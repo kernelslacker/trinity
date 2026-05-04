@@ -101,10 +101,9 @@ static void post_select(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_select: rejected suspicious post_state=%p "
 			  "(pid-scribbled?)\n", snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -114,14 +113,13 @@ static void post_select(struct syscallrecord *rec)
 	 * the inner pointers may no longer reference our heap allocations.
 	 * Leak rather than hand garbage to free().
 	 */
-	if (looks_like_corrupted_ptr(snap->rfds) ||
-	    looks_like_corrupted_ptr(snap->wfds) ||
-	    looks_like_corrupted_ptr(snap->exfds) ||
-	    looks_like_corrupted_ptr(snap->tv)) {
+	if (looks_like_corrupted_ptr(rec, snap->rfds) ||
+	    looks_like_corrupted_ptr(rec, snap->wfds) ||
+	    looks_like_corrupted_ptr(rec, snap->exfds) ||
+	    looks_like_corrupted_ptr(rec, snap->tv)) {
 		outputerr("post_select: rejected suspicious snap rfds=%p wfds=%p "
 			  "exfds=%p tv=%p (post_state-scribbled?)\n",
 			  snap->rfds, snap->wfds, snap->exfds, snap->tv);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}

@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include "arch.h"
@@ -993,6 +994,59 @@ static unsigned long defense_counter_load(unsigned int i)
 	return __atomic_load_n(p, __ATOMIC_RELAXED);
 }
 
+/*
+ * Render the per-handler attribution ring for post_handler_corrupt_ptr.
+ * Snapshots the ring under the same lock the recorder uses so a
+ * concurrent insertion cannot reorder entries underneath the sort.  The
+ * snapshot is then sorted descending by count and emitted; suppressed
+ * entirely when the ring is empty so quiet windows stay terse.
+ */
+static int corrupt_ptr_attr_cmp(const void *a, const void *b)
+{
+	const struct corrupt_ptr_attr_entry *ea = a;
+	const struct corrupt_ptr_attr_entry *eb = b;
+
+	if (eb->count > ea->count)
+		return 1;
+	if (eb->count < ea->count)
+		return -1;
+	return 0;
+}
+
+static void corrupt_ptr_attr_dump(void)
+{
+	struct corrupt_ptr_attr_entry snap[CORRUPT_PTR_ATTR_SLOTS];
+	unsigned int i, n = 0;
+
+	lock(&shm->stats.corrupt_ptr_attr_lock);
+	memcpy(snap, shm->stats.corrupt_ptr_attr, sizeof(snap));
+	unlock(&shm->stats.corrupt_ptr_attr_lock);
+
+	for (i = 0; i < CORRUPT_PTR_ATTR_SLOTS; i++)
+		if (snap[i].count != 0)
+			n++;
+
+	if (n == 0)
+		return;
+
+	qsort(snap, CORRUPT_PTR_ATTR_SLOTS, sizeof(snap[0]),
+	      corrupt_ptr_attr_cmp);
+
+	output(0, "post_handler_corrupt_ptr attribution (top %u handlers):\n", n);
+	for (i = 0; i < CORRUPT_PTR_ATTR_SLOTS; i++) {
+		const char *name;
+
+		if (snap[i].count == 0)
+			break;
+		if (snap[i].nr == CORRUPT_PTR_ATTR_NR_NONE)
+			name = "<deferred-free / non-syscall>";
+		else
+			name = print_syscall_name(snap[i].nr, snap[i].do32bit);
+		output(0, "  %-32s %s %lu\n",
+		       name, snap[i].do32bit ? "(32)" : "(64)", snap[i].count);
+	}
+}
+
 void defense_counters_periodic_dump(void)
 {
 	static unsigned long prev[ARRAY_SIZE(defense_counters)];
@@ -1040,6 +1094,8 @@ void defense_counters_periodic_dump(void)
 		       defense_counters[i].name, delta,
 		       rate_milli / 1000, rate_milli % 1000, cur);
 	}
+
+	corrupt_ptr_attr_dump();
 
 	last_dump = now;
 }

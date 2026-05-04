@@ -102,11 +102,9 @@ static void post_newfstat(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_newfstat: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
-				   __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -130,11 +128,9 @@ static void post_newfstat(struct syscallrecord *rec)
 		 * wholesale stomp could rewrite the snapshot's inner statbuf
 		 * field.  Reject pid-scribbled statbuf before deref.
 		 */
-		if (looks_like_corrupted_ptr(buf)) {
+		if (looks_like_corrupted_ptr(rec, buf)) {
 			outputerr("post_newfstat: rejected suspicious statbuf=%p (post_state-scribbled?)\n",
 				  buf);
-			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
-					   __ATOMIC_RELAXED);
 			goto out_free;
 		}
 	}
@@ -321,11 +317,9 @@ static void post_newfstatat(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_newfstatat: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr,
-				   1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -351,11 +345,9 @@ static void post_newfstatat(struct syscallrecord *rec)
 		 * statbuf / pathname fields.  Reject pid-scribbled
 		 * pointers before deref.
 		 */
-		if (looks_like_corrupted_ptr(buf) || looks_like_corrupted_ptr(path)) {
+		if (looks_like_corrupted_ptr(rec, buf) || looks_like_corrupted_ptr(rec, path)) {
 			outputerr("post_newfstatat: rejected suspicious statbuf=%p filename=%p (post_state-scribbled?)\n",
 				  buf, path);
-			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr,
-					   1, __ATOMIC_RELAXED);
 			goto out_free;
 		}
 	}

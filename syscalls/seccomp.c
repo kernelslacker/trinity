@@ -182,10 +182,9 @@ static void post_seccomp(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_seccomp: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -197,10 +196,9 @@ static void post_seccomp(struct syscallrecord *rec)
 	 * so a NULL here is itself corruption -- the < 0x10000 band of
 	 * looks_like_corrupted_ptr() catches it without a separate guard.
 	 */
-	if (looks_like_corrupted_ptr(snap->heap)) {
+	if (looks_like_corrupted_ptr(rec, snap->heap)) {
 		outputerr("post_seccomp: rejected suspicious snap heap=%p (post_state-scribbled?)\n",
 			  snap->heap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}

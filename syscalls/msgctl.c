@@ -48,9 +48,8 @@ static void post_msgctl(struct syscallrecord *rec)
 	if (buf == NULL)
 		return;
 
-	if (looks_like_corrupted_ptr(buf)) {
+	if (looks_like_corrupted_ptr(rec, buf)) {
 		outputerr("post_msgctl: rejected suspicious buf=%p (pid-scribbled?)\n", buf);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a3 = 0;
 		rec->post_state = 0;
 		return;

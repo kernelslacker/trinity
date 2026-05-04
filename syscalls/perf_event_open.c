@@ -1517,10 +1517,9 @@ static void post_perf_event_open(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the free
 	 * path against handing a non-heap value to free().
 	 */
-	if (looks_like_corrupted_ptr(attr)) {
+	if (looks_like_corrupted_ptr(rec, attr)) {
 		outputerr("post_perf_event_open: rejected suspicious attr=%p "
 			  "(pid-scribbled?)\n", attr);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a1 = 0;
 		rec->post_state = 0;
 		return;

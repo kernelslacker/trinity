@@ -112,10 +112,9 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_rt_sigprocmask: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -137,10 +136,9 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 	 * stomp could rewrite the snapshot's inner pointer field.  Reject
 	 * a pid-scribbled oset before deref.
 	 */
-	if (looks_like_corrupted_ptr((void *) snap->oset)) {
+	if (looks_like_corrupted_ptr(rec, (void *) snap->oset)) {
 		outputerr("post_rt_sigprocmask: rejected suspicious oset=%p (post_state-scribbled?)\n",
 			  (void *) snap->oset);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		goto out_free;
 	}
 

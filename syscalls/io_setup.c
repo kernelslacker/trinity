@@ -79,10 +79,9 @@ static void post_io_setup(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_io_setup: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -100,10 +99,9 @@ static void post_io_setup(struct syscallrecord *rec)
 	 * a pid-scribbled ctxp before the *ctxp deref steers the context
 	 * id read at a foreign allocation.
 	 */
-	if (looks_like_corrupted_ptr(ctxp)) {
+	if (looks_like_corrupted_ptr(rec, ctxp)) {
 		outputerr("post_io_setup: rejected suspicious ctxp=%p (post_state-scribbled?)\n",
 			  (void *) ctxp);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		goto out_free;
 	}
 

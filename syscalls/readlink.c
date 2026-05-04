@@ -136,11 +136,9 @@ static void post_readlink(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_readlink: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
-				   __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -167,11 +165,9 @@ static void post_readlink(struct syscallrecord *rec)
 		 * path pointer fields.  Reject pid-scribbled values before
 		 * deref.
 		 */
-		if (looks_like_corrupted_ptr(buf) || looks_like_corrupted_ptr(path)) {
+		if (looks_like_corrupted_ptr(rec, buf) || looks_like_corrupted_ptr(rec, path)) {
 			outputerr("post_readlink: rejected suspicious buf=%p path=%p (post_state-scribbled?)\n",
 				  buf, path);
-			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr,
-					   1, __ATOMIC_RELAXED);
 			goto out_free;
 		}
 	}
@@ -363,11 +359,9 @@ static void post_readlinkat(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_readlinkat: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
-				   __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -408,11 +402,9 @@ static void post_readlinkat(struct syscallrecord *rec)
 		 * pathname pointer fields.  Reject pid-scribbled values
 		 * before deref.
 		 */
-		if (looks_like_corrupted_ptr(buf) || looks_like_corrupted_ptr(path)) {
+		if (looks_like_corrupted_ptr(rec, buf) || looks_like_corrupted_ptr(rec, path)) {
 			outputerr("post_readlinkat: rejected suspicious buf=%p pathname=%p (post_state-scribbled?)\n",
 				  buf, path);
-			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr,
-					   1, __ATOMIC_RELAXED);
 			goto out_free;
 		}
 	}

@@ -152,9 +152,8 @@ static void post_init_module(struct syscallrecord *rec)
 	if (umod == NULL)
 		return;
 
-	if (looks_like_corrupted_ptr(umod)) {
+	if (looks_like_corrupted_ptr(rec, umod)) {
 		outputerr("post_init_module: rejected suspicious umod=%p (pid-scribbled?)\n", umod);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a1 = 0;
 		rec->post_state = 0;
 		return;

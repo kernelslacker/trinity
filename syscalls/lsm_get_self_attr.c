@@ -178,10 +178,9 @@ static void post_lsm_get_self_attr(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_lsm_get_self_attr: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -200,11 +199,10 @@ static void post_lsm_get_self_attr(struct syscallrecord *rec)
 	 * stomp could rewrite the snapshot's inner pointer fields.  Reject
 	 * pid-scribbled ctx/size before deref.
 	 */
-	if (looks_like_corrupted_ptr((void *) snap->ctx) ||
-	    looks_like_corrupted_ptr((void *) snap->size)) {
+	if (looks_like_corrupted_ptr(rec, (void *) snap->ctx) ||
+	    looks_like_corrupted_ptr(rec, (void *) snap->size)) {
 		outputerr("post_lsm_get_self_attr: rejected suspicious ctx=%p size=%p (post_state-scribbled?)\n",
 			  (void *) snap->ctx, (void *) snap->size);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		goto out_free;
 	}
 

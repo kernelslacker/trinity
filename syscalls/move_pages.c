@@ -120,10 +120,9 @@ static void post_move_pages(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_move_pages: rejected suspicious post_state=%p "
 			  "(pid-scribbled?)\n", snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -133,13 +132,12 @@ static void post_move_pages(struct syscallrecord *rec)
 	 * the inner pointers may no longer reference our heap allocations.
 	 * Leak rather than hand garbage to free().
 	 */
-	if (looks_like_corrupted_ptr(snap->pages) ||
-	    looks_like_corrupted_ptr(snap->nodes) ||
-	    looks_like_corrupted_ptr(snap->status)) {
+	if (looks_like_corrupted_ptr(rec, snap->pages) ||
+	    looks_like_corrupted_ptr(rec, snap->nodes) ||
+	    looks_like_corrupted_ptr(rec, snap->status)) {
 		outputerr("post_move_pages: rejected suspicious snap pages=%p "
 			  "nodes=%p status=%p (post_state-scribbled?)\n",
 			  snap->pages, snap->nodes, snap->status);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}

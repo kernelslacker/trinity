@@ -163,10 +163,9 @@ static void post_sendmsg(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so keep the
 	 * corruption guard.
 	 */
-	if (looks_like_corrupted_ptr(msg)) {
+	if (looks_like_corrupted_ptr(rec, msg)) {
 		outputerr("post_sendmsg: rejected suspicious msg=%p "
 			  "(pid-scribbled?)\n", msg);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
@@ -254,10 +253,9 @@ static void post_sendmmsg(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so keep the
 	 * corruption guard.
 	 */
-	if (looks_like_corrupted_ptr(msgs)) {
+	if (looks_like_corrupted_ptr(rec, msgs)) {
 		outputerr("post_sendmmsg: rejected suspicious msgs=%p "
 			  "(pid-scribbled?)\n", msgs);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
@@ -277,7 +275,6 @@ static void post_sendmmsg(struct syscallrecord *rec)
 	if (vlen > SENDMMSG_MAX_VLEN) {
 		outputerr("post_sendmmsg: rejected suspicious vlen=%u "
 			  "(pid-scribbled?)\n", vlen);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;

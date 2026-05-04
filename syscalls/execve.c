@@ -151,10 +151,9 @@ static void post_execve(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_execve: rejected suspicious post_state=%p "
 			  "(pid-scribbled?)\n", snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -166,11 +165,10 @@ static void post_execve(struct syscallrecord *rec)
 	 * free()ing the outer arrays, and a bad pointer crashes on the
 	 * first deref.  Leak rather than walk garbage.
 	 */
-	if (looks_like_corrupted_ptr(snap->argv) ||
-	    looks_like_corrupted_ptr(snap->envp)) {
+	if (looks_like_corrupted_ptr(rec, snap->argv) ||
+	    looks_like_corrupted_ptr(rec, snap->envp)) {
 		outputerr("post_execve: rejected suspicious argv=%p envp=%p "
 			  "(post_state-scribbled?)\n", snap->argv, snap->envp);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
@@ -183,7 +181,6 @@ static void post_execve(struct syscallrecord *rec)
 	if (snap->argvcount > 32 || snap->envpcount > 32) {
 		outputerr("post_execve: rejected suspicious argvcount=%lu envpcount=%lu "
 			  "(post_state-scribbled?)\n", snap->argvcount, snap->envpcount);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
@@ -201,26 +198,23 @@ static void post_execveat(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_execveat: rejected suspicious post_state=%p "
 			  "(pid-scribbled?)\n", snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
 
-	if (looks_like_corrupted_ptr(snap->argv) ||
-	    looks_like_corrupted_ptr(snap->envp)) {
+	if (looks_like_corrupted_ptr(rec, snap->argv) ||
+	    looks_like_corrupted_ptr(rec, snap->envp)) {
 		outputerr("post_execveat: rejected suspicious argv=%p envp=%p "
 			  "(post_state-scribbled?)\n", snap->argv, snap->envp);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
 	if (snap->argvcount > 32 || snap->envpcount > 32) {
 		outputerr("post_execveat: rejected suspicious argvcount=%lu envpcount=%lu "
 			  "(post_state-scribbled?)\n", snap->argvcount, snap->envpcount);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}

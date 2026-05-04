@@ -36,9 +36,8 @@ static void post_msgsnd(struct syscallrecord *rec)
 	if (msgp == NULL)
 		return;
 
-	if (looks_like_corrupted_ptr(msgp)) {
+	if (looks_like_corrupted_ptr(rec, msgp)) {
 		outputerr("post_msgsnd: rejected suspicious msgp=%p (pid-scribbled?)\n", msgp);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;

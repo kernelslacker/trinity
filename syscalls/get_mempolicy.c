@@ -166,10 +166,9 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_get_mempolicy: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -195,11 +194,10 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 		 * wholesale stomp could rewrite the snapshot's inner pointer
 		 * fields.  Reject pid-scribbled policy/nmask before deref.
 		 */
-		if (looks_like_corrupted_ptr(policy_p) ||
-		    looks_like_corrupted_ptr(nmask_p)) {
+		if (looks_like_corrupted_ptr(rec, policy_p) ||
+		    looks_like_corrupted_ptr(rec, nmask_p)) {
 			outputerr("post_get_mempolicy: rejected suspicious policy=%p nmask=%p (post_state-scribbled?)\n",
 				  policy_p, nmask_p);
-			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 			goto out_free;
 		}
 	}
