@@ -1044,10 +1044,11 @@ out:
 /* ------------------------------------------------------------------ *
  * Recipe 14: FUTEX_WAIT + FUTEX_WAKE via io_uring
  *
- * Map a shared page, submit IORING_OP_FUTEX_WAIT with an expected value
- * that doesn't match (fast EAGAIN path), then IORING_OP_FUTEX_WAKE on
- * the same address.  Exercises the io_uring futex dispatch path added
- * in Linux 6.7.  First ENOSYS latches the recipe off.
+ * Draw a shared-anon region from the parent's inherited mapping pool,
+ * submit IORING_OP_FUTEX_WAIT with an expected value that doesn't match
+ * (fast EAGAIN path), then IORING_OP_FUTEX_WAKE on the same address.
+ * Exercises the io_uring futex dispatch path added in Linux 6.7.  First
+ * ENOSYS latches the recipe off.
  * ------------------------------------------------------------------ */
 #ifndef IORING_OP_FUTEX_WAIT
 #define IORING_OP_FUTEX_WAIT	46
@@ -1057,14 +1058,29 @@ out:
 static bool recipe_futex_wait_wake(struct iour_ctx *ctx, bool *unsupported)
 {
 	struct io_uring_sqe sqes[2];
-	uint32_t *addr = MAP_FAILED;
+	struct map *m = NULL;
+	uint32_t *addr = NULL;
 	bool ok = false;
 	int r;
 
-	addr = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
-		    MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-	if (addr == MAP_FAILED)
+	/* Draw the futex backing storage from the parent's inherited
+	 * mapping pool.  Sibling iouring children draw from the same pool,
+	 * so multiple rings will sometimes target the same futex word —
+	 * that overlap is the CV.4 target, exercising io_uring's futex
+	 * dispatch and the kernel's shared-key hash bucket against
+	 * cross-sibling waiters and wakers on identical keys.
+	 *
+	 * The pool owns the mapping: do NOT munmap on cleanup.
+	 *
+	 * Filter the pool draw on PROT_READ | PROT_WRITE: the recipe stores
+	 * to the value word before submission and the kernel reads it during
+	 * the cmpxchg in the FUTEX_WAIT op handler.  PROT_READ-only or
+	 * PROT_NONE pool entries would SEGV on the value-word store before
+	 * the SQE is ever submitted. */
+	m = get_map_with_prot(PROT_READ | PROT_WRITE);
+	if (m == NULL)
 		goto out;
+	addr = (uint32_t *)m->ptr;
 
 	*addr = 0;
 
@@ -1101,8 +1117,6 @@ static bool recipe_futex_wait_wake(struct iour_ctx *ctx, bool *unsupported)
 	iour_drain_cqes(ctx);
 	ok = true;
 out:
-	if (addr != MAP_FAILED)
-		munmap(addr, page_size);
 	return ok;
 }
 

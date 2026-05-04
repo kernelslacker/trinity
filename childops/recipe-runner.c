@@ -74,6 +74,7 @@
 #include "child.h"
 #include "childops-util.h"
 #include "compat.h"
+#include "maps.h"
 #include "random.h"
 #include "shm.h"
 #include "stats.h"
@@ -708,26 +709,41 @@ out:
 /*
  * Recipe 14: futex lifecycle on a shared anonymous mapping.
  *
- * mmap MAP_SHARED | MAP_ANONYMOUS → futex(FUTEX_WAIT) with a short
- * timeout (expected to return ETIMEDOUT immediately because the value
- * doesn't match) → futex(FUTEX_WAKE) on the same address (zero waiters
- * to wake) → munmap.  Exercises the futex hash-bucket lookup, the
- * timeout path, and the cleanup of the futex queue.
+ * Draw a region from the parent's inherited mapping pool (built once in
+ * setup_initial_mappings as MAP_SHARED | MAP_ANONYMOUS) → futex(FUTEX_WAIT)
+ * with a short timeout (expected to return EAGAIN immediately because
+ * the value doesn't match) → futex(FUTEX_WAKE) on the same address.
+ * Exercises the futex hash-bucket lookup, the timeout path, and the
+ * cleanup of the futex queue.
  *
- * Using MAP_SHARED puts the futex on the shared key path inside the
- * kernel, which is the more interesting variant — the private path is
- * what most application code hits.
+ * The shared-anon pool entries put the futex on the shared key path
+ * inside the kernel, which is the more interesting variant — the private
+ * path is what most application code hits.
+ *
+ * Filter the pool draw on PROT_READ | PROT_WRITE: the recipe writes the
+ * value word before the FUTEX_WAIT and the kernel reads it during the
+ * cmpxchg in futex_wait_setup.  Drawing a PROT_READ-only or PROT_NONE
+ * pool entry would SEGV on the value-word store before the futex syscall.
+ *
+ * The pool owns the mapping: do NOT munmap on cleanup.  Sibling recipes
+ * draw from the same pool, so they will sometimes target the same futex
+ * word — the cross-sibling collision on the value and on the kernel's
+ * shared-key hash bucket is the cross-vector behaviour we want to
+ * exercise.  The 1 ms timeout bounds any worst-case wait if a sibling
+ * happens to have raced *futex_addr to the expected value of 1 between
+ * our store and the FUTEX_WAIT.
  */
 static bool recipe_futex(bool *unsupported __unused__)
 {
 	struct timespec ts;
-	uint32_t *futex_addr = MAP_FAILED;
+	struct map *m = NULL;
+	uint32_t *futex_addr = NULL;
 	bool ok = false;
 
-	futex_addr = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
-			  MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-	if (futex_addr == MAP_FAILED)
+	m = get_map_with_prot(PROT_READ | PROT_WRITE);
+	if (m == NULL)
 		goto out;
+	futex_addr = (uint32_t *)m->ptr;
 
 	*futex_addr = 0;
 
@@ -744,8 +760,6 @@ static bool recipe_futex(bool *unsupported __unused__)
 
 	ok = true;
 out:
-	if (futex_addr != MAP_FAILED)
-		(void)munmap(futex_addr, page_size);
 	return ok;
 }
 
