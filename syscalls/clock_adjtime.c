@@ -6,6 +6,7 @@
 #include <string.h>
 #include "random.h"
 #include "sanitise.h"
+#include "utils.h"
 
 static unsigned long clock_ids[] = {
 	CLOCK_REALTIME, CLOCK_MONOTONIC, CLOCK_PROCESS_CPUTIME_ID,
@@ -60,6 +61,16 @@ static void sanitise_clock_adjtime(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) tx;
 }
 
+static void post_clock_adjtime(struct syscallrecord *rec)
+{
+	long ret = (long) rec->retval;
+
+	if (ret == -1L)
+		return;
+	if (ret < TIME_OK || ret > TIME_ERROR)
+		post_handler_corrupt_ptr_bump(rec, NULL);
+}
+
 struct syscallentry syscall_clock_adjtime = {
 	.name = "clock_adjtime",
 	.group = GROUP_TIME,
@@ -69,4 +80,5 @@ struct syscallentry syscall_clock_adjtime = {
 	.arg_params[0].list = ARGLIST(clock_ids),
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_clock_adjtime,
+	.post = post_clock_adjtime,
 };
