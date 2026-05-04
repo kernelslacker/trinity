@@ -27,13 +27,17 @@ static void sanitise_recv(struct syscallrecord *rec)
 	avoid_shared_buffer(&rec->a2, rec->a3);
 }
 
+#ifndef MSG_SOCK_DEVMEM
+#define MSG_SOCK_DEVMEM	0x2000000	/* 6.10+ */
+#endif
+
 static unsigned long recv_flags[] = {
 	MSG_OOB, MSG_PEEK, MSG_DONTROUTE, MSG_CTRUNC,
 	MSG_PROBE, MSG_TRUNC, MSG_DONTWAIT, MSG_EOR,
 	MSG_WAITALL, MSG_FIN, MSG_SYN, MSG_CONFIRM,
 	MSG_RST, MSG_ERRQUEUE, MSG_NOSIGNAL, MSG_MORE,
 	MSG_WAITFORONE, MSG_FASTOPEN, MSG_CMSG_CLOEXEC, MSG_CMSG_COMPAT,
-	MSG_BATCH, MSG_ZEROCOPY,
+	MSG_BATCH, MSG_ZEROCOPY, MSG_SOCK_DEVMEM,
 };
 
 struct syscallentry syscall_recv = {
