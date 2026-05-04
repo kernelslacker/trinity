@@ -493,6 +493,12 @@ struct stats_s {
 	unsigned long iouring_reaped;		/* CQEs drained from the completion ring */
 	unsigned long iouring_failed;		/* setup/mmap/submit_burst/io_uring_enter returned -1 */
 
+	/* sanitise_io_uring_enter bailed out because the kernel-shared SQ ring
+	 * mask read back larger than ring->sq_entries -- a sibling op had
+	 * stomped the mask, which would have steered fill_sqe past the SQE
+	 * array and faulted on an unmapped page. */
+	unsigned long iouring_enter_mask_corrupt;
+
 	/* close_racer childop counters */
 	unsigned long close_racer_runs;			/* total close_racer invocations */
 	unsigned long close_racer_pairs;		/* cycles where close+join completed */
