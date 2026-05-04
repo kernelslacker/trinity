@@ -351,14 +351,44 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			goto out_unlock;
 		}
 	} else if (head->num_entries >= head->array_capacity) {
-		/* Local objects: grow via realloc on private heap. */
+		/*
+		 * Local objects: grow on the private heap.
+		 *
+		 * Hand-rolled allocate-copy-defer-free instead of plain
+		 * realloc().  realloc() returns the old chunk to glibc the
+		 * moment the resize forces a move, but get_random_object()
+		 * (and find_local_object_by_fd, for_each_obj iterators, the
+		 * arg-gen path get_map → alloc_iovec → ...) read head->array
+		 * lockless from the same child without any temporal barrier.
+		 * A compiler-hoisted load of head->array, an interrupted code
+		 * path holding the prior pointer, or a stale slot pointer
+		 * that survived a wild value-result write can all keep the
+		 * OLD array container live past the resize -- next deref
+		 * lands inside a glibc-reclaimed chunk.
+		 *
+		 * Routing the old container through deferred_free_enqueue()
+		 * gives it the same 5-50 syscall (effective 40-400 with
+		 * DEFERRED_TICK_BATCH) TTL the obj struct frees already
+		 * enjoy via release_obj() above.  That is far longer than
+		 * any in-flight head->array reader's window, and closes the
+		 * UAF on the array container the same way the get_map fix
+		 * (3a8d344f0f73, 546f576fae24) closed the UAF on the obj
+		 * struct.  Same hazard shape, same defence.
+		 *
+		 * The deferred_free ring rejects sub-page / canonical-out-of-
+		 * range / misaligned ptrs (looks_like_corrupted_ptr) and ptrs
+		 * overlapping any tracked shared region.  The OBJ_LOCAL
+		 * head->array sits in private heap returned by malloc, so it
+		 * passes both bands trivially.
+		 */
 		struct object **newarray;
-		unsigned int newcap;
+		struct object **oldarray;
+		unsigned int newcap, oldcap;
 
 		newcap = head->array_capacity ? head->array_capacity * 2 : 16;
-		newarray = realloc(head->array, newcap * sizeof(struct object *));
+		newarray = malloc(newcap * sizeof(struct object *));
 		if (newarray == NULL) {
-			outputerr("add_object: realloc failed for type %u (cap %u)\n",
+			outputerr("add_object: malloc failed for type %u (cap %u)\n",
 				  type, newcap);
 			if (is_fd_type(type)) {
 				int fd = fd_from_object(obj, type);
@@ -368,8 +398,15 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			release_obj(obj, scope, type);
 			return;
 		}
+		oldcap = head->array_capacity;
+		oldarray = head->array;
+		if (oldarray != NULL && oldcap > 0)
+			memcpy(newarray, oldarray,
+			       oldcap * sizeof(struct object *));
 		head->array = newarray;
 		head->array_capacity = newcap;
+		if (oldarray != NULL)
+			deferred_free_enqueue(oldarray, free);
 	}
 	head->array[head->num_entries] = obj;
 	obj->array_idx = head->num_entries;
