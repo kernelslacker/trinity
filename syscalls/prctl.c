@@ -12,6 +12,7 @@
 #include <sys/prctl.h>
 #include <sys/socket.h>
 
+#include "deferred-free.h"
 #include "net.h"
 #include "maps.h"
 #include "random.h"
@@ -104,8 +105,26 @@ static unsigned long cap_values[] = {
 };
 
 
+/*
+ * Snapshot of the dispatch option and the (PR_SET_SECCOMP-only) heap
+ * sock_fprog the post handler reads, captured at sanitise time and
+ * consumed by the post handler.  Lives in rec->post_state, a slot the
+ * syscall ABI does not expose, so the post path is immune to a sibling
+ * syscall scribbling rec->a1 (option) or rec->a3 (sock_fprog pointer)
+ * between the syscall returning and the post handler running.  The old
+ * post handler dispatched off rec->a1 directly: a flip to PR_SET_SECCOMP
+ * from any other option would deref a NULL post_state's bpf->filter, and
+ * a flip away from PR_SET_SECCOMP would leak the sock_fprog and its
+ * filter; a flip to PR_SET_NO_NEW_PRIVS would fire the cred oracle on
+ * an unrelated retval and report bogus divergences.
+ */
+struct prctl_post_state {
+	int option;
+	struct sock_fprog *bpf;
+};
+
 #ifdef USE_SECCOMP
-static void do_set_seccomp(struct syscallrecord *rec)
+static struct sock_fprog *do_set_seccomp(struct syscallrecord *rec)
 {
 	unsigned long *optval = NULL, __unused__ optlen = 0;
 
@@ -117,26 +136,27 @@ static void do_set_seccomp(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) optval;
 	rec->a4 = 0;
 	rec->a5 = 0;
-	/* Snapshot for the post handler -- a3 may be scribbled by a sibling
-	 * syscall before post_prctl() runs, leaving a real-but-wrong heap
-	 * pointer that the corruption guard cannot distinguish from the
-	 * original sock_fprog. */
-	rec->post_state = (unsigned long) optval;
+	return (struct sock_fprog *) optval;
 }
 #else
-static void do_set_seccomp(__unused__ struct syscallrecord *rec) { }
+static struct sock_fprog *do_set_seccomp(__unused__ struct syscallrecord *rec)
+{
+	return NULL;
+}
 #endif
 
 /* We already got a generic_sanitise at this point */
 static void sanitise_prctl(struct syscallrecord *rec)
 {
 	int option = prctl_opts[rand() % NR_PRCTL_OPTS];
+	struct sock_fprog *bpf = NULL;
 
+	rec->post_state = 0;
 	rec->a1 = option;
 
 	switch (option) {
 	case PR_SET_SECCOMP:
-		do_set_seccomp(rec);
+		bpf = do_set_seccomp(rec);
 		break;
 
 	case PR_CAPBSET_READ:
@@ -157,36 +177,73 @@ static void sanitise_prctl(struct syscallrecord *rec)
 	default:
 		break;
 	}
+
+	/*
+	 * Two options have post-handler work: PR_SET_SECCOMP frees the
+	 * heap sock_fprog and PR_SET_NO_NEW_PRIVS runs the sticky-flag
+	 * oracle.  Allocate the snapshot for both so the post handler
+	 * dispatches off snap->option (immune to a sibling scribble of
+	 * rec->a1) and reads bpf from snap->bpf (immune to a scribble of
+	 * rec->a3).  Other options skip the snap entirely -- their post
+	 * path is empty and a sibling-induced flip into them simply
+	 * returns early on snap == NULL.
+	 */
+	if (option == PR_SET_SECCOMP || option == PR_SET_NO_NEW_PRIVS) {
+		struct prctl_post_state *snap = zmalloc(sizeof(*snap));
+
+		snap->option = option;
+		snap->bpf = bpf;
+		rec->post_state = (unsigned long) snap;
+	}
 }
 
 static void post_prctl(struct syscallrecord *rec)
 {
+	struct prctl_post_state *snap = (struct prctl_post_state *) rec->post_state;
 	struct sock_fprog *bpf;
 	long got;
 
-	switch (rec->a1) {
-	case PR_SET_SECCOMP:
-		bpf = (struct sock_fprog *) rec->post_state;
-		if (bpf == NULL)
-			return;
-		/*
-		 * post_state is private to the post handler, but the whole
-		 * syscallrecord can still be wholesale-stomped, so keep the
-		 * corruption guard as a backstop.
-		 */
-		if (looks_like_corrupted_ptr(bpf)) {
-			outputerr("post_prctl: rejected suspicious bpf=%p (pid-scribbled?)\n",
-				  (void *) bpf);
-			shm->stats.post_handler_corrupt_ptr++;
-			rec->a3 = 0;
-			rec->post_state = 0;
-			return;
-		}
-		free(bpf->filter);
-		free(bpf);
-		rec->a3 = 0;
+	rec->a3 = 0;
+
+	if (snap == NULL)
+		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_prctl: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
+	}
+
+	/*
+	 * Defense in depth: if something corrupted the snapshot itself,
+	 * the inner bpf pointer may no longer reference our heap
+	 * allocation.  NULL is a legitimate value here (PR_SET_NO_NEW_PRIVS
+	 * does not allocate), so only flag a non-NULL value that fails
+	 * the heuristic.  Leak rather than hand garbage to free().
+	 */
+	if (snap->bpf != NULL && looks_like_corrupted_ptr(snap->bpf)) {
+		outputerr("post_prctl: rejected suspicious snap bpf=%p (post_state-scribbled?)\n",
+			  snap->bpf);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		deferred_freeptr(&rec->post_state);
+		return;
+	}
+
+	switch (snap->option) {
+	case PR_SET_SECCOMP:
+		bpf = snap->bpf;
+		if (bpf != NULL) {
+			free(bpf->filter);
+			free(bpf);
+		}
+		break;
 
 	case PR_SET_NO_NEW_PRIVS:
 		/*
@@ -197,9 +254,9 @@ static void post_prctl(struct syscallrecord *rec)
 		 * suid-binary execve and seccomp filter installation.
 		 */
 		if ((long) rec->retval != 0)
-			return;
+			break;
 		if (!ONE_IN(20))
-			return;
+			break;
 		got = prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0);
 		if (got != 1) {
 			output(0, "cred oracle: prctl(PR_SET_NO_NEW_PRIVS) "
@@ -207,8 +264,10 @@ static void post_prctl(struct syscallrecord *rec)
 			__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}
-		return;
+		break;
 	}
+
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_prctl = {
