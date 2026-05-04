@@ -173,7 +173,8 @@ bool xattr_thrash(struct childdata *child)
 
 			for (j = 0; j < vlen; j++)
 				value[j] = (unsigned char)rand();
-			rc = fsetxattr(s->fd, name, value, vlen, flags);
+			rc = fsetxattr(s->fd, name, value, vlen,
+				       (int)RAND_NEGATIVE_OR(flags));
 			if (rc == 0)
 				__atomic_add_fetch(&shm->stats.xattr_thrash_set,
 						   1, __ATOMIC_RELAXED);

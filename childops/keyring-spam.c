@@ -241,7 +241,8 @@ bool keyring_spam(struct childdata *child)
 			serial = ring_pick(live);
 			if (serial == 0)
 				break;
-			rc = syscall(__NR_keyctl, (unsigned long) KEYCTL_READ,
+			rc = syscall(__NR_keyctl,
+				     (unsigned long) RAND_NEGATIVE_OR(KEYCTL_READ),
 				     (unsigned long) serial,
 				     (unsigned long) buf,
 				     (unsigned long) sizeof(buf), 0UL);
