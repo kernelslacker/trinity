@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <linux/utsname.h>
 #include <asm/unistd.h>
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -25,9 +26,42 @@
 #define SYS_uname __NR_uname
 #endif
 
+/*
+ * Snapshot of the one uname input arg read by the post oracle, captured
+ * at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect the source memcpy at a foreign user
+ * buffer.
+ */
+struct uname_post_state {
+	unsigned long name;
+};
+
 static void sanitise_uname(struct syscallrecord *rec)
 {
+	struct uname_post_state *snap;
+
+	/*
+	 * Clear post_state up front so an early return below leaves the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record.
+	 */
+	rec->post_state = 0;
+
 	avoid_shared_buffer(&rec->a1, sizeof(struct utsname));
+
+	/*
+	 * Snapshot the one input arg for the post oracle.  Without this
+	 * the post handler reads rec->a1 at post-time, when a sibling
+	 * syscall may have scribbled the slot: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original name
+	 * user-buffer pointer, so the source memcpy would touch a foreign
+	 * allocation.  post_state is private to the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->name = rec->a1;
+	rec->post_state = (unsigned long) snap;
 }
 
 /*
@@ -57,46 +91,70 @@ static void sanitise_uname(struct syscallrecord *rec)
  * copy_to_user tear shows up here but not in the procfs oracle, while a
  * proc_dostring regression shows up in the procfs oracle but not here.
  *
- * TOCTOU defeat: the user receive buffer at rec->a1 is alloc_shared
- * memory and a sibling can scribble it between the original return and
- * our re-issue.  Snapshot it into a stack-local first, then re-issue
- * into a SEPARATE stack buffer (do NOT pass rec->a1 -- a sibling could
- * mutate it mid-syscall and we want a clean compare).  Compare each of
- * the six fields with no early return so multi-field corruption surfaces
- * in a single sample, but bump the anomaly counter only once.  Sample
- * one in a hundred to stay in line with the rest of the oracle family.
+ * TOCTOU defeat: the one input arg (name) is snapshotted at sanitise time
+ * into a heap struct in rec->post_state, so a sibling that scribbles
+ * rec->a1 between syscall return and post entry cannot redirect the
+ * source memcpy at a foreign user buffer.  The user-buffer payload at
+ * name is then snapshotted into a stack-local first, then re-issued into
+ * a SEPARATE stack buffer (do NOT pass snap->name -- a sibling could
+ * mutate it mid-syscall and forge a clean compare).  Compare each of the
+ * six fields with no early return so multi-field corruption surfaces in
+ * a single sample, but bump the anomaly counter only once.  Sample one
+ * in a hundred to stay in line with the rest of the oracle family.
  */
 static void post_uname(struct syscallrecord *rec)
 {
+	struct uname_post_state *snap =
+		(struct uname_post_state *) rec->post_state;
 	struct new_utsname first;
 	struct new_utsname recheck;
 	bool diverged;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_uname: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if (rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a1 == 0)
-		return;
+	if (snap->name == 0)
+		goto out_free;
 
 	{
-		void *name = (void *)(unsigned long) rec->a1;
+		void *name = (void *)(unsigned long) snap->name;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner name
+		 * field.  Reject pid-scribbled name before deref.
+		 */
 		if (looks_like_corrupted_ptr(name)) {
-			outputerr("post_uname: rejected suspicious name=%p (pid-scribbled?)\n",
+			outputerr("post_uname: rejected suspicious name=%p (post_state-scribbled?)\n",
 				  name);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	memcpy(&first, (void *)(unsigned long) rec->a1, sizeof(first));
+	memcpy(&first, (void *)(unsigned long) snap->name, sizeof(first));
 
 	if (syscall(SYS_uname, &recheck) != 0)
-		return;
+		goto out_free;
 
 	diverged = (memcmp(first.sysname,    recheck.sysname,    __NEW_UTS_LEN + 1) != 0) ||
 		   (memcmp(first.nodename,   recheck.nodename,   __NEW_UTS_LEN + 1) != 0) ||
@@ -106,7 +164,7 @@ static void post_uname(struct syscallrecord *rec)
 		   (memcmp(first.domainname, recheck.domainname, __NEW_UTS_LEN + 1) != 0);
 
 	if (!diverged)
-		return;
+		goto out_free;
 
 	{
 		char first_hex[6][32 * 2 + 1];
@@ -143,6 +201,9 @@ static void post_uname(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.uname_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_uname = {
