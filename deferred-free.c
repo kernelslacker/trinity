@@ -231,7 +231,8 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 	 * tokens (caller knows what they're doing); same gating convention
 	 * as the range_overlaps_shared check below.
 	 */
-	if (free_func == free && looks_like_corrupted_ptr(NULL, ptr)) {
+	if (free_func == free &&
+	    looks_like_corrupted_ptr_pc(NULL, ptr, __builtin_return_address(0))) {
 		outputerr("deferred_free_enqueue: rejected suspicious ptr=%p "
 			  "(pid-scribbled?)\n", ptr);
 		return;
@@ -290,7 +291,7 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 				  pc_to_string(__builtin_return_address(0),
 					       pcbuf, sizeof(pcbuf)), n);
 		}
-		post_handler_corrupt_ptr_bump(NULL);
+		post_handler_corrupt_ptr_bump(NULL, __builtin_return_address(0));
 		return;
 	}
 
