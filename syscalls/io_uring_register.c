@@ -49,6 +49,9 @@
 #ifndef IORING_REGISTER_BPF_FILTER
 #define IORING_REGISTER_BPF_FILTER	37
 #endif
+#ifndef IORING_REGISTER_USE_REGISTERED_RING
+#define IORING_REGISTER_USE_REGISTERED_RING	(1U << 31)
+#endif
 
 static unsigned long io_uring_register_opcodes[] = {
 	IORING_REGISTER_BUFFERS,
@@ -89,6 +92,14 @@ static unsigned long io_uring_register_opcodes[] = {
 	IORING_REGISTER_QUERY,
 	IORING_REGISTER_ZCRX_CTRL,
 	IORING_REGISTER_BPF_FILTER,
+	/*
+	 * Modifier bit OR'd onto the request opcode that tells the kernel
+	 * to treat fd as a registered-ring index rather than a real fd.
+	 * Listing it as a pool value exercises the masking path (low bits
+	 * are zero, so the kernel decodes it as opcode 0 via the registered
+	 * ring) -- a corner ARG_OP would not otherwise reach.
+	 */
+	IORING_REGISTER_USE_REGISTERED_RING,
 };
 
 /*
