@@ -11,6 +11,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <asm/unistd.h>
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -37,11 +38,30 @@ static unsigned long listmount_flags[] = {
 	LISTMOUNT_REVERSE,
 };
 
+#ifdef HAVE_SYS_LISTMOUNT
+/*
+ * Snapshot of the three listmount input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect us at a foreign mount-id buffer or
+ * smear the size bound used to seed the re-issue.
+ */
+struct listmount_post_state {
+	unsigned long req;
+	unsigned long mnt_ids;
+	unsigned long nr_mnt_ids;
+};
+#endif
+
 static void sanitise_listmount(struct syscallrecord *rec)
 {
 	struct mnt_id_req *req;
 	__u64 *mnt_ids;
 	unsigned int nr;
+#ifdef HAVE_SYS_LISTMOUNT
+	struct listmount_post_state *snap;
+#endif
 
 	req = (struct mnt_id_req *) get_writable_address(sizeof(*req));
 	memset(req, 0, sizeof(*req));
@@ -60,6 +80,25 @@ static void sanitise_listmount(struct syscallrecord *rec)
 	rec->a1 = (unsigned long) req;
 	rec->a2 = (unsigned long) mnt_ids;
 	rec->a3 = nr;
+
+#ifdef HAVE_SYS_LISTMOUNT
+	/*
+	 * Snapshot the three input args for the post oracle.  Without this
+	 * the post handler reads rec->aN at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original user
+	 * buffer pointers, so the memcpy / re-issue would touch a foreign
+	 * allocation.  post_state is private to the post handler.  Gated on
+	 * HAVE_SYS_LISTMOUNT to mirror the .post registration -- on systems
+	 * without SYS_listmount the post handler is not registered and a
+	 * snapshot only the post handler can free would leak.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->req        = rec->a1;
+	snap->mnt_ids    = rec->a2;
+	snap->nr_mnt_ids = rec->a3;
+	rec->post_state  = (unsigned long) snap;
+#endif
 }
 
 /*
@@ -80,14 +119,16 @@ static void sanitise_listmount(struct syscallrecord *rec)
  *     rec->a1/rec->a2 between the original syscall return and our re-issue
  *     via alloc_shared in another trinity child task.
  *
- * TOCTOU defeat: a sibling thread in the same trinity child can scribble
- * either the request struct at rec->a1, the ids payload at rec->a2, or the
- * size word at rec->a3 between the syscall return and our post-hook.
- * Snapshot both the request struct and the first N ids into stack-locals,
- * then re-issue with a fresh private stack request and a fresh private
- * stack ids buffer (do NOT pass rec->a1/rec->a2 -- a sibling could mutate
- * them mid-syscall and we want a clean compare).  The flags arg is forced
- * to zero on the re-call since reverse-iteration would change the ordering.
+ * TOCTOU defeat: the three input args (req, mnt_ids, nr_mnt_ids) are
+ * snapshotted at sanitise time into a heap struct in rec->post_state, so
+ * a sibling that scribbles rec->aN between syscall return and post entry
+ * cannot redirect us at a foreign mount-id buffer or smear the size
+ * bound.  We still snapshot the request struct and the first N ids into
+ * stack-locals before re-issuing, with a fresh private stack request and
+ * a fresh private stack ids buffer (do NOT pass the snapshot's req /
+ * mnt_ids -- a sibling could scribble the user buffers themselves
+ * mid-syscall and forge a clean compare).  The flags arg is forced to
+ * zero on the re-call since reverse-iteration would change the ordering.
  *
  * Sample one in a hundred to stay in line with the rest of the oracle
  * family.  No early return on first divergence -- multi-field corruption
@@ -96,6 +137,7 @@ static void sanitise_listmount(struct syscallrecord *rec)
 static void post_listmount(struct syscallrecord *rec)
 {
 #ifdef HAVE_SYS_LISTMOUNT
+	struct listmount_post_state *snap = (struct listmount_post_state *) rec->post_state;
 	struct mnt_id_req first_req;
 	u64 first_ids[64];
 	u64 recheck_ids[64];
@@ -103,49 +145,69 @@ static void post_listmount(struct syscallrecord *rec)
 	unsigned long buf_slots;
 	long rc;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_listmount: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval <= 0)
-		return;
+		goto out_free;
 
-	if (rec->a1 == 0 || rec->a2 == 0 || rec->a3 == 0)
-		return;
+	if (snap->req == 0 || snap->mnt_ids == 0 || snap->nr_mnt_ids == 0)
+		goto out_free;
 
 	{
-		void *req_p = (void *)(unsigned long) rec->a1;
-		void *ids_p = (void *)(unsigned long) rec->a2;
+		void *req_p = (void *)(unsigned long) snap->req;
+		void *ids_p = (void *)(unsigned long) snap->mnt_ids;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1/a2. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner pointer
+		 * fields.  Reject pid-scribbled req/mnt_ids before deref.
+		 */
 		if (looks_like_corrupted_ptr(req_p) ||
 		    looks_like_corrupted_ptr(ids_p)) {
-			outputerr("post_listmount: rejected suspicious req=%p mnt_ids=%p (pid-scribbled?)\n",
+			outputerr("post_listmount: rejected suspicious req=%p mnt_ids=%p (post_state-scribbled?)\n",
 				  req_p, ids_p);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	memcpy(&first_req, (void *) rec->a1, sizeof(first_req));
+	memcpy(&first_req, (void *) snap->req, sizeof(first_req));
 
 	n = ((unsigned long) rec->retval < 64ul)
 		? (unsigned long) rec->retval : 64ul;
-	memcpy(first_ids, (void *) rec->a2, n * sizeof(u64));
+	memcpy(first_ids, (void *) snap->mnt_ids, n * sizeof(u64));
 
 	{
 		struct mnt_id_req recheck_req = first_req;
 
-		buf_slots = ((unsigned long) rec->a3 < 64ul)
-			? (unsigned long) rec->a3 : 64ul;
+		buf_slots = ((unsigned long) snap->nr_mnt_ids < 64ul)
+			? (unsigned long) snap->nr_mnt_ids : 64ul;
 		rc = syscall(SYS_listmount, &recheck_req, recheck_ids,
 			     buf_slots, 0u);
 	}
 
 	if (rc < 0)
-		return;
+		goto out_free;
 
 	if (rc != (long) rec->retval)
-		return;
+		goto out_free;
 
 	if (memcmp(first_ids, recheck_ids, (size_t) rc * sizeof(u64)) != 0) {
 		char first_hex[64 * 17 + 1];
@@ -176,6 +238,9 @@ static void post_listmount(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.listmount_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 #else
 	(void) rec;
 #endif
