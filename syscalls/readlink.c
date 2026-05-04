@@ -6,21 +6,73 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 
-static void sanitise_readlink(struct syscallrecord *rec)
-{
-	avoid_shared_buffer(&rec->a2, rec->a3 ? rec->a3 : page_size);
-}
-
 #if defined(SYS_readlink) || defined(__NR_readlink)
 #ifndef SYS_readlink
 #define SYS_readlink __NR_readlink
 #endif
+
+/*
+ * Snapshot of the two readlink input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives
+ * in rec->post_state, a slot the syscall ABI does not expose, so a
+ * sibling syscall scribbling rec->aN between the syscall returning
+ * and the post handler running cannot redirect the strncpy at a
+ * foreign path string (steering the re-issue at a different symlink
+ * inode would forge a clean-looking divergence between the two
+ * payloads) or the source memcpy at a foreign user buffer.
+ */
+struct readlink_post_state {
+	unsigned long path;
+	unsigned long buf;
+};
+#endif
+
+static void sanitise_readlink(struct syscallrecord *rec)
+{
+#if defined(SYS_readlink) || defined(__NR_readlink)
+	struct readlink_post_state *snap;
+
+	/*
+	 * Clear post_state up front so an early return below leaves the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record.
+	 */
+	rec->post_state = 0;
+#endif
+
+	avoid_shared_buffer(&rec->a2, rec->a3 ? rec->a3 : page_size);
+
+#if defined(SYS_readlink) || defined(__NR_readlink)
+	/*
+	 * Snapshot the two input args for the post oracle.  Without this
+	 * the post handler reads rec->a1/a2 at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original buf
+	 * user-buffer pointer (so the source memcpy would touch a foreign
+	 * allocation the guard never inspected) and a stomped path string
+	 * pointer steers strncpy at a different name -- the re-issue then
+	 * resolves a different symlink inode and the byte compare fires
+	 * as if the kernel had torn the original payload.  post_state is
+	 * private to the post handler.  Gated on the syscall number macro
+	 * to mirror the .post registration -- on systems without
+	 * SYS_readlink the post handler's re-issue would not work and a
+	 * snapshot only the post handler can free would leak.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->path      = rec->a1;
+	snap->buf       = rec->a2;
+	rec->post_state = (unsigned long) snap;
+#endif
+}
+
+#if defined(SYS_readlink) || defined(__NR_readlink)
 
 /*
  * Oracle: readlink(path, buf, bufsiz) walks `path` WITHOUT following the
@@ -68,38 +120,63 @@ static void sanitise_readlink(struct syscallrecord *rec)
  */
 static void post_readlink(struct syscallrecord *rec)
 {
+	struct readlink_post_state *snap =
+		(struct readlink_post_state *) rec->post_state;
 	char snap_path[4096];
 	unsigned char first_buf[4096];
 	unsigned char recheck_buf[4096];
 	size_t snap_len;
 	long rc;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_readlink: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+				   __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval <= 0)
-		return;
+		goto out_free;
 
-	if (rec->a1 == 0)
-		return;
+	if (snap->path == 0)
+		goto out_free;
 
-	if (rec->a2 == 0)
-		return;
+	if (snap->buf == 0)
+		goto out_free;
 
 	{
-		void *buf = (void *)(unsigned long) rec->a2;
-		void *path = (void *)(unsigned long) rec->a1;
+		void *buf = (void *)(unsigned long) snap->buf;
+		void *path = (void *)(unsigned long) snap->path;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2/a1. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner buf/
+		 * path pointer fields.  Reject pid-scribbled values before
+		 * deref.
+		 */
 		if (looks_like_corrupted_ptr(buf) || looks_like_corrupted_ptr(path)) {
-			outputerr("post_readlink: rejected suspicious buf=%p path=%p (pid-scribbled?)\n",
+			outputerr("post_readlink: rejected suspicious buf=%p path=%p (post_state-scribbled?)\n",
 				  buf, path);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr,
+					   1, __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	strncpy(snap_path, (const char *)(unsigned long) rec->a1,
+	strncpy(snap_path, (const char *)(unsigned long) snap->path,
 		sizeof(snap_path) - 1);
 	snap_path[sizeof(snap_path) - 1] = '\0';
 
@@ -107,19 +184,19 @@ static void post_readlink(struct syscallrecord *rec)
 	if (snap_len > sizeof(first_buf))
 		snap_len = sizeof(first_buf);
 
-	memcpy(first_buf, (void *)(unsigned long) rec->a2, snap_len);
+	memcpy(first_buf, (void *)(unsigned long) snap->buf, snap_len);
 
 	rc = syscall(SYS_readlink, snap_path, recheck_buf,
 		     sizeof(recheck_buf));
 
 	if (rc <= 0)
-		return;
+		goto out_free;
 
 	if ((size_t) rc != snap_len)
-		return;
+		goto out_free;
 
 	if (memcmp(first_buf, recheck_buf, snap_len) == 0)
-		return;
+		goto out_free;
 
 	{
 		char first_hex[32 * 2 + 1];
@@ -142,6 +219,9 @@ static void post_readlink(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.readlink_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 #endif /* SYS_readlink || __NR_readlink */
 
