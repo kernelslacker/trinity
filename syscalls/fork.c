@@ -50,6 +50,19 @@ static void post_fork(struct syscallrecord *rec)
 	} else {
 		__unused__ int ret;
 
+		/*
+		 * Kernel ABI: parent retval is the child pid in [1, PID_MAX_LIMIT=4194304],
+		 * or -1UL on failure. Anything else is a corrupted retval (sign-extension
+		 * tear or pid_ns translation bug) — reject before pid_alive()/waitpid()
+		 * steers wait-loop bookkeeping off real children.
+		 */
+		if (rec->retval > 4194304UL && rec->retval != (unsigned long)-1L) {
+			output(0, "post_fork: rejected returned pid 0x%lx outside [1, PID_MAX_LIMIT=4194304] (and not -1)\n",
+			       rec->retval);
+			post_handler_corrupt_ptr_bump(rec, NULL);
+			return;
+		}
+
 		while (pid_alive(pid) == true) {
 			int status;
 			ret = waitpid(pid, &status, WUNTRACED | WCONTINUED | WNOHANG);
