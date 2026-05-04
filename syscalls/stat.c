@@ -75,11 +75,26 @@ static unsigned long statx_flags[] = {
 #define STATX_SUBVOL		0x00008000
 #endif
 
+/*
+ * Per-bit guards: STATX_WRITE_ATOMIC landed in 6.11 and STATX_DIO_READ_ALIGN
+ * in 6.13, after the umbrella STATX_TYPE block above was last refreshed.  A
+ * uapi snapshot from 6.10..6.12 defines STATX_TYPE (skipping the block above)
+ * but is missing one or both of these.  Guarding individually fills the gap
+ * without redefining bits the host header already provides.
+ */
+#ifndef STATX_WRITE_ATOMIC
+#define STATX_WRITE_ATOMIC	0x00010000
+#endif
+#ifndef STATX_DIO_READ_ALIGN
+#define STATX_DIO_READ_ALIGN	0x00020000
+#endif
+
 static unsigned long statx_mask[] = {
 	STATX_TYPE, STATX_MODE, STATX_NLINK, STATX_UID, STATX_GID,
 	STATX_ATIME, STATX_MTIME, STATX_CTIME, STATX_INO, STATX_SIZE,
 	STATX_BLOCKS, STATX_BTIME, STATX_MNT_ID, STATX_DIOALIGN,
-	STATX_MNT_ID_UNIQUE, STATX_SUBVOL,
+	STATX_MNT_ID_UNIQUE, STATX_SUBVOL, STATX_WRITE_ATOMIC,
+	STATX_DIO_READ_ALIGN,
 };
 
 /*
@@ -164,9 +179,9 @@ static void sanitise_statx(struct syscallrecord *rec)
  *     legitimately flip (chattr +i, FS_DAX_FL toggle, FS_VERITY_FL set).
  *   stx_mnt_id — bind-mount churn / mount propagation across a private
  *     namespace can change this without the inode changing.
- *   stx_dio_mem_align / stx_dio_offset_align / stx_subvol /
- *     stx_atomic_write_* — rare reconfiguration paths that legitimately
- *     change without the underlying inode rotating.
+ *   stx_dio_mem_align / stx_dio_offset_align / stx_dio_read_offset_align /
+ *     stx_subvol / stx_atomic_write_* — rare reconfiguration paths that
+ *     legitimately change without the underlying inode rotating.
  *
  * A divergence in the compared fields is not benign drift; it points
  * at one of:
