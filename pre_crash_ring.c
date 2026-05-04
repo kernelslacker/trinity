@@ -50,10 +50,45 @@ void pre_crash_ring_record(struct childdata *child,
 	e->retval = (long) rec->retval;
 	e->errno_post = rec->errno_post;
 	e->ts = (now != NULL) ? *now : rec->tp;
+	e->kind = PRE_CRASH_KIND_SYSCALL;
 
 	/* Publish only after the entry is fully populated, so a post-mortem
 	 * reader that acquire-loads head and walks back N slots never sees
 	 * a torn entry. */
+	atomic_store_explicit(&ring->head, head + 1, memory_order_release);
+}
+
+void pre_crash_ring_record_taint(struct childdata *child,
+				 unsigned long delta,
+				 unsigned long tainted_now,
+				 unsigned int op_type,
+				 unsigned long op_nr)
+{
+	struct pre_crash_ring *ring;
+	struct pre_crash_entry *e;
+	uint32_t head;
+
+	if (child == NULL)
+		return;
+
+	ring = &child->pre_crash;
+
+	head = atomic_load_explicit(&ring->head, memory_order_relaxed);
+	e = &ring->entries[head & (PRE_CRASH_RING_SIZE - 1)];
+
+	e->args[0] = delta;
+	e->args[1] = tainted_now;
+	e->args[2] = (unsigned long) op_type;
+	e->args[3] = op_nr;
+	e->args[4] = 0;
+	e->args[5] = 0;
+	e->retval = 0;
+	e->syscall_nr = 0;
+	e->errno_post = 0;
+	e->do32bit = false;
+	e->kind = PRE_CRASH_KIND_TAINT;
+	clock_gettime(CLOCK_MONOTONIC, &e->ts);
+
 	atomic_store_explicit(&ring->head, head + 1, memory_order_release);
 }
 
@@ -91,12 +126,21 @@ static void dump_one_ring(struct childdata *child,
 	for (i = 0; i < count; i++) {
 		uint32_t slot = (head - count + i) & (PRE_CRASH_RING_SIZE - 1);
 		struct pre_crash_entry *e = &ring->entries[slot];
-		struct syscallentry *entry = get_syscall_entry(e->syscall_nr,
-							       e->do32bit);
-		const char *name = entry ? entry->name : "?";
 		char tsbuf[32];
 
 		format_ts_relative(tsbuf, sizeof(tsbuf), &e->ts, anchor);
+
+		if (e->kind == PRE_CRASH_KIND_TAINT) {
+			outputerr("  [%s] taint delta=0x%lx now=0x%lx op_type=%lu op_nr=%lu\n",
+				  tsbuf, e->args[0], e->args[1],
+				  e->args[2], e->args[3]);
+			continue;
+		}
+
+		struct syscallentry *entry = get_syscall_entry(e->syscall_nr,
+							       e->do32bit);
+		const char *name = entry ? entry->name : "?";
+
 		outputerr("  [%s] nr=%u (%s%s) a1=%lx a2=%lx a3=%lx a4=%lx a5=%lx a6=%lx retval=%ld errno=%d\n",
 			  tsbuf, e->syscall_nr, name,
 			  e->do32bit ? ",32" : "",

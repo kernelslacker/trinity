@@ -27,13 +27,29 @@ struct syscallrecord;
  */
 #define PRE_CRASH_RING_SIZE	64
 
+/*
+ * Two event kinds share the ring so the post-mortem reader sees a single
+ * chronologically-ordered stream.  SYSCALL slots populate every field
+ * normally; TAINT slots reuse the existing fields to encode the taint
+ * delta context (see pre_crash_ring_record_taint() for the encoding) so
+ * we don't need to grow the per-entry footprint just for the soft-taint
+ * watcher.
+ */
+enum pre_crash_kind {
+	PRE_CRASH_KIND_SYSCALL = 0,
+	PRE_CRASH_KIND_TAINT,
+};
+
 struct pre_crash_entry {
-	struct timespec ts;		/* CLOCK_MONOTONIC at syscall return. */
-	unsigned long args[6];		/* argument values as the syscall saw them. */
-	long retval;			/* return value the kernel reported. */
-	unsigned int syscall_nr;	/* index into the syscall table. */
-	int errno_post;			/* errno after return. */
-	bool do32bit;			/* selects which table syscall_nr indexes. */
+	struct timespec ts;		/* CLOCK_MONOTONIC at event time. */
+	unsigned long args[6];		/* SYSCALL: argument values as the syscall saw them.
+					 * TAINT: args[0]=delta mask (XOR), args[1]=new tainted mask,
+					 *        args[2]=op_type, args[3]=op_nr, args[4..5] unused. */
+	long retval;			/* SYSCALL: return value the kernel reported. TAINT: 0. */
+	unsigned int syscall_nr;	/* SYSCALL: index into the syscall table. TAINT: 0. */
+	int errno_post;			/* SYSCALL: errno after return. TAINT: 0. */
+	bool do32bit;			/* SYSCALL: selects which table syscall_nr indexes. TAINT: false. */
+	uint8_t kind;			/* enum pre_crash_kind. */
 };
 
 struct pre_crash_ring {
@@ -47,6 +63,19 @@ struct pre_crash_ring {
 void pre_crash_ring_record(struct childdata *child,
 			   const struct syscallrecord *rec,
 			   const struct timespec *now);
+
+/*
+ * Push a soft-taint context entry: a /proc/sys/kernel/tainted bit
+ * transition was observed across a non-syscall childop dispatch.  delta
+ * is the XOR of the pre/post masks (which bits flipped), tainted_now is
+ * the post-dispatch mask, op_type/op_nr identify the offending dispatch.
+ * Lock-free SPSC same as the syscall path.
+ */
+void pre_crash_ring_record_taint(struct childdata *child,
+				 unsigned long delta,
+				 unsigned long tainted_now,
+				 unsigned int op_type,
+				 unsigned long op_nr);
 
 void pre_crash_ring_dump(struct childdata *child);
 
