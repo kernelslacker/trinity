@@ -21,14 +21,56 @@
 #include "trinity.h"
 #include "utils.h"
 
-static const int prots[] = {
-	PROT_NONE,
-	PROT_READ,
-	PROT_WRITE,
-	PROT_READ | PROT_WRITE,
-	PROT_READ | PROT_EXEC,
-	PROT_READ | PROT_WRITE | PROT_EXEC,
+/*
+ * Per-invocation prot-shift mode.  A single uniform-random prot pick
+ * spreads the protection-bit transitions thinly across the prot
+ * lattice; varying the mode concentrates a burst of related
+ * transitions in one invocation, which reaches page-table paths a
+ * uniform pick rarely lingers on long enough to race.
+ *
+ *   PROT_NONE_BURST    - hammer PROT_NONE across sub-ranges, exercises
+ *                        the unmap-style page-table teardown path
+ *                        repeatedly without releasing the VMA.
+ *   PROT_RW_FLIP       - alternate PROT_READ <-> PROT_READ|PROT_WRITE,
+ *                        isolates the writable-bit page-table flip
+ *                        without touching the executable bit.
+ *   PROT_X_TOGGLE      - alternate PROT_READ <-> PROT_READ|PROT_EXEC,
+ *                        isolates the NX-bit flip and trips the W^X
+ *                        edge when paired with the curated negative
+ *                        flag escape.
+ *   PROT_RANDOM_BITMASK - mask = rand() & 0x07; exhaustive over the
+ *                        valid PROT_R/W/X combinations including
+ *                        PROT_NONE, with no temporal correlation
+ *                        between consecutive iterations.
+ *
+ * Mirrors the per-invocation variety pattern in 03d9df8c0f72
+ * (vdso-mremap-race shape) and 4eb7e650afe5 (flock-thrash ordering).
+ */
+enum prot_mode {
+	PROT_MODE_NONE_BURST = 0,
+	PROT_MODE_RW_FLIP,
+	PROT_MODE_X_TOGGLE,
+	PROT_MODE_RANDOM_BITMASK,
+	NR_PROT_MODES,
 };
+
+#define PROT_MODE_ITERS 4
+
+static int prot_for_mode(enum prot_mode mode, unsigned int iter)
+{
+	switch (mode) {
+	case PROT_MODE_NONE_BURST:
+		return PROT_NONE;
+	case PROT_MODE_RW_FLIP:
+		return (iter & 1) ? (PROT_READ | PROT_WRITE) : PROT_READ;
+	case PROT_MODE_X_TOGGLE:
+		return (iter & 1) ? (PROT_READ | PROT_EXEC) : PROT_READ;
+	case PROT_MODE_RANDOM_BITMASK:
+		return (int)(rand() & 0x07);
+	default:
+		return PROT_NONE;
+	}
+}
 
 /*
  * Pick a random page-aligned sub-range within a mapping.
@@ -61,9 +103,8 @@ bool mprotect_split(struct childdata *child)
 {
 	struct object *obj;
 	struct map *map;
-	unsigned long offset, len;
-	int new_prot;
-	void *addr;
+	enum prot_mode mode;
+	unsigned int iter;
 
 	(void)child;
 
@@ -81,47 +122,45 @@ bool mprotect_split(struct childdata *child)
 	if (map->size < page_size)
 		return true;
 
-	offset = pick_subrange(map, &len);
-	addr = (char *)map->ptr + offset;
+	mode = (enum prot_mode)((unsigned int)rand() % NR_PROT_MODES);
 
-	/*
-	 * 20% of the time, restore the original prot to encourage
-	 * VMA re-merging.  Otherwise pick a different prot to force
-	 * a split.
-	 */
-	if (ONE_IN(5)) {
-		new_prot = map->prot;
-	} else {
-		new_prot = RAND_ARRAY(prots);
-		/* Try to pick something different from current. */
-		if (new_prot == map->prot)
-			new_prot = RAND_ARRAY(prots);
+	for (iter = 0; iter < PROT_MODE_ITERS; iter++) {
+		unsigned long offset, len;
+		int new_prot;
+		void *addr;
+
+		offset = pick_subrange(map, &len);
+		addr = (char *)map->ptr + offset;
+
+		new_prot = prot_for_mode(mode, iter);
+
+		if (mprotect(addr, len, (int)RAND_NEGATIVE_OR(new_prot)) != 0)
+			continue;
+
+		/*
+		 * Update the tracked prot.  For a whole-range change
+		 * new_prot describes every page exactly.  For a sub-range,
+		 * intersect: the result is the set of permission bits
+		 * GUARANTEED present in every page of the mapping.
+		 *
+		 * get_map_with_prot() filters pool draws by m->prot, so a
+		 * stale m->prot that still claims PROT_WRITE for a mapping
+		 * whose sub-range we just downgraded to PROT_READ leaks
+		 * into consumers (memory_pressure's per-page dirty loop,
+		 * iouring_flood, iouring_recipes, madvise_pattern_cycler),
+		 * which then SEGV_ACCERR on the first downgraded page.
+		 * Tracking the intersection is conservative — a sub-range
+		 * upgrade (e.g. PROT_NONE map gaining PROT_RW pages) is
+		 * not reflected, so the filter may skip a mapping that
+		 * actually has writable pages somewhere.  That's an
+		 * acceptable false-negative; a false-positive crashes the
+		 * child.
+		 */
+		if (offset == 0 && len == map->size)
+			map->prot = new_prot;
+		else
+			map->prot &= new_prot;
 	}
-
-	if (mprotect(addr, len, (int)RAND_NEGATIVE_OR(new_prot)) != 0)
-		return true;
-
-	/*
-	 * Update the tracked prot.  For a whole-range change new_prot
-	 * describes every page exactly.  For a sub-range, intersect:
-	 * the result is the set of permission bits GUARANTEED present
-	 * in every page of the mapping.
-	 *
-	 * get_map_with_prot() filters pool draws by m->prot, so a stale
-	 * m->prot that still claims PROT_WRITE for a mapping whose
-	 * sub-range we just downgraded to PROT_READ leaks into consumers
-	 * (memory_pressure's per-page dirty loop, iouring_flood,
-	 * iouring_recipes, madvise_pattern_cycler), which then SEGV_ACCERR
-	 * on the first downgraded page.  Tracking the intersection is
-	 * conservative — a sub-range upgrade (e.g. PROT_NONE map gaining
-	 * PROT_RW pages) is not reflected, so the filter may skip a
-	 * mapping that actually has writable pages somewhere.  That's an
-	 * acceptable false-negative; a false-positive crashes the child.
-	 */
-	if (offset == 0 && len == map->size)
-		map->prot = new_prot;
-	else
-		map->prot &= new_prot;
 
 	return true;
 }
