@@ -12,6 +12,8 @@
 #include "random.h"
 #include "sanitise.h"
 #include "compat.h"
+#include "trinity.h"
+#include "utils.h"
 
 static unsigned long clock_nanosleep_which[] = {
 	CLOCK_REALTIME, CLOCK_MONOTONIC, CLOCK_PROCESS_CPUTIME_ID,
@@ -49,6 +51,16 @@ static void sanitise_clock_nanosleep(struct syscallrecord *rec)
 	avoid_shared_buffer(&rec->a4, sizeof(struct timespec));
 }
 
+static void post_clock_nanosleep(struct syscallrecord *rec)
+{
+	long ret = (long) rec->retval;
+
+	if (ret != 0 && ret != -1L) {
+		output(0, "post_clock_nanosleep: rejected retval %ld outside {0, -1}\n", ret);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
 struct syscallentry syscall_clock_nanosleep = {
 	.name = "clock_nanosleep",
 	.group = GROUP_TIME,
@@ -60,4 +72,5 @@ struct syscallentry syscall_clock_nanosleep = {
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_clock_nanosleep,
+	.post = post_clock_nanosleep,
 };
