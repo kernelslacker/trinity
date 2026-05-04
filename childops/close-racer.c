@@ -86,6 +86,50 @@
  * inside a single invocation, stop trying for the rest of it. */
 #define THREAD_SPAWN_LATCH	3
 
+/* Within-cycle ordering variations.  Each mode picks a different
+ * combination of close vs join vs sleep ordering, landing in a different
+ * sub-window of the kernel close-vs-fdget race.  Picked uniformly at
+ * random per cycle so a single invocation exercises the whole set. */
+enum cycle_mode {
+	/* Close sv[0] (the racer's fd) first, then sv[1], then join.
+	 * The classic ordering: file_close_fd_locked drops sv[0] from
+	 * the table while the racer still holds a __fget'd ref, so
+	 * __fput on sv[0] is queued behind syscall return. */
+	CYCLE_NORMAL,
+	/* Close peer sv[1] before sv[0].  recv() racers see EOF via
+	 * peer-close and unblock before sv[0] hits file_close_fd_locked;
+	 * exercises peer-side filp_close + final fput before the racer-
+	 * fd teardown — opposite half of the teardown ordering. */
+	CYCLE_PEER_FIRST,
+	/* Close normally, then sleep again before joining.  The racer's
+	 * syscall has already returned by the time we sleep, so this
+	 * widens the window where the kernel may still be settling final
+	 * fput / file_operations->release before pthread_join syncs. */
+	CYCLE_POST_SLEEP,
+	/* No explicit close in this cycle — defer to function exit,
+	 * after pthread_join has returned and the racer thread is gone.
+	 * The deferred close therefore drops the only remaining ref and
+	 * runs synchronous fput, exercising the post-syscall teardown
+	 * path rather than the mid-fdget race. */
+	CYCLE_SKIP_CLOSE,
+	/* Open 2..MULTI_PAIR_MAX pairs back-to-back with one racer each,
+	 * then close all 2*K fds in shuffled order before joining all
+	 * racers — sustained fdtable churn under multiple concurrent
+	 * fdget references vs the serialised pair-at-a-time pattern. */
+	CYCLE_MULTI_PAIR,
+	CYCLE_MODE_NR,
+};
+
+/* Upper bound on pairs opened concurrently inside one cycle.  Capped at
+ * 3 so the worst-case cycle still fits inside the parent's alarm(1)
+ * window — racers run concurrently so cycle latency is bounded by
+ * RACER_TIMEOUT_MS regardless of K. */
+#define MULTI_PAIR_MAX		3
+
+/* Upper bound on deferred-close backlog: worst case every cycle picks
+ * CYCLE_SKIP_CLOSE and leaks two fds. */
+#define DEFERRED_FD_MAX		(MAX_CYCLES * 2)
+
 /* What syscall does the racer thread block on?  All entries here have a
  * kernel-side bounded timeout (or are non-blocking and race in fdget
  * itself), so plain pthread_join always returns within RACER_TIMEOUT_MS
@@ -181,6 +225,8 @@ bool close_racer(struct childdata *child)
 	unsigned int cycles;
 	unsigned int i;
 	unsigned int spawn_fail_streak = 0;
+	int deferred_fds[DEFERRED_FD_MAX];
+	unsigned int deferred_n = 0;
 
 	(void)child;
 
@@ -189,30 +235,48 @@ bool close_racer(struct childdata *child)
 	cycles = 1 + ((unsigned int)rand() % MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
-		struct racer_arg ra;
-		pthread_t tid;
-		int sv[2];
-		int rc;
+		enum cycle_mode mode = (enum cycle_mode)(rand() % CYCLE_MODE_NR);
+		struct racer_arg ra[MULTI_PAIR_MAX];
+		pthread_t tid[MULTI_PAIR_MAX];
+		int sv[MULTI_PAIR_MAX][2];
+		bool spawned[MULTI_PAIR_MAX] = { false };
+		unsigned int k = 1;
+		unsigned int j;
+		unsigned int n_spawned = 0;
 
-		if (!make_fd_pair(sv)) {
-			__atomic_add_fetch(&shm->stats.close_racer_failed,
-					   1, __ATOMIC_RELAXED);
-			continue;
+		if (mode == CYCLE_MULTI_PAIR)
+			k = 2 + ((unsigned int)rand() % 2);
+
+		/* Open all K pairs and spawn racers BEFORE any close, so
+		 * multi-pair mode actually has multiple concurrent fdget
+		 * references in flight when the close phase starts. */
+		for (j = 0; j < k; j++) {
+			if (!make_fd_pair(sv[j])) {
+				__atomic_add_fetch(&shm->stats.close_racer_failed,
+						   1, __ATOMIC_RELAXED);
+				continue;
+			}
+			ra[j].fd = sv[j][0];
+			ra[j].op = (enum racer_op)(rand() % RACER_OP_NR);
+			if (pthread_create(&tid[j], NULL,
+					   racer_thread, &ra[j]) != 0) {
+				/* EAGAIN under nproc/thread limits is the
+				 * common case.  Bookkeep, close the fds we
+				 * just opened, leave latch check for end-of-
+				 * cycle so we never bail with already-
+				 * spawned-but-unjoined racers. */
+				__atomic_add_fetch(&shm->stats.close_racer_thread_spawn_fail,
+						   1, __ATOMIC_RELAXED);
+				close(sv[j][0]);
+				close(sv[j][1]);
+				spawn_fail_streak++;
+				continue;
+			}
+			spawned[j] = true;
+			n_spawned++;
 		}
-
-		ra.fd = sv[0];
-		ra.op = (enum racer_op)(rand() % RACER_OP_NR);
-
-		rc = pthread_create(&tid, NULL, racer_thread, &ra);
-		if (rc != 0) {
-			/* EAGAIN under nproc/thread limits is the common case.
-			 * Bookkeep, latch the streak, close the fds we just
-			 * opened and skip this cycle. */
-			__atomic_add_fetch(&shm->stats.close_racer_thread_spawn_fail,
-					   1, __ATOMIC_RELAXED);
-			close(sv[0]);
-			close(sv[1]);
-			if (++spawn_fail_streak >= THREAD_SPAWN_LATCH)
+		if (n_spawned == 0) {
+			if (spawn_fail_streak >= THREAD_SPAWN_LATCH)
 				return true;
 			continue;
 		}
@@ -223,14 +287,83 @@ bool close_racer(struct childdata *child)
 		if ((rand() & 0xff) != 0)
 			usleep((useconds_t)(1 + rand() % 100));
 
-		(void)close(sv[0]);
-		(void)close(sv[1]);
+		switch (mode) {
+		case CYCLE_PEER_FIRST:
+			(void)close(sv[0][1]);
+			(void)close(sv[0][0]);
+			break;
 
-		(void)pthread_join(tid, NULL);
+		case CYCLE_SKIP_CLOSE:
+			/* Defer to function exit so the racer is fully
+			 * joined first; the deferred close then drops the
+			 * last ref synchronously rather than racing fdget. */
+			if (deferred_n + 2 <= DEFERRED_FD_MAX) {
+				deferred_fds[deferred_n++] = sv[0][0];
+				deferred_fds[deferred_n++] = sv[0][1];
+			} else {
+				(void)close(sv[0][0]);
+				(void)close(sv[0][1]);
+			}
+			break;
+
+		case CYCLE_MULTI_PAIR: {
+			int order[MULTI_PAIR_MAX * 2];
+			unsigned int n = 0;
+
+			for (j = 0; j < k; j++) {
+				if (!spawned[j])
+					continue;
+				order[n++] = (int)(j * 2);
+				order[n++] = (int)(j * 2 + 1);
+			}
+			/* Fisher-Yates shuffle — interleaved close across
+			 * multiple struct files in one cycle drives sustained
+			 * fdtable churn rather than the rigid pair-at-a-time
+			 * close ordering. */
+			for (j = n; j > 1; j--) {
+				unsigned int r = (unsigned int)rand() % j;
+				int tmp = order[j - 1];
+
+				order[j - 1] = order[r];
+				order[r] = tmp;
+			}
+			for (j = 0; j < n; j++) {
+				int idx = order[j];
+
+				(void)close(sv[idx >> 1][idx & 1]);
+			}
+			break;
+		}
+
+		case CYCLE_NORMAL:
+		case CYCLE_POST_SLEEP:
+		default:
+			(void)close(sv[0][0]);
+			(void)close(sv[0][1]);
+			if (mode == CYCLE_POST_SLEEP) {
+				/* Short post-close sleep: racer's syscall has
+				 * returned by now, so this widens the window
+				 * where final fput / release may still be
+				 * settling before pthread_join syncs. */
+				usleep((useconds_t)(1 + rand() % 50));
+			}
+			break;
+		}
+
+		for (j = 0; j < k; j++) {
+			if (spawned[j])
+				(void)pthread_join(tid[j], NULL);
+		}
 
 		__atomic_add_fetch(&shm->stats.close_racer_pairs,
-				   1, __ATOMIC_RELAXED);
+				   n_spawned, __ATOMIC_RELAXED);
 	}
+
+	/* Drain deferred closes from CYCLE_SKIP_CLOSE iterations.  All
+	 * racer threads have been joined by now, so these closes hit the
+	 * post-syscall teardown path rather than the mid-fdget race. */
+	for (i = 0; i < deferred_n; i++)
+		(void)close(deferred_fds[i]);
 
 	return true;
 }
