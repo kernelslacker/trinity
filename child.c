@@ -27,9 +27,11 @@
 #include "maps.h"
 #include "params.h"
 #include "pids.h"
+#include "pre_crash_ring.h"
 #include "random.h"
 #include "shm.h"
 #include "signals.h"
+#include "stats.h"
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"	// ARRAY_SIZE
@@ -221,6 +223,52 @@ static void open_fail_nth(struct childdata *child)
 }
 
 /*
+ * Read /proc/sys/kernel/tainted via a cached fd.  Procfs returns the
+ * mask as ASCII decimal followed by '\n'.  lseek(0) is required because
+ * the procfs handler reports "no more data" on a second read of the
+ * same open without a rewind.  Errors return 0 (mask unknown) so the
+ * caller's XOR delta degrades to "no change" rather than spuriously
+ * firing the watcher.
+ */
+static unsigned long read_tainted_mask(int fd)
+{
+	char buf[32];
+	ssize_t n;
+
+	if (fd < 0)
+		return 0;
+	if (lseek(fd, 0, SEEK_SET) == (off_t) -1)
+		return 0;
+	n = read(fd, buf, sizeof(buf) - 1);
+	if (n <= 0)
+		return 0;
+	buf[n] = '\0';
+	return strtoul(buf, NULL, 10);
+}
+
+/*
+ * Cache an fd to /proc/sys/kernel/tainted for the per-childop taint
+ * watcher.  -1 disables the watcher (e.g. on kernels where the file is
+ * unreadable).  Sibling probes don't share state via shm because the
+ * file is world-readable on every supported kernel — a per-child failure
+ * is almost certainly local (fd exhaustion) and not worth latching off
+ * fleet-wide.
+ */
+static void open_tainted_fd(struct childdata *child)
+{
+	int fd;
+
+	fd = open("/proc/sys/kernel/tainted", O_RDONLY);
+	if (fd == -1) {
+		child->tainted_fd = -1;
+		child->last_tainted = 0;
+		return;
+	}
+	child->tainted_fd = fd;
+	child->last_tainted = read_tainted_mask(fd);
+}
+
+/*
  * We call this occasionally to set some FPU state, in the hopes that we
  * might tickle some weird FPU/scheduler related bugs
  */
@@ -288,6 +336,8 @@ void clean_childdata(struct childdata *child)
 			      memory_order_relaxed);
 
 	child->fail_nth_fd = -1;
+	child->tainted_fd = -1;
+	child->last_tainted = 0;
 	child->current_recipe_name = NULL;
 
 	/* Drop any sentinel reading from the previous occupant of this slot
@@ -558,6 +608,8 @@ static void init_child(struct childdata *child, int childno)
 	set_make_it_fail();
 
 	open_fail_nth(child);
+
+	open_tainted_fd(child);
 
 	if (RAND_BOOL())
 		use_fpu();
@@ -1311,7 +1363,39 @@ void child_process(struct childdata *child, int childno)
 			(child->op_type < NR_CHILD_OP_TYPES)
 				? op_dispatch[child->op_type]
 				: NULL;
+
+		/* Soft-taint watcher: bracket non-syscall dispatches with a
+		 * read of /proc/sys/kernel/tainted so a bit transition (e.g.
+		 * lockdep WARN, RCU stall, reckless module load) gets pinned
+		 * to the specific childop that triggered it even when the
+		 * kernel doesn't escalate to an oops.  Skipped for
+		 * CHILD_OP_SYSCALL — the hot 95% path can't afford an extra
+		 * pair of read syscalls per iteration, and random_syscall has
+		 * its own taint-tracking via the existing pre_crash_ring
+		 * record on syscall return. */
+		const bool watch_taint = (child->op_type != CHILD_OP_SYSCALL &&
+					  child->tainted_fd >= 0);
+		unsigned long tainted_before = 0;
+		if (watch_taint)
+			tainted_before = read_tainted_mask(child->tainted_fd);
+
 		ret = op_fn ? op_fn(child) : run_sequence_chain(child);
+
+		if (watch_taint) {
+			unsigned long tainted_after =
+				read_tainted_mask(child->tainted_fd);
+			unsigned long delta = tainted_after ^ tainted_before;
+			if (delta) {
+				pre_crash_ring_record_taint(child, delta,
+							    tainted_after,
+							    (unsigned int) child->op_type,
+							    child->op_nr);
+				__atomic_add_fetch(
+					&shm->stats.taint_transitions[child->op_type],
+					1, __ATOMIC_RELAXED);
+				child->last_tainted = tainted_after;
+			}
+		}
 
 		if (child->op_type != CHILD_OP_SYSCALL) {
 			alarm(0);
@@ -1361,6 +1445,11 @@ out:
 	if (child->fail_nth_fd != -1) {
 		close(child->fail_nth_fd);
 		child->fail_nth_fd = -1;
+	}
+
+	if (child->tainted_fd != -1) {
+		close(child->tainted_fd);
+		child->tainted_fd = -1;
 	}
 
 	debugf("child %d %d exiting.\n", childno, getpid());

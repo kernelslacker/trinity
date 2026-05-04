@@ -1259,6 +1259,19 @@ void dump_stats(void)
 	if (shm->stats.divergence_sentinel_anomalies)
 		stat_row("corruption", "divergence_sentinel_anomalies", shm->stats.divergence_sentinel_anomalies);
 
+	{
+		unsigned int op;
+		char metric[40];
+
+		for (op = 0; op < NR_CHILD_OP_TYPES; op++) {
+			if (shm->stats.taint_transitions[op] == 0)
+				continue;
+			snprintf(metric, sizeof(metric), "op_type_%u", op);
+			stat_row("taint_transitions", metric,
+				 shm->stats.taint_transitions[op]);
+		}
+	}
+
 	if (shm->stats.shared_buffer_redirected)
 		stat_row("shared_buffer", "args_redirected",     shm->stats.shared_buffer_redirected);
 	if (shm->stats.range_overlaps_shared_rejects) {

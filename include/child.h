@@ -270,6 +270,17 @@ struct childdata {
 	const char *bug_func;
 	unsigned int bug_lineno;
 
+	/* Per-child taint watcher.  tainted_fd is opened once at child init
+	 * against /proc/sys/kernel/tainted and cached for the child's
+	 * lifetime; -1 means the open failed and the watcher is disabled.
+	 * last_tainted holds the most recent kernel taint mask we observed,
+	 * baseline-read at init.  The dispatch loop XORs a fresh read against
+	 * this on each non-syscall childop completion to catch soft taints
+	 * (lockdep WARN, RCU stall, reckless module load) tied to a specific
+	 * op even when no oops fires. */
+	int tainted_fd;
+	unsigned long last_tainted;
+
 	/* ---- Cold tail: large rings and the per-call syscallrecord with
 	 * its 4 KiB prebuffer.  Pushed past every hot/warm field so reads
 	 * of any field above land in the leading cacheline(s) instead of

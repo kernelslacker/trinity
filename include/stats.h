@@ -269,6 +269,15 @@ struct stats_s {
 	 * to amplify multi-field clobbers above noise from singleton drifts. */
 	unsigned long divergence_sentinel_anomalies;
 
+	/* Childop taint-watcher: count of times a /proc/sys/kernel/tainted
+	 * bit transition was observed across a non-syscall childop dispatch,
+	 * indexed by enum child_op_type.  Surfaces soft taints (lockdep WARN,
+	 * RCU stall, reckless module load, etc.) tied to a specific childop
+	 * even when no oops is raised.  RELAXED add-fetch: the counter is a
+	 * coarse anomaly indicator, not a precise event log — the matching
+	 * pre_crash_ring entry holds the full per-event context. */
+	unsigned long taint_transitions[NR_CHILD_OP_TYPES];
+
 	/* ---- Group C: per-childop ---- */
 
 	/* procfs_writer childop: per-tree write counts */
