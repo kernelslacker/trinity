@@ -365,7 +365,12 @@ static unsigned int do_one_op(enum migration_op op, void *region,
 			flags |= MPOL_MF_MOVE_ALL;
 		if ((rand() % 8) == 0)
 			flags |= MPOL_MF_STRICT;
-		rc = sys_mbind(region, region_len, pick_mpol_mode(),
+		/* 1-in-RAND_NEGATIVE_RATIO sub the curated MPOL_* mode for an
+		 * edge value — exercises sys_mbind's mode >= MPOL_MAX / mode
+		 * < 0 rejection which the kernel-supported subset above never
+		 * reaches. */
+		rc = sys_mbind(region, region_len,
+			       (int)RAND_NEGATIVE_OR(pick_mpol_mode()),
 			       mask, MAXNODE_ARG, flags);
 		if (rc < 0)
 			(*failed_out)++;

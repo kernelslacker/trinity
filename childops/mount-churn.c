@@ -171,7 +171,12 @@ bool mount_churn(struct childdata *child)
 			continue;
 		}
 
-		if (mount(fstype, path, fstype, flags, NULL) != 0) {
+		/* 1-in-RAND_NEGATIVE_RATIO sub the curated safe MS_* mask for
+		 * an edge value — exercises sys_mount's flag-mask validation
+		 * (MS_MGC magic, mutually-exclusive bits, unknown-bit
+		 * rejection) which the safe subset above never reaches. */
+		if (mount(fstype, path, fstype,
+			  (unsigned long)RAND_NEGATIVE_OR(flags), NULL) != 0) {
 			__atomic_add_fetch(&shm->stats.mount_churn_failed,
 					   1, __ATOMIC_RELAXED);
 			/* EPERM here means the namespace setup didn't
