@@ -37,11 +37,19 @@
  * N must be a power of two so the modulo collapses to a bitmask.
  *
  * Side effect: TTL is effectively multiplied by N.  Nominal range
- * 5-50 syscalls becomes 40-400 syscalls of in-ring lifetime.  This
+ * 5-50 syscalls becomes 80-800 syscalls of in-ring lifetime.  This
  * is fine -- and arguably better for catching UAF overlap -- but
  * worth knowing when reading the TTL constants above.
+ *
+ * 8 was insufficient for the head->array container lifetime in
+ * add_object's OBJ_LOCAL grow path: a get_random_object() reader
+ * interrupted by a signal whose handler runs syscalls (ticking the
+ * ring) while the original code holds head->array in a register/
+ * cache can outlive a 40-400 syscall TTL when the signal handler
+ * is heavy.  16 keeps the same shape but lifts the headroom to a
+ * range no plausible reader window touches.
  */
-#define DEFERRED_TICK_BATCH	8
+#define DEFERRED_TICK_BATCH	16
 
 struct deferred_entry {
 	void *ptr;
