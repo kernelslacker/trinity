@@ -6,15 +6,51 @@
 #include <unistd.h>
 #include <limits.h>
 #include "arch.h"
+#include "deferred-free.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "random.h"
 #include "utils.h"
 
+/*
+ * Snapshot of the one getcwd input arg read by the post oracle, captured
+ * at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect the source memcpy at a foreign user
+ * buffer.  The size arg (rec->a2) is not snapshotted because the post
+ * handler bounds the copy by rec->retval (the kernel-reported length),
+ * not by the caller-supplied size.
+ */
+struct getcwd_post_state {
+	unsigned long buf;
+};
+
 static void sanitise_getcwd(struct syscallrecord *rec)
 {
+	struct getcwd_post_state *snap;
+
+	/*
+	 * Clear post_state up front so an early return below leaves the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record.
+	 */
+	rec->post_state = 0;
+
 	avoid_shared_buffer(&rec->a1, rec->a2 ? rec->a2 : page_size);
+
+	/*
+	 * Snapshot the one input arg the post oracle reads.  Without this
+	 * the post handler reads rec->a1 at post-time, when a sibling
+	 * syscall may have scribbled the slot: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original buf
+	 * user-buffer pointer, so the source memcpy would touch a foreign
+	 * allocation.  post_state is private to the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->buf = rec->a1;
+	rec->post_state = (unsigned long) snap;
 }
 
 /*
@@ -31,46 +67,75 @@ static void sanitise_getcwd(struct syscallrecord *rec)
  * own next op) doing chdir() between sys_getcwd's return and this post
  * hook firing.  ONE_IN(100) sampling × the low background chdir rate
  * keeps the counter signal-bearing rather than noise-dominated.
+ *
+ * TOCTOU defeat: the buf input arg is snapshotted at sanitise time into
+ * a heap struct in rec->post_state, so a sibling that scribbles rec->a1
+ * between syscall return and post entry cannot redirect the source
+ * memcpy at a foreign user buffer.  The user-buffer payload at buf is
+ * then copied into a stack-local before the strcmp so a concurrent
+ * thread cannot mutate it between checks.
  */
 static void post_getcwd(struct syscallrecord *rec)
 {
+	struct getcwd_post_state *snap =
+		(struct getcwd_post_state *) rec->post_state;
 	char proc_cwd[PATH_MAX];
 	char user_cwd[PATH_MAX];
 	ssize_t n;
 	long ret;
 	size_t copy_len;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_getcwd: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+				   __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	ret = (long)rec->retval;
 	if (ret <= 0)
-		return;				/* syscall failed/empty */
-	if (rec->a1 == 0)
-		return;				/* no user buffer */
+		goto out_free;			/* syscall failed/empty */
+	if (snap->buf == 0)
+		goto out_free;			/* no user buffer */
 
 	{
-		void *buf = (void *)(unsigned long) rec->a1;
+		void *buf = (void *)(unsigned long) snap->buf;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner buf
+		 * field.  Reject pid-scribbled buf before deref.
+		 */
 		if (looks_like_corrupted_ptr(buf)) {
-			outputerr("post_getcwd: rejected suspicious buf=%p (pid-scribbled?)\n",
+			outputerr("post_getcwd: rejected suspicious buf=%p (post_state-scribbled?)\n",
 				  buf);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+					   __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
 	n = readlink("/proc/self/cwd", proc_cwd, sizeof(proc_cwd) - 1);
 	if (n <= 0)
-		return;				/* readlink failed */
+		goto out_free;			/* readlink failed */
 	proc_cwd[n] = '\0';
 
-	/* TOCTOU defeat: copy user buffer into local before compare so a
-	 * concurrent thread cannot mutate it between checks. */
 	copy_len = ((size_t)ret < sizeof(user_cwd))
 			? (size_t)ret : sizeof(user_cwd) - 1;
-	memcpy(user_cwd, (const void *)(uintptr_t)rec->a1, copy_len);
+	memcpy(user_cwd, (const void *)(uintptr_t) snap->buf, copy_len);
 	/* sys_getcwd includes the trailing NUL in the returned length, so
 	 * the string proper is copy_len-1 bytes.  Force NUL-terminate
 	 * defensively. */
@@ -82,6 +147,9 @@ static void post_getcwd(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.getcwd_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_getcwd = {
