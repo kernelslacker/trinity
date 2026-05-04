@@ -143,6 +143,23 @@ enum vdso_mutation {
 };
 
 /*
+ * Per-invocation mremap shape.  A single shape (the MOVE case below)
+ * only exercises move_vma's pure-relocation path; varying the shape
+ * reaches truncate-tail shrink, MAYMOVE grow, and the split-then-merge
+ * path that single-shape callers never touch.  NOOP keeps the
+ * surrounding race window (fork + spinner) exercised without any VMA
+ * churn so the per-invocation distribution still includes a baseline.
+ */
+enum mremap_shape {
+	MREMAP_SHAPE_SHRINK = 0,
+	MREMAP_SHAPE_GROW,
+	MREMAP_SHAPE_MOVE,
+	MREMAP_SHAPE_SHRINK_THEN_GROW,
+	MREMAP_SHAPE_NOOP,
+	NR_MREMAP_SHAPES,
+};
+
+/*
  * Spinner helper: tight loop on clock_gettime(CLOCK_MONOTONIC) for
  * BUDGET_NS / 2.  clock_gettime routes through the vDSO on x86_64 and
  * aarch64 by default, so this is the syscall most likely to hit a
@@ -189,26 +206,92 @@ static void __attribute__((noreturn)) mutator_helper(void)
 	mut = (enum vdso_mutation) ((unsigned int) rand() % NR_VDSO_MUTATIONS);
 
 	switch (mut) {
-	case MUT_MREMAP:
-		/* Pick a fresh-but-aligned destination via a throwaway
-		 * mmap, then mremap with MREMAP_FIXED onto it.  The
-		 * scratch reservation gets released by the kernel as
-		 * mremap takes ownership of the destination range. */
-		fresh = mmap(NULL, vdso_size, PROT_NONE,
-			     MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-		if (fresh != MAP_FAILED) {
-			/* 1-in-RAND_NEGATIVE_RATIO sub the curated
-			 * MAYMOVE|FIXED for a curated edge value —
-			 * exercises mremap's flag-mask check
-			 * (flags & ~(MREMAP_MAYMOVE|MREMAP_FIXED|
-			 * MREMAP_DONTUNMAP) -> EINVAL) which the
-			 * curated pair never reaches. */
-			(void) mremap(vdso_addr, vdso_size, vdso_size,
-				      (int)RAND_NEGATIVE_OR(MREMAP_MAYMOVE |
-							    MREMAP_FIXED),
-				      fresh);
+	case MUT_MREMAP: {
+		enum mremap_shape shape;
+		long pagesize;
+		unsigned long half;
+
+		pagesize = sysconf(_SC_PAGESIZE);
+		if (pagesize <= 0)
+			pagesize = 4096;
+		/* Page-align the half size; vdso is page-aligned but a
+		 * single-page vDSO would yield half==0, which mremap
+		 * rejects with -EINVAL.  Fall back to NOOP in that case
+		 * so SHRINK / SHRINK_THEN_GROW don't degrade to a pure
+		 * EINVAL spam loop. */
+		half = (vdso_size / 2) & ~((unsigned long)pagesize - 1);
+
+		shape = (enum mremap_shape)((unsigned int)rand() % NR_MREMAP_SHAPES);
+		if (half == 0 &&
+		    (shape == MREMAP_SHAPE_SHRINK ||
+		     shape == MREMAP_SHAPE_SHRINK_THEN_GROW))
+			shape = MREMAP_SHAPE_NOOP;
+
+		switch (shape) {
+		case MREMAP_SHAPE_SHRINK:
+			/* In-place truncate-tail: hits the shrink path
+			 * inside mremap_to that unmaps the high half of
+			 * the special-mapping VMA without relocating. */
+			(void) mremap(vdso_addr, vdso_size, half, 0);
+			break;
+
+		case MREMAP_SHAPE_GROW:
+			/* MAYMOVE grow to 2x: kernel may relocate the
+			 * VMA to find a contiguous range, exercising the
+			 * grow-and-move path in move_vma() that the
+			 * same-size MOVE shape doesn't reach. */
+			(void) mremap(vdso_addr, vdso_size,
+				      vdso_size * 2, MREMAP_MAYMOVE);
+			break;
+
+		case MREMAP_SHAPE_MOVE:
+			/* Same-size relocation onto a fresh reservation
+			 * via MAYMOVE|FIXED.  Exercises move_vma's pure-
+			 * relocation path and the special-mapping
+			 * vdso_mremap callback's AT_SYSINFO_EHDR / per-
+			 * task vdso_base fixup.  Pick a destination via
+			 * a throwaway mmap; the kernel releases the
+			 * scratch reservation as mremap takes ownership. */
+			fresh = mmap(NULL, vdso_size, PROT_NONE,
+				     MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+			if (fresh != MAP_FAILED) {
+				/* 1-in-RAND_NEGATIVE_RATIO sub the
+				 * curated MAYMOVE|FIXED for a curated
+				 * edge value — exercises mremap's flag-
+				 * mask check (flags & ~(MREMAP_MAYMOVE|
+				 * MREMAP_FIXED|MREMAP_DONTUNMAP) ->
+				 * EINVAL) which the curated pair never
+				 * reaches. */
+				(void) mremap(vdso_addr, vdso_size, vdso_size,
+					      (int)RAND_NEGATIVE_OR(MREMAP_MAYMOVE |
+								    MREMAP_FIXED),
+					      fresh);
+			}
+			break;
+
+		case MREMAP_SHAPE_SHRINK_THEN_GROW:
+			/* Two-step: shrink in place to split the VMA,
+			 * then MAYMOVE-grow back to roughly the original
+			 * extent.  Exercises the split-then-merge path
+			 * through __split_vma and vma_merge that the
+			 * single-shape MOVE never touches. */
+			if (mremap(vdso_addr, vdso_size, half, 0) != MAP_FAILED)
+				(void) mremap(vdso_addr, half,
+					      vdso_size, MREMAP_MAYMOVE);
+			break;
+
+		case MREMAP_SHAPE_NOOP:
+			/* Baseline: skip the mremap entirely.  Keeps the
+			 * surrounding fork + spinner race window in the
+			 * per-invocation distribution without any VMA
+			 * churn from this arm. */
+			break;
+
+		case NR_MREMAP_SHAPES:
+			break;
 		}
 		break;
+	}
 
 	case MUT_MPROTECT:
 		(void) mprotect(vdso_addr, vdso_size, PROT_READ | PROT_WRITE);
