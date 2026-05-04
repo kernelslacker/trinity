@@ -223,9 +223,51 @@ struct syscallentry syscall_fstatfs = {
  * On error, -1 is returned, and errno is set appropriately.
  */
 
+#ifdef SYS_fstatfs64
+/*
+ * Snapshot of the three fstatfs64 input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives
+ * in rec->post_state, a slot the syscall ABI does not expose, so a
+ * sibling syscall scribbling rec->aN between the syscall returning
+ * and the post handler running cannot retarget the re-issue at a
+ * different fd, smear the buffer-size word used to seed the re-issue,
+ * or steer the source memcpy at a foreign user buffer.
+ */
+struct fstatfs64_post_state {
+	unsigned long fd;
+	unsigned long sz;
+	unsigned long buf;
+};
+#endif
+
 static void sanitise_fstatfs64(struct syscallrecord *rec)
 {
 	avoid_shared_buffer(&rec->a3, rec->a2 ? rec->a2 : page_size);
+
+#ifdef SYS_fstatfs64
+	{
+		struct fstatfs64_post_state *snap;
+
+		rec->post_state = 0;
+
+		/*
+		 * Snapshot the three input args for the post oracle.
+		 * Without this the post handler reads rec->aN at post-time,
+		 * when a sibling syscall may have scribbled the slots:
+		 * looks_like_corrupted_ptr() cannot tell a real-but-wrong
+		 * heap address from the original user buf pointer, so the
+		 * source memcpy would touch a foreign allocation, and a
+		 * stomped fd or sz word would silently steer the re-issue
+		 * against a different mount or change the buffer-size
+		 * semantics.  post_state is private to the post handler.
+		 */
+		snap = zmalloc(sizeof(*snap));
+		snap->fd  = rec->a1;
+		snap->sz  = rec->a2;
+		snap->buf = rec->a3;
+		rec->post_state = (unsigned long) snap;
+	}
+#endif
 }
 
 /*
@@ -262,39 +304,63 @@ static void sanitise_fstatfs64(struct syscallrecord *rec)
 #ifdef SYS_fstatfs64
 static void post_fstatfs64(struct syscallrecord *rec)
 {
+	struct fstatfs64_post_state *snap =
+		(struct fstatfs64_post_state *) rec->post_state;
 	struct statfs64 first, recheck;
 	int fd;
 	size_t sz;
 	int diverged = 0;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_fstatfs64: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+				   __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a3 == 0)
-		return;
+	if (snap->buf == 0)
+		goto out_free;
 
-	fd = (int) rec->a1;
-	sz = (size_t) rec->a2;
+	fd = (int) snap->fd;
+	sz = (size_t) snap->sz;
 
 	{
-		void *buf = (void *)(unsigned long) rec->a3;
+		void *buf = (void *)(unsigned long) snap->buf;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a3. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner buf
+		 * field.  Reject pid-scribbled buf before deref.
+		 */
 		if (looks_like_corrupted_ptr(buf)) {
-			outputerr("post_fstatfs64: rejected suspicious buf=%p (pid-scribbled?)\n",
+			outputerr("post_fstatfs64: rejected suspicious buf=%p (post_state-scribbled?)\n",
 				  buf);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+					   __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	memcpy(&first, (void *)(unsigned long) rec->a3, sizeof(first));
+	memcpy(&first, (void *)(unsigned long) snap->buf, sizeof(first));
 
 	if (syscall(SYS_fstatfs64, fd, sz, &recheck) != 0)
-		return;
+		goto out_free;
 
 	if (first.f_type    != recheck.f_type)    diverged = 1;
 	if (first.f_bsize   != recheck.f_bsize)   diverged = 1;
@@ -307,7 +373,7 @@ static void post_fstatfs64(struct syscallrecord *rec)
 	if (first.f_fsid.__val[1] != recheck.f_fsid.__val[1]) diverged = 1;
 
 	if (!diverged)
-		return;
+		goto out_free;
 
 	output(0,
 	       "fstatfs64 oracle anomaly: fd=%d sz=%zu "
@@ -333,6 +399,9 @@ static void post_fstatfs64(struct syscallrecord *rec)
 
 	__atomic_add_fetch(&shm->stats.fstatfs64_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 #endif
 
