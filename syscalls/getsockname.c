@@ -149,6 +149,25 @@ static void post_getsockname(struct syscallrecord *rec)
 		return;
 	}
 
+	/*
+	 * Kernel ABI: getsockname returns 0 on success and -1UL on failure
+	 * (with errno set on the libc side). The syscall return path has no
+	 * other legitimate value -- anything outside {0, -1UL} is a
+	 * structural ABI violation (sign-extension tear of the int return,
+	 * sibling-thread scribble of rec->retval between syscall return and
+	 * post entry, or a torn copy_to_user of the result word landing in
+	 * the syscall return slot). Reject before the ONE_IN(100) sample
+	 * gate below: the existing oracle short-circuits on retval != 0 and
+	 * would silently swallow a wild value 100% of the time, leaving the
+	 * corruption invisible.
+	 */
+	if (rec->retval != 0 && rec->retval != (unsigned long)-1L) {
+		outputerr("post_getsockname: rejected returned status 0x%lx outside {0, -1UL} (kernel ABI violation)\n",
+			  rec->retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
+	}
+
 	if (!ONE_IN(100))
 		goto out_free;
 
