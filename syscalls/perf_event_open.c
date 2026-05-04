@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 #include <sys/types.h>
 #include <dirent.h>
 #include <errno.h>
@@ -1479,6 +1480,32 @@ static void post_perf_event_open(struct syscallrecord *rec)
 
 		/* Parent-side path (no-op in children). */
 		remove_object_by_fd(fd);
+
+		/*
+		 * Stop the event before close().  close() alone is enough for
+		 * the common per-task counting/sampling event whose only
+		 * kernel referent is the fd's f_count -- the final fput drops
+		 * the event.  It is not enough when the event has attached
+		 * itself to something else that holds an independent ref:
+		 *   - PERF_FLAG_PID_CGROUP installs the event into the
+		 *     cgroup's event list; the cgroup keeps it scheduled and
+		 *     accumulating samples on every task in the cgroup until
+		 *     the event is explicitly disabled, even after our fd has
+		 *     been closed and the (perhaps short-lived) child that
+		 *     created it is gone.
+		 *   - PERF_FLAG_FD_OUTPUT redirects samples into another
+		 *     event's ring buffer; the producer keeps writing into
+		 *     that buffer between our close() and the kernel's
+		 *     deferred teardown of the producer side.
+		 *   - Group members on a pinned leader stay scheduled across
+		 *     the leader's lifetime even after their own fd closes.
+		 * Issuing IOC_DISABLE first walks the event off all of those
+		 * paths synchronously, so the close() that follows is just a
+		 * refcount drop on a quiescent event.  Mirrors the BPF detach
+		 * pattern in post_bpf() and the IPC_RMID pattern in
+		 * post_msgget()/post_semget().
+		 */
+		ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
 		close(fd);
 	}
 
