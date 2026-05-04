@@ -29,6 +29,26 @@ static void post_setsid(struct syscallrecord *rec)
 {
 	pid_t got, recheck;
 
+	/*
+	 * Kernel ABI: setsid on success returns pid_vnr(task_session(current))
+	 * which equals the calling task's pid in the caller's pid_ns (the kernel
+	 * just made the caller the session leader), so the value is bounded by
+	 * PID_MAX_LIMIT (4194304) and is always >= 1. Failure returns -1UL
+	 * (typically EPERM when the caller is already a process-group leader).
+	 * Anything outside [1, PID_MAX_LIMIT] ∪ {-1UL} is a corrupted retval
+	 * (sign-extension tear, pid_ns translation bug, or torn write to
+	 * signal->pids[PIDTYPE_SID]) — reject on every call before the
+	 * ONE_IN(100) re-read oracle below, since that gate would only catch
+	 * such corruption ~1% of the time.
+	 */
+	if (rec->retval != (unsigned long)-1L &&
+	    (rec->retval == 0 || rec->retval > 4194304UL)) {
+		output(0, "post_setsid: rejected returned sid 0x%lx outside [1, PID_MAX_LIMIT=4194304] (and not -1)\n",
+		       rec->retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		return;
+	}
+
 	if (!ONE_IN(100))
 		return;
 
