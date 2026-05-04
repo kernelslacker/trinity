@@ -143,7 +143,12 @@ bool uffd_churn(struct childdata *child)
 		unsigned int npages;
 		int fd;
 
-		fd = do_userfaultfd(O_CLOEXEC | O_NONBLOCK);
+		/* 1-in-RAND_NEGATIVE_RATIO sub the curated valid flag mix
+		 * for a curated edge value — exercises do_sys_userfaultfd's
+		 * (flags & ~UFFD_USER_VALID_FLAGS) rejection path which the
+		 * O_CLOEXEC|O_NONBLOCK pair above never reaches. */
+		fd = do_userfaultfd(
+			(int)RAND_NEGATIVE_OR(O_CLOEXEC | O_NONBLOCK));
 		if (fd < 0) {
 			/* EPERM: vm.unprivileged_userfaultfd=0 and we lack
 			 * CAP_SYS_PTRACE.  ENOSYS: kernel built without

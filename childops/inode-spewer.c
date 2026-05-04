@@ -93,7 +93,14 @@ static bool do_create_and_destroy(void)
 		if (size > 0) {
 			int ret __unused__;
 			if (RAND_BOOL())
-				ret = ftruncate(fd, size);
+				/* 1-in-RAND_NEGATIVE_RATIO sub the curated
+				 * in-range size for a curated edge value —
+				 * exercises do_sys_ftruncate's length < 0
+				 * rejection and inode_newsize_ok's
+				 * MAX_LFS_FILESIZE bound which the
+				 * 0..MB(4) mix above never reaches. */
+				ret = ftruncate(fd,
+					(off_t)RAND_NEGATIVE_OR(size));
 			else
 				ret = fallocate(fd, 0, 0, size);
 		}
