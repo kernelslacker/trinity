@@ -276,8 +276,9 @@ static void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 
 void generic_post_close_fd(struct syscallrecord *rec)
 {
-	if ((long)rec->retval >= 0)
-		close((int)rec->retval);
+	long ret = (long)rec->retval;
+	if (ret >= 0 && ret < (1 << 20))
+		close((int)ret);
 }
 
 /*
