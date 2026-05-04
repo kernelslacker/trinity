@@ -290,6 +290,11 @@ void clean_childdata(struct childdata *child)
 	child->fail_nth_fd = -1;
 	child->current_recipe_name = NULL;
 
+	/* Drop any sentinel reading from the previous occupant of this slot
+	 * so the first periodic_work tick re-populates without comparing
+	 * against state captured under a different child's environment. */
+	child->sentinel_prev.valid = false;
+
 	/* Clear any __BUG() stamp left by the prior occupant of this slot
 	 * so the parent's zombie-pending warning doesn't mis-attribute the
 	 * fresh child's eventual exit to the previous one's assertion. */
@@ -672,13 +677,16 @@ out:
  * we don't want to happen on every iteration of the child loop.
  *
  * The caller gates entry on (op_nr & 15) == 0, so reaching here is
- * already the "every 16 iterations" event — check_parent_pid runs
- * unconditionally.  The deeper 128-iteration gate is folded into the
- * op_nr argument so this function carries no static state at all.
+ * already the "every 16 iterations" event — check_parent_pid and the
+ * divergence sentinel run unconditionally.  The deeper 128-iteration
+ * gate is folded into the op_nr argument so this function carries no
+ * static state at all.
  */
-static void periodic_work(unsigned long op_nr)
+static void periodic_work(struct childdata *child, unsigned long op_nr)
 {
 	check_parent_pid();
+
+	divergence_sentinel_tick(child);
 
 	/* Every 128 iterations. */
 	if ((op_nr & 127) == 0) {
@@ -1252,7 +1260,7 @@ void child_process(struct childdata *child, int childno)
 		}
 
 		if ((child->op_nr & 15) == 0)
-			periodic_work(child->op_nr);
+			periodic_work(child, child->op_nr);
 
 		/* Free any deferred allocations whose TTL has expired.
 		 * This runs before the syscall so that freed memory can

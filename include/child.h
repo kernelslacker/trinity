@@ -57,6 +57,41 @@ struct child_syscall_ring {
 	_Atomic uint32_t head;
 };
 
+/*
+ * Cached previous-tick reading of the curated "should be deterministic
+ * across short windows" syscall set.  Populated each time periodic_work
+ * runs the divergence sentinel; the next tick re-reads and compares.
+ *
+ * Only the fields that are stable across two adjacent ticks are kept --
+ * sysinfo's loads/uptime/freeram are deliberately omitted because they
+ * legitimately drift between samples and would generate noise.
+ *
+ * The intent is to catch fuzzed value-result syscall buffers whose
+ * destination addresses overlap one of these cached readings: a stray
+ * write into the cache surfaces as a divergence at the next tick, and a
+ * stray write into an unrelated kernel-managed datum (utsname, rlimit,
+ * sched_param) shows up as the live re-read disagreeing with what we
+ * captured the previous tick.  __NEW_UTS_LEN is 64 -- arrays sized 65 to
+ * include the trailing NUL the kernel always copies.
+ */
+struct sentinel_reading {
+	char sysname[65];
+	char nodename[65];
+	char release[65];
+	char version[65];
+	char machine[65];
+	unsigned long sysinfo_totalram;
+	unsigned long sysinfo_totalswap;
+	unsigned long sysinfo_totalhigh;
+	unsigned int sysinfo_mem_unit;
+	unsigned long getrlimit_cur;
+	unsigned long getrlimit_max;
+	unsigned long prlimit64_cur;
+	unsigned long prlimit64_max;
+	int sched_priority;
+	bool valid;
+};
+
 enum child_op_type {
 	CHILD_OP_SYSCALL = 0,	/* default: fuzz random syscalls */
 	CHILD_OP_MMAP_LIFECYCLE,
@@ -256,6 +291,11 @@ struct childdata {
 	 * crash caused by a child wild write hundreds of syscalls back). */
 	struct pre_crash_ring pre_crash;
 
+	/* Previous-tick reading for the periodic_work divergence sentinel.
+	 * .valid is false on the first tick after clean_childdata so the
+	 * first sample populates without a (meaningless) compare. */
+	struct sentinel_reading sentinel_prev;
+
 	/* The actual syscall records each child uses.  Dominated by a 4 KiB
 	 * prebuffer + 128 B postbuffer used by -v rendering — only nr / a1..a6
 	 * / retval / lock / state are touched on the hot path, and those are
@@ -294,6 +334,16 @@ void child_fd_ring_push(struct child_fd_ring *ring, int fd);
 
 void child_syscall_ring_push(struct child_syscall_ring *ring,
 			     const struct syscallrecord *rec);
+
+/*
+ * Periodic-work divergence sentinel.  Re-issues a curated set of
+ * "should be deterministic across short windows" syscalls (uname,
+ * sysinfo, getrlimit/prlimit64 RLIMIT_NOFILE, sched_getparam(0)),
+ * compares against child->sentinel_prev, and reports any unexpected
+ * drift via pre_crash_ring + a stats counter.  First tick populates
+ * the cache and returns without comparing.  See child-sentinel.c.
+ */
+void divergence_sentinel_tick(struct childdata *child);
 
 void init_child_mappings(void);
 
