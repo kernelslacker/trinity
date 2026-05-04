@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -936,6 +937,111 @@ void corrupt_ptr_spike_check(void)
 
 	window_start = now;
 	window_baseline = current;
+}
+
+/*
+ * Periodic surface of the defense-counter family that dump_stats() only
+ * emits at end-of-run.  Called once per main_loop tick from the parent;
+ * every DEFENSE_DUMP_INTERVAL_SEC the diff between the current counter
+ * value and the value cached at the prior dump is divided by the elapsed
+ * window and emitted as a per-second rate, so an operator watching a
+ * long fuzz run can see which guards are catching real wild writes vs
+ * sitting at noise without waiting for the run to end.  Counters with a
+ * zero delta are skipped so the per-window line stays short on a quiet
+ * fleet; the whole block is suppressed entirely on a window where every
+ * counter held flat.  Listed once in defense_counters[] so adding a new
+ * defense counter only needs one edit to get periodic visibility.
+ */
+#define DEFENSE_DUMP_INTERVAL_SEC	600
+
+static const struct {
+	const char *name;
+	size_t off;
+} defense_counters[] = {
+	{ "shared_buffer_redirected",
+	  offsetof(struct stats_s, shared_buffer_redirected) },
+	{ "range_overlaps_shared_rejects",
+	  offsetof(struct stats_s, range_overlaps_shared_rejects) },
+	{ "post_handler_corrupt_ptr",
+	  offsetof(struct stats_s, post_handler_corrupt_ptr) },
+	{ "snapshot_non_heap_reject",
+	  offsetof(struct stats_s, snapshot_non_heap_reject) },
+	{ "deferred_free_corrupt_ptr",
+	  offsetof(struct stats_s, deferred_free_corrupt_ptr) },
+	{ "rec_canary_stomped",
+	  offsetof(struct stats_s, rec_canary_stomped) },
+	{ "sibling_mprotect_failed",
+	  offsetof(struct stats_s, sibling_mprotect_failed) },
+	{ "sibling_refreeze_count",
+	  offsetof(struct stats_s, sibling_refreeze_count) },
+	{ "divergence_sentinel_anomalies",
+	  offsetof(struct stats_s, divergence_sentinel_anomalies) },
+	{ "iouring_enter_mask_corrupt",
+	  offsetof(struct stats_s, iouring_enter_mask_corrupt) },
+	{ "local_op_count_corrupted",
+	  offsetof(struct stats_s, local_op_count_corrupted) },
+	{ "fd_event_ring_corrupted",
+	  offsetof(struct stats_s, fd_event_ring_corrupted) },
+	{ "fd_event_ring_overwritten",
+	  offsetof(struct stats_s, fd_event_ring_overwritten) },
+};
+
+static unsigned long defense_counter_load(unsigned int i)
+{
+	unsigned long *p = (unsigned long *)((char *)&shm->stats +
+					     defense_counters[i].off);
+	return __atomic_load_n(p, __ATOMIC_RELAXED);
+}
+
+void defense_counters_periodic_dump(void)
+{
+	static unsigned long prev[ARRAY_SIZE(defense_counters)];
+	static struct timespec last_dump;
+	struct timespec now;
+	unsigned int i;
+	long elapsed;
+	int header_emitted = 0;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	/* First call: arm the window so any pre-existing counts carried
+	 * over from earlier in the run are not mis-attributed to the
+	 * first window, mirroring corrupt_ptr_spike_check(). */
+	if (last_dump.tv_sec == 0) {
+		last_dump = now;
+		for (i = 0; i < ARRAY_SIZE(defense_counters); i++)
+			prev[i] = defense_counter_load(i);
+		return;
+	}
+
+	elapsed = now.tv_sec - last_dump.tv_sec;
+	if (elapsed < DEFENSE_DUMP_INTERVAL_SEC)
+		return;
+
+	for (i = 0; i < ARRAY_SIZE(defense_counters); i++) {
+		unsigned long cur = defense_counter_load(i);
+		unsigned long delta = cur - prev[i];
+		unsigned long rate_milli;
+
+		prev[i] = cur;
+		if (delta == 0)
+			continue;
+
+		if (header_emitted == 0) {
+			output(0, "Defense counter rates over last %lds:\n",
+			       elapsed);
+			header_emitted = 1;
+		}
+
+		/* Per-second rate scaled by 1000 to keep three decimals
+		 * without dragging in floating point on the parent path. */
+		rate_milli = (delta * 1000UL) / (unsigned long)elapsed;
+		output(0, "  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+		       defense_counters[i].name, delta,
+		       rate_milli / 1000, rate_milli % 1000, cur);
+	}
+
+	last_dump = now;
 }
 
 void dump_stats(void)
