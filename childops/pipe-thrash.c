@@ -146,7 +146,7 @@ bool pipe_thrash(struct childdata *child)
 			break;
 		case 1:
 			rc = pipe2(pair,
-				   pipe2_flags[rand() % (int)ARRAY_SIZE(pipe2_flags)]);
+				   (int)RAND_NEGATIVE_OR(pipe2_flags[rand() % (int)ARRAY_SIZE(pipe2_flags)]));
 			if (rc == 0)
 				__atomic_add_fetch(&shm->stats.pipe_thrash_pipes,
 						   1, __ATOMIC_RELAXED);
