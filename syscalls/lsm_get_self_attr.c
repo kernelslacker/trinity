@@ -7,6 +7,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -49,10 +50,37 @@ static unsigned long lsm_get_flags[] = {
 	LSM_FLAG_SINGLE,
 };
 
+#ifdef HAVE_SYS_LSM_GET_SELF_ATTR
+/*
+ * Snapshot of the four lsm_get_self_attr input args read by the post
+ * oracle, captured at sanitise time and consumed by the post handler.
+ * Lives in rec->post_state, a slot the syscall ABI does not expose, so
+ * a sibling syscall scribbling rec->aN between the syscall returning
+ * and the post handler running cannot redirect us at a foreign ctx /
+ * size user buffer or hand the re-call the wrong (attr, flags) tuple.
+ */
+struct lsm_get_self_attr_post_state {
+	unsigned long attr;
+	unsigned long ctx;
+	unsigned long size;
+	unsigned long flags;
+};
+#endif
+
 static void sanitise_lsm_get_self_attr(struct syscallrecord *rec)
 {
 	u32 *size;
 	void *buf;
+#ifdef HAVE_SYS_LSM_GET_SELF_ATTR
+	struct lsm_get_self_attr_post_state *snap;
+#endif
+
+	/*
+	 * Clear post_state up front so an early return below leaves the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record.
+	 */
+	rec->post_state = 0;
 
 	/*
 	 * The kernel reads *size to find how much space the caller provided.
@@ -66,6 +94,27 @@ static void sanitise_lsm_get_self_attr(struct syscallrecord *rec)
 	*size = page_size;
 	rec->a2 = (unsigned long) buf;
 	rec->a3 = (unsigned long) size;
+
+#ifdef HAVE_SYS_LSM_GET_SELF_ATTR
+	/*
+	 * Snapshot all four input args for the post oracle.  Without this
+	 * the post handler reads rec->aN at post-time, when a sibling
+	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original user
+	 * buffer pointers, so the memcpy / re-call would touch a foreign
+	 * allocation.  post_state is private to the post handler.  Gated on
+	 * HAVE_SYS_LSM_GET_SELF_ATTR to mirror the .post registration -- on
+	 * systems without SYS_lsm_get_self_attr the post handler is not
+	 * registered and a snapshot only the post handler can free would
+	 * leak.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->attr  = rec->a1;
+	snap->ctx   = rec->a2;
+	snap->size  = rec->a3;
+	snap->flags = rec->a4;
+	rec->post_state = (unsigned long) snap;
+#endif
 }
 
 /*
@@ -88,11 +137,14 @@ static void sanitise_lsm_get_self_attr(struct syscallrecord *rec)
  *   - Sibling-thread scribble of either rec->aN or the user buffers between
  *     syscall return and our post-hook re-read.
  *
- * TOCTOU defeat: snapshot all four args plus the size value and the ctx
- * payload into stack-locals BEFORE re-issuing, so a sibling that scribbles
- * either rec->aN or the user buffers between syscall return and the post
- * hook cannot smear the comparison.  The re-call uses fresh stack buffers
- * (NOT rec->a2 / rec->a3 -- a sibling could mutate them mid-syscall and
+ * TOCTOU defeat: all four input args (attr, ctx, size, flags) are
+ * snapshotted at sanitise time into a heap struct in rec->post_state, so
+ * a sibling that scribbles rec->aN between syscall return and post entry
+ * cannot redirect us at a foreign ctx / size buffer or hand the re-call
+ * the wrong (attr, flags) tuple.  We still snapshot the size value and
+ * ctx payload into stack-locals before re-issuing, with a fresh private
+ * stack ctx buffer and size word (NOT the snapshot's ctx / size -- a
+ * sibling could scribble the user buffers themselves mid-syscall and
  * forge a clean compare).
  *
  * Sample one in a hundred to stay in line with the rest of the oracle
@@ -110,56 +162,69 @@ static void sanitise_lsm_get_self_attr(struct syscallrecord *rec)
 #ifdef HAVE_SYS_LSM_GET_SELF_ATTR
 static void post_lsm_get_self_attr(struct syscallrecord *rec)
 {
+	struct lsm_get_self_attr_post_state *snap =
+		(struct lsm_get_self_attr_post_state *) rec->post_state;
 	u32 size_first;
 	u32 size_recall;
 	unsigned char ctx_first[LSM_CTX_BUF_MAX];
 	unsigned char ctx_recall[LSM_CTX_BUF_MAX];
-	unsigned int attr_snap;
-	unsigned long ctx_snap;
-	unsigned long size_ptr_snap;
-	u32 flags_snap;
 	long rc;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
 
-	if ((long) rec->retval != 0)
-		return;
-
-	if (rec->a2 == 0 || rec->a3 == 0)
-		return;
-
-	attr_snap     = (unsigned int) rec->a1;
-	ctx_snap      = rec->a2;
-	size_ptr_snap = rec->a3;
-	flags_snap    = (u32) rec->a4;
-
-	/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2/a3. */
-	if (looks_like_corrupted_ptr((void *) ctx_snap) ||
-	    looks_like_corrupted_ptr((void *) size_ptr_snap)) {
-		outputerr("post_lsm_get_self_attr: rejected suspicious ctx=%p size=%p (pid-scribbled?)\n",
-			  (void *) ctx_snap, (void *) size_ptr_snap);
-		shm->stats.post_handler_corrupt_ptr++;
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_lsm_get_self_attr: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
 		return;
 	}
 
-	memcpy(&size_first, (const void *) size_ptr_snap, sizeof(size_first));
-	if (size_first > LSM_CTX_BUF_MAX)
-		return;
+	if (!ONE_IN(100))
+		goto out_free;
 
-	memcpy(ctx_first, (const void *) ctx_snap, size_first);
+	if ((long) rec->retval != 0)
+		goto out_free;
+
+	if (snap->ctx == 0 || snap->size == 0)
+		goto out_free;
+
+	/*
+	 * Defense in depth: even with the post_state snapshot, a wholesale
+	 * stomp could rewrite the snapshot's inner pointer fields.  Reject
+	 * pid-scribbled ctx/size before deref.
+	 */
+	if (looks_like_corrupted_ptr((void *) snap->ctx) ||
+	    looks_like_corrupted_ptr((void *) snap->size)) {
+		outputerr("post_lsm_get_self_attr: rejected suspicious ctx=%p size=%p (post_state-scribbled?)\n",
+			  (void *) snap->ctx, (void *) snap->size);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		goto out_free;
+	}
+
+	memcpy(&size_first, (const void *) snap->size, sizeof(size_first));
+	if (size_first > LSM_CTX_BUF_MAX)
+		goto out_free;
+
+	memcpy(ctx_first, (const void *) snap->ctx, size_first);
 
 	size_recall = LSM_CTX_BUF_MAX;
 	memset(ctx_recall, 0, sizeof(ctx_recall));
-	rc = syscall(SYS_lsm_get_self_attr, attr_snap, ctx_recall,
-		     &size_recall, flags_snap);
+	rc = syscall(SYS_lsm_get_self_attr, snap->attr, ctx_recall,
+		     &size_recall, snap->flags);
 	if (rc != 0)
-		return;
+		goto out_free;
 
 	if (size_first != size_recall) {
 		output(0,
-		       "[oracle:lsm_get_self_attr] size %u vs %u (attr=%u flags=0x%x)\n",
-		       size_first, size_recall, attr_snap, flags_snap);
+		       "[oracle:lsm_get_self_attr] size %u vs %u (attr=%lu flags=0x%lx)\n",
+		       size_first, size_recall, snap->attr, snap->flags);
 		__atomic_add_fetch(&shm->stats.lsm_get_self_attr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
@@ -167,12 +232,15 @@ static void post_lsm_get_self_attr(struct syscallrecord *rec)
 	if (memcmp(ctx_first, ctx_recall,
 		   size_first < size_recall ? size_first : size_recall) != 0) {
 		output(0,
-		       "[oracle:lsm_get_self_attr] ctx diverged over %u bytes (attr=%u flags=0x%x)\n",
+		       "[oracle:lsm_get_self_attr] ctx diverged over %u bytes (attr=%lu flags=0x%lx)\n",
 		       size_first < size_recall ? size_first : size_recall,
-		       attr_snap, flags_snap);
+		       snap->attr, snap->flags);
 		__atomic_add_fetch(&shm->stats.lsm_get_self_attr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 #endif
 
