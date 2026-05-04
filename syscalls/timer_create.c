@@ -69,9 +69,7 @@ static void post_timer_create(struct syscallrecord *rec)
 		return;
 
 	idp = (timer_t *) rec->a3;
-	if (looks_like_corrupted_ptr(idp)) {
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
-				   __ATOMIC_RELAXED);
+	if (looks_like_corrupted_ptr(rec, idp)) {
 		return;
 	}
 

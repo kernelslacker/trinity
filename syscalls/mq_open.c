@@ -125,11 +125,9 @@ static void post_mq_open(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_mq_open: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
-				   __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -149,11 +147,9 @@ static void post_mq_open(struct syscallrecord *rec)
 		 */
 		if (name == NULL)
 			goto out_free;
-		if (looks_like_corrupted_ptr(name)) {
+		if (looks_like_corrupted_ptr(rec, name)) {
 			outputerr("post_mq_open: rejected suspicious u_name=%p (post_state-scribbled?)\n",
 				  name);
-			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
-					   __ATOMIC_RELAXED);
 			goto out_free;
 		}
 	}

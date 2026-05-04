@@ -70,10 +70,9 @@ static void post_getsockopt(struct syscallrecord *rec)
 		 * syscallrecord can still be wholesale-stomped, so guard the
 		 * free path against handing a non-heap value to free().
 		 */
-		if (looks_like_corrupted_ptr(optval)) {
+		if (looks_like_corrupted_ptr(rec, optval)) {
 			outputerr("post_getsockopt: rejected suspicious optval=%p "
 				  "(pid-scribbled?)\n", optval);
-			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 			rec->a4 = 0;
 			rec->post_state = 0;
 		} else {

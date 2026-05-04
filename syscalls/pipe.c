@@ -27,9 +27,8 @@ static void post_pipe(struct syscallrecord *rec)
 	if (fildes == NULL)
 		return;
 
-	if (looks_like_corrupted_ptr(fildes)) {
+	if (looks_like_corrupted_ptr(rec, fildes)) {
 		outputerr("post_pipe: rejected suspicious fildes=%p (pid-scribbled?)\n", fildes);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a1 = 0;
 		rec->post_state = 0;
 		return;

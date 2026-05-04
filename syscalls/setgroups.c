@@ -184,11 +184,9 @@ static void post_setgroups(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_setgroups: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
-				   __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -208,11 +206,9 @@ static void post_setgroups(struct syscallrecord *rec)
 	 * pid-scribbled grouplist before deref -- list_set is read in both
 	 * the getgroups compare and the procfs compare below.
 	 */
-	if (n_set > 0 && list_set != NULL && looks_like_corrupted_ptr(list_set)) {
+	if (n_set > 0 && list_set != NULL && looks_like_corrupted_ptr(rec, list_set)) {
 		outputerr("post_setgroups: rejected suspicious grouplist=%p (post_state-scribbled?)\n",
 			  (void *) list_set);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
-				   __ATOMIC_RELAXED);
 		goto out_free;
 	}
 

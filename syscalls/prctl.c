@@ -213,10 +213,9 @@ static void post_prctl(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_prctl: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -228,10 +227,9 @@ static void post_prctl(struct syscallrecord *rec)
 	 * does not allocate), so only flag a non-NULL value that fails
 	 * the heuristic.  Leak rather than hand garbage to free().
 	 */
-	if (snap->bpf != NULL && looks_like_corrupted_ptr(snap->bpf)) {
+	if (snap->bpf != NULL && looks_like_corrupted_ptr(rec, snap->bpf)) {
 		outputerr("post_prctl: rejected suspicious snap bpf=%p (post_state-scribbled?)\n",
 			  snap->bpf);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}

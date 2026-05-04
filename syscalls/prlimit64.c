@@ -180,10 +180,9 @@ static void post_prlimit64(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_prlimit64: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -216,10 +215,9 @@ static void post_prlimit64(struct syscallrecord *rec)
 		 * old_rlim pointer field.  Reject pid-scribbled old_rlim
 		 * before deref.
 		 */
-		if (looks_like_corrupted_ptr(old_rlim)) {
+		if (looks_like_corrupted_ptr(rec, old_rlim)) {
 			outputerr("post_prlimit64: rejected suspicious old_rlim=%p (post_state-scribbled?)\n",
 				  old_rlim);
-			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 			goto out_free;
 		}
 	}

@@ -34,9 +34,8 @@ static void post_socketpair(struct syscallrecord *rec)
 	if (usockvec == NULL)
 		return;
 
-	if (looks_like_corrupted_ptr(usockvec)) {
+	if (looks_like_corrupted_ptr(rec, usockvec)) {
 		outputerr("post_socketpair: rejected suspicious usockvec=%p (pid-scribbled?)\n", usockvec);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a4 = 0;
 		rec->post_state = 0;
 		return;

@@ -127,10 +127,9 @@ static void post_capset(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_capset: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -150,10 +149,9 @@ static void post_capset(struct syscallrecord *rec)
 	 * stomp could rewrite the snapshot's inner pointer fields.  Reject
 	 * pid-scribbled header/data before deref.
 	 */
-	if (looks_like_corrupted_ptr(hdr) || looks_like_corrupted_ptr(data)) {
+	if (looks_like_corrupted_ptr(rec, hdr) || looks_like_corrupted_ptr(rec, data)) {
 		outputerr("post_capset: rejected suspicious header=%p data=%p (post_state-scribbled?)\n",
 			  hdr, data);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		goto out_free;
 	}
 

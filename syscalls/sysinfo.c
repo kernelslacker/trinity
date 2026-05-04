@@ -108,11 +108,9 @@ static void post_sysinfo(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_sysinfo: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
-				   __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -134,11 +132,9 @@ static void post_sysinfo(struct syscallrecord *rec)
 		 * wholesale stomp could rewrite the snapshot's inner info
 		 * field.  Reject pid-scribbled info before deref.
 		 */
-		if (looks_like_corrupted_ptr(info)) {
+		if (looks_like_corrupted_ptr(rec, info)) {
 			outputerr("post_sysinfo: rejected suspicious info=%p (post_state-scribbled?)\n",
 				  info);
-			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
-					   __ATOMIC_RELAXED);
 			goto out_free;
 		}
 	}

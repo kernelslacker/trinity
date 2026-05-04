@@ -84,9 +84,8 @@ static void post_listns(struct syscallrecord *rec)
 	if (req == NULL)
 		return;
 
-	if (looks_like_corrupted_ptr(req)) {
+	if (looks_like_corrupted_ptr(rec, req)) {
 		outputerr("post_listns: rejected suspicious req=%p (pid-scribbled?)\n", req);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a1 = 0;
 		rec->post_state = 0;
 		return;

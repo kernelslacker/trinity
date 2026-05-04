@@ -191,9 +191,8 @@ static void post_socketcall(struct syscallrecord *rec)
 	if (args == NULL)
 		return;
 
-	if (looks_like_corrupted_ptr(args)) {
+	if (looks_like_corrupted_ptr(rec, args)) {
 		outputerr("post_socketcall: rejected suspicious args=%p (pid-scribbled?)\n", args);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;

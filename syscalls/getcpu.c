@@ -222,10 +222,9 @@ static void post_getcpu(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_getcpu: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -243,11 +242,10 @@ static void post_getcpu(struct syscallrecord *rec)
 	 * stomp could rewrite the snapshot's inner pointer fields.  Reject
 	 * pid-scribbled cpup/nodep before deref.
 	 */
-	if (looks_like_corrupted_ptr((void *) snap->cpup) ||
-	    looks_like_corrupted_ptr((void *) snap->nodep)) {
+	if (looks_like_corrupted_ptr(rec, (void *) snap->cpup) ||
+	    looks_like_corrupted_ptr(rec, (void *) snap->nodep)) {
 		outputerr("post_getcpu: rejected suspicious cpup=%p nodep=%p (post_state-scribbled?)\n",
 			  (void *) snap->cpup, (void *) snap->nodep);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		goto out_free;
 	}
 

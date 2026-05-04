@@ -47,9 +47,8 @@ static void post_write(struct syscallrecord *rec)
 	if (buf == NULL)
 		return;
 
-	if (looks_like_corrupted_ptr(buf)) {
+	if (looks_like_corrupted_ptr(rec, buf)) {
 		outputerr("post_write: rejected suspicious buf=%p (pid-scribbled?)\n", buf);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;

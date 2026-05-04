@@ -14,12 +14,15 @@
 #include "child.h"
 #include "debug.h"
 #include "deferred-free.h"
+#include "locks.h"
 #include "objects.h"
 #include "params.h"
 #include "pc_format.h"
 #include "pids.h"
 #include "random.h"
 #include "shm.h"
+#include "stats.h"
+#include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
 #include "utils.h"
@@ -991,17 +994,82 @@ void freeptr(unsigned long *p)
  * Returns true if the pointer looks scribbled and the caller should
  * drop it instead of dereferencing or freeing.
  */
-bool looks_like_corrupted_ptr(const void *p)
+/*
+ * Update the per-handler attribution ring for a post_handler_corrupt_ptr
+ * rejection.  Linear scan of the 32-entry ring: if @nr is already present
+ * we bump its count; otherwise the lowest-count slot is evicted in favour
+ * of the new key.  Eviction churn at steady state is bounded -- once the
+ * ring is full of the genuinely-hot handlers, a new low-rate offender
+ * displaces another low-rate offender and the high-rate slots stay put.
+ *
+ * Single coarse lock around the whole update: contention is limited to
+ * actual rejection events, which by construction are rare relative to
+ * the per-syscall hot path; the cost of a spin here is dwarfed by the
+ * per-rejection outputerr() the caller is about to emit.  The lock is
+ * also taken on the bump-existing path so a concurrent eviction cannot
+ * race with the increment and lose the bump.
+ */
+static void corrupt_ptr_attr_record(unsigned int nr, bool do32bit)
+{
+	struct corrupt_ptr_attr_entry *ring = shm->stats.corrupt_ptr_attr;
+	unsigned int i, victim;
+	unsigned long victim_count;
+
+	lock(&shm->stats.corrupt_ptr_attr_lock);
+
+	for (i = 0; i < CORRUPT_PTR_ATTR_SLOTS; i++) {
+		if (ring[i].count != 0 &&
+		    ring[i].nr == nr && ring[i].do32bit == do32bit) {
+			ring[i].count++;
+			unlock(&shm->stats.corrupt_ptr_attr_lock);
+			return;
+		}
+	}
+
+	victim = 0;
+	victim_count = ring[0].count;
+	for (i = 1; i < CORRUPT_PTR_ATTR_SLOTS; i++) {
+		if (ring[i].count < victim_count) {
+			victim = i;
+			victim_count = ring[i].count;
+		}
+		if (victim_count == 0)
+			break;
+	}
+
+	ring[victim].nr = nr;
+	ring[victim].do32bit = do32bit;
+	ring[victim].count = victim_count + 1;
+
+	unlock(&shm->stats.corrupt_ptr_attr_lock);
+}
+
+void post_handler_corrupt_ptr_bump(struct syscallrecord *rec)
+{
+	unsigned int nr;
+	bool do32bit;
+
+	__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+
+	if (rec != NULL) {
+		nr = rec->nr;
+		do32bit = rec->do32bit;
+	} else {
+		nr = CORRUPT_PTR_ATTR_NR_NONE;
+		do32bit = false;
+	}
+	corrupt_ptr_attr_record(nr, do32bit);
+}
+
+bool looks_like_corrupted_ptr(struct syscallrecord *rec, const void *p)
 {
 	unsigned long v = (unsigned long) p;
 
-	if (v < 0x10000)
-		return true;
-	if (v >= (1UL << 47))
-		return true;
-	if (v & 0x7)
-		return true;
-	return false;
+	if (v >= 0x10000 && v < (1UL << 47) && (v & 0x7) == 0)
+		return false;
+
+	post_handler_corrupt_ptr_bump(rec);
+	return true;
 }
 
 /*

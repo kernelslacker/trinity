@@ -522,10 +522,9 @@ static void post_bpf(struct syscallrecord *rec)
 	 * (e.g. by a child reusing the slot), so keep the corruption guard
 	 * as a backstop.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_bpf: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -538,10 +537,9 @@ static void post_bpf(struct syscallrecord *rec)
 	 * < 0x10000 band of looks_like_corrupted_ptr() catches it without
 	 * a separate NULL guard.
 	 */
-	if (looks_like_corrupted_ptr(snap->attr)) {
+	if (looks_like_corrupted_ptr(rec, snap->attr)) {
 		outputerr("post_bpf: rejected suspicious snap attr=%p (post_state-scribbled?)\n",
 			  snap->attr);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}

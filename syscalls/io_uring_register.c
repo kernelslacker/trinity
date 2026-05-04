@@ -278,10 +278,9 @@ static void post_io_uring_register(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_io_uring_register: rejected suspicious "
 			  "post_state=%p (pid-scribbled?)\n", snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -293,10 +292,9 @@ static void post_io_uring_register(struct syscallrecord *rec)
 	 * so only flag a non-NULL value that fails the heuristic.  Leak
 	 * rather than hand garbage to free().
 	 */
-	if (snap->heap_buf != NULL && looks_like_corrupted_ptr(snap->heap_buf)) {
+	if (snap->heap_buf != NULL && looks_like_corrupted_ptr(rec, snap->heap_buf)) {
 		outputerr("post_io_uring_register: rejected suspicious snap "
 			  "heap_buf=%p (post_state-scribbled?)\n", snap->heap_buf);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}

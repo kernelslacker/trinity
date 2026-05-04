@@ -61,9 +61,8 @@ static void post_poll(struct syscallrecord *rec)
 	if (ufds == NULL)
 		return;
 
-	if (looks_like_corrupted_ptr(ufds)) {
+	if (looks_like_corrupted_ptr(rec, ufds)) {
 		outputerr("post_poll: rejected suspicious ufds=%p (pid-scribbled?)\n", ufds);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a1 = 0;
 		rec->post_state = 0;
 		return;
@@ -147,19 +146,17 @@ static void post_ppoll(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_ppoll: rejected suspicious post_state=%p "
 			  "(pid-scribbled?)\n", snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
 
-	if (looks_like_corrupted_ptr(snap->fds) ||
-	    looks_like_corrupted_ptr(snap->ts)) {
+	if (looks_like_corrupted_ptr(rec, snap->fds) ||
+	    looks_like_corrupted_ptr(rec, snap->ts)) {
 		outputerr("post_ppoll: rejected suspicious snap fds=%p ts=%p "
 			  "(post_state-scribbled?)\n", snap->fds, snap->ts);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}

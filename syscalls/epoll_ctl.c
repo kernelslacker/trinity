@@ -56,10 +56,9 @@ static void post_epoll_ctl(struct syscallrecord *rec)
 	if (ep == NULL)
 		return;
 
-	if (looks_like_corrupted_ptr(ep)) {
+	if (looks_like_corrupted_ptr(rec, ep)) {
 		outputerr("post_epoll_ctl: rejected suspicious ep=%p "
 			  "(pid-scribbled?)\n", ep);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a4 = 0;
 		rec->post_state = 0;
 		return;

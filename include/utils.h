@@ -91,8 +91,27 @@ void freeptr(unsigned long *p);
  * was about to deref or free?  Returns true if the value cannot plausibly
  * be a heap pointer we handed out.  See utils.c for the rationale and
  * the cluster-1/2/3 crash signature this guards against.
+ *
+ * @rec is the syscallrecord context the call originates from, used for
+ * per-handler attribution of the global post_handler_corrupt_ptr counter.
+ * Pass NULL when called outside a syscall post-handler (e.g. from inside
+ * deferred_free_enqueue) -- those rejections fold into a single
+ * pseudo-handler bucket in the attribution ring.  The caller is expected
+ * to log its own descriptive outputerr() line; this function only handles
+ * the heuristic decision and the bookkeeping that follows it.
  */
-bool looks_like_corrupted_ptr(const void *p);
+struct syscallrecord;
+bool looks_like_corrupted_ptr(struct syscallrecord *rec, const void *p);
+
+/*
+ * Bump the post_handler_corrupt_ptr counter and record per-handler
+ * attribution.  Use directly only at sites that detect corruption via a
+ * mechanism other than looks_like_corrupted_ptr (e.g. the alloc-track
+ * ring miss inside deferred_free_enqueue) -- shape-heuristic callers
+ * should go through looks_like_corrupted_ptr() above, which calls this
+ * internally on a positive result.  rec==NULL for non-syscall callers.
+ */
+void post_handler_corrupt_ptr_bump(struct syscallrecord *rec);
 
 /*
  * Cache the [heap] extent from /proc/self/maps.  Call once before

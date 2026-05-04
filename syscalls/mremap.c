@@ -153,11 +153,9 @@ static void post_mremap(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_mremap: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
-				   __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -172,11 +170,9 @@ static void post_mremap(struct syscallrecord *rec)
 	 * stomp could rewrite the snapshot's inner map field.  Reject a
 	 * pid-scribbled map before deref.
 	 */
-	if (looks_like_corrupted_ptr(map)) {
+	if (looks_like_corrupted_ptr(rec, map)) {
 		outputerr("post_mremap: rejected suspicious map=%p (post_state-scribbled?)\n",
 			  (void *) map);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
-				   __ATOMIC_RELAXED);
 		goto out_free;
 	}
 

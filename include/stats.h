@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include "child.h"	/* NR_CHILD_OP_TYPES */
+#include "locks.h"	/* lock_t */
 #include "syscall.h"	/* MAX_NR_SYSCALL */
 
 /*
@@ -50,6 +51,15 @@
  * can live inside struct stats_s.  A static_assert in slab-cache-thrash.c
  * fails the build if the two ever drift. */
 #define NR_SLAB_TARGETS 7
+
+/* Per-handler attribution ring for the post_handler_corrupt_ptr counter.
+ * Sized to comfortably hold the long tail of distinct handlers without
+ * inflating the shm footprint -- 32 entries cover the unique post-handler
+ * count with headroom (the syscall table currently has ~30 .post hooks
+ * that call looks_like_corrupted_ptr).  A reserved nr value tags the
+ * non-syscall (rec==NULL) pseudo-handler bucket. */
+#define CORRUPT_PTR_ATTR_SLOTS		32
+#define CORRUPT_PTR_ATTR_NR_NONE	((unsigned int) ~0u)
 
 /* Coarse syscall categories used by the dispatch-time histogram.  Order
  * is also the dump order; SYSCAT_OTHER is the catch-all for anything not
@@ -228,6 +238,27 @@ struct stats_s {
 	 * are still landing in rec-> memory -- the post-handler guard is
 	 * doing its job and converting would-be SIGSEGVs into a counter. */
 	unsigned long post_handler_corrupt_ptr;
+
+	/* Per-handler attribution ring for post_handler_corrupt_ptr.  The
+	 * global counter above tells us _that_ snapshot guards are firing,
+	 * but not _which_ post handlers -- with rejections sustained at
+	 * hundreds per minute that is the question that decides whether the
+	 * shape heuristic is doing real work or false-positiving on a
+	 * specific caller.  Each entry is keyed by (nr, do32bit); the ring
+	 * holds the top CORRUPT_PTR_ATTR_SLOTS handlers seen so far,
+	 * evicting the lowest-count entry on insertion of a new key.  The
+	 * lock serialises insertion + eviction; bumping an existing entry
+	 * still takes the lock so a concurrent eviction cannot race with the
+	 * increment.  rec==NULL callers (deferred_free_enqueue and other
+	 * non-syscall paths) fold into the reserved nr=CORRUPT_PTR_ATTR_NR_NONE
+	 * pseudo-handler bucket so the attribution ring still surfaces them.
+	 * Dumped by defense_counters_periodic_dump(). */
+	struct corrupt_ptr_attr_entry {
+		unsigned int nr;
+		bool do32bit;
+		unsigned long count;
+	} corrupt_ptr_attr[CORRUPT_PTR_ATTR_SLOTS];
+	lock_t corrupt_ptr_attr_lock;
 
 	/* deferred_free_enqueue() saw a pointer that passed the pid-shape
 	 * heuristic but landed outside the cached brk arena -- can't be a

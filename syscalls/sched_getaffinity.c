@@ -104,10 +104,9 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_sched_getaffinity: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -133,10 +132,9 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 		 */
 		if (mask == NULL)
 			goto out_free;
-		if (looks_like_corrupted_ptr(mask)) {
+		if (looks_like_corrupted_ptr(rec, mask)) {
 			outputerr("post_sched_getaffinity: rejected suspicious user_mask_ptr=%p (post_state-scribbled?)\n",
 				  mask);
-			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 			goto out_free;
 		}
 	}

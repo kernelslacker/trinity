@@ -113,9 +113,8 @@ static void post_io_uring_setup(struct syscallrecord *rec)
 	if (params == NULL)
 		goto check_ret;
 
-	if (looks_like_corrupted_ptr(params)) {
+	if (looks_like_corrupted_ptr(rec, params)) {
 		outputerr("post_io_uring_setup: rejected suspicious params=%p (pid-scribbled?)\n", params);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		goto check_ret;

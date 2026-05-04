@@ -50,9 +50,8 @@ static void post_s390_sthyi(struct syscallrecord *rec)
 	if (addr == NULL)
 		return;
 
-	if (looks_like_corrupted_ptr(addr)) {
+	if (looks_like_corrupted_ptr(rec, addr)) {
 		outputerr("post_s390_sthyi: rejected suspicious addr=%p (pid-scribbled?)\n", addr);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;

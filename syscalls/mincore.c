@@ -35,9 +35,8 @@ static void post_mincore(struct syscallrecord *rec)
 	if (vec == NULL)
 		return;
 
-	if (looks_like_corrupted_ptr(vec)) {
+	if (looks_like_corrupted_ptr(rec, vec)) {
 		outputerr("post_mincore: rejected suspicious vec=%p (pid-scribbled?)\n", vec);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->a3 = 0;
 		rec->post_state = 0;
 		return;

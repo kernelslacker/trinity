@@ -147,10 +147,9 @@ static void post_file_getattr(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_file_getattr: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -182,10 +181,9 @@ static void post_file_getattr(struct syscallrecord *rec)
 		 * wholesale stomp could rewrite the snapshot's inner pointer
 		 * fields.  Reject pid-scribbled ufattr/pathname before deref.
 		 */
-		if (looks_like_corrupted_ptr(ufattr) || looks_like_corrupted_ptr(path)) {
+		if (looks_like_corrupted_ptr(rec, ufattr) || looks_like_corrupted_ptr(rec, path)) {
 			outputerr("post_file_getattr: rejected suspicious ufattr=%p filename=%p (post_state-scribbled?)\n",
 				  ufattr, path);
-			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 			goto out_free;
 		}
 	}

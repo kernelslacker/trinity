@@ -152,10 +152,9 @@ static void post_getpeername(struct syscallrecord *rec)
 	 * syscallrecord can still be wholesale-stomped, so guard the
 	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(snap)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_getpeername: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
 	}
@@ -181,11 +180,10 @@ static void post_getpeername(struct syscallrecord *rec)
 		 * fields.  Reject pid-scribbled usockaddr/usockaddr_len before
 		 * deref.
 		 */
-		if (looks_like_corrupted_ptr(addr_p) ||
-		    looks_like_corrupted_ptr(len_p)) {
+		if (looks_like_corrupted_ptr(rec, addr_p) ||
+		    looks_like_corrupted_ptr(rec, len_p)) {
 			outputerr("post_getpeername: rejected suspicious usockaddr=%p usockaddr_len=%p (post_state-scribbled?)\n",
 				  addr_p, len_p);
-			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 			goto out_free;
 		}
 	}
