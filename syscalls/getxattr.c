@@ -17,7 +17,10 @@
 
 static void sanitise_getxattr(struct syscallrecord *rec)
 {
-	char *name = (char *) get_writable_address(256);
+	char *name = (char *) get_writable_struct(256);
+
+	if (!name)
+		return;
 	gen_xattr_name(name, 256);
 	rec->a2 = (unsigned long) name;
 	avoid_shared_buffer(&rec->a3, rec->a4);
