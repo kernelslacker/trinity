@@ -196,8 +196,16 @@ static void __attribute__((noreturn)) mutator_helper(void)
 		fresh = mmap(NULL, vdso_size, PROT_NONE,
 			     MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 		if (fresh != MAP_FAILED) {
+			/* 1-in-RAND_NEGATIVE_RATIO sub the curated
+			 * MAYMOVE|FIXED for a curated edge value —
+			 * exercises mremap's flag-mask check
+			 * (flags & ~(MREMAP_MAYMOVE|MREMAP_FIXED|
+			 * MREMAP_DONTUNMAP) -> EINVAL) which the
+			 * curated pair never reaches. */
 			(void) mremap(vdso_addr, vdso_size, vdso_size,
-				      MREMAP_MAYMOVE | MREMAP_FIXED, fresh);
+				      (int)RAND_NEGATIVE_OR(MREMAP_MAYMOVE |
+							    MREMAP_FIXED),
+				      fresh);
 		}
 		break;
 

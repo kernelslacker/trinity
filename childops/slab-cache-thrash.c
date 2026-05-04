@@ -76,6 +76,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "random.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
@@ -213,7 +214,14 @@ static void burst_inotify_watches(unsigned int n)
 		mask &= ~(1U << (i & 7));
 		if (mask == 0)
 			mask = IN_ACCESS;
-		wd = inotify_add_watch(ifd, path, mask);
+		/* 1-in-RAND_NEGATIVE_RATIO sub the curated event-mask
+		 * for a curated edge value — exercises inotify's mask
+		 * validation (inotify_arg_to_mask rejects masks with no
+		 * IN_ALL_EVENTS bits set; flag bits outside the valid
+		 * set get masked off) which the curated 8-bit cycle
+		 * never reaches. */
+		wd = inotify_add_watch(ifd, path,
+				       (uint32_t)RAND_NEGATIVE_OR(mask));
 		if (wd >= 0)
 			added++;
 	}
@@ -271,7 +279,7 @@ static void burst_inode_cache(unsigned int n)
 static void burst_files_cache(unsigned int n)
 {
 	int fds[SLAB_THRASH_MAX];
-	int seed;
+	int seed_fd;
 	unsigned int i;
 
 	/* dup() bursts force the per-process fdtable to grow when it
@@ -280,18 +288,18 @@ static void burst_files_cache(unsigned int n)
 	 * struct files_struct itself sits behind.  Use /dev/null as the
 	 * source: it's always openable, has minimal kernel-side cost per
 	 * dup, and doesn't keep any state we'd have to clean up. */
-	seed = open("/dev/null", O_RDONLY | O_CLOEXEC);
-	if (seed < 0) {
+	seed_fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+	if (seed_fd < 0) {
 		for (i = 0; i < n; i++)
 			fds[i] = -1;
 		return;
 	}
 
 	for (i = 0; i < n; i++)
-		fds[i] = dup(seed);
+		fds[i] = dup(seed_fd);
 
 	free_fds_interleaved(fds, n);
-	close(seed);
+	close(seed_fd);
 }
 
 static void run_burst(enum slab_target t, unsigned int n)
