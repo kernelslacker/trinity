@@ -3,6 +3,7 @@
  */
 #include "sanitise.h"
 #include "compat.h"
+#include "trinity.h"
 
 #include <sys/inotify.h>
 
@@ -15,6 +16,14 @@ static unsigned long inotify_add_watch_masks[] = {
 	IN_ONESHOT, IN_MASK_CREATE,
 };
 
+static void post_inotify_add_watch(struct syscallrecord *rec)
+{
+	if ((long) rec->retval < 0)
+		return;
+
+	inotify_rm_watch((int) rec->a1, (int) rec->retval);
+}
+
 struct syscallentry syscall_inotify_add_watch = {
 	.name = "inotify_add_watch",
 	.num_args = 3,
@@ -23,4 +32,5 @@ struct syscallentry syscall_inotify_add_watch = {
 	.arg_params[2].list = ARGLIST(inotify_add_watch_masks),
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	.post = post_inotify_add_watch,
 };
