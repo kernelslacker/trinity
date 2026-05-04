@@ -14,6 +14,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "trinity.h"
 #include "utils.h"
 
 static void iommufd_destructor(struct object *obj)
@@ -61,11 +62,15 @@ static int init_iommufd_fds(void)
 	head->shared_alloc = true;
 
 	fd = open_iommufd();
-	if (fd < 0)
+	if (fd < 0) {
+		outputerr("init_iommufd_fds: open(/dev/iommu) failed: %s\n",
+			strerror(errno));
 		return false;
+	}
 
 	obj = alloc_shared_obj(sizeof(struct object));
 	if (obj == NULL) {
+		outputerr("init_iommufd_fds: alloc_shared_obj failed\n");
 		close(fd);
 		return false;
 	}
@@ -93,11 +98,15 @@ static int open_iommufd_fd(void)
 	int fd;
 
 	fd = open_iommufd();
-	if (fd < 0)
+	if (fd < 0) {
+		outputerr("open_iommufd_fd: open(/dev/iommu) failed: %s\n",
+			strerror(errno));
 		return false;
+	}
 
 	obj = alloc_shared_obj(sizeof(struct object));
 	if (obj == NULL) {
+		outputerr("open_iommufd_fd: alloc_shared_obj failed\n");
 		close(fd);
 		return false;
 	}

@@ -17,6 +17,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"
+#include "trinity.h"
 #include "utils.h"
 
 #ifndef SECCOMP_SET_MODE_FILTER
@@ -85,11 +86,15 @@ static int open_seccomp_notif(void)
 	int fd;
 
 	fd = create_seccomp_notif_fd();
-	if (fd < 0)
+	if (fd < 0) {
+		outputerr("open_seccomp_notif: seccomp(SET_MODE_FILTER, NEW_LISTENER) failed: %s\n",
+			strerror(errno));
 		return false;
+	}
 
 	obj = alloc_shared_obj(sizeof(struct object));
 	if (obj == NULL) {
+		outputerr("open_seccomp_notif: alloc_shared_obj failed\n");
 		close(fd);
 		return false;
 	}

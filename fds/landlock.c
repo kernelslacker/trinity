@@ -128,13 +128,17 @@ static int open_landlock_fd(void)
 	}
 
 	fd = syscall(__NR_landlock_create_ruleset, &attr, attr_size, 0);
-	if (fd < 0)
+	if (fd < 0) {
+		outputerr("open_landlock_fd: landlock_create_ruleset(abi=%d) failed: %s\n",
+			abi, strerror(errno));
 		return false;
+	}
 
 	arm_landlock(fd);
 
 	obj = alloc_shared_obj(sizeof(struct object));
 	if (obj == NULL) {
+		outputerr("open_landlock_fd: alloc_shared_obj failed\n");
 		close(fd);
 		return false;
 	}
@@ -142,6 +146,7 @@ static int open_landlock_fd(void)
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_LANDLOCK);
 	return true;
 #else
+	outputerr("open_landlock_fd: __NR_landlock_create_ruleset not defined at build time\n");
 	return false;
 #endif
 }
