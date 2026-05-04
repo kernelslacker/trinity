@@ -8,9 +8,12 @@
  * On success add_key() returns the serial number of the key it created or updated.
  * On error, the value -1 will be returned and errno will have been set to an appropriate error.
  */
+#include <sys/syscall.h>
+#include <unistd.h>
 #include <linux/keyctl.h>
 #include "random.h"
 #include "sanitise.h"
+#include "trinity.h"
 
 static const char *keytypes[] = {
 	"user", "keyring", "big_key",
@@ -32,6 +35,14 @@ static unsigned long addkey_ringids[] = {
 	KEY_SPEC_REQUESTOR_KEYRING,
 };
 
+static void post_add_key(struct syscallrecord *rec)
+{
+	if ((long) rec->retval < 0)
+		return;
+
+	syscall(SYS_keyctl, KEYCTL_INVALIDATE, (long) rec->retval);
+}
+
 struct syscallentry syscall_add_key = {
 	.name = "add_key",
 	.num_args = 5,
@@ -40,5 +51,6 @@ struct syscallentry syscall_add_key = {
 	.arg_params[4].list = ARGLIST(addkey_ringids),
 	.rettype = RET_KEY_SERIAL_T,
 	.sanitise = sanitise_add_key,
+	.post = post_add_key,
 	.group = GROUP_IPC,
 };
