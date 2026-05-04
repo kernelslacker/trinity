@@ -43,27 +43,30 @@ static void sanitise_epoll_ctl(struct syscallrecord *rec)
 	ep->data.fd = get_random_fd();
 	ep->events = set_rand_bitmask(ARRAY_SIZE(epoll_flags), epoll_flags);
 	rec->a4 = (unsigned long) ep;
+
+	/* Snapshot for the post handler -- a4 may be scribbled by a sibling
+	 * syscall before post_epoll_ctl() runs. */
+	rec->post_state = (unsigned long) ep;
 }
 
 static void post_epoll_ctl(struct syscallrecord *rec)
 {
-	void *ep = (void *) rec->a4;
+	void *ep = (void *) rec->post_state;
 
 	if (ep == NULL)
 		return;
 
-	/*
-	 * epoll_ctl free()s rec->a4 directly (not via deferred_free_enqueue),
-	 * so the central guard in deferred-free.c won't catch a pid-scribbled
-	 * value here -- check inline.  Cluster-1/2/3 guard.
-	 */
 	if (looks_like_corrupted_ptr(ep)) {
 		outputerr("post_epoll_ctl: rejected suspicious ep=%p "
 			  "(pid-scribbled?)\n", ep);
 		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a4 = 0;
+		rec->post_state = 0;
 		return;
 	}
 	free(ep);
+	rec->a4 = 0;
+	rec->post_state = 0;
 }
 
 static unsigned long epoll_ctl_ops[] = {

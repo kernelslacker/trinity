@@ -135,31 +135,31 @@ static void sanitise_clone3(struct syscallrecord *rec)
 
 	rec->a1 = (unsigned long) args;
 	rec->a2 = RAND_ARRAY(clone3_sizes);
+
+	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
+	 * syscall before post_clone3() runs. */
+	rec->post_state = (unsigned long) args;
 }
 
 static void post_clone3(struct syscallrecord *rec)
 {
-	struct clone_args *args = (struct clone_args *)(unsigned long) rec->a1;
+	struct clone_args *args = (struct clone_args *)(unsigned long) rec->post_state;
 
-	/*
-	 * Snapshot rec->a1 once and reject pid-scribbled values before
-	 * deref'ing args->set_tid.  Cluster-1/2/3 guard: a sibling fuzzed
-	 * value-result syscall can scribble rec->a1 with a tid/pid between
-	 * syscall return and post-handler entry, and the args->set_tid
-	 * deref then crashes with si_addr==si_pid.
-	 */
 	if (args == NULL)
 		return;
 	if (looks_like_corrupted_ptr(args)) {
 		outputerr("post_clone3: rejected suspicious args=%p (pid-scribbled?)\n",
 			  args);
 		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a1 = 0;
+		rec->post_state = 0;
 		return;
 	}
 
 	if (args->set_tid != 0)
 		deferred_free_enqueue((void *)(unsigned long) args->set_tid, NULL);
-	deferred_freeptr(&rec->a1);
+	rec->a1 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_clone3 = {
