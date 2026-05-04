@@ -29,6 +29,15 @@ static void post_gettid(struct syscallrecord *rec)
 	pid_t got, proc_pid = (pid_t)-1;
 	unsigned int pid_int;
 
+	long ret = (long) rec->retval;
+
+	/* Kernel ABI: gettid() cannot fail; retval must be in [1, PID_MAX_LIMIT=4194304]. */
+	if (ret < 1 || ret > 4194304) {
+		output(0, "gettid oracle: returned pid %ld is out of range (must be in [1, PID_MAX_LIMIT=4194304], never -1)\n",
+		       ret);
+		return;
+	}
+
 	if (!ONE_IN(100))
 		return;
 
