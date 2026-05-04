@@ -77,7 +77,7 @@ static void post_dup2(struct syscallrecord *rec)
 	struct childdata *child;
 	struct stat st_old, st_new;
 
-	if ((long) rec->retval < 0)
+	if ((long)rec->retval < 0 || (long)rec->retval >= (1 << 20))
 		return;
 
 	child = this_child();
