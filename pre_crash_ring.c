@@ -92,6 +92,42 @@ void pre_crash_ring_record_taint(struct childdata *child,
 	atomic_store_explicit(&ring->head, head + 1, memory_order_release);
 }
 
+void pre_crash_ring_record_canary(struct childdata *child,
+				  const struct syscallrecord *rec,
+				  uint64_t observed)
+{
+	struct pre_crash_ring *ring;
+	struct pre_crash_entry *e;
+	uint32_t head;
+
+	if (child == NULL || rec == NULL)
+		return;
+
+	ring = &child->pre_crash;
+
+	head = atomic_load_explicit(&ring->head, memory_order_relaxed);
+	e = &ring->entries[head & (PRE_CRASH_RING_SIZE - 1)];
+
+	/* Preserve the nominal call context (post-mortem usually wants
+	 * the syscall name, even though the args themselves are now
+	 * untrustworthy) and stash the observed canary in a slot we can
+	 * pretty-print at dump time. */
+	e->syscall_nr = rec->nr;
+	e->do32bit = rec->do32bit;
+	e->args[0] = rec->a1;
+	e->args[1] = rec->a2;
+	e->args[2] = rec->a3;
+	e->args[3] = rec->a4;
+	e->args[4] = rec->a5;
+	e->args[5] = (unsigned long) observed;
+	e->retval = (long) rec->retval;
+	e->errno_post = rec->errno_post;
+	e->kind = PRE_CRASH_KIND_CANARY;
+	clock_gettime(CLOCK_MONOTONIC, &e->ts);
+
+	atomic_store_explicit(&ring->head, head + 1, memory_order_release);
+}
+
 static void format_ts_relative(char *out, size_t outlen,
 			       const struct timespec *entry,
 			       const struct timespec *anchor)
@@ -134,6 +170,20 @@ static void dump_one_ring(struct childdata *child,
 			outputerr("  [%s] taint delta=0x%lx now=0x%lx op_type=%lu op_nr=%lu\n",
 				  tsbuf, e->args[0], e->args[1],
 				  e->args[2], e->args[3]);
+			continue;
+		}
+
+		if (e->kind == PRE_CRASH_KIND_CANARY) {
+			struct syscallentry *centry = get_syscall_entry(e->syscall_nr,
+									e->do32bit);
+			const char *cname = centry ? centry->name : "?";
+
+			outputerr("  [%s] CANARY-STOMP nr=%u (%s%s) observed=0x%lx a1=%lx a2=%lx a3=%lx a4=%lx a5=%lx retval=%ld\n",
+				  tsbuf, e->syscall_nr, cname,
+				  e->do32bit ? ",32" : "",
+				  e->args[5], e->args[0], e->args[1],
+				  e->args[2], e->args[3], e->args[4],
+				  e->retval);
 			continue;
 		}
 

@@ -228,6 +228,19 @@ struct stats_s {
 	 * the corruption happened before the guard was active. */
 	unsigned long deferred_free_corrupt_ptr;
 
+	/* handle_syscall_ret() found rec->_canary != REC_CANARY_MAGIC on
+	 * entry — the entire syscallrecord was rewritten between BEFORE
+	 * and AFTER, including bookkeeping fields the per-arg snapshot
+	 * pattern can't shadow.  Distinct from post_handler_corrupt_ptr,
+	 * which only catches scribbled rec->aN pointer slots: a wholesale
+	 * stomp from a sibling value-result syscall whose buffer aliased
+	 * the rec lands here without tripping the snapshot guards.  Bumped
+	 * informationally; the child does NOT abort, since the call has
+	 * already returned and the mismatched data is past being trusted
+	 * anyway.  See pre_crash_ring entry kind PRE_CRASH_KIND_CANARY for
+	 * the matching context capture. */
+	unsigned long rec_canary_stomped;
+
 	/* init_child()'s sibling-freeze step issues mprotect(PROT_READ) on
 	 * every other child's childdata (and on the shared pids[] array) so
 	 * a value-result syscall buffer in one sibling can't scribble over

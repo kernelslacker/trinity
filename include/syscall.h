@@ -49,7 +49,27 @@ struct syscallrecord {
 	enum syscallstate state;
 	char prebuffer[PREBUFFER_LEN];
 	char postbuffer[POSTBUFFER_LEN];
+
+	/*
+	 * Wholesale-stomp detector.  Stamped with REC_CANARY_MAGIC just
+	 * before the syscall is dispatched; checked on entry to
+	 * handle_syscall_ret().  The snapshot pattern (post_state, plus
+	 * per-handler argN shadows) defends against scribbles of individual
+	 * pointer slots, but an aliased value-result write from a sibling
+	 * syscall can clobber the entire syscallrecord including bookkeeping
+	 * fields the snapshot pattern can't shadow.  An unchanged canary at
+	 * post-handler entry rules that class out for the call; a mismatch
+	 * tells us the rec was rewritten under us between BEFORE and AFTER.
+	 *
+	 * Trailing the postbuffer (cold tail) is deliberate: a wholesale
+	 * stomp typically covers many hundreds of bytes, so a canary near
+	 * the end has the highest probability of being inside the clobber
+	 * region while staying off every hot cacheline.
+	 */
+	uint64_t _canary;
 };
+
+#define REC_CANARY_MAGIC	0xdeadbeefcafebabeULL
 
 enum argtype {
 	ARG_UNDEFINED,
