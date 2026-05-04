@@ -11,7 +11,35 @@
 #include "deferred-free.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 #include "compat.h"
+
+/*
+ * Snapshot of the heap allocation sanitise hands to the kernel via
+ * rec->a4, captured at sanitise time and consumed by the post handler.
+ * Lives in rec->post_state, a slot the syscall ABI does not expose, so
+ * the post path is immune to a sibling syscall scribbling rec->a1 or
+ * rec->a4 between the syscall returning and the post handler running.
+ *
+ * Per-op allocation matrix.  Of the 25 PTRACE_* requests this generator
+ * knows about, only four allocate a heap buffer that the post handler
+ * has to free:
+ *
+ *   PTRACE_SETSIGINFO  -> siginfo_t *
+ *   PTRACE_GETSIGINFO  -> siginfo_t *
+ *   PTRACE_SETSIGMASK  -> sigset_t *
+ *   PTRACE_GETSIGMASK  -> sigset_t *
+ *
+ * The other 21 requests feed rec->a4 with non-heap values -- signals,
+ * immediate bitmasks, addresses from get_address() / get_writable_-
+ * address(), or zero -- and leave snap->data NULL.  The post handler
+ * dispatches off the snapshot, not rec->a1, so a sibling scribble of
+ * the request opcode also cannot redirect the free into a non-heap
+ * rec->a4 slot.
+ */
+struct ptrace_post_state {
+	void *data;
+};
 
 static unsigned long ptrace_o_flags[] = {
 	PTRACE_O_TRACESYSGOOD,
@@ -28,6 +56,9 @@ static unsigned long ptrace_o_flags[] = {
 
 static void sanitise_ptrace(struct syscallrecord *rec)
 {
+	struct ptrace_post_state *snap;
+	void *data = NULL;
+
 	/* Use child pids only — tracing parent/screen/tmux hangs forever */
 	rec->a2 = get_pid();
 
@@ -63,6 +94,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 		si->si_code = rand32();
 		si->si_errno = rand() % 133;
 		rec->a4 = (unsigned long) si;
+		data = si;
 		break;
 	}
 
@@ -71,6 +103,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 		siginfo_t *si = zmalloc(sizeof(siginfo_t));
 
 		rec->a4 = (unsigned long) si;
+		data = si;
 		break;
 	}
 
@@ -84,6 +117,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 		generate_rand_bytes((unsigned char *) set, sizeof(sigset_t));
 		rec->a3 = sizeof(sigset_t);
 		rec->a4 = (unsigned long) set;
+		data = set;
 		break;
 	}
 
@@ -93,6 +127,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 
 		rec->a3 = sizeof(sigset_t);
 		rec->a4 = (unsigned long) set;
+		data = set;
 		break;
 	}
 
@@ -136,20 +171,70 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 		/* Unknown requests — leave data as random */
 		break;
 	}
+
+	/*
+	 * Snapshot the heap pointer (or NULL for the 21 ops that did not
+	 * allocate) for the post handler.  A sibling syscall can scribble
+	 * rec->a4 between the syscall returning and the post handler
+	 * running, leaving a real-but-wrong heap pointer that
+	 * looks_like_corrupted_ptr() cannot distinguish from the original;
+	 * the post handler then hands the wrong allocation to free, leaking
+	 * ours and corrupting another sanitise routine's live buffer.  A
+	 * scribble of rec->a1 is just as dangerous -- it would redirect the
+	 * old request-gated dispatch into a non-heap rec->a4 slot.
+	 * rec->post_state is private to the post handler, so the scribblers
+	 * have nothing to scribble there.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->data = data;
+	rec->post_state = (unsigned long) snap;
 }
 
 static void post_ptrace(struct syscallrecord *rec)
 {
-	switch (rec->a1) {
-	case PTRACE_SETSIGINFO:
-	case PTRACE_GETSIGINFO:
-	case PTRACE_SETSIGMASK:
-	case PTRACE_GETSIGMASK:
-		deferred_freeptr(&rec->a4);
-		break;
-	default:
-		break;
+	struct ptrace_post_state *snap = (struct ptrace_post_state *) rec->post_state;
+
+	rec->a4 = 0;
+
+	if (snap == NULL)
+		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_ptrace: rejected suspicious post_state=%p "
+			  "(pid-scribbled?)\n", snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
 	}
+
+	/*
+	 * Defense in depth: if something corrupted the snapshot itself,
+	 * the inner pointer may no longer reference our heap allocation.
+	 * NULL is a legitimate value here (most ops do not allocate), so
+	 * only flag a non-NULL value that fails the heuristic.  Leak
+	 * rather than hand garbage to free().
+	 */
+	if (snap->data != NULL && looks_like_corrupted_ptr(snap->data)) {
+		outputerr("post_ptrace: rejected suspicious snap data=%p "
+			  "(post_state-scribbled?)\n", snap->data);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		deferred_freeptr(&rec->post_state);
+		return;
+	}
+
+	/*
+	 * deferred_free_enqueue() is a no-op on NULL, so the call falls
+	 * through harmlessly for ops that did not allocate.  We use
+	 * enqueue (not deferred_freeptr) so concurrent observers that
+	 * grabbed the address from rec->a4 before a scribble do not UAF.
+	 */
+	deferred_free_enqueue(snap->data, NULL);
+	deferred_freeptr(&rec->post_state);
 }
 
 static unsigned long ptrace_reqs[] = {
