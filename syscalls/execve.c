@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include "arch.h"	// page_size
+#include "deferred-free.h"
 #include "random.h"	// generate_rand_bytes
 #include "sanitise.h"
 #include "shm.h"
@@ -20,6 +21,20 @@
 #include "trinity.h"	// __unused__
 #include "utils.h"
 #include "compat.h"
+
+/*
+ * Snapshot of the argv/envp arrays and their lengths, captured at sanitise
+ * time and consumed by the post handler.  Lives in rec->post_state, a slot
+ * the syscall ABI does not expose, so the post-time array walk operates on
+ * values immune to a sibling syscall scribbling rec->a2/a3/a4 between the
+ * syscall returning and the post handler running.
+ */
+struct execve_post_state {
+	void **argv;
+	void **envp;
+	unsigned long argvcount;
+	unsigned long envpcount;
+};
 
 static unsigned long ** gen_ptrs_to_crap(unsigned int count)
 {
@@ -66,6 +81,7 @@ static void redirect_stdio(void)
 
 static void sanitise_execve(struct syscallrecord *rec)
 {
+	struct execve_post_state *snap;
 	unsigned long **argv, **envp;
 	unsigned int argvcount, envpcount;
 
@@ -79,9 +95,6 @@ static void sanitise_execve(struct syscallrecord *rec)
 	envpcount = rand() % 32;
 	envp = gen_ptrs_to_crap(envpcount);
 
-	/* Pack both counts into a6 (unused by both execve and execveat). */
-	rec->a6 = ((unsigned long)argvcount << 32) | envpcount;
-
 	if (this_syscallname("execve") == true) {
 		rec->a2 = (unsigned long) argv;
 		rec->a3 = (unsigned long) envp;
@@ -89,6 +102,20 @@ static void sanitise_execve(struct syscallrecord *rec)
 		rec->a3 = (unsigned long) argv;
 		rec->a4 = (unsigned long) envp;
 	}
+
+	/*
+	 * Snapshot the array pointers and counts for the post handler.  The
+	 * snapshot lives in rec->post_state, which the syscall ABI does not
+	 * expose, so a sibling syscall scribbling rec->a2/a3/a4 between the
+	 * syscall returning and the post handler running cannot misdirect
+	 * the array walk into an unrelated heap allocation.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->argv = (void **) argv;
+	snap->envp = (void **) envp;
+	snap->argvcount = argvcount;
+	snap->envpcount = envpcount;
+	rec->post_state = (unsigned long) snap;
 }
 
 /* if execve succeeds, we'll never get back here, so this only
@@ -111,58 +138,94 @@ static void free_execve_ptrs(void **argv, void **envp,
 
 static void post_execve(struct syscallrecord *rec)
 {
-	void **argv = (void **) rec->a2;
-	void **envp = (void **) rec->a3;
-	unsigned int argvcount = (unsigned int)(rec->a6 >> 32);
-	unsigned int envpcount = (unsigned int)(rec->a6 & 0xFFFFFFFF);
+	struct execve_post_state *snap = (struct execve_post_state *) rec->post_state;
+
+	rec->a2 = 0;
+	rec->a3 = 0;
+
+	if (snap == NULL)
+		return;
 
 	/*
-	 * free_execve_ptrs() walks argv[]/envp[] then free()s the outer
-	 * arrays.  A pid-scribble in either rec->a2 or rec->a3 makes the
-	 * inner walk crash on the first deref.  Cluster-1/2/3 guard.
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(argv) || looks_like_corrupted_ptr(envp)) {
-		outputerr("post_execve: rejected suspicious argv=%p envp=%p "
-			  "(pid-scribbled?)\n", argv, envp);
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_execve: rejected suspicious post_state=%p "
+			  "(pid-scribbled?)\n", snap);
 		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Defense in depth: if something corrupted the snapshot itself,
+	 * the inner array pointers may no longer reference our heap
+	 * allocations.  free_execve_ptrs() walks argv[]/envp[] before
+	 * free()ing the outer arrays, and a bad pointer crashes on the
+	 * first deref.  Leak rather than walk garbage.
+	 */
+	if (looks_like_corrupted_ptr(snap->argv) ||
+	    looks_like_corrupted_ptr(snap->envp)) {
+		outputerr("post_execve: rejected suspicious argv=%p envp=%p "
+			  "(post_state-scribbled?)\n", snap->argv, snap->envp);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		deferred_freeptr(&rec->post_state);
 		return;
 	}
 	/*
-	 * sanitise_execve() bounds both counts by rand() % 32, so anything
-	 * over 32 means rec->a6 was scribbled by a sibling syscall between
-	 * sanitise and post.  Walking the array with a bogus count reads
-	 * far past the end of the allocation; leak instead — the child
-	 * process is dying anyway.
+	 * sanitise_execve() bounds both counts by rand() % 32; anything
+	 * over 32 means the snapshot was scribbled.  Walking the array
+	 * with a bogus count reads far past the end of the allocation,
+	 * so leak instead — the child process is dying anyway.
 	 */
-	if (argvcount > 32 || envpcount > 32) {
-		outputerr("post_execve: rejected suspicious argvcount=%u envpcount=%u "
-			  "(a6-scribbled?)\n", argvcount, envpcount);
+	if (snap->argvcount > 32 || snap->envpcount > 32) {
+		outputerr("post_execve: rejected suspicious argvcount=%lu envpcount=%lu "
+			  "(post_state-scribbled?)\n", snap->argvcount, snap->envpcount);
 		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		deferred_freeptr(&rec->post_state);
 		return;
 	}
-	free_execve_ptrs(argv, envp, argvcount, envpcount);
+	free_execve_ptrs(snap->argv, snap->envp, snap->argvcount, snap->envpcount);
+	deferred_freeptr(&rec->post_state);
 }
 
 static void post_execveat(struct syscallrecord *rec)
 {
-	void **argv = (void **) rec->a3;
-	void **envp = (void **) rec->a4;
-	unsigned int argvcount = (unsigned int)(rec->a6 >> 32);
-	unsigned int envpcount = (unsigned int)(rec->a6 & 0xFFFFFFFF);
+	struct execve_post_state *snap = (struct execve_post_state *) rec->post_state;
 
-	if (looks_like_corrupted_ptr(argv) || looks_like_corrupted_ptr(envp)) {
+	rec->a3 = 0;
+	rec->a4 = 0;
+
+	if (snap == NULL)
+		return;
+
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_execveat: rejected suspicious post_state=%p "
+			  "(pid-scribbled?)\n", snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (looks_like_corrupted_ptr(snap->argv) ||
+	    looks_like_corrupted_ptr(snap->envp)) {
 		outputerr("post_execveat: rejected suspicious argv=%p envp=%p "
-			  "(pid-scribbled?)\n", argv, envp);
+			  "(post_state-scribbled?)\n", snap->argv, snap->envp);
 		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		deferred_freeptr(&rec->post_state);
 		return;
 	}
-	if (argvcount > 32 || envpcount > 32) {
-		outputerr("post_execveat: rejected suspicious argvcount=%u envpcount=%u "
-			  "(a6-scribbled?)\n", argvcount, envpcount);
+	if (snap->argvcount > 32 || snap->envpcount > 32) {
+		outputerr("post_execveat: rejected suspicious argvcount=%lu envpcount=%lu "
+			  "(post_state-scribbled?)\n", snap->argvcount, snap->envpcount);
 		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		deferred_freeptr(&rec->post_state);
 		return;
 	}
-	free_execve_ptrs(argv, envp, argvcount, envpcount);
+	free_execve_ptrs(snap->argv, snap->envp, snap->argvcount, snap->envpcount);
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_execve = {
