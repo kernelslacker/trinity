@@ -3,15 +3,49 @@
  */
 #include <string.h>
 #include <sys/sysinfo.h>
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 
+/*
+ * Snapshot of the one sysinfo input arg read by the post oracle, captured
+ * at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect the source memcpy at a foreign user
+ * buffer.
+ */
+struct sysinfo_post_state {
+	unsigned long info;
+};
+
 static void sanitise_sysinfo(struct syscallrecord *rec)
 {
+	struct sysinfo_post_state *snap;
+
+	/*
+	 * Clear post_state up front so an early return below leaves the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record.
+	 */
+	rec->post_state = 0;
+
 	avoid_shared_buffer(&rec->a1, sizeof(struct sysinfo));
+
+	/*
+	 * Snapshot the one input arg for the post oracle.  Without this
+	 * the post handler reads rec->a1 at post-time, when a sibling
+	 * syscall may have scribbled the slot: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original info
+	 * user-buffer pointer, so the source memcpy would touch a foreign
+	 * allocation.  post_state is private to the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->info = rec->a1;
+	rec->post_state = (unsigned long) snap;
 }
 
 /*
@@ -41,9 +75,13 @@ static void sanitise_sysinfo(struct syscallrecord *rec)
  *   - memory hotplug torn write: rare but real -- totalram changes
  *     mid-flight while the kernel is still copying.
  *
- * TOCTOU defeat: snapshot the user buffer to a stack-local before the
- * re-call so a sibling thread cannot scribble on rec->a1 between the
- * syscall return and our compare.
+ * TOCTOU defeat: the one input arg (info) is snapshotted at sanitise time
+ * into a heap struct in rec->post_state, so a sibling that scribbles
+ * rec->a1 between syscall return and post entry cannot redirect the
+ * source memcpy at a foreign user buffer.  The user-buffer payload at
+ * info is then snapshotted into a stack-local before the re-call so a
+ * sibling thread cannot scribble it between the original syscall return
+ * and our compare.
  *
  * Sample one in a hundred.  Known benign false-positive sources:
  *   - genuine memory hotplug between the two reads (totalram changes
@@ -58,34 +96,58 @@ static void sanitise_sysinfo(struct syscallrecord *rec)
  */
 static void post_sysinfo(struct syscallrecord *rec)
 {
+	struct sysinfo_post_state *snap =
+		(struct sysinfo_post_state *) rec->post_state;
 	struct sysinfo user_view, kernel_view;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_sysinfo: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+				   __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a1 == 0)
-		return;
+	if (snap->info == 0)
+		goto out_free;
 
 	{
-		void *info = (void *)(unsigned long) rec->a1;
+		void *info = (void *)(unsigned long) snap->info;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner info
+		 * field.  Reject pid-scribbled info before deref.
+		 */
 		if (looks_like_corrupted_ptr(info)) {
-			outputerr("post_sysinfo: rejected suspicious info=%p (pid-scribbled?)\n",
+			outputerr("post_sysinfo: rejected suspicious info=%p (post_state-scribbled?)\n",
 				  info);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+					   __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	memcpy(&user_view, (void *)(unsigned long) rec->a1,
+	memcpy(&user_view, (void *)(unsigned long) snap->info,
 	       sizeof(user_view));
 
 	if (sysinfo(&kernel_view) != 0)
-		return;
+		goto out_free;
 
 	if (user_view.totalram != kernel_view.totalram) {
 		output(0, "sysinfo oracle: totalram user=%lu kernel=%lu\n",
@@ -112,6 +174,9 @@ static void post_sysinfo(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.sysinfo_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_sysinfo = {
