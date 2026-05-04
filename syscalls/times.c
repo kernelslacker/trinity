@@ -3,15 +3,49 @@
  */
 #include <string.h>
 #include <sys/times.h>
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 
+/*
+ * Snapshot of the one times input arg read by the post oracle, captured
+ * at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect the source memcpy at a foreign user
+ * buffer.
+ */
+struct times_post_state {
+	unsigned long tbuf;
+};
+
 static void sanitise_times(struct syscallrecord *rec)
 {
+	struct times_post_state *snap;
+
+	/*
+	 * Clear post_state up front so an early return below leaves the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record.
+	 */
+	rec->post_state = 0;
+
 	avoid_shared_buffer(&rec->a1, sizeof(struct tms));
+
+	/*
+	 * Snapshot the one input arg for the post oracle.  Without this
+	 * the post handler reads rec->a1 at post-time, when a sibling
+	 * syscall may have scribbled the slot: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original tbuf
+	 * user-buffer pointer, so the source memcpy would touch a foreign
+	 * allocation.  post_state is private to the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->tbuf = rec->a1;
+	rec->post_state = (unsigned long) snap;
 }
 
 /*
@@ -39,11 +73,15 @@ static void sanitise_times(struct syscallrecord *rec)
  *   - sibling-thread scribble of the user receive buffer between the
  *     syscall return and our post-hook re-read.
  *
- * TOCTOU defeat: snapshot the user buffer to a stack-local before the re-
- * call so a sibling thread cannot scribble on rec->a1 between the original
- * syscall return and the comparison.  Re-issue times() into a separate
- * stack buffer; if the re-call returns (clock_t)-1 give up rather than
- * report a false divergence.  Compare all five values with no early-return
+ * TOCTOU defeat: the one input arg (tbuf) is snapshotted at sanitise time
+ * into a heap struct in rec->post_state, so a sibling that scribbles
+ * rec->a1 between syscall return and post entry cannot redirect the
+ * source memcpy at a foreign user buffer.  The user-buffer payload at
+ * tbuf is then snapshotted into a stack-local before the re-call so a
+ * sibling thread cannot scribble it between the original syscall return
+ * and the comparison.  Re-issue times() into a separate stack buffer; if
+ * the re-call returns (clock_t)-1 give up rather than report a false
+ * divergence.  Compare all five values with no early-return
  * so multi-field corruption surfaces in a single sample, and emit one log
  * line carrying both 5-tuples so the operator sees the full divergence
  * shape at once.  Bump the anomaly counter once per sample regardless of
@@ -56,35 +94,59 @@ static void sanitise_times(struct syscallrecord *rec)
  */
 static void post_times(struct syscallrecord *rec)
 {
+	struct times_post_state *snap =
+		(struct times_post_state *) rec->post_state;
 	struct tms first, recall;
 	clock_t r;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_times: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+				   __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((clock_t) rec->retval == (clock_t) -1)
-		return;
+		goto out_free;
 
-	if (rec->a1 == 0)
-		return;
+	if (snap->tbuf == 0)
+		goto out_free;
 
 	{
-		void *tbuf = (void *)(unsigned long) rec->a1;
+		void *tbuf = (void *)(unsigned long) snap->tbuf;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner tbuf
+		 * field.  Reject pid-scribbled tbuf before deref.
+		 */
 		if (looks_like_corrupted_ptr(tbuf)) {
-			outputerr("post_times: rejected suspicious tbuf=%p (pid-scribbled?)\n",
+			outputerr("post_times: rejected suspicious tbuf=%p (post_state-scribbled?)\n",
 				  tbuf);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+					   __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	memcpy(&first, (struct tms *)(unsigned long) rec->a1, sizeof(first));
+	memcpy(&first, (struct tms *)(unsigned long) snap->tbuf, sizeof(first));
 
 	r = times(&recall);
 	if (r == (clock_t) -1)
-		return;
+		goto out_free;
 
 	if (r < (clock_t) rec->retval ||
 	    recall.tms_utime  < first.tms_utime  ||
@@ -101,6 +163,9 @@ static void post_times(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.times_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_times = {
