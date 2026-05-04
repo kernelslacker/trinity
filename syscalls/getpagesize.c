@@ -17,6 +17,11 @@
  * agree with sysconf, otherwise userspace mmap math, malloc arenas
  * and stack guard placement all silently corrupt.
  *
+ * The page size is also required by the architecture to be a power of
+ * two; a non-pow2 value indicates kernel build/init misconfiguration
+ * or vsyscall/auxv corruption, so flag it even if the two sources
+ * happen to agree.
+ *
  * Only sample successful returns; -ENOSYS is the expected outcome on
  * the most common host and isn't an anomaly.  ONE_IN(100) keeps the
  * sysconf cost in line with the rest of the oracle family.
@@ -35,8 +40,9 @@ static void post_getpagesize(struct syscallrecord *rec)
 	if (expected <= 0)
 		return;
 
-	if ((long) rec->retval != expected) {
-		output(0, "getpagesize oracle: returned %ld but sysconf(_SC_PAGESIZE)=%ld\n",
+	if ((long) rec->retval != expected ||
+	    (expected & (expected - 1))) {
+		output(0, "getpagesize oracle: returned %ld but sysconf(_SC_PAGESIZE)=%ld (must match and be a power of two)\n",
 		       (long) rec->retval, expected);
 		__atomic_add_fetch(&shm->stats.getpagesize_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
