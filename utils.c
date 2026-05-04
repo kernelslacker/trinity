@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include "child.h"
 #include "debug.h"
+#include "deferred-free.h"
 #include "objects.h"
 #include "params.h"
 #include "pc_format.h"
@@ -878,6 +879,7 @@ void * __zmalloc(size_t size, const char *func)
 
 done:
 	memset(p, 0, size);
+	deferred_alloc_track(p);
 	return p;
 }
 

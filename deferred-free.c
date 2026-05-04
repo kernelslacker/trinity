@@ -50,6 +50,64 @@ struct deferred_entry {
 };
 
 /*
+ * Side-set of "live" malloc results.  __zmalloc() registers every
+ * pointer it returns; deferred_free_enqueue() consumes the matching
+ * entry to confirm the pointer it has been handed is a real malloc
+ * result before letting it through to free().
+ *
+ * The pre-existing looks_like_corrupted_ptr() heuristic only rejects
+ * sub-page / above-canonical / mis-aligned values.  A wholesale stomp
+ * that scribbles rec->post_state (or rec->aN) with an address that
+ * happens to land inside the heap arena passes every band of that test
+ * -- 8-byte aligned, in user VA, not pid-shaped -- yet is not a real
+ * malloc-return.  Eight ASAN "bad-free" reports hit exactly that gap:
+ * the freed pointer was heap-region but not at an allocation start, so
+ * libc's free() rejects it.  Tracking the set of live malloc results
+ * gives us ground truth that the pointer-shape heuristic can't.
+ *
+ * Sized for the in-flight window: between a sanitise's zmalloc and the
+ * matching post handler's deferred_free_enqueue, the same syscall does
+ * a handful of additional zmallocs (snap struct, arg generators, etc.)
+ * -- well under a hundred in the worst case.  256 entries gives ample
+ * headroom; on overflow we evict in arrival order, which only causes a
+ * benign drop (memory leak) of the evicted pointer's eventual free.
+ *
+ * Process-local: zero-initialised BSS, COW-shared at fork, written
+ * single-threaded by the owning child.  No locking needed.
+ */
+#define ALLOC_TRACK_SIZE	256
+
+static void *alloc_track[ALLOC_TRACK_SIZE];
+static unsigned int alloc_track_head;
+
+void deferred_alloc_track(void *ptr)
+{
+	if (ptr == NULL)
+		return;
+
+	alloc_track[alloc_track_head % ALLOC_TRACK_SIZE] = ptr;
+	alloc_track_head++;
+}
+
+/*
+ * Consume the entry matching @ptr.  Returns true if found (and clears
+ * the slot); false if the pointer was not in the side-set, meaning the
+ * caller is about to free something __zmalloc() never produced.
+ */
+static bool alloc_track_consume(void *ptr)
+{
+	unsigned int i;
+
+	for (i = 0; i < ALLOC_TRACK_SIZE; i++) {
+		if (alloc_track[i] == ptr) {
+			alloc_track[i] = NULL;
+			return true;
+		}
+	}
+	return false;
+}
+
+/*
  * Ring storage lives in an mmap'd region whose address range is registered
  * with shared_regions[] via track_shared_region().  That tracking lets
  * avoid_shared_buffer() and the mm-syscall sanitisers refuse fuzzed
@@ -159,6 +217,34 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 	if (looks_like_corrupted_ptr(ptr) && free_func == free) {
 		outputerr("deferred_free_enqueue: rejected suspicious ptr=%p "
 			  "(pid-scribbled?)\n", ptr);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	/*
+	 * Ground-truth check: refuse to enqueue a pointer that __zmalloc()
+	 * never produced.  Catches the bad-free class where a sibling stomp
+	 * (or kernel write into a mistakenly-aliased rec field) overwrites
+	 * a snapshot/arg slot with a heap-region-shaped value that defeats
+	 * the heuristic guard above.  Eight ASAN bad-frees in a recent run
+	 * all matched this shape: 8-byte aligned, in user VA, sitting inside
+	 * the heap arena, but not at any malloc-returned offset.  The custom
+	 * free_func path is exempt -- callers using their own free routine
+	 * may legitimately pass non-heap tokens (sentinel values, mmap
+	 * pointers managed by the alt allocator) the same gating convention
+	 * the looks_like_corrupted_ptr check above uses.
+	 */
+	if (free_func == free && !alloc_track_consume(ptr)) {
+		static unsigned long unknown_drops;
+		unsigned long n = ++unknown_drops;
+		if ((n % 1000) == 1) {
+			char pcbuf[128];
+			outputerr("deferred_free_enqueue: rejected ptr=%p "
+				  "(not a tracked allocation) caller=%s "
+				  "[%lu cumulative]\n", ptr,
+				  pc_to_string(__builtin_return_address(0),
+					       pcbuf, sizeof(pcbuf)), n);
+		}
 		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
 		return;
 	}
