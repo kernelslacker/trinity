@@ -3,6 +3,7 @@
  */
 #include <stdlib.h>
 #include "arch.h"
+#include "deferred-free.h"
 #include "maps.h"
 #include "random.h"
 #include "sanitise.h"
@@ -12,10 +13,43 @@
 
 #define WHOLE 1
 
+/*
+ * Snapshot of the four munmap inputs read by the post handler, captured
+ * at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot:
+ *   - flip the action gate that decides destroy_object vs prot=0
+ *     invalidate (a stomped 1 destroys an arbitrary trinity object via
+ *     container_of(); a stomped 0 leaves a stale entry the consumer
+ *     pool will hand out for write);
+ *   - retarget the trinity-tracked map pointer the post handler
+ *     destroys or invalidates (looks_like_corrupted_ptr cannot tell a
+ *     real-but-wrong heap address from a real map pointer);
+ *   - steer the proc-maps oracle's range arguments at a different
+ *     address window than the syscall actually operated on (forging
+ *     either a clean compare against an unrelated /proc/self/maps slice
+ *     or an "unmap leaked" anomaly that never happened).
+ */
+struct munmap_post_state {
+	unsigned long addr;
+	unsigned long len;
+	unsigned long map;
+	unsigned long action;
+};
+
 static void sanitise_munmap(struct syscallrecord *rec)
 {
+	struct munmap_post_state *snap;
 	struct map *map = common_set_mmap_ptr_len();
 	int action = 0;
+
+	/*
+	 * Clear post_state up front so an early return below leaves the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record.
+	 */
+	rec->post_state = 0;
 
 	if (map == NULL) {
 		/* No mapping to unmap. Stash NULL/0 so post_munmap sees
@@ -74,22 +108,70 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	/* Stash map pointer and action in unused arg slots for post callback. */
 	rec->a3 = (unsigned long) map;
 	rec->a4 = action;
+
+	/*
+	 * Snapshot the four inputs the post handler reads.  Without this
+	 * the post handler reads rec->a1/a2/a3/a4 at post-time, when a
+	 * sibling syscall may have scribbled the slots: a stomped action
+	 * flips destroy_object vs prot=0 invalidate (destroying an
+	 * arbitrary object via container_of, or leaving a stale entry the
+	 * pool hands out for write), looks_like_corrupted_ptr() cannot
+	 * tell a real-but-wrong heap address from a real map pointer so a
+	 * foreign-heap stomp slips the rec->a3 guard, and a stomped
+	 * rec->a1/a2 retargets the proc-maps oracle at a window the
+	 * syscall never touched -- forging either a clean compare or a
+	 * never-happened anomaly.  post_state is private to the post
+	 * handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->addr   = rec->a1;
+	snap->len    = rec->a2;
+	snap->map    = rec->a3;
+	snap->action = rec->a4;
+	rec->post_state = (unsigned long) snap;
 }
 
 static void post_munmap(struct syscallrecord *rec)
 {
-	struct map *map = (struct map *) rec->a3;
-	int action = rec->a4;
+	struct munmap_post_state *snap =
+		(struct munmap_post_state *) rec->post_state;
+	struct map *map;
+	unsigned long action;
+
+	if (snap == NULL)
+		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_munmap: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+				   __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
 
 	if (rec->retval != 0)
-		return;
+		goto out_free;
 
-	/* Cluster-1/2/3 guard: reject pid-scribbled rec->a3. */
+	map = (struct map *) snap->map;
+	action = snap->action;
+
+	/*
+	 * Defense in depth: even with the post_state snapshot, a wholesale
+	 * stomp could rewrite the snapshot's inner map field.  Reject a
+	 * pid-scribbled map before deref.
+	 */
 	if (map != NULL && looks_like_corrupted_ptr(map)) {
-		outputerr("post_munmap: rejected suspicious map=%p (pid-scribbled?)\n",
+		outputerr("post_munmap: rejected suspicious map=%p (post_state-scribbled?)\n",
 			  (void *) map);
-		shm->stats.post_handler_corrupt_ptr++;
-		return;
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
+				   __ATOMIC_RELAXED);
+		goto out_free;
 	}
 
 	if (action == WHOLE) {
@@ -119,15 +201,18 @@ static void post_munmap(struct syscallrecord *rec)
 	 * /proc/self/maps.  Any overlapping entry means the kernel's VMA
 	 * teardown silently failed despite returning success.
 	 */
-	if (rec->a1 != 0 && rec->a2 > 0 && ONE_IN(100)) {
-		if (!proc_maps_check(rec->a1, rec->a2, 0, false)) {
+	if (snap->addr != 0 && snap->len > 0 && ONE_IN(100)) {
+		if (!proc_maps_check(snap->addr, snap->len, 0, false)) {
 			output(0, "mmap oracle: munmap(%lx, %lu) succeeded "
 			       "but range still in /proc/self/maps\n",
-			       rec->a1, rec->a2);
+			       snap->addr, snap->len);
 			__atomic_add_fetch(&shm->stats.mmap_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_munmap = {
