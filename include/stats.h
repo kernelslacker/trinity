@@ -260,6 +260,16 @@ struct stats_s {
 	} corrupt_ptr_attr[CORRUPT_PTR_ATTR_SLOTS];
 	lock_t corrupt_ptr_attr_lock;
 
+	/* Monotonic counter feeding the value-sampling rate-limiter inside
+	 * looks_like_corrupted_ptr.  Distinct from post_handler_corrupt_ptr
+	 * (which is also bumped from the rec==NULL path through
+	 * post_handler_corrupt_ptr_bump and so cannot be used as the sample
+	 * cadence source -- a sample log line printed from the bump helper
+	 * has no value to print).  RELAXED bumps; the sample cadence does
+	 * not need to be exactly every Nth rejection across a contended
+	 * fleet, only roughly so. */
+	unsigned long corrupt_ptr_sample_seq;
+
 	/* deferred_free_enqueue() saw a pointer that passed the pid-shape
 	 * heuristic but landed outside the cached brk arena -- can't be a
 	 * real __zmalloc() result.  Defense-in-depth alongside the live-
