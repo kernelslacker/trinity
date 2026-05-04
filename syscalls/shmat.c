@@ -5,6 +5,7 @@
 #include "arch.h"
 #include "random.h"
 #include "sanitise.h"
+#include "utils.h"
 
 static unsigned long shmat_flags[] = {
 	SHM_RDONLY, SHM_RND,
@@ -23,6 +24,17 @@ static void sanitise_shmat(struct syscallrecord *rec)
 		rec->a2 = (unsigned long) get_map() & PAGE_MASK;
 }
 
+static void post_shmat(struct syscallrecord *rec)
+{
+	void *addr = (void *) rec->retval;
+
+	if (addr == (void *) -1)
+		return;
+
+	if ((unsigned long) addr & (page_size - 1))
+		post_handler_corrupt_ptr_bump(rec, NULL);
+}
+
 struct syscallentry syscall_shmat = {
 	.name = "shmat",
 	.group = GROUP_IPC,
@@ -33,4 +45,5 @@ struct syscallentry syscall_shmat = {
 	.arg_params[0].range.hi = 65535,
 	.arg_params[2].list = ARGLIST(shmat_flags),
 	.sanitise = sanitise_shmat,
+	.post = post_shmat,
 };
