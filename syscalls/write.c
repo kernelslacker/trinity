@@ -11,6 +11,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
+#include "utils.h"
 
 static void sanitise_write(struct syscallrecord *rec)
 {
@@ -34,11 +35,28 @@ static void sanitise_write(struct syscallrecord *rec)
 
 	rec->a2 = (unsigned long) ptr;
 	rec->a3 = size;
+	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
+	 * syscall before post_write() runs. */
+	rec->post_state = (unsigned long) ptr;
 }
 
 static void post_write(struct syscallrecord *rec)
 {
-	deferred_freeptr(&rec->a2);
+	void *buf = (void *) rec->post_state;
+
+	if (buf == NULL)
+		return;
+
+	if (looks_like_corrupted_ptr(buf)) {
+		outputerr("post_write: rejected suspicious buf=%p (pid-scribbled?)\n", buf);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a2 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a2 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_write = {

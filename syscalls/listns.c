@@ -8,6 +8,9 @@
 #include "random.h"
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
 
 /*
  * struct ns_id_req from include/uapi/linux/nsfs.h.
@@ -63,11 +66,29 @@ static void sanitise_listns(struct syscallrecord *rec)
 	 * an alloc_shared region.
 	 */
 	avoid_shared_buffer(&rec->a2, rec->a3 * sizeof(__u64));
+
+	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
+	 * syscall before post_listns() runs. */
+	rec->post_state = (unsigned long) req;
 }
 
 static void post_listns(struct syscallrecord *rec)
 {
-	deferred_freeptr(&rec->a1);
+	void *req = (void *) rec->post_state;
+
+	if (req == NULL)
+		return;
+
+	if (looks_like_corrupted_ptr(req)) {
+		outputerr("post_listns: rejected suspicious req=%p (pid-scribbled?)\n", req);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->a1 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a1 = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_listns = {
