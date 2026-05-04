@@ -9,6 +9,7 @@
 #include "shm.h"
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 /*
  * Oracle: getpgid(0) returns the process group id of the current task in
@@ -34,6 +35,24 @@ static void post_getpgid(struct syscallrecord *rec)
 	FILE *f;
 	char line[256];
 	pid_t got, proc_pgid = (pid_t)-1;
+
+	/*
+	 * Kernel ABI: sys_getpgid returns task_pgrp_vnr(p) — a positive pid in
+	 * the caller's pid_ns, bounded by PID_MAX_LIMIT (4194304). Failure
+	 * returns -1 with errno set (-1UL on the syscall return path). A retval
+	 * outside [1, PID_MAX_LIMIT] that isn't -1UL is a corrupted retval (a
+	 * sign-extension tear, a -errno leaking through the return path, or a
+	 * pid_ns translation bug) — reject it before the ONE_IN(100) sample
+	 * gates the procfs NSpgid: cross-check, so corruption fires on every
+	 * call rather than the 1-in-100 sample.
+	 */
+	if ((rec->retval < 1UL || rec->retval > 4194304UL) &&
+	    rec->retval != (unsigned long)-1L) {
+		output(0, "post_getpgid: rejected returned pgid 0x%lx outside [1, PID_MAX_LIMIT=4194304] (and not -1)\n",
+		       rec->retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		return;
+	}
 
 	if (!ONE_IN(100))
 		return;
