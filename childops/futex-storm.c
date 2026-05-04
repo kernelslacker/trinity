@@ -104,7 +104,7 @@ static void do_wake(struct futex_storm_shared *s, int idx)
 	 * exercises the value-vs-enqueue ordering.
 	 */
 	__atomic_add_fetch(&s->futexes[idx], 1, __ATOMIC_RELAXED);
-	syscall(__NR_futex, &s->futexes[idx], FUTEX_WAKE, nwake, NULL, NULL, 0);
+	syscall(__NR_futex, &s->futexes[idx], (int)RAND_NEGATIVE_OR(FUTEX_WAKE), nwake, NULL, NULL, 0);
 }
 
 static void do_requeue(struct futex_storm_shared *s, int idx1, int idx2)

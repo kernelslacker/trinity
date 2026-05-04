@@ -203,7 +203,7 @@ bool epoll_volatility(struct childdata *child)
 			 * op succeeds and grows the per-fd epitem list. */
 			fd_idx = pick_fd_idx(registered, epfd_idx, false);
 			memset(&ev, 0, sizeof(ev));
-			ev.events  = random_events();
+			ev.events  = (uint32_t)RAND_NEGATIVE_OR(random_events());
 			ev.data.fd = target_fds[fd_idx];
 			rc = epoll_ctl(epfds[epfd_idx], EPOLL_CTL_ADD,
 				       target_fds[fd_idx], &ev);
