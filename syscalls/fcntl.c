@@ -39,8 +39,43 @@ unsigned int random_fcntl_setfl_flags(void)
 	return set_rand_bitmask(ARRAY_SIZE(fcntl_o_flags), fcntl_o_flags);
 }
 
+/*
+ * Stratified cmd picker.  Uniform sampling across the full cmd list under-
+ * exercises the rarer kernel paths (lease/OFD-lock/owner_ex/seals/notify),
+ * because most of the cmds in fcntl_flags[] route into a small set of common
+ * file_struct accessors.  Bias the picker so the rare paths get hit ~30% of
+ * the time, and also drop in a fully random cmd ~10% of the time to cover
+ * out-of-table values that exercise the kernel's input validation.
+ */
+static const unsigned long fcntl_cmds_common[] = {
+	F_GETFD, F_SETFD, F_DUPFD, F_GETFL, F_SETFL,
+};
+
+static const unsigned long fcntl_cmds_rare[] = {
+	F_SETLEASE, F_GETLEASE,
+	F_GETOWN_EX, F_SETOWN_EX,
+	F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW,
+	F_NOTIFY,
+	F_ADD_SEALS, F_GET_SEALS,
+	F_SETSIG, F_GETSIG,
+	F_SETPIPE_SZ,
+};
+
+static unsigned long pick_fcntl_cmd(void)
+{
+	unsigned int r = rand() % 100;
+
+	if (r < 60)
+		return fcntl_cmds_common[rand() % ARRAY_SIZE(fcntl_cmds_common)];
+	if (r < 90)
+		return fcntl_cmds_rare[rand() % ARRAY_SIZE(fcntl_cmds_rare)];
+	return (unsigned long) rand32();
+}
+
 static void sanitise_fcntl(struct syscallrecord *rec)
 {
+	rec->a2 = pick_fcntl_cmd();
+
 	switch (rec->a2) {
 	/* arg = fd */
 	case F_DUPFD:
