@@ -159,6 +159,24 @@ static void post_getpeername(struct syscallrecord *rec)
 		return;
 	}
 
+	/*
+	 * Kernel ABI: getpeername returns 0 on success and -1UL (errno style)
+	 * on failure — those are the only two legitimate retval shapes. Any
+	 * other value is a structural ABI regression: a sign-extension tear
+	 * across the 32/64 boundary, a torn copy-out of the status code, or a
+	 * sibling thread scribbling rec->retval between syscall return and
+	 * post-hook entry. Reject before the ONE_IN(100) sample gate, which
+	 * would otherwise miss a corrupted retval 99% of the time, and before
+	 * the != 0 early-return that today silently absorbs both -1 and any
+	 * wild value into the same "give up quietly" branch.
+	 */
+	if (rec->retval != 0 && rec->retval != (unsigned long)-1L) {
+		outputerr("post_getpeername: rejected retval 0x%lx outside {0, -1} (kernel ABI: status code only)\n",
+			  rec->retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
+	}
+
 	if (!ONE_IN(100))
 		goto out_free;
 
