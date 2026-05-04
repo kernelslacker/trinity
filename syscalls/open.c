@@ -221,9 +221,28 @@ static void post_openat2(struct syscallrecord *rec)
 	void *how = (void *) rec->post_state;
 	int fd = rec->retval;
 
-	if (fd != -1)
-		close(fd);
+	/*
+	 * Bound the returned fd before close().  -1 is the documented
+	 * failure return — skip close but fall through to release the
+	 * captured how snapshot.  Any other out-of-range value is the
+	 * fingerprint of a torn / sign-extended retval that would steer
+	 * close() at a foreign fd in our own process; log + bump the
+	 * corruption counter and converge on the same cleanup so the
+	 * heap-allocated snapshot is not leaked.  Mirrors the bound used
+	 * by post_open / post_openat / post_creat siblings.
+	 */
+	if (fd == -1)
+		goto out_free;
 
+	if (fd < 0 || fd >= (1 << 20)) {
+		output(0, "post_openat2: rejected fd %d out of [0, 1<<20) before close\n", fd);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
+	}
+
+	close(fd);
+
+out_free:
 	if (how == NULL)
 		return;
 
