@@ -208,11 +208,16 @@ static void post_seccomp(struct syscallrecord *rec)
 	case SECCOMP_SET_MODE_FILTER: {
 		struct sock_fprog *fprog = (struct sock_fprog *) snap->heap;
 
-		/* When SECCOMP_FILTER_FLAG_NEW_LISTENER is set, a successful
-		 * SECCOMP_SET_MODE_FILTER returns a notification fd. */
-		if ((rec->a2 & SECCOMP_FILTER_FLAG_NEW_LISTENER) &&
-		    (int)rec->retval >= 0)
-			close((int)rec->retval);
+		if (rec->a2 & SECCOMP_FILTER_FLAG_NEW_LISTENER) {
+			int fd = (int)rec->retval;
+
+			if (fd >= 0 && fd < (1 << 20)) {
+				close(fd);
+			} else if (fd >= 0) {
+				outputerr("post_seccomp: rejecting out-of-bound NEW_LISTENER fd=%d\n", fd);
+				post_handler_corrupt_ptr_bump(rec, NULL);
+			}
+		}
 
 		free(fprog->filter);
 		deferred_free_enqueue(fprog, NULL);
