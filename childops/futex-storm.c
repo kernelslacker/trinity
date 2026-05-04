@@ -51,6 +51,20 @@
 #define MAX_WORKERS	6
 #define STORM_BUDGET_NS	200000000L	/* 200 ms wall-clock per round */
 
+/*
+ * Per-invocation op-selection mode.  All workers in a single futex_storm()
+ * call share the mode picked by the parent before fork(), so the storm as
+ * a whole presents one coherent waiter/wake population to the kernel
+ * rather than every worker independently sampling a uniform distribution.
+ */
+enum storm_mode {
+	STORM_WAVE_NORMAL,	/* original: uniform 4-way op pick, free idx */
+	STORM_SAME_FUTEX_BURST,	/* all actors stack on one word, mostly WAIT */
+	STORM_WAKE_BEFORE_WAIT,	/* WAKE-biased; hit no-waiter / drain paths */
+	STORM_REQUEUE_HEAVY,	/* concentrate REQUEUE/CMP_REQUEUE on one pair */
+	STORM_MODE_MAX,
+};
+
 struct futex_storm_shared {
 	pthread_barrier_t barrier;
 
@@ -69,6 +83,13 @@ struct futex_storm_shared {
 	 * each futex syscall.  Drained into shm->stats.futex_storm_iters
 	 * by the parent before teardown. */
 	unsigned long iters;
+
+	/* Op-selection mode and the two pinned indices used by the
+	 * SAME_FUTEX_BURST and REQUEUE_HEAVY modes.  Set once by the
+	 * parent before fork() and read-only in the workers. */
+	unsigned int mode;
+	int pinned1;
+	int pinned2;
 };
 
 /* ------------------------------------------------------------------ */
@@ -166,9 +187,61 @@ static void inner_worker(struct futex_storm_shared *s)
 	pthread_barrier_wait(&s->barrier);
 
 	while (!__atomic_load_n(&s->done, __ATOMIC_RELAXED)) {
-		unsigned int op = rand() % 4;
-		int idx1 = rand() % NR_FUTEX_WORDS;
-		int idx2 = rand() % NR_FUTEX_WORDS;
+		unsigned int r = (unsigned int)rand();
+		unsigned int op;
+		int idx1, idx2;
+
+		switch (s->mode) {
+		case STORM_SAME_FUTEX_BURST:
+			/*
+			 * Every worker pins to one shared word and mostly
+			 * sleeps on it, so the hashed bucket grows to a
+			 * deep waiter chain before the occasional WAKE
+			 * drains it — exercises the bulk wake_q walk and
+			 * the per-bucket plist ordering, which the uniform
+			 * 4-way mix never builds up enough waiters to hit.
+			 */
+			idx1 = idx2 = s->pinned1;
+			op = ((r % 10) < 7) ? 0 : 1;
+			break;
+		case STORM_WAKE_BEFORE_WAIT:
+			/*
+			 * WAKE-heavy with free indices, so most wakes land
+			 * on a bucket with zero waiters (no-op fast path)
+			 * or on a waiter that hasn't finished enqueuing yet
+			 * (the value-bump in do_wake forces -EWOULDBLOCK).
+			 * Both paths are skipped by the alternation-style
+			 * wait-then-wake distribution.
+			 */
+			idx1 = (int)((r >> 4) % NR_FUTEX_WORDS);
+			idx2 = (int)((r >> 8) % NR_FUTEX_WORDS);
+			op = ((r % 10) < 7) ? 1 : 0;
+			break;
+		case STORM_REQUEUE_HEAVY:
+			/*
+			 * Concentrate REQUEUE / CMP_REQUEUE traffic on a
+			 * single source/destination pair so the requeue
+			 * path runs back-to-back against the same two
+			 * buckets.  A handful of WAITs keep the source
+			 * populated; one WAKE in ten clears the head so
+			 * the next requeue isn't a no-op.
+			 */
+			idx1 = s->pinned1;
+			idx2 = s->pinned2;
+			if ((r % 10) < 6)
+				op = 2 + (r & 1);
+			else if ((r % 10) < 9)
+				op = 0;
+			else
+				op = 1;
+			break;
+		case STORM_WAVE_NORMAL:
+		default:
+			op   = r % 4;
+			idx1 = (int)((r >> 4) % NR_FUTEX_WORDS);
+			idx2 = (int)((r >> 8) % NR_FUTEX_WORDS);
+			break;
+		}
 
 		switch (op) {
 		case 0: do_wait(s, idx1);              break;
@@ -224,6 +297,18 @@ bool futex_storm(struct childdata *child)
 	memset(s->futexes, 0, sizeof(s->futexes));
 	s->done  = 0;
 	s->iters = 0;
+
+	/*
+	 * Pick the per-invocation op-selection mode and the two pinned
+	 * indices the bucket-burst / requeue-heavy modes use.  The two
+	 * indices must differ so REQUEUE_HEAVY actually drives traffic
+	 * across two buckets rather than degenerating into a self-requeue.
+	 */
+	s->mode    = (unsigned int)rand() % STORM_MODE_MAX;
+	s->pinned1 = rand() % NR_FUTEX_WORDS;
+	s->pinned2 = rand() % NR_FUTEX_WORDS;
+	if (s->pinned2 == s->pinned1)
+		s->pinned2 = (s->pinned1 + 1) % NR_FUTEX_WORDS;
 
 	if (pthread_barrierattr_init(&attr) != 0)
 		goto out_unmap;
