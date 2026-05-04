@@ -36,6 +36,7 @@
 #include <linux/sched/types.h>
 
 #include "child.h"
+#include "random.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -71,7 +72,12 @@ bool sched_cycler(struct childdata *child)
 	switch (cls) {
 	case SCHED_FIFO:
 	case SCHED_RR:
-		attr.sched_priority = 1 + rand() % 3;
+		/* 1-in-RAND_NEGATIVE_RATIO sub the in-range RT priority for
+		 * a curated edge value — exercises sched_setattr's priority
+		 * range validation against sched_get_priority_min/max for the
+		 * chosen class, which the curated 1..3 mix never reaches. */
+		attr.sched_priority =
+			(unsigned int)RAND_NEGATIVE_OR(1 + rand() % 3);
 		break;
 	case SCHED_DEADLINE:
 		attr.sched_runtime  = 1 * NSEC_PER_MSEC;

@@ -170,7 +170,12 @@ static void fill_attr(struct perf_event_attr *attr, __u32 pmu_type)
 
 	switch (pmu_type) {
 	case PERF_TYPE_SOFTWARE:
-		attr->config = (uint64_t)(rand() % PERF_COUNT_SW_MAX);
+		/* 1-in-RAND_NEGATIVE_RATIO sub the in-range SW event id for
+		 * a curated edge value — exercises perf_event_open's config
+		 * range validation against PERF_COUNT_SW_MAX which the
+		 * curated 0..MAX-1 mix never reaches. */
+		attr->config = (uint64_t)RAND_NEGATIVE_OR(
+			rand() % PERF_COUNT_SW_MAX);
 		break;
 	case PERF_TYPE_HARDWARE:
 		attr->config = (uint64_t)(rand() % PERF_COUNT_HW_MAX);

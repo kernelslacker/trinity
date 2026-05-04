@@ -306,7 +306,12 @@ bool cpu_hotplug_rider(struct childdata *child)
 			memset(&attr, 0, sizeof(attr));
 			attr.size = sizeof(attr);
 			attr.sched_policy = SCHED_OTHER;
-			attr.sched_nice = (int) ((rand() % 40) - 20);
+			/* 1-in-RAND_NEGATIVE_RATIO sub the in-range nice value
+			 * for a curated edge value — exercises sched_setattr's
+			 * nice clamp / EINVAL path which the curated -20..19
+			 * mix never reaches. */
+			attr.sched_nice =
+				(int)RAND_NEGATIVE_OR((rand() % 40) - 20);
 			(void) do_sched_setattr(0, &attr);
 			affinity_calls++;
 			break;
