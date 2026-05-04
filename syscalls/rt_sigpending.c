@@ -6,15 +6,53 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 
+/*
+ * Snapshot of the two rt_sigpending input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect the oracle at a foreign set user
+ * buffer or alias the sigsetsize length check.
+ */
+struct rt_sigpending_post_state {
+	unsigned long set;
+	unsigned long sigsetsize;
+};
+
 static void sanitise_rt_sigpending(struct syscallrecord *rec)
 {
+	struct rt_sigpending_post_state *snap;
+
+	/*
+	 * Clear post_state up front so an early return below leaves the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record.
+	 */
+	rec->post_state = 0;
+
 	avoid_shared_buffer(&rec->a1, rec->a2);
+
+	/*
+	 * Snapshot the two input args read by the post oracle.  Without
+	 * this the post handler reads rec->a1/a2 at post-time, when a
+	 * sibling syscall may have scribbled the slots:
+	 * looks_like_corrupted_ptr() cannot tell a real-but-wrong heap
+	 * address from the original set user buffer pointer, so the source
+	 * memcpy would touch a foreign allocation that the guard never
+	 * inspected, and the sigsetsize gate would resolve against a
+	 * scribbled value.  post_state is private to the post handler.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->set        = rec->a1;
+	snap->sigsetsize = rec->a2;
+	rec->post_state = (unsigned long) snap;
 }
 
 /*
@@ -34,6 +72,8 @@ static void sanitise_rt_sigpending(struct syscallrecord *rec)
  */
 static void post_rt_sigpending(struct syscallrecord *rec)
 {
+	struct rt_sigpending_post_state *snap =
+		(struct rt_sigpending_post_state *) rec->post_state;
 	FILE *f;
 	char line[128];
 	uint64_t syscall_pending, proc_pending = 0;
@@ -41,34 +81,50 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 	bool have_sigpnd = false, have_shdpnd = false;
 	sigset_t buf;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
 
-	if (rec->retval != 0)
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_rt_sigpending: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
 		return;
-	if (rec->a1 == 0)
-		return;
-	if (rec->a2 != sizeof(sigset_t))
-		return;
-
-	{
-		void *set = (void *)(unsigned long) rec->a1;
-
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a1. */
-		if (looks_like_corrupted_ptr(set)) {
-			outputerr("post_rt_sigpending: rejected suspicious set=%p (pid-scribbled?)\n",
-				  set);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
-		}
 	}
 
-	memcpy(&buf, (void *)(unsigned long)rec->a1, sizeof(buf));
+	if (!ONE_IN(100))
+		goto out_free;
+
+	if (rec->retval != 0)
+		goto out_free;
+	if (snap->set == 0)
+		goto out_free;
+	if (snap->sigsetsize != sizeof(sigset_t))
+		goto out_free;
+
+	/*
+	 * Defense in depth: even with the post_state snapshot, a wholesale
+	 * stomp could rewrite the snapshot's inner pointer field.  Reject
+	 * a pid-scribbled set before deref.
+	 */
+	if (looks_like_corrupted_ptr((void *) snap->set)) {
+		outputerr("post_rt_sigpending: rejected suspicious set=%p (post_state-scribbled?)\n",
+			  (void *) snap->set);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		goto out_free;
+	}
+
+	memcpy(&buf, (const void *) snap->set, sizeof(buf));
 	memcpy(&syscall_pending, &buf, sizeof(syscall_pending));
 
 	f = fopen("/proc/self/status", "r");
 	if (!f)
-		return;
+		goto out_free;
 	while (fgets(line, sizeof(line), f)) {
 		if (!have_sigpnd && strncmp(line, "SigPnd:", 7) == 0) {
 			if (sscanf(line + 7, "%lx", &sigpnd) == 1)
@@ -83,7 +139,7 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 	fclose(f);
 
 	if (!have_sigpnd || !have_shdpnd)
-		return;
+		goto out_free;
 
 	proc_pending = (uint64_t)sigpnd | (uint64_t)shdpnd;
 
@@ -97,6 +153,9 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.rt_sigpending_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_rt_sigpending = {
