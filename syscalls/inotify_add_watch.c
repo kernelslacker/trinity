@@ -12,7 +12,7 @@ static unsigned long inotify_add_watch_masks[] = {
 	IN_CREATE, IN_DELETE, IN_DELETE_SELF, IN_MOVE_SELF,
 	IN_UNMOUNT, IN_Q_OVERFLOW, IN_IGNORED, IN_ONLYDIR,
 	IN_DONT_FOLLOW, IN_EXCL_UNLINK, IN_MASK_ADD, IN_ISDIR,
-	IN_ONESHOT,
+	IN_ONESHOT, IN_MASK_CREATE,
 };
 
 struct syscallentry syscall_inotify_add_watch = {
