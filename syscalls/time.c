@@ -42,8 +42,24 @@ static void post_time(struct syscallrecord *rec)
 		return;
 
 	syscall_t = (long) rec->retval;
-	if (syscall_t <= 0)
+
+	/* Errno-style return (-1..-MAX_ERRNO): silent skip.  Sanitised
+	 * tloc producing -EFAULT is normal and not an oracle violation. */
+	if (IS_ERR_VALUE(rec->retval))
 		return;
+
+	/* A successful sys_time() must be a positive wall-clock time.
+	 * Zero means the Epoch and a negative value outside the errno
+	 * range cannot be a real time post-1970 -- both shapes point at
+	 * a sign-extension bug on the compat path, a 32-bit y2038 wrap,
+	 * or a tloc-copy-back that returned stale stack. */
+	if (syscall_t <= 0) {
+		output(0, "time oracle: non-positive successful return %ld\n",
+		       syscall_t);
+		__atomic_add_fetch(&shm->stats.time_oracle_anomalies, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	}
 
 	if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
 		return;
