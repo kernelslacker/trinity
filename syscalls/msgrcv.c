@@ -6,11 +6,22 @@
 #include "compat.h"
 #include "random.h"
 #include "sanitise.h"
+#include "utils.h"
 
 static void sanitise_msgrcv(struct syscallrecord *rec)
 {
 	rec->a3 = rand() % MSGMAX;
 	avoid_shared_buffer(&rec->a2, rec->a3 + sizeof(long));
+}
+
+static void post_msgrcv(struct syscallrecord *rec)
+{
+	long ret = (long) rec->retval;
+
+	if (ret == -1L)
+		return;
+	if (ret < 0 || (size_t) ret > (size_t) rec->a3)
+		post_handler_corrupt_ptr_bump(rec, NULL);
 }
 
 static unsigned long msgrcv_flags[] = {
@@ -30,4 +41,5 @@ struct syscallentry syscall_msgrcv = {
 	.arg_params[4].list = ARGLIST(msgrcv_flags),
 	.flags = IGNORE_ENOSYS | NEED_ALARM,
 	.sanitise = sanitise_msgrcv,
+	.post = post_msgrcv,
 };
