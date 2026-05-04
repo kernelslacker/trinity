@@ -7,6 +7,7 @@
 #include <string.h>
 #include "random.h"
 #include "sanitise.h"
+#include "utils.h"
 
 static unsigned long adj_modes[] = {
 	ADJ_OFFSET, ADJ_FREQUENCY, ADJ_MAXERROR, ADJ_ESTERROR,
@@ -61,6 +62,16 @@ static void sanitise_adjtimex(struct syscallrecord *rec)
 	rec->a1 = (unsigned long) tx;
 }
 
+static void post_adjtimex(struct syscallrecord *rec)
+{
+	long ret = (long) rec->retval;
+
+	if (ret == -1L)
+		return;
+	if (ret < TIME_OK || ret > TIME_ERROR)
+		post_handler_corrupt_ptr_bump(rec, NULL);
+}
+
 struct syscallentry syscall_adjtimex = {
 	.name = "adjtimex",
 	.group = GROUP_TIME,
@@ -68,4 +79,5 @@ struct syscallentry syscall_adjtimex = {
 	.argname = { [0] = "txc_p" },
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_adjtimex,
+	.post = post_adjtimex,
 };
