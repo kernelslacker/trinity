@@ -6,6 +6,8 @@
 #include <linux/bpf.h>
 #include <linux/filter.h>
 #include <linux/version.h>
+#include <sys/syscall.h>
+#include <string.h>
 #include <unistd.h>
 #include "arch.h"
 #include "bpf.h"
@@ -643,6 +645,35 @@ static void post_bpf(struct syscallrecord *rec)
 			struct object *obj = alloc_object();
 			obj->bpfbtfobj.fd = fd;
 			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_BTF);
+		}
+		break;
+
+	case BPF_PROG_ATTACH:
+		/*
+		 * A successful legacy attach pins the program against the
+		 * target object (cgroup, sockmap, netns, ...) without going
+		 * through bpf_link.  close() on the prog fd does not undo the
+		 * attach: the target keeps a refcount on the program until an
+		 * explicit BPF_PROG_DETACH with the matching {target_fd,
+		 * attach_bpf_fd, attach_type} triple, or until the target
+		 * itself is destroyed.  Most attach_types in the dispatch
+		 * array expect target_fd to be a cgroup / netns / netdev fd
+		 * and so reject the random map fd we hand them, but the
+		 * sockmap and reuseport-array attach paths accept a map fd
+		 * and can succeed against a freshly created sockmap.  When
+		 * that happens, replay the inverse cmd from the snapshot so
+		 * the program ref drops at syscall return rather than at
+		 * child exit.
+		 */
+		if (rec->retval == 0) {
+			union bpf_attr detach;
+
+			memset(&detach, 0, sizeof(detach));
+			detach.target_fd = attr->target_fd;
+			detach.attach_bpf_fd = attr->attach_bpf_fd;
+			detach.attach_type = attr->attach_type;
+			(void) syscall(__NR_bpf, BPF_PROG_DETACH,
+				       &detach, sizeof(detach));
 		}
 		break;
 
