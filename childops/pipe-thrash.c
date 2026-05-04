@@ -38,6 +38,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "jitter.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -125,6 +126,7 @@ bool pipe_thrash(struct childdata *child)
 	int batch[FD_BATCH];
 	unsigned int filled = 0;
 	unsigned int iter;
+	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
 
 	(void)child;
 
@@ -132,7 +134,7 @@ bool pipe_thrash(struct childdata *child)
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
-	for (iter = 0; iter < MAX_ITERATIONS; iter++) {
+	for (iter = 0; iter < iters; iter++) {
 		int pair[2] = { -1, -1 };
 		int rc;
 		unsigned int op = (unsigned int)rand() % 3;

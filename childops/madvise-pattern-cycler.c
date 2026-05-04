@@ -59,6 +59,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "jitter.h"
 #include "maps.h"
 #include "random.h"
 #include "shm.h"
@@ -231,7 +232,7 @@ bool madvise_cycler(struct childdata *child)
 	 * MADV_FREE first. */
 	advice_idx = (unsigned int) rand() % (unsigned int) ARRAY_SIZE(advice_cycle);
 
-	iter_cap = BUDGETED(CHILD_OP_MADVISE_CYCLER, MAX_ITERATIONS);
+	iter_cap = BUDGETED(CHILD_OP_MADVISE_CYCLER, JITTER_RANGE(MAX_ITERATIONS));
 	for (iter = 0; iter < iter_cap; iter++) {
 		unsigned long offset, len;
 		int advice, rc;

@@ -71,6 +71,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "jitter.h"
 #include "maps.h"
 #include "random.h"
 #include "shm.h"
@@ -424,6 +425,7 @@ bool numa_migration_churn(struct childdata *child)
 	unsigned long region_len;
 	struct timespec start;
 	unsigned int iter;
+	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
 	enum migration_op op_idx;
 	unsigned int calls = 0, failed = 0;
 
@@ -456,7 +458,7 @@ bool numa_migration_churn(struct childdata *child)
 
 	op_idx = (enum migration_op) ((unsigned int) rand() % NR_MIGRATION_OPS);
 
-	for (iter = 0; iter < MAX_ITERATIONS; iter++) {
+	for (iter = 0; iter < iters; iter++) {
 		calls += do_one_op(op_idx, region, region_len, &failed);
 		op_idx = (enum migration_op) (((unsigned int) op_idx + 1)
 					       % NR_MIGRATION_OPS);

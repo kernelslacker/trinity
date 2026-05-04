@@ -51,6 +51,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "jitter.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -122,6 +123,7 @@ bool xattr_thrash(struct childdata *child)
 	struct timespec start;
 	unsigned int opened = 0;
 	unsigned int iter;
+	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
 	unsigned int i;
 
 	(void)child;
@@ -143,7 +145,7 @@ bool xattr_thrash(struct childdata *child)
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
-	for (iter = 0; iter < MAX_ITERATIONS; iter++) {
+	for (iter = 0; iter < iters; iter++) {
 		struct xattr_slot *s = &slots[(unsigned int)rand() % opened];
 		const char *name = xattr_names[(unsigned int)rand() % NR_XATTR_NAMES];
 		char path[PATH_MAX + 32];

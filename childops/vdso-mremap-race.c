@@ -80,6 +80,7 @@
 
 #include "child.h"
 #include "childops-util.h"
+#include "jitter.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -233,6 +234,7 @@ static void __attribute__((noreturn)) mutator_helper(void)
 bool vdso_mremap_race(struct childdata *child)
 {
 	unsigned int iter;
+	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
 	struct timespec start, now;
 	long elapsed_ns;
 
@@ -247,7 +249,7 @@ bool vdso_mremap_race(struct childdata *child)
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
-	for (iter = 0; iter < MAX_ITERATIONS; iter++) {
+	for (iter = 0; iter < iters; iter++) {
 		pid_t spinner_pid, mutator_pid;
 		int status;
 
