@@ -11,8 +11,9 @@ static void post_creat(struct syscallrecord *rec)
 {
 	int fd = rec->retval;
 
-	if (fd != -1)
-		close(fd);
+	if (fd < 0 || fd >= (1 << 20))
+		return;
+	close(fd);
 }
 
 struct syscallentry syscall_creat = {
