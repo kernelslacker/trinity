@@ -43,6 +43,27 @@
 #endif
 
 /*
+ * Linux 6.13 froze the v0 layout of struct pidfd_info at 64 bytes; the
+ * kernel uses this to detect old userspace.
+ */
+#ifndef PIDFD_INFO_SIZE_VER0
+# define PIDFD_INFO_SIZE_VER0 64
+#endif
+
+/*
+ * Linux 6.18 added response-only bits reported in pidfd_info.coredump_mask
+ * when PIDFD_INFO_COREDUMP is set in the request mask. We never write
+ * these — they're documented here so future analysis of the returned
+ * struct isn't opaque.
+ */
+#ifndef PIDFD_COREDUMPED
+# define PIDFD_COREDUMPED    (1U << 0)
+# define PIDFD_COREDUMP_SKIP (1U << 1)
+# define PIDFD_COREDUMP_USER (1U << 2)
+# define PIDFD_COREDUMP_ROOT (1U << 3)
+#endif
+
+/*
  * struct pidfd_info and PIDFD_GET_INFO also landed in Linux 6.13.
  */
 #ifndef PIDFD_GET_INFO
