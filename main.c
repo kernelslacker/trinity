@@ -22,6 +22,7 @@
 #include "post-mortem.h"
 #include "random.h"
 #include "shm.h"
+#include "stats.h"
 #include "syscall.h"
 #include "tables.h"
 #include "taint.h"
@@ -1243,6 +1244,8 @@ void main_loop(void)
 		check_children_progressing();
 
 		process_zombie_pending();
+
+		corrupt_ptr_spike_check();
 
 		print_stats();
 
