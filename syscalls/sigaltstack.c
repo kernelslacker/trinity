@@ -7,6 +7,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
+#include "deferred-free.h"
 #include "maps.h"
 #include "random.h"
 #include "sanitise.h"
@@ -22,9 +23,28 @@
 #define HAVE_SYS_SIGALTSTACK 1
 #endif
 
+#ifdef HAVE_SYS_SIGALTSTACK
+/*
+ * Snapshot of the two sigaltstack input args read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot flip the mode-A gate (uss == NULL) into a
+ * spurious oracle run, nor can it redirect the uoss read at a foreign
+ * stack_t buffer.
+ */
+struct sigaltstack_post_state {
+	unsigned long uss;
+	unsigned long uoss;
+};
+#endif
+
 static void sanitise_sigaltstack(struct syscallrecord *rec)
 {
 	stack_t *ss;
+#ifdef HAVE_SYS_SIGALTSTACK
+	struct sigaltstack_post_state *snap;
+#endif
 
 	ss = (stack_t *) get_writable_address(sizeof(*ss));
 
@@ -65,6 +85,26 @@ static void sanitise_sigaltstack(struct syscallrecord *rec)
 	 * land inside an alloc_shared region.
 	 */
 	avoid_shared_buffer(&rec->a2, sizeof(stack_t));
+
+#ifdef HAVE_SYS_SIGALTSTACK
+	/*
+	 * Snapshot the two input args for the post oracle.  Without this
+	 * the post handler reads rec->a1/a2 at post-time, when a sibling
+	 * syscall may have scribbled the slots: a flipped a1 could turn a
+	 * mode-A call (uss != NULL, mutates state) into a spurious mode-B
+	 * oracle run, and looks_like_corrupted_ptr() cannot tell a
+	 * real-but-wrong heap address from the original uoss buffer.
+	 * post_state is private to the post handler.  Gated on
+	 * HAVE_SYS_SIGALTSTACK to mirror the .post registration -- on
+	 * systems without SYS_sigaltstack the post handler is not
+	 * registered and a snapshot only the post handler can free would
+	 * leak.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->uss  = rec->a1;
+	snap->uoss = rec->a2;
+	rec->post_state = (unsigned long) snap;
+#endif
 }
 
 /*
@@ -93,11 +133,15 @@ static void sanitise_sigaltstack(struct syscallrecord *rec)
  * sanitiser revision starts emitting mode-B calls the oracle picks them up
  * automatically.
  *
- * TOCTOU defeat: snapshot the stack_t payload into a stack-local BEFORE
- * re-issuing, so a sibling that scribbles either rec->a2 or the user buffer
- * between syscall return and the post hook cannot smear the comparison.
- * The re-call uses a fresh stack buffer (NOT rec->a2 -- a sibling could
- * mutate it mid-syscall and forge a clean compare).
+ * TOCTOU defeat: the two input args (uss, uoss) are snapshotted at
+ * sanitise time into a heap struct in rec->post_state, so a sibling that
+ * scribbles rec->aN between syscall return and post entry cannot flip
+ * the mode-A gate or redirect the uoss read at a foreign stack_t.  We
+ * still snapshot the stack_t payload into a stack-local BEFORE
+ * re-issuing, so a sibling that scribbles the user buffer itself between
+ * the two reads cannot smear the comparison.  The re-call uses a fresh
+ * stack buffer (NOT the snap's uoss -- a sibling could mutate the user
+ * buffer mid-syscall and forge a clean compare).
  *
  * Sample one in a hundred to stay in line with the rest of the oracle
  * family.  Per-field bumps with no early-return so simultaneous
@@ -119,41 +163,62 @@ static void sanitise_sigaltstack(struct syscallrecord *rec)
 #ifdef HAVE_SYS_SIGALTSTACK
 static void post_sigaltstack(struct syscallrecord *rec)
 {
+	struct sigaltstack_post_state *snap = (struct sigaltstack_post_state *) rec->post_state;
 	stack_t first_ss;
 	stack_t recheck_ss;
 	long rc;
 
-	if (!ONE_IN(100))
+	if (snap == NULL)
 		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(snap)) {
+		outputerr("post_sigaltstack: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if ((long) rec->retval != 0)
-		return;
+		goto out_free;
 
-	if (rec->a1 != 0)
-		return;
+	if (snap->uss != 0)
+		goto out_free;
 
-	if (rec->a2 == 0)
-		return;
+	if (snap->uoss == 0)
+		goto out_free;
 
 	{
-		void *uoss = (void *)(unsigned long) rec->a2;
+		void *uoss = (void *)(unsigned long) snap->uoss;
 
-		/* Cluster-1/2/3 guard: reject pid-scribbled rec->a2. */
+		/*
+		 * Defense in depth: even with the post_state snapshot, a
+		 * wholesale stomp could rewrite the snapshot's inner uoss
+		 * field.  Reject pid-scribbled uoss before deref.
+		 */
 		if (looks_like_corrupted_ptr(uoss)) {
-			outputerr("post_sigaltstack: rejected suspicious uoss=%p (pid-scribbled?)\n",
+			outputerr("post_sigaltstack: rejected suspicious uoss=%p (post_state-scribbled?)\n",
 				  uoss);
-			shm->stats.post_handler_corrupt_ptr++;
-			return;
+			__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+			goto out_free;
 		}
 	}
 
-	memcpy(&first_ss, (const void *)(unsigned long) rec->a2,
+	memcpy(&first_ss, (const void *)(unsigned long) snap->uoss,
 	       sizeof(first_ss));
 
 	memset(&recheck_ss, 0, sizeof(recheck_ss));
 	rc = syscall(SYS_sigaltstack, NULL, &recheck_ss);
 	if (rc != 0)
-		return;
+		goto out_free;
 
 	if (first_ss.ss_sp != recheck_ss.ss_sp) {
 		output(0,
@@ -181,6 +246,9 @@ static void post_sigaltstack(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.sigaltstack_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 #endif
 
