@@ -893,7 +893,7 @@ static const int dormant_op_disabled[39] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 0, 1,	/* 10-14: fault_injector active; dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, recipe_runner */
-	1, 1, 1, 1, 1,	/* 15-19: dormant: iouring_recipes, fd_stress, refcount_auditor, fs_lifecycle, signal_storm */
+	1, 1, 0, 1, 1,	/* 15-19: refcount_auditor active; dormant: iouring_recipes, fd_stress, fs_lifecycle, signal_storm */
 	1, 1, 1, 1, 1,	/* 20-24: dormant: futex_storm, pipe_thrash, fork_storm, flock_thrash, cgroup_churn */
 	1, 1, 1, 1, 1,	/* 25-29: dormant: mount_churn, uffd_churn, iouring_flood, close_racer, socket_family_chain */
 	1, 1, 1, 1, 1,	/* 30-34: dormant: xattr_thrash, pidfd_storm, madvise_cycler, epoll_volatility, keyring_spam */
