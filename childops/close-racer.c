@@ -169,7 +169,7 @@ static void *racer_thread(void *arg)
 static bool make_fd_pair(int sv[2])
 {
 	if (RAND_BOOL()) {
-		if (pipe2(sv, O_CLOEXEC) == 0)
+		if (pipe2(sv, (int)RAND_NEGATIVE_OR(O_CLOEXEC)) == 0)
 			return true;
 		/* Fall through to socketpair on pipe2 failure. */
 	}

@@ -31,6 +31,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "random.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -96,7 +97,7 @@ static long do_alloc_syscall(void)
 		break;
 	case 4:
 		/* eventfd: file + eventfd_ctx allocation */
-		ret = eventfd(0, 0);
+		ret = eventfd(0, (int)RAND_NEGATIVE_OR(0));
 		if (ret >= 0)
 			close((int)ret);
 		break;
