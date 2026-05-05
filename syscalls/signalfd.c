@@ -3,6 +3,7 @@
  */
 #include <signal.h>
 #include <unistd.h>
+#include "objects.h"
 #include "sanitise.h"
 
 static void sanitise_signalfd(struct syscallrecord *rec)
@@ -20,6 +21,21 @@ static void sanitise_signalfd(struct syscallrecord *rec)
 	rec->a3 = sizeof(sigset_t);
 }
 
+static void post_signalfd(struct syscallrecord *rec)
+{
+	struct object *new;
+	int fd = rec->retval;
+
+	if ((long)rec->retval < 0)
+		return;
+	if (fd < 0 || fd >= (1 << 20))
+		return;
+
+	new = alloc_object();
+	new->signalfdobj.fd = fd;
+	add_object(new, OBJ_LOCAL, OBJ_FD_SIGNALFD);
+}
+
 struct syscallentry syscall_signalfd = {
 	.name = "signalfd",
 	.group = GROUP_SIGNAL,
@@ -27,8 +43,9 @@ struct syscallentry syscall_signalfd = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "ufd", [1] = "user_mask", [2] = "sizemask" },
 	.sanitise = sanitise_signalfd,
-	.post = generic_post_close_fd,
+	.post = post_signalfd,
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_SIGNALFD,
 	.flags = NEED_ALARM,
 };
 
@@ -67,7 +84,8 @@ struct syscallentry syscall_signalfd4 = {
 	.argname = { [0] = "ufd", [1] = "user_mask", [2] = "sizemask", [3] = "flags" },
 	.arg_params[3].list = ARGLIST(signalfd4_flags),
 	.sanitise = sanitise_signalfd4,
-	.post = generic_post_close_fd,
+	.post = post_signalfd,
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_SIGNALFD,
 	.flags = NEED_ALARM,
 };
