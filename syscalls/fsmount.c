@@ -48,7 +48,8 @@ struct syscallentry syscall_fsmount = {
 	.arg_params[1].list = ARGLIST(fsmount_flags),
 	.arg_params[2].list = ARGLIST(fsmount_attr_flags),
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_MOUNT,
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
-	.post = generic_post_close_fd,
+	.post = post_mount_fd,
 };

@@ -1,6 +1,7 @@
 /*
  *  SYSCALL_DEFINE3(open_tree, int, dfd, const char *, filename, unsigned, flags)
  */
+#include "object-types.h"
 #include "sanitise.h"
 #include <fcntl.h>
 #include <unistd.h>
@@ -30,7 +31,8 @@ struct syscallentry syscall_open_tree = {
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "flags" },
 	.arg_params[2].list = ARGLIST(open_tree_flags),
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_MOUNT,
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
-	.post = generic_post_close_fd,
+	.post = post_mount_fd,
 };
