@@ -105,6 +105,10 @@ struct kcov_shared {
 	unsigned long total_pcs;
 	unsigned long total_calls;
 	unsigned long remote_calls;	/* calls using KCOV_REMOTE_ENABLE */
+	/* Number of kcov_collect() calls where the kernel filled the entire
+	 * trace buffer.  When non-zero a non-trivial fraction of syscalls
+	 * are losing tail coverage and KCOV_TRACE_SIZE should be raised. */
+	unsigned long trace_truncated;
 	unsigned long per_syscall_edges[MAX_NR_SYSCALL];
 	unsigned long per_syscall_calls[MAX_NR_SYSCALL];
 	unsigned long last_edge_at[MAX_NR_SYSCALL];

@@ -381,8 +381,15 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 			1, __ATOMIC_RELAXED);
 
 	count = __atomic_load_n(&kc->trace_buf[0], __ATOMIC_RELAXED);
-	if (count > KCOV_TRACE_SIZE - 1)
+	if (count > KCOV_TRACE_SIZE - 1) {
+		/* Kernel wanted to record more PCs than the buffer holds; the
+		 * tail of this call's coverage was dropped.  Bump a counter so
+		 * the post-mortem can show whether KCOV_TRACE_SIZE needs to
+		 * grow again. */
+		__atomic_fetch_add(&kcov_shm->trace_truncated, 1,
+			__ATOMIC_RELAXED);
 		count = KCOV_TRACE_SIZE - 1;
+	}
 
 	/*
 	 * Invalidate the dedup table by bumping the generation counter — every
