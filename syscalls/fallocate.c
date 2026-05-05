@@ -28,7 +28,7 @@ static void sanitise_fallocate(struct syscallrecord *rec)
 	int64_t len = RAND_RANGE(1, 64ULL << 20);	/* [1, 64 MB] */
 
 	/* Prevent offset+len from overflowing loff_t */
-	if (offset + len < offset)
+	if (len > INT64_MAX - offset)
 		len = INT64_MAX - offset;
 
 	rec->a3 = (unsigned long) offset;
