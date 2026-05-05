@@ -151,6 +151,28 @@ static void post_lookup_dcookie(struct syscallrecord *rec)
 		return;
 	}
 
+	/*
+	 * STRONG-VAL byte-count bound: lookup_dcookie(2) on success returns
+	 * the number of path bytes the kernel wrote into the user buf,
+	 * capped at the len argument (rec->a3, snapshotted into snap->len).
+	 * A retval > len on a positive return is structurally impossible
+	 * from the dcookie path -- it points at a sign-extension tear in
+	 * the syscall return slot, a sibling-stomp of rec->retval between
+	 * syscall return and post entry, or -errno leaking through the
+	 * success return.  Fire unconditionally, ahead of the ONE_IN(100)
+	 * sample gate that throttles the equality oracle, so every offend-
+	 * ing retval is counted on every occurrence rather than one in a
+	 * hundred.  The pre-existing retval <= 0 gate after the sample
+	 * stays in place; this bound only screens positive-but-oversize
+	 * returns.  Mirrors the getxattr-family snap-extension pattern.
+	 */
+	if ((long) rec->retval > 0 && (unsigned long) rec->retval > snap->len) {
+		outputerr("post_lookup_dcookie: rejecting retval %lu > len %lu\n",
+			  rec->retval, snap->len);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
+	}
+
 	if (!ONE_IN(100))
 		goto out_free;
 
