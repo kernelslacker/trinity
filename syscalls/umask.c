@@ -8,6 +8,7 @@
 #include "shm.h"
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 /*
  * Oracle: umask(mask) installs (mask & 0777) into current->fs->umask
@@ -37,6 +38,19 @@ static void post_umask(struct syscallrecord *rec)
 	char line[256];
 	unsigned int kumask;
 	unsigned int expected;
+
+	/* Kernel ABI: sys_umask cannot fail and the kernel masks the
+	 * incoming argument with 0777 before storing, so the returned
+	 * previous mask is always within [0, 0777].  Anything above that
+	 * is a torn return, sign-extension, or sibling-stomp on rec->retval
+	 * -- not a procfs-divergence the oracle below could catch.  Reject
+	 * before the ONE_IN(100) gate so every call is checked. */
+	if (rec->retval > 0777UL) {
+		outputerr("post_umask: rejected retval 0x%lx outside [0, 0777]\n",
+			  rec->retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		return;
+	}
 
 	if (!ONE_IN(100))
 		return;
