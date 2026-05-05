@@ -137,6 +137,7 @@ enum child_op_type {
 	CHILD_OP_PACKET_FANOUT_THRASH,
 	CHILD_OP_IOURING_NET_MULTISHOT,
 	CHILD_OP_TCP_AO_ROTATE,
+	CHILD_OP_VRF_FIB_CHURN,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -448,3 +449,4 @@ bool tls_rotate(struct childdata *child);
 bool packet_fanout_thrash(struct childdata *child);
 bool iouring_net_multishot(struct childdata *child);
 bool tcp_ao_rotate(struct childdata *child);
+bool vrf_fib_churn(struct childdata *child);

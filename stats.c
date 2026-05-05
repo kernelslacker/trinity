@@ -679,7 +679,8 @@ static void dump_stats_json(void)
 		"\"tls_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_failed\":%lu,\"installs\":%lu,\"rekeys_ok\":%lu,\"rekeys_rejected\":%lu},"
 		"\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu},"
 		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu},"
-		"\"tcp_ao_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"addkey_rejected\":%lu,\"keys_added\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"packets_sent\":%lu,\"key_rotations\":%lu,\"info_rejected\":%lu,\"key_dels\":%lu,\"delkey_rejected\":%lu,\"cycles\":%lu}"
+		"\"tcp_ao_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"addkey_rejected\":%lu,\"keys_added\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"packets_sent\":%lu,\"key_rotations\":%lu,\"info_rejected\":%lu,\"key_dels\":%lu,\"delkey_rejected\":%lu,\"cycles\":%lu},"
+		"\"vrf_fib_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_ok\":%lu,\"addr_ok\":%lu,\"up_ok\":%lu,\"rule_added\":%lu,\"bound\":%lu,\"sendto_ok\":%lu,\"rule2_added\":%lu,\"rule_removed\":%lu,\"link_removed\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -888,7 +889,18 @@ static void dump_stats_json(void)
 		shm->stats.tcp_ao_rotate_info_rejected,
 		shm->stats.tcp_ao_rotate_key_dels,
 		shm->stats.tcp_ao_rotate_delkey_rejected,
-		shm->stats.tcp_ao_rotate_cycles);
+		shm->stats.tcp_ao_rotate_cycles,
+		shm->stats.vrf_fib_churn_runs,
+		shm->stats.vrf_fib_churn_setup_failed,
+		shm->stats.vrf_fib_churn_link_ok,
+		shm->stats.vrf_fib_churn_addr_ok,
+		shm->stats.vrf_fib_churn_up_ok,
+		shm->stats.vrf_fib_churn_rule_added,
+		shm->stats.vrf_fib_churn_bound,
+		shm->stats.vrf_fib_churn_sendto_ok,
+		shm->stats.vrf_fib_churn_rule2_added,
+		shm->stats.vrf_fib_churn_rule_removed,
+		shm->stats.vrf_fib_churn_link_removed);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -1906,6 +1918,20 @@ void dump_stats(void)
 		stat_row("tcp_ao_rotate", "key_dels",        shm->stats.tcp_ao_rotate_key_dels);
 		stat_row("tcp_ao_rotate", "delkey_rejected", shm->stats.tcp_ao_rotate_delkey_rejected);
 		stat_row("tcp_ao_rotate", "cycles",          shm->stats.tcp_ao_rotate_cycles);
+	}
+
+	if (shm->stats.vrf_fib_churn_runs) {
+		stat_row("vrf_fib_churn", "runs",         shm->stats.vrf_fib_churn_runs);
+		stat_row("vrf_fib_churn", "setup_failed", shm->stats.vrf_fib_churn_setup_failed);
+		stat_row("vrf_fib_churn", "link_ok",      shm->stats.vrf_fib_churn_link_ok);
+		stat_row("vrf_fib_churn", "addr_ok",      shm->stats.vrf_fib_churn_addr_ok);
+		stat_row("vrf_fib_churn", "up_ok",        shm->stats.vrf_fib_churn_up_ok);
+		stat_row("vrf_fib_churn", "rule_added",   shm->stats.vrf_fib_churn_rule_added);
+		stat_row("vrf_fib_churn", "bound",        shm->stats.vrf_fib_churn_bound);
+		stat_row("vrf_fib_churn", "sendto_ok",    shm->stats.vrf_fib_churn_sendto_ok);
+		stat_row("vrf_fib_churn", "rule2_added",  shm->stats.vrf_fib_churn_rule2_added);
+		stat_row("vrf_fib_churn", "rule_removed", shm->stats.vrf_fib_churn_rule_removed);
+		stat_row("vrf_fib_churn", "link_removed", shm->stats.vrf_fib_churn_link_removed);
 	}
 
 	if (kcov_shm != NULL) {
