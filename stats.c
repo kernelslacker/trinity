@@ -636,7 +636,8 @@ static void dump_stats_json(void)
 			"\"deferred_free_corrupt_ptr\":%lu,"
 			"\"post_handler_corrupt_ptr\":%lu,\"snapshot_non_heap_reject\":%lu,"
 			"\"rec_canary_stomped\":%lu,\"rzs_blanket_reject\":%lu,"
-			"\"sibling_mprotect_failed\":%lu},"
+			"\"sibling_mprotect_failed\":%lu,"
+			"\"destroy_object_idx\":%lu},"
 		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu},"
 		"\"refcount_audit\":{\"runs\":%lu,\"fd_anomalies\":%lu,"
 			"\"mmap_anomalies\":%lu,\"sock_anomalies\":%lu},"
@@ -777,6 +778,7 @@ static void dump_stats_json(void)
 		shm->stats.rec_canary_stomped,
 		shm->stats.rzs_blanket_reject,
 		shm->stats.sibling_mprotect_failed,
+		shm->stats.destroy_object_idx_corrupt,
 		shm->stats.shared_buffer_redirected, shm->stats.range_overlaps_shared_rejects,
 		shm->stats.refcount_audit_runs, shm->stats.refcount_audit_fd_anomalies,
 		shm->stats.refcount_audit_mmap_anomalies, shm->stats.refcount_audit_sock_anomalies,
@@ -993,6 +995,8 @@ static const struct {
 	  offsetof(struct stats_s, fd_event_ring_overwritten) },
 	{ "fd_event_payload_corrupt",
 	  offsetof(struct stats_s, fd_event_payload_corrupt) },
+	{ "destroy_object_idx_corrupt",
+	  offsetof(struct stats_s, destroy_object_idx_corrupt) },
 };
 
 static unsigned long defense_counter_load(unsigned int i)
@@ -1554,6 +1558,8 @@ void dump_stats(void)
 		stat_row("corruption", "sibling_mprotect_failed", shm->stats.sibling_mprotect_failed);
 	if (shm->stats.divergence_sentinel_anomalies)
 		stat_row("corruption", "divergence_sentinel_anomalies", shm->stats.divergence_sentinel_anomalies);
+	if (shm->stats.destroy_object_idx_corrupt)
+		stat_row("corruption", "destroy_object_idx",     shm->stats.destroy_object_idx_corrupt);
 
 	{
 		unsigned int op;
