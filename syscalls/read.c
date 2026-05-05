@@ -29,6 +29,7 @@ struct syscallentry syscall_read = {
 	.argname = { [0] = "fd", [1] = "buf", [2] = "count" },
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	.bound_arg = 3,
 };
 
 
@@ -64,6 +65,7 @@ struct syscallentry syscall_pread64 = {
 	.argname = { [0] = "fd", [1] = "buf", [2] = "count", [3] = "pos" },
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	.bound_arg = 3,
 };
 
 /*

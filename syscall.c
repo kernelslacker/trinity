@@ -340,6 +340,69 @@ static bool reject_corrupt_retfd(const struct syscallentry *entry,
 }
 
 /*
+ * Blanket count-bound validator for syscalls whose retval semantics are
+ * exactly "bytes/items processed in [0, aN] || -1", driven by the
+ * .bound_arg annotation on syscallentry.  Single dispatcher chokepoint
+ * means we don't have to sprinkle the same per-syscall .post bound check
+ * across every read/write/recv/send-class handler individually -- one
+ * gate covers the entire helper-eligible set, and adding a new entry to
+ * the set is a one-line .bound_arg = N annotation.
+ *
+ * Read the count from rec->aN at validator entry rather than from a
+ * post_state snapshot: the validator runs before entry->post, so the
+ * snap-stash pattern that defends per-syscall post handlers against
+ * sibling-stomps of rec->aN is not yet in scope.  Per-syscall .post
+ * handlers that already keep a snap-bounded copy (write/listmount/
+ * readlink/getcwd etc.) remain in place as a defense-in-depth second
+ * layer; this helper catches the symmetric set that has no .post today
+ * (read/pread64/recv/sendto/...) for the same logical bug class.
+ *
+ * Informational only -- do NOT coerce rec->retval.  Unlike the RET_FD
+ * blanket validator, an over-large count-bound retval does not seed a
+ * downstream wild-write hazard: nobody passes the retval back to the
+ * kernel as a buffer length or fd.  The cost of a mis-coerced retval
+ * (silently dropping a legitimate large read on a machine whose ulimit
+ * raises the bound past the helper's expectation) outweighs the value
+ * for a Phase 2 detector.  Coercion is reserved for a follow-up phase
+ * once the helper has accumulated quiet-week telemetry.
+ *
+ * Skip rec->retval == -1UL: failure is the legitimate error path and
+ * carries no count semantics.
+ */
+static void enforce_count_bound(const struct syscallentry *entry,
+				struct syscallrecord *rec)
+{
+	int idx = entry->bound_arg;
+	unsigned long count;
+	unsigned long ret;
+
+	if (idx == 0)
+		return;
+
+	if (rec->retval == -1UL)
+		return;
+
+	switch (idx) {
+	case 1: count = rec->a1; break;
+	case 2: count = rec->a2; break;
+	case 3: count = rec->a3; break;
+	case 4: count = rec->a4; break;
+	case 5: count = rec->a5; break;
+	case 6: count = rec->a6; break;
+	default: return;
+	}
+
+	ret = rec->retval;
+	if (ret > count) {
+		outputerr("count-bound: %s retval=%lu exceeds %s=%lu\n",
+			  entry->name, ret,
+			  entry->argname[idx - 1] ? entry->argname[idx - 1] : "count",
+			  count);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+/*
  * Generic post-hook: register the fd returned by an annotated syscall
  * into its typed OBJ_LOCAL pool.  Runs after entry->post so a
  * syscall-specific handler that already registered the fd (and possibly
@@ -527,6 +590,8 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 	__atomic_add_fetch(&entry->attempted, 1, __ATOMIC_RELAXED);
 
 	reject_corrupt_retfd(entry, rec);
+
+	enforce_count_bound(entry, rec);
 
 	if (entry->post)
 	    entry->post(rec);

@@ -229,4 +229,5 @@ struct syscallentry syscall_sched_getaffinity = {
 	.argname = { [0] = "pid", [1] = "len", [2] = "user_mask_ptr" },
 	.sanitise = sanitise_sched_getaffinity,
 	.post = post_sched_getaffinity,
+	.bound_arg = 2,
 };

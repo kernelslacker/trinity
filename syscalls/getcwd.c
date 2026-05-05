@@ -177,4 +177,5 @@ struct syscallentry syscall_getcwd = {
 	.post = post_getcwd,
 	.rettype = RET_PATH,
 	.group = GROUP_VFS,
+	.bound_arg = 2,
 };

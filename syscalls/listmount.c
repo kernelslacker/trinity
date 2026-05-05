@@ -274,4 +274,5 @@ struct syscallentry syscall_listmount = {
 	.group = GROUP_VFS,
 	.sanitise = sanitise_listmount,
 	.post = post_listmount,
+	.bound_arg = 3,
 };

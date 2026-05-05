@@ -49,6 +49,7 @@ struct syscallentry syscall_recv = {
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
 	.sanitise = sanitise_recv,
+	.bound_arg = 3,
 };
 
 
@@ -66,6 +67,7 @@ struct syscallentry syscall_recvfrom = {
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
 	.sanitise = sanitise_recv,	// same as recv
+	.bound_arg = 3,
 };
 
 

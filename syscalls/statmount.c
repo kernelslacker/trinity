@@ -318,4 +318,5 @@ struct syscallentry syscall_statmount = {
 	.group = GROUP_VFS,
 	.sanitise = sanitise_statmount,
 	.post = post_statmount,
+	.bound_arg = 3,
 };
