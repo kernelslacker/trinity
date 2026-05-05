@@ -81,15 +81,55 @@ static int init_iommufd_fds(void)
 
 static int get_rand_iommufd_fd(void)
 {
-	struct object *obj;
-
 	if (objects_empty(OBJ_FD_IOMMUFD) == true)
 		return -1;
 
-	obj = get_random_object(OBJ_FD_IOMMUFD, OBJ_GLOBAL);
-	if (obj == NULL)
-		return -1;
-	return obj->iommufdobj.fd;
+	/*
+	 * Versioned slot pick + validate_object_handle() before the
+	 * obj->iommufdobj.fd deref, mirroring the wireup at 15b6257b8206
+	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
+	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
+	 * reader UAF window the framework commit a7fdbb97830c spelled out:
+	 * between the lockless slot pick and the consumer's read of
+	 * the iommufd handed to ioctl(IOMMU_*) via the fd_provider .get callback,
+	 * the parent can destroy the obj, free_shared_obj() returns the
+	 * chunk to the shared-heap freelist, and a concurrent
+	 * alloc_shared_obj() recycles it underneath us.
+	 */
+	for (int i = 0; i < 1000; i++) {
+		unsigned int slot_idx, slot_version;
+		struct object *obj;
+		int fd;
+
+		obj = get_random_object_versioned(OBJ_FD_IOMMUFD, OBJ_GLOBAL,
+						  &slot_idx, &slot_version);
+		if (obj == NULL)
+			continue;
+
+		/*
+		 * Heap pointers land at >= 0x10000 and below the 47-bit
+		 * user/kernel boundary; anything outside that window can't
+		 * be a real obj struct.  Reject before deref.
+		 */
+		if ((uintptr_t)obj < 0x10000UL ||
+		    (uintptr_t)obj >= 0x800000000000UL) {
+			outputerr("get_rand_iommufd_fd: bogus obj %p in "
+				  "OBJ_FD_IOMMUFD pool\n", obj);
+			continue;
+		}
+
+		if (!validate_object_handle(OBJ_FD_IOMMUFD, OBJ_GLOBAL, obj,
+					    slot_idx, slot_version))
+			continue;
+
+		fd = obj->iommufdobj.fd;
+		if (fd < 0)
+			continue;
+
+		return fd;
+	}
+
+	return -1;
 }
 
 static int open_iommufd_fd(void)
