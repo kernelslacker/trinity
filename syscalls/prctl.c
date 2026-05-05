@@ -238,7 +238,9 @@ static void post_prctl(struct syscallrecord *rec)
 	case PR_SET_SECCOMP:
 		bpf = snap->bpf;
 		if (bpf != NULL) {
-			free(bpf->filter);
+			if (inner_ptr_ok_to_free(rec, bpf->filter,
+						 "post_prctl/bpf_filter"))
+				free(bpf->filter);
 			free(bpf);
 		}
 		break;
