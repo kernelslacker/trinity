@@ -16,8 +16,6 @@
 #include <linux/fib_rules.h>
 #include <linux/genetlink.h>
 #include <linux/netfilter/nfnetlink.h>
-#include <linux/netfilter/nfnetlink_conntrack.h>
-#include <linux/netfilter/nf_tables.h>
 #include <linux/xfrm.h>
 #include <linux/audit.h>
 #include <linux/sock_diag.h>
@@ -29,6 +27,7 @@
 #include "net.h"
 #include "netlink-attrs.h"
 #include "netlink-genl-families.h"
+#include "netlink-nfnl-subsystems.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -136,7 +135,13 @@ static unsigned short pick_nlmsg_type(int protocol)
 		return RAND_ARRAY(audit_types);
 	case NETLINK_NETFILTER: {
 		/* nfnetlink: subsys << 8 | msg.
-		 * Use proper NFNL_SUBSYS_* constants for better coverage. */
+		 *
+		 * Bias toward (subsys, cmd) pairs from the registry so the
+		 * kernel's per-subsys nfnl_callback dispatcher actually
+		 * accepts the type byte; the registered cmd set comes from
+		 * net/netlink-nfnl-sub-*.c.  Keep an unknown-cmd path with
+		 * low probability to keep exercising the
+		 * dispatcher-not-registered fast-reject. */
 		static const unsigned char nfnl_subsys[] = {
 			NFNL_SUBSYS_CTNETLINK, NFNL_SUBSYS_CTNETLINK_EXP,
 			NFNL_SUBSYS_QUEUE, NFNL_SUBSYS_ULOG,
@@ -147,6 +152,13 @@ static unsigned short pick_nlmsg_type(int protocol)
 		};
 		unsigned char subsys;
 
+		if (!ONE_IN(4)) {
+			const struct nfnl_subsys_grammar *sub;
+
+			sub = nfnl_pick_subsys();
+			if (sub != NULL)
+				return (sub->subsys_id << 8) | nfnl_pick_cmd(sub);
+		}
 		if (ONE_IN(8))
 			subsys = rand() % 16;
 		else
@@ -1160,72 +1172,6 @@ static const struct nla_attr_spec xfrma_specs[] = {
 	{ XFRMA_SA_DIR,          NLA_KIND_U8,     1 },
 };
 
-/* ctnetlink attribute spec table (CTA_*) */
-static const struct nla_attr_spec cta_specs[] = {
-	{ CTA_TUPLE_ORIG,     NLA_KIND_NESTED, 0 },
-	{ CTA_TUPLE_REPLY,    NLA_KIND_NESTED, 0 },
-	{ CTA_STATUS,         NLA_KIND_U32,    4 },
-	{ CTA_PROTOINFO,      NLA_KIND_NESTED, 0 },
-	{ CTA_HELP,           NLA_KIND_NESTED, 0 },
-	{ CTA_NAT_SRC,        NLA_KIND_NESTED, 0 },
-	{ CTA_NAT_DST,        NLA_KIND_NESTED, 0 },
-	{ CTA_TIMEOUT,        NLA_KIND_U32,    4 },
-	{ CTA_MARK,           NLA_KIND_U32,    4 },
-	{ CTA_MARK_MASK,      NLA_KIND_U32,    4 },
-	{ CTA_COUNTERS_ORIG,  NLA_KIND_NESTED, 0 },
-	{ CTA_COUNTERS_REPLY, NLA_KIND_NESTED, 0 },
-	{ CTA_USE,            NLA_KIND_U32,    4 },
-	{ CTA_ID,             NLA_KIND_U32,    4 },
-	{ CTA_TUPLE_MASTER,   NLA_KIND_NESTED, 0 },
-	{ CTA_SEQ_ADJ_ORIG,   NLA_KIND_NESTED, 0 },
-	{ CTA_SEQ_ADJ_REPLY,  NLA_KIND_NESTED, 0 },
-	{ CTA_ZONE,           NLA_KIND_U16,    2 },
-	{ CTA_TIMESTAMP,      NLA_KIND_NESTED, 0 },
-	{ CTA_LABELS,         NLA_KIND_BINARY, 16 },
-	{ CTA_LABELS_MASK,    NLA_KIND_BINARY, 16 },
-	{ CTA_SYNPROXY,       NLA_KIND_NESTED, 0 },
-	{ CTA_FILTER,         NLA_KIND_NESTED, 0 },
-	{ CTA_STATUS_MASK,    NLA_KIND_U32,    4 },
-};
-
-/* nftables attribute spec table (NFTA_*) — covers the table/chain/rule/set
- * top-level namespaces, which are what userspace tooling spends most of
- * its time emitting. */
-static const struct nla_attr_spec nfta_specs[] = {
-	/* NFT_MSG_*TABLE */
-	{ NFTA_TABLE_NAME,       NLA_KIND_STRING, 32 },
-	{ NFTA_TABLE_FLAGS,      NLA_KIND_U32,    4 },
-	{ NFTA_TABLE_HANDLE,     NLA_KIND_U64,    8 },
-	{ NFTA_TABLE_USERDATA,   NLA_KIND_BINARY, 64 },
-	/* NFT_MSG_*CHAIN */
-	{ NFTA_CHAIN_TABLE,      NLA_KIND_STRING, 32 },
-	{ NFTA_CHAIN_HANDLE,     NLA_KIND_U64,    8 },
-	{ NFTA_CHAIN_NAME,       NLA_KIND_STRING, 32 },
-	{ NFTA_CHAIN_HOOK,       NLA_KIND_NESTED, 0 },
-	{ NFTA_CHAIN_POLICY,     NLA_KIND_U32,    4 },
-	{ NFTA_CHAIN_TYPE,       NLA_KIND_STRING, 16 },
-	{ NFTA_CHAIN_FLAGS,      NLA_KIND_U32,    4 },
-	{ NFTA_CHAIN_USERDATA,   NLA_KIND_BINARY, 64 },
-	/* NFT_MSG_*RULE */
-	{ NFTA_RULE_TABLE,       NLA_KIND_STRING, 32 },
-	{ NFTA_RULE_CHAIN,       NLA_KIND_STRING, 32 },
-	{ NFTA_RULE_HANDLE,      NLA_KIND_U64,    8 },
-	{ NFTA_RULE_EXPRESSIONS, NLA_KIND_NESTED, 0 },
-	{ NFTA_RULE_POSITION,    NLA_KIND_U64,    8 },
-	{ NFTA_RULE_USERDATA,    NLA_KIND_BINARY, 64 },
-	/* NFT_MSG_*SET */
-	{ NFTA_SET_TABLE,        NLA_KIND_STRING, 32 },
-	{ NFTA_SET_NAME,         NLA_KIND_STRING, 32 },
-	{ NFTA_SET_FLAGS,        NLA_KIND_U32,    4 },
-	{ NFTA_SET_KEY_TYPE,     NLA_KIND_U32,    4 },
-	{ NFTA_SET_KEY_LEN,      NLA_KIND_U32,    4 },
-	{ NFTA_SET_DATA_TYPE,    NLA_KIND_U32,    4 },
-	{ NFTA_SET_DATA_LEN,     NLA_KIND_U32,    4 },
-	{ NFTA_SET_POLICY,       NLA_KIND_U32,    4 },
-	{ NFTA_SET_TIMEOUT,      NLA_KIND_U64,    8 },
-	{ NFTA_SET_USERDATA,     NLA_KIND_BINARY, 64 },
-};
-
 /*
  * Generate body for NETLINK_XFRM messages.
  * Body struct varies by message type. The big structs (xfrm_usersa_info
@@ -1746,8 +1692,9 @@ static size_t append_specced_nlattr(unsigned char *buf, size_t offset,
  * Return the nla_attr_spec table for a given protocol/nlmsg_type pair,
  * setting *nr_out to its element count.  NULL means the family is not
  * spec-aware and the caller should fall back to the legacy flat-attr
- * generator.  Netfilter dispatches by subsystem nibble of nlmsg_type
- * since CTNETLINK and NFTABLES occupy different sub-namespaces.
+ * generator.  Netfilter dispatches by NFNL_SUBSYS_x nibble of
+ * nlmsg_type via the per-subsys grammar registry; generic netlink
+ * dispatches by runtime-resolved family_id via the genl registry.
  */
 static const struct nla_attr_spec *pick_spec_table(int protocol,
 						   unsigned short nlmsg_type,
@@ -1772,16 +1719,12 @@ static const struct nla_attr_spec *pick_spec_table(int protocol,
 		*nr_out = ARRAY_SIZE(xfrma_specs);
 		return xfrma_specs;
 	case NETLINK_NETFILTER: {
-		unsigned char subsys = nlmsg_type >> 8;
+		const struct nfnl_subsys_grammar *sub;
 
-		if (subsys == NFNL_SUBSYS_CTNETLINK ||
-		    subsys == NFNL_SUBSYS_CTNETLINK_EXP) {
-			*nr_out = ARRAY_SIZE(cta_specs);
-			return cta_specs;
-		}
-		if (subsys == NFNL_SUBSYS_NFTABLES) {
-			*nr_out = ARRAY_SIZE(nfta_specs);
-			return nfta_specs;
+		sub = nfnl_lookup_by_subsys(nlmsg_type >> 8);
+		if (sub != NULL && sub->n_attrs > 0) {
+			*nr_out = sub->n_attrs;
+			return sub->attrs;
 		}
 		return NULL;
 	}
