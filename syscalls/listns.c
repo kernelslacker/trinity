@@ -53,9 +53,22 @@ static unsigned long ns_types[] = {
 	CLONE_NEWTIME,
 };
 
+/*
+ * Snapshot of the listns input args read by the post oracle, captured at
+ * sanitise time and consumed by the post handler.  Lives in rec->post_state,
+ * a slot the syscall ABI does not expose, so a sibling syscall scribbling
+ * rec->aN between the syscall returning and the post handler running cannot
+ * smear the size bound used to validate the retval.
+ */
+struct listns_post_state {
+	unsigned long req;
+	unsigned long nr_ns_ids;
+};
+
 static void sanitise_listns(struct syscallrecord *rec)
 {
 	struct ns_id_req *req;
+	struct listns_post_state *snap;
 
 	req = zmalloc(sizeof(struct ns_id_req));
 	req->size = NS_ID_REQ_SIZE_VER0;
@@ -72,26 +85,51 @@ static void sanitise_listns(struct syscallrecord *rec)
 	 */
 	avoid_shared_buffer(&rec->a2, rec->a3 * sizeof(__u64));
 
-	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
-	 * syscall before post_listns() runs. */
-	rec->post_state = (unsigned long) req;
+	/* Snapshot for the post handler -- a1 / a3 may be scribbled by a
+	 * sibling syscall before post_listns() runs. */
+	snap = zmalloc(sizeof(*snap));
+	snap->req = rec->a1;
+	snap->nr_ns_ids = rec->a3;
+	rec->post_state = (unsigned long) snap;
 }
 
 static void post_listns(struct syscallrecord *rec)
 {
-	void *req = (void *) rec->post_state;
+	struct listns_post_state *snap = (struct listns_post_state *) rec->post_state;
 
-	if (req == NULL)
+	if (snap == NULL)
 		return;
 
-	if (looks_like_corrupted_ptr(rec, req)) {
-		outputerr("post_listns: rejected suspicious req=%p (pid-scribbled?)\n", req);
+	if (looks_like_corrupted_ptr(rec, snap)) {
+		outputerr("post_listns: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
 		rec->a1 = 0;
 		rec->post_state = 0;
 		return;
 	}
 
+	/*
+	 * Kernel ABI: sys_listns writes at most nr_ns_ids u64 namespace IDs
+	 * to the user buffer and returns the count written, capped at the
+	 * snapshotted nr_ns_ids arg.  Failure returns -1UL.  Anything >
+	 * snap->nr_ns_ids on a non-(-1UL) return is structural ABI
+	 * corruption: a sign-extension tear in the syscall return path, a
+	 * kernel-side write that spilled past the user-supplied bound, or a
+	 * torn read of the namespace iterator counter.  Fall through to
+	 * out_free so the deferred req / post_state buffers are still
+	 * released.
+	 */
+	if ((long) rec->retval != -1L &&
+	    (unsigned long) rec->retval > snap->nr_ns_ids) {
+		outputerr("post_listns: retval %lu exceeds requested nr_ns_ids %lu\n",
+			  (unsigned long) rec->retval, snap->nr_ns_ids);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
+	}
+
+out_free:
 	rec->a1 = 0;
+	deferred_freeptr(&snap->req);
 	deferred_freeptr(&rec->post_state);
 }
 
