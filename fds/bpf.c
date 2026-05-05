@@ -666,21 +666,62 @@ static int init_bpf_btf_fds(void)
 
 int get_rand_bpf_btf_fd(void)
 {
-	struct object *obj = NULL;
 	struct objhead *local;
 
-	/* See get_rand_bpf_fd() for why we coin-flip OBJ_LOCAL first. */
+	/* See get_rand_bpf_fd() for why we coin-flip OBJ_LOCAL first.
+	 * OBJ_LOCAL is per-child and unaffected by the lockless-reader
+	 * UAF window addressed by a7fdbb97830c, so only the OBJ_GLOBAL
+	 * fallback below gets the slot-version validation wireup. */
 	local = get_objhead(OBJ_LOCAL, OBJ_FD_BPF_BTF);
-	if (local != NULL && local->num_entries > 0 && RAND_BOOL())
-		obj = get_random_object(OBJ_FD_BPF_BTF, OBJ_LOCAL);
-	if (obj == NULL) {
-		if (objects_empty(OBJ_FD_BPF_BTF) == true)
-			return -1;
-		obj = get_random_object(OBJ_FD_BPF_BTF, OBJ_GLOBAL);
+	if (local != NULL && local->num_entries > 0 && RAND_BOOL()) {
+		struct object *obj = get_random_object(OBJ_FD_BPF_BTF,
+						       OBJ_LOCAL);
+		if (obj != NULL)
+			return obj->bpfbtfobj.fd;
 	}
-	if (obj == NULL)
+
+	if (objects_empty(OBJ_FD_BPF_BTF) == true)
 		return -1;
-	return obj->bpfbtfobj.fd;
+
+	/*
+	 * Versioned slot pick + validate_object_handle() before the
+	 * obj->bpfbtfobj.fd deref, mirroring the wireup at 15b6257b8206
+	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
+	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
+	 * reader UAF window: between the lockless slot pick and the
+	 * consumer's read of the BTF fd routed into
+	 * BPF_OBJ_GET_INFO_BY_FD, the parent can destroy the obj and a
+	 * concurrent alloc_shared_obj() recycles the chunk.
+	 */
+	for (int i = 0; i < 1000; i++) {
+		unsigned int slot_idx, slot_version;
+		struct object *obj;
+		int fd;
+
+		obj = get_random_object_versioned(OBJ_FD_BPF_BTF, OBJ_GLOBAL,
+						  &slot_idx, &slot_version);
+		if (obj == NULL)
+			continue;
+
+		if ((uintptr_t)obj < 0x10000UL ||
+		    (uintptr_t)obj >= 0x800000000000UL) {
+			outputerr("get_rand_bpf_btf_fd: bogus obj %p in "
+				  "OBJ_FD_BPF_BTF pool\n", obj);
+			continue;
+		}
+
+		if (!validate_object_handle(OBJ_FD_BPF_BTF, OBJ_GLOBAL, obj,
+					    slot_idx, slot_version))
+			continue;
+
+		fd = obj->bpfbtfobj.fd;
+		if (fd < 0)
+			continue;
+
+		return fd;
+	}
+
+	return -1;
 }
 
 static const struct fd_provider bpf_btf_fd_provider = {
