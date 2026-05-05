@@ -342,6 +342,23 @@ struct stats_s {
 	 * routes through post_handler_corrupt_ptr_bump's per-handler ring. */
 	unsigned long rzs_blanket_reject;
 
+	/* handle_syscall_ret() saw reject_corrupt_retfd() flag a structurally
+	 * out-of-bound rec->retval on a RET_FD-class syscall (negative,
+	 * >= NR_OPEN, or otherwise outside [0, 1<<20)) BEFORE the
+	 * success/failure dispatch.  Distinct from shm->stats.failures: the
+	 * latter aggregates legitimate -1UL returns alongside the coerced
+	 * corruption returns, drowning the corruption signal in the noise
+	 * of normal failed syscalls (>50% of every fuzz run).  This counter
+	 * surfaces only the structurally-corrupt RET_FD subset, so a quiet
+	 * window where every failure was a real -ENOENT/-EBADF/etc still
+	 * reads as zero corruption -- non-zero here always means a fabricated
+	 * fd value reached the dispatcher.  Sub-attribution by syscall (nr,
+	 * do32bit) routes through post_handler_corrupt_ptr_bump's
+	 * per-handler ring (already invoked from inside
+	 * reject_corrupt_retfd()), so this counter is the headline tally and
+	 * the per-handler ring carries the breakdown. */
+	unsigned long retfd_blanket_reject;
+
 	/* init_child()'s sibling-freeze step issues mprotect(PROT_READ) on
 	 * every other child's childdata (and on the shared pids[] array) so
 	 * a value-result syscall buffer in one sibling can't scribble over
