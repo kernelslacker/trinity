@@ -22,6 +22,10 @@
 #define MPOL_WEIGHTED_INTERLEAVE 6	/* 6.9+ */
 #endif
 
+#ifndef MPOL_MF_LAZY
+#define MPOL_MF_LAZY (1 << 3)	/* lazy migrate-on-fault */
+#endif
+
 static void sanitise_mbind(struct syscallrecord *rec)
 {
 	unsigned long *mask;
@@ -68,7 +72,7 @@ static unsigned long mbind_modes[] = {
 };
 
 static unsigned long mbind_flags[] = {
-	MPOL_MF_STRICT, MPOL_MF_MOVE, MPOL_MF_MOVE_ALL,
+	MPOL_MF_STRICT, MPOL_MF_MOVE, MPOL_MF_MOVE_ALL, MPOL_MF_LAZY,
 	MPOL_F_STATIC_NODES, MPOL_F_RELATIVE_NODES,
 };
 
