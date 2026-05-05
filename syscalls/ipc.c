@@ -5,6 +5,7 @@
  * Old-style IPC multiplexer.  Maps to semop/semget/semctl/msgsnd/msgrcv/
  * msgget/msgctl/shmat/shmdt/shmget/shmctl via the 'call' argument.
  */
+#include <limits.h>
 #include <linux/ipc.h>
 #include <linux/sem.h>
 #include <linux/msg.h>
@@ -12,6 +13,18 @@
 #include <string.h>
 #include "random.h"
 #include "sanitise.h"
+#include "trinity.h"
+#include "utils.h"
+
+/*
+ * Forward-declare the userspace cleanup prototypes. The matching
+ * <sys/{sem,msg,shm}.h> headers re-define struct {sem,msq,shm}id_ds and
+ * collide with the <linux/...> versions used throughout this file, so
+ * we declare just the entry points we need.
+ */
+extern int semctl(int semid, int semnum, int cmd, ...);
+extern int msgctl(int msqid, int cmd, struct msqid_ds *buf);
+extern int shmctl(int shmid, int cmd, struct shmid_ds *buf);
 
 static unsigned long ipc_calls[] = {
 	SEMOP, SEMGET, SEMCTL, SEMTIMEDOP,
@@ -308,6 +321,64 @@ static void sanitise_ipc(struct syscallrecord *rec)
 	}
 }
 
+/*
+ * The ipc() multiplexer can dispatch to semget/msgget/shmget, each of
+ * which allocates a kernel IPC array via newary() that persists until
+ * explicitly removed. Mirror the post handlers on the modern direct
+ * syscalls (post_semget/post_msgget/post_shmget) and IPC_RMID the freshly
+ * created id immediately, otherwise a long fuzz run accumulates thousands
+ * of sem/msg arrays totalling several GB of vmalloc and OOM-kills the box.
+ */
+static void post_ipc(struct syscallrecord *rec)
+{
+	unsigned long call = rec->a1;
+	long ret = (long) rec->retval;
+	int id;
+
+	/* Ordinary error return: -1 with errno set. */
+	if (ret < 0)
+		return;
+
+	switch (call) {
+	case SEMGET:
+	case MSGGET:
+	case SHMGET:
+		break;
+	default:
+		return;
+	}
+
+	/*
+	 * The kernel ABI guarantees these *get() calls return either -1 or
+	 * a non-negative int IPC id (0..INT_MAX). A retval outside that
+	 * range cannot have come from the kernel; silently truncating to
+	 * (int) would IPC_RMID an unrelated object on the host that
+	 * happens to share the low 31 bits of the garbage.
+	 */
+	if (ret > INT_MAX) {
+		output(0, "ipc oracle: returned IPC id 0x%lx out of "
+			  "range (must be 0..INT_MAX)\n",
+			  (unsigned long) rec->retval);
+		(void) looks_like_corrupted_ptr(rec,
+						(const void *) rec->retval);
+		return;
+	}
+
+	id = (int) ret;
+
+	switch (call) {
+	case SEMGET:
+		semctl(id, 0, IPC_RMID);
+		break;
+	case MSGGET:
+		msgctl(id, IPC_RMID, NULL);
+		break;
+	case SHMGET:
+		shmctl(id, IPC_RMID, NULL);
+		break;
+	}
+}
+
 struct syscallentry syscall_ipc = {
 	.name = "ipc",
 	.group = GROUP_IPC,
@@ -317,4 +388,5 @@ struct syscallentry syscall_ipc = {
 	.arg_params[0].list = ARGLIST(ipc_calls),
 	.flags = IGNORE_ENOSYS,
 	.sanitise = sanitise_ipc,
+	.post = post_ipc,
 };
