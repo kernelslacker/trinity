@@ -14,17 +14,16 @@
 #include "utils.h"
 
 /*
- * Snapshot of the one getcwd input arg read by the post oracle, captured
+ * Snapshot of the getcwd input args read by the post oracle, captured
  * at sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot redirect the source memcpy at a foreign user
- * buffer.  The size arg (rec->a2) is not snapshotted because the post
- * handler bounds the copy by rec->retval (the kernel-reported length),
- * not by the caller-supplied size.
+ * buffer or launder an oversized retval past the size bound below.
  */
 struct getcwd_post_state {
 	unsigned long buf;
+	unsigned long size;
 };
 
 static void sanitise_getcwd(struct syscallrecord *rec)
@@ -50,6 +49,7 @@ static void sanitise_getcwd(struct syscallrecord *rec)
 	 */
 	snap = zmalloc(sizeof(*snap));
 	snap->buf = rec->a1;
+	snap->size = rec->a2;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -98,6 +98,26 @@ static void post_getcwd(struct syscallrecord *rec)
 			  snap);
 		rec->post_state = 0;
 		return;
+	}
+
+	/*
+	 * STRONG-VAL length bound: sys_getcwd on success returns the byte
+	 * length (including the trailing NUL) of the path written into the
+	 * user `buf`, capped at the caller-supplied `size`.  Failure
+	 * returns a negative errno.  A retval > size on a positive return
+	 * is a structural ABI regression -- a torn write of the length, a
+	 * sibling-stomp of rec->retval between syscall return and post
+	 * entry, or a path-component miscount in prepend_path().  Compare
+	 * against the snapshotted size (snap->size) rather than rec->a2 so
+	 * a sibling that scribbles rec->aN cannot launder an oversized
+	 * retval past this gate.  Fires unconditionally, ahead of the
+	 * ONE_IN(100) sample gate, so every offending retval is counted.
+	 */
+	if ((long)rec->retval > 0 && (unsigned long)rec->retval > snap->size) {
+		outputerr("post_getcwd: rejected retval=0x%lx > size=%lu\n",
+			  rec->retval, snap->size);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
 	}
 
 	if (!ONE_IN(100))
