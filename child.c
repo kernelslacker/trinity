@@ -902,7 +902,7 @@ static const int dormant_op_disabled[39] = {
 	1, 1, 1, 1, 1,	/* 20-24: dormant: futex_storm, pipe_thrash, fork_storm, flock_thrash, cgroup_churn */
 	1, 1, 1, 1, 1,	/* 25-29: dormant: mount_churn, uffd_churn, iouring_flood, close_racer, socket_family_chain */
 	1, 1, 1, 1, 1,	/* 30-34: dormant: xattr_thrash, pidfd_storm, madvise_cycler, epoll_volatility, keyring_spam */
-	1, 1, 1, 1,	/* 35-38: dormant: vdso_mremap_race, numa_migration, cpu_hotplug_rider, slab_cache_thrash */
+	1, 1, 1, 0,	/* 35-38: slab_cache_thrash active; dormant: vdso_mremap_race, numa_migration, cpu_hotplug_rider */
 };
 
 /*
@@ -945,6 +945,7 @@ static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_KEYRING_SPAM,
 	CHILD_OP_VDSO_MREMAP_RACE,
 	CHILD_OP_MEMORY_PRESSURE,
+	CHILD_OP_SLAB_CACHE_THRASH,
 	CHILD_OP_USERNS_FUZZER,
 	CHILD_OP_SCHED_CYCLER,
 	CHILD_OP_BARRIER_RACER,
