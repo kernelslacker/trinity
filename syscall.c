@@ -507,6 +507,7 @@ static void canary_stomp_warn_ratelimited(const struct syscallentry *entry,
 void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 {
 	unsigned int call = rec->nr;
+	bool retfd_rejected;
 
 	/* Wholesale-stomp check: if anything overwrote the rec while the
 	 * kernel had control, the canary won't match.  Catches the rarer
@@ -563,8 +564,25 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 	 * scoreboards the bogus value, entry->successes and stats.successes
 	 * both bump.  Coercing to -1UL here lets the dispatch below route
 	 * the rejected case through handle_failure() naturally, and the
-	 * forced errno_post = EINVAL drops cleanly into the errno bucket. */
-	reject_corrupt_retfd(entry, rec);
+	 * forced errno_post = EINVAL drops cleanly into the errno bucket.
+	 *
+	 * Capture the rejection so we can both (a) tally it under a
+	 * dedicated counter -- shm->stats.failures aggregates this with
+	 * legitimate -1UL returns and would drown the corruption signal
+	 * in the noise of normal failed syscalls -- and (b) skip
+	 * entry->post() on the corrupt path so a .post handler that
+	 * happens not to short-circuit on (long)retval < 0 (defence in
+	 * depth: every RET_FD .post in-tree does, but the dispatcher
+	 * shouldn't have to trust that going forward) can't act on a
+	 * fabricated return.  Sub-attribution by (nr, do32bit) was
+	 * already routed to post_handler_corrupt_ptr_bump's per-handler
+	 * ring from inside reject_corrupt_retfd(), so this counter is
+	 * the headline tally and the per-handler ring carries the
+	 * per-syscall breakdown. */
+	retfd_rejected = reject_corrupt_retfd(entry, rec);
+	if (retfd_rejected)
+		__atomic_add_fetch(&shm->stats.retfd_blanket_reject, 1,
+				   __ATOMIC_RELAXED);
 
 	if (rec->retval == -1UL) {
 		int err = rec->errno_post;
@@ -601,7 +619,12 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 
 	enforce_count_bound(entry, rec);
 
-	if (entry->post)
+	/* Skip entry->post on a rejected RET_FD: handler would be acting
+	 * on a fabricated retval, attribution already happened inside
+	 * reject_corrupt_retfd().  register_returned_fd() below already
+	 * short-circuits on (long)rec->retval < 0 so the coerced -1UL
+	 * makes it a no-op there regardless. */
+	if (entry->post && !retfd_rejected)
 	    entry->post(rec);
 
 	register_returned_fd(entry, rec);
