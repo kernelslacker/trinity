@@ -142,6 +142,27 @@ static void post_lgetxattr(struct syscallrecord *rec)
 		return;
 	}
 
+	/*
+	 * STRONG-VAL count bound: lgetxattr(2) on success returns the number
+	 * of bytes the VFS copied into the user `value` buffer, capped at the
+	 * `size` argument (rec->a4) by vfs_getxattr's truncation; failure
+	 * returns -1UL.  A retval > size on a non-(-1UL) return is structurally
+	 * impossible from the VFS path -- it points at a sign-extension tear,
+	 * a sibling-stomp of rec->retval between syscall return and post entry,
+	 * or -errno leaking through the success slot.  Fire unconditionally,
+	 * ahead of the ONE_IN(100) sample gate that throttles the equality
+	 * oracle, so every offending retval is counted, not one-in-a-hundred.
+	 * The pre-existing retval <= 0 gate after the sample stays in place.
+	 */
+	if ((long) rec->retval == -1L)
+		goto out_free;
+	if (rec->retval > rec->a4) {
+		outputerr("post_lgetxattr: rejecting retval %lu > size %lu\n",
+			  rec->retval, rec->a4);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
+	}
+
 	if (!ONE_IN(100))
 		goto out_free;
 
