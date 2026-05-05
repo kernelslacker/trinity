@@ -2,10 +2,12 @@
  * SYSCALL_DEFINE2(socketcall, int, call, unsigned long __user *, args)
  */
 #include <stdlib.h>
+#include <unistd.h>
 #include <linux/net.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include "net.h"
+#include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -76,6 +78,10 @@ static void socketcall_socketpair(unsigned long *args)
 	args[0] = st.family;
 	args[1] = st.type;
 	args[2] = st.protocol;
+	/* SYS_SOCKETPAIR needs a writable int[2] for the kernel to deposit
+	 * the pair of fds.  Without it the kernel returns -EFAULT and the
+	 * post handler has nothing to register.  Freed in post_socketcall. */
+	args[3] = (unsigned long) malloc(sizeof(int) * 2);
 }
 
 static void socketcall_send(unsigned long *args)
@@ -184,9 +190,51 @@ static void sanitise_socketcall(struct syscallrecord *rec)
 	rec->post_state = (unsigned long) args;
 }
 
+static void register_sock_fd(int fd, unsigned long family,
+			     unsigned long type, unsigned long protocol)
+{
+	const struct netproto *proto;
+	struct object *new;
+
+	if (family >= TRINITY_PF_MAX) {
+		close(fd);
+		return;
+	}
+
+	proto = net_protocols[family].proto;
+	if (proto != NULL)
+		if (proto->socket_setup != NULL)
+			proto->socket_setup(fd);
+
+	new = alloc_object();
+	new->sockinfo.fd = fd;
+	new->sockinfo.triplet.family = family;
+	new->sockinfo.triplet.type = type;
+	new->sockinfo.triplet.protocol = protocol;
+	add_object(new, OBJ_LOCAL, OBJ_FD_SOCKET);
+}
+
+static void register_accepted_fd(int fd, int listener_fd)
+{
+	struct fd_hash_entry *listen_entry;
+	struct object *new;
+
+	new = alloc_object();
+	new->sockinfo.fd = fd;
+
+	/* Inherit triplet from the listening socket. */
+	listen_entry = fd_hash_lookup(listener_fd);
+	if (listen_entry != NULL && listen_entry->type == OBJ_FD_SOCKET)
+		new->sockinfo.triplet = listen_entry->obj->sockinfo.triplet;
+
+	add_object(new, OBJ_LOCAL, OBJ_FD_SOCKET);
+}
+
 static void post_socketcall(struct syscallrecord *rec)
 {
-	void *args = (void *) rec->post_state;
+	unsigned long *args = (unsigned long *) rec->post_state;
+	unsigned long call = rec->a1;
+	long retval = (long) rec->retval;
 
 	if (args == NULL)
 		return;
@@ -196,6 +244,46 @@ static void post_socketcall(struct syscallrecord *rec)
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
+	}
+
+	/*
+	 * The args buffer is a multiplexer trampoline: each sub-call has its
+	 * own per-syscall post handler in syscalls/socket.c, accept.c, etc.,
+	 * but the multiplexer bypasses them.  Without this dispatch every fd
+	 * created by socketcall(SYS_SOCKET/SOCKETPAIR/ACCEPT/ACCEPT4) leaks
+	 * out of trinity's OBJ_FD_SOCKET pool, sits in the kernel fd table
+	 * burning RLIMIT_NOFILE until child exit, and is invisible to sibling
+	 * syscalls (no one can pick it).  Mirrors the IPC RMID handler added
+	 * for the ipc() multiplexer.
+	 */
+	switch (call) {
+	case SYS_SOCKET:
+		if (retval >= 0)
+			register_sock_fd(retval, args[0], args[1], args[2]);
+		break;
+
+	case SYS_ACCEPT:
+	case SYS_ACCEPT4:
+		if (retval >= 0)
+			register_accepted_fd(retval, (int) args[0]);
+		break;
+
+	case SYS_SOCKETPAIR: {
+		int *fds = (int *) args[3];
+
+		if (fds != NULL) {
+			if (retval >= 0) {
+				register_sock_fd(fds[0], args[0], args[1], args[2]);
+				register_sock_fd(fds[1], args[0], args[1], args[2]);
+			}
+			free(fds);
+			args[3] = 0;
+		}
+		break;
+	}
+
+	default:
+		break;
 	}
 
 	rec->a2 = 0;
