@@ -4,6 +4,7 @@
 #include <limits.h>
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void post_timer_getoverrun(struct syscallrecord *rec)
 {
@@ -12,9 +13,11 @@ static void post_timer_getoverrun(struct syscallrecord *rec)
 	if (ret == -1L)
 		return;
 
-	if (ret < 0 || ret > INT_MAX)
+	if (ret < 0 || ret > INT_MAX) {
 		output(0, "timer_getoverrun oracle: returned %ld is out of range (must be 0..INT_MAX or -1)\n",
 			ret);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
 }
 
 struct syscallentry syscall_timer_getoverrun = {
