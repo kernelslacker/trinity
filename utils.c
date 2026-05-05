@@ -64,13 +64,13 @@ static void note_shared_overflow(const char *who, const void *addr)
 		who, MAX_SHARED_ALLOCS, addr);
 }
 
-static void * __alloc_shared(unsigned int size, bool is_global_obj)
+static void * __alloc_shared(size_t size, bool is_global_obj)
 {
 	void *ret;
 
 	ret = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0);
 	if (ret == MAP_FAILED) {
-		outputerr("mmap %u failure\n", size);
+		outputerr("mmap %zu failure\n", size);
 		exit(EXIT_FAILURE);
 	}
 	/* poison with independently-random bytes to expose uninitialized reads. */
@@ -118,7 +118,7 @@ void track_shared_region(unsigned long addr, unsigned long size)
 	}
 }
 
-void * alloc_shared(unsigned int size)
+void * alloc_shared(size_t size)
 {
 	return __alloc_shared(size, false);
 }
@@ -130,9 +130,14 @@ void * alloc_shared(unsigned int size)
  * that stray-write into the global object pool then SIGSEGV at the
  * source instead of silently corrupting parent state.
  */
-void * alloc_shared_global(unsigned int size)
+void * alloc_shared_global(size_t size)
 {
 	return __alloc_shared(size, true);
+}
+
+bool shared_size_mul(size_t a, size_t b, size_t *out)
+{
+	return !__builtin_mul_overflow(a, b, out);
 }
 
 /*

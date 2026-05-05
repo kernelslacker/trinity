@@ -493,8 +493,14 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 {
 	unsigned int n, m;
 	struct syscallentry *copy;
+	size_t bytes;
 
-	copy = alloc_shared(nr * sizeof(struct syscallentry));
+	if (!shared_size_mul(nr, sizeof(struct syscallentry), &bytes)) {
+		outputerr("copy_syscall_table: nr=%u * sizeof(struct syscallentry) overflows size_t\n",
+			  nr);
+		exit(EXIT_FAILURE);
+	}
+	copy = alloc_shared(bytes);
 	if (copy == NULL)
 		exit(EXIT_FAILURE);
 

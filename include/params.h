@@ -21,6 +21,13 @@
 /* command line args. */
 void parse_args(int argc, char *argv[]);
 
+/*
+ * Apply the derived max_children cap to the default num_online_cpus*4
+ * value when -C was not used.  No-op when -C is in effect: the parser
+ * already validated user_specified_children against the same cap.
+ */
+void clamp_default_max_children(void);
+
 extern bool set_debug;
 
 extern bool do_32_arch;

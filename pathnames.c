@@ -318,7 +318,16 @@ static const char ** list_to_index(struct namelist *namelist)
 		total_str_bytes += strlen(nl->name) + 1;
 	}
 
-	findex = alloc_shared_global(sizeof(char *) * files_in_index);
+	{
+		size_t findex_bytes;
+
+		if (!shared_size_mul(files_in_index, sizeof(char *), &findex_bytes)) {
+			outputerr("list_to_index: files_in_index=%u * sizeof(char *) overflows size_t\n",
+				  files_in_index);
+			exit(EXIT_FAILURE);
+		}
+		findex = alloc_shared_global(findex_bytes);
+	}
 	slab = alloc_shared_global(total_str_bytes ? total_str_bytes : 1);
 
 	/* Second pass: copy strings into the slab and build the index. */

@@ -83,7 +83,8 @@ void create_shm(void)
 void init_shm(void)
 {
 	unsigned int i;
-	unsigned int childptrslen;
+	size_t childptrslen;
+	size_t fd_event_ring_arr_bytes;
 
 	output(2, "shm is at %p\n", shm);
 
@@ -115,7 +116,12 @@ void init_shm(void)
 
 	__atomic_store_n(&shm->seed, init_seed(seed), __ATOMIC_RELAXED);
 
-	childptrslen = max_children * sizeof(struct childdata *);
+	if (!shared_size_mul(max_children, sizeof(struct childdata *),
+			     &childptrslen)) {
+		outputerr("init_shm: max_children=%u * sizeof(struct childdata *) overflows size_t\n",
+			  max_children);
+		exit(EXIT_FAILURE);
+	}
 	/* round up to page size */
 	childptrslen += page_size - 1;
 	childptrslen &= PAGE_MASK;
@@ -138,8 +144,13 @@ void init_shm(void)
 	 * to it after that point will SIGSEGV at the source.  We store one
 	 * pointer per child slot and compare in fd_event_drain_all().
 	 */
-	expected_fd_event_rings = alloc_shared_global(
-		max_children * sizeof(struct fd_event_ring *));
+	if (!shared_size_mul(max_children, sizeof(struct fd_event_ring *),
+			     &fd_event_ring_arr_bytes)) {
+		outputerr("init_shm: max_children=%u * sizeof(struct fd_event_ring *) overflows size_t\n",
+			  max_children);
+		exit(EXIT_FAILURE);
+	}
+	expected_fd_event_rings = alloc_shared_global(fd_event_ring_arr_bytes);
 
 	/* We allocate the childdata structs as shared mappings, because
 	 * the forking process needs to peek into each childs syscall records
