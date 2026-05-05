@@ -118,6 +118,7 @@ struct syscallentry syscall_write = {
 	.sanitise = sanitise_write,
 	.post     = post_write,
 	.group = GROUP_VFS,
+	.bound_arg = 3,
 };
 
 /*
@@ -160,6 +161,7 @@ struct syscallentry syscall_pwrite64 = {
 	.sanitise = sanitise_pwrite64,
 	.post     = post_write,
 	.group = GROUP_VFS,
+	.bound_arg = 3,
 };
 
 

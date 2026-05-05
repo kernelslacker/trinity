@@ -51,6 +51,7 @@ struct syscallentry syscall_send = {
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
 	.sanitise = sanitise_send,
+	.bound_arg = 3,
 };
 
 
@@ -68,6 +69,7 @@ struct syscallentry syscall_sendto = {
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
 	.sanitise = sanitise_send,	// same as send
+	.bound_arg = 3,
 };
 
 /*

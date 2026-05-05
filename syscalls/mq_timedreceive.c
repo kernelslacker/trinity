@@ -52,4 +52,5 @@ struct syscallentry syscall_mq_timedreceive = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_mq_timedreceive,
 	.post = post_mq_timedreceive,
+	.bound_arg = 3,
 };

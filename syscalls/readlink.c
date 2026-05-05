@@ -259,6 +259,7 @@ struct syscallentry syscall_readlink = {
 #if defined(SYS_readlink) || defined(__NR_readlink)
 	.post = post_readlink,
 #endif
+	.bound_arg = 3,
 };
 
 
@@ -497,4 +498,5 @@ struct syscallentry syscall_readlinkat = {
 #if defined(SYS_readlinkat) || defined(__NR_readlinkat)
 	.post = post_readlinkat,
 #endif
+	.bound_arg = 4,
 };
