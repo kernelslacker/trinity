@@ -136,9 +136,11 @@ static void post_recvmsg(struct syscallrecord *rec)
 		return;
 	}
 
-	free(msg->msg_control);
+	if (inner_ptr_ok_to_free(rec, msg->msg_control, "post_recvmsg/msg_control"))
+		free(msg->msg_control);
 	deferred_free_enqueue(msg->msg_iov, NULL);
-	free(msg->msg_name);
+	if (inner_ptr_ok_to_free(rec, msg->msg_name, "post_recvmsg/msg_name"))
+		free(msg->msg_name);
 	rec->a2 = 0;
 	deferred_freeptr(&rec->post_state);
 }
@@ -243,8 +245,12 @@ static void post_recvmmsg(struct syscallrecord *rec)
 
 	for (i = 0; i < vlen; i++) {
 		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov, NULL);
-		free(msgs[i].msg_hdr.msg_control);
-		free(msgs[i].msg_hdr.msg_name);
+		if (inner_ptr_ok_to_free(rec, msgs[i].msg_hdr.msg_control,
+					 "post_recvmmsg/msg_control"))
+			free(msgs[i].msg_hdr.msg_control);
+		if (inner_ptr_ok_to_free(rec, msgs[i].msg_hdr.msg_name,
+					 "post_recvmmsg/msg_name"))
+			free(msgs[i].msg_hdr.msg_name);
 	}
 	rec->a2 = 0;
 	deferred_freeptr(&rec->post_state);
