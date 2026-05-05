@@ -324,9 +324,51 @@ retry:
 	if (retries >= 10)
 		return get_random_fd();
 
-	obj = get_random_object(objtype, OBJ_GLOBAL);
-	if (obj == NULL)
-		return get_random_fd();
+	{
+		unsigned int slot_idx, slot_version;
+
+		/*
+		 * Versioned slot pick + validate_object_handle() before
+		 * fd_from_object() derefs obj->...obj.fd, mirroring the
+		 * wireup at 15b6257b8206 (fds/sockets.c get_rand_socketinfo)
+		 * and 5ef98298f6ad (syscalls/keyctl.c KEYCTL_WATCH_KEY).
+		 * Same OBJ_GLOBAL lockless-reader UAF window the framework
+		 * commit a7fdbb97830c addresses: between the lockless slot
+		 * pick and fd_from_object()'s deref, the parent can destroy
+		 * the obj, free_shared_obj() returns the chunk to the
+		 * shared-heap freelist, and a concurrent alloc_shared_obj()
+		 * recycles it underneath us.
+		 *
+		 * Adapted shape: get_typed_fd() already had a bounded
+		 * retry loop (retries >= 10) for the existing
+		 * fd_hash_lookup() stale-fd recovery path, plus a
+		 * request_fd_regen() side effect.  Reuse that same retry
+		 * budget for version-validate failures rather than nesting
+		 * a second retry loop — both failure modes are
+		 * "this slot got stomped, try another", and the existing
+		 * fd_hash check stays in place after the deref since it
+		 * catches a different failure (fd closed by another path
+		 * after the obj was published).
+		 */
+		obj = get_random_object_versioned(objtype, OBJ_GLOBAL,
+						  &slot_idx, &slot_version);
+		if (obj == NULL)
+			return get_random_fd();
+
+		if ((uintptr_t)obj < 0x10000UL ||
+		    (uintptr_t)obj >= 0x800000000000UL) {
+			outputerr("get_typed_fd: bogus obj %p in objtype=%d "
+				  "pool\n", obj, objtype);
+			retries++;
+			goto retry;
+		}
+
+		if (!validate_object_handle(objtype, OBJ_GLOBAL, obj,
+					    slot_idx, slot_version)) {
+			retries++;
+			goto retry;
+		}
+	}
 
 	fd = fd_from_object(obj, objtype);
 	if (fd < 0)
