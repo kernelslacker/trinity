@@ -2,6 +2,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdint.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
@@ -804,8 +805,14 @@ static unsigned char last_reject_have_syscall;
 
 bool range_overlaps_shared(unsigned long addr, unsigned long len)
 {
-	unsigned long end = addr + len;
+	unsigned long end;
 	unsigned int i;
+
+	/* Treat wrapped ranges as overlapping so callers reject them. */
+	if (len != 0 && addr > ULONG_MAX - len)
+		return true;
+
+	end = addr + len;
 
 	for (i = 0; i < nr_shared_regions; i++) {
 		unsigned long r_start = shared_regions[i].addr;
