@@ -457,17 +457,87 @@ static int open_sockets(void)
 
 struct socketinfo * get_rand_socketinfo(void)
 {
-	struct object *obj;
-
 	/* When using victim files, sockets can be 0. */
 	if (objects_empty(OBJ_FD_SOCKET) == true)
 		return NULL;
 
-	obj = get_random_object(OBJ_FD_SOCKET, OBJ_GLOBAL);
-	if (obj == NULL)
-		return NULL;
+	for (int i = 0; i < 1000; i++) {
+		unsigned int slot_idx, slot_version;
+		struct object *obj;
+		struct socketinfo *si;
 
-	return &obj->sockinfo;
+		/*
+		 * Use the versioned API so we can re-validate the slot
+		 * right before handing &obj->sockinfo back to the caller.
+		 * The lockless OBJ_GLOBAL reader race that surfaced the
+		 * +0x1ded78 SEGV cluster (sanitise-hook-audit rows 1-4 —
+		 * sanitise_recv/sendmsg/mmsg, setsockopt, getsockopt) is
+		 * the same shape get_map() already defends against:
+		 * the parent destroys the obj between the lockless pick
+		 * and the consumer's later deref of si->triplet.family /
+		 * si->fd, and free_shared_obj() routes the chunk back to
+		 * the shared-heap freelist where a concurrent
+		 * alloc_shared_obj() recycles it underneath us.  The
+		 * version snapshot below + validate_object_handle() just
+		 * before return narrows that window to a few cycles.
+		 */
+		obj = get_random_object_versioned(OBJ_FD_SOCKET, OBJ_GLOBAL,
+						  &slot_idx, &slot_version);
+		if (obj == NULL)
+			continue;
+
+		/*
+		 * Defend against stale or corrupted slot pointers leaking
+		 * out of the OBJ_FD_SOCKET pool.  Heap pointers land at
+		 * >= 0x10000 and below the 47-bit user/kernel boundary;
+		 * any obj pointer outside that window can't be a real obj
+		 * struct, and dereferencing &obj->sockinfo then si->fd or
+		 * si->triplet.family scribbles garbage into whatever
+		 * sanitise_* hook is consuming the socketinfo (recvmsg's
+		 * msg_name, setsockopt's level/optname dispatch).
+		 */
+		if ((uintptr_t)obj < 0x10000UL ||
+		    (uintptr_t)obj >= 0x800000000000UL) {
+			outputerr("get_rand_socketinfo: bogus obj %p in "
+				  "OBJ_FD_SOCKET pool\n", obj);
+			continue;
+		}
+
+		si = &obj->sockinfo;
+
+		/*
+		 * Even when the obj pointer is sane, the socketinfo may
+		 * have been stomped by a stray syscall write — leaving a
+		 * believable obj address but wildly wrong fd/family.
+		 * Legitimate sockets always have fd >= 0 (set by
+		 * add_socket() before publish) and family < TRINITY_PF_MAX
+		 * (the same bound syscalls/socket.c:133 and
+		 * syscalls/socketcall.c:199 enforce on the dispatch path).
+		 * Reject anything outside those bounds rather than feed it
+		 * into rand_proto_for_family() / get_domain_name() etc.
+		 */
+		if (si->fd < 0 || si->triplet.family >= TRINITY_PF_MAX) {
+			outputerr("get_rand_socketinfo: bogus sockinfo "
+				  "(fd=%d family=%u) for obj %p\n",
+				  si->fd, si->triplet.family, obj);
+			continue;
+		}
+
+		/*
+		 * Last-line check: if the parent destroyed/replaced this
+		 * slot between get_random_object_versioned() and now, the
+		 * version no longer matches and obj is unsafe to deref.
+		 * Drop it and pick again rather than handing &obj->sockinfo
+		 * to the caller.
+		 */
+		if (!validate_object_handle(OBJ_FD_SOCKET, OBJ_GLOBAL, obj,
+					    slot_idx, slot_version))
+			continue;
+
+		return si;
+	}
+
+	return NULL;
 }
 
 static int get_rand_socket_fd(void)
