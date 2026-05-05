@@ -509,6 +509,7 @@ static void post_bpf(struct syscallrecord *rec)
 	union bpf_attr *attr;
 	unsigned int cmd;
 	int fd = rec->retval;
+	unsigned long ret = rec->retval;
 
 	rec->a2 = 0;
 
@@ -546,6 +547,41 @@ static void post_bpf(struct syscallrecord *rec)
 
 	cmd = snap->cmd;
 	attr = snap->attr;
+
+	/*
+	 * Per-cmd STRONG-VAL on retval for the *_GET_NEXT_ID dispatch.
+	 * BPF_{PROG,MAP,BTF,LINK}_GET_NEXT_ID all funnel through
+	 * bpf_obj_get_next_id() in kernel/bpf/syscall.c, which returns 0
+	 * on success (writing the resolved id into attr->next_id via
+	 * put_user) or -EINVAL / -EPERM / -ENOENT / -EFAULT on failure --
+	 * the syscall return is RZS, not the id itself; the id lives in
+	 * attr->next_id.  Any retval other than 0 or -1UL on these cmds
+	 * is structural corruption: a torn write of the return slot, a
+	 * sign-extension at the syscall ABI boundary, or -errno bits
+	 * leaking through the success path without becoming -1UL.  None
+	 * of the four register through add_object, so the FD-pool blanket
+	 * gate at add_object's entry never sees their retval; this per-
+	 * cmd guard closes that gap.  Validate against the snapshotted
+	 * cmd, not rec->a1, so a sibling scribble of rec->a1 cannot
+	 * misroute the dispatch.  -1UL fall-through is intentional --
+	 * every documented failure path lands there.
+	 */
+	if (ret != (unsigned long)-1L) {
+		switch (cmd) {
+		case BPF_PROG_GET_NEXT_ID:
+		case BPF_MAP_GET_NEXT_ID:
+		case BPF_BTF_GET_NEXT_ID:
+		case BPF_LINK_GET_NEXT_ID:
+			if (ret != 0) {
+				outputerr("post_bpf: cmd=%u rejected GET_NEXT_ID retval=0x%lx (expected 0 or -1UL)\n",
+					  cmd, ret);
+				post_handler_corrupt_ptr_bump(rec, NULL);
+			}
+			break;
+		default:
+			break;
+		}
+	}
 
 	switch (cmd) {
 	case BPF_MAP_CREATE:
