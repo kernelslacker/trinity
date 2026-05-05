@@ -671,7 +671,8 @@ static void dump_stats_json(void)
 		"\"uffd_churn\":{\"runs\":%lu,\"registers\":%lu,\"unregisters\":%lu,\"failed\":%lu},"
 		"\"iouring_flood\":{\"runs\":%lu,\"submits\":%lu,\"reaped\":%lu,\"failed\":%lu},"
 		"\"close_racer\":{\"runs\":%lu,\"pairs\":%lu,\"failed\":%lu,\"thread_spawn_fail\":%lu},"
-		"\"socket_family_chain\":{\"runs\":%lu,\"completed\":%lu,\"failed\":%lu,\"authencesn_attempts\":%lu,\"splice_attempts\":%lu}"
+		"\"socket_family_chain\":{\"runs\":%lu,\"completed\":%lu,\"failed\":%lu,\"authencesn_attempts\":%lu,\"splice_attempts\":%lu},"
+		"\"tls_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_failed\":%lu,\"installs\":%lu,\"rekeys_ok\":%lu,\"rekeys_rejected\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -837,7 +838,13 @@ static void dump_stats_json(void)
 		shm->stats.socket_family_chain_completed,
 		shm->stats.socket_family_chain_failed,
 		shm->stats.socket_family_chain_authencesn_attempts,
-		shm->stats.socket_family_chain_splice_attempts);
+		shm->stats.socket_family_chain_splice_attempts,
+		shm->stats.tls_rotate_runs,
+		shm->stats.tls_rotate_setup_failed,
+		shm->stats.tls_rotate_ulp_failed,
+		shm->stats.tls_rotate_installs,
+		shm->stats.tls_rotate_rekeys_ok,
+		shm->stats.tls_rotate_rekeys_rejected);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -1758,6 +1765,15 @@ void dump_stats(void)
 		stat_row("socket_family_chain", "failed",              shm->stats.socket_family_chain_failed);
 		stat_row("socket_family_chain", "authencesn_attempts", shm->stats.socket_family_chain_authencesn_attempts);
 		stat_row("socket_family_chain", "splice_attempts",     shm->stats.socket_family_chain_splice_attempts);
+	}
+
+	if (shm->stats.tls_rotate_runs) {
+		stat_row("tls_rotate", "runs",            shm->stats.tls_rotate_runs);
+		stat_row("tls_rotate", "setup_failed",    shm->stats.tls_rotate_setup_failed);
+		stat_row("tls_rotate", "ulp_failed",      shm->stats.tls_rotate_ulp_failed);
+		stat_row("tls_rotate", "installs",        shm->stats.tls_rotate_installs);
+		stat_row("tls_rotate", "rekeys_ok",       shm->stats.tls_rotate_rekeys_ok);
+		stat_row("tls_rotate", "rekeys_rejected", shm->stats.tls_rotate_rekeys_rejected);
 	}
 
 	if (kcov_shm != NULL) {

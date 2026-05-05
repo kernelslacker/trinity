@@ -635,6 +635,14 @@ struct stats_s {
 	unsigned long socket_family_chain_authencesn_attempts;	/* authencesn name forced */
 	unsigned long socket_family_chain_splice_attempts;	/* splice path replaced sendmsg data leg */
 
+	/* tls_rotate childop counters */
+	unsigned long tls_rotate_runs;			/* total tls_rotate invocations */
+	unsigned long tls_rotate_setup_failed;		/* loopback TCP pair setup failed */
+	unsigned long tls_rotate_ulp_failed;		/* setsockopt(TCP_ULP, "tls") failed (no CONFIG_TLS) */
+	unsigned long tls_rotate_installs;		/* successful initial TLS_TX install */
+	unsigned long tls_rotate_rekeys_ok;		/* rekey TLS_TX install accepted */
+	unsigned long tls_rotate_rekeys_rejected;	/* rekey TLS_TX install rejected (EBUSY etc) */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
