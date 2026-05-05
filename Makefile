@@ -72,7 +72,7 @@ asan: trinity
 debug: trinity
 
 test:
-	@if [ ! -f config.h ]; then  echo "[1;31mRun configure.sh first.[0m" ; exit; fi
+	@if [ ! -f config.h ]; then  echo "[1;31mRun ./configure first.[0m" ; exit; fi
 
 
 MACHINE		:= $(shell $(CC) -dumpmachine)
