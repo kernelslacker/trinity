@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE3(getdents, unsigned int, fd,
     struct linux_dirent __user *, dirent, unsigned int, count)
  */
+#include <limits.h>
 #include "arch.h"
 #include "sanitise.h"
 #include "trinity.h"
@@ -40,7 +41,7 @@ static void post_getdents(struct syscallrecord *rec)
 	if (retval == (unsigned long)-1L)
 		return;
 
-	if ((long) retval < 0 || retval > count) {
+	if (retval > LONG_MAX || retval > count) {
 		outputerr("post_getdents: rejected retval %ld outside [0, count=%lu] and != -1UL\n",
 			  (long) retval, count);
 		post_handler_corrupt_ptr_bump(rec, NULL);
