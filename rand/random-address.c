@@ -5,6 +5,8 @@
 #include <string.h>
 #include <sys/uio.h>
 #include <sys/mman.h>	// mprotect
+#include <sys/ipc.h>
+#include <sys/shm.h>
 
 #include "arch.h"	// KERNEL_ADDR etc
 #include "random.h"
@@ -89,6 +91,21 @@ retry:	tries++;
 			goto retry;
 		if (obj->sysv_shm.size < size)
 			goto retry;
+		/*
+		 * The pool slot was valid when populated, but a sibling
+		 * shmctl(IPC_RMID) may have flipped the segment to the
+		 * SHM_DEST/zombie state in the meantime.  Touching the
+		 * cached ptr after that SIGSEGVs/SIGBUSes the consumer.
+		 * Probe the segment with IPC_STAT and retry the slot if
+		 * the lookup fails or the destroy bit is set.
+		 */
+		{
+			struct shmid_ds buf;
+			if (shmctl(obj->sysv_shm.id, IPC_STAT, &buf) != 0)
+				goto retry;
+			if (buf.shm_perm.mode & SHM_DEST)
+				goto retry;
+		}
 		addr = obj->sysv_shm.ptr;
 	}
 
