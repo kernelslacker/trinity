@@ -172,11 +172,14 @@ static void post_sendmsg(struct syscallrecord *rec)
 	}
 
 	if (msg->msg_iov != NULL) {
-		if (rec->a4)
+		if (rec->a4 &&
+		    inner_ptr_ok_to_free(rec, msg->msg_iov[0].iov_base,
+					 "post_sendmsg/iov_base"))
 			free(msg->msg_iov[0].iov_base);
 		deferred_free_enqueue(msg->msg_iov, NULL);
 	}
-	free(msg->msg_name);	// free sockaddr
+	if (inner_ptr_ok_to_free(rec, msg->msg_name, "post_sendmsg/msg_name"))
+		free(msg->msg_name);	// free sockaddr
 	rec->a2 = 0;
 	deferred_freeptr(&rec->post_state);
 }
@@ -282,7 +285,9 @@ static void post_sendmmsg(struct syscallrecord *rec)
 
 	for (i = 0; i < vlen; i++) {
 		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov, NULL);
-		free(msgs[i].msg_hdr.msg_name);
+		if (inner_ptr_ok_to_free(rec, msgs[i].msg_hdr.msg_name,
+					 "post_sendmmsg/msg_name"))
+			free(msgs[i].msg_hdr.msg_name);
 	}
 	rec->a2 = 0;
 	deferred_freeptr(&rec->post_state);

@@ -134,6 +134,31 @@ bool looks_like_corrupted_ptr_pc(struct syscallrecord *rec, const void *p,
 void post_handler_corrupt_ptr_bump(struct syscallrecord *rec, void *caller_pc);
 
 /*
+ * Inner-pointer-field free guard for post handlers that walk a
+ * snapshotted struct (msghdr / mmsghdr / etc.) and free its inner
+ * pointer fields.  The OUTER snapshot pointer is alignment-checked at
+ * handler entry, but the inner pointer fields live in the snapshotted
+ * struct's heap bytes and can be partially overwritten by a sibling
+ * syscall that scribbles bytes into that allocation.  A scribble that
+ * preserves the high bits (still heap-shaped) but clobbers the low byte
+ * leaves a misaligned heap-shaped value, which then trips libasan's
+ * PoisonShadow alignment CHECK at asan_poisoning.cpp:37 once it reaches
+ * free().
+ *
+ * Returns true if @p is safe to hand to free().  NULL is treated as a
+ * legitimate "field not populated" value (e.g. msg_name when no
+ * sockaddr was generated, msg_control when sanitise_*msg chose not to
+ * populate it) and does not count as a rejection.  When the rejected
+ * value matches the libasan-CHECK trigger band -- heap-shaped
+ * (>= 0x10000) but misaligned ((v & 0x7) != 0) -- emit an outputerr()
+ * line tagged with @site so the interception is visible in logs and
+ * the per-PC attribution ring (post_handler_corrupt_ptr) names the
+ * offending field.
+ */
+bool inner_ptr_ok_to_free(struct syscallrecord *rec, const void *p,
+			  const char *site);
+
+/*
  * Cache the [heap] extent from /proc/self/maps.  Call once before
  * fork; every child inherits the cached bounds via COW BSS.
  */

@@ -1178,6 +1178,32 @@ bool looks_like_corrupted_ptr(struct syscallrecord *rec, const void *p)
 	return looks_like_corrupted_ptr_pc(rec, p, NULL);
 }
 
+bool inner_ptr_ok_to_free(struct syscallrecord *rec, const void *p,
+			  const char *site)
+{
+	unsigned long v = (unsigned long) p;
+
+	if (p == NULL)
+		return false;
+
+	if (!looks_like_corrupted_ptr(rec, p))
+		return true;
+
+	/*
+	 * Heap-shaped but misaligned -- the exact band that bypasses the
+	 * outer-ptr alignment guard (because the outer ptr passes) but
+	 * trips libasan's PoisonShadow CHECK once the inner field reaches
+	 * free().  Surface it explicitly so log scanners can correlate the
+	 * interception with the asan_poisoning.cpp:37 crash signature; the
+	 * per-handler attribution ring already names the syscall via rec.
+	 */
+	if (v >= 0x10000 && (v & 0x7) != 0)
+		outputerr("%s: rejected misaligned heap-shaped inner ptr=0x%lx "
+			  "(libasan PoisonShadow trigger; scribbled?)\n",
+			  site, v);
+	return false;
+}
+
 /*
  * Cached extent of the brk()-managed glibc arena, captured once at
  * init time from /proc/self/maps.  COW-shared into every forked child
