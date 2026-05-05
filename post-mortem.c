@@ -393,7 +393,7 @@ static void write_artifact_buf(const char *dir, const char *name,
 
 static void dump_kcov_state(FILE *fp)
 {
-	unsigned long edges, pcs, calls, remote;
+	unsigned long edges, pcs, calls, remote, truncated;
 	unsigned int i, cold = 0;
 	unsigned int nr_to_scan;
 
@@ -402,13 +402,18 @@ static void dump_kcov_state(FILE *fp)
 		return;
 	}
 
-	edges  = __atomic_load_n(&kcov_shm->edges_found,  __ATOMIC_RELAXED);
-	pcs    = __atomic_load_n(&kcov_shm->total_pcs,    __ATOMIC_RELAXED);
-	calls  = __atomic_load_n(&kcov_shm->total_calls,  __ATOMIC_RELAXED);
-	remote = __atomic_load_n(&kcov_shm->remote_calls, __ATOMIC_RELAXED);
+	edges     = __atomic_load_n(&kcov_shm->edges_found,    __ATOMIC_RELAXED);
+	pcs       = __atomic_load_n(&kcov_shm->total_pcs,      __ATOMIC_RELAXED);
+	calls     = __atomic_load_n(&kcov_shm->total_calls,    __ATOMIC_RELAXED);
+	remote    = __atomic_load_n(&kcov_shm->remote_calls,   __ATOMIC_RELAXED);
+	truncated = __atomic_load_n(&kcov_shm->trace_truncated, __ATOMIC_RELAXED);
 
 	fprintf(fp, "KCOV: %lu unique edges, %lu total PCs, %lu calls (%lu remote)\n",
 		edges, pcs, calls, remote);
+	if (truncated > 0)
+		fprintf(fp, "KCOV: %lu calls truncated trace buffer (%.2f%% of calls) — consider raising KCOV_TRACE_SIZE\n",
+			truncated,
+			calls > 0 ? (100.0 * truncated) / calls : 0.0);
 
 	nr_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
 	for (i = 0; i < nr_to_scan; i++) {
