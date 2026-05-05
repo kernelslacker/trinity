@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 #include <errno.h>
+#include "cgroup.h"
 #include "child.h"
 #include "fd-event.h"
 #include "maps.h"
@@ -1421,9 +1422,16 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	/* requires ROOT to select pid that doesn't belong to us */
 
 	if (flags & PERF_FLAG_PID_CGROUP) {
-		/* In theory in this case we should pass in */
-		/* a file descriptor from /dev/cgroup       */
-		pid = get_random_fd();
+		/* PERF_FLAG_PID_CGROUP makes the kernel interpret 'pid' as
+		 * a cgroup directory fd (an O_PATH dir under /sys/fs/cgroup).
+		 * Pull from the cgroup pool so the cgroup-pinned perf path
+		 * actually exercises real cgroup attachment instead of
+		 * bouncing off EBADF on the first random fd we hand it.
+		 * If the pool is empty (no cgroupfs mounted, init failed),
+		 * fall back to a generic random fd to keep this path firing. */
+		pid = get_rand_cgroup_fd();
+		if (pid < 0)
+			pid = get_random_fd();
 	} else {
 		switch(rand() % 4) {
 		case 0:	/* use current thread */

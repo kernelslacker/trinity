@@ -129,6 +129,10 @@ struct mountfdobj {
 	int fd;
 };
 
+struct cgroupfdobj {
+	int fd;
+};
+
 struct io_uringobj {
 	int fd;
 	unsigned int setup_flags;
@@ -203,6 +207,8 @@ struct object {
 		struct signalfdobj signalfdobj;
 
 		struct mountfdobj mountfdobj;
+
+		struct cgroupfdobj cgroupfdobj;
 
 		struct iommufdobj iommufdobj;
 
