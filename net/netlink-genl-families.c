@@ -36,6 +36,7 @@
 #include "utils.h"
 
 extern struct genl_family_grammar fam_devlink;
+extern struct genl_family_grammar fam_nl80211;
 
 /*
  * Per-family grammar definitions live in net/netlink-genl-fam-*.c;
@@ -45,6 +46,7 @@ extern struct genl_family_grammar fam_devlink;
  */
 static struct genl_family_grammar *registry[] = {
 	&fam_devlink,
+	&fam_nl80211,
 };
 
 static int discovery_done;
