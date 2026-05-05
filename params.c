@@ -15,6 +15,7 @@
 #include "params.h"
 #include "domains.h"
 #include "random.h"
+#include "strategy.h"
 #include "syscall.h"
 #include "tables.h"
 #include "taint.h"
@@ -326,6 +327,7 @@ static const struct option_help option_descs[] = {
 	{ "show-unannotated",	 0,  "show unannotated syscalls" },
 	{ "stats",		 0,  "show errno distribution per syscall before exiting" },
 	{ "stats-json",		 0,  "emit dump_stats output as a single JSON object on stdout (machine-readable)" },
+	{ "strategy",		 0,  "arm-selection policy for the multi-strategy rotation: round-robin (default) or bandit (UCB1)" },
 	{ "syslog",		'S', "log important info to syslog (useful if syslog is remote)" },
 	{ "verbose",		'v', "increase output verbosity. Repeat for more detail (-vv)" },
 	{ "victims",		'V', "path to victim files (may be repeated)" },
@@ -399,6 +401,7 @@ static const struct option longopts[] = {
 	{ "random", required_argument, NULL, 'r' },
 	{ "stats", no_argument, NULL, 0 },
 	{ "stats-json", no_argument, NULL, 0 },
+	{ "strategy", required_argument, NULL, 0 },
 	{ "show-unannotated", no_argument, NULL, 0 },
 	{ "syslog", no_argument, NULL, 'S' },
 	{ "verbose", no_argument, NULL, 'v' },
@@ -707,6 +710,14 @@ void parse_args(int argc, char *argv[])
 			if (strcmp("stats-json", longopts[opt_index].name) == 0) {
 				stats_json = true;
 				show_stats = true;
+			}
+
+			if (strcmp("strategy", longopts[opt_index].name) == 0) {
+				if (!parse_picker_mode(optarg, &picker_mode_arg)) {
+					outputerr("--strategy: unknown picker '%s' (try round-robin or bandit)\n",
+						  optarg);
+					exit(EXIT_FAILURE);
+				}
 			}
 
 			if (strcmp("no-warm-start", longopts[opt_index].name) == 0)

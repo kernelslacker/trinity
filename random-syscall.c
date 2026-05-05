@@ -427,7 +427,8 @@ static void apply_chain_substitution(struct syscallrecord *rec,
 
 /*
  * Check the rotation boundary and, if crossed, atomically claim the
- * switch and bump shm->current_strategy round-robin to the next strategy.
+ * switch and update shm->current_strategy to whatever the configured
+ * picker (round-robin or UCB1 bandit, see strategy.h) selects next.
  *
  * The rotation clock is shm->stats.op_count (fleet-wide ops, including
  * non-syscall alt-ops — every child contributes ticks at the same rate).
@@ -471,7 +472,15 @@ static void maybe_rotate_strategy(void)
 	edges_in_window = edges_now - shm->edges_at_window_start;
 	syscalls_in_window = now - last;
 
-	next = (prev + 1) % NR_STRATEGIES;
+	/* Feed the just-finished window into the bandit before asking
+	 * the picker to choose the next arm, so UCB1 sees up-to-date
+	 * pulls/reward when scoring.  Round-robin mode ignores the
+	 * counters but the bookkeeping is harmless and lets the
+	 * end-of-run summary print pulls under either picker. */
+	bandit_record_pull(prev, edges_in_window);
+	next = pick_next_strategy(prev);
+	if (next < 0 || next >= NR_STRATEGIES)
+		next = (prev + 1) % NR_STRATEGIES;
 
 	shm->edges_at_window_start =
 		__atomic_load_n(&shm->edges_by_strategy[next], __ATOMIC_RELAXED);

@@ -1670,6 +1670,8 @@ void dump_stats(void)
 	if (verbosity > 1)
 		dump_syscall_category_histogram();
 
+	dump_strategy_stats();
+
 	{
 		size_t used = __atomic_load_n(&shm->shared_obj_heap_used,
 					      __ATOMIC_RELAXED);
