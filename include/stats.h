@@ -471,6 +471,21 @@ struct stats_s {
 	unsigned long genl_family_calls_ethtool;
 	unsigned long genl_family_calls_mptcp_pm;
 
+	/* nfnetlink registry per-subsystem dispatch counters.  Same shape
+	 * as the genl_family_calls counters above but for NETLINK_NETFILTER
+	 * subsystems.  Bumped from gen_nfnl_body() each time the message
+	 * generator routes an nfnetlink message at a registered subsys —
+	 * a non-zero count at run end confirms both that the type picker
+	 * landed on the subsys and that the body generator routed through
+	 * the spec-driven path.  Per subsys in the registry; the
+	 * ctnetlink/ctnetlink_exp pair share a CTA_* attr namespace but
+	 * each carries its own counter so the EXP traffic split is
+	 * visible. */
+	unsigned long nfnl_subsys_calls_ctnetlink;
+	unsigned long nfnl_subsys_calls_ctnetlink_exp;
+	unsigned long nfnl_subsys_calls_nftables;
+	unsigned long nfnl_subsys_calls_ipset;
+
 	/* perf_event_chains childop counters */
 	unsigned long perf_chains_runs;		/* total invocations */
 	unsigned long perf_chains_groups_created;	/* group leader fd opened successfully */
