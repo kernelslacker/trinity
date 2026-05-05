@@ -362,6 +362,7 @@ static bool argtype_accepts_numeric_substitute(enum argtype t)
 	case ARG_FD_PERF:
 	case ARG_FD_PIDFD:
 	case ARG_FD_PIPE:
+	case ARG_FD_SIGNALFD:
 	case ARG_FD_SOCKET:
 	case ARG_FD_TIMERFD:
 		return true;
