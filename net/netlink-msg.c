@@ -27,6 +27,8 @@
 #include <stdlib.h>
 #include <arpa/inet.h>
 #include "net.h"
+#include "netlink-attrs.h"
+#include "netlink-genl-families.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -152,7 +154,20 @@ static unsigned short pick_nlmsg_type(int protocol)
 		return (subsys << 8) | (rand() % 16);
 	}
 	case NETLINK_GENERIC:
-		/* genl: CTRL_CMD range or random family id */
+		/* genl: prefer a runtime-resolved family id from the
+		 * grammar registry when one is available; that gets the
+		 * message past the kernel's family demuxer into the
+		 * actual per-family parser.  Fall back to GENL_ID_CTRL or
+		 * a random nlmsg_type in the dynamic-allocation range to
+		 * keep exercising the unknown-family fast-reject path. */
+		if (!ONE_IN(4)) {
+			struct genl_family_grammar *fam;
+
+			genl_resolve_families();
+			fam = genl_pick_resolved_family();
+			if (fam != NULL)
+				return fam->family_id;
+		}
 		if (RAND_BOOL())
 			return GENL_ID_CTRL;
 		return RAND_RANGE(GENL_MIN_ID, GENL_MIN_ID + 64);
@@ -901,23 +916,6 @@ static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
  * generated attrs are length-rejected with -EINVAL before any code
  * the family cares about gets to run.
  */
-enum nla_kind {
-	NLA_KIND_U8,
-	NLA_KIND_U16,
-	NLA_KIND_U32,
-	NLA_KIND_U64,
-	NLA_KIND_BINARY,
-	NLA_KIND_STRING,
-	NLA_KIND_NESTED,
-	NLA_KIND_FLAG,
-};
-
-struct nla_attr_spec {
-	unsigned short type;
-	unsigned short kind;
-	unsigned short max_len;	/* upper bound on payload; 0 for fixed kinds */
-};
-
 /* genl controller (GENL_ID_CTRL) attributes */
 static const struct nla_attr_spec ctrl_specs[] = {
 	{ CTRL_ATTR_FAMILY_ID,    NLA_KIND_U16,    2 },
@@ -1059,19 +1057,29 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
  */
 static size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type)
 {
+	const struct genl_family_grammar *fam;
 	struct genlmsghdr genl;
 
 	if (nlmsg_type == GENL_ID_CTRL) {
 		/* Controller commands: GETFAMILY is the most useful */
 		genl.cmd = RAND_RANGE(CTRL_CMD_UNSPEC, CTRL_CMD_MAX);
+		genl.version = RAND_BOOL() ? 1 : rand() % 4;
+	} else if ((fam = genl_lookup_by_id(nlmsg_type)) != NULL) {
+		/* Resolved family: pick a known cmd from its grammar so the
+		 * family's command dispatcher accepts it.  Use the family's
+		 * preferred version when set so the version gate also
+		 * passes; the kernel-side check is usually >= so a small
+		 * version is fine. */
+		genl.cmd = genl_pick_cmd(fam);
+		genl.version = fam->default_version ? fam->default_version : 1;
 	} else {
 		/* Unknown family: random command, biased toward low values */
 		if (RAND_BOOL())
 			genl.cmd = rand() % 16;
 		else
 			genl.cmd = rand() % 256;
+		genl.version = RAND_BOOL() ? 1 : rand() % 4;
 	}
-	genl.version = RAND_BOOL() ? 1 : rand() % 4;
 	/* reserved: usually 0, but fuzz it sometimes to test validation */
 	genl.reserved = ONE_IN(4) ? rand16() : 0;
 
@@ -1745,12 +1753,20 @@ static const struct nla_attr_spec *pick_spec_table(int protocol,
 						   size_t *nr_out)
 {
 	switch (protocol) {
-	case NETLINK_GENERIC:
+	case NETLINK_GENERIC: {
+		const struct genl_family_grammar *fam;
+
 		if (nlmsg_type == GENL_ID_CTRL) {
 			*nr_out = ARRAY_SIZE(ctrl_specs);
 			return ctrl_specs;
 		}
+		fam = genl_lookup_by_id(nlmsg_type);
+		if (fam != NULL && fam->n_attrs > 0) {
+			*nr_out = fam->n_attrs;
+			return fam->attrs;
+		}
 		return NULL;
+	}
 	case NETLINK_XFRM:
 		*nr_out = ARRAY_SIZE(xfrma_specs);
 		return xfrma_specs;
