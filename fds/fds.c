@@ -308,6 +308,7 @@ int get_typed_fd(enum argtype type)
 	case ARG_FD_IO_URING:	objtype = OBJ_FD_IO_URING; break;
 	case ARG_FD_LANDLOCK:	objtype = OBJ_FD_LANDLOCK; break;
 	case ARG_FD_MEMFD:	objtype = OBJ_FD_MEMFD; break;
+	case ARG_FD_MOUNT:	objtype = OBJ_FD_MOUNT; break;
 	case ARG_FD_MQ:		objtype = OBJ_FD_MQ; break;
 	case ARG_FD_PERF:	objtype = OBJ_FD_PERF; break;
 	case ARG_FD_PIDFD:	objtype = OBJ_FD_PIDFD; break;
