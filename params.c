@@ -102,6 +102,42 @@ static bool parse_duration(const char *s, unsigned int *out)
 	return true;
 }
 
+/*
+ * Parse a non-negative decimal integer from optarg.  Requires the entire
+ * string be consumed (no trailing junk), rejects empty input and overflow,
+ * and optionally rejects zero.  On success writes the value to *out and
+ * returns true; on failure prints a diagnostic and returns false.
+ */
+static bool parse_unsigned(const char *s, const char *name,
+			   bool allow_zero, unsigned long *out)
+{
+	char *end;
+	unsigned long val;
+
+	if (s == NULL || *s == '\0') {
+		outputerr("--%s: missing value\n", name);
+		return false;
+	}
+
+	errno = 0;
+	val = strtoul(s, &end, 10);
+	if (end == s || *end != '\0') {
+		outputerr("--%s: can't parse '%s' as a number\n", name, s);
+		return false;
+	}
+	if (errno == ERANGE) {
+		outputerr("--%s: value '%s' out of range\n", name, s);
+		return false;
+	}
+	if (!allow_zero && val == 0) {
+		outputerr("--%s: zero is not a meaningful value\n", name);
+		return false;
+	}
+
+	*out = val;
+	return true;
+}
+
 bool no_warm_start = false;
 char *warm_start_path = NULL;
 
@@ -159,8 +195,8 @@ static const struct option_help option_descs[] = {
 	{ "dry-run",		 0,  "parse args and exit without fuzzing" },
 	{ "effector-map",	 0,  "calibrate per-bit input significance under KCOV and exit (one-shot)" },
 	{ "enable-fds",		 0,  NULL },	/* handled separately */
-	{ "epoch-iterations",	 0,  "syscalls per epoch before restarting (0 = disabled)" },
-	{ "epoch-timeout",	 0,  "seconds per epoch before restarting (0 = disabled)" },
+	{ "epoch-iterations",	 0,  "syscalls per epoch before restarting (must be > 0; omit to disable)" },
+	{ "epoch-timeout",	 0,  "seconds per epoch before restarting (must be > 0; omit to disable)" },
 	{ "exclude",		'x', "don't call a specific syscall" },
 	{ "group",		'g', "only run syscalls from a certain group (vfs,vm,net,ipc,process,signal,io_uring,bpf,sched,time)" },
 	{ "group-bias",		 0,  "bias syscall selection toward the same group as the previous call" },
@@ -510,14 +546,23 @@ void parse_args(int argc, char *argv[])
 			if (strcmp("enable-fds", longopts[opt_index].name) == 0)
 				process_fds_param(optarg, true);
 
-			if (strcmp("epoch-iterations", longopts[opt_index].name) == 0)
-				epoch_iterations = strtoul(optarg, NULL, 10);
+			if (strcmp("epoch-iterations", longopts[opt_index].name) == 0) {
+				if (!parse_unsigned(optarg, "epoch-iterations", false, &epoch_iterations))
+					exit(EXIT_FAILURE);
+			}
 
 			if (strcmp("epoch-timeout", longopts[opt_index].name) == 0) {
 				if (max_runtime_set) {
 					outputerr("warning: --max-runtime takes precedence; ignoring --epoch-timeout\n");
 				} else {
-					epoch_timeout = strtoul(optarg, NULL, 10);
+					unsigned long val;
+					if (!parse_unsigned(optarg, "epoch-timeout", false, &val))
+						exit(EXIT_FAILURE);
+					if (val > UINT_MAX) {
+						outputerr("--epoch-timeout: value %lu exceeds UINT_MAX\n", val);
+						exit(EXIT_FAILURE);
+					}
+					epoch_timeout = (unsigned int)val;
 					epoch_timeout_set = true;
 				}
 			}
