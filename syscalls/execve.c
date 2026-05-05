@@ -128,11 +128,13 @@ static void free_execve_ptrs(void **argv, void **envp,
 	unsigned int i;
 
 	for (i = 0; i < argvcount; i++)
-		free(argv[i]);
+		if (!looks_like_corrupted_ptr(NULL, argv[i]))
+			free(argv[i]);
 	free(argv);
 
 	for (i = 0; i < envpcount; i++)
-		free(envp[i]);
+		if (!looks_like_corrupted_ptr(NULL, envp[i]))
+			free(envp[i]);
 	free(envp);
 }
 
