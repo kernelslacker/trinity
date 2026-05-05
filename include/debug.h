@@ -6,7 +6,8 @@
 
 void show_backtrace(void);
 
-extern void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsigned int lineno);
+extern void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsigned int lineno)
+	__attribute__((noreturn));
 
 #define BUG(bugtxt)	do { \
 	__BUG(bugtxt, __FILE__, __func__, __LINE__); \

@@ -69,7 +69,7 @@ void show_backtrace(void)
 	show_child_backtrace();
 }
 
-void __BUG(const char *bugtxt, const char *filename, const char *funcname, unsigned int lineno)
+void __attribute__((noreturn)) __BUG(const char *bugtxt, const char *filename, const char *funcname, unsigned int lineno)
 {
 	struct childdata *child = this_child();
 
