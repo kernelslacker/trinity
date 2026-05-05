@@ -89,6 +89,14 @@ static void __attribute__((constructor)) read_filesystem_types(void)
 	nr_filesystem_types = count;
 }
 
+#ifndef MS_SUBMOUNT
+#define MS_SUBMOUNT	(1<<26)
+#endif
+
+#ifndef MS_NOREMOTELOCK
+#define MS_NOREMOTELOCK	(1<<27)
+#endif
+
 static unsigned long mount_flags[] = {
 	MS_RDONLY, MS_NOSUID, MS_NODEV, MS_NOEXEC,
 	MS_SYNCHRONOUS, MS_REMOUNT, MS_MANDLOCK, MS_DIRSYNC,
@@ -100,6 +108,7 @@ static unsigned long mount_flags[] = {
 	MS_NOUSER,
 	MS_NOSYMFOLLOW,		/* v5.10 */
 	MS_LAZYTIME,		/* v4.0 */
+	MS_SUBMOUNT, MS_NOREMOTELOCK,
 };
 
 static void sanitise_mount(struct syscallrecord *rec)
