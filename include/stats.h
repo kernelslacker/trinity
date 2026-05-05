@@ -643,6 +643,16 @@ struct stats_s {
 	unsigned long tls_rotate_rekeys_ok;		/* rekey TLS_TX install accepted */
 	unsigned long tls_rotate_rekeys_rejected;	/* rekey TLS_TX install rejected (EBUSY etc) */
 
+	/* packet_fanout_thrash childop counters */
+	unsigned long packet_fanout_runs;		/* total packet_fanout_thrash invocations */
+	unsigned long packet_fanout_setup_failed;	/* socket(AF_PACKET) failed (EPERM/no CONFIG_PACKET) */
+	unsigned long packet_fanout_ring_failed;	/* PACKET_RX_RING setsockopt failed */
+	unsigned long packet_fanout_rings_installed;	/* successful PACKET_RX_RING install */
+	unsigned long packet_fanout_mmap_failed;	/* mmap of the RX ring failed */
+	unsigned long packet_fanout_joins;		/* successful PACKET_FANOUT join */
+	unsigned long packet_fanout_rejoins_ok;		/* second PACKET_FANOUT setsockopt accepted */
+	unsigned long packet_fanout_rejoins_rejected;	/* second PACKET_FANOUT rejected (EALREADY etc) */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
