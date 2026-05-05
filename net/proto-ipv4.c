@@ -353,6 +353,9 @@ static const struct ip_sso_funcptr ip_ssoptrs[IPPROTO_MAX] = {
 	[IPPROTO_UDPLITE] = { .sol = SOL_UDPLITE, .func = &udplite_setsockopt },
 	[IPPROTO_RAW] = { .sol = SOL_RAW, .func = &raw_setsockopt },
 	[IPPROTO_MPLS] = { .func = NULL },
+#if defined(IPPROTO_MAX) && (IPPROTO_MPTCP < IPPROTO_MAX)
+	[IPPROTO_MPTCP] = { .sol = SOL_MPTCP, .func = &mptcp_setsockopt },
+#endif
 };
 
 static void call_inet_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
@@ -470,6 +473,8 @@ static struct socket_triplet ipv4_triplets[] = {
 	{ .family = PF_INET, .protocol = IPPROTO_IP, .type = SOCK_STREAM },
 
 	{ .family = PF_INET, .protocol = IPPROTO_TCP, .type = SOCK_STREAM },
+
+	{ .family = PF_INET, .protocol = IPPROTO_MPTCP, .type = SOCK_STREAM },
 
 	{ .family = PF_INET, .protocol = IPPROTO_UDP, .type = SOCK_DGRAM },
 

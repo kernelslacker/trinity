@@ -316,6 +316,10 @@ static void inet6_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 			so->level = SOL_DCCP;
 			dccp_setsockopt(so, triplet);
 			break;
+		case IPPROTO_MPTCP:
+			so->level = SOL_MPTCP;
+			mptcp_setsockopt(so, triplet);
+			break;
 		default:
 			__inet6_setsockopt(so);
 			break;
@@ -333,6 +337,8 @@ static struct socket_triplet ipv6_triplets[] = {
 	{ .family = PF_INET6, .protocol = IPPROTO_IP, .type = SOCK_STREAM },
 
 	{ .family = PF_INET6, .protocol = IPPROTO_TCP, .type = SOCK_STREAM },
+
+	{ .family = PF_INET6, .protocol = IPPROTO_MPTCP, .type = SOCK_STREAM },
 
 	{ .family = PF_INET6, .protocol = IPPROTO_UDP, .type = SOCK_DGRAM },
 

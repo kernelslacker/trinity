@@ -956,6 +956,9 @@ enum kcmp_type {
 #ifndef IPPROTO_MPLS
 #define IPPROTO_MPLS		137
 #endif
+#ifndef IPPROTO_MPTCP
+#define IPPROTO_MPTCP		262
+#endif
 
 /* linux/in6.h */
 #ifndef IPV6_FLOWINFO
@@ -1105,6 +1108,21 @@ enum kcmp_type {
 
 #ifndef SOL_TLS
 #define SOL_TLS		282
+#endif
+
+#ifndef SOL_MPTCP
+#define SOL_MPTCP	284
+#endif
+
+/* linux/mptcp.h - SOL_MPTCP optnames (getsockopt only in current kernels;
+ * setsockopt at SOL_MPTCP returns -EOPNOTSUPP, but the dispatch path still
+ * runs, and getsockopt re-uses do_setsockopt to populate level/optname).
+ */
+#ifndef MPTCP_INFO
+#define MPTCP_INFO		1
+#define MPTCP_TCPINFO		2
+#define MPTCP_SUBFLOW_ADDRS	3
+#define MPTCP_FULL_INFO		4
 #endif
 
 /* net/bluetooth/hci.h */
