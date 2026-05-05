@@ -163,8 +163,8 @@ void init_shm(void)
 		 * Per-child childdata stays alloc_shared() rather than
 		 * alloc_shared_global() because each child writes its own slot
 		 * extensively: child->syscall (rec->nr / args / retval before
-		 * each syscall), child->kcov (per-call cmp_mode / remote_mode
-		 * flags), child->objects[] (OBJ_LOCAL pools the child mutates
+		 * each syscall), child->kcov (per-call remote_mode
+		 * flag), child->objects[] (OBJ_LOCAL pools the child mutates
 		 * without parent involvement), child->last_syscall_nr,
 		 * child->fd_lifetime / current_fd, etc.  Freeze would EFAULT
 		 * the child's syscall dispatch loop on the first write to its

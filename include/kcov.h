@@ -23,6 +23,15 @@
  * on exactly the syscalls the fuzzer would learn the most from. */
 #define KCOV_TRACE_SIZE (256 << 10)
 
+/* Size of the per-child KCOV comparison-operand buffer (number of
+ * unsigned longs).  Each CMP record is 4 u64 (type, arg1, arg2, ip),
+ * so 256K u64 entries hold up to (256K - 1)/4 ≈ 64K records (~2MB
+ * per child).  Sized to match the PC trace buffer's footprint; CMP
+ * record rate per syscall is typically lower than PC rate, but big
+ * enough to absorb deep validation paths without truncating tails. */
+#define KCOV_CMP_BUFFER_SIZE (256 << 10)
+#define KCOV_CMP_RECORDS_MAX ((KCOV_CMP_BUFFER_SIZE - 1) / 4)
+
 /* Number of distinct edge slots PCs hash into.
  * 8M slots preserves the prior bitmap's birthday-paradox headroom: 50%
  * collision threshold is ~1.177 * sqrt(N), so the table stays useful out
@@ -86,16 +95,38 @@ struct kcov_dedup_slot {
 	uint32_t generation;
 };
 
+/* On-the-wire layout of a single KCOV_TRACE_CMP record, as the kernel
+ * writes it after the count header at trace_buf[0].  type encodes the
+ * operand size in its low bits and KCOV_CMP_CONST (1<<0) when one
+ * operand was a compile-time constant; arg1/arg2 are the operands;
+ * ip is the kernel PC of the comparison. */
+struct kcov_cmp_record {
+	uint64_t type;
+	uint64_t arg1;
+	uint64_t arg2;
+	uint64_t ip;
+};
+
 struct kcov_child {
+	/* Field order is constrained by the hot-cacheline budget in struct
+	 * childdata (see static_assert in child.c).  Sized to 48 bytes:
+	 * 4 ints/u32 (16) + 4 bools (4) + 4 padding + 3 pointers (24).
+	 * That leaves exactly 16 bytes in the 64-byte hot leading cacheline
+	 * for the four childdata fields that follow (last_syscall_nr,
+	 * last_group, op_nr, local_op_count).  child_id is intentionally
+	 * not stored here — kcov_enable_remote() takes it as a parameter
+	 * (sourced from childdata->num) so the second fd's metadata fits
+	 * without overflowing the cacheline. */
 	int fd;
-	unsigned long *trace_buf;
+	int cmp_fd;                     /* second fd for KCOV_TRACE_CMP, -1 if unavailable */
+	uint32_t current_generation;	/* bumped per kcov_collect() to invalidate dedup */
 	bool active;       /* true if this child successfully opened kcov */
-	bool cmp_mode;     /* true when this syscall should use CMP tracing */
+	bool cmp_capable;  /* true if cmp_fd was probed and KCOV_TRACE_CMP works */
 	bool remote_mode;  /* true when using KCOV_REMOTE_ENABLE */
 	bool remote_capable; /* true if kernel supports KCOV_REMOTE_ENABLE */
-	unsigned int child_id; /* unique child id for remote handle */
+	unsigned long *trace_buf;
+	unsigned long *cmp_trace_buf;	/* mmap of cmp_fd, NULL if unavailable */
 	struct kcov_dedup_slot *dedup;	/* KCOV_DEDUP_SIZE entries, child-private */
-	uint32_t current_generation;	/* bumped per kcov_collect() to invalidate dedup */
 };
 
 /* Shared coverage state, allocated in shared memory. */
@@ -113,6 +144,14 @@ struct kcov_shared {
 	 * trace buffer.  When non-zero a non-trivial fraction of syscalls
 	 * are losing tail coverage and KCOV_TRACE_SIZE should be raised. */
 	unsigned long trace_truncated;
+	/* Total CMP records pulled out of per-child KCOV_TRACE_CMP buffers
+	 * across all syscalls.  Diagnostic — confirms the second-fd CMP
+	 * collection plumbing is producing records, and gauges how much
+	 * raw signal reaches the future mutator consumer. */
+	unsigned long cmp_records_collected;
+	/* Number of kcov_collect_cmp() calls where the cmp buffer filled
+	 * up.  Mirror of trace_truncated, sized off KCOV_CMP_BUFFER_SIZE. */
+	unsigned long cmp_trace_truncated;
 	unsigned long per_syscall_edges[MAX_NR_SYSCALL];
 	unsigned long per_syscall_calls[MAX_NR_SYSCALL];
 	unsigned long last_edge_at[MAX_NR_SYSCALL];
@@ -137,13 +176,27 @@ void kcov_cleanup_child(struct kcov_child *kc);
 /* Bracket the actual syscall() call with these. No-ops if !active. */
 void kcov_enable_trace(struct kcov_child *kc);
 void kcov_enable_cmp(struct kcov_child *kc);
-void kcov_enable_remote(struct kcov_child *kc);
+void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id);
 void kcov_disable(struct kcov_child *kc);
 
 /* After disabling, collect PCs and update the global bitmap.
  * Returns true if new coverage was found. nr is the syscall number
  * for per-syscall edge tracking. */
 bool kcov_collect(struct kcov_child *kc, unsigned int nr);
+
+/* After disabling, drain the CMP buffer into the per-syscall hint pool
+ * and bump the CMP-records-collected counter.  No-op when cmp_capable
+ * is false. */
+void kcov_collect_cmp(struct kcov_child *kc, unsigned int nr);
+
+/* Accessor for the raw CMP record stream after kcov_disable().
+ * On return, *out points at the first record (NULL when cmp_capable
+ * is false or the buffer is empty) and *count is the (clamped) record
+ * count.  Future mutator-side consumers that want raw operand pairs
+ * rather than the deduped hint-pool view call this. */
+void kcov_get_cmp_records(struct kcov_child *kc,
+			  struct kcov_cmp_record **out,
+			  unsigned long *count);
 
 /* Returns true if syscall nr hasn't found new edges recently.
  * Used by syscall selection to deprioritize saturated syscalls. */

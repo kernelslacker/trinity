@@ -159,11 +159,13 @@ enum child_op_type {
 struct childdata {
 	/* ---- Hot leading cacheline (64 bytes) ---- */
 
-	/* Per-child KCOV state (fd + trace buffer + active/cmp/remote flags).
-	 * Touched on every syscall: dispatch_step gates cmp_mode/remote_mode
-	 * off kcov.active and kcov.remote_capable, __do_syscall hands &kcov
-	 * to the kcov_enable_X / kcov_disable wrappers, and kcov_collect
-	 * mutates dedup + current_generation per call. */
+	/* Per-child KCOV state (PC fd + CMP fd + trace buffers + active/
+	 * cmp_capable/remote flags).  Touched on every syscall: dispatch_step
+	 * gates remote_mode off kcov.remote_capable, __do_syscall hands
+	 * &kcov to the kcov_enable_X / kcov_disable wrappers (PC and CMP
+	 * always run together on every syscall), and kcov_collect /
+	 * kcov_collect_cmp mutate dedup + current_generation + the shared
+	 * CMP-records counter per call. */
 	struct kcov_child kcov;
 
 	/* Last syscall number executed, for edge-pair tracking.

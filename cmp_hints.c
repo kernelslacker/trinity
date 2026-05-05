@@ -41,9 +41,10 @@ void cmp_hints_init(void)
 	/*
 	 * Stays alloc_shared() rather than alloc_shared_global().
 	 * Children are the producers for the per-syscall pools — every
-	 * cmp-mode syscall calls cmp_hints_collect() in child context, which
-	 * acquires pool->lock and mutates pool->values[] / pool->count via
-	 * pool_add_locked.  An mprotect PROT_READ on this region would EFAULT
+	 * syscall calls cmp_hints_collect() (via kcov_collect_cmp) in child
+	 * context, which acquires pool->lock and mutates pool->values[] /
+	 * pool->count via pool_add_locked.  An mprotect PROT_READ on this
+	 * region would EFAULT
 	 * the lock-acquire write itself (the lock byte lives inside the
 	 * region) and disable the CMP-guided arg generation entirely.
 	 *
@@ -146,8 +147,11 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 
 	count = __atomic_load_n(&trace_buf[0], __ATOMIC_RELAXED);
 
-	if (count > (KCOV_TRACE_SIZE - 1) / WORDS_PER_CMP)
-		count = (KCOV_TRACE_SIZE - 1) / WORDS_PER_CMP;
+	/* Buffer is the per-child KCOV_TRACE_CMP mmap, sized off
+	 * KCOV_CMP_BUFFER_SIZE u64 entries.  Truncation accounting lives
+	 * in kcov_collect_cmp(); here we just clamp to be defensive. */
+	if (count > KCOV_CMP_RECORDS_MAX)
+		count = KCOV_CMP_RECORDS_MAX;
 
 	if (count == 0)
 		return;

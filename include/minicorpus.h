@@ -133,21 +133,13 @@ void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry,
 
 /* Mutator-case attribution.
  *
- * mutate_arg() accumulates per-case pick counts in process-local stash
- * during arg generation.  The post-syscall path commits or discards that
- * stash exactly once per syscall:
- *   - commit() folds the stash into shm-wide trials, and (if
- *     found_new) into wins, then clears the stash.  Call from the
- *     normal coverage path after kcov_collect().
- *   - clear() drops the stash without crediting.  Call from paths that
- *     don't produce a found_new signal (cmp-mode syscalls), so a future
- *     commit isn't fed stale counts from a previous call.
- *
- * Exactly one of commit/clear must run per syscall; otherwise a later
- * commit will mis-attribute mutations from an earlier syscall to a
- * coverage event that didn't include them. */
+ * mutate_arg() accumulates per-case pick counts in a process-local stash
+ * during arg generation.  After the syscall completes the post-coverage
+ * path calls commit() exactly once, folding the stash into shm-wide
+ * trials and (if found_new) wins, then clearing the stash.  Skipping the
+ * commit on a syscall would mis-attribute its mutations to the next
+ * syscall's coverage event. */
 void minicorpus_mut_attrib_commit(bool found_new);
-void minicorpus_mut_attrib_clear(void);
 
 /* Persist the in-memory corpus rings to a file at @path.
  * Writes via a per-pid .tmp file and renames atomically — safe under

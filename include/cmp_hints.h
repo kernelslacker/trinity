@@ -19,9 +19,6 @@
 /* Max unique hints stored per syscall number. */
 #define CMP_HINTS_PER_SYSCALL 32
 
-/* 1-in-N syscalls use CMP mode instead of PC mode. */
-#define CMP_MODE_RATIO 8
-
 struct cmp_hint_pool {
 	lock_t lock;
 	unsigned int count;
