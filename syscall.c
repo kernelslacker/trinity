@@ -411,6 +411,30 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		}
 	}
 
+	/* Blanket bound for RET_ZERO_SUCCESS handlers.  The contract for
+	 * this rettype is rec->retval ∈ {0, -1UL} -- success returns 0,
+	 * failure returns -1 with errno set.  Anything else means the
+	 * retval slot was scribbled between the syscall return and our
+	 * load (a torn upper-bit write, or a sibling value-result syscall
+	 * whose buffer aliased rec->retval without disturbing the canary).
+	 * One gate at the dispatcher chokepoint covers every handler
+	 * advertising RET_ZERO_SUCCESS -- whether the rettype is set
+	 * statically in the syscallentry or overridden per-cmd by a
+	 * sanitise hook (fcntl, futex) -- so we don't have to sprinkle
+	 * the same retval bound across the ~85 .post handlers individually.
+	 * Use rec->rettype, not entry->rettype, so per-cmd overrides apply
+	 * to the correct subset of calls.  Informational like the canary
+	 * check above; downstream success/failure tally and entry->post
+	 * still run since the sub-attribution ring needs the .post PC.
+	 * Sub-attribution lands in post_handler_corrupt_ptr's per-handler
+	 * ring under the (nr, do32bit) of the offending syscall. */
+	if (unlikely(rec->rettype == RET_ZERO_SUCCESS &&
+		     rec->retval != 0 && rec->retval != -1UL)) {
+		__atomic_add_fetch(&shm->stats.rzs_blanket_reject, 1,
+				   __ATOMIC_RELAXED);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+
 	if (rec->retval == -1UL) {
 		int err = rec->errno_post;
 
