@@ -4,6 +4,7 @@
  */
 #include <linux/keyctl.h>
 #include <string.h>
+#include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "compat.h"
@@ -228,6 +229,27 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 		rec->a2 = (unsigned long) buf;
 		rec->a3 = 64;
 		break;
+
+	case KEYCTL_WATCH_KEY: {
+		/* arg2=key, arg3=watch_queue_fd, arg4=filter (NULL=remove) */
+		struct object *obj;
+		int fd = -1;
+
+		if (objects_empty(OBJ_FD_WATCH_QUEUE) == false) {
+			obj = get_random_object(OBJ_FD_WATCH_QUEUE, OBJ_GLOBAL);
+			if (obj != NULL)
+				fd = obj->watch_queueobj.fd;
+		}
+		rec->a2 = (unsigned long) random_key_id();
+		rec->a3 = (unsigned long) fd;
+		if (RAND_BOOL()) {
+			rec->a4 = 0;
+		} else {
+			buf = (char *) get_writable_address(64);
+			rec->a4 = (unsigned long) buf;
+		}
+		break;
+	}
 
 	case KEYCTL_SESSION_TO_PARENT:
 		/* no args */
