@@ -604,7 +604,8 @@ static void post_bpf(struct syscallrecord *rec)
 		/* Free the instruction buffer (allocated by both generators) */
 		{
 			void *ptr = (void *)(unsigned long)attr->insns;
-			free(ptr);
+			if (inner_ptr_ok_to_free(rec, ptr, "post_bpf/attr->insns"))
+				free(ptr);
 		}
 		break;
 
