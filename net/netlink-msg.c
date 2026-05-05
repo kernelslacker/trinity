@@ -1072,6 +1072,7 @@ static size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type)
 		 * version is fine. */
 		genl.cmd = genl_pick_cmd(fam);
 		genl.version = fam->default_version ? fam->default_version : 1;
+		genl_family_bump_calls(fam);
 	} else {
 		/* Unknown family: random command, biased toward low values */
 		if (RAND_BOOL())

@@ -22,6 +22,7 @@
  */
 
 #include <errno.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -32,6 +33,8 @@
 
 #include "netlink-genl-families.h"
 #include "random.h"
+#include "shm.h"
+#include "stats.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -64,6 +67,44 @@ static struct genl_family_grammar *registry[] = {
 };
 
 static int discovery_done;
+
+/*
+ * Per-family stats counter offsets.  Kept here (instead of carried by
+ * the per-family grammar files) so the family files don't have to
+ * pull in stats.h — adding a counter for a new family is a one-line
+ * append below paired with a one-line addition in struct stats_s.
+ * Walk the table at resolve time and stamp registry[i]->call_counter
+ * for any family whose name matches.  Families absent from this table
+ * (or whose grammar is ifdef'd out at the registry level) get a NULL
+ * call_counter; the bump helper degrades to a no-op for them.
+ */
+static const struct {
+	const char *name;
+	size_t off;
+} family_calls_off[] = {
+	{ "devlink",   offsetof(struct stats_s, genl_family_calls_devlink) },
+	{ "nl80211",   offsetof(struct stats_s, genl_family_calls_nl80211) },
+	{ "TASKSTATS", offsetof(struct stats_s, genl_family_calls_taskstats) },
+	{ "ethtool",   offsetof(struct stats_s, genl_family_calls_ethtool) },
+	{ "mptcp_pm",  offsetof(struct stats_s, genl_family_calls_mptcp_pm) },
+};
+
+static void stamp_call_counters(void)
+{
+	unsigned int i, j;
+
+	for (i = 0; i < ARRAY_SIZE(registry); i++) {
+		if (registry[i] == NULL || registry[i]->call_counter != NULL)
+			continue;
+		for (j = 0; j < ARRAY_SIZE(family_calls_off); j++) {
+			if (strcmp(registry[i]->name, family_calls_off[j].name) != 0)
+				continue;
+			registry[i]->call_counter = (unsigned long *)
+				((char *)&shm->stats + family_calls_off[j].off);
+			break;
+		}
+	}
+}
 
 static unsigned int registry_real_count(void)
 {
@@ -224,6 +265,13 @@ void genl_resolve_families(void)
 		return;
 	discovery_done = 1;
 
+	/* Wire up per-family call counters before opening the socket so
+	 * the dispatcher can bump them even on hosts where CTRL_GETFAMILY
+	 * fails -- a family that never resolves keeps a NULL counter and
+	 * the bump degrades to a no-op, but the wire-up itself is
+	 * idempotent and cheap. */
+	stamp_call_counters();
+
 	if (registry_real_count() == 0)
 		return;	/* no families registered yet — nothing to ask about */
 
@@ -287,4 +335,11 @@ unsigned char genl_pick_cmd(const struct genl_family_grammar *fam)
 	if (!fam || fam->n_cmds == 0)
 		return 0;
 	return fam->cmds[rand() % fam->n_cmds].cmd;
+}
+
+void genl_family_bump_calls(const struct genl_family_grammar *fam)
+{
+	if (!fam || !fam->call_counter)
+		return;
+	__atomic_add_fetch(fam->call_counter, 1, __ATOMIC_RELAXED);
 }

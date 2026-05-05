@@ -628,6 +628,8 @@ static void dump_stats_json(void)
 		"\"userns_fuzzer\":{\"runs\":%lu,\"inner_crashed\":%lu,\"unsupported\":%lu},"
 		"\"barrier_racer\":{\"runs\":%lu,\"inner_crashed\":%lu},"
 		"\"genetlink_fuzzer\":{\"families_discovered\":%lu,\"msgs_sent\":%lu,\"eperm\":%lu},"
+		"\"genl_family_calls\":{\"devlink\":%lu,\"nl80211\":%lu,\"taskstats\":%lu,"
+			"\"ethtool\":%lu,\"mptcp_pm\":%lu},"
 		"\"netlink_generator\":{\"nested_attrs_emitted\":%lu},"
 		"\"perf_event_chains\":{\"runs\":%lu,\"groups_created\":%lu,\"ioctl_ops\":%lu},"
 		"\"tracefs_fuzzer\":{\"kprobe_writes\":%lu,\"uprobe_writes\":%lu,"
@@ -764,6 +766,11 @@ static void dump_stats_json(void)
 		shm->stats.barrier_racer_runs, shm->stats.barrier_racer_inner_crashed,
 		shm->stats.genetlink_families_discovered, shm->stats.genetlink_msgs_sent,
 		shm->stats.genetlink_eperm,
+		shm->stats.genl_family_calls_devlink,
+		shm->stats.genl_family_calls_nl80211,
+		shm->stats.genl_family_calls_taskstats,
+		shm->stats.genl_family_calls_ethtool,
+		shm->stats.genl_family_calls_mptcp_pm,
 		shm->stats.netlink_nested_attrs_emitted,
 		shm->stats.perf_chains_runs, shm->stats.perf_chains_groups_created,
 		shm->stats.perf_chains_ioctl_ops,
@@ -1032,6 +1039,21 @@ static const struct {
 	  offsetof(struct stats_s, destroy_object_idx_corrupt) },
 	{ "global_obj_uaf_caught",
 	  offsetof(struct stats_s, global_obj_uaf_caught) },
+	/* genetlink registry per-family dispatch counters; rate-of-change
+	 * surfaces the live family selection mix without waiting for the
+	 * end-of-run summary.  A counter that stays at zero across an
+	 * interval window with the others advancing flags either a missing
+	 * registry entry or a family the controller never resolved. */
+	{ "genl_family_calls_devlink",
+	  offsetof(struct stats_s, genl_family_calls_devlink) },
+	{ "genl_family_calls_nl80211",
+	  offsetof(struct stats_s, genl_family_calls_nl80211) },
+	{ "genl_family_calls_taskstats",
+	  offsetof(struct stats_s, genl_family_calls_taskstats) },
+	{ "genl_family_calls_ethtool",
+	  offsetof(struct stats_s, genl_family_calls_ethtool) },
+	{ "genl_family_calls_mptcp_pm",
+	  offsetof(struct stats_s, genl_family_calls_mptcp_pm) },
 };
 
 static unsigned long defense_counter_load(unsigned int i)
@@ -1512,6 +1534,18 @@ void dump_stats(void)
 		stat_row("genetlink_fuzzer", "families_discovered", shm->stats.genetlink_families_discovered);
 		stat_row("genetlink_fuzzer", "msgs_sent",           shm->stats.genetlink_msgs_sent);
 		stat_row("genetlink_fuzzer", "eperm",               shm->stats.genetlink_eperm);
+	}
+
+	if (shm->stats.genl_family_calls_devlink   ||
+	    shm->stats.genl_family_calls_nl80211   ||
+	    shm->stats.genl_family_calls_taskstats ||
+	    shm->stats.genl_family_calls_ethtool   ||
+	    shm->stats.genl_family_calls_mptcp_pm) {
+		stat_row("genl_family_calls", "devlink",   shm->stats.genl_family_calls_devlink);
+		stat_row("genl_family_calls", "nl80211",   shm->stats.genl_family_calls_nl80211);
+		stat_row("genl_family_calls", "taskstats", shm->stats.genl_family_calls_taskstats);
+		stat_row("genl_family_calls", "ethtool",   shm->stats.genl_family_calls_ethtool);
+		stat_row("genl_family_calls", "mptcp_pm",  shm->stats.genl_family_calls_mptcp_pm);
 	}
 
 	if (shm->stats.netlink_nested_attrs_emitted)

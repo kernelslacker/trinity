@@ -452,6 +452,25 @@ struct stats_s {
 	/* netlink message generator: NLA_F_NESTED containers emitted */
 	unsigned long netlink_nested_attrs_emitted;
 
+	/* genetlink registry per-family dispatch counters.  Bumped from
+	 * gen_genl_body() each time the spec-driven dispatcher routes a
+	 * message to a registered family — distinct from the
+	 * genetlink_fuzzer childop counters above (which only see the
+	 * dedicated discovery childop).  Diagnostic-only: reading a non-
+	 * zero count at run end confirms two things at once -- the
+	 * controller dump resolved the family ID, and at least one
+	 * NETLINK_GENERIC syscall picked that family during dispatch.  A
+	 * zero value when the family is known to be loaded narrows the
+	 * miss to either the resolver (no CTRL response) or the picker
+	 * (genl_pick_resolved_family never selected this slot during the
+	 * run window).  Per family in the registry; ifdef'd ones share
+	 * the gate of their family file. */
+	unsigned long genl_family_calls_devlink;
+	unsigned long genl_family_calls_nl80211;
+	unsigned long genl_family_calls_taskstats;
+	unsigned long genl_family_calls_ethtool;
+	unsigned long genl_family_calls_mptcp_pm;
+
 	/* perf_event_chains childop counters */
 	unsigned long perf_chains_runs;		/* total invocations */
 	unsigned long perf_chains_groups_created;	/* group leader fd opened successfully */
