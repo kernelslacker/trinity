@@ -7,6 +7,7 @@
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
+#include "trinity.h"
 #include "compat.h"
 
 #ifndef KEYCTL_INVALIDATE
@@ -232,13 +233,70 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 
 	case KEYCTL_WATCH_KEY: {
 		/* arg2=key, arg3=watch_queue_fd, arg4=filter (NULL=remove) */
-		struct object *obj;
 		int fd = -1;
 
+		/*
+		 * Same OBJ_GLOBAL lockless-reader UAF class that the
+		 * fds/sockets.c get_rand_socketinfo() wireup defends against
+		 * (sanitise-hook-audit-2026-05-05 row 9): the parent can
+		 * destroy and recycle the OBJ_FD_WATCH_QUEUE slot between the
+		 * lockless pick and our deref of obj->watch_queueobj.fd,
+		 * leaving a stale or recycled obj pointer that would feed
+		 * garbage into rec->a3 as the watch_queue fd argument to
+		 * KEYCTL_WATCH_KEY.  Mirror the wireup shape used by
+		 * get_rand_socketinfo() — versioned pick + slot-version
+		 * handle re-validation immediately before the deref — but
+		 * keep it inline since this is the only sanitise-hook
+		 * consumer of obj->watch_queueobj.
+		 */
 		if (objects_empty(OBJ_FD_WATCH_QUEUE) == false) {
-			obj = get_random_object(OBJ_FD_WATCH_QUEUE, OBJ_GLOBAL);
-			if (obj != NULL)
+			for (int i = 0; i < 1000; i++) {
+				unsigned int slot_idx, slot_version;
+				struct object *obj;
+
+				obj = get_random_object_versioned(OBJ_FD_WATCH_QUEUE,
+								  OBJ_GLOBAL,
+								  &slot_idx,
+								  &slot_version);
+				if (obj == NULL)
+					continue;
+
+				/*
+				 * Defend against stale or corrupted slot
+				 * pointers leaking out of the
+				 * OBJ_FD_WATCH_QUEUE pool.  Heap pointers
+				 * land at >= 0x10000 and below the 47-bit
+				 * user/kernel boundary; anything outside
+				 * that window can't be a real obj struct,
+				 * and dereferencing &obj->watch_queueobj.fd
+				 * would scribble whatever happens to live
+				 * at that address into rec->a3.
+				 */
+				if ((uintptr_t)obj < 0x10000UL ||
+				    (uintptr_t)obj >= 0x800000000000UL) {
+					outputerr("KEYCTL_WATCH_KEY: bogus obj %p "
+						  "in OBJ_FD_WATCH_QUEUE pool\n",
+						  obj);
+					continue;
+				}
+
+				/*
+				 * Last-line check: if the parent destroyed or
+				 * replaced this slot between the versioned
+				 * pick and now, validate_object_handle() bumps
+				 * global_obj_uaf_caught and returns false.
+				 * Drop the pick and try again rather than
+				 * reading a stale fd out of obj->watch_queueobj.
+				 */
+				if (!validate_object_handle(OBJ_FD_WATCH_QUEUE,
+							    OBJ_GLOBAL, obj,
+							    slot_idx,
+							    slot_version))
+					continue;
+
 				fd = obj->watch_queueobj.fd;
+				break;
+			}
 		}
 		rec->a2 = (unsigned long) random_key_id();
 		rec->a3 = (unsigned long) fd;
