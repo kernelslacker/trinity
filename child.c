@@ -625,14 +625,19 @@ static void init_child(struct childdata *child, int childno)
 		 * host's mount tree.  Make the new ns recursively private so
 		 * downstream mount churn stays contained.  If the remount is
 		 * rejected (EPERM in some sandboxed configs) we can't undo the
-		 * unshare, so log it loudly and continue: the child is still
-		 * usable, just not isolated for mount fuzzing. */
-		if (unshare(CLONE_NEWNS) == 0) {
-			if (mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0)
-				output(0, "child %d: MS_PRIVATE remount failed (errno=%d) "
-				       "after unshare(CLONE_NEWNS); mounts in this child "
-				       "may propagate to host mount table\n",
-				       childno, errno);
+		 * unshare, so latch shm->no_private_ns to skip future attempts
+		 * and log only the first failure: the child is still usable,
+		 * just not isolated for mount fuzzing. */
+		if (!__atomic_load_n(&shm->no_private_ns, __ATOMIC_RELAXED)) {
+			if (unshare(CLONE_NEWNS) == 0) {
+				if (mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0) {
+					if (!__atomic_exchange_n(&shm->no_private_ns, true, __ATOMIC_RELAXED))
+						output(0, "child %d: MS_PRIVATE remount failed (errno=%d) "
+						       "after unshare(CLONE_NEWNS); mounts in this child "
+						       "may propagate to host mount table\n",
+						       childno, errno);
+				}
+			}
 		}
 		unshare(CLONE_NEWIPC);
 		unshare(CLONE_IO);

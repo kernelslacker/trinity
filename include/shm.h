@@ -180,6 +180,14 @@ struct shm_s {
 	 * into each child's address space. */
 	_Atomic bool no_pidns;
 
+	/* set to true if a child fails the MS_REC|MS_PRIVATE remount
+	 * after unshare(CLONE_NEWNS). Stored in shm so the flag
+	 * propagates across fork() — a process-local static would be
+	 * duplicated into each child's address space. Used to suppress
+	 * log spam over long fuzz runs and to skip the unshare+remount
+	 * dance once we know it can't be made private. */
+	_Atomic bool no_private_ns;
+
 	/* recipe_runner discovery latches: a recipe whose first invocation
 	 * detects an absent kernel feature (ENOSYS, missing config) flips
 	 * its slot here so siblings stop probing.  Indexed by the recipe's
