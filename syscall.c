@@ -282,6 +282,64 @@ void generic_post_close_fd(struct syscallrecord *rec)
 }
 
 /*
+ * Blanket retval bound for RET_FD handlers at the do_syscall layer.
+ * Complements the add_object()-side check: that gate fires only on
+ * RET_FD entries that declare a ret_objtype and reach the universal
+ * pool-registration chokepoint.  Roughly 19 RET_FD entries instead
+ * carry bespoke .post handlers that consume the returned fd without
+ * ever calling add_object() -- the generic_post_close_fd users
+ * (signalfd, signalfd4, fsmount, open_tree, open_tree_attr,
+ * memfd_secret, pidfd_getfd), perf_event_open's close-on-fail path,
+ * futex(FUTEX_FD) (which has no retval check at all), and a handful
+ * of others.  Without a chokepoint at this layer a wholesale-stomped
+ * or upper-bit-corrupt rec->retval whose lower bits happen to be
+ * positive slips past the "(long)retval >= 0" gates these handlers
+ * use and is fed straight back to the kernel as a real fd by close()
+ * (or worse, lands on a file-table entry an unrelated path opened).
+ *
+ * 1<<20 = 1048576 matches the kernel's NR_OPEN ceiling
+ * (include/uapi/linux/fs.h), the absolute upper bound RLIMIT_NOFILE
+ * may be raised to on every distro we exercise.  No legitimate RET_FD
+ * handler treats an out-of-range value as anything but a kernel ABI
+ * violation, so the validator firing IS the bug report.
+ *
+ * Read rec->rettype rather than entry->rettype: fcntl(F_DUPFD /
+ * F_DUPFD_CLOEXEC) and futex(FUTEX_FD) only set RET_FD on the rec at
+ * sanitise time; their syscallentries advertise something else.
+ *
+ * On rejection, coerce rec->retval = -1UL and rec->errno_post =
+ * EINVAL.  Every existing .post handler short-circuits on
+ * (long)retval < 0, register_returned_fd() likewise skips the < 0
+ * branch, so the coerced shape papers over the corruption for all
+ * downstream consumers in one place.  Sub-attribution by syscall
+ * routes through post_handler_corrupt_ptr_bump's per-handler ring
+ * via the rec it's passed.
+ */
+static bool reject_corrupt_retfd(const struct syscallentry *entry,
+				 struct syscallrecord *rec)
+{
+	long s;
+
+	if (rec->rettype != RET_FD)
+		return false;
+
+	/* -1UL is the legitimate failure value; handle_failure path. */
+	if (rec->retval == -1UL)
+		return false;
+
+	s = (long)rec->retval;
+	if (s >= 0 && s < (1L << 20))
+		return false;
+
+	outputerr("retfd: rejecting out-of-bound retval=0x%lx for %s\n",
+		  rec->retval, entry->name);
+	post_handler_corrupt_ptr_bump(rec, NULL);
+	rec->retval = -1UL;
+	rec->errno_post = EINVAL;
+	return true;
+}
+
+/*
  * Generic post-hook: register the fd returned by an annotated syscall
  * into its typed OBJ_LOCAL pool.  Runs after entry->post so a
  * syscall-specific handler that already registered the fd (and possibly
@@ -467,6 +525,8 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		__atomic_add_fetch(&shm->stats.successes, 1, __ATOMIC_RELAXED);
 	}
 	__atomic_add_fetch(&entry->attempted, 1, __ATOMIC_RELAXED);
+
+	reject_corrupt_retfd(entry, rec);
 
 	if (entry->post)
 	    entry->post(rec);
