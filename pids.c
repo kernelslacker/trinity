@@ -163,7 +163,7 @@ void dump_childnos(void)
 			} else {
 				pid_t pid = __atomic_load_n(&pids[i + j], __ATOMIC_RELAXED);
 
-				n = snprintf(sptr, end - sptr, "%u ", pid);
+				n = snprintf(sptr, end - sptr, "%d ", (int)pid);
 			}
 			if (n > 0 && n < end - sptr)
 				sptr += n;
