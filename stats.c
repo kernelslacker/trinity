@@ -634,7 +634,7 @@ static void dump_stats_json(void)
 		"\"corruption\":{\"local_op_count\":%lu,\"fd_event_ring_noncanon\":%lu,"
 			"\"fd_event_ring_canary\":%lu,\"deferred_free_corrupt_ptr\":%lu,"
 			"\"post_handler_corrupt_ptr\":%lu,\"snapshot_non_heap_reject\":%lu,"
-			"\"rec_canary_stomped\":%lu,"
+			"\"rec_canary_stomped\":%lu,\"rzs_blanket_reject\":%lu,"
 			"\"sibling_mprotect_failed\":%lu},"
 		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu},"
 		"\"refcount_audit\":{\"runs\":%lu,\"fd_anomalies\":%lu,"
@@ -773,6 +773,7 @@ static void dump_stats_json(void)
 		shm->stats.post_handler_corrupt_ptr,
 		shm->stats.snapshot_non_heap_reject,
 		shm->stats.rec_canary_stomped,
+		shm->stats.rzs_blanket_reject,
 		shm->stats.sibling_mprotect_failed,
 		shm->stats.shared_buffer_redirected, shm->stats.range_overlaps_shared_rejects,
 		shm->stats.refcount_audit_runs, shm->stats.refcount_audit_fd_anomalies,
@@ -972,6 +973,8 @@ static const struct {
 	  offsetof(struct stats_s, deferred_free_corrupt_ptr) },
 	{ "rec_canary_stomped",
 	  offsetof(struct stats_s, rec_canary_stomped) },
+	{ "rzs_blanket_reject",
+	  offsetof(struct stats_s, rzs_blanket_reject) },
 	{ "sibling_mprotect_failed",
 	  offsetof(struct stats_s, sibling_mprotect_failed) },
 	{ "sibling_refreeze_count",
@@ -1539,6 +1542,8 @@ void dump_stats(void)
 		stat_row("corruption", "snapshot_non_heap_reject", shm->stats.snapshot_non_heap_reject);
 	if (shm->stats.rec_canary_stomped)
 		stat_row("corruption", "rec_canary_stomped",     shm->stats.rec_canary_stomped);
+	if (shm->stats.rzs_blanket_reject)
+		stat_row("corruption", "rzs_blanket_reject",     shm->stats.rzs_blanket_reject);
 	if (shm->stats.sibling_mprotect_failed)
 		stat_row("corruption", "sibling_mprotect_failed", shm->stats.sibling_mprotect_failed);
 	if (shm->stats.divergence_sentinel_anomalies)

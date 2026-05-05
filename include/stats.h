@@ -329,6 +329,19 @@ struct stats_s {
 	 * the matching context capture. */
 	unsigned long rec_canary_stomped;
 
+	/* handle_syscall_ret() observed rec->retval outside the {0, -1UL}
+	 * contract on a syscall whose per-call rettype was RET_ZERO_SUCCESS.
+	 * The dispatcher gate fires once per call and covers every handler
+	 * advertising that rettype (whether set statically in syscallentry
+	 * or overridden per-cmd by a sanitise hook), so a single chokepoint
+	 * substitutes for retval bounds duplicated across the ~85
+	 * RET_ZERO_SUCCESS .post handlers.  Non-zero means a torn or
+	 * wholesale-stomped retval slipped past the canary check (different
+	 * stomp class — the canary catches whole-rec rewrites, this catches
+	 * an isolated rec->retval scribble).  Sub-attribution by caller PC
+	 * routes through post_handler_corrupt_ptr_bump's per-handler ring. */
+	unsigned long rzs_blanket_reject;
+
 	/* init_child()'s sibling-freeze step issues mprotect(PROT_READ) on
 	 * every other child's childdata (and on the shared pids[] array) so
 	 * a value-result syscall buffer in one sibling can't scribble over
