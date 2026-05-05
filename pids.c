@@ -12,6 +12,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "utils.h"	// shared_size_mul
 
 #include <debug.h>
 
@@ -310,7 +311,16 @@ void pids_init(void)
 	 * freeze_global_objects pair so the freeze defence applies to
 	 * children only.
 	 */
-	pids = alloc_shared_global(max_children * sizeof(pid_t));
+	{
+		size_t pids_bytes;
+
+		if (!shared_size_mul(max_children, sizeof(pid_t), &pids_bytes)) {
+			outputerr("pids_init: max_children=%u * sizeof(pid_t) overflows size_t\n",
+				  max_children);
+			exit(EXIT_FAILURE);
+		}
+		pids = alloc_shared_global(pids_bytes);
+	}
 	for_each_child(i)
 		__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);
 }

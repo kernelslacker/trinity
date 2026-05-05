@@ -271,6 +271,12 @@ int main(int argc, char* argv[])
 
 	parse_args(argc, argv);
 
+	/* Apply the shared_regions[] / RLIMIT_NPROC / RLIMIT_NOFILE cap
+	 * to the default num_online_cpus*4 value when the operator did
+	 * not pass -C.  -C path validates against the same cap inside
+	 * parse_args, so this is a no-op there. */
+	clamp_default_max_children();
+
 	/* --alt-op-children clamp.  Reserving more slots than the total
 	 * fleet would leave zero default syscall children, which defeats
 	 * the throughput-preservation rationale.  Cap at max_children-1

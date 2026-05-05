@@ -11,10 +11,37 @@
 #define GB(_x) ((_x) * 1024UL * MB(1))
 
 #define MAX_SHARED_ALLOCS 4096
+
+/*
+ * Reserve slots in shared_regions[] that are not consumed by per-child
+ * growth (struct shm_s, syscalltable copy, kcov rings, image segments,
+ * shared obj/str heaps, deferred-free, pids/children index pages, etc.).
+ * Anything left after this reserve is the budget for per-child allocs.
+ */
+#define SHARED_REGIONS_GLOBAL_RESERVE 256
+
+/*
+ * Per-child shared allocations: childdata + fd_event_ring (see init_shm).
+ * The cap formula in derive_max_children_cap() divides the remaining
+ * shared_regions[] budget by this number.
+ */
+#define SHARED_REGIONS_PER_CHILD 2
+
 extern unsigned int nr_shared_regions;
 
-void * alloc_shared(unsigned int size);
-void * alloc_shared_global(unsigned int size);
+void * alloc_shared(size_t size);
+void * alloc_shared_global(size_t size);
+
+/*
+ * Checked size = a * b for shared-allocation call sites with a variable
+ * count multiplier (max_children, files_in_index, syscall table size).
+ * Returns true and writes the product when it fits in size_t; returns
+ * false on overflow without touching *out.  Callers are expected to
+ * outputerr() and bail on a false return -- truncated size would let
+ * a downstream alloc succeed with a buffer too small for the indexing
+ * the caller is about to do.
+ */
+bool shared_size_mul(size_t a, size_t b, size_t *out);
 void * alloc_shared_obj(size_t size);
 void free_shared_obj(void *p, size_t size);
 void * alloc_shared_str(size_t size);

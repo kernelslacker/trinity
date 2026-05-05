@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <getopt.h>
 #include <limits.h>
+#include <sys/resource.h>
 #include <sys/types.h>
 
 #include "bdevs.h"
@@ -17,7 +18,7 @@
 #include "syscall.h"
 #include "tables.h"
 #include "taint.h"
-#include "trinity.h"	// progname
+#include "trinity.h"	// progname, max_files_rlimit
 #include "utils.h"
 
 bool set_debug = false;
@@ -136,6 +137,118 @@ static bool parse_unsigned(const char *s, const char *name,
 
 	*out = val;
 	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * max_children cap derivation
+ *
+ * Ceilings on max_children to keep a typo (-C 999999999) from turning
+ * into a host-level fork/allocation storm.  Three independent budgets:
+ *
+ *   (a) shared_regions[] capacity:  each child consumes
+ *       SHARED_REGIONS_PER_CHILD slots in alloc_shared()'s static
+ *       tracker, with SHARED_REGIONS_GLOBAL_RESERVE held back for
+ *       fixed allocations (shm, syscall table, kcov, image segments,
+ *       etc).
+ *   (b) RLIMIT_NPROC - HOST_NPROC_RESERVE: leave headroom for the
+ *       parent and the operator's surrounding processes.
+ *   (c) RLIMIT_NOFILE - PARENT_NOFILE_RESERVE: parent opens one
+ *       /proc/<pid>/stat fd per child plus its own ancillary fds.
+ *
+ * The derived cap is the smallest of those plus PROJECT_MAX_CHILDREN.
+ * derive_max_children_cap() also reports which budget is binding so
+ * the operator-facing error/warning can name the source.
+ * ------------------------------------------------------------------ */
+
+#define HOST_NPROC_RESERVE	32
+#define PARENT_NOFILE_RESERVE	64
+#define PROJECT_MAX_CHILDREN	16384
+
+enum max_children_binding {
+	BINDING_PROJECT_MAX,
+	BINDING_SHARED_REGIONS,
+	BINDING_NPROC,
+	BINDING_NOFILE,
+};
+
+static const char *binding_name(enum max_children_binding b)
+{
+	switch (b) {
+	case BINDING_PROJECT_MAX:    return "project sanity limit";
+	case BINDING_SHARED_REGIONS: return "shared_regions[] capacity";
+	case BINDING_NPROC:          return "RLIMIT_NPROC";
+	case BINDING_NOFILE:         return "RLIMIT_NOFILE";
+	}
+	return "?";
+}
+
+static unsigned long derive_max_children_cap(enum max_children_binding *out_binding)
+{
+	unsigned long cap = PROJECT_MAX_CHILDREN;
+	enum max_children_binding b = BINDING_PROJECT_MAX;
+	unsigned long shared_cap;
+	struct rlimit nproc;
+
+	shared_cap = (MAX_SHARED_ALLOCS - SHARED_REGIONS_GLOBAL_RESERVE) /
+		     SHARED_REGIONS_PER_CHILD;
+	if (shared_cap < cap) {
+		cap = shared_cap;
+		b = BINDING_SHARED_REGIONS;
+	}
+
+	if (getrlimit(RLIMIT_NPROC, &nproc) == 0 &&
+	    nproc.rlim_cur != RLIM_INFINITY) {
+		unsigned long nproc_cap;
+
+		if (nproc.rlim_cur > HOST_NPROC_RESERVE)
+			nproc_cap = nproc.rlim_cur - HOST_NPROC_RESERVE;
+		else
+			nproc_cap = 0;
+		if (nproc_cap < cap) {
+			cap = nproc_cap;
+			b = BINDING_NPROC;
+		}
+	}
+
+	if (max_files_rlimit.rlim_cur != RLIM_INFINITY) {
+		unsigned long nofile_cap;
+
+		if (max_files_rlimit.rlim_cur > PARENT_NOFILE_RESERVE)
+			nofile_cap = max_files_rlimit.rlim_cur - PARENT_NOFILE_RESERVE;
+		else
+			nofile_cap = 0;
+		if (nofile_cap < cap) {
+			cap = nofile_cap;
+			b = BINDING_NOFILE;
+		}
+	}
+
+	if (out_binding != NULL)
+		*out_binding = b;
+	return cap;
+}
+
+void clamp_default_max_children(void)
+{
+	enum max_children_binding b;
+	unsigned long cap;
+
+	/* -C path validates against the cap inside parse_args; nothing to do. */
+	if (user_specified_children != 0)
+		return;
+
+	cap = derive_max_children_cap(&b);
+	if (cap == 0) {
+		outputerr("cannot run trinity: %s leaves no budget for children\n",
+			  binding_name(b));
+		exit(EXIT_FAILURE);
+	}
+	if ((unsigned long)max_children > cap) {
+		outputerr("warning: default max_children=%u (num_online_cpus*4) "
+			  "exceeds %s cap of %lu; clamping\n",
+			  max_children, binding_name(b), cap);
+		max_children = (unsigned int)cap;
+	}
 }
 
 bool no_warm_start = false;
@@ -342,6 +455,8 @@ void parse_args(int argc, char *argv[])
 		case 'C': {
 			char *end;
 			unsigned long val;
+			enum max_children_binding b;
+			unsigned long cap;
 
 			errno = 0;
 			val = strtoul(optarg, &end, 10);
@@ -349,17 +464,18 @@ void parse_args(int argc, char *argv[])
 				outputerr("can't parse '%s' as a number\n", optarg);
 				exit(EXIT_FAILURE);
 			}
-			if (val > UINT_MAX) {
-				outputerr("children value %lu exceeds UINT_MAX\n", val);
+			if (val == 0) {
+				outputerr("zero children ? WAT?\n");
+				exit(EXIT_FAILURE);
+			}
+			cap = derive_max_children_cap(&b);
+			if (val > cap) {
+				outputerr("--children=%lu exceeds %s cap of %lu\n",
+					  val, binding_name(b), cap);
 				exit(EXIT_FAILURE);
 			}
 			user_specified_children = (unsigned int)val;
 			max_children = user_specified_children;
-
-			if (max_children == 0) {
-				outputerr("zero children ? WAT?\n");
-				exit(EXIT_FAILURE);
-			}
 			break;
 		}
 
