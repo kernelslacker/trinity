@@ -73,12 +73,27 @@ struct syscallentry syscall_sendto = {
 /*
  * SYSCALL_DEFINE3(sendmsg, int, fd, struct msghdr __user *, msg, unsigned, flags)
  */
+/*
+ * Snapshot for the post handler.  rec->a2 (the msghdr pointer) may be
+ * scribbled by a sibling syscall before post_sendmsg() runs, and the
+ * msghdr's iov array is just as exposed to a sibling-thread torn write
+ * of msg->msg_iovlen / msg->msg_iov[].iov_len that the count-bound
+ * validator below relies on.  Captured at sanitise time into a
+ * post_state-private heap struct that no syscall ABI slot points at.
+ */
+struct sendmsg_post_state {
+	struct msghdr *msg;
+	unsigned long iov_len_sum;
+};
+
 static void sanitise_sendmsg(struct syscallrecord *rec)
 {
 	struct socketinfo *si = (struct socketinfo *) rec->a1;
 	struct msghdr *msg;
 	struct sockaddr *sa = NULL;
 	socklen_t salen = 0;
+	struct sendmsg_post_state *snap;
+	unsigned long iov_len_sum = 0;
 
 	rec->a4 = 0;	/* sendmsg_used_gen_msg: set to 1 if gen_msg path taken */
 
@@ -116,6 +131,7 @@ skip_si:
 				iov->iov_len = len;
 				msg->msg_iov = iov;
 				msg->msg_iovlen = 1;
+				iov_len_sum = len;
 				rec->a4 = 1;
 				goto set_control;
 			}
@@ -124,10 +140,14 @@ skip_si:
 
 	if (RAND_BOOL()) {
 		unsigned int num_entries;
+		unsigned int i;
 
 		num_entries = RAND_RANGE(1, 3);
 		msg->msg_iov = alloc_iovec(num_entries);
 		msg->msg_iovlen = num_entries;
+
+		for (i = 0; i < num_entries; i++)
+			iov_len_sum += msg->msg_iov[i].iov_len;
 	}
 
 set_control:
@@ -144,32 +164,64 @@ set_control:
 		msg->msg_flags = 0;
 
 	rec->a2 = (unsigned long) msg;
-	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
-	 * syscall (e.g. an objects.c add_object realloc) before post_sendmsg()
-	 * runs, leaving a real-but-wrong heap pointer that the corruption
-	 * guard cannot distinguish from the original. */
-	rec->post_state = (unsigned long) msg;
+
+	snap = zmalloc(sizeof(*snap));
+	snap->msg = msg;
+	snap->iov_len_sum = iov_len_sum;
+	rec->post_state = (unsigned long) snap;
 }
 
 static void post_sendmsg(struct syscallrecord *rec)
 {
-	struct msghdr *msg = (struct msghdr *) rec->post_state;
+	struct sendmsg_post_state *snap =
+		(struct sendmsg_post_state *) rec->post_state;
+	struct msghdr *msg;
 
-	if (msg == NULL)
+	if (snap == NULL)
 		return;
 
 	/*
 	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so keep the
-	 * corruption guard.
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(rec, msg)) {
-		outputerr("post_sendmsg: rejected suspicious msg=%p "
-			  "(pid-scribbled?)\n", msg);
+	if (looks_like_corrupted_ptr(rec, snap)) {
+		outputerr("post_sendmsg: rejected suspicious post_state=%p "
+			  "(pid-scribbled?)\n", snap);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
 	}
+
+	msg = snap->msg;
+
+	if (msg == NULL || looks_like_corrupted_ptr(rec, msg)) {
+		outputerr("post_sendmsg: rejected suspicious msg=%p "
+			  "(post_state-scribbled?)\n", msg);
+		rec->a2 = 0;
+		goto out_free;
+	}
+
+	/*
+	 * STRONG-VAL count bound: __sys_sendmsg() returns the count of
+	 * bytes sent (0..Σ msg->msg_iov[].iov_len) on success or -1 on
+	 * failure.  Anything > Σ iov_len (excluding -1UL) is a structural
+	 * ABI regression: a sign-extension tear, a torn write of the count
+	 * by a parallel signal-restart path, or -errno leaking through the
+	 * success slot.  iov_len_sum was snapshotted at sanitise time into
+	 * the post_state-private slot rather than re-walked from the
+	 * sibling-stomp-vulnerable msghdr.  Mirrors recvmsg 9f1fda362a96.
+	 */
+	if ((long) rec->retval == -1L)
+		goto skip_bound;
+	if (rec->retval > snap->iov_len_sum) {
+		outputerr("post_sendmsg: rejecting retval %lu > iov_len_sum %lu\n",
+			  rec->retval, snap->iov_len_sum);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		rec->a2 = 0;
+		goto out_free;
+	}
+skip_bound:
 
 	if (msg->msg_iov != NULL) {
 		if (rec->a4 &&
@@ -181,6 +233,9 @@ static void post_sendmsg(struct syscallrecord *rec)
 	if (inner_ptr_ok_to_free(rec, msg->msg_name, "post_sendmsg/msg_name"))
 		free(msg->msg_name);	// free sockaddr
 	rec->a2 = 0;
+	deferred_free_enqueue(msg, NULL);
+
+out_free:
 	deferred_freeptr(&rec->post_state);
 }
 
