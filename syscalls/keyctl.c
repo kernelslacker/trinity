@@ -52,11 +52,44 @@ static long random_key_id(void)
 	return 1 + (rand() % 1000);
 }
 
+/*
+ * Stratified cmd picker.  Uniform sampling across the full cmd list under-
+ * exercises the rarer kernel paths (instantiate_iov/move/watch/restrict/
+ * persistent/session_to_parent/perm-mgmt), because most of the cmds in
+ * keyctl_cmds[] route into a small set of common key lookup/read paths.
+ * Bias the picker so the rare paths get hit ~40% of the time, and also
+ * drop in a fully random cmd ~10% of the time to cover out-of-table values
+ * that exercise the kernel's input validation.
+ */
+static const unsigned long keyctl_cmds_common[] = {
+	KEYCTL_GET_KEYRING_ID, KEYCTL_REVOKE, KEYCTL_READ,
+	KEYCTL_DESCRIBE, KEYCTL_LINK, KEYCTL_UNLINK,
+};
+
+static const unsigned long keyctl_cmds_rare[] = {
+	KEYCTL_INSTANTIATE_IOV, KEYCTL_MOVE, KEYCTL_WATCH_KEY,
+	KEYCTL_RESTRICT_KEYRING, KEYCTL_GET_PERSISTENT,
+	KEYCTL_SESSION_TO_PARENT, KEYCTL_JOIN_SESSION_KEYRING,
+	KEYCTL_SET_REQKEY_KEYRING, KEYCTL_CHOWN, KEYCTL_SETPERM,
+};
+
+static unsigned long pick_keyctl_cmd(void)
+{
+	unsigned int r = rand() % 100;
+
+	if (r < 50)
+		return keyctl_cmds_common[rand() % ARRAY_SIZE(keyctl_cmds_common)];
+	if (r < 90)
+		return keyctl_cmds_rare[rand() % ARRAY_SIZE(keyctl_cmds_rare)];
+	return (unsigned long) rand32();
+}
+
 static void sanitise_keyctl(struct syscallrecord *rec)
 {
 	unsigned long cmd;
 	char *buf;
 
+	rec->a1 = pick_keyctl_cmd();
 	cmd = rec->a1;
 
 	switch (cmd) {
