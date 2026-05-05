@@ -578,6 +578,21 @@ static void post_bpf(struct syscallrecord *rec)
 				post_handler_corrupt_ptr_bump(rec, NULL);
 			}
 			break;
+		/*
+		 * *_GET_FD_BY_ID return a real fd on success — bound to the
+		 * VAL13 family fd window [0, 1<<20).  -errno other than -1UL
+		 * or a wildly out-of-range value is structural corruption.
+		 */
+		case BPF_PROG_GET_FD_BY_ID:
+		case BPF_MAP_GET_FD_BY_ID:
+		case BPF_BTF_GET_FD_BY_ID:
+		case BPF_LINK_GET_FD_BY_ID:
+			if ((long)ret < 0 || ret >= (1UL << 20)) {
+				outputerr("post_bpf: cmd=%u rejected GET_FD_BY_ID retval=0x%lx (expected [0,1<<20) or -1UL)\n",
+					  cmd, ret);
+				post_handler_corrupt_ptr_bump(rec, NULL);
+			}
+			break;
 		default:
 			break;
 		}
