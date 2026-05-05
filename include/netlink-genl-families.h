@@ -43,6 +43,13 @@ struct genl_family_grammar {
 	unsigned short family_id; /* 0 == unresolved */
 	unsigned char resolved;
 	unsigned char unavailable; /* set when CTRL didn't return this name */
+
+	/* Pointer into shm->stats stamped during genl_resolve_families()
+	 * via a static name->offset table maintained alongside the
+	 * registry (so the per-family grammar files don't have to pull
+	 * in stats.h).  NULL for any family that lacks a counter slot
+	 * — bumping degrades to a no-op. */
+	unsigned long *call_counter;
 };
 
 /*
@@ -76,3 +83,11 @@ const struct genl_family_grammar *genl_lookup_by_id(unsigned short family_id);
  * the kernel rejects cleanly via -EOPNOTSUPP.
  */
 unsigned char genl_pick_cmd(const struct genl_family_grammar *fam);
+
+/*
+ * Bump the per-family dispatch counter for fam.  Called from
+ * gen_genl_body() once per built genl message after the family has
+ * been resolved.  No-op when fam is NULL or its call_counter pointer
+ * was not stamped at resolve time (family lacks a stats slot).
+ */
+void genl_family_bump_calls(const struct genl_family_grammar *fam);
