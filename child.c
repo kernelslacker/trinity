@@ -504,7 +504,6 @@ static void freeze_sibling_childdata(int my_childno)
 static void init_child(struct childdata *child, int childno)
 {
 	pid_t pid = getpid();
-	char childname[17];
 	unsigned int new_gen;
 	int devnull;
 
@@ -594,12 +593,6 @@ static void init_child(struct childdata *child, int childno)
 
 	if (RAND_BOOL())
 		bind_child_to_cpu(child);
-
-	memset(childname, 0, sizeof(childname));
-	snprintf(childname, sizeof(childname), "trinity-c%d", childno);
-	prctl(PR_SET_NAME, (unsigned long) &childname);
-
-	oom_score_adj(500);
 
 	/* Wait for all the children to start up. */
 	while (!__atomic_load_n(&shm->ready, __ATOMIC_ACQUIRE))
@@ -1257,7 +1250,20 @@ _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
 
 void child_process(struct childdata *child, int childno)
 {
+	char childname[17];
 	int ret;
+
+	/* Rename and lower OOM priority before init_child() runs.  init_child
+	 * does a lot of mmap-heavy work (init_child_mappings, futex setup,
+	 * sibling-childdata mprotect sweeps) which is exactly when memory
+	 * pressure peaks.  If we wait until the end of init_child to set the
+	 * comm + oom_score_adj, the kernel sees a fresh fork still named
+	 * "trinity-main" with adj=0 and may pick it as the OOM victim instead
+	 * of the actually-running children at adj=500. */
+	memset(childname, 0, sizeof(childname));
+	snprintf(childname, sizeof(childname), "trinity-c%d", childno);
+	prctl(PR_SET_NAME, (unsigned long) &childname);
+	oom_score_adj(500);
 
 	init_child(child, childno);
 
