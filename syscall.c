@@ -556,6 +556,16 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 
+	/* Validate RET_FD shape before success/failure dispatch.  A
+	 * structurally corrupt fd return (e.g. upper bits set, or below the
+	 * NR_OPEN ceiling but negative-when-cast) is != -1UL, so without
+	 * this gate it would take the success branch: handle_success()
+	 * scoreboards the bogus value, entry->successes and stats.successes
+	 * both bump.  Coercing to -1UL here lets the dispatch below route
+	 * the rejected case through handle_failure() naturally, and the
+	 * forced errno_post = EINVAL drops cleanly into the errno bucket. */
+	reject_corrupt_retfd(entry, rec);
+
 	if (rec->retval == -1UL) {
 		int err = rec->errno_post;
 
@@ -588,8 +598,6 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		__atomic_add_fetch(&shm->stats.successes, 1, __ATOMIC_RELAXED);
 	}
 	__atomic_add_fetch(&entry->attempted, 1, __ATOMIC_RELAXED);
-
-	reject_corrupt_retfd(entry, rec);
 
 	enforce_count_bound(entry, rec);
 
