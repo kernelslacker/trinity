@@ -489,8 +489,28 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			       oldcap * sizeof(struct object *));
 		head->array = newarray;
 		head->array_capacity = newcap;
-		if (oldarray != NULL)
+		if (oldarray != NULL) {
+			/*
+			 * Diagnostic: a per-PC bump attributed to this site is
+			 * firing at ~21/sec in live fuzz runs.  oldarray is a
+			 * glibc malloc result from this very function so it
+			 * should pass the shape heuristic on every call.  Log
+			 * the actual value (rate-limited) when the heuristic
+			 * would reject so we can tell whether the values are
+			 * well-formed heap pointers (attribution artefact) or
+			 * weird values (a real corruption upstream).  Pure
+			 * informational, does not change behaviour.
+			 */
+			if (looks_like_corrupted_ptr(NULL, oldarray)) {
+				static unsigned long shape_rejects;
+				unsigned long n2 = ++shape_rejects;
+				if ((n2 % 1000) == 1)
+					outputerr("add_object pre-defer-free oldarray=%p "
+						  "(oldcap=%u, newcap=%u, head=%p) [%lu cumulative]\n",
+						  oldarray, oldcap, newcap, head, n2);
+			}
 			deferred_free_enqueue(oldarray, free);
+		}
 	}
 	head->array[n] = obj;
 	obj->array_idx = n;
