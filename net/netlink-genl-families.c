@@ -38,6 +38,7 @@
 extern struct genl_family_grammar fam_devlink;
 extern struct genl_family_grammar fam_nl80211;
 extern struct genl_family_grammar fam_taskstats;
+extern struct genl_family_grammar fam_ethtool;
 
 /*
  * Per-family grammar definitions live in net/netlink-genl-fam-*.c;
@@ -49,6 +50,7 @@ static struct genl_family_grammar *registry[] = {
 	&fam_devlink,
 	&fam_nl80211,
 	&fam_taskstats,
+	&fam_ethtool,
 };
 
 static int discovery_done;
