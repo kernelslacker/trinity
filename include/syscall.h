@@ -282,6 +282,7 @@ void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		struct kcov_child *kc, struct childdata *child);
 void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry);
 void generic_post_close_fd(struct syscallrecord *rec);
+void post_mount_fd(struct syscallrecord *rec);
 
 #define for_each_arg(_e, _i) \
 	for (_i = 1; _i <= (_e)->num_args; _i++)

@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <linux/mount.h>
+#include "object-types.h"
 #include "sanitise.h"
 
 #ifndef OPEN_TREE_CLONE
@@ -61,8 +62,9 @@ struct syscallentry syscall_open_tree_attr = {
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "flags", [3] = "uattr", [4] = "usize" },
 	.arg_params[2].list = ARGLIST(open_tree_attr_flags),
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_MOUNT,
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_open_tree_attr,
-	.post = generic_post_close_fd,
+	.post = post_mount_fd,
 };
