@@ -283,12 +283,34 @@ static void post_sendmmsg(struct syscallrecord *rec)
 		return;
 	}
 
+	/*
+	 * STRONG-VAL count bound: net/socket.c::__sys_sendmmsg() returns
+	 * the count of successfully-sent mmsghdr entries (1..vlen) on
+	 * success or -1UL on failure.  A retval > vlen on a non-(-1UL)
+	 * return is a structural ABI regression -- sign-extension tear in
+	 * the return slot, torn write of the count by a parallel
+	 * signal-restart path, or -errno leaking through the success slot.
+	 * Compare against the local vlen snapshot already bounded by the
+	 * SENDMMSG_MAX_VLEN guard above so a sibling re-scribble of
+	 * rec->a3 between that guard and this check cannot launder an
+	 * oversized retval past the bound.  No snap-struct extension --
+	 * vlen lives on the stack from handler entry.  Mirrors
+	 * epoll_wait 4c7a84058afd / epoll_pwait 1ae902d4b01d.
+	 */
+	if ((long) rec->retval != -1L && rec->retval > vlen) {
+		outputerr("post_sendmmsg: rejected retval=0x%lx > vlen=%u\n",
+			  rec->retval, vlen);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
+	}
+
 	for (i = 0; i < vlen; i++) {
 		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov, NULL);
 		if (inner_ptr_ok_to_free(rec, msgs[i].msg_hdr.msg_name,
 					 "post_sendmmsg/msg_name"))
 			free(msgs[i].msg_hdr.msg_name);
 	}
+out_free:
 	rec->a2 = 0;
 	deferred_freeptr(&rec->post_state);
 }
