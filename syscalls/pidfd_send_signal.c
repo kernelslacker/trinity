@@ -50,6 +50,7 @@ static void sanitise_pidfd_send_signal(struct syscallrecord *rec)
 
 struct syscallentry syscall_pidfd_send_signal = {
 	.name = "pidfd_send_signal",
+	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
 	.num_args = 4,
 	.argtype = { [0] = ARG_FD_PIDFD, [1] = ARG_OP, [3] = ARG_OP },

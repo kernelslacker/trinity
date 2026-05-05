@@ -9,6 +9,7 @@ struct syscallentry syscall_unlink = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_PATHNAME },
 	.argname = { [0] = "pathname" },
+	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
 };
 
@@ -26,6 +27,7 @@ struct syscallentry syscall_unlinkat = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_LIST },
 	.argname = { [0] = "dfd", [1] = "pathname", [2] = "flag" },
 	.arg_params[2].list = ARGLIST(unlinkat_flags),
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };

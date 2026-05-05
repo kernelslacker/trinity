@@ -64,6 +64,7 @@ struct syscallentry syscall_landlock_add_rule = {
 	.argtype = { [0] = ARG_FD_LANDLOCK, [1] = ARG_OP },
 	.argname = { [0] = "ruleset_fd", [1] = "rule_type", [2] = "rule_attr", [3] = "flags" },
 	.arg_params[1].list = ARGLIST(landlock_ruletypes),
+	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
 	.sanitise = sanitise_landlock_add_rule,
 };

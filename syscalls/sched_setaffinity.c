@@ -42,6 +42,7 @@ static void sanitise_sched_setaffinity(struct syscallrecord *rec)
 
 struct syscallentry syscall_sched_setaffinity = {
 	.name = "sched_setaffinity",
+	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_SCHED,
 	.num_args = 3,
 	.argtype = { [0] = ARG_PID },

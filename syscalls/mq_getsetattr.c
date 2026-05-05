@@ -32,6 +32,7 @@ struct syscallentry syscall_mq_getsetattr = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_FD_MQ },
 	.argname = { [0] = "mqdes", [1] = "u_mqstat", [2] = "u_omqstat" },
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_mq_getsetattr,
 };

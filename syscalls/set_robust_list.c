@@ -17,5 +17,6 @@ struct syscallentry syscall_set_robust_list = {
 	.sanitise = sanitise_set_robust_list,
 	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LEN },
 	.argname = { [0] = "head", [1] = "len" },
+	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
 };

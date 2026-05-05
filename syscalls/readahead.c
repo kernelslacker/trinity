@@ -16,6 +16,7 @@ struct syscallentry syscall_readahead = {
 	.argtype = { [0] = ARG_FD, [2] = ARG_LEN },
 	.argname = { [0] = "fd", [1] = "offset", [2] = "count" },
 	.sanitise = sanitise_readahead,
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };

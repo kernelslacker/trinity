@@ -35,6 +35,7 @@ struct syscallentry syscall_msync = {
 	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN, [2] = ARG_OP },
 	.argname = { [0] = "start", [1] = "len", [2] = "flags" },
 	.arg_params[2].list = ARGLIST(msync_flags),
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VM,
 	.sanitise = sanitise_msync,

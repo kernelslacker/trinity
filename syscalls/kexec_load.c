@@ -70,6 +70,7 @@ struct syscallentry syscall_kexec_load = {
 	.argname = { [0] = "entry", [1] = "nr_segments", [2] = "segments", [3] = "flags" },
 	.arg_params[3].list = ARGLIST(kexec_load_flags),
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_kexec_load,
 };

@@ -28,6 +28,7 @@ struct syscallentry syscall_linkat = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_FD, [3] = ARG_PATHNAME, [4] = ARG_LIST },
 	.argname = { [0] = "olddfd", [1] = "oldname", [2] = "newdfd", [3] = "newname", [4] = "flags" },
 	.arg_params[4].list = ARGLIST(linkat_flags),
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_linkat,

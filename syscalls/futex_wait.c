@@ -76,6 +76,7 @@ struct syscallentry syscall_futex_wait = {
 	.arg_params[3].list = ARGLIST(futex2_flags),
 	.arg_params[5].list = ARGLIST(futex_wait_clockids),
 	.sanitise = sanitise_futex_wait,
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_IPC,
 };

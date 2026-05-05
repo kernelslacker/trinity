@@ -29,6 +29,7 @@ static void sanitise_sched_setscheduler(struct syscallrecord *rec)
 
 struct syscallentry syscall_sched_setscheduler = {
 	.name = "sched_setscheduler",
+	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_SCHED,
 	.num_args = 3,
 	.argtype = { [0] = ARG_PID, [1] = ARG_OP, [2] = ARG_ADDRESS },

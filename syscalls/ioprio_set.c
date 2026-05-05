@@ -35,5 +35,6 @@ struct syscallentry syscall_ioprio_set = {
 	.argname = { [0] = "which", [1] = "who", [2] = "ioprio" },
 	.arg_params[0].list = ARGLIST(ioprio_who),
 	.sanitise = sanitise_ioprio_set,
+	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_SCHED,
 };

@@ -124,6 +124,7 @@ struct syscallentry syscall_mount = {
 	.argname = { [0] = "dev_name", [1] = "dir_name", [2] = "type", [3] = "flags", [4] = "data" },
 	.arg_params[3].list = ARGLIST(mount_flags),
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_mount,
 };
@@ -192,6 +193,7 @@ struct syscallentry syscall_mount_setattr = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_LIST },
 	.argname = { [0] = "dfd", [1] = "path", [2] = "flags", [3] = "uattr", [4] = "usize" },
 	.arg_params[2].list = ARGLIST(mount_setattr_flags),
+	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_mount_setattr,
 };

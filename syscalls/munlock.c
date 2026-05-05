@@ -15,6 +15,7 @@ struct syscallentry syscall_munlock = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN },
 	.argname = { [0] = "addr", [1] = "len" },
+	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VM,
 	.sanitise = sanitise_munlock,
 };
