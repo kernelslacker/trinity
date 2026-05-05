@@ -167,8 +167,7 @@ void minicorpus_save(struct syscallrecord *rec)
  *
  * mutate_arg() bumps mut_attrib[op] every time it picks case `op`.  After
  * the syscall completes, the post-coverage path drains the stash via
- * minicorpus_mut_attrib_commit() (folding it into shm-wide trials/wins)
- * or minicorpus_mut_attrib_clear() (dropping it for cmp-mode calls).
+ * minicorpus_mut_attrib_commit(), folding it into shm-wide trials/wins.
  *
  * Process-local — children fork before any mutate_arg call, so each child
  * has its own copy.  No locking needed: a child runs single-threaded.
@@ -179,9 +178,9 @@ static unsigned int mut_attrib[MUT_NUM_OPS];
  * Process-local replay and splice attribution flags.
  *
  * Set by minicorpus_replay() when the respective event occurs; consumed
- * and cleared by minicorpus_mut_attrib_commit() / minicorpus_mut_attrib_clear()
- * to attribute wins without needing a second pass over the call path.
- * Per-process — same fork/single-threaded guarantee as mut_attrib[].
+ * and cleared by minicorpus_mut_attrib_commit() to attribute wins without
+ * needing a second pass over the call path.  Per-process — same
+ * fork/single-threaded guarantee as mut_attrib[].
  */
 static bool this_replay_ran;
 static bool this_replay_spliced;
@@ -306,13 +305,6 @@ void minicorpus_mut_attrib_commit(bool found_new)
 					   1UL, __ATOMIC_RELAXED);
 		this_replay_spliced = false;
 	}
-}
-
-void minicorpus_mut_attrib_clear(void)
-{
-	memset(mut_attrib, 0, sizeof(mut_attrib));
-	this_replay_ran = false;
-	this_replay_spliced = false;
 }
 
 /*

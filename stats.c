@@ -253,6 +253,7 @@ static void json_emit_kcov_section(void)
 	const struct syscalltable *table;
 	unsigned int nr_syscalls_to_scan;
 	unsigned long kc_edges, kc_pcs, kc_calls, kc_remote;
+	unsigned long kc_cmp_records, kc_cmp_trunc;
 	unsigned int top_nr[10];
 	unsigned long top_edges[10];
 	unsigned int top_count = 0;
@@ -269,6 +270,10 @@ static void json_emit_kcov_section(void)
 	kc_pcs    = __atomic_load_n(&kcov_shm->total_pcs,    __ATOMIC_RELAXED);
 	kc_calls  = __atomic_load_n(&kcov_shm->total_calls,  __ATOMIC_RELAXED);
 	kc_remote = __atomic_load_n(&kcov_shm->remote_calls, __ATOMIC_RELAXED);
+	kc_cmp_records = __atomic_load_n(&kcov_shm->cmp_records_collected,
+		__ATOMIC_RELAXED);
+	kc_cmp_trunc = __atomic_load_n(&kcov_shm->cmp_trace_truncated,
+		__ATOMIC_RELAXED);
 
 	nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
 	table = biarch ? syscalls_64bit : syscalls;
@@ -313,8 +318,10 @@ static void json_emit_kcov_section(void)
 	}
 
 	printf(",\"kcov\":{\"unique_edges\":%lu,\"total_pcs\":%lu,"
-		"\"total_calls\":%lu,\"remote_calls\":%lu",
-		kc_edges, kc_pcs, kc_calls, kc_remote);
+		"\"total_calls\":%lu,\"remote_calls\":%lu,"
+		"\"cmp_records_collected\":%lu,\"cmp_trace_truncated\":%lu",
+		kc_edges, kc_pcs, kc_calls, kc_remote,
+		kc_cmp_records, kc_cmp_trunc);
 
 	fputs(",\"top_syscalls\":[", stdout);
 	for (j = 0; j < top_count; j++) {
@@ -1760,15 +1767,20 @@ void dump_stats(void)
 		unsigned int cold_count = 0;
 		unsigned int j;
 
-		unsigned long kc_edges  = __atomic_load_n(&kcov_shm->edges_found,   __ATOMIC_RELAXED);
-		unsigned long kc_pcs    = __atomic_load_n(&kcov_shm->total_pcs,     __ATOMIC_RELAXED);
-		unsigned long kc_calls  = __atomic_load_n(&kcov_shm->total_calls,   __ATOMIC_RELAXED);
-		unsigned long kc_remote = __atomic_load_n(&kcov_shm->remote_calls,  __ATOMIC_RELAXED);
+		unsigned long kc_edges       = __atomic_load_n(&kcov_shm->edges_found,            __ATOMIC_RELAXED);
+		unsigned long kc_pcs         = __atomic_load_n(&kcov_shm->total_pcs,              __ATOMIC_RELAXED);
+		unsigned long kc_calls       = __atomic_load_n(&kcov_shm->total_calls,            __ATOMIC_RELAXED);
+		unsigned long kc_remote      = __atomic_load_n(&kcov_shm->remote_calls,           __ATOMIC_RELAXED);
+		unsigned long kc_cmp_records = __atomic_load_n(&kcov_shm->cmp_records_collected,  __ATOMIC_RELAXED);
+		unsigned long kc_cmp_trunc   = __atomic_load_n(&kcov_shm->cmp_trace_truncated,    __ATOMIC_RELAXED);
 
-		stat_row("kcov_coverage", "unique_edges", kc_edges);
-		stat_row("kcov_coverage", "total_pcs",    kc_pcs);
-		stat_row("kcov_coverage", "total_calls",  kc_calls);
-		stat_row("kcov_coverage", "remote_calls", kc_remote);
+		stat_row("kcov_coverage", "unique_edges",          kc_edges);
+		stat_row("kcov_coverage", "total_pcs",             kc_pcs);
+		stat_row("kcov_coverage", "total_calls",           kc_calls);
+		stat_row("kcov_coverage", "remote_calls",          kc_remote);
+		stat_row("kcov_coverage", "cmp_records_collected", kc_cmp_records);
+		if (kc_cmp_trunc > 0)
+			stat_row("kcov_coverage", "cmp_trace_truncated", kc_cmp_trunc);
 
 		/* Find top 10 edge-producing syscalls via insertion sort. */
 		unsigned int nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;

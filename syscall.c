@@ -174,21 +174,23 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 
 		if (rec->do32bit == false) {
 			if (kc != NULL && kc->remote_mode)
-				kcov_enable_remote(kc);
-			else if (kc != NULL && kc->cmp_mode)
-				kcov_enable_cmp(kc);
+				kcov_enable_remote(kc, child != NULL ? child->num : 0);
 			else
 				kcov_enable_trace(kc);
+			/* CMP collection runs on a dedicated second fd in
+			 * parallel with whichever PC mode (per-thread or
+			 * remote) is active above; both buffers populate
+			 * simultaneously per syscall. */
+			kcov_enable_cmp(kc);
 			fault_armed = maybe_inject_fault(child, state);
 			ret = syscall(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 			kcov_disable(kc);
 		} else {
 			if (kc != NULL && kc->remote_mode)
-				kcov_enable_remote(kc);
-			else if (kc != NULL && kc->cmp_mode)
-				kcov_enable_cmp(kc);
+				kcov_enable_remote(kc, child != NULL ? child->num : 0);
 			else
 				kcov_enable_trace(kc);
+			kcov_enable_cmp(kc);
 			fault_armed = maybe_inject_fault(child, state);
 			ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 			kcov_disable(kc);

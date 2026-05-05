@@ -497,73 +497,60 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			  bool *found_new)
 {
 	struct syscallrecord *rec = &child->syscall;
-	bool do_cmp;
+	bool new_edges;
 
 	output_syscall_prefix(rec, entry);
 
-	/* Every CMP_MODE_RATIO-th syscall, run in CMP mode to collect
-	 * comparison operand hints instead of PC coverage.
-	 * Every KCOV_REMOTE_RATIO-th non-CMP syscall, use KCOV_REMOTE_ENABLE
-	 * to also collect coverage from softirqs/threaded-irqs/kthreads. */
-	do_cmp = child->kcov.active && ONE_IN(CMP_MODE_RATIO);
-	child->kcov.cmp_mode = do_cmp;
-	child->kcov.remote_mode = !do_cmp && child->kcov.remote_capable &&
+	/* PC and CMP coverage now run on separate kcov fds in parallel,
+	 * so every syscall produces both — no more 1-in-N tradeoff between
+	 * the two.  The only remaining mode toggle is whether to use
+	 * KCOV_REMOTE_ENABLE on the PC fd to also pick up softirq /
+	 * threaded-irq / kthread coverage. */
+	child->kcov.remote_mode = child->kcov.remote_capable &&
 				  ONE_IN(KCOV_REMOTE_RATIO);
 
 	do_syscall(rec, entry, &child->kcov, child);
 
-	if (unlikely(do_cmp)) {
-		cmp_hints_collect(child->kcov.trace_buf, rec->nr);
-		/* cmp-mode runs don't produce a found_new signal, so the
-		 * mutator-attribution stash from generate_syscall_args has
-		 * no coverage event to bind to.  Drop it instead of letting
-		 * it leak into the next non-cmp syscall's commit. */
-		minicorpus_mut_attrib_clear();
-	} else {
-		bool new_edges = kcov_collect(&child->kcov, rec->nr);
+	new_edges = kcov_collect(&child->kcov, rec->nr);
+	kcov_collect_cmp(&child->kcov, rec->nr);
 
-		/* Surface this step's new-coverage signal to the chain
-		 * executor (when called via run_sequence_chain).  cmp-mode
-		 * runs above leave *found_new at its caller-supplied default,
-		 * which is the right semantic — they don't produce an edge
-		 * count, so they neither qualify nor disqualify the chain
-		 * for save. */
-		if (found_new != NULL)
-			*found_new = new_edges;
+	/* Surface this step's new-coverage signal to the chain executor
+	 * (when called via run_sequence_chain). */
+	if (found_new != NULL)
+		*found_new = new_edges;
 
-		/* Record the (prev, curr) syscall pair for sequence coverage. */
-		if (child->last_syscall_nr != EDGEPAIR_NO_PREV)
-			edgepair_record(child->last_syscall_nr, rec->nr, new_edges);
+	/* Record the (prev, curr) syscall pair for sequence coverage. */
+	if (child->last_syscall_nr != EDGEPAIR_NO_PREV)
+		edgepair_record(child->last_syscall_nr, rec->nr, new_edges);
 
-		/* Credit each mutator case picked during this call's
-		 * arg generation, with wins iff this call found new edges. */
-		minicorpus_mut_attrib_commit(new_edges);
+	/* Credit each mutator case picked during this call's arg
+	 * generation, with wins iff this call found new edges. */
+	minicorpus_mut_attrib_commit(new_edges);
 
-		/* Save args that discovered new coverage, but only for
-		 * syscalls without sanitise (which may stash pointers). */
-		if (unlikely(new_edges)) {
-			int strat;
+	/* Save args that discovered new coverage, but only for
+	 * syscalls without sanitise (which may stash pointers). */
+	if (unlikely(new_edges)) {
+		int strat;
 
-			if (entry->sanitise == NULL)
-				minicorpus_save(rec);
+		if (entry->sanitise == NULL)
+			minicorpus_save(rec);
 
-			/* Coverage-delta-triggered persistence: snapshot the
-			 * minicorpus to disk every MINICORPUS_SNAPSHOT_EDGES
-			 * fleet-wide edges so a crash mid-run only loses the
-			 * last cadence window of state, not the whole run.
-			 * Cheap fast path when the gap isn't reached; only one
-			 * caller per window actually runs the save. */
-			minicorpus_maybe_snapshot();
+		/* Coverage-delta-triggered persistence: snapshot the
+		 * minicorpus to disk every MINICORPUS_SNAPSHOT_EDGES
+		 * fleet-wide edges so a crash mid-run only loses the
+		 * last cadence window of state, not the whole run.
+		 * Cheap fast path when the gap isn't reached; only one
+		 * caller per window actually runs the save. */
+		minicorpus_maybe_snapshot();
 
-			/* Attribute this new edge to the strategy that was
-			 * active when it was discovered.  Cumulative; the
-			 * window delta is computed by maybe_rotate_strategy
-			 * against shm->edges_at_window_start. */
-			strat = __atomic_load_n(&shm->current_strategy, __ATOMIC_RELAXED);
-			if (strat >= 0 && strat < NR_STRATEGIES)
-				__atomic_fetch_add(&shm->edges_by_strategy[strat],
-						   1, __ATOMIC_RELAXED);
-		}
+		/* Attribute this new edge to the strategy that was
+		 * active when it was discovered.  Cumulative; the
+		 * window delta is computed by maybe_rotate_strategy
+		 * against shm->edges_at_window_start. */
+		strat = __atomic_load_n(&shm->current_strategy, __ATOMIC_RELAXED);
+		if (strat >= 0 && strat < NR_STRATEGIES)
+			__atomic_fetch_add(&shm->edges_by_strategy[strat],
+					   1, __ATOMIC_RELAXED);
 	}
 
 	output_syscall_postfix(rec);

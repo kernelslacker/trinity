@@ -28,6 +28,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include "cmp_hints.h"
 #include "edgepair.h"
 #include "kcov.h"
 #include "trinity.h"
@@ -96,11 +97,12 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 {
 	kc->fd = -1;
 	kc->trace_buf = NULL;
+	kc->cmp_fd = -1;
+	kc->cmp_trace_buf = NULL;
 	kc->active = false;
-	kc->cmp_mode = false;
+	kc->cmp_capable = false;
 	kc->remote_mode = false;
 	kc->remote_capable = false;
-	kc->child_id = child_id;
 	kc->dedup = NULL;
 	kc->current_generation = 0;
 
@@ -204,6 +206,57 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	if (kc->trace_buf != NULL)
 		track_shared_region((unsigned long)kc->trace_buf,
 				    KCOV_TRACE_SIZE * sizeof(unsigned long));
+
+	/*
+	 * Second KCOV fd dedicated to KCOV_TRACE_CMP.  Trinity used to
+	 * mode-toggle the single PC fd into CMP for 1-in-CMP_MODE_RATIO
+	 * syscalls, which traded a sliver of every-syscall PC coverage for
+	 * occasional comparison-operand hints.  With a dedicated fd we run
+	 * both modes simultaneously on every syscall — PC coverage is no
+	 * longer sacrificed, and CMP records accumulate at the maximum
+	 * possible rate.  Probe enable/disable here so a kernel without
+	 * KCOV_TRACE_CMP support degrades cleanly to PC-only without
+	 * disabling the rest of KCOV.  Per-child cost: one extra fd plus
+	 * KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long) (~2MB) of mmap.
+	 */
+	if (kc->active) {
+		kc->cmp_fd = open("/sys/kernel/debug/kcov", O_RDWR);
+		if (kc->cmp_fd >= 0) {
+			if (ioctl(kc->cmp_fd, KCOV_INIT_TRACE,
+					(unsigned long)KCOV_CMP_BUFFER_SIZE) < 0)
+				goto err_close_cmp;
+
+			kc->cmp_trace_buf = mmap(NULL,
+				KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long),
+				PROT_READ | PROT_WRITE, MAP_SHARED,
+				kc->cmp_fd, 0);
+			if (kc->cmp_trace_buf == MAP_FAILED) {
+				kc->cmp_trace_buf = NULL;
+				goto err_close_cmp;
+			}
+
+			/* Probe KCOV_TRACE_CMP support.  An older kernel
+			 * without CMP returns -ENOTSUPP from ENABLE; tear
+			 * down the cmp fd and leave cmp_capable = false. */
+			if (ioctl(kc->cmp_fd, KCOV_ENABLE, KCOV_TRACE_CMP) < 0)
+				goto err_unmap_cmp;
+			if (ioctl(kc->cmp_fd, KCOV_DISABLE, 0) < 0)
+				goto err_unmap_cmp;
+
+			kc->cmp_capable = true;
+			track_shared_region((unsigned long)kc->cmp_trace_buf,
+				KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long));
+		}
+	}
+	return;
+
+err_unmap_cmp:
+	munmap(kc->cmp_trace_buf,
+		KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long));
+	kc->cmp_trace_buf = NULL;
+err_close_cmp:
+	close(kc->cmp_fd);
+	kc->cmp_fd = -1;
 	return;
 
 err_free_dedup:
@@ -221,11 +274,21 @@ void kcov_cleanup_child(struct kcov_child *kc)
 		close(kc->fd);
 		kc->fd = -1;
 	}
+	if (kc->cmp_trace_buf != NULL) {
+		munmap(kc->cmp_trace_buf,
+			KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long));
+		kc->cmp_trace_buf = NULL;
+	}
+	if (kc->cmp_fd >= 0) {
+		close(kc->cmp_fd);
+		kc->cmp_fd = -1;
+	}
 	if (kc->dedup != NULL) {
 		free(kc->dedup);
 		kc->dedup = NULL;
 	}
 	kc->active = false;
+	kc->cmp_capable = false;
 }
 
 void kcov_enable_trace(struct kcov_child *kc)
@@ -240,15 +303,19 @@ void kcov_enable_trace(struct kcov_child *kc)
 
 void kcov_enable_cmp(struct kcov_child *kc)
 {
-	if (kc == NULL || !kc->active)
+	if (kc == NULL || !kc->cmp_capable)
 		return;
 
-	__atomic_store_n(&kc->trace_buf[0], 0, __ATOMIC_RELAXED);
-	if (ioctl(kc->fd, KCOV_ENABLE, KCOV_TRACE_CMP) < 0)
-		kc->active = false;
+	__atomic_store_n(&kc->cmp_trace_buf[0], 0, __ATOMIC_RELAXED);
+	if (ioctl(kc->cmp_fd, KCOV_ENABLE, KCOV_TRACE_CMP) < 0) {
+		/* Runtime failure on a previously-probed-good fd.  Leave
+		 * kc->active alone — PC tracing on the other fd is
+		 * independent and still valid; just stop attempting CMP. */
+		kc->cmp_capable = false;
+	}
 }
 
-void kcov_enable_remote(struct kcov_child *kc)
+void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id)
 {
 	struct kcov_remote_arg arg = {0};
 
@@ -260,7 +327,7 @@ void kcov_enable_remote(struct kcov_child *kc)
 	arg.trace_mode = KCOV_TRACE_PC;
 	arg.area_size = KCOV_TRACE_SIZE;
 	arg.num_handles = 0;
-	arg.common_handle = KCOV_SUBSYSTEM_COMMON | (kc->child_id + 1);
+	arg.common_handle = KCOV_SUBSYSTEM_COMMON | (child_id + 1);
 
 	if (ioctl(kc->fd, KCOV_REMOTE_ENABLE, &arg) < 0) {
 		/* Fall back to per-thread mode if remote fails at runtime. */
@@ -272,10 +339,18 @@ void kcov_enable_remote(struct kcov_child *kc)
 
 void kcov_disable(struct kcov_child *kc)
 {
-	if (kc == NULL || kc->fd < 0 || kc->trace_buf == NULL)
+	if (kc == NULL)
 		return;
 
-	ioctl(kc->fd, KCOV_DISABLE, 0);
+	if (kc->fd >= 0 && kc->trace_buf != NULL)
+		ioctl(kc->fd, KCOV_DISABLE, 0);
+
+	/* Always issue DISABLE on the cmp fd as well; it's a no-op when
+	 * the fd was never enabled this call (effector-map calibration
+	 * paths only go through kcov_enable_trace) and the kernel will
+	 * just return -EINVAL, which we ignore. */
+	if (kc->cmp_fd >= 0 && kc->cmp_trace_buf != NULL)
+		ioctl(kc->cmp_fd, KCOV_DISABLE, 0);
 }
 
 /*
@@ -443,6 +518,54 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 	}
 
 	return found_new;
+}
+
+void kcov_collect_cmp(struct kcov_child *kc, unsigned int nr)
+{
+	unsigned long count;
+
+	if (kc == NULL || !kc->cmp_capable || kc->cmp_trace_buf == NULL)
+		return;
+
+	count = __atomic_load_n(&kc->cmp_trace_buf[0], __ATOMIC_RELAXED);
+	if (count > KCOV_CMP_RECORDS_MAX) {
+		/* Kernel wanted to record more comparisons than the cmp
+		 * buffer holds; the tail was dropped.  Mirrors the PC-side
+		 * trace_truncated counter. */
+		__atomic_fetch_add(&kcov_shm->cmp_trace_truncated, 1,
+			__ATOMIC_RELAXED);
+		count = KCOV_CMP_RECORDS_MAX;
+	}
+
+	if (count == 0)
+		return;
+
+	cmp_hints_collect(kc->cmp_trace_buf, nr);
+
+	__atomic_fetch_add(&kcov_shm->cmp_records_collected, count,
+		__ATOMIC_RELAXED);
+}
+
+void kcov_get_cmp_records(struct kcov_child *kc,
+			  struct kcov_cmp_record **out,
+			  unsigned long *count)
+{
+	unsigned long n;
+
+	*out = NULL;
+	*count = 0;
+
+	if (kc == NULL || !kc->cmp_capable || kc->cmp_trace_buf == NULL)
+		return;
+
+	n = __atomic_load_n(&kc->cmp_trace_buf[0], __ATOMIC_RELAXED);
+	if (n > KCOV_CMP_RECORDS_MAX)
+		n = KCOV_CMP_RECORDS_MAX;
+	if (n == 0)
+		return;
+
+	*out = (struct kcov_cmp_record *)&kc->cmp_trace_buf[1];
+	*count = n;
 }
 
 unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
