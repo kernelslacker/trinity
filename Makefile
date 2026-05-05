@@ -40,6 +40,9 @@ LDLIBS += -lpthread
 # pc_format.c uses dladdr() to resolve PIE-relative offsets
 LDLIBS += -ldl
 
+# strategy.c uses sqrt()/log() for the UCB1 bandit picker
+LDLIBS += -lm
+
 # gcc only.
 ifneq ($(shell $(CC) -v 2>&1 | grep -c "clang"), 1)
 CFLAGS += -Wlogical-op

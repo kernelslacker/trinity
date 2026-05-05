@@ -114,6 +114,13 @@ void init_shm(void)
 	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL, __ATOMIC_RELAXED);
 	shm->edges_at_window_start = 0;
 
+	/* Picker mode (round-robin vs UCB1 bandit) was selected by
+	 * parse_args via --strategy.  Stash it in shm so the CAS-winning
+	 * child at each rotation reads a consistent value.  bandit_pulls/
+	 * bandit_reward are zeroed by the shm_zero default and only
+	 * touched by the bandit picker, so no further init is needed. */
+	__atomic_store_n(&shm->picker_mode, picker_mode_arg, __ATOMIC_RELAXED);
+
 	__atomic_store_n(&shm->seed, init_seed(seed), __ATOMIC_RELAXED);
 
 	if (!shared_size_mul(max_children, sizeof(struct childdata *),

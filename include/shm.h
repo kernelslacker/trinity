@@ -242,6 +242,27 @@ struct shm_s {
 	unsigned long edges_by_strategy[NR_STRATEGIES];
 
 	/*
+	 * UCB1 bandit picker (Phase 2) — see include/strategy.h.
+	 *
+	 * picker_mode: arm-selection policy (PICKER_ROUND_ROBIN or
+	 *   PICKER_BANDIT_UCB1).  Set once at init_shm time from
+	 *   picker_mode_arg, never mutated thereafter.  Read by the
+	 *   CAS-winning child on the rotation path.
+	 *
+	 * bandit_pulls[]: number of windows each arm was selected for.
+	 *   Bumped by bandit_record_pull() during the rotation switch,
+	 *   which is serialised by the syscalls_at_last_switch CAS, so
+	 *   plain integer writes are safe (no concurrent writers).
+	 *
+	 * bandit_reward[]: cumulative edges discovered while each arm
+	 *   was active.  Sum of per-window edge deltas, written under
+	 *   the same CAS-serialised path as bandit_pulls[].
+	 */
+	_Atomic int picker_mode;
+	unsigned long bandit_pulls[NR_STRATEGIES];
+	unsigned long bandit_reward[NR_STRATEGIES];
+
+	/*
 	 * EFAULT-probe cache for ioctl arg classification.  Open-addressing
 	 * hashmap keyed on (group_idx, request); see ioctls/efault_cache.c
 	 * for the slot encoding and the probing protocol.  Lives in shm so
