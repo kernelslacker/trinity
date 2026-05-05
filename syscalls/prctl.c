@@ -241,7 +241,7 @@ static void post_prctl(struct syscallrecord *rec)
 			if (inner_ptr_ok_to_free(rec, bpf->filter,
 						 "post_prctl/bpf_filter"))
 				free(bpf->filter);
-			free(bpf);
+			deferred_free_enqueue(bpf, NULL);
 		}
 		break;
 
