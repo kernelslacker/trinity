@@ -219,7 +219,9 @@ static void post_seccomp(struct syscallrecord *rec)
 			}
 		}
 
-		free(fprog->filter);
+		if (inner_ptr_ok_to_free(rec, fprog->filter,
+					 "post_seccomp/fprog_filter"))
+			free(fprog->filter);
 		deferred_free_enqueue(fprog, NULL);
 		break;
 	}
