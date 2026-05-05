@@ -104,6 +104,75 @@ static unsigned long io_uring_register_opcodes[] = {
 };
 
 /*
+ * Stratified opcode picker.  Uniform sampling across the 38-entry
+ * io_uring_register_opcodes[] table under-exercises the rarer kernel
+ * paths because the list mixes a small set of common multi-purpose
+ * opcodes (BUFFERS/FILES/EVENTFD/PROBE/PERSONALITY/IOWQ_MAX_WORKERS)
+ * with newer narrowly-targeted ones (zcrx, mem_region, query,
+ * bpf_filter, clock, resize_rings, ...).  Bias the picker so the rare
+ * paths get hit ~50% of the time, and ~10% of the time OR the
+ * IORING_REGISTER_USE_REGISTERED_RING modifier bit onto a re-rolled
+ * base opcode to exercise the masking path that decodes fd as a
+ * registered-ring index rather than a real fd.
+ */
+static const unsigned long io_uring_register_opcodes_common[] = {
+	IORING_REGISTER_BUFFERS,
+	IORING_REGISTER_FILES,
+	IORING_REGISTER_EVENTFD,
+	IORING_REGISTER_PROBE,
+	IORING_REGISTER_PERSONALITY,
+	IORING_REGISTER_IOWQ_MAX_WORKERS,
+};
+
+static const unsigned long io_uring_register_opcodes_rare[] = {
+	IORING_REGISTER_RESIZE_RINGS,
+	IORING_REGISTER_CLONE_BUFFERS,
+	IORING_REGISTER_ZCRX_IFQ,
+	IORING_REGISTER_MEM_REGION,
+	IORING_REGISTER_QUERY,
+	IORING_REGISTER_ZCRX_CTRL,
+	IORING_REGISTER_BPF_FILTER,
+	IORING_REGISTER_CLOCK,
+	IORING_REGISTER_NAPI,
+	IORING_REGISTER_SEND_MSG_RING,
+	IORING_REGISTER_RING_FDS,
+	IORING_REGISTER_RESTRICTIONS,
+	IORING_REGISTER_ENABLE_RINGS,
+	IORING_REGISTER_SYNC_CANCEL,
+	IORING_REGISTER_PBUF_RING,
+	IORING_REGISTER_PBUF_STATUS,
+};
+
+static unsigned long pick_io_uring_register_opcode(void)
+{
+	unsigned int r = rand() % 100;
+	unsigned long base;
+
+	if (r < 40)
+		return io_uring_register_opcodes_common[rand() %
+			ARRAY_SIZE(io_uring_register_opcodes_common)];
+	if (r < 90)
+		return io_uring_register_opcodes_rare[rand() %
+			ARRAY_SIZE(io_uring_register_opcodes_rare)];
+
+	/*
+	 * 10%: re-roll a base opcode (50/50 common vs rare) and OR in the
+	 * IORING_REGISTER_USE_REGISTERED_RING modifier bit.  The kernel
+	 * masks this bit off before dispatching, decoding fd as a
+	 * registered-ring index rather than a real fd -- a path the bare
+	 * opcode list never reaches when the modifier is listed alone as
+	 * a pool value (it decodes there as opcode 0).
+	 */
+	if (rand() % 2)
+		base = io_uring_register_opcodes_common[rand() %
+			ARRAY_SIZE(io_uring_register_opcodes_common)];
+	else
+		base = io_uring_register_opcodes_rare[rand() %
+			ARRAY_SIZE(io_uring_register_opcodes_rare)];
+	return base | IORING_REGISTER_USE_REGISTERED_RING;
+}
+
+/*
  * Snapshot of the opcode-gated heap allocation sanitise hands to the
  * kernel via rec->a3, captured at sanitise time and consumed by the
  * post handler.  Lives in rec->post_state, a slot the syscall ABI does
@@ -136,6 +205,8 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	unsigned int opcode;
 	unsigned int nr;
 	void *buf;
+
+	rec->a2 = pick_io_uring_register_opcode();
 
 	ring = get_io_uring_ring();
 	if (ring != NULL)
