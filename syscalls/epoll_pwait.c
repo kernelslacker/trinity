@@ -14,6 +14,8 @@ SYSCALL_DEFINE6(epoll_pwait2, int, epfd, struct epoll_event __user *, events,
 #include <sys/epoll.h>
 #include "random.h"
 #include "sanitise.h"
+#include "trinity.h"
+#include "utils.h"
 
 static void sanitise_epoll_pwait(struct syscallrecord *rec)
 {
@@ -31,6 +33,17 @@ static void sanitise_epoll_pwait2(struct syscallrecord *rec)
 	avoid_shared_buffer(&rec->a2, rec->a3 * sizeof(struct epoll_event));
 }
 
+static void post_epoll_pwait(struct syscallrecord *rec)
+{
+	if ((long) rec->retval == -1L)
+		return;
+	if (rec->retval > rec->a3) {
+		outputerr("post_epoll_pwait: rejecting retval %ld > maxevents %ld\n",
+			 (long) rec->retval, (long) rec->a3);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
 struct syscallentry syscall_epoll_pwait = {
 	.name = "epoll_pwait",
 	.num_args = 6,
@@ -39,6 +52,7 @@ struct syscallentry syscall_epoll_pwait = {
 	.arg_params[2].range.low = 1,
 	.arg_params[2].range.hi = 128,
 	.sanitise = sanitise_epoll_pwait,
+	.post = post_epoll_pwait,
 	.rettype = RET_BORING,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
@@ -52,6 +66,7 @@ struct syscallentry syscall_epoll_pwait2 = {
 	.arg_params[2].range.low = 1,
 	.arg_params[2].range.hi = 128,
 	.sanitise = sanitise_epoll_pwait2,
+	.post = post_epoll_pwait,
 	.rettype = RET_BORING,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
