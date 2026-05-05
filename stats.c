@@ -632,7 +632,8 @@ static void dump_stats_json(void)
 		"\"iouring_recipes\":{\"runs\":%lu,\"completed\":%lu,\"partial\":%lu,\"enosys\":%lu},"
 		"\"zombie_slots\":{\"pending\":%lu,\"reaped\":%lu,\"timed_out\":%lu},"
 		"\"corruption\":{\"local_op_count\":%lu,\"fd_event_ring_noncanon\":%lu,"
-			"\"fd_event_ring_canary\":%lu,\"deferred_free_corrupt_ptr\":%lu,"
+			"\"fd_event_ring_canary\":%lu,\"fd_event_payload\":%lu,"
+			"\"deferred_free_corrupt_ptr\":%lu,"
 			"\"post_handler_corrupt_ptr\":%lu,\"snapshot_non_heap_reject\":%lu,"
 			"\"rec_canary_stomped\":%lu,\"rzs_blanket_reject\":%lu,"
 			"\"sibling_mprotect_failed\":%lu},"
@@ -769,6 +770,7 @@ static void dump_stats_json(void)
 		shm->stats.zombies_timed_out,
 		shm->stats.local_op_count_corrupted, shm->stats.fd_event_ring_corrupted,
 		shm->stats.fd_event_ring_overwritten,
+		shm->stats.fd_event_payload_corrupt,
 		shm->stats.deferred_free_corrupt_ptr,
 		shm->stats.post_handler_corrupt_ptr,
 		shm->stats.snapshot_non_heap_reject,
@@ -989,6 +991,8 @@ static const struct {
 	  offsetof(struct stats_s, fd_event_ring_corrupted) },
 	{ "fd_event_ring_overwritten",
 	  offsetof(struct stats_s, fd_event_ring_overwritten) },
+	{ "fd_event_payload_corrupt",
+	  offsetof(struct stats_s, fd_event_payload_corrupt) },
 };
 
 static unsigned long defense_counter_load(unsigned int i)
@@ -1534,6 +1538,8 @@ void dump_stats(void)
 		stat_row("corruption", "fd_event_ring_noncanon", shm->stats.fd_event_ring_corrupted);
 	if (shm->stats.fd_event_ring_overwritten)
 		stat_row("corruption", "fd_event_ring_canary",   shm->stats.fd_event_ring_overwritten);
+	if (shm->stats.fd_event_payload_corrupt)
+		stat_row("corruption", "fd_event_payload",       shm->stats.fd_event_payload_corrupt);
 	if (shm->stats.deferred_free_corrupt_ptr)
 		stat_row("corruption", "deferred_free_corrupt_ptr", shm->stats.deferred_free_corrupt_ptr);
 	if (shm->stats.post_handler_corrupt_ptr)

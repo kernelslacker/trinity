@@ -685,6 +685,15 @@ struct stats_s {
 	 * Indicates the pointer was overwritten after init. */
 	unsigned long fd_event_ring_overwritten;
 
+	/* fd_event_drain() rejected a child-supplied event whose payload
+	 * (type tag, objtype, fd, family, ...) was outside the dispatch
+	 * code's safe range.  Children write their own ring under hostile
+	 * fuzzed workloads, so the parent treats every payload field as
+	 * untrusted; without this guard a bad objtype OOB-writes
+	 * shm->fd_regen_pending and a bad family OOB-reads net_protocols
+	 * inside add_socket(). */
+	unsigned long fd_event_payload_corrupt;
+
 	/* Shared obj-heap pressure counters: cumulative successful allocs
 	 * and frees through alloc_shared_obj() / free_shared_obj().  Read
 	 * by dump_stats() under -v to print a one-line utilisation summary
