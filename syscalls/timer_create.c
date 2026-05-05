@@ -4,6 +4,7 @@
 	timer_t __user *, created_timer_id)
  */
 #include <signal.h>
+#include <stdint.h>
 #include <time.h>
 
 #include "sanitise.h"
@@ -72,6 +73,7 @@ static void post_timer_create(struct syscallrecord *rec)
 {
 	timer_t *idp;
 	timer_t tid;
+	intptr_t tid_int;
 
 	if ((long) rec->retval < 0)
 		return;
@@ -82,7 +84,27 @@ static void post_timer_create(struct syscallrecord *rec)
 		return;
 	}
 
+	/*
+	 * The snapshot above protects the OUT-pointer (idp) from rec->aN
+	 * scribbles, but the kernel-written timer_t value at *idp lives in
+	 * the user-supplied buffer and is fair game for a sibling syscall
+	 * to clobber between the syscall returning and this handler running.
+	 * glibc's timer_delete() indexes a per-process timer table by tid,
+	 * so a garbage tid faults inside the table lookup before any
+	 * defensive return path can run.  A successful timer_create yields
+	 * a small non-negative timer_t (typically a single-digit index);
+	 * anything outside [0, 65535] is overwhelmingly likely a scribble.
+	 */
 	tid = *idp;
+	tid_int = (intptr_t) tid;
+	if (tid_int < 0 || tid_int > 65535) {
+		outputerr("post_timer_create: rejected suspicious tid=%p (kernel-write-buffer-scribbled?)\n",
+			  (void *) tid);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		rec->post_state = 0;
+		return;
+	}
+
 	timer_delete(tid);
 	rec->post_state = 0;
 }
