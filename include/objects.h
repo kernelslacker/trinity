@@ -133,6 +133,11 @@ struct cgroupfdobj {
 	int fd;
 };
 
+struct watch_queueobj {
+	int fd;		/* exposed read end (the watch_queue consumer) */
+	int peer_fd;	/* held write end; closed in destructor to avoid leak */
+};
+
 struct io_uringobj {
 	int fd;
 	unsigned int setup_flags;
@@ -209,6 +214,8 @@ struct object {
 		struct mountfdobj mountfdobj;
 
 		struct cgroupfdobj cgroupfdobj;
+
+		struct watch_queueobj watch_queueobj;
 
 		struct iommufdobj iommufdobj;
 
