@@ -16,8 +16,12 @@
  */
 
 /* Size of the per-child KCOV trace buffer (number of unsigned longs).
- * 64K entries is 512KB on 64-bit, enough for most syscall paths. */
-#define KCOV_TRACE_SIZE (64 << 10)
+ * 256K entries is 2MB on 64-bit.  Deep kernel paths (long io_uring
+ * chains, deep btrfs ops, multi-level fs walks, large genetlink
+ * families) can blow past the previous 64K-entry budget and silently
+ * truncate the tail of the trace, dropping uncounted edge coverage
+ * on exactly the syscalls the fuzzer would learn the most from. */
+#define KCOV_TRACE_SIZE (256 << 10)
 
 /* Number of distinct edge slots PCs hash into.
  * 8M slots preserves the prior bitmap's birthday-paradox headroom: 50%
