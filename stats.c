@@ -630,6 +630,8 @@ static void dump_stats_json(void)
 		"\"genetlink_fuzzer\":{\"families_discovered\":%lu,\"msgs_sent\":%lu,\"eperm\":%lu},"
 		"\"genl_family_calls\":{\"devlink\":%lu,\"nl80211\":%lu,\"taskstats\":%lu,"
 			"\"ethtool\":%lu,\"mptcp_pm\":%lu},"
+		"\"nfnl_subsys_calls\":{\"ctnetlink\":%lu,\"ctnetlink_exp\":%lu,"
+			"\"nftables\":%lu,\"ipset\":%lu},"
 		"\"netlink_generator\":{\"nested_attrs_emitted\":%lu},"
 		"\"perf_event_chains\":{\"runs\":%lu,\"groups_created\":%lu,\"ioctl_ops\":%lu},"
 		"\"tracefs_fuzzer\":{\"kprobe_writes\":%lu,\"uprobe_writes\":%lu,"
@@ -772,6 +774,10 @@ static void dump_stats_json(void)
 		shm->stats.genl_family_calls_taskstats,
 		shm->stats.genl_family_calls_ethtool,
 		shm->stats.genl_family_calls_mptcp_pm,
+		shm->stats.nfnl_subsys_calls_ctnetlink,
+		shm->stats.nfnl_subsys_calls_ctnetlink_exp,
+		shm->stats.nfnl_subsys_calls_nftables,
+		shm->stats.nfnl_subsys_calls_ipset,
 		shm->stats.netlink_nested_attrs_emitted,
 		shm->stats.perf_chains_runs, shm->stats.perf_chains_groups_created,
 		shm->stats.perf_chains_ioctl_ops,
@@ -1063,6 +1069,18 @@ static const struct {
 	  offsetof(struct stats_s, genl_family_calls_ethtool) },
 	{ "genl_family_calls_mptcp_pm",
 	  offsetof(struct stats_s, genl_family_calls_mptcp_pm) },
+	/* nfnetlink registry per-subsys dispatch counters; same diagnostic
+	 * value as the genl ones above but for NETLINK_NETFILTER subsystems.
+	 * Lets an operator see the live ctnetlink/nftables/ipset traffic
+	 * split at 10-minute granularity without waiting for run end. */
+	{ "nfnl_subsys_calls_ctnetlink",
+	  offsetof(struct stats_s, nfnl_subsys_calls_ctnetlink) },
+	{ "nfnl_subsys_calls_ctnetlink_exp",
+	  offsetof(struct stats_s, nfnl_subsys_calls_ctnetlink_exp) },
+	{ "nfnl_subsys_calls_nftables",
+	  offsetof(struct stats_s, nfnl_subsys_calls_nftables) },
+	{ "nfnl_subsys_calls_ipset",
+	  offsetof(struct stats_s, nfnl_subsys_calls_ipset) },
 };
 
 static unsigned long defense_counter_load(unsigned int i)
@@ -1555,6 +1573,16 @@ void dump_stats(void)
 		stat_row("genl_family_calls", "taskstats", shm->stats.genl_family_calls_taskstats);
 		stat_row("genl_family_calls", "ethtool",   shm->stats.genl_family_calls_ethtool);
 		stat_row("genl_family_calls", "mptcp_pm",  shm->stats.genl_family_calls_mptcp_pm);
+	}
+
+	if (shm->stats.nfnl_subsys_calls_ctnetlink     ||
+	    shm->stats.nfnl_subsys_calls_ctnetlink_exp ||
+	    shm->stats.nfnl_subsys_calls_nftables      ||
+	    shm->stats.nfnl_subsys_calls_ipset) {
+		stat_row("nfnl_subsys_calls", "ctnetlink",     shm->stats.nfnl_subsys_calls_ctnetlink);
+		stat_row("nfnl_subsys_calls", "ctnetlink_exp", shm->stats.nfnl_subsys_calls_ctnetlink_exp);
+		stat_row("nfnl_subsys_calls", "nftables",      shm->stats.nfnl_subsys_calls_nftables);
+		stat_row("nfnl_subsys_calls", "ipset",         shm->stats.nfnl_subsys_calls_ipset);
 	}
 
 	if (shm->stats.netlink_nested_attrs_emitted)

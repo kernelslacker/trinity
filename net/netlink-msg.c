@@ -1114,11 +1114,13 @@ static unsigned short pick_genl_attr_type(unsigned short nlmsg_type)
 /*
  * Generate body for NETLINK_NETFILTER messages.
  * nfnetlink messages have a nfgenmsg (4 bytes) after nlmsghdr.
- * The nlmsg_type encodes subsystem << 8 | message.
- * Also improve the type encoding in pick_nlmsg_type() via the
- * nfnl_subsys table to use proper subsystem constants.
+ * The nlmsg_type encodes subsystem << 8 | message.  After building
+ * the body, bump the per-subsys dispatch counter so the live
+ * subsystem mix is visible in the periodic stats dump and end-of-run
+ * summary; bump degrades to a no-op when nlmsg_type's high byte
+ * doesn't match any registered subsys.
  */
-static size_t gen_nfnl_body(unsigned char *body)
+static size_t gen_nfnl_body(unsigned char *body, unsigned short nlmsg_type)
 {
 	struct nfgenmsg nfg;
 	static const unsigned char nf_families[] = {
@@ -1133,6 +1135,7 @@ static size_t gen_nfnl_body(unsigned char *body)
 	nfg.res_id = ONE_IN(4) ? rand16() : 0;
 
 	memcpy(body, &nfg, sizeof(nfg));
+	nfnl_subsys_bump_calls(nfnl_lookup_by_subsys(nlmsg_type >> 8));
 	return sizeof(nfg);
 }
 
@@ -1769,7 +1772,7 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	} else if (triplet->protocol == NETLINK_GENERIC) {
 		body_len = gen_genl_body(msg + offset, nlmsg_type);
 	} else if (triplet->protocol == NETLINK_NETFILTER) {
-		body_len = gen_nfnl_body(msg + offset);
+		body_len = gen_nfnl_body(msg + offset, nlmsg_type);
 	} else if (triplet->protocol == NETLINK_XFRM) {
 		body_len = gen_xfrm_body(msg + offset, nlmsg_type);
 	} else if (triplet->protocol == NETLINK_AUDIT) {
