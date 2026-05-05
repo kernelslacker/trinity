@@ -285,7 +285,7 @@ static void use_fpu(void)
  * chance that the oom-killer kills our processes rather than something
  * more important.
  */
-static void oom_score_adj(int adj)
+void oom_score_adj(int adj)
 {
 	FILE *fp;
 
