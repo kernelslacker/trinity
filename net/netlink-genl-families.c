@@ -35,15 +35,16 @@
 #include "trinity.h"
 #include "utils.h"
 
+extern struct genl_family_grammar fam_devlink;
+
 /*
- * Per-family grammar definitions are added one per follow-up commit;
- * the trailing NULL keeps the array non-zero-sized while no families
- * are registered yet.  Lookups skip NULL entries so the placeholder
- * never gets picked.  Each new family appends &fam_<name> here and
- * extends ARRAY_SIZE() naturally.
+ * Per-family grammar definitions live in net/netlink-genl-fam-*.c;
+ * each new family adds an extern declaration above and a pointer
+ * here.  Lookups skip NULL entries so a temporary placeholder is
+ * harmless if a family ever needs to be ifdef'd out.
  */
 static struct genl_family_grammar *registry[] = {
-	(struct genl_family_grammar *)0,
+	&fam_devlink,
 };
 
 static int discovery_done;
