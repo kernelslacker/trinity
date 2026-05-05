@@ -19,18 +19,21 @@
 #endif
 
 /*
- * Snapshot of the two readlink input args read by the post oracle,
+ * Snapshot of the three readlink input args read by the post oracle,
  * captured at sanitise time and consumed by the post handler.  Lives
  * in rec->post_state, a slot the syscall ABI does not expose, so a
  * sibling syscall scribbling rec->aN between the syscall returning
  * and the post handler running cannot redirect the strncpy at a
  * foreign path string (steering the re-issue at a different symlink
  * inode would forge a clean-looking divergence between the two
- * payloads) or the source memcpy at a foreign user buffer.
+ * payloads), redirect the source memcpy at a foreign user buffer, or
+ * smear the bufsiz value the retval > bufsiz anomaly gate compares
+ * against.
  */
 struct readlink_post_state {
 	unsigned long path;
 	unsigned long buf;
+	unsigned long bufsiz;
 };
 #endif
 
@@ -51,23 +54,26 @@ static void sanitise_readlink(struct syscallrecord *rec)
 
 #if defined(SYS_readlink) || defined(__NR_readlink)
 	/*
-	 * Snapshot the two input args for the post oracle.  Without this
-	 * the post handler reads rec->a1/a2 at post-time, when a sibling
+	 * Snapshot the three input args for the post oracle.  Without this
+	 * the post handler reads rec->a1/a2/a3 at post-time, when a sibling
 	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
 	 * cannot tell a real-but-wrong heap address from the original buf
 	 * user-buffer pointer (so the source memcpy would touch a foreign
-	 * allocation the guard never inspected) and a stomped path string
-	 * pointer steers strncpy at a different name -- the re-issue then
-	 * resolves a different symlink inode and the byte compare fires
-	 * as if the kernel had torn the original payload.  post_state is
-	 * private to the post handler.  Gated on the syscall number macro
-	 * to mirror the .post registration -- on systems without
-	 * SYS_readlink the post handler's re-issue would not work and a
-	 * snapshot only the post handler can free would leak.
+	 * allocation the guard never inspected), a stomped path string
+	 * pointer steers strncpy at a different name (the re-issue then
+	 * resolves a different symlink inode and the byte compare fires as
+	 * if the kernel had torn the original payload), and a stomped
+	 * bufsiz can flip the retval > bufsiz anomaly gate either way --
+	 * forging a violation when none occurred or hiding a real one.
+	 * post_state is private to the post handler.  Gated on the syscall
+	 * number macro to mirror the .post registration -- on systems
+	 * without SYS_readlink the post handler's re-issue would not work
+	 * and a snapshot only the post handler can free would leak.
 	 */
 	snap = zmalloc(sizeof(*snap));
 	snap->path      = rec->a1;
 	snap->buf       = rec->a2;
+	snap->bufsiz    = rec->a3;
 	rec->post_state = (unsigned long) snap;
 #endif
 }
@@ -141,6 +147,28 @@ static void post_readlink(struct syscallrecord *rec)
 			  snap);
 		rec->post_state = 0;
 		return;
+	}
+
+	/*
+	 * STRONG-VAL count bound: readlink(2) on success returns the number
+	 * of bytes the VFS copied into the user `buf`, capped at the `bufsiz`
+	 * argument (rec->a3, snapped at sanitise time) by readlink_copy's
+	 * truncation; failure returns -1.  A retval > bufsiz on a positive
+	 * return is structurally impossible from the VFS path -- it points
+	 * at a sign-extension tear in the syscall return path, a sibling-
+	 * thread torn-write of rec->retval between syscall return and post
+	 * entry, or -errno leaking through the success return slot.  Fire
+	 * unconditionally, ahead of the ONE_IN(100) sample gate that
+	 * throttles the equality oracle, so every offending retval is
+	 * counted, not one-in-a-hundred.  Falls through to out_free so the
+	 * snapshot heap is released via deferred_freeptr.
+	 */
+	if ((long) rec->retval > 0 &&
+	    (unsigned long) rec->retval > snap->bufsiz) {
+		outputerr("post_readlink: rejected retval=0x%lx > bufsiz=%lu\n",
+			  rec->retval, snap->bufsiz);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
 	}
 
 	if (!ONE_IN(100))
