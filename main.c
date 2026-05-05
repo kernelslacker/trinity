@@ -847,10 +847,19 @@ static void fork_children(void)
 			exit(EXIT_LOST_CHILD);
 		}
 
-		if (spawn_child(childno) == false) {
-			outputerr("Couldn't fork initial children!\n");
-			panic(EXIT_FORK_FAILURE);
-			exit(EXIT_FORK_FAILURE);
+		{
+			unsigned int retries = 0;
+
+			while (spawn_child(childno) == false) {
+				if (++retries >= 10) {
+					outputerr("Failed to fork initial child for slot %d after %u attempts, skipping slot.\n",
+						childno, retries);
+					break;
+				}
+				usleep(retries * 10000);
+			}
+			if (retries >= 10)
+				continue;
 		}
 
 		/* Per-spawn visibility under -v.  Today only the final
