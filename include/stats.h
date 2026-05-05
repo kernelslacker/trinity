@@ -697,6 +697,20 @@ struct stats_s {
 	unsigned long iouring_multishot_completions;	/* CQEs drained for the multishot */
 	unsigned long iouring_multishot_cancel_submitted; /* ASYNC_CANCEL submitted+entered */
 
+	/* tcp_ao_rotate childop counters */
+	unsigned long tcp_ao_rotate_runs;		/* total tcp_ao_rotate invocations */
+	unsigned long tcp_ao_rotate_setup_failed;	/* loopback listen/socket/bind setup failed */
+	unsigned long tcp_ao_rotate_addkey_rejected;	/* TCP_AO_ADD_KEY rejected (ENOPROTOOPT/EPERM/EINVAL/EEXIST) */
+	unsigned long tcp_ao_rotate_keys_added;		/* TCP_AO_ADD_KEY accepted (initial install + per-rotate add) */
+	unsigned long tcp_ao_rotate_connect_failed;	/* connect/accept failed after keys installed */
+	unsigned long tcp_ao_rotate_connected;		/* AO-protected pair reached ESTABLISHED */
+	unsigned long tcp_ao_rotate_packets_sent;	/* send() through AO sign path returned >0 */
+	unsigned long tcp_ao_rotate_key_rotations;	/* TCP_AO_INFO current_key flip accepted */
+	unsigned long tcp_ao_rotate_info_rejected;	/* TCP_AO_INFO rotate rejected (EINVAL etc) */
+	unsigned long tcp_ao_rotate_key_dels;		/* TCP_AO_DEL_KEY accepted (race window vs verify path) */
+	unsigned long tcp_ao_rotate_delkey_rejected;	/* TCP_AO_DEL_KEY rejected */
+	unsigned long tcp_ao_rotate_cycles;		/* full cycles reaching teardown */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
