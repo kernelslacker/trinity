@@ -122,18 +122,19 @@ static void sanitise_execve(struct syscallrecord *rec)
  * has to worry about the case where execve returned a failure.
  */
 
-static void free_execve_ptrs(void **argv, void **envp,
+static void free_execve_ptrs(struct syscallrecord *rec,
+			      void **argv, void **envp,
 			      unsigned int argvcount, unsigned int envpcount)
 {
 	unsigned int i;
 
 	for (i = 0; i < argvcount; i++)
-		if (!looks_like_corrupted_ptr(NULL, argv[i]))
+		if (inner_ptr_ok_to_free(rec, argv[i], "free_execve_ptrs/argv[i]"))
 			free(argv[i]);
 	free(argv);
 
 	for (i = 0; i < envpcount; i++)
-		if (!looks_like_corrupted_ptr(NULL, envp[i]))
+		if (inner_ptr_ok_to_free(rec, envp[i], "free_execve_ptrs/envp[i]"))
 			free(envp[i]);
 	free(envp);
 }
@@ -186,7 +187,7 @@ static void post_execve(struct syscallrecord *rec)
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
-	free_execve_ptrs(snap->argv, snap->envp, snap->argvcount, snap->envpcount);
+	free_execve_ptrs(rec, snap->argv, snap->envp, snap->argvcount, snap->envpcount);
 	deferred_freeptr(&rec->post_state);
 }
 
@@ -220,7 +221,7 @@ static void post_execveat(struct syscallrecord *rec)
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
-	free_execve_ptrs(snap->argv, snap->envp, snap->argvcount, snap->envpcount);
+	free_execve_ptrs(rec, snap->argv, snap->envp, snap->argvcount, snap->envpcount);
 	deferred_freeptr(&rec->post_state);
 }
 
