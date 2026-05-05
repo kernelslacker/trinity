@@ -675,7 +675,8 @@ static void dump_stats_json(void)
 		"\"close_racer\":{\"runs\":%lu,\"pairs\":%lu,\"failed\":%lu,\"thread_spawn_fail\":%lu},"
 		"\"socket_family_chain\":{\"runs\":%lu,\"completed\":%lu,\"failed\":%lu,\"authencesn_attempts\":%lu,\"splice_attempts\":%lu},"
 		"\"tls_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_failed\":%lu,\"installs\":%lu,\"rekeys_ok\":%lu,\"rekeys_rejected\":%lu},"
-		"\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu}"
+		"\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu},"
+		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -860,7 +861,15 @@ static void dump_stats_json(void)
 		shm->stats.packet_fanout_mmap_failed,
 		shm->stats.packet_fanout_joins,
 		shm->stats.packet_fanout_rejoins_ok,
-		shm->stats.packet_fanout_rejoins_rejected);
+		shm->stats.packet_fanout_rejoins_rejected,
+		shm->stats.iouring_multishot_runs,
+		shm->stats.iouring_multishot_setup_failed,
+		shm->stats.iouring_multishot_pbuf_ring_ok,
+		shm->stats.iouring_multishot_pbuf_legacy_ok,
+		shm->stats.iouring_multishot_armed,
+		shm->stats.iouring_multishot_packets_sent,
+		shm->stats.iouring_multishot_completions,
+		shm->stats.iouring_multishot_cancel_submitted);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -1828,6 +1837,17 @@ void dump_stats(void)
 		stat_row("packet_fanout_thrash", "joins",            shm->stats.packet_fanout_joins);
 		stat_row("packet_fanout_thrash", "rejoins_ok",       shm->stats.packet_fanout_rejoins_ok);
 		stat_row("packet_fanout_thrash", "rejoins_rejected", shm->stats.packet_fanout_rejoins_rejected);
+	}
+
+	if (shm->stats.iouring_multishot_runs) {
+		stat_row("iouring_net_multishot", "runs",             shm->stats.iouring_multishot_runs);
+		stat_row("iouring_net_multishot", "setup_failed",     shm->stats.iouring_multishot_setup_failed);
+		stat_row("iouring_net_multishot", "pbuf_ring_ok",     shm->stats.iouring_multishot_pbuf_ring_ok);
+		stat_row("iouring_net_multishot", "pbuf_legacy_ok",   shm->stats.iouring_multishot_pbuf_legacy_ok);
+		stat_row("iouring_net_multishot", "armed",            shm->stats.iouring_multishot_armed);
+		stat_row("iouring_net_multishot", "packets_sent",     shm->stats.iouring_multishot_packets_sent);
+		stat_row("iouring_net_multishot", "completions",      shm->stats.iouring_multishot_completions);
+		stat_row("iouring_net_multishot", "cancel_submitted", shm->stats.iouring_multishot_cancel_submitted);
 	}
 
 	if (kcov_shm != NULL) {

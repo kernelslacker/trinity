@@ -672,6 +672,16 @@ struct stats_s {
 	unsigned long packet_fanout_rejoins_ok;		/* second PACKET_FANOUT setsockopt accepted */
 	unsigned long packet_fanout_rejoins_rejected;	/* second PACKET_FANOUT rejected (EALREADY etc) */
 
+	/* iouring_net_multishot childop counters */
+	unsigned long iouring_multishot_runs;		/* total iouring_net_multishot invocations */
+	unsigned long iouring_multishot_setup_failed;	/* ring/socket/buffer-pool setup failed */
+	unsigned long iouring_multishot_pbuf_ring_ok;	/* IORING_REGISTER_PBUF_RING accepted */
+	unsigned long iouring_multishot_pbuf_legacy_ok;	/* fell back to PROVIDE_BUFFERS */
+	unsigned long iouring_multishot_armed;		/* multishot RECV submitted+entered */
+	unsigned long iouring_multishot_packets_sent;	/* peer UDP packets sendto()'d */
+	unsigned long iouring_multishot_completions;	/* CQEs drained for the multishot */
+	unsigned long iouring_multishot_cancel_submitted; /* ASYNC_CANCEL submitted+entered */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic

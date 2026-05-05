@@ -135,6 +135,7 @@ enum child_op_type {
 	CHILD_OP_SLAB_CACHE_THRASH,
 	CHILD_OP_TLS_ROTATE,
 	CHILD_OP_PACKET_FANOUT_THRASH,
+	CHILD_OP_IOURING_NET_MULTISHOT,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -444,3 +445,4 @@ bool cpu_hotplug_rider(struct childdata *child);
 bool slab_cache_thrash(struct childdata *child);
 bool tls_rotate(struct childdata *child);
 bool packet_fanout_thrash(struct childdata *child);
+bool iouring_net_multishot(struct childdata *child);
