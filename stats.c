@@ -672,7 +672,8 @@ static void dump_stats_json(void)
 		"\"iouring_flood\":{\"runs\":%lu,\"submits\":%lu,\"reaped\":%lu,\"failed\":%lu},"
 		"\"close_racer\":{\"runs\":%lu,\"pairs\":%lu,\"failed\":%lu,\"thread_spawn_fail\":%lu},"
 		"\"socket_family_chain\":{\"runs\":%lu,\"completed\":%lu,\"failed\":%lu,\"authencesn_attempts\":%lu,\"splice_attempts\":%lu},"
-		"\"tls_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_failed\":%lu,\"installs\":%lu,\"rekeys_ok\":%lu,\"rekeys_rejected\":%lu}"
+		"\"tls_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_failed\":%lu,\"installs\":%lu,\"rekeys_ok\":%lu,\"rekeys_rejected\":%lu},"
+		"\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -844,7 +845,15 @@ static void dump_stats_json(void)
 		shm->stats.tls_rotate_ulp_failed,
 		shm->stats.tls_rotate_installs,
 		shm->stats.tls_rotate_rekeys_ok,
-		shm->stats.tls_rotate_rekeys_rejected);
+		shm->stats.tls_rotate_rekeys_rejected,
+		shm->stats.packet_fanout_runs,
+		shm->stats.packet_fanout_setup_failed,
+		shm->stats.packet_fanout_ring_failed,
+		shm->stats.packet_fanout_rings_installed,
+		shm->stats.packet_fanout_mmap_failed,
+		shm->stats.packet_fanout_joins,
+		shm->stats.packet_fanout_rejoins_ok,
+		shm->stats.packet_fanout_rejoins_rejected);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -1774,6 +1783,17 @@ void dump_stats(void)
 		stat_row("tls_rotate", "installs",        shm->stats.tls_rotate_installs);
 		stat_row("tls_rotate", "rekeys_ok",       shm->stats.tls_rotate_rekeys_ok);
 		stat_row("tls_rotate", "rekeys_rejected", shm->stats.tls_rotate_rekeys_rejected);
+	}
+
+	if (shm->stats.packet_fanout_runs) {
+		stat_row("packet_fanout_thrash", "runs",             shm->stats.packet_fanout_runs);
+		stat_row("packet_fanout_thrash", "setup_failed",     shm->stats.packet_fanout_setup_failed);
+		stat_row("packet_fanout_thrash", "ring_failed",      shm->stats.packet_fanout_ring_failed);
+		stat_row("packet_fanout_thrash", "rings_installed",  shm->stats.packet_fanout_rings_installed);
+		stat_row("packet_fanout_thrash", "mmap_failed",      shm->stats.packet_fanout_mmap_failed);
+		stat_row("packet_fanout_thrash", "joins",            shm->stats.packet_fanout_joins);
+		stat_row("packet_fanout_thrash", "rejoins_ok",       shm->stats.packet_fanout_rejoins_ok);
+		stat_row("packet_fanout_thrash", "rejoins_rejected", shm->stats.packet_fanout_rejoins_rejected);
 	}
 
 	if (kcov_shm != NULL) {
