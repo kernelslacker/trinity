@@ -99,10 +99,39 @@ struct seccomp_post_state {
 	void *heap;
 };
 
+/*
+ * Stratified op picker.  Uniform sampling across the four SECCOMP ops
+ * spends a quarter of the budget on SECCOMP_SET_MODE_STRICT, which
+ * irreversibly seccomps the child and shuts down further coverage of
+ * this syscall in that task.  Bias the picker toward SET_MODE_FILTER
+ * (the BPF install path is where the interesting program-load and
+ * listener-fd logic lives) and away from STRICT, while still hitting
+ * GET_ACTION_AVAIL and GET_NOTIF_SIZES regularly.
+ *
+ *   60%  SECCOMP_SET_MODE_FILTER
+ *   20%  SECCOMP_GET_ACTION_AVAIL
+ *   10%  SECCOMP_GET_NOTIF_SIZES
+ *   10%  SECCOMP_SET_MODE_STRICT
+ */
+static unsigned int pick_seccomp_op(void)
+{
+	unsigned int r = rand32() % 100;
+
+	if (r < 60)
+		return SECCOMP_SET_MODE_FILTER;
+	if (r < 80)
+		return SECCOMP_GET_ACTION_AVAIL;
+	if (r < 90)
+		return SECCOMP_GET_NOTIF_SIZES;
+	return SECCOMP_SET_MODE_STRICT;
+}
+
 static void sanitise_seccomp(struct syscallrecord *rec)
 {
 	struct seccomp_post_state *snap;
 	void *heap = NULL;
+
+	rec->a1 = pick_seccomp_op();
 
 	rec->post_state = 0;
 
