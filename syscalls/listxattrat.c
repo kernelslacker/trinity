@@ -34,6 +34,7 @@ struct listxattrat_post_state {
 	unsigned long pathname;
 	unsigned long at_flags;
 	unsigned long list;
+	unsigned long size;
 };
 #endif
 
@@ -64,6 +65,7 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 	snap->pathname = rec->a2;
 	snap->at_flags = rec->a3;
 	snap->list     = rec->a4;
+	snap->size     = rec->a5;
 	rec->post_state = (unsigned long) snap;
 #endif
 }
@@ -146,6 +148,27 @@ static void post_listxattrat(struct syscallrecord *rec)
 			  snap);
 		rec->post_state = 0;
 		return;
+	}
+
+	/*
+	 * STRONG-VAL count bound: listxattrat(2) on success returns the
+	 * byte length of the NUL-separated name list written into `list`,
+	 * a value capped at the `size` argument by the VFS.  Failure
+	 * returns -1UL.  A retval > size on a non-(-1UL) return is a
+	 * structural ABI regression -- sign-extension tear in the return
+	 * slot, sibling-stomp of rec->retval between syscall return and
+	 * post entry, or -errno leaking through the success slot.  Compare
+	 * against the snapshotted size (snap->size) rather than rec->a5 so
+	 * a sibling that scribbles rec->aN between syscall return and post
+	 * entry cannot launder an oversized retval past this gate.  Fires
+	 * unconditionally, ahead of the ONE_IN(100) sample gate, so every
+	 * offending retval is counted.
+	 */
+	if ((long) rec->retval != -1L && rec->retval > snap->size) {
+		outputerr("post_listxattrat: rejected retval=0x%lx > size=%lu\n",
+			  rec->retval, snap->size);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
 	}
 
 	if (!ONE_IN(100))
