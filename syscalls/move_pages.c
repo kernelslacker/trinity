@@ -106,6 +106,39 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 	rec->post_state = (unsigned long) snap;
 }
 
+/*
+ * Diagnostic helper for the rejection sample lines below.  Mirrors the
+ * banding used by corrupt_ptr_label() in utils.c so the per-handler
+ * sample lines and the global corrupt-ptr reject sample line speak the
+ * same vocabulary.  Inline-local rather than a shared helper because
+ * this whole sample block is investigation scaffolding and is meant to
+ * be removable in one commit once the scribble vector is characterised.
+ */
+static const char *snap_field_label(unsigned long v)
+{
+	if (v == 0)
+		return "NULL";
+	if (v < 0x10000)
+		return "NULL-ish";
+	if (v < 4194304)
+		return "pid-shaped";
+	if (v >= 0x800000000000UL)
+		return "kernel-VA";
+	if ((v & 0x7) != 0)
+		return "misaligned";
+	return "heap-shaped";
+}
+
+/*
+ * Sample-rate cap for the per-rejection diagnostic lines.  At the
+ * observed ~7-8/sec rate from per-handler attribution, 1-in-100 emits
+ * roughly 4-5 lines per minute -- enough to characterise the value
+ * distribution without flooding logs faster than the operator can
+ * read them.  Process-local counter is fine: the goal is sample
+ * cadence, not exact 1-in-N globally.
+ */
+#define MOVE_PAGES_DIAG_INTERVAL	100
+
 static void post_move_pages(struct syscallrecord *rec)
 {
 	struct move_pages_post_state *snap = (struct move_pages_post_state *) rec->post_state;
@@ -123,8 +156,14 @@ static void post_move_pages(struct syscallrecord *rec)
 	 * snapshot pointer before dereferencing it.
 	 */
 	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_move_pages: rejected suspicious post_state=%p "
-			  "(pid-scribbled?)\n", snap);
+		static unsigned long outer_seq;
+		unsigned long n = ++outer_seq;
+		if ((n % MOVE_PAGES_DIAG_INTERVAL) == 1) {
+			outputerr("post_move_pages-diag: outer-guard reject "
+				  "snap=%p label=%s [%lu cumulative]\n",
+				  snap,
+				  snap_field_label((unsigned long) snap), n);
+		}
 		rec->post_state = 0;
 		return;
 	}
@@ -137,9 +176,23 @@ static void post_move_pages(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap->pages) ||
 	    looks_like_corrupted_ptr(rec, snap->nodes) ||
 	    looks_like_corrupted_ptr(rec, snap->status)) {
-		outputerr("post_move_pages: rejected suspicious snap pages=%p "
-			  "nodes=%p status=%p (post_state-scribbled?)\n",
-			  snap->pages, snap->nodes, snap->status);
+		static unsigned long inner_seq;
+		unsigned long n = ++inner_seq;
+		if ((n % MOVE_PAGES_DIAG_INTERVAL) == 1) {
+			outputerr("post_move_pages-diag: inner-guard reject "
+				  "snap=%p (heap-shape ok) "
+				  "pages=%p[%s] nodes=%p[%s] status=%p[%s] "
+				  "count=%lu retval=0x%lx [%lu cumulative]\n",
+				  snap,
+				  snap->pages,
+				  snap_field_label((unsigned long) snap->pages),
+				  snap->nodes,
+				  snap_field_label((unsigned long) snap->nodes),
+				  snap->status,
+				  snap_field_label((unsigned long) snap->status),
+				  snap->count,
+				  (unsigned long) rec->retval, n);
+		}
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
