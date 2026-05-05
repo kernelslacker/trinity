@@ -23,6 +23,7 @@ static void sanitise_mq_unlink(struct syscallrecord *rec)
 
 struct syscallentry syscall_mq_unlink = {
 	.name = "mq_unlink",
+	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_IPC,
 	.num_args = 1,
 	.argtype = { [0] = ARG_ADDRESS },

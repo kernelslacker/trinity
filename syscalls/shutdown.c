@@ -14,6 +14,7 @@ struct syscallentry syscall_shutdown = {
 	.argtype = { [0] = ARG_FD_SOCKET, [1] = ARG_OP },
 	.argname = { [0] = "fd", [1] = "how" },
 	.arg_params[1].list = ARGLIST(shutdown_hows),
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
 };

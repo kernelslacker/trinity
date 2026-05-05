@@ -12,6 +12,7 @@ struct syscallentry syscall_lchown = {
 	.arg_params[1].range.hi = 65535,
 	.arg_params[2].range.low = 0,
 	.arg_params[2].range.hi = 65535,
+	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
 };
 

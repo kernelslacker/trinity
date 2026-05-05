@@ -21,5 +21,6 @@ struct syscallentry syscall_set_mempolicy_home_node = {
 	.arg_params[2].range.low = 0,
 	.arg_params[2].range.hi = 7,
 	.sanitise = sanitise_set_mempolicy_home_node,
+	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VM,
 };

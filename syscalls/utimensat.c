@@ -60,5 +60,6 @@ struct syscallentry syscall_utimensat = {
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "utimes", [3] = "flags" },
 	.arg_params[3].list = ARGLIST(utimensat_flags),
 	.sanitise = sanitise_utimensat,
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 };

@@ -18,5 +18,6 @@ struct syscallentry syscall_move_mount = {
 	.argname = { [0] = "from_dfd", [1] = "from_pathname", [2] = "to_dfd", [3] = "to_pathname", [4] = "flags" },
 	.arg_params[4].list = ARGLIST(move_mount_flags),
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEEDS_ROOT,
 };

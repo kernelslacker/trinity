@@ -49,6 +49,7 @@ struct syscallentry syscall_sync_file_range = {
 	.argtype = { [0] = ARG_FD, [2] = ARG_LEN, [3] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "offset", [2] = "nbytes", [3] = "flags" },
 	.arg_params[3].list = ARGLIST(sync_file_range_flags),
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };

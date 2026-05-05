@@ -35,6 +35,7 @@ struct syscallentry syscall_mq_timedsend = {
 	.argname = { [0] = "mqdes", [1] = "u_msg_ptr", [2] = "msg_len", [3] = "msg_prio", [4] = "u_abs_timeout" },
 	.arg_params[3].range.low = 0,
 	.arg_params[3].range.hi = 32768,
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_mq_timedsend,
 };

@@ -70,6 +70,7 @@ struct syscallentry syscall_set_mempolicy = {
 	.argtype = { [0] = ARG_OP },
 	.argname = { [0] = "mode", [1] = "nmask", [2] = "maxnode" },
 	.arg_params[0].list = ARGLIST(mempolicy_modes),
+	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VM,
 	.sanitise = sanitise_set_mempolicy,
 };

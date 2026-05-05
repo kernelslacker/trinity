@@ -55,6 +55,7 @@ struct syscallentry syscall_futex_requeue = {
 	.arg_params[3].range.low = 0,
 	.arg_params[3].range.hi = 128,
 	.sanitise = sanitise_futex_requeue,
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_IPC,
 };

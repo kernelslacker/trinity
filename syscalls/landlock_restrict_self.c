@@ -38,5 +38,6 @@ struct syscallentry syscall_landlock_restrict_self = {
 	.argtype = { [0] = ARG_FD_LANDLOCK },
 	.argname = { [0] = "fd", [1] = "flags" },
 	.sanitise = sanitise_landlock_restrict_self,
+	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
 };

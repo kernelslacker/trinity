@@ -9,5 +9,6 @@ struct syscallentry syscall_setdomainname = {
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_LEN },
 	.argname = { [0] = "name", [1] = "len" },
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEEDS_ROOT,
 };

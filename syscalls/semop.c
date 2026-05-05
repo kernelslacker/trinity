@@ -48,6 +48,7 @@ struct syscallentry syscall_semop = {
 	.argname = { [0] = "semid", [1] = "tsops", [2] = "nsops" },
 	.arg_params[0].range.low = 0,
 	.arg_params[0].range.hi = 65535,
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_semop,
 };
