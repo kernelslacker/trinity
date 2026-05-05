@@ -13,10 +13,24 @@
 #include "compat.h"
 #include "utils.h"
 
+/*
+ * Snapshot of the (buf, count) pair the post handler needs, captured at
+ * sanitise time and parked in rec->post_state -- a slot the syscall ABI
+ * does not expose, so a sibling syscall scribbling rec->a2/a3 between
+ * syscall return and post_write() running cannot redirect us at a foreign
+ * buffer or hand the count-bound validator the wrong length.  Shared by
+ * write(2) and pwrite64(2): both register post_write.
+ */
+struct write_post_state {
+	unsigned long buf;
+	unsigned long count;
+};
+
 static void sanitise_write(struct syscallrecord *rec)
 {
 	unsigned int size;
 	void *ptr;
+	struct write_post_state *snap;
 
 	/* Last line of defense: don't write to stdin/stdout/stderr. */
 	if (rec->a1 <= 2)
@@ -27,7 +41,7 @@ static void sanitise_write(struct syscallrecord *rec)
 	else
 		size = rand() % page_size;
 
-	ptr = malloc(size);
+	ptr = zmalloc(size);
 	if (ptr == NULL)
 		return;
 
@@ -35,26 +49,63 @@ static void sanitise_write(struct syscallrecord *rec)
 
 	rec->a2 = (unsigned long) ptr;
 	rec->a3 = size;
-	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
-	 * syscall before post_write() runs. */
-	rec->post_state = (unsigned long) ptr;
+	/*
+	 * Snapshot (buf, count) for the post handler -- a2/a3 may be
+	 * scribbled by a sibling syscall before post_write() runs, so the
+	 * count-bound validator must read count from the post-state-private
+	 * slot rather than the sibling-stomp-vulnerable rec->a3.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->buf = (unsigned long) ptr;
+	snap->count = size;
+	rec->post_state = (unsigned long) snap;
 }
 
 static void post_write(struct syscallrecord *rec)
 {
-	void *buf = (void *) rec->post_state;
+	struct write_post_state *snap =
+		(struct write_post_state *) rec->post_state;
 
-	if (buf == NULL)
+	if (snap == NULL)
 		return;
 
-	if (looks_like_corrupted_ptr(rec, buf)) {
-		outputerr("post_write: rejected suspicious buf=%p (pid-scribbled?)\n", buf);
+	if (looks_like_corrupted_ptr(rec, snap)) {
+		outputerr("post_write: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
 	}
 
+	/*
+	 * STRONG-VAL count bound: write(2) / pwrite64(2) on success return
+	 * the number of bytes successfully written (0..count); failure
+	 * returns -1UL.  A retval > count on a non-(-1UL) return is a
+	 * structural ABI regression -- a sign-extension tear in the syscall
+	 * return path, a torn write of count by a parallel signal-restart
+	 * path, or -errno leaking through the success slot.  Read count from
+	 * snap->count, not rec->a3: snap lives in the post-state-private
+	 * slot the syscall ABI does not expose, so it is immune to the
+	 * sibling-stomp class that can scribble rec->aN between syscall
+	 * return and post entry.  Mirrors the lgetxattr / fgetxattr / getxattr
+	 * size-bound shape with snap->count instead of snap->size.
+	 */
+	if ((long) rec->retval == -1L)
+		goto skip_bound;
+	if (rec->retval > snap->count) {
+		outputerr("corrupt write retval %lu > count %lu\n",
+			  rec->retval, snap->count);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
+	}
+
+skip_bound:
+	/* fall through */
+
+out_free:
 	rec->a2 = 0;
+	deferred_free_enqueue((void *) snap->buf, NULL);
+	snap->buf = 0;
 	deferred_freeptr(&rec->post_state);
 }
 
