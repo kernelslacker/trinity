@@ -431,17 +431,21 @@ void generic_sanitise(struct syscallrecord *rec)
 	memset(&rec->a1, 0, 6 * sizeof(unsigned long));
 	rec->post_state = 0;
 
-	if (entry->argtype[0] != 0)
+	/* num_args is the authority for which slots are present.
+	 * Don't gate on argtype[i] != 0 — ARG_UNDEFINED is enum value 0,
+	 * which would silently skip filling those slots even though
+	 * fill_arg() handles ARG_UNDEFINED by returning a random value. */
+	if (entry->num_args >= 1)
 		rec->a1 = fill_arg(rec, 1);
-	if (entry->argtype[1] != 0)
+	if (entry->num_args >= 2)
 		rec->a2 = fill_arg(rec, 2);
-	if (entry->argtype[2] != 0)
+	if (entry->num_args >= 3)
 		rec->a3 = fill_arg(rec, 3);
-	if (entry->argtype[3] != 0)
+	if (entry->num_args >= 4)
 		rec->a4 = fill_arg(rec, 4);
-	if (entry->argtype[4] != 0)
+	if (entry->num_args >= 5)
 		rec->a5 = fill_arg(rec, 5);
-	if (entry->argtype[5] != 0)
+	if (entry->num_args >= 6)
 		rec->a6 = fill_arg(rec, 6);
 }
 
