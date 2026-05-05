@@ -863,8 +863,45 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 
 	head = get_objhead(scope, type);
 
-	/* Swap-with-last removal from the parallel array */
+	/*
+	 * obj->array_idx is the slot we're about to swap-with-last and
+	 * NULL.  add_object() set it once at insertion (objects.c:516)
+	 * and the swap branch below maintains it on every reshuffle —
+	 * the canonical invariant is head->array[obj->array_idx] == obj.
+	 *
+	 * obj itself lives in either the shared obj heap (OBJ_GLOBAL with
+	 * shared_alloc=true) or per-process heap (everything else).  The
+	 * shared path is reachable to every child's wild fuzzed writes and
+	 * a value-result syscall whose length-arg lands inside an obj
+	 * struct will scribble its array_idx field; the private path is
+	 * still reachable to a stale slot pointer that survived the
+	 * deferred-free TTL and got handed back through get_random_object().
+	 *
+	 * Indexing without verifying the invariant therefore produces one
+	 * of two silent failures:
+	 *   - array_idx >= num_entries: the head->array[idx] = head->array[last]
+	 *     write lands past the live window, smashing whichever slot the
+	 *     stomp's index pointed at (or, for OBJ_GLOBAL, OOB past the
+	 *     fixed GLOBAL_OBJ_MAX_CAPACITY allocation entirely);
+	 *   - array_idx < num_entries but head->array[idx] != obj: we NULL
+	 *     and free a different live object, then call its type-correct
+	 *     destructor on what we still believe is `obj` — a UAF on the
+	 *     unrelated object's backing storage on the very next read of
+	 *     it through the pool.
+	 *
+	 * Validate the invariant up front.  On mismatch, drop the destroy
+	 * cleanly (no slot mutation, no destructor, no release) and bump
+	 * the corruption counter — `obj` may not even belong to this pool
+	 * any more, so touching it is exactly the wrong move.
+	 */
 	idx = obj->array_idx;
+	if (idx >= head->num_entries || head->array[idx] != obj) {
+		__atomic_add_fetch(&shm->stats.destroy_object_idx_corrupt, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	}
+
+	/* Swap-with-last removal from the parallel array */
 	last = head->num_entries - 1;
 	if (idx != last) {
 		head->array[idx] = head->array[last];

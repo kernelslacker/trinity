@@ -694,6 +694,16 @@ struct stats_s {
 	 * inside add_socket(). */
 	unsigned long fd_event_payload_corrupt;
 
+	/* __destroy_object() rejected an obj whose array_idx didn't pass
+	 * the head->array[array_idx] == obj invariant — either the index
+	 * was out of bounds for the pool, or the slot held a different
+	 * pointer.  Both shapes mean the obj's array_idx is stale or
+	 * corrupted; following the swap-with-last would either OOB-write
+	 * past head->array[num_entries) or destroy the unrelated object
+	 * occupying that slot.  The destroy is dropped (no free, no
+	 * destructor) and counted here. */
+	unsigned long destroy_object_idx_corrupt;
+
 	/* Shared obj-heap pressure counters: cumulative successful allocs
 	 * and frees through alloc_shared_obj() / free_shared_obj().  Read
 	 * by dump_stats() under -v to print a one-line utilisation summary
