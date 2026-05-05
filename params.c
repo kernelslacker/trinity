@@ -18,6 +18,7 @@
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"	// progname
+#include "utils.h"
 
 bool set_debug = false;
 bool do_specific_syscall = false;
@@ -109,6 +110,22 @@ bool do_effector_map = false;
 bool user_set_seed = false;
 
 unsigned char desired_group = GROUP_NONE;
+
+static const struct {
+	const char *name;
+	unsigned char id;
+} group_names[] = {
+	{ "vm",       GROUP_VM },
+	{ "vfs",      GROUP_VFS },
+	{ "net",      GROUP_NET },
+	{ "ipc",      GROUP_IPC },
+	{ "process",  GROUP_PROCESS },
+	{ "signal",   GROUP_SIGNAL },
+	{ "io_uring", GROUP_IO_URING },
+	{ "bpf",      GROUP_BPF },
+	{ "sched",    GROUP_SCHED },
+	{ "time",     GROUP_TIME },
+};
 
 char *specific_domain_optarg = NULL;
 
@@ -322,28 +339,26 @@ void parse_args(int argc, char *argv[])
 			parse_exclude_domains(optarg);
 			break;
 
-		case 'g':
-			if (!strcmp(optarg, "vm"))
-				desired_group = GROUP_VM;
-			else if (!strcmp(optarg, "vfs"))
-				desired_group = GROUP_VFS;
-			else if (!strcmp(optarg, "net"))
-				desired_group = GROUP_NET;
-			else if (!strcmp(optarg, "ipc"))
-				desired_group = GROUP_IPC;
-			else if (!strcmp(optarg, "process"))
-				desired_group = GROUP_PROCESS;
-			else if (!strcmp(optarg, "signal"))
-				desired_group = GROUP_SIGNAL;
-			else if (!strcmp(optarg, "io_uring"))
-				desired_group = GROUP_IO_URING;
-			else if (!strcmp(optarg, "bpf"))
-				desired_group = GROUP_BPF;
-			else if (!strcmp(optarg, "sched"))
-				desired_group = GROUP_SCHED;
-			else if (!strcmp(optarg, "time"))
-				desired_group = GROUP_TIME;
+		case 'g': {
+			unsigned int i;
+			bool matched = false;
+
+			for (i = 0; i < ARRAY_SIZE(group_names); i++) {
+				if (!strcmp(optarg, group_names[i].name)) {
+					desired_group = group_names[i].id;
+					matched = true;
+					break;
+				}
+			}
+			if (!matched) {
+				outputerr("unknown group '%s'. Valid groups are:", optarg);
+				for (i = 0; i < ARRAY_SIZE(group_names); i++)
+					outputerr(" %s", group_names[i].name);
+				outputerr("\n");
+				exit(EXIT_FAILURE);
+			}
 			break;
+		}
 
 		/* Show help */
 		case 'h':
