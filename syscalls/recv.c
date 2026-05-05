@@ -243,6 +243,22 @@ static void post_recvmmsg(struct syscallrecord *rec)
 		return;
 	}
 
+	/*
+	 * Kernel ABI: __sys_recvmmsg() returns the count of successfully
+	 * received mmsghdr entries (1..vlen) on success or -1 on failure.
+	 * Anything > vlen (excluding -1UL) is a structural ABI regression: a
+	 * sign-extension tear, a torn write of the count by a parallel
+	 * signal-restart path, or -errno leaking through the success slot.
+	 * vlen is already validated by the cap guard above so it is safe to
+	 * compare directly.  Mirrors epoll_wait 4c7a84058afd / epoll_pwait
+	 * 1ae902d4b01d.
+	 */
+	if ((long) rec->retval != -1L && rec->retval > vlen) {
+		outputerr("post_recvmmsg: rejecting retval %ld > vlen %u\n",
+			  (long) rec->retval, vlen);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+
 	for (i = 0; i < vlen; i++) {
 		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov, NULL);
 		if (inner_ptr_ok_to_free(rec, msgs[i].msg_hdr.msg_control,
