@@ -358,6 +358,7 @@ static bool argtype_accepts_numeric_substitute(enum argtype t)
 	case ARG_FD_IO_URING:
 	case ARG_FD_LANDLOCK:
 	case ARG_FD_MEMFD:
+	case ARG_FD_MOUNT:
 	case ARG_FD_MQ:
 	case ARG_FD_PERF:
 	case ARG_FD_PIDFD:
