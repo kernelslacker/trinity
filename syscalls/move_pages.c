@@ -33,6 +33,7 @@ struct move_pages_post_state {
 	unsigned long *pages;
 	int *nodes;
 	int *status;
+	unsigned long count;
 };
 
 static void sanitise_move_pages(struct syscallrecord *rec)
@@ -101,6 +102,7 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 	snap->pages = page_alloc;
 	snap->nodes = nodes;
 	snap->status = status;
+	snap->count = count;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -140,6 +142,25 @@ static void post_move_pages(struct syscallrecord *rec)
 			  snap->pages, snap->nodes, snap->status);
 		deferred_freeptr(&rec->post_state);
 		return;
+	}
+
+	/*
+	 * Kernel ABI: sys_move_pages returns the count of pages that
+	 * could not be moved, capped at the snapshotted nr_pages arg.
+	 * Failure returns -1UL.  Anything > snap->count on a non-(-1UL)
+	 * return is a structural ABI regression: a sign-extension tear
+	 * in the syscall return path, a kernel-side miscount of unmoved
+	 * pages that exceeds the user-supplied bound, or a torn read of
+	 * the migration counter.  Inner pointers passed the corruption
+	 * guards above, so fall through and still release the
+	 * page/node/status arrays via the unified release path below.
+	 */
+	if ((long) rec->retval != -1L &&
+	    (unsigned long) rec->retval > snap->count) {
+		outputerr("post_move_pages: retval %lu exceeds requested nr_pages %lu\n",
+			  (unsigned long) rec->retval, snap->count);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		/* fall through to release allocations */
 	}
 
 	deferred_free_enqueue(snap->pages, NULL);
