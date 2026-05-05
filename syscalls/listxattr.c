@@ -130,6 +130,15 @@ static void post_flistxattr(struct syscallrecord *rec)
 		return;
 	}
 
+	if ((long) rec->retval == -1L)
+		goto out_free;
+	if (rec->retval > rec->a3) {
+		outputerr("post_flistxattr: rejecting retval %lu > size %lu\n",
+			  rec->retval, rec->a3);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
+	}
+
 	if (!ONE_IN(100))
 		goto out_free;
 
@@ -319,6 +328,15 @@ static void post_listxattr(struct syscallrecord *rec)
 			  snap);
 		rec->post_state = 0;
 		return;
+	}
+
+	if ((long) rec->retval == -1L)
+		goto out_free;
+	if (rec->retval > rec->a3) {
+		outputerr("post_listxattr: rejecting retval %lu > size %lu\n",
+			  rec->retval, rec->a3);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
 	}
 
 	if (!ONE_IN(100))
@@ -512,6 +530,15 @@ static void post_llistxattr(struct syscallrecord *rec)
 			  snap);
 		rec->post_state = 0;
 		return;
+	}
+
+	if ((long) rec->retval == -1L)
+		goto out_free;
+	if (rec->retval > rec->a3) {
+		outputerr("post_llistxattr: rejecting retval %lu > size %lu\n",
+			  rec->retval, rec->a3);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
 	}
 
 	if (!ONE_IN(100))
