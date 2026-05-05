@@ -128,26 +128,74 @@ static int init_pidfd_fds(void)
 
 static int get_rand_pidfd(void)
 {
-	struct object *obj;
-	int fd;
-
 	if (objects_empty(OBJ_FD_PIDFD) == true)
 		return -1;
 
-	obj = get_random_object(OBJ_FD_PIDFD, OBJ_GLOBAL);
-	if (obj == NULL)
-		return -1;
+	/*
+	 * Versioned slot pick + validate_object_handle() before the
+	 * obj->pidfdobj.fd deref, mirroring the wireup at 15b6257b8206
+	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
+	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
+	 * reader UAF window the framework commit a7fdbb97830c spelled out:
+	 * between the lockless slot pick and the consumer's read of the
+	 * pidfd handed to pidfd_send_signal/pidfd_open/etc via the
+	 * fd_provider .get callback, the parent can destroy the obj,
+	 * free_shared_obj() returns the chunk to the shared-heap freelist,
+	 * and a concurrent alloc_shared_obj() recycles it underneath us.
+	 *
+	 * Adapted shape: pidfd already had a post-deref fcntl(F_GETFD)
+	 * sanity probe to catch already-closed pidfds, with an
+	 * fd_event_enqueue(FD_EVENT_CLOSE) to evict the stale entry.  Keep
+	 * that probe inside the loop so a fcntl(EBADF) drops the candidate
+	 * and re-picks from the pool instead of returning -1 to the caller
+	 * after a single try — the version-validate covers the recycled-obj
+	 * race, fcntl covers the closed-but-still-published-fd race, and
+	 * both want the same retry budget.
+	 */
+	for (int i = 0; i < 1000; i++) {
+		unsigned int slot_idx, slot_version;
+		struct object *obj;
+		int fd;
 
-	fd = obj->pidfdobj.fd;
-	if (fcntl(fd, F_GETFD) < 0) {
-		struct childdata *child = this_child();
+		obj = get_random_object_versioned(OBJ_FD_PIDFD, OBJ_GLOBAL,
+						  &slot_idx, &slot_version);
+		if (obj == NULL)
+			continue;
 
-		if (child != NULL && child->fd_event_ring != NULL)
-			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
-					 fd, -1, 0, 0, 0);
-		return -1;
+		/*
+		 * Heap pointers land at >= 0x10000 and below the 47-bit
+		 * user/kernel boundary; anything outside that window can't
+		 * be a real obj struct.  Reject before deref.
+		 */
+		if ((uintptr_t)obj < 0x10000UL ||
+		    (uintptr_t)obj >= 0x800000000000UL) {
+			outputerr("get_rand_pidfd: bogus obj %p in "
+				  "OBJ_FD_PIDFD pool\n", obj);
+			continue;
+		}
+
+		if (!validate_object_handle(OBJ_FD_PIDFD, OBJ_GLOBAL, obj,
+					    slot_idx, slot_version))
+			continue;
+
+		fd = obj->pidfdobj.fd;
+		if (fd < 0)
+			continue;
+
+		if (fcntl(fd, F_GETFD) < 0) {
+			struct childdata *child = this_child();
+
+			if (child != NULL && child->fd_event_ring != NULL)
+				fd_event_enqueue(child->fd_event_ring,
+						 FD_EVENT_CLOSE,
+						 fd, -1, 0, 0, 0);
+			continue;
+		}
+
+		return fd;
 	}
-	return fd;
+
+	return -1;
 }
 
 static const struct fd_provider pidfd_fd_provider = {
