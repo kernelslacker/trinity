@@ -26,6 +26,8 @@
  * and reach the per-cmd handler with a usable net_device pointer.
  */
 
+#if __has_include(<linux/ethtool_netlink_generated.h>)
+
 #include <linux/ethtool_netlink_generated.h>
 
 #include "netlink-genl-families.h"
@@ -80,3 +82,5 @@ struct genl_family_grammar fam_ethtool = {
 	.n_attrs = ARRAY_SIZE(ethtool_attrs),
 	.default_version = ETHTOOL_GENL_VERSION,
 };
+
+#endif /* __has_include(<linux/ethtool_netlink_generated.h>) */

@@ -38,7 +38,9 @@
 extern struct genl_family_grammar fam_devlink;
 extern struct genl_family_grammar fam_nl80211;
 extern struct genl_family_grammar fam_taskstats;
+#if __has_include(<linux/ethtool_netlink_generated.h>)
 extern struct genl_family_grammar fam_ethtool;
+#endif
 
 /*
  * Per-family grammar definitions live in net/netlink-genl-fam-*.c;
@@ -50,7 +52,9 @@ static struct genl_family_grammar *registry[] = {
 	&fam_devlink,
 	&fam_nl80211,
 	&fam_taskstats,
+#if __has_include(<linux/ethtool_netlink_generated.h>)
 	&fam_ethtool,
+#endif
 };
 
 static int discovery_done;
