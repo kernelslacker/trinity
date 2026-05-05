@@ -55,8 +55,9 @@
  * out the cycles budget.  Operators wanting before/after readings should
  * sample slabinfo externally.
  *
- * Dormant by default in dormant_op_disabled[].  Enable after a smoke-
- * test confirms no iters/s regression at the random-pick rate.
+ * Active in both the random picker (dormant_op_disabled[] entry cleared)
+ * and alt_op_rotation[], so dedicated alt-op children can target it
+ * deliberately while the random picker still draws it occasionally.
  */
 
 #include <errno.h>
