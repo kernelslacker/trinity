@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "arch.h"
+#include "child.h"
 #include "effector-map.h"
 #include "fd.h"
 #include "files.h"
@@ -408,6 +409,13 @@ int main(int argc, char* argv[])
 	no_bind_to_cpu = RAND_BOOL();
 
 	prctl(PR_SET_NAME, (unsigned long) &taskname);
+
+	/* Opt the parent out of OOM-killing.  Children carry adj=500 so they
+	 * are the kernel's preferred victims under memory pressure; if the
+	 * parent dies the whole fuzz session dies (unrecoverable: shared
+	 * state, watchdog, reaper, all vanish).  -1000 makes the kernel's
+	 * preference structural rather than statistical. */
+	oom_score_adj(-1000);
 
 	output(1, "phase: open_fds\n");
 	if (open_fds() == false) {

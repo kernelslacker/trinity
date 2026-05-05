@@ -361,6 +361,8 @@ void init_child_mappings(void);
 
 void child_process(struct childdata *child, int childno);
 
+void oom_score_adj(int adj);
+
 /* Dedicated alt-op children: when --alt-op-children=N is set, the first
  * N child slots run a fixed alt op for life (round-robin from a static
  * rotation table) instead of the default 95%-syscall / 5%-altop mix.
