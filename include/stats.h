@@ -139,6 +139,18 @@ struct stats_s {
 	 * result on top of trinity bookkeeping. */
 	unsigned long shared_buffer_redirected;
 
+	/* Same defense as shared_buffer_redirected, but for arg pointers
+	 * that landed inside the per-child libc brk arena rather than in
+	 * an alloc_shared() region.  A kernel write into the brk arena
+	 * scribbles a glibc chunk header and the next malloc anywhere in
+	 * trinity finds the corruption and aborts -- the libasan abort()
+	 * inside __interceptor_malloc cluster from the asan-self-kill
+	 * triage.  Non-zero count means fuzzed arg generation is still
+	 * producing pointers into the private heap; without this redirect
+	 * each one would manifest as a confusing crash far from the
+	 * upstream syscall that did the scribble. */
+	unsigned long libc_heap_redirected;
+
 	/* range_overlaps_shared() rejected an addr/len because it overlapped
 	 * one of trinity's tracked alloc_shared regions.  Tells you whether
 	 * the wild-write defense is doing meaningful work or trivially

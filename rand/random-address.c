@@ -136,19 +136,34 @@ void * get_writable_struct(size_t size)
  * here" syscall (read, recv, getdents, statx, ioctl _IOR, ...) into a
  * silent corruption of trinity bookkeeping.  Symptoms include impossible
  * counter values, non-canonical pointers, and crashes far from the
- * scribbled write.  Sanitisers that hand the kernel a writable buffer
- * call this to swap the address out for a known-safe one before the
- * syscall is issued.
+ * scribbled write.
+ *
+ * The same wholesale-stomp shape applies to trinity's *private* libc
+ * heap arena: a fuzzed pointer landing in [heap_start, heap_end) lets
+ * the kernel write on top of a glibc chunk header, and the next malloc
+ * anywhere finds the corrupted arena and aborts.  The overnight
+ * asan-self-kill triage attributed 1094 of 3488 child crashes (~31%)
+ * to this exact shape -- libasan abort() inside __interceptor_malloc,
+ * surfacing far from the upstream syscall that did the scribble.
+ *
+ * Sanitisers that hand the kernel a writable buffer call this to swap
+ * the address out for a known-safe one before the syscall is issued.
+ * Both regions are checked; the per-region counters tell which class
+ * the redirect saved us from.
  */
 void avoid_shared_buffer(unsigned long *addr, unsigned long len)
 {
 	void *replacement;
+	bool overlap_shared, overlap_heap;
 
 	if (addr == NULL)
 		return;
 	if (*addr == 0)
 		return;
-	if (!range_overlaps_shared(*addr, len))
+
+	overlap_shared = range_overlaps_shared(*addr, len);
+	overlap_heap = range_overlaps_libc_heap(*addr, len);
+	if (!overlap_shared && !overlap_heap)
 		return;
 
 	replacement = get_writable_address(len ? len : page_size);
@@ -156,8 +171,12 @@ void avoid_shared_buffer(unsigned long *addr, unsigned long len)
 		return;
 
 	*addr = (unsigned long) replacement;
-	if (shm != NULL)
-		__atomic_add_fetch(&shm->stats.shared_buffer_redirected, 1, __ATOMIC_RELAXED);
+	if (shm != NULL) {
+		if (overlap_shared)
+			__atomic_add_fetch(&shm->stats.shared_buffer_redirected, 1, __ATOMIC_RELAXED);
+		if (overlap_heap)
+			__atomic_add_fetch(&shm->stats.libc_heap_redirected, 1, __ATOMIC_RELAXED);
+	}
 }
 
 void * get_address(void)
