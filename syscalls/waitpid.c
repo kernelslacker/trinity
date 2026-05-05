@@ -4,6 +4,7 @@
 #include <sys/wait.h>
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 static unsigned long wait_options[] = {
 	WNOHANG, WUNTRACED, WCONTINUED,
@@ -29,9 +30,11 @@ static void post_waitpid(struct syscallrecord *rec)
 	if (ret == -1L || ret == 0)
 		return;
 
-	if (ret < 0 || ret > 4194304)
+	if (ret < 0 || ret > 4194304) {
 		output(0, "waitpid oracle: returned pid %ld is out of range (must be -1, 0, or in [1, PID_MAX_LIMIT=4194304])\n",
 		       ret);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
 }
 
 struct syscallentry syscall_waitpid = {

@@ -8,6 +8,7 @@
 #include "sanitise.h"
 #include "compat.h"
 #include "trinity.h"
+#include "utils.h"
 
 static unsigned long kcmp_types[] = {
 	KCMP_FILE, KCMP_VM, KCMP_FILES, KCMP_FS,
@@ -33,9 +34,11 @@ static void post_kcmp(struct syscallrecord *rec)
 	if (ret == -1L)
 		return;
 
-	if (ret > 3)
+	if (ret > 3) {
 		output(0, "kcmp oracle: returned %ld is out of range (must be 0..3 or -1)\n",
 			ret);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
 }
 
 struct syscallentry syscall_kcmp = {

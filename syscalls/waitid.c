@@ -7,6 +7,7 @@
 #include <sys/wait.h>
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 static unsigned long waitid_options[] = {
 	WNOHANG, WEXITED, WSTOPPED, WCONTINUED, WNOWAIT,
@@ -39,6 +40,7 @@ static void post_waitid(struct syscallrecord *rec)
 
 	output(0, "waitid oracle: retval %ld is invalid (must be 0 on success or -1 on failure)\n",
 	       ret);
+	post_handler_corrupt_ptr_bump(rec, NULL);
 }
 
 struct syscallentry syscall_waitid = {
