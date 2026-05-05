@@ -13,6 +13,7 @@
 #include "shm.h"
 #include "arch.h"
 #include "compat.h"
+#include "hugepages.h"
 #include "objects.h"
 #include "random.h"
 #include "tables.h"
@@ -72,6 +73,15 @@ unsigned long get_rand_mmap_flags(void)
 	 */
 	if (type == MAP_SHARED_VALIDATE && RAND_BOOL())
 		flags |= MAP_SYNC;
+
+	/*
+	 * If MAP_HUGETLB ended up set, sometimes also encode a specific
+	 * huge-page size into bits 26..31 via MAP_HUGE_SHIFT.  Without
+	 * this the kernel always uses its default size, so MAP_HUGE_2MB,
+	 * MAP_HUGE_1GB, etc. never get exercised through the fuzzer.
+	 */
+	if ((flags & MAP_HUGETLB) && RAND_BOOL())
+		flags |= pick_random_huge_size_encoding();
 
 	return flags;
 }
