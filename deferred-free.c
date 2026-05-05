@@ -409,6 +409,51 @@ void deferred_freeptr(unsigned long *p)
 	deferred_free_enqueue(ptr, NULL);
 }
 
+/*
+ * Free one ring entry's payload, dropping it if the pointer fails the
+ * sanity bands.  Both the tick (TTL expiry) and flush (child exit)
+ * paths route through here -- pre-helper, only tick had these checks,
+ * so a corrupted ring entry surviving until child exit would silently
+ * free a bogus pointer through deferred_free_flush().  The tick guard
+ * rejected ~47.7k corrupt-pointer scribbles in a single 6.76h run
+ * (~2/sec), so the ring DOES get scribbled in practice; every entry
+ * the tick guard would have rejected was being silently freed by
+ * flush instead.
+ *
+ * Caller must clear ring[slot].ptr (and decrement ring_count where
+ * it tracks per-slot) before calling.  Clearing first means a signal
+ * that longjmps out of fn() can't leave a freed pointer pending in
+ * the ring.
+ *
+ * Sub-page guard: a ptr below 0x10000 cannot be a real heap address;
+ * almost certainly a fuzzed value-result syscall scribbled a pid-shape
+ * into the slot.  Drop rather than crash on free().
+ *
+ * Alignment guard: defense in depth at the free() boundary.  glibc
+ * malloc returns >= 8-byte aligned chunks; libasan internally CHECKs
+ * alignment and aborts the child without an ASAN bad-free report
+ * (asan_poisoning.cpp: "AddrIsAlignedByGranularity(addr) != 0"),
+ * which is harder to triage than a normal bad-free.
+ */
+static void free_ring_entry(void *ptr, void (*fn)(void *), unsigned int slot)
+{
+	if ((unsigned long)ptr < 0x10000) {
+		outputerr("deferred_free: rejected suspicious ptr=%p "
+			  "in slot %u (looks pid-shaped)\n", ptr, slot);
+		__atomic_add_fetch(&shm->stats.deferred_free_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	if (((unsigned long)ptr & 0x7) != 0) {
+		outputerr("deferred_free: rejected misaligned ptr=%p "
+			  "in slot %u\n", ptr, slot);
+		__atomic_add_fetch(&shm->stats.deferred_free_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	fn(ptr);
+}
+
 void deferred_free_tick(void)
 {
 	static unsigned int tick_count;
@@ -459,37 +504,7 @@ void deferred_free_tick(void)
 		ring[i].ptr = NULL;
 		ring_count--;
 
-		/* Sanity-check ptr before invoking fn().  A sub-page address
-		 * cannot be a real heap pointer; if we see one here it's
-		 * almost certainly a fuzzed value-result syscall having
-		 * scribbled a pid-shaped value into the ring before the
-		 * mprotect guard was added (or a bypass that defeated it).
-		 * Drop the pointer rather than crash on free(). */
-		if ((unsigned long)ptr < 0x10000) {
-			outputerr("deferred_free: rejected suspicious ptr=%p "
-				  "in slot %u (looks pid-shaped)\n", ptr, i);
-			__atomic_add_fetch(&shm->stats.deferred_free_corrupt_ptr, 1, __ATOMIC_RELAXED);
-			continue;
-		}
-
-		/*
-		 * Alignment defense-in-depth at the free() boundary.  Ring
-		 * entries should be alignment-safe by construction (enqueue's
-		 * unconditional alignment guard rejects misaligned input and
-		 * the mprotect bracket prevents post-enqueue scribbles), but
-		 * a misaligned ptr reaching libasan's free interceptor trips
-		 * an internal CHECK in asan_poisoning.cpp and aborts the
-		 * child without an ASAN bad-free report, which is harder to
-		 * triage.  Mirrors the sub-page band above.
-		 */
-		if (((unsigned long)ptr & 0x7) != 0) {
-			outputerr("deferred_free: rejected misaligned ptr=%p "
-				  "in slot %u\n", ptr, i);
-			__atomic_add_fetch(&shm->stats.deferred_free_corrupt_ptr, 1, __ATOMIC_RELAXED);
-			continue;
-		}
-
-		fn(ptr);
+		free_ring_entry(ptr, fn, i);
 	}
 
 	ring_lock();
@@ -506,10 +521,18 @@ void deferred_free_flush(void)
 		return;
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
-		if (ring[i].ptr != NULL) {
-			ring[i].free_func(ring[i].ptr);
-			ring[i].ptr = NULL;
-		}
+		void *ptr;
+		void (*fn)(void *);
+
+		if (ring[i].ptr == NULL)
+			continue;
+
+		/* Clear before invoking, mirroring tick: a signal that
+		 * longjmps mid-free leaves the slot empty either way. */
+		ptr = ring[i].ptr;
+		fn = ring[i].free_func;
+		ring[i].ptr = NULL;
+		free_ring_entry(ptr, fn, i);
 	}
 	ring_count = 0;
 
