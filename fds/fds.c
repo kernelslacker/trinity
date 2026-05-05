@@ -312,6 +312,7 @@ int get_typed_fd(enum argtype type)
 	case ARG_FD_PERF:	objtype = OBJ_FD_PERF; break;
 	case ARG_FD_PIDFD:	objtype = OBJ_FD_PIDFD; break;
 	case ARG_FD_PIPE:	objtype = OBJ_FD_PIPE; break;
+	case ARG_FD_SIGNALFD:	objtype = OBJ_FD_SIGNALFD; break;
 	case ARG_FD_SOCKET:	objtype = OBJ_FD_SOCKET; break;
 	case ARG_FD_TIMERFD:	objtype = OBJ_FD_TIMERFD; break;
 	default:
