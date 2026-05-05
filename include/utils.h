@@ -199,6 +199,14 @@ void heap_bounds_init(void);
  */
 bool is_in_glibc_heap(const void *p);
 
+/*
+ * Range-overlap variant for the avoid_shared_buffer() redirect path.
+ * Returns true only when [addr, addr+len) intersects the cached brk
+ * arena AND the bounds were captured (unknown arena -> false, so we
+ * never redirect every write on a misconfigured init).
+ */
+bool range_overlaps_libc_heap(unsigned long addr, unsigned long len);
+
 int get_num_fds(void);
 
 #define __stringify_1(x...)     #x

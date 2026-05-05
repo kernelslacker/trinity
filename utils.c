@@ -1296,6 +1296,38 @@ bool is_in_glibc_heap(const void *p)
 	return v >= heap_start && v < heap_end;
 }
 
+/*
+ * Range-overlap variant of is_in_glibc_heap() with the opposite
+ * unknown-bounds polarity: returns true only when [addr, addr+len)
+ * intersects the cached brk arena AND the bounds were captured.
+ * Used by avoid_shared_buffer() to redirect output-buffer syscall
+ * args away from the libc heap arena -- a fuzzed pointer pointing
+ * here would let the kernel scribble glibc chunk metadata, and the
+ * next malloc anywhere in trinity finds the corruption and aborts
+ * (the libasan abort() inside __interceptor_malloc cluster from
+ * the overnight asan-self-kill triage).  Mirrors range_overlaps_shared()
+ * semantics: a single byte of overlap is enough to redirect, and an
+ * unknown arena (heap_bounds_init() never found a [heap] line) is
+ * treated as no-overlap so we don't redirect every legitimate write.
+ */
+bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
+{
+	unsigned long end;
+
+	if (heap_start == 0)
+		return false;
+
+	/* Treat wrapped ranges as overlapping so callers reject them. */
+	if (len != 0 && addr > ULONG_MAX - len)
+		return true;
+
+	end = addr + len;
+	if (end == addr)
+		end = addr + 1;
+
+	return addr < heap_end && end > heap_start;
+}
+
 int get_num_fds(void)
 {
 	struct linux_dirent64 {

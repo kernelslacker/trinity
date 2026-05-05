@@ -639,7 +639,8 @@ static void dump_stats_json(void)
 			"\"retfd_blanket_reject\":%lu,"
 			"\"sibling_mprotect_failed\":%lu,"
 			"\"destroy_object_idx\":%lu},"
-		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu},"
+		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu,"
+			"\"libc_heap_redirected\":%lu},"
 		"\"refcount_audit\":{\"runs\":%lu,\"fd_anomalies\":%lu,"
 			"\"mmap_anomalies\":%lu,\"sock_anomalies\":%lu},"
 		"\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
@@ -782,6 +783,7 @@ static void dump_stats_json(void)
 		shm->stats.sibling_mprotect_failed,
 		shm->stats.destroy_object_idx_corrupt,
 		shm->stats.shared_buffer_redirected, shm->stats.range_overlaps_shared_rejects,
+		shm->stats.libc_heap_redirected,
 		shm->stats.refcount_audit_runs, shm->stats.refcount_audit_fd_anomalies,
 		shm->stats.refcount_audit_mmap_anomalies, shm->stats.refcount_audit_sock_anomalies,
 		shm->stats.fs_lifecycle_tmpfs, shm->stats.fs_lifecycle_ramfs,
@@ -971,6 +973,8 @@ static const struct {
 	  offsetof(struct stats_s, shared_buffer_redirected) },
 	{ "range_overlaps_shared_rejects",
 	  offsetof(struct stats_s, range_overlaps_shared_rejects) },
+	{ "libc_heap_redirected",
+	  offsetof(struct stats_s, libc_heap_redirected) },
 	{ "post_handler_corrupt_ptr",
 	  offsetof(struct stats_s, post_handler_corrupt_ptr) },
 	{ "snapshot_non_heap_reject",
@@ -1582,6 +1586,8 @@ void dump_stats(void)
 
 	if (shm->stats.shared_buffer_redirected)
 		stat_row("shared_buffer", "args_redirected",     shm->stats.shared_buffer_redirected);
+	if (shm->stats.libc_heap_redirected)
+		stat_row("shared_buffer", "libc_heap_redirected", shm->stats.libc_heap_redirected);
 	if (shm->stats.range_overlaps_shared_rejects) {
 		stat_row("shared_buffer", "range_overlaps_shared_rejects",
 			 shm->stats.range_overlaps_shared_rejects);
