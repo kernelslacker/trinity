@@ -54,10 +54,58 @@ static unsigned long ptrace_o_flags[] = {
 	PTRACE_O_SUSPEND_SECCOMP,
 };
 
+/*
+ * Stratified request picker.  Uniform sampling across ptrace_reqs[]
+ * under-exercises the rarer signal/options paths, because most of the
+ * 25 requests funnel into the well-trodden access_remote_vm path
+ * (PEEK/POKE).  Bias the picker so the siginfo/sigmask/options family
+ * gets half the per-call budget, with control-flow ops kept rare since
+ * they tend to detach the tracee or end the run early.
+ *
+ * ptrace also carries AVOID_SYSCALL and runs only via the effector
+ * path, so the per-call rare-path bias is even more valuable -- there
+ * are far fewer ptrace calls overall, and we want each one to land in
+ * a path we actually care about exercising.
+ *
+ * The request is overridden at the top of sanitise_ptrace() so the
+ * existing per-request arg sanitisation (data buffers, signal numbers,
+ * options bitmask, etc.) runs unchanged on the new selection.
+ */
+static const unsigned long ptrace_reqs_common[] = {
+	PTRACE_PEEKTEXT, PTRACE_PEEKDATA, PTRACE_PEEKUSR,
+	PTRACE_POKETEXT, PTRACE_POKEDATA, PTRACE_POKEUSR,
+};
+
+static const unsigned long ptrace_reqs_siginfo[] = {
+	PTRACE_SETSIGINFO, PTRACE_GETSIGINFO,
+	PTRACE_SETSIGMASK, PTRACE_GETSIGMASK,
+	PTRACE_SETOPTIONS, PTRACE_GETEVENTMSG,
+	PTRACE_PEEKSIGINFO,
+};
+
+static const unsigned long ptrace_reqs_control[] = {
+	PTRACE_CONT, PTRACE_SYSCALL, PTRACE_SINGLESTEP,
+	PTRACE_SYSEMU, PTRACE_SYSEMU_SINGLESTEP,
+	PTRACE_DETACH, PTRACE_KILL,
+};
+
+static unsigned long pick_ptrace_req(void)
+{
+	unsigned int r = rand() % 100;
+
+	if (r < 35)
+		return ptrace_reqs_common[rand() % ARRAY_SIZE(ptrace_reqs_common)];
+	if (r < 85)
+		return ptrace_reqs_siginfo[rand() % ARRAY_SIZE(ptrace_reqs_siginfo)];
+	return ptrace_reqs_control[rand() % ARRAY_SIZE(ptrace_reqs_control)];
+}
+
 static void sanitise_ptrace(struct syscallrecord *rec)
 {
 	struct ptrace_post_state *snap;
 	void *data = NULL;
+
+	rec->a1 = pick_ptrace_req();
 
 	/* Use child pids only — tracing parent/screen/tmux hangs forever */
 	rec->a2 = get_pid();
