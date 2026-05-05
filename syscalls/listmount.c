@@ -160,6 +160,26 @@ static void post_listmount(struct syscallrecord *rec)
 		return;
 	}
 
+	/*
+	 * Kernel ABI: sys_listmount writes at most nr_mnt_ids u64 mount IDs
+	 * to the user buffer and returns the count written, capped at the
+	 * snapshotted nr_mnt_ids arg.  Failure returns -1UL with EFAULT,
+	 * EINVAL, or ENOENT.  Anything > snap->nr_mnt_ids on a non-(-1UL)
+	 * return is a structural ABI regression: a sign-extension tear in
+	 * the syscall return path, a kernel-side write that spilled past
+	 * the user-supplied bound, or a torn read of the iterator counter.
+	 * Reject before the ONE_IN(100) re-issue oracle below, which would
+	 * otherwise miss 99% of corrupted retvals.  Fall through to
+	 * out_free so the deferred post_state buffer is still released.
+	 */
+	if ((long) rec->retval != -1L &&
+	    (unsigned long) rec->retval > snap->nr_mnt_ids) {
+		outputerr("post_listmount: retval %lu exceeds requested nr_mnt_ids %lu\n",
+			  (unsigned long) rec->retval, snap->nr_mnt_ids);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
+	}
+
 	if (!ONE_IN(100))
 		goto out_free;
 
