@@ -27,6 +27,7 @@ struct select_post_state {
 	fd_set *wfds;
 	fd_set *exfds;
 	struct timeval *tv;
+	unsigned int nfds;
 };
 
 static void sanitise_select(struct syscallrecord *rec)
@@ -81,6 +82,7 @@ static void sanitise_select(struct syscallrecord *rec)
 	snap->wfds = wfds;
 	snap->exfds = exfds;
 	snap->tv = tv;
+	snap->nfds = nfds;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -106,6 +108,27 @@ static void post_select(struct syscallrecord *rec)
 			  "(pid-scribbled?)\n", snap);
 		rec->post_state = 0;
 		return;
+	}
+
+	/*
+	 * Kernel ABI: select(2) on success returns the total count of ready
+	 * fds across the read/write/exception sets — fs/select.c::do_select()
+	 * walks each bitmap of size nfds independently and sums set-bit
+	 * counts across all three, so a single fd present in all three sets
+	 * contributes 3 to the return. The upper bound is therefore 3 * nfds,
+	 * not nfds. Failure returns -1UL with EBADF/EFAULT/EINTR/EINVAL/ENOMEM.
+	 * Anything > 3 * nfds (excluding -1UL) is a structural ABI regression:
+	 * a sign-extension tear, a torn write of the count by a parallel
+	 * signal-restart path, or -errno leaking through the success slot.
+	 * Validate before the inner-pointer guards so the corruption is
+	 * caught even when the inner pointers are scribbled; fall through to
+	 * the existing teardown so the heap allocations are still released.
+	 */
+	if ((long) rec->retval != -1L && rec->retval > 3UL * snap->nfds) {
+		outputerr("post_select: rejected retval=0x%lx > 3*nfds=%u\n",
+			  rec->retval, 3 * snap->nfds);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		/* fall through to existing teardown to release deferred allocations */
 	}
 
 	/*
