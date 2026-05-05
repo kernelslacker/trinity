@@ -36,6 +36,8 @@ struct map * get_map(void)
 		scope = OBJ_LOCAL;
 
 	for (int i = 0; i < 1000; i++) {
+		unsigned int slot_idx, slot_version;
+
 		switch (rand() % 3) {
 		case 0:	type = OBJ_MMAP_ANON;
 			break;
@@ -45,7 +47,22 @@ struct map * get_map(void)
 			break;
 		}
 
-		obj = get_random_object(type, scope);
+		/*
+		 * Use the versioned API so we can re-validate the slot
+		 * right before handing &obj->map back to the caller.  The
+		 * lockless OBJ_GLOBAL reader race surfaced in the 2026-05-05
+		 * overnight asan run as 30x SEGVs at asan-poisoned addresses
+		 * (si_addr=0x51900064f758 family, SEGV_ACCERR — the asan
+		 * redzone signature) inside the consumer's map->ptr deref:
+		 * the parent destroyed the obj between the lockless pick
+		 * and this caller's deref, free_shared_obj() had already
+		 * routed the chunk back to the shared-heap freelist, and
+		 * a concurrent alloc_shared_obj() recycled it underneath us.
+		 * The version snapshot below + validate_object_handle()
+		 * just before return narrows that window to a few cycles.
+		 */
+		obj = get_random_object_versioned(type, scope, &slot_idx,
+						  &slot_version);
 		if (obj == NULL)
 			continue;
 
@@ -88,6 +105,17 @@ struct map * get_map(void)
 				  obj->map.size, obj, type, scope);
 			continue;
 		}
+
+		/*
+		 * Last-line check: if the parent destroyed/replaced this
+		 * slot between get_random_object_versioned() and now, the
+		 * version no longer matches and obj is unsafe to deref.
+		 * Drop it and pick again rather than handing &obj->map to
+		 * the caller.
+		 */
+		if (!validate_object_handle(type, scope, obj, slot_idx,
+					    slot_version))
+			continue;
 
 		return &obj->map;
 	}

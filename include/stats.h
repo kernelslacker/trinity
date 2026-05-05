@@ -733,6 +733,20 @@ struct stats_s {
 	 * destructor) and counted here. */
 	unsigned long destroy_object_idx_corrupt;
 
+	/* get_random_object()/validate_object_handle() detected that the
+	 * parent destroyed (or replaced) the OBJ_GLOBAL slot the lockless
+	 * child reader had picked, between the slot sample and the would-
+	 * be-deref.  Bumped both when get_random_object exhausts its
+	 * retry budget against repeated concurrent destroys, and when a
+	 * caller-side validate_object_handle() rejects a previously-
+	 * returned obj.  The 30x SEGV cluster at asan-poisoned addresses
+	 * (si_addr=0x51900064f758 family, SEGV_ACCERR — asan redzone) in
+	 * the 2026-05-05 overnight run was this race firing through
+	 * get_map → consumer dereferences; a non-zero counter here means
+	 * the version-tag guard caught the same race that previously
+	 * crashed children. */
+	unsigned long global_obj_uaf_caught;
+
 	/* Shared obj-heap pressure counters: cumulative successful allocs
 	 * and frees through alloc_shared_obj() / free_shared_obj().  Read
 	 * by dump_stats() under -v to print a one-line utilisation summary

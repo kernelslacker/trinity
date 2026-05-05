@@ -638,7 +638,8 @@ static void dump_stats_json(void)
 			"\"rec_canary_stomped\":%lu,\"rzs_blanket_reject\":%lu,"
 			"\"retfd_blanket_reject\":%lu,"
 			"\"sibling_mprotect_failed\":%lu,"
-			"\"destroy_object_idx\":%lu},"
+			"\"destroy_object_idx\":%lu,"
+			"\"global_obj_uaf_caught\":%lu},"
 		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu,"
 			"\"libc_heap_redirected\":%lu},"
 		"\"refcount_audit\":{\"runs\":%lu,\"fd_anomalies\":%lu,"
@@ -782,6 +783,7 @@ static void dump_stats_json(void)
 		shm->stats.retfd_blanket_reject,
 		shm->stats.sibling_mprotect_failed,
 		shm->stats.destroy_object_idx_corrupt,
+		shm->stats.global_obj_uaf_caught,
 		shm->stats.shared_buffer_redirected, shm->stats.range_overlaps_shared_rejects,
 		shm->stats.libc_heap_redirected,
 		shm->stats.refcount_audit_runs, shm->stats.refcount_audit_fd_anomalies,
@@ -1005,6 +1007,8 @@ static const struct {
 	  offsetof(struct stats_s, fd_event_payload_corrupt) },
 	{ "destroy_object_idx_corrupt",
 	  offsetof(struct stats_s, destroy_object_idx_corrupt) },
+	{ "global_obj_uaf_caught",
+	  offsetof(struct stats_s, global_obj_uaf_caught) },
 };
 
 static unsigned long defense_counter_load(unsigned int i)
@@ -1570,6 +1574,8 @@ void dump_stats(void)
 		stat_row("corruption", "divergence_sentinel_anomalies", shm->stats.divergence_sentinel_anomalies);
 	if (shm->stats.destroy_object_idx_corrupt)
 		stat_row("corruption", "destroy_object_idx",     shm->stats.destroy_object_idx_corrupt);
+	if (shm->stats.global_obj_uaf_caught)
+		stat_row("corruption", "global_obj_uaf_caught",  shm->stats.global_obj_uaf_caught);
 
 	{
 		unsigned int op;

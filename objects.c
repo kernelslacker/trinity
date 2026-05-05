@@ -512,6 +512,20 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			deferred_free_enqueue(oldarray, free);
 		}
 	}
+
+	/*
+	 * Bump the slot's version BEFORE publishing the new pointer so a
+	 * concurrent lockless reader that snapshots slot_versions[n]
+	 * after this point and reads array[n] sees a (version, ptr)
+	 * pair that's internally consistent.  RELEASE so the bump is
+	 * visible to the child's ACQUIRE-load in get_random_object().
+	 * Skipped for OBJ_LOCAL (no slot_versions array there — no
+	 * lockless reader to coordinate with).
+	 */
+	if (scope == OBJ_GLOBAL && head->slot_versions != NULL)
+		__atomic_add_fetch(&head->slot_versions[n], 1,
+				   __ATOMIC_RELEASE);
+
 	head->array[n] = obj;
 	obj->array_idx = n;
 
@@ -545,6 +559,17 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			__atomic_store_n(&head->num_entries, n,
 					 __ATOMIC_RELEASE);
 			head->array[n] = NULL;
+			/*
+			 * Rollback bump: a lockless reader that briefly
+			 * observed snapshot=n+1 may have captured the pre-
+			 * rollback (slot_versions[n], array[n]) pair and be
+			 * mid-validation.  Bump the version again so its post-
+			 * use re-acquire diverges and the obj — about to be
+			 * release_obj()'d into the freelist — is rejected.
+			 */
+			if (head->slot_versions != NULL)
+				__atomic_add_fetch(&head->slot_versions[n], 1,
+						   __ATOMIC_RELEASE);
 			if (fd >= 0)
 				close(fd);
 			release_obj(obj, scope, type);
@@ -600,9 +625,21 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
 			memset(head->array, 0, GLOBAL_OBJ_MAX_CAPACITY *
 			       sizeof(struct object *));
 			head->array_capacity = GLOBAL_OBJ_MAX_CAPACITY;
+			/*
+			 * Parallel per-slot version counter for the lockless
+			 * child reader's seqlock-style consistency check.
+			 * Same backing region as ->array (alloc_shared_global)
+			 * so freeze/thaw/mprotect cycles cover both.
+			 */
+			head->slot_versions =
+				alloc_shared_global(GLOBAL_OBJ_MAX_CAPACITY *
+						    sizeof(unsigned int));
+			memset(head->slot_versions, 0, GLOBAL_OBJ_MAX_CAPACITY *
+			       sizeof(unsigned int));
 		} else {
 			head->array = NULL;
 			head->array_capacity = 0;
+			head->slot_versions = NULL;
 		}
 
 		/*
@@ -668,35 +705,186 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
  *      by the OBJ_GLOBAL-in-parent-heap problem and addressed by the
  *      separately-tracked structural fix.
  */
-struct object * get_random_object(enum objecttype type, enum obj_scope scope)
+/*
+ * Lockless seqlock-style sample of one OBJ_GLOBAL slot from a child.
+ *
+ * Reads slot_versions[idx] before and after sampling array[idx]; if the
+ * two versions match AND the obj pointer is non-NULL we have a (version,
+ * obj) pair that no concurrent destroy interleaved with.  On mismatch
+ * the parent mutated the slot inside our window — return NULL to the
+ * caller's retry loop.  On a stable but NULL slot (transient swap-with-
+ * last torn state) likewise return NULL so the retry picks a fresh idx.
+ *
+ * The caller saves *version_out for a later validate_object_handle()
+ * re-acquire if it carries the obj past its own deref window (e.g. the
+ * arg-gen path, where get_map() returns &obj->map and the consumer
+ * derefs map->ptr several frames downstream).
+ */
+static struct object *sample_global_slot(struct objhead *head,
+					 unsigned int idx,
+					 unsigned int *version_out)
 {
-	struct objhead *head;
+	unsigned int v_a, v_b;
 	struct object *obj;
 
-	head = get_objhead(scope, type);
+	v_a = __atomic_load_n(&head->slot_versions[idx], __ATOMIC_ACQUIRE);
+	obj = __atomic_load_n(&head->array[idx], __ATOMIC_ACQUIRE);
+	v_b = __atomic_load_n(&head->slot_versions[idx], __ATOMIC_ACQUIRE);
+	if (v_a != v_b || obj == NULL)
+		return NULL;
+	*version_out = v_a;
+	return obj;
+}
 
-	if (scope == OBJ_GLOBAL && getpid() != mainpid) {
-		unsigned int snapshot;
+/*
+ * Bounded retry budget for the lockless reader's seqlock loop.
+ *
+ * A single mismatch means one parent-side destroy raced with the
+ * sample; a small handful of retries absorbs back-to-back regen churn
+ * on the same pool without spinning forever in the (theoretical) case
+ * of a parent that destroys faster than the child can sample.  Beyond
+ * that, surface NULL to the caller — most consumers (get_map, the
+ * fd_provider syscalls) treat NULL as "pick something else this round"
+ * and just retry at their own granularity.
+ */
+#define GET_RANDOM_OBJECT_RETRY_BUDGET 8
 
+static struct object *get_random_object_global_lockless(struct objhead *head,
+							unsigned int *idx_out,
+							unsigned int *version_out)
+{
+	unsigned int snapshot;
+	unsigned int idx;
+	unsigned int version;
+	struct object *obj;
+	int attempt;
+
+	for (attempt = 0; attempt < GET_RANDOM_OBJECT_RETRY_BUDGET; attempt++) {
 		snapshot = __atomic_load_n(&head->num_entries,
 					   __ATOMIC_ACQUIRE);
 		if (snapshot == 0)
 			return NULL;
-		return head->array[rand() % snapshot];
+		/*
+		 * Defence against a wild-write-stomped num_entries that
+		 * exceeds the array bound; sample_global_slot below would
+		 * OOB-read slot_versions/array otherwise.  validate_global_
+		 * objects() reports this on the parent's idle pass; here we
+		 * just fall back gracefully to NULL.
+		 */
+		if (snapshot > head->array_capacity)
+			return NULL;
+		idx = rand() % snapshot;
+		obj = sample_global_slot(head, idx, &version);
+		if (obj != NULL) {
+			*idx_out = idx;
+			*version_out = version;
+			return obj;
+		}
+	}
+
+	__atomic_add_fetch(&shm->stats.global_obj_uaf_caught, 1,
+			   __ATOMIC_RELAXED);
+	return NULL;
+}
+
+struct object * get_random_object(enum objecttype type, enum obj_scope scope)
+{
+	unsigned int idx, version;
+
+	return get_random_object_versioned(type, scope, &idx, &version);
+}
+
+struct object * get_random_object_versioned(enum objecttype type,
+					    enum obj_scope scope,
+					    unsigned int *idx_out,
+					    unsigned int *version_out)
+{
+	struct objhead *head;
+	struct object *obj;
+
+	*idx_out = 0;
+	*version_out = 0;
+
+	head = get_objhead(scope, type);
+	if (head == NULL)
+		return NULL;
+
+	if (scope == OBJ_GLOBAL && getpid() != mainpid) {
+		if (head->slot_versions == NULL) {
+			/* Pool was never initialised (no
+			 * REG_GLOBAL_OBJ for this type, or init was
+			 * skipped); fall through to the legacy lockless
+			 * read with no version validation rather than
+			 * deref a NULL slot_versions[]. */
+			unsigned int snapshot;
+
+			snapshot = __atomic_load_n(&head->num_entries,
+						   __ATOMIC_ACQUIRE);
+			if (snapshot == 0)
+				return NULL;
+			if (snapshot > head->array_capacity)
+				return NULL;
+			return head->array[rand() % snapshot];
+		}
+		return get_random_object_global_lockless(head, idx_out,
+							 version_out);
 	}
 
 	if (scope == OBJ_GLOBAL)
 		lock(&shm->objlock);
 
-	if (head->num_entries == 0)
+	if (head->num_entries == 0) {
 		obj = NULL;
-	else
-		obj = head->array[rand() % head->num_entries];
+	} else {
+		unsigned int idx = rand() % head->num_entries;
+
+		obj = head->array[idx];
+		*idx_out = idx;
+		if (scope == OBJ_GLOBAL && head->slot_versions != NULL)
+			*version_out = head->slot_versions[idx];
+	}
 
 	if (scope == OBJ_GLOBAL)
 		unlock(&shm->objlock);
 
 	return obj;
+}
+
+bool validate_object_handle(enum objecttype type, enum obj_scope scope,
+			    struct object *obj, unsigned int idx,
+			    unsigned int version)
+{
+	struct objhead *head;
+	unsigned int v_now;
+	struct object *cur;
+
+	if (obj == NULL)
+		return false;
+
+	/*
+	 * Only the lockless OBJ_GLOBAL child reader carries the UAF
+	 * window we are protecting against.  Parent OBJ_GLOBAL reads run
+	 * under shm->objlock and OBJ_LOCAL pools are per-child private,
+	 * so the validation degenerates to "yes" in both cases.
+	 */
+	if (scope != OBJ_GLOBAL || getpid() == mainpid)
+		return true;
+
+	head = get_objhead(scope, type);
+	if (head == NULL || head->slot_versions == NULL)
+		return true;
+
+	if (idx >= head->array_capacity)
+		return false;
+
+	v_now = __atomic_load_n(&head->slot_versions[idx], __ATOMIC_ACQUIRE);
+	cur = __atomic_load_n(&head->array[idx], __ATOMIC_ACQUIRE);
+	if (v_now != version || cur != obj) {
+		__atomic_add_fetch(&shm->stats.global_obj_uaf_caught, 1,
+				   __ATOMIC_RELAXED);
+		return false;
+	}
+	return true;
 }
 
 bool objects_empty(enum objecttype type)
@@ -903,6 +1091,32 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 
 	/* Swap-with-last removal from the parallel array */
 	last = head->num_entries - 1;
+
+	/*
+	 * Bump the per-slot version BEFORE mutating the array, on every
+	 * slot we are about to touch (the destroyed slot at idx, plus the
+	 * formerly-last slot at `last` we are about to NULL).  A lockless
+	 * child reader running through the seqlock-style protocol in
+	 * get_random_object()/validate_object_handle() snapshots the
+	 * slot version, samples array[idx], then re-snapshots the version;
+	 * a mismatch means a destroy raced with the read and the picked
+	 * obj must NOT be dereferenced (release_obj() may already have
+	 * routed it through free_shared_obj()'s freelist where a sibling
+	 * alloc_shared_obj() can recycle it under us — the asan-poisoned
+	 * redzone reads at 0x51900064f758 in the overnight 2026-05-05 run
+	 * were exactly this).  Order matters: version bump first, then
+	 * array mutation, then count decrement; the reader's ACQUIRE on
+	 * the version pairs with these RELEASEs.  Skipped for OBJ_LOCAL
+	 * (no slot_versions array, no lockless reader).
+	 */
+	if (head->slot_versions != NULL) {
+		__atomic_add_fetch(&head->slot_versions[idx], 1,
+				   __ATOMIC_RELEASE);
+		if (last != idx)
+			__atomic_add_fetch(&head->slot_versions[last], 1,
+					   __ATOMIC_RELEASE);
+	}
+
 	if (idx != last) {
 		head->array[idx] = head->array[last];
 		if (head->array[idx] != NULL)

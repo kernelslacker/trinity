@@ -237,6 +237,21 @@ struct object {
 
 struct objhead {
 	struct object **array;		/* parallel array for O(1) random access */
+	/*
+	 * Per-slot version counter, parallel to ->array.  Bumped by
+	 * add_object()/__destroy_object() on every slot mutation (insert,
+	 * swap-in from the prior tail, NULL-out of the prior tail).  The
+	 * lockless child reader in get_random_object() snapshots
+	 * slot_versions[idx] before and after sampling array[idx]; a
+	 * mismatch means the parent destroyed or replaced the slot during
+	 * the sample window and the picked obj pointer is no longer trust-
+	 * worthy (it may have been free_shared_obj()'d into the shared
+	 * heap freelist between the snapshot and the deref).  Allocated
+	 * only for OBJ_GLOBAL pools — OBJ_LOCAL has no lockless reader
+	 * path, so the field stays NULL there.  Lives in the same shared-
+	 * global region as ->array so freeze_global_objects() covers it.
+	 */
+	unsigned int *slot_versions;
 	unsigned int num_entries;
 	unsigned int array_capacity;
 	unsigned int max_entries;
@@ -320,6 +335,41 @@ void init_global_objects(void);
 struct childdata;
 void init_object_lists(enum obj_scope scope, struct childdata *child);
 struct object * get_random_object(enum objecttype type, enum obj_scope scope);
+
+/*
+ * Versioned variant of get_random_object().  On success returns the
+ * picked obj and stores the slot index and the version observed at
+ * pick time into *idx_out / *version_out.  Callers that hold the obj
+ * across a window in which the parent might destroy it (e.g. get_map
+ * passes &obj->map outwards and the consumer derefs map->ptr later)
+ * pass the saved (idx, version) into validate_object_handle() right
+ * before the deref to confirm the slot wasn't mutated underneath us.
+ * Returns NULL if the pool is empty or the lockless reader's retry
+ * budget was exhausted by repeated concurrent destroys.  For OBJ_LOCAL
+ * (no lockless reader, no slot_versions array) the out params are set
+ * to (0, 0) and the helper degenerates to plain get_random_object().
+ */
+struct object * get_random_object_versioned(enum objecttype type,
+					    enum obj_scope scope,
+					    unsigned int *idx_out,
+					    unsigned int *version_out);
+
+/*
+ * Re-validate an obj handle previously returned by
+ * get_random_object_versioned().  Re-acquires slot_versions[idx] and
+ * array[idx] and confirms (a) the version matches what the caller
+ * snapshotted at pick time and (b) the slot still points at the same
+ * obj.  Returns true if the slot is still consistent, false if the
+ * parent destroyed or replaced the entry in the meantime — in which
+ * case the caller MUST drop the handle and pick a fresh one rather
+ * than dereferencing the stale obj pointer.  Bumps the
+ * global_obj_uaf_caught counter on a detected mismatch.  No-op (always
+ * true) for OBJ_LOCAL.
+ */
+bool validate_object_handle(enum objecttype type, enum obj_scope scope,
+			    struct object *obj, unsigned int idx,
+			    unsigned int version);
+
 bool objects_empty(enum objecttype type);
 void validate_global_objects(void);
 struct objhead * get_objhead(enum obj_scope scope, enum objecttype type);
