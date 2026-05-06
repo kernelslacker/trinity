@@ -896,6 +896,18 @@ struct stats_s {
 	unsigned long netns_teardown_kill_ok;			/* SIGKILL delivered to in-ns child (race vs cleanup_net) */
 	unsigned long netns_teardown_completed_ok;		/* full cycle reached waitpid + close anchor cleanly */
 
+	/* tcp_ulp_swap_churn childop counters */
+	unsigned long tcp_ulp_swap_churn_runs;			/* total tcp_ulp_swap_churn invocations */
+	unsigned long tcp_ulp_swap_churn_setup_failed;		/* loopback pair / connect / unsupported latch fired */
+	unsigned long tcp_ulp_swap_churn_install_tls_ok;	/* setsockopt(TCP_ULP, "tls") accepted on connected sock */
+	unsigned long tcp_ulp_swap_churn_tx_install_ok;		/* setsockopt(SOL_TLS, TLS_TX, &cinfo) accepted */
+	unsigned long tcp_ulp_swap_churn_send_ok;		/* tls_sw_sendmsg drove a record onto the wire */
+	unsigned long tcp_ulp_swap_churn_swap_rejected_ok;	/* setsockopt(TCP_ULP, "espintcp"|"smc") rejected post-connect (the bug surface) */
+	unsigned long tcp_ulp_swap_churn_ifname_probe_ok;	/* SIOCGIFNAME / SIOCSIFNAME probe completed without disturbing lo */
+	unsigned long tcp_ulp_swap_churn_uninstall_ok;		/* setsockopt(TCP_ULP, "") uninstall accepted */
+	unsigned long tcp_ulp_swap_churn_reinstall_ok;		/* second setsockopt(TCP_ULP, "tls") accepted (re-init path) */
+	unsigned long tcp_ulp_swap_churn_install_failed;	/* TCP_ULP install non-latch failure (runtime errno bump) */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic

@@ -154,6 +154,7 @@ enum child_op_type {
 	CHILD_OP_NF_CONNTRACK_HELPER,
 	CHILD_OP_AF_UNIX_SCM_RIGHTS_GC,
 	CHILD_OP_NETNS_TEARDOWN_CHURN,
+	CHILD_OP_TCP_ULP_SWAP_CHURN,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -482,3 +483,4 @@ bool handshake_req_abort(struct childdata *child);
 bool nf_conntrack_helper_churn(struct childdata *child);
 bool af_unix_scm_rights_gc_churn(struct childdata *child);
 bool netns_teardown_churn(struct childdata *child);
+bool tcp_ulp_swap_churn(struct childdata *child);
