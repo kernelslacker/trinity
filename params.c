@@ -32,6 +32,8 @@ bool do_64_arch = true;
 unsigned int specific_domain = 0;
 unsigned int user_specified_children = 0;
 unsigned int alt_op_children = 0;
+unsigned int explorer_children = 0;
+bool user_specified_explorer_children = false;
 
 bool do_specific_domain = false;
 bool no_domains[TRINITY_PF_MAX];
@@ -229,6 +231,35 @@ static unsigned long derive_max_children_cap(enum max_children_binding *out_bind
 	return cap;
 }
 
+/*
+ * Compute the default explorer-pool size when --explorer-children was not
+ * passed.  Default is max_children/8 (12.5%): for -C64 → 8 explorers, -C16
+ * → 2, -C8 → 1, -C4 → 0.  Small fleets get zero explorers because the
+ * bandit's per-arm pull count needs the full slot budget to converge.
+ *
+ * Validates the explicit operator value (post-parse) against the ceiling
+ * of max_children/2: more than half being explorers leaves the bandit
+ * pool too small for UCB1 to differentiate arms.
+ *
+ * Called from main() after clamp_default_max_children() so max_children
+ * is final.  Mirrors the alt_op_children clamp pattern in trinity.c.
+ */
+void clamp_default_explorer_children(void)
+{
+	unsigned int ceiling = max_children / 2;
+
+	if (!user_specified_explorer_children) {
+		explorer_children = max_children / 8;
+		return;
+	}
+
+	if (explorer_children > ceiling) {
+		outputerr("warning: --explorer-children=%u exceeds max_children/2 (%u); clamping to %u\n",
+			  explorer_children, ceiling, ceiling);
+		explorer_children = ceiling;
+	}
+}
+
 void clamp_default_max_children(void)
 {
 	enum max_children_binding b;
@@ -312,6 +343,7 @@ static const struct option_help option_descs[] = {
 	{ "epoch-iterations",	 0,  "syscalls per epoch before restarting (must be > 0; omit to disable)" },
 	{ "epoch-timeout",	 0,  "seconds per epoch before restarting (must be > 0; omit to disable)" },
 	{ "exclude",		'x', "don't call a specific syscall" },
+	{ "explorer-children",	 0,  "reserve N children to always run STRATEGY_RANDOM as a bandit-independent explorer pool (default: max_children/8; max: max_children/2)" },
 	{ "group",		'g', "only run syscalls from a certain group (vfs,vm,net,ipc,process,signal,io_uring,bpf,sched,time)" },
 	{ "group-bias",		 0,  "bias syscall selection toward the same group as the previous call" },
 	{ "help",		'h', "show this help" },
@@ -387,6 +419,7 @@ static const struct option longopts[] = {
 	{ "epoch-iterations", required_argument, NULL, 0 },
 	{ "epoch-timeout", required_argument, NULL, 0 },
 	{ "exclude", required_argument, NULL, 'x' },
+	{ "explorer-children", required_argument, NULL, 0 },
 	{ "group", required_argument, NULL, 'g' },
 	{ "group-bias", no_argument, NULL, 0 },
 	{ "kernel_taint", required_argument, NULL, 'T' },
@@ -652,6 +685,24 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("clowntown", longopts[opt_index].name) == 0)
 				clowntown = true;
+
+			if (strcmp("explorer-children", longopts[opt_index].name) == 0) {
+				char *end;
+				unsigned long val;
+
+				errno = 0;
+				val = strtoul(optarg, &end, 10);
+				if (end == optarg || *end != '\0' || errno == ERANGE) {
+					outputerr("can't parse '%s' as a number\n", optarg);
+					exit(EXIT_FAILURE);
+				}
+				if (val > UINT_MAX) {
+					outputerr("--explorer-children value %lu exceeds UINT_MAX\n", val);
+					exit(EXIT_FAILURE);
+				}
+				explorer_children = (unsigned int)val;
+				user_specified_explorer_children = true;
+			}
 
 			if (strcmp("disable-fds", longopts[opt_index].name) == 0)
 				process_fds_param(optarg, false);
