@@ -260,7 +260,6 @@ struct syscallentry syscall_listxattrat = {
 	.argname = { [0] = "dfd", [1] = "pathname", [2] = "at_flags", [3] = "list", [4] = "size" },
 	.arg_params[2].list = ARGLIST(listxattrat_at_flags),
 	.sanitise = sanitise_listxattrat,
-	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 #if defined(SYS_listxattrat) || defined(__NR_listxattrat)
