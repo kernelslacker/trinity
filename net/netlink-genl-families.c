@@ -47,6 +47,9 @@ extern struct genl_family_grammar fam_ethtool;
 #if __has_include(<linux/mptcp_pm.h>)
 extern struct genl_family_grammar fam_mptcp_pm;
 #endif
+#if __has_include(<linux/tipc_netlink.h>)
+extern struct genl_family_grammar fam_tipc;
+#endif
 
 /*
  * Per-family grammar definitions live in net/netlink-genl-fam-*.c;
@@ -63,6 +66,9 @@ static struct genl_family_grammar *registry[] = {
 #endif
 #if __has_include(<linux/mptcp_pm.h>)
 	&fam_mptcp_pm,
+#endif
+#if __has_include(<linux/tipc_netlink.h>)
+	&fam_tipc,
 #endif
 };
 
@@ -87,6 +93,7 @@ static const struct {
 	{ "TASKSTATS", offsetof(struct stats_s, genl_family_calls_taskstats) },
 	{ "ethtool",   offsetof(struct stats_s, genl_family_calls_ethtool) },
 	{ "mptcp_pm",  offsetof(struct stats_s, genl_family_calls_mptcp_pm) },
+	{ "TIPCv2",    offsetof(struct stats_s, genl_family_calls_tipc) },
 };
 
 static void stamp_call_counters(void)
