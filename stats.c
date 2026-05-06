@@ -683,7 +683,8 @@ static void dump_stats_json(void)
 		"\"vrf_fib_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_ok\":%lu,\"addr_ok\":%lu,\"up_ok\":%lu,\"rule_added\":%lu,\"bound\":%lu,\"sendto_ok\":%lu,\"rule2_added\":%lu,\"rule_removed\":%lu,\"link_removed\":%lu},"
 		"\"netlink_monitor_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"mon_open\":%lu,\"mut_open\":%lu,\"mut_op_ok\":%lu,\"recv_drained\":%lu,\"group_drop\":%lu,\"group_add\":%lu},"
 		"\"tipc_link_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bearer_enable_ok\":%lu,\"sock_rdm_ok\":%lu,\"topsrv_connect_ok\":%lu,\"sub_ports_sent\":%lu,\"publish_ok\":%lu,\"bearer_disable_ok\":%lu},"
-		"\"tls_ulp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_install_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"splice_ok\":%lu,\"rekey_ok\":%lu,\"recv_ok\":%lu}"
+		"\"tls_ulp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_install_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"splice_ok\":%lu,\"rekey_ok\":%lu,\"recv_ok\":%lu},"
+		"\"vxlan_encap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"fdb_add_ok\":%lu,\"link_up_ok\":%lu,\"packet_sent_ok\":%lu,\"link_del_ok\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -927,7 +928,14 @@ static void dump_stats_json(void)
 		shm->stats.tls_ulp_churn_send_ok,
 		shm->stats.tls_ulp_churn_splice_ok,
 		shm->stats.tls_ulp_churn_rekey_ok,
-		shm->stats.tls_ulp_churn_recv_ok);
+		shm->stats.tls_ulp_churn_recv_ok,
+		shm->stats.vxlan_encap_churn_runs,
+		shm->stats.vxlan_encap_churn_setup_failed,
+		shm->stats.vxlan_encap_churn_link_create_ok,
+		shm->stats.vxlan_encap_churn_fdb_add_ok,
+		shm->stats.vxlan_encap_churn_link_up_ok,
+		shm->stats.vxlan_encap_churn_packet_sent_ok,
+		shm->stats.vxlan_encap_churn_link_del_ok);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -1996,6 +2004,16 @@ void dump_stats(void)
 		stat_row("tls_ulp_churn", "splice_ok",       shm->stats.tls_ulp_churn_splice_ok);
 		stat_row("tls_ulp_churn", "rekey_ok",        shm->stats.tls_ulp_churn_rekey_ok);
 		stat_row("tls_ulp_churn", "recv_ok",         shm->stats.tls_ulp_churn_recv_ok);
+	}
+
+	if (shm->stats.vxlan_encap_churn_runs) {
+		stat_row("vxlan_encap_churn", "runs",           shm->stats.vxlan_encap_churn_runs);
+		stat_row("vxlan_encap_churn", "setup_failed",   shm->stats.vxlan_encap_churn_setup_failed);
+		stat_row("vxlan_encap_churn", "link_create_ok", shm->stats.vxlan_encap_churn_link_create_ok);
+		stat_row("vxlan_encap_churn", "fdb_add_ok",     shm->stats.vxlan_encap_churn_fdb_add_ok);
+		stat_row("vxlan_encap_churn", "link_up_ok",     shm->stats.vxlan_encap_churn_link_up_ok);
+		stat_row("vxlan_encap_churn", "packet_sent_ok", shm->stats.vxlan_encap_churn_packet_sent_ok);
+		stat_row("vxlan_encap_churn", "link_del_ok",    shm->stats.vxlan_encap_churn_link_del_ok);
 	}
 
 	if (kcov_shm != NULL) {
