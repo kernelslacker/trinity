@@ -16,6 +16,7 @@
 
 #include <setjmp.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -32,27 +33,46 @@
 /*
  * Pool-race fault guard.  See the comment on pool_race_aborted[] in
  * include/stats.h for the race we're catching.  The guard only
- * siglongjmps on real kernel faults (si_code > 0); sibling-spoofed
- * fatal signals are filtered the same way child_fault_handler filters
- * them in signals.c:80, and self-sent signals fall through to the
- * default handler (so a glibc abort still gets diagnosed by
- * child_fault_handler instead of orphaning the allocator lock — see
- * signals.c:175-184 for the long-form rationale).
+ * siglongjmps on real kernel faults (si_code > 0) whose si_addr
+ * falls inside the pool mapping range drawn by this invocation.
+ * Anything else falls through to the default handler so the per-pid
+ * bug log path in signals.c child_fault_handler still gets reached:
  *
- * Wrap is currently inlined per-childop at 4 sites (memory_pressure,
- * iouring_flood, iouring_recipes, madvise_cycler).  TODO: if this
- * pattern grows past ~6 callsites, factor into childops-util.h as
- * childop_run_with_fault_guard().
+ *   - Sibling-spoofed fatal signals (si_code <= 0, si_pid != getpid)
+ *     return silently — kernel already consumed the signal and we
+ *     don't want to count spoof noise.
+ *   - Self-sent fatal signals (si_code <= 0, si_pid == getpid, e.g.
+ *     glibc abort) restore SIG_DFL and re-raise so child_fault_handler
+ *     diagnoses + exits.  Don't siglongjmp here: glibc may hold the
+ *     allocator lock and longjmping orphans it (see signals.c
+ *     long-form rationale on the sigalrm_handler longjmp removal).
+ *   - Real kernel faults whose si_addr is outside the drawn pool
+ *     range (ASAN redzone hits, genuine SIGBUS on an unrelated mmap,
+ *     a setup-path bug, etc.) restore SIG_DFL and re-raise so the
+ *     bug log path is preserved.  This is the gate that the
+ *     follow-up commit added: the prior wrap accepted any
+ *     si_code > 0 as pool race, swallowing unrelated kernel faults.
+ *   - Real kernel faults whose si_addr is inside the drawn pool
+ *     range siglongjmp to the wrap epilogue, which bumps
+ *     pool_race_aborted[] and returns false.
  *
- * Per-childop wrap scope: cluster M only (sibling-driven UAF on
- * pool-drawn mappings).  Other childops are out of scope for this
- * change — they don't draw from the parent's mapping pool.
+ * The pool-mapping range is captured into the file-scope statics
+ * below by the wrap site after the get_map_with_prot draw; the
+ * handler reads them.  Volatile-qualified so the compiler does not
+ * hoist or coalesce reads across the asynchronous signal-handler
+ * entry.  Aligned word reads are atomic on the supported arches,
+ * and the writes complete before sigaction installs the handler so
+ * ordering is provided by the kernel-side sigaction barrier.
  */
 static sigjmp_buf memory_pressure_pool_race_jmp;
+static volatile uintptr_t memory_pressure_pool_race_addr_low;
+static volatile uintptr_t memory_pressure_pool_race_addr_high;
 
 static void memory_pressure_pool_race_handler(int sig, siginfo_t *info,
 					      void *ctx)
 {
+	uintptr_t fault_addr;
+
 	(void)ctx;
 	if (info->si_code <= 0 && info->si_pid != getpid()) {
 		/* Sibling-spoofed fatal signal — kernel already consumed
@@ -62,9 +82,19 @@ static void memory_pressure_pool_race_handler(int sig, siginfo_t *info,
 	}
 	if (info->si_code <= 0) {
 		/* Self-sent (glibc abort etc.) — restore default and
-		 * re-raise so child_fault_handler diagnoses + exits.
-		 * Don't siglongjmp here: glibc may hold the allocator
-		 * lock and longjmping orphans it. */
+		 * re-raise so child_fault_handler diagnoses + exits. */
+		signal(sig, SIG_DFL);
+		raise(sig);
+		return;
+	}
+
+	fault_addr = (uintptr_t)info->si_addr;
+	if (fault_addr < memory_pressure_pool_race_addr_low ||
+	    fault_addr >= memory_pressure_pool_race_addr_high) {
+		/* Real kernel fault but si_addr is outside the drawn
+		 * pool range — not the race we're guarding against.
+		 * Restore default and re-raise so child_fault_handler
+		 * diagnoses + exits and the bug log path is preserved. */
 		signal(sig, SIG_DFL);
 		raise(sig);
 		return;
@@ -102,9 +132,22 @@ bool memory_pressure(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.memory_pressure_runs, 1, __ATOMIC_RELAXED);
 
+	/* Setup is outside the wrap.  region/len/p/stride are derived from
+	 * pointer arithmetic that cannot fault on the pool mapping itself,
+	 * and any fault inside this setup region (e.g. m->ptr corruption)
+	 * is not a pool race and should reach child_fault_handler via the
+	 * default handler. */
+	region = m->ptr;
+	len = m->size;
+	p = (volatile unsigned char *)region;
+	stride = 3 * page_size;
+
 	{
 		struct sigaction sa, old_segv, old_bus;
 		bool aborted = false;
+
+		memory_pressure_pool_race_addr_low  = (uintptr_t)region;
+		memory_pressure_pool_race_addr_high = (uintptr_t)region + len;
 
 		memset(&sa, 0, sizeof(sa));
 		sigemptyset(&sa.sa_mask);
@@ -114,9 +157,6 @@ bool memory_pressure(struct childdata *child)
 		sigaction(SIGBUS,  &sa, &old_bus);
 
 		if (sigsetjmp(memory_pressure_pool_race_jmp, 1) == 0) {
-			region = m->ptr;
-			len = m->size;
-
 			/*
 			 * Dirty each page so MADV_PAGEOUT has real work to do.
 			 * Without this the pages are zero-filled and the
@@ -125,7 +165,6 @@ bool memory_pressure(struct childdata *child)
 			 * which bypasses the reclaim writeback paths we want
 			 * to hit).
 			 */
-			p = (volatile unsigned char *)region;
 			for (i = 0; i < len; i += page_size)
 				p[i] = (unsigned char)(i & 0xff);
 
@@ -145,7 +184,6 @@ bool memory_pressure(struct childdata *child)
 			 * contiguous pages, so each fault is handled
 			 * independently by the allocator.
 			 */
-			stride = 3 * page_size;
 			for (i = 0; i < len; i += stride)
 				(void)p[i];
 		} else {
@@ -154,6 +192,9 @@ bool memory_pressure(struct childdata *child)
 
 		sigaction(SIGSEGV, &old_segv, NULL);
 		sigaction(SIGBUS,  &old_bus,  NULL);
+
+		memory_pressure_pool_race_addr_low  = 0;
+		memory_pressure_pool_race_addr_high = 0;
 
 		if (aborted) {
 			/* siglongjmp skipped any in-flight cleanup —
