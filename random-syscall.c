@@ -676,7 +676,7 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	do_syscall(rec, entry, &child->kcov, child);
 
 	new_edges = kcov_collect(&child->kcov, rec->nr);
-	kcov_collect_cmp(&child->kcov, rec->nr);
+	kcov_collect_cmp(&child->kcov, rec->nr, child->is_explorer);
 
 	/* Surface this step's new-coverage signal to the chain executor
 	 * (when called via run_sequence_chain). */
@@ -694,8 +694,6 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	/* Save args that discovered new coverage, but only for
 	 * syscalls without sanitise (which may stash pointers). */
 	if (unlikely(new_edges)) {
-		int strat;
-
 		if (entry->sanitise == NULL)
 			minicorpus_save(rec);
 
@@ -707,14 +705,30 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		 * caller per window actually runs the save. */
 		minicorpus_maybe_snapshot();
 
-		/* Attribute this new edge to the strategy that was
-		 * active when it was discovered.  Cumulative; the
-		 * window delta is computed by maybe_rotate_strategy
-		 * against shm->edges_at_window_start. */
-		strat = __atomic_load_n(&shm->current_strategy, __ATOMIC_RELAXED);
-		if (strat >= 0 && strat < NR_STRATEGIES)
-			__atomic_fetch_add(&shm->edges_by_strategy[strat],
+		if (child->is_explorer) {
+			/* Explorer-pool discoveries are real edges and count
+			 * toward the run-wide fleet totals, but skip the
+			 * per-strategy reward attribution: explorers always
+			 * run STRATEGY_RANDOM, so feeding their edges into
+			 * the bandit's current arm would either inflate a
+			 * non-RANDOM arm's reward (when the bandit picked
+			 * something else) or double-count when the bandit
+			 * also picked RANDOM. */
+			__atomic_fetch_add(&shm->stats.explorer_pool_edges_discovered,
 					   1, __ATOMIC_RELAXED);
+		} else {
+			/* Attribute this new edge to the strategy that was
+			 * active when it was discovered.  Cumulative; the
+			 * window delta is computed by maybe_rotate_strategy
+			 * against shm->edges_at_window_start. */
+			int strat = __atomic_load_n(&shm->current_strategy,
+						    __ATOMIC_RELAXED);
+			if (strat >= 0 && strat < NR_STRATEGIES)
+				__atomic_fetch_add(&shm->edges_by_strategy[strat],
+						   1, __ATOMIC_RELAXED);
+			__atomic_fetch_add(&shm->stats.bandit_pool_edges_discovered,
+					   1, __ATOMIC_RELAXED);
+		}
 	}
 
 	output_syscall_postfix(rec);

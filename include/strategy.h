@@ -129,8 +129,19 @@ int pick_next_strategy(int prev);
  *
  * Window-rotation count is read from shm->bandit_window_count, which
  * the rotation hook bumps once per completed window.
+ *
+ * is_explorer is true when the caller is one of the explorer-pool
+ * children whose syscall picker forces STRATEGY_RANDOM independent of
+ * the bandit's arm pick.  Their CMP novelty observations still feed
+ * the per-syscall bloom (the bloom is a global "have we seen this
+ * constant lately" signal that should not be polluted by the explorer
+ * partition either way) but skip the per-arm reward attribution into
+ * bandit_cmp_new_constants[]: explorers run a different strategy from
+ * whatever the bandit picked for the bandit pool, so crediting their
+ * CMP novelty to the bandit's current arm would be a misattribution.
  */
-void bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr);
+void bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr,
+			bool is_explorer);
 
 /*
  * Bump the per-syscall frontier-edge ring slot when kcov_collect

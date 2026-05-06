@@ -1195,6 +1195,21 @@ struct stats_s {
 	 * means the picker fast path is no longer respecting the explorer
 	 * partition. */
 	unsigned long strategy_explorer_picks;
+
+	/* New PC edges discovered by explorer-pool children, bumped from
+	 * dispatch_step's new-edge branch when child->is_explorer is true.
+	 * Counted separately from edges_by_strategy[] (which excludes
+	 * explorer contributions to keep the bandit's reward signal honest)
+	 * so the per-pool edge-discovery ratio is recoverable for tuning. */
+	unsigned long explorer_pool_edges_discovered;
+
+	/* New PC edges discovered by non-explorer (bandit-pool) children,
+	 * bumped from the same branch in dispatch_step.  Equal to
+	 * sum(edges_by_strategy[]) modulo the brief race between an
+	 * edges_by_strategy[] increment and the syscalls_at_last_switch CAS:
+	 * the per-strategy counter is meaningful; this scalar gives the
+	 * bandit-pool aggregate without iterating the per-strategy array. */
+	unsigned long bandit_pool_edges_discovered;
 };
 
 unsigned int stats_syscall_category(const char *name);

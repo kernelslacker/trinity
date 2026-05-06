@@ -31,6 +31,7 @@
 #include "kcov.h"		/* KCOV_CMP_RECORDS_MAX */
 #include "params.h"
 #include "shm.h"
+#include "stats.h"
 #include "strategy.h"
 #include "syscall.h"		/* MAX_NR_SYSCALL */
 #include "utils.h"
@@ -226,7 +227,8 @@ static bool cmp_bloom_set(_Atomic uint8_t *bloom, uint32_t bit)
 	return (prev & mask) == 0;
 }
 
-void bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr)
+void bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr,
+			bool is_explorer)
 {
 	struct cmp_novelty_entry *e;
 	unsigned long count, i;
@@ -271,6 +273,14 @@ void bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr)
 	}
 
 	if (novel == 0)
+		return;
+
+	/* Explorer-pool children run a different strategy than whatever the
+	 * bandit picked for the bandit pool; crediting their CMP novelty to
+	 * shm->current_strategy would misattribute their work and bias the
+	 * bandit's reward calculation.  The bloom updates above still run so
+	 * the global novelty horizon stays consistent across the fleet. */
+	if (is_explorer)
 		return;
 
 	strat = __atomic_load_n(&shm->current_strategy, __ATOMIC_RELAXED);
@@ -450,11 +460,31 @@ void dump_strategy_stats(void)
 {
 	enum picker_mode_t mode;
 	unsigned long total_pulls = 0;
+	unsigned long explorer_edges, bandit_edges;
 	int i;
 
 	mode = __atomic_load_n(&shm->picker_mode, __ATOMIC_RELAXED);
 
 	output(0, "strategy picker: %s\n", picker_mode_name(mode));
+
+	/* Hybrid bandit/explorer split summary.  Suppressed when the run had
+	 * no explorers reserved (explorer_children == 0) -- the bandit-pool
+	 * counter still ran but there is nothing to compare it against. */
+	if (explorer_children > 0) {
+		explorer_edges = __atomic_load_n(
+			&shm->stats.explorer_pool_edges_discovered,
+			__ATOMIC_RELAXED);
+		bandit_edges = __atomic_load_n(
+			&shm->stats.bandit_pool_edges_discovered,
+			__ATOMIC_RELAXED);
+
+		output(0, "  explorer pool: %u children, %lu edges\n",
+		       explorer_children, explorer_edges);
+		output(0, "  bandit pool:   %u children, %lu edges\n",
+		       max_children > explorer_children ?
+		       max_children - explorer_children : 0,
+		       bandit_edges);
+	}
 
 	for (i = 0; i < NR_STRATEGIES; i++)
 		total_pulls += shm->bandit_pulls[i];

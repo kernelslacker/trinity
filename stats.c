@@ -1379,6 +1379,17 @@ static const struct {
 	 * highlights either picker overhead or per-strategy work skew. */
 	{ "strategy_explorer_picks",
 	  offsetof(struct stats_s, strategy_explorer_picks) },
+	/* Per-pool new-edge counters: ratio
+	 *   explorer_pool_edges_discovered / bandit_pool_edges_discovered
+	 * compared against
+	 *   explorer_children / (max_children - explorer_children)
+	 * tells the operator whether the explorer pool is finding edges
+	 * disproportionately to its fleet share -- the trigger condition
+	 * for considering per-child bandit (Option C). */
+	{ "explorer_pool_edges_discovered",
+	  offsetof(struct stats_s, explorer_pool_edges_discovered) },
+	{ "bandit_pool_edges_discovered",
+	  offsetof(struct stats_s, bandit_pool_edges_discovered) },
 	/* Epoll lazy-arm wins: rate-of-change tracks fresh epfds reaching
 	 * children after the deferred-arm refactor.  A flat counter while
 	 * fd_regenerated keeps climbing means children aren't picking up
