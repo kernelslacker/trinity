@@ -547,7 +547,8 @@ static void dump_stats_json(void)
 		"\"fd_lifecycle\":{\"stale_detected\":%lu,\"stale_by_generation\":%lu,"
 			"\"closed_tracked\":%lu,\"regenerated\":%lu,\"duped\":%lu,"
 			"\"events_processed\":%lu,\"events_dropped\":%lu,"
-			"\"runtime_registered\":%lu,\"epoll_lazy_armed\":%lu},"
+			"\"runtime_registered\":%lu,\"epoll_lazy_armed\":%lu,"
+			"\"epoll_blocking_poll_skipped\":%lu},"
 		"\"oracle\":{\"fd_anomalies\":%lu,\"mmap_anomalies\":%lu,"
 			"\"cred_anomalies\":%lu,\"sched_anomalies\":%lu,"
 			"\"uid_anomalies\":%lu,\"gid_anomalies\":%lu,"
@@ -715,6 +716,7 @@ static void dump_stats_json(void)
 		shm->stats.fd_duped, shm->stats.fd_events_processed,
 		shm->stats.fd_events_dropped, shm->stats.fd_runtime_registered,
 		shm->stats.epoll_lazy_armed,
+		shm->stats.epoll_blocking_poll_skipped,
 		shm->stats.fd_oracle_anomalies, shm->stats.mmap_oracle_anomalies,
 		shm->stats.cred_oracle_anomalies, shm->stats.sched_oracle_anomalies,
 		shm->stats.uid_oracle_anomalies, shm->stats.gid_oracle_anomalies,
@@ -1401,6 +1403,13 @@ static const struct {
 	 * the regenerated epfds — i.e. the consumer wireup regressed. */
 	{ "epoll_lazy_armed",
 	  offsetof(struct stats_s, epoll_lazy_armed) },
+	/* Watch-set populations refused because the candidate fd belonged
+	 * to a poll_can_block-tagged fd_provider (FUSE / userfaultfd / KVM
+	 * vCPU / io_uring / pidfd).  Sustained growth confirms the filter
+	 * is intercepting the fds that would otherwise wedge children in
+	 * ep_item_poll → fops->poll on the per-fd waitqueue. */
+	{ "epoll_blocking_poll_skipped",
+	  offsetof(struct stats_s, epoll_blocking_poll_skipped) },
 	/* Per-vCPU ioctl dispatches into kvm_vcpu_grp.  Rate-of-change at the
 	 * 10-minute window granularity confirms the OBJ_FD_KVM_VCPU fd_test
 	 * path is keeping up with vCPU pool churn -- a flat counter while the
@@ -1635,7 +1644,8 @@ void dump_stats(void)
 	if (shm->stats.fd_stale_detected || shm->stats.fd_closed_tracked ||
 	    shm->stats.fd_regenerated || shm->stats.fd_stale_by_generation ||
 	    shm->stats.fd_duped || shm->stats.fd_events_processed ||
-	    shm->stats.epoll_lazy_armed) {
+	    shm->stats.epoll_lazy_armed ||
+	    shm->stats.epoll_blocking_poll_skipped) {
 		stat_row("fd_lifecycle", "stale_detected",      shm->stats.fd_stale_detected);
 		stat_row("fd_lifecycle", "stale_by_generation", shm->stats.fd_stale_by_generation);
 		stat_row("fd_lifecycle", "closed_tracked",      shm->stats.fd_closed_tracked);
@@ -1644,6 +1654,8 @@ void dump_stats(void)
 		stat_row("fd_lifecycle", "events_processed",    shm->stats.fd_events_processed);
 		stat_row("fd_lifecycle", "events_dropped",      shm->stats.fd_events_dropped);
 		stat_row("fd_lifecycle", "epoll_lazy_armed",    shm->stats.epoll_lazy_armed);
+		stat_row("fd_lifecycle", "epoll_blocking_poll_skipped",
+			 shm->stats.epoll_blocking_poll_skipped);
 	}
 
 	if (shm->stats.fd_oracle_anomalies)

@@ -58,6 +58,7 @@ void register_fd_provider(const struct fd_provider *prov)
 	newnode->get = prov->get;
 	newnode->open = prov->open;
 	newnode->child_ops = prov->child_ops;
+	newnode->poll_can_block = prov->poll_can_block;
 	num_fd_providers++;
 
 	list_add_tail(&newnode->list, &fd_providers->list);
@@ -428,6 +429,47 @@ int get_child_live_fd(struct childdata *child)
 	}
 
 	return -1;
+}
+
+/*
+ * Map fd → owning fd_provider via the global fd hash.  Returns NULL for
+ * untracked fds (anything not in the OBJ_GLOBAL pools — child-private
+ * fds, accept()'d sockets that haven't been registered yet, kernel-
+ * opened fds in shared trees, ...) and for tracked fds whose objtype
+ * does not match any registered provider.
+ */
+static struct fd_provider *fd_lookup_provider(int fd)
+{
+	struct fd_hash_entry *e;
+	struct list_head *node;
+
+	e = fd_hash_lookup(fd);
+	if (e == NULL)
+		return NULL;
+
+	if (fd_providers == NULL)
+		return NULL;
+
+	list_for_each(node, &fd_providers->list) {
+		struct fd_provider *provider = (struct fd_provider *) node;
+
+		if (provider->objtype == e->type)
+			return provider;
+	}
+	return NULL;
+}
+
+bool fd_poll_can_block(int fd)
+{
+	struct fd_provider *provider;
+
+	if (fd < 0)
+		return false;
+
+	provider = fd_lookup_provider(fd);
+	if (provider == NULL)
+		return false;
+	return provider->poll_can_block;
 }
 
 /*

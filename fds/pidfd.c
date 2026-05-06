@@ -205,6 +205,13 @@ static const struct fd_provider pidfd_fd_provider = {
 	.init = &init_pidfd_fds,
 	.get = &get_rand_pidfd,
 	.open = &open_pidfd_fd,
+	/*
+	 * pidfd_poll() returns ready only when the referenced task exits;
+	 * for a long-running target, ep_item_poll parks on the task's
+	 * exit waitqueue with no bound.  Bar from epoll/select/poll watch
+	 * sets; direct waitid()/pidfd_send_signal() remains available.
+	 */
+	.poll_can_block = true,
 };
 
 REG_FD_PROV(pidfd_fd_provider);

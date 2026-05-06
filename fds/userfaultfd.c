@@ -226,6 +226,13 @@ static const struct fd_provider userfaultfd_provider = {
 	.init = &init_userfaultfds,
 	.get = &get_rand_userfaultfd,
 	.open = &open_userfaultfd,
+	/*
+	 * uffd_poll() blocks until the kernel has a pending page-fault event
+	 * to deliver; with no registered VMA / no fault driver, EPOLL_CTL_ADD
+	 * → ep_item_poll wedges the caller in TASK_UNINTERRUPTIBLE.  Bar from
+	 * watch sets; direct read()/UFFDIO_* fuzzing remains unaffected.
+	 */
+	.poll_can_block = true,
 };
 
 REG_FD_PROV(userfaultfd_provider);
