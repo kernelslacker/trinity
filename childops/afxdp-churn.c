@@ -39,15 +39,25 @@
  *       socket and increments the xsk_buff_pool refcount.
  *   8.  bind(XDP_USE_NEED_WAKEUP, ifindex=lo, qid=0).  Lights up the
  *       per-socket xsk_buff_pool and arms the rings.
- *   9.  Inject a 1-byte packet via the TX ring (UMEM offset 0) and kick
+ *   9.  Attach the loaded XDP program to lo so xdp_do_redirect() actually
+ *       runs against ingress packets.  bpf(BPF_LINK_CREATE, BPF_XDP) is
+ *       tried first (auto-detach on link fd close, no separate detach
+ *       syscall needed).  On older kernels without LINK_CREATE for XDP,
+ *       or when another iter_one already won the lo slot, fall back to
+ *       RTM_NEWLINK with a nested IFLA_XDP { IFLA_XDP_FD, IFLA_XDP_FLAGS
+ *       = XDP_FLAGS_SKB_MODE } -- SKB mode is mandatory on lo (no
+ *       native-XDP path).  Without this attach, no redirect-side walker
+ *       runs and step 12's race window stays cold.
+ *  10.  Inject a 1-byte packet via the TX ring (UMEM offset 0) and kick
  *       via sendto(MSG_DONTWAIT) so xsk_sendmsg drives a TX descriptor
  *       through the pool.
- *  10.  setsockopt XDP_STATISTICS read while RX is armed (the stats path
+ *  11.  setsockopt XDP_STATISTICS read while RX is armed (the stats path
  *       walks per-ring counters while the bound rings could race it).
- *  11.  RACE A: bpf(BPF_MAP_DELETE_ELEM) on the bound XSKMAP key.  This
- *       is CVE-2024-50115's surface: the redirect-side walker holds an
- *       RCU-protected map pointer that the delete frees underneath.
- *  12.  RACE B: munmap one of the ring mmaps while the socket is still
+ *  12.  RACE A: bpf(BPF_MAP_DELETE_ELEM) on the bound XSKMAP key while
+ *       the attached XDP program is live on lo.  This is CVE-2024-50115's
+ *       surface: the redirect-side walker holds an RCU-protected map
+ *       pointer that the delete frees underneath.
+ *  13.  RACE B: munmap one of the ring mmaps while the socket is still
  *       bound.  CVE-2023-39197's surface: the xsk_buff_pool refcount on
  *       the umem region must keep the kernel's view alive past the
  *       munmap of the *user's* ring mapping.
@@ -56,6 +66,18 @@
  *   - lo (loopback) is the only ifindex we touch -- never an external NIC.
  *     The bind() qid is 0; there's no zero-copy path on lo so XDP_COPY is
  *     the implicit fallback.
+ *   - The attached XDP program is the redirect-only sequence from
+ *     xdp_prog_load() below: it stamps bpf_redirect_info and returns
+ *     XDP_REDIRECT.  When the bound XSKMAP slot is populated, packets
+ *     get redirected into our private xsk and consumed (worst case they
+ *     sit in the RX ring until teardown unmaps it).  When the slot is
+ *     empty (between iter_one's, or after RACE A's delete),
+ *     xdp_do_redirect() drops the packet.  Total attached wall-time per
+ *     outer invocation is bounded by AFXDP_WALL_CAP_NS (200 ms) so any
+ *     localhost-traffic disruption is bursty and short-lived.  The
+ *     attach lifetime is the BPF link fd: closing it in teardown
+ *     auto-detaches; trinity child crash also closes it (kernel reaps
+ *     fds on exit).
  *   - All UMEM / ring memory is per-iteration MAP_PRIVATE | MAP_ANONYMOUS,
  *     unmapped on exit.
  *   - Outer loop is BUDGETED (base 5 / floor 16 / cap 64) with JITTER and
@@ -90,7 +112,10 @@
 #include <unistd.h>
 
 #include <linux/bpf.h>
+#include <linux/if_link.h>
 #include <linux/if_xdp.h>
+#include <linux/netlink.h>
+#include <linux/rtnetlink.h>
 
 #include "bpf.h"
 #include "child.h"
@@ -141,6 +166,31 @@
 #endif
 #ifndef BPF_FUNC_redirect_map
 #define BPF_FUNC_redirect_map		51
+#endif
+
+/* BPF_LINK_CREATE landed in 5.7; older kernels return -EINVAL and the
+ * netlink fallback below picks up the attach. */
+#ifndef BPF_LINK_CREATE
+#define BPF_LINK_CREATE			28
+#endif
+
+/* IFLA_XDP attach (UAPI fallbacks for stripped sysroots).  IFLA_XDP is a
+ * nested rtnetlink attribute carrying IFLA_XDP_FD + IFLA_XDP_FLAGS
+ * sub-attrs.  XDP_FLAGS_SKB_MODE is mandatory on lo (no native XDP);
+ * XDP_FLAGS_REPLACE lets us boot a stale leftover prog from a prior
+ * iteration if the kernel kept it bound past close(prog_fd). */
+#ifndef IFLA_XDP
+#define IFLA_XDP			43
+#endif
+#ifndef IFLA_XDP_FD
+#define IFLA_XDP_FD			1
+#define IFLA_XDP_FLAGS			3
+#endif
+#ifndef XDP_FLAGS_SKB_MODE
+#define XDP_FLAGS_SKB_MODE		(1U << 1)
+#endif
+#ifndef XDP_FLAGS_REPLACE
+#define XDP_FLAGS_REPLACE		(1U << 4)
 #endif
 
 /* XDP_REDIRECT action code returned by the program; tells the kernel's
@@ -287,6 +337,9 @@ struct xsk_state {
 	int		xsk_fd;
 	int		map_fd;
 	int		prog_fd;
+	int		xdp_link_fd;		/* BPF_LINK_CREATE auto-detach handle */
+	int		rtnl_fd;		/* netlink fallback attach socket */
+	unsigned int	nl_attached_ifindex;	/* non-zero => detach via netlink in teardown */
 	void		*umem;
 	void		*rx_ring;
 	void		*tx_ring;
@@ -300,12 +353,16 @@ struct xsk_state {
 	bool		bound;
 };
 
+static int xdp_netlink_set_fd(int rtnl, unsigned int ifindex, int prog_fd);
+
 static void xsk_init(struct xsk_state *st)
 {
 	memset(st, 0, sizeof(*st));
-	st->xsk_fd  = -1;
-	st->map_fd  = -1;
-	st->prog_fd = -1;
+	st->xsk_fd      = -1;
+	st->map_fd      = -1;
+	st->prog_fd     = -1;
+	st->xdp_link_fd = -1;
+	st->rtnl_fd     = -1;
 	st->umem    = MAP_FAILED;
 	st->rx_ring = MAP_FAILED;
 	st->tx_ring = MAP_FAILED;
@@ -315,6 +372,16 @@ static void xsk_init(struct xsk_state *st)
 
 static void xsk_teardown(struct xsk_state *st)
 {
+	/* Detach order: BPF link first (auto-detaches on close), then any
+	 * netlink-attached prog (explicit RTM_NEWLINK with prog_fd=-1 in
+	 * SKB mode), then close prog/map fds. */
+	if (st->xdp_link_fd >= 0)
+		close(st->xdp_link_fd);
+	if (st->nl_attached_ifindex && st->rtnl_fd >= 0)
+		(void)xdp_netlink_set_fd(st->rtnl_fd,
+					 st->nl_attached_ifindex, -1);
+	if (st->rtnl_fd >= 0)
+		close(st->rtnl_fd);
 	if (st->fr_ring != MAP_FAILED && st->fr_ring_sz)
 		(void)munmap(st->fr_ring, st->fr_ring_sz);
 	if (st->cr_ring != MAP_FAILED && st->cr_ring_sz)
@@ -328,6 +395,137 @@ static void xsk_teardown(struct xsk_state *st)
 	if (st->xsk_fd  >= 0) close(st->xsk_fd);
 	if (st->prog_fd >= 0) close(st->prog_fd);
 	if (st->map_fd  >= 0) close(st->map_fd);
+}
+
+/*
+ * BPF_LINK_CREATE attach for XDP.  Returns the link fd on success.
+ * Auto-detaches on close(link_fd), so teardown is just close().
+ */
+static int xdp_link_attach(int prog_fd, unsigned int ifindex)
+{
+	union bpf_attr attr;
+
+	memset(&attr, 0, sizeof(attr));
+	attr.link_create.prog_fd        = (uint32_t)prog_fd;
+	attr.link_create.target_ifindex = ifindex;
+	attr.link_create.attach_type    = BPF_XDP;
+
+	return sys_bpf(BPF_LINK_CREATE, &attr, sizeof(attr));
+}
+
+/*
+ * Open a NETLINK_ROUTE socket for the XDP attach fallback.  Bound,
+ * RCVTIMEO 1s so a wedged rtnl can't outlive the SIGALRM(1s) cap.
+ */
+static int xdp_netlink_open(void)
+{
+	struct sockaddr_nl sa;
+	struct timeval tv;
+	int fd;
+
+	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
+	if (fd < 0)
+		return -1;
+
+	memset(&sa, 0, sizeof(sa));
+	sa.nl_family = AF_NETLINK;
+	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
+		close(fd);
+		return -1;
+	}
+
+	tv.tv_sec  = 1;
+	tv.tv_usec = 0;
+	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+	return fd;
+}
+
+/*
+ * Send an RTM_NEWLINK with a nested IFLA_XDP { IFLA_XDP_FD,
+ * IFLA_XDP_FLAGS=SKB_MODE } attribute to attach (prog_fd >= 0) or
+ * detach (prog_fd == -1) the XDP program on @ifindex.  Returns 0 on
+ * success, kernel errno (negated) on failure, -EIO on transport error.
+ */
+static int xdp_netlink_set_fd(int rtnl, unsigned int ifindex, int prog_fd)
+{
+	unsigned char buf[256];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	struct nlattr *nest;
+	struct nlattr *nla;
+	struct sockaddr_nl dst;
+	struct iovec iov;
+	struct msghdr mh;
+	unsigned char rbuf[256];
+	size_t off;
+	__u32 flags = XDP_FLAGS_SKB_MODE;
+	__s32 fdval = prog_fd;
+	ssize_t n;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = 1;
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	ifi->ifi_index  = (int)ifindex;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+
+	/* Open IFLA_XDP nested attribute. */
+	nest = (struct nlattr *)(buf + off);
+	nest->nla_type = IFLA_XDP | NLA_F_NESTED;
+	off += NLA_HDRLEN;
+
+	/* IFLA_XDP_FD */
+	nla = (struct nlattr *)(buf + off);
+	nla->nla_type = IFLA_XDP_FD;
+	nla->nla_len  = (unsigned short)(NLA_HDRLEN + sizeof(fdval));
+	memcpy(buf + off + NLA_HDRLEN, &fdval, sizeof(fdval));
+	off += NLA_ALIGN(NLA_HDRLEN + sizeof(fdval));
+
+	/* IFLA_XDP_FLAGS */
+	nla = (struct nlattr *)(buf + off);
+	nla->nla_type = IFLA_XDP_FLAGS;
+	nla->nla_len  = (unsigned short)(NLA_HDRLEN + sizeof(flags));
+	memcpy(buf + off + NLA_HDRLEN, &flags, sizeof(flags));
+	off += NLA_ALIGN(NLA_HDRLEN + sizeof(flags));
+
+	/* Close nest. */
+	nest->nla_len = (unsigned short)((unsigned char *)(buf + off) -
+					 (unsigned char *)nest);
+
+	nlh->nlmsg_len = (__u32)off;
+
+	memset(&dst, 0, sizeof(dst));
+	dst.nl_family = AF_NETLINK;
+	iov.iov_base = buf;
+	iov.iov_len  = off;
+	memset(&mh, 0, sizeof(mh));
+	mh.msg_name    = &dst;
+	mh.msg_namelen = sizeof(dst);
+	mh.msg_iov     = &iov;
+	mh.msg_iovlen  = 1;
+
+	if (sendmsg(rtnl, &mh, 0) < 0)
+		return -EIO;
+
+	n = recv(rtnl, rbuf, sizeof(rbuf), 0);
+	if (n < 0 || (size_t)n < NLMSG_HDRLEN)
+		return -EIO;
+	{
+		struct nlmsghdr *r = (struct nlmsghdr *)rbuf;
+
+		if (r->nlmsg_type == NLMSG_ERROR) {
+			struct nlmsgerr *e = (struct nlmsgerr *)NLMSG_DATA(r);
+
+			return e->error;	/* 0 on ack */
+		}
+	}
+	return -EIO;
 }
 
 /* One full setup + race + teardown cycle on a fresh AF_XDP socket. */
@@ -493,6 +691,33 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 		st.bound = true;
 		__atomic_add_fetch(&shm->stats.afxdp_churn_bind_ok,
 				   1, __ATOMIC_RELAXED);
+	}
+
+	/* Attach the loaded XDP program to lo so xdp_do_redirect() actually
+	 * walks the XSKMAP -- without an attached program, the RACE A
+	 * map-delete below has no concurrent reader and never opens the
+	 * CVE-2024-50115 window.  Try BPF_LINK_CREATE first (auto-detach
+	 * on link fd close), fall back to RTM_NEWLINK + IFLA_XDP_FD in
+	 * SKB mode on older kernels (returns -EINVAL from BPF_LINK_CREATE)
+	 * or when another iter_one already won the lo slot. */
+	if (st.bound && st.prog_fd >= 0) {
+		st.xdp_link_fd = xdp_link_attach(st.prog_fd, lo_ifindex);
+		if (st.xdp_link_fd >= 0) {
+			__atomic_add_fetch(&shm->stats.afxdp_churn_link_attach_ok,
+					   1, __ATOMIC_RELAXED);
+		} else {
+			st.rtnl_fd = xdp_netlink_open();
+			if (st.rtnl_fd >= 0 &&
+			    xdp_netlink_set_fd(st.rtnl_fd, lo_ifindex,
+					       st.prog_fd) == 0) {
+				st.nl_attached_ifindex = lo_ifindex;
+				__atomic_add_fetch(&shm->stats.afxdp_churn_netlink_attach_ok,
+						   1, __ATOMIC_RELAXED);
+			} else {
+				__atomic_add_fetch(&shm->stats.afxdp_churn_attach_failed,
+						   1, __ATOMIC_RELAXED);
+			}
+		}
 	}
 
 	if (st.bound) {
