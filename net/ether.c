@@ -8,7 +8,7 @@ static const int ether_types[] = {
 
 	/*These are the defined Ethernet Protocol ID's. */
 	ETH_P_LOOP, ETH_P_PUP, ETH_P_PUPAT, ETH_P_IP,
-	ETH_P_X25, ETH_P_ARP, ETH_P_BPQ, ETH_P_IEEEPUP,
+	ETH_P_X25, ETH_P_ARP, ETH_P_IEEEPUP,
 	ETH_P_IEEEPUPAT, ETH_P_BATMAN, ETH_P_DEC, ETH_P_DNA_DL,
 	ETH_P_DNA_RC, ETH_P_DNA_RT, ETH_P_LAT, ETH_P_DIAG,
 	ETH_P_CUST, ETH_P_SCA, ETH_P_TEB, ETH_P_RARP,
@@ -26,7 +26,7 @@ static const int ether_types[] = {
 	ETH_P_802_3_MIN,
 
 	/* Non DIX types. Won't clash for 1500 types. */
-	ETH_P_802_3, ETH_P_AX25, ETH_P_ALL, ETH_P_802_2,
+	ETH_P_802_3, ETH_P_ALL, ETH_P_802_2,
 	ETH_P_SNAP, ETH_P_DDCMP, ETH_P_WAN_PPP, ETH_P_PPP_MP,
 	ETH_P_LOCALTALK, ETH_P_CAN, ETH_P_CANFD, ETH_P_PPPTALK,
 	ETH_P_TR_802_2, ETH_P_MOBITEX, ETH_P_CONTROL, ETH_P_IRDA,
