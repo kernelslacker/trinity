@@ -681,7 +681,8 @@ static void dump_stats_json(void)
 		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu},"
 		"\"tcp_ao_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"addkey_rejected\":%lu,\"keys_added\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"packets_sent\":%lu,\"key_rotations\":%lu,\"info_rejected\":%lu,\"key_dels\":%lu,\"delkey_rejected\":%lu,\"cycles\":%lu},"
 		"\"vrf_fib_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_ok\":%lu,\"addr_ok\":%lu,\"up_ok\":%lu,\"rule_added\":%lu,\"bound\":%lu,\"sendto_ok\":%lu,\"rule2_added\":%lu,\"rule_removed\":%lu,\"link_removed\":%lu},"
-		"\"netlink_monitor_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"mon_open\":%lu,\"mut_open\":%lu,\"mut_op_ok\":%lu,\"recv_drained\":%lu,\"group_drop\":%lu,\"group_add\":%lu}"
+		"\"netlink_monitor_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"mon_open\":%lu,\"mut_open\":%lu,\"mut_op_ok\":%lu,\"recv_drained\":%lu,\"group_drop\":%lu,\"group_add\":%lu},"
+		"\"tipc_link_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bearer_enable_ok\":%lu,\"sock_rdm_ok\":%lu,\"topsrv_connect_ok\":%lu,\"sub_ports_sent\":%lu,\"publish_ok\":%lu,\"bearer_disable_ok\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -909,7 +910,15 @@ static void dump_stats_json(void)
 		shm->stats.netlink_monitor_race_mut_op_ok,
 		shm->stats.netlink_monitor_race_recv_drained,
 		shm->stats.netlink_monitor_race_group_drop,
-		shm->stats.netlink_monitor_race_group_add);
+		shm->stats.netlink_monitor_race_group_add,
+		shm->stats.tipc_link_churn_runs,
+		shm->stats.tipc_link_churn_setup_failed,
+		shm->stats.tipc_link_churn_bearer_enable_ok,
+		shm->stats.tipc_link_churn_sock_rdm_ok,
+		shm->stats.tipc_link_churn_topsrv_connect_ok,
+		shm->stats.tipc_link_churn_sub_ports_sent,
+		shm->stats.tipc_link_churn_publish_ok,
+		shm->stats.tipc_link_churn_bearer_disable_ok);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -1103,6 +1112,8 @@ static const struct {
 	  offsetof(struct stats_s, genl_family_calls_ethtool) },
 	{ "genl_family_calls_mptcp_pm",
 	  offsetof(struct stats_s, genl_family_calls_mptcp_pm) },
+	{ "genl_family_calls_tipc",
+	  offsetof(struct stats_s, genl_family_calls_tipc) },
 	/* nfnetlink registry per-subsys dispatch counters; same diagnostic
 	 * value as the genl ones above but for NETLINK_NETFILTER subsystems.
 	 * Lets an operator see the live ctnetlink/nftables/ipset traffic
@@ -1601,12 +1612,14 @@ void dump_stats(void)
 	    shm->stats.genl_family_calls_nl80211   ||
 	    shm->stats.genl_family_calls_taskstats ||
 	    shm->stats.genl_family_calls_ethtool   ||
-	    shm->stats.genl_family_calls_mptcp_pm) {
+	    shm->stats.genl_family_calls_mptcp_pm  ||
+	    shm->stats.genl_family_calls_tipc) {
 		stat_row("genl_family_calls", "devlink",   shm->stats.genl_family_calls_devlink);
 		stat_row("genl_family_calls", "nl80211",   shm->stats.genl_family_calls_nl80211);
 		stat_row("genl_family_calls", "taskstats", shm->stats.genl_family_calls_taskstats);
 		stat_row("genl_family_calls", "ethtool",   shm->stats.genl_family_calls_ethtool);
 		stat_row("genl_family_calls", "mptcp_pm",  shm->stats.genl_family_calls_mptcp_pm);
+		stat_row("genl_family_calls", "tipc",      shm->stats.genl_family_calls_tipc);
 	}
 
 	if (shm->stats.nfnl_subsys_calls_ctnetlink     ||
@@ -1952,6 +1965,17 @@ void dump_stats(void)
 		stat_row("netlink_monitor_race", "recv_drained", shm->stats.netlink_monitor_race_recv_drained);
 		stat_row("netlink_monitor_race", "group_drop",   shm->stats.netlink_monitor_race_group_drop);
 		stat_row("netlink_monitor_race", "group_add",    shm->stats.netlink_monitor_race_group_add);
+	}
+
+	if (shm->stats.tipc_link_churn_runs) {
+		stat_row("tipc_link_churn", "runs",              shm->stats.tipc_link_churn_runs);
+		stat_row("tipc_link_churn", "setup_failed",      shm->stats.tipc_link_churn_setup_failed);
+		stat_row("tipc_link_churn", "bearer_enable_ok",  shm->stats.tipc_link_churn_bearer_enable_ok);
+		stat_row("tipc_link_churn", "sock_rdm_ok",       shm->stats.tipc_link_churn_sock_rdm_ok);
+		stat_row("tipc_link_churn", "topsrv_connect_ok", shm->stats.tipc_link_churn_topsrv_connect_ok);
+		stat_row("tipc_link_churn", "sub_ports_sent",    shm->stats.tipc_link_churn_sub_ports_sent);
+		stat_row("tipc_link_churn", "publish_ok",        shm->stats.tipc_link_churn_publish_ok);
+		stat_row("tipc_link_churn", "bearer_disable_ok", shm->stats.tipc_link_churn_bearer_disable_ok);
 	}
 
 	if (kcov_shm != NULL) {
