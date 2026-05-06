@@ -160,6 +160,7 @@ enum child_op_type {
 	CHILD_OP_VSOCK_TRANSPORT_CHURN,
 	CHILD_OP_BRIDGE_VLAN_CHURN,
 	CHILD_OP_IGMP_MLD_SOURCE_CHURN,
+	CHILD_OP_PSP_KEY_ROTATE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -494,3 +495,4 @@ bool iouring_send_zc_churn(struct childdata *child);
 bool vsock_transport_churn(struct childdata *child);
 bool bridge_vlan_churn(struct childdata *child);
 bool igmp_mld_source_churn(struct childdata *child);
+bool psp_key_rotate(struct childdata *child);
