@@ -774,6 +774,18 @@ struct stats_s {
 	unsigned long bridge_fdb_stp_fdb_del_ok;	/* RTM_DELNEIGH on a learned fdb entry accepted */
 	unsigned long bridge_fdb_stp_link_del_ok;	/* RTM_DELLINK on bridge accepted */
 
+	/* nftables_churn childop counters */
+	unsigned long nftables_churn_runs;		/* total nftables_churn invocations */
+	unsigned long nftables_churn_setup_failed;	/* unshare / nfnl_open / nf_tables latched */
+	unsigned long nftables_churn_table_create_ok;	/* NFT_MSG_NEWTABLE accepted */
+	unsigned long nftables_churn_set_create_ok;	/* NFT_MSG_NEWSET (anonymous) accepted */
+	unsigned long nftables_churn_chain_create_ok;	/* NFT_MSG_NEWCHAIN (base or aux) accepted */
+	unsigned long nftables_churn_rule_create_ok;	/* NFT_MSG_NEWRULE (append) accepted */
+	unsigned long nftables_churn_packet_sent_ok;	/* loopback UDP sendto returned >0 (drives input hook) */
+	unsigned long nftables_churn_rule_insert_ok;	/* NFT_MSG_NEWRULE at NFTA_RULE_POSITION accepted */
+	unsigned long nftables_churn_rule_del_ok;	/* NFT_MSG_DELRULE bulk-del accepted */
+	unsigned long nftables_churn_table_del_ok;	/* NFT_MSG_DELTABLE accepted */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
