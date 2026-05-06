@@ -682,7 +682,8 @@ static void dump_stats_json(void)
 		"\"tcp_ao_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"addkey_rejected\":%lu,\"keys_added\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"packets_sent\":%lu,\"key_rotations\":%lu,\"info_rejected\":%lu,\"key_dels\":%lu,\"delkey_rejected\":%lu,\"cycles\":%lu},"
 		"\"vrf_fib_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_ok\":%lu,\"addr_ok\":%lu,\"up_ok\":%lu,\"rule_added\":%lu,\"bound\":%lu,\"sendto_ok\":%lu,\"rule2_added\":%lu,\"rule_removed\":%lu,\"link_removed\":%lu},"
 		"\"netlink_monitor_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"mon_open\":%lu,\"mut_open\":%lu,\"mut_op_ok\":%lu,\"recv_drained\":%lu,\"group_drop\":%lu,\"group_add\":%lu},"
-		"\"tipc_link_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bearer_enable_ok\":%lu,\"sock_rdm_ok\":%lu,\"topsrv_connect_ok\":%lu,\"sub_ports_sent\":%lu,\"publish_ok\":%lu,\"bearer_disable_ok\":%lu}"
+		"\"tipc_link_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bearer_enable_ok\":%lu,\"sock_rdm_ok\":%lu,\"topsrv_connect_ok\":%lu,\"sub_ports_sent\":%lu,\"publish_ok\":%lu,\"bearer_disable_ok\":%lu},"
+		"\"tls_ulp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_install_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"splice_ok\":%lu,\"rekey_ok\":%lu,\"recv_ok\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -918,7 +919,15 @@ static void dump_stats_json(void)
 		shm->stats.tipc_link_churn_topsrv_connect_ok,
 		shm->stats.tipc_link_churn_sub_ports_sent,
 		shm->stats.tipc_link_churn_publish_ok,
-		shm->stats.tipc_link_churn_bearer_disable_ok);
+		shm->stats.tipc_link_churn_bearer_disable_ok,
+		shm->stats.tls_ulp_churn_runs,
+		shm->stats.tls_ulp_churn_setup_failed,
+		shm->stats.tls_ulp_churn_ulp_install_ok,
+		shm->stats.tls_ulp_churn_tx_install_ok,
+		shm->stats.tls_ulp_churn_send_ok,
+		shm->stats.tls_ulp_churn_splice_ok,
+		shm->stats.tls_ulp_churn_rekey_ok,
+		shm->stats.tls_ulp_churn_recv_ok);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -1976,6 +1985,17 @@ void dump_stats(void)
 		stat_row("tipc_link_churn", "sub_ports_sent",    shm->stats.tipc_link_churn_sub_ports_sent);
 		stat_row("tipc_link_churn", "publish_ok",        shm->stats.tipc_link_churn_publish_ok);
 		stat_row("tipc_link_churn", "bearer_disable_ok", shm->stats.tipc_link_churn_bearer_disable_ok);
+	}
+
+	if (shm->stats.tls_ulp_churn_runs) {
+		stat_row("tls_ulp_churn", "runs",            shm->stats.tls_ulp_churn_runs);
+		stat_row("tls_ulp_churn", "setup_failed",    shm->stats.tls_ulp_churn_setup_failed);
+		stat_row("tls_ulp_churn", "ulp_install_ok",  shm->stats.tls_ulp_churn_ulp_install_ok);
+		stat_row("tls_ulp_churn", "tx_install_ok",   shm->stats.tls_ulp_churn_tx_install_ok);
+		stat_row("tls_ulp_churn", "send_ok",         shm->stats.tls_ulp_churn_send_ok);
+		stat_row("tls_ulp_churn", "splice_ok",       shm->stats.tls_ulp_churn_splice_ok);
+		stat_row("tls_ulp_churn", "rekey_ok",        shm->stats.tls_ulp_churn_rekey_ok);
+		stat_row("tls_ulp_churn", "recv_ok",         shm->stats.tls_ulp_churn_recv_ok);
 	}
 
 	if (kcov_shm != NULL) {
