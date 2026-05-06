@@ -886,6 +886,16 @@ struct stats_s {
 	unsigned long af_unix_scm_rights_gc_recv_ok;		/* recvmsg drained queued SCM_RIGHTS msg (race vs unix_gc walk) */
 	unsigned long af_unix_scm_rights_gc_iouring_variant_ok;	/* io_uring fd inserted into the unix-scm reference graph */
 
+	/* netns_teardown_churn childop counters */
+	unsigned long netns_teardown_runs;			/* total netns_teardown_churn invocations */
+	unsigned long netns_teardown_setup_failed;		/* anchor open / fork / unsupported latch fired */
+	unsigned long netns_teardown_unshare_ok;		/* unshare(CLONE_NEWNET) entered fresh net ns */
+	unsigned long netns_teardown_socket_pair_ok;		/* in-ns listen+connect TCP pair established on lo */
+	unsigned long netns_teardown_fork_ok;			/* fork() spawned the in-ns child holding sockets */
+	unsigned long netns_teardown_setns_ok;			/* parent setns() back to anchor net ns */
+	unsigned long netns_teardown_kill_ok;			/* SIGKILL delivered to in-ns child (race vs cleanup_net) */
+	unsigned long netns_teardown_completed_ok;		/* full cycle reached waitpid + close anchor cleanly */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
