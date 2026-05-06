@@ -175,6 +175,13 @@ struct stats_s {
 	/* post-syscall oracle anomaly counts */
 	unsigned long fd_oracle_anomalies __attribute__((aligned(64)));
 	unsigned long mmap_oracle_anomalies;
+
+	/* post_mmap clamped new->map.size below the requested length because
+	 * the underlying file fd was shorter than mapping_sizes[i]+offset.
+	 * Without the clamp dirty_mapping (and later get_map() consumers) walk
+	 * pages past EOF and SIGBUS with BUS_ADRERR — a trinity self-bug that
+	 * burns the child before it can contribute to coverage. */
+	unsigned long mmap_size_clamped;
 	unsigned long cred_oracle_anomalies;
 	unsigned long sched_oracle_anomalies;
 	unsigned long uid_oracle_anomalies;
