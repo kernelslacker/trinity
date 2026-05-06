@@ -968,6 +968,18 @@ struct stats_s {
 	 * the heap actually exhausts. */
 	unsigned long obj_heap_allocs;
 	unsigned long obj_heap_frees;
+
+	/* Number of bandit windows where the CMP-novelty term was non-zero
+	 * after weighting -- i.e. the just-finished window saw at least
+	 * CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL fresh comparison constants
+	 * for the active arm and so contributed to the bandit's reward
+	 * beyond the PC-edge headline signal.  Diagnostic: an operator can
+	 * read this counter (and the per-arm cmp_share line in the strategy
+	 * stats) to tell whether the CMP feedback is meaningfully steering
+	 * arm selection or just tracking PC-edge growth.  Bumped from the
+	 * CAS-serialised maybe_rotate_strategy() path so a plain unsigned
+	 * long with __atomic_fetch_add suffices. */
+	unsigned long bandit_cmp_reward_added;
 };
 
 unsigned int stats_syscall_category(const char *name);
