@@ -249,7 +249,6 @@ struct syscallentry syscall_lsm_get_self_attr = {
 	.argname = { [0] = "attr", [1] = "ctx", [2] = "size", [3] = "flags" },
 	.arg_params[0].list = ARGLIST(lsm_attrs),
 	.arg_params[3].list = ARGLIST(lsm_get_flags),
-	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_lsm_get_self_attr,
 	.group = GROUP_PROCESS,
 #ifdef HAVE_SYS_LSM_GET_SELF_ATTR
