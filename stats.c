@@ -709,7 +709,8 @@ static void dump_stats_json(void)
 		"\"psp_key_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"netdev_create_ok\":%lu,\"family_resolve_ok\":%lu,\"dev_get_ok\":%lu,\"key_install_ok\":%lu,\"spi_set_ok\":%lu,\"send_ok\":%lu,\"rotate_ok\":%lu,\"spi_switch_ok\":%lu,\"shutdown_ok\":%lu},"
 		"\"afxdp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"umem_reg_ok\":%lu,\"rings_setup_ok\":%lu,\"prog_load_ok\":%lu,\"map_create_ok\":%lu,\"map_update_ok\":%lu,\"bind_ok\":%lu,\"link_attach_ok\":%lu,\"netlink_attach_ok\":%lu,\"attach_failed\":%lu,\"send_ok\":%lu,\"recv_ok\":%lu,\"map_delete_ok\":%lu,\"munmap_race_ok\":%lu},"
 		"\"kvm\":{\"vcpu_ioctls_dispatched\":%lu},"
-		"\"kvm_run_churn\":{\"invocations\":%lu,\"exit_io\":%lu,\"exit_mmio\":%lu,\"exit_hlt\":%lu,\"exit_shutdown\":%lu,\"exit_fail_entry\":%lu,\"exit_internal_error\":%lu,\"exit_intr\":%lu,\"exit_other\":%lu,\"errors\":%lu}"
+		"\"kvm_run_churn\":{\"invocations\":%lu,\"exit_io\":%lu,\"exit_mmio\":%lu,\"exit_hlt\":%lu,\"exit_shutdown\":%lu,\"exit_fail_entry\":%lu,\"exit_internal_error\":%lu,\"exit_intr\":%lu,\"exit_other\":%lu,\"errors\":%lu},"
+		"\"nl80211\":{\"runs\":%lu,\"setup_failed\":%lu,\"scan_triggered\":%lu,\"connect_attempted\":%lu,\"connect_succeeded\":%lu,\"disconnect_attempted\":%lu,\"regdom_changed\":%lu,\"iface_created\":%lu,\"iface_destroyed\":%lu,\"bursts_sent\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1156,7 +1157,17 @@ static void dump_stats_json(void)
 		shm->stats.kvm_run_exit_internal_error,
 		shm->stats.kvm_run_exit_intr,
 		shm->stats.kvm_run_exit_other,
-		shm->stats.kvm_run_errors);
+		shm->stats.kvm_run_errors,
+		shm->stats.nl80211_runs,
+		shm->stats.nl80211_setup_failed,
+		shm->stats.nl80211_scan_triggered,
+		shm->stats.nl80211_connect_attempted,
+		shm->stats.nl80211_connect_succeeded,
+		shm->stats.nl80211_disconnect_attempted,
+		shm->stats.nl80211_regdom_changed,
+		shm->stats.nl80211_iface_created,
+		shm->stats.nl80211_iface_destroyed,
+		shm->stats.nl80211_bursts_sent);
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -1429,6 +1440,14 @@ static const struct {
 	 * by a fd that doesn't satisfy kvm_vcpu_fd_test. */
 	{ "kvm_vcpu_ioctls_dispatched",
 	  offsetof(struct stats_s, kvm_vcpu_ioctls_dispatched) },
+	/* nl80211_churn invocation rate.  Periodic visibility lets an operator
+	 * confirm the cfg80211 state-machine fuzzer is making progress under the
+	 * mac80211_hwsim radio without waiting for the end-of-run summary; a
+	 * flat counter while other network childops advance is the signal that
+	 * the hwsim probe latched ns_unsupported_nl80211 and the op went
+	 * noop_forever for the rest of the run. */
+	{ "nl80211_runs",
+	  offsetof(struct stats_s, nl80211_runs) },
 };
 
 static unsigned long defense_counter_load(unsigned int i)
@@ -2568,6 +2587,19 @@ void dump_stats(void)
 		stat_row("kvm_run_churn", "exit_intr",          shm->stats.kvm_run_exit_intr);
 		stat_row("kvm_run_churn", "exit_other",         shm->stats.kvm_run_exit_other);
 		stat_row("kvm_run_churn", "errors",             shm->stats.kvm_run_errors);
+	}
+
+	if (shm->stats.nl80211_runs) {
+		stat_row("nl80211_churn", "runs",                  shm->stats.nl80211_runs);
+		stat_row("nl80211_churn", "setup_failed",          shm->stats.nl80211_setup_failed);
+		stat_row("nl80211_churn", "scan_triggered",        shm->stats.nl80211_scan_triggered);
+		stat_row("nl80211_churn", "connect_attempted",     shm->stats.nl80211_connect_attempted);
+		stat_row("nl80211_churn", "connect_succeeded",     shm->stats.nl80211_connect_succeeded);
+		stat_row("nl80211_churn", "disconnect_attempted",  shm->stats.nl80211_disconnect_attempted);
+		stat_row("nl80211_churn", "regdom_changed",        shm->stats.nl80211_regdom_changed);
+		stat_row("nl80211_churn", "iface_created",         shm->stats.nl80211_iface_created);
+		stat_row("nl80211_churn", "iface_destroyed",       shm->stats.nl80211_iface_destroyed);
+		stat_row("nl80211_churn", "bursts_sent",           shm->stats.nl80211_bursts_sent);
 	}
 
 	if (kcov_shm != NULL) {

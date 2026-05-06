@@ -1278,6 +1278,22 @@ struct stats_s {
 	unsigned long kvm_run_exit_intr;		/* exit_reason == KVM_EXIT_INTR (alarm-induced) */
 	unsigned long kvm_run_exit_other;		/* every other exit_reason value */
 	unsigned long kvm_run_errors;			/* KVM_RUN ioctl returned -1 */
+
+	/* nl80211_churn childop counters.  Drives cfg80211 state-machine
+	 * fuzz under a mac80211_hwsim test radio inside CLONE_NEWNET.
+	 * Race surface targeted by CVE-2022-41674 (cfg80211_update_notlisted_
+	 * nontrans OOB), CVE-2023-3090 (nl80211 wiphy index race), and
+	 * CVE-2025-21672 (cfg80211_scan_done UAF). */
+	unsigned long nl80211_runs;			/* total nl80211_churn invocations */
+	unsigned long nl80211_setup_failed;		/* unshare / netlink open / family resolve / hwsim absent */
+	unsigned long nl80211_scan_triggered;		/* NL80211_CMD_TRIGGER_SCAN accepted */
+	unsigned long nl80211_connect_attempted;	/* NL80211_CMD_CONNECT issued */
+	unsigned long nl80211_connect_succeeded;	/* NL80211_CMD_CONNECT accepted (no kernel rejection) */
+	unsigned long nl80211_disconnect_attempted;	/* NL80211_CMD_DISCONNECT issued */
+	unsigned long nl80211_regdom_changed;		/* NL80211_CMD_SET_REG accepted */
+	unsigned long nl80211_iface_created;		/* NL80211_CMD_NEW_INTERFACE accepted */
+	unsigned long nl80211_iface_destroyed;		/* NL80211_CMD_DEL_INTERFACE accepted */
+	unsigned long nl80211_bursts_sent;		/* loopback UDP sendto on wlan iface returned >0 */
 };
 
 unsigned int stats_syscall_category(const char *name);

@@ -896,7 +896,7 @@ static void check_fd_leaks(struct childdata *child)
  * Enable the dormant ops one at a time once each has been load-tested.
  * To enable an op: set its entry below to 0.
  */
-static const int dormant_op_disabled[70] = {
+static const int dormant_op_disabled[71] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 0, 1,	/* 10-14: fault_injector active; dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, recipe_runner */
@@ -911,6 +911,7 @@ static const int dormant_op_disabled[70] = {
 	1, 1, 1, 1, 1,	/* 55-59: dormant: mptcp_pm_churn, devlink_port_churn, handshake_req_abort, nf_conntrack_helper_churn, af_unix_scm_rights_gc_churn */
 	1, 1, 1, 1, 1,	/* 60-64: dormant: netns_teardown_churn, tcp_ulp_swap_churn, msg_zerocopy_churn, iouring_send_zc_churn, vsock_transport_churn */
 	1, 1, 1, 1, 1,	/* 65-69: bridge_vlan_churn, igmp_mld_source_churn, psp_key_rotate, afxdp_churn, kvm_run_churn */
+	1,		/* 70: dormant: nl80211_churn */
 };
 
 /*
@@ -985,6 +986,7 @@ static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_BPF_CGROUP_ATTACH,
 	CHILD_OP_SCTP_ASSOC_CHURN,
 	CHILD_OP_MPTCP_PM_CHURN,
+	CHILD_OP_NL80211_CHURN,
 };
 #define NR_ALT_OP_ROTATION	ARRAY_SIZE(alt_op_rotation)
 
@@ -1061,6 +1063,7 @@ static const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_PSP_KEY_ROTATE:	return "psp_key_rotate";
 	case CHILD_OP_AFXDP_CHURN:	return "afxdp_churn";
 	case CHILD_OP_KVM_RUN_CHURN:	return "kvm_run_churn";
+	case CHILD_OP_NL80211_CHURN:	return "nl80211_churn";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1116,7 +1119,7 @@ static enum child_op_type pick_op_type(void)
 	if (r < 95)
 		return CHILD_OP_SYSCALL;
 
-	pick = rand() % 70;
+	pick = rand() % 71;
 	if (dormant_op_disabled[pick])
 		return CHILD_OP_SYSCALL;
 
@@ -1190,6 +1193,7 @@ static enum child_op_type pick_op_type(void)
 	case 67: return CHILD_OP_PSP_KEY_ROTATE;
 	case 68: return CHILD_OP_AFXDP_CHURN;
 	case 69: return CHILD_OP_KVM_RUN_CHURN;
+	case 70: return CHILD_OP_NL80211_CHURN;
 	}
 	return CHILD_OP_SYSCALL;
 }
@@ -1358,6 +1362,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_PSP_KEY_ROTATE]	= psp_key_rotate,
 	[CHILD_OP_AFXDP_CHURN]		= afxdp_churn,
 	[CHILD_OP_KVM_RUN_CHURN]	= kvm_run_churn,
+	[CHILD_OP_NL80211_CHURN]	= nl80211_churn,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
