@@ -291,6 +291,28 @@ static void sanitise_futex(struct syscallrecord *rec)
 		rec->a1 = (unsigned long) &lock1->futex; /* uaddr */
 		/* ^^ no, we do not have 64-bit futexes :P */
 		rec->a5 = (unsigned long) &lock2->futex; /* uaddr2 */
+	} else if (RAND_BOOL()) {
+		/*
+		 * Pull from the shared cross-child futex word pool.  Same VA
+		 * across children, so two unrelated children passing these
+		 * addresses to FUTEX_WAIT / FUTEX_WAKE actually contend on
+		 * the same kernel futex hash bucket -- something the
+		 * per-child COW-private OBJ_FUTEX pool above can't reach.
+		 *
+		 * The shared obj heap is mprotect PROT_READ post-freeze, so
+		 * userspace cmpxchg on these words would SIGSEGV in the
+		 * child.  We jump to out_setclock here, bypassing the
+		 * userspace trylock branch (case 0 below) that would do
+		 * exactly that.  Kernel-side writes from FUTEX_LOCK_PI /
+		 * WAKE_OP simply return -EFAULT, which is acceptable fuzz.
+		 */
+		uint32_t *w1 = get_shared_futex_word();
+		uint32_t *w2 = get_shared_futex_word();
+		if (w1 == NULL || w2 == NULL)
+			goto out_setclock;
+		rec->a1 = (unsigned long) w1;
+		rec->a5 = (unsigned long) w2;
+		goto out_setclock;
 	} else {
 		rec->a1 = (unsigned long) get_futex_mmap();
 		rec->a5 = (unsigned long) get_futex_mmap();
