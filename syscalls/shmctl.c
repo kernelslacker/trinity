@@ -17,6 +17,7 @@ static unsigned long shmctl_ops[] = {
 static void sanitise_shmctl(struct syscallrecord *rec)
 {
 	void *buf = NULL;
+	unsigned long allocated_size = 0;
 
 	rec->post_state = 0;
 
@@ -27,14 +28,17 @@ static void sanitise_shmctl(struct syscallrecord *rec)
 		rec->a3 = 0;
 		return;
 	case IPC_INFO:
-		buf = zmalloc(sizeof(struct shminfo));
+		allocated_size = sizeof(struct shminfo);
+		buf = zmalloc(allocated_size);
 		break;
 	case SHM_INFO:
-		buf = zmalloc(sizeof(struct shm_info));
+		allocated_size = sizeof(struct shm_info);
+		buf = zmalloc(allocated_size);
 		break;
 	default:
 		/* IPC_STAT, IPC_SET, SHM_STAT */
-		buf = zmalloc(sizeof(struct shmid_ds));
+		allocated_size = sizeof(struct shmid_ds);
+		buf = zmalloc(allocated_size);
 		break;
 	}
 
@@ -42,6 +46,8 @@ static void sanitise_shmctl(struct syscallrecord *rec)
 	/* Snapshot for the post handler -- a3 may be scribbled by a sibling
 	 * syscall before post_shmctl() runs. */
 	rec->post_state = (unsigned long) buf;
+
+	avoid_shared_buffer(&rec->a3, allocated_size);
 }
 
 static void post_shmctl(struct syscallrecord *rec)
