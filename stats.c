@@ -705,7 +705,8 @@ static void dump_stats_json(void)
 		"\"bridge_vlan_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"vlan_add_ok\":%lu,\"vlan_del_ok\":%lu,\"tunnel_add_ok\":%lu,\"mst_set_ok\":%lu,\"raw_send_ok\":%lu},"
 		"\"igmp_mld_source_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"join_ok\":%lu,\"leave_ok\":%lu,\"block_ok\":%lu,\"msfilter_ok\":%lu,\"drop_ok\":%lu,\"send_ok\":%lu},"
 		"\"psp_key_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"netdev_create_ok\":%lu,\"family_resolve_ok\":%lu,\"dev_get_ok\":%lu,\"key_install_ok\":%lu,\"spi_set_ok\":%lu,\"send_ok\":%lu,\"rotate_ok\":%lu,\"spi_switch_ok\":%lu,\"shutdown_ok\":%lu},"
-		"\"afxdp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"umem_reg_ok\":%lu,\"rings_setup_ok\":%lu,\"prog_load_ok\":%lu,\"map_create_ok\":%lu,\"map_update_ok\":%lu,\"bind_ok\":%lu,\"link_attach_ok\":%lu,\"netlink_attach_ok\":%lu,\"attach_failed\":%lu,\"send_ok\":%lu,\"recv_ok\":%lu,\"map_delete_ok\":%lu,\"munmap_race_ok\":%lu}"
+		"\"afxdp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"umem_reg_ok\":%lu,\"rings_setup_ok\":%lu,\"prog_load_ok\":%lu,\"map_create_ok\":%lu,\"map_update_ok\":%lu,\"bind_ok\":%lu,\"link_attach_ok\":%lu,\"netlink_attach_ok\":%lu,\"attach_failed\":%lu,\"send_ok\":%lu,\"recv_ok\":%lu,\"map_delete_ok\":%lu,\"munmap_race_ok\":%lu},"
+		"\"kvm\":{\"vcpu_ioctls_dispatched\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1138,7 +1139,8 @@ static void dump_stats_json(void)
 		shm->stats.afxdp_churn_send_ok,
 		shm->stats.afxdp_churn_recv_ok,
 		shm->stats.afxdp_churn_map_delete_ok,
-		shm->stats.afxdp_churn_munmap_race_ok);
+		shm->stats.afxdp_churn_munmap_race_ok,
+		shm->stats.kvm_vcpu_ioctls_dispatched);
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -1396,6 +1398,14 @@ static const struct {
 	 * the regenerated epfds — i.e. the consumer wireup regressed. */
 	{ "epoll_lazy_armed",
 	  offsetof(struct stats_s, epoll_lazy_armed) },
+	/* Per-vCPU ioctl dispatches into kvm_vcpu_grp.  Rate-of-change at the
+	 * 10-minute window granularity confirms the OBJ_FD_KVM_VCPU fd_test
+	 * path is keeping up with vCPU pool churn -- a flat counter while the
+	 * vcpu pool is non-empty would mean the new ioctl group isn't winning
+	 * find_ioctl_group() arbitration, or the sanitiser is being bypassed
+	 * by a fd that doesn't satisfy kvm_vcpu_fd_test. */
+	{ "kvm_vcpu_ioctls_dispatched",
+	  offsetof(struct stats_s, kvm_vcpu_ioctls_dispatched) },
 };
 
 static unsigned long defense_counter_load(unsigned int i)
@@ -1906,6 +1916,9 @@ void dump_stats(void)
 
 	if (shm->stats.netlink_nested_attrs_emitted)
 		stat_row("netlink_generator", "nested_attrs_emitted", shm->stats.netlink_nested_attrs_emitted);
+
+	if (shm->stats.kvm_vcpu_ioctls_dispatched)
+		stat_row("kvm", "vcpu_ioctls_dispatched", shm->stats.kvm_vcpu_ioctls_dispatched);
 
 	if (shm->stats.perf_chains_runs) {
 		stat_row("perf_event_chains", "runs",           shm->stats.perf_chains_runs);
