@@ -63,6 +63,14 @@ static unsigned long accept4_flags[] = {
 	SOCK_NONBLOCK, SOCK_CLOEXEC,
 };
 
+static void sanitise_accept4(struct syscallrecord *rec)
+{
+	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
+
+	avoid_shared_buffer(&rec->a2, sizeof(struct sockaddr_storage));
+	avoid_shared_buffer(&rec->a3, sizeof(int));
+}
+
 struct syscallentry syscall_accept4 = {
 	.name = "accept4",
 	.num_args = 4,
@@ -73,6 +81,6 @@ struct syscallentry syscall_accept4 = {
 	.ret_objtype = OBJ_FD_SOCKET,
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
-	.sanitise = sanitise_accept,
+	.sanitise = sanitise_accept4,
 	.post = post_accept,
 };
