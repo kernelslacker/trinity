@@ -43,6 +43,8 @@ static void sanitise_cachestat(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) range;
 	rec->a3 = (unsigned long) cs;
 	rec->a4 = 0;	/* no flags defined yet, must be zero */
+
+	avoid_shared_buffer(&rec->a3, sizeof(struct cachestat));
 }
 
 struct syscallentry syscall_cachestat = {
