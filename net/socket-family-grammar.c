@@ -44,6 +44,9 @@
  */
 static const struct socket_family_grammar * const sfg_registry[] = {
 	&grammar_inet,
+#ifdef USE_IPV6
+	&grammar_inet6,
+#endif
 	NULL,
 };
 
