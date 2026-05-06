@@ -4,10 +4,14 @@
 #include <netinet/in.h>
 #include <linux/if_packet.h>
 #include <linux/if_ether.h>
+#include <fcntl.h>
+#include <net/if.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "net.h"
 #include "random.h"
+#include "socket-family-grammar.h"
 #include "compat.h"
 
 /* ETH_P_* values are big-endian Ethernet types; socket() for PF_PACKET
@@ -162,4 +166,169 @@ const struct netproto proto_packet = {
 	.gen_sockaddr = packet_gen_sockaddr,
 	.valid_triplets = packet_triplets,
 	.nr_triplets = ARRAY_SIZE(packet_triplets),
+};
+
+/*
+ * grammar_packet — coherent walk for AF_PACKET driven by the
+ * per-family grammar dispatcher (net/socket-family-grammar.c).
+ *
+ * walk_setsockopts fires the TPACKET ring-teardown sequence the
+ * design doc calls for: PACKET_VERSION cycles V1 -> V2 -> V3,
+ * PACKET_RX_RING installs a minimal-but-valid tpacket_req3,
+ * PACKET_FANOUT joins a HASH | DEFRAG group, PACKET_AUXDATA and
+ * PACKET_VNET_HDR enable, then PACKET_TX_RING installs again with
+ * the same minimal req3, and finally PACKET_VERSION rolls back to
+ * V1 to exercise the ring-teardown-on-version-change path.  Random
+ * per-syscall fuzzing rolls one of these per call — landing them
+ * in this exact order on the same fd is what catches the
+ * sequence-dependent packet_set_ring / packet_release_ring paths.
+ *
+ * pick_triplet uses SOCK_RAW or SOCK_DGRAM with one of ETH_P_ALL,
+ * ETH_P_IP, ETH_P_ARP, ETH_P_802_2 in network byte order.
+ * bind_or_connect lands sockaddr_ll on the loopback interface so
+ * the ring can attach without depending on a real netdev.
+ *
+ * can_run probes socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL)).
+ * EPERM on unprivileged hosts latches the family off cleanly via
+ * the framework's sfg_unsupported gate.
+ */
+
+#ifndef PACKET_FANOUT_HASH
+#define PACKET_FANOUT_HASH		0
+#endif
+#ifndef PACKET_FANOUT_FLAG_DEFRAG
+#define PACKET_FANOUT_FLAG_DEFRAG	0x8000
+#endif
+
+static const int packet_grammar_protos[] = {
+	ETH_P_ALL, ETH_P_IP, ETH_P_ARP, ETH_P_802_2,
+};
+
+static bool packet_grammar_can_run(void)
+{
+	int fd;
+
+	fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+	if (fd < 0)
+		return false;
+	close(fd);
+	return true;
+}
+
+static void packet_grammar_pick_triplet(struct socket_triplet *out)
+{
+	out->family = AF_PACKET;
+	out->type = RAND_BOOL() ? SOCK_RAW : SOCK_DGRAM;
+	out->protocol = htons(packet_grammar_protos[
+		rand() % ARRAY_SIZE(packet_grammar_protos)]);
+}
+
+static void packet_grammar_configure_pre_bind(int fd, struct socket_triplet *t)
+{
+	int flags;
+
+	(void) t;
+	flags = fcntl(fd, F_GETFL, 0);
+	if (flags >= 0)
+		(void) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+static int packet_grammar_bind(int fd, struct socket_triplet *t)
+{
+	struct sockaddr_ll ll;
+	unsigned int ifindex;
+
+	memset(&ll, 0, sizeof(ll));
+	ll.sll_family = AF_PACKET;
+	ll.sll_protocol = (unsigned short) t->protocol;
+	ifindex = if_nametoindex("lo");
+	ll.sll_ifindex = (int) ifindex;	/* 0 falls through to "any" */
+
+	if (bind(fd, (struct sockaddr *) &ll, sizeof(ll)) < 0)
+		return -1;
+	return 0;
+}
+
+static bool packet_grammar_needs_listen_accept(struct socket_triplet *t)
+{
+	(void) t;
+	return false;
+}
+
+static void packet_grammar_setup_req3(struct tpacket_req3 *req)
+{
+	memset(req, 0, sizeof(*req));
+	req->tp_block_size = 0x1000;
+	req->tp_block_nr = 4;
+	req->tp_frame_size = 0x800;
+	req->tp_frame_nr = 8;
+	req->tp_retire_blk_tov = 60;
+	req->tp_feature_req_word = 0;
+}
+
+static void packet_grammar_set_version(int fd, int version)
+{
+	(void) setsockopt(fd, SOL_PACKET, PACKET_VERSION,
+			  &version, sizeof(version));
+}
+
+static void packet_grammar_walk_setsockopts(int fd, struct socket_triplet *t,
+					    unsigned int n)
+{
+	struct tpacket_req3 req;
+	unsigned int step = 0;
+	int one = 1;
+	unsigned int fanout;
+
+	(void) t;
+
+	if (step++ < n)
+		packet_grammar_set_version(fd, TPACKET_V1);
+	if (step++ < n)
+		packet_grammar_set_version(fd, TPACKET_V2);
+	if (step++ < n)
+		packet_grammar_set_version(fd, TPACKET_V3);
+
+	if (step++ < n) {
+		packet_grammar_setup_req3(&req);
+		(void) setsockopt(fd, SOL_PACKET, PACKET_RX_RING,
+				  &req, sizeof(req));
+	}
+
+	if (step++ < n) {
+		fanout = (PACKET_FANOUT_HASH |
+			  (PACKET_FANOUT_FLAG_DEFRAG << 16));
+		(void) setsockopt(fd, SOL_PACKET, PACKET_FANOUT,
+				  &fanout, sizeof(fanout));
+	}
+
+	if (step++ < n)
+		(void) setsockopt(fd, SOL_PACKET, PACKET_AUXDATA,
+				  &one, sizeof(one));
+	if (step++ < n)
+		(void) setsockopt(fd, SOL_PACKET, PACKET_VNET_HDR,
+				  &one, sizeof(one));
+
+	if (step++ < n) {
+		packet_grammar_setup_req3(&req);
+		(void) setsockopt(fd, SOL_PACKET, PACKET_TX_RING,
+				  &req, sizeof(req));
+	}
+
+	/* Roll the version back to V1 — kernel must tear down the
+	 * V3-shaped rings before it can install a V1 view.  This is
+	 * the sequence the random per-syscall fuzzer never lands. */
+	if (step++ < n)
+		packet_grammar_set_version(fd, TPACKET_V1);
+}
+
+const struct socket_family_grammar grammar_packet = {
+	.family			= AF_PACKET,
+	.name			= "packet",
+	.can_run		= packet_grammar_can_run,
+	.pick_triplet		= packet_grammar_pick_triplet,
+	.configure_pre_bind	= packet_grammar_configure_pre_bind,
+	.bind_or_connect	= packet_grammar_bind,
+	.walk_setsockopts	= packet_grammar_walk_setsockopts,
+	.needs_listen_accept	= packet_grammar_needs_listen_accept,
 };
