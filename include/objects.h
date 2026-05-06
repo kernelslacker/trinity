@@ -160,6 +160,18 @@ struct landlockobj {
 	int fd;
 };
 
+struct kvmsysobj {
+	int fd;
+	int api_version;
+};
+
+struct kvmvmobj {
+	int fd;
+	int parent_sysfd;
+	int nr_vcpus;
+	int nr_devices;
+};
+
 struct aioobj {
 	unsigned long ctx;
 };
@@ -224,6 +236,10 @@ struct object {
 		struct io_uringobj io_uringobj;
 
 		struct landlockobj landlockobj;
+
+		struct kvmsysobj kvmsysobj;
+
+		struct kvmvmobj kvmvmobj;
 
 		struct aioobj aioobj;
 
