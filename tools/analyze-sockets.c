@@ -29,7 +29,6 @@ static const struct family families[] = {
 	{ "PF_UNIX",         PF_LOCAL },
 	{ "PF_FILE",         PF_LOCAL },
 	{ "PF_INET",         2 },
-	{ "PF_AX25",         3 },
 	{ "PF_IPX",          4 },
 	{ "PF_NETROM",       6 },
 	{ "PF_BRIDGE",       7 },

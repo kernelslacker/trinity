@@ -20,7 +20,6 @@ static const struct domain domains[] = {
 	{ "UNIX",	PF_LOCAL },
 	{ "FILE",	PF_LOCAL },
 	{ "INET",	PF_INET },
-	{ "AX25",	PF_AX25 },
 	{ "IPX",	PF_IPX },
 	{ "NETROM",	PF_NETROM },
 	{ "BRIDGE",	PF_BRIDGE },
