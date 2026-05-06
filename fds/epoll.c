@@ -65,25 +65,41 @@ static void arm_epoll(int epfd)
 }
 
 /*
- * Child-side lazy arm: first child to win the CAS on eo->armed performs
- * the EPOLL_CTL_ADDs; everyone else short-circuits.  Cross-process safe
- * because eo lives in shm (alloc_shared_obj in the open/init paths).
+ * Per-process bitmap of "have I already armed this epfd?".  Lives in
+ * BSS, so each forked child gets its own COW copy and the writes never
+ * touch the OBJ_GLOBAL shm region (which freeze_global_objects() has
+ * mprotected PROT_READ before fork).  Indexed by epollobj.pool_idx,
+ * which the parent stamps once at alloc time.
  *
- * A child that wedges inside arm_epoll's epoll_ctl is killable by the
- * watchdog and replaced by a fresh fork — the parent is never the one
- * holding the syscall, which is the entire point of deferring the arm.
+ * Per-process state is correct even though the same epfd may end up
+ * armed independently by multiple children: EPOLL_CTL_ADD on an fd
+ * already in the set returns -EEXIST, so the duplicate calls are
+ * harmless and bounded (max_children × MAX_EPOLL_FDS over a session).
+ */
+static bool child_armed_epfds[MAX_EPOLL_FDS];
+
+/*
+ * Child-side lazy arm.  A child that wedges inside arm_epoll's
+ * epoll_ctl is killable by the watchdog and replaced by a fresh fork —
+ * the parent is never the one holding the syscall, which is the entire
+ * point of deferring the arm.
  */
 void arm_epoll_if_needed(struct epollobj *eo)
 {
-	bool expected = false;
+	unsigned int idx = eo->pool_idx;
 
-	if (__atomic_load_n(&eo->armed, __ATOMIC_ACQUIRE))
+	/* pool_idx beyond the bitmap can occur if the post-freeze regen
+	 * path (open_epoll_fd via try_regenerate_fd) churns more epfds
+	 * across a session than the initial pool size.  Skip rather
+	 * than over-index — the regen'd epfd then plays as an empty
+	 * epoll set in this consumer, which is benign (epoll_wait
+	 * returns 0 / EAGAIN) and far better than a wild bitmap write. */
+	if (idx >= MAX_EPOLL_FDS)
 		return;
 
-	if (!__atomic_compare_exchange_n(&eo->armed, &expected, true,
-					 false, __ATOMIC_ACQ_REL,
-					 __ATOMIC_RELAXED))
+	if (child_armed_epfds[idx])
 		return;
+	child_armed_epfds[idx] = true;
 
 	arm_epoll(eo->fd);
 	__atomic_add_fetch(&shm->stats.epoll_lazy_armed, 1,
@@ -108,9 +124,19 @@ static void epoll_dump(struct object *obj, enum obj_scope scope)
 {
 	struct epollobj *eo = &obj->epollobj;
 
-	output(2, "epoll fd:%d used create1?:%d flags:%x armed:%d scope:%d\n",
-		eo->fd, eo->create1, eo->flags, eo->armed, scope);
+	output(2, "epoll fd:%d used create1?:%d flags:%x pool_idx:%u scope:%d\n",
+		eo->fd, eo->create1, eo->flags, eo->pool_idx, scope);
 }
+
+/*
+ * Monotonically incremented for each epollobj allocated by this
+ * provider (init pool + post-init regens).  Parent-only writer; lives
+ * in the parent's BSS so freeze_global_objects() doesn't cover it.
+ * Stamped into eo->pool_idx so children can use it as a stable bitmap
+ * key.  Values >= MAX_EPOLL_FDS are intentionally allowed and are
+ * filtered by arm_epoll_if_needed()'s safety belt.
+ */
+static unsigned int next_pool_idx;
 
 static int init_epoll_fds(void)
 {
@@ -144,7 +170,7 @@ static int init_epoll_fds(void)
 		obj->epollobj.fd = fd;
 		obj->epollobj.create1 = use_create1;
 		obj->epollobj.flags = use_create1 ? EPOLL_CLOEXEC : 0;
-		obj->epollobj.armed = false;
+		obj->epollobj.pool_idx = next_pool_idx++;
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_EPOLL);
 		i++;
 	}
@@ -173,7 +199,7 @@ static int open_epoll_fd(void)
 	obj->epollobj.fd = fd;
 	obj->epollobj.create1 = use_create1;
 	obj->epollobj.flags = use_create1 ? EPOLL_CLOEXEC : 0;
-	obj->epollobj.armed = false;
+	obj->epollobj.pool_idx = next_pool_idx++;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_EPOLL);
 	return true;
 }
