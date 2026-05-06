@@ -920,6 +920,16 @@ struct stats_s {
 	unsigned long msg_zerocopy_churn_send_after_munmap_caught;	/* send(MSG_ZEROCOPY) after munmap returned EFAULT (rollback path reached) */
 	unsigned long msg_zerocopy_churn_sndzc_disable_ok;	/* setsockopt(SO_ZEROCOPY, 0) accepted with notifs possibly pending */
 
+	/* iouring_send_zc_churn childop counters */
+	unsigned long iouring_send_zc_churn_runs;			/* total iouring_send_zc_churn invocations */
+	unsigned long iouring_send_zc_churn_setup_failed;		/* io_uring_setup / mmap / loopback / SO_ZEROCOPY / unsupported latch fired */
+	unsigned long iouring_send_zc_churn_register_bufs_ok;		/* io_uring_register(IORING_REGISTER_BUFFERS) accepted */
+	unsigned long iouring_send_zc_churn_send_zc_ok;			/* IORING_OP_SEND_ZC SQE submitted (io_uring_enter returned >=0) */
+	unsigned long iouring_send_zc_churn_sendmsg_zc_ok;		/* IORING_OP_SENDMSG_ZC SQE submitted (io_uring_enter returned >=0) */
+	unsigned long iouring_send_zc_churn_unregister_race_ok;		/* IORING_UNREGISTER_BUFFERS accepted mid-flight (rsrc-node race window opened) */
+	unsigned long iouring_send_zc_churn_update_race_ok;		/* IORING_REGISTER_BUFFERS_UPDATE replaced slot 0 mid-flight (imu_index race window opened) */
+	unsigned long iouring_send_zc_churn_cqe_drained;		/* CQE reaped from the completion ring (ZC notif or send completion) */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
