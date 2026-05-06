@@ -39,12 +39,14 @@ struct epollobj {
 	int fd;
 	bool create1;
 	int flags;
-	/* Set once arm_epoll_if_needed() has populated the epoll set with
-	 * EPOLL_CTL_ADD entries.  Owned by children: the OBJ_GLOBAL pool
-	 * publishes new epfds with armed=false and the first child to win
-	 * the CAS does the EPOLL_CTL_ADDs.  Kept in shm via alloc_shared_obj
-	 * so all children see the same flip. */
-	bool armed;
+	/* Stable identity assigned at allocation time, used as the index
+	 * into the per-process child_armed_epfds[] bitmap in fds/epoll.c
+	 * that tracks whether THIS process has already issued the
+	 * EPOLL_CTL_ADD population for this epfd.  Written exactly once
+	 * by the parent (under the alloc_shared_obj/add_object thaw
+	 * bracket) and read-only thereafter — children never store into
+	 * the frozen shm region. */
+	unsigned int pool_idx;
 };
 
 struct eventfdobj {
