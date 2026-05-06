@@ -1187,6 +1187,14 @@ struct stats_s {
 	 * pulls for the COVERAGE_FRONTIER arm, this ratio also approximates
 	 * the average accepted picks per window the arm ran. */
 	unsigned long frontier_strategy_picks;
+
+	/* Number of syscall picks the explorer pool forced to STRATEGY_RANDOM
+	 * regardless of the bandit's current arm.  Bumped from set_syscall_nr
+	 * when child->is_explorer is true.  Rate-of-change should track
+	 * explorer_children * (per-child syscall throughput) -- divergence
+	 * means the picker fast path is no longer respecting the explorer
+	 * partition. */
+	unsigned long strategy_explorer_picks;
 };
 
 unsigned int stats_syscall_category(const char *name);

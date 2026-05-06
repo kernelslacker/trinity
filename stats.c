@@ -1373,6 +1373,12 @@ static const struct {
 	 * the fleet's syscall throughput when the bandit picker selects it. */
 	{ "frontier_strategy_picks",
 	  offsetof(struct stats_s, frontier_strategy_picks) },
+	/* Picks the explorer pool forced to STRATEGY_RANDOM.  Rate-of-change
+	 * over the run divided by explorer_children gives the per-explorer
+	 * picker throughput; deviation from the bandit-pool throughput
+	 * highlights either picker overhead or per-strategy work skew. */
+	{ "strategy_explorer_picks",
+	  offsetof(struct stats_s, strategy_explorer_picks) },
 	/* Epoll lazy-arm wins: rate-of-change tracks fresh epfds reaching
 	 * children after the deferred-arm refactor.  A flat counter while
 	 * fd_regenerated keeps climbing means children aren't picking up
@@ -2019,6 +2025,9 @@ void dump_stats(void)
 	if (shm->stats.frontier_strategy_picks)
 		stat_row("strategy", "frontier_strategy_picks",
 			 shm->stats.frontier_strategy_picks);
+	if (shm->stats.strategy_explorer_picks)
+		stat_row("strategy", "strategy_explorer_picks",
+			 shm->stats.strategy_explorer_picks);
 
 	dump_strategy_stats();
 
