@@ -478,6 +478,14 @@ static void maybe_rotate_strategy(void)
 	 * counters but the bookkeeping is harmless and lets the
 	 * end-of-run summary print pulls under either picker. */
 	bandit_record_pull(prev, edges_in_window);
+
+	/* Tick the rotation counter so bandit_cmp_observe()'s per-syscall
+	 * bloom decay sees the new window index on subsequent calls.
+	 * Bumped after bandit_record_pull so a concurrent observer racing
+	 * the rotation either sees the old (still-valid) window or the
+	 * fresh one — both attribute correctly. */
+	__atomic_fetch_add(&shm->bandit_window_count, 1UL, __ATOMIC_RELAXED);
+
 	next = pick_next_strategy(prev);
 	if (next < 0 || next >= NR_STRATEGIES)
 		next = (prev + 1) % NR_STRATEGIES;

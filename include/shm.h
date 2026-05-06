@@ -263,6 +263,41 @@ struct shm_s {
 	unsigned long bandit_reward[NR_STRATEGIES];
 
 	/*
+	 * Monotonic rotation counter, bumped by the CAS-winning child in
+	 * maybe_rotate_strategy() once per completed window.  Used as the
+	 * generation tag for the cmp_novelty[] bloom decay below: a bloom
+	 * entry with window_tag more than CMP_NOVELTY_DECAY_WINDOWS behind
+	 * this counter is considered stale and gets cleared on next access.
+	 * Stays plain unsigned long with explicit __atomic_* accessors to
+	 * match the existing bandit_pulls[]/bandit_reward[] convention.
+	 */
+	unsigned long bandit_window_count;
+
+	/*
+	 * Per-syscall comparison-constant novelty bloom — see include/strategy.h
+	 * (bandit_cmp_observe).  Each entry holds a 1024-bit bloom filter over
+	 * the comparison constants observed for that syscall in the recent
+	 * past, plus a generation tag (the rotation count at which the bloom
+	 * was last cleared).  When a child observing a fresh CMP record finds
+	 * the entry's tag more than CMP_NOVELTY_DECAY_WINDOWS rotations old it
+	 * lazily zeroes the bloom and republishes the tag, so a constant that
+	 * stops appearing for K windows is forgotten and counts as novel
+	 * again.  Sized 132 bytes per syscall * MAX_NR_SYSCALL ≈ 132 KiB inside
+	 * shm — well below other arrays already living here (per_syscall_*).
+	 *
+	 * bandit_cmp_new_constants[]: per-arm cumulative count of CMP records
+	 *   that missed the bloom at observation time.  Bumped by every child
+	 *   inside bandit_cmp_observe() (atomic add, multiple producers).  The
+	 *   rotation hook turns the per-window delta into a secondary reward
+	 *   term inside bandit_record_pull().
+	 */
+	struct cmp_novelty_entry {
+		_Atomic uint32_t window_tag;
+		_Atomic uint8_t bloom[128];
+	} cmp_novelty[MAX_NR_SYSCALL];
+	unsigned long bandit_cmp_new_constants[NR_STRATEGIES];
+
+	/*
 	 * EFAULT-probe cache for ioctl arg classification.  Open-addressing
 	 * hashmap keyed on (group_idx, request); see ioctls/efault_cache.c
 	 * for the slot encoding and the probing protocol.  Lives in shm so

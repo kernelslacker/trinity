@@ -37,6 +37,17 @@ enum strategy_t {
 #define STRATEGY_WINDOW (1UL << 20)	/* 1,048,576 ops */
 
 /*
+ * How many rotation windows a CMP constant remains "seen" inside the
+ * per-syscall novelty bloom before it decays back to "novel".  At ~100
+ * sec/window this is ~13 minutes of fleet wall time, long enough that a
+ * constant the kernel checks every few syscalls stays remembered, short
+ * enough that a syscall whose validation surface drifts (e.g. after a
+ * cgroup mount, a netns unshare, a new fd type entering the pool) gets
+ * fresh novelty credit when its comparison constants change.
+ */
+#define CMP_NOVELTY_DECAY_WINDOWS 8
+
+/*
  * Arm-selection policy used at each rotation boundary to decide which
  * strategy runs next.  Selected once at parse_args() time via the
  * --strategy flag, propagated into shm->picker_mode at init_shm time
@@ -75,6 +86,23 @@ void bandit_record_pull(int arm, unsigned long reward);
  * wins immediately during cold-start).
  */
 int pick_next_strategy(int prev);
+
+/*
+ * Walk a per-child KCOV_TRACE_CMP buffer and feed each interesting
+ * comparison constant through the per-syscall novelty bloom in
+ * shm->cmp_novelty[].  Constants that miss the bloom (and so are
+ * "novel" within the last CMP_NOVELTY_DECAY_WINDOWS rotations) bump
+ * shm->bandit_cmp_new_constants[strat] for the active strategy, where
+ * strat is the value of shm->current_strategy at the time of the
+ * call.  Called by every child from kcov_collect_cmp() right after
+ * cmp_hints_collect; the bloom is a separate data structure from the
+ * cmp_hints pool so the (deduplicated) hint pool entries do not skew
+ * the novelty signal.
+ *
+ * Window-rotation count is read from shm->bandit_window_count, which
+ * the rotation hook bumps once per completed window.
+ */
+void bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr);
 
 /*
  * End-of-run summary: per-arm pulls + cumulative reward + mean

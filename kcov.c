@@ -31,6 +31,7 @@
 #include "cmp_hints.h"
 #include "edgepair.h"
 #include "kcov.h"
+#include "strategy.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -541,6 +542,7 @@ void kcov_collect_cmp(struct kcov_child *kc, unsigned int nr)
 		return;
 
 	cmp_hints_collect(kc->cmp_trace_buf, nr);
+	bandit_cmp_observe(kc->cmp_trace_buf, nr);
 
 	__atomic_fetch_add(&kcov_shm->cmp_records_collected, count,
 		__ATOMIC_RELAXED);
