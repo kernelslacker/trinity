@@ -1137,6 +1137,17 @@ static void dump_stats_json(void)
 		shm->stats.afxdp_churn_map_delete_ok,
 		shm->stats.afxdp_churn_munmap_race_ok);
 
+	/*
+	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
+	 * (taint_transitions[], pool_race_aborted[]) are intentionally not
+	 * emitted here.  The JSON schema in this function is a flat per-key
+	 * mapping; expanding either array as a nested object or array would
+	 * change the schema shape and inflate the JSON for consumers that
+	 * only care about scalar counters.  These arrays remain visible in
+	 * the human-readable dump_stats() output, which iterates them as
+	 * one row per non-zero entry under the matching group name.
+	 */
+
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
 	json_emit_cmp_hints_section();
