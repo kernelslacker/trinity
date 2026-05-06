@@ -151,6 +151,7 @@ enum child_op_type {
 	CHILD_OP_MPTCP_PM_CHURN,
 	CHILD_OP_DEVLINK_PORT_CHURN,
 	CHILD_OP_HANDSHAKE_REQ_ABORT,
+	CHILD_OP_NF_CONNTRACK_HELPER,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -476,3 +477,4 @@ bool sctp_assoc_churn(struct childdata *child);
 bool mptcp_pm_churn(struct childdata *child);
 bool devlink_port_churn(struct childdata *child);
 bool handshake_req_abort(struct childdata *child);
+bool nf_conntrack_helper_churn(struct childdata *child);
