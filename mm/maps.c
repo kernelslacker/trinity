@@ -396,13 +396,26 @@ void dirty_mapping(struct map *map)
  */
 void dirty_random_mapping(void)
 {
-	struct map *map;
+	struct map_handle h;
 
-	map = get_map();
-	if (map == NULL)
+	if (!get_map_handle(&h))
 		return;
 
-	dirty_mapping(map);
+	/*
+	 * Re-validate right before the deref-heavy dirty_mapping path
+	 * (it reads map->prot to dispatch and then map->ptr / map->size
+	 * inside random_map_writefn / random_map_readfn).  Even the few-
+	 * cycle window between get_map_handle()'s internal validation
+	 * and the call below is a window the parent's __destroy_object
+	 * can race in; this re-narrow drops the slot rather than touching
+	 * a recycled obj when it does.  validate_map_handle() bumps
+	 * shm->stats.maps_uaf_caught on a detected mismatch so periodic
+	 * defense-counter dumps surface live race rates.
+	 */
+	if (!validate_map_handle(&h))
+		return;
+
+	dirty_mapping(h.map);
 }
 
 /*
