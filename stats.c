@@ -689,7 +689,8 @@ static void dump_stats_json(void)
 		"\"nftables_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"table_create_ok\":%lu,\"set_create_ok\":%lu,\"chain_create_ok\":%lu,\"rule_create_ok\":%lu,\"packet_sent_ok\":%lu,\"rule_insert_ok\":%lu,\"rule_del_ok\":%lu,\"table_del_ok\":%lu},"
 		"\"tc_qdisc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"qdisc_create_ok\":%lu,\"tclass_create_ok\":%lu,\"tfilter_create_ok\":%lu,\"packet_sent_ok\":%lu,\"qdisc_replace_ok\":%lu,\"tfilter_del_ok\":%lu,\"qdisc_del_ok\":%lu,\"link_del_ok\":%lu},"
 		"\"xfrm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_updated\":%lu,\"sa_deleted\":%lu,\"pol_added\":%lu,\"pol_deleted\":%lu,\"esp_sent\":%lu,\"pfkey_send_ok\":%lu},"
-		"\"bpf_cgroup_attach\":{\"runs\":%lu,\"setup_failed\":%lu,\"prog_loaded\":%lu,\"attached\":%lu,\"attach_rejected\":%lu,\"packets_sent\":%lu,\"detached\":%lu,\"post_detach_sent\":%lu}"
+		"\"bpf_cgroup_attach\":{\"runs\":%lu,\"setup_failed\":%lu,\"prog_loaded\":%lu,\"attached\":%lu,\"attach_rejected\":%lu,\"packets_sent\":%lu,\"detached\":%lu,\"post_detach_sent\":%lu},"
+		"\"sctp_assoc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bindx_added\":%lu,\"bindx_removed\":%lu,\"bindx_rejected\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"accepted\":%lu,\"packets_sent\":%lu,\"peeled_off\":%lu,\"peeloff_rejected\":%lu,\"cycles\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -986,7 +987,19 @@ static void dump_stats_json(void)
 		shm->stats.bpf_cgroup_attach_attach_rejected,
 		shm->stats.bpf_cgroup_attach_packets_sent,
 		shm->stats.bpf_cgroup_attach_detached,
-		shm->stats.bpf_cgroup_attach_post_detach_sent);
+		shm->stats.bpf_cgroup_attach_post_detach_sent,
+		shm->stats.sctp_assoc_churn_runs,
+		shm->stats.sctp_assoc_churn_setup_failed,
+		shm->stats.sctp_assoc_churn_bindx_added,
+		shm->stats.sctp_assoc_churn_bindx_removed,
+		shm->stats.sctp_assoc_churn_bindx_rejected,
+		shm->stats.sctp_assoc_churn_connect_failed,
+		shm->stats.sctp_assoc_churn_connected,
+		shm->stats.sctp_assoc_churn_accepted,
+		shm->stats.sctp_assoc_churn_packets_sent,
+		shm->stats.sctp_assoc_churn_peeled_off,
+		shm->stats.sctp_assoc_churn_peeloff_rejected,
+		shm->stats.sctp_assoc_churn_cycles);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();

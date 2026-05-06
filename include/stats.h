@@ -827,6 +827,20 @@ struct stats_s {
 	unsigned long bpf_cgroup_attach_detached;		/* PROG_DETACH accepted (mid-flow) */
 	unsigned long bpf_cgroup_attach_post_detach_sent;	/* sendto/connect after detach returned >=0 */
 
+	/* sctp_assoc_churn childop counters */
+	unsigned long sctp_assoc_churn_runs;			/* total sctp_assoc_churn invocations */
+	unsigned long sctp_assoc_churn_setup_failed;		/* socket/bind/listen setup failed (incl. !CONFIG_IP_SCTP) */
+	unsigned long sctp_assoc_churn_bindx_added;		/* SCTP_SOCKOPT_BINDX_ADD accepted (incl. ASCONF emit) */
+	unsigned long sctp_assoc_churn_bindx_removed;		/* SCTP_SOCKOPT_BINDX_REM accepted (incl. ASCONF emit) */
+	unsigned long sctp_assoc_churn_bindx_rejected;		/* bindx ADD/REM rejected (EOPNOTSUPP/EADDRINUSE/EINVAL) */
+	unsigned long sctp_assoc_churn_connect_failed;		/* SCTP_SOCKOPT_CONNECTX failed (non-EINPROGRESS) */
+	unsigned long sctp_assoc_churn_connected;		/* connectx accepted/in-progress */
+	unsigned long sctp_assoc_churn_accepted;		/* server-side accept() returned an assoc fd */
+	unsigned long sctp_assoc_churn_packets_sent;		/* send() through ASCONF / data path returned >0 */
+	unsigned long sctp_assoc_churn_peeled_off;		/* SCTP_SOCKOPT_PEELOFF accepted (assoc detach race) */
+	unsigned long sctp_assoc_churn_peeloff_rejected;	/* peeloff rejected (EINVAL/ENOENT) */
+	unsigned long sctp_assoc_churn_cycles;			/* full cycles reaching teardown */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
