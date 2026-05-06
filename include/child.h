@@ -138,6 +138,7 @@ enum child_op_type {
 	CHILD_OP_IOURING_NET_MULTISHOT,
 	CHILD_OP_TCP_AO_ROTATE,
 	CHILD_OP_VRF_FIB_CHURN,
+	CHILD_OP_NETLINK_MONITOR_RACE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -450,3 +451,4 @@ bool packet_fanout_thrash(struct childdata *child);
 bool iouring_net_multishot(struct childdata *child);
 bool tcp_ao_rotate(struct childdata *child);
 bool vrf_fib_churn(struct childdata *child);
+bool netlink_monitor_race(struct childdata *child);
