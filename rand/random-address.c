@@ -18,6 +18,7 @@
 
 void * get_writable_address(unsigned long size)
 {
+	struct map_handle h;
 	struct map *map;
 	struct object *obj;
 	void *addr = NULL;
@@ -28,9 +29,9 @@ retry:	tries++;
 		return NULL;
 
 	if (RAND_BOOL()) {
-		map = get_map();
-		if (map == NULL)
+		if (!get_map_handle(&h))
 			goto retry;
+		map = h.map;
 		/*
 		 * Sanity-guard the map pointer before deref.  Heap pointers
 		 * land at >= 0x10000 and below the user/kernel VA boundary;
@@ -42,7 +43,8 @@ retry:	tries++;
 		if ((uintptr_t)map < 0x10000UL ||
 		    (uintptr_t)map >= 0x800000000000UL) {
 			outputerr("get_writable_address: bogus map pointer %p "
-				  "from get_map() — pool corruption?\n", map);
+				  "from get_map_handle() — pool corruption?\n",
+				  map);
 			goto retry;
 		}
 		/*
@@ -71,6 +73,22 @@ retry:	tries++;
 		if (map->prot == 0)
 			goto retry;
 		if (map->size < size)
+			goto retry;
+
+		/*
+		 * Re-validate the slot just before we copy out map->ptr and
+		 * fall through to the mprotect() below.  Between
+		 * get_map_handle() and here we have read map->prot and
+		 * map->size; a concurrent __destroy_object() would have
+		 * routed the obj through free_shared_obj()'s freelist where
+		 * a sibling alloc_shared_obj() can recycle it underneath
+		 * us, leaving a believable map->prot/size from the recycled
+		 * use but a map->ptr that no longer maps anything.  The
+		 * subsequent mprotect would then either ENOENT or land on
+		 * a different mapping entirely.  Drop the slot and retry
+		 * rather than mprotect()ing a stale ptr.
+		 */
+		if (!validate_map_handle(&h))
 			goto retry;
 
 		addr = map->ptr;
