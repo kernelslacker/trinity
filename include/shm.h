@@ -319,6 +319,29 @@ struct shm_s {
 	unsigned long bandit_cmp_share_sum_x1000[NR_STRATEGIES];
 
 	/*
+	 * Per-syscall frontier-edge ring -- see include/strategy.h.
+	 *
+	 * frontier_history[nr][slot] counts NEW edges syscall nr produced
+	 * during the rotation window mapped to slot.  Slot is an index in
+	 * [0, FRONTIER_DECAY_WINDOWS); the slot currently being filled is
+	 * (frontier_slot & mask), advanced once per rotation by the
+	 * CAS-winning child via frontier_window_advance().  Sum across all
+	 * slots is the syscall's "recent frontier-edge count" -- the weight
+	 * the coverage-frontier picker biases its uniform pick toward.
+	 *
+	 * Bumped on the kcov_collect new-edge branch by every child
+	 * (multi-producer, atomic add).  Slot rotation zeroes the new slot
+	 * before publishing the new index, so a producer racing the rotation
+	 * either bumps the previous (still-valid) slot or the freshly cleared
+	 * new slot -- both attribute correctly within the K-window decay.
+	 *
+	 * Sized MAX_NR_SYSCALL * FRONTIER_DECAY_WINDOWS * 4 = 32 KiB, a
+	 * rounding error against the cmp_novelty[] block above.
+	 */
+	_Atomic uint32_t frontier_history[MAX_NR_SYSCALL][FRONTIER_DECAY_WINDOWS];
+	_Atomic uint32_t frontier_slot;
+
+	/*
 	 * EFAULT-probe cache for ioctl arg classification.  Open-addressing
 	 * hashmap keyed on (group_idx, request); see ioctls/efault_cache.c
 	 * for the slot encoding and the probing protocol.  Lives in shm so

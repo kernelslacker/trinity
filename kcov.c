@@ -515,6 +515,11 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 				1, __ATOMIC_RELAXED);
 			__atomic_store_n(&kcov_shm->last_edge_at[nr],
 				call_nr, __ATOMIC_RELAXED);
+			/* Bump the per-syscall frontier-edge ring so the
+			 * coverage-frontier picker (when active) can bias
+			 * selection toward syscalls currently producing fresh
+			 * coverage. */
+			frontier_record_new_edge(nr);
 		}
 	}
 

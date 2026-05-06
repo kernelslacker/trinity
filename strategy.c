@@ -282,6 +282,72 @@ void bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr)
 }
 
 /*
+ * Per-syscall frontier-edge ring accessors.
+ *
+ * The ring is a fixed-width window of FRONTIER_DECAY_WINDOWS slots per
+ * syscall; the slot currently being filled is (frontier_slot &
+ * (FRONTIER_DECAY_WINDOWS - 1)).  Producers (kcov_collect on the
+ * new-edge branch) atomic-add into the current slot.  The rotation hook
+ * advances the slot index and zeroes the slot it just moved into, so
+ * sums across the ring give the trailing K-window frontier count for
+ * each syscall -- effectively a sliding window with discrete decay.
+ *
+ * FRONTIER_DECAY_WINDOWS is currently 8 (see strategy.h); the AND-mask
+ * approach assumes it stays a power of two -- enforced by the
+ * static_assert below so a future change to a non-pot value fails at
+ * compile time rather than silently producing wrong slot indices.
+ */
+_Static_assert((FRONTIER_DECAY_WINDOWS &
+		(FRONTIER_DECAY_WINDOWS - 1)) == 0,
+	       "FRONTIER_DECAY_WINDOWS must be a power of two");
+
+void frontier_record_new_edge(unsigned int nr)
+{
+	uint32_t slot;
+
+	if (nr >= MAX_NR_SYSCALL)
+		return;
+
+	slot = __atomic_load_n(&shm->frontier_slot, __ATOMIC_RELAXED) &
+	       (FRONTIER_DECAY_WINDOWS - 1);
+	__atomic_fetch_add(&shm->frontier_history[nr][slot], 1U,
+			   __ATOMIC_RELAXED);
+}
+
+unsigned long frontier_recent_count(unsigned int nr)
+{
+	unsigned long sum = 0;
+	unsigned int s;
+
+	if (nr >= MAX_NR_SYSCALL)
+		return 0;
+
+	for (s = 0; s < FRONTIER_DECAY_WINDOWS; s++)
+		sum += __atomic_load_n(&shm->frontier_history[nr][s],
+				       __ATOMIC_RELAXED);
+	return sum;
+}
+
+void frontier_window_advance(void)
+{
+	uint32_t next;
+	unsigned int nr;
+
+	/* Bump the slot index FIRST so producers racing the rotation start
+	 * targeting the new slot before we clear it.  We then zero the new
+	 * slot to drop the K-windows-old contents.  A producer that bumps
+	 * the slot between the store and the clear loses its add (rare,
+	 * benign for a noisy weight signal); a producer bumping after the
+	 * clear lands on the freshly zeroed slot as intended. */
+	next = __atomic_add_fetch(&shm->frontier_slot, 1U, __ATOMIC_RELAXED);
+	next &= (FRONTIER_DECAY_WINDOWS - 1);
+
+	for (nr = 0; nr < MAX_NR_SYSCALL; nr++)
+		__atomic_store_n(&shm->frontier_history[nr][next], 0U,
+				 __ATOMIC_RELAXED);
+}
+
+/*
  * Compute the UCB1 score for one arm.  Standard formulation:
  *
  *     score_i = mean_reward_i / norm + c * sqrt(ln(N) / n_i)
