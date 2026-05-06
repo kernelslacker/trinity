@@ -951,6 +951,16 @@ struct stats_s {
 	unsigned long bridge_vlan_churn_mst_set_ok;		/* RTM_SETLINK IFLA_PROTINFO IFLA_BRPORT_MST_ENTRY set accepted */
 	unsigned long bridge_vlan_churn_raw_send_ok;		/* AF_PACKET sendto with 802.1Q tag returned >0 */
 
+	/* igmp_mld_source_churn childop counters */
+	unsigned long igmp_mld_source_churn_runs;		/* total igmp_mld_source_churn invocations */
+	unsigned long igmp_mld_source_churn_setup_failed;	/* socket / bind / probe latched */
+	unsigned long igmp_mld_source_churn_join_ok;		/* MCAST_JOIN_SOURCE_GROUP accepted */
+	unsigned long igmp_mld_source_churn_leave_ok;		/* MCAST_LEAVE_SOURCE_GROUP accepted mid-stream */
+	unsigned long igmp_mld_source_churn_block_ok;		/* MCAST_BLOCK_SOURCE accepted (INCLUDE->EXCLUDE flip) */
+	unsigned long igmp_mld_source_churn_msfilter_ok;	/* MCAST_MSFILTER bulk replace accepted */
+	unsigned long igmp_mld_source_churn_drop_ok;		/* IP_DROP_MEMBERSHIP / IPV6_DROP_MEMBERSHIP accepted */
+	unsigned long igmp_mld_source_churn_send_ok;		/* sender datagram returned >0 */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
