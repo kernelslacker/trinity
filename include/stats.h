@@ -1095,6 +1095,18 @@ struct stats_s {
 	 * crashed children. */
 	unsigned long global_obj_uaf_caught;
 
+	/* Sibling of global_obj_uaf_caught for the maps-pool layer.  Bumped
+	 * by get_map_handle() when its 1000-iter retry budget is exhausted
+	 * by repeated concurrent destroys, and by validate_map_handle()
+	 * when a previously-handed-out map handle fails its just-before-
+	 * deref re-validation.  global_obj_uaf_caught counts every
+	 * object-pool-layer catch (across all OBJ_GLOBAL types); this
+	 * counter narrows visibility to the maps consumer chain so an
+	 * operator can tell whether a non-zero defense-counter delta was
+	 * driven by maps churn vs the other versioned consumers
+	 * (sockets, fd providers, keyctl, futex). */
+	unsigned long maps_uaf_caught;
+
 	/* Shared obj-heap pressure counters: cumulative successful allocs
 	 * and frees through alloc_shared_obj() / free_shared_obj().  Read
 	 * by dump_stats() under -v to print a one-line utilisation summary

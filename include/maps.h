@@ -38,6 +38,36 @@ void setup_initial_mappings(void);
 struct map * get_map(void);
 struct map * get_map_with_prot(int required_prot);
 
+/*
+ * Slot-version handle for the lockless OBJ_GLOBAL maps-pool reader.
+ *
+ * get_map() narrows the destroy-vs-deref window to the few cycles
+ * between its internal validate_object_handle() call and the caller's
+ * first deref.  Consumers that hold the returned struct map * across
+ * a longer window — multi-frame arg-gen paths, periodic dirty loops
+ * that walk every page, iovec builders that draw many maps before
+ * any syscall is issued — can reopen that window for the parent's
+ * __destroy_object() to race in.  The handle bundles the picked
+ * (map, owning obj, slot idx, slot version) so the consumer can
+ * re-validate right before the deref via validate_map_handle() and
+ * drop the slot rather than dereferencing a recycled obj.
+ *
+ * The map pointer is &owner->map; the owner is recovered via
+ * container_of() inside validate_map_handle() and re-checked against
+ * head->array[slot_idx] / head->slot_versions[slot_idx] using the
+ * existing object-pool slot-version primitive.
+ */
+struct map_handle {
+	struct map *map;
+	enum objecttype type;
+	enum obj_scope scope;
+	unsigned int slot_idx;
+	unsigned int slot_version;
+};
+
+bool get_map_handle(struct map_handle *h);
+bool validate_map_handle(struct map_handle *h);
+
 struct map * common_set_mmap_ptr_len(void);
 
 void dirty_mapping(struct map *map);

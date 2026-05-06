@@ -14,22 +14,36 @@
 #include "utils.h"
 
 /*
- * Return a pointer a previous mmap() that we did, either during startup,
- * or from a fuzz result.
+ * Populate a slot-version handle for a randomly-picked entry in the
+ * OBJ_MMAP_ANON / OBJ_MMAP_FILE / OBJ_MMAP_TESTFILE pools.  Same
+ * pick-and-validate flow as get_map() (heap-range guard, size guard,
+ * just-before-return validate_object_handle()) but additionally
+ * captures (slot_idx, slot_version) into *h so the caller can
+ * re-validate the slot via validate_map_handle() right before its
+ * own deref of map->ptr / map->size / map->prot.  Returns true on
+ * success with h->map pointing at &obj->map; false (and h->map = NULL)
+ * if the 1000-iter retry budget is exhausted by repeated concurrent
+ * destroys, in which case shm->stats.maps_uaf_caught is bumped.
+ *
+ * For OBJ_LOCAL pools (no lockless reader, no slot_versions array)
+ * the validate path degenerates to "always true" inside
+ * validate_object_handle() so the handle still works as a thin
+ * wrapper around get_map() — the consumer doesn't need to special-
+ * case scope.
  */
-struct map * get_map(void)
+bool get_map_handle(struct map_handle *h)
 {
-	struct object *obj = NULL;
 	struct childdata *child = this_child();
 	enum obj_scope scope;
 	enum objecttype type = 0;
 
-	/*
-	 * Some of the fd providers need weird mappings on startup.
-	 * (fd-perf for eg), these are called from the main process,
-	 * and hence don't have a valid this_child, so we address the
-	 * initial mappings list directly.
-	 */
+	if (h == NULL)
+		return false;
+
+	h->map = NULL;
+	h->slot_idx = 0;
+	h->slot_version = 0;
+
 	if (child == NULL)
 		scope = OBJ_GLOBAL;
 	else
@@ -37,6 +51,7 @@ struct map * get_map(void)
 
 	for (int i = 0; i < 1000; i++) {
 		unsigned int slot_idx, slot_version;
+		struct object *obj;
 
 		switch (rand() % 3) {
 		case 0:	type = OBJ_MMAP_ANON;
@@ -59,7 +74,9 @@ struct map * get_map(void)
 		 * routed the chunk back to the shared-heap freelist, and
 		 * a concurrent alloc_shared_obj() recycled it underneath us.
 		 * The version snapshot below + validate_object_handle()
-		 * just before return narrows that window to a few cycles.
+		 * just before return narrows that window to a few cycles;
+		 * the handle exported in *h lets a downstream consumer
+		 * re-narrow it again right before its own deref.
 		 */
 		obj = get_random_object_versioned(type, scope, &slot_idx,
 						  &slot_version);
@@ -79,8 +96,9 @@ struct map * get_map(void)
 		 */
 		if ((uintptr_t)obj < 0x10000UL ||
 		    (uintptr_t)obj >= 0x800000000000UL) {
-			outputerr("get_map: bogus obj %p in OBJ_MMAP pool "
-				  "(type %u, scope %d)\n", obj, type, scope);
+			outputerr("get_map_handle: bogus obj %p in OBJ_MMAP "
+				  "pool (type %u, scope %d)\n",
+				  obj, type, scope);
 			continue;
 		}
 
@@ -100,8 +118,8 @@ struct map * get_map(void)
 		 * has at least one page.
 		 */
 		if (obj->map.size == 0 || obj->map.size > GB(4UL)) {
-			outputerr("get_map: bogus map->size %lu for obj %p "
-				  "(type %u, scope %d)\n",
+			outputerr("get_map_handle: bogus map->size %lu for "
+				  "obj %p (type %u, scope %d)\n",
 				  obj->map.size, obj, type, scope);
 			continue;
 		}
@@ -117,10 +135,71 @@ struct map * get_map(void)
 					    slot_version))
 			continue;
 
-		return &obj->map;
+		h->map = &obj->map;
+		h->type = type;
+		h->scope = scope;
+		h->slot_idx = slot_idx;
+		h->slot_version = slot_version;
+		return true;
 	}
 
-	return NULL;
+	__atomic_add_fetch(&shm->stats.maps_uaf_caught, 1, __ATOMIC_RELAXED);
+	return false;
+}
+
+/*
+ * Re-validate a previously-obtained map handle right before the caller
+ * dereferences h->map.  Recovers the owning obj via container_of() —
+ * &obj->map is in a union inside struct object, so the back-pointer is
+ * a fixed offset — and asks the object-pool slot-version primitive
+ * whether the slot still holds the same obj at the same version we
+ * picked.  Returns true if the slot is consistent; false (and bumps
+ * shm->stats.maps_uaf_caught) if the parent destroyed or replaced the
+ * entry in the meantime, in which case the caller MUST drop h->map
+ * rather than dereferencing it.
+ *
+ * Defends the longer windows that get_map_handle() itself can't close:
+ *  - arg-gen paths that hold &obj->map across multiple frames before
+ *    the syscall is dispatched
+ *  - dirty/iovec loops that draw a map then walk every page
+ *  - any consumer where a sibling syscall could land between the pick
+ *    and the use
+ *
+ * For the OBJ_LOCAL scope (no slot_versions array, no lockless reader)
+ * validate_object_handle() returns true unconditionally so this helper
+ * is a no-op — matches the OBJ_LOCAL behaviour of the underlying
+ * primitive without forcing the caller to special-case scope.
+ */
+bool validate_map_handle(struct map_handle *h)
+{
+	struct object *obj;
+
+	if (h == NULL || h->map == NULL)
+		return false;
+
+	obj = container_of(h->map, struct object, map);
+
+	if (!validate_object_handle(h->type, h->scope, obj, h->slot_idx,
+				    h->slot_version)) {
+		__atomic_add_fetch(&shm->stats.maps_uaf_caught, 1,
+				   __ATOMIC_RELAXED);
+		return false;
+	}
+	return true;
+}
+
+/*
+ * Return a pointer a previous mmap() that we did, either during startup,
+ * or from a fuzz result.  Thin wrapper around get_map_handle() for
+ * callers that don't need to re-validate the slot at deref time.
+ */
+struct map * get_map(void)
+{
+	struct map_handle h;
+
+	if (!get_map_handle(&h))
+		return NULL;
+	return h.map;
 }
 
 /*
