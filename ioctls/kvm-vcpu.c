@@ -1,24 +1,24 @@
 /*
- * Per-vCPU ioctl grammar -- read-side (Phase 3a).
+ * Per-vCPU ioctl grammar.
  *
  * Phase 1 (6a98d474117f) and Phase 2 (11222fbf1656) wired up the KVM fd
  * hierarchy: /dev/kvm -> KVM_CREATE_VM -> KVM_CREATE_VCPU, with vCPU fds
- * landing in OBJ_FD_KVM_VCPU.  Until now those vCPU fds were exercisable
- * only by the flat ioctls/kvm.c grouping, which matches against the
- * "kvm" misc-device name and so only ever fires when a child happens to
- * grab /dev/kvm itself -- in which case the per-vCPU ioctls in that
- * grouping bounce off the system fd with ENOTTY.  This file installs a
- * dedicated ioctl_group with an fd_test that walks the OBJ_FD_KVM_VCPU
- * pool, so per-vCPU ioctls only fire on actual vCPU fds and the kernel
- * code paths behind KVM_GET_REGS / KVM_GET_SREGS / KVM_GET_LAPIC / ...
- * become reachable from the fuzzer for the first time.
+ * landing in OBJ_FD_KVM_VCPU.  Until the read-side commit landed, those
+ * vCPU fds were exercisable only by the flat ioctls/kvm.c grouping,
+ * which matches against the "kvm" misc-device name and so only ever
+ * fires when a child happens to grab /dev/kvm itself -- in which case
+ * the per-vCPU ioctls in that grouping bounce off the system fd with
+ * ENOTTY.  This file installs a dedicated ioctl_group with an fd_test
+ * that walks the OBJ_FD_KVM_VCPU pool, so per-vCPU ioctls only fire on
+ * actual vCPU fds.
  *
- * The read-side starter set lives here; the write-side (KVM_SET_*,
- * KVM_INTERRUPT, KVM_NMI, KVM_SMI) lands in a follow-up commit on the
- * same group.  Read-side first because the kernel never mutates vCPU
- * state on these calls -- it only fills out the userspace buffer -- so
- * a fault in the kernel writeback path is the most diagnostic place to
- * land first when the per-vCPU grammar starts firing on the fleet.
+ * Read-side ioctls (KVM_GET_*) populate userspace buffers from kernel
+ * vCPU state and never mutate the vCPU; write-side ioctls (KVM_SET_*,
+ * KVM_INTERRUPT, KVM_NMI, KVM_SMI) take userspace input and update
+ * vCPU register state, queue interrupts, deliver NMIs, etc.  Both sets
+ * share kvm_vcpu_sanitise() and the same kvm_vcpu_grp registration --
+ * find_ioctl_group()'s fd_test arbitration is the only place fd-type
+ * dispatch matters, and there's no per-direction split there.
  */
 
 #ifdef USE_KVM
@@ -147,16 +147,21 @@ static void kvm_vcpu_sanitise(const struct ioctl_group *grp,
 	 * Override Tier 1's writable-buffer sizing for the variable-length
 	 * structs whose flexible array tail is sized by the leading count
 	 * field.  The standard generator gives an _IOC_SIZE-sized buffer
-	 * (the header alone), which on KVM_GET_MSRS / KVM_GET_CPUID2 /
-	 * KVM_GET_REG_LIST has the kernel writing past the buffer when the
-	 * randomised nmsrs / nent / n field exceeds zero.
+	 * (the header alone), which on the GET path has the kernel writing
+	 * past the buffer when the randomised count field exceeds zero, and
+	 * on the SET path has the kernel reading past the buffer when it
+	 * walks entries[] expecting nmsrs / nent items.  KVM_SET_MSRS /
+	 * KVM_SET_CPUID2 share the same struct shape as their GET twin and
+	 * route through the same helper.
 	 */
 	switch (rec->a2) {
 #ifdef X86
 	case KVM_GET_MSRS:
+	case KVM_SET_MSRS:
 		sanitise_kvm_msrs(rec);
 		break;
 	case KVM_GET_CPUID2:
+	case KVM_SET_CPUID2:
 		sanitise_kvm_cpuid2(rec);
 		break;
 #endif
@@ -173,16 +178,31 @@ static void kvm_vcpu_sanitise(const struct ioctl_group *grp,
 
 static const struct ioctl kvm_vcpu_ioctls[] = {
 	IOCTL(KVM_GET_REGS),
+	IOCTL(KVM_SET_REGS),
 	IOCTL(KVM_GET_SREGS),
+	IOCTL(KVM_SET_SREGS),
 	IOCTL(KVM_GET_FPU),
+	IOCTL(KVM_SET_FPU),
 	IOCTL(KVM_GET_VCPU_EVENTS),
+	IOCTL(KVM_SET_VCPU_EVENTS),
+	IOCTL(KVM_INTERRUPT),
+	IOCTL(KVM_NMI),
+#ifdef KVM_SMI
+	IOCTL(KVM_SMI),
+#endif
 #ifdef X86
 	IOCTL(KVM_GET_LAPIC),
+	IOCTL(KVM_SET_LAPIC),
 	IOCTL(KVM_GET_MSRS),
+	IOCTL(KVM_SET_MSRS),
 	IOCTL(KVM_GET_CPUID2),
+	IOCTL(KVM_SET_CPUID2),
 	IOCTL(KVM_GET_XSAVE),
+	IOCTL(KVM_SET_XSAVE),
 	IOCTL(KVM_GET_XCRS),
+	IOCTL(KVM_SET_XCRS),
 	IOCTL(KVM_GET_DEBUGREGS),
+	IOCTL(KVM_SET_DEBUGREGS),
 #endif
 	IOCTL(KVM_GET_REG_LIST),
 };
