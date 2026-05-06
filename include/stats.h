@@ -151,6 +151,21 @@ struct stats_s {
 	 * upstream syscall that did the scribble. */
 	unsigned long libc_heap_redirected;
 
+	/* Same shape as libc_heap_redirected, but bumped from the second-
+	 * pass scrub of struct-embedded pointer fields (iovec arrays passed
+	 * to readv / writev / process_vm_*v / process_madvise / recvmsg /
+	 * sendmsg / recvmmsg / sendmmsg).  alloc_iovec() already runs
+	 * avoid_shared_buffer() per iov_base at iovec build time, but a
+	 * sibling syscall that scribbles the iovec heap allocation between
+	 * sanitise and the kernel reading the array can replace iov_base
+	 * with a fuzzed value that lands in the libc brk arena.  The next
+	 * malloc anywhere in trinity then finds the corruption and aborts
+	 * -- glibc heap-corruption assert in non-ASAN runs traces through
+	 * __zmalloc paths whose syscall arg structs contain embedded fuzzed
+	 * pointers.  Non-zero count tells how often the second-pass scrub
+	 * caught one before the kernel scribbled the arena. */
+	unsigned long libc_heap_embedded_redirected;
+
 	/* range_overlaps_shared() rejected an addr/len because it overlapped
 	 * one of trinity's tracked alloc_shared regions.  Tells you whether
 	 * the wild-write defense is doing meaningful work or trivially

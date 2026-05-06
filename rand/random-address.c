@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/uio.h>
+#include <sys/socket.h>	// struct msghdr
 #include <sys/mman.h>	// mprotect
 #include <sys/ipc.h>
 #include <sys/shm.h>
@@ -246,6 +247,86 @@ unsigned long find_previous_arg_address(struct syscallrecord *rec, unsigned int 
 	return addr;
 }
 
+
+/*
+ * Second-pass scrub of an iovec[] handed to a kernel-write syscall
+ * (readv / preadv* / process_vm_readv / recvmsg / recvmmsg / process_
+ * madvise -- and the corresponding kernel-read syscalls where a
+ * scribbled iov_base would still let the kernel touch the wrong page).
+ *
+ * alloc_iovec() already runs avoid_shared_buffer() per iov_base at
+ * build time (which post c4f1c69cdb08 covers both alloc_shared regions
+ * and the libc brk arena), but the iovec array lives in the per-child
+ * heap as a vlen * sizeof(struct iovec) zmalloc().  A sibling syscall
+ * that scribbles bytes into that allocation between the sanitiser
+ * returning and the kernel reading the array can replace any iov_base
+ * with a fuzzed value -- and a value landing in the libc brk arena
+ * lets the kernel write on top of a glibc chunk header, surfacing
+ * later as a glibc heap-corruption assert via the next malloc anywhere
+ * in trinity (the dominant non-ASAN cluster: __zmalloc -> malloc ->
+ * malloc_printerr -> abort).
+ *
+ * Walk the array one final time and zero any entry whose [base, base+
+ * len) overlaps either an alloc_shared region or the libc brk arena.
+ * Zero base + zero len makes the kernel skip the entry without erroring
+ * the whole call.  Bumps libc_heap_embedded_redirected so the operator
+ * can see the second-pass coverage independently from the
+ * shared_buffer_redirected / libc_heap_redirected counters that track
+ * the build-time defense.
+ */
+void scrub_iovec_for_kernel_write(struct iovec *iov, unsigned long count)
+{
+	unsigned long i;
+
+	if (iov == NULL || count == 0)
+		return;
+
+	if (count > 256)
+		count = 256;
+
+	for (i = 0; i < count; i++) {
+		unsigned long base = (unsigned long) iov[i].iov_base;
+		unsigned long len = iov[i].iov_len;
+		bool overlap_shared, overlap_heap;
+
+		if (base == 0 || len == 0)
+			continue;
+
+		overlap_shared = range_overlaps_shared(base, len);
+		overlap_heap = range_overlaps_libc_heap(base, len);
+		if (!overlap_shared && !overlap_heap)
+			continue;
+
+		iov[i].iov_base = NULL;
+		iov[i].iov_len = 0;
+		if (shm != NULL && overlap_heap)
+			__atomic_add_fetch(&shm->stats.libc_heap_embedded_redirected,
+					   1, __ATOMIC_RELAXED);
+	}
+}
+
+/*
+ * Per-msghdr second-pass scrub.  Walks the embedded msg_iov array via
+ * scrub_iovec_for_kernel_write() so a sibling scribble that landed an
+ * iov_base in the libc brk arena (or in an alloc_shared region) is
+ * defanged before the kernel walks the array.  msg_name / msg_control
+ * are intentionally not redirected: those fields are populated only by
+ * trinity-controlled allocators (zmalloc, get_address) at sanitise
+ * time and the post handlers free them based on their stored values --
+ * silently swapping them out would either UAF the original allocation
+ * or hand free() a non-malloc pointer.  Sibling-scribble exposure on
+ * those fields is handled by the existing inner_ptr_ok_to_free()
+ * shape check at free time rather than at sanitise time.
+ */
+void scrub_msghdr_for_kernel_write(struct msghdr *msg)
+{
+	if (msg == NULL)
+		return;
+	if (msg->msg_iov == NULL || msg->msg_iovlen == 0)
+		return;
+
+	scrub_iovec_for_kernel_write(msg->msg_iov, msg->msg_iovlen);
+}
 
 struct iovec * alloc_iovec(unsigned int num)
 {
