@@ -30,7 +30,6 @@ static const struct family families[] = {
 	{ "PF_FILE",         PF_LOCAL },
 	{ "PF_INET",         2 },
 	{ "PF_IPX",          4 },
-	{ "PF_NETROM",       6 },
 	{ "PF_BRIDGE",       7 },
 	{ "PF_ATMPVC",       8 },
 	{ "PF_X25",          9 },
