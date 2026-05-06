@@ -945,7 +945,7 @@ static unsigned char rand_family(void)
 {
 	static const unsigned char families[] = {
 		AF_INET, AF_INET6, AF_UNSPEC, AF_BRIDGE, AF_MPLS,
-		AF_PACKET, AF_DECnet,
+		AF_PACKET,
 	};
 	if (ONE_IN(8))
 		return rand() % 256;
