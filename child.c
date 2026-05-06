@@ -666,6 +666,13 @@ static void init_child(struct childdata *child, int childno)
 	 * this NULL — the first choose_syscall_table call refreshes it. */
 	if (!biarch)
 		child->active_syscalls = shm->active_syscalls;
+
+	/* Stamp the explorer-pool flag based on this child's slot index.
+	 * explorer_children is finalised in clamp_default_explorer_children()
+	 * before the first fork, so a single read here suffices for the
+	 * child's lifetime. */
+	child->is_explorer = (childno >= 0 &&
+			      (unsigned int)childno < explorer_children);
 }
 
 /*
