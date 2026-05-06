@@ -48,6 +48,17 @@ enum strategy_t {
 #define CMP_NOVELTY_DECAY_WINDOWS 8
 
 /*
+ * Width of the per-syscall frontier-edge ring, in rotation windows.
+ * The ring records, per slot, how many "first-time-this-window" PC edges
+ * a syscall produced.  Sum across the ring is the syscall's recent
+ * frontier-edge count, used by the coverage-frontier strategy as a
+ * weight bias.  Mirrors CMP_NOVELTY_DECAY_WINDOWS so the two
+ * coverage-novelty signals (CMP constants and PC edges) decay over the
+ * same wall-clock horizon.
+ */
+#define FRONTIER_DECAY_WINDOWS 8
+
+/*
  * Arm-selection policy used at each rotation boundary to decide which
  * strategy runs next.  Selected once at parse_args() time via the
  * --strategy flag, propagated into shm->picker_mode at init_shm time
@@ -117,6 +128,34 @@ int pick_next_strategy(int prev);
  * the rotation hook bumps once per completed window.
  */
 void bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr);
+
+/*
+ * Bump the per-syscall frontier-edge ring slot when kcov_collect
+ * reports a NEW edge for syscall nr.  Called from kcov.c on the
+ * found_new branch.  Out-of-range nr is silently dropped.
+ *
+ * "Frontier" here means an edge hit for the first time within the
+ * current FRONTIER_DECAY_WINDOWS rotations: a syscall that keeps
+ * producing first-time edges has unmined coverage worth re-exercising.
+ */
+void frontier_record_new_edge(unsigned int nr);
+
+/*
+ * Sum of the per-syscall frontier ring across all slots, capped to
+ * a sensible u32.  Cheap O(FRONTIER_DECAY_WINDOWS) per call.  Called
+ * by the coverage-frontier picker once per syscall slot during the
+ * weighted-pick walk.
+ */
+unsigned long frontier_recent_count(unsigned int nr);
+
+/*
+ * Advance the frontier-edge ring to the next slot and zero it.  Called
+ * exactly once per rotation by the CAS-winning child inside
+ * maybe_rotate_strategy(), so plain (non-atomic) writes to the slot
+ * index are safe.  The slot zero uses atomic stores because concurrent
+ * kcov_collect callers may still be racing in.
+ */
+void frontier_window_advance(void);
 
 /*
  * End-of-run summary: per-arm pulls + cumulative reward + mean

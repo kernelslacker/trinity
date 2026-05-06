@@ -497,6 +497,12 @@ static void maybe_rotate_strategy(void)
 	 * fresh one — both attribute correctly. */
 	__atomic_fetch_add(&shm->bandit_window_count, 1UL, __ATOMIC_RELAXED);
 
+	/* Roll the per-syscall frontier-edge ring forward and zero the new
+	 * slot so it represents only edges discovered in the upcoming
+	 * window.  Same K-window decay horizon as the CMP-novelty bloom
+	 * above. */
+	frontier_window_advance();
+
 	next = pick_next_strategy(prev);
 	if (next < 0 || next >= NR_STRATEGIES)
 		next = (prev + 1) % NR_STRATEGIES;
