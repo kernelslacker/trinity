@@ -58,6 +58,19 @@ static void sanitise_getsockopt(struct syscallrecord *rec)
 	 * buffer.  The lenp slot in a5 is a 4-byte allocation that is not
 	 * walked, only freed; it is left under the existing path. */
 	rec->post_state = rec->a4;
+
+	/*
+	 * The kernel writes the option value through optval (a4) up to
+	 * *optlen bytes and updates *optlen (a5) with the actual count.
+	 * Both args must be redirected if they overlap an alloc_shared
+	 * region or the libc brk arena before the syscall is issued.
+	 * Order matters: post_state above captures the original zmalloc
+	 * result so the post handler frees what we own even when
+	 * avoid_shared_buffer swaps a4 out for a get_writable_address
+	 * pointer here.
+	 */
+	avoid_shared_buffer(&rec->a4, page_size);
+	avoid_shared_buffer(&rec->a5, sizeof(socklen_t));
 }
 
 static void post_getsockopt(struct syscallrecord *rec)
