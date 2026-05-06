@@ -93,6 +93,18 @@ static const struct ioctl kvm_vm_ioctls[] = {
 	IOCTL(KVM_ARM_SET_DEVICE_ADDR),
 #endif
 	IOCTL(KVM_ENABLE_CAP),
+#ifdef KVM_RESET_DIRTY_RINGS
+	IOCTL(KVM_RESET_DIRTY_RINGS),
+#endif
+#ifdef KVM_CLEAR_DIRTY_LOG
+	IOCTL(KVM_CLEAR_DIRTY_LOG),
+#endif
+#ifdef KVM_SET_MEMORY_ATTRIBUTES
+	IOCTL(KVM_SET_MEMORY_ATTRIBUTES),
+#endif
+#ifdef KVM_PRE_FAULT_MEMORY
+	IOCTL(KVM_PRE_FAULT_MEMORY),
+#endif
 };
 
 static const struct ioctl_group kvm_vm_grp = {
