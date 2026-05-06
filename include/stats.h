@@ -1105,6 +1105,15 @@ struct stats_s {
 	 * CAS-serialised maybe_rotate_strategy() path so a plain unsigned
 	 * long with __atomic_fetch_add suffices. */
 	unsigned long bandit_cmp_reward_added;
+
+	/* Number of syscall picks completed under STRATEGY_COVERAGE_FRONTIER.
+	 * Bumped on the success path of set_syscall_nr_coverage_frontier --
+	 * surfaces how many calls the frontier-weighted picker actually
+	 * accepted (roulette-wheel rejections are absorbed into the inner
+	 * retry loop and not counted here).  Compared against bandit
+	 * pulls for the COVERAGE_FRONTIER arm, this ratio also approximates
+	 * the average accepted picks per window the arm ran. */
+	unsigned long frontier_strategy_picks;
 };
 
 unsigned int stats_syscall_category(const char *name);

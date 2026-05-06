@@ -30,6 +30,9 @@
 enum strategy_t {
 	STRATEGY_HEURISTIC = 0,	/* default: group-bias + cold-skip + edgepair-bias */
 	STRATEGY_RANDOM,	/* uniform pick, no biases */
+	STRATEGY_COVERAGE_FRONTIER, /* roulette-wheel weighted by per-syscall
+				     * frontier-edge count (see frontier_*
+				     * APIs below) */
 	NR_STRATEGIES,
 };
 
