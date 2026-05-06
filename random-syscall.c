@@ -294,6 +294,117 @@ retry:
 }
 
 /*
+ * Pick the syscall to run under STRATEGY_COVERAGE_FRONTIER: uniform draw
+ * from active_syscalls, then biased acceptance against the per-syscall
+ * frontier-edge weight via rejection sampling.  Each candidate is
+ * accepted with probability (frontier_recent_count(nr) + 1) /
+ * (max_weight + 1); the +1 keeps cold syscalls from starving completely
+ * and lets the strategy still drive forward when no syscall has
+ * produced a frontier edge in the last K windows (every weight is 1, so
+ * acceptance reduces to uniform).
+ *
+ * max_weight is sampled once at the top of the function rather than per
+ * retry so the bias mass stays stable across the inner retry loop, and
+ * so concurrent kcov_collect-driven bumps to frontier_history during
+ * the pick don't perturb the acceptance probability mid-call.  The
+ * sample walks active_syscalls once -- O(N) with N <= MAX_NR_SYSCALL,
+ * dominated by the syscall dispatch itself.
+ *
+ * The validate / EXPENSIVE / AVOID_SYSCALL retry budget mirrors the
+ * other set_syscall_nr_* variants because those are correctness gates,
+ * not selection biases.
+ */
+static bool set_syscall_nr_coverage_frontier(struct syscallrecord *rec,
+					     struct childdata *child)
+{
+	struct syscallentry *entry;
+	unsigned int syscallnr;
+	unsigned int i, val;
+	bool do32;
+	unsigned int outer_attempts = 0;
+	unsigned int nr_syscalls;
+	unsigned long max_weight = 0;
+
+	if (biarch) {
+		do32 = choose_syscall_table(child, &nr_syscalls);
+	} else {
+		do32 = false;
+		nr_syscalls = max_nr_syscalls;
+	}
+
+	/* Snapshot the largest frontier-edge count across the active table
+	 * once so the rejection-sampling acceptance ratio is stable across
+	 * retries.  Walks the table linearly; the active_syscalls slot
+	 * encoding (index+1, 0=disabled) is the same as the other pickers. */
+	for (i = 0; i < nr_syscalls; i++) {
+		unsigned long w;
+
+		val = child->active_syscalls[i];
+		if (val == 0)
+			continue;
+		w = frontier_recent_count((unsigned int)(val - 1));
+		if (w > max_weight)
+			max_weight = w;
+	}
+
+retry:
+	if (no_syscalls_enabled() == true) {
+		output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
+		__atomic_store_n(&shm->exit_reason, EXIT_NO_SYSCALLS_ENABLED, __ATOMIC_RELAXED);
+		return FAIL;
+	}
+
+	if (outer_attempts++ > 10000) {
+		output(0, "[%d] set_syscall_nr_coverage_frontier exceeded retry budget\n", getpid());
+		return FAIL;
+	}
+
+	syscallnr = rand() % nr_syscalls;
+
+	val = child->active_syscalls[syscallnr];
+	if (val == 0)
+		goto retry;
+
+	syscallnr = val - 1;
+
+	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
+		deactivate_syscall(syscallnr, do32);
+		goto retry;
+	}
+
+	entry = get_syscall_entry(syscallnr, do32);
+	if (entry->flags & EXPENSIVE) {
+		if (!ONE_IN(1000))
+			goto retry;
+	}
+
+	/* Frontier-weighted acceptance.  When max_weight is 0 (no syscall
+	 * has registered a frontier edge in the last FRONTIER_DECAY_WINDOWS
+	 * rotations -- typical at run start or in a heavily-explored
+	 * codebase where everything has plateaued), the (w+1)/(max+1) ratio
+	 * is 1 for every candidate and the acceptance gate is bypassed,
+	 * degenerating gracefully to uniform pick. */
+	if (max_weight > 0) {
+		unsigned long w = frontier_recent_count(syscallnr);
+		unsigned long denom = max_weight + 1UL;
+		unsigned long roll = (unsigned long)rand() % denom;
+
+		if (roll >= w + 1UL)
+			goto retry;
+	}
+
+	lock(&rec->lock);
+	rec->do32bit = do32;
+	rec->nr = syscallnr;
+	unlock(&rec->lock);
+
+	__atomic_fetch_add(&shm->stats.frontier_strategy_picks, 1UL,
+			   __ATOMIC_RELAXED);
+
+	return true;
+}
+
+/*
  * Dispatch syscall selection through the active strategy's picker.
  * Reads shm->current_strategy with relaxed atomic — the value can change
  * mid-call (another child wins the rotation CAS) but the worst case is a
@@ -313,6 +424,8 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 		return set_syscall_nr_heuristic(rec, child);
 	case STRATEGY_RANDOM:
 		return set_syscall_nr_random(rec, child);
+	case STRATEGY_COVERAGE_FRONTIER:
+		return set_syscall_nr_coverage_frontier(rec, child);
 	default:
 		__builtin_unreachable();
 	}

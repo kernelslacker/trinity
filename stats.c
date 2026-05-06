@@ -1334,6 +1334,11 @@ static const struct {
 	 * contributing to arm selection. */
 	{ "bandit_cmp_reward_added",
 	  offsetof(struct stats_s, bandit_cmp_reward_added) },
+	/* Picks accepted by STRATEGY_COVERAGE_FRONTIER's frontier-weighted
+	 * roulette wheel.  Rate-of-change tracks the arm's actual share of
+	 * the fleet's syscall throughput when the bandit picker selects it. */
+	{ "frontier_strategy_picks",
+	  offsetof(struct stats_s, frontier_strategy_picks) },
 };
 
 static unsigned long defense_counter_load(unsigned int i)
@@ -1956,6 +1961,9 @@ void dump_stats(void)
 	if (shm->stats.bandit_cmp_reward_added)
 		stat_row("strategy", "bandit_cmp_reward_added",
 			 shm->stats.bandit_cmp_reward_added);
+	if (shm->stats.frontier_strategy_picks)
+		stat_row("strategy", "frontier_strategy_picks",
+			 shm->stats.frontier_strategy_picks);
 
 	dump_strategy_stats();
 
