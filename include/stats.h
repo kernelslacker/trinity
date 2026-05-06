@@ -1052,6 +1052,15 @@ struct stats_s {
 	 * from somebody other than the slot's current owner. */
 	unsigned long local_op_count_corrupted;
 
+	/* sanitize_inherited_fds() closed an fd that the parent inherited
+	 * from its launcher (or the launcher's parent) at startup.  We
+	 * keep only {0,1,2} across the parent's fork boundary into the
+	 * fuzz children; anything else came in from outside trinity and
+	 * could end up being polled, watched, or otherwise wedged on by
+	 * the reap path (e.g. a stuck-fs fd surfacing in the child-monitor
+	 * watch set and blocking the parent's epoll/poll loop). */
+	unsigned long parent_inherited_fds_closed;
+
 	/* fd_event_drain_all() found a child->fd_event_ring pointer that
 	 * failed the canonical-address / minimum-address sanity check.
 	 * Defense-in-depth against D-state zombie write-after-reap. */

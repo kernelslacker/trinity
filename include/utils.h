@@ -209,6 +209,24 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len);
 
 int get_num_fds(void);
 
+/*
+ * Walk /proc/self/fd at parent startup and close any fd that wasn't
+ * deliberately opened by trinity.  Run once, before trinity opens any
+ * of its own fds — at that point the keep set is exactly {0, 1, 2}
+ * and everything else came in from the launcher (or its parent).
+ *
+ * Defense in depth against the wedge class where an inherited fd for
+ * a stuck filesystem (FUSE, NFS, etc.) ends up adopted into one of
+ * trinity's per-child watch sets and a routine syscall on it blocks
+ * for the lifetime of the run — stalling the parent's reap path and
+ * letting zombie children pile up indefinitely.
+ *
+ * Bumps shm->stats.parent_inherited_fds_closed for each fd closed,
+ * and logs the fd number plus its readlink target so the operator
+ * can see what the launcher left behind.
+ */
+void sanitize_inherited_fds(void);
+
 #define __stringify_1(x...)     #x
 #define __stringify(x...)       __stringify_1(x)
 
