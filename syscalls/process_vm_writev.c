@@ -21,34 +21,22 @@ static unsigned long process_vm_writev_flags[] = {
  * addresses.  Any rvec entry that lands in a tracked shared region
  * lets the kernel scribble whatever was in lvec on top of trinity's
  * own bookkeeping, with effects ranging from silent metric corruption
- * to allocator chaos.
+ * to allocator chaos.  The same shape applies to the per-child libc
+ * brk arena: a fuzzed iov_base landing in [heap_start, heap_end) lets
+ * the kernel write on top of a glibc chunk header, surfacing later as
+ * a glibc heap-corruption assert via the next malloc anywhere in
+ * trinity (the dominant non-ASAN cluster: __zmalloc -> malloc ->
+ * malloc_printerr -> abort).
  *
  * Walk the rvec array (already populated by alloc_iovec via the
- * ARG_IOVEC generator) and zero out any iov_base whose range
- * overlaps a shared region.  Zero len plus zero base makes the
- * kernel skip that entry without erroring the whole call.
+ * ARG_IOVEC generator) via the second-pass scrub helper, which zeros
+ * out any iov_base whose range overlaps either a shared region or the
+ * libc brk arena.  Zero len plus zero base makes the kernel skip that
+ * entry without erroring the whole call.
  */
 static void sanitise_process_vm_writev(struct syscallrecord *rec)
 {
-	struct iovec *rvec = (struct iovec *)rec->a4;
-	unsigned long count = rec->a5;
-	unsigned long i;
-
-	if (rvec == NULL || count == 0)
-		return;
-
-	if (count > 256)
-		count = 256;
-
-	for (i = 0; i < count; i++) {
-		if (rvec[i].iov_base == NULL || rvec[i].iov_len == 0)
-			continue;
-		if (range_overlaps_shared((unsigned long)rvec[i].iov_base,
-					  rvec[i].iov_len)) {
-			rvec[i].iov_base = NULL;
-			rvec[i].iov_len = 0;
-		}
-	}
+	scrub_iovec_for_kernel_write((struct iovec *)rec->a4, rec->a5);
 }
 
 static void post_process_vm_writev(struct syscallrecord *rec)

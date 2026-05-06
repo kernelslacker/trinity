@@ -129,6 +129,21 @@ skip_si:
 	else
 		msg->msg_flags = 0;
 
+	/*
+	 * Second-pass scrub of msg_iov before the kernel walks the array.
+	 * alloc_iovec() above already runs avoid_shared_buffer() per
+	 * iov_base at build time, but the iovec array lives in heap as a
+	 * vlen * sizeof(struct iovec) zmalloc() and a sibling syscall can
+	 * scribble bytes into that allocation between this sanitiser
+	 * returning and the kernel reading the array, replacing iov_base
+	 * with a fuzzed value.  An iov_base landing in the libc brk arena
+	 * lets the kernel write the received data on top of glibc chunk
+	 * metadata, surfacing later as a glibc heap-corruption assert via
+	 * the next malloc anywhere in trinity (the dominant non-ASAN
+	 * cluster: __zmalloc -> malloc -> malloc_printerr -> abort).
+	 */
+	scrub_msghdr_for_kernel_write(msg);
+
 	rec->a2 = (unsigned long) msg;
 
 	snap = zmalloc(sizeof(*snap));
@@ -252,6 +267,17 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 			msg->msg_controllen = rand32() % 4096;
 			msg->msg_control = zmalloc(msg->msg_controllen);
 		}
+
+		/*
+		 * Second-pass scrub of this entry's msg_iov before the
+		 * kernel walks the array.  Mirrors sanitise_recvmsg --
+		 * a sibling scribble of the iovec heap allocation between
+		 * this sanitiser returning and the kernel reading the
+		 * array can replace iov_base with a fuzzed value, and a
+		 * value landing in the libc brk arena lets the kernel
+		 * write received data on top of glibc chunk metadata.
+		 */
+		scrub_msghdr_for_kernel_write(msg);
 	}
 
 	rec->a2 = (unsigned long) msgs;

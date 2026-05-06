@@ -165,6 +165,20 @@ set_control:
 	else
 		msg->msg_flags = 0;
 
+	/*
+	 * Second-pass scrub of msg_iov before the kernel walks the array.
+	 * Even though sendmsg is a kernel-read of the iov_base buffers,
+	 * net/skbuff.c paths that copy the user data sometimes fault back
+	 * in via copy_from_iter_full() and on the gen_msg / SCM_RIGHTS
+	 * path the kernel writes the cmsg back into the iovec.  An
+	 * iov_base scribbled into the libc brk arena by a sibling between
+	 * this sanitiser returning and the kernel reading the array would
+	 * then surface as a glibc heap-corruption assert via the next
+	 * malloc anywhere in trinity (__zmalloc -> malloc ->
+	 * malloc_printerr -> abort).  Mirrors recvmsg.
+	 */
+	scrub_msghdr_for_kernel_write(msg);
+
 	rec->a2 = (unsigned long) msg;
 
 	snap = zmalloc(sizeof(*snap));
@@ -288,6 +302,16 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 			msg->msg_controllen = rand32() % 20480;
 			msg->msg_control = get_address();
 		}
+
+		/*
+		 * Second-pass scrub of this entry's msg_iov before the
+		 * kernel walks the array.  Mirrors sanitise_sendmsg --
+		 * a sibling scribble of the iovec heap allocation can
+		 * leave an iov_base in the libc brk arena, and a kernel
+		 * write back via cmsg / copy_from_iter fault-in would
+		 * scribble glibc chunk metadata.
+		 */
+		scrub_msghdr_for_kernel_write(msg);
 	}
 
 	rec->a2 = (unsigned long) msgs;
