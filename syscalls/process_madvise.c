@@ -25,37 +25,24 @@ static unsigned long process_madvise_flags[] = {
  * zap PTEs in the target's mapping.  kcov's mmap inserts pages with
  * vm_insert_page and ships no fault handler, so once those PTEs are gone
  * the next kc->trace_buf[] read in kcov_collect SIGBUSes -- the dominant
- * unique-signature crash class in trinity userland fuzz runs.
+ * unique-signature crash class in trinity userland fuzz runs.  The same
+ * shape applies to the per-child libc brk arena: an iov_base landing in
+ * [heap_start, heap_end) lets MADV_PAGEOUT zap PTEs underneath glibc
+ * chunk metadata, surfacing later as a glibc heap-corruption assert.
  *
  * regular madvise's sanitiser uses range_overlaps_shared() against
  * (rec->a1, rec->a2); process_madvise can't do that because the kernel
  * dereferences vec as an iovec[] rather than treating the addr/len pair
  * as a single range.  Switch the args to ARG_IOVEC/ARG_IOVECLEN so
  * alloc_iovec() runs avoid_shared_buffer() per entry, and walk vec
- * here as belt-and-suspenders for the case where avoid_shared_buffer
- * couldn't find a replacement (heap exhausted, len > available).
+ * here via the second-pass scrub helper as belt-and-suspenders for the
+ * case where avoid_shared_buffer couldn't find a replacement (heap
+ * exhausted, len > available) or a sibling scribbled the iovec heap
+ * allocation between sanitise and the kernel reading the array.
  */
 static void sanitise_process_madvise(struct syscallrecord *rec)
 {
-	struct iovec *vec = (struct iovec *)rec->a2;
-	unsigned long count = rec->a3;
-	unsigned long i;
-
-	if (vec == NULL || count == 0)
-		return;
-
-	if (count > 256)
-		count = 256;
-
-	for (i = 0; i < count; i++) {
-		if (vec[i].iov_base == NULL || vec[i].iov_len == 0)
-			continue;
-		if (range_overlaps_shared((unsigned long)vec[i].iov_base,
-					  vec[i].iov_len)) {
-			vec[i].iov_base = NULL;
-			vec[i].iov_len = 0;
-		}
-	}
+	scrub_iovec_for_kernel_write((struct iovec *)rec->a2, rec->a3);
 }
 
 struct syscallentry syscall_process_madvise = {
