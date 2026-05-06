@@ -222,4 +222,19 @@ const struct netproto proto_bluetooth = {
 	.valid_triplets = bluetooth_triplets,
 	.nr_triplets = ARRAY_SIZE(bluetooth_triplets),
 };
+
+#include "socket-family-grammar.h"
+
+/*
+ * Dormant grammar stub — keeps the AF_BLUETOOTH slot in the registry
+ * so a user with the matching CONFIG can plug a real grammar in
+ * without changing the registry array.  can_run=sfg_always_false so
+ * sfg_pick_random_active() never picks this entry on the current
+ * kernel.
+ */
+const struct socket_family_grammar grammar_bluetooth_stub = {
+	.family		= PF_BLUETOOTH,
+	.name		= "bluetooth_stub",
+	.can_run	= sfg_always_false,
+};
 #endif /* USE_BLUETOOTH */

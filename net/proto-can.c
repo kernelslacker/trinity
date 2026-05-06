@@ -233,3 +233,11 @@ const struct netproto proto_can = {
 	.nr_triplets = ARRAY_SIZE(can_triplets),
 	.setsockopt = can_setsockopt,
 };
+
+#include "socket-family-grammar.h"
+
+const struct socket_family_grammar grammar_can_stub = {
+	.family		= PF_CAN,
+	.name		= "can_stub",
+	.can_run	= sfg_always_false,
+};

@@ -83,4 +83,12 @@ const struct netproto proto_caif = {
 	.valid_triplets = caif_triplet,
 	.nr_triplets = ARRAY_SIZE(caif_triplet),
 };
+
+#include "socket-family-grammar.h"
+
+const struct socket_family_grammar grammar_caif_stub = {
+	.family		= PF_CAIF,
+	.name		= "caif_stub",
+	.can_run	= sfg_always_false,
+};
 #endif

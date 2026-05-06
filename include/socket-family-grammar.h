@@ -109,3 +109,24 @@ extern const struct socket_family_grammar grammar_inet;
 extern const struct socket_family_grammar grammar_inet6;
 #endif
 extern const struct socket_family_grammar grammar_unix;
+
+/*
+ * Stub entries — registered with can_run=sfg_always_false so they
+ * never run on this kernel build, but keep their slot in the
+ * registry so a user with the matching CONFIG can pick them up
+ * without registering anything new.  Each gets upgraded to a real
+ * grammar in a later commit.
+ */
+#ifdef USE_BLUETOOTH
+extern const struct socket_family_grammar grammar_bluetooth_stub;
+#endif
+#ifdef USE_CAIF
+extern const struct socket_family_grammar grammar_caif_stub;
+#endif
+#ifdef USE_VSOCK
+extern const struct socket_family_grammar grammar_vsock_stub;
+#endif
+extern const struct socket_family_grammar grammar_can_stub;
+extern const struct socket_family_grammar grammar_phonet_stub;
+extern const struct socket_family_grammar grammar_smc_stub;
+extern const struct socket_family_grammar grammar_tipc_stub;
