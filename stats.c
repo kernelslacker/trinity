@@ -699,7 +699,8 @@ static void dump_stats_json(void)
 		"\"netns_teardown\":{\"runs\":%lu,\"setup_failed\":%lu,\"unshare_ok\":%lu,\"socket_pair_ok\":%lu,\"fork_ok\":%lu,\"setns_ok\":%lu,\"kill_ok\":%lu,\"completed_ok\":%lu},"
 		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},"
 		"\"msg_zerocopy_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sends_ok\":%lu,\"sends_efault\":%lu,\"sends_eagain\":%lu,\"errqueue_drained\":%lu,\"errqueue_empty\":%lu,\"munmap_ok\":%lu,\"send_after_munmap_caught\":%lu,\"sndzc_disable_ok\":%lu},"
-		"\"iouring_send_zc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"register_bufs_ok\":%lu,\"send_zc_ok\":%lu,\"sendmsg_zc_ok\":%lu,\"unregister_race_ok\":%lu,\"update_race_ok\":%lu,\"cqe_drained\":%lu}"
+		"\"iouring_send_zc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"register_bufs_ok\":%lu,\"send_zc_ok\":%lu,\"sendmsg_zc_ok\":%lu,\"unregister_race_ok\":%lu,\"update_race_ok\":%lu,\"cqe_drained\":%lu},"
+		"\"vsock_transport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bind_ok\":%lu,\"connect_ok\":%lu,\"send_ok\":%lu,\"buffer_size_ok\":%lu,\"timeout_ok\":%lu,\"get_cid_ok\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1079,7 +1080,15 @@ static void dump_stats_json(void)
 		shm->stats.iouring_send_zc_churn_sendmsg_zc_ok,
 		shm->stats.iouring_send_zc_churn_unregister_race_ok,
 		shm->stats.iouring_send_zc_churn_update_race_ok,
-		shm->stats.iouring_send_zc_churn_cqe_drained);
+		shm->stats.iouring_send_zc_churn_cqe_drained,
+		shm->stats.vsock_transport_churn_runs,
+		shm->stats.vsock_transport_churn_setup_failed,
+		shm->stats.vsock_transport_churn_bind_ok,
+		shm->stats.vsock_transport_churn_connect_ok,
+		shm->stats.vsock_transport_churn_send_ok,
+		shm->stats.vsock_transport_churn_buffer_size_ok,
+		shm->stats.vsock_transport_churn_timeout_ok,
+		shm->stats.vsock_transport_churn_get_cid_ok);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -2329,6 +2338,17 @@ void dump_stats(void)
 		stat_row("iouring_send_zc_churn", "unregister_race_ok", shm->stats.iouring_send_zc_churn_unregister_race_ok);
 		stat_row("iouring_send_zc_churn", "update_race_ok",     shm->stats.iouring_send_zc_churn_update_race_ok);
 		stat_row("iouring_send_zc_churn", "cqe_drained",        shm->stats.iouring_send_zc_churn_cqe_drained);
+	}
+
+	if (shm->stats.vsock_transport_churn_runs) {
+		stat_row("vsock_transport_churn", "runs",           shm->stats.vsock_transport_churn_runs);
+		stat_row("vsock_transport_churn", "setup_failed",   shm->stats.vsock_transport_churn_setup_failed);
+		stat_row("vsock_transport_churn", "bind_ok",        shm->stats.vsock_transport_churn_bind_ok);
+		stat_row("vsock_transport_churn", "connect_ok",     shm->stats.vsock_transport_churn_connect_ok);
+		stat_row("vsock_transport_churn", "send_ok",        shm->stats.vsock_transport_churn_send_ok);
+		stat_row("vsock_transport_churn", "buffer_size_ok", shm->stats.vsock_transport_churn_buffer_size_ok);
+		stat_row("vsock_transport_churn", "timeout_ok",     shm->stats.vsock_transport_churn_timeout_ok);
+		stat_row("vsock_transport_churn", "get_cid_ok",     shm->stats.vsock_transport_churn_get_cid_ok);
 	}
 
 	if (kcov_shm != NULL) {

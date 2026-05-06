@@ -157,6 +157,7 @@ enum child_op_type {
 	CHILD_OP_TCP_ULP_SWAP_CHURN,
 	CHILD_OP_MSG_ZEROCOPY_CHURN,
 	CHILD_OP_IOURING_SEND_ZC_CHURN,
+	CHILD_OP_VSOCK_TRANSPORT_CHURN,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -488,3 +489,4 @@ bool netns_teardown_churn(struct childdata *child);
 bool tcp_ulp_swap_churn(struct childdata *child);
 bool msg_zerocopy_churn(struct childdata *child);
 bool iouring_send_zc_churn(struct childdata *child);
+bool vsock_transport_churn(struct childdata *child);
