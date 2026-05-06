@@ -849,6 +849,14 @@ struct stats_s {
 	unsigned long mptcp_pm_churn_addr_removed_ok;		/* MPTCP_PM_CMD_DEL_ADDR ack 0 (subflow teardown raced data) */
 	unsigned long mptcp_pm_churn_send_ok;			/* send() through the live MPTCP socket returned >0 */
 
+	/* devlink_port_churn childop counters */
+	unsigned long devlink_port_churn_iterations;		/* per-loop iteration completed */
+	unsigned long devlink_port_churn_split_ok;		/* DEVLINK_CMD_PORT_SPLIT ack 0 */
+	unsigned long devlink_port_churn_split_fail;		/* DEVLINK_CMD_PORT_SPLIT non-zero ack (expected sometimes) */
+	unsigned long devlink_port_churn_reload_ok;		/* DEVLINK_CMD_RELOAD action=DRIVER_REINIT ack 0 */
+	unsigned long devlink_port_churn_reload_fail;		/* DEVLINK_CMD_RELOAD non-zero ack */
+	unsigned long devlink_port_churn_create_skipped;	/* netdevsim absent / sysfs unwritable */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
