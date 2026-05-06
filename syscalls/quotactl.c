@@ -51,6 +51,7 @@ static void sanitise_quotactl(struct syscallrecord *rec)
 			dqb->dqb_isoftlimit = rand() % 100000;
 		}
 		rec->a4 = (unsigned long) dqb;
+		avoid_shared_buffer(&rec->a4, sizeof(*dqb));
 		break;
 	}
 	case Q_GETINFO:
@@ -65,6 +66,7 @@ static void sanitise_quotactl(struct syscallrecord *rec)
 			dqi->dqi_igrace = 3600 * (1 + (rand() % 168));
 		}
 		rec->a4 = (unsigned long) dqi;
+		avoid_shared_buffer(&rec->a4, sizeof(*dqi));
 		break;
 	}
 	case Q_GETFMT: {
@@ -73,6 +75,7 @@ static void sanitise_quotactl(struct syscallrecord *rec)
 		if (!fmt)
 			break;
 		rec->a4 = (unsigned long) fmt;
+		avoid_shared_buffer(&rec->a4, sizeof(*fmt));
 		break;
 	}
 	default:
