@@ -109,6 +109,7 @@ extern const struct socket_family_grammar grammar_inet;
 extern const struct socket_family_grammar grammar_inet6;
 #endif
 extern const struct socket_family_grammar grammar_unix;
+extern const struct socket_family_grammar grammar_netlink;
 
 /*
  * Stub entries — registered with can_run=sfg_always_false so they
