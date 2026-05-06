@@ -37,8 +37,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <setjmp.h>
-#include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -55,32 +53,6 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
-
-/* Pool-race fault guard.  See the comment on the equivalent guard in
- * childops/memory-pressure.c for the full rationale; in short, this
- * catches the residual race between a sibling unmapping a pool entry
- * and this child dereferencing the iobuf pointer drawn from the same
- * entry, which the munmap post-hook pool invalidation cannot close. */
-static sigjmp_buf iouring_flood_pool_race_jmp;
-
-static void iouring_flood_pool_race_handler(int sig, siginfo_t *info,
-					    void *ctx)
-{
-	(void)ctx;
-	if (info->si_code <= 0 && info->si_pid != getpid()) {
-		/* Sibling-spoofed — kernel consumed the signal already. */
-		return;
-	}
-	if (info->si_code <= 0) {
-		/* Self-sent (glibc abort etc.) — restore default and
-		 * re-raise so child_fault_handler diagnoses + exits.
-		 * siglongjmp here would orphan the allocator lock. */
-		signal(sig, SIG_DFL);
-		raise(sig);
-		return;
-	}
-	siglongjmp(iouring_flood_pool_race_jmp, 1);
-}
 
 #ifndef __NR_io_uring_setup
 #define __NR_io_uring_setup	425
@@ -409,7 +381,16 @@ bool iouring_flood(struct childdata *child)
 	 *
 	 * The pool is owned by the parent: we must NOT munmap on cleanup,
 	 * and we must NOT memset the buffer — clobbering it would corrupt
-	 * the shared state that other childops also draw from. */
+	 * the shared state that other childops also draw from.
+	 *
+	 * No SIGSEGV/SIGBUS sigsetjmp wrap protects the pool draw here:
+	 * the iouring kernel never faults userspace on a bad SQE buffer.
+	 * The pointer is copied into the SQE in fill_sqe and the kernel
+	 * surfaces a stale-pointer condition as -EFAULT in the CQE result
+	 * (drained in drain_cqes and counted in iouring_failed via the
+	 * io_uring_enter return path), not as a userspace SIGSEGV.  A
+	 * signal-handler wrap here can therefore only hide unrelated bugs
+	 * — bad pool buffers do not surface through it. */
 	if (iobuf == NULL) {
 		struct map *m = get_map_with_prot(PROT_READ | PROT_WRITE);
 
@@ -435,92 +416,58 @@ bool iouring_flood(struct childdata *child)
 	cycles = 1 + ((unsigned int)rand() % MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
-		struct sigaction sa, old_segv, old_bus;
-		bool aborted = false;
+		struct flood_ctx ctx;
+		unsigned int n_pick;
+		unsigned int n_subs;
+		unsigned int j;
+		int r;
 
-		memset(&sa, 0, sizeof(sa));
-		sigemptyset(&sa.sa_mask);
-		sa.sa_flags = SA_SIGINFO;
-		sa.sa_sigaction = iouring_flood_pool_race_handler;
-		sigaction(SIGSEGV, &sa, &old_segv);
-		sigaction(SIGBUS,  &sa, &old_bus);
-
-		if (sigsetjmp(iouring_flood_pool_race_jmp, 1) == 0) {
-			struct flood_ctx ctx;
-			unsigned int n_pick;
-			unsigned int n_subs;
-			unsigned int j;
-			int r;
-
-			if (!flood_setup(&ctx)) {
-				/* ENOSYS: kernel built without
-				 * CONFIG_IO_URING.  EPERM:  io_uring
-				 * disabled by sysctl.  Neither changes
-				 * for the life of this process — latch
-				 * and bail so subsequent invocations
-				 * no-op. */
-				if (errno == ENOSYS || errno == EPERM) {
-					ns_unsupported = true;
-					sigaction(SIGSEGV, &old_segv, NULL);
-					sigaction(SIGBUS,  &old_bus,  NULL);
-					break;
-				}
-				__atomic_add_fetch(&shm->stats.iouring_failed,
-						   1, __ATOMIC_RELAXED);
-				goto cycle_done;
+		if (!flood_setup(&ctx)) {
+			/* ENOSYS: kernel built without CONFIG_IO_URING.
+			 * EPERM:  io_uring disabled by sysctl.  Neither
+			 * changes for the life of this process — latch
+			 * and bail so subsequent invocations no-op. */
+			if (errno == ENOSYS || errno == EPERM) {
+				ns_unsupported = true;
+				break;
 			}
+			__atomic_add_fetch(&shm->stats.iouring_failed,
+					   1, __ATOMIC_RELAXED);
+			continue;
+		}
 
-			n_pick = MIN_BURST + ((unsigned int)rand() %
-					      (MAX_BURST - MIN_BURST + 1));
+		n_pick = MIN_BURST + ((unsigned int)rand() %
+				      (MAX_BURST - MIN_BURST + 1));
 
-			for (j = 0; j < n_pick; j++)
-				fill_sqe(&burst[j], dev_null_rd, dev_null_wr,
-					 j + 1);
+		for (j = 0; j < n_pick; j++)
+			fill_sqe(&burst[j], dev_null_rd, dev_null_wr, j + 1);
 
-			n_subs = submit_burst(&ctx, burst, n_pick);
-			if (n_subs == 0) {
-				__atomic_add_fetch(&shm->stats.iouring_failed,
-						   1, __ATOMIC_RELAXED);
-				flood_teardown(&ctx);
-				goto cycle_done;
-			}
-
-			r = (int)syscall(__NR_io_uring_enter, ctx.fd, n_subs,
-					 n_subs, IORING_ENTER_GETEVENTS, NULL,
-					 0);
-			if (r < 0) {
-				__atomic_add_fetch(&shm->stats.iouring_failed,
-						   1, __ATOMIC_RELAXED);
-			} else {
-				unsigned int reaped;
-
-				__atomic_add_fetch(&shm->stats.iouring_submits,
-						   (unsigned long)n_subs,
-						   __ATOMIC_RELAXED);
-				reaped = drain_cqes(&ctx);
-				__atomic_add_fetch(&shm->stats.iouring_reaped,
-						   (unsigned long)reaped,
-						   __ATOMIC_RELAXED);
-			}
-
+		n_subs = submit_burst(&ctx, burst, n_pick);
+		if (n_subs == 0) {
+			__atomic_add_fetch(&shm->stats.iouring_failed,
+					   1, __ATOMIC_RELAXED);
 			flood_teardown(&ctx);
-		} else {
-			aborted = true;
+			continue;
 		}
-cycle_done:
-		sigaction(SIGSEGV, &old_segv, NULL);
-		sigaction(SIGBUS,  &old_bus,  NULL);
 
-		if (aborted) {
-			/* siglongjmp skipped flood_teardown for this
-			 * cycle — the per-cycle ring mmaps + ring fd
-			 * are leaked, accepted per the dispatch.  Move
-			 * on to the next cycle rather than aborting
-			 * the whole invocation. */
-			__atomic_add_fetch(
-				&shm->stats.pool_race_aborted[CHILD_OP_IOURING_FLOOD],
-				1, __ATOMIC_RELAXED);
+		r = (int)syscall(__NR_io_uring_enter, ctx.fd, n_subs,
+				 n_subs, IORING_ENTER_GETEVENTS, NULL, 0);
+		if (r < 0) {
+			__atomic_add_fetch(&shm->stats.iouring_failed,
+					   1, __ATOMIC_RELAXED);
+		} else {
+			unsigned int reaped;
+
+			__atomic_add_fetch(&shm->stats.iouring_submits,
+					   (unsigned long)n_subs,
+					   __ATOMIC_RELAXED);
+			reaped = drain_cqes(&ctx);
+			__atomic_add_fetch(&shm->stats.iouring_reaped,
+					   (unsigned long)reaped,
+					   __ATOMIC_RELAXED);
 		}
+
+		flood_teardown(&ctx);
 	}
 
 	close(dev_null_rd);
