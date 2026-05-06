@@ -663,6 +663,13 @@ static const struct fd_provider kvm_vcpu_provider = {
 	.init = &init_kvm_vcpus,
 	.get = &get_rand_kvm_vcpu_fd,
 	.open = &open_kvm_vcpu_fd,
+	/*
+	 * kvm_vcpu_fops->poll runs through the KVM_RUN waitqueue; without
+	 * an actively scheduled vCPU thread, ep_item_poll has nothing to
+	 * wake it.  Bar from epoll/select/poll watch sets; direct
+	 * KVM_RUN/KVM_GET_REGS ioctl fuzzing remains available.
+	 */
+	.poll_can_block = true,
 };
 
 REG_FD_PROV(kvm_vcpu_provider);

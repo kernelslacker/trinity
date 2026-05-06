@@ -1093,6 +1093,21 @@ struct stats_s {
 	 * / get_rand_epoll_fd. */
 	unsigned long epoll_lazy_armed;
 
+	/* Number of fd-pickup attempts the watch-set sanitisers (arm_epoll,
+	 * sanitise_epoll_ctl, sanitise_poll/ppoll, sanitise_select) refused
+	 * because the candidate fd belonged to an fd_provider whose
+	 * poll_can_block tag was set (FUSE / userfaultfd / KVM vCPU /
+	 * io_uring / pidfd).  Drop the kernel into the four ep_item_poll
+	 * blocking-poll callsites (do_epoll_ctl + ep_send_events +
+	 * __ep_eventpoll_poll + ep_loop_check_proc) without this filter and
+	 * a single FUSE daemon dying takes 100+ child slots into
+	 * TASK_UNINTERRUPTIBLE on the per-fd waitqueue, which the watchdog
+	 * cannot break and defer-slot-reuse cannot recycle.  A non-zero
+	 * counter alongside steady epoll_lazy_armed growth means the filter
+	 * is doing work; a flat counter while D-state child counts climb
+	 * means a new blocking-poll fd_provider escaped the tagging. */
+	unsigned long epoll_blocking_poll_skipped;
+
 	/* Number of fds the generic ret_objtype post-hook auto-registered
 	 * into a per-type OBJ_LOCAL pool because no syscall-specific .post
 	 * had already done so. */

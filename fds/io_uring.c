@@ -321,6 +321,12 @@ static const struct fd_provider io_uring_fd_provider = {
 	.init = &init_io_uring_fds,
 	.get = &get_rand_io_uring_fd,
 	.open = &open_io_uring_fd,
+	/*
+	 * io_uring_poll() waits for completion-queue activity; an idle ring
+	 * with no submitted SQEs leaves ep_item_poll spinning on the CQ
+	 * waitqueue indefinitely.  Bar from epoll/select/poll watch sets.
+	 */
+	.poll_can_block = true,
 };
 
 REG_FD_PROV(io_uring_fd_provider);
