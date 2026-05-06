@@ -54,6 +54,26 @@ static void arm_epoll(int epfd)
 		if (target_fd == epfd)
 			continue;
 
+		/*
+		 * Refuse fds whose owning fd_provider opted into
+		 * poll_can_block.  ep_item_poll runs the target's f_op->poll
+		 * synchronously inside EPOLL_CTL_ADD, and a blocking ->poll
+		 * (FUSE without a daemon, idle io_uring CQ, vCPU not yet
+		 * KVM_RUN'd, never-exiting pidfd target, unregistered uffd)
+		 * parks the calling task in TASK_UNINTERRUPTIBLE on the
+		 * per-fd waitqueue.  The watchdog cannot kill it and
+		 * defer-slot-reuse pins the slot, cascading into the wedge
+		 * captured at 2026-05-06 (117 children across the four
+		 * ep_item_poll callsites: do_epoll_ctl+0x123b,
+		 * ep_send_events+0x104, __ep_eventpoll_poll+0x123,
+		 * ep_loop_check_proc+0x76).
+		 */
+		if (fd_poll_can_block(target_fd)) {
+			__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+					   __ATOMIC_RELAXED);
+			continue;
+		}
+
 		ev.events = 0;
 		nbits = 1 + (rand() % ARRAY_SIZE(epoll_events));
 		for (j = 0; j < nbits; j++)
