@@ -18,6 +18,7 @@ static unsigned long msgctl_cmds[] = {
 static void sanitise_msgctl(struct syscallrecord *rec)
 {
 	void *buf = NULL;
+	unsigned long allocated_size = 0;
 
 	rec->post_state = 0;
 
@@ -27,11 +28,13 @@ static void sanitise_msgctl(struct syscallrecord *rec)
 		return;
 	case IPC_INFO:
 	case MSG_INFO:
-		buf = zmalloc(sizeof(struct msginfo));
+		allocated_size = sizeof(struct msginfo);
+		buf = zmalloc(allocated_size);
 		break;
 	default:
 		/* IPC_STAT, IPC_SET, MSG_STAT */
-		buf = zmalloc(sizeof(struct msqid_ds));
+		allocated_size = sizeof(struct msqid_ds);
+		buf = zmalloc(allocated_size);
 		break;
 	}
 
@@ -39,6 +42,8 @@ static void sanitise_msgctl(struct syscallrecord *rec)
 	/* Snapshot for the post handler -- a3 may be scribbled by a sibling
 	 * syscall before post_msgctl() runs. */
 	rec->post_state = (unsigned long) buf;
+
+	avoid_shared_buffer(&rec->a3, allocated_size);
 }
 
 static void post_msgctl(struct syscallrecord *rec)
