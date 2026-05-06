@@ -687,7 +687,8 @@ static void dump_stats_json(void)
 		"\"vxlan_encap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"fdb_add_ok\":%lu,\"link_up_ok\":%lu,\"packet_sent_ok\":%lu,\"link_del_ok\":%lu},"
 		"\"bridge_fdb_stp\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"raw_send_ok\":%lu,\"stp_toggle_ok\":%lu,\"fdb_del_ok\":%lu,\"link_del_ok\":%lu},"
 		"\"nftables_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"table_create_ok\":%lu,\"set_create_ok\":%lu,\"chain_create_ok\":%lu,\"rule_create_ok\":%lu,\"packet_sent_ok\":%lu,\"rule_insert_ok\":%lu,\"rule_del_ok\":%lu,\"table_del_ok\":%lu},"
-		"\"tc_qdisc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"qdisc_create_ok\":%lu,\"tclass_create_ok\":%lu,\"tfilter_create_ok\":%lu,\"packet_sent_ok\":%lu,\"qdisc_replace_ok\":%lu,\"tfilter_del_ok\":%lu,\"qdisc_del_ok\":%lu,\"link_del_ok\":%lu}"
+		"\"tc_qdisc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"qdisc_create_ok\":%lu,\"tclass_create_ok\":%lu,\"tfilter_create_ok\":%lu,\"packet_sent_ok\":%lu,\"qdisc_replace_ok\":%lu,\"tfilter_del_ok\":%lu,\"qdisc_del_ok\":%lu,\"link_del_ok\":%lu},"
+		"\"xfrm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_updated\":%lu,\"sa_deleted\":%lu,\"pol_added\":%lu,\"pol_deleted\":%lu,\"esp_sent\":%lu,\"pfkey_send_ok\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -967,7 +968,16 @@ static void dump_stats_json(void)
 		shm->stats.tc_qdisc_churn_qdisc_replace_ok,
 		shm->stats.tc_qdisc_churn_tfilter_del_ok,
 		shm->stats.tc_qdisc_churn_qdisc_del_ok,
-		shm->stats.tc_qdisc_churn_link_del_ok);
+		shm->stats.tc_qdisc_churn_link_del_ok,
+		shm->stats.xfrm_churn_runs,
+		shm->stats.xfrm_churn_setup_failed,
+		shm->stats.xfrm_churn_sa_added,
+		shm->stats.xfrm_churn_sa_updated,
+		shm->stats.xfrm_churn_sa_deleted,
+		shm->stats.xfrm_churn_pol_added,
+		shm->stats.xfrm_churn_pol_deleted,
+		shm->stats.xfrm_churn_esp_sent,
+		shm->stats.xfrm_churn_pfkey_send_ok);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -2084,6 +2094,18 @@ void dump_stats(void)
 		stat_row("tc_qdisc_churn", "tfilter_del_ok",    shm->stats.tc_qdisc_churn_tfilter_del_ok);
 		stat_row("tc_qdisc_churn", "qdisc_del_ok",      shm->stats.tc_qdisc_churn_qdisc_del_ok);
 		stat_row("tc_qdisc_churn", "link_del_ok",       shm->stats.tc_qdisc_churn_link_del_ok);
+	}
+
+	if (shm->stats.xfrm_churn_runs) {
+		stat_row("xfrm_churn", "runs",          shm->stats.xfrm_churn_runs);
+		stat_row("xfrm_churn", "setup_failed",  shm->stats.xfrm_churn_setup_failed);
+		stat_row("xfrm_churn", "sa_added",      shm->stats.xfrm_churn_sa_added);
+		stat_row("xfrm_churn", "sa_updated",    shm->stats.xfrm_churn_sa_updated);
+		stat_row("xfrm_churn", "sa_deleted",    shm->stats.xfrm_churn_sa_deleted);
+		stat_row("xfrm_churn", "pol_added",     shm->stats.xfrm_churn_pol_added);
+		stat_row("xfrm_churn", "pol_deleted",   shm->stats.xfrm_churn_pol_deleted);
+		stat_row("xfrm_churn", "esp_sent",      shm->stats.xfrm_churn_esp_sent);
+		stat_row("xfrm_churn", "pfkey_send_ok", shm->stats.xfrm_churn_pfkey_send_ok);
 	}
 
 	if (kcov_shm != NULL) {

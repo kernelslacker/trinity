@@ -145,6 +145,7 @@ enum child_op_type {
 	CHILD_OP_BRIDGE_FDB_STP,
 	CHILD_OP_NFTABLES_CHURN,
 	CHILD_OP_TC_QDISC_CHURN,
+	CHILD_OP_XFRM_CHURN,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -464,3 +465,4 @@ bool vxlan_encap_churn(struct childdata *child);
 bool bridge_fdb_stp(struct childdata *child);
 bool nftables_churn(struct childdata *child);
 bool tc_qdisc_churn(struct childdata *child);
+bool xfrm_churn(struct childdata *child);
