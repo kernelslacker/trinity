@@ -11,6 +11,9 @@
 static void sanitise_accept(struct syscallrecord *rec)
 {
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
+
+	avoid_shared_buffer(&rec->a2, sizeof(struct sockaddr_storage));
+	avoid_shared_buffer(&rec->a3, sizeof(int));
 }
 
 static void post_accept(struct syscallrecord *rec)
