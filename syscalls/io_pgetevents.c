@@ -36,6 +36,8 @@ static void sanitise_io_pgetevents(struct syscallrecord *rec)
 	rec->a4 = (unsigned long) events;
 	rec->a5 = (unsigned long) ts;
 	rec->a6 = 0;		/* usig=NULL — no signal mask */
+
+	avoid_shared_buffer(&rec->a4, rec->a3 * sizeof(struct io_event));
 }
 
 static void post_io_pgetevents(struct syscallrecord *rec)
