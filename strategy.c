@@ -93,20 +93,50 @@ const char *picker_mode_name(enum picker_mode_t mode)
 
 /*
  * Record the just-finished window: bump pull count for the arm that
- * was active and add its edge yield to the cumulative reward.
+ * was active, add its edge yield plus the CMP-novelty term to the
+ * cumulative reward, and update the diagnostic CMP-share running sum.
  * Called by the CAS-winning child during maybe_rotate_strategy(),
  * which serialises with the picker, so plain (non-atomic) writes
- * to bandit_pulls[] / bandit_reward[] are safe — readers only run
- * inside the next pick_next_strategy() call on the next CAS winner,
- * and the strategy-switch store has release semantics.
+ * to bandit_pulls[] / bandit_reward[] / bandit_cmp_share_sum_x1000[]
+ * are safe — readers only run inside the next pick_next_strategy()
+ * call on the next CAS winner, and the strategy-switch store has
+ * release semantics.  The stats counter bump uses an atomic add
+ * because dump_stats() is parent-side and may read concurrently.
+ *
+ * pc_edges is the per-window edges-by-strategy delta; cmp_new_constants
+ * is the per-window bandit_cmp_new_constants delta.  Combined reward
+ * is pc_edges + cmp_new_constants /
+ * CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL (integer division — sub-weight
+ * residues round to zero, deliberately so a window with a handful
+ * of novel constants doesn't perturb the headline PC signal).
  */
-void bandit_record_pull(int arm, unsigned long reward)
+void bandit_record_pull(int arm, unsigned long pc_edges,
+			unsigned long cmp_new_constants)
 {
+	unsigned long cmp_term;
+	unsigned long total;
+
 	if (arm < 0 || arm >= NR_STRATEGIES)
 		return;
 
+	cmp_term = cmp_new_constants / CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL;
+	total = pc_edges + cmp_term;
+
 	shm->bandit_pulls[arm]++;
-	shm->bandit_reward[arm] += reward;
+	shm->bandit_reward[arm] += total;
+
+	if (cmp_term == 0)
+		return;
+
+	__atomic_fetch_add(&shm->stats.bandit_cmp_reward_added, 1UL,
+			   __ATOMIC_RELAXED);
+
+	/* Per-arm running sum of cmp_term's share of the combined reward,
+	 * scaled to parts per thousand.  total is non-zero here because
+	 * cmp_term > 0.  Averaged at end-of-run to surface the empirical
+	 * CMP weighting per arm so the 0.25 constant can be tuned. */
+	shm->bandit_cmp_share_sum_x1000[arm] +=
+		(cmp_term * 1000UL) / total;
 }
 
 /*
@@ -371,11 +401,19 @@ void dump_strategy_stats(void)
 		unsigned long reward = shm->bandit_reward[i];
 		unsigned long cmp_new = __atomic_load_n(
 			&shm->bandit_cmp_new_constants[i], __ATOMIC_RELAXED);
+		unsigned long share_sum = shm->bandit_cmp_share_sum_x1000[i];
 		unsigned long mean_x1000 = pulls ? (reward * 1000UL / pulls) : 0;
+		/* Average per-window CMP share, parts per thousand.  Divides
+		 * by total pulls (not just CMP-contributing pulls) so a low
+		 * value can mean either "CMP rarely fires" or "CMP fires but
+		 * is small relative to PC reward" — both are interesting for
+		 * tuning the 0.25 weight constant. */
+		unsigned long share_avg_x1000 = pulls ? (share_sum / pulls) : 0;
 
-		output(0, "  arm[%d]: pulls=%lu reward=%lu mean=%lu.%03lu edges/window cmp_novel=%lu\n",
+		output(0, "  arm[%d]: pulls=%lu reward=%lu mean=%lu.%03lu edges/window cmp_novel=%lu cmp_share=%lu.%lu%%\n",
 		       i, pulls, reward,
 		       mean_x1000 / 1000UL, mean_x1000 % 1000UL,
-		       cmp_new);
+		       cmp_new,
+		       share_avg_x1000 / 10UL, share_avg_x1000 % 10UL);
 	}
 }

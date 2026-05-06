@@ -451,6 +451,7 @@ static void maybe_rotate_strategy(void)
 	unsigned long last;
 	int prev, next;
 	unsigned long edges_now, edges_in_window, syscalls_in_window;
+	unsigned long cmp_now, cmp_in_window;
 
 	now = __atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED);
 	last = __atomic_load_n(&shm->syscalls_at_last_switch, __ATOMIC_RELAXED);
@@ -472,12 +473,22 @@ static void maybe_rotate_strategy(void)
 	edges_in_window = edges_now - shm->edges_at_window_start;
 	syscalls_in_window = now - last;
 
+	/* CMP-novelty delta: number of comparison constants the active arm
+	 * exposed for the first time within CMP_NOVELTY_DECAY_WINDOWS this
+	 * window.  Folded into the bandit reward by bandit_record_pull as
+	 * a 0.25-weight secondary signal so an arm whose PC growth has
+	 * plateaued but whose validation surface is still mutating doesn't
+	 * lose to a noisier arm on PC delta alone. */
+	cmp_now = __atomic_load_n(&shm->bandit_cmp_new_constants[prev],
+				  __ATOMIC_RELAXED);
+	cmp_in_window = cmp_now - shm->bandit_cmp_at_window_start;
+
 	/* Feed the just-finished window into the bandit before asking
 	 * the picker to choose the next arm, so UCB1 sees up-to-date
 	 * pulls/reward when scoring.  Round-robin mode ignores the
 	 * counters but the bookkeeping is harmless and lets the
 	 * end-of-run summary print pulls under either picker. */
-	bandit_record_pull(prev, edges_in_window);
+	bandit_record_pull(prev, edges_in_window, cmp_in_window);
 
 	/* Tick the rotation counter so bandit_cmp_observe()'s per-syscall
 	 * bloom decay sees the new window index on subsequent calls.
@@ -492,10 +503,14 @@ static void maybe_rotate_strategy(void)
 
 	shm->edges_at_window_start =
 		__atomic_load_n(&shm->edges_by_strategy[next], __ATOMIC_RELAXED);
+	shm->bandit_cmp_at_window_start =
+		__atomic_load_n(&shm->bandit_cmp_new_constants[next],
+				__ATOMIC_RELAXED);
 	__atomic_store_n(&shm->current_strategy, next, __ATOMIC_RELEASE);
 
-	output(0, "strategy: switched to %d (prev %d: edges=%lu, syscalls=%lu)\n",
-	       next, prev, edges_in_window, syscalls_in_window);
+	output(0, "strategy: switched to %d (prev %d: edges=%lu, syscalls=%lu, cmp_novel=%lu)\n",
+	       next, prev, edges_in_window, syscalls_in_window,
+	       cmp_in_window);
 }
 
 /*

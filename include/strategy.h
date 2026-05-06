@@ -72,12 +72,26 @@ bool parse_picker_mode(const char *name, enum picker_mode_t *out);
 const char *picker_mode_name(enum picker_mode_t mode);
 
 /*
+ * Reward weight for the CMP-novelty secondary signal, expressed as
+ * the integer reciprocal of 0.25.  Each novel CMP constant contributes
+ * 1/CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL to the bandit's per-window
+ * reward, so PC edges (weight 1.0) remain the dominant signal and
+ * CMP variety acts as a tiebreaker / decay-resistor for arms whose
+ * PC growth has plateaued but whose comparison surface is still
+ * mutating.  Hard-coded today; future work may expose this via CLI.
+ */
+#define CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL 4
+
+/*
  * Record the just-finished window's outcome for the bandit picker.
- * Bumps bandit_pulls[arm] and adds the per-window edge delta to
- * bandit_reward[arm].  Called from the CAS-winning child during
+ * Bumps bandit_pulls[arm], adds the per-window edge delta to
+ * bandit_reward[arm], and folds in (cmp_new_constants /
+ * CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL) as a secondary CMP-novelty
+ * term.  Called from the CAS-winning child during
  * maybe_rotate_strategy(); a no-op when arm is out of range.
  */
-void bandit_record_pull(int arm, unsigned long reward);
+void bandit_record_pull(int arm, unsigned long pc_edges,
+			unsigned long cmp_new_constants);
 
 /*
  * Pick the arm to run during the next window.  In PICKER_ROUND_ROBIN

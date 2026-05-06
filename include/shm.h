@@ -298,6 +298,27 @@ struct shm_s {
 	unsigned long bandit_cmp_new_constants[NR_STRATEGIES];
 
 	/*
+	 * Snapshot of bandit_cmp_new_constants[active_arm] at the start of
+	 * the current window, by symmetry with edges_at_window_start.  The
+	 * rotation hook reads bandit_cmp_new_constants[prev] and subtracts
+	 * this snapshot to compute the cmp-novelty delta the just-finished
+	 * window produced, then reseeds the snapshot from the next arm's
+	 * counter.  Single field rather than per-arm because only one arm
+	 * is active per window.  Written only by the CAS-winning child.
+	 */
+	unsigned long bandit_cmp_at_window_start;
+
+	/*
+	 * Per-arm cumulative sum of (cmp_term * 1000 / total_reward) across
+	 * windows where cmp_term > 0.  Divided by bandit_pulls[arm] at end
+	 * of run to print the average per-window CMP contribution share, so
+	 * the operator can tune CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL on real
+	 * run data.  Written only by the CAS-winning child, same path as
+	 * bandit_pulls/bandit_reward.
+	 */
+	unsigned long bandit_cmp_share_sum_x1000[NR_STRATEGIES];
+
+	/*
 	 * EFAULT-probe cache for ioctl arg classification.  Open-addressing
 	 * hashmap keyed on (group_idx, request); see ioctls/efault_cache.c
 	 * for the slot encoding and the probing protocol.  Lives in shm so

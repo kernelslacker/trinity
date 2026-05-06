@@ -1214,6 +1214,13 @@ static const struct {
 	  offsetof(struct stats_s, nfnl_subsys_calls_nftables) },
 	{ "nfnl_subsys_calls_ipset",
 	  offsetof(struct stats_s, nfnl_subsys_calls_ipset) },
+	/* UCB1 bandit CMP-novelty reward firings: bumped from
+	 * maybe_rotate_strategy() each time the just-finished window had
+	 * enough novel comparison constants to clear the integer reward
+	 * weight.  Surfaces whether the CMP feedback is meaningfully
+	 * contributing to arm selection. */
+	{ "bandit_cmp_reward_added",
+	  offsetof(struct stats_s, bandit_cmp_reward_added) },
 };
 
 static unsigned long defense_counter_load(unsigned int i)
@@ -1832,6 +1839,10 @@ void dump_stats(void)
 
 	if (verbosity > 1)
 		dump_syscall_category_histogram();
+
+	if (shm->stats.bandit_cmp_reward_added)
+		stat_row("strategy", "bandit_cmp_reward_added",
+			 shm->stats.bandit_cmp_reward_added);
 
 	dump_strategy_stats();
 
