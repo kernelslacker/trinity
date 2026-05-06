@@ -708,7 +708,8 @@ static void dump_stats_json(void)
 		"\"igmp_mld_source_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"join_ok\":%lu,\"leave_ok\":%lu,\"block_ok\":%lu,\"msfilter_ok\":%lu,\"drop_ok\":%lu,\"send_ok\":%lu},"
 		"\"psp_key_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"netdev_create_ok\":%lu,\"family_resolve_ok\":%lu,\"dev_get_ok\":%lu,\"key_install_ok\":%lu,\"spi_set_ok\":%lu,\"send_ok\":%lu,\"rotate_ok\":%lu,\"spi_switch_ok\":%lu,\"shutdown_ok\":%lu},"
 		"\"afxdp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"umem_reg_ok\":%lu,\"rings_setup_ok\":%lu,\"prog_load_ok\":%lu,\"map_create_ok\":%lu,\"map_update_ok\":%lu,\"bind_ok\":%lu,\"link_attach_ok\":%lu,\"netlink_attach_ok\":%lu,\"attach_failed\":%lu,\"send_ok\":%lu,\"recv_ok\":%lu,\"map_delete_ok\":%lu,\"munmap_race_ok\":%lu},"
-		"\"kvm\":{\"vcpu_ioctls_dispatched\":%lu}"
+		"\"kvm\":{\"vcpu_ioctls_dispatched\":%lu},"
+		"\"kvm_run_churn\":{\"invocations\":%lu,\"exit_io\":%lu,\"exit_mmio\":%lu,\"exit_hlt\":%lu,\"exit_shutdown\":%lu,\"exit_fail_entry\":%lu,\"exit_internal_error\":%lu,\"exit_intr\":%lu,\"exit_other\":%lu,\"errors\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1145,7 +1146,17 @@ static void dump_stats_json(void)
 		shm->stats.afxdp_churn_recv_ok,
 		shm->stats.afxdp_churn_map_delete_ok,
 		shm->stats.afxdp_churn_munmap_race_ok,
-		shm->stats.kvm_vcpu_ioctls_dispatched);
+		shm->stats.kvm_vcpu_ioctls_dispatched,
+		shm->stats.kvm_run_invocations,
+		shm->stats.kvm_run_exit_io,
+		shm->stats.kvm_run_exit_mmio,
+		shm->stats.kvm_run_exit_hlt,
+		shm->stats.kvm_run_exit_shutdown,
+		shm->stats.kvm_run_exit_fail_entry,
+		shm->stats.kvm_run_exit_internal_error,
+		shm->stats.kvm_run_exit_intr,
+		shm->stats.kvm_run_exit_other,
+		shm->stats.kvm_run_errors);
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -2544,6 +2555,19 @@ void dump_stats(void)
 		stat_row("afxdp_churn", "recv_ok",         shm->stats.afxdp_churn_recv_ok);
 		stat_row("afxdp_churn", "map_delete_ok",   shm->stats.afxdp_churn_map_delete_ok);
 		stat_row("afxdp_churn", "munmap_race_ok",  shm->stats.afxdp_churn_munmap_race_ok);
+	}
+
+	if (shm->stats.kvm_run_invocations) {
+		stat_row("kvm_run_churn", "invocations",        shm->stats.kvm_run_invocations);
+		stat_row("kvm_run_churn", "exit_io",            shm->stats.kvm_run_exit_io);
+		stat_row("kvm_run_churn", "exit_mmio",          shm->stats.kvm_run_exit_mmio);
+		stat_row("kvm_run_churn", "exit_hlt",           shm->stats.kvm_run_exit_hlt);
+		stat_row("kvm_run_churn", "exit_shutdown",      shm->stats.kvm_run_exit_shutdown);
+		stat_row("kvm_run_churn", "exit_fail_entry",    shm->stats.kvm_run_exit_fail_entry);
+		stat_row("kvm_run_churn", "exit_internal_error", shm->stats.kvm_run_exit_internal_error);
+		stat_row("kvm_run_churn", "exit_intr",          shm->stats.kvm_run_exit_intr);
+		stat_row("kvm_run_churn", "exit_other",         shm->stats.kvm_run_exit_other);
+		stat_row("kvm_run_churn", "errors",             shm->stats.kvm_run_errors);
 	}
 
 	if (kcov_shm != NULL) {

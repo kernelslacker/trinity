@@ -1266,6 +1266,18 @@ struct stats_s {
 	 * operator sees the per-window dispatch rate without waiting for the
 	 * end-of-run summary. */
 	unsigned long kvm_vcpu_ioctls_dispatched;
+
+	/* kvm_run_churn childop counters */
+	unsigned long kvm_run_invocations;		/* total KVM_RUN ioctls issued */
+	unsigned long kvm_run_exit_io;			/* exit_reason == KVM_EXIT_IO */
+	unsigned long kvm_run_exit_mmio;		/* exit_reason == KVM_EXIT_MMIO */
+	unsigned long kvm_run_exit_hlt;			/* exit_reason == KVM_EXIT_HLT */
+	unsigned long kvm_run_exit_shutdown;		/* exit_reason == KVM_EXIT_SHUTDOWN */
+	unsigned long kvm_run_exit_fail_entry;		/* exit_reason == KVM_EXIT_FAIL_ENTRY */
+	unsigned long kvm_run_exit_internal_error;	/* exit_reason == KVM_EXIT_INTERNAL_ERROR */
+	unsigned long kvm_run_exit_intr;		/* exit_reason == KVM_EXIT_INTR (alarm-induced) */
+	unsigned long kvm_run_exit_other;		/* every other exit_reason value */
+	unsigned long kvm_run_errors;			/* KVM_RUN ioctl returned -1 */
 };
 
 unsigned int stats_syscall_category(const char *name);
