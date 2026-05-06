@@ -694,7 +694,8 @@ static void dump_stats_json(void)
 		"\"mptcp_pm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sock_mptcp_ok\":%lu,\"addr_added_ok\":%lu,\"addr_removed_ok\":%lu,\"send_ok\":%lu},"
 		"\"devlink_port_churn\":{\"iterations\":%lu,\"split_ok\":%lu,\"split_fail\":%lu,\"reload_ok\":%lu,\"reload_fail\":%lu,\"create_skipped\":%lu},"
 		"\"handshake_req_abort\":{\"runs\":%lu,\"setup_failed\":%lu,\"accept_ok\":%lu,\"done_ok\":%lu,\"abort_ok\":%lu,\"orphan_close\":%lu},"
-		"\"nf_conntrack_helper_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_helper\":%lu,\"attach_ok\":%lu,\"attach_fail\":%lu,\"exp_ok\":%lu,\"packet_sent\":%lu,\"delete_ok\":%lu,\"zone_swap\":%lu,\"detach_ok\":%lu}"
+		"\"nf_conntrack_helper_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_helper\":%lu,\"attach_ok\":%lu,\"attach_fail\":%lu,\"exp_ok\":%lu,\"packet_sent\":%lu,\"delete_ok\":%lu,\"zone_swap\":%lu,\"detach_ok\":%lu},"
+		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"iouring_variant_ok\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1031,7 +1032,14 @@ static void dump_stats_json(void)
 		shm->stats.nf_conntrack_helper_churn_packet_sent,
 		shm->stats.nf_conntrack_helper_churn_delete_ok,
 		shm->stats.nf_conntrack_helper_churn_zone_swap,
-		shm->stats.nf_conntrack_helper_churn_detach_ok);
+		shm->stats.nf_conntrack_helper_churn_detach_ok,
+		shm->stats.af_unix_scm_rights_gc_runs,
+		shm->stats.af_unix_scm_rights_gc_setup_failed,
+		shm->stats.af_unix_scm_rights_gc_cycle_built_ok,
+		shm->stats.af_unix_scm_rights_gc_close_ok,
+		shm->stats.af_unix_scm_rights_gc_trigger_ok,
+		shm->stats.af_unix_scm_rights_gc_recv_ok,
+		shm->stats.af_unix_scm_rights_gc_iouring_variant_ok);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -2223,6 +2231,16 @@ void dump_stats(void)
 		stat_row("nf_conntrack_helper_churn", "delete_ok",    shm->stats.nf_conntrack_helper_churn_delete_ok);
 		stat_row("nf_conntrack_helper_churn", "zone_swap",    shm->stats.nf_conntrack_helper_churn_zone_swap);
 		stat_row("nf_conntrack_helper_churn", "detach_ok",    shm->stats.nf_conntrack_helper_churn_detach_ok);
+	}
+
+	if (shm->stats.af_unix_scm_rights_gc_runs) {
+		stat_row("af_unix_scm_rights_gc", "runs",                shm->stats.af_unix_scm_rights_gc_runs);
+		stat_row("af_unix_scm_rights_gc", "setup_failed",        shm->stats.af_unix_scm_rights_gc_setup_failed);
+		stat_row("af_unix_scm_rights_gc", "cycle_built_ok",      shm->stats.af_unix_scm_rights_gc_cycle_built_ok);
+		stat_row("af_unix_scm_rights_gc", "close_ok",            shm->stats.af_unix_scm_rights_gc_close_ok);
+		stat_row("af_unix_scm_rights_gc", "trigger_ok",          shm->stats.af_unix_scm_rights_gc_trigger_ok);
+		stat_row("af_unix_scm_rights_gc", "recv_ok",             shm->stats.af_unix_scm_rights_gc_recv_ok);
+		stat_row("af_unix_scm_rights_gc", "iouring_variant_ok",  shm->stats.af_unix_scm_rights_gc_iouring_variant_ok);
 	}
 
 	if (kcov_shm != NULL) {

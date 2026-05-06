@@ -877,6 +877,15 @@ struct stats_s {
 	unsigned long nf_conntrack_helper_churn_zone_swap;	/* SO_MARK-driven zone-swap drive packet emitted */
 	unsigned long nf_conntrack_helper_churn_detach_ok;	/* CT_NEW NLM_F_REPLACE w/o CTA_HELP ack 0 (detach race) */
 
+	/* af_unix_scm_rights_gc_churn childop counters */
+	unsigned long af_unix_scm_rights_gc_runs;		/* total af_unix_scm_rights_gc_churn invocations */
+	unsigned long af_unix_scm_rights_gc_setup_failed;	/* AF_UNIX socketpair() failed (probe latch) */
+	unsigned long af_unix_scm_rights_gc_cycle_built_ok;	/* full 3-pair SCM_RIGHTS cycle constructed end-to-end */
+	unsigned long af_unix_scm_rights_gc_close_ok;		/* userspace dropped its refs to cycle members (gc fodder) */
+	unsigned long af_unix_scm_rights_gc_trigger_ok;		/* gc-trigger sendmsg / drain landed (unix_inflight or workqueue) */
+	unsigned long af_unix_scm_rights_gc_recv_ok;		/* recvmsg drained queued SCM_RIGHTS msg (race vs unix_gc walk) */
+	unsigned long af_unix_scm_rights_gc_iouring_variant_ok;	/* io_uring fd inserted into the unix-scm reference graph */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
