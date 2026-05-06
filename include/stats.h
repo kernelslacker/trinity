@@ -799,6 +799,17 @@ struct stats_s {
 	unsigned long tc_qdisc_churn_qdisc_del_ok;	/* RTM_DELQDISC root accepted */
 	unsigned long tc_qdisc_churn_link_del_ok;	/* RTM_DELLINK on dummy accepted */
 
+	/* xfrm_churn childop counters */
+	unsigned long xfrm_churn_runs;			/* total xfrm_churn invocations */
+	unsigned long xfrm_churn_setup_failed;		/* unshare / NETLINK_XFRM open latched */
+	unsigned long xfrm_churn_sa_added;		/* XFRM_MSG_NEWSA accepted */
+	unsigned long xfrm_churn_sa_updated;		/* XFRM_MSG_UPDSA accepted (mid-flow rekey) */
+	unsigned long xfrm_churn_sa_deleted;		/* XFRM_MSG_DELSA accepted */
+	unsigned long xfrm_churn_pol_added;		/* XFRM_MSG_NEWPOLICY accepted */
+	unsigned long xfrm_churn_pol_deleted;		/* XFRM_MSG_DELPOLICY accepted */
+	unsigned long xfrm_churn_esp_sent;		/* loopback UDP send through SP/SA bundle returned >0 */
+	unsigned long xfrm_churn_pfkey_send_ok;		/* PF_KEYv2 SADB_FLUSH send returned >0 */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
