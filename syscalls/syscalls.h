@@ -178,7 +178,6 @@ extern struct syscallentry syscall_newfstat;
 extern struct syscallentry syscall_newlstat;
 extern struct syscallentry syscall_newstat;
 extern struct syscallentry syscall_newuname;
-extern struct syscallentry syscall_nfsservctl;
 extern struct syscallentry syscall_nice;
 extern struct syscallentry syscall_ni_syscall;
 extern struct syscallentry syscall_oldreaddir;
