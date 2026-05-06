@@ -100,7 +100,8 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 		       unsigned int *err_burst);
 
 /*
- * Per-family extern declarations land in subsequent commits as each
- * grammar is implemented.  The registry array in
- * net/socket-family-grammar.c grows in lockstep.
+ * Per-family extern declarations.  The registry array in
+ * net/socket-family-grammar.c grows in lockstep with this list as
+ * each grammar lands.
  */
+extern const struct socket_family_grammar grammar_inet;
