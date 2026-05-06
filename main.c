@@ -1139,6 +1139,35 @@ static void print_stats(void)
 					stall_count ? stalltxt : "",
 					rate);
 			}
+
+			/* Per-pool live ratio.  Suppressed when no explorers are
+			 * reserved (small fleets, --explorer-children=0, or pre-
+			 * default rollout) -- printing zeros adds visual noise. */
+			if (explorer_children > 0) {
+				static unsigned long last_explorer_edges = 0;
+				static unsigned long last_bandit_edges = 0;
+				unsigned long e_cur = __atomic_load_n(
+					&shm->stats.explorer_pool_edges_discovered,
+					__ATOMIC_RELAXED);
+				unsigned long b_cur = __atomic_load_n(
+					&shm->stats.bandit_pool_edges_discovered,
+					__ATOMIC_RELAXED);
+				unsigned long total = e_cur + b_cur;
+				unsigned long e_delta = e_cur - last_explorer_edges;
+				unsigned long b_delta = b_cur - last_bandit_edges;
+				unsigned int e_share_pct = total > 0 ?
+					(unsigned int)(e_cur * 100UL / total) : 0;
+				unsigned int b_share_pct = 100U - e_share_pct;
+
+				output(0, "[main] explorer: %u/%u children, %lu edges (%u%%/+%lu)  bandit: %u/%u, %lu edges (%u%%/+%lu)\n",
+					explorer_children, max_children,
+					e_cur, e_share_pct, e_delta,
+					max_children - explorer_children, max_children,
+					b_cur, b_share_pct, b_delta);
+				last_explorer_edges = e_cur;
+				last_bandit_edges = b_cur;
+			}
+
 			lastcount = op_count;
 		}
 	}
