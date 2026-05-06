@@ -23,6 +23,9 @@ static void sanitise_mincore(struct syscallrecord *rec)
 
 	vec = zmalloc(len);
 	rec->a3 = (unsigned long) vec;
+
+	avoid_shared_buffer(&rec->a3, len);
+
 	/* Snapshot for the post handler -- a3 may be scribbled by a sibling
 	 * syscall before post_mincore() runs. */
 	rec->post_state = (unsigned long) vec;
