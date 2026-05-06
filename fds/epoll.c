@@ -24,6 +24,17 @@ static const uint32_t epoll_events[] = {
 /*
  * Register 1-3 random fds with the epoll instance so that
  * epoll_wait/epoll_pwait actually have something to monitor.
+ *
+ * MUST run in child context only.  epoll_ctl(EPOLL_CTL_ADD) invokes the
+ * target fd's ->poll handler synchronously inside the kernel
+ * (ep_item_poll → fops->poll), and a fuzzer-controlled target_fd from
+ * get_random_fd() can name an fd whose ->poll blocks indefinitely
+ * (e.g. /dev/fuse waiting on an unresponsive userspace daemon, an
+ * io_uring fd, an empty eventfd in a non-O_NONBLOCK pattern, ...).
+ * If the parent's main loop calls this and the syscall blocks, the
+ * watchdog cannot kill the parent, children are never reaped, and the
+ * whole session wedges.  Children that block here are recovered by
+ * is_child_making_progress() in the watchdog.
  */
 static void arm_epoll(int epfd)
 {
@@ -53,6 +64,32 @@ static void arm_epoll(int epfd)
 	}
 }
 
+/*
+ * Child-side lazy arm: first child to win the CAS on eo->armed performs
+ * the EPOLL_CTL_ADDs; everyone else short-circuits.  Cross-process safe
+ * because eo lives in shm (alloc_shared_obj in the open/init paths).
+ *
+ * A child that wedges inside arm_epoll's epoll_ctl is killable by the
+ * watchdog and replaced by a fresh fork — the parent is never the one
+ * holding the syscall, which is the entire point of deferring the arm.
+ */
+void arm_epoll_if_needed(struct epollobj *eo)
+{
+	bool expected = false;
+
+	if (__atomic_load_n(&eo->armed, __ATOMIC_ACQUIRE))
+		return;
+
+	if (!__atomic_compare_exchange_n(&eo->armed, &expected, true,
+					 false, __ATOMIC_ACQ_REL,
+					 __ATOMIC_RELAXED))
+		return;
+
+	arm_epoll(eo->fd);
+	__atomic_add_fetch(&shm->stats.epoll_lazy_armed, 1,
+			   __ATOMIC_RELAXED);
+}
+
 static void epoll_destructor(struct object *obj)
 {
 	close(obj->epollobj.fd);
@@ -71,8 +108,8 @@ static void epoll_dump(struct object *obj, enum obj_scope scope)
 {
 	struct epollobj *eo = &obj->epollobj;
 
-	output(2, "epoll fd:%d used create1?:%d flags:%x scope:%d\n",
-		eo->fd, eo->create1, eo->flags, scope);
+	output(2, "epoll fd:%d used create1?:%d flags:%x armed:%d scope:%d\n",
+		eo->fd, eo->create1, eo->flags, eo->armed, scope);
 }
 
 static int init_epoll_fds(void)
@@ -107,8 +144,8 @@ static int init_epoll_fds(void)
 		obj->epollobj.fd = fd;
 		obj->epollobj.create1 = use_create1;
 		obj->epollobj.flags = use_create1 ? EPOLL_CLOEXEC : 0;
+		obj->epollobj.armed = false;
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_EPOLL);
-		arm_epoll(fd);
 		i++;
 	}
 	return true;
@@ -136,8 +173,8 @@ static int open_epoll_fd(void)
 	obj->epollobj.fd = fd;
 	obj->epollobj.create1 = use_create1;
 	obj->epollobj.flags = use_create1 ? EPOLL_CLOEXEC : 0;
+	obj->epollobj.armed = false;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_EPOLL);
-	arm_epoll(fd);
 	return true;
 }
 
@@ -187,6 +224,8 @@ static int get_rand_epoll_fd(void)
 		fd = obj->epollobj.fd;
 		if (fd < 0)
 			continue;
+
+		arm_epoll_if_needed(&obj->epollobj);
 
 		return fd;
 	}

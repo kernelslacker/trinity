@@ -6,6 +6,8 @@
 #include "syscall.h"
 #include "types.h"
 
+struct epollobj;
+
 void setup_fd_providers(void);
 
 bool open_fds(void);
@@ -35,6 +37,10 @@ int get_new_random_fd(void);
 int get_typed_fd(enum argtype type);
 int get_child_live_fd(struct childdata *child);
 void try_regenerate_fd(enum objecttype type);
+
+/* Defined in fds/epoll.c — child-side lazy arm.  See block comment
+ * above arm_epoll() for why arming must not run in parent context. */
+void arm_epoll_if_needed(struct epollobj *eo);
 
 #define REG_FD_PROV(_struct) \
 	static void __attribute__((constructor)) register_##_struct(void) { \
