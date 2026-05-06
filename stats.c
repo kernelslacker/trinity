@@ -650,7 +650,8 @@ static void dump_stats_json(void)
 			"\"retfd_blanket_reject\":%lu,"
 			"\"sibling_mprotect_failed\":%lu,"
 			"\"destroy_object_idx\":%lu,"
-			"\"global_obj_uaf_caught\":%lu},"
+			"\"global_obj_uaf_caught\":%lu,"
+			"\"maps_uaf_caught\":%lu},"
 		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu,"
 			"\"libc_heap_redirected\":%lu},"
 		"\"refcount_audit\":{\"runs\":%lu,\"fd_anomalies\":%lu,"
@@ -833,6 +834,7 @@ static void dump_stats_json(void)
 		shm->stats.sibling_mprotect_failed,
 		shm->stats.destroy_object_idx_corrupt,
 		shm->stats.global_obj_uaf_caught,
+		shm->stats.maps_uaf_caught,
 		shm->stats.shared_buffer_redirected, shm->stats.range_overlaps_shared_rejects,
 		shm->stats.libc_heap_redirected,
 		shm->stats.refcount_audit_runs, shm->stats.refcount_audit_fd_anomalies,
@@ -1299,6 +1301,8 @@ static const struct {
 	  offsetof(struct stats_s, destroy_object_idx_corrupt) },
 	{ "global_obj_uaf_caught",
 	  offsetof(struct stats_s, global_obj_uaf_caught) },
+	{ "maps_uaf_caught",
+	  offsetof(struct stats_s, maps_uaf_caught) },
 	/* genetlink registry per-family dispatch counters; rate-of-change
 	 * surfaces the live family selection mix without waiting for the
 	 * end-of-run summary.  A counter that stays at zero across an
@@ -1939,6 +1943,8 @@ void dump_stats(void)
 		stat_row("corruption", "destroy_object_idx",     shm->stats.destroy_object_idx_corrupt);
 	if (shm->stats.global_obj_uaf_caught)
 		stat_row("corruption", "global_obj_uaf_caught",  shm->stats.global_obj_uaf_caught);
+	if (shm->stats.maps_uaf_caught)
+		stat_row("corruption", "maps_uaf_caught",        shm->stats.maps_uaf_caught);
 
 	{
 		unsigned int op;
