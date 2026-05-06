@@ -24,6 +24,8 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <poll.h>
+#include <setjmp.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -1207,11 +1209,39 @@ static const struct iour_recipe catalog[] = {
 _Static_assert(ARRAY_SIZE(catalog) <= MAX_IOURING_RECIPES,
 	       "iouring recipe catalog outgrew MAX_IOURING_RECIPES; bump it");
 
+/* Pool-race fault guard.  See childops/memory-pressure.c for the full
+ * rationale; the wrap below catches a sibling-driven UAF on any pool-
+ * drawn buffer used inside r->run() (3 of the 15 recipes draw from
+ * the parent's mapping pool — the rest are no-ops here, the wrap is
+ * unconditional for shape simplicity). */
+static sigjmp_buf iouring_recipes_pool_race_jmp;
+
+static void iouring_recipes_pool_race_handler(int sig, siginfo_t *info,
+					      void *ctx)
+{
+	(void)ctx;
+	if (info->si_code <= 0 && info->si_pid != getpid()) {
+		/* Sibling-spoofed — kernel consumed the signal already. */
+		return;
+	}
+	if (info->si_code <= 0) {
+		/* Self-sent (glibc abort etc.) — restore default and
+		 * re-raise so child_fault_handler diagnoses + exits.
+		 * siglongjmp here would orphan the allocator lock. */
+		signal(sig, SIG_DFL);
+		raise(sig);
+		return;
+	}
+	siglongjmp(iouring_recipes_pool_race_jmp, 1);
+}
+
 bool iouring_recipes(struct childdata *child __unused__)
 {
 	struct iour_ctx ctx;
 	const struct iour_recipe *r;
-	unsigned int idx;
+	/* volatile: read after sigsetjmp/siglongjmp window so the value
+	 * must survive the longjmp register-clobber per ISO C 7.13.2.1. */
+	volatile unsigned int idx;
 	unsigned int tries;
 	bool unsupported = false;
 	bool ok;
@@ -1244,7 +1274,41 @@ bool iouring_recipes(struct childdata *child __unused__)
 		return true;
 	}
 
-	ok = r->run(&ctx, &unsupported);
+	{
+		struct sigaction sa, old_segv, old_bus;
+		bool aborted = false;
+
+		memset(&sa, 0, sizeof(sa));
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = SA_SIGINFO;
+		sa.sa_sigaction = iouring_recipes_pool_race_handler;
+		sigaction(SIGSEGV, &sa, &old_segv);
+		sigaction(SIGBUS,  &sa, &old_bus);
+
+		if (sigsetjmp(iouring_recipes_pool_race_jmp, 1) == 0) {
+			ok = r->run(&ctx, &unsupported);
+		} else {
+			aborted = true;
+			ok = false;
+		}
+
+		sigaction(SIGSEGV, &old_segv, NULL);
+		sigaction(SIGBUS,  &old_bus,  NULL);
+
+		if (aborted) {
+			/* siglongjmp skipped any in-recipe cleanup — the
+			 * recipe-internal allocations (sockets, eventfds)
+			 * are leaked.  iour_teardown below still runs on
+			 * the outer ring ctx, which iour_setup populated
+			 * before the wrap, so the ring mmaps + ring fd
+			 * are still released.  Don't latch
+			 * iouring_recipe_disabled[idx] — faults are not
+			 * ENOSYS. */
+			__atomic_add_fetch(
+				&shm->stats.pool_race_aborted[CHILD_OP_IOURING_RECIPES],
+				1, __ATOMIC_RELAXED);
+		}
+	}
 
 	iour_teardown(&ctx);
 
