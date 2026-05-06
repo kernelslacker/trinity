@@ -3,16 +3,6 @@
 #include <linux/atmdev.h>
 #include <linux/atm.h>
 #include <linux/sonet.h>
-#include <linux/atm_eni.h>
-#include <linux/atm_he.h>
-#include <linux/atm_nicstar.h>
-#include <linux/atm_zatm.h>
-#include <linux/atm_idt77105.h>
-#include <linux/atmclip.h>
-#include <linux/atmarp.h>
-#include <linux/atmlec.h>
-#include <linux/atmmpc.h>
-#include <linux/atm_tcp.h>
 #include <linux/atmbr2684.h>
 #include <linux/atmsvc.h>
 #include <sys/socket.h>
@@ -128,25 +118,11 @@ static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 	case ATM_GETCIRANGE:
 	case ATM_SETESI:
 	case ATM_SETESIF:
-	case ATM_ADDLECSADDR:
-	case ATM_DELLECSADDR:
-	case ATM_GETLECSADDR:
 	case ATM_GETSTAT:
 	case ATM_GETSTATZ:
 	case ATM_GETLOOP:
 	case ATM_SETLOOP:
 	case ATM_QUERYLOOP:
-	/* vendor PHY-private ioctls (IDT77105) */
-	case IDT77105_GETSTAT:
-	case IDT77105_GETSTATZ:
-	/* vendor SAR-private ioctls; ENI_MEMDUMP == HE_GET_REG numerically */
-	case ENI_MEMDUMP:
-	case ENI_SETMULT:
-	case NS_GETPSTAT:
-	case ZATM_GETPOOL:
-	/* ZATM_GETPOOLZ == NS_SETBUFLEV numerically; one label covers both */
-	case ZATM_GETPOOLZ:
-	case ZATM_SETPOOL:
 		sanitise_atmif_sioc(rec);
 		break;
 
@@ -260,9 +236,6 @@ static const struct ioctl atm_ioctls[] = {
 	IOCTL(ATM_SETCIRANGE),
 	IOCTL(ATM_SETESI),
 	IOCTL(ATM_SETESIF),
-	IOCTL(ATM_ADDLECSADDR),
-	IOCTL(ATM_DELLECSADDR),
-	IOCTL(ATM_GETLECSADDR),
 	IOCTL(ATM_GETSTAT),
 	IOCTL(ATM_GETSTATZ),
 	IOCTL(ATM_GETLOOP),
@@ -271,43 +244,14 @@ static const struct ioctl atm_ioctls[] = {
 	IOCTL(ATM_SETSC),
 	IOCTL(ATM_SETBACKEND),
 	IOCTL(ATM_NEWBACKENDIF),
-	/* vendor PHY-private driver ioctls */
-	IOCTL(IDT77105_GETSTAT),
-	IOCTL(IDT77105_GETSTATZ),
-	/* vendor SAR-private driver ioctls */
-	IOCTL(ENI_MEMDUMP),
-	IOCTL(ENI_SETMULT),
-	IOCTL(HE_GET_REG),
-	IOCTL(NS_GETPSTAT),
-	IOCTL(NS_SETBUFLEV),
-	IOCTL(NS_ADJBUFLEV),
-	IOCTL(ZATM_GETPOOL),
-	IOCTL(ZATM_GETPOOLZ),
-	IOCTL(ZATM_SETPOOL),
 	IOCTL(ATM_ADDPARTY),
 	IOCTL(ATM_DROPPARTY),
 	/* BR2684 bridged RFC2684 backend filter */
 	IOCTL(BR2684_SETFILT),
-	/* ATMTCP virtual driver; all _IO, no arg */
-	IOCTL(SIOCSIFATMTCP),
-	IOCTL(ATMTCP_CREATE),
-	IOCTL(ATMTCP_REMOVE),
 	/* SVC signaling daemon control socket; _IO, no arg */
 #ifdef ATMSIGD_CTRL
 	IOCTL(ATMSIGD_CTRL),
 #endif
-	/* LAN Emulation and MPOA control sockets; all _IO, no arg */
-	IOCTL(ATMLEC_CTRL),
-	IOCTL(ATMLEC_DATA),
-	IOCTL(ATMLEC_MCAST),
-	IOCTL(ATMMPC_CTRL),
-	IOCTL(ATMMPC_DATA),
-	/* Classical IP over ATM and ARP daemon control; all _IO, no arg */
-	IOCTL(SIOCMKCLIP),
-	IOCTL(ATMARPD_CTRL),
-	IOCTL(ATMARP_MKIP),
-	IOCTL(ATMARP_SETENTRY),
-	IOCTL(ATMARP_ENCAP),
 	IOCTL(SONET_GETSTAT),
 	IOCTL(SONET_GETSTATZ),
 	IOCTL(SONET_SETDIAG),
