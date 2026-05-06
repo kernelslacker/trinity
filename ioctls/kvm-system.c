@@ -41,6 +41,19 @@ static int kvm_system_fd_test(int fd, const struct stat *st __attribute__((unuse
 }
 
 static const struct ioctl kvm_system_ioctls[] = {
+	IOCTL(KVM_GET_API_VERSION),
+	IOCTL(KVM_CREATE_VM),
+	IOCTL(KVM_CHECK_EXTENSION),
+	IOCTL(KVM_GET_VCPU_MMAP_SIZE),
+#ifdef KVM_TRACE_ENABLE
+	IOCTL(KVM_TRACE_ENABLE),
+#endif
+#ifdef KVM_TRACE_PAUSE
+	IOCTL(KVM_TRACE_PAUSE),
+#endif
+#ifdef KVM_TRACE_DISABLE
+	IOCTL(KVM_TRACE_DISABLE),
+#endif
 #ifdef X86
 	IOCTL(KVM_X86_GET_MCE_CAP_SUPPORTED),
 #endif
