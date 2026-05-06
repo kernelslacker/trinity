@@ -688,7 +688,8 @@ static void dump_stats_json(void)
 		"\"bridge_fdb_stp\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"raw_send_ok\":%lu,\"stp_toggle_ok\":%lu,\"fdb_del_ok\":%lu,\"link_del_ok\":%lu},"
 		"\"nftables_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"table_create_ok\":%lu,\"set_create_ok\":%lu,\"chain_create_ok\":%lu,\"rule_create_ok\":%lu,\"packet_sent_ok\":%lu,\"rule_insert_ok\":%lu,\"rule_del_ok\":%lu,\"table_del_ok\":%lu},"
 		"\"tc_qdisc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"qdisc_create_ok\":%lu,\"tclass_create_ok\":%lu,\"tfilter_create_ok\":%lu,\"packet_sent_ok\":%lu,\"qdisc_replace_ok\":%lu,\"tfilter_del_ok\":%lu,\"qdisc_del_ok\":%lu,\"link_del_ok\":%lu},"
-		"\"xfrm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_updated\":%lu,\"sa_deleted\":%lu,\"pol_added\":%lu,\"pol_deleted\":%lu,\"esp_sent\":%lu,\"pfkey_send_ok\":%lu}"
+		"\"xfrm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_updated\":%lu,\"sa_deleted\":%lu,\"pol_added\":%lu,\"pol_deleted\":%lu,\"esp_sent\":%lu,\"pfkey_send_ok\":%lu},"
+		"\"bpf_cgroup_attach\":{\"runs\":%lu,\"setup_failed\":%lu,\"prog_loaded\":%lu,\"attached\":%lu,\"attach_rejected\":%lu,\"packets_sent\":%lu,\"detached\":%lu,\"post_detach_sent\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -977,7 +978,15 @@ static void dump_stats_json(void)
 		shm->stats.xfrm_churn_pol_added,
 		shm->stats.xfrm_churn_pol_deleted,
 		shm->stats.xfrm_churn_esp_sent,
-		shm->stats.xfrm_churn_pfkey_send_ok);
+		shm->stats.xfrm_churn_pfkey_send_ok,
+		shm->stats.bpf_cgroup_attach_runs,
+		shm->stats.bpf_cgroup_attach_setup_failed,
+		shm->stats.bpf_cgroup_attach_prog_loaded,
+		shm->stats.bpf_cgroup_attach_attached,
+		shm->stats.bpf_cgroup_attach_attach_rejected,
+		shm->stats.bpf_cgroup_attach_packets_sent,
+		shm->stats.bpf_cgroup_attach_detached,
+		shm->stats.bpf_cgroup_attach_post_detach_sent);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -2106,6 +2115,17 @@ void dump_stats(void)
 		stat_row("xfrm_churn", "pol_deleted",   shm->stats.xfrm_churn_pol_deleted);
 		stat_row("xfrm_churn", "esp_sent",      shm->stats.xfrm_churn_esp_sent);
 		stat_row("xfrm_churn", "pfkey_send_ok", shm->stats.xfrm_churn_pfkey_send_ok);
+	}
+
+	if (shm->stats.bpf_cgroup_attach_runs) {
+		stat_row("bpf_cgroup_attach", "runs",             shm->stats.bpf_cgroup_attach_runs);
+		stat_row("bpf_cgroup_attach", "setup_failed",     shm->stats.bpf_cgroup_attach_setup_failed);
+		stat_row("bpf_cgroup_attach", "prog_loaded",      shm->stats.bpf_cgroup_attach_prog_loaded);
+		stat_row("bpf_cgroup_attach", "attached",         shm->stats.bpf_cgroup_attach_attached);
+		stat_row("bpf_cgroup_attach", "attach_rejected",  shm->stats.bpf_cgroup_attach_attach_rejected);
+		stat_row("bpf_cgroup_attach", "packets_sent",     shm->stats.bpf_cgroup_attach_packets_sent);
+		stat_row("bpf_cgroup_attach", "detached",         shm->stats.bpf_cgroup_attach_detached);
+		stat_row("bpf_cgroup_attach", "post_detach_sent", shm->stats.bpf_cgroup_attach_post_detach_sent);
 	}
 
 	if (kcov_shm != NULL) {

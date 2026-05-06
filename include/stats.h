@@ -817,6 +817,16 @@ struct stats_s {
 	unsigned long xfrm_churn_esp_sent;		/* loopback UDP send through SP/SA bundle returned >0 */
 	unsigned long xfrm_churn_pfkey_send_ok;		/* PF_KEYv2 SADB_FLUSH send returned >0 */
 
+	/* bpf_cgroup_attach childop counters */
+	unsigned long bpf_cgroup_attach_runs;			/* total bpf_cgroup_attach invocations */
+	unsigned long bpf_cgroup_attach_setup_failed;		/* cgroup open / PROG_LOAD failed */
+	unsigned long bpf_cgroup_attach_prog_loaded;		/* PROG_LOAD accepted */
+	unsigned long bpf_cgroup_attach_attached;		/* PROG_ATTACH accepted */
+	unsigned long bpf_cgroup_attach_attach_rejected;	/* PROG_ATTACH rejected */
+	unsigned long bpf_cgroup_attach_packets_sent;		/* sendto/connect ops returned >=0 */
+	unsigned long bpf_cgroup_attach_detached;		/* PROG_DETACH accepted (mid-flow) */
+	unsigned long bpf_cgroup_attach_post_detach_sent;	/* sendto/connect after detach returned >=0 */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
