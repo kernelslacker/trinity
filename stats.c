@@ -677,6 +677,7 @@ static void dump_stats_json(void)
 		"\"iouring_flood\":{\"runs\":%lu,\"submits\":%lu,\"reaped\":%lu,\"failed\":%lu},"
 		"\"close_racer\":{\"runs\":%lu,\"pairs\":%lu,\"failed\":%lu,\"thread_spawn_fail\":%lu},"
 		"\"socket_family_chain\":{\"runs\":%lu,\"completed\":%lu,\"failed\":%lu,\"authencesn_attempts\":%lu,\"splice_attempts\":%lu},"
+		"\"socket_family_grammar\":{\"runs\":%lu,\"completed\":%lu},"
 		"\"tls_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_failed\":%lu,\"installs\":%lu,\"rekeys_ok\":%lu,\"rekeys_rejected\":%lu},"
 		"\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu},"
 		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu},"
@@ -884,6 +885,8 @@ static void dump_stats_json(void)
 		shm->stats.socket_family_chain_failed,
 		shm->stats.socket_family_chain_authencesn_attempts,
 		shm->stats.socket_family_chain_splice_attempts,
+		shm->stats.socket_family_grammar_runs,
+		shm->stats.socket_family_grammar_completed,
 		shm->stats.tls_rotate_runs,
 		shm->stats.tls_rotate_setup_failed,
 		shm->stats.tls_rotate_ulp_failed,
@@ -2202,6 +2205,11 @@ void dump_stats(void)
 		stat_row("socket_family_chain", "failed",              shm->stats.socket_family_chain_failed);
 		stat_row("socket_family_chain", "authencesn_attempts", shm->stats.socket_family_chain_authencesn_attempts);
 		stat_row("socket_family_chain", "splice_attempts",     shm->stats.socket_family_chain_splice_attempts);
+	}
+
+	if (shm->stats.socket_family_grammar_runs) {
+		stat_row("socket_family_grammar", "runs",      shm->stats.socket_family_grammar_runs);
+		stat_row("socket_family_grammar", "completed", shm->stats.socket_family_grammar_completed);
 	}
 
 	if (shm->stats.tls_rotate_runs) {
