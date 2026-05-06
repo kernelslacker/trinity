@@ -84,8 +84,6 @@ static const struct ioctl socket_ioctls[] = {
 	{ .name = "SIOCSRARP", .request = 0x8962, },
 	{ .name = "SIOCGIFMAP", .request = 0x8970, },
 	{ .name = "SIOCSIFMAP", .request = 0x8971, },
-	{ .name = "SIOCADDDLCI", .request = 0x8980, },
-	{ .name = "SIOCDELDLCI", .request = 0x8981, },
 	{ .name = "SIOCGIFVLAN", .request = 0x8982, },
 	{ .name = "SIOCSIFVLAN", .request = 0x8983, },
 	{ .name = "SIOCBONDENSLAVE", .request = 0x8990, },
