@@ -414,7 +414,20 @@ retry:
  */
 static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 {
-	int strat = __atomic_load_n(&shm->current_strategy, __ATOMIC_RELAXED);
+	int strat;
+
+	/* Explorer-pool children bypass the bandit's current pick and run
+	 * STRATEGY_RANDOM unconditionally -- including when the bandit has
+	 * picked STRATEGY_COVERAGE_FRONTIER.  The pool is the always-on
+	 * uniform baseline that lets the bandit's reward signal stay honest
+	 * even when its winning arm goes stale. */
+	if (child->is_explorer) {
+		__atomic_fetch_add(&shm->stats.strategy_explorer_picks, 1UL,
+				   __ATOMIC_RELAXED);
+		return set_syscall_nr_random(rec, child);
+	}
+
+	strat = __atomic_load_n(&shm->current_strategy, __ATOMIC_RELAXED);
 
 	if (strat < 0 || strat >= NR_STRATEGIES)
 		strat = STRATEGY_HEURISTIC;
