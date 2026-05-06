@@ -128,21 +128,31 @@ void freeptr(unsigned long *p);
  * the heuristic decision and the bookkeeping that follows it.
  */
 struct syscallrecord;
-bool looks_like_corrupted_ptr(struct syscallrecord *rec, const void *p);
 
 /*
- * Variant that additionally records @caller_pc into the deferred-free
- * sub-attribution ring on a positive (rec==NULL) result.  Use this from
- * the rec==NULL site inside deferred_free_enqueue so the dump can break
- * the deferred-free pseudo-handler row down by call site; pass
- * __builtin_return_address(0) so the recorded PC identifies the caller
- * of deferred_free_enqueue rather than deferred_free_enqueue itself.
- * The plain looks_like_corrupted_ptr() above is a thin wrapper that
- * calls this with caller_pc=NULL -- syscall post-handler callers do
- * not need PC attribution, the (nr, do32bit) row already names them.
+ * Variant that additionally records @caller_pc into the per-callsite
+ * sub-attribution ring on a positive result.  Used directly from
+ * deferred_free_enqueue (rec==NULL) so the recorded PC identifies the
+ * deferred_free_enqueue caller; the looks_like_corrupted_ptr() inline
+ * wrapper below routes every other call site through here with
+ * __builtin_return_address(0) so per-handler rows in the dump can be
+ * broken down by the specific looks_like_corrupted_ptr() callsite.
  */
 bool looks_like_corrupted_ptr_pc(struct syscallrecord *rec, const void *p,
 				 void *caller_pc);
+
+/*
+ * Inline wrapper so each call site automatically supplies its own
+ * caller PC without source change.  Kept as static inline in the header
+ * (rather than a regular function in utils.c that captures
+ * __builtin_return_address(0)) so the recorded PC is the syscall
+ * handler's own callsite rather than this wrapper's.
+ */
+static inline bool looks_like_corrupted_ptr(struct syscallrecord *rec,
+					    const void *p)
+{
+	return looks_like_corrupted_ptr_pc(rec, p, __builtin_return_address(0));
+}
 
 /*
  * Bump the post_handler_corrupt_ptr counter and record per-handler

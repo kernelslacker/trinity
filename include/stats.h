@@ -61,17 +61,15 @@
 #define CORRUPT_PTR_ATTR_SLOTS		32
 #define CORRUPT_PTR_ATTR_NR_NONE	((unsigned int) ~0u)
 
-/* Caller-PC sub-attribution ring for the deferred-free / non-syscall
- * pseudo-handler bucket.  In live runs that bucket dominates the
- * per-handler attribution table (>99% of total rejections in the runs
- * that motivated this) but the (nr, do32bit) key collapses every caller
- * of deferred_free_enqueue onto a single row, so we cannot tell which
- * deferred_freeptr / deferred_free_enqueue site is the pointer source.
- * A separate ring keyed on caller PC narrows the offending site without
- * inflating the per-handler ring's eviction churn.  Sized smaller than
- * the per-handler ring -- the set of distinct deferred-free call sites
- * is much smaller than the set of post handlers. */
-#define CORRUPT_PTR_PC_SLOTS		16
+/* Caller-PC sub-attribution ring keyed by (nr, do32bit, pc).  Originally
+ * scoped to the deferred-free / non-syscall pseudo-handler bucket so we
+ * could break that row down by call site; now also captures rec!=NULL
+ * post-handler bumps so each per-handler row in the dump can be broken
+ * down by the specific looks_like_corrupted_ptr() callsite that fired.
+ * Sized to comfortably hold ~30 hot post handlers x ~2 distinct caller
+ * PCs each plus the deferred-free call sites and headroom -- a wider
+ * keyspace than the original deferred-free-only design needed. */
+#define CORRUPT_PTR_PC_SLOTS		64
 
 /* Coarse syscall categories used by the dispatch-time histogram.  Order
  * is also the dump order; SYSCAT_OTHER is the catch-all for anything not
@@ -306,15 +304,20 @@ struct stats_s {
 	} corrupt_ptr_attr[CORRUPT_PTR_ATTR_SLOTS];
 	lock_t corrupt_ptr_attr_lock;
 
-	/* Per-caller-PC sub-attribution for the deferred-free / non-syscall
-	 * row of corrupt_ptr_attr.  Only populated on the rec==NULL path
-	 * (post_handler_corrupt_ptr_bump callers passing a non-NULL caller
-	 * PC); rec!=NULL post-handler rejections are already attributed by
-	 * (nr, do32bit) and skip this ring.  Same eviction policy as
-	 * corrupt_ptr_attr -- the lowest-count slot is displaced when a new
-	 * PC arrives.  Dumped as an indented sub-table beneath the
-	 * deferred-free row of the per-handler attribution table. */
+	/* Per-callsite sub-attribution keyed by (nr, do32bit, pc) so each
+	 * row of corrupt_ptr_attr can be broken down by the specific
+	 * looks_like_corrupted_ptr() callsite that fired.  Populated on
+	 * both rec==NULL bumps (deferred_free_enqueue, etc., where nr is
+	 * CORRUPT_PTR_ATTR_NR_NONE so PCs cluster under the deferred-free
+	 * row) and rec!=NULL post-handler bumps (so a sibling-syscall
+	 * scribble of rec->retval is identified by which post handler's
+	 * line of code rejected the value).  Same eviction policy as
+	 * corrupt_ptr_attr -- the lowest-count slot is displaced when a
+	 * new key arrives.  Dumped as an indented sub-table beneath each
+	 * matching row of the per-handler attribution table. */
 	struct corrupt_ptr_pc_entry {
+		unsigned int nr;
+		bool do32bit;
 		void *pc;
 		unsigned long count;
 	} corrupt_ptr_pc[CORRUPT_PTR_PC_SLOTS];

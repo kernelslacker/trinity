@@ -1447,9 +1447,9 @@ static int corrupt_ptr_attr_cmp(const void *a, const void *b)
 }
 
 /*
- * Comparator for the deferred-free caller-PC sub-attribution ring.
- * Same descending-by-count order as the per-handler ring so the dump
- * leads with the loudest call site.
+ * Comparator for the per-callsite sub-attribution ring.  Same
+ * descending-by-count order as the per-handler ring so the dump leads
+ * with the loudest call site within each handler row.
  */
 static int corrupt_ptr_pc_cmp(const void *a, const void *b)
 {
@@ -1464,37 +1464,24 @@ static int corrupt_ptr_pc_cmp(const void *a, const void *b)
 }
 
 /*
- * Render the per-PC sub-attribution ring as an indented sub-table
- * beneath the deferred-free row of the main attribution dump.  Snapped
- * under the same lock the recorder takes so a concurrent insertion
- * cannot reorder entries underneath the sort.  Suppressed when the
- * ring is empty -- pre-sub-attribution runs and quiet windows stay
- * terse.
+ * Render PC sub-attribution entries that match (nr, do32bit) as
+ * indented sub-rows beneath the matching per-handler row.  Caller
+ * passes a snapshot already sorted descending by count so all rows
+ * share one snap+sort across the dump pass.  Silent when no entry
+ * matches -- pre-sub-attribution runs and quiet handlers stay terse.
  */
-static void corrupt_ptr_pc_dump(void)
+static void corrupt_ptr_pc_dump_for(const struct corrupt_ptr_pc_entry *snap,
+				    unsigned int nr, bool do32bit)
 {
-	struct corrupt_ptr_pc_entry snap[CORRUPT_PTR_PC_SLOTS];
-	unsigned int i, n = 0;
-
-	lock(&shm->stats.corrupt_ptr_pc_lock);
-	memcpy(snap, shm->stats.corrupt_ptr_pc, sizeof(snap));
-	unlock(&shm->stats.corrupt_ptr_pc_lock);
-
-	for (i = 0; i < CORRUPT_PTR_PC_SLOTS; i++)
-		if (snap[i].count != 0)
-			n++;
-
-	if (n == 0)
-		return;
-
-	qsort(snap, CORRUPT_PTR_PC_SLOTS, sizeof(snap[0]),
-	      corrupt_ptr_pc_cmp);
+	unsigned int i;
 
 	for (i = 0; i < CORRUPT_PTR_PC_SLOTS; i++) {
 		char pcbuf[128];
 
 		if (snap[i].count == 0)
 			break;
+		if (snap[i].nr != nr || snap[i].do32bit != do32bit)
+			continue;
 		output(0, "    %-32s %lu\n",
 		       pc_to_string(snap[i].pc, pcbuf, sizeof(pcbuf)),
 		       snap[i].count);
@@ -1504,11 +1491,16 @@ static void corrupt_ptr_pc_dump(void)
 static void corrupt_ptr_attr_dump(void)
 {
 	struct corrupt_ptr_attr_entry snap[CORRUPT_PTR_ATTR_SLOTS];
+	struct corrupt_ptr_pc_entry pc_snap[CORRUPT_PTR_PC_SLOTS];
 	unsigned int i, n = 0;
 
 	lock(&shm->stats.corrupt_ptr_attr_lock);
 	memcpy(snap, shm->stats.corrupt_ptr_attr, sizeof(snap));
 	unlock(&shm->stats.corrupt_ptr_attr_lock);
+
+	lock(&shm->stats.corrupt_ptr_pc_lock);
+	memcpy(pc_snap, shm->stats.corrupt_ptr_pc, sizeof(pc_snap));
+	unlock(&shm->stats.corrupt_ptr_pc_lock);
 
 	for (i = 0; i < CORRUPT_PTR_ATTR_SLOTS; i++)
 		if (snap[i].count != 0)
@@ -1519,6 +1511,8 @@ static void corrupt_ptr_attr_dump(void)
 
 	qsort(snap, CORRUPT_PTR_ATTR_SLOTS, sizeof(snap[0]),
 	      corrupt_ptr_attr_cmp);
+	qsort(pc_snap, CORRUPT_PTR_PC_SLOTS, sizeof(pc_snap[0]),
+	      corrupt_ptr_pc_cmp);
 
 	output(0, "post_handler_corrupt_ptr attribution (top %u handlers):\n", n);
 	for (i = 0; i < CORRUPT_PTR_ATTR_SLOTS; i++) {
@@ -1535,8 +1529,7 @@ static void corrupt_ptr_attr_dump(void)
 			width = snap[i].do32bit ? "(32)" : "(64)";
 		}
 		output(0, "  %-32s %s %lu\n", name, width, snap[i].count);
-		if (snap[i].nr == CORRUPT_PTR_ATTR_NR_NONE)
-			corrupt_ptr_pc_dump();
+		corrupt_ptr_pc_dump_for(pc_snap, snap[i].nr, snap[i].do32bit);
 	}
 }
 
