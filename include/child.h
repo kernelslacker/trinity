@@ -147,6 +147,7 @@ enum child_op_type {
 	CHILD_OP_TC_QDISC_CHURN,
 	CHILD_OP_XFRM_CHURN,
 	CHILD_OP_BPF_CGROUP_ATTACH,
+	CHILD_OP_SCTP_ASSOC_CHURN,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -468,3 +469,4 @@ bool nftables_churn(struct childdata *child);
 bool tc_qdisc_churn(struct childdata *child);
 bool xfrm_churn(struct childdata *child);
 bool bpf_cgroup_attach(struct childdata *child);
+bool sctp_assoc_churn(struct childdata *child);
