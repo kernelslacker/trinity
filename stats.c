@@ -690,7 +690,8 @@ static void dump_stats_json(void)
 		"\"tc_qdisc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"qdisc_create_ok\":%lu,\"tclass_create_ok\":%lu,\"tfilter_create_ok\":%lu,\"packet_sent_ok\":%lu,\"qdisc_replace_ok\":%lu,\"tfilter_del_ok\":%lu,\"qdisc_del_ok\":%lu,\"link_del_ok\":%lu},"
 		"\"xfrm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_updated\":%lu,\"sa_deleted\":%lu,\"pol_added\":%lu,\"pol_deleted\":%lu,\"esp_sent\":%lu,\"pfkey_send_ok\":%lu},"
 		"\"bpf_cgroup_attach\":{\"runs\":%lu,\"setup_failed\":%lu,\"prog_loaded\":%lu,\"attached\":%lu,\"attach_rejected\":%lu,\"packets_sent\":%lu,\"detached\":%lu,\"post_detach_sent\":%lu},"
-		"\"sctp_assoc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bindx_added\":%lu,\"bindx_removed\":%lu,\"bindx_rejected\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"accepted\":%lu,\"packets_sent\":%lu,\"peeled_off\":%lu,\"peeloff_rejected\":%lu,\"cycles\":%lu}"
+		"\"sctp_assoc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bindx_added\":%lu,\"bindx_removed\":%lu,\"bindx_rejected\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"accepted\":%lu,\"packets_sent\":%lu,\"peeled_off\":%lu,\"peeloff_rejected\":%lu,\"cycles\":%lu},"
+		"\"mptcp_pm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sock_mptcp_ok\":%lu,\"addr_added_ok\":%lu,\"addr_removed_ok\":%lu,\"send_ok\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -999,7 +1000,13 @@ static void dump_stats_json(void)
 		shm->stats.sctp_assoc_churn_packets_sent,
 		shm->stats.sctp_assoc_churn_peeled_off,
 		shm->stats.sctp_assoc_churn_peeloff_rejected,
-		shm->stats.sctp_assoc_churn_cycles);
+		shm->stats.sctp_assoc_churn_cycles,
+		shm->stats.mptcp_pm_churn_runs,
+		shm->stats.mptcp_pm_churn_setup_failed,
+		shm->stats.mptcp_pm_churn_sock_mptcp_ok,
+		shm->stats.mptcp_pm_churn_addr_added_ok,
+		shm->stats.mptcp_pm_churn_addr_removed_ok,
+		shm->stats.mptcp_pm_churn_send_ok);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -2139,6 +2146,15 @@ void dump_stats(void)
 		stat_row("bpf_cgroup_attach", "packets_sent",     shm->stats.bpf_cgroup_attach_packets_sent);
 		stat_row("bpf_cgroup_attach", "detached",         shm->stats.bpf_cgroup_attach_detached);
 		stat_row("bpf_cgroup_attach", "post_detach_sent", shm->stats.bpf_cgroup_attach_post_detach_sent);
+	}
+
+	if (shm->stats.mptcp_pm_churn_runs) {
+		stat_row("mptcp_pm_churn", "runs",            shm->stats.mptcp_pm_churn_runs);
+		stat_row("mptcp_pm_churn", "setup_failed",    shm->stats.mptcp_pm_churn_setup_failed);
+		stat_row("mptcp_pm_churn", "sock_mptcp_ok",   shm->stats.mptcp_pm_churn_sock_mptcp_ok);
+		stat_row("mptcp_pm_churn", "addr_added_ok",   shm->stats.mptcp_pm_churn_addr_added_ok);
+		stat_row("mptcp_pm_churn", "addr_removed_ok", shm->stats.mptcp_pm_churn_addr_removed_ok);
+		stat_row("mptcp_pm_churn", "send_ok",         shm->stats.mptcp_pm_churn_send_ok);
 	}
 
 	if (kcov_shm != NULL) {
