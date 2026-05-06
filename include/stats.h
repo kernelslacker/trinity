@@ -940,6 +940,17 @@ struct stats_s {
 	unsigned long vsock_transport_churn_timeout_ok;		/* setsockopt(SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW) accepted mid-flow */
 	unsigned long vsock_transport_churn_get_cid_ok;		/* ioctl(IOCTL_VM_SOCKETS_GET_LOCAL_CID) returned the local cid */
 
+	/* bridge_vlan_churn childop counters */
+	unsigned long bridge_vlan_churn_runs;			/* total bridge_vlan_churn invocations */
+	unsigned long bridge_vlan_churn_setup_failed;		/* unshare / rtnl_open / bridge probe latched */
+	unsigned long bridge_vlan_churn_bridge_create_ok;	/* RTM_NEWLINK type=bridge IFLA_BR_VLAN_FILTERING=1 accepted */
+	unsigned long bridge_vlan_churn_veth_create_ok;		/* RTM_NEWLINK type=veth accepted (per pair) */
+	unsigned long bridge_vlan_churn_vlan_add_ok;		/* RTM_SETLINK IFLA_BRIDGE_VLAN_INFO add accepted on a port */
+	unsigned long bridge_vlan_churn_vlan_del_ok;		/* RTM_DELLINK IFLA_BRIDGE_VLAN_INFO del accepted mid-traffic */
+	unsigned long bridge_vlan_churn_tunnel_add_ok;		/* RTM_SETLINK IFLA_BRIDGE_VLAN_TUNNEL_INFO add accepted */
+	unsigned long bridge_vlan_churn_mst_set_ok;		/* RTM_SETLINK IFLA_PROTINFO IFLA_BRPORT_MST_ENTRY set accepted */
+	unsigned long bridge_vlan_churn_raw_send_ok;		/* AF_PACKET sendto with 802.1Q tag returned >0 */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
