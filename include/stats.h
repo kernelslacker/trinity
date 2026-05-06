@@ -724,6 +724,16 @@ struct stats_s {
 	unsigned long vrf_fib_churn_rule_removed;	/* RTM_DELRULE for the bound rule accepted */
 	unsigned long vrf_fib_churn_link_removed;	/* RTM_DELLINK vrf accepted (full cycle reached teardown) */
 
+	/* netlink_monitor_race childop counters */
+	unsigned long netlink_monitor_race_runs;	/* total netlink_monitor_race invocations */
+	unsigned long netlink_monitor_race_setup_failed; /* unshare(CLONE_NEWNET) or socket open/bind failed */
+	unsigned long netlink_monitor_race_mon_open;	/* monitor NETLINK_ROUTE socket bound with groups */
+	unsigned long netlink_monitor_race_mut_open;	/* mutator NETLINK_ROUTE socket opened */
+	unsigned long netlink_monitor_race_mut_op_ok;	/* RTM_NEW/DEL LINK/ADDR ack==0 from mutator */
+	unsigned long netlink_monitor_race_recv_drained; /* recvmsg(MSG_DONTWAIT) returned >0 on monitor */
+	unsigned long netlink_monitor_race_group_drop;	/* NETLINK_DROP_MEMBERSHIP setsockopt accepted */
+	unsigned long netlink_monitor_race_group_add;	/* NETLINK_ADD_MEMBERSHIP setsockopt accepted */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic

@@ -889,7 +889,7 @@ static void check_fd_leaks(struct childdata *child)
  * Enable the dormant ops one at a time once each has been load-tested.
  * To enable an op: set its entry below to 0.
  */
-static const int dormant_op_disabled[44] = {
+static const int dormant_op_disabled[45] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 0, 1,	/* 10-14: fault_injector active; dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, recipe_runner */
@@ -898,7 +898,7 @@ static const int dormant_op_disabled[44] = {
 	1, 1, 1, 1, 1,	/* 25-29: dormant: mount_churn, uffd_churn, iouring_flood, close_racer, socket_family_chain */
 	1, 1, 1, 1, 1,	/* 30-34: dormant: xattr_thrash, pidfd_storm, madvise_cycler, epoll_volatility, keyring_spam */
 	1, 1, 1, 0, 1,	/* 35-39: slab_cache_thrash active; dormant: vdso_mremap_race, numa_migration, cpu_hotplug_rider, tls_rotate */
-	1, 1, 1, 1,	/* 40-43: dormant: packet_fanout_thrash, iouring_net_multishot, tcp_ao_rotate, vrf_fib_churn */
+	1, 1, 1, 1, 1,	/* 40-44: dormant: packet_fanout_thrash, iouring_net_multishot, tcp_ao_rotate, vrf_fib_churn, netlink_monitor_race */
 };
 
 /*
@@ -962,6 +962,7 @@ static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_IOURING_NET_MULTISHOT,
 	CHILD_OP_TCP_AO_ROTATE,
 	CHILD_OP_VRF_FIB_CHURN,
+	CHILD_OP_NETLINK_MONITOR_RACE,
 };
 #define NR_ALT_OP_ROTATION	ARRAY_SIZE(alt_op_rotation)
 
@@ -1013,6 +1014,7 @@ static const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_IOURING_NET_MULTISHOT:	return "iouring_net_multishot";
 	case CHILD_OP_TCP_AO_ROTATE:	return "tcp_ao_rotate";
 	case CHILD_OP_VRF_FIB_CHURN:	return "vrf_fib_churn";
+	case CHILD_OP_NETLINK_MONITOR_RACE:	return "netlink_monitor_race";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1068,7 +1070,7 @@ static enum child_op_type pick_op_type(void)
 	if (r < 95)
 		return CHILD_OP_SYSCALL;
 
-	pick = rand() % 44;
+	pick = rand() % 45;
 	if (dormant_op_disabled[pick])
 		return CHILD_OP_SYSCALL;
 
@@ -1117,6 +1119,7 @@ static enum child_op_type pick_op_type(void)
 	case 41: return CHILD_OP_IOURING_NET_MULTISHOT;
 	case 42: return CHILD_OP_TCP_AO_ROTATE;
 	case 43: return CHILD_OP_VRF_FIB_CHURN;
+	case 44: return CHILD_OP_NETLINK_MONITOR_RACE;
 	}
 	return CHILD_OP_SYSCALL;
 }
@@ -1260,6 +1263,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_IOURING_NET_MULTISHOT] = iouring_net_multishot,
 	[CHILD_OP_TCP_AO_ROTATE]	= tcp_ao_rotate,
 	[CHILD_OP_VRF_FIB_CHURN]	= vrf_fib_churn,
+	[CHILD_OP_NETLINK_MONITOR_RACE]	= netlink_monitor_race,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,

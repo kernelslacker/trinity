@@ -680,7 +680,8 @@ static void dump_stats_json(void)
 		"\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu},"
 		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu},"
 		"\"tcp_ao_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"addkey_rejected\":%lu,\"keys_added\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"packets_sent\":%lu,\"key_rotations\":%lu,\"info_rejected\":%lu,\"key_dels\":%lu,\"delkey_rejected\":%lu,\"cycles\":%lu},"
-		"\"vrf_fib_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_ok\":%lu,\"addr_ok\":%lu,\"up_ok\":%lu,\"rule_added\":%lu,\"bound\":%lu,\"sendto_ok\":%lu,\"rule2_added\":%lu,\"rule_removed\":%lu,\"link_removed\":%lu}"
+		"\"vrf_fib_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_ok\":%lu,\"addr_ok\":%lu,\"up_ok\":%lu,\"rule_added\":%lu,\"bound\":%lu,\"sendto_ok\":%lu,\"rule2_added\":%lu,\"rule_removed\":%lu,\"link_removed\":%lu},"
+		"\"netlink_monitor_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"mon_open\":%lu,\"mut_open\":%lu,\"mut_op_ok\":%lu,\"recv_drained\":%lu,\"group_drop\":%lu,\"group_add\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -900,7 +901,15 @@ static void dump_stats_json(void)
 		shm->stats.vrf_fib_churn_sendto_ok,
 		shm->stats.vrf_fib_churn_rule2_added,
 		shm->stats.vrf_fib_churn_rule_removed,
-		shm->stats.vrf_fib_churn_link_removed);
+		shm->stats.vrf_fib_churn_link_removed,
+		shm->stats.netlink_monitor_race_runs,
+		shm->stats.netlink_monitor_race_setup_failed,
+		shm->stats.netlink_monitor_race_mon_open,
+		shm->stats.netlink_monitor_race_mut_open,
+		shm->stats.netlink_monitor_race_mut_op_ok,
+		shm->stats.netlink_monitor_race_recv_drained,
+		shm->stats.netlink_monitor_race_group_drop,
+		shm->stats.netlink_monitor_race_group_add);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -1932,6 +1941,17 @@ void dump_stats(void)
 		stat_row("vrf_fib_churn", "rule2_added",  shm->stats.vrf_fib_churn_rule2_added);
 		stat_row("vrf_fib_churn", "rule_removed", shm->stats.vrf_fib_churn_rule_removed);
 		stat_row("vrf_fib_churn", "link_removed", shm->stats.vrf_fib_churn_link_removed);
+	}
+
+	if (shm->stats.netlink_monitor_race_runs) {
+		stat_row("netlink_monitor_race", "runs",         shm->stats.netlink_monitor_race_runs);
+		stat_row("netlink_monitor_race", "setup_failed", shm->stats.netlink_monitor_race_setup_failed);
+		stat_row("netlink_monitor_race", "mon_open",     shm->stats.netlink_monitor_race_mon_open);
+		stat_row("netlink_monitor_race", "mut_open",     shm->stats.netlink_monitor_race_mut_open);
+		stat_row("netlink_monitor_race", "mut_op_ok",    shm->stats.netlink_monitor_race_mut_op_ok);
+		stat_row("netlink_monitor_race", "recv_drained", shm->stats.netlink_monitor_race_recv_drained);
+		stat_row("netlink_monitor_race", "group_drop",   shm->stats.netlink_monitor_race_group_drop);
+		stat_row("netlink_monitor_race", "group_add",    shm->stats.netlink_monitor_race_group_add);
 	}
 
 	if (kcov_shm != NULL) {
