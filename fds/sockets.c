@@ -397,6 +397,57 @@ out:
 	free(sa);
 }
 
+/*
+ * Probe each socket family the random-syscall picker might select and
+ * latch off the ones the running kernel can't open at all.  gen_socket_args
+ * (syscalls/socket.c) consults no_domains[] before every random socket()
+ * pick; without this auto-skip, a kernel built without CONFIG_BT / CONFIG_X25
+ * / CONFIG_TIPC / CONFIG_PHONET / CONFIG_ATM / CONFIG_NFC / CONFIG_INFINIBAND
+ * / CONFIG_SMC etc. burns one random-syscall slot per cycle on a
+ * guaranteed-EAFNOSUPPORT call.  Only mark when both SOCK_STREAM and
+ * SOCK_DGRAM probes return EAFNOSUPPORT or EPROTONOSUPPORT — anything else
+ * (EACCES, EPERM, success) means the family is reachable and policy / type
+ * mismatches are not our concern here.  The grammar code stays in tree;
+ * users on a kernel with the family present probe-pass and fuzz normally.
+ */
+static void probe_unsupported_pf_families(void)
+{
+	unsigned int pf;
+
+	for (pf = 0; pf < TRINITY_PF_MAX; pf++) {
+		int fd, e_stream, e_dgram;
+
+		if (no_domains[pf])
+			continue;
+
+		fd = socket(pf, SOCK_STREAM, 0);
+		if (fd >= 0) {
+			close(fd);
+			continue;
+		}
+		e_stream = errno;
+
+		fd = socket(pf, SOCK_DGRAM, 0);
+		if (fd >= 0) {
+			close(fd);
+			continue;
+		}
+		e_dgram = errno;
+
+		if ((e_stream != EAFNOSUPPORT && e_stream != EPROTONOSUPPORT) ||
+		    (e_dgram != EAFNOSUPPORT && e_dgram != EPROTONOSUPPORT))
+			continue;
+
+		no_domains[pf] = true;
+		__atomic_add_fetch(&shm->stats.no_domains_runtime_skipped,
+				   1, __ATOMIC_RELAXED);
+		output(1, "auto-disabled socket family %u (%s): probe returned "
+			  "%s/%s\n",
+		       pf, get_domain_name(pf) ? get_domain_name(pf) : "?",
+		       strerror(e_stream), strerror(e_dgram));
+	}
+}
+
 static int open_sockets(void)
 {
 	struct objhead *head;
@@ -449,6 +500,8 @@ static int open_sockets(void)
 	 * inherit the populated tables via COW. */
 	init_alg_template_dict();
 #endif
+
+	probe_unsupported_pf_families();
 
 	ret = generate_sockets();
 	output(1, "created %u sockets\n", nr_sockets);

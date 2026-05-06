@@ -703,6 +703,15 @@ struct stats_s {
 	unsigned long socket_family_chain_authencesn_attempts;	/* authencesn name forced */
 	unsigned long socket_family_chain_splice_attempts;	/* splice path replaced sendmsg data leg */
 
+	/* Number of socket families auto-marked in no_domains[] at startup
+	 * because socket() probes returned EAFNOSUPPORT/EPROTONOSUPPORT for
+	 * both SOCK_STREAM and SOCK_DGRAM.  Bumped once per latched PF from
+	 * open_sockets().  A non-zero value tells the operator how many
+	 * random-syscall socket() picks per cycle the kernel build can
+	 * never reach -- and confirms the auto-skip ran (vs. the user
+	 * supplying --exclude-domains by hand). */
+	unsigned long no_domains_runtime_skipped;
+
 	/* tls_rotate childop counters */
 	unsigned long tls_rotate_runs;			/* total tls_rotate invocations */
 	unsigned long tls_rotate_setup_failed;		/* loopback TCP pair setup failed */
