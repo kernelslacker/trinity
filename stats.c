@@ -700,7 +700,8 @@ static void dump_stats_json(void)
 		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},"
 		"\"msg_zerocopy_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sends_ok\":%lu,\"sends_efault\":%lu,\"sends_eagain\":%lu,\"errqueue_drained\":%lu,\"errqueue_empty\":%lu,\"munmap_ok\":%lu,\"send_after_munmap_caught\":%lu,\"sndzc_disable_ok\":%lu},"
 		"\"iouring_send_zc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"register_bufs_ok\":%lu,\"send_zc_ok\":%lu,\"sendmsg_zc_ok\":%lu,\"unregister_race_ok\":%lu,\"update_race_ok\":%lu,\"cqe_drained\":%lu},"
-		"\"vsock_transport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bind_ok\":%lu,\"connect_ok\":%lu,\"send_ok\":%lu,\"buffer_size_ok\":%lu,\"timeout_ok\":%lu,\"get_cid_ok\":%lu}"
+		"\"vsock_transport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bind_ok\":%lu,\"connect_ok\":%lu,\"send_ok\":%lu,\"buffer_size_ok\":%lu,\"timeout_ok\":%lu,\"get_cid_ok\":%lu},"
+		"\"bridge_vlan_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"vlan_add_ok\":%lu,\"vlan_del_ok\":%lu,\"tunnel_add_ok\":%lu,\"mst_set_ok\":%lu,\"raw_send_ok\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1088,7 +1089,16 @@ static void dump_stats_json(void)
 		shm->stats.vsock_transport_churn_send_ok,
 		shm->stats.vsock_transport_churn_buffer_size_ok,
 		shm->stats.vsock_transport_churn_timeout_ok,
-		shm->stats.vsock_transport_churn_get_cid_ok);
+		shm->stats.vsock_transport_churn_get_cid_ok,
+		shm->stats.bridge_vlan_churn_runs,
+		shm->stats.bridge_vlan_churn_setup_failed,
+		shm->stats.bridge_vlan_churn_bridge_create_ok,
+		shm->stats.bridge_vlan_churn_veth_create_ok,
+		shm->stats.bridge_vlan_churn_vlan_add_ok,
+		shm->stats.bridge_vlan_churn_vlan_del_ok,
+		shm->stats.bridge_vlan_churn_tunnel_add_ok,
+		shm->stats.bridge_vlan_churn_mst_set_ok,
+		shm->stats.bridge_vlan_churn_raw_send_ok);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -2349,6 +2359,18 @@ void dump_stats(void)
 		stat_row("vsock_transport_churn", "buffer_size_ok", shm->stats.vsock_transport_churn_buffer_size_ok);
 		stat_row("vsock_transport_churn", "timeout_ok",     shm->stats.vsock_transport_churn_timeout_ok);
 		stat_row("vsock_transport_churn", "get_cid_ok",     shm->stats.vsock_transport_churn_get_cid_ok);
+	}
+
+	if (shm->stats.bridge_vlan_churn_runs) {
+		stat_row("bridge_vlan_churn", "runs",             shm->stats.bridge_vlan_churn_runs);
+		stat_row("bridge_vlan_churn", "setup_failed",     shm->stats.bridge_vlan_churn_setup_failed);
+		stat_row("bridge_vlan_churn", "bridge_create_ok", shm->stats.bridge_vlan_churn_bridge_create_ok);
+		stat_row("bridge_vlan_churn", "veth_create_ok",   shm->stats.bridge_vlan_churn_veth_create_ok);
+		stat_row("bridge_vlan_churn", "vlan_add_ok",      shm->stats.bridge_vlan_churn_vlan_add_ok);
+		stat_row("bridge_vlan_churn", "vlan_del_ok",      shm->stats.bridge_vlan_churn_vlan_del_ok);
+		stat_row("bridge_vlan_churn", "tunnel_add_ok",    shm->stats.bridge_vlan_churn_tunnel_add_ok);
+		stat_row("bridge_vlan_churn", "mst_set_ok",       shm->stats.bridge_vlan_churn_mst_set_ok);
+		stat_row("bridge_vlan_churn", "raw_send_ok",      shm->stats.bridge_vlan_churn_raw_send_ok);
 	}
 
 	if (kcov_shm != NULL) {
