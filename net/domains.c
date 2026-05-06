@@ -25,7 +25,6 @@ static const struct domain domains[] = {
 	{ "ATMPVC",	PF_ATMPVC },
 	{ "X25",	PF_X25 },
 	{ "INET6",	PF_INET6 },
-	{ "ROSE",	PF_ROSE },
 	{ "DECnet",	PF_DECnet },
 	{ "NETBEUI",	PF_NETBEUI },
 	{ "SECURITY",	PF_SECURITY },

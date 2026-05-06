@@ -384,7 +384,6 @@ check_header linux/kvm.h USE_KVM
 check_header linux/seccomp.h USE_SECCOMP
 check_header linux/vhost.h USE_VHOST
 check_header execinfo.h USE_BACKTRACE
-check_header netrose/rose.h USE_ROSE
 check_header netipx/ipx.h USE_IPX
 check_header bluetooth/bluetooth.h USE_BLUETOOTH
 check_header linux/vm_sockets.h USE_VSOCK
