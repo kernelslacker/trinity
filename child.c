@@ -889,7 +889,7 @@ static void check_fd_leaks(struct childdata *child)
  * Enable the dormant ops one at a time once each has been load-tested.
  * To enable an op: set its entry below to 0.
  */
-static const int dormant_op_disabled[55] = {
+static const int dormant_op_disabled[56] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 0, 1,	/* 10-14: fault_injector active; dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, recipe_runner */
@@ -901,6 +901,7 @@ static const int dormant_op_disabled[55] = {
 	1, 1, 1, 1, 1,	/* 40-44: dormant: packet_fanout_thrash, iouring_net_multishot, tcp_ao_rotate, vrf_fib_churn, netlink_monitor_race */
 	1, 1, 1, 1, 1,	/* 45-49: dormant: tipc_link_churn, tls_ulp_churn, vxlan_encap_churn, bridge_fdb_stp, nftables_churn */
 	1, 1, 1, 1, 1,	/* 50-54: dormant: tc_qdisc_churn, xfrm_churn, bpf_cgroup_attach, [reserved], sctp_assoc_churn */
+	1,		/* 55:    dormant: mptcp_pm_churn */
 };
 
 /*
@@ -974,6 +975,7 @@ static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_XFRM_CHURN,
 	CHILD_OP_BPF_CGROUP_ATTACH,
 	CHILD_OP_SCTP_ASSOC_CHURN,
+	CHILD_OP_MPTCP_PM_CHURN,
 };
 #define NR_ALT_OP_ROTATION	ARRAY_SIZE(alt_op_rotation)
 
@@ -1035,6 +1037,7 @@ static const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_XFRM_CHURN:	return "xfrm_churn";
 	case CHILD_OP_BPF_CGROUP_ATTACH:	return "bpf_cgroup_attach";
 	case CHILD_OP_SCTP_ASSOC_CHURN:	return "sctp_assoc_churn";
+	case CHILD_OP_MPTCP_PM_CHURN:	return "mptcp_pm_churn";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1090,7 +1093,7 @@ static enum child_op_type pick_op_type(void)
 	if (r < 95)
 		return CHILD_OP_SYSCALL;
 
-	pick = rand() % 55;
+	pick = rand() % 56;
 	if (dormant_op_disabled[pick])
 		return CHILD_OP_SYSCALL;
 
@@ -1149,6 +1152,7 @@ static enum child_op_type pick_op_type(void)
 	case 51: return CHILD_OP_XFRM_CHURN;
 	case 52: return CHILD_OP_BPF_CGROUP_ATTACH;
 	case 54: return CHILD_OP_SCTP_ASSOC_CHURN;
+	case 55: return CHILD_OP_MPTCP_PM_CHURN;
 	}
 	return CHILD_OP_SYSCALL;
 }
@@ -1302,6 +1306,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_XFRM_CHURN]		= xfrm_churn,
 	[CHILD_OP_BPF_CGROUP_ATTACH]	= bpf_cgroup_attach,
 	[CHILD_OP_SCTP_ASSOC_CHURN]	= sctp_assoc_churn,
+	[CHILD_OP_MPTCP_PM_CHURN]	= mptcp_pm_churn,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,

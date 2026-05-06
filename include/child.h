@@ -148,6 +148,7 @@ enum child_op_type {
 	CHILD_OP_XFRM_CHURN,
 	CHILD_OP_BPF_CGROUP_ATTACH,
 	CHILD_OP_SCTP_ASSOC_CHURN,
+	CHILD_OP_MPTCP_PM_CHURN,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -470,3 +471,4 @@ bool tc_qdisc_churn(struct childdata *child);
 bool xfrm_churn(struct childdata *child);
 bool bpf_cgroup_attach(struct childdata *child);
 bool sctp_assoc_churn(struct childdata *child);
+bool mptcp_pm_churn(struct childdata *child);

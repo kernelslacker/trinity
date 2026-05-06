@@ -841,6 +841,14 @@ struct stats_s {
 	unsigned long sctp_assoc_churn_peeloff_rejected;	/* peeloff rejected (EINVAL/ENOENT) */
 	unsigned long sctp_assoc_churn_cycles;			/* full cycles reaching teardown */
 
+	/* mptcp_pm_churn childop counters */
+	unsigned long mptcp_pm_churn_runs;			/* total mptcp_pm_churn invocations */
+	unsigned long mptcp_pm_churn_setup_failed;		/* socket/bind/listen/connect setup failed */
+	unsigned long mptcp_pm_churn_sock_mptcp_ok;		/* IPPROTO_MPTCP server socket created (CONFIG_MPTCP=y) */
+	unsigned long mptcp_pm_churn_addr_added_ok;		/* MPTCP_PM_CMD_ADD_ADDR ack 0 (endpoint installed) */
+	unsigned long mptcp_pm_churn_addr_removed_ok;		/* MPTCP_PM_CMD_DEL_ADDR ack 0 (subflow teardown raced data) */
+	unsigned long mptcp_pm_churn_send_ok;			/* send() through the live MPTCP socket returned >0 */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
