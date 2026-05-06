@@ -1057,15 +1057,15 @@ static void corrupt_ptr_attr_record(unsigned int nr, bool do32bit)
 }
 
 /*
- * Record a caller PC into the deferred-free sub-attribution ring.
- * Same eviction policy as corrupt_ptr_attr_record: bump the matching
- * slot if present, otherwise displace the lowest-count slot.  The lock
- * is held across both the search and the eviction so a concurrent
- * insertion cannot lose a bump.  Skipped when pc==NULL -- rec!=NULL
- * post-handler callers do not need PC attribution because the
- * (nr, do32bit) row already identifies them.
+ * Record a (nr, do32bit, pc) triple into the per-callsite sub-attribution
+ * ring.  Same eviction policy as corrupt_ptr_attr_record: bump the
+ * matching slot if present, otherwise displace the lowest-count slot.
+ * The lock is held across both the search and the eviction so a
+ * concurrent insertion cannot lose a bump.  Skipped when pc==NULL
+ * (defensive -- a caller without a usable return address has no
+ * useful PC to record).
  */
-static void corrupt_ptr_pc_record(void *pc)
+static void corrupt_ptr_pc_record(unsigned int nr, bool do32bit, void *pc)
 {
 	struct corrupt_ptr_pc_entry *ring = shm->stats.corrupt_ptr_pc;
 	unsigned int i, victim;
@@ -1077,7 +1077,9 @@ static void corrupt_ptr_pc_record(void *pc)
 	lock(&shm->stats.corrupt_ptr_pc_lock);
 
 	for (i = 0; i < CORRUPT_PTR_PC_SLOTS; i++) {
-		if (ring[i].count != 0 && ring[i].pc == pc) {
+		if (ring[i].count != 0 &&
+		    ring[i].nr == nr && ring[i].do32bit == do32bit &&
+		    ring[i].pc == pc) {
 			ring[i].count++;
 			unlock(&shm->stats.corrupt_ptr_pc_lock);
 			return;
@@ -1095,6 +1097,8 @@ static void corrupt_ptr_pc_record(void *pc)
 			break;
 	}
 
+	ring[victim].nr = nr;
+	ring[victim].do32bit = do32bit;
 	ring[victim].pc = pc;
 	ring[victim].count = victim_count + 1;
 
@@ -1114,8 +1118,8 @@ void post_handler_corrupt_ptr_bump(struct syscallrecord *rec, void *caller_pc)
 	} else {
 		nr = CORRUPT_PTR_ATTR_NR_NONE;
 		do32bit = false;
-		corrupt_ptr_pc_record(caller_pc);
 	}
+	corrupt_ptr_pc_record(nr, do32bit, caller_pc);
 	corrupt_ptr_attr_record(nr, do32bit);
 }
 
@@ -1183,11 +1187,6 @@ bool looks_like_corrupted_ptr_pc(struct syscallrecord *rec, const void *p,
 				       pcbuf, sizeof(pcbuf)));
 	}
 	return true;
-}
-
-bool looks_like_corrupted_ptr(struct syscallrecord *rec, const void *p)
-{
-	return looks_like_corrupted_ptr_pc(rec, p, NULL);
 }
 
 bool inner_ptr_ok_to_free(struct syscallrecord *rec, const void *p,
