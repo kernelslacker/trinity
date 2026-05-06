@@ -786,6 +786,19 @@ struct stats_s {
 	unsigned long nftables_churn_rule_del_ok;	/* NFT_MSG_DELRULE bulk-del accepted */
 	unsigned long nftables_churn_table_del_ok;	/* NFT_MSG_DELTABLE accepted */
 
+	/* tc_qdisc_churn childop counters */
+	unsigned long tc_qdisc_churn_runs;		/* total tc_qdisc_churn invocations */
+	unsigned long tc_qdisc_churn_setup_failed;	/* unshare / rtnl_open / dummy latched */
+	unsigned long tc_qdisc_churn_link_create_ok;	/* RTM_NEWLINK type=dummy accepted */
+	unsigned long tc_qdisc_churn_qdisc_create_ok;	/* RTM_NEWQDISC root accepted */
+	unsigned long tc_qdisc_churn_tclass_create_ok;	/* RTM_NEWTCLASS accepted (per class) */
+	unsigned long tc_qdisc_churn_tfilter_create_ok;	/* RTM_NEWTFILTER accepted */
+	unsigned long tc_qdisc_churn_packet_sent_ok;	/* loopback UDP sendto on dummy returned >0 */
+	unsigned long tc_qdisc_churn_qdisc_replace_ok;	/* RTM_NEWQDISC NLM_F_REPLACE accepted (mid-flow swap) */
+	unsigned long tc_qdisc_churn_tfilter_del_ok;	/* RTM_DELTFILTER bulk-del accepted */
+	unsigned long tc_qdisc_churn_qdisc_del_ok;	/* RTM_DELQDISC root accepted */
+	unsigned long tc_qdisc_churn_link_del_ok;	/* RTM_DELLINK on dummy accepted */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
