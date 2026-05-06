@@ -208,6 +208,15 @@ struct shm_s {
 	 * is otherwise locked down.  Siblings then skip the chain entirely. */
 	bool socket_family_chain_unsupported;
 
+	/* Per-family latch for the socket-family-grammar dispatcher
+	 * (net/socket-family-grammar.c).  sfg_unsupported[family] is set
+	 * when can_run() probes fail or when run_grammar_chain() exhausts
+	 * its ERR_BURST_LIMIT for that family — siblings then skip the
+	 * grammar entry on subsequent picks.  No auto-clear; module load
+	 * mid-run takes the hit, same recovery story as the AF_ALG latch
+	 * above. */
+	bool sfg_unsupported[TRINITY_PF_MAX];
+
 	/*
 	 * Multi-strategy syscall picker — see include/strategy.h.
 	 *

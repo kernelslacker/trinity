@@ -703,6 +703,15 @@ struct stats_s {
 	unsigned long socket_family_chain_authencesn_attempts;	/* authencesn name forced */
 	unsigned long socket_family_chain_splice_attempts;	/* splice path replaced sendmsg data leg */
 
+	/* socket-family-grammar dispatcher counters
+	 * (net/socket-family-grammar.c).  Bumped per call into
+	 * run_grammar_chain() — runs counts every entry, completed counts
+	 * the walks that reached the data leg cleanly.  Per-family
+	 * completion counters are intentionally absent: the existing
+	 * chrono log + per-syscall stats already attribute coverage. */
+	unsigned long socket_family_grammar_runs;
+	unsigned long socket_family_grammar_completed;
+
 	/* Number of dispatches inside tracefs_fuzzer that landed on a
 	 * function-tracer-subset op (set_ftrace_filter / set_ftrace_notrace /
 	 * set_graph_function / current_tracer) but were short-circuited

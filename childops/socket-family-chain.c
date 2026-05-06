@@ -9,20 +9,37 @@
  * lifecycle stay cold.  This childop walks one such lifecycle end-to-end
  * with the same fd flowing through every step.
  *
- * v1: AF_ALG only.  socket() -> bind(salg_type/salg_name) ->
- * setsockopt(ALG_SET_KEY) -> [aead only] setsockopt(ALG_SET_AEAD_AUTHSIZE)
+ * v1 (84b298906961): AF_ALG only.  socket() -> bind(salg_type/salg_name)
+ * -> setsockopt(ALG_SET_KEY) -> [aead only] setsockopt(ALG_SET_AEAD_AUTHSIZE)
  * -> accept() -> sendmsg() -> recv() -> close.  The bound parent_fd and
  * accepted child_fd are private to one invocation and never enter the
  * global socket pool — coherence is the entire point.
+ *
+ * v3 (ef5622b4ac38): added a splice(tagged_fd -> pipe -> child_fd) data
+ * leg substitution to the AF_ALG path so the chain reaches alg_sendpage
+ * via splice_read_to_pipe instead of only the userspace-buffer sendmsg
+ * route.
+ *
+ * v2 (this file): the AF_ALG-only walker now lives in run_alg_chain()
+ * unchanged.  The outer driver dispatches between run_alg_chain() and
+ * the table-driven run_grammar_chain() (net/socket-family-grammar.c)
+ * which handles arbitrary AF_* families via per-family grammar entries.
+ * SFG_AF_ALG_BIAS_PCT keeps a fixed share of invocations on the AF_ALG
+ * path so v1's authencesn-shaped probing load isn't diluted as the
+ * grammar registry grows.  When the registry is empty the dispatcher
+ * falls back to run_alg_chain() for every cycle, so behaviour is
+ * identical to v1+v3 until per-family grammars land.
  *
  * Cleanup follows the canonical childop convention (see iouring-recipes.c
  * recipe_provide_buffers): per-resource flag, single goto out, only the
  * resources that were acquired get torn down.  An alarm bounds the whole
  * invocation in case any step blocks.
  *
- * If the kernel rebuffs the chain repeatedly with ESRCH/EPERM/ENOPROTOOPT
+ * If the AF_ALG path is rebuffed repeatedly with ESRCH/EPERM/ENOPROTOOPT
  * (CRYPTO_USER_API absent or AF_ALG bind path locked down), a per-shm
- * latch flips so siblings stop probing.
+ * latch flips so siblings stop probing.  Per-family latches under
+ * shm->sfg_unsupported[] handle the same recovery story for the
+ * grammar-registry families.
  */
 
 #include <errno.h>
@@ -48,6 +65,7 @@
 #include "proto-alg-dict.h"
 #include "random.h"
 #include "shm.h"
+#include "socket-family-grammar.h"
 #include "stats.h"
 #include "trinity.h"
 #include "utils.h"
@@ -66,9 +84,24 @@
 #define MSG_NOSIGNAL		0x4000
 #endif
 
-#define INNER_MIN	1
-#define INNER_MAX	4
-#define ERR_BURST_LIMIT	5
+#define INNER_MIN		1
+#define INNER_MAX_ALG		4	/* AF_ALG arm preserves v1's 1..4 */
+#define INNER_MAX_GRAMMAR	3	/* grammar walks are longer; cap at 3 */
+#define ERR_BURST_LIMIT		5
+
+/*
+ * Probability (out of 100) that a cycle drives the AF_ALG-specific
+ * walker (run_alg_chain).  The remaining 75% draws a random entry from
+ * the grammar registry and runs it via run_grammar_chain().  When the
+ * registry is empty (framework commit, before any per-family grammar
+ * lands) the grammar arm has nothing to pick and the cycle falls back
+ * to run_alg_chain — behaviour is identical to v1+v3.
+ *
+ * 25% keeps the AF_ALG path's authencesn-shaped probing load steady
+ * after the grammar table fills out, so the existing CVE-bait isn't
+ * diluted by the new families.
+ */
+#define SFG_AF_ALG_BIAS_PCT	25
 
 /*
  * Probability (out of 100) that the data leg is replaced by a splice
@@ -121,7 +154,7 @@ static const enum alg_dict_type sfc_to_dict[SFC_NR_TYPES] = {
  * path so the outer cycle can latch the unsupported flag; returns true on
  * everything else (including chain steps that legitimately fail late).
  */
-static bool run_one_chain(unsigned int *err_burst)
+static bool run_alg_chain(unsigned int *err_burst)
 {
 	struct sockaddr_alg sa;
 	unsigned char key[64];
@@ -211,7 +244,7 @@ static bool run_one_chain(unsigned int *err_burst)
 	 * Data leg.  ~SPLICE_SUBST_PCT% of the time, replace the sendmsg
 	 * buffer path with splice(tagged_fd -> pipe -> child_fd) using a
 	 * page-cache-backed source fd from the OBJ_FD_PAGECACHE pool.  The
-	 * pipe pair is owned by run_one_chain() — splice_pfd[] is initialised
+	 * pipe pair is owned by run_alg_chain() — splice_pfd[] is initialised
 	 * to {-1, -1} and torn down in the unified out: block, matching the
 	 * per-resource flag-and-cleanup pattern in iouring-recipes.c.
 	 *
@@ -279,40 +312,93 @@ out:
 	return ok;
 }
 
+/*
+ * Pick the per-cycle arm.  Returns true to drive the AF_ALG-specific
+ * walker, false to draw from the grammar registry.  When the grammar
+ * registry has no active entry the caller treats a "false" decision as
+ * a fall-through to the AF_ALG arm so behaviour stays identical to v1+v3
+ * until per-family grammars land.
+ */
+static bool pick_alg_arm(void)
+{
+	return (rand() % 100) < SFG_AF_ALG_BIAS_PCT;
+}
+
 bool socket_family_chain(struct childdata *child __unused__)
 {
 	unsigned int inner;
 	unsigned int cycles;
-	unsigned int err_burst = 0;
+	unsigned int alg_err_burst = 0;
+	unsigned int gram_err_burst = 0;
 	bool any_completed = false;
+	bool use_alg;
+	const struct socket_family_grammar *sfg;
 
 	__atomic_add_fetch(&shm->stats.socket_family_chain_runs, 1,
 			   __ATOMIC_RELAXED);
 
-	if (__atomic_load_n(&shm->socket_family_chain_unsupported,
-			    __ATOMIC_RELAXED))
-		return true;
-
 	/*
 	 * Bound the entire invocation.  child.c arms alarm(1) for every
-	 * non-syscall op; the inner cycle does up to 4 full setup chains
-	 * and each step (bind, setsockopt, accept) can briefly block on
-	 * crypto module init under load.  Two seconds is comfortable for
-	 * the worst case and short enough that a stuck op still yields
-	 * the slot promptly.
+	 * non-syscall op; an inner cycle does up to four AF_ALG setups (or
+	 * up to three grammar walks, which can be longer) and each step
+	 * can briefly block on crypto module init or bind contention.
+	 * Two seconds is comfortable for the worst case and short enough
+	 * that a stuck op still yields the slot promptly.
 	 */
 	alarm(2);
 
-	cycles = INNER_MIN + (rand() % (INNER_MAX - INNER_MIN + 1));
-	for (inner = 0; inner < cycles; inner++) {
-		if (run_one_chain(&err_burst))
-			any_completed = true;
+	/*
+	 * Decide arm + cycle count once per invocation so kcov locality
+	 * doesn't get diluted by per-cycle arm flipping.  Grammar walks
+	 * cap at INNER_MAX_GRAMMAR (3) because each walk is heavier than
+	 * a v1 AF_ALG chain; AF_ALG keeps INNER_MAX_ALG (4) for parity
+	 * with v1.
+	 */
+	use_alg = pick_alg_arm();
+	if (!use_alg) {
+		sfg = sfg_pick_random_active();
+		if (sfg == NULL) {
+			/* Empty registry or every entry latched off — fall
+			 * back to the AF_ALG arm so the slot still does
+			 * useful work. */
+			use_alg = true;
+		}
+	} else {
+		sfg = NULL;
+	}
 
-		if (err_burst > ERR_BURST_LIMIT) {
-			__atomic_store_n(
-				&shm->socket_family_chain_unsupported, true,
-				__ATOMIC_RELAXED);
-			break;
+	if (use_alg) {
+		if (__atomic_load_n(&shm->socket_family_chain_unsupported,
+				    __ATOMIC_RELAXED)) {
+			alarm(0);
+			return true;
+		}
+		cycles = INNER_MIN +
+			 (rand() % (INNER_MAX_ALG - INNER_MIN + 1));
+	} else {
+		cycles = INNER_MIN +
+			 (rand() % (INNER_MAX_GRAMMAR - INNER_MIN + 1));
+	}
+
+	for (inner = 0; inner < cycles; inner++) {
+		if (use_alg) {
+			if (run_alg_chain(&alg_err_burst))
+				any_completed = true;
+
+			if (alg_err_burst > ERR_BURST_LIMIT) {
+				__atomic_store_n(
+					&shm->socket_family_chain_unsupported,
+					true, __ATOMIC_RELAXED);
+				break;
+			}
+		} else {
+			if (run_grammar_chain(sfg, &gram_err_burst))
+				any_completed = true;
+
+			if (gram_err_burst > ERR_BURST_LIMIT) {
+				sfg_mark_unsupported(sfg->family);
+				break;
+			}
 		}
 	}
 
