@@ -36,7 +36,30 @@ static struct pollfd *alloc_pollfds(struct syscallrecord *rec)
 	pollfd = zmalloc(num_fds * sizeof(struct pollfd));
 
 	for (i = 0; i < num_fds; i++) {
-		pollfd[i].fd = get_random_fd();
+		int fd;
+		unsigned int tries;
+
+		/*
+		 * Same blocking-poll wedge as arm_epoll(): poll(2) walks each
+		 * pollfd and calls do_pollfd → vfs_poll → fops->poll on it; a
+		 * /dev/fuse handle without a live daemon parks the child in
+		 * TASK_UNINTERRUPTIBLE on the FUSE waitqueue.  Reroll up to a
+		 * bounded number of times; if we still hit a tagged fd, set the
+		 * pollfd entry's fd to -1 so the kernel ignores it (poll/ppoll
+		 * skip negative fds entirely per do_sys_poll's POLLNVAL guard).
+		 */
+		for (tries = 0; tries < 16; tries++) {
+			fd = get_random_fd();
+			if (fd < 0)
+				break;
+			if (!fd_poll_can_block(fd))
+				break;
+			__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+					   __ATOMIC_RELAXED);
+			fd = -1;
+		}
+
+		pollfd[i].fd = fd;
 		pollfd[i].events = set_rand_bitmask(ARRAY_SIZE(poll_events), poll_events);
 	}
 

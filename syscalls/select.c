@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "fd.h"
 #include "random.h"
 #include "sanitise.h"
 #include "deferred-free.h"
@@ -52,9 +53,37 @@ static void sanitise_select(struct syscallrecord *rec)
 	nset = rand32() % 10;
 	/* set some random fd's. */
 	for (i = 0; i < nset; i++) {
-		FD_SET(rand32() % nfds, rfds);
-		FD_SET(rand32() % nfds, wfds);
-		FD_SET(rand32() % nfds, exfds);
+		int rfd = rand32() % nfds;
+		int wfd = rand32() % nfds;
+		int efd = rand32() % nfds;
+
+		/*
+		 * The bit positions chosen here can collide with real tracked
+		 * fds (low-numbered handles below the 1023 nfds bound).  If a
+		 * collision lands on an fd whose fd_provider has poll_can_block
+		 * set, do_select → vfs_poll → fops->poll wedges the child in
+		 * TASK_UNINTERRUPTIBLE on the per-fd waitqueue (FUSE / uffd /
+		 * io_uring / vCPU / pidfd).  Skip those bits; an unset bit is
+		 * indistinguishable from "fd not interesting" to do_select().
+		 * Untracked bit positions (the common case) fall through
+		 * unchanged — fd_poll_can_block returns false for any fd not
+		 * present in the global fd_hash.
+		 */
+		if (!fd_poll_can_block(rfd))
+			FD_SET(rfd, rfds);
+		else
+			__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+					   __ATOMIC_RELAXED);
+		if (!fd_poll_can_block(wfd))
+			FD_SET(wfd, wfds);
+		else
+			__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+					   __ATOMIC_RELAXED);
+		if (!fd_poll_can_block(efd))
+			FD_SET(efd, exfds);
+		else
+			__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+					   __ATOMIC_RELAXED);
 	}
 
 	rec->a2 = (unsigned long) rfds;
