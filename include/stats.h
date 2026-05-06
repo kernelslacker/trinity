@@ -930,6 +930,16 @@ struct stats_s {
 	unsigned long iouring_send_zc_churn_update_race_ok;		/* IORING_REGISTER_BUFFERS_UPDATE replaced slot 0 mid-flight (imu_index race window opened) */
 	unsigned long iouring_send_zc_churn_cqe_drained;		/* CQE reaped from the completion ring (ZC notif or send completion) */
 
+	/* vsock_transport_churn childop counters */
+	unsigned long vsock_transport_churn_runs;			/* total vsock_transport_churn invocations */
+	unsigned long vsock_transport_churn_setup_failed;		/* socket / bind / listen / connect / unsupported latch fired */
+	unsigned long vsock_transport_churn_bind_ok;			/* bind(VMADDR_CID_LOCAL) + listen accepted */
+	unsigned long vsock_transport_churn_connect_ok;		/* loopback connect to listener accepted */
+	unsigned long vsock_transport_churn_send_ok;			/* send(MSG_DONTWAIT) returned >=0 on the loopback transport */
+	unsigned long vsock_transport_churn_buffer_size_ok;	/* setsockopt(SO_VM_SOCKETS_BUFFER_SIZE) accepted mid-flow */
+	unsigned long vsock_transport_churn_timeout_ok;		/* setsockopt(SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW) accepted mid-flow */
+	unsigned long vsock_transport_churn_get_cid_ok;		/* ioctl(IOCTL_VM_SOCKETS_GET_LOCAL_CID) returned the local cid */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
