@@ -1,0 +1,234 @@
+/*
+ * kvm_run_churn -- drive vCPUs through KVM_RUN with kvm_run-region
+ * scribbling.
+ *
+ * KVM_RUN is the only ioctl that transfers control to the guest, so it
+ * is the entry point for every VM-exit handler in the kernel
+ * (kvm_emulate_io, kvm_handle_mmio, kvm_emulate_hypercall, the x86
+ * instruction emulator, the LAPIC TPR/CR8 sync, the sync_regs valid/
+ * dirty masks).  Phases 1-3 left vCPU objects with fully populated
+ * kvm_run mmap regions but never invoked KVM_RUN itself, so all of
+ * those handlers were unreachable via the fuzzer.  This op fills the
+ * gap.
+ *
+ * Per outer iteration (1-3 inner KVM_RUN calls):
+ *   1. Pick a random OBJ_FD_KVM_VCPU.  Empty pool means /dev/kvm is
+ *      unavailable -- silently skip.
+ *   2. Scribble the kvm_run fields the UAPI documents as userspace
+ *      input: request_interrupt_window, immediate_exit, cr8, apic_base,
+ *      and (when KVM_CAP_SYNC_REGS is supported) kvm_valid_regs +
+ *      kvm_dirty_regs masked to the cap-reported supported bits.
+ *   3. ioctl(vcpu_fd, KVM_RUN, 0).  alarm(2) bounds wall-clock time so
+ *      a runaway guest that fails to take an exit can't wedge the
+ *      child past the parent's own alarm window.
+ *   4. Tally exit_reason; for KVM_EXIT_IO scribble the data area at
+ *      kvm_run + io.data_offset, and for KVM_EXIT_MMIO scribble the
+ *      inline mmio.data[8] -- the kernel re-reads both on the next
+ *      KVM_RUN entry, so this exposes the IO/MMIO completion paths to
+ *      fuzzed bytes that the guest itself would never have produced.
+ *
+ * KVM_CAP_SYNC_REGS is probed lazily on first invocation against any
+ * live OBJ_FD_KVM_SYSTEM fd; result is cached for the rest of the
+ * child's lifetime.  Probe failure or absent system fd leaves
+ * sync_regs_caps at 0, which makes step 2 leave the sync-regs fields
+ * untouched.
+ */
+
+#ifdef USE_KVM
+
+#include <errno.h>
+#include <signal.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+
+#include <linux/kvm.h>
+
+#include "child.h"
+#include "object-types.h"
+#include "objects.h"
+#include "random.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
+
+#define KVM_RUN_CHURN_INNER_MAX	3
+#define KVM_RUN_ALARM_SECS	2
+
+/* Cached KVM_CAP_SYNC_REGS bitmask.  0 == cap absent or not yet probed
+ * (sync-regs scribble suppressed in either case). */
+static uint64_t sync_regs_caps;
+static bool sync_regs_probed;
+
+static void probe_sync_regs_caps(void)
+{
+	struct objhead *head;
+	struct object *obj;
+	unsigned int idx;
+	int rc;
+
+	if (sync_regs_probed)
+		return;
+	sync_regs_probed = true;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_KVM_SYSTEM);
+	if (head == NULL || head->array == NULL)
+		return;
+
+	for_each_obj(head, obj, idx) {
+		if (obj->kvmsysobj.fd < 0)
+			continue;
+		rc = ioctl(obj->kvmsysobj.fd, KVM_CHECK_EXTENSION,
+			   (unsigned long)KVM_CAP_SYNC_REGS);
+		if (rc > 0)
+			sync_regs_caps = (uint64_t)rc;
+		return;
+	}
+}
+
+static void scribble_pre_run(struct kvm_run *kr)
+{
+	kr->request_interrupt_window = (__u8)(rand() & 1);
+
+	/* immediate_exit forces an instant return from KVM_RUN.  Bias
+	 * toward setting it 3-of-4 invocations so we exercise the early-
+	 * exit accounting path frequently while still occasionally
+	 * letting the guest actually run -- the latter is what produces
+	 * KVM_EXIT_IO / KVM_EXIT_MMIO entries from the synthetic guest
+	 * state KVM_CREATE_VM leaves us with. */
+	kr->immediate_exit = (__u8)(ONE_IN(4) ? 0 : 1);
+
+	kr->cr8 = (__u64)(rand() & 0xff);
+
+	if (RAND_BOOL()) {
+		/* x86 LAPIC base lives at 0xFEE00000.  Walk +/- 0x1000
+		 * around it half the time so the kernel sees a
+		 * lapic-shaped value before exiting. */
+		kr->apic_base = 0xFEE00000ULL +
+				(uint64_t)(rand() & 0x1fff) - 0x1000ULL;
+	} else {
+		kr->apic_base = (uint64_t)rand64();
+	}
+
+	if (sync_regs_caps != 0) {
+		kr->kvm_valid_regs = (__u64)rand64() & sync_regs_caps;
+		kr->kvm_dirty_regs = (__u64)rand64() & sync_regs_caps;
+	}
+}
+
+static void tally_exit(struct kvm_run *kr, size_t kvm_run_size)
+{
+	switch (kr->exit_reason) {
+	case KVM_EXIT_IO: {
+		uint64_t off = kr->io.data_offset;
+		uint64_t len = (uint64_t)kr->io.size *
+			       (uint64_t)kr->io.count;
+
+		__atomic_add_fetch(&shm->stats.kvm_run_exit_io, 1,
+				   __ATOMIC_RELAXED);
+		if (off == 0 || off >= kvm_run_size || len == 0 ||
+		    len > 4096)
+			return;
+		if (off + len > kvm_run_size)
+			len = kvm_run_size - off;
+		generate_rand_bytes((unsigned char *)kr + off,
+				    (unsigned int)len);
+		return;
+	}
+	case KVM_EXIT_MMIO:
+		__atomic_add_fetch(&shm->stats.kvm_run_exit_mmio, 1,
+				   __ATOMIC_RELAXED);
+		generate_rand_bytes(kr->mmio.data, sizeof(kr->mmio.data));
+		return;
+	case KVM_EXIT_HLT:
+		__atomic_add_fetch(&shm->stats.kvm_run_exit_hlt, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	case KVM_EXIT_SHUTDOWN:
+		__atomic_add_fetch(&shm->stats.kvm_run_exit_shutdown, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	case KVM_EXIT_FAIL_ENTRY:
+		__atomic_add_fetch(&shm->stats.kvm_run_exit_fail_entry, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	case KVM_EXIT_INTERNAL_ERROR:
+		__atomic_add_fetch(&shm->stats.kvm_run_exit_internal_error,
+				   1, __ATOMIC_RELAXED);
+		return;
+	case KVM_EXIT_INTR:
+		__atomic_add_fetch(&shm->stats.kvm_run_exit_intr, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	default:
+		__atomic_add_fetch(&shm->stats.kvm_run_exit_other, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	}
+}
+
+static void run_one(int vcpufd, struct kvm_run *kr, size_t kvm_run_size)
+{
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.kvm_run_invocations, 1,
+			   __ATOMIC_RELAXED);
+
+	scribble_pre_run(kr);
+
+	alarm(KVM_RUN_ALARM_SECS);
+	rc = ioctl(vcpufd, KVM_RUN, 0UL);
+	alarm(0);
+
+	if (rc < 0) {
+		__atomic_add_fetch(&shm->stats.kvm_run_errors, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	}
+
+	tally_exit(kr, kvm_run_size);
+}
+
+bool kvm_run_churn(struct childdata *child __attribute__((unused)))
+{
+	struct object *obj;
+	int vcpufd, iters, i;
+	struct kvm_run *kr;
+	size_t kvm_run_size;
+
+	probe_sync_regs_caps();
+
+	if (objects_empty(OBJ_FD_KVM_VCPU))
+		return true;
+
+	obj = get_random_object(OBJ_FD_KVM_VCPU, OBJ_GLOBAL);
+	if (obj == NULL)
+		return true;
+
+	vcpufd = obj->kvmvcpuobj.fd;
+	kr = (struct kvm_run *)obj->kvmvcpuobj.kvm_run;
+	kvm_run_size = obj->kvmvcpuobj.kvm_run_size;
+	if (vcpufd < 0 || kr == NULL || kvm_run_size < sizeof(*kr))
+		return true;
+
+	iters = 1 + (rand() % KVM_RUN_CHURN_INNER_MAX);
+	for (i = 0; i < iters; i++)
+		run_one(vcpufd, kr, kvm_run_size);
+
+	return true;
+}
+
+#else /* !USE_KVM */
+
+#include <stdbool.h>
+#include "child.h"
+
+bool kvm_run_churn(struct childdata *child __attribute__((unused)))
+{
+	return true;
+}
+
+#endif /* USE_KVM */
