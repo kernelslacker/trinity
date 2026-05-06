@@ -68,6 +68,24 @@ extern bool kernel_taint_param_occured;
 extern unsigned int user_specified_children;
 extern unsigned int alt_op_children;
 
+/*
+ * Hybrid bandit/explorer split: when --strategy=bandit is in effect, the
+ * first `explorer_children` child slots ignore the bandit's pick and run
+ * STRATEGY_RANDOM unconditionally as an always-on uniform baseline.  Their
+ * coverage discoveries are recorded separately and excluded from the
+ * bandit's reward signal so the explorer pool acts as an independent
+ * canary rather than biasing arm selection.
+ *
+ * Default (when --explorer-children is not passed) is computed as
+ * max_children/8 by clamp_default_explorer_children() after parse_args
+ * has finalised max_children.  user_specified_explorer_children records
+ * whether the operator passed the flag explicitly so the default-fill
+ * path can leave their value alone.
+ */
+extern unsigned int explorer_children;
+extern bool user_specified_explorer_children;
+void clamp_default_explorer_children(void);
+
 extern unsigned long epoch_iterations;
 extern unsigned int epoch_timeout;
 
