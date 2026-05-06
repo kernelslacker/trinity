@@ -55,6 +55,7 @@
 #include <setjmp.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -193,14 +194,24 @@ static void touch_subrange(volatile unsigned char *base, unsigned long len)
 }
 
 /* Pool-race fault guard.  See childops/memory-pressure.c for the full
- * rationale; the wrap below catches a sibling-driven UAF on the
- * pool-drawn region between draw and the optional touch_subrange()
- * write/read inside the iter loop. */
+ * rationale.  The wrap below catches a sibling-driven UAF on the
+ * pool-drawn region between draw and the touch_subrange() write/read
+ * inside the iter loop, but only when si_addr is inside the drawn
+ * pool mapping range.  Faults outside the range — ASAN redzone hits,
+ * setup-path bugs, genuine SIGBUS on an unrelated mmap — restore
+ * SIG_DFL and re-raise so child_fault_handler diagnoses + exits and
+ * the per-pid bug log path is preserved.  Volatile, ordering, and
+ * re-raise rationale match the equivalent statics in
+ * childops/memory-pressure.c. */
 static sigjmp_buf madvise_cycler_pool_race_jmp;
+static volatile uintptr_t madvise_cycler_pool_race_addr_low;
+static volatile uintptr_t madvise_cycler_pool_race_addr_high;
 
 static void madvise_cycler_pool_race_handler(int sig, siginfo_t *info,
 					     void *ctx)
 {
+	uintptr_t fault_addr;
+
 	(void)ctx;
 	if (info->si_code <= 0 && info->si_pid != getpid()) {
 		/* Sibling-spoofed — kernel consumed the signal already. */
@@ -214,6 +225,18 @@ static void madvise_cycler_pool_race_handler(int sig, siginfo_t *info,
 		raise(sig);
 		return;
 	}
+
+	fault_addr = (uintptr_t)info->si_addr;
+	if (fault_addr < madvise_cycler_pool_race_addr_low ||
+	    fault_addr >= madvise_cycler_pool_race_addr_high) {
+		/* Real kernel fault but si_addr is outside the drawn
+		 * pool range — not the race we're guarding against.
+		 * Restore default and re-raise so child_fault_handler
+		 * diagnoses + exits and the bug log path is preserved. */
+		signal(sig, SIG_DFL);
+		raise(sig);
+		return;
+	}
 	siglongjmp(madvise_cycler_pool_race_jmp, 1);
 }
 
@@ -223,7 +246,14 @@ bool madvise_cycler(struct childdata *child)
 	unsigned char *region;
 	unsigned long region_len, nr_pages;
 	struct timespec start;
-	unsigned int iter, iter_cap;
+	unsigned int iter;
+	/* volatile: iter_cap is computed before sigsetjmp via the BUDGETED
+	 * macro (which contains a statement-expression temp _b) and read
+	 * inside the wrap.  Without volatile GCC's -Wclobbered analysis
+	 * flags _b as possibly-clobbered by longjmp; ISO C 7.13.2.1 only
+	 * guarantees post-longjmp values for objects with volatile-
+	 * qualified type. */
+	volatile unsigned int iter_cap;
 	unsigned int advice_idx;
 
 	(void) child;
@@ -256,9 +286,32 @@ bool madvise_cycler(struct childdata *child)
 		return true;
 	}
 
+	/* Setup is outside the wrap.  None of clock_gettime, the effector
+	 * pick, or the budget-cap calculation touches the pool mapping, so
+	 * a fault inside this setup region is not a pool race and should
+	 * reach child_fault_handler via the default handler. */
+	clock_gettime(CLOCK_MONOTONIC, &start);
+
+	/* Start the cycle at an offset into the advice list so concurrent
+	 * madvise_cycler invocations don't all hammer MADV_FREE first.
+	 * Bias the start through the effector map: advice values whose
+	 * bit pattern overlaps the kernel's hot branches on madvise's
+	 * advice arg get more starting weight, putting their reclaim /
+	 * populate / collapse paths under pressure first while the wall-
+	 * clock budget is still fresh. */
+	advice_idx = effector_pick_array_index(
+		EFFECTOR_NR(__NR_madvise), 2,
+		advice_cycle, ARRAY_SIZE(advice_cycle));
+
+	iter_cap = BUDGETED(CHILD_OP_MADVISE_CYCLER,
+			    JITTER_RANGE(MAX_ITERATIONS));
+
 	{
 		struct sigaction sa, old_segv, old_bus;
 		bool aborted = false;
+
+		madvise_cycler_pool_race_addr_low  = (uintptr_t)region;
+		madvise_cycler_pool_race_addr_high = (uintptr_t)region + region_len;
 
 		memset(&sa, 0, sizeof(sa));
 		sigemptyset(&sa.sa_mask);
@@ -268,22 +321,6 @@ bool madvise_cycler(struct childdata *child)
 		sigaction(SIGBUS,  &sa, &old_bus);
 
 		if (sigsetjmp(madvise_cycler_pool_race_jmp, 1) == 0) {
-			clock_gettime(CLOCK_MONOTONIC, &start);
-
-			/* Start the cycle at an offset into the advice list so
-			 * concurrent madvise_cycler invocations don't all
-			 * hammer MADV_FREE first.  Bias the start through the
-			 * effector map: advice values whose bit pattern
-			 * overlaps the kernel's hot branches on madvise's
-			 * advice arg get more starting weight, putting their
-			 * reclaim / populate / collapse paths under pressure
-			 * first while the wall-clock budget is still fresh. */
-			advice_idx = effector_pick_array_index(
-				EFFECTOR_NR(__NR_madvise), 2,
-				advice_cycle, ARRAY_SIZE(advice_cycle));
-
-			iter_cap = BUDGETED(CHILD_OP_MADVISE_CYCLER,
-					    JITTER_RANGE(MAX_ITERATIONS));
 			for (iter = 0; iter < iter_cap; iter++) {
 				unsigned long offset, len;
 				int advice, rc;
@@ -331,6 +368,9 @@ bool madvise_cycler(struct childdata *child)
 
 		sigaction(SIGSEGV, &old_segv, NULL);
 		sigaction(SIGBUS,  &old_bus,  NULL);
+
+		madvise_cycler_pool_race_addr_low  = 0;
+		madvise_cycler_pool_race_addr_high = 0;
 
 		if (aborted) {
 			/* siglongjmp skipped any in-flight cleanup — none
