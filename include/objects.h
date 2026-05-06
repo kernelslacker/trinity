@@ -178,6 +178,14 @@ struct kvmvmobj {
 	int nr_devices;
 };
 
+struct kvmvcpuobj {
+	int fd;
+	int parent_vmfd;
+	int vcpu_id;
+	void *kvm_run;
+	size_t kvm_run_size;
+};
+
 struct aioobj {
 	unsigned long ctx;
 };
@@ -246,6 +254,8 @@ struct object {
 		struct kvmsysobj kvmsysobj;
 
 		struct kvmvmobj kvmvmobj;
+
+		struct kvmvcpuobj kvmvcpuobj;
 
 		struct aioobj aioobj;
 

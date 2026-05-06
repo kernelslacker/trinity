@@ -183,7 +183,7 @@ struct fd_hash_entry *fd_hash_lookup(int fd)
 
 static bool is_fd_type(enum objecttype type)
 {
-	return type >= OBJ_FD_PIPE && type <= OBJ_FD_KVM_VM;
+	return type >= OBJ_FD_PIPE && type <= OBJ_FD_KVM_VCPU;
 }
 
 /*
@@ -1032,6 +1032,7 @@ static void invalidate_object_fd(struct object *obj, enum objecttype type)
 	case OBJ_FD_FS_CTX:	obj->fsctxobj.fd = -1; break;
 	case OBJ_FD_KVM_SYSTEM:	obj->kvmsysobj.fd = -1; break;
 	case OBJ_FD_KVM_VM:	obj->kvmvmobj.fd = -1; break;
+	case OBJ_FD_KVM_VCPU:	obj->kvmvcpuobj.fd = -1; break;
 	default:		break;
 	}
 }
@@ -1272,6 +1273,7 @@ void set_object_fd(struct object *obj, enum objecttype type, int fd)
 	case OBJ_FD_FS_CTX:	obj->fsctxobj.fd = fd; break;
 	case OBJ_FD_KVM_SYSTEM:	obj->kvmsysobj.fd = fd; break;
 	case OBJ_FD_KVM_VM:	obj->kvmvmobj.fd = fd; break;
+	case OBJ_FD_KVM_VCPU:	obj->kvmvcpuobj.fd = fd; break;
 	default:		break;
 	}
 }
@@ -1339,6 +1341,7 @@ int fd_from_object(struct object *obj, enum objecttype type)
 	case OBJ_FD_FS_CTX:	return obj->fsctxobj.fd;
 	case OBJ_FD_KVM_SYSTEM:	return obj->kvmsysobj.fd;
 	case OBJ_FD_KVM_VM:	return obj->kvmvmobj.fd;
+	case OBJ_FD_KVM_VCPU:	return obj->kvmvcpuobj.fd;
 	default:		return -1;
 	}
 }
