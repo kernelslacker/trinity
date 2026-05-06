@@ -865,6 +865,18 @@ struct stats_s {
 	unsigned long handshake_req_abort_abort_ok;		/* HANDSHAKE_CMD_DONE status!=0 issued (abort-shape race) */
 	unsigned long handshake_req_abort_orphan_close;		/* close() while requests outstanding (sk_destruct path) */
 
+	/* nf_conntrack_helper_churn childop counters */
+	unsigned long nf_conntrack_helper_churn_runs;		/* total nf_conntrack_helper_churn invocations */
+	unsigned long nf_conntrack_helper_churn_setup_failed;	/* nfnl socket open / CTNETLINK probe failed */
+	unsigned long nf_conntrack_helper_churn_no_helper;	/* runtime helper-mask empty (no helpers loaded) */
+	unsigned long nf_conntrack_helper_churn_attach_ok;	/* CT_NEW + CTA_HELP ack 0 or EEXIST (attach path ran) */
+	unsigned long nf_conntrack_helper_churn_attach_fail;	/* CT_NEW + CTA_HELP rejected (validation ran) */
+	unsigned long nf_conntrack_helper_churn_exp_ok;		/* EXP_NEW ack 0 (expectation registered) */
+	unsigned long nf_conntrack_helper_churn_packet_sent;	/* loopback drive packet emitted (helper ->help() path) */
+	unsigned long nf_conntrack_helper_churn_delete_ok;	/* CT_DELETE ack 0 (race vs helper expectation walk) */
+	unsigned long nf_conntrack_helper_churn_zone_swap;	/* SO_MARK-driven zone-swap drive packet emitted */
+	unsigned long nf_conntrack_helper_churn_detach_ok;	/* CT_NEW NLM_F_REPLACE w/o CTA_HELP ack 0 (detach race) */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic

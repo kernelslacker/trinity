@@ -693,7 +693,8 @@ static void dump_stats_json(void)
 		"\"sctp_assoc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bindx_added\":%lu,\"bindx_removed\":%lu,\"bindx_rejected\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"accepted\":%lu,\"packets_sent\":%lu,\"peeled_off\":%lu,\"peeloff_rejected\":%lu,\"cycles\":%lu},"
 		"\"mptcp_pm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sock_mptcp_ok\":%lu,\"addr_added_ok\":%lu,\"addr_removed_ok\":%lu,\"send_ok\":%lu},"
 		"\"devlink_port_churn\":{\"iterations\":%lu,\"split_ok\":%lu,\"split_fail\":%lu,\"reload_ok\":%lu,\"reload_fail\":%lu,\"create_skipped\":%lu},"
-		"\"handshake_req_abort\":{\"runs\":%lu,\"setup_failed\":%lu,\"accept_ok\":%lu,\"done_ok\":%lu,\"abort_ok\":%lu,\"orphan_close\":%lu}"
+		"\"handshake_req_abort\":{\"runs\":%lu,\"setup_failed\":%lu,\"accept_ok\":%lu,\"done_ok\":%lu,\"abort_ok\":%lu,\"orphan_close\":%lu},"
+		"\"nf_conntrack_helper_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_helper\":%lu,\"attach_ok\":%lu,\"attach_fail\":%lu,\"exp_ok\":%lu,\"packet_sent\":%lu,\"delete_ok\":%lu,\"zone_swap\":%lu,\"detach_ok\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1020,7 +1021,17 @@ static void dump_stats_json(void)
 		shm->stats.handshake_req_abort_accept_ok,
 		shm->stats.handshake_req_abort_done_ok,
 		shm->stats.handshake_req_abort_abort_ok,
-		shm->stats.handshake_req_abort_orphan_close);
+		shm->stats.handshake_req_abort_orphan_close,
+		shm->stats.nf_conntrack_helper_churn_runs,
+		shm->stats.nf_conntrack_helper_churn_setup_failed,
+		shm->stats.nf_conntrack_helper_churn_no_helper,
+		shm->stats.nf_conntrack_helper_churn_attach_ok,
+		shm->stats.nf_conntrack_helper_churn_attach_fail,
+		shm->stats.nf_conntrack_helper_churn_exp_ok,
+		shm->stats.nf_conntrack_helper_churn_packet_sent,
+		shm->stats.nf_conntrack_helper_churn_delete_ok,
+		shm->stats.nf_conntrack_helper_churn_zone_swap,
+		shm->stats.nf_conntrack_helper_churn_detach_ok);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -2199,6 +2210,19 @@ void dump_stats(void)
 		stat_row("handshake_req_abort", "done_ok",      shm->stats.handshake_req_abort_done_ok);
 		stat_row("handshake_req_abort", "abort_ok",     shm->stats.handshake_req_abort_abort_ok);
 		stat_row("handshake_req_abort", "orphan_close", shm->stats.handshake_req_abort_orphan_close);
+	}
+
+	if (shm->stats.nf_conntrack_helper_churn_runs) {
+		stat_row("nf_conntrack_helper_churn", "runs",         shm->stats.nf_conntrack_helper_churn_runs);
+		stat_row("nf_conntrack_helper_churn", "setup_failed", shm->stats.nf_conntrack_helper_churn_setup_failed);
+		stat_row("nf_conntrack_helper_churn", "no_helper",    shm->stats.nf_conntrack_helper_churn_no_helper);
+		stat_row("nf_conntrack_helper_churn", "attach_ok",    shm->stats.nf_conntrack_helper_churn_attach_ok);
+		stat_row("nf_conntrack_helper_churn", "attach_fail",  shm->stats.nf_conntrack_helper_churn_attach_fail);
+		stat_row("nf_conntrack_helper_churn", "exp_ok",       shm->stats.nf_conntrack_helper_churn_exp_ok);
+		stat_row("nf_conntrack_helper_churn", "packet_sent",  shm->stats.nf_conntrack_helper_churn_packet_sent);
+		stat_row("nf_conntrack_helper_churn", "delete_ok",    shm->stats.nf_conntrack_helper_churn_delete_ok);
+		stat_row("nf_conntrack_helper_churn", "zone_swap",    shm->stats.nf_conntrack_helper_churn_zone_swap);
+		stat_row("nf_conntrack_helper_churn", "detach_ok",    shm->stats.nf_conntrack_helper_churn_detach_ok);
 	}
 
 	if (kcov_shm != NULL) {
