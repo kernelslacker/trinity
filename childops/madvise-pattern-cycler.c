@@ -52,11 +52,15 @@
  *     wedged madvise path here still trips the SIGALRM stall detector.
  */
 
+#include <setjmp.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "arch.h"
 #include "child.h"
@@ -188,6 +192,31 @@ static void touch_subrange(volatile unsigned char *base, unsigned long len)
 	}
 }
 
+/* Pool-race fault guard.  See childops/memory-pressure.c for the full
+ * rationale; the wrap below catches a sibling-driven UAF on the
+ * pool-drawn region between draw and the optional touch_subrange()
+ * write/read inside the iter loop. */
+static sigjmp_buf madvise_cycler_pool_race_jmp;
+
+static void madvise_cycler_pool_race_handler(int sig, siginfo_t *info,
+					     void *ctx)
+{
+	(void)ctx;
+	if (info->si_code <= 0 && info->si_pid != getpid()) {
+		/* Sibling-spoofed — kernel consumed the signal already. */
+		return;
+	}
+	if (info->si_code <= 0) {
+		/* Self-sent (glibc abort etc.) — restore default and
+		 * re-raise so child_fault_handler diagnoses + exits.
+		 * siglongjmp here would orphan the allocator lock. */
+		signal(sig, SIG_DFL);
+		raise(sig);
+		return;
+	}
+	siglongjmp(madvise_cycler_pool_race_jmp, 1);
+}
+
 bool madvise_cycler(struct childdata *child)
 {
 	struct map *m;
@@ -227,50 +256,93 @@ bool madvise_cycler(struct childdata *child)
 		return true;
 	}
 
-	clock_gettime(CLOCK_MONOTONIC, &start);
+	{
+		struct sigaction sa, old_segv, old_bus;
+		bool aborted = false;
 
-	/* Start the cycle at an offset into the advice list so concurrent
-	 * madvise_cycler invocations don't all hammer MADV_FREE first.
-	 * Bias the start through the effector map: advice values whose
-	 * bit pattern overlaps the kernel's hot branches on madvise's
-	 * advice arg get more starting weight, putting their reclaim /
-	 * populate / collapse paths under pressure first while the wall-
-	 * clock budget is still fresh. */
-	advice_idx = effector_pick_array_index(EFFECTOR_NR(__NR_madvise), 2,
-			advice_cycle, ARRAY_SIZE(advice_cycle));
+		memset(&sa, 0, sizeof(sa));
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = SA_SIGINFO;
+		sa.sa_sigaction = madvise_cycler_pool_race_handler;
+		sigaction(SIGSEGV, &sa, &old_segv);
+		sigaction(SIGBUS,  &sa, &old_bus);
 
-	iter_cap = BUDGETED(CHILD_OP_MADVISE_CYCLER, JITTER_RANGE(MAX_ITERATIONS));
-	for (iter = 0; iter < iter_cap; iter++) {
-		unsigned long offset, len;
-		int advice, rc;
+		if (sigsetjmp(madvise_cycler_pool_race_jmp, 1) == 0) {
+			clock_gettime(CLOCK_MONOTONIC, &start);
 
-		offset = pick_subrange(nr_pages, &len);
-		advice = (int)advice_cycle[advice_idx];
-		advice_idx = (advice_idx + 1) % (unsigned int) ARRAY_SIZE(advice_cycle);
+			/* Start the cycle at an offset into the advice list so
+			 * concurrent madvise_cycler invocations don't all
+			 * hammer MADV_FREE first.  Bias the start through the
+			 * effector map: advice values whose bit pattern
+			 * overlaps the kernel's hot branches on madvise's
+			 * advice arg get more starting weight, putting their
+			 * reclaim / populate / collapse paths under pressure
+			 * first while the wall-clock budget is still fresh. */
+			advice_idx = effector_pick_array_index(
+				EFFECTOR_NR(__NR_madvise), 2,
+				advice_cycle, ARRAY_SIZE(advice_cycle));
 
-		/* 1-in-RAND_NEGATIVE_RATIO sub the page-aligned valid len for
-		 * a curated edge value — exercises the kernel's range
-		 * validation (PAGE_ALIGN overflow, end < start, len near
-		 * SIZE_MAX) which the partial-VMA path above never reaches. */
-		rc = madvise(region + offset,
-			     (size_t)RAND_NEGATIVE_OR(len), advice);
-		__atomic_add_fetch(&shm->stats.madvise_cycler_calls,
-				   1, __ATOMIC_RELAXED);
-		if (rc < 0) {
-			__atomic_add_fetch(&shm->stats.madvise_cycler_failed,
-					   1, __ATOMIC_RELAXED);
-			/* -EINVAL from MADV_COLLAPSE on non-THP-eligible
-			 * ranges, -EAGAIN from MADV_FREE on a memory-
-			 * pressured swapless system, etc.  Expected; fall
-			 * through. */
+			iter_cap = BUDGETED(CHILD_OP_MADVISE_CYCLER,
+					    JITTER_RANGE(MAX_ITERATIONS));
+			for (iter = 0; iter < iter_cap; iter++) {
+				unsigned long offset, len;
+				int advice, rc;
+
+				offset = pick_subrange(nr_pages, &len);
+				advice = (int)advice_cycle[advice_idx];
+				advice_idx = (advice_idx + 1) %
+					(unsigned int)ARRAY_SIZE(advice_cycle);
+
+				/* 1-in-RAND_NEGATIVE_RATIO sub the page-aligned
+				 * valid len for a curated edge value —
+				 * exercises the kernel's range validation
+				 * (PAGE_ALIGN overflow, end < start, len near
+				 * SIZE_MAX) which the partial-VMA path above
+				 * never reaches. */
+				rc = madvise(region + offset,
+					     (size_t)RAND_NEGATIVE_OR(len),
+					     advice);
+				__atomic_add_fetch(
+					&shm->stats.madvise_cycler_calls,
+					1, __ATOMIC_RELAXED);
+				if (rc < 0) {
+					__atomic_add_fetch(
+						&shm->stats.madvise_cycler_failed,
+						1, __ATOMIC_RELAXED);
+					/* -EINVAL from MADV_COLLAPSE on
+					 * non-THP-eligible ranges, -EAGAIN
+					 * from MADV_FREE on a memory-
+					 * pressured swapless system, etc.
+					 * Expected; fall through. */
+				}
+
+				if (RAND_BOOL())
+					touch_subrange(
+						(volatile unsigned char *)
+							region + offset,
+						len);
+
+				if (budget_elapsed(&start))
+					break;
+			}
+		} else {
+			aborted = true;
 		}
 
-		if (RAND_BOOL())
-			touch_subrange((volatile unsigned char *) region + offset,
-				       len);
+		sigaction(SIGSEGV, &old_segv, NULL);
+		sigaction(SIGBUS,  &old_bus,  NULL);
 
-		if (budget_elapsed(&start))
-			break;
+		if (aborted) {
+			/* siglongjmp skipped any in-flight cleanup — none
+			 * to skip in this body (no per-iteration
+			 * allocations).  Match the single-page early-
+			 * return shape above (return true for "no useful
+			 * work but no error") rather than reporting a
+			 * dispatch-level failure. */
+			__atomic_add_fetch(
+				&shm->stats.pool_race_aborted[CHILD_OP_MADVISE_CYCLER],
+				1, __ATOMIC_RELAXED);
+		}
 	}
 
 	return true;
