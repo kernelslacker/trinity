@@ -111,6 +111,9 @@ extern const struct socket_family_grammar grammar_inet6;
 extern const struct socket_family_grammar grammar_unix;
 extern const struct socket_family_grammar grammar_netlink;
 extern const struct socket_family_grammar grammar_packet;
+#ifdef USE_XDP
+extern const struct socket_family_grammar grammar_xdp;
+#endif
 
 /*
  * Stub entries — registered with can_run=sfg_always_false so they

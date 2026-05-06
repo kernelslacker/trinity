@@ -2,11 +2,16 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/mman.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <net/if.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <linux/if_xdp.h>
 #include "net.h"
 #include "random.h"
+#include "socket-family-grammar.h"
 #include "utils.h"
 #include "compat.h"
 
@@ -226,5 +231,189 @@ const struct netproto proto_xdp = {
 	.setsockopt = xdp_setsockopt,
 	.valid_triplets = xdp_triplet,
 	.nr_triplets = ARRAY_SIZE(xdp_triplet),
+};
+
+/*
+ * grammar_xdp — coherent walk for AF_XDP driven by the per-family
+ * grammar dispatcher (net/socket-family-grammar.c).
+ *
+ * walk_setsockopts walks the canonical UMEM/ring setup
+ * (XDP_UMEM_REG → fill ring → completion ring → RX_RING → TX_RING)
+ * but deliberately churns the order — half the time RX_RING lands
+ * BEFORE XDP_UMEM_REG so the kernel's xsk_setsockopt ordering check
+ * runs against an unregistered umem.  The other half walks the
+ * canonical order so the success path also gets coverage on the
+ * same fd that just registered the umem.
+ *
+ * The umem is mmap'd at 64 * 4096 == 16 pages, the smallest size
+ * the kernel will accept with chunk_size 4096 and frame headroom 0.
+ * It leaks deliberately — the fd close path tears it down via
+ * xsk_destruct.  bind_or_connect uses sxdp_ifindex of "lo" with
+ * a random sxdp_flags; bind() is expected to fail on lo with most
+ * flag combinations and EOPNOTSUPP / EINVAL is swallowed by the
+ * framework's err_burst counter rather than latching the family.
+ *
+ * data_leg stays NULL — XDP doesn't drive sendmsg through this
+ * path; packets flow through the rings instead.  needs_listen_accept
+ * is also false.  can_run probes socket(AF_XDP, SOCK_RAW, 0) and
+ * latches off on ENOSYS / EPROTONOSUPPORT for kernels without
+ * CONFIG_XDP_SOCKETS.
+ */
+
+#define XDP_GRAMMAR_UMEM_PAGES		16
+#define XDP_GRAMMAR_UMEM_BYTES		(XDP_GRAMMAR_UMEM_PAGES * 4096)
+#define XDP_GRAMMAR_RING_SIZE		64
+
+static bool xdp_grammar_can_run(void)
+{
+	int fd;
+
+	fd = socket(AF_XDP, SOCK_RAW, 0);
+	if (fd < 0)
+		return false;
+	close(fd);
+	return true;
+}
+
+static void xdp_grammar_pick_triplet(struct socket_triplet *out)
+{
+	out->family = AF_XDP;
+	out->type = SOCK_RAW;
+	out->protocol = 0;
+}
+
+static void xdp_grammar_configure_pre_bind(int fd, struct socket_triplet *t)
+{
+	int flags;
+
+	(void) t;
+	flags = fcntl(fd, F_GETFL, 0);
+	if (flags >= 0)
+		(void) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+static int xdp_grammar_bind(int fd, struct socket_triplet *t)
+{
+	struct sockaddr_xdp xdp;
+	unsigned int ifindex;
+
+	(void) t;
+
+	memset(&xdp, 0, sizeof(xdp));
+	xdp.sxdp_family = AF_XDP;
+	ifindex = if_nametoindex("lo");
+	xdp.sxdp_ifindex = ifindex;
+	xdp.sxdp_queue_id = 0;
+	switch (rand() % 4) {
+	case 0:	xdp.sxdp_flags = 0; break;
+	case 1: xdp.sxdp_flags = XDP_USE_NEED_WAKEUP; break;
+	case 2: xdp.sxdp_flags = XDP_COPY; break;
+	case 3: xdp.sxdp_flags = XDP_ZEROCOPY; break;
+	}
+
+	/* bind() likely fails on lo with most flag combinations.
+	 * Swallow EOPNOTSUPP / EINVAL gracefully — the kernel paths
+	 * we wanted to walk already ran via walk_setsockopts. */
+	if (bind(fd, (struct sockaddr *) &xdp, sizeof(xdp)) < 0) {
+		if (errno == EOPNOTSUPP || errno == EINVAL ||
+		    errno == ENODEV)
+			return 0;
+		return -1;
+	}
+	return 0;
+}
+
+static bool xdp_grammar_needs_listen_accept(struct socket_triplet *t)
+{
+	(void) t;
+	return false;
+}
+
+static void *xdp_grammar_alloc_umem(void)
+{
+	void *area;
+
+	area = mmap(NULL, XDP_GRAMMAR_UMEM_BYTES, PROT_READ | PROT_WRITE,
+		    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (area == MAP_FAILED)
+		return NULL;
+	return area;
+}
+
+static void xdp_grammar_set_ring(int fd, int optname)
+{
+	int sz = XDP_GRAMMAR_RING_SIZE;
+
+	(void) setsockopt(fd, SOL_XDP, optname, &sz, sizeof(sz));
+}
+
+static void xdp_grammar_register_umem(int fd, void *area)
+{
+	struct xdp_umem_reg reg;
+
+	memset(&reg, 0, sizeof(reg));
+	reg.addr = (unsigned long long) area;
+	reg.len = XDP_GRAMMAR_UMEM_BYTES;
+	reg.chunk_size = 4096;
+	reg.headroom = 0;
+	reg.flags = 0;
+	(void) setsockopt(fd, SOL_XDP, XDP_UMEM_REG, &reg, sizeof(reg));
+}
+
+static void xdp_grammar_walk_setsockopts(int fd, struct socket_triplet *t,
+					 unsigned int n)
+{
+	void *area;
+	bool churn_order = RAND_BOOL();
+	unsigned int step = 0;
+
+	(void) t;
+
+	area = xdp_grammar_alloc_umem();
+	if (area == NULL)
+		return;
+
+	if (churn_order) {
+		/* Out-of-order: install RX ring before UMEM_REG so the
+		 * kernel's ordering check rejects the call.  Then install
+		 * UMEM_REG and the rest of the canonical walk to also
+		 * exercise the success path in the same chain. */
+		if (step++ < n)
+			xdp_grammar_set_ring(fd, XDP_RX_RING);
+		if (step++ < n)
+			xdp_grammar_register_umem(fd, area);
+		if (step++ < n)
+			xdp_grammar_set_ring(fd, XDP_UMEM_FILL_RING);
+		if (step++ < n)
+			xdp_grammar_set_ring(fd, XDP_UMEM_COMPLETION_RING);
+		if (step++ < n)
+			xdp_grammar_set_ring(fd, XDP_TX_RING);
+	} else {
+		if (step++ < n)
+			xdp_grammar_register_umem(fd, area);
+		if (step++ < n)
+			xdp_grammar_set_ring(fd, XDP_UMEM_FILL_RING);
+		if (step++ < n)
+			xdp_grammar_set_ring(fd, XDP_UMEM_COMPLETION_RING);
+		if (step++ < n)
+			xdp_grammar_set_ring(fd, XDP_RX_RING);
+		if (step++ < n)
+			xdp_grammar_set_ring(fd, XDP_TX_RING);
+	}
+
+	/* Leave the umem mapped — the kernel holds a reference while
+	 * the socket is alive and the fd close path tears it down via
+	 * xsk_destruct. */
+}
+
+const struct socket_family_grammar grammar_xdp = {
+	.family			= AF_XDP,
+	.name			= "xdp",
+	.can_run		= xdp_grammar_can_run,
+	.pick_triplet		= xdp_grammar_pick_triplet,
+	.configure_pre_bind	= xdp_grammar_configure_pre_bind,
+	.bind_or_connect	= xdp_grammar_bind,
+	.walk_setsockopts	= xdp_grammar_walk_setsockopts,
+	.needs_listen_accept	= xdp_grammar_needs_listen_accept,
 };
 #endif /* USE_XDP */
