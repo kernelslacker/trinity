@@ -114,4 +114,12 @@ const struct netproto proto_vsock = {
 	.valid_triplets = vsock_triplets,
 	.nr_triplets = ARRAY_SIZE(vsock_triplets),
 };
+
+#include "socket-family-grammar.h"
+
+const struct socket_family_grammar grammar_vsock_stub = {
+	.family		= PF_VSOCK,
+	.name		= "vsock_stub",
+	.can_run	= sfg_always_false,
+};
 #endif /* USE_VSOCK */

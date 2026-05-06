@@ -48,6 +48,25 @@ static const struct socket_family_grammar * const sfg_registry[] = {
 	&grammar_inet6,
 #endif
 	&grammar_unix,
+
+	/* Dormant stubs — sfg_always_false keeps them inert on this
+	 * kernel build, but the slot is held so a user with the right
+	 * CONFIG (or a future commit upgrading the stub to a real
+	 * grammar) drops in without changing the registry array. */
+#ifdef USE_BLUETOOTH
+	&grammar_bluetooth_stub,
+#endif
+#ifdef USE_CAIF
+	&grammar_caif_stub,
+#endif
+#ifdef USE_VSOCK
+	&grammar_vsock_stub,
+#endif
+	&grammar_can_stub,
+	&grammar_phonet_stub,
+	&grammar_smc_stub,
+	&grammar_tipc_stub,
+
 	NULL,
 };
 

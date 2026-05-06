@@ -59,3 +59,11 @@ const struct netproto proto_smc = {
 	.valid_triplets = smc_triplet,
 	.nr_triplets = ARRAY_SIZE(smc_triplet),
 };
+
+#include "socket-family-grammar.h"
+
+const struct socket_family_grammar grammar_smc_stub = {
+	.family		= PF_SMC,
+	.name		= "smc_stub",
+	.can_run	= sfg_always_false,
+};

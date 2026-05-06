@@ -51,3 +51,11 @@ const struct netproto proto_phonet = {
 	.valid_triplets = phonet_triplets,
 	.nr_triplets = ARRAY_SIZE(phonet_triplets),
 };
+
+#include "socket-family-grammar.h"
+
+const struct socket_family_grammar grammar_phonet_stub = {
+	.family		= PF_PHONET,
+	.name		= "phonet_stub",
+	.can_run	= sfg_always_false,
+};
