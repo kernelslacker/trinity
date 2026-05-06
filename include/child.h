@@ -142,6 +142,7 @@ enum child_op_type {
 	CHILD_OP_TIPC_LINK_CHURN,
 	CHILD_OP_TLS_ULP_CHURN,
 	CHILD_OP_VXLAN_ENCAP_CHURN,
+	CHILD_OP_BRIDGE_FDB_STP,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -458,3 +459,4 @@ bool netlink_monitor_race(struct childdata *child);
 bool tipc_link_churn(struct childdata *child);
 bool tls_ulp_churn(struct childdata *child);
 bool vxlan_encap_churn(struct childdata *child);
+bool bridge_fdb_stp(struct childdata *child);

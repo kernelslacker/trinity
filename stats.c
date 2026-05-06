@@ -684,7 +684,8 @@ static void dump_stats_json(void)
 		"\"netlink_monitor_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"mon_open\":%lu,\"mut_open\":%lu,\"mut_op_ok\":%lu,\"recv_drained\":%lu,\"group_drop\":%lu,\"group_add\":%lu},"
 		"\"tipc_link_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bearer_enable_ok\":%lu,\"sock_rdm_ok\":%lu,\"topsrv_connect_ok\":%lu,\"sub_ports_sent\":%lu,\"publish_ok\":%lu,\"bearer_disable_ok\":%lu},"
 		"\"tls_ulp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_install_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"splice_ok\":%lu,\"rekey_ok\":%lu,\"recv_ok\":%lu},"
-		"\"vxlan_encap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"fdb_add_ok\":%lu,\"link_up_ok\":%lu,\"packet_sent_ok\":%lu,\"link_del_ok\":%lu}"
+		"\"vxlan_encap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"fdb_add_ok\":%lu,\"link_up_ok\":%lu,\"packet_sent_ok\":%lu,\"link_del_ok\":%lu},"
+		"\"bridge_fdb_stp\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"raw_send_ok\":%lu,\"stp_toggle_ok\":%lu,\"fdb_del_ok\":%lu,\"link_del_ok\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -935,7 +936,15 @@ static void dump_stats_json(void)
 		shm->stats.vxlan_encap_churn_fdb_add_ok,
 		shm->stats.vxlan_encap_churn_link_up_ok,
 		shm->stats.vxlan_encap_churn_packet_sent_ok,
-		shm->stats.vxlan_encap_churn_link_del_ok);
+		shm->stats.vxlan_encap_churn_link_del_ok,
+		shm->stats.bridge_fdb_stp_runs,
+		shm->stats.bridge_fdb_stp_setup_failed,
+		shm->stats.bridge_fdb_stp_bridge_create_ok,
+		shm->stats.bridge_fdb_stp_veth_create_ok,
+		shm->stats.bridge_fdb_stp_raw_send_ok,
+		shm->stats.bridge_fdb_stp_stp_toggle_ok,
+		shm->stats.bridge_fdb_stp_fdb_del_ok,
+		shm->stats.bridge_fdb_stp_link_del_ok);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -2014,6 +2023,17 @@ void dump_stats(void)
 		stat_row("vxlan_encap_churn", "link_up_ok",     shm->stats.vxlan_encap_churn_link_up_ok);
 		stat_row("vxlan_encap_churn", "packet_sent_ok", shm->stats.vxlan_encap_churn_packet_sent_ok);
 		stat_row("vxlan_encap_churn", "link_del_ok",    shm->stats.vxlan_encap_churn_link_del_ok);
+	}
+
+	if (shm->stats.bridge_fdb_stp_runs) {
+		stat_row("bridge_fdb_stp", "runs",            shm->stats.bridge_fdb_stp_runs);
+		stat_row("bridge_fdb_stp", "setup_failed",    shm->stats.bridge_fdb_stp_setup_failed);
+		stat_row("bridge_fdb_stp", "bridge_create_ok", shm->stats.bridge_fdb_stp_bridge_create_ok);
+		stat_row("bridge_fdb_stp", "veth_create_ok",  shm->stats.bridge_fdb_stp_veth_create_ok);
+		stat_row("bridge_fdb_stp", "raw_send_ok",     shm->stats.bridge_fdb_stp_raw_send_ok);
+		stat_row("bridge_fdb_stp", "stp_toggle_ok",   shm->stats.bridge_fdb_stp_stp_toggle_ok);
+		stat_row("bridge_fdb_stp", "fdb_del_ok",      shm->stats.bridge_fdb_stp_fdb_del_ok);
+		stat_row("bridge_fdb_stp", "link_del_ok",     shm->stats.bridge_fdb_stp_link_del_ok);
 	}
 
 	if (kcov_shm != NULL) {
