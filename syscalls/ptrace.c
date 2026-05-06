@@ -151,6 +151,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 		siginfo_t *si = zmalloc(sizeof(siginfo_t));
 
 		rec->a4 = (unsigned long) si;
+		avoid_shared_buffer(&rec->a4, sizeof(siginfo_t));
 		data = si;
 		break;
 	}
@@ -175,6 +176,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 
 		rec->a3 = sizeof(sigset_t);
 		rec->a4 = (unsigned long) set;
+		avoid_shared_buffer(&rec->a4, sizeof(sigset_t));
 		data = set;
 		break;
 	}
@@ -200,6 +202,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 	case PTRACE_GETEVENTMSG:
 		/* data is an output pointer — give it a writable address */
 		rec->a4 = (unsigned long) get_writable_address(page_size);
+		avoid_shared_buffer(&rec->a4, page_size);
 		break;
 
 	case PTRACE_SETREGS:
