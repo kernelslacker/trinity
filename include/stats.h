@@ -1009,6 +1009,9 @@ struct stats_s {
 	unsigned long afxdp_churn_map_create_ok;		/* bpf(BPF_MAP_CREATE, BPF_MAP_TYPE_XSKMAP) accepted */
 	unsigned long afxdp_churn_map_update_ok;		/* bpf(BPF_MAP_UPDATE_ELEM) installed xsk_fd at xskmap key */
 	unsigned long afxdp_churn_bind_ok;			/* bind(XDP_USE_NEED_WAKEUP, lo, qid=0) accepted */
+	unsigned long afxdp_churn_link_attach_ok;		/* bpf(BPF_LINK_CREATE, BPF_XDP) attached prog to lo */
+	unsigned long afxdp_churn_netlink_attach_ok;		/* RTM_NEWLINK + IFLA_XDP_FD fallback attached prog to lo */
+	unsigned long afxdp_churn_attach_failed;		/* both attach paths failed -- RACE A window stays cold */
 	unsigned long afxdp_churn_send_ok;			/* sendto() kick on bound xsk returned >=0 (or EAGAIN/ENOBUFS/EBUSY) */
 	unsigned long afxdp_churn_recv_ok;			/* getsockopt(XDP_STATISTICS) on bound xsk succeeded */
 	unsigned long afxdp_churn_map_delete_ok;		/* bpf(BPF_MAP_DELETE_ELEM) on bound xskmap key (race target) */
