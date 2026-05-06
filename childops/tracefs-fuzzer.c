@@ -152,13 +152,30 @@ static bool tracers_discovered;
 static bool tracefs_available;
 static bool tracefs_checked;
 
-/* Check once whether tracefs is mounted and accessible. */
+/*
+ * Soft cap-gate for the function-tracer subset (set_ftrace_filter /
+ * set_ftrace_notrace / set_graph_function / current_tracer).  These files
+ * are absent on kernels built with CONFIG_FTRACE=n even when EVENT_TRACING
+ * remains compiled in -- the static event tree under events/ is still
+ * fuzzable, so we don't disable the whole childop, just the function-tracer
+ * dispatches.  Probed once at init via access(current_tracer, F_OK) -- the
+ * canonical CONFIG_FTRACE-only file.
+ */
+static bool ftrace_subset_unsupported;
+
+/* Check once whether tracefs is mounted and accessible.  At the same
+ * time, probe whether the function-tracer subset is reachable so the
+ * dispatch can latch off ftrace-only paths on FTRACE=n kernels while
+ * keeping events-tree fuzzing alive. */
 static bool check_tracefs(void)
 {
 	if (tracefs_checked)
 		return tracefs_available;
 	tracefs_checked = true;
 	tracefs_available = (access(TRACEFS_ROOT "/tracing_on", F_OK) == 0);
+	if (tracefs_available)
+		ftrace_subset_unsupported =
+			(access(TRACEFS_ROOT "/current_tracer", F_OK) != 0);
 	return tracefs_available;
 }
 
@@ -574,10 +591,24 @@ bool tracefs_fuzzer(struct childdata *child)
 	switch (rand() % 11) {
 	case 0: case 1:	do_kprobe_events();	break;
 	case 2: case 3:	do_uprobe_events();	break;
-	case 4: case 5:	do_ftrace_filter();	break;
+	case 4: case 5:
+		if (ftrace_subset_unsupported) {
+			__atomic_add_fetch(&shm->stats.tracefs_ftrace_subset_skipped,
+					   1, __ATOMIC_RELAXED);
+			break;
+		}
+		do_ftrace_filter();
+		break;
 	case 6:		do_event_enable();	break;
 	case 7:		do_trace_options();	break;
-	case 8:		do_current_tracer();	break;
+	case 8:
+		if (ftrace_subset_unsupported) {
+			__atomic_add_fetch(&shm->stats.tracefs_ftrace_subset_skipped,
+					   1, __ATOMIC_RELAXED);
+			break;
+		}
+		do_current_tracer();
+		break;
 	case 9:		do_tracing_on();	break;
 	case 10:	do_buffer_size();	break;
 	}
