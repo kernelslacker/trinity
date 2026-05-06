@@ -1228,6 +1228,17 @@ struct stats_s {
 	 * the per-strategy counter is meaningful; this scalar gives the
 	 * bandit-pool aggregate without iterating the per-strategy array. */
 	unsigned long bandit_pool_edges_discovered;
+
+	/* Per-vCPU ioctl dispatches into kvm_vcpu_grp.  Bumped from
+	 * kvm_vcpu_sanitise() each time pick_random_ioctl() lands on an ioctl
+	 * destined for an OBJ_FD_KVM_VCPU fd.  Distinct from the flat KVM
+	 * ioctl group so a zero count here while the flat KVM group stat ticks
+	 * means the per-vCPU fd_test path is dropping the fd and the dispatch
+	 * is still bouncing off /dev/kvm with ENOTTY -- the very state Phase 3
+	 * exists to fix.  Surfaced via defense_counters_periodic_dump() so an
+	 * operator sees the per-window dispatch rate without waiting for the
+	 * end-of-run summary. */
+	unsigned long kvm_vcpu_ioctls_dispatched;
 };
 
 unsigned int stats_syscall_category(const char *name);
