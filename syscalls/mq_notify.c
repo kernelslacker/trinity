@@ -37,6 +37,8 @@ static void sanitise_mq_notify(struct syscallrecord *rec)
 	}
 
 	rec->a2 = (unsigned long) sev;
+
+	avoid_shared_buffer(&rec->a2, sizeof(struct sigevent));
 }
 
 static void post_mq_notify(struct syscallrecord *rec)
