@@ -15,7 +15,6 @@
 #include "ioctls.h"
 #include "utils.h"
 
-/* deprecated nouveau ioctls */
 /*
  * Copyright 2005 Stephane Marchesin.
  * All Rights Reserved.
@@ -47,14 +46,6 @@ struct drm_nouveau_getparam {
 #define DRM_IOCTL_NOUVEAU_GETPARAM           DRM_IOWR(DRM_COMMAND_BASE + DRM_NOUVEAU_GETPARAM, struct drm_nouveau_getparam)
 #endif
 
-#ifndef DRM_IOCTL_NOUVEAU_SETPARAM
-struct drm_nouveau_setparam {
-	uint64_t param;
-	uint64_t value;
-};
-#define DRM_IOCTL_NOUVEAU_SETPARAM           DRM_IOWR(DRM_COMMAND_BASE + DRM_NOUVEAU_SETPARAM, struct drm_nouveau_setparam)
-#endif
-
 #ifndef DRM_IOCTL_NOUVEAU_CHANNEL_ALLOC
 struct drm_nouveau_channel_alloc {
 	uint32_t     fb_ctxdma_handle;
@@ -81,37 +72,6 @@ struct drm_nouveau_channel_free {
 	int channel;
 };
 #define DRM_IOCTL_NOUVEAU_CHANNEL_FREE       DRM_IOW (DRM_COMMAND_BASE + DRM_NOUVEAU_CHANNEL_FREE, struct drm_nouveau_channel_free)
-#endif
-
-#ifndef DRM_IOCTL_NOUVEAU_GROBJ_ALLOC
-struct drm_nouveau_grobj_alloc {
-	int      channel;
-	uint32_t handle;
-	int      class;
-};
-#define DRM_IOCTL_NOUVEAU_GROBJ_ALLOC        DRM_IOW (DRM_COMMAND_BASE + DRM_NOUVEAU_GROBJ_ALLOC, struct drm_nouveau_grobj_alloc)
-#endif
-
-#ifndef USE_DEFAULT_STRUCT_DRM_NOUVEAU_NOTIFIEROBJ_ALLOC
-struct drm_nouveau_notifierobj_alloc {
-	uint32_t channel;
-	uint32_t handle;
-	uint32_t size;
-	uint32_t offset;
-};
-#endif
-#ifndef DRM_IOCTL_NOUVEAU_NOTIFIEROBJ_ALLOC
-#define DRM_IOCTL_NOUVEAU_NOTIFIEROBJ_ALLOC  DRM_IOWR(DRM_COMMAND_BASE + DRM_NOUVEAU_NOTIFIEROBJ_ALLOC, struct drm_nouveau_notifierobj_alloc)
-#endif
-
-#ifndef USE_DEFAULT_STRUCT_DRM_NOUVEAU_GPUOBJ_FREE
-struct drm_nouveau_gpuobj_free {
-	int      channel;
-	uint32_t handle;
-};
-#endif
-#ifndef DRM_IOCTL_NOUVEAU_GPUOBJ_FREE
-#define DRM_IOCTL_NOUVEAU_GPUOBJ_FREE        DRM_IOW (DRM_COMMAND_BASE + DRM_NOUVEAU_GPUOBJ_FREE, struct drm_nouveau_gpuobj_free)
 #endif
 
 static const struct ioctl drm_ioctls[] = {
@@ -422,12 +382,8 @@ static const struct ioctl drm_ioctls[] = {
 
 	/* nouveau_drm.h */
 	IOCTL(DRM_IOCTL_NOUVEAU_GETPARAM),
-	IOCTL(DRM_IOCTL_NOUVEAU_SETPARAM),
 	IOCTL(DRM_IOCTL_NOUVEAU_CHANNEL_ALLOC),
 	IOCTL(DRM_IOCTL_NOUVEAU_CHANNEL_FREE),
-	IOCTL(DRM_IOCTL_NOUVEAU_GROBJ_ALLOC),
-	IOCTL(DRM_IOCTL_NOUVEAU_NOTIFIEROBJ_ALLOC),
-	IOCTL(DRM_IOCTL_NOUVEAU_GPUOBJ_FREE),
 #ifdef DRM_IOCTL_NOUVEAU_GEM_NEW
 	IOCTL(DRM_IOCTL_NOUVEAU_GEM_NEW),
 #endif
