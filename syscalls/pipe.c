@@ -15,6 +15,9 @@ static void sanitise_pipe(struct syscallrecord *rec)
 	void *p = malloc(sizeof(int) * 2);
 
 	rec->a1 = (unsigned long) p;
+
+	avoid_shared_buffer(&rec->a1, 2 * sizeof(int));
+
 	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
 	 * syscall before post_pipe() runs. */
 	rec->post_state = (unsigned long) p;
