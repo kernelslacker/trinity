@@ -1014,6 +1014,15 @@ struct stats_s {
 	unsigned long fd_events_processed;
 	unsigned long fd_events_dropped;
 
+	/* Number of times a child won the CAS in arm_epoll_if_needed() and
+	 * actually performed the EPOLL_CTL_ADD population for an unarmed
+	 * epfd.  Should rise once per new epfd (init pool seeds + every
+	 * try_regenerate_fd → open_epoll_fd replacement).  A flat counter
+	 * means children aren't picking unarmed epfds — either the consumer
+	 * wireup regressed or no one is calling get_typed_fd(ARG_FD_EPOLL)
+	 * / get_rand_epoll_fd. */
+	unsigned long epoll_lazy_armed;
+
 	/* Number of fds the generic ret_objtype post-hook auto-registered
 	 * into a per-type OBJ_LOCAL pool because no syscall-specific .post
 	 * had already done so. */

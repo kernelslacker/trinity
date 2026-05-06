@@ -39,6 +39,12 @@ struct epollobj {
 	int fd;
 	bool create1;
 	int flags;
+	/* Set once arm_epoll_if_needed() has populated the epoll set with
+	 * EPOLL_CTL_ADD entries.  Owned by children: the OBJ_GLOBAL pool
+	 * publishes new epfds with armed=false and the first child to win
+	 * the CAS does the EPOLL_CTL_ADDs.  Kept in shm via alloc_shared_obj
+	 * so all children see the same flip. */
+	bool armed;
 };
 
 struct eventfdobj {

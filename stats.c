@@ -547,7 +547,7 @@ static void dump_stats_json(void)
 		"\"fd_lifecycle\":{\"stale_detected\":%lu,\"stale_by_generation\":%lu,"
 			"\"closed_tracked\":%lu,\"regenerated\":%lu,\"duped\":%lu,"
 			"\"events_processed\":%lu,\"events_dropped\":%lu,"
-			"\"runtime_registered\":%lu},"
+			"\"runtime_registered\":%lu,\"epoll_lazy_armed\":%lu},"
 		"\"oracle\":{\"fd_anomalies\":%lu,\"mmap_anomalies\":%lu,"
 			"\"cred_anomalies\":%lu,\"sched_anomalies\":%lu,"
 			"\"uid_anomalies\":%lu,\"gid_anomalies\":%lu,"
@@ -710,6 +710,7 @@ static void dump_stats_json(void)
 		shm->stats.fd_closed_tracked, shm->stats.fd_regenerated,
 		shm->stats.fd_duped, shm->stats.fd_events_processed,
 		shm->stats.fd_events_dropped, shm->stats.fd_runtime_registered,
+		shm->stats.epoll_lazy_armed,
 		shm->stats.fd_oracle_anomalies, shm->stats.mmap_oracle_anomalies,
 		shm->stats.cred_oracle_anomalies, shm->stats.sched_oracle_anomalies,
 		shm->stats.uid_oracle_anomalies, shm->stats.gid_oracle_anomalies,
@@ -1339,6 +1340,12 @@ static const struct {
 	 * the fleet's syscall throughput when the bandit picker selects it. */
 	{ "frontier_strategy_picks",
 	  offsetof(struct stats_s, frontier_strategy_picks) },
+	/* Epoll lazy-arm wins: rate-of-change tracks fresh epfds reaching
+	 * children after the deferred-arm refactor.  A flat counter while
+	 * fd_regenerated keeps climbing means children aren't picking up
+	 * the regenerated epfds — i.e. the consumer wireup regressed. */
+	{ "epoll_lazy_armed",
+	  offsetof(struct stats_s, epoll_lazy_armed) },
 };
 
 static unsigned long defense_counter_load(unsigned int i)
@@ -1564,7 +1571,8 @@ void dump_stats(void)
 
 	if (shm->stats.fd_stale_detected || shm->stats.fd_closed_tracked ||
 	    shm->stats.fd_regenerated || shm->stats.fd_stale_by_generation ||
-	    shm->stats.fd_duped || shm->stats.fd_events_processed) {
+	    shm->stats.fd_duped || shm->stats.fd_events_processed ||
+	    shm->stats.epoll_lazy_armed) {
 		stat_row("fd_lifecycle", "stale_detected",      shm->stats.fd_stale_detected);
 		stat_row("fd_lifecycle", "stale_by_generation", shm->stats.fd_stale_by_generation);
 		stat_row("fd_lifecycle", "closed_tracked",      shm->stats.fd_closed_tracked);
@@ -1572,6 +1580,7 @@ void dump_stats(void)
 		stat_row("fd_lifecycle", "duped",               shm->stats.fd_duped);
 		stat_row("fd_lifecycle", "events_processed",    shm->stats.fd_events_processed);
 		stat_row("fd_lifecycle", "events_dropped",      shm->stats.fd_events_dropped);
+		stat_row("fd_lifecycle", "epoll_lazy_armed",    shm->stats.epoll_lazy_armed);
 	}
 
 	if (shm->stats.fd_oracle_anomalies)

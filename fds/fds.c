@@ -368,6 +368,19 @@ retry:
 			retries++;
 			goto retry;
 		}
+
+		/*
+		 * Lazy-arm epoll fds in child context.  arm_epoll() invokes
+		 * epoll_ctl(EPOLL_CTL_ADD) on a fuzzer-controlled target_fd
+		 * whose ->poll handler can block indefinitely (e.g. /dev/fuse
+		 * waiting on its userspace daemon).  Doing this from the
+		 * parent's main loop wedges the whole session because the
+		 * watchdog cannot kill the parent; doing it from a child is
+		 * recoverable via is_child_making_progress().  See the block
+		 * comment above arm_epoll() in fds/epoll.c.
+		 */
+		if (objtype == OBJ_FD_EPOLL)
+			arm_epoll_if_needed(&obj->epollobj);
 	}
 
 	fd = fd_from_object(obj, objtype);
