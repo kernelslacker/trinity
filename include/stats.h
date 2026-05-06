@@ -443,6 +443,17 @@ struct stats_s {
 	 * pre_crash_ring entry holds the full per-event context. */
 	unsigned long taint_transitions[NR_CHILD_OP_TYPES];
 
+	/* Pool-race aborted counter, indexed by enum child_op_type.
+	 * Bumped from inside each pool-consuming childop's SIGSEGV/SIGBUS
+	 * sigsetjmp wrap when a sibling unmapped the pool entry between
+	 * the get_map_with_prot() draw and the actual user-mode dereference
+	 * inside the body.  Closes the race-window residual that the
+	 * munmap post-hook pool invalidation cannot catch (live mapping at
+	 * draw, gone at use).  Wrapped childops: memory_pressure,
+	 * iouring_flood, iouring_recipes, madvise_cycler.  RELAXED add-
+	 * fetch: a coarse anomaly indicator, not an event log. */
+	unsigned long pool_race_aborted[NR_CHILD_OP_TYPES];
+
 	/* ---- Group C: per-childop ---- */
 
 	/* procfs_writer childop: per-tree write counts */

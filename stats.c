@@ -1959,6 +1959,14 @@ void dump_stats(void)
 			stat_row("taint_transitions", metric,
 				 shm->stats.taint_transitions[op]);
 		}
+
+		for (op = 0; op < NR_CHILD_OP_TYPES; op++) {
+			if (shm->stats.pool_race_aborted[op] == 0)
+				continue;
+			snprintf(metric, sizeof(metric), "op_type_%u", op);
+			stat_row("pool_race_aborted", metric,
+				 shm->stats.pool_race_aborted[op]);
+		}
 	}
 
 	if (shm->stats.shared_buffer_redirected)
