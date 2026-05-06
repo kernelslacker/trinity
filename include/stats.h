@@ -961,6 +961,19 @@ struct stats_s {
 	unsigned long igmp_mld_source_churn_drop_ok;		/* IP_DROP_MEMBERSHIP / IPV6_DROP_MEMBERSHIP accepted */
 	unsigned long igmp_mld_source_churn_send_ok;		/* sender datagram returned >0 */
 
+	/* psp_key_rotate childop counters */
+	unsigned long psp_key_rotate_runs;			/* total psp_key_rotate invocations */
+	unsigned long psp_key_rotate_setup_failed;		/* unshare / netlink open / family probe latched */
+	unsigned long psp_key_rotate_netdev_create_ok;		/* rtnl RTM_NEWLINK netdevsim accepted */
+	unsigned long psp_key_rotate_family_resolve_ok;		/* CTRL_CMD_GETFAMILY resolved PSP family id */
+	unsigned long psp_key_rotate_dev_get_ok;		/* PSP_CMD_DEV_GET dump returned without error */
+	unsigned long psp_key_rotate_key_install_ok;		/* initial PSP_CMD_KEY_ROTATE accepted */
+	unsigned long psp_key_rotate_spi_set_ok;		/* PSP_CMD_TX_ASSOC bound socket fd to dev (spec: spi_set_ok) */
+	unsigned long psp_key_rotate_send_ok;			/* send() over PSP-bound socket returned >0 */
+	unsigned long psp_key_rotate_rotate_ok;			/* mid-flow PSP_CMD_KEY_ROTATE accepted (race target) */
+	unsigned long psp_key_rotate_spi_switch_ok;		/* mid-flow PSP_CMD_TX_ASSOC re-bind accepted */
+	unsigned long psp_key_rotate_shutdown_ok;		/* shutdown(SHUT_RDWR) on PSP-bound socket returned 0 */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
