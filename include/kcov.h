@@ -186,8 +186,11 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr);
 
 /* After disabling, drain the CMP buffer into the per-syscall hint pool
  * and bump the CMP-records-collected counter.  No-op when cmp_capable
- * is false. */
-void kcov_collect_cmp(struct kcov_child *kc, unsigned int nr);
+ * is false.  is_explorer is forwarded to bandit_cmp_observe() so the
+ * explorer pool's novelty observations skip per-arm reward attribution
+ * (they ran a different strategy than the bandit's current arm). */
+void kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
+		      bool is_explorer);
 
 /* Accessor for the raw CMP record stream after kcov_disable().
  * On return, *out points at the first record (NULL when cmp_capable
