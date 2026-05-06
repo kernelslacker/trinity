@@ -152,6 +152,7 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 		buf = (char *) get_writable_address(256);
 		rec->a3 = (unsigned long) buf;
 		rec->a4 = 256;
+		avoid_shared_buffer(&rec->a3, rec->a4);
 		break;
 
 	case KEYCTL_LINK:
@@ -229,6 +230,7 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 		buf = (char *) get_writable_address(64);
 		rec->a2 = (unsigned long) buf;
 		rec->a3 = 64;
+		avoid_shared_buffer(&rec->a2, rec->a3);
 		break;
 
 	case KEYCTL_WATCH_KEY: {
@@ -306,6 +308,8 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 			buf = (char *) get_writable_address(64);
 			rec->a4 = (unsigned long) buf;
 		}
+		if (rec->a4)
+			avoid_shared_buffer(&rec->a4, 64);
 		break;
 	}
 
