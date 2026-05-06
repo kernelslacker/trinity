@@ -704,7 +704,8 @@ static void dump_stats_json(void)
 		"\"vsock_transport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bind_ok\":%lu,\"connect_ok\":%lu,\"send_ok\":%lu,\"buffer_size_ok\":%lu,\"timeout_ok\":%lu,\"get_cid_ok\":%lu},"
 		"\"bridge_vlan_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"vlan_add_ok\":%lu,\"vlan_del_ok\":%lu,\"tunnel_add_ok\":%lu,\"mst_set_ok\":%lu,\"raw_send_ok\":%lu},"
 		"\"igmp_mld_source_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"join_ok\":%lu,\"leave_ok\":%lu,\"block_ok\":%lu,\"msfilter_ok\":%lu,\"drop_ok\":%lu,\"send_ok\":%lu},"
-		"\"psp_key_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"netdev_create_ok\":%lu,\"family_resolve_ok\":%lu,\"dev_get_ok\":%lu,\"key_install_ok\":%lu,\"spi_set_ok\":%lu,\"send_ok\":%lu,\"rotate_ok\":%lu,\"spi_switch_ok\":%lu,\"shutdown_ok\":%lu}"
+		"\"psp_key_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"netdev_create_ok\":%lu,\"family_resolve_ok\":%lu,\"dev_get_ok\":%lu,\"key_install_ok\":%lu,\"spi_set_ok\":%lu,\"send_ok\":%lu,\"rotate_ok\":%lu,\"spi_switch_ok\":%lu,\"shutdown_ok\":%lu},"
+		"\"afxdp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"umem_reg_ok\":%lu,\"rings_setup_ok\":%lu,\"prog_load_ok\":%lu,\"map_create_ok\":%lu,\"map_update_ok\":%lu,\"bind_ok\":%lu,\"send_ok\":%lu,\"recv_ok\":%lu,\"map_delete_ok\":%lu,\"munmap_race_ok\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1122,7 +1123,19 @@ static void dump_stats_json(void)
 		shm->stats.psp_key_rotate_send_ok,
 		shm->stats.psp_key_rotate_rotate_ok,
 		shm->stats.psp_key_rotate_spi_switch_ok,
-		shm->stats.psp_key_rotate_shutdown_ok);
+		shm->stats.psp_key_rotate_shutdown_ok,
+		shm->stats.afxdp_churn_runs,
+		shm->stats.afxdp_churn_setup_failed,
+		shm->stats.afxdp_churn_umem_reg_ok,
+		shm->stats.afxdp_churn_rings_setup_ok,
+		shm->stats.afxdp_churn_prog_load_ok,
+		shm->stats.afxdp_churn_map_create_ok,
+		shm->stats.afxdp_churn_map_update_ok,
+		shm->stats.afxdp_churn_bind_ok,
+		shm->stats.afxdp_churn_send_ok,
+		shm->stats.afxdp_churn_recv_ok,
+		shm->stats.afxdp_churn_map_delete_ok,
+		shm->stats.afxdp_churn_munmap_race_ok);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -2453,6 +2466,21 @@ void dump_stats(void)
 		stat_row("psp_key_rotate", "rotate_ok",         shm->stats.psp_key_rotate_rotate_ok);
 		stat_row("psp_key_rotate", "spi_switch_ok",     shm->stats.psp_key_rotate_spi_switch_ok);
 		stat_row("psp_key_rotate", "shutdown_ok",       shm->stats.psp_key_rotate_shutdown_ok);
+	}
+
+	if (shm->stats.afxdp_churn_runs) {
+		stat_row("afxdp_churn", "runs",            shm->stats.afxdp_churn_runs);
+		stat_row("afxdp_churn", "setup_failed",    shm->stats.afxdp_churn_setup_failed);
+		stat_row("afxdp_churn", "umem_reg_ok",     shm->stats.afxdp_churn_umem_reg_ok);
+		stat_row("afxdp_churn", "rings_setup_ok",  shm->stats.afxdp_churn_rings_setup_ok);
+		stat_row("afxdp_churn", "prog_load_ok",    shm->stats.afxdp_churn_prog_load_ok);
+		stat_row("afxdp_churn", "map_create_ok",   shm->stats.afxdp_churn_map_create_ok);
+		stat_row("afxdp_churn", "map_update_ok",   shm->stats.afxdp_churn_map_update_ok);
+		stat_row("afxdp_churn", "bind_ok",         shm->stats.afxdp_churn_bind_ok);
+		stat_row("afxdp_churn", "send_ok",         shm->stats.afxdp_churn_send_ok);
+		stat_row("afxdp_churn", "recv_ok",         shm->stats.afxdp_churn_recv_ok);
+		stat_row("afxdp_churn", "map_delete_ok",   shm->stats.afxdp_churn_map_delete_ok);
+		stat_row("afxdp_churn", "munmap_race_ok",  shm->stats.afxdp_churn_munmap_race_ok);
 	}
 
 	if (kcov_shm != NULL) {

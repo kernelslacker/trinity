@@ -1000,6 +1000,20 @@ struct stats_s {
 	unsigned long psp_key_rotate_spi_switch_ok;		/* mid-flow PSP_CMD_TX_ASSOC re-bind accepted */
 	unsigned long psp_key_rotate_shutdown_ok;		/* shutdown(SHUT_RDWR) on PSP-bound socket returned 0 */
 
+	/* afxdp_churn childop counters */
+	unsigned long afxdp_churn_runs;				/* total afxdp_churn invocations */
+	unsigned long afxdp_churn_setup_failed;			/* socket / mmap / setsockopt / cap-gate latched */
+	unsigned long afxdp_churn_umem_reg_ok;			/* setsockopt(XDP_UMEM_REG) accepted */
+	unsigned long afxdp_churn_rings_setup_ok;		/* all four XDP_*_RING setsockopts accepted */
+	unsigned long afxdp_churn_prog_load_ok;			/* bpf(BPF_PROG_LOAD, BPF_PROG_TYPE_XDP) accepted */
+	unsigned long afxdp_churn_map_create_ok;		/* bpf(BPF_MAP_CREATE, BPF_MAP_TYPE_XSKMAP) accepted */
+	unsigned long afxdp_churn_map_update_ok;		/* bpf(BPF_MAP_UPDATE_ELEM) installed xsk_fd at xskmap key */
+	unsigned long afxdp_churn_bind_ok;			/* bind(XDP_USE_NEED_WAKEUP, lo, qid=0) accepted */
+	unsigned long afxdp_churn_send_ok;			/* sendto() kick on bound xsk returned >=0 (or EAGAIN/ENOBUFS/EBUSY) */
+	unsigned long afxdp_churn_recv_ok;			/* getsockopt(XDP_STATISTICS) on bound xsk succeeded */
+	unsigned long afxdp_churn_map_delete_ok;		/* bpf(BPF_MAP_DELETE_ELEM) on bound xskmap key (race target) */
+	unsigned long afxdp_churn_munmap_race_ok;		/* munmap of FILL ring while bound (race target) */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
