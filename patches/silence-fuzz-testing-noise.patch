@@ -10,14 +10,13 @@ Subject: [PATCH 22/23] silence fuzz-testing noise
  net/appletalk/ddp.c             |  5 -----
  net/can/af_can.c                |  9 ---------
  net/core/sock.c                 |  7 -------
- net/irda/af_irda.c              |  6 +-----
  net/netfilter/ipvs/ip_vs_core.c |  2 --
  net/packet/af_packet.c          |  4 +---
  net/rds/bind.c                  |  2 --
  net/sctp/socket.c               |  8 --------
  net/socket.c                    |  2 --
  security/selinux/hooks.c        |  4 ----
- 13 files changed, 7 insertions(+), 63 deletions(-)
+ 12 files changed, 7 insertions(+), 57 deletions(-)
 
 diff --git a/arch/x86/kernel/vm86_32.c b/arch/x86/kernel/vm86_32.c
 index fc9db6ef2a95..f01621eeea7e 100644
@@ -150,31 +149,6 @@ index dc30dc5bb1b8..ed36ac88702f 100644
  		return 0;
  	}
  	*timeo_p = MAX_SCHEDULE_TIMEOUT;
-diff --git a/net/irda/af_irda.c b/net/irda/af_irda.c
-index ee0ea25c8e7a..60aad352dad6 100644
---- a/net/irda/af_irda.c
-+++ b/net/irda/af_irda.c
-@@ -494,10 +494,8 @@ static int irda_open_lsap(struct irda_sock *self, int pid)
- {
- 	notify_t notify;
- 
--	if (self->lsap) {
--		net_warn_ratelimited("%s(), busy!\n", __func__);
-+	if (self->lsap)
- 		return -EBUSY;
--	}
- 
- 	/* Initialize callbacks to be used by the IrDA stack */
- 	irda_notify_init(&notify);
-@@ -2104,8 +2102,6 @@ static int irda_setsockopt(struct socket *sock, int level, int optname,
- 				 __func__, opt);
- 			self->max_sdu_size_rx = opt;
- 		} else {
--			net_warn_ratelimited("%s: not allowed to set MAXSDUSIZE for this socket type!\n",
--					     __func__);
- 			err = -ENOPROTOOPT;
- 			goto out;
- 		}
 diff --git a/net/netfilter/ipvs/ip_vs_core.c b/net/netfilter/ipvs/ip_vs_core.c
 index 5d2b806a862e..e87a6c896ff8 100644
 --- a/net/netfilter/ipvs/ip_vs_core.c
