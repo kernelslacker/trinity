@@ -6,7 +6,6 @@ extern struct syscallentry syscall_add_key;
 extern struct syscallentry syscall_adjtimex;
 extern struct syscallentry syscall_alarm;
 extern struct syscallentry syscall_arch_prctl;
-extern struct syscallentry syscall_bdflush;
 extern struct syscallentry syscall_bind;
 extern struct syscallentry syscall_brk;
 extern struct syscallentry syscall_capget;
