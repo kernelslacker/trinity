@@ -316,7 +316,6 @@ extern struct syscallentry syscall_sync;
 extern struct syscallentry syscall_sync_file_range2;
 extern struct syscallentry syscall_sync_file_range;
 extern struct syscallentry syscall_syncfs;
-extern struct syscallentry syscall_sysctl;
 extern struct syscallentry syscall_sysfs;
 extern struct syscallentry syscall_sysinfo;
 extern struct syscallentry syscall_syslog;
