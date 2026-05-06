@@ -908,6 +908,18 @@ struct stats_s {
 	unsigned long tcp_ulp_swap_churn_reinstall_ok;		/* second setsockopt(TCP_ULP, "tls") accepted (re-init path) */
 	unsigned long tcp_ulp_swap_churn_install_failed;	/* TCP_ULP install non-latch failure (runtime errno bump) */
 
+	/* msg_zerocopy_churn childop counters */
+	unsigned long msg_zerocopy_churn_runs;			/* total msg_zerocopy_churn invocations */
+	unsigned long msg_zerocopy_churn_setup_failed;		/* loopback pair / SO_ZEROCOPY install / mmap / unsupported latch fired */
+	unsigned long msg_zerocopy_churn_sends_ok;		/* send(MSG_ZEROCOPY) returned >=0 (notification will queue) */
+	unsigned long msg_zerocopy_churn_sends_efault;		/* send(MSG_ZEROCOPY) returned EFAULT (page-pin failure path reached) */
+	unsigned long msg_zerocopy_churn_sends_eagain;		/* send(MSG_ZEROCOPY) returned EAGAIN/EWOULDBLOCK (retry-cap saturated) */
+	unsigned long msg_zerocopy_churn_errqueue_drained;	/* recvmsg(MSG_ERRQUEUE) drained at least one notif (sock_extended_err shape validated) */
+	unsigned long msg_zerocopy_churn_errqueue_empty;	/* recvmsg(MSG_ERRQUEUE) returned EAGAIN on first attempt (no notifs yet) */
+	unsigned long msg_zerocopy_churn_munmap_ok;		/* munmap of backing pages succeeded mid-flight (skb may still pin them) */
+	unsigned long msg_zerocopy_churn_send_after_munmap_caught;	/* send(MSG_ZEROCOPY) after munmap returned EFAULT (rollback path reached) */
+	unsigned long msg_zerocopy_churn_sndzc_disable_ok;	/* setsockopt(SO_ZEROCOPY, 0) accepted with notifs possibly pending */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic

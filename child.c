@@ -889,7 +889,7 @@ static void check_fd_leaks(struct childdata *child)
  * Enable the dormant ops one at a time once each has been load-tested.
  * To enable an op: set its entry below to 0.
  */
-static const int dormant_op_disabled[62] = {
+static const int dormant_op_disabled[63] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 0, 1,	/* 10-14: fault_injector active; dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, recipe_runner */
@@ -902,7 +902,7 @@ static const int dormant_op_disabled[62] = {
 	1, 1, 1, 1, 1,	/* 45-49: dormant: tipc_link_churn, tls_ulp_churn, vxlan_encap_churn, bridge_fdb_stp, nftables_churn */
 	1, 1, 1, 1, 1,	/* 50-54: dormant: tc_qdisc_churn, xfrm_churn, bpf_cgroup_attach, [reserved], sctp_assoc_churn */
 	1, 1, 1, 1, 1,	/* 55-59: dormant: mptcp_pm_churn, devlink_port_churn, handshake_req_abort, nf_conntrack_helper_churn, af_unix_scm_rights_gc_churn */
-	1, 1,		/* 60-61: dormant: netns_teardown_churn, tcp_ulp_swap_churn */
+	1, 1, 1,	/* 60-62: dormant: netns_teardown_churn, tcp_ulp_swap_churn, msg_zerocopy_churn */
 };
 
 /*
@@ -1045,6 +1045,7 @@ static const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_AF_UNIX_SCM_RIGHTS_GC:	return "af_unix_scm_rights_gc_churn";
 	case CHILD_OP_NETNS_TEARDOWN_CHURN:	return "netns_teardown_churn";
 	case CHILD_OP_TCP_ULP_SWAP_CHURN:	return "tcp_ulp_swap_churn";
+	case CHILD_OP_MSG_ZEROCOPY_CHURN:	return "msg_zerocopy_churn";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1100,7 +1101,7 @@ static enum child_op_type pick_op_type(void)
 	if (r < 95)
 		return CHILD_OP_SYSCALL;
 
-	pick = rand() % 62;
+	pick = rand() % 63;
 	if (dormant_op_disabled[pick])
 		return CHILD_OP_SYSCALL;
 
@@ -1166,6 +1167,7 @@ static enum child_op_type pick_op_type(void)
 	case 59: return CHILD_OP_AF_UNIX_SCM_RIGHTS_GC;
 	case 60: return CHILD_OP_NETNS_TEARDOWN_CHURN;
 	case 61: return CHILD_OP_TCP_ULP_SWAP_CHURN;
+	case 62: return CHILD_OP_MSG_ZEROCOPY_CHURN;
 	}
 	return CHILD_OP_SYSCALL;
 }
@@ -1326,6 +1328,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_AF_UNIX_SCM_RIGHTS_GC]	= af_unix_scm_rights_gc_churn,
 	[CHILD_OP_NETNS_TEARDOWN_CHURN]	= netns_teardown_churn,
 	[CHILD_OP_TCP_ULP_SWAP_CHURN]	= tcp_ulp_swap_churn,
+	[CHILD_OP_MSG_ZEROCOPY_CHURN]	= msg_zerocopy_churn,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
