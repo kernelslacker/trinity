@@ -22,6 +22,9 @@ static void sanitise_socketpair(struct syscallrecord *rec)
 	rec->a4 = (unsigned long) malloc(sizeof(int) * 2);
 	if (!rec->a4)
 		return;
+
+	avoid_shared_buffer(&rec->a4, 2 * sizeof(int));
+
 	/* Snapshot for the post handler -- a4 may be scribbled by a sibling
 	 * syscall before post_socketpair() runs. */
 	rec->post_state = rec->a4;
