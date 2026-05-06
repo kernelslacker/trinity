@@ -5,9 +5,6 @@
 const struct protoptr net_protocols[TRINITY_PF_MAX] = {
 	[PF_UNIX] = { .proto = &proto_unix },
 	[PF_INET] = { .proto = &proto_ipv4 },
-#ifdef USE_IPX
-	[PF_IPX] = { .proto = &proto_ipx },
-#endif
 	[PF_X25] = { .proto = &proto_x25 },
 #ifdef USE_IPV6
 	[PF_INET6] = { .proto = &proto_inet6 },
