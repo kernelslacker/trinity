@@ -315,7 +315,10 @@ void generic_post_close_fd(struct syscallrecord *rec)
  * branch, so the coerced shape papers over the corruption for all
  * downstream consumers in one place.  Sub-attribution by syscall
  * routes through post_handler_corrupt_ptr_bump's per-handler ring
- * via the rec it's passed.
+ * via the rec it's passed; the _dispatch wrapper additionally feeds
+ * this site's caller PC into the per-PC ring so the dump can tell
+ * blanket-validator rejections of a syscall apart from that same
+ * syscall's own .post handler rejections.
  */
 static bool reject_corrupt_retfd(const struct syscallentry *entry,
 				 struct syscallrecord *rec)
@@ -335,7 +338,7 @@ static bool reject_corrupt_retfd(const struct syscallentry *entry,
 
 	outputerr("retfd: rejecting out-of-bound retval=0x%lx for %s\n",
 		  rec->retval, entry->name);
-	post_handler_corrupt_ptr_bump(rec, NULL);
+	post_handler_corrupt_ptr_bump_dispatch(rec);
 	rec->retval = -1UL;
 	rec->errno_post = EINVAL;
 	return true;
@@ -551,12 +554,15 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 	 * check above; downstream success/failure tally and entry->post
 	 * still run since the sub-attribution ring needs the .post PC.
 	 * Sub-attribution lands in post_handler_corrupt_ptr's per-handler
-	 * ring under the (nr, do32bit) of the offending syscall. */
+	 * ring under the (nr, do32bit) of the offending syscall; the
+	 * _dispatch wrapper additionally feeds this site's caller PC into
+	 * the per-PC ring so the dump distinguishes RZS blanket rejections
+	 * from the same syscall's own .post handler rejections. */
 	if (unlikely(rec->rettype == RET_ZERO_SUCCESS &&
 		     rec->retval != 0 && rec->retval != -1UL)) {
 		__atomic_add_fetch(&shm->stats.rzs_blanket_reject, 1,
 				   __ATOMIC_RELAXED);
-		post_handler_corrupt_ptr_bump(rec, NULL);
+		post_handler_corrupt_ptr_bump_dispatch(rec);
 	}
 
 	/* Validate RET_FD shape before success/failure dispatch.  A
