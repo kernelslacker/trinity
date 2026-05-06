@@ -162,13 +162,34 @@ static inline bool looks_like_corrupted_ptr(struct syscallrecord *rec,
  * should go through looks_like_corrupted_ptr() above, which calls this
  * internally on a positive result.  rec==NULL for non-syscall callers.
  *
- * @caller_pc, when non-NULL on the rec==NULL path, additionally feeds a
- * caller-PC sub-attribution ring so the deferred-free pseudo-handler
- * row of the per-handler dump can be broken down by call site.  Pass
- * NULL when caller-site attribution is irrelevant (rec!=NULL paths
- * already get per-syscall attribution) or unavailable.
+ * @caller_pc, when non-NULL, additionally feeds the (nr, do32bit, pc)
+ * sub-attribution ring so each per-handler row of the dump can be
+ * broken down by the specific call site that fired -- distinguishing
+ * the per-syscall .post bumps (via looks_like_corrupted_ptr) from the
+ * dispatcher-level RZS / RET_FD blanket validators that also bump for
+ * the same (nr, do32bit) row.  Pass NULL only when caller-PC attribution
+ * is unavailable; a NULL skips the PC ring but still records the
+ * (nr, do32bit) attribution.
  */
 void post_handler_corrupt_ptr_bump(struct syscallrecord *rec, void *caller_pc);
+
+/*
+ * Inline wrapper for the dispatcher-level blanket validators (the RZS
+ * and RET_FD gates in handle_syscall_ret() / reject_corrupt_retfd()).
+ * Forwards __builtin_return_address(0) so the per-PC ring records the
+ * dispatcher bump callsite (one PC per validator) rather than NULL --
+ * without this, every dispatcher-level rejection of (nr, do32bit)
+ * collapses onto the same row as that syscall's own .post handler
+ * rejections and the dump can no longer tell whether a hot row is the
+ * .post handler or a blanket validator firing.  Same static-inline
+ * placement rationale as looks_like_corrupted_ptr above so the
+ * recorded PC is the dispatcher's own bump callsite rather than this
+ * wrapper's body.
+ */
+static inline void post_handler_corrupt_ptr_bump_dispatch(struct syscallrecord *rec)
+{
+	post_handler_corrupt_ptr_bump(rec, __builtin_return_address(0));
+}
 
 /*
  * Inner-pointer-field free guard for post handlers that walk a
