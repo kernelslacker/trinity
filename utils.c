@@ -1328,6 +1328,65 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 	return addr < heap_end && end > heap_start;
 }
 
+void sanitize_inherited_fds(void)
+{
+	DIR *dir;
+	struct dirent *de;
+	int dir_fd;
+
+	dir = opendir("/proc/self/fd");
+	if (dir == NULL) {
+		outputerr("sanitize_inherited_fds: opendir(/proc/self/fd) failed: %s\n",
+			  strerror(errno));
+		return;
+	}
+	dir_fd = dirfd(dir);
+
+	while ((de = readdir(dir)) != NULL) {
+		char linkpath[64];
+		char target[PATH_MAX];
+		char *endp;
+		ssize_t n;
+		long fdl;
+		int fd;
+
+		if (de->d_name[0] == '.')
+			continue;
+
+		errno = 0;
+		fdl = strtol(de->d_name, &endp, 10);
+		if (errno != 0 || *endp != '\0' || fdl < 0 || fdl > INT_MAX)
+			continue;
+		fd = (int) fdl;
+
+		/* Always keep stdin/stdout/stderr. */
+		if (fd <= 2)
+			continue;
+
+		/* Skip the readdir() handle itself; closedir() will release
+		 * it once the walk completes. */
+		if (fd == dir_fd)
+			continue;
+
+		n = -1;
+		if ((size_t) snprintf(linkpath, sizeof(linkpath),
+				      "/proc/self/fd/%d", fd) < sizeof(linkpath))
+			n = readlink(linkpath, target, sizeof(target) - 1);
+		if (n < 0)
+			n = 0;
+		target[n] = '\0';
+
+		outputerr("sanitize_inherited_fds: closing unexpected inherited fd %d (%s)\n",
+			  fd, n > 0 ? target : "?");
+
+		close(fd);
+		if (shm != NULL)
+			__atomic_add_fetch(&shm->stats.parent_inherited_fds_closed,
+					   1, __ATOMIC_RELAXED);
+	}
+	closedir(dir);
+}
+
 int get_num_fds(void)
 {
 	struct linux_dirent64 {

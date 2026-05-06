@@ -270,6 +270,15 @@ int main(int argc, char* argv[])
 
 	create_shm();
 
+	/* Close any fd the launcher (or its parent) handed us before we
+	 * open anything of our own.  Keep set is exactly {0,1,2} at this
+	 * point; every later open in trinity (kmsg-monitor, kcov probe,
+	 * fd-provider init under open_fds, per-child pidstat handles) is
+	 * by definition something we want to manage.  Defense-in-depth
+	 * against a stuck-fs inherited fd ending up in a watch set and
+	 * stalling the parent's reap path. */
+	sanitize_inherited_fds();
+
 	parse_args(argc, argv);
 
 	/* Apply the shared_regions[] / RLIMIT_NPROC / RLIMIT_NOFILE cap
