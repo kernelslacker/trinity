@@ -277,6 +277,71 @@ struct iour_recipe {
 	bool (*run)(struct iour_ctx *ctx, bool *unsupported);
 };
 
+/* Pool-race fault guard.  See childops/memory-pressure.c for the full
+ * rationale.  The wrap below catches a sibling-driven UAF on a pool-
+ * drawn buffer used inside r->run().  Only 3 of the 15 catalog recipes
+ * draw from the parent's mapping pool (recipe_fixed_buffer_read,
+ * recipe_write_read_fixed, recipe_futex_wait_wake); the other 12 do
+ * not touch pool memory at all.
+ *
+ * The handler siglongjmps only when (a) the fault is a real kernel
+ * fault (si_code > 0) and (b) si_addr is inside the pool mapping
+ * range that the dispatched recipe drew.  The 3 pool-drawing recipes
+ * publish their drawn range into the file-scope statics below right
+ * after get_map_with_prot() returns; non-pool-drawing recipes never
+ * touch the statics, so the range stays at 0..0 (set by the wrap
+ * site before sigsetjmp) and every si_addr falls outside.  An
+ * outside-range fault — including any fault from a non-pool recipe —
+ * restores SIG_DFL and re-raises so child_fault_handler diagnoses +
+ * exits and the per-pid bug log path is preserved.
+ *
+ * Volatile-qualified for the same reason as the equivalent statics
+ * in memory-pressure: stop the compiler hoisting/coalescing reads
+ * across the asynchronous handler entry.  Aligned word reads are
+ * atomic on supported arches; the writes complete before sigaction
+ * installs the handler so ordering is provided by the kernel-side
+ * sigaction barrier (or, for the per-recipe writes, by the fact
+ * that the handler can only be entered as a result of a fault
+ * delivered to this thread after the writes have committed). */
+static sigjmp_buf iouring_recipes_pool_race_jmp;
+static volatile uintptr_t iouring_recipes_pool_race_addr_low;
+static volatile uintptr_t iouring_recipes_pool_race_addr_high;
+
+static void iouring_recipes_pool_race_handler(int sig, siginfo_t *info,
+					      void *ctx)
+{
+	uintptr_t fault_addr;
+
+	(void)ctx;
+	if (info->si_code <= 0 && info->si_pid != getpid()) {
+		/* Sibling-spoofed — kernel consumed the signal already. */
+		return;
+	}
+	if (info->si_code <= 0) {
+		/* Self-sent (glibc abort etc.) — restore default and
+		 * re-raise so child_fault_handler diagnoses + exits.
+		 * siglongjmp here would orphan the allocator lock. */
+		signal(sig, SIG_DFL);
+		raise(sig);
+		return;
+	}
+
+	fault_addr = (uintptr_t)info->si_addr;
+	if (fault_addr < iouring_recipes_pool_race_addr_low ||
+	    fault_addr >= iouring_recipes_pool_race_addr_high) {
+		/* Real kernel fault but si_addr is outside the drawn
+		 * pool range (including the range-empty case for the 12
+		 * non-pool-drawing recipes) — not the race we're guarding
+		 * against.  Restore default and re-raise so
+		 * child_fault_handler diagnoses + exits and the bug log
+		 * path is preserved. */
+		signal(sig, SIG_DFL);
+		raise(sig);
+		return;
+	}
+	siglongjmp(iouring_recipes_pool_race_jmp, 1);
+}
+
 /* ------------------------------------------------------------------ *
  * Recipe 1: NOP chain (sanity + linked-SQE chain dispatch)
  *
@@ -686,6 +751,13 @@ static bool recipe_fixed_buffer_read(struct iour_ctx *ctx,
 	buf = m->ptr;
 	buf_sz = m->size;
 
+	/* Publish drawn pool range to the iouring_recipes_pool_race_handler
+	 * so an in-range SEGV/SIGBUS later inside this recipe gets caught
+	 * as a pool race; out-of-range faults stay routed to the default
+	 * handler. */
+	iouring_recipes_pool_race_addr_low  = (uintptr_t)buf;
+	iouring_recipes_pool_race_addr_high = (uintptr_t)buf + buf_sz;
+
 	iov.iov_base = buf;
 	iov.iov_len  = buf_sz;
 
@@ -768,6 +840,11 @@ static bool recipe_write_read_fixed(struct iour_ctx *ctx,
 		goto out;
 	buf = m->ptr;
 	buf_sz = m->size;
+
+	/* Publish drawn pool range — see recipe_fixed_buffer_read for the
+	 * full rationale. */
+	iouring_recipes_pool_race_addr_low  = (uintptr_t)buf;
+	iouring_recipes_pool_race_addr_high = (uintptr_t)buf + buf_sz;
 
 	iov.iov_base = buf;
 	iov.iov_len  = buf_sz;
@@ -1084,6 +1161,13 @@ static bool recipe_futex_wait_wake(struct iour_ctx *ctx, bool *unsupported)
 		goto out;
 	addr = (uint32_t *)m->ptr;
 
+	/* Publish drawn pool range — see recipe_fixed_buffer_read for the
+	 * full rationale.  The value-word store below is the first
+	 * userspace deref of the pool entry and the most likely fault
+	 * site if a sibling has unmapped between the draw and now. */
+	iouring_recipes_pool_race_addr_low  = (uintptr_t)m->ptr;
+	iouring_recipes_pool_race_addr_high = (uintptr_t)m->ptr + m->size;
+
 	*addr = 0;
 
 	/* FUTEX_WAIT with val=1 — mismatches *addr=0, returns EAGAIN. */
@@ -1209,32 +1293,6 @@ static const struct iour_recipe catalog[] = {
 _Static_assert(ARRAY_SIZE(catalog) <= MAX_IOURING_RECIPES,
 	       "iouring recipe catalog outgrew MAX_IOURING_RECIPES; bump it");
 
-/* Pool-race fault guard.  See childops/memory-pressure.c for the full
- * rationale; the wrap below catches a sibling-driven UAF on any pool-
- * drawn buffer used inside r->run() (3 of the 15 recipes draw from
- * the parent's mapping pool — the rest are no-ops here, the wrap is
- * unconditional for shape simplicity). */
-static sigjmp_buf iouring_recipes_pool_race_jmp;
-
-static void iouring_recipes_pool_race_handler(int sig, siginfo_t *info,
-					      void *ctx)
-{
-	(void)ctx;
-	if (info->si_code <= 0 && info->si_pid != getpid()) {
-		/* Sibling-spoofed — kernel consumed the signal already. */
-		return;
-	}
-	if (info->si_code <= 0) {
-		/* Self-sent (glibc abort etc.) — restore default and
-		 * re-raise so child_fault_handler diagnoses + exits.
-		 * siglongjmp here would orphan the allocator lock. */
-		signal(sig, SIG_DFL);
-		raise(sig);
-		return;
-	}
-	siglongjmp(iouring_recipes_pool_race_jmp, 1);
-}
-
 bool iouring_recipes(struct childdata *child __unused__)
 {
 	struct iour_ctx ctx;
@@ -1278,6 +1336,14 @@ bool iouring_recipes(struct childdata *child __unused__)
 		struct sigaction sa, old_segv, old_bus;
 		bool aborted = false;
 
+		/* Default empty range — non-pool-drawing recipes leave it
+		 * empty so every si_addr falls outside and the handler
+		 * defers to child_fault_handler.  The 3 pool-drawing
+		 * recipes overwrite it from inside r->run() right after
+		 * their get_map_with_prot() draw. */
+		iouring_recipes_pool_race_addr_low  = 0;
+		iouring_recipes_pool_race_addr_high = 0;
+
 		memset(&sa, 0, sizeof(sa));
 		sigemptyset(&sa.sa_mask);
 		sa.sa_flags = SA_SIGINFO;
@@ -1294,6 +1360,9 @@ bool iouring_recipes(struct childdata *child __unused__)
 
 		sigaction(SIGSEGV, &old_segv, NULL);
 		sigaction(SIGBUS,  &old_bus,  NULL);
+
+		iouring_recipes_pool_race_addr_low  = 0;
+		iouring_recipes_pool_race_addr_high = 0;
 
 		if (aborted) {
 			/* siglongjmp skipped any in-recipe cleanup — the
