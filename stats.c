@@ -695,7 +695,8 @@ static void dump_stats_json(void)
 		"\"devlink_port_churn\":{\"iterations\":%lu,\"split_ok\":%lu,\"split_fail\":%lu,\"reload_ok\":%lu,\"reload_fail\":%lu,\"create_skipped\":%lu},"
 		"\"handshake_req_abort\":{\"runs\":%lu,\"setup_failed\":%lu,\"accept_ok\":%lu,\"done_ok\":%lu,\"abort_ok\":%lu,\"orphan_close\":%lu},"
 		"\"nf_conntrack_helper_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_helper\":%lu,\"attach_ok\":%lu,\"attach_fail\":%lu,\"exp_ok\":%lu,\"packet_sent\":%lu,\"delete_ok\":%lu,\"zone_swap\":%lu,\"detach_ok\":%lu},"
-		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"iouring_variant_ok\":%lu}"
+		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"iouring_variant_ok\":%lu},"
+		"\"netns_teardown\":{\"runs\":%lu,\"setup_failed\":%lu,\"unshare_ok\":%lu,\"socket_pair_ok\":%lu,\"fork_ok\":%lu,\"setns_ok\":%lu,\"kill_ok\":%lu,\"completed_ok\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1039,7 +1040,15 @@ static void dump_stats_json(void)
 		shm->stats.af_unix_scm_rights_gc_close_ok,
 		shm->stats.af_unix_scm_rights_gc_trigger_ok,
 		shm->stats.af_unix_scm_rights_gc_recv_ok,
-		shm->stats.af_unix_scm_rights_gc_iouring_variant_ok);
+		shm->stats.af_unix_scm_rights_gc_iouring_variant_ok,
+		shm->stats.netns_teardown_runs,
+		shm->stats.netns_teardown_setup_failed,
+		shm->stats.netns_teardown_unshare_ok,
+		shm->stats.netns_teardown_socket_pair_ok,
+		shm->stats.netns_teardown_fork_ok,
+		shm->stats.netns_teardown_setns_ok,
+		shm->stats.netns_teardown_kill_ok,
+		shm->stats.netns_teardown_completed_ok);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -2241,6 +2250,17 @@ void dump_stats(void)
 		stat_row("af_unix_scm_rights_gc", "trigger_ok",          shm->stats.af_unix_scm_rights_gc_trigger_ok);
 		stat_row("af_unix_scm_rights_gc", "recv_ok",             shm->stats.af_unix_scm_rights_gc_recv_ok);
 		stat_row("af_unix_scm_rights_gc", "iouring_variant_ok",  shm->stats.af_unix_scm_rights_gc_iouring_variant_ok);
+	}
+
+	if (shm->stats.netns_teardown_runs) {
+		stat_row("netns_teardown", "runs",            shm->stats.netns_teardown_runs);
+		stat_row("netns_teardown", "setup_failed",    shm->stats.netns_teardown_setup_failed);
+		stat_row("netns_teardown", "unshare_ok",      shm->stats.netns_teardown_unshare_ok);
+		stat_row("netns_teardown", "socket_pair_ok",  shm->stats.netns_teardown_socket_pair_ok);
+		stat_row("netns_teardown", "fork_ok",         shm->stats.netns_teardown_fork_ok);
+		stat_row("netns_teardown", "setns_ok",        shm->stats.netns_teardown_setns_ok);
+		stat_row("netns_teardown", "kill_ok",         shm->stats.netns_teardown_kill_ok);
+		stat_row("netns_teardown", "completed_ok",    shm->stats.netns_teardown_completed_ok);
 	}
 
 	if (kcov_shm != NULL) {
