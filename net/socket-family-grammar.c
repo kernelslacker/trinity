@@ -43,6 +43,7 @@
  * every real slot.
  */
 static const struct socket_family_grammar * const sfg_registry[] = {
+	&grammar_inet,
 	NULL,
 };
 

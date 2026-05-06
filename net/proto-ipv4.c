@@ -3,7 +3,9 @@
 #include <sys/un.h>
 #include <sys/uio.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <netinet/udp.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <linux/types.h>
@@ -21,8 +23,10 @@
 #include "arch.h"
 #include "net.h"
 #include "random.h"
+#include "socket-family-grammar.h"
 #include "tls.h"
 #include "uid.h"
+#include "utils.h"
 
 /* workaround for <linux/in.h> vs. <netinet/in.h> */
 #ifndef IP_MULTICAST_ALL
@@ -522,4 +526,204 @@ const struct netproto proto_ipv4 = {
 	.nr_triplets = ARRAY_SIZE(ipv4_triplets),
 	.valid_privileged_triplets = ipv4_privileged_triplets,
 	.nr_privileged_triplets = ARRAY_SIZE(ipv4_privileged_triplets),
+};
+
+/*
+ * grammar_inet — coherent walk for AF_INET sockets driven by the
+ * per-family grammar dispatcher (net/socket-family-grammar.c).
+ *
+ * pick_triplet biases TCP/UDP because that's where the
+ * sequence-dependent kernel paths live (TCP_ULP install + TLS
+ * cipher install ordering, UDP_GRO + IP_PKTINFO interaction).
+ * Other in-tree triplets (RAW, SCTP, DCCP) are owned by their
+ * own grammar entries when they land.
+ *
+ * walk_setsockopts fires ORDERED setsockopt sequences targeting
+ * paths random per-syscall fuzzing cannot reach in coherent
+ * succession:
+ *
+ *   TCP arm:  TCP_CONGESTION -> TCP_ULP="tls" -> TLS_TX install
+ *             -> TLS_RX install -> TLS_TX rekey
+ *
+ *   UDP arm:  SO_REUSEPORT -> IP_PKTINFO -> SO_INCOMING_CPU
+ *             -> IP_TOS / IP_RECVERR fanout
+ *
+ * configure_pre_bind sets O_NONBLOCK so accept()/recv() return
+ * EAGAIN instead of blocking on the alarm(2) bound — leaves more
+ * of the chain budget for actual fuzzing.
+ *
+ * gen_cmsg attaches IP_PKTINFO ancillary on send half the time so
+ * the data leg exercises ip_cmsg_send paths the bare sendmsg can't.
+ */
+
+static const char * const tcp_cc_algos[] = {
+	"cubic", "reno", "bbr", "westwood", "vegas", "htcp",
+	"cdg", "lp", "highspeed", "hybla", "illinois", "veno",
+	"yeah", "scalable",
+	/* invalid string to exercise tcp_set_congestion_control's
+	 * tcp_ca_find_autoload reject path */
+	"thereisnosuchthingaslunch",
+};
+
+static void inet_pick_triplet(struct socket_triplet *out)
+{
+	/* Bias 50/50 between TCP STREAM and UDP DGRAM — both arms have
+	 * deep grammar walks below.  RAW/SCTP/DCCP get their own
+	 * grammar entries when those land. */
+	if (RAND_BOOL()) {
+		out->family = PF_INET;
+		out->protocol = IPPROTO_TCP;
+		out->type = SOCK_STREAM;
+	} else {
+		out->family = PF_INET;
+		out->protocol = IPPROTO_UDP;
+		out->type = SOCK_DGRAM;
+	}
+}
+
+static void inet_configure_pre_bind(int fd, struct socket_triplet *triplet)
+{
+	int flags;
+
+	(void) triplet;
+
+	flags = fcntl(fd, F_GETFL, 0);
+	if (flags >= 0)
+		(void) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+static void inet_walk_tcp(int fd, unsigned int n)
+{
+	unsigned int step = 0;
+	struct tls12_crypto_info_aes_gcm_128 ci;
+	const char *cc;
+	const char ulp_tls[] = "tls";
+
+	if (step++ >= n)
+		return;
+	cc = tcp_cc_algos[rand() % ARRAY_SIZE(tcp_cc_algos)];
+	(void) setsockopt(fd, IPPROTO_TCP, TCP_CONGESTION, cc, strlen(cc));
+
+	if (step++ >= n)
+		return;
+	(void) setsockopt(fd, IPPROTO_TCP, TCP_ULP, ulp_tls, sizeof(ulp_tls) - 1);
+
+	while (step < n) {
+		int direction = (step & 1) ? TLS_TX : TLS_RX;
+
+		generate_rand_bytes((unsigned char *) &ci, sizeof(ci));
+		ci.info.version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
+		ci.info.cipher_type = TLS_CIPHER_AES_GCM_128;
+		(void) setsockopt(fd, SOL_TLS, direction, &ci, sizeof(ci));
+		step++;
+	}
+}
+
+static void inet_walk_udp(int fd, unsigned int n)
+{
+	unsigned int step = 0;
+	int one = 1;
+	int cpu;
+	int tos;
+
+	if (step++ >= n)
+		return;
+	(void) setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(one));
+
+	if (step++ >= n)
+		return;
+	(void) setsockopt(fd, IPPROTO_IP, IP_PKTINFO, &one, sizeof(one));
+
+	if (step++ >= n)
+		return;
+	cpu = rand() % 16;
+	(void) setsockopt(fd, SOL_SOCKET, SO_INCOMING_CPU, &cpu, sizeof(cpu));
+
+	while (step < n) {
+		tos = rand() & 0xff;
+		(void) setsockopt(fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
+		step++;
+		if (step >= n)
+			break;
+		(void) setsockopt(fd, IPPROTO_IP, IP_RECVERR, &one, sizeof(one));
+		step++;
+	}
+}
+
+static void inet_walk_setsockopts(int fd, struct socket_triplet *triplet,
+				  unsigned int n)
+{
+	if (triplet->protocol == IPPROTO_TCP || triplet->type == SOCK_STREAM)
+		inet_walk_tcp(fd, n);
+	else if (triplet->protocol == IPPROTO_UDP || triplet->type == SOCK_DGRAM)
+		inet_walk_udp(fd, n);
+	else
+		sfg_default_walk_setsockopts(fd, triplet, n);
+}
+
+static void inet_gen_cmsg(int fd, struct socket_triplet *triplet,
+			  struct msghdr *msg, void *cmsgbuf, size_t cmsgbuflen)
+{
+	struct cmsghdr *cmsg;
+	struct in_pktinfo pkti;
+	int tos;
+
+	(void) fd;
+	(void) triplet;
+
+	/* Half the time leave cmsg empty so the bare-sendmsg path also
+	 * gets exercised under this grammar. */
+	if (RAND_BOOL())
+		return;
+
+	if (RAND_BOOL()) {
+		if (cmsgbuflen < CMSG_SPACE(sizeof(struct in_pktinfo)))
+			return;
+		msg->msg_control = cmsgbuf;
+		msg->msg_controllen = CMSG_SPACE(sizeof(struct in_pktinfo));
+
+		cmsg = CMSG_FIRSTHDR(msg);
+		cmsg->cmsg_level = SOL_IP;
+		cmsg->cmsg_type = IP_PKTINFO;
+		cmsg->cmsg_len = CMSG_LEN(sizeof(struct in_pktinfo));
+
+		memset(&pkti, 0, sizeof(pkti));
+		pkti.ipi_ifindex = rand() % 8;
+		pkti.ipi_spec_dst.s_addr = htonl(INADDR_LOOPBACK);
+		pkti.ipi_addr.s_addr = htonl(INADDR_LOOPBACK);
+		memcpy(CMSG_DATA(cmsg), &pkti, sizeof(pkti));
+	} else {
+		if (cmsgbuflen < CMSG_SPACE(sizeof(int)))
+			return;
+		msg->msg_control = cmsgbuf;
+		msg->msg_controllen = CMSG_SPACE(sizeof(int));
+
+		cmsg = CMSG_FIRSTHDR(msg);
+		cmsg->cmsg_level = SOL_IP;
+		cmsg->cmsg_type = IP_TOS;
+		cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+
+		tos = rand() & 0xff;
+		memcpy(CMSG_DATA(cmsg), &tos, sizeof(tos));
+	}
+}
+
+static bool inet_can_run(void)
+{
+	return sfg_can_run_default(PF_INET);
+}
+
+const struct socket_family_grammar grammar_inet = {
+	.family			= PF_INET,
+	.name			= "inet",
+	.can_run		= inet_can_run,
+	.pick_triplet		= inet_pick_triplet,
+	.configure_pre_bind	= inet_configure_pre_bind,
+	.walk_setsockopts	= inet_walk_setsockopts,
+	.gen_cmsg		= inet_gen_cmsg,
+	/* bind_or_connect / configure_post_bind / needs_listen_accept /
+	 * data_leg use the framework defaults — proto_ipv4.gen_sockaddr
+	 * is sufficient for bind, the default listen+accept gating
+	 * matches SOCK_STREAM, and the default sendmsg+recv data leg
+	 * is what the IPv4 walk wants. */
 };
