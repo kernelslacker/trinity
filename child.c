@@ -889,7 +889,7 @@ static void check_fd_leaks(struct childdata *child)
  * Enable the dormant ops one at a time once each has been load-tested.
  * To enable an op: set its entry below to 0.
  */
-static const int dormant_op_disabled[47] = {
+static const int dormant_op_disabled[48] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 0, 1,	/* 10-14: fault_injector active; dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, recipe_runner */
@@ -899,7 +899,7 @@ static const int dormant_op_disabled[47] = {
 	1, 1, 1, 1, 1,	/* 30-34: dormant: xattr_thrash, pidfd_storm, madvise_cycler, epoll_volatility, keyring_spam */
 	1, 1, 1, 0, 1,	/* 35-39: slab_cache_thrash active; dormant: vdso_mremap_race, numa_migration, cpu_hotplug_rider, tls_rotate */
 	1, 1, 1, 1, 1,	/* 40-44: dormant: packet_fanout_thrash, iouring_net_multishot, tcp_ao_rotate, vrf_fib_churn, netlink_monitor_race */
-	1, 1,		/* 45-46: dormant: tipc_link_churn, tls_ulp_churn */
+	1, 1, 1,	/* 45-47: dormant: tipc_link_churn, tls_ulp_churn, vxlan_encap_churn */
 };
 
 /*
@@ -966,6 +966,7 @@ static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_NETLINK_MONITOR_RACE,
 	CHILD_OP_TIPC_LINK_CHURN,
 	CHILD_OP_TLS_ULP_CHURN,
+	CHILD_OP_VXLAN_ENCAP_CHURN,
 };
 #define NR_ALT_OP_ROTATION	ARRAY_SIZE(alt_op_rotation)
 
@@ -1020,6 +1021,7 @@ static const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_NETLINK_MONITOR_RACE:	return "netlink_monitor_race";
 	case CHILD_OP_TIPC_LINK_CHURN:	return "tipc_link_churn";
 	case CHILD_OP_TLS_ULP_CHURN:	return "tls_ulp_churn";
+	case CHILD_OP_VXLAN_ENCAP_CHURN:	return "vxlan_encap_churn";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1075,7 +1077,7 @@ static enum child_op_type pick_op_type(void)
 	if (r < 95)
 		return CHILD_OP_SYSCALL;
 
-	pick = rand() % 47;
+	pick = rand() % 48;
 	if (dormant_op_disabled[pick])
 		return CHILD_OP_SYSCALL;
 
@@ -1127,6 +1129,7 @@ static enum child_op_type pick_op_type(void)
 	case 44: return CHILD_OP_NETLINK_MONITOR_RACE;
 	case 45: return CHILD_OP_TIPC_LINK_CHURN;
 	case 46: return CHILD_OP_TLS_ULP_CHURN;
+	case 47: return CHILD_OP_VXLAN_ENCAP_CHURN;
 	}
 	return CHILD_OP_SYSCALL;
 }
@@ -1273,6 +1276,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_NETLINK_MONITOR_RACE]	= netlink_monitor_race,
 	[CHILD_OP_TIPC_LINK_CHURN]	= tipc_link_churn,
 	[CHILD_OP_TLS_ULP_CHURN]	= tls_ulp_churn,
+	[CHILD_OP_VXLAN_ENCAP_CHURN]	= vxlan_encap_churn,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,

@@ -755,6 +755,15 @@ struct stats_s {
 	unsigned long tls_ulp_churn_rekey_ok;		/* mid-stream TLS_TX re-install accepted */
 	unsigned long tls_ulp_churn_recv_ok;		/* recv() through tls_sw_recvmsg returned >0 */
 
+	/* vxlan_encap_churn childop counters */
+	unsigned long vxlan_encap_churn_runs;		/* total vxlan_encap_churn invocations */
+	unsigned long vxlan_encap_churn_setup_failed;	/* unshare(CLONE_NEWNET) / rtnl_open / all-kinds latched */
+	unsigned long vxlan_encap_churn_link_create_ok;	/* RTM_NEWLINK type=vxlan/gre/geneve accepted */
+	unsigned long vxlan_encap_churn_fdb_add_ok;	/* RTM_NEWNEIGH NTF_SELF accepted (vxlan only) */
+	unsigned long vxlan_encap_churn_link_up_ok;	/* RTM_NEWLINK setlink IFF_UP accepted */
+	unsigned long vxlan_encap_churn_packet_sent_ok;	/* sendto on AF_PACKET raw bound to tunnel returned >0 */
+	unsigned long vxlan_encap_churn_link_del_ok;	/* RTM_DELLINK accepted */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
