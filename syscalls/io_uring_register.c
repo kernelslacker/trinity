@@ -459,5 +459,4 @@ struct syscallentry syscall_io_uring_register = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_io_uring_register,
 	.post = post_io_uring_register,
-	.rettype = RET_ZERO_SUCCESS,
 };
