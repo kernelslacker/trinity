@@ -50,6 +50,9 @@ static const struct socket_family_grammar * const sfg_registry[] = {
 	&grammar_unix,
 	&grammar_netlink,
 	&grammar_packet,
+#ifdef USE_XDP
+	&grammar_xdp,
+#endif
 
 	/* Dormant stubs — sfg_always_false keeps them inert on this
 	 * kernel build, but the slot is held so a user with the right
