@@ -33,6 +33,8 @@ static void sanitise_io_getevents(struct syscallrecord *rec)
 	rec->a3 = nr;
 	rec->a4 = (unsigned long) events;
 	rec->a5 = (unsigned long) ts;
+
+	avoid_shared_buffer(&rec->a4, rec->a3 * sizeof(struct io_event));
 }
 
 static void post_io_getevents(struct syscallrecord *rec)
