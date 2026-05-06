@@ -108,3 +108,4 @@ extern const struct socket_family_grammar grammar_inet;
 #ifdef USE_IPV6
 extern const struct socket_family_grammar grammar_inet6;
 #endif
+extern const struct socket_family_grammar grammar_unix;
