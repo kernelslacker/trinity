@@ -105,3 +105,6 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
  * each grammar lands.
  */
 extern const struct socket_family_grammar grammar_inet;
+#ifdef USE_IPV6
+extern const struct socket_family_grammar grammar_inet6;
+#endif

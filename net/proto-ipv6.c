@@ -4,6 +4,7 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <netinet/ip6.h>
+#include <netinet/tcp.h>
 #include <linux/in6.h>	// needed for in6_flowlabel_req
 #include <linux/if.h>
 #include <linux/ipv6.h>	// needed for ipv6_opt_hdr
@@ -11,12 +12,16 @@
 #include <linux/if_packet.h>
 #include <linux/netfilter_ipv6/ip6_tables.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <stdlib.h>
+#include <string.h>
 #include "arch.h"
 #include "net.h"
 #include "random.h"
+#include "socket-family-grammar.h"
 #include "tls.h"
 #include "uid.h"
+#include "utils.h"
 #include "compat.h"
 
 #ifndef SOL_TCP
@@ -370,5 +375,185 @@ const struct netproto proto_inet6 = {
 	.nr_triplets = ARRAY_SIZE(ipv6_triplets),
 	.valid_privileged_triplets = ipv6_privileged_triplets,
 	.nr_privileged_triplets = ARRAY_SIZE(ipv6_privileged_triplets),
+};
+
+/*
+ * grammar_inet6 — coherent walk for AF_INET6 sockets, parallels
+ * grammar_inet but exercises the IPv6 sockopt namespace
+ * (IPV6_RECVPKTINFO / IPV6_TCLASS / IPV6_HOPLIMIT churn) and the
+ * IPv6 cmsg shape (IPV6_PKTINFO with in6_pktinfo).
+ *
+ * The TCP arm intentionally mirrors the v4 grammar's TCP_ULP+TLS
+ * sequence — TLS install paths are family-agnostic at the socket
+ * layer, but the IPv6 wrapping exercises ipv6_setsockopt -> tcp_v6_*
+ * dispatch for each step.  That dispatch path is distinct from v4's
+ * and historically rich in bugs.
+ */
+
+static const char * const inet6_tcp_cc_algos[] = {
+	"cubic", "reno", "bbr", "westwood", "vegas", "htcp",
+	"cdg", "lp", "highspeed", "hybla",
+	/* invalid string to exercise the autoload reject path */
+	"thereisnosuchthingaslunch6",
+};
+
+static void inet6_pick_triplet(struct socket_triplet *out)
+{
+	if (RAND_BOOL()) {
+		out->family = PF_INET6;
+		out->protocol = IPPROTO_TCP;
+		out->type = SOCK_STREAM;
+	} else {
+		out->family = PF_INET6;
+		out->protocol = IPPROTO_UDP;
+		out->type = SOCK_DGRAM;
+	}
+}
+
+static void inet6_configure_pre_bind(int fd, struct socket_triplet *triplet)
+{
+	int flags;
+	int v6only;
+
+	(void) triplet;
+
+	flags = fcntl(fd, F_GETFL, 0);
+	if (flags >= 0)
+		(void) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+	/* Toggle IPV6_V6ONLY before bind so the inet6 / dual-stack
+	 * code path can be reached deterministically per walk. */
+	v6only = RAND_BOOL();
+	(void) setsockopt(fd, SOL_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only));
+}
+
+static void inet6_walk_tcp(int fd, unsigned int n)
+{
+	unsigned int step = 0;
+	struct tls12_crypto_info_aes_gcm_128 ci;
+	const char *cc;
+	const char ulp_tls[] = "tls";
+
+	if (step++ >= n)
+		return;
+	cc = inet6_tcp_cc_algos[rand() % ARRAY_SIZE(inet6_tcp_cc_algos)];
+	(void) setsockopt(fd, IPPROTO_TCP, TCP_CONGESTION, cc, strlen(cc));
+
+	if (step++ >= n)
+		return;
+	(void) setsockopt(fd, IPPROTO_TCP, TCP_ULP, ulp_tls, sizeof(ulp_tls) - 1);
+
+	while (step < n) {
+		int direction = (step & 1) ? TLS_TX : TLS_RX;
+
+		generate_rand_bytes((unsigned char *) &ci, sizeof(ci));
+		ci.info.version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
+		ci.info.cipher_type = TLS_CIPHER_AES_GCM_128;
+		(void) setsockopt(fd, SOL_TLS, direction, &ci, sizeof(ci));
+		step++;
+	}
+}
+
+static void inet6_walk_udp(int fd, unsigned int n)
+{
+	unsigned int step = 0;
+	int one = 1;
+	int tclass;
+	int hops;
+
+	if (step++ >= n)
+		return;
+	(void) setsockopt(fd, SOL_IPV6, IPV6_RECVPKTINFO, &one, sizeof(one));
+
+	if (step++ >= n)
+		return;
+	tclass = rand() & 0xff;
+	(void) setsockopt(fd, SOL_IPV6, IPV6_TCLASS, &tclass, sizeof(tclass));
+
+	if (step++ >= n)
+		return;
+	hops = (rand() % 254) + 1;
+	(void) setsockopt(fd, SOL_IPV6, IPV6_HOPLIMIT, &hops, sizeof(hops));
+
+	while (step < n) {
+		(void) setsockopt(fd, SOL_IPV6, IPV6_RECVHOPLIMIT,
+				  &one, sizeof(one));
+		step++;
+		if (step >= n)
+			break;
+		(void) setsockopt(fd, SOL_IPV6, IPV6_RECVERR,
+				  &one, sizeof(one));
+		step++;
+	}
+}
+
+static void inet6_walk_setsockopts(int fd, struct socket_triplet *triplet,
+				   unsigned int n)
+{
+	if (triplet->protocol == IPPROTO_TCP || triplet->type == SOCK_STREAM)
+		inet6_walk_tcp(fd, n);
+	else if (triplet->protocol == IPPROTO_UDP || triplet->type == SOCK_DGRAM)
+		inet6_walk_udp(fd, n);
+	else
+		sfg_default_walk_setsockopts(fd, triplet, n);
+}
+
+static void inet6_gen_cmsg(int fd, struct socket_triplet *triplet,
+			   struct msghdr *msg, void *cmsgbuf, size_t cmsgbuflen)
+{
+	struct cmsghdr *cmsg;
+	struct in6_pktinfo pkti;
+	int hops;
+
+	(void) fd;
+	(void) triplet;
+
+	if (RAND_BOOL())
+		return;
+
+	if (RAND_BOOL()) {
+		if (cmsgbuflen < CMSG_SPACE(sizeof(struct in6_pktinfo)))
+			return;
+		msg->msg_control = cmsgbuf;
+		msg->msg_controllen = CMSG_SPACE(sizeof(struct in6_pktinfo));
+
+		cmsg = CMSG_FIRSTHDR(msg);
+		cmsg->cmsg_level = SOL_IPV6;
+		cmsg->cmsg_type = IPV6_PKTINFO;
+		cmsg->cmsg_len = CMSG_LEN(sizeof(struct in6_pktinfo));
+
+		memset(&pkti, 0, sizeof(pkti));
+		inet_pton(AF_INET6, "::1", &pkti.ipi6_addr);
+		pkti.ipi6_ifindex = rand() % 8;
+		memcpy(CMSG_DATA(cmsg), &pkti, sizeof(pkti));
+	} else {
+		if (cmsgbuflen < CMSG_SPACE(sizeof(int)))
+			return;
+		msg->msg_control = cmsgbuf;
+		msg->msg_controllen = CMSG_SPACE(sizeof(int));
+
+		cmsg = CMSG_FIRSTHDR(msg);
+		cmsg->cmsg_level = SOL_IPV6;
+		cmsg->cmsg_type = IPV6_HOPLIMIT;
+		cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+
+		hops = (rand() % 254) + 1;
+		memcpy(CMSG_DATA(cmsg), &hops, sizeof(hops));
+	}
+}
+
+static bool inet6_can_run(void)
+{
+	return sfg_can_run_default(PF_INET6);
+}
+
+const struct socket_family_grammar grammar_inet6 = {
+	.family			= PF_INET6,
+	.name			= "inet6",
+	.can_run		= inet6_can_run,
+	.pick_triplet		= inet6_pick_triplet,
+	.configure_pre_bind	= inet6_configure_pre_bind,
+	.walk_setsockopts	= inet6_walk_setsockopts,
+	.gen_cmsg		= inet6_gen_cmsg,
 };
 #endif
