@@ -703,6 +703,15 @@ struct stats_s {
 	unsigned long socket_family_chain_authencesn_attempts;	/* authencesn name forced */
 	unsigned long socket_family_chain_splice_attempts;	/* splice path replaced sendmsg data leg */
 
+	/* Number of dispatches inside tracefs_fuzzer that landed on a
+	 * function-tracer-subset op (set_ftrace_filter / set_ftrace_notrace /
+	 * set_graph_function / current_tracer) but were short-circuited
+	 * because the running kernel was built without CONFIG_FTRACE
+	 * (current_tracer absent at init probe).  Static-event-tree paths
+	 * keep running on the same kernel; this counts only the wasted
+	 * function-tracer slots. */
+	unsigned long tracefs_ftrace_subset_skipped;
+
 	/* Number of socket families auto-marked in no_domains[] at startup
 	 * because socket() probes returned EAFNOSUPPORT/EPROTONOSUPPORT for
 	 * both SOCK_STREAM and SOCK_DGRAM.  Bumped once per latched PF from
