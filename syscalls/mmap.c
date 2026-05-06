@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include "maps.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -172,13 +173,45 @@ static void post_mmap(struct syscallrecord *rec)
 		new->map.type = CHILD_ANON;
 		add_object(new, OBJ_LOCAL, OBJ_MMAP_ANON);
 	} else {
+		struct stat st;
+
 		new->map.fd = rec->a5;
 		new->map.type = MMAPED_FILE;
+
+		/*
+		 * sanitise_mmap picks rec->a2 from a fixed mapping_sizes[]
+		 * table without bounding it against the chosen fd's actual
+		 * file size.  The kernel happily creates a VMA covering pages
+		 * past EOF, but accessing them SIGBUSes with BUS_ADRERR --
+		 * dirty_mapping (and later get_map() consumers reading from
+		 * the OBJ_LOCAL pool entry) walk the recorded size and burn
+		 * the child before it can contribute to coverage.  Clamp
+		 * map->size to the in-bounds extent so subsequent walks stay
+		 * inside real backing.  st_size == 0 covers /dev/zero,
+		 * /dev/mem, hugetlb fds, memfd_secret, kcov and any other
+		 * special fd whose mappable extent is not reflected in stat
+		 * -- leave the requested size alone for those (they don't
+		 * SIGBUS the way a short file mmap does).
+		 */
+		if (rec->a5 != (unsigned long) -1 &&
+		    fstat((int) rec->a5, &st) == 0 && st.st_size > 0) {
+			off_t backed = (off_t) st.st_size - (off_t) rec->a6;
+
+			if (backed <= 0)
+				new->map.size = 0;
+			else if ((unsigned long) backed < new->map.size)
+				new->map.size = (unsigned long) backed & PAGE_MASK;
+
+			if (new->map.size != rec->a2)
+				__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+						   1, __ATOMIC_RELAXED);
+		}
+
 		add_object(new, OBJ_LOCAL, OBJ_MMAP_FILE);
 	}
 
 	/* Sometimes dirty the mapping. */
-	if (RAND_BOOL())
+	if (new->map.size > 0 && RAND_BOOL())
 		dirty_mapping(&new->map);
 
 	/*
