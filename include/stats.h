@@ -857,6 +857,14 @@ struct stats_s {
 	unsigned long devlink_port_churn_reload_fail;		/* DEVLINK_CMD_RELOAD non-zero ack */
 	unsigned long devlink_port_churn_create_skipped;	/* netdevsim absent / sysfs unwritable */
 
+	/* handshake_req_abort childop counters */
+	unsigned long handshake_req_abort_runs;			/* total handshake_req_abort invocations */
+	unsigned long handshake_req_abort_setup_failed;		/* genl resolve / socket setup failed (incl. !CONFIG_NET_HANDSHAKE) */
+	unsigned long handshake_req_abort_accept_ok;		/* HANDSHAKE_CMD_ACCEPT issued (lookup-by-class path ran) */
+	unsigned long handshake_req_abort_done_ok;		/* HANDSHAKE_CMD_DONE status=0 issued (lookup-by-sockfd ran) */
+	unsigned long handshake_req_abort_abort_ok;		/* HANDSHAKE_CMD_DONE status!=0 issued (abort-shape race) */
+	unsigned long handshake_req_abort_orphan_close;		/* close() while requests outstanding (sk_destruct path) */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic

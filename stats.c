@@ -692,7 +692,8 @@ static void dump_stats_json(void)
 		"\"bpf_cgroup_attach\":{\"runs\":%lu,\"setup_failed\":%lu,\"prog_loaded\":%lu,\"attached\":%lu,\"attach_rejected\":%lu,\"packets_sent\":%lu,\"detached\":%lu,\"post_detach_sent\":%lu},"
 		"\"sctp_assoc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bindx_added\":%lu,\"bindx_removed\":%lu,\"bindx_rejected\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"accepted\":%lu,\"packets_sent\":%lu,\"peeled_off\":%lu,\"peeloff_rejected\":%lu,\"cycles\":%lu},"
 		"\"mptcp_pm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sock_mptcp_ok\":%lu,\"addr_added_ok\":%lu,\"addr_removed_ok\":%lu,\"send_ok\":%lu},"
-		"\"devlink_port_churn\":{\"iterations\":%lu,\"split_ok\":%lu,\"split_fail\":%lu,\"reload_ok\":%lu,\"reload_fail\":%lu,\"create_skipped\":%lu}"
+		"\"devlink_port_churn\":{\"iterations\":%lu,\"split_ok\":%lu,\"split_fail\":%lu,\"reload_ok\":%lu,\"reload_fail\":%lu,\"create_skipped\":%lu},"
+		"\"handshake_req_abort\":{\"runs\":%lu,\"setup_failed\":%lu,\"accept_ok\":%lu,\"done_ok\":%lu,\"abort_ok\":%lu,\"orphan_close\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1013,7 +1014,13 @@ static void dump_stats_json(void)
 		shm->stats.devlink_port_churn_split_fail,
 		shm->stats.devlink_port_churn_reload_ok,
 		shm->stats.devlink_port_churn_reload_fail,
-		shm->stats.devlink_port_churn_create_skipped);
+		shm->stats.devlink_port_churn_create_skipped,
+		shm->stats.handshake_req_abort_runs,
+		shm->stats.handshake_req_abort_setup_failed,
+		shm->stats.handshake_req_abort_accept_ok,
+		shm->stats.handshake_req_abort_done_ok,
+		shm->stats.handshake_req_abort_abort_ok,
+		shm->stats.handshake_req_abort_orphan_close);
 
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
@@ -2183,6 +2190,15 @@ void dump_stats(void)
 		stat_row("devlink_port_churn", "reload_ok",      shm->stats.devlink_port_churn_reload_ok);
 		stat_row("devlink_port_churn", "reload_fail",    shm->stats.devlink_port_churn_reload_fail);
 		stat_row("devlink_port_churn", "create_skipped", shm->stats.devlink_port_churn_create_skipped);
+	}
+
+	if (shm->stats.handshake_req_abort_runs) {
+		stat_row("handshake_req_abort", "runs",         shm->stats.handshake_req_abort_runs);
+		stat_row("handshake_req_abort", "setup_failed", shm->stats.handshake_req_abort_setup_failed);
+		stat_row("handshake_req_abort", "accept_ok",    shm->stats.handshake_req_abort_accept_ok);
+		stat_row("handshake_req_abort", "done_ok",      shm->stats.handshake_req_abort_done_ok);
+		stat_row("handshake_req_abort", "abort_ok",     shm->stats.handshake_req_abort_abort_ok);
+		stat_row("handshake_req_abort", "orphan_close", shm->stats.handshake_req_abort_orphan_close);
 	}
 
 	if (kcov_shm != NULL) {
