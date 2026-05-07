@@ -910,7 +910,7 @@ static const int dormant_op_disabled[71] = {
 	1, 1, 1, 1, 1,	/* 50-54: dormant: tc_qdisc_churn, xfrm_churn, bpf_cgroup_attach, [reserved], sctp_assoc_churn */
 	1, 1, 1, 1, 1,	/* 55-59: dormant: mptcp_pm_churn, devlink_port_churn, handshake_req_abort, nf_conntrack_helper_churn, af_unix_scm_rights_gc_churn */
 	1, 1, 1, 1, 1,	/* 60-64: dormant: netns_teardown_churn, tcp_ulp_swap_churn, msg_zerocopy_churn, iouring_send_zc_churn, vsock_transport_churn */
-	1, 1, 1, 1, 1,	/* 65-69: bridge_vlan_churn, igmp_mld_source_churn, psp_key_rotate, afxdp_churn, kvm_run_churn */
+	1, 1, 1, 1, 0,	/* 65-69: kvm_run_churn active; dormant: bridge_vlan_churn, igmp_mld_source_churn, psp_key_rotate, afxdp_churn */
 	1,		/* 70: dormant: nl80211_churn */
 };
 
