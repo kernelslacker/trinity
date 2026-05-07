@@ -885,10 +885,10 @@ static void check_fd_leaks(struct childdata *child)
 }
 
 /*
- * Pick an op type for this iteration.  Syscalls dominate (~95%),
- * with the remaining ~5% spread across the alternative ops.
- * This gives the VM-stress and inode paths occasional exercise
- * without starving the main syscall fuzzer.
+ * Source of truth for which alt-op slots are enabled.  Picked uniformly by
+ * pick_op_type() — but only via the derived enabled_altops[] dense vector
+ * (see init_altop_dispatch() below), so the EFFECTIVE altop rate matches
+ * the nominal 95/5 split regardless of how many slots are gated off here.
  *
  * Cases 5-18 are gated here: they are structurally reachable (the r%19 bug
  * is fixed) but their throughput cost is unknown.  procfs_writer (case 4)
@@ -1111,93 +1111,158 @@ void log_alt_op_config(void)
 		alt_op_children, buf);
 }
 
+/*
+ * Slot -> alt-op mapping.  Same indexing as dormant_op_disabled[]: slot N
+ * is enabled iff dormant_op_disabled[N] == 0.  Slot 53 is a hole left by a
+ * removed op; CHILD_OP_SYSCALL acts as a sentinel and is filtered out
+ * during dense-vector construction.
+ */
+static const enum child_op_type pick_op_type_table[71] = {
+	[0]  = CHILD_OP_MMAP_LIFECYCLE,
+	[1]  = CHILD_OP_MPROTECT_SPLIT,
+	[2]  = CHILD_OP_MLOCK_PRESSURE,
+	[3]  = CHILD_OP_INODE_SPEWER,
+	[4]  = CHILD_OP_PROCFS_WRITER,
+	[5]  = CHILD_OP_MEMORY_PRESSURE,
+	[6]  = CHILD_OP_USERNS_FUZZER,
+	[7]  = CHILD_OP_SCHED_CYCLER,
+	[8]  = CHILD_OP_BARRIER_RACER,
+	[9]  = CHILD_OP_GENETLINK_FUZZER,
+	[10] = CHILD_OP_PERF_CHAINS,
+	[11] = CHILD_OP_TRACEFS_FUZZER,
+	[12] = CHILD_OP_BPF_LIFECYCLE,
+	[13] = CHILD_OP_FAULT_INJECTOR,
+	[14] = CHILD_OP_RECIPE_RUNNER,
+	[15] = CHILD_OP_IOURING_RECIPES,
+	[16] = CHILD_OP_FD_STRESS,
+	[17] = CHILD_OP_REFCOUNT_AUDITOR,
+	[18] = CHILD_OP_FS_LIFECYCLE,
+	[19] = CHILD_OP_SIGNAL_STORM,
+	[20] = CHILD_OP_FUTEX_STORM,
+	[21] = CHILD_OP_PIPE_THRASH,
+	[22] = CHILD_OP_FORK_STORM,
+	[23] = CHILD_OP_FLOCK_THRASH,
+	[24] = CHILD_OP_CGROUP_CHURN,
+	[25] = CHILD_OP_MOUNT_CHURN,
+	[26] = CHILD_OP_UFFD_CHURN,
+	[27] = CHILD_OP_IOURING_FLOOD,
+	[28] = CHILD_OP_CLOSE_RACER,
+	[29] = CHILD_OP_SOCKET_FAMILY_CHAIN,
+	[30] = CHILD_OP_XATTR_THRASH,
+	[31] = CHILD_OP_PIDFD_STORM,
+	[32] = CHILD_OP_MADVISE_CYCLER,
+	[33] = CHILD_OP_EPOLL_VOLATILITY,
+	[34] = CHILD_OP_KEYRING_SPAM,
+	[35] = CHILD_OP_VDSO_MREMAP_RACE,
+	[36] = CHILD_OP_NUMA_MIGRATION,
+	[37] = CHILD_OP_CPU_HOTPLUG_RIDER,
+	[38] = CHILD_OP_SLAB_CACHE_THRASH,
+	[39] = CHILD_OP_TLS_ROTATE,
+	[40] = CHILD_OP_PACKET_FANOUT_THRASH,
+	[41] = CHILD_OP_IOURING_NET_MULTISHOT,
+	[42] = CHILD_OP_TCP_AO_ROTATE,
+	[43] = CHILD_OP_VRF_FIB_CHURN,
+	[44] = CHILD_OP_NETLINK_MONITOR_RACE,
+	[45] = CHILD_OP_TIPC_LINK_CHURN,
+	[46] = CHILD_OP_TLS_ULP_CHURN,
+	[47] = CHILD_OP_VXLAN_ENCAP_CHURN,
+	[48] = CHILD_OP_BRIDGE_FDB_STP,
+	[49] = CHILD_OP_NFTABLES_CHURN,
+	[50] = CHILD_OP_TC_QDISC_CHURN,
+	[51] = CHILD_OP_XFRM_CHURN,
+	[52] = CHILD_OP_BPF_CGROUP_ATTACH,
+	[53] = CHILD_OP_SYSCALL,	/* hole filled with sentinel */
+	[54] = CHILD_OP_SCTP_ASSOC_CHURN,
+	[55] = CHILD_OP_MPTCP_PM_CHURN,
+	[56] = CHILD_OP_DEVLINK_PORT_CHURN,
+	[57] = CHILD_OP_HANDSHAKE_REQ_ABORT,
+	[58] = CHILD_OP_NF_CONNTRACK_HELPER,
+	[59] = CHILD_OP_AF_UNIX_SCM_RIGHTS_GC,
+	[60] = CHILD_OP_NETNS_TEARDOWN_CHURN,
+	[61] = CHILD_OP_TCP_ULP_SWAP_CHURN,
+	[62] = CHILD_OP_MSG_ZEROCOPY_CHURN,
+	[63] = CHILD_OP_IOURING_SEND_ZC_CHURN,
+	[64] = CHILD_OP_VSOCK_TRANSPORT_CHURN,
+	[65] = CHILD_OP_BRIDGE_VLAN_CHURN,
+	[66] = CHILD_OP_IGMP_MLD_SOURCE_CHURN,
+	[67] = CHILD_OP_PSP_KEY_ROTATE,
+	[68] = CHILD_OP_AFXDP_CHURN,
+	[69] = CHILD_OP_KVM_RUN_CHURN,
+	[70] = CHILD_OP_NL80211_CHURN,
+};
+_Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
+	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
+
+/*
+ * Dense vector of currently-enabled alt-ops, derived from
+ * dormant_op_disabled[] + pick_op_type_table[] by init_altop_dispatch().
+ *
+ * The previous implementation re-rolled into the full 71-slot space and
+ * rejected dormant slots inline, which collapsed the EFFECTIVE altop rate
+ * well below the nominal 5% (effective ≈ 5% × enabled/71).  Picking from
+ * the dense vector keeps effective ≈ nominal regardless of how many slots
+ * are gated off, while keeping dormant_op_disabled[] as the source of truth.
+ *
+ * Sized at NR_CHILD_OP_TYPES (one slot per enum value, more than enough to
+ * hold every non-sentinel slot in pick_op_type_table[]).
+ */
+static enum child_op_type enabled_altops[NR_CHILD_OP_TYPES];
+static unsigned int enabled_altop_count;
+
+/*
+ * Walk dormant_op_disabled[] + pick_op_type_table[] in parallel and
+ * populate enabled_altops[] / enabled_altop_count.  Skips dormant slots
+ * and the slot-53 sentinel hole.  Logs the resulting dispatch config so
+ * the operator can see at -v what the effective altop mix actually is.
+ *
+ * Currently called once from main_loop before fork_children; the dormant
+ * gates are compile-time constants so a single startup pass suffices.
+ *
+ * TODO: if a future change adds runtime dormant-flipping, re-invoke this
+ * function on the flip so the dense vector and log line stay accurate.
+ */
+void init_altop_dispatch(void)
+{
+	char buf[1024];
+	size_t off = 0;
+	unsigned int i;
+	unsigned int count = 0;
+
+	for (i = 0; i < ARRAY_SIZE(pick_op_type_table); i++) {
+		enum child_op_type op = pick_op_type_table[i];
+		int n;
+
+		if (dormant_op_disabled[i])
+			continue;
+		if (op == CHILD_OP_SYSCALL)	/* slot-53 sentinel */
+			continue;
+
+		enabled_altops[count++] = op;
+
+		n = snprintf(buf + off, sizeof(buf) - off, "%s%s",
+			off ? ", " : "", alt_op_name(op));
+		if (n > 0 && (size_t)n < sizeof(buf) - off)
+			off += (size_t)n;
+	}
+	enabled_altop_count = count;
+
+	if (count == 0) {
+		output(1, "[main] altop dispatch: nominal=5%% effective=0%% (all altops dormant, falling back to syscall)\n");
+		return;
+	}
+
+	output(1, "[main] altop dispatch: nominal=5%% effective=5%% (%u enabled altops: %s)\n",
+		count, buf);
+}
+
 static enum child_op_type pick_op_type(void)
 {
 	unsigned int r = rand() % 100;
-	unsigned int pick;
 
-	if (r < 95)
+	if (r < 95 || enabled_altop_count == 0)
 		return CHILD_OP_SYSCALL;
 
-	pick = rand() % 71;
-	if (dormant_op_disabled[pick])
-		return CHILD_OP_SYSCALL;
-
-	static const enum child_op_type pick_op_type_table[71] = {
-		[0]  = CHILD_OP_MMAP_LIFECYCLE,
-		[1]  = CHILD_OP_MPROTECT_SPLIT,
-		[2]  = CHILD_OP_MLOCK_PRESSURE,
-		[3]  = CHILD_OP_INODE_SPEWER,
-		[4]  = CHILD_OP_PROCFS_WRITER,
-		[5]  = CHILD_OP_MEMORY_PRESSURE,
-		[6]  = CHILD_OP_USERNS_FUZZER,
-		[7]  = CHILD_OP_SCHED_CYCLER,
-		[8]  = CHILD_OP_BARRIER_RACER,
-		[9]  = CHILD_OP_GENETLINK_FUZZER,
-		[10] = CHILD_OP_PERF_CHAINS,
-		[11] = CHILD_OP_TRACEFS_FUZZER,
-		[12] = CHILD_OP_BPF_LIFECYCLE,
-		[13] = CHILD_OP_FAULT_INJECTOR,
-		[14] = CHILD_OP_RECIPE_RUNNER,
-		[15] = CHILD_OP_IOURING_RECIPES,
-		[16] = CHILD_OP_FD_STRESS,
-		[17] = CHILD_OP_REFCOUNT_AUDITOR,
-		[18] = CHILD_OP_FS_LIFECYCLE,
-		[19] = CHILD_OP_SIGNAL_STORM,
-		[20] = CHILD_OP_FUTEX_STORM,
-		[21] = CHILD_OP_PIPE_THRASH,
-		[22] = CHILD_OP_FORK_STORM,
-		[23] = CHILD_OP_FLOCK_THRASH,
-		[24] = CHILD_OP_CGROUP_CHURN,
-		[25] = CHILD_OP_MOUNT_CHURN,
-		[26] = CHILD_OP_UFFD_CHURN,
-		[27] = CHILD_OP_IOURING_FLOOD,
-		[28] = CHILD_OP_CLOSE_RACER,
-		[29] = CHILD_OP_SOCKET_FAMILY_CHAIN,
-		[30] = CHILD_OP_XATTR_THRASH,
-		[31] = CHILD_OP_PIDFD_STORM,
-		[32] = CHILD_OP_MADVISE_CYCLER,
-		[33] = CHILD_OP_EPOLL_VOLATILITY,
-		[34] = CHILD_OP_KEYRING_SPAM,
-		[35] = CHILD_OP_VDSO_MREMAP_RACE,
-		[36] = CHILD_OP_NUMA_MIGRATION,
-		[37] = CHILD_OP_CPU_HOTPLUG_RIDER,
-		[38] = CHILD_OP_SLAB_CACHE_THRASH,
-		[39] = CHILD_OP_TLS_ROTATE,
-		[40] = CHILD_OP_PACKET_FANOUT_THRASH,
-		[41] = CHILD_OP_IOURING_NET_MULTISHOT,
-		[42] = CHILD_OP_TCP_AO_ROTATE,
-		[43] = CHILD_OP_VRF_FIB_CHURN,
-		[44] = CHILD_OP_NETLINK_MONITOR_RACE,
-		[45] = CHILD_OP_TIPC_LINK_CHURN,
-		[46] = CHILD_OP_TLS_ULP_CHURN,
-		[47] = CHILD_OP_VXLAN_ENCAP_CHURN,
-		[48] = CHILD_OP_BRIDGE_FDB_STP,
-		[49] = CHILD_OP_NFTABLES_CHURN,
-		[50] = CHILD_OP_TC_QDISC_CHURN,
-		[51] = CHILD_OP_XFRM_CHURN,
-		[52] = CHILD_OP_BPF_CGROUP_ATTACH,
-		[53] = CHILD_OP_SYSCALL,	/* hole filled with sentinel */
-		[54] = CHILD_OP_SCTP_ASSOC_CHURN,
-		[55] = CHILD_OP_MPTCP_PM_CHURN,
-		[56] = CHILD_OP_DEVLINK_PORT_CHURN,
-		[57] = CHILD_OP_HANDSHAKE_REQ_ABORT,
-		[58] = CHILD_OP_NF_CONNTRACK_HELPER,
-		[59] = CHILD_OP_AF_UNIX_SCM_RIGHTS_GC,
-		[60] = CHILD_OP_NETNS_TEARDOWN_CHURN,
-		[61] = CHILD_OP_TCP_ULP_SWAP_CHURN,
-		[62] = CHILD_OP_MSG_ZEROCOPY_CHURN,
-		[63] = CHILD_OP_IOURING_SEND_ZC_CHURN,
-		[64] = CHILD_OP_VSOCK_TRANSPORT_CHURN,
-		[65] = CHILD_OP_BRIDGE_VLAN_CHURN,
-		[66] = CHILD_OP_IGMP_MLD_SOURCE_CHURN,
-		[67] = CHILD_OP_PSP_KEY_ROTATE,
-		[68] = CHILD_OP_AFXDP_CHURN,
-		[69] = CHILD_OP_KVM_RUN_CHURN,
-		[70] = CHILD_OP_NL80211_CHURN,
-	};
-
-	return pick_op_type_table[pick];
+	return enabled_altops[rand() % enabled_altop_count];
 }
 
 /*

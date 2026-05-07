@@ -1244,6 +1244,7 @@ void main_loop(void)
 	if (epoch_timeout)
 		clock_gettime(CLOCK_MONOTONIC, &epoch_start);
 
+	init_altop_dispatch();
 	log_alt_op_config();
 
 	output(1, "phase: fork_children\n");
