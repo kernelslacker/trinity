@@ -11,6 +11,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <asm/unistd.h>
+#include "arch.h"
 #include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
@@ -80,6 +81,9 @@ static void sanitise_listmount(struct syscallrecord *rec)
 	rec->a1 = (unsigned long) req;
 	rec->a2 = (unsigned long) mnt_ids;
 	rec->a3 = nr;
+
+	avoid_shared_buffer(&rec->a2, page_size);
+	avoid_shared_buffer(&rec->a3, sizeof(u32));
 
 #ifdef HAVE_SYS_LISTMOUNT
 	/*
