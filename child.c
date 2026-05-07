@@ -1403,6 +1403,14 @@ void child_process(struct childdata *child, int childno)
 				       childno >= 0 &&
 				       (unsigned int)childno < alt_op_children);
 
+	/* kcov_shm is mapped once at startup (init_kcov_shm) and never
+	 * reassigned for the child's lifetime, so the per-iteration NULL
+	 * tests gating the edges_before snapshot and the post-call
+	 * adapt_budget feedback are loop-invariant.  Hoist them once,
+	 * mirroring the use_dedicated_op pattern above, to drop 2 loads
+	 * + 2 compares per iteration on the dominant 95% syscall path. */
+	const bool have_kcov = (kcov_shm != NULL);
+
 	while (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING) {
 		/* Catch-up sibling refreeze: a new sibling that ran init_child
 		 * since our last sweep bumped shm->sibling_freeze_gen.  Re-run
@@ -1498,7 +1506,7 @@ void child_process(struct childdata *child, int childno)
 		 * counter stays at zero and the delta is always 0, which
 		 * correctly degrades to "never boost, never shrink" — the
 		 * multiplier sticks at 1.0x and behaviour matches pre-CV.13. */
-		unsigned long edges_before = (kcov_shm != NULL)
+		unsigned long edges_before = have_kcov
 			? __atomic_load_n(&kcov_shm->edges_found,
 					  __ATOMIC_RELAXED)
 			: 0UL;
@@ -1549,7 +1557,7 @@ void child_process(struct childdata *child, int childno)
 		/* Feed the post-invocation edge delta back into the per-op
 		 * budget multiplier.  Skipped when KCOV is unavailable —
 		 * adapt_budget() needs a real signal to ratchet on. */
-		if (kcov_shm != NULL) {
+		if (have_kcov) {
 			unsigned long edges_after = __atomic_load_n(
 				&kcov_shm->edges_found, __ATOMIC_RELAXED);
 			adapt_budget(child->op_type, edges_before, edges_after);
