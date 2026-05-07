@@ -363,14 +363,14 @@ retry:		i = rand() % max_children;
 		pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
 		if (pid == EMPTY_PIDSLOT || pid == ppid) {
 			if (++retries >= 100)
-				return getpid();
+				return cached_pid;
 			goto retry;
 		}
 		return pid;
 	}
 
 	if (dice < 85)
-		return getpid();
+		return cached_pid;
 
 	if (dice < 95)
 		return 0;
@@ -379,5 +379,5 @@ retry:		i = rand() % max_children;
 	if (dangerous)
 		return 1;
 
-	return getpid();
+	return cached_pid;
 }
