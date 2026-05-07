@@ -1260,12 +1260,14 @@ void main_loop(void)
 				kill_all_kids();
 		}
 
-		if (syscalls_todo && (__atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED) >= syscalls_todo)) {
+		unsigned long op = __atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED);
+
+		if (syscalls_todo && (op >= syscalls_todo)) {
 			output(0, "Reached limit %lu. Telling children to exit.\n", syscalls_todo);
 			panic(EXIT_REACHED_COUNT);
 		}
 
-		if (epoch_iterations && (__atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED) >= epoch_iterations)) {
+		if (epoch_iterations && (op >= epoch_iterations)) {
 			output(0, "Epoch iteration limit %lu reached.\n", epoch_iterations);
 			panic(EXIT_EPOCH_DONE);
 		}
