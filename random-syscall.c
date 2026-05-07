@@ -507,6 +507,30 @@ static bool argtype_accepts_numeric_substitute(enum argtype t)
 }
 
 /*
+ * Build the numeric-substitute slot bitmap for entry's argtype[] table.
+ * Called once per syscallentry at table-init time from
+ * copy_syscall_table() in tables.c; the cached mask in
+ * entry->numeric_substitute_mask then drives apply_chain_substitution()
+ * below without re-walking argtype[] or re-running the 23-case
+ * argtype_accepts_numeric_substitute() switch on every chain step.
+ * Bit k (k=0..5) set means slot (k+1) accepts a numeric substitute.
+ */
+uint8_t compute_numeric_substitute_mask(const struct syscallentry *entry)
+{
+	uint8_t mask = 0;
+	unsigned int i;
+
+	if (entry == NULL)
+		return 0;
+
+	for (i = 0; i < entry->num_args && i < 6; i++) {
+		if (argtype_accepts_numeric_substitute(entry->argtype[i]))
+			mask |= (uint8_t)(1u << i);
+	}
+	return mask;
+}
+
+/*
  * Apply Phase 1 retval substitution to rec in place.  Used by both the
  * fresh-args path (random_syscall_step) and the corpus-replay path
  * (replay_syscall_step) so the chain semantics — substituted args reach
@@ -520,9 +544,8 @@ static void apply_chain_substitution(struct syscallrecord *rec,
 				     bool have_substitute,
 				     unsigned long substitute_retval)
 {
-	unsigned int safe_slots[6];
-	unsigned int nsafe = 0;
-	unsigned int i, slot;
+	unsigned int draw, slot;
+	uint8_t mask;
 
 	if (!have_substitute)
 		return;
@@ -531,14 +554,24 @@ static void apply_chain_substitution(struct syscallrecord *rec,
 	if ((unsigned int)(rand() % 100) >= CHAIN_SUBST_PCT)
 		return;
 
-	for (i = 0; i < entry->num_args && i < 6; i++) {
-		if (argtype_accepts_numeric_substitute(get_argtype(entry, i + 1)))
-			safe_slots[nsafe++] = i + 1;
-	}
-	if (nsafe == 0)
+	mask = entry->numeric_substitute_mask;
+	if (mask == 0)
 		return;
 
-	slot = safe_slots[rand() % nsafe];
+	/*
+	 * Pick a slot via __builtin_ctz of a masked random draw against
+	 * the precomputed mask.  When the masked draw lands on zero (no
+	 * eligible slot bit overlapped this iteration's random bits) fall
+	 * back to the mask itself so __builtin_ctz still picks the
+	 * lowest-numbered eligible slot.  Same slots remain eligible as
+	 * the old per-call safe_slots[] walk — only the dispatch
+	 * mechanism changes.
+	 */
+	draw = (unsigned int)rand() & mask;
+	if (draw == 0)
+		draw = mask;
+	slot = (unsigned int)__builtin_ctz(draw) + 1;
+
 	switch (slot) {
 	case 1: rec->a1 = substitute_retval; break;
 	case 2: rec->a2 = substitute_retval; break;

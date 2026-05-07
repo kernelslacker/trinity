@@ -515,6 +515,7 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		copy[m].active_number = 0;
 		copy[m].syscall_category = stats_syscall_category(copy[m].name);
 		copy[m].is_close_syscall = (strcmp(copy[m].name, "close") == 0);
+		copy[m].numeric_substitute_mask = compute_numeric_substitute_mask(&copy[m]);
 
 		from[n].entry = &copy[m];
 		m++;
