@@ -105,9 +105,14 @@ unsigned int fd_event_drain(struct fd_event_ring *ring)
 	uint32_t head, tail, overflow;
 	unsigned int processed = 0;
 
-	/* Check and reset overflow counter. */
-	overflow = atomic_exchange_explicit(&ring->overflow, 0,
-					    memory_order_relaxed);
+	/* Check and reset overflow counter.  Common case is zero, so
+	 * peek with a relaxed load to avoid a locked RMW that would
+	 * dirty the cacheline shared with the producer.
+	 */
+	overflow = atomic_load_explicit(&ring->overflow, memory_order_relaxed);
+	if (overflow != 0)
+		overflow = atomic_exchange_explicit(&ring->overflow, 0,
+						    memory_order_relaxed);
 	if (overflow > 0) {
 		output(1, "fd_event: ring overflow, %u events dropped\n",
 		       overflow);
