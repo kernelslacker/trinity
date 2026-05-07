@@ -1463,7 +1463,15 @@ void child_process(struct childdata *child, int childno)
 			set_seed(child);
 		}
 
-		if ((child->op_nr & 15) == 0)
+		/* Two back-to-back callsites below (periodic_work and the
+		 * iter-start clock_gettime refresh) share the same 16-iter
+		 * cadence.  Compute the predicate once and reuse, mirroring
+		 * the use_dedicated_op / have_kcov hoists at the top of
+		 * child_process(); saves 1 mask + 1 compare + 1 branch on
+		 * every iter, not just the 5% alt-op path. */
+		const bool tick16 = ((child->op_nr & 15) == 0);
+
+		if (tick16)
 			periodic_work(child, child->op_nr);
 
 		/* Free any deferred allocations whose TTL has expired.
@@ -1487,7 +1495,7 @@ void child_process(struct childdata *child, int childno)
 		 * tv_sec with a 30-second threshold (main.c:653).  At 700
 		 * iters/sec a 16-iter sample interval is ~23 ms — well
 		 * inside the second-level tolerance. */
-		if ((child->op_nr & 15) == 0)
+		if (tick16)
 			clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
 		disable_coredumps();
