@@ -89,6 +89,7 @@ static const char * const xattr_names[] = {
 struct xattr_slot {
 	int fd;
 	unsigned int idx;	/* 1-based testfile index, for path-based syscalls */
+	char path[PATH_MAX + 32];
 };
 
 static int open_one(unsigned int idx)
@@ -98,12 +99,6 @@ static int open_one(unsigned int idx)
 	snprintf(path, sizeof(path), "%s/trinity-testfile%u",
 		 trinity_tmpdir_abs(), idx);
 	return open(path, O_RDWR | O_CREAT, 0666);
-}
-
-static void slot_path(const struct xattr_slot *s, char *out, size_t outlen)
-{
-	snprintf(out, outlen, "%s/trinity-testfile%u",
-		 trinity_tmpdir_abs(), s->idx);
 }
 
 static bool budget_elapsed(const struct timespec *start)
@@ -137,6 +132,8 @@ bool xattr_thrash(struct childdata *child)
 			continue;
 		slots[opened].fd = fd;
 		slots[opened].idx = 1 + i;
+		snprintf(slots[opened].path, sizeof(slots[opened].path),
+			 "%s/trinity-testfile%u", trinity_tmpdir_abs(), 1 + i);
 		opened++;
 	}
 
@@ -148,7 +145,6 @@ bool xattr_thrash(struct childdata *child)
 	for (iter = 0; iter < iters; iter++) {
 		struct xattr_slot *s = &slots[(unsigned int)rand() % opened];
 		const char *name = xattr_names[(unsigned int)rand() % NR_XATTR_NAMES];
-		char path[PATH_MAX + 32];
 		int rc;
 		/* 12 distinct dispatches so the path-based and fd-based
 		 * variants of every op all land regularly.  Set/get
@@ -195,8 +191,7 @@ bool xattr_thrash(struct childdata *child)
 
 			for (j = 0; j < vlen; j++)
 				value[j] = (unsigned char)rand();
-			slot_path(s, path, sizeof(path));
-			rc = setxattr(path, name, value, vlen, 0);
+			rc = setxattr(s->path, name, value, vlen, 0);
 			if (rc == 0)
 				__atomic_add_fetch(&shm->stats.xattr_thrash_set,
 						   1, __ATOMIC_RELAXED);
@@ -222,8 +217,7 @@ bool xattr_thrash(struct childdata *child)
 		case 7: {
 			unsigned char buf[64];
 
-			slot_path(s, path, sizeof(path));
-			rc = (int) getxattr(path, name, buf, sizeof(buf));
+			rc = (int) getxattr(s->path, name, buf, sizeof(buf));
 			if (rc >= 0)
 				__atomic_add_fetch(&shm->stats.xattr_thrash_get,
 						   1, __ATOMIC_RELAXED);
@@ -242,8 +236,7 @@ bool xattr_thrash(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			break;
 		case 9:
-			slot_path(s, path, sizeof(path));
-			rc = removexattr(path, name);
+			rc = removexattr(s->path, name);
 			if (rc == 0)
 				__atomic_add_fetch(&shm->stats.xattr_thrash_remove,
 						   1, __ATOMIC_RELAXED);
@@ -270,8 +263,7 @@ bool xattr_thrash(struct childdata *child)
 		case 11: {
 			char buf[256];
 
-			slot_path(s, path, sizeof(path));
-			rc = (int) listxattr(path, buf, sizeof(buf));
+			rc = (int) listxattr(s->path, buf, sizeof(buf));
 			if (rc >= 0)
 				__atomic_add_fetch(&shm->stats.xattr_thrash_list,
 						   1, __ATOMIC_RELAXED);
