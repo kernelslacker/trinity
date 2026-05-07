@@ -33,6 +33,18 @@
 
 #define NR_MEMFD_SECRET_FDS 4
 
+/*
+ * Latched per-process: memfd_secret(2) returned ENOSYS (CONFIG_SECRETMEM=n
+ * or syscall not wired on this arch) or EINVAL with the only flag values
+ * we ever pass (0 / O_CLOEXEC, both unconditionally valid when the syscall
+ * is supported -- so EINVAL here means the kernel disabled the feature at
+ * runtime, e.g. secretmem.enable_secretmem=0).  Neither flips during this
+ * process, so init / regen / consumers all fast-path past the syscall
+ * once latched.  Mirrors the unsupported_<name> shape used by kvm /
+ * landlock / mq.
+ */
+static bool unsupported_memfd_secret;
+
 static int memfd_secret(unsigned int flags)
 {
 #ifdef __NR_memfd_secret
@@ -69,11 +81,20 @@ static int open_memfd_secret_fd(void)
 	unsigned int flags;
 	int fd;
 
+	if (unsupported_memfd_secret)
+		return false;
+
 	flags = RAND_BOOL() ? O_CLOEXEC : 0;
 
 	fd = memfd_secret(flags);
-	if (fd < 0)
+	if (fd < 0) {
+		if (errno == ENOSYS || errno == EINVAL) {
+			outputerr("open_memfd_secret_fd: memfd_secret(flags=%x) failed: %s -- latching unsupported_memfd_secret\n",
+				flags, strerror(errno));
+			unsupported_memfd_secret = true;
+		}
 		return false;
+	}
 
 	obj = alloc_shared_obj(sizeof(struct object));
 	if (obj == NULL) {
@@ -114,6 +135,9 @@ static int init_memfd_secret_fds(void)
 
 static int get_rand_memfd_secret_fd(void)
 {
+	if (unsupported_memfd_secret)
+		return -1;
+
 	if (objects_empty(OBJ_FD_MEMFD_SECRET) == true)
 		return -1;
 

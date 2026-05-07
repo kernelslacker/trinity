@@ -35,12 +35,16 @@
 #define KVM_VCPUS_PER_VM 2
 
 /*
- * Tracks whether /dev/kvm could be opened at all.  Set by init_kvm_system
- * and consulted by init_kvm_vms / init_kvm_vcpus so all providers degrade
- * together when the kernel lacks KVM support (no module, headers but no
- * /dev/kvm node, EACCES, etc.).
+ * Latched per-process: /dev/kvm could not be opened or KVM_GET_API_VERSION
+ * failed.  Set by init_kvm_system and consulted by init_kvm_vms /
+ * init_kvm_vcpus, the open_kvm_*_fd regen paths, and the get_rand_kvm_*_fd
+ * consumers so all three providers degrade together when the kernel lacks
+ * KVM support (no module, headers but no /dev/kvm node, EACCES, etc.).
+ * No /dev/kvm means no system fd, which means no VM, which means no vCPU —
+ * one shared latch matches the dependency chain.  Mirrors the
+ * unsupported_<name> flag shape used by landlock / memfd_secret / mq.
  */
-static bool kvm_subsystem_available = true;
+static bool unsupported_kvm;
 
 /*
  * Cached KVM_GET_VCPU_MMAP_SIZE result — set by init_kvm_system right
@@ -358,18 +362,18 @@ static int init_kvm_system(void)
 
 	sysfd = open("/dev/kvm", O_RDWR);
 	if (sysfd < 0) {
-		outputerr("init_kvm_system: open(/dev/kvm) failed: %s\n",
+		outputerr("init_kvm_system: open(/dev/kvm) failed: %s -- latching unsupported_kvm\n",
 			strerror(errno));
-		kvm_subsystem_available = false;
+		unsupported_kvm = true;
 		return false;
 	}
 
 	api_version = ioctl(sysfd, KVM_GET_API_VERSION, 0UL);
 	if (api_version < 0) {
-		outputerr("init_kvm_system: KVM_GET_API_VERSION failed: %s\n",
+		outputerr("init_kvm_system: KVM_GET_API_VERSION failed: %s -- latching unsupported_kvm\n",
 			strerror(errno));
 		close(sysfd);
-		kvm_subsystem_available = false;
+		unsupported_kvm = true;
 		return false;
 	}
 	if (api_version != KVM_EXPECTED_API_VERSION) {
@@ -397,7 +401,7 @@ static int init_kvm_system(void)
 	if (sysobj == NULL) {
 		outputerr("init_kvm_system: alloc_shared_obj(sys) failed\n");
 		close(sysfd);
-		kvm_subsystem_available = false;
+		unsupported_kvm = true;
 		return false;
 	}
 	sysobj->kvmsysobj.fd = sysfd;
@@ -420,7 +424,7 @@ static int init_kvm_system(void)
 
 static int init_kvm_vms(void)
 {
-	if (!kvm_subsystem_available)
+	if (unsupported_kvm)
 		return false;
 
 	setup_kvm_vm_head();
@@ -454,7 +458,7 @@ static int init_kvm_vms(void)
 
 static int init_kvm_vcpus(void)
 {
-	if (!kvm_subsystem_available)
+	if (unsupported_kvm)
 		return false;
 
 	setup_kvm_vcpu_head();
@@ -480,7 +484,7 @@ static int open_kvm_system_fd(void)
 	struct object *obj;
 	int sysfd, api_version;
 
-	if (!kvm_subsystem_available)
+	if (unsupported_kvm)
 		return false;
 
 	sysfd = open("/dev/kvm", O_RDWR);
@@ -508,7 +512,7 @@ static int open_kvm_vm_fd(void)
 {
 	int sysfd;
 
-	if (!kvm_subsystem_available)
+	if (unsupported_kvm)
 		return false;
 
 	sysfd = peek_system_fd();
@@ -522,7 +526,7 @@ static int open_kvm_vcpu_fd(void)
 {
 	struct object *vmobj;
 
-	if (!kvm_subsystem_available)
+	if (unsupported_kvm)
 		return false;
 
 	vmobj = peek_vm_obj();
@@ -534,6 +538,9 @@ static int open_kvm_vcpu_fd(void)
 
 static int get_rand_kvm_system_fd(void)
 {
+	if (unsupported_kvm)
+		return -1;
+
 	if (objects_empty(OBJ_FD_KVM_SYSTEM) == true)
 		return -1;
 
@@ -568,6 +575,9 @@ static int get_rand_kvm_system_fd(void)
 
 static int get_rand_kvm_vm_fd(void)
 {
+	if (unsupported_kvm)
+		return -1;
+
 	if (objects_empty(OBJ_FD_KVM_VM) == true)
 		return -1;
 
@@ -602,6 +612,9 @@ static int get_rand_kvm_vm_fd(void)
 
 static int get_rand_kvm_vcpu_fd(void)
 {
+	if (unsupported_kvm)
+		return -1;
+
 	if (objects_empty(OBJ_FD_KVM_VCPU) == true)
 		return -1;
 
