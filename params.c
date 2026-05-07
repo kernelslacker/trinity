@@ -286,6 +286,8 @@ void clamp_default_max_children(void)
 bool no_warm_start = false;
 char *warm_start_path = NULL;
 
+char *stats_log_path = NULL;
+
 bool do_effector_map = false;
 
 bool user_set_seed = false;
@@ -359,6 +361,7 @@ static const struct option_help option_descs[] = {
 	{ "show-unannotated",	 0,  "show unannotated syscalls" },
 	{ "stats",		 0,  "show errno distribution per syscall before exiting" },
 	{ "stats-json",		 0,  "emit dump_stats output as a single JSON object on stdout (machine-readable)" },
+	{ "stats-log-file",	 0,  "path to append periodic stats dumps to (in addition to stdout)" },
 	{ "strategy",		 0,  "arm-selection policy for the multi-strategy rotation: round-robin (default) or bandit (UCB1)" },
 	{ "syslog",		'S', "log important info to syslog (useful if syslog is remote)" },
 	{ "verbose",		'v', "increase output verbosity. Repeat for more detail (-vv)" },
@@ -434,6 +437,7 @@ static const struct option longopts[] = {
 	{ "random", required_argument, NULL, 'r' },
 	{ "stats", no_argument, NULL, 0 },
 	{ "stats-json", no_argument, NULL, 0 },
+	{ "stats-log-file", required_argument, NULL, 0 },
 	{ "strategy", required_argument, NULL, 0 },
 	{ "show-unannotated", no_argument, NULL, 0 },
 	{ "syslog", no_argument, NULL, 'S' },
@@ -761,6 +765,15 @@ void parse_args(int argc, char *argv[])
 			if (strcmp("stats-json", longopts[opt_index].name) == 0) {
 				stats_json = true;
 				show_stats = true;
+			}
+
+			if (strcmp("stats-log-file", longopts[opt_index].name) == 0) {
+				free(stats_log_path);
+				stats_log_path = strdup(optarg);
+				if (!stats_log_path) {
+					outputerr("strdup failed\n");
+					exit(EXIT_FAILURE);
+				}
 			}
 
 			if (strcmp("strategy", longopts[opt_index].name) == 0) {
