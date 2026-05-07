@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include "arch.h"
 #include "deferred-free.h"
 #include "maps.h"
@@ -194,6 +195,34 @@ static void post_mremap(struct syscallrecord *rec)
 
 	map->ptr = ptr;
 	map->size = snap->new_len;
+
+	/*
+	 * For file-backed maps, an mremap grow can produce a VMA covering
+	 * pages past the file's backing extent — accessing those pages
+	 * SIGBUSes BUS_ADRERR and burns the child before it contributes
+	 * coverage, the same crash class post_mmap clamps against.  Mirror
+	 * that clamp here: fstat the backing fd and shrink map->size to
+	 * the page-aligned in-bounds extent.  Anonymous maps (CHILD_ANON,
+	 * INITIAL_ANON) are kernel-backed across the grow and stay at the
+	 * requested length.  The original mmap offset is not preserved
+	 * across the mremap path, so be conservative and treat offset as
+	 * zero (clamp to st_size).  st_size == 0 covers /dev/zero,
+	 * /dev/mem, hugetlb fds, memfd_secret, kcov and friends whose
+	 * mappable extent is not reflected in stat — leave the requested
+	 * size alone for those, matching post_mmap.
+	 */
+	if (map->type == MMAPED_FILE && map->fd != -1) {
+		struct stat st;
+
+		if (fstat(map->fd, &st) == 0 && st.st_size > 0) {
+			if ((unsigned long) st.st_size < map->size)
+				map->size = (unsigned long) st.st_size & PAGE_MASK;
+
+			if (map->size != snap->new_len)
+				__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+						   1, __ATOMIC_RELAXED);
+		}
+	}
 
 out_free:
 	deferred_freeptr(&rec->post_state);
