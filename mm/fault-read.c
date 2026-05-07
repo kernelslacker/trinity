@@ -49,14 +49,34 @@ static void read_one_page(struct map *map)
 }
 
 
+/*
+ * Same per-call cap as the write-side dirty_* functions: every
+ * read_mprotect() is an mprotect(4096) that triggers a TLB shootdown
+ * IPI to every other CPU running a thread of the same mm.  Walking N
+ * pages of a large mapping in a tight loop generates an IPI storm
+ * proportional to N x num_children.  The fuzz value of read-faulting
+ * every page beyond the first few is marginal -- the goal is "this
+ * VMA gets read-touched", not "every page in this VMA gets touched".
+ */
+#define READ_PAGES_PER_CALL_MAX	32U
+
+static unsigned int read_walk_count(struct map *map)
+{
+	unsigned int nr = nr_pages(map);
+
+	if (nr > READ_PAGES_PER_CALL_MAX)
+		nr = READ_PAGES_PER_CALL_MAX;
+	return nr;
+}
+
 static void read_whole_mapping(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned int i, nr;
+	unsigned int i, walk;
 
-	nr = nr_pages(map);
+	walk = read_walk_count(map);
 
-	for (i = 0; i < nr; i++) {
+	for (i = 0; i < walk; i++) {
 		char *page = p + (i * page_size);
 		read_mprotect((void *) page, page_size, PROT_READ);
 		memcpy(page_buf, page, page_size);
@@ -66,14 +86,18 @@ static void read_whole_mapping(struct map *map)
 static void read_every_other_page(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned int i, nr, first;
+	unsigned int i, walk, total, first;
 
-	nr = nr_pages(map);
-
+	total = nr_pages(map);
+	walk = read_walk_count(map);
 	first = RAND_BOOL();
 
-	for (i = first; i < nr; i+=2) {
-		char *page = p + (i * page_size);
+	for (i = 0; i < walk; i++) {
+		unsigned int idx = first + (i * 2);
+
+		if (idx >= total)
+			break;
+		char *page = p + (idx * page_size);
 		read_mprotect((void *) page, page_size, PROT_READ);
 		memcpy(page_buf, page, page_size);
 	}
@@ -82,32 +106,39 @@ static void read_every_other_page(struct map *map)
 static void read_mapping_reverse(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned int i, nr;
+	unsigned int i, walk, total;
 
-	if (nr_pages(map) == 0)
+	total = nr_pages(map);
+	if (total == 0)
 		return;
 
-	nr = nr_pages(map) - 1;
+	walk = read_walk_count(map);
 
-	for (i = nr; ; i--) {
-		char *page = p + (i * page_size);
+	for (i = 0; i < walk; i++) {
+		unsigned int idx = total - 1 - i;
+		char *page = p + (idx * page_size);
+
 		read_mprotect((void *) page, page_size, PROT_READ);
 		memcpy(page_buf, page, page_size);
-		if (i == 0)
-			break;
 	}
 }
 
-/* fault in all pages of the mapping. */
+/* fault in a sample of the mapping's pages. */
 static void read_random_pages(struct map *map)
 {
 	char *p = map->ptr;
-	unsigned int i, nr;
+	unsigned int i, walk, total;
 
-	nr = nr_pages(map);
+	total = nr_pages(map);
+	if (total == 0)
+		return;
 
-	for (i = 0; i < nr; i++) {
-		char *page = p + ((rand() % nr) * page_size);
+	walk = read_walk_count(map);
+
+	for (i = 0; i < walk; i++) {
+		/* Offset is uniform across the FULL mapping; only the
+		 * iteration count is capped. */
+		char *page = p + ((rand() % total) * page_size);
 		read_mprotect((void *) page, page_size, PROT_READ);
 		memcpy(page_buf, page, page_size);
 	}
