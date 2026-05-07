@@ -24,6 +24,7 @@
 #include "results.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "signals.h"
 #include "syscall.h"
 #include "tables.h"
 #include "taint.h"
@@ -449,11 +450,21 @@ static void register_returned_fd(const struct syscallentry *entry,
 void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		struct kcov_child *kc, struct childdata *child)
 {
+	/* Arm the self-fuzzed-fatal-signal gate in child_fault_handler.
+	 * While set, an own-pid SI_USER/SI_TKILL/SI_QUEUE delivery of
+	 * SIGSEGV/SIGBUS/SIGILL/SIGABRT is treated as fuzzer noise (the
+	 * child just executed kill/tkill/tgkill/rt_sigqueueinfo/
+	 * pidfd_send_signal at itself) and the child exits silently
+	 * instead of pouring a bug log into /tmp/.  See signals.c. */
+	in_do_syscall = 1;
+
 	if (entry->flags & EXTRA_FORK)
 		do_extrafork(rec, entry, child);
 	else
 		 /* common-case, do the syscall in this child process. */
 		__do_syscall(rec, entry, BEFORE, kc, child);
+
+	in_do_syscall = 0;
 
 	/* Reuse the iteration-start timestamp child->tp captured at the top
 	 * of random_syscall_step() rather than calling clock_gettime() again.
