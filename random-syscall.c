@@ -304,12 +304,15 @@ retry:
  * produced a frontier edge in the last K windows (every weight is 1, so
  * acceptance reduces to uniform).
  *
- * max_weight is sampled once at the top of the function rather than per
- * retry so the bias mass stays stable across the inner retry loop, and
- * so concurrent kcov_collect-driven bumps to frontier_history during
- * the pick don't perturb the acceptance probability mid-call.  The
- * sample walks active_syscalls once -- O(N) with N <= MAX_NR_SYSCALL,
- * dominated by the syscall dispatch itself.
+ * max_weight is read once at the top of the function from the cached
+ * shm->frontier_max_weight_cached so the bias mass stays stable across
+ * the inner retry loop, and so concurrent kcov_collect-driven bumps to
+ * frontier_history during the pick don't perturb the acceptance
+ * probability mid-call.  The cache is recomputed authoritatively on
+ * each window rotation by frontier_window_advance() and ratcheted
+ * upward on new-edge bumps by frontier_record_new_edge(), turning what
+ * used to be an O(MAX_NR_SYSCALL) walk per pick into a single RELAXED
+ * load.
  *
  * The validate / EXPENSIVE / AVOID_SYSCALL retry budget mirrors the
  * other set_syscall_nr_* variants because those are correctness gates,
@@ -320,11 +323,11 @@ static bool set_syscall_nr_coverage_frontier(struct syscallrecord *rec,
 {
 	struct syscallentry *entry;
 	unsigned int syscallnr;
-	unsigned int i, val;
+	unsigned int val;
 	bool do32;
 	unsigned int outer_attempts = 0;
 	unsigned int nr_syscalls;
-	unsigned long max_weight = 0;
+	unsigned long max_weight;
 
 	if (biarch) {
 		do32 = choose_syscall_table(child, &nr_syscalls);
@@ -333,20 +336,8 @@ static bool set_syscall_nr_coverage_frontier(struct syscallrecord *rec,
 		nr_syscalls = max_nr_syscalls;
 	}
 
-	/* Snapshot the largest frontier-edge count across the active table
-	 * once so the rejection-sampling acceptance ratio is stable across
-	 * retries.  Walks the table linearly; the active_syscalls slot
-	 * encoding (index+1, 0=disabled) is the same as the other pickers. */
-	for (i = 0; i < nr_syscalls; i++) {
-		unsigned long w;
-
-		val = child->active_syscalls[i];
-		if (val == 0)
-			continue;
-		w = frontier_recent_count((unsigned int)(val - 1));
-		if (w > max_weight)
-			max_weight = w;
-	}
+	max_weight = __atomic_load_n(&shm->frontier_max_weight_cached,
+				     __ATOMIC_RELAXED);
 
 retry:
 	if (no_syscalls_enabled() == true) {
