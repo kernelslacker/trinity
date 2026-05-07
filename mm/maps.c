@@ -117,7 +117,17 @@ bool get_map_handle(struct map_handle *h)
 		 * are rejected.  Zero is also bogus — a real mapping always
 		 * has at least one page.
 		 */
-		if (obj->map.size == 0 || obj->map.size > GB(4UL)) {
+		if (obj->map.size == 0) {
+			/*
+			 * Legitimate post-clamp state from mmap_fd:
+			 * empty file, fstat failure, or offset past EOF.
+			 * mmap_fd now drops these at seed time, but a
+			 * pre-clamp pool entry from an earlier startup
+			 * may still surface here.  Skip silently.
+			 */
+			continue;
+		}
+		if (obj->map.size > GB(4UL)) {
 			outputerr("get_map_handle: bogus map->size %lu for "
 				  "obj %p (type %u, scope %d)\n",
 				  obj->map.size, obj, type, scope);
@@ -558,6 +568,26 @@ retry_mmap:
 			else if ((unsigned long) backed < obj->map.size)
 				obj->map.size = (unsigned long) backed & PAGE_MASK;
 		}
+	}
+
+	/*
+	 * A zero-clamped entry has no walkable extent and would only be
+	 * rejected by every get_map_handle() consumer.  Drop it at the
+	 * seed site instead of polluting the pool.
+	 */
+	if (obj->map.size == 0) {
+		munmap(obj->map.ptr, len > 0 ? len : page_size);
+		if (scope == OBJ_GLOBAL) {
+			free_shared_str(obj->map.name,
+					strlen(obj->map.name) + 1);
+			obj->map.name = NULL;
+			free_shared_obj(obj, sizeof(struct object));
+		} else {
+			free(obj->map.name);
+			obj->map.name = NULL;
+			free(obj);
+		}
+		return;
 	}
 
 	track_shared_region((unsigned long)obj->map.ptr, obj->map.size);
