@@ -148,3 +148,52 @@ void healer_seq_push(struct childdata *child, unsigned int nr);
  * established for the defense counter dump.
  */
 void healer_table_dump(void);
+
+/*
+ * Cross-run persistence.  Serialise the entire shm->healer_relations[]
+ * table to `path` (atomic via tmp-file + rename) so a subsequent run
+ * can warm-start from it.  Returns true on success; on failure the
+ * destination file is left untouched.  Safe to call concurrently with
+ * fuzz children: per-slot snapshots tear at most one observation, which
+ * the next snapshot resyncs.
+ */
+bool healer_save_file(const char *path);
+
+/*
+ * Reverse of healer_save_file().  Stages the file payload through a
+ * heap buffer, validates the header (magic, version, table dimensions,
+ * MAX_NR_SYSCALL, kernel utsname.release/.version) and the payload
+ * CRC32, then bulk-copies into shm->healer_relations[] and restores
+ * shm->stats.healer_relations_observed / .healer_obs_at_last_snapshot.
+ * Caller must invoke before fork: the load is not safe against
+ * concurrent observers.  Returns true on a successful warm-start; a
+ * kernel-utsname mismatch logs a one-line cold-start notice and returns
+ * false.
+ */
+bool healer_load_file(const char *path);
+
+/*
+ * Build a default per-arch relation-table path under
+ * $XDG_CACHE_HOME/trinity/healer/<arch>-<release> (or
+ * $HOME/.cache/...).  Creates the parent directory tree on demand;
+ * returns NULL on uname() failure or path-buffer overflow.  Mirrors
+ * minicorpus_default_path() and effector_map_default_path().
+ */
+const char *healer_default_path(void);
+
+/*
+ * Configure the path that healer_maybe_snapshot() will save to.  Must
+ * be called in the parent before fork so children inherit
+ * healer_snapshot_path COW.  No-op on NULL or oversized path.
+ */
+void healer_enable_snapshots(const char *path);
+
+/*
+ * Periodic mid-run snapshot trigger.  Cheap fast path when the fleet-
+ * wide observation count hasn't advanced HEALER_SNAPSHOT_OBSERVATIONS
+ * past the last snapshot's high-water-mark.  When the gap is reached,
+ * one CAS-elected caller runs healer_save_file() to the configured
+ * path; everyone else loses the CAS and returns.  Called from the same
+ * observer-hook fire path that drives healer_observe_relation().
+ */
+void healer_maybe_snapshot(void);
