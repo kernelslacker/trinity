@@ -430,10 +430,10 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 	bool do32;
 	char state;
 
-	pid = __atomic_load_n(&pids[childno], __ATOMIC_RELAXED);
-
 	if (shm->debug == false)
 		return;
+
+	pid = __atomic_load_n(&pids[childno], __ATOMIC_RELAXED);
 
 	rec = &child->syscall;
 
