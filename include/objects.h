@@ -269,6 +269,26 @@ struct object {
 	};
 };
 
+/*
+ * Per-objhead fd→object hash slot for OBJ_LOCAL pools.  Open-addressing
+ * with linear probing: fd == -1 marks an empty slot.  Sized to a fixed
+ * power-of-two (LOCAL_FD_HASH_SIZE) chosen comfortably above any plausible
+ * per-(child, type) entry count so the load factor stays low and probes
+ * resolve in one or two steps.
+ */
+struct local_fd_hash_slot {
+	int fd;
+	struct object *obj;
+};
+
+/*
+ * Power-of-two slot count for the per-OBJ_LOCAL fd→object hash.  Sized
+ * above the realistic upper bound of entries any single (child, type) pool
+ * accumulates so open-addressing probes settle in O(1) at the typical
+ * load factors observed in fuzz runs.
+ */
+#define LOCAL_FD_HASH_SIZE	1024
+
 struct objhead {
 	struct object **array;		/* parallel array for O(1) random access */
 	/*
@@ -286,6 +306,17 @@ struct objhead {
 	 * global region as ->array so freeze_global_objects() covers it.
 	 */
 	unsigned int *slot_versions;
+	/*
+	 * Per-objhead fd→object hash for OBJ_LOCAL fd-typed pools.  Lazily
+	 * allocated in the child's private heap on the first add_object()
+	 * insert and kept in sync by add_object()/__destroy_object() on every
+	 * slot mutation.  find_local_object_by_fd() consults this instead of
+	 * walking head->array linearly, which collapses an O(n) scan with
+	 * one cache line per slot into an O(1) probe.  Stays NULL for
+	 * OBJ_GLOBAL pools (those use the global shm fd_hash) and for
+	 * non-fd OBJ_LOCAL pools.
+	 */
+	struct local_fd_hash_slot *fd_hash;
 	unsigned int num_entries;
 	unsigned int array_capacity;
 	unsigned int max_entries;
