@@ -44,6 +44,93 @@ static struct {
 unsigned int nr_shared_regions;
 
 /*
+ * Bitmap accelerator for range_overlaps_shared().  One bit per
+ * SHARED_BITMAP_GRANULARITY-byte chunk of user VA; a set bit means at
+ * least one byte in that chunk belongs to a registered shared region.
+ *
+ * The mm-syscall sanitisers (madvise/mremap/mprotect/munmap/mseal/mbind/
+ * process_madvise/remap_file_pages/...) call range_overlaps_shared()
+ * once per fuzzed call, often many times per child per second.  The
+ * original linear scan over shared_regions[] is O(N) per query with N
+ * easily reaching 100+ on a 32-child fleet (per-child childdata,
+ * fd_event ring, kcov ring, plus the global reserve).  Replacing the
+ * scan with this bitmap turns the hot path into one or two word loads
+ * for the common single-page query.
+ *
+ * Granularity 2 MiB is the natural unit for the conservative
+ * over-reject guarantee: any 2 MiB chunk that touches a shared region
+ * gets its bit set, and a query whose footprint hits that chunk
+ * rejects.  False positives are possible at chunk boundaries (a
+ * non-shared page co-located in the same 2 MiB chunk as a shared
+ * region rejects too), which is the SAFETY direction -- under-reject
+ * would let a fuzzed mmap call clobber trinity's own shared state.
+ *
+ * Span 1<<47 covers the canonical x86_64 user VA on default
+ * (4-level page table) kernels.  Regions registered outside the span
+ * trip the BUG_ON in shared_bitmap_mark(); queries entirely outside
+ * the span return false (no tracked region can live there because the
+ * BUG_ON would have fired).  At 1 bit per 2 MiB, the bitmap is
+ * 1<<26 bits = 8 MiB of BSS, but it is mostly zero pages: only the
+ * 4 KiB pages that cover actually-set bits ever fault in, so true
+ * resident growth is in the kilobytes for a typical fleet host where
+ * shared regions cluster in the mmap arena near 0x7f000000....
+ */
+#define SHARED_BITMAP_GRANULARITY_LOG2	21UL	/* 2 MiB per bit */
+#define SHARED_BITMAP_VA_LOG2		47UL	/* 128 TiB user VA span */
+#define SHARED_BITMAP_VA_SPAN		(1UL << SHARED_BITMAP_VA_LOG2)
+#define SHARED_BITMAP_NBITS		(SHARED_BITMAP_VA_SPAN >> SHARED_BITMAP_GRANULARITY_LOG2)
+#define SHARED_BITMAP_BITS_PER_WORD	(8UL * sizeof(unsigned long))
+#define SHARED_BITMAP_NWORDS		(SHARED_BITMAP_NBITS / SHARED_BITMAP_BITS_PER_WORD)
+
+static unsigned long shared_region_bitmap[SHARED_BITMAP_NWORDS];
+
+static inline bool shared_bitmap_test(unsigned long bit)
+{
+	return (shared_region_bitmap[bit / SHARED_BITMAP_BITS_PER_WORD] >>
+		(bit % SHARED_BITMAP_BITS_PER_WORD)) & 1UL;
+}
+
+static inline void shared_bitmap_set(unsigned long bit)
+{
+	shared_region_bitmap[bit / SHARED_BITMAP_BITS_PER_WORD] |=
+		1UL << (bit % SHARED_BITMAP_BITS_PER_WORD);
+}
+
+/*
+ * Mark every 2 MiB chunk that intersects [addr, addr+size).  Called
+ * from the tail of __alloc_shared() and track_shared_region() so the
+ * bitmap stays in sync with shared_regions[].  size==0 is a no-op
+ * (matches the "empty region overlaps nothing" semantics callers rely
+ * on).  An out-of-span registration BUG()s loudly: the linear-scan
+ * predecessor would have caught such a region, so silently dropping it
+ * here would flip the safety invariant from "over-reject" to
+ * "under-reject" -- the exact failure mode this whole guard exists to
+ * prevent.
+ */
+static void shared_bitmap_mark(unsigned long addr, unsigned long size)
+{
+	unsigned long end, first, last, bit;
+
+	if (size == 0)
+		return;
+
+	if (addr >= SHARED_BITMAP_VA_SPAN ||
+	    size > SHARED_BITMAP_VA_SPAN - addr) {
+		outputerr("shared_bitmap_mark: region 0x%lx+0x%lx outside "
+			  "1<<%lu user VA span; widen SHARED_BITMAP_VA_LOG2\n",
+			  addr, size, SHARED_BITMAP_VA_LOG2);
+		BUG("shared region outside bitmap span");
+	}
+
+	end = addr + size - 1;
+	first = addr >> SHARED_BITMAP_GRANULARITY_LOG2;
+	last = end >> SHARED_BITMAP_GRANULARITY_LOG2;
+
+	for (bit = first; bit <= last; bit++)
+		shared_bitmap_set(bit);
+}
+
+/*
  * Fire once when shared_regions[] first runs out of slots.  Per-call
  * outputerr() would spam stderr from inside init_shm()'s for_each_child
  * loop on a host whose max_children pushes the table past capacity --
@@ -90,6 +177,7 @@ static void * __alloc_shared(size_t size, bool is_global_obj)
 		shared_regions[nr_shared_regions].addr = (unsigned long) ret;
 		shared_regions[nr_shared_regions].size = size;
 		shared_regions[nr_shared_regions].is_global_obj = is_global_obj;
+		shared_bitmap_mark((unsigned long) ret, size);
 		nr_shared_regions++;
 	} else {
 		note_shared_overflow("alloc_shared", ret);
@@ -112,6 +200,7 @@ void track_shared_region(unsigned long addr, unsigned long size)
 		shared_regions[nr_shared_regions].addr = addr;
 		shared_regions[nr_shared_regions].size = size;
 		shared_regions[nr_shared_regions].is_global_obj = false;
+		shared_bitmap_mark(addr, size);
 		nr_shared_regions++;
 	} else {
 		note_shared_overflow("track_shared_region", (const void *)addr);
@@ -723,10 +812,37 @@ static void mprotect_global_obj_regions(int prot)
 	}
 }
 
+/*
+ * Self-check: confirm range_overlaps_shared()'s bitmap accelerator
+ * actually rejects the first registered region.  Catches construction
+ * regressions (a future refactor that forgets to call
+ * shared_bitmap_mark() at registration would otherwise fail open and
+ * silently let the fuzzer clobber trinity's own shared state).  Runs
+ * once -- the bitmap only grows with new registrations, so a single
+ * positive assert is sufficient to prove the wiring works. */
+static void shared_bitmap_self_check(void)
+{
+	static bool checked;
+	unsigned long base, bit;
+
+	if (checked || nr_shared_regions == 0)
+		return;
+	checked = true;
+
+	base = shared_regions[0].addr;
+	bit = base >> SHARED_BITMAP_GRANULARITY_LOG2;
+	if (!shared_bitmap_test(bit)) {
+		outputerr("range_overlaps_shared bitmap missing first region "
+			  "@ 0x%lx (bit %lu)\n", base, bit);
+		BUG("shared region bitmap inconsistent");
+	}
+}
+
 void freeze_global_objects(void)
 {
 	mprotect_global_obj_regions(PROT_READ);
 	global_objects_protected = true;
+	shared_bitmap_self_check();
 }
 
 void thaw_global_objects(void)
@@ -810,8 +926,10 @@ static unsigned char last_reject_have_syscall;
 
 bool range_overlaps_shared(unsigned long addr, unsigned long len)
 {
-	unsigned long end;
-	unsigned int i;
+	unsigned long end, check_end, first, last, bit;
+	bool overlap = false;
+	unsigned long n;
+	struct childdata *child;
 
 	/* Treat wrapped ranges as overlapping so callers reject them. */
 	if (len != 0 && addr > ULONG_MAX - len)
@@ -819,61 +937,81 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len)
 
 	end = addr + len;
 
-	for (i = 0; i < nr_shared_regions; i++) {
-		unsigned long r_start = shared_regions[i].addr;
-		unsigned long r_end = r_start + shared_regions[i].size;
+	/* Bitmap accelerator: O(ceil(len/2MB)+1) bit reads instead of an
+	 * O(N) walk over shared_regions[].  A range entirely above the
+	 * bitmap span has no tracked overlap -- shared_bitmap_mark()
+	 * BUG()s on out-of-span registrations, so a miss here cannot hide
+	 * a real region.  A zero-length probe collapses to a single bit
+	 * read on the chunk containing addr; this is over-rejection
+	 * relative to the original byte-precise test (which only matched
+	 * an empty range strictly inside a region) but lands on the
+	 * SAFETY side that callers depend on. */
+	if (addr < SHARED_BITMAP_VA_SPAN) {
+		check_end = end;
+		if (check_end > SHARED_BITMAP_VA_SPAN)
+			check_end = SHARED_BITMAP_VA_SPAN;
 
-		if (addr < r_end && end > r_start) {
-			unsigned long n;
-			struct childdata *child;
+		first = addr >> SHARED_BITMAP_GRANULARITY_LOG2;
+		if (check_end > addr)
+			last = (check_end - 1) >> SHARED_BITMAP_GRANULARITY_LOG2;
+		else
+			last = first;
 
-			n = __atomic_add_fetch(&shm->stats.range_overlaps_shared_rejects,
-					       1, __ATOMIC_RELAXED);
-
-			child = this_child();
-			if (child != NULL) {
-				unsigned int nr = child->syscall.nr;
-				bool do32 = child->syscall.do32bit;
-
-				if (nr < MAX_NR_SYSCALL) {
-					unsigned long *bucket = do32 ?
-						&shm->stats.range_overlaps_shared_rejects_per_syscall_32[nr] :
-						&shm->stats.range_overlaps_shared_rejects_per_syscall_64[nr];
-					__atomic_add_fetch(bucket, 1, __ATOMIC_RELAXED);
-				}
-
-				__atomic_store_n(&last_reject_syscall_nr,
-						 nr, __ATOMIC_RELAXED);
-				__atomic_store_n(&last_reject_do32bit,
-						 do32 ? 1 : 0,
-						 __ATOMIC_RELAXED);
-				__atomic_store_n(&last_reject_have_syscall, 1,
-						 __ATOMIC_RELAXED);
+		for (bit = first; bit <= last; bit++) {
+			if (shared_bitmap_test(bit)) {
+				overlap = true;
+				break;
 			}
-
-			if (verbosity > 1 &&
-			    (n % RANGE_OVERLAPS_SHARED_REJECT_REPORT_INTERVAL) == 0) {
-				const char *sname = "?";
-				unsigned int snr;
-				unsigned char s32;
-
-				if (__atomic_load_n(&last_reject_have_syscall,
-						    __ATOMIC_RELAXED)) {
-					snr = __atomic_load_n(&last_reject_syscall_nr,
-							      __ATOMIC_RELAXED);
-					s32 = __atomic_load_n(&last_reject_do32bit,
-							      __ATOMIC_RELAXED);
-					sname = print_syscall_name(snr, s32 != 0);
-				}
-
-				output(1, "range_overlaps_shared: %lu cumulative rejects "
-					"(latest syscall=%s addr=0x%lx len=%lu)\n",
-					n, sname, addr, len);
-			}
-			return true;
 		}
 	}
-	return false;
+
+	if (!overlap)
+		return false;
+
+	n = __atomic_add_fetch(&shm->stats.range_overlaps_shared_rejects,
+			       1, __ATOMIC_RELAXED);
+
+	child = this_child();
+	if (child != NULL) {
+		unsigned int nr = child->syscall.nr;
+		bool do32 = child->syscall.do32bit;
+
+		if (nr < MAX_NR_SYSCALL) {
+			unsigned long *bucket = do32 ?
+				&shm->stats.range_overlaps_shared_rejects_per_syscall_32[nr] :
+				&shm->stats.range_overlaps_shared_rejects_per_syscall_64[nr];
+			__atomic_add_fetch(bucket, 1, __ATOMIC_RELAXED);
+		}
+
+		__atomic_store_n(&last_reject_syscall_nr,
+				 nr, __ATOMIC_RELAXED);
+		__atomic_store_n(&last_reject_do32bit,
+				 do32 ? 1 : 0,
+				 __ATOMIC_RELAXED);
+		__atomic_store_n(&last_reject_have_syscall, 1,
+				 __ATOMIC_RELAXED);
+	}
+
+	if (verbosity > 1 &&
+	    (n % RANGE_OVERLAPS_SHARED_REJECT_REPORT_INTERVAL) == 0) {
+		const char *sname = "?";
+		unsigned int snr;
+		unsigned char s32;
+
+		if (__atomic_load_n(&last_reject_have_syscall,
+				    __ATOMIC_RELAXED)) {
+			snr = __atomic_load_n(&last_reject_syscall_nr,
+					      __ATOMIC_RELAXED);
+			s32 = __atomic_load_n(&last_reject_do32bit,
+					      __ATOMIC_RELAXED);
+			sname = print_syscall_name(snr, s32 != 0);
+		}
+
+		output(1, "range_overlaps_shared: %lu cumulative rejects "
+			"(latest syscall=%s addr=0x%lx len=%lu)\n",
+			n, sname, addr, len);
+	}
+	return true;
 }
 
 void * __zmalloc(size_t size, const char *func)
