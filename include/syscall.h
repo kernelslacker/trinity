@@ -340,6 +340,7 @@ void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry);
 void generic_post_close_fd(struct syscallrecord *rec);
 void post_mount_fd(struct syscallrecord *rec);
+void post_fs_ctx_fd(struct syscallrecord *rec);
 uint8_t compute_numeric_substitute_mask(const struct syscallentry *entry);
 
 #define for_each_arg(_e, _i) \

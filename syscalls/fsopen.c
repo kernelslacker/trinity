@@ -45,4 +45,5 @@ struct syscallentry syscall_fsopen = {
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_fsopen,
+	.post = post_fs_ctx_fd,
 };

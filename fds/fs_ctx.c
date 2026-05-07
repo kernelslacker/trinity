@@ -169,6 +169,21 @@ static int open_fs_ctx_fd(void)
 	return true;
 }
 
+void post_fs_ctx_fd(struct syscallrecord *rec)
+{
+	struct object *new;
+	int fd = rec->retval;
+
+	if ((long)rec->retval < 0)
+		return;
+	if (fd < 0 || fd >= (1 << 20))
+		return;
+
+	new = alloc_object();
+	new->fsctxobj.fd = fd;
+	add_object(new, OBJ_LOCAL, OBJ_FD_FS_CTX);
+}
+
 static const struct fd_provider fs_ctx_fd_provider = {
 	.name = "fs_ctx",
 	.objtype = OBJ_FD_FS_CTX,
