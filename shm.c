@@ -114,6 +114,12 @@ void init_shm(void)
 	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL, __ATOMIC_RELAXED);
 	shm->edges_at_window_start = 0;
 
+	/* Frontier-picker bias-mass cache starts at 0 so the first pick
+	 * before any new-edge bumps degenerates to uniform.  Explicit init
+	 * (the surrounding shm memset already zeroes it) keeps the cache
+	 * lifecycle visible alongside the other strategy-rotation fields. */
+	__atomic_store_n(&shm->frontier_max_weight_cached, 0U, __ATOMIC_RELAXED);
+
 	/* Picker mode (round-robin vs UCB1 bandit) was selected by
 	 * parse_args via --strategy.  Stash it in shm so the CAS-winning
 	 * child at each rotation reads a consistent value.  bandit_pulls/

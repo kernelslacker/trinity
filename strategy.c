@@ -22,6 +22,7 @@
  * the window itself.
  */
 
+#include <limits.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -314,6 +315,8 @@ _Static_assert((FRONTIER_DECAY_WINDOWS &
 void frontier_record_new_edge(unsigned int nr)
 {
 	uint32_t slot;
+	unsigned long w;
+	unsigned int cached;
 
 	if (nr >= MAX_NR_SYSCALL)
 		return;
@@ -322,6 +325,20 @@ void frontier_record_new_edge(unsigned int nr)
 	       (FRONTIER_DECAY_WINDOWS - 1);
 	__atomic_fetch_add(&shm->frontier_history[nr][slot], 1U,
 			   __ATOMIC_RELAXED);
+
+	/* Ratchet the cached max upward if this bump pushed nr's recent
+	 * count past it.  No CAS: a racing producer that also raises the
+	 * max can clobber our store with its (also-correct) value, and a
+	 * racing rotation will overwrite with the authoritative recompute.
+	 * Both outcomes leave the cache within one window's slack. */
+	w = frontier_recent_count(nr);
+	if (w > UINT_MAX)
+		w = UINT_MAX;
+	cached = __atomic_load_n(&shm->frontier_max_weight_cached,
+				 __ATOMIC_RELAXED);
+	if ((unsigned int)w > cached)
+		__atomic_store_n(&shm->frontier_max_weight_cached,
+				 (unsigned int)w, __ATOMIC_RELAXED);
 }
 
 unsigned long frontier_recent_count(unsigned int nr)
@@ -342,6 +359,7 @@ void frontier_window_advance(void)
 {
 	uint32_t next;
 	unsigned int nr;
+	unsigned long max_weight = 0;
 
 	/* Bump the slot index FIRST so producers racing the rotation start
 	 * targeting the new slot before we clear it.  We then zero the new
@@ -355,6 +373,24 @@ void frontier_window_advance(void)
 	for (nr = 0; nr < MAX_NR_SYSCALL; nr++)
 		__atomic_store_n(&shm->frontier_history[nr][next], 0U,
 				 __ATOMIC_RELAXED);
+
+	/* Recompute the authoritative cached max over the just-rotated
+	 * ring so the coverage-frontier picker can read the bias mass
+	 * with one RELAXED load instead of an O(MAX_NR_SYSCALL) walk per
+	 * pick.  Reads here are RELAXED -- a producer's add concurrent
+	 * with this loop can be missed, but will be folded in by its own
+	 * ratcheting store in frontier_record_new_edge or by the next
+	 * rotation. */
+	for (nr = 0; nr < MAX_NR_SYSCALL; nr++) {
+		unsigned long w = frontier_recent_count(nr);
+
+		if (w > max_weight)
+			max_weight = w;
+	}
+	if (max_weight > UINT_MAX)
+		max_weight = UINT_MAX;
+	__atomic_store_n(&shm->frontier_max_weight_cached,
+			 (unsigned int)max_weight, __ATOMIC_RELAXED);
 }
 
 /*

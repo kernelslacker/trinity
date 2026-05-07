@@ -352,6 +352,21 @@ struct shm_s {
 	_Atomic uint32_t frontier_slot;
 
 	/*
+	 * Cached max of frontier_recent_count() across all syscalls --
+	 * the rejection-sampling acceptance ratio in the coverage-frontier
+	 * picker uses this as the bias-mass denominator.  Recomputed
+	 * authoritatively on each window rotation, and ratcheted upward
+	 * on new-edge bumps, so the picker reads it with a single
+	 * RELAXED load instead of walking ~MAX_NR_SYSCALL frontier rings
+	 * (8 RELAXED loads each) per pick.  Torn / stale values are
+	 * acceptable: a slightly low cached max biases the picker toward
+	 * heavier-weighted syscalls (under-rejecting cold ones); a
+	 * slightly high one biases it toward uniform.  Both errors are
+	 * bounded by one window rotation.
+	 */
+	unsigned int frontier_max_weight_cached;
+
+	/*
 	 * EFAULT-probe cache for ioctl arg classification.  Open-addressing
 	 * hashmap keyed on (group_idx, request); see ioctls/efault_cache.c
 	 * for the slot encoding and the probing protocol.  Lives in shm so
