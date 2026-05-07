@@ -191,20 +191,30 @@ static void post_mmap(struct syscallrecord *rec)
 		 * /dev/mem, hugetlb fds, memfd_secret, kcov and any other
 		 * special fd whose mappable extent is not reflected in stat
 		 * -- leave the requested size alone for those (they don't
-		 * SIGBUS the way a short file mmap does).
+		 * SIGBUS the way a short file mmap does).  If fstat itself
+		 * fails (fd was closed or replaced between the syscall and
+		 * the post handler) the extent is unknown, so zero the size
+		 * to gate dirty_mapping off rather than walking past EOF.
 		 */
-		if (rec->a5 != (unsigned long) -1 &&
-		    fstat((int) rec->a5, &st) == 0 && st.st_size > 0) {
-			off_t backed = (off_t) st.st_size - (off_t) rec->a6;
+		if (rec->a5 != (unsigned long) -1) {
+			if (fstat((int) rec->a5, &st) == 0) {
+				if (st.st_size > 0) {
+					off_t backed = (off_t) st.st_size - (off_t) rec->a6;
 
-			if (backed <= 0)
+					if (backed <= 0)
+						new->map.size = 0;
+					else if ((unsigned long) backed < new->map.size)
+						new->map.size = (unsigned long) backed & PAGE_MASK;
+
+					if (new->map.size != rec->a2)
+						__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+								   1, __ATOMIC_RELAXED);
+				}
+			} else {
 				new->map.size = 0;
-			else if ((unsigned long) backed < new->map.size)
-				new->map.size = (unsigned long) backed & PAGE_MASK;
-
-			if (new->map.size != rec->a2)
 				__atomic_add_fetch(&shm->stats.mmap_size_clamped,
 						   1, __ATOMIC_RELAXED);
+			}
 		}
 
 		add_object(new, OBJ_LOCAL, OBJ_MMAP_FILE);
