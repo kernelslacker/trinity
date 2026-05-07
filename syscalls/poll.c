@@ -179,11 +179,27 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 	rec->a5 = sizeof(sigset_t);
 
 	/*
+	 * ppoll(2) writes pollfd[i].revents back into ufds and rewrites
+	 * tsp with the remaining timeout when a signal interrupts the
+	 * wait.  Both buffers come from zmalloc(), i.e. the libc brk
+	 * arena, so the kernel writes can land on top of glibc chunk
+	 * metadata.  Route both output buffers through
+	 * avoid_shared_buffer() so the writes hit a known-safe writable
+	 * region when the original ranges overlap the libc heap or any
+	 * tracked shared region.
+	 */
+	avoid_shared_buffer(&rec->a1, rec->a2 * sizeof(struct pollfd));
+	avoid_shared_buffer(&rec->a3, sizeof(struct timespec));
+
+	/*
 	 * Snapshot both heap pointers for the post handler.  rec->a1 and
 	 * rec->a3 can be scribbled by a sibling syscall between the syscall
 	 * returning and the post handler running, leaving real-but-wrong
 	 * heap pointers that looks_like_corrupted_ptr() cannot distinguish
-	 * from the originals.
+	 * from the originals.  Capture the original fds/ts allocations (not
+	 * the post-relocation rec->a1/a3) -- post_ppoll() frees them via
+	 * deferred_free_enqueue(), and the relocated addresses live in the
+	 * get_writable_address() pool, not the glibc heap.
 	 */
 	snap = zmalloc(sizeof(*snap));
 	snap->fds = fds;
