@@ -1025,6 +1025,8 @@ const char *minicorpus_default_path(void)
 	const char *home = getenv("HOME");
 	char dir[PATH_MAX];
 	const char *arch;
+	struct utsname u;
+	char *r;
 	int ret;
 
 #if defined(__x86_64__)
@@ -1050,6 +1052,13 @@ const char *minicorpus_default_path(void)
 #else
 	arch = "unknown";
 #endif
+
+	if (uname(&u) != 0)
+		return NULL;
+	for (r = u.release; *r; r++) {
+		if (*r == '/')
+			*r = '_';
+	}
 
 	if (xdg && xdg[0] == '/') {
 		ret = snprintf(dir, sizeof(dir), "%s/trinity/corpus", xdg);
@@ -1080,7 +1089,7 @@ const char *minicorpus_default_path(void)
 			return NULL;
 	}
 
-	ret = snprintf(pathbuf, sizeof(pathbuf), "%s/%s", dir, arch);
+	ret = snprintf(pathbuf, sizeof(pathbuf), "%s/%s-%s", dir, arch, u.release);
 	if (ret < 0 || (size_t)ret >= sizeof(pathbuf))
 		return NULL;
 	return pathbuf;
