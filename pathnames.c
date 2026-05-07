@@ -75,7 +75,6 @@ static const char * const interesting_paths[] = {
 	"/proc/self/status", "/proc/self/maps", "/proc/self/cmdline",
 	"/proc/version", "/proc/meminfo", "/proc/cpuinfo",
 	"/sys/kernel/vmcoreinfo",
-	NULL
 };
 
 static int ignore_files(const char *path)
@@ -456,11 +455,7 @@ const char * generate_pathname(void)
 	if (files_in_index > 0 && (int)(rand() % 100) < WALKED_PATH_RATIO) {
 		pathname = get_filename();
 	} else {
-		unsigned int n;
-
-		for (n = 0; interesting_paths[n] != NULL; n++)
-			;
-		pathname = interesting_paths[rand() % n];
+		pathname = interesting_paths[rand() % ARRAY_SIZE(interesting_paths)];
 	}
 
 	if (pathname == NULL)
