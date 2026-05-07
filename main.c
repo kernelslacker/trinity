@@ -907,14 +907,17 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 		debugf("Sending PTRACE_DETACH (and then KILL)\n");
 		ptrace(PTRACE_DETACH, pid, NULL, NULL);
 		kill_pid(pid);
-		/* Reap the killed child to avoid leaving a zombie — once
-		 * reap_child() clears the pid slot nobody will waitpid() it. */
-		waitpid(pid, NULL, WNOHANG);
-		if (pidstatfiles[childno])
-			fclose(pidstatfiles[childno]);
-		pidstatfiles[childno] = NULL;
-		reap_child(children[childno], childno);
-		replace_child(childno);
+		/* Route through register_zombie_slot rather than reaping the
+		 * slot unconditionally.  A bare waitpid(WNOHANG) here often
+		 * returns 0 because the kernel hasn't finished tearing down
+		 * the SIGKILL'd task; clearing pids[childno] in that window
+		 * lets the next slot occupant inherit the dying task's late
+		 * writes into childdata (same race shape documented at the
+		 * top of this file).  register_zombie_slot's fast path reaps
+		 * + replaces immediately when the kernel has already released
+		 * the task, and its slow path defers replacement until
+		 * process_zombie_pending() observes the zombie gone. */
+		register_zombie_slot(childno, pid);
 		return;
 
 	case SIGALRM:
