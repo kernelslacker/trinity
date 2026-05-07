@@ -663,6 +663,17 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		 * release_obj if a further double would overflow unsigned
 		 * int rather than letting the OOB land.
 		 */
+		if (head->array_capacity > UINT_MAX / 2) {
+			outputerr("add_object: cap overflow type=%u num_entries=%u capacity=%u\n",
+				  type, n, head->array_capacity);
+			if (is_fd_type(type)) {
+				int fd = fd_from_object(obj, type);
+				if (fd >= 0)
+					close(fd);
+			}
+			release_obj(obj, scope, type);
+			return;
+		}
 		newcap = head->array_capacity ? head->array_capacity * 2 : 16;
 		while (newcap <= n) {
 			if (newcap > UINT_MAX / 2) {
