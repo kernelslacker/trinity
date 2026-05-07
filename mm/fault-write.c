@@ -76,16 +76,44 @@ static void dirty_whole_mapping(struct map *map)
 	}
 }
 
+/*
+ * Per-call upper bound on mark_page_rw() invocations.  Each mark_page_rw
+ * is an mprotect(4096) that triggers a TLB shootdown IPI to every other
+ * CPU running a thread of the same mm.  Walking N pages of a large
+ * mapping in a tight loop generates an IPI storm proportional to N x
+ * num_children.  The fuzz value of dirtying any one page after the first
+ * few is marginal — the goal is "this VMA gets touched", not "every
+ * page in this VMA gets touched".  Cap the per-call work; pages above
+ * the cap get hit on a future tick instead.
+ */
+#define DIRTY_PAGES_PER_CALL_MAX	32U
+
+static unsigned int dirty_walk_count(struct map *map)
+{
+	unsigned int nr = nr_pages(map);
+
+	if (nr > DIRTY_PAGES_PER_CALL_MAX)
+		nr = DIRTY_PAGES_PER_CALL_MAX;
+	return nr;
+}
+
 static void dirty_every_other_page(struct map *map)
 {
-	unsigned int i, nr, first;
+	unsigned int i, walk, total, first;
 
-	nr = nr_pages(map);
-
+	total = nr_pages(map);
+	walk = dirty_walk_count(map);
 	first = RAND_BOOL();
 
-	for (i = first; i < nr; i+=2) {
-		char *p = map->ptr + (i * page_size);
+	/* Step by 2, but stop after `walk` iterations rather than after
+	 * `total` pages, so we cap the per-call mprotect count.  walk*2
+	 * <= total*2 so the index never overruns. */
+	for (i = 0; i < walk; i++) {
+		unsigned int idx = first + (i * 2);
+
+		if (idx >= total)
+			break;
+		char *p = map->ptr + (idx * page_size);
 		if (mark_page_rw(p) == true)
 			*p = rand();
 	}
@@ -93,31 +121,40 @@ static void dirty_every_other_page(struct map *map)
 
 static void dirty_mapping_reverse(struct map *map)
 {
-	unsigned int i, nr;
+	unsigned int i, walk, total;
 
-	if (nr_pages(map) == 0)
+	total = nr_pages(map);
+	if (total == 0)
 		return;
 
-	nr = nr_pages(map) - 1;
+	walk = dirty_walk_count(map);
 
-	for (i = nr; ; i--) {
-		char *p = map->ptr + (i * page_size);
+	/* Walk the topmost `walk` pages, descending. */
+	for (i = 0; i < walk; i++) {
+		unsigned int idx = total - 1 - i;
+		char *p = map->ptr + (idx * page_size);
+
 		if (mark_page_rw(p) == true)
 			*p = rand();
-		if (i == 0)
-			break;
 	}
 }
 
 /* dirty a random set of map->size pages. (some may be faulted >once) */
 static void dirty_random_pages(struct map *map)
 {
-	unsigned int i, nr;
+	unsigned int i, walk, total;
 
-	nr = nr_pages(map);
+	total = nr_pages(map);
+	if (total == 0)
+		return;
 
-	for (i = 0; i < nr; i++) {
-		off_t offset = (rand() % nr) * page_size;
+	walk = dirty_walk_count(map);
+
+	for (i = 0; i < walk; i++) {
+		/* Offset is uniform across the FULL mapping; only the
+		 * iteration count is capped.  Preserves the
+		 * "any page in the mapping" sampling distribution. */
+		off_t offset = (rand() % total) * page_size;
 		char *p = map->ptr + offset;
 		if (mark_page_rw(p) == true)
 			*p = rand();
