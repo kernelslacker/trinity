@@ -114,6 +114,13 @@ void init_shm(void)
 	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL, __ATOMIC_RELAXED);
 	shm->edges_at_window_start = 0;
 
+	/* Optimistic seed for the biarch picker's per-table validity cache.
+	 * The authoritative pass through validate_syscall_table_{32,64}() at
+	 * the end of munge_tables() will rewrite both before any child runs;
+	 * deactivate_syscall{32,64}() then keep them in sync at runtime. */
+	shm->valid_syscall_table_32 = true;
+	shm->valid_syscall_table_64 = true;
+
 	/* Frontier-picker bias-mass cache starts at 0 so the first pick
 	 * before any new-edge bumps degenerates to uniform.  Explicit init
 	 * (the surrounding shm memset already zeroes it) keeps the cache
