@@ -728,7 +728,8 @@ static void dump_stats_json(void)
 		"\"afxdp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"umem_reg_ok\":%lu,\"rings_setup_ok\":%lu,\"prog_load_ok\":%lu,\"map_create_ok\":%lu,\"map_update_ok\":%lu,\"bind_ok\":%lu,\"link_attach_ok\":%lu,\"netlink_attach_ok\":%lu,\"attach_failed\":%lu,\"send_ok\":%lu,\"recv_ok\":%lu,\"map_delete_ok\":%lu,\"munmap_race_ok\":%lu},"
 		"\"kvm\":{\"vcpu_ioctls_dispatched\":%lu},"
 		"\"kvm_run_churn\":{\"invocations\":%lu,\"exit_io\":%lu,\"exit_mmio\":%lu,\"exit_hlt\":%lu,\"exit_shutdown\":%lu,\"exit_fail_entry\":%lu,\"exit_internal_error\":%lu,\"exit_intr\":%lu,\"exit_other\":%lu,\"errors\":%lu},"
-		"\"nl80211\":{\"runs\":%lu,\"setup_failed\":%lu,\"scan_triggered\":%lu,\"connect_attempted\":%lu,\"connect_succeeded\":%lu,\"disconnect_attempted\":%lu,\"regdom_changed\":%lu,\"iface_created\":%lu,\"iface_destroyed\":%lu,\"bursts_sent\":%lu}"
+		"\"nl80211\":{\"runs\":%lu,\"setup_failed\":%lu,\"scan_triggered\":%lu,\"connect_attempted\":%lu,\"connect_succeeded\":%lu,\"disconnect_attempted\":%lu,\"regdom_changed\":%lu,\"iface_created\":%lu,\"iface_destroyed\":%lu,\"bursts_sent\":%lu},"
+		"\"nat_t_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_deleted\":%lu,\"frames_sent\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1185,7 +1186,12 @@ static void dump_stats_json(void)
 		shm->stats.nl80211_regdom_changed,
 		shm->stats.nl80211_iface_created,
 		shm->stats.nl80211_iface_destroyed,
-		shm->stats.nl80211_bursts_sent);
+		shm->stats.nl80211_bursts_sent,
+		shm->stats.nat_t_churn_runs,
+		shm->stats.nat_t_churn_setup_failed,
+		shm->stats.nat_t_churn_sa_added,
+		shm->stats.nat_t_churn_sa_deleted,
+		shm->stats.nat_t_churn_frames_sent);
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -2546,6 +2552,14 @@ void dump_stats(void)
 		stat_row("xfrm_churn", "pol_deleted",   shm->stats.xfrm_churn_pol_deleted);
 		stat_row("xfrm_churn", "esp_sent",      shm->stats.xfrm_churn_esp_sent);
 		stat_row("xfrm_churn", "pfkey_send_ok", shm->stats.xfrm_churn_pfkey_send_ok);
+	}
+
+	if (shm->stats.nat_t_churn_runs) {
+		stat_row("nat_t_churn", "runs",         shm->stats.nat_t_churn_runs);
+		stat_row("nat_t_churn", "setup_failed", shm->stats.nat_t_churn_setup_failed);
+		stat_row("nat_t_churn", "sa_added",     shm->stats.nat_t_churn_sa_added);
+		stat_row("nat_t_churn", "sa_deleted",   shm->stats.nat_t_churn_sa_deleted);
+		stat_row("nat_t_churn", "frames_sent",  shm->stats.nat_t_churn_frames_sent);
 	}
 
 	if (shm->stats.bpf_cgroup_attach_runs) {

@@ -787,6 +787,7 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 	case CHILD_OP_CPU_HOTPLUG_RIDER:	return 50;
 	case CHILD_OP_CGROUP_CHURN:		return 30;
 	case CHILD_OP_MOUNT_CHURN:		return 40;
+	case CHILD_OP_NAT_T_CHURN:		return 40;
 	case CHILD_OP_UFFD_CHURN:		return 30;
 	case CHILD_OP_IOURING_FLOOD:		return 30;
 	case CHILD_OP_CLOSE_RACER:		return 30;
@@ -896,7 +897,7 @@ static void check_fd_leaks(struct childdata *child)
  * Enable the dormant ops one at a time once each has been load-tested.
  * To enable an op: set its entry below to 0.
  */
-static const int dormant_op_disabled[71] = {
+static const int dormant_op_disabled[72] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 0, 1,	/* 10-14: fault_injector active; dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, recipe_runner */
@@ -911,7 +912,7 @@ static const int dormant_op_disabled[71] = {
 	1, 1, 1, 1, 1,	/* 55-59: dormant: mptcp_pm_churn, devlink_port_churn, handshake_req_abort, nf_conntrack_helper_churn, af_unix_scm_rights_gc_churn */
 	1, 1, 1, 1, 1,	/* 60-64: dormant: netns_teardown_churn, tcp_ulp_swap_churn, msg_zerocopy_churn, iouring_send_zc_churn, vsock_transport_churn */
 	1, 1, 1, 1, 0,	/* 65-69: kvm_run_churn active; dormant: bridge_vlan_churn, igmp_mld_source_churn, psp_key_rotate, afxdp_churn */
-	1,		/* 70: dormant: nl80211_churn */
+	1, 1,		/* 70-71: dormant: nl80211_churn, nat_t_churn */
 };
 
 /*
@@ -987,6 +988,7 @@ static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_SCTP_ASSOC_CHURN,
 	CHILD_OP_MPTCP_PM_CHURN,
 	CHILD_OP_NL80211_CHURN,
+	CHILD_OP_NAT_T_CHURN,
 };
 #define NR_ALT_OP_ROTATION	ARRAY_SIZE(alt_op_rotation)
 
@@ -1064,6 +1066,7 @@ static const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_AFXDP_CHURN:	return "afxdp_churn";
 	case CHILD_OP_KVM_RUN_CHURN:	return "kvm_run_churn";
 	case CHILD_OP_NL80211_CHURN:	return "nl80211_churn";
+	case CHILD_OP_NAT_T_CHURN:	return "nat_t_churn";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1117,7 +1120,7 @@ void log_alt_op_config(void)
  * removed op; CHILD_OP_SYSCALL acts as a sentinel and is filtered out
  * during dense-vector construction.
  */
-static const enum child_op_type pick_op_type_table[71] = {
+static const enum child_op_type pick_op_type_table[72] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -1189,6 +1192,7 @@ static const enum child_op_type pick_op_type_table[71] = {
 	[68] = CHILD_OP_AFXDP_CHURN,
 	[69] = CHILD_OP_KVM_RUN_CHURN,
 	[70] = CHILD_OP_NL80211_CHURN,
+	[71] = CHILD_OP_NAT_T_CHURN,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1430,6 +1434,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_AFXDP_CHURN]		= afxdp_churn,
 	[CHILD_OP_KVM_RUN_CHURN]	= kvm_run_churn,
 	[CHILD_OP_NL80211_CHURN]	= nl80211_churn,
+	[CHILD_OP_NAT_T_CHURN]		= nat_t_churn,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
