@@ -11,6 +11,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "arch.h"
 #include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
@@ -51,6 +52,9 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 	}
 
 	rec->a3 = (unsigned long) mask;
+
+	avoid_shared_buffer(&rec->a2, sizeof(u32));
+	avoid_shared_buffer(&rec->a3, page_size);
 
 	/*
 	 * Snapshot the three input args for the post oracle.  Without this
