@@ -729,7 +729,8 @@ static void dump_stats_json(void)
 		"\"kvm\":{\"vcpu_ioctls_dispatched\":%lu},"
 		"\"kvm_run_churn\":{\"invocations\":%lu,\"exit_io\":%lu,\"exit_mmio\":%lu,\"exit_hlt\":%lu,\"exit_shutdown\":%lu,\"exit_fail_entry\":%lu,\"exit_internal_error\":%lu,\"exit_intr\":%lu,\"exit_other\":%lu,\"errors\":%lu},"
 		"\"nl80211\":{\"runs\":%lu,\"setup_failed\":%lu,\"scan_triggered\":%lu,\"connect_attempted\":%lu,\"connect_succeeded\":%lu,\"disconnect_attempted\":%lu,\"regdom_changed\":%lu,\"iface_created\":%lu,\"iface_destroyed\":%lu,\"bursts_sent\":%lu},"
-		"\"nat_t_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_deleted\":%lu,\"frames_sent\":%lu}"
+		"\"nat_t_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_deleted\":%lu,\"frames_sent\":%lu},"
+		"\"splice_protocols\":{\"runs\":%lu,\"setup_failed\":%lu,\"chain_ok\":%lu,\"in_bytes\":%lu,\"out_bytes\":%lu,\"udp_encap_attempted\":%lu,\"tcp_repair_attempted\":%lu,\"packet_ring_attempted\":%lu,\"alg_attempted\":%lu,\"rxrpc_attempted\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1191,7 +1192,17 @@ static void dump_stats_json(void)
 		shm->stats.nat_t_churn_setup_failed,
 		shm->stats.nat_t_churn_sa_added,
 		shm->stats.nat_t_churn_sa_deleted,
-		shm->stats.nat_t_churn_frames_sent);
+		shm->stats.nat_t_churn_frames_sent,
+		shm->stats.splice_protocols_runs,
+		shm->stats.splice_protocols_setup_failed,
+		shm->stats.splice_protocols_chain_ok,
+		shm->stats.splice_protocols_in_bytes,
+		shm->stats.splice_protocols_out_bytes,
+		shm->stats.splice_protocols_udp_encap_attempted,
+		shm->stats.splice_protocols_tcp_repair_attempted,
+		shm->stats.splice_protocols_packet_ring_attempted,
+		shm->stats.splice_protocols_alg_attempted,
+		shm->stats.splice_protocols_rxrpc_attempted);
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -2762,6 +2773,19 @@ void dump_stats(void)
 		stat_row("nl80211_churn", "iface_created",         shm->stats.nl80211_iface_created);
 		stat_row("nl80211_churn", "iface_destroyed",       shm->stats.nl80211_iface_destroyed);
 		stat_row("nl80211_churn", "bursts_sent",           shm->stats.nl80211_bursts_sent);
+	}
+
+	if (shm->stats.splice_protocols_runs) {
+		stat_row("splice_protocols", "runs",                  shm->stats.splice_protocols_runs);
+		stat_row("splice_protocols", "setup_failed",          shm->stats.splice_protocols_setup_failed);
+		stat_row("splice_protocols", "chain_ok",              shm->stats.splice_protocols_chain_ok);
+		stat_row("splice_protocols", "in_bytes",              shm->stats.splice_protocols_in_bytes);
+		stat_row("splice_protocols", "out_bytes",             shm->stats.splice_protocols_out_bytes);
+		stat_row("splice_protocols", "udp_encap_attempted",   shm->stats.splice_protocols_udp_encap_attempted);
+		stat_row("splice_protocols", "tcp_repair_attempted",  shm->stats.splice_protocols_tcp_repair_attempted);
+		stat_row("splice_protocols", "packet_ring_attempted", shm->stats.splice_protocols_packet_ring_attempted);
+		stat_row("splice_protocols", "alg_attempted",         shm->stats.splice_protocols_alg_attempted);
+		stat_row("splice_protocols", "rxrpc_attempted",       shm->stats.splice_protocols_rxrpc_attempted);
 	}
 
 	if (kcov_shm != NULL) {
