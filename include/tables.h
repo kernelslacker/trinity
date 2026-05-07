@@ -2,6 +2,7 @@
 
 #include "types.h"
 #include "syscall.h"
+#include "child.h"
 
 extern const struct syscalltable *syscalls;
 extern const struct syscalltable *syscalls_32bit;
@@ -81,6 +82,53 @@ int munge_tables(void);
 struct syscallentry * get_syscall_entry(unsigned int calln, bool do32);
 
 bool this_syscallname(const char *thisname);
+
+/*
+ * Per-discriminator flag-bit fast paths for the shared .sanitise / .post
+ * hooks that handle two syscallentries each (mmap/mmap2,
+ * sync_file_range/sync_file_range2, inotify_init/inotify_init1,
+ * epoll_create/epoll_create1, execve/execveat).  Read the cached entry
+ * pointer that dispatch_step() stamps on the rec, NULL-guard for any
+ * future caller that fires before dispatch, then return the matching
+ * cached flag bit.  Collapses each callsite from a get_syscall_entry()
+ * lookup + biarch branch + strcmp to a single dereference + byte load.
+ * this_syscallname() is left in place as the fallback for any future
+ * discriminator that does not yet have a flag bit.
+ */
+static inline bool current_entry_is_mmap2(void)
+{
+	struct syscallentry *e = this_child()->syscall.entry;
+
+	return e != NULL && e->is_mmap2;
+}
+
+static inline bool current_entry_is_sync_file_range2(void)
+{
+	struct syscallentry *e = this_child()->syscall.entry;
+
+	return e != NULL && e->is_sync_file_range2;
+}
+
+static inline bool current_entry_is_inotify_init1(void)
+{
+	struct syscallentry *e = this_child()->syscall.entry;
+
+	return e != NULL && e->is_inotify_init1;
+}
+
+static inline bool current_entry_is_epoll_create1(void)
+{
+	struct syscallentry *e = this_child()->syscall.entry;
+
+	return e != NULL && e->is_epoll_create1;
+}
+
+static inline bool current_entry_is_execve(void)
+{
+	struct syscallentry *e = this_child()->syscall.entry;
+
+	return e != NULL && e->is_execve;
+}
 
 #define for_each_32bit_syscall(i) \
 	for (i = 0; i < max_nr_32bit_syscalls; i++)

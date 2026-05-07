@@ -20,7 +20,7 @@ static void post_epoll_create(struct syscallrecord *rec)
 	new = alloc_object();
 	eo = &new->epollobj;
 	eo->fd = fd;
-	if (this_syscallname("epoll_create1")) {
+	if (current_entry_is_epoll_create1()) {
 		eo->create1 = true;
 		eo->flags = rec->a1;
 	} else {
