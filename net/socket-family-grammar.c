@@ -50,6 +50,7 @@ static const struct socket_family_grammar * const sfg_registry[] = {
 	&grammar_mptcp,
 	&grammar_kcm,
 	&grammar_rxrpc,
+	&grammar_qrtr,
 #ifdef USE_RDS
 	&grammar_rds,
 #endif
