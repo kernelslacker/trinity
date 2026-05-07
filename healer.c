@@ -47,6 +47,33 @@
 #define FNV1A_OFFSET_BASIS 0x811c9dc5U
 #define FNV1A_PRIME        0x01000193U
 
+/*
+ * Layout-pinning asserts so the (pred_a, pred_b, predset_hash) tuple
+ * accessed via the .key uint64_t union member matches what the
+ * struct-member view writes, and likewise for (nr, weight) inside
+ * struct healer_promoted.  A future struct reorder that breaks the
+ * packing fails to compile rather than silently desynchronising the
+ * lockless CAS payload from the field view.  Mirrors the static
+ * asserts edgepair.c uses to pin its own packed-key claim path.
+ */
+_Static_assert(offsetof(struct healer_relation, pred_a) == 0,
+	       "pred_a must be at offset 0 for packed CAS");
+_Static_assert(offsetof(struct healer_relation, pred_b) == 2,
+	       "pred_b must be at offset 2 for packed CAS");
+_Static_assert(offsetof(struct healer_relation, predset_hash) == 4,
+	       "predset_hash must be at offset 4 for packed CAS");
+_Static_assert(sizeof(uint16_t) == 2,
+	       "uint16_t must be 2 bytes for packed CAS");
+_Static_assert(sizeof(uint32_t) == 4,
+	       "uint32_t must be 4 bytes for packed CAS");
+
+_Static_assert(offsetof(struct healer_promoted, nr) == 0,
+	       "nr must be at offset 0 for packed CAS");
+_Static_assert(offsetof(struct healer_promoted, weight) == 4,
+	       "weight must be at offset 4 for packed CAS");
+_Static_assert(sizeof(unsigned int) == 4,
+	       "unsigned int must be 4 bytes for packed CAS");
+
 static unsigned int healer_predset_hash(unsigned int pred_a, unsigned int pred_b)
 {
 	uint32_t h = FNV1A_OFFSET_BASIS;
@@ -81,79 +108,220 @@ void healer_seq_push(struct childdata *child, unsigned int nr)
 }
 
 /*
+ * Pack (pred_a, pred_b, predset_hash) into a uint64_t matching the
+ * union layout in struct healer_relation.  Goes through a typed
+ * temporary + memcpy so the access stays inside the well-defined
+ * union view that strict aliasing permits, the same trick edgepair.c
+ * uses for its packed (prev_nr, curr_nr) key.
+ */
+static uint64_t healer_pack_key(unsigned int pred_a, unsigned int pred_b,
+				unsigned int predset_hash)
+{
+	struct {
+		uint16_t pa;
+		uint16_t pb;
+		uint32_t h;
+	} tmp = { (uint16_t)pred_a, (uint16_t)pred_b, predset_hash };
+	uint64_t packed;
+
+	memcpy(&packed, &tmp, sizeof(packed));
+	return packed;
+}
+
+/*
+ * Unpack pred_a / pred_b out of a previously-loaded slot key.  The
+ * dump path uses this so it can pull the full identifier triple from
+ * the single ACQUIRE-load of slot->key, rather than re-reading the
+ * struct fields and exposing itself to a non-atomic tear against a
+ * concurrent CAS-claim.
+ */
+static void healer_unpack_key(uint64_t key, unsigned int *pred_a,
+			      unsigned int *pred_b)
+{
+	struct {
+		uint16_t pa;
+		uint16_t pb;
+		uint32_t h;
+	} tmp;
+
+	memcpy(&tmp, &key, sizeof(tmp));
+	*pred_a = tmp.pa;
+	*pred_b = tmp.pb;
+}
+
+/*
+ * Pack (nr, weight) into the uint64_t entry view of struct
+ * healer_promoted.  weight == 0 marks an empty entry; a real entry
+ * always carries weight >= 1, so the packed value is non-zero
+ * whenever the slot is populated.
+ */
+static uint64_t healer_pack_promoted(unsigned int nr, unsigned int weight)
+{
+	struct {
+		unsigned int n;
+		unsigned int w;
+	} tmp = { nr, weight };
+	uint64_t packed;
+
+	memcpy(&packed, &tmp, sizeof(packed));
+	return packed;
+}
+
+static void healer_unpack_promoted(uint64_t entry, unsigned int *nr,
+				   unsigned int *weight)
+{
+	struct {
+		unsigned int n;
+		unsigned int w;
+	} tmp;
+
+	memcpy(&tmp, &entry, sizeof(tmp));
+	*nr = tmp.n;
+	*weight = tmp.w;
+}
+
+/*
  * Bump the (predset, current_nr) tuple in `slot`, evicting the lowest-
  * weight existing promoted entry when the slot is full.  Returns true
  * if an eviction took place, so the caller can bump the eviction
- * counter without re-scanning the array.  The caller holds the
- * appropriate shm->healer_relations_locks[shard_idx] across the whole
- * insertion sequence so a concurrent observer hashing into the same
- * shard cannot lose a bump or evict our just-inserted entry.
+ * counter without re-scanning the array.  Lockless: each promoted
+ * entry is mutated via a 64-bit CAS on the (nr, weight) packed view,
+ * weight == 0 is the empty-entry sentinel, and CAS failure restarts
+ * the scan so we re-pick up any state another observer just published
+ * (a concurrent insert of the same nr collapses onto the bump path
+ * on the next pass; a concurrent eviction reopens an empty entry that
+ * the next pass tries to claim before scanning for a new victim).
  */
 static bool healer_slot_record(struct healer_relation *slot,
 			       unsigned int current_nr)
 {
-	unsigned int i, victim;
-	unsigned int victim_weight;
+	unsigned int i;
+	unsigned int victim_idx = 0;
+	unsigned int victim_weight = 0;
+	uint64_t victim_packed = 0;
+	bool victim_found;
+	uint64_t expected, target;
+	int restart_budget = HEALER_PROMOTED_PER_SLOT * 2;
 
-	for (i = 0; i < slot->promoted_count; i++) {
-		if (slot->promoted[i].nr == current_nr) {
-			slot->promoted[i].weight++;
+restart:
+	if (--restart_budget < 0) {
+		/* Defensive bound on the lockless retry loop -- under
+		 * pathological CAS contention we'd rather drop one
+		 * observation than spin forever.  In practice the
+		 * observer-hook fire rate keeps per-slot contention
+		 * vanishingly small; this exists for the worst-case
+		 * tail and never trips in steady state. */
+		return false;
+	}
+
+	/* Phase 1: scan for an existing (predset, current_nr) entry and
+	 * bump its weight.  Atomic load gives us a coherent snapshot of
+	 * the (nr, weight) pair; weight == 0 means the entry is empty
+	 * (and not in flight, since claim/evict CASes publish weight >=
+	 * 1 atomically). */
+	for (i = 0; i < HEALER_PROMOTED_PER_SLOT; i++) {
+		uint64_t entry;
+		unsigned int weight, nr;
+
+		entry = __atomic_load_n(&slot->promoted[i].entry,
+					__ATOMIC_RELAXED);
+		healer_unpack_promoted(entry, &nr, &weight);
+
+		if (weight != 0 && nr == current_nr) {
+			__atomic_fetch_add(&slot->promoted[i].weight,
+					   1, __ATOMIC_RELAXED);
 			return false;
 		}
 	}
 
-	if (slot->promoted_count < HEALER_PROMOTED_PER_SLOT) {
-		slot->promoted[slot->promoted_count].nr = current_nr;
-		slot->promoted[slot->promoted_count].weight = 1;
-		slot->promoted_count++;
-		return false;
+	/* Phase 2: try to claim an empty entry for current_nr.  CAS the
+	 * packed (nr, weight) field from the all-zero empty marker to
+	 * (current_nr, 1); a competing observer that wins the CAS for
+	 * some nr' instead leaves us to restart, so we either land on
+	 * the existing-match path (if nr' == current_nr) or claim a
+	 * different empty entry on the next pass. */
+	for (i = 0; i < HEALER_PROMOTED_PER_SLOT; i++) {
+		uint64_t loaded;
+
+		loaded = __atomic_load_n(&slot->promoted[i].entry,
+					 __ATOMIC_RELAXED);
+		if (loaded != 0)
+			continue;
+
+		expected = 0;
+		target = healer_pack_promoted(current_nr, 1);
+
+		if (__atomic_compare_exchange_n(&slot->promoted[i].entry,
+						&expected, target, false,
+						__ATOMIC_RELEASE,
+						__ATOMIC_RELAXED))
+			return false;
+
+		/* CAS lost: another observer just published into this
+		 * entry.  Restart from Phase 1 in case they published
+		 * our nr (in which case we want the bump path). */
+		goto restart;
 	}
 
-	/* Slot is full -- displace the lowest-weight entry.  Mirrors
-	 * corrupt_ptr_attr_record's eviction policy: the new entry inherits
-	 * victim_weight + 1 so a freshly displaced predset is not instantly
-	 * re-evicted on its next observation. */
-	victim = 0;
-	victim_weight = slot->promoted[0].weight;
-	for (i = 1; i < HEALER_PROMOTED_PER_SLOT; i++) {
-		if (slot->promoted[i].weight < victim_weight) {
-			victim = i;
-			victim_weight = slot->promoted[i].weight;
+	/* Phase 3: slot is full -- displace the lowest-weight entry.
+	 * Mirrors the original eviction policy: the new entry inherits
+	 * victim_weight + 1 so a freshly displaced predset is not
+	 * instantly re-evicted on its next observation.  CAS the
+	 * victim's exact prior packed value so a concurrent bump or
+	 * eviction is detected and triggers a re-scan. */
+	victim_found = false;
+	for (i = 0; i < HEALER_PROMOTED_PER_SLOT; i++) {
+		uint64_t entry;
+		unsigned int weight, nr;
+
+		entry = __atomic_load_n(&slot->promoted[i].entry,
+					__ATOMIC_RELAXED);
+		healer_unpack_promoted(entry, &nr, &weight);
+
+		/* Re-check for a concurrent insert of current_nr before
+		 * we evict -- another observer might have published our
+		 * nr while we were scanning Phases 1-2. */
+		if (weight != 0 && nr == current_nr) {
+			__atomic_fetch_add(&slot->promoted[i].weight,
+					   1, __ATOMIC_RELAXED);
+			return false;
 		}
-		if (victim_weight == 0)
-			break;
-	}
-	slot->promoted[victim].nr = current_nr;
-	slot->promoted[victim].weight = victim_weight + 1;
-	return true;
-}
 
-/*
- * Sanity-check the shard / slot bit layout against HEALER_SHARD_SHIFT
- * so a future tuning of HEALER_RELATION_SLOTS or HEALER_RELATION_SHARDS
- * that breaks the disjoint-bit-field invariant fails to compile rather
- * than silently aliasing two predsets onto the same lock.
- */
-_Static_assert(HEALER_RELATIONS_PER_SHARD ==
-	       (HEALER_RELATION_SLOTS / HEALER_RELATION_SHARDS),
-	       "HEALER_RELATIONS_PER_SHARD must tile HEALER_RELATION_SLOTS");
-_Static_assert((HEALER_RELATION_SHARDS &
-		(HEALER_RELATION_SHARDS - 1)) == 0,
-	       "HEALER_RELATION_SHARDS must be a power of two");
-_Static_assert((HEALER_RELATIONS_PER_SHARD &
-		(HEALER_RELATIONS_PER_SHARD - 1)) == 0,
-	       "HEALER_RELATIONS_PER_SHARD must be a power of two");
-_Static_assert((1u << HEALER_SHARD_SHIFT) == HEALER_RELATIONS_PER_SHARD,
-	       "HEALER_SHARD_SHIFT must equal log2(HEALER_RELATIONS_PER_SHARD)");
+		/* A concurrent eviction may have just opened a fresh
+		 * empty entry; restart so we can try the cheaper Phase 2
+		 * claim path before resorting to another eviction. */
+		if (weight == 0)
+			goto restart;
+
+		if (!victim_found || weight < victim_weight) {
+			victim_idx = i;
+			victim_weight = weight;
+			victim_packed = entry;
+			victim_found = true;
+		}
+	}
+
+	expected = victim_packed;
+	target = healer_pack_promoted(current_nr, victim_weight + 1);
+
+	if (__atomic_compare_exchange_n(&slot->promoted[victim_idx].entry,
+					&expected, target, false,
+					__ATOMIC_RELEASE,
+					__ATOMIC_RELAXED))
+		return true;
+
+	/* Victim was bumped or evicted out from under us -- restart. */
+	goto restart;
+}
 
 void healer_observe_relation(struct childdata *child, unsigned int current_nr)
 {
 	unsigned int pred_a, pred_b;
 	unsigned int predset_hash;
-	unsigned int shard_idx;
 	unsigned int slot_idx;
 	unsigned int probe;
-	struct healer_relation *shard;
+	struct healer_relation *table;
+	uint64_t target_key;
 	bool evicted = false;
 
 	if (child == NULL)
@@ -182,50 +350,55 @@ void healer_observe_relation(struct childdata *child, unsigned int current_nr)
 	}
 
 	predset_hash = healer_predset_hash(pred_a, pred_b);
-
-	/* Lower HEALER_SHARD_SHIFT bits index into the shard; the next
-	 * log2(HEALER_RELATION_SHARDS) bits select which shard.  Disjoint
-	 * fields keep the two indices independent under FNV-1a. */
-	slot_idx = predset_hash & (HEALER_RELATIONS_PER_SHARD - 1);
-	shard_idx = (predset_hash >> HEALER_SHARD_SHIFT) &
-		    (HEALER_RELATION_SHARDS - 1);
-	shard = shm->healer_relations[shard_idx];
-
-	lock(&shm->healer_relations_locks[shard_idx]);
+	slot_idx = predset_hash & (HEALER_RELATION_SLOTS - 1);
+	table = shm->healer_relations;
+	target_key = healer_pack_key(pred_a, pred_b, predset_hash);
 
 	for (probe = 0; probe < HEALER_PROBE_LIMIT; probe++) {
 		struct healer_relation *slot;
 		unsigned int idx;
+		uint64_t slot_key;
 
-		idx = (slot_idx + probe) & (HEALER_RELATIONS_PER_SHARD - 1);
-		slot = &shard[idx];
+		idx = (slot_idx + probe) & (HEALER_RELATION_SLOTS - 1);
+		slot = &table[idx];
+		slot_key = __atomic_load_n(&slot->key, __ATOMIC_ACQUIRE);
 
-		if (slot->predset_hash == 0) {
-			slot->predset_hash = predset_hash;
-			slot->pred_a = pred_a;
-			slot->pred_b = pred_b;
-			slot->promoted[0].nr = current_nr;
-			slot->promoted[0].weight = 1;
-			slot->promoted_count = 1;
-			break;
+		if (slot_key == 0) {
+			uint64_t expected = 0;
+
+			if (__atomic_compare_exchange_n(
+					&slot->key, &expected, target_key,
+					false, __ATOMIC_RELEASE,
+					__ATOMIC_RELAXED)) {
+				/* Slot is now ours.  Fall through to
+				 * healer_slot_record so the first promoted
+				 * entry goes in via the same CAS-claim
+				 * machinery any concurrent observer also
+				 * uses -- a second observer that ACQUIREs
+				 * slot->key right after our publish and
+				 * races into promoted[0] is handled
+				 * uniformly without needing a special
+				 * "winner stores promoted[0] directly"
+				 * path that would race against them. */
+				evicted = healer_slot_record(slot, current_nr);
+				break;
+			}
+
+			/* CAS lost: another observer claimed this slot.
+			 * `expected` now holds the winning key -- if it
+			 * matches our predset, fall through to the match
+			 * path so we still bump (predset, current_nr). */
+			slot_key = expected;
+			if (slot_key != target_key)
+				continue;
 		}
 
-		if (slot->predset_hash == predset_hash &&
-		    slot->pred_a == pred_a &&
-		    slot->pred_b == pred_b) {
+		if (slot_key == target_key) {
 			evicted = healer_slot_record(slot, current_nr);
 			break;
 		}
 	}
 
-	unlock(&shm->healer_relations_locks[shard_idx]);
-
-	/* Stats counters are now bumped from any of HEALER_RELATION_SHARDS
-	 * shard-locked paths (and read unlocked from healer_table_dump),
-	 * so the previously plain ++ under one global lock becomes an
-	 * atomic add.  Pulled out of the locked region: the counters carry
-	 * their own atomicity, holding the shard lock across them would
-	 * just lengthen the critical section. */
 	if (probe == HEALER_PROBE_LIMIT) {
 		/* Ran off the end of the probe window without finding
 		 * either the matching predset or an empty slot.  Drop the
@@ -273,66 +446,77 @@ void healer_table_dump(void)
 	unsigned int top_count = 0;
 	unsigned int occupied = 0;
 	unsigned long total_promoted = 0;
-	unsigned int s, i, j;
+	unsigned int i, j;
 	unsigned long observed, table_full, evictions;
 
-	/* Acquire every shard lock in fixed ascending order so the whole
-	 * table is read under a coherent snapshot.  No other path takes
-	 * more than one shard lock, so this strict ordering is sufficient
-	 * to avoid deadlock without any AB-BA gymnastics. */
-	for (s = 0; s < HEALER_RELATION_SHARDS; s++)
-		lock(&shm->healer_relations_locks[s]);
+	/* Lockless sweep: each slot is read via a single ACQUIRE-load of
+	 * slot->key so the (pred_a, pred_b, predset_hash) tuple is a
+	 * coherent snapshot against the writer's RELEASE-CAS, and each
+	 * promoted entry is read via a single atomic load of the packed
+	 * (nr, weight) field for the same reason.  The cross-slot
+	 * snapshot is best-effort -- entries may appear or advance
+	 * during the scan -- which matches the dump's "approximate
+	 * top-10 right now" intent and is the same tolerance
+	 * cmp_hints' lockless reader documents. */
+	for (i = 0; i < HEALER_RELATION_SLOTS; i++) {
+		const struct healer_relation *slot = &shm->healer_relations[i];
+		uint64_t slot_key;
+		unsigned int slot_pred_a, slot_pred_b;
+		unsigned int slot_promoted = 0;
 
-	for (s = 0; s < HEALER_RELATION_SHARDS; s++) {
-		for (i = 0; i < HEALER_RELATIONS_PER_SHARD; i++) {
-			const struct healer_relation *slot =
-				&shm->healer_relations[s][i];
+		slot_key = __atomic_load_n(&slot->key, __ATOMIC_ACQUIRE);
+		if (slot_key == 0)
+			continue;
 
-			if (slot->predset_hash == 0)
+		healer_unpack_key(slot_key, &slot_pred_a, &slot_pred_b);
+
+		for (j = 0; j < HEALER_PROMOTED_PER_SLOT; j++) {
+			uint64_t entry;
+			unsigned int weight, nr;
+			unsigned int min_idx = 0;
+			unsigned int k;
+
+			entry = __atomic_load_n(&slot->promoted[j].entry,
+						__ATOMIC_RELAXED);
+			healer_unpack_promoted(entry, &nr, &weight);
+
+			if (weight == 0)
 				continue;
-			occupied++;
-			total_promoted += slot->promoted_count;
 
-			for (j = 0; j < slot->promoted_count; j++) {
-				unsigned int weight = slot->promoted[j].weight;
-				unsigned int min_idx = 0;
-				unsigned int k;
+			slot_promoted++;
 
-				if (top_count < HEALER_DUMP_TOP_N) {
-					top[top_count].pred_a = slot->pred_a;
-					top[top_count].pred_b = slot->pred_b;
-					top[top_count].promoted_nr =
-						slot->promoted[j].nr;
-					top[top_count].weight = weight;
-					top_count++;
-					continue;
-				}
-
-				for (k = 1; k < HEALER_DUMP_TOP_N; k++) {
-					if (top[k].weight < top[min_idx].weight)
-						min_idx = k;
-				}
-				if (weight > top[min_idx].weight) {
-					top[min_idx].pred_a = slot->pred_a;
-					top[min_idx].pred_b = slot->pred_b;
-					top[min_idx].promoted_nr =
-						slot->promoted[j].nr;
-					top[min_idx].weight = weight;
-				}
+			if (top_count < HEALER_DUMP_TOP_N) {
+				top[top_count].pred_a = slot_pred_a;
+				top[top_count].pred_b = slot_pred_b;
+				top[top_count].promoted_nr = nr;
+				top[top_count].weight = weight;
+				top_count++;
+				continue;
 			}
+
+			for (k = 1; k < HEALER_DUMP_TOP_N; k++) {
+				if (top[k].weight < top[min_idx].weight)
+					min_idx = k;
+			}
+			if (weight > top[min_idx].weight) {
+				top[min_idx].pred_a = slot_pred_a;
+				top[min_idx].pred_b = slot_pred_b;
+				top[min_idx].promoted_nr = nr;
+				top[min_idx].weight = weight;
+			}
+		}
+
+		if (slot_promoted > 0) {
+			occupied++;
+			total_promoted += slot_promoted;
 		}
 	}
 
-	/* Refresh the lazily-maintained occupancy counter while we still
-	 * hold every shard lock so the value the dump prints matches what
-	 * we just scanned. */
-	shm->stats.healer_unique_predsets = occupied;
-
-	/* Release in reverse order for symmetry with acquisition; either
-	 * direction is correct for unlock since no waiter can hold one of
-	 * these and be waiting on another. */
-	for (s = HEALER_RELATION_SHARDS; s-- > 0; )
-		unlock(&shm->healer_relations_locks[s]);
+	/* Refresh the lazily-maintained occupancy counter so the dump
+	 * we are about to emit reflects the slot scan we just did.  The
+	 * hot observer-hook path stays free of an extra counter store. */
+	__atomic_store_n(&shm->stats.healer_unique_predsets, occupied,
+			 __ATOMIC_RELAXED);
 
 	observed = __atomic_load_n(&shm->stats.healer_relations_observed,
 				   __ATOMIC_RELAXED);
