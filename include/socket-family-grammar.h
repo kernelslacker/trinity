@@ -119,6 +119,7 @@ extern const struct socket_family_grammar grammar_rds;
 extern const struct socket_family_grammar grammar_mctp;
 #endif
 extern const struct socket_family_grammar grammar_llc;
+extern const struct socket_family_grammar grammar_mpls;
 extern const struct socket_family_grammar grammar_unix;
 extern const struct socket_family_grammar grammar_netlink;
 extern const struct socket_family_grammar grammar_packet;
