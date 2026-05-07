@@ -447,6 +447,18 @@ void remove_object_by_fd(int fd);
 /* fd hash table for O(1) fd→object lookup */
 #define FD_HASH_SIZE 4096	/* power of 2, must exceed max tracked fds */
 
+/*
+ * Cap on the parallel compact live-fd list (shm->fd_live[]) maintained
+ * alongside fd_hash[].  The list lets refcount-auditor and other
+ * "iterate every live fd" walkers skip the sparse-hash empty-slot
+ * scan.  Sized to FD_HASH_SIZE so overflow is impossible by
+ * construction (fd_hash_insert refuses past FD_HASH_SIZE entries
+ * already), but the writer still gates on this cap and silently
+ * drops overflow entries from the live list — the auditor is a
+ * sampling consumer and tolerates a missed entry.
+ */
+#define FD_LIVE_MAX FD_HASH_SIZE
+
 struct fd_hash_entry {
 	int fd;			/* -1 = empty slot */
 	enum objecttype type;

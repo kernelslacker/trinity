@@ -72,10 +72,17 @@ static bool check_proc_available(void)
 /*
  * Bucket 0: fd refcount check via /proc/self/fdinfo/N.
  *
- * Walk shm->fd_hash.  For each live fd, confirm the kernel still exposes it
- * under /proc/self/fdinfo/N.  A missing entry means trinity's pool believes
- * the fd is open but the underlying file struct has been freed — a refcount
- * imbalance between the pool and the kernel.
+ * Walk shm->fd_live[], the parallel compact list of live fds maintained
+ * by fd_hash_insert / fd_hash_remove.  fd_hash[] is a sparse open-addressing
+ * table sized for hash-collision headroom (FD_HASH_SIZE slots, typically
+ * <10% occupied), so iterating it directly burns >90% of the work on
+ * empty-slot NULL checks.  fd_live[] is dense — every entry is a live fd —
+ * so the auditor only visits real work.
+ *
+ * For each live fd, confirm the kernel still exposes it under
+ * /proc/self/fdinfo/N.  A missing entry means trinity's pool believes
+ * the fd is open but the underlying file struct has been freed — a
+ * refcount imbalance between the pool and the kernel.
  *
  * False-positive discipline: we dup() the fd to obtain a stable handle
  * to the underlying file struct, then stat /proc/self/fdinfo/<newfd>.
@@ -83,20 +90,28 @@ static bool check_proc_available(void)
  * (close-racer, fd-stress) — without it, the F_GETFD→stat window allowed
  * a sibling close between the two syscalls to produce spurious
  * "fd missing from /proc" reports.
+ *
+ * Lockless read of fd_live[]: ACQUIRE-load fd_live_count first to
+ * synchronise with the publishing RELEASE store on the writer side, then
+ * RELAXED-load each fd_live[] entry.  A concurrent swap-remove can race
+ * us — we may re-read an fd that was just removed, which the dup() check
+ * naturally tolerates (it returns EBADF and we skip the entry).
  */
 static void audit_fd_bucket(void)
 {
 	unsigned int i;
+	unsigned int count;
 
 	if (!check_proc_available())
 		return;
 
-	for (i = 0; i < FD_HASH_SIZE; i++) {
+	count = __atomic_load_n(&shm->fd_live_count, __ATOMIC_ACQUIRE);
+	for (i = 0; i < count; i++) {
 		char path[64];
 		struct stat st;
 		int fd, newfd;
 
-		fd = __atomic_load_n(&shm->fd_hash[i].fd, __ATOMIC_ACQUIRE);
+		fd = __atomic_load_n(&shm->fd_live[i], __ATOMIC_RELAXED);
 		if (fd < 0)
 			continue;
 

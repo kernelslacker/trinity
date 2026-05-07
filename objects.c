@@ -55,6 +55,64 @@ void fd_hash_init(void)
 		shm->fd_hash[i].gen = 0;
 	}
 	shm->fd_hash_count = 0;
+	/*
+	 * fd_live[] entries are gated by fd_live_count, so initialising
+	 * just the count is sufficient; stale slot contents past the
+	 * count are never read.
+	 */
+	shm->fd_live_count = 0;
+}
+
+/*
+ * Append fd to the parallel live-fd list.  Caller must hold shm->objlock
+ * and have just transitioned an fd_hash[] slot from empty to occupied.
+ * Publishes the new entry first, then bumps fd_live_count with RELEASE
+ * so a lockless reader that ACQUIREs the count is guaranteed to see the
+ * entry.  Silently drops the entry if the cap is hit; the only consumer
+ * (refcount-auditor) is a sampling auditor and tolerates a missed fd.
+ */
+static void fd_live_append(int fd)
+{
+	unsigned int idx = shm->fd_live_count;
+
+	if (idx >= FD_LIVE_MAX)
+		return;
+
+	__atomic_store_n(&shm->fd_live[idx], fd, __ATOMIC_RELEASE);
+	__atomic_store_n(&shm->fd_live_count, idx + 1, __ATOMIC_RELEASE);
+}
+
+/*
+ * Swap-remove fd from the parallel live-fd list.  Caller must hold
+ * shm->objlock and have just transitioned an fd_hash[] slot from
+ * occupied to empty.  Linear scan over fd_live[0..count) is cheap —
+ * the list is bounded by FD_HASH_SIZE in the worst case but typically
+ * holds a few hundred entries.  The replacement-then-decrement order
+ * keeps the visible window of fd_live[] entries valid: a concurrent
+ * lockless reader that loads count after the decrement sees a list
+ * whose every slot is a real live fd; one that loads count before the
+ * decrement may re-read the just-removed fd, which the auditor's
+ * dup() check naturally tolerates.
+ */
+static void fd_live_remove(int fd)
+{
+	unsigned int count = shm->fd_live_count;
+	unsigned int i;
+
+	for (i = 0; i < count; i++) {
+		if (shm->fd_live[i] != fd)
+			continue;
+
+		if (i != count - 1) {
+			int last = shm->fd_live[count - 1];
+
+			__atomic_store_n(&shm->fd_live[i], last,
+					 __ATOMIC_RELEASE);
+		}
+		__atomic_store_n(&shm->fd_live_count, count - 1,
+				 __ATOMIC_RELEASE);
+		return;
+	}
 }
 
 static unsigned int fd_hash_slot(int fd)
@@ -104,8 +162,10 @@ bool fd_hash_insert(int fd, struct object *obj, enum objecttype type)
 	while (shm->fd_hash[slot].fd != -1 && shm->fd_hash[slot].fd != fd)
 		slot = (slot + 1) & (FD_HASH_SIZE - 1);
 
-	if (shm->fd_hash[slot].fd == -1)
+	if (shm->fd_hash[slot].fd == -1) {
 		shm->fd_hash_count++;
+		fd_live_append(fd);
+	}
 
 	shm->fd_hash[slot].obj = obj;
 	shm->fd_hash[slot].type = type;
@@ -146,6 +206,7 @@ void fd_hash_remove(int fd)
 			__atomic_store_n(&shm->fd_hash[slot].fd, -1,
 					 __ATOMIC_RELEASE);
 			shm->fd_hash_count--;
+			fd_live_remove(fd);
 			next = (slot + 1) & (FD_HASH_SIZE - 1);
 			while (shm->fd_hash[next].fd != -1) {
 				struct fd_hash_entry displaced = shm->fd_hash[next];
