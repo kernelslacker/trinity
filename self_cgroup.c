@@ -320,8 +320,11 @@ void self_cgroup_cleanup(void)
  * cycle.  Phase 2 listens to the kernel's memory.events file (rewritten
  * each time low/high/max/oom counters bump) and applies back-pressure
  * before the cap is reached: a doubling fork-rate throttle on
- * memory.high crossings, and a small forced shed of the youngest
- * children on memory.max crossings.
+ * memory.high crossings.  memory.max crossings are tracked for
+ * diagnostics only -- the kernel's own OOM killer handles the cap, and
+ * a userspace shed-on-top response cascades into a kill-respawn loop
+ * because the youngest pid is the child mid-init that needs the most
+ * memory.
  *
  * The watch is parent-only.  Inotify on cgroupfs delivers IN_MODIFY
  * each time the kernel rewrites memory.events; the parent drains those
@@ -339,7 +342,6 @@ unsigned int fork_throttle_us;
 #define THROTTLE_MIN_US		1000U	/* 1 ms initial step */
 #define THROTTLE_MAX_US		100000U	/* 100 ms cap */
 #define THROTTLE_DECAY_TICKS	40U	/* ~1s of quiet at 25ms cadence */
-#define MAX_SHED_PER_EVENT	8U	/* upper bound on a single shed */
 
 static int events_inotify_fd = -1;
 static int events_file_fd = -1;
@@ -445,64 +447,6 @@ static void events_cleanup(void)
 	}
 }
 
-static int pid_cmp_desc(const void *a, const void *b)
-{
-	pid_t pa = *(const pid_t *)a;
-	pid_t pb = *(const pid_t *)b;
-
-	return (pb > pa) - (pb < pa);
-}
-
-/*
- * Kill the n highest-pid live children.  Highest pid is a proxy for
- * "most recently forked": the kernel's pid allocator is monotonic up to
- * pid_max wrap, and trinity's parent forks in a tight loop so wrap
- * collisions inside one fleet are negligible.  Younger children carry
- * less accumulated bandit/HEALER state, so shedding them costs the
- * least learning per byte freed.  The parent's normal reap path
- * (handle_children -> reap_child -> replace_child) repopulates the
- * slots once memory pressure subsides; the throttle keeps the refill
- * rate sane.
- */
-static void shed_youngest_children(unsigned int n)
-{
-	pid_t *snap;
-	unsigned int i, count = 0;
-
-	if (n == 0 || pids == NULL)
-		return;
-
-	snap = malloc(max_children * sizeof(*snap));
-	if (snap == NULL)
-		return;
-
-	for (i = 0; i < max_children; i++) {
-		pid_t pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
-
-		if (pid == EMPTY_PIDSLOT)
-			continue;
-		if (!pid_is_valid(pid))
-			continue;
-		snap[count++] = pid;
-	}
-
-	if (count == 0) {
-		free(snap);
-		return;
-	}
-
-	qsort(snap, count, sizeof(*snap), pid_cmp_desc);
-
-	if (n > count)
-		n = count;
-	for (i = 0; i < n; i++) {
-		if (pid_alive(snap[i]) == true)
-			kill_pid(snap[i]);
-	}
-
-	free(snap);
-}
-
 void self_cgroup_events_check(void)
 {
 	char drain[4096];
@@ -551,23 +495,29 @@ void self_cgroup_events_check(void)
 		       high_event_seq, fork_throttle_us);
 	}
 
+	/*
+	 * memory.events:max means the kernel has already OOM-killed at
+	 * least one task in the cgroup to satisfy the cap.  The previous
+	 * shed_youngest_children() response on top of that double-killed
+	 * the kernel's victim AND also picked the wrong target: highest
+	 * pid is "most recently forked", which is the child currently
+	 * running freeze_global_objects() and per-child shm setup.  That
+	 * mid-init child is the heaviest live memory consumer and has no
+	 * accumulated bandit/HEALER state to preserve, so killing it both
+	 * trips the cgroup again on respawn (init re-allocates) and
+	 * cascades into a kill-respawn-kill loop that prevents any actual
+	 * fuzz work.  Track the counter for diagnostics; let the kernel's
+	 * own OOM killer handle the cap.  The HIGH-event-driven fork
+	 * throttle above gives back-pressure before max events fire in
+	 * the first place.
+	 */
 	if (max > last_max_count) {
 		unsigned long delta = max - last_max_count;
-		unsigned int shed;
 
 		last_max_count = max;
 		max_event_seq++;
-		/* Scale shed count with how many max-events we missed in
-		 * one tick; cap so we don't shed the whole fleet on a
-		 * single bump. */
-		shed = (delta > MAX_SHED_PER_EVENT) ? MAX_SHED_PER_EVENT
-						    : (unsigned int)delta * 2;
-		if (shed < 2)
-			shed = 2;
-		if (shed > MAX_SHED_PER_EVENT)
-			shed = MAX_SHED_PER_EVENT;
-		output(0, "self-cgroup: MAX event #%u -- shedding %u children\n",
-		       max_event_seq, shed);
-		shed_youngest_children(shed);
+		output(0, "self-cgroup: MAX event #%u (delta=%lu) -- "
+		       "kernel OOM-killed; no userspace shed\n",
+		       max_event_seq, delta);
 	}
 }
