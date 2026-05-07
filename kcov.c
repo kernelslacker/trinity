@@ -480,6 +480,15 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 		kc->current_generation = 1;
 	}
 
+	/* Cache the bucket from the previous loop iteration so a run of
+	 * repeat hits on the same edge (common: a tight kernel loop dumps
+	 * the same PC dozens of times into the trace buffer) doesn't have
+	 * to recompute bucket_for_count() for the prior count.  prev_edge
+	 * is set to an unreachable sentinel so the first iteration always
+	 * misses the cache and falls back to the explicit recomputation. */
+	unsigned int prev_edge = (unsigned int)-1;
+	unsigned int prev_bucket = 0;
+
 	for (idx = 0; idx < count; idx++) {
 		unsigned long pc_val = kc->trace_buf[idx + 1];
 		unsigned int edge = pc_to_edge(pc_val);
@@ -491,8 +500,16 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 		/* Skip the atomic OR when this hit kept us inside the same
 		 * bucket as the previous hit on this edge — there is no
 		 * possible new bit to set, so the global write is wasted. */
-		if (local_count > 1 && bucket == bucket_for_count(local_count - 1))
-			continue;
+		if (local_count > 1) {
+			unsigned int last_bucket = (edge == prev_edge)
+				? prev_bucket
+				: bucket_for_count(local_count - 1);
+			if (bucket == last_bucket) {
+				prev_edge = edge;
+				prev_bucket = bucket;
+				continue;
+			}
+		}
 
 		mask = (unsigned char)(1U << bucket);
 		old = __atomic_fetch_or(&kcov_shm->bucket_seen[edge],
@@ -503,6 +520,9 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 				1, __ATOMIC_RELAXED);
 			found_new = true;
 		}
+
+		prev_edge = edge;
+		prev_bucket = bucket;
 	}
 
 	__atomic_fetch_add(&kcov_shm->total_pcs, count, __ATOMIC_RELAXED);
