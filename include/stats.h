@@ -1315,6 +1315,21 @@ struct stats_s {
 	unsigned long nl80211_iface_destroyed;		/* NL80211_CMD_DEL_INTERFACE accepted */
 	unsigned long nl80211_bursts_sent;		/* loopback UDP sendto on wlan iface returned >0 */
 
+	/* splice_protocols childop counters.  Coverage of splice() into
+	 * sockets whose protocol state has been steered into one of
+	 * several non-default modes (UDP_ENCAP, TCP_REPAIR, AF_PACKET
+	 * RX-ring, AF_ALG skcipher, AF_RXRPC bound). */
+	unsigned long splice_protocols_runs;			/* total splice_protocols invocations */
+	unsigned long splice_protocols_setup_failed;		/* per-iter setup latched (every supported setup exhausted) */
+	unsigned long splice_protocols_chain_ok;		/* both splice() halves returned >0 */
+	unsigned long splice_protocols_in_bytes;		/* bytes splice'd file_fd -> pipe[1] */
+	unsigned long splice_protocols_out_bytes;		/* bytes splice'd pipe[0] -> socket_fd */
+	unsigned long splice_protocols_udp_encap_attempted;	/* UDP_ENCAP setup arm picked (ESPINUDP / L2TPINUDP) */
+	unsigned long splice_protocols_tcp_repair_attempted;	/* TCP_REPAIR setup arm picked */
+	unsigned long splice_protocols_packet_ring_attempted;	/* AF_PACKET TPACKET RX-ring setup arm picked */
+	unsigned long splice_protocols_alg_attempted;		/* AF_ALG skcipher setup arm picked */
+	unsigned long splice_protocols_rxrpc_attempted;		/* AF_RXRPC bound-socket setup arm picked */
+
 	/*
 	 * HEALER Phase A observer counters -- see include/healer.h.
 	 * All four are bumped from healer_observe_relation() / the periodic
