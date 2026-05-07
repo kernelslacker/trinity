@@ -452,14 +452,10 @@ void generic_sanitise(struct syscallentry *entry, struct syscallrecord *rec)
 		rec->a6 = fill_arg(entry, rec, 6);
 }
 
-void generic_free_arg(struct syscallrecord *rec)
+void generic_free_arg(struct syscallentry *entry, struct syscallrecord *rec)
 {
-	struct syscallentry *entry;
-	unsigned int i, call;
+	unsigned int i;
 
-	call = rec->nr;
-
-	entry = get_syscall_entry(call, rec->do32bit);
 	BUG_ON(entry == NULL);
 
 	for_each_arg(entry, i) {
