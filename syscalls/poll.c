@@ -72,8 +72,21 @@ static void sanitise_poll(struct syscallrecord *rec)
 {
 	struct pollfd *pollfd = alloc_pollfds(rec);
 
+	/*
+	 * The kernel writes pollfd[i].revents back into the user-supplied
+	 * array.  alloc_pollfds() handed us a zmalloc()'d buffer that lives
+	 * inside the libc brk arena, so a fuzzed ufds pointer (or even the
+	 * legitimate one) lets the kernel scribble glibc chunk metadata.
+	 * Route the output buffer through avoid_shared_buffer() so the
+	 * write lands in a known-safe writable region instead.
+	 */
+	avoid_shared_buffer(&rec->a1, rec->a2 * sizeof(struct pollfd));
+
 	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
-	 * syscall before post_poll() runs. */
+	 * syscall before post_poll() runs.  Snapshot the original heap
+	 * allocation (pollfd), not the post-relocation rec->a1: the post
+	 * handler frees the snapshot via deferred_freeptr(), and the
+	 * relocated address is not a malloc result. */
 	rec->post_state = (unsigned long) pollfd;
 }
 
