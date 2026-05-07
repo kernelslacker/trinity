@@ -39,11 +39,15 @@ void activate_syscall64(unsigned int calln)
 void deactivate_syscall32(unsigned int calln)
 {
 	deactivate_syscall_in_table(calln, &shm->nr_active_32bit_syscalls, syscalls_32bit, shm->active_syscalls32);
+	if (shm->nr_active_32bit_syscalls == 0)
+		shm->valid_syscall_table_32 = false;
 }
 
 void deactivate_syscall64(unsigned int calln)
 {
 	deactivate_syscall_in_table(calln, &shm->nr_active_64bit_syscalls, syscalls_64bit, shm->active_syscalls64);
+	if (shm->nr_active_64bit_syscalls == 0)
+		shm->valid_syscall_table_64 = false;
 }
 
 
@@ -54,6 +58,7 @@ int validate_syscall_table_64(void)
 	else
 		use_64bit = true;
 
+	shm->valid_syscall_table_64 = use_64bit;
 	return use_64bit;
 }
 
@@ -64,6 +69,7 @@ int validate_syscall_table_32(void)
 	else
 		use_32bit = true;
 
+	shm->valid_syscall_table_32 = use_32bit;
 	return use_32bit;
 }
 

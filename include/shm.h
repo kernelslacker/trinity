@@ -87,6 +87,20 @@ struct shm_s {
 	unsigned int nr_active_32bit_syscalls;
 	unsigned int nr_active_64bit_syscalls;
 
+	/*
+	 * Cached "table has at least one active syscall" booleans for the
+	 * biarch picker.  Maintained by validate_syscall_table_{32,64}() at
+	 * startup and invalidated by the deactivate_syscall{32,64}() paths
+	 * (and the 32-on-64 emulation auto-disable) when the corresponding
+	 * nr_active_*bit_syscalls counter falls to zero.  Lets
+	 * choose_syscall_table() short-circuit the per-pick walk through
+	 * validate_syscall_table_{32,64}() with two single-byte loads.
+	 *
+	 * Only meaningful on biarch builds; uniarch never reads them.
+	 */
+	bool valid_syscall_table_32;
+	bool valid_syscall_table_64;
+
 #ifdef ARCH_IS_BIARCH
 	/* Check that 32bit emulation is available. */
 	unsigned int syscalls32_succeeded;

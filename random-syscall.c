@@ -51,14 +51,17 @@ static bool choose_syscall_table(struct childdata *child,
 {
 	bool do32 = false;
 
-	/* First, check that we have syscalls enabled in either table. */
-	if (validate_syscall_table_64() == false) {
+	/* First, check that we have syscalls enabled in either table.
+	 * Read the cached validity bits maintained by validate_syscall_table_*
+	 * and the deactivate_syscall{32,64}() paths instead of re-running the
+	 * walk on every pick. */
+	if (shm->valid_syscall_table_64 == false) {
 		use_64bit = false;
 		/* If no 64bit syscalls enabled, force 32bit. */
 		do32 = true;
 	}
 
-	if (validate_syscall_table_32() == false)
+	if (shm->valid_syscall_table_32 == false)
 		use_32bit = false;
 
 	/* If both tables enabled, pick randomly. */
