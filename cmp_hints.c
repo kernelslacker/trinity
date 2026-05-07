@@ -50,11 +50,11 @@ void cmp_hints_init(void)
 	 *
 	 * Wild-write risk this leaves open: a child syscall whose user-buffer
 	 * arg aliases into a pool could let the kernel scribble into
-	 * pool->values[] (corrupt sorted invariant; pool_add_locked tolerates
-	 * out-of-order entries via the binary-search dedup, so worst case is
-	 * a duplicate insertion or a missed dedup — not a crash) or into the
-	 * lock byte (a stuck lock would deadlock subsequent cmp_hints_collect
-	 * callers in that one syscall slot).  Diagnostic-grade only.
+	 * pool->values[] (worst case: a duplicate slips past the linear-scan
+	 * dedup, or a stale value is handed back as a hint — not a crash) or
+	 * into the lock byte (a stuck lock would deadlock subsequent
+	 * cmp_hints_collect callers in that one syscall slot).
+	 * Diagnostic-grade only.
 	 */
 	cmp_hints_shm = alloc_shared(sizeof(struct cmp_hints_shared));
 	memset(cmp_hints_shm, 0, sizeof(struct cmp_hints_shared));
@@ -73,48 +73,28 @@ static void pool_unlock(struct cmp_hint_pool *pool)
 }
 
 /*
- * Insert val into the sorted values[] array. Dedups via binary search.
- * When the pool is full, evicts a random slot. Caller must hold pool->lock.
+ * Insert val into the unordered values[] array. Dedups via linear scan.
+ * When the pool is full, overwrites a random slot in place. Caller must
+ * hold pool->lock.
  */
 static void pool_add_locked(struct cmp_hint_pool *pool, unsigned long val)
 {
-	unsigned int lo = 0, hi = pool->count, mid;
+	unsigned int i, count = pool->count;
 
-	while (lo < hi) {
-		unsigned long v;
-
-		mid = (lo + hi) / 2;
-		v = pool->values[mid];
-		if (v == val)
+	for (i = 0; i < count; i++)
+		if (pool->values[i] == val)
 			return;
-		if (v < val)
-			lo = mid + 1;
-		else
-			hi = mid;
-	}
 
-	if (pool->count < CMP_HINTS_PER_SYSCALL) {
-		memmove(&pool->values[lo + 1], &pool->values[lo],
-			(pool->count - lo) * sizeof(unsigned long));
-		pool->values[lo] = val;
+	if (count < CMP_HINTS_PER_SYSCALL) {
+		pool->values[count] = val;
 		/*
 		 * RELEASE-store count so a lockless reader in cmp_hints_try_get
 		 * that observes the new count is guaranteed to also see the
 		 * values[] store above.
 		 */
-		__atomic_store_n(&pool->count, pool->count + 1, __ATOMIC_RELEASE);
+		__atomic_store_n(&pool->count, count + 1, __ATOMIC_RELEASE);
 	} else {
-		unsigned int victim = rand() % CMP_HINTS_PER_SYSCALL;
-		unsigned int pos = (victim < lo) ? lo - 1 : lo;
-
-		if (victim < pos) {
-			memmove(&pool->values[victim], &pool->values[victim + 1],
-				(pos - victim) * sizeof(unsigned long));
-		} else if (victim > pos) {
-			memmove(&pool->values[pos + 1], &pool->values[pos],
-				(victim - pos) * sizeof(unsigned long));
-		}
-		pool->values[pos] = val;
+		pool->values[rand() % CMP_HINTS_PER_SYSCALL] = val;
 	}
 }
 
@@ -184,19 +164,15 @@ bool cmp_hints_try_get(unsigned int nr, unsigned long *out)
 	 * Lockless read.  Multiple children fuzzing the same syscall would
 	 * otherwise serialize on pool->lock just to grab one hint.
 	 *
-	 * Tolerated races:
-	 *   - Stale count: we may pick an idx within an older snapshot, which
-	 *     still indexes a populated slot (count is monotonic up to the
-	 *     CMP_HINTS_PER_SYSCALL cap; once full, count stops moving).
-	 *   - Concurrent insert/eviction shifting values[] under us: each slot
-	 *     is a naturally-aligned unsigned long, so the read is atomic at
-	 *     the hardware level — we get either the pre- or post-shift value.
-	 *     Both are valid hints that lived in the pool, possibly a duplicate
-	 *     of a neighbouring entry.
+	 * Tolerated race: a stale count snapshot still indexes a populated
+	 * slot — count is monotonic up to the CMP_HINTS_PER_SYSCALL cap, and
+	 * once full it stops moving (full-pool eviction overwrites in place).
+	 * Each slot is a naturally-aligned unsigned long, so a concurrent
+	 * eviction yields either the pre- or post-overwrite value at the
+	 * hardware level; both are valid hints that lived in the pool.
 	 *
-	 * For fuzzer hints these are all benign — values[] entries are direct
-	 * unsigned longs substituted as syscall args, never dereferenced, and a
-	 * stale or duplicated hint is no worse than picking a different one.
+	 * For fuzzer hints this is benign — values[] entries are direct
+	 * unsigned longs substituted as syscall args, never dereferenced.
 	 */
 	count = __atomic_load_n(&pool->count, __ATOMIC_ACQUIRE);
 	if (count == 0)
