@@ -61,6 +61,7 @@ static const struct socket_family_grammar * const sfg_registry[] = {
 	&grammar_mpls,
 	&grammar_unix,
 	&grammar_netlink,
+	&grammar_xfrm,
 	&grammar_packet,
 #ifdef USE_XDP
 	&grammar_xdp,
