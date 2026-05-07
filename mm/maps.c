@@ -397,6 +397,7 @@ void dirty_mapping(struct map *map)
 void dirty_random_mapping(void)
 {
 	struct map_handle h;
+	struct map local;
 
 	if (!get_map_handle(&h))
 		return;
@@ -415,7 +416,43 @@ void dirty_random_mapping(void)
 	if (!validate_map_handle(&h))
 		return;
 
-	dirty_mapping(h.map);
+	/*
+	 * The mmap_fd post-mmap fstat clamp pins obj->map.size to the file's
+	 * backed extent at allocation time, but a sibling syscall can
+	 * ftruncate() the underlying fd down between then and now.  Walking
+	 * the stale stored size SIGBUSes BUS_ADRERR on the first page past
+	 * the new EOF.
+	 *
+	 * Snapshot the map into a stack-local, re-fstat the fd, and clamp
+	 * a local-effective walk extent using the same min / page-aligned
+	 * down arithmetic as the mmap_fd clamp.  obj->map.size itself is
+	 * left untouched -- other consumers reuse the stored value and a
+	 * different walker may race with us; mutating it would leak the
+	 * narrowed view to anyone holding the same handle.
+	 *
+	 * fstat failure (EBADF after a sibling close, etc.) is treated as
+	 * "no walkable extent" and the dirty walk is dropped entirely
+	 * rather than falling back to the stale stored size.  Anonymous
+	 * mappings (INITIAL_ANON, CHILD_ANON) carry no underlying file
+	 * extent and pass through unchanged.
+	 */
+	local = *h.map;
+
+	if (local.type == MMAPED_FILE && local.fd >= 0) {
+		struct stat st;
+
+		if (fstat(local.fd, &st) != 0)
+			return;
+		if (st.st_size == 0)
+			return;
+		if ((unsigned long) st.st_size < local.size)
+			local.size = (unsigned long) st.st_size & PAGE_MASK;
+	}
+
+	if (local.size == 0)
+		return;
+
+	dirty_mapping(&local);
 }
 
 /*
