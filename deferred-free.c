@@ -15,6 +15,7 @@
  */
 
 #include <errno.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
@@ -149,6 +150,19 @@ static unsigned int ring_count;
 static size_t ring_bytes;
 
 /*
+ * One bit per ring slot: 1 == occupied, 0 == free.  Lets enqueue find
+ * the next empty slot in O(1) via __builtin_ctzll(~occupied_mask)
+ * instead of a linear scan over all 64 entries.  Maintained alongside
+ * ring_count: every ptr write that fills a slot sets the bit, every
+ * clear that empties a slot clears it.  BSS-resident (not inside the
+ * mprotect-bracketed ring), so the cheap scan in enqueue's full-ring
+ * check and the ctzll lookup itself need no unlock.  uint64_t suffices
+ * because DEFERRED_RING_SIZE == 64; a static_assert would be overkill
+ * for a single contiguous file.
+ */
+static uint64_t occupied_mask;
+
+/*
  * Bracket every writer/reader of ring[] with mprotect().  Between
  * ticks the ring sits at PROT_NONE; any fuzzed value-result syscall
  * that tries to scribble inside it now SIGSEGVs in the kernel's
@@ -203,6 +217,7 @@ void deferred_free_init(void)
 	memset(ring, 0, ring_bytes);
 	track_shared_region((unsigned long)ring, ring_bytes);
 	ring_count = 0;
+	occupied_mask = 0;
 	ring_lock();
 
 	/*
@@ -392,20 +407,20 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 		if (ring[oldest].ptr != NULL && ring[oldest].free_func != NULL) {
 			ring[oldest].free_func(ring[oldest].ptr);
 			ring[oldest].ptr = NULL;
+			occupied_mask &= ~(1ULL << oldest);
 			ring_count--;
 		}
 	}
 
-	/* Find an empty slot. */
-	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
-		if (ring[i].ptr == NULL) {
-			ring[i].ptr = ptr;
-			ring[i].free_func = free_func;
-			ring[i].ttl = RAND_RANGE(DEFERRED_TTL_MIN, DEFERRED_TTL_MAX);
-			ring_count++;
-			break;
-		}
-	}
+	/* Find an empty slot.  After the full-ring eviction above, at
+	 * least one bit in occupied_mask is clear, so ~occupied_mask is
+	 * non-zero and __builtin_ctzll's UB-on-zero case can't fire. */
+	i = __builtin_ctzll(~occupied_mask);
+	ring[i].ptr = ptr;
+	ring[i].free_func = free_func;
+	ring[i].ttl = RAND_RANGE(DEFERRED_TTL_MIN, DEFERRED_TTL_MAX);
+	occupied_mask |= 1ULL << i;
+	ring_count++;
 
 	ring_lock();
 }
@@ -510,6 +525,7 @@ void deferred_free_tick(void)
 		ptr = ring[i].ptr;
 		fn = ring[i].free_func;
 		ring[i].ptr = NULL;
+		occupied_mask &= ~(1ULL << i);
 		ring_count--;
 
 		free_ring_entry(ptr, fn, i);
@@ -543,6 +559,7 @@ void deferred_free_flush(void)
 		free_ring_entry(ptr, fn, i);
 	}
 	ring_count = 0;
+	occupied_mask = 0;
 
 	ring_lock();
 }
