@@ -457,6 +457,19 @@ struct stats_s {
 	 * fetch: a coarse anomaly indicator, not an event log. */
 	unsigned long pool_race_aborted[NR_CHILD_OP_TYPES];
 
+	/* Per-childop edge-discovery attribution, indexed by enum
+	 * child_op_type.  Bumped per alt-op invocation in child_process()'s
+	 * post-call have_kcov block with the same edges_after - edges_before
+	 * delta that adapt_budget() consumes; CHILD_OP_SYSCALL is skipped to
+	 * avoid double-counting (the syscall path attributes new edges via
+	 * the explorer/bandit strategy counters).  Without this attribution
+	 * alt-op childops bump the global kcov edge counter but contribute
+	 * to no per-strategy total, so their coverage value is invisible to
+	 * the operator and the gap between KCOV total and strategy totals
+	 * is unexplained.  RELAXED add-fetch: a cumulative diagnostic, not
+	 * an event log. */
+	unsigned long childop_edges_discovered[NR_CHILD_OP_TYPES];
+
 	/* ---- Group C: per-childop ---- */
 
 	/* procfs_writer childop: per-tree write counts */
