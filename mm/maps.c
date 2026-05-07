@@ -484,6 +484,45 @@ retry_mmap:
 		} else
 			goto retry_mmap;
 	}
+
+	/*
+	 * obj->map.size currently records the length passed to mmap():
+	 * for len > 0 the caller-supplied length, for len == 0 a forced
+	 * page_size used only to give the obj a non-NULL ptr for type
+	 * tracking.  Neither value is bounded against the chosen fd's
+	 * actual backing extent.
+	 *
+	 * For len > 0 the offset above is a random page-aligned multiple
+	 * in [0, len); the kernel happily creates a VMA covering pages
+	 * past EOF when offset + len > st_size, but accessing those pages
+	 * SIGBUSes with BUS_ADRERR.  For len == 0 we have no walkable
+	 * extent at all -- the one-page mmap exists only as a handle.
+	 *
+	 * dirty_random_mapping (and other consumers that walk obj->map.size
+	 * bytes from obj->map.ptr) burn the child on the first unbacked
+	 * page, so clamp the recorded size to the in-bounds extent.  fstat
+	 * failure or an empty regular file leaves no walkable pages -- gate
+	 * downstream walkers off with size 0.  mmap_fd is reached only from
+	 * regular-file paths, so st_size == 0 means a genuinely empty file
+	 * (the special-fd carve-out used by post_mmap does not apply here).
+	 */
+	if (len == 0) {
+		obj->map.size = 0;
+	} else {
+		struct stat st;
+
+		if (fstat(fd, &st) != 0 || st.st_size == 0) {
+			obj->map.size = 0;
+		} else {
+			off_t backed = (off_t) st.st_size - (off_t) offset;
+
+			if (backed <= 0)
+				obj->map.size = 0;
+			else if ((unsigned long) backed < obj->map.size)
+				obj->map.size = (unsigned long) backed & PAGE_MASK;
+		}
+	}
+
 	track_shared_region((unsigned long)obj->map.ptr, obj->map.size);
 
 	head = get_objhead(scope, type);
