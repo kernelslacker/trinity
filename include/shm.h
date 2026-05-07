@@ -366,6 +366,21 @@ struct shm_s {
 	_Atomic uint32_t frontier_slot;
 
 	/*
+	 * Per-syscall cached recent-edge count -- running sum of
+	 * frontier_history[nr][*] across the live ring, maintained
+	 * incrementally so frontier_recent_count(nr) is a single RELAXED
+	 * load instead of an O(FRONTIER_DECAY_WINDOWS) walk.  Producers
+	 * fetch_add 1 here in lockstep with the per-slot bump; the window
+	 * rotator subtracts the just-zeroed slot's contribution from this
+	 * counter in the same pass that clears the slot.  Same RELAXED
+	 * race envelope as frontier_history -- a producer add that
+	 * interleaves with the rotation's exchange-then-subtract can leave
+	 * cached one bump above the live sum, bounded by one window and
+	 * folded back in by the next rotation.
+	 */
+	_Atomic uint32_t frontier_recent_count_cached[MAX_NR_SYSCALL];
+
+	/*
 	 * Cached max of frontier_recent_count() across all syscalls --
 	 * the rejection-sampling acceptance ratio in the coverage-frontier
 	 * picker uses this as the bias-mass denominator.  Recomputed

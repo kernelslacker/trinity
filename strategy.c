@@ -325,6 +325,8 @@ void frontier_record_new_edge(unsigned int nr)
 	       (FRONTIER_DECAY_WINDOWS - 1);
 	__atomic_fetch_add(&shm->frontier_history[nr][slot], 1U,
 			   __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->frontier_recent_count_cached[nr], 1U,
+			   __ATOMIC_RELAXED);
 
 	/* Ratchet the cached max upward if this bump pushed nr's recent
 	 * count past it.  No CAS: a racing producer that also raises the
@@ -343,16 +345,11 @@ void frontier_record_new_edge(unsigned int nr)
 
 unsigned long frontier_recent_count(unsigned int nr)
 {
-	unsigned long sum = 0;
-	unsigned int s;
-
 	if (nr >= MAX_NR_SYSCALL)
 		return 0;
 
-	for (s = 0; s < FRONTIER_DECAY_WINDOWS; s++)
-		sum += __atomic_load_n(&shm->frontier_history[nr][s],
-				       __ATOMIC_RELAXED);
-	return sum;
+	return __atomic_load_n(&shm->frontier_recent_count_cached[nr],
+			       __ATOMIC_RELAXED);
 }
 
 void frontier_window_advance(void)
@@ -370,22 +367,29 @@ void frontier_window_advance(void)
 	next = __atomic_add_fetch(&shm->frontier_slot, 1U, __ATOMIC_RELAXED);
 	next &= (FRONTIER_DECAY_WINDOWS - 1);
 
-	for (nr = 0; nr < MAX_NR_SYSCALL; nr++)
-		__atomic_store_n(&shm->frontier_history[nr][next], 0U,
-				 __ATOMIC_RELAXED);
-
-	/* Recompute the authoritative cached max over the just-rotated
-	 * ring so the coverage-frontier picker can read the bias mass
-	 * with one RELAXED load instead of an O(MAX_NR_SYSCALL) walk per
-	 * pick.  Reads here are RELAXED -- a producer's add concurrent
-	 * with this loop can be missed, but will be folded in by its own
-	 * ratcheting store in frontier_record_new_edge or by the next
-	 * rotation. */
+	/* Single fused pass: drop the K-windows-old slot and recompute the
+	 * authoritative cached max over the just-rotated ring at the same
+	 * time.  Per-syscall the work is one exchange (zero the slot, hand
+	 * back its contribution), one fetch_sub (remove that contribution
+	 * from the per-nr running sum), and a max compare -- two atomics
+	 * total instead of one store plus an FRONTIER_DECAY_WINDOWS-deep
+	 * ring walk per syscall.  Reads here are RELAXED; a producer's add
+	 * that interleaves with the exchange/sub on the same nr can leave
+	 * the cached running sum one bump above the live ring sum, bounded
+	 * by one window and folded back in by the next rotation. */
 	for (nr = 0; nr < MAX_NR_SYSCALL; nr++) {
-		unsigned long w = frontier_recent_count(nr);
+		uint32_t old_slot;
+		uint32_t old_cached;
+		uint32_t new_sum;
 
-		if (w > max_weight)
-			max_weight = w;
+		old_slot = __atomic_exchange_n(&shm->frontier_history[nr][next],
+					       0U, __ATOMIC_RELAXED);
+		old_cached = __atomic_fetch_sub(
+			&shm->frontier_recent_count_cached[nr],
+			old_slot, __ATOMIC_RELAXED);
+		new_sum = old_cached - old_slot;
+		if (new_sum > max_weight)
+			max_weight = new_sum;
 	}
 	if (max_weight > UINT_MAX)
 		max_weight = UINT_MAX;
