@@ -73,7 +73,7 @@ bool check_all_locks(void)
 bool trylock(lock_t *lk)
 {
 	unsigned long expected = 0;
-	unsigned long desired = MAKE_LOCK(getpid(), LOCKED);
+	unsigned long desired = MAKE_LOCK(cached_pid, LOCKED);
 
 	/* Single CAS sets both lock state AND owner atomically.
 	 * No torn state possible — if we die after this, the lock
@@ -115,7 +115,7 @@ static void try_release_dead_holder(lock_t *lk)
 
 void lock(lock_t *lk)
 {
-	pid_t pid = getpid();
+	pid_t pid = cached_pid;
 	unsigned int spins = 0;
 
 	while (!trylock(lk)) {
@@ -180,7 +180,7 @@ void bust_lock(lock_t *lk)
 
 	if (LOCK_STATE(s) != LOCKED)
 		return;
-	if (LOCK_OWNER(s) != getpid())
+	if (LOCK_OWNER(s) != cached_pid)
 		return;
 	unlock(lk);
 }
