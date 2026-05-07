@@ -281,6 +281,12 @@ int main(int argc, char* argv[])
 
 	parse_args(argc, argv);
 
+	/* Open --stats-log-file (if any) before change_tmp_dir() so a
+	 * relative PATH is resolved against the operator's launch CWD,
+	 * not trinity's tmp/ working directory.  No-op when the flag was
+	 * not passed; failure logs a warning and continues without a log. */
+	stats_log_open(stats_log_path);
+
 	/* Apply the shared_regions[] / RLIMIT_NPROC / RLIMIT_NOFILE cap
 	 * to the default num_online_cpus*4 value when the operator did
 	 * not pass -C.  -C path validates against the same cap inside
@@ -543,6 +549,8 @@ int main(int argc, char* argv[])
 	ret = set_exit_code(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED));
 out:
 	kmsg_monitor_stop();
+
+	stats_log_close();
 
 #ifdef __SANITIZE_ADDRESS__
 	/*

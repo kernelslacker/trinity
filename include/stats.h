@@ -1310,6 +1310,15 @@ void corrupt_ptr_spike_check(void);
  * sitting at noise without waiting for the run to finish. */
 void defense_counters_periodic_dump(void);
 
+/* --stats-log-file backing.  Open at startup (append, header line on each
+ * open), close at shutdown (footer line).  stats_log_write() mirrors its
+ * formatted line to stdout via output(0,...) AND, if the log is open, to
+ * the file with an immediate fflush so a crash mid-run doesn't truncate
+ * the most recent dump. */
+void stats_log_open(const char *path);
+void stats_log_close(void);
+void stats_log_write(const char *fmt, ...);
+
 /* Implemented in childops/recipe-runner.c; emits per-recipe completion
  * counts so the catalog layout stays private to that file. */
 void recipe_runner_dump_stats(void);

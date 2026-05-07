@@ -1,9 +1,11 @@
 #include <errno.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include "arch.h"
 #include "cmp_hints.h"
 #include "edgepair.h"
@@ -1512,9 +1514,9 @@ static void corrupt_ptr_pc_dump_for(const struct corrupt_ptr_pc_entry *snap,
 			break;
 		if (snap[i].nr != nr || snap[i].do32bit != do32bit)
 			continue;
-		output(0, "    %-32s %lu\n",
-		       pc_to_string(snap[i].pc, pcbuf, sizeof(pcbuf)),
-		       snap[i].count);
+		stats_log_write("    %-32s %lu\n",
+				pc_to_string(snap[i].pc, pcbuf, sizeof(pcbuf)),
+				snap[i].count);
 	}
 }
 
@@ -1544,7 +1546,7 @@ static void corrupt_ptr_attr_dump(void)
 	qsort(pc_snap, CORRUPT_PTR_PC_SLOTS, sizeof(pc_snap[0]),
 	      corrupt_ptr_pc_cmp);
 
-	output(0, "post_handler_corrupt_ptr attribution (top %u handlers):\n", n);
+	stats_log_write("post_handler_corrupt_ptr attribution (top %u handlers):\n", n);
 	for (i = 0; i < CORRUPT_PTR_ATTR_SLOTS; i++) {
 		const char *name;
 		const char *width;
@@ -1558,8 +1560,86 @@ static void corrupt_ptr_attr_dump(void)
 			name = print_syscall_name(snap[i].nr, snap[i].do32bit);
 			width = snap[i].do32bit ? "(32)" : "(64)";
 		}
-		output(0, "  %-32s %s %lu\n", name, width, snap[i].count);
+		stats_log_write("  %-32s %s %lu\n", name, width, snap[i].count);
 		corrupt_ptr_pc_dump_for(pc_snap, snap[i].nr, snap[i].do32bit);
+	}
+}
+
+/*
+ * --stats-log-file backing.  The file is opened in append mode at startup
+ * (so multiple runs into the same file accrue history rather than clobber
+ * each other) and closed at shutdown.  Each open/close writes a single
+ * header/footer marker line so the log is self-delimiting; per-line wall
+ * clocks would just bloat the dump output -- the dump's own [main] prefix
+ * and the open marker's ISO timestamp let the reader anchor entries.
+ */
+static FILE *stats_log_fp = NULL;
+
+#define STATS_LOG_TS_BUFSIZE	48
+#define STATS_LOG_LINE_BUFSIZE	1024
+
+static void stats_log_iso_timestamp(char *buf, size_t buflen)
+{
+	time_t now = time(NULL);
+	struct tm tmv;
+
+	if (gmtime_r(&now, &tmv) == NULL) {
+		snprintf(buf, buflen, "?");
+		return;
+	}
+	if (strftime(buf, buflen, "%Y-%m-%dT%H:%M:%SZ", &tmv) == 0)
+		snprintf(buf, buflen, "?");
+}
+
+void stats_log_open(const char *path)
+{
+	char ts[STATS_LOG_TS_BUFSIZE];
+
+	if (path == NULL || *path == '\0')
+		return;
+
+	stats_log_fp = fopen(path, "a");
+	if (stats_log_fp == NULL) {
+		outputerr("failed to open stats log file %s: %s\n",
+			  path, strerror(errno));
+		return;
+	}
+
+	stats_log_iso_timestamp(ts, sizeof(ts));
+	fprintf(stats_log_fp,
+		"\n=== trinity stats log opened at %s pid=%d ===\n",
+		ts, (int)getpid());
+	fflush(stats_log_fp);
+}
+
+void stats_log_close(void)
+{
+	char ts[STATS_LOG_TS_BUFSIZE];
+
+	if (stats_log_fp == NULL)
+		return;
+
+	stats_log_iso_timestamp(ts, sizeof(ts));
+	fprintf(stats_log_fp,
+		"=== trinity stats log closed at %s ===\n", ts);
+	fclose(stats_log_fp);
+	stats_log_fp = NULL;
+}
+
+void stats_log_write(const char *fmt, ...)
+{
+	char buf[STATS_LOG_LINE_BUFSIZE];
+	va_list args;
+
+	va_start(args, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, args);
+	va_end(args);
+
+	output(0, "%s", buf);
+
+	if (stats_log_fp != NULL) {
+		fputs(buf, stats_log_fp);
+		fflush(stats_log_fp);
 	}
 }
 
@@ -1598,17 +1678,17 @@ void defense_counters_periodic_dump(void)
 			continue;
 
 		if (header_emitted == 0) {
-			output(0, "Defense counter rates over last %lds:\n",
-			       elapsed);
+			stats_log_write("Defense counter rates over last %lds:\n",
+					elapsed);
 			header_emitted = 1;
 		}
 
 		/* Per-second rate scaled by 1000 to keep three decimals
 		 * without dragging in floating point on the parent path. */
 		rate_milli = (delta * 1000UL) / (unsigned long)elapsed;
-		output(0, "  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-		       defense_counters[i].name, delta,
-		       rate_milli / 1000, rate_milli % 1000, cur);
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				defense_counters[i].name, delta,
+				rate_milli / 1000, rate_milli % 1000, cur);
 	}
 
 	corrupt_ptr_attr_dump();
