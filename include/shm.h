@@ -8,6 +8,7 @@
 #include "efault_cache.h"
 #include "exit.h"
 #include "files.h"
+#include "healer.h"
 #include "locks.h"
 #include "net.h"
 #include "object-types.h"
@@ -360,6 +361,32 @@ struct shm_s {
 	 * 0 is the empty-slot sentinel.
 	 */
 	_Atomic uint64_t ioctl_efault_cache[IOCTL_EFAULT_CACHE_SIZE];
+
+	/*
+	 * HEALER syscall-relation observer table -- see include/healer.h
+	 * for the design.  Indexed by FNV-1a(sorted (pred_a, pred_b)) masked
+	 * to HEALER_RELATION_SLOTS; collisions linear-probe up to
+	 * HEALER_PROBE_LIMIT slots before dropping the observation and
+	 * bumping shm->stats.healer_table_full.  Empty slots are identified
+	 * by predset_hash == 0; a real predset whose FNV-1a hash happens to
+	 * be 0 is remapped to 1 inside healer_observe_relation().
+	 *
+	 * Sized HEALER_RELATION_SLOTS * sizeof(struct healer_relation)
+	 * ~= 16384 * 80B = 1.25 MiB -- comfortably below the existing
+	 * cmp_novelty[] / frontier_history[] envelope.
+	 *
+	 * Single coarse lock across all observer-hook updates: the hook
+	 * fires only on the new-edge branch of dispatch_step, which by
+	 * construction is rare relative to the per-syscall hot path
+	 * (typical fleet new-edge rate is well under 1% of dispatched
+	 * calls), so contention is bounded and the lock keeps the
+	 * insertion + eviction scan atomic without needing CAS-per-slot
+	 * coordination.  Writes to a slot's promoted[] array are similarly
+	 * serialised under this lock, which lets the dump path snapshot
+	 * the whole table under one acquire instead of per-slot.
+	 */
+	struct healer_relation healer_relations[HEALER_RELATION_SLOTS];
+	lock_t healer_relations_lock;
 };
 extern struct shm_s *shm;
 extern unsigned int shm_size;

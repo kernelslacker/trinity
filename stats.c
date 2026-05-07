@@ -9,6 +9,7 @@
 #include "arch.h"
 #include "cmp_hints.h"
 #include "edgepair.h"
+#include "healer.h"
 #include "kcov.h"
 #include "minicorpus.h"
 #include "params.h"
@@ -1716,6 +1717,8 @@ void defense_counters_periodic_dump(void)
 	}
 
 	corrupt_ptr_attr_dump();
+
+	healer_table_dump();
 
 	last_dump = now;
 }

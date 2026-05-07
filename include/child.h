@@ -268,6 +268,18 @@ struct childdata {
 	unsigned int stall_count;
 	unsigned int stall_last;
 
+	/* HEALER per-child sequence buffer.  Holds the last two completed
+	 * syscall numbers, written from the per-call bookkeeping path right
+	 * after last_syscall_nr is updated.  Read at observer-hook fire to
+	 * recover the (pred_a, pred_b) tuple the new-edge event is credited
+	 * to.  seq_count is a saturating counter used to gate the observer
+	 * until both slots are populated -- the very first two syscalls of a
+	 * child's life produce no predset, since there is no "two completed
+	 * syscalls before this one" to point at.  Owner-only state, no shm
+	 * coherence needed. */
+	unsigned int healer_seq[2];
+	unsigned int healer_seq_count;
+
 	unsigned char xcpu_count;
 
 	unsigned char kill_count;
