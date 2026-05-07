@@ -187,11 +187,14 @@ static void post_mmap(struct syscallrecord *rec)
 		 * the OBJ_LOCAL pool entry) walk the recorded size and burn
 		 * the child before it can contribute to coverage.  Clamp
 		 * map->size to the in-bounds extent so subsequent walks stay
-		 * inside real backing.  st_size == 0 covers /dev/zero,
-		 * /dev/mem, hugetlb fds, memfd_secret, kcov and any other
-		 * special fd whose mappable extent is not reflected in stat
-		 * -- leave the requested size alone for those (they don't
-		 * SIGBUS the way a short file mmap does).  If fstat itself
+		 * inside real backing.  st_size == 0 on a non-regular file
+		 * covers /dev/zero, /dev/mem, hugetlb fds, memfd_secret,
+		 * kcov and any other special fd whose mappable extent is
+		 * not reflected in stat -- leave the requested size alone
+		 * for those (they don't SIGBUS the way a short file mmap
+		 * does).  st_size == 0 on a regular file (a fresh testfile
+		 * or empty memfd) has no backing at all, so zero map->size
+		 * to keep the dirty walker off it.  If fstat itself
 		 * fails (fd was closed or replaced between the syscall and
 		 * the post handler) the extent is unknown, so zero the size
 		 * to gate dirty_mapping off rather than walking past EOF.
@@ -223,6 +226,10 @@ static void post_mmap(struct syscallrecord *rec)
 					if (new->map.size != rec->a2)
 						__atomic_add_fetch(&shm->stats.mmap_size_clamped,
 								   1, __ATOMIC_RELAXED);
+				} else if (S_ISREG(st.st_mode)) {
+					new->map.size = 0;
+					__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+							   1, __ATOMIC_RELAXED);
 				}
 			} else {
 				new->map.size = 0;
