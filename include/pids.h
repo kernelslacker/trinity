@@ -6,6 +6,7 @@
 
 extern pid_t *pids;
 extern pid_t mainpid;
+extern pid_t cached_pid;
 
 #define for_each_child(i)	for (i = 0; i < max_children; i++)
 

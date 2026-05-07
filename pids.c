@@ -20,7 +20,7 @@ pid_t *pids;
 
 /* Per-child cache: set once in init_child(), avoids O(n) scans. */
 static int cached_childno = CHILD_NOT_FOUND;
-static pid_t cached_pid = EMPTY_PIDSLOT;
+pid_t cached_pid = EMPTY_PIDSLOT;
 static struct childdata *cached_child = NULL;
 
 void set_child_cache(int childno, pid_t pid, struct childdata *child)

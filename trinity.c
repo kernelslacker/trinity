@@ -214,6 +214,7 @@ static void epoch_loop(void)
 		if (epoch_pid == 0) {
 			/* Epoch child: become the effective main process. */
 			mainpid = getpid();
+			cached_pid = mainpid;
 			setup_main_signals();
 			main_loop();
 			_exit(set_exit_code(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED)));
@@ -255,6 +256,7 @@ int main(int argc, char* argv[])
 	progname = argv[0];
 
 	mainpid = getpid();
+	cached_pid = mainpid;
 
     if (getrlimit(RLIMIT_NOFILE, &max_files_rlimit) != 0) {
 		max_files_rlimit.rlim_cur = 1024;
