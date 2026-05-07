@@ -101,16 +101,24 @@ void deferred_alloc_track(void *ptr)
  * Consume the entry matching @ptr.  Returns true if found (and clears
  * the slot); false if the pointer was not in the side-set, meaning the
  * caller is about to free something __zmalloc() never produced.
+ *
+ * Scan backward from the newest entry.  The vast majority of consumers
+ * are post handlers running a few syscalls after the matching __zmalloc()
+ * (PATHNAME / IOVEC / SOCKADDR generators enqueue 1-3 pointers per arg),
+ * so the hit lives near the head.  Average match distance drops from
+ * ALLOC_TRACK_SIZE/2 to a handful of compares; miss cost is unchanged.
  */
 static bool alloc_track_consume(void *ptr)
 {
+	unsigned int idx = (alloc_track_head - 1) & (ALLOC_TRACK_SIZE - 1);
 	unsigned int i;
 
 	for (i = 0; i < ALLOC_TRACK_SIZE; i++) {
-		if (alloc_track[i] == ptr) {
-			alloc_track[i] = NULL;
+		if (alloc_track[idx] == ptr) {
+			alloc_track[idx] = NULL;
 			return true;
 		}
+		idx = (idx - 1) & (ALLOC_TRACK_SIZE - 1);
 	}
 	return false;
 }
