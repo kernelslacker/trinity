@@ -104,6 +104,8 @@ static struct edgepair_entry *find_or_insert(unsigned int prev_nr,
 		struct edgepair_entry *e = &edgepair_shm->table[idx];
 		uint64_t slot = __atomic_load_n(&e->key, __ATOMIC_ACQUIRE);
 
+		__builtin_prefetch(&edgepair_shm->table[(idx + 1) & EDGEPAIR_TABLE_MASK]);
+
 		/* Found existing entry for this pair. */
 		if (slot == target)
 			return e;
@@ -171,6 +173,8 @@ static struct edgepair_entry *find_entry(unsigned int prev_nr,
 	for (unsigned int probe = 0; probe < EDGEPAIR_MAX_PROBE; probe++) {
 		struct edgepair_entry *e = &edgepair_shm->table[idx];
 		uint64_t slot = __atomic_load_n(&e->key, __ATOMIC_ACQUIRE);
+
+		__builtin_prefetch(&edgepair_shm->table[(idx + 1) & EDGEPAIR_TABLE_MASK]);
 
 		if (slot == empty)
 			return NULL;
