@@ -95,6 +95,9 @@ static void sanitise_lsm_get_self_attr(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) buf;
 	rec->a3 = (unsigned long) size;
 
+	avoid_shared_buffer(&rec->a2, page_size);
+	avoid_shared_buffer(&rec->a3, sizeof(u32));
+
 #ifdef HAVE_SYS_LSM_GET_SELF_ATTR
 	/*
 	 * Snapshot all four input args for the post oracle.  Without this
