@@ -122,6 +122,7 @@ extern const struct socket_family_grammar grammar_llc;
 extern const struct socket_family_grammar grammar_mpls;
 extern const struct socket_family_grammar grammar_unix;
 extern const struct socket_family_grammar grammar_netlink;
+extern const struct socket_family_grammar grammar_xfrm;
 extern const struct socket_family_grammar grammar_packet;
 #ifdef USE_XDP
 extern const struct socket_family_grammar grammar_xdp;
