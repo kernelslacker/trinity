@@ -926,6 +926,14 @@ static struct object *get_random_object_global_lockless(struct objhead *head,
 	unsigned int version;
 	struct object *obj;
 	int attempt;
+	/*
+	 * For OBJ_GLOBAL pools array_capacity is fixed at
+	 * GLOBAL_OBJ_MAX_CAPACITY in init_object_lists() and is never
+	 * resized (the parallel array is alloc_shared_global()'d once and
+	 * frozen RO via freeze_global_objects()).  Hoist the load out of
+	 * the retry loop so we don't reread it on every attempt.
+	 */
+	const unsigned int cap = head->array_capacity;
 
 	for (attempt = 0; attempt < GET_RANDOM_OBJECT_RETRY_BUDGET; attempt++) {
 		snapshot = __atomic_load_n(&head->num_entries,
@@ -939,7 +947,7 @@ static struct object *get_random_object_global_lockless(struct objhead *head,
 		 * objects() reports this on the parent's idle pass; here we
 		 * just fall back gracefully to NULL.
 		 */
-		if (snapshot > head->array_capacity)
+		if (snapshot > cap)
 			return NULL;
 		idx = rand() % snapshot;
 		obj = sample_global_slot(head, idx, &version);
