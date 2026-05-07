@@ -84,10 +84,10 @@ void healer_seq_push(struct childdata *child, unsigned int nr)
  * Bump the (predset, current_nr) tuple in `slot`, evicting the lowest-
  * weight existing promoted entry when the slot is full.  Returns true
  * if an eviction took place, so the caller can bump the eviction
- * counter without re-scanning the array.  The caller holds
- * shm->healer_relations_lock across the whole insertion sequence so a
- * concurrent observer cannot lose a bump or evict our just-inserted
- * entry.
+ * counter without re-scanning the array.  The caller holds the
+ * appropriate shm->healer_relations_locks[shard_idx] across the whole
+ * insertion sequence so a concurrent observer hashing into the same
+ * shard cannot lose a bump or evict our just-inserted entry.
  */
 static bool healer_slot_record(struct healer_relation *slot,
 			       unsigned int current_nr)
@@ -128,13 +128,32 @@ static bool healer_slot_record(struct healer_relation *slot,
 	return true;
 }
 
+/*
+ * Sanity-check the shard / slot bit layout against HEALER_SHARD_SHIFT
+ * so a future tuning of HEALER_RELATION_SLOTS or HEALER_RELATION_SHARDS
+ * that breaks the disjoint-bit-field invariant fails to compile rather
+ * than silently aliasing two predsets onto the same lock.
+ */
+_Static_assert(HEALER_RELATIONS_PER_SHARD ==
+	       (HEALER_RELATION_SLOTS / HEALER_RELATION_SHARDS),
+	       "HEALER_RELATIONS_PER_SHARD must tile HEALER_RELATION_SLOTS");
+_Static_assert((HEALER_RELATION_SHARDS &
+		(HEALER_RELATION_SHARDS - 1)) == 0,
+	       "HEALER_RELATION_SHARDS must be a power of two");
+_Static_assert((HEALER_RELATIONS_PER_SHARD &
+		(HEALER_RELATIONS_PER_SHARD - 1)) == 0,
+	       "HEALER_RELATIONS_PER_SHARD must be a power of two");
+_Static_assert((1u << HEALER_SHARD_SHIFT) == HEALER_RELATIONS_PER_SHARD,
+	       "HEALER_SHARD_SHIFT must equal log2(HEALER_RELATIONS_PER_SHARD)");
+
 void healer_observe_relation(struct childdata *child, unsigned int current_nr)
 {
 	unsigned int pred_a, pred_b;
 	unsigned int predset_hash;
+	unsigned int shard_idx;
 	unsigned int slot_idx;
 	unsigned int probe;
-	struct healer_relation *table;
+	struct healer_relation *shard;
 	bool evicted = false;
 
 	if (child == NULL)
@@ -163,17 +182,23 @@ void healer_observe_relation(struct childdata *child, unsigned int current_nr)
 	}
 
 	predset_hash = healer_predset_hash(pred_a, pred_b);
-	slot_idx = predset_hash & (HEALER_RELATION_SLOTS - 1);
-	table = shm->healer_relations;
 
-	lock(&shm->healer_relations_lock);
+	/* Lower HEALER_SHARD_SHIFT bits index into the shard; the next
+	 * log2(HEALER_RELATION_SHARDS) bits select which shard.  Disjoint
+	 * fields keep the two indices independent under FNV-1a. */
+	slot_idx = predset_hash & (HEALER_RELATIONS_PER_SHARD - 1);
+	shard_idx = (predset_hash >> HEALER_SHARD_SHIFT) &
+		    (HEALER_RELATION_SHARDS - 1);
+	shard = shm->healer_relations[shard_idx];
+
+	lock(&shm->healer_relations_locks[shard_idx]);
 
 	for (probe = 0; probe < HEALER_PROBE_LIMIT; probe++) {
 		struct healer_relation *slot;
 		unsigned int idx;
 
-		idx = (slot_idx + probe) & (HEALER_RELATION_SLOTS - 1);
-		slot = &table[idx];
+		idx = (slot_idx + probe) & (HEALER_RELATIONS_PER_SHARD - 1);
+		slot = &shard[idx];
 
 		if (slot->predset_hash == 0) {
 			slot->predset_hash = predset_hash;
@@ -193,19 +218,28 @@ void healer_observe_relation(struct childdata *child, unsigned int current_nr)
 		}
 	}
 
+	unlock(&shm->healer_relations_locks[shard_idx]);
+
+	/* Stats counters are now bumped from any of HEALER_RELATION_SHARDS
+	 * shard-locked paths (and read unlocked from healer_table_dump),
+	 * so the previously plain ++ under one global lock becomes an
+	 * atomic add.  Pulled out of the locked region: the counters carry
+	 * their own atomicity, holding the shard lock across them would
+	 * just lengthen the critical section. */
 	if (probe == HEALER_PROBE_LIMIT) {
 		/* Ran off the end of the probe window without finding
 		 * either the matching predset or an empty slot.  Drop the
 		 * observation and surface the table-full event so the
 		 * operator can spot a saturated table in the periodic dump. */
-		shm->stats.healer_table_full++;
+		__atomic_fetch_add(&shm->stats.healer_table_full, 1,
+				   __ATOMIC_RELAXED);
 	}
 
-	shm->stats.healer_relations_observed++;
+	__atomic_fetch_add(&shm->stats.healer_relations_observed, 1,
+			   __ATOMIC_RELAXED);
 	if (evicted)
-		shm->stats.healer_evictions++;
-
-	unlock(&shm->healer_relations_lock);
+		__atomic_fetch_add(&shm->stats.healer_evictions, 1,
+				   __ATOMIC_RELAXED);
 }
 
 /*
@@ -239,58 +273,73 @@ void healer_table_dump(void)
 	unsigned int top_count = 0;
 	unsigned int occupied = 0;
 	unsigned long total_promoted = 0;
-	unsigned int i, j;
+	unsigned int s, i, j;
 	unsigned long observed, table_full, evictions;
 
-	lock(&shm->healer_relations_lock);
+	/* Acquire every shard lock in fixed ascending order so the whole
+	 * table is read under a coherent snapshot.  No other path takes
+	 * more than one shard lock, so this strict ordering is sufficient
+	 * to avoid deadlock without any AB-BA gymnastics. */
+	for (s = 0; s < HEALER_RELATION_SHARDS; s++)
+		lock(&shm->healer_relations_locks[s]);
 
-	for (i = 0; i < HEALER_RELATION_SLOTS; i++) {
-		const struct healer_relation *slot = &shm->healer_relations[i];
+	for (s = 0; s < HEALER_RELATION_SHARDS; s++) {
+		for (i = 0; i < HEALER_RELATIONS_PER_SHARD; i++) {
+			const struct healer_relation *slot =
+				&shm->healer_relations[s][i];
 
-		if (slot->predset_hash == 0)
-			continue;
-		occupied++;
-		total_promoted += slot->promoted_count;
-
-		for (j = 0; j < slot->promoted_count; j++) {
-			unsigned int weight = slot->promoted[j].weight;
-			unsigned int min_idx = 0;
-			unsigned int k;
-
-			if (top_count < HEALER_DUMP_TOP_N) {
-				top[top_count].pred_a = slot->pred_a;
-				top[top_count].pred_b = slot->pred_b;
-				top[top_count].promoted_nr =
-					slot->promoted[j].nr;
-				top[top_count].weight = weight;
-				top_count++;
+			if (slot->predset_hash == 0)
 				continue;
-			}
+			occupied++;
+			total_promoted += slot->promoted_count;
 
-			for (k = 1; k < HEALER_DUMP_TOP_N; k++) {
-				if (top[k].weight < top[min_idx].weight)
-					min_idx = k;
-			}
-			if (weight > top[min_idx].weight) {
-				top[min_idx].pred_a = slot->pred_a;
-				top[min_idx].pred_b = slot->pred_b;
-				top[min_idx].promoted_nr =
-					slot->promoted[j].nr;
-				top[min_idx].weight = weight;
+			for (j = 0; j < slot->promoted_count; j++) {
+				unsigned int weight = slot->promoted[j].weight;
+				unsigned int min_idx = 0;
+				unsigned int k;
+
+				if (top_count < HEALER_DUMP_TOP_N) {
+					top[top_count].pred_a = slot->pred_a;
+					top[top_count].pred_b = slot->pred_b;
+					top[top_count].promoted_nr =
+						slot->promoted[j].nr;
+					top[top_count].weight = weight;
+					top_count++;
+					continue;
+				}
+
+				for (k = 1; k < HEALER_DUMP_TOP_N; k++) {
+					if (top[k].weight < top[min_idx].weight)
+						min_idx = k;
+				}
+				if (weight > top[min_idx].weight) {
+					top[min_idx].pred_a = slot->pred_a;
+					top[min_idx].pred_b = slot->pred_b;
+					top[min_idx].promoted_nr =
+						slot->promoted[j].nr;
+					top[min_idx].weight = weight;
+				}
 			}
 		}
 	}
 
 	/* Refresh the lazily-maintained occupancy counter while we still
-	 * hold the lock so the value the dump prints matches what we just
-	 * scanned. */
+	 * hold every shard lock so the value the dump prints matches what
+	 * we just scanned. */
 	shm->stats.healer_unique_predsets = occupied;
 
-	observed = shm->stats.healer_relations_observed;
-	table_full = shm->stats.healer_table_full;
-	evictions = shm->stats.healer_evictions;
+	/* Release in reverse order for symmetry with acquisition; either
+	 * direction is correct for unlock since no waiter can hold one of
+	 * these and be waiting on another. */
+	for (s = HEALER_RELATION_SHARDS; s-- > 0; )
+		unlock(&shm->healer_relations_locks[s]);
 
-	unlock(&shm->healer_relations_lock);
+	observed = __atomic_load_n(&shm->stats.healer_relations_observed,
+				   __ATOMIC_RELAXED);
+	table_full = __atomic_load_n(&shm->stats.healer_table_full,
+				     __ATOMIC_RELAXED);
+	evictions = __atomic_load_n(&shm->stats.healer_evictions,
+				    __ATOMIC_RELAXED);
 
 	if (occupied == 0 && observed == 0)
 		return;

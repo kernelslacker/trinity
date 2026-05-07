@@ -408,29 +408,45 @@ struct shm_s {
 
 	/*
 	 * HEALER syscall-relation observer table -- see include/healer.h
-	 * for the design.  Indexed by FNV-1a(sorted (pred_a, pred_b)) masked
-	 * to HEALER_RELATION_SLOTS; collisions linear-probe up to
-	 * HEALER_PROBE_LIMIT slots before dropping the observation and
-	 * bumping shm->stats.healer_table_full.  Empty slots are identified
-	 * by predset_hash == 0; a real predset whose FNV-1a hash happens to
-	 * be 0 is remapped to 1 inside healer_observe_relation().
+	 * for the design.  Partitioned into HEALER_RELATION_SHARDS slabs of
+	 * HEALER_RELATIONS_PER_SHARD slots each; the predset hash's lower
+	 * HEALER_SHARD_SHIFT bits index into a shard, the next
+	 * log2(HEALER_RELATION_SHARDS) bits select which shard.  Collisions
+	 * linear-probe up to HEALER_PROBE_LIMIT slots within a single shard
+	 * before dropping the observation and bumping
+	 * shm->stats.healer_table_full.  Empty slots are identified by
+	 * predset_hash == 0; a real predset whose FNV-1a hash happens to be
+	 * 0 is remapped to 1 inside healer_observe_relation().
 	 *
-	 * Sized HEALER_RELATION_SLOTS * sizeof(struct healer_relation)
-	 * ~= 16384 * 80B = 1.25 MiB -- comfortably below the existing
-	 * cmp_novelty[] / frontier_history[] envelope.
+	 * Sized HEALER_RELATION_SHARDS * HEALER_RELATIONS_PER_SHARD *
+	 * sizeof(struct healer_relation) ~= 16 * 1024 * 80B = 1.25 MiB --
+	 * unchanged from the pre-shard flat layout, comfortably below the
+	 * existing cmp_novelty[] / frontier_history[] envelope.  Per-shard
+	 * fill ratios match the pre-shard global ratio under FNV-1a's
+	 * uniform output distribution, so probe-length and table_full
+	 * behaviour are unchanged.
 	 *
-	 * Single coarse lock across all observer-hook updates: the hook
-	 * fires only on the new-edge branch of dispatch_step, which by
-	 * construction is rare relative to the per-syscall hot path
-	 * (typical fleet new-edge rate is well under 1% of dispatched
-	 * calls), so contention is bounded and the lock keeps the
-	 * insertion + eviction scan atomic without needing CAS-per-slot
-	 * coordination.  Writes to a slot's promoted[] array are similarly
-	 * serialised under this lock, which lets the dump path snapshot
-	 * the whole table under one acquire instead of per-slot.
+	 * Per-shard lock instead of a single coarse lock: the observer hook
+	 * fires only on the new-edge branch of dispatch_step (typical fleet
+	 * rate well under 1% of dispatched calls), but burst windows --
+	 * post-fork warmup, recipe-runner childop, frontier-strategy windows
+	 * that rip through new coverage -- collapse every child's new-edge
+	 * path through the same lock.  Sharding the lock by predset hash
+	 * cuts that contention by HEALER_RELATION_SHARDS while preserving
+	 * the per-slot insertion + eviction-scan atomicity that the existing
+	 * promoted[] mutation logic relies on.  The dump path takes all
+	 * shard locks in fixed ascending order so the whole table is read
+	 * coherently with no AB-BA risk -- no other path takes more than
+	 * one shard lock.  Cross-shard stats counters
+	 * (stats.healer_relations_observed, .healer_table_full,
+	 * .healer_evictions) are bumped via __atomic_fetch_add since they
+	 * sit outside any single shard's lock.
+	 *
+	 * The locks array is aligned to a cache line so it does not
+	 * false-share with the trailing slots of the table block.
 	 */
-	struct healer_relation healer_relations[HEALER_RELATION_SLOTS];
-	lock_t healer_relations_lock;
+	struct healer_relation healer_relations[HEALER_RELATION_SHARDS][HEALER_RELATIONS_PER_SHARD];
+	lock_t healer_relations_locks[HEALER_RELATION_SHARDS] __attribute__((aligned(64)));
 };
 extern struct shm_s *shm;
 extern unsigned int shm_size;
