@@ -269,14 +269,10 @@ static unsigned long gen_undefined_arg(unsigned int call)
 	return rand64();
 }
 
-static unsigned long fill_arg(struct syscallrecord *rec, unsigned int argnum)
+static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum)
 {
-	struct syscallentry *entry;
-	unsigned int call;
+	unsigned int call = rec->nr;
 	enum argtype argtype;
-
-	call = rec->nr;
-	entry = get_syscall_entry(call, rec->do32bit);
 
 	if (argnum > entry->num_args)
 		return 0;
@@ -436,17 +432,17 @@ void generic_sanitise(struct syscallrecord *rec)
 	 * which would silently skip filling those slots even though
 	 * fill_arg() handles ARG_UNDEFINED by returning a random value. */
 	if (entry->num_args >= 1)
-		rec->a1 = fill_arg(rec, 1);
+		rec->a1 = fill_arg(entry, rec, 1);
 	if (entry->num_args >= 2)
-		rec->a2 = fill_arg(rec, 2);
+		rec->a2 = fill_arg(entry, rec, 2);
 	if (entry->num_args >= 3)
-		rec->a3 = fill_arg(rec, 3);
+		rec->a3 = fill_arg(entry, rec, 3);
 	if (entry->num_args >= 4)
-		rec->a4 = fill_arg(rec, 4);
+		rec->a4 = fill_arg(entry, rec, 4);
 	if (entry->num_args >= 5)
-		rec->a5 = fill_arg(rec, 5);
+		rec->a5 = fill_arg(entry, rec, 5);
 	if (entry->num_args >= 6)
-		rec->a6 = fill_arg(rec, 6);
+		rec->a6 = fill_arg(entry, rec, 6);
 }
 
 void generic_free_arg(struct syscallrecord *rec)
