@@ -62,22 +62,6 @@ void cmp_hints_init(void)
 		(unsigned long) sizeof(struct cmp_hints_shared) / 1024);
 }
 
-/*
- * Filter out uninteresting comparison values.
- * Skip 0, 1, -1, and very small values that are likely to be
- * boolean/flag checks rather than meaningful constants.
- */
-static bool interesting_value(unsigned long val)
-{
-	if (val == 0 || val == 1)
-		return false;
-	if (val == (unsigned long) -1)
-		return false;
-	if (val < 4)
-		return false;
-	return true;
-}
-
 static void pool_lock(struct cmp_hint_pool *pool)
 {
 	lock(&pool->lock);
@@ -172,9 +156,15 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 		if (!(type & KCOV_CMP_CONST))
 			continue;
 
-		if (interesting_value(arg1))
+		/*
+		 * Filter out uninteresting comparison operands inline so the
+		 * compiler can fold the per-record check to a couple of
+		 * branches: skip 0/1/2/3 (caught by the ~3UL mask going to 0)
+		 * and the all-ones sentinel.
+		 */
+		if (((arg1 & ~3UL) != 0) && (arg1 != (unsigned long) -1))
 			pool_add_locked(pool, arg1);
-		if (interesting_value(arg2))
+		if (((arg2 & ~3UL) != 0) && (arg2 != (unsigned long) -1))
 			pool_add_locked(pool, arg2);
 	}
 	pool_unlock(pool);
