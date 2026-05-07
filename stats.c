@@ -22,6 +22,21 @@
 #include "utils.h"
 
 /*
+ * Linker-provided bounds of the running binary's executable text.  Used
+ * to filter PC samples whose storage was itself stomped by the wild
+ * writes we are trying to attribute -- an entry whose pc lands outside
+ * [__executable_start, _etext) cannot be a real call site and would
+ * otherwise dump as garbage.
+ */
+extern char __executable_start[];
+extern char _etext[];
+
+static inline bool pc_in_text(void *pc)
+{
+	return pc >= (void *)__executable_start && pc < (void *)_etext;
+}
+
+/*
  * Aggregate-stats table column widths. Header + every row uses the same
  * format string so output is greppable (grep '^fd_lifecycle ') and
  * human-scannable (columns line up).
@@ -1513,6 +1528,15 @@ static void corrupt_ptr_pc_dump_for(const struct corrupt_ptr_pc_entry *snap,
 		if (snap[i].count == 0)
 			break;
 		if (snap[i].nr != nr || snap[i].do32bit != do32bit)
+			continue;
+		/*
+		 * The pc slots in this ring are themselves a write target
+		 * of the wild-write storm being measured -- entries get
+		 * stomped between sample-time and dump-time.  Skip rows
+		 * whose pc no longer points into our own .text so the
+		 * sub-attribution output stays trustworthy for triage.
+		 */
+		if (snap[i].pc == NULL || !pc_in_text(snap[i].pc))
 			continue;
 		stats_log_write("    %-32s %lu\n",
 				pc_to_string(snap[i].pc, pcbuf, sizeof(pcbuf)),
