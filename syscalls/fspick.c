@@ -27,4 +27,5 @@ struct syscallentry syscall_fspick = {
 	.ret_objtype = OBJ_FD_FS_CTX,
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
+	.post = post_fs_ctx_fd,
 };
