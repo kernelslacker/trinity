@@ -68,6 +68,29 @@ struct shm_s {
 	struct fd_hash_entry fd_hash[FD_HASH_SIZE] __attribute__((aligned(64)));
 	unsigned int fd_hash_count;
 
+	/*
+	 * Parallel compact list of live fds for "iterate every live fd"
+	 * consumers (currently refcount-auditor's audit_fd_bucket).  The
+	 * fd_hash[] table is sized for hash-collision headroom and is
+	 * sparsely populated — a typical fleet run holds a few hundred
+	 * live fds in 4096 slots, so a naive walk wastes >90% of its
+	 * iterations on empty slots.  fd_live[0..fd_live_count) holds
+	 * the fd value of every currently-occupied fd_hash slot, and
+	 * the consumer resolves each fd back to its slot via the
+	 * existing hash + linear-probe chain (fd_hash_lookup).
+	 *
+	 * Maintained by fd_hash_insert (append-on-claim) and
+	 * fd_hash_remove (swap-remove) under shm->objlock; reads from
+	 * children are unlocked and use ACQUIRE on fd_live_count to
+	 * synchronise with the publishing RELEASE store on the writer
+	 * side.  Order does not match fd_hash[] slot order — a
+	 * displacement-driven re-seat in fd_hash_remove leaves the live
+	 * fd's position in fd_live[] unchanged because the entry's fd
+	 * identity is unchanged.
+	 */
+	int fd_live[FD_LIVE_MAX];
+	unsigned int fd_live_count;
+
 	/* Written by main process — own cache line to avoid
 	 * false sharing with child-written stats above. */
 	unsigned int running_childs __attribute__((aligned(64)));
