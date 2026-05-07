@@ -1580,7 +1580,7 @@ void remove_object_by_fd(int fd)
 static void __prune_objects(struct childdata *child, enum objecttype type, enum obj_scope scope)
 {
 	struct objhead *head;
-	unsigned int i;
+	unsigned int snapshot, expected_kills, i;
 
 	head = &child->objects[type];
 
@@ -1595,21 +1595,35 @@ static void __prune_objects(struct childdata *child, enum objecttype type, enum 
 	if (head->array == NULL)
 		return;
 
-	/* Single pass: prune each entry with 1/10 probability.
+	/* Direct random-victim sampling.  The old form walked all N slots
+	 * and rolled ONE_IN(10) per slot -- ~N rand() calls and N branches
+	 * to perform ~N/10 destroys.  Pick expected_kills victims directly:
+	 * ~N/10 rand() calls and N/10 branches for the same eviction rate.
 	 *
-	 * Walk the array in reverse.  destroy_object() does swap-with-last
-	 * on the parallel array, so a forward walk would skip whichever
-	 * entry got pulled into the current slot from the back.  Walking
-	 * from the back means any swap-in source is from a position we
-	 * have already visited, so each live entry is considered exactly
-	 * once. */
-	for (i = head->num_entries; i > 0; i--) {
-		struct object *obj = head->array[i - 1];
+	 * snapshot is taken once: destroy_object() decrements num_entries
+	 * via swap-with-last, but we sample over the original index space.
+	 * Slots beyond the shrunken num_entries are NULLed by
+	 * __destroy_object, so the obj == NULL skip absorbs them.  When a
+	 * swap lands a previously-tail entry into a not-yet-picked slot,
+	 * that resident is statistically equivalent to having been picked
+	 * directly -- so the old reverse-walk invariant (each live entry
+	 * visited exactly once) is no longer load-bearing.
+	 *
+	 * Duplicate picks land on the same idx with probability
+	 * ~expected_kills/snapshot (~10%); a duplicate finds NULL on the
+	 * second visit and is silently skipped. */
+	snapshot = head->num_entries;
+	expected_kills = snapshot / 10U;
+	if (expected_kills == 0)
+		expected_kills = 1U;
+
+	for (i = 0; i < expected_kills; i++) {
+		unsigned int idx = rand() % snapshot;
+		struct object *obj = head->array[idx];
 
 		if (obj == NULL)
 			continue;
-		if (ONE_IN(10))
-			destroy_object(obj, scope, type);
+		destroy_object(obj, scope, type);
 	}
 }
 
