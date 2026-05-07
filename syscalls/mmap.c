@@ -199,7 +199,21 @@ static void post_mmap(struct syscallrecord *rec)
 		if (rec->a5 != (unsigned long) -1) {
 			if (fstat((int) rec->a5, &st) == 0) {
 				if (st.st_size > 0) {
-					off_t backed = (off_t) st.st_size - (off_t) rec->a6;
+					off_t off_bytes;
+
+					/*
+					 * sanitise_mmap stores mmap2's pgoff in
+					 * 4K-page units, but the clamp below works
+					 * in bytes.  Scale before subtracting from
+					 * st_size, otherwise backed is off by 4096x
+					 * for any mmap2 with non-zero pgoff.
+					 */
+					if (this_syscallname("mmap2") == true)
+						off_bytes = (off_t) rec->a6 * (off_t) page_size;
+					else
+						off_bytes = (off_t) rec->a6;
+
+					off_t backed = (off_t) st.st_size - off_bytes;
 
 					if (backed <= 0)
 						new->map.size = 0;
