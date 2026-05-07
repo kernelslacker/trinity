@@ -215,14 +215,9 @@ static bool is_arg_address(enum argtype argtype)
 	return false;
 }
 
-unsigned long find_previous_arg_address(struct syscallrecord *rec, unsigned int argnum)
+unsigned long find_previous_arg_address(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum)
 {
-	struct syscallentry *entry;
 	unsigned long addr = 0;
-	unsigned int call;
-
-	call = rec->nr;
-	entry = get_syscall_entry(call, rec->do32bit);
 
 	if (argnum > 1)
 		if (is_arg_address(entry->argtype[0]) == true)
