@@ -456,8 +456,10 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	bool was_protected = false;
 	char pcbuf[128];
 
-	output(2, "ADD-OBJ slot=%p type=%d caller=%s\n", obj, type,
-		pc_to_string(__builtin_return_address(0), pcbuf, sizeof(pcbuf)));
+	if (unlikely(verbosity > 1)) {
+		output(2, "ADD-OBJ slot=%p type=%d caller=%s\n", obj, type,
+			pc_to_string(__builtin_return_address(0), pcbuf, sizeof(pcbuf)));
+	}
 
 	/*
 	 * Reject obviously-corrupted fd values before they enter any pool.
