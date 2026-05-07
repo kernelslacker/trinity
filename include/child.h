@@ -164,6 +164,7 @@ enum child_op_type {
 	CHILD_OP_AFXDP_CHURN,
 	CHILD_OP_KVM_RUN_CHURN,
 	CHILD_OP_NL80211_CHURN,
+	CHILD_OP_NAT_T_CHURN,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -530,3 +531,4 @@ bool psp_key_rotate(struct childdata *child);
 bool afxdp_churn(struct childdata *child);
 bool kvm_run_churn(struct childdata *child);
 bool nl80211_churn(struct childdata *child);
+bool nat_t_churn(struct childdata *child);

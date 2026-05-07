@@ -886,6 +886,13 @@ struct stats_s {
 	unsigned long xfrm_churn_esp_sent;		/* loopback UDP send through SP/SA bundle returned >0 */
 	unsigned long xfrm_churn_pfkey_send_ok;		/* PF_KEYv2 SADB_FLUSH send returned >0 */
 
+	/* nat_t_churn childop counters */
+	unsigned long nat_t_churn_runs;			/* total nat_t_churn invocations */
+	unsigned long nat_t_churn_setup_failed;		/* unshare / NETLINK_XFRM open latched */
+	unsigned long nat_t_churn_sa_added;		/* XFRM_MSG_NEWSA with XFRMA_ENCAP accepted */
+	unsigned long nat_t_churn_sa_deleted;		/* XFRM_MSG_DELSA accepted */
+	unsigned long nat_t_churn_frames_sent;		/* ESP-in-UDP sendto returned >0 */
+
 	/* bpf_cgroup_attach childop counters */
 	unsigned long bpf_cgroup_attach_runs;			/* total bpf_cgroup_attach invocations */
 	unsigned long bpf_cgroup_attach_setup_failed;		/* cgroup open / PROG_LOAD failed */
