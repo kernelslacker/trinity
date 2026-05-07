@@ -53,14 +53,10 @@ bool get_map_handle(struct map_handle *h)
 		unsigned int slot_idx, slot_version;
 		struct object *obj;
 
-		switch (rand() % 3) {
-		case 0:	type = OBJ_MMAP_ANON;
-			break;
-		case 1:	type = OBJ_MMAP_FILE;
-			break;
-		case 2:	type = OBJ_MMAP_TESTFILE;
-			break;
-		}
+		static const enum objecttype map_pool_types[3] = {
+			OBJ_MMAP_ANON, OBJ_MMAP_FILE, OBJ_MMAP_TESTFILE
+		};
+		type = map_pool_types[rand() % 3];
 
 		/*
 		 * Use the versioned API so we can re-validate the slot
