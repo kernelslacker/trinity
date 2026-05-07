@@ -24,7 +24,7 @@ void *get_writable_struct(size_t size);
 void avoid_shared_buffer(unsigned long *addr, unsigned long len);
 void scrub_iovec_for_kernel_write(struct iovec *iov, unsigned long count);
 void scrub_msghdr_for_kernel_write(struct msghdr *msg);
-unsigned long find_previous_arg_address(struct syscallrecord *rec, unsigned int argnum);
+unsigned long find_previous_arg_address(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum);
 struct iovec * alloc_iovec(unsigned int num);
 unsigned long get_len(void);
 unsigned int get_pid(void);
