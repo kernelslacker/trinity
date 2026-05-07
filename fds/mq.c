@@ -16,6 +16,17 @@
 #include "trinity.h"
 #include "utils.h"
 
+/*
+ * Latched per-process: mq_open(3) consistently failed across the init
+ * loop with an errno that won't change (ENOSYS = no CONFIG_POSIX_MQUEUE,
+ * EOPNOTSUPP = filesystem refused the operation, ENOSPC = per-uid msg
+ * queue limit hit and not getting any better since we never reach the
+ * mq_unlink path on init failure).  Once latched, regen + consumers
+ * fast-path past mq_open.  Mirrors the unsupported_<name> shape used by
+ * kvm / landlock / memfd_secret.
+ */
+static bool unsupported_mq;
+
 static void mq_destructor(struct object *obj)
 {
 	close(obj->mqobj.fd);
@@ -77,6 +88,9 @@ static int open_one_mq(int idx)
 
 static int open_mq_fd(void)
 {
+	if (unsupported_mq)
+		return false;
+
 	return open_one_mq(rand() % 10);
 }
 
@@ -84,6 +98,7 @@ static int init_mq_fds(void)
 {
 	struct objhead *head;
 	unsigned int i;
+	int last_errno = 0;
 	int ret = false;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_MQ);
@@ -102,6 +117,15 @@ static int init_mq_fds(void)
 	for (i = 0; i < 5; i++) {
 		if (open_one_mq(i))
 			ret = true;
+		else
+			last_errno = errno;
+	}
+
+	if (!ret && (last_errno == ENOSYS || last_errno == EOPNOTSUPP ||
+		     last_errno == ENOSPC)) {
+		outputerr("init_mq_fds: all 5 mq_open attempts failed: %s -- latching unsupported_mq\n",
+			strerror(last_errno));
+		unsupported_mq = true;
 	}
 
 	return ret;
@@ -109,6 +133,9 @@ static int init_mq_fds(void)
 
 static int get_rand_mq_fd(void)
 {
+	if (unsupported_mq)
+		return -1;
+
 	if (objects_empty(OBJ_FD_MQ) == true)
 		return -1;
 

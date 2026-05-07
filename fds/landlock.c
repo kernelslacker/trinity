@@ -18,6 +18,16 @@
 #include "trinity.h"
 #include "utils.h"
 
+/*
+ * Latched per-process: landlock_create_ruleset returned an errno that
+ * won't change for the life of the process (CONFIG_LANDLOCK=n,
+ * EOPNOTSUPP from a kernel built without the feature, or EPERM from a
+ * locked-down profile).  Once latched, init / regen / consumers all
+ * fast-path past landlock without re-entering the syscall.  Mirrors the
+ * unsupported_<name> shape used by kvm / memfd_secret / mq.
+ */
+static bool unsupported_landlock;
+
 static void landlock_destructor(struct object *obj)
 {
 	close(obj->landlockobj.fd);
@@ -106,6 +116,9 @@ static int open_landlock_fd(void)
 	size_t attr_size;
 	int abi, fd;
 
+	if (unsupported_landlock)
+		return false;
+
 	abi = (int)syscall(__NR_landlock_create_ruleset, NULL, 0,
 			   LANDLOCK_CREATE_RULESET_VERSION);
 	if (abi < 1)
@@ -129,6 +142,12 @@ static int open_landlock_fd(void)
 
 	fd = syscall(__NR_landlock_create_ruleset, &attr, attr_size, 0);
 	if (fd < 0) {
+		if (errno == ENOSYS || errno == EOPNOTSUPP || errno == EPERM) {
+			outputerr("open_landlock_fd: landlock_create_ruleset(abi=%d) failed: %s -- latching unsupported_landlock\n",
+				abi, strerror(errno));
+			unsupported_landlock = true;
+			return false;
+		}
 		outputerr("open_landlock_fd: landlock_create_ruleset(abi=%d) failed: %s\n",
 			abi, strerror(errno));
 		return false;
@@ -146,7 +165,10 @@ static int open_landlock_fd(void)
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_LANDLOCK);
 	return true;
 #else
-	outputerr("open_landlock_fd: __NR_landlock_create_ruleset not defined at build time\n");
+	if (!unsupported_landlock) {
+		outputerr("open_landlock_fd: __NR_landlock_create_ruleset not defined at build time -- latching unsupported_landlock\n");
+		unsupported_landlock = true;
+	}
 	return false;
 #endif
 }
@@ -165,6 +187,9 @@ static int init_landlock_fds(void)
 
 static int get_rand_landlock_fd(void)
 {
+	if (unsupported_landlock)
+		return -1;
+
 	if (objects_empty(OBJ_FD_LANDLOCK) == true)
 		return -1;
 
