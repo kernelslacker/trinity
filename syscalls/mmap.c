@@ -104,7 +104,7 @@ static void sanitise_mmap(struct syscallrecord *rec)
 		if (rec->a5 == (unsigned long) -1)
 			rec->a5 = 0;
 
-		if (this_syscallname("mmap2") == true) {
+		if (current_entry_is_mmap2()) {
 			/* mmap2 counts in 4K units */
 			rec->a6 /= 4096;
 		} else {
@@ -211,7 +211,7 @@ static void post_mmap(struct syscallrecord *rec)
 					 * st_size, otherwise backed is off by 4096x
 					 * for any mmap2 with non-zero pgoff.
 					 */
-					if (this_syscallname("mmap2") == true)
+					if (current_entry_is_mmap2())
 						off_bytes = (off_t) rec->a6 * (off_t) page_size;
 					else
 						off_bytes = (off_t) rec->a6;

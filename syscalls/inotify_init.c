@@ -15,7 +15,7 @@ static void post_inotify_init(struct syscallrecord *rec)
 
 	new = alloc_object();
 	new->inotifyobj.fd = fd;
-	if (this_syscallname("inotify_init1"))
+	if (current_entry_is_inotify_init1())
 		new->inotifyobj.flags = rec->a1;
 	else
 		new->inotifyobj.flags = 0;

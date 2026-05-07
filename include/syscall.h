@@ -242,6 +242,25 @@ struct syscallentry {
 	bool is_close_syscall;
 
 	/*
+	 * Cached per-discriminator flags for the handful of shared
+	 * .sanitise / .post hooks that serve two syscallentries and need
+	 * to tell which variant they were called for (mmap vs mmap2,
+	 * sync_file_range vs sync_file_range2, inotify_init vs
+	 * inotify_init1, epoll_create vs epoll_create1, execve vs
+	 * execveat).  Resolved once from .name at table-init time in
+	 * copy_syscall_table() so the discriminator collapses to a single
+	 * byte load instead of the lookup-and-strcmp shape this_syscallname
+	 * costs on every probe.  Packed adjacent to is_close_syscall so the
+	 * whole cluster fits in the existing alignment hole in front of
+	 * bound_arg without growing the struct.
+	 */
+	bool is_mmap2;
+	bool is_sync_file_range2;
+	bool is_inotify_init1;
+	bool is_epoll_create1;
+	bool is_execve;
+
+	/*
 	 * Cached bitmap of arg slots (1..6) whose argtype legitimately
 	 * accepts a numeric substitute -- bit k set means slot (k+1) is a
 	 * legal target for the sequence-chain executor's retval-substitute

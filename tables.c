@@ -515,6 +515,19 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		copy[m].active_number = 0;
 		copy[m].syscall_category = stats_syscall_category(copy[m].name);
 		copy[m].is_close_syscall = (strcmp(copy[m].name, "close") == 0);
+		/*
+		 * Per-discriminator flags consumed by the shared .sanitise /
+		 * .post hooks for the five biarch / variant pairs trinity
+		 * fuzzes.  Resolved once here so the per-call discriminator
+		 * collapses to a single-byte load (see current_entry_is_*()
+		 * in include/tables.h) instead of running this_syscallname()'s
+		 * lookup-and-strcmp on every probe.
+		 */
+		copy[m].is_mmap2 = (strcmp(copy[m].name, "mmap2") == 0);
+		copy[m].is_sync_file_range2 = (strcmp(copy[m].name, "sync_file_range2") == 0);
+		copy[m].is_inotify_init1 = (strcmp(copy[m].name, "inotify_init1") == 0);
+		copy[m].is_epoll_create1 = (strcmp(copy[m].name, "epoll_create1") == 0);
+		copy[m].is_execve = (strcmp(copy[m].name, "execve") == 0);
 		copy[m].numeric_substitute_mask = compute_numeric_substitute_mask(&copy[m]);
 
 		from[n].entry = &copy[m];
