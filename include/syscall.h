@@ -229,6 +229,20 @@ struct syscallentry {
 	bool is_close_syscall;
 
 	/*
+	 * Cached bitmap of arg slots (1..6) whose argtype legitimately
+	 * accepts a numeric substitute -- bit k set means slot (k+1) is a
+	 * legal target for the sequence-chain executor's retval-substitute
+	 * stomp.  Resolved once from .argtype[] at table-init time in
+	 * copy_syscall_table() via compute_numeric_substitute_mask() so
+	 * apply_chain_substitution() in random-syscall.c can dispatch via a
+	 * single masked-rand + __builtin_ctz instead of re-walking the
+	 * argtype array and re-running the 23-case
+	 * argtype_accepts_numeric_substitute() switch on every chain step.
+	 * 6 bits used; upper 2 bits always zero.
+	 */
+	uint8_t numeric_substitute_mask;
+
+	/*
 	 * Trinity 1-based index (1..6) of the syscall argument whose value
 	 * upper-bounds rec->retval -- typically the "count" / "size" / "len"
 	 * argument of read/write/recv/send-class syscalls.  Consumed at the
@@ -294,6 +308,7 @@ void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry);
 void generic_post_close_fd(struct syscallrecord *rec);
 void post_mount_fd(struct syscallrecord *rec);
+uint8_t compute_numeric_substitute_mask(const struct syscallentry *entry);
 
 #define for_each_arg(_e, _i) \
 	for (_i = 1; _i <= (_e)->num_args; _i++)
