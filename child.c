@@ -1487,6 +1487,14 @@ void child_process(struct childdata *child, int childno)
 		if (use_dedicated_op == false)
 			child->op_type = pick_op_type();
 
+		/* The alt-op predicate is read three times below (alarm arm,
+		 * watch_taint compute, alarm disarm + op_count bump) and the
+		 * op_type field cannot change inside the iter body once
+		 * stamped above.  Hoist into a single bool, mirroring the
+		 * tick16 / use_dedicated_op / have_kcov hoists already in
+		 * this loop; saves 2 loads + 2 compares per iter. */
+		const bool is_alt_op = (child->op_type != CHILD_OP_SYSCALL);
+
 		/* Refresh the iteration-start timestamp every 16th pass.
 		 * vDSO clock_gettime is fast (~20 ns) but at ~700 ops/sec
 		 * across 32 children it adds up; rec->tp consumers (taint
@@ -1505,7 +1513,7 @@ void child_process(struct childdata *child, int childno)
 		 * SIGALRM-based stall detection can fire if the op hangs.
 		 * random_syscall() arms alarm internally for NEED_ALARM syscalls.
 		 */
-		if (child->op_type != CHILD_OP_SYSCALL)
+		if (is_alt_op)
 			alarm(1);
 
 		/* Snapshot the global edge counter for adapt_budget()'s
@@ -1533,8 +1541,7 @@ void child_process(struct childdata *child, int childno)
 		 * pair of read syscalls per iteration, and random_syscall has
 		 * its own taint-tracking via the existing pre_crash_ring
 		 * record on syscall return. */
-		const bool watch_taint = (child->op_type != CHILD_OP_SYSCALL &&
-					  child->tainted_fd >= 0);
+		const bool watch_taint = (is_alt_op && child->tainted_fd >= 0);
 		unsigned long tainted_before = 0;
 		if (watch_taint)
 			tainted_before = read_tainted_mask(child->tainted_fd);
@@ -1557,7 +1564,7 @@ void child_process(struct childdata *child, int childno)
 			}
 		}
 
-		if (child->op_type != CHILD_OP_SYSCALL) {
+		if (is_alt_op) {
 			alarm(0);
 			__atomic_add_fetch(&shm->stats.op_count, 1, __ATOMIC_RELAXED);
 		}
