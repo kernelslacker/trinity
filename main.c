@@ -21,6 +21,7 @@
 #include "pids.h"
 #include "post-mortem.h"
 #include "random.h"
+#include "self_cgroup.h"
 #include "shm.h"
 #include "stats.h"
 #include "syscall.h"
@@ -769,6 +770,13 @@ static bool spawn_child(int childno)
 		return false;
 	}
 
+	/* Phase 2 self-cgroup back-pressure: when memory.high is being
+	 * crossed, the parent ramps fork_throttle_us up so we slow the
+	 * spawn rate ahead of the kernel-side throttle.  Zero in the
+	 * common no-pressure path. */
+	if (fork_throttle_us > 0)
+		usleep(fork_throttle_us);
+
 	fflush(stdout);
 	pid = fork();
 
@@ -1248,6 +1256,8 @@ void main_loop(void)
 		fd_event_drain_all();
 
 		taint_check();
+
+		self_cgroup_events_check();
 
 		periodic_global_sanity_walk();
 
