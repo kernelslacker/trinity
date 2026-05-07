@@ -1577,12 +1577,12 @@ void remove_object_by_fd(int fd)
 		freeze_global_objects();
 }
 
-static void __prune_objects(enum objecttype type, enum obj_scope scope)
+static void __prune_objects(struct childdata *child, enum objecttype type, enum obj_scope scope)
 {
 	struct objhead *head;
 	unsigned int i;
 
-	head = get_objhead(scope, type);
+	head = &child->objects[type];
 
 	/* 0 = don't ever prune. */
 	if (head->max_entries == 0)
@@ -1615,6 +1615,7 @@ static void __prune_objects(enum objecttype type, enum obj_scope scope)
 
 void prune_objects(void)
 {
+	struct childdata *child;
 	unsigned int i;
 
 	/* We don't want to over-prune things and growing a little
@@ -1623,9 +1624,18 @@ void prune_objects(void)
 	if (!(ONE_IN(10)))
 		return;
 
+	/* Resolve the per-child object pool once.  Without this hoist,
+	 * each __prune_objects() call would re-enter get_objhead() ->
+	 * this_child() (a getpid + cache probe) for every one of the
+	 * MAX_OBJECT_TYPES iterations -- a wasted lookup per type.
+	 */
+	child = this_child();
+	if (child == NULL)
+		return;
+
 	for (i = 0; i < MAX_OBJECT_TYPES; i++) {
-		__prune_objects(i, OBJ_LOCAL);
+		__prune_objects(child, i, OBJ_LOCAL);
 		// For now, we're only pruning local objects.
-		// __prune_objects(i, OBJ_GLOBAL);
+		// __prune_objects(child, i, OBJ_GLOBAL);
 	}
 }
