@@ -6,11 +6,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/inotify.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "child.h"
 #include "params.h"
+#include "pids.h"
 #include "self_cgroup.h"
 #include "trinity.h"
 #include "utils.h"
@@ -180,6 +183,12 @@ static bool already_capped(const char *parent_cg_path)
 	return capped;
 }
 
+/* Defined below; forward-declared so self_cgroup_setup / _cleanup can
+ * call them while keeping the Phase 2 implementation grouped at the
+ * bottom of the file. */
+static void events_setup(void);
+static void events_cleanup(void);
+
 void self_cgroup_setup(void)
 {
 	char *parent_cg = NULL;
@@ -283,6 +292,8 @@ void self_cgroup_setup(void)
 	self_cg_path = new_cg;
 	new_cg = NULL;
 
+	events_setup();
+
 out:
 	free(parent_cg);
 	free(new_cg);
@@ -293,9 +304,270 @@ out:
 
 void self_cgroup_cleanup(void)
 {
+	events_cleanup();
 	if (self_cg_path == NULL)
 		return;
 	rmdir(self_cg_path);
 	free(self_cg_path);
 	self_cg_path = NULL;
+}
+
+/*
+ * Phase 2: memory.events back-pressure.
+ *
+ * The Phase 1 cap is reactive: when memory.max is hit the kernel evicts
+ * trinity processes, dropping bandit/HEALER convergence state every
+ * cycle.  Phase 2 listens to the kernel's memory.events file (rewritten
+ * each time low/high/max/oom counters bump) and applies back-pressure
+ * before the cap is reached: a doubling fork-rate throttle on
+ * memory.high crossings, and a small forced shed of the youngest
+ * children on memory.max crossings.
+ *
+ * The watch is parent-only.  Inotify on cgroupfs delivers IN_MODIFY
+ * each time the kernel rewrites memory.events; the parent drains those
+ * notifications from its main_loop tick (~25ms cadence at the busiest)
+ * and re-reads the file to compare counts against the last snapshot.
+ *
+ * Failure paths (inotify_init1 EMFILE, watch add denied, file open
+ * denied) all degrade silently to "Phase 1 only": the kernel will
+ * still scope the OOM kill to trinity's subtree, just without the
+ * proactive throttle.
+ */
+
+unsigned int fork_throttle_us;
+
+#define THROTTLE_MIN_US		1000U	/* 1 ms initial step */
+#define THROTTLE_MAX_US		100000U	/* 100 ms cap */
+#define THROTTLE_DECAY_TICKS	40U	/* ~1s of quiet at 25ms cadence */
+#define MAX_SHED_PER_EVENT	8U	/* upper bound on a single shed */
+
+static int events_inotify_fd = -1;
+static int events_file_fd = -1;
+static unsigned long last_high_count;
+static unsigned long last_max_count;
+static unsigned int high_event_seq;
+static unsigned int max_event_seq;
+static unsigned int quiet_streak;
+
+/*
+ * Re-read the cgroup memory.events file (rewritten in place by the
+ * kernel) and pull out the high and max counters.  The file is small
+ * (~96 bytes) and uses a stable "key value\n" format documented in
+ * cgroup-v2.rst.  Counters increase monotonically across the cgroup's
+ * lifetime, so a delta against the prior snapshot is the new-event
+ * count for that counter.
+ */
+static bool read_event_counts(unsigned long *high_out, unsigned long *max_out)
+{
+	char buf[512];
+	ssize_t n;
+	char *line, *save = NULL;
+	unsigned long high = 0, max = 0;
+
+	if (events_file_fd < 0)
+		return false;
+	if (lseek(events_file_fd, 0, SEEK_SET) == (off_t)-1)
+		return false;
+	n = read(events_file_fd, buf, sizeof(buf) - 1);
+	if (n <= 0)
+		return false;
+	buf[n] = '\0';
+	for (line = strtok_r(buf, "\n", &save); line != NULL;
+	     line = strtok_r(NULL, "\n", &save)) {
+		unsigned long v;
+
+		if (sscanf(line, "high %lu", &v) == 1)
+			high = v;
+		else if (sscanf(line, "max %lu", &v) == 1)
+			max = v;
+	}
+	*high_out = high;
+	*max_out = max;
+	return true;
+}
+
+static void events_setup(void)
+{
+	char path[PATH_MAX];
+
+	if (self_cg_path == NULL)
+		return;
+
+	if ((size_t)snprintf(path, sizeof(path), "%s/memory.events",
+			     self_cg_path) >= sizeof(path))
+		return;
+
+	events_inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+	if (events_inotify_fd < 0) {
+		outputerr("self-cgroup: inotify_init1 failed: %s; "
+			  "memory.events watcher disabled\n",
+			  strerror(errno));
+		return;
+	}
+
+	if (inotify_add_watch(events_inotify_fd, path, IN_MODIFY) < 0) {
+		outputerr("self-cgroup: inotify_add_watch(%s) failed: %s; "
+			  "memory.events watcher disabled\n",
+			  path, strerror(errno));
+		close(events_inotify_fd);
+		events_inotify_fd = -1;
+		return;
+	}
+
+	events_file_fd = open(path, O_RDONLY | O_CLOEXEC);
+	if (events_file_fd < 0) {
+		outputerr("self-cgroup: open(%s) failed: %s; "
+			  "memory.events watcher disabled\n",
+			  path, strerror(errno));
+		close(events_inotify_fd);
+		events_inotify_fd = -1;
+		return;
+	}
+
+	/* Seed the prior-snapshot so a fresh cgroup with non-zero
+	 * counters from a previous tenant (shouldn't happen for a
+	 * trinity-<pid> dir we just mkdir'd, but be defensive) doesn't
+	 * trigger a phantom event on the first tick. */
+	read_event_counts(&last_high_count, &last_max_count);
+
+	output(0, "self-cgroup: memory.events watcher armed on %s\n", path);
+}
+
+static void events_cleanup(void)
+{
+	if (events_file_fd >= 0) {
+		close(events_file_fd);
+		events_file_fd = -1;
+	}
+	if (events_inotify_fd >= 0) {
+		close(events_inotify_fd);
+		events_inotify_fd = -1;
+	}
+}
+
+static int pid_cmp_desc(const void *a, const void *b)
+{
+	pid_t pa = *(const pid_t *)a;
+	pid_t pb = *(const pid_t *)b;
+
+	return (pb > pa) - (pb < pa);
+}
+
+/*
+ * Kill the n highest-pid live children.  Highest pid is a proxy for
+ * "most recently forked": the kernel's pid allocator is monotonic up to
+ * pid_max wrap, and trinity's parent forks in a tight loop so wrap
+ * collisions inside one fleet are negligible.  Younger children carry
+ * less accumulated bandit/HEALER state, so shedding them costs the
+ * least learning per byte freed.  The parent's normal reap path
+ * (handle_children -> reap_child -> replace_child) repopulates the
+ * slots once memory pressure subsides; the throttle keeps the refill
+ * rate sane.
+ */
+static void shed_youngest_children(unsigned int n)
+{
+	pid_t *snap;
+	unsigned int i, count = 0;
+
+	if (n == 0 || pids == NULL)
+		return;
+
+	snap = malloc(max_children * sizeof(*snap));
+	if (snap == NULL)
+		return;
+
+	for (i = 0; i < max_children; i++) {
+		pid_t pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
+
+		if (pid == EMPTY_PIDSLOT)
+			continue;
+		if (!pid_is_valid(pid))
+			continue;
+		snap[count++] = pid;
+	}
+
+	if (count == 0) {
+		free(snap);
+		return;
+	}
+
+	qsort(snap, count, sizeof(*snap), pid_cmp_desc);
+
+	if (n > count)
+		n = count;
+	for (i = 0; i < n; i++) {
+		if (pid_alive(snap[i]) == true)
+			kill_pid(snap[i]);
+	}
+
+	free(snap);
+}
+
+void self_cgroup_events_check(void)
+{
+	char drain[4096];
+	ssize_t r;
+	bool any_event = false;
+	unsigned long high, max;
+
+	if (events_inotify_fd < 0)
+		return;
+
+	/* Drain the inotify queue.  We don't care which event fired
+	 * (memory.events only carries IN_MODIFY for us) — only that
+	 * something fired.  EAGAIN on the trailing call is the normal
+	 * empty-queue signal under O_NONBLOCK. */
+	while ((r = read(events_inotify_fd, drain, sizeof(drain))) > 0)
+		any_event = true;
+
+	if (!any_event) {
+		if (fork_throttle_us > 0 &&
+		    ++quiet_streak >= THROTTLE_DECAY_TICKS) {
+			output(0, "self-cgroup: HIGH cleared -- fork throttle off\n");
+			fork_throttle_us = 0;
+			quiet_streak = 0;
+		}
+		return;
+	}
+
+	quiet_streak = 0;
+
+	if (!read_event_counts(&high, &max))
+		return;
+
+	if (high > last_high_count) {
+		unsigned int next;
+
+		last_high_count = high;
+		high_event_seq++;
+		if (fork_throttle_us == 0)
+			next = THROTTLE_MIN_US;
+		else if (fork_throttle_us >= THROTTLE_MAX_US / 2)
+			next = THROTTLE_MAX_US;
+		else
+			next = fork_throttle_us * 2;
+		fork_throttle_us = next;
+		output(0, "self-cgroup: HIGH event #%u -- fork throttle now %uus\n",
+		       high_event_seq, fork_throttle_us);
+	}
+
+	if (max > last_max_count) {
+		unsigned long delta = max - last_max_count;
+		unsigned int shed;
+
+		last_max_count = max;
+		max_event_seq++;
+		/* Scale shed count with how many max-events we missed in
+		 * one tick; cap so we don't shed the whole fleet on a
+		 * single bump. */
+		shed = (delta > MAX_SHED_PER_EVENT) ? MAX_SHED_PER_EVENT
+						    : (unsigned int)delta * 2;
+		if (shed < 2)
+			shed = 2;
+		if (shed > MAX_SHED_PER_EVENT)
+			shed = MAX_SHED_PER_EVENT;
+		output(0, "self-cgroup: MAX event #%u -- shedding %u children\n",
+		       max_event_seq, shed);
+		shed_youngest_children(shed);
+	}
 }
