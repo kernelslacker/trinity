@@ -158,9 +158,10 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 
 	pool_lock(pool);
 	for (i = 0; i < count; i++) {
-		unsigned long type = trace_buf[1 + i * WORDS_PER_CMP];
-		unsigned long arg1 = trace_buf[1 + i * WORDS_PER_CMP + 1];
-		unsigned long arg2 = trace_buf[1 + i * WORDS_PER_CMP + 2];
+		unsigned long *rec = &trace_buf[1 + i * WORDS_PER_CMP];
+		unsigned long type = rec[0];
+		unsigned long arg1 = rec[1];
+		unsigned long arg2 = rec[2];
 
 		/* We only care about comparisons where one side is a
 		 * compile-time constant — those reveal what the kernel
