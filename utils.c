@@ -919,7 +919,10 @@ void dump_obj_heap_stats(void)
 
 /* Last syscall to trip a range_overlaps_shared() reject.  Last-write-wins;
  * a coarse hint for which sanitiser is doing the most work, not a precise
- * audit trail.  No lock — torn reads are acceptable for a diagnostic. */
+ * audit trail.  Process-local statics: each child has its own copy, the
+ * writer and the reader (the periodic -v summary below) live in the same
+ * single-threaded child, so plain accesses suffice.  Torn reads are
+ * acceptable for a diagnostic anyway. */
 static unsigned int last_reject_syscall_nr;
 static unsigned char last_reject_do32bit;
 static unsigned char last_reject_have_syscall;
@@ -983,13 +986,9 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len)
 			__atomic_add_fetch(bucket, 1, __ATOMIC_RELAXED);
 		}
 
-		__atomic_store_n(&last_reject_syscall_nr,
-				 nr, __ATOMIC_RELAXED);
-		__atomic_store_n(&last_reject_do32bit,
-				 do32 ? 1 : 0,
-				 __ATOMIC_RELAXED);
-		__atomic_store_n(&last_reject_have_syscall, 1,
-				 __ATOMIC_RELAXED);
+		last_reject_syscall_nr = nr;
+		last_reject_do32bit = do32 ? 1 : 0;
+		last_reject_have_syscall = 1;
 	}
 
 	if (verbosity > 1 &&
@@ -998,12 +997,9 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len)
 		unsigned int snr;
 		unsigned char s32;
 
-		if (__atomic_load_n(&last_reject_have_syscall,
-				    __ATOMIC_RELAXED)) {
-			snr = __atomic_load_n(&last_reject_syscall_nr,
-					      __ATOMIC_RELAXED);
-			s32 = __atomic_load_n(&last_reject_do32bit,
-					      __ATOMIC_RELAXED);
+		if (last_reject_have_syscall) {
+			snr = last_reject_syscall_nr;
+			s32 = last_reject_do32bit;
 			sname = print_syscall_name(snr, s32 != 0);
 		}
 
