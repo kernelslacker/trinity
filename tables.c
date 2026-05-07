@@ -704,15 +704,21 @@ struct syscallentry * get_syscall_entry(unsigned int callno, bool do32 __attribu
  * Check the name of the syscall we're in the ->sanitise of.
  * This is useful for syscalls where we have a common ->sanitise
  * for multiple syscallentry's. (mmap/mmap2, sync_file_range/sync_file_range2)
+ *
+ * Reads the resolved entry pointer that dispatch_step() stamps on the rec
+ * before invoking do_syscall(); this elides the per-call
+ * get_syscall_entry(nr, do32bit) table lookup + biarch branch the original
+ * shape paid for on every callsite (mmap/mmap2 fires this twice per call).
+ * All current callers run inside .sanitise / .post hooks, both of which
+ * fire after dispatch_step has set rec->entry, so the NULL guard only
+ * matters for any future caller that fires before dispatch.
  */
 bool this_syscallname(const char *thisname)
 {
-	struct childdata *child = this_child();
-	unsigned int call = child->syscall.nr;
-	struct syscallentry *syscall_entry = get_syscall_entry(call, child->syscall.do32bit);
+	struct syscallentry *e = this_child()->syscall.entry;
 
-	if (syscall_entry == NULL)
+	if (e == NULL)
 		return false;
 
-	return strcmp(thisname, syscall_entry->name) == 0;
+	return strcmp(thisname, e->name) == 0;
 }
