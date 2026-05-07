@@ -434,6 +434,12 @@ void oom_score_adj(int adj);
 void assign_dedicated_alt_op(struct childdata *child, int childno);
 void log_alt_op_config(void);
 
+/* init_altop_dispatch() builds the dense vector of currently-enabled
+ * alt-ops from dormant_op_disabled[].  Must run before pick_op_type()
+ * is first invoked (i.e. before fork_children); a fresh call is required
+ * if dormant gates ever become runtime mutable. */
+void init_altop_dispatch(void);
+
 void set_dontkillme(struct childdata *child, bool state);
 
 void reap_child(struct childdata *child, int childno);
