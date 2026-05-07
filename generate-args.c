@@ -121,12 +121,13 @@ static unsigned long handle_arg_op(struct syscallentry *entry, unsigned int argn
 {
 	const unsigned long *values = NULL;
 	unsigned int num = 0;
+	unsigned long hint;
 
 	get_num_and_values(entry, argnum, &num, &values);
 
 	/* ~1 in 16: try a CMP hint as an undocumented command code. */
-	if (ONE_IN(16) && cmp_hints_available(call))
-		return cmp_hints_get(call);
+	if (ONE_IN(16) && cmp_hints_try_get(call, &hint))
+		return hint;
 
 	return values[rand() % num];
 }
@@ -139,6 +140,7 @@ static unsigned long handle_arg_list(struct syscallentry *entry, unsigned int ar
 	unsigned long mask = 0;
 	unsigned int num = 0;
 	const unsigned long *values = NULL;
+	unsigned long hint;
 
 	get_num_and_values(entry, argnum, &num, &values);
 
@@ -150,9 +152,9 @@ static unsigned long handle_arg_list(struct syscallentry *entry, unsigned int ar
 	}
 
 	/* ~1 in 16: OR in a CMP hint as an undocumented flag bit. */
-	if (ONE_IN(16) && cmp_hints_available(call)) {
+	if (ONE_IN(16) && cmp_hints_try_get(call, &hint)) {
 		mask = set_rand_bitmask(num, values);
-		mask |= cmp_hints_get(call);
+		mask |= hint;
 		return mask;
 	}
 
@@ -252,10 +254,12 @@ enum argtype get_argtype(struct syscallentry *entry, unsigned int argnum)
 
 static unsigned long gen_undefined_arg(unsigned int call)
 {
+	unsigned long hint;
+
 	switch (rand() % 9) {
 	case 0:
-		if (cmp_hints_available(call))
-			return cmp_hints_get(call);
+		if (cmp_hints_try_get(call, &hint))
+			return hint;
 		return mutate_value(get_boundary_value());
 	case 1: return mutate_value(get_boundary_value());
 	case 2: return mutate_value(rand64());

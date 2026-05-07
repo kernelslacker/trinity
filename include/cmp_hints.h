@@ -38,8 +38,6 @@ void cmp_hints_init(void);
  * add interesting constants to the hint pool for syscall nr. */
 void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr);
 
-/* Return a random hint value for the given syscall, or 0 if none. */
-unsigned long cmp_hints_get(unsigned int nr);
-
-/* Return true if any hints are available for this syscall. */
-bool cmp_hints_available(unsigned int nr);
+/* Try to extract a random hint value for the given syscall.
+ * Returns true with the hint written to *out, or false if none available. */
+bool cmp_hints_try_get(unsigned int nr, unsigned long *out);

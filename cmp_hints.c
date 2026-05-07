@@ -98,7 +98,7 @@ static void pool_add_locked(struct cmp_hint_pool *pool, unsigned long val)
 			(pool->count - lo) * sizeof(unsigned long));
 		pool->values[lo] = val;
 		/*
-		 * RELEASE-store count so a lockless reader in cmp_hints_get
+		 * RELEASE-store count so a lockless reader in cmp_hints_try_get
 		 * that observes the new count is guaranteed to also see the
 		 * values[] store above.
 		 */
@@ -170,13 +170,13 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 	pool_unlock(pool);
 }
 
-unsigned long cmp_hints_get(unsigned int nr)
+bool cmp_hints_try_get(unsigned int nr, unsigned long *out)
 {
 	struct cmp_hint_pool *pool;
 	unsigned int count;
 
 	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
-		return 0;
+		return false;
 
 	pool = &cmp_hints_shm->pools[nr];
 
@@ -200,16 +200,8 @@ unsigned long cmp_hints_get(unsigned int nr)
 	 */
 	count = __atomic_load_n(&pool->count, __ATOMIC_ACQUIRE);
 	if (count == 0)
-		return 0;
-
-	return pool->values[rand() % count];
-}
-
-bool cmp_hints_available(unsigned int nr)
-{
-	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return false;
 
-	return __atomic_load_n(&cmp_hints_shm->pools[nr].count,
-			       __ATOMIC_RELAXED) > 0;
+	*out = pool->values[rand() % count];
+	return true;
 }
