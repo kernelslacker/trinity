@@ -15,10 +15,16 @@
  * Rotation Phase 2 -> HEALER section) for the broader two-phase design.
  */
 
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/utsname.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "edgepair.h"		/* EDGEPAIR_NO_PREV */
@@ -545,4 +551,471 @@ void healer_table_dump(void)
 				print_syscall_name(top[i].promoted_nr, false),
 				top[i].weight);
 	}
+}
+
+/*
+ * Cross-run persistence.
+ *
+ * The relation table lives in shm and dies with the trinity process; every
+ * restart is otherwise a cold start.  Phase B's syscall picker needs the
+ * table to settle (24-48h of observations) before the bandit arm has any
+ * usable signal, but trinity's children OOM/crash long before that on
+ * realistic fleet hosts -- so without persistence the table never reaches
+ * the maturity threshold and Phase B stays gated indefinitely.
+ *
+ * The save/load wire-format and election machinery here mirror the same
+ * pattern minicorpus.c and effector-map.c established for their own per-
+ * run-vs-cross-run state: an XDG_CACHE_HOME / mkdir-p / atomic-rename-via-
+ * tmp-file save path, a header carrying magic + version + dimensions +
+ * kernel-utsname + payload CRC32, and a CAS-elected snapshot trigger so
+ * concurrent fuzz children don't race into the save.  See effector-map.c
+ * for the mirrored header-shape rationale; the duplication is deliberate
+ * (a future divergence in any one persistence file's format shouldn't
+ * ripple into the others).
+ *
+ * File layout (little-endian, packed as written):
+ *
+ *   offset  size   field
+ *   ------  ----   ----------------------------------------------------
+ *        0     4   magic = 0x48524C54 ('H','R','L','T' -- HEALER
+ *                          Relation-table) sniff anchor.
+ *        4     4   version = HEALER_FILE_VERSION (currently 1).
+ *        8     4   relation_slots = HEALER_RELATION_SLOTS at write time.
+ *                          A loader compiled with a different value
+ *                          refuses the file (the on-disk layout is
+ *                          dimensioned by it).
+ *       12     4   promoted_per_slot = HEALER_PROMOTED_PER_SLOT at write
+ *                          time.  Same dimension-mismatch reject.
+ *       16     4   max_nr_syscall = MAX_NR_SYSCALL at write time.  Reject
+ *                          on mismatch -- the (pred_a, pred_b, nr) fields
+ *                          are uint16_t and a build with different syscall
+ *                          numbering would silently misinterpret entries.
+ *       20     4   payload_crc32 over the relation payload that follows
+ *                          (header-internal fields are not covered; the
+ *                          dimension/magic/version checks catch tampered
+ *                          headers earlier and cheaper).
+ *       24     8   observations = shm->stats.healer_relations_observed at
+ *                          write time.  Restored on load so the snapshot
+ *                          gating threshold is anchored to the cumulative
+ *                          observation count rather than the post-load
+ *                          delta.
+ *       32    65   kernel_release = utsname.release captured at write
+ *                          time, NUL-terminated, fixed-width.  Loader
+ *                          compares strncmp(); a mismatch logs and
+ *                          cold-starts (the relation table is meaningful
+ *                          only against the kernel it was learned on,
+ *                          since syscall numbering and per-syscall edge
+ *                          fingerprints can shift between kernels).
+ *       97    65   kernel_version = utsname.version, same reject
+ *                          semantics; .release alone is too coarse to
+ *                          identify one specific compiled kernel image.
+ *      162     6   pad to round struct healer_file_header to 8 bytes.
+ *
+ *      168 onwards  payload = HEALER_RELATION_SLOTS * sizeof(struct
+ *                  healer_relation) bytes of relation table, laid out
+ *                  in C row-major order matching the in-memory
+ *                  shm->healer_relations[] indexing.  No per-slot
+ *                  framing; reads/writes are bulk into the in-shm
+ *                  array.  payload_crc32 is computed over exactly
+ *                  these bytes.
+ *
+ * Atomicity: save writes to "<path>.tmp.<pid>", fsyncs, then renames into
+ * place; the per-pid suffix stops two concurrent --healer-snapshot saves
+ * (e.g. snapshot-trigger fire racing with the atexit save) from
+ * interleaving writes.  Snapshot-window concurrent observers are
+ * tolerated: a torn slot key/entry is a one-observation discrepancy that
+ * the next snapshot resyncs, and the loader's CRC catches the (much
+ * rarer) bytes-written-mid-rename failure mode.
+ */
+
+#define HEALER_FILE_MAGIC		0x48524C54U	/* "HRLT" */
+#define HEALER_FILE_VERSION		1U
+#define HEALER_UTSNAME_LEN		65	/* matches Linux __NEW_UTS_LEN+1 */
+
+/*
+ * Periodic snapshot trigger.  Every HEALER_SNAPSHOT_OBSERVATIONS the
+ * fleet-wide observation counter advances past, one CAS-elected child
+ * runs the save while everyone else early-returns; the next window opens
+ * once the next slice has accumulated.  50000 was picked to amortise the
+ * ~1.13MB write across roughly a minute of steady-state fuzzing on a
+ * typical fleet host -- frequent enough that an OOM-mid-run only loses
+ * the last cadence window of observations, infrequent enough that the
+ * write-back pressure stays in the noise.
+ */
+#define HEALER_SNAPSHOT_OBSERVATIONS	50000UL
+
+/* Header layout is naturally packed under the LP64 ABIs trinity targets:
+ * 6 uint32_t fields, a uint64_t, then two fixed-width char arrays plus
+ * a 6-byte tail pad summing to 168 bytes with no compiler-inserted
+ * padding.  No __attribute__((packed)) needed -- and adding one would
+ * trip -Wpacked. */
+struct healer_file_header {
+	uint32_t magic;
+	uint32_t version;
+	uint32_t relation_slots;
+	uint32_t promoted_per_slot;
+	uint32_t max_nr_syscall;
+	uint32_t payload_crc32;
+	uint64_t observations;
+	char kernel_release[HEALER_UTSNAME_LEN];
+	char kernel_version[HEALER_UTSNAME_LEN];
+	uint8_t pad[6];
+};
+
+#define HEALER_PAYLOAD_BYTES \
+	((size_t)HEALER_RELATION_SLOTS * sizeof(struct healer_relation))
+
+/* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Same algorithm the
+ * minicorpus and effector-map persistence files use; kept local rather
+ * than refactored into a shared helper so a future divergence in any
+ * one file's format doesn't ripple over here. */
+static uint32_t healer_crc32(const void *buf, size_t len)
+{
+	static uint32_t table[256];
+	static bool table_built;
+	const uint8_t *p = buf;
+	uint32_t crc = 0xffffffffU;
+	size_t i;
+
+	if (!table_built) {
+		uint32_t c;
+		unsigned int n, k;
+
+		for (n = 0; n < 256; n++) {
+			c = n;
+			for (k = 0; k < 8; k++)
+				c = (c & 1) ? (0xedb88320U ^ (c >> 1)) : (c >> 1);
+			table[n] = c;
+		}
+		table_built = true;
+	}
+
+	for (i = 0; i < len; i++)
+		crc = table[(crc ^ p[i]) & 0xff] ^ (crc >> 8);
+
+	return crc ^ 0xffffffffU;
+}
+
+static ssize_t healer_write_all(int fd, const void *buf, size_t len)
+{
+	const uint8_t *p = buf;
+	size_t left = len;
+
+	while (left > 0) {
+		ssize_t n = write(fd, p, left);
+
+		if (n < 0) {
+			if (errno == EINTR)
+				continue;
+			return -1;
+		}
+		if (n == 0)
+			return -1;
+		p += n;
+		left -= n;
+	}
+	return (ssize_t)len;
+}
+
+static ssize_t healer_read_all(int fd, void *buf, size_t len)
+{
+	uint8_t *p = buf;
+	size_t left = len;
+
+	while (left > 0) {
+		ssize_t n = read(fd, p, left);
+
+		if (n < 0) {
+			if (errno == EINTR)
+				continue;
+			return -1;
+		}
+		if (n == 0)
+			break;
+		p += n;
+		left -= n;
+	}
+	return (ssize_t)(len - left);
+}
+
+bool healer_save_file(const char *path)
+{
+	struct healer_file_header hdr;
+	struct utsname u;
+	char tmppath[PATH_MAX];
+	int fd;
+	int ret;
+
+	if (path == NULL || shm == NULL)
+		return false;
+
+	if (uname(&u) != 0)
+		return false;
+
+	memset(&hdr, 0, sizeof(hdr));
+	hdr.magic = HEALER_FILE_MAGIC;
+	hdr.version = HEALER_FILE_VERSION;
+	hdr.relation_slots = HEALER_RELATION_SLOTS;
+	hdr.promoted_per_slot = HEALER_PROMOTED_PER_SLOT;
+	hdr.max_nr_syscall = MAX_NR_SYSCALL;
+	hdr.payload_crc32 = healer_crc32(shm->healer_relations,
+					 HEALER_PAYLOAD_BYTES);
+	hdr.observations = __atomic_load_n(&shm->stats.healer_relations_observed,
+					   __ATOMIC_RELAXED);
+	strncpy(hdr.kernel_release, u.release, sizeof(hdr.kernel_release) - 1);
+	hdr.kernel_release[sizeof(hdr.kernel_release) - 1] = '\0';
+	strncpy(hdr.kernel_version, u.version, sizeof(hdr.kernel_version) - 1);
+	hdr.kernel_version[sizeof(hdr.kernel_version) - 1] = '\0';
+
+	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d",
+			path, (int)getpid());
+	if (ret < 0 || (size_t)ret >= sizeof(tmppath))
+		return false;
+
+	fd = open(tmppath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0)
+		return false;
+
+	if (healer_write_all(fd, &hdr, sizeof(hdr)) < 0)
+		goto fail;
+	if (healer_write_all(fd, shm->healer_relations,
+			     HEALER_PAYLOAD_BYTES) < 0)
+		goto fail;
+
+	if (fsync(fd) != 0)
+		goto fail;
+	if (close(fd) != 0) {
+		(void)unlink(tmppath);
+		return false;
+	}
+
+	if (rename(tmppath, path) != 0) {
+		(void)unlink(tmppath);
+		return false;
+	}
+	return true;
+
+fail:
+	(void)close(fd);
+	(void)unlink(tmppath);
+	return false;
+}
+
+bool healer_load_file(const char *path)
+{
+	struct healer_file_header hdr;
+	struct utsname u;
+	void *tmpbuf;
+	uint32_t want_crc;
+	int fd;
+	bool ok = false;
+
+	if (path == NULL || shm == NULL)
+		return false;
+
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
+		return false;
+
+	if (healer_read_all(fd, &hdr, sizeof(hdr)) != (ssize_t)sizeof(hdr))
+		goto out_close;
+
+	if (hdr.magic != HEALER_FILE_MAGIC ||
+	    hdr.version != HEALER_FILE_VERSION ||
+	    hdr.relation_slots != HEALER_RELATION_SLOTS ||
+	    hdr.promoted_per_slot != HEALER_PROMOTED_PER_SLOT ||
+	    hdr.max_nr_syscall != MAX_NR_SYSCALL)
+		goto out_close;
+
+	if (uname(&u) != 0)
+		goto out_close;
+
+	hdr.kernel_release[sizeof(hdr.kernel_release) - 1] = '\0';
+	hdr.kernel_version[sizeof(hdr.kernel_version) - 1] = '\0';
+	if (strncmp(hdr.kernel_release, u.release,
+			sizeof(hdr.kernel_release)) != 0 ||
+	    strncmp(hdr.kernel_version, u.version,
+			sizeof(hdr.kernel_version)) != 0) {
+		/* Cold-start path: the file is structurally valid but was
+		 * written against a different compiled kernel image, so its
+		 * (pred_a, pred_b, nr) entries reference syscall and edge IDs
+		 * that may have shifted under us.  Surface this so the
+		 * operator can see why the warm-start was skipped without
+		 * having to compare uname output by hand. */
+		outputerr("healer: skipping warm-start of %s -- file built against %s, running %s\n",
+			  path, hdr.kernel_release, u.release);
+		goto out_close;
+	}
+
+	/* Stage the payload into a heap buffer first so a partial read or
+	 * CRC failure leaves shm->healer_relations untouched (a torn load
+	 * straight into shm would poison every child's view of the table). */
+	tmpbuf = malloc(HEALER_PAYLOAD_BYTES);
+	if (tmpbuf == NULL)
+		goto out_close;
+
+	if (healer_read_all(fd, tmpbuf, HEALER_PAYLOAD_BYTES)
+			!= (ssize_t)HEALER_PAYLOAD_BYTES)
+		goto out_free;
+
+	want_crc = healer_crc32(tmpbuf, HEALER_PAYLOAD_BYTES);
+	if (want_crc != hdr.payload_crc32)
+		goto out_free;
+
+	memcpy(shm->healer_relations, tmpbuf, HEALER_PAYLOAD_BYTES);
+	__atomic_store_n(&shm->stats.healer_relations_observed,
+			 hdr.observations, __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->stats.healer_obs_at_last_snapshot,
+			 hdr.observations, __ATOMIC_RELAXED);
+	ok = true;
+
+out_free:
+	free(tmpbuf);
+out_close:
+	(void)close(fd);
+	return ok;
+}
+
+/*
+ * Build a default per-arch healer relation-table path under
+ * $XDG_CACHE_HOME/trinity/healer/ (or $HOME/.cache/...).  Parallel to
+ * minicorpus_default_path's corpus/ and effector_map_default_path's
+ * effector/ directories; kept separate so the three artifacts can be
+ * removed or copied independently.  Creates the parent directory tree
+ * on demand.
+ */
+const char *healer_default_path(void)
+{
+	static char pathbuf[PATH_MAX];
+	const char *xdg = getenv("XDG_CACHE_HOME");
+	const char *home = getenv("HOME");
+	char dir[PATH_MAX];
+	const char *arch;
+	struct utsname u;
+	char *r;
+	int ret;
+
+#if defined(__x86_64__)
+	arch = "x86_64";
+#elif defined(__i386__)
+	arch = "i386";
+#elif defined(__aarch64__)
+	arch = "aarch64";
+#elif defined(__arm__)
+	arch = "arm";
+#elif defined(__powerpc64__)
+	arch = "ppc64";
+#elif defined(__powerpc__)
+	arch = "ppc";
+#elif defined(__s390x__)
+	arch = "s390x";
+#elif defined(__mips__)
+	arch = "mips";
+#elif defined(__sparc__)
+	arch = "sparc";
+#elif defined(__riscv) || defined(__riscv__)
+	arch = "riscv64";
+#else
+	arch = "unknown";
+#endif
+
+	if (uname(&u) != 0)
+		return NULL;
+	for (r = u.release; *r; r++) {
+		if (*r == '/')
+			*r = '_';
+	}
+
+	if (xdg && xdg[0] == '/')
+		ret = snprintf(dir, sizeof(dir), "%s/trinity/healer", xdg);
+	else if (home && home[0] == '/')
+		ret = snprintf(dir, sizeof(dir),
+			"%s/.cache/trinity/healer", home);
+	else
+		return NULL;
+	if (ret < 0 || (size_t)ret >= sizeof(dir))
+		return NULL;
+
+	{
+		char *p;
+
+		for (p = dir + 1; *p; p++) {
+			if (*p == '/') {
+				*p = '\0';
+				if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
+					*p = '/';
+					return NULL;
+				}
+				*p = '/';
+			}
+		}
+		if (mkdir(dir, 0755) != 0 && errno != EEXIST)
+			return NULL;
+	}
+
+	ret = snprintf(pathbuf, sizeof(pathbuf), "%s/%s-%s",
+			dir, arch, u.release);
+	if (ret < 0 || (size_t)ret >= sizeof(pathbuf))
+		return NULL;
+	return pathbuf;
+}
+
+/*
+ * Periodic snapshot trigger.
+ *
+ * Mirror of minicorpus_maybe_snapshot(): the save path is set in the
+ * parent before fork via healer_enable_snapshots() and inherited COW by
+ * every child.  All children call healer_maybe_snapshot() from the
+ * observer-hook fire path; the function early-returns cheaply unless the
+ * fleet-wide observation counter has advanced HEALER_SNAPSHOT_OBSERVATIONS
+ * past the last snapshot's high-water-mark.  When the gap is reached, a
+ * single CAS on shm->stats.healer_obs_at_last_snapshot picks one caller
+ * as the saver -- it runs healer_save_file() while everyone else loses
+ * the CAS and returns.  The next snapshot opportunity opens once the next
+ * window has accumulated.
+ */
+static char healer_snapshot_path[PATH_MAX];
+static bool healer_snapshot_enabled;
+
+void healer_enable_snapshots(const char *path)
+{
+	size_t len;
+
+	if (path == NULL)
+		return;
+	len = strlen(path);
+	if (len == 0 || len >= sizeof(healer_snapshot_path))
+		return;
+	memcpy(healer_snapshot_path, path, len + 1);
+	healer_snapshot_enabled = true;
+}
+
+void healer_maybe_snapshot(void)
+{
+	unsigned long obs_now, old;
+
+	if (!healer_snapshot_enabled || shm == NULL)
+		return;
+
+	obs_now = __atomic_load_n(&shm->stats.healer_relations_observed,
+				  __ATOMIC_RELAXED);
+	old = __atomic_load_n(&shm->stats.healer_obs_at_last_snapshot,
+			      __ATOMIC_RELAXED);
+
+	if (obs_now < old + HEALER_SNAPSHOT_OBSERVATIONS)
+		return;
+
+	/* Race for the slot.  Whoever wins the CAS is responsible for the
+	 * save; the others see the new high-water-mark on their next call
+	 * and early-return.  RELAXED ordering is enough -- the save itself
+	 * reads the relation table via the same atomic-load discipline the
+	 * dump path uses, and the counter is just gating who runs, not
+	 * what they observe. */
+	if (!__atomic_compare_exchange_n(&shm->stats.healer_obs_at_last_snapshot,
+					 &old, obs_now,
+					 false,
+					 __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+		return;
+
+	healer_save_file(healer_snapshot_path);
 }

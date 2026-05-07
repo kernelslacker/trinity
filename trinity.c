@@ -16,6 +16,7 @@
 #include "effector-map.h"
 #include "fd.h"
 #include "files.h"
+#include "healer.h"
 #include "ioctls.h"
 #include "kmsg-monitor.h"
 #include "maps.h"
@@ -528,6 +529,30 @@ int main(int argc, char* argv[])
 		}
 	}
 
+	/*
+	 * HEALER relation-table warm-start.  Independent of the minicorpus
+	 * warm-start gate so an operator can opt out of one without losing
+	 * the other (--no-healer-warm-start covers the load, the load is
+	 * silent on a missing file because cold-start is the legitimate
+	 * first-run state).  Snapshot wiring is gated separately by
+	 * --no-healer-snapshot so a read-only "warm-start but don't write"
+	 * mode is also expressible.  Both are done before fork so children
+	 * inherit the populated shm region and the snapshot path COW.
+	 */
+	if (!no_healer_warm_start) {
+		const char *hpath = healer_default_path();
+
+		if (hpath != NULL && healer_load_file(hpath))
+			output(0, "healer: warm-started relation table from %s\n",
+				hpath);
+	}
+	if (!no_healer_snapshot) {
+		const char *hpath = healer_default_path();
+
+		if (hpath != NULL)
+			healer_enable_snapshots(hpath);
+	}
+
 	if (epoch_iterations || epoch_timeout)
 		epoch_loop();
 	else
@@ -548,6 +573,28 @@ int main(int argc, char* argv[])
 							   : minicorpus_default_path();
 			if (path != NULL && minicorpus_save_file(path))
 				output(0, "minicorpus: persisted to %s\n", path);
+		}
+	}
+
+	/*
+	 * Best-effort end-of-run HEALER snapshot on a clean shutdown.  The
+	 * periodic snapshot trigger covers crashes; this captures the trailing
+	 * window of observations the trigger window had not yet flushed.
+	 * Same exit-reason gate the minicorpus save uses -- a poisoned shm
+	 * after a corruption-aborted run could feed garbage into the next
+	 * warm-start, so we skip the save unless the shutdown was clean.
+	 */
+	if (!no_healer_snapshot) {
+		enum exit_reasons er =
+			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+
+		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
+		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
+			const char *hpath = healer_default_path();
+
+			if (hpath != NULL && healer_save_file(hpath))
+				output(0, "healer: persisted relation table to %s\n",
+					hpath);
 		}
 	}
 

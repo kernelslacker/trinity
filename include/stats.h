@@ -1335,6 +1335,17 @@ struct stats_s {
 	unsigned long healer_table_full;
 	unsigned long healer_evictions;
 	unsigned long healer_unique_predsets;
+	/*
+	 * Snapshot-trigger high-water-mark for healer_maybe_snapshot(): the
+	 * value of healer_relations_observed at the last completed snapshot.
+	 * Children CAS this forward to elect a single saver per
+	 * HEALER_SNAPSHOT_OBSERVATIONS window; the loser-side branch falls
+	 * out cheaply via the gap-check before any CAS attempt.  Restored
+	 * from the on-disk header on a successful warm-start so the first
+	 * post-warm-start window is anchored to the cumulative count rather
+	 * than triggering an immediate save against a freshly loaded table.
+	 */
+	unsigned long healer_obs_at_last_snapshot;
 };
 
 unsigned int stats_syscall_category(const char *name);
