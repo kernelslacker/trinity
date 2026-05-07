@@ -25,6 +25,12 @@
 
 unsigned int nr_sockets = 0;
 
+/* Per-family successful add_socket() count.  Bumped from open_socket()
+ * during generate_sockets(); read once after the pool is built so PFs
+ * that produced zero usable sockets can be latched into no_domains[]
+ * the same way --exclude-domains= would have done. */
+static unsigned int per_pf_added[TRINITY_PF_MAX];
+
 
 static void sso_socket(struct socket_triplet *triplet, struct sockopt *so, int fd)
 {
@@ -113,6 +119,8 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 		return -1;
 
 	nr_sockets++;
+	if (domain < ARRAY_SIZE(per_pf_added))
+		per_pf_added[domain]++;
 
 	return fd;
 }
@@ -441,6 +449,51 @@ static void probe_unsupported_pf_families(void)
 	}
 }
 
+/*
+ * Second auto-skip pass: complements probe_unsupported_pf_families()
+ * which acts before generate_sockets() based on raw socket() probes.
+ * Some PFs satisfy the probe (driver loaded, EAFNOSUPPORT not returned)
+ * but every triplet in their valid_triplets table still fails to
+ * produce a usable socket -- e.g. socket_setup() rejects every type,
+ * or every protocol returns EPROTONOSUPPORT.  Without this pass those
+ * PFs stay reachable from the random-syscall picker (gen_socket_args
+ * consults no_domains[]) and burn one slot per cycle on a guaranteed
+ * failure.  Latch them off based on the actual pool-build outcome.
+ */
+static void auto_disable_empty_pf_pools(void)
+{
+	char buf[1024];
+	unsigned int pf, off = 0, n = 0;
+
+	buf[0] = '\0';
+
+	for (pf = 0; pf < TRINITY_PF_MAX; pf++) {
+		const char *name;
+		int w;
+
+		if (no_domains[pf])
+			continue;
+		if (net_protocols[pf].proto == NULL)
+			continue;
+		if (per_pf_added[pf] != 0)
+			continue;
+
+		no_domains[pf] = true;
+		__atomic_add_fetch(&shm->stats.no_domains_runtime_skipped,
+				   1, __ATOMIC_RELAXED);
+
+		name = get_domain_name(pf);
+		w = snprintf(buf + off, sizeof(buf) - off, "%s%s",
+			     n == 0 ? "" : " ", name ? name : "?");
+		if (w > 0 && (unsigned int)w < sizeof(buf) - off)
+			off += w;
+		n++;
+	}
+
+	if (n != 0)
+		output(0, "auto-disable PF: %s\n", buf);
+}
+
 static int open_sockets(void)
 {
 	struct objhead *head;
@@ -497,6 +550,7 @@ static int open_sockets(void)
 	probe_unsupported_pf_families();
 
 	ret = generate_sockets();
+	auto_disable_empty_pf_pools();
 	output(1, "created %u sockets\n", nr_sockets);
 	return ret;
 }
