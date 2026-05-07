@@ -644,5 +644,5 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 
 	check_uid();
 
-	generic_free_arg(rec);
+	generic_free_arg(entry, rec);
 }
