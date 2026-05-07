@@ -336,6 +336,21 @@ static void shared_obj_heap_init(void)
  * cmpxchg16b-based DWCAS without any caller change.
  */
 
+/*
+ * The packed (ptr, version) freelist head assumes the top 16 bits of every
+ * freelist pointer are zero — i.e. a 48-bit canonical userspace VA range,
+ * which is the x86-64 default and is not guaranteed on arm64 (52-bit
+ * possible), s390x, riscv, or x86-64 with 5-level paging enabled.  Reject
+ * the build explicitly so a future port hits the wall here instead of
+ * shipping a subtly-broken allocator.  Removing this guard requires either
+ * a DWCAS-based 128-bit head where available or a (struct ptr, generation)
+ * variant guarded by a small lock — see the comment block above the head
+ * declaration.
+ */
+#if !defined(__x86_64__)
+#error "shm freelist (ptr, version) packing assumes 48-bit userspace VA — port requires DWCAS or struct+lock variant"
+#endif
+
 #define FREELIST_PTR_MASK	((uint64_t)((1ULL << 48) - 1))
 #define FREELIST_VER_SHIFT	48
 
