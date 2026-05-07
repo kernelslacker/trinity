@@ -214,13 +214,26 @@ static void post_mremap(struct syscallrecord *rec)
 	if (map->type == MMAPED_FILE && map->fd != -1) {
 		struct stat st;
 
-		if (fstat(map->fd, &st) == 0 && st.st_size > 0) {
-			if ((unsigned long) st.st_size < map->size)
-				map->size = (unsigned long) st.st_size & PAGE_MASK;
+		if (fstat(map->fd, &st) == 0) {
+			if (st.st_size > 0) {
+				if ((unsigned long) st.st_size < map->size)
+					map->size = (unsigned long) st.st_size & PAGE_MASK;
 
-			if (map->size != snap->new_len)
-				__atomic_add_fetch(&shm->stats.mmap_size_clamped,
-						   1, __ATOMIC_RELAXED);
+				if (map->size != snap->new_len)
+					__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+							   1, __ATOMIC_RELAXED);
+			}
+		} else {
+			/*
+			 * fstat failed -- the fd was closed or replaced
+			 * between the mremap return and the post handler.
+			 * Backed extent is unknown, so zero the size to
+			 * gate dirty_mapping off rather than walking past
+			 * EOF.  Mirrors the post_mmap fstat-failure stance.
+			 */
+			map->size = 0;
+			__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+					   1, __ATOMIC_RELAXED);
 		}
 	}
 
