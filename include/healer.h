@@ -32,39 +32,11 @@
 
 /*
  * Power-of-two table size keeps the slot index a cheap mask of the
- * hash output.  16384 slots * ~80 bytes per slot ~= 1.25 MiB of shm,
+ * hash output.  16384 slots * 72 bytes per slot ~= 1.13 MiB of shm,
  * well within the existing per-arena budget (cmp_novelty[] alone is
  * ~132 KiB, frontier_history[] another 32 KiB).
  */
 #define HEALER_RELATION_SLOTS    16384
-
-/*
- * Number of partitions the relation table is split into.  Each shard
- * carries its own lock, so an observer-hook fire only blocks other
- * observers whose predset hashes into the same shard.  16 was picked
- * to drop global-lock contention by the same factor in burst windows
- * (post-fork warmup, recipe-runner childop, frontier-strategy windows
- * that rip through new coverage) while keeping the lock-array compact
- * enough to fit in two cache lines.  Power-of-two so the shard index
- * is a cheap mask of the hash's high bits.
- */
-#define HEALER_RELATION_SHARDS   16
-
-/*
- * Per-shard slot count.  HEALER_RELATION_SLOTS still names the
- * fleet-wide capacity; the per-shard slab gets that many divided by
- * the shard count.  Probing stays inside one shard so the per-shard
- * lock fully covers the insertion / eviction sequence.
- */
-#define HEALER_RELATIONS_PER_SHARD (HEALER_RELATION_SLOTS / HEALER_RELATION_SHARDS)
-
-/*
- * Bit position used to derive the shard index from the predset hash.
- * The lower HEALER_SHARD_SHIFT bits feed the in-shard slot index;
- * the next log2(HEALER_RELATION_SHARDS) bits feed the shard index.
- * Disjoint bit fields keep the two indices independent under FNV-1a.
- */
-#define HEALER_SHARD_SHIFT       10
 
 /*
  * Per-predset cap on the number of (promoted_nr) entries we track.
@@ -88,25 +60,52 @@
  */
 #define HEALER_PROBE_LIMIT       16
 
+/*
+ * One promoted-syscall entry inside a relation slot.  The (nr, weight)
+ * pair lives in a 64-bit union so observers can CAS-claim a fresh
+ * entry, atomic-fetch-add an existing entry's weight, and CAS-evict
+ * the lowest-weight entry, all without serialising through a per-slot
+ * lock.  weight == 0 is the empty-entry sentinel: real entries are
+ * inserted with weight == 1 and only ever ratchet up or get replaced
+ * wholesale by an eviction CAS, so weight never transiently reads
+ * back as 0 once an entry has been published.
+ */
 struct healer_promoted {
-	unsigned int nr;
-	unsigned int weight;	/* edge-discovery count attributed to this
-				 * (predset, nr) tuple. */
+	union {
+		struct {
+			unsigned int nr;
+			unsigned int weight;	/* edge-discovery count attributed to this
+						 * (predset, nr) tuple. */
+		};
+		uint64_t entry;
+	};
 };
 
 /*
- * One relation-table slot.  `predset_hash == 0` is the empty-slot
- * sentinel (we remap the FNV-1a hash 0 to 1 explicitly so a real
- * predset never collides with empty).  pred_a and pred_b are stored
- * sorted (pred_a <= pred_b) so the (A, B) / (B, A) symmetry holds at
- * insertion time and there is no need to re-sort on lookup.
+ * One relation-table slot.  The leading (pred_a, pred_b, predset_hash)
+ * tuple is laid out so a single 64-bit atomic load/CAS through the
+ * `key` union member sees a coherent identifier triple, mirroring
+ * edgepair_entry's packed-key claim protocol in edgepair.c.
+ * `predset_hash == 0` (and therefore `key == 0`) is the empty-slot
+ * sentinel; healer_predset_hash() remaps the vanishingly rare FNV-1a
+ * output of 0 to 1 so a real predset never collides with empty,
+ * leaving the surrounding shm memset(0) as the only initialisation
+ * the table needs.  pred_a and pred_b are stored sorted (pred_a <=
+ * pred_b) so the (A, B) / (B, A) symmetry holds at insertion time;
+ * they are narrowed to uint16_t -- syscall numbers fit (MAX_NR_SYSCALL
+ * is 1024) and the caller already filters the EDGEPAIR_NO_PREV
+ * (0xFFFF) sentinel before we ever reach a slot.
  */
 struct healer_relation {
-	unsigned int predset_hash;
-	unsigned int pred_a;
-	unsigned int pred_b;
+	union {
+		struct {
+			uint16_t pred_a;
+			uint16_t pred_b;
+			uint32_t predset_hash;
+		};
+		uint64_t key;
+	};
 	struct healer_promoted promoted[HEALER_PROMOTED_PER_SLOT];
-	unsigned int promoted_count;
 };
 
 struct childdata;
@@ -117,10 +116,12 @@ struct childdata;
  * path).  Reads the child's last-2 completed syscall numbers out of
  * the per-child sequence buffer, sorts them, hashes the predset, and
  * either bumps the matching (predset, current_nr) entry or evicts the
- * lowest-weight entry to make room.  Updates happen under the per-shard
- * lock chosen by (predset_hash >> HEALER_SHARD_SHIFT) so two observers
- * whose predsets fall in different shards never serialise (see the lock
- * array declaration in include/shm.h for the contention argument).
+ * lowest-weight entry to make room.  All updates are lockless: the
+ * slot's identifier triple is CAS-claimed via the packed `key` field
+ * and each promoted entry is mutated via a 64-bit CAS on its (nr,
+ * weight) packed view, so concurrent observers never serialise on a
+ * shared lock (see the table declaration in include/shm.h for the
+ * memory-ordering argument).
  *
  * No-op until the child has executed at least two syscalls (the
  * sequence buffer needs both predecessor slots populated).

@@ -1309,8 +1309,8 @@ struct stats_s {
 	 *   end of HEALER_PROBE_LIMIT slots without finding either the
 	 *   matching predset or an empty slot; persistent non-zero growth
 	 *   means HEALER_RELATION_SLOTS is too small for the working set.
-	 * healer_evictions: the slot was full (promoted_count ==
-	 *   HEALER_PROMOTED_PER_SLOT) and we displaced the lowest-weight
+	 * healer_evictions: the slot was full (all HEALER_PROMOTED_PER_SLOT
+	 *   promoted entries populated) and we displaced the lowest-weight
 	 *   entry to insert a new follow-up; rapid growth here suggests
 	 *   HEALER_PROMOTED_PER_SLOT is too tight.
 	 * healer_unique_predsets: number of occupied slots, recomputed by
