@@ -347,7 +347,7 @@ static void calibrate_one(unsigned int nr, struct kcov_child *kc)
 	 * giving us a fresh baseline that exercises the unprimed allocator
 	 * paths the same way the regular fuzz loop's first call to a
 	 * never-replayed syscall would. */
-	generic_sanitise(&rec);
+	generic_sanitise(entry, &rec);
 
 	base_args[0] = rec.a1;
 	base_args[1] = rec.a2;
