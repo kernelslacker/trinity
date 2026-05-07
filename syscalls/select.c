@@ -97,6 +97,17 @@ static void sanitise_select(struct syscallrecord *rec)
 	rec->a5 = (unsigned long) tv;
 
 	/*
+	 * Relocate any output buffer that landed inside the SHM region to a
+	 * private heap page.  avoid_shared_buffer() rewrites rec->aN in place,
+	 * so the snapshot below captures the post-relocation pointer and the
+	 * post handler frees what the kernel actually wrote to.
+	 */
+	avoid_shared_buffer(&rec->a2, sizeof(fd_set));
+	avoid_shared_buffer(&rec->a3, sizeof(fd_set));
+	avoid_shared_buffer(&rec->a4, sizeof(fd_set));
+	avoid_shared_buffer(&rec->a5, sizeof(struct timeval));
+
+	/*
 	 * Snapshot all four heap pointers for the post handler.  A sibling
 	 * syscall can scribble rec->a2/a3/a4/a5 between the syscall
 	 * returning and the post handler running, leaving real-but-wrong
@@ -107,10 +118,10 @@ static void sanitise_select(struct syscallrecord *rec)
 	 * handler, so the scribblers have nothing to scribble there.
 	 */
 	snap = zmalloc(sizeof(*snap));
-	snap->rfds = rfds;
-	snap->wfds = wfds;
-	snap->exfds = exfds;
-	snap->tv = tv;
+	snap->rfds = (fd_set *) rec->a2;
+	snap->wfds = (fd_set *) rec->a3;
+	snap->exfds = (fd_set *) rec->a4;
+	snap->tv = (struct timeval *) rec->a5;
 	snap->nfds = nfds;
 	rec->post_state = (unsigned long) snap;
 }
