@@ -1571,11 +1571,25 @@ void child_process(struct childdata *child, int childno)
 
 		/* Feed the post-invocation edge delta back into the per-op
 		 * budget multiplier.  Skipped when KCOV is unavailable —
-		 * adapt_budget() needs a real signal to ratchet on. */
+		 * adapt_budget() needs a real signal to ratchet on.
+		 *
+		 * For alt-op invocations only, also fold the same delta into
+		 * the per-childop edge-discovery counter so the operator can
+		 * see which alt-op childops actually contribute new coverage.
+		 * CHILD_OP_SYSCALL is skipped here -- the syscall path already
+		 * attributes new edges via the explorer/bandit strategy
+		 * counters, and double-counting would distort both totals. */
 		if (have_kcov) {
 			unsigned long edges_after = __atomic_load_n(
 				&kcov_shm->edges_found, __ATOMIC_RELAXED);
 			adapt_budget(child->op_type, edges_before, edges_after);
+			if (is_alt_op) {
+				unsigned long delta = (edges_after >= edges_before)
+					? (edges_after - edges_before) : 0;
+				__atomic_fetch_add(
+					&shm->stats.childop_edges_discovered[child->op_type],
+					delta, __ATOMIC_RELAXED);
+			}
 		}
 
 		enable_coredumps();

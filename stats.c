@@ -1189,9 +1189,10 @@ static void dump_stats_json(void)
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
-	 * (taint_transitions[], pool_race_aborted[]) are intentionally not
-	 * emitted here.  The JSON schema in this function is a flat per-key
-	 * mapping; expanding either array as a nested object or array would
+	 * (taint_transitions[], pool_race_aborted[],
+	 * childop_edges_discovered[]) are intentionally not emitted here.
+	 * The JSON schema in this function is a flat per-key mapping;
+	 * expanding any of these arrays as a nested object or array would
 	 * change the schema shape and inflate the JSON for consumers that
 	 * only care about scalar counters.  These arrays remain visible in
 	 * the human-readable dump_stats() output, which iterates them as
@@ -2168,6 +2169,46 @@ void dump_stats(void)
 			snprintf(metric, sizeof(metric), "op_type_%u", op);
 			stat_row("pool_race_aborted", metric,
 				 shm->stats.pool_race_aborted[op]);
+		}
+
+		/* Per-childop edge-discovery attribution: rendered sorted by
+		 * count descending so the operator sees the dominant alt-op
+		 * coverage contributors first.  CHILD_OP_SYSCALL is skipped
+		 * because the syscall path attributes its edges via the
+		 * explorer/bandit strategy counters; including it here would
+		 * double-count against KCOV total. */
+		{
+			struct { unsigned int op; unsigned long count; }
+				ranked[NR_CHILD_OP_TYPES];
+			unsigned int nranked = 0, ri, rj;
+
+			for (op = CHILD_OP_SYSCALL + 1;
+			     op < NR_CHILD_OP_TYPES; op++) {
+				unsigned long v =
+					shm->stats.childop_edges_discovered[op];
+				if (v == 0)
+					continue;
+				ranked[nranked].op = op;
+				ranked[nranked].count = v;
+				nranked++;
+			}
+			for (ri = 1; ri < nranked; ri++) {
+				for (rj = ri; rj > 0 &&
+				     ranked[rj].count > ranked[rj - 1].count;
+				     rj--) {
+					unsigned int to = ranked[rj].op;
+					unsigned long tc = ranked[rj].count;
+					ranked[rj] = ranked[rj - 1];
+					ranked[rj - 1].op = to;
+					ranked[rj - 1].count = tc;
+				}
+			}
+			for (ri = 0; ri < nranked; ri++) {
+				snprintf(metric, sizeof(metric),
+					 "op_type_%u", ranked[ri].op);
+				stat_row("childop_edges_discovered",
+					 metric, ranked[ri].count);
+			}
 		}
 	}
 
