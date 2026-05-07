@@ -22,6 +22,19 @@ enum syscallstate {
 
 struct syscallrecord {
 	unsigned int nr;
+
+	/*
+	 * Pointer to the resolved syscallentry for this call.  Stamped once
+	 * at the top of dispatch_step() (the only path that drives a real
+	 * syscall through this rec) so the .sanitise / .post handlers and
+	 * their helpers (this_syscallname() and the per-discriminator flag
+	 * tests built on top of it) can read the entry directly instead of
+	 * re-running get_syscall_entry(nr, do32bit) -- which is a table
+	 * lookup plus a biarch branch -- on every probe.  NULL outside an
+	 * in-flight dispatch; this_syscallname() treats NULL as "not me".
+	 */
+	struct syscallentry *entry;
+
 	unsigned long a1;
 	unsigned long a2;
 	unsigned long a3;
