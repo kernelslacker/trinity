@@ -797,11 +797,11 @@ static bool spawn_child(int childno)
 		pidstatfiles[childno] = NULL;
 	}
 	pidstatfiles[childno] = open_child_pidstat(pid);
-	__atomic_add_fetch(&shm->running_childs, 1, __ATOMIC_RELAXED);
+	unsigned int running = __atomic_add_fetch(&shm->running_childs, 1, __ATOMIC_RELAXED);
 
 	debugf("Created child %d (pid:%d) [total:%u/%u]\n",
 		childno, pid,
-		__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED),
+		running,
 		max_children);
 	return true;
 }
