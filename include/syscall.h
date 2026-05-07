@@ -220,6 +220,15 @@ struct syscallentry {
 	unsigned char syscall_category;
 
 	/*
+	 * Cached "is this the close(2) syscall?" flag.  Resolved once from
+	 * .name at table-init time in copy_syscall_table() so the dispatch
+	 * fd-leak accounting in random-syscall.c can branch on a single
+	 * byte load instead of running strcmp(entry->name, "close") on
+	 * every syscall invocation.
+	 */
+	bool is_close_syscall;
+
+	/*
 	 * Trinity 1-based index (1..6) of the syscall argument whose value
 	 * upper-bounds rec->retval -- typically the "count" / "size" / "len"
 	 * argument of read/write/recv/send-class syscalls.  Consumed at the
