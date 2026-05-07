@@ -409,14 +409,8 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
 	BUG("unreachable!\n");
 }
 
-void generic_sanitise(struct syscallrecord *rec)
+void generic_sanitise(struct syscallentry *entry, struct syscallrecord *rec)
 {
-	struct syscallentry *entry;
-	unsigned int call;
-
-	call = rec->nr;
-	entry = get_syscall_entry(call, rec->do32bit);
-
 	/* Defensive: zero arg slots so any ARG_UNDEFINED entry doesn't
 	 * inherit stale values from the previous syscall's record.  Also
 	 * zero the post_state snapshot slot — sanitisers that use it
@@ -502,7 +496,7 @@ void generate_syscall_args(struct syscallrecord *rec)
 		return;
 	}
 
-	generic_sanitise(rec);
+	generic_sanitise(entry, rec);
 	rec->rettype = entry->rettype;
 	if (entry->sanitise)
 		entry->sanitise(rec);
