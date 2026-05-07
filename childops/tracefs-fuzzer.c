@@ -22,6 +22,15 @@
  *   tracing_on           -- "0" or "1"
  *   buffer_size_kb       -- numeric string
  *
+ * Cap-gate: the function-tracer subset (set_ftrace_*, current_tracer,
+ * available_tracers) and the event-tracing subset (events/<subsys>/...) are
+ * compiled in independently.  CONFIG_FTRACE=n with EVENT_TRACING=y is a
+ * supported build and a real-world fuzz-box configuration.  At first
+ * invocation each child probes one canonical file from each subset and
+ * builds a runtime dispatch table that contains only the handlers whose
+ * required subset is actually present, eliminating wasted ENOENT syscalls
+ * on each random pick.
+ *
  * Trinity-todo #2.3.
  */
 
@@ -149,35 +158,15 @@ static char discovered_tracers[16][32];
 static unsigned int nr_discovered_tracers;
 static bool tracers_discovered;
 
+/*
+ * Per-process tracefs probe state.  tracefs_checked latches the first-call
+ * branch; tracefs_available is the overall dispatch enable; the two
+ * *_subset_present booleans drive the runtime pick-table filter.
+ */
 static bool tracefs_available;
 static bool tracefs_checked;
-
-/*
- * Soft cap-gate for the function-tracer subset (set_ftrace_filter /
- * set_ftrace_notrace / set_graph_function / current_tracer).  These files
- * are absent on kernels built with CONFIG_FTRACE=n even when EVENT_TRACING
- * remains compiled in -- the static event tree under events/ is still
- * fuzzable, so we don't disable the whole childop, just the function-tracer
- * dispatches.  Probed once at init via access(current_tracer, F_OK) -- the
- * canonical CONFIG_FTRACE-only file.
- */
-static bool ftrace_subset_unsupported;
-
-/* Check once whether tracefs is mounted and accessible.  At the same
- * time, probe whether the function-tracer subset is reachable so the
- * dispatch can latch off ftrace-only paths on FTRACE=n kernels while
- * keeping events-tree fuzzing alive. */
-static bool check_tracefs(void)
-{
-	if (tracefs_checked)
-		return tracefs_available;
-	tracefs_checked = true;
-	tracefs_available = (access(TRACEFS_ROOT "/tracing_on", F_OK) == 0);
-	if (tracefs_available)
-		ftrace_subset_unsupported =
-			(access(TRACEFS_ROOT "/current_tracer", F_OK) != 0);
-	return tracefs_available;
-}
+static bool ftrace_subset_present;
+static bool events_subset_present;
 
 /*
  * Recurse into TRACEFS_ROOT/events/ at depth 1-2 and collect paths ending
@@ -581,6 +570,103 @@ static void do_buffer_size(void)
 			   1, __ATOMIC_RELAXED);
 }
 
+/*
+ * Dispatch table.  Each entry pairs a do_*() handler with the subset bitmask
+ * it requires, plus a relative weight controlling pick frequency (matching
+ * the prior switch-case slot counts).  The weights mirror the historical
+ * dispatch ratios: kprobe/uprobe/ftrace_filter twice as likely as the rest.
+ *
+ * required == 0 means the op only touches files that exist on every tracefs
+ * build (kprobe_events, uprobe_events, trace_options, tracing_on,
+ * buffer_size_kb).  REQ_FTRACE entries depend on CONFIG_FTRACE; REQ_EVENTS
+ * entries depend on the static event tree under events/.
+ */
+enum tracefs_subset {
+	REQ_FTRACE = 1u << 0,
+	REQ_EVENTS = 1u << 1,
+};
+
+struct tracefs_op {
+	void (*fn)(void);
+	unsigned int required;
+	unsigned int weight;
+};
+
+static const struct tracefs_op tracefs_ops[] = {
+	{ do_kprobe_events,  0,          2 },
+	{ do_uprobe_events,  0,          2 },
+	{ do_ftrace_filter,  REQ_FTRACE, 2 },
+	{ do_event_enable,   REQ_EVENTS, 1 },
+	{ do_trace_options,  0,          1 },
+	{ do_current_tracer, REQ_FTRACE, 1 },
+	{ do_tracing_on,     0,          1 },
+	{ do_buffer_size,    0,          1 },
+};
+
+/*
+ * Runtime pick array built once per process from tracefs_ops[], filtered to
+ * the entries whose required-subset mask is satisfied by the kernel under
+ * test.  Each op is pushed weight-times so rand() % nr_picks gives weighted
+ * uniform selection without a separate weight-walk on every dispatch.  Sized
+ * to comfortably hold the sum of all weights (currently 11).
+ */
+static const struct tracefs_op *pick_table[16];
+static unsigned int nr_picks;
+
+static void build_pick_table(unsigned int avail)
+{
+	unsigned int i, j;
+
+	for (i = 0; i < ARRAY_SIZE(tracefs_ops); i++) {
+		if ((tracefs_ops[i].required & ~avail) != 0)
+			continue;
+		for (j = 0; j < tracefs_ops[i].weight; j++) {
+			if (nr_picks >= ARRAY_SIZE(pick_table))
+				return;
+			pick_table[nr_picks++] = &tracefs_ops[i];
+		}
+	}
+}
+
+/*
+ * First-invocation probe.  Confirms tracefs is mounted, then learns which
+ * subsets are reachable on this kernel and constructs the runtime pick
+ * table.  Returns false (and bails the childop) when tracefs is absent or
+ * when both function-tracer and event-tracing subsets are missing -- in
+ * that degenerate case there is nothing useful left to fuzz.
+ */
+static bool check_tracefs(void)
+{
+	unsigned int avail = 0;
+
+	if (tracefs_checked)
+		return tracefs_available;
+	tracefs_checked = true;
+
+	if (access(TRACEFS_ROOT "/tracing_on", F_OK) != 0)
+		return false;
+
+	ftrace_subset_present = (access(TRACEFS_ROOT "/current_tracer", F_OK) == 0);
+	events_subset_present = (access(TRACEFS_ROOT "/available_events", F_OK) == 0);
+
+	outputstd("tracefs-fuzzer: ftrace_subset=%s events_subset=%s\n",
+		  ftrace_subset_present ? "yes" : "no",
+		  events_subset_present ? "yes" : "no");
+
+	if (!ftrace_subset_present && !events_subset_present)
+		return false;
+
+	if (ftrace_subset_present)
+		avail |= REQ_FTRACE;
+	if (events_subset_present)
+		avail |= REQ_EVENTS;
+
+	build_pick_table(avail);
+
+	tracefs_available = true;
+	return true;
+}
+
 bool tracefs_fuzzer(struct childdata *child)
 {
 	(void)child;
@@ -588,30 +674,6 @@ bool tracefs_fuzzer(struct childdata *child)
 	if (!check_tracefs())
 		return true;
 
-	switch (rand() % 11) {
-	case 0: case 1:	do_kprobe_events();	break;
-	case 2: case 3:	do_uprobe_events();	break;
-	case 4: case 5:
-		if (ftrace_subset_unsupported) {
-			__atomic_add_fetch(&shm->stats.tracefs_ftrace_subset_skipped,
-					   1, __ATOMIC_RELAXED);
-			break;
-		}
-		do_ftrace_filter();
-		break;
-	case 6:		do_event_enable();	break;
-	case 7:		do_trace_options();	break;
-	case 8:
-		if (ftrace_subset_unsupported) {
-			__atomic_add_fetch(&shm->stats.tracefs_ftrace_subset_skipped,
-					   1, __ATOMIC_RELAXED);
-			break;
-		}
-		do_current_tracer();
-		break;
-	case 9:		do_tracing_on();	break;
-	case 10:	do_buffer_size();	break;
-	}
-
+	pick_table[rand() % nr_picks]->fn();
 	return true;
 }
