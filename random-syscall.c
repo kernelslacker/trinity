@@ -773,7 +773,7 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			if ((int)rec->retval > 2)
 				child_fd_ring_push(&child->live_fds, (int)rec->retval);
 		}
-		if (strcmp(entry->name, "close") == 0)
+		if (entry->is_close_syscall)
 			child->fd_closed++;
 	}
 
