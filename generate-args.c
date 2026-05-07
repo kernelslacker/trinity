@@ -423,8 +423,21 @@ void generic_sanitise(struct syscallrecord *rec)
 	 * allocate fresh in this dispatch, and a stale value left by a
 	 * previous syscall (e.g. one whose post handler did not reach the
 	 * deferred_freeptr) would otherwise survive into a post handler
-	 * that now reads it as a live pointer. */
-	memset(&rec->a1, 0, 6 * sizeof(unsigned long));
+	 * that now reads it as a live pointer.
+	 *
+	 * Only zero the slots that won't be overwritten below by fill_arg();
+	 * the bulk memset of all six was wasted work for the common case of
+	 * 4-6 argument syscalls. Switch fall-through unrolls the per-slot
+	 * zero so the compiler can pick an efficient sequence. */
+	switch (entry->num_args) {
+	case 0: rec->a1 = 0; /* fall through */
+	case 1: rec->a2 = 0; /* fall through */
+	case 2: rec->a3 = 0; /* fall through */
+	case 3: rec->a4 = 0; /* fall through */
+	case 4: rec->a5 = 0; /* fall through */
+	case 5: rec->a6 = 0; /* fall through */
+	default: break;
+	}
 	rec->post_state = 0;
 
 	/* num_args is the authority for which slots are present.
