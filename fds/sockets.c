@@ -119,35 +119,31 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 
 static unsigned int valid_proto(unsigned int family)
 {
-	const char *famstr;
-
-	famstr = get_domain_name(family);
-
 	/* Not used for creating sockets. */
-	if (strncmp(famstr, "UNSPEC", 7) == 0)
+	if (family == PF_UNSPEC)
 		return false;
-	if (strncmp(famstr, "BRIDGE", 7) == 0)
+	if (family == PF_BRIDGE)
 		return false;
-	if (strncmp(famstr, "SECURITY", 9) == 0)
+	if (family == PF_SECURITY)
 		return false;
 
 	/* Not actually implemented (or now removed). */
-	if (strncmp(famstr, "NETBEUI", 8) == 0)
+	if (family == PF_NETBEUI)
 		return false;
-	if (strncmp(famstr, "ASH", 4) == 0)
+	if (family == PF_ASH)
 		return false;
-	if (strncmp(famstr, "SNA", 4) == 0)
+	if (family == PF_SNA)
 		return false;
-	if (strncmp(famstr, "WANPIPE", 8) == 0)
+	if (family == PF_WANPIPE)
 		return false;
 
 	/* Needs root. */
 	if (orig_uid != 0) {
-		if (strncmp(famstr, "KEY", 4) == 0)
+		if (family == PF_KEY)
 			return false;
-		if (strncmp(famstr, "PACKET", 7) == 0)
+		if (family == PF_PACKET)
 			return false;
-		if (strncmp(famstr, "LLC", 4) == 0)
+		if (family == PF_LLC)
 			return false;
 	}
 
@@ -197,9 +193,6 @@ static bool generate_specific_socket(int family)
 
 	BUG_ON(st.family >= ARRAY_SIZE(no_domains));
 	if (no_domains[st.family])
-		return false;
-
-	if (get_domain_name(st.family) == NULL)
 		return false;
 
 	if (valid_proto(st.family) == false)
@@ -624,8 +617,6 @@ static int open_socket_fd(void)
 	if (st.family >= ARRAY_SIZE(no_domains))
 		return false;
 	if (no_domains[st.family])
-		return false;
-	if (get_domain_name(st.family) == NULL)
 		return false;
 	if (valid_proto(st.family) == false)
 		return false;
