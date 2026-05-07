@@ -33,7 +33,7 @@
  *
  * Single-node hosts: this op is meaningless.  At init we parse
  * /sys/devices/system/node/online; if only one node is present we set
- * noop_forever and every subsequent invocation bails immediately (counted
+ * ns_unsupported_numa and every subsequent invocation bails immediately (counted
  * once for visibility).  EPERM responses from migrate_pages / move_pages
  * (need CAP_SYS_NICE) are counted as regular failures and the loop
  * continues — the kernel-side entry check still ran, which is the
@@ -111,7 +111,7 @@
 #define TOUCH_PAGES		4
 
 static bool numa_inited;
-static bool noop_forever;
+static bool ns_unsupported_numa;
 
 /* Highest-numbered online node id, populated by init_numa_state().  Used
  * to cap our random node selection so we don't keep targeting offline
@@ -236,7 +236,7 @@ static void init_numa_state(void)
 	parse_online_nodes();
 
 	if (online_node_count < 2) {
-		noop_forever = true;
+		ns_unsupported_numa = true;
 		return;
 	}
 
@@ -434,7 +434,7 @@ bool numa_migration_churn(struct childdata *child)
 	if (!numa_inited)
 		init_numa_state();
 
-	if (noop_forever) {
+	if (ns_unsupported_numa) {
 		__atomic_add_fetch(&shm->stats.numa_migration_no_numa,
 				   1, __ATOMIC_RELAXED);
 		return false;
