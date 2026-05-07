@@ -57,6 +57,13 @@ const struct ioctl_group *find_ioctl_group(int fd)
 		return grps[matches[rand() % matchcount]];
 
 	/* We don't have an fd_test, so try matching on type & devname */
+	if (stbuf.st_rdev == 0)
+		return NULL;
+
+	devname = map_dev(stbuf.st_rdev, stbuf.st_mode);
+	if (!devname)
+		return NULL;
+
 	for (i = 0; i < grps_cnt; ++i) {
 		switch (grps[i]->devtype) {
 		case DEV_MISC:
@@ -71,13 +78,6 @@ const struct ioctl_group *find_ioctl_group(int fd)
 			break;
 		default: break;
 		}
-
-		if (stbuf.st_rdev == 0)
-			return NULL;
-
-		devname = map_dev(stbuf.st_rdev, stbuf.st_mode);
-		if (!devname)
-			return NULL;
 
 		for (j=0; j < grps[i]->devs_cnt; ++j)
 			if (strcmp(devname, grps[i]->devs[j]) == 0)
