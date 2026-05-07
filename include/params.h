@@ -92,6 +92,14 @@ extern unsigned int epoch_timeout;
 extern bool no_warm_start;
 extern char *warm_start_path;
 
+/* self-cgroup containment knobs (see self_cgroup.c).  NULL string args
+ * mean "use the default" (60%/50%/20% of MemTotal).  no_cgroup skips
+ * the sub-cgroup creation entirely. */
+extern char *memory_max_arg;
+extern char *memory_high_arg;
+extern char *memory_swap_max_arg;
+extern bool no_cgroup;
+
 extern char *stats_log_path;
 
 extern bool do_effector_map;

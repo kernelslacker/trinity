@@ -286,6 +286,11 @@ void clamp_default_max_children(void)
 bool no_warm_start = false;
 char *warm_start_path = NULL;
 
+char *memory_max_arg = NULL;
+char *memory_high_arg = NULL;
+char *memory_swap_max_arg = NULL;
+bool no_cgroup = false;
+
 char *stats_log_path = NULL;
 
 bool do_effector_map = false;
@@ -353,6 +358,10 @@ static const struct option_help option_descs[] = {
 	{ "kernel_taint",	'T', "controls which kernel taint flags should be considered (see README)" },
 	{ "list",		'L', "list all syscalls known on this architecture" },
 	{ "max-runtime",	 0,  "maximum runtime before exit, with optional suffix s/m/h/d (e.g., 30s, 10m, 2h, 1d). Overrides --epoch-timeout." },
+	{ "memory-high",	 0,  "self-cgroup memory.high throttling threshold. Accepts \"max\", N% of MemTotal, or N[KMG] bytes. Default: 50%." },
+	{ "memory-max",		 0,  "self-cgroup memory.max hard cap. Accepts \"max\", N% of MemTotal, or N[KMG] bytes. Default: 60%." },
+	{ "memory-swap-max",	 0,  "self-cgroup memory.swap.max cap. Accepts \"max\", N% of MemTotal, or N[KMG] bytes. Default: 20%." },
+	{ "no-cgroup",		 0,  "skip self-cgroup creation entirely (no in-binary memory containment)" },
 	{ "domain",		'P', "specify specific network domain for sockets" },
 	{ "quiet",		'q', "suppress the per-second progress line (other output unchanged)" },
 	{ "no_domain",		'E', "specify network domains to be excluded from testing" },
@@ -429,6 +438,10 @@ static const struct option longopts[] = {
 	{ "help", no_argument, NULL, 'h' },
 	{ "list", no_argument, NULL, 'L' },
 	{ "max-runtime", required_argument, NULL, 0 },
+	{ "memory-high", required_argument, NULL, 0 },
+	{ "memory-max", required_argument, NULL, 0 },
+	{ "memory-swap-max", required_argument, NULL, 0 },
+	{ "no-cgroup", no_argument, NULL, 0 },
 	{ "ioctls", no_argument, NULL, 'I' },
 	{ "no_domain", required_argument, NULL, 'E' },
 	{ "domain", required_argument, NULL, 'P' },
@@ -740,6 +753,36 @@ void parse_args(int argc, char *argv[])
 					epoch_timeout_set = true;
 				}
 			}
+
+			if (strcmp("memory-max", longopts[opt_index].name) == 0) {
+				free(memory_max_arg);
+				memory_max_arg = strdup(optarg);
+				if (memory_max_arg == NULL) {
+					outputerr("strdup failed\n");
+					exit(EXIT_FAILURE);
+				}
+			}
+
+			if (strcmp("memory-high", longopts[opt_index].name) == 0) {
+				free(memory_high_arg);
+				memory_high_arg = strdup(optarg);
+				if (memory_high_arg == NULL) {
+					outputerr("strdup failed\n");
+					exit(EXIT_FAILURE);
+				}
+			}
+
+			if (strcmp("memory-swap-max", longopts[opt_index].name) == 0) {
+				free(memory_swap_max_arg);
+				memory_swap_max_arg = strdup(optarg);
+				if (memory_swap_max_arg == NULL) {
+					outputerr("strdup failed\n");
+					exit(EXIT_FAILURE);
+				}
+			}
+
+			if (strcmp("no-cgroup", longopts[opt_index].name) == 0)
+				no_cgroup = true;
 
 			if (strcmp("max-runtime", longopts[opt_index].name) == 0) {
 				unsigned int seconds;

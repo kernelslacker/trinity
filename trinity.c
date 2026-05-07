@@ -25,6 +25,7 @@
 #include "params.h"
 #include "domains.h"
 #include "random.h"
+#include "self_cgroup.h"
 #include "signals.h"
 #include "shm.h"
 #include "stats.h"
@@ -282,6 +283,16 @@ int main(int argc, char* argv[])
 	sanitize_inherited_fds();
 
 	parse_args(argc, argv);
+
+	/* Place ourselves into a dedicated cgroup v2 sub-cgroup with a
+	 * memory cap so a runaway allocation triggers a scoped OOM kill of
+	 * trinity instead of a host-wide global OOM that takes down the
+	 * surrounding shell/tmux.  cgroup v2 process membership is inherited
+	 * on plain fork(), so all later children land here automatically.
+	 * Failures degrade gracefully: trinity continues without the safety
+	 * net rather than refusing to start. */
+	self_cgroup_setup();
+	atexit(self_cgroup_cleanup);
 
 	/* Open --stats-log-file (if any) before change_tmp_dir() so a
 	 * relative PATH is resolved against the operator's launch CWD,
