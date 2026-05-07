@@ -114,6 +114,9 @@ extern const struct socket_family_grammar grammar_rxrpc;
 #ifdef USE_RDS
 extern const struct socket_family_grammar grammar_rds;
 #endif
+#ifdef USE_MCTP
+extern const struct socket_family_grammar grammar_mctp;
+#endif
 extern const struct socket_family_grammar grammar_unix;
 extern const struct socket_family_grammar grammar_netlink;
 extern const struct socket_family_grammar grammar_packet;
