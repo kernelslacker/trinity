@@ -15,6 +15,7 @@
 #include "cmp_hints.h"
 #include "debug.h"
 #include "edgepair.h"
+#include "healer.h"
 #include "kcov.h"
 #include "locks.h"
 #include "minicorpus.h"
@@ -697,6 +698,15 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		if (entry->sanitise == NULL)
 			minicorpus_save(rec);
 
+		/* HEALER Phase A observer -- credit the (predset -> rec->nr)
+		 * relation for this new-edge event.  Reads the per-child
+		 * sequence buffer's two predecessor slots; the buffer is
+		 * pushed below (alongside last_syscall_nr) so the read here
+		 * sees the two completed syscalls before the current one,
+		 * which is exactly the predset the new edge should be
+		 * credited to. */
+		healer_observe_relation(child, rec->nr);
+
 		/* Coverage-delta-triggered persistence: snapshot the
 		 * minicorpus to disk every MINICORPUS_SNAPSHOT_EDGES
 		 * fleet-wide edges so a crash mid-run only loses the
@@ -773,6 +783,11 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 
 	/* Track syscall number for edge-pair sequence coverage. */
 	child->last_syscall_nr = rec->nr;
+
+	/* Mirror the just-completed syscall into the HEALER Phase A
+	 * per-child sequence buffer so the next call's observer-hook
+	 * fire sees this nr as one of its two predecessors. */
+	healer_seq_push(child, rec->nr);
 
 	/* Cheap end-of-call check for the strategy rotation boundary.
 	 * Two relaxed loads + a compare in the common case; the CAS only

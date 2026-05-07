@@ -1294,6 +1294,34 @@ struct stats_s {
 	unsigned long nl80211_iface_created;		/* NL80211_CMD_NEW_INTERFACE accepted */
 	unsigned long nl80211_iface_destroyed;		/* NL80211_CMD_DEL_INTERFACE accepted */
 	unsigned long nl80211_bursts_sent;		/* loopback UDP sendto on wlan iface returned >0 */
+
+	/*
+	 * HEALER Phase A observer counters -- see include/healer.h.
+	 * All four are bumped from healer_observe_relation() / the periodic
+	 * dump path; surfaced once per dump tick alongside the relation
+	 * top-10 so the operator can spot a saturated table or a runaway
+	 * eviction rate without grepping the shm dump.
+	 *
+	 * healer_relations_observed: every observer-hook fire (both first
+	 *   inserts and weight bumps), so the ratio of unique predsets to
+	 *   total observations is recoverable.
+	 * healer_table_full: probe-limit hits where the lookup ran off the
+	 *   end of HEALER_PROBE_LIMIT slots without finding either the
+	 *   matching predset or an empty slot; persistent non-zero growth
+	 *   means HEALER_RELATION_SLOTS is too small for the working set.
+	 * healer_evictions: the slot was full (promoted_count ==
+	 *   HEALER_PROMOTED_PER_SLOT) and we displaced the lowest-weight
+	 *   entry to insert a new follow-up; rapid growth here suggests
+	 *   HEALER_PROMOTED_PER_SLOT is too tight.
+	 * healer_unique_predsets: number of occupied slots, recomputed by
+	 *   sweeping healer_relations[] inside healer_table_dump().
+	 *   Lazy refresh keeps the hot observer-hook path free of an extra
+	 *   counter store while the periodic dump still has a stable read.
+	 */
+	unsigned long healer_relations_observed;
+	unsigned long healer_table_full;
+	unsigned long healer_evictions;
+	unsigned long healer_unique_predsets;
 };
 
 unsigned int stats_syscall_category(const char *name);
