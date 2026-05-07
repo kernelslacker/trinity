@@ -357,7 +357,7 @@ unsigned int get_pid(void)
 	dice = rand() % 100;
 
 	if (dice < 70) {
-		pid_t ppid = getppid();
+		pid_t ppid = mainpid;
 		unsigned int retries = 0;
 retry:		i = rand() % max_children;
 		pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
