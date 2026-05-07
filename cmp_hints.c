@@ -97,10 +97,13 @@ static void pool_add_locked(struct cmp_hint_pool *pool, unsigned long val)
 	unsigned int lo = 0, hi = pool->count, mid;
 
 	while (lo < hi) {
+		unsigned long v;
+
 		mid = (lo + hi) / 2;
-		if (pool->values[mid] == val)
+		v = pool->values[mid];
+		if (v == val)
 			return;
-		if (pool->values[mid] < val)
+		if (v < val)
 			lo = mid + 1;
 		else
 			hi = mid;
