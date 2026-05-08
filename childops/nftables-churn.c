@@ -164,6 +164,23 @@
 #define NFT_JUMP			(0xfffffffdU)
 #define NFT_GOTO			(0xfffffffcU)
 #endif
+#ifndef NFT_CONTINUE
+#define NFT_CONTINUE			(0xffffffffU)
+#endif
+#ifndef NFT_BREAK
+#define NFT_BREAK			(0xfffffffeU)
+#endif
+#ifndef NFT_RETURN
+#define NFT_RETURN			(0xfffffffbU)
+#endif
+
+/* netfilter base verdicts (used in NFTA_VERDICT_CODE for terminal verdicts) */
+#ifndef NF_DROP
+#define NF_DROP				0
+#endif
+#ifndef NF_ACCEPT
+#define NF_ACCEPT			1
+#endif
 
 #ifndef NFT_REG_VERDICT
 #define NFT_REG_VERDICT			0
@@ -1425,6 +1442,100 @@ static size_t build_nft_cmp_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Structurally-valid nft_immediate expression element.  Net layout:
+ *   NFTA_LIST_ELEM (nested)
+ *     NFTA_EXPR_NAME = "immediate"
+ *     NFTA_EXPR_DATA (nested)
+ *       NFTA_IMMEDIATE_DREG = NFT_REG_VERDICT | NFT_REG_1..NFT_REG_4
+ *       NFTA_IMMEDIATE_DATA (nested)
+ *         if DREG == NFT_REG_VERDICT:
+ *           NFTA_DATA_VERDICT (nested)
+ *             NFTA_VERDICT_CODE = NF_DROP|NF_ACCEPT|NFT_RETURN|NFT_CONTINUE
+ *         else:
+ *           NFTA_DATA_VALUE = LEN bytes random
+ *
+ * DREG picks NFT_REG_VERDICT (verdict carrier) ONE_IN(2), else uniform
+ * across NFT_REG_1..NFT_REG_4 (constant-data loader).  When carrying a
+ * verdict, terminal verdict codes are picked uniformly from
+ * {NF_DROP, NF_ACCEPT, NFT_RETURN, NFT_CONTINUE} — this exercises the
+ * non-jumping verdict branches in nft_immediate_eval that the hard-coded
+ * NFT_JUMP/NFT_GOTO verdict element below never visits.  Constant-data
+ * width coin-flips across {1, 2, 4, 8, 16} matching the cmp/bitwise
+ * register-width spread.
+ */
+static size_t build_nft_immediate_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u32 lens[] = { 1, 2, 4, 8, 16 };
+	static const __u32 regs[] = {
+		NFT_REG_1, NFT_REG_2, NFT_REG_3, NFT_REG_4,
+	};
+	static const __u32 verdicts[] = {
+		NF_DROP, NF_ACCEPT, NFT_RETURN, NFT_CONTINUE,
+	};
+	struct nlattr *elem, *expr_data, *imm_data;
+	size_t elem_off, expr_data_off, imm_data_off;
+	__u32 dreg = ONE_IN(2)
+		? NFT_REG_VERDICT
+		: regs[rand32() % ARRAY_SIZE(regs)];
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "immediate");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_IMMEDIATE_DREG, dreg);
+	if (!off)
+		return 0;
+
+	imm_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_IMMEDIATE_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	if (dreg == NFT_REG_VERDICT) {
+		struct nlattr *verdict;
+		size_t verdict_off;
+		__u32 code = verdicts[rand32() % ARRAY_SIZE(verdicts)];
+
+		verdict_off = off;
+		off = nla_put(buf, off, cap,
+			      NFTA_DATA_VERDICT | NLA_F_NESTED, NULL, 0);
+		if (!off)
+			return 0;
+		off = nla_put_be32(buf, off, cap, NFTA_VERDICT_CODE, code);
+		if (!off)
+			return 0;
+		verdict = (struct nlattr *)(buf + verdict_off);
+		verdict->nla_len = (unsigned short)(off - verdict_off);
+	} else {
+		__u32 len_v = lens[rand32() % ARRAY_SIZE(lens)];
+		unsigned char bytes[16];
+
+		generate_rand_bytes(bytes, len_v);
+		off = nla_put(buf, off, cap, NFTA_DATA_VALUE, bytes, len_v);
+		if (!off)
+			return 0;
+	}
+
+	imm_data = (struct nlattr *)(buf + imm_data_off);
+	imm_data->nla_len = (unsigned short)(off - imm_data_off);
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * NFT_MSG_NEWRULE on (table, chain) carrying one immediate-verdict
  * expression that jumps/gotos to target_chain.  The expression list
  * layout is:
@@ -1447,7 +1558,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 const char *chain_name, const char *target_chain,
 			 __u32 verdict_code, __u64 position, bool with_payload,
 			 bool with_meta, bool with_lookup, bool with_log,
-			 bool with_bitwise, bool with_cmp,
+			 bool with_bitwise, bool with_cmp, bool with_immediate,
 			 const char *set_name, __u32 set_id)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
@@ -1515,6 +1626,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_cmp) {
 		off = build_nft_cmp_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_immediate) {
+		off = build_nft_immediate_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -1724,11 +1841,12 @@ bool nftables_churn(struct childdata *child)
 		bool with_log = ONE_IN(4);
 		bool with_bitwise = ONE_IN(4);
 		bool with_cmp = ONE_IN(3);
+		bool with_immediate = ONE_IN(3);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 0, with_payload,
 				  with_meta, with_lookup, with_log,
-				  with_bitwise, with_cmp,
+				  with_bitwise, with_cmp, with_immediate,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
 					   1, __ATOMIC_RELAXED);
@@ -1749,6 +1867,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_cmp)
 				__atomic_add_fetch(&shm->stats.nftables_churn_cmp_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_immediate)
+				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -1814,11 +1935,12 @@ bool nftables_churn(struct childdata *child)
 		bool with_log = ONE_IN(4);
 		bool with_bitwise = ONE_IN(4);
 		bool with_cmp = ONE_IN(3);
+		bool with_immediate = ONE_IN(3);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 1, with_payload,
 				  with_meta, with_lookup, with_log,
-				  with_bitwise, with_cmp,
+				  with_bitwise, with_cmp, with_immediate,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
 					   1, __ATOMIC_RELAXED);
@@ -1839,6 +1961,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_cmp)
 				__atomic_add_fetch(&shm->stats.nftables_churn_cmp_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_immediate)
+				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
