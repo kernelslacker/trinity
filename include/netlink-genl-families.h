@@ -38,6 +38,11 @@ struct genl_family_grammar {
 	const struct nla_attr_spec *attrs;
 	unsigned int n_attrs;
 	unsigned char default_version; /* genlmsghdr.version when nonzero */
+	unsigned char hdrsize;	/* family-specific fixed header that the
+				 * kernel skips past before attribute parsing
+				 * (e.g. struct ovs_header for the openvswitch
+				 * families).  0 for the common case where
+				 * attributes follow the genlmsghdr directly. */
 
 	/* Filled in at runtime by genl_resolve_families(): */
 	unsigned short family_id; /* 0 == unresolved */

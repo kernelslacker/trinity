@@ -1063,14 +1063,19 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 /*
  * Generate body for NETLINK_GENERIC messages.
  * All genl messages have a genlmsghdr (4 bytes) immediately after nlmsghdr.
+ * Some families (openvswitch's six, for example) declare a non-zero
+ * family->hdrsize that the kernel skips past before walking attributes —
+ * for those we append fam->hdrsize random bytes after the genlmsghdr so
+ * the per-cmd attribute parser sees TLVs at the offset it expects.
  * For the controller (GENL_ID_CTRL), we pick from CTRL_CMD_* commands.
  * For other families, we use random cmd values since we don't know
  * which families are loaded at runtime.
  */
 static size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type)
 {
-	const struct genl_family_grammar *fam;
+	const struct genl_family_grammar *fam = NULL;
 	struct genlmsghdr genl;
+	size_t len;
 
 	if (nlmsg_type == GENL_ID_CTRL) {
 		/* Controller commands: GETFAMILY is the most useful */
@@ -1097,7 +1102,11 @@ static size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type)
 	genl.reserved = ONE_IN(4) ? rand16() : 0;
 
 	memcpy(body, &genl, sizeof(genl));
-	return sizeof(genl);
+	len = sizeof(genl);
+
+	if (fam && fam->hdrsize)
+		generate_rand_bytes(body + len, fam->hdrsize);
+	return len + (fam ? fam->hdrsize : 0);
 }
 
 /* Pick an nlattr type for genl controller messages.  Reads through the
@@ -1751,7 +1760,9 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	int rtnl_group = -1;
 	int num_attrs;
 
-	if (offset + NLMSG_HDRLEN + 4 > buflen)
+	/* Floor: nlmsghdr + genlmsghdr + a small per-family fixed header.
+	 * Real buffers are >=1280 bytes so this is just a sanity gate. */
+	if (offset + NLMSG_HDRLEN + 8 > buflen)
 		return offset;
 
 	nlmsg_type = pick_nlmsg_type(triplet->protocol);
