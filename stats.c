@@ -648,7 +648,8 @@ static void dump_stats_json(void)
 		"\"barrier_racer\":{\"runs\":%lu,\"inner_crashed\":%lu},"
 		"\"genetlink_fuzzer\":{\"families_discovered\":%lu,\"msgs_sent\":%lu,\"eperm\":%lu},"
 		"\"genl_family_calls\":{\"devlink\":%lu,\"nl80211\":%lu,\"taskstats\":%lu,"
-			"\"ethtool\":%lu,\"mptcp_pm\":%lu,\"l2tp\":%lu,\"gtp\":%lu,\"netlabel\":%lu},"
+			"\"ethtool\":%lu,\"mptcp_pm\":%lu,\"l2tp\":%lu,\"gtp\":%lu,\"netlabel\":%lu,"
+				"\"team\":%lu},"
 		"\"nfnl_subsys_calls\":{\"ctnetlink\":%lu,\"ctnetlink_exp\":%lu,"
 			"\"nftables\":%lu,\"ipset\":%lu},"
 		"\"netlink_generator\":{\"nested_attrs_emitted\":%lu},"
@@ -836,6 +837,7 @@ static void dump_stats_json(void)
 		shm->stats.genl_family_calls_l2tp,
 		shm->stats.genl_family_calls_gtp,
 		shm->stats.genl_family_calls_netlabel,
+		shm->stats.genl_family_calls_team,
 		shm->stats.nfnl_subsys_calls_ctnetlink,
 		shm->stats.nfnl_subsys_calls_ctnetlink_exp,
 		shm->stats.nfnl_subsys_calls_nftables,
@@ -1458,6 +1460,8 @@ static const struct {
 	  offsetof(struct stats_s, genl_family_calls_gtp) },
 	{ "genl_family_calls_netlabel",
 	  offsetof(struct stats_s, genl_family_calls_netlabel) },
+	{ "genl_family_calls_team",
+	  offsetof(struct stats_s, genl_family_calls_team) },
 	/* nfnetlink registry per-subsys dispatch counters; same diagnostic
 	 * value as the genl ones above but for NETLINK_NETFILTER subsystems.
 	 * Lets an operator see the live ctnetlink/nftables/ipset traffic
@@ -2260,7 +2264,8 @@ void dump_stats(void)
 	    shm->stats.genl_family_calls_mptcp_pm  ||
 	    shm->stats.genl_family_calls_tipc      ||
 	    shm->stats.genl_family_calls_wireguard ||
-	    shm->stats.genl_family_calls_netlabel) {
+	    shm->stats.genl_family_calls_netlabel  ||
+	    shm->stats.genl_family_calls_team) {
 		stat_row("genl_family_calls", "devlink",   shm->stats.genl_family_calls_devlink);
 		stat_row("genl_family_calls", "nl80211",   shm->stats.genl_family_calls_nl80211);
 		stat_row("genl_family_calls", "taskstats", shm->stats.genl_family_calls_taskstats);
@@ -2269,6 +2274,7 @@ void dump_stats(void)
 		stat_row("genl_family_calls", "tipc",      shm->stats.genl_family_calls_tipc);
 		stat_row("genl_family_calls", "wireguard", shm->stats.genl_family_calls_wireguard);
 		stat_row("genl_family_calls", "netlabel",  shm->stats.genl_family_calls_netlabel);
+		stat_row("genl_family_calls", "team",      shm->stats.genl_family_calls_team);
 	}
 
 	if (shm->stats.nfnl_subsys_calls_ctnetlink     ||
