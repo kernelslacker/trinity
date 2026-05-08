@@ -83,7 +83,7 @@ static void socket_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 #ifdef USE_BPF
 		int prog_fd = get_rand_bpf_prog_fd();
 		if (prog_fd >= 0) {
-			int *buf = malloc(sizeof(int));
+			int *buf = zmalloc(sizeof(int));
 			*buf = prog_fd;
 			free((void *) so->optval);
 			so->optval = (unsigned long) buf;

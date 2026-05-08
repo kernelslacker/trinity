@@ -81,7 +81,7 @@ static void socketcall_socketpair(unsigned long *args)
 	/* SYS_SOCKETPAIR needs a writable int[2] for the kernel to deposit
 	 * the pair of fds.  Without it the kernel returns -EFAULT and the
 	 * post handler has nothing to register.  Freed in post_socketcall. */
-	args[3] = (unsigned long) malloc(sizeof(int) * 2);
+	args[3] = (unsigned long) zmalloc(sizeof(int) * 2);
 }
 
 static void socketcall_send(unsigned long *args)
