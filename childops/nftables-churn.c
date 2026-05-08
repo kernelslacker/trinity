@@ -671,6 +671,37 @@
 #define NFT_LIMIT_F_INV			(1 << 0)
 #endif
 
+/* nft_numgen NFTA_NG_* attribute IDs and the NFT_NG_INCREMENTAL /
+ * NFT_NG_RANDOM type selectors.  The validator in
+ * net/netfilter/nft_numgen.c dispatches on NFTA_NG_TYPE: the parser
+ * reads nft_ng_policy[] (DREG/MODULUS/TYPE/OFFSET, all u32), then
+ * NFT_NG_INCREMENTAL routes to nft_ng_inc_init (atomic counter mod
+ * modulus) and NFT_NG_RANDOM to nft_ng_random_init (PRNG mod modulus).
+ * Both init helpers reject MODULUS == 0 with -ERANGE; any TYPE outside
+ * {INCREMENTAL, RANDOM} is rejected with -EOPNOTSUPP before the
+ * type-specific init runs.  OFFSET is added to the result at eval time
+ * and is optional.  Each symbol is guarded individually so the build
+ * still works on older host headers that predate any subset. */
+#ifndef NFTA_NG_DREG
+#define NFTA_NG_DREG			1
+#endif
+#ifndef NFTA_NG_MODULUS
+#define NFTA_NG_MODULUS			2
+#endif
+#ifndef NFTA_NG_TYPE
+#define NFTA_NG_TYPE			3
+#endif
+#ifndef NFTA_NG_OFFSET
+#define NFTA_NG_OFFSET			4
+#endif
+
+#ifndef NFT_NG_INCREMENTAL
+#define NFT_NG_INCREMENTAL		0
+#endif
+#ifndef NFT_NG_RANDOM
+#define NFT_NG_RANDOM			1
+#endif
+
 /* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
  * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
  * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
@@ -2162,6 +2193,99 @@ static size_t build_nft_limit_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_numgen
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_numgen.c via
+ * the nft_ng_policy[] parser: NFTA_NG_DREG, NFTA_NG_MODULUS and
+ * NFTA_NG_TYPE are mandatory, NFTA_NG_OFFSET is optional.  The TYPE
+ * value dispatches to nft_ng_inc_init (NFT_NG_INCREMENTAL: atomic
+ * counter mod modulus) or nft_ng_random_init (NFT_NG_RANDOM: PRNG mod
+ * modulus); both reject modulus == 0 with -ERANGE, and any TYPE outside
+ * {INCREMENTAL, RANDOM} is rejected with -EOPNOTSUPP before the
+ * type-specific init runs.  The deprecated NFTA_NG_SET_NAME /
+ * NFTA_NG_SET_ID anonymous-set variants are intentionally not emitted
+ * here — they need their own slice with care around the .set policy
+ * gate.
+ *
+ * Variants per call:
+ *   - DREG uniform across NFT_REG_1..NFT_REG_4 so the destination
+ *     register validation in nft_parse_register_store sees the full
+ *     legacy-register spread.
+ *   - MODULUS rolls uniformly across {2, 16, 256, 65536} so both the
+ *     small-modulus per-byte fan-out (the natural per-byte hash spread)
+ *     and the wide-modulus per-port-style fan-out land on the eval-time
+ *     reciprocal_scale path.  All four values are > 0 so the
+ *     -ERANGE guard in both init helpers never fires before the
+ *     type-specific init runs.
+ *   - TYPE is coin-flipped between NFT_NG_INCREMENTAL and
+ *     NFT_NG_RANDOM so both dispatch arms (atomic counter increment vs
+ *     prandom_u32_state in nft_ng_random_eval) see traffic.
+ *   - OFFSET is coin-flipped present, value uniform over
+ *     {0, 1, 0x100, 0xffff}; when present the eval-time u32 add of
+ *     (counter % modulus) + offset exercises the offset-fold path
+ *     including the wrap that 0xffff + small-modulus produces.
+ */
+static size_t build_nft_numgen_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u32 regs[] = {
+		NFT_REG_1, NFT_REG_2, NFT_REG_3, NFT_REG_4,
+	};
+	static const __u32 moduli[] = {
+		2U,			/* small: per-byte fan-out */
+		16U,
+		256U,
+		65536U,			/* wide: per-port-style fan-out */
+	};
+	static const __u32 offsets[] = {
+		0U, 1U, 0x100U, 0xffffU,
+	};
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u32 dreg = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 modulus = moduli[rand32() % ARRAY_SIZE(moduli)];
+	__u32 type = ONE_IN(2) ? NFT_NG_INCREMENTAL : NFT_NG_RANDOM;
+	bool with_offset = ONE_IN(2);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "numgen");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_NG_DREG, dreg);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_NG_MODULUS, modulus);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_NG_TYPE, type);
+	if (!off)
+		return 0;
+
+	if (with_offset) {
+		__u32 offset = offsets[rand32() % ARRAY_SIZE(offsets)];
+
+		off = nla_put_be32(buf, off, cap, NFTA_NG_OFFSET, offset);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Structurally-valid nft_immediate expression element.  Net layout:
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "immediate"
@@ -2498,6 +2622,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_bitwise, bool with_cmp, bool with_range,
 			 bool with_byteorder, bool with_socket,
 			 bool with_quota, bool with_limit,
+			 bool with_numgen,
 			 bool with_immediate,
 			 bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
@@ -2597,6 +2722,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_limit) {
 		off = build_nft_limit_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_numgen) {
+		off = build_nft_numgen_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -2830,6 +2961,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_socket = ONE_IN(3);
 		bool with_quota = ONE_IN(3);
 		bool with_limit = ONE_IN(3);
+		bool with_numgen = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -2839,7 +2971,8 @@ bool nftables_churn(struct childdata *child)
 				  with_meta, with_lookup, with_log,
 				  with_bitwise, with_cmp, with_range,
 				  with_byteorder, with_socket,
-				  with_quota, with_limit, with_immediate,
+				  with_quota, with_limit, with_numgen,
+				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
@@ -2876,6 +3009,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_limit)
 				__atomic_add_fetch(&shm->stats.nftables_churn_limit_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_numgen)
+				__atomic_add_fetch(&shm->stats.nftables_churn_numgen_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
@@ -2955,6 +3091,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_socket = ONE_IN(3);
 		bool with_quota = ONE_IN(3);
 		bool with_limit = ONE_IN(3);
+		bool with_numgen = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -2964,7 +3101,8 @@ bool nftables_churn(struct childdata *child)
 				  with_meta, with_lookup, with_log,
 				  with_bitwise, with_cmp, with_range,
 				  with_byteorder, with_socket,
-				  with_quota, with_limit, with_immediate,
+				  with_quota, with_limit, with_numgen,
+				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
@@ -3001,6 +3139,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_limit)
 				__atomic_add_fetch(&shm->stats.nftables_churn_limit_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_numgen)
+				__atomic_add_fetch(&shm->stats.nftables_churn_numgen_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
