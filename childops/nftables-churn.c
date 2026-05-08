@@ -795,6 +795,29 @@
 #define TCP_MAX_WSCALE			14
 #endif
 
+/* nft_counter NFTA_COUNTER_* attribute IDs.  The validator in
+ * net/netfilter/nft_counter.c (nft_counter_init) drives off
+ * nft_counter_policy[]: NFTA_COUNTER_BYTES (NLA_U64) and
+ * NFTA_COUNTER_PACKETS (NLA_U64) are BOTH individually OPTIONAL — the
+ * init body gates each one with `if (tb[...])` and reads the wire value
+ * via be64_to_cpu(nla_get_be64()), seeding the per-cpu counter's byte
+ * and packet starting values respectively.  The policy has no bounds
+ * (any u64 is accepted), no flag mask, and no chain-context restriction
+ * (nft_counter has no validate hook beyond standard expression
+ * validation).  Emitting zero attrs leaves the per-cpu counter at
+ * default-zero which does still drive a code path, but the more
+ * interesting init path runs `nft_be64_set` for at-least-one attr — so
+ * the emitter forces PACKETS present if the per-attr coin-flips would
+ * otherwise produce the empty payload.  Each symbol is guarded
+ * individually so the build still works on older host headers that
+ * predate any subset. */
+#ifndef NFTA_COUNTER_BYTES
+#define NFTA_COUNTER_BYTES		1
+#endif
+#ifndef NFTA_COUNTER_PACKETS
+#define NFTA_COUNTER_PACKETS		2
+#endif
+
 /* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
  * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
  * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
@@ -2620,6 +2643,124 @@ static size_t build_nft_synproxy_expr(unsigned char *buf, size_t off, size_t cap
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_counter
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_counter.c
+ * (nft_counter_init): both NFTA_COUNTER_BYTES and NFTA_COUNTER_PACKETS
+ * are individually OPTIONAL u64 attributes (each gated by `if (tb[...])`
+ * in the init body) and are read off the wire as big-endian via
+ * be64_to_cpu(nla_get_be64()).  Whichever attrs are present become the
+ * starting byte / packet counts for the per-cpu counter that
+ * nft_counter_eval increments per matched skb.  The policy has no
+ * bounds (any u64 is accepted), no flag mask, and no chain-context
+ * restriction (no validate hook beyond standard expression validation).
+ *
+ * Variants per call:
+ *   - BYTES rolls across {0, small, INT_MAX (0x7fffffff), U32_MAX
+ *     (0xffffffff), near-U64_MAX} via a rand64()-shifted bucket pick so
+ *     the per-cpu-counter add arithmetic in nft_counter_eval and the
+ *     accumulating dump path in nft_counter_dump see both the
+ *     freshly-zeroed counter and the wraparound-imminent counter on the
+ *     very first matched packet.
+ *   - PACKETS rolls across the same {0, small, INT_MAX, U32_MAX,
+ *     near-U64_MAX} spread for the same reason on the packet-count
+ *     accumulator.
+ *
+ * Each attribute is coin-flipped present independently.  If the
+ * coin-flips would emit zero attrs the priv struct ends up at
+ * default-zero — which is a valid path through the parser but skips the
+ * nft_be64_set storage path entirely; PACKETS is forced present in
+ * that case so at least one be64 actually flows through the init body.
+ */
+static size_t build_nft_counter_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	bool with_bytes = ONE_IN(2);
+	bool with_packets = ONE_IN(2);
+
+	/* At least one attr keeps init off the all-default-zero shortcut. */
+	if (!with_bytes && !with_packets)
+		with_packets = true;
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "counter");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	if (with_bytes) {
+		__u64 r = rand64();
+		__u64 bytes;
+
+		switch (r & 0x7) {
+		case 0:
+			bytes = 0ULL;
+			break;
+		case 1:
+			bytes = (r >> 3) & 0xffffULL;
+			break;
+		case 2:
+		case 3:
+			bytes = 0x7fffffffULL;	/* INT_MAX */
+			break;
+		case 4:
+		case 5:
+			bytes = 0xffffffffULL;	/* U32_MAX */
+			break;
+		default:
+			bytes = ~0ULL - ((r >> 3) & 0xffffULL);
+			break;
+		}
+		off = nla_put_be64(buf, off, cap, NFTA_COUNTER_BYTES, bytes);
+		if (!off)
+			return 0;
+	}
+
+	if (with_packets) {
+		__u64 r = rand64();
+		__u64 packets;
+
+		switch (r & 0x7) {
+		case 0:
+			packets = 0ULL;
+			break;
+		case 1:
+			packets = (r >> 3) & 0xffffULL;
+			break;
+		case 2:
+		case 3:
+			packets = 0x7fffffffULL;	/* INT_MAX */
+			break;
+		case 4:
+		case 5:
+			packets = 0xffffffffULL;	/* U32_MAX */
+			break;
+		default:
+			packets = ~0ULL - ((r >> 3) & 0xffffULL);
+			break;
+		}
+		off = nla_put_be64(buf, off, cap, NFTA_COUNTER_PACKETS, packets);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Structurally-valid nft_immediate expression element.  Net layout:
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "immediate"
@@ -2958,6 +3099,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_quota, bool with_limit,
 			 bool with_numgen, bool with_hash,
 			 bool with_synproxy,
+			 bool with_counter,
 			 bool with_immediate,
 			 bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
@@ -3075,6 +3217,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_synproxy) {
 		off = build_nft_synproxy_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_counter) {
+		off = build_nft_counter_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -3311,6 +3459,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_numgen = ONE_IN(3);
 		bool with_hash = ONE_IN(3);
 		bool with_synproxy = ONE_IN(3);
+		bool with_counter = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -3321,7 +3470,8 @@ bool nftables_churn(struct childdata *child)
 				  with_bitwise, with_cmp, with_range,
 				  with_byteorder, with_socket,
 				  with_quota, with_limit, with_numgen,
-				  with_hash, with_synproxy, with_immediate,
+				  with_hash, with_synproxy, with_counter,
+				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
@@ -3367,6 +3517,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_synproxy)
 				__atomic_add_fetch(&shm->stats.nftables_churn_synproxy_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_counter)
+				__atomic_add_fetch(&shm->stats.nftables_churn_counter_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
@@ -3449,6 +3602,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_numgen = ONE_IN(3);
 		bool with_hash = ONE_IN(3);
 		bool with_synproxy = ONE_IN(3);
+		bool with_counter = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -3459,7 +3613,8 @@ bool nftables_churn(struct childdata *child)
 				  with_bitwise, with_cmp, with_range,
 				  with_byteorder, with_socket,
 				  with_quota, with_limit, with_numgen,
-				  with_hash, with_synproxy, with_immediate,
+				  with_hash, with_synproxy, with_counter,
+				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
@@ -3505,6 +3660,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_synproxy)
 				__atomic_add_fetch(&shm->stats.nftables_churn_synproxy_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_counter)
+				__atomic_add_fetch(&shm->stats.nftables_churn_counter_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
