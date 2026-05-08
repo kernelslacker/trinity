@@ -247,7 +247,7 @@ void dump_pids_page_state(void)
 	outputerr("=== end pids[] page state ===\n");
 }
 
-static pid_t pidmax;
+static unsigned long pidmax;
 
 static int read_pid_max(void)
 {
@@ -293,7 +293,7 @@ void pids_init(void)
 		outputerr("Couldn't read pid_max from proc\n");
 	}
 
-	output(0, "Using pid_max = %d\n", pidmax);
+	output(0, "Using pid_max = %lu\n", pidmax);
 
 	/*
 	 * pids[] is read by children (get_pid() biases random pid args
@@ -327,7 +327,7 @@ void pids_init(void)
 
 int pid_is_valid(pid_t pid)
 {
-	if ((pid > pidmax) || (pid < 1))
+	if ((pid < 1) || ((unsigned long)pid > pidmax))
 		return false;
 
 	return true;
