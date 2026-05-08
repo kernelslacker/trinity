@@ -1298,10 +1298,6 @@ struct kvm_ppc_pvinfo {
 #define KVM_GET_TSC_KHZ           _IO(KVMIO,  0xa3)
 #endif
 
-#ifndef KVM_DEBUG_GUEST
-#define KVM_DEBUG_GUEST           _IOW(KVMIO, 0x87, int)
-#endif
-
 #ifndef KVM_GET_DEBUGREGS
 struct kvm_debugregs {
 	__u64 db[4];
@@ -1357,7 +1353,8 @@ struct kvm_msi {
         __u32 address_hi;
         __u32 data;
         __u32 flags;
-        __u8  pad[16];
+        __u32 devid;
+        __u8  pad[12];
 };
 #define KVM_SIGNAL_MSI            _IOW(KVMIO,  0xa5, struct kvm_msi)
 #endif
@@ -1403,7 +1400,8 @@ struct kvm_ppc_one_seg_page_size {
 struct kvm_ppc_smmu_info {
 	__u64 flags;
 	__u32 slb_size;
-	__u32 pad;
+	__u16 data_keys;
+	__u16 instr_keys;
 	struct kvm_ppc_one_seg_page_size sps[KVM_PPC_PAGE_SIZES_MAX_SZ];
 };
 #define KVM_PPC_GET_SMMU_INFO	  _IOR(KVMIO,  0xa6, struct kvm_ppc_smmu_info)
