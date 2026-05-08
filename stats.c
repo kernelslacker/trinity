@@ -1697,6 +1697,25 @@ void stats_log_close(void)
 	stats_log_fp = NULL;
 }
 
+/* Drop the inherited stats-log fd from a fork()'d child.  fopen() on the
+ * parent side leaves an ordinary fd in the table; fork shares it, and the
+ * syscall fuzzer in the child can hit it numerically (fchmod / ftruncate /
+ * fchown / write at random offset) without ever going through an
+ * fd-provider.  The symptom is the operator's stats.log gaining random
+ * permissions and size jumping around mid-run.  close()ing the fd here
+ * removes only the child's fd-table entry (the parent's entry refers to
+ * the same kernel struct file but via a separate fd-table slot, so the
+ * parent's writes are unaffected).  Null the FILE* so a stray
+ * stats_log_write call from the child silently no-ops instead of writing
+ * via a dangling fileno. */
+void stats_log_drop_in_child(void)
+{
+	if (stats_log_fp == NULL)
+		return;
+	close(fileno(stats_log_fp));
+	stats_log_fp = NULL;
+}
+
 void stats_log_write(const char *fmt, ...)
 {
 	char buf[STATS_LOG_LINE_BUFSIZE];
