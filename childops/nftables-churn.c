@@ -903,6 +903,62 @@
 #define NFT_RT_XFRM			4
 #endif
 
+/* nft_fib NFTA_FIB_* attribute IDs, NFT_FIB_RESULT_* result IDs, and
+ * NFTA_FIB_F_* flag bits.  The validator in net/netfilter/nft_fib.c
+ * (nft_fib_init / nft_fib_validate) drives off nft_fib_policy[]: all
+ * three of NFTA_FIB_DREG (NLA_U32), NFTA_FIB_RESULT (NLA_U32), and
+ * NFTA_FIB_FLAGS (NLA_U32) are MANDATORY (nft_fib_init returns -EINVAL
+ * if any are missing).  RESULT is an enum (OIF=1, OIFNAME=2,
+ * ADDRTYPE=3); FLAGS is a bitmap (SADDR=1<<0, DADDR=1<<1, MARK=1<<2,
+ * IIF=1<<3, OIF=1<<4, PRESENT=1<<5).  nft_fib_init enforces several
+ * cross-field constraints: exactly one of SADDR/DADDR must be set
+ * (-EINVAL otherwise), IIF and OIF are mutually exclusive (-EINVAL if
+ * both), PRESENT is only valid with RESULT=ADDRTYPE (-EOPNOTSUPP
+ * otherwise), and MARK requires CONFIG_NF_CONNTRACK_MARK.  Validate()
+ * additionally restricts result OIF/OIFNAME/ADDRTYPE-with-OIF to
+ * PRE_ROUTING/LOCAL_IN/FORWARD/LOCAL_OUT/POST_ROUTING hooks.  nft_fib
+ * is built as CONFIG_NFT_FIB=m (with per-family nft_fib_ipv4/ipv6/inet
+ * also =m) on the fuzz-box, so the policy validation path is exercised
+ * once the module loads at runtime.  Each symbol is guarded individually
+ * so the build still works on stale-host headers that predate any
+ * subset of the UAPI exposure. */
+#ifndef NFTA_FIB_DREG
+#define NFTA_FIB_DREG			1
+#endif
+#ifndef NFTA_FIB_RESULT
+#define NFTA_FIB_RESULT			2
+#endif
+#ifndef NFTA_FIB_FLAGS
+#define NFTA_FIB_FLAGS			3
+#endif
+#ifndef NFT_FIB_RESULT_OIF
+#define NFT_FIB_RESULT_OIF		1
+#endif
+#ifndef NFT_FIB_RESULT_OIFNAME
+#define NFT_FIB_RESULT_OIFNAME		2
+#endif
+#ifndef NFT_FIB_RESULT_ADDRTYPE
+#define NFT_FIB_RESULT_ADDRTYPE		3
+#endif
+#ifndef NFTA_FIB_F_SADDR
+#define NFTA_FIB_F_SADDR		(1 << 0)
+#endif
+#ifndef NFTA_FIB_F_DADDR
+#define NFTA_FIB_F_DADDR		(1 << 1)
+#endif
+#ifndef NFTA_FIB_F_MARK
+#define NFTA_FIB_F_MARK			(1 << 2)
+#endif
+#ifndef NFTA_FIB_F_IIF
+#define NFTA_FIB_F_IIF			(1 << 3)
+#endif
+#ifndef NFTA_FIB_F_OIF
+#define NFTA_FIB_F_OIF			(1 << 4)
+#endif
+#ifndef NFTA_FIB_F_PRESENT
+#define NFTA_FIB_F_PRESENT		(1 << 5)
+#endif
+
 /* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
  * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
  * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
@@ -3120,6 +3176,134 @@ static size_t build_nft_rt_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_fib
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_fib.c
+ * (nft_fib_init -> cross-field constraint checks, then nft_fib_validate
+ * at commit time for hook restrictions).  All three of NFTA_FIB_DREG
+ * (NLA_U32), NFTA_FIB_RESULT (NLA_U32), and NFTA_FIB_FLAGS (NLA_U32)
+ * are MANDATORY.
+ *
+ * RESULT distribution per call (rand32() % 3) — roughly 1/3 each:
+ *   - OIF       (1): valid only on PRE_ROUTING/LOCAL_IN/FORWARD/
+ *     LOCAL_OUT/POST_ROUTING hooks (nft_fib_validate -> -EOPNOTSUPP
+ *     elsewhere).
+ *   - OIFNAME   (2): same hook restriction as OIF.
+ *   - ADDRTYPE  (3): no hook restriction unless OIF flag is set; the
+ *     only RESULT that legally combines with NFTA_FIB_F_PRESENT.
+ *
+ * FLAGS distribution per call:
+ *   - SADDR / DADDR slot (rand32() % 16): bucket 0 leaves NEITHER set
+ *     (~1/16, drives -EINVAL in nft_fib_init), bucket 1 sets BOTH
+ *     (~1/16, also -EINVAL), buckets 2..15 set exactly one (14/16
+ *     total, split 7/7 between SADDR and DADDR by parity for a clean
+ *     50/50 inside the in-policy slice).
+ *   - MARK (~1/4 via ONE_IN(4)): legal when CONFIG_NF_CONNTRACK_MARK
+ *     is on; rejected with -EOPNOTSUPP otherwise.
+ *   - IIF / OIF (mutually exclusive, ~1/8 each via rand32() % 16
+ *     buckets 0,1 -> IIF and 2,3 -> OIF; the kernel rejects -EINVAL
+ *     if both are ever set, which can't happen here).
+ *   - PRESENT (~1/4 via ONE_IN(4)) ONLY when RESULT=ADDRTYPE; on the
+ *     other two RESULT values nft_fib_init returns -EOPNOTSUPP, so we
+ *     deliberately leave PRESENT off to keep that bucket exercising
+ *     the success path.
+ *
+ * DREG is picked uniformly from NFT_REG_1..NFT_REG_4 inline since the
+ * existing emitters in this file each open-code their own register
+ * pick (no shared helper).  No upper-bound clamping on RESULT or FLAGS
+ * beyond what the kernel mask enforces — out-of-enum RESULT values
+ * are rejected by nft_fib_init's switch statement with -EINVAL, which
+ * is intended coverage if a stale-host header expands an unknown
+ * value.
+ */
+static size_t build_nft_fib_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u32 dreg = NFT_REG_1 + (rand32() % 4);
+	__u32 result_bucket = rand32() % 3;
+	__u32 saddr_daddr_bucket = rand32() % 16;
+	__u32 iif_oif_bucket = rand32() % 16;
+	__u32 result;
+	__u32 flags = 0;
+
+	switch (result_bucket) {
+	case 0:
+		result = NFT_FIB_RESULT_OIF;
+		break;
+	case 1:
+		result = NFT_FIB_RESULT_OIFNAME;
+		break;
+	default:
+		result = NFT_FIB_RESULT_ADDRTYPE;
+		break;
+	}
+
+	switch (saddr_daddr_bucket) {
+	case 0:
+		break;
+	case 1:
+		flags |= NFTA_FIB_F_SADDR | NFTA_FIB_F_DADDR;
+		break;
+	default:
+		if (saddr_daddr_bucket & 1)
+			flags |= NFTA_FIB_F_DADDR;
+		else
+			flags |= NFTA_FIB_F_SADDR;
+		break;
+	}
+
+	if (ONE_IN(4))
+		flags |= NFTA_FIB_F_MARK;
+
+	switch (iif_oif_bucket) {
+	case 0:
+	case 1:
+		flags |= NFTA_FIB_F_IIF;
+		break;
+	case 2:
+	case 3:
+		flags |= NFTA_FIB_F_OIF;
+		break;
+	default:
+		break;
+	}
+
+	if (result == NFT_FIB_RESULT_ADDRTYPE && ONE_IN(4))
+		flags |= NFTA_FIB_F_PRESENT;
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "fib");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_FIB_RESULT, result);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_FIB_FLAGS, flags);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_FIB_DREG, dreg);
+	if (!off)
+		return 0;
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Structurally-valid nft_immediate expression element.  Net layout:
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "immediate"
@@ -3462,6 +3646,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_connlimit,
 			 bool with_last,
 			 bool with_rt,
+			 bool with_fib,
 			 bool with_immediate,
 			 bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
@@ -3603,6 +3788,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_rt) {
 		off = build_nft_rt_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_fib) {
+		off = build_nft_fib_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -3843,6 +4034,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_connlimit = ONE_IN(3);
 		bool with_last = ONE_IN(3);
 		bool with_rt = ONE_IN(3);
+		bool with_fib = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -3857,6 +4049,7 @@ bool nftables_churn(struct childdata *child)
 				  with_connlimit,
 				  with_last,
 				  with_rt,
+				  with_fib,
 				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
@@ -3915,6 +4108,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_rt)
 				__atomic_add_fetch(&shm->stats.nftables_churn_rt_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_fib)
+				__atomic_add_fetch(&shm->stats.nftables_churn_fib_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
@@ -4001,6 +4197,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_connlimit = ONE_IN(3);
 		bool with_last = ONE_IN(3);
 		bool with_rt = ONE_IN(3);
+		bool with_fib = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -4015,6 +4212,7 @@ bool nftables_churn(struct childdata *child)
 				  with_connlimit,
 				  with_last,
 				  with_rt,
+				  with_fib,
 				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
@@ -4073,6 +4271,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_rt)
 				__atomic_add_fetch(&shm->stats.nftables_churn_rt_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_fib)
+				__atomic_add_fetch(&shm->stats.nftables_churn_fib_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
