@@ -670,7 +670,8 @@ static void dump_stats_json(void)
 			"\"sibling_mprotect_failed\":%lu,"
 			"\"destroy_object_idx\":%lu,"
 			"\"global_obj_uaf_caught\":%lu,"
-			"\"maps_uaf_caught\":%lu},"
+			"\"maps_uaf_caught\":%lu,"
+			"\"pagecache_canary_corrupt_caught\":%lu},"
 		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu,"
 			"\"libc_heap_redirected\":%lu,\"libc_heap_embedded_redirected\":%lu,"
 			"\"get_writable_address_scribbled_slots_caught\":%lu},"
@@ -866,6 +867,7 @@ static void dump_stats_json(void)
 		shm->stats.destroy_object_idx_corrupt,
 		shm->stats.global_obj_uaf_caught,
 		shm->stats.maps_uaf_caught,
+		shm->stats.pagecache_canary_corrupt_caught,
 		shm->stats.shared_buffer_redirected, shm->stats.range_overlaps_shared_rejects,
 		shm->stats.libc_heap_redirected, shm->stats.libc_heap_embedded_redirected,
 		shm->stats.get_writable_address_scribbled_slots_caught,
@@ -1426,6 +1428,8 @@ static const struct {
 	  offsetof(struct stats_s, global_obj_uaf_caught) },
 	{ "maps_uaf_caught",
 	  offsetof(struct stats_s, maps_uaf_caught) },
+	{ "pagecache_canary_corrupt_caught",
+	  offsetof(struct stats_s, pagecache_canary_corrupt_caught) },
 	/* genetlink registry per-family dispatch counters; rate-of-change
 	 * surfaces the live family selection mix without waiting for the
 	 * end-of-run summary.  A counter that stays at zero across an
@@ -2219,6 +2223,9 @@ void dump_stats(void)
 		stat_row("corruption", "global_obj_uaf_caught",  shm->stats.global_obj_uaf_caught);
 	if (shm->stats.maps_uaf_caught)
 		stat_row("corruption", "maps_uaf_caught",        shm->stats.maps_uaf_caught);
+	if (shm->stats.pagecache_canary_corrupt_caught)
+		stat_row("oracle", "pagecache_canary_corrupt_caught",
+			 shm->stats.pagecache_canary_corrupt_caught);
 
 	{
 		unsigned int op;

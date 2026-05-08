@@ -18,6 +18,16 @@ struct fileobj {
 	bool pagecache_backed;
 	bool is_setuid;
 	int fcntl_flags;
+	/*
+	 * Bitmask of OBJ_FLAG_* (see include/canary.h).  Currently
+	 * only OBJ_FLAG_NO_WRITE is defined; the field is sized as a
+	 * full word so future bits don't widen the struct again.
+	 * Default zero — unset by alloc_shared_obj's memset for
+	 * bump-allocated fresh chunks, and by the testfile/pagecache
+	 * providers which never touch this field.  Producers that
+	 * need the flag set assign it explicitly at object publish.
+	 */
+	unsigned int obj_flags;
 };
 
 struct pipeobj {
