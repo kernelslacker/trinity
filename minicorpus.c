@@ -87,6 +87,55 @@ static void ring_unlock(struct corpus_ring *ring)
 	unlock(&ring->lock);
 }
 
+/*
+ * Whether a saved syscall's args can be replayed safely.  Rejects the
+ * argtype set whose values are runtime-relative — replay either feeds
+ * the kernel garbage or, for ARG_PID, an active pid that gets signalled.
+ *
+ *  - ARG_IOVEC / ARG_PATHNAME / ARG_SOCKADDR / ARG_MMAP: heap pointers
+ *    handed out by generic_sanitise().  After deferred-free eviction
+ *    they go stale and replay feeds freed memory to the kernel.
+ *
+ *  - ARG_PID: a pid valid in the saving run is meaningless in the
+ *    replaying run.  Worse, dense trinity pid allocation plus kernel
+ *    pid recycling means a stale pid frequently HITS a current trinity
+ *    child or the parent — replay of kill / tkill / tgkill /
+ *    pidfd_send_signal / rt_sigqueueinfo entries cascade-SIGKILLs the
+ *    fleet.
+ *
+ * Three call sites must agree on this list:
+ *
+ *   minicorpus_save()       — refuse to capture in the first place.
+ *   minicorpus_replay()     — refuse to play back from the in-memory
+ *                             ring (catches cross-config corpus swap
+ *                             where the ring contains entries built
+ *                             for a different syscall set).
+ *   minicorpus_load_file()  — refuse to admit from on-disk warm-start.
+ *                             Covers stale corpora that predate the
+ *                             ARG_PID guard, cross-config swap of a
+ *                             saved file, and any future syscall whose
+ *                             argtype changes to ARG_PID without
+ *                             invalidating cached corpora.
+ */
+static bool corpus_args_replayable(const struct syscallentry *entry)
+{
+	unsigned int i;
+
+	for (i = 0; i < entry->num_args && i < 6; i++) {
+		switch (entry->argtype[i]) {
+		case ARG_IOVEC:
+		case ARG_PATHNAME:
+		case ARG_SOCKADDR:
+		case ARG_MMAP:
+		case ARG_PID:
+			return false;
+		default:
+			break;
+		}
+	}
+	return true;
+}
+
 void minicorpus_save(struct syscallrecord *rec)
 {
 	struct corpus_ring *ring;
@@ -102,32 +151,8 @@ void minicorpus_save(struct syscallrecord *rec)
 	if (entry == NULL)
 		return;
 
-	/* Reject syscalls whose args don't survive replay across runs.
-	 *
-	 *  - ARG_IOVEC / ARG_PATHNAME / ARG_SOCKADDR / ARG_MMAP: heap pointers
-	 *    allocated by generic_sanitise().  After deferred-free eviction
-	 *    they go stale and replaying them feeds freed memory to the kernel.
-	 *
-	 *  - ARG_PID: a pid valid in the saving run is meaningless in the
-	 *    replaying run.  Worse, due to dense trinity pid allocation and
-	 *    kernel pid recycling, a stale pid frequently HITS a current
-	 *    trinity child or the parent — replay of kill/tkill/tgkill/
-	 *    pidfd_send_signal/rt_sigqueueinfo entries cascade-SIGKILLs the
-	 *    fleet.  Observed 2026-04-20 immediately after warm-start landed:
-	 *    639-entry corpus → wave of "pid X has disappeared" reaps within
-	 *    seconds of fork-out. */
-	for (i = 0; i < entry->num_args && i < 6; i++) {
-		switch (entry->argtype[i]) {
-		case ARG_IOVEC:
-		case ARG_PATHNAME:
-		case ARG_SOCKADDR:
-		case ARG_MMAP:
-		case ARG_PID:
-			return;
-		default:
-			break;
-		}
-	}
+	if (!corpus_args_replayable(entry))
+		return;
 
 	ring = &minicorpus_shm->rings[nr];
 
@@ -597,7 +622,6 @@ bool minicorpus_replay(struct syscallrecord *rec)
 	struct syscallentry *entry;
 	unsigned int nr = rec->nr;
 	unsigned int slot;
-	unsigned int i;
 
 	if (minicorpus_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return false;
@@ -632,19 +656,8 @@ bool minicorpus_replay(struct syscallrecord *rec)
 	if (entry == NULL)
 		return false;
 
-	/* Don't replay into syscalls with pointer-bearing arg types.
-	 * Same rationale as minicorpus_save(). */
-	for (i = 0; i < entry->num_args && i < 6; i++) {
-		switch (entry->argtype[i]) {
-		case ARG_IOVEC:
-		case ARG_PATHNAME:
-		case ARG_SOCKADDR:
-		case ARG_MMAP:
-			return false;
-		default:
-			break;
-		}
-	}
+	if (!corpus_args_replayable(entry))
+		return false;
 
 	minicorpus_mutate_args(snapshot.args, entry, nr);
 
@@ -971,6 +984,7 @@ bool minicorpus_load_file(const char *path,
 	for (;;) {
 		struct corpus_ring *ring;
 		struct corpus_entry *dst;
+		struct syscallentry *xe;
 		uint32_t want;
 		ssize_t n;
 		unsigned int j;
@@ -987,6 +1001,22 @@ bool minicorpus_load_file(const char *path,
 			offsetof(struct corpus_file_entry, crc));
 		if (want != ent.crc || ent.nr >= MAX_NR_SYSCALL ||
 		    ent.num_args > 6) {
+			ndiscarded++;
+			continue;
+		}
+
+		/* Drop entries whose argtype set is no longer replay-safe.
+		 * Catches stale-on-disk corpora pre-dating the ARG_PID guard,
+		 * cross-config swap of a saved file (different syscall set
+		 * for the same nr), and any future syscall whose argtype
+		 * changes to ARG_PID without invalidating cached corpora.
+		 * Bumps ndiscarded so operators see a corpus-quality signal
+		 * rather than silently absorbing the entry.  do32bit isn't
+		 * encoded on disk; the 64-bit table is the canonical view
+		 * (matches effector-map's lookup) and on biarch any pointer/
+		 * pid argtype is shared between both tables for a given nr. */
+		xe = get_syscall_entry(ent.nr, false);
+		if (xe != NULL && !corpus_args_replayable(xe)) {
 			ndiscarded++;
 			continue;
 		}
