@@ -172,7 +172,8 @@ void unlock(lock_t *lk)
  *
  * This function should be used sparingly. It's pretty much never something
  * that you'll need, just for rare occasions like when we return from a
- * signal handler with a lock held.
+ * signal handler with a lock held.  The owner check below means cross-pid
+ * recovery (parent freeing a dead child's lock) must use force_bust_lock().
  */
 void bust_lock(lock_t *lk)
 {
@@ -183,4 +184,42 @@ void bust_lock(lock_t *lk)
 	if (LOCK_OWNER(s) != cached_pid)
 		return;
 	unlock(lk);
+}
+
+/*
+ * Cross-pid orphan release. Parent calls this on a lock held by a dead
+ * child after check_all_locks() has already exhausted its 10-iteration
+ * reap loop. bust_lock() above can't do this — its LOCK_OWNER == cached_pid
+ * gate rejects every parent-side release of a child-held lock, leaving the
+ * post-cap fallback inert and the orphan sitting until check_lock()'s
+ * pid_alive scan eventually self-heals it on the next pass.
+ *
+ * Confirm the holder is truly dead before clearing.  Releasing a lock owned
+ * by a live process would let two waiters enter the critical section and is
+ * a UAF source, so on a live owner we log once and bail — that's a real
+ * lock-acquisition bug, not something to paper over here.  ABA-CAS on the
+ * sampled state mirrors try_release_dead_holder() so a sibling child
+ * grabbing shm->syscalltable_lock during the bust window isn't clobbered.
+ */
+void force_bust_lock(lock_t *lk)
+{
+	unsigned long s = __atomic_load_n(&lk->state, __ATOMIC_ACQUIRE);
+	pid_t owner;
+
+	if (LOCK_STATE(s) != LOCKED)
+		return;
+
+	owner = LOCK_OWNER(s);
+	if (pid_alive(owner)) {
+		static bool warned;
+		if (!warned) {
+			warned = true;
+			outputerr("force_bust_lock: refusing to release lock held by live pid %d\n",
+				  owner);
+		}
+		return;
+	}
+
+	__atomic_compare_exchange_n(&lk->state, &s, 0,
+				    0, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
 }
