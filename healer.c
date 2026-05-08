@@ -445,16 +445,19 @@ void healer_observe_relation(struct childdata *child, unsigned int current_nr)
  * stays at the noise floor and gets displaced when a real follow-up
  * needs the slot.
  *
- * 50000 observations matches HEALER_SNAPSHOT_OBSERVATIONS so the decay
- * cadence and snapshot cadence sit on the same fleet-wide scale: at
- * the steady-state ~10K observations per several-hour run the table
- * decays a handful of times per long run, fast enough to shed one-off
- * noise within a single fuzz session but slow enough that a relation
- * needing ~10K observations to settle still has time to cross the
- * weight=5 medium-confidence band.  Re-tunable in isolation from the
- * snapshot cadence if either cadence proves wrong in fleet data.
+ * 5000 observations: tighter than the snapshot cadence (50000) on
+ * purpose -- fleet data shows the observation rate collapses an order
+ * of magnitude (~30/sec early-run -> ~0.5/sec post-saturation) once
+ * KCOV coverage flattens, so a 50K threshold meant decay never fired
+ * during the saturated steady state where it's most needed (top-N
+ * dominated by frozen historical bursts that don't reflect current
+ * causation).  5K fires several times during the hot phase too, but
+ * the decay walk is a single relaxed-atomic sweep so the cost is
+ * negligible vs the snapshot cadence on which the operator's only
+ * visible artifact (the dump line) rides.  Decoupled from the
+ * snapshot interval since the two don't need to share a value.
  */
-#define HEALER_DECAY_OBSERVATIONS	50000UL
+#define HEALER_DECAY_OBSERVATIONS	5000UL
 
 /*
  * Single-runner election + decay walk.  Mirrors healer_maybe_snapshot's
