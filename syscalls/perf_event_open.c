@@ -847,7 +847,7 @@ static void setup_breakpoints(struct perf_event_attr *attr)
 	/* or a valid mem location for R/W/RW             */
 	attr->bp_addr = (long)get_address();
 
-	switch (rand() % 5) {
+	switch (rand() % 9) {
 	case 0:
 		attr->bp_len = HW_BREAKPOINT_LEN_1;
 		break;
@@ -855,12 +855,24 @@ static void setup_breakpoints(struct perf_event_attr *attr)
 		attr->bp_len = HW_BREAKPOINT_LEN_2;
 		break;
 	case 2:
-		attr->bp_len = HW_BREAKPOINT_LEN_4;
+		attr->bp_len = HW_BREAKPOINT_LEN_3;
 		break;
 	case 3:
-		attr->bp_len = HW_BREAKPOINT_LEN_8;
+		attr->bp_len = HW_BREAKPOINT_LEN_4;
 		break;
 	case 4:
+		attr->bp_len = HW_BREAKPOINT_LEN_5;
+		break;
+	case 5:
+		attr->bp_len = HW_BREAKPOINT_LEN_6;
+		break;
+	case 6:
+		attr->bp_len = HW_BREAKPOINT_LEN_7;
+		break;
+	case 7:
+		attr->bp_len = HW_BREAKPOINT_LEN_8;
+		break;
+	case 8:
 		attr->bp_len = rand64();
 		break;
 	default:
