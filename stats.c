@@ -732,7 +732,8 @@ static void dump_stats_json(void)
 		"\"nat_t_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_deleted\":%lu,\"frames_sent\":%lu},"
 		"\"splice_protocols\":{\"runs\":%lu,\"setup_failed\":%lu,\"chain_ok\":%lu,\"in_bytes\":%lu,\"out_bytes\":%lu,\"udp_encap_attempted\":%lu,\"tcp_repair_attempted\":%lu,\"packet_ring_attempted\":%lu,\"alg_attempted\":%lu,\"rxrpc_attempted\":%lu,\"msg_splice_pages_attempted\":%lu,\"msg_splice_pages_path_taken_inferred\":%lu},"
 		"\"rxrpc_key_install\":{\"runs\":%lu,\"calls\":%lu,\"revokes\":%lu,\"quota_hits\":%lu,\"unsupported\":%lu},"
-		"\"af_alg_weak_cipher_probe\":{\"runs\":%lu,\"socket_failed\":%lu,\"total_bind_attempts\":%lu,\"total_bind_accepted\":%lu,\"weak_accepted_total\":%lu,\"setkey_accepted_total\":%lu,\"skcipher_weak_accepted\":%lu,\"aead_weak_accepted\":%lu,\"hash_weak_accepted\":%lu,\"strong_rejected\":%lu}"
+		"\"af_alg_weak_cipher_probe\":{\"runs\":%lu,\"socket_failed\":%lu,\"total_bind_attempts\":%lu,\"total_bind_accepted\":%lu,\"weak_accepted_total\":%lu,\"setkey_accepted_total\":%lu,\"skcipher_weak_accepted\":%lu,\"aead_weak_accepted\":%lu,\"hash_weak_accepted\":%lu,\"strong_rejected\":%lu},"
+		"\"af_alg_probe\":{\"runs\":%lu,\"unsupported\":%lu,\"accept_total\":%lu,\"reject_total\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1221,7 +1222,11 @@ static void dump_stats_json(void)
 		shm->stats.af_alg_weak_cipher_probe_skcipher_weak_accepted,
 		shm->stats.af_alg_weak_cipher_probe_aead_weak_accepted,
 		shm->stats.af_alg_weak_cipher_probe_hash_weak_accepted,
-		shm->stats.af_alg_weak_cipher_probe_strong_rejected);
+		shm->stats.af_alg_weak_cipher_probe_strong_rejected,
+		shm->stats.af_alg_probe_runs,
+		shm->stats.af_alg_probe_unsupported,
+		shm->stats.af_alg_probe_accept_total,
+		shm->stats.af_alg_probe_reject_total);
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -2828,6 +2833,24 @@ void dump_stats(void)
 		stat_row("af_alg_weak_cipher_probe", "aead_weak_accepted",     shm->stats.af_alg_weak_cipher_probe_aead_weak_accepted);
 		stat_row("af_alg_weak_cipher_probe", "hash_weak_accepted",     shm->stats.af_alg_weak_cipher_probe_hash_weak_accepted);
 		stat_row("af_alg_weak_cipher_probe", "strong_rejected",        shm->stats.af_alg_weak_cipher_probe_strong_rejected);
+	}
+
+	if (shm->stats.af_alg_probe_runs || shm->stats.af_alg_probe_unsupported) {
+		unsigned int tmpl;
+
+		stat_row("af_alg_probe", "runs",         shm->stats.af_alg_probe_runs);
+		stat_row("af_alg_probe", "unsupported",  shm->stats.af_alg_probe_unsupported);
+		stat_row("af_alg_probe", "accept_total", shm->stats.af_alg_probe_accept_total);
+		stat_row("af_alg_probe", "reject_total", shm->stats.af_alg_probe_reject_total);
+		for (tmpl = 0; tmpl < NR_AF_ALG_PROBE_TEMPLATES; tmpl++) {
+			char metric[64];
+			const char *label = af_alg_probe_template_label(tmpl);
+
+			snprintf(metric, sizeof(metric), "%s.accept", label);
+			stat_row("af_alg_probe", metric, shm->stats.af_alg_probe_accept[tmpl]);
+			snprintf(metric, sizeof(metric), "%s.reject", label);
+			stat_row("af_alg_probe", metric, shm->stats.af_alg_probe_reject[tmpl]);
+		}
 	}
 
 	if (kcov_shm != NULL) {

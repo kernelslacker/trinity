@@ -1358,6 +1358,23 @@ struct stats_s {
 	unsigned long af_alg_weak_cipher_probe_hash_weak_accepted;	/* per-kind weak-bucket: hash */
 	unsigned long af_alg_weak_cipher_probe_strong_rejected;		/* control template rejected -- structurally broken kernel */
 
+	/* af_alg_template_probe childop counters.  One-shot enumeration
+	 * of which AF_ALG crypto template names this kernel accepts via
+	 * bind(2); per-template accept/reject lives in the parallel
+	 * arrays, indexed by the probe_table[] order in
+	 * childops/af-alg-template-probe.c.  af_alg_probe_done is the
+	 * fleet-wide CAS latch that elects a single child to run the
+	 * probe — not a counter, but lives here so it shares the shm
+	 * mapping and survives across childdata recycles. */
+#define NR_AF_ALG_PROBE_TEMPLATES	12
+	unsigned int  af_alg_probe_done;	/* 0 -> 1 CAS election latch */
+	unsigned long af_alg_probe_runs;	/* probe winners (should == 1 fleet-wide) */
+	unsigned long af_alg_probe_unsupported;	/* socket(AF_ALG) returned EAFNOSUPPORT */
+	unsigned long af_alg_probe_accept_total;	/* sum of per-template binds that returned 0 */
+	unsigned long af_alg_probe_reject_total;	/* sum of per-template binds that returned -1 */
+	unsigned long af_alg_probe_accept[NR_AF_ALG_PROBE_TEMPLATES];
+	unsigned long af_alg_probe_reject[NR_AF_ALG_PROBE_TEMPLATES];
+
 	/*
 	 * HEALER Phase A observer counters -- see include/healer.h.
 	 * All four are bumped from healer_observe_relation() / the periodic

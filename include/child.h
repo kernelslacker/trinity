@@ -168,6 +168,7 @@ enum child_op_type {
 	CHILD_OP_RXRPC_KEY_INSTALL,
 	CHILD_OP_INPLACE_CRYPTO_ORACLE,
 	CHILD_OP_AF_ALG_WEAK_CIPHER_PROBE,
+	CHILD_OP_AF_ALG_TEMPLATE_PROBE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -539,3 +540,5 @@ bool splice_protocols(struct childdata *child);
 bool rxrpc_key_install(struct childdata *child);
 bool inplace_crypto_oracle(struct childdata *child);
 bool af_alg_weak_cipher_probe(struct childdata *child);
+bool af_alg_template_probe(struct childdata *child);
+const char *af_alg_probe_template_label(unsigned int idx);
