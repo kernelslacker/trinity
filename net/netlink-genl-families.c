@@ -53,6 +53,14 @@ extern struct genl_family_grammar fam_tipc;
 #if __has_include(<linux/wireguard.h>)
 extern struct genl_family_grammar fam_wireguard;
 #endif
+#if __has_include(<linux/openvswitch.h>)
+extern struct genl_family_grammar fam_ovs_datapath;
+extern struct genl_family_grammar fam_ovs_vport;
+extern struct genl_family_grammar fam_ovs_flow;
+extern struct genl_family_grammar fam_ovs_packet;
+extern struct genl_family_grammar fam_ovs_meter;
+extern struct genl_family_grammar fam_ovs_ct_limit;
+#endif
 
 /*
  * Per-family grammar definitions live in net/netlink-genl-fam-*.c;
@@ -75,6 +83,14 @@ static struct genl_family_grammar *registry[] = {
 #endif
 #if __has_include(<linux/wireguard.h>)
 	&fam_wireguard,
+#endif
+#if __has_include(<linux/openvswitch.h>)
+	&fam_ovs_datapath,
+	&fam_ovs_vport,
+	&fam_ovs_flow,
+	&fam_ovs_packet,
+	&fam_ovs_meter,
+	&fam_ovs_ct_limit,
 #endif
 };
 
