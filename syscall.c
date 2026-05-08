@@ -255,6 +255,10 @@ static void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 
 	/* misc failure. */
 	if (extrapid == -1) {
+		/* Parent already allocated snap in sanitise; post handler will
+		 * not run because state never reaches AFTER. Free snap here. */
+		if (entry->post != NULL)
+			entry->post(rec);
 		return;
 	}
 
@@ -284,6 +288,24 @@ static void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 		kill(extrapid, SIGKILL);
 		waitpid(extrapid, NULL, 0);
 	}
+
+	/* Grandchild died before reaching __do_syscall's AFTER block, so
+	 * handle_syscall_ret will skip entry->post (state != AFTER gate).
+	 * The parent-side allocations referenced by rec->post_state would
+	 * otherwise leak onto this worker's heap on every grandchild
+	 * timeout (~254 KiB worst case for execve / execveat). Invoke
+	 * entry->post here so it frees post_state.
+	 *
+	 * Safe because the only EXTRA_FORK syscalls with a post handler
+	 * today are execve and execveat, both of which inspect
+	 * rec->post_state exclusively (no dependency on rec->retval /
+	 * errno_post / state). Any future EXTRA_FORK syscall whose post
+	 * handler reads those fields must gate them on state == AFTER
+	 * itself.
+	 *
+	 * No lock: grandchild was SIGKILL'd and reaped, no contender. */
+	if (rec->state != AFTER && entry->post != NULL)
+		entry->post(rec);
 }
 
 
