@@ -923,10 +923,17 @@ bool replay_syscall_step(struct childdata *child,
 	memcpy(args, saved->args, sizeof(args));
 	minicorpus_mutate_args(args, entry, saved->nr);
 
+	/* Hold rec->lock across the (nr, do32bit) advance, the arg writes,
+	 * the postbuffer reset, and the chain substitution.  An outside
+	 * reader (watchdog thread, parent inspecting via shm, pre_crash_ring
+	 * decode) that samples rec mid-step must not see the new (nr,
+	 * do32bit) paired with the previous syscall's a1..a6 — that torn
+	 * pairing miscredits args to the wrong syscall in divergence stats
+	 * and crash-ring reconstruction.  apply_chain_substitution writes
+	 * rec->aN, so the unlock has to come after it. */
 	lock(&rec->lock);
 	rec->do32bit = saved->do32bit;
 	rec->nr = saved->nr;
-	unlock(&rec->lock);
 
 	rec->a1 = args[0];
 	rec->a2 = args[1];
@@ -938,6 +945,7 @@ bool replay_syscall_step(struct childdata *child,
 	rec->postbuffer[0] = '\0';
 
 	apply_chain_substitution(rec, entry, have_substitute, substitute_retval);
+	unlock(&rec->lock);
 
 	return dispatch_step(child, entry, found_new);
 }
