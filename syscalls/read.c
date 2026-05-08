@@ -3,6 +3,7 @@
  */
 #include <stdlib.h>
 #include <string.h>
+#include <sys/uio.h>
 #include "arch.h"
 #include "maps.h"
 #include "random.h"
@@ -37,9 +38,15 @@ struct syscallentry syscall_read = {
  * SYSCALL_DEFINE3(readv, unsigned long, fd, const struct iovec __user *, vec, unsigned long>
  */
 
+static void sanitise_readv(struct syscallrecord *rec)
+{
+	scrub_iovec_for_kernel_write((struct iovec *)rec->a2, rec->a3);
+}
+
 struct syscallentry syscall_readv = {
 	.name = "readv",
 	.num_args = 3,
+	.sanitise = sanitise_readv,
 	.argtype = { [0] = ARG_FD, [1] = ARG_IOVEC, [2] = ARG_IOVECLEN },
 	.argname = { [0] = "fd", [1] = "vec", [2] = "vlen" },
 	.flags = NEED_ALARM,
@@ -78,6 +85,8 @@ static void sanitise_preadv(struct syscallrecord *rec)
 	/* Generate a valid file position (non-negative loff_t). */
 	rec->a5 = 0;	/* pos_h: keep offset < 4GB */
 	rec->a4 = rand64() & 0x7fffffff;	/* pos_l: non-negative */
+
+	scrub_iovec_for_kernel_write((struct iovec *)rec->a2, rec->a3);
 }
 
 struct syscallentry syscall_preadv = {
@@ -109,6 +118,8 @@ static void sanitise_preadv2(struct syscallrecord *rec)
 		rec->a5 = 0;
 		rec->a4 = rand64() & 0x7fffffff;
 	}
+
+	scrub_iovec_for_kernel_write((struct iovec *)rec->a2, rec->a3);
 }
 
 struct syscallentry syscall_preadv2 = {
