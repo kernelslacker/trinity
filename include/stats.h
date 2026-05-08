@@ -170,6 +170,18 @@ struct stats_s {
 	 * bypassing every input. */
 	unsigned long range_overlaps_shared_rejects;
 
+	/* get_writable_address() refused to return a freshly-picked pool
+	 * address because the slot's stored ptr (map->ptr or
+	 * obj->sysv_shm.ptr) no longer resolved to any registered shared
+	 * region -- the slot was scribbled to a value that either failed
+	 * mprotect(PROT_READ|PROT_WRITE) outright or pointed at a heap-
+	 * shaped userspace address that happened to be RW already.  Either
+	 * way the next sanitiser dereference would SEGV inside the
+	 * sanitiser; the retry instead picks a different slot.  Non-zero
+	 * count means the upstream pool-slot scribble is happening; the
+	 * fix here only converts the resulting SEGV into a clean retry. */
+	unsigned long get_writable_address_scribbled_slots_caught;
+
 	/* Per-syscall reject counts indexed by syscall.nr, bumped from the
 	 * range_overlaps_shared() trip site so dump_stats() can name the top
 	 * offenders.  Two arrays so 32/64-bit syscall numbers don't smear

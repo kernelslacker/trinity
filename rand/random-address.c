@@ -126,12 +126,65 @@ retry:	tries++;
 				goto retry;
 		}
 		addr = obj->sysv_shm.ptr;
+		/*
+		 * The OBJ_SYSV_SHM branch lacks the OBJ_MMAP branch's
+		 * range_overlaps_shared(map, sizeof(*map)) and
+		 * validate_map_handle() defenses, so a scribble that
+		 * replaced obj->sysv_shm.ptr with a heap-shaped value
+		 * sails past the IPC_STAT check above (the shm
+		 * segment id is fine; only the cached attached-ptr is
+		 * stale).  Reject early before the mprotect below
+		 * touches a region that doesn't belong to any tracked
+		 * mapping.
+		 */
+		if (!range_in_tracked_shared((unsigned long) addr,
+					     (unsigned long) size)) {
+			__atomic_add_fetch(
+				&shm->stats.get_writable_address_scribbled_slots_caught,
+				1, __ATOMIC_RELAXED);
+			goto retry;
+		}
 	}
 
-	if (mprotect(addr, size, PROT_READ | PROT_WRITE) != 0)
+	if (mprotect(addr, size, PROT_READ | PROT_WRITE) != 0) {
 		log_mprotect_failure(addr, (size_t) size,
 				     PROT_READ | PROT_WRITE,
 				     __builtin_return_address(0), errno);
+		/*
+		 * mprotect failed -- the slot's stored ptr is almost
+		 * certainly scribbled (real alloc_shared / SysV shm
+		 * mappings stay PROT_READ|PROT_WRITE for their full
+		 * lifetime, so an upgrade-to-RW that returns -1 is the
+		 * fingerprint of a stale or fabricated pointer).
+		 * Returning addr regardless gives the caller a value
+		 * that SEGV_ACCERRs on first dereference; retrying
+		 * picks a different slot and rolls past the bad one.
+		 */
+		__atomic_add_fetch(
+			&shm->stats.get_writable_address_scribbled_slots_caught,
+			1, __ATOMIC_RELAXED);
+		goto retry;
+	}
+
+	/*
+	 * Defense: even when mprotect succeeded, validate addr lives in
+	 * a tracked shared region.  A scribbled slot can hold a heap-
+	 * shaped userspace address whose pages are already RW (libc heap,
+	 * a stack page, another mmap'd region we don't own) -- mprotect
+	 * succeeds as a no-op upgrade and we'd hand back a pointer that
+	 * doesn't belong to any trinity-tracked mapping.  The next
+	 * sanitiser dereference scribbles glibc bookkeeping or some
+	 * unrelated mapping, surfacing far from the scribble origin.
+	 * The retry loop's tries==100 cap keeps a mostly-scribbled pool
+	 * from spinning forever.
+	 */
+	if (!range_in_tracked_shared((unsigned long) addr,
+				     (unsigned long) size)) {
+		__atomic_add_fetch(
+			&shm->stats.get_writable_address_scribbled_slots_caught,
+			1, __ATOMIC_RELAXED);
+		goto retry;
+	}
 
 	return addr;
 }
