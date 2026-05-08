@@ -205,12 +205,10 @@ static int open_loopback_pair(pid_t *out_pid)
 	if (pid == 0) {
 		/* Acceptor child: accept once, drain anything the parent
 		 * pushes through the ZC path so the receive window stays
-		 * open, then exit.  alarm(2) bounds the lifetime if the
-		 * parent crashes pre-connect. */
+		 * open, then exit. */
 		int s;
 		unsigned char drain[8192];
 
-		alarm(2);
 		s = accept(listener, NULL, NULL);
 		if (s >= 0) {
 			ssize_t n;

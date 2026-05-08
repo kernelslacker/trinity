@@ -406,7 +406,6 @@ static int open_loopback_pair(pid_t *out_pid)
 		int s;
 		unsigned char drain[4096];
 
-		alarm(2);
 		s = accept(listener, NULL, NULL);
 		if (s >= 0) {
 			ssize_t n;
