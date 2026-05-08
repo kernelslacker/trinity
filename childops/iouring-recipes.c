@@ -23,6 +23,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <netinet/in.h>
 #include <poll.h>
 #include <setjmp.h>
 #include <signal.h>
@@ -37,10 +38,26 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/uio.h>
+#include <sys/un.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 #include <linux/futex.h>
 #include <linux/io_uring.h>
+
+#ifndef MFD_CLOEXEC
+#define MFD_CLOEXEC	0x0001U
+#endif
+
+/* Local mirror of struct open_how — avoid a build-time dependency on
+ * a kernel header that older distributions ship without. */
+struct iour_open_how {
+	__u64	flags;
+	__u64	mode;
+	__u64	resolve;
+};
+
 
 #include "arch.h"
 #include "child.h"
@@ -114,7 +131,9 @@ struct iour_recipe_state {
 	int		evfd;
 	int		sock[2];
 	int		pipefd[2];
+	int		pipefd2[2];	/* second pipe pair (SPLICE/TEE) */
 	int		open_fd;	/* /dev/null, /dev/zero, etc. */
+	int		memfd;		/* memfd_create-backed regular file */
 	int		epoll_fd;
 	void		*malloc_buf;
 
@@ -307,14 +326,17 @@ static void iour_recipe_state_init(struct iour_recipe_state *s,
 				   struct iour_ctx *ctx)
 {
 	memset(s, 0, sizeof(*s));
-	s->ctx       = ctx;
-	s->evfd      = -1;
-	s->sock[0]   = -1;
-	s->sock[1]   = -1;
-	s->pipefd[0] = -1;
-	s->pipefd[1] = -1;
-	s->open_fd   = -1;
-	s->epoll_fd  = -1;
+	s->ctx        = ctx;
+	s->evfd       = -1;
+	s->sock[0]    = -1;
+	s->sock[1]    = -1;
+	s->pipefd[0]  = -1;
+	s->pipefd[1]  = -1;
+	s->pipefd2[0] = -1;
+	s->pipefd2[1] = -1;
+	s->open_fd    = -1;
+	s->memfd      = -1;
+	s->epoll_fd   = -1;
 }
 
 /*
@@ -378,9 +400,21 @@ static void iour_recipe_state_cleanup(struct iour_recipe_state *s)
 		close(s->pipefd[1]);
 		s->pipefd[1] = -1;
 	}
+	if (s->pipefd2[0] >= 0) {
+		close(s->pipefd2[0]);
+		s->pipefd2[0] = -1;
+	}
+	if (s->pipefd2[1] >= 0) {
+		close(s->pipefd2[1]);
+		s->pipefd2[1] = -1;
+	}
 	if (s->open_fd >= 0) {
 		close(s->open_fd);
 		s->open_fd = -1;
+	}
+	if (s->memfd >= 0) {
+		close(s->memfd);
+		s->memfd = -1;
 	}
 	if (s->epoll_fd >= 0) {
 		close(s->epoll_fd);
@@ -1358,6 +1392,1178 @@ out:
 	return ok;
 }
 
+/* ================================================================== *
+ * Per-opcode breadth recipes
+ *
+ * One single-shot recipe per IORING_OP_* that the chained recipes above
+ * don't already cover.  The per-op SQE field validators (prep) and
+ * issue paths in io_uring/opdef.c are reached even when the underlying
+ * syscall returns -ENOENT/-EBADF/-EINVAL/-ECHILD on synthetic args, so
+ * recipes deliberately keep arguments simple — the kernel surface is
+ * the validator state machine, not the data.
+ * ================================================================== */
+
+/* ------------------------------------------------------------------ *
+ * Recipe: SENDMSG over socketpair
+ * ------------------------------------------------------------------ */
+static bool recipe_sendmsg(struct iour_recipe_state *s,
+			   bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	struct msghdr msg;
+	struct iovec iov;
+	char buf[32];
+	int r;
+
+	if (socketpair(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0, s->sock) < 0)
+		return false;
+
+	memset(buf, 'm', sizeof(buf));
+	iov.iov_base = buf;
+	iov.iov_len  = sizeof(buf);
+
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_iov    = &iov;
+	msg.msg_iovlen = 1;
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_SENDMSG;
+	sqe.fd        = s->sock[0];
+	sqe.addr      = (__u64)(uintptr_t)&msg;
+	sqe.msg_flags = MSG_DONTWAIT;
+	sqe.user_data = 200;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: RECVMSG over socketpair (with primer write)
+ * ------------------------------------------------------------------ */
+static bool recipe_recvmsg(struct iour_recipe_state *s,
+			   bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	struct msghdr msg;
+	struct iovec iov;
+	char buf[32];
+	int r;
+
+	if (socketpair(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0, s->sock) < 0)
+		return false;
+
+	{
+		const char primer[] = "recvmsg";
+		ssize_t w __unused__ = write(s->sock[0], primer, sizeof(primer));
+	}
+
+	iov.iov_base = buf;
+	iov.iov_len  = sizeof(buf);
+
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_iov    = &iov;
+	msg.msg_iovlen = 1;
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_RECVMSG;
+	sqe.fd        = s->sock[1];
+	sqe.addr      = (__u64)(uintptr_t)&msg;
+	sqe.msg_flags = MSG_DONTWAIT;
+	sqe.user_data = 210;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: ACCEPT on a non-listening socketpair endpoint
+ *
+ * The socketpair fd isn't a listener, so ops->accept() returns
+ * synchronously — the io_uring accept prep + issue dispatch still runs.
+ * ------------------------------------------------------------------ */
+static bool recipe_accept(struct iour_recipe_state *s,
+			  bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	struct sockaddr_storage ss;
+	socklen_t slen = sizeof(ss);
+	int r;
+
+	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC,
+		       0, s->sock) < 0)
+		return false;
+
+	memset(&ss, 0, sizeof(ss));
+
+	sqe_clear(&sqe);
+	sqe.opcode       = IORING_OP_ACCEPT;
+	sqe.fd           = s->sock[0];
+	sqe.addr         = (__u64)(uintptr_t)&ss;
+	sqe.addr2        = (__u64)(uintptr_t)&slen;
+	sqe.accept_flags = SOCK_NONBLOCK | SOCK_CLOEXEC;
+	sqe.user_data    = 220;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: CONNECT to 127.0.0.1:1 (likely ECONNREFUSED)
+ * ------------------------------------------------------------------ */
+static bool recipe_connect(struct iour_recipe_state *s,
+			   bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	struct sockaddr_in sin;
+	int r;
+
+	s->sock[0] = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC,
+			    0);
+	if (s->sock[0] < 0)
+		return false;
+
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family      = AF_INET;
+	sin.sin_port        = htons(1);
+	sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_CONNECT;
+	sqe.fd        = s->sock[0];
+	sqe.addr      = (__u64)(uintptr_t)&sin;
+	sqe.off       = sizeof(sin);
+	sqe.user_data = 230;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: BIND to a fresh AF_INET ephemeral port
+ *
+ * The kernel reads sockaddr length from sqe->addr_len (the u16 sharing
+ * the splice_fd_in union) for IORING_OP_BIND.  Port 0 → kernel auto-
+ * assigns; loopback is universally available.
+ * ------------------------------------------------------------------ */
+static bool recipe_bind(struct iour_recipe_state *s, bool *unsupported)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	struct sockaddr_in sin;
+	int r;
+
+	s->sock[0] = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (s->sock[0] < 0)
+		return false;
+
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family      = AF_INET;
+	sin.sin_port        = 0;
+	sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_BIND;
+	sqe.fd        = s->sock[0];
+	sqe.addr      = (__u64)(uintptr_t)&sin;
+	sqe.addr_len  = sizeof(sin);
+	sqe.user_data = 240;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0) {
+		if (errno == ENOSYS || errno == EINVAL) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+					   1, __ATOMIC_RELAXED);
+		}
+		return false;
+	}
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: LISTEN on a freshly-bound TCP socket
+ * ------------------------------------------------------------------ */
+static bool recipe_listen(struct iour_recipe_state *s, bool *unsupported)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	struct sockaddr_in sin;
+	int r;
+
+	s->sock[0] = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (s->sock[0] < 0)
+		return false;
+
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family      = AF_INET;
+	sin.sin_port        = 0;
+	sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	if (bind(s->sock[0], (struct sockaddr *)&sin, sizeof(sin)) < 0)
+		return false;
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_LISTEN;
+	sqe.fd        = s->sock[0];
+	sqe.len       = 8;
+	sqe.user_data = 250;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0) {
+		if (errno == ENOSYS || errno == EINVAL) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+					   1, __ATOMIC_RELAXED);
+		}
+		return false;
+	}
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * memfd helper used by the regular-file family below.
+ * ------------------------------------------------------------------ */
+static int iour_make_memfd(void)
+{
+	int fd = (int)syscall(SYS_memfd_create, "trinity-iour", MFD_CLOEXEC);
+
+	if (fd < 0)
+		return -1;
+	if (ftruncate(fd, 4096) < 0) {
+		close(fd);
+		return -1;
+	}
+	return fd;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: FSYNC on a memfd
+ * ------------------------------------------------------------------ */
+static bool recipe_fsync(struct iour_recipe_state *s,
+			 bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	int r;
+
+	s->memfd = iour_make_memfd();
+	if (s->memfd < 0)
+		return false;
+
+	sqe_clear(&sqe);
+	sqe.opcode      = IORING_OP_FSYNC;
+	sqe.fd          = s->memfd;
+	sqe.fsync_flags = 0;
+	sqe.user_data   = 260;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: SYNC_FILE_RANGE on a memfd
+ * ------------------------------------------------------------------ */
+static bool recipe_sync_file_range(struct iour_recipe_state *s,
+				   bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	int r;
+
+	s->memfd = iour_make_memfd();
+	if (s->memfd < 0)
+		return false;
+
+	sqe_clear(&sqe);
+	sqe.opcode           = IORING_OP_SYNC_FILE_RANGE;
+	sqe.fd               = s->memfd;
+	sqe.off              = 0;
+	sqe.len              = 4096;
+	sqe.sync_range_flags = 0;
+	sqe.user_data        = 270;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: READV from /dev/zero into a stack iovec
+ * ------------------------------------------------------------------ */
+static bool recipe_readv(struct iour_recipe_state *s,
+			 bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	struct iovec iov[2];
+	char buf1[64], buf2[64];
+	int r;
+
+	s->open_fd = open("/dev/zero", O_RDONLY | O_CLOEXEC);
+	if (s->open_fd < 0)
+		return false;
+
+	iov[0].iov_base = buf1;
+	iov[0].iov_len  = sizeof(buf1);
+	iov[1].iov_base = buf2;
+	iov[1].iov_len  = sizeof(buf2);
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_READV;
+	sqe.fd        = s->open_fd;
+	sqe.addr      = (__u64)(uintptr_t)iov;
+	sqe.len       = 2;
+	sqe.off       = 0;
+	sqe.user_data = 280;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: WRITEV to a memfd via two iovecs
+ * ------------------------------------------------------------------ */
+static bool recipe_writev(struct iour_recipe_state *s,
+			  bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	struct iovec iov[2];
+	char buf1[32], buf2[32];
+	int r;
+
+	s->memfd = iour_make_memfd();
+	if (s->memfd < 0)
+		return false;
+
+	memset(buf1, 'a', sizeof(buf1));
+	memset(buf2, 'b', sizeof(buf2));
+	iov[0].iov_base = buf1;
+	iov[0].iov_len  = sizeof(buf1);
+	iov[1].iov_base = buf2;
+	iov[1].iov_len  = sizeof(buf2);
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_WRITEV;
+	sqe.fd        = s->memfd;
+	sqe.addr      = (__u64)(uintptr_t)iov;
+	sqe.len       = 2;
+	sqe.off       = 0;
+	sqe.user_data = 290;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: FALLOCATE on a memfd
+ *
+ * SQE layout: sqe->fd, sqe->off=offset, sqe->addr=length, sqe->len=mode.
+ * ------------------------------------------------------------------ */
+static bool recipe_fallocate(struct iour_recipe_state *s,
+			     bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	int r;
+
+	s->memfd = iour_make_memfd();
+	if (s->memfd < 0)
+		return false;
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_FALLOCATE;
+	sqe.fd        = s->memfd;
+	sqe.off       = 0;
+	sqe.addr      = 8192;
+	sqe.len       = 0;
+	sqe.user_data = 300;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: FTRUNCATE on a memfd
+ *
+ * SQE layout: sqe->fd, sqe->off=length.
+ * ------------------------------------------------------------------ */
+static bool recipe_ftruncate(struct iour_recipe_state *s, bool *unsupported)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	int r;
+
+	s->memfd = iour_make_memfd();
+	if (s->memfd < 0)
+		return false;
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_FTRUNCATE;
+	sqe.fd        = s->memfd;
+	sqe.off       = 2048;
+	sqe.user_data = 310;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0) {
+		if (errno == ENOSYS || errno == EINVAL) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+					   1, __ATOMIC_RELAXED);
+		}
+		return false;
+	}
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: FADVISE on a memfd
+ *
+ * SQE layout: sqe->fd, sqe->off=offset, sqe->addr=len, sqe->fadvise_advice.
+ * ------------------------------------------------------------------ */
+static bool recipe_fadvise(struct iour_recipe_state *s,
+			   bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	int r;
+
+	s->memfd = iour_make_memfd();
+	if (s->memfd < 0)
+		return false;
+
+	sqe_clear(&sqe);
+	sqe.opcode         = IORING_OP_FADVISE;
+	sqe.fd             = s->memfd;
+	sqe.off            = 0;
+	sqe.addr           = 4096;
+	sqe.fadvise_advice = POSIX_FADV_WILLNEED;
+	sqe.user_data      = 320;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: READ_MULTISHOT on a pipe with provided buffers + cancel
+ *
+ * READ_MULTISHOT requires IOSQE_BUFFER_SELECT and a buf_group containing
+ * at least one buffer — provide one, arm the multishot, then cancel it
+ * synchronously to drain the in-flight request before teardown.
+ * ------------------------------------------------------------------ */
+static bool recipe_read_multishot(struct iour_recipe_state *s,
+				  bool *unsupported)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	int r;
+#define READMS_GROUP	7
+#define READMS_COUNT	2
+#define READMS_SIZE	256
+
+	s->malloc_buf = malloc((size_t)READMS_COUNT * READMS_SIZE);
+	if (!s->malloc_buf)
+		return false;
+	memset(s->malloc_buf, 0, (size_t)READMS_COUNT * READMS_SIZE);
+
+	if (pipe(s->pipefd) < 0)
+		return false;
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_PROVIDE_BUFFERS;
+	sqe.addr      = (__u64)(uintptr_t)s->malloc_buf;
+	sqe.len       = READMS_SIZE;
+	sqe.fd        = READMS_COUNT;
+	sqe.off       = 0;
+	sqe.buf_group = READMS_GROUP;
+	sqe.user_data = 330;
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	if (iour_enter(ctx, 1, 1) < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	s->provided_buf_active   = true;
+	s->provided_buf_group_id = READMS_GROUP;
+	s->provided_buf_count    = READMS_COUNT;
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_READ_MULTISHOT;
+	sqe.fd        = s->pipefd[0];
+	sqe.flags     = IOSQE_BUFFER_SELECT;
+	sqe.buf_group = READMS_GROUP;
+	sqe.user_data = 331;
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 0);
+	if (r < 0) {
+		if (errno == ENOSYS || errno == EINVAL) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+					   1, __ATOMIC_RELAXED);
+		}
+		return false;
+	}
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_ASYNC_CANCEL;
+	sqe.addr      = 331;
+	sqe.user_data = 332;
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	if (iour_enter(ctx, 1, 1) < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+
+#undef READMS_GROUP
+#undef READMS_COUNT
+#undef READMS_SIZE
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: OPENAT2 with a struct open_how (likely ENOENT)
+ * ------------------------------------------------------------------ */
+static bool recipe_openat2(struct iour_recipe_state *s,
+			   bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	struct iour_open_how how;
+	static const char path[] = "/dev/null";
+	int r;
+
+	memset(&how, 0, sizeof(how));
+	how.flags = O_RDONLY | O_CLOEXEC;
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_OPENAT2;
+	sqe.fd        = AT_FDCWD;
+	sqe.addr      = (__u64)(uintptr_t)path;
+	sqe.addr2     = (__u64)(uintptr_t)&how;
+	sqe.len       = sizeof(how);
+	sqe.user_data = 340;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: EPOLL_CTL — add an eventfd to an epoll set via the ring
+ *
+ * SQE layout: sqe->fd=epfd, sqe->len=op, sqe->off=target fd,
+ *             sqe->addr=epoll_event*.
+ * ------------------------------------------------------------------ */
+static bool recipe_epoll_ctl(struct iour_recipe_state *s,
+			     bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	struct epoll_event ev;
+	int r;
+
+	s->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+	if (s->epoll_fd < 0)
+		return false;
+	s->evfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+	if (s->evfd < 0)
+		return false;
+
+	memset(&ev, 0, sizeof(ev));
+	ev.events  = EPOLLIN;
+	ev.data.fd = s->evfd;
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_EPOLL_CTL;
+	sqe.fd        = s->epoll_fd;
+	sqe.len       = EPOLL_CTL_ADD;
+	sqe.off       = s->evfd;
+	sqe.addr      = (__u64)(uintptr_t)&ev;
+	sqe.user_data = 350;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: SPLICE between two pipes (with primer write)
+ * ------------------------------------------------------------------ */
+static bool recipe_splice(struct iour_recipe_state *s,
+			  bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	int r;
+
+	if (pipe(s->pipefd) < 0)
+		return false;
+	if (pipe(s->pipefd2) < 0)
+		return false;
+
+	{
+		const char primer[64] = { 's', 'p', 'l', 'i', 'c', 'e' };
+		ssize_t w __unused__ = write(s->pipefd[1], primer,
+					     sizeof(primer));
+	}
+
+	sqe_clear(&sqe);
+	sqe.opcode        = IORING_OP_SPLICE;
+	sqe.fd            = s->pipefd2[1];	/* out */
+	sqe.splice_fd_in  = s->pipefd[0];	/* in */
+	sqe.splice_off_in = (__u64)-1;
+	sqe.off           = (__u64)-1;
+	sqe.len           = 64;
+	sqe.splice_flags  = 0;
+	sqe.user_data     = 360;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: TEE between two pipes
+ * ------------------------------------------------------------------ */
+static bool recipe_tee(struct iour_recipe_state *s,
+		       bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	int r;
+
+	if (pipe(s->pipefd) < 0)
+		return false;
+	if (pipe(s->pipefd2) < 0)
+		return false;
+
+	{
+		const char primer[64] = { 't', 'e', 'e' };
+		ssize_t w __unused__ = write(s->pipefd[1], primer,
+					     sizeof(primer));
+	}
+
+	sqe_clear(&sqe);
+	sqe.opcode       = IORING_OP_TEE;
+	sqe.fd           = s->pipefd2[1];	/* out */
+	sqe.splice_fd_in = s->pipefd[0];	/* in */
+	sqe.len          = 64;
+	sqe.splice_flags = 0;
+	sqe.user_data    = 370;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: FILES_UPDATE on a pre-registered file table
+ *
+ * Register 4 placeholder slots, then submit FILES_UPDATE to swap one
+ * slot in via the SQE.  The cleanup path UNREGISTERs the table.
+ * ------------------------------------------------------------------ */
+static bool recipe_files_update(struct iour_recipe_state *s,
+				bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	int regfds[4] = { -1, -1, -1, -1 };
+	int newfds[1];
+	int r;
+
+	s->open_fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+	if (s->open_fd < 0)
+		return false;
+
+	r = (int)syscall(__NR_io_uring_register, ctx->fd,
+			 IORING_REGISTER_FILES, regfds, 4);
+	if (r < 0)
+		return false;
+	s->registered_files = true;
+
+	newfds[0] = s->open_fd;
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_FILES_UPDATE;
+	sqe.fd        = 0;
+	sqe.addr      = (__u64)(uintptr_t)newfds;
+	sqe.len       = 1;
+	sqe.off       = 0;
+	sqe.user_data = 380;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: LINK_TIMEOUT chained from a NOP
+ *
+ * LINK_TIMEOUT only makes sense as the second member of a linked pair;
+ * it bounds the time the prior linked op may run.  NOP completes
+ * instantly so the timeout itself fires the cancellation path harmlessly.
+ * ------------------------------------------------------------------ */
+static bool recipe_link_timeout(struct iour_recipe_state *s,
+				bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqes[2];
+	struct __kernel_timespec ts;
+	int r;
+
+	sqe_clear(&sqes[0]);
+	sqes[0].opcode    = IORING_OP_NOP;
+	sqes[0].flags     = IOSQE_IO_LINK;
+	sqes[0].user_data = 390;
+
+	ts.tv_sec  = 0;
+	ts.tv_nsec = 1000000;	/* 1 ms */
+
+	sqe_clear(&sqes[1]);
+	sqes[1].opcode        = IORING_OP_LINK_TIMEOUT;
+	sqes[1].addr          = (__u64)(uintptr_t)&ts;
+	sqes[1].len           = 1;
+	sqes[1].timeout_flags = 0;
+	sqes[1].user_data     = 391;
+
+	if (!iour_submit_sqes(ctx, sqes, 2))
+		return false;
+	r = iour_enter(ctx, 2, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: TIMEOUT_REMOVE — submit a long timeout, then yank it
+ * ------------------------------------------------------------------ */
+static bool recipe_timeout_remove(struct iour_recipe_state *s,
+				  bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	struct __kernel_timespec ts;
+	int r;
+
+	ts.tv_sec  = 60;
+	ts.tv_nsec = 0;
+
+	sqe_clear(&sqe);
+	sqe.opcode        = IORING_OP_TIMEOUT;
+	sqe.addr          = (__u64)(uintptr_t)&ts;
+	sqe.len           = 1;
+	sqe.timeout_flags = 0;
+	sqe.user_data     = 400;
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	if (iour_enter(ctx, 1, 0) < 0)
+		return false;
+
+	sqe_clear(&sqe);
+	sqe.opcode        = IORING_OP_TIMEOUT_REMOVE;
+	sqe.addr          = 400;
+	sqe.timeout_flags = 0;
+	sqe.user_data     = 401;
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 2);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: RENAMEAT on missing source (ENOENT but full prep+issue)
+ *
+ * SQE layout: sqe->fd=old_dfd, sqe->addr=oldpath, sqe->len=new_dfd
+ * (an int packed as u32), sqe->addr2=newpath, sqe->rename_flags.
+ * ------------------------------------------------------------------ */
+static bool recipe_renameat(struct iour_recipe_state *s,
+			    bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	static const char oldp[] = "/tmp/trinity-iour-rn-src";
+	static const char newp[] = "/tmp/trinity-iour-rn-dst";
+	int r;
+
+	sqe_clear(&sqe);
+	sqe.opcode       = IORING_OP_RENAMEAT;
+	sqe.fd           = AT_FDCWD;
+	sqe.addr         = (__u64)(uintptr_t)oldp;
+	sqe.len          = (__u32)AT_FDCWD;
+	sqe.addr2        = (__u64)(uintptr_t)newp;
+	sqe.rename_flags = 0;
+	sqe.user_data    = 410;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: UNLINKAT on a path that doesn't exist
+ * ------------------------------------------------------------------ */
+static bool recipe_unlinkat(struct iour_recipe_state *s,
+			    bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	static const char path[] = "/tmp/trinity-iour-unlink-target";
+	int r;
+
+	sqe_clear(&sqe);
+	sqe.opcode       = IORING_OP_UNLINKAT;
+	sqe.fd           = AT_FDCWD;
+	sqe.addr         = (__u64)(uintptr_t)path;
+	sqe.unlink_flags = 0;
+	sqe.user_data    = 420;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: MKDIRAT — likely EEXIST or EACCES; prep + issue path runs
+ * ------------------------------------------------------------------ */
+static bool recipe_mkdirat(struct iour_recipe_state *s,
+			   bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	static const char path[] = "/tmp/trinity-iour-mkdir-target";
+	int r;
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_MKDIRAT;
+	sqe.fd        = AT_FDCWD;
+	sqe.addr      = (__u64)(uintptr_t)path;
+	sqe.len       = 0700;
+	sqe.user_data = 430;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: SYMLINKAT — likely EEXIST/EACCES; prep + issue path runs
+ *
+ * SQE layout: sqe->fd=newdirfd, sqe->addr=target (symlink contents),
+ *             sqe->addr2=linkpath.
+ * ------------------------------------------------------------------ */
+static bool recipe_symlinkat(struct iour_recipe_state *s,
+			     bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	static const char target[] = "/dev/null";
+	static const char linkp[]  = "/tmp/trinity-iour-symlink";
+	int r;
+
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_SYMLINKAT;
+	sqe.fd        = AT_FDCWD;
+	sqe.addr      = (__u64)(uintptr_t)target;
+	sqe.addr2     = (__u64)(uintptr_t)linkp;
+	sqe.user_data = 440;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: LINKAT — same SQE shape as RENAMEAT plus hardlink_flags
+ * ------------------------------------------------------------------ */
+static bool recipe_linkat(struct iour_recipe_state *s,
+			  bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	static const char oldp[] = "/dev/null";
+	static const char newp[] = "/tmp/trinity-iour-hardlink";
+	int r;
+
+	sqe_clear(&sqe);
+	sqe.opcode         = IORING_OP_LINKAT;
+	sqe.fd             = AT_FDCWD;
+	sqe.addr           = (__u64)(uintptr_t)oldp;
+	sqe.len            = (__u32)AT_FDCWD;
+	sqe.addr2          = (__u64)(uintptr_t)newp;
+	sqe.hardlink_flags = 0;
+	sqe.user_data      = 450;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Xattr SQE layout: sqe->addr=name ptr, sqe->addr3=value ptr,
+ *                   sqe->len=size, sqe->xattr_flags=flags;
+ *                   path-based variants additionally use sqe->addr2=path.
+ * ------------------------------------------------------------------ */
+static bool recipe_setxattr(struct iour_recipe_state *s,
+			    bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	static const char path[]  = "/tmp/trinity-iour-xattr-tgt";
+	static const char name[]  = "user.trinity";
+	static const char value[] = "v";
+	int r;
+
+	sqe_clear(&sqe);
+	sqe.opcode      = IORING_OP_SETXATTR;
+	sqe.addr        = (__u64)(uintptr_t)name;
+	sqe.addr2       = (__u64)(uintptr_t)path;
+	sqe.addr3       = (__u64)(uintptr_t)value;
+	sqe.len         = sizeof(value);
+	sqe.xattr_flags = 0;
+	sqe.user_data   = 460;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+static bool recipe_fsetxattr(struct iour_recipe_state *s,
+			     bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	static const char name[]  = "user.trinity";
+	static const char value[] = "v";
+	int r;
+
+	s->memfd = iour_make_memfd();
+	if (s->memfd < 0)
+		return false;
+
+	sqe_clear(&sqe);
+	sqe.opcode      = IORING_OP_FSETXATTR;
+	sqe.fd          = s->memfd;
+	sqe.addr        = (__u64)(uintptr_t)name;
+	sqe.addr3       = (__u64)(uintptr_t)value;
+	sqe.len         = sizeof(value);
+	sqe.xattr_flags = 0;
+	sqe.user_data   = 470;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+static bool recipe_getxattr(struct iour_recipe_state *s,
+			    bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	static const char path[] = "/dev/null";
+	static const char name[] = "user.trinity";
+	char value[64];
+	int r;
+
+	sqe_clear(&sqe);
+	sqe.opcode      = IORING_OP_GETXATTR;
+	sqe.addr        = (__u64)(uintptr_t)name;
+	sqe.addr2       = (__u64)(uintptr_t)path;
+	sqe.addr3       = (__u64)(uintptr_t)value;
+	sqe.len         = sizeof(value);
+	sqe.xattr_flags = 0;
+	sqe.user_data   = 480;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+static bool recipe_fgetxattr(struct iour_recipe_state *s,
+			     bool *unsupported __unused__)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	static const char name[] = "user.trinity";
+	char value[64];
+	int r;
+
+	s->memfd = iour_make_memfd();
+	if (s->memfd < 0)
+		return false;
+
+	sqe_clear(&sqe);
+	sqe.opcode      = IORING_OP_FGETXATTR;
+	sqe.fd          = s->memfd;
+	sqe.addr        = (__u64)(uintptr_t)name;
+	sqe.addr3       = (__u64)(uintptr_t)value;
+	sqe.len         = sizeof(value);
+	sqe.xattr_flags = 0;
+	sqe.user_data   = 490;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: WAITID on P_ALL with WNOHANG (likely ECHILD)
+ *
+ * SQE layout: sqe->len=which, sqe->fd=upid, sqe->file_index=options,
+ *             sqe->addr2=infop ptr.
+ * ------------------------------------------------------------------ */
+static bool recipe_waitid(struct iour_recipe_state *s, bool *unsupported)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	siginfo_t infop;
+	int r;
+
+	memset(&infop, 0, sizeof(infop));
+
+	sqe_clear(&sqe);
+	sqe.opcode      = IORING_OP_WAITID;
+	sqe.len         = P_ALL;
+	sqe.fd          = 0;
+	sqe.file_index  = WNOHANG | WEXITED;
+	sqe.addr2       = (__u64)(uintptr_t)&infop;
+	sqe.user_data   = 500;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0) {
+		if (errno == ENOSYS || errno == EINVAL) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+					   1, __ATOMIC_RELAXED);
+		}
+		return false;
+	}
+	iour_drain_cqes(ctx);
+	return true;
+}
+
 static const struct iour_recipe catalog[] = {
 	{ "nop_chain",              recipe_nop_chain              },
 	{ "timeout_drain",          recipe_timeout_drain          },
@@ -1374,6 +2580,47 @@ static const struct iour_recipe catalog[] = {
 	{ "statx_fixed_file",       recipe_statx_fixed_file       },
 	{ "futex_wait_wake",        recipe_futex_wait_wake        },
 	{ "epoll_wait",             recipe_epoll_wait             },
+	{ "sendmsg",                recipe_sendmsg                },
+	{ "recvmsg",                recipe_recvmsg                },
+	{ "accept",                 recipe_accept                 },
+	{ "connect",                recipe_connect                },
+	{ "bind",                   recipe_bind                   },
+	{ "listen",                 recipe_listen                 },
+	{ "fsync",                  recipe_fsync                  },
+	{ "sync_file_range",        recipe_sync_file_range        },
+	{ "readv",                  recipe_readv                  },
+	{ "writev",                 recipe_writev                 },
+	{ "fallocate",              recipe_fallocate              },
+	{ "ftruncate",              recipe_ftruncate              },
+	{ "fadvise",                recipe_fadvise                },
+	{ "read_multishot",         recipe_read_multishot         },
+	{ "openat2",                recipe_openat2                },
+	{ "epoll_ctl",              recipe_epoll_ctl              },
+	{ "splice",                 recipe_splice                 },
+	{ "tee",                    recipe_tee                    },
+	{ "files_update",           recipe_files_update           },
+	{ "link_timeout",           recipe_link_timeout           },
+	{ "timeout_remove",         recipe_timeout_remove         },
+	{ "renameat",               recipe_renameat               },
+	{ "unlinkat",               recipe_unlinkat               },
+	{ "mkdirat",                recipe_mkdirat                },
+	{ "symlinkat",              recipe_symlinkat              },
+	{ "linkat",                 recipe_linkat                 },
+	{ "setxattr",               recipe_setxattr               },
+	{ "fsetxattr",              recipe_fsetxattr              },
+	{ "getxattr",               recipe_getxattr               },
+	{ "fgetxattr",              recipe_fgetxattr              },
+	{ "waitid",                 recipe_waitid                 },
+	/*
+	 * Deferred to follow-up: per-op submission requires setup the
+	 * recipe harness doesn't track yet, so they're intentionally
+	 * absent from the catalog rather than stubbed:
+	 *   IORING_OP_FUTEX_WAITV       — needs a struct futex_waitv[] vector
+	 *   IORING_OP_FIXED_FD_INSTALL  — needs a registered-file slot index
+	 *                                 to be wired up at submission time
+	 *   IORING_OP_NOP128            — needs IORING_SETUP_SQE128 ring
+	 *   IORING_OP_URING_CMD128      — needs IORING_SETUP_SQE128 ring
+	 */
 };
 
 _Static_assert(ARRAY_SIZE(catalog) <= MAX_IOURING_RECIPES,
