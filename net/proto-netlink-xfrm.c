@@ -180,15 +180,16 @@
 #endif
 
 #ifndef XFRM_MSG_NEWSA
+/* values per include/uapi/linux/xfrm.h */
 #define XFRM_MSG_NEWSA			0x10
 #define XFRM_MSG_DELSA			0x11
 #define XFRM_MSG_NEWPOLICY		0x13
 #define XFRM_MSG_DELPOLICY		0x14
 #define XFRM_MSG_EXPIRE			0x18
-#define XFRM_MSG_UPDSA			0x1f
-#define XFRM_MSG_FLUSHSA		0x19
-#define XFRM_MSG_FLUSHPOLICY		0x1a
-#define XFRM_MSG_NEWAE			0x1b
+#define XFRM_MSG_UPDSA			0x1a
+#define XFRM_MSG_FLUSHSA		0x1c
+#define XFRM_MSG_FLUSHPOLICY		0x1d
+#define XFRM_MSG_NEWAE			0x1e
 #endif
 
 #ifndef XFRMA_ALG_AUTH
