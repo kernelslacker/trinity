@@ -797,6 +797,7 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 	case CHILD_OP_TLS_ROTATE:		return 30;
 	case CHILD_OP_PACKET_FANOUT_THRASH:	return 30;
 	case CHILD_OP_SPLICE_PROTOCOLS:		return 30;
+	case CHILD_OP_RXRPC_KEY_INSTALL:	return 30;
 	default:				return 10;
 	}
 }
@@ -898,7 +899,7 @@ static void check_fd_leaks(struct childdata *child)
  * Enable the dormant ops one at a time once each has been load-tested.
  * To enable an op: set its entry below to 0.
  */
-static const int dormant_op_disabled[73] = {
+static const int dormant_op_disabled[74] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 0, 1,	/* 10-14: fault_injector active; dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, recipe_runner */
@@ -915,6 +916,7 @@ static const int dormant_op_disabled[73] = {
 	1, 1, 1, 1, 0,	/* 65-69: kvm_run_churn active; dormant: bridge_vlan_churn, igmp_mld_source_churn, psp_key_rotate, afxdp_churn */
 	1, 1,		/* 70-71: dormant: nl80211_churn, nat_t_churn */
 	1,		/* 72: dormant: splice_protocols */
+	1,		/* 73: dormant: rxrpc_key_install */
 };
 
 /*
@@ -1070,6 +1072,7 @@ static const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_NL80211_CHURN:	return "nl80211_churn";
 	case CHILD_OP_NAT_T_CHURN:	return "nat_t_churn";
 	case CHILD_OP_SPLICE_PROTOCOLS:	return "splice_protocols";
+	case CHILD_OP_RXRPC_KEY_INSTALL:	return "rxrpc_key_install";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1123,7 +1126,7 @@ void log_alt_op_config(void)
  * removed op; CHILD_OP_SYSCALL acts as a sentinel and is filtered out
  * during dense-vector construction.
  */
-static const enum child_op_type pick_op_type_table[73] = {
+static const enum child_op_type pick_op_type_table[74] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -1197,6 +1200,7 @@ static const enum child_op_type pick_op_type_table[73] = {
 	[70] = CHILD_OP_NL80211_CHURN,
 	[71] = CHILD_OP_NAT_T_CHURN,
 	[72] = CHILD_OP_SPLICE_PROTOCOLS,
+	[73] = CHILD_OP_RXRPC_KEY_INSTALL,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1440,6 +1444,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_NL80211_CHURN]	= nl80211_churn,
 	[CHILD_OP_NAT_T_CHURN]		= nat_t_churn,
 	[CHILD_OP_SPLICE_PROTOCOLS]	= splice_protocols,
+	[CHILD_OP_RXRPC_KEY_INSTALL]	= rxrpc_key_install,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
