@@ -1434,6 +1434,7 @@ void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype ty
 static void destroy_objects(enum objecttype type, enum obj_scope scope)
 {
 	struct objhead *head;
+	unsigned int prev_n;
 
 	head = get_objhead(scope, type);
 	if (head->num_entries == 0)
@@ -1456,7 +1457,16 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 			head->num_entries--;
 			continue;
 		}
+		prev_n = head->num_entries;
 		__destroy_object(obj, scope, type, false);
+		if (head->num_entries == prev_n && head->array[0] == obj) {
+			/* __destroy_object early-returned without making progress —
+			 * obj has corrupt array_idx invariant.  Skip past it the
+			 * same way we skip a torn NULL slot, otherwise we spin
+			 * forever at parent shutdown blocking process reaping. */
+			head->array[0] = NULL;
+			head->num_entries--;
+		}
 	}
 
 	/* Only free private-heap arrays (OBJ_LOCAL).  OBJ_GLOBAL arrays
