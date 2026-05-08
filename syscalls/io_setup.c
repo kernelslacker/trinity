@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE2(io_setup, unsigned, nr_events, aio_context_t __user *, ctxp)
  */
+#include <linux/aio_abi.h>
 #include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -47,6 +48,13 @@ static void sanitise_io_setup(struct syscallrecord *rec)
 	ctxp = (unsigned long *) get_writable_address(sizeof(*ctxp));
 	*ctxp = 0;
 	rec->a2 = (unsigned long) ctxp;
+
+	/*
+	 * Re-route ctxp out of any alloc_shared / libc-heap region BEFORE
+	 * the snapshot below so snap->ctxp captures the post-redirect
+	 * address that post_io_setup will dereference.
+	 */
+	avoid_shared_buffer(&rec->a2, sizeof(aio_context_t));
 
 	/*
 	 * Snapshot the two input args the post oracle inspects.  Without
