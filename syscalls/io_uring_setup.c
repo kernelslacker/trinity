@@ -100,6 +100,14 @@ static void sanitise_io_uring_setup(struct syscallrecord *rec)
 		params->sq_thread_idle = RAND_RANGE(100, 10000);
 
 	rec->a2 = (unsigned long) params;
+
+	/*
+	 * Re-route params out of any alloc_shared / libc-heap region BEFORE
+	 * the snapshot below so post_io_uring_setup observes the same
+	 * post-redirect address the kernel wrote io_uring_params into.
+	 */
+	avoid_shared_buffer(&rec->a2, sizeof(struct io_uring_params));
+
 	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
 	 * syscall before post_io_uring_setup() runs. */
 	rec->post_state = (unsigned long) params;
