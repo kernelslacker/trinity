@@ -19,7 +19,7 @@ static void sanitise_socketpair(struct syscallrecord *rec)
 	rec->a1 = st.family;
 	rec->a2 = st.type;
 	rec->a3 = st.protocol;
-	rec->a4 = (unsigned long) malloc(sizeof(int) * 2);
+	rec->a4 = (unsigned long) zmalloc(sizeof(int) * 2);
 	if (!rec->a4)
 		return;
 
