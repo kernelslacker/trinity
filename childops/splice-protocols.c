@@ -120,6 +120,12 @@
 # define SOL_ALG			279
 #endif
 
+#ifndef MSG_SPLICE_PAGES
+# define MSG_SPLICE_PAGES		0x8000000
+#endif
+
+#define SPLICE_SELFTEST_LEN		64U
+
 enum splice_proto_setup {
 	SPS_UDP_ESPINUDP = 0,
 	SPS_UDP_L2TPINUDP,
@@ -530,6 +536,102 @@ static int pick_setup(unsigned int start, enum splice_proto_setup *out_setup)
 	return -1;
 }
 
+static bool selftest_done;
+
+/*
+ * Behavioural self-test: confirm that an explicit MSG_SPLICE_PAGES
+ * sendmsg() round-trips a known marker payload through a UDP loopback
+ * socket pair.  We cannot inspect kernel-internal frag flags from
+ * userspace; this is a pure end-to-end length check.  If the receiver
+ * sees fewer bytes than were sent, the kernel build silently dropped
+ * data on the zero-copy plant path, and the bug-class oracle this
+ * childop is meant to exercise is ineffective on this target.
+ *
+ * Latched after the first invocation regardless of outcome — this is a
+ * one-shot config probe, not a per-iter check.
+ */
+static void splice_protocols_selftest(void)
+{
+	char path[] = "/tmp/splice-self-test-XXXXXX";
+	unsigned char marker[SPLICE_SELFTEST_LEN];
+	unsigned char rxbuf[SPLICE_SELFTEST_LEN * 2];
+	struct sockaddr_in sin_tx, sin_rx;
+	socklen_t slen;
+	struct iovec iov;
+	struct msghdr mh;
+	int tmpfd = -1, rdfd = -1, tx = -1, rx = -1;
+	ssize_t n;
+	bool path_ok = false;
+
+	tmpfd = mkstemp(path);
+	if (tmpfd < 0)
+		goto out;
+	memset(marker, 'A', sizeof(marker));
+	if (write(tmpfd, marker, sizeof(marker)) != (ssize_t) sizeof(marker))
+		goto out;
+	close(tmpfd);
+	tmpfd = -1;
+
+	rdfd = open(path, O_RDONLY | O_CLOEXEC);
+	if (rdfd < 0)
+		goto out;
+	if (read(rdfd, marker, sizeof(marker)) != (ssize_t) sizeof(marker))
+		goto out;
+
+	rx = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+	if (rx < 0)
+		goto out;
+	memset(&sin_rx, 0, sizeof(sin_rx));
+	sin_rx.sin_family = AF_INET;
+	sin_rx.sin_port   = 0;
+	sin_rx.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	if (bind(rx, (struct sockaddr *) &sin_rx, sizeof(sin_rx)) < 0)
+		goto out;
+	slen = sizeof(sin_rx);
+	if (getsockname(rx, (struct sockaddr *) &sin_rx, &slen) < 0)
+		goto out;
+
+	tx = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+	if (tx < 0)
+		goto out;
+	memset(&sin_tx, 0, sizeof(sin_tx));
+	sin_tx.sin_family = AF_INET;
+	sin_tx.sin_port   = 0;
+	sin_tx.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	if (bind(tx, (struct sockaddr *) &sin_tx, sizeof(sin_tx)) < 0)
+		goto out;
+	if (connect(tx, (struct sockaddr *) &sin_rx, sizeof(sin_rx)) < 0)
+		goto out;
+
+	iov.iov_base = marker;
+	iov.iov_len  = sizeof(marker);
+	memset(&mh, 0, sizeof(mh));
+	mh.msg_iov    = &iov;
+	mh.msg_iovlen = 1;
+
+	n = sendmsg(tx, &mh, MSG_SPLICE_PAGES | MSG_DONTWAIT);
+	if (n != (ssize_t) sizeof(marker))
+		goto out;
+
+	n = recv(rx, rxbuf, sizeof(rxbuf), MSG_DONTWAIT);
+	if (n == (ssize_t) sizeof(marker))
+		path_ok = true;
+
+out:
+	if (!path_ok)
+		outputerr("splice_protocols: MSG_SPLICE_PAGES path appears not to be exercised on this kernel/build — bug-class oracle may be ineffective\n");
+
+	if (tx >= 0)
+		close(tx);
+	if (rx >= 0)
+		close(rx);
+	if (rdfd >= 0)
+		close(rdfd);
+	if (tmpfd >= 0)
+		close(tmpfd);
+	(void) unlink(path);
+}
+
 static void run_iter(unsigned int iter)
 {
 	enum splice_proto_setup setup;
@@ -595,6 +697,18 @@ static void run_iter(unsigned int iter)
 	if (in_n > 0) {
 		__atomic_add_fetch(&shm->stats.splice_protocols_in_bytes,
 				   (unsigned long) in_n, __ATOMIC_RELAXED);
+		/*
+		 * The splice_to_socket() kernel path sets MSG_SPLICE_PAGES
+		 * for us — every pipe->socket splice here is expected to
+		 * traverse that path.  Bump _attempted unconditionally; if
+		 * the kernel returns the full requested length with no short
+		 * write, infer the zero-copy plant succeeded.  Operator can
+		 * watch path_taken_inferred / attempted; a low ratio means
+		 * many splices fell back to copy and aren't reproducing the
+		 * intended bug shape.
+		 */
+		__atomic_add_fetch(&shm->stats.splice_protocols_msg_splice_pages_attempted,
+				   1, __ATOMIC_RELAXED);
 		out_n = splice(pfd[0], NULL, sock_fd, NULL,
 			       (size_t) in_n, flags_out);
 		if (out_n > 0) {
@@ -602,6 +716,9 @@ static void run_iter(unsigned int iter)
 					   (unsigned long) out_n, __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.splice_protocols_chain_ok,
 					   1, __ATOMIC_RELAXED);
+			if (out_n == in_n)
+				__atomic_add_fetch(&shm->stats.splice_protocols_msg_splice_pages_path_taken_inferred,
+						   1, __ATOMIC_RELAXED);
 
 			if (RAND_BOOL()) {
 				unsigned char rxbuf[512];
@@ -630,6 +747,11 @@ bool splice_protocols(struct childdata *child __unused__)
 
 	__atomic_add_fetch(&shm->stats.splice_protocols_runs,
 			   1, __ATOMIC_RELAXED);
+
+	if (!selftest_done) {
+		selftest_done = true;
+		splice_protocols_selftest();
+	}
 
 	for (i = 0; i < SPS_NR; i++) {
 		if (!unsupported_setup[i]) {

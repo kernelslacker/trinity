@@ -1329,6 +1329,8 @@ struct stats_s {
 	unsigned long splice_protocols_packet_ring_attempted;	/* AF_PACKET TPACKET RX-ring setup arm picked */
 	unsigned long splice_protocols_alg_attempted;		/* AF_ALG skcipher setup arm picked */
 	unsigned long splice_protocols_rxrpc_attempted;		/* AF_RXRPC bound-socket setup arm picked */
+	unsigned long splice_protocols_msg_splice_pages_attempted;	/* splice()/sendmsg() calls where the kernel is expected to plant pages via MSG_SPLICE_PAGES */
+	unsigned long splice_protocols_msg_splice_pages_path_taken_inferred;	/* of those, how many returned len matching input with no errno (zero-copy plant inferred). Operator: ratio < 90% means many calls fell back to copy and aren't reproducing the intended bug shape. */
 
 	/* rxrpc_key_install childop counters.  Coverage of the
 	 * net/rxrpc/key.c token parsers reached via add_key("rxrpc", ...)

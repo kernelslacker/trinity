@@ -730,7 +730,7 @@ static void dump_stats_json(void)
 		"\"kvm_run_churn\":{\"invocations\":%lu,\"exit_io\":%lu,\"exit_mmio\":%lu,\"exit_hlt\":%lu,\"exit_shutdown\":%lu,\"exit_fail_entry\":%lu,\"exit_internal_error\":%lu,\"exit_intr\":%lu,\"exit_other\":%lu,\"errors\":%lu},"
 		"\"nl80211\":{\"runs\":%lu,\"setup_failed\":%lu,\"scan_triggered\":%lu,\"connect_attempted\":%lu,\"connect_succeeded\":%lu,\"disconnect_attempted\":%lu,\"regdom_changed\":%lu,\"iface_created\":%lu,\"iface_destroyed\":%lu,\"bursts_sent\":%lu},"
 		"\"nat_t_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_deleted\":%lu,\"frames_sent\":%lu},"
-		"\"splice_protocols\":{\"runs\":%lu,\"setup_failed\":%lu,\"chain_ok\":%lu,\"in_bytes\":%lu,\"out_bytes\":%lu,\"udp_encap_attempted\":%lu,\"tcp_repair_attempted\":%lu,\"packet_ring_attempted\":%lu,\"alg_attempted\":%lu,\"rxrpc_attempted\":%lu},"
+		"\"splice_protocols\":{\"runs\":%lu,\"setup_failed\":%lu,\"chain_ok\":%lu,\"in_bytes\":%lu,\"out_bytes\":%lu,\"udp_encap_attempted\":%lu,\"tcp_repair_attempted\":%lu,\"packet_ring_attempted\":%lu,\"alg_attempted\":%lu,\"rxrpc_attempted\":%lu,\"msg_splice_pages_attempted\":%lu,\"msg_splice_pages_path_taken_inferred\":%lu},"
 		"\"rxrpc_key_install\":{\"runs\":%lu,\"calls\":%lu,\"revokes\":%lu,\"quota_hits\":%lu,\"unsupported\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
@@ -1204,6 +1204,8 @@ static void dump_stats_json(void)
 		shm->stats.splice_protocols_packet_ring_attempted,
 		shm->stats.splice_protocols_alg_attempted,
 		shm->stats.splice_protocols_rxrpc_attempted,
+		shm->stats.splice_protocols_msg_splice_pages_attempted,
+		shm->stats.splice_protocols_msg_splice_pages_path_taken_inferred,
 		shm->stats.rxrpc_key_install_runs,
 		shm->stats.rxrpc_key_install_calls,
 		shm->stats.rxrpc_key_install_revokes,
@@ -2792,6 +2794,8 @@ void dump_stats(void)
 		stat_row("splice_protocols", "packet_ring_attempted", shm->stats.splice_protocols_packet_ring_attempted);
 		stat_row("splice_protocols", "alg_attempted",         shm->stats.splice_protocols_alg_attempted);
 		stat_row("splice_protocols", "rxrpc_attempted",       shm->stats.splice_protocols_rxrpc_attempted);
+		stat_row("splice_protocols", "msg_splice_pages_attempted",           shm->stats.splice_protocols_msg_splice_pages_attempted);
+		stat_row("splice_protocols", "msg_splice_pages_path_taken_inferred", shm->stats.splice_protocols_msg_splice_pages_path_taken_inferred);
 	}
 
 	if (shm->stats.rxrpc_key_install_runs) {
