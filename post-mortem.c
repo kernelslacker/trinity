@@ -110,7 +110,7 @@ static unsigned int drain_child_ring(unsigned int idx,
 	unsigned int n = 0;
 
 	head = atomic_load_explicit(&ring->head, memory_order_acquire);
-	count = head < CHILD_SYSCALL_RING_SIZE ? head : CHILD_SYSCALL_RING_SIZE;
+	count = head < CHILD_SYSCALL_RING_SIZE ? head : CHILD_SYSCALL_RING_SIZE - 1;
 
 	for (j = 0; j < count; j++) {
 		uint32_t idx_slot = (head - count + j) & (CHILD_SYSCALL_RING_SIZE - 1);
