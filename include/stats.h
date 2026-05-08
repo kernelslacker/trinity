@@ -534,6 +534,7 @@ struct stats_s {
 	unsigned long genl_family_calls_tipc;
 	unsigned long genl_family_calls_wireguard;
 	unsigned long genl_family_calls_l2tp;
+	unsigned long genl_family_calls_gtp;
 	/* Bundled counter for the four NetLabel families (CALIPSO,
 	 * CIPSOv4, UNLBL, MGMT) — they all dispatch into the same LSM
 	 * hook chain on the kernel side, so a single end-of-run row

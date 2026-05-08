@@ -64,6 +64,9 @@ extern struct genl_family_grammar fam_ovs_ct_limit;
 #if __has_include(<linux/l2tp.h>)
 extern struct genl_family_grammar fam_l2tp;
 #endif
+#if __has_include(<linux/gtp.h>)
+extern struct genl_family_grammar fam_gtp;
+#endif
 extern struct genl_family_grammar fam_nlbl_mgmt;
 extern struct genl_family_grammar fam_nlbl_cipsov4;
 extern struct genl_family_grammar fam_nlbl_unlabel;
@@ -102,6 +105,9 @@ static struct genl_family_grammar *registry[] = {
 #if __has_include(<linux/l2tp.h>)
 	&fam_l2tp,
 #endif
+#if __has_include(<linux/gtp.h>)
+	&fam_gtp,
+#endif
 	&fam_nlbl_mgmt,
 	&fam_nlbl_cipsov4,
 	&fam_nlbl_unlabel,
@@ -132,6 +138,7 @@ static const struct {
 	{ "TIPCv2",    offsetof(struct stats_s, genl_family_calls_tipc) },
 	{ "wireguard", offsetof(struct stats_s, genl_family_calls_wireguard) },
 	{ "l2tp",      offsetof(struct stats_s, genl_family_calls_l2tp) },
+	{ "gtp",       offsetof(struct stats_s, genl_family_calls_gtp) },
 	/* All four NetLabel families share a single bundled counter so the
 	 * end-of-run stats line carries one row covering CALIPSO + CIPSOv4
 	 * + UNLBL + MGMT traffic together; the spec-driven dispatcher's
