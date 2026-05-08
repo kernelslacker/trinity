@@ -75,6 +75,82 @@ struct trinity_io_uring_clock_register {
 	__u32	__resv[3];
 };
 
+/*
+ * Trinity-private mirrors for the IORING_REGISTER_* opcode arg structs added
+ * in 6.4..6.14.  Same rationale as the file_index_range / clock_register
+ * mirrors above: the kernel copies sizeof(its-own-struct) bytes from the user
+ * pointer, so layout is the only thing that matters at the syscall boundary,
+ * and there is no per-struct sentinel #define to test via #ifndef.  Mirroring
+ * keeps the file building against any uapi header vintage trinity supports.
+ */
+struct trinity_io_uring_buf_reg {
+	__u64	ring_addr;
+	__u32	ring_entries;
+	__u16	bgid;
+	__u16	flags;
+	__u64	resv[3];
+};
+
+struct trinity_io_uring_napi {
+	__u32	busy_poll_to;
+	__u8	prefer_busy_poll;
+	__u8	opcode;
+	__u8	pad[2];
+	__u32	op_param;
+	__u32	resv;
+};
+
+struct trinity_io_uring_zcrx_offsets {
+	__u32	head;
+	__u32	tail;
+	__u32	rqes;
+	__u32	__resv2;
+	__u64	__resv[2];
+};
+
+struct trinity_io_uring_zcrx_ifq_reg {
+	__u32	if_idx;
+	__u32	if_rxq;
+	__u32	rq_entries;
+	__u32	flags;
+	__u64	area_ptr;
+	__u64	region_ptr;
+	struct trinity_io_uring_zcrx_offsets offsets;
+	__u32	zcrx_id;
+	__u32	__resv2;
+	__u64	__resv[3];
+};
+
+struct trinity_io_uring_mem_region_reg {
+	__u64	region_uptr;
+	__u64	flags;
+	__u64	__resv[2];
+};
+
+struct trinity_io_uring_clone_buffers {
+	__u32	src_fd;
+	__u32	flags;
+	__u32	src_off;
+	__u32	dst_off;
+	__u32	nr;
+	__u32	pad[3];
+};
+
+/*
+ * __kernel_timespec embedded by value -- inline its layout to avoid pulling
+ * in <linux/time_types.h> and to insulate against any future ABI churn.
+ */
+struct trinity_io_uring_sync_cancel_reg {
+	__u64	addr;
+	__s32	fd;
+	__u32	flags;
+	__s64	timeout_tv_sec;
+	__s64	timeout_tv_nsec;
+	__u8	opcode;
+	__u8	pad[7];
+	__u64	pad2[3];
+};
+
 static unsigned long io_uring_register_opcodes[] = {
 	IORING_REGISTER_BUFFERS,
 	IORING_UNREGISTER_BUFFERS,
@@ -357,6 +433,168 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) cr;
 		rec->a4 = 0;
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_PBUF_RING / IORING_UNREGISTER_PBUF_RING:
+	 * arg = struct io_uring_buf_reg, nr_args = 1.  Seed ring_entries
+	 * with a small power-of-2 so io_register_pbuf_ring's
+	 * is_power_of_2(reg.ring_entries) sanity check passes and the
+	 * handler reaches the buf_ring allocation path.  Leave ring_addr
+	 * NULL -- the handler will EFAULT past the size check, which still
+	 * exercises far more code than the default zero-page path.
+	 */
+	case IORING_REGISTER_PBUF_RING:
+	case IORING_UNREGISTER_PBUF_RING: {
+		struct trinity_io_uring_buf_reg *r;
+		r = (struct trinity_io_uring_buf_reg *)
+			get_writable_struct(sizeof(*r));
+		if (r) {
+			memset(r, 0, sizeof(*r));
+			r->ring_entries = 1U << (4 + (rand() % 4));  /* 16..128 */
+			r->bgid = rand() % 16;
+		}
+		rec->a3 = (unsigned long) r;
+		rec->a4 = 1;
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_NAPI / IORING_UNREGISTER_NAPI:
+	 * arg = struct io_uring_napi, nr_args = 0.  Default opcode field
+	 * to IO_URING_NAPI_REGISTER_OP (0) so io_register_napi reaches
+	 * io_napi_register_napi() rather than rejecting at the opcode
+	 * switch.  Occasionally fuzz the opcode/tracking-strategy fields.
+	 */
+	case IORING_REGISTER_NAPI:
+	case IORING_UNREGISTER_NAPI: {
+		struct trinity_io_uring_napi *n;
+		n = (struct trinity_io_uring_napi *)
+			get_writable_struct(sizeof(*n));
+		if (n) {
+			memset(n, 0, sizeof(*n));
+			n->busy_poll_to = rand() % 1000;
+			n->prefer_busy_poll = rand() & 1;
+			n->opcode = (rand() % 8 == 0) ? rand() & 0xff : 0;
+			n->op_param = rand();
+		}
+		rec->a3 = (unsigned long) n;
+		rec->a4 = 0;
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_ZCRX_IFQ: arg = struct io_uring_zcrx_ifq_reg,
+	 * nr_args = 1.  Seed rq_entries with a small power-of-2 so the
+	 * is_power_of_2 check in io_register_zcrx_ifq passes; if_idx /
+	 * if_rxq pick small values that may or may not resolve to a real
+	 * netdev.  area_ptr / region_ptr are left NULL on purpose -- the
+	 * handler EFAULTs past validation, exercising the early checks.
+	 */
+	case IORING_REGISTER_ZCRX_IFQ: {
+		struct trinity_io_uring_zcrx_ifq_reg *z;
+		z = (struct trinity_io_uring_zcrx_ifq_reg *)
+			get_writable_struct(sizeof(*z));
+		if (z) {
+			memset(z, 0, sizeof(*z));
+			z->rq_entries = 1U << (4 + (rand() % 4));
+			z->if_idx = 1 + (rand() % 4);
+			z->if_rxq = rand() % 4;
+		}
+		rec->a3 = (unsigned long) z;
+		rec->a4 = 1;
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_RESIZE_RINGS: arg = struct io_uring_params,
+	 * nr_args = 0.  Kernel-side this is gated on the source ring
+	 * having been created with IORING_SETUP_DEFER_TASKRUN; trinity
+	 * does not control how its ARG_FD_IO_URING fd was set up, so most
+	 * invocations will be rejected at io_register_resize_rings's
+	 * IORING_SETUP_DEFER_TASKRUN check.  Still seed sq_entries /
+	 * cq_entries non-zero so the rare ring that does qualify reaches
+	 * io_allocate_scq_urings rather than bailing on entry-count == 0.
+	 */
+	case IORING_REGISTER_RESIZE_RINGS: {
+		struct io_uring_params *p;
+		p = (struct io_uring_params *)
+			get_writable_struct(sizeof(*p));
+		if (p) {
+			memset(p, 0, sizeof(*p));
+			p->sq_entries = 1U << (3 + (rand() % 5));   /* 8..128 */
+			p->cq_entries = p->sq_entries * 2;
+		}
+		rec->a3 = (unsigned long) p;
+		rec->a4 = 0;
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_MEM_REGION: arg = struct io_uring_mem_region_reg,
+	 * nr_args = 1.  region_uptr points to a struct io_uring_region_desc
+	 * the kernel copy_from_users separately; wire it to a fresh
+	 * get_writable_address() page so io_create_region reaches its own
+	 * field validation rather than EFAULTing at the second copy.
+	 */
+	case IORING_REGISTER_MEM_REGION: {
+		struct trinity_io_uring_mem_region_reg *m;
+		void *region_desc;
+		m = (struct trinity_io_uring_mem_region_reg *)
+			get_writable_struct(sizeof(*m));
+		region_desc = get_writable_address(page_size);
+		if (region_desc)
+			memset(region_desc, 0, page_size);
+		if (m) {
+			memset(m, 0, sizeof(*m));
+			m->region_uptr = (unsigned long) region_desc;
+		}
+		rec->a3 = (unsigned long) m;
+		rec->a4 = 1;
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_CLONE_BUFFERS: arg = struct io_uring_clone_buffers,
+	 * nr_args = 1.  src_fd defaults to the same ring fd, exercising the
+	 * src == dst rejection path; nr non-zero so we reach the buffer-table
+	 * walk rather than bailing at the count==0 check.
+	 */
+	case IORING_REGISTER_CLONE_BUFFERS: {
+		struct trinity_io_uring_clone_buffers *c;
+		c = (struct trinity_io_uring_clone_buffers *)
+			get_writable_struct(sizeof(*c));
+		if (c) {
+			memset(c, 0, sizeof(*c));
+			c->src_fd = (ring != NULL) ? (__u32) ring->fd : (__u32) -1;
+			c->nr = 1 + (rand() % 16);
+		}
+		rec->a3 = (unsigned long) c;
+		rec->a4 = 1;
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_SYNC_CANCEL: arg = struct io_uring_sync_cancel_reg,
+	 * nr_args = 1.  All-zero is a legal payload (matches "cancel any") and
+	 * reaches io_sync_cancel's request-search loop, the bug-rich part.
+	 * Occasionally seed a non-zero opcode/flags to walk the validator.
+	 */
+	case IORING_REGISTER_SYNC_CANCEL: {
+		struct trinity_io_uring_sync_cancel_reg *s;
+		s = (struct trinity_io_uring_sync_cancel_reg *)
+			get_writable_struct(sizeof(*s));
+		if (s) {
+			memset(s, 0, sizeof(*s));
+			s->fd = -1;
+			if ((rand() % 8) == 0) {
+				s->opcode = rand() & 0xff;
+				s->flags = rand();
+			}
+		}
+		rec->a3 = (unsigned long) s;
+		rec->a4 = 1;
 		break;
 	}
 
