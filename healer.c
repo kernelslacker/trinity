@@ -80,6 +80,8 @@ _Static_assert(offsetof(struct healer_promoted, weight) == 4,
 _Static_assert(sizeof(unsigned int) == 4,
 	       "unsigned int must be 4 bytes for packed CAS");
 
+static void healer_maybe_decay(void);
+
 static unsigned int healer_predset_hash(unsigned int pred_a, unsigned int pred_b)
 {
 	uint32_t h = FNV1A_OFFSET_BASIS;
@@ -419,6 +421,117 @@ void healer_observe_relation(struct childdata *child, unsigned int current_nr)
 	if (evicted)
 		__atomic_fetch_add(&shm->stats.healer_evictions, 1,
 				   __ATOMIC_RELAXED);
+
+	/* Periodic weight-decay: every HEALER_DECAY_OBSERVATIONS one
+	 * CAS-elected observer halves all entry weights (floor 1) so the
+	 * relation table converges on persistently-correlated tuples
+	 * rather than accumulating weight=1 co-occurrence noise that
+	 * eviction alone only sheds at slot saturation.  Cheap fast path
+	 * when the gap isn't reached. */
+	healer_maybe_decay();
+}
+
+/*
+ * Periodic weight-decay trigger.
+ *
+ * Without decay, every (predset, nr) tuple ever observed accumulates
+ * weight monotonically until the slot saturates and the lowest-weight
+ * entry gets evicted -- which means a single one-time co-occurrence
+ * (weight=1) sits in the table forever as long as the slot has room,
+ * dragging the top-N dump toward syscall-frequency noise rather than
+ * causal correlation.  Periodic halving lets the table converge on
+ * persistently-correlated tuples: anything getting bumped at least
+ * every other window holds its rank, while a one-shot weight=1 entry
+ * stays at the noise floor and gets displaced when a real follow-up
+ * needs the slot.
+ *
+ * 50000 observations matches HEALER_SNAPSHOT_OBSERVATIONS so the decay
+ * cadence and snapshot cadence sit on the same fleet-wide scale: at
+ * the steady-state ~10K observations per several-hour run the table
+ * decays a handful of times per long run, fast enough to shed one-off
+ * noise within a single fuzz session but slow enough that a relation
+ * needing ~10K observations to settle still has time to cross the
+ * weight=5 medium-confidence band.  Re-tunable in isolation from the
+ * snapshot cadence if either cadence proves wrong in fleet data.
+ */
+#define HEALER_DECAY_OBSERVATIONS	50000UL
+
+/*
+ * Single-runner election + decay walk.  Mirrors healer_maybe_snapshot's
+ * window-CAS pattern so concurrent observers don't all walk the table
+ * at the same boundary; the decay walk itself is best-effort relaxed
+ * stores against the live table -- a concurrent observer's
+ * fetch-add-1 on an entry the decay walk just halved loses at most one
+ * weight bump, which the next observation re-credits.  Intentionally
+ * cheaper than the snapshot path: no staging buffer, no fsync, no
+ * rename -- just one pass over HEALER_RELATION_SLOTS * HEALER_PROMOTED_PER_SLOT
+ * entries (= 128K relaxed atomic ops worst case, well under a millisecond).
+ */
+static void healer_maybe_decay(void)
+{
+	unsigned long obs_now, old;
+	unsigned int i, j;
+
+	if (shm == NULL)
+		return;
+
+	obs_now = __atomic_load_n(&shm->stats.healer_relations_observed,
+				  __ATOMIC_RELAXED);
+	old = __atomic_load_n(&shm->stats.healer_obs_at_last_decay,
+			      __ATOMIC_RELAXED);
+
+	if (obs_now < old + HEALER_DECAY_OBSERVATIONS)
+		return;
+
+	/* Window-CAS: whichever observer wins owns this decay boundary;
+	 * losers see the advanced high-water-mark on their next call and
+	 * early-return.  RELAXED is enough -- the walk's atomic stores
+	 * carry their own ordering against concurrent observer bumps,
+	 * and the counter is just gating who runs, not what they observe. */
+	if (!__atomic_compare_exchange_n(&shm->stats.healer_obs_at_last_decay,
+					 &old, obs_now,
+					 false,
+					 __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+		return;
+
+	/* Walk the table once, halving every populated entry's weight with
+	 * a floor of 1.  Floor 1 (rather than evicting weight=0 entries) is
+	 * deliberate: a borderline-real relation that hasn't yet accumulated
+	 * a second bump still gets one more decay window to prove itself
+	 * before the slot's eviction policy gets a crack at it.  Race window
+	 * with concurrent observers is fine: a fetch_add on an entry we
+	 * halved races, but the worst case is one lost bump per racing
+	 * observer per decay -- vanishing against the per-window observation
+	 * count. */
+	for (i = 0; i < HEALER_RELATION_SLOTS; i++) {
+		struct healer_relation *slot = &shm->healer_relations[i];
+		uint64_t slot_key;
+
+		slot_key = __atomic_load_n(&slot->key, __ATOMIC_ACQUIRE);
+		if (slot_key == 0)
+			continue;
+
+		for (j = 0; j < HEALER_PROMOTED_PER_SLOT; j++) {
+			uint64_t entry;
+			unsigned int weight, nr, halved;
+
+			entry = __atomic_load_n(&slot->promoted[j].entry,
+						__ATOMIC_RELAXED);
+			healer_unpack_promoted(entry, &nr, &weight);
+
+			if (weight <= 1)
+				continue;
+
+			halved = weight / 2;
+			if (halved < 1)
+				halved = 1;
+			__atomic_store_n(&slot->promoted[j].weight, halved,
+					 __ATOMIC_RELAXED);
+		}
+	}
+
+	__atomic_fetch_add(&shm->stats.healer_weight_decays_run, 1,
+			   __ATOMIC_RELAXED);
 }
 
 /*
@@ -452,8 +565,13 @@ void healer_table_dump(void)
 	unsigned int top_count = 0;
 	unsigned int occupied = 0;
 	unsigned long total_promoted = 0;
+	unsigned long total_weight = 0;
+	unsigned long weight_gt_1 = 0;
+	unsigned long weight_gt_5 = 0;
+	unsigned long weight_gt_10 = 0;
+	unsigned long mean_milli = 0;
 	unsigned int i, j;
-	unsigned long observed, table_full, evictions;
+	unsigned long observed, table_full, evictions, decays_run;
 
 	/* Lockless sweep: each slot is read via a single ACQUIRE-load of
 	 * slot->key so the (pred_a, pred_b, predset_hash) tuple is a
@@ -490,6 +608,13 @@ void healer_table_dump(void)
 				continue;
 
 			slot_promoted++;
+			total_weight += weight;
+			if (weight > 1)
+				weight_gt_1++;
+			if (weight > 5)
+				weight_gt_5++;
+			if (weight > 10)
+				weight_gt_10++;
 
 			if (top_count < HEALER_DUMP_TOP_N) {
 				top[top_count].pred_a = slot_pred_a;
@@ -530,6 +655,8 @@ void healer_table_dump(void)
 				     __ATOMIC_RELAXED);
 	evictions = __atomic_load_n(&shm->stats.healer_evictions,
 				    __ATOMIC_RELAXED);
+	decays_run = __atomic_load_n(&shm->stats.healer_weight_decays_run,
+				     __ATOMIC_RELAXED);
 
 	if (occupied == 0 && observed == 0)
 		return;
@@ -537,6 +664,16 @@ void healer_table_dump(void)
 	stats_log_write("HEALER relation table: %u/%u slots filled, %lu total promoted entries, %lu probe-limit hits, %lu evictions, %lu observations\n",
 			occupied, HEALER_RELATION_SLOTS, total_promoted,
 			table_full, evictions, observed);
+
+	/* Per-mille mean (sum * 1000 / count) keeps two decimals without
+	 * dragging in floating point on the dump path; matches the
+	 * scaled-integer trick the defense-counter rate dump uses for its
+	 * per-second formatting. */
+	if (total_promoted > 0)
+		mean_milli = (total_weight * 1000UL) / total_promoted;
+	stats_log_write("  weight distribution: gt1=%lu, gt5=%lu, gt10=%lu  (mean=%lu.%03lu, decays=%lu)\n",
+			weight_gt_1, weight_gt_5, weight_gt_10,
+			mean_milli / 1000, mean_milli % 1000, decays_run);
 
 	if (top_count == 0)
 		return;

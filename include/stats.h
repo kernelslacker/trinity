@@ -1451,6 +1451,26 @@ struct stats_s {
 	 * path.
 	 */
 	unsigned long healer_snapshot_overruns;
+	/*
+	 * Decay-window high-water-mark for healer_maybe_decay(): the value of
+	 * healer_relations_observed at the last completed decay walk.  Children
+	 * CAS this forward to elect a single runner per HEALER_DECAY_OBSERVATIONS
+	 * window; losers see the advanced high-water-mark on their next call and
+	 * early-return.  Decay halves every promoted entry's weight (floor 1) so
+	 * the relation table converges on persistently-correlated (predset, nr)
+	 * tuples rather than accumulating one-time co-occurrence noise that
+	 * eviction alone only sheds at slot saturation.
+	 */
+	unsigned long healer_obs_at_last_decay;
+	/*
+	 * Bumped each time healer_maybe_decay() wins the window-CAS and walks
+	 * the relation table halving weights.  Operator can grep stats to see
+	 * the decay rate -- a runaway value relative to runtime suggests
+	 * HEALER_DECAY_OBSERVATIONS is too tight, and a value stuck at zero on
+	 * a long-running fuzz means the observation rate is too low to ever
+	 * cross the window threshold.
+	 */
+	unsigned long healer_weight_decays_run;
 };
 
 unsigned int stats_syscall_category(const char *name);
