@@ -959,6 +959,62 @@
 #define NFTA_FIB_F_PRESENT		(1 << 5)
 #endif
 
+/* nft_exthdr NFTA_EXTHDR_* attribute IDs, NFT_EXTHDR_OP_* op enum and the
+ * NFT_EXTHDR_F_PRESENT flag bit.  The validator in
+ * net/netfilter/nft_exthdr.c is a 4-arm parser whose entry point is
+ * nft_exthdr_init: NFTA_EXTHDR_OP (NLA_U32, default OP_IPV6 when absent)
+ * selects which init helper runs (nft_exthdr_ipv6_init,
+ * nft_exthdr_tcp_init, nft_exthdr_ipv4_init, nft_exthdr_sctp_init).
+ * Common-to-all-arms attrs are NFTA_EXTHDR_TYPE (NLA_U8 — interpretation
+ * depends on OP), NFTA_EXTHDR_OFFSET (NLA_U32, big-endian on wire),
+ * NFTA_EXTHDR_LEN (NLA_U32, big-endian, validator clamps at 127), plus
+ * exactly one register: NFTA_EXTHDR_DREG (NLA_U32) on the read path and
+ * NFTA_EXTHDR_SREG (NLA_U32) on the write path (TCPOPT-only — the only
+ * arm that supports writing an option back).  NFTA_EXTHDR_FLAGS (NLA_U32,
+ * big-endian) is OPTIONAL and the only legal bit is NFT_EXTHDR_F_PRESENT
+ * (0x01); rejected with -EINVAL when combined with SREG.  nft_exthdr is
+ * built into nf_tables core (no separate CONFIG_NFT_EXTHDR), so any host
+ * with CONFIG_NF_TABLES has the expression available.  Each symbol is
+ * guarded individually so the build still works on older host headers
+ * that predate any subset of NFTA_EXTHDR_OP / NFTA_EXTHDR_SREG (added
+ * later than the rest of the attr space). */
+#ifndef NFTA_EXTHDR_DREG
+#define NFTA_EXTHDR_DREG		1
+#endif
+#ifndef NFTA_EXTHDR_TYPE
+#define NFTA_EXTHDR_TYPE		2
+#endif
+#ifndef NFTA_EXTHDR_OFFSET
+#define NFTA_EXTHDR_OFFSET		3
+#endif
+#ifndef NFTA_EXTHDR_LEN
+#define NFTA_EXTHDR_LEN			4
+#endif
+#ifndef NFTA_EXTHDR_FLAGS
+#define NFTA_EXTHDR_FLAGS		5
+#endif
+#ifndef NFTA_EXTHDR_OP
+#define NFTA_EXTHDR_OP			6
+#endif
+#ifndef NFTA_EXTHDR_SREG
+#define NFTA_EXTHDR_SREG		7
+#endif
+#ifndef NFT_EXTHDR_OP_IPV6
+#define NFT_EXTHDR_OP_IPV6		0
+#endif
+#ifndef NFT_EXTHDR_OP_TCPOPT
+#define NFT_EXTHDR_OP_TCPOPT		1
+#endif
+#ifndef NFT_EXTHDR_OP_IPV4
+#define NFT_EXTHDR_OP_IPV4		2
+#endif
+#ifndef NFT_EXTHDR_OP_SCTP
+#define NFT_EXTHDR_OP_SCTP		3
+#endif
+#ifndef NFT_EXTHDR_F_PRESENT
+#define NFT_EXTHDR_F_PRESENT		(1 << 0)
+#endif
+
 /* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
  * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
  * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
@@ -3304,6 +3360,142 @@ static size_t build_nft_fib_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_exthdr
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the 4-arm parser in net/netfilter/nft_exthdr.c —
+ * nft_exthdr_init dispatches on NFTA_EXTHDR_OP to one of
+ * nft_exthdr_ipv6_init (OP_IPV6, the default when the attr is absent),
+ * nft_exthdr_tcp_init (OP_TCPOPT, the only arm with a write variant via
+ * NFTA_EXTHDR_SREG), nft_exthdr_ipv4_init (OP_IPV4) and
+ * nft_exthdr_sctp_init (OP_SCTP).  Mandatory wire attrs are TYPE
+ * (NLA_U8 — semantics depend on OP), OFFSET (NLA_U32 big-endian, byte
+ * offset within the parsed header), LEN (NLA_U32 big-endian, validator
+ * clamps at 127) plus exactly one of DREG (read) or SREG (write).
+ *
+ * OP distribution per call (rand32() % 4) — uniform across the four
+ * kernel arms so each init helper sees an equal share of inbound
+ * messages.  TYPE per arm is picked from an arm-appropriate set so the
+ * post-OP switch lands on a recognised value:
+ *   - OP_IPV6   : HOPOPT(0), ROUTING(43), FRAGMENT(44), DSTOPT(60),
+ *                 MOBILITY(135) — drives nft_exthdr_ipv6_eval's
+ *                 ipv6_find_hdr lookup with a real protocol number.
+ *   - OP_TCPOPT : NOP(1), MSS(2), WSCALE(3), SACK_PERM(4), SACK(5),
+ *                 TIMESTAMP(8), MD5SIG(19), AO(29), FASTOPEN(34) —
+ *                 the kinds nft_exthdr_tcp_eval inspects.
+ *   - OP_IPV4   : EOL(0), NOP(1), RR(7), TS(68), RA(148) — reachable
+ *                 IPv4 option types parsed by nft_exthdr_ipv4_eval.
+ *   - OP_SCTP   : DATA(0), INIT(1), INIT_ACK(2), SACK(3), HEARTBEAT(4),
+ *                 HEARTBEAT_ACK(5) — chunk types walked by
+ *                 nft_exthdr_sctp_eval.
+ *
+ * OFFSET is 0..63 (well within every arm's accept range) and LEN is
+ * 1..16 (clear of the validator's 127 clamp).  DREG vs SREG split:
+ * SREG is legal only on OP_TCPOPT, so for any other OP DREG is forced;
+ * on OP_TCPOPT a coin flip (ONE_IN(4)) picks SREG to drive the write
+ * arm, otherwise DREG drives the read arm.  Register value is uniform
+ * across NFT_REG_1..NFT_REG_4 inline (no shared helper, matching the
+ * surrounding emitters).  FLAGS is read-only territory: NFT_EXTHDR_F_PRESENT
+ * is emitted ONE_IN(4) but only when SREG is NOT set — combining FLAGS
+ * with SREG fails -EINVAL, and the rejection-path bucket is intentionally
+ * kept narrow so the success path dominates.
+ *
+ * History: CVE-2022-1015 was a signed-integer wrap in nft_exthdr_init's
+ * register-bound check on this expression; this emitter keeps the
+ * validator path warm so any future regression in the same area
+ * surfaces under fuzz.
+ */
+static size_t build_nft_exthdr_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u8 ipv6_types[] = { 0, 43, 44, 60, 135 };
+	static const __u8 tcpopt_types[] = { 1, 2, 3, 4, 5, 8, 19, 29, 34 };
+	static const __u8 ipv4_types[] = { 0, 1, 7, 68, 148 };
+	static const __u8 sctp_types[] = { 0, 1, 2, 3, 4, 5 };
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u32 op_bucket = rand32() % 4;
+	__u32 op;
+	__u8 type;
+	__u32 offset = rand32() % 64;
+	__u32 len = 1 + (rand32() % 16);
+	__u32 reg = NFT_REG_1 + (rand32() % 4);
+	bool use_sreg = false;
+	bool emit_flags;
+
+	switch (op_bucket) {
+	case 0:
+	default:
+		op = NFT_EXTHDR_OP_IPV6;
+		type = ipv6_types[rand32() % ARRAY_SIZE(ipv6_types)];
+		break;
+	case 1:
+		op = NFT_EXTHDR_OP_TCPOPT;
+		type = tcpopt_types[rand32() % ARRAY_SIZE(tcpopt_types)];
+		use_sreg = ONE_IN(4);
+		break;
+	case 2:
+		op = NFT_EXTHDR_OP_IPV4;
+		type = ipv4_types[rand32() % ARRAY_SIZE(ipv4_types)];
+		break;
+	case 3:
+		op = NFT_EXTHDR_OP_SCTP;
+		type = sctp_types[rand32() % ARRAY_SIZE(sctp_types)];
+		break;
+	}
+
+	emit_flags = !use_sreg && ONE_IN(4);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "exthdr");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	if (use_sreg)
+		off = nla_put_be32(buf, off, cap, NFTA_EXTHDR_SREG, reg);
+	else
+		off = nla_put_be32(buf, off, cap, NFTA_EXTHDR_DREG, reg);
+	if (!off)
+		return 0;
+
+	off = nla_put(buf, off, cap, NFTA_EXTHDR_TYPE, &type, sizeof(type));
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_EXTHDR_OFFSET, offset);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_EXTHDR_LEN, len);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_EXTHDR_OP, op);
+	if (!off)
+		return 0;
+
+	if (emit_flags) {
+		off = nla_put_be32(buf, off, cap, NFTA_EXTHDR_FLAGS,
+				   NFT_EXTHDR_F_PRESENT);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Structurally-valid nft_immediate expression element.  Net layout:
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "immediate"
@@ -3647,6 +3839,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_last,
 			 bool with_rt,
 			 bool with_fib,
+			 bool with_exthdr,
 			 bool with_immediate,
 			 bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
@@ -3794,6 +3987,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_fib) {
 		off = build_nft_fib_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_exthdr) {
+		off = build_nft_exthdr_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -4035,6 +4234,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_last = ONE_IN(3);
 		bool with_rt = ONE_IN(3);
 		bool with_fib = ONE_IN(3);
+		bool with_exthdr = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -4050,6 +4250,7 @@ bool nftables_churn(struct childdata *child)
 				  with_last,
 				  with_rt,
 				  with_fib,
+				  with_exthdr,
 				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
@@ -4111,6 +4312,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_fib)
 				__atomic_add_fetch(&shm->stats.nftables_churn_fib_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_exthdr)
+				__atomic_add_fetch(&shm->stats.nftables_churn_exthdr_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
@@ -4198,6 +4402,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_last = ONE_IN(3);
 		bool with_rt = ONE_IN(3);
 		bool with_fib = ONE_IN(3);
+		bool with_exthdr = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -4213,6 +4418,7 @@ bool nftables_churn(struct childdata *child)
 				  with_last,
 				  with_rt,
 				  with_fib,
+				  with_exthdr,
 				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
@@ -4274,6 +4480,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_fib)
 				__atomic_add_fetch(&shm->stats.nftables_churn_fib_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_exthdr)
+				__atomic_add_fetch(&shm->stats.nftables_churn_exthdr_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
