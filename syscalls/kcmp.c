@@ -13,6 +13,7 @@
 static unsigned long kcmp_types[] = {
 	KCMP_FILE, KCMP_VM, KCMP_FILES, KCMP_FS,
 	KCMP_SIGHAND, KCMP_IO, KCMP_SYSVSEM,
+	KCMP_EPOLL_TFD,
 };
 
 /* For KCMP_FILE, idx1/idx2 are fd numbers to compare. */
