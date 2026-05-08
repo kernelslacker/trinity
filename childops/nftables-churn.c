@@ -459,6 +459,26 @@
 #define NFTA_DATA_VALUE			1
 #endif
 
+/* nft_cmp NFTA_CMP_* attribute IDs and NFT_CMP_* op codes.  The
+ * validator in net/netfilter/nft_cmp.c (nft_cmp_init) demands SREG +
+ * OP + DATA; DATA is a nested NFTA_DATA_VALUE carrying the comparison
+ * bytes.  Guarded so the build still works on older host headers that
+ * predate nft_cmp's UAPI exposure. */
+#ifndef NFTA_CMP_SREG
+#define NFTA_CMP_SREG			1
+#define NFTA_CMP_OP			2
+#define NFTA_CMP_DATA			3
+#endif
+
+#ifndef NFT_CMP_EQ
+#define NFT_CMP_EQ			0
+#define NFT_CMP_NEQ			1
+#define NFT_CMP_LT			2
+#define NFT_CMP_LTE			3
+#define NFT_CMP_GT			4
+#define NFT_CMP_GTE			5
+#endif
+
 /* Reasonable ceiling on a single nfnetlink message + payload.  The
  * rule message with one nested expression containing a verdict +
  * chain string is the largest we emit; well under 1 KiB.  2 KiB
@@ -1325,6 +1345,86 @@ static size_t build_nft_bitwise_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_cmp
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_cmp.c
+ * (nft_cmp_init) — the policy table nft_cmp_policy[] gates SREG/OP/DATA
+ * and then nft_data_init parses the nested NFTA_DATA_VALUE payload.
+ *
+ * cmp is the most fundamental nftables expression: every realistic rule
+ * compares a freshly-loaded register against a literal.  Roll variants
+ * per call:
+ *   - SREG picks one of NFT_REG_1..NFT_REG_4 uniformly so cmp consumes
+ *     whatever a preceding payload/meta/bitwise emit just stored.
+ *   - OP picks NFT_CMP_EQ ONE_IN(2) (matches the dominant real-world
+ *     shape), else uniform across NEQ/LT/LTE/GT/GTE so the ordered
+ *     comparators get exercised too.
+ *   - DATA length coin-flips across {1, 2, 4, 8, 16} bytes — the
+ *     validator accepts any length up to NFT_REG_SIZE, and each width
+ *     hits a different memcmp / register-fold path.
+ *   - DATA bytes are random; the rule will almost never match traffic,
+ *     but commit-time validation (the codepath we care about for churn)
+ *     runs regardless.
+ */
+static size_t build_nft_cmp_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u32 lens[] = { 1, 2, 4, 8, 16 };
+	static const __u32 regs[] = {
+		NFT_REG_1, NFT_REG_2, NFT_REG_3, NFT_REG_4,
+	};
+	static const __u32 ordered_ops[] = {
+		NFT_CMP_NEQ, NFT_CMP_LT, NFT_CMP_LTE,
+		NFT_CMP_GT, NFT_CMP_GTE,
+	};
+	struct nlattr *elem, *expr_data, *value;
+	size_t elem_off, expr_data_off, value_off;
+	__u32 sreg = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 len_v = lens[rand32() % ARRAY_SIZE(lens)];
+	__u32 op = ONE_IN(2)
+		? NFT_CMP_EQ
+		: ordered_ops[rand32() % ARRAY_SIZE(ordered_ops)];
+	unsigned char bytes[16];
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "cmp");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_CMP_SREG, sreg);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_CMP_OP, op);
+	if (!off)
+		return 0;
+
+	value_off = off;
+	off = nla_put(buf, off, cap, NFTA_CMP_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+	generate_rand_bytes(bytes, len_v);
+	off = nla_put(buf, off, cap, NFTA_DATA_VALUE, bytes, len_v);
+	if (!off)
+		return 0;
+	value = (struct nlattr *)(buf + value_off);
+	value->nla_len = (unsigned short)(off - value_off);
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * NFT_MSG_NEWRULE on (table, chain) carrying one immediate-verdict
  * expression that jumps/gotos to target_chain.  The expression list
  * layout is:
@@ -1347,7 +1447,8 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 const char *chain_name, const char *target_chain,
 			 __u32 verdict_code, __u64 position, bool with_payload,
 			 bool with_meta, bool with_lookup, bool with_log,
-			 bool with_bitwise, const char *set_name, __u32 set_id)
+			 bool with_bitwise, bool with_cmp,
+			 const char *set_name, __u32 set_id)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
 	struct nlattr *exprs, *elem, *expr_data, *imm_data, *verdict;
@@ -1408,6 +1509,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_bitwise) {
 		off = build_nft_bitwise_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_cmp) {
+		off = build_nft_cmp_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -1616,11 +1723,13 @@ bool nftables_churn(struct childdata *child)
 		bool with_lookup = ONE_IN(3);
 		bool with_log = ONE_IN(4);
 		bool with_bitwise = ONE_IN(4);
+		bool with_cmp = ONE_IN(3);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 0, with_payload,
 				  with_meta, with_lookup, with_log,
-				  with_bitwise, anon_set, set_id) == 0) {
+				  with_bitwise, with_cmp,
+				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
 					   1, __ATOMIC_RELAXED);
 			if (with_payload)
@@ -1637,6 +1746,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_bitwise)
 				__atomic_add_fetch(&shm->stats.nftables_churn_bitwise_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_cmp)
+				__atomic_add_fetch(&shm->stats.nftables_churn_cmp_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -1701,11 +1813,13 @@ bool nftables_churn(struct childdata *child)
 		bool with_lookup = ONE_IN(3);
 		bool with_log = ONE_IN(4);
 		bool with_bitwise = ONE_IN(4);
+		bool with_cmp = ONE_IN(3);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 1, with_payload,
 				  with_meta, with_lookup, with_log,
-				  with_bitwise, anon_set, set_id) == 0) {
+				  with_bitwise, with_cmp,
+				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
 					   1, __ATOMIC_RELAXED);
 			if (with_payload)
@@ -1722,6 +1836,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_bitwise)
 				__atomic_add_fetch(&shm->stats.nftables_churn_bitwise_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_cmp)
+				__atomic_add_fetch(&shm->stats.nftables_churn_cmp_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
