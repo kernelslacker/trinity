@@ -1343,6 +1343,21 @@ struct stats_s {
 	unsigned long rxrpc_key_install_quota_hits;	/* add_key returned -EDQUOT */
 	unsigned long rxrpc_key_install_unsupported;	/* per-process latch fired (no rxrpc key type) */
 
+	/* af_alg_weak_cipher_probe childop counters.  Enumerates which
+	 * crypto template names AF_ALG accepts via bind(); surfaces the
+	 * deprecated/weak templates the kernel still accepts as a
+	 * hardening signal, plus a small strong-template control set. */
+	unsigned long af_alg_weak_cipher_probe_runs;			/* total invocations */
+	unsigned long af_alg_weak_cipher_probe_socket_failed;		/* socket(AF_ALG) returned <0 */
+	unsigned long af_alg_weak_cipher_probe_total_bind_attempts;	/* bind() calls issued */
+	unsigned long af_alg_weak_cipher_probe_total_bind_accepted;	/* bind() returned 0 */
+	unsigned long af_alg_weak_cipher_probe_weak_accepted_total;	/* of those, hits on the weak-template set */
+	unsigned long af_alg_weak_cipher_probe_setkey_accepted_total;	/* skcipher/aead setsockopt(ALG_SET_KEY) returned 0 */
+	unsigned long af_alg_weak_cipher_probe_skcipher_weak_accepted;	/* per-kind weak-bucket: skcipher */
+	unsigned long af_alg_weak_cipher_probe_aead_weak_accepted;	/* per-kind weak-bucket: aead */
+	unsigned long af_alg_weak_cipher_probe_hash_weak_accepted;	/* per-kind weak-bucket: hash */
+	unsigned long af_alg_weak_cipher_probe_strong_rejected;		/* control template rejected -- structurally broken kernel */
+
 	/*
 	 * HEALER Phase A observer counters -- see include/healer.h.
 	 * All four are bumped from healer_observe_relation() / the periodic
