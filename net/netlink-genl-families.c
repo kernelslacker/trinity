@@ -61,6 +61,9 @@ extern struct genl_family_grammar fam_ovs_packet;
 extern struct genl_family_grammar fam_ovs_meter;
 extern struct genl_family_grammar fam_ovs_ct_limit;
 #endif
+#if __has_include(<linux/l2tp.h>)
+extern struct genl_family_grammar fam_l2tp;
+#endif
 
 /*
  * Per-family grammar definitions live in net/netlink-genl-fam-*.c;
@@ -92,6 +95,9 @@ static struct genl_family_grammar *registry[] = {
 	&fam_ovs_meter,
 	&fam_ovs_ct_limit,
 #endif
+#if __has_include(<linux/l2tp.h>)
+	&fam_l2tp,
+#endif
 };
 
 static int discovery_done;
@@ -117,6 +123,7 @@ static const struct {
 	{ "mptcp_pm",  offsetof(struct stats_s, genl_family_calls_mptcp_pm) },
 	{ "TIPCv2",    offsetof(struct stats_s, genl_family_calls_tipc) },
 	{ "wireguard", offsetof(struct stats_s, genl_family_calls_wireguard) },
+	{ "l2tp",      offsetof(struct stats_s, genl_family_calls_l2tp) },
 };
 
 static void stamp_call_counters(void)
