@@ -807,9 +807,10 @@ void log_mprotect_failure(void *addr, size_t len, int prot,
 
 static bool global_objects_protected;
 
-static void mprotect_global_obj_regions(int prot)
+static bool mprotect_global_obj_regions(int prot)
 {
 	unsigned int i;
+	bool ok = true;
 
 	for (i = 0; i < nr_shared_regions; i++) {
 		void *addr;
@@ -820,11 +821,14 @@ static void mprotect_global_obj_regions(int prot)
 
 		addr = (void *) shared_regions[i].addr;
 		len = (size_t) shared_regions[i].size;
-		if (mprotect(addr, len, prot) != 0)
+		if (mprotect(addr, len, prot) != 0) {
 			log_mprotect_failure(addr, len, prot,
 					     __builtin_return_address(0),
 					     errno);
+			ok = false;
+		}
 	}
+	return ok;
 }
 
 /*
@@ -855,14 +859,30 @@ static void shared_bitmap_self_check(void)
 
 void freeze_global_objects(void)
 {
-	mprotect_global_obj_regions(PROT_READ);
-	global_objects_protected = true;
+	/*
+	 * Only advertise the defence as armed if every region actually went
+	 * PROT_READ.  On partial failure, leave the flag false and log loudly
+	 * so triage can see the wild-write defence is degraded; the program
+	 * still runs because writes through the unprotected regions remain
+	 * legal (they were already writable before this call).
+	 */
+	if (mprotect_global_obj_regions(PROT_READ))
+		global_objects_protected = true;
+	else
+		outputerr("freeze_global_objects: mprotect RO failed on at least one region; wild-write defence is partial\n");
 	shared_bitmap_self_check();
 }
 
 void thaw_global_objects(void)
 {
-	mprotect_global_obj_regions(PROT_READ | PROT_WRITE);
+	/*
+	 * Failure here is unrecoverable: callers (add_object publish, regen
+	 * field writes, free_shared_obj zero-fill) will observe the cleared
+	 * flag and write into a region that is still PROT_READ, taking a
+	 * SIGSEGV mid-critical-section in the parent.  Bail loudly instead.
+	 */
+	if (!mprotect_global_obj_regions(PROT_READ | PROT_WRITE))
+		BUG("thaw_global_objects: mprotect RW failed -- heap is half-thawed, unrecoverable");
 	global_objects_protected = false;
 }
 
