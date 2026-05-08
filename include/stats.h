@@ -43,7 +43,7 @@
 
 /* Upper bound on the iouring_recipes catalog.  iouring-recipes.c asserts
  * at build time that its table fits. */
-#define MAX_IOURING_RECIPES 32
+#define MAX_IOURING_RECIPES 64
 
 /* Number of distinct slab classes the slab_cache_thrash childop targets,
  * one entry per enum slab_target in childops/slab-cache-thrash.c.  Sized
