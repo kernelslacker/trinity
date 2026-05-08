@@ -168,6 +168,39 @@
 #ifndef NFT_REG_VERDICT
 #define NFT_REG_VERDICT			0
 #endif
+#ifndef NFT_REG_1
+#define NFT_REG_1			1
+#define NFT_REG_2			2
+#define NFT_REG_3			3
+#define NFT_REG_4			4
+#endif
+#ifndef NFT_REG32_00
+#define NFT_REG32_00			8
+#endif
+
+/* nft_payload base / NFTA_PAYLOAD_* attribute IDs.  The validator in
+ * net/netfilter/nft_payload.c (nft_payload_init / nft_payload_set_init)
+ * accepts BASE in {LL,NETWORK,TRANSPORT,INNER}_HEADER, OFFSET as a
+ * bounded uint, and LEN <= NFT_REG_SIZE on the read path; values
+ * outside those ranges yield -EINVAL before the per-expression parser
+ * runs. */
+#ifndef NFT_PAYLOAD_LL_HEADER
+#define NFT_PAYLOAD_LL_HEADER		0
+#define NFT_PAYLOAD_NETWORK_HEADER	1
+#define NFT_PAYLOAD_TRANSPORT_HEADER	2
+#define NFT_PAYLOAD_INNER_HEADER	3
+#endif
+
+#ifndef NFTA_PAYLOAD_DREG
+#define NFTA_PAYLOAD_DREG		1
+#define NFTA_PAYLOAD_BASE		2
+#define NFTA_PAYLOAD_OFFSET		3
+#define NFTA_PAYLOAD_LEN		4
+#define NFTA_PAYLOAD_SREG		5
+#define NFTA_PAYLOAD_CSUM_TYPE		6
+#define NFTA_PAYLOAD_CSUM_OFFSET	7
+#define NFTA_PAYLOAD_CSUM_FLAGS		8
+#endif
 
 /* set flags */
 #ifndef NFT_SET_ANONYMOUS
@@ -644,6 +677,92 @@ static int build_newchain(int fd, __u8 family, const char *table_name,
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_payload
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  All field values are picked from kernel-accepted ranges
+ * so the message reaches the per-expression parser surface in
+ * net/netfilter/nft_payload.c instead of bouncing off NFTA_EXPR_DATA
+ * validation in nf_tables_newexpr.  Two variants are emitted, rolled
+ * per call:
+ *   - read path  (DREG set):  load LEN bytes from base+offset into a
+ *     general-purpose register.  Reaches nft_payload_init.
+ *   - write path (SREG set):  write LEN bytes from a register back
+ *     into the packet at base+offset, optionally with a checksum
+ *     fixup.  Reaches nft_payload_set_init plus the csum-helper path.
+ */
+static size_t build_nft_payload_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u32 bases[] = {
+		NFT_PAYLOAD_LL_HEADER, NFT_PAYLOAD_NETWORK_HEADER,
+		NFT_PAYLOAD_TRANSPORT_HEADER, NFT_PAYLOAD_INNER_HEADER,
+	};
+	static const __u32 regs[] = {
+		NFT_REG_1, NFT_REG_2, NFT_REG_3, NFT_REG_4,
+		NFT_REG32_00, NFT_REG32_00 + 1, NFT_REG32_00 + 2,
+		NFT_REG32_00 + 3, NFT_REG32_00 + 7,
+	};
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u32 base = bases[rand32() % ARRAY_SIZE(bases)];
+	__u32 reg  = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 offset_v = rand32() % 64;
+	__u32 len_v    = (rand32() % 16) + 1;
+	bool write_path = ONE_IN(4);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "payload");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_PAYLOAD_BASE, base);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_PAYLOAD_OFFSET, offset_v);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_PAYLOAD_LEN, len_v);
+	if (!off)
+		return 0;
+
+	if (write_path) {
+		off = nla_put_be32(buf, off, cap, NFTA_PAYLOAD_SREG, reg);
+		if (!off)
+			return 0;
+		off = nla_put_be32(buf, off, cap, NFTA_PAYLOAD_CSUM_TYPE,
+				   rand32() % 3);
+		if (!off)
+			return 0;
+		off = nla_put_be32(buf, off, cap, NFTA_PAYLOAD_CSUM_OFFSET,
+				   rand32() % 64);
+		if (!off)
+			return 0;
+		off = nla_put_be32(buf, off, cap, NFTA_PAYLOAD_CSUM_FLAGS,
+				   rand32() & 0x1);
+		if (!off)
+			return 0;
+	} else {
+		off = nla_put_be32(buf, off, cap, NFTA_PAYLOAD_DREG, reg);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * NFT_MSG_NEWRULE on (table, chain) carrying one immediate-verdict
  * expression that jumps/gotos to target_chain.  The expression list
  * layout is:
@@ -664,7 +783,7 @@ static int build_newchain(int fd, __u8 family, const char *table_name,
  */
 static int build_newrule(int fd, __u8 family, const char *table_name,
 			 const char *chain_name, const char *target_chain,
-			 __u32 verdict_code, __u64 position)
+			 __u32 verdict_code, __u64 position, bool with_payload)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
 	struct nlattr *exprs, *elem, *expr_data, *imm_data, *verdict;
@@ -697,6 +816,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 		      NFTA_RULE_EXPRESSIONS | NLA_F_NESTED, NULL, 0);
 	if (!off)
 		return -EIO;
+
+	if (with_payload) {
+		off = build_nft_payload_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
 
 	elem_off = off;
 	off = nla_put(buf, off, sizeof(buf),
@@ -896,10 +1021,18 @@ bool nftables_churn(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.nftables_churn_chain_create_ok,
 				   1, __ATOMIC_RELAXED);
 
-	if (build_newrule(nfnl, family, table_name, base_chain,
-			  aux_chain, verdict, 0) == 0)
-		__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
-				   1, __ATOMIC_RELAXED);
+	{
+		bool with_payload = ONE_IN(3);
+
+		if (build_newrule(nfnl, family, table_name, base_chain,
+				  aux_chain, verdict, 0, with_payload) == 0) {
+			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
+					   1, __ATOMIC_RELAXED);
+			if (with_payload)
+				__atomic_add_fetch(&shm->stats.nftables_churn_payload_expr_emit,
+						   1, __ATOMIC_RELAXED);
+		}
+	}
 
 	/*
 	 * Drive the input hook with loopback UDP traffic.  Each send
@@ -955,10 +1088,18 @@ bool nftables_churn(struct childdata *child)
 	 * exists the kernel rejects it cheaply, which is fine — the
 	 * commit-time validation still ran.
 	 */
-	if (build_newrule(nfnl, family, table_name, base_chain,
-			  aux_chain, verdict, 1) == 0)
-		__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
-				   1, __ATOMIC_RELAXED);
+	{
+		bool with_payload = ONE_IN(3);
+
+		if (build_newrule(nfnl, family, table_name, base_chain,
+				  aux_chain, verdict, 1, with_payload) == 0) {
+			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
+					   1, __ATOMIC_RELAXED);
+			if (with_payload)
+				__atomic_add_fetch(&shm->stats.nftables_churn_payload_expr_emit,
+						   1, __ATOMIC_RELAXED);
+		}
+	}
 
 	/*
 	 * Concurrent with whatever's still draining from the udp send
