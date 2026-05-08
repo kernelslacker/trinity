@@ -509,6 +509,128 @@ enum {
 #define L2TP_ATTR_RX_INVALID		11
 #endif
 
+/* linux/netlabel.h
+ *
+ * NetLabel does not ship a UAPI header; its four generic-netlink
+ * families (CALIPSO / CIPSOv4 / UNLBL / MGMT) live in kernel-internal
+ * headers (net/netlabel/netlabel_*.h plus include/net/netlabel.h).
+ * Trinity references the family-name strings, the protocol version,
+ * and the per-family NLBL_*_C_* command + NLBL_*_A_* attribute id
+ * spaces from the spec walker, so the same numeric values the kernel
+ * registers under are mirrored here behind per-symbol #ifndef guards.
+ * If a future kernel-headers package ever ships these as UAPI the host
+ * header wins; until then the spec walker references compile against
+ * these fallbacks unconditionally.  Family-name strings match the
+ * NETLBL_NLTYPE_*_NAME constants in include/net/netlabel.h exactly,
+ * including the lowercase 'v' in "NLBL_CIPSOv4" — the controller
+ * dump compares family-name strings byte-for-byte.
+ */
+#ifndef NETLBL_PROTO_VERSION
+#define NETLBL_PROTO_VERSION		3
+#endif
+
+#ifndef NLBL_MGMT_GENL_NAME
+#define NLBL_MGMT_GENL_NAME		"NLBL_MGMT"
+#endif
+#ifndef NLBL_CIPSOV4_GENL_NAME
+#define NLBL_CIPSOV4_GENL_NAME		"NLBL_CIPSOv4"
+#endif
+#ifndef NLBL_UNLABEL_GENL_NAME
+#define NLBL_UNLABEL_GENL_NAME		"NLBL_UNLBL"
+#endif
+#ifndef NLBL_CALIPSO_GENL_NAME
+#define NLBL_CALIPSO_GENL_NAME		"NLBL_CALIPSO"
+#endif
+
+/* NLBL_MGMT_C_* — net/netlabel/netlabel_mgmt.h */
+#ifndef NLBL_MGMT_C_ADD
+#define NLBL_MGMT_C_ADD			1
+#define NLBL_MGMT_C_REMOVE		2
+#define NLBL_MGMT_C_LISTALL		3
+#define NLBL_MGMT_C_ADDDEF		4
+#define NLBL_MGMT_C_REMOVEDEF		5
+#define NLBL_MGMT_C_LISTDEF		6
+#define NLBL_MGMT_C_PROTOCOLS		7
+#define NLBL_MGMT_C_VERSION		8
+#endif
+
+/* NLBL_MGMT_A_* — net/netlabel/netlabel_mgmt.h */
+#ifndef NLBL_MGMT_A_DOMAIN
+#define NLBL_MGMT_A_DOMAIN		1
+#define NLBL_MGMT_A_PROTOCOL		2
+#define NLBL_MGMT_A_VERSION		3
+#define NLBL_MGMT_A_CV4DOI		4
+#define NLBL_MGMT_A_IPV6ADDR		5
+#define NLBL_MGMT_A_IPV6MASK		6
+#define NLBL_MGMT_A_IPV4ADDR		7
+#define NLBL_MGMT_A_IPV4MASK		8
+#define NLBL_MGMT_A_ADDRSELECTOR	9
+#define NLBL_MGMT_A_SELECTORLIST	10
+#define NLBL_MGMT_A_FAMILY		11
+#define NLBL_MGMT_A_CLPDOI		12
+#endif
+
+/* NLBL_CIPSOV4_C_* — net/netlabel/netlabel_cipso_v4.h */
+#ifndef NLBL_CIPSOV4_C_ADD
+#define NLBL_CIPSOV4_C_ADD		1
+#define NLBL_CIPSOV4_C_REMOVE		2
+#define NLBL_CIPSOV4_C_LIST		3
+#define NLBL_CIPSOV4_C_LISTALL		4
+#endif
+
+/* NLBL_CIPSOV4_A_* — net/netlabel/netlabel_cipso_v4.h */
+#ifndef NLBL_CIPSOV4_A_DOI
+#define NLBL_CIPSOV4_A_DOI		1
+#define NLBL_CIPSOV4_A_MTYPE		2
+#define NLBL_CIPSOV4_A_TAG		3
+#define NLBL_CIPSOV4_A_TAGLST		4
+#define NLBL_CIPSOV4_A_MLSLVLLOC	5
+#define NLBL_CIPSOV4_A_MLSLVLREM	6
+#define NLBL_CIPSOV4_A_MLSLVL		7
+#define NLBL_CIPSOV4_A_MLSLVLLST	8
+#define NLBL_CIPSOV4_A_MLSCATLOC	9
+#define NLBL_CIPSOV4_A_MLSCATREM	10
+#define NLBL_CIPSOV4_A_MLSCAT		11
+#define NLBL_CIPSOV4_A_MLSCATLST	12
+#endif
+
+/* NLBL_UNLABEL_C_* — net/netlabel/netlabel_unlabeled.h */
+#ifndef NLBL_UNLABEL_C_ACCEPT
+#define NLBL_UNLABEL_C_ACCEPT		1
+#define NLBL_UNLABEL_C_LIST		2
+#define NLBL_UNLABEL_C_STATICADD	3
+#define NLBL_UNLABEL_C_STATICREMOVE	4
+#define NLBL_UNLABEL_C_STATICLIST	5
+#define NLBL_UNLABEL_C_STATICADDDEF	6
+#define NLBL_UNLABEL_C_STATICREMOVEDEF	7
+#define NLBL_UNLABEL_C_STATICLISTDEF	8
+#endif
+
+/* NLBL_UNLABEL_A_* — net/netlabel/netlabel_unlabeled.h */
+#ifndef NLBL_UNLABEL_A_ACPTFLG
+#define NLBL_UNLABEL_A_ACPTFLG		1
+#define NLBL_UNLABEL_A_IPV6ADDR		2
+#define NLBL_UNLABEL_A_IPV6MASK		3
+#define NLBL_UNLABEL_A_IPV4ADDR		4
+#define NLBL_UNLABEL_A_IPV4MASK		5
+#define NLBL_UNLABEL_A_IFACE		6
+#define NLBL_UNLABEL_A_SECCTX		7
+#endif
+
+/* NLBL_CALIPSO_C_* — net/netlabel/netlabel_calipso.h */
+#ifndef NLBL_CALIPSO_C_ADD
+#define NLBL_CALIPSO_C_ADD		1
+#define NLBL_CALIPSO_C_REMOVE		2
+#define NLBL_CALIPSO_C_LIST		3
+#define NLBL_CALIPSO_C_LISTALL		4
+#endif
+
+/* NLBL_CALIPSO_A_* — net/netlabel/netlabel_calipso.h */
+#ifndef NLBL_CALIPSO_A_DOI
+#define NLBL_CALIPSO_A_DOI		1
+#define NLBL_CALIPSO_A_MTYPE		2
+#endif
+
 /* linux/io_uring.h
  *
  * IORING_OP_* enum values added after the v6.6 LTS cut.  The enum is

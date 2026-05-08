@@ -64,6 +64,10 @@ extern struct genl_family_grammar fam_ovs_ct_limit;
 #if __has_include(<linux/l2tp.h>)
 extern struct genl_family_grammar fam_l2tp;
 #endif
+extern struct genl_family_grammar fam_nlbl_mgmt;
+extern struct genl_family_grammar fam_nlbl_cipsov4;
+extern struct genl_family_grammar fam_nlbl_unlabel;
+extern struct genl_family_grammar fam_nlbl_calipso;
 
 /*
  * Per-family grammar definitions live in net/netlink-genl-fam-*.c;
@@ -98,6 +102,10 @@ static struct genl_family_grammar *registry[] = {
 #if __has_include(<linux/l2tp.h>)
 	&fam_l2tp,
 #endif
+	&fam_nlbl_mgmt,
+	&fam_nlbl_cipsov4,
+	&fam_nlbl_unlabel,
+	&fam_nlbl_calipso,
 };
 
 static int discovery_done;
@@ -124,6 +132,15 @@ static const struct {
 	{ "TIPCv2",    offsetof(struct stats_s, genl_family_calls_tipc) },
 	{ "wireguard", offsetof(struct stats_s, genl_family_calls_wireguard) },
 	{ "l2tp",      offsetof(struct stats_s, genl_family_calls_l2tp) },
+	/* All four NetLabel families share a single bundled counter so the
+	 * end-of-run stats line carries one row covering CALIPSO + CIPSOv4
+	 * + UNLBL + MGMT traffic together; the spec-driven dispatcher's
+	 * per-family resolution is preserved (each family has its own
+	 * family_id and grammar), only the diagnostic counter is bundled. */
+	{ "NLBL_MGMT",     offsetof(struct stats_s, genl_family_calls_netlabel) },
+	{ "NLBL_CIPSOv4",  offsetof(struct stats_s, genl_family_calls_netlabel) },
+	{ "NLBL_UNLBL",    offsetof(struct stats_s, genl_family_calls_netlabel) },
+	{ "NLBL_CALIPSO",  offsetof(struct stats_s, genl_family_calls_netlabel) },
 };
 
 static void stamp_call_counters(void)
