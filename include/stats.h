@@ -1379,6 +1379,32 @@ struct stats_s {
 	 * than triggering an immediate save against a freshly loaded table.
 	 */
 	unsigned long healer_obs_at_last_snapshot;
+	/*
+	 * Active-saver gate for healer_maybe_snapshot().  CAS'd 0 -> 1 by
+	 * the caller that just won the window-CAS; cleared back to 0 once
+	 * healer_save_file() returns.  Closes the multi-window concurrent-
+	 * save hole: healer_save_file() takes wall-clock time (snapshot the
+	 * relation table, write to .tmp.<pid>, fsync, rename), and during
+	 * that window non-saving children keep bumping
+	 * healer_relations_observed -- enough to advance another full
+	 * HEALER_SNAPSHOT_OBSERVATIONS boundary while the first saver is
+	 * still mid-write.  Without this flag the second window-CAS would
+	 * also succeed and a second healer_save_file() would race the first
+	 * on the rename(.tmp.<pid>, healer_snapshot_path) step (last rename
+	 * wins, and the loser's bytes can be the more-recent ones).  Not
+	 * persisted to the on-disk header -- runtime-only state.
+	 */
+	unsigned long healer_save_in_progress;
+	/*
+	 * Bumped from healer_maybe_snapshot() when the window-CAS won the
+	 * boundary but the in-progress CAS lost (a previous saver is still
+	 * writing).  Persistent non-zero growth means healer_save_file()
+	 * wall-clock cost is approaching or exceeding the time the fleet
+	 * takes to accumulate one HEALER_SNAPSHOT_OBSERVATIONS window of
+	 * relations -- consider widening the window or speeding up the save
+	 * path.
+	 */
+	unsigned long healer_snapshot_overruns;
 };
 
 unsigned int stats_syscall_category(const char *name);
