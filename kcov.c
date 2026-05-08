@@ -102,6 +102,7 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	kc->cmp_trace_buf = NULL;
 	kc->active = false;
 	kc->cmp_capable = false;
+	kc->cmp_enabled_this_call = false;
 	kc->remote_mode = false;
 	kc->remote_capable = false;
 	kc->dedup = NULL;
@@ -290,6 +291,7 @@ void kcov_cleanup_child(struct kcov_child *kc)
 	}
 	kc->active = false;
 	kc->cmp_capable = false;
+	kc->cmp_enabled_this_call = false;
 }
 
 void kcov_enable_trace(struct kcov_child *kc)
@@ -313,7 +315,9 @@ void kcov_enable_cmp(struct kcov_child *kc)
 		 * kc->active alone — PC tracing on the other fd is
 		 * independent and still valid; just stop attempting CMP. */
 		kc->cmp_capable = false;
+		return;
 	}
+	kc->cmp_enabled_this_call = true;
 }
 
 void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id)
@@ -346,12 +350,14 @@ void kcov_disable(struct kcov_child *kc)
 	if (kc->fd >= 0 && kc->trace_buf != NULL)
 		ioctl(kc->fd, KCOV_DISABLE, 0);
 
-	/* Always issue DISABLE on the cmp fd as well; it's a no-op when
-	 * the fd was never enabled this call (effector-map calibration
-	 * paths only go through kcov_enable_trace) and the kernel will
-	 * just return -EINVAL, which we ignore. */
-	if (kc->cmp_fd >= 0 && kc->cmp_trace_buf != NULL)
+	/* Skip the cmp-fd DISABLE when cmp wasn't enabled this call —
+	 * the kernel would just return -EINVAL, and effector-map
+	 * calibration runs that wasted ioctl O(num_syscalls × num_args
+	 * × 64) times per child. */
+	if (kc->cmp_fd >= 0 && kc->cmp_trace_buf != NULL && kc->cmp_enabled_this_call) {
 		ioctl(kc->cmp_fd, KCOV_DISABLE, 0);
+		kc->cmp_enabled_this_call = false;
+	}
 }
 
 /*
