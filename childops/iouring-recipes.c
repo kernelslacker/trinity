@@ -93,6 +93,42 @@ struct iour_ctx {
 	unsigned int	cq_off_cqes;
 };
 
+/*
+ * Per-iteration recipe resources.  Recipes may allocate fds, pipes,
+ * sockets, malloc'd buffers, an inner io_uring ring, or io_uring-side
+ * registrations (registered buffers / files / provided buffers).  The
+ * pool-race siglongjmp in iouring_recipes() unwinds straight to the
+ * wrap's setjmp landing pad, skipping the recipe's own cleanup; this
+ * struct lives in the wrap's stack frame so it survives the longjmp,
+ * and iour_recipe_state_cleanup() releases every populated field.
+ *
+ * Sentinels: -1 for fds, NULL for pointers, false for bools.  The
+ * cleanup is idempotent — recipes may clear fields after a deliberate
+ * teardown mid-execution (e.g. recipe_provide_buffers' REMOVE_BUFFERS),
+ * and the wrap calls cleanup unconditionally on both the success and
+ * abort paths.
+ */
+struct iour_recipe_state {
+	struct iour_ctx	*ctx;		/* outer ring; convenience handle */
+
+	int		evfd;
+	int		sock[2];
+	int		pipefd[2];
+	int		open_fd;	/* /dev/null, /dev/zero, etc. */
+	int		epoll_fd;
+	void		*malloc_buf;
+
+	struct iour_ctx	inner;		/* recipe_msg_ring destination */
+	bool		inner_active;
+
+	bool		registered_buf;	  /* IORING_REGISTER_BUFFERS active */
+	bool		registered_files; /* IORING_REGISTER_FILES active */
+
+	bool		provided_buf_active;
+	unsigned int	provided_buf_group_id;
+	unsigned int	provided_buf_count;
+};
+
 static inline unsigned int ring_u32(void *ring, unsigned int off)
 {
 	return *(volatile unsigned int *)((char *)ring + off);
@@ -267,6 +303,95 @@ static void sqe_clear(struct io_uring_sqe *s)
 	memset(s, 0, sizeof(*s));
 }
 
+static void iour_recipe_state_init(struct iour_recipe_state *s,
+				   struct iour_ctx *ctx)
+{
+	memset(s, 0, sizeof(*s));
+	s->ctx       = ctx;
+	s->evfd      = -1;
+	s->sock[0]   = -1;
+	s->sock[1]   = -1;
+	s->pipefd[0] = -1;
+	s->pipefd[1] = -1;
+	s->open_fd   = -1;
+	s->epoll_fd  = -1;
+}
+
+/*
+ * Tear down every populated recipe resource.  Idempotent: each branch
+ * checks the field's sentinel and clears it after release, so the caller
+ * may invoke this on both the success path (after the recipe has cleared
+ * the fields it deliberately tore down) and the siglongjmp landing path
+ * (where fields hold whatever the aborted recipe had set).
+ *
+ * Order matters: io_uring registrations and the inner ring must be torn
+ * down before the outer ring (which the wrap closes after this returns),
+ * and provided-buffer REMOVE_BUFFERS must run before UNREGISTER because
+ * it submits an SQE on the outer ring.
+ */
+static void iour_recipe_state_cleanup(struct iour_recipe_state *s)
+{
+	if (s->provided_buf_active) {
+		struct io_uring_sqe sqe;
+
+		sqe_clear(&sqe);
+		sqe.opcode    = IORING_OP_REMOVE_BUFFERS;
+		sqe.fd        = s->provided_buf_count;
+		sqe.buf_group = s->provided_buf_group_id;
+		sqe.user_data = 999;
+		if (iour_submit_sqes(s->ctx, &sqe, 1))
+			(void)iour_enter(s->ctx, 1, 0);
+		iour_drain_cqes(s->ctx);
+		s->provided_buf_active = false;
+	}
+	if (s->registered_buf) {
+		(void)syscall(__NR_io_uring_register, s->ctx->fd,
+			      IORING_UNREGISTER_BUFFERS, NULL, 0);
+		s->registered_buf = false;
+	}
+	if (s->registered_files) {
+		(void)syscall(__NR_io_uring_register, s->ctx->fd,
+			      IORING_UNREGISTER_FILES, NULL, 0);
+		s->registered_files = false;
+	}
+	if (s->inner_active) {
+		iour_teardown(&s->inner);
+		s->inner_active = false;
+	}
+	if (s->evfd >= 0) {
+		close(s->evfd);
+		s->evfd = -1;
+	}
+	if (s->sock[0] >= 0) {
+		close(s->sock[0]);
+		s->sock[0] = -1;
+	}
+	if (s->sock[1] >= 0) {
+		close(s->sock[1]);
+		s->sock[1] = -1;
+	}
+	if (s->pipefd[0] >= 0) {
+		close(s->pipefd[0]);
+		s->pipefd[0] = -1;
+	}
+	if (s->pipefd[1] >= 0) {
+		close(s->pipefd[1]);
+		s->pipefd[1] = -1;
+	}
+	if (s->open_fd >= 0) {
+		close(s->open_fd);
+		s->open_fd = -1;
+	}
+	if (s->epoll_fd >= 0) {
+		close(s->epoll_fd);
+		s->epoll_fd = -1;
+	}
+	if (s->malloc_buf) {
+		free(s->malloc_buf);
+		s->malloc_buf = NULL;
+	}
+}
+
 /*
  * A discoverable recipe sets *unsupported = true when it first encounters
  * ENOSYS or a missing kernel feature.  The dispatcher latches the recipe off
@@ -274,7 +399,7 @@ static void sqe_clear(struct io_uring_sqe *s)
  */
 struct iour_recipe {
 	const char *name;
-	bool (*run)(struct iour_ctx *ctx, bool *unsupported);
+	bool (*run)(struct iour_recipe_state *s, bool *unsupported);
 };
 
 /* Pool-race fault guard.  See childops/memory-pressure.c for the full
@@ -351,9 +476,10 @@ static void iouring_recipes_pool_race_handler(int sig, siginfo_t *info,
  * must propagate the linked state through two members before posting
  * the final unlinked completion.
  * ------------------------------------------------------------------ */
-static bool recipe_nop_chain(struct iour_ctx *ctx,
+static bool recipe_nop_chain(struct iour_recipe_state *s,
 			      bool *unsupported __unused__)
 {
+	struct iour_ctx *ctx = s->ctx;
 	struct io_uring_sqe sqes[3];
 	int r;
 
@@ -390,9 +516,10 @@ static bool recipe_nop_chain(struct iour_ctx *ctx,
  * timeout countdown — this exercises the drain-flag dispatch path and
  * the timeout-vs-drain interaction.
  * ------------------------------------------------------------------ */
-static bool recipe_timeout_drain(struct iour_ctx *ctx,
+static bool recipe_timeout_drain(struct iour_recipe_state *s,
 				 bool *unsupported __unused__)
 {
+	struct iour_ctx *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	struct __kernel_timespec ts;
 	int r;
@@ -436,22 +563,22 @@ static bool recipe_timeout_drain(struct iour_ctx *ctx,
 #define IORING_POLL_ADD_MULTI	(1U << 0)
 #endif
 
-static bool recipe_poll_multishot(struct iour_ctx *ctx,
+static bool recipe_poll_multishot(struct iour_recipe_state *s,
 				  bool *unsupported __unused__)
 {
+	struct iour_ctx *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
-	int evfd = -1;
 	bool ok = false;
 	int r;
 
-	evfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-	if (evfd < 0)
+	s->evfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+	if (s->evfd < 0)
 		goto out;
 
 	/* POLL_ADD with IORING_POLL_ADD_MULTI (multi-shot). */
 	sqe_clear(&sqes[0]);
 	sqes[0].opcode        = IORING_OP_POLL_ADD;
-	sqes[0].fd            = evfd;
+	sqes[0].fd            = s->evfd;
 	sqes[0].poll32_events = POLLIN;
 	sqes[0].len           = IORING_POLL_ADD_MULTI;
 	sqes[0].user_data     = 20;
@@ -472,8 +599,6 @@ static bool recipe_poll_multishot(struct iour_ctx *ctx,
 	iour_drain_cqes(ctx);
 	ok = true;
 out:
-	if (evfd >= 0)
-		close(evfd);
 	return ok;
 }
 
@@ -485,24 +610,24 @@ out:
  * walks the linked-request dispatch and the UNIX socket I/O path
  * within a single submission batch.
  * ------------------------------------------------------------------ */
-static bool recipe_send_recv_linked(struct iour_ctx *ctx,
+static bool recipe_send_recv_linked(struct iour_recipe_state *s,
 				    bool *unsupported __unused__)
 {
+	struct iour_ctx *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
-	int sv[2] = { -1, -1 };
 	char buf[32];
 	bool ok = false;
 	int r;
 
 	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC,
-		       0, sv) < 0)
+		       0, s->sock) < 0)
 		goto out;
 
 	memset(buf, 's', sizeof(buf));
 
 	sqe_clear(&sqes[0]);
 	sqes[0].opcode    = IORING_OP_SEND;
-	sqes[0].fd        = sv[0];
+	sqes[0].fd        = s->sock[0];
 	sqes[0].addr      = (__u64)(uintptr_t)buf;
 	sqes[0].len       = sizeof(buf);
 	sqes[0].flags     = IOSQE_IO_LINK;
@@ -510,7 +635,7 @@ static bool recipe_send_recv_linked(struct iour_ctx *ctx,
 
 	sqe_clear(&sqes[1]);
 	sqes[1].opcode    = IORING_OP_RECV;
-	sqes[1].fd        = sv[1];
+	sqes[1].fd        = s->sock[1];
 	sqes[1].addr      = (__u64)(uintptr_t)buf;
 	sqes[1].len       = sizeof(buf);
 	sqes[1].user_data = 31;
@@ -525,8 +650,6 @@ static bool recipe_send_recv_linked(struct iour_ctx *ctx,
 	iour_drain_cqes(ctx);
 	ok = true;
 out:
-	if (sv[0] >= 0) close(sv[0]);
-	if (sv[1] >= 0) close(sv[1]);
 	return ok;
 }
 
@@ -539,9 +662,10 @@ out:
  * cancel sequence when the second request references a result not yet
  * available from the first.
  * ------------------------------------------------------------------ */
-static bool recipe_openat_close_linked(struct iour_ctx *ctx,
+static bool recipe_openat_close_linked(struct iour_recipe_state *s,
 				       bool *unsupported __unused__)
 {
+	struct iour_ctx *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	int r;
 	static const char devnull[] = "/dev/null";
@@ -578,9 +702,10 @@ static bool recipe_openat_close_linked(struct iour_ctx *ctx,
  * time) exercises the linked-request setup/teardown and the SHUTDOWN
  * opcode path.
  * ------------------------------------------------------------------ */
-static bool recipe_socket_shutdown_linked(struct iour_ctx *ctx,
+static bool recipe_socket_shutdown_linked(struct iour_recipe_state *s,
 					  bool *unsupported)
 {
+	struct iour_ctx *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	int r;
 
@@ -622,9 +747,10 @@ static bool recipe_socket_shutdown_linked(struct iour_ctx *ctx,
  * middle one on success.  This exercises the CQE-skip accounting path
  * and its interaction with linked requests.
  * ------------------------------------------------------------------ */
-static bool recipe_nop_cqe_skip(struct iour_ctx *ctx,
+static bool recipe_nop_cqe_skip(struct iour_recipe_state *s,
 				bool *unsupported __unused__)
 {
+	struct iour_ctx *ctx = s->ctx;
 	struct io_uring_sqe sqes[3];
 	int r;
 
@@ -663,22 +789,22 @@ static bool recipe_nop_cqe_skip(struct iour_ctx *ctx,
  * use-after-free on the request-completion path when a cancel races
  * the natural completion.
  * ------------------------------------------------------------------ */
-static bool recipe_async_cancel(struct iour_ctx *ctx,
+static bool recipe_async_cancel(struct iour_recipe_state *s,
 				bool *unsupported __unused__)
 {
+	struct iour_ctx *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
-	int evfd = -1;
 	bool ok = false;
 	int r;
 
-	evfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-	if (evfd < 0)
+	s->evfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+	if (s->evfd < 0)
 		goto out;
 
 	/* POLL_ADD that won't fire — stays pending. */
 	sqe_clear(&sqes[0]);
 	sqes[0].opcode        = IORING_OP_POLL_ADD;
-	sqes[0].fd            = evfd;
+	sqes[0].fd            = s->evfd;
 	sqes[0].poll32_events = POLLIN;
 	sqes[0].user_data     = 70;
 
@@ -698,8 +824,6 @@ static bool recipe_async_cancel(struct iour_ctx *ctx,
 	iour_drain_cqes(ctx);
 	ok = true;
 out:
-	if (evfd >= 0)
-		close(evfd);
 	return ok;
 }
 
@@ -712,16 +836,15 @@ out:
  * per-syscall get_user_pages and reads directly into the pre-pinned
  * region.  Unregister before teardown to exercise the unpin path.
  * ------------------------------------------------------------------ */
-static bool recipe_fixed_buffer_read(struct iour_ctx *ctx,
+static bool recipe_fixed_buffer_read(struct iour_recipe_state *s,
 				     bool *unsupported __unused__)
 {
+	struct iour_ctx *ctx = s->ctx;
 	struct iovec iov;
 	struct io_uring_sqe sqe;
 	struct map *m = NULL;
 	void *buf = NULL;
 	size_t buf_sz = 0;
-	int devzero = -1;
-	bool registered = false;
 	bool ok = false;
 	int r;
 
@@ -765,15 +888,15 @@ static bool recipe_fixed_buffer_read(struct iour_ctx *ctx,
 			 IORING_REGISTER_BUFFERS, &iov, 1);
 	if (r < 0)
 		goto out;
-	registered = true;
+	s->registered_buf = true;
 
-	devzero = open("/dev/zero", O_RDONLY | O_CLOEXEC);
-	if (devzero < 0)
+	s->open_fd = open("/dev/zero", O_RDONLY | O_CLOEXEC);
+	if (s->open_fd < 0)
 		goto out;
 
 	sqe_clear(&sqe);
 	sqe.opcode    = IORING_OP_READ_FIXED;
-	sqe.fd        = devzero;
+	sqe.fd        = s->open_fd;
 	sqe.addr      = (__u64)(uintptr_t)buf;
 	sqe.len       = (unsigned int)buf_sz;
 	sqe.buf_index = 0;
@@ -789,11 +912,6 @@ static bool recipe_fixed_buffer_read(struct iour_ctx *ctx,
 	iour_drain_cqes(ctx);
 	ok = true;
 out:
-	if (registered)
-		(void)syscall(__NR_io_uring_register, ctx->fd,
-			      IORING_UNREGISTER_BUFFERS, NULL, 0);
-	if (devzero >= 0)
-		close(devzero);
 	return ok;
 }
 
@@ -805,16 +923,15 @@ out:
  * submitted as a linked pair.  This exercises the fixed-buffer fast
  * path in both directions within a structured sequence.
  * ------------------------------------------------------------------ */
-static bool recipe_write_read_fixed(struct iour_ctx *ctx,
+static bool recipe_write_read_fixed(struct iour_recipe_state *s,
 				    bool *unsupported __unused__)
 {
+	struct iour_ctx *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	struct iovec iov;
 	struct map *m = NULL;
-	int pfd[2] = { -1, -1 };
 	void *buf = NULL;
 	size_t buf_sz = 0;
-	bool registered = false;
 	bool ok = false;
 	int r;
 
@@ -853,14 +970,14 @@ static bool recipe_write_read_fixed(struct iour_ctx *ctx,
 			 IORING_REGISTER_BUFFERS, &iov, 1);
 	if (r < 0)
 		goto out;
-	registered = true;
+	s->registered_buf = true;
 
-	if (pipe(pfd) < 0)
+	if (pipe(s->pipefd) < 0)
 		goto out;
 
 	sqe_clear(&sqes[0]);
 	sqes[0].opcode    = IORING_OP_WRITE_FIXED;
-	sqes[0].fd        = pfd[1];
+	sqes[0].fd        = s->pipefd[1];
 	sqes[0].addr      = (__u64)(uintptr_t)buf;
 	sqes[0].len       = 64;
 	sqes[0].buf_index = 0;
@@ -869,7 +986,7 @@ static bool recipe_write_read_fixed(struct iour_ctx *ctx,
 
 	sqe_clear(&sqes[1]);
 	sqes[1].opcode    = IORING_OP_READ_FIXED;
-	sqes[1].fd        = pfd[0];
+	sqes[1].fd        = s->pipefd[0];
 	sqes[1].addr      = (__u64)(uintptr_t)buf;
 	sqes[1].len       = 64;
 	sqes[1].buf_index = 0;
@@ -885,11 +1002,6 @@ static bool recipe_write_read_fixed(struct iour_ctx *ctx,
 	iour_drain_cqes(ctx);
 	ok = true;
 out:
-	if (registered)
-		(void)syscall(__NR_io_uring_register, ctx->fd,
-			      IORING_UNREGISTER_BUFFERS, NULL, 0);
-	if (pfd[0] >= 0) close(pfd[0]);
-	if (pfd[1] >= 0) close(pfd[1]);
 	return ok;
 }
 
@@ -902,32 +1014,30 @@ out:
  * Exercises the provided-buffer lifecycle: add → select → consume →
  * remove, including the CQE upper-16-bits buffer-ID reporting path.
  * ------------------------------------------------------------------ */
-static bool recipe_provide_buffers(struct iour_ctx *ctx,
+static bool recipe_provide_buffers(struct iour_recipe_state *s,
 				   bool *unsupported __unused__)
 {
 #define PBUF_GROUP_ID	1
 #define PBUF_COUNT	4
 #define PBUF_BUF_SIZE	256
 
+	struct iour_ctx *ctx = s->ctx;
 	struct io_uring_sqe sqe;
-	char *bufs = NULL;
-	int sv[2] = { -1, -1 };
-	bool provided = false;
 	bool ok = false;
 	int r;
 
-	bufs = malloc((size_t)PBUF_COUNT * PBUF_BUF_SIZE);
-	if (!bufs)
+	s->malloc_buf = malloc((size_t)PBUF_COUNT * PBUF_BUF_SIZE);
+	if (!s->malloc_buf)
 		goto out;
-	memset(bufs, 0, (size_t)PBUF_COUNT * PBUF_BUF_SIZE);
+	memset(s->malloc_buf, 0, (size_t)PBUF_COUNT * PBUF_BUF_SIZE);
 
-	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) < 0)
+	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, s->sock) < 0)
 		goto out;
 
 	/* PROVIDE_BUFFERS: addr=start, len=buf_size, fd=count, off=start_bid. */
 	sqe_clear(&sqe);
 	sqe.opcode    = IORING_OP_PROVIDE_BUFFERS;
-	sqe.addr      = (__u64)(uintptr_t)bufs;
+	sqe.addr      = (__u64)(uintptr_t)s->malloc_buf;
 	sqe.len       = PBUF_BUF_SIZE;
 	sqe.fd        = PBUF_COUNT;
 	sqe.off       = 0;
@@ -941,17 +1051,19 @@ static bool recipe_provide_buffers(struct iour_ctx *ctx,
 	if (r < 0)
 		goto out;
 	iour_drain_cqes(ctx);
-	provided = true;
+	s->provided_buf_active   = true;
+	s->provided_buf_group_id = PBUF_GROUP_ID;
+	s->provided_buf_count    = PBUF_COUNT;
 
 	{
 		const char msg[] = "recipe";
-		ssize_t w __unused__ = write(sv[0], msg, sizeof(msg));
+		ssize_t w __unused__ = write(s->sock[0], msg, sizeof(msg));
 	}
 
 	/* RECV with IOSQE_BUFFER_SELECT — kernel picks buffer from group. */
 	sqe_clear(&sqe);
 	sqe.opcode    = IORING_OP_RECV;
-	sqe.fd        = sv[1];
+	sqe.fd        = s->sock[1];
 	sqe.len       = PBUF_BUF_SIZE;
 	sqe.flags     = IOSQE_BUFFER_SELECT;
 	sqe.buf_group = PBUF_GROUP_ID;
@@ -979,25 +1091,10 @@ static bool recipe_provide_buffers(struct iour_ctx *ctx,
 	if (r < 0)
 		goto out;
 	iour_drain_cqes(ctx);
-	provided = false;
+	s->provided_buf_active = false;
 
 	ok = true;
 out:
-	if (provided) {
-		struct io_uring_sqe s;
-
-		sqe_clear(&s);
-		s.opcode    = IORING_OP_REMOVE_BUFFERS;
-		s.fd        = PBUF_COUNT;
-		s.buf_group = PBUF_GROUP_ID;
-		s.user_data = 103;
-		if (iour_submit_sqes(ctx, &s, 1))
-			iour_enter(ctx, 1, 0);
-		iour_drain_cqes(ctx);
-	}
-	if (sv[0] >= 0) close(sv[0]);
-	if (sv[1] >= 0) close(sv[1]);
-	free(bufs);
 	return ok;
 
 #undef PBUF_GROUP_ID
@@ -1018,21 +1115,20 @@ out:
 #define IORING_OP_MSG_RING	40
 #endif
 
-static bool recipe_msg_ring(struct iour_ctx *ctx, bool *unsupported)
+static bool recipe_msg_ring(struct iour_recipe_state *s, bool *unsupported)
 {
-	struct iour_ctx dst;
+	struct iour_ctx *ctx = s->ctx;
 	struct io_uring_sqe sqe;
-	bool dst_ok = false;
 	bool ok = false;
 	int r;
 
-	if (!iour_setup(&dst, 8))
+	if (!iour_setup(&s->inner, 8))
 		goto out;
-	dst_ok = true;
+	s->inner_active = true;
 
 	sqe_clear(&sqe);
 	sqe.opcode    = IORING_OP_MSG_RING;
-	sqe.fd        = dst.fd;
+	sqe.fd        = s->inner.fd;
 	sqe.len       = 0;
 	sqe.off       = 0xdeadbeefULL;
 	sqe.user_data = 110;
@@ -1051,11 +1147,9 @@ static bool recipe_msg_ring(struct iour_ctx *ctx, bool *unsupported)
 	}
 
 	iour_drain_cqes(ctx);
-	iour_drain_cqes(&dst);
+	iour_drain_cqes(&s->inner);
 	ok = true;
 out:
-	if (dst_ok)
-		iour_teardown(&dst);
 	return ok;
 }
 
@@ -1067,28 +1161,27 @@ out:
  * This exercises the registered-file fast path that avoids the
  * per-syscall fdget_pos lookup.
  * ------------------------------------------------------------------ */
-static bool recipe_statx_fixed_file(struct iour_ctx *ctx,
+static bool recipe_statx_fixed_file(struct iour_recipe_state *s,
 				    bool *unsupported __unused__)
 {
+	struct iour_ctx *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct statx stx;
-	int fds[1] = { -1 };
-	int devnull = -1;
-	bool registered = false;
+	int fds[1];
 	bool ok = false;
 	int r;
 	static const char empty[] = "";
 
-	devnull = open("/dev/null", O_RDONLY | O_CLOEXEC);
-	if (devnull < 0)
+	s->open_fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+	if (s->open_fd < 0)
 		goto out;
 
-	fds[0] = devnull;
+	fds[0] = s->open_fd;
 	r = (int)syscall(__NR_io_uring_register, ctx->fd,
 			 IORING_REGISTER_FILES, fds, 1);
 	if (r < 0)
 		goto out;
-	registered = true;
+	s->registered_files = true;
 
 	memset(&stx, 0, sizeof(stx));
 
@@ -1112,11 +1205,6 @@ static bool recipe_statx_fixed_file(struct iour_ctx *ctx,
 	iour_drain_cqes(ctx);
 	ok = true;
 out:
-	if (registered)
-		(void)syscall(__NR_io_uring_register, ctx->fd,
-			      IORING_UNREGISTER_FILES, NULL, 0);
-	if (devnull >= 0)
-		close(devnull);
 	return ok;
 }
 
@@ -1134,8 +1222,9 @@ out:
 #define IORING_OP_FUTEX_WAKE	47
 #endif
 
-static bool recipe_futex_wait_wake(struct iour_ctx *ctx, bool *unsupported)
+static bool recipe_futex_wait_wake(struct iour_recipe_state *s, bool *unsupported)
 {
+	struct iour_ctx *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	struct map *m = NULL;
 	uint32_t *addr = NULL;
@@ -1219,33 +1308,32 @@ out:
 #define IORING_OP_EPOLL_WAIT	59
 #endif
 
-static bool recipe_epoll_wait(struct iour_ctx *ctx, bool *unsupported)
+static bool recipe_epoll_wait(struct iour_recipe_state *s, bool *unsupported)
 {
+	struct iour_ctx *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct epoll_event ev;
 	struct epoll_event evs[4];
-	int epfd = -1;
-	int evfd = -1;
 	bool ok = false;
 	int r;
 
-	epfd = epoll_create1(EPOLL_CLOEXEC);
-	if (epfd < 0)
+	s->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+	if (s->epoll_fd < 0)
 		goto out;
 
-	evfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-	if (evfd < 0)
+	s->evfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+	if (s->evfd < 0)
 		goto out;
 
 	memset(&ev, 0, sizeof(ev));
 	ev.events  = EPOLLIN;
-	ev.data.fd = evfd;
-	if (epoll_ctl(epfd, EPOLL_CTL_ADD, evfd, &ev) < 0)
+	ev.data.fd = s->evfd;
+	if (epoll_ctl(s->epoll_fd, EPOLL_CTL_ADD, s->evfd, &ev) < 0)
 		goto out;
 
 	sqe_clear(&sqe);
 	sqe.opcode    = IORING_OP_EPOLL_WAIT;
-	sqe.fd        = epfd;
+	sqe.fd        = s->epoll_fd;
 	sqe.addr      = (__u64)(uintptr_t)evs;
 	sqe.len       = ARRAY_SIZE(evs);
 	sqe.off       = 0;
@@ -1267,8 +1355,6 @@ static bool recipe_epoll_wait(struct iour_ctx *ctx, bool *unsupported)
 	iour_drain_cqes(ctx);
 	ok = true;
 out:
-	if (evfd >= 0) close(evfd);
-	if (epfd >= 0) close(epfd);
 	return ok;
 }
 
@@ -1296,6 +1382,7 @@ _Static_assert(ARRAY_SIZE(catalog) <= MAX_IOURING_RECIPES,
 bool iouring_recipes(struct childdata *child __unused__)
 {
 	struct iour_ctx ctx;
+	struct iour_recipe_state state;
 	const struct iour_recipe *r;
 	/* volatile: read after sigsetjmp/siglongjmp window so the value
 	 * must survive the longjmp register-clobber per ISO C 7.13.2.1. */
@@ -1332,6 +1419,8 @@ bool iouring_recipes(struct childdata *child __unused__)
 		return true;
 	}
 
+	iour_recipe_state_init(&state, &ctx);
+
 	{
 		struct sigaction sa, old_segv, old_bus;
 		bool aborted = false;
@@ -1352,7 +1441,7 @@ bool iouring_recipes(struct childdata *child __unused__)
 		sigaction(SIGBUS,  &sa, &old_bus);
 
 		if (sigsetjmp(iouring_recipes_pool_race_jmp, 1) == 0) {
-			ok = r->run(&ctx, &unsupported);
+			ok = r->run(&state, &unsupported);
 		} else {
 			aborted = true;
 			ok = false;
@@ -1365,12 +1454,12 @@ bool iouring_recipes(struct childdata *child __unused__)
 		iouring_recipes_pool_race_addr_high = 0;
 
 		if (aborted) {
-			/* siglongjmp skipped any in-recipe cleanup — the
-			 * recipe-internal allocations (sockets, eventfds)
-			 * are leaked.  iour_teardown below still runs on
-			 * the outer ring ctx, which iour_setup populated
-			 * before the wrap, so the ring mmaps + ring fd
-			 * are still released.  Don't latch
+			/* siglongjmp skipped the recipe's own out: cleanup,
+			 * but the per-iteration resources it allocated are
+			 * recorded in &state and torn down by
+			 * iour_recipe_state_cleanup() below.  The outer
+			 * iour_teardown() then releases the ring mmaps + ring
+			 * fd that iour_setup() populated above.  Don't latch
 			 * iouring_recipe_disabled[idx] — faults are not
 			 * ENOSYS. */
 			__atomic_add_fetch(
@@ -1379,6 +1468,7 @@ bool iouring_recipes(struct childdata *child __unused__)
 		}
 	}
 
+	iour_recipe_state_cleanup(&state);
 	iour_teardown(&ctx);
 
 	if (unsupported)
