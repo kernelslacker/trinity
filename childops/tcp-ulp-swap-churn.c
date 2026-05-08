@@ -236,12 +236,10 @@ static int open_loopback_pair(pid_t *out_pid)
 	if (pid == 0) {
 		/* Acceptor child.  accept() one connection, drain so the
 		 * parent's sends don't stall on receive-window watermarks,
-		 * exit.  Self-bound by alarm(2) so a parent that crashes
-		 * before connect() can't strand us. */
+		 * then exit. */
 		int s;
 		unsigned char drain[1024];
 
-		alarm(2);
 		s = accept(listener, NULL, NULL);
 		if (s >= 0) {
 			ssize_t n;

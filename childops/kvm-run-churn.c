@@ -18,9 +18,9 @@
  *      input: request_interrupt_window, immediate_exit, cr8, apic_base,
  *      and (when KVM_CAP_SYNC_REGS is supported) kvm_valid_regs +
  *      kvm_dirty_regs masked to the cap-reported supported bits.
- *   3. ioctl(vcpu_fd, KVM_RUN, 0).  alarm(2) bounds wall-clock time so
- *      a runaway guest that fails to take an exit can't wedge the
- *      child past the parent's own alarm window.
+ *   3. ioctl(vcpu_fd, KVM_RUN, 0).  child.c's alarm(1) bounds wall-clock
+ *      time so a runaway guest that fails to take an exit can't wedge the
+ *      child past the parent's per-op contract.
  *   4. Tally exit_reason; for KVM_EXIT_IO scribble the data area at
  *      kvm_run + io.data_offset, and for KVM_EXIT_MMIO scribble the
  *      inline mmio.data[8] -- the kernel re-reads both on the next
@@ -37,7 +37,6 @@
 #ifdef USE_KVM
 
 #include <errno.h>
-#include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -56,7 +55,6 @@
 #include "utils.h"
 
 #define KVM_RUN_CHURN_INNER_MAX	3
-#define KVM_RUN_ALARM_SECS	2
 
 /* Cached KVM_CAP_SYNC_REGS bitmask.  0 == cap absent or not yet probed
  * (sync-regs scribble suppressed in either case). */
@@ -179,9 +177,7 @@ static void run_one(int vcpufd, struct kvm_run *kr, size_t kvm_run_size)
 
 	scribble_pre_run(kr);
 
-	alarm(KVM_RUN_ALARM_SECS);
 	rc = ioctl(vcpufd, KVM_RUN, 0UL);
-	alarm(0);
 
 	if (rc < 0) {
 		__atomic_add_fetch(&shm->stats.kvm_run_errors, 1,

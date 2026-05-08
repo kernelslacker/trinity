@@ -32,8 +32,9 @@
  *
  * Cleanup follows the canonical childop convention (see iouring-recipes.c
  * recipe_provide_buffers): per-resource flag, single goto out, only the
- * resources that were acquired get torn down.  An alarm bounds the whole
- * invocation in case any step blocks.
+ * resources that were acquired get torn down.  child.c arms alarm(1)
+ * around every non-syscall op, which bounds the whole invocation in
+ * case any step blocks.
  *
  * If the AF_ALG path is rebuffed repeatedly with ESRCH/EPERM/ENOPROTOOPT
  * (CRYPTO_USER_API absent or AF_ALG bind path locked down), a per-shm
@@ -338,16 +339,6 @@ bool socket_family_chain(struct childdata *child __unused__)
 			   __ATOMIC_RELAXED);
 
 	/*
-	 * Bound the entire invocation.  child.c arms alarm(1) for every
-	 * non-syscall op; an inner cycle does up to four AF_ALG setups (or
-	 * up to three grammar walks, which can be longer) and each step
-	 * can briefly block on crypto module init or bind contention.
-	 * Two seconds is comfortable for the worst case and short enough
-	 * that a stuck op still yields the slot promptly.
-	 */
-	alarm(2);
-
-	/*
 	 * Decide arm + cycle count once per invocation so kcov locality
 	 * doesn't get diluted by per-cycle arm flipping.  Grammar walks
 	 * cap at INNER_MAX_GRAMMAR (3) because each walk is heavier than
@@ -370,7 +361,6 @@ bool socket_family_chain(struct childdata *child __unused__)
 	if (use_alg) {
 		if (__atomic_load_n(&shm->socket_family_chain_unsupported,
 				    __ATOMIC_RELAXED)) {
-			alarm(0);
 			return true;
 		}
 		cycles = INNER_MIN +
@@ -409,7 +399,6 @@ bool socket_family_chain(struct childdata *child __unused__)
 		__atomic_add_fetch(&shm->stats.socket_family_chain_failed,
 				   1, __ATOMIC_RELAXED);
 
-	alarm(0);
 	return true;
 }
 

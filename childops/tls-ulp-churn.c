@@ -209,13 +209,10 @@ static int open_loopback_pair(pid_t *out_pid)
 	if (pid == 0) {
 		/* Acceptor child.  accept() one connection, drain a small
 		 * amount of data so the parent's sends don't all go to the
-		 * receive queue and stall on watermarks, then exit.  Cap the
-		 * lifetime with our own SIGALRM in case the parent dies
-		 * before connect()ing. */
+		 * receive queue and stall on watermarks, then exit. */
 		int s;
 		unsigned char drain[1024];
 
-		alarm(2);
 		s = accept(listener, NULL, NULL);
 		if (s >= 0) {
 			ssize_t n;
