@@ -522,6 +522,25 @@
 #define NFT_CMP_GTE			5
 #endif
 
+/* nft_range NFTA_RANGE_* attribute IDs and NFT_RANGE_* op codes.  The
+ * validator in net/netfilter/nft_range.c (nft_range_init) demands SREG
+ * + OP + FROM_DATA + TO_DATA; FROM_DATA and TO_DATA are each a nested
+ * NFTA_DATA_VALUE carrying the bound bytes.  The kernel rejects
+ * reversed bounds (memcmp(from, to) > 0) before any register check
+ * runs.  Guarded so the build still works on older host headers that
+ * predate nft_range's UAPI exposure. */
+#ifndef NFTA_RANGE_OP
+#define NFTA_RANGE_OP			1
+#define NFTA_RANGE_SREG			2
+#define NFTA_RANGE_FROM_DATA		3
+#define NFTA_RANGE_TO_DATA		4
+#endif
+
+#ifndef NFT_RANGE_EQ
+#define NFT_RANGE_EQ			0
+#define NFT_RANGE_NEQ			1
+#endif
+
 /* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
  * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
  * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
@@ -1566,6 +1585,95 @@ static size_t build_nft_cmp_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_range
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_range.c
+ * (nft_range_init) — the policy table nft_range_policy[] gates
+ * SREG/OP/FROM_DATA/TO_DATA and then nft_data_init parses each nested
+ * NFTA_DATA_VALUE bound.  The kernel rejects reversed bounds via
+ * memcmp(from, to) > 0 before any register check runs, so FROM is
+ * rolled and TO is rolled strictly above it.
+ *
+ * range is the structural cousin of cmp — same SREG-vs-literal model,
+ * but takes a [FROM, TO] interval and returns match/no-match per OP.
+ * Roll variants per call:
+ *   - SREG picks one of NFT_REG_1..NFT_REG_4 uniformly so range consumes
+ *     whatever a preceding payload/meta/bitwise emit just stored.
+ *   - OP picks NFT_RANGE_EQ ONE_IN(2), else NFT_RANGE_NEQ — the only
+ *     two values the kernel enum exposes.
+ *   - FROM is a 31-bit random; TO = FROM + 1 + small-random, capped so
+ *     the addition can't wrap.  Both bounds are emitted in network
+ *     byte order via nla_put_be32(NFTA_DATA_VALUE), which preserves
+ *     numeric ordering under the kernel's byte-wise memcmp.
+ *
+ * LOAD-only: range only reads SREG and the immediate FROM/TO bounds —
+ * no DREG, no register write, no datapath state mutation.  Heavier
+ * than cmp at commit time (two NFTA_DATA_VALUE parses + a bound-
+ * ordering memcmp) but cheap on the runtime side.
+ */
+static size_t build_nft_range_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u32 regs[] = {
+		NFT_REG_1, NFT_REG_2, NFT_REG_3, NFT_REG_4,
+	};
+	struct nlattr *elem, *expr_data, *value;
+	size_t elem_off, expr_data_off, value_off;
+	__u32 sreg = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 op = ONE_IN(2) ? NFT_RANGE_EQ : NFT_RANGE_NEQ;
+	__u32 from_v = rand32() & 0x7fffffffU;
+	__u32 to_v = from_v + 1 + (rand32() % 0x10000);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "range");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_RANGE_OP, op);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_RANGE_SREG, sreg);
+	if (!off)
+		return 0;
+
+	value_off = off;
+	off = nla_put(buf, off, cap,
+		      NFTA_RANGE_FROM_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_DATA_VALUE, from_v);
+	if (!off)
+		return 0;
+	value = (struct nlattr *)(buf + value_off);
+	value->nla_len = (unsigned short)(off - value_off);
+
+	value_off = off;
+	off = nla_put(buf, off, cap,
+		      NFTA_RANGE_TO_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_DATA_VALUE, to_v);
+	if (!off)
+		return 0;
+	value = (struct nlattr *)(buf + value_off);
+	value->nla_len = (unsigned short)(off - value_off);
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Structurally-valid nft_immediate expression element.  Net layout:
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "immediate"
@@ -1899,8 +2007,8 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 const char *chain_name, const char *target_chain,
 			 __u32 verdict_code, __u64 position, bool with_payload,
 			 bool with_meta, bool with_lookup, bool with_log,
-			 bool with_bitwise, bool with_cmp, bool with_immediate,
-			 bool with_dynset, bool with_ct,
+			 bool with_bitwise, bool with_cmp, bool with_range,
+			 bool with_immediate, bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
@@ -1968,6 +2076,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_cmp) {
 		off = build_nft_cmp_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_range) {
+		off = build_nft_range_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -2196,6 +2310,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_log = ONE_IN(4);
 		bool with_bitwise = ONE_IN(4);
 		bool with_cmp = ONE_IN(3);
+		bool with_range = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -2203,8 +2318,8 @@ bool nftables_churn(struct childdata *child)
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 0, with_payload,
 				  with_meta, with_lookup, with_log,
-				  with_bitwise, with_cmp, with_immediate,
-				  with_dynset, with_ct,
+				  with_bitwise, with_cmp, with_range,
+				  with_immediate, with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
 					   1, __ATOMIC_RELAXED);
@@ -2225,6 +2340,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_cmp)
 				__atomic_add_fetch(&shm->stats.nftables_churn_cmp_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_range)
+				__atomic_add_fetch(&shm->stats.nftables_churn_range_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
@@ -2299,6 +2417,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_log = ONE_IN(4);
 		bool with_bitwise = ONE_IN(4);
 		bool with_cmp = ONE_IN(3);
+		bool with_range = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -2306,8 +2425,8 @@ bool nftables_churn(struct childdata *child)
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 1, with_payload,
 				  with_meta, with_lookup, with_log,
-				  with_bitwise, with_cmp, with_immediate,
-				  with_dynset, with_ct,
+				  with_bitwise, with_cmp, with_range,
+				  with_immediate, with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
 					   1, __ATOMIC_RELAXED);
@@ -2328,6 +2447,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_cmp)
 				__atomic_add_fetch(&shm->stats.nftables_churn_cmp_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_range)
+				__atomic_add_fetch(&shm->stats.nftables_churn_range_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
