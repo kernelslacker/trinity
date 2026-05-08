@@ -257,7 +257,19 @@ bool close_racer(struct childdata *child)
 				continue;
 			}
 			ra[j].fd = sv[j][0];
-			ra[j].op = (enum racer_op)(rand() % RACER_OP_NR);
+			/* CYCLE_SKIP_CLOSE defers BOTH sv[0] and sv[1] to
+			 * function-end cleanup, so a RACER_RECV pick has no
+			 * peer-close EOF and no sv[0] EBADF to unblock it
+			 * mid-cycle.  recv() (no MSG_DONTWAIT, no SO_RCVTIMEO)
+			 * therefore blocks until the parent's per-op SIGALRM
+			 * fires and pthread_join() at end-of-cycle waits the
+			 * full alarm budget.  Re-roll the op so RECV is
+			 * excluded when we already know the cycle won't unblock
+			 * it; the other RACER_OPs are bounded-timeout (or
+			 * non-blocking) and join cleanly under SKIP_CLOSE. */
+			do {
+				ra[j].op = (enum racer_op)(rand() % RACER_OP_NR);
+			} while (mode == CYCLE_SKIP_CLOSE && ra[j].op == RACER_RECV);
 			if (pthread_create(&tid[j], NULL,
 					   racer_thread, &ra[j]) != 0) {
 				/* EAGAIN under nproc/thread limits is the
