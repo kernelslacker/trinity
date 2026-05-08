@@ -138,6 +138,7 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 {
 	unsigned long ret = dry_run ? -1UL : 0;
 	bool fault_armed = false;
+	int saved_errno = 0;
 
 	errno = 0;
 
@@ -190,6 +191,7 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 			kcov_enable_cmp(kc);
 			fault_armed = maybe_inject_fault(child, state);
 			ret = syscall(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
+			saved_errno = errno;
 			kcov_disable(kc);
 		} else {
 			if (kc != NULL && kc->remote_mode)
@@ -199,6 +201,7 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 			kcov_enable_cmp(kc);
 			fault_armed = maybe_inject_fault(child, state);
 			ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
+			saved_errno = errno;
 			kcov_disable(kc);
 		}
 
@@ -207,7 +210,7 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		 * went unconsumed (the syscall didn't reach an allocation we hit). */
 		if (fault_armed) {
 			__atomic_add_fetch(&shm->stats.fault_injected, 1, __ATOMIC_RELAXED);
-			if (ret == (unsigned long)-1L && errno == ENOMEM)
+			if (ret == (unsigned long)-1L && saved_errno == ENOMEM)
 				__atomic_add_fetch(&shm->stats.fault_consumed, 1, __ATOMIC_RELAXED);
 		}
 
@@ -222,7 +225,7 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	}
 
 	lock(&rec->lock);
-	rec->errno_post = errno;
+	rec->errno_post = saved_errno;
 	rec->retval = ret;
 	rec->state = AFTER;
 	unlock(&rec->lock);
