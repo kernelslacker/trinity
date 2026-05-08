@@ -14,9 +14,6 @@
 #include "trinity.h"
 #include "compat.h"
 
-#ifndef AF_MPLS
-#define AF_MPLS 28
-#endif
 #ifndef ETH_P_MPLS_UC
 #define ETH_P_MPLS_UC 0x8847
 #endif

@@ -172,12 +172,6 @@
 #ifndef SOL_NETLINK
 #define SOL_NETLINK			270
 #endif
-#ifndef NETLINK_EXT_ACK
-#define NETLINK_EXT_ACK			11
-#endif
-#ifndef NETLINK_CAP_ACK
-#define NETLINK_CAP_ACK			10
-#endif
 
 #ifndef XFRM_MSG_NEWSA
 /* values per include/uapi/linux/xfrm.h */
