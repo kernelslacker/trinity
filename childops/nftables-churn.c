@@ -1040,6 +1040,47 @@
 #define NFT_OSF_F_VERSION		(1 << 0)
 #endif
 
+/* nft_queue NFTA_QUEUE_* attribute IDs and the NFT_QUEUE_FLAG_* mask
+ * bits.  The validator in net/netfilter/nft_queue.c is a two-arm
+ * parser: nft_queue_init dispatches on whether NFTA_QUEUE_SREG_QNUM is
+ * present.  STATIC arm requires NFTA_QUEUE_NUM (NLA_U16, BE16 on wire,
+ * the queue index) and accepts NFTA_QUEUE_TOTAL (NLA_U16, BE16 on
+ * wire, defaulting to 1 — kernel enforces priv->queuenum +
+ * priv->queues_total - 1 <= USHRT_MAX else -ERANGE) plus
+ * NFTA_QUEUE_FLAGS (NLA_U16, BE16 on wire, masked against
+ * NFT_QUEUE_FLAG_MASK = 0x03 — any bit outside NFT_QUEUE_FLAG_BYPASS |
+ * NFT_QUEUE_FLAG_CPU_FANOUT trips -EINVAL).  SREG arm
+ * (nft_queue_sreg_init) reads NFTA_QUEUE_SREG_QNUM as a u32 register
+ * source (validated by nft_parse_register_load against
+ * NFT_REG32_00..NFT_REG32_15) and still accepts the FLAGS mask check;
+ * NUM is mutually exclusive with SREG_QNUM (passing both yields
+ * -EINVAL).  nft_queue builds as CONFIG_NFT_QUEUE=m on the fuzz-box,
+ * so the validator only runs once the module is loaded — but the wire
+ * bytes are structurally valid either way.  Each symbol is guarded
+ * individually so the build still works on older host headers that
+ * predate any subset of the attribute or flag definitions. */
+#ifndef NFTA_QUEUE_NUM
+#define NFTA_QUEUE_NUM			1
+#endif
+#ifndef NFTA_QUEUE_TOTAL
+#define NFTA_QUEUE_TOTAL		2
+#endif
+#ifndef NFTA_QUEUE_FLAGS
+#define NFTA_QUEUE_FLAGS		3
+#endif
+#ifndef NFTA_QUEUE_SREG_QNUM
+#define NFTA_QUEUE_SREG_QNUM		4
+#endif
+#ifndef NFT_QUEUE_FLAG_BYPASS
+#define NFT_QUEUE_FLAG_BYPASS		0x01
+#endif
+#ifndef NFT_QUEUE_FLAG_CPU_FANOUT
+#define NFT_QUEUE_FLAG_CPU_FANOUT	0x02
+#endif
+#ifndef NFT_QUEUE_FLAG_MASK
+#define NFT_QUEUE_FLAG_MASK		0x03
+#endif
+
 /* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
  * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
  * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
@@ -3619,6 +3660,129 @@ static size_t build_nft_osf_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_queue
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_queue.c — a
+ * two-arm parser dispatched by nft_queue_init on whether
+ * NFTA_QUEUE_SREG_QNUM is present:
+ *
+ *   STATIC arm (no SREG_QNUM):
+ *     NFTA_QUEUE_NUM is mandatory (NLA_U16, BE16 on wire — the queue
+ *     index).  NFTA_QUEUE_TOTAL is optional (NLA_U16, BE16 on wire,
+ *     default 1, fanout count).  Init enforces
+ *     priv->queuenum + priv->queues_total - 1 <= USHRT_MAX or
+ *     -ERANGE.  NFTA_QUEUE_FLAGS is optional (NLA_U16, BE16 on wire);
+ *     init checks (flags & ~NFT_QUEUE_FLAG_MASK) == 0 — any bit
+ *     outside NFT_QUEUE_FLAG_BYPASS | NFT_QUEUE_FLAG_CPU_FANOUT trips
+ *     -EINVAL.
+ *
+ *   SREG arm (SREG_QNUM present, no NUM):
+ *     nft_queue_sreg_init reads NFTA_QUEUE_SREG_QNUM as a u32 register
+ *     source (validated by nft_parse_register_load against
+ *     NFT_REG32_00..NFT_REG32_15).  FLAGS still optional and validated
+ *     against NFT_QUEUE_FLAG_MASK on this path too.
+ *
+ *   NUM and SREG_QNUM are mutually exclusive — passing both yields
+ *   -EINVAL.  This emitter never produces that shape; the rejection
+ *   path is left for a future bad-shape childop.
+ *
+ * Variants per call:
+ *   - Arm picked uniformly via ONE_IN(2): STATIC vs SREG.
+ *   - STATIC.NUM: drawn so NUM + (TOTAL ? TOTAL : 1) - 1 <= USHRT_MAX.
+ *     With no TOTAL, NUM is uniform 0..0xFFFE.  With TOTAL = T, NUM is
+ *     uniform 0..(0xFFFF - T) so the success path stays in policy.
+ *   - STATIC.TOTAL: ONE_IN(2); when attached, uniform 1..16 to keep
+ *     fanout small while still exercising the multi-queue path.
+ *   - STATIC/SREG.FLAGS: ONE_IN(3); when attached, ~3/4 a uniform
+ *     in-policy draw across {0, NFT_QUEUE_FLAG_BYPASS,
+ *     NFT_QUEUE_FLAG_CPU_FANOUT, NFT_QUEUE_FLAG_MASK} so the success
+ *     path dominates, and ~1/4 a uniform out-of-policy draw across
+ *     {0x04, 0x08, 0x40, 0x80, 0xff, 0xfffe, 0xffff} to keep the
+ *     ~NFT_QUEUE_FLAG_MASK rejection bucket in nft_queue_init warm.
+ *   - SREG.SREG_QNUM: uniform across NFT_REG32_00..NFT_REG32_15.
+ */
+static size_t build_nft_queue_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u16 good_flags[] = {
+		0,
+		NFT_QUEUE_FLAG_BYPASS,
+		NFT_QUEUE_FLAG_CPU_FANOUT,
+		NFT_QUEUE_FLAG_MASK,
+	};
+	static const __u16 bad_flags[] = {
+		0x04, 0x08, 0x40, 0x80, 0xff, 0xfffe, 0xffff,
+	};
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	bool sreg_arm = ONE_IN(2);
+	bool with_total = !sreg_arm && ONE_IN(2);
+	bool with_flags = ONE_IN(3);
+	__u16 num = 0, total = 0, flags = 0;
+	__u32 sreg_qnum = 0;
+
+	if (sreg_arm) {
+		sreg_qnum = NFT_REG32_00 + (rand32() % 16);
+	} else {
+		if (with_total) {
+			total = (__u16)(1 + (rand32() % 16));
+			num = (__u16)(rand32() % (0x10000U - total));
+		} else {
+			num = (__u16)(rand32() % 0xFFFFU);
+		}
+	}
+
+	if (with_flags) {
+		if (ONE_IN(4))
+			flags = bad_flags[rand32() % ARRAY_SIZE(bad_flags)];
+		else
+			flags = good_flags[rand32() % ARRAY_SIZE(good_flags)];
+	}
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "queue");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	if (sreg_arm) {
+		off = nla_put_be32(buf, off, cap, NFTA_QUEUE_SREG_QNUM,
+				   sreg_qnum);
+		if (!off)
+			return 0;
+	} else {
+		off = nla_put_be16(buf, off, cap, NFTA_QUEUE_NUM, num);
+		if (!off)
+			return 0;
+		if (with_total) {
+			off = nla_put_be16(buf, off, cap, NFTA_QUEUE_TOTAL,
+					   total);
+			if (!off)
+				return 0;
+		}
+	}
+
+	if (with_flags) {
+		off = nla_put_be16(buf, off, cap, NFTA_QUEUE_FLAGS, flags);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Structurally-valid nft_immediate expression element.  Net layout:
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "immediate"
@@ -3964,6 +4128,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_fib,
 			 bool with_exthdr,
 			 bool with_osf,
+			 bool with_queue,
 			 bool with_immediate,
 			 bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
@@ -4123,6 +4288,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_osf) {
 		off = build_nft_osf_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_queue) {
+		off = build_nft_queue_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -4366,6 +4537,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_fib = ONE_IN(3);
 		bool with_exthdr = ONE_IN(3);
 		bool with_osf = ONE_IN(3);
+		bool with_queue = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -4383,6 +4555,7 @@ bool nftables_churn(struct childdata *child)
 				  with_fib,
 				  with_exthdr,
 				  with_osf,
+				  with_queue,
 				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
@@ -4450,6 +4623,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_osf)
 				__atomic_add_fetch(&shm->stats.nftables_churn_osf_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_queue)
+				__atomic_add_fetch(&shm->stats.nftables_churn_queue_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
@@ -4539,6 +4715,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_fib = ONE_IN(3);
 		bool with_exthdr = ONE_IN(3);
 		bool with_osf = ONE_IN(3);
+		bool with_queue = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -4556,6 +4733,7 @@ bool nftables_churn(struct childdata *child)
 				  with_fib,
 				  with_exthdr,
 				  with_osf,
+				  with_queue,
 				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
@@ -4623,6 +4801,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_osf)
 				__atomic_add_fetch(&shm->stats.nftables_churn_osf_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_queue)
+				__atomic_add_fetch(&shm->stats.nftables_churn_queue_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
