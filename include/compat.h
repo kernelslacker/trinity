@@ -420,6 +420,27 @@ enum {
 #define RTNLGRP_MPLS_NETCONF 29
 #endif
 
+/* linux/wireguard.h
+ *
+ * Userspace kernel-headers packages routinely lag the running kernel by
+ * months or years -- but the fuzz target IS the running kernel, so a
+ * constant that the host header is missing must still be reachable in
+ * the spec table.  The walker references the constants unconditionally;
+ * compat fallbacks below carry whatever the host header doesn't ship,
+ * matching the upstream uapi enum values.
+ */
+#ifndef WGALLOWEDIP_A_FLAGS
+/* WGALLOWEDIP_A_FLAGS was appended to the WGALLOWEDIP_A_* enum after
+ * the original 5.6 WireGuard merge -- carries the WGALLOWEDIP_F_REMOVE_ME
+ * mark that flags an allowed-IP for removal on the next SET_DEVICE.
+ * Older host headers stop the enum at WGALLOWEDIP_A_CIDR_MASK=3, so
+ * the next value is 4. */
+#define WGALLOWEDIP_A_FLAGS	4
+#endif
+#ifndef WGALLOWEDIP_F_REMOVE_ME
+#define WGALLOWEDIP_F_REMOVE_ME	(1U << 0)
+#endif
+
 /* linux/prctl.h */
 #ifndef PR_MCE_KILL_GET
 #define PR_MCE_KILL_GET 34
