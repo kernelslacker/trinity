@@ -85,19 +85,17 @@ static int open_perf_fd(void)
 
 	fd = syscall(__NR_perf_event_open, rec.a1, rec.a2, rec.a3, rec.a4, rec.a5);
 	if (fd < 0) {
-		int saved_errno = errno;
-		freeptr(&rec.a1);
-		errno = saved_errno;
 		/* No log here: failure-classification is handled by the
 		 * init_perf_fds caller, which inspects errno across many
-		 * attempts. Logging per call would flood. */
+		 * attempts. Logging per call would flood.  rec.a1's attr
+		 * buffer is owned by the deferred-free queue (sanitise
+		 * registered it via deferred_free_enqueue). */
 		return false;
 	}
 
 	obj = alloc_shared_obj(sizeof(struct object));
 	if (obj == NULL) {
 		outputerr("open_perf_fd: alloc_shared_obj failed\n");
-		freeptr(&rec.a1);
 		close(fd);
 		return false;
 	}
@@ -105,13 +103,11 @@ static int open_perf_fd(void)
 	obj->perfobj.eventattr = alloc_shared_str(sizeof(struct perf_event_attr));
 	if (obj->perfobj.eventattr == NULL) {
 		outputerr("open_perf_fd: alloc_shared_str(perf_event_attr) failed\n");
-		freeptr(&rec.a1);
 		free_shared_obj(obj, sizeof(struct object));
 		close(fd);
 		return false;
 	}
 	memcpy(obj->perfobj.eventattr, (void *) rec.a1, sizeof(struct perf_event_attr));
-	freeptr(&rec.a1);
 	obj->perfobj.pid = rec.a2;
 	obj->perfobj.cpu = rec.a3;
 	obj->perfobj.group_fd = rec.a4;
