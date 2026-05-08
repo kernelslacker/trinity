@@ -202,6 +202,126 @@
 #define NFTA_PAYLOAD_CSUM_FLAGS		8
 #endif
 
+/* nft_meta NFTA_META_* attribute IDs and NFT_META_* key IDs.  The
+ * validator in net/netfilter/nft_meta.c (nft_meta_get_init /
+ * nft_meta_set_init) drives off NFTA_META_KEY: a read-path expression
+ * sets DREG and the per-key dispatch picks the load helper, a write-
+ * path expression sets SREG and is rejected on read-only keys before
+ * any register check runs. */
+#ifndef NFTA_META_DREG
+#define NFTA_META_DREG			1
+#define NFTA_META_KEY			2
+#define NFTA_META_SREG			3
+#endif
+
+/* Per-key fallbacks.  Each is its own #ifndef so we don't clobber
+ * macros the kernel header already defines (NFT_META_IIFTYPE in
+ * particular is a macro alias for the NFT_META_IFTYPE enumerator,
+ * not a bare enumerator).  Values track the enum positions in
+ * include/uapi/linux/netfilter/nf_tables.h. */
+#ifndef NFT_META_LEN
+#define NFT_META_LEN			0
+#endif
+#ifndef NFT_META_PROTOCOL
+#define NFT_META_PROTOCOL		1
+#endif
+#ifndef NFT_META_PRIORITY
+#define NFT_META_PRIORITY		2
+#endif
+#ifndef NFT_META_MARK
+#define NFT_META_MARK			3
+#endif
+#ifndef NFT_META_IIF
+#define NFT_META_IIF			4
+#endif
+#ifndef NFT_META_OIF
+#define NFT_META_OIF			5
+#endif
+#ifndef NFT_META_IIFNAME
+#define NFT_META_IIFNAME		6
+#endif
+#ifndef NFT_META_OIFNAME
+#define NFT_META_OIFNAME		7
+#endif
+#ifndef NFT_META_IIFTYPE
+#define NFT_META_IIFTYPE		8
+#endif
+#ifndef NFT_META_OIFTYPE
+#define NFT_META_OIFTYPE		9
+#endif
+#ifndef NFT_META_SKUID
+#define NFT_META_SKUID			10
+#endif
+#ifndef NFT_META_SKGID
+#define NFT_META_SKGID			11
+#endif
+#ifndef NFT_META_NFTRACE
+#define NFT_META_NFTRACE		12
+#endif
+#ifndef NFT_META_RTCLASSID
+#define NFT_META_RTCLASSID		13
+#endif
+#ifndef NFT_META_SECMARK
+#define NFT_META_SECMARK		14
+#endif
+#ifndef NFT_META_NFPROTO
+#define NFT_META_NFPROTO		15
+#endif
+#ifndef NFT_META_L4PROTO
+#define NFT_META_L4PROTO		16
+#endif
+#ifndef NFT_META_BRI_IIFNAME
+#define NFT_META_BRI_IIFNAME		17
+#endif
+#ifndef NFT_META_BRI_OIFNAME
+#define NFT_META_BRI_OIFNAME		18
+#endif
+#ifndef NFT_META_PKTTYPE
+#define NFT_META_PKTTYPE		19
+#endif
+#ifndef NFT_META_CPU
+#define NFT_META_CPU			20
+#endif
+#ifndef NFT_META_IIFGROUP
+#define NFT_META_IIFGROUP		21
+#endif
+#ifndef NFT_META_OIFGROUP
+#define NFT_META_OIFGROUP		22
+#endif
+#ifndef NFT_META_CGROUP
+#define NFT_META_CGROUP			23
+#endif
+#ifndef NFT_META_PRANDOM
+#define NFT_META_PRANDOM		24
+#endif
+#ifndef NFT_META_IIFKIND
+#define NFT_META_IIFKIND		26
+#endif
+#ifndef NFT_META_OIFKIND
+#define NFT_META_OIFKIND		27
+#endif
+#ifndef NFT_META_BRI_IIFPVID
+#define NFT_META_BRI_IIFPVID		28
+#endif
+#ifndef NFT_META_BRI_IIFVPROTO
+#define NFT_META_BRI_IIFVPROTO		29
+#endif
+#ifndef NFT_META_TIME_NS
+#define NFT_META_TIME_NS		30
+#endif
+#ifndef NFT_META_TIME_DAY
+#define NFT_META_TIME_DAY		31
+#endif
+#ifndef NFT_META_TIME_HOUR
+#define NFT_META_TIME_HOUR		32
+#endif
+#ifndef NFT_META_SDIF
+#define NFT_META_SDIF			33
+#endif
+#ifndef NFT_META_SDIFNAME
+#define NFT_META_SDIFNAME		34
+#endif
+
 /* set flags */
 #ifndef NFT_SET_ANONYMOUS
 #define NFT_SET_ANONYMOUS		0x1
@@ -763,6 +883,91 @@ static size_t build_nft_payload_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_meta
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the per-key validator + register check in
+ * net/netfilter/nft_meta.c (nft_meta_get_init / nft_meta_set_init)
+ * instead of bouncing off NFTA_EXPR_DATA validation in
+ * nf_tables_newexpr.  Two variants, rolled per call:
+ *   - read path  (DREG, 3-in-4): load the metadata field named by
+ *     NFTA_META_KEY into a general-purpose register.  Key is rolled
+ *     across the full read-allowed set.
+ *   - write path (SREG, 1-in-4): write a register value back into a
+ *     writable metadata field.  The kernel rejects SREG on read-only
+ *     keys before any register validation runs, so the key is rolled
+ *     over a conservative writable subset (MARK, PRIORITY, NFTRACE,
+ *     PKTTYPE) — widening it would just pre-empt coverage of
+ *     nft_meta_set_init.
+ */
+static size_t build_nft_meta_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u32 read_keys[] = {
+		NFT_META_LEN, NFT_META_PROTOCOL, NFT_META_PRIORITY,
+		NFT_META_MARK, NFT_META_IIF, NFT_META_OIF,
+		NFT_META_IIFNAME, NFT_META_OIFNAME,
+		NFT_META_IIFTYPE, NFT_META_OIFTYPE,
+		NFT_META_SKUID, NFT_META_SKGID, NFT_META_NFTRACE,
+		NFT_META_RTCLASSID, NFT_META_SECMARK,
+		NFT_META_NFPROTO, NFT_META_L4PROTO,
+		NFT_META_BRI_IIFNAME, NFT_META_BRI_OIFNAME,
+		NFT_META_PKTTYPE, NFT_META_CPU,
+		NFT_META_IIFGROUP, NFT_META_OIFGROUP,
+		NFT_META_CGROUP, NFT_META_PRANDOM,
+		NFT_META_IIFKIND, NFT_META_OIFKIND,
+		NFT_META_BRI_IIFPVID, NFT_META_BRI_IIFVPROTO,
+		NFT_META_TIME_NS, NFT_META_TIME_DAY, NFT_META_TIME_HOUR,
+		NFT_META_SDIF, NFT_META_SDIFNAME,
+	};
+	static const __u32 write_keys[] = {
+		NFT_META_MARK, NFT_META_PRIORITY,
+		NFT_META_NFTRACE, NFT_META_PKTTYPE,
+	};
+	static const __u32 regs[] = {
+		NFT_REG_1, NFT_REG_2, NFT_REG_3, NFT_REG_4,
+		NFT_REG32_00, NFT_REG32_00 + 1, NFT_REG32_00 + 2,
+		NFT_REG32_00 + 3, NFT_REG32_00 + 7,
+	};
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	bool write_path = ONE_IN(4);
+	__u32 reg = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 key = write_path
+		? write_keys[rand32() % ARRAY_SIZE(write_keys)]
+		: read_keys[rand32() % ARRAY_SIZE(read_keys)];
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "meta");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_META_KEY, key);
+	if (!off)
+		return 0;
+
+	if (write_path)
+		off = nla_put_be32(buf, off, cap, NFTA_META_SREG, reg);
+	else
+		off = nla_put_be32(buf, off, cap, NFTA_META_DREG, reg);
+	if (!off)
+		return 0;
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * NFT_MSG_NEWRULE on (table, chain) carrying one immediate-verdict
  * expression that jumps/gotos to target_chain.  The expression list
  * layout is:
@@ -783,7 +988,8 @@ static size_t build_nft_payload_expr(unsigned char *buf, size_t off, size_t cap)
  */
 static int build_newrule(int fd, __u8 family, const char *table_name,
 			 const char *chain_name, const char *target_chain,
-			 __u32 verdict_code, __u64 position, bool with_payload)
+			 __u32 verdict_code, __u64 position, bool with_payload,
+			 bool with_meta)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
 	struct nlattr *exprs, *elem, *expr_data, *imm_data, *verdict;
@@ -819,6 +1025,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_payload) {
 		off = build_nft_payload_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_meta) {
+		off = build_nft_meta_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -1023,13 +1235,18 @@ bool nftables_churn(struct childdata *child)
 
 	{
 		bool with_payload = ONE_IN(3);
+		bool with_meta = ONE_IN(3);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
-				  aux_chain, verdict, 0, with_payload) == 0) {
+				  aux_chain, verdict, 0, with_payload,
+				  with_meta) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
 					   1, __ATOMIC_RELAXED);
 			if (with_payload)
 				__atomic_add_fetch(&shm->stats.nftables_churn_payload_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_meta)
+				__atomic_add_fetch(&shm->stats.nftables_churn_meta_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -1090,13 +1307,18 @@ bool nftables_churn(struct childdata *child)
 	 */
 	{
 		bool with_payload = ONE_IN(3);
+		bool with_meta = ONE_IN(3);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
-				  aux_chain, verdict, 1, with_payload) == 0) {
+				  aux_chain, verdict, 1, with_payload,
+				  with_meta) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
 					   1, __ATOMIC_RELAXED);
 			if (with_payload)
 				__atomic_add_fetch(&shm->stats.nftables_churn_payload_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_meta)
+				__atomic_add_fetch(&shm->stats.nftables_churn_meta_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
