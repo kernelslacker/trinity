@@ -357,6 +357,22 @@ void healer_observe_relation(struct childdata *child, unsigned int current_nr)
 		pred_b = tmp;
 	}
 
+	/*
+	 * Bump the per-syscall predecessor-appearance counter that feeds the
+	 * TF-IDF-style normalisation on the dump path.  Done before the
+	 * lookup so a probe-limit miss still increments the denominator --
+	 * the syscall *did* appear as a predecessor in an observation, even
+	 * if no slot was available to credit the pair.  Skip the second
+	 * bump when pred_a == pred_b so a self-paired predset (same syscall
+	 * fired twice in a row) doesn't get double-counted against itself.
+	 */
+	if (pred_a < MAX_NR_SYSCALL)
+		__atomic_add_fetch(&shm->stats.healer_pred_appearance[pred_a],
+				   1, __ATOMIC_RELAXED);
+	if (pred_b != pred_a && pred_b < MAX_NR_SYSCALL)
+		__atomic_add_fetch(&shm->stats.healer_pred_appearance[pred_b],
+				   1, __ATOMIC_RELAXED);
+
 	predset_hash = healer_predset_hash(pred_a, pred_b);
 	slot_idx = predset_hash & (HEALER_RELATION_SLOTS - 1);
 	table = shm->healer_relations;
@@ -541,26 +557,127 @@ static void healer_maybe_decay(void)
  * Snapshot tuple emitted to the dump's top-N selector.  Each promoted
  * entry yields one of these; predset_hash is omitted because the
  * (pred_a, pred_b) pair is already self-identifying for the dump's
- * grouping needs.
+ * grouping needs.  pred_a_freq / pred_b_freq are the per-predecessor
+ * appearance counters captured at scan time, kept on the entry so the
+ * sort-by-normalised-score and the per-line display both work from the
+ * same snapshot value (re-reading the live counter for the display
+ * after sorting on a stale read would risk emitting a normalised score
+ * that doesn't match the freq numbers shown next to it).
  */
 struct healer_dump_entry {
 	unsigned int pred_a;
 	unsigned int pred_b;
 	unsigned int promoted_nr;
 	unsigned int weight;
+	unsigned long pred_a_freq;
+	unsigned long pred_b_freq;
+	unsigned long norm_score_milli;
 };
+
+/*
+ * Integer square root via Newton's method, used by the dump-path
+ * normalisation.  Trinity has no isqrt helper of its own and pulling in
+ * libm just for sqrt() on a once-per-dump-tick path is overkill; this
+ * converges in a handful of iterations for the input range we care
+ * about (per-syscall appearance products fit comfortably in 64 bits
+ * across any realistic fuzz duration).
+ */
+static unsigned long healer_isqrt(unsigned long n)
+{
+	unsigned long x, y;
+
+	if (n < 2)
+		return n;
+	x = n;
+	y = (x + 1) / 2;
+	while (y < x) {
+		x = y;
+		y = (x + n / x) / 2;
+	}
+	return x;
+}
+
+/*
+ * TF-IDF-style normalisation for the relation-table dump.  Returns a
+ * fixed-point score scaled by 1000 so the dump path can sort and emit
+ * two-decimal precision without dragging floating point onto the hot
+ * stats output.
+ *
+ * Formula:  norm = (raw_weight * 1000) / isqrt(pred_a_freq * pred_b_freq + 1)
+ *
+ * Rationale (chose sqrt-dampening over log2 or one-sided / max):
+ *   - sqrt has the right monotonic shape: a predecessor that appears 100x
+ *     gets penalised ~10x, one that appears 10000x gets penalised ~100x.
+ *     The penalty grows with frequency but not as steeply as plain
+ *     division by frequency, so a pair with one slightly-frequent and
+ *     one rare predecessor still scores meaningfully higher than a pair
+ *     of two frequent ones.
+ *   - The "+1" guarantees the denominator is at least 1 even when both
+ *     appearance counters are still zero (e.g. a freshly warm-started
+ *     entry whose pair hasn't been re-observed yet).  Without it a
+ *     warm-start entry with zero freq would divide-by-zero; with it,
+ *     the entry simply scores at raw_weight * 1000 until the counters
+ *     accumulate.
+ *   - Cheaper to compute than a portable integer log2 (no special-case
+ *     handling for small values, no __builtin_clzl shape-fixup) and
+ *     less aggressive than `weight / max(a, b)` which would over-penalise
+ *     a pair where both predecessors are productive.
+ *
+ * Raw weight is preserved on the per-entry display so the operator can
+ * still see the underlying signal alongside the normalised ranking.
+ */
+static unsigned long healer_normalised_score_milli(unsigned long raw_weight,
+						   unsigned long pred_a_freq,
+						   unsigned long pred_b_freq)
+{
+	unsigned long product = pred_a_freq * pred_b_freq + 1;
+	unsigned long denom = healer_isqrt(product);
+
+	if (denom == 0)
+		denom = 1;
+	return (raw_weight * 1000UL) / denom;
+}
 
 static int healer_dump_entry_cmp(const void *a, const void *b)
 {
 	const struct healer_dump_entry *ea = a;
 	const struct healer_dump_entry *eb = b;
 
-	if (ea->weight > eb->weight)
+	if (ea->norm_score_milli > eb->norm_score_milli)
 		return -1;
-	if (ea->weight < eb->weight)
+	if (ea->norm_score_milli < eb->norm_score_milli)
 		return 1;
 	return 0;
 }
+
+/*
+ * Per-syscall aggregate used by the predecessor-frequency leader
+ * display: appearance counter snapshot + sum of weights where this
+ * syscall is the *successor* of some pair.  The latter lets the
+ * operator distinguish a pure noise rider (high appearance, zero
+ * successor weight -- e.g. getppid on the live runs) from a syscall
+ * that's frequent as a predecessor and also genuinely productive
+ * (high appearance, also non-trivial successor weight).
+ */
+struct healer_pred_leader {
+	unsigned int nr;
+	unsigned long appearances;
+	unsigned long succ_weight;
+};
+
+static int healer_pred_leader_cmp(const void *a, const void *b)
+{
+	const struct healer_pred_leader *la = a;
+	const struct healer_pred_leader *lb = b;
+
+	if (la->appearances > lb->appearances)
+		return -1;
+	if (la->appearances < lb->appearances)
+		return 1;
+	return 0;
+}
+
+#define HEALER_PRED_LEADERS_TOP_N 5
 
 void healer_table_dump(void)
 {
@@ -575,6 +692,21 @@ void healer_table_dump(void)
 	unsigned long mean_milli = 0;
 	unsigned int i, j;
 	unsigned long observed, table_full, evictions, decays_run;
+	/*
+	 * Per-syscall successor-weight accumulator built up during the
+	 * relation sweep below: succ_weight[nr] += promoted entry's weight
+	 * whenever that entry's promoted_nr == nr.  Used downstream by the
+	 * predecessor-frequency leader display to annotate each leader with
+	 * how productive it has been *as a successor* (vs how often it
+	 * landed in a predecessor slot).  Kept as a heap allocation rather
+	 * than a stack array so a future MAX_NR_SYSCALL bump doesn't blow
+	 * the dump-path stack frame.
+	 */
+	unsigned long *succ_weight;
+
+	succ_weight = calloc(MAX_NR_SYSCALL, sizeof(*succ_weight));
+	if (succ_weight == NULL)
+		return;
 
 	/* Lockless sweep: each slot is read via a single ACQUIRE-load of
 	 * slot->key so the (pred_a, pred_b, predset_hash) tuple is a
@@ -590,6 +722,7 @@ void healer_table_dump(void)
 		uint64_t slot_key;
 		unsigned int slot_pred_a, slot_pred_b;
 		unsigned int slot_promoted = 0;
+		unsigned long pred_a_freq, pred_b_freq;
 
 		slot_key = __atomic_load_n(&slot->key, __ATOMIC_ACQUIRE);
 		if (slot_key == 0)
@@ -597,11 +730,24 @@ void healer_table_dump(void)
 
 		healer_unpack_key(slot_key, &slot_pred_a, &slot_pred_b);
 
+		/* Hoist the per-syscall appearance reads out of the per-promoted
+		 * inner loop -- they are slot-constant (every promoted entry in
+		 * the slot shares the same predecessor pair) and the dump path
+		 * shouldn't pay HEALER_PROMOTED_PER_SLOT extra atomic loads per
+		 * slot for a value it could read once. */
+		pred_a_freq = (slot_pred_a < MAX_NR_SYSCALL) ?
+			__atomic_load_n(&shm->stats.healer_pred_appearance[slot_pred_a],
+					__ATOMIC_RELAXED) : 0;
+		pred_b_freq = (slot_pred_b < MAX_NR_SYSCALL) ?
+			__atomic_load_n(&shm->stats.healer_pred_appearance[slot_pred_b],
+					__ATOMIC_RELAXED) : 0;
+
 		for (j = 0; j < HEALER_PROMOTED_PER_SLOT; j++) {
 			uint64_t entry;
 			unsigned int weight, nr;
 			unsigned int min_idx = 0;
 			unsigned int k;
+			unsigned long norm_score;
 
 			entry = __atomic_load_n(&slot->promoted[j].entry,
 						__ATOMIC_RELAXED);
@@ -619,24 +765,41 @@ void healer_table_dump(void)
 			if (weight > 10)
 				weight_gt_10++;
 
+			/* Successor-weight accumulator: a syscall's "productive
+			 * as successor" score is the sum of weights of every
+			 * promoted entry whose nr is this syscall, regardless
+			 * of which predset led there. */
+			if (nr < MAX_NR_SYSCALL)
+				succ_weight[nr] += weight;
+
+			norm_score = healer_normalised_score_milli(weight,
+								   pred_a_freq,
+								   pred_b_freq);
+
 			if (top_count < HEALER_DUMP_TOP_N) {
 				top[top_count].pred_a = slot_pred_a;
 				top[top_count].pred_b = slot_pred_b;
 				top[top_count].promoted_nr = nr;
 				top[top_count].weight = weight;
+				top[top_count].pred_a_freq = pred_a_freq;
+				top[top_count].pred_b_freq = pred_b_freq;
+				top[top_count].norm_score_milli = norm_score;
 				top_count++;
 				continue;
 			}
 
 			for (k = 1; k < HEALER_DUMP_TOP_N; k++) {
-				if (top[k].weight < top[min_idx].weight)
+				if (top[k].norm_score_milli < top[min_idx].norm_score_milli)
 					min_idx = k;
 			}
-			if (weight > top[min_idx].weight) {
+			if (norm_score > top[min_idx].norm_score_milli) {
 				top[min_idx].pred_a = slot_pred_a;
 				top[min_idx].pred_b = slot_pred_b;
 				top[min_idx].promoted_nr = nr;
 				top[min_idx].weight = weight;
+				top[min_idx].pred_a_freq = pred_a_freq;
+				top[min_idx].pred_b_freq = pred_b_freq;
+				top[min_idx].norm_score_milli = norm_score;
 			}
 		}
 
@@ -661,8 +824,10 @@ void healer_table_dump(void)
 	decays_run = __atomic_load_n(&shm->stats.healer_weight_decays_run,
 				     __ATOMIC_RELAXED);
 
-	if (occupied == 0 && observed == 0)
+	if (occupied == 0 && observed == 0) {
+		free(succ_weight);
 		return;
+	}
 
 	stats_log_write("HEALER relation table: %u/%u slots filled, %lu total promoted entries, %lu probe-limit hits, %lu evictions, %lu observations\n",
 			occupied, HEALER_RELATION_SLOTS, total_promoted,
@@ -678,19 +843,90 @@ void healer_table_dump(void)
 			weight_gt_1, weight_gt_5, weight_gt_10,
 			mean_milli / 1000, mean_milli % 1000, decays_run);
 
-	if (top_count == 0)
+	if (top_count == 0) {
+		free(succ_weight);
 		return;
+	}
 
 	qsort(top, top_count, sizeof(top[0]), healer_dump_entry_cmp);
 
-	stats_log_write("HEALER top %u relations by weight:\n", top_count);
+	/* Title flips from "by weight" to "by normalised weight" so the
+	 * operator immediately notices the ranking has changed -- the raw
+	 * weight is still emitted alongside, and the predfreq numbers make
+	 * the per-line scaling auditable on the spot. */
+	stats_log_write("HEALER top %u relations by normalised weight:\n",
+			top_count);
 	for (i = 0; i < top_count; i++) {
-		stats_log_write("  {%s, %s} -> %s weight=%u\n",
+		stats_log_write("  {%s, %s} -> %s norm=%lu.%03lu (raw=%u, predfreq a=%lu b=%lu)\n",
 				print_syscall_name(top[i].pred_a, false),
 				print_syscall_name(top[i].pred_b, false),
 				print_syscall_name(top[i].promoted_nr, false),
-				top[i].weight);
+				top[i].norm_score_milli / 1000,
+				top[i].norm_score_milli % 1000,
+				top[i].weight,
+				top[i].pred_a_freq,
+				top[i].pred_b_freq);
 	}
+
+	/*
+	 * Predecessor-frequency leader display.  Surfaces the top-N
+	 * syscalls by appearance counter alongside the sum of weights they
+	 * have produced *as a successor* of any pair, so the operator can
+	 * tell at a glance which leaders are pure noise riders (high
+	 * appearance, zero or near-zero successor weight) vs which are
+	 * genuinely productive in both roles.  The first kind is what the
+	 * dump's normalised ranking is dampening; the second kind is fine
+	 * to leave at full credit and the operator can confirm that here.
+	 */
+	{
+		struct healer_pred_leader leaders[HEALER_PRED_LEADERS_TOP_N];
+		unsigned int leader_count = 0;
+		unsigned int n;
+
+		for (n = 0; n < MAX_NR_SYSCALL; n++) {
+			unsigned long appearances;
+			unsigned int min_idx = 0;
+			unsigned int k;
+
+			appearances = __atomic_load_n(
+				&shm->stats.healer_pred_appearance[n],
+				__ATOMIC_RELAXED);
+			if (appearances == 0)
+				continue;
+
+			if (leader_count < HEALER_PRED_LEADERS_TOP_N) {
+				leaders[leader_count].nr = n;
+				leaders[leader_count].appearances = appearances;
+				leaders[leader_count].succ_weight = succ_weight[n];
+				leader_count++;
+				continue;
+			}
+
+			for (k = 1; k < HEALER_PRED_LEADERS_TOP_N; k++) {
+				if (leaders[k].appearances < leaders[min_idx].appearances)
+					min_idx = k;
+			}
+			if (appearances > leaders[min_idx].appearances) {
+				leaders[min_idx].nr = n;
+				leaders[min_idx].appearances = appearances;
+				leaders[min_idx].succ_weight = succ_weight[n];
+			}
+		}
+
+		if (leader_count > 0) {
+			qsort(leaders, leader_count, sizeof(leaders[0]),
+			      healer_pred_leader_cmp);
+			stats_log_write("HEALER predecessor-frequency leaders:\n");
+			for (n = 0; n < leader_count; n++) {
+				stats_log_write("  %s: appearances=%lu (succ_weight=%lu)\n",
+						print_syscall_name(leaders[n].nr, false),
+						leaders[n].appearances,
+						leaders[n].succ_weight);
+			}
+		}
+	}
+
+	free(succ_weight);
 }
 
 /*
