@@ -532,6 +532,7 @@ struct stats_s {
 	unsigned long genl_family_calls_ethtool;
 	unsigned long genl_family_calls_mptcp_pm;
 	unsigned long genl_family_calls_tipc;
+	unsigned long genl_family_calls_wireguard;
 
 	/* nfnetlink registry per-subsystem dispatch counters.  Same shape
 	 * as the genl_family_calls counters above but for NETLINK_NETFILTER

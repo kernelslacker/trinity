@@ -1442,6 +1442,8 @@ static const struct {
 	  offsetof(struct stats_s, genl_family_calls_mptcp_pm) },
 	{ "genl_family_calls_tipc",
 	  offsetof(struct stats_s, genl_family_calls_tipc) },
+	{ "genl_family_calls_wireguard",
+	  offsetof(struct stats_s, genl_family_calls_wireguard) },
 	/* nfnetlink registry per-subsys dispatch counters; same diagnostic
 	 * value as the genl ones above but for NETLINK_NETFILTER subsystems.
 	 * Lets an operator see the live ctnetlink/nftables/ipset traffic
@@ -2105,13 +2107,15 @@ void dump_stats(void)
 	    shm->stats.genl_family_calls_taskstats ||
 	    shm->stats.genl_family_calls_ethtool   ||
 	    shm->stats.genl_family_calls_mptcp_pm  ||
-	    shm->stats.genl_family_calls_tipc) {
+	    shm->stats.genl_family_calls_tipc      ||
+	    shm->stats.genl_family_calls_wireguard) {
 		stat_row("genl_family_calls", "devlink",   shm->stats.genl_family_calls_devlink);
 		stat_row("genl_family_calls", "nl80211",   shm->stats.genl_family_calls_nl80211);
 		stat_row("genl_family_calls", "taskstats", shm->stats.genl_family_calls_taskstats);
 		stat_row("genl_family_calls", "ethtool",   shm->stats.genl_family_calls_ethtool);
 		stat_row("genl_family_calls", "mptcp_pm",  shm->stats.genl_family_calls_mptcp_pm);
 		stat_row("genl_family_calls", "tipc",      shm->stats.genl_family_calls_tipc);
+		stat_row("genl_family_calls", "wireguard", shm->stats.genl_family_calls_wireguard);
 	}
 
 	if (shm->stats.nfnl_subsys_calls_ctnetlink     ||

@@ -50,6 +50,9 @@ extern struct genl_family_grammar fam_mptcp_pm;
 #if __has_include(<linux/tipc_netlink.h>)
 extern struct genl_family_grammar fam_tipc;
 #endif
+#if __has_include(<linux/wireguard.h>)
+extern struct genl_family_grammar fam_wireguard;
+#endif
 
 /*
  * Per-family grammar definitions live in net/netlink-genl-fam-*.c;
@@ -69,6 +72,9 @@ static struct genl_family_grammar *registry[] = {
 #endif
 #if __has_include(<linux/tipc_netlink.h>)
 	&fam_tipc,
+#endif
+#if __has_include(<linux/wireguard.h>)
+	&fam_wireguard,
 #endif
 };
 
@@ -94,6 +100,7 @@ static const struct {
 	{ "ethtool",   offsetof(struct stats_s, genl_family_calls_ethtool) },
 	{ "mptcp_pm",  offsetof(struct stats_s, genl_family_calls_mptcp_pm) },
 	{ "TIPCv2",    offsetof(struct stats_s, genl_family_calls_tipc) },
+	{ "wireguard", offsetof(struct stats_s, genl_family_calls_wireguard) },
 };
 
 static void stamp_call_counters(void)
