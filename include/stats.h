@@ -826,6 +826,13 @@ struct stats_s {
 	unsigned long vrf_fib_churn_rule_removed;	/* RTM_DELRULE for the bound rule accepted */
 	unsigned long vrf_fib_churn_link_removed;	/* RTM_DELLINK vrf accepted (full cycle reached teardown) */
 
+	/* mpls_route_churn childop counters */
+	unsigned long mpls_route_churn_runs;		/* total mpls_route_churn invocations */
+	unsigned long mpls_route_churn_label_install_ok; /* RTM_NEWROUTE family=AF_MPLS accepted (arm A) */
+	unsigned long mpls_route_churn_iptunnel_install_ok; /* RTM_NEWROUTE family=AF_INET + RTA_ENCAP MPLS accepted (arm B) */
+	unsigned long mpls_route_churn_delete_ok;	/* matching RTM_DELROUTE accepted (either arm) */
+	unsigned long mpls_route_churn_ns_unsupported;	/* mpls / lwtunnel latch fired (no-op for the rest of this child) */
+
 	/* netlink_monitor_race childop counters */
 	unsigned long netlink_monitor_race_runs;	/* total netlink_monitor_race invocations */
 	unsigned long netlink_monitor_race_setup_failed; /* unshare(CLONE_NEWNET) or socket open/bind failed */

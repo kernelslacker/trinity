@@ -706,6 +706,7 @@ static void dump_stats_json(void)
 		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu},"
 		"\"tcp_ao_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"addkey_rejected\":%lu,\"keys_added\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"packets_sent\":%lu,\"key_rotations\":%lu,\"info_rejected\":%lu,\"key_dels\":%lu,\"delkey_rejected\":%lu,\"cycles\":%lu},"
 		"\"vrf_fib_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_ok\":%lu,\"addr_ok\":%lu,\"up_ok\":%lu,\"rule_added\":%lu,\"bound\":%lu,\"sendto_ok\":%lu,\"rule2_added\":%lu,\"rule_removed\":%lu,\"link_removed\":%lu},"
+		"\"mpls_route_churn\":{\"runs\":%lu,\"label_install_ok\":%lu,\"iptunnel_install_ok\":%lu,\"delete_ok\":%lu,\"ns_unsupported\":%lu},"
 		"\"netlink_monitor_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"mon_open\":%lu,\"mut_open\":%lu,\"mut_op_ok\":%lu,\"recv_drained\":%lu,\"group_drop\":%lu,\"group_add\":%lu},"
 		"\"tipc_link_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bearer_enable_ok\":%lu,\"sock_rdm_ok\":%lu,\"topsrv_connect_ok\":%lu,\"sub_ports_sent\":%lu,\"publish_ok\":%lu,\"bearer_disable_ok\":%lu},"
 		"\"tls_ulp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_install_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"splice_ok\":%lu,\"rekey_ok\":%lu,\"recv_ok\":%lu},"
@@ -973,6 +974,11 @@ static void dump_stats_json(void)
 		shm->stats.vrf_fib_churn_rule2_added,
 		shm->stats.vrf_fib_churn_rule_removed,
 		shm->stats.vrf_fib_churn_link_removed,
+		shm->stats.mpls_route_churn_runs,
+		shm->stats.mpls_route_churn_label_install_ok,
+		shm->stats.mpls_route_churn_iptunnel_install_ok,
+		shm->stats.mpls_route_churn_delete_ok,
+		shm->stats.mpls_route_churn_ns_unsupported,
 		shm->stats.netlink_monitor_race_runs,
 		shm->stats.netlink_monitor_race_setup_failed,
 		shm->stats.netlink_monitor_race_mon_open,
@@ -2705,6 +2711,14 @@ void dump_stats(void)
 		stat_row("vrf_fib_churn", "rule2_added",  shm->stats.vrf_fib_churn_rule2_added);
 		stat_row("vrf_fib_churn", "rule_removed", shm->stats.vrf_fib_churn_rule_removed);
 		stat_row("vrf_fib_churn", "link_removed", shm->stats.vrf_fib_churn_link_removed);
+	}
+
+	if (shm->stats.mpls_route_churn_runs) {
+		stat_row("mpls_route_churn", "runs",                shm->stats.mpls_route_churn_runs);
+		stat_row("mpls_route_churn", "label_install_ok",    shm->stats.mpls_route_churn_label_install_ok);
+		stat_row("mpls_route_churn", "iptunnel_install_ok", shm->stats.mpls_route_churn_iptunnel_install_ok);
+		stat_row("mpls_route_churn", "delete_ok",           shm->stats.mpls_route_churn_delete_ok);
+		stat_row("mpls_route_churn", "ns_unsupported",      shm->stats.mpls_route_churn_ns_unsupported);
 	}
 
 	if (shm->stats.netlink_monitor_race_runs) {
