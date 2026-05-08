@@ -54,6 +54,27 @@
 #define IORING_REGISTER_USE_REGISTERED_RING	(1U << 31)
 #endif
 
+/*
+ * Local mirrors of the FILE_ALLOC_RANGE / CLOCK opcode argument structs.
+ * <linux/io_uring.h> declares io_uring_file_index_range and
+ * io_uring_clock_register as enums-or-structs depending on the kernel
+ * vintage, with no stable #define companion to detect via #ifndef.
+ * Use trinity-private struct names with identical layout: the kernel
+ * copies sizeof(its-own-struct) bytes from the user pointer, so layout
+ * is the only thing that matters at the syscall boundary.  This keeps
+ * the file building against any header vintage without redefinition.
+ */
+struct trinity_io_uring_file_index_range {
+	__u32	off;
+	__u32	len;
+	__u64	resv;
+};
+
+struct trinity_io_uring_clock_register {
+	__u32	clockid;
+	__u32	__resv[3];
+};
+
 static unsigned long io_uring_register_opcodes[] = {
 	IORING_REGISTER_BUFFERS,
 	IORING_UNREGISTER_BUFFERS,
@@ -276,6 +297,68 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		rec->a3 = (unsigned long) buf;
 		rec->a4 = 2;
 		break;
+
+	/*
+	 * IORING_REGISTER_FILE_ALLOC_RANGE: arg = struct io_uring_file_index_range,
+	 * nr_args = 0.  Kernel rejects nr_args != 0 before dispatch, so the
+	 * default catch-all (which sets nr_args = 1) never reaches the handler
+	 * body.  Bias off/len against a small registered file table; 1-in-32
+	 * inject INT_MAX to probe arithmetic overflow checks in the range
+	 * allocator.
+	 */
+	case IORING_REGISTER_FILE_ALLOC_RANGE: {
+		struct trinity_io_uring_file_index_range *r;
+		r = (struct trinity_io_uring_file_index_range *)
+			get_writable_struct(sizeof(*r));
+		if (r) {
+			memset(r, 0, sizeof(*r));
+			if ((rand() % 32) == 0) {
+				r->off = INT_MAX;
+				r->len = INT_MAX;
+			} else {
+				r->off = rand() % 16;
+				r->len = 1 + (rand() % 16);
+			}
+		}
+		rec->a3 = (unsigned long) r;
+		rec->a4 = 0;
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_CLOCK: arg = struct io_uring_clock_register,
+	 * nr_args = 0.  Same nr_args == 0 gate as FILE_ALLOC_RANGE.  75% of
+	 * the time pick a clockid the kernel's io_register_clock will accept
+	 * (CLOCK_MONOTONIC / CLOCK_BOOTTIME -- CLOCK_REALTIME is rejected by
+	 * the validator but exercises that reject path); 25% garbage to
+	 * exercise the validator.  1-in-16 leave a non-zero __resv slot to
+	 * exercise the memchr_inv reject path.  Hard-code the clockid values
+	 * (0/1/7 from uapi/linux/time.h) to keep trinity hermetic against
+	 * <time.h> enum drift.
+	 */
+	case IORING_REGISTER_CLOCK: {
+		static const __s32 valid_clockids[] = {
+			0,	/* CLOCK_REALTIME */
+			1,	/* CLOCK_MONOTONIC */
+			7,	/* CLOCK_BOOTTIME */
+		};
+		struct trinity_io_uring_clock_register *cr;
+		cr = (struct trinity_io_uring_clock_register *)
+			get_writable_struct(sizeof(*cr));
+		if (cr) {
+			memset(cr, 0, sizeof(*cr));
+			if ((rand() % 4) == 0)
+				cr->clockid = rand();
+			else
+				cr->clockid = valid_clockids[rand() %
+					ARRAY_SIZE(valid_clockids)];
+			if ((rand() % 16) == 0)
+				cr->__resv[rand() % 3] = rand();
+		}
+		rec->a3 = (unsigned long) cr;
+		rec->a4 = 0;
+		break;
+	}
 
 	/*
 	 * For opcodes with struct args we don't model in detail, provide a
