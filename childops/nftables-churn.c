@@ -541,6 +541,37 @@
 #define NFT_RANGE_NEQ			1
 #endif
 
+/* nft_byteorder NFTA_BYTEORDER_* attribute IDs and NFT_BYTEORDER_* op
+ * codes.  The validator in net/netfilter/nft_byteorder.c
+ * (nft_byteorder_init) demands SREG + DREG + OP + LEN + SIZE — every
+ * slot in nft_byteorder_policy[] is mandatory (no NLA_F_OPTIONAL on
+ * any).  SIZE must be one of {2, 4, 8} and LEN must be a non-zero
+ * multiple of SIZE; LEN is further capped at FIELD_SIZEOF(struct
+ * nft_data, data) which is 16 bytes.  Guarded per-symbol so the build
+ * still works on older host headers that predate any of these. */
+#ifndef NFTA_BYTEORDER_SREG
+#define NFTA_BYTEORDER_SREG		1
+#endif
+#ifndef NFTA_BYTEORDER_DREG
+#define NFTA_BYTEORDER_DREG		2
+#endif
+#ifndef NFTA_BYTEORDER_OP
+#define NFTA_BYTEORDER_OP		3
+#endif
+#ifndef NFTA_BYTEORDER_LEN
+#define NFTA_BYTEORDER_LEN		4
+#endif
+#ifndef NFTA_BYTEORDER_SIZE
+#define NFTA_BYTEORDER_SIZE		5
+#endif
+
+#ifndef NFT_BYTEORDER_NTOH
+#define NFT_BYTEORDER_NTOH		0
+#endif
+#ifndef NFT_BYTEORDER_HTON
+#define NFT_BYTEORDER_HTON		1
+#endif
+
 /* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
  * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
  * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
@@ -1674,6 +1705,87 @@ static size_t build_nft_range_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_byteorder
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_byteorder.c
+ * (nft_byteorder_init) — the policy table nft_byteorder_policy[] gates
+ * SREG/DREG/OP/LEN/SIZE and every attribute is mandatory (no
+ * NLA_F_OPTIONAL on any slot).  After parsing the kernel further
+ * enforces SIZE in {2, 4, 8} and LEN a non-zero multiple of SIZE,
+ * with LEN capped at FIELD_SIZEOF(struct nft_data, data) == 16.
+ *
+ * byteorder is a load/store register reformatter — it reads LEN bytes
+ * from SREG, byte-swaps each SIZE-wide element through ntoh/hton, and
+ * writes the result to DREG.  Roll variants per call:
+ *   - SREG and DREG independently pick from NFT_REG_1..NFT_REG_4 so
+ *     byteorder consumes whatever a preceding payload/meta/bitwise
+ *     emit just stored, and so DREG races other expressions writing
+ *     the same register inside one rule.
+ *   - OP picks NTOH ONE_IN(2) else HTON — the only two values the
+ *     kernel enum exposes.
+ *   - SIZE is rolled first from {2, 4, 8}, then LEN is picked as a
+ *     multiple of SIZE bounded by 16, so every emit sits inside the
+ *     validator's accept range and exercises the per-element swap
+ *     loop rather than the EINVAL early-return.
+ *
+ * LOAD-and-STORE: byteorder writes the destination register, so it
+ * also exercises the nft_data store path that purely-readonly
+ * expressions like cmp/range never touch.
+ */
+static size_t build_nft_byteorder_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u32 regs[] = {
+		NFT_REG_1, NFT_REG_2, NFT_REG_3, NFT_REG_4,
+	};
+	static const __u32 sizes[] = { 2, 4, 8 };
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u32 sreg = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 dreg = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 op = ONE_IN(2) ? NFT_BYTEORDER_NTOH : NFT_BYTEORDER_HTON;
+	__u32 size = sizes[rand32() % ARRAY_SIZE(sizes)];
+	__u32 max_mult = 16 / size;
+	__u32 mult = 1 + (rand32() % max_mult);
+	__u32 len = mult * size;
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "byteorder");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_BYTEORDER_SREG, sreg);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_BYTEORDER_DREG, dreg);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_BYTEORDER_OP, op);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_BYTEORDER_LEN, len);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_BYTEORDER_SIZE, size);
+	if (!off)
+		return 0;
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Structurally-valid nft_immediate expression element.  Net layout:
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "immediate"
@@ -2008,7 +2120,8 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 __u32 verdict_code, __u64 position, bool with_payload,
 			 bool with_meta, bool with_lookup, bool with_log,
 			 bool with_bitwise, bool with_cmp, bool with_range,
-			 bool with_immediate, bool with_dynset, bool with_ct,
+			 bool with_byteorder, bool with_immediate,
+			 bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
@@ -2082,6 +2195,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_range) {
 		off = build_nft_range_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_byteorder) {
+		off = build_nft_byteorder_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -2311,6 +2430,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_bitwise = ONE_IN(4);
 		bool with_cmp = ONE_IN(3);
 		bool with_range = ONE_IN(3);
+		bool with_byteorder = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -2319,7 +2439,8 @@ bool nftables_churn(struct childdata *child)
 				  aux_chain, verdict, 0, with_payload,
 				  with_meta, with_lookup, with_log,
 				  with_bitwise, with_cmp, with_range,
-				  with_immediate, with_dynset, with_ct,
+				  with_byteorder, with_immediate,
+				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
 					   1, __ATOMIC_RELAXED);
@@ -2343,6 +2464,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_range)
 				__atomic_add_fetch(&shm->stats.nftables_churn_range_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_byteorder)
+				__atomic_add_fetch(&shm->stats.nftables_churn_byteorder_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
@@ -2418,6 +2542,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_bitwise = ONE_IN(4);
 		bool with_cmp = ONE_IN(3);
 		bool with_range = ONE_IN(3);
+		bool with_byteorder = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -2426,7 +2551,8 @@ bool nftables_churn(struct childdata *child)
 				  aux_chain, verdict, 1, with_payload,
 				  with_meta, with_lookup, with_log,
 				  with_bitwise, with_cmp, with_range,
-				  with_immediate, with_dynset, with_ct,
+				  with_byteorder, with_immediate,
+				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
 					   1, __ATOMIC_RELAXED);
@@ -2450,6 +2576,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_range)
 				__atomic_add_fetch(&shm->stats.nftables_churn_range_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_byteorder)
+				__atomic_add_fetch(&shm->stats.nftables_churn_byteorder_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
