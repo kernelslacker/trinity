@@ -1302,6 +1302,24 @@ struct stats_s {
 	 * bandit-pool aggregate without iterating the per-strategy array. */
 	unsigned long bandit_pool_edges_discovered;
 
+	/* Per-syscall new-edge attribution, split by strategy pool.  Bumped
+	 * from dispatch_step's new-edge branch with the (edges_after -
+	 * edges_before) delta of kcov_shm->edges_found around kcov_collect,
+	 * so the increment matches the count of distinct new edges this
+	 * syscall produced rather than 1-per-call (per_syscall_edges in
+	 * kcov_shm uses the latter shape).
+	 *
+	 * Surfaced only via top_syscalls_periodic_dump() -- the array is
+	 * sized 2 * MAX_NR_SYSCALL * sizeof(unsigned long) ~= 16 KiB and
+	 * would dominate the JSON path; leaving it out of dump_stats keeps
+	 * the consumer-of-JSON output stable while the dump tick gives the
+	 * operator a per-pool top-N view of where each pool is finding
+	 * coverage.  RELAXED add-fetch: cumulative diagnostic, not an event
+	 * log; window deltas come from the dump's own snapshot+diff against
+	 * its previous tick. */
+	unsigned long edges_per_syscall_bandit[MAX_NR_SYSCALL];
+	unsigned long edges_per_syscall_explorer[MAX_NR_SYSCALL];
+
 	/* Per-vCPU ioctl dispatches into kvm_vcpu_grp.  Bumped from
 	 * kvm_vcpu_sanitise() each time pick_random_ioctl() lands on an ioctl
 	 * destined for an OBJ_FD_KVM_VCPU fd.  Distinct from the flat KVM
@@ -1500,6 +1518,16 @@ void corrupt_ptr_spike_check(void);
  * a long fuzz run can tell which guards are catching real wild writes vs
  * sitting at noise without waiting for the run to finish. */
 void defense_counters_periodic_dump(void);
+
+/* Per-tick scan paired with defense_counters_periodic_dump: every dump
+ * window, emits the top-5 syscalls by new-edge attribution for each
+ * strategy pool (bandit vs explorer) so the operator can see which
+ * single syscalls are currently driving coverage growth in each pool.
+ * Where the two top-5s diverge is the diagnostic value: explorer-top
+ * surfacing a syscall the bandit-top has dropped means either the
+ * bandit has correctly converged or has over-converged and is missing
+ * something. */
+void top_syscalls_periodic_dump(void);
 
 /* --stats-log-file backing.  Open at startup (append, header line on each
  * open), close at shutdown (footer line).  stats_log_write() mirrors its
