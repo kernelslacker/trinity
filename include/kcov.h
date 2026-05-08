@@ -110,7 +110,7 @@ struct kcov_cmp_record {
 struct kcov_child {
 	/* Field order is constrained by the hot-cacheline budget in struct
 	 * childdata (see static_assert in child.c).  Sized to 48 bytes:
-	 * 4 ints/u32 (16) + 4 bools (4) + 4 padding + 3 pointers (24).
+	 * 4 ints/u32 (16) + 5 bools (5) + 3 padding + 3 pointers (24).
 	 * That leaves exactly 16 bytes in the 64-byte hot leading cacheline
 	 * for the four childdata fields that follow (last_syscall_nr,
 	 * last_group, op_nr, local_op_count).  child_id is intentionally
@@ -122,6 +122,7 @@ struct kcov_child {
 	uint32_t current_generation;	/* bumped per kcov_collect() to invalidate dedup */
 	bool active;       /* true if this child successfully opened kcov */
 	bool cmp_capable;  /* true if cmp_fd was probed and KCOV_TRACE_CMP works */
+	bool cmp_enabled_this_call;	/* true between kcov_enable_cmp() and kcov_disable() */
 	bool remote_mode;  /* true when using KCOV_REMOTE_ENABLE */
 	bool remote_capable; /* true if kernel supports KCOV_REMOTE_ENABLE */
 	unsigned long *trace_buf;
