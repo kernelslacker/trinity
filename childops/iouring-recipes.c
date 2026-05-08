@@ -46,6 +46,8 @@
 #include <linux/futex.h>
 #include <linux/io_uring.h>
 
+#include "compat.h"
+
 #ifndef MFD_CLOEXEC
 #define MFD_CLOEXEC	0x0001U
 #endif
@@ -1251,11 +1253,6 @@ out:
  * Exercises the io_uring futex dispatch path added in Linux 6.7.  First
  * ENOSYS latches the recipe off.
  * ------------------------------------------------------------------ */
-#ifndef IORING_OP_FUTEX_WAIT
-#define IORING_OP_FUTEX_WAIT	46
-#define IORING_OP_FUTEX_WAKE	47
-#endif
-
 static bool recipe_futex_wait_wake(struct iour_recipe_state *s, bool *unsupported)
 {
 	struct iour_ctx *ctx = s->ctx;
@@ -1338,10 +1335,6 @@ out:
  * setup and teardown path inside io_uring's implementation.  Added in
  * Linux 6.15; first ENOSYS/EINVAL latches the recipe off.
  * ------------------------------------------------------------------ */
-#ifndef IORING_OP_EPOLL_WAIT
-#define IORING_OP_EPOLL_WAIT	59
-#endif
-
 static bool recipe_epoll_wait(struct iour_recipe_state *s, bool *unsupported)
 {
 	struct iour_ctx *ctx = s->ctx;
