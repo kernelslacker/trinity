@@ -648,7 +648,7 @@ static void dump_stats_json(void)
 		"\"barrier_racer\":{\"runs\":%lu,\"inner_crashed\":%lu},"
 		"\"genetlink_fuzzer\":{\"families_discovered\":%lu,\"msgs_sent\":%lu,\"eperm\":%lu},"
 		"\"genl_family_calls\":{\"devlink\":%lu,\"nl80211\":%lu,\"taskstats\":%lu,"
-			"\"ethtool\":%lu,\"mptcp_pm\":%lu},"
+			"\"ethtool\":%lu,\"mptcp_pm\":%lu,\"l2tp\":%lu},"
 		"\"nfnl_subsys_calls\":{\"ctnetlink\":%lu,\"ctnetlink_exp\":%lu,"
 			"\"nftables\":%lu,\"ipset\":%lu},"
 		"\"netlink_generator\":{\"nested_attrs_emitted\":%lu},"
@@ -833,6 +833,7 @@ static void dump_stats_json(void)
 		shm->stats.genl_family_calls_taskstats,
 		shm->stats.genl_family_calls_ethtool,
 		shm->stats.genl_family_calls_mptcp_pm,
+		shm->stats.genl_family_calls_l2tp,
 		shm->stats.nfnl_subsys_calls_ctnetlink,
 		shm->stats.nfnl_subsys_calls_ctnetlink_exp,
 		shm->stats.nfnl_subsys_calls_nftables,
@@ -1449,6 +1450,8 @@ static const struct {
 	  offsetof(struct stats_s, genl_family_calls_tipc) },
 	{ "genl_family_calls_wireguard",
 	  offsetof(struct stats_s, genl_family_calls_wireguard) },
+	{ "genl_family_calls_l2tp",
+	  offsetof(struct stats_s, genl_family_calls_l2tp) },
 	/* nfnetlink registry per-subsys dispatch counters; same diagnostic
 	 * value as the genl ones above but for NETLINK_NETFILTER subsystems.
 	 * Lets an operator see the live ctnetlink/nftables/ipset traffic

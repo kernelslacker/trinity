@@ -469,6 +469,46 @@ enum {
 #define WGALLOWEDIP_F_REMOVE_ME	(1U << 0)
 #endif
 
+/* linux/l2tp.h
+ *
+ * The L2TP_ATTR_* enum has been appended to several times since the
+ * original 2.6.35 merge, and the L2TP_ATTR_STATS sub-namespace picked
+ * up two more entries after its original 2.6.35 shape.  The walker
+ * references each constant unconditionally; compat fallbacks below
+ * carry whatever the host header doesn't ship, matching the upstream
+ * uapi enum values.
+ */
+#ifndef L2TP_ATTR_IP6_SADDR
+/* IP6_SADDR / IP6_DADDR + UDP_ZERO_CSUM6_TX/RX were appended in 3.16
+ * to carry the L2TPv3-over-UDPv6 endpoint pair plus per-direction
+ * checksum-zeroing knobs.  Older host headers stop at L2TP_ATTR_STATS=30. */
+#define L2TP_ATTR_IP6_SADDR		31
+#endif
+#ifndef L2TP_ATTR_IP6_DADDR
+#define L2TP_ATTR_IP6_DADDR		32
+#endif
+#ifndef L2TP_ATTR_UDP_ZERO_CSUM6_TX
+#define L2TP_ATTR_UDP_ZERO_CSUM6_TX	33
+#endif
+#ifndef L2TP_ATTR_UDP_ZERO_CSUM6_RX
+#define L2TP_ATTR_UDP_ZERO_CSUM6_RX	34
+#endif
+#ifndef L2TP_ATTR_PAD
+/* PAD slot appended in 4.7 as a generic 64-bit alignment hole for
+ * future u64 attrs.  Not referenced by the walker (the kernel emits
+ * it, the walker doesn't), but defined here for completeness. */
+#define L2TP_ATTR_PAD			35
+#endif
+#ifndef L2TP_ATTR_RX_COOKIE_DISCARDS
+/* Inner L2TP_ATTR_STATS u64 counters.  RX_COOKIE_DISCARDS appended in
+ * 4.4, RX_INVALID and STATS_PAD appended in 4.7.  The original 2.6.35
+ * inner enum stopped at L2TP_ATTR_RX_ERRORS=8. */
+#define L2TP_ATTR_RX_COOKIE_DISCARDS	10
+#endif
+#ifndef L2TP_ATTR_RX_INVALID
+#define L2TP_ATTR_RX_INVALID		11
+#endif
+
 /* linux/io_uring.h
  *
  * IORING_OP_* enum values added after the v6.6 LTS cut.  The enum is
