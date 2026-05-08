@@ -1015,6 +1015,31 @@
 #define NFT_EXTHDR_F_PRESENT		(1 << 0)
 #endif
 
+/* nft_osf NFTA_OSF_* attribute IDs and the NFT_OSF_F_VERSION flag bit.
+ * The validator in net/netfilter/nft_osf.c (nft_osf_init) is a single-arm
+ * parser whose policy table requires NFTA_OSF_DREG (NLA_BE32 register
+ * destination, capped at NFT_REG32_MAX), accepts NFTA_OSF_TTL (NLA_U8,
+ * init clamps the meaningful range to 0..2 — values above 2 are rejected
+ * with -EINVAL) and accepts NFTA_OSF_FLAGS (NLA_BE32) only when the
+ * value is exactly NFT_OSF_F_VERSION (0x01); any other bit pattern is
+ * rejected with -EINVAL.  nft_osf builds as CONFIG_NFT_OSF=m, so the
+ * policy path runs only once the module is loaded — but the wire bytes
+ * are structurally valid either way.  Each symbol is guarded individually
+ * so the build still works on older host headers that predate any subset
+ * of the attribute or flag definitions. */
+#ifndef NFTA_OSF_DREG
+#define NFTA_OSF_DREG			1
+#endif
+#ifndef NFTA_OSF_TTL
+#define NFTA_OSF_TTL			2
+#endif
+#ifndef NFTA_OSF_FLAGS
+#define NFTA_OSF_FLAGS			3
+#endif
+#ifndef NFT_OSF_F_VERSION
+#define NFT_OSF_F_VERSION		(1 << 0)
+#endif
+
 /* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
  * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
  * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
@@ -3496,6 +3521,104 @@ static size_t build_nft_exthdr_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_osf
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_osf.c
+ * (nft_osf_init): NFTA_OSF_DREG is mandatory (NLA_BE32 register
+ * destination capped at NFT_REG32_MAX, written across two 16-byte
+ * register slots so the genre string up to NFT_OSF_MAXGENRELEN fits),
+ * NFTA_OSF_TTL is optional (NLA_U8 — init only accepts 0..2, any value
+ * above 2 trips -EINVAL) and NFTA_OSF_FLAGS is optional (NLA_BE32 —
+ * init only accepts the exact value NFT_OSF_F_VERSION (0x01); any other
+ * bit pattern, including 0, is rejected with -EINVAL).  nft_osf is
+ * built CONFIG_NFT_OSF=m on the test kernel, so the policy validation
+ * path only runs once the module is loaded — the emitter still produces
+ * structurally-valid netlink either way.
+ *
+ * Variants per call:
+ *   - DREG picks uniformly from NFT_REG_1..NFT_REG_4 so the genre
+ *     string lands in whatever register a following cmp/range/bitwise
+ *     emit will read against.
+ *   - TTL is rolled ONE_IN(2); when attached the in-policy values
+ *     {0, 1, 2} are weighted at ~7/8 (uniform across the three) so the
+ *     success path dominates, with ~1/8 falling out to a uniform draw
+ *     across the rejection range 3..255 to keep the -EINVAL bucket in
+ *     nft_osf_init warm.
+ *   - FLAGS is rolled ONE_IN(3); when attached the in-policy value
+ *     NFT_OSF_F_VERSION is weighted at ~3/4 and the remaining ~1/4
+ *     rolls a uniform draw across out-of-policy values
+ *     {0, 0x2, 0x80, 0xff, 0xffffffff} so the exact-equals check in
+ *     nft_osf_init also sees rejection traffic.
+ */
+static size_t build_nft_osf_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u32 bad_flags[] = {
+		0, 0x2, 0x80, 0xff, 0xffffffffU,
+	};
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u32 dreg = NFT_REG_1 + (rand32() % 4);
+	bool with_ttl = ONE_IN(2);
+	bool with_flags = ONE_IN(3);
+	__u8 ttl;
+	__u32 flags;
+
+	if (with_ttl) {
+		if (ONE_IN(8))
+			ttl = 3 + (rand32() % 253);	/* 3..255: -EINVAL */
+		else
+			ttl = (__u8)(rand32() % 3);	/* 0..2: in policy */
+	} else {
+		ttl = 0;
+	}
+
+	if (with_flags) {
+		if (ONE_IN(4))
+			flags = bad_flags[rand32() % ARRAY_SIZE(bad_flags)];
+		else
+			flags = NFT_OSF_F_VERSION;
+	} else {
+		flags = 0;
+	}
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "osf");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_OSF_DREG, dreg);
+	if (!off)
+		return 0;
+
+	if (with_ttl) {
+		off = nla_put(buf, off, cap, NFTA_OSF_TTL, &ttl, sizeof(ttl));
+		if (!off)
+			return 0;
+	}
+
+	if (with_flags) {
+		off = nla_put_be32(buf, off, cap, NFTA_OSF_FLAGS, flags);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Structurally-valid nft_immediate expression element.  Net layout:
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "immediate"
@@ -3840,6 +3963,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_rt,
 			 bool with_fib,
 			 bool with_exthdr,
+			 bool with_osf,
 			 bool with_immediate,
 			 bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
@@ -3993,6 +4117,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_exthdr) {
 		off = build_nft_exthdr_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_osf) {
+		off = build_nft_osf_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -4235,6 +4365,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_rt = ONE_IN(3);
 		bool with_fib = ONE_IN(3);
 		bool with_exthdr = ONE_IN(3);
+		bool with_osf = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -4251,6 +4382,7 @@ bool nftables_churn(struct childdata *child)
 				  with_rt,
 				  with_fib,
 				  with_exthdr,
+				  with_osf,
 				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
@@ -4315,6 +4447,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_exthdr)
 				__atomic_add_fetch(&shm->stats.nftables_churn_exthdr_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_osf)
+				__atomic_add_fetch(&shm->stats.nftables_churn_osf_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
@@ -4403,6 +4538,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_rt = ONE_IN(3);
 		bool with_fib = ONE_IN(3);
 		bool with_exthdr = ONE_IN(3);
+		bool with_osf = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -4419,6 +4555,7 @@ bool nftables_churn(struct childdata *child)
 				  with_rt,
 				  with_fib,
 				  with_exthdr,
+				  with_osf,
 				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
@@ -4483,6 +4620,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_exthdr)
 				__atomic_add_fetch(&shm->stats.nftables_churn_exthdr_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_osf)
+				__atomic_add_fetch(&shm->stats.nftables_churn_osf_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
