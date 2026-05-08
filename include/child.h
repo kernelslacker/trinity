@@ -166,6 +166,7 @@ enum child_op_type {
 	CHILD_OP_NL80211_CHURN,
 	CHILD_OP_NAT_T_CHURN,
 	CHILD_OP_SPLICE_PROTOCOLS,
+	CHILD_OP_RXRPC_KEY_INSTALL,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -534,3 +535,4 @@ bool kvm_run_churn(struct childdata *child);
 bool nl80211_churn(struct childdata *child);
 bool nat_t_churn(struct childdata *child);
 bool splice_protocols(struct childdata *child);
+bool rxrpc_key_install(struct childdata *child);

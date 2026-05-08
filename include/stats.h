@@ -1330,6 +1330,17 @@ struct stats_s {
 	unsigned long splice_protocols_alg_attempted;		/* AF_ALG skcipher setup arm picked */
 	unsigned long splice_protocols_rxrpc_attempted;		/* AF_RXRPC bound-socket setup arm picked */
 
+	/* rxrpc_key_install childop counters.  Coverage of the
+	 * net/rxrpc/key.c token parsers reached via add_key("rxrpc", ...)
+	 * and add_key("rxrpc_s", ...): null-security fast path, v1 binary
+	 * RXKAD, XDR envelope (with XDR-RXKAD / XDR-RXGK inners), and
+	 * rxkad/rxgk preparse_server_key. */
+	unsigned long rxrpc_key_install_runs;		/* total rxrpc_key_install invocations */
+	unsigned long rxrpc_key_install_calls;		/* total add_key/keyctl ops attempted */
+	unsigned long rxrpc_key_install_revokes;	/* KEYCTL_REVOKE / KEYCTL_UNLINK accepted */
+	unsigned long rxrpc_key_install_quota_hits;	/* add_key returned -EDQUOT */
+	unsigned long rxrpc_key_install_unsupported;	/* per-process latch fired (no rxrpc key type) */
+
 	/*
 	 * HEALER Phase A observer counters -- see include/healer.h.
 	 * All four are bumped from healer_observe_relation() / the periodic
