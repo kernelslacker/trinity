@@ -416,6 +416,22 @@
 #define NFT_LOOKUP_F_INV		(1 << 0)
 #endif
 
+/* NFTA_LOG_* attribute identifiers (uapi/linux/netfilter/nf_tables.h).
+ * Values match the kernel enum nft_log_attributes; guarded so the
+ * build still works on older host headers that predate nft_log. */
+#ifndef NFTA_LOG_PREFIX
+#define NFTA_LOG_PREFIX			1
+#define NFTA_LOG_GROUP			2
+#define NFTA_LOG_SNAPLEN		3
+#define NFTA_LOG_QTHRESHOLD		4
+#define NFTA_LOG_LEVEL			5
+#define NFTA_LOG_FLAGS			6
+#endif
+
+#ifndef NF_LOG_DEFAULT_MASK
+#define NF_LOG_DEFAULT_MASK		0x0f
+#endif
+
 /* Reasonable ceiling on a single nfnetlink message + payload.  The
  * rule message with one nested expression containing a verdict +
  * chain string is the largest we emit; well under 1 KiB.  2 KiB
@@ -540,6 +556,14 @@ static size_t nla_put_be32(unsigned char *buf, size_t off, size_t cap,
 			   unsigned short type, __u32 v)
 {
 	__u32 be = htonl(v);
+
+	return nla_put(buf, off, cap, type, &be, sizeof(be));
+}
+
+static size_t nla_put_be16(unsigned char *buf, size_t off, size_t cap,
+			   unsigned short type, __u16 v)
+{
+	__u16 be = htons(v);
 
 	return nla_put(buf, off, cap, type, &be, sizeof(be));
 }
@@ -1053,6 +1077,113 @@ static size_t build_nft_lookup_expr(unsigned char *buf, size_t off,
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_log
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the per-attribute validator in
+ * net/netfilter/nft_log.c (nft_log_init) — nf_log binding, group /
+ * snaplen / qthreshold range checks, and the prefix-string parser.
+ *
+ * Each optional attribute is coin-flipped in independently so the
+ * emitted shape varies per call.  If every coin came up false a
+ * single attribute is forced in so the expression is never
+ * degenerate-empty (which the kernel would happily accept but which
+ * would waste an iteration).
+ */
+static size_t build_nft_log_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	bool with_prefix    = ONE_IN(2);
+	bool with_group     = ONE_IN(3);
+	bool with_snaplen   = ONE_IN(3);
+	bool with_qthresh   = ONE_IN(3);
+	bool with_level     = ONE_IN(2);
+	bool with_flags     = ONE_IN(3);
+
+	if (!with_prefix && !with_group && !with_snaplen &&
+	    !with_qthresh && !with_level && !with_flags) {
+		switch (rand32() % 6) {
+		case 0: with_prefix  = true; break;
+		case 1: with_group   = true; break;
+		case 2: with_snaplen = true; break;
+		case 3: with_qthresh = true; break;
+		case 4: with_level   = true; break;
+		default: with_flags  = true; break;
+		}
+	}
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "log");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	if (with_prefix) {
+		char prefix[9];
+		unsigned int len = (rand32() % 8) + 1;
+		unsigned int i;
+
+		for (i = 0; i < len; i++)
+			prefix[i] = 'a' + (rand32() % 26);
+		prefix[len] = '\0';
+		off = nla_put_str(buf, off, cap, NFTA_LOG_PREFIX, prefix);
+		if (!off)
+			return 0;
+	}
+
+	if (with_group) {
+		off = nla_put_be16(buf, off, cap, NFTA_LOG_GROUP,
+				   (__u16)rand32());
+		if (!off)
+			return 0;
+	}
+
+	if (with_snaplen) {
+		off = nla_put_be32(buf, off, cap, NFTA_LOG_SNAPLEN,
+				   rand32() % 0x10000);
+		if (!off)
+			return 0;
+	}
+
+	if (with_qthresh) {
+		off = nla_put_be16(buf, off, cap, NFTA_LOG_QTHRESHOLD,
+				   (__u16)rand32());
+		if (!off)
+			return 0;
+	}
+
+	if (with_level) {
+		off = nla_put_be32(buf, off, cap, NFTA_LOG_LEVEL,
+				   rand32() % 8);
+		if (!off)
+			return 0;
+	}
+
+	if (with_flags) {
+		__u32 flags = ONE_IN(2)
+			? NF_LOG_DEFAULT_MASK
+			: (rand32() & NF_LOG_DEFAULT_MASK);
+		off = nla_put_be32(buf, off, cap, NFTA_LOG_FLAGS, flags);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * NFT_MSG_NEWRULE on (table, chain) carrying one immediate-verdict
  * expression that jumps/gotos to target_chain.  The expression list
  * layout is:
@@ -1074,8 +1205,8 @@ static size_t build_nft_lookup_expr(unsigned char *buf, size_t off,
 static int build_newrule(int fd, __u8 family, const char *table_name,
 			 const char *chain_name, const char *target_chain,
 			 __u32 verdict_code, __u64 position, bool with_payload,
-			 bool with_meta, bool with_lookup, const char *set_name,
-			 __u32 set_id)
+			 bool with_meta, bool with_lookup, bool with_log,
+			 const char *set_name, __u32 set_id)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
 	struct nlattr *exprs, *elem, *expr_data, *imm_data, *verdict;
@@ -1124,6 +1255,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 	if (with_lookup) {
 		off = build_nft_lookup_expr(buf, off, sizeof(buf),
 					    set_name, set_id);
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_log) {
+		off = build_nft_log_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -1330,11 +1467,12 @@ bool nftables_churn(struct childdata *child)
 		bool with_payload = ONE_IN(3);
 		bool with_meta = ONE_IN(3);
 		bool with_lookup = ONE_IN(3);
+		bool with_log = ONE_IN(4);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 0, with_payload,
-				  with_meta, with_lookup, anon_set,
-				  set_id) == 0) {
+				  with_meta, with_lookup, with_log,
+				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
 					   1, __ATOMIC_RELAXED);
 			if (with_payload)
@@ -1345,6 +1483,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_lookup)
 				__atomic_add_fetch(&shm->stats.nftables_churn_lookup_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_log)
+				__atomic_add_fetch(&shm->stats.nftables_churn_log_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -1407,11 +1548,12 @@ bool nftables_churn(struct childdata *child)
 		bool with_payload = ONE_IN(3);
 		bool with_meta = ONE_IN(3);
 		bool with_lookup = ONE_IN(3);
+		bool with_log = ONE_IN(4);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 1, with_payload,
-				  with_meta, with_lookup, anon_set,
-				  set_id) == 0) {
+				  with_meta, with_lookup, with_log,
+				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
 					   1, __ATOMIC_RELAXED);
 			if (with_payload)
@@ -1422,6 +1564,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_lookup)
 				__atomic_add_fetch(&shm->stats.nftables_churn_lookup_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_log)
+				__atomic_add_fetch(&shm->stats.nftables_churn_log_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
