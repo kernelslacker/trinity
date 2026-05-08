@@ -61,21 +61,6 @@ static void dirty_one_page(struct map *map)
 		p[offset] = rand();
 }
 
-static void dirty_whole_mapping(struct map *map)
-{
-	unsigned int i, nr;
-
-	if (mark_map_rw(map) == false)
-		return;
-
-	nr = nr_pages(map);
-
-	for (i = 0; i < nr; i++) {
-		char *p = map->ptr + (i * page_size);
-		*p = rand();
-	}
-}
-
 /*
  * Per-call upper bound on mark_page_rw() invocations.  Each mark_page_rw
  * is an mprotect(4096) that triggers a TLB shootdown IPI to every other
@@ -95,6 +80,21 @@ static unsigned int dirty_walk_count(struct map *map)
 	if (nr > DIRTY_PAGES_PER_CALL_MAX)
 		nr = DIRTY_PAGES_PER_CALL_MAX;
 	return nr;
+}
+
+static void dirty_whole_mapping(struct map *map)
+{
+	unsigned int i, nr;
+
+	if (mark_map_rw(map) == false)
+		return;
+
+	nr = dirty_walk_count(map);
+
+	for (i = 0; i < nr; i++) {
+		char *p = map->ptr + (i * page_size);
+		*p = rand();
+	}
 }
 
 static void dirty_every_other_page(struct map *map)
