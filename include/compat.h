@@ -469,6 +469,19 @@ enum {
 #define WGALLOWEDIP_F_REMOVE_ME	(1U << 0)
 #endif
 
+/* linux/openvswitch.h
+ *
+ * OVS_PACKET_ATTR_UPCALL_PID was appended to the ovs_packet_attr enum
+ * after the original OVS_PACKET_ATTR_HASH addition.  Older host headers
+ * stop the enum before it; the spec table reference is unconditional.
+ * Counted from OVS_PACKET_ATTR_UNSPEC=0: PACKET=1, KEY=2, ACTIONS=3,
+ * USERDATA=4, EGRESS_TUN_KEY=5, UNUSED1=6, UNUSED2=7, PROBE=8, MRU=9,
+ * LEN=10, HASH=11, UPCALL_PID=12.
+ */
+#ifndef OVS_PACKET_ATTR_UPCALL_PID
+#define OVS_PACKET_ATTR_UPCALL_PID	12
+#endif
+
 /* linux/l2tp.h
  *
  * The L2TP_ATTR_* enum has been appended to several times since the
