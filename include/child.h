@@ -62,21 +62,25 @@ struct child_syscall_ring {
  * across short windows" syscall set.  Populated each time periodic_work
  * runs the divergence sentinel; the next tick re-reads and compares.
  *
- * Only the fields that are stable across two adjacent ticks are kept --
- * sysinfo's loads/uptime/freeram are deliberately omitted because they
- * legitimately drift between samples and would generate noise.
+ * Only the fields that are stable across two adjacent ticks AND not
+ * legitimately mutable by syscalls trinity itself fuzzes are kept --
+ * sysinfo's loads/uptime/freeram drift between samples on their own,
+ * while utsname's nodename, RLIMIT_NOFILE's rlim_cur/rlim_max, and the
+ * task's sched_priority are routinely changed by successful
+ * sethostname / setrlimit / prlimit64 / sched_setparam calls and would
+ * generate false-positive divergences.
  *
  * The intent is to catch fuzzed value-result syscall buffers whose
  * destination addresses overlap one of these cached readings: a stray
  * write into the cache surfaces as a divergence at the next tick, and a
- * stray write into an unrelated kernel-managed datum (utsname, rlimit,
- * sched_param) shows up as the live re-read disagreeing with what we
- * captured the previous tick.  __NEW_UTS_LEN is 64 -- arrays sized 65 to
- * include the trailing NUL the kernel always copies.
+ * stray write into an unrelated kernel-managed datum (utsname's
+ * boot-stable strings, sysinfo's boot-stable scalars) shows up as the
+ * live re-read disagreeing with what we captured the previous tick.
+ * __NEW_UTS_LEN is 64 -- arrays sized 65 to include the trailing NUL
+ * the kernel always copies.
  */
 struct sentinel_reading {
 	char sysname[65];
-	char nodename[65];
 	char release[65];
 	char version[65];
 	char machine[65];
@@ -84,11 +88,6 @@ struct sentinel_reading {
 	unsigned long sysinfo_totalswap;
 	unsigned long sysinfo_totalhigh;
 	unsigned int sysinfo_mem_unit;
-	unsigned long getrlimit_cur;
-	unsigned long getrlimit_max;
-	unsigned long prlimit64_cur;
-	unsigned long prlimit64_max;
-	int sched_priority;
 	bool valid;
 };
 

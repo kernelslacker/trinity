@@ -7,17 +7,22 @@
  * childdata.sentinel_prev.  Any unexpected drift in the stable fields
  * is the fingerprint of a wild write -- either a fuzzed value-result
  * syscall buffer scribbling our cache, or a fuzzed buffer aimed at the
- * kernel-managed copy that backs one of these reads (utsname,
- * RLIMIT_NOFILE, sched_param).  In both directions the divergence
- * surfaces here as adjacent ticks disagreeing.
+ * kernel-managed copy that backs one of these reads (utsname's
+ * boot-stable strings, sysinfo's boot-stable scalars).  In both
+ * directions the divergence surfaces here as adjacent ticks disagreeing.
  *
- * The probe set is deliberately tiny and cheap (five vDSO-or-fast
- * syscalls), and sysinfo's loads/uptime/freeram are excluded because
- * they legitimately drift between two adjacent ticks.  Sample fields
- * stay limited to those that should not change at all unless someone
- * stomps memory: utsname strings, sysinfo's boot-stable counters,
- * RLIMIT_NOFILE rlim_cur/rlim_max, and the calling task's scheduling
- * priority.
+ * The probe set is deliberately tiny and cheap (two fast syscalls), and
+ * sysinfo's loads/uptime/freeram are excluded because they legitimately
+ * drift between two adjacent ticks.  Sample fields stay limited to
+ * those that should not change at all unless someone stomps memory:
+ * utsname's sysname/release/version/machine and sysinfo's
+ * totalram/totalswap/totalhigh/mem_unit.  utsname's nodename,
+ * RLIMIT_NOFILE rlim_cur/rlim_max, and the task's scheduling priority
+ * are deliberately excluded -- they are routinely mutated by successful
+ * sethostname / setrlimit / prlimit64 / sched_setparam calls trinity
+ * itself fuzzes, so comparing them produces false-positive divergences
+ * on every operator-driven write rather than detecting kernel-side
+ * corruption.
  *
  * On a hit we push a sentinel-marked entry into the per-child
  * pre_crash_ring (so the post-mortem dumper has the offending field
@@ -28,10 +33,8 @@
  * not-dominant.
  */
 
-#include <sched.h>
 #include <stdatomic.h>
 #include <string.h>
-#include <sys/resource.h>
 #include <sys/sysinfo.h>
 #include <sys/syscall.h>
 #include <sys/utsname.h>
@@ -51,25 +54,18 @@
 #ifndef SYS_sysinfo
 #define SYS_sysinfo __NR_sysinfo
 #endif
-#ifndef SYS_getrlimit
-#define SYS_getrlimit __NR_getrlimit
-#endif
-#ifndef SYS_prlimit64
-#define SYS_prlimit64 __NR_prlimit64
-#endif
-#ifndef SYS_sched_getparam
-#define SYS_sched_getparam __NR_sched_getparam
-#endif
 
 /*
  * Per-field identifiers, packed into the synthetic syscallrecord we
  * push into pre_crash_ring on a hit.  Grouped by source syscall so a
  * post-mortem reader can decode "which syscall, which field" from the
- * single id without a side table.
+ * single id without a side table.  The gaps in the numbering (5..9 and
+ * 14..) are intentional -- the post-mortem decoder reads these as raw
+ * numeric ids, so leaving the original group bases in place keeps old
+ * sentinel entries in already-collected logs unambiguous.
  */
 enum sentinel_field {
 	SF_UNAME_SYSNAME	= 0,
-	SF_UNAME_NODENAME	= 1,
 	SF_UNAME_RELEASE	= 2,
 	SF_UNAME_VERSION	= 3,
 	SF_UNAME_MACHINE	= 4,
@@ -78,14 +74,6 @@ enum sentinel_field {
 	SF_SYSINFO_TOTALSWAP	= 11,
 	SF_SYSINFO_TOTALHIGH	= 12,
 	SF_SYSINFO_MEM_UNIT	= 13,
-
-	SF_GETRLIMIT_CUR	= 20,
-	SF_GETRLIMIT_MAX	= 21,
-
-	SF_PRLIMIT64_CUR	= 30,
-	SF_PRLIMIT64_MAX	= 31,
-
-	SF_SCHED_PRIORITY	= 40,
 };
 
 /*
@@ -109,29 +97,16 @@ static bool sentinel_capture(struct sentinel_reading *out)
 {
 	struct new_utsname uts;
 	struct sysinfo si;
-	struct rlimit rl_g;
-	struct rlimit rl_p;
-	struct sched_param sp;
 
 	memset(&uts, 0, sizeof(uts));
 	memset(&si, 0, sizeof(si));
-	memset(&rl_g, 0, sizeof(rl_g));
-	memset(&rl_p, 0, sizeof(rl_p));
-	memset(&sp, 0, sizeof(sp));
 
 	if (syscall(SYS_uname, &uts) != 0)
 		return false;
 	if (syscall(SYS_sysinfo, &si) != 0)
 		return false;
-	if (syscall(SYS_getrlimit, RLIMIT_NOFILE, &rl_g) != 0)
-		return false;
-	if (syscall(SYS_prlimit64, 0, RLIMIT_NOFILE, NULL, &rl_p) != 0)
-		return false;
-	if (syscall(SYS_sched_getparam, 0, &sp) != 0)
-		return false;
 
 	memcpy(out->sysname,  uts.sysname,  sizeof(out->sysname));
-	memcpy(out->nodename, uts.nodename, sizeof(out->nodename));
 	memcpy(out->release,  uts.release,  sizeof(out->release));
 	memcpy(out->version,  uts.version,  sizeof(out->version));
 	memcpy(out->machine,  uts.machine,  sizeof(out->machine));
@@ -140,14 +115,6 @@ static bool sentinel_capture(struct sentinel_reading *out)
 	out->sysinfo_totalswap	= si.totalswap;
 	out->sysinfo_totalhigh	= si.totalhigh;
 	out->sysinfo_mem_unit	= si.mem_unit;
-
-	out->getrlimit_cur	= (unsigned long) rl_g.rlim_cur;
-	out->getrlimit_max	= (unsigned long) rl_g.rlim_max;
-
-	out->prlimit64_cur	= (unsigned long) rl_p.rlim_cur;
-	out->prlimit64_max	= (unsigned long) rl_p.rlim_max;
-
-	out->sched_priority	= sp.sched_priority;
 
 	out->valid = true;
 	return true;
@@ -255,9 +222,6 @@ void divergence_sentinel_tick(struct childdata *child)
 	compare_uname_field(child, SF_UNAME_SYSNAME,
 			    child->sentinel_prev.sysname, cur.sysname,
 			    sizeof(cur.sysname));
-	compare_uname_field(child, SF_UNAME_NODENAME,
-			    child->sentinel_prev.nodename, cur.nodename,
-			    sizeof(cur.nodename));
 	compare_uname_field(child, SF_UNAME_RELEASE,
 			    child->sentinel_prev.release, cur.release,
 			    sizeof(cur.release));
@@ -280,25 +244,6 @@ void divergence_sentinel_tick(struct childdata *child)
 	compare_scalar(child, (unsigned int) SYS_sysinfo, SF_SYSINFO_MEM_UNIT,
 		       (unsigned long) child->sentinel_prev.sysinfo_mem_unit,
 		       (unsigned long) cur.sysinfo_mem_unit);
-
-	compare_scalar(child, (unsigned int) SYS_getrlimit, SF_GETRLIMIT_CUR,
-		       child->sentinel_prev.getrlimit_cur,
-		       cur.getrlimit_cur);
-	compare_scalar(child, (unsigned int) SYS_getrlimit, SF_GETRLIMIT_MAX,
-		       child->sentinel_prev.getrlimit_max,
-		       cur.getrlimit_max);
-
-	compare_scalar(child, (unsigned int) SYS_prlimit64, SF_PRLIMIT64_CUR,
-		       child->sentinel_prev.prlimit64_cur,
-		       cur.prlimit64_cur);
-	compare_scalar(child, (unsigned int) SYS_prlimit64, SF_PRLIMIT64_MAX,
-		       child->sentinel_prev.prlimit64_max,
-		       cur.prlimit64_max);
-
-	compare_scalar(child, (unsigned int) SYS_sched_getparam,
-		       SF_SCHED_PRIORITY,
-		       (unsigned long) child->sentinel_prev.sched_priority,
-		       (unsigned long) cur.sched_priority);
 
 	child->sentinel_prev = cur;
 }
