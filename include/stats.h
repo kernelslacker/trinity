@@ -534,6 +534,11 @@ struct stats_s {
 	unsigned long genl_family_calls_tipc;
 	unsigned long genl_family_calls_wireguard;
 	unsigned long genl_family_calls_l2tp;
+	/* Bundled counter for the four NetLabel families (CALIPSO,
+	 * CIPSOv4, UNLBL, MGMT) — they all dispatch into the same LSM
+	 * hook chain on the kernel side, so a single end-of-run row
+	 * captures total NetLabel traffic without splitting four ways. */
+	unsigned long genl_family_calls_netlabel;
 
 	/* nfnetlink registry per-subsystem dispatch counters.  Same shape
 	 * as the genl_family_calls counters above but for NETLINK_NETFILTER
