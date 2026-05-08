@@ -522,8 +522,10 @@ void struct_catalog_init(void)
 			nr = search_syscall_table(syscalls,
 						  max_nr_syscalls,
 						  sa->syscall_name);
-			if (nr >= 0 && (unsigned int) nr < MAX_NR_SYSCALL)
+			if (nr >= 0 && (unsigned int) nr < MAX_NR_SYSCALL) {
 				desc_by_nr_64[nr][sa->arg_idx - 1] = sa->desc;
+				desc_by_nr_32[nr][sa->arg_idx - 1] = sa->desc;
+			}
 		}
 	}
 
