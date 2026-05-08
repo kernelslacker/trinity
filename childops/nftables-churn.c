@@ -398,6 +398,24 @@
 #define NFTA_SET_ID			10
 #endif
 
+/* nft_lookup NFTA_LOOKUP_* attribute IDs and lookup-flag bits.  The
+ * validator in net/netfilter/nft_lookup.c (nft_lookup_init) requires
+ * NFTA_LOOKUP_SET to name an existing set in the same transaction, with
+ * NFTA_LOOKUP_SET_ID disambiguating anonymous-set names; NFTA_LOOKUP_SREG
+ * is the register holding the key, NFTA_LOOKUP_DREG is only valid for
+ * map-typed sets and yields -EOPNOTSUPP otherwise. */
+#ifndef NFTA_LOOKUP_SET
+#define NFTA_LOOKUP_SET			1
+#define NFTA_LOOKUP_SREG		2
+#define NFTA_LOOKUP_DREG		3
+#define NFTA_LOOKUP_SET_ID		4
+#define NFTA_LOOKUP_FLAGS		5
+#endif
+
+#ifndef NFT_LOOKUP_F_INV
+#define NFT_LOOKUP_F_INV		(1 << 0)
+#endif
+
 /* Reasonable ceiling on a single nfnetlink message + payload.  The
  * rule message with one nested expression containing a verdict +
  * chain string is the largest we emit; well under 1 KiB.  2 KiB
@@ -968,6 +986,73 @@ static size_t build_nft_meta_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_lookup
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the per-expression validator in
+ * net/netfilter/nft_lookup.c (nft_lookup_init) — set-binding,
+ * sreg/dreg validation, and the map-vs-plain set type check.  Refers
+ * to the in-transaction anonymous set already created by build_newset
+ * via NFTA_LOOKUP_SET (name) + NFTA_LOOKUP_SET_ID (cookie); the kernel
+ * resolves the binding inside the same commit.
+ *
+ * Roll variants per call:
+ *   - SREG always present (key register, NFT_REG32_00..15).
+ *   - DREG present 1-in-2 (NFT_REG32_00..15).  DREG is only valid on
+ *     map-typed sets — the kernel returns -EOPNOTSUPP for plain sets,
+ *     which is exactly the validator path we're trying to cover.
+ *   - FLAGS = 0 by default, NFT_LOOKUP_F_INV 1-in-4 (negated lookup).
+ */
+static size_t build_nft_lookup_expr(unsigned char *buf, size_t off,
+				    size_t cap, const char *set_name,
+				    __u32 set_id)
+{
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u32 sreg = NFT_REG32_00 + (rand32() % 16);
+	__u32 dreg = NFT_REG32_00 + (rand32() % 16);
+	__u32 flags = ONE_IN(4) ? NFT_LOOKUP_F_INV : 0;
+	bool with_dreg = ONE_IN(2);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "lookup");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_LOOKUP_SET, set_name);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_LOOKUP_SREG, sreg);
+	if (!off)
+		return 0;
+	if (with_dreg) {
+		off = nla_put_be32(buf, off, cap, NFTA_LOOKUP_DREG, dreg);
+		if (!off)
+			return 0;
+	}
+	off = nla_put_be32(buf, off, cap, NFTA_LOOKUP_SET_ID, set_id);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_LOOKUP_FLAGS, flags);
+	if (!off)
+		return 0;
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * NFT_MSG_NEWRULE on (table, chain) carrying one immediate-verdict
  * expression that jumps/gotos to target_chain.  The expression list
  * layout is:
@@ -989,7 +1074,8 @@ static size_t build_nft_meta_expr(unsigned char *buf, size_t off, size_t cap)
 static int build_newrule(int fd, __u8 family, const char *table_name,
 			 const char *chain_name, const char *target_chain,
 			 __u32 verdict_code, __u64 position, bool with_payload,
-			 bool with_meta)
+			 bool with_meta, bool with_lookup, const char *set_name,
+			 __u32 set_id)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
 	struct nlattr *exprs, *elem, *expr_data, *imm_data, *verdict;
@@ -1031,6 +1117,13 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_meta) {
 		off = build_nft_meta_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_lookup) {
+		off = build_nft_lookup_expr(buf, off, sizeof(buf),
+					    set_name, set_id);
 		if (!off)
 			return -EIO;
 	}
@@ -1236,10 +1329,12 @@ bool nftables_churn(struct childdata *child)
 	{
 		bool with_payload = ONE_IN(3);
 		bool with_meta = ONE_IN(3);
+		bool with_lookup = ONE_IN(3);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 0, with_payload,
-				  with_meta) == 0) {
+				  with_meta, with_lookup, anon_set,
+				  set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
 					   1, __ATOMIC_RELAXED);
 			if (with_payload)
@@ -1247,6 +1342,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_meta)
 				__atomic_add_fetch(&shm->stats.nftables_churn_meta_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_lookup)
+				__atomic_add_fetch(&shm->stats.nftables_churn_lookup_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -1308,10 +1406,12 @@ bool nftables_churn(struct childdata *child)
 	{
 		bool with_payload = ONE_IN(3);
 		bool with_meta = ONE_IN(3);
+		bool with_lookup = ONE_IN(3);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 1, with_payload,
-				  with_meta) == 0) {
+				  with_meta, with_lookup, anon_set,
+				  set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
 					   1, __ATOMIC_RELAXED);
 			if (with_payload)
@@ -1319,6 +1419,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_meta)
 				__atomic_add_fetch(&shm->stats.nftables_churn_meta_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_lookup)
+				__atomic_add_fetch(&shm->stats.nftables_churn_lookup_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}

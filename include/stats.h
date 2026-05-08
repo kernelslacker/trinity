@@ -886,6 +886,7 @@ struct stats_s {
 	unsigned long nftables_churn_table_del_ok;	/* NFT_MSG_DELTABLE accepted */
 	unsigned long nftables_churn_payload_expr_emit;	/* NEWRULE carried a structured nft_payload expression */
 	unsigned long nftables_churn_meta_expr_emit;	/* NEWRULE carried a structured nft_meta expression */
+	unsigned long nftables_churn_lookup_expr_emit;	/* NEWRULE carried a structured nft_lookup expression */
 
 	/* tc_qdisc_churn childop counters */
 	unsigned long tc_qdisc_churn_runs;		/* total tc_qdisc_churn invocations */
