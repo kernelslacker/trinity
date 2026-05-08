@@ -867,6 +867,42 @@
 #define NFTA_LAST_MSECS			2
 #endif
 
+/* nft_rt NFTA_RT_* attribute IDs and NFT_RT_* key IDs.  The validator
+ * in net/netfilter/nft_rt.c (nft_rt_init / nft_rt_validate) drives off
+ * nft_rt_policy[]: NFTA_RT_DREG (NLA_U32) and NFTA_RT_KEY
+ * (NLA_POLICY_MAX(NLA_BE32, 255)) are both MANDATORY.  The KEY enum
+ * (CLASSID=0, NEXTHOP4=1, NEXTHOP6=2, TCPMSS=3, XFRM=4) selects which
+ * dst/route field gets loaded into the destination register; out-of-
+ * enum keys are rejected by nft_rt_init's switch statement with
+ * -EINVAL even though the policy mask permits 0..255.  Validate() also
+ * rejects family != IPv4/IPv6/INET with -EOPNOTSUPP, and TCPMSS
+ * additionally requires a FORWARD/LOCAL_OUT/POST_ROUTING hook.
+ * nft_rt is built into nf_tables core (no separate CONFIG_NFT_RT), so
+ * any host with CONFIG_NF_TABLES has the expression available.  Each
+ * symbol is guarded individually so the build still works on older
+ * host headers that predate any subset. */
+#ifndef NFTA_RT_DREG
+#define NFTA_RT_DREG			1
+#endif
+#ifndef NFTA_RT_KEY
+#define NFTA_RT_KEY			2
+#endif
+#ifndef NFT_RT_CLASSID
+#define NFT_RT_CLASSID			0
+#endif
+#ifndef NFT_RT_NEXTHOP4
+#define NFT_RT_NEXTHOP4			1
+#endif
+#ifndef NFT_RT_NEXTHOP6
+#define NFT_RT_NEXTHOP6			2
+#endif
+#ifndef NFT_RT_TCPMSS
+#define NFT_RT_TCPMSS			3
+#endif
+#ifndef NFT_RT_XFRM
+#define NFT_RT_XFRM			4
+#endif
+
 /* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
  * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
  * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
@@ -3002,6 +3038,88 @@ static size_t build_nft_last_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_rt
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_rt.c
+ * (nft_rt_init -> priv->key dispatch, then nft_rt_validate at commit
+ * time).  Both NFTA_RT_DREG (NLA_U32) and NFTA_RT_KEY
+ * (NLA_POLICY_MAX(NLA_BE32, 255)) are MANDATORY.
+ *
+ * KEY distribution per call (rand32() % 8):
+ *   - CLASSID  ~1/4 (buckets 0,1): always valid across IPv4/IPv6/INET.
+ *   - NEXTHOP4 ~1/4 (buckets 2,3): always valid.
+ *   - NEXTHOP6 ~1/4 (buckets 4,5): always valid.
+ *   - XFRM     ~1/8 (bucket  6):   always valid.
+ *   - TCPMSS   ~1/8 (bucket  7):   only valid in FORWARD/LOCAL_OUT/
+ *     POST_ROUTING hooks; nft_rt_validate rejects other hooks with
+ *     -EOPNOTSUPP, which is the rejection-path coverage we want.
+ *
+ * DREG is picked uniformly from NFT_REG_1..NFT_REG_4 inline since the
+ * existing emitters in this file each open-code their own register
+ * pick (no shared helper).  No upper-bound clamping on KEY beyond what
+ * the kernel mask enforces — picking from the valid enum exercises
+ * the success path, and the kernel's own switch statement in
+ * nft_rt_init rejects out-of-enum keys with -EINVAL when stale-host
+ * headers expand to unknown values.
+ */
+static size_t build_nft_rt_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u32 dreg = NFT_REG_1 + (rand32() % 4);
+	__u32 bucket = rand32() & 0x7;
+	__u32 key;
+
+	switch (bucket) {
+	case 0:
+	case 1:
+		key = NFT_RT_CLASSID;
+		break;
+	case 2:
+	case 3:
+		key = NFT_RT_NEXTHOP4;
+		break;
+	case 4:
+	case 5:
+		key = NFT_RT_NEXTHOP6;
+		break;
+	case 6:
+		key = NFT_RT_XFRM;
+		break;
+	default:
+		key = NFT_RT_TCPMSS;
+		break;
+	}
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "rt");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_RT_KEY, key);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_RT_DREG, dreg);
+	if (!off)
+		return 0;
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Structurally-valid nft_immediate expression element.  Net layout:
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "immediate"
@@ -3343,6 +3461,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_counter,
 			 bool with_connlimit,
 			 bool with_last,
+			 bool with_rt,
 			 bool with_immediate,
 			 bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
@@ -3478,6 +3597,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_last) {
 		off = build_nft_last_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_rt) {
+		off = build_nft_rt_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -3717,6 +3842,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_counter = ONE_IN(3);
 		bool with_connlimit = ONE_IN(3);
 		bool with_last = ONE_IN(3);
+		bool with_rt = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -3730,6 +3856,7 @@ bool nftables_churn(struct childdata *child)
 				  with_hash, with_synproxy, with_counter,
 				  with_connlimit,
 				  with_last,
+				  with_rt,
 				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
@@ -3785,6 +3912,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_last)
 				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_rt)
+				__atomic_add_fetch(&shm->stats.nftables_churn_rt_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
@@ -3870,6 +4000,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_counter = ONE_IN(3);
 		bool with_connlimit = ONE_IN(3);
 		bool with_last = ONE_IN(3);
+		bool with_rt = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -3883,6 +4014,7 @@ bool nftables_churn(struct childdata *child)
 				  with_hash, with_synproxy, with_counter,
 				  with_connlimit,
 				  with_last,
+				  with_rt,
 				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
@@ -3938,6 +4070,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_last)
 				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_rt)
+				__atomic_add_fetch(&shm->stats.nftables_churn_rt_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
