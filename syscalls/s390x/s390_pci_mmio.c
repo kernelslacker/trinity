@@ -26,7 +26,7 @@ static void sanitise_s390_pci_mmio(struct syscallrecord *rec)
 		rec->a3 = page_size - offset;
 	if (rec->a3 == 0)
 		rec->a3 = 1;
-	rec->a2 = (unsigned long)malloc(rec->a3);
+	rec->a2 = (unsigned long)zmalloc(rec->a3);
 	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
 	 * syscall before post_s390_pci_mmio() runs.  malloc() failure leaves
 	 * a2 == NULL, which the snapshot mirrors. */
