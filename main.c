@@ -153,7 +153,7 @@ void reap_child(struct childdata *child, int childno)
 	if (pid == EMPTY_PIDSLOT)
 		return;
 	child->tp = (struct timespec){ .tv_sec = 0, .tv_nsec = 0 };
-	bust_lock(&child->syscall.lock);
+	force_bust_lock(&child->syscall.lock);
 
 	/* Flush any unbatched per-child syscall count into the shared total
 	 * so it isn't lost when the child slot is recycled. */
@@ -291,9 +291,9 @@ static void kill_all_kids(void)
 		reap_dead_kids();
 	if (check_all_locks() == true) {
 		for_each_child(i)
-			bust_lock(&children[i]->syscall.lock);
-		bust_lock(&shm->syscalltable_lock);
-		bust_lock(&shm->objlock);
+			force_bust_lock(&children[i]->syscall.lock);
+		force_bust_lock(&shm->syscalltable_lock);
+		force_bust_lock(&shm->objlock);
 	}
 }
 

@@ -34,3 +34,4 @@ void unlock(lock_t *lk);
 bool check_all_locks(void);
 
 void bust_lock(lock_t *lk);
+void force_bust_lock(lock_t *lk);
