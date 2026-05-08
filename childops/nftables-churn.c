@@ -818,6 +818,32 @@
 #define NFTA_COUNTER_PACKETS		2
 #endif
 
+/* nft_connlimit NFTA_CONNLIMIT_* attribute IDs and NFT_CONNLIMIT_F_INV
+ * flag bit.  The validator in net/netfilter/nft_connlimit.c
+ * (nft_connlimit_do_init) drives off nft_connlimit_policy[]:
+ * NFTA_CONNLIMIT_COUNT (NLA_U32, big-endian on wire — read via
+ * ntohl(nla_get_be32())) is REQUIRED (the init body returns -EINVAL when
+ * tb[NFTA_CONNLIMIT_COUNT] is NULL) and seeds the per-rule connection
+ * cap that nft_connlimit_do_eval compares the live conncount against.
+ * NFTA_CONNLIMIT_FLAGS (NLA_U32, big-endian) is OPTIONAL and the only
+ * legal bit is NFT_CONNLIMIT_F_INV (0x01); any other bit fails the
+ * `flags & ~NFT_CONNLIMIT_F_INV` check with -EOPNOTSUPP before the
+ * priv struct is initialised.  When set, NFT_CONNLIMIT_F_INV flips the
+ * eval comparator's verdict via XOR so over-cap becomes the matching
+ * side instead of the rejecting side.  Each symbol is guarded
+ * individually so the build still works on older host headers that
+ * predate any subset.  Depends on CONFIG_NF_CONNTRACK + CONFIG_NF_CONNCOUNT
+ * (auto-pulled by CONFIG_NFT_CONNLIMIT=m); fuzz-box config has it. */
+#ifndef NFTA_CONNLIMIT_COUNT
+#define NFTA_CONNLIMIT_COUNT		1
+#endif
+#ifndef NFTA_CONNLIMIT_FLAGS
+#define NFTA_CONNLIMIT_FLAGS		2
+#endif
+#ifndef NFT_CONNLIMIT_F_INV
+#define NFT_CONNLIMIT_F_INV		(1 << 0)
+#endif
+
 /* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
  * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
  * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
@@ -2761,6 +2787,90 @@ static size_t build_nft_counter_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_connlimit
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_connlimit.c
+ * (nft_connlimit_do_init): NFTA_CONNLIMIT_COUNT (NLA_U32, big-endian on
+ * wire — read via ntohl(nla_get_be32())) is REQUIRED — the kernel
+ * returns -EINVAL when the attribute is missing — and seeds the per-rule
+ * connection-count cap that nft_connlimit_do_eval's `count > limit`
+ * gate compares against.  NFTA_CONNLIMIT_FLAGS (NLA_U32, big-endian) is
+ * OPTIONAL: the only legal bit is NFT_CONNLIMIT_F_INV (0x01); any other
+ * bit fails `flags & ~NFT_CONNLIMIT_F_INV` with -EOPNOTSUPP before the
+ * priv struct is initialised.  When set, the inversion flag flips the
+ * eval comparator's verdict via XOR so the over-cap branch becomes the
+ * matching side instead of the rejecting side.
+ *
+ * Variants per call:
+ *   - COUNT rolls across {0, 1, small, INT_MAX, U32_MAX} via a rand32()
+ *     bucket pick so the eval-time `count > limit` comparator and the
+ *     `(count > limit) ^ invert` verdict flip see both the
+ *     trivially-tripped (0/1) and the can-never-trip (U32_MAX) ends of
+ *     the spectrum on the very first conntrack-bearing skb.
+ *   - FLAGS is coin-flipped present.  When present, the value stays
+ *     within {0, NFT_CONNLIMIT_F_INV} so do_init's policy walker
+ *     reaches the priv-struct setup instead of bailing at the EOPNOTSUPP
+ *     gate every time.  ONE_IN(8) of the flag-present emissions
+ *     deliberately set an out-of-mask byte (0x02..0xff) so the
+ *     EOPNOTSUPP rejection path through the same `flags & ~MASK` check
+ *     also gets exercised.
+ */
+static size_t build_nft_connlimit_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u32 count_buckets[] = {
+		0U,			/* trivially tripped */
+		1U,			/* trivially tripped on the second conn */
+		8U,			/* small */
+		0x7fffffffU,		/* INT_MAX */
+		0xffffffffU,		/* U32_MAX — can-never-trip */
+	};
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u32 count = count_buckets[rand32() % ARRAY_SIZE(count_buckets)];
+	bool with_flags = ONE_IN(2);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "connlimit");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_CONNLIMIT_COUNT, count);
+	if (!off)
+		return 0;
+
+	if (with_flags) {
+		__u32 flags;
+
+		if (ONE_IN(8)) {
+			/* Drive the `flags & ~NFT_CONNLIMIT_F_INV` ->
+			 * -EOPNOTSUPP rejection path: pick any non-zero
+			 * byte from the disallowed range. */
+			flags = 0x02U + (rand32() % 0xfeU);
+		} else {
+			flags = ONE_IN(2) ? NFT_CONNLIMIT_F_INV : 0U;
+		}
+		off = nla_put_be32(buf, off, cap, NFTA_CONNLIMIT_FLAGS, flags);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Structurally-valid nft_immediate expression element.  Net layout:
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "immediate"
@@ -3100,6 +3210,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_numgen, bool with_hash,
 			 bool with_synproxy,
 			 bool with_counter,
+			 bool with_connlimit,
 			 bool with_immediate,
 			 bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
@@ -3223,6 +3334,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_counter) {
 		off = build_nft_counter_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_connlimit) {
+		off = build_nft_connlimit_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -3460,6 +3577,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_hash = ONE_IN(3);
 		bool with_synproxy = ONE_IN(3);
 		bool with_counter = ONE_IN(3);
+		bool with_connlimit = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -3471,6 +3589,7 @@ bool nftables_churn(struct childdata *child)
 				  with_byteorder, with_socket,
 				  with_quota, with_limit, with_numgen,
 				  with_hash, with_synproxy, with_counter,
+				  with_connlimit,
 				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
@@ -3520,6 +3639,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_counter)
 				__atomic_add_fetch(&shm->stats.nftables_churn_counter_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_connlimit)
+				__atomic_add_fetch(&shm->stats.nftables_churn_connlimit_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
@@ -3603,6 +3725,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_hash = ONE_IN(3);
 		bool with_synproxy = ONE_IN(3);
 		bool with_counter = ONE_IN(3);
+		bool with_connlimit = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -3614,6 +3737,7 @@ bool nftables_churn(struct childdata *child)
 				  with_byteorder, with_socket,
 				  with_quota, with_limit, with_numgen,
 				  with_hash, with_synproxy, with_counter,
+				  with_connlimit,
 				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
@@ -3663,6 +3787,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_counter)
 				__atomic_add_fetch(&shm->stats.nftables_churn_counter_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_connlimit)
+				__atomic_add_fetch(&shm->stats.nftables_churn_connlimit_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
