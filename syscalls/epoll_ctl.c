@@ -6,6 +6,7 @@
  */
 #include <stdlib.h>
 #include <sys/epoll.h>
+#include "deferred-free.h"
 #include "fd.h"
 #include "sanitise.h"
 #include "random.h"
@@ -91,9 +92,8 @@ static void post_epoll_ctl(struct syscallrecord *rec)
 		rec->post_state = 0;
 		return;
 	}
-	free(ep);
 	rec->a4 = 0;
-	rec->post_state = 0;
+	deferred_freeptr(&rec->post_state);
 }
 
 static unsigned long epoll_ctl_ops[] = {
