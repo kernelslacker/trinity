@@ -73,6 +73,9 @@ extern struct genl_family_grammar fam_macsec;
 #if __has_include(<linux/if_team.h>)
 extern struct genl_family_grammar fam_team;
 #endif
+#if __has_include(<linux/hsr_netlink.h>)
+extern struct genl_family_grammar fam_hsr;
+#endif
 extern struct genl_family_grammar fam_nlbl_mgmt;
 extern struct genl_family_grammar fam_nlbl_cipsov4;
 extern struct genl_family_grammar fam_nlbl_unlabel;
@@ -120,6 +123,9 @@ static struct genl_family_grammar *registry[] = {
 #if __has_include(<linux/if_team.h>)
 	&fam_team,
 #endif
+#if __has_include(<linux/hsr_netlink.h>)
+	&fam_hsr,
+#endif
 	&fam_nlbl_mgmt,
 	&fam_nlbl_cipsov4,
 	&fam_nlbl_unlabel,
@@ -162,6 +168,7 @@ static const struct {
 	{ "NLBL_UNLBL",    offsetof(struct stats_s, genl_family_calls_netlabel) },
 	{ "NLBL_CALIPSO",  offsetof(struct stats_s, genl_family_calls_netlabel) },
 	{ "team",          offsetof(struct stats_s, genl_family_calls_team) },
+	{ "hsr",           offsetof(struct stats_s, genl_family_calls_hsr) },
 };
 
 static void stamp_call_counters(void)

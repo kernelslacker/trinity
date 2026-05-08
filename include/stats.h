@@ -542,6 +542,7 @@ struct stats_s {
 	 * captures total NetLabel traffic without splitting four ways. */
 	unsigned long genl_family_calls_netlabel;
 	unsigned long genl_family_calls_team;
+	unsigned long genl_family_calls_hsr;
 
 	/* nfnetlink registry per-subsystem dispatch counters.  Same shape
 	 * as the genl_family_calls counters above but for NETLINK_NETFILTER
