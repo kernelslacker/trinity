@@ -918,7 +918,7 @@ static const int dormant_op_disabled[79] = {
 	1, 1, 1, 0, 1,	/* 35-39: slab_cache_thrash active; dormant: vdso_mremap_race, numa_migration, cpu_hotplug_rider, tls_rotate */
 	1, 1, 1, 1, 1,	/* 40-44: dormant: packet_fanout_thrash, iouring_net_multishot, tcp_ao_rotate, vrf_fib_churn, netlink_monitor_race */
 	1, 1, 1, 1, 1,	/* 45-49: dormant: tipc_link_churn, tls_ulp_churn, vxlan_encap_churn, bridge_fdb_stp, nftables_churn */
-	1, 1, 1, 1, 1,	/* 50-54: dormant: tc_qdisc_churn, xfrm_churn, bpf_cgroup_attach, [reserved], sctp_assoc_churn */
+	1, 1, 1, 1, 1,	/* 50-54: dormant: tc_qdisc_churn, xfrm_churn, bpf_cgroup_attach, mpls_route_churn, sctp_assoc_churn */
 	1, 1, 1, 1, 1,	/* 55-59: dormant: mptcp_pm_churn, devlink_port_churn, handshake_req_abort, nf_conntrack_helper_churn, af_unix_scm_rights_gc_churn */
 	1, 1, 1, 1, 1,	/* 60-64: dormant: netns_teardown_churn, tcp_ulp_swap_churn, msg_zerocopy_churn, iouring_send_zc_churn, vsock_transport_churn */
 	1, 1, 1, 1, 0,	/* 65-69: kvm_run_churn active; dormant: bridge_vlan_churn, igmp_mld_source_churn, psp_key_rotate, afxdp_churn */
@@ -1091,6 +1091,7 @@ static const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_AF_ALG_TEMPLATE_PROBE:	return "af_alg_template_probe";
 	case CHILD_OP_IOURING_CMD_PASSTHROUGH:	return "iouring_cmd_passthrough";
 	case CHILD_OP_PAGECACHE_CANARY_CHECK:	return "pagecache_canary_check";
+	case CHILD_OP_MPLS_ROUTE_CHURN:	return "mpls_route_churn";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1140,9 +1141,10 @@ void log_alt_op_config(void)
 
 /*
  * Slot -> alt-op mapping.  Same indexing as dormant_op_disabled[]: slot N
- * is enabled iff dormant_op_disabled[N] == 0.  Slot 53 is a hole left by a
- * removed op; CHILD_OP_SYSCALL acts as a sentinel and is filtered out
- * during dense-vector construction.
+ * is enabled iff dormant_op_disabled[N] == 0.  Slot 53 was previously a hole
+ * left by a removed op; it now holds CHILD_OP_MPLS_ROUTE_CHURN.  The
+ * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
+ * defensive coding for any future hole.
  */
 static const enum child_op_type pick_op_type_table[79] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
@@ -1198,7 +1200,7 @@ static const enum child_op_type pick_op_type_table[79] = {
 	[50] = CHILD_OP_TC_QDISC_CHURN,
 	[51] = CHILD_OP_XFRM_CHURN,
 	[52] = CHILD_OP_BPF_CGROUP_ATTACH,
-	[53] = CHILD_OP_SYSCALL,	/* hole filled with sentinel */
+	[53] = CHILD_OP_MPLS_ROUTE_CHURN,
 	[54] = CHILD_OP_SCTP_ASSOC_CHURN,
 	[55] = CHILD_OP_MPTCP_PM_CHURN,
 	[56] = CHILD_OP_DEVLINK_PORT_CHURN,
@@ -1473,6 +1475,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_AF_ALG_TEMPLATE_PROBE]	= af_alg_template_probe,
 	[CHILD_OP_IOURING_CMD_PASSTHROUGH]	= iouring_cmd_passthrough,
 	[CHILD_OP_PAGECACHE_CANARY_CHECK]	= pagecache_canary_check,
+	[CHILD_OP_MPLS_ROUTE_CHURN]	= mpls_route_churn,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
