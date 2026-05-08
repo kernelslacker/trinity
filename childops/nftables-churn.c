@@ -747,6 +747,54 @@
 #define NFT_HASH_SYM			1
 #endif
 
+/* nft_synproxy NFTA_SYNPROXY_* attribute IDs and NF_SYNPROXY_OPT_* option
+ * bits.  The validator in net/netfilter/nft_synproxy.c
+ * (nft_synproxy_do_init) drives off nft_synproxy_policy[]: each of MSS,
+ * WSCALE and FLAGS is individually OPTIONAL (gated by `if (tb[...])` in
+ * the init body), but emitting zero of them leaves the priv struct at
+ * default-zero which is uninteresting, so the emitter forces MSS present
+ * if the per-attr coin-flips would otherwise produce the empty payload.
+ * WSCALE is bounded by NLA_POLICY_MAX(NLA_U8, TCP_MAX_WSCALE) where
+ * TCP_MAX_WSCALE == 14 in include/net/tcp.h — values > 14 are rejected
+ * with -EINVAL by the policy walker before the init body sees them.
+ * FLAGS is bounded by NLA_POLICY_MASK(NLA_BE32, NF_SYNPROXY_OPT_MASK)
+ * where the mask is MSS | WSCALE | SACK_PERM | TIMESTAMP == 0x0F;
+ * NF_SYNPROXY_OPT_ECN (0x10) is DELIBERATELY excluded from the mask and
+ * rejected by the policy walker.  MSS is NLA_U16 read on-wire as
+ * big-endian via ntohs(nla_get_be16()) in the kernel and has no
+ * additional validator beyond the type.  Chain-context (LOCAL_IN /
+ * FORWARD priority on a base chain) is enforced by nft_synproxy_validate
+ * at validate-hook time, not by do_init — so this payload exercises the
+ * policy walker and do_init reliably regardless of which chain the rule
+ * lands on.  Each symbol is guarded individually so the build still
+ * works on older host headers that predate any subset. */
+#ifndef NFTA_SYNPROXY_MSS
+#define NFTA_SYNPROXY_MSS		1
+#endif
+#ifndef NFTA_SYNPROXY_WSCALE
+#define NFTA_SYNPROXY_WSCALE		2
+#endif
+#ifndef NFTA_SYNPROXY_FLAGS
+#define NFTA_SYNPROXY_FLAGS		3
+#endif
+
+#ifndef NF_SYNPROXY_OPT_MSS
+#define NF_SYNPROXY_OPT_MSS		0x01
+#endif
+#ifndef NF_SYNPROXY_OPT_WSCALE
+#define NF_SYNPROXY_OPT_WSCALE		0x02
+#endif
+#ifndef NF_SYNPROXY_OPT_SACK_PERM
+#define NF_SYNPROXY_OPT_SACK_PERM	0x04
+#endif
+#ifndef NF_SYNPROXY_OPT_TIMESTAMP
+#define NF_SYNPROXY_OPT_TIMESTAMP	0x08
+#endif
+
+#ifndef TCP_MAX_WSCALE
+#define TCP_MAX_WSCALE			14
+#endif
+
 /* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
  * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
  * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
@@ -2457,6 +2505,121 @@ static size_t build_nft_hash_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_synproxy
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_synproxy.c
+ * via the nft_synproxy_policy[] parser and nft_synproxy_do_init().
+ *
+ * Each of the three attributes is individually OPTIONAL in do_init
+ * (each is gated by `if (tb[...])` in the init body), so any subset is
+ * accepted by the parser.  Per-attr coin-flips drive presence; if all
+ * three coin-flips would produce the empty payload, MSS is forced
+ * present so the priv struct does not stay at default-zero — which
+ * leaves every option-emit path in nft_synproxy_eval cold.
+ *
+ * Variants per call:
+ *   - NFTA_SYNPROXY_MSS (NLA_U16, big-endian on wire — the kernel reads
+ *     it via ntohs(nla_get_be16())) is the TCP MSS the synproxy hands
+ *     back to the backend.  The policy has no validator beyond the
+ *     type, so values roll uniformly across {0, 536, 1460, 9000} —
+ *     covering the degenerate zero, the IPv4 minimum, the typical
+ *     ethernet MSS, and the jumbo-frame end of the range.  All four
+ *     fit in 16 bits, so the truncation guard is never reached.
+ *   - NFTA_SYNPROXY_WSCALE (NLA_U8) is the TCP window-scale shift.
+ *     The policy is NLA_POLICY_MAX(NLA_U8, TCP_MAX_WSCALE) where
+ *     TCP_MAX_WSCALE == 14, so the parser rejects values > 14 with
+ *     -EINVAL before do_init runs.  WSCALE rolls uniformly across the
+ *     full valid 0..14 range, exercising both the unscaled (0) and
+ *     fully-scaled (14) ends of the SYN/ACK option emit path.
+ *   - NFTA_SYNPROXY_FLAGS (NLA_BE32) is the option mask the synproxy
+ *     reflects into its SYN/ACK.  The policy is
+ *     NLA_POLICY_MASK(NLA_BE32, NF_SYNPROXY_OPT_MASK) where the mask is
+ *     MSS | WSCALE | SACK_PERM | TIMESTAMP == 0x0F.  NF_SYNPROXY_OPT_ECN
+ *     (0x10) is intentionally excluded from the mask and rejected by
+ *     the parser — so FLAGS rolls uniformly across 0..0x0F to stay
+ *     structurally valid and never trip the mask guard.  All sixteen
+ *     combinations of the four allowed bits get reached, including the
+ *     zero-bits payload that suppresses every per-option emit branch
+ *     and the all-four-set payload that exercises every emit branch in
+ *     one shot.
+ *
+ * The parser is a single-arm dispatch (no NFTA_*_TYPE selector picking
+ * between sub-inits the way nft_hash and nft_numgen have).  Chain
+ * context (LOCAL_IN / FORWARD priority on a base chain) is enforced by
+ * nft_synproxy_validate at validate-hook time, NOT inside do_init — so
+ * a NEWRULE carrying this expression on any chain still drives the
+ * policy walker and do_init reliably; the validate-hook -EOPNOTSUPP
+ * (when present) fires after the structurally-interesting work the
+ * slice is here to exercise.
+ */
+static size_t build_nft_synproxy_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u16 mss_values[] = {
+		0U,				/* degenerate zero */
+		536U,				/* IPv4 minimum */
+		1460U,				/* typical ethernet */
+		9000U,				/* jumbo frame */
+	};
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	bool with_mss = ONE_IN(2);
+	bool with_wscale = ONE_IN(2);
+	bool with_flags = ONE_IN(2);
+
+	/* At least one attr keeps the priv struct off default-zero. */
+	if (!with_mss && !with_wscale && !with_flags)
+		with_mss = true;
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "synproxy");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	if (with_mss) {
+		__u16 mss = mss_values[rand32() % ARRAY_SIZE(mss_values)];
+
+		off = nla_put_be16(buf, off, cap, NFTA_SYNPROXY_MSS, mss);
+		if (!off)
+			return 0;
+	}
+
+	if (with_wscale) {
+		__u8 wscale = (__u8)(rand32() % (TCP_MAX_WSCALE + 1));
+
+		off = nla_put(buf, off, cap, NFTA_SYNPROXY_WSCALE,
+			      &wscale, sizeof(wscale));
+		if (!off)
+			return 0;
+	}
+
+	if (with_flags) {
+		__u32 flags = rand32() & (NF_SYNPROXY_OPT_MSS |
+					  NF_SYNPROXY_OPT_WSCALE |
+					  NF_SYNPROXY_OPT_SACK_PERM |
+					  NF_SYNPROXY_OPT_TIMESTAMP);
+
+		off = nla_put_be32(buf, off, cap, NFTA_SYNPROXY_FLAGS, flags);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Structurally-valid nft_immediate expression element.  Net layout:
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "immediate"
@@ -2794,6 +2957,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_byteorder, bool with_socket,
 			 bool with_quota, bool with_limit,
 			 bool with_numgen, bool with_hash,
+			 bool with_synproxy,
 			 bool with_immediate,
 			 bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
@@ -2905,6 +3069,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_hash) {
 		off = build_nft_hash_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_synproxy) {
+		off = build_nft_synproxy_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -3140,6 +3310,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_limit = ONE_IN(3);
 		bool with_numgen = ONE_IN(3);
 		bool with_hash = ONE_IN(3);
+		bool with_synproxy = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -3150,7 +3321,7 @@ bool nftables_churn(struct childdata *child)
 				  with_bitwise, with_cmp, with_range,
 				  with_byteorder, with_socket,
 				  with_quota, with_limit, with_numgen,
-				  with_hash, with_immediate,
+				  with_hash, with_synproxy, with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
@@ -3193,6 +3364,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_hash)
 				__atomic_add_fetch(&shm->stats.nftables_churn_hash_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_synproxy)
+				__atomic_add_fetch(&shm->stats.nftables_churn_synproxy_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
@@ -3274,6 +3448,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_limit = ONE_IN(3);
 		bool with_numgen = ONE_IN(3);
 		bool with_hash = ONE_IN(3);
+		bool with_synproxy = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -3284,7 +3459,7 @@ bool nftables_churn(struct childdata *child)
 				  with_bitwise, with_cmp, with_range,
 				  with_byteorder, with_socket,
 				  with_quota, with_limit, with_numgen,
-				  with_hash, with_immediate,
+				  with_hash, with_synproxy, with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
@@ -3327,6 +3502,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_hash)
 				__atomic_add_fetch(&shm->stats.nftables_churn_hash_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_synproxy)
+				__atomic_add_fetch(&shm->stats.nftables_churn_synproxy_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
