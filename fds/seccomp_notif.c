@@ -55,8 +55,18 @@ static void seccomp_notif_dump(struct object *obj, enum obj_scope scope)
 
 /*
  * Build a minimal BPF program that returns SECCOMP_RET_USER_NOTIF for
- * getpid() and SECCOMP_RET_ALLOW for everything else.  This gives us
- * a notification fd without interfering with normal operation.
+ * an obsolete syscall and SECCOMP_RET_ALLOW for everything else.  This
+ * gives us a notification fd without interfering with normal operation.
+ *
+ * The filter target MUST be a syscall trinity does not invoke (directly
+ * or via libc) AND that the random picker does not select; otherwise
+ * the seccomp filter — which is inherited across fork and is permanent
+ * — wedges the parent and every child until somebody services the
+ * listener fd, and nothing in the codebase services it as part of
+ * normal scheduling.  __NR_query_module fits: the in-kernel slot is
+ * sys_ni_syscall, trinity's table entry for it is syscall_ni_syscall,
+ * and validate_specific_syscall_silent() skips NI_SYSCALL entries at
+ * activation time so the random picker never reaches it.
  */
 static int create_seccomp_notif_fd(void)
 {
@@ -64,8 +74,8 @@ static int create_seccomp_notif_fd(void)
 		/* A = syscall number */
 		BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
 			 offsetof(struct seccomp_data, nr)),
-		/* if (A == __NR_getpid) goto notify */
-		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_getpid, 0, 1),
+		/* if (A == __NR_query_module) goto notify */
+		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_query_module, 0, 1),
 		/* notify: return USER_NOTIF */
 		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF),
 		/* allow: return ALLOW */
