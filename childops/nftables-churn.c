@@ -432,6 +432,33 @@
 #define NF_LOG_DEFAULT_MASK		0x0f
 #endif
 
+/* nft_bitwise NFTA_BITWISE_* attribute IDs and NFT_BITWISE_* op codes.
+ * The validator in net/netfilter/nft_bitwise.c (nft_bitwise_init)
+ * branches on NFTA_BITWISE_OP: NFT_BITWISE_BOOL takes MASK + XOR (each
+ * a nested NFTA_DATA_VALUE of LEN bytes), NFT_BITWISE_LSHIFT /
+ * NFT_BITWISE_RSHIFT take NFTA_BITWISE_DATA (a nested NFTA_DATA_VALUE
+ * carrying a __be32 shift count).  Guarded so the build still works on
+ * older host headers that predate nft_bitwise's UAPI exposure. */
+#ifndef NFTA_BITWISE_SREG
+#define NFTA_BITWISE_SREG		1
+#define NFTA_BITWISE_DREG		2
+#define NFTA_BITWISE_LEN		3
+#define NFTA_BITWISE_MASK		4
+#define NFTA_BITWISE_XOR		5
+#define NFTA_BITWISE_OP			6
+#define NFTA_BITWISE_DATA		7
+#endif
+
+#ifndef NFT_BITWISE_BOOL
+#define NFT_BITWISE_BOOL		0
+#define NFT_BITWISE_LSHIFT		1
+#define NFT_BITWISE_RSHIFT		2
+#endif
+
+#ifndef NFTA_DATA_VALUE
+#define NFTA_DATA_VALUE			1
+#endif
+
 /* Reasonable ceiling on a single nfnetlink message + payload.  The
  * rule message with one nested expression containing a verdict +
  * chain string is the largest we emit; well under 1 KiB.  2 KiB
@@ -1184,6 +1211,120 @@ static size_t build_nft_log_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_bitwise
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the per-op validator + register check in
+ * net/netfilter/nft_bitwise.c (nft_bitwise_init) — the policy table
+ * nft_bitwise_policy[] gates SREG/DREG/LEN/OP and then the op-specific
+ * payload (MASK+XOR for BOOL, DATA shift count for LSHIFT/RSHIFT) is
+ * parsed by the per-branch helper.
+ *
+ * Roll variants per call:
+ *   - LEN coin-flips across {1, 2, 4, 8, 16} bytes — the validator
+ *     accepts any length up to NFT_REG_SIZE, and each width hits a
+ *     different memcpy / register-fold path.
+ *   - OP picks NFT_BITWISE_BOOL (mask+xor) ONE_IN(2), else
+ *     NFT_BITWISE_LSHIFT or NFT_BITWISE_RSHIFT.
+ *   - For BOOL: MASK and XOR are each a nested NFTA_DATA_VALUE of LEN
+ *     bytes filled with random data.
+ *   - For LSHIFT/RSHIFT: NFTA_BITWISE_DATA is a nested NFTA_DATA_VALUE
+ *     carrying a __be32 shift count in 0..31, the range the kernel
+ *     accepts before nft_bitwise_init returns -EINVAL.
+ */
+static size_t build_nft_bitwise_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u32 lens[] = { 1, 2, 4, 8, 16 };
+	static const __u32 regs[] = {
+		NFT_REG_1, NFT_REG_2, NFT_REG_3, NFT_REG_4,
+	};
+	struct nlattr *elem, *expr_data, *value;
+	size_t elem_off, expr_data_off, value_off;
+	__u32 sreg = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 dreg = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 len_v = lens[rand32() % ARRAY_SIZE(lens)];
+	bool boolean_op = ONE_IN(2);
+	__u32 op = boolean_op
+		? NFT_BITWISE_BOOL
+		: ((rand32() & 1) ? NFT_BITWISE_LSHIFT : NFT_BITWISE_RSHIFT);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "bitwise");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_BITWISE_SREG, sreg);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_BITWISE_DREG, dreg);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_BITWISE_LEN, len_v);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_BITWISE_OP, op);
+	if (!off)
+		return 0;
+
+	if (boolean_op) {
+		unsigned char bytes[16];
+
+		/* MASK = nested NFTA_DATA_VALUE = LEN random bytes */
+		value_off = off;
+		off = nla_put(buf, off, cap,
+			      NFTA_BITWISE_MASK | NLA_F_NESTED, NULL, 0);
+		if (!off)
+			return 0;
+		generate_rand_bytes(bytes, len_v);
+		off = nla_put(buf, off, cap, NFTA_DATA_VALUE, bytes, len_v);
+		if (!off)
+			return 0;
+		value = (struct nlattr *)(buf + value_off);
+		value->nla_len = (unsigned short)(off - value_off);
+
+		/* XOR = nested NFTA_DATA_VALUE = LEN random bytes */
+		value_off = off;
+		off = nla_put(buf, off, cap,
+			      NFTA_BITWISE_XOR | NLA_F_NESTED, NULL, 0);
+		if (!off)
+			return 0;
+		generate_rand_bytes(bytes, len_v);
+		off = nla_put(buf, off, cap, NFTA_DATA_VALUE, bytes, len_v);
+		if (!off)
+			return 0;
+		value = (struct nlattr *)(buf + value_off);
+		value->nla_len = (unsigned short)(off - value_off);
+	} else {
+		__u32 shift = rand32() % 32;
+
+		value_off = off;
+		off = nla_put(buf, off, cap,
+			      NFTA_BITWISE_DATA | NLA_F_NESTED, NULL, 0);
+		if (!off)
+			return 0;
+		off = nla_put_be32(buf, off, cap, NFTA_DATA_VALUE, shift);
+		if (!off)
+			return 0;
+		value = (struct nlattr *)(buf + value_off);
+		value->nla_len = (unsigned short)(off - value_off);
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * NFT_MSG_NEWRULE on (table, chain) carrying one immediate-verdict
  * expression that jumps/gotos to target_chain.  The expression list
  * layout is:
@@ -1206,7 +1347,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 const char *chain_name, const char *target_chain,
 			 __u32 verdict_code, __u64 position, bool with_payload,
 			 bool with_meta, bool with_lookup, bool with_log,
-			 const char *set_name, __u32 set_id)
+			 bool with_bitwise, const char *set_name, __u32 set_id)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
 	struct nlattr *exprs, *elem, *expr_data, *imm_data, *verdict;
@@ -1261,6 +1402,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_log) {
 		off = build_nft_log_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_bitwise) {
+		off = build_nft_bitwise_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -1468,11 +1615,12 @@ bool nftables_churn(struct childdata *child)
 		bool with_meta = ONE_IN(3);
 		bool with_lookup = ONE_IN(3);
 		bool with_log = ONE_IN(4);
+		bool with_bitwise = ONE_IN(4);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 0, with_payload,
 				  with_meta, with_lookup, with_log,
-				  anon_set, set_id) == 0) {
+				  with_bitwise, anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
 					   1, __ATOMIC_RELAXED);
 			if (with_payload)
@@ -1486,6 +1634,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_log)
 				__atomic_add_fetch(&shm->stats.nftables_churn_log_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_bitwise)
+				__atomic_add_fetch(&shm->stats.nftables_churn_bitwise_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -1549,11 +1700,12 @@ bool nftables_churn(struct childdata *child)
 		bool with_meta = ONE_IN(3);
 		bool with_lookup = ONE_IN(3);
 		bool with_log = ONE_IN(4);
+		bool with_bitwise = ONE_IN(4);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 1, with_payload,
 				  with_meta, with_lookup, with_log,
-				  anon_set, set_id) == 0) {
+				  with_bitwise, anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
 					   1, __ATOMIC_RELAXED);
 			if (with_payload)
@@ -1567,6 +1719,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_log)
 				__atomic_add_fetch(&shm->stats.nftables_churn_log_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_bitwise)
+				__atomic_add_fetch(&shm->stats.nftables_churn_bitwise_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
