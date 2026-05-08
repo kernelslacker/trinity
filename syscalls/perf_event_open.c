@@ -1361,13 +1361,14 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	addr = zmalloc(page_size);
 	rec->a1 = (unsigned long) addr;
 	attr = (struct perf_event_attr *) addr;
-	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
-	 * syscall before post_perf_event_open() runs, leaving a real-but-wrong
-	 * heap pointer that the corruption guard cannot distinguish from the
-	 * original perf_event_attr.  Without the snapshot the post handler
-	 * frees the wrong allocation, leaking ours and corrupting another
-	 * sanitise routine's live buffer. */
-	rec->post_state = (unsigned long) addr;
+
+	/*
+	 * Hand the snap to the deferred-free queue at sanitise time so cleanup
+	 * is independent of whether the .post handler ever runs.  When
+	 * reject_corrupt_retfd() flags retfd, handle_syscall_ret() skips .post
+	 * entirely, and a post-side free would leak the snap.
+	 */
+	deferred_free_enqueue(addr, NULL);
 
 	/* cpu */
 	/* requires ROOT to select specific CPU if pid==-1 (all processes) */
@@ -1474,7 +1475,6 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 
 static void post_perf_event_open(struct syscallrecord *rec)
 {
-	void *attr = (void *) rec->post_state;
 	int fd = rec->retval;
 
 	if (fd >= 0 && fd < (1 << 20)) {
@@ -1520,24 +1520,7 @@ static void post_perf_event_open(struct syscallrecord *rec)
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 
-	if (attr == NULL)
-		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the free
-	 * path against handing a non-heap value to free().
-	 */
-	if (looks_like_corrupted_ptr(rec, attr)) {
-		outputerr("post_perf_event_open: rejected suspicious attr=%p "
-			  "(pid-scribbled?)\n", attr);
-		rec->a1 = 0;
-		rec->post_state = 0;
-		return;
-	}
-
 	rec->a1 = 0;
-	deferred_freeptr(&rec->post_state);
 }
 
 static unsigned long perf_event_open_flags[] = {
