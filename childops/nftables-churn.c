@@ -522,6 +522,104 @@
 #define NFT_CMP_GTE			5
 #endif
 
+/* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
+ * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
+ * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
+ * dispatch picks the load helper, a write-path expression sets SREG
+ * and is rejected on read-only keys before any register check runs.
+ * NFTA_CT_DIRECTION is only meaningful for tuple keys (SRC/DST/PROTO_*)
+ * and is silently ignored on the rest.  Guarded so the build still
+ * works on older host headers that predate nft_ct's UAPI exposure. */
+#ifndef NFTA_CT_DREG
+#define NFTA_CT_DREG			1
+#define NFTA_CT_KEY			2
+#define NFTA_CT_DIRECTION		3
+#define NFTA_CT_SREG			4
+#endif
+
+/* Per-key fallbacks.  Each is its own #ifndef so we don't clobber
+ * macros the kernel header already defines.  Values track the enum
+ * positions in include/uapi/linux/netfilter/nf_tables.h. */
+#ifndef NFT_CT_STATE
+#define NFT_CT_STATE			0
+#endif
+#ifndef NFT_CT_DIRECTION
+#define NFT_CT_DIRECTION		1
+#endif
+#ifndef NFT_CT_STATUS
+#define NFT_CT_STATUS			2
+#endif
+#ifndef NFT_CT_MARK
+#define NFT_CT_MARK			3
+#endif
+#ifndef NFT_CT_SECMARK
+#define NFT_CT_SECMARK			4
+#endif
+#ifndef NFT_CT_EXPIRATION
+#define NFT_CT_EXPIRATION		5
+#endif
+#ifndef NFT_CT_HELPER
+#define NFT_CT_HELPER			6
+#endif
+#ifndef NFT_CT_L3PROTOCOL
+#define NFT_CT_L3PROTOCOL		7
+#endif
+#ifndef NFT_CT_SRC
+#define NFT_CT_SRC			8
+#endif
+#ifndef NFT_CT_DST
+#define NFT_CT_DST			9
+#endif
+#ifndef NFT_CT_PROTOCOL
+#define NFT_CT_PROTOCOL			10
+#endif
+#ifndef NFT_CT_PROTO_SRC
+#define NFT_CT_PROTO_SRC		11
+#endif
+#ifndef NFT_CT_PROTO_DST
+#define NFT_CT_PROTO_DST		12
+#endif
+#ifndef NFT_CT_LABELS
+#define NFT_CT_LABELS			13
+#endif
+#ifndef NFT_CT_PKTS
+#define NFT_CT_PKTS			14
+#endif
+#ifndef NFT_CT_BYTES
+#define NFT_CT_BYTES			15
+#endif
+#ifndef NFT_CT_AVGPKT
+#define NFT_CT_AVGPKT			16
+#endif
+#ifndef NFT_CT_ZONE
+#define NFT_CT_ZONE			17
+#endif
+#ifndef NFT_CT_EVENTMASK
+#define NFT_CT_EVENTMASK		18
+#endif
+#ifndef NFT_CT_SRC_IP
+#define NFT_CT_SRC_IP			19
+#endif
+#ifndef NFT_CT_DST_IP
+#define NFT_CT_DST_IP			20
+#endif
+#ifndef NFT_CT_SRC_IP6
+#define NFT_CT_SRC_IP6			21
+#endif
+#ifndef NFT_CT_DST_IP6
+#define NFT_CT_DST_IP6			22
+#endif
+#ifndef NFT_CT_ID
+#define NFT_CT_ID			23
+#endif
+
+#ifndef IP_CT_DIR_ORIGINAL
+#define IP_CT_DIR_ORIGINAL		0
+#endif
+#ifndef IP_CT_DIR_REPLY
+#define IP_CT_DIR_REPLY			1
+#endif
+
 /* Reasonable ceiling on a single nfnetlink message + payload.  The
  * rule message with one nested expression containing a verdict +
  * chain string is the largest we emit; well under 1 KiB.  2 KiB
@@ -1667,6 +1765,118 @@ static size_t build_nft_dynset_expr(unsigned char *buf, size_t off,
 }
 
 /*
+ * Structurally-valid nft_ct expression element.  Net layout:
+ *   NFTA_LIST_ELEM (nested)
+ *     NFTA_EXPR_NAME = "ct"
+ *     NFTA_EXPR_DATA (nested)
+ *       NFTA_CT_KEY = NFT_CT_*
+ *       LOAD mode:
+ *         NFTA_CT_DREG = NFT_REG_1..NFT_REG_4
+ *         NFTA_CT_DIRECTION (1-in-2 for tuple keys) = ORIGINAL|REPLY
+ *       STORE mode:
+ *         NFTA_CT_SREG = NFT_REG_1..NFT_REG_4
+ *
+ * Reaches the validator in net/netfilter/nft_ct.c (nft_ct_get_init for
+ * LOAD, nft_ct_set_init for STORE).  The per-key dispatch table maps
+ * NFTA_CT_KEY to a load/store helper; STORE is rejected outright on
+ * read-only keys, and the tuple-key handlers honour NFTA_CT_DIRECTION
+ * to pick origin- vs reply-side conntrack tuple data.
+ *
+ * nft_ct is one of the most-used expressions in real rulesets —
+ * connection tracking is foundational, every stateful firewall touches
+ * it.  Hot kernel path with per-key dispatch logic, direction handling,
+ * and LOAD/STORE asymmetry — all attractive bug surfaces.  Heavier
+ * weight than the logging exprs because ct expressions touch live
+ * conntrack state on every datapath packet.
+ *
+ * STORE-eligible keys mirror the nft_ct_set_keys[] table in the
+ * kernel: NFT_CT_MARK, NFT_CT_LABELS, NFT_CT_EVENTMASK, NFT_CT_ZONE.
+ * Tuple keys (direction-meaningful) are SRC/DST/PROTO_SRC/PROTO_DST
+ * plus the explicit IPv4/IPv6 SRC_IP/DST_IP variants and the L3/L4
+ * protocol pair.
+ */
+static size_t build_nft_ct_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u32 regs[] = {
+		NFT_REG_1, NFT_REG_2, NFT_REG_3, NFT_REG_4,
+	};
+	static const __u32 load_keys[] = {
+		NFT_CT_STATE, NFT_CT_DIRECTION, NFT_CT_STATUS,
+		NFT_CT_MARK, NFT_CT_SECMARK, NFT_CT_EXPIRATION,
+		NFT_CT_HELPER, NFT_CT_L3PROTOCOL, NFT_CT_PROTOCOL,
+		NFT_CT_SRC, NFT_CT_DST, NFT_CT_PROTO_SRC, NFT_CT_PROTO_DST,
+		NFT_CT_LABELS, NFT_CT_PKTS, NFT_CT_BYTES, NFT_CT_AVGPKT,
+		NFT_CT_ZONE, NFT_CT_EVENTMASK,
+		NFT_CT_SRC_IP, NFT_CT_DST_IP,
+		NFT_CT_SRC_IP6, NFT_CT_DST_IP6,
+		NFT_CT_ID,
+	};
+	static const __u32 store_keys[] = {
+		NFT_CT_MARK, NFT_CT_LABELS, NFT_CT_EVENTMASK, NFT_CT_ZONE,
+	};
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	bool store_mode = ONE_IN(2);
+	__u32 key;
+	__u32 reg = regs[rand32() % ARRAY_SIZE(regs)];
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "ct");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	if (store_mode) {
+		key = store_keys[rand32() % ARRAY_SIZE(store_keys)];
+		off = nla_put_be32(buf, off, cap, NFTA_CT_KEY, key);
+		if (!off)
+			return 0;
+		off = nla_put_be32(buf, off, cap, NFTA_CT_SREG, reg);
+		if (!off)
+			return 0;
+	} else {
+		bool tuple_key;
+
+		key = load_keys[rand32() % ARRAY_SIZE(load_keys)];
+		off = nla_put_be32(buf, off, cap, NFTA_CT_KEY, key);
+		if (!off)
+			return 0;
+		off = nla_put_be32(buf, off, cap, NFTA_CT_DREG, reg);
+		if (!off)
+			return 0;
+
+		tuple_key = (key == NFT_CT_SRC || key == NFT_CT_DST ||
+			     key == NFT_CT_PROTO_SRC ||
+			     key == NFT_CT_PROTO_DST ||
+			     key == NFT_CT_SRC_IP || key == NFT_CT_DST_IP ||
+			     key == NFT_CT_SRC_IP6 || key == NFT_CT_DST_IP6);
+		if (tuple_key && ONE_IN(2)) {
+			__u8 dir = (rand32() & 1) ? IP_CT_DIR_REPLY
+						  : IP_CT_DIR_ORIGINAL;
+
+			off = nla_put(buf, off, cap, NFTA_CT_DIRECTION,
+				      &dir, sizeof(dir));
+			if (!off)
+				return 0;
+		}
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * NFT_MSG_NEWRULE on (table, chain) carrying one immediate-verdict
  * expression that jumps/gotos to target_chain.  The expression list
  * layout is:
@@ -1690,7 +1900,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 __u32 verdict_code, __u64 position, bool with_payload,
 			 bool with_meta, bool with_lookup, bool with_log,
 			 bool with_bitwise, bool with_cmp, bool with_immediate,
-			 bool with_dynset,
+			 bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
@@ -1771,6 +1981,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 	if (with_dynset) {
 		off = build_nft_dynset_expr(buf, off, sizeof(buf),
 					    set_name, set_id);
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_ct) {
+		off = build_nft_ct_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -1982,12 +2198,13 @@ bool nftables_churn(struct childdata *child)
 		bool with_cmp = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
+		bool with_ct = ONE_IN(3);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 0, with_payload,
 				  with_meta, with_lookup, with_log,
 				  with_bitwise, with_cmp, with_immediate,
-				  with_dynset,
+				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
 					   1, __ATOMIC_RELAXED);
@@ -2014,6 +2231,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_dynset)
 				__atomic_add_fetch(&shm->stats.nftables_churn_dynset_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_ct)
+				__atomic_add_fetch(&shm->stats.nftables_churn_ct_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -2081,12 +2301,13 @@ bool nftables_churn(struct childdata *child)
 		bool with_cmp = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
+		bool with_ct = ONE_IN(3);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 1, with_payload,
 				  with_meta, with_lookup, with_log,
 				  with_bitwise, with_cmp, with_immediate,
-				  with_dynset,
+				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
 					   1, __ATOMIC_RELAXED);
@@ -2113,6 +2334,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_dynset)
 				__atomic_add_fetch(&shm->stats.nftables_churn_dynset_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_ct)
+				__atomic_add_fetch(&shm->stats.nftables_churn_ct_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
