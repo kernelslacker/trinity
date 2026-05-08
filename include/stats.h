@@ -540,6 +540,7 @@ struct stats_s {
 	 * hook chain on the kernel side, so a single end-of-run row
 	 * captures total NetLabel traffic without splitting four ways. */
 	unsigned long genl_family_calls_netlabel;
+	unsigned long genl_family_calls_team;
 
 	/* nfnetlink registry per-subsystem dispatch counters.  Same shape
 	 * as the genl_family_calls counters above but for NETLINK_NETFILTER
