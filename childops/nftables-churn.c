@@ -572,6 +572,38 @@
 #define NFT_BYTEORDER_HTON		1
 #endif
 
+/* nft_socket NFTA_SOCKET_* attribute IDs and NFT_SOCKET_* key IDs.
+ * The validator in net/netfilter/nft_socket.c (nft_socket_init) requires
+ * NFTA_SOCKET_KEY and NFTA_SOCKET_DREG, accepts KEY in
+ * {TRANSPARENT, MARK, WILDCARD, CGROUPV2}, and demands NFTA_SOCKET_LEVEL
+ * iff KEY == NFT_SOCKET_CGROUPV2 (rejected for any other KEY).  LEVEL is
+ * a u32 cgroup hierarchy depth bounded by the kernel at 0..255.  The
+ * NFT_SOCKET_CGROUPV2 / NFTA_SOCKET_LEVEL pair post-dates 5.4 LTS, so
+ * each symbol is guarded individually so the build still works on older
+ * host headers that predate any subset of these. */
+#ifndef NFTA_SOCKET_KEY
+#define NFTA_SOCKET_KEY			1
+#endif
+#ifndef NFTA_SOCKET_DREG
+#define NFTA_SOCKET_DREG		2
+#endif
+#ifndef NFTA_SOCKET_LEVEL
+#define NFTA_SOCKET_LEVEL		3
+#endif
+
+#ifndef NFT_SOCKET_TRANSPARENT
+#define NFT_SOCKET_TRANSPARENT		0
+#endif
+#ifndef NFT_SOCKET_MARK
+#define NFT_SOCKET_MARK			1
+#endif
+#ifndef NFT_SOCKET_WILDCARD
+#define NFT_SOCKET_WILDCARD		2
+#endif
+#ifndef NFT_SOCKET_CGROUPV2
+#define NFT_SOCKET_CGROUPV2		3
+#endif
+
 /* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
  * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
  * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
@@ -1786,6 +1818,81 @@ static size_t build_nft_byteorder_expr(unsigned char *buf, size_t off, size_t ca
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_socket
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_socket.c
+ * (nft_socket_init) — the policy table nft_socket_policy[] gates
+ * KEY/DREG/LEVEL, and the init handler enforces a KEY-conditional rule:
+ * NFTA_SOCKET_LEVEL is mandatory iff KEY == NFT_SOCKET_CGROUPV2 and
+ * rejected for any other KEY.
+ *
+ * socket reaches into the per-skb socket lookup path: nft_socket_eval
+ * resolves the socket via skb->sk (falling back to nf_sk_lookup_slow
+ * when missing), normalises through sk_to_full_sk, and then the per-key
+ * dispatch reads IP(V6)_TRANSPARENT, sk->sk_mark, the wildcard-bind
+ * test or sock_cgroup_ancestor at the requested cgroupv2 level — all
+ * load paths that purely-on-skb expressions like payload/byteorder
+ * never touch.  Roll variants per call:
+ *   - KEY picks uniformly from
+ *     {TRANSPARENT, MARK, WILDCARD, CGROUPV2} so each emit lands on a
+ *     different per-key load helper.
+ *   - DREG picks one of NFT_REG_1..NFT_REG_4 uniformly so the lookup
+ *     result lands in whatever register a following cmp/range/bitwise
+ *     emit will read.
+ *   - LEVEL is rolled in 0..255 (the kernel-accepted range) and is
+ *     emitted ONLY when KEY == NFT_SOCKET_CGROUPV2; on any other KEY
+ *     LEVEL is omitted so nft_socket_init's "LEVEL with non-CGROUPV2
+ *     KEY" early-EINVAL is not the dominant outcome.
+ */
+static size_t build_nft_socket_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u32 regs[] = {
+		NFT_REG_1, NFT_REG_2, NFT_REG_3, NFT_REG_4,
+	};
+	static const __u32 keys[] = {
+		NFT_SOCKET_TRANSPARENT, NFT_SOCKET_MARK,
+		NFT_SOCKET_WILDCARD, NFT_SOCKET_CGROUPV2,
+	};
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u32 key = keys[rand32() % ARRAY_SIZE(keys)];
+	__u32 dreg = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 level = rand32() & 0xff;
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "socket");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_SOCKET_KEY, key);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_SOCKET_DREG, dreg);
+	if (!off)
+		return 0;
+	if (key == NFT_SOCKET_CGROUPV2) {
+		off = nla_put_be32(buf, off, cap, NFTA_SOCKET_LEVEL, level);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Structurally-valid nft_immediate expression element.  Net layout:
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "immediate"
@@ -2120,7 +2227,8 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 __u32 verdict_code, __u64 position, bool with_payload,
 			 bool with_meta, bool with_lookup, bool with_log,
 			 bool with_bitwise, bool with_cmp, bool with_range,
-			 bool with_byteorder, bool with_immediate,
+			 bool with_byteorder, bool with_socket,
+			 bool with_immediate,
 			 bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
 {
@@ -2201,6 +2309,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_byteorder) {
 		off = build_nft_byteorder_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_socket) {
+		off = build_nft_socket_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -2431,6 +2545,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_cmp = ONE_IN(3);
 		bool with_range = ONE_IN(3);
 		bool with_byteorder = ONE_IN(3);
+		bool with_socket = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -2439,7 +2554,7 @@ bool nftables_churn(struct childdata *child)
 				  aux_chain, verdict, 0, with_payload,
 				  with_meta, with_lookup, with_log,
 				  with_bitwise, with_cmp, with_range,
-				  with_byteorder, with_immediate,
+				  with_byteorder, with_socket, with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
@@ -2467,6 +2582,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_byteorder)
 				__atomic_add_fetch(&shm->stats.nftables_churn_byteorder_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_socket)
+				__atomic_add_fetch(&shm->stats.nftables_churn_socket_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
@@ -2543,6 +2661,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_cmp = ONE_IN(3);
 		bool with_range = ONE_IN(3);
 		bool with_byteorder = ONE_IN(3);
+		bool with_socket = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -2551,7 +2670,7 @@ bool nftables_churn(struct childdata *child)
 				  aux_chain, verdict, 1, with_payload,
 				  with_meta, with_lookup, with_log,
 				  with_bitwise, with_cmp, with_range,
-				  with_byteorder, with_immediate,
+				  with_byteorder, with_socket, with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
@@ -2579,6 +2698,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_byteorder)
 				__atomic_add_fetch(&shm->stats.nftables_churn_byteorder_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_socket)
+				__atomic_add_fetch(&shm->stats.nftables_churn_socket_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
