@@ -1045,6 +1045,52 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len)
 	return true;
 }
 
+/*
+ * Precise containment check: is [addr, addr+len) fully inside at least
+ * one entry of shared_regions[]?  Used by get_writable_address() to
+ * confirm a freshly-picked pool address still resolves to a tracked
+ * mapping before handing it back to a sanitiser.
+ *
+ * Distinct from range_overlaps_shared() in three ways the caller
+ * relies on:
+ *   1. Polarity is "fully inside", not "overlaps".  A scribbled slot
+ *      can hold a value that happens to abut a tracked region without
+ *      being inside it; over-acceptance there would defeat the guard.
+ *   2. Walks shared_regions[] linearly.  The bitmap accelerator that
+ *      backs range_overlaps_shared() rounds to 2 MiB chunks, which is
+ *      the SAFETY direction for a reject-shaped sanitiser but the
+ *      WRONG direction here -- a 2 MiB chunk that contains some
+ *      tracked region would falsely accept addresses elsewhere in the
+ *      same chunk.
+ *   3. Does not bump range_overlaps_shared_rejects.  This is a
+ *      validation lookup, not a sanitiser reject; folding it into the
+ *      reject counter would lie to the operator about how often the
+ *      mm-syscall guards are firing.
+ *
+ * Empty ranges (len == 0) match if @addr lies strictly inside any
+ * region; the caller controls len so this is the consistent shape.
+ * Wrapped ranges return false (no real allocation can wrap user VA).
+ */
+bool range_in_tracked_shared(unsigned long addr, unsigned long len)
+{
+	unsigned long end;
+	unsigned int i;
+
+	if (len != 0 && addr > ULONG_MAX - len)
+		return false;
+
+	end = addr + len;
+
+	for (i = 0; i < nr_shared_regions; i++) {
+		unsigned long rstart = shared_regions[i].addr;
+		unsigned long rend = rstart + shared_regions[i].size;
+
+		if (addr >= rstart && end <= rend)
+			return true;
+	}
+	return false;
+}
+
 void * __zmalloc(size_t size, const char *func)
 {
 	void *p;

@@ -51,6 +51,15 @@ void freeze_global_objects(void);
 void thaw_global_objects(void);
 bool globals_are_protected(void);
 bool range_overlaps_shared(unsigned long addr, unsigned long len);
+/*
+ * Inverse-polarity check: returns true iff [addr, addr+len) is fully
+ * contained within at least one registered shared region.  Walks
+ * shared_regions[] precisely (no bitmap rounding) and does not bump
+ * the range_overlaps_shared_rejects stat -- callers use this to
+ * validate that a freshly-picked writable-pool address still belongs
+ * to a tracked mapping, not to score a sanitiser rejection.
+ */
+bool range_in_tracked_shared(unsigned long addr, unsigned long len);
 void track_shared_region(unsigned long addr, unsigned long size);
 void register_loaded_image_segments(void);
 void dump_obj_heap_stats(void);
