@@ -1226,6 +1226,18 @@ struct stats_s {
 	 * crashed children. */
 	unsigned long global_obj_uaf_caught;
 
+	/* Bumped by childops/pagecache-canary-check.c when a verifier
+	 * read returned a byte that did not match the deterministic
+	 * canary_expected_byte() pattern.  A non-zero counter here
+	 * means a kernel code path mutated a canary file's contents
+	 * mid-run via a route that bypassed the file's normal write-
+	 * side validation — the bug class the oracle exists to catch.
+	 * Each bump corresponds to one verifier invocation that found
+	 * a divergence (the verifier logs offset+expected/actual
+	 * windows and continues, so multiple invocations against the
+	 * same corrupted file each contribute one bump). */
+	unsigned long pagecache_canary_corrupt_caught;
+
 	/* Sibling of global_obj_uaf_caught for the maps-pool layer.  Bumped
 	 * by get_map_handle() when its 1000-iter retry budget is exhausted
 	 * by repeated concurrent destroys, and by validate_map_handle()
