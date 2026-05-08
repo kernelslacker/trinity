@@ -1495,6 +1495,10 @@ void defense_counters_periodic_dump(void);
 void stats_log_open(const char *path);
 void stats_log_close(void);
 void stats_log_write(const char *fmt, ...);
+/* Closes the inherited stats-log fd in a fork()'d child so the syscall
+ * fuzzer can't reach it numerically (fchmod / ftruncate / write).  Parent
+ * fd is unaffected — different fd-table slots, same kernel struct file. */
+void stats_log_drop_in_child(void);
 
 /* Implemented in childops/recipe-runner.c; emits per-recipe completion
  * counts so the catalog layout stays private to that file. */

@@ -523,6 +523,12 @@ static void init_child(struct childdata *child, int childno)
 			close(devnull);
 	}
 
+	/* Drop the inherited --stats-log-file fd before any syscall fuzzing
+	 * starts: it's a parent-only writer, but children would otherwise
+	 * reach it numerically via fchmod / ftruncate / write at random
+	 * offset, smashing the operator's log mid-run. */
+	stats_log_drop_in_child();
+
 	/* Detach from the controlling terminal so a fuzzed
 	 * open("/dev/tty", O_WRONLY) followed by write() can't reach the
 	 * operator's shell.  The dup2 above only covers fds 0/1/2; this
