@@ -101,37 +101,23 @@ static void sanitise_io_uring_setup(struct syscallrecord *rec)
 
 	rec->a2 = (unsigned long) params;
 
-	/*
-	 * Re-route params out of any alloc_shared / libc-heap region BEFORE
-	 * the snapshot below so post_io_uring_setup observes the same
-	 * post-redirect address the kernel wrote io_uring_params into.
-	 */
 	avoid_shared_buffer(&rec->a2, sizeof(struct io_uring_params));
 
-	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
-	 * syscall before post_io_uring_setup() runs. */
-	rec->post_state = (unsigned long) params;
+	/*
+	 * Hand the snap to the deferred-free queue at sanitise time so cleanup
+	 * is independent of whether the .post handler ever runs.  When
+	 * reject_corrupt_retfd() flags retfd, handle_syscall_ret() skips .post
+	 * entirely, and a post-side free would leak the snap.
+	 */
+	deferred_free_enqueue(params, NULL);
 }
 
 static void post_io_uring_setup(struct syscallrecord *rec)
 {
 	int fd = rec->retval;
-	void *params = (void *) rec->post_state;
-
-	if (params == NULL)
-		goto check_ret;
-
-	if (looks_like_corrupted_ptr(rec, params)) {
-		outputerr("post_io_uring_setup: rejected suspicious params=%p (pid-scribbled?)\n", params);
-		rec->a2 = 0;
-		rec->post_state = 0;
-		goto check_ret;
-	}
 
 	rec->a2 = 0;
-	deferred_freeptr(&rec->post_state);
 
-check_ret:
 	if ((long)rec->retval < 0)
 		return;
 
