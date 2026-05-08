@@ -51,6 +51,15 @@ static const char * const kmsg_triggers[] = {
 	"UBSAN:",
 	"WARNING: possible recursive locking",
 	"WARNING: possible circular locking",
+	"WARNING: CPU:",		/* generic WARN_ON()/WARN() splat banner from kernel/panic.c::__warn */
+	"WARNING: suspicious RCU",	/* lockdep-RCU usage warning */
+	"WARNING: bad unlock",		/* lockdep bad-unlock-balance */
+	"WARNING: held lock",		/* lockdep held-lock-freed */
+	"Oops:",			/* arch oops banner */
+	"Kernel BUG",			/* BUG()/BUG_ON() banner */
+	"kernel BUG",			/* alternate-case BUG banner emitted by some arches */
+	"BUG:",				/* "BUG: sleeping function ...", "BUG: workqueue lockup", "BUG: scheduling while atomic", "BUG: unable to handle ..." */
+	"refcount_t:",			/* lib/refcount.c overflow/underflow saturation */
 	"INFO: rcu_sched self-detected stall",
 	"INFO: rcu_preempt self-detected stall",
 	"INFO: task ",			/* "INFO: task <name> blocked for more than ..." */
