@@ -1543,6 +1543,21 @@ struct stats_s {
 	 * cross the window threshold.
 	 */
 	unsigned long healer_weight_decays_run;
+	/*
+	 * Per-syscall counter of how often this syscall appears as either
+	 * pred_a or pred_b in a recorded HEALER pair observation.  Used to
+	 * compute a TF-IDF-style normalisation on the relation-table dump:
+	 * frequent neutral syscalls (getppid, gettid, timer_delete, ...) ride
+	 * the predecessor slot constantly without contributing any state of
+	 * their own, so pair weights involving them get scaled down at
+	 * display time and the operator's top-N view surfaces the genuinely
+	 * productive predecessors instead.  Per-run only; not persisted
+	 * across snapshots (a warm-start sees zeros, which back-pressure-free
+	 * regrows over the first few thousand observations).  The relation
+	 * table itself still records and evicts on raw weights -- this
+	 * counter only feeds the dump path.
+	 */
+	unsigned long healer_pred_appearance[MAX_NR_SYSCALL];
 };
 
 unsigned int stats_syscall_category(const char *name);
