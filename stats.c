@@ -1795,6 +1795,143 @@ void defense_counters_periodic_dump(void)
 	last_dump = now;
 }
 
+/* Per-pool top-N entry for top_syscalls_periodic_dump's stack-resident
+ * insertion sort.  Holds the syscall's table index and the per-window
+ * delta of its strategy-attributed new-edge counter. */
+struct top_syscall_entry {
+	unsigned int nr;
+	unsigned long delta;
+};
+
+#define TOP_SYSCALLS_DUMP_TOPN	5
+
+static void top_syscalls_emit_pool(const char *pool_name,
+				   const unsigned long *cur,
+				   const unsigned long *prev,
+				   unsigned int nr_to_scan,
+				   const struct syscalltable *table,
+				   bool is32bit)
+{
+	struct top_syscall_entry top[TOP_SYSCALLS_DUMP_TOPN];
+	unsigned int top_count = 0;
+	unsigned long total = 0, top_sum = 0, share_pct;
+	unsigned int i;
+	int j;
+
+	for (i = 0; i < nr_to_scan; i++) {
+		unsigned long delta = (cur[i] > prev[i]) ? cur[i] - prev[i] : 0;
+
+		if (delta == 0)
+			continue;
+
+		total += delta;
+
+		/* Insertion sort, descending by delta, capped at TOP_N. */
+		for (j = (int)top_count;
+		     j > 0 && delta > top[j - 1].delta;
+		     j--) {
+			if (j < TOP_SYSCALLS_DUMP_TOPN)
+				top[j] = top[j - 1];
+		}
+		if (j < TOP_SYSCALLS_DUMP_TOPN) {
+			top[j].nr = i;
+			top[j].delta = delta;
+			if (top_count < TOP_SYSCALLS_DUMP_TOPN)
+				top_count++;
+		}
+	}
+
+	/* Skip the strategy block entirely when the pool contributed no
+	 * new edges this window -- a "(0 total, top 5 = 0%)" line is
+	 * noise, not signal. */
+	if (total == 0)
+		return;
+
+	for (j = 0; j < (int)top_count; j++)
+		top_sum += top[j].delta;
+	share_pct = (top_sum * 100UL) / total;
+
+	stats_log_write("  %s (%lu total, top %u = %lu%%):\n",
+			pool_name, total, top_count, share_pct);
+
+	for (j = 0; j < (int)top_count; j++) {
+		const char *name = table ? print_syscall_name(top[j].nr, is32bit)
+					 : "???";
+		stats_log_write("    %-24s +%lu\n", name, top[j].delta);
+	}
+}
+
+void top_syscalls_periodic_dump(void)
+{
+	static unsigned long prev_bandit[MAX_NR_SYSCALL];
+	static unsigned long prev_explorer[MAX_NR_SYSCALL];
+	static struct timespec last_dump;
+	unsigned long cur_bandit[MAX_NR_SYSCALL];
+	unsigned long cur_explorer[MAX_NR_SYSCALL];
+	struct timespec now;
+	long elapsed;
+	unsigned int nr_to_scan;
+	const struct syscalltable *table;
+	unsigned int i;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	/* First call: arm the window so any pre-existing counts carried
+	 * over from earlier in the run are not mis-attributed to the
+	 * first window, mirroring defense_counters_periodic_dump. */
+	if (last_dump.tv_sec == 0) {
+		last_dump = now;
+		for (i = 0; i < MAX_NR_SYSCALL; i++) {
+			prev_bandit[i]   = __atomic_load_n(
+				&shm->stats.edges_per_syscall_bandit[i],
+				__ATOMIC_RELAXED);
+			prev_explorer[i] = __atomic_load_n(
+				&shm->stats.edges_per_syscall_explorer[i],
+				__ATOMIC_RELAXED);
+		}
+		return;
+	}
+
+	elapsed = now.tv_sec - last_dump.tv_sec;
+	if (elapsed < DEFENSE_DUMP_INTERVAL_SEC)
+		return;
+
+	for (i = 0; i < MAX_NR_SYSCALL; i++) {
+		cur_bandit[i]   = __atomic_load_n(
+			&shm->stats.edges_per_syscall_bandit[i],
+			__ATOMIC_RELAXED);
+		cur_explorer[i] = __atomic_load_n(
+			&shm->stats.edges_per_syscall_explorer[i],
+			__ATOMIC_RELAXED);
+	}
+
+	/* Match the same biarch table-scan choice the existing per-syscall
+	 * top-N path in dump_stats uses: under biarch only the 64-bit table
+	 * is iterated (32-bit nrs collide with 64-bit ones in the same
+	 * index space and would shadow them in the display). */
+	if (biarch) {
+		nr_to_scan = max_nr_64bit_syscalls;
+		table = syscalls_64bit;
+	} else {
+		nr_to_scan = max_nr_syscalls;
+		table = syscalls;
+	}
+	if (nr_to_scan > MAX_NR_SYSCALL)
+		nr_to_scan = MAX_NR_SYSCALL;
+
+	stats_log_write("Top %u syscalls by new edges in last %lds:\n",
+			TOP_SYSCALLS_DUMP_TOPN, elapsed);
+	top_syscalls_emit_pool("bandit", cur_bandit, prev_bandit,
+			       nr_to_scan, table, false);
+	top_syscalls_emit_pool("explorer", cur_explorer, prev_explorer,
+			       nr_to_scan, table, false);
+
+	memcpy(prev_bandit,   cur_bandit,   sizeof(prev_bandit));
+	memcpy(prev_explorer, cur_explorer, sizeof(prev_explorer));
+
+	last_dump = now;
+}
+
 void dump_stats(void)
 {
 	unsigned int i;

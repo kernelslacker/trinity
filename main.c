@@ -1303,6 +1303,8 @@ void main_loop(void)
 
 		defense_counters_periodic_dump();
 
+		top_syscalls_periodic_dump();
+
 		print_stats();
 
 		/* This should never happen, but just to catch corner cases, like if

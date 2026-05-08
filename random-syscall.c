@@ -690,6 +690,8 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 {
 	struct syscallrecord *rec = &child->syscall;
 	bool new_edges;
+	unsigned long edges_before = 0, edges_after, edges_delta;
+	bool have_kcov_counter = (kcov_shm != NULL);
 
 	/* Stamp the resolved entry on the rec so .sanitise / .post handlers
 	 * (and helpers like this_syscallname()) can reach it without
@@ -708,8 +710,41 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 
 	do_syscall(rec, entry, &child->kcov, child);
 
+	/* Snapshot edges_found around kcov_collect so the per-syscall
+	 * attribution counters below can be bumped by the actual count of
+	 * distinct new edges this call produced (kcov_collect() returns a
+	 * bool, so the count has to be reconstructed here from the global
+	 * counter delta). */
+	if (have_kcov_counter)
+		edges_before = __atomic_load_n(&kcov_shm->edges_found,
+					       __ATOMIC_RELAXED);
+
 	new_edges = kcov_collect(&child->kcov, rec->nr);
 	kcov_collect_cmp(&child->kcov, rec->nr, child->is_explorer);
+
+	if (have_kcov_counter) {
+		edges_after = __atomic_load_n(&kcov_shm->edges_found,
+					      __ATOMIC_RELAXED);
+		edges_delta = (edges_after >= edges_before)
+			? (edges_after - edges_before) : 0;
+	} else {
+		edges_delta = 0;
+	}
+
+	/* Per-syscall new-edge attribution split by strategy pool.  Skipped
+	 * when the call produced no new edges (the dump only consumes the
+	 * positive delta side) and when rec->nr falls outside the table.
+	 * Biarch attribution follows the same raw-rec->nr indexing the
+	 * existing kcov_shm->per_syscall_edges array uses; the dump iterates
+	 * only the active 64-bit table when biarch, so 32-bit calls are
+	 * effectively ignored there as they are everywhere else. */
+	if (edges_delta > 0 && rec->nr < MAX_NR_SYSCALL) {
+		unsigned long *bucket = child->is_explorer
+			? shm->stats.edges_per_syscall_explorer
+			: shm->stats.edges_per_syscall_bandit;
+		__atomic_fetch_add(&bucket[rec->nr], edges_delta,
+				   __ATOMIC_RELAXED);
+	}
 
 	/* Surface this step's new-coverage signal to the chain executor
 	 * (when called via run_sequence_chain). */
