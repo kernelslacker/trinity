@@ -628,6 +628,49 @@
 #define NFT_QUOTA_F_INV			(1 << 0)
 #endif
 
+/* nft_limit NFTA_LIMIT_* attribute IDs plus the NFT_LIMIT_PKTS /
+ * NFT_LIMIT_PKT_BYTES type selectors and the NFT_LIMIT_F_INV flag.  The
+ * validator in net/netfilter/nft_limit.c (nft_limit_init) reads the
+ * nft_limit_policy[] table — NFTA_LIMIT_RATE (u64) and NFTA_LIMIT_UNIT
+ * (u64) are both mandatory (the per-period token count and the period
+ * length in seconds), NFTA_LIMIT_BURST (u32) is optional and widens the
+ * tolerance window, NFTA_LIMIT_TYPE (u32) is optional and dispatches
+ * between the packet-count limiter (NFT_LIMIT_PKTS == 0, default) and
+ * the byte-count limiter (NFT_LIMIT_PKT_BYTES == 1) — any other TYPE
+ * value is rejected with -EOPNOTSUPP — and NFTA_LIMIT_FLAGS (u32) is
+ * optional and the only bit the kernel accepts is NFT_LIMIT_F_INV (any
+ * other bit is rejected with -EOPNOTSUPP).  RATE == 0 is rejected
+ * outright; the parser then computes nfs = unit * NSEC_PER_SEC before
+ * dispatching to nft_limit_pkts_init or nft_limit_bytes_init for
+ * token-bucket arithmetic.  Each symbol is guarded individually so the
+ * build still works on older host headers that predate any subset. */
+#ifndef NFTA_LIMIT_RATE
+#define NFTA_LIMIT_RATE			1
+#endif
+#ifndef NFTA_LIMIT_UNIT
+#define NFTA_LIMIT_UNIT			2
+#endif
+#ifndef NFTA_LIMIT_BURST
+#define NFTA_LIMIT_BURST		3
+#endif
+#ifndef NFTA_LIMIT_TYPE
+#define NFTA_LIMIT_TYPE			4
+#endif
+#ifndef NFTA_LIMIT_FLAGS
+#define NFTA_LIMIT_FLAGS		5
+#endif
+
+#ifndef NFT_LIMIT_PKTS
+#define NFT_LIMIT_PKTS			0
+#endif
+#ifndef NFT_LIMIT_PKT_BYTES
+#define NFT_LIMIT_PKT_BYTES		1
+#endif
+
+#ifndef NFT_LIMIT_F_INV
+#define NFT_LIMIT_F_INV			(1 << 0)
+#endif
+
 /* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
  * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
  * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
@@ -2009,6 +2052,116 @@ static size_t build_nft_quota_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_limit
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_limit.c
+ * (nft_limit_init): NFTA_LIMIT_RATE and NFTA_LIMIT_UNIT are mandatory,
+ * BURST/TYPE/FLAGS are optional.  TYPE picks between
+ * NFT_LIMIT_PKTS (default) and NFT_LIMIT_PKT_BYTES which dispatches to
+ * nft_limit_pkts_init vs nft_limit_bytes_init for token-bucket setup.
+ * RATE == 0 is rejected outright; unknown TYPE / unknown FLAGS bits are
+ * rejected with -EOPNOTSUPP.  All values go on the wire u64/u32 in
+ * network byte order.
+ *
+ * Variants per call:
+ *   - RATE rolls uniformly across orders of magnitude
+ *     {small, typical, huge} so the token-bucket arithmetic in
+ *     nft_limit_eval (nfs / rate, with the divide_s64 in
+ *     nft_limit_init) sees both fast-refill and slow-refill regimes.
+ *     RATE is forced non-zero so init does not bail at the rate==0
+ *     guard before the bucket math runs.
+ *   - UNIT picks one of {1, 60, 3600} seconds — the per-second,
+ *     per-minute, and per-hour windows real rulesets use — so the
+ *     unit*NSEC_PER_SEC multiplication in nft_limit_init exercises a
+ *     spread of nfs values feeding the credit/refill divide.
+ *   - BURST is coin-flipped present, value rolled small/medium/large so
+ *     the optional widening of the bucket capacity is hit half the time
+ *     without ever omitting the more interesting refill path.
+ *   - TYPE is coin-flipped between PKTS and PKT_BYTES so both
+ *     dispatch arms (per-packet credit decrement vs per-skb-len credit
+ *     decrement in nft_limit_eval) see traffic.
+ *   - FLAGS is a coin-flip on NFT_LIMIT_F_INV and otherwise omitted, so
+ *     the inverted-budget branch in nft_limit_eval gets exercised half
+ *     the time without ever feeding an unknown bit (which the parser
+ *     rejects with -EOPNOTSUPP before init returns).
+ */
+static size_t build_nft_limit_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u64 rates[] = {
+		1ULL,			/* small: bucket immediately drained */
+		1024ULL,		/* typical */
+		1ULL << 20,		/* huge */
+	};
+	static const __u64 units[] = {
+		1ULL,			/* per-second */
+		60ULL,			/* per-minute */
+		3600ULL,		/* per-hour */
+	};
+	static const __u32 bursts[] = {
+		0U,			/* small */
+		128U,			/* medium */
+		65535U,			/* large */
+	};
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u64 rate = rates[rand32() % ARRAY_SIZE(rates)];
+	__u64 unit = units[rand32() % ARRAY_SIZE(units)];
+	bool with_burst = ONE_IN(2);
+	bool with_type = ONE_IN(2);
+	bool with_flags = ONE_IN(2);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "limit");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be64(buf, off, cap, NFTA_LIMIT_RATE, rate);
+	if (!off)
+		return 0;
+	off = nla_put_be64(buf, off, cap, NFTA_LIMIT_UNIT, unit);
+	if (!off)
+		return 0;
+
+	if (with_burst) {
+		__u32 burst = bursts[rand32() % ARRAY_SIZE(bursts)];
+
+		off = nla_put_be32(buf, off, cap, NFTA_LIMIT_BURST, burst);
+		if (!off)
+			return 0;
+	}
+
+	if (with_type) {
+		__u32 type = ONE_IN(2) ? NFT_LIMIT_PKTS : NFT_LIMIT_PKT_BYTES;
+
+		off = nla_put_be32(buf, off, cap, NFTA_LIMIT_TYPE, type);
+		if (!off)
+			return 0;
+	}
+
+	if (with_flags) {
+		off = nla_put_be32(buf, off, cap, NFTA_LIMIT_FLAGS,
+				   NFT_LIMIT_F_INV);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Structurally-valid nft_immediate expression element.  Net layout:
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "immediate"
@@ -2344,7 +2497,8 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_meta, bool with_lookup, bool with_log,
 			 bool with_bitwise, bool with_cmp, bool with_range,
 			 bool with_byteorder, bool with_socket,
-			 bool with_quota, bool with_immediate,
+			 bool with_quota, bool with_limit,
+			 bool with_immediate,
 			 bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
 {
@@ -2437,6 +2591,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_quota) {
 		off = build_nft_quota_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_limit) {
+		off = build_nft_limit_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -2669,6 +2829,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_byteorder = ONE_IN(3);
 		bool with_socket = ONE_IN(3);
 		bool with_quota = ONE_IN(3);
+		bool with_limit = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -2678,7 +2839,7 @@ bool nftables_churn(struct childdata *child)
 				  with_meta, with_lookup, with_log,
 				  with_bitwise, with_cmp, with_range,
 				  with_byteorder, with_socket,
-				  with_quota, with_immediate,
+				  with_quota, with_limit, with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
@@ -2712,6 +2873,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_quota)
 				__atomic_add_fetch(&shm->stats.nftables_churn_quota_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_limit)
+				__atomic_add_fetch(&shm->stats.nftables_churn_limit_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
@@ -2790,6 +2954,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_byteorder = ONE_IN(3);
 		bool with_socket = ONE_IN(3);
 		bool with_quota = ONE_IN(3);
+		bool with_limit = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -2799,7 +2964,7 @@ bool nftables_churn(struct childdata *child)
 				  with_meta, with_lookup, with_log,
 				  with_bitwise, with_cmp, with_range,
 				  with_byteorder, with_socket,
-				  with_quota, with_immediate,
+				  with_quota, with_limit, with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
@@ -2833,6 +2998,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_quota)
 				__atomic_add_fetch(&shm->stats.nftables_churn_quota_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_limit)
+				__atomic_add_fetch(&shm->stats.nftables_churn_limit_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
