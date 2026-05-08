@@ -172,6 +172,7 @@ enum child_op_type {
 	CHILD_OP_IOURING_CMD_PASSTHROUGH,
 	CHILD_OP_PAGECACHE_CANARY_CHECK,
 	CHILD_OP_MPLS_ROUTE_CHURN,
+	CHILD_OP_SOCK_DIAG_WALKER,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -548,3 +549,4 @@ const char *af_alg_probe_template_label(unsigned int idx);
 bool iouring_cmd_passthrough(struct childdata *child);
 bool pagecache_canary_check(struct childdata *child);
 bool mpls_route_churn(struct childdata *child);
+bool sock_diag_walker(struct childdata *child);
