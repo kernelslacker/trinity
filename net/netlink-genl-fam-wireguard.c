@@ -37,6 +37,7 @@
 
 #include <linux/wireguard.h>
 
+#include "compat.h"
 #include "netlink-genl-families.h"
 #include "utils.h"
 
@@ -92,12 +93,7 @@ static const struct nla_attr_spec wireguard_attrs[] = {
 	{ WGALLOWEDIP_A_FAMILY,			NLA_KIND_U16,    2 },
 	{ WGALLOWEDIP_A_IPADDR,			NLA_KIND_BINARY, 16 },
 	{ WGALLOWEDIP_A_CIDR_MASK,		NLA_KIND_U8,     1 },
-#ifdef WGALLOWEDIP_A_FLAGS
-	/* Added after the original WireGuard merge for WGALLOWEDIP_F_REMOVE_ME;
-	 * absent in older <linux/wireguard.h> shipped with kernel-headers
-	 * predating the addition. */
 	{ WGALLOWEDIP_A_FLAGS,			NLA_KIND_U32,    4 },
-#endif
 };
 
 struct genl_family_grammar fam_wireguard = {
