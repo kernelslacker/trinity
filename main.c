@@ -778,7 +778,7 @@ static bool spawn_child(int childno)
 		usleep(fork_throttle_us);
 
 	fflush(stdout);
-	pid = fork();
+	pid = self_cgroup_fork_into_workload();
 
 	if (pid == 0) {
 		child_process(child, childno);

@@ -2,14 +2,19 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <signal.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/inotify.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#include <linux/sched.h>
 
 #include "child.h"
 #include "params.h"
@@ -18,13 +23,35 @@
 #include "trinity.h"
 #include "utils.h"
 
+#ifndef CLONE_INTO_CGROUP
+#define CLONE_INTO_CGROUP 0x200000000ULL
+#endif
+
 /*
- * The cgroup directory we created and own.  NULL when no cgroup was made
- * (either disabled, parse failure, or already capped by a wrapper scope).
- * Cleanup at exit is best-effort: the kernel reclaims the cgroup when the
- * last process exits anyway, but rmdir keeps the tree tidy on clean exit.
+ * Sub-cgroup layout (all under the v2 cgroup we belong to at startup):
+ *
+ *   trinity-<pid>/                     container, no procs, no memory.* set
+ *     ├── parent/                      memory.oom.group=0, memory.high=<small>
+ *     │                                trinity-main lives here
+ *     └── children/                    memory.oom.group=1, memory.max=<cap>
+ *                                      all worker children live here
+ *
+ * The split exists so children's OOM doesn't take the parent.  When the
+ * children/ cap fires, oom.group=1 kills the entire worker pool atomically
+ * and the parent re-spawns from a clean state.  Parent has no memory.max
+ * and a generous memory.high so its bandit/HEALER bookkeeping is never
+ * the OOM target.
+ *
+ * Cleanup is best-effort: the kernel reclaims empty cgroups when the last
+ * process exits, so rmdir failures during teardown are benign.
  */
-static char *self_cg_path;
+static char *cg_container;	/* trinity-<pid>/ */
+static char *cg_parent;		/* trinity-<pid>/parent/ */
+static char *cg_workload;	/* trinity-<pid>/children/ in split mode,
+				 * or the single trinity-<pid>/ in fallback */
+static int  cg_workload_fd = -1;	/* O_DIRECTORY on cg_workload */
+static bool cg_split_mode;	/* true if parent/children sub-cgroups are live */
+static bool clone3_unavailable;	/* latched on first ENOSYS */
 
 static unsigned long mem_total_bytes(void)
 {
@@ -44,18 +71,17 @@ static unsigned long mem_total_bytes(void)
 }
 
 /*
- * Parse a size argument and produce the canonical byte-count string we
- * write into the cgroup file.  Accepted forms:
- *   "max"          → out is set to "max" (cgroup sentinel for uncapped)
+ * Parse a size argument and produce a byte-count (out_bytes) plus the
+ * canonical string we write into the cgroup file (out_str).  Accepted forms:
+ *   "max"          → out_str="max", out_bytes=ULONG_MAX (sentinel for uncapped)
  *   "<n>%"         → percentage of MemTotal (1..100)
  *   "<n>[KMG]"     → bytes, with optional K/M/G binary suffix (1024)
  *
- * On success returns true and *out points to a malloc'd NUL-terminated
- * string the caller must free.  On failure returns false and *out is
- * untouched.
+ * On success returns true; *out_str is malloc'd, caller frees.
+ * On failure returns false and outputs are untouched.
  */
 static bool parse_size_arg(const char *arg, unsigned long mem_total,
-			   char **out)
+			   char **out_str, unsigned long *out_bytes)
 {
 	char *end;
 	unsigned long long val;
@@ -65,8 +91,11 @@ static bool parse_size_arg(const char *arg, unsigned long mem_total,
 		return false;
 
 	if (strcmp(arg, "max") == 0) {
-		*out = strdup("max");
-		return *out != NULL;
+		*out_str = strdup("max");
+		if (*out_str == NULL)
+			return false;
+		*out_bytes = ULONG_MAX;
+		return true;
 	}
 
 	errno = 0;
@@ -96,8 +125,9 @@ static bool parse_size_arg(const char *arg, unsigned long mem_total,
 		val *= mult;
 	}
 
-	if (asprintf(out, "%llu", val) < 0)
+	if (asprintf(out_str, "%llu", val) < 0)
 		return false;
+	*out_bytes = (unsigned long)val;
 	return true;
 }
 
@@ -189,16 +219,223 @@ static bool already_capped(const char *parent_cg_path)
 static void events_setup(void);
 static void events_cleanup(void);
 
+/*
+ * Compute the parent's memory.high reservation.  Parent does little work
+ * per-iter (waitpid/reap/fork loop, periodic_work bookkeeping, HEALER
+ * snapshots), so a small soft limit is plenty.
+ *
+ *   parent_high = min(200M, total_max / 16)
+ *
+ * The /16 split keeps the parent's reservation proportional on tiny
+ * budgets (e.g. a 256M total cap leaves ~16M for the parent — small but
+ * functional) while capping at 200M on large budgets so the operator's
+ * --memory-max value mostly goes to children where the work happens.
+ *
+ * memory.high is a soft limit (kernel throttles allocations above it),
+ * not a hard cap.  We deliberately do not set memory.max on the parent —
+ * if parent ever genuinely needs more, it should be allowed to allocate.
+ */
+static unsigned long compute_parent_high(unsigned long total_max_bytes)
+{
+	const unsigned long PARENT_HIGH_CAP = 200UL * 1024 * 1024;
+
+	if (total_max_bytes == ULONG_MAX)
+		return PARENT_HIGH_CAP;
+	if (total_max_bytes / 16 < PARENT_HIGH_CAP)
+		return total_max_bytes / 16;
+	return PARENT_HIGH_CAP;
+}
+
+/*
+ * Try to enable the memory controller in the container's subtree so the
+ * parent/ and children/ sub-cgroups can carry memory.* knobs.  Returns
+ * true on success.  Failure (EOPNOTSUPP, EINVAL, EACCES) is the signal to
+ * fall back to single-cgroup mode.
+ */
+static bool enable_memory_subtree(const char *container_path)
+{
+	return write_cg_file(container_path, "cgroup.subtree_control",
+			     "+memory");
+}
+
+/*
+ * Build sub-cgroups under container/: parent/ and children/.  Sets all
+ * memory knobs and moves trinity-main into parent/.  On any failure
+ * returns false; caller falls back to single-cgroup mode using the same
+ * container directory.
+ */
+static bool setup_split(const char *container_path,
+			const char *children_max_str,
+			const char *children_high_str,
+			const char *children_swap_str,
+			unsigned long children_max_bytes)
+{
+	char *parent_path = NULL;
+	char *children_path = NULL;
+	char parent_high_str[32];
+	char pidbuf[32];
+	int n;
+	int wfd = -1;
+	unsigned long parent_high;
+
+	if (!enable_memory_subtree(container_path)) {
+		outputerr("self-cgroup: enable +memory in subtree_control failed: %s\n",
+			  strerror(errno));
+		return false;
+	}
+
+	if (asprintf(&parent_path, "%s/parent", container_path) < 0) {
+		parent_path = NULL;
+		goto fail;
+	}
+	if (asprintf(&children_path, "%s/children", container_path) < 0) {
+		children_path = NULL;
+		goto fail;
+	}
+
+	if (mkdir(parent_path, 0755) != 0) {
+		outputerr("self-cgroup: mkdir(%s) failed: %s\n",
+			  parent_path, strerror(errno));
+		goto fail;
+	}
+	if (mkdir(children_path, 0755) != 0) {
+		outputerr("self-cgroup: mkdir(%s) failed: %s\n",
+			  children_path, strerror(errno));
+		rmdir(parent_path);
+		goto fail;
+	}
+
+	/* Children: hard cap + swap cap + back-pressure threshold + group-OOM. */
+	if (!write_cg_file(children_path, "memory.max", children_max_str)) {
+		outputerr("self-cgroup: write children/memory.max=%s failed: %s\n",
+			  children_max_str, strerror(errno));
+		goto fail_rmdir;
+	}
+	if (!write_cg_file(children_path, "memory.high", children_high_str))
+		output(1, "self-cgroup: write children/memory.high=%s failed: %s\n",
+		       children_high_str, strerror(errno));
+	if (!write_cg_file(children_path, "memory.swap.max", children_swap_str))
+		output(1, "self-cgroup: write children/memory.swap.max=%s failed: %s\n",
+		       children_swap_str, strerror(errno));
+	/* memory.oom.group=1: when children's memory.max fires, kill ALL
+	 * processes in this cgroup atomically.  Best-effort — older kernels
+	 * without the knob silently fall back to per-task OOM. */
+	if (!write_cg_file(children_path, "memory.oom.group", "1"))
+		output(1, "self-cgroup: write children/memory.oom.group=1 failed: %s\n",
+		       strerror(errno));
+
+	/* Parent: small soft limit, no hard cap, never group-killed. */
+	parent_high = compute_parent_high(children_max_bytes == ULONG_MAX
+					  ? ULONG_MAX
+					  : children_max_bytes);
+	n = snprintf(parent_high_str, sizeof(parent_high_str), "%lu",
+		     parent_high);
+	if (n < 0 || (size_t)n >= sizeof(parent_high_str))
+		goto fail_rmdir;
+	if (!write_cg_file(parent_path, "memory.high", parent_high_str))
+		output(1, "self-cgroup: write parent/memory.high=%s failed: %s\n",
+		       parent_high_str, strerror(errno));
+	if (!write_cg_file(parent_path, "memory.oom.group", "0"))
+		output(1, "self-cgroup: write parent/memory.oom.group=0 failed: %s\n",
+		       strerror(errno));
+
+	/* Move trinity-main into parent/.  If this fails the split is moot:
+	 * trinity-main would be left in container/ alongside the empty
+	 * subgroups, which violates v2's "no internal processes" rule. */
+	n = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)getpid());
+	if (n < 0 || (size_t)n >= sizeof(pidbuf) ||
+	    !write_cg_file(parent_path, "cgroup.procs", pidbuf)) {
+		outputerr("self-cgroup: parent/cgroup.procs write failed: %s\n",
+			  strerror(errno));
+		goto fail_rmdir;
+	}
+
+	/* Open children/ as O_DIRECTORY so spawn_child() can hand the fd to
+	 * clone3(CLONE_INTO_CGROUP).  O_PATH would also work but O_DIRECTORY
+	 * is what the man page documents for this ABI. */
+	wfd = open(children_path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	if (wfd < 0) {
+		outputerr("self-cgroup: open(%s) failed: %s\n",
+			  children_path, strerror(errno));
+		goto fail_rmdir;
+	}
+
+	cg_parent = parent_path;
+	cg_workload = children_path;
+	cg_workload_fd = wfd;
+	cg_split_mode = true;
+
+	output(0, "self-cgroup: split mode active "
+	       "(parent/memory.high=%s, children/memory.max=%s memory.high=%s memory.swap.max=%s memory.oom.group=1)\n",
+	       parent_high_str, children_max_str, children_high_str, children_swap_str);
+	return true;
+
+fail_rmdir:
+	if (wfd >= 0)
+		close(wfd);
+	rmdir(children_path);
+	rmdir(parent_path);
+fail:
+	free(parent_path);
+	free(children_path);
+	return false;
+}
+
+/*
+ * Single-cgroup fallback: container directory carries memory.* knobs
+ * directly and trinity-main + all workers live in it.  This is the
+ * Phase 1 behavior and is used when the parent/children split couldn't
+ * be set up (older kernel, delegation gap, etc.).  No OOM scope
+ * isolation — just the original hard cap.
+ */
+static bool setup_single(const char *container_path,
+			 const char *max_str,
+			 const char *high_str,
+			 const char *swap_str)
+{
+	char pidbuf[32];
+	int n;
+
+	if (!write_cg_file(container_path, "memory.max", max_str)) {
+		outputerr("self-cgroup: write memory.max=%s failed: %s\n",
+			  max_str, strerror(errno));
+		return false;
+	}
+	if (!write_cg_file(container_path, "memory.high", high_str))
+		output(1, "self-cgroup: write memory.high=%s failed: %s\n",
+		       high_str, strerror(errno));
+	if (!write_cg_file(container_path, "memory.swap.max", swap_str))
+		output(1, "self-cgroup: write memory.swap.max=%s failed: %s\n",
+		       swap_str, strerror(errno));
+
+	n = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)getpid());
+	if (n < 0 || (size_t)n >= sizeof(pidbuf) ||
+	    !write_cg_file(container_path, "cgroup.procs", pidbuf)) {
+		outputerr("self-cgroup: cgroup.procs write failed: %s\n",
+			  strerror(errno));
+		return false;
+	}
+
+	cg_workload = strdup(container_path);
+	if (cg_workload == NULL)
+		return false;
+
+	output(0, "self-cgroup: single-cgroup fallback "
+	       "(memory.max=%s memory.high=%s memory.swap.max=%s) -- no OOM scope split\n",
+	       max_str, high_str, swap_str);
+	return true;
+}
+
 void self_cgroup_setup(void)
 {
 	char *parent_cg = NULL;
-	char *new_cg = NULL;
 	unsigned long memtotal;
-	char *max_value = NULL;
-	char *high_value = NULL;
-	char *swap_value = NULL;
-	char pidbuf[32];
-	int n;
+	char *max_str = NULL;
+	char *high_str = NULL;
+	char *swap_str = NULL;
+	unsigned long max_bytes = 0;
+	unsigned long high_bytes = 0;
+	unsigned long swap_bytes = 0;
 
 	if (no_cgroup)
 		return;
@@ -224,92 +461,174 @@ void self_cgroup_setup(void)
 	}
 
 	if (!parse_size_arg(memory_max_arg ? memory_max_arg : "60%",
-			    memtotal, &max_value)) {
+			    memtotal, &max_str, &max_bytes)) {
 		outputerr("self-cgroup: invalid --memory-max '%s'; "
 			  "running without memory cap\n",
 			  memory_max_arg ? memory_max_arg : "60%");
 		goto out;
 	}
 	if (!parse_size_arg(memory_high_arg ? memory_high_arg : "50%",
-			    memtotal, &high_value)) {
+			    memtotal, &high_str, &high_bytes)) {
 		outputerr("self-cgroup: invalid --memory-high '%s'; "
 			  "running without memory cap\n",
 			  memory_high_arg ? memory_high_arg : "50%");
 		goto out;
 	}
 	if (!parse_size_arg(memory_swap_max_arg ? memory_swap_max_arg : "20%",
-			    memtotal, &swap_value)) {
+			    memtotal, &swap_str, &swap_bytes)) {
 		outputerr("self-cgroup: invalid --memory-swap-max '%s'; "
 			  "running without memory cap\n",
 			  memory_swap_max_arg ? memory_swap_max_arg : "20%");
 		goto out;
 	}
+	(void)high_bytes;
+	(void)swap_bytes;
 
-	if (asprintf(&new_cg, "/sys/fs/cgroup%s/trinity-%d",
+	if (asprintf(&cg_container, "/sys/fs/cgroup%s/trinity-%d",
 		     parent_cg, (int)getpid()) < 0) {
-		new_cg = NULL;
+		cg_container = NULL;
 		outputerr("self-cgroup: asprintf failed; "
 			  "running without memory cap\n");
 		goto out;
 	}
 
-	if (mkdir(new_cg, 0755) != 0) {
+	if (mkdir(cg_container, 0755) != 0) {
 		outputerr("self-cgroup: mkdir(%s) failed: %s; "
 			  "running without memory cap\n",
-			  new_cg, strerror(errno));
+			  cg_container, strerror(errno));
+		free(cg_container);
+		cg_container = NULL;
 		goto out;
 	}
 
-	if (!write_cg_file(new_cg, "memory.max", max_value)) {
-		outputerr("self-cgroup: write memory.max=%s failed: %s; "
-			  "running without memory cap\n",
-			  max_value, strerror(errno));
-		rmdir(new_cg);
-		goto out;
+	/*
+	 * Try the parent/children split first.  On any failure, fall back to
+	 * single-cgroup mode (Phase 1 semantics) so the operator still gets
+	 * the hard memory cap even on kernels/configs where the split won't
+	 * fly.  setup_split() leaves the container directory in place either
+	 * way; we then attach memory.* directly to it for the fallback.
+	 */
+	if (setup_split(cg_container, max_str, high_str, swap_str, max_bytes)) {
+		/* split mode established; cg_parent/cg_workload populated. */
+	} else {
+		output(1, "self-cgroup: parent/children split unavailable; "
+		       "falling back to single-cgroup mode\n");
+		if (!setup_single(cg_container, max_str, high_str, swap_str)) {
+			outputerr("self-cgroup: single-cgroup fallback also failed; "
+				  "running without memory cap\n");
+			rmdir(cg_container);
+			free(cg_container);
+			cg_container = NULL;
+			goto out;
+		}
 	}
-
-	/* memory.high and memory.swap.max are best-effort.  A kernel that
-	 * doesn't expose memory.swap.max (swap accounting disabled) is fine
-	 * — memory.max alone is the load-bearing safety net. */
-	if (!write_cg_file(new_cg, "memory.high", high_value))
-		output(1, "self-cgroup: write memory.high=%s failed: %s\n",
-		       high_value, strerror(errno));
-	if (!write_cg_file(new_cg, "memory.swap.max", swap_value))
-		output(1, "self-cgroup: write memory.swap.max=%s failed: %s\n",
-		       swap_value, strerror(errno));
-
-	n = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)getpid());
-	if (n < 0 || (size_t)n >= sizeof(pidbuf) ||
-	    !write_cg_file(new_cg, "cgroup.procs", pidbuf)) {
-		outputerr("self-cgroup: cgroup.procs write failed: %s; "
-			  "running without memory cap\n", strerror(errno));
-		rmdir(new_cg);
-		goto out;
-	}
-
-	output(0, "self-cgroup: in %s/trinity-%d (memory.max=%s memory.high=%s memory.swap.max=%s)\n",
-	       parent_cg, (int)getpid(), max_value, high_value, swap_value);
-	self_cg_path = new_cg;
-	new_cg = NULL;
 
 	events_setup();
 
 out:
 	free(parent_cg);
-	free(new_cg);
-	free(max_value);
-	free(high_value);
-	free(swap_value);
+	free(max_str);
+	free(high_str);
+	free(swap_str);
 }
 
 void self_cgroup_cleanup(void)
 {
 	events_cleanup();
-	if (self_cg_path == NULL)
-		return;
-	rmdir(self_cg_path);
-	free(self_cg_path);
-	self_cg_path = NULL;
+
+	if (cg_workload_fd >= 0) {
+		close(cg_workload_fd);
+		cg_workload_fd = -1;
+	}
+
+	/*
+	 * rmdir order: workload (children) first, then parent, then
+	 * container.  Best-effort: trinity-main is still in cg_parent at
+	 * this point, so its rmdir will EBUSY.  The kernel will reap empty
+	 * cgroups when the last process exits, so leaks are short-lived.
+	 */
+	if (cg_workload != NULL) {
+		rmdir(cg_workload);
+		free(cg_workload);
+		cg_workload = NULL;
+	}
+	if (cg_parent != NULL) {
+		rmdir(cg_parent);
+		free(cg_parent);
+		cg_parent = NULL;
+	}
+	if (cg_container != NULL) {
+		rmdir(cg_container);
+		free(cg_container);
+		cg_container = NULL;
+	}
+	cg_split_mode = false;
+}
+
+/*
+ * Spawn a worker into the children/ cgroup.  Same return semantics as
+ * fork(): pid in parent, 0 in child, -1 on error.
+ *
+ * Preferred path is clone3(CLONE_INTO_CGROUP) with an O_DIRECTORY fd on
+ * children/ — atomic placement, no transient window where the child runs
+ * in parent/ and racing allocations could land against the wrong limit.
+ *
+ * Fallbacks:
+ *   - cg_workload_fd < 0 (cgroup setup didn't happen, or single-cgroup
+ *     fallback): plain fork(); children inherit whatever cgroup the
+ *     parent is in.
+ *   - clone3 returns ENOSYS (very old kernel, pre-5.7-ish or stripped):
+ *     latch clone3_unavailable, fall through to fork() + post-migrate
+ *     by writing the child pid to children/cgroup.procs.  Brief race
+ *     window where the child is in parent/ before the write lands.
+ *   - clone3 returns any other error (EAGAIN, ENOMEM): return -1 so the
+ *     caller's existing retry loop in spawn_child() handles it the same
+ *     way it would handle a transient fork() failure.
+ */
+pid_t self_cgroup_fork_into_workload(void)
+{
+	pid_t pid;
+
+	if (cg_workload_fd < 0)
+		return fork();
+
+	if (!clone3_unavailable) {
+		struct clone_args args = {
+			.flags = CLONE_INTO_CGROUP,
+			.exit_signal = SIGCHLD,
+			.cgroup = (uint64_t)(unsigned int)cg_workload_fd,
+		};
+		long ret = syscall(__NR_clone3, &args, sizeof(args));
+
+		if (ret >= 0)
+			return (pid_t)ret;
+		if (errno != ENOSYS)
+			return -1;
+		clone3_unavailable = true;
+		output(0, "self-cgroup: clone3 ENOSYS; "
+		       "falling back to fork()+post-migrate\n");
+	}
+
+	pid = fork();
+	if (pid > 0) {
+		char buf[32];
+		int n = snprintf(buf, sizeof(buf), "%d\n", (int)pid);
+		int fd;
+
+		if (n > 0 && (size_t)n < sizeof(buf)) {
+			fd = openat(cg_workload_fd, "cgroup.procs",
+				    O_WRONLY | O_CLOEXEC);
+			if (fd >= 0) {
+				ssize_t wn = write(fd, buf, (size_t)n);
+
+				if (wn != n)
+					output(1, "self-cgroup: post-fork migrate of pid %d failed: %s\n",
+					       (int)pid, strerror(errno));
+				close(fd);
+			}
+		}
+	}
+	return pid;
 }
 
 /*
@@ -320,11 +639,14 @@ void self_cgroup_cleanup(void)
  * cycle.  Phase 2 listens to the kernel's memory.events file (rewritten
  * each time low/high/max/oom counters bump) and applies back-pressure
  * before the cap is reached: a doubling fork-rate throttle on
- * memory.high crossings.  memory.max crossings are tracked for
- * diagnostics only -- the kernel's own OOM killer handles the cap, and
- * a userspace shed-on-top response cascades into a kill-respawn loop
- * because the youngest pid is the child mid-init that needs the most
- * memory.
+ * memory.high crossings.
+ *
+ * In split mode the watcher attaches to children/memory.events — that's
+ * where the workload's memory pressure shows up.  memory.max crossings
+ * are tracked for diagnostics only: with children/memory.oom.group=1 the
+ * kernel kills the entire worker pool atomically when the cap fires, the
+ * parent re-spawns from a clean state, and any userspace shed-on-top
+ * would just race the kernel.
  *
  * The watch is parent-only.  Inotify on cgroupfs delivers IN_MODIFY
  * each time the kernel rewrites memory.events; the parent drains those
@@ -332,9 +654,8 @@ void self_cgroup_cleanup(void)
  * and re-reads the file to compare counts against the last snapshot.
  *
  * Failure paths (inotify_init1 EMFILE, watch add denied, file open
- * denied) all degrade silently to "Phase 1 only": the kernel will
- * still scope the OOM kill to trinity's subtree, just without the
- * proactive throttle.
+ * denied) all degrade silently: the kernel will still scope the OOM kill
+ * to children/, just without the proactive throttle.
  */
 
 unsigned int fork_throttle_us;
@@ -392,11 +713,11 @@ static void events_setup(void)
 {
 	char path[PATH_MAX];
 
-	if (self_cg_path == NULL)
+	if (cg_workload == NULL)
 		return;
 
 	if ((size_t)snprintf(path, sizeof(path), "%s/memory.events",
-			     self_cg_path) >= sizeof(path))
+			     cg_workload) >= sizeof(path))
 		return;
 
 	events_inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
@@ -496,20 +817,14 @@ void self_cgroup_events_check(void)
 	}
 
 	/*
-	 * memory.events:max means the kernel has already OOM-killed at
-	 * least one task in the cgroup to satisfy the cap.  The previous
-	 * shed_youngest_children() response on top of that double-killed
-	 * the kernel's victim AND also picked the wrong target: highest
-	 * pid is "most recently forked", which is the child currently
-	 * running freeze_global_objects() and per-child shm setup.  That
-	 * mid-init child is the heaviest live memory consumer and has no
-	 * accumulated bandit/HEALER state to preserve, so killing it both
-	 * trips the cgroup again on respawn (init re-allocates) and
-	 * cascades into a kill-respawn-kill loop that prevents any actual
-	 * fuzz work.  Track the counter for diagnostics; let the kernel's
-	 * own OOM killer handle the cap.  The HIGH-event-driven fork
-	 * throttle above gives back-pressure before max events fire in
-	 * the first place.
+	 * memory.events:max means the kernel has already OOM-killed in the
+	 * children/ cgroup.  With memory.oom.group=1 the kill takes the
+	 * whole worker pool atomically and the parent (which lives in the
+	 * sibling parent/ cgroup with no memory.max) survives untouched —
+	 * the existing reap loop in main_loop sees all the SIGCHLDs and
+	 * re-spawns the pool from scratch.  No userspace shed required.
+	 * The HIGH-event-driven fork throttle above gives back-pressure
+	 * before max events fire in the first place.
 	 */
 	if (max > last_max_count) {
 		unsigned long delta = max - last_max_count;
@@ -517,7 +832,9 @@ void self_cgroup_events_check(void)
 		last_max_count = max;
 		max_event_seq++;
 		output(0, "self-cgroup: MAX event #%u (delta=%lu) -- "
-		       "kernel OOM-killed; no userspace shed\n",
-		       max_event_seq, delta);
+		       "kernel %s; parent re-spawns worker pool\n",
+		       max_event_seq, delta,
+		       cg_split_mode ? "group-killed children cgroup atomically"
+				     : "OOM-killed in single-cgroup mode");
 	}
 }
