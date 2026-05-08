@@ -702,6 +702,51 @@
 #define NFT_NG_RANDOM			1
 #endif
 
+/* nft_hash NFTA_HASH_* attribute IDs and the NFT_HASH_JENKINS /
+ * NFT_HASH_SYM type selectors.  The validator in
+ * net/netfilter/nft_hash.c dispatches on NFTA_HASH_TYPE: NFT_HASH_JENKINS
+ * (default if absent) routes to nft_jhash_init, which requires
+ * NFTA_HASH_SREG + NFTA_HASH_LEN + NFTA_HASH_DREG + NFTA_HASH_MODULUS
+ * and accepts optional NFTA_HASH_SEED (a u32 jhash seed; if absent the
+ * kernel synthesises one via prandom at init time) plus optional
+ * NFTA_HASH_OFFSET; NFT_HASH_SYM routes to nft_symhash_init, which uses
+ * skb->hash as the input and therefore requires only NFTA_HASH_DREG +
+ * NFTA_HASH_MODULUS plus optional NFTA_HASH_OFFSET — SREG, LEN and SEED
+ * are all rejected with -EINVAL on the symhash path.  Both inits reject
+ * MODULUS == 0 with -ERANGE; any TYPE outside {JENKINS, SYM} is rejected
+ * with -EOPNOTSUPP before the type-specific init runs.  LEN on the
+ * jhash path must satisfy 1..NFT_REG_SIZE*4 == 1..64.  Each symbol is
+ * guarded individually so the build still works on older host headers
+ * that predate any subset. */
+#ifndef NFTA_HASH_SREG
+#define NFTA_HASH_SREG			1
+#endif
+#ifndef NFTA_HASH_DREG
+#define NFTA_HASH_DREG			2
+#endif
+#ifndef NFTA_HASH_LEN
+#define NFTA_HASH_LEN			3
+#endif
+#ifndef NFTA_HASH_MODULUS
+#define NFTA_HASH_MODULUS		4
+#endif
+#ifndef NFTA_HASH_SEED
+#define NFTA_HASH_SEED			5
+#endif
+#ifndef NFTA_HASH_OFFSET
+#define NFTA_HASH_OFFSET		6
+#endif
+#ifndef NFTA_HASH_TYPE
+#define NFTA_HASH_TYPE			7
+#endif
+
+#ifndef NFT_HASH_JENKINS
+#define NFT_HASH_JENKINS		0
+#endif
+#ifndef NFT_HASH_SYM
+#define NFT_HASH_SYM			1
+#endif
+
 /* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
  * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
  * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
@@ -2286,6 +2331,132 @@ static size_t build_nft_numgen_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_hash
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_hash.c via the
+ * nft_hash_policy[] parser, which dispatches on NFTA_HASH_TYPE:
+ * NFT_HASH_JENKINS (nft_jhash_init) consumes a contiguous LEN-byte
+ * window starting at SREG, jhashes it with SEED and reduces mod MODULUS
+ * (plus OFFSET if present); NFT_HASH_SYM (nft_symhash_init) reduces the
+ * skb hash mod MODULUS and stores at DREG, ignoring SREG/LEN/SEED — the
+ * parser actively rejects those attributes on the symhash path with
+ * -EINVAL.  Both inits reject MODULUS == 0 with -ERANGE and any TYPE
+ * outside {JENKINS, SYM} with -EOPNOTSUPP before the type-specific init
+ * runs.  TYPE is emitted explicitly even though absent defaults to
+ * JENKINS, so the on-wire shape is unambiguous regardless of which arm
+ * we picked.  The deprecated NFTA_HASH_SET_NAME / NFTA_HASH_SET_ID
+ * map-lookup variants are intentionally not emitted here — they need
+ * their own slice with care around the .set policy gate.
+ *
+ * Variants per call:
+ *   - TYPE coin-flips between NFT_HASH_JENKINS and NFT_HASH_SYM so both
+ *     dispatch arms (per-packet jhash of an SREG window vs the precomputed
+ *     skb->hash reduction) see traffic.  Per-arm attribute sets are
+ *     emitted strictly: jhash carries SREG + LEN + optional SEED, symhash
+ *     carries neither so the -EINVAL guard never fires before init.
+ *   - DREG uniform across NFT_REG_1..NFT_REG_4 so the destination
+ *     register validation in nft_parse_register_store sees the full
+ *     legacy-register spread.
+ *   - SREG (jhash only) uniform across NFT_REG_1..NFT_REG_4 so the
+ *     source register validation in nft_parse_register_load lands on
+ *     each of the legacy registers.
+ *   - LEN (jhash only) rolls uniformly across {1, 4, 8, 16, 32}, all
+ *     within the 1..NFT_REG_SIZE*4 == 1..64 range the parser enforces;
+ *     the spread covers both single-byte and multi-register windows.
+ *   - MODULUS rolls uniformly across {2, 16, 256, 65536} so both the
+ *     small-modulus per-byte fan-out and the wide-modulus per-port-style
+ *     fan-out land on the eval-time reciprocal_scale path.  All four
+ *     values are > 0 so the -ERANGE guard never fires.
+ *   - SEED (jhash only) is coin-flipped present, value uniform u32; when
+ *     absent the kernel synthesises one via prandom at init time, so
+ *     both seeded and self-seeded init paths get coverage.
+ *   - OFFSET is coin-flipped present, value uniform over
+ *     {0, 1, 0x100, 0xffff}; when present the eval-time u32 add of
+ *     (hash % modulus) + offset exercises the offset-fold path including
+ *     the wrap that 0xffff + small-modulus produces.
+ */
+static size_t build_nft_hash_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u32 regs[] = {
+		NFT_REG_1, NFT_REG_2, NFT_REG_3, NFT_REG_4,
+	};
+	static const __u32 lens[] = { 1U, 4U, 8U, 16U, 32U };
+	static const __u32 moduli[] = {
+		2U,			/* small: per-byte fan-out */
+		16U,
+		256U,
+		65536U,			/* wide: per-port-style fan-out */
+	};
+	static const __u32 offsets[] = {
+		0U, 1U, 0x100U, 0xffffU,
+	};
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u32 dreg = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 modulus = moduli[rand32() % ARRAY_SIZE(moduli)];
+	__u32 type = ONE_IN(2) ? NFT_HASH_JENKINS : NFT_HASH_SYM;
+	bool with_offset = ONE_IN(2);
+	bool with_seed = ONE_IN(2);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "hash");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_HASH_DREG, dreg);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_HASH_MODULUS, modulus);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_HASH_TYPE, type);
+	if (!off)
+		return 0;
+
+	if (type == NFT_HASH_JENKINS) {
+		__u32 sreg = regs[rand32() % ARRAY_SIZE(regs)];
+		__u32 len = lens[rand32() % ARRAY_SIZE(lens)];
+
+		off = nla_put_be32(buf, off, cap, NFTA_HASH_SREG, sreg);
+		if (!off)
+			return 0;
+		off = nla_put_be32(buf, off, cap, NFTA_HASH_LEN, len);
+		if (!off)
+			return 0;
+
+		if (with_seed) {
+			off = nla_put_be32(buf, off, cap, NFTA_HASH_SEED,
+					   rand32());
+			if (!off)
+				return 0;
+		}
+	}
+
+	if (with_offset) {
+		__u32 offset = offsets[rand32() % ARRAY_SIZE(offsets)];
+
+		off = nla_put_be32(buf, off, cap, NFTA_HASH_OFFSET, offset);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Structurally-valid nft_immediate expression element.  Net layout:
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "immediate"
@@ -2622,7 +2793,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_bitwise, bool with_cmp, bool with_range,
 			 bool with_byteorder, bool with_socket,
 			 bool with_quota, bool with_limit,
-			 bool with_numgen,
+			 bool with_numgen, bool with_hash,
 			 bool with_immediate,
 			 bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
@@ -2728,6 +2899,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_numgen) {
 		off = build_nft_numgen_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_hash) {
+		off = build_nft_hash_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -2962,6 +3139,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_quota = ONE_IN(3);
 		bool with_limit = ONE_IN(3);
 		bool with_numgen = ONE_IN(3);
+		bool with_hash = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -2972,7 +3150,7 @@ bool nftables_churn(struct childdata *child)
 				  with_bitwise, with_cmp, with_range,
 				  with_byteorder, with_socket,
 				  with_quota, with_limit, with_numgen,
-				  with_immediate,
+				  with_hash, with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
@@ -3012,6 +3190,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_numgen)
 				__atomic_add_fetch(&shm->stats.nftables_churn_numgen_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_hash)
+				__atomic_add_fetch(&shm->stats.nftables_churn_hash_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
@@ -3092,6 +3273,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_quota = ONE_IN(3);
 		bool with_limit = ONE_IN(3);
 		bool with_numgen = ONE_IN(3);
+		bool with_hash = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -3102,7 +3284,7 @@ bool nftables_churn(struct childdata *child)
 				  with_bitwise, with_cmp, with_range,
 				  with_byteorder, with_socket,
 				  with_quota, with_limit, with_numgen,
-				  with_immediate,
+				  with_hash, with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
@@ -3142,6 +3324,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_numgen)
 				__atomic_add_fetch(&shm->stats.nftables_churn_numgen_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_hash)
+				__atomic_add_fetch(&shm->stats.nftables_churn_hash_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
