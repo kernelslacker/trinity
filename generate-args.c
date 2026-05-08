@@ -487,6 +487,14 @@ void generate_syscall_args(struct syscallrecord *rec)
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
 	rec->state = PREP;
 
+	/* Reset post_state on every syscall step, before any branch.
+	 * generic_sanitise() also clears it, but the minicorpus-replay
+	 * path below skips generic_sanitise entirely; without this hoist,
+	 * a sanitise-less syscall whose prior post handler did not reach
+	 * deferred_freeptr would leave a stale pointer in post_state for
+	 * the next syscall's post handler to dereference. */
+	rec->post_state = 0;
+
 	/* For syscalls without sanitise callbacks, try replaying a
 	 * saved arg set from the mini-corpus. If replay succeeds,
 	 * skip generic_sanitise — the args are already populated. */
