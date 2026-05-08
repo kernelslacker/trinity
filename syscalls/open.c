@@ -211,50 +211,42 @@ static void sanitise_openat2(struct syscallrecord *rec)
 
 	rec->a3 = (unsigned long) how;
 	rec->a4 = sizeof(struct open_how);
-	/* Snapshot for the post handler -- a3 may be scribbled by a sibling
-	 * syscall before post_openat2() runs. */
-	rec->post_state = (unsigned long) how;
+
+	/*
+	 * Hand the snap to the deferred-free queue at sanitise time so cleanup
+	 * is independent of whether the .post handler ever runs.  When
+	 * reject_corrupt_retfd() flags retfd, handle_syscall_ret() skips .post
+	 * entirely, and a post-side free would leak the snap.
+	 */
+	deferred_free_enqueue(how, NULL);
 }
 
 static void post_openat2(struct syscallrecord *rec)
 {
-	void *how = (void *) rec->post_state;
 	int fd = rec->retval;
 
 	/*
 	 * Bound the returned fd before close().  -1 is the documented
-	 * failure return — skip close but fall through to release the
-	 * captured how snapshot.  Any other out-of-range value is the
-	 * fingerprint of a torn / sign-extended retval that would steer
-	 * close() at a foreign fd in our own process; log + bump the
-	 * corruption counter and converge on the same cleanup so the
-	 * heap-allocated snapshot is not leaked.  Mirrors the bound used
-	 * by post_open / post_openat / post_creat siblings.
+	 * failure return.  Any other out-of-range value is the fingerprint
+	 * of a torn / sign-extended retval that would steer close() at a
+	 * foreign fd in our own process; log + bump the corruption counter.
+	 * Mirrors the bound used by post_open / post_openat / post_creat
+	 * siblings.
 	 */
-	if (fd == -1)
-		goto out_free;
+	if (fd == -1) {
+		rec->a3 = 0;
+		return;
+	}
 
 	if (fd < 0 || fd >= (1 << 20)) {
 		output(0, "post_openat2: rejected fd %d out of [0, 1<<20) before close\n", fd);
 		post_handler_corrupt_ptr_bump(rec, NULL);
-		goto out_free;
+		rec->a3 = 0;
+		return;
 	}
 
 	close(fd);
-
-out_free:
-	if (how == NULL)
-		return;
-
-	if (looks_like_corrupted_ptr(rec, how)) {
-		outputerr("post_openat2: rejected suspicious how=%p (pid-scribbled?)\n", how);
-		rec->a3 = 0;
-		rec->post_state = 0;
-		return;
-	}
-
 	rec->a3 = 0;
-	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_openat2 = {
