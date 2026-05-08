@@ -85,6 +85,9 @@ extern struct genl_family_grammar fam_psample;
 #if __has_include(<linux/ila.h>)
 extern struct genl_family_grammar fam_ila;
 #endif
+#if __has_include(<linux/ioam6_genl.h>)
+extern struct genl_family_grammar fam_ioam6;
+#endif
 extern struct genl_family_grammar fam_nlbl_mgmt;
 extern struct genl_family_grammar fam_nlbl_cipsov4;
 extern struct genl_family_grammar fam_nlbl_unlabel;
@@ -144,6 +147,9 @@ static struct genl_family_grammar *registry[] = {
 #if __has_include(<linux/ila.h>)
 	&fam_ila,
 #endif
+#if __has_include(<linux/ioam6_genl.h>)
+	&fam_ioam6,
+#endif
 	&fam_nlbl_mgmt,
 	&fam_nlbl_cipsov4,
 	&fam_nlbl_unlabel,
@@ -190,6 +196,7 @@ static const struct {
 	{ "fou",           offsetof(struct stats_s, genl_family_calls_fou) },
 	{ "psample",       offsetof(struct stats_s, genl_family_calls_psample) },
 	{ "ila",           offsetof(struct stats_s, genl_family_calls_ila) },
+	{ "IOAM6",         offsetof(struct stats_s, genl_family_calls_ioam6) },
 };
 
 static void stamp_call_counters(void)
