@@ -35,7 +35,11 @@
 #endif
 
 #ifndef O_TMPFILE
-#define O_TMPFILE	020000000
+/* Kernel deliberately ORs in O_DIRECTORY so an old kernel without
+ * __O_TMPFILE support fails the open with -EINVAL rather than silently
+ * treating it as no-op. See asm-generic/fcntl.h.
+ */
+#define O_TMPFILE	(020000000 | 00200000)
 #endif
 
 #ifndef AT_NO_AUTOMOUNT
