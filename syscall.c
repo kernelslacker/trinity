@@ -274,11 +274,13 @@ static void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 		int childstatus;
 
 		pid = waitpid(extrapid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
+		if (pid < 0 && errno == EINTR)
+			pid = 0;	/* transient, keep retrying within the budget */
 		usleep(1000);
 	}
 
-	/* Timed out. Force-kill and reap to prevent zombies. */
-	if (pid == 0) {
+	/* Timed out, or waitpid errored. Force-kill and reap to prevent zombies. */
+	if (pid <= 0) {
 		kill(extrapid, SIGKILL);
 		waitpid(extrapid, NULL, 0);
 	}
