@@ -844,6 +844,29 @@
 #define NFT_CONNLIMIT_F_INV		(1 << 0)
 #endif
 
+/* nft_last NFTA_LAST_* attribute IDs.  The validator in
+ * net/netfilter/nft_last.c (nft_last_init) drives off
+ * nft_last_policy[]: NFTA_LAST_SET (NLA_U32, big-endian on wire — read
+ * via ntohl(nla_get_be32())) is OPTIONAL and acts as a 0/1 flag that
+ * controls whether the 'last seen' state is pre-seeded as already set;
+ * NFTA_LAST_MSECS (NLA_U64, big-endian on wire — fed through
+ * nf_msecs_to_jiffies64, which rejects negative-from-jiffies wraps and
+ * oversized future-jiffies values) is OPTIONAL and only consumed when
+ * SET == 1, where it carries the seed delta backed off from the
+ * current jiffies.  Both attributes absent leaves the expression in
+ * the default-init shape; SET == 0 with MSECS present is a no-op for
+ * the seed since init only reads MSECS when SET is true.  Each symbol
+ * is guarded individually so the build still works on older host
+ * headers that predate any subset.  nft_last is built into nf_tables
+ * core (no separate CONFIG_NFT_LAST), so any host with
+ * CONFIG_NF_TABLES has the expression available. */
+#ifndef NFTA_LAST_SET
+#define NFTA_LAST_SET			1
+#endif
+#ifndef NFTA_LAST_MSECS
+#define NFTA_LAST_MSECS			2
+#endif
+
 /* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
  * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
  * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
@@ -2871,6 +2894,114 @@ static size_t build_nft_connlimit_expr(unsigned char *buf, size_t off, size_t ca
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_last
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_last.c
+ * (nft_last_init) — both attributes are OPTIONAL.  NFTA_LAST_SET
+ * (NLA_U32, big-endian on wire — read via ntohl(nla_get_be32())) is a
+ * 0/1 flag controlling whether the 'last seen' state is pre-seeded as
+ * already set.  NFTA_LAST_MSECS (NLA_U64, big-endian on wire — fed
+ * through nf_msecs_to_jiffies64, which rejects negative-from-jiffies
+ * wraps and oversized future-jiffies values) is only consumed when
+ * SET == 1; init treats MSECS-with-SET==0 as a no-op for the seed.
+ * The eval path just stores `jiffies` and bumps `set`, and dump
+ * round-trips both fields, so the interesting validator coverage is
+ * at init time.
+ *
+ * Bucket distribution per call (rand32() % 8):
+ *   - both attributes absent (~1/4): default-init path, neither
+ *     attribute seeds anything.
+ *   - SET only present, value 0 (~1/8): policy walker consumes SET
+ *     but the seed branch stays dormant.
+ *   - SET only present, value 1 (~1/4): seeds 'set' with the default
+ *     jiffies offset since MSECS is missing.
+ *   - SET == 1 + MSECS small {0, 1, 1000} (~1/4): drives the
+ *     fast-path through nf_msecs_to_jiffies64 with values that round
+ *     to a sub-second jiffies offset.
+ *   - SET == 1 + MSECS large {INT_MAX, U32_MAX, U64_MAX} as a 64-bit
+ *     BE value (~1/8): drives nf_msecs_to_jiffies64's range-rejection
+ *     paths for oversized future-jiffies and negative-from-jiffies
+ *     wraps.
+ */
+static size_t build_nft_last_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u64 msecs_small[] = { 0ULL, 1ULL, 1000ULL };
+	static const __u64 msecs_large[] = {
+		0x7fffffffULL,		/* INT_MAX */
+		0xffffffffULL,		/* U32_MAX */
+		0xffffffffffffffffULL,	/* U64_MAX */
+	};
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u32 bucket = rand32() & 0x7;
+	bool with_set = false;
+	bool with_msecs = false;
+	__u32 set_val = 0;
+	__u64 msecs_val = 0;
+
+	switch (bucket) {
+	case 0:
+	case 1:
+		/* both attributes absent — default-init shape */
+		break;
+	case 2:
+		with_set = true;
+		set_val = 0;
+		break;
+	case 3:
+	case 4:
+		with_set = true;
+		set_val = 1;
+		break;
+	case 5:
+	case 6:
+		with_set = true;
+		set_val = 1;
+		with_msecs = true;
+		msecs_val = msecs_small[rand32() % ARRAY_SIZE(msecs_small)];
+		break;
+	default:
+		with_set = true;
+		set_val = 1;
+		with_msecs = true;
+		msecs_val = msecs_large[rand32() % ARRAY_SIZE(msecs_large)];
+		break;
+	}
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "last");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	if (with_set) {
+		off = nla_put_be32(buf, off, cap, NFTA_LAST_SET, set_val);
+		if (!off)
+			return 0;
+	}
+
+	if (with_msecs) {
+		off = nla_put_be64(buf, off, cap, NFTA_LAST_MSECS, msecs_val);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Structurally-valid nft_immediate expression element.  Net layout:
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "immediate"
@@ -3211,6 +3342,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_synproxy,
 			 bool with_counter,
 			 bool with_connlimit,
+			 bool with_last,
 			 bool with_immediate,
 			 bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
@@ -3340,6 +3472,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_connlimit) {
 		off = build_nft_connlimit_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_last) {
+		off = build_nft_last_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -3578,6 +3716,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_synproxy = ONE_IN(3);
 		bool with_counter = ONE_IN(3);
 		bool with_connlimit = ONE_IN(3);
+		bool with_last = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -3590,6 +3729,7 @@ bool nftables_churn(struct childdata *child)
 				  with_quota, with_limit, with_numgen,
 				  with_hash, with_synproxy, with_counter,
 				  with_connlimit,
+				  with_last,
 				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
@@ -3642,6 +3782,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_connlimit)
 				__atomic_add_fetch(&shm->stats.nftables_churn_connlimit_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_last)
+				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
@@ -3726,6 +3869,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_synproxy = ONE_IN(3);
 		bool with_counter = ONE_IN(3);
 		bool with_connlimit = ONE_IN(3);
+		bool with_last = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -3738,6 +3882,7 @@ bool nftables_churn(struct childdata *child)
 				  with_quota, with_limit, with_numgen,
 				  with_hash, with_synproxy, with_counter,
 				  with_connlimit,
+				  with_last,
 				  with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
@@ -3790,6 +3935,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_connlimit)
 				__atomic_add_fetch(&shm->stats.nftables_churn_connlimit_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_last)
+				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
