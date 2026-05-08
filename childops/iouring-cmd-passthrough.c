@@ -110,6 +110,7 @@
 #include <linux/io_uring.h>
 
 #include "child.h"
+#include "compat.h"
 #include "random.h"
 #include "shm.h"
 #include "stats.h"
@@ -125,13 +126,6 @@
 #define IORING_OFF_SQ_RING	0ULL
 #define IORING_OFF_CQ_RING	0x8000000ULL
 #define IORING_OFF_SQES		0x10000000ULL
-#endif
-
-/* BLOCK_URING_CMD_DISCARD lives in <linux/blkdev.h>, which is uapi
- * but not always shipped in stripped kernel-headers packages.  Keep a
- * local fallback so the build doesn't depend on its presence. */
-#ifndef BLOCK_URING_CMD_DISCARD
-#define BLOCK_URING_CMD_DISCARD		_IO(0x12, 0)
 #endif
 
 /* Per-process variant availability cache.  Populated lazily by

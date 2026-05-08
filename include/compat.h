@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sys/socket.h>
+#include <netinet/in.h>		/* IPPROTO_*, IP_*, IPV6_* enum members */
 #include <linux/types.h>
 
 /* bits/eventfd.h */
@@ -466,6 +467,64 @@ enum {
 #endif
 #ifndef WGALLOWEDIP_F_REMOVE_ME
 #define WGALLOWEDIP_F_REMOVE_ME	(1U << 0)
+#endif
+
+/* linux/io_uring.h
+ *
+ * IORING_OP_* enum values added after the v6.6 LTS cut.  The enum is
+ * append-only and never renumbered, so each value below is stable
+ * across kernels.  Trinity references these unconditionally from
+ * recipe / passthrough childops; without compat fallbacks the build
+ * breaks (or, worse, dispatches the wrong opcode) on any host whose
+ * kernel-headers package predates the addition.
+ */
+#ifndef IORING_OP_READ_MULTISHOT
+#define IORING_OP_READ_MULTISHOT	49
+#endif
+#ifndef IORING_OP_WAITID
+#define IORING_OP_WAITID		50
+#endif
+#ifndef IORING_OP_FUTEX_WAIT
+#define IORING_OP_FUTEX_WAIT		51
+#define IORING_OP_FUTEX_WAKE		52
+#endif
+#ifndef IORING_OP_FUTEX_WAITV
+#define IORING_OP_FUTEX_WAITV		53
+#endif
+#ifndef IORING_OP_FIXED_FD_INSTALL
+#define IORING_OP_FIXED_FD_INSTALL	54
+#endif
+#ifndef IORING_OP_FTRUNCATE
+#define IORING_OP_FTRUNCATE		55
+#endif
+#ifndef IORING_OP_BIND
+#define IORING_OP_BIND			56
+#endif
+#ifndef IORING_OP_LISTEN
+#define IORING_OP_LISTEN		57
+#endif
+#ifndef IORING_OP_RECV_ZC
+#define IORING_OP_RECV_ZC		58
+#endif
+#ifndef IORING_OP_EPOLL_WAIT
+#define IORING_OP_EPOLL_WAIT		59
+#endif
+
+/* SOCKET_URING_OP_* — IORING_OP_URING_CMD socket subsystem cmd_ops,
+ * added 6.6 alongside the .level/.optname/.optval/.optlen SQE union
+ * members.  The enum can be backfilled here; the matching SQE union
+ * members can NOT (struct fields aren't preprocessor-expandable) and
+ * are handled call-site. */
+#ifndef SOCKET_URING_OP_SIOCINQ
+#define SOCKET_URING_OP_SIOCINQ		0
+#define SOCKET_URING_OP_SIOCOUTQ	1
+#define SOCKET_URING_OP_GETSOCKOPT	2
+#define SOCKET_URING_OP_SETSOCKOPT	3
+#endif
+
+/* linux/blkdev.h — async io_uring discard cmd, added 6.12. */
+#ifndef BLOCK_URING_CMD_DISCARD
+#define BLOCK_URING_CMD_DISCARD		_IO(0x12, 0)
 #endif
 
 /* linux/prctl.h */
