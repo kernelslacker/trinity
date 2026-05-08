@@ -12,7 +12,7 @@
 
 static void sanitise_pipe(struct syscallrecord *rec)
 {
-	void *p = malloc(sizeof(int) * 2);
+	void *p = zmalloc(sizeof(int) * 2);
 
 	rec->a1 = (unsigned long) p;
 
@@ -64,7 +64,7 @@ static unsigned long pipe2_flags[] = {
 
 static void sanitise_pipe2(struct syscallrecord *rec)
 {
-	void *p = malloc(sizeof(int) * 2);
+	void *p = zmalloc(sizeof(int) * 2);
 
 	rec->a1 = (unsigned long) p;
 
