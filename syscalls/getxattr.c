@@ -151,7 +151,7 @@ static void post_getxattr(struct syscallrecord *rec)
 	 * ahead of the ONE_IN(100) sample gate that throttles the equality
 	 * oracle, so every offending retval is counted, not one-in-a-hundred.
 	 */
-	if ((long) rec->retval == -1L)
+	if ((long) rec->retval < 0)
 		goto out_free;
 	if (rec->retval > rec->a4) {
 		outputerr("post_getxattr: rejecting retval %lu > size %lu\n",

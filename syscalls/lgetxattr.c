@@ -154,7 +154,7 @@ static void post_lgetxattr(struct syscallrecord *rec)
 	 * oracle, so every offending retval is counted, not one-in-a-hundred.
 	 * The pre-existing retval <= 0 gate after the sample stays in place.
 	 */
-	if ((long) rec->retval == -1L)
+	if ((long) rec->retval < 0)
 		goto out_free;
 	if (rec->retval > rec->a4) {
 		outputerr("post_lgetxattr: rejecting retval %lu > size %lu\n",

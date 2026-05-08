@@ -158,7 +158,7 @@ static void post_fgetxattr(struct syscallrecord *rec)
 	 * throttles the equality oracle, so every offending retval is counted,
 	 * not one-in-a-hundred.
 	 */
-	if ((long) rec->retval == -1L)
+	if ((long) rec->retval < 0)
 		goto out_free;
 	if (rec->retval > rec->a4) {
 		outputerr("post_fgetxattr: rejecting retval %lu > size %lu\n",
