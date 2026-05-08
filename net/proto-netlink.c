@@ -14,13 +14,6 @@
 #include "random.h"
 #include "socket-family-grammar.h"
 
-#ifndef NETLINK_EXT_ACK
-#define NETLINK_EXT_ACK		11
-#endif
-#ifndef NETLINK_GET_STRICT_CHK
-#define NETLINK_GET_STRICT_CHK	12
-#endif
-
 static void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_nl *nl;

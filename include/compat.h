@@ -101,6 +101,9 @@
 #ifndef F_SEAL_FUTURE_WRITE
 #define F_SEAL_FUTURE_WRITE	0x0010
 #endif
+#ifndef F_SEAL_EXEC
+#define F_SEAL_EXEC		0x0020
+#endif
 #ifndef F_GET_RW_HINT
 #define F_GET_RW_HINT		(F_LINUX_SPECIFIC_BASE + 11)
 #define F_SET_RW_HINT		(F_LINUX_SPECIFIC_BASE + 12)
@@ -263,6 +266,9 @@ enum {
 #ifndef PF_MPLS
 #define PF_MPLS		28
 #endif
+#ifndef AF_MPLS
+#define AF_MPLS		PF_MPLS
+#endif
 
 #ifndef PF_CAN
 #define PF_CAN		29
@@ -316,21 +322,36 @@ enum {
 #ifndef PF_KCM
 #define PF_KCM		41
 #endif
+#ifndef AF_KCM
+#define AF_KCM		PF_KCM
+#endif
 
 #ifndef PF_QIPCRTR
 #define PF_QIPCRTR	42
+#endif
+#ifndef AF_QIPCRTR
+#define AF_QIPCRTR	PF_QIPCRTR
 #endif
 
 #ifndef PF_SMC
 #define PF_SMC		43
 #endif
+#ifndef AF_SMC
+#define AF_SMC		PF_SMC
+#endif
 
 #ifndef PF_XDP
 #define PF_XDP		44
 #endif
+#ifndef AF_XDP
+#define AF_XDP		PF_XDP
+#endif
 
 #ifndef PF_MCTP
 #define PF_MCTP		45
+#endif
+#ifndef AF_MCTP
+#define AF_MCTP		PF_MCTP
 #endif
 
 #ifndef NFC_SOCKPROTO_RAW
@@ -394,6 +415,12 @@ enum {
 #endif
 #ifndef NETLINK_CAP_ACK
 #define NETLINK_CAP_ACK 10
+#endif
+#ifndef NETLINK_EXT_ACK
+#define NETLINK_EXT_ACK 11
+#endif
+#ifndef NETLINK_GET_STRICT_CHK
+#define NETLINK_GET_STRICT_CHK 12
 #endif
 #ifndef NETLINK_SOCK_DIAG
 #define NETLINK_SOCK_DIAG 4
@@ -1497,6 +1524,24 @@ struct kvm_get_htab_fd {
 #ifndef RWF_DSYNC
 #define RWF_DSYNC 0x00000002 /* per-IO O_DSYNC */
 #define RWF_SYNC  0x00000004 /* per-IO O_SYNC */
+#endif
+#ifndef RWF_NOWAIT
+#define RWF_NOWAIT 0x00000008 /* per-IO, return -EAGAIN if blocking would happen */
+#endif
+#ifndef RWF_APPEND
+#define RWF_APPEND 0x00000010 /* per-IO O_APPEND */
+#endif
+#ifndef RWF_NOAPPEND
+#define RWF_NOAPPEND 0x00000020 /* per-IO negation of O_APPEND */
+#endif
+#ifndef RWF_ATOMIC
+#define RWF_ATOMIC 0x00000040 /* per-IO atomic write */
+#endif
+#ifndef RWF_DONTCACHE
+#define RWF_DONTCACHE 0x00000080 /* buffered IO that drops the cache after use */
+#endif
+#ifndef RWF_NOSIGNAL
+#define RWF_NOSIGNAL 0x00000100 /* do not raise SIGPIPE on pipe write */
 #endif
 
 /* sys/epoll.h */
