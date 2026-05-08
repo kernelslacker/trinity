@@ -907,7 +907,7 @@ static void check_fd_leaks(struct childdata *child)
  * Enable the dormant ops one at a time once each has been load-tested.
  * To enable an op: set its entry below to 0.
  */
-static const int dormant_op_disabled[79] = {
+static const int dormant_op_disabled[80] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 0, 1,	/* 10-14: fault_injector active; dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, recipe_runner */
@@ -930,6 +930,7 @@ static const int dormant_op_disabled[79] = {
 	1,		/* 76: dormant: af_alg_template_probe */
 	1,		/* 77: dormant: iouring_cmd_passthrough */
 	0,		/* 78: active: pagecache_canary_check (verifier — runs at the altop bucket rate) */
+	1,		/* 79: dormant: sock_diag_walker */
 };
 
 /*
@@ -1006,6 +1007,7 @@ static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_MPTCP_PM_CHURN,
 	CHILD_OP_NL80211_CHURN,
 	CHILD_OP_NAT_T_CHURN,
+	CHILD_OP_SOCK_DIAG_WALKER,
 };
 #define NR_ALT_OP_ROTATION	ARRAY_SIZE(alt_op_rotation)
 
@@ -1092,6 +1094,7 @@ static const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_IOURING_CMD_PASSTHROUGH:	return "iouring_cmd_passthrough";
 	case CHILD_OP_PAGECACHE_CANARY_CHECK:	return "pagecache_canary_check";
 	case CHILD_OP_MPLS_ROUTE_CHURN:	return "mpls_route_churn";
+	case CHILD_OP_SOCK_DIAG_WALKER:	return "sock_diag_walker";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1146,7 +1149,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[79] = {
+static const enum child_op_type pick_op_type_table[80] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -1226,6 +1229,7 @@ static const enum child_op_type pick_op_type_table[79] = {
 	[76] = CHILD_OP_AF_ALG_TEMPLATE_PROBE,
 	[77] = CHILD_OP_IOURING_CMD_PASSTHROUGH,
 	[78] = CHILD_OP_PAGECACHE_CANARY_CHECK,
+	[79] = CHILD_OP_SOCK_DIAG_WALKER,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1476,6 +1480,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_IOURING_CMD_PASSTHROUGH]	= iouring_cmd_passthrough,
 	[CHILD_OP_PAGECACHE_CANARY_CHECK]	= pagecache_canary_check,
 	[CHILD_OP_MPLS_ROUTE_CHURN]	= mpls_route_churn,
+	[CHILD_OP_SOCK_DIAG_WALKER]	= sock_diag_walker,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,

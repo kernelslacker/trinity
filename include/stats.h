@@ -1465,6 +1465,15 @@ struct stats_s {
 	unsigned long af_alg_probe_accept[NR_AF_ALG_PROBE_TEMPLATES];
 	unsigned long af_alg_probe_reject[NR_AF_ALG_PROBE_TEMPLATES];
 
+	/* sock_diag_walker childop counters */
+	unsigned long sock_diag_walker_runs;		/* total invocations */
+	unsigned long sock_diag_walker_setup_failed;	/* socket(NETLINK_SOCK_DIAG) failed */
+	unsigned long sock_diag_walker_inet;		/* inet_diag_req_v2 variant dispatched */
+	unsigned long sock_diag_walker_unix;		/* unix_diag_req variant dispatched */
+	unsigned long sock_diag_walker_netlink;		/* netlink_diag_req variant dispatched */
+	unsigned long sock_diag_walker_packet;		/* packet_diag_req variant dispatched */
+	unsigned long sock_diag_walker_vsock;		/* vsock_diag_req variant dispatched */
+
 	/*
 	 * HEALER Phase A observer counters -- see include/healer.h.
 	 * All four are bumped from healer_observe_relation() / the periodic
