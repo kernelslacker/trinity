@@ -690,6 +690,20 @@ void healer_table_dump(void)
 	unsigned long weight_gt_5 = 0;
 	unsigned long weight_gt_10 = 0;
 	unsigned long mean_milli = 0;
+	/*
+	 * Counts relation-table slots whose unpacked (pred_a, pred_b) tuple
+	 * or whose inner promoted entry's nr is >= MAX_NR_SYSCALL — i.e. not
+	 * a real syscall number.  Real syscall nrs top out around 471 today;
+	 * any larger value in a slot is the signature of a stray scribble
+	 * landing on healer_relations[] in shm (same broad corruption class
+	 * being chased separately for rec->retval).  Skip these from both
+	 * the gt counts and the top-N display so they don't poison the
+	 * normalised ranking — a corrupt entry has appearance counters of
+	 * zero and would otherwise sort to the top via the divide-by-tiny-
+	 * denominator code path.  The count itself is surfaced on the dump
+	 * line so the operator can see corruption is actually there.
+	 */
+	unsigned long corrupt_in_table = 0;
 	unsigned int i, j;
 	unsigned long observed, table_full, evictions, decays_run;
 	/*
@@ -730,17 +744,28 @@ void healer_table_dump(void)
 
 		healer_unpack_key(slot_key, &slot_pred_a, &slot_pred_b);
 
+		/* Slot-level corruption check: pred_a / pred_b stamped with a
+		 * non-syscall value mean a stray write hit this slot's key.
+		 * Skip the entire slot — all its promoted entries inherit the
+		 * bad predecessor pair and have nothing to contribute to the
+		 * dump.  Count once per corrupt slot, not per promoted entry. */
+		if (slot_pred_a >= MAX_NR_SYSCALL ||
+		    slot_pred_b >= MAX_NR_SYSCALL) {
+			corrupt_in_table++;
+			continue;
+		}
+
 		/* Hoist the per-syscall appearance reads out of the per-promoted
 		 * inner loop -- they are slot-constant (every promoted entry in
 		 * the slot shares the same predecessor pair) and the dump path
 		 * shouldn't pay HEALER_PROMOTED_PER_SLOT extra atomic loads per
 		 * slot for a value it could read once. */
-		pred_a_freq = (slot_pred_a < MAX_NR_SYSCALL) ?
-			__atomic_load_n(&shm->stats.healer_pred_appearance[slot_pred_a],
-					__ATOMIC_RELAXED) : 0;
-		pred_b_freq = (slot_pred_b < MAX_NR_SYSCALL) ?
-			__atomic_load_n(&shm->stats.healer_pred_appearance[slot_pred_b],
-					__ATOMIC_RELAXED) : 0;
+		pred_a_freq = __atomic_load_n(
+			&shm->stats.healer_pred_appearance[slot_pred_a],
+			__ATOMIC_RELAXED);
+		pred_b_freq = __atomic_load_n(
+			&shm->stats.healer_pred_appearance[slot_pred_b],
+			__ATOMIC_RELAXED);
 
 		for (j = 0; j < HEALER_PROMOTED_PER_SLOT; j++) {
 			uint64_t entry;
@@ -755,6 +780,16 @@ void healer_table_dump(void)
 
 			if (weight == 0)
 				continue;
+
+			/* Per-entry corruption check: stray scribble may have
+			 * left pred_a/pred_b intact but trashed the promoted
+			 * entry's nr.  Skip from gt counts + top-N — a corrupt
+			 * weight=1 entry would otherwise inflate the noise
+			 * floor and chase the normalised ranking. */
+			if (nr >= MAX_NR_SYSCALL) {
+				corrupt_in_table++;
+				continue;
+			}
 
 			slot_promoted++;
 			total_weight += weight;
@@ -842,6 +877,10 @@ void healer_table_dump(void)
 	stats_log_write("  weight distribution: gt1=%lu, gt5=%lu, gt10=%lu  (mean=%lu.%03lu, decays=%lu)\n",
 			weight_gt_1, weight_gt_5, weight_gt_10,
 			mean_milli / 1000, mean_milli % 1000, decays_run);
+
+	if (corrupt_in_table != 0)
+		stats_log_write("  corrupt entries skipped: %lu (slot-key or promoted-nr >= MAX_NR_SYSCALL)\n",
+				corrupt_in_table);
 
 	if (top_count == 0) {
 		free(succ_weight);
