@@ -16,8 +16,8 @@
  *
  *   grammar_xfrm     - this file.  Pinned to NETLINK_XFRM, walks the
  *                      SA + SP control surface message-by-message
- *                      across NEWSA / UPDSA / NEWAE / DELSA / NEWPOLICY
- *                      / DELPOLICY / FLUSHSA / FLUSHPOLICY with coherent
+ *                      across NEWSA / UPDSA / NEWAE / EXPIRE / DELSA /
+ *                      NEWPOLICY / DELPOLICY / FLUSHSA / FLUSHPOLICY with coherent
  *                      attribute pairing inside each message and a
  *                      per-process ring of installed SAs so UPDSA / NEWAE
  *                      / DELSA target a real previously-installed SA
@@ -84,6 +84,15 @@
  *   NEWAE      - xfrm_aevent_id targeting a ring SA, with rotated
  *                XFRM_AE_* flags driving XFRMA_REPLAY_VAL /
  *                XFRMA_REPLAY_ESN_VAL / XFRMA_LTIME_VAL parser arms.
+ *
+ *   EXPIRE     - xfrm_user_expire targeting a ring SA, with hard==0/1
+ *                rotated.  hard==0 drives the lifetime-fired km->event
+ *                notification path without teardown; hard==1 additionally
+ *                walks __xfrm_state_delete + xfrm_audit_state_delete.
+ *                On hard==1 acceptance the ring slot is dropped (kernel
+ *                deleted the SA); on soft the entry stays.  Closes the
+ *                NEW -> UPDATE -> EXPIRE -> DEL natural lifecycle that
+ *                the random per-syscall fuzzer cannot synthesise.
  *
  *   DELSA      - target a previously-installed SA from the ring (the
  *                oldest, on a ring-full eviction; otherwise random).
@@ -1311,6 +1320,79 @@ static int xfrm_emit_delsa_random(int fd)
 }
 
 /*
+ * Build XFRM_MSG_EXPIRE targeting a ring SA.  The kernel handler
+ * (xfrm_add_sa_expire in net/xfrm/xfrm_user.c) looks up the SA by
+ * (mark, daddr, spi, proto, family) from the embedded xfrm_usersa_info
+ * shell, then calls km_state_expired() with the trailing ->hard byte;
+ * hard==1 also tears the SA down via __xfrm_state_delete().  The lookup
+ * uses XFRMA_MARK from the attrs (we don't emit it -- mark falls back
+ * to 0, matching the most common NEWSA shape we install).  The
+ * remaining xfrm_usersa_info fields are unread by the lookup; we still
+ * fill them with self-consistent values so a future kernel that grew
+ * additional validation on the expire path doesn't bounce us on shape.
+ *
+ * On hard==1 acceptance the kernel deletes the SA -- drop the ring
+ * slot so subsequent UPDSA/NEWAE/DELSA on it don't bounce on ESRCH.
+ * On soft (hard==0) the SA stays installed; the ring entry stays.
+ */
+static int xfrm_emit_expire(int fd)
+{
+	unsigned char buf[512];
+	struct nlmsghdr *nlh;
+	struct xfrm_user_expire *ue;
+	struct xfrm_usersa_info *sa;
+	struct xfrm_sa_track t;
+	unsigned int idx;
+	__u8 hard;
+	size_t off;
+	int rc;
+
+	if (!sa_ring_pick(&t, &idx))
+		return 0;	/* nothing installed yet */
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_EXPIRE;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = xfrm_next_seq();
+
+	ue = (struct xfrm_user_expire *)NLMSG_DATA(nlh);
+	sa = &ue->state;
+
+	/* Lookup keys -- must match the SA the ring entry refers to. */
+	sa->id.daddr = t.daddr;
+	sa->id.spi   = t.spi;
+	sa->id.proto = t.proto;
+	sa->family   = t.family;
+
+	/* Self-consistent fill for the rest of the shell.  None of these
+	 * are read by xfrm_add_sa_expire today, but a future-kernel
+	 * shape-validation arm would otherwise hit zeros. */
+	fill_selector(&sa->sel, t.family);
+	fill_addresses(t.family, &sa->saddr, &sa->id.daddr);
+	sa->id.daddr = t.daddr;	/* restore lookup key after fill_addresses */
+	fill_lifetime(&sa->lft);
+	sa->reqid         = t.reqid;
+	sa->mode          = pick_mode();
+	sa->replay_window = (__u8)(rand32() % 64);
+	sa->flags         = (__u8)(rand32() & 0x7f);
+
+	/* Rotate hard 0/1 -- soft hits the kn->event(STATE_EXPIRED) path
+	 * without teardown; hard additionally drives __xfrm_state_delete
+	 * and audit_state_delete. */
+	hard = (__u8)(rand32() & 1);
+	ue->hard = hard;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ue));
+	nlh->nlmsg_len = (__u32)off;
+
+	rc = xfrm_send_recv(fd, buf, off);
+	if (rc == 0 && hard)
+		sa_ring_drop(idx);
+	return rc;
+}
+
+/*
  * Build XFRM_MSG_NEWPOLICY OUT direction with XFRMA_TMPL.  When the
  * SA ring has an entry, point the template at it (so the resolution
  * machinery has a concrete target); otherwise synthesise a template
@@ -1465,6 +1547,7 @@ enum xfrm_msg_kind {
 	XMK_NEWSA,
 	XMK_UPDSA,
 	XMK_NEWAE,
+	XMK_EXPIRE,
 	XMK_DELSA,
 	XMK_NEWPOLICY,
 	XMK_DELPOLICY,
@@ -1475,11 +1558,18 @@ enum xfrm_msg_kind {
 
 /* Weights -- higher = more often.  When ring empty, NEWSA / NEWPOLICY
  * dominate so the ring fills.  When ring non-empty, UPDSA / NEWAE /
- * DELSA become first-class.  FLUSHSA / FLUSHPOLICY stay rare. */
+ * EXPIRE / DELSA become first-class.  FLUSHSA / FLUSHPOLICY stay rare.
+ *
+ * EXPIRE rotates between hard==0 (lifetime-fired notification only,
+ * SA stays installed) and hard==1 (lifetime-fired + teardown, SA
+ * removed).  The hard==1 path covers the natural NEW -> UPDATE ->
+ * EXPIRE -> DEL lifecycle; the soft path leaves the SA in the ring so
+ * subsequent UPDSA / NEWAE keep working against the same shell. */
 static const unsigned int xmk_weights_empty_ring[XMK_MAX] = {
 	[XMK_NEWSA]		= 50,
 	[XMK_UPDSA]		= 0,
 	[XMK_NEWAE]		= 0,
+	[XMK_EXPIRE]		= 0,
 	[XMK_DELSA]		= 0,
 	[XMK_NEWPOLICY]		= 30,
 	[XMK_DELPOLICY]		= 5,
@@ -1488,11 +1578,12 @@ static const unsigned int xmk_weights_empty_ring[XMK_MAX] = {
 };
 static const unsigned int xmk_weights_full_ring[XMK_MAX] = {
 	[XMK_NEWSA]		= 20,
-	[XMK_UPDSA]		= 20,
-	[XMK_NEWAE]		= 15,
-	[XMK_DELSA]		= 15,
-	[XMK_NEWPOLICY]		= 15,
-	[XMK_DELPOLICY]		= 10,
+	[XMK_UPDSA]		= 18,
+	[XMK_NEWAE]		= 13,
+	[XMK_EXPIRE]		= 12,
+	[XMK_DELSA]		= 13,
+	[XMK_NEWPOLICY]		= 14,
+	[XMK_DELPOLICY]		= 8,
 	[XMK_FLUSHSA]		= 2,
 	[XMK_FLUSHPOLICY]	= 1,
 };
@@ -1527,6 +1618,7 @@ static void dispatch_msg_kind(int fd, enum xfrm_msg_kind k)
 	case XMK_NEWSA:		rc = xfrm_emit_newsa(fd); break;
 	case XMK_UPDSA:		rc = xfrm_emit_updsa(fd); break;
 	case XMK_NEWAE:		rc = xfrm_emit_newae(fd); break;
+	case XMK_EXPIRE:	rc = xfrm_emit_expire(fd); break;
 	case XMK_DELSA:		rc = xfrm_emit_delsa_random(fd); break;
 	case XMK_NEWPOLICY:	rc = xfrm_emit_newpolicy(fd); break;
 	case XMK_DELPOLICY:	rc = xfrm_emit_delpolicy(fd); break;
