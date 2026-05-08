@@ -637,25 +637,54 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 			}
 			__atomic_add_fetch(&shm->stats.failures, 1, __ATOMIC_RELAXED);
 		}
-	} else {
+	} else if (rec->state == AFTER) {
+		/* Symmetric guard to the failure branch above: an
+		 * EXTRA_FORK grandchild that was SIGKILL'd by
+		 * do_extrafork's 1-second timeout (or died in execve)
+		 * before reaching __do_syscall's AFTER block leaves
+		 * rec->retval as whatever the previous syscall stamped
+		 * into shm.  Without this gate handle_success() would
+		 * scoreboard a stale fd/len, and entry->successes /
+		 * shm->stats.successes would tally a syscall that
+		 * never actually returned. */
 		handle_success(rec);	// Believe me folks, you'll never get bored with winning
 		__atomic_add_fetch(&entry->successes, 1, __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.successes, 1, __ATOMIC_RELAXED);
 	}
+	/* attempted stays ungated: an attempted invocation IS still an
+	 * attempt even if the grandchild never reached AFTER, and
+	 * (attempted - successes - failures) gives operators visibility
+	 * on how many EXTRA_FORK grandchildren are getting killed. */
 	__atomic_add_fetch(&entry->attempted, 1, __ATOMIC_RELAXED);
 
-	enforce_count_bound(entry, rec);
+	/* enforce_count_bound, entry->post, and register_returned_fd all
+	 * read rec->aN / rec->retval and would act on the previous
+	 * syscall's stale shm state if the grandchild was SIGKILL'd
+	 * before AFTER.  Gate the whole batch on state == AFTER so a
+	 * killed grandchild can't trigger a spurious count-bound warning,
+	 * a .post handler acting on stale args, or a stale fd getting
+	 * inserted into the OBJ_LOCAL pool. */
+	if (rec->state == AFTER) {
+		enforce_count_bound(entry, rec);
 
-	/* Skip entry->post on a rejected RET_FD: handler would be acting
-	 * on a fabricated retval, attribution already happened inside
-	 * reject_corrupt_retfd().  register_returned_fd() below already
-	 * short-circuits on (long)rec->retval < 0 so the coerced -1UL
-	 * makes it a no-op there regardless. */
-	if (entry->post && !retfd_rejected)
-	    entry->post(rec);
+		/* Skip entry->post on a rejected RET_FD: handler would
+		 * be acting on a fabricated retval, attribution already
+		 * happened inside reject_corrupt_retfd().
+		 * register_returned_fd() below already short-circuits on
+		 * (long)rec->retval < 0 so the coerced -1UL makes it a
+		 * no-op there regardless. */
+		if (entry->post && !retfd_rejected)
+		    entry->post(rec);
 
-	register_returned_fd(entry, rec);
+		register_returned_fd(entry, rec);
+	}
 
+	/* check_uid inspects current process state, not rec; safe to
+	 * run regardless.  generic_free_arg frees ARG_PATHNAME /
+	 * ARG_IOVEC / ARG_SOCKADDR buffers that the parent allocated
+	 * before do_syscall ran -- they exist independent of whether
+	 * the grandchild reached AFTER and MUST be freed to avoid
+	 * leaking. */
 	check_uid();
 
 	generic_free_arg(entry, rec);
