@@ -169,6 +169,7 @@ enum child_op_type {
 	CHILD_OP_INPLACE_CRYPTO_ORACLE,
 	CHILD_OP_AF_ALG_WEAK_CIPHER_PROBE,
 	CHILD_OP_AF_ALG_TEMPLATE_PROBE,
+	CHILD_OP_IOURING_CMD_PASSTHROUGH,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -542,3 +543,4 @@ bool inplace_crypto_oracle(struct childdata *child);
 bool af_alg_weak_cipher_probe(struct childdata *child);
 bool af_alg_template_probe(struct childdata *child);
 const char *af_alg_probe_template_label(unsigned int idx);
+bool iouring_cmd_passthrough(struct childdata *child);
