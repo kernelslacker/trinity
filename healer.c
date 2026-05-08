@@ -991,11 +991,39 @@ const char *healer_default_path(void)
  * every child.  All children call healer_maybe_snapshot() from the
  * observer-hook fire path; the function early-returns cheaply unless the
  * fleet-wide observation counter has advanced HEALER_SNAPSHOT_OBSERVATIONS
- * past the last snapshot's high-water-mark.  When the gap is reached, a
- * single CAS on shm->stats.healer_obs_at_last_snapshot picks one caller
- * as the saver -- it runs healer_save_file() while everyone else loses
- * the CAS and returns.  The next snapshot opportunity opens once the next
- * window has accumulated.
+ * past the last snapshot's high-water-mark.
+ *
+ * The election is two-step:
+ *
+ *   1. CAS shm->stats.healer_obs_at_last_snapshot forward to obs_now.
+ *      Whichever caller wins this CAS owns the WINDOW boundary -- the
+ *      losers see the new high-water-mark on their next call and
+ *      early-return.  This step is unchanged.
+ *
+ *   2. CAS shm->stats.healer_save_in_progress 0 -> 1.  The window-CAS
+ *      alone is not enough to keep healer_save_file() singleton: the
+ *      save takes wall-clock time (snapshot the relation table, write to
+ *      .tmp.<pid>, fsync, rename) and during that window non-saving
+ *      children continue to bump healer_relations_observed.  On a hot
+ *      fleet the counter can pile up by another full WINDOW before the
+ *      first saver returns; the next caller's window-CAS would then
+ *      also succeed and a second healer_save_file() would race the
+ *      first on the rename(.tmp.<pid>, healer_snapshot_path) step --
+ *      last rename wins, so the on-disk file ends up being whichever
+ *      saver finishes second, not necessarily the one with the more
+ *      recent observations.  The in-progress CAS closes that hole: if
+ *      it loses, a previous saver is still mid-write, so we bump
+ *      shm->stats.healer_snapshot_overruns and return without rolling
+ *      back the window-CAS (that boundary belongs to the in-flight
+ *      saver -- the next post-completion call sees the advanced
+ *      high-water-mark and waits another full WINDOW).
+ *
+ * Folding the two CAS attempts together would be wrong: the window-CAS
+ * advances the high-water-mark unconditionally so the next snapshot
+ * opportunity opens after exactly one more WINDOW; if that single CAS
+ * also gated the in-progress check, an overrun-skip would silently
+ * advance the high-water-mark without a save running, delaying the
+ * next save attempt by a second WINDOW.  Keep them separate.
  */
 static char healer_snapshot_path[PATH_MAX];
 static bool healer_snapshot_enabled;
@@ -1015,7 +1043,7 @@ void healer_enable_snapshots(const char *path)
 
 void healer_maybe_snapshot(void)
 {
-	unsigned long obs_now, old;
+	unsigned long obs_now, old, expect;
 
 	if (!healer_snapshot_enabled || shm == NULL)
 		return;
@@ -1028,17 +1056,37 @@ void healer_maybe_snapshot(void)
 	if (obs_now < old + HEALER_SNAPSHOT_OBSERVATIONS)
 		return;
 
-	/* Race for the slot.  Whoever wins the CAS is responsible for the
-	 * save; the others see the new high-water-mark on their next call
-	 * and early-return.  RELAXED ordering is enough -- the save itself
-	 * reads the relation table via the same atomic-load discipline the
-	 * dump path uses, and the counter is just gating who runs, not
-	 * what they observe. */
+	/* Race for the window slot.  Whoever wins this CAS owns the
+	 * WINDOW boundary; the others see the new high-water-mark on
+	 * their next call and early-return.  RELAXED ordering is enough
+	 * -- the save itself reads the relation table via the same
+	 * atomic-load discipline the dump path uses, and the counter is
+	 * just gating who runs, not what they observe. */
 	if (!__atomic_compare_exchange_n(&shm->stats.healer_obs_at_last_snapshot,
 					 &old, obs_now,
 					 false,
 					 __ATOMIC_RELAXED, __ATOMIC_RELAXED))
 		return;
 
+	/* Race for the active-saver slot.  A previous WINDOW's saver may
+	 * still be mid-healer_save_file() (slow disk, hot fleet); if so,
+	 * bail before starting a second concurrent save into the same
+	 * path -- two savers would race on the final rename and the
+	 * on-disk file would end up being whichever finished second.
+	 * The window-CAS above is left advanced; that boundary belongs
+	 * to the in-flight saver. */
+	expect = 0;
+	if (!__atomic_compare_exchange_n(&shm->stats.healer_save_in_progress,
+					 &expect, 1UL,
+					 false,
+					 __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+		__atomic_fetch_add(&shm->stats.healer_snapshot_overruns, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	}
+
 	healer_save_file(healer_snapshot_path);
+
+	__atomic_store_n(&shm->stats.healer_save_in_progress, 0,
+			 __ATOMIC_RELAXED);
 }
