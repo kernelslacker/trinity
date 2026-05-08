@@ -622,10 +622,14 @@ void healer_table_dump(void)
  * Atomicity: save writes to "<path>.tmp.<pid>", fsyncs, then renames into
  * place; the per-pid suffix stops two concurrent --healer-snapshot saves
  * (e.g. snapshot-trigger fire racing with the atexit save) from
- * interleaving writes.  Snapshot-window concurrent observers are
- * tolerated: a torn slot key/entry is a one-observation discrepancy that
- * the next snapshot resyncs, and the loader's CRC catches the (much
- * rarer) bytes-written-mid-rename failure mode.
+ * interleaving writes.  Snapshot-window concurrent observers are handled
+ * by copying the live shm payload into a heap buffer before the CRC is
+ * computed, so the on-disk CRC and the on-disk payload describe
+ * byte-identical bytes -- without that staging, observer hooks CASing
+ * into the relation table during the ~1.13MB write would leave the CRC
+ * describing the table at T1 and the payload at T2, and the loader's
+ * CRC check would reject the snapshot.  The loader's CRC still catches
+ * the (much rarer) bytes-written-mid-rename failure mode on top.
  */
 
 #define HEALER_FILE_MAGIC		0x48524C54U	/* "HRLT" */
@@ -743,6 +747,7 @@ bool healer_save_file(const char *path)
 	struct healer_file_header hdr;
 	struct utsname u;
 	char tmppath[PATH_MAX];
+	void *snapshot;
 	int fd;
 	int ret;
 
@@ -752,14 +757,25 @@ bool healer_save_file(const char *path)
 	if (uname(&u) != 0)
 		return false;
 
+	/* Stage the payload through a heap buffer so healer_crc32() and
+	 * healer_write_all() see byte-identical bytes.  Observer hooks CAS
+	 * into shm->healer_relations continuously during the ~1.13MB write;
+	 * computing the CRC straight from shm and then writing straight
+	 * from shm again would describe T1 in the on-disk CRC and T2 in the
+	 * on-disk payload, which the loader's CRC check would then reject.
+	 * Mirror the load path's staging discipline. */
+	snapshot = malloc(HEALER_PAYLOAD_BYTES);
+	if (snapshot == NULL)
+		return false;
+	memcpy(snapshot, shm->healer_relations, HEALER_PAYLOAD_BYTES);
+
 	memset(&hdr, 0, sizeof(hdr));
 	hdr.magic = HEALER_FILE_MAGIC;
 	hdr.version = HEALER_FILE_VERSION;
 	hdr.relation_slots = HEALER_RELATION_SLOTS;
 	hdr.promoted_per_slot = HEALER_PROMOTED_PER_SLOT;
 	hdr.max_nr_syscall = MAX_NR_SYSCALL;
-	hdr.payload_crc32 = healer_crc32(shm->healer_relations,
-					 HEALER_PAYLOAD_BYTES);
+	hdr.payload_crc32 = healer_crc32(snapshot, HEALER_PAYLOAD_BYTES);
 	hdr.observations = __atomic_load_n(&shm->stats.healer_relations_observed,
 					   __ATOMIC_RELAXED);
 	strncpy(hdr.kernel_release, u.release, sizeof(hdr.kernel_release) - 1);
@@ -769,35 +785,42 @@ bool healer_save_file(const char *path)
 
 	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d",
 			path, (int)getpid());
-	if (ret < 0 || (size_t)ret >= sizeof(tmppath))
+	if (ret < 0 || (size_t)ret >= sizeof(tmppath)) {
+		free(snapshot);
 		return false;
+	}
 
 	fd = open(tmppath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	if (fd < 0)
+	if (fd < 0) {
+		free(snapshot);
 		return false;
+	}
 
 	if (healer_write_all(fd, &hdr, sizeof(hdr)) < 0)
 		goto fail;
-	if (healer_write_all(fd, shm->healer_relations,
-			     HEALER_PAYLOAD_BYTES) < 0)
+	if (healer_write_all(fd, snapshot, HEALER_PAYLOAD_BYTES) < 0)
 		goto fail;
 
 	if (fsync(fd) != 0)
 		goto fail;
 	if (close(fd) != 0) {
 		(void)unlink(tmppath);
+		free(snapshot);
 		return false;
 	}
 
 	if (rename(tmppath, path) != 0) {
 		(void)unlink(tmppath);
+		free(snapshot);
 		return false;
 	}
+	free(snapshot);
 	return true;
 
 fail:
 	(void)close(fd);
 	(void)unlink(tmppath);
+	free(snapshot);
 	return false;
 }
 
