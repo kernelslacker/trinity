@@ -433,6 +433,32 @@
 #define NFT_LOOKUP_F_INV		(1 << 0)
 #endif
 
+/* nft_dynset NFTA_DYNSET_* attribute IDs.  The validator in
+ * net/netfilter/nft_dynset.c (nft_dynset_init) requires NFTA_DYNSET_OP,
+ * NFTA_DYNSET_SREG_KEY, and a set binding (SET_NAME + SET_ID for
+ * anonymous sets resolved in the same transaction).  TIMEOUT is u64,
+ * FLAGS is u32; the nested NFTA_DYNSET_EXPR / NFTA_DYNSET_EXPRESSIONS
+ * containers are intentionally not emitted here — separate slice. */
+#ifndef NFTA_DYNSET_SET_NAME
+#define NFTA_DYNSET_SET_NAME		1
+#define NFTA_DYNSET_SET_ID		2
+#define NFTA_DYNSET_OP			3
+#define NFTA_DYNSET_SREG_KEY		4
+#define NFTA_DYNSET_SREG_DATA		5
+#define NFTA_DYNSET_TIMEOUT		6
+#define NFTA_DYNSET_FLAGS		9
+#endif
+
+#ifndef NFT_DYNSET_OP_ADD
+#define NFT_DYNSET_OP_ADD		0
+#define NFT_DYNSET_OP_UPDATE		1
+#define NFT_DYNSET_OP_DELETE		2
+#endif
+
+#ifndef NFT_DYNSET_F_INV
+#define NFT_DYNSET_F_INV		(1 << 0)
+#endif
+
 /* NFTA_LOG_* attribute identifiers (uapi/linux/netfilter/nf_tables.h).
  * Values match the kernel enum nft_log_attributes; guarded so the
  * build still works on older host headers that predate nft_log. */
@@ -1536,6 +1562,111 @@ static size_t build_nft_immediate_expr(unsigned char *buf, size_t off, size_t ca
 }
 
 /*
+ * Structurally-valid nft_dynset expression element.  Net layout:
+ *   NFTA_LIST_ELEM (nested)
+ *     NFTA_EXPR_NAME = "dynset"
+ *     NFTA_EXPR_DATA (nested)
+ *       NFTA_DYNSET_SET_NAME = anon set built by build_newset
+ *       NFTA_DYNSET_SET_ID   = matching cookie (in-batch resolution)
+ *       NFTA_DYNSET_OP       = ADD | UPDATE | DELETE
+ *       NFTA_DYNSET_SREG_KEY = NFT_REG_1..NFT_REG_4
+ *       NFTA_DYNSET_SREG_DATA (1-in-2)  = NFT_REG_1..NFT_REG_4
+ *       NFTA_DYNSET_TIMEOUT  (1-in-3)   = small u64 ms
+ *       NFTA_DYNSET_FLAGS    (1-in-4)   = NFT_DYNSET_F_INV
+ *
+ * Reaches the validator in net/netfilter/nft_dynset.c (nft_dynset_init)
+ * — set-binding lookup, op enum range check, sreg/timeout validation,
+ * and the inv-flag gate that only makes sense for OP_DELETE.  dynset is
+ * the runtime-mutating set update primitive used by conntrack helpers,
+ * rate limiters, and the limit/quota convenience expressions; it has
+ * been a recurring fuzz target (race against set teardown is the same
+ * commit-vs-datapath window CVE-2024-1086 hung off).  Heavier weight
+ * than the logging exprs because dynset mutates kernel state on every
+ * datapath packet rather than just emitting a side effect.
+ *
+ * NFTA_DYNSET_EXPR / NFTA_DYNSET_EXPRESSIONS (nested expression
+ * containers attached to each new set element) are intentionally not
+ * emitted here — they need their own slice with care around the
+ * stateful-vs-stateless expression policy.
+ */
+static size_t build_nft_dynset_expr(unsigned char *buf, size_t off,
+				    size_t cap, const char *set_name,
+				    __u32 set_id)
+{
+	static const __u32 regs[] = {
+		NFT_REG_1, NFT_REG_2, NFT_REG_3, NFT_REG_4,
+	};
+	static const __u32 ops[] = {
+		NFT_DYNSET_OP_ADD,
+		NFT_DYNSET_OP_UPDATE,
+		NFT_DYNSET_OP_DELETE,
+	};
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u32 op = ops[rand32() % ARRAY_SIZE(ops)];
+	__u32 sreg_key = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 sreg_data = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 flags = ONE_IN(4) ? NFT_DYNSET_F_INV : 0;
+	bool with_sreg_data = ONE_IN(2);
+	bool with_timeout = ONE_IN(3);
+	bool with_flags = ONE_IN(4);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "dynset");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_DYNSET_SET_NAME, set_name);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_DYNSET_SET_ID, set_id);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_DYNSET_OP, op);
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_DYNSET_SREG_KEY, sreg_key);
+	if (!off)
+		return 0;
+	if (with_sreg_data) {
+		off = nla_put_be32(buf, off, cap,
+				   NFTA_DYNSET_SREG_DATA, sreg_data);
+		if (!off)
+			return 0;
+	}
+	if (with_timeout) {
+		__u64 timeout_ms = (__u64)((rand32() % 1000) + 1);
+		__u64 be_t = ((__u64)htonl((__u32)(timeout_ms >> 32))) |
+			     (((__u64)htonl((__u32)timeout_ms)) << 32);
+
+		off = nla_put(buf, off, cap, NFTA_DYNSET_TIMEOUT,
+			      &be_t, sizeof(be_t));
+		if (!off)
+			return 0;
+	}
+	if (with_flags) {
+		off = nla_put_be32(buf, off, cap, NFTA_DYNSET_FLAGS, flags);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * NFT_MSG_NEWRULE on (table, chain) carrying one immediate-verdict
  * expression that jumps/gotos to target_chain.  The expression list
  * layout is:
@@ -1559,6 +1690,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 __u32 verdict_code, __u64 position, bool with_payload,
 			 bool with_meta, bool with_lookup, bool with_log,
 			 bool with_bitwise, bool with_cmp, bool with_immediate,
+			 bool with_dynset,
 			 const char *set_name, __u32 set_id)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
@@ -1632,6 +1764,13 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_immediate) {
 		off = build_nft_immediate_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_dynset) {
+		off = build_nft_dynset_expr(buf, off, sizeof(buf),
+					    set_name, set_id);
 		if (!off)
 			return -EIO;
 	}
@@ -1842,11 +1981,13 @@ bool nftables_churn(struct childdata *child)
 		bool with_bitwise = ONE_IN(4);
 		bool with_cmp = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
+		bool with_dynset = ONE_IN(3);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 0, with_payload,
 				  with_meta, with_lookup, with_log,
 				  with_bitwise, with_cmp, with_immediate,
+				  with_dynset,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
 					   1, __ATOMIC_RELAXED);
@@ -1870,6 +2011,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_dynset)
+				__atomic_add_fetch(&shm->stats.nftables_churn_dynset_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -1936,11 +2080,13 @@ bool nftables_churn(struct childdata *child)
 		bool with_bitwise = ONE_IN(4);
 		bool with_cmp = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
+		bool with_dynset = ONE_IN(3);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 1, with_payload,
 				  with_meta, with_lookup, with_log,
 				  with_bitwise, with_cmp, with_immediate,
+				  with_dynset,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
 					   1, __ATOMIC_RELAXED);
@@ -1964,6 +2110,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_dynset)
+				__atomic_add_fetch(&shm->stats.nftables_churn_dynset_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
