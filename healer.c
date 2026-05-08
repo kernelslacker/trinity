@@ -1162,7 +1162,10 @@ bool healer_save_file(const char *path)
 	struct healer_file_header hdr;
 	struct utsname u;
 	char tmppath[PATH_MAX];
+	struct healer_relation *snap_slots;
 	void *snapshot;
+	unsigned int scrubbed = 0;
+	unsigned int i, j;
 	int fd;
 	int ret;
 
@@ -1183,6 +1186,57 @@ bool healer_save_file(const char *path)
 	if (snapshot == NULL)
 		return false;
 	memcpy(snapshot, shm->healer_relations, HEALER_PAYLOAD_BYTES);
+
+	/* Sanitise the heap snapshot before write so corrupt-slot scribbles
+	 * (pred_a / pred_b / promoted_nr stamped with non-syscall values by
+	 * a stray write hitting the relation table in shm) don't get
+	 * persisted to disk and then reloaded into the table on warm-start,
+	 * carrying garbage across runs.  Mirrors the slot-level + per-entry
+	 * bound checks the dump path uses to skip corrupt slots; the live
+	 * shm->healer_relations[] is deliberately left alone -- decay and
+	 * eviction will age corrupt slots out in the normal way -- so the
+	 * sweep operates ONLY on the heap buffer.  CRC is computed below
+	 * over the cleaned snapshot, so the on-disk file is an idealised
+	 * clean view and the loader sees no corruption to begin with. */
+	snap_slots = snapshot;
+	for (i = 0; i < HEALER_RELATION_SLOTS; i++) {
+		struct healer_relation *slot = &snap_slots[i];
+		unsigned int slot_pred_a, slot_pred_b;
+
+		if (slot->key == 0)
+			continue;
+
+		healer_unpack_key(slot->key, &slot_pred_a, &slot_pred_b);
+
+		/* Slot-level: a stray write into the slot's key has trashed
+		 * the predecessor pair; every promoted entry in the slot
+		 * inherits the bad pair and is unrecoverable.  Memset the
+		 * whole slot -- key == 0 is the empty-slot sentinel and
+		 * weight == 0 the empty-entry one, so a zeroed slot loads
+		 * back as cleanly empty. */
+		if (slot_pred_a >= MAX_NR_SYSCALL ||
+		    slot_pred_b >= MAX_NR_SYSCALL) {
+			memset(slot, 0, sizeof(*slot));
+			scrubbed++;
+			continue;
+		}
+
+		/* Per-entry: pred_a / pred_b are clean but a promoted entry's
+		 * nr got scribbled.  Zero just that entry so the rest of the
+		 * slot's legitimate promoted entries survive the round-trip. */
+		for (j = 0; j < HEALER_PROMOTED_PER_SLOT; j++) {
+			unsigned int nr, weight;
+
+			healer_unpack_promoted(slot->promoted[j].entry,
+					       &nr, &weight);
+			if (weight == 0)
+				continue;
+			if (nr >= MAX_NR_SYSCALL) {
+				slot->promoted[j].entry = 0;
+				scrubbed++;
+			}
+		}
+	}
 
 	memset(&hdr, 0, sizeof(hdr));
 	hdr.magic = HEALER_FILE_MAGIC;
@@ -1230,6 +1284,9 @@ bool healer_save_file(const char *path)
 		return false;
 	}
 	free(snapshot);
+	if (scrubbed != 0)
+		output(0, "healer_save_file: scrubbed %u corrupt slots/entries from snapshot\n",
+		       scrubbed);
 	return true;
 
 fail:
