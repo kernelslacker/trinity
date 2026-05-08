@@ -109,6 +109,16 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 	snap->mode  = rec->a3;
 	snap->attr  = rec->a4;
 	rec->post_state = (unsigned long) snap;
+
+	/*
+	 * Hand the snap to the deferred-free queue at sanitise time so cleanup
+	 * is independent of whether the .post handler ever runs.  When
+	 * reject_corrupt_retfd() flags retfd, handle_syscall_ret() skips .post
+	 * entirely, and a post-side free would leak the snap.  The post handler
+	 * still reads rec->post_state to drive same-iteration mq_unlink within
+	 * the deferred-queue TTL window, but no longer frees the snap itself.
+	 */
+	deferred_free_enqueue(snap, NULL);
 }
 
 static void post_mq_open(struct syscallrecord *rec)
@@ -133,12 +143,12 @@ static void post_mq_open(struct syscallrecord *rec)
 	}
 
 	if ((long)rec->retval < 0)
-		goto out_free;
+		return;
 
 	if ((unsigned long)rec->retval >= (1UL << 20)) {
 		outputerr("post_mq_open: rejecting out-of-bound fd=%ld\n", (long)rec->retval);
 		post_handler_corrupt_ptr_bump(rec, NULL);
-		goto out_free;
+		return;
 	}
 
 	close(fd);
@@ -152,11 +162,11 @@ static void post_mq_open(struct syscallrecord *rec)
 		 * field.  Reject pid-scribbled name before mq_unlink.
 		 */
 		if (name == NULL)
-			goto out_free;
+			return;
 		if (looks_like_corrupted_ptr(rec, name)) {
 			outputerr("post_mq_open: rejected suspicious u_name=%p (post_state-scribbled?)\n",
 				  name);
-			goto out_free;
+			return;
 		}
 	}
 
@@ -164,11 +174,13 @@ static void post_mq_open(struct syscallrecord *rec)
 	 * The name pointer comes from the snapshot captured at sanitise
 	 * time, not from rec->a1, so a sibling that scribbled the syscall
 	 * arg slot in the TOCTOU window between guard and mq_unlink
-	 * cannot redirect this call at a foreign string. */
+	 * cannot redirect this call at a foreign string.
+	 *
+	 * The snap buffer itself is owned by the deferred-free queue
+	 * (enqueued at sanitise time), so the post handler does not free
+	 * it here -- doing so would double-free.
+	 */
 	mq_unlink((const char *) snap->name);
-
-out_free:
-	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_mq_open = {
