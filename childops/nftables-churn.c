@@ -604,6 +604,30 @@
 #define NFT_SOCKET_CGROUPV2		3
 #endif
 
+/* nft_quota NFTA_QUOTA_* attribute IDs and the NFT_QUOTA_F_INV flag.
+ * The validator in net/netfilter/nft_quota.c (nft_quota_init) reads the
+ * nft_quota_policy[] table — NFTA_QUOTA_BYTES (u64) is mandatory and
+ * carries the cap, NFTA_QUOTA_FLAGS (u32) is optional and the only bit
+ * the kernel accepts is NFT_QUOTA_F_INV (any other bit is rejected with
+ * -EOPNOTSUPP), and NFTA_QUOTA_CONSUMED (u64) is optional and pre-seeds
+ * the per-rule counter.  BYTES == 0 is permitted by the parser; the
+ * eval-time comparator (consumed vs bytes, optionally inverted) is what
+ * decides the verdict.  Each symbol is guarded individually so the
+ * build still works on older host headers that predate any subset. */
+#ifndef NFTA_QUOTA_BYTES
+#define NFTA_QUOTA_BYTES		1
+#endif
+#ifndef NFTA_QUOTA_FLAGS
+#define NFTA_QUOTA_FLAGS		2
+#endif
+#ifndef NFTA_QUOTA_CONSUMED
+#define NFTA_QUOTA_CONSUMED		3
+#endif
+
+#ifndef NFT_QUOTA_F_INV
+#define NFT_QUOTA_F_INV			(1 << 0)
+#endif
+
 /* nft_ct NFTA_CT_* attribute IDs and NFT_CT_* key IDs.  The validator
  * in net/netfilter/nft_ct.c (nft_ct_get_init / nft_ct_set_init) drives
  * off NFTA_CT_KEY: a read-path expression sets DREG and the per-key
@@ -834,6 +858,15 @@ static size_t nla_put_be16(unsigned char *buf, size_t off, size_t cap,
 			   unsigned short type, __u16 v)
 {
 	__u16 be = htons(v);
+
+	return nla_put(buf, off, cap, type, &be, sizeof(be));
+}
+
+static size_t nla_put_be64(unsigned char *buf, size_t off, size_t cap,
+			   unsigned short type, __u64 v)
+{
+	__u64 be = ((__u64)htonl((__u32)(v >> 32))) |
+		   (((__u64)htonl((__u32)v)) << 32);
 
 	return nla_put(buf, off, cap, type, &be, sizeof(be));
 }
@@ -1893,6 +1926,89 @@ static size_t build_nft_socket_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_quota
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_quota.c
+ * (nft_quota_init): NFTA_QUOTA_BYTES is mandatory (the cap), FLAGS is
+ * optional and only NFT_QUOTA_F_INV is accepted, CONSUMED is optional
+ * and pre-seeds the per-rule counter.  All three values are u64/u32 in
+ * network byte order.
+ *
+ * Variants per call:
+ *   - BYTES rolls uniformly across orders of magnitude
+ *     {tiny, typical, huge} so each emit lands somewhere different on
+ *     the cap-not-yet-hit vs cap-immediately-exceeded axis the eval
+ *     comparator dispatches on.
+ *   - FLAGS is a coin-flip on NFT_QUOTA_F_INV and otherwise omitted, so
+ *     the inversion branch in nft_quota_eval gets exercised half the
+ *     time without ever feeding an unknown bit (which the parser
+ *     rejects with -EOPNOTSUPP before init returns).
+ *   - CONSUMED is rolled ONE_IN(2); when present its value sits below
+ *     BYTES half the time and above BYTES the other half so the
+ *     consumed-vs-cap comparison in nft_quota_eval sees both sides on
+ *     the very first packet.
+ */
+static size_t build_nft_quota_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	static const __u64 byte_caps[] = {
+		1ULL,			/* tiny: cap-immediately-hit */
+		4096ULL,		/* small */
+		1ULL << 20,		/* typical (~1 MiB) */
+		1ULL << 32,		/* huge (~4 GiB) */
+	};
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u64 bytes = byte_caps[rand32() % ARRAY_SIZE(byte_caps)];
+	bool with_flags = ONE_IN(2);
+	bool with_consumed = ONE_IN(2);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "quota");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be64(buf, off, cap, NFTA_QUOTA_BYTES, bytes);
+	if (!off)
+		return 0;
+
+	if (with_flags) {
+		off = nla_put_be32(buf, off, cap, NFTA_QUOTA_FLAGS,
+				   NFT_QUOTA_F_INV);
+		if (!off)
+			return 0;
+	}
+
+	if (with_consumed) {
+		__u64 consumed;
+
+		if (ONE_IN(2)) {
+			consumed = bytes ? (rand64() % (bytes + 1)) : 0;
+		} else {
+			consumed = bytes + 1 + (rand64() & 0xffff);
+		}
+		off = nla_put_be64(buf, off, cap, NFTA_QUOTA_CONSUMED,
+				   consumed);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Structurally-valid nft_immediate expression element.  Net layout:
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "immediate"
@@ -2228,7 +2344,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_meta, bool with_lookup, bool with_log,
 			 bool with_bitwise, bool with_cmp, bool with_range,
 			 bool with_byteorder, bool with_socket,
-			 bool with_immediate,
+			 bool with_quota, bool with_immediate,
 			 bool with_dynset, bool with_ct,
 			 const char *set_name, __u32 set_id)
 {
@@ -2315,6 +2431,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_socket) {
 		off = build_nft_socket_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_quota) {
+		off = build_nft_quota_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -2546,6 +2668,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_range = ONE_IN(3);
 		bool with_byteorder = ONE_IN(3);
 		bool with_socket = ONE_IN(3);
+		bool with_quota = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -2554,7 +2677,8 @@ bool nftables_churn(struct childdata *child)
 				  aux_chain, verdict, 0, with_payload,
 				  with_meta, with_lookup, with_log,
 				  with_bitwise, with_cmp, with_range,
-				  with_byteorder, with_socket, with_immediate,
+				  with_byteorder, with_socket,
+				  with_quota, with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
@@ -2585,6 +2709,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_socket)
 				__atomic_add_fetch(&shm->stats.nftables_churn_socket_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_quota)
+				__atomic_add_fetch(&shm->stats.nftables_churn_quota_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
@@ -2662,6 +2789,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_range = ONE_IN(3);
 		bool with_byteorder = ONE_IN(3);
 		bool with_socket = ONE_IN(3);
+		bool with_quota = ONE_IN(3);
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
@@ -2670,7 +2798,8 @@ bool nftables_churn(struct childdata *child)
 				  aux_chain, verdict, 1, with_payload,
 				  with_meta, with_lookup, with_log,
 				  with_bitwise, with_cmp, with_range,
-				  with_byteorder, with_socket, with_immediate,
+				  with_byteorder, with_socket,
+				  with_quota, with_immediate,
 				  with_dynset, with_ct,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
@@ -2701,6 +2830,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_socket)
 				__atomic_add_fetch(&shm->stats.nftables_churn_socket_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_quota)
+				__atomic_add_fetch(&shm->stats.nftables_churn_quota_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_immediate)
 				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,

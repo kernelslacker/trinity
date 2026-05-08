@@ -904,6 +904,7 @@ struct stats_s {
 	unsigned long nftables_churn_range_expr_emit;	/* NEWRULE carried a structured nft_range expression */
 	unsigned long nftables_churn_byteorder_expr_emit;	/* NEWRULE carried a structured nft_byteorder expression */
 	unsigned long nftables_churn_socket_expr_emit;	/* NEWRULE carried a structured nft_socket expression */
+	unsigned long nftables_churn_quota_expr_emit;	/* NEWRULE carried a structured nft_quota expression */
 	unsigned long nftables_churn_immediate_expr_emit;	/* NEWRULE carried a structured nft_immediate expression */
 	unsigned long nftables_churn_dynset_expr_emit;	/* NEWRULE carried a structured nft_dynset expression */
 	unsigned long nftables_churn_ct_expr_emit;	/* NEWRULE carried a structured nft_ct expression */
