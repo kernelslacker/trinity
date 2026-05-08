@@ -1366,13 +1366,17 @@ bool inner_ptr_ok_to_free(struct syscallrecord *rec, const void *p,
 
 /*
  * Cached extent of the brk()-managed glibc arena, captured once at
- * init time from /proc/self/maps.  COW-shared into every forked child
- * (the heap address range stays stable across fork -- the kernel just
- * marks the pages CoW), so a single pre-fork parse covers the whole
- * fleet.  Zero start means we never found a [heap] line; in that case
- * is_in_glibc_heap() falls back to "always true" so we don't reject
- * legitimate frees on platforms or builds where glibc has chosen an
- * mmap-only allocation strategy and the brk arena is empty.
+ * init time from /proc/self/maps.  COW-shared into every forked
+ * child, so a single pre-fork parse seeds the whole fleet.  heap_start
+ * is stable for the lifetime of the process (the brk base doesn't
+ * move), but heap_end is only a snapshot -- a child that extends brk
+ * post-fork (millions of iterations of getline in /proc parsers,
+ * libasan shadow growth, heavy zmalloc traffic) sails past it, so
+ * consumers also consult sbrk(0) for the current break.  Zero start
+ * means we never found a [heap] line; in that case is_in_glibc_heap()
+ * falls back to "always true" so we don't reject legitimate frees on
+ * platforms or builds where glibc has chosen an mmap-only allocation
+ * strategy and the brk arena is empty.
  */
 static unsigned long heap_start;
 static unsigned long heap_end;
@@ -1438,10 +1442,25 @@ void heap_bounds_init(void)
 bool is_in_glibc_heap(const void *p)
 {
 	unsigned long v = (unsigned long) p;
+	unsigned long end, cur;
 
 	if (heap_start == 0)
 		return true;
-	return v >= heap_start && v < heap_end;
+
+	/*
+	 * heap_end is a pre-fork snapshot.  A long-running child can
+	 * extend brk past it, so consult sbrk(0) for the live break;
+	 * brk only grows in the steady state, so the larger of the two
+	 * is the live upper bound.  Guard against sbrk failure -- the
+	 * (void *)-1 sentinel cast to unsigned long would over-include
+	 * every address.
+	 */
+	end = heap_end;
+	cur = (unsigned long) sbrk(0);
+	if (cur != (unsigned long) -1 && cur > end)
+		end = cur;
+
+	return v >= heap_start && v < end;
 }
 
 /*
@@ -1460,7 +1479,7 @@ bool is_in_glibc_heap(const void *p)
  */
 bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 {
-	unsigned long end;
+	unsigned long end, hend, cur;
 
 	if (heap_start == 0)
 		return false;
@@ -1473,7 +1492,20 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 	if (end == addr)
 		end = addr + 1;
 
-	return addr < heap_end && end > heap_start;
+	/*
+	 * Same brk-grew-past-snapshot story as is_in_glibc_heap().
+	 * Missing the redirect here is the safety-critical failure
+	 * mode: a fuzzed pointer landing in the brk extension above
+	 * the cached heap_end gets through avoid_shared_buffer(), the
+	 * kernel scribbles glibc chunk metadata in the extension, and
+	 * the next malloc in the child aborts.
+	 */
+	hend = heap_end;
+	cur = (unsigned long) sbrk(0);
+	if (cur != (unsigned long) -1 && cur > hend)
+		hend = cur;
+
+	return addr < hend && end > heap_start;
 }
 
 void sanitize_inherited_fds(void)
