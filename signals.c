@@ -66,12 +66,73 @@ static void sighandler(int sig)
 }
 
 /*
+ * Signal-safe siginfo dump shared by child_fault_handler and
+ * main_fault_handler.
+ *
+ * Don't use psiginfo() -- it calls fmemopen(), which calls calloc(),
+ * which deadlocks if this signal was raised by glibc's own abort()
+ * while malloc's arena lock is still held by us.  Same family as the
+ * libgcc_s/backtrace deadlock fixed in 81143aaeaba6, just one frame up.
+ *
+ * Hand-roll a signal-safe equivalent: a lookup table covering every
+ * signal either fault handler is installed for, snprintf to a stack
+ * buffer, single write().  No allocator involvement, no stdio, no
+ * syslog.
+ *
+ * Used by both the child fault handler (SIGSEGV/SIGABRT/SIGBUS/SIGILL)
+ * and the parent's main_fault_handler (which adds SIGFPE/SIGQUIT/
+ * SIGTRAP/SIGSYS -- see setup_main_signals).  Without this in the
+ * parent path, a SIGSEGV or SIGABRT raised by glibc with the arena
+ * lock held (e.g. heap corruption from shm scribble, or an internal
+ * assertion) would fmemopen->calloc and wedge the parent's death
+ * path forever -- the fleet would then sit on a non-responsive
+ * trinity main until something external SIGKILLed it.
+ */
+static void write_siginfo_safely(int sig, const siginfo_t *info, const char *who)
+{
+	static const struct {
+		int sig;
+		const char *name;
+	} sigtab[] = {
+		{ SIGSEGV, "SIGSEGV" },
+		{ SIGABRT, "SIGABRT" },
+		{ SIGBUS,  "SIGBUS"  },
+		{ SIGILL,  "SIGILL"  },
+		{ SIGFPE,  "SIGFPE"  },
+		{ SIGQUIT, "SIGQUIT" },
+		{ SIGTRAP, "SIGTRAP" },
+		{ SIGSYS,  "SIGSYS"  },
+	};
+	const char *signame = "UNKNOWN";
+	char buf[256];
+	int len;
+	size_t i;
+
+	for (i = 0; i < sizeof(sigtab) / sizeof(sigtab[0]); i++) {
+		if (sigtab[i].sig == sig) {
+			signame = sigtab[i].name;
+			break;
+		}
+	}
+	len = snprintf(buf, sizeof(buf),
+		"%s: fatal signal: %s (si_code=%d, si_addr=%p, si_pid=%d)\n",
+		who, signame, info->si_code, info->si_addr, (int)info->si_pid);
+	if (len > 0) {
+		ssize_t w;
+		if ((size_t)len > sizeof(buf))
+			len = sizeof(buf);
+		w = write(STDERR_FILENO, buf, (size_t)len);
+		(void)w;	/* dying anyway; can't act on a short write */
+	}
+}
+
+/*
  * Child-side fault handler.  Mirrors main_fault_handler in spirit but
  * preserves the existing non-debug clean-exit behaviour:
  *
  *   - Real fault (kernel-generated, si_code > 0) or self-sent (abort,
  *     stack-smash from libc):
- *       * dump backtrace + psiginfo to stderr so we have ANY signal
+ *       * dump backtrace + signal info to stderr so we have ANY signal
  *         in the log even when the core is unwindable (fault from
  *         stack-corruption disturbs the unwind chain — gdb on the
  *         core often gets nothing)
@@ -128,9 +189,9 @@ static void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 	/*
 	 * Child stdin/stdout/stderr were dup2'd to /dev/null in init_child
 	 * (see child.c) to silence syscall spew to the operator's terminal.
-	 * Redirect stderr to a per-pid log file so the backtrace + psiginfo
-	 * output below lands in /tmp/trinity-bug-<pid>.log instead of being
-	 * swallowed — without this we have zero forensics on child SEGVs.
+	 * Redirect stderr to a per-pid log file so the backtrace + signal
+	 * info output below lands in /tmp/trinity-bug-<pid>.log instead of
+	 * being swallowed — without this we have zero forensics on child SEGVs.
 	 */
 	{
 		char path[PATH_MAX + 64];
@@ -152,46 +213,7 @@ static void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 		backtrace_symbols_fd(frames, nframes, STDERR_FILENO);
 	}
 #endif
-	/*
-	 * Don't use psiginfo() -- it calls fmemopen(), which calls
-	 * calloc(), which deadlocks if this signal was raised by glibc's
-	 * own abort() while malloc's arena lock is still held by us.
-	 * Same family as the libgcc_s/backtrace deadlock fixed in
-	 * 81143aaeaba6, just one frame up.  Hand-roll a signal-safe
-	 * equivalent: lookup table for the 4 signals we trap, snprintf
-	 * to a stack buffer, single write().  No allocator involvement.
-	 */
-	{
-		static const struct {
-			int sig;
-			const char *name;
-		} sigtab[] = {
-			{ SIGSEGV, "SIGSEGV" },
-			{ SIGABRT, "SIGABRT" },
-			{ SIGBUS,  "SIGBUS"  },
-			{ SIGILL,  "SIGILL"  },
-		};
-		const char *signame = "UNKNOWN";
-		char buf[256];
-		int len, i;
-
-		for (i = 0; (size_t)i < sizeof(sigtab) / sizeof(sigtab[0]); i++) {
-			if (sigtab[i].sig == sig) {
-				signame = sigtab[i].name;
-				break;
-			}
-		}
-		len = snprintf(buf, sizeof(buf),
-			"trinity child: fatal signal: %s (si_code=%d, si_addr=%p, si_pid=%d)\n",
-			signame, info->si_code, info->si_addr, (int)info->si_pid);
-		if (len > 0) {
-			ssize_t w;
-			if ((size_t)len > sizeof(buf))
-				len = sizeof(buf);
-			w = write(STDERR_FILENO, buf, (size_t)len);
-			(void)w;	/* dying anyway; can't act on a short write */
-		}
-	}
+	write_siginfo_safely(sig, info, "trinity child");
 
 	if (shm->debug == true) {
 		(void)signal(sig, SIG_DFL);
@@ -247,7 +269,7 @@ static void main_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 		int nframes = backtrace(frames, 64);
 		backtrace_symbols_fd(frames, nframes, STDERR_FILENO);
 #endif
-		psiginfo(info, "trinity main: fatal signal");
+		write_siginfo_safely(sig, info, "trinity main");
 		signal(sig, SIG_DFL);
 		raise(sig);
 	}
