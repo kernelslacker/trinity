@@ -267,13 +267,25 @@ static int issue_probe(struct kcov_child *kc, unsigned int call,
 	int ret;
 
 	probe_timed_out = 0;
+
+	/*
+	 * Arm the watchdog AFTER kcov_enable_trace and disarm it BEFORE
+	 * kcov_disable.  If SIGALRM lands inside the KCOV_ENABLE ioctl the
+	 * ioctl returns -EINTR, which kcov_enable_trace treats as a fatal
+	 * failure and clears kc->active.  From that point on every probe
+	 * short-circuits inside kcov_enable_trace, the syscall runs without
+	 * coverage, and fp_capture reads zeros — silently corrupting every
+	 * subsequent calibration entry to baseline=0/probe=0.  The window
+	 * the watchdog actually needs to cover is the fuzzed syscall; the
+	 * trinity-controlled enable/disable ioctls don't need it.
+	 */
+	kcov_enable_trace(kc);
 	(void)alarm(EFFECTOR_PROBE_TIMEOUT_SEC);
 
-	kcov_enable_trace(kc);
 	(void)syscall(call, args[0], args[1], args[2], args[3], args[4], args[5]);
-	kcov_disable(kc);
 
 	(void)alarm(0);
+	kcov_disable(kc);
 
 	fp_capture(fp, kc);
 
