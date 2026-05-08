@@ -4,6 +4,7 @@
 
 #include "compat.h"
 #include "proto-alg-dict.h"
+#include "random.h"
 #include "trinity.h"
 
 #ifdef USE_IF_ALG
@@ -265,11 +266,97 @@ const char **alg_dict_names(enum alg_dict_type type, unsigned int *count)
 }
 
 /*
+ * Curated template names that target the kernel crypto template
+ * parser (crypto/api.c crypto_alg_lookup, crypto/algboss.c
+ * cryptomgr_probe).  Mix of valid simple/composed algos for guaranteed
+ * coverage even with an empty /proc/crypto, plus parser-corner inputs
+ * (deeply-nested compositions, malformed parens, mismatched
+ * outer/inner, removed algos, length-edge strings).  Random-bytes
+ * drawn from /proc/crypto never reach these shapes.
+ */
+static const char *torture_names[] = {
+	/* simple */
+	"aes", "des", "des3_ede", "twofish", "serpent", "blowfish",
+	"camellia", "cast5", "cast6", "chacha20",
+	"sha1", "sha256", "sha512", "md5",
+	"crc32c", "crc32", "poly1305",
+	"sm4", "sm3",
+	"streebog256", "streebog512",
+	"ghash", "vmac64", "xxhash64", "michael_mic", "adler32",
+	"rmd160", "wp512", "tgr192",
+	/* mode wrappers */
+	"cbc(aes)", "ecb(aes)", "ctr(aes)", "xts(aes)", "lrw(aes)",
+	"cts(cbc(aes))", "pcbc(fcrypt)", "ofb(aes)", "cfb(aes)",
+	/* AEAD */
+	"gcm(aes)", "ccm(aes)", "chacha20poly1305",
+	"rfc4106(gcm(aes))", "rfc4543(gcm(aes))",
+	"rfc7539(chacha20,poly1305)", "rfc7539esp(chacha20,poly1305)",
+	/* HMAC / AUTH */
+	"hmac(sha256)", "hmac(sha512)", "hmac(md5)",
+	"cmac(aes)", "xcbc(aes)", "vmac64(aes)",
+	/* AUTHENC compositions */
+	"authenc(hmac(sha256),cbc(aes))",
+	"authenc(hmac(sha1),cbc(des3_ede))",
+	"authencesn(hmac(sha256),cbc(aes))",
+	/* compress */
+	"deflate", "lzo", "lzo-rle", "lz4", "lz4hc", "zstd", "842",
+	/* deeply-nested compositions — parser depth stress */
+	"hmac(hmac(hmac(sha256)))",
+	"cbc(cbc(cbc(aes)))",
+	"authenc(hmac(sha256),authenc(hmac(sha1),cbc(aes)))",
+	"essiv(cbc(aes),sha256)",
+	/* just-shy-of-valid */
+	"cbc(", "cbc(aes", "cbc(aes,)", "(aes)", "cbc()",
+	"cbc(,aes)", "hmac(", "hmac(sha256",
+	"authenc(hmac(sha256),)", "authenc(,cbc(aes))",
+	"hmac(sha256))",
+	/* mismatched outer/inner */
+	"hmac(aes)", "cbc(sha256)", "gcm(sha512)",
+	"authenc(cbc(aes),hmac(sha256))",
+	/* deprecated / removed */
+	"tea", "xtea", "khazad", "anubis", "arc4", "salsa20",
+	/* length-edge */
+	"",
+	"a",
+	"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+};
+
+/*
+ * Extended salg_type pool.  Includes kernel-internal cra_type strings
+ * ("shash", "compress", "acompress") that AF_ALG itself does not
+ * register an af_alg_type for — binding with these forces the bind-
+ * path lookup loop to walk to completion and return -ENOENT, which
+ * is the boundary we want under fuzz.  Mismatch with the salg_name
+ * is deliberate.
+ */
+static const char *torture_types[] = {
+	"hash", "skcipher", "aead", "rng",
+	"akcipher", "kpp",
+	"shash", "compress", "acompress",
+};
+
+static void pick_alg_torture(struct sockaddr_alg *alg)
+{
+	const char *name = torture_names[rand() % ARRAY_SIZE(torture_names)];
+	const char *type = torture_types[rand() % ARRAY_SIZE(torture_types)];
+
+	strncpy((char *)alg->salg_type, type, sizeof(alg->salg_type) - 1);
+	alg->salg_type[sizeof(alg->salg_type) - 1] = '\0';
+	strncpy((char *)alg->salg_name, name, sizeof(alg->salg_name) - 1);
+	alg->salg_name[sizeof(alg->salg_name) - 1] = '\0';
+}
+
+/*
  * Pick a salg_type / salg_name pair from the runtime dictionary.
  * Falls back to the static fallback arrays via the dict's own merge
  * if /proc/crypto was empty.  If the dict bucket is somehow still
  * empty (init never ran), drop back to the static array directly so
  * we never emit a NULL salg_name.
+ *
+ * 1-in-4 calls divert to the torture path: salg_name is drawn from a
+ * curated table of parser-corner inputs and salg_type rotates
+ * independently across all af_alg_type buckets plus a few kernel-
+ * internal-only types.  type_str is ignored on the torture path.
  */
 void pick_alg(enum alg_dict_type type, const char *type_str,
 	      struct sockaddr_alg *alg)
@@ -277,6 +364,11 @@ void pick_alg(enum alg_dict_type type, const char *type_str,
 	const char **names;
 	const char *pick = NULL;
 	unsigned int n;
+
+	if (ONE_IN(4)) {
+		pick_alg_torture(alg);
+		return;
+	}
 
 	strncpy((char *)alg->salg_type, type_str, sizeof(alg->salg_type) - 1);
 	alg->salg_type[sizeof(alg->salg_type) - 1] = '\0';
