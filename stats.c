@@ -649,7 +649,8 @@ static void dump_stats_json(void)
 		"\"genetlink_fuzzer\":{\"families_discovered\":%lu,\"msgs_sent\":%lu,\"eperm\":%lu},"
 		"\"genl_family_calls\":{\"devlink\":%lu,\"nl80211\":%lu,\"taskstats\":%lu,"
 			"\"ethtool\":%lu,\"mptcp_pm\":%lu,\"l2tp\":%lu,\"gtp\":%lu,\"macsec\":%lu,"
-				"\"netlabel\":%lu,\"team\":%lu,\"hsr\":%lu,\"fou\":%lu},"
+				"\"netlabel\":%lu,\"team\":%lu,\"hsr\":%lu,\"fou\":%lu,"
+				"\"psample\":%lu},"
 		"\"nfnl_subsys_calls\":{\"ctnetlink\":%lu,\"ctnetlink_exp\":%lu,"
 			"\"nftables\":%lu,\"ipset\":%lu},"
 		"\"netlink_generator\":{\"nested_attrs_emitted\":%lu},"
@@ -841,6 +842,7 @@ static void dump_stats_json(void)
 		shm->stats.genl_family_calls_team,
 		shm->stats.genl_family_calls_hsr,
 		shm->stats.genl_family_calls_fou,
+		shm->stats.genl_family_calls_psample,
 		shm->stats.nfnl_subsys_calls_ctnetlink,
 		shm->stats.nfnl_subsys_calls_ctnetlink_exp,
 		shm->stats.nfnl_subsys_calls_nftables,
@@ -1471,6 +1473,8 @@ static const struct {
 	  offsetof(struct stats_s, genl_family_calls_hsr) },
 	{ "genl_family_calls_fou",
 	  offsetof(struct stats_s, genl_family_calls_fou) },
+	{ "genl_family_calls_psample",
+	  offsetof(struct stats_s, genl_family_calls_psample) },
 	/* nfnetlink registry per-subsys dispatch counters; same diagnostic
 	 * value as the genl ones above but for NETLINK_NETFILTER subsystems.
 	 * Lets an operator see the live ctnetlink/nftables/ipset traffic
@@ -2276,7 +2280,8 @@ void dump_stats(void)
 	    shm->stats.genl_family_calls_netlabel  ||
 	    shm->stats.genl_family_calls_team      ||
 	    shm->stats.genl_family_calls_hsr       ||
-	    shm->stats.genl_family_calls_fou) {
+	    shm->stats.genl_family_calls_fou       ||
+	    shm->stats.genl_family_calls_psample) {
 		stat_row("genl_family_calls", "devlink",   shm->stats.genl_family_calls_devlink);
 		stat_row("genl_family_calls", "nl80211",   shm->stats.genl_family_calls_nl80211);
 		stat_row("genl_family_calls", "taskstats", shm->stats.genl_family_calls_taskstats);
@@ -2288,6 +2293,7 @@ void dump_stats(void)
 		stat_row("genl_family_calls", "team",      shm->stats.genl_family_calls_team);
 		stat_row("genl_family_calls", "hsr",       shm->stats.genl_family_calls_hsr);
 		stat_row("genl_family_calls", "fou",       shm->stats.genl_family_calls_fou);
+		stat_row("genl_family_calls", "psample",   shm->stats.genl_family_calls_psample);
 	}
 
 	if (shm->stats.nfnl_subsys_calls_ctnetlink     ||
