@@ -1744,3 +1744,62 @@ void healer_maybe_snapshot(void)
 	__atomic_store_n(&shm->stats.healer_save_in_progress, 0,
 			 __ATOMIC_RELAXED);
 }
+
+/*
+ * --- Pair-relation table (single-predecessor companion) ---
+ *
+ * Parallel storage to the (predset -> nr) triple table above, indexed
+ * (pred -> succ) instead of ((pred_a, pred_b) -> succ).  Coarser-
+ * grained than triples but cheap to seed from a static prior derived
+ * from existing ARG_FD_* / ret_objtype metadata, which the upcoming
+ * follow-up commits will plumb in.  Nothing in this file or anywhere
+ * else calls the APIs below yet -- this commit only stages the
+ * storage and the three accessors so the seed-loader and observer-
+ * merge work has a stable destination to build against.
+ *
+ * Sizing: MAX_NR_SYSCALL * MAX_NR_SYSCALL * 4 bytes.  Lives in
+ * process-private BSS rather than shm because the dominant access
+ * pattern is one bulk parent-side seed write before fork followed by
+ * read-mostly child-side lookups; the per-child divergence on later
+ * observation bumps is acceptable in exchange for not growing the
+ * shm budget the much larger triple table already carries.
+ */
+static unsigned int healer_pair_table[MAX_NR_SYSCALL][MAX_NR_SYSCALL];
+
+void healer_pair_seed(unsigned int pred, unsigned int succ, unsigned int weight)
+{
+	unsigned int expected = 0;
+
+	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
+		return;
+
+	/* Don't overwrite a cell that already carries a weight -- a
+	 * previous seed call (or, once the observer-bump merge lands,
+	 * an in-flight observation) for this (pred, succ) pair is more
+	 * authoritative than this caller, and the seed loader is
+	 * expected to be idempotent.  CAS failure is a silent no-op so
+	 * the loader can re-run without double-counting. */
+	if (__atomic_compare_exchange_n(&healer_pair_table[pred][succ],
+					&expected, weight, false,
+					__ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+		if (shm != NULL)
+			__atomic_fetch_add(&shm->stats.healer_pair_seeded, 1,
+					   __ATOMIC_RELAXED);
+	}
+}
+
+void healer_pair_observe(unsigned int pred, unsigned int succ)
+{
+	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
+		return;
+
+	__atomic_fetch_add(&healer_pair_table[pred][succ], 1, __ATOMIC_RELAXED);
+}
+
+unsigned int healer_pair_get(unsigned int pred, unsigned int succ)
+{
+	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
+		return 0;
+
+	return __atomic_load_n(&healer_pair_table[pred][succ], __ATOMIC_RELAXED);
+}

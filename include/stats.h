@@ -1632,6 +1632,19 @@ struct stats_s {
 	 */
 	unsigned long healer_weight_decays_run;
 	/*
+	 * Bumped from healer_pair_seed() each time the install-CAS actually
+	 * publishes a fresh (pred -> succ) entry into the pair-relation
+	 * table; the no-op fall-through path (the cell was already
+	 * populated) is silent.  Lets the operator confirm the static-seed
+	 * loader (separate follow-up commit) actually ran and roughly how
+	 * many distinct pairs it carried in -- a stuck-at-zero value on a
+	 * fuzz where seeds are expected means the loader path didn't fire.
+	 * Per-run only; the pair table itself is process-private BSS rather
+	 * than shm so this counter is the only fleet-visible signal that
+	 * the pair-side of the HEALER pipeline is active.
+	 */
+	unsigned long healer_pair_seeded;
+	/*
 	 * Per-syscall counter of how often this syscall appears as either
 	 * pred_a or pred_b in a recorded HEALER pair observation.  Used to
 	 * compute a TF-IDF-style normalisation on the relation-table dump:
