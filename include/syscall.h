@@ -97,6 +97,7 @@ enum argtype {
 	ARG_AIO_CTX,	/* Linux AIO aio_context_t (opaque kernel u64) */
 	ARG_SEM_ID,	/* SysV semaphore set id from semget (signed int) */
 	ARG_MSG_ID,	/* SysV message queue id from msgget (signed int) */
+	ARG_SYSV_SHM,	/* SysV shared memory id from shmget (signed int) */
 	ARG_RANGE,
 	ARG_OP,
 	ARG_LIST,

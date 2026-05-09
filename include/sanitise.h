@@ -39,6 +39,8 @@ int get_random_sysv_sem(void);
 void register_sysv_sem(int semid);
 int get_random_sysv_msg(void);
 void register_sysv_msg(int msqid);
+int get_random_sysv_shm(void);
+void register_sysv_shm(int shmid);
 
 void gen_unicode_page(char *page);
 
