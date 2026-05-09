@@ -51,4 +51,5 @@ struct syscallentry syscall_vfork = {
 	.argname = { [0] = "regs" },
 	.post = post_vfork,
 	.rettype = RET_PID_T,
+	.ret_objtype = OBJ_PID,
 };

@@ -208,6 +208,10 @@ struct timeridobj {
 	int32_t tid;
 };
 
+struct pidobj {
+	pid_t pid;
+};
+
 struct sysvsemobj {
 	int semid;
 };
@@ -288,6 +292,8 @@ struct object {
 		struct keyserialobj keyserialobj;
 
 		struct timeridobj timeridobj;
+
+		struct pidobj pidobj;
 
 		struct sysvsemobj sysvsemobj;
 

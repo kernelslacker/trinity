@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <signal.h>
 #include <unistd.h>
+#include "objects.h"
 #include "params.h"	// dangerous
 #include "pids.h"
 #include "random.h"
@@ -380,4 +381,46 @@ retry:		i = rand() % max_children;
 		return 1;
 
 	return cached_pid;
+}
+
+/*
+ * OBJ_PID pool helpers.
+ *
+ * The pool is fed by the seven pid-returning syscalls
+ * (fork, vfork, clone, clone3, getpid, gettid, getppid) via the
+ * generic .ret_objtype = OBJ_PID dispatch hook in handle_syscall_ret;
+ * mirrors the OBJ_KEY_SERIAL / OBJ_TIMERID / OBJ_AIO_CTX shape but
+ * with no destructor -- pids are non-resource handles, nothing to
+ * release at child teardown.  Consumed by ARG_PIDs fill_arg branch
+ * in generate-args.c so the 12+ ARG_PID consumers (kill, tkill,
+ * tgkill, ptrace, setpgid, getpgid, getsid, setpriority, getpriority,
+ * waitpid, wait4, sched_set..., sched_get..., perf_event_open, ...)
+ * can pick pids the fuzz session has actually produced instead of
+ * rolling the same single random distribution every call.  Cold-pool
+ * fallback defers to get_pids existing live-children bias so runtime
+ * behaviour does not regress when the pool is empty.
+ */
+pid_t get_random_pid_from_pool(void)
+{
+	struct object *obj;
+
+	if (objects_empty(OBJ_PID) == true)
+		return (pid_t) get_pid();
+
+	obj = get_random_object(OBJ_PID, OBJ_LOCAL);
+	if (obj == NULL)
+		return (pid_t) get_pid();
+	return obj->pidobj.pid;
+}
+
+void register_returned_pid(pid_t pid)
+{
+	struct object *obj;
+
+	if (pid <= 0)
+		return;
+
+	obj = alloc_object();
+	obj->pidobj.pid = pid;
+	add_object(obj, OBJ_LOCAL, OBJ_PID);
 }
