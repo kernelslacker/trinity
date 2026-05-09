@@ -4,11 +4,27 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include "objects.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+
+static void register_pipe_fd(int fd, bool reader)
+{
+	struct object *new;
+
+	if (fd <= 2)
+		return;
+	if (find_local_object_by_fd(OBJ_FD_PIPE, fd) != NULL)
+		return;
+
+	new = alloc_object();
+	new->pipeobj.fd = fd;
+	new->pipeobj.reader = reader;
+	add_object(new, OBJ_LOCAL, OBJ_FD_PIPE);
+}
 
 static void sanitise_pipe(struct syscallrecord *rec)
 {
@@ -25,7 +41,7 @@ static void sanitise_pipe(struct syscallrecord *rec)
 
 static void post_pipe(struct syscallrecord *rec)
 {
-	void *fildes = (void *) rec->post_state;
+	int *fildes = (int *) rec->post_state;
 
 	if (fildes == NULL)
 		return;
@@ -35,6 +51,11 @@ static void post_pipe(struct syscallrecord *rec)
 		rec->a1 = 0;
 		rec->post_state = 0;
 		return;
+	}
+
+	if ((long) rec->retval == 0) {
+		register_pipe_fd(fildes[0], true);
+		register_pipe_fd(fildes[1], false);
 	}
 
 	rec->a1 = 0;
