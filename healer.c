@@ -652,6 +652,13 @@ static void healer_maybe_decay(void)
  * same snapshot value (re-reading the live counter for the display
  * after sorting on a stale read would risk emitting a normalised score
  * that doesn't match the freq numbers shown next to it).
+ *
+ * Pair-table entries reuse this struct so the same sort and top-N
+ * selection ranks triples and pairs head-to-head by normalised score.
+ * For a pair entry (is_pair == true): pred_b carries the producer
+ * syscall, promoted_nr carries the consumer, pred_b_freq carries the
+ * producer's appearance count, and pred_a / pred_a_freq are unused
+ * (the rendered line shows `*` in the slot a triple would put pred_a).
  */
 struct healer_dump_entry {
 	unsigned int pred_a;
@@ -661,6 +668,7 @@ struct healer_dump_entry {
 	unsigned long pred_a_freq;
 	unsigned long pred_b_freq;
 	unsigned long norm_score_milli;
+	bool is_pair;
 };
 
 /*
@@ -813,6 +821,17 @@ void healer_table_dump(void)
 	 * evidence) and an operator wants to see them independently.
 	 */
 	unsigned long low_raw_skipped = 0;
+	/*
+	 * Per-dump tally of the static-seed pair table: total nonzero
+	 * cells and the subset of those whose weight has reached >=2 (i.e.
+	 * either a seed that has been confirmed by at least one dynamic
+	 * observation, or a runtime-only pair that has been observed at
+	 * least twice).  Walked here so the second figure tracks "how many
+	 * pairs have evidence on top of the prior" without standing up a
+	 * separate dump pass.
+	 */
+	unsigned long pair_populated = 0;
+	unsigned long pair_weighted = 0;
 	unsigned int i, j;
 	unsigned long observed, table_full, evictions, decays_run;
 	/*
@@ -970,6 +989,7 @@ void healer_table_dump(void)
 				top[top_count].pred_a_freq = pred_a_freq;
 				top[top_count].pred_b_freq = pred_b_freq;
 				top[top_count].norm_score_milli = norm_score;
+				top[top_count].is_pair = false;
 				top_count++;
 				continue;
 			}
@@ -986,12 +1006,109 @@ void healer_table_dump(void)
 				top[min_idx].pred_a_freq = pred_a_freq;
 				top[min_idx].pred_b_freq = pred_b_freq;
 				top[min_idx].norm_score_milli = norm_score;
+				top[min_idx].is_pair = false;
 			}
 		}
 
 		if (slot_promoted > 0) {
 			occupied++;
 			total_promoted += slot_promoted;
+		}
+	}
+
+	/*
+	 * Pair-table sweep.  Walks the producer/consumer pair matrix that
+	 * the static-seed loader (and, once the observer-bump path lands,
+	 * dynamic observations) populates and merges its entries into the
+	 * same top[] candidate list as triples.  Pair entries are scored
+	 * with a single-predecessor adaptation of the triple normalisation
+	 * (raw * 1000 / isqrt(producer_appearances + 1)) and ranked
+	 * head-to-head against triples by norm_score_milli, so the operator
+	 * sees the strongest pair priors interleaved with the strongest
+	 * runtime-observed triples instead of dropped onto a separate
+	 * second dump.
+	 *
+	 * The pair table is a dense [MAX_NR_SYSCALL][MAX_NR_SYSCALL] matrix
+	 * (a few hundred K cells, mostly zero on a fresh run), so the bulk
+	 * walk happens once per dump tick and is cheap enough not to need
+	 * any sparser indexing.  HEALER_DUMP_MIN_RAW gates pair entries the
+	 * same way it gates triples: with HEALER_STATIC_SEED_WEIGHT == 3 ==
+	 * HEALER_DUMP_MIN_RAW the floor lets every fresh seed install
+	 * qualify on its first dump while still dropping a raw=1 or raw=2
+	 * dynamic-only pair (which the same statistical-noise argument that
+	 * motivates the triple-side floor applies to verbatim).  Skips are
+	 * tallied into the existing low_raw_skipped counter so the
+	 * "low-raw skipped: N" line covers both the triple and pair sides.
+	 */
+	for (i = 0; i < MAX_NR_SYSCALL; i++) {
+		unsigned long producer_freq = __atomic_load_n(
+			&shm->stats.healer_pred_appearance[i],
+			__ATOMIC_RELAXED);
+
+		for (j = 0; j < MAX_NR_SYSCALL; j++) {
+			unsigned int weight;
+			unsigned long denom, norm_score;
+			unsigned int min_idx = 0;
+			unsigned int k;
+
+			weight = healer_pair_get(i, j);
+			if (weight == 0)
+				continue;
+
+			pair_populated++;
+			if (weight >= 2)
+				pair_weighted++;
+
+			if (weight < HEALER_DUMP_MIN_RAW) {
+				low_raw_skipped++;
+				continue;
+			}
+
+			/*
+			 * Single-predecessor TF-IDF analog: the triple form
+			 * dampens by isqrt(predfreq_a * predfreq_b + 1)
+			 * because both predecessors are antecedents of the
+			 * successor; a pair has only one antecedent (the
+			 * producer), so the denominator collapses to
+			 * isqrt(producer_freq + 1).  Reuses healer_isqrt()
+			 * rather than repeating the Newton iteration.  The
+			 * "+1" keeps the denominator non-zero on the cold
+			 * start where the producer hasn't been observed
+			 * yet, so a freshly seeded pair scores at raw * 1000
+			 * until appearance counters accumulate.
+			 */
+			denom = healer_isqrt(producer_freq + 1);
+			if (denom == 0)
+				denom = 1;
+			norm_score = (weight * 1000UL) / denom;
+
+			if (top_count < HEALER_DUMP_TOP_N) {
+				top[top_count].pred_a = 0;
+				top[top_count].pred_b = i;
+				top[top_count].promoted_nr = j;
+				top[top_count].weight = weight;
+				top[top_count].pred_a_freq = 0;
+				top[top_count].pred_b_freq = producer_freq;
+				top[top_count].norm_score_milli = norm_score;
+				top[top_count].is_pair = true;
+				top_count++;
+				continue;
+			}
+
+			for (k = 1; k < HEALER_DUMP_TOP_N; k++) {
+				if (top[k].norm_score_milli < top[min_idx].norm_score_milli)
+					min_idx = k;
+			}
+			if (norm_score > top[min_idx].norm_score_milli) {
+				top[min_idx].pred_a = 0;
+				top[min_idx].pred_b = i;
+				top[min_idx].promoted_nr = j;
+				top[min_idx].weight = weight;
+				top[min_idx].pred_a_freq = 0;
+				top[min_idx].pred_b_freq = producer_freq;
+				top[min_idx].norm_score_milli = norm_score;
+				top[min_idx].is_pair = true;
+			}
 		}
 	}
 
@@ -1010,7 +1127,7 @@ void healer_table_dump(void)
 	decays_run = __atomic_load_n(&shm->stats.healer_weight_decays_run,
 				     __ATOMIC_RELAXED);
 
-	if (occupied == 0 && observed == 0) {
+	if (occupied == 0 && observed == 0 && pair_populated == 0) {
 		free(succ_weight);
 		return;
 	}
@@ -1057,6 +1174,24 @@ void healer_table_dump(void)
 	stats_log_write("HEALER top %u relations by normalised weight:\n",
 			top_count);
 	for (i = 0; i < top_count; i++) {
+		/*
+		 * Pair entries render with `*` in the slot a triple would
+		 * put pred_a so the operator can tell at a glance which
+		 * lines come from the producer/consumer prior vs the
+		 * runtime-observed triple table; the leading `{*, ` prefix
+		 * is also a stable shape any future downstream parser can
+		 * key off without re-deriving the dump format.
+		 */
+		if (top[i].is_pair) {
+			stats_log_write("  {*, %s} -> %s norm=%lu.%03lu (raw=%u, predfreq=%lu)\n",
+					print_syscall_name(top[i].pred_b, false),
+					print_syscall_name(top[i].promoted_nr, false),
+					top[i].norm_score_milli / 1000,
+					top[i].norm_score_milli % 1000,
+					top[i].weight,
+					top[i].pred_b_freq);
+			continue;
+		}
 		stats_log_write("  {%s, %s} -> %s norm=%lu.%03lu (raw=%u, predfreq a=%lu b=%lu)\n",
 				print_syscall_name(top[i].pred_a, false),
 				print_syscall_name(top[i].pred_b, false),
@@ -1067,6 +1202,20 @@ void healer_table_dump(void)
 				top[i].pred_a_freq,
 				top[i].pred_b_freq);
 	}
+
+	/*
+	 * Pair-table summary line: total cells holding any weight, plus
+	 * the subset whose weight has reached >=2.  The first figure
+	 * reflects the static-seed install size; the second tracks how
+	 * many pairs have evidence beyond the bare prior, so an operator
+	 * can tell whether dynamic observation is accumulating on top of
+	 * the seed (rising weighted_count) or whether the table is still
+	 * the loader's first install (weighted_count near zero).
+	 */
+	stats_log_write("HEALER pair table: %lu/%lu populated, %lu with weight>=2\n",
+			pair_populated,
+			(unsigned long)MAX_NR_SYSCALL * MAX_NR_SYSCALL,
+			pair_weighted);
 
 	/*
 	 * Predecessor-frequency leader display.  Surfaces the top-N
