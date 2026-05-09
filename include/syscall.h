@@ -109,6 +109,8 @@ enum argtype {
 	ARG_SOCKADDRLEN,
 	ARG_MMAP,
 	ARG_SOCKETINFO,
+	ARG_FD_BPF_MAP,
+	ARG_FD_BPF_PROG,
 	ARG_FD_EPOLL,
 	ARG_FD_EVENTFD,
 	ARG_FD_FANOTIFY,
@@ -129,7 +131,7 @@ enum argtype {
 
 static inline bool is_typed_fdarg(enum argtype type)
 {
-	return type >= ARG_FD_EPOLL && type <= ARG_FD_TIMERFD;
+	return type >= ARG_FD_BPF_MAP && type <= ARG_FD_TIMERFD;
 }
 
 static inline bool is_fdarg(enum argtype type)
