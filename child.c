@@ -55,13 +55,23 @@ _Static_assert(offsetof(struct childdata, op_nr) < 64,
  * Hard per-child virtual-memory cap.  A single runaway mmap/mremap (or the
  * cumulative drift of N children each growing to multi-GiB) can push the
  * machine into global OOM; with memory.oom.group on the user slice that
- * takes out the whole login session (tmux, ssh, the lot).  1 GiB × default
- * child count fits comfortably on small fuzz boxes while still leaving
- * room for legitimate large mappings the syscall fuzzer wants to exercise.
- * Pushing past the cap returns ENOMEM at the syscall — itself a
- * fuzz-relevant kernel return path.
+ * takes out the whole login session (tmux, ssh, the lot).  Pushing past
+ * the cap returns ENOMEM at the syscall — itself a fuzz-relevant kernel
+ * return path.
+ *
+ * Sized at 4 GiB.  An earlier 1 GiB cap was below the ~2 GB virtual-memory
+ * baseline children inherit at fork(), so kcov_init_child()'s trace_buf
+ * mmap (and several childops' init mappings — userfaultfd, iommufd,
+ * landlock, pagecache, perf, seccomp-notif) silently EFAULTed; KCOV
+ * stayed inactive and recorded zero edges.  4 GiB clears the inherited
+ * baseline plus trinity's own fixed-cost mappings (~100 MB of childop
+ * init plus a few MB of KCOV buffers) with multi-GiB of headroom for
+ * fuzz-driven mmap growth, while still cutting the observed 21 TB
+ * single-child runaway by ~5000x.  RLIMIT_AS bounds reserved virtual
+ * memory, not RSS — 16 children × 4 GiB = 64 GiB of address-space
+ * ceiling, but the bulk stays unmapped and never touches physical RAM.
  */
-#define TRINITY_CHILD_AS_CAP_BYTES	(1UL << 30)
+#define TRINITY_CHILD_AS_CAP_BYTES	(4UL << 30)
 
 /* Set to true once we detect that unprivileged pidns isn't available.
  * Lives in shared memory (shm->no_pidns) so the flag propagates across
@@ -550,22 +560,6 @@ static void init_child(struct childdata *child, int childno)
 	 * /dev/tty opens fail with ENXIO. */
 	(void) setsid();
 
-	/*
-	 * Pin RLIMIT_AS hard before any later setup can take a large mapping.
-	 * Deterministic — not folded into the random rlim_resources sweep in
-	 * munge_process(), which is for fuzz diversity and gets randomly
-	 * skipped.  Both rlim_cur and rlim_max are clamped to the cap so a
-	 * fuzzed setrlimit() in the child can't widen it back to RLIM_INFINITY.
-	 */
-	{
-		struct rlimit as_lim = {
-			.rlim_cur = TRINITY_CHILD_AS_CAP_BYTES,
-			.rlim_max = TRINITY_CHILD_AS_CAP_BYTES,
-		};
-		if (setrlimit(RLIMIT_AS, &as_lim) != 0)
-			perror("setrlimit(RLIMIT_AS)");
-	}
-
 	/* Re-set num from the stack-based childno in case shared memory
 	 * was corrupted by a sibling's stray write. */
 	child->num = childno;
@@ -707,6 +701,34 @@ static void init_child(struct childdata *child, int childno)
 	 * child's lifetime. */
 	child->is_explorer = (childno >= 0 &&
 			      (unsigned int)childno < explorer_children);
+
+	/*
+	 * Pin RLIMIT_AS as the LAST thing init_child does, just before the
+	 * child_process() main loop takes over.  Applied here — not back at
+	 * setsid() time — so the inherited ~2 GB virtual-memory baseline,
+	 * init_child_mappings()'s per-child mmaps, kcov_init_child()'s
+	 * trace_buf + cmp_buf mmaps, and the various childop init mappings
+	 * (userfaultfd, iommufd, landlock, pagecache, perf, seccomp-notif)
+	 * all complete under the inherited RLIM_INFINITY ceiling.  Only
+	 * fuzz-driven mmap growth from the syscall loop is bound by the cap;
+	 * trinity's fixed-cost setup doesn't get silently EFAULTed by it.
+	 *
+	 * Deterministic — not folded into the random rlim_resources sweep in
+	 * munge_process(), which is for fuzz diversity and gets randomly
+	 * skipped.  munge_process() ran above us and may have tightened other
+	 * limits, but its sweep only ever shrinks them, so running it before
+	 * the cap is set is safe.  Both rlim_cur and rlim_max are clamped to
+	 * the cap so a fuzzed setrlimit() in the child can't widen it back to
+	 * RLIM_INFINITY.
+	 */
+	{
+		struct rlimit as_lim = {
+			.rlim_cur = TRINITY_CHILD_AS_CAP_BYTES,
+			.rlim_max = TRINITY_CHILD_AS_CAP_BYTES,
+		};
+		if (setrlimit(RLIMIT_AS, &as_lim) != 0)
+			perror("setrlimit(RLIMIT_AS)");
+	}
 }
 
 /*
