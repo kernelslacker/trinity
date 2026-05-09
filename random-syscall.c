@@ -469,6 +469,8 @@ static bool argtype_accepts_numeric_substitute(enum argtype t)
 	case ARG_KEY_SERIAL:
 	case ARG_TIMERID:
 	case ARG_AIO_CTX:
+	case ARG_SEM_ID:
+	case ARG_MSG_ID:
 	case ARG_RANGE:
 	case ARG_OP:
 	case ARG_LIST:

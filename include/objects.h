@@ -208,6 +208,14 @@ struct timeridobj {
 	int32_t tid;
 };
 
+struct sysvsemobj {
+	int semid;
+};
+
+struct sysvmsgobj {
+	int msqid;
+};
+
 struct object {
 	unsigned int array_idx;		/* index in objhead->array */
 	union {
@@ -280,6 +288,10 @@ struct object {
 		struct keyserialobj keyserialobj;
 
 		struct timeridobj timeridobj;
+
+		struct sysvsemobj sysvsemobj;
+
+		struct sysvmsgobj sysvmsgobj;
 
 		struct socketinfo sockinfo;
 
