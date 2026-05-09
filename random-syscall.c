@@ -478,6 +478,8 @@ static bool argtype_accepts_numeric_substitute(enum argtype t)
 	case ARG_CPU:
 	case ARG_IOVECLEN:
 	case ARG_SOCKADDRLEN:
+	case ARG_FD_BPF_MAP:
+	case ARG_FD_BPF_PROG:
 	case ARG_FD_EPOLL:
 	case ARG_FD_EVENTFD:
 	case ARG_FD_FANOTIFY:

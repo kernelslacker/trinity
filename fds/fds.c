@@ -301,6 +301,8 @@ int get_typed_fd(enum argtype type)
 	unsigned int retries = 0;
 
 	switch (type) {
+	case ARG_FD_BPF_MAP:	objtype = OBJ_FD_BPF_MAP; break;
+	case ARG_FD_BPF_PROG:	objtype = OBJ_FD_BPF_PROG; break;
 	case ARG_FD_EPOLL:	objtype = OBJ_FD_EPOLL; break;
 	case ARG_FD_EVENTFD:	objtype = OBJ_FD_EVENTFD; break;
 	case ARG_FD_FANOTIFY:	objtype = OBJ_FD_FANOTIFY; break;
