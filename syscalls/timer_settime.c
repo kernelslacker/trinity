@@ -45,10 +45,8 @@ struct syscallentry syscall_timer_settime = {
 	.name = "timer_settime",
 	.group = GROUP_TIME,
 	.num_args = 4,
-	.argtype = { [0] = ARG_RANGE, [1] = ARG_LIST, [3] = ARG_ADDRESS },
+	.argtype = { [0] = ARG_TIMERID, [1] = ARG_LIST, [3] = ARG_ADDRESS },
 	.argname = { [0] = "timer_id", [1] = "flags", [2] = "new_setting", [3] = "old_setting" },
-	.arg_params[0].range.low = 0,
-	.arg_params[0].range.hi = 31,
 	.arg_params[1].list = ARGLIST(timer_settime_flags),
 	.sanitise = sanitise_timer_settime,
 };

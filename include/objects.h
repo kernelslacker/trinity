@@ -206,6 +206,10 @@ struct keyserialobj {
 	int32_t serial;
 };
 
+struct timeridobj {
+	int32_t tid;
+};
+
 struct object {
 	unsigned int array_idx;		/* index in objhead->array */
 	union {
@@ -276,6 +280,8 @@ struct object {
 		struct aioobj aioobj;
 
 		struct keyserialobj keyserialobj;
+
+		struct timeridobj timeridobj;
 
 		struct socketinfo sockinfo;
 
