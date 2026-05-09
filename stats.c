@@ -651,7 +651,8 @@ static void dump_stats_json(void)
 		"\"genl_family_calls\":{\"devlink\":%lu,\"nl80211\":%lu,\"taskstats\":%lu,"
 			"\"ethtool\":%lu,\"mptcp_pm\":%lu,\"l2tp\":%lu,\"gtp\":%lu,\"macsec\":%lu,"
 				"\"netlabel\":%lu,\"team\":%lu,\"hsr\":%lu,\"fou\":%lu,"
-				"\"psample\":%lu,\"ila\":%lu,\"ioam6\":%lu,\"seg6\":%lu},"
+				"\"psample\":%lu,\"ila\":%lu,\"ioam6\":%lu,\"seg6\":%lu,"
+				"\"thermal\":%lu},"
 		"\"nfnl_subsys_calls\":{\"ctnetlink\":%lu,\"ctnetlink_exp\":%lu,"
 			"\"nftables\":%lu,\"ipset\":%lu},"
 		"\"netlink_generator\":{\"nested_attrs_emitted\":%lu},"
@@ -850,6 +851,7 @@ static void dump_stats_json(void)
 		shm->stats.genl_family_calls_ila,
 		shm->stats.genl_family_calls_ioam6,
 		shm->stats.genl_family_calls_seg6,
+		shm->stats.genl_family_calls_thermal,
 		shm->stats.nfnl_subsys_calls_ctnetlink,
 		shm->stats.nfnl_subsys_calls_ctnetlink_exp,
 		shm->stats.nfnl_subsys_calls_nftables,
@@ -1498,6 +1500,8 @@ static const struct {
 	  offsetof(struct stats_s, genl_family_calls_ioam6) },
 	{ "genl_family_calls_seg6",
 	  offsetof(struct stats_s, genl_family_calls_seg6) },
+	{ "genl_family_calls_thermal",
+	  offsetof(struct stats_s, genl_family_calls_thermal) },
 	/* nfnetlink registry per-subsys dispatch counters; same diagnostic
 	 * value as the genl ones above but for NETLINK_NETFILTER subsystems.
 	 * Lets an operator see the live ctnetlink/nftables/ipset traffic
@@ -2403,7 +2407,8 @@ void dump_stats(void)
 	    shm->stats.genl_family_calls_psample   ||
 	    shm->stats.genl_family_calls_ila       ||
 	    shm->stats.genl_family_calls_ioam6     ||
-	    shm->stats.genl_family_calls_seg6) {
+	    shm->stats.genl_family_calls_seg6      ||
+	    shm->stats.genl_family_calls_thermal) {
 		stat_row("genl_family_calls", "devlink",   shm->stats.genl_family_calls_devlink);
 		stat_row("genl_family_calls", "nl80211",   shm->stats.genl_family_calls_nl80211);
 		stat_row("genl_family_calls", "taskstats", shm->stats.genl_family_calls_taskstats);
@@ -2419,6 +2424,7 @@ void dump_stats(void)
 		stat_row("genl_family_calls", "ila",       shm->stats.genl_family_calls_ila);
 		stat_row("genl_family_calls", "ioam6",     shm->stats.genl_family_calls_ioam6);
 		stat_row("genl_family_calls", "seg6",      shm->stats.genl_family_calls_seg6);
+		stat_row("genl_family_calls", "thermal",   shm->stats.genl_family_calls_thermal);
 	}
 
 	if (shm->stats.nfnl_subsys_calls_ctnetlink     ||
