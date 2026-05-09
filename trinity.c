@@ -546,6 +546,7 @@ int main(int argc, char* argv[])
 			output(0, "healer: warm-started relation table from %s\n",
 				hpath);
 	}
+	(void)healer_load_static_seed();
 	if (!no_healer_snapshot) {
 		const char *hpath = healer_default_path();
 

@@ -81,6 +81,17 @@
 #define HEALER_DUMP_MIN_RAW 3
 
 /*
+ * Initial weight installed by the static-seed loader for each producer/
+ * consumer pair derived from the existing ret_objtype / argtype metadata
+ * the syscall table already carries.  Held at the same value as
+ * HEALER_DUMP_MIN_RAW so seeded pairs clear the top-N qualification
+ * floor immediately, but a real triple with raw>=4 still beats them
+ * once observations actually accumulate.  Bootstraps the picker's pair
+ * prior on cold runs without dominating the ranking long-term.
+ */
+#define HEALER_STATIC_SEED_WEIGHT 3
+
+/*
  * FNV-1a parameters from the canonical 32-bit FNV definition.  Used
  * over the byte representation of the sorted (pred_a, pred_b) tuple
  * to derive the initial slot index.  Cheap enough on the (rare)
@@ -1961,4 +1972,109 @@ unsigned int healer_count_pc_pairs(void)
 							max_nr_syscalls);
 	}
 	return count;
+}
+
+/*
+ * Per-table static-seed installer.  Walks one syscall table and calls
+ * healer_pair_seed(HEALER_STATIC_SEED_WEIGHT) for every (producer A,
+ * consumer B) match where A's ret_objtype is consumed by one of B's
+ * argtype slots.  Mirrors healer_count_pc_pairs_in_table by shape so
+ * the "what gets seeded" inventory matches the dry-run counter exactly,
+ * with two differences: the per-match action is a write rather than a
+ * counter increment, and self-pairs (a == b) are skipped.  A self-pair
+ * captures the dup/dup2/dup3 shape (consume an fd of kind K, produce an
+ * fd of kind K), which is a duplicate-class shape rather than a
+ * productive state-transition prior, so seeding (a -> a) would inject
+ * a synthetic edge with no underlying semantics.
+ */
+static void healer_load_pc_pairs_in_table(const struct syscalltable *tbl,
+					  unsigned int n)
+{
+	unsigned int a, b;
+
+	if (tbl == NULL)
+		return;
+
+	for (a = 0; a < n; a++) {
+		const struct syscallentry *entry_a = tbl[a].entry;
+		enum objecttype kind;
+
+		if (entry_a == NULL)
+			continue;
+
+		kind = healer_produces_objtype(entry_a);
+		if (kind == OBJ_NONE)
+			continue;
+
+		for (b = 0; b < n; b++) {
+			const struct syscallentry *entry_b = tbl[b].entry;
+
+			if (entry_b == NULL)
+				continue;
+			if (a == b)
+				continue;
+			if (healer_consumes_objtype(entry_b, kind))
+				healer_pair_seed(entry_a->number,
+						 entry_b->number,
+						 HEALER_STATIC_SEED_WEIGHT);
+		}
+	}
+}
+
+/*
+ * Static-seed loader entry point.  Walks the active syscall table(s)
+ * at startup and pre-populates the pair-relation table with
+ * HEALER_STATIC_SEED_WEIGHT for every (producer, consumer) edge
+ * implied by the metadata already attached to each syscallentry.  Run
+ * pre-fork so children inherit the populated table by COW; the pair
+ * table is process-private BSS and is not persisted across runs, so
+ * this loader is the only path that pre-populates it.
+ *
+ * Idempotent: healer_pair_seed CAS-installs from 0, so cells already
+ * carrying a weight (either from a previous loader call within this
+ * process, or, once the observer-bump merge lands in a follow-up
+ * commit, from an in-flight observation) silently no-op.  This
+ * matters on biarch builds where the 32-bit and 64-bit tables can
+ * map the same raw syscall number to different syscalls; the second
+ * walk's CAS just fails on any cell the first walk already filled,
+ * and the cell keeps the first walk's weight.
+ *
+ * Returns the number of fresh CAS-successful seed installs over the
+ * course of this call, measured as the delta on
+ * shm->stats.healer_pair_seeded across the load.  Cells already
+ * populated when the loader runs are silently skipped and do not
+ * contribute to the return value.  On a cold-start run with an empty
+ * pair table the return value matches one side of the (producer-
+ * consumer-edges-on-this-arch) inventory healer_count_pc_pairs()
+ * reports, modulo the self-pair skip.
+ *
+ * Logs the install count through stats_log_write so the seeding event
+ * is captured in the per-run stats.log alongside the periodic dumps;
+ * this is the only fleet-visible signal that the static-seed path
+ * actually fired on a given startup.
+ */
+unsigned int healer_load_static_seed(void)
+{
+	unsigned long before, after;
+	unsigned int installed;
+
+	before = (shm != NULL) ?
+		__atomic_load_n(&shm->stats.healer_pair_seeded, __ATOMIC_RELAXED) : 0;
+
+	if (biarch == true) {
+		healer_load_pc_pairs_in_table(syscalls_32bit,
+					      max_nr_32bit_syscalls);
+		healer_load_pc_pairs_in_table(syscalls_64bit,
+					      max_nr_64bit_syscalls);
+	} else {
+		healer_load_pc_pairs_in_table(syscalls, max_nr_syscalls);
+	}
+
+	after = (shm != NULL) ?
+		__atomic_load_n(&shm->stats.healer_pair_seeded, __ATOMIC_RELAXED) : 0;
+	installed = (unsigned int)(after - before);
+
+	stats_log_write("HEALER static seed: %u producer/consumer pairs installed\n",
+			installed);
+	return installed;
 }
