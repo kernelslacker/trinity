@@ -13,6 +13,45 @@
  * See include/healer.h for the data structure and per-field comments,
  * and ~/gdrive/Obsidian/projects/trinity/trinity-todo.md (Multi-Strategy
  * Rotation Phase 2 -> HEALER section) for the broader two-phase design.
+ *
+ * --- Lineage note ---
+ *
+ * The name HEALER comes from the SOSP'21 paper "HEALER: Relation
+ * Learning Guided Kernel Fuzzing" (Sun et al.), which seeds an
+ * influence relation matrix R[a][b] from MoonShine-style static
+ * field analysis of kernel handlers and refines it dynamically via
+ * observed coverage gain.  This implementation is HEALER-INSPIRED
+ * rather than a faithful port; meaningful divergences worth noting
+ * for anyone reading the literature alongside the code:
+ *
+ *   - The original HEALER stores PAIRS (a -> b) in a 2D matrix.
+ *     This implementation tracks TRIPLES ((pred_a, pred_b) -> succ)
+ *     in a sparse hash table.  The pair table introduced by the
+ *     static-seed work is parallel storage, not the primary unit.
+ *
+ *   - The original HEALER's static prior comes from MoonShine's
+ *     read/write field analysis on kernel sources.  Trinity has no
+ *     such analyser; the static seed here is a coarser approximation
+ *     derived from trinity's own ARG_FD_* / ret_objtype metadata
+ *     (producer syscall A's return type matches a typed-arg slot of
+ *     consumer B).  Probably ~80% of MoonShine's signal at zero
+ *     analysis cost.
+ *
+ *   - The original HEALER's R is consumed by syzkaller's program
+ *     generator to bias A->B sequence picks.  The trinity picker
+ *     does NOT yet consult this table -- the bandit/explorer
+ *     strategies pick syscalls from coverage feedback alone.
+ *     "Phase B" above is where this is supposed to change.
+ *
+ *   - TF-IDF normalisation, per-predecessor frequency tracking,
+ *     decay walks, the corrupt-entry filter, and the low-confidence
+ *     and minimum-raw qualification floors are all trinity-specific
+ *     additions that don't appear in the original paper.
+ *
+ * In practice the module is closer to a "syscall relation observer
+ * + dump" than to HEALER's program generator.  Name retained because
+ * the intellectual lineage is real and the literature reference is
+ * useful for new contributors.
  */
 
 #include <errno.h>
