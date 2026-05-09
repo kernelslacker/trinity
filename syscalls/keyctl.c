@@ -391,6 +391,45 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 	}
 }
 
+/*
+ * Per-cmd producer wireup.  keyctl is multiplexed so the dispatcher's
+ * generic .ret_objtype hook can't be used: only some subcommands return
+ * a freshly minted key_serial_t in rec->retval, the rest return 0, a
+ * bytes-written count, or -errno.  Funnel the producer subcommands
+ * through register_key_serial() so the OBJ_KEY_SERIAL pool sees the
+ * serials they mint, mirroring the .ret_objtype = OBJ_KEY_SERIAL
+ * annotation that add_key/request_key already use.
+ *
+ * Producers wired here (all return key_serial_t > 0 on success):
+ *   KEYCTL_GET_KEYRING_ID       - returns the resolved keyring's serial
+ *   KEYCTL_JOIN_SESSION_KEYRING - returns the joined/created session keyring
+ *   KEYCTL_SEARCH               - returns the found key's serial
+ *   KEYCTL_GET_PERSISTENT       - returns the persistent keyring's serial
+ *
+ * Not wired: KEYCTL_INSTANTIATE / KEYCTL_NEGATE / KEYCTL_REJECT /
+ * KEYCTL_INSTANTIATE_IOV all return 0 on success — they operate on an
+ * already-allocated key, they don't mint a new serial.  Pool teardown
+ * is handled by the existing OBJ_KEY_SERIAL destructor (KEYCTL_INVALIDATE).
+ */
+static void post_keyctl(struct syscallrecord *rec)
+{
+	long ret = (long) rec->retval;
+
+	if (ret <= 0 || ret > INT32_MAX)
+		return;
+
+	switch (rec->a1) {
+	case KEYCTL_GET_KEYRING_ID:
+	case KEYCTL_JOIN_SESSION_KEYRING:
+	case KEYCTL_SEARCH:
+	case KEYCTL_GET_PERSISTENT:
+		register_key_serial((int32_t) ret);
+		break;
+	default:
+		break;
+	}
+}
+
 struct syscallentry syscall_keyctl = {
 	.name = "keyctl",
 	.num_args = 5,
@@ -399,4 +438,5 @@ struct syscallentry syscall_keyctl = {
 	.arg_params[0].list = ARGLIST(keyctl_cmds),
 	.group = GROUP_IPC,
 	.sanitise = sanitise_keyctl,
+	.post = post_keyctl,
 };
