@@ -12,6 +12,7 @@
 #include "maps.h"
 #include "minicorpus.h"
 #include "net.h"
+#include "numa.h"
 #include "pathnames.h"
 #include "random.h"
 #include "results.h"
@@ -471,6 +472,16 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
 
 	case ARG_CPU:
 		return (unsigned long) get_cpu();
+
+	case ARG_NUMA_NODE:
+		/* ~1 in 8: emit a wild small int so the kernel's
+		 * nodes_valid / MAX_NUMNODES bound checks in mm/mempolicy.c
+		 * stay exercised; otherwise pull a real online node id from
+		 * the pool seeded at startup from
+		 * /sys/devices/system/node/online. */
+		if (ONE_IN(8))
+			return (unsigned long) (rand32() & 0xFFFF);
+		return (unsigned long) random_numa_node();
 
 	case ARG_PATHNAME:
 		return (unsigned long) generate_pathname();

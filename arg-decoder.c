@@ -82,6 +82,7 @@ static char * decode_argtype(char *sptr, char *end, unsigned long reg, enum argt
 	case ARG_LEN:
 	case ARG_RANGE:
 	case ARG_CPU:
+	case ARG_NUMA_NODE:
 	case ARG_IOVECLEN:
 	case ARG_SOCKADDRLEN:
 		if (((long) reg < -16384) || ((long) reg > 16384)) {
