@@ -188,8 +188,7 @@ static uint64_t occupied_mask;
 static bool ring_unlock(void)
 {
 	if (mprotect(ring, ring_bytes, PROT_READ | PROT_WRITE) != 0) {
-		outputerr("deferred_free: mprotect RW failed: %s\n",
-			  strerror(errno));
+		outputerr("deferred_free: mprotect RW failed: errno=%d\n", errno);
 		return false;
 	}
 	return true;
@@ -198,8 +197,7 @@ static bool ring_unlock(void)
 static void ring_lock(void)
 {
 	if (mprotect(ring, ring_bytes, PROT_NONE) != 0)
-		outputerr("deferred_free: mprotect NONE failed: %s\n",
-			  strerror(errno));
+		outputerr("deferred_free: mprotect NONE failed: errno=%d\n", errno);
 }
 
 void deferred_free_init(void)
