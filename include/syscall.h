@@ -92,6 +92,7 @@ enum argtype {
 	ARG_MODE_T,
 	ARG_NON_NULL_ADDRESS,
 	ARG_PID,
+	ARG_KEY_SERIAL,	/* kernel keyring key_serial_t (signed 32-bit) */
 	ARG_RANGE,
 	ARG_OP,
 	ARG_LIST,

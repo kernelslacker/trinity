@@ -410,6 +410,14 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
 	case ARG_PID:
 		return (unsigned long) get_pid();
 
+	case ARG_KEY_SERIAL:
+		/* ~1 in 8: pass garbage to keep keyctl/add_key/request_key
+		 * input-validation paths exercised; otherwise pull a serial
+		 * from the producer-fed OBJ_KEY_SERIAL pool. */
+		if (ONE_IN(8))
+			return (unsigned long) (int32_t) rand32();
+		return (unsigned long) get_random_key_serial();
+
 	case ARG_RANGE:
 		return handle_arg_range(entry, argnum);
 

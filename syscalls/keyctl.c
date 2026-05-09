@@ -3,7 +3,10 @@
 	unsigned long, arg4, unsigned long, arg5)
  */
 #include <linux/keyctl.h>
+#include <stdint.h>
 #include <string.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
@@ -29,6 +32,61 @@
 #define KEYCTL_WATCH_KEY		32
 #endif
 
+/*
+ * OBJ_KEY_SERIAL pool: producer-side cache of live key serials returned
+ * by add_key/request_key (and the keyctl subcommands that mint keys).
+ * Consumed by keyctl/add_key/request_key argument generation so subsequent
+ * fuzzed calls hit serials the kernel actually has on hand instead of
+ * dead-on-arrival random integers.  Lives in the per-child OBJ_LOCAL pool;
+ * the pool destructor calls KEYCTL_INVALIDATE on shutdown so produced
+ * keys don't leak past child lifetime.
+ */
+static void key_serial_destructor(struct object *obj)
+{
+	syscall(SYS_keyctl, KEYCTL_INVALIDATE, obj->keyserialobj.serial);
+}
+
+static void init_key_serial_pool(void)
+{
+	struct objhead *head;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_KEY_SERIAL);
+	if (head == NULL)
+		return;
+
+	/* Wire the destructor on the OBJ_GLOBAL head; child OBJ_LOCAL
+	 * pools inherit it from here at child fork time
+	 * (init_object_lists() copies destroy/dump from the GLOBAL head). */
+	head->destroy = &key_serial_destructor;
+}
+
+REG_GLOBAL_OBJ(key_serial, init_key_serial_pool);
+
+void register_key_serial(int32_t serial)
+{
+	struct object *obj;
+
+	if (serial <= 0)
+		return;
+
+	obj = alloc_object();
+	obj->keyserialobj.serial = serial;
+	add_object(obj, OBJ_LOCAL, OBJ_KEY_SERIAL);
+}
+
+int32_t get_random_key_serial(void)
+{
+	struct object *obj;
+
+	if (objects_empty(OBJ_KEY_SERIAL) == true)
+		return (int32_t) (1 + (rand() % 1000));
+
+	obj = get_random_object(OBJ_KEY_SERIAL, OBJ_LOCAL);
+	if (obj == NULL)
+		return (int32_t) (1 + (rand() % 1000));
+	return obj->keyserialobj.serial;
+}
+
 static unsigned long keyctl_cmds[] = {
 	KEYCTL_GET_KEYRING_ID, KEYCTL_JOIN_SESSION_KEYRING, KEYCTL_UPDATE, KEYCTL_REVOKE,
 	KEYCTL_CHOWN, KEYCTL_SETPERM, KEYCTL_DESCRIBE, KEYCTL_CLEAR,
@@ -48,10 +106,22 @@ static long key_specs[] = {
 
 static long random_key_id(void)
 {
-	/* Half special keyrings, half random serial numbers. */
-	if (RAND_BOOL())
+	/* Three-way mix:
+	 *   ~1/2  special keyring constant (KEY_SPEC_*)
+	 *   ~3/8  live serial from the OBJ_KEY_SERIAL producer pool
+	 *         (falls back to a low random integer if the pool is empty,
+	 *         see get_random_key_serial())
+	 *   ~1/8  fully random low integer to keep input-validation paths
+	 *         exercised independent of pool state
+	 */
+	switch (rand() % 8) {
+	case 0 ... 3:
 		return key_specs[rand() % ARRAY_SIZE(key_specs)];
-	return 1 + (rand() % 1000);
+	case 4 ... 6:
+		return (long) get_random_key_serial();
+	default:
+		return 1 + (rand() % 1000);
+	}
 }
 
 /*

@@ -202,6 +202,10 @@ struct aioobj {
 	unsigned long ctx;
 };
 
+struct keyserialobj {
+	int32_t serial;
+};
+
 struct object {
 	unsigned int array_idx;		/* index in objhead->array */
 	union {
@@ -270,6 +274,8 @@ struct object {
 		struct kvmvcpuobj kvmvcpuobj;
 
 		struct aioobj aioobj;
+
+		struct keyserialobj keyserialobj;
 
 		struct socketinfo sockinfo;
 
