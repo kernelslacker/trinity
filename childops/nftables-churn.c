@@ -137,11 +137,17 @@
 #ifndef NFPROTO_INET
 #define NFPROTO_INET			1
 #endif
+#ifndef NFPROTO_IPV4
+#define NFPROTO_IPV4			2
+#endif
 #ifndef NFPROTO_NETDEV
 #define NFPROTO_NETDEV			5
 #endif
 #ifndef NFPROTO_BRIDGE
 #define NFPROTO_BRIDGE			7
+#endif
+#ifndef NFPROTO_IPV6
+#define NFPROTO_IPV6			10
 #endif
 
 #ifndef NF_INET_LOCAL_IN
@@ -914,6 +920,34 @@
 #endif
 #ifndef NFTA_REDIR_FLAGS
 #define NFTA_REDIR_FLAGS		3
+#endif
+
+/* nft_tproxy NFTA_TPROXY_* attribute IDs.  The validator in
+ * net/netfilter/nft_tproxy.c (nft_tproxy_init) walks
+ * nft_tproxy_policy[] and accepts three attributes:
+ * NFTA_TPROXY_FAMILY (NLA_U32, big-endian on wire — read via
+ * ntohl(nla_get_be32())) carries the address family of the proxied
+ * destination and is required-ish; only NFPROTO_IPV4 (2) and
+ * NFPROTO_IPV6 (10) are accepted, any other value is rejected with
+ * -EINVAL before the priv struct is initialised.  NFTA_TPROXY_REG_ADDR
+ * and NFTA_TPROXY_REG_PORT (NLA_U32, big-endian) hold register
+ * references (NFT_REG_*) bracketing the rewritten dst-addr / dst-port
+ * loaded at eval time; out-of-range register values are rejected with
+ * -ERANGE through nft_parse_register_load.  The kernel allows REG_ADDR
+ * and REG_PORT independently when the family-resolution path is OK, so
+ * the emitter does not gate one on the other.  Each NFTA_TPROXY_*
+ * symbol is guarded individually so the build still works on older
+ * host headers that predate any subset.  NFPROTO_IPV4 / NFPROTO_IPV6
+ * are stable and need no shim.  Depends on CONFIG_NFT_TPROXY=m, which
+ * the test kernel config has. */
+#ifndef NFTA_TPROXY_FAMILY
+#define NFTA_TPROXY_FAMILY		1
+#endif
+#ifndef NFTA_TPROXY_REG_ADDR
+#define NFTA_TPROXY_REG_ADDR		2
+#endif
+#ifndef NFTA_TPROXY_REG_PORT
+#define NFTA_TPROXY_REG_PORT		3
 #endif
 
 /* nft_last NFTA_LAST_* attribute IDs.  The validator in
@@ -3380,6 +3414,98 @@ static size_t build_nft_redir_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_tproxy
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_tproxy.c
+ * (nft_tproxy_init), which walks nft_tproxy_policy[]:
+ *   - NFTA_TPROXY_FAMILY (NLA_U32, big-endian on wire — read via
+ *     ntohl(nla_get_be32())) carries the address family of the proxied
+ *     destination.  Only NFPROTO_IPV4 (2) and NFPROTO_IPV6 (10) are
+ *     accepted; any other value is rejected with -EINVAL before the
+ *     priv struct is initialised.
+ *   - NFTA_TPROXY_REG_ADDR / NFTA_TPROXY_REG_PORT (NLA_U32, big-endian)
+ *     are register references (NFT_REG_*) bracketing the rewritten
+ *     dst-addr / dst-port loaded at eval time.  Out-of-range register
+ *     values are rejected with -ERANGE through nft_parse_register_load.
+ * The kernel allows REG_ADDR and REG_PORT independently when the
+ * family-resolution path is OK, so neither is gated on the other.
+ *
+ * Variants per call:
+ *   - FAMILY: ONE_IN(2) emit IPV4 (2), else IPV6 (10) — the two
+ *     accepted values that drive the priv-struct setup path.
+ *     ONE_IN(8) of the FAMILY emissions deliberately uses a raw
+ *     rand32() so the bad-family -EINVAL rejection path also gets
+ *     exercised.
+ *   - REG_ADDR coin-flipped present (ONE_IN(3)) with the value picked
+ *     uniformly across NFT_REG_1..NFT_REG_4.
+ *   - REG_PORT coin-flipped present (ONE_IN(3)), same register pick.
+ *     Not gated on REG_ADDR — kernel accepts either independently.
+ */
+static size_t build_nft_tproxy_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	bool with_addr = ONE_IN(3);
+	bool with_port = ONE_IN(3);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "tproxy");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	{
+		__u32 family;
+
+		if (ONE_IN(8)) {
+			/* Drive the bad-family -EINVAL rejection path
+			 * with raw garbage that almost never lands on
+			 * NFPROTO_IPV4 or NFPROTO_IPV6. */
+			family = rand32();
+		} else if (ONE_IN(2)) {
+			family = NFPROTO_IPV4;
+		} else {
+			family = NFPROTO_IPV6;
+		}
+		off = nla_put_be32(buf, off, cap, NFTA_TPROXY_FAMILY, family);
+		if (!off)
+			return 0;
+	}
+
+	if (with_addr) {
+		__u32 reg = NFT_REG_1 + (rand32() % 4);
+
+		off = nla_put_be32(buf, off, cap,
+				   NFTA_TPROXY_REG_ADDR, reg);
+		if (!off)
+			return 0;
+	}
+
+	if (with_port) {
+		__u32 reg = NFT_REG_1 + (rand32() % 4);
+
+		off = nla_put_be32(buf, off, cap,
+				   NFTA_TPROXY_REG_PORT, reg);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_last
  * expression into buf at off, returning the new offset (or 0 on
  * overflow).  Reaches the validator in net/netfilter/nft_last.c
@@ -4397,6 +4523,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_connlimit,
 			 bool with_masq,
 			 bool with_redir,
+			 bool with_tproxy,
 			 bool with_last,
 			 bool with_rt,
 			 bool with_fib,
@@ -4544,6 +4671,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_redir) {
 		off = build_nft_redir_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_tproxy) {
+		off = build_nft_tproxy_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -4820,6 +4953,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_connlimit = ONE_IN(3);
 		bool with_masq = ONE_IN(3);
 		bool with_redir = ONE_IN(3);
+		bool with_tproxy = ONE_IN(3);
 		bool with_last = ONE_IN(3);
 		bool with_rt = ONE_IN(3);
 		bool with_fib = ONE_IN(3);
@@ -4840,6 +4974,7 @@ bool nftables_churn(struct childdata *child)
 				  with_connlimit,
 				  with_masq,
 				  with_redir,
+				  with_tproxy,
 				  with_last,
 				  with_rt,
 				  with_fib,
@@ -4904,6 +5039,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_redir)
 				__atomic_add_fetch(&shm->stats.nftables_churn_redir_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_tproxy)
+				__atomic_add_fetch(&shm->stats.nftables_churn_tproxy_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_last)
 				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
@@ -5008,6 +5146,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_connlimit = ONE_IN(3);
 		bool with_masq = ONE_IN(3);
 		bool with_redir = ONE_IN(3);
+		bool with_tproxy = ONE_IN(3);
 		bool with_last = ONE_IN(3);
 		bool with_rt = ONE_IN(3);
 		bool with_fib = ONE_IN(3);
@@ -5028,6 +5167,7 @@ bool nftables_churn(struct childdata *child)
 				  with_connlimit,
 				  with_masq,
 				  with_redir,
+				  with_tproxy,
 				  with_last,
 				  with_rt,
 				  with_fib,
@@ -5092,6 +5232,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_redir)
 				__atomic_add_fetch(&shm->stats.nftables_churn_redir_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_tproxy)
+				__atomic_add_fetch(&shm->stats.nftables_churn_tproxy_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_last)
 				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
