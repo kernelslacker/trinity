@@ -7,12 +7,70 @@
 #include <stdint.h>
 #include <time.h>
 
+#include "objects.h"
 #include "sanitise.h"
 #include "random.h"
 #include "shm.h"
 #include "compat.h"
 #include "trinity.h"
 #include "utils.h"
+
+/*
+ * OBJ_TIMERID pool: producer-side cache of live POSIX timer ids
+ * returned by timer_create.  Consumed by timer_settime/_gettime/
+ * _getoverrun/_delete argument generation so subsequent fuzzed calls
+ * hit ids the kernel actually has on hand instead of dead-on-arrival
+ * random integers.  Lives in the per-child OBJ_LOCAL pool; the pool
+ * destructor calls real timer_delete() on shutdown so produced timers
+ * don't leak past child lifetime.  Unlike the previous per-call
+ * timer_delete-on-return shape, the live ids stay around long enough
+ * for the consumers to actually exercise the kernel's k_itimer paths.
+ */
+static void timerid_destructor(struct object *obj)
+{
+	timer_delete((timer_t) (intptr_t) obj->timeridobj.tid);
+}
+
+static void init_timerid_pool(void)
+{
+	struct objhead *head;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_TIMERID);
+	if (head == NULL)
+		return;
+
+	/* Wire the destructor on the OBJ_GLOBAL head; child OBJ_LOCAL
+	 * pools inherit it from here at child fork time
+	 * (init_object_lists() copies destroy/dump from the GLOBAL head). */
+	head->destroy = &timerid_destructor;
+}
+
+REG_GLOBAL_OBJ(timerid, init_timerid_pool);
+
+void register_timerid(int32_t tid)
+{
+	struct object *obj;
+
+	if (tid < 0)
+		return;
+
+	obj = alloc_object();
+	obj->timeridobj.tid = tid;
+	add_object(obj, OBJ_LOCAL, OBJ_TIMERID);
+}
+
+int32_t get_random_timerid(void)
+{
+	struct object *obj;
+
+	if (objects_empty(OBJ_TIMERID) == true)
+		return (int32_t) (rand() % 32);
+
+	obj = get_random_object(OBJ_TIMERID, OBJ_LOCAL);
+	if (obj == NULL)
+		return (int32_t) (rand() % 32);
+	return obj->timeridobj.tid;
+}
 
 static void timer_create_sanitise(struct syscallrecord *rec)
 {
@@ -59,15 +117,13 @@ static unsigned long clock_ids[] = {
 
 /*
  * timer_create allocates a kernel k_itimer slab object and writes the
- * resulting timer_t out to *created_timer_id.  The fuzzer never deletes
- * the timer, so each successful call leaks a k_itimer for the lifetime
- * of the child, climbs RLIMIT_SIGPENDING / per-uid limits, and pins
- * slab memory.  Mirror the IPC RMID-style cleanup applied to
- * semget/msgget: on success, dereference the user out-pointer and
- * timer_delete() the freshly-created id.  Sibling syscalls
- * (timer_settime/_gettime/_getoverrun) may occasionally race the
- * deletion; that is the same tradeoff the IPC cleanup accepts and the
- * underlying kernel paths still get exercised.
+ * resulting timer_t out to *created_timer_id.  Hand the freshly-minted
+ * id to the OBJ_TIMERID pool so timer_settime/_gettime/_getoverrun/
+ * _delete consumers can pick it up; the per-child pool destructor
+ * issues the real timer_delete() at child teardown so produced timers
+ * don't outlive the producing child.  This replaces a previous
+ * delete-immediately post handler that prevented any pool-based
+ * tracking from being useful.
  */
 static void post_timer_create(struct syscallrecord *rec)
 {
@@ -89,11 +145,13 @@ static void post_timer_create(struct syscallrecord *rec)
 	 * scribbles, but the kernel-written timer_t value at *idp lives in
 	 * the user-supplied buffer and is fair game for a sibling syscall
 	 * to clobber between the syscall returning and this handler running.
-	 * glibc's timer_delete() indexes a per-process timer table by tid,
-	 * so a garbage tid faults inside the table lookup before any
-	 * defensive return path can run.  A successful timer_create yields
-	 * a small non-negative timer_t (typically a single-digit index);
-	 * anything outside [0, 65535] is overwhelmingly likely a scribble.
+	 * glibc's timer_delete() (called from the pool destructor) indexes
+	 * a per-process timer table by tid, so a garbage tid faults inside
+	 * the table lookup before any defensive return path can run.  A
+	 * successful timer_create yields a small non-negative timer_t
+	 * (typically a single-digit index); anything outside [0, 65535] is
+	 * overwhelmingly likely a scribble — drop those instead of feeding
+	 * them to the pool.
 	 */
 	tid = *idp;
 	tid_int = (intptr_t) tid;
@@ -105,7 +163,7 @@ static void post_timer_create(struct syscallrecord *rec)
 		return;
 	}
 
-	timer_delete(tid);
+	register_timerid((int32_t) tid_int);
 	rec->post_state = 0;
 }
 

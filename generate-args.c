@@ -418,6 +418,15 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
 			return (unsigned long) (int32_t) rand32();
 		return (unsigned long) get_random_key_serial();
 
+	case ARG_TIMERID:
+		/* ~1 in 8: pass garbage to keep timer_settime/_gettime/
+		 * _getoverrun/_delete input-validation paths exercised;
+		 * otherwise pull a tid from the producer-fed OBJ_TIMERID
+		 * pool fed by timer_create. */
+		if (ONE_IN(8))
+			return (unsigned long) (int32_t) rand32();
+		return (unsigned long) get_random_timerid();
+
 	case ARG_RANGE:
 		return handle_arg_range(entry, argnum);
 
