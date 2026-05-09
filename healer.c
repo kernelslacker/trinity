@@ -44,6 +44,25 @@
 #define HEALER_DUMP_TOP_N 10
 
 /*
+ * Low-confidence floor for top-N qualification.  Entries whose
+ * predecessor pair has a zero appearance counter on at least one side
+ * lack this-run evidence and would otherwise be amplified by the
+ * tiny-denominator code path inside healer_normalised_score_milli
+ * (isqrt(a*b + 1) collapses to 1 when either factor is zero, so any
+ * weight=1 entry would jump to score=1000).  Two real shapes hit this:
+ *   - warm-started entries inherited from a prior run, whose pair
+ *     hasn't yet been observed in the new run (both counters still 0);
+ *   - predecessor-skipped leftovers, where one side of the pair is a
+ *     syscall the observer-hook gate now refuses to feed into
+ *     healer_seq (e.g. a syscall returning ENOSYS on this kernel),
+ *     so its appearance counter stays 0 forever and the entry
+ *     persists in the table until decay+eviction reclaims it.
+ * Filter at top-N qualification only; the observation, save/load and
+ * decay paths keep handling these entries normally.
+ */
+#define HEALER_DUMP_MIN_PRED_APPEARANCES 1
+
+/*
  * FNV-1a parameters from the canonical 32-bit FNV definition.  Used
  * over the byte representation of the sorted (pred_a, pred_b) tuple
  * to derive the initial slot index.  Cheap enough on the (rare)
@@ -704,6 +723,17 @@ void healer_table_dump(void)
 	 * line so the operator can see corruption is actually there.
 	 */
 	unsigned long corrupt_in_table = 0;
+	/*
+	 * Counts entries skipped from top-N qualification because their
+	 * predecessor pair has at least one appearance counter still at
+	 * zero — see HEALER_DUMP_MIN_PRED_APPEARANCES for why.  Surfaced
+	 * on the dump line so the operator can tell when the filter is
+	 * actively suppressing entries (e.g. shortly after a warm-start)
+	 * vs when the table is genuinely all this-run-observed.  Counted
+	 * once per promoted entry, not per slot, so the number lines up
+	 * with how many would otherwise have been candidates.
+	 */
+	unsigned long low_confidence_skipped = 0;
 	unsigned int i, j;
 	unsigned long observed, table_full, evictions, decays_run;
 	/*
@@ -811,6 +841,24 @@ void healer_table_dump(void)
 								   pred_a_freq,
 								   pred_b_freq);
 
+			/*
+			 * Low-confidence floor: drop entries from top-N
+			 * qualification when at least one predecessor has no
+			 * this-run appearance signal.  Both warm-start
+			 * zombies (both counters at zero) and predecessor-
+			 * skipped leftovers (one counter pinned at zero)
+			 * land here, and both would otherwise dominate the
+			 * dump via the isqrt(0+1)=1 amplification branch.
+			 * Per-promoted accounting matches the corruption
+			 * skip a few lines up so the surfaced counts are
+			 * comparable.
+			 */
+			if (pred_a_freq < HEALER_DUMP_MIN_PRED_APPEARANCES ||
+			    pred_b_freq < HEALER_DUMP_MIN_PRED_APPEARANCES) {
+				low_confidence_skipped++;
+				continue;
+			}
+
 			if (top_count < HEALER_DUMP_TOP_N) {
 				top[top_count].pred_a = slot_pred_a;
 				top[top_count].pred_b = slot_pred_b;
@@ -881,6 +929,11 @@ void healer_table_dump(void)
 	if (corrupt_in_table != 0)
 		stats_log_write("  corrupt entries skipped: %lu (slot-key or promoted-nr >= MAX_NR_SYSCALL)\n",
 				corrupt_in_table);
+
+	if (low_confidence_skipped != 0)
+		stats_log_write("  low-confidence skipped: %lu (min predfreq < %u)\n",
+				low_confidence_skipped,
+				HEALER_DUMP_MIN_PRED_APPEARANCES);
 
 	if (top_count == 0) {
 		free(succ_weight);
