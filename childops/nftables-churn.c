@@ -95,6 +95,9 @@
 #if __has_include(<linux/netfilter/nfnetlink.h>)
 #include <linux/netfilter/nfnetlink.h>
 #endif
+#if __has_include(<linux/xfrm.h>)
+#include <linux/xfrm.h>
+#endif
 
 #include <errno.h>
 #include <net/if.h>
@@ -948,6 +951,61 @@
 #endif
 #ifndef NFTA_TPROXY_REG_PORT
 #define NFTA_TPROXY_REG_PORT		3
+#endif
+
+/* nft_xfrm NFTA_XFRM_* attribute IDs and NFT_XFRM_KEY_* enum values.
+ * The validator in net/netfilter/nft_xfrm.c (nft_xfrm_get_init) walks
+ * nft_xfrm_policy[] and accepts four attributes:
+ *   - NFTA_XFRM_DREG (NLA_U32) — REQUIRED — destination register
+ *     (NFT_REG_1..NFT_REG_4 / NFT_REG32_*) resolved through
+ *     nft_parse_register_load; out-of-range register values are
+ *     rejected with -ERANGE.
+ *   - NFTA_XFRM_KEY (NLA_POLICY_MAX(NLA_BE32, 255)) — REQUIRED — one
+ *     of NFT_XFRM_KEY_DADDR_IP4 (1), NFT_XFRM_KEY_DADDR_IP6 (2),
+ *     NFT_XFRM_KEY_SADDR_IP4 (3), NFT_XFRM_KEY_SADDR_IP6 (4),
+ *     NFT_XFRM_KEY_REQID (5), NFT_XFRM_KEY_SPI (6).
+ *     NFT_XFRM_KEY_UNSPEC (0) and any value above the enum max are
+ *     rejected with -EINVAL by the init switch.
+ *   - NFTA_XFRM_DIR (NLA_U8) — REQUIRED — must be XFRM_POLICY_IN (0)
+ *     or XFRM_POLICY_OUT (1); other values are rejected with -EINVAL.
+ *   - NFTA_XFRM_SPNUM (NLA_POLICY_MAX(NLA_BE32, 255)) — OPTIONAL —
+ *     secpath array index, kernel ntohl()s the wire value.
+ * ctx->family must be NFPROTO_IPV4 / NFPROTO_IPV6 / NFPROTO_INET; any
+ * other family is rejected with -EOPNOTSUPP before the policy walker
+ * runs.  Each NFTA_XFRM_* and NFT_XFRM_KEY_* symbol is guarded
+ * individually so the build still works on stale host headers that
+ * predate any subset.  XFRM_POLICY_IN / XFRM_POLICY_OUT (0/1) are
+ * stable in <linux/xfrm.h> and need no shim.  Depends on
+ * CONFIG_NFT_XFRM=m, which the fuzz-box config has. */
+#ifndef NFTA_XFRM_DREG
+#define NFTA_XFRM_DREG			1
+#endif
+#ifndef NFTA_XFRM_KEY
+#define NFTA_XFRM_KEY			2
+#endif
+#ifndef NFTA_XFRM_DIR
+#define NFTA_XFRM_DIR			3
+#endif
+#ifndef NFTA_XFRM_SPNUM
+#define NFTA_XFRM_SPNUM			4
+#endif
+#ifndef NFT_XFRM_KEY_DADDR_IP4
+#define NFT_XFRM_KEY_DADDR_IP4		1
+#endif
+#ifndef NFT_XFRM_KEY_DADDR_IP6
+#define NFT_XFRM_KEY_DADDR_IP6		2
+#endif
+#ifndef NFT_XFRM_KEY_SADDR_IP4
+#define NFT_XFRM_KEY_SADDR_IP4		3
+#endif
+#ifndef NFT_XFRM_KEY_SADDR_IP6
+#define NFT_XFRM_KEY_SADDR_IP6		4
+#endif
+#ifndef NFT_XFRM_KEY_REQID
+#define NFT_XFRM_KEY_REQID		5
+#endif
+#ifndef NFT_XFRM_KEY_SPI
+#define NFT_XFRM_KEY_SPI		6
 #endif
 
 /* nft_last NFTA_LAST_* attribute IDs.  The validator in
@@ -3506,6 +3564,128 @@ static size_t build_nft_tproxy_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_xfrm
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_xfrm.c
+ * (nft_xfrm_get_init), which walks nft_xfrm_policy[] and requires all
+ * three of NFTA_XFRM_KEY, NFTA_XFRM_DIR and NFTA_XFRM_DREG to be
+ * present (-EINVAL otherwise).  ctx->family must be NFPROTO_IPV4 /
+ * NFPROTO_IPV6 / NFPROTO_INET (-EOPNOTSUPP otherwise) and is enforced
+ * before the policy walk.  NFTA_XFRM_SPNUM (NLA_POLICY_MAX(NLA_BE32,
+ * 255)) is OPTIONAL — secpath array index, kernel ntohl()s the wire
+ * value.
+ *
+ * Variants per call:
+ *   - KEY: ONE_IN(7) for each of the six valid enum values
+ *     (DADDR_IP4=1, DADDR_IP6=2, SADDR_IP4=3, SADDR_IP6=4, REQID=5,
+ *     SPI=6) — these drive the success path through the init switch.
+ *     ONE_IN(8) of the KEY emissions instead drops a raw rand32()
+ *     capped at 255 so UNSPEC (0) and any value above the enum max
+ *     exercise the -EINVAL leg.
+ *   - DIR: ONE_IN(2) emit XFRM_POLICY_IN (0), else XFRM_POLICY_OUT
+ *     (1) — the two accepted values.  ONE_IN(8) of the DIR emissions
+ *     instead drops a raw u8 through to exercise the bad-direction
+ *     -EINVAL rejection path.
+ *   - DREG picked uniformly across NFT_REG_1..NFT_REG_4 inline,
+ *     matching the cmp / range / numgen / hash / masq / redir / tproxy
+ *     sibling pattern in this file (no shared helper).
+ *   - SPNUM coin-flipped present (ONE_IN(3)).  When emitted, ONE_IN(2)
+ *     small (0..7) else raw rand32() capped at 255 so both the
+ *     reasonable-index and the policy-mask boundary get exercise.
+ */
+static size_t build_nft_xfrm_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u32 dreg = NFT_REG_1 + (rand32() % 4);
+	__u32 key;
+	__u8 dir;
+
+	if (ONE_IN(8)) {
+		/* Drive UNSPEC(0) / >MAX -EINVAL legs through the
+		 * NLA_POLICY_MAX cap and the init switch. */
+		key = rand32() & 0xff;
+	} else {
+		switch (rand32() % 7) {
+		case 0:
+			key = NFT_XFRM_KEY_DADDR_IP4;
+			break;
+		case 1:
+			key = NFT_XFRM_KEY_DADDR_IP6;
+			break;
+		case 2:
+			key = NFT_XFRM_KEY_SADDR_IP4;
+			break;
+		case 3:
+			key = NFT_XFRM_KEY_SADDR_IP6;
+			break;
+		case 4:
+			key = NFT_XFRM_KEY_REQID;
+			break;
+		case 5:
+			key = NFT_XFRM_KEY_SPI;
+			break;
+		default:
+			/* Bucket 6: another raw-cap shot at the
+			 * rejection path so the bad-key coverage is
+			 * not entirely gated on the ONE_IN(8) above. */
+			key = rand32() & 0xff;
+			break;
+		}
+	}
+
+	if (ONE_IN(8)) {
+		dir = (__u8)(rand32() & 0xff);
+	} else if (ONE_IN(2)) {
+		dir = XFRM_POLICY_IN;
+	} else {
+		dir = XFRM_POLICY_OUT;
+	}
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "xfrm");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_XFRM_KEY, key);
+	if (!off)
+		return 0;
+	off = nla_put(buf, off, cap, NFTA_XFRM_DIR, &dir, sizeof(dir));
+	if (!off)
+		return 0;
+	off = nla_put_be32(buf, off, cap, NFTA_XFRM_DREG, dreg);
+	if (!off)
+		return 0;
+
+	if (ONE_IN(3)) {
+		__u32 spnum;
+
+		if (ONE_IN(2))
+			spnum = rand32() & 0x7;
+		else
+			spnum = rand32() & 0xff;
+		off = nla_put_be32(buf, off, cap, NFTA_XFRM_SPNUM, spnum);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_last
  * expression into buf at off, returning the new offset (or 0 on
  * overflow).  Reaches the validator in net/netfilter/nft_last.c
@@ -4524,6 +4704,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_masq,
 			 bool with_redir,
 			 bool with_tproxy,
+			 bool with_xfrm,
 			 bool with_last,
 			 bool with_rt,
 			 bool with_fib,
@@ -4677,6 +4858,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_tproxy) {
 		off = build_nft_tproxy_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_xfrm) {
+		off = build_nft_xfrm_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -4954,6 +5141,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_masq = ONE_IN(3);
 		bool with_redir = ONE_IN(3);
 		bool with_tproxy = ONE_IN(3);
+		bool with_xfrm = ONE_IN(3);
 		bool with_last = ONE_IN(3);
 		bool with_rt = ONE_IN(3);
 		bool with_fib = ONE_IN(3);
@@ -4975,6 +5163,7 @@ bool nftables_churn(struct childdata *child)
 				  with_masq,
 				  with_redir,
 				  with_tproxy,
+				  with_xfrm,
 				  with_last,
 				  with_rt,
 				  with_fib,
@@ -5042,6 +5231,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_tproxy)
 				__atomic_add_fetch(&shm->stats.nftables_churn_tproxy_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_xfrm)
+				__atomic_add_fetch(&shm->stats.nftables_churn_xfrm_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_last)
 				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
@@ -5147,6 +5339,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_masq = ONE_IN(3);
 		bool with_redir = ONE_IN(3);
 		bool with_tproxy = ONE_IN(3);
+		bool with_xfrm = ONE_IN(3);
 		bool with_last = ONE_IN(3);
 		bool with_rt = ONE_IN(3);
 		bool with_fib = ONE_IN(3);
@@ -5168,6 +5361,7 @@ bool nftables_churn(struct childdata *child)
 				  with_masq,
 				  with_redir,
 				  with_tproxy,
+				  with_xfrm,
 				  with_last,
 				  with_rt,
 				  with_fib,
@@ -5235,6 +5429,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_tproxy)
 				__atomic_add_fetch(&shm->stats.nftables_churn_tproxy_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_xfrm)
+				__atomic_add_fetch(&shm->stats.nftables_churn_xfrm_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_last)
 				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
