@@ -1425,6 +1425,8 @@ static const struct {
 	  offsetof(struct stats_s, rzs_blanket_reject) },
 	{ "retfd_blanket_reject",
 	  offsetof(struct stats_s, retfd_blanket_reject) },
+	{ "execve_self_exec_blocked",
+	  offsetof(struct stats_s, execve_self_exec_blocked) },
 	{ "sibling_mprotect_failed",
 	  offsetof(struct stats_s, sibling_mprotect_failed) },
 	{ "sibling_refreeze_count",

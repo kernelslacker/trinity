@@ -408,6 +408,20 @@ struct stats_s {
 	 * the per-handler ring carries the breakdown. */
 	unsigned long retfd_blanket_reject;
 
+	/* sanitise_execve() refused to let an execve / execveat fire because
+	 * the resolved target inode matched trinity's own binary -- the path
+	 * argument was rewritten to a known-bad value so the kernel returns
+	 * a clean -ENOENT/-ENOTDIR and the post handler's argv/envp free
+	 * walk runs unchanged.  Without this guard a fuzzed pathname that
+	 * resolves to /proc/self/exe, /proc/<pid>/exe, the original launch
+	 * path, or an inherited fd backed by the trinity binary spawns a
+	 * full nested trinity that inherits the parent's cmdline, cgroup,
+	 * and namespace state and starts its own child fleet -- the nested
+	 * fleets eat the process table fast enough to trip the parent's
+	 * fork-retry budget and wedge the main loop.  Always-on; no CLI
+	 * knob.  See sanitise_execve() for the (dev, ino) compare site. */
+	unsigned long execve_self_exec_blocked;
+
 	/* init_child()'s sibling-freeze step issues mprotect(PROT_READ) on
 	 * every other child's childdata (and on the shared pids[] array) so
 	 * a value-result syscall buffer in one sibling can't scribble over

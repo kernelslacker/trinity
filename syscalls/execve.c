@@ -11,7 +11,9 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include "arch.h"	// page_size
 #include "deferred-free.h"
 #include "random.h"	// generate_rand_bytes
@@ -79,6 +81,95 @@ static void redirect_stdio(void)
 		close(devnull);
 }
 
+/*
+ * Refuse to let the syscall fire when the resolved target is the trinity
+ * binary itself.  See the trinity_self_exe comment in include/shm.h for
+ * the failure mode this defends against -- a fuzzed pathname (or an
+ * inherited fd consumed by execveat AT_EMPTY_PATH) that resolves back to
+ * our own binary spawns a nested trinity that inherits the parent's
+ * cmdline, cgroup, and namespace state and starts its own child fleet.
+ *
+ * fstatat() handles every shape we care about:
+ *   - execve absolute path:                    fstatat(AT_FDCWD, p, , 0)
+ *   - execve relative path:                    fstatat(AT_FDCWD, p, , 0)
+ *     (resolved against the child's cwd, which is where ./trinity lives
+ *      in the typical operator launch)
+ *   - execveat (dirfd, p, , flags):            fstatat(dirfd, p, , flags
+ *      & (AT_EMPTY_PATH|AT_SYMLINK_NOFOLLOW))
+ *   - execveat (fd, "", , AT_EMPTY_PATH):      fstatat above degenerates
+ *     to the AT_EMPTY_PATH fd-only case and returns the fd's identity
+ *
+ * On match, overwrite the path buffer in place with a known-bad string
+ * so the kernel returns a clean -ENOENT/-ENOTDIR -- the post handler's
+ * argv/envp free walk is unaffected because the heap pointer itself
+ * still points at the same allocation.  AT_SYMLINK_NOFOLLOW intentionally
+ * propagates: a /proc/<pid>/exe symlink stat'd with NOFOLLOW returns the
+ * symlink itself rather than the binary, so a fuzz call that sets
+ * NOFOLLOW slips past -- accepted, that combination is harmless because
+ * the same flag also blocks the kernel's lookup from following into the
+ * binary on the syscall side.
+ *
+ * Stat failures (EACCES, EFAULT from a scribbled pointer, ENOENT on a
+ * fuzzed bogus path) skip the guard and let the syscall fail naturally,
+ * preserving the existing failure-path coverage.
+ */
+static void block_self_exec(struct syscallrecord *rec)
+{
+	static const char poison[] = "/dev/null/no-such-thing";
+	bool is_execve;
+	char *pathptr;
+	int dirfd;
+	int flags;
+	struct stat st;
+
+	if (!shm->trinity_self_exe.valid)
+		return;
+
+	is_execve = current_entry_is_execve();
+	if (is_execve) {
+		dirfd = AT_FDCWD;
+		pathptr = (char *) rec->a1;
+		flags = 0;
+	} else {
+		dirfd = (int) rec->a1;
+		pathptr = (char *) rec->a2;
+		flags = (int)(rec->a5 & (AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW));
+	}
+
+	if (pathptr == NULL) {
+		if ((flags & AT_EMPTY_PATH) == 0)
+			return;
+		pathptr = (char *) "";
+	}
+
+	if (fstatat(dirfd, pathptr, &st, flags) != 0)
+		return;
+
+	if (st.st_dev != shm->trinity_self_exe.dev ||
+	    st.st_ino != shm->trinity_self_exe.ino)
+		return;
+
+	/*
+	 * The pathname buffer is a fresh MAX_PATH_LEN zmalloc allocation
+	 * from generate_pathname() -- writing 24 bytes into it is safe
+	 * and the post handler's deferred_free still gets a valid heap
+	 * pointer.  The execveat AT_EMPTY_PATH+NULL-path shape has no
+	 * real buffer to overwrite (we substituted the static "" literal
+	 * for fstatat above); strip AT_EMPTY_PATH instead so the kernel
+	 * reads the NULL pointer and returns -EFAULT before touching the
+	 * binary.
+	 */
+	if (is_execve)
+		memcpy((char *) rec->a1, poison, sizeof(poison));
+	else if (rec->a2 != 0)
+		memcpy((char *) rec->a2, poison, sizeof(poison));
+	else
+		rec->a5 &= ~(unsigned long) AT_EMPTY_PATH;
+
+	__atomic_add_fetch(&shm->stats.execve_self_exec_blocked, 1,
+			   __ATOMIC_RELAXED);
+}
+
 static void sanitise_execve(struct syscallrecord *rec)
 {
 	struct execve_post_state *snap;
@@ -102,6 +193,8 @@ static void sanitise_execve(struct syscallrecord *rec)
 		rec->a3 = (unsigned long) argv;
 		rec->a4 = (unsigned long) envp;
 	}
+
+	block_self_exec(rec);
 
 	/*
 	 * Snapshot the array pointers and counts for the post handler.  The
