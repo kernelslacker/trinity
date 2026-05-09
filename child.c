@@ -51,6 +51,18 @@
 _Static_assert(offsetof(struct childdata, op_nr) < 64,
 	"struct childdata: op_nr (per-syscall hot field) escaped the leading cacheline");
 
+/*
+ * Hard per-child virtual-memory cap.  A single runaway mmap/mremap (or the
+ * cumulative drift of N children each growing to multi-GiB) can push the
+ * machine into global OOM; with memory.oom.group on the user slice that
+ * takes out the whole login session (tmux, ssh, the lot).  1 GiB × default
+ * child count fits comfortably on small fuzz boxes while still leaving
+ * room for legitimate large mappings the syscall fuzzer wants to exercise.
+ * Pushing past the cap returns ENOMEM at the syscall — itself a
+ * fuzz-relevant kernel return path.
+ */
+#define TRINITY_CHILD_AS_CAP_BYTES	(1UL << 30)
+
 /* Set to true once we detect that unprivileged pidns isn't available.
  * Lives in shared memory (shm->no_pidns) so the flag propagates across
  * fork() — see init_child() below. */
@@ -537,6 +549,22 @@ static void init_child(struct childdata *child, int childno)
 	 * own session leader without a controlling terminal — subsequent
 	 * /dev/tty opens fail with ENXIO. */
 	(void) setsid();
+
+	/*
+	 * Pin RLIMIT_AS hard before any later setup can take a large mapping.
+	 * Deterministic — not folded into the random rlim_resources sweep in
+	 * munge_process(), which is for fuzz diversity and gets randomly
+	 * skipped.  Both rlim_cur and rlim_max are clamped to the cap so a
+	 * fuzzed setrlimit() in the child can't widen it back to RLIM_INFINITY.
+	 */
+	{
+		struct rlimit as_lim = {
+			.rlim_cur = TRINITY_CHILD_AS_CAP_BYTES,
+			.rlim_max = TRINITY_CHILD_AS_CAP_BYTES,
+		};
+		if (setrlimit(RLIMIT_AS, &as_lim) != 0)
+			perror("setrlimit(RLIMIT_AS)");
+	}
 
 	/* Re-set num from the stack-based childno in case shared memory
 	 * was corrupted by a sibling's stray write. */
