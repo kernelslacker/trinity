@@ -49,10 +49,12 @@
 /*
  * Low-confidence floor for top-N qualification.  Entries whose
  * predecessor pair has a zero appearance counter on at least one side
- * lack this-run evidence and would otherwise be amplified by the
- * tiny-denominator code path inside healer_normalised_score_milli
- * (isqrt(a*b + 1) collapses to 1 when either factor is zero, so any
- * weight=1 entry would jump to score=1000).  Two real shapes hit this:
+ * lack this-run evidence and are dropped before the normalised score
+ * is even computed -- a complementary mechanism to the
+ * HEALER_NORM_PREDFREQ_BIAS pseudo-count that dampens the score for
+ * entries that survive the filter (predfreq >= 1 on both sides) and
+ * for the pair-side dump path which has no equivalent filter at all.
+ * Two real shapes hit this filter:
  *   - warm-started entries inherited from a prior run, whose pair
  *     hasn't yet been observed in the new run (both counters still 0);
  *   - predecessor-skipped leftovers, where one side of the pair is a
@@ -91,6 +93,27 @@
  * prior on cold runs without dominating the ranking long-term.
  */
 #define HEALER_STATIC_SEED_WEIGHT 3
+
+/*
+ * Additive bias applied to each predecessor-appearance count before the
+ * normalisation denominator is computed.  Acts as a Bayesian-style
+ * pseudo-count: a predecessor that has not yet been observed in the
+ * current run is treated as if it had been observed this many times,
+ * so the denominator never collapses to its minimum value (isqrt(0+1)
+ * == isqrt(1) == 1) and seeded entries with predfreq == 0 stop scoring
+ * at raw_weight * 1000 -- which on the pair-side dump made every static
+ * seed install render as norm == raw and crowd dynamically observed
+ * entries (whose denominator was already > 1) out of the top-N entirely.
+ *
+ * Sized at 5 because the dynamic-pair entries that demonstrably carry
+ * signal (the post-load observer-bumped pairs that actually fired in
+ * the run) hit predfreq counts in the low single digits within the
+ * first dump tick, and crossing K is what lets a real entry rise above
+ * the seed-baseline.  Lower K leaves seeds visible in the ranking;
+ * higher K over-suppresses early-run dynamic signal before the
+ * counters have had time to accumulate.
+ */
+#define HEALER_NORM_PREDFREQ_BIAS 5
 
 /*
  * FNV-1a parameters from the canonical 32-bit FNV definition.  Used
@@ -701,7 +724,10 @@ static unsigned long healer_isqrt(unsigned long n)
  * two-decimal precision without dragging floating point onto the hot
  * stats output.
  *
- * Formula:  norm = (raw_weight * 1000) / isqrt(pred_a_freq * pred_b_freq + 1)
+ * Formula:
+ *   a     = pred_a_freq + HEALER_NORM_PREDFREQ_BIAS
+ *   b     = pred_b_freq + HEALER_NORM_PREDFREQ_BIAS
+ *   norm  = (raw_weight * 1000) / isqrt(a * b + 1)
  *
  * Rationale (chose sqrt-dampening over log2 or one-sided / max):
  *   - sqrt has the right monotonic shape: a predecessor that appears 100x
@@ -710,12 +736,19 @@ static unsigned long healer_isqrt(unsigned long n)
  *     division by frequency, so a pair with one slightly-frequent and
  *     one rare predecessor still scores meaningfully higher than a pair
  *     of two frequent ones.
- *   - The "+1" guarantees the denominator is at least 1 even when both
- *     appearance counters are still zero (e.g. a freshly warm-started
- *     entry whose pair hasn't been re-observed yet).  Without it a
- *     warm-start entry with zero freq would divide-by-zero; with it,
- *     the entry simply scores at raw_weight * 1000 until the counters
- *     accumulate.
+ *   - HEALER_NORM_PREDFREQ_BIAS shifts each predfreq by a constant
+ *     pseudo-count before the multiply-and-sqrt, so a not-yet-observed
+ *     predecessor (predfreq == 0) no longer collapses the denominator
+ *     to isqrt(0*0 + 1) == 1.  Without that bias, every entry whose
+ *     pair was static-seeded but not yet dynamically observed scored
+ *     at raw_weight * 1000 -- the entire top-N degenerated into the
+ *     seed floor and dynamically observed entries with real signal
+ *     (denominator > 1) were buried below them.
+ *   - The "+1" inside the isqrt is now redundant for divide-by-zero
+ *     protection (the K-bias guarantees a*b >= K*K > 0), but is kept
+ *     so the formula's textual shape stays comparable to the prior
+ *     baseline and the post-isqrt `denom == 0` guard below remains a
+ *     trivial cheap check.
  *   - Cheaper to compute than a portable integer log2 (no special-case
  *     handling for small values, no __builtin_clzl shape-fixup) and
  *     less aggressive than `weight / max(a, b)` which would over-penalise
@@ -728,7 +761,9 @@ static unsigned long healer_normalised_score_milli(unsigned long raw_weight,
 						   unsigned long pred_a_freq,
 						   unsigned long pred_b_freq)
 {
-	unsigned long product = pred_a_freq * pred_b_freq + 1;
+	unsigned long a = pred_a_freq + HEALER_NORM_PREDFREQ_BIAS;
+	unsigned long b = pred_b_freq + HEALER_NORM_PREDFREQ_BIAS;
+	unsigned long product = a * b + 1;
 	unsigned long denom = healer_isqrt(product);
 
 	if (denom == 0)
@@ -957,11 +992,15 @@ void healer_table_dump(void)
 			 * this-run appearance signal.  Both warm-start
 			 * zombies (both counters at zero) and predecessor-
 			 * skipped leftovers (one counter pinned at zero)
-			 * land here, and both would otherwise dominate the
-			 * dump via the isqrt(0+1)=1 amplification branch.
-			 * Per-promoted accounting matches the corruption
-			 * skip a few lines up so the surfaced counts are
-			 * comparable.
+			 * land here.  HEALER_NORM_PREDFREQ_BIAS already
+			 * keeps the denominator off its minimum value, but
+			 * this filter additionally insists on at least some
+			 * this-run evidence before an entry can rank --
+			 * "denominator no longer pathological" is not the
+			 * same standard as "this entry was actually
+			 * observed in the current run".  Per-promoted
+			 * accounting matches the corruption skip a few
+			 * lines up so the surfaced counts are comparable.
 			 */
 			if (pred_a_freq < HEALER_DUMP_MIN_PRED_APPEARANCES ||
 			    pred_b_freq < HEALER_DUMP_MIN_PRED_APPEARANCES) {
@@ -1067,18 +1106,26 @@ void healer_table_dump(void)
 
 			/*
 			 * Single-predecessor TF-IDF analog: the triple form
-			 * dampens by isqrt(predfreq_a * predfreq_b + 1)
-			 * because both predecessors are antecedents of the
-			 * successor; a pair has only one antecedent (the
-			 * producer), so the denominator collapses to
-			 * isqrt(producer_freq + 1).  Reuses healer_isqrt()
-			 * rather than repeating the Newton iteration.  The
-			 * "+1" keeps the denominator non-zero on the cold
-			 * start where the producer hasn't been observed
-			 * yet, so a freshly seeded pair scores at raw * 1000
-			 * until appearance counters accumulate.
+			 * dampens by isqrt((a+K)*(b+K) + 1) over both
+			 * predecessor antecedents; a pair has only one
+			 * antecedent (the producer), so the denominator
+			 * collapses to isqrt(producer_freq + K + 1).  Reuses
+			 * healer_isqrt() rather than repeating the Newton
+			 * iteration.  HEALER_NORM_PREDFREQ_BIAS is the same
+			 * pseudo-count shift the triple-side formula uses,
+			 * applied here for the same reason: without it,
+			 * every static-seeded pair whose producer had not
+			 * yet been observed (producer_freq == 0) collapsed
+			 * the denominator to isqrt(1) == 1 and rendered as
+			 * norm == raw * 1000, dominating the top-N over any
+			 * dynamically observed pair whose producer had a
+			 * non-zero appearance count.  The trailing "+1" is
+			 * redundant for divide-by-zero with the bias in
+			 * place but is retained so the formula reads as a
+			 * direct K-shift of the prior baseline.
 			 */
-			denom = healer_isqrt(producer_freq + 1);
+			denom = healer_isqrt(producer_freq +
+					     HEALER_NORM_PREDFREQ_BIAS + 1);
 			if (denom == 0)
 				denom = 1;
 			norm_score = (weight * 1000UL) / denom;
