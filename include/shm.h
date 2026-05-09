@@ -2,6 +2,7 @@
 
 #include <stdatomic.h>
 #include <stdint.h>
+#include <sys/types.h>
 #include <time.h>
 #include "arch.h"
 #include "child.h"
@@ -32,6 +33,27 @@ struct shm_s {
 	 * dump_stats() to log absolute runtime alongside iters/s, which lets
 	 * crash post-mortem correlate trinity output to external logs. */
 	time_t start_time;
+
+	/*
+	 * Identity of trinity's own binary, captured once in init_shm() via
+	 * stat("/proc/self/exe", ...).  Read-only after init; written exactly
+	 * once before any child forks, so children inherit the populated cache
+	 * via shared mapping and the execve sanitiser can fstatat() the target
+	 * of a fuzzed execve / execveat and refuse the syscall if the resolved
+	 * (dev, ino) matches.  Catches every path that resolves to the trinity
+	 * binary regardless of name -- /proc/self/exe, /proc/<pid>/exe,
+	 * hardlinks, bind-mounted aliases, the literal path the operator
+	 * launched with, and execveat(fd, "", AT_EMPTY_PATH) where fd is
+	 * inherited from the parent.  valid == false means the startup stat
+	 * failed (very unlikely; /proc not mounted or similar) and the guard
+	 * short-circuits to "no protection" -- degraded behaviour matches the
+	 * pre-guard baseline.  See sanitise_execve() in syscalls/execve.c.
+	 */
+	struct {
+		dev_t dev;
+		ino_t ino;
+		bool valid;
+	} trinity_self_exe;
 
 	/*
 	 * Monotonic generation counter bumped by each new child after it
