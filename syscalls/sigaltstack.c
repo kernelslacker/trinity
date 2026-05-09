@@ -260,4 +260,5 @@ struct syscallentry syscall_sigaltstack = {
 #ifdef HAVE_SYS_SIGALTSTACK
 	.post = post_sigaltstack,
 #endif
+	.rettype = RET_ZERO_SUCCESS,
 };

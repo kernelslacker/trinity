@@ -52,6 +52,7 @@ struct syscallentry syscall_send = {
 	.group = GROUP_NET,
 	.sanitise = sanitise_send,
 	.bound_arg = 3,
+	.rettype = RET_NUM_BYTES,
 };
 
 
@@ -70,6 +71,7 @@ struct syscallentry syscall_sendto = {
 	.group = GROUP_NET,
 	.sanitise = sanitise_send,	// same as send
 	.bound_arg = 3,
+	.rettype = RET_NUM_BYTES,
 };
 
 /*
@@ -265,6 +267,7 @@ struct syscallentry syscall_sendmsg = {
 	.post = post_sendmsg,
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
+	.rettype = RET_NUM_BYTES,
 };
 /*
  * SYSCALL_DEFINE4(sendmmsg, int, fd, struct mmsghdr __user *, mmsg,
@@ -407,4 +410,5 @@ struct syscallentry syscall_sendmmsg = {
 	.group = GROUP_NET,
 	.sanitise = sanitise_sendmmsg,
 	.post = post_sendmmsg,
+	.rettype = RET_BORING,
 };

@@ -178,6 +178,7 @@ struct syscallentry syscall_getresgid = {
 	.sanitise = sanitise_getresgid,
 	.group = GROUP_PROCESS,
 	.post = post_getresgid,
+	.rettype = RET_ZERO_SUCCESS,
 };
 
 
@@ -192,4 +193,5 @@ struct syscallentry syscall_getresgid16 = {
 	.argname = { [0] = "rgid", [1] = "egid", [2] = "sgid" },
 	.sanitise = sanitise_getresgid16,
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

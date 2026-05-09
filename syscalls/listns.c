@@ -143,4 +143,5 @@ struct syscallentry syscall_listns = {
 	.post = post_listns,
 	.group = GROUP_PROCESS,
 	.bound_arg = 3,
+	.rettype = RET_NUM_BYTES,
 };

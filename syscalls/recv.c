@@ -50,6 +50,7 @@ struct syscallentry syscall_recv = {
 	.group = GROUP_NET,
 	.sanitise = sanitise_recv,
 	.bound_arg = 3,
+	.rettype = RET_NUM_BYTES,
 };
 
 
@@ -68,6 +69,7 @@ struct syscallentry syscall_recvfrom = {
 	.group = GROUP_NET,
 	.sanitise = sanitise_recv,	// same as recv
 	.bound_arg = 3,
+	.rettype = RET_NUM_BYTES,
 };
 
 
@@ -228,6 +230,7 @@ struct syscallentry syscall_recvmsg = {
 	.group = GROUP_NET,
 	.sanitise = sanitise_recvmsg,
 	.post = post_recvmsg,
+	.rettype = RET_NUM_BYTES,
 };
 
 /*
@@ -367,4 +370,5 @@ struct syscallentry syscall_recvmmsg = {
 	.group = GROUP_NET,
 	.sanitise = sanitise_recvmmsg,
 	.post = post_recvmmsg,
+	.rettype = RET_BORING,
 };

@@ -31,6 +31,7 @@ struct syscallentry syscall_read = {
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.bound_arg = 3,
+	.rettype = RET_NUM_BYTES,
 };
 
 
@@ -51,6 +52,7 @@ struct syscallentry syscall_readv = {
 	.argname = { [0] = "fd", [1] = "vec", [2] = "vlen" },
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	.rettype = RET_NUM_BYTES,
 };
 
 /*
@@ -73,6 +75,7 @@ struct syscallentry syscall_pread64 = {
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.bound_arg = 3,
+	.rettype = RET_NUM_BYTES,
 };
 
 /*
@@ -97,6 +100,7 @@ struct syscallentry syscall_preadv = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_preadv,
 	.group = GROUP_VFS,
+	.rettype = RET_NUM_BYTES,
 };
 
 /*
@@ -131,4 +135,5 @@ struct syscallentry syscall_preadv2 = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_preadv2,
 	.group = GROUP_VFS,
+	.rettype = RET_NUM_BYTES,
 };

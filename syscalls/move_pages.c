@@ -235,4 +235,5 @@ struct syscallentry syscall_move_pages = {
 	.group = GROUP_VM,
 	.sanitise = sanitise_move_pages,
 	.post = post_move_pages,
+	.rettype = RET_ZERO_SUCCESS,
 };

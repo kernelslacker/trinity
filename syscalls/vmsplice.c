@@ -34,4 +34,5 @@ struct syscallentry syscall_vmsplice = {
 	.post = post_vmsplice,
 	.group = GROUP_VM,
 	.flags = NEED_ALARM,
+	.rettype = RET_NUM_BYTES,
 };

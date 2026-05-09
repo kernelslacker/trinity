@@ -48,4 +48,5 @@ struct syscallentry syscall_wait4 = {
 	.arg_params[2].list = ARGLIST(wait_options),
 	.sanitise = sanitise_wait4,
 	.post = post_wait4,
+	.rettype = RET_PID_T,
 };

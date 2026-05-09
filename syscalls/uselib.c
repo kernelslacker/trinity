@@ -9,4 +9,5 @@ struct syscallentry syscall_uselib = {
 	.argtype = { [0] = ARG_PATHNAME },
 	.argname = { [0] = "library" },
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 };

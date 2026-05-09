@@ -172,4 +172,5 @@ struct syscallentry syscall_sched_rr_get_interval = {
 	.argname = { [0] = "pid", [1] = "interval" },
 	.sanitise = sanitise_sched_rr_get_interval,
 	.post = post_sched_rr_get_interval,
+	.rettype = RET_ZERO_SUCCESS,
 };

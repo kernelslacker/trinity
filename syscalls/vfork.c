@@ -50,4 +50,5 @@ struct syscallentry syscall_vfork = {
 	.flags = AVOID_SYSCALL | EXTRA_FORK, // No args, confuses fuzzer
 	.argname = { [0] = "regs" },
 	.post = post_vfork,
+	.rettype = RET_PID_T,
 };

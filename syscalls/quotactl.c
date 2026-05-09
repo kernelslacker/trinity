@@ -91,4 +91,5 @@ struct syscallentry syscall_quotactl = {
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_quotactl,
+	.rettype = RET_ZERO_SUCCESS,
 };

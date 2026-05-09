@@ -312,6 +312,7 @@ struct syscallentry syscall_setgroups = {
 	.sanitise = sanitise_setgroups,
 	.post = post_setgroups,
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 };
 
 
@@ -327,4 +328,5 @@ struct syscallentry syscall_setgroups16 = {
 	.arg_params[0].range.low = 0,
 	.arg_params[0].range.hi = 65536,
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

@@ -95,4 +95,5 @@ struct syscallentry syscall_mq_notify = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_mq_notify,
 	.post = post_mq_notify,
+	.rettype = RET_ZERO_SUCCESS,
 };

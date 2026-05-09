@@ -182,4 +182,5 @@ struct syscallentry syscall_newuname = {
 	.sanitise = sanitise_newuname,
 	.post = post_newuname,
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

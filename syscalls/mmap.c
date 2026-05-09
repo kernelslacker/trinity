@@ -314,6 +314,7 @@ struct syscallentry syscall_mmap = {
 
 	.group = GROUP_VM,
 	.flags = NEED_ALARM,
+	.rettype = RET_ADDRESS,
 };
 
 struct syscallentry syscall_mmap2 = {
@@ -331,4 +332,5 @@ struct syscallentry syscall_mmap2 = {
 
 	.group = GROUP_VM,
 	.flags = NEED_ALARM,
+	.rettype = RET_ADDRESS,
 };

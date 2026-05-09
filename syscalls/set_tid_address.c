@@ -30,4 +30,5 @@ struct syscallentry syscall_set_tid_address = {
 	.flags = AVOID_SYSCALL,
 	.group = GROUP_PROCESS,
 	.post = post_set_tid_address,
+	.rettype = RET_PID_T,
 };

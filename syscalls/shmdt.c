@@ -39,4 +39,5 @@ struct syscallentry syscall_shmdt = {
 	.argname = { [0] = "shmaddr" },
 	.sanitise = sanitise_shmdt,
 	.post = post_shmdt,
+	.rettype = RET_ZERO_SUCCESS,
 };

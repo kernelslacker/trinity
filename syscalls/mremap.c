@@ -254,4 +254,5 @@ struct syscallentry syscall_mremap = {
 	.arg_params[3].list = ARGLIST(mremap_flags),
 	.group = GROUP_VM,
 	.post = post_mremap,
+	.rettype = RET_ADDRESS,
 };

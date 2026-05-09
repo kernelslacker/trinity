@@ -58,4 +58,5 @@ struct syscallentry syscall_process_vm_readv = {
 	.arg_params[5].list = ARGLIST(process_vm_readv_flags),
 	.sanitise = sanitise_process_vm_readv,
 	.post = post_process_vm_readv,
+	.rettype = RET_NUM_BYTES,
 };

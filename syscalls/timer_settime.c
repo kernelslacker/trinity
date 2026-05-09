@@ -49,4 +49,5 @@ struct syscallentry syscall_timer_settime = {
 	.argname = { [0] = "timer_id", [1] = "flags", [2] = "new_setting", [3] = "old_setting" },
 	.arg_params[1].list = ARGLIST(timer_settime_flags),
 	.sanitise = sanitise_timer_settime,
+	.rettype = RET_ZERO_SUCCESS,
 };

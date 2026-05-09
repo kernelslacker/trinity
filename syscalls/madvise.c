@@ -61,4 +61,5 @@ struct syscallentry syscall_madvise = {
 	.arg_params[2].list = ARGLIST(madvise_advices),
 	.group = GROUP_VM,
 	.sanitise = sanitise_madvise,
+	.rettype = RET_ZERO_SUCCESS,
 };

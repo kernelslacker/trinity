@@ -30,4 +30,5 @@ struct syscallentry syscall_tee = {
 	.post = post_tee,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	.rettype = RET_NUM_BYTES,
 };

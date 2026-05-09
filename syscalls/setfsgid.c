@@ -38,6 +38,7 @@ struct syscallentry syscall_setfsgid = {
 	.arg_params[0].range.hi = 65535,
 	.post = post_setfsgid,
 	.group = GROUP_VFS,
+	.rettype = RET_GID_T,
 };
 
 /*
@@ -52,4 +53,5 @@ struct syscallentry syscall_setfsgid16 = {
 	.arg_params[0].range.low = 0,
 	.arg_params[0].range.hi = 65535,
 	.group = GROUP_VFS,
+	.rettype = RET_GID_T,
 };

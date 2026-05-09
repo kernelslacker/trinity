@@ -27,4 +27,5 @@ struct syscallentry syscall_timer_getoverrun = {
 	.argtype = { [0] = ARG_TIMERID },
 	.argname = { [0] = "timer_id" },
 	.post = post_timer_getoverrun,
+	.rettype = RET_BORING,
 };

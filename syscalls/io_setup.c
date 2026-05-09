@@ -179,4 +179,5 @@ struct syscallentry syscall_io_setup = {
 	.group = GROUP_VFS,
 	.sanitise = sanitise_io_setup,
 	.post = post_io_setup,
+	.rettype = RET_ZERO_SUCCESS,
 };

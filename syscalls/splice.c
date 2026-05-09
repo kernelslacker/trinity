@@ -61,4 +61,5 @@ struct syscallentry syscall_splice = {
 	.post = post_splice,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	.rettype = RET_NUM_BYTES,
 };

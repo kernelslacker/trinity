@@ -175,6 +175,7 @@ struct syscallentry syscall_mprotect = {
 	.sanitise = sanitise_mprotect,
 	.group = GROUP_VM,
 	.post = post_mprotect,
+	.rettype = RET_ZERO_SUCCESS,
 };
 
 struct syscallentry syscall_pkey_mprotect = {
@@ -186,4 +187,5 @@ struct syscallentry syscall_pkey_mprotect = {
 	.sanitise = sanitise_mprotect,
 	.group = GROUP_VM,
 	.post = post_mprotect,
+	.rettype = RET_ZERO_SUCCESS,
 };

@@ -17,6 +17,7 @@ struct syscallentry syscall_lstat = {
 	.argname = { [0] = "filename", [1] = "statbuf" },
 	.sanitise = sanitise_lstat_buf,
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 };
 
 
@@ -32,4 +33,5 @@ struct syscallentry syscall_lstat64 = {
 	.argname = { [0] = "filename", [1] = "statbuf" },
 	.sanitise = sanitise_lstat_buf,
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 };

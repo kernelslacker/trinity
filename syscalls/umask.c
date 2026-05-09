@@ -92,4 +92,5 @@ struct syscallentry syscall_umask = {
 	.arg_params[0].range.hi = 07777,
 	.group = GROUP_PROCESS,
 	.post = post_umask,
+	.rettype = RET_BORING,
 };

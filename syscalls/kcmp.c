@@ -51,4 +51,5 @@ struct syscallentry syscall_kcmp = {
 	.arg_params[2].list = ARGLIST(kcmp_types),
 	.sanitise = sanitise_kcmp,
 	.post = post_kcmp,
+	.rettype = RET_BORING,
 };

@@ -62,4 +62,5 @@ struct syscallentry syscall_setns= {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_setns,
 	.post = post_setns,
+	.rettype = RET_ZERO_SUCCESS,
 };

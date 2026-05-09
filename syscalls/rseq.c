@@ -42,4 +42,5 @@ struct syscallentry syscall_rseq = {
 	.arg_params[2].list = ARGLIST(rseq_flags),
 	.sanitise = sanitise_rseq,
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

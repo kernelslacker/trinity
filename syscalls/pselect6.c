@@ -224,4 +224,5 @@ struct syscallentry syscall_pselect6 = {
 	.sanitise = sanitise_pselect6,
 	.post = post_pselect6,
 	.group = GROUP_VFS,
+	.rettype = RET_BORING,
 };

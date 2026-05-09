@@ -9,4 +9,5 @@ struct syscallentry syscall_oldumount = {
 	.argtype = { [0] = ARG_PATHNAME },
 	.argname = { [0] = "name" },
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 };

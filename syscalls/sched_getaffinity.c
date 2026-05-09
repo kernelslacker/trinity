@@ -234,4 +234,5 @@ struct syscallentry syscall_sched_getaffinity = {
 	.sanitise = sanitise_sched_getaffinity,
 	.post = post_sched_getaffinity,
 	.bound_arg = 2,
+	.rettype = RET_NUM_BYTES,
 };

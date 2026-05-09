@@ -178,6 +178,7 @@ struct syscallentry syscall_getresuid = {
 	.sanitise = sanitise_getresuid,
 	.group = GROUP_PROCESS,
 	.post = post_getresuid,
+	.rettype = RET_ZERO_SUCCESS,
 };
 
 /*
@@ -191,4 +192,5 @@ struct syscallentry syscall_getresuid16 = {
 	.argname = { [0] = "ruid", [1] = "euid", [2] = "suid" },
 	.sanitise = sanitise_getresuid16,
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

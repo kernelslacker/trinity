@@ -204,4 +204,5 @@ struct syscallentry syscall_sigpending = {
 #ifdef HAVE_SYS_SIGPENDING
 	.post = post_sigpending,
 #endif
+	.rettype = RET_ZERO_SUCCESS,
 };

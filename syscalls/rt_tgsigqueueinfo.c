@@ -41,4 +41,5 @@ struct syscallentry syscall_rt_tgsigqueueinfo = {
 	.argname = { [0] = "tgid", [1] = "pid", [2] = "sig", [3] = "uinfo" },
 	.arg_params[2].list = ARGLIST(safe_signals),
 	.sanitise = sanitise_rt_tgsigqueueinfo,
+	.rettype = RET_ZERO_SUCCESS,
 };

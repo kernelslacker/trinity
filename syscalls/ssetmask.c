@@ -8,4 +8,5 @@ struct syscallentry syscall_ssetmask = {
 	.num_args = 1,
 	.argname = { [0] = "newmask" },
 	.group = GROUP_PROCESS,
+	.rettype = RET_BORING,
 };
