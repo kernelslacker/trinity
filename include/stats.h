@@ -435,6 +435,25 @@ struct stats_s {
 	 * the per-handler ring carries the breakdown. */
 	unsigned long retfd_blanket_reject;
 
+	/* fill_arg() fired the ONE_IN(WRONG_FD_TYPE_FREQ) branch on a
+	 * typed-fd argument and substituted either a different typed-fd
+	 * subtype or a generic-pool fd in its place.  Headline counter for
+	 * the wrong-fd-type substitution: divided by op_count this is the
+	 * realised substitution rate, which should track 1 / WRONG_FD_TYPE_FREQ
+	 * weighted by the typed-fd-arg fraction of the syscall mix.  Targets
+	 * the wrong-fd-type bug class -- without these substitutions the
+	 * typed-fd consumer always hands the kernel the correct subtype and
+	 * any type-check guard sitting only on the mismatched-subtype path
+	 * is never reached. */
+	unsigned long wrong_fd_type_substitutions;
+
+	/* Subset of wrong_fd_type_substitutions where the substitution fell
+	 * through to get_random_fd() instead of picking another typed-fd
+	 * argtype.  Surfaces the typed-vs-generic split so the ONE_IN(4)
+	 * generic branch is observable separately from the dominant
+	 * other-typed-fd path. */
+	unsigned long wrong_fd_type_subst_generic;
+
 	/* sanitise_execve() refused to let an execve / execveat fire because
 	 * the resolved target inode matched trinity's own binary -- the path
 	 * argument was rewritten to a known-bad value so the kernel returns

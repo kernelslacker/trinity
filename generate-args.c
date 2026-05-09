@@ -21,6 +21,15 @@
 #include "tables.h"
 #include "trinity.h"	// num_online_cpus
 
+/* ONE_IN denominator for substituting a wrong-subtype fd (or a generic
+ * pool fd) into a typed-fd argument slot.  Trades a small fraction of
+ * the precision win that typed-fd dispatch buys for coverage of the
+ * wrong-fd-type bug class -- without this, a kernel type-check guard
+ * sitting on the path that only fires for a mismatched fd subtype is
+ * never exercised, because the consumer always hands the syscall the
+ * correct subtype out of the matching obj pool. */
+#define WRONG_FD_TYPE_FREQ	16
+
 static int get_cpu(void)
 {
 	int i;
@@ -303,11 +312,41 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
 	if (is_typed_fdarg(argtype)) {
 		struct results *results = &entry->results[argnum - 1];
 		bool filter = (rand() % 10) < 7;
+		enum argtype effective_argtype = argtype;
+		bool use_generic = false;
 		int fd = 0;
 		int tries;
 
+		/* With ~1/WRONG_FD_TYPE_FREQ probability, swap the requested
+		 * typed-fd subtype for a different one (or, less often, a
+		 * generic fd from the global pool) before entering the reroll
+		 * loop.  The swap is sticky across rerolls so the failed-fd
+		 * filter still has a chance to drop known-bad (slot, fd)
+		 * pairs for whatever fd source we ended up with. */
+		if (ONE_IN(WRONG_FD_TYPE_FREQ)) {
+			__atomic_fetch_add(&shm->stats.wrong_fd_type_substitutions,
+					   1UL, __ATOMIC_RELAXED);
+			if (ONE_IN(4)) {
+				use_generic = true;
+				__atomic_fetch_add(&shm->stats.wrong_fd_type_subst_generic,
+						   1UL, __ATOMIC_RELAXED);
+			} else {
+				/* Pick uniformly from the ARG_FD_EPOLL .. ARG_FD_TIMERFD
+				 * range excluding the requested argtype: sample one of
+				 * the (range) other slots, then bump past argtype if
+				 * we landed at-or-above it. */
+				unsigned int range = ARG_FD_TIMERFD - ARG_FD_EPOLL;
+				unsigned int pick = rand() % range;
+
+				effective_argtype = ARG_FD_EPOLL + pick;
+				if (effective_argtype >= argtype)
+					effective_argtype++;
+			}
+		}
+
 		for (tries = 0; tries < FAILED_FD_REROLL_LIMIT; tries++) {
-			fd = get_typed_fd(argtype);
+			fd = use_generic ? get_random_fd()
+					 : get_typed_fd(effective_argtype);
 			if (!filter || !fd_recently_failed(results, fd))
 				break;
 		}
