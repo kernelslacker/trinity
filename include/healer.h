@@ -230,3 +230,16 @@ unsigned int healer_pair_get(unsigned int pred, unsigned int succ);
  * before the loader starts mutating the pair table.
  */
 unsigned int healer_count_pc_pairs(void);
+
+/*
+ * Static-seed loader.  Walks the active syscall table(s) at startup
+ * and pre-populates the pair table by calling healer_pair_seed() with
+ * HEALER_STATIC_SEED_WEIGHT for every (producer, consumer) edge that
+ * the same metadata walked by healer_count_pc_pairs() identifies.
+ * Run once pre-fork from the trinity init path so children inherit
+ * the populated pair table by COW.  Returns the number of fresh CAS-
+ * successful seed installs (cells that went from 0 to the seed weight
+ * during this call); cells already populated by an earlier observation
+ * or a previous loader invocation are silently skipped.  Idempotent.
+ */
+unsigned int healer_load_static_seed(void);
