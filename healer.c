@@ -27,6 +27,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "arch.h"		/* biarch */
 #include "child.h"
 #include "edgepair.h"		/* EDGEPAIR_NO_PREV */
 #include "healer.h"
@@ -1802,4 +1803,162 @@ unsigned int healer_pair_get(unsigned int pred, unsigned int succ)
 		return 0;
 
 	return __atomic_load_n(&healer_pair_table[pred][succ], __ATOMIC_RELAXED);
+}
+
+/*
+ * --- Producer/consumer classifier (static-seed prior) ---
+ *
+ * Bootstraps the (pred -> succ) pair table above from the metadata
+ * already carried by every syscallentry: ret_objtype tags the kind of
+ * fd a syscall produces, and the per-arg argtype[] slots tag the kind
+ * of fd a syscall consumes.  A producer A and a consumer B form a
+ * candidate pair when A's ret_objtype matches one of B's typed-fd
+ * argtype slots; the seed loader (separate follow-up commit) will
+ * iterate the same shape and call healer_pair_seed() per match.  This
+ * commit lands the helpers and a count-only entry point so the
+ * classifier can be sanity-checked in isolation before the loader
+ * starts mutating the pair table.
+ */
+
+/*
+ * Map a typed-fd argtype to the matching object-type kind.  Returns
+ * OBJ_NONE for the untyped ARG_FD slot (the kernel doesn't tell us
+ * what kind of fd is expected) and for every non-fd argtype.
+ *
+ * Mirrors the per-argtype mapping at childops/fd-stress.c:107-119 by
+ * shape rather than by include: the fd-stress copy is wired into the
+ * typed-fd-pair sampler and is tightly coupled to that subsystem's
+ * out-pointer signature, so a HEALER-local stand-alone helper avoids
+ * dragging in childops/ headers (which pull child-side runtime state
+ * the parent-side classifier has no business touching).
+ */
+static enum objecttype healer_argtype_to_objtype(enum argtype t)
+{
+	switch (t) {
+	case ARG_FD_EPOLL:	return OBJ_FD_EPOLL;
+	case ARG_FD_EVENTFD:	return OBJ_FD_EVENTFD;
+	case ARG_FD_FANOTIFY:	return OBJ_FD_FANOTIFY;
+	case ARG_FD_FS_CTX:	return OBJ_FD_FS_CTX;
+	case ARG_FD_INOTIFY:	return OBJ_FD_INOTIFY;
+	case ARG_FD_IO_URING:	return OBJ_FD_IO_URING;
+	case ARG_FD_LANDLOCK:	return OBJ_FD_LANDLOCK;
+	case ARG_FD_MEMFD:	return OBJ_FD_MEMFD;
+	case ARG_FD_MOUNT:	return OBJ_FD_MOUNT;
+	case ARG_FD_MQ:		return OBJ_FD_MQ;
+	case ARG_FD_PERF:	return OBJ_FD_PERF;
+	case ARG_FD_PIDFD:	return OBJ_FD_PIDFD;
+	case ARG_FD_PIPE:	return OBJ_FD_PIPE;
+	case ARG_FD_SIGNALFD:	return OBJ_FD_SIGNALFD;
+	case ARG_FD_SOCKET:	return OBJ_FD_SOCKET;
+	case ARG_FD_TIMERFD:	return OBJ_FD_TIMERFD;
+	default:		return OBJ_NONE;
+	}
+}
+
+/*
+ * True when `entry` accepts an fd of `kind` in any of its argument
+ * slots.  OBJ_NONE never matches -- the untyped ARG_FD slot also maps
+ * to OBJ_NONE, so collapsing both to "no signal" keeps the classifier
+ * from manufacturing a pair out of two unrelated unknowns.
+ */
+static bool healer_consumes_objtype(const struct syscallentry *entry,
+				    enum objecttype kind)
+{
+	unsigned int i;
+
+	if (kind == OBJ_NONE)
+		return false;
+
+	for (i = 0; i < entry->num_args && i < 6; i++) {
+		if (healer_argtype_to_objtype(entry->argtype[i]) == kind)
+			return true;
+	}
+	return false;
+}
+
+/*
+ * The kind of fd `entry` produces, or OBJ_NONE if none.  Today this
+ * is a one-line accessor over ret_objtype, but it exists as its own
+ * function so a future producer that returns multiple kinds (e.g.
+ * pidfd_open, which emits both an OBJ_FD_PIDFD and an OBJ_FD slot
+ * to the parent's tracking pool) can be promoted to an iterator
+ * without touching every caller.
+ */
+static enum objecttype healer_produces_objtype(const struct syscallentry *entry)
+{
+	return entry->ret_objtype;
+}
+
+/*
+ * Per-table classifier helper.  Counts seed-eligible (producer,
+ * consumer) pairs within a single syscall table -- the biarch caller
+ * invokes this once per arch and sums the results, the uniarch caller
+ * invokes it once on the only table.  Self-pairs (a == b) are counted:
+ * a producer that also consumes its own kind is a real shape (dup,
+ * dup2, dup3 -- consume an fd, produce an fd) and the pair table
+ * indexes (pred == succ) cells just like any other.
+ */
+static unsigned int healer_count_pc_pairs_in_table(const struct syscalltable *tbl,
+						   unsigned int n)
+{
+	unsigned int a, b, count = 0;
+
+	if (tbl == NULL)
+		return 0;
+
+	for (a = 0; a < n; a++) {
+		const struct syscallentry *entry_a = tbl[a].entry;
+		enum objecttype kind;
+
+		if (entry_a == NULL)
+			continue;
+
+		kind = healer_produces_objtype(entry_a);
+		if (kind == OBJ_NONE)
+			continue;
+
+		for (b = 0; b < n; b++) {
+			const struct syscallentry *entry_b = tbl[b].entry;
+
+			if (entry_b == NULL)
+				continue;
+
+			if (healer_consumes_objtype(entry_b, kind))
+				count++;
+		}
+	}
+	return count;
+}
+
+/*
+ * Classifier dry-run: count seed-eligible (producer, consumer) pairs
+ * across the active syscall table(s) without writing to the pair
+ * table.  Lets the seed loader (a follow-up commit) be split in two:
+ * this commit's count proves the classifier picks up the metadata
+ * edges we expect on the current arch, and the loader commit re-walks
+ * the same shape but emits healer_pair_seed() per match instead of
+ * just incrementing a counter.
+ *
+ * Biarch builds keep separate 32-bit and 64-bit syscall tables (the
+ * uniarch `syscalls` global is left NULL on those builds), so the
+ * walk has to fan out across both -- mirroring the biarch branch
+ * stats.c's json_emit_syscalls_array uses for the same reason.  The
+ * pair table itself is biarch-flat (indexed by raw syscall number),
+ * so summing across both arches matches the seed loader's eventual
+ * write pattern.
+ */
+unsigned int healer_count_pc_pairs(void)
+{
+	unsigned int count = 0;
+
+	if (biarch == true) {
+		count += healer_count_pc_pairs_in_table(syscalls_32bit,
+							max_nr_32bit_syscalls);
+		count += healer_count_pc_pairs_in_table(syscalls_64bit,
+							max_nr_64bit_syscalls);
+	} else {
+		count += healer_count_pc_pairs_in_table(syscalls,
+							max_nr_syscalls);
+	}
+	return count;
 }
