@@ -883,6 +883,39 @@
 #define NF_NAT_RANGE_PROTO_RANDOM_FULLY	0x10
 #endif
 
+/* nft_redir NFTA_REDIR_* attribute IDs.  The validator in
+ * net/netfilter/nft_redir.c (nft_redir_init, shared by the
+ * nft_redir_ipv4 / nft_redir_ipv6 / nft_redir_inet modules via the same
+ * nft_redir_policy[]) accepts three OPTIONAL attributes:
+ * NFTA_REDIR_REG_PROTO_MIN and NFTA_REDIR_REG_PROTO_MAX (NLA_U32,
+ * big-endian on wire) hold register references (NFT_REG_*) bracketing
+ * the destination-port rewrite range loaded at eval time; if MIN is
+ * present and MAX is absent the kernel defaults MAX to MIN, but MAX
+ * present without MIN is rejected with -EINVAL, so the emitter gates
+ * MAX on MIN.  NFTA_REDIR_FLAGS (NLA_U32, big-endian on wire — read via
+ * ntohl(nla_get_be32())) carries a subset of nf_nat_range flags drawn
+ * from the same NF_NAT_RANGE_MASK == 0x1c surface as nft_masq
+ * (NF_NAT_RANGE_PROTO_RANDOM 0x4, NF_NAT_RANGE_PERSISTENT 0x8,
+ * NF_NAT_RANGE_PROTO_RANDOM_FULLY 0x10); any out-of-mask bit fails the
+ * `flags & ~NF_NAT_RANGE_MASK` check with -EINVAL before the priv
+ * struct is initialised.  All three attributes absent leaves the
+ * expression at zero flags / no port range, which is a legal but
+ * uninteresting pass-through.  The NF_NAT_RANGE_* constants are
+ * already shimmed by the nft_masq block above and are not re-shimmed
+ * here.  Each NFTA_REDIR_* symbol is guarded individually so the build
+ * still works on older host headers that predate any subset.  Depends
+ * on CONFIG_NF_NAT (auto-pulled by CONFIG_NFT_REDIR=m); fuzz-box
+ * config has it. */
+#ifndef NFTA_REDIR_REG_PROTO_MIN
+#define NFTA_REDIR_REG_PROTO_MIN	1
+#endif
+#ifndef NFTA_REDIR_REG_PROTO_MAX
+#define NFTA_REDIR_REG_PROTO_MAX	2
+#endif
+#ifndef NFTA_REDIR_FLAGS
+#define NFTA_REDIR_FLAGS		3
+#endif
+
 /* nft_last NFTA_LAST_* attribute IDs.  The validator in
  * net/netfilter/nft_last.c (nft_last_init) drives off
  * nft_last_policy[]: NFTA_LAST_SET (NLA_U32, big-endian on wire — read
@@ -3247,6 +3280,106 @@ static size_t build_nft_masq_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_redir
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  Reaches the validator in net/netfilter/nft_redir.c
+ * (nft_redir_init, shared by the nft_redir_ipv4 / nft_redir_ipv6 /
+ * nft_redir_inet modules via the same nft_redir_policy[]).  All three
+ * attributes are OPTIONAL:
+ *   - NFTA_REDIR_REG_PROTO_MIN / NFTA_REDIR_REG_PROTO_MAX (NLA_U32,
+ *     big-endian) are register references (NFT_REG_*) bracketing the
+ *     destination-port rewrite range loaded at eval time.  If MIN is
+ *     present and MAX is absent the kernel defaults MAX to MIN; MAX
+ *     present without MIN is rejected with -EINVAL.
+ *   - NFTA_REDIR_FLAGS (NLA_U32, big-endian on wire — read via
+ *     ntohl(nla_get_be32())) is a subset of nf_nat_range flags drawn
+ *     from the same NF_NAT_RANGE_MASK == 0x1c surface as nft_masq
+ *     (NF_NAT_RANGE_PROTO_RANDOM 0x4, NF_NAT_RANGE_PERSISTENT 0x8,
+ *     NF_NAT_RANGE_PROTO_RANDOM_FULLY 0x10).  Any other bit fails the
+ *     `flags & ~NF_NAT_RANGE_MASK` check with -EINVAL before the priv
+ *     struct is initialised.
+ * All three attributes absent leaves the expression at zero flags / no
+ * port range — a legal but uninteresting pass-through, which is why the
+ * coin-flips below favour at least one attribute being present most of
+ * the time without forcing it.
+ *
+ * Variants per call:
+ *   - FLAGS coin-flipped present (ONE_IN(2)).  When present, the value
+ *     normally stays masked against NF_NAT_RANGE_MASK so do_init's
+ *     policy walker reaches the priv-struct setup.  ONE_IN(8) of the
+ *     flag-present emissions deliberately use a raw rand32() so the
+ *     out-of-mask -EINVAL rejection path through the same
+ *     `flags & ~NF_NAT_RANGE_MASK` check also gets exercised.
+ *   - MIN coin-flipped present (ONE_IN(3)) with the value picked
+ *     uniformly across NFT_REG_1..NFT_REG_4.
+ *   - MAX is gated on MIN being present (ONE_IN(2) of the MIN-present
+ *     emissions): emitting MAX without MIN would always trip the
+ *     -EINVAL rejection that is NOT the intended coverage target here.
+ */
+static size_t build_nft_redir_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	bool with_flags = ONE_IN(2);
+	bool with_min = ONE_IN(3);
+	bool with_max = with_min && ONE_IN(2);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "redir");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	if (with_flags) {
+		__u32 flags;
+
+		if (ONE_IN(8)) {
+			/* Drive the `flags & ~NF_NAT_RANGE_MASK` ->
+			 * -EINVAL rejection path with raw garbage that
+			 * almost always lights up an out-of-mask bit. */
+			flags = rand32();
+		} else {
+			flags = rand32() & 0x1cU;
+		}
+		off = nla_put_be32(buf, off, cap, NFTA_REDIR_FLAGS, flags);
+		if (!off)
+			return 0;
+	}
+
+	if (with_min) {
+		__u32 reg = NFT_REG_1 + (rand32() % 4);
+
+		off = nla_put_be32(buf, off, cap,
+				   NFTA_REDIR_REG_PROTO_MIN, reg);
+		if (!off)
+			return 0;
+	}
+
+	if (with_max) {
+		__u32 reg = NFT_REG_1 + (rand32() % 4);
+
+		off = nla_put_be32(buf, off, cap,
+				   NFTA_REDIR_REG_PROTO_MAX, reg);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_last
  * expression into buf at off, returning the new offset (or 0 on
  * overflow).  Reaches the validator in net/netfilter/nft_last.c
@@ -4263,6 +4396,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_counter,
 			 bool with_connlimit,
 			 bool with_masq,
+			 bool with_redir,
 			 bool with_last,
 			 bool with_rt,
 			 bool with_fib,
@@ -4404,6 +4538,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_masq) {
 		off = build_nft_masq_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_redir) {
+		off = build_nft_redir_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -4679,6 +4819,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_counter = ONE_IN(3);
 		bool with_connlimit = ONE_IN(3);
 		bool with_masq = ONE_IN(3);
+		bool with_redir = ONE_IN(3);
 		bool with_last = ONE_IN(3);
 		bool with_rt = ONE_IN(3);
 		bool with_fib = ONE_IN(3);
@@ -4698,6 +4839,7 @@ bool nftables_churn(struct childdata *child)
 				  with_hash, with_synproxy, with_counter,
 				  with_connlimit,
 				  with_masq,
+				  with_redir,
 				  with_last,
 				  with_rt,
 				  with_fib,
@@ -4759,6 +4901,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_masq)
 				__atomic_add_fetch(&shm->stats.nftables_churn_masq_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_redir)
+				__atomic_add_fetch(&shm->stats.nftables_churn_redir_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_last)
 				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
@@ -4862,6 +5007,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_counter = ONE_IN(3);
 		bool with_connlimit = ONE_IN(3);
 		bool with_masq = ONE_IN(3);
+		bool with_redir = ONE_IN(3);
 		bool with_last = ONE_IN(3);
 		bool with_rt = ONE_IN(3);
 		bool with_fib = ONE_IN(3);
@@ -4881,6 +5027,7 @@ bool nftables_churn(struct childdata *child)
 				  with_hash, with_synproxy, with_counter,
 				  with_connlimit,
 				  with_masq,
+				  with_redir,
 				  with_last,
 				  with_rt,
 				  with_fib,
@@ -4942,6 +5089,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_masq)
 				__atomic_add_fetch(&shm->stats.nftables_churn_masq_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_redir)
+				__atomic_add_fetch(&shm->stats.nftables_churn_redir_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_last)
 				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
