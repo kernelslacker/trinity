@@ -403,7 +403,39 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 			}
 		}
 		if (ring[oldest].ptr != NULL && ring[oldest].free_func != NULL) {
-			ring[oldest].free_func(ring[oldest].ptr);
+			void *evict_ptr = ring[oldest].ptr;
+			void (*evict_free)(void *) = ring[oldest].free_func;
+			bool corrupt = false;
+
+			/*
+			 * The enqueue path validates ptr against three
+			 * ground-truth bands (heap-bounds via
+			 * is_in_glibc_heap, alloc-track ring via
+			 * alloc_track_consume, shared-region overlap via
+			 * range_overlaps_shared) BEFORE ring_unlock().  Once
+			 * unlocked, the slot sits RW until ring_lock() runs,
+			 * so an in-flight stomp from a sibling fuzzed value-
+			 * result syscall can scribble ring[oldest].ptr between
+			 * when the slot was last validated and when the full-
+			 * ring eviction here decides to free it.  Re-run the
+			 * same three guards before free()ing so a wild pointer
+			 * becomes a telemetry bump instead of a crash.  Custom
+			 * free_func callers stay exempt -- mirrors the gating
+			 * convention used on the enqueue side.  Counter only
+			 * (no per-rejection log): the eviction case is rarer
+			 * than the enqueue rejection paths, whose 1-in-1000
+			 * caller-PC logs already prove the stomp pattern.
+			 */
+			if (evict_free == free) {
+				if (!is_in_glibc_heap(evict_ptr) ||
+				    !alloc_track_consume(evict_ptr) ||
+				    range_overlaps_shared((unsigned long)evict_ptr, 1))
+					corrupt = true;
+			}
+			if (corrupt)
+				__atomic_add_fetch(&shm->stats.ring_eviction_corrupt, 1, __ATOMIC_RELAXED);
+			else
+				evict_free(evict_ptr);
 			ring[oldest].ptr = NULL;
 			occupied_mask &= ~(1ULL << oldest);
 			ring_count--;

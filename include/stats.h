@@ -359,6 +359,22 @@ struct stats_s {
 	 * corruption on non-ASAN builds) into a counter bump. */
 	unsigned long snapshot_non_heap_reject;
 
+	/* deferred_free_enqueue() evicted the oldest ring slot to make
+	 * room on a full ring and the slot's ptr failed re-validation
+	 * against the same three guards the enqueue side runs (heap-
+	 * bounds via is_in_glibc_heap, ground-truth via
+	 * alloc_track_consume, shared-region overlap via
+	 * range_overlaps_shared).  The slot was validated when it was
+	 * originally enqueued, but the ring page sits RW between
+	 * ring_unlock() and ring_lock() during enqueue, so an in-flight
+	 * stomp from a sibling fuzzed value-result syscall can scribble
+	 * ring[i].ptr in that window.  Non-zero means the eviction
+	 * guard converted what would have been a wild free() into a
+	 * counter bump.  Only counted for free_func == free callers;
+	 * custom free routines are exempt, mirroring the enqueue-side
+	 * gating convention. */
+	unsigned long ring_eviction_corrupt;
+
 	/* deferred_free_tick() saw a sub-page (pid-shaped) pointer in a
 	 * ring slot and refused to call free() on it.  Non-zero means the
 	 * mprotect guard around the ring is being bypassed somehow, or
