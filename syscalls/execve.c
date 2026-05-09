@@ -213,23 +213,35 @@ static void sanitise_execve(struct syscallrecord *rec)
 
 /* if execve succeeds, we'll never get back here, so this only
  * has to worry about the case where execve returned a failure.
+ *
+ * Route the snapshot's argv/envp arrays (and their inner element
+ * pointers) through deferred_free_enqueue() so the lifetime overlaps
+ * the same TTL window every other syscall's allocations live in.  The
+ * earlier free()-direct path bypassed deferred-free's bookkeeping --
+ * the alloc_track entry for each pointer survived the direct free(),
+ * leaving a stale tracked allocation that a later eviction in the
+ * deferred-free ring could free a second time.  Letting the queue own
+ * the release closes that double-free window and keeps the alloc_track
+ * side-set consistent with reality.
+ *
+ * deferred_free_enqueue() carries its own NULL / shape / heap-bounds
+ * guards, so the inner-pointer corruption checks the old direct-free
+ * helper performed via inner_ptr_ok_to_free() are subsumed; a scribbled
+ * inner slot is rejected at the queue boundary and counted by the same
+ * telemetry path every other syscall's enqueues use.
  */
-
-static void free_execve_ptrs(struct syscallrecord *rec,
-			      void **argv, void **envp,
-			      unsigned int argvcount, unsigned int envpcount)
+static void enqueue_execve_ptrs(void **argv, void **envp,
+				unsigned int argvcount, unsigned int envpcount)
 {
 	unsigned int i;
 
 	for (i = 0; i < argvcount; i++)
-		if (inner_ptr_ok_to_free(rec, argv[i], "free_execve_ptrs/argv[i]"))
-			free(argv[i]);
-	free(argv);
+		deferred_free_enqueue(argv[i], NULL);
+	deferred_free_enqueue(argv, NULL);
 
 	for (i = 0; i < envpcount; i++)
-		if (inner_ptr_ok_to_free(rec, envp[i], "free_execve_ptrs/envp[i]"))
-			free(envp[i]);
-	free(envp);
+		deferred_free_enqueue(envp[i], NULL);
+	deferred_free_enqueue(envp, NULL);
 }
 
 static void post_execve(struct syscallrecord *rec)
@@ -257,9 +269,9 @@ static void post_execve(struct syscallrecord *rec)
 	/*
 	 * Defense in depth: if something corrupted the snapshot itself,
 	 * the inner array pointers may no longer reference our heap
-	 * allocations.  free_execve_ptrs() walks argv[]/envp[] before
-	 * free()ing the outer arrays, and a bad pointer crashes on the
-	 * first deref.  Leak rather than walk garbage.
+	 * allocations.  enqueue_execve_ptrs() walks argv[]/envp[] before
+	 * handing the outer arrays to deferred-free, and a bad pointer
+	 * crashes on the first deref.  Leak rather than walk garbage.
 	 */
 	if (looks_like_corrupted_ptr(rec, snap->argv) ||
 	    looks_like_corrupted_ptr(rec, snap->envp)) {
@@ -280,7 +292,7 @@ static void post_execve(struct syscallrecord *rec)
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
-	free_execve_ptrs(rec, snap->argv, snap->envp, snap->argvcount, snap->envpcount);
+	enqueue_execve_ptrs(snap->argv, snap->envp, snap->argvcount, snap->envpcount);
 	deferred_freeptr(&rec->post_state);
 }
 
@@ -314,7 +326,7 @@ static void post_execveat(struct syscallrecord *rec)
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
-	free_execve_ptrs(rec, snap->argv, snap->envp, snap->argvcount, snap->envpcount);
+	enqueue_execve_ptrs(snap->argv, snap->envp, snap->argvcount, snap->envpcount);
 	deferred_freeptr(&rec->post_state);
 }
 
