@@ -1490,43 +1490,50 @@ static void post_perf_event_open(struct syscallrecord *rec)
 	int fd = rec->retval;
 
 	if (fd >= 0 && fd < (1 << 20)) {
-		struct childdata *child = this_child();
+		unsigned long flags = rec->a5;
+		bool needs_immediate_teardown =
+			(flags & (PERF_FLAG_PID_CGROUP | PERF_FLAG_FD_OUTPUT)) != 0;
 
-		/* Notify the parent so it can remove this fd from the object
-		 * pool.  remove_object_by_fd() is a no-op in child context. */
-		if (child != NULL && child->fd_event_ring != NULL)
-			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
-					 fd, -1, 0, 0, 0);
+		if (needs_immediate_teardown) {
+			struct childdata *child = this_child();
 
-		/* Parent-side path (no-op in children). */
-		remove_object_by_fd(fd);
+			/*
+			 * Cgroup-pinned and FD_OUTPUT-redirected events hold
+			 * kernel-side references that outlive our fd: the
+			 * cgroup keeps cgroup-pinned events scheduled across
+			 * every task in the cgroup, and the FD_OUTPUT producer
+			 * keeps writing into the consumer's ring buffer until
+			 * its own deferred teardown.  Letting the dispatcher
+			 * stash the fd into the OBJ_FD_PERF pool and waiting
+			 * for child teardown to close it would leave both
+			 * paths firing under the iteration scope of a child
+			 * that may run for hours.  Walk the event off
+			 * synchronously here, then coerce rec->retval = -1UL
+			 * so register_returned_fd()'s (long)retval < 0 gate
+			 * skips the about-to-be-closed fd -- handle_success()
+			 * already ran above this layer, so the success tally
+			 * is preserved.
+			 */
+			if (child != NULL && child->fd_event_ring != NULL)
+				fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
+						 fd, -1, 0, 0, 0);
 
+			remove_object_by_fd(fd);
+
+			ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
+			close(fd);
+
+			rec->retval = -1UL;
+		}
 		/*
-		 * Stop the event before close().  close() alone is enough for
-		 * the common per-task counting/sampling event whose only
-		 * kernel referent is the fd's f_count -- the final fput drops
-		 * the event.  It is not enough when the event has attached
-		 * itself to something else that holds an independent ref:
-		 *   - PERF_FLAG_PID_CGROUP installs the event into the
-		 *     cgroup's event list; the cgroup keeps it scheduled and
-		 *     accumulating samples on every task in the cgroup until
-		 *     the event is explicitly disabled, even after our fd has
-		 *     been closed and the (perhaps short-lived) child that
-		 *     created it is gone.
-		 *   - PERF_FLAG_FD_OUTPUT redirects samples into another
-		 *     event's ring buffer; the producer keeps writing into
-		 *     that buffer between our close() and the kernel's
-		 *     deferred teardown of the producer side.
-		 *   - Group members on a pinned leader stay scheduled across
-		 *     the leader's lifetime even after their own fd closes.
-		 * Issuing IOC_DISABLE first walks the event off all of those
-		 * paths synchronously, so the close() that follows is just a
-		 * refcount drop on a quiescent event.  Mirrors the BPF detach
-		 * pattern in post_bpf() and the IPC_RMID pattern in
-		 * post_msgget()/post_semget().
+		 * Common path: leave the fd open.  The dispatcher's
+		 * register_returned_fd() runs after this handler and claims
+		 * the fd into the OBJ_FD_PERF OBJ_LOCAL pool via the
+		 * .ret_objtype annotation.  perffd_destructor handles
+		 * IOC_DISABLE+close at child teardown -- and walks the pool
+		 * for any peers whose group_fd matches the leader, disabling
+		 * and closing those too.
 		 */
-		ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
-		close(fd);
 	} else if (fd != -1) {
 		outputerr("post_perf_event_open: rejecting out-of-bound fd=%d\n", fd);
 		post_handler_corrupt_ptr_bump(rec, NULL);
@@ -1546,6 +1553,7 @@ struct syscallentry syscall_perf_event_open = {
 	.argname = { [0] = "attr_uptr", [1] = "pid", [2] = "cpu", [3] = "group_fd", [4] = "flags" },
 	.arg_params[4].list = ARGLIST(perf_event_open_flags),
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_PERF,
 	.sanitise = sanitise_perf_event_open,
 	.post = post_perf_event_open,
 	.init = init_pmus,

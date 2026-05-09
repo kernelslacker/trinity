@@ -19,6 +19,14 @@ struct syscallentry syscall_memfd_secret = {
 	.argname = { [0] = "flag" },
 	.arg_params[0].list = ARGLIST(memfd_secret_flags),
 	.rettype = RET_FD,
-	.post = generic_post_close_fd,
+	.ret_objtype = OBJ_FD_MEMFD_SECRET,
+	/*
+	 * No .post: the dispatcher's register_returned_fd() claims the
+	 * fd into the OBJ_FD_MEMFD_SECRET OBJ_LOCAL pool via the
+	 * .ret_objtype annotation, and memfd_secret_destructor handles
+	 * close() at child teardown.  Replaces the previous
+	 * generic_post_close_fd hook, which closed the fd immediately
+	 * and so prevented any consumer from picking it up.
+	 */
 	.group = GROUP_VFS,
 };
