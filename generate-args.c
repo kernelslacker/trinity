@@ -409,7 +409,18 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
 		return (unsigned long) get_map();
 
 	case ARG_PID:
-		return (unsigned long) get_pid();
+		/* ~1 in 8: pass garbage to keep the ARG_PID consumers
+		 * (kill, tkill, tgkill, ptrace, setpgid, getpgid, getsid,
+		 * setpriority, getpriority, waitpid, wait4, sched_set...,
+		 * sched_get..., perf_event_open, ...) hitting their
+		 * input-validation paths; otherwise pull a pid from the
+		 * producer-fed OBJ_PID pool fed by fork, vfork, clone,
+		 * clone3, getpid, gettid, getppid.  Cold-pool fallback
+		 * defers to get_pid()'s live-children bias inside
+		 * get_random_pid_from_pool. */
+		if (ONE_IN(8))
+			return (unsigned long) (int32_t) rand32();
+		return (unsigned long) get_random_pid_from_pool();
 
 	case ARG_KEY_SERIAL:
 		/* ~1 in 8: pass garbage to keep keyctl/add_key/request_key

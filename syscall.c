@@ -473,6 +473,22 @@ static void register_returned_fd(const struct syscallentry *entry,
 		return;
 	}
 
+	if (type == OBJ_PID) {
+		long p = (long) rec->retval;
+
+		/* fork/vfork/clone parent-side success: a child pid in
+		 * [1, PID_MAX_LIMIT=4194304].  Reject 0 (clone child branch
+		 * already rerouted by the per-syscall .post handler that
+		 * _exit's before reaching here, but defence-in-depth) and
+		 * anything past the kernel's pid_max ceiling -- the latter
+		 * is the corrupted-retval shape the per-syscall .post oracles
+		 * already log via post_handler_corrupt_ptr_bump. */
+		if (p <= 0 || p > 4194304)
+			return;
+		register_returned_pid((pid_t) p);
+		return;
+	}
+
 	fd = (int)rec->retval;
 	if (fd <= 2)
 		return;

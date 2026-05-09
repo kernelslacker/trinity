@@ -78,4 +78,5 @@ struct syscallentry syscall_fork = {
 	.sanitise = sanitise_fork,
 	.post = post_fork,
 	.rettype = RET_PID_T,
+	.ret_objtype = OBJ_PID,
 };

@@ -29,6 +29,8 @@ unsigned long find_previous_arg_address(struct syscallentry *entry, struct sysca
 struct iovec * alloc_iovec(unsigned int num);
 unsigned long get_len(void);
 unsigned int get_pid(void);
+pid_t get_random_pid_from_pool(void);
+void register_returned_pid(pid_t pid);
 int32_t get_random_key_serial(void);
 void register_key_serial(int32_t serial);
 int32_t get_random_timerid(void);

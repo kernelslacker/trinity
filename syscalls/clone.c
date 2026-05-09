@@ -66,4 +66,5 @@ struct syscallentry syscall_clone = {
 	.sanitise = sanitise_clone,
 	.post = post_clone,
 	.rettype = RET_PID_T,
+	.ret_objtype = OBJ_PID,
 };

@@ -73,5 +73,6 @@ struct syscallentry syscall_getpid = {
 	.group = GROUP_PROCESS,
 	.num_args = 0,
 	.rettype = RET_PID_T,
+	.ret_objtype = OBJ_PID,
 	.post = post_getpid,
 };
