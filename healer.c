@@ -1157,15 +1157,76 @@ static ssize_t healer_read_all(int fd, void *buf, size_t len)
 	return (ssize_t)(len - left);
 }
 
+/*
+ * Scrub a heap snapshot of the relation table (HEALER_PAYLOAD_BYTES of
+ * back-to-back struct healer_relation slots) of any per-slot or per-entry
+ * scribbles where pred_a / pred_b / promoted_nr was stamped with a
+ * non-syscall value by a stray write hitting the live table in shm.
+ * Mirrors the slot-level + per-entry bound checks the dump path uses to
+ * skip corrupt slots: if pred_a or pred_b is >= MAX_NR_SYSCALL the whole
+ * slot is unrecoverable (every promoted entry inherits the bad pair) and
+ * gets memset to zero -- key == 0 is the empty-slot sentinel and
+ * weight == 0 the empty-entry one, so a zeroed slot loads back as
+ * cleanly empty.  Otherwise each promoted entry is checked individually
+ * and only entries with nr >= MAX_NR_SYSCALL get zeroed, preserving the
+ * slot's legitimate promoted entries.  Returns the count of slots and
+ * per-entry zeroings performed.
+ *
+ * Used by both healer_save_file() (so the on-disk file is an idealised
+ * clean view and the loader sees no corruption to begin with) and
+ * healer_load_file() (defence-in-depth: an old file written before the
+ * save-side scrub, or a tail-probability bit-flip in a hex value that
+ * still satisfies the on-disk CRC, still gets cleaned before the memcpy
+ * into shm).  Operates ONLY on the heap buffer it is handed; the live
+ * shm->healer_relations[] is never touched here -- decay and eviction
+ * age corrupt slots out in the normal way.
+ */
+static unsigned int healer_scrub_snapshot(void *snapshot)
+{
+	struct healer_relation *snap_slots = snapshot;
+	unsigned int scrubbed = 0;
+	unsigned int i, j;
+
+	for (i = 0; i < HEALER_RELATION_SLOTS; i++) {
+		struct healer_relation *slot = &snap_slots[i];
+		unsigned int slot_pred_a, slot_pred_b;
+
+		if (slot->key == 0)
+			continue;
+
+		healer_unpack_key(slot->key, &slot_pred_a, &slot_pred_b);
+
+		if (slot_pred_a >= MAX_NR_SYSCALL ||
+		    slot_pred_b >= MAX_NR_SYSCALL) {
+			memset(slot, 0, sizeof(*slot));
+			scrubbed++;
+			continue;
+		}
+
+		for (j = 0; j < HEALER_PROMOTED_PER_SLOT; j++) {
+			unsigned int nr, weight;
+
+			healer_unpack_promoted(slot->promoted[j].entry,
+					       &nr, &weight);
+			if (weight == 0)
+				continue;
+			if (nr >= MAX_NR_SYSCALL) {
+				slot->promoted[j].entry = 0;
+				scrubbed++;
+			}
+		}
+	}
+
+	return scrubbed;
+}
+
 bool healer_save_file(const char *path)
 {
 	struct healer_file_header hdr;
 	struct utsname u;
 	char tmppath[PATH_MAX];
-	struct healer_relation *snap_slots;
 	void *snapshot;
-	unsigned int scrubbed = 0;
-	unsigned int i, j;
+	unsigned int scrubbed;
 	int fd;
 	int ret;
 
@@ -1187,56 +1248,14 @@ bool healer_save_file(const char *path)
 		return false;
 	memcpy(snapshot, shm->healer_relations, HEALER_PAYLOAD_BYTES);
 
-	/* Sanitise the heap snapshot before write so corrupt-slot scribbles
-	 * (pred_a / pred_b / promoted_nr stamped with non-syscall values by
-	 * a stray write hitting the relation table in shm) don't get
-	 * persisted to disk and then reloaded into the table on warm-start,
-	 * carrying garbage across runs.  Mirrors the slot-level + per-entry
-	 * bound checks the dump path uses to skip corrupt slots; the live
-	 * shm->healer_relations[] is deliberately left alone -- decay and
-	 * eviction will age corrupt slots out in the normal way -- so the
-	 * sweep operates ONLY on the heap buffer.  CRC is computed below
-	 * over the cleaned snapshot, so the on-disk file is an idealised
-	 * clean view and the loader sees no corruption to begin with. */
-	snap_slots = snapshot;
-	for (i = 0; i < HEALER_RELATION_SLOTS; i++) {
-		struct healer_relation *slot = &snap_slots[i];
-		unsigned int slot_pred_a, slot_pred_b;
-
-		if (slot->key == 0)
-			continue;
-
-		healer_unpack_key(slot->key, &slot_pred_a, &slot_pred_b);
-
-		/* Slot-level: a stray write into the slot's key has trashed
-		 * the predecessor pair; every promoted entry in the slot
-		 * inherits the bad pair and is unrecoverable.  Memset the
-		 * whole slot -- key == 0 is the empty-slot sentinel and
-		 * weight == 0 the empty-entry one, so a zeroed slot loads
-		 * back as cleanly empty. */
-		if (slot_pred_a >= MAX_NR_SYSCALL ||
-		    slot_pred_b >= MAX_NR_SYSCALL) {
-			memset(slot, 0, sizeof(*slot));
-			scrubbed++;
-			continue;
-		}
-
-		/* Per-entry: pred_a / pred_b are clean but a promoted entry's
-		 * nr got scribbled.  Zero just that entry so the rest of the
-		 * slot's legitimate promoted entries survive the round-trip. */
-		for (j = 0; j < HEALER_PROMOTED_PER_SLOT; j++) {
-			unsigned int nr, weight;
-
-			healer_unpack_promoted(slot->promoted[j].entry,
-					       &nr, &weight);
-			if (weight == 0)
-				continue;
-			if (nr >= MAX_NR_SYSCALL) {
-				slot->promoted[j].entry = 0;
-				scrubbed++;
-			}
-		}
-	}
+	/* Sanitise the heap snapshot before computing the CRC and writing
+	 * it out, so corrupt-slot scribbles in the live table don't get
+	 * persisted to disk and reloaded back into shm on warm-start,
+	 * carrying garbage across runs.  See healer_scrub_snapshot() for
+	 * the slot-level + per-entry rules.  The on-disk file becomes an
+	 * idealised clean view; the live shm->healer_relations[] is
+	 * untouched -- decay and eviction handle it in the normal way. */
+	scrubbed = healer_scrub_snapshot(snapshot);
 
 	memset(&hdr, 0, sizeof(hdr));
 	hdr.magic = HEALER_FILE_MAGIC;
@@ -1302,6 +1321,7 @@ bool healer_load_file(const char *path)
 	struct utsname u;
 	void *tmpbuf;
 	uint32_t want_crc;
+	unsigned int scrubbed = 0;
 	int fd;
 	bool ok = false;
 
@@ -1357,12 +1377,25 @@ bool healer_load_file(const char *path)
 	if (want_crc != hdr.payload_crc32)
 		goto out_free;
 
+	/* Defence-in-depth: even after CRC has confirmed bit-for-bit fidelity
+	 * with what was written, the file itself may carry corrupt slots --
+	 * an old snapshot saved before the save-side scrub commit, or a
+	 * tail-probability bit-flip in a hex value that still satisfies CRC.
+	 * Run the same sanitiser the save side runs so the bytes we're about
+	 * to memcpy into shm match the slot-level + per-entry invariants the
+	 * dump path enforces.  The scrub touches tmpbuf only; shm still gets
+	 * the cleaned bytes via the existing memcpy below. */
+	scrubbed = healer_scrub_snapshot(tmpbuf);
+
 	memcpy(shm->healer_relations, tmpbuf, HEALER_PAYLOAD_BYTES);
 	__atomic_store_n(&shm->stats.healer_relations_observed,
 			 hdr.observations, __ATOMIC_RELAXED);
 	__atomic_store_n(&shm->stats.healer_obs_at_last_snapshot,
 			 hdr.observations, __ATOMIC_RELAXED);
 	ok = true;
+	if (scrubbed != 0)
+		output(0, "healer_load_file: scrubbed %u corrupt slots/entries from loaded snapshot\n",
+		       scrubbed);
 
 out_free:
 	free(tmpbuf);
