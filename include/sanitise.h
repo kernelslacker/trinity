@@ -35,6 +35,10 @@ int32_t get_random_timerid(void);
 void register_timerid(int32_t tid);
 unsigned long get_random_aio_ctx(void);
 void register_aio_ctx(unsigned long ctx);
+int get_random_sysv_sem(void);
+void register_sysv_sem(int semid);
+int get_random_sysv_msg(void);
+void register_sysv_msg(int msqid);
 
 void gen_unicode_page(char *page);
 

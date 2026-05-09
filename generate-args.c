@@ -436,6 +436,22 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
 			return (unsigned long) rand64();
 		return get_random_aio_ctx();
 
+	case ARG_SEM_ID:
+		/* ~1 in 8: pass garbage to keep semctl/semop/semtimedop
+		 * input-validation paths exercised; otherwise pull a semid
+		 * from the producer-fed OBJ_SYSV_SEM pool fed by semget. */
+		if (ONE_IN(8))
+			return (unsigned long) (int) rand32();
+		return (unsigned long) get_random_sysv_sem();
+
+	case ARG_MSG_ID:
+		/* ~1 in 8: pass garbage to keep msgctl/msgsnd/msgrcv
+		 * input-validation paths exercised; otherwise pull a msqid
+		 * from the producer-fed OBJ_SYSV_MSG pool fed by msgget. */
+		if (ONE_IN(8))
+			return (unsigned long) (int) rand32();
+		return (unsigned long) get_random_sysv_msg();
+
 	case ARG_RANGE:
 		return handle_arg_range(entry, argnum);
 
