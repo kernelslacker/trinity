@@ -125,7 +125,6 @@ static void post_mq_open(struct syscallrecord *rec)
 {
 	struct mq_open_post_state *snap =
 		(struct mq_open_post_state *) rec->post_state;
-	int fd = rec->retval;
 
 	if (snap == NULL)
 		return;
@@ -151,7 +150,15 @@ static void post_mq_open(struct syscallrecord *rec)
 		return;
 	}
 
-	close(fd);
+	/* Don't close fd here: the dispatcher's register_returned_fd()
+	 * runs after this handler and claims the fd into the OBJ_FD_MQ
+	 * OBJ_LOCAL pool (via the .ret_objtype annotation on the
+	 * syscallentry).  mq_destructor handles close() at child
+	 * teardown.  mq_unlink below still removes the named entry from
+	 * the queue namespace so subsequent iterations re-binding the
+	 * same name don't EEXIST -- the kernel keeps the queue alive
+	 * for the open fd until its last close.
+	 */
 
 	{
 		void *name = (void *)(unsigned long) snap->name;
@@ -191,6 +198,7 @@ struct syscallentry syscall_mq_open = {
 	.argname = { [0] = "u_name", [1] = "oflag", [2] = "mode", [3] = "u_attr" },
 	.arg_params[1].list = ARGLIST(mq_open_flags),
 	.rettype = RET_FD,
+	.ret_objtype = OBJ_FD_MQ,
 	.sanitise = sanitise_mq_open,
 	.post = post_mq_open,
 };
