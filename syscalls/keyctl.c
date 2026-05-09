@@ -253,13 +253,14 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 		 */
 		if (objects_empty(OBJ_FD_WATCH_QUEUE) == false) {
 			for (int i = 0; i < 1000; i++) {
-				unsigned int slot_idx, slot_version;
+				unsigned int slot_idx, slot_version, slot_array_gen;
 				struct object *obj;
 
 				obj = get_random_object_versioned(OBJ_FD_WATCH_QUEUE,
 								  OBJ_GLOBAL,
 								  &slot_idx,
-								  &slot_version);
+								  &slot_version,
+								  &slot_array_gen);
 				if (obj == NULL)
 					continue;
 
@@ -293,7 +294,8 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 				if (!validate_object_handle(OBJ_FD_WATCH_QUEUE,
 							    OBJ_GLOBAL, obj,
 							    slot_idx,
-							    slot_version))
+							    slot_version,
+							    slot_array_gen))
 					continue;
 
 				fd = obj->watch_queueobj.fd;

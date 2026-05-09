@@ -562,7 +562,7 @@ struct socketinfo * get_rand_socketinfo(void)
 		return NULL;
 
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version;
+		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		struct socketinfo *si;
 
@@ -582,7 +582,7 @@ struct socketinfo * get_rand_socketinfo(void)
 		 * before return narrows that window to a few cycles.
 		 */
 		obj = get_random_object_versioned(OBJ_FD_SOCKET, OBJ_GLOBAL,
-						  &slot_idx, &slot_version);
+						  &slot_idx, &slot_version, &slot_array_gen);
 		if (obj == NULL)
 			continue;
 
@@ -631,7 +631,7 @@ struct socketinfo * get_rand_socketinfo(void)
 		 * to the caller.
 		 */
 		if (!validate_object_handle(OBJ_FD_SOCKET, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version))
+					    slot_idx, slot_version, slot_array_gen))
 			continue;
 
 		return si;

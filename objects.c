@@ -708,6 +708,22 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			       oldcap * sizeof(struct object *));
 		head->array = newarray;
 		head->array_capacity = newcap;
+		/*
+		 * Bump the whole-array generation AFTER the new buffer is
+		 * published.  A reader that snapshots the generation BEFORE
+		 * loading head->array sees either (gen=N, array=oldarray) or
+		 * (gen=N+1, array=newarray); validate_object_handle() compares
+		 * its snapshotted gen against the current value and rejects
+		 * any handle whose snapshot pre-dates the swap, so a consumer
+		 * that loaded head->array into a local variable before this
+		 * point and is now holding a slot pointer from the prior
+		 * generation drops it instead of dereferencing into the
+		 * deferred-free queue's pending chunk.  RELEASE so the bump
+		 * orders after the head->array store from a reader's
+		 * perspective.
+		 */
+		__atomic_add_fetch(&head->array_generation, 1,
+				   __ATOMIC_RELEASE);
 		if (oldarray != NULL)
 			deferred_free_enqueue(oldarray, free);
 	}
@@ -823,6 +839,7 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
 		}
 
 		head->num_entries = 0;
+		head->array_generation = 0;
 
 		if (scope == OBJ_GLOBAL) {
 			/* Pre-allocate the parallel array in MAP_SHARED memory
@@ -971,7 +988,8 @@ static struct object *sample_global_slot(struct objhead *head,
 
 static struct object *get_random_object_global_lockless(struct objhead *head,
 							unsigned int *idx_out,
-							unsigned int *version_out)
+							unsigned int *version_out,
+							unsigned int *array_gen_out)
 {
 	unsigned int snapshot;
 	unsigned int idx;
@@ -988,6 +1006,8 @@ static struct object *get_random_object_global_lockless(struct objhead *head,
 	const unsigned int cap = head->array_capacity;
 
 	for (attempt = 0; attempt < GET_RANDOM_OBJECT_RETRY_BUDGET; attempt++) {
+		unsigned int gen;
+
 		snapshot = __atomic_load_n(&head->num_entries,
 					   __ATOMIC_ACQUIRE);
 		if (snapshot == 0)
@@ -1001,11 +1021,23 @@ static struct object *get_random_object_global_lockless(struct objhead *head,
 		 */
 		if (snapshot > cap)
 			return NULL;
+		/*
+		 * Snapshot the whole-array generation BEFORE the per-slot
+		 * sample.  ACQUIRE pairs with the bumper's RELEASE in
+		 * add_object()/destroy_objects().  OBJ_GLOBAL arrays don't
+		 * realloc, so this is 0 in steady state — but a wild write
+		 * that reseats head->array would also be visible here, and
+		 * the matching check in validate_object_handle() rejects the
+		 * handle before any consumer derefs the obj it references.
+		 */
+		gen = __atomic_load_n(&head->array_generation,
+				      __ATOMIC_ACQUIRE);
 		idx = rand() % snapshot;
 		obj = sample_global_slot(head, idx, &version);
 		if (obj != NULL) {
 			*idx_out = idx;
 			*version_out = version;
+			*array_gen_out = gen;
 			return obj;
 		}
 	}
@@ -1017,21 +1049,24 @@ static struct object *get_random_object_global_lockless(struct objhead *head,
 
 struct object * get_random_object(enum objecttype type, enum obj_scope scope)
 {
-	unsigned int idx, version;
+	unsigned int idx, version, array_gen;
 
-	return get_random_object_versioned(type, scope, &idx, &version);
+	return get_random_object_versioned(type, scope, &idx, &version,
+					   &array_gen);
 }
 
 struct object * get_random_object_versioned(enum objecttype type,
 					    enum obj_scope scope,
 					    unsigned int *idx_out,
-					    unsigned int *version_out)
+					    unsigned int *version_out,
+					    unsigned int *array_gen_out)
 {
 	struct objhead *head;
 	struct object *obj;
 
 	*idx_out = 0;
 	*version_out = 0;
+	*array_gen_out = 0;
 
 	head = get_objhead(scope, type);
 	if (head == NULL)
@@ -1052,10 +1087,13 @@ struct object * get_random_object_versioned(enum objecttype type,
 				return NULL;
 			if (snapshot > head->array_capacity)
 				return NULL;
+			*array_gen_out = __atomic_load_n(&head->array_generation,
+							 __ATOMIC_ACQUIRE);
 			return head->array[rand() % snapshot];
 		}
 		return get_random_object_global_lockless(head, idx_out,
-							 version_out);
+							 version_out,
+							 array_gen_out);
 	}
 
 	if (scope == OBJ_GLOBAL)
@@ -1066,6 +1104,17 @@ struct object * get_random_object_versioned(enum objecttype type,
 	} else {
 		unsigned int idx = rand() % head->num_entries;
 
+		/*
+		 * Snapshot array_generation BEFORE the array deref.  For
+		 * OBJ_LOCAL this is the entire validation primitive: a later
+		 * validate_object_handle() compares the snapshot against the
+		 * current head->array_generation to catch a stale handle held
+		 * across an add_object() grow that reseated head->array.
+		 * ACQUIRE pairs with the RELEASE bump in add_object()'s grow
+		 * path and destroy_objects()'s teardown.
+		 */
+		*array_gen_out = __atomic_load_n(&head->array_generation,
+						 __ATOMIC_ACQUIRE);
 		obj = head->array[idx];
 		*idx_out = idx;
 		if (scope == OBJ_GLOBAL && head->slot_versions != NULL)
@@ -1080,9 +1129,10 @@ struct object * get_random_object_versioned(enum objecttype type,
 
 bool validate_object_handle(enum objecttype type, enum obj_scope scope,
 			    struct object *obj, unsigned int idx,
-			    unsigned int version)
+			    unsigned int version, unsigned int array_gen)
 {
 	struct objhead *head;
+	unsigned int gen_now;
 	unsigned int v_now;
 	struct object *cur;
 
@@ -1090,16 +1140,50 @@ bool validate_object_handle(enum objecttype type, enum obj_scope scope,
 		return false;
 
 	/*
-	 * Only the lockless OBJ_GLOBAL child reader carries the UAF
-	 * window we are protecting against.  Parent OBJ_GLOBAL reads run
-	 * under shm->objlock and OBJ_LOCAL pools are per-child private,
-	 * so the validation degenerates to "yes" in both cases.
+	 * Parent OBJ_GLOBAL reads run under shm->objlock and synchronously
+	 * with all mutators, so neither the slot-version nor the array-
+	 * generation race window exists from the parent's perspective.
+	 * (The parent never touches OBJ_LOCAL — get_objhead returns NULL
+	 * for OBJ_LOCAL when this_child() is NULL — so the parent path
+	 * collapses cleanly to OBJ_GLOBAL only.)
 	 */
-	if (scope != OBJ_GLOBAL || getpid() == mainpid)
+	if (scope == OBJ_GLOBAL && getpid() == mainpid)
 		return true;
 
 	head = get_objhead(scope, type);
-	if (head == NULL || head->slot_versions == NULL)
+	if (head == NULL)
+		return true;
+
+	/*
+	 * Whole-array generation check.  A mismatch means head->array was
+	 * reseated since the caller snapshotted array_gen at pick time —
+	 * the OBJ_LOCAL grow path's zmalloc-copy-defer-free, the teardown
+	 * NULL-out, or a wild write that stomped both head->array and
+	 * head->array_generation in the same vicinity.  The caller's idx
+	 * is now indexing into either a deferred-free chunk that may have
+	 * been recycled by libc (the failure mode that surfaced as a UAF
+	 * read inside a stdio FILE buffer the OBJ_LOCAL maps pool's prior
+	 * generation had been free()'d into) or an unrelated buffer
+	 * entirely.  Reject without dereferencing array[idx].  ACQUIRE
+	 * pairs with the bumper's RELEASE in add_object()/destroy_objects.
+	 *
+	 * For OBJ_LOCAL this is the whole validation: there is no
+	 * lockless reader to coordinate with via slot_versions, the bug
+	 * we are catching is buffer-level rather than slot-level, and any
+	 * deref of head->array inside this function would simply re-trip
+	 * the same UAF we are trying to detect.
+	 */
+	gen_now = __atomic_load_n(&head->array_generation, __ATOMIC_ACQUIRE);
+	if (gen_now != array_gen) {
+		__atomic_add_fetch(&shm->stats.global_obj_uaf_caught, 1,
+				   __ATOMIC_RELAXED);
+		return false;
+	}
+
+	if (scope != OBJ_GLOBAL)
+		return true;
+
+	if (head->slot_versions == NULL)
 		return true;
 
 	if (idx >= head->array_capacity)
@@ -1455,6 +1539,13 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 		free(head->array);
 		head->array = NULL;
 		head->array_capacity = 0;
+		/*
+		 * Bump the generation so any handle still snapshotted from
+		 * the just-freed buffer fails validation rather than indexing
+		 * back into a libc-reclaimed chunk.
+		 */
+		__atomic_add_fetch(&head->array_generation, 1,
+				   __ATOMIC_RELEASE);
 	} else {
 		/* Zero out the shared array for reuse. */
 		memset(head->array, 0, head->array_capacity * sizeof(struct object *));

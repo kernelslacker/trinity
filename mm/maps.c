@@ -18,8 +18,8 @@
  * OBJ_MMAP_ANON / OBJ_MMAP_FILE / OBJ_MMAP_TESTFILE pools.  Same
  * pick-and-validate flow as get_map() (heap-range guard, size guard,
  * just-before-return validate_object_handle()) but additionally
- * captures (slot_idx, slot_version) into *h so the caller can
- * re-validate the slot via validate_map_handle() right before its
+ * captures (slot_idx, slot_version, slot_array_gen) into *h so the
+ * caller can re-validate the slot via validate_map_handle() right before its
  * own deref of map->ptr / map->size / map->prot.  Returns true on
  * success with h->map pointing at &obj->map; false (and h->map = NULL)
  * if the 1000-iter retry budget is exhausted by repeated concurrent
@@ -43,6 +43,7 @@ bool get_map_handle(struct map_handle *h)
 	h->map = NULL;
 	h->slot_idx = 0;
 	h->slot_version = 0;
+	h->slot_array_gen = 0;
 
 	if (child == NULL)
 		scope = OBJ_GLOBAL;
@@ -50,7 +51,7 @@ bool get_map_handle(struct map_handle *h)
 		scope = OBJ_LOCAL;
 
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version;
+		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 
 		static const enum objecttype map_pool_types[3] = {
@@ -69,13 +70,20 @@ bool get_map_handle(struct map_handle *h)
 		 * and this caller's deref, free_shared_obj() had already
 		 * routed the chunk back to the shared-heap freelist, and
 		 * a concurrent alloc_shared_obj() recycled it underneath us.
-		 * The version snapshot below + validate_object_handle()
-		 * just before return narrows that window to a few cycles;
-		 * the handle exported in *h lets a downstream consumer
-		 * re-narrow it again right before its own deref.
+		 * The version+array-generation snapshot below plus
+		 * validate_object_handle() just before return narrows that
+		 * window to a few cycles; the handle exported in *h lets a
+		 * downstream consumer re-narrow it again right before its
+		 * own deref.  The array-generation snapshot additionally
+		 * catches the OBJ_LOCAL pool's own grow path reseating
+		 * head->array — without it, a slot picked from one
+		 * generation of head->array but dereffed after a same-child
+		 * add_object() doubling reads the deferred-free chunk that
+		 * libc may have already recycled.
 		 */
 		obj = get_random_object_versioned(type, scope, &slot_idx,
-						  &slot_version);
+						  &slot_version,
+						  &slot_array_gen);
 		if (obj == NULL)
 			continue;
 
@@ -138,7 +146,7 @@ bool get_map_handle(struct map_handle *h)
 		 * the caller.
 		 */
 		if (!validate_object_handle(type, scope, obj, slot_idx,
-					    slot_version))
+					    slot_version, slot_array_gen))
 			continue;
 
 		h->map = &obj->map;
@@ -146,6 +154,7 @@ bool get_map_handle(struct map_handle *h)
 		h->scope = scope;
 		h->slot_idx = slot_idx;
 		h->slot_version = slot_version;
+		h->slot_array_gen = slot_array_gen;
 		return true;
 	}
 
@@ -186,7 +195,7 @@ bool validate_map_handle(struct map_handle *h)
 	obj = container_of(h->map, struct object, map);
 
 	if (!validate_object_handle(h->type, h->scope, obj, h->slot_idx,
-				    h->slot_version)) {
+				    h->slot_version, h->slot_array_gen)) {
 		__atomic_add_fetch(&shm->stats.maps_uaf_caught, 1,
 				   __ATOMIC_RELAXED);
 		return false;

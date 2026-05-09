@@ -326,7 +326,7 @@ retry:
 		return get_random_fd();
 
 	{
-		unsigned int slot_idx, slot_version;
+		unsigned int slot_idx, slot_version, slot_array_gen;
 
 		/*
 		 * Versioned slot pick + validate_object_handle() before
@@ -352,7 +352,7 @@ retry:
 		 * after the obj was published).
 		 */
 		obj = get_random_object_versioned(objtype, OBJ_GLOBAL,
-						  &slot_idx, &slot_version);
+						  &slot_idx, &slot_version, &slot_array_gen);
 		if (obj == NULL)
 			return get_random_fd();
 
@@ -365,7 +365,7 @@ retry:
 		}
 
 		if (!validate_object_handle(objtype, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version)) {
+					    slot_idx, slot_version, slot_array_gen)) {
 			retries++;
 			goto retry;
 		}

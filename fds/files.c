@@ -195,12 +195,12 @@ int get_rand_pool_fd(enum objecttype objtype)
 	 * three providers with a single wireup.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version;
+		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
 		obj = get_random_object_versioned(objtype, OBJ_GLOBAL,
-						  &slot_idx, &slot_version);
+						  &slot_idx, &slot_version, &slot_array_gen);
 		if (obj == NULL)
 			continue;
 
@@ -217,7 +217,7 @@ int get_rand_pool_fd(enum objecttype objtype)
 		}
 
 		if (!validate_object_handle(objtype, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version))
+					    slot_idx, slot_version, slot_array_gen))
 			continue;
 
 		fd = obj->fileobj.fd;

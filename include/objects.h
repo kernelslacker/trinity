@@ -302,6 +302,27 @@ struct local_fd_hash_slot {
 struct objhead {
 	struct object **array;		/* parallel array for O(1) random access */
 	/*
+	 * Whole-array generation counter.  Bumped on every reassignment of
+	 * ->array (the OBJ_LOCAL grow path's zmalloc-copy-defer-free in
+	 * add_object(), and the destroy_objects() teardown that NULLs the
+	 * pointer on shutdown).  Independent of the per-slot ->slot_versions
+	 * scheme: slot_versions catches a slot being destroyed or replaced
+	 * underneath a reader, while array_generation catches the entire
+	 * backing buffer being swapped (the doubling realloc) or wild-write-
+	 * stomped to a stale pointer.  A reader snapshots this at slot-pick
+	 * time and validate_object_handle() compares the snapshot against
+	 * the current value before trusting any cached array index — a
+	 * mismatch means the buffer the snapshot was indexing has since
+	 * been deferred-freed back to the libc cache and may now alias
+	 * something else (the failure mode the OBJ_LOCAL maps pool hit when
+	 * a prior generation of head->array was reused for a stdio FILE
+	 * buffer).  OBJ_GLOBAL arrays are pre-allocated at fixed capacity
+	 * and never reseated, so the counter stays 0 there in steady state;
+	 * the check is still wired up for defence-in-depth against a wild
+	 * write that clobbers head->array alongside head->array_generation.
+	 */
+	unsigned int array_generation;
+	/*
 	 * Per-slot version counter, parallel to ->array.  Bumped by
 	 * add_object()/__destroy_object() on every slot mutation (insert,
 	 * swap-in from the prior tail, NULL-out of the prior tail).  The
@@ -413,37 +434,47 @@ struct object * get_random_object(enum objecttype type, enum obj_scope scope);
 
 /*
  * Versioned variant of get_random_object().  On success returns the
- * picked obj and stores the slot index and the version observed at
- * pick time into *idx_out / *version_out.  Callers that hold the obj
- * across a window in which the parent might destroy it (e.g. get_map
- * passes &obj->map outwards and the consumer derefs map->ptr later)
- * pass the saved (idx, version) into validate_object_handle() right
- * before the deref to confirm the slot wasn't mutated underneath us.
- * Returns NULL if the pool is empty or the lockless reader's retry
- * budget was exhausted by repeated concurrent destroys.  For OBJ_LOCAL
- * (no lockless reader, no slot_versions array) the out params are set
- * to (0, 0) and the helper degenerates to plain get_random_object().
+ * picked obj and stores the slot index, the per-slot version, and the
+ * whole-array generation observed at pick time into
+ * *idx_out / *version_out / *array_gen_out.  Callers that hold the obj
+ * across a window in which a parent destroy or a same-process realloc
+ * could invalidate the slot (e.g. get_map passes &obj->map outwards
+ * and the consumer derefs map->ptr later) pass the saved triple into
+ * validate_object_handle() right before the deref to confirm neither
+ * the slot was mutated nor the entire backing array was reseated
+ * underneath us.  Returns NULL if the pool is empty or the lockless
+ * reader's retry budget was exhausted by repeated concurrent destroys.
+ * For OBJ_LOCAL (no lockless reader, no slot_versions array) the
+ * version out is set to 0 but array_gen_out still carries the snapshot
+ * needed by validate_object_handle()'s OBJ_LOCAL path.
  */
 struct object * get_random_object_versioned(enum objecttype type,
 					    enum obj_scope scope,
 					    unsigned int *idx_out,
-					    unsigned int *version_out);
+					    unsigned int *version_out,
+					    unsigned int *array_gen_out);
 
 /*
  * Re-validate an obj handle previously returned by
- * get_random_object_versioned().  Re-acquires slot_versions[idx] and
- * array[idx] and confirms (a) the version matches what the caller
- * snapshotted at pick time and (b) the slot still points at the same
- * obj.  Returns true if the slot is still consistent, false if the
- * parent destroyed or replaced the entry in the meantime — in which
- * case the caller MUST drop the handle and pick a fresh one rather
- * than dereferencing the stale obj pointer.  Bumps the
- * global_obj_uaf_caught counter on a detected mismatch.  No-op (always
- * true) for OBJ_LOCAL.
+ * get_random_object_versioned().  First compares the snapshotted
+ * head->array_generation against the current value: a mismatch means
+ * the entire backing array was reseated since the pick (the OBJ_LOCAL
+ * grow path's zmalloc-copy-defer-free, or a wild write that stomped
+ * head->array), so the caller's cached idx is indexing into either a
+ * deferred-free chunk that may have been recycled by libc or an
+ * unrelated buffer entirely; reject without dereferencing the stale
+ * array.  For OBJ_GLOBAL also re-acquires slot_versions[idx] and
+ * array[idx] and confirms the per-slot version matches and the slot
+ * still points at the same obj — the seqlock-style protection against
+ * the parent destroying or replacing the slot in the meantime.
+ * Returns true if every check passes, false on any mismatch — in
+ * which case the caller MUST drop the handle and pick a fresh one
+ * rather than dereferencing the stale obj pointer.  Bumps the
+ * global_obj_uaf_caught counter on a detected mismatch.
  */
 bool validate_object_handle(enum objecttype type, enum obj_scope scope,
 			    struct object *obj, unsigned int idx,
-			    unsigned int version);
+			    unsigned int version, unsigned int array_gen);
 
 bool objects_empty(enum objecttype type);
 void validate_global_objects(void);
