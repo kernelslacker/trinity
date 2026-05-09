@@ -21,6 +21,7 @@
 #include "kmsg-monitor.h"
 #include "maps.h"
 #include "minicorpus.h"
+#include "numa.h"
 #include "objects.h"
 #include "pids.h"
 #include "params.h"
@@ -269,6 +270,8 @@ int main(int argc, char* argv[])
 	long ncpus = sysconf(_SC_NPROCESSORS_ONLN);
 	num_online_cpus = (ncpus > 0) ? (unsigned int)ncpus : 1;
 	max_children = num_online_cpus * 4;	/* possibly overridden in params. */
+
+	init_numa_nodes();
 
 	select_syscall_tables();
 
