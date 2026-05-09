@@ -10,6 +10,7 @@
 #include "debug.h"
 #include "exit.h"
 #include "params.h"
+#include "shm.h"
 #include "trinity.h"
 #include "uid.h"
 
@@ -148,6 +149,12 @@ changed:
 		}
 
 		output(0, "uid changed! Was: %u, now %u\n", orig_uid, myuid);
+
+		/* Release-store the offending uid before panic() writes
+		 * exit_reason, so a reader who observes
+		 * exit_reason==EXIT_UID_CHANGED is guaranteed to see
+		 * uid_at_exit too. */
+		__atomic_store_n(&shm->uid_at_exit, myuid, __ATOMIC_RELEASE);
 
 		panic(EXIT_UID_CHANGED);
 		_exit(EXIT_UID_CHANGED);

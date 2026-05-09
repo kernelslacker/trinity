@@ -28,6 +28,7 @@
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"
+#include "uid.h"
 #include "utils.h"
 
 static void handle_child(int childno, pid_t childpid, int childstatus);
@@ -1399,8 +1400,24 @@ corrupt:
 	kill_all_kids();
 
 dont_wait:
-	output(0, "Bailing main loop because %s.\n",
-		decode_exit(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED)));
+	{
+		enum exit_reasons reason =
+			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+
+		switch (reason) {
+		case EXIT_UID_CHANGED: {
+			uid_t bad = __atomic_load_n(&shm->uid_at_exit,
+						    __ATOMIC_ACQUIRE);
+			output(0, "Bailing main loop because UID changed (was %u, now %u).\n",
+				orig_uid, bad);
+			break;
+		}
+		default:
+			output(0, "Bailing main loop because %s.\n",
+				decode_exit(reason));
+			break;
+		}
+	}
 }
 
 

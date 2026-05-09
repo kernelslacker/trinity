@@ -213,6 +213,9 @@ struct shm_s {
 
 	/* various flags. */
 	enum exit_reasons exit_reason;
+	/* set by check_uid alongside panic(EXIT_UID_CHANGED) so main can
+	 * include the offending uid in the bail message. */
+	uid_t uid_at_exit;
 	_Atomic bool dont_make_it_fail;
 
 	/* Set to true once we detect that /proc/self/fail-nth can't be
