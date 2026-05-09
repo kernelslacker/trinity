@@ -1619,6 +1619,15 @@ static int corrupt_ptr_pc_cmp(const void *a, const void *b)
  * passes a snapshot already sorted descending by count so all rows
  * share one snap+sort across the dump pass.  Silent when no entry
  * matches -- pre-sub-attribution runs and quiet handlers stay terse.
+ *
+ * Each row is annotated with a best-effort "file.c:NNN" from addr2line
+ * because pc_to_string() alone renders a PIE-relative offset that gets
+ * resolved by addr2line / external tooling DOWN to the nearest
+ * preceding global symbol -- a captured PC living inside an
+ * LTO-inlined static helper body therefore appears under whichever
+ * unrelated non-static symbol happens to precede it in the binary.
+ * Source coordinates disambiguate; falls back to the bare offset when
+ * addr2line is unavailable or the address can't be resolved.
  */
 static void corrupt_ptr_pc_dump_for(const struct corrupt_ptr_pc_entry *snap,
 				    unsigned int nr, bool do32bit)
@@ -1627,6 +1636,8 @@ static void corrupt_ptr_pc_dump_for(const struct corrupt_ptr_pc_entry *snap,
 
 	for (i = 0; i < CORRUPT_PTR_PC_SLOTS; i++) {
 		char pcbuf[128];
+		char srcbuf[256];
+		const char *src;
 
 		if (snap[i].count == 0)
 			break;
@@ -1641,9 +1652,15 @@ static void corrupt_ptr_pc_dump_for(const struct corrupt_ptr_pc_entry *snap,
 		 */
 		if (snap[i].pc == NULL || !pc_in_text(snap[i].pc))
 			continue;
-		stats_log_write("    %-32s %lu\n",
-				pc_to_string(snap[i].pc, pcbuf, sizeof(pcbuf)),
-				snap[i].count);
+		src = pc_to_source_line(snap[i].pc, srcbuf, sizeof(srcbuf));
+		if (src != NULL)
+			stats_log_write("    %-32s (%s) %lu\n",
+					pc_to_string(snap[i].pc, pcbuf, sizeof(pcbuf)),
+					src, snap[i].count);
+		else
+			stats_log_write("    %-32s %lu\n",
+					pc_to_string(snap[i].pc, pcbuf, sizeof(pcbuf)),
+					snap[i].count);
 	}
 }
 
@@ -1734,6 +1751,8 @@ static void deferred_free_reject_pc_dump(void)
 	stats_log_write("deferred_free_reject attribution (top %u callers):\n", n);
 	for (i = 0; i < CORRUPT_PTR_PC_SLOTS; i++) {
 		char pcbuf[128];
+		char srcbuf[256];
+		const char *src;
 
 		if (snap[i].count == 0)
 			break;
@@ -1744,9 +1763,25 @@ static void deferred_free_reject_pc_dump(void)
 		 */
 		if (snap[i].pc == NULL || !pc_in_text(snap[i].pc))
 			continue;
-		stats_log_write("  %-32s %lu\n",
-				pc_to_string(snap[i].pc, pcbuf, sizeof(pcbuf)),
-				snap[i].count);
+		/*
+		 * Annotate with addr2line file:line for the same reason as
+		 * corrupt_ptr_pc_dump_for: load-relative offsets resolved by
+		 * external tooling round DOWN to the nearest preceding
+		 * global symbol, mis-attributing PCs inside LTO-inlined
+		 * static helpers (deferred_free_enqueue itself is exactly
+		 * that shape via the looks_like_corrupted_ptr_pc and
+		 * post_handler_corrupt_ptr_bump inlines).  Falls back to
+		 * the bare offset on resolution miss.
+		 */
+		src = pc_to_source_line(snap[i].pc, srcbuf, sizeof(srcbuf));
+		if (src != NULL)
+			stats_log_write("  %-32s (%s) %lu\n",
+					pc_to_string(snap[i].pc, pcbuf, sizeof(pcbuf)),
+					src, snap[i].count);
+		else
+			stats_log_write("  %-32s %lu\n",
+					pc_to_string(snap[i].pc, pcbuf, sizeof(pcbuf)),
+					snap[i].count);
 	}
 }
 
