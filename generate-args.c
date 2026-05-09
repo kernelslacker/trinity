@@ -452,6 +452,14 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
 			return (unsigned long) (int) rand32();
 		return (unsigned long) get_random_sysv_msg();
 
+	case ARG_SYSV_SHM:
+		/* ~1 in 8: pass garbage to keep shmat/shmctl input-
+		 * validation paths exercised; otherwise pull a shmid from
+		 * the producer-fed OBJ_SYSV_SHM pool fed by shmget. */
+		if (ONE_IN(8))
+			return (unsigned long) (int) rand32();
+		return (unsigned long) get_random_sysv_shm();
+
 	case ARG_RANGE:
 		return handle_arg_range(entry, argnum);
 
