@@ -218,3 +218,15 @@ void healer_maybe_snapshot(void);
 void healer_pair_seed(unsigned int pred, unsigned int succ, unsigned int weight);
 void healer_pair_observe(unsigned int pred, unsigned int succ);
 unsigned int healer_pair_get(unsigned int pred, unsigned int succ);
+
+/*
+ * Static-seed classifier dry-run.  Walks the active syscall table once
+ * and counts the (producer, consumer) pairs that match by metadata --
+ * specifically, syscalls whose ret_objtype matches another syscall's
+ * typed-fd argtype slot.  Returns the count without writing anything;
+ * the seed loader that bulk-populates healer_pair_seed() from the same
+ * walk is a separate follow-up commit, and this counter exists so the
+ * classifier's edge inventory can be sanity-checked in isolation
+ * before the loader starts mutating the pair table.
+ */
+unsigned int healer_count_pc_pairs(void);
