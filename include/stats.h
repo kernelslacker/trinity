@@ -1006,6 +1006,7 @@ struct stats_s {
 	unsigned long nftables_churn_tproxy_expr_emit;	/* NEWRULE carried a structured nft_tproxy expression */
 	unsigned long nftables_churn_xfrm_expr_emit;	/* NEWRULE carried a structured nft_xfrm expression */
 	unsigned long nftables_churn_dup_netdev_expr_emit;	/* NEWRULE carried a structured nft_dup_netdev expression */
+	unsigned long nftables_churn_dup_ipv4_expr_emit;	/* NEWRULE carried a structured nft_dup_ipv4 expression */
 	unsigned long nftables_churn_last_expr_emit;	/* NEWRULE carried a structured nft_last expression */
 	unsigned long nftables_churn_rt_expr_emit;	/* NEWRULE carried a structured nft_rt expression */
 	unsigned long nftables_churn_fib_expr_emit;	/* NEWRULE carried a structured nft_fib expression */
