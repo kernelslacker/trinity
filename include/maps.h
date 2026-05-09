@@ -63,6 +63,15 @@ struct map_handle {
 	enum obj_scope scope;
 	unsigned int slot_idx;
 	unsigned int slot_version;
+	/*
+	 * Snapshot of head->array_generation captured at pick time.  Lets
+	 * validate_object_handle() detect a stale slot index that was
+	 * captured against a prior generation of head->array — the
+	 * OBJ_LOCAL grow path reseats the buffer and routes the old chunk
+	 * through deferred_free, so an idx held across a grow points into
+	 * a libc-reclaimed region.  See struct objhead.array_generation.
+	 */
+	unsigned int slot_array_gen;
 };
 
 bool get_map_handle(struct map_handle *h);

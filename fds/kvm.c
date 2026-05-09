@@ -545,12 +545,12 @@ static int get_rand_kvm_system_fd(void)
 		return -1;
 
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version;
+		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
 		obj = get_random_object_versioned(OBJ_FD_KVM_SYSTEM, OBJ_GLOBAL,
-						  &slot_idx, &slot_version);
+						  &slot_idx, &slot_version, &slot_array_gen);
 		if (obj == NULL)
 			continue;
 
@@ -562,7 +562,7 @@ static int get_rand_kvm_system_fd(void)
 		}
 
 		if (!validate_object_handle(OBJ_FD_KVM_SYSTEM, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version))
+					    slot_idx, slot_version, slot_array_gen))
 			continue;
 
 		fd = obj->kvmsysobj.fd;
@@ -582,12 +582,12 @@ static int get_rand_kvm_vm_fd(void)
 		return -1;
 
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version;
+		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
 		obj = get_random_object_versioned(OBJ_FD_KVM_VM, OBJ_GLOBAL,
-						  &slot_idx, &slot_version);
+						  &slot_idx, &slot_version, &slot_array_gen);
 		if (obj == NULL)
 			continue;
 
@@ -599,7 +599,7 @@ static int get_rand_kvm_vm_fd(void)
 		}
 
 		if (!validate_object_handle(OBJ_FD_KVM_VM, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version))
+					    slot_idx, slot_version, slot_array_gen))
 			continue;
 
 		fd = obj->kvmvmobj.fd;
@@ -619,12 +619,12 @@ static int get_rand_kvm_vcpu_fd(void)
 		return -1;
 
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version;
+		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
 		obj = get_random_object_versioned(OBJ_FD_KVM_VCPU, OBJ_GLOBAL,
-						  &slot_idx, &slot_version);
+						  &slot_idx, &slot_version, &slot_array_gen);
 		if (obj == NULL)
 			continue;
 
@@ -636,7 +636,7 @@ static int get_rand_kvm_vcpu_fd(void)
 		}
 
 		if (!validate_object_handle(OBJ_FD_KVM_VCPU, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version))
+					    slot_idx, slot_version, slot_array_gen))
 			continue;
 
 		fd = obj->kvmvcpuobj.fd;
