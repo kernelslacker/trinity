@@ -48,4 +48,5 @@ struct syscallentry syscall_setitimer = {
 	.argname = { [0] = "which", [1] = "value", [2] = "ovalue" },
 	.arg_params[0].list = ARGLIST(setitimer_which),
 	.sanitise = sanitise_setitimer,
+	.rettype = RET_ZERO_SUCCESS,
 };

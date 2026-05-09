@@ -164,4 +164,5 @@ struct syscallentry syscall_rt_sigpending = {
 	.argname = { [0] = "set", [1] = "sigsetsize" },
 	.sanitise = sanitise_rt_sigpending,
 	.post = post_rt_sigpending,
+	.rettype = RET_ZERO_SUCCESS,
 };

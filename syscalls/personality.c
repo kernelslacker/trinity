@@ -36,4 +36,5 @@ struct syscallentry syscall_personality = {
 	.argname = { [0] = "personality" },
 	.arg_params[0].list = ARGLIST(personalities),
 	.post = post_personality,
+	.rettype = RET_BORING,
 };

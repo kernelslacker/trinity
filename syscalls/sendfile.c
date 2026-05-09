@@ -41,6 +41,7 @@ struct syscallentry syscall_sendfile = {
 	.post = post_sendfile_common,
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
 	.group = GROUP_VFS,
+	.rettype = RET_NUM_BYTES,
 };
 
 /*
@@ -56,4 +57,5 @@ struct syscallentry syscall_sendfile64 = {
 	.post = post_sendfile_common,
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
 	.group = GROUP_VFS,
+	.rettype = RET_NUM_BYTES,
 };

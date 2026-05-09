@@ -43,4 +43,5 @@ struct syscallentry syscall_timerfd_settime = {
 	.arg_params[1].list = ARGLIST(timerfd_settime_flags),
 	.sanitise = sanitise_timerfd_settime,
 	.flags = NEED_ALARM,
+	.rettype = RET_ZERO_SUCCESS,
 };

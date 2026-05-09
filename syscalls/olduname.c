@@ -249,4 +249,5 @@ struct syscallentry syscall_olduname = {
 	.post = post_olduname,
 #endif
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

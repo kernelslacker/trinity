@@ -56,4 +56,5 @@ struct syscallentry syscall_socketpair = {
 	.group = GROUP_NET,
 	.sanitise = sanitise_socketpair,
 	.post = post_socketpair,
+	.rettype = RET_ZERO_SUCCESS,
 };

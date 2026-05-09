@@ -176,4 +176,5 @@ struct syscallentry syscall_timer_create = {
 	.arg_params[0].list = ARGLIST(clock_ids),
 	.sanitise = timer_create_sanitise,
 	.post = post_timer_create,
+	.rettype = RET_ZERO_SUCCESS,
 };

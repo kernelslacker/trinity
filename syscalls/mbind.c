@@ -93,4 +93,5 @@ struct syscallentry syscall_mbind = {
 
 	.sanitise = sanitise_mbind,
 	.group = GROUP_VM,
+	.rettype = RET_ZERO_SUCCESS,
 };

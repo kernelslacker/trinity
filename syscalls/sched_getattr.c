@@ -255,4 +255,5 @@ struct syscallentry syscall_sched_getattr = {
 	.arg_params[3].list = ARGLIST(sched_getattr_flags),
 	.sanitise = sanitise_sched_getattr,
 	.post = post_sched_getattr,
+	.rettype = RET_ZERO_SUCCESS,
 };

@@ -172,4 +172,5 @@ struct syscallentry syscall_init_module = {
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_init_module,
 	.post = post_init_module,
+	.rettype = RET_ZERO_SUCCESS,
 };

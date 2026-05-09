@@ -57,4 +57,5 @@ struct syscallentry syscall_mincore = {
 	.group = GROUP_VM,
 	.sanitise = sanitise_mincore,
 	.post = post_mincore,
+	.rettype = RET_ZERO_SUCCESS,
 };

@@ -77,4 +77,5 @@ struct syscallentry syscall_fork = {
 	.flags = AVOID_SYSCALL, // No args to fuzz, confuses fuzzer
 	.sanitise = sanitise_fork,
 	.post = post_fork,
+	.rettype = RET_PID_T,
 };

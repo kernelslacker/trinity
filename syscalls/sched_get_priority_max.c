@@ -84,4 +84,5 @@ struct syscallentry syscall_sched_get_priority_max = {
 	.argname = { [0] = "policy" },
 	.arg_params[0].list = ARGLIST(sched_policies),
 	.post = post_sched_get_priority_max,
+	.rettype = RET_BORING,
 };

@@ -172,4 +172,5 @@ struct syscallentry syscall_times = {
 	.argname = { [0] = "tbuf" },
 	.sanitise = sanitise_times,
 	.post = post_times,
+	.rettype = RET_BORING,
 };

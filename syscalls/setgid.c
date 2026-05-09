@@ -81,6 +81,7 @@ struct syscallentry syscall_setgid = {
 	.arg_params[0].range.hi = 65535,
 	.post = post_setgid,
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 };
 
 
@@ -96,4 +97,5 @@ struct syscallentry syscall_setgid16 = {
 	.arg_params[0].range.low = 0,
 	.arg_params[0].range.hi = 65535,
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

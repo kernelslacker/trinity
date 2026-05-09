@@ -23,4 +23,5 @@ struct syscallentry syscall_nanosleep = {
 	.argname = { [0] = "rqtp", [1] = "rmtp" },
 	.post = post_nanosleep,
 	.flags = AVOID_SYSCALL, // Boring.  Can cause long sleeps.
+	.rettype = RET_ZERO_SUCCESS,
 };

@@ -50,6 +50,7 @@ struct syscallentry syscall_setfsuid = {
 	.arg_params[0].range.hi = 65535,
 	.post = post_setfsuid,
 	.group = GROUP_VFS,
+	.rettype = RET_UID_T,
 };
 
 
@@ -65,4 +66,5 @@ struct syscallentry syscall_setfsuid16 = {
 	.arg_params[0].range.low = 0,
 	.arg_params[0].range.hi = 65535,
 	.group = GROUP_VFS,
+	.rettype = RET_UID_T,
 };

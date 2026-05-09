@@ -33,4 +33,5 @@ struct syscallentry syscall_stime = {
 	.argname = { [0] = "tptr" },
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_stime,
+	.rettype = RET_ZERO_SUCCESS,
 };

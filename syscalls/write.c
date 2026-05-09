@@ -119,6 +119,7 @@ struct syscallentry syscall_write = {
 	.post     = post_write,
 	.group = GROUP_VFS,
 	.bound_arg = 3,
+	.rettype = RET_NUM_BYTES,
 };
 
 /*
@@ -139,6 +140,7 @@ struct syscallentry syscall_writev = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_writev,
 	.group = GROUP_VFS,
+	.rettype = RET_NUM_BYTES,
 };
 
 
@@ -162,6 +164,7 @@ struct syscallentry syscall_pwrite64 = {
 	.post     = post_write,
 	.group = GROUP_VFS,
 	.bound_arg = 3,
+	.rettype = RET_NUM_BYTES,
 };
 
 
@@ -186,6 +189,7 @@ struct syscallentry syscall_pwritev = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_pwritev,
 	.group = GROUP_VFS,
+	.rettype = RET_NUM_BYTES,
 };
 
 /*
@@ -220,4 +224,5 @@ struct syscallentry syscall_pwritev2 = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_pwritev2,
 	.group = GROUP_VFS,
+	.rettype = RET_NUM_BYTES,
 };

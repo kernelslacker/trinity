@@ -27,4 +27,5 @@ struct syscallentry syscall_sigprocmask = {
 	.argname = { [0] = "how", [1] = "set", [2] = "oset" },
 	.arg_params[0].list = ARGLIST(sigprocmask_how),
 	.sanitise = sanitise_sigprocmask,
+	.rettype = RET_ZERO_SUCCESS,
 };

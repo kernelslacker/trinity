@@ -80,4 +80,5 @@ struct syscallentry syscall_quotactl_fd = {
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_quotactl_fd,
+	.rettype = RET_ZERO_SUCCESS,
 };

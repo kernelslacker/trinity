@@ -65,4 +65,5 @@ struct syscallentry syscall_setpgid = {
 	.argtype = { [0] = ARG_PID, [1] = ARG_PID },
 	.argname = { [0] = "pid", [1] = "pgid" },
 	.post = post_setpgid,
+	.rettype = RET_ZERO_SUCCESS,
 };

@@ -254,4 +254,5 @@ struct syscallentry syscall_lookup_dcookie = {
 #endif
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
+	.rettype = RET_NUM_BYTES,
 };

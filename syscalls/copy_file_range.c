@@ -51,4 +51,5 @@ struct syscallentry syscall_copy_file_range = {
 	.post = post_copy_file_range,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	.rettype = RET_NUM_BYTES,
 };

@@ -278,4 +278,5 @@ struct syscallentry syscall_listmount = {
 	.sanitise = sanitise_listmount,
 	.post = post_listmount,
 	.bound_arg = 3,
+	.rettype = RET_NUM_BYTES,
 };

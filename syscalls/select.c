@@ -203,4 +203,5 @@ struct syscallentry syscall_select = {
 	.post = post_select,
 	.group = GROUP_VFS,
 	.flags = NEED_ALARM,
+	.rettype = RET_BORING,
 };

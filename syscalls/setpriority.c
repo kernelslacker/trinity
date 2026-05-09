@@ -84,4 +84,5 @@ struct syscallentry syscall_setpriority = {
 	.sanitise = sanitise_setpriority,
 	.post = post_setpriority,
 	.group = GROUP_SCHED,
+	.rettype = RET_ZERO_SUCCESS,
 };

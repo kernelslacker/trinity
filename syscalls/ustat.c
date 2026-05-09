@@ -80,4 +80,5 @@ struct syscallentry syscall_ustat = {
 	.argname = { [0] = "dev", [1] = "ubuf" },
 	.sanitise = sanitise_ustat,
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 };

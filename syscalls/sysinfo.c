@@ -183,4 +183,5 @@ struct syscallentry syscall_sysinfo = {
 	.sanitise = sanitise_sysinfo,
 	.post = post_sysinfo,
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

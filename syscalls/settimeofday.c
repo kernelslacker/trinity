@@ -47,4 +47,5 @@ struct syscallentry syscall_settimeofday = {
 	.argname = { [0] = "tv", [1] = "tz" },
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_settimeofday,
+	.rettype = RET_ZERO_SUCCESS,
 };

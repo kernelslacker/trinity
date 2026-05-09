@@ -297,4 +297,5 @@ struct syscallentry syscall_setsockopt = {
 	.post = post_setsockopt,
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
+	.rettype = RET_ZERO_SUCCESS,
 };

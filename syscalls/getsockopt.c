@@ -106,4 +106,5 @@ struct syscallentry syscall_getsockopt = {
 	.group = GROUP_NET,
 	.sanitise = sanitise_getsockopt,
 	.post = post_getsockopt,
+	.rettype = RET_ZERO_SUCCESS,
 };

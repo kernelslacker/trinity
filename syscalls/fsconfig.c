@@ -122,4 +122,5 @@ struct syscallentry syscall_fsconfig = {
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_fsconfig,
+	.rettype = RET_ZERO_SUCCESS,
 };

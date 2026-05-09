@@ -7,4 +7,5 @@ struct syscallentry syscall_sgetmask = {
 	.name = "sgetmask",
 	.num_args = 0,
 	.group = GROUP_PROCESS,
+	.rettype = RET_BORING,
 };

@@ -82,4 +82,5 @@ struct syscallentry syscall_clock_adjtime = {
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_clock_adjtime,
 	.post = post_clock_adjtime,
+	.rettype = RET_BORING,
 };

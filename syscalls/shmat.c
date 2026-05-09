@@ -46,4 +46,5 @@ struct syscallentry syscall_shmat = {
 	.arg_params[2].list = ARGLIST(shmat_flags),
 	.sanitise = sanitise_shmat,
 	.post = post_shmat,
+	.rettype = RET_ADDRESS,
 };

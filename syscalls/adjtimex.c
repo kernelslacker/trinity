@@ -81,4 +81,5 @@ struct syscallentry syscall_adjtimex = {
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_adjtimex,
 	.post = post_adjtimex,
+	.rettype = RET_BORING,
 };

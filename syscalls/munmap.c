@@ -219,4 +219,5 @@ struct syscallentry syscall_munmap = {
 	.group = GROUP_VM,
 	.sanitise = sanitise_munmap,
 	.post = post_munmap,
+	.rettype = RET_ZERO_SUCCESS,
 };

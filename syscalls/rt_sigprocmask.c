@@ -184,4 +184,5 @@ struct syscallentry syscall_rt_sigprocmask = {
 	.argname = { [0] = "how", [1] = "set", [2] = "oset", [3] = "sigsetsize" },
 	.arg_params[0].list = ARGLIST(sigprocmask_how),
 	.post = post_rt_sigprocmask,
+	.rettype = RET_ZERO_SUCCESS,
 };

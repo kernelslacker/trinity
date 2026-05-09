@@ -48,6 +48,7 @@ struct syscallentry syscall_pipe = {
 	.group = GROUP_VFS,
 	.sanitise = sanitise_pipe,
 	.post = post_pipe,
+	.rettype = RET_ZERO_SUCCESS,
 };
 
 /*
@@ -84,4 +85,5 @@ struct syscallentry syscall_pipe2 = {
 	.group = GROUP_VFS,
 	.sanitise = sanitise_pipe2,
 	.post = post_pipe,
+	.rettype = RET_ZERO_SUCCESS,
 };

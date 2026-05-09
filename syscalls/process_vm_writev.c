@@ -58,4 +58,5 @@ struct syscallentry syscall_process_vm_writev = {
 	.arg_params[5].list = ARGLIST(process_vm_writev_flags),
 	.sanitise = sanitise_process_vm_writev,
 	.post = post_process_vm_writev,
+	.rettype = RET_NUM_BYTES,
 };

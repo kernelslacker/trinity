@@ -202,4 +202,5 @@ struct syscallentry syscall_get_robust_list = {
 	.post = post_get_robust_list,
 #endif
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

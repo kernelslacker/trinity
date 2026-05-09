@@ -42,4 +42,5 @@ struct syscallentry syscall_sched_yield = {
 	.group = GROUP_SCHED,
 	.num_args = 0,
 	.post = post_sched_yield,
+	.rettype = RET_ZERO_SUCCESS,
 };

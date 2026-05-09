@@ -87,4 +87,5 @@ struct syscallentry syscall_remap_file_pages = {
 	.arg_params[4].list = ARGLIST(remap_file_pages_flags),
 	.group = GROUP_VM,
 	.sanitise = sanitise_remap_file_pages,
+	.rettype = RET_ZERO_SUCCESS,
 };

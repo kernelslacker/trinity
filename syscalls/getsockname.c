@@ -285,4 +285,5 @@ struct syscallentry syscall_getsockname = {
 #ifdef HAVE_SYS_GETSOCKNAME
 	.post = post_getsockname,
 #endif
+	.rettype = RET_ZERO_SUCCESS,
 };
