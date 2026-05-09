@@ -247,6 +247,7 @@ static void enqueue_execve_ptrs(void **argv, void **envp,
 static void post_execve(struct syscallrecord *rec)
 {
 	struct execve_post_state *snap = (struct execve_post_state *) rec->post_state;
+	struct execve_post_state local_snap;
 
 	rec->a2 = 0;
 	rec->a3 = 0;
@@ -267,16 +268,27 @@ static void post_execve(struct syscallrecord *rec)
 	}
 
 	/*
+	 * Copy the snapshot struct contents into a local so the field
+	 * validations below run against the same bytes the array walk
+	 * will consume.  A sibling syscall scribbling snap->argv /
+	 * snap->envp / snap->{argv,envp}count between the looks_like_corrupted_ptr
+	 * check and the subsequent field reads would otherwise let
+	 * post-validated garbage reach enqueue_execve_ptrs() and SIGSEGV
+	 * the post handler on the first inner deref.
+	 */
+	local_snap = *snap;
+
+	/*
 	 * Defense in depth: if something corrupted the snapshot itself,
 	 * the inner array pointers may no longer reference our heap
 	 * allocations.  enqueue_execve_ptrs() walks argv[]/envp[] before
 	 * handing the outer arrays to deferred-free, and a bad pointer
 	 * crashes on the first deref.  Leak rather than walk garbage.
 	 */
-	if (looks_like_corrupted_ptr(rec, snap->argv) ||
-	    looks_like_corrupted_ptr(rec, snap->envp)) {
+	if (looks_like_corrupted_ptr(rec, local_snap.argv) ||
+	    looks_like_corrupted_ptr(rec, local_snap.envp)) {
 		outputerr("post_execve: rejected suspicious argv=%p envp=%p "
-			  "(post_state-scribbled?)\n", snap->argv, snap->envp);
+			  "(post_state-scribbled?)\n", local_snap.argv, local_snap.envp);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
@@ -286,19 +298,22 @@ static void post_execve(struct syscallrecord *rec)
 	 * with a bogus count reads far past the end of the allocation,
 	 * so leak instead — the child process is dying anyway.
 	 */
-	if (snap->argvcount > 32 || snap->envpcount > 32) {
+	if (local_snap.argvcount > 32 || local_snap.envpcount > 32) {
 		outputerr("post_execve: rejected suspicious argvcount=%lu envpcount=%lu "
-			  "(post_state-scribbled?)\n", snap->argvcount, snap->envpcount);
+			  "(post_state-scribbled?)\n",
+			  local_snap.argvcount, local_snap.envpcount);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
-	enqueue_execve_ptrs(snap->argv, snap->envp, snap->argvcount, snap->envpcount);
+	enqueue_execve_ptrs(local_snap.argv, local_snap.envp,
+			    local_snap.argvcount, local_snap.envpcount);
 	deferred_freeptr(&rec->post_state);
 }
 
 static void post_execveat(struct syscallrecord *rec)
 {
 	struct execve_post_state *snap = (struct execve_post_state *) rec->post_state;
+	struct execve_post_state local_snap;
 
 	rec->a3 = 0;
 	rec->a4 = 0;
@@ -313,20 +328,30 @@ static void post_execveat(struct syscallrecord *rec)
 		return;
 	}
 
-	if (looks_like_corrupted_ptr(rec, snap->argv) ||
-	    looks_like_corrupted_ptr(rec, snap->envp)) {
+	/*
+	 * See post_execve() above — copy the snapshot struct out before
+	 * validating individual fields so a sibling scribble between the
+	 * snap pointer check and the field reads can't slip past the
+	 * looks_like_corrupted_ptr / count guards.
+	 */
+	local_snap = *snap;
+
+	if (looks_like_corrupted_ptr(rec, local_snap.argv) ||
+	    looks_like_corrupted_ptr(rec, local_snap.envp)) {
 		outputerr("post_execveat: rejected suspicious argv=%p envp=%p "
-			  "(post_state-scribbled?)\n", snap->argv, snap->envp);
+			  "(post_state-scribbled?)\n", local_snap.argv, local_snap.envp);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
-	if (snap->argvcount > 32 || snap->envpcount > 32) {
+	if (local_snap.argvcount > 32 || local_snap.envpcount > 32) {
 		outputerr("post_execveat: rejected suspicious argvcount=%lu envpcount=%lu "
-			  "(post_state-scribbled?)\n", snap->argvcount, snap->envpcount);
+			  "(post_state-scribbled?)\n",
+			  local_snap.argvcount, local_snap.envpcount);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
-	enqueue_execve_ptrs(snap->argv, snap->envp, snap->argvcount, snap->envpcount);
+	enqueue_execve_ptrs(local_snap.argv, local_snap.envp,
+			    local_snap.argvcount, local_snap.envpcount);
 	deferred_freeptr(&rec->post_state);
 }
 
