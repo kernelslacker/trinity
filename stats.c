@@ -666,7 +666,8 @@ static void dump_stats_json(void)
 		"\"corruption\":{\"local_op_count\":%lu,\"fd_event_ring_noncanon\":%lu,"
 			"\"fd_event_ring_canary\":%lu,\"fd_event_payload\":%lu,"
 			"\"deferred_free_corrupt_ptr\":%lu,"
-			"\"post_handler_corrupt_ptr\":%lu,\"snapshot_non_heap_reject\":%lu,"
+			"\"post_handler_corrupt_ptr\":%lu,\"deferred_free_reject\":%lu,"
+			"\"snapshot_non_heap_reject\":%lu,"
 			"\"rec_canary_stomped\":%lu,\"rzs_blanket_reject\":%lu,"
 			"\"retfd_blanket_reject\":%lu,"
 			"\"sibling_mprotect_failed\":%lu,"
@@ -873,6 +874,7 @@ static void dump_stats_json(void)
 		shm->stats.fd_event_payload_corrupt,
 		shm->stats.deferred_free_corrupt_ptr,
 		shm->stats.post_handler_corrupt_ptr,
+		shm->stats.deferred_free_reject,
 		shm->stats.snapshot_non_heap_reject,
 		shm->stats.rec_canary_stomped,
 		shm->stats.rzs_blanket_reject,
@@ -1415,6 +1417,8 @@ static const struct {
 	  offsetof(struct stats_s, get_writable_address_scribbled_slots_caught) },
 	{ "post_handler_corrupt_ptr",
 	  offsetof(struct stats_s, post_handler_corrupt_ptr) },
+	{ "deferred_free_reject",
+	  offsetof(struct stats_s, deferred_free_reject) },
 	{ "snapshot_non_heap_reject",
 	  offsetof(struct stats_s, snapshot_non_heap_reject) },
 	{ "deferred_free_corrupt_ptr",
@@ -1687,6 +1691,64 @@ static void corrupt_ptr_attr_dump(void)
 }
 
 /*
+ * Render the per-callsite attribution ring for deferred_free_reject.
+ * Mirrors corrupt_ptr_attr_dump() but with no per-handler dimension --
+ * every entry is keyed by deferred_free_enqueue's caller PC alone, since
+ * all bumps originate from the rec==NULL deferred-free path.  Emits a
+ * top-N PC list sorted descending by count and is suppressed entirely
+ * on a quiet ring so windows with no rejects stay terse.
+ */
+static int deferred_free_reject_pc_cmp(const void *a, const void *b)
+{
+	const struct deferred_free_reject_pc_entry *ea = a;
+	const struct deferred_free_reject_pc_entry *eb = b;
+
+	if (eb->count > ea->count)
+		return 1;
+	if (eb->count < ea->count)
+		return -1;
+	return 0;
+}
+
+static void deferred_free_reject_pc_dump(void)
+{
+	struct deferred_free_reject_pc_entry snap[CORRUPT_PTR_PC_SLOTS];
+	unsigned int i, n = 0;
+
+	lock(&shm->stats.deferred_free_reject_pc_lock);
+	memcpy(snap, shm->stats.deferred_free_reject_pc, sizeof(snap));
+	unlock(&shm->stats.deferred_free_reject_pc_lock);
+
+	for (i = 0; i < CORRUPT_PTR_PC_SLOTS; i++)
+		if (snap[i].count != 0)
+			n++;
+
+	if (n == 0)
+		return;
+
+	qsort(snap, CORRUPT_PTR_PC_SLOTS, sizeof(snap[0]),
+	      deferred_free_reject_pc_cmp);
+
+	stats_log_write("deferred_free_reject attribution (top %u callers):\n", n);
+	for (i = 0; i < CORRUPT_PTR_PC_SLOTS; i++) {
+		char pcbuf[128];
+
+		if (snap[i].count == 0)
+			break;
+		/*
+		 * Same in-flight-stomp risk as corrupt_ptr_pc_dump_for: skip
+		 * rows whose pc no longer points into our own .text so the
+		 * sub-attribution output stays trustworthy for triage.
+		 */
+		if (snap[i].pc == NULL || !pc_in_text(snap[i].pc))
+			continue;
+		stats_log_write("  %-32s %lu\n",
+				pc_to_string(snap[i].pc, pcbuf, sizeof(pcbuf)),
+				snap[i].count);
+	}
+}
+
+/*
  * --stats-log-file backing.  The file is opened in append mode at startup
  * (so multiple runs into the same file accrue history rather than clobber
  * each other) and closed at shutdown.  Each open/close writes a single
@@ -1832,6 +1894,7 @@ void defense_counters_periodic_dump(void)
 	}
 
 	corrupt_ptr_attr_dump();
+	deferred_free_reject_pc_dump();
 
 	healer_table_dump();
 
@@ -2401,6 +2464,8 @@ void dump_stats(void)
 		stat_row("corruption", "deferred_free_corrupt_ptr", shm->stats.deferred_free_corrupt_ptr);
 	if (shm->stats.post_handler_corrupt_ptr)
 		stat_row("corruption", "post_handler_corrupt_ptr", shm->stats.post_handler_corrupt_ptr);
+	if (shm->stats.deferred_free_reject)
+		stat_row("corruption", "deferred_free_reject",   shm->stats.deferred_free_reject);
 	if (shm->stats.snapshot_non_heap_reject)
 		stat_row("corruption", "snapshot_non_heap_reject", shm->stats.snapshot_non_heap_reject);
 	if (shm->stats.rec_canary_stomped)
