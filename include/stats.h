@@ -1258,6 +1258,13 @@ struct stats_s {
 	unsigned long fd_events_processed;
 	unsigned long fd_events_dropped;
 
+	/* fd_hash_reinsert() exhausted the linear-probe chain without
+	 * finding a free slot and silently dropped the displaced entry.
+	 * Only reachable when fd_hash_count == FD_HASH_SIZE; non-zero
+	 * means we lost an fd registration during a removal-driven
+	 * re-seat and the per-iter outputerr names which fd. */
+	unsigned long fd_hash_reinsert_dropped;
+
 	/* Number of times a child won the CAS in arm_epoll_if_needed() and
 	 * actually performed the EPOLL_CTL_ADD population for an unarmed
 	 * epfd.  Should rise once per new epfd (init pool seeds + every

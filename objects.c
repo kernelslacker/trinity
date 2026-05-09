@@ -138,8 +138,11 @@ static void fd_hash_reinsert(int fd, struct object *obj, enum objecttype type,
 			break;
 		slot = (slot + 1) & (FD_HASH_SIZE - 1);
 	}
-	if (probe == FD_HASH_SIZE)
+	if (probe == FD_HASH_SIZE) {
+		shm->stats.fd_hash_reinsert_dropped++;
+		outputerr("fd_hash_reinsert: table full, dropping fd %d\n", fd);
 		return;
+	}
 
 	shm->fd_hash[slot].obj = obj;
 	shm->fd_hash[slot].type = type;
@@ -205,7 +208,6 @@ void fd_hash_remove(int fd)
 					 __ATOMIC_RELEASE);
 			__atomic_store_n(&shm->fd_hash[slot].fd, -1,
 					 __ATOMIC_RELEASE);
-			shm->fd_hash_count--;
 			fd_live_remove(fd);
 			next = (slot + 1) & (FD_HASH_SIZE - 1);
 			while (shm->fd_hash[next].fd != -1) {
@@ -216,6 +218,16 @@ void fd_hash_remove(int fd)
 						 displaced.type, displaced.gen);
 				next = (next + 1) & (FD_HASH_SIZE - 1);
 			}
+			/*
+			 * Decrement after the displaced-entry walk: between
+			 * the slot clear and the reinsert loop the table
+			 * still holds the same number of live entries (the
+			 * displaced ones get re-seated, not added).
+			 * Decrementing here keeps fd_hash_count from
+			 * undershooting the true occupancy for any reader
+			 * that samples it during the walk.
+			 */
+			shm->fd_hash_count--;
 			return;
 		}
 		slot = (slot + 1) & (FD_HASH_SIZE - 1);
