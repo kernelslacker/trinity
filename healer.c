@@ -31,6 +31,7 @@
 #include "child.h"
 #include "edgepair.h"		/* EDGEPAIR_NO_PREV */
 #include "healer.h"
+#include "params.h"		/* do_32_arch, do_64_arch */
 #include "shm.h"
 #include "stats.h"
 #include "tables.h"		/* print_syscall_name */
@@ -2112,10 +2113,13 @@ unsigned int healer_count_pc_pairs(void)
 	unsigned int count = 0;
 
 	if (biarch == true) {
-		count += healer_count_pc_pairs_in_table(syscalls_32bit,
-							max_nr_32bit_syscalls);
-		count += healer_count_pc_pairs_in_table(syscalls_64bit,
-							max_nr_64bit_syscalls);
+		/* Only walk a table if its arch is active; -a64 / -a32 / uniarch all naturally avoid the pair_R cross-arch number collision. */
+		if (do_64_arch == true)
+			count += healer_count_pc_pairs_in_table(syscalls_64bit,
+								max_nr_64bit_syscalls);
+		if (do_32_arch == true)
+			count += healer_count_pc_pairs_in_table(syscalls_32bit,
+								max_nr_32bit_syscalls);
 	} else {
 		count += healer_count_pc_pairs_in_table(syscalls,
 							max_nr_syscalls);
@@ -2211,10 +2215,13 @@ unsigned int healer_load_static_seed(void)
 		__atomic_load_n(&shm->stats.healer_pair_seeded, __ATOMIC_RELAXED) : 0;
 
 	if (biarch == true) {
-		healer_load_pc_pairs_in_table(syscalls_32bit,
-					      max_nr_32bit_syscalls);
-		healer_load_pc_pairs_in_table(syscalls_64bit,
-					      max_nr_64bit_syscalls);
+		/* Only walk a table if its arch is active; -a64 / -a32 / uniarch all naturally avoid the pair_R cross-arch number collision. */
+		if (do_64_arch == true)
+			healer_load_pc_pairs_in_table(syscalls_64bit,
+						      max_nr_64bit_syscalls);
+		if (do_32_arch == true)
+			healer_load_pc_pairs_in_table(syscalls_32bit,
+						      max_nr_32bit_syscalls);
 	} else {
 		healer_load_pc_pairs_in_table(syscalls, max_nr_syscalls);
 	}
