@@ -64,6 +64,22 @@
 #define HEALER_DUMP_MIN_PRED_APPEARANCES 1
 
 /*
+ * Minimum raw-observation floor for top-N qualification.  A promoted
+ * entry's weight is the raw count of times that (predset -> successor)
+ * triple has been observed; entries with raw=1 are single-shot events
+ * and carry no statistical signal yet.  Without this floor the TF-IDF
+ * normalisation in healer_normalised_score_milli amplifies a single
+ * observation into a high norm score whenever either predecessor's
+ * appearance count is small (the isqrt(a*b+1) denominator is tiny when
+ * one side is in the low single digits), so raw=1 noise was repeatedly
+ * elevating itself into the dump's top-10 alongside genuinely repeated
+ * patterns.  Filter at top-N qualification only; observation, save/load
+ * and decay all keep handling these entries normally so they remain
+ * available to graduate into the ranking once they accumulate evidence.
+ */
+#define HEALER_DUMP_MIN_RAW 3
+
+/*
  * FNV-1a parameters from the canonical 32-bit FNV definition.  Used
  * over the byte representation of the sorted (pred_a, pred_b) tuple
  * to derive the initial slot index.  Cheap enough on the (rare)
@@ -776,6 +792,15 @@ void healer_table_dump(void)
 	 * with how many would otherwise have been candidates.
 	 */
 	unsigned long low_confidence_skipped = 0;
+	/*
+	 * Counts entries skipped from top-N qualification because their raw
+	 * observation count is below HEALER_DUMP_MIN_RAW — single-shot triples
+	 * that the TF-IDF amplification path would otherwise float to the top.
+	 * Kept separate from low_confidence_skipped because the two filters
+	 * answer different questions (predecessor evidence vs triple-level
+	 * evidence) and an operator wants to see them independently.
+	 */
+	unsigned long low_raw_skipped = 0;
 	unsigned int i, j;
 	unsigned long observed, table_full, evictions, decays_run;
 	/*
@@ -912,6 +937,19 @@ void healer_table_dump(void)
 				continue;
 			}
 
+			/*
+			 * Raw-observation floor: a single sighting carries no
+			 * statistical weight on its own and would otherwise be
+			 * lifted into the top-N by the TF-IDF denominator when
+			 * either predecessor's appearance count is small.  Same
+			 * top-N-only treatment as the low-confidence filter
+			 * above, counted per promoted entry for parity.
+			 */
+			if (weight < HEALER_DUMP_MIN_RAW) {
+				low_raw_skipped++;
+				continue;
+			}
+
 			if (top_count < HEALER_DUMP_TOP_N) {
 				top[top_count].pred_a = slot_pred_a;
 				top[top_count].pred_b = slot_pred_b;
@@ -987,6 +1025,11 @@ void healer_table_dump(void)
 		stats_log_write("  low-confidence skipped: %lu (min predfreq < %u)\n",
 				low_confidence_skipped,
 				HEALER_DUMP_MIN_PRED_APPEARANCES);
+
+	if (low_raw_skipped != 0)
+		stats_log_write("  low-raw skipped: %lu (raw < %u)\n",
+				low_raw_skipped,
+				HEALER_DUMP_MIN_RAW);
 
 	if (top_count == 0) {
 		free(succ_weight);
