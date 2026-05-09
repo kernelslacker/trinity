@@ -3,6 +3,7 @@
  */
 
 #include <errno.h>
+#include <stdint.h>
 #include <string.h>
 #include <signal.h>
 #include <unistd.h>
@@ -458,6 +459,19 @@ static void register_returned_fd(const struct syscallentry *entry,
 		return;
 	if ((long)rec->retval < 0)
 		return;
+
+	/* Non-fd object kinds (e.g. OBJ_KEY_SERIAL) hand off to a
+	 * type-specific registrar — the fd-keyed logic below assumes
+	 * an OBJ_FD_* layout (set_object_fd / find_local_object_by_fd
+	 * walk fd union members) and would be a no-op otherwise. */
+	if (type == OBJ_KEY_SERIAL) {
+		long s = (long) rec->retval;
+
+		if (s <= 0 || s > INT32_MAX)
+			return;
+		register_key_serial((int32_t) s);
+		return;
+	}
 
 	fd = (int)rec->retval;
 	if (fd <= 2)
