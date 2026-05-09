@@ -3875,6 +3875,98 @@ static size_t build_nft_dup_ipv4_expr(unsigned char *buf, size_t off, size_t cap
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid
+ * nft_dup_ipv6 expression into buf at off, returning the new offset
+ * (or 0 on overflow).  Reaches the validator in
+ * net/ipv6/netfilter/nft_dup_ipv6.c (nft_dup_ipv6_init), which walks
+ * nft_dup_ipv6_policy[] and consumes:
+ *   - NFTA_DUP_SREG_ADDR (NLA_U32) — REQUIRED — source register
+ *     loading a struct in6_addr IPv6 gateway address
+ *     (sizeof(struct in6_addr) == 16), resolved through
+ *     nft_parse_register_load with NFT_DATA_VALUE.  Missing returns
+ *     -EINVAL up front; out-of-range register values are rejected
+ *     with -ERANGE inside nft_parse_register_load, and the
+ *     16-byte load size makes -ERANGE easier to hit than the
+ *     IPv4 sibling because high register indices have less room
+ *     left in the register file.
+ *   - NFTA_DUP_SREG_DEV (NLA_U32) — OPTIONAL — source register
+ *     loading the int oif; absent leaves oif == -1 in the kernel
+ *     branch.
+ *
+ * The expression is registered for NFPROTO_IPV6 table family only and
+ * shares the "dup" expression name with the NFPROTO_NETDEV and
+ * NFPROTO_IPV4 siblings in net/netfilter/nft_dup_netdev.c and
+ * net/ipv4/netfilter/nft_dup_ipv4.c — the expression-type lookup
+ * disambiguates by ctx->family.  Emissions on non-IPv6 chains
+ * (ipv4 / inet / arp / bridge / netdev) get rejected at
+ * expression-type lookup with -ENOPROTOOPT before init runs, which
+ * exercises the family-mismatch leg on top of the IPv6-family success
+ * path.  The dispatch loop in this file is family-blind today; the
+ * family-mismatch coverage is intentional kernel-side gating.
+ *
+ * Variants per call:
+ *   - SREG_ADDR always emitted (the required-gate); picked uniformly
+ *     across NFT_REG_1..NFT_REG_4 inline, matching the cmp / range /
+ *     numgen / hash / masq / redir / tproxy / xfrm / dup_netdev /
+ *     dup_ipv4 sibling pattern in this file (no shared helper).
+ *     ONE_IN(8) instead drops a raw rand32() so out-of-range register
+ *     values exercise the -ERANGE rejection leg in
+ *     nft_parse_register_load — particularly relevant here because
+ *     the 16-byte in6_addr load tightens the upper bound on which
+ *     register indices fit.
+ *   - SREG_DEV coin-flipped present (ONE_IN(2)).  When emitted,
+ *     picked uniformly across NFT_REG_1..NFT_REG_4 with the same
+ *     ONE_IN(8) raw-rand32() escape hatch for -ERANGE coverage.
+ */
+static size_t build_nft_dup_ipv6_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	bool with_dev = ONE_IN(2);
+	__u32 sreg_addr, sreg_dev;
+
+	if (ONE_IN(8))
+		sreg_addr = rand32();
+	else
+		sreg_addr = NFT_REG_1 + (rand32() % 4);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "dup");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_DUP_SREG_ADDR, sreg_addr);
+	if (!off)
+		return 0;
+
+	if (with_dev) {
+		if (ONE_IN(8))
+			sreg_dev = rand32();
+		else
+			sreg_dev = NFT_REG_1 + (rand32() % 4);
+
+		off = nla_put_be32(buf, off, cap, NFTA_DUP_SREG_DEV, sreg_dev);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_last
  * expression into buf at off, returning the new offset (or 0 on
  * overflow).  Reaches the validator in net/netfilter/nft_last.c
@@ -4896,6 +4988,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_xfrm,
 			 bool with_dup_netdev,
 			 bool with_dup_ipv4,
+			 bool with_dup_ipv6,
 			 bool with_last,
 			 bool with_rt,
 			 bool with_fib,
@@ -5067,6 +5160,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_dup_ipv4) {
 		off = build_nft_dup_ipv4_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_dup_ipv6) {
+		off = build_nft_dup_ipv6_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -5347,6 +5446,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_xfrm = ONE_IN(3);
 		bool with_dup_netdev = ONE_IN(3);
 		bool with_dup_ipv4 = ONE_IN(3);
+		bool with_dup_ipv6 = ONE_IN(3);
 		bool with_last = ONE_IN(3);
 		bool with_rt = ONE_IN(3);
 		bool with_fib = ONE_IN(3);
@@ -5371,6 +5471,7 @@ bool nftables_churn(struct childdata *child)
 				  with_xfrm,
 				  with_dup_netdev,
 				  with_dup_ipv4,
+				  with_dup_ipv6,
 				  with_last,
 				  with_rt,
 				  with_fib,
@@ -5447,6 +5548,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_dup_ipv4)
 				__atomic_add_fetch(&shm->stats.nftables_churn_dup_ipv4_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_dup_ipv6)
+				__atomic_add_fetch(&shm->stats.nftables_churn_dup_ipv6_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_last)
 				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
@@ -5555,6 +5659,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_xfrm = ONE_IN(3);
 		bool with_dup_netdev = ONE_IN(3);
 		bool with_dup_ipv4 = ONE_IN(3);
+		bool with_dup_ipv6 = ONE_IN(3);
 		bool with_last = ONE_IN(3);
 		bool with_rt = ONE_IN(3);
 		bool with_fib = ONE_IN(3);
@@ -5579,6 +5684,7 @@ bool nftables_churn(struct childdata *child)
 				  with_xfrm,
 				  with_dup_netdev,
 				  with_dup_ipv4,
+				  with_dup_ipv6,
 				  with_last,
 				  with_rt,
 				  with_fib,
@@ -5655,6 +5761,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_dup_ipv4)
 				__atomic_add_fetch(&shm->stats.nftables_churn_dup_ipv4_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_dup_ipv6)
+				__atomic_add_fetch(&shm->stats.nftables_churn_dup_ipv6_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_last)
 				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
