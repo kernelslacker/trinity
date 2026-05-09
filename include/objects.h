@@ -172,8 +172,6 @@ struct io_uringobj {
 
 struct io_uringobj *get_io_uring_ring(void);
 
-unsigned long get_random_aio_ctx(void);
-
 struct landlockobj {
 	int fd;
 };

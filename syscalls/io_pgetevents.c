@@ -21,8 +21,6 @@ static void sanitise_io_pgetevents(struct syscallrecord *rec)
 	struct timespec *ts;
 	long nr;
 
-	rec->a1 = get_random_aio_ctx();
-
 	nr = 1 + (rand() % 16);
 	events = (struct io_event *) get_writable_address(nr * sizeof(*events));
 	memset(events, 0, nr * sizeof(*events));
@@ -53,6 +51,7 @@ static void post_io_pgetevents(struct syscallrecord *rec)
 struct syscallentry syscall_io_pgetevents = {
 	.name = "io_pgetevents",
 	.num_args = 6,
+	.argtype = { [0] = ARG_AIO_CTX },
 	.argname = { [0] = "ctx_id", [1] = "min_nr", [2] = "nr", [3] = "events", [4] = "timeout", [5] = "usig" },
 	.group = GROUP_VFS,
 	.sanitise = sanitise_io_pgetevents,

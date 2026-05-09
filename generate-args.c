@@ -427,6 +427,15 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
 			return (unsigned long) (int32_t) rand32();
 		return (unsigned long) get_random_timerid();
 
+	case ARG_AIO_CTX:
+		/* ~1 in 8: pass garbage to keep io_submit/io_getevents/
+		 * io_pgetevents/io_destroy/io_cancel input-validation paths
+		 * exercised; otherwise pull a context from the producer-fed
+		 * OBJ_AIO_CTX pool fed by io_setup. */
+		if (ONE_IN(8))
+			return (unsigned long) rand64();
+		return get_random_aio_ctx();
+
 	case ARG_RANGE:
 		return handle_arg_range(entry, argnum);
 
