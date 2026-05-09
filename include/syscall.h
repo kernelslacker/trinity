@@ -94,6 +94,7 @@ enum argtype {
 	ARG_PID,
 	ARG_KEY_SERIAL,	/* kernel keyring key_serial_t (signed 32-bit) */
 	ARG_TIMERID,	/* POSIX per-process timer_t */
+	ARG_AIO_CTX,	/* Linux AIO aio_context_t (opaque kernel u64) */
 	ARG_RANGE,
 	ARG_OP,
 	ARG_LIST,

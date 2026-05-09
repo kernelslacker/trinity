@@ -33,6 +33,8 @@ int32_t get_random_key_serial(void);
 void register_key_serial(int32_t serial);
 int32_t get_random_timerid(void);
 void register_timerid(int32_t tid);
+unsigned long get_random_aio_ctx(void);
+void register_aio_ctx(unsigned long ctx);
 
 void gen_unicode_page(char *page);
 
