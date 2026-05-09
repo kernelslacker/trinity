@@ -602,6 +602,27 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	 */
 	unsigned int n = head->num_entries;
 
+	if (n > head->array_capacity) {
+		/* Wild-stomp defence — refuse to act on a snapshot that was already
+		 * out-of-bounds at the moment we read it.  The grow loop's UINT_MAX/2
+		 * guard would eventually catch this, but bail earlier so we don't
+		 * attempt large allocations we know up-front to be illegitimate.
+		 * Mirrors the symmetric pick-side guard in get_random_object_
+		 * versioned()'s OBJ_LOCAL branch and the OBJ_GLOBAL guard at the
+		 * grow check just below this line. */
+		outputerr("add_object: stomped num_entries type=%u num_entries=%u capacity=%u\n",
+			  type, n, head->array_capacity);
+		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted, 1,
+				   __ATOMIC_RELAXED);
+		if (is_fd_type(type)) {
+			int fd = fd_from_object(obj, type);
+			if (fd >= 0)
+				close(fd);
+		}
+		release_obj(obj, scope, type);
+		goto out_unlock;
+	}
+
 	/* For global objects, the array was pre-allocated in shared
 	 * memory by init_object_lists().  Never realloc — just reject
 	 * if we've hit the fixed capacity. */
@@ -1099,26 +1120,48 @@ struct object * get_random_object_versioned(enum objecttype type,
 	if (scope == OBJ_GLOBAL)
 		lock(&shm->objlock);
 
-	if (head->num_entries == 0) {
-		obj = NULL;
-	} else {
-		unsigned int idx = rand() % head->num_entries;
+	{
+		unsigned int snapshot = __atomic_load_n(&head->num_entries,
+							__ATOMIC_ACQUIRE);
 
-		/*
-		 * Snapshot array_generation BEFORE the array deref.  For
-		 * OBJ_LOCAL this is the entire validation primitive: a later
-		 * validate_object_handle() compares the snapshot against the
-		 * current head->array_generation to catch a stale handle held
-		 * across an add_object() grow that reseated head->array.
-		 * ACQUIRE pairs with the RELEASE bump in add_object()'s grow
-		 * path and destroy_objects()'s teardown.
-		 */
-		*array_gen_out = __atomic_load_n(&head->array_generation,
-						 __ATOMIC_ACQUIRE);
-		obj = head->array[idx];
-		*idx_out = idx;
-		if (scope == OBJ_GLOBAL && head->slot_versions != NULL)
-			*version_out = head->slot_versions[idx];
+		if (snapshot == 0) {
+			obj = NULL;
+		} else if (snapshot > head->array_capacity) {
+			/*
+			 * Wild-stomp defence — mirror the OBJ_GLOBAL guards at
+			 * the lockless-reader path and the legacy fall-through
+			 * just above (snapshot > cap returns NULL).  A fuzzed
+			 * value-result write whose buffer aliased an objhead
+			 * has scribbled head->num_entries past the array
+			 * bound; converting that into a NULL return keeps the
+			 * head->array[idx] deref below from running off the
+			 * end.  See struct stats::local_obj_num_entries_
+			 * corrupted in include/stats.h for the broader hazard
+			 * description; the symmetric write-side guard in
+			 * add_object() bumps the same counter.
+			 */
+			__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
+					   1, __ATOMIC_RELAXED);
+			obj = NULL;
+		} else {
+			unsigned int idx = rand() % snapshot;
+
+			/*
+			 * Snapshot array_generation BEFORE the array deref.  For
+			 * OBJ_LOCAL this is the entire validation primitive: a later
+			 * validate_object_handle() compares the snapshot against the
+			 * current head->array_generation to catch a stale handle held
+			 * across an add_object() grow that reseated head->array.
+			 * ACQUIRE pairs with the RELEASE bump in add_object()'s grow
+			 * path and destroy_objects()'s teardown.
+			 */
+			*array_gen_out = __atomic_load_n(&head->array_generation,
+							 __ATOMIC_ACQUIRE);
+			obj = head->array[idx];
+			*idx_out = idx;
+			if (scope == OBJ_GLOBAL && head->slot_versions != NULL)
+				*version_out = head->slot_versions[idx];
+		}
 	}
 
 	if (scope == OBJ_GLOBAL)
