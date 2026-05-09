@@ -2,6 +2,7 @@
  * Call a single random syscall with random args.
  */
 
+#include <errno.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
@@ -863,8 +864,19 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 
 	/* Mirror the just-completed syscall into the HEALER Phase A
 	 * per-child sequence buffer so the next call's observer-hook
-	 * fire sees this nr as one of its two predecessors. */
-	healer_seq_push(child, rec->nr);
+	 * fire sees this nr as one of its two predecessors.
+	 *
+	 * Skip syscalls that returned -ENOSYS or -EOPNOTSUPP: the kernel
+	 * dispatcher rejected the call before its body executed, so kernel
+	 * state is unchanged from the previous syscall.  Crediting them as
+	 * state-setting predecessors of a subsequent new-edge event would
+	 * dilute attribution toward calls that did nothing. */
+	if (rec->retval == -1UL &&
+	    (rec->errno_post == ENOSYS || rec->errno_post == EOPNOTSUPP)) {
+		/* nothing — keep the previous predecessor in place */
+	} else {
+		healer_seq_push(child, rec->nr);
+	}
 
 	/* Cheap end-of-call check for the strategy rotation boundary.
 	 * Two relaxed loads + a compare in the common case; the CAS only
