@@ -1540,6 +1540,19 @@ struct stats_s {
 	 */
 	unsigned long healer_obs_at_last_decay;
 	/*
+	 * Wall-clock companion to healer_obs_at_last_decay: time(NULL) value
+	 * captured at the last completed decay walk.  Drives the secondary
+	 * time-based trigger inside healer_maybe_decay() so the relation
+	 * table keeps aging even when KCOV coverage saturates and the
+	 * observation rate collapses to ~0 -- in that regime the
+	 * observation-window threshold may take hours or never to cross,
+	 * which leaves frozen historical bursts dominating the top-N.  Both
+	 * counters are advanced together by whichever observer wins the
+	 * window-CAS election so a triggered decay (regardless of which
+	 * trigger fired) starts the next window cleanly on both axes.
+	 */
+	unsigned long healer_time_at_last_decay;
+	/*
 	 * Bumped each time healer_maybe_decay() wins the window-CAS and walks
 	 * the relation table halving weights.  Operator can grep stats to see
 	 * the decay rate -- a runaway value relative to runtime suggests

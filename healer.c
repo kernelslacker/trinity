@@ -24,6 +24,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "child.h"
@@ -495,6 +496,22 @@ void healer_observe_relation(struct childdata *child, unsigned int current_nr)
 #define HEALER_DECAY_OBSERVATIONS	5000UL
 
 /*
+ * Wall-clock secondary trigger for the decay walk.  The observation-based
+ * trigger above only fires when new edges are being discovered, but on a
+ * long-running fuzz the KCOV edge set saturates and the observation rate
+ * collapses to ~0 -- which leaves the table frozen with whatever
+ * historical weights it had at saturation, defeating the purpose of
+ * decay (the top-N becomes a snapshot of the early-run discovery burst
+ * rather than what's productive right now).  600s is comfortably longer
+ * than a hot-phase observation window (decay fires several times during
+ * the burst via the observation trigger, well before 10 minutes elapses)
+ * but short enough that a saturated steady-state table doesn't sit
+ * unaged for hours.  Hardcoded -- no operator knob, no expectation that
+ * fleet boxes will need to retune this.
+ */
+#define HEALER_DECAY_INTERVAL_SEC	600UL
+
+/*
  * Single-runner election + decay walk.  Mirrors healer_maybe_snapshot's
  * window-CAS pattern so concurrent observers don't all walk the table
  * at the same boundary; the decay walk itself is best-effort relaxed
@@ -508,7 +525,9 @@ void healer_observe_relation(struct childdata *child, unsigned int current_nr)
 static void healer_maybe_decay(void)
 {
 	unsigned long obs_now, old;
+	unsigned long now_sec, old_time, new_obs;
 	unsigned int i, j;
+	bool obs_trigger, time_trigger;
 
 	if (shm == NULL)
 		return;
@@ -517,20 +536,43 @@ static void healer_maybe_decay(void)
 				  __ATOMIC_RELAXED);
 	old = __atomic_load_n(&shm->stats.healer_obs_at_last_decay,
 			      __ATOMIC_RELAXED);
+	old_time = __atomic_load_n(&shm->stats.healer_time_at_last_decay,
+				   __ATOMIC_RELAXED);
+	now_sec = (unsigned long)time(NULL);
 
-	if (obs_now < old + HEALER_DECAY_OBSERVATIONS)
+	obs_trigger = (obs_now >= old + HEALER_DECAY_OBSERVATIONS);
+	time_trigger = (now_sec >= old_time + HEALER_DECAY_INTERVAL_SEC);
+
+	if (!obs_trigger && !time_trigger)
 		return;
 
-	/* Window-CAS: whichever observer wins owns this decay boundary;
-	 * losers see the advanced high-water-mark on their next call and
-	 * early-return.  RELAXED is enough -- the walk's atomic stores
-	 * carry their own ordering against concurrent observer bumps,
-	 * and the counter is just gating who runs, not what they observe. */
+	/* Window-CAS election on healer_obs_at_last_decay: whichever observer
+	 * wins owns this decay boundary; losers see the advanced high-water-
+	 * mark on their next call and early-return.  RELAXED is enough -- the
+	 * walk's atomic stores carry their own ordering against concurrent
+	 * observer bumps, and the counter is just gating who runs, not what
+	 * they observe.
+	 *
+	 * When only the time trigger fires, obs_now may equal `old` (no new
+	 * observations since the last decay), and a CAS of (old -> old) would
+	 * succeed for every concurrent observer rather than electing one.
+	 * Force the new value to be strictly greater in that case so the CAS
+	 * is a real change and contested calls actually serialise.  The +1
+	 * skew on the next observation-trigger boundary is irrelevant against
+	 * the 5000-observation window. */
+	new_obs = (obs_now > old) ? obs_now : old + 1;
 	if (!__atomic_compare_exchange_n(&shm->stats.healer_obs_at_last_decay,
-					 &old, obs_now,
+					 &old, new_obs,
 					 false,
 					 __ATOMIC_RELAXED, __ATOMIC_RELAXED))
 		return;
+
+	/* Won the election -- advance the time baseline so the next time-
+	 * trigger window starts cleanly regardless of which trigger fired
+	 * this time.  No CAS needed: the obs-field election above already
+	 * guarantees we're the sole writer for this decay boundary. */
+	__atomic_store_n(&shm->stats.healer_time_at_last_decay, now_sec,
+			 __ATOMIC_RELAXED);
 
 	/* Walk the table once, halving every populated entry's weight with
 	 * a floor of 1.  Floor 1 (rather than evicting weight=0 entries) is
@@ -751,6 +793,17 @@ void healer_table_dump(void)
 	succ_weight = calloc(MAX_NR_SYSCALL, sizeof(*succ_weight));
 	if (succ_weight == NULL)
 		return;
+
+	/* Drive a time-triggered decay from the dump path.  Decay is
+	 * primarily called from healer_observe_relation on every observation,
+	 * but observations dry up once KCOV coverage saturates -- with no
+	 * observation-side caller, the wall-clock secondary trigger inside
+	 * healer_maybe_decay would never get a chance to fire.  The dump runs
+	 * on a fixed cadence regardless of observation activity, so calling
+	 * maybe_decay here gives the time trigger a guaranteed evaluation
+	 * point.  CAS election inside maybe_decay makes it safe to be called
+	 * concurrently with the observation-path callers. */
+	healer_maybe_decay();
 
 	/* Lockless sweep: each slot is read via a single ACQUIRE-load of
 	 * slot->key so the (pred_a, pred_b, predset_hash) tuple is a
