@@ -161,7 +161,39 @@ static void sanitise_io_uring_enter(struct syscallrecord *rec)
 	unsigned int *sq_array;
 
 	ring = get_io_uring_ring();
-	if (ring == NULL || ring->sq_ring == NULL)
+	/*
+	 * Guard every pointer/field we are about to dereference.  The obj
+	 * lives on the shared heap (head->shared_alloc) so the struct itself
+	 * survives free, but its sq_ring/sqes pointers and sq_entries count
+	 * have no such guarantee:
+	 *
+	 *   - A ring whose mmap failed during open_io_uring_fd_config() is
+	 *     never published, but a freed-and-recycled obj chunk can come
+	 *     back zeroed (alloc_shared_obj zero-fills) and republished by
+	 *     the next setup; until that setup completes its field stores
+	 *     a concurrent reader sees sqes==NULL or sq_entries==0.
+	 *   - read_ring_u32() at line below dereferences sq_ring at off_mask;
+	 *     if sq_ring is NULL (first SIGSEGV cluster, +0xd4e46) we fault.
+	 *   - fill_sqe() at line below memsets sqes[sqe_idx]; if sqes is
+	 *     NULL (second SIGSEGV cluster, +0xd5002) we fault before any
+	 *     of the per-field stores run.
+	 *   - sq_entries == 0 makes RAND_RANGE(1, 0) collapse and the slot
+	 *     write below walks a zero-length sqe mapping.
+	 *
+	 * On any of these, bail before the deref.  The syscall still fires
+	 * with the default ARG_FD_IO_URING fd / ARG_RANGE counts populated
+	 * by the framework — fuzz coverage is preserved, just with an empty
+	 * SQ ring update for this iteration.
+	 *
+	 * Not handled here: rings opened post-fork by another child via
+	 * try_regenerate_fd() carry non-NULL sq_ring/sqes that are mapped
+	 * only in that child's address space; a NULL check cannot detect
+	 * the cross-process visibility hole.  Closing it requires gating
+	 * shm->mapped_ring publication to init-phase rings — see the
+	 * comment block in fds/io_uring.c above head->shared_alloc.
+	 */
+	if (ring == NULL || ring->sq_ring == NULL || ring->sqes == NULL ||
+	    ring->sq_entries == 0)
 		return;
 
 	/* Use the mapped ring's fd so the SQEs actually matter. */
