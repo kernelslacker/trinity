@@ -838,9 +838,41 @@ static void replace_child(int childno)
 	}
 }
 
+/* Dump /proc/self/status so a stuck-fork bail report shows the parent's
+ * thread/process accounting (Threads:, FDSize:, etc.) at the moment we
+ * gave up.  Useful for triaging whether the kernel-side resource we ran
+ * out of was process slots, pid_max, or something else. */
+static void dump_proc_self_status(void)
+{
+	FILE *fp;
+	char *line = NULL;
+	size_t n = 0;
+
+	fp = fopen("/proc/self/status", "r");
+	if (fp == NULL)
+		return;
+
+	while (getline(&line, &n, fp) != -1)
+		outputerr("/proc/self/status: %s", line);
+
+	free(line);
+	fclose(fp);
+}
+
 /* Generate children*/
 static void fork_children(void)
 {
+	/* Bound the outer respawn loop.  The inner spawn_child retry
+	 * already caps per-slot attempts at 10, but if every slot keeps
+	 * failing (e.g. the process table is full of orphans the parent
+	 * cannot reap) the outer while loop will iterate forever, growing
+	 * a silent wedge with no exit, no watchdog fire, and no operator
+	 * visibility beyond strace.  Track consecutive failed spawn_child
+	 * calls and bail once we cross the threshold; with the 10-100ms
+	 * inner backoff this caps the stuck window at roughly a minute. */
+	unsigned int consecutive_fork_failures = 0;
+	const unsigned int max_consecutive_fork_failures = 1000;
+
 	while (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) < max_children) {
 		int childno;
 
@@ -859,6 +891,14 @@ static void fork_children(void)
 			unsigned int retries = 0;
 
 			while (spawn_child(childno) == false) {
+				consecutive_fork_failures++;
+				if (consecutive_fork_failures >= max_consecutive_fork_failures) {
+					outputerr("main: fork stuck - %u consecutive spawn failures; bailing (process table likely exhausted)\n",
+						consecutive_fork_failures);
+					dump_proc_self_status();
+					panic(EXIT_FORK_FAILURE);
+					return;
+				}
 				if (++retries >= 10) {
 					outputerr("Failed to fork initial child for slot %d after %u attempts, skipping slot.\n",
 						childno, retries);
@@ -868,6 +908,7 @@ static void fork_children(void)
 			}
 			if (retries >= 10)
 				continue;
+			consecutive_fork_failures = 0;
 		}
 
 		/* Per-spawn visibility under -v.  Today only the final
