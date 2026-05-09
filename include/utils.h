@@ -139,6 +139,21 @@ void freeptr(unsigned long *p);
 struct syscallrecord;
 
 /*
+ * Shape-only predicate split out of looks_like_corrupted_ptr_pc so
+ * callers that want the same heuristic but want to bump a different
+ * counter (deferred_free_enqueue, into deferred_free_reject) can share
+ * the band definition without going through the post_handler bumper.
+ * Returns true when @p does NOT look like a heap pointer we could have
+ * handed out -- i.e. NULL-ish, non-canonical, or misaligned.
+ */
+static inline bool is_corrupt_ptr_shape(const void *p)
+{
+	unsigned long v = (unsigned long) p;
+
+	return !(v >= 0x10000 && v < (1UL << 47) && (v & 0x7) == 0);
+}
+
+/*
  * Variant that additionally records @caller_pc into the per-callsite
  * sub-attribution ring on a positive result.  Used directly from
  * deferred_free_enqueue (rec==NULL) so the recorded PC identifies the
@@ -181,6 +196,18 @@ static inline bool looks_like_corrupted_ptr(struct syscallrecord *rec,
  * (nr, do32bit) attribution.
  */
 void post_handler_corrupt_ptr_bump(struct syscallrecord *rec, void *caller_pc);
+
+/*
+ * Bump the deferred_free_reject counter and record per-callsite
+ * attribution into deferred_free_reject_pc.  Use from the two reject
+ * sites inside deferred_free_enqueue (shape heuristic + alloc-track
+ * miss) so obj-pool-release-time corruption gets a dedicated channel
+ * instead of conflating with syscall .post handler corruption on
+ * post_handler_corrupt_ptr.  @caller_pc identifies the
+ * deferred_free_enqueue caller (release_obj, generic_free_arg, etc.);
+ * a NULL skips the PC ring but still bumps the headline counter.
+ */
+void deferred_free_reject_bump(void *caller_pc);
 
 /*
  * Inline wrapper for the dispatcher-level blanket validators (the RZS

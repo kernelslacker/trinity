@@ -1339,6 +1339,59 @@ void post_handler_corrupt_ptr_bump(struct syscallrecord *rec, void *caller_pc)
 }
 
 /*
+ * Record a caller PC into the deferred_free_reject sub-attribution ring.
+ * Same eviction policy as corrupt_ptr_pc_record: bump the matching slot
+ * if present, otherwise displace the lowest-count slot.  Skipped when
+ * pc==NULL (defensive -- a caller without a usable return address has
+ * no useful PC to record).  Slimmer key than corrupt_ptr_pc_record
+ * because every bump originates from rec==NULL deferred_free_enqueue
+ * calls so (nr, do32bit) carry no information.
+ */
+static void deferred_free_reject_pc_record(void *pc)
+{
+	struct deferred_free_reject_pc_entry *ring;
+	unsigned int i, victim;
+	unsigned long victim_count;
+
+	if (pc == NULL)
+		return;
+
+	ring = shm->stats.deferred_free_reject_pc;
+
+	lock(&shm->stats.deferred_free_reject_pc_lock);
+
+	for (i = 0; i < CORRUPT_PTR_PC_SLOTS; i++) {
+		if (ring[i].count != 0 && ring[i].pc == pc) {
+			ring[i].count++;
+			unlock(&shm->stats.deferred_free_reject_pc_lock);
+			return;
+		}
+	}
+
+	victim = 0;
+	victim_count = ring[0].count;
+	for (i = 1; i < CORRUPT_PTR_PC_SLOTS; i++) {
+		if (ring[i].count < victim_count) {
+			victim = i;
+			victim_count = ring[i].count;
+		}
+		if (victim_count == 0)
+			break;
+	}
+
+	ring[victim].pc = pc;
+	ring[victim].count = victim_count + 1;
+
+	unlock(&shm->stats.deferred_free_reject_pc_lock);
+}
+
+void deferred_free_reject_bump(void *caller_pc)
+{
+	__atomic_add_fetch(&shm->stats.deferred_free_reject, 1, __ATOMIC_RELAXED);
+	deferred_free_reject_pc_record(caller_pc);
+}
+
+/*
  * Categorise a rejected pointer value into one of four heuristic bands
  * so the sample log line tells us at a glance whether the rejection is
  * obvious noise (NULL-ish, pid-shaped, kernel-VA leak) or whether the
@@ -1372,7 +1425,7 @@ bool looks_like_corrupted_ptr_pc(struct syscallrecord *rec, const void *p,
 	unsigned long v = (unsigned long) p;
 	unsigned long n;
 
-	if (v >= 0x10000 && v < (1UL << 47) && (v & 0x7) == 0)
+	if (!is_corrupt_ptr_shape(p))
 		return false;
 
 	post_handler_corrupt_ptr_bump(rec, caller_pc);

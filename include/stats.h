@@ -335,6 +335,35 @@ struct stats_s {
 	} corrupt_ptr_pc[CORRUPT_PTR_PC_SLOTS];
 	lock_t corrupt_ptr_pc_lock;
 
+	/* deferred_free_enqueue() rejected a pointer at the obj-pool /
+	 * arg-cleanup boundary because the value either failed the shape
+	 * heuristic or missed the alloc-track set.  Distinct from
+	 * post_handler_corrupt_ptr above -- that counter measures syscall
+	 * .post handlers writing garbage into rec->aN; this one measures
+	 * release-time corruption arriving at the deferred-free queue (an
+	 * obj struct that no longer looks heap-shaped, an argv pointer that
+	 * was never __zmalloc'd, etc.).  Conflating the two onto a single
+	 * counter made attribution unreadable -- release_obj's deferred-free
+	 * misses (legitimate "untracked pointer reaching deferred-free"
+	 * signal) swamped the syscall-.post-scribble signal the original
+	 * counter was designed for.  Sub-attribution by deferred_free_enqueue
+	 * caller PC routes through deferred_free_reject_pc below. */
+	unsigned long deferred_free_reject;
+
+	/* Per-callsite attribution ring for deferred_free_reject.  Keyed by
+	 * the deferred_free_enqueue caller PC -- the obj-pool / arg-cleanup
+	 * site that handed over the suspect pointer.  Same eviction policy
+	 * as corrupt_ptr_pc: bump the matching slot if present, otherwise
+	 * displace the lowest-count slot.  No (nr, do32bit) key -- every
+	 * bump originates from rec==NULL deferred_free_enqueue calls, so a
+	 * single PC dimension is enough.  Dumped by
+	 * defense_counters_periodic_dump() alongside corrupt_ptr_attr. */
+	struct deferred_free_reject_pc_entry {
+		void *pc;
+		unsigned long count;
+	} deferred_free_reject_pc[CORRUPT_PTR_PC_SLOTS];
+	lock_t deferred_free_reject_pc_lock;
+
 	/* Monotonic counter feeding the value-sampling rate-limiter inside
 	 * looks_like_corrupted_ptr.  Distinct from post_handler_corrupt_ptr
 	 * (which is also bumped from the rec==NULL path through
