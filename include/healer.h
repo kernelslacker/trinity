@@ -197,3 +197,24 @@ void healer_enable_snapshots(const char *path);
  * observer-hook fire path that drives healer_observe_relation().
  */
 void healer_maybe_snapshot(void);
+
+/*
+ * Pair-relation table -- single-predecessor companion to the
+ * (predset -> nr) triple table above.  Indexed (pred -> succ); each
+ * cell holds a single weight counter mutated via relaxed atomics.
+ *
+ * Foundational storage for upcoming static-seed work that bootstraps
+ * a producer->consumer prior from existing ARG_FD_* / ret_objtype
+ * metadata: pairs are coarser-grained than the triples but converge
+ * MUCH faster from a static prior than triples can.  None of the APIs
+ * below are wired into any observation or picker path yet -- the seed
+ * loader and the merge into the existing observer fire are separate
+ * follow-up commits.
+ *
+ * All three accessors silently no-op (or, for the read accessor,
+ * return 0) when either syscall number is out of range, so callers
+ * don't have to gate on MAX_NR_SYSCALL themselves.
+ */
+void healer_pair_seed(unsigned int pred, unsigned int succ, unsigned int weight);
+void healer_pair_observe(unsigned int pred, unsigned int succ);
+unsigned int healer_pair_get(unsigned int pred, unsigned int succ);
