@@ -638,6 +638,7 @@ struct stats_s {
 	unsigned long genl_family_calls_ioam6;
 	unsigned long genl_family_calls_seg6;
 	unsigned long genl_family_calls_thermal;
+	unsigned long genl_family_calls_ipvs;
 
 	/* nfnetlink registry per-subsystem dispatch counters.  Same shape
 	 * as the genl_family_calls counters above but for NETLINK_NETFILTER

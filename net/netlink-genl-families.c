@@ -94,6 +94,9 @@ extern struct genl_family_grammar fam_seg6;
 #if __has_include(<linux/thermal.h>)
 extern struct genl_family_grammar fam_thermal;
 #endif
+#if __has_include(<linux/ip_vs.h>)
+extern struct genl_family_grammar fam_ipvs;
+#endif
 extern struct genl_family_grammar fam_nlbl_mgmt;
 extern struct genl_family_grammar fam_nlbl_cipsov4;
 extern struct genl_family_grammar fam_nlbl_unlabel;
@@ -162,6 +165,9 @@ static struct genl_family_grammar *registry[] = {
 #if __has_include(<linux/thermal.h>)
 	&fam_thermal,
 #endif
+#if __has_include(<linux/ip_vs.h>)
+	&fam_ipvs,
+#endif
 	&fam_nlbl_mgmt,
 	&fam_nlbl_cipsov4,
 	&fam_nlbl_unlabel,
@@ -211,6 +217,7 @@ static const struct {
 	{ "IOAM6",         offsetof(struct stats_s, genl_family_calls_ioam6) },
 	{ "SEG6",          offsetof(struct stats_s, genl_family_calls_seg6) },
 	{ "thermal",       offsetof(struct stats_s, genl_family_calls_thermal) },
+	{ "IPVS",          offsetof(struct stats_s, genl_family_calls_ipvs) },
 };
 
 static void stamp_call_counters(void)
