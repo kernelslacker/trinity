@@ -1008,6 +1008,29 @@
 #define NFT_XFRM_KEY_SPI		6
 #endif
 
+/* nft_dup_netdev NFTA_DUP_SREG_DEV attribute ID.  The validator in
+ * net/netfilter/nft_dup_netdev.c (nft_dup_netdev_init) walks
+ * nft_dup_netdev_policy[] and consumes a single REQUIRED attribute:
+ *   - NFTA_DUP_SREG_DEV (NLA_U32) — REQUIRED — source register of the
+ *     output netdev ifindex (NFT_REG_1..NFT_REG_4 / NFT_REG32_*),
+ *     resolved through nft_parse_register_load with NFT_DATA_VALUE
+ *     size sizeof(int).  NULL returns -EINVAL; out-of-range register
+ *     values are rejected with -ERANGE.
+ * The expression is registered for NFPROTO_NETDEV table family only,
+ * so emissions on ipv4/ipv6/inet/arp/bridge tables get rejected at
+ * expression-type lookup before init runs — that exercises the
+ * lookup-side rejection path on top of the netdev-family success
+ * path.  The neighbouring NFTA_DUP_SREG_ADDR attribute in the same
+ * enum is consumed by the ip/ip6 family ip{6}_dup_pktinfo expression
+ * in nft_dup_ipv4.c / nft_dup_ipv6.c and is not part of this
+ * netdev-family slice.  The symbol is guarded individually so the
+ * build still works on stale host headers that predate it.
+ * NFPROTO_NETDEV is stable in <linux/netfilter.h>.  Depends on
+ * CONFIG_NFT_DUP_NETDEV=m, which the fuzz-box config has. */
+#ifndef NFTA_DUP_SREG_DEV
+#define NFTA_DUP_SREG_DEV		2
+#endif
+
 /* nft_last NFTA_LAST_* attribute IDs.  The validator in
  * net/netfilter/nft_last.c (nft_last_init) drives off
  * nft_last_policy[]: NFTA_LAST_SET (NLA_U32, big-endian on wire — read
@@ -3686,6 +3709,64 @@ static size_t build_nft_xfrm_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid
+ * nft_dup_netdev expression into buf at off, returning the new offset
+ * (or 0 on overflow).  Reaches the validator in
+ * net/netfilter/nft_dup_netdev.c (nft_dup_netdev_init), which walks
+ * nft_dup_netdev_policy[] and requires NFTA_DUP_SREG_DEV — a NLA_U32
+ * register reference resolved through nft_parse_register_load with
+ * NFT_DATA_VALUE size sizeof(int).  Missing returns -EINVAL,
+ * out-of-range register values return -ERANGE.  The expression is
+ * registered for NFPROTO_NETDEV table family only; emissions in any
+ * other family get rejected at expression-type lookup before init
+ * runs, which exercises the lookup-side rejection path on top of the
+ * netdev-family success path.
+ *
+ * Variants per call:
+ *   - SREG_DEV picked uniformly across NFT_REG_1..NFT_REG_4 inline,
+ *     matching the cmp / range / numgen / hash / masq / redir /
+ *     tproxy / xfrm sibling pattern in this file (no shared helper).
+ *   - ONE_IN(8) of the SREG_DEV emissions instead drops a raw
+ *     rand32() so out-of-range register values exercise the -ERANGE
+ *     rejection leg in nft_parse_register_load.
+ */
+static size_t build_nft_dup_netdev_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	__u32 sreg_dev;
+
+	if (ONE_IN(8))
+		sreg_dev = rand32();
+	else
+		sreg_dev = NFT_REG_1 + (rand32() % 4);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "dup");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_DUP_SREG_DEV, sreg_dev);
+	if (!off)
+		return 0;
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_last
  * expression into buf at off, returning the new offset (or 0 on
  * overflow).  Reaches the validator in net/netfilter/nft_last.c
@@ -4705,6 +4786,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_redir,
 			 bool with_tproxy,
 			 bool with_xfrm,
+			 bool with_dup_netdev,
 			 bool with_last,
 			 bool with_rt,
 			 bool with_fib,
@@ -4864,6 +4946,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_xfrm) {
 		off = build_nft_xfrm_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_dup_netdev) {
+		off = build_nft_dup_netdev_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -5142,6 +5230,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_redir = ONE_IN(3);
 		bool with_tproxy = ONE_IN(3);
 		bool with_xfrm = ONE_IN(3);
+		bool with_dup_netdev = ONE_IN(3);
 		bool with_last = ONE_IN(3);
 		bool with_rt = ONE_IN(3);
 		bool with_fib = ONE_IN(3);
@@ -5164,6 +5253,7 @@ bool nftables_churn(struct childdata *child)
 				  with_redir,
 				  with_tproxy,
 				  with_xfrm,
+				  with_dup_netdev,
 				  with_last,
 				  with_rt,
 				  with_fib,
@@ -5234,6 +5324,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_xfrm)
 				__atomic_add_fetch(&shm->stats.nftables_churn_xfrm_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_dup_netdev)
+				__atomic_add_fetch(&shm->stats.nftables_churn_dup_netdev_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_last)
 				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
@@ -5340,6 +5433,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_redir = ONE_IN(3);
 		bool with_tproxy = ONE_IN(3);
 		bool with_xfrm = ONE_IN(3);
+		bool with_dup_netdev = ONE_IN(3);
 		bool with_last = ONE_IN(3);
 		bool with_rt = ONE_IN(3);
 		bool with_fib = ONE_IN(3);
@@ -5362,6 +5456,7 @@ bool nftables_churn(struct childdata *child)
 				  with_redir,
 				  with_tproxy,
 				  with_xfrm,
+				  with_dup_netdev,
 				  with_last,
 				  with_rt,
 				  with_fib,
@@ -5432,6 +5527,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_xfrm)
 				__atomic_add_fetch(&shm->stats.nftables_churn_xfrm_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_dup_netdev)
+				__atomic_add_fetch(&shm->stats.nftables_churn_dup_netdev_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_last)
 				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
