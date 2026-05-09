@@ -1056,6 +1056,49 @@
 #define NFTA_DUP_SREG_ADDR		1
 #endif
 
+/* nft_fwd_netdev NFTA_FWD_* attribute IDs.  The validator in
+ * net/netfilter/nft_fwd_netdev.c walks two policies that share the
+ * NFTA_FWD_* uapi enum (NFTA_FWD_UNSPEC=0, NFTA_FWD_SREG_DEV=1,
+ * NFTA_FWD_SREG_ADDR=2, NFTA_FWD_NFPROTO=3) — the enum is distinct
+ * from the NFTA_DUP_* set used by nft_dup_netdev / nft_dup_ipv4 /
+ * nft_dup_ipv6, despite the naming overlap.  Two init paths consume
+ * these:
+ *   - nft_fwd_netdev_init (bare-forward arm) consumes only
+ *     NFTA_FWD_SREG_DEV (NLA_U32) — REQUIRED — source register loading
+ *     the int oif, resolved through nft_parse_register_load with
+ *     NFT_DATA_VALUE size sizeof(int).  Missing returns -EINVAL.
+ *   - nft_fwd_neigh_init (forward-with-neigh-resolve arm) consumes
+ *     NFTA_FWD_SREG_DEV and additionally NFTA_FWD_SREG_ADDR
+ *     (NLA_U32) — source register loading either struct in_addr
+ *     (4 bytes) or struct in6_addr (16 bytes), and NFTA_FWD_NFPROTO
+ *     (NLA_U32) — REQUIRED for this arm — carrying NFPROTO_IPV4 or
+ *     NFPROTO_IPV6 to pick the address load size.  The kernel
+ *     branches on NFTA_FWD_SREG_ADDR presence to switch between the
+ *     two init paths.
+ * The expression is registered for NFPROTO_NETDEV table family only;
+ * emissions on any other table family are rejected at expression-type
+ * lookup with -ENOPROTOOPT before init runs, which exercises the
+ * family-mismatch leg on top of the netdev-family success path.  The
+ * expression name is "fwd" and is NOT shared with the nft_dup_*
+ * family (those use "dup"), so no shim sharing is possible.  The
+ * symbols are guarded individually so the build still works on stale
+ * host headers that predate them.  NFPROTO_IPV4 / NFPROTO_IPV6 /
+ * NFPROTO_NETDEV are already shimmed earlier in the file and stable
+ * in <linux/netfilter.h>.  Depends on CONFIG_NFT_FWD_NETDEV=m, which
+ * the test kernel config has. */
+#ifndef NFTA_FWD_UNSPEC
+#define NFTA_FWD_UNSPEC			0
+#endif
+#ifndef NFTA_FWD_SREG_DEV
+#define NFTA_FWD_SREG_DEV		1
+#endif
+#ifndef NFTA_FWD_SREG_ADDR
+#define NFTA_FWD_SREG_ADDR		2
+#endif
+#ifndef NFTA_FWD_NFPROTO
+#define NFTA_FWD_NFPROTO		3
+#endif
+
 /* nft_last NFTA_LAST_* attribute IDs.  The validator in
  * net/netfilter/nft_last.c (nft_last_init) drives off
  * nft_last_policy[]: NFTA_LAST_SET (NLA_U32, big-endian on wire — read
@@ -3967,6 +4010,112 @@ static size_t build_nft_dup_ipv6_expr(unsigned char *buf, size_t off, size_t cap
 }
 
 /*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid
+ * nft_fwd_netdev expression into buf at off, returning the new offset
+ * (or 0 on overflow).  Reaches the validator in
+ * net/netfilter/nft_fwd_netdev.c, which has two init paths sharing
+ * the NFTA_FWD_* uapi enum:
+ *   - nft_fwd_netdev_init (bare-forward arm): consumes only
+ *     NFTA_FWD_SREG_DEV (NLA_U32) — REQUIRED — source register loading
+ *     the int oif, resolved through nft_parse_register_load with
+ *     NFT_DATA_VALUE size sizeof(int).  Missing returns -EINVAL up
+ *     front; out-of-range register values are rejected with -ERANGE.
+ *   - nft_fwd_neigh_init (forward-with-neigh-resolve arm): selected
+ *     by the kernel when NFTA_FWD_SREG_ADDR is present.  Consumes
+ *     NFTA_FWD_SREG_DEV (REQUIRED, same as above), NFTA_FWD_SREG_ADDR
+ *     (NLA_U32) — source register loading struct in_addr (4 bytes)
+ *     or struct in6_addr (16 bytes), and NFTA_FWD_NFPROTO (NLA_U32) —
+ *     REQUIRED for this arm — carrying NFPROTO_IPV4 or NFPROTO_IPV6
+ *     to pick the address load size.  Other family values are
+ *     rejected on the address-load side.
+ *
+ * The expression is registered for NFPROTO_NETDEV table family only
+ * and uses the expression name "fwd" (distinct from the "dup" name
+ * shared by the nft_dup_* siblings).  Emissions on any other table
+ * family are rejected at expression-type lookup with -ENOPROTOOPT
+ * before init runs — that exercises the family-mismatch leg on top of
+ * the netdev-family success path.  The dispatch loop in this file is
+ * family-blind today; the family-mismatch coverage is intentional
+ * kernel-side gating.
+ *
+ * Variants per call:
+ *   - SREG_DEV always emitted (the required-gate); picked uniformly
+ *     across NFT_REG_1..NFT_REG_4 inline, matching the cmp / range /
+ *     numgen / hash / masq / redir / tproxy / xfrm / dup_netdev /
+ *     dup_ipv4 / dup_ipv6 sibling pattern in this file (no shared
+ *     helper).  ONE_IN(8) instead drops a raw rand32() so out-of-range
+ *     register values exercise the -ERANGE rejection leg in
+ *     nft_parse_register_load.
+ *   - with_neigh coin-flipped (ONE_IN(2)).  When false, only SREG_DEV
+ *     is emitted and the kernel takes the bare-forward init path;
+ *     when true, SREG_ADDR + NFPROTO are also emitted and the kernel
+ *     switches to nft_fwd_neigh_init.  Both arms are interesting.
+ *     SREG_ADDR uses the same NFT_REG_1..NFT_REG_4 / ONE_IN(8) raw
+ *     rand32() escape hatch as SREG_DEV.  NFPROTO is picked uniformly
+ *     across {NFPROTO_IPV4, NFPROTO_IPV6}, with a ONE_IN(8) raw
+ *     rand32() escape that hands the kernel a bogus family so the
+ *     address-load size selection rejects it.
+ */
+static size_t build_nft_fwd_netdev_expr(unsigned char *buf, size_t off, size_t cap)
+{
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	bool with_neigh = ONE_IN(2);
+	__u32 sreg_dev, sreg_addr, nfproto;
+
+	if (ONE_IN(8))
+		sreg_dev = rand32();
+	else
+		sreg_dev = NFT_REG_1 + (rand32() % 4);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "fwd");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_be32(buf, off, cap, NFTA_FWD_SREG_DEV, sreg_dev);
+	if (!off)
+		return 0;
+
+	if (with_neigh) {
+		if (ONE_IN(8))
+			sreg_addr = rand32();
+		else
+			sreg_addr = NFT_REG_1 + (rand32() % 4);
+
+		off = nla_put_be32(buf, off, cap, NFTA_FWD_SREG_ADDR, sreg_addr);
+		if (!off)
+			return 0;
+
+		if (ONE_IN(8))
+			nfproto = rand32();
+		else if (ONE_IN(2))
+			nfproto = NFPROTO_IPV4;
+		else
+			nfproto = NFPROTO_IPV6;
+
+		off = nla_put_be32(buf, off, cap, NFTA_FWD_NFPROTO, nfproto);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
  * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_last
  * expression into buf at off, returning the new offset (or 0 on
  * overflow).  Reaches the validator in net/netfilter/nft_last.c
@@ -4989,6 +5138,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_dup_netdev,
 			 bool with_dup_ipv4,
 			 bool with_dup_ipv6,
+			 bool with_fwd_netdev,
 			 bool with_last,
 			 bool with_rt,
 			 bool with_fib,
@@ -5166,6 +5316,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_dup_ipv6) {
 		off = build_nft_dup_ipv6_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_fwd_netdev) {
+		off = build_nft_fwd_netdev_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -5447,6 +5603,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_dup_netdev = ONE_IN(3);
 		bool with_dup_ipv4 = ONE_IN(3);
 		bool with_dup_ipv6 = ONE_IN(3);
+		bool with_fwd_netdev = ONE_IN(3);
 		bool with_last = ONE_IN(3);
 		bool with_rt = ONE_IN(3);
 		bool with_fib = ONE_IN(3);
@@ -5472,6 +5629,7 @@ bool nftables_churn(struct childdata *child)
 				  with_dup_netdev,
 				  with_dup_ipv4,
 				  with_dup_ipv6,
+				  with_fwd_netdev,
 				  with_last,
 				  with_rt,
 				  with_fib,
@@ -5551,6 +5709,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_dup_ipv6)
 				__atomic_add_fetch(&shm->stats.nftables_churn_dup_ipv6_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_fwd_netdev)
+				__atomic_add_fetch(&shm->stats.nftables_churn_fwd_netdev_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_last)
 				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
@@ -5660,6 +5821,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_dup_netdev = ONE_IN(3);
 		bool with_dup_ipv4 = ONE_IN(3);
 		bool with_dup_ipv6 = ONE_IN(3);
+		bool with_fwd_netdev = ONE_IN(3);
 		bool with_last = ONE_IN(3);
 		bool with_rt = ONE_IN(3);
 		bool with_fib = ONE_IN(3);
@@ -5685,6 +5847,7 @@ bool nftables_churn(struct childdata *child)
 				  with_dup_netdev,
 				  with_dup_ipv4,
 				  with_dup_ipv6,
+				  with_fwd_netdev,
 				  with_last,
 				  with_rt,
 				  with_fib,
@@ -5764,6 +5927,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_dup_ipv6)
 				__atomic_add_fetch(&shm->stats.nftables_churn_dup_ipv6_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_fwd_netdev)
+				__atomic_add_fetch(&shm->stats.nftables_churn_fwd_netdev_expr_emit,
 						   1, __ATOMIC_RELAXED);
 			if (with_last)
 				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
