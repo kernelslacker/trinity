@@ -202,39 +202,96 @@ static unsigned int collect_proc_net_inodes(const char *path,
 					    unsigned int inode_field,
 					    ino_t *out, unsigned int max)
 {
-	FILE *f;
-	char line[256];
+	/* Chunked stack-buffer read, no stdio.  Each call to the auditor
+	 * sweeps six /proc/net files, and the auditor itself runs in the
+	 * fuzz loop (sampled at 1-in-50, with one of three buckets selected
+	 * per call), so under load the stdio path here was driving a steady
+	 * stream of FILE-struct + IO-buffer malloc/free cycles per file.
+	 * That heap traffic is wasted work and, under ASAN, becomes
+	 * candidate abort sites; the freed IO buffer is also a known recycle
+	 * source for a heap-use-after-free shape where the buffer is later
+	 * reissued by trinity's __zmalloc into an obj pool slot.
+	 *
+	 * /proc/net/{tcp,udp,...} can run to many KB on a busy host, so a
+	 * single read into a stack buffer would truncate the file and
+	 * spuriously report "inode missing".  Chunked read with line
+	 * stitching: read into a stack buffer, process complete lines up
+	 * to the last newline, memmove any partial trailing line to the
+	 * front of the buffer, refill, repeat.  Skips the one-line header
+	 * exactly like the previous fgets-based loop.
+	 */
+	char buf[8192];
+	size_t held = 0;
 	unsigned int count = 0;
 	bool skip_header = true;
+	int fd;
 
-	f = fopen(path, "r");
-	if (!f)
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
 		return 0;
 
-	while (fgets(line, sizeof(line), f) && count < max) {
-		char *tok, *saveptr, *p;
-		unsigned int field;
-		unsigned long inode;
+	for (;;) {
+		ssize_t n;
+		char *start, *eol;
 
-		if (skip_header) {
-			skip_header = false;
-			continue;
+		n = read(fd, buf + held, sizeof(buf) - 1 - held);
+		if (n < 0) {
+			if (errno == EINTR)
+				continue;
+			break;
 		}
+		if (n == 0 && held == 0)
+			break;
+		held += (size_t)n;
+		buf[held] = '\0';
 
-		p = line;
-		for (field = 1; field <= inode_field; field++) {
-			tok = strtok_r(p, " \t\n", &saveptr);
-			p = NULL;
-			if (tok == NULL)
-				break;
-			if (field == inode_field) {
-				if (sscanf(tok, "%lu", &inode) == 1 && inode != 0)
-					out[count++] = (ino_t)inode;
+		start = buf;
+		while (count < max &&
+		       (eol = memchr(start, '\n', buf + held - start)) != NULL) {
+			char *tok, *saveptr, *p;
+			unsigned int field;
+			unsigned long inode;
+
+			*eol = '\0';
+
+			if (skip_header) {
+				skip_header = false;
+				start = eol + 1;
+				continue;
 			}
+
+			p = start;
+			for (field = 1; field <= inode_field; field++) {
+				tok = strtok_r(p, " \t", &saveptr);
+				p = NULL;
+				if (tok == NULL)
+					break;
+				if (field == inode_field) {
+					if (sscanf(tok, "%lu", &inode) == 1 && inode != 0)
+						out[count++] = (ino_t)inode;
+				}
+			}
+			start = eol + 1;
 		}
+
+		if (count >= max)
+			break;
+
+		/* Stitch the partial trailing line (no newline yet) to the
+		 * front of the buffer and refill from the kernel.  If the
+		 * remainder fills the entire buffer, the line is pathologically
+		 * long — drop it to avoid an infinite loop. */
+		held -= (size_t)(start - buf);
+		if (held == sizeof(buf) - 1)
+			held = 0;
+		else if (held > 0)
+			memmove(buf, start, held);
+
+		if (n == 0)
+			break;
 	}
 
-	fclose(f);
+	close(fd);
 	return count;
 }
 
