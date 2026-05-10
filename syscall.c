@@ -372,7 +372,7 @@ static bool reject_corrupt_retfd(const struct syscallentry *entry,
 
 	outputerr("retfd: rejecting out-of-bound retval=0x%lx for %s\n",
 		  rec->retval, entry->name);
-	post_handler_corrupt_ptr_bump_dispatch(rec);
+	post_handler_corrupt_ptr_bump_retfd(rec);
 	rec->retval = -1UL;
 	rec->errno_post = EINVAL;
 	return true;
@@ -635,7 +635,7 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		     rec->retval != 0 && rec->retval != -1UL)) {
 		__atomic_add_fetch(&shm->stats.rzs_blanket_reject, 1,
 				   __ATOMIC_RELAXED);
-		post_handler_corrupt_ptr_bump_dispatch(rec);
+		post_handler_corrupt_ptr_bump_rzs(rec);
 	}
 
 	/* Validate RET_FD shape before success/failure dispatch.  A

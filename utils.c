@@ -1391,6 +1391,18 @@ void deferred_free_reject_bump(void *caller_pc)
 	deferred_free_reject_pc_record(caller_pc);
 }
 
+__attribute__((noinline))
+void post_handler_corrupt_ptr_bump_rzs(struct syscallrecord *rec)
+{
+	post_handler_corrupt_ptr_bump(rec, __builtin_return_address(0));
+}
+
+__attribute__((noinline))
+void post_handler_corrupt_ptr_bump_retfd(struct syscallrecord *rec)
+{
+	post_handler_corrupt_ptr_bump(rec, __builtin_return_address(0));
+}
+
 /*
  * Categorise a rejected pointer value into one of four heuristic bands
  * so the sample log line tells us at a glance whether the rejection is
