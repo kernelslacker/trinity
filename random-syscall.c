@@ -479,6 +479,8 @@ static bool argtype_accepts_numeric_substitute(enum argtype t)
 	case ARG_NUMA_NODE:
 	case ARG_IOVECLEN:
 	case ARG_SOCKADDRLEN:
+	case ARG_FD_BPF_BTF:
+	case ARG_FD_BPF_LINK:
 	case ARG_FD_BPF_MAP:
 	case ARG_FD_BPF_PROG:
 	case ARG_FD_EPOLL:

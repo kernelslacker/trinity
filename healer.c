@@ -2146,6 +2146,10 @@ unsigned int healer_pair_get(unsigned int pred, unsigned int succ)
 static enum objecttype healer_argtype_to_objtype(enum argtype t)
 {
 	switch (t) {
+	case ARG_FD_BPF_BTF:	return OBJ_FD_BPF_BTF;
+	case ARG_FD_BPF_LINK:	return OBJ_FD_BPF_LINK;
+	case ARG_FD_BPF_MAP:	return OBJ_FD_BPF_MAP;
+	case ARG_FD_BPF_PROG:	return OBJ_FD_BPF_PROG;
 	case ARG_FD_EPOLL:	return OBJ_FD_EPOLL;
 	case ARG_FD_EVENTFD:	return OBJ_FD_EVENTFD;
 	case ARG_FD_FANOTIFY:	return OBJ_FD_FANOTIFY;
