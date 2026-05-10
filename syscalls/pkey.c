@@ -60,6 +60,7 @@ struct syscallentry syscall_pkey_alloc = {
 	.sanitise = sanitise_pkey_alloc,
 	.post = post_pkey_alloc,
 	.group = GROUP_VM,
+	.rettype = RET_BORING,
 };
 
 struct syscallentry syscall_pkey_free = {
@@ -70,4 +71,5 @@ struct syscallentry syscall_pkey_free = {
 	.arg_params[0].range.low = 0,
 	.arg_params[0].range.hi = 15,
 	.group = GROUP_VM,
+	.rettype = RET_ZERO_SUCCESS,
 };

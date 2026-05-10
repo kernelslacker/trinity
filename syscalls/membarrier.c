@@ -48,4 +48,5 @@ struct syscallentry syscall_membarrier = {
 	.arg_params[0].list = ARGLIST(membarrier_cmds),
 	.sanitise = sanitise_membarrier,
 	.group = GROUP_SCHED,
+	.rettype = RET_ZERO_SUCCESS,
 };
