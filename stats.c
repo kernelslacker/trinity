@@ -743,7 +743,8 @@ static void dump_stats_json(void)
 		"\"splice_protocols\":{\"runs\":%lu,\"setup_failed\":%lu,\"chain_ok\":%lu,\"in_bytes\":%lu,\"out_bytes\":%lu,\"udp_encap_attempted\":%lu,\"tcp_repair_attempted\":%lu,\"packet_ring_attempted\":%lu,\"alg_attempted\":%lu,\"rxrpc_attempted\":%lu,\"msg_splice_pages_attempted\":%lu,\"msg_splice_pages_path_taken_inferred\":%lu},"
 		"\"rxrpc_key_install\":{\"runs\":%lu,\"calls\":%lu,\"revokes\":%lu,\"quota_hits\":%lu,\"unsupported\":%lu},"
 		"\"af_alg_weak_cipher_probe\":{\"runs\":%lu,\"socket_failed\":%lu,\"total_bind_attempts\":%lu,\"total_bind_accepted\":%lu,\"weak_accepted_total\":%lu,\"setkey_accepted_total\":%lu,\"skcipher_weak_accepted\":%lu,\"aead_weak_accepted\":%lu,\"hash_weak_accepted\":%lu,\"strong_rejected\":%lu},"
-		"\"af_alg_probe\":{\"runs\":%lu,\"unsupported\":%lu,\"accept_total\":%lu,\"reject_total\":%lu}"
+		"\"af_alg_probe\":{\"runs\":%lu,\"unsupported\":%lu,\"accept_total\":%lu,\"reject_total\":%lu},"
+		"\"ublk_lifecycle\":{\"iters\":%lu,\"eperm\":%lu,\"add_ok\":%lu,\"fetch_ok\":%lu,\"del_ok\":%lu,\"race_observed\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1284,7 +1285,13 @@ static void dump_stats_json(void)
 		shm->stats.af_alg_probe_runs,
 		shm->stats.af_alg_probe_unsupported,
 		shm->stats.af_alg_probe_accept_total,
-		shm->stats.af_alg_probe_reject_total);
+		shm->stats.af_alg_probe_reject_total,
+		shm->stats.ublk_lifecycle_iters,
+		shm->stats.ublk_lifecycle_eperm,
+		shm->stats.ublk_lifecycle_add_ok,
+		shm->stats.ublk_lifecycle_fetch_ok,
+		shm->stats.ublk_lifecycle_del_ok,
+		shm->stats.ublk_lifecycle_race_observed);
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -3000,6 +3007,15 @@ void dump_stats(void)
 		stat_row("xfrm_churn", "ah_esn_setup_fail",  shm->stats.xfrm_ah_esn_setup_fail);
 		stat_row("xfrm_churn", "ah_esn_async_runs",  shm->stats.xfrm_ah_esn_async_runs);
 		stat_row("xfrm_churn", "ah_esn_delsa_races", shm->stats.xfrm_ah_esn_delsa_races);
+	}
+
+	if (shm->stats.ublk_lifecycle_iters) {
+		stat_row("ublk_lifecycle", "iters",         shm->stats.ublk_lifecycle_iters);
+		stat_row("ublk_lifecycle", "eperm",         shm->stats.ublk_lifecycle_eperm);
+		stat_row("ublk_lifecycle", "add_ok",        shm->stats.ublk_lifecycle_add_ok);
+		stat_row("ublk_lifecycle", "fetch_ok",      shm->stats.ublk_lifecycle_fetch_ok);
+		stat_row("ublk_lifecycle", "del_ok",        shm->stats.ublk_lifecycle_del_ok);
+		stat_row("ublk_lifecycle", "race_observed", shm->stats.ublk_lifecycle_race_observed);
 	}
 
 	if (shm->stats.nat_t_churn_runs) {

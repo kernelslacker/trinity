@@ -175,6 +175,7 @@ enum child_op_type {
 	CHILD_OP_SOCK_DIAG_WALKER,
 	CHILD_OP_ALTNAME_THRASH,
 	CHILD_OP_IPMR_CACHE_REPORT,
+	CHILD_OP_UBLK_LIFECYCLE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -554,3 +555,4 @@ bool mpls_route_churn(struct childdata *child);
 bool sock_diag_walker(struct childdata *child);
 bool altname_thrash(struct childdata *child);
 bool ipmr_cache_report(struct childdata *child);
+bool ublk_lifecycle(struct childdata *child);
