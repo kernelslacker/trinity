@@ -62,9 +62,19 @@ static unsigned long clone3_sizes[] = {
 	sizeof(struct clone_args),
 };
 
+/*
+ * Low-bit ticket on rec->post_state -- see the long comment in
+ * sanitise_clone3() about the throttle bookkeeping.  zmalloc returns
+ * >=8-byte-aligned pointers so this bit is free to overlay on the
+ * args pointer, but the post handler must mask it off before any
+ * dereference or deferred_freeptr() of post_state.
+ */
+#define NEWNET_INFLIGHT_TICKET	0x1UL
+
 static void sanitise_clone3(struct syscallrecord *rec)
 {
 	struct clone_args *args;
+	bool newnet_admitted = false;
 
 	args = zmalloc(sizeof(struct clone_args));
 
@@ -75,6 +85,35 @@ static void sanitise_clone3(struct syscallrecord *rec)
 		enforce_clone_flag_deps(&f, false);
 		args->flags = f;
 	}
+
+	/*
+	 * Throttle CLONE_NEWNET to MAX_CONCURRENT_NEWNET fleet-wide -- the
+	 * kernel's netns cleanup workqueue is the slow path and any
+	 * grandchild that succeeds with this flag widens the backlog.  See
+	 * the comment on MAX_CONCURRENT_NEWNET in include/shm.h.  The
+	 * "did we increment" decision rides in bit 0 of rec->post_state
+	 * (set in stash_args_into_post_state below) -- post_state is
+	 * already spoken for here as the args pointer for post_clone3 to
+	 * free, but zmalloc returns >=8-byte-aligned pointers so the low
+	 * three bits are free.  We deliberately do not derive the post-
+	 * call decision from args->flags: a sibling syscall can scribble
+	 * the args allocation between BEFORE and AFTER, and an unbalanced
+	 * decrement would underflow the in-flight counter into a giant
+	 * unsigned value and permanently disable the cap.
+	 */
+	if (args->flags & CLONE_NEWNET) {
+		if (__atomic_load_n(&shm->newnet_in_flight, __ATOMIC_RELAXED) >=
+		    MAX_CONCURRENT_NEWNET) {
+			args->flags &= ~CLONE_NEWNET;
+			__atomic_fetch_add(&shm->stats.unshare_newnet_throttled, 1,
+					   __ATOMIC_RELAXED);
+		} else {
+			__atomic_fetch_add(&shm->newnet_in_flight, 1,
+					   __ATOMIC_RELAXED);
+			newnet_admitted = true;
+		}
+	}
+
 	args->exit_signal = rand() % _NSIG;
 
 	/*
@@ -137,13 +176,30 @@ static void sanitise_clone3(struct syscallrecord *rec)
 	rec->a2 = RAND_ARRAY(clone3_sizes);
 
 	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
-	 * syscall before post_clone3() runs. */
+	 * syscall before post_clone3() runs.  Bit 0 doubles as the throttle
+	 * "we incremented shm->newnet_in_flight" ticket; post_clone3 masks
+	 * it off before any dereference / deferred_freeptr. */
 	rec->post_state = (unsigned long) args;
+	if (newnet_admitted)
+		rec->post_state |= NEWNET_INFLIGHT_TICKET;
 }
 
 static void post_clone3(struct syscallrecord *rec)
 {
 	struct clone_args *args;
+
+	/*
+	 * Drop the throttle ticket first and unconditionally, before any
+	 * branch that might early-return or call deferred_freeptr() on
+	 * post_state.  The ticket bit overlays the args pointer and must
+	 * be masked off before any dereference; doing it once at the top
+	 * keeps the corrupt-retval and normal paths from each having to
+	 * remember.
+	 */
+	if (rec->post_state & NEWNET_INFLIGHT_TICKET) {
+		rec->post_state &= ~NEWNET_INFLIGHT_TICKET;
+		__atomic_fetch_sub(&shm->newnet_in_flight, 1, __ATOMIC_RELAXED);
+	}
 
 	/*
 	 * Kernel ABI: parent retval is the child pid in [1, PID_MAX_LIMIT=4194304],
