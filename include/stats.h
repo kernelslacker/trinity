@@ -939,6 +939,15 @@ struct stats_s {
 	unsigned long tcp_ao_rotate_delkey_rejected;	/* TCP_AO_DEL_KEY rejected */
 	unsigned long tcp_ao_rotate_cycles;		/* full cycles reaching teardown */
 
+	/* tcp_md5_listener_race childop counters */
+	unsigned long tcp_md5_listener_race_runs;		/* total tcp_md5_listener_race invocations */
+	unsigned long tcp_md5_listener_race_setup_failed;	/* loopback listen/socket/bind setup failed */
+	unsigned long tcp_md5_listener_race_md5_set_ok;		/* TCP_MD5SIG install/rotate/delete accepted */
+	unsigned long tcp_md5_listener_race_md5_set_failed;	/* TCP_MD5SIG rejected (EOPNOTSUPP/EINVAL/EPERM) */
+	unsigned long tcp_md5_listener_race_connect_ok;		/* zero-linger client connect() egress observed */
+	unsigned long tcp_md5_listener_race_rst_sent_ok;	/* zero-linger close() drove RST toward listener */
+	unsigned long tcp_md5_listener_race_completed_ok;	/* full cycles reaching teardown */
+
 	/* vrf_fib_churn childop counters */
 	unsigned long vrf_fib_churn_runs;		/* total vrf_fib_churn invocations */
 	unsigned long vrf_fib_churn_setup_failed;	/* unshare(CLONE_NEWNET) or rtnl socket failed */
