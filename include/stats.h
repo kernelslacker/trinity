@@ -1079,6 +1079,10 @@ struct stats_s {
 	unsigned long tc_qdisc_churn_tfilter_del_ok;	/* RTM_DELTFILTER bulk-del accepted */
 	unsigned long tc_qdisc_churn_qdisc_del_ok;	/* RTM_DELQDISC root accepted */
 	unsigned long tc_qdisc_churn_link_del_ok;	/* RTM_DELLINK on dummy accepted */
+	unsigned long tc_qdisc_peek_stack_runs;		/* deliberate peek-x-peek stack sub-mode fired */
+	unsigned long tc_qdisc_peek_stack_install_ok;	/* parent + child grafted successfully */
+	unsigned long tc_qdisc_peek_stack_install_fail;	/* parent or child install rejected */
+	unsigned long tc_qdisc_peek_stack_burst_ok;	/* loopback UDP sendto on stacked tree returned >0 */
 
 	/* xfrm_churn childop counters */
 	unsigned long xfrm_churn_runs;			/* total xfrm_churn invocations */
