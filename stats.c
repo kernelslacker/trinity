@@ -762,7 +762,8 @@ static void dump_stats_json(void)
 			"\"connect_no_listen\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
 			"\"ioctl_rotation\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
 			"\"setsockopt_zero_len\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
-			"\"close_via_dup\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu}}"
+			"\"close_via_dup\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu}},"
+		"\"flowtable_encap_vlan\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"offloaded_pkts\":%lu,\"gso_sends\":%lu,\"vlan_teardown_races\":%lu,\"unsupported_latched\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1440,7 +1441,14 @@ static void dump_stats_json(void)
 		shm->stats.obscure_af_churn_pattern_unexpected_success[4],
 		shm->stats.obscure_af_churn_pattern_runs[5],
 		shm->stats.obscure_af_churn_pattern_kernel_rejected[5],
-		shm->stats.obscure_af_churn_pattern_unexpected_success[5]);
+		shm->stats.obscure_af_churn_pattern_unexpected_success[5],
+		shm->stats.flowtable_vlan_runs,
+		shm->stats.flowtable_vlan_setup_ok,
+		shm->stats.flowtable_vlan_setup_failed,
+		shm->stats.flowtable_vlan_offloaded_pkts,
+		shm->stats.flowtable_vlan_gso_sends,
+		shm->stats.flowtable_vlan_vlan_teardown_races,
+		shm->stats.flowtable_vlan_unsupported_latched);
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -3518,6 +3526,16 @@ void dump_stats(void)
 			stat_row("obscure_af_churn", key,
 				 shm->stats.obscure_af_churn_pattern_unexpected_success[ap]);
 		}
+	}
+
+	if (shm->stats.flowtable_vlan_runs) {
+		stat_row("flowtable_encap_vlan", "runs",                 shm->stats.flowtable_vlan_runs);
+		stat_row("flowtable_encap_vlan", "setup_ok",             shm->stats.flowtable_vlan_setup_ok);
+		stat_row("flowtable_encap_vlan", "setup_failed",         shm->stats.flowtable_vlan_setup_failed);
+		stat_row("flowtable_encap_vlan", "offloaded_pkts",       shm->stats.flowtable_vlan_offloaded_pkts);
+		stat_row("flowtable_encap_vlan", "gso_sends",            shm->stats.flowtable_vlan_gso_sends);
+		stat_row("flowtable_encap_vlan", "vlan_teardown_races",  shm->stats.flowtable_vlan_vlan_teardown_races);
+		stat_row("flowtable_encap_vlan", "unsupported_latched",  shm->stats.flowtable_vlan_unsupported_latched);
 	}
 
 	if (shm->stats.afxdp_churn_runs) {
