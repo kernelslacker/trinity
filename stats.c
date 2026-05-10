@@ -746,7 +746,8 @@ static void dump_stats_json(void)
 		"\"af_alg_probe\":{\"runs\":%lu,\"unsupported\":%lu,\"accept_total\":%lu,\"reject_total\":%lu},"
 		"\"ublk_lifecycle\":{\"iters\":%lu,\"eperm\":%lu,\"add_ok\":%lu,\"fetch_ok\":%lu,\"del_ok\":%lu,\"race_observed\":%lu},"
 		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
-		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu}"
+		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
+		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1305,7 +1306,11 @@ static void dump_stats_json(void)
 		shm->stats.inm_unsupported,
 		shm->stats.inm_link_create_ok,
 		shm->stats.inm_netns_migrate_ok,
-		shm->stats.inm_changelink_ok);
+		shm->stats.inm_changelink_ok,
+		shm->stats.ipvs_sysctl_writer_runs,
+		shm->stats.ipvs_sysctl_writer_writes_ok,
+		shm->stats.ipvs_sysctl_writer_writes_failed,
+		shm->stats.ipvs_sysctl_writer_unsupported_latched);
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -3219,6 +3224,13 @@ void dump_stats(void)
 		stat_row("ip6erspan_netns_migrate", "link_create_ok",   shm->stats.inm_link_create_ok);
 		stat_row("ip6erspan_netns_migrate", "netns_migrate_ok", shm->stats.inm_netns_migrate_ok);
 		stat_row("ip6erspan_netns_migrate", "changelink_ok",    shm->stats.inm_changelink_ok);
+	}
+
+	if (shm->stats.ipvs_sysctl_writer_runs) {
+		stat_row("ipvs_sysctl_writer", "runs",                shm->stats.ipvs_sysctl_writer_runs);
+		stat_row("ipvs_sysctl_writer", "writes_ok",           shm->stats.ipvs_sysctl_writer_writes_ok);
+		stat_row("ipvs_sysctl_writer", "writes_failed",       shm->stats.ipvs_sysctl_writer_writes_failed);
+		stat_row("ipvs_sysctl_writer", "unsupported_latched", shm->stats.ipvs_sysctl_writer_unsupported_latched);
 	}
 
 	if (shm->stats.afxdp_churn_runs) {
