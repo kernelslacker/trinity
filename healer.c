@@ -62,6 +62,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/utsname.h>
 #include <time.h>
 #include <unistd.h>
@@ -2282,17 +2283,201 @@ unsigned int healer_count_pc_pairs(void)
 }
 
 /*
+ * --- ENOSYS probe (kernel-availability gate for the static seed) ---
+ *
+ * The active syscall table is filtered by user-side gates only:
+ * --disabled-syscalls, the per-arch enable bits, and the toggle/group
+ * commands.  Whether the running kernel actually implements the call
+ * is never consulted -- a syscall whose handler is sys_ni_syscall on
+ * this build (LANDLOCK on a no-LANDLOCK kernel, io_uring on a kernel
+ * with IO_URING=n, fanotify on a stripped-down container kernel) stays
+ * 'active' in the table and the seed walk happily produces pair entries
+ * involving it.  Those pairs then dominate the HEALER dump because
+ * neither the producer nor the consumer ever fires at runtime to bump
+ * the cell back down with real coverage signal, so the dump shows pure
+ * static-seed weight against syscalls the kernel will never run.
+ *
+ * Probe each candidate syscall once at static-seed-load time with all
+ * zero args; if it returns ENOSYS, mark the number unsupported and
+ * skip every (producer, consumer) pair that involves it on either side
+ * during the seed walk.  Cached at process scope -- the seed loader is
+ * the only caller and runs once pre-fork, so children inherit the
+ * already-populated map by COW just like the pair table.
+ */
+static bool healer_kernel_supports[MAX_NR_SYSCALL];
+static bool healer_probe_done;
+static unsigned int healer_probe_supported;
+static unsigned int healer_probe_enosys;
+static unsigned int healer_probe_skiplist;
+
+/*
+ * True when the syscall must NOT be probed because invoking it -- even
+ * with all-zero args -- has side effects beyond the ENOSYS reject we
+ * actually care about.  Skipped entries are conservatively treated as
+ * supported so the seed walk still includes their pairs; the cost of a
+ * false positive (a polluting pair against a syscall that isn't really
+ * there) is bounded to this short list, which the prompt-driven audit
+ * picked out as the unambiguously-dangerous shapes.
+ *
+ * Three signal sources, walked cheapest-first:
+ *   - AVOID_SYSCALL: trinity's existing "do not invoke from the parent"
+ *     flag.  Already covers exit, exit_group, fork, vfork, clone,
+ *     clone3, kill, tkill, tgkill, ptrace, restart_syscall, sigreturn /
+ *     rt_sigreturn, sigaction, sigsuspend, rt_sigsuspend, signal,
+ *     setitimer, set_tid_address, brk, alarm, pause, nanosleep,
+ *     pselect6, close, close_range and rt_sigqueueinfo -- the full set
+ *     of "would wreck the parent's process / signal / fd state" callees.
+ *   - NEEDS_ROOT: not strictly side-effect-bearing for non-root, but
+ *     covers reboot-class / mount-class / kexec-class shapes the parent
+ *     should never poke even with a kernel-level reject (kexec_load,
+ *     kexec_file_load, mount, umount, pivot_root, swapon, swapoff,
+ *     chroot, sethostname, setdomainname, ioperm, iopl).
+ *   - EXTRA_FORK: catches execve / execveat / vfork (vfork also flagged
+ *     AVOID_SYSCALL) which would replace or duplicate the parent.
+ *
+ * Plus a small name-only denylist for the side-effect-on-zero-args
+ * shapes the flag scheme doesn't reach: the setuid / setgid family
+ * (no AVOID_SYSCALL flag, would mutate creds), reboot (no flag at
+ * all), seccomp (mode == 0 == SECCOMP_SET_MODE_STRICT would lock the
+ * parent down to read/write/_exit/sigreturn), setsid / setpgid
+ * (session / process-group rewrites), personality (changes execution
+ * domain), unshare (flags == 0 is a no-op today but the kernel ABI
+ * lets that change), capset (would drop capabilities on a non-NULL
+ * arg path the kernel might not reject early enough), and _exit /
+ * landlock_restrict_self (process-terminating / process-locking).
+ */
+static bool healer_probe_unsafe(const struct syscallentry *entry)
+{
+	static const char * const denylist[] = {
+		"setuid", "setuid32",
+		"setgid", "setgid32",
+		"setreuid", "setreuid32",
+		"setregid", "setregid32",
+		"setresuid", "setresuid32",
+		"setresgid", "setresgid32",
+		"setfsuid", "setfsuid32",
+		"setfsgid", "setfsgid32",
+		"reboot",
+		"seccomp",
+		"setsid",
+		"setpgid",
+		"personality",
+		"unshare",
+		"capset",
+		"_exit",
+		"landlock_restrict_self",
+	};
+	unsigned int i;
+
+	if (entry->flags & (AVOID_SYSCALL | NEEDS_ROOT | EXTRA_FORK))
+		return true;
+
+	if (entry->name == NULL)
+		return false;
+
+	for (i = 0; i < ARRAY_SIZE(denylist); i++) {
+		if (strcmp(entry->name, denylist[i]) == 0)
+			return true;
+	}
+	return false;
+}
+
+/*
+ * Probe one syscall table.  For each entry: if the per-NR slot is
+ * already marked supported by an earlier walk (biarch builds visit a
+ * raw NR twice when 32-bit and 64-bit happen to share the same number),
+ * skip it; if the entry is on the unsafe list, mark it supported
+ * unconditionally and bump the skiplist counter; otherwise issue the
+ * zero-arg syscall and check errno.  The pair table is biarch-flat
+ * (indexed by raw number), so a single per-NR boolean matches the
+ * downstream gate's resolution exactly -- on the rare biarch shape
+ * where two distinct syscalls share a NR and one is supported, the
+ * "first walk wins, second walk silently no-ops" pattern is the same
+ * one healer_load_pc_pairs_in_table relies on for the same reason.
+ */
+static void healer_probe_table(const struct syscalltable *tbl, unsigned int n)
+{
+	unsigned int i;
+
+	if (tbl == NULL)
+		return;
+
+	for (i = 0; i < n; i++) {
+		const struct syscallentry *entry = tbl[i].entry;
+		unsigned int nr;
+
+		if (entry == NULL)
+			continue;
+
+		nr = entry->number;
+		if (nr >= MAX_NR_SYSCALL)
+			continue;
+		if (healer_kernel_supports[nr])
+			continue;
+
+		if (healer_probe_unsafe(entry)) {
+			healer_kernel_supports[nr] = true;
+			healer_probe_skiplist++;
+			continue;
+		}
+
+		errno = 0;
+		(void)syscall((long)nr, 0L, 0L, 0L, 0L, 0L, 0L);
+		if (errno == ENOSYS) {
+			healer_probe_enosys++;
+		} else {
+			healer_kernel_supports[nr] = true;
+			healer_probe_supported++;
+		}
+	}
+}
+
+/*
+ * One-shot per-process ENOSYS probe.  Walks the same active table(s)
+ * the seed loader will walk a moment later, in the same biarch order,
+ * so the kernel-supports map is fully populated before any seed-walk
+ * lookup consults it.  Idempotent; a second call is a no-op so the
+ * stats line and the per-NR bitmap stay stable across re-entries.
+ */
+static void healer_run_enosys_probe(void)
+{
+	if (healer_probe_done == true)
+		return;
+	healer_probe_done = true;
+
+	if (biarch == true) {
+		if (do_64_arch == true)
+			healer_probe_table(syscalls_64bit,
+					   max_nr_64bit_syscalls);
+		if (do_32_arch == true)
+			healer_probe_table(syscalls_32bit,
+					   max_nr_32bit_syscalls);
+	} else {
+		healer_probe_table(syscalls, max_nr_syscalls);
+	}
+
+	stats_log_write("HEALER probe: %u syscalls supported, %u ENOSYS, %u skip-list\n",
+			healer_probe_supported,
+			healer_probe_enosys,
+			healer_probe_skiplist);
+}
+
+/*
  * Per-table static-seed installer.  Walks one syscall table and calls
  * healer_pair_seed(HEALER_STATIC_SEED_WEIGHT) for every (producer A,
  * consumer B) match where A's ret_objtype is consumed by one of B's
  * argtype slots.  Mirrors healer_count_pc_pairs_in_table by shape so
  * the "what gets seeded" inventory matches the dry-run counter exactly,
- * with two differences: the per-match action is a write rather than a
- * counter increment, and self-pairs (a == b) are skipped.  A self-pair
- * captures the dup/dup2/dup3 shape (consume an fd of kind K, produce an
- * fd of kind K), which is a duplicate-class shape rather than a
- * productive state-transition prior, so seeding (a -> a) would inject
- * a synthetic edge with no underlying semantics.
+ * with three differences: the per-match action is a write rather than a
+ * counter increment, self-pairs (a == b) are skipped, and the
+ * kernel-supports gate populated by healer_run_enosys_probe filters
+ * pairs that involve a syscall the running kernel rejects with ENOSYS
+ * (LANDLOCK on a no-LANDLOCK kernel, io_uring on a kernel with
+ * IO_URING=n, etc.).  A self-pair captures the dup/dup2/dup3 shape
+ * (consume an fd of kind K, produce an fd of kind K), which is a
+ * duplicate-class shape rather than a productive state-transition
+ * prior, so seeding (a -> a) would inject a synthetic edge with no
+ * underlying semantics.
  */
 static void healer_load_pc_pairs_in_table(const struct syscalltable *tbl,
 					  unsigned int n)
@@ -2308,6 +2493,10 @@ static void healer_load_pc_pairs_in_table(const struct syscalltable *tbl,
 
 		if (entry_a == NULL)
 			continue;
+		if (entry_a->number >= MAX_NR_SYSCALL)
+			continue;
+		if (healer_kernel_supports[entry_a->number] == false)
+			continue;
 
 		kind = healer_produces_objtype(entry_a);
 		if (kind == OBJ_NONE)
@@ -2319,6 +2508,10 @@ static void healer_load_pc_pairs_in_table(const struct syscalltable *tbl,
 			if (entry_b == NULL)
 				continue;
 			if (a == b)
+				continue;
+			if (entry_b->number >= MAX_NR_SYSCALL)
+				continue;
+			if (healer_kernel_supports[entry_b->number] == false)
 				continue;
 			if (healer_consumes_objtype(entry_b, kind))
 				healer_pair_seed(entry_a->number,
@@ -2364,6 +2557,8 @@ unsigned int healer_load_static_seed(void)
 {
 	unsigned long before, after;
 	unsigned int installed;
+
+	healer_run_enosys_probe();
 
 	before = (shm != NULL) ?
 		__atomic_load_n(&shm->stats.healer_pair_seeded, __ATOMIC_RELAXED) : 0;
