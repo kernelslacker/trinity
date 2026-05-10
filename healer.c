@@ -485,15 +485,6 @@ void healer_observe_relation(struct childdata *child, unsigned int current_nr)
 	if (pred_a == EDGEPAIR_NO_PREV || pred_b == EDGEPAIR_NO_PREV)
 		return;
 
-	/* Pair-table observer: credit the (immediate-predecessor -> current_nr)
-	 * relationship.  The immediate predecessor is healer_seq[1], which is
-	 * still in pred_b at this point (the pred_a/pred_b swap below normalises
-	 * for the triple-table key but discards the temporal ordering we need
-	 * here).  Without this call the pair table never accumulates weight
-	 * beyond the static seed and is indistinguishable from the producer/
-	 * consumer prior. */
-	healer_pair_observe(pred_b, current_nr);
-
 	if (pred_a > pred_b) {
 		unsigned int tmp = pred_a;
 		pred_a = pred_b;
