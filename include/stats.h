@@ -914,6 +914,10 @@ struct stats_s {
 	unsigned long iouring_multishot_packets_sent;	/* peer UDP packets sendto()'d */
 	unsigned long iouring_multishot_completions;	/* CQEs drained for the multishot */
 	unsigned long iouring_multishot_cancel_submitted; /* ASYNC_CANCEL submitted+entered */
+	unsigned long iouring_napi_register_ok;		/* IORING_REGISTER_NAPI accepted */
+	unsigned long iouring_napi_register_fail;	/* IORING_REGISTER_NAPI rejected */
+	unsigned long iouring_napi_unregister_ok;	/* IORING_UNREGISTER_NAPI accepted */
+	unsigned long iouring_napi_unregister_fail;	/* IORING_UNREGISTER_NAPI rejected */
 
 	/* tcp_ao_rotate childop counters */
 	unsigned long tcp_ao_rotate_runs;		/* total tcp_ao_rotate invocations */
