@@ -323,6 +323,38 @@ struct childdata {
 	unsigned long fd_closed;
 	unsigned long fd_created_by_group[NR_GROUPS];
 
+	/* Per-child storm-containment counters.  Bumped in lock-step with
+	 * the existing global stats.{post_handler_corrupt_ptr,maps_uaf_caught,
+	 * get_writable_address_scribbled_slots_caught} from the same call
+	 * sites; the global counters lose attribution across the fleet, so
+	 * these per-child shadows are what the storm-rate check below scores
+	 * against.  Owner-only writes from inside the child, no cross-process
+	 * coherence needed.  Reset in clean_childdata so a fresh occupant of
+	 * the slot starts from zero.  See storm_check_last_* below for the
+	 * sliding-window accounting. */
+	unsigned long local_post_handler_corrupt_ptr;
+	unsigned long local_maps_uaf_caught;
+	unsigned long local_scribbled_slots_caught;
+
+	/* Sliding-window state for the per-child storm-rate check.
+	 * storm_check_last_time is the monotonic timestamp at which the
+	 * three local_* counters above last passed the rate gate (or the
+	 * time clean_childdata ran, whichever is most recent).  The three
+	 * snapshots are the values of each counter at that same instant.
+	 * The check (in child_process) re-reads CLOCK_MONOTONIC and the
+	 * counters every LOCAL_STORM_CHECK_PERIOD iterations and triggers
+	 * a recycle when (counter_now - snapshot) / (now - last_time)
+	 * exceeds LOCAL_STORM_RATE_THRESHOLD events/sec for any of the
+	 * three signals AND the window has been open for at least
+	 * LOCAL_STORM_WINDOW_SEC seconds.  The window-floor is what
+	 * suppresses single-spike false positives; a transient burst that
+	 * cannot sustain over 10 s gets absorbed into the next snapshot
+	 * roll instead of recycling the child. */
+	struct timespec storm_check_last_time;
+	unsigned long storm_check_last_post_handler;
+	unsigned long storm_check_last_maps_uaf;
+	unsigned long storm_check_last_scribbled;
+
 	/* Ring buffer for reporting fd events to the parent.
 	 * Allocated in shared memory, one per child. */
 	struct fd_event_ring *fd_event_ring;
@@ -388,6 +420,24 @@ struct childdata {
 } __attribute__((aligned(64)));
 
 extern unsigned int max_children;
+
+/*
+ * Per-child corruption-rate storm-containment thresholds.  When any of
+ * post_handler_corrupt_ptr / maps_uaf_caught / scribbled_slots_caught
+ * sustains LOCAL_STORM_RATE_THRESHOLD events/sec or more over a window
+ * of at least LOCAL_STORM_WINDOW_SEC seconds, the child voluntarily
+ * exits its main loop so the parent can fork a replacement.  Rationale:
+ * the corruption is a per-child accumulator (a scribbled OBJ_LOCAL slot
+ * or a poisoned libc arena) -- it does not survive across fork(), so a
+ * fresh child re-inherits clean state and breaks the burn-arg-gen-cycles
+ * feedback loop the storm produces.  Containment, not root-cause fix.
+ *
+ * LOCAL_STORM_CHECK_PERIOD is a power-of-two so the per-iteration gate
+ * is a single AND + branch, with no clock_gettime() in the hot path.
+ */
+#define LOCAL_STORM_RATE_THRESHOLD	50	/* events/sec sustained */
+#define LOCAL_STORM_WINDOW_SEC		10	/* must hold for >= this long */
+#define LOCAL_STORM_CHECK_PERIOD	1024	/* iterations between checks */
 
 /*
  * Compute the adaptive iteration count for an opt-in childop.  Reads

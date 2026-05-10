@@ -2713,6 +2713,9 @@ void dump_stats(void)
 	if (shm->stats.get_writable_address_scribbled_slots_caught)
 		stat_row("shared_buffer", "get_writable_address_scribbled_slots_caught",
 			 shm->stats.get_writable_address_scribbled_slots_caught);
+	if (shm->stats.children_recycled_on_storm)
+		stat_row("corruption", "children_recycled_on_storm",
+			 shm->stats.children_recycled_on_storm);
 
 	if (verbosity > 1)
 		dump_syscall_category_histogram();

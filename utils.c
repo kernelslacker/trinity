@@ -1322,10 +1322,20 @@ static void corrupt_ptr_pc_record(unsigned int nr, bool do32bit, void *pc)
 
 void post_handler_corrupt_ptr_bump(struct syscallrecord *rec, void *caller_pc)
 {
+	struct childdata *child;
 	unsigned int nr;
 	bool do32bit;
 
 	__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+
+	/* Per-child shadow of the same event, scored by the storm-rate
+	 * check in child_process.  this_child() returns NULL when called
+	 * outside a child context (parent post-mortem paths, deferred-free
+	 * tick on the main process), in which case there is no per-child
+	 * counter to bump. */
+	child = this_child();
+	if (child != NULL)
+		child->local_post_handler_corrupt_ptr++;
 
 	if (rec != NULL) {
 		nr = rec->nr;

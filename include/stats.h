@@ -182,6 +182,18 @@ struct stats_s {
 	 * fix here only converts the resulting SEGV into a clean retry. */
 	unsigned long get_writable_address_scribbled_slots_caught;
 
+	/* Bumped each time a child exits voluntarily because one of its
+	 * per-child corruption-rate signals (post_handler_corrupt_ptr,
+	 * maps_uaf_caught, get_writable_address_scribbled_slots_caught)
+	 * sustained LOCAL_STORM_RATE_THRESHOLD events/sec for at least
+	 * LOCAL_STORM_WINDOW_SEC seconds.  Surfaces how often the storm
+	 * containment is firing -- a steadily climbing value during a run
+	 * means the corruption source is still active and the parent is
+	 * paying recurring fork cost to keep coverage moving; a stuck-at-
+	 * zero value means the threshold is set too high or no storm is
+	 * being produced. */
+	unsigned long children_recycled_on_storm;
+
 	/* Bumped by the sanitise hooks for unshare / clone / clone3 each
 	 * time a CLONE_NEWNET request was rejected because shm->newnet_in_flight
 	 * had already hit MAX_CONCURRENT_NEWNET.  Non-zero count is the
