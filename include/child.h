@@ -176,6 +176,7 @@ enum child_op_type {
 	CHILD_OP_ALTNAME_THRASH,
 	CHILD_OP_IPMR_CACHE_REPORT,
 	CHILD_OP_UBLK_LIFECYCLE,
+	CHILD_OP_VETH_ASYMMETRIC_XDP,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -556,3 +557,4 @@ bool sock_diag_walker(struct childdata *child);
 bool altname_thrash(struct childdata *child);
 bool ipmr_cache_report(struct childdata *child);
 bool ublk_lifecycle(struct childdata *child);
+bool veth_asymmetric_xdp(struct childdata *child);

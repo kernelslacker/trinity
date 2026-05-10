@@ -744,7 +744,8 @@ static void dump_stats_json(void)
 		"\"rxrpc_key_install\":{\"runs\":%lu,\"calls\":%lu,\"revokes\":%lu,\"quota_hits\":%lu,\"unsupported\":%lu},"
 		"\"af_alg_weak_cipher_probe\":{\"runs\":%lu,\"socket_failed\":%lu,\"total_bind_attempts\":%lu,\"total_bind_accepted\":%lu,\"weak_accepted_total\":%lu,\"setkey_accepted_total\":%lu,\"skcipher_weak_accepted\":%lu,\"aead_weak_accepted\":%lu,\"hash_weak_accepted\":%lu,\"strong_rejected\":%lu},"
 		"\"af_alg_probe\":{\"runs\":%lu,\"unsupported\":%lu,\"accept_total\":%lu,\"reject_total\":%lu},"
-		"\"ublk_lifecycle\":{\"iters\":%lu,\"eperm\":%lu,\"add_ok\":%lu,\"fetch_ok\":%lu,\"del_ok\":%lu,\"race_observed\":%lu}"
+		"\"ublk_lifecycle\":{\"iters\":%lu,\"eperm\":%lu,\"add_ok\":%lu,\"fetch_ok\":%lu,\"del_ok\":%lu,\"race_observed\":%lu},"
+		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1291,7 +1292,13 @@ static void dump_stats_json(void)
 		shm->stats.ublk_lifecycle_add_ok,
 		shm->stats.ublk_lifecycle_fetch_ok,
 		shm->stats.ublk_lifecycle_del_ok,
-		shm->stats.ublk_lifecycle_race_observed);
+		shm->stats.ublk_lifecycle_race_observed,
+		shm->stats.veth_asym_iters,
+		shm->stats.veth_asym_eperm,
+		shm->stats.veth_asym_unsupported,
+		shm->stats.veth_asym_pair_ok,
+		shm->stats.veth_asym_xdp_attach_ok,
+		shm->stats.veth_asym_send_ok);
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -3187,6 +3194,15 @@ void dump_stats(void)
 		stat_row("psp_key_rotate", "rotate_ok",         shm->stats.psp_key_rotate_rotate_ok);
 		stat_row("psp_key_rotate", "spi_switch_ok",     shm->stats.psp_key_rotate_spi_switch_ok);
 		stat_row("psp_key_rotate", "shutdown_ok",       shm->stats.psp_key_rotate_shutdown_ok);
+	}
+
+	if (shm->stats.veth_asym_iters) {
+		stat_row("veth_asymmetric_xdp", "iters",         shm->stats.veth_asym_iters);
+		stat_row("veth_asymmetric_xdp", "eperm",         shm->stats.veth_asym_eperm);
+		stat_row("veth_asymmetric_xdp", "unsupported",   shm->stats.veth_asym_unsupported);
+		stat_row("veth_asymmetric_xdp", "pair_ok",       shm->stats.veth_asym_pair_ok);
+		stat_row("veth_asymmetric_xdp", "xdp_attach_ok", shm->stats.veth_asym_xdp_attach_ok);
+		stat_row("veth_asymmetric_xdp", "send_ok",       shm->stats.veth_asym_send_ok);
 	}
 
 	if (shm->stats.afxdp_churn_runs) {
