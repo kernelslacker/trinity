@@ -823,6 +823,75 @@ static int healer_dump_entry_cmp(const void *a, const void *b)
 }
 
 /*
+ * Bounded-size top-N insertion shared by the triple and pair
+ * collection loops.  Holds the top HEALER_DUMP_TOP_N entries in
+ * unsorted form: fills until full, then evicts the slot with the
+ * smallest norm_score_milli when a higher-scoring candidate arrives.
+ * Hoisted out of the dump body so the same heap-replacement logic
+ * does not have to be repeated for the dynamic and seed-only pools
+ * the caller now keeps separate.
+ */
+static void healer_top_n_insert(struct healer_dump_entry *top,
+				unsigned int *top_count,
+				const struct healer_dump_entry *cand)
+{
+	unsigned int min_idx = 0;
+	unsigned int k;
+
+	if (*top_count < HEALER_DUMP_TOP_N) {
+		top[*top_count] = *cand;
+		(*top_count)++;
+		return;
+	}
+
+	for (k = 1; k < HEALER_DUMP_TOP_N; k++) {
+		if (top[k].norm_score_milli < top[min_idx].norm_score_milli)
+			min_idx = k;
+	}
+	if (cand->norm_score_milli > top[min_idx].norm_score_milli)
+		top[min_idx] = *cand;
+}
+
+/*
+ * Emit one ranked section of the top-N dump.  Caller passes a header
+ * format string with a single %u for the count plus the already-sorted
+ * top[] slice; this just walks the slice and prints each entry in the
+ * same shape healer_table_dump used to print a single combined block.
+ * Pair entries render with `*` in the slot a triple would put pred_a so
+ * the operator can tell at a glance which lines come from the
+ * producer/consumer prior vs the runtime-observed triple table.
+ */
+static void healer_dump_emit_top(const char *header_fmt,
+				 const struct healer_dump_entry *top,
+				 unsigned int count)
+{
+	unsigned int i;
+
+	stats_log_write(header_fmt, count);
+	for (i = 0; i < count; i++) {
+		if (top[i].is_pair) {
+			stats_log_write("  {*, %s} -> %s norm=%lu.%03lu (raw=%u, predfreq=%lu)\n",
+					print_syscall_name(top[i].pred_b, false),
+					print_syscall_name(top[i].promoted_nr, false),
+					top[i].norm_score_milli / 1000,
+					top[i].norm_score_milli % 1000,
+					top[i].weight,
+					top[i].pred_b_freq);
+			continue;
+		}
+		stats_log_write("  {%s, %s} -> %s norm=%lu.%03lu (raw=%u, predfreq a=%lu b=%lu)\n",
+				print_syscall_name(top[i].pred_a, false),
+				print_syscall_name(top[i].pred_b, false),
+				print_syscall_name(top[i].promoted_nr, false),
+				top[i].norm_score_milli / 1000,
+				top[i].norm_score_milli % 1000,
+				top[i].weight,
+				top[i].pred_a_freq,
+				top[i].pred_b_freq);
+	}
+}
+
+/*
  * Per-syscall aggregate used by the predecessor-frequency leader
  * display: appearance counter snapshot + sum of weights where this
  * syscall is the *successor* of some pair.  The latter lets the
@@ -853,8 +922,22 @@ static int healer_pred_leader_cmp(const void *a, const void *b)
 
 void healer_table_dump(void)
 {
-	struct healer_dump_entry top[HEALER_DUMP_TOP_N];
-	unsigned int top_count = 0;
+	/*
+	 * Two parallel top-N pools so the dump can show high-confidence
+	 * (any predfreq>0, dynamically observed at least once) and seed-
+	 * only (predfreq==0, purely static-seeded) entries in separate
+	 * ranked sections.  Without the split, the K=5 denominator bias
+	 * leaves un-confirmed seeds at norm=1.500 and they crowd out any
+	 * dynamically observed entry whose normalised score has been
+	 * dampened by the actual pred-appearance counts -- the seed pool
+	 * dominates the combined ranking until dynamic entries accumulate
+	 * enough observations to overtake them, which is the opposite of
+	 * what the dump should be highlighting.
+	 */
+	struct healer_dump_entry top_dyn[HEALER_DUMP_TOP_N];
+	struct healer_dump_entry top_seed[HEALER_DUMP_TOP_N];
+	unsigned int top_dyn_count = 0;
+	unsigned int top_seed_count = 0;
 	unsigned int occupied = 0;
 	unsigned long total_promoted = 0;
 	unsigned long total_weight = 0;
@@ -984,9 +1067,8 @@ void healer_table_dump(void)
 		for (j = 0; j < HEALER_PROMOTED_PER_SLOT; j++) {
 			uint64_t entry;
 			unsigned int weight, nr;
-			unsigned int min_idx = 0;
-			unsigned int k;
 			unsigned long norm_score;
+			struct healer_dump_entry cand;
 
 			entry = __atomic_load_n(&slot->promoted[j].entry,
 						__ATOMIC_RELAXED);
@@ -1060,33 +1142,31 @@ void healer_table_dump(void)
 				continue;
 			}
 
-			if (top_count < HEALER_DUMP_TOP_N) {
-				top[top_count].pred_a = slot_pred_a;
-				top[top_count].pred_b = slot_pred_b;
-				top[top_count].promoted_nr = nr;
-				top[top_count].weight = weight;
-				top[top_count].pred_a_freq = pred_a_freq;
-				top[top_count].pred_b_freq = pred_b_freq;
-				top[top_count].norm_score_milli = norm_score;
-				top[top_count].is_pair = false;
-				top_count++;
-				continue;
-			}
+			cand.pred_a = slot_pred_a;
+			cand.pred_b = slot_pred_b;
+			cand.promoted_nr = nr;
+			cand.weight = weight;
+			cand.pred_a_freq = pred_a_freq;
+			cand.pred_b_freq = pred_b_freq;
+			cand.norm_score_milli = norm_score;
+			cand.is_pair = false;
 
-			for (k = 1; k < HEALER_DUMP_TOP_N; k++) {
-				if (top[k].norm_score_milli < top[min_idx].norm_score_milli)
-					min_idx = k;
-			}
-			if (norm_score > top[min_idx].norm_score_milli) {
-				top[min_idx].pred_a = slot_pred_a;
-				top[min_idx].pred_b = slot_pred_b;
-				top[min_idx].promoted_nr = nr;
-				top[min_idx].weight = weight;
-				top[min_idx].pred_a_freq = pred_a_freq;
-				top[min_idx].pred_b_freq = pred_b_freq;
-				top[min_idx].norm_score_milli = norm_score;
-				top[min_idx].is_pair = false;
-			}
+			/*
+			 * Triples reach here only after both predfreqs have
+			 * cleared HEALER_DUMP_MIN_PRED_APPEARANCES, so they
+			 * always satisfy the dynamic-section criterion (>=1
+			 * predecessor observed this run).  The seed-only pool
+			 * remains reachable in principle if that minimum is
+			 * ever lowered to 0, which is why the route is written
+			 * as the same pred_a||pred_b>0 test the spec defines
+			 * rather than an unconditional dynamic-pool insert.
+			 */
+			if (pred_a_freq > 0 || pred_b_freq > 0)
+				healer_top_n_insert(top_dyn, &top_dyn_count,
+						    &cand);
+			else
+				healer_top_n_insert(top_seed, &top_seed_count,
+						    &cand);
 		}
 
 		if (slot_promoted > 0) {
@@ -1127,8 +1207,7 @@ void healer_table_dump(void)
 		for (j = 0; j < MAX_NR_SYSCALL; j++) {
 			unsigned int weight;
 			unsigned long denom, norm_score;
-			unsigned int min_idx = 0;
-			unsigned int k;
+			struct healer_dump_entry cand;
 
 			weight = healer_pair_get(i, j);
 			if (weight == 0)
@@ -1169,33 +1248,31 @@ void healer_table_dump(void)
 				denom = 1;
 			norm_score = (weight * 1000UL) / denom;
 
-			if (top_count < HEALER_DUMP_TOP_N) {
-				top[top_count].pred_a = 0;
-				top[top_count].pred_b = i;
-				top[top_count].promoted_nr = j;
-				top[top_count].weight = weight;
-				top[top_count].pred_a_freq = 0;
-				top[top_count].pred_b_freq = producer_freq;
-				top[top_count].norm_score_milli = norm_score;
-				top[top_count].is_pair = true;
-				top_count++;
-				continue;
-			}
+			cand.pred_a = 0;
+			cand.pred_b = i;
+			cand.promoted_nr = j;
+			cand.weight = weight;
+			cand.pred_a_freq = 0;
+			cand.pred_b_freq = producer_freq;
+			cand.norm_score_milli = norm_score;
+			cand.is_pair = true;
 
-			for (k = 1; k < HEALER_DUMP_TOP_N; k++) {
-				if (top[k].norm_score_milli < top[min_idx].norm_score_milli)
-					min_idx = k;
-			}
-			if (norm_score > top[min_idx].norm_score_milli) {
-				top[min_idx].pred_a = 0;
-				top[min_idx].pred_b = i;
-				top[min_idx].promoted_nr = j;
-				top[min_idx].weight = weight;
-				top[min_idx].pred_a_freq = 0;
-				top[min_idx].pred_b_freq = producer_freq;
-				top[min_idx].norm_score_milli = norm_score;
-				top[min_idx].is_pair = true;
-			}
+			/*
+			 * Pair entries split on producer_freq: a producer that
+			 * has been observed at least once this run lifts the
+			 * pair into the dynamic pool, otherwise it is a pure
+			 * static-seed prior and lands in the seed-only pool.
+			 * This is the case the split exists for -- without it,
+			 * un-confirmed seeds at norm=raw*1000/isqrt(K+1)
+			 * dominate any dynamic pair whose denominator has been
+			 * dampened by an actual producer appearance count.
+			 */
+			if (producer_freq > 0)
+				healer_top_n_insert(top_dyn, &top_dyn_count,
+						    &cand);
+			else
+				healer_top_n_insert(top_seed, &top_seed_count,
+						    &cand);
 		}
 	}
 
@@ -1247,47 +1324,34 @@ void healer_table_dump(void)
 				low_raw_skipped,
 				HEALER_DUMP_MIN_RAW);
 
-	if (top_count == 0) {
+	if (top_dyn_count == 0 && top_seed_count == 0) {
 		free(succ_weight);
 		return;
 	}
 
-	qsort(top, top_count, sizeof(top[0]), healer_dump_entry_cmp);
+	/*
+	 * Two independently-ranked sections.  Title still says "by
+	 * normalised weight" so the operator immediately notices the
+	 * ranking is the dampened score (the raw weight is emitted
+	 * alongside, and the predfreq numbers make the per-line scaling
+	 * auditable on the spot).  The seed-only section is suppressed
+	 * when empty (and likewise for the dynamic section) so a fresh
+	 * run with nothing in either pool does not print empty headers.
+	 */
+	if (top_dyn_count > 0) {
+		qsort(top_dyn, top_dyn_count, sizeof(top_dyn[0]),
+		      healer_dump_entry_cmp);
+		healer_dump_emit_top(
+			"HEALER top %u dynamically-observed relations by normalised weight:\n",
+			top_dyn, top_dyn_count);
+	}
 
-	/* Title flips from "by weight" to "by normalised weight" so the
-	 * operator immediately notices the ranking has changed -- the raw
-	 * weight is still emitted alongside, and the predfreq numbers make
-	 * the per-line scaling auditable on the spot. */
-	stats_log_write("HEALER top %u relations by normalised weight:\n",
-			top_count);
-	for (i = 0; i < top_count; i++) {
-		/*
-		 * Pair entries render with `*` in the slot a triple would
-		 * put pred_a so the operator can tell at a glance which
-		 * lines come from the producer/consumer prior vs the
-		 * runtime-observed triple table; the leading `{*, ` prefix
-		 * is also a stable shape any future downstream parser can
-		 * key off without re-deriving the dump format.
-		 */
-		if (top[i].is_pair) {
-			stats_log_write("  {*, %s} -> %s norm=%lu.%03lu (raw=%u, predfreq=%lu)\n",
-					print_syscall_name(top[i].pred_b, false),
-					print_syscall_name(top[i].promoted_nr, false),
-					top[i].norm_score_milli / 1000,
-					top[i].norm_score_milli % 1000,
-					top[i].weight,
-					top[i].pred_b_freq);
-			continue;
-		}
-		stats_log_write("  {%s, %s} -> %s norm=%lu.%03lu (raw=%u, predfreq a=%lu b=%lu)\n",
-				print_syscall_name(top[i].pred_a, false),
-				print_syscall_name(top[i].pred_b, false),
-				print_syscall_name(top[i].promoted_nr, false),
-				top[i].norm_score_milli / 1000,
-				top[i].norm_score_milli % 1000,
-				top[i].weight,
-				top[i].pred_a_freq,
-				top[i].pred_b_freq);
+	if (top_seed_count > 0) {
+		qsort(top_seed, top_seed_count, sizeof(top_seed[0]),
+		      healer_dump_entry_cmp);
+		healer_dump_emit_top(
+			"HEALER top %u seed-only relations (predfreq=0, awaiting dynamic confirmation):\n",
+			top_seed, top_seed_count);
 	}
 
 	/*
