@@ -8,4 +8,5 @@ struct syscallentry syscall_rtas = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_ADDRESS },
 	.argname = { [0] = "uargs" },
+	.rettype = RET_ZERO_SUCCESS,
 };
