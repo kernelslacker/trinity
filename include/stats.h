@@ -364,6 +364,17 @@ struct stats_s {
 	} deferred_free_reject_pc[CORRUPT_PTR_PC_SLOTS];
 	lock_t deferred_free_reject_pc_lock;
 
+	/* Bumped each time check_uid sees the child's uid drift away from
+	 * orig_uid + overflowuid; was previously a hard bail
+	 * (EXIT_UID_CHANGED) but logged + continued for non-root drifts
+	 * since 2026-05-09.  The drift is almost always a fuzzed
+	 * setresuid/setreuid/setfsuid succeeding inside an unshared user
+	 * namespace -- interesting coverage, not a danger -- so the run
+	 * keeps going.  A drift to uid==0 (root) is still a hard bail
+	 * via EXIT_UID_CHANGED, since subsequent fuzz syscalls at elevated
+	 * privilege could damage the host. */
+	unsigned long uid_change_logged;
+
 	/* Monotonic counter feeding the value-sampling rate-limiter inside
 	 * looks_like_corrupted_ptr.  Distinct from post_handler_corrupt_ptr
 	 * (which is also bumped from the rec==NULL path through
