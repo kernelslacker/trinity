@@ -30,7 +30,9 @@
 
 #include "cmp_hints.h"
 #include "edgepair.h"
+#include "healer.h"
 #include "kcov.h"
+#include "shm.h"
 #include "stats.h"
 #include "strategy.h"
 #include "trinity.h"
@@ -685,23 +687,30 @@ void kcov_plateau_check(void)
 	kcov_shm->plateau_window_start = now;
 
 	if (delta < KCOV_PLATEAU_RATE_THRESHOLD) {
-		long minutes;
-
+		/* Edge-triggered: emit the warning, bump the transition
+		 * counter, and fire the auto-response hook only when we cross
+		 * from healthy into PLATEAU.  Subsequent ticks while still in
+		 * plateau stay silent so the operator's stats.log gets one
+		 * line per episode rather than one per 600s window. */
 		if (!kcov_shm->plateau_active) {
 			kcov_shm->plateau_active = true;
 			kcov_shm->plateau_entered_at = now;
+			__atomic_fetch_add(&shm->stats.plateau_entered, 1,
+					   __ATOMIC_RELAXED);
+			stats_log_write("PLATEAU: edge-discovery rate %lu edges/%ds < threshold (%d) sustained for >=%d minutes (bandit may be in local minimum, consider intervention)\n",
+					delta, KCOV_PLATEAU_WINDOW_SEC,
+					KCOV_PLATEAU_RATE_THRESHOLD,
+					KCOV_PLATEAU_WINDOW_SEC / 60);
+			healer_plateau_response();
 		}
-		/* The just-closed 600s window already counts as 10 minutes of
-		 * sub-threshold rate, so the first emit reports 10 minutes and
-		 * each re-emit grows by another window. */
-		minutes = ((now - kcov_shm->plateau_entered_at) +
-			   KCOV_PLATEAU_WINDOW_SEC) / 60;
-		stats_log_write("PLATEAU: rate=%lu edges/%ds for %ld minutes\n",
-				delta, KCOV_PLATEAU_WINDOW_SEC, minutes);
 	} else if (kcov_shm->plateau_active) {
+		long minutes = (now - kcov_shm->plateau_entered_at) / 60;
+
 		kcov_shm->plateau_active = false;
 		kcov_shm->plateau_entered_at = 0;
-		stats_log_write("PLATEAU CLEARED: rate=%lu edges/%ds\n",
-				delta, KCOV_PLATEAU_WINDOW_SEC);
+		__atomic_fetch_add(&shm->stats.plateau_exited, 1,
+				   __ATOMIC_RELAXED);
+		stats_log_write("PLATEAU CLEARED: edge-discovery rate %lu edges/%ds (plateau lasted %ld minutes)\n",
+				delta, KCOV_PLATEAU_WINDOW_SEC, minutes);
 	}
 }
