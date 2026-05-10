@@ -1299,6 +1299,12 @@ struct stats_s {
 	unsigned long inm_netns_migrate_ok;			/* RTM_SETLINK IFLA_NET_NS_FD moved the link to the sibling ns */
 	unsigned long inm_changelink_ok;			/* RTM_NEWLINK NLM_F_REPLACE in target ns walked ->changelink */			/* AF_PACKET sendto to peer veth returned >0 */
 
+	/* ipvs_sysctl_writer childop counters */
+	unsigned long ipvs_sysctl_writer_runs;			/* total ipvs_sysctl_writer invocations */
+	unsigned long ipvs_sysctl_writer_writes_ok;		/* sysctl write returned >0 */
+	unsigned long ipvs_sysctl_writer_writes_failed;		/* open or write failed (kernel rejected payload) */
+	unsigned long ipvs_sysctl_writer_unsupported_latched;	/* unshare/open ENOENT latched op off */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic

@@ -178,6 +178,7 @@ enum child_op_type {
 	CHILD_OP_UBLK_LIFECYCLE,
 	CHILD_OP_VETH_ASYMMETRIC_XDP,
 	CHILD_OP_IP6ERSPAN_NETNS_MIGRATE,
+	CHILD_OP_IPVS_SYSCTL_WRITER,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -560,3 +561,4 @@ bool ipmr_cache_report(struct childdata *child);
 bool ublk_lifecycle(struct childdata *child);
 bool veth_asymmetric_xdp(struct childdata *child);
 bool ip6erspan_netns_migrate(struct childdata *child);
+bool ipvs_sysctl_writer(struct childdata *child);
