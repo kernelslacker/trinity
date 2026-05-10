@@ -106,6 +106,18 @@
 #define IORING_UNREGISTER_PBUF_RING	23
 #endif
 
+/* IORING_REGISTER_NAPI / IORING_UNREGISTER_NAPI are also enum members
+ * (introduced in 6.9), so the same shim shape applies — define op numbers
+ * if the build env's uapi predates them.  struct io_uring_napi itself
+ * cannot be #ifndef-detected; we assume uapi has it (kernel 6.9+).  On
+ * older kernels the syscall just returns EINVAL/ENOTTY and we move on. */
+#ifndef IORING_REGISTER_NAPI
+#define IORING_REGISTER_NAPI		27
+#endif
+#ifndef IORING_UNREGISTER_NAPI
+#define IORING_UNREGISTER_NAPI		28
+#endif
+
 #ifndef IORING_RECV_MULTISHOT
 #define IORING_RECV_MULTISHOT	(1U << 1)
 #endif
@@ -493,6 +505,8 @@ bool iouring_net_multishot(struct childdata *child)
 	void *pbuf_data = NULL;
 	void *legacy_bufs = NULL;
 	bool used_pbuf_ring = false;
+	struct io_uring_napi napi_in, napi_out;
+	bool napi_armed = false;
 	unsigned int npkts;
 	unsigned int i;
 	int r;
@@ -541,6 +555,27 @@ bool iouring_net_multishot(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
+	}
+
+	/* Optionally register NAPI busy-poll on the ring before arming the
+	 * multishot.  Pre-6.9 kernels return EINVAL/ENOTTY; we ignore the
+	 * error and continue.  The interesting coverage is the register +
+	 * later unregister cycle wrapping the multishot lifecycle. */
+	if (ONE_IN(2)) {
+		memset(&napi_in, 0, sizeof(napi_in));
+		napi_in.busy_poll_to     = (__u32)(rand() % 200);
+		napi_in.prefer_busy_poll = (__u8)(rand() & 1);
+
+		r = (int)syscall(__NR_io_uring_register, ctx.fd,
+				 IORING_REGISTER_NAPI, &napi_in, 1);
+		if (r == 0) {
+			napi_armed = true;
+			__atomic_add_fetch(&shm->stats.iouring_napi_register_ok,
+					   1, __ATOMIC_RELAXED);
+		} else {
+			__atomic_add_fetch(&shm->stats.iouring_napi_register_fail,
+					   1, __ATOMIC_RELAXED);
+		}
 	}
 
 	/* Multishot RECV with buffer selection.  ioprio carries
@@ -615,6 +650,41 @@ bool iouring_net_multishot(struct childdata *child)
 			__atomic_add_fetch(&shm->stats.iouring_multishot_cancel_submitted,
 					   1, __ATOMIC_RELAXED);
 			(void)ms_drain(&ctx);
+		}
+	}
+
+	/* Stale-NAPI probe (upstream b8c2e9e27636): after
+	 * IORING_UNREGISTER_NAPI, prior ring state could retain pointers /
+	 * handles tied to the NAPI registration.  Drive the path by
+	 * unregistering, then submitting one more multishot RECV + drain
+	 * pass — exercises any post-unregister stale state in io_uring/net.c
+	 * and io_uring/napi.c.  Kernel writes the previous napi config back
+	 * into the passed struct, so it must be writable. */
+	if (napi_armed) {
+		memset(&napi_out, 0, sizeof(napi_out));
+		r = (int)syscall(__NR_io_uring_register, ctx.fd,
+				 IORING_UNREGISTER_NAPI, &napi_out, 1);
+		if (r == 0)
+			__atomic_add_fetch(&shm->stats.iouring_napi_unregister_ok,
+					   1, __ATOMIC_RELAXED);
+		else
+			__atomic_add_fetch(&shm->stats.iouring_napi_unregister_fail,
+					   1, __ATOMIC_RELAXED);
+
+		memset(&sqe, 0, sizeof(sqe));
+		sqe.opcode    = IORING_OP_RECV;
+		sqe.fd        = rxfd;
+		sqe.addr      = 0;
+		sqe.len       = 0;
+		sqe.ioprio    = IORING_RECV_MULTISHOT;
+		sqe.flags     = IOSQE_BUFFER_SELECT;
+		sqe.buf_group = PBUF_GROUP_ID;
+		sqe.user_data = MULTISHOT_USER_DATA;
+
+		if (ms_submit(&ctx, &sqe, 1)) {
+			r = ms_enter(&ctx, 1, 0);
+			if (r >= 0)
+				(void)ms_drain(&ctx);
 		}
 	}
 
