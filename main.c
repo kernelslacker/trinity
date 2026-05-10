@@ -15,6 +15,7 @@
 #include "child.h"
 #include "debug.h"
 #include "fd-event.h"
+#include "healer.h"
 #include "kcov.h"
 #include "objects.h"
 #include "params.h"
@@ -1294,6 +1295,12 @@ static void periodic_global_sanity_walk(void)
 
 	last_walk_op = op;
 	validate_global_objects();
+}
+
+void healer_plateau_response(void)
+{
+	/* PHASE 2: implement intervention */
+	stats_log_write("PLATEAU RESPONSE: TBD (would intervene here)\n");
 }
 
 void main_loop(void)

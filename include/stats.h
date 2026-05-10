@@ -1506,6 +1506,18 @@ struct stats_s {
 	unsigned long edges_per_syscall_bandit[MAX_NR_SYSCALL];
 	unsigned long edges_per_syscall_explorer[MAX_NR_SYSCALL];
 
+	/* Coverage-plateau detector transition counters, bumped from
+	 * kcov_plateau_check() on the rising edge (healthy -> plateau, when
+	 * the sliding-window edge-discovery rate falls below
+	 * KCOV_PLATEAU_RATE_THRESHOLD) and the falling edge (plateau ->
+	 * healthy, when the rate recovers).  Distinct from the one-shot
+	 * stats.log warning so a forensic / cron consumer can tell how many
+	 * distinct plateau episodes a long fuzz hit without parsing the
+	 * mirrored log.  Bumped from the parent-only tick path so the relaxed
+	 * add-fetch is for ordering hygiene rather than concurrent writers. */
+	unsigned long plateau_entered;
+	unsigned long plateau_exited;
+
 	/* Per-vCPU ioctl dispatches into kvm_vcpu_grp.  Bumped from
 	 * kvm_vcpu_sanitise() each time pick_random_ioctl() lands on an ioctl
 	 * destined for an OBJ_FD_KVM_VCPU fd.  Distinct from the flat KVM

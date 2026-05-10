@@ -243,3 +243,18 @@ unsigned int healer_count_pc_pairs(void);
  * or a previous loader invocation are silently skipped.  Idempotent.
  */
 unsigned int healer_load_static_seed(void);
+
+/*
+ * Phase 1 stub for the coverage-plateau auto-response path.  Invoked
+ * from kcov_plateau_check() on the rising-edge transition into PLATEAU
+ * state, alongside the one-shot stats.log warning the detector emits.
+ *
+ * Phase 1 is detection-only: this stub just logs that a response would
+ * fire here.  Future phases replace the body with the actual
+ * intervention (bandit reseed, explorer pool bump, syscall-pool churn,
+ * etc.) without further plumbing on the call-site side.  The function
+ * lives outside healer.c because Phase 1 is intentionally a main-loop
+ * / stats-side observability commit and does not modify HEALER
+ * algorithm state.
+ */
+void healer_plateau_response(void);
