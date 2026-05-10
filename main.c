@@ -199,49 +199,75 @@ static void reap_dead_kids(void)
 {
 	unsigned int i;
 	unsigned int reaped = 0;
+	unsigned int drained;
 
 	if (children == NULL)
 		return;
 
-	for_each_child(i) {
-		pid_t pid, wpid;
+	/* First pass: drain every reapable child via wait4(-1).
+	 *
+	 * SIGCHLD is edge-triggered: when N children die between handler
+	 * invocations the kernel still queues only one signal, so a reap
+	 * path that reaps one zombie at a time falls behind any time more
+	 * than one child dies in the same tick.  The previous per-slot
+	 * waitpid() walk was also vulnerable to drift between pids[] and
+	 * kernel reality (stale slot, racy spawn) — a zombie whose slot
+	 * had already been cleared by some other path stayed unreaped
+	 * indefinitely because no slot pointed at it.
+	 *
+	 * Under a crash storm (e.g. a post_handler_corrupt_ptr scribble
+	 * round killing children faster than we replace them) that drift
+	 * has been observed to leave 22 <defunct> children parked while
+	 * only one slot was actually fuzzing — net throughput ~1/16th of
+	 * nominal, KCOV edge growth flatlined.
+	 *
+	 * wait4(-1) reaps whatever the kernel has, regardless of our
+	 * bookkeeping.  Loop with WNOHANG until it returns 0 (nothing more
+	 * pending) or -1 (ECHILD, no children at all — defensive; should
+	 * not happen while main is fuzzing).  Bound to a sanity cap so a
+	 * pathological case can't spin here forever. */
+	for (drained = 0; drained < 64; drained++) {
+		pid_t wpid;
 		int childstatus;
+		int childno;
+
+		wpid = wait4(-1, &childstatus, WNOHANG | WUNTRACED | WCONTINUED, NULL);
+		if (wpid <= 0)
+			break;
+
+		childno = find_childno(wpid);
+		if (childno != CHILD_NOT_FOUND) {
+			handle_child(childno, wpid, childstatus);
+		} else {
+			/* Reaped a pid we no longer track — its slot was
+			 * already cleared by some earlier path but the
+			 * kernel hadn't released the task struct yet.
+			 * Nothing more to do; kernel side is now clean. */
+			output(0, "reap_dead_kids: reaped untracked pid %d (status 0x%x)\n",
+				wpid, childstatus);
+		}
+		reaped++;
+	}
+
+	/* Second pass: catch slots whose pid is gone but our bookkeeping
+	 * never noticed — e.g. the wait4 drain above reaped a slotted pid
+	 * via the untracked path, or the child died without routing
+	 * through our normal exit accounting.  Without this the slot
+	 * stays occupied forever and the spawn path can't refill it. */
+	for_each_child(i) {
+		pid_t pid;
 
 		pid = __atomic_load_n(&pids[i], __ATOMIC_ACQUIRE);
 		if (pid == EMPTY_PIDSLOT)
 			continue;
-
-		/* if we find corruption, just skip over it. */
 		if (pid_is_valid(pid) == false)
 			continue;
 
-		if (pid_alive(pid) == false) {
-			if (errno == ESRCH) {
-				/* pid_alive treats zombies as not-alive so check_lock
-				 * can release locks held by dying children.  A zombie
-				 * still has an exit status to harvest — try waitpid
-				 * first so we route through handle_child like a normal
-				 * exit, instead of silently dropping the status and
-				 * leaking the zombie task struct. */
-				wpid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
-				if (wpid > 0) {
-					handle_child(i, wpid, childstatus);
-					continue;
-				}
-				output(0, "pid %u has disappeared. Reaping.\n", pid);
-				reap_child(children[i], i);
-				reaped++;
-			} else {
-				output(0, "problem checking on pid %u (%d:%s)\n", pid, errno, strerror(errno));
-			}
-			continue;
+		if (kill(pid, 0) != 0 && errno == ESRCH) {
+			output(0, "pid %u has disappeared. Reaping.\n", pid);
+			reap_child(children[i], i);
+			reaped++;
 		}
-
-		wpid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
-		handle_child(i, wpid, childstatus);
-
-		if (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) == 0)
-			return;
 	}
 
 	if (reaped != 0)
