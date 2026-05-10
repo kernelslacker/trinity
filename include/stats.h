@@ -1093,6 +1093,10 @@ struct stats_s {
 	unsigned long xt_ct_set_ok;		/* IPT/IP6T_SO_SET_REPLACE accepted */
 	unsigned long xt_ct_get_ok;		/* IPT/IP6T_SO_GET_ENTRIES accepted (xt_target_to_user reply path) */
 	unsigned long xt_ct_v2_seen;		/* revision 2 path actually accepted on this kernel */
+	unsigned long nft_fwd_loop_runs;		/* nft_fwd_netdev loop sub-mode invocations */
+	unsigned long nft_fwd_loop_ns_setup_failed;	/* veth/addr/netdev-table install failed -- latches */
+	unsigned long nft_fwd_loop_probe_sent_ok;	/* ICMP probe via raw socket sendto returned >0 */
+	unsigned long nft_fwd_loop_completed_ok;	/* full setup + chains + rules + probe completed */
 
 	/* tc_qdisc_churn childop counters */
 	unsigned long tc_qdisc_churn_runs;		/* total tc_qdisc_churn invocations */
