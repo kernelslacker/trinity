@@ -972,6 +972,12 @@ struct stats_s {
 	unsigned long ipfrag_send_failed;		/* sendto returned <=0 (queue full / EPERM / etc.) */
 	unsigned long ipfrag_unique_srcs;		/* fragment pairs emitted with a fresh source IP */
 
+	/* rtnl_vf_broadcast_getlink childop counters */
+	unsigned long rtnl_vf_broadcast_runs;		/* total rtnl_vf_broadcast_getlink invocations */
+	unsigned long rtnl_vf_broadcast_setup_ok;	/* netdevsim+sriov_numvfs+rtnl setup completed */
+	unsigned long rtnl_vf_broadcast_setup_failed;	/* netdevsim absent / unshare / sriov write failed */
+	unsigned long rtnl_vf_broadcast_getlink_ok;	/* RTM_GETLINK with RTEXT_FILTER_VF drained a response */
+
 	/* vrf_fib_churn childop counters */
 	unsigned long vrf_fib_churn_runs;		/* total vrf_fib_churn invocations */
 	unsigned long vrf_fib_churn_setup_failed;	/* unshare(CLONE_NEWNET) or rtnl socket failed */
