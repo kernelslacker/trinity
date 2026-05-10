@@ -241,9 +241,47 @@ static void post_mmap(struct syscallrecord *rec)
 		add_object(new, OBJ_LOCAL, OBJ_MMAP_FILE);
 	}
 
-	/* Sometimes dirty the mapping. */
-	if (new->map.size > 0 && RAND_BOOL())
-		dirty_mapping(&new->map);
+	/*
+	 * Sometimes dirty the mapping.
+	 *
+	 * Window A: between the post-mmap fstat clamp above (which pinned
+	 * new->map.size to st_size at allocation time) and this dirty walk,
+	 * any sibling holding the same fd can ftruncate() it shorter,
+	 * fallocate(FALLOC_FL_PUNCH_HOLE) it, or fallocate(FALLOC_FL_
+	 * COLLAPSE_RANGE) it.  Walking the now-stale stored size SIGBUSes
+	 * BUS_ADRERR on the first page past the new EOF, killing the child
+	 * before it contributes to coverage (3x ba67bbc7 + 2x 899fc9d9
+	 * cluster, post_mmap → memcpy SIGBUS).
+	 *
+	 * Re-snapshot into a stack-local and re-fstat right before the
+	 * dirty walk, mirroring dirty_random_mapping (mm/maps.c).  The
+	 * obj's stored map is left at its post-allocation extent — other
+	 * consumers (the OBJ_LOCAL pool walker, get_map() readers from
+	 * later syscalls in this child) reuse that value and may race with
+	 * us, but mutating it would leak this narrowed view to anyone
+	 * holding the same handle.
+	 *
+	 * fstat failure (EBADF after a sibling close) drops the dirty walk
+	 * entirely; falling back to the stale stored size is exactly what
+	 * this clamp exists to avoid.
+	 */
+	if (new->map.size > 0 && RAND_BOOL()) {
+		struct map local = new->map;
+		bool walk = true;
+
+		if (local.type == MMAPED_FILE && local.fd >= 0) {
+			struct stat st2;
+
+			if (fstat(local.fd, &st2) != 0 || st2.st_size == 0) {
+				walk = false;
+			} else if ((unsigned long) st2.st_size < local.size) {
+				local.size = (unsigned long) st2.st_size & PAGE_MASK;
+			}
+		}
+
+		if (walk && local.size > 0)
+			dirty_mapping(&local);
+	}
 
 	/*
 	 * Oracle: 1-in-100 chance — verify the new mapping is visible in
