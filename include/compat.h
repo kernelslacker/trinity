@@ -745,6 +745,7 @@ enum {
 #ifndef IORING_OP_FUTEX_WAIT
 #define IORING_OP_FUTEX_WAIT		51
 #define IORING_OP_FUTEX_WAKE		52
+#define TRINITY_COMPAT_BACKFILLED_FUTEX_WAIT_WAKE
 #endif
 #ifndef IORING_OP_FUTEX_WAITV
 #define IORING_OP_FUTEX_WAITV		53
@@ -757,6 +758,7 @@ enum {
 #endif
 #ifndef IORING_OP_BIND
 #define IORING_OP_BIND			56
+#define TRINITY_COMPAT_BACKFILLED_BIND
 #endif
 #ifndef IORING_OP_LISTEN
 #define IORING_OP_LISTEN		57
@@ -778,6 +780,7 @@ enum {
 #define SOCKET_URING_OP_SIOCOUTQ	1
 #define SOCKET_URING_OP_GETSOCKOPT	2
 #define SOCKET_URING_OP_SETSOCKOPT	3
+#define TRINITY_COMPAT_BACKFILLED_SOCKET_URING_OP
 #endif
 
 /* linux/blkdev.h — async io_uring discard cmd, added 6.12. */

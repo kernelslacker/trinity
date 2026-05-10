@@ -1253,6 +1253,7 @@ out:
  * Exercises the io_uring futex dispatch path added in Linux 6.7.  First
  * ENOSYS latches the recipe off.
  * ------------------------------------------------------------------ */
+#ifndef TRINITY_COMPAT_BACKFILLED_FUTEX_WAIT_WAKE
 static bool recipe_futex_wait_wake(struct iour_recipe_state *s, bool *unsupported)
 {
 	struct iour_ctx *ctx = s->ctx;
@@ -1325,6 +1326,7 @@ static bool recipe_futex_wait_wake(struct iour_recipe_state *s, bool *unsupporte
 out:
 	return ok;
 }
+#endif /* TRINITY_COMPAT_BACKFILLED_FUTEX_WAIT_WAKE */
 
 /* ------------------------------------------------------------------ *
  * Recipe 15: EPOLL_WAIT via io_uring
@@ -1562,6 +1564,7 @@ static bool recipe_connect(struct iour_recipe_state *s,
  * the splice_fd_in union) for IORING_OP_BIND.  Port 0 → kernel auto-
  * assigns; loopback is universally available.
  * ------------------------------------------------------------------ */
+#ifndef TRINITY_COMPAT_BACKFILLED_BIND
 static bool recipe_bind(struct iour_recipe_state *s, bool *unsupported)
 {
 	struct iour_ctx *ctx = s->ctx;
@@ -1599,6 +1602,7 @@ static bool recipe_bind(struct iour_recipe_state *s, bool *unsupported)
 	iour_drain_cqes(ctx);
 	return true;
 }
+#endif /* TRINITY_COMPAT_BACKFILLED_BIND */
 
 /* ------------------------------------------------------------------ *
  * Recipe: LISTEN on a freshly-bound TCP socket
@@ -2571,13 +2575,17 @@ static const struct iour_recipe catalog[] = {
 	{ "provide_buffers",        recipe_provide_buffers        },
 	{ "msg_ring",               recipe_msg_ring               },
 	{ "statx_fixed_file",       recipe_statx_fixed_file       },
+#ifndef TRINITY_COMPAT_BACKFILLED_FUTEX_WAIT_WAKE
 	{ "futex_wait_wake",        recipe_futex_wait_wake        },
+#endif
 	{ "epoll_wait",             recipe_epoll_wait             },
 	{ "sendmsg",                recipe_sendmsg                },
 	{ "recvmsg",                recipe_recvmsg                },
 	{ "accept",                 recipe_accept                 },
 	{ "connect",                recipe_connect                },
+#ifndef TRINITY_COMPAT_BACKFILLED_BIND
 	{ "bind",                   recipe_bind                   },
+#endif
 	{ "listen",                 recipe_listen                 },
 	{ "fsync",                  recipe_fsync                  },
 	{ "sync_file_range",        recipe_sync_file_range        },
