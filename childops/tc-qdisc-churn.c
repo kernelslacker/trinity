@@ -84,6 +84,23 @@
  * dummy only (private netns).  Per-kind latches so a kernel without
  * a given sch_* / cls_* module pays the EFAIL once and skips that
  * kind permanently.
+ *
+ * Sub-mode (gated ONE_IN(4) per invocation): build a deliberate
+ * peek-x-peek stack — root qdisc whose ->dequeue calls .peek() on
+ * an inner qdisc whose .peek is qdisc_peek_dequeued() (i.e. peek
+ * dequeues an skb and stashes it in q->skb).  Parents in the
+ * stack-set call peek-on-inner during their own dequeue: prio
+ * walks bands, tbf gates by token bucket, sfb / red front a single
+ * inner queue.  Children in the stack-set implement peek as
+ * qdisc_peek_dequeued (qfq, sfq) or as a peek-then-stash equivalent
+ * (cake).  The interaction the bug class lives in: the parent
+ * believes peek() returned an skb still queued in the child; if the
+ * parent's bookkeeping then returns that skb back to the inner
+ * unchanged the child's q->skb stash points at an skb the inner
+ * already considers dequeued.  Stack is built with parent root +
+ * child grafted to parent classid 1; for qfq child also a single
+ * qfq class + matchall filter pinning traffic to it.  UDP burst
+ * follows the same BUDGETED+JITTER pattern as the standard path.
  */
 
 #if __has_include(<linux/pkt_sched.h>)
@@ -188,12 +205,13 @@
 /*
  * Qdisc kind rotation.  Each entry is the kind name as the kernel
  * registers it (matches the sch_<kind> module name with the same
- * suffix used by request_module).  Mix of classless (tbf, sfb,
- * cake, fq_pie, fq_codel, pfifo_fast, netem) and classful (htb,
- * hfsc, qfq, prio, ets, taprio) so both per-iteration commit paths
- * get coverage.  CV.37 spec calls out qfq, taprio, netem, sch_*
- * generally as the high-CVE corner — listed first so the rotation
- * touches them early.
+ * suffix used by request_module).  Mix of classless (cake, fq_pie,
+ * fq_codel, pfifo_fast, netem, tbf) and classful (htb, hfsc, qfq,
+ * prio, ets, taprio, sfb, red) so both per-iteration commit paths
+ * get coverage.  sfb and red expose .graft via Qdisc_class_ops with
+ * a single child slot at classid 1; treated as classful here so
+ * they participate as parent qdiscs in the deliberate peek-stack
+ * sub-mode (see peek_parents[] below).
  */
 struct qdisc_kind {
 	const char *name;
@@ -204,7 +222,8 @@ static const struct qdisc_kind qdisc_kinds[] = {
 	{ "qfq",         true  },
 	{ "taprio",      true  },
 	{ "netem",       false },
-	{ "sfb",         false },
+	{ "sfb",         true  },
+	{ "red",         true  },
 	{ "cake",        false },
 	{ "tbf",         false },
 	{ "htb",         true  },
@@ -785,6 +804,333 @@ static bool is_unsupported_err(int rc)
 	       rc == -EPROTONOSUPPORT || rc == -ENOENT;
 }
 
+/*
+ * Deliberate peek-x-peek stack sub-mode.
+ *
+ * The TCA_OPTIONS attribute for qdiscs that demand parameters is
+ * constructed via per-kind encoders; for kinds whose init accepts
+ * empty options the encoder is NULL.  Each encoder writes the
+ * payload bytes that go *inside* TCA_OPTIONS — the caller wraps
+ * them with a single nla header.
+ *
+ * Header struct sizes are pinned by the kernel UAPI: tc_red_qopt is
+ * 4+4+4+4 bytes (3 u32 + 4 chars); tc_tbf_qopt is 2 * tc_ratespec
+ * (12 each) + 3 u32 = 36 bytes.  Numeric values picked for "shaper
+ * actually shapes": rate ~1Mbit, modest queue limits.  The codepath
+ * we care about is the dequeue / peek interaction with the inner
+ * qdisc, which fires regardless of the exact rate/threshold values
+ * as long as there are skbs queued and the parent has a token /
+ * threshold to gate on.
+ */
+typedef size_t (*peek_opts_encoder)(unsigned char *buf, size_t cap);
+
+static size_t encode_red_opts(unsigned char *buf, size_t cap)
+{
+	struct tc_red_qopt opt;
+
+	if (cap < sizeof(opt))
+		return 0;
+	memset(&opt, 0, sizeof(opt));
+	opt.limit     = 60 * 1024;
+	opt.qth_min   = 8 * 1024;
+	opt.qth_max   = 32 * 1024;
+	opt.Wlog      = 2;
+	opt.Plog      = 10;
+	opt.Scell_log = 8;
+	opt.flags     = 0;
+	memcpy(buf, &opt, sizeof(opt));
+	return sizeof(opt);
+}
+
+static size_t encode_tbf_opts(unsigned char *buf, size_t cap)
+{
+	struct tc_tbf_qopt opt;
+
+	if (cap < sizeof(opt))
+		return 0;
+	memset(&opt, 0, sizeof(opt));
+	opt.rate.rate     = 125000;	/* ~1 Mbit/s in bytes/sec */
+	opt.rate.cell_log = 3;
+	opt.rate.mpu      = 64;
+	opt.limit         = 60 * 1024;
+	opt.buffer        = 8000;	/* token bucket buffer */
+	opt.mtu           = 1500;
+	memcpy(buf, &opt, sizeof(opt));
+	return sizeof(opt);
+}
+
+/*
+ * Build a NEWQDISC with a TCA_OPTIONS payload containing one nested
+ * attribute of (inner_type, inner_payload).  Used for parents that
+ * demand options (red, tbf) — the encoder writes the inner payload
+ * bytes; this wraps them as TCA_OPTIONS{ inner_type{ ... } }.  When
+ * encoder is NULL emits an empty TCA_OPTIONS, matching build_newqdisc.
+ */
+static int build_newqdisc_opts(int fd, int ifindex, __u32 handle, __u32 parent,
+			       const char *kind, peek_opts_encoder enc,
+			       unsigned short inner_type, __u16 extra_flags)
+{
+	unsigned char buf[RTNL_BUF_BYTES];
+	struct nlattr *opts;
+	size_t off, opts_off, inner_off, inner_len;
+	unsigned char inner[256];
+
+	memset(buf, 0, sizeof(buf));
+	off = tcmsg_hdr(buf, RTM_NEWQDISC, extra_flags, ifindex,
+			handle, parent, 0);
+
+	off = nla_put_str(buf, off, sizeof(buf), TCA_KIND, kind);
+	if (!off)
+		return -EIO;
+
+	opts_off = off;
+	off = nla_put(buf, off, sizeof(buf), TCA_OPTIONS, NULL, 0);
+	if (!off)
+		return -EIO;
+
+	if (enc != NULL) {
+		inner_len = enc(inner, sizeof(inner));
+		if (inner_len == 0)
+			return -EIO;
+		inner_off = nla_put(buf, off, sizeof(buf), inner_type,
+				    inner, inner_len);
+		if (!inner_off)
+			return -EIO;
+		off = inner_off;
+	}
+
+	opts = (struct nlattr *)(buf + opts_off);
+	opts->nla_len = (unsigned short)(off - opts_off);
+
+	tcmsg_finalize(buf, off);
+	return rtnl_send_recv_retry(fd, buf, off);
+}
+
+/*
+ * Build a NEWTCLASS with TCA_OPTIONS containing TCA_QFQ_WEIGHT.
+ * qfq classes accept defaults but kernel-side qfq_change_class
+ * reads weight; supplying a sane non-zero value avoids the EINVAL
+ * path and ensures the class is actually installable so the
+ * matchall filter has somewhere to point.
+ */
+static int build_qfq_class(int fd, int ifindex, __u32 handle, __u32 parent)
+{
+	unsigned char buf[RTNL_BUF_BYTES];
+	struct nlattr *opts;
+	size_t off, opts_off;
+	__u32 weight = 1;
+
+	memset(buf, 0, sizeof(buf));
+	off = tcmsg_hdr(buf, RTM_NEWTCLASS, NLM_F_CREATE | NLM_F_EXCL,
+			ifindex, handle, parent, 0);
+
+	off = nla_put_str(buf, off, sizeof(buf), TCA_KIND, "qfq");
+	if (!off)
+		return -EIO;
+
+	opts_off = off;
+	off = nla_put(buf, off, sizeof(buf), TCA_OPTIONS, NULL, 0);
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf), TCA_QFQ_WEIGHT,
+		      &weight, sizeof(weight));
+	if (!off)
+		return -EIO;
+	opts = (struct nlattr *)(buf + opts_off);
+	opts->nla_len = (unsigned short)(off - opts_off);
+
+	tcmsg_finalize(buf, off);
+	return rtnl_send_recv_retry(fd, buf, off);
+}
+
+/*
+ * Parents whose ->dequeue calls peek on their inner child qdisc.
+ * sfb / red front a single inner queue at classid 1; prio walks
+ * its bands (band 1 maps to classid 1 here); tbf gates by token
+ * bucket and reads from its single inner queue.  child_classid is
+ * the minor used when grafting the child as parent=major:classid.
+ *
+ * Each entry's opts encoder feeds the parent qdisc init: prio /
+ * sfb take empty options; red / tbf demand parameter blobs.
+ */
+struct peek_parent {
+	const char *name;
+	peek_opts_encoder enc;
+	unsigned short inner_type;
+	__u32 child_classid;
+};
+
+static const struct peek_parent peek_parents[] = {
+	{ "prio", NULL,             0,             1 },
+	{ "sfb",  NULL,             0,             1 },
+	{ "red",  encode_red_opts,  TCA_RED_PARMS, 1 },
+	{ "tbf",  encode_tbf_opts,  TCA_TBF_PARMS, 1 },
+};
+#define NR_PEEK_PARENTS	ARRAY_SIZE(peek_parents)
+
+/*
+ * Children whose .peek is qdisc_peek_dequeued (or a stash-on-peek
+ * equivalent for cake).  Empty options are accepted by all three
+ * for the qdisc init itself; qfq additionally needs a class +
+ * filter so the parent's enqueue path can land an skb in it
+ * (handled inline in do_peek_stack).
+ */
+static const char * const peek_children[] = {
+	"qfq", "sfq", "cake",
+};
+#define NR_PEEK_CHILDREN	ARRAY_SIZE(peek_children)
+
+/*
+ * Look up qdisc_kinds[] index for a peek-stack name so we can
+ * share the per-kind ns_unsupported / modprobe latches with the
+ * standard rotation.  Returns NR_QDISC_KINDS if not found.
+ */
+static unsigned int qdisc_kind_idx(const char *name)
+{
+	unsigned int i;
+
+	for (i = 0; i < NR_QDISC_KINDS; i++) {
+		if (strcmp(qdisc_kinds[i].name, name) == 0)
+			return i;
+	}
+	return NR_QDISC_KINDS;
+}
+
+/*
+ * Build the deliberate peek-x-peek stack and drive it with a UDP
+ * burst.  Uses the same BUDGETED+JITTER pattern as the standard
+ * path so the wall-clock cap is uniform across both sub-modes.
+ * Caller falls through to the shared dellink cleanup at the
+ * tc_qdisc_churn out: label so any installed qdisc tree gets
+ * cascaded down via dev_qdisc_destroy when the dummy goes.
+ */
+static void do_peek_stack(int rtnl, int ifindex, const char *dev_name)
+{
+	const struct peek_parent *p;
+	const char *child_name;
+	unsigned int p_idx, c_idx;
+	unsigned int p_kind_idx, c_kind_idx;
+	__u32 p_major, p_handle, c_major, c_handle, c_parent;
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.tc_qdisc_peek_stack_runs, 1,
+			   __ATOMIC_RELAXED);
+
+	p_idx = rand32() % NR_PEEK_PARENTS;
+	c_idx = rand32() % NR_PEEK_CHILDREN;
+	p = &peek_parents[p_idx];
+	child_name = peek_children[c_idx];
+
+	p_kind_idx = qdisc_kind_idx(p->name);
+	c_kind_idx = qdisc_kind_idx(child_name);
+	if (p_kind_idx >= NR_QDISC_KINDS || c_kind_idx >= NR_QDISC_KINDS)
+		return;
+	if (ns_unsupported_qdisc_kind[p_kind_idx] ||
+	    ns_unsupported_qdisc_kind[c_kind_idx])
+		return;
+
+	modprobe_qdisc(p_kind_idx);
+	modprobe_qdisc(c_kind_idx);
+
+	p_major  = (__u32)((rand32() % 0xfee0U) + 0x10U);
+	p_handle = p_major << 16;
+	/* keep child major distinct from parent for clarity in any
+	 * post-mortem dump — the kernel only requires uniqueness within
+	 * the device but mixing them up makes triage harder. */
+	do {
+		c_major = (__u32)((rand32() % 0xfee0U) + 0x10U);
+	} while (c_major == p_major);
+	c_handle = c_major << 16;
+	c_parent = p_handle | p->child_classid;
+
+	rc = build_newqdisc_opts(rtnl, ifindex, p_handle, TC_H_ROOT,
+				 p->name, p->enc, p->inner_type,
+				 NLM_F_CREATE | NLM_F_EXCL);
+	if (rc != 0) {
+		if (is_unsupported_err(rc))
+			ns_unsupported_qdisc_kind[p_kind_idx] = true;
+		__atomic_add_fetch(&shm->stats.tc_qdisc_peek_stack_install_fail,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	rc = build_newqdisc(rtnl, ifindex, c_handle, c_parent,
+			    child_name, NLM_F_CREATE | NLM_F_EXCL);
+	if (rc != 0) {
+		if (is_unsupported_err(rc))
+			ns_unsupported_qdisc_kind[c_kind_idx] = true;
+		__atomic_add_fetch(&shm->stats.tc_qdisc_peek_stack_install_fail,
+				   1, __ATOMIC_RELAXED);
+		(void)build_delqdisc(rtnl, ifindex, p_handle, TC_H_ROOT);
+		return;
+	}
+
+	__atomic_add_fetch(&shm->stats.tc_qdisc_peek_stack_install_ok,
+			   1, __ATOMIC_RELAXED);
+
+	/*
+	 * qfq has no internal classifier — without a class + filter
+	 * any enqueue lands nowhere and the parent's peek-on-inner
+	 * never sees an skb.  Build a single qfq class and a matchall
+	 * filter on the qfq qdisc that pins everything to it.  Errors
+	 * here are non-fatal: the install_ok counter already fired
+	 * and the burst still exercises some part of the path.
+	 */
+	if (strcmp(child_name, "qfq") == 0) {
+		__u32 qfq_class = c_handle | 1U;
+
+		(void)build_qfq_class(rtnl, ifindex, qfq_class, c_handle);
+		(void)build_newtfilter(rtnl, ifindex, c_handle, "matchall");
+	}
+
+	if (!ns_unsupported_inet) {
+		struct sockaddr_in dst;
+		struct timespec t0;
+		unsigned int iters, i;
+		int udp;
+
+		udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+		if (udp < 0) {
+			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
+				ns_unsupported_inet = true;
+			return;
+		}
+		(void)setsockopt(udp, SOL_SOCKET, SO_BINDTODEVICE,
+				 dev_name, strlen(dev_name) + 1);
+
+		memset(&dst, 0, sizeof(dst));
+		dst.sin_family      = AF_INET;
+		dst.sin_port        = htons(TC_INNER_PORT);
+		dst.sin_addr.s_addr = htonl(0x7f000001U);
+
+		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
+		iters = BUDGETED(CHILD_OP_TC_QDISC_CHURN,
+				 JITTER_RANGE(TC_PACKET_BASE));
+		if (iters < TC_PACKET_FLOOR)
+			iters = TC_PACKET_FLOOR;
+		if (iters > TC_PACKET_CAP)
+			iters = TC_PACKET_CAP;
+
+		for (i = 0; i < iters; i++) {
+			unsigned char payload[64];
+			ssize_t n;
+
+			if (ns_since(&t0) >= STORM_BUDGET_NS)
+				break;
+
+			generate_rand_bytes(payload, sizeof(payload));
+			n = sendto(udp, payload, sizeof(payload),
+				   MSG_DONTWAIT,
+				   (struct sockaddr *)&dst, sizeof(dst));
+			if (n > 0)
+				__atomic_add_fetch(&shm->stats.tc_qdisc_peek_stack_burst_ok,
+						   1, __ATOMIC_RELAXED);
+		}
+
+		close(udp);
+	}
+}
+
 bool tc_qdisc_churn(struct childdata *child)
 {
 	char dummy_name[IFNAMSIZ];
@@ -849,6 +1195,18 @@ bool tc_qdisc_churn(struct childdata *child)
 		goto out;
 
 	(void)build_setlink_up(rtnl, dummy_idx);
+
+	/*
+	 * One iteration in four runs the deliberate peek-x-peek stack
+	 * sub-mode instead of the standard rotation.  Cleanup
+	 * (RTM_DELLINK on the dummy) still happens at the shared
+	 * out: label so any qdisc tree the sub-mode installed gets
+	 * cascaded down via dev_qdisc_destroy when the link goes.
+	 */
+	if (ONE_IN(4)) {
+		do_peek_stack(rtnl, dummy_idx, dummy_name);
+		goto out;
+	}
 
 	qidx = pick_qdisc_idx();
 	if (qidx >= NR_QDISC_KINDS)
