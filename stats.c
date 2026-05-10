@@ -3095,6 +3095,10 @@ void dump_stats(void)
 		stat_row("xfrm_churn", "ah_esn_setup_fail",  shm->stats.xfrm_ah_esn_setup_fail);
 		stat_row("xfrm_churn", "ah_esn_async_runs",  shm->stats.xfrm_ah_esn_async_runs);
 		stat_row("xfrm_churn", "ah_esn_delsa_races", shm->stats.xfrm_ah_esn_delsa_races);
+		stat_row("xfrm_churn", "compat_sweep_runs",  shm->stats.xfrm_compat_sweep_runs);
+		stat_row("xfrm_churn", "compat_sends_ok",    shm->stats.xfrm_compat_sends_ok);
+		stat_row("xfrm_churn", "compat_sends_failed", shm->stats.xfrm_compat_sends_failed);
+		stat_row("xfrm_churn", "compat_replies_seen", shm->stats.xfrm_compat_replies_seen);
 	}
 
 	if (shm->stats.ublk_lifecycle_iters) {
