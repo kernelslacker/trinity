@@ -345,6 +345,18 @@ void clean_childdata(struct childdata *child)
 	memset(child->fd_created_by_group, 0, sizeof(child->fd_created_by_group));
 	clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
+	/* Reset per-child storm-containment counters and reseed the
+	 * sliding-window snapshot to "right now, all zeros" so the first
+	 * check after fork has a clean baseline rather than measuring a
+	 * rate against the previous occupant of this slot. */
+	child->local_post_handler_corrupt_ptr = 0;
+	child->local_maps_uaf_caught = 0;
+	child->local_scribbled_slots_caught = 0;
+	child->storm_check_last_time = child->tp;
+	child->storm_check_last_post_handler = 0;
+	child->storm_check_last_maps_uaf = 0;
+	child->storm_check_last_scribbled = 0;
+
 	/* Reset live fd ring: -1 marks all slots as empty. */
 	for (int i = 0; i < CHILD_FD_RING_SIZE; i++)
 		child->live_fds.fds[i] = -1;
@@ -1584,6 +1596,56 @@ _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
  */
 #define NEW_OP_COUNT 100000
 
+/*
+ * Per-child corruption-rate storm check.  Cheap modulo-gated probe of
+ * the three local_* counters maintained alongside their global shm
+ * stats siblings; returns true when any counter has been climbing at
+ * LOCAL_STORM_RATE_THRESHOLD events/sec or more for at least
+ * LOCAL_STORM_WINDOW_SEC seconds, in which case the caller should
+ * exit its main loop so the parent can recycle the slot.
+ *
+ * The window-floor (LOCAL_STORM_WINDOW_SEC) suppresses single-spike
+ * false positives -- a transient burst that cannot sustain absorbs
+ * into the next snapshot roll instead of recycling the child.  When
+ * the window has aged past the floor without any signal exceeding the
+ * rate threshold, the snapshot is rolled forward so the next check
+ * measures a fresh window rather than a smeared cumulative rate.
+ *
+ * Returns false (and may roll the snapshot) when no recycle is needed.
+ */
+static bool storm_rate_recycle(struct childdata *child)
+{
+	struct timespec now;
+	long window_sec;
+	unsigned long delta_post, delta_maps, delta_scribbled;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	window_sec = (long)(now.tv_sec - child->storm_check_last_time.tv_sec);
+	if (window_sec < LOCAL_STORM_WINDOW_SEC)
+		return false;
+
+	delta_post = child->local_post_handler_corrupt_ptr -
+		     child->storm_check_last_post_handler;
+	delta_maps = child->local_maps_uaf_caught -
+		     child->storm_check_last_maps_uaf;
+	delta_scribbled = child->local_scribbled_slots_caught -
+			  child->storm_check_last_scribbled;
+
+	if ((delta_post / (unsigned long)window_sec) >= LOCAL_STORM_RATE_THRESHOLD ||
+	    (delta_maps / (unsigned long)window_sec) >= LOCAL_STORM_RATE_THRESHOLD ||
+	    (delta_scribbled / (unsigned long)window_sec) >= LOCAL_STORM_RATE_THRESHOLD)
+		return true;
+
+	/* Quiet window: roll the snapshot so the next check measures the
+	 * next window in isolation rather than smearing a years-long
+	 * cumulative count against a fresh interval. */
+	child->storm_check_last_time = now;
+	child->storm_check_last_post_handler = child->local_post_handler_corrupt_ptr;
+	child->storm_check_last_maps_uaf = child->local_maps_uaf_caught;
+	child->storm_check_last_scribbled = child->local_scribbled_slots_caught;
+	return false;
+}
+
 void child_process(struct childdata *child, int childno)
 {
 	char childname[17];
@@ -1681,6 +1743,22 @@ void child_process(struct childdata *child, int childno)
 
 		if (tick16)
 			periodic_work(child, child->op_nr);
+
+		/* Per-child storm-containment gate: once every
+		 * LOCAL_STORM_CHECK_PERIOD iterations, score the three
+		 * local corruption-rate counters against the threshold.
+		 * The corruption is a per-child accumulator (a poisoned
+		 * OBJ_LOCAL slot or a scribbled libc arena) -- it does
+		 * not survive across fork(), so a fresh child re-inherits
+		 * clean state and breaks the burn-arg-gen-cycles loop the
+		 * storm produces.  Symptom containment, not a root-cause
+		 * fix; the upstream scribble source is still active. */
+		if ((child->op_nr & (LOCAL_STORM_CHECK_PERIOD - 1)) == 0 &&
+		    storm_rate_recycle(child)) {
+			__atomic_add_fetch(&shm->stats.children_recycled_on_storm,
+					   1, __ATOMIC_RELAXED);
+			goto out;
+		}
 
 		/* Free any deferred allocations whose TTL has expired.
 		 * This runs before the syscall so that freed memory can

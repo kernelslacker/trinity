@@ -10,6 +10,7 @@
 #include <sys/shm.h>
 
 #include "arch.h"	// KERNEL_ADDR etc
+#include "child.h"	// this_child(), per-child storm counters
 #include "random.h"
 #include "sanitise.h"
 #include "maps.h"
@@ -142,6 +143,11 @@ retry:	tries++;
 			__atomic_add_fetch(
 				&shm->stats.get_writable_address_scribbled_slots_caught,
 				1, __ATOMIC_RELAXED);
+			{
+				struct childdata *c = this_child();
+				if (c != NULL)
+					c->local_scribbled_slots_caught++;
+			}
 			goto retry;
 		}
 	}
@@ -163,6 +169,11 @@ retry:	tries++;
 		__atomic_add_fetch(
 			&shm->stats.get_writable_address_scribbled_slots_caught,
 			1, __ATOMIC_RELAXED);
+		{
+			struct childdata *c = this_child();
+			if (c != NULL)
+				c->local_scribbled_slots_caught++;
+		}
 		goto retry;
 	}
 
@@ -183,6 +194,11 @@ retry:	tries++;
 		__atomic_add_fetch(
 			&shm->stats.get_writable_address_scribbled_slots_caught,
 			1, __ATOMIC_RELAXED);
+		{
+			struct childdata *c = this_child();
+			if (c != NULL)
+				c->local_scribbled_slots_caught++;
+		}
 		goto retry;
 	}
 
