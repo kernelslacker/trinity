@@ -487,6 +487,7 @@ static void sqe_clear(struct io_uring_sqe *s)
  * the rest of the iouring-recipes catalog uses.
  * ------------------------------------------------------------------ */
 
+#ifndef TRINITY_COMPAT_BACKFILLED_SOCKET_URING_OP
 static const __u32 sock_cmd_ops[] = {
 	SOCKET_URING_OP_SIOCINQ,
 	SOCKET_URING_OP_SIOCOUTQ,
@@ -543,6 +544,7 @@ out:
 		close(sock_fd);
 	return ok;
 }
+#endif /* TRINITY_COMPAT_BACKFILLED_SOCKET_URING_OP */
 
 /* ------------------------------------------------------------------ *
  * Variant: blockdev
@@ -640,10 +642,11 @@ out:
 }
 
 /* ------------------------------------------------------------------ *
- * Variant dispatch.  variant_socket is always present; the other
- * gated variants are tried only when their cache flag says they're
- * available.  Pick one variant per invocation uniformly across the
- * available set.
+ * Variant dispatch.  Each variant is tried only when its cache flag
+ * says it's available; variant_socket additionally compiles out on
+ * stale-LTS hosts whose uapi headers lack the .level/.optname/.optval/
+ * .optlen SQE union members.  Pick one variant per invocation
+ * uniformly across the available set.
  * ------------------------------------------------------------------ */
 
 bool iouring_cmd_passthrough(struct childdata *child __unused__)
@@ -659,8 +662,10 @@ bool iouring_cmd_passthrough(struct childdata *child __unused__)
 
 	probe_variants();
 
+#ifndef TRINITY_COMPAT_BACKFILLED_SOCKET_URING_OP
 	if (vcache.socket_ok)
 		avail[navail++] = V_SOCKET;
+#endif
 	if (vcache.blockdev_ok)
 		avail[navail++] = V_BLOCKDEV;
 
@@ -675,9 +680,11 @@ bool iouring_cmd_passthrough(struct childdata *child __unused__)
 	}
 
 	switch (avail[(unsigned int)rand() % (unsigned int)navail]) {
+#ifndef TRINITY_COMPAT_BACKFILLED_SOCKET_URING_OP
 	case V_SOCKET:
 		ok = variant_socket(&ctx);
 		break;
+#endif
 	case V_BLOCKDEV:
 		ok = variant_blockdev(&ctx);
 		break;
