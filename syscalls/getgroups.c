@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE2(getgroups, int, gidsetsize, gid_t __user *, grouplist)
  */
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
@@ -33,8 +34,10 @@ static void sanitise_getgroups(struct syscallrecord *rec)
  */
 static void post_getgroups(struct syscallrecord *rec)
 {
-	FILE *f;
-	char line[8192];
+	char buf[16384];
+	char *line, *eol;
+	ssize_t n;
+	int fd;
 
 	/*
 	 * Kernel ABI: success retval is the supplementary group count for
@@ -60,38 +63,50 @@ static void post_getgroups(struct syscallrecord *rec)
 	if ((long) rec->retval < 0)
 		return;
 
-	f = fopen("/proc/self/status", "r");
-	if (!f)
+	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
+	 * thousands of times per second under fuzz, and stdio's per-call malloc
+	 * of FILE struct + IO buffer is heap traffic we don't need.  16 KB is
+	 * a generous bound on /proc/self/status — Groups: holds up to
+	 * NGROUPS_MAX gids as decimal-plus-space tokens, which fits in 8-9 KB
+	 * even at the limit. */
+	fd = open("/proc/self/status", O_RDONLY);
+	if (fd < 0)
 		return;
-	while (fgets(line, sizeof(line), f)) {
-		if (strncmp(line, "Groups:", 7) == 0) {
-			size_t len = strlen(line);
-			char *p, *tok, *saveptr = NULL;
-			int seen = 0;
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return;
+	/* Truncated read — bail rather than risk a false positive on a
+	 * partially-captured Groups: line. */
+	if ((size_t)n == sizeof(buf) - 1)
+		return;
+	buf[n] = '\0';
+	/* Anchor on a newline so a "Groups:" substring inside an earlier
+	 * field cannot mis-target the parse. */
+	line = strstr(buf, "\nGroups:");
+	if (line != NULL) {
+		char *p = line + 8;
+		char *tok, *saveptr = NULL;
+		int seen = 0;
 
-			/* Truncated line — bail rather than risk a false positive. */
-			if (len == sizeof(line) - 1 && line[len - 1] != '\n') {
-				fclose(f);
-				return;
-			}
+		/* Bound strtok_r to this single line by NUL-terminating at the
+		 * next newline; the original fgets-based code only saw one line
+		 * at a time. */
+		eol = strchr(p, '\n');
+		if (eol != NULL)
+			*eol = '\0';
 
-			p = line + 7;
-			for (tok = strtok_r(p, " \t\n", &saveptr); tok;
-			     tok = strtok_r(NULL, " \t\n", &saveptr))
-				seen++;
+		for (tok = strtok_r(p, " \t", &saveptr); tok;
+		     tok = strtok_r(NULL, " \t", &saveptr))
+			seen++;
 
-			fclose(f);
-
-			if (seen != (int) rec->retval) {
-				output(0, "groups oracle: /proc/self/status Groups: count %d but rec->retval was %ld\n",
-				       seen, (long) rec->retval);
-				__atomic_add_fetch(&shm->stats.getgroups_oracle_anomalies, 1,
-						   __ATOMIC_RELAXED);
-			}
-			return;
+		if (seen != (int) rec->retval) {
+			output(0, "groups oracle: /proc/self/status Groups: count %d but rec->retval was %ld\n",
+			       seen, (long) rec->retval);
+			__atomic_add_fetch(&shm->stats.getgroups_oracle_anomalies, 1,
+					   __ATOMIC_RELAXED);
 		}
 	}
-	fclose(f);
 }
 
 struct syscallentry syscall_getgroups = {
