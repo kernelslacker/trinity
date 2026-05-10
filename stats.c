@@ -710,6 +710,7 @@ static void dump_stats_json(void)
 		"\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu},"
 		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu,\"napi_register_ok\":%lu,\"napi_register_fail\":%lu,\"napi_unregister_ok\":%lu,\"napi_unregister_fail\":%lu},"
 		"\"tcp_ao_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"addkey_rejected\":%lu,\"keys_added\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"packets_sent\":%lu,\"key_rotations\":%lu,\"info_rejected\":%lu,\"key_dels\":%lu,\"delkey_rejected\":%lu,\"cycles\":%lu},"
+		"\"tcp_md5_listener_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"md5_set_ok\":%lu,\"md5_set_failed\":%lu,\"connect_ok\":%lu,\"rst_sent_ok\":%lu,\"completed_ok\":%lu},"
 		"\"vrf_fib_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_ok\":%lu,\"addr_ok\":%lu,\"up_ok\":%lu,\"rule_added\":%lu,\"bound\":%lu,\"sendto_ok\":%lu,\"rule2_added\":%lu,\"rule_removed\":%lu,\"link_removed\":%lu},"
 		"\"mpls_route_churn\":{\"runs\":%lu,\"label_install_ok\":%lu,\"iptunnel_install_ok\":%lu,\"delete_ok\":%lu,\"ns_unsupported\":%lu},"
 		"\"netlink_monitor_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"mon_open\":%lu,\"mut_open\":%lu,\"mut_op_ok\":%lu,\"recv_drained\":%lu,\"group_drop\":%lu,\"group_add\":%lu},"
@@ -987,6 +988,13 @@ static void dump_stats_json(void)
 		shm->stats.tcp_ao_rotate_key_dels,
 		shm->stats.tcp_ao_rotate_delkey_rejected,
 		shm->stats.tcp_ao_rotate_cycles,
+		shm->stats.tcp_md5_listener_race_runs,
+		shm->stats.tcp_md5_listener_race_setup_failed,
+		shm->stats.tcp_md5_listener_race_md5_set_ok,
+		shm->stats.tcp_md5_listener_race_md5_set_failed,
+		shm->stats.tcp_md5_listener_race_connect_ok,
+		shm->stats.tcp_md5_listener_race_rst_sent_ok,
+		shm->stats.tcp_md5_listener_race_completed_ok,
 		shm->stats.vrf_fib_churn_runs,
 		shm->stats.vrf_fib_churn_setup_failed,
 		shm->stats.vrf_fib_churn_link_ok,
@@ -2913,6 +2921,16 @@ void dump_stats(void)
 		stat_row("tcp_ao_rotate", "key_dels",        shm->stats.tcp_ao_rotate_key_dels);
 		stat_row("tcp_ao_rotate", "delkey_rejected", shm->stats.tcp_ao_rotate_delkey_rejected);
 		stat_row("tcp_ao_rotate", "cycles",          shm->stats.tcp_ao_rotate_cycles);
+	}
+
+	if (shm->stats.tcp_md5_listener_race_runs) {
+		stat_row("tcp_md5_listener_race", "runs",           shm->stats.tcp_md5_listener_race_runs);
+		stat_row("tcp_md5_listener_race", "setup_failed",   shm->stats.tcp_md5_listener_race_setup_failed);
+		stat_row("tcp_md5_listener_race", "md5_set_ok",     shm->stats.tcp_md5_listener_race_md5_set_ok);
+		stat_row("tcp_md5_listener_race", "md5_set_failed", shm->stats.tcp_md5_listener_race_md5_set_failed);
+		stat_row("tcp_md5_listener_race", "connect_ok",     shm->stats.tcp_md5_listener_race_connect_ok);
+		stat_row("tcp_md5_listener_race", "rst_sent_ok",    shm->stats.tcp_md5_listener_race_rst_sent_ok);
+		stat_row("tcp_md5_listener_race", "completed_ok",   shm->stats.tcp_md5_listener_race_completed_ok);
 	}
 
 	if (shm->stats.vrf_fib_churn_runs) {
