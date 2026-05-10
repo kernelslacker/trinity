@@ -1663,6 +1663,11 @@ struct stats_s {
 	unsigned long altname_thrash_delprop_done;	/* RTM_DELLINKPROP IFLA_PROP_LIST accepted */
 	unsigned long altname_thrash_getlink_done;	/* RTM_GETLINK targeted with RTEXT_FILTER_VF accepted */
 
+	/* ipmr_cache_report childop counters */
+	unsigned long ipmr_cache_report_iters;		/* per-iteration loop body entries */
+	unsigned long ipmr_cache_report_eperm;		/* MRT_INIT returned -EPERM (CAP_NET_ADMIN gate) */
+	unsigned long ipmr_cache_report_emit_ok;	/* sendto a NOCACHE multicast group succeeded */
+
 	/*
 	 * HEALER Phase A observer counters -- see include/healer.h.
 	 * All four are bumped from healer_observe_relation() / the periodic
