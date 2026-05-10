@@ -136,6 +136,15 @@
 #ifndef NFNETLINK_V0
 #define NFNETLINK_V0			0
 #endif
+#ifndef NFNL_MSG_BATCH_BEGIN
+#define NFNL_MSG_BATCH_BEGIN		16
+#endif
+#ifndef NFNL_MSG_BATCH_END
+#define NFNL_MSG_BATCH_END		17
+#endif
+#ifndef NFT_TABLE_F_DORMANT
+#define NFT_TABLE_F_DORMANT		0x1
+#endif
 
 #ifndef NFPROTO_INET
 #define NFPROTO_INET			1
@@ -5838,6 +5847,168 @@ done:
 	(void)build_deltable(fd, NFPROTO_IPV4, table_name);
 }
 
+/*
+ * Dormant-table abort sub-mode.  Drives the abort path the upstream
+ * commit 63bac02786030 ("nf_tables: drop releases of nft_hook from
+ * dormant tables on abort") repaired.  Single netlink batch:
+ *   BATCH_BEGIN
+ *   NEWTABLE flags=NFT_TABLE_F_DORMANT
+ *   NEWCHAIN base chain attached to NF_INET_LOCAL_OUT (allocates the
+ *     first nft_hook even though dormant tables don't register hooks)
+ *   NEWCHAIN NLM_F_REPLACE on the same chain with a different
+ *     hooknum/priority -- kernel allocates a fresh nft_hook and queues
+ *     the prior one for release on commit
+ *   NEWCHAIN NLM_F_REPLACE referencing a bogus NFTA_CHAIN_HANDLE --
+ *     kernel rejects -ENOENT, the batch transitions to the abort path
+ *   BATCH_END
+ * Cleanup: NFT_MSG_DELTABLE outside the batch.
+ */
+static void nft_dormant_abort_sweep(int fd)
+{
+	static const __u32 hooks[] = {
+		NF_INET_LOCAL_OUT, NF_INET_POST_ROUTING,
+		NF_INET_PRE_ROUTING, NF_INET_LOCAL_IN, NF_INET_FORWARD,
+	};
+	unsigned char buf[2048];
+	struct sockaddr_nl dst;
+	struct iovec iov;
+	struct msghdr mh;
+	struct nlmsghdr *nlh;
+	struct nfgenmsg_local *nfg;
+	struct nlattr *hook_attr;
+	char table_name[32];
+	const char *chain_name = "dhkc";
+	__u8 family = NFPROTO_INET;
+	__u32 hk_a = hooks[rand32() % ARRAY_SIZE(hooks)];
+	__u32 hk_b = hooks[rand32() % ARRAY_SIZE(hooks)];
+	__u64 bogus_handle;
+	size_t off = 0, msg_off, hook_off;
+	__u16 batch_markers[] = { NFNL_MSG_BATCH_BEGIN, NFNL_MSG_BATCH_END };
+	__u16 chain_flags[]   = { NLM_F_CREATE, NLM_F_REPLACE };
+	__u32 chain_hook[]    = { hk_a, hk_b == hk_a ? (hk_a + 1) % 5 : hk_b };
+	int i;
+
+	__atomic_add_fetch(&shm->stats.nft_dormant_abort_iters,
+			   1, __ATOMIC_RELAXED);
+
+	snprintf(table_name, sizeof(table_name), "trdorm%u",
+		 (unsigned int)(rand32() & 0xffffu));
+	memset(buf, 0, sizeof(buf));
+
+	/* BATCH_BEGIN with res_id steering the batch at the nftables subsys */
+	msg_off = off;
+	nlh = (struct nlmsghdr *)(buf + off);
+	nlh->nlmsg_type  = batch_markers[0];
+	nlh->nlmsg_flags = NLM_F_REQUEST;
+	nlh->nlmsg_seq   = next_seq();
+	nfg = (struct nfgenmsg_local *)NLMSG_DATA(nlh);
+	nfg->nfgen_family = AF_UNSPEC;
+	nfg->version      = NFNETLINK_V0;
+	nfg->res_id       = htons(NFNL_SUBSYS_NFTABLES);
+	off += NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*nfg));
+	nlh->nlmsg_len = (__u32)(off - msg_off);
+
+	/* (a) NEWTABLE flags=NFT_TABLE_F_DORMANT */
+	msg_off = off;
+	off += nfnl_hdr(buf + off, NFT_MSG_NEWTABLE, NLM_F_CREATE, family);
+	off = nla_put_str(buf, off, sizeof(buf), NFTA_TABLE_NAME, table_name);
+	off = nla_put_be32(buf, off, sizeof(buf), NFTA_TABLE_FLAGS,
+			   NFT_TABLE_F_DORMANT);
+	if (!off)
+		return;
+	((struct nlmsghdr *)(buf + msg_off))->nlmsg_len = (__u32)(off - msg_off);
+
+	/* (b) + (c): two NEWCHAINs on the same name, second is REPLACE with
+	 * a different hook so the kernel allocates a fresh nft_hook and
+	 * detaches the original. */
+	for (i = 0; i < 2; i++) {
+		msg_off = off;
+		off += nfnl_hdr(buf + off, NFT_MSG_NEWCHAIN,
+				chain_flags[i], family);
+		off = nla_put_str(buf, off, sizeof(buf),
+				  NFTA_CHAIN_TABLE, table_name);
+		off = nla_put_str(buf, off, sizeof(buf),
+				  NFTA_CHAIN_NAME, chain_name);
+		hook_off = off;
+		off = nla_put(buf, off, sizeof(buf),
+			      NFTA_CHAIN_HOOK | NLA_F_NESTED, NULL, 0);
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   NFTA_HOOK_HOOKNUM, chain_hook[i]);
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   NFTA_HOOK_PRIORITY, (__u32)(i ? 10 : 0));
+		if (!off)
+			return;
+		hook_attr = (struct nlattr *)(buf + hook_off);
+		hook_attr->nla_len = (unsigned short)(off - hook_off);
+		off = nla_put_str(buf, off, sizeof(buf),
+				  NFTA_CHAIN_TYPE, "filter");
+		if (!off)
+			return;
+		((struct nlmsghdr *)(buf + msg_off))->nlmsg_len =
+			(__u32)(off - msg_off);
+	}
+
+	/* (d) NEWCHAIN NLM_F_REPLACE on a bogus NFTA_CHAIN_HANDLE.  Kernel
+	 * walks lookup, fails -ENOENT, batch enters the abort path. */
+	msg_off = off;
+	off += nfnl_hdr(buf + off, NFT_MSG_NEWCHAIN, NLM_F_REPLACE, family);
+	off = nla_put_str(buf, off, sizeof(buf), NFTA_CHAIN_TABLE, table_name);
+	bogus_handle = ((__u64)htonl(0xdeadbeefU) << 32) |
+		       (__u64)htonl(0xcafebabeU);
+	off = nla_put(buf, off, sizeof(buf), NFTA_CHAIN_HANDLE,
+		      &bogus_handle, sizeof(bogus_handle));
+	if (!off)
+		return;
+	((struct nlmsghdr *)(buf + msg_off))->nlmsg_len = (__u32)(off - msg_off);
+
+	/* (e) BATCH_END */
+	msg_off = off;
+	nlh = (struct nlmsghdr *)(buf + off);
+	nlh->nlmsg_type  = batch_markers[1];
+	nlh->nlmsg_flags = NLM_F_REQUEST;
+	nlh->nlmsg_seq   = next_seq();
+	nfg = (struct nfgenmsg_local *)NLMSG_DATA(nlh);
+	nfg->nfgen_family = AF_UNSPEC;
+	nfg->version      = NFNETLINK_V0;
+	nfg->res_id       = htons(NFNL_SUBSYS_NFTABLES);
+	off += NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*nfg));
+	nlh->nlmsg_len = (__u32)(off - msg_off);
+
+	memset(&dst, 0, sizeof(dst));
+	dst.nl_family = AF_NETLINK;
+	iov.iov_base  = buf;
+	iov.iov_len   = off;
+	memset(&mh, 0, sizeof(mh));
+	mh.msg_name    = &dst;
+	mh.msg_namelen = sizeof(dst);
+	mh.msg_iov     = &iov;
+	mh.msg_iovlen  = 1;
+
+	if (sendmsg(fd, &mh, 0) < 0) {
+		if (errno == EPERM || errno == EOPNOTSUPP) {
+			ns_unsupported_nf_tables = true;
+			__atomic_add_fetch(&shm->stats.nft_dormant_abort_eperm,
+					   1, __ATOMIC_RELAXED);
+		} else {
+			__atomic_add_fetch(&shm->stats.nft_dormant_abort_emsg,
+					   1, __ATOMIC_RELAXED);
+		}
+		return;
+	}
+
+	/* Drain the abort error reply (one nlmsgerr from the rejected
+	 * REPLACE).  Block once so we wait for the abort path to complete,
+	 * then non-blockingly drain anything coalesced behind it. */
+	(void)recv(fd, buf, sizeof(buf), 0);
+	while (recv(fd, buf, sizeof(buf), MSG_DONTWAIT) > 0)
+		;
+
+	__atomic_add_fetch(&shm->stats.nft_dormant_abort_ok,
+			   1, __ATOMIC_RELAXED);
+
+	(void)build_deltable(fd, family, table_name);
+}
+
 bool nftables_churn(struct childdata *child)
 {
 	char table_name[32];
@@ -5898,6 +6069,14 @@ bool nftables_churn(struct childdata *child)
 	if (!lo_brought_up) {
 		bring_lo_up(rtnl);
 		lo_brought_up = true;
+	}
+
+	/* Dormant-table abort sub-mode (upstream 63bac02786030) -- rare gate
+	 * so the expression-fuzz path below stays the dominant workload.
+	 * Reuses ns_unsupported_nf_tables as the latch on EPERM/EOPNOTSUPP. */
+	if (ONE_IN(8)) {
+		nft_dormant_abort_sweep(nfnl);
+		goto out;
 	}
 
 	/* Per-hook .validate sweep on xt-compat targets, gated separately
