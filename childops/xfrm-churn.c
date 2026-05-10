@@ -139,8 +139,10 @@
 #ifndef XFRM_MSG_NEWSA
 #define XFRM_MSG_NEWSA		0x10
 #define XFRM_MSG_DELSA		0x11
+#define XFRM_MSG_GETSA		0x12
 #define XFRM_MSG_NEWPOLICY	0x13
 #define XFRM_MSG_DELPOLICY	0x14
+#define XFRM_MSG_ALLOCSPI	0x16
 #define XFRM_MSG_UPDSA		0x1f
 #endif
 
@@ -326,6 +328,12 @@ struct xfrm_replay_state_esn {
 	__u32			seq_hi;
 	__u32			replay_window;
 	__u32			bmp[];
+};
+
+struct xfrm_userspi_info {
+	struct xfrm_usersa_info		info;
+	__u32				min;
+	__u32				max;
 };
 #endif /* !__has_include(<linux/xfrm.h>) */
 
@@ -809,7 +817,7 @@ static size_t append_algo_attrs(unsigned char *buf, size_t off, size_t cap,
  * policy template and the later UPDSA / DELSA.
  */
 static int build_newsa(int fd, const struct xfrm_algo_def *def,
-		       __u32 reqid, __be32 spi, __u8 mode)
+		       __u32 reqid, __be32 spi, __u8 mode, __u32 seq)
 {
 	unsigned char buf[XFRM_BUF_BYTES];
 	struct nlmsghdr *nlh;
@@ -829,6 +837,7 @@ static int build_newsa(int fd, const struct xfrm_algo_def *def,
 	sa->id.proto       = def->proto;
 	sa->saddr.a4       = XFRM_SADDR_BE;
 	fill_lifetime(&sa->lft);
+	sa->seq            = seq;	/* link onto byseq when seq != 0 */
 	sa->reqid          = reqid;
 	sa->family         = AF_INET;
 	sa->mode           = mode;
@@ -851,7 +860,7 @@ static int build_newsa(int fd, const struct xfrm_algo_def *def,
  * — the in-flight encrypt may still be holding the old key.
  */
 static int build_updsa(int fd, const struct xfrm_algo_def *def,
-		       __u32 reqid, __be32 spi, __u8 mode)
+		       __u32 reqid, __be32 spi, __u8 mode, __u32 seq)
 {
 	unsigned char buf[XFRM_BUF_BYTES];
 	struct nlmsghdr *nlh;
@@ -871,6 +880,7 @@ static int build_updsa(int fd, const struct xfrm_algo_def *def,
 	sa->id.proto       = def->proto;
 	sa->saddr.a4       = XFRM_SADDR_BE;
 	fill_lifetime(&sa->lft);
+	sa->seq            = seq;	/* keep byseq linkage stable across rekey */
 	sa->reqid          = reqid;
 	sa->family         = AF_INET;
 	sa->mode           = mode;
@@ -992,6 +1002,110 @@ static int build_delpolicy(int fd)
 	pid->dir = XFRM_POLICY_OUT;
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*pid));
+	nlh->nlmsg_len = (__u32)off;
+	return xfrm_send_recv(fd, buf, off);
+}
+
+/*
+ * Rotate sa->km.seq across edge values + a couple of random sizes.
+ * The kernel only links an SA onto byseq when (x->km.seq != 0); the
+ * lookup walker (__xfrm_find_acq_byseq) is reachable from
+ * xfrm_alloc_userspi when the in-flight SA-acquire rotation happens
+ * to share a saddr/seq tuple, and the byseq unhash path runs from
+ * __xfrm_state_delete on every linked SA.  Rotating across {0, 1, 2,
+ * a small random, a large random, U32_MAX} keeps zero in the mix
+ * (skip-link control) while ensuring the byseq table is non-empty
+ * across most invocations.  Returning the value lets the caller use
+ * the same seq in any follow-up GETSA-by-seq request.
+ */
+static __u32 pick_sa_seq(void)
+{
+	switch (rand32() % 6U) {
+	case 0:  return 0U;
+	case 1:  return 1U;
+	case 2:  return 2U;
+	case 3:  return (rand32() & 0xffU) + 1U;
+	case 4:  return rand32();
+	default: return ~0U;
+	}
+}
+
+/*
+ * XFRM_MSG_ALLOCSPI: ask the kernel to pick a fresh SPI for a
+ * half-built SA carrying daddr + proto + reqid.  Walks
+ * __xfrm_find_acq_byseq + xfrm_state_lookup_byspi while scanning the
+ * SPI window, then inserts the resulting larval SA onto byspi — one
+ * of two writers (alongside NEWSA) that hits the byspi insert side
+ * upstream commit 14acf9652e56 fingerprints.  min/max bracket the
+ * same [0x100, 0xffffff] range used elsewhere in this op.
+ */
+static int build_allocspi(int fd, const struct xfrm_algo_def *def,
+			  __u32 reqid, __u8 mode, __u32 seq)
+{
+	unsigned char buf[XFRM_BUF_BYTES];
+	struct nlmsghdr *nlh;
+	struct xfrm_userspi_info *spi_info;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_ALLOCSPI;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = next_seq();
+
+	spi_info = (struct xfrm_userspi_info *)NLMSG_DATA(nlh);
+	fill_selector(&spi_info->info.sel, IPPROTO_UDP);
+	spi_info->info.id.daddr.a4 = XFRM_DADDR_BE;
+	spi_info->info.id.spi      = 0;	/* kernel picks */
+	spi_info->info.id.proto    = def->proto;
+	spi_info->info.saddr.a4    = XFRM_SADDR_BE;
+	fill_lifetime(&spi_info->info.lft);
+	spi_info->info.seq    = seq;
+	spi_info->info.reqid  = reqid;
+	spi_info->info.family = AF_INET;
+	spi_info->info.mode   = mode;
+	spi_info->info.replay_window = 32;
+	spi_info->info.flags  = 0;
+	spi_info->min = XFRM_SPI_MIN;
+	spi_info->max = XFRM_SPI_MIN + XFRM_SPI_RANGE - 1U;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*spi_info));
+	nlh->nlmsg_len = (__u32)off;
+	/* ALLOCSPI returns a longer reply than send_recv's 1KB rbuf can
+	 * always carry; xfrm_send_recv treats a non-error reply as -EIO.
+	 * That's still acceptable as a counter signal — the kernel-side
+	 * walk has already happened by the time the reply is composed. */
+	return xfrm_send_recv_retry(fd, buf, off);
+}
+
+/*
+ * XFRM_MSG_GETSA via xfrm_usersa_id (daddr + spi + proto + family).
+ * Drives __xfrm_state_lookup byspi walker on the netlink-visible read
+ * path.  This is one of the lookup-side readers upstream commit
+ * 14acf9652e56 calls out (KASAN tag "Read in __xfrm_state_lookup").
+ * Reply carries a full xfrm_usersa_info; we don't parse it — the bug
+ * window is the kernel-side hash walk, not the userland decode.
+ */
+static int build_getsa_byspi(int fd, __u8 proto, __be32 spi)
+{
+	unsigned char buf[256];
+	struct nlmsghdr *nlh;
+	struct xfrm_usersa_id *uid;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_GETSA;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = next_seq();
+
+	uid = (struct xfrm_usersa_id *)NLMSG_DATA(nlh);
+	uid->daddr.a4 = XFRM_DADDR_BE;
+	uid->spi      = spi;
+	uid->family   = AF_INET;
+	uid->proto    = proto;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*uid));
 	nlh->nlmsg_len = (__u32)off;
 	return xfrm_send_recv(fd, buf, off);
 }
@@ -1297,6 +1411,7 @@ bool xfrm_churn(struct childdata *child)
 	__u32 reqid;
 	__be32 spi;
 	__u8 mode;
+	__u32 seq;
 	struct timespec t0;
 	unsigned int iters, sent;
 	int rc;
@@ -1343,6 +1458,7 @@ bool xfrm_churn(struct childdata *child)
 	def   = &xfrm_algos[aidx];
 	reqid = (rand32() % XFRM_REQID_RANGE) + 1U;
 	spi   = htonl((rand32() % XFRM_SPI_RANGE) + XFRM_SPI_MIN);
+	seq   = pick_sa_seq();
 	mode  = (rand32() & 1U) ? XFRM_MODE_TRANSPORT : XFRM_MODE_TRANSPORT;
 	/* TUNNEL mode requires routes to the inner addresses; staying
 	 * in TRANSPORT keeps the data plane self-contained on lo.
@@ -1350,7 +1466,7 @@ bool xfrm_churn(struct childdata *child)
 	 * later without restructuring this caller. */
 
 	modprobe_algo(aidx);
-	rc = build_newsa(xfrm, def, reqid, spi, mode);
+	rc = build_newsa(xfrm, def, reqid, spi, mode, seq);
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_algo[aidx] = true;
@@ -1401,7 +1517,27 @@ bool xfrm_churn(struct childdata *child)
 	 * from the burst above may still be holding the old key —
 	 * CVE-2023-1611 family lives in this window.
 	 */
-	rc = build_updsa(xfrm, def, reqid, spi, mode);
+	/*
+	 * Lookup-side reader: GETSA-by-SPI walks
+	 * __xfrm_state_lookup -> byspi while the SA is live.  ONE_IN(8)
+	 * keeps the netlink chatter bounded; the kernel-side hash walk
+	 * happens before the reply is composed so even a recv() short-
+	 * read still drives the bug-class window.
+	 */
+	if (ONE_IN(8))
+		(void)build_getsa_byspi(xfrm, def->proto, spi);
+
+	/*
+	 * Second writer onto byspi: ALLOCSPI on a half-built SA with the
+	 * same rotated reqid + seq.  Walks __xfrm_find_acq_byseq +
+	 * xfrm_state_lookup_byspi during the SPI scan, then inserts a
+	 * larval SA onto byspi.  ONE_IN(8) bounds cost and keeps the
+	 * larval-SA accumulator from saturating the per-netns table.
+	 */
+	if (ONE_IN(8))
+		(void)build_allocspi(xfrm, def, reqid, mode, seq);
+
+	rc = build_updsa(xfrm, def, reqid, spi, mode, seq);
 	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.xfrm_churn_sa_updated,
 				   1, __ATOMIC_RELAXED);
