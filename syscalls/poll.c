@@ -138,6 +138,7 @@ struct syscallentry syscall_poll = {
 	.sanitise = sanitise_poll,
 	.post = post_poll,
 	.group = GROUP_VFS,
+	.rettype = RET_BORING,
 };
 
 /*
@@ -266,4 +267,5 @@ struct syscallentry syscall_ppoll = {
 	.sanitise = sanitise_ppoll,
 	.post = post_ppoll,
 	.group = GROUP_VFS,
+	.rettype = RET_BORING,
 };
