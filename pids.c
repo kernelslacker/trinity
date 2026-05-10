@@ -42,8 +42,10 @@ void set_child_cache(int childno, pid_t pid, struct childdata *child)
 bool pid_alive(pid_t pid)
 {
 	char path[64];
+	char buf[512];
 	char state = '?';
-	FILE *f;
+	ssize_t n;
+	int fd;
 
 	if (pid < -1) {
 		syslogf("kill_pid tried to kill %d!\n", pid);
@@ -66,27 +68,36 @@ bool pid_alive(pid_t pid)
 
 	/* kill() returned 0, so the task struct exists.  Check whether
 	 * it's a zombie via /proc/<pid>/stat — third whitespace-separated
-	 * field is a single-char state. */
+	 * field is a single-char state.  Use raw open/read into a stack
+	 * buffer rather than fopen/fread/fclose: this is the parent's
+	 * hottest path (called per held lock per check_all_locks tick AND
+	 * once per just-spawned child in init_child) and stdio's per-call
+	 * malloc of FILE struct + IO buffer is heap traffic we don't need
+	 * here.  Under ASAN, every one of those mallocs is a candidate
+	 * abort site; under normal builds it's just wasted work. */
 	snprintf(path, sizeof(path), "/proc/%d/stat", pid);
-	f = fopen(path, "r");
-	if (f == NULL) {
-		/* Race: process exited between kill() and fopen.  Treat as
+	fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		/* Race: process exited between kill() and open.  Treat as
 		 * not alive — caller will recover. */
 		errno = ESRCH;
 		return false;
 	}
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0) {
+		errno = ESRCH;
+		return false;
+	}
+	buf[n] = '\0';
 	/* Format: pid (comm with possible spaces) state ppid ...
 	 * The comm may contain ')' so look for the LAST ')' then read
 	 * the next whitespace token. */
 	{
-		char buf[512];
-		size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-		buf[n] = '\0';
 		char *rparen = strrchr(buf, ')');
 		if (rparen != NULL && rparen[1] == ' ' && rparen[2] != '\0')
 			state = rparen[2];
 	}
-	fclose(f);
 
 	if (state == 'Z' || state == 'X') {
 		/* Set errno so callers (notably check_lock) treat this
