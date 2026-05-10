@@ -153,6 +153,10 @@
 #define IOCTL_VM_SOCKETS_GET_LOCAL_CID	_IO(0x07, 0xb9)
 #endif
 
+#ifndef VMADDR_CID_ANY
+#define VMADDR_CID_ANY			((unsigned int)-1)
+#endif
+
 /* Per-process latched gate.  Capability / config / kernel-version
  * support for AF_VSOCK + vsock_loopback is static across a child's
  * lifetime; once the install has paid the EAFNOSUPPORT we stop probing
@@ -173,6 +177,9 @@ static bool ns_unsupported_vsock_transport_churn;
 #define VS_CONNECT_TIMEO_US		(50ULL * 1000ULL)
 #define VS_DRAIN_CAP			8U
 #define VS_UNSHARE_VARIANT_PCT		25U
+#define VS_SEQ_EOM_GATE			8U
+#define VS_SEQ_EOM_BURST_MIN		4U
+#define VS_SEQ_EOM_BURST_RANGE		5U	/* 4..8 inclusive */
 
 static long long ns_since(const struct timespec *t0)
 {
@@ -414,6 +421,114 @@ static void iter_one_in_fresh_netns(const struct timespec *t_outer)
 	close(anchor);
 }
 
+/* Sub-mode: drive the VIRTIO_VSOCK_SEQ_EOM unbounded-queue path with a
+ * burst of 0-length frames flagged MSG_EOR on a SEQPACKET socket (or a
+ * STREAM fallback on kernels that reject SOCK_SEQPACKET on AF_VSOCK).
+ * Pre-fix, the receive side enqueued every empty EOM packet on the rx
+ * queue without bounds, since recv-side accounting only credited
+ * payload bytes; a sender could pin arbitrary memory by spamming empty
+ * EOM frames.  Upstream 059b7dbd20a6 ("vsock: drop 0-length
+ * VIRTIO_VSOCK_SEQ_EOM frames") drops them at the transport layer.
+ *
+ * All I/O is MSG_DONTWAIT so the burst respects the SIGALRM(1s) cap.
+ * EBADF / EINVAL / ENOTCONN bumps the skipped counter and returns
+ * cleanly rather than aborting the whole sub-mode. */
+static void iter_seq_eom_burst(const struct timespec *t_outer)
+{
+	int listener = -1;
+	int cli = -1;
+	int srv = -1;
+	struct sockaddr_vm addr;
+	socklen_t slen = sizeof(addr);
+	unsigned int burst, i;
+
+	__atomic_add_fetch(&shm->stats.vsock_seq_eom_runs, 1, __ATOMIC_RELAXED);
+
+	if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS) {
+		__atomic_add_fetch(&shm->stats.vsock_seq_eom_skipped, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	}
+
+	listener = socket(AF_VSOCK, SOCK_SEQPACKET, 0);
+	if (listener < 0)
+		listener = socket(AF_VSOCK, SOCK_STREAM, 0);
+	if (listener < 0) {
+		__atomic_add_fetch(&shm->stats.vsock_seq_eom_skipped, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	}
+
+	memset(&addr, 0, sizeof(addr));
+	addr.svm_family = AF_VSOCK;
+	addr.svm_cid = VMADDR_CID_LOCAL;
+	addr.svm_port = VMADDR_PORT_ANY;
+
+	if (bind(listener, (struct sockaddr *)&addr, sizeof(addr)) < 0 ||
+	    getsockname(listener, (struct sockaddr *)&addr, &slen) < 0 ||
+	    listen(listener, 4) < 0) {
+		__atomic_add_fetch(&shm->stats.vsock_seq_eom_skipped, 1,
+				   __ATOMIC_RELAXED);
+		goto out;
+	}
+
+	cli = socket(AF_VSOCK, SOCK_SEQPACKET, 0);
+	if (cli < 0)
+		cli = socket(AF_VSOCK, SOCK_STREAM, 0);
+	if (cli < 0) {
+		__atomic_add_fetch(&shm->stats.vsock_seq_eom_skipped, 1,
+				   __ATOMIC_RELAXED);
+		goto out;
+	}
+	apply_timeouts(cli);
+
+	if (connect(cli, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+		__atomic_add_fetch(&shm->stats.vsock_seq_eom_skipped, 1,
+				   __ATOMIC_RELAXED);
+		goto out;
+	}
+
+	srv = accept(listener, NULL, NULL);
+	if (srv >= 0)
+		apply_timeouts(srv);
+
+	burst = VS_SEQ_EOM_BURST_MIN + (rand() % VS_SEQ_EOM_BURST_RANGE);
+	for (i = 0; i < burst; i++) {
+		struct iovec iov;
+		struct msghdr mh;
+		ssize_t r;
+
+		if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
+			break;
+
+		iov.iov_base = NULL;
+		iov.iov_len = 0;
+		memset(&mh, 0, sizeof(mh));
+		mh.msg_iov = &iov;
+		mh.msg_iovlen = 1;
+
+		r = sendmsg(cli, &mh, MSG_EOR | MSG_NOSIGNAL | MSG_DONTWAIT);
+		if (r >= 0) {
+			__atomic_add_fetch(&shm->stats.vsock_seq_eom_sends_ok,
+					   1, __ATOMIC_RELAXED);
+		} else {
+			__atomic_add_fetch(&shm->stats.vsock_seq_eom_sends_failed,
+					   1, __ATOMIC_RELAXED);
+			if (errno == EBADF || errno == EINVAL ||
+			    errno == ENOTCONN || errno == EPIPE)
+				break;
+		}
+	}
+
+out:
+	if (cli >= 0)
+		close(cli);
+	if (srv >= 0)
+		close(srv);
+	if (listener >= 0)
+		close(listener);
+}
+
 bool vsock_transport_churn(struct childdata *child)
 {
 	struct timespec t_outer;
@@ -454,6 +569,9 @@ bool vsock_transport_churn(struct childdata *child)
 
 		if (ns_unsupported_vsock_transport_churn)
 			break;
+
+		if (ONE_IN(VS_SEQ_EOM_GATE))
+			iter_seq_eom_burst(&t_outer);
 	}
 
 	return true;
