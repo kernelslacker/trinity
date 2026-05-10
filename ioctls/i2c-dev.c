@@ -8,6 +8,7 @@
  * standard DEV_CHAR + devs[] match path applies; no fd_test needed.
  */
 
+#include <limits.h>
 #include <linux/ioctl.h>
 #include <linux/i2c-dev.h>
 #include <linux/i2c.h>
@@ -113,6 +114,27 @@ static void build_smbus(struct syscallrecord *rec)
 		 * block[I2C_SMBUS_BLOCK_MAX + 2] payload. */
 		for (i = 0; i < sizeof(*data); i++)
 			((unsigned char *) data)[i] = rand();
+
+		/* For block-style transactions, force block[0] (the length
+		 * byte the kernel reads to size the copy) to a boundary
+		 * value around I2C_SMBUS_BLOCK_MAX (32): the empty path,
+		 * off-by-one minimal, the maximum legal length, the first
+		 * overflow, and a worst-case heavy OOB. block[1..] stays
+		 * random so the OOB-read paths still see varied content. */
+		switch (s->size) {
+		case I2C_SMBUS_BLOCK_DATA:
+		case I2C_SMBUS_I2C_BLOCK_DATA:
+		case I2C_SMBUS_I2C_BLOCK_BROKEN:
+		case I2C_SMBUS_BLOCK_PROC_CALL: {
+			static const unsigned char block_lens[] = {
+				0, 1, 32, 33, 255,
+			};
+			data->block[0] = block_lens[rand() % ARRAY_SIZE(block_lens)];
+			break;
+		}
+		default:
+			break;
+		}
 	}
 }
 
@@ -142,10 +164,23 @@ static void i2cdev_sanitise(const struct ioctl_group *grp,
 		rec->a3 = rand() & 0xff;
 		break;
 
-	case I2C_TIMEOUT:
-		/* Units of 10ms. Keep it modest. */
-		rec->a3 = rand() & 0xff;
+	case I2C_TIMEOUT: {
+		/* Units of 10ms; the kernel multiplies by 10 internally,
+		 * so the interesting failure modes cluster around the
+		 * INT_MAX/10 boundary where that multiply overflows, plus
+		 * the trivial 0/1 ends and the unsigned wrap at UINT_MAX. */
+		static const unsigned long timeout_vals[] = {
+			0,
+			1,
+			(unsigned long)(INT_MAX / 10) - 1,
+			(unsigned long)(INT_MAX / 10),
+			(unsigned long)(INT_MAX / 10) + 1,
+			(unsigned long)INT_MAX,
+			(unsigned long)UINT_MAX,
+		};
+		rec->a3 = timeout_vals[rand() % ARRAY_SIZE(timeout_vals)];
 		break;
+	}
 
 	case I2C_FUNCS:
 		/* Output: pointer to unsigned long. */
