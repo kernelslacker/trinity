@@ -137,5 +137,6 @@ struct syscallentry syscall_modify_ldt = {
 	.arg_params[0].list = ARGLIST(modify_ldt_funcs),
 	.sanitise = sanitise_modify_ldt,
 	.post = post_modify_ldt,
+	.rettype = RET_BORING,
 };
 #endif

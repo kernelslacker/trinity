@@ -70,5 +70,6 @@ struct syscallentry syscall_s390_sthyi = {
 	.argname = { [0] = "function_code", [1] = "resp_buffer", [2] = "return_code", [3] = "resp_buffer" },
 	.arg_params[0].list = ARGLIST(syscall_s390_sthyi_arg1),
 	.arg_params[3].range.low = 0,
-	.arg_params[3].range.hi = 128
+	.arg_params[3].range.hi = 128,
+	.rettype = RET_ZERO_SUCCESS,
 };
