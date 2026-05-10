@@ -1201,6 +1201,13 @@ struct stats_s {
 	unsigned long mptcp_setsockopt_master_fail;		/* setsockopt() on master mptcp socket failed */
 	unsigned long mptcp_getsockopt_verify_ok;		/* getsockopt() readback matched the value just set */
 	unsigned long mptcp_getsockopt_verify_drift;		/* getsockopt() readback diverged from set value */
+	unsigned long mptcp_sockopt_sweep_runs;			/* sockopt-inheritance sweep sub-mode invocations */
+	unsigned long mptcp_sockopt_set_ok;			/* sweep: setsockopt() on master mptcp socket succeeded */
+	unsigned long mptcp_sockopt_set_failed;			/* sweep: setsockopt() on master mptcp socket failed */
+	unsigned long mptcp_sockopt_subflow_added;		/* sweep: MPTCP_INFO num_subflows bumped after ADD_ADDR */
+	unsigned long mptcp_sockopt_readback_ok;		/* sweep: post-subflow getsockopt() returned the option */
+	unsigned long mptcp_sockopt_inherit_mismatch;		/* sweep: master readback != value set (70ece9d7021c bug-signal) */
+	unsigned long mptcp_sockopt_unsupported_latched;	/* sweep: opt latched out after EOPNOTSUPP/ENOPROTOOPT */
 
 	/* devlink_port_churn childop counters */
 	unsigned long devlink_port_churn_iterations;		/* per-loop iteration completed */

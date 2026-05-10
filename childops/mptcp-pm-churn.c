@@ -461,6 +461,156 @@ static const struct mptcp_sf_optspec mptcp_sf_opts[] = {
 	{ "TCP_DEFER_ACCEPT",	TCP_DEFER_ACCEPT,	genval_defer },
 };
 
+/* Local shims so the sweep sub-mode below compiles on sysroots whose
+ * <netinet/tcp.h> / <linux/mptcp.h> predate these constants.  Values
+ * match the kernel UAPI; same defines live in include/compat.h. */
+#ifndef SOL_MPTCP
+#define SOL_MPTCP	284
+#endif
+#ifndef MPTCP_INFO
+#define MPTCP_INFO	1
+#endif
+
+/*
+ * Curated sweep table for the sockopt-inheritance sub-mode below.
+ * Each entry is a TCP-level option that mptcp_setsockopt_all_sf()
+ * propagates from the master to every existing AND future subflow.
+ * Upstream commit 70ece9d7021c restored a missing sockopt_seq_inc()
+ * in that path: without it, subflows added AFTER a master setsockopt
+ * silently inherited the pre-set value.  Wider value ranges than the
+ * sibling all_sf_recipe — this sweep is specifically poking the
+ * inheritance edge, not the value-validation edge.
+ */
+static int sweep_genval_u32(void)	{ return (int)rand32(); }
+static int sweep_genval_syncnt(void)	{ return 1 + (int)(rand32() % 127U); }
+static int sweep_genval_keepidle_w(void){ return 1 + (int)(rand32() % 32767U); }
+static int sweep_genval_keepintvl_w(void){ return 1 + (int)(rand32() % 32767U); }
+static int sweep_genval_keepcnt_w(void)	{ return 1 + (int)(rand32() % 127U); }
+static int sweep_genval_maxseg_w(void)	{ return 88 + (int)(rand32() % (32767U - 88U)); }
+
+static const struct mptcp_sf_optspec mptcp_sf_sweep_opts[] = {
+	{ "TCP_MAXSEG",		TCP_MAXSEG,		sweep_genval_maxseg_w },
+	{ "TCP_NODELAY",	TCP_NODELAY,		genval_bool },
+	{ "TCP_CORK",		TCP_CORK,		genval_bool },
+	{ "TCP_KEEPIDLE",	TCP_KEEPIDLE,		sweep_genval_keepidle_w },
+	{ "TCP_KEEPINTVL",	TCP_KEEPINTVL,		sweep_genval_keepintvl_w },
+	{ "TCP_KEEPCNT",	TCP_KEEPCNT,		sweep_genval_keepcnt_w },
+	{ "TCP_USER_TIMEOUT",	TCP_USER_TIMEOUT,	sweep_genval_u32 },
+	{ "TCP_SYNCNT",		TCP_SYNCNT,		sweep_genval_syncnt },
+	{ "TCP_LINGER2",	TCP_LINGER2,		sweep_genval_u32 },
+	{ "TCP_NOTSENT_LOWAT",	TCP_NOTSENT_LOWAT,	sweep_genval_u32 },
+	{ "TCP_DEFER_ACCEPT",	TCP_DEFER_ACCEPT,	sweep_genval_u32 },
+	{ "TCP_QUICKACK",	TCP_QUICKACK,		genval_bool },
+	{ "TCP_FASTOPEN_CONNECT", TCP_FASTOPEN_CONNECT,	genval_bool },
+};
+
+/* Per-opt unsupported-latch bitmap.  When the master's setsockopt
+ * returns EOPNOTSUPP/ENOPROTOOPT, that opt is dropped from the
+ * rotation for the rest of the process — the kernel's MPTCP build
+ * gating won't change mid-run.  Sized for ARRAY_SIZE(...) ≤ 32. */
+static unsigned int sweep_unsupported_mask;
+
+/*
+ * Read MPTCP_INFO and return num_subflows (mptcpi_subflows is the
+ * first byte of struct mptcp_info, stable since the option was
+ * introduced).  Returns 0 on any error path so the bump-detect loop
+ * just keeps polling — child.c's SIGALRM(1s) is the outer cap.
+ */
+static unsigned int sweep_get_subflow_count(int sk)
+{
+	unsigned char buf[256];
+	socklen_t len = sizeof(buf);
+
+	memset(buf, 0, sizeof(buf));
+	if (getsockopt(sk, SOL_MPTCP, MPTCP_INFO, buf, &len) < 0)
+		return 0;
+	if (len < 1)
+		return 0;
+	return buf[0];
+}
+
+/*
+ * Sockopt-inheritance sweep.  Order matters: setsockopt FIRST on the
+ * live MPTCP master, then ADD_ADDR via the existing PM machinery so
+ * the kernel MP_JOINs to the new endpoint AFTER the option is in
+ * place.  Bounded poll on MPTCP_INFO num_subflows confirms the new
+ * subflow actually came up before we readback.  A readback drift on
+ * the master is the bug-signal counter — collected, not asserted;
+ * upstream 70ece9d7021c is the fix shape.
+ */
+static void mptcp_sockopt_inheritance_sweep(int cli, int genl_fd)
+{
+	const struct mptcp_sf_optspec *spec;
+	unsigned int idx = 0, tries;
+	unsigned int n_before, n_after;
+	int set_val, get_val = 0;
+	socklen_t glen;
+	__u8 loc_id;
+	__u32 addr_h;
+	const unsigned int n_opts = ARRAY_SIZE(mptcp_sf_sweep_opts);
+	const unsigned int all_mask = (n_opts >= 32U) ? ~0U
+					: ((1U << n_opts) - 1U);
+
+	__atomic_add_fetch(&shm->stats.mptcp_sockopt_sweep_runs,
+			   1, __ATOMIC_RELAXED);
+
+	if (sweep_unsupported_mask == all_mask)
+		return;
+
+	for (tries = 0; tries < n_opts * 2U; tries++) {
+		idx = (unsigned int)(rand32() % n_opts);
+		if (!(sweep_unsupported_mask & (1U << idx)))
+			break;
+	}
+	if (sweep_unsupported_mask & (1U << idx))
+		return;
+
+	spec = &mptcp_sf_sweep_opts[idx];
+	set_val = spec->genval();
+
+	n_before = sweep_get_subflow_count(cli);
+
+	if (setsockopt(cli, IPPROTO_TCP, spec->optname,
+		       &set_val, sizeof(set_val)) < 0) {
+		if (errno == EOPNOTSUPP || errno == ENOPROTOOPT) {
+			sweep_unsupported_mask |= (1U << idx);
+			__atomic_add_fetch(&shm->stats.mptcp_sockopt_unsupported_latched,
+					   1, __ATOMIC_RELAXED);
+		}
+		__atomic_add_fetch(&shm->stats.mptcp_sockopt_set_failed,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+	__atomic_add_fetch(&shm->stats.mptcp_sockopt_set_ok,
+			   1, __ATOMIC_RELAXED);
+
+	loc_id = 1U + (__u8)(rand32() % MPTCP_PM_LOC_ID_MAX);
+	addr_h = MPTCP_PM_LOOPBACK_BASE + (rand32() % NR_MPTCP_LOOPBACK_ADDRS);
+	(void)mptcp_pm_addr_cmd(genl_fd, MPTCP_PM_CMD_ADD_ADDR,
+				loc_id, addr_h);
+
+	n_after = n_before;
+	for (tries = 0; tries < 8U; tries++) {
+		n_after = sweep_get_subflow_count(cli);
+		if (n_after > n_before)
+			break;
+		sched_yield();
+	}
+	if (n_after > n_before)
+		__atomic_add_fetch(&shm->stats.mptcp_sockopt_subflow_added,
+				   1, __ATOMIC_RELAXED);
+
+	glen = sizeof(get_val);
+	if (getsockopt(cli, IPPROTO_TCP, spec->optname,
+		       &get_val, &glen) == 0 && glen == sizeof(get_val)) {
+		__atomic_add_fetch(&shm->stats.mptcp_sockopt_readback_ok,
+				   1, __ATOMIC_RELAXED);
+		if (get_val != set_val)
+			__atomic_add_fetch(&shm->stats.mptcp_sockopt_inherit_mismatch,
+					   1, __ATOMIC_RELAXED);
+	}
+}
+
 /*
  * Per-iteration recipe targeting the setsockopt_all_sf seq window:
  *   1. open a fresh master IPPROTO_MPTCP socket (separate from the
@@ -724,6 +874,17 @@ bool mptcp_pm_churn(struct childdata *child)
 		 *    sub-modes, drives the path 70ece9d7021c fixed. */
 		if (ONE_IN(8))
 			mptcp_setsockopt_all_sf_recipe(genl_fd);
+
+		/* h) Sockopt-inheritance sweep on the live master.  Walks
+		 *    a curated TCP_* table, sets one opt, drives ADD_ADDR
+		 *    to spawn a subflow AFTER the option is in place, then
+		 *    polls MPTCP_INFO until num_subflows bumps and reads
+		 *    the option back.  A drift bumps the bug-signal
+		 *    counter (70ece9d7021c).  Higher cadence than the
+		 *    fresh-socket recipe above — reusing the established
+		 *    connection is much cheaper. */
+		if (ONE_IN(4))
+			mptcp_sockopt_inheritance_sweep(cli, genl_fd);
 
 		/* Walk loc_id forward bounded to [1, MPTCP_PM_LOC_ID_MAX].
 		 * The kernel rejects loc_id > 127 with EINVAL so capping

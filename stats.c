@@ -723,7 +723,7 @@ static void dump_stats_json(void)
 		"\"xfrm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_updated\":%lu,\"sa_deleted\":%lu,\"pol_added\":%lu,\"pol_deleted\":%lu,\"esp_sent\":%lu,\"pfkey_send_ok\":%lu,\"ah_esn_setup_ok\":%lu,\"ah_esn_setup_fail\":%lu,\"ah_esn_async_runs\":%lu,\"ah_esn_delsa_races\":%lu},"
 		"\"bpf_cgroup_attach\":{\"runs\":%lu,\"setup_failed\":%lu,\"prog_loaded\":%lu,\"attached\":%lu,\"attach_rejected\":%lu,\"packets_sent\":%lu,\"detached\":%lu,\"post_detach_sent\":%lu},"
 		"\"sctp_assoc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bindx_added\":%lu,\"bindx_removed\":%lu,\"bindx_rejected\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"accepted\":%lu,\"packets_sent\":%lu,\"peeled_off\":%lu,\"peeloff_rejected\":%lu,\"cycles\":%lu},"
-		"\"mptcp_pm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sock_mptcp_ok\":%lu,\"addr_added_ok\":%lu,\"addr_removed_ok\":%lu,\"send_ok\":%lu,\"setsockopt_unsupported\":%lu,\"setsockopt_master_set\":%lu,\"setsockopt_master_fail\":%lu,\"getsockopt_verify_ok\":%lu,\"getsockopt_verify_drift\":%lu},"
+		"\"mptcp_pm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sock_mptcp_ok\":%lu,\"addr_added_ok\":%lu,\"addr_removed_ok\":%lu,\"send_ok\":%lu,\"setsockopt_unsupported\":%lu,\"setsockopt_master_set\":%lu,\"setsockopt_master_fail\":%lu,\"getsockopt_verify_ok\":%lu,\"getsockopt_verify_drift\":%lu,\"sockopt_sweep_runs\":%lu,\"sockopt_set_ok\":%lu,\"sockopt_set_failed\":%lu,\"sockopt_subflow_added\":%lu,\"sockopt_readback_ok\":%lu,\"sockopt_inherit_mismatch\":%lu,\"sockopt_unsupported_latched\":%lu},"
 		"\"devlink_port_churn\":{\"iterations\":%lu,\"split_ok\":%lu,\"split_fail\":%lu,\"reload_ok\":%lu,\"reload_fail\":%lu,\"create_skipped\":%lu},"
 		"\"handshake_req_abort\":{\"runs\":%lu,\"setup_failed\":%lu,\"accept_ok\":%lu,\"done_ok\":%lu,\"abort_ok\":%lu,\"orphan_close\":%lu},"
 		"\"nf_conntrack_helper_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_helper\":%lu,\"attach_ok\":%lu,\"attach_fail\":%lu,\"exp_ok\":%lu,\"packet_sent\":%lu,\"delete_ok\":%lu,\"zone_swap\":%lu,\"detach_ok\":%lu},"
@@ -1141,6 +1141,13 @@ static void dump_stats_json(void)
 		shm->stats.mptcp_setsockopt_master_fail,
 		shm->stats.mptcp_getsockopt_verify_ok,
 		shm->stats.mptcp_getsockopt_verify_drift,
+		shm->stats.mptcp_sockopt_sweep_runs,
+		shm->stats.mptcp_sockopt_set_ok,
+		shm->stats.mptcp_sockopt_set_failed,
+		shm->stats.mptcp_sockopt_subflow_added,
+		shm->stats.mptcp_sockopt_readback_ok,
+		shm->stats.mptcp_sockopt_inherit_mismatch,
+		shm->stats.mptcp_sockopt_unsupported_latched,
 		shm->stats.devlink_port_churn_iterations,
 		shm->stats.devlink_port_churn_split_ok,
 		shm->stats.devlink_port_churn_split_fail,
@@ -3159,6 +3166,13 @@ void dump_stats(void)
 		stat_row("mptcp_pm_churn", "setsockopt_master_fail",   shm->stats.mptcp_setsockopt_master_fail);
 		stat_row("mptcp_pm_churn", "getsockopt_verify_ok",     shm->stats.mptcp_getsockopt_verify_ok);
 		stat_row("mptcp_pm_churn", "getsockopt_verify_drift",  shm->stats.mptcp_getsockopt_verify_drift);
+		stat_row("mptcp_pm_churn", "sockopt_sweep_runs",       shm->stats.mptcp_sockopt_sweep_runs);
+		stat_row("mptcp_pm_churn", "sockopt_set_ok",           shm->stats.mptcp_sockopt_set_ok);
+		stat_row("mptcp_pm_churn", "sockopt_set_failed",       shm->stats.mptcp_sockopt_set_failed);
+		stat_row("mptcp_pm_churn", "sockopt_subflow_added",    shm->stats.mptcp_sockopt_subflow_added);
+		stat_row("mptcp_pm_churn", "sockopt_readback_ok",      shm->stats.mptcp_sockopt_readback_ok);
+		stat_row("mptcp_pm_churn", "sockopt_inherit_mismatch", shm->stats.mptcp_sockopt_inherit_mismatch);
+		stat_row("mptcp_pm_churn", "sockopt_unsupported_latched", shm->stats.mptcp_sockopt_unsupported_latched);
 	}
 
 	if (shm->stats.devlink_port_churn_iterations ||
