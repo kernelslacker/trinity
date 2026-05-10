@@ -957,7 +957,7 @@ static void check_fd_leaks(struct childdata *child)
  * Enable the dormant ops one at a time once each has been load-tested.
  * To enable an op: set its entry below to 0.
  */
-static const int dormant_op_disabled[84] = {
+static const int dormant_op_disabled[85] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 0, 1,	/* 10-14: fault_injector active; dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, recipe_runner */
@@ -985,6 +985,7 @@ static const int dormant_op_disabled[84] = {
 	1,		/* 81: dormant: ipmr_cache_report */
 	1,		/* 82: dormant: ublk_lifecycle */
 	1,		/* 83: dormant: veth_asymmetric_xdp */
+	1,		/* 84: dormant: ip6erspan_netns_migrate */
 };
 
 /*
@@ -1154,6 +1155,7 @@ static const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_IPMR_CACHE_REPORT:	return "ipmr_cache_report";
 	case CHILD_OP_UBLK_LIFECYCLE:	return "ublk_lifecycle";
 	case CHILD_OP_VETH_ASYMMETRIC_XDP:	return "veth_asymmetric_xdp";
+	case CHILD_OP_IP6ERSPAN_NETNS_MIGRATE:	return "ip6erspan_netns_migrate";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1208,7 +1210,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[84] = {
+static const enum child_op_type pick_op_type_table[85] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -1293,6 +1295,7 @@ static const enum child_op_type pick_op_type_table[84] = {
 	[81] = CHILD_OP_IPMR_CACHE_REPORT,
 	[82] = CHILD_OP_UBLK_LIFECYCLE,
 	[83] = CHILD_OP_VETH_ASYMMETRIC_XDP,
+	[84] = CHILD_OP_IP6ERSPAN_NETNS_MIGRATE,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1548,6 +1551,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_IPMR_CACHE_REPORT]	= ipmr_cache_report,
 	[CHILD_OP_UBLK_LIFECYCLE]	= ublk_lifecycle,
 	[CHILD_OP_VETH_ASYMMETRIC_XDP]	= veth_asymmetric_xdp,
+	[CHILD_OP_IP6ERSPAN_NETNS_MIGRATE]	= ip6erspan_netns_migrate,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
