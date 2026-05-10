@@ -749,7 +749,8 @@ static void dump_stats_json(void)
 		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
 		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
 		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu},"
-		"\"ipv6_ndisc_proxy\":{\"runs\":%lu,\"ns_sent_ok\":%lu,\"setup_failed\":%lu,\"proxy_enable_ok\":%lu}"
+		"\"ipv6_ndisc_proxy\":{\"runs\":%lu,\"ns_sent_ok\":%lu,\"setup_failed\":%lu,\"proxy_enable_ok\":%lu},"
+		"\"ipfrag_source_churn\":{\"runs\":%lu,\"packets_sent_ok\":%lu,\"send_failed\":%lu,\"unique_srcs\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1347,7 +1348,11 @@ static void dump_stats_json(void)
 		shm->stats.ipv6_ndisc_proxy_runs,
 		shm->stats.ipv6_ndisc_proxy_ns_sent_ok,
 		shm->stats.ipv6_ndisc_proxy_setup_failed,
-		shm->stats.ipv6_ndisc_proxy_proxy_enable_ok);
+		shm->stats.ipv6_ndisc_proxy_proxy_enable_ok,
+		shm->stats.ipfrag_source_runs,
+		shm->stats.ipfrag_packets_sent_ok,
+		shm->stats.ipfrag_send_failed,
+		shm->stats.ipfrag_unique_srcs);
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -3307,6 +3312,13 @@ void dump_stats(void)
 		stat_row("ipv6_ndisc_proxy", "ns_sent_ok",      shm->stats.ipv6_ndisc_proxy_ns_sent_ok);
 		stat_row("ipv6_ndisc_proxy", "setup_failed",    shm->stats.ipv6_ndisc_proxy_setup_failed);
 		stat_row("ipv6_ndisc_proxy", "proxy_enable_ok", shm->stats.ipv6_ndisc_proxy_proxy_enable_ok);
+	}
+
+	if (shm->stats.ipfrag_source_runs) {
+		stat_row("ipfrag_source_churn", "runs",            shm->stats.ipfrag_source_runs);
+		stat_row("ipfrag_source_churn", "packets_sent_ok", shm->stats.ipfrag_packets_sent_ok);
+		stat_row("ipfrag_source_churn", "send_failed",     shm->stats.ipfrag_send_failed);
+		stat_row("ipfrag_source_churn", "unique_srcs",     shm->stats.ipfrag_unique_srcs);
 	}
 
 	if (shm->stats.afxdp_churn_runs) {
