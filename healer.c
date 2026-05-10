@@ -57,8 +57,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <setjmp.h>
-#include <signal.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -2321,34 +2319,7 @@ static bool healer_kernel_supports[MAX_NR_SYSCALL];
 static bool healer_probe_done;
 static unsigned int healer_probe_supported;
 static unsigned int healer_probe_enosys;
-static unsigned int healer_probe_blocked;
 static unsigned int healer_probe_skiplist;
-
-/*
- * Per-probe siglongjmp checkpoint and SIGALRM handler.  A static name-only
- * denylist can never be exhaustive: dozens of syscalls block indefinitely
- * when called with all-zero args (select / pselect6 / poll / ppoll /
- * epoll_wait / epoll_pwait / pause with no timeout, read / recv / accept
- * with the kernel willing to wait, wait4 / waitpid / waitid with no
- * children, nanosleep / clock_nanosleep with a long ts, semop /
- * mq_timed{send,receive} / futex(WAIT) with no timeout, ...).  Bound each
- * probe call with alarm(1) and siglongjmp out of the SIGALRM handler so
- * the probe gives up after a second instead of wedging trinity startup
- * forever.
- *
- * siglongjmp from a signal handler is async-signal-safe per POSIX; the
- * probe runs once in the parent before any child fork, so the
- * "longjmp from a glibc-internal lock" hazard that motivates the child
- * handler's set-flag-only design (see signals.c sigalrm_handler) does
- * not apply here -- the parent isn't fuzzing, just issuing one syscall
- * per iteration with no allocator traffic in between.
- */
-static sigjmp_buf healer_probe_jmpbuf;
-
-static void healer_probe_sigalrm(__unused__ int sig)
-{
-	siglongjmp(healer_probe_jmpbuf, 1);
-}
 
 /*
  * True when the syscall must NOT be probed because invoking it -- even
@@ -2461,35 +2432,13 @@ static void healer_probe_table(const struct syscalltable *tbl, unsigned int n)
 			continue;
 		}
 
-		if (sigsetjmp(healer_probe_jmpbuf, 1) == 0) {
-			int err;
-
-			errno = 0;
-			(void)alarm(1);
-			(void)syscall((long)nr, 0L, 0L, 0L, 0L, 0L, 0L);
-			err = errno;
-			(void)alarm(0);
-			if (err == ENOSYS) {
-				healer_probe_enosys++;
-			} else {
-				healer_kernel_supports[nr] = true;
-				healer_probe_supported++;
-			}
+		errno = 0;
+		(void)syscall((long)nr, 0L, 0L, 0L, 0L, 0L, 0L);
+		if (errno == ENOSYS) {
+			healer_probe_enosys++;
 		} else {
-			/* alarm(1) fired before the syscall returned, i.e.
-			 * the call blocked > 1s on its zero-arg form (select
-			 * / poll / wait / recv / nanosleep / futex(WAIT) /
-			 * ...).  Cancel any leftover timer and treat the
-			 * syscall as supported -- a blocking implementation
-			 * is by definition present in this kernel, and a
-			 * false positive (pair entries kept against a
-			 * syscall we can't probe cleanly) is bounded and far
-			 * cheaper than a false negative would be (every pair
-			 * touching this NR silently dropped from the seed
-			 * walk). */
-			(void)alarm(0);
 			healer_kernel_supports[nr] = true;
-			healer_probe_blocked++;
+			healer_probe_supported++;
 		}
 	}
 }
@@ -2503,25 +2452,9 @@ static void healer_probe_table(const struct syscalltable *tbl, unsigned int n)
  */
 static void healer_run_enosys_probe(void)
 {
-	struct sigaction probe_sa, prev_sa;
-
 	if (healer_probe_done == true)
 		return;
 	healer_probe_done = true;
-
-	/* setup_main_signals() installs SIGALRM = SIG_IGN in the parent so
-	 * children fuzzing rt_sigqueueinfo / pidfd_send_signal / timer_*
-	 * with sigev_signo == SIGALRM can't kill the parent.  That means an
-	 * alarm() the probe fires below would not actually interrupt the
-	 * blocking syscall it's meant to bound.  Install a probe-local
-	 * SIGALRM handler that siglongjmps back to the per-iteration
-	 * sigsetjmp checkpoint, then restore the prior disposition (whatever
-	 * it was -- SIG_IGN here, or SIG_DFL if the probe ever runs before
-	 * setup_main_signals) at the end so we don't disturb the caller. */
-	sigemptyset(&probe_sa.sa_mask);
-	probe_sa.sa_flags = 0;
-	probe_sa.sa_handler = healer_probe_sigalrm;
-	(void)sigaction(SIGALRM, &probe_sa, &prev_sa);
 
 	if (biarch == true) {
 		if (do_64_arch == true)
@@ -2534,13 +2467,9 @@ static void healer_run_enosys_probe(void)
 		healer_probe_table(syscalls, max_nr_syscalls);
 	}
 
-	(void)alarm(0);
-	(void)sigaction(SIGALRM, &prev_sa, NULL);
-
-	stats_log_write("HEALER probe: %u syscalls supported, %u ENOSYS, %u blocked-skip, %u denylist-skip\n",
+	stats_log_write("HEALER probe: %u syscalls supported, %u ENOSYS, %u skip-list\n",
 			healer_probe_supported,
 			healer_probe_enosys,
-			healer_probe_blocked,
 			healer_probe_skiplist);
 }
 
