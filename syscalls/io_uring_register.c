@@ -53,6 +53,15 @@
 #ifndef IORING_REGISTER_USE_REGISTERED_RING
 #define IORING_REGISTER_USE_REGISTERED_RING	(1U << 31)
 #endif
+#ifndef IORING_OP_MSG_RING
+#define IORING_OP_MSG_RING			40
+#endif
+
+/*
+ * IO_URING_BPF_CMD_FILTER: cmd_type selector inside struct io_uring_bpf.
+ * No system-header sentinel #define; mirror the value here.
+ */
+#define TRINITY_IO_URING_BPF_CMD_FILTER	1
 
 /*
  * Local mirrors of the FILE_ALLOC_RANGE / CLOCK opcode argument structs.
@@ -134,6 +143,47 @@ struct trinity_io_uring_clone_buffers {
 	__u32	dst_off;
 	__u32	nr;
 	__u32	pad[3];
+};
+
+/*
+ * Trinity-private mirrors for the blind-fd register opcode arg structs:
+ * io_uring_restriction / io_uring_task_restriction (RESTRICTIONS task path)
+ * and io_uring_bpf / io_uring_bpf_filter (BPF_FILTER task path).  Same
+ * rationale as the other private mirrors here -- no per-struct sentinel
+ * #define exists to test via #ifndef, so layout-only mirrors keep the
+ * file building against any uapi header vintage trinity supports.
+ */
+struct trinity_io_uring_restriction {
+	__u16	opcode;
+	__u8	op;
+	__u8	resv;
+	__u32	resv2[3];
+};
+
+struct trinity_io_uring_task_restriction {
+	__u16	flags;
+	__u16	nr_res;
+	__u32	resv[3];
+	struct trinity_io_uring_restriction restrictions[];
+};
+
+struct trinity_io_uring_bpf_filter {
+	__u32	opcode;
+	__u32	flags;
+	__u32	filter_len;
+	__u8	pdu_size;
+	__u8	resv[3];
+	__u64	filter_ptr;
+	__u64	resv2[5];
+};
+
+struct trinity_io_uring_bpf {
+	__u16	cmd_type;
+	__u16	cmd_flags;
+	__u32	resv;
+	union {
+		struct trinity_io_uring_bpf_filter filter;
+	};
 };
 
 /*
@@ -308,6 +358,29 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	ring = get_io_uring_ring();
 	if (ring != NULL)
 		rec->a1 = ring->fd;
+
+	/*
+	 * 15% of the time, override into the kernel's blind fd == -1
+	 * registration path (io_uring_register_blind).  Three opcodes are
+	 * only reachable that way: SEND_MSG_RING, RESTRICTIONS (task-scoped
+	 * via io_register_restrictions_task), BPF_FILTER (task-scoped via
+	 * io_register_bpf_filter_task).  QUERY is also a blind opcode but
+	 * is reachable via the real-fd path too, so it isn't in the pool.
+	 * The override only fires when the real-fd path was actually in
+	 * play (ring != NULL); the remaining 85% keep the existing
+	 * real-fd dispatch intact.  Done as a re-roll after
+	 * pick_io_uring_register_opcode() returns rather than a new picker
+	 * entry so the override stays decoupled from the picker tables.
+	 */
+	if (ring != NULL && (rand() % 100) < 15) {
+		static const unsigned long blind_opcodes[] = {
+			IORING_REGISTER_SEND_MSG_RING,
+			IORING_REGISTER_RESTRICTIONS,
+			IORING_REGISTER_BPF_FILTER,
+		};
+		rec->a1 = (unsigned long) -1U;
+		rec->a2 = blind_opcodes[rand() % ARRAY_SIZE(blind_opcodes)];
+	}
 
 	opcode = rec->a2;
 
@@ -594,6 +667,80 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 			}
 		}
 		rec->a3 = (unsigned long) s;
+		rec->a4 = 1;
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_SEND_MSG_RING (blind, fd == -1 only): arg = struct
+	 * io_uring_sqe with opcode = IORING_OP_MSG_RING, nr_args = 1.  The
+	 * handler (io_uring_register_send_msg_ring) reads the SQE and
+	 * dispatches as if it were an MSG_RING op via io_uring_sync_msg_ring
+	 * -- otherwise it returns -EINVAL early on opcode mismatch.  flags
+	 * must be 0 or the same -EINVAL gate fires.
+	 */
+	case IORING_REGISTER_SEND_MSG_RING: {
+		struct io_uring_sqe *sqe;
+		sqe = (struct io_uring_sqe *) get_writable_struct(sizeof(*sqe));
+		if (sqe) {
+			memset(sqe, 0, sizeof(*sqe));
+			sqe->opcode = IORING_OP_MSG_RING;
+		}
+		rec->a3 = (unsigned long) sqe;
+		rec->a4 = 1;
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_RESTRICTIONS (task-scoped via the blind fd == -1
+	 * path): arg = struct io_uring_task_restriction with a flex-array of
+	 * struct io_uring_restriction[nr_res], nr_args = 1.  flags must be 0
+	 * and the resv slot must be all-zero or io_register_restrictions_task
+	 * bails at -EINVAL.  Allocate room for a small nr_res so
+	 * io_parse_restrictions actually iterates the array; zeroed entries
+	 * still walk the parser.  The real-fd RESTRICTIONS path takes a flat
+	 * array shape and reaches this case too -- a zeroed io_uring_task_-
+	 * restriction overlays cleanly onto a single zero io_uring_restriction
+	 * (both paths read sane payloads from the same buffer).
+	 */
+	case IORING_REGISTER_RESTRICTIONS: {
+		struct trinity_io_uring_task_restriction *tr;
+		unsigned int nr_res = rand() % 4;
+		size_t sz = sizeof(*tr) +
+			nr_res * sizeof(struct trinity_io_uring_restriction);
+		tr = (struct trinity_io_uring_task_restriction *)
+			get_writable_struct(sz);
+		if (tr) {
+			memset(tr, 0, sz);
+			tr->nr_res = nr_res;
+		}
+		rec->a3 = (unsigned long) tr;
+		rec->a4 = 1;
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_BPF_FILTER (task-scoped via the blind fd == -1
+	 * path): arg = struct io_uring_bpf with cmd_type =
+	 * IO_URING_BPF_CMD_FILTER and an embedded io_uring_bpf_filter,
+	 * nr_args = 1.  CAP_SYS_ADMIN gates the path unless task_no_new_-
+	 * privs is set; trinity may not satisfy either, but the EACCES
+	 * reject still exercises the gate.  filter_ptr left NULL --
+	 * bpf_prog_create_from_user EFAULTs past it, exercising the early
+	 * io_bpf_filter_import validators (cmd_type/flags/opcode/filter_len
+	 * checks) before the copy.
+	 */
+	case IORING_REGISTER_BPF_FILTER: {
+		struct trinity_io_uring_bpf *bp;
+		bp = (struct trinity_io_uring_bpf *)
+			get_writable_struct(sizeof(*bp));
+		if (bp) {
+			memset(bp, 0, sizeof(*bp));
+			bp->cmd_type = TRINITY_IO_URING_BPF_CMD_FILTER;
+			bp->filter.opcode = rand() % IORING_OP_LAST;
+			bp->filter.filter_len = rand() % 8;
+		}
+		rec->a3 = (unsigned long) bp;
 		rec->a4 = 1;
 		break;
 	}
