@@ -117,6 +117,8 @@ void do_uid0_check(void)
 void check_uid(void)
 {
 	uid_t myuid;
+	uid_t overflowuid = 65534;
+	FILE *fp;
 
 	/* If we were root, then obviously setuid() will change us, so don't even check. */
 	if (orig_uid == 0)
@@ -136,27 +138,40 @@ void check_uid(void)
 
 changed:
 		/* unshare() can change us to /proc/sys/kernel/overflowuid */
-		{
-			uid_t overflowuid = 65534;
-			FILE *fp = fopen("/proc/sys/kernel/overflowuid", "r");
-			if (fp) {
-				if (fscanf(fp, "%u", &overflowuid) != 1)
-					overflowuid = 65534;
-				fclose(fp);
-			}
-			if (myuid == overflowuid)
-				return;
+		fp = fopen("/proc/sys/kernel/overflowuid", "r");
+		if (fp) {
+			if (fscanf(fp, "%u", &overflowuid) != 1)
+				overflowuid = 65534;
+			fclose(fp);
+		}
+		if (myuid == overflowuid)
+			return;
+
+		/* uid drifted to root: this is the ONLY case that's actually
+		 * dangerous -- subsequent fuzz syscalls would run with root
+		 * privileges and could damage the host.  Hard bail. */
+		if (myuid == 0) {
+			output(0, "uid changed to ROOT! Was: %u, now %u -- bailing for safety\n",
+				orig_uid, myuid);
+
+			/* Release-store the offending uid before panic() writes
+			 * exit_reason, so a reader who observes
+			 * exit_reason==EXIT_UID_CHANGED is guaranteed to see
+			 * uid_at_exit too. */
+			__atomic_store_n(&shm->uid_at_exit, myuid, __ATOMIC_RELEASE);
+
+			panic(EXIT_UID_CHANGED);
+			_exit(EXIT_UID_CHANGED);
 		}
 
-		output(0, "uid changed! Was: %u, now %u\n", orig_uid, myuid);
-
-		/* Release-store the offending uid before panic() writes
-		 * exit_reason, so a reader who observes
-		 * exit_reason==EXIT_UID_CHANGED is guaranteed to see
-		 * uid_at_exit too. */
-		__atomic_store_n(&shm->uid_at_exit, myuid, __ATOMIC_RELEASE);
-
-		panic(EXIT_UID_CHANGED);
-		_exit(EXIT_UID_CHANGED);
+		/* Any other drift: log + bump counter + continue.  Most often
+		 * this is a fuzzed setresuid/setreuid/setfsuid succeeding
+		 * inside an unshared user namespace -- interesting coverage,
+		 * not a danger.  Verbose-only because at high fuzz rates this
+		 * can fire frequently. */
+		output(1, "uid changed (continuing): was %u, now %u (overflowuid=%u)\n",
+			orig_uid, myuid, overflowuid);
+		__atomic_fetch_add(&shm->stats.uid_change_logged, 1, __ATOMIC_RELAXED);
+		return;
 	}
 }
