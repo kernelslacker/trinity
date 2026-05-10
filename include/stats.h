@@ -1289,7 +1289,15 @@ struct stats_s {
 	unsigned long veth_asym_unsupported;			/* veth or XDP latched off (separate latches inside the op) */
 	unsigned long veth_asym_pair_ok;			/* RTM_NEWLINK created an asymmetric-queue veth pair */
 	unsigned long veth_asym_xdp_attach_ok;			/* RTM_NEWLINK + IFLA_XDP attached the prog (SKB mode) */
-	unsigned long veth_asym_send_ok;			/* AF_PACKET sendto to peer veth returned >0 */
+	unsigned long veth_asym_send_ok;
+
+	/* ip6erspan_netns_migrate childop counters */
+	unsigned long inm_iters;				/* total ip6erspan_netns_migrate invocations */
+	unsigned long inm_eperm;				/* unshare/NEWLINK rejected with EPERM */
+	unsigned long inm_unsupported;				/* per-kind ENOENT/EAFNOSUPPORT/EPROTONOSUPPORT/EOPNOTSUPP at create */
+	unsigned long inm_link_create_ok;			/* RTM_NEWLINK created the link in the original ns */
+	unsigned long inm_netns_migrate_ok;			/* RTM_SETLINK IFLA_NET_NS_FD moved the link to the sibling ns */
+	unsigned long inm_changelink_ok;			/* RTM_NEWLINK NLM_F_REPLACE in target ns walked ->changelink */			/* AF_PACKET sendto to peer veth returned >0 */
 
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
