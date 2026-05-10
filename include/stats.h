@@ -1052,6 +1052,10 @@ struct stats_s {
 	unsigned long nftables_churn_immediate_expr_emit;	/* NEWRULE carried a structured nft_immediate expression */
 	unsigned long nftables_churn_dynset_expr_emit;	/* NEWRULE carried a structured nft_dynset expression */
 	unsigned long nftables_churn_ct_expr_emit;	/* NEWRULE carried a structured nft_ct expression */
+	unsigned long nft_compat_validate_install_ok;		/* (target, hook) chain+rule accepted */
+	unsigned long nft_compat_validate_install_fail;		/* (target, hook) chain+rule rejected (non-unsupported) */
+	unsigned long nft_compat_validate_unsupported;		/* EOPNOTSUPP/EPROTONOSUPPORT (compat target absent) */
+	unsigned long nft_compat_validate_per_hook_pairs;	/* (target, hook) pair install attempts */
 
 	/* tc_qdisc_churn childop counters */
 	unsigned long tc_qdisc_churn_runs;		/* total tc_qdisc_churn invocations */
