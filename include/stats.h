@@ -1626,6 +1626,13 @@ struct stats_s {
 	unsigned long sock_diag_walker_packet;		/* packet_diag_req variant dispatched */
 	unsigned long sock_diag_walker_vsock;		/* vsock_diag_req variant dispatched */
 
+	/* altname_thrash childop counters */
+	unsigned long altname_thrash_invocations;	/* total altname_thrash invocations */
+	unsigned long altname_thrash_unshare_failed;	/* unshare(CLONE_NEWNET) failed (latched) */
+	unsigned long altname_thrash_addprop_done;	/* RTM_NEWLINKPROP IFLA_PROP_LIST accepted */
+	unsigned long altname_thrash_delprop_done;	/* RTM_DELLINKPROP IFLA_PROP_LIST accepted */
+	unsigned long altname_thrash_getlink_done;	/* RTM_GETLINK targeted with RTEXT_FILTER_VF accepted */
+
 	/*
 	 * HEALER Phase A observer counters -- see include/healer.h.
 	 * All four are bumped from healer_observe_relation() / the periodic

@@ -173,6 +173,7 @@ enum child_op_type {
 	CHILD_OP_PAGECACHE_CANARY_CHECK,
 	CHILD_OP_MPLS_ROUTE_CHURN,
 	CHILD_OP_SOCK_DIAG_WALKER,
+	CHILD_OP_ALTNAME_THRASH,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -550,3 +551,4 @@ bool iouring_cmd_passthrough(struct childdata *child);
 bool pagecache_canary_check(struct childdata *child);
 bool mpls_route_churn(struct childdata *child);
 bool sock_diag_walker(struct childdata *child);
+bool altname_thrash(struct childdata *child);
