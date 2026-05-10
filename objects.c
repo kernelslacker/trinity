@@ -638,8 +638,82 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	struct object **array_snap = head->array;
 	unsigned int gen_snap = __atomic_load_n(&head->array_generation,
 						__ATOMIC_ACQUIRE);
+	/*
+	 * Snapshot head->array_capacity alongside n / array_snap / gen_snap.
+	 * Every capacity-bound decision below (the entry stomp-bound bail,
+	 * the OBJ_GLOBAL "global array full" reject, the OBJ_LOCAL grow
+	 * trigger and grow-loop arithmetic) routes through cap_snap so a
+	 * sibling value-result write that scribbles head->array_capacity
+	 * between two re-loads cannot let n=K pass a "K > cap_load_A"
+	 * check at one site and then fail to trigger a grow at a later
+	 * "K >= cap_load_B" check because a different load saw a stomped
+	 * larger value.  Without this snapshot a joint stomp of
+	 * (num_entries, array_capacity) to mutually-consistent large values
+	 * passes the entry n>cap bail (cap_load_A also large), passes the
+	 * OBJ_LOCAL grow trigger n>=cap (cap_load_B also large), and lands
+	 * array_snap[n] = obj 153+ slots past the original 16-slot
+	 * allocation -- the heap-buffer-overflow ASAN caught in add_object
+	 * via post_eventfd_create.  Closes the last objhead field that was
+	 * still being read fresh from shm at every use; mirrors the
+	 * snapshot regimes added for num_entries (1ca419778f42), array
+	 * (5f3851f029d8) and array_generation (58e9d01ac4d2).  The OBJ_LOCAL
+	 * grow branch refreshes cap_snap to the post-grow newcap below
+	 * alongside the existing array_snap / gen_snap refresh.
+	 */
+	unsigned int cap_snap = head->array_capacity;
 
-	if (n > head->array_capacity) {
+	/*
+	 * Reject snapshots whose head->array pointer is itself shape-
+	 * unhealthy (sub-page / non-canonical / misaligned).  NULL is the
+	 * legitimate first-add state -- head->array is only allocated by
+	 * the OBJ_LOCAL grow branch below or init_object_lists() for
+	 * OBJ_GLOBAL -- so skip the shape check on NULL.  Any non-NULL
+	 * value that fails is_corrupt_ptr_shape() came from a wild stomp
+	 * that hit head->array; fall through to the same release_obj +
+	 * counter bump path the entry-time num_entries guard uses so the
+	 * failure mode collapses onto one shape.
+	 */
+	if (array_snap != NULL && is_corrupt_ptr_shape(array_snap)) {
+		outputerr("add_object: stomped head->array type=%u array=%p num_entries=%u capacity=%u\n",
+			  type, array_snap, n, cap_snap);
+		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted, 1,
+				   __ATOMIC_RELAXED);
+		if (is_fd_type(type)) {
+			int fd = fd_from_object(obj, type);
+			if (fd >= 0)
+				close(fd);
+		}
+		release_obj(obj, scope, type);
+		goto out_unlock;
+	}
+
+	/*
+	 * Reject snapshots whose array_capacity is past the OBJHEAD_SANE_
+	 * LIMIT ceiling objhead_looks_sane() already uses for the dump
+	 * path.  A snapshot above this is a smoking-gun wild stomp -- no
+	 * legitimate grow can produce a capacity here (OBJ_GLOBAL is hard-
+	 * capped at GLOBAL_OBJ_MAX_CAPACITY=1024, OBJ_LOCAL working sets
+	 * stay well below 64K) -- and acting on it lets the joint
+	 * (num_entries, array_capacity) stomp described above slip through
+	 * the capacity-routed checks because cap_snap was already poisoned
+	 * at snapshot time.  Same release_obj + counter path as the other
+	 * snapshot-rejection sites.
+	 */
+	if (cap_snap > OBJHEAD_SANE_LIMIT) {
+		outputerr("add_object: stomped capacity type=%u capacity=%u num_entries=%u\n",
+			  type, cap_snap, n);
+		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted, 1,
+				   __ATOMIC_RELAXED);
+		if (is_fd_type(type)) {
+			int fd = fd_from_object(obj, type);
+			if (fd >= 0)
+				close(fd);
+		}
+		release_obj(obj, scope, type);
+		goto out_unlock;
+	}
+
+	if (n > cap_snap) {
 		/* Wild-stomp defence — refuse to act on a snapshot that was already
 		 * out-of-bounds at the moment we read it.  The grow loop's UINT_MAX/2
 		 * guard would eventually catch this, but bail earlier so we don't
@@ -648,7 +722,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		 * versioned()'s OBJ_LOCAL branch and the OBJ_GLOBAL guard at the
 		 * grow check just below this line. */
 		outputerr("add_object: stomped num_entries type=%u num_entries=%u capacity=%u\n",
-			  type, n, head->array_capacity);
+			  type, n, cap_snap);
 		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted, 1,
 				   __ATOMIC_RELAXED);
 		if (is_fd_type(type)) {
@@ -664,9 +738,9 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	 * memory by init_object_lists().  Never realloc — just reject
 	 * if we've hit the fixed capacity. */
 	if (scope == OBJ_GLOBAL) {
-		if (n >= head->array_capacity) {
+		if (n >= cap_snap) {
 			outputerr("add_object: global array full for type %u "
-				  "(cap %u)\n", type, head->array_capacity);
+				  "(cap %u)\n", type, cap_snap);
 			if (is_fd_type(type)) {
 				int fd = fd_from_object(obj, type);
 				if (fd >= 0)
@@ -675,7 +749,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			release_obj(obj, scope, type);
 			goto out_unlock;
 		}
-	} else if (n >= head->array_capacity) {
+	} else if (n >= cap_snap) {
 		/*
 		 * Local objects: grow on the private heap.
 		 *
@@ -721,9 +795,9 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		 * release_obj if a further double would overflow unsigned
 		 * int rather than letting the OOB land.
 		 */
-		if (head->array_capacity > UINT_MAX / 2) {
+		if (cap_snap > UINT_MAX / 2) {
 			outputerr("add_object: cap overflow type=%u num_entries=%u capacity=%u\n",
-				  type, n, head->array_capacity);
+				  type, n, cap_snap);
 			if (is_fd_type(type)) {
 				int fd = fd_from_object(obj, type);
 				if (fd >= 0)
@@ -732,11 +806,11 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			release_obj(obj, scope, type);
 			return;
 		}
-		newcap = head->array_capacity ? head->array_capacity * 2 : 16;
+		newcap = cap_snap ? cap_snap * 2 : 16;
 		while (newcap <= n) {
 			if (newcap > UINT_MAX / 2) {
 				outputerr("add_object: cap overflow type=%u num_entries=%u capacity=%u\n",
-					  type, n, head->array_capacity);
+					  type, n, cap_snap);
 				if (is_fd_type(type)) {
 					int fd = fd_from_object(obj, type);
 					if (fd >= 0)
@@ -759,7 +833,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			release_obj(obj, scope, type);
 			return;
 		}
-		oldcap = head->array_capacity;
+		oldcap = cap_snap;
 		oldarray = head->array;
 		if (oldarray != NULL && oldcap > 0)
 			memcpy(newarray, oldarray,
@@ -795,6 +869,18 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		array_snap = head->array;
 		gen_snap = __atomic_load_n(&head->array_generation,
 					   __ATOMIC_ACQUIRE);
+		/*
+		 * Refresh cap_snap to the post-grow capacity for the same
+		 * reason array_snap and gen_snap are refreshed above: the
+		 * pre-write re-check below compares cap_snap against
+		 * head->array_capacity to catch a sibling stomp landing
+		 * between the entry snapshot and the slot store, and the
+		 * legitimate grow we just performed bumped capacity itself.
+		 * Use newcap rather than re-reading head->array_capacity so
+		 * the refresh window stays closed on a sibling stomp landing
+		 * between the publish at line ~768 and here.
+		 */
+		cap_snap = newcap;
 		if (oldarray != NULL)
 			deferred_free_enqueue(oldarray, free);
 	}
@@ -834,9 +920,38 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	{
 		unsigned int gen_now = __atomic_load_n(&head->array_generation,
 						       __ATOMIC_ACQUIRE);
+		unsigned int cap_now;
+
 		if (gen_now != gen_snap) {
 			outputerr("add_object: stomped array_generation type=%u gen_snap=%u gen_now=%u\n",
 				  type, gen_snap, gen_now);
+			__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
+					   1, __ATOMIC_RELAXED);
+			if (is_fd_type(type)) {
+				int fd = fd_from_object(obj, type);
+				if (fd >= 0)
+					close(fd);
+			}
+			release_obj(obj, scope, type);
+			goto out_unlock;
+		}
+		/*
+		 * Pair with the cap_snap entry-snapshot above: re-check
+		 * head->array_capacity hasn't been scribbled between the
+		 * snapshot (or its post-grow refresh) and the slot store.
+		 * The gen re-check just above catches a stomp that touched
+		 * head->array_generation; a sibling value-result write that
+		 * landed in the same shm vicinity but missed the gen field
+		 * and only stomped array_capacity is caught here.  array_snap
+		 * was sized for cap_snap slots; if the live capacity now
+		 * disagrees, the snapshot we are about to deref no longer
+		 * matches the array's true bound and the store at
+		 * array_snap[n] = obj is no longer provably in-bounds.
+		 */
+		cap_now = head->array_capacity;
+		if (cap_now != cap_snap) {
+			outputerr("add_object: stomped array_capacity type=%u cap_snap=%u cap_now=%u num_entries=%u\n",
+				  type, cap_snap, cap_now, n);
 			__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
 					   1, __ATOMIC_RELAXED);
 			if (is_fd_type(type)) {

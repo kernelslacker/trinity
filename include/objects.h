@@ -400,6 +400,19 @@ struct objhead {
 #define GLOBAL_OBJ_MAX_CAPACITY	1024
 
 /*
+ * Upper bound for any objhead counter we treat as plausible.  Picked well
+ * above any legitimate working set (OBJ_GLOBAL is hard-capped at
+ * GLOBAL_OBJ_MAX_CAPACITY, OBJ_LOCAL working sets observed in the fleet
+ * never exceed a few hundred entries) and well below the 32-bit wrap
+ * window the grow path's UINT_MAX/2 guards work against.  A snapshot of
+ * num_entries / max_entries / array_capacity past this is a smoking-gun
+ * wild stomp and any caller that observes one should reject the snapshot
+ * rather than act on it.  Used by objhead_looks_sane() in debug.c and the
+ * snapshot-validation guards in add_object().
+ */
+#define OBJHEAD_SANE_LIMIT	(1U << 16)
+
+/*
  * Iterate the parallel array of an objhead.
  *
  * Walks head->array[0..num_entries) and yields each non-NULL slot as

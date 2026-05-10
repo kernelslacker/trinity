@@ -164,10 +164,10 @@ void dump_syscallrec(struct syscallrecord *rec)
  * struct we're handed is by definition untrustworthy.  Refuse to call
  * head->dump (a function pointer) unless the surrounding counters
  * pass a basic sanity check; otherwise we crash dereferencing junk
- * while trying to *report* the corruption.
+ * while trying to *report* the corruption.  OBJHEAD_SANE_LIMIT is
+ * defined in include/objects.h so add_object() can share the same
+ * ceiling for its snapshot-time wild-stomp rejects.
  */
-#define OBJHEAD_SANE_LIMIT	(1U << 16)
-
 static bool objhead_looks_sane(const struct objhead *head)
 {
 	if (head->num_entries > OBJHEAD_SANE_LIMIT)
