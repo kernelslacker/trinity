@@ -637,6 +637,62 @@
 #define NFT_QUOTA_F_INV			(1 << 0)
 #endif
 
+/* nft_objref NFTA_OBJREF_* attribute IDs and the NFT_OBJECT_* type
+ * constants the IMM-mode validator dispatches on.  The validator in
+ * net/netfilter/nft_objref.c selects between two ops via
+ * nft_objref_select_ops(): IMM mode requires NFTA_OBJREF_IMM_NAME
+ * (NLA_STRING, NFT_OBJ_MAXNAMELEN-1 bounded) plus NFTA_OBJREF_IMM_TYPE
+ * (NLA_U32, must match a registered NFT_OBJECT_* family); SET mode
+ * requires NFTA_OBJREF_SET_SREG plus one of NFTA_OBJREF_SET_NAME or
+ * NFTA_OBJREF_SET_ID.  Each symbol is guarded individually so the build
+ * still works on older host headers that predate any subset. */
+#ifndef NFTA_OBJREF_IMM_TYPE
+#define NFTA_OBJREF_IMM_TYPE		1
+#endif
+#ifndef NFTA_OBJREF_IMM_NAME
+#define NFTA_OBJREF_IMM_NAME		2
+#endif
+#ifndef NFTA_OBJREF_SET_SREG
+#define NFTA_OBJREF_SET_SREG		3
+#endif
+#ifndef NFTA_OBJREF_SET_NAME
+#define NFTA_OBJREF_SET_NAME		4
+#endif
+#ifndef NFTA_OBJREF_SET_ID
+#define NFTA_OBJREF_SET_ID		5
+#endif
+
+#ifndef NFT_OBJECT_COUNTER
+#define NFT_OBJECT_COUNTER		1
+#endif
+#ifndef NFT_OBJECT_QUOTA
+#define NFT_OBJECT_QUOTA		2
+#endif
+#ifndef NFT_OBJECT_CT_HELPER
+#define NFT_OBJECT_CT_HELPER		3
+#endif
+#ifndef NFT_OBJECT_LIMIT
+#define NFT_OBJECT_LIMIT		4
+#endif
+#ifndef NFT_OBJECT_CONNLIMIT
+#define NFT_OBJECT_CONNLIMIT		5
+#endif
+#ifndef NFT_OBJECT_TUNNEL
+#define NFT_OBJECT_TUNNEL		6
+#endif
+#ifndef NFT_OBJECT_CT_TIMEOUT
+#define NFT_OBJECT_CT_TIMEOUT		7
+#endif
+#ifndef NFT_OBJECT_SECMARK
+#define NFT_OBJECT_SECMARK		8
+#endif
+#ifndef NFT_OBJECT_CT_EXPECT
+#define NFT_OBJECT_CT_EXPECT		9
+#endif
+#ifndef NFT_OBJECT_SYNPROXY
+#define NFT_OBJECT_SYNPROXY		10
+#endif
+
 /* nft_limit NFTA_LIMIT_* attribute IDs plus the NFT_LIMIT_PKTS /
  * NFT_LIMIT_PKT_BYTES type selectors and the NFT_LIMIT_F_INV flag.  The
  * validator in net/netfilter/nft_limit.c (nft_limit_init) reads the
@@ -2705,6 +2761,126 @@ static size_t build_nft_quota_expr(unsigned char *buf, size_t off, size_t cap)
 		}
 		off = nla_put_be64(buf, off, cap, NFTA_QUOTA_CONSUMED,
 				   consumed);
+		if (!off)
+			return 0;
+	}
+
+	expr_data = (struct nlattr *)(buf + expr_data_off);
+	expr_data->nla_len = (unsigned short)(off - expr_data_off);
+	elem = (struct nlattr *)(buf + elem_off);
+	elem->nla_len = (unsigned short)(off - elem_off);
+	return off;
+}
+
+/*
+ * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_objref
+ * expression into buf at off, returning the new offset (or 0 on
+ * overflow).  nft_objref references a previously-registered named
+ * object (counter, quota, ct helper, ...) and the expression has two
+ * operating modes selected by net/netfilter/nft_objref.c
+ * (nft_objref_select_ops): IMM mode dispatches to nft_objref_init,
+ * SET mode dispatches to nft_objref_map_init.
+ *
+ * IMM mode emits NFTA_OBJREF_IMM_NAME (NLA_STRING, bounded by
+ * NFT_OBJ_MAXNAMELEN-1) and NFTA_OBJREF_IMM_TYPE (NLA_U32, must match a
+ * registered NFT_OBJECT_* family).  The kernel's nft_objref_init runs
+ * the policy check first, then calls nft_obj_lookup() — names that
+ * miss the lookup return -ENOENT but the NLA validation path
+ * (string-length bound, type range) has already executed end-to-end.
+ *
+ * SET mode emits NFTA_OBJREF_SET_SREG (NLA_U32, validated by
+ * nft_parse_register_load against the bound set's klen) plus
+ * NFTA_OBJREF_SET_NAME and/or NFTA_OBJREF_SET_ID — the kernel accepts
+ * either or both, the lookup uses NAME-then-ID resolution.  Garbage
+ * names hit nft_set_lookup_global and bounce out cheaply, again after
+ * the policy check has run.  Reaches both nft_objref_init and
+ * nft_objref_map_init parser paths under random rolls.
+ *
+ * Variants per call:
+ *   - IMM-vs-SET coin-flip so each emit splits roughly 50/50 between
+ *     the two select_ops branches.
+ *   - IMM-mode TYPE rolls uniformly across the 9 in-tree NFT_OBJECT_*
+ *     constants {COUNTER, QUOTA, CT_HELPER, LIMIT, CONNLIMIT, TUNNEL,
+ *     CT_TIMEOUT, SECMARK, CT_EXPECT, SYNPROXY} so the type-range
+ *     validation in nft_objref_init sees the full accepted range
+ *     (and SYNPROXY exercises the family/hooks gate in
+ *     nft_objref_validate_obj_type).
+ *   - IMM-mode NAME picks from a small short-name pool — names will
+ *     usually miss nft_obj_lookup but the pool keeps the bounded
+ *     NLA_STRING test working at expected lengths.
+ *   - SET-mode SREG picks NFT_REG_1..NFT_REG_4.
+ *   - SET-mode emits NAME and/or ID under coin flips so all three
+ *     legal {NAME-only, ID-only, NAME+ID} combinations are reached.
+ */
+static size_t build_nft_objref_expr(unsigned char *buf, size_t off,
+				    size_t cap)
+{
+	static const __u32 obj_types[] = {
+		NFT_OBJECT_COUNTER,	NFT_OBJECT_QUOTA,
+		NFT_OBJECT_CT_HELPER,	NFT_OBJECT_LIMIT,
+		NFT_OBJECT_CONNLIMIT,	NFT_OBJECT_TUNNEL,
+		NFT_OBJECT_CT_TIMEOUT,	NFT_OBJECT_SECMARK,
+		NFT_OBJECT_CT_EXPECT,	NFT_OBJECT_SYNPROXY,
+	};
+	static const char * const obj_names[] = {
+		"c1", "q1", "l1", "h1", "ct1", "tun1", "sm1", "sp1",
+	};
+	static const __u32 regs[] = {
+		NFT_REG_1, NFT_REG_2, NFT_REG_3, NFT_REG_4,
+	};
+	struct nlattr *elem, *expr_data;
+	size_t elem_off, expr_data_off;
+	bool set_mode = ONE_IN(2);
+
+	elem_off = off;
+	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	off = nla_put_str(buf, off, cap, NFTA_EXPR_NAME, "objref");
+	if (!off)
+		return 0;
+
+	expr_data_off = off;
+	off = nla_put(buf, off, cap, NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
+	if (!off)
+		return 0;
+
+	if (set_mode) {
+		__u32 sreg = regs[rand32() % ARRAY_SIZE(regs)];
+		bool with_name = ONE_IN(2);
+		bool with_id = with_name ? ONE_IN(2) : true;
+
+		off = nla_put_be32(buf, off, cap,
+				   NFTA_OBJREF_SET_SREG, sreg);
+		if (!off)
+			return 0;
+		if (with_name) {
+			const char *nm =
+				obj_names[rand32() % ARRAY_SIZE(obj_names)];
+
+			off = nla_put_str(buf, off, cap,
+					  NFTA_OBJREF_SET_NAME, nm);
+			if (!off)
+				return 0;
+		}
+		if (with_id) {
+			off = nla_put_be32(buf, off, cap,
+					   NFTA_OBJREF_SET_ID, rand32());
+			if (!off)
+				return 0;
+		}
+	} else {
+		const char *nm =
+			obj_names[rand32() % ARRAY_SIZE(obj_names)];
+		__u32 type = obj_types[rand32() % ARRAY_SIZE(obj_types)];
+
+		off = nla_put_str(buf, off, cap,
+				  NFTA_OBJREF_IMM_NAME, nm);
+		if (!off)
+			return 0;
+		off = nla_put_be32(buf, off, cap,
+				   NFTA_OBJREF_IMM_TYPE, type);
 		if (!off)
 			return 0;
 	}
@@ -5147,6 +5323,7 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 			 bool with_queue,
 			 bool with_immediate,
 			 bool with_dynset, bool with_ct,
+			 bool with_objref,
 			 const char *set_name, __u32 set_id)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
@@ -5377,6 +5554,12 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 
 	if (with_ct) {
 		off = build_nft_ct_expr(buf, off, sizeof(buf));
+		if (!off)
+			return -EIO;
+	}
+
+	if (with_objref) {
+		off = build_nft_objref_expr(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -5613,6 +5796,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
+		bool with_objref = ONE_IN(3);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 0, with_payload,
@@ -5638,6 +5822,7 @@ bool nftables_churn(struct childdata *child)
 				  with_queue,
 				  with_immediate,
 				  with_dynset, with_ct,
+				  with_objref,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
 					   1, __ATOMIC_RELAXED);
@@ -5831,6 +6016,7 @@ bool nftables_churn(struct childdata *child)
 		bool with_immediate = ONE_IN(3);
 		bool with_dynset = ONE_IN(3);
 		bool with_ct = ONE_IN(3);
+		bool with_objref = ONE_IN(3);
 
 		if (build_newrule(nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 1, with_payload,
@@ -5856,6 +6042,7 @@ bool nftables_churn(struct childdata *child)
 				  with_queue,
 				  with_immediate,
 				  with_dynset, with_ct,
+				  with_objref,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
 					   1, __ATOMIC_RELAXED);
