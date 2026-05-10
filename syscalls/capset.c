@@ -5,7 +5,8 @@
  * On error, -1 is returned, and errno is set appropriately.
  */
 #include <linux/capability.h>
-#include <sys/time.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #include "deferred-free.h"
 #include "random.h"
 #include "shm.h"
@@ -100,7 +101,14 @@ static void sanitise_capset(struct syscallrecord *rec)
  * settimeofday(NULL, NULL) is the chosen probe: the kernel runs the
  * CAP_SYS_TIME LSM hook unconditionally before doing anything, so with
  * the cap it returns 0 and without it returns -EPERM.  No side effects
- * either way.
+ * either way.  We invoke the syscall directly via syscall(2) rather than
+ * the libc wrapper because glibc's settimeofday() compiles to a path
+ * that, when tz is NULL, falls through to imul $0x3e8, 0x8(%rdi) without
+ * first checking tv -- so settimeofday(NULL, NULL) SIGSEGVs in libc
+ * before reaching the syscall boundary.  The kernel itself handles a
+ * NULL tv/tz pair safely (security_settime64() runs first, returns
+ * -EPERM without touching the args), so the direct syscall preserves
+ * the no-side-effect probe semantic.
  *
  * We can only check the drop direction because Trinity isn't root and
  * never had the cap to begin with — gain checks would always show
@@ -159,7 +167,7 @@ static void post_capset(struct syscallrecord *rec)
 	if ((data[0].effective & (1u << CAP_SYS_TIME)) != 0)
 		goto out_free;
 
-	if (settimeofday(NULL, NULL) == 0) {
+	if (syscall(SYS_settimeofday, NULL, NULL) == 0) {
 		output(0, "cred oracle: capset cleared CAP_SYS_TIME from effective "
 		       "set but settimeofday(NULL, NULL) succeeded\n");
 		__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
