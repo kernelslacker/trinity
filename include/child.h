@@ -189,6 +189,7 @@ enum child_op_type {
 	CHILD_OP_ATM_VCC_CHURN,
 	CHILD_OP_IP6GRE_BOND_LAPB_STACK,
 	CHILD_OP_FLOWTABLE_ENCAP_VLAN,
+	CHILD_OP_IPV6_PMTU_TEARDOWN_RACE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -632,3 +633,4 @@ bool bridge_conntrack_churn(struct childdata *child);
 bool atm_vcc_churn(struct childdata *child);
 bool ip6gre_bond_lapb_stack(struct childdata *child);
 bool flowtable_encap_vlan(struct childdata *child);
+bool ipv6_pmtu_teardown_race(struct childdata *child);

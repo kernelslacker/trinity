@@ -978,7 +978,7 @@ static void check_fd_leaks(struct childdata *child)
  * Enable the dormant ops one at a time once each has been load-tested.
  * To enable an op: set its entry below to 0.
  */
-static const int dormant_op_disabled[96] = {
+static const int dormant_op_disabled[97] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 0, 1,	/* 10-14: fault_injector active; dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, recipe_runner */
@@ -1018,6 +1018,7 @@ static const int dormant_op_disabled[96] = {
 	1,		/* 93: dormant: atm_vcc_churn */
 	1,		/* 94: dormant: ip6gre_bond_lapb_stack */
 	1,		/* 95: dormant: flowtable_encap_vlan */
+	1,		/* 96: dormant: ipv6_pmtu_teardown_race */
 };
 
 /*
@@ -1199,6 +1200,7 @@ static const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_ATM_VCC_CHURN:	return "atm_vcc_churn";
 	case CHILD_OP_IP6GRE_BOND_LAPB_STACK:	return "ip6gre_bond_lapb_stack";
 	case CHILD_OP_FLOWTABLE_ENCAP_VLAN:	return "flowtable_encap_vlan";
+	case CHILD_OP_IPV6_PMTU_TEARDOWN_RACE:	return "ipv6_pmtu_teardown_race";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1253,7 +1255,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[96] = {
+static const enum child_op_type pick_op_type_table[97] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -1350,6 +1352,7 @@ static const enum child_op_type pick_op_type_table[96] = {
 	[93] = CHILD_OP_ATM_VCC_CHURN,
 	[94] = CHILD_OP_IP6GRE_BOND_LAPB_STACK,
 	[95] = CHILD_OP_FLOWTABLE_ENCAP_VLAN,
+	[96] = CHILD_OP_IPV6_PMTU_TEARDOWN_RACE,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1617,6 +1620,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_ATM_VCC_CHURN]	= atm_vcc_churn,
 	[CHILD_OP_IP6GRE_BOND_LAPB_STACK]	= ip6gre_bond_lapb_stack,
 	[CHILD_OP_FLOWTABLE_ENCAP_VLAN]	= flowtable_encap_vlan,
+	[CHILD_OP_IPV6_PMTU_TEARDOWN_RACE]	= ipv6_pmtu_teardown_race,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
