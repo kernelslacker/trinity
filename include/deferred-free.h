@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 /*
  * Deferred-free queue for syscall argument allocations.
  *
@@ -27,6 +29,17 @@ void deferred_free_init(void);
  * NULL is silently ignored.
  */
 void deferred_alloc_track(void *ptr);
+
+/*
+ * Non-consuming probe: returns true if @ptr was returned by a recent
+ * __zmalloc() and still sits in the alloc-track ring.  Lets readers
+ * that hold a stored pointer (e.g. an object-pool slot) validate it
+ * against the live malloc-result set BEFORE the first deref, without
+ * perturbing the consume-on-free invariant deferred_free_enqueue
+ * relies on.  Returns false if the pointer was never tracked, was
+ * already consumed, or was evicted by ring rollover.
+ */
+bool alloc_track_lookup(void *ptr);
 
 /*
  * Enqueue a pointer for deferred freeing.  free_func is called when
