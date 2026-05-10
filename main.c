@@ -243,7 +243,7 @@ static void reap_dead_kids(void)
 			 * already cleared by some earlier path but the
 			 * kernel hadn't released the task struct yet.
 			 * Nothing more to do; kernel side is now clean. */
-			output(0, "reap_dead_kids: reaped untracked pid %d (status 0x%x)\n",
+			output(1, "reap_dead_kids: reaped untracked pid %d (status 0x%x)\n",
 				wpid, childstatus);
 		}
 		reaped++;
@@ -271,7 +271,7 @@ static void reap_dead_kids(void)
 	}
 
 	if (reaped != 0)
-		output(0, "Reaped %d dead children\n", reaped);
+		output(1, "Reaped %d dead children\n", reaped);
 }
 
 static void kill_all_kids(void)
