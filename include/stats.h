@@ -1424,6 +1424,18 @@ struct stats_s {
 	 * (sockets, fd providers, keyctl, futex). */
 	unsigned long maps_uaf_caught;
 
+	/* Per-call abort counter for random_map_readfn().  Bumped each time
+	 * the per-page memcpy in one of the read walks (read_one_page,
+	 * read_whole_mapping, read_every_other_page, read_mapping_reverse,
+	 * read_random_pages, read_last_page) takes a SIGBUS or SIGSEGV
+	 * inside the sigsetjmp-guarded section and the walk siglongjmps out
+	 * cleanly instead of killing the child.  Non-zero values surface
+	 * the live truncate / hole-punch / MADV_REMOVE race rate against
+	 * file-backed mmaps and the sibling-munmap rate against anon
+	 * mappings — both are TOCTOU windows the local-snapshot+fstat clamp
+	 * narrows but cannot fully close. */
+	unsigned long read_walk_aborted;
+
 	/* Shared obj-heap pressure counters: cumulative successful allocs
 	 * and frees through alloc_shared_obj() / free_shared_obj().  Read
 	 * by dump_stats() under -v to print a one-line utilisation summary
