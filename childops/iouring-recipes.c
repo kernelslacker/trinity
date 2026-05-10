@@ -2561,6 +2561,139 @@ static bool recipe_waitid(struct iour_recipe_state *s, bool *unsupported)
 	return true;
 }
 
+/* ------------------------------------------------------------------ *
+ * Recipe: registered eventfd + recursive completion exerciser
+ *
+ * IORING_REGISTER_EVENTFD installs an eventfd as the ring's CQE
+ * notification target.  Submitting an SQE that reads from that same
+ * registered eventfd creates a feedback path: each CQE posted by the
+ * read signals the registered eventfd, incrementing its counter, which
+ * wakes the next pending read SQE, which on completion posts another
+ * CQE — and so on.  Upstream commit 04fe9aeb4f3c fixed a bug class
+ * where this path could stick / recurse on the wakeup signal when many
+ * CQEs landed in quick succession.
+ *
+ * The recipe registers the eventfd against the ring (50% async via
+ * IORING_REGISTER_EVENTFD_ASYNC), submits a small batch (4–8) of
+ * IORING_OP_READ SQEs targeting that fd, then writes the eventfd many
+ * times to drive the recursive wakeup path while the ring drains the
+ * read completions.  Drain is bounded; first EINVAL/ENOTTY on register
+ * latches the recipe off.
+ * ------------------------------------------------------------------ */
+#ifndef IORING_REGISTER_EVENTFD
+#define IORING_REGISTER_EVENTFD		4
+#endif
+#ifndef IORING_UNREGISTER_EVENTFD
+#define IORING_UNREGISTER_EVENTFD	5
+#endif
+#ifndef IORING_REGISTER_EVENTFD_ASYNC
+#define IORING_REGISTER_EVENTFD_ASYNC	7
+#endif
+
+static bool recipe_eventfd_recursive(struct iour_recipe_state *s,
+				     bool *unsupported)
+{
+	struct iour_ctx *ctx = s->ctx;
+	struct io_uring_sqe sqes[8];
+	eventfd_t bufs[8];
+	uint64_t one = 1;
+	struct io_uring_cqe *cqes;
+	unsigned int nreads, reg_op, mask, head, tail, reaped, spins, i;
+	bool ok = false;
+	bool registered = false;
+	int r;
+
+	s->evfd = eventfd(0, EFD_NONBLOCK);
+	if (s->evfd < 0)
+		goto out;
+
+	reg_op = ONE_IN(2) ? IORING_REGISTER_EVENTFD_ASYNC
+			   : IORING_REGISTER_EVENTFD;
+
+	r = (int)syscall(__NR_io_uring_register, ctx->fd, reg_op,
+			 &s->evfd, 1);
+	if (r < 0) {
+		__atomic_add_fetch(&shm->stats.iouring_eventfd_register_fail,
+				   1, __ATOMIC_RELAXED);
+		if (errno == EINVAL || errno == ENOTTY) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+					   1, __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+	registered = true;
+	__atomic_add_fetch(&shm->stats.iouring_eventfd_register_ok, 1,
+			   __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.iouring_eventfd_recursive_runs, 1,
+			   __ATOMIC_RELAXED);
+
+	nreads = 4 + ((unsigned int)rand() % 5);
+
+	for (i = 0; i < nreads; i++) {
+		sqe_clear(&sqes[i]);
+		sqes[i].opcode    = IORING_OP_READ;
+		sqes[i].fd        = s->evfd;
+		sqes[i].addr      = (__u64)(uintptr_t)&bufs[i];
+		sqes[i].len       = sizeof(eventfd_t);
+		sqes[i].user_data = 600 + i;
+	}
+
+	if (!iour_submit_sqes(ctx, sqes, nreads))
+		goto cleanup;
+
+	r = (int)syscall(__NR_io_uring_enter, ctx->fd, nreads, 0, 0, NULL, 0);
+	if (r < 0)
+		goto cleanup;
+
+	/* Fire many wakeups in quick succession.  Each write increments
+	 * the eventfd counter, the kernel wakes a blocked read SQE which
+	 * consumes the counter and posts a CQE, and the CQE post itself
+	 * signals the registered eventfd — the recursive wakeup loop
+	 * fixed upstream by 04fe9aeb4f3c. */
+	for (i = 0; i < 16; i++) {
+		ssize_t w __unused__ = write(s->evfd, &one, sizeof(one));
+	}
+
+	/* Bounded drain.  Non-blocking GETEVENTS lets the kernel post
+	 * completions; cap at 32 spins / 32 CQEs so a wedged kernel can't
+	 * hang us, and break early once every read SQE has completed. */
+	cqes = (struct io_uring_cqe *)((char *)ctx->cq_ring + ctx->cq_off_cqes);
+	mask = ring_u32(ctx->cq_ring, ctx->cq_off_mask);
+	reaped = 0;
+	for (spins = 0; spins < 32 && reaped < 32; spins++) {
+		(void)syscall(__NR_io_uring_enter, ctx->fd, 0, 0,
+			      IORING_ENTER_GETEVENTS, NULL, 0);
+
+		head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
+		tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
+		while (head != tail && reaped < 32) {
+			(void)cqes[head & mask];
+			head++;
+			reaped++;
+		}
+		__sync_synchronize();
+		ring_store_u32(ctx->cq_ring, ctx->cq_off_head, head);
+
+		if (reaped >= nreads)
+			break;
+	}
+
+	if (reaped)
+		__atomic_add_fetch(&shm->stats.iouring_eventfd_recursive_cqes,
+				   reaped, __ATOMIC_RELAXED);
+
+	ok = true;
+
+cleanup:
+	if (registered) {
+		(void)syscall(__NR_io_uring_register, ctx->fd,
+			      IORING_UNREGISTER_EVENTFD, NULL, 0);
+	}
+out:
+	return ok;
+}
+
 static const struct iour_recipe catalog[] = {
 	{ "nop_chain",              recipe_nop_chain              },
 	{ "timeout_drain",          recipe_timeout_drain          },
@@ -2612,6 +2745,7 @@ static const struct iour_recipe catalog[] = {
 	{ "getxattr",               recipe_getxattr               },
 	{ "fgetxattr",              recipe_fgetxattr              },
 	{ "waitid",                 recipe_waitid                 },
+	{ "eventfd_recursive",      recipe_eventfd_recursive      },
 	/*
 	 * Deferred to follow-up: per-op submission requires setup the
 	 * recipe harness doesn't track yet, so they're intentionally

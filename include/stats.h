@@ -728,6 +728,12 @@ struct stats_s {
 	 * catalog layout. */
 	unsigned long iouring_recipe_completed_per[MAX_IOURING_RECIPES];
 
+	/* iouring eventfd recursive completion recipe counters */
+	unsigned long iouring_eventfd_register_ok;	/* IORING_REGISTER_EVENTFD[_ASYNC] succeeded */
+	unsigned long iouring_eventfd_register_fail;	/* register call returned an error */
+	unsigned long iouring_eventfd_recursive_runs;	/* recipe ran past register */
+	unsigned long iouring_eventfd_recursive_cqes;	/* CQEs reaped within the recipe */
+
 	/* refcount_auditor childop counters */
 	unsigned long refcount_audit_runs;
 	unsigned long refcount_audit_fd_anomalies;
