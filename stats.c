@@ -717,7 +717,7 @@ static void dump_stats_json(void)
 		"\"tls_ulp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_install_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"splice_ok\":%lu,\"rekey_ok\":%lu,\"recv_ok\":%lu},"
 		"\"vxlan_encap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"fdb_add_ok\":%lu,\"link_up_ok\":%lu,\"packet_sent_ok\":%lu,\"link_del_ok\":%lu},"
 		"\"bridge_fdb_stp\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"raw_send_ok\":%lu,\"stp_toggle_ok\":%lu,\"fdb_del_ok\":%lu,\"link_del_ok\":%lu},"
-		"\"nftables_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"table_create_ok\":%lu,\"set_create_ok\":%lu,\"chain_create_ok\":%lu,\"rule_create_ok\":%lu,\"packet_sent_ok\":%lu,\"rule_insert_ok\":%lu,\"rule_del_ok\":%lu,\"table_del_ok\":%lu,\"payload_expr_emit\":%lu,\"compat_validate_install_ok\":%lu,\"compat_validate_install_fail\":%lu,\"compat_validate_unsupported\":%lu,\"compat_validate_per_hook_pairs\":%lu},"
+		"\"nftables_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"table_create_ok\":%lu,\"set_create_ok\":%lu,\"chain_create_ok\":%lu,\"rule_create_ok\":%lu,\"packet_sent_ok\":%lu,\"rule_insert_ok\":%lu,\"rule_del_ok\":%lu,\"table_del_ok\":%lu,\"payload_expr_emit\":%lu,\"compat_validate_install_ok\":%lu,\"compat_validate_install_fail\":%lu,\"compat_validate_unsupported\":%lu,\"compat_validate_per_hook_pairs\":%lu,\"dormant_abort_iters\":%lu,\"dormant_abort_eperm\":%lu,\"dormant_abort_emsg\":%lu,\"dormant_abort_ok\":%lu},"
 		"\"tc_qdisc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"qdisc_create_ok\":%lu,\"tclass_create_ok\":%lu,\"tfilter_create_ok\":%lu,\"packet_sent_ok\":%lu,\"qdisc_replace_ok\":%lu,\"tfilter_del_ok\":%lu,\"qdisc_del_ok\":%lu,\"link_del_ok\":%lu},"
 		"\"xfrm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_updated\":%lu,\"sa_deleted\":%lu,\"pol_added\":%lu,\"pol_deleted\":%lu,\"esp_sent\":%lu,\"pfkey_send_ok\":%lu,\"ah_esn_setup_ok\":%lu,\"ah_esn_setup_fail\":%lu,\"ah_esn_async_runs\":%lu,\"ah_esn_delsa_races\":%lu},"
 		"\"bpf_cgroup_attach\":{\"runs\":%lu,\"setup_failed\":%lu,\"prog_loaded\":%lu,\"attached\":%lu,\"attach_rejected\":%lu,\"packets_sent\":%lu,\"detached\":%lu,\"post_detach_sent\":%lu},"
@@ -1053,6 +1053,10 @@ static void dump_stats_json(void)
 		shm->stats.nft_compat_validate_install_fail,
 		shm->stats.nft_compat_validate_unsupported,
 		shm->stats.nft_compat_validate_per_hook_pairs,
+		shm->stats.nft_dormant_abort_iters,
+		shm->stats.nft_dormant_abort_eperm,
+		shm->stats.nft_dormant_abort_emsg,
+		shm->stats.nft_dormant_abort_ok,
 		shm->stats.tc_qdisc_churn_runs,
 		shm->stats.tc_qdisc_churn_setup_failed,
 		shm->stats.tc_qdisc_churn_link_create_ok,
@@ -2962,6 +2966,10 @@ void dump_stats(void)
 		stat_row("nftables_churn", "compat_validate_install_fail",   shm->stats.nft_compat_validate_install_fail);
 		stat_row("nftables_churn", "compat_validate_unsupported",    shm->stats.nft_compat_validate_unsupported);
 		stat_row("nftables_churn", "compat_validate_per_hook_pairs", shm->stats.nft_compat_validate_per_hook_pairs);
+		stat_row("nftables_churn", "dormant_abort_iters", shm->stats.nft_dormant_abort_iters);
+		stat_row("nftables_churn", "dormant_abort_eperm", shm->stats.nft_dormant_abort_eperm);
+		stat_row("nftables_churn", "dormant_abort_emsg",  shm->stats.nft_dormant_abort_emsg);
+		stat_row("nftables_churn", "dormant_abort_ok",    shm->stats.nft_dormant_abort_ok);
 	}
 
 	if (shm->stats.tc_qdisc_churn_runs) {

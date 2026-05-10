@@ -1056,6 +1056,10 @@ struct stats_s {
 	unsigned long nft_compat_validate_install_fail;		/* (target, hook) chain+rule rejected (non-unsupported) */
 	unsigned long nft_compat_validate_unsupported;		/* EOPNOTSUPP/EPROTONOSUPPORT (compat target absent) */
 	unsigned long nft_compat_validate_per_hook_pairs;	/* (target, hook) pair install attempts */
+	unsigned long nft_dormant_abort_iters;		/* dormant-table abort sub-mode invocations */
+	unsigned long nft_dormant_abort_eperm;		/* sendmsg EPERM (CAP_NET_ADMIN gate) -- latches */
+	unsigned long nft_dormant_abort_emsg;		/* sendmsg failures other than EPERM */
+	unsigned long nft_dormant_abort_ok;		/* batch sent + drain completed */
 
 	/* tc_qdisc_churn childop counters */
 	unsigned long tc_qdisc_churn_runs;		/* total tc_qdisc_churn invocations */
