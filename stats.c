@@ -748,7 +748,8 @@ static void dump_stats_json(void)
 		"\"ublk_lifecycle\":{\"iters\":%lu,\"eperm\":%lu,\"add_ok\":%lu,\"fetch_ok\":%lu,\"del_ok\":%lu,\"race_observed\":%lu},"
 		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
 		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
-		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu}"
+		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu},"
+		"\"ipv6_ndisc_proxy\":{\"runs\":%lu,\"ns_sent_ok\":%lu,\"setup_failed\":%lu,\"proxy_enable_ok\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1338,7 +1339,11 @@ static void dump_stats_json(void)
 		shm->stats.ipvs_sysctl_writer_runs,
 		shm->stats.ipvs_sysctl_writer_writes_ok,
 		shm->stats.ipvs_sysctl_writer_writes_failed,
-		shm->stats.ipvs_sysctl_writer_unsupported_latched);
+		shm->stats.ipvs_sysctl_writer_unsupported_latched,
+		shm->stats.ipv6_ndisc_proxy_runs,
+		shm->stats.ipv6_ndisc_proxy_ns_sent_ok,
+		shm->stats.ipv6_ndisc_proxy_setup_failed,
+		shm->stats.ipv6_ndisc_proxy_proxy_enable_ok);
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -3284,6 +3289,13 @@ void dump_stats(void)
 		stat_row("ipvs_sysctl_writer", "writes_ok",           shm->stats.ipvs_sysctl_writer_writes_ok);
 		stat_row("ipvs_sysctl_writer", "writes_failed",       shm->stats.ipvs_sysctl_writer_writes_failed);
 		stat_row("ipvs_sysctl_writer", "unsupported_latched", shm->stats.ipvs_sysctl_writer_unsupported_latched);
+	}
+
+	if (shm->stats.ipv6_ndisc_proxy_runs) {
+		stat_row("ipv6_ndisc_proxy", "runs",            shm->stats.ipv6_ndisc_proxy_runs);
+		stat_row("ipv6_ndisc_proxy", "ns_sent_ok",      shm->stats.ipv6_ndisc_proxy_ns_sent_ok);
+		stat_row("ipv6_ndisc_proxy", "setup_failed",    shm->stats.ipv6_ndisc_proxy_setup_failed);
+		stat_row("ipv6_ndisc_proxy", "proxy_enable_ok", shm->stats.ipv6_ndisc_proxy_proxy_enable_ok);
 	}
 
 	if (shm->stats.afxdp_churn_runs) {

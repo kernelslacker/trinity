@@ -948,6 +948,12 @@ struct stats_s {
 	unsigned long tcp_md5_listener_race_rst_sent_ok;	/* zero-linger close() drove RST toward listener */
 	unsigned long tcp_md5_listener_race_completed_ok;	/* full cycles reaching teardown */
 
+	/* ipv6_ndisc_proxy childop counters */
+	unsigned long ipv6_ndisc_proxy_runs;		/* total ipv6_ndisc_proxy invocations */
+	unsigned long ipv6_ndisc_proxy_ns_sent_ok;	/* AF_PACKET NS frame sendto returned >0 */
+	unsigned long ipv6_ndisc_proxy_setup_failed;	/* unshare/veth/addr/proxy setup failed */
+	unsigned long ipv6_ndisc_proxy_proxy_enable_ok;	/* proxy_ndp sysctl flip accepted */
+
 	/* vrf_fib_churn childop counters */
 	unsigned long vrf_fib_churn_runs;		/* total vrf_fib_churn invocations */
 	unsigned long vrf_fib_churn_setup_failed;	/* unshare(CLONE_NEWNET) or rtnl socket failed */
