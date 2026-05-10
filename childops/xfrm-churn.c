@@ -1401,6 +1401,105 @@ static void pfkey_flush_burst(void)
 	close(s);
 }
 
+/*
+ * Burn-this-netns mode: rare branch (ONE_IN(BURN_GATE_DENOM) at the
+ * top of xfrm_churn) that races cleanup_net's xfrm_state_flush against
+ * the byseq/byspi chains we just populated.  Mechanics:
+ *
+ *   1. Open /proc/self/ns/net as the anchor before any unshare.
+ *   2. Acquire one ticket from shm->newnet_in_flight under
+ *      MAX_CONCURRENT_NEWNET; bail if cap reached (mirrors the
+ *      sanitise_unshare bookkeeping in syscalls/unshare.c).
+ *   3. unshare(CLONE_NEWNET) into a fresh sub-netns.
+ *   4. Open NETLINK_XFRM, install one SA via NEWSA with non-zero
+ *      seq + spi (so the SA links onto BOTH byseq and byspi), then
+ *      back-to-back fire build_getsa_byspi (drives __xfrm_state_lookup
+ *      byspi walker) and build_allocspi (drives __xfrm_find_acq_byseq +
+ *      xfrm_state_lookup_byspi during the SPI scan + a larval insert).
+ *   5. close(xfrm_fd) so the only remaining sock_net ref drops, then
+ *      setns back to the anchor and close it.  With no refs left on
+ *      the sub-netns, cleanup_net schedules its workqueue:
+ *      xfrm_state_flush walks byseq + byspi while another CPU may
+ *      still be in the lookup walker we kicked off.  Race window is
+ *      the bug-class fixed by upstream 14acf9652e56.
+ *   6. Drop the ticket.
+ *
+ * On any setup failure past the unshare we still try to setns back so
+ * the trinity child isn't stranded in a doomed sub-netns; the ticket
+ * is always dropped.  Returns true if the burn attempt was launched
+ * (caller should short-circuit), false if we bailed before unshare so
+ * caller can fall through to the normal flow.
+ */
+#define XFRM_BURN_GATE_DENOM	64U
+
+static bool xfrm_burn_netns(void)
+{
+	int anchor = -1;
+	int xfd = -1;
+	unsigned int aidx;
+	const struct xfrm_algo_def *def;
+	__u32 reqid, seq;
+	__be32 spi;
+	bool ticketed = false;
+
+	__atomic_add_fetch(&shm->stats.xfrm_churn_burn_runs, 1,
+			   __ATOMIC_RELAXED);
+
+	if (__atomic_load_n(&shm->newnet_in_flight, __ATOMIC_RELAXED) >=
+	    MAX_CONCURRENT_NEWNET) {
+		__atomic_add_fetch(&shm->stats.xfrm_churn_burn_throttled, 1,
+				   __ATOMIC_RELAXED);
+		return false;
+	}
+
+	aidx = pick_algo_idx();
+	if (aidx >= NR_XFRM_ALGOS)
+		return false;
+	def = &xfrm_algos[aidx];
+
+	anchor = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
+	if (anchor < 0)
+		return false;
+
+	__atomic_fetch_add(&shm->newnet_in_flight, 1, __ATOMIC_RELAXED);
+	ticketed = true;
+
+	if (unshare(CLONE_NEWNET) < 0)
+		goto out;
+
+	xfd = xfrm_open();
+	if (xfd < 0)
+		goto out;
+
+	reqid = (rand32() % XFRM_REQID_RANGE) + 1U;
+	spi   = htonl((rand32() % XFRM_SPI_RANGE) + XFRM_SPI_MIN);
+	/* Force seq != 0 in the burn branch -- the whole point is to
+	 * have the SA on byseq when xfrm_state_flush runs. */
+	seq   = (rand32() & 0xffffU) | 1U;
+
+	modprobe_algo(aidx);
+	if (build_newsa(xfd, def, reqid, spi, XFRM_MODE_TRANSPORT, seq) != 0)
+		goto out;
+
+	(void)build_getsa_byspi(xfd, def->proto, spi);
+	(void)build_allocspi(xfd, def, reqid, XFRM_MODE_TRANSPORT, seq);
+
+	__atomic_add_fetch(&shm->stats.xfrm_churn_burn_completed, 1,
+			   __ATOMIC_RELAXED);
+
+out:
+	if (xfd >= 0)
+		close(xfd);
+	if (anchor >= 0) {
+		(void)setns(anchor, CLONE_NEWNET);
+		close(anchor);
+	}
+	if (ticketed)
+		__atomic_fetch_sub(&shm->newnet_in_flight, 1,
+				   __ATOMIC_RELAXED);
+	return true;
+}
+
 bool xfrm_churn(struct childdata *child)
 {
 	int xfrm = -1;
@@ -1421,6 +1520,18 @@ bool xfrm_churn(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.xfrm_churn_runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_setup_failed || ns_unsupported_xfrm)
+		return true;
+
+	/*
+	 * Burn-this-netns mode: rare branch that races cleanup_net's
+	 * xfrm_state_flush against in-flight byseq/byspi readers
+	 * (Phase 1 reader paths populate the chains).  Bug class fixed
+	 * by upstream 14acf9652e56.  Self-contained sub-netns + setns
+	 * back to anchor; if launched, the rest of xfrm_churn is
+	 * skipped this iteration to avoid running the normal flow on
+	 * the just-burned ns.
+	 */
+	if (ONE_IN(XFRM_BURN_GATE_DENOM) && xfrm_burn_netns())
 		return true;
 
 	if (!ns_unshared) {

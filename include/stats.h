@@ -1084,6 +1084,9 @@ struct stats_s {
 	unsigned long xfrm_ah_esn_setup_fail;		/* AH+ESN+async-algo NEWSA rejected */
 	unsigned long xfrm_ah_esn_async_runs;		/* AH+ESN+async-algo sub-mode invocations */
 	unsigned long xfrm_ah_esn_delsa_races;		/* AH+ESN+async-algo DELSA accepted (race window) */
+	unsigned long xfrm_churn_burn_runs;		/* burn-this-netns branch attempted */
+	unsigned long xfrm_churn_burn_throttled;	/* burn-this-netns skipped: MAX_CONCURRENT_NEWNET cap reached */
+	unsigned long xfrm_churn_burn_completed;	/* burn-this-netns reached the readers + larval insert */
 
 	/* nat_t_churn childop counters */
 	unsigned long nat_t_churn_runs;			/* total nat_t_churn invocations */
