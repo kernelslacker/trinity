@@ -31,4 +31,5 @@ struct syscallentry syscall_getpriority = {
 	.arg_params[0].list = ARGLIST(getpriority_which),
 	.group = GROUP_SCHED,
 	.post = post_getpriority,
+	.rettype = RET_BORING,
 };

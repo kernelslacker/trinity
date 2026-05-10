@@ -260,6 +260,7 @@ struct syscallentry syscall_readlink = {
 	.post = post_readlink,
 #endif
 	.bound_arg = 3,
+	.rettype = RET_NUM_BYTES,
 };
 
 
@@ -499,4 +500,5 @@ struct syscallentry syscall_readlinkat = {
 	.post = post_readlinkat,
 #endif
 	.bound_arg = 4,
+	.rettype = RET_NUM_BYTES,
 };

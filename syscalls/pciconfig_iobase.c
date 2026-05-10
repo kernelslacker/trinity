@@ -27,4 +27,5 @@ struct syscallentry syscall_pciconfig_iobase = {
 	.arg_params[2].range.low = 0,
 	.arg_params[2].range.hi = 255,
 	.group = GROUP_PROCESS,
+	.rettype = RET_BORING,
 };

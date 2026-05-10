@@ -83,4 +83,5 @@ struct syscallentry syscall_time = {
 	.argname = { [0] = "tloc" },
 	.sanitise = sanitise_time,
 	.post = post_time,
+	.rettype = RET_BORING,
 };

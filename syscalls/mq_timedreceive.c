@@ -56,4 +56,5 @@ struct syscallentry syscall_mq_timedreceive = {
 	.sanitise = sanitise_mq_timedreceive,
 	.post = post_mq_timedreceive,
 	.bound_arg = 3,
+	.rettype = RET_NUM_BYTES,
 };

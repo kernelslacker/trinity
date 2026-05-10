@@ -46,4 +46,6 @@ struct syscallentry syscall_getrandom = {
 	.sanitise = sanitise_getrandom,
 	.post = post_getrandom,
 	.group = GROUP_PROCESS,
+	.bound_arg = 2,
+	.rettype = RET_NUM_BYTES,
 };

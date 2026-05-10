@@ -29,4 +29,5 @@ struct syscallentry syscall_pciconfig_read = {
 	.arg_params[2].range.low = 0, .arg_params[2].range.hi = 4095,
 	.sanitise = sanitise_pciconfig_read,
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

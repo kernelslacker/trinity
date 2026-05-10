@@ -8,4 +8,5 @@ struct syscallentry syscall_vhangup = {
 	.num_args = 0,
 	.flags = AVOID_SYSCALL, // No args, confuses fuzzer
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 };

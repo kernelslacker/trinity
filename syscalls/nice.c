@@ -43,4 +43,5 @@ struct syscallentry syscall_nice = {
 	.sanitise = sanitise_nice,
 	.post = post_nice,
 	.group = GROUP_SCHED,
+	.rettype = RET_BORING,
 };
