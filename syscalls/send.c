@@ -275,10 +275,30 @@ struct syscallentry syscall_sendmsg = {
  */
 #define SENDMMSG_MAX_VLEN	4
 
+/*
+ * Snapshot for the post handler.  rec->a2 (the msgs pointer) and rec->a3
+ * (vlen) are both exposed to a sibling syscall scribbling an ABI slot
+ * between sanitise returning and post_sendmmsg() running.  The pointer
+ * scribble was caught by 914fbc6f1ff6 (msgs guard via post_state); vlen
+ * was missed.  A sibling fuzzed value-result syscall scribbling rec->a3
+ * to any value in [2, SENDMMSG_MAX_VLEN] above the original vlen makes
+ * the cleanup loop walk past the vlen * sizeof(struct mmsghdr) zmalloc
+ * — heap-buffer-overflow on the msgs[i].msg_hdr.msg_iov read.  ASAN
+ * caught exactly that: original vlen=1 (64-byte allocation), rec->a3
+ * scribbled to vlen>=2, post handler read msgs[1] = 16 bytes OOB.
+ * Capture both into a post_state-private heap struct that no syscall
+ * ABI slot points at.  Mirrors capset_post_state.
+ */
+struct sendmmsg_post_state {
+	struct mmsghdr *msgs;
+	unsigned int vlen;
+};
+
 static void sanitise_sendmmsg(struct syscallrecord *rec)
 {
 	struct socketinfo *si = (struct socketinfo *) rec->a1;
 	struct mmsghdr *msgs;
+	struct sendmmsg_post_state *snap;
 	unsigned int vlen;
 	unsigned int i;
 
@@ -319,67 +339,72 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 
 	rec->a2 = (unsigned long) msgs;
 	rec->a3 = vlen;
-	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
-	 * syscall (e.g. an objects.c add_object realloc) before
-	 * post_sendmmsg() runs, leaving a real-but-wrong heap pointer that
-	 * the corruption guard cannot distinguish from the original. */
-	rec->post_state = (unsigned long) msgs;
+
+	snap = zmalloc(sizeof(*snap));
+	snap->msgs = msgs;
+	snap->vlen = vlen;
+	rec->post_state = (unsigned long) snap;
 }
 
 static void post_sendmmsg(struct syscallrecord *rec)
 {
-	struct mmsghdr *msgs = (struct mmsghdr *) rec->post_state;
-	unsigned int vlen = (unsigned int) rec->a3;
+	struct sendmmsg_post_state *snap =
+		(struct sendmmsg_post_state *) rec->post_state;
+	struct mmsghdr *msgs;
+	unsigned int vlen;
 	unsigned int i;
 
-	if (msgs == NULL)
+	if (snap == NULL)
 		return;
 
 	/*
 	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so keep the
-	 * corruption guard.
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(rec, msgs)) {
-		outputerr("post_sendmmsg: rejected suspicious msgs=%p "
-			  "(pid-scribbled?)\n", msgs);
+	if (looks_like_corrupted_ptr(rec, snap)) {
+		outputerr("post_sendmmsg: rejected suspicious post_state=%p "
+			  "(pid-scribbled?)\n", snap);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
 	}
 
+	msgs = snap->msgs;
+	vlen = snap->vlen;
+
 	/*
-	 * Snapshot rec->a3 (vlen) and bound against the sanitiser cap.
-	 * 914fbc6f1ff6 caught the msgs pointer scribble but missed vlen:
-	 * sanitise_sendmmsg picks vlen ∈ [1, SENDMMSG_MAX_VLEN] and zmallocs
-	 * vlen * sizeof(struct mmsghdr), but a sibling fuzzed value-result
-	 * syscall can scribble rec->a3 to an arbitrary value between the
-	 * call and the post handler running.  The loop then walks past the
-	 * 256-byte (4 * sizeof(mmsghdr)) allocation — heap-buffer-overflow
-	 * 16 bytes after the region, ASAN c4 trip 2026-05-03 at line 249.
-	 * Anything above the cap can't be a real vlen for this call.
+	 * Defense in depth: even with the post_state snapshot, a wholesale
+	 * stomp could rewrite the snapshot's inner fields.  Reject before
+	 * the loop touches msgs[].
+	 */
+	if (msgs == NULL || looks_like_corrupted_ptr(rec, msgs)) {
+		outputerr("post_sendmmsg: rejected suspicious msgs=%p "
+			  "(post_state-scribbled?)\n", msgs);
+		rec->a2 = 0;
+		goto out_free;
+	}
+
+	/*
+	 * Paranoid bound on snap->vlen.  Set by sanitise into post_state-
+	 * private storage no syscall ABI slot points at, so should never
+	 * fire -- a hit means the snapshot itself was wholesale-scribbled.
 	 */
 	if (vlen > SENDMMSG_MAX_VLEN) {
 		outputerr("post_sendmmsg: rejected suspicious vlen=%u "
-			  "(pid-scribbled?)\n", vlen);
+			  "(post_state-scribbled?)\n", vlen);
 		rec->a2 = 0;
-		rec->post_state = 0;
-		return;
+		goto out_free;
 	}
 
 	/*
 	 * STRONG-VAL count bound: net/socket.c::__sys_sendmmsg() returns
 	 * the count of successfully-sent mmsghdr entries (1..vlen) on
-	 * success or -1UL on failure.  A retval > vlen on a non-(-1UL)
-	 * return is a structural ABI regression -- sign-extension tear in
-	 * the return slot, torn write of the count by a parallel
-	 * signal-restart path, or -errno leaking through the success slot.
-	 * Compare against the local vlen snapshot already bounded by the
-	 * SENDMMSG_MAX_VLEN guard above so a sibling re-scribble of
-	 * rec->a3 between that guard and this check cannot launder an
-	 * oversized retval past the bound.  No snap-struct extension --
-	 * vlen lives on the stack from handler entry.  Mirrors
-	 * epoll_wait 4c7a84058afd / epoll_pwait 1ae902d4b01d.
+	 * success or -1UL on failure.  Compare against snap->vlen, the
+	 * trusted sanitise-time value -- a sibling scribble of rec->a3
+	 * between the call and the post handler running cannot launder an
+	 * oversized retval past this bound.  Mirrors epoll_wait
+	 * 4c7a84058afd / epoll_pwait 1ae902d4b01d.
 	 */
 	if ((long) rec->retval != -1L && rec->retval > vlen) {
 		outputerr("post_sendmmsg: rejected retval=0x%lx > vlen=%u\n",
@@ -394,8 +419,10 @@ static void post_sendmmsg(struct syscallrecord *rec)
 					 "post_sendmmsg/msg_name"))
 			free(msgs[i].msg_hdr.msg_name);
 	}
-out_free:
 	rec->a2 = 0;
+	deferred_free_enqueue(msgs, NULL);
+
+out_free:
 	deferred_freeptr(&rec->post_state);
 }
 
