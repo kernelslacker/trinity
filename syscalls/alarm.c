@@ -98,4 +98,5 @@ struct syscallentry syscall_alarm = {
 	.arg_params[0].range.hi = 5,
 	.sanitise = sanitise_alarm,
 	.post = post_alarm,
+	.rettype = RET_BORING,
 };

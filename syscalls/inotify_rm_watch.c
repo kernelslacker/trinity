@@ -23,4 +23,5 @@ struct syscallentry syscall_inotify_rm_watch = {
 	.sanitise = sanitise_inotify_rm_watch,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	.rettype = RET_ZERO_SUCCESS,
 };

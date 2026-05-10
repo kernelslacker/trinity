@@ -13,4 +13,5 @@ struct syscallentry syscall_pciconfig_write = {
 	.arg_params[1].range.low = 0, .arg_params[1].range.hi = 255,
 	.arg_params[2].range.low = 0, .arg_params[2].range.hi = 4095,
 	.group = GROUP_PROCESS,
+	.rettype = RET_ZERO_SUCCESS,
 };
