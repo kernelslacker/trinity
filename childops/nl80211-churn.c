@@ -195,6 +195,59 @@
 #define NL80211_IFTYPE_STATION		2
 #endif
 
+/*
+ * NL80211 peer-measurement (PMSR) UAPI fallbacks.  Used to drive the
+ * net/wireless/pmsr.c FTM request parser.  The FTMS_PER_BURST attribute
+ * is the target field: upstream policy is NLA_U8 but the historical
+ * getter used nla_get_u32(), so the parser silently consumed three
+ * bytes past the policy-validated payload (broken on big-endian, see
+ * commit 0f3c0a197309 -- "wifi: nl80211: fix
+ * NL80211_PMSR_FTM_REQ_ATTR_FTMS_PER_BURST usage").  Sending the attr
+ * at both u8 and u32 widths exercises both the post-fix strict policy
+ * (u32 form -> -EINVAL) and the pre-fix mis-sized read (u8 form
+ * passes; u32 form pre-fix passes a getter that the policy then
+ * tightens).
+ */
+#ifndef NL80211_CMD_PEER_MEASUREMENT_START
+#define NL80211_CMD_PEER_MEASUREMENT_START	131
+#endif
+#ifndef NL80211_ATTR_PEER_MEASUREMENTS
+#define NL80211_ATTR_PEER_MEASUREMENTS		273
+#endif
+#ifndef NL80211_PMSR_ATTR_PEERS
+#define NL80211_PMSR_ATTR_PEERS			5
+#endif
+#ifndef NL80211_PMSR_TYPE_FTM
+#define NL80211_PMSR_TYPE_FTM			1
+#endif
+#ifndef NL80211_PMSR_PEER_ATTR_ADDR
+#define NL80211_PMSR_PEER_ATTR_ADDR		1
+#endif
+#ifndef NL80211_PMSR_PEER_ATTR_REQ
+#define NL80211_PMSR_PEER_ATTR_REQ		3
+#endif
+#ifndef NL80211_PMSR_REQ_ATTR_DATA
+#define NL80211_PMSR_REQ_ATTR_DATA		1
+#endif
+#ifndef NL80211_PMSR_FTM_REQ_ATTR_PREAMBLE
+#define NL80211_PMSR_FTM_REQ_ATTR_PREAMBLE	2
+#endif
+#ifndef NL80211_PMSR_FTM_REQ_ATTR_NUM_BURSTS_EXP
+#define NL80211_PMSR_FTM_REQ_ATTR_NUM_BURSTS_EXP	3
+#endif
+#ifndef NL80211_PMSR_FTM_REQ_ATTR_BURST_PERIOD
+#define NL80211_PMSR_FTM_REQ_ATTR_BURST_PERIOD	4
+#endif
+#ifndef NL80211_PMSR_FTM_REQ_ATTR_BURST_DURATION
+#define NL80211_PMSR_FTM_REQ_ATTR_BURST_DURATION	5
+#endif
+#ifndef NL80211_PMSR_FTM_REQ_ATTR_FTMS_PER_BURST
+#define NL80211_PMSR_FTM_REQ_ATTR_FTMS_PER_BURST	6
+#endif
+#ifndef NL80211_PREAMBLE_DMG
+#define NL80211_PREAMBLE_DMG			3
+#endif
+
 /* Outer churn-loop budget knobs (per spec). */
 #define NL80211_OUTER_BASE		5U
 #define NL80211_OUTER_FLOOR		16U
@@ -678,6 +731,182 @@ static int new_station_iface(int nlfd, uint32_t phy, const char *ifname)
 	return ifindex;
 }
 
+static void random_bssid(unsigned char mac[6]);
+
+/*
+ * Open a nested netlink attribute container at the current write
+ * cursor.  Reserves NLA_HDRLEN bytes for the header; the actual nla_len
+ * is patched in by nla_nest_end() once all child attributes have been
+ * appended.  Returns false on overflow.
+ */
+struct nla_nest {
+	size_t header_off;
+};
+
+static bool nla_nest_start(unsigned char *buf, size_t cap, size_t *off,
+			   uint16_t type, struct nla_nest *n)
+{
+	struct nlattr nla;
+
+	if (*off + NLA_HDRLEN > cap)
+		return false;
+	n->header_off = *off;
+	nla.nla_type = type;
+	nla.nla_len  = 0;
+	memcpy(buf + *off, &nla, sizeof(nla));
+	*off += NLA_HDRLEN;
+	return true;
+}
+
+/*
+ * Close a nested attribute opened by nla_nest_start().  Writes the
+ * unpadded nla_len field at the recorded header offset and pads the
+ * write cursor up to NLA_ALIGNTO so the next sibling starts on a
+ * 4-byte boundary.  Returns false on overflow / 64K oversize.
+ */
+static bool nla_nest_end(unsigned char *buf, size_t cap, size_t *off,
+			 const struct nla_nest *n)
+{
+	size_t len = *off - n->header_off;
+	size_t pad;
+	struct nlattr *nla;
+
+	if (len > UINT16_MAX)
+		return false;
+	pad = NLA_ALIGN(len) - len;
+	if (*off + pad > cap)
+		return false;
+	if (pad)
+		memset(buf + *off, 0, pad);
+	*off += pad;
+	nla = (struct nlattr *)(buf + n->header_off);
+	nla->nla_len = (uint16_t)len;
+	return true;
+}
+
+/*
+ * NL80211_CMD_PEER_MEASUREMENT_START with an FTM request that emits
+ * NL80211_PMSR_FTM_REQ_ATTR_FTMS_PER_BURST as either a 1-byte or
+ * 4-byte payload, selected by @ftms_as_u32.  Drives
+ * net/wireless/pmsr.c::nl80211_pmsr_parse_ftm_req() with both widths
+ * so a future regression of the historical NLA_U32-policy /
+ * nla_get_u32-getter mismatch (upstream commit 0f3c0a197309) is
+ * caught: with the post-fix NLA_U8 policy the kernel must reject the
+ * u32 form with -EINVAL, while the u8 form parses cleanly.  No
+ * NL80211_CMD_PEER_MEASUREMENT_STOP teardown -- mac80211_hwsim has no
+ * actual ranging responder, so the request fails synchronously
+ * (typically -EOPNOTSUPP / -EINVAL / -ENOTCONN); kernel cleans up on
+ * socket close.  Tolerates any errno.
+ */
+static int build_pmsr_ftm_req(int nlfd, uint32_t ifindex, bool ftms_as_u32)
+{
+	unsigned char attrs[1024];
+	unsigned char resp[NL80211_NL_RX_BUF];
+	struct nla_nest pmsr, peers, peer1, req, type_ftm;
+	size_t off = 0;
+	size_t resp_len = 0;
+	unsigned char mac[6];
+	uint32_t preamble = (uint32_t)(rand32() % 4U);	/* LEGACY..DMG */
+	uint16_t burst_period = (uint16_t)(rand32() & 0xffffu);
+	uint8_t num_bursts_exp = (uint8_t)(rand32() & 0xfu);
+	uint8_t burst_duration = (uint8_t)(rand32() & 0xfu);
+
+	if (!nla_put_u32(attrs, sizeof(attrs), &off,
+			 NL80211_ATTR_IFINDEX, ifindex))
+		return -EIO;
+
+	if (!nla_nest_start(attrs, sizeof(attrs), &off,
+			    NL80211_ATTR_PEER_MEASUREMENTS, &pmsr))
+		return -EIO;
+	if (!nla_nest_start(attrs, sizeof(attrs), &off,
+			    NL80211_PMSR_ATTR_PEERS, &peers))
+		return -EIO;
+	/* Anonymous peer index 1; the kernel ignores the index itself
+	 * (NL80211_PMSR_ATTR_PEERS is "indexed by" but the index is
+	 * meaningless per the UAPI doc -- it's just a list). */
+	if (!nla_nest_start(attrs, sizeof(attrs), &off, 1, &peer1))
+		return -EIO;
+
+	random_bssid(mac);
+	if (!nla_put(attrs, sizeof(attrs), &off,
+		     NL80211_PMSR_PEER_ATTR_ADDR, mac, sizeof(mac)))
+		return -EIO;
+
+	if (!nla_nest_start(attrs, sizeof(attrs), &off,
+			    NL80211_PMSR_PEER_ATTR_REQ, &req))
+		return -EIO;
+	if (!nla_nest_start(attrs, sizeof(attrs), &off,
+			    NL80211_PMSR_REQ_ATTR_DATA, &type_ftm))
+		return -EIO;
+	{
+		struct nla_nest ftm;
+
+		if (!nla_nest_start(attrs, sizeof(attrs), &off,
+				    NL80211_PMSR_TYPE_FTM, &ftm))
+			return -EIO;
+
+		if (!nla_put_u32(attrs, sizeof(attrs), &off,
+				 NL80211_PMSR_FTM_REQ_ATTR_PREAMBLE,
+				 preamble))
+			return -EIO;
+		if (!nla_put(attrs, sizeof(attrs), &off,
+			     NL80211_PMSR_FTM_REQ_ATTR_BURST_PERIOD,
+			     &burst_period, sizeof(burst_period)))
+			return -EIO;
+		if (!nla_put(attrs, sizeof(attrs), &off,
+			     NL80211_PMSR_FTM_REQ_ATTR_NUM_BURSTS_EXP,
+			     &num_bursts_exp, sizeof(num_bursts_exp)))
+			return -EIO;
+		if (!nla_put(attrs, sizeof(attrs), &off,
+			     NL80211_PMSR_FTM_REQ_ATTR_BURST_DURATION,
+			     &burst_duration, sizeof(burst_duration)))
+			return -EIO;
+
+		/* The bug-shape attribute.  Two paths:
+		 *   - u32 form: 4-byte payload spanning the full u32 range.
+		 *     Post-fix kernels reject this on the NLA_U8 strict
+		 *     policy (-EINVAL).  Pre-fix kernels read it via
+		 *     nla_get_u32() with no width check.
+		 *   - u8 form: 1-byte payload 0..255.  Always policy-legal;
+		 *     post-fix kernels parse it via nla_get_u8(); pre-fix
+		 *     kernels read four bytes via nla_get_u32() and pick up
+		 *     three garbage upper bytes from the next attribute /
+		 *     padding (the visible symptom on big-endian). */
+		if (ftms_as_u32) {
+			uint32_t v = rand32();
+
+			if (!nla_put_u32(attrs, sizeof(attrs), &off,
+					 NL80211_PMSR_FTM_REQ_ATTR_FTMS_PER_BURST,
+					 v))
+				return -EIO;
+		} else {
+			uint8_t v = (uint8_t)(rand32() & 0xffu);
+
+			if (!nla_put(attrs, sizeof(attrs), &off,
+				     NL80211_PMSR_FTM_REQ_ATTR_FTMS_PER_BURST,
+				     &v, sizeof(v)))
+				return -EIO;
+		}
+
+		if (!nla_nest_end(attrs, sizeof(attrs), &off, &ftm))
+			return -EIO;
+	}
+	if (!nla_nest_end(attrs, sizeof(attrs), &off, &type_ftm))
+		return -EIO;
+	if (!nla_nest_end(attrs, sizeof(attrs), &off, &req))
+		return -EIO;
+	if (!nla_nest_end(attrs, sizeof(attrs), &off, &peer1))
+		return -EIO;
+	if (!nla_nest_end(attrs, sizeof(attrs), &off, &peers))
+		return -EIO;
+	if (!nla_nest_end(attrs, sizeof(attrs), &off, &pmsr))
+		return -EIO;
+
+	return genl_send_recv(nlfd, nl80211_family,
+			      NL80211_CMD_PEER_MEASUREMENT_START, 1,
+			      attrs, off, resp, sizeof(resp), &resp_len);
+}
+
 static int del_iface_by_index(int nlfd, int ifindex)
 {
 	unsigned char attrs[64];
@@ -1026,6 +1255,25 @@ static void iter_one(int nlfd, unsigned int iter_idx,
 	__atomic_add_fetch(&shm->stats.nl80211_disconnect_attempted,
 			   1, __ATOMIC_RELAXED);
 	(void)rc;
+
+	/* PMSR FTM request sub-mode.  Low rate (ONE_IN(8)) so it doesn't
+	 * crowd out the scan/connect coverage above; flips the FTMS_PER_BURST
+	 * attribute width every other invocation to exercise both the u8
+	 * and u32 forms documented in upstream commit 0f3c0a197309. */
+	if (ONE_IN(8) && created_count > 0) {
+		bool as_u32 = ONE_IN(2);
+		int slot = (int)(rand32() % created_count);
+		int target = created_ifindex[slot];
+
+		if (target > 0) {
+			__atomic_add_fetch(&shm->stats.nl80211_pmsr_runs,
+					   1, __ATOMIC_RELAXED);
+			if (build_pmsr_ftm_req(nlfd, (uint32_t)target,
+					       as_u32) == 0)
+				__atomic_add_fetch(&shm->stats.nl80211_pmsr_ok,
+						   1, __ATOMIC_RELAXED);
+		}
+	}
 
 	rc = del_iface_by_index(nlfd, ifindex);
 	if (rc == 0) {
