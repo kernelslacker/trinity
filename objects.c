@@ -614,6 +614,31 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	 */
 	unsigned int n = head->num_entries;
 
+	/*
+	 * Parallel snapshot of head->array and head->array_generation.
+	 * The n snapshot above only addresses the index used at the slot
+	 * write; head->array itself is re-loaded from shm at the deref
+	 * (mov (%rcx),%rax immediately before mov %rbx,(%rax,%rdx,8) at
+	 * objects.c:777 in the prod disasm), so a sibling value-result
+	 * write that scribbles head->array between the grow check and the
+	 * slot store faults on a freshly-corrupted pointer with the n
+	 * snapshot intact.  Snapshot the array pointer alongside n and
+	 * route the slot write through the snapshot so the deref is
+	 * decoupled from any post-snapshot stomp.  gen_snap pairs with
+	 * the RELEASE bump in the OBJ_LOCAL grow branch below and the
+	 * read-side ACQUIRE-load in get_random_object_versioned() / the
+	 * matching check in validate_object_handle(): a wild write that
+	 * also clobbered head->array_generation is caught at the pre-
+	 * write re-check before the store dereferences a stale snapshot
+	 * (the wild-write may have invalidated array_snap in the same
+	 * vicinity).  OBJ_LOCAL grow legitimately reseats head->array
+	 * and bumps the generation, so the snapshots are refreshed
+	 * inside that branch to the post-grow values.
+	 */
+	struct object **array_snap = head->array;
+	unsigned int gen_snap = __atomic_load_n(&head->array_generation,
+						__ATOMIC_ACQUIRE);
+
 	if (n > head->array_capacity) {
 		/* Wild-stomp defence — refuse to act on a snapshot that was already
 		 * out-of-bounds at the moment we read it.  The grow loop's UINT_MAX/2
@@ -757,6 +782,19 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		 */
 		__atomic_add_fetch(&head->array_generation, 1,
 				   __ATOMIC_RELEASE);
+		/*
+		 * Refresh the snapshots taken at the top of the function: we
+		 * just legitimately reseated head->array and bumped
+		 * head->array_generation, so the stale array_snap (== old
+		 * deferred-freed buffer) and gen_snap (== pre-bump value)
+		 * would both be rejected by the pre-write re-check below.
+		 * Re-load with ACQUIRE so a sibling-scribble that also lands
+		 * on head->array_generation between the bump and here is
+		 * caught at the re-check rather than silently accepted.
+		 */
+		array_snap = head->array;
+		gen_snap = __atomic_load_n(&head->array_generation,
+					   __ATOMIC_ACQUIRE);
 		if (oldarray != NULL)
 			deferred_free_enqueue(oldarray, free);
 	}
@@ -774,7 +812,44 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		__atomic_add_fetch(&head->slot_versions[n], 1,
 				   __ATOMIC_RELEASE);
 
-	head->array[n] = obj;
+	/*
+	 * Re-check head->array_generation immediately before the store.
+	 * A sibling value-result write that scribbled head->array between
+	 * the snapshot at the top and this point would also land in the
+	 * same shm vicinity as head->array_generation; mirror the read-
+	 * side mismatch reject in validate_object_handle() here on the
+	 * write side.  Route through the existing local_obj_num_entries_
+	 * corrupted path used by the entry-time stomped-num_entries guard
+	 * so the failure mode collapses onto one counter and one error
+	 * shape -- both observations are the same hazard class (a wild
+	 * stomp on objhead state past the snapshot).  ACQUIRE pairs with
+	 * the bumper's RELEASE in the OBJ_LOCAL grow branch above and in
+	 * destroy_objects().  OBJ_GLOBAL arrays are pre-allocated and
+	 * never legitimately reseated, so gen stays at the snapshotted
+	 * value in steady state -- a mismatch there means a wild write
+	 * has clobbered head->array_generation (and presumably head->array
+	 * with it), which is exactly the case the snapshot is here to
+	 * catch.
+	 */
+	{
+		unsigned int gen_now = __atomic_load_n(&head->array_generation,
+						       __ATOMIC_ACQUIRE);
+		if (gen_now != gen_snap) {
+			outputerr("add_object: stomped array_generation type=%u gen_snap=%u gen_now=%u\n",
+				  type, gen_snap, gen_now);
+			__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
+					   1, __ATOMIC_RELAXED);
+			if (is_fd_type(type)) {
+				int fd = fd_from_object(obj, type);
+				if (fd >= 0)
+					close(fd);
+			}
+			release_obj(obj, scope, type);
+			goto out_unlock;
+		}
+	}
+
+	array_snap[n] = obj;
 	obj->array_idx = n;
 
 	/*
@@ -816,7 +891,18 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			 */
 			__atomic_store_n(&head->num_entries, n,
 					 __ATOMIC_RELEASE);
-			head->array[n] = NULL;
+			/*
+			 * Roll back through the same snapshotted pointer the
+			 * publishing store at array_snap[n] = obj used.  A
+			 * sibling-scribble that landed between the slot write
+			 * above and the fd_hash_insert() reject here would
+			 * fault on a freshly-corrupted head->array re-load
+			 * otherwise; the snapshot was validated by the gen
+			 * re-check before the publish, and OBJ_GLOBAL arrays
+			 * never legitimately reseat, so the snapshot still
+			 * names the slot we wrote.
+			 */
+			array_snap[n] = NULL;
 			/*
 			 * Rollback bump: a lockless reader that briefly
 			 * observed snapshot=n+1 may have captured the pre-
