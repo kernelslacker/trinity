@@ -185,12 +185,10 @@ static void sanitise_io_uring_enter(struct syscallrecord *rec)
 	 * by the framework — fuzz coverage is preserved, just with an empty
 	 * SQ ring update for this iteration.
 	 *
-	 * Not handled here: rings opened post-fork by another child via
-	 * try_regenerate_fd() carry non-NULL sq_ring/sqes that are mapped
-	 * only in that child's address space; a NULL check cannot detect
-	 * the cross-process visibility hole.  Closing it requires gating
-	 * shm->mapped_ring publication to init-phase rings — see the
-	 * comment block in fds/io_uring.c above head->shared_alloc.
+	 * The post-fork visibility hole (rings whose sq_ring/sqes are mapped
+	 * only in the regen-caller's VA) is closed at the publication site:
+	 * shm->mapped_ring is now init-phase-gated in open_io_uring_fd_config(),
+	 * so post-fork regen rings never reach this load.
 	 */
 	if (ring == NULL || ring->sq_ring == NULL || ring->sqes == NULL ||
 	    ring->sq_entries == 0)

@@ -122,7 +122,8 @@ static void io_uring_dump(struct object *obj, enum obj_scope scope)
 		ring->sq_ring ? "yes" : "no", scope);
 }
 
-static int open_io_uring_fd_config(unsigned int entries, unsigned int flags)
+static int open_io_uring_fd_config(unsigned int entries, unsigned int flags,
+				   bool init_phase)
 {
 #ifdef __NR_io_uring_setup
 	struct trinity_io_uring_params params;
@@ -195,8 +196,21 @@ static int open_io_uring_fd_config(unsigned int entries, unsigned int flags)
 
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_IO_URING);
 
-	/* RELEASE store: pairs with the child-side ACQUIRE in get_io_uring_ring(). */
-	__atomic_store_n(&shm->mapped_ring, ring, __ATOMIC_RELEASE);
+	/*
+	 * Publish to shm->mapped_ring only for rings created during the
+	 * pre-fork init phase (init_io_uring_fds()).  Post-fork regen via
+	 * try_regenerate_fd() → open_io_uring_fd() still grows OBJ_GLOBAL
+	 * via add_object() above (so get_typed_fd(ARG_FD_IO_URING) keeps
+	 * finding rings — it reads the obj's scalar fd, not the mmap
+	 * pointers), but its sq_ring/sqes are mapped only in the regen-
+	 * caller's VA.  Publishing them would point already-forked siblings
+	 * at parent-private addresses they can't dereference, recreating
+	 * the post-fork visibility hole that sanitise_io_uring_enter
+	 * faults on.  RELEASE store pairs with the child-side ACQUIRE in
+	 * get_io_uring_ring().
+	 */
+	if (init_phase)
+		__atomic_store_n(&shm->mapped_ring, ring, __ATOMIC_RELEASE);
 
 	return true;
 #else
@@ -210,7 +224,7 @@ static int open_io_uring_fd(void)
 	unsigned int i = rand() % ARRAY_SIZE(ring_configs);
 
 	return open_io_uring_fd_config(ring_configs[i].entries,
-				       ring_configs[i].flags);
+				       ring_configs[i].flags, false);
 }
 
 static int init_io_uring_fds(void)
@@ -241,23 +255,23 @@ static int init_io_uring_fds(void)
 	 * rings created post-fork via try_regenerate_fd() the mapping
 	 * exists only in the parent and a child dereference would fault.
 	 *
-	 * That post-fork mmap-pointer hazard is pre-existing (the obj
-	 * struct itself was already a parent-private hazard before this
-	 * conversion masked the further deref) and orthogonal to the
-	 * obj-on-shared-heap structural fix this commit lands.  Closing
-	 * it requires either (a) gating the shm->mapped_ring publication
-	 * to init-phase rings only so post-fork rings are never picked
-	 * up by child sanitisers, or (b) skipping io_uring's .open hook
-	 * so the pool never regenerates from child context.  Either is a
-	 * separate change — the obj-struct migration here strictly
-	 * improves the pre-fork-ring case (no more obj read fault) while
-	 * leaving the post-fork-ring failure mode unchanged.
+	 * The post-fork mmap-pointer hazard is now structurally closed at
+	 * the publication site: open_io_uring_fd_config() only stores into
+	 * shm->mapped_ring when called with init_phase=true, which is the
+	 * pre-fork loop below.  Post-fork regen via the .open hook still
+	 * grows OBJ_GLOBAL with a freshly mmap'd ring (so the pool count
+	 * stays alive and get_typed_fd(ARG_FD_IO_URING) still hands out
+	 * the regen'd fd to syscalls that just want the scalar), but it
+	 * no longer overwrites the published slot with parent-private
+	 * sq_ring/sqes pointers that already-forked siblings would fault
+	 * on the moment they load shm->mapped_ring.
 	 */
 	head->shared_alloc = true;
 
 	for (i = 0; i < ARRAY_SIZE(ring_configs); i++)
 		count += open_io_uring_fd_config(ring_configs[i].entries,
-						 ring_configs[i].flags);
+						 ring_configs[i].flags,
+						 true);
 	return count > 0;
 }
 
