@@ -1138,6 +1138,10 @@ struct stats_s {
 	unsigned long xfrm_churn_burn_runs;		/* burn-this-netns branch attempted */
 	unsigned long xfrm_churn_burn_throttled;	/* burn-this-netns skipped: MAX_CONCURRENT_NEWNET cap reached */
 	unsigned long xfrm_churn_burn_completed;	/* burn-this-netns reached the readers + larval insert */
+	unsigned long xfrm_compat_sweep_runs;		/* xfrm_compat_msg_sweep sub-mode invocations */
+	unsigned long xfrm_compat_sends_ok;		/* sweep sendto returned >= 0 */
+	unsigned long xfrm_compat_sends_failed;		/* sweep sendto returned < 0 */
+	unsigned long xfrm_compat_replies_seen;		/* sweep recv returned > 0 */
 
 	/* nat_t_churn childop counters */
 	unsigned long nat_t_churn_runs;			/* total nat_t_churn invocations */

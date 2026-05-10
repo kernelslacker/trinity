@@ -146,6 +146,29 @@
 #define XFRM_MSG_UPDSA		0x1f
 #endif
 
+/* XFRM_MSG_MAPPING (0x21) was added to the UAPI without a matching entry
+ * in net/xfrm/xfrm_compat.c::xfrm_msg_min[], which was sized only through
+ * XFRM_MSG_GETAE.  A 32-bit task issuing the new opcode against a 64-bit
+ * kernel walked off the end of xfrm_msg_min[] reading garbage as the
+ * minimum payload size.  Fixed by upstream commit 28465227c80f.  Sysroot
+ * shims so the sweep below compiles against older <linux/xfrm.h>. */
+#ifndef XFRM_MSG_MAPPING
+#define XFRM_MSG_MAPPING	0x21
+#endif
+
+#ifndef XFRM_MSG_SETDEFAULT
+#define XFRM_MSG_SETDEFAULT	0x22
+#endif
+
+#ifndef XFRM_MSG_GETDEFAULT
+#define XFRM_MSG_GETDEFAULT	0x23
+#endif
+
+/* End of the compat-table sweep range.  Covers MAPPING + the SETDEFAULT
+ * / GETDEFAULT pair added after it; widening this picks up any further
+ * UAPI additions whose compat-table entry is missing. */
+#define XFRM_COMPAT_SWEEP_MAX	XFRM_MSG_GETDEFAULT
+
 #ifndef XFRMA_ALG_AUTH
 #define XFRMA_ALG_AUTH		1
 #define XFRMA_ALG_CRYPT		2
@@ -1402,6 +1425,71 @@ static void pfkey_flush_burst(void)
 }
 
 /*
+ * Defensive sweep of the netlink_xfrm opcode space, targeting off-end
+ * indexing in net/xfrm/xfrm_compat.c::xfrm_msg_min[] and the broader
+ * xfrm_user dispatch.  Pre-fix (upstream 28465227c80f) the compat
+ * translation table was sized only through XFRM_MSG_GETAE while the
+ * UAPI grew XFRM_MSG_MAPPING; a 32-bit task issuing MAPPING walked
+ * off the end reading garbage.  A 64-bit-only fuzz binary doesn't
+ * itself enter the compat translator, but iterating the full
+ * XFRM_MSG_BASE..XFRM_MSG_MAX range exercises every kernel-side
+ * dispatch slot, catching any later off-end index added since.
+ *
+ * Per-iteration: rebuild a minimal nlmsghdr with a fixed 64-byte
+ * payload tail (small enough not to exceed any opcode's max, large
+ * enough to satisfy the smaller of the 32-bit / 64-bit struct
+ * minimums for most opcodes), sendto the bound NETLINK_XFRM fd
+ * MSG_DONTWAIT, drain at most one reply per send.  Most opcodes
+ * reject with EINVAL / E2BIG / EOPNOTSUPP — that's fine, the
+ * dispatch slot lookup happens before the validation that emits the
+ * rejection.  All I/O is non-blocking so the inner loop can't stall
+ * past the SIGALRM(1s) cap.
+ */
+static void xfrm_compat_msg_sweep(int fd)
+{
+	struct sockaddr_nl dst;
+	unsigned char buf[256];
+	unsigned char rbuf[1024];
+	struct nlmsghdr *nlh;
+	unsigned int t;
+	size_t off;
+	ssize_t n;
+
+	if (ns_unsupported_xfrm)
+		return;
+
+	__atomic_add_fetch(&shm->stats.xfrm_compat_sweep_runs,
+			   1, __ATOMIC_RELAXED);
+
+	memset(&dst, 0, sizeof(dst));
+	dst.nl_family = AF_NETLINK;
+
+	for (t = XFRM_MSG_NEWSA; t <= XFRM_COMPAT_SWEEP_MAX; t++) {
+		memset(buf, 0, sizeof(buf));
+		nlh = (struct nlmsghdr *)buf;
+		nlh->nlmsg_type  = (__u16)t;
+		nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+		nlh->nlmsg_seq   = next_seq();
+		off = NLMSG_HDRLEN + NLMSG_ALIGN(64);
+		nlh->nlmsg_len   = (__u32)off;
+
+		if (sendto(fd, buf, off, MSG_DONTWAIT,
+			   (struct sockaddr *)&dst, sizeof(dst)) < 0) {
+			__atomic_add_fetch(&shm->stats.xfrm_compat_sends_failed,
+					   1, __ATOMIC_RELAXED);
+			continue;
+		}
+		__atomic_add_fetch(&shm->stats.xfrm_compat_sends_ok,
+				   1, __ATOMIC_RELAXED);
+
+		n = recv(fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
+		if (n > 0)
+			__atomic_add_fetch(&shm->stats.xfrm_compat_replies_seen,
+					   1, __ATOMIC_RELAXED);
+	}
+}
+
+/*
  * Burn-this-netns mode: rare branch (ONE_IN(BURN_GATE_DENOM) at the
  * top of xfrm_churn) that races cleanup_net's xfrm_state_flush against
  * the byseq/byspi chains we just populated.  Mechanics:
@@ -1699,6 +1787,14 @@ bool xfrm_churn(struct childdata *child)
 	 * netlink_xfrm. */
 	if ((rand32() & 7U) == 0)
 		pfkey_flush_burst();
+
+	/* Compat-table off-end-read sweep: ~1 in 8 invocations iterates
+	 * the full XFRM_MSG_BASE..XFRM_MSG_MAX opcode range against the
+	 * already-open netlink_xfrm fd.  Targets the bug class fixed by
+	 * upstream 28465227c80f (missing xfrm_msg_min[] entry for
+	 * XFRM_MSG_MAPPING) and any later off-end indices added since. */
+	if (ONE_IN(8))
+		xfrm_compat_msg_sweep(xfrm);
 
 out:
 	if (udp >= 0)
