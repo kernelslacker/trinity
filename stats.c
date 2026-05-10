@@ -750,7 +750,8 @@ static void dump_stats_json(void)
 		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
 		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu},"
 		"\"ipv6_ndisc_proxy\":{\"runs\":%lu,\"ns_sent_ok\":%lu,\"setup_failed\":%lu,\"proxy_enable_ok\":%lu},"
-		"\"ipfrag_source_churn\":{\"runs\":%lu,\"packets_sent_ok\":%lu,\"send_failed\":%lu,\"unique_srcs\":%lu}"
+		"\"ipfrag_source_churn\":{\"runs\":%lu,\"packets_sent_ok\":%lu,\"send_failed\":%lu,\"unique_srcs\":%lu},"
+		"\"rtnl_vf_broadcast_getlink\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"getlink_ok\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1361,7 +1362,11 @@ static void dump_stats_json(void)
 		shm->stats.ipfrag_source_runs,
 		shm->stats.ipfrag_packets_sent_ok,
 		shm->stats.ipfrag_send_failed,
-		shm->stats.ipfrag_unique_srcs);
+		shm->stats.ipfrag_unique_srcs,
+		shm->stats.rtnl_vf_broadcast_runs,
+		shm->stats.rtnl_vf_broadcast_setup_ok,
+		shm->stats.rtnl_vf_broadcast_setup_failed,
+		shm->stats.rtnl_vf_broadcast_getlink_ok);
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -3336,6 +3341,13 @@ void dump_stats(void)
 		stat_row("ipfrag_source_churn", "packets_sent_ok", shm->stats.ipfrag_packets_sent_ok);
 		stat_row("ipfrag_source_churn", "send_failed",     shm->stats.ipfrag_send_failed);
 		stat_row("ipfrag_source_churn", "unique_srcs",     shm->stats.ipfrag_unique_srcs);
+	}
+
+	if (shm->stats.rtnl_vf_broadcast_runs) {
+		stat_row("rtnl_vf_broadcast_getlink", "runs",          shm->stats.rtnl_vf_broadcast_runs);
+		stat_row("rtnl_vf_broadcast_getlink", "setup_ok",      shm->stats.rtnl_vf_broadcast_setup_ok);
+		stat_row("rtnl_vf_broadcast_getlink", "setup_failed",  shm->stats.rtnl_vf_broadcast_setup_failed);
+		stat_row("rtnl_vf_broadcast_getlink", "getlink_ok",    shm->stats.rtnl_vf_broadcast_getlink_ok);
 	}
 
 	if (shm->stats.afxdp_churn_runs) {
