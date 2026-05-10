@@ -720,7 +720,15 @@ static void init_child(struct childdata *child, int childno)
 	 * the cap is set is safe.  Both rlim_cur and rlim_max are clamped to
 	 * the cap so a fuzzed setrlimit() in the child can't widen it back to
 	 * RLIM_INFINITY.
+	 *
+	 * Skipped under ASAN: the address sanitizer reserves 32-512 GiB of
+	 * virtual address space for its shadow memory, far above the 4 GiB
+	 * cap.  Without this skip every child's first mmap fails and the run
+	 * dies before main_loop with "ERROR: Failed to mmap" in every child
+	 * log.  ASAN runs are debug builds where catching the bug matters
+	 * more than bounding virtual memory.
 	 */
+#ifndef __SANITIZE_ADDRESS__
 	{
 		struct rlimit as_lim = {
 			.rlim_cur = TRINITY_CHILD_AS_CAP_BYTES,
@@ -729,6 +737,7 @@ static void init_child(struct childdata *child, int childno)
 		if (setrlimit(RLIMIT_AS, &as_lim) != 0)
 			perror("setrlimit(RLIMIT_AS)");
 	}
+#endif
 }
 
 /*
