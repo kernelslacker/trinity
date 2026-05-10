@@ -125,6 +125,29 @@ static bool alloc_track_consume(void *ptr)
 }
 
 /*
+ * Non-consuming peer of alloc_track_consume: returns true if @ptr is
+ * present in the side-set without removing it.  Used by readers that
+ * want to validate a stored pointer (e.g. an object-pool slot) before
+ * the first deref, but must not perturb the consume-on-free invariant
+ * the deferred_free_enqueue path relies on.  Scan logic mirrors
+ * alloc_track_consume so behaviour stays in lock-step if the storage
+ * shape changes; deliberately NOT factored into a shared helper to
+ * keep the consume path's hot codepath untouched.
+ */
+bool alloc_track_lookup(void *ptr)
+{
+	unsigned int idx = (alloc_track_head - 1) & (ALLOC_TRACK_SIZE - 1);
+	unsigned int i;
+
+	for (i = 0; i < ALLOC_TRACK_SIZE; i++) {
+		if (alloc_track[idx] == ptr)
+			return true;
+		idx = (idx - 1) & (ALLOC_TRACK_SIZE - 1);
+	}
+	return false;
+}
+
+/*
  * Ring storage lives in an mmap'd region whose address range is registered
  * with shared_regions[] via track_shared_region().  That tracking lets
  * avoid_shared_buffer() and the mm-syscall sanitisers refuse fuzzed

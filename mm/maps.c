@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include "arch.h"
 #include "child.h"
+#include "deferred-free.h"
 #include "maps.h"
 #include "random.h"
 #include "shm.h"
@@ -102,6 +103,31 @@ bool get_map_handle(struct map_handle *h)
 		    (uintptr_t)obj >= 0x800000000000UL) {
 			outputerr("get_map_handle: bogus obj %p in OBJ_MMAP "
 				  "pool (type %u, scope %d)\n",
+				  obj, type, scope);
+			continue;
+		}
+
+		/*
+		 * Ground-truth check before the first deref: obj pointers
+		 * for OBJ_LOCAL pools come back through __zmalloc(), which
+		 * registers them in the alloc-track ring.  A stomped slot
+		 * can hand back a value that passes the heap-range guard
+		 * above (8-byte aligned, inside user VA) yet doesn't match
+		 * any allocation we ever made -- the first obj->map.size
+		 * read then returns garbage and downstream consumers
+		 * (gen_xattr_name, generate_syscall_args, alloc_iovec)
+		 * walk into unmapped memory.  Skip the slot when the obj
+		 * isn't in the live malloc-result set.  OBJ_GLOBAL pool
+		 * objs come from alloc_shared_obj() which does not feed
+		 * the alloc-track ring; the version+array-generation
+		 * snapshot taken above plus validate_object_handle() at
+		 * the end of the loop are the ground-truth check for that
+		 * scope, so the lookup is gated on OBJ_LOCAL to avoid
+		 * spurious rejections of legitimate shared-heap objs.
+		 */
+		if (scope == OBJ_LOCAL && !alloc_track_lookup(obj)) {
+			outputerr("get_map_handle: obj %p not in alloc_track "
+				  "(stomped slot, type %u, scope %d)\n",
 				  obj, type, scope);
 			continue;
 		}
