@@ -739,7 +739,7 @@ static void dump_stats_json(void)
 		"\"kvm\":{\"vcpu_ioctls_dispatched\":%lu},"
 		"\"kvm_run_churn\":{\"invocations\":%lu,\"exit_io\":%lu,\"exit_mmio\":%lu,\"exit_hlt\":%lu,\"exit_shutdown\":%lu,\"exit_fail_entry\":%lu,\"exit_internal_error\":%lu,\"exit_intr\":%lu,\"exit_other\":%lu,\"errors\":%lu},"
 		"\"nl80211\":{\"runs\":%lu,\"setup_failed\":%lu,\"scan_triggered\":%lu,\"connect_attempted\":%lu,\"connect_succeeded\":%lu,\"disconnect_attempted\":%lu,\"regdom_changed\":%lu,\"iface_created\":%lu,\"iface_destroyed\":%lu,\"bursts_sent\":%lu},"
-		"\"nat_t_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_deleted\":%lu,\"frames_sent\":%lu},"
+		"\"nat_t_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_deleted\":%lu,\"frames_sent\":%lu,\"xfrm6_setup_ok\":%lu,\"xfrm6_setup_fail\":%lu,\"xfrm6_sendto_runs\":%lu,\"xfrm6_delsa_races\":%lu},"
 		"\"splice_protocols\":{\"runs\":%lu,\"setup_failed\":%lu,\"chain_ok\":%lu,\"in_bytes\":%lu,\"out_bytes\":%lu,\"udp_encap_attempted\":%lu,\"tcp_repair_attempted\":%lu,\"packet_ring_attempted\":%lu,\"alg_attempted\":%lu,\"rxrpc_attempted\":%lu,\"msg_splice_pages_attempted\":%lu,\"msg_splice_pages_path_taken_inferred\":%lu},"
 		"\"rxrpc_key_install\":{\"runs\":%lu,\"calls\":%lu,\"revokes\":%lu,\"quota_hits\":%lu,\"unsupported\":%lu},"
 		"\"af_alg_weak_cipher_probe\":{\"runs\":%lu,\"socket_failed\":%lu,\"total_bind_attempts\":%lu,\"total_bind_accepted\":%lu,\"weak_accepted_total\":%lu,\"setkey_accepted_total\":%lu,\"skcipher_weak_accepted\":%lu,\"aead_weak_accepted\":%lu,\"hash_weak_accepted\":%lu,\"strong_rejected\":%lu},"
@@ -1237,6 +1237,10 @@ static void dump_stats_json(void)
 		shm->stats.nat_t_churn_sa_added,
 		shm->stats.nat_t_churn_sa_deleted,
 		shm->stats.nat_t_churn_frames_sent,
+		shm->stats.nat_t_xfrm6_setup_ok,
+		shm->stats.nat_t_xfrm6_setup_fail,
+		shm->stats.nat_t_xfrm6_sendto_runs,
+		shm->stats.nat_t_xfrm6_delsa_races,
 		shm->stats.splice_protocols_runs,
 		shm->stats.splice_protocols_setup_failed,
 		shm->stats.splice_protocols_chain_ok,
@@ -2974,11 +2978,15 @@ void dump_stats(void)
 	}
 
 	if (shm->stats.nat_t_churn_runs) {
-		stat_row("nat_t_churn", "runs",         shm->stats.nat_t_churn_runs);
-		stat_row("nat_t_churn", "setup_failed", shm->stats.nat_t_churn_setup_failed);
-		stat_row("nat_t_churn", "sa_added",     shm->stats.nat_t_churn_sa_added);
-		stat_row("nat_t_churn", "sa_deleted",   shm->stats.nat_t_churn_sa_deleted);
-		stat_row("nat_t_churn", "frames_sent",  shm->stats.nat_t_churn_frames_sent);
+		stat_row("nat_t_churn", "runs",              shm->stats.nat_t_churn_runs);
+		stat_row("nat_t_churn", "setup_failed",      shm->stats.nat_t_churn_setup_failed);
+		stat_row("nat_t_churn", "sa_added",          shm->stats.nat_t_churn_sa_added);
+		stat_row("nat_t_churn", "sa_deleted",        shm->stats.nat_t_churn_sa_deleted);
+		stat_row("nat_t_churn", "frames_sent",       shm->stats.nat_t_churn_frames_sent);
+		stat_row("nat_t_churn", "xfrm6_setup_ok",    shm->stats.nat_t_xfrm6_setup_ok);
+		stat_row("nat_t_churn", "xfrm6_setup_fail",  shm->stats.nat_t_xfrm6_setup_fail);
+		stat_row("nat_t_churn", "xfrm6_sendto_runs", shm->stats.nat_t_xfrm6_sendto_runs);
+		stat_row("nat_t_churn", "xfrm6_delsa_races", shm->stats.nat_t_xfrm6_delsa_races);
 	}
 
 	if (shm->stats.bpf_cgroup_attach_runs) {
