@@ -155,6 +155,29 @@
 #define HEALER_NORM_PREDFREQ_BIAS 5
 
 /*
+ * Display-time pollution filter: minimum total HEALER observation
+ * count before the dump suppresses static-seeded entries whose
+ * participating syscalls have never been attempted by any child this
+ * run.  Below this threshold the dump trusts the seed-derived
+ * ranking, since "never attempted" early in a run just means "the
+ * random scheduler hasn't picked it yet".  Above it, attempted == 0
+ * means the kernel is rejecting the syscall (ENOSYS, missing CONFIG,
+ * sandboxed) and the seed's pair will never produce real signal -- so
+ * surfacing it in the top-N is pure UX noise (e.g. {*, landlock_*}
+ * lines on a no-LANDLOCK kernel that pollute the seed-only section
+ * for the entire run).  Replaces the failed startup ENOSYS-probe
+ * approach (commits 9ec0ac291dd2 / 3f61a24beebd, both reverted for
+ * hangs and fragility) with a no-startup-cost dump-path filter.
+ *
+ * Sized at 1000 because by the time HEALER has logged that many
+ * observations the random scheduler has had ample opportunity to dial
+ * any genuinely-supported syscall at least once; an entry still at
+ * attempted == 0 at that point is overwhelmingly likely to be one the
+ * kernel will keep rejecting.
+ */
+#define HEALER_POLLUTION_FILTER_THRESHOLD 1000UL
+
+/*
  * FNV-1a parameters from the canonical 32-bit FNV definition.  Used
  * over the byte representation of the sorted (pred_a, pred_b) tuple
  * to derive the initial slot index.  Cheap enough on the (rare)
@@ -920,6 +943,32 @@ static int healer_pred_leader_cmp(const void *a, const void *b)
 
 #define HEALER_PRED_LEADERS_TOP_N 5
 
+/*
+ * True if the syscall's per-entry attempted counter is still zero --
+ * i.e. no child has ever called this syscall this run.  Backs the
+ * dump-path pollution filter (HEALER_POLLUTION_FILTER_THRESHOLD).
+ *
+ * NULL or out-of-range entries are treated as unattempted: a slot
+ * the build's syscall table does not even carry cannot meaningfully
+ * have been attempted, and the surrounding filter still requires the
+ * total observation threshold before acting on the result, so a
+ * mis-seeded out-of-range nr cannot suppress anything until the run
+ * is well past warmup.  do32 is left at false to match the call shape
+ * print_syscall_name uses everywhere else in the dump path -- HEALER
+ * does not separately track 32-bit dispatches.
+ */
+static bool healer_syscall_unattempted(unsigned int nr)
+{
+	const struct syscallentry *entry;
+
+	if (nr >= MAX_NR_SYSCALL)
+		return true;
+	entry = get_syscall_entry(nr, false);
+	if (entry == NULL)
+		return true;
+	return entry->attempted == 0;
+}
+
 void healer_table_dump(void)
 {
 	/*
@@ -980,6 +1029,17 @@ void healer_table_dump(void)
 	 */
 	unsigned long low_raw_skipped = 0;
 	/*
+	 * Counts entries skipped from top-N qualification because both
+	 * participating syscalls have entry->attempted == 0 and HEALER's
+	 * total observation count is past HEALER_POLLUTION_FILTER_THRESHOLD
+	 * — i.e. seed-only pollution from syscalls the running kernel
+	 * keeps rejecting (ENOSYS, missing CONFIG, sandboxed).  Surfaced
+	 * on its own dump line so the operator can see the filter doing
+	 * useful work (or, if the count is implausibly large, notice the
+	 * threshold is mistuned for the current workload).
+	 */
+	unsigned long pollution_filtered = 0;
+	/*
 	 * Per-dump tally of the static-seed pair table: total nonzero
 	 * cells and the subset of those whose weight has reached >=2 (i.e.
 	 * either a seed that has been confirmed by at least one dynamic
@@ -1018,6 +1078,18 @@ void healer_table_dump(void)
 	 * point.  CAS election inside maybe_decay makes it safe to be called
 	 * concurrently with the observation-path callers. */
 	healer_maybe_decay();
+
+	/* Snapshot the total observation count once up-front so the
+	 * pollution filter inside the scan loops compares every
+	 * candidate against the same threshold value -- re-reading the
+	 * live counter per candidate would let the threshold trip
+	 * mid-scan and produce an inconsistent dump where a few early
+	 * entries survived the filter and later identical entries did
+	 * not.  Reused for the summary line below in place of a second
+	 * load; the older code read it again there only because nothing
+	 * upstream had needed it yet. */
+	observed = __atomic_load_n(&shm->stats.healer_relations_observed,
+				   __ATOMIC_RELAXED);
 
 	/* Lockless sweep: each slot is read via a single ACQUIRE-load of
 	 * slot->key so the (pred_a, pred_b, predset_hash) tuple is a
@@ -1142,6 +1214,25 @@ void healer_table_dump(void)
 				continue;
 			}
 
+			/*
+			 * Pollution filter: once HEALER has accumulated enough
+			 * total observations, drop entries whose predecessor
+			 * pair references syscalls no child has ever attempted
+			 * (ENOSYS / missing CONFIG / sandboxed).  These persist
+			 * indefinitely as static-seed installs the kernel will
+			 * never let HEALER confirm dynamically -- e.g. the
+			 * landlock_create_ruleset pollution Dave saw in the
+			 * seed-only section on a no-LANDLOCK kernel.  Top-N
+			 * qualification only; the slot itself stays put for
+			 * load/save and weight-decay handling.
+			 */
+			if (observed >= HEALER_POLLUTION_FILTER_THRESHOLD &&
+			    healer_syscall_unattempted(slot_pred_a) &&
+			    healer_syscall_unattempted(slot_pred_b)) {
+				pollution_filtered++;
+				continue;
+			}
+
 			cand.pred_a = slot_pred_a;
 			cand.pred_b = slot_pred_b;
 			cand.promoted_nr = nr;
@@ -1223,6 +1314,23 @@ void healer_table_dump(void)
 			}
 
 			/*
+			 * Pollution filter, pair-side: same shape as the
+			 * triple-side check above, applied to the producer
+			 * (i) / consumer (j) syscall pair the dump renders as
+			 * `{*, producer} -> consumer`.  This is the section
+			 * the original landlock_create_ruleset pollution
+			 * showed up in -- pair seeds for syscalls the kernel
+			 * keeps rejecting accumulate at the top of the
+			 * seed-only ranking with predfreq=0 forever.
+			 */
+			if (observed >= HEALER_POLLUTION_FILTER_THRESHOLD &&
+			    healer_syscall_unattempted(i) &&
+			    healer_syscall_unattempted(j)) {
+				pollution_filtered++;
+				continue;
+			}
+
+			/*
 			 * Single-predecessor TF-IDF analog: the triple form
 			 * dampens by isqrt((a+K)*(b+K) + 1) over both
 			 * predecessor antecedents; a pair has only one
@@ -1282,8 +1390,6 @@ void healer_table_dump(void)
 	__atomic_store_n(&shm->stats.healer_unique_predsets, occupied,
 			 __ATOMIC_RELAXED);
 
-	observed = __atomic_load_n(&shm->stats.healer_relations_observed,
-				   __ATOMIC_RELAXED);
 	table_full = __atomic_load_n(&shm->stats.healer_table_full,
 				     __ATOMIC_RELAXED);
 	evictions = __atomic_load_n(&shm->stats.healer_evictions,
@@ -1323,6 +1429,10 @@ void healer_table_dump(void)
 		stats_log_write("  low-raw skipped: %lu (raw < %u)\n",
 				low_raw_skipped,
 				HEALER_DUMP_MIN_RAW);
+
+	if (pollution_filtered != 0)
+		stats_log_write("HEALER pollution-filtered: %lu seed pairs hidden (predfreq=0, attempted=0)\n",
+				pollution_filtered);
 
 	if (top_dyn_count == 0 && top_seed_count == 0) {
 		free(succ_weight);
