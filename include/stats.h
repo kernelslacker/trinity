@@ -1287,6 +1287,10 @@ struct stats_s {
 	unsigned long vsock_transport_churn_buffer_size_ok;	/* setsockopt(SO_VM_SOCKETS_BUFFER_SIZE) accepted mid-flow */
 	unsigned long vsock_transport_churn_timeout_ok;		/* setsockopt(SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW) accepted mid-flow */
 	unsigned long vsock_transport_churn_get_cid_ok;		/* ioctl(IOCTL_VM_SOCKETS_GET_LOCAL_CID) returned the local cid */
+	unsigned long vsock_seq_eom_runs;			/* SEQ_EOM 0-length burst sub-mode invocations */
+	unsigned long vsock_seq_eom_sends_ok;			/* sendmsg(MSG_EOR, iov_len=0) returned >= 0 */
+	unsigned long vsock_seq_eom_sends_failed;		/* sendmsg(MSG_EOR, iov_len=0) returned < 0 */
+	unsigned long vsock_seq_eom_skipped;			/* sub-mode gated out: no socket / unsupported / wall-cap */
 
 	/* bridge_vlan_churn childop counters */
 	unsigned long bridge_vlan_churn_runs;			/* total bridge_vlan_churn invocations */
