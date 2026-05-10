@@ -991,6 +991,13 @@ struct stats_s {
 	unsigned long obscure_af_churn_pattern_kernel_rejected[8];
 	unsigned long obscure_af_churn_pattern_unexpected_success[8];
 
+	/* ipv6_pmtu_teardown_race childop counters */
+	unsigned long ipv6_pmtu_race_runs;			/* total ipv6_pmtu_teardown_race invocations */
+	unsigned long ipv6_pmtu_race_setup_failed;		/* probe / anchor / unshare / worker fork failed */
+	unsigned long ipv6_pmtu_race_ptb_sent_ok;		/* sendto(ICMPV6_PKT_TOOBIG) returned >=0 */
+	unsigned long ipv6_pmtu_race_dellink_ok;		/* RTM_DELLINK ack 0 from worker B */
+	unsigned long ipv6_pmtu_race_completed_ok;		/* iter_one reached setns-back + close cleanly */
+
 	/* vrf_fib_churn childop counters */
 	unsigned long vrf_fib_churn_runs;		/* total vrf_fib_churn invocations */
 	unsigned long vrf_fib_churn_setup_failed;	/* unshare(CLONE_NEWNET) or rtnl socket failed */
