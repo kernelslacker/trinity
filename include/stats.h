@@ -1283,6 +1283,14 @@ struct stats_s {
 	unsigned long afxdp_churn_map_delete_ok;		/* bpf(BPF_MAP_DELETE_ELEM) on bound xskmap key (race target) */
 	unsigned long afxdp_churn_munmap_race_ok;		/* munmap of FILL ring while bound (race target) */
 
+	/* veth_asymmetric_xdp childop counters */
+	unsigned long veth_asym_iters;				/* total veth_asymmetric_xdp invocations */
+	unsigned long veth_asym_eperm;				/* unshare/NEWLINK rejected with EPERM */
+	unsigned long veth_asym_unsupported;			/* veth or XDP latched off (separate latches inside the op) */
+	unsigned long veth_asym_pair_ok;			/* RTM_NEWLINK created an asymmetric-queue veth pair */
+	unsigned long veth_asym_xdp_attach_ok;			/* RTM_NEWLINK + IFLA_XDP attached the prog (SKB mode) */
+	unsigned long veth_asym_send_ok;			/* AF_PACKET sendto to peer veth returned >0 */
+
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
 	 * private to the childop since nothing else needs the symbolic
