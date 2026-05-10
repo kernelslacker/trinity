@@ -82,6 +82,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <sched.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -98,6 +99,7 @@
 #if __has_include(<linux/mptcp_pm.h>)
 
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <linux/genetlink.h>
 #include <linux/mptcp_pm.h>
 #include <linux/netlink.h>
@@ -105,6 +107,7 @@
 #include "jitter.h"
 #include "netlink-genl-families.h"
 #include "random.h"
+#include "utils.h"
 
 extern struct genl_family_grammar fam_mptcp_pm;
 
@@ -422,6 +425,123 @@ static void churn_send(int fd)
 				   1, __ATOMIC_RELAXED);
 }
 
+/*
+ * Static table of TCP-level sockopts that mptcp's setsockopt_all_sf()
+ * propagates from the master mptcp socket to every current and future
+ * subflow.  Upstream commit 70ece9d7021c restored a missing
+ * sockopt_seq_inc() in that propagation path: without the seq bump,
+ * subflows created AFTER the master setsockopt() inherit stale state.
+ *
+ * Each entry pairs an SOL_TCP optname with a small value generator.
+ * TCP_CONGESTION is intentionally omitted — its string-arg path doesn't
+ * fit the int-valued table here.
+ */
+struct mptcp_sf_optspec {
+	const char	*name;
+	int		 optname;
+	int		 (*genval)(void);
+};
+
+static int genval_maxseg(void)		{ return 536 + (int)(rand32() % 800U); }
+static int genval_bool(void)		{ return RAND_BOOL() ? 1 : 0; }
+static int genval_keepidle(void)	{ return 1 + (int)(rand32() % 600U); }
+static int genval_keepintvl(void)	{ return 1 + (int)(rand32() % 60U); }
+static int genval_keepcnt(void)		{ return 1 + (int)(rand32() % 16U); }
+static int genval_user_to(void)		{ return 1 + (int)(rand32() % 30000U); }
+static int genval_defer(void)		{ return 1 + (int)(rand32() % 60U); }
+
+static const struct mptcp_sf_optspec mptcp_sf_opts[] = {
+	{ "TCP_MAXSEG",		TCP_MAXSEG,		genval_maxseg },
+	{ "TCP_NODELAY",	TCP_NODELAY,		genval_bool },
+	{ "TCP_CORK",		TCP_CORK,		genval_bool },
+	{ "TCP_KEEPIDLE",	TCP_KEEPIDLE,		genval_keepidle },
+	{ "TCP_KEEPINTVL",	TCP_KEEPINTVL,		genval_keepintvl },
+	{ "TCP_KEEPCNT",	TCP_KEEPCNT,		genval_keepcnt },
+	{ "TCP_USER_TIMEOUT",	TCP_USER_TIMEOUT,	genval_user_to },
+	{ "TCP_DEFER_ACCEPT",	TCP_DEFER_ACCEPT,	genval_defer },
+};
+
+/*
+ * Per-iteration recipe targeting the setsockopt_all_sf seq window:
+ *   1. open a fresh master IPPROTO_MPTCP socket (separate from the
+ *      live churn connection so we don't interfere with the ADD/DEL
+ *      race window the outer loop drives),
+ *   2. setsockopt() a randomly-picked TCP-level option on the master,
+ *   3. drive an MPTCP_PM_CMD_ADD_ADDR so the path manager creates a
+ *      subflow AFTER the master setsockopt — this is the seq window
+ *      upstream commit 70ece9d7021c closes,
+ *   4. yield briefly so the subflow create can run,
+ *   5. getsockopt() the same optname on the master and verify the
+ *      value matches — catches the trivially-broken case where the
+ *      master itself wasn't applied.
+ *
+ * Subflow sockopt state isn't directly fd-addressable from userspace,
+ * so the kernel-level seq miss is observable as a behavioural drift in
+ * subflow connect timing / TCP behaviour, not via a userspace
+ * getsockopt on the subflow.  Goal here is just to drive the codepath
+ * under fuzz so KASAN/UBSAN/lockdep can fire.
+ */
+static void mptcp_setsockopt_all_sf_recipe(int genl_fd)
+{
+	const struct mptcp_sf_optspec *spec;
+	int sk;
+	int set_val;
+	int get_val = 0;
+	socklen_t glen;
+	__u8 loc_id;
+	__u32 addr_h;
+	unsigned int idle;
+
+	sk = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_MPTCP);
+	if (sk < 0) {
+		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT ||
+		    errno == ESOCKTNOSUPPORT) {
+			ns_unsupported_mptcp = true;
+			__atomic_add_fetch(&shm->stats.mptcp_setsockopt_unsupported,
+					   1, __ATOMIC_RELAXED);
+		}
+		return;
+	}
+
+	spec = &mptcp_sf_opts[rand32() % ARRAY_SIZE(mptcp_sf_opts)];
+	set_val = spec->genval();
+
+	if (setsockopt(sk, IPPROTO_TCP, spec->optname,
+		       &set_val, sizeof(set_val)) < 0) {
+		__atomic_add_fetch(&shm->stats.mptcp_setsockopt_master_fail,
+				   1, __ATOMIC_RELAXED);
+	} else {
+		__atomic_add_fetch(&shm->stats.mptcp_setsockopt_master_set,
+				   1, __ATOMIC_RELAXED);
+	}
+
+	/* Trigger a subflow create AFTER the master setsockopt — this is
+	 * the seq window upstream commit 70ece9d7021c closes.  loc_id and
+	 * addr ranges match the outer loop's bounds so the kernel's
+	 * pernet endpoint validator accepts the request. */
+	loc_id = 1U + (__u8)(rand32() % MPTCP_PM_LOC_ID_MAX);
+	addr_h = MPTCP_PM_LOOPBACK_BASE + (rand32() % NR_MPTCP_LOOPBACK_ADDRS);
+	(void)mptcp_pm_addr_cmd(genl_fd, MPTCP_PM_CMD_ADD_ADDR,
+				loc_id, addr_h);
+
+	idle = 1U + (rand32() % 3U);
+	while (idle--)
+		sched_yield();
+
+	glen = sizeof(get_val);
+	if (getsockopt(sk, IPPROTO_TCP, spec->optname,
+		       &get_val, &glen) == 0 && glen == sizeof(get_val)) {
+		if (get_val == set_val)
+			__atomic_add_fetch(&shm->stats.mptcp_getsockopt_verify_ok,
+					   1, __ATOMIC_RELAXED);
+		else
+			__atomic_add_fetch(&shm->stats.mptcp_getsockopt_verify_drift,
+					   1, __ATOMIC_RELAXED);
+	}
+
+	close(sk);
+}
+
 bool mptcp_pm_churn(struct childdata *child)
 {
 	struct sockaddr_in srv_addr, cli_addr;
@@ -595,6 +715,15 @@ bool mptcp_pm_churn(struct childdata *child)
 			(void)mptcp_pm_set_limits(genl_fd);
 		else
 			(void)mptcp_pm_flush_addrs(genl_fd);
+
+		/* g) Occasional setsockopt_all_sf seq-window probe:
+		 *    open a fresh master mptcp socket, set a TCP-level
+		 *    sockopt, drive an ADD_ADDR to create a subflow
+		 *    during the propagation seq window, and verify the
+		 *    master got the value.  Same cadence as other
+		 *    sub-modes, drives the path 70ece9d7021c fixed. */
+		if (ONE_IN(8))
+			mptcp_setsockopt_all_sf_recipe(genl_fd);
 
 		/* Walk loc_id forward bounded to [1, MPTCP_PM_LOC_ID_MAX].
 		 * The kernel rejects loc_id > 127 with EINVAL so capping
