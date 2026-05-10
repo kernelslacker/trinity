@@ -332,14 +332,14 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
 				__atomic_fetch_add(&shm->stats.wrong_fd_type_subst_generic,
 						   1UL, __ATOMIC_RELAXED);
 			} else {
-				/* Pick uniformly from the ARG_FD_BPF_MAP .. ARG_FD_TIMERFD
+				/* Pick uniformly from the ARG_FD_BPF_BTF .. ARG_FD_TIMERFD
 				 * range excluding the requested argtype: sample one of
 				 * the (range) other slots, then bump past argtype if
 				 * we landed at-or-above it. */
-				unsigned int range = ARG_FD_TIMERFD - ARG_FD_BPF_MAP;
+				unsigned int range = ARG_FD_TIMERFD - ARG_FD_BPF_BTF;
 				unsigned int pick = rand() % range;
 
-				effective_argtype = ARG_FD_BPF_MAP + pick;
+				effective_argtype = ARG_FD_BPF_BTF + pick;
 				if (effective_argtype >= argtype)
 					effective_argtype++;
 			}
