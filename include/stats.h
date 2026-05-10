@@ -1678,6 +1678,8 @@ struct stats_s {
 	unsigned long nl80211_iface_created;		/* NL80211_CMD_NEW_INTERFACE accepted */
 	unsigned long nl80211_iface_destroyed;		/* NL80211_CMD_DEL_INTERFACE accepted */
 	unsigned long nl80211_bursts_sent;		/* loopback UDP sendto on wlan iface returned >0 */
+	unsigned long nl80211_pmsr_runs;		/* NL80211_CMD_PEER_MEASUREMENT_START FTM request issued */
+	unsigned long nl80211_pmsr_ok;			/* NL80211_CMD_PEER_MEASUREMENT_START accepted (no kernel rejection) */
 
 	/* splice_protocols childop counters.  Coverage of splice() into
 	 * sockets whose protocol state has been steered into one of
