@@ -507,6 +507,23 @@ struct shm_s {
 	 * .healer_evictions) are bumped via __atomic_fetch_add.
 	 */
 	struct healer_relation healer_relations[HEALER_RELATION_SLOTS];
+
+	/*
+	 * Pair-relation table (single-predecessor companion to
+	 * healer_relations[] above).  Dense MAX_NR_SYSCALL x MAX_NR_SYSCALL
+	 * matrix indexed (pred -> succ); each cell is a relaxed-atomic
+	 * weight counter.  Sized 1024 * 1024 * 4 = 4 MiB, the largest single
+	 * region in shm but still a small fraction of the surrounding shm
+	 * budget.  Lives in shm rather than process-private BSS so the
+	 * per-child observer bumps converge into a single fleet-wide table:
+	 * a private-BSS layout would let the parent seed the table pre-fork
+	 * and have children inherit a COW snapshot, but each child's
+	 * subsequent observation would only mutate its own copy and
+	 * cross-child convergence (the entire point of the observer wire-up)
+	 * would never happen.  Zeroed by the surrounding shm memset(0); the
+	 * static-seed loader runs parent-side post-zero and pre-fork.
+	 */
+	unsigned int healer_pair_table[MAX_NR_SYSCALL][MAX_NR_SYSCALL];
 };
 extern struct shm_s *shm;
 extern unsigned int shm_size;

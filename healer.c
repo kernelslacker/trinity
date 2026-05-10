@@ -2193,20 +2193,30 @@ void healer_maybe_snapshot(void)
  * Parallel storage to the (predset -> nr) triple table above, indexed
  * (pred -> succ) instead of ((pred_a, pred_b) -> succ).  Coarser-
  * grained than triples but cheap to seed from a static prior derived
- * from existing ARG_FD_* / ret_objtype metadata, which the upcoming
- * follow-up commits will plumb in.  Nothing in this file or anywhere
- * else calls the APIs below yet -- this commit only stages the
- * storage and the three accessors so the seed-loader and observer-
- * merge work has a stable destination to build against.
+ * from existing ARG_FD_* / ret_objtype metadata, which the static-seed
+ * loader below plumbs in pre-fork.
  *
- * Sizing: MAX_NR_SYSCALL * MAX_NR_SYSCALL * 4 bytes.  Lives in
- * process-private BSS rather than shm because the dominant access
- * pattern is one bulk parent-side seed write before fork followed by
- * read-mostly child-side lookups; the per-child divergence on later
- * observation bumps is acceptable in exchange for not growing the
- * shm budget the much larger triple table already carries.
+ * The backing store lives at shm->healer_pair_table (declared in
+ * include/shm.h) so the parent's pre-fork seed AND each child's later
+ * observer-side bumps land in the same fleet-wide region; see the
+ * declaration's comment for the rationale on shm vs process-private
+ * BSS.  Locking model matches healer_relations[]: relaxed-atomic
+ * compare-exchange for the seed installer (idempotent CAS-from-zero)
+ * and a relaxed-atomic load + CAS loop bounded by HEALER_PAIR_MAX_WEIGHT
+ * for the observer bump.  No new lock or pattern is introduced here.
  */
-static unsigned int healer_pair_table[MAX_NR_SYSCALL][MAX_NR_SYSCALL];
+
+/*
+ * Per-cell saturation cap.  A single hot (pred, succ) pair fired in a
+ * tight loop would otherwise drive its cell's weight into the millions
+ * within seconds and dominate the dump-side ranking forever; the cap
+ * lets a steady observer signal accumulate well above the noise floor
+ * while still leaving room for late-arriving pairs to overtake an
+ * early hotspot via decay (when decay lands).  Picked at 1<<24 (~16M)
+ * to comfortably outrun any realistic per-run observation count for a
+ * single pair while staying far below uint32 saturation.
+ */
+#define HEALER_PAIR_MAX_WEIGHT (1U << 24)
 
 void healer_pair_seed(unsigned int pred, unsigned int succ, unsigned int weight)
 {
@@ -2216,26 +2226,39 @@ void healer_pair_seed(unsigned int pred, unsigned int succ, unsigned int weight)
 		return;
 
 	/* Don't overwrite a cell that already carries a weight -- a
-	 * previous seed call (or, once the observer-bump merge lands,
-	 * an in-flight observation) for this (pred, succ) pair is more
-	 * authoritative than this caller, and the seed loader is
-	 * expected to be idempotent.  CAS failure is a silent no-op so
-	 * the loader can re-run without double-counting. */
-	if (__atomic_compare_exchange_n(&healer_pair_table[pred][succ],
+	 * previous seed call or an in-flight observation for this
+	 * (pred, succ) pair is more authoritative than this caller, and
+	 * the seed loader is expected to be idempotent.  CAS failure is
+	 * a silent no-op so the loader can re-run without double-counting. */
+	if (__atomic_compare_exchange_n(&shm->healer_pair_table[pred][succ],
 					&expected, weight, false,
-					__ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
-		if (shm != NULL)
-			__atomic_fetch_add(&shm->stats.healer_pair_seeded, 1,
-					   __ATOMIC_RELAXED);
-	}
+					__ATOMIC_RELAXED, __ATOMIC_RELAXED))
+		__atomic_fetch_add(&shm->stats.healer_pair_seeded, 1,
+				   __ATOMIC_RELAXED);
 }
 
 void healer_pair_observe(unsigned int pred, unsigned int succ)
 {
+	unsigned int cur;
+
 	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
 		return;
 
-	__atomic_fetch_add(&healer_pair_table[pred][succ], 1, __ATOMIC_RELAXED);
+	/* Load + CAS loop instead of a bare fetch_add so the cell
+	 * saturates at HEALER_PAIR_MAX_WEIGHT cleanly.  Concurrent
+	 * observers retry on CAS failure; under steady-state observer-
+	 * hook fire rates per-cell contention is vanishingly small, and
+	 * once a cell hits the cap every observer short-circuits without
+	 * touching the line at all. */
+	cur = __atomic_load_n(&shm->healer_pair_table[pred][succ],
+			      __ATOMIC_RELAXED);
+	while (cur < HEALER_PAIR_MAX_WEIGHT) {
+		if (__atomic_compare_exchange_n(
+				&shm->healer_pair_table[pred][succ],
+				&cur, cur + 1, false,
+				__ATOMIC_RELAXED, __ATOMIC_RELAXED))
+			return;
+	}
 }
 
 unsigned int healer_pair_get(unsigned int pred, unsigned int succ)
@@ -2243,7 +2266,8 @@ unsigned int healer_pair_get(unsigned int pred, unsigned int succ)
 	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
 		return 0;
 
-	return __atomic_load_n(&healer_pair_table[pred][succ], __ATOMIC_RELAXED);
+	return __atomic_load_n(&shm->healer_pair_table[pred][succ],
+			       __ATOMIC_RELAXED);
 }
 
 /*

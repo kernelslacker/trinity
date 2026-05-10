@@ -202,14 +202,17 @@ void healer_maybe_snapshot(void);
  * Pair-relation table -- single-predecessor companion to the
  * (predset -> nr) triple table above.  Indexed (pred -> succ); each
  * cell holds a single weight counter mutated via relaxed atomics.
+ * The backing store lives in shm (shm->healer_pair_table) so the
+ * parent's pre-fork static seed and each child's runtime observer
+ * bumps converge into a single fleet-wide table; see the declaration
+ * in include/shm.h for the rationale.
  *
- * Foundational storage for upcoming static-seed work that bootstraps
- * a producer->consumer prior from existing ARG_FD_* / ret_objtype
- * metadata: pairs are coarser-grained than the triples but converge
- * MUCH faster from a static prior than triples can.  None of the APIs
- * below are wired into any observation or picker path yet -- the seed
- * loader and the merge into the existing observer fire are separate
- * follow-up commits.
+ * Bootstrapped from a static (producer -> consumer) prior derived from
+ * existing ARG_FD_* / ret_objtype metadata via healer_load_static_seed(),
+ * then refined at runtime by healer_pair_observe() firing on the
+ * new-edge path alongside healer_observe_relation().  Pairs are
+ * coarser-grained than the triples but converge MUCH faster from a
+ * static prior than triples can.
  *
  * All three accessors silently no-op (or, for the read accessor,
  * return 0) when either syscall number is out of range, so callers

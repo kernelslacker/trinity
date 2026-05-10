@@ -786,6 +786,22 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		 * credited to. */
 		healer_observe_relation(child, rec->nr);
 
+		/* Single-predecessor companion to the (predset -> nr) bump
+		 * above.  Same new-edge gating, but the pair table is the
+		 * coarser (immediate-pred -> nr) signal that the static-seed
+		 * loader bootstraps from ret_objtype/argtype metadata --
+		 * firing the bump alongside the relation observer keeps the
+		 * pair side learning from runtime evidence too instead of
+		 * staying frozen at the static seed forever.  child->last_
+		 * syscall_nr is the immediate predecessor (mirrors the
+		 * edgepair_record() call above) and is still the prior
+		 * value here -- it gets updated to rec->nr further down,
+		 * after this block.  An EDGEPAIR_NO_PREV sentinel value
+		 * (0xFFFF, e.g. on the first syscall of a child's life) is
+		 * filtered by healer_pair_observe()'s own MAX_NR_SYSCALL
+		 * guard, so no extra check is needed here. */
+		healer_pair_observe(child->last_syscall_nr, rec->nr);
+
 		/* Observation-delta-triggered persistence: same shape as the
 		 * minicorpus snapshot below, but gated on the cumulative
 		 * HEALER observation counter rather than fleet-wide edge
