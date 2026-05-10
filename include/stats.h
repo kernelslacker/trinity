@@ -1171,6 +1171,7 @@ struct stats_s {
 	unsigned long af_unix_scm_rights_gc_close_ok;		/* userspace dropped its refs to cycle members (gc fodder) */
 	unsigned long af_unix_scm_rights_gc_trigger_ok;		/* gc-trigger sendmsg / drain landed (unix_inflight or workqueue) */
 	unsigned long af_unix_scm_rights_gc_recv_ok;		/* recvmsg drained queued SCM_RIGHTS msg (race vs unix_gc walk) */
+	unsigned long af_unix_scm_rights_gc_peek_ok;		/* recvmsg(MSG_PEEK) walked unix_peek_fpl on queued SCM_RIGHTS */
 	unsigned long af_unix_scm_rights_gc_iouring_variant_ok;	/* io_uring fd inserted into the unix-scm reference graph */
 
 	/* netns_teardown_churn childop counters */
