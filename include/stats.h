@@ -1060,6 +1060,12 @@ struct stats_s {
 	unsigned long nft_dormant_abort_eperm;		/* sendmsg EPERM (CAP_NET_ADMIN gate) -- latches */
 	unsigned long nft_dormant_abort_emsg;		/* sendmsg failures other than EPERM */
 	unsigned long nft_dormant_abort_ok;		/* batch sent + drain completed */
+	unsigned long xt_ct_iters;		/* xt_CT usersize sub-mode invocations */
+	unsigned long xt_ct_eperm;		/* setsockopt EPERM (CAP_NET_ADMIN gate) -- latches */
+	unsigned long xt_ct_unsupported;	/* xt_CT module absent (ENOENT/EOPNOTSUPP/ENOPROTOOPT) -- latches */
+	unsigned long xt_ct_set_ok;		/* IPT/IP6T_SO_SET_REPLACE accepted */
+	unsigned long xt_ct_get_ok;		/* IPT/IP6T_SO_GET_ENTRIES accepted (xt_target_to_user reply path) */
+	unsigned long xt_ct_v2_seen;		/* revision 2 path actually accepted on this kernel */
 
 	/* tc_qdisc_churn childop counters */
 	unsigned long tc_qdisc_churn_runs;		/* total tc_qdisc_churn invocations */
