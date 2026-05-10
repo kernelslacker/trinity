@@ -23,6 +23,21 @@ struct io_uringobj;
 void create_shm(void);
 void init_shm(void);
 
+/*
+ * Concurrent in-flight cap for unshare(CLONE_NEWNET) and the matching
+ * clone()/clone3() flag.  Trinity children fuzzing fork()/clone()/clone3()
+ * spawn untracked grandchildren; each grandchild that calls unshare with
+ * CLONE_NEWNET feeds the kernel's netns cleanup workqueue, and the
+ * per-call cost grows with the queue's backlog.  Past a few in-flight
+ * unshares per host the workqueue can't keep up — copy_net_ns() begins
+ * blocking in D-state, the untracked grandchild population grows
+ * unbounded, and the box turns into a forkbomb.  A small fleet-wide
+ * cap on in-flight CLONE_NEWNET callers caps the backlog the kernel
+ * side has to drain.  See shm->newnet_in_flight and the
+ * unshare_newnet_throttled stat counter.
+ */
+#define MAX_CONCURRENT_NEWNET 4
+
 struct shm_s {
 	char __padding[4096];
 
@@ -246,6 +261,22 @@ struct shm_s {
 	 * log spam over long fuzz runs and to skip the unshare+remount
 	 * dance once we know it can't be made private. */
 	_Atomic bool no_private_ns;
+
+	/*
+	 * Fleet-wide in-flight count of unshare(CLONE_NEWNET) and the
+	 * matching clone()/clone3() flag.  The sanitise hooks for those
+	 * three syscalls bump this on admission and the matching post
+	 * hooks drop it; calls that find the count already at
+	 * MAX_CONCURRENT_NEWNET strip CLONE_NEWNET from the flag arg
+	 * instead of admitting another in-flight caller and bump
+	 * shm->stats.unshare_newnet_throttled.  See the long comment on
+	 * MAX_CONCURRENT_NEWNET above for the kernel-side reason this
+	 * cap exists.  Stored in shm so all children plus any untracked
+	 * grandchildren they fork share one counter — a process-local
+	 * static would be duplicated across the COW fork tree and let
+	 * each subtree run its own unbounded admission rate.
+	 */
+	_Atomic int newnet_in_flight;
 
 	/* recipe_runner discovery latches: a recipe whose first invocation
 	 * detects an absent kernel feature (ENOSYS, missing config) flips

@@ -3,6 +3,7 @@
  */
 #include <linux/sched.h>
 #include "sanitise.h"
+#include "shm.h"
 
 #ifndef UNSHARE_EMPTY_MNTNS
 #define UNSHARE_EMPTY_MNTNS	0x00100000
@@ -16,6 +17,51 @@ static unsigned long unshare_flags[] = {
 	UNSHARE_EMPTY_MNTNS,
 };
 
+/*
+ * post_state convention for the throttle: NEWNET_INFLIGHT_TICKET means
+ * sanitise_unshare() admitted a CLONE_NEWNET caller and bumped
+ * shm->newnet_in_flight, so post_unshare() must drop it.  Zero (the
+ * value generic_sanitise() leaves behind) means we did not bump and
+ * post must not drop.  We deliberately do not derive this from the
+ * post-call value of rec->a1 -- a sibling syscall can scribble the
+ * arg slot between BEFORE and AFTER, and an unbalanced decrement would
+ * let the in-flight counter underflow into a giant unsigned value and
+ * permanently disable the cap.
+ */
+#define NEWNET_INFLIGHT_TICKET	0x1UL
+
+static void sanitise_unshare(struct syscallrecord *rec)
+{
+	if ((rec->a1 & CLONE_NEWNET) == 0)
+		return;
+
+	if (__atomic_load_n(&shm->newnet_in_flight, __ATOMIC_RELAXED) >=
+	    MAX_CONCURRENT_NEWNET) {
+		/*
+		 * Cap reached -- strip CLONE_NEWNET.  The remaining bits in
+		 * unshare_flags[] are still a valid unshare bitmask (the
+		 * kernel takes any subset, including zero), so the syscall
+		 * still exercises the unshare path; we only avoid feeding
+		 * another in-flight netns clone into copy_net_ns().
+		 */
+		rec->a1 &= ~CLONE_NEWNET;
+		__atomic_fetch_add(&shm->stats.unshare_newnet_throttled, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	}
+
+	__atomic_fetch_add(&shm->newnet_in_flight, 1, __ATOMIC_RELAXED);
+	rec->post_state = NEWNET_INFLIGHT_TICKET;
+}
+
+static void post_unshare(struct syscallrecord *rec)
+{
+	if (rec->post_state != NEWNET_INFLIGHT_TICKET)
+		return;
+	rec->post_state = 0;
+	__atomic_fetch_sub(&shm->newnet_in_flight, 1, __ATOMIC_RELAXED);
+}
+
 struct syscallentry syscall_unshare = {
 	.name = "unshare",
 	.group = GROUP_PROCESS,
@@ -23,5 +69,7 @@ struct syscallentry syscall_unshare = {
 	.argtype = { [0] = ARG_LIST },
 	.argname = { [0] = "unshare_flags" },
 	.arg_params[0].list = ARGLIST(unshare_flags),
+	.sanitise = sanitise_unshare,
+	.post = post_unshare,
 	.rettype = RET_ZERO_SUCCESS,
 };

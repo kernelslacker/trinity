@@ -182,6 +182,17 @@ struct stats_s {
 	 * fix here only converts the resulting SEGV into a clean retry. */
 	unsigned long get_writable_address_scribbled_slots_caught;
 
+	/* Bumped by the sanitise hooks for unshare / clone / clone3 each
+	 * time a CLONE_NEWNET request was rejected because shm->newnet_in_flight
+	 * had already hit MAX_CONCURRENT_NEWNET.  Non-zero count is the
+	 * fleet-visible signal that the netns-forkbomb throttle (see the
+	 * comment on MAX_CONCURRENT_NEWNET in include/shm.h) is firing —
+	 * a steadily climbing value during a run means the kernel netns
+	 * cleanup workqueue is the slow path and the cap is doing real
+	 * work; stuck-at-zero means the fuzzer is not currently producing
+	 * enough concurrent unshares to trip it. */
+	unsigned long unshare_newnet_throttled;
+
 	/* Per-syscall reject counts indexed by syscall.nr, bumped from the
 	 * range_overlaps_shared() trip site so dump_stats() can name the top
 	 * offenders.  Two arrays so 32/64-bit syscall numbers don't smear

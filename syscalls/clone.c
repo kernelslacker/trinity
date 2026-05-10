@@ -8,12 +8,24 @@
 #include <linux/sched.h>
 #include "clone.h"
 #include "sanitise.h"
+#include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 
 #ifndef CLONE_NEWCGROUP
 #define CLONE_NEWCGROUP                0x02000000      /* New cgroup namespace */
 #endif
+
+/*
+ * Mirrors the convention in syscalls/unshare.c: when sanitise admits
+ * a CLONE_NEWNET clone() it stamps post_state with this magic value so
+ * post_clone() knows to drop shm->newnet_in_flight.  We do not derive
+ * the bookkeeping from rec->a1 at post time -- the wholesale-stomp
+ * detector exists precisely because sibling syscalls can scribble the
+ * rec, and an unbalanced decrement would permanently unbalance the
+ * cap.
+ */
+#define NEWNET_INFLIGHT_TICKET	0x1UL
 
 static unsigned long clone_flags[] = {
 	CSIGNAL,
@@ -29,10 +41,39 @@ static unsigned long clone_flags[] = {
 static void sanitise_clone(struct syscallrecord *rec)
 {
 	enforce_clone_flag_deps(&rec->a1, true);
+
+	/*
+	 * Throttle CLONE_NEWNET to MAX_CONCURRENT_NEWNET fleet-wide -- the
+	 * kernel's netns cleanup workqueue is the slow path and any
+	 * grandchild that succeeds with this flag widens the backlog.  See
+	 * the comment on MAX_CONCURRENT_NEWNET in include/shm.h for the
+	 * full forkbomb story.  Done after enforce_clone_flag_deps() so we
+	 * see the final flag set the kernel will receive, not the raw
+	 * random bitmask that may still have a CLONE_NEWNET that another
+	 * dep rule was about to strip anyway.
+	 */
+	if ((rec->a1 & CLONE_NEWNET) == 0)
+		return;
+
+	if (__atomic_load_n(&shm->newnet_in_flight, __ATOMIC_RELAXED) >=
+	    MAX_CONCURRENT_NEWNET) {
+		rec->a1 &= ~CLONE_NEWNET;
+		__atomic_fetch_add(&shm->stats.unshare_newnet_throttled, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	}
+
+	__atomic_fetch_add(&shm->newnet_in_flight, 1, __ATOMIC_RELAXED);
+	rec->post_state = NEWNET_INFLIGHT_TICKET;
 }
 
 static void post_clone(struct syscallrecord *rec)
 {
+	if (rec->post_state == NEWNET_INFLIGHT_TICKET) {
+		rec->post_state = 0;
+		__atomic_fetch_sub(&shm->newnet_in_flight, 1, __ATOMIC_RELAXED);
+	}
+
 	/* Child branch: caller-side differentiation, nothing to validate here. */
 	if (rec->retval == 0)
 		return;
