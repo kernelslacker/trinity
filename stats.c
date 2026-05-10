@@ -664,6 +664,8 @@ static void dump_stats_json(void)
 		"\"bpf_fd_provider\":{\"maps_provided\":%lu,\"progs_provided\":%lu},"
 		"\"recipe_runner\":{\"runs\":%lu,\"completed\":%lu,\"partial\":%lu,\"unsupported\":%lu},"
 		"\"iouring_recipes\":{\"runs\":%lu,\"completed\":%lu,\"partial\":%lu,\"enosys\":%lu},"
+		"\"iouring_eventfd\":{\"register_ok\":%lu,\"register_fail\":%lu,"
+			"\"recursive_runs\":%lu,\"recursive_cqes\":%lu},"
 		"\"zombie_slots\":{\"pending\":%lu,\"reaped\":%lu,\"timed_out\":%lu},"
 		"\"corruption\":{\"local_op_count\":%lu,\"fd_event_ring_noncanon\":%lu,"
 			"\"fd_event_ring_canary\":%lu,\"fd_event_payload\":%lu,"
@@ -872,6 +874,10 @@ static void dump_stats_json(void)
 		shm->stats.recipe_partial, shm->stats.recipe_unsupported,
 		shm->stats.iouring_recipes_runs, shm->stats.iouring_recipes_completed,
 		shm->stats.iouring_recipes_partial, shm->stats.iouring_recipes_enosys,
+		shm->stats.iouring_eventfd_register_ok,
+		shm->stats.iouring_eventfd_register_fail,
+		shm->stats.iouring_eventfd_recursive_runs,
+		shm->stats.iouring_eventfd_recursive_cqes,
 		shm->stats.zombie_slots_pending, shm->stats.zombies_reaped,
 		shm->stats.zombies_timed_out,
 		shm->stats.local_op_count_corrupted, shm->stats.fd_event_ring_corrupted,
@@ -2497,6 +2503,18 @@ void dump_stats(void)
 		stat_row("iouring_recipes", "partial",   shm->stats.iouring_recipes_partial);
 		stat_row("iouring_recipes", "enosys",    shm->stats.iouring_recipes_enosys);
 		iouring_recipes_dump_stats();
+	}
+
+	if (shm->stats.iouring_eventfd_register_ok ||
+	    shm->stats.iouring_eventfd_register_fail) {
+		stat_row("iouring_eventfd", "register_ok",
+			 shm->stats.iouring_eventfd_register_ok);
+		stat_row("iouring_eventfd", "register_fail",
+			 shm->stats.iouring_eventfd_register_fail);
+		stat_row("iouring_eventfd", "recursive_runs",
+			 shm->stats.iouring_eventfd_recursive_runs);
+		stat_row("iouring_eventfd", "recursive_cqes",
+			 shm->stats.iouring_eventfd_recursive_cqes);
 	}
 
 	if (shm->stats.zombies_reaped || shm->stats.zombies_timed_out ||
