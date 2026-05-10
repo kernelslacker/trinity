@@ -240,10 +240,27 @@ struct syscallentry syscall_recvmsg = {
  */
 #define RECVMMSG_MAX_VLEN	4
 
+/*
+ * Snapshot for the post handler.  Sister bug to sendmmsg: rec->a2 (msgs
+ * pointer) and rec->a3 (vlen) are both exposed to a sibling syscall
+ * scribbling an ABI slot between sanitise returning and post_recvmmsg()
+ * running.  The pointer scribble was caught by 914fbc6f1ff6 (msgs guard
+ * via post_state); vlen was missed.  A sibling scribble of rec->a3 to a
+ * value above the original vlen makes the cleanup loop walk past the
+ * vlen * sizeof(struct mmsghdr) zmalloc — heap-buffer-overflow.  Capture
+ * both into a post_state-private heap struct that no syscall ABI slot
+ * points at.  Mirrors capset_post_state.
+ */
+struct recvmmsg_post_state {
+	struct mmsghdr *msgs;
+	unsigned int vlen;
+};
+
 static void sanitise_recvmmsg(struct syscallrecord *rec)
 {
 	struct socketinfo *si = (struct socketinfo *) rec->a1;
 	struct mmsghdr *msgs;
+	struct recvmmsg_post_state *snap;
 	unsigned int vlen;
 	unsigned int i;
 
@@ -285,59 +302,70 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 
 	rec->a2 = (unsigned long) msgs;
 	rec->a3 = vlen;
-	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
-	 * syscall (e.g. an objects.c add_object realloc) before
-	 * post_recvmmsg() runs, leaving a real-but-wrong heap pointer that
-	 * the corruption guard cannot distinguish from the original. */
-	rec->post_state = (unsigned long) msgs;
+
+	snap = zmalloc(sizeof(*snap));
+	snap->msgs = msgs;
+	snap->vlen = vlen;
+	rec->post_state = (unsigned long) snap;
 }
 
 static void post_recvmmsg(struct syscallrecord *rec)
 {
-	struct mmsghdr *msgs = (struct mmsghdr *) rec->post_state;
-	unsigned int vlen = (unsigned int) rec->a3;
+	struct recvmmsg_post_state *snap =
+		(struct recvmmsg_post_state *) rec->post_state;
+	struct mmsghdr *msgs;
+	unsigned int vlen;
 	unsigned int i;
 
-	if (msgs == NULL)
+	if (snap == NULL)
 		return;
 
 	/*
 	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so keep the
-	 * corruption guard.
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(rec, msgs)) {
-		outputerr("post_recvmmsg: rejected suspicious msgs=%p "
-			  "(pid-scribbled?)\n", msgs);
+	if (looks_like_corrupted_ptr(rec, snap)) {
+		outputerr("post_recvmmsg: rejected suspicious post_state=%p "
+			  "(pid-scribbled?)\n", snap);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
 	}
 
+	msgs = snap->msgs;
+	vlen = snap->vlen;
+
 	/*
-	 * Snapshot rec->a3 (vlen) and bound against the sanitiser cap.
-	 * Same shape as the post_sendmmsg vlen scribble: 914fbc6f1ff6 added
-	 * the msgs pointer guard but rec->a3 is just as exposed to a
-	 * sibling fuzzed value-result syscall scribbling it between the
-	 * call and the post handler running.  The loop would walk past the
-	 * vlen * sizeof(struct mmsghdr) allocation, heap-buffer-overflow.
+	 * Defense in depth: even with the post_state snapshot, a wholesale
+	 * stomp could rewrite the snapshot's inner fields.  Reject before
+	 * the loop touches msgs[].
+	 */
+	if (msgs == NULL || looks_like_corrupted_ptr(rec, msgs)) {
+		outputerr("post_recvmmsg: rejected suspicious msgs=%p "
+			  "(post_state-scribbled?)\n", msgs);
+		rec->a2 = 0;
+		goto out_free;
+	}
+
+	/*
+	 * Paranoid bound on snap->vlen.  Set by sanitise into post_state-
+	 * private storage no syscall ABI slot points at, so should never
+	 * fire -- a hit means the snapshot itself was wholesale-scribbled.
 	 */
 	if (vlen > RECVMMSG_MAX_VLEN) {
 		outputerr("post_recvmmsg: rejected suspicious vlen=%u "
-			  "(pid-scribbled?)\n", vlen);
+			  "(post_state-scribbled?)\n", vlen);
 		rec->a2 = 0;
-		rec->post_state = 0;
-		return;
+		goto out_free;
 	}
 
 	/*
 	 * Kernel ABI: __sys_recvmmsg() returns the count of successfully
 	 * received mmsghdr entries (1..vlen) on success or -1 on failure.
-	 * Anything > vlen (excluding -1UL) is a structural ABI regression: a
-	 * sign-extension tear, a torn write of the count by a parallel
-	 * signal-restart path, or -errno leaking through the success slot.
-	 * vlen is already validated by the cap guard above so it is safe to
-	 * compare directly.  Mirrors epoll_wait 4c7a84058afd / epoll_pwait
+	 * Compare against snap->vlen, the trusted sanitise-time value, so a
+	 * sibling scribble of rec->a3 cannot launder an oversized retval
+	 * past this bound.  Mirrors epoll_wait 4c7a84058afd / epoll_pwait
 	 * 1ae902d4b01d.
 	 */
 	if ((long) rec->retval != -1L && rec->retval > vlen) {
@@ -356,6 +384,9 @@ static void post_recvmmsg(struct syscallrecord *rec)
 			free(msgs[i].msg_hdr.msg_name);
 	}
 	rec->a2 = 0;
+	deferred_free_enqueue(msgs, NULL);
+
+out_free:
 	deferred_freeptr(&rec->post_state);
 }
 
