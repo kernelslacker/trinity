@@ -1306,6 +1306,11 @@ struct stats_s {
 	unsigned long afxdp_churn_recv_ok;			/* getsockopt(XDP_STATISTICS) on bound xsk succeeded */
 	unsigned long afxdp_churn_map_delete_ok;		/* bpf(BPF_MAP_DELETE_ELEM) on bound xskmap key (race target) */
 	unsigned long afxdp_churn_munmap_race_ok;		/* munmap of FILL ring while bound (race target) */
+	unsigned long afxdp_xsg_iters;				/* per-iter knob enable_sg=1: USE_SG umem + XDP_USE_SG bind + chained TX desc */
+	unsigned long afxdp_tx_metadata_iters;			/* per-iter knob enable_tx_md=1: tx_metadata_len umem + XDP_TX_METADATA stamp */
+	unsigned long afxdp_tun_bind_iters;			/* per-iter knob: bound to tun (IFF_NAPI|IFF_NAPI_FRAGS) instead of lo */
+	unsigned long afxdp_xsg_bind_failed;			/* UMEM_REG with XDP_UMEM_FLAGS_USE_SG rejected; latched off, retried without */
+	unsigned long afxdp_tx_md_bind_failed;			/* UMEM_REG with tx_metadata_len rejected; latched off, retried without */
 
 	/* veth_asymmetric_xdp childop counters */
 	unsigned long veth_asym_iters;				/* total veth_asymmetric_xdp invocations */

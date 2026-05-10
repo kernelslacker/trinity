@@ -104,6 +104,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
@@ -113,6 +114,7 @@
 
 #include <linux/bpf.h>
 #include <linux/if_link.h>
+#include <linux/if_tun.h>
 #include <linux/if_xdp.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
@@ -197,6 +199,58 @@
  * xdp_do_redirect() to consult the redirect map (XSKMAP in our case). */
 #define XDP_REDIRECT_RET		3
 
+/* Multibuf + sw-csum tx-metadata UAPI fallbacks (toolchain header drift).
+ *   XDP_USE_SG               sxdp_flags bit:  multi-frag bind (0f3776583d28)
+ *   XDP_UMEM_FLAGS_USE_SG    xdp_umem_reg.flags bit: multi-frag UMEM
+ *   XDP_PKT_CONTD            desc->options bit: head of chained TX desc
+ *   XDP_TX_METADATA          desc->options bit: read xsk_tx_metadata before addr
+ *   XDP_TXMD_FLAGS_*         flags inside the stamped metadata header
+ *   IFF_NAPI / IFF_NAPI_FRAGS  tun ifr_flags for napi-frag rx (d73a9a63f9f7) */
+#ifndef XDP_USE_SG
+#define XDP_USE_SG			(1 << 4)
+#endif
+#ifndef XDP_UMEM_FLAGS_USE_SG
+#define XDP_UMEM_FLAGS_USE_SG		(1 << 1)
+#endif
+#ifndef XDP_PKT_CONTD
+#define XDP_PKT_CONTD			(1 << 0)
+#endif
+#ifndef XDP_TX_METADATA
+#define XDP_TX_METADATA			(1 << 1)
+#endif
+#ifndef XDP_TXMD_FLAGS_TIMESTAMP
+#define XDP_TXMD_FLAGS_TIMESTAMP	(1 << 0)
+#endif
+#ifndef XDP_TXMD_FLAGS_CHECKSUM
+#define XDP_TXMD_FLAGS_CHECKSUM		(1 << 1)
+#endif
+#ifndef IFF_NAPI
+#define IFF_NAPI			0x0010
+#endif
+#ifndef IFF_NAPI_FRAGS
+#define IFF_NAPI_FRAGS			0x0020
+#endif
+
+/* Compat xdp_umem_reg with tx_metadata_len present.  The kernel
+ * setsockopt path is size-tolerant (xsk_setsockopt_xdp_umem_reg accepts
+ * either old or new layouts); using our own struct decouples from the
+ * toolchain header version while preserving the on-wire ABI. */
+struct afxdp_umem_reg_compat {
+	__u64 addr;
+	__u64 len;
+	__u32 chunk_size;
+	__u32 headroom;
+	__u32 flags;
+	__u32 tx_metadata_len;
+};
+
+/* xsk_tx_metadata layout is fixed (16 bytes): u64 flags at off 0, then
+ * a union — for sw checksum we use u16 csum_start at off 8 and u16
+ * csum_offset at off 10. Use a raw 16-byte buffer to avoid toolchain
+ * struct presence assumptions. */
+#define AFXDP_TX_META_BYTES		16U
+#define AFXDP_SG_CHUNK_SIZE		1024U
+
 #define AFXDP_OUTER_BASE		5U
 #define AFXDP_OUTER_FLOOR		16U
 #define AFXDP_OUTER_CAP			64U
@@ -210,6 +264,8 @@
 
 static bool ns_unsupported_afxdp;
 static bool ns_unsupported_bpf_xdp;
+static bool ns_unsupported_xdp_sg;
+static bool ns_unsupported_tx_metadata;
 
 static long long ns_since(const struct timespec *t0)
 {
@@ -339,6 +395,7 @@ struct xsk_state {
 	int		prog_fd;
 	int		xdp_link_fd;		/* BPF_LINK_CREATE auto-detach handle */
 	int		rtnl_fd;		/* netlink fallback attach socket */
+	int		tun_fd;			/* /dev/net/tun fd kept open while xsk bound to tunN */
 	unsigned int	nl_attached_ifindex;	/* non-zero => detach via netlink in teardown */
 	void		*umem;
 	void		*rx_ring;
@@ -363,6 +420,7 @@ static void xsk_init(struct xsk_state *st)
 	st->prog_fd     = -1;
 	st->xdp_link_fd = -1;
 	st->rtnl_fd     = -1;
+	st->tun_fd      = -1;
 	st->umem    = MAP_FAILED;
 	st->rx_ring = MAP_FAILED;
 	st->tx_ring = MAP_FAILED;
@@ -395,6 +453,33 @@ static void xsk_teardown(struct xsk_state *st)
 	if (st->xsk_fd  >= 0) close(st->xsk_fd);
 	if (st->prog_fd >= 0) close(st->prog_fd);
 	if (st->map_fd  >= 0) close(st->map_fd);
+	if (st->tun_fd  >= 0) close(st->tun_fd);
+}
+
+/*
+ * Open /dev/net/tun and create a tunN device with IFF_NAPI_FRAGS so the
+ * rx path uses the napi-frag (non-linear skb) shape — exactly the
+ * IFF_TX_SKB_NO_LINEAR netdev class that d73a9a63f9f7 missed when
+ * binding sw-csum TX metadata.  Returns fd on success and writes the
+ * kernel-assigned name into @name_out (IFNAMSIZ buffer); -1 on failure.
+ * Caller must keep the fd open while the xsk is bound to the device.
+ */
+static int tun_open_napi_frags(char *name_out)
+{
+	struct ifreq ifr;
+	int fd;
+
+	fd = open("/dev/net/tun", O_RDWR | O_NONBLOCK | O_CLOEXEC);
+	if (fd < 0)
+		return -1;
+	memset(&ifr, 0, sizeof(ifr));
+	ifr.ifr_flags = IFF_TUN | IFF_NO_PI | IFF_NAPI | IFF_NAPI_FRAGS;
+	if (ioctl(fd, TUNSETIFF, &ifr) < 0) {
+		close(fd);
+		return -1;
+	}
+	memcpy(name_out, ifr.ifr_name, IFNAMSIZ);
+	return fd;
 }
 
 /*
@@ -532,14 +617,16 @@ static int xdp_netlink_set_fd(int rtnl, unsigned int ifindex, int prog_fd)
 static void iter_one(unsigned int idx, const struct timespec *t_outer)
 {
 	struct xsk_state st;
-	struct xdp_umem_reg umem_reg;
+	struct afxdp_umem_reg_compat umem_reg;
 	struct xdp_statistics xstats;
 	struct sockaddr_xdp sxdp;
+	char tun_name[IFNAMSIZ];
 	socklen_t off_len = sizeof(st.off);
 	socklen_t xstats_len = sizeof(xstats);
 	uint32_t ring_entries = AFXDP_RING_ENTRIES;
-	unsigned int lo_ifindex;
+	unsigned int target_ifindex;
 	unsigned int retry;
+	bool want_sg, want_tx_md, want_tun;
 	int rc;
 
 	(void)idx;
@@ -567,14 +654,45 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 		goto out;
 	}
 
+	/* Per-iteration knobs.  Two latches gate the new feature flags off
+	 * the moment the kernel rejects them with EINVAL — but we never
+	 * disable the whole childop on either, the existing UMEM/ring/bind
+	 * path is the baseline coverage and must keep running. */
+	want_sg    = !ns_unsupported_xdp_sg     && (rand() & 1);
+	want_tx_md = !ns_unsupported_tx_metadata && (rand() & 1);
+	want_tun   = (rand() & 3) == 0;
+
 	memset(&umem_reg, 0, sizeof(umem_reg));
-	umem_reg.addr       = (uint64_t)(uintptr_t)st.umem;
-	umem_reg.len        = AFXDP_UMEM_BYTES;
-	umem_reg.chunk_size = AFXDP_CHUNK_SIZE;
-	umem_reg.headroom   = 0;
-	umem_reg.flags      = 0;
+	umem_reg.addr            = (uint64_t)(uintptr_t)st.umem;
+	umem_reg.len             = AFXDP_UMEM_BYTES;
+	umem_reg.chunk_size      = want_sg ? AFXDP_SG_CHUNK_SIZE : AFXDP_CHUNK_SIZE;
+	umem_reg.headroom        = want_tx_md ? AFXDP_TX_META_BYTES : 0;
+	umem_reg.flags           = want_sg ? XDP_UMEM_FLAGS_USE_SG : 0;
+	umem_reg.tx_metadata_len = want_tx_md ? AFXDP_TX_META_BYTES : 0;
 	rc = setsockopt_retry(st.xsk_fd, SOL_XDP, XDP_UMEM_REG,
 			      &umem_reg, sizeof(umem_reg));
+	if (rc < 0 && errno == EINVAL && (want_sg || want_tx_md)) {
+		/* Latch unsupported features off and retry once with the
+		 * baseline (single-buf, no metadata) layout — the rest of
+		 * the iteration is still useful coverage. */
+		if (want_sg) {
+			ns_unsupported_xdp_sg = true;
+			__atomic_add_fetch(&shm->stats.afxdp_xsg_bind_failed,
+					   1, __ATOMIC_RELAXED);
+		}
+		if (want_tx_md) {
+			ns_unsupported_tx_metadata = true;
+			__atomic_add_fetch(&shm->stats.afxdp_tx_md_bind_failed,
+					   1, __ATOMIC_RELAXED);
+		}
+		want_sg = want_tx_md = false;
+		umem_reg.chunk_size      = AFXDP_CHUNK_SIZE;
+		umem_reg.headroom        = 0;
+		umem_reg.flags           = 0;
+		umem_reg.tx_metadata_len = 0;
+		rc = setsockopt_retry(st.xsk_fd, SOL_XDP, XDP_UMEM_REG,
+				      &umem_reg, sizeof(umem_reg));
+	}
 	if (rc < 0) {
 		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -582,6 +700,12 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 	}
 	__atomic_add_fetch(&shm->stats.afxdp_churn_umem_reg_ok,
 			   1, __ATOMIC_RELAXED);
+	if (want_sg)
+		__atomic_add_fetch(&shm->stats.afxdp_xsg_iters,
+				   1, __ATOMIC_RELAXED);
+	if (want_tx_md)
+		__atomic_add_fetch(&shm->stats.afxdp_tx_metadata_iters,
+				   1, __ATOMIC_RELAXED);
 
 	/* All four rings, same size.  CVE-2022-3625 is in this exact
 	 * setsockopt path -- the fix landed in xsk_setsockopt() to refuse
@@ -667,8 +791,26 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 		__atomic_add_fetch(&shm->stats.afxdp_churn_map_update_ok,
 				   1, __ATOMIC_RELAXED);
 
-	lo_ifindex = if_nametoindex("lo");
-	if (lo_ifindex == 0) {
+	/* Pick bind target: tun-with-NAPI_FRAGS when the per-iter knob fired
+	 * (and tun is reachable), else lo.  d73a9a63f9f7's bug surface is
+	 * the IFF_TX_SKB_NO_LINEAR class of netdev — tun in NAPI mode
+	 * exposes that path; lo does not. */
+	target_ifindex = 0;
+	if (want_tun) {
+		st.tun_fd = tun_open_napi_frags(tun_name);
+		if (st.tun_fd >= 0)
+			target_ifindex = if_nametoindex(tun_name);
+		if (target_ifindex == 0) {
+			if (st.tun_fd >= 0) {
+				close(st.tun_fd);
+				st.tun_fd = -1;
+			}
+			want_tun = false;
+		}
+	}
+	if (target_ifindex == 0)
+		target_ifindex = if_nametoindex("lo");
+	if (target_ifindex == 0) {
 		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -676,8 +818,9 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 
 	memset(&sxdp, 0, sizeof(sxdp));
 	sxdp.sxdp_family       = AF_XDP;
-	sxdp.sxdp_flags        = XDP_USE_NEED_WAKEUP;
-	sxdp.sxdp_ifindex      = lo_ifindex;
+	sxdp.sxdp_flags        = XDP_USE_NEED_WAKEUP |
+				 (want_sg ? XDP_USE_SG : 0);
+	sxdp.sxdp_ifindex      = target_ifindex;
 	sxdp.sxdp_queue_id     = 0;
 	sxdp.sxdp_shared_umem_fd = 0;
 
@@ -691,6 +834,15 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 		st.bound = true;
 		__atomic_add_fetch(&shm->stats.afxdp_churn_bind_ok,
 				   1, __ATOMIC_RELAXED);
+		if (want_tun)
+			__atomic_add_fetch(&shm->stats.afxdp_tun_bind_iters,
+					   1, __ATOMIC_RELAXED);
+	} else if (want_sg && errno == EINVAL) {
+		/* Bind-time rejection of XDP_USE_SG (e.g. driver path).
+		 * Latch so subsequent iters don't ask for it again. */
+		ns_unsupported_xdp_sg = true;
+		__atomic_add_fetch(&shm->stats.afxdp_xsg_bind_failed,
+				   1, __ATOMIC_RELAXED);
 	}
 
 	/* Attach the loaded XDP program to lo so xdp_do_redirect() actually
@@ -701,16 +853,16 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 	 * SKB mode on older kernels (returns -EINVAL from BPF_LINK_CREATE)
 	 * or when another iter_one already won the lo slot. */
 	if (st.bound && st.prog_fd >= 0) {
-		st.xdp_link_fd = xdp_link_attach(st.prog_fd, lo_ifindex);
+		st.xdp_link_fd = xdp_link_attach(st.prog_fd, target_ifindex);
 		if (st.xdp_link_fd >= 0) {
 			__atomic_add_fetch(&shm->stats.afxdp_churn_link_attach_ok,
 					   1, __ATOMIC_RELAXED);
 		} else {
 			st.rtnl_fd = xdp_netlink_open();
 			if (st.rtnl_fd >= 0 &&
-			    xdp_netlink_set_fd(st.rtnl_fd, lo_ifindex,
+			    xdp_netlink_set_fd(st.rtnl_fd, target_ifindex,
 					       st.prog_fd) == 0) {
-				st.nl_attached_ifindex = lo_ifindex;
+				st.nl_attached_ifindex = target_ifindex;
 				__atomic_add_fetch(&shm->stats.afxdp_churn_netlink_attach_ok,
 						   1, __ATOMIC_RELAXED);
 			} else {
@@ -721,21 +873,59 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 	}
 
 	if (st.bound) {
-		/* Inject one TX descriptor (UMEM offset 0, 1-byte payload)
-		 * directly into the TX ring, then sendto-kick.  The kernel's
-		 * xsk_sendmsg walks the TX ring and pulls the descriptor
-		 * through xsk_buff_pool, which is the live-pool path we want
-		 * to race against the deletes/munmaps below. */
+		/* Inject TX descriptor(s) into the TX ring, then sendto-kick.
+		 * xsk_sendmsg walks the TX ring and pulls the descriptors
+		 * through xsk_buff_pool — the live-pool path we want to race
+		 * against the deletes/munmaps below.
+		 *
+		 * Multibuf path (want_sg): enqueue two chained descriptors,
+		 * head with XDP_PKT_CONTD set in options.  Hits the chained-
+		 * frag walker that 0f3776583d28 fixes (per-desc UAF when the
+		 * chain crosses UMEM frag boundaries).
+		 *
+		 * TX-metadata path (want_tx_md): stamp xsk_tx_metadata into
+		 * the headroom region just before the head desc->addr and set
+		 * XDP_TX_METADATA in head->options.  The kernel reads csum
+		 * fields from there; d73a9a63f9f7 mishandled this when the
+		 * bound netdev advertises IFF_TX_SKB_NO_LINEAR. */
 		uint32_t *prod = (uint32_t *)((char *)st.tx_ring +
 					      st.off.tx.producer);
 		struct xdp_desc *desc = (struct xdp_desc *)((char *)st.tx_ring +
 							    st.off.tx.desc);
 		uint32_t p = __atomic_load_n(prod, __ATOMIC_RELAXED);
+		uint32_t chunk_sz = want_sg ? AFXDP_SG_CHUNK_SIZE
+					    : AFXDP_CHUNK_SIZE;
+		uint64_t head_addr = want_tx_md ? AFXDP_TX_META_BYTES : 0;
+		uint16_t head_opts = (want_sg ? XDP_PKT_CONTD : 0) |
+				     (want_tx_md ? XDP_TX_METADATA : 0);
+		uint32_t enq = 1U;
 
-		desc[p % AFXDP_RING_ENTRIES].addr = 0;
-		desc[p % AFXDP_RING_ENTRIES].len  = 1;
-		desc[p % AFXDP_RING_ENTRIES].options = 0;
-		__atomic_store_n(prod, p + 1, __ATOMIC_RELEASE);
+		if (want_tx_md && (char *)st.umem != MAP_FAILED) {
+			/* metadata header is 16 bytes immediately preceding
+			 * head_addr in the UMEM region — relies on headroom
+			 * being set to AFXDP_TX_META_BYTES at UMEM_REG. */
+			unsigned char *meta = (unsigned char *)st.umem +
+					      head_addr - AFXDP_TX_META_BYTES;
+			__u64 mflags = XDP_TXMD_FLAGS_CHECKSUM |
+				       ((rand() & 1) ? XDP_TXMD_FLAGS_TIMESTAMP : 0);
+
+			memset(meta, 0, AFXDP_TX_META_BYTES);
+			memcpy(meta, &mflags, sizeof(mflags));
+			/* csum_start=0, csum_offset=0 — bytes 8..11 already zero. */
+		}
+
+		desc[p % AFXDP_RING_ENTRIES].addr    = head_addr;
+		desc[p % AFXDP_RING_ENTRIES].len     = 1;
+		desc[p % AFXDP_RING_ENTRIES].options = head_opts;
+		if (want_sg) {
+			uint32_t q = (p + 1) % AFXDP_RING_ENTRIES;
+
+			desc[q].addr    = (uint64_t)chunk_sz + head_addr;
+			desc[q].len     = 1;
+			desc[q].options = 0;	/* tail of chain */
+			enq = 2U;
+		}
+		__atomic_store_n(prod, p + enq, __ATOMIC_RELEASE);
 
 		if (sendto(st.xsk_fd, NULL, 0, MSG_DONTWAIT, NULL, 0) >= 0 ||
 		    errno == EAGAIN || errno == ENOBUFS || errno == EBUSY)
