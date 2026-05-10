@@ -1485,9 +1485,16 @@ void healer_table_dump(void)
  *                          only against the kernel it was learned on,
  *                          since syscall numbering and per-syscall edge
  *                          fingerprints can shift between kernels).
- *       97    65   kernel_version = utsname.version, same reject
- *                          semantics; .release alone is too coarse to
- *                          identify one specific compiled kernel image.
+ *       97    65   kernel_version = utsname.version captured at write
+ *                          time, NUL-terminated, fixed-width.  Stored
+ *                          for forensic value (strings(1) on a stale
+ *                          snapshot can still identify the exact build
+ *                          it came from) but NOT compared on load: the
+ *                          build timestamp changes on every kernel
+ *                          rebuild, and the relation table is indexed
+ *                          by syscall number -- which is stable across
+ *                          rebuilds of the same source -- so .release
+ *                          alone is the right warm-start gate.
  *      162     6   pad to round struct healer_file_header to 8 bytes.
  *
  *      168 onwards  payload = HEALER_RELATION_SLOTS * sizeof(struct
@@ -1811,17 +1818,21 @@ bool healer_load_file(const char *path)
 
 	hdr.kernel_release[sizeof(hdr.kernel_release) - 1] = '\0';
 	hdr.kernel_version[sizeof(hdr.kernel_version) - 1] = '\0';
+	/* Cold-start path: gate warm-start on utsname.release only.  The
+	 * relation table is indexed by syscall number, and syscall numbers
+	 * are stable across kernel rebuilds of the same source tree, so a
+	 * fresh build with an unchanged release should reuse the cache.
+	 * utsname.version (the build timestamp) was previously also gated
+	 * on, but that was over-strict: it threw away the entire warm-start
+	 * cache after every kernel rebuild for no functional reason.  The
+	 * relations might be slightly stale at the margins if the kernel's
+	 * CFG shifted under recompile, but they're not wrong -- at worst
+	 * a few pairs point at slightly less-productive paths.  A release
+	 * mismatch, by contrast, can shift syscall numbers outright, so
+	 * that one still cold-starts. */
 	if (strncmp(hdr.kernel_release, u.release,
-			sizeof(hdr.kernel_release)) != 0 ||
-	    strncmp(hdr.kernel_version, u.version,
-			sizeof(hdr.kernel_version)) != 0) {
-		/* Cold-start path: the file is structurally valid but was
-		 * written against a different compiled kernel image, so its
-		 * (pred_a, pred_b, nr) entries reference syscall and edge IDs
-		 * that may have shifted under us.  Surface this so the
-		 * operator can see why the warm-start was skipped without
-		 * having to compare uname output by hand. */
-		outputerr("healer: skipping warm-start of %s -- file built against %s, running %s\n",
+			sizeof(hdr.kernel_release)) != 0) {
+		outputerr("healer: skipping warm-start of %s -- file built against release %s, running release %s\n",
 			  path, hdr.kernel_release, u.release);
 		goto out_close;
 	}
