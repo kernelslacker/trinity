@@ -31,6 +31,7 @@
 #include "cmp_hints.h"
 #include "edgepair.h"
 #include "kcov.h"
+#include "stats.h"
 #include "strategy.h"
 #include "trinity.h"
 #include "utils.h"
@@ -651,4 +652,56 @@ unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
 bool kcov_syscall_is_cold(unsigned int nr)
 {
 	return kcov_syscall_cold_skip_pct(nr) > 0;
+}
+
+void kcov_plateau_check(void)
+{
+	unsigned long edges_now, delta;
+	time_t now;
+
+	if (kcov_shm == NULL)
+		return;
+
+	now = time(NULL);
+	edges_now = __atomic_load_n(&kcov_shm->edges_found, __ATOMIC_RELAXED);
+
+	/* Arm the window on the first call so any pre-existing edge count
+	 * (e.g. from the warm-up phase before main_loop entry) is not
+	 * mis-attributed to the first 10-minute window. */
+	if (!kcov_shm->plateau_armed) {
+		kcov_shm->plateau_window_start = now;
+		kcov_shm->plateau_prev_edges = edges_now;
+		kcov_shm->plateau_armed = true;
+		return;
+	}
+
+	if ((now - kcov_shm->plateau_window_start) < KCOV_PLATEAU_WINDOW_SEC)
+		return;
+
+	delta = (edges_now >= kcov_shm->plateau_prev_edges)
+		? edges_now - kcov_shm->plateau_prev_edges : 0;
+	kcov_shm->plateau_last_window_delta = delta;
+	kcov_shm->plateau_prev_edges = edges_now;
+	kcov_shm->plateau_window_start = now;
+
+	if (delta < KCOV_PLATEAU_RATE_THRESHOLD) {
+		long minutes;
+
+		if (!kcov_shm->plateau_active) {
+			kcov_shm->plateau_active = true;
+			kcov_shm->plateau_entered_at = now;
+		}
+		/* The just-closed 600s window already counts as 10 minutes of
+		 * sub-threshold rate, so the first emit reports 10 minutes and
+		 * each re-emit grows by another window. */
+		minutes = ((now - kcov_shm->plateau_entered_at) +
+			   KCOV_PLATEAU_WINDOW_SEC) / 60;
+		stats_log_write("PLATEAU: rate=%lu edges/%ds for %ld minutes\n",
+				delta, KCOV_PLATEAU_WINDOW_SEC, minutes);
+	} else if (kcov_shm->plateau_active) {
+		kcov_shm->plateau_active = false;
+		kcov_shm->plateau_entered_at = 0;
+		stats_log_write("PLATEAU CLEARED: rate=%lu edges/%ds\n",
+				delta, KCOV_PLATEAU_WINDOW_SEC);
+	}
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <time.h>
+
 #include "types.h"
 #include "syscall.h"	/* MAX_NR_SYSCALL */
 
@@ -69,6 +71,15 @@
 /* If a syscall hasn't found new edges in this many global calls,
  * it's considered "cold" and deprioritized during selection. */
 #define KCOV_COLD_THRESHOLD 500000
+
+/* Coverage-plateau detector: window length and trigger threshold.
+ * The window is fixed at 600s (10 minutes) so a single below-threshold
+ * sample already represents "sustained for ≥ 10 min".  The threshold of
+ * 10 new edges per 600s window is exactly < 1 new edge per 60s, the
+ * point at which manual observation has shown the fuzzer is wedged at
+ * a local minimum and not making forward progress. */
+#define KCOV_PLATEAU_WINDOW_SEC 600
+#define KCOV_PLATEAU_RATE_THRESHOLD 10
 
 /* KCOV trace modes */
 #define KCOV_TRACE_PC  0
@@ -159,6 +170,21 @@ struct kcov_shared {
 	/* Snapshot of per_syscall_edges at the previous stats interval.
 	 * Used to compute per-interval edge growth rate. */
 	unsigned long per_syscall_edges_previous[MAX_NR_SYSCALL];
+	/* Sliding-window edge-rate plateau detector state.  Sampled at the
+	 * 600s parent stats tick: each tick, delta = edges_found -
+	 * plateau_prev_edges is the count of new edges discovered in the
+	 * most recent KCOV_PLATEAU_WINDOW_SEC window.  When the delta drops
+	 * below KCOV_PLATEAU_RATE_THRESHOLD (rate < 1 edge per 60s sustained
+	 * over the 10-minute window) the parent enters PLATEAU state and
+	 * emits a one-line warning to stats.log; a matching CLEARED line is
+	 * emitted when the rate climbs back above threshold.  Detection only
+	 * — no automatic response. */
+	time_t plateau_window_start;
+	unsigned long plateau_prev_edges;
+	unsigned long plateau_last_window_delta;
+	time_t plateau_entered_at;
+	bool plateau_armed;
+	bool plateau_active;
 };
 
 extern struct kcov_shared *kcov_shm;
@@ -211,3 +237,12 @@ bool kcov_syscall_is_cold(unsigned int nr);
  * the value grows with the staleness gap so persistently cold syscalls
  * are deprioritized harder than ones that just crossed the threshold. */
 unsigned int kcov_syscall_cold_skip_pct(unsigned int nr);
+
+/* Sliding-window edge-rate plateau check.  Self-gates on
+ * KCOV_PLATEAU_WINDOW_SEC, so the caller can invoke it once per
+ * main_loop tick alongside the other periodic samplers.  Emits a
+ * one-line PLATEAU warning to stats.log when the per-window edge
+ * discovery rate drops below KCOV_PLATEAU_RATE_THRESHOLD and a matching
+ * PLATEAU CLEARED line when the rate recovers.  Detection only — does
+ * not touch bandit, explorer, or syscall-pool state. */
+void kcov_plateau_check(void);

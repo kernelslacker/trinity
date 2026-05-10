@@ -1373,6 +1373,8 @@ void main_loop(void)
 
 		top_syscalls_periodic_dump();
 
+		kcov_plateau_check();
+
 		print_stats();
 
 		/* This should never happen, but just to catch corner cases, like if
