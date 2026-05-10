@@ -3,6 +3,7 @@
                  struct getcpu_cache __user *, unused)
  */
 #include <dirent.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/syscall.h>
@@ -82,19 +83,25 @@ static void sanitise_getcpu(struct syscallrecord *rec)
  */
 static long parse_sysfs_max(const char *path)
 {
-	FILE *f;
 	char buf[1024];
 	const char *p;
+	ssize_t n;
+	int fd;
 	long max_id = -1;
 
-	f = fopen(path, "r");
-	if (!f)
+	/* Raw open/read instead of fopen/fgets/fclose: this is reached from
+	 * post_getcpu, which runs in the syscall hot path under fuzz, and
+	 * stdio's per-call malloc of FILE struct + IO buffer is heap traffic
+	 * we don't need.  The sysfs cpulist/nodelist payload is a single short
+	 * line (typically <100 bytes) so one read suffices. */
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
 		return -1;
-	if (!fgets(buf, sizeof(buf), f)) {
-		fclose(f);
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
 		return -1;
-	}
-	fclose(f);
+	buf[n] = '\0';
 
 	p = buf;
 	while (*p) {
