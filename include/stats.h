@@ -1680,6 +1680,9 @@ struct stats_s {
 	unsigned long nl80211_bursts_sent;		/* loopback UDP sendto on wlan iface returned >0 */
 	unsigned long nl80211_pmsr_runs;		/* NL80211_CMD_PEER_MEASUREMENT_START FTM request issued */
 	unsigned long nl80211_pmsr_ok;			/* NL80211_CMD_PEER_MEASUREMENT_START accepted (no kernel rejection) */
+	unsigned long nl80211_admin_gate_runs;		/* admin-gate probe forked + ran (per upstream 381cd547bc6e audit) */
+	unsigned long nl80211_admin_gate_eperm_ok;	/* probed cmd correctly returned -EPERM under dropped caps */
+	unsigned long nl80211_admin_gate_unexpected;	/* probed cmd returned non-EPERM (regression or unreachable) */
 
 	/* splice_protocols childop counters.  Coverage of splice() into
 	 * sockets whose protocol state has been steered into one of

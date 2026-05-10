@@ -248,6 +248,31 @@
 #define NL80211_PREAMBLE_DMG			3
 #endif
 
+/*
+ * NL80211 admin-gate probe UAPI fallbacks.  Used to confirm the
+ * GENL_ADMIN_PERM flag is set on the genl_ops table entry for each
+ * cmd id below.  Upstream commit 381cd547bc6e ("wifi: nl80211: gate
+ * SET_PMK/DEL_PMK/SET_WIPHY_NETNS behind admin perm check") audited
+ * the table and re-flagged the entries that had been missing the
+ * flag; a regression that drops the flag again is silent unless
+ * something probes from an unprivileged context.
+ */
+#ifndef NL80211_CMD_SET_WIPHY_NETNS
+#define NL80211_CMD_SET_WIPHY_NETNS		78
+#endif
+#ifndef NL80211_CMD_SET_PMK
+#define NL80211_CMD_SET_PMK			122
+#endif
+#ifndef NL80211_CMD_DEL_PMK
+#define NL80211_CMD_DEL_PMK			123
+#endif
+#ifndef NL80211_ATTR_NETNS_FD
+#define NL80211_ATTR_NETNS_FD			219
+#endif
+#ifndef NL80211_ATTR_PMK
+#define NL80211_ATTR_PMK			254
+#endif
+
 /* Outer churn-loop budget knobs (per spec). */
 #define NL80211_OUTER_BASE		5U
 #define NL80211_OUTER_FLOOR		16U
@@ -1184,6 +1209,121 @@ static void cleanup_ifaces(int nlfd)
 }
 
 /*
+ * Admin-gate detector.  Forks; the child enters an unmapped
+ * CLONE_NEWUSER (no uid mapping -> all init_user_ns capabilities are
+ * dropped instantly), opens a fresh NETLINK_GENERIC socket of its
+ * own, and probes a fixed catalogue of NL80211_CMD_* opcodes that
+ * must be admin-gated.  netlink_capable(skb, CAP_NET_ADMIN) is the
+ * only barrier reachable from this context, so a missing
+ * GENL_ADMIN_PERM flag on the genl_ops entry is the regression
+ * surface: a unprivileged caller would walk straight into the
+ * handler, returning 0 / -EINVAL / etc. instead of the expected
+ * -EPERM.  NEW_INTERFACE is included as a positive control: it has
+ * been admin-gated since the UAPI was introduced, so an EPERM from
+ * it confirms the cap drop took effect for this run.  Any non-EPERM
+ * response (including 0 success or a non-EPERM errno) is bumped to
+ * the unexpected counter; the caller cannot distinguish "kernel let
+ * us through" from "cmd unreachable for unrelated reasons" without
+ * cross-checking the positive-control delta over many runs.
+ */
+struct admin_gate_cmd_desc {
+	uint8_t cmd;
+	bool needs_mac_pmk;
+	bool needs_netns_fd;
+};
+
+static const struct admin_gate_cmd_desc admin_gate_catalogue[] = {
+	{ NL80211_CMD_SET_PMK,         true,  false },
+	{ NL80211_CMD_DEL_PMK,         true,  false },
+	{ NL80211_CMD_SET_WIPHY_NETNS, false, true  },
+	{ NL80211_CMD_NEW_INTERFACE,   false, false },	/* positive control */
+};
+
+static void nl80211_admin_gate_probe(uint32_t wiphy_idx)
+{
+	pid_t pid;
+
+	__atomic_add_fetch(&shm->stats.nl80211_admin_gate_runs,
+			   1, __ATOMIC_RELAXED);
+
+	pid = fork();
+	if (pid < 0)
+		return;
+
+	if (pid == 0) {
+		int cnlfd;
+		unsigned int i;
+
+		if (unshare(CLONE_NEWUSER) != 0)
+			_exit(0);
+
+		cnlfd = open_genl_socket();
+		if (cnlfd < 0)
+			_exit(0);
+
+		for (i = 0; i < sizeof(admin_gate_catalogue) /
+				sizeof(admin_gate_catalogue[0]); i++) {
+			const struct admin_gate_cmd_desc *d =
+				&admin_gate_catalogue[i];
+			unsigned char attrs[256];
+			unsigned char resp[NL80211_NL_RX_BUF];
+			unsigned char mac[6];
+			unsigned char pmk[16];
+			int netns_fd = -1;
+			size_t off = 0;
+			size_t resp_len = 0;
+			int rc;
+
+			if (!nla_put_u32(attrs, sizeof(attrs), &off,
+					 NL80211_ATTR_WIPHY, wiphy_idx))
+				continue;
+			if (d->needs_mac_pmk) {
+				random_bssid(mac);
+				if (!nla_put(attrs, sizeof(attrs), &off,
+					     NL80211_ATTR_MAC,
+					     mac, sizeof(mac)))
+					continue;
+				generate_rand_bytes(pmk, sizeof(pmk));
+				if (!nla_put(attrs, sizeof(attrs), &off,
+					     NL80211_ATTR_PMK,
+					     pmk, sizeof(pmk)))
+					continue;
+			}
+			if (d->needs_netns_fd) {
+				netns_fd = open("/proc/self/ns/net",
+						O_RDONLY | O_CLOEXEC);
+				if (netns_fd < 0)
+					continue;
+				if (!nla_put_u32(attrs, sizeof(attrs), &off,
+						 NL80211_ATTR_NETNS_FD,
+						 (uint32_t)netns_fd)) {
+					close(netns_fd);
+					continue;
+				}
+			}
+
+			rc = genl_send_recv(cnlfd, nl80211_family, d->cmd, 1,
+					    attrs, off, resp,
+					    sizeof(resp), &resp_len);
+
+			if (netns_fd >= 0)
+				close(netns_fd);
+
+			if (rc == -EPERM)
+				__atomic_add_fetch(&shm->stats.nl80211_admin_gate_eperm_ok,
+						   1, __ATOMIC_RELAXED);
+			else
+				__atomic_add_fetch(&shm->stats.nl80211_admin_gate_unexpected,
+						   1, __ATOMIC_RELAXED);
+		}
+		close(cnlfd);
+		_exit(0);
+	}
+
+	(void)waitpid(pid, NULL, 0);
+}
+
+/*
  * Single outer iteration of the churn loop.  Each iter creates one
  * STATION iface, runs the full scan/connect/burst/scan-again/regdom/
  * disconnect/del-iface chain on it, and tears it down at the end.  The
@@ -1274,6 +1414,13 @@ static void iter_one(int nlfd, unsigned int iter_idx,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
+
+	/* Admin-gate detector sub-mode.  Lower rate (ONE_IN(16)) than the
+	 * other sub-modes because each call forks + waitpid; the child
+	 * runs in an unmapped user namespace and probes the catalogue of
+	 * cmd ids that must be admin-gated per upstream 381cd547bc6e. */
+	if (ONE_IN(16))
+		nl80211_admin_gate_probe(nl80211_phy0);
 
 	rc = del_iface_by_index(nlfd, ifindex);
 	if (rc == 0) {
