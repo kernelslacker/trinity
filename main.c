@@ -1299,8 +1299,20 @@ static void periodic_global_sanity_walk(void)
 
 void healer_plateau_response(void)
 {
-	/* PHASE 2: implement intervention */
-	stats_log_write("PLATEAU RESPONSE: TBD (would intervene here)\n");
+	/* Force the strategy picker to rotate on the next syscall dispatch
+	 * so the plateau override in pick_next_strategy (returns
+	 * STRATEGY_RANDOM while plateau_active is set) takes effect within
+	 * seconds rather than waiting up to STRATEGY_WINDOW (~1M ops, ~9
+	 * minutes at 2K iter/sec) for the natural rotation cadence.
+	 * Setting syscalls_at_last_switch to 0 makes maybe_rotate_strategy
+	 * trip on the next call from any child; the CAS guard there
+	 * ensures only one child does the rotation work even though every
+	 * child sees the trigger.  After this fires once, the field
+	 * advances to op_count and the next forced rotation waits for the
+	 * usual window — which is fine, because the picker override stays
+	 * latched on plateau_active for as long as the plateau persists. */
+	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL, __ATOMIC_RELAXED);
+	stats_log_write("PLATEAU RESPONSE: forcing STRATEGY_RANDOM until plateau clears\n");
 }
 
 void main_loop(void)

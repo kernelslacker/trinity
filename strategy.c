@@ -465,6 +465,19 @@ int pick_next_strategy(int prev)
 	if (mode == PICKER_ROUND_ROBIN)
 		return (prev + 1) % NR_STRATEGIES;
 
+	/* Plateau-detector override: when KCOV's edge-discovery rate is
+	 * stalled, the bandit has likely settled into an exploit-heavy
+	 * arm whose own gradient has gone flat.  Force STRATEGY_RANDOM
+	 * (uniform pick, no biases) to break out of the local minimum;
+	 * subsequent rotations stay on RANDOM until kcov_plateau_check()
+	 * detects edge discovery resuming and clears plateau_active, at
+	 * which point UCB1 scoring takes over again on the next call.
+	 * Round-robin mode bypasses this — its own cycling already
+	 * includes RANDOM and forcing it here would just collapse the
+	 * cycle to one arm. */
+	if (kcov_shm != NULL && kcov_shm->plateau_active)
+		return STRATEGY_RANDOM;
+
 	/* Cold-start: prefer any unpulled arm before scoring. */
 	for (i = 0; i < NR_STRATEGIES; i++) {
 		if (shm->bandit_pulls[i] == 0)
