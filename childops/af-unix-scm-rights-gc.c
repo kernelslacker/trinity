@@ -272,6 +272,69 @@ static int recv_drain_scm(int recv_fd)
 	return 0;
 }
 
+/*
+ * Peek one message from recv_fd with MSG_PEEK | MSG_DONTWAIT.  This is
+ * the only userspace path that reaches unix_peek_fpl(): the kernel dups
+ * each SCM_RIGHTS file (fpl) and installs a fresh fd in our table while
+ * leaving the original skb on the queue.  Running this concurrently
+ * with unix_gc exercises the gc_in_progress observation that the
+ * upstream fix (commit d82ba05263c6 "af_unix: Set gc_in_progress to
+ * true in unix_gc()") protects against -- a peeker's dup'd file racing
+ * a live gc walk that has not yet snapshotted gc_in_progress.
+ *
+ * The peeked SCM_RIGHTS payload stays queued (next drain will hit it
+ * again); we just close the freshly installed fds to avoid leaks.
+ *
+ * Returns 0 on a peek that completed (success or EAGAIN/ETIMEDOUT/
+ * EINTR), -1 on hard failure.
+ */
+static int recv_peek_scm(int recv_fd)
+{
+	char payload[UNIX_SCM_PAYLOAD_BYTES];
+	char cbuf[CMSG_SPACE(sizeof(int) * 8)];
+	struct iovec iov;
+	struct msghdr mh;
+	struct cmsghdr *cmsg;
+	ssize_t r;
+
+	iov.iov_base = payload;
+	iov.iov_len  = sizeof(payload);
+
+	memset(&mh, 0, sizeof(mh));
+	memset(cbuf, 0, sizeof(cbuf));
+	mh.msg_iov     = &iov;
+	mh.msg_iovlen  = 1;
+	mh.msg_control = cbuf;
+	mh.msg_controllen = sizeof(cbuf);
+
+	r = recvmsg(recv_fd, &mh, MSG_PEEK | MSG_DONTWAIT);
+	if (r < 0) {
+		if (errno == EAGAIN || errno == EINTR || errno == ETIMEDOUT)
+			return 0;
+		return -1;
+	}
+
+	for (cmsg = CMSG_FIRSTHDR(&mh); cmsg != NULL;
+	     cmsg = CMSG_NXTHDR(&mh, cmsg)) {
+		if (cmsg->cmsg_level != SOL_SOCKET ||
+		    cmsg->cmsg_type != SCM_RIGHTS)
+			continue;
+		if (cmsg->cmsg_len < CMSG_LEN(sizeof(int)))
+			continue;
+		{
+			size_t n = (cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int);
+			int *fds = (int *)CMSG_DATA(cmsg);
+			size_t i;
+
+			for (i = 0; i < n; i++) {
+				if (fds[i] >= 0)
+					(void)close(fds[i]);
+			}
+		}
+	}
+	return 0;
+}
+
 #if HAVE_IOURING_VARIANT
 /*
  * Best-effort io_uring setup.  Returns the ring fd on success, -1 on
@@ -413,10 +476,16 @@ static void iter_one(void)
 		races = 1U;
 
 	for (r = 0; r < races; r++) {
-		/* (a) Drain the queued SCM_RIGHTS message on a peer end
-		 *     of the cycle.  recv_drain_scm closes any installed
-		 *     fds itself so we don't leak refs across iterations. */
+		/* (a) Peek the queued SCM_RIGHTS message FIRST so the kernel
+		 *     walks unix_peek_fpl() (the path the upstream fix
+		 *     d82ba05263c6 protects) with the SCM_RIGHTS still
+		 *     in-flight, then drain to consume it.  recv_peek_scm
+		 *     and recv_drain_scm both close any installed fds. */
 		if (sv2[1] >= 0) {
+			if (recv_peek_scm(sv2[1]) == 0) {
+				__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_peek_ok,
+						   1, __ATOMIC_RELAXED);
+			}
 			if (recv_drain_scm(sv2[1]) == 0) {
 				__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_recv_ok,
 						   1, __ATOMIC_RELAXED);
