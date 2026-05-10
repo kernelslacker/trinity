@@ -1139,6 +1139,11 @@ struct stats_s {
 	unsigned long mptcp_pm_churn_addr_added_ok;		/* MPTCP_PM_CMD_ADD_ADDR ack 0 (endpoint installed) */
 	unsigned long mptcp_pm_churn_addr_removed_ok;		/* MPTCP_PM_CMD_DEL_ADDR ack 0 (subflow teardown raced data) */
 	unsigned long mptcp_pm_churn_send_ok;			/* send() through the live MPTCP socket returned >0 */
+	unsigned long mptcp_setsockopt_unsupported;		/* IPPROTO_MPTCP socket() rejected during setsockopt_all_sf recipe */
+	unsigned long mptcp_setsockopt_master_set;		/* setsockopt() on master mptcp socket succeeded */
+	unsigned long mptcp_setsockopt_master_fail;		/* setsockopt() on master mptcp socket failed */
+	unsigned long mptcp_getsockopt_verify_ok;		/* getsockopt() readback matched the value just set */
+	unsigned long mptcp_getsockopt_verify_drift;		/* getsockopt() readback diverged from set value */
 
 	/* devlink_port_churn childop counters */
 	unsigned long devlink_port_churn_iterations;		/* per-loop iteration completed */
