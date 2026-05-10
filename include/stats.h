@@ -966,6 +966,12 @@ struct stats_s {
 	unsigned long ipv6_ndisc_proxy_setup_failed;	/* unshare/veth/addr/proxy setup failed */
 	unsigned long ipv6_ndisc_proxy_proxy_enable_ok;	/* proxy_ndp sysctl flip accepted */
 
+	/* ipfrag_source_churn childop counters */
+	unsigned long ipfrag_source_runs;		/* total ipfrag_source_churn invocations */
+	unsigned long ipfrag_packets_sent_ok;		/* raw IPv4 fragment sendto returned >0 */
+	unsigned long ipfrag_send_failed;		/* sendto returned <=0 (queue full / EPERM / etc.) */
+	unsigned long ipfrag_unique_srcs;		/* fragment pairs emitted with a fresh source IP */
+
 	/* vrf_fib_churn childop counters */
 	unsigned long vrf_fib_churn_runs;		/* total vrf_fib_churn invocations */
 	unsigned long vrf_fib_churn_setup_failed;	/* unshare(CLONE_NEWNET) or rtnl socket failed */
