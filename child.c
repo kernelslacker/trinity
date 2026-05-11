@@ -978,7 +978,7 @@ static void check_fd_leaks(struct childdata *child)
  * Enable the dormant ops one at a time once each has been load-tested.
  * To enable an op: set its entry below to 0.
  */
-static const int dormant_op_disabled[93] = {
+static const int dormant_op_disabled[94] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 0, 1,	/* 10-14: fault_injector active; dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, recipe_runner */
@@ -1015,6 +1015,7 @@ static const int dormant_op_disabled[93] = {
 	1,		/* 90: dormant: obscure_af_churn */
 	1,		/* 91: dormant: af_alg_recvmsg_churn */
 	1,		/* 92: dormant: bridge_conntrack_churn */
+	1,		/* 93: dormant: atm_vcc_churn */
 };
 
 /*
@@ -1193,6 +1194,7 @@ static const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_RTNL_VF_BROADCAST_GETLINK:	return "rtnl_vf_broadcast_getlink";
 	case CHILD_OP_OBSCURE_AF_CHURN:	return "obscure_af_churn";
 	case CHILD_OP_BRIDGE_CT_CHURN:	return "bridge_conntrack_churn";
+	case CHILD_OP_ATM_VCC_CHURN:	return "atm_vcc_churn";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1247,7 +1249,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[93] = {
+static const enum child_op_type pick_op_type_table[94] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -1341,6 +1343,7 @@ static const enum child_op_type pick_op_type_table[93] = {
 	[90] = CHILD_OP_OBSCURE_AF_CHURN,
 	[91] = CHILD_OP_AF_ALG_RECVMSG_CHURN,
 	[92] = CHILD_OP_BRIDGE_CT_CHURN,
+	[93] = CHILD_OP_ATM_VCC_CHURN,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1605,6 +1608,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_RTNL_VF_BROADCAST_GETLINK]	= rtnl_vf_broadcast_getlink,
 	[CHILD_OP_OBSCURE_AF_CHURN]	= obscure_af_churn,
 	[CHILD_OP_BRIDGE_CT_CHURN]	= bridge_conntrack_churn,
+	[CHILD_OP_ATM_VCC_CHURN]	= atm_vcc_churn,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
