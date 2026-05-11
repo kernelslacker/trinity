@@ -1404,6 +1404,11 @@ struct stats_s {
 	unsigned long veth_asym_xdp_attach_ok;			/* RTM_NEWLINK + IFLA_XDP attached the prog (SKB mode) */
 	unsigned long veth_asym_send_ok;
 
+	/* ip6gre_bond_lapb_stack childop counters */
+	unsigned long ip6gre_lapb_runs;				/* total ip6gre_bond_lapb_stack invocations */
+	unsigned long ip6gre_lapb_setup_failed;			/* unshare/NEWLINK/SETLINK/lapb-resolve rejected */
+	unsigned long ip6gre_lapb_flag_toggles;			/* RTM_SETLINK IFF_UP/IFF_DOWN messages issued on the lapb dev */
+
 	/* ip6erspan_netns_migrate childop counters */
 	unsigned long inm_iters;				/* total ip6erspan_netns_migrate invocations */
 	unsigned long inm_eperm;				/* unshare/NEWLINK rejected with EPERM */
