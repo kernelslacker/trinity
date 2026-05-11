@@ -1137,6 +1137,11 @@ struct stats_s {
 	unsigned long nft_fwd_loop_ns_setup_failed;	/* veth/addr/netdev-table install failed -- latches */
 	unsigned long nft_fwd_loop_probe_sent_ok;	/* ICMP probe via raw socket sendto returned >0 */
 	unsigned long nft_fwd_loop_completed_ok;	/* full setup + chains + rules + probe completed */
+	unsigned long nft_l4frag_iters;			/* L4-aware-on-fragment sub-mode invocations */
+	unsigned long nft_l4frag_install_ok;		/* table + pre-defrag chain install accepted */
+	unsigned long nft_l4frag_rule_ok;		/* NEWRULE carrying socket/tproxy/exthdr/osf accepted */
+	unsigned long nft_l4frag_send_ok;		/* raw IPv4 fragment sendto returned >0 */
+	unsigned long nft_l4frag_send_failed;		/* raw IPv4 fragment sendto returned <=0 (incl. EPERM on raw open) */
 
 	/* tc_qdisc_churn childop counters */
 	unsigned long tc_qdisc_churn_runs;		/* total tc_qdisc_churn invocations */
