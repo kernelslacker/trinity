@@ -1686,6 +1686,9 @@ struct stats_s {
 	unsigned long kvm_run_exit_intr;		/* exit_reason == KVM_EXIT_INTR (alarm-induced) */
 	unsigned long kvm_run_exit_other;		/* every other exit_reason value */
 	unsigned long kvm_run_errors;			/* KVM_RUN ioctl returned -1 */
+	unsigned long kvm_gpc_memslot_race_runs;	/* memslot-race sub-mode invocations */
+	unsigned long kvm_gpc_memslot_race_deletes;	/* KVM_SET_USER_MEMORY_REGION{,2} delete ioctls issued by writer */
+	unsigned long kvm_gpc_memslot_race_unsupported;	/* sub-mode latched off (cap absent or ENODEV/EOPNOTSUPP) */
 
 	/* nl80211_churn childop counters.  Drives cfg80211 state-machine
 	 * fuzz under a mac80211_hwsim test radio inside CLONE_NEWNET.
