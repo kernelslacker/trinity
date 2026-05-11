@@ -1,14 +1,20 @@
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <sys/un.h>
 #include <netinet/in.h>
 #include <linux/phonet.h>
 #include <stdlib.h>
+#include <string.h>
 #include "net.h"
 #include "random.h"
 #include "compat.h"
 
 #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL	0x4000
+#endif
 
 static void phonet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
@@ -37,6 +43,41 @@ static void phonet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 	so->optlen = sizeof(unsigned int);
 }
 
+/*
+ * Fire sendmsg() on a freshly created phonet socket without a prior
+ * bind().  Targets the paired pn_socket_autobind / pn_socket_sendmsg
+ * BUGs upstream — the autobind path runs from sendmsg on an unbound
+ * socket, and the default trinity walk always binds first, so the
+ * unbound-sendmsg edge stays cold without an explicit probe here.
+ */
+static void phonet_socket_setup(int fd)
+{
+	struct sockaddr_pn dest;
+	struct iovec iov;
+	struct msghdr msg;
+	char buf[16];
+
+	if (!ONE_IN(8))
+		return;
+
+	memset(&dest, 0, sizeof(dest));
+	dest.spn_family = PF_PHONET;
+	dest.spn_obj = rand();
+	dest.spn_dev = rand();
+	dest.spn_resource = rand();
+
+	memset(buf, 0, sizeof(buf));
+	iov.iov_base = buf;
+	iov.iov_len  = sizeof(buf);
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_name    = &dest;
+	msg.msg_namelen = sizeof(dest);
+	msg.msg_iov     = &iov;
+	msg.msg_iovlen  = 1;
+
+	(void) sendmsg(fd, &msg, MSG_NOSIGNAL);
+}
+
 static struct socket_triplet phonet_triplets[] = {
 	{ .family = PF_PHONET, .protocol = 0, .type = SOCK_DGRAM },
 	{ .family = PF_PHONET, .protocol = 0, .type = SOCK_SEQPACKET },
@@ -46,6 +87,7 @@ static struct socket_triplet phonet_triplets[] = {
 
 const struct netproto proto_phonet = {
 	.name = "phonet",
+	.socket_setup = phonet_socket_setup,
 	.setsockopt = phonet_setsockopt,
 	.gen_sockaddr = phonet_gen_sockaddr,
 	.valid_triplets = phonet_triplets,
