@@ -1220,21 +1220,24 @@ static void print_stats(void)
 					rate);
 			}
 
-			/* Per-pool live ratio.  Suppressed when no explorers are
-			 * reserved (small fleets, --explorer-children=0, or pre-
-			 * default rollout) -- printing zeros adds visual noise. */
+			/* Per-pool live ratio.  When the explorer pool is empty
+			 * (e.g. -C N where N/8 rounds to zero, common with ASAN
+			 * configs), drop the explorer half of the line but still
+			 * report bandit activity so edge-discovery visibility
+			 * isn't lost. */
+			static unsigned long last_bandit_edges = 0;
+			unsigned long b_cur = __atomic_load_n(
+				&shm->stats.bandit_pool_edges_discovered,
+				__ATOMIC_RELAXED);
+			unsigned long b_delta = b_cur - last_bandit_edges;
+
 			if (explorer_children > 0) {
 				static unsigned long last_explorer_edges = 0;
-				static unsigned long last_bandit_edges = 0;
 				unsigned long e_cur = __atomic_load_n(
 					&shm->stats.explorer_pool_edges_discovered,
 					__ATOMIC_RELAXED);
-				unsigned long b_cur = __atomic_load_n(
-					&shm->stats.bandit_pool_edges_discovered,
-					__ATOMIC_RELAXED);
 				unsigned long total = e_cur + b_cur;
 				unsigned long e_delta = e_cur - last_explorer_edges;
-				unsigned long b_delta = b_cur - last_bandit_edges;
 				unsigned int e_share_pct = total > 0 ?
 					(unsigned int)(e_cur * 100UL / total) : 0;
 				unsigned int b_share_pct = 100U - e_share_pct;
@@ -1245,8 +1248,12 @@ static void print_stats(void)
 					max_children - explorer_children, max_children,
 					b_cur, b_share_pct, b_delta);
 				last_explorer_edges = e_cur;
-				last_bandit_edges = b_cur;
+			} else {
+				output(0, "[main] bandit: %u/%u children, %lu edges (+%lu)\n",
+					max_children, max_children,
+					b_cur, b_delta);
 			}
+			last_bandit_edges = b_cur;
 
 			lastcount = op_count;
 		}
