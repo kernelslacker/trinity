@@ -1,7 +1,10 @@
 #include <limits.h>
 #include <malloc.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include "child.h"
 #include "debug.h"
@@ -60,6 +63,54 @@ static inline bool local_array_holds_capacity(struct object **array_snap,
 		return false;
 	return malloc_usable_size(array_snap) >=
 		(size_t)cap_snap * sizeof(struct object *);
+}
+
+/*
+ * Crash-safe diagnostic for add_object's wild-stomp detection branches.
+ * The surrounding objhead/shm state is by definition unreliable when one
+ * of these branches fires, and outputerr() routes through vfprintf() ->
+ * stdio FILE locks / glibc varargs machinery.  In practice that path has
+ * itself SIGSEGV'd inside libc on the same wild stomp that triggered the
+ * detection, drowning out the primary signal.  Build the message in a
+ * fixed-size stack buffer with snprintf (no malloc) and write(2) it raw
+ * to stderr -- no FILE state, no allocator, no shm touched after the
+ * caller's own snapshot.
+ *
+ * Rate-limited to ~one line per 100 ms via a process-wide monotonic
+ * timestamp and a single CAS, so a wild writer that re-fires the
+ * detection on every retry does not flood the log.
+ */
+static void crashsafe_corruption_log(const char *what, unsigned int type,
+				     void *array, unsigned int n,
+				     unsigned int cap)
+{
+	static uint64_t last_ns;
+	struct timespec ts;
+	uint64_t now_ns, prev;
+	char buf[256];
+	int len;
+
+	if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+		return;
+	now_ns = (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+	prev = __atomic_load_n(&last_ns, __ATOMIC_RELAXED);
+	if (prev != 0 && now_ns - prev < 100000000ull)
+		return;
+	if (!__atomic_compare_exchange_n(&last_ns, &prev, now_ns, 0,
+					 __ATOMIC_RELAXED,
+					 __ATOMIC_RELAXED))
+		return;
+
+	len = snprintf(buf, sizeof(buf),
+		       "add_object: %s type=%u array=%p num_entries=%u capacity=%u\n",
+		       what, type, array, n, cap);
+	if (len <= 0)
+		return;
+	if ((size_t)len >= sizeof(buf))
+		len = sizeof(buf) - 1;
+	if (write(STDERR_FILENO, buf, (size_t)len) < 0) {
+		/* nothing useful to do here -- the diagnostic itself failed */
+	}
 }
 
 void register_global_obj_init(struct global_obj_entry *entry)
@@ -764,8 +815,8 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	 * failure mode collapses onto one shape.
 	 */
 	if (array_snap != NULL && is_corrupt_ptr_shape(array_snap)) {
-		outputerr("add_object: stomped head->array type=%u array=%p num_entries=%u capacity=%u\n",
-			  type, array_snap, n, cap_snap);
+		crashsafe_corruption_log("stomped head->array", type,
+					 array_snap, n, cap_snap);
 		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted, 1,
 				   __ATOMIC_RELAXED);
 		post_handler_corrupt_ptr_bump_site(NULL,
@@ -795,8 +846,8 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	if (cap_snap > OBJHEAD_SANE_LIMIT ||
 	    (scope == OBJ_LOCAL &&
 	     !local_array_holds_capacity(array_snap, cap_snap))) {
-		outputerr("add_object: stomped capacity type=%u capacity=%u num_entries=%u\n",
-			  type, cap_snap, n);
+		crashsafe_corruption_log("stomped capacity", type,
+					 array_snap, n, cap_snap);
 		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted, 1,
 				   __ATOMIC_RELAXED);
 		post_handler_corrupt_ptr_bump_site(NULL,
@@ -819,8 +870,8 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		 * Mirrors the symmetric pick-side guard in get_random_object_
 		 * versioned()'s OBJ_LOCAL branch and the OBJ_GLOBAL guard at the
 		 * grow check just below this line. */
-		outputerr("add_object: stomped num_entries type=%u num_entries=%u capacity=%u\n",
-			  type, n, cap_snap);
+		crashsafe_corruption_log("stomped num_entries", type,
+					 array_snap, n, cap_snap);
 		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted, 1,
 				   __ATOMIC_RELAXED);
 		post_handler_corrupt_ptr_bump_site(NULL,
@@ -840,8 +891,8 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	 * if we've hit the fixed capacity. */
 	if (scope == OBJ_GLOBAL) {
 		if (n >= cap_snap) {
-			outputerr("add_object: global array full for type %u "
-				  "(cap %u)\n", type, cap_snap);
+			crashsafe_corruption_log("global array full", type,
+						 array_snap, n, cap_snap);
 			if (is_fd_type(type)) {
 				int fd = fd_from_object(obj, type);
 				if (fd >= 0)
