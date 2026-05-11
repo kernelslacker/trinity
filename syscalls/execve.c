@@ -9,6 +9,7 @@
  */
 #include <errno.h>
 #include <fcntl.h>
+#include <malloc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -268,6 +269,28 @@ static void post_execve(struct syscallrecord *rec)
 	}
 
 	/*
+	 * Shape passed, but a sibling-stomp can still redirect post_state
+	 * to a different heap allocation that happens to be canonical and
+	 * aligned -- typically a smaller struct from another syscall's own
+	 * post_state slot.  Copying *snap into local_snap then reads
+	 * sizeof(struct execve_post_state) bytes past the end of the foreign
+	 * allocation (heap-buffer-overflow).  malloc_usable_size on a
+	 * shape-valid heap pointer reads glibc chunk-header metadata and is
+	 * well-defined; the looks_like_corrupted_ptr check above already
+	 * rejected the NULL/non-canonical/misaligned shapes that would make
+	 * it UB.  Bail without freeing -- the underlying allocation is owned
+	 * by whatever syscall originally produced it, and handing it to
+	 * deferred-free here would double-account it.
+	 */
+	if (malloc_usable_size(snap) < sizeof(*snap)) {
+		outputerr("post_execve: rejected post_state=%p backing chunk %zu < %zu "
+			  "(post_state-redirected?)\n",
+			  snap, malloc_usable_size(snap), sizeof(*snap));
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
 	 * Copy the snapshot struct contents into a local so the field
 	 * validations below run against the same bytes the array walk
 	 * will consume.  A sibling syscall scribbling snap->argv /
@@ -324,6 +347,17 @@ static void post_execveat(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_execveat: rejected suspicious post_state=%p "
 			  "(pid-scribbled?)\n", snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/* See post_execve() — backing-chunk size guard against post_state
+	 * redirected to a smaller foreign allocation by sibling stomp.
+	 */
+	if (malloc_usable_size(snap) < sizeof(*snap)) {
+		outputerr("post_execveat: rejected post_state=%p backing chunk %zu < %zu "
+			  "(post_state-redirected?)\n",
+			  snap, malloc_usable_size(snap), sizeof(*snap));
 		rec->post_state = 0;
 		return;
 	}
