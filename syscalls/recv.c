@@ -83,8 +83,26 @@ struct syscallentry syscall_recvfrom = {
  * of msg->msg_iovlen / msg->msg_iov[].iov_len that the count-bound
  * validator below relies on.  Captured at sanitise time into a
  * post_state-private heap struct that no syscall ABI slot points at.
+ *
+ * The struct carries a leading magic cookie because the heap-shape check
+ * on rec->post_state is value-based only -- a sibling that scribbles
+ * rec->post_state with any heap-shaped 8-byte aligned pointer (e.g. a
+ * stale alloc_iovec(1) from a different syscall, which is also a 16-byte
+ * region) sails past looks_like_corrupted_ptr() and the post handler
+ * then loads snap->msg from foreign bytes, treats the result as a
+ * struct msghdr *, and dereferences into poisoned heap.  ASAN caught
+ * exactly that: snap landed at a 16-byte region, snap->msg returned a
+ * wild value, and post_recvmsg crashed on the subsequent inner-field
+ * read 496 bytes past the foreign 16-byte allocation.  The cookie is
+ * an arbitrary 64-bit constant: the chance a sibling scribble forges
+ * the exact value is 2^-64 per stomp, so a mismatch is treated as a
+ * stomp signature rather than as benign noise.  Sized 24 bytes so the
+ * struct also no longer collides with the 16-byte free-list bucket
+ * that holds alloc_iovec(1) and the existing post_state structs.
  */
+#define RECVMSG_POST_STATE_MAGIC	0x52435653504F5354UL	/* "RCVSPOST" */
 struct recvmsg_post_state {
+	unsigned long magic;
 	struct msghdr *msg;
 	unsigned long iov_len_sum;
 };
@@ -149,6 +167,7 @@ skip_si:
 	rec->a2 = (unsigned long) msg;
 
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = RECVMSG_POST_STATE_MAGIC;
 	snap->msg = msg;
 	snap->iov_len_sum = iov_len_sum;
 	rec->post_state = (unsigned long) snap;
@@ -172,6 +191,29 @@ static void post_recvmsg(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_recvmsg: rejected suspicious post_state=%p "
 			  "(pid-scribbled?)\n", snap);
+		rec->a2 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation (a different syscall's post_state, an
+	 * alloc_iovec(1) in the same 16/24-byte free-list bucket, ...)
+	 * would let the wrong bytes pose as a recvmsg_post_state.  The
+	 * cookie was set at sanitise time; a mismatch means snap does
+	 * not point at our struct -- abandon both the snap and the msghdr
+	 * cleanup rather than feed wild bytes into the inner-field deref.
+	 * Cannot deferred_freeptr the snap because we cannot prove it is
+	 * one of our allocations -- leak it and let the deferred-free
+	 * tick reclaim the original snap on the next pass.
+	 */
+	if (snap->magic != RECVMSG_POST_STATE_MAGIC) {
+		outputerr("post_recvmsg: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
