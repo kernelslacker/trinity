@@ -158,23 +158,16 @@ static void audit_mmap_bucket(void)
 
 	for (t = 0; t < ARRAY_SIZE(mmap_types); t++) {
 		struct objhead *head;
+		struct object *obj;
 		unsigned int i;
 
 		head = get_objhead(OBJ_GLOBAL, mmap_types[t]);
-		if (head == NULL || head->num_entries == 0 || head->array == NULL)
+		if (head == NULL)
 			continue;
 
-		for (i = 0; i < head->num_entries; i++) {
-			struct object *obj;
+		for_each_obj(head, obj, i) {
 			struct map *m;
 			unsigned long addr;
-
-			if (i >= head->array_capacity)
-				break;
-
-			obj = head->array[i];
-			if (obj == NULL)
-				continue;
 
 			m = &obj->map;
 			addr = (unsigned long) m->ptr;
@@ -322,6 +315,7 @@ static void audit_socket_bucket(void)
 		{ "/proc/net/packet",  9 },
 	};
 	struct objhead *head;
+	struct object *obj;
 	ino_t *net_inodes;
 	unsigned int net_count = 0;
 	unsigned int t, i;
@@ -330,7 +324,7 @@ static void audit_socket_bucket(void)
 		return;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SOCKET);
-	if (head == NULL || head->num_entries == 0 || head->array == NULL)
+	if (head == NULL)
 		return;
 
 	net_inodes = malloc(MAX_PROC_NET_INODES * sizeof(*net_inodes));
@@ -353,19 +347,11 @@ static void audit_socket_bucket(void)
 		return;
 	}
 
-	for (i = 0; i < head->num_entries; i++) {
-		struct object *obj;
+	for_each_obj(head, obj, i) {
 		struct socketinfo *si;
 		struct stat st;
 		unsigned int j;
 		bool found;
-
-		if (i >= head->array_capacity)
-			break;
-
-		obj = head->array[i];
-		if (obj == NULL)
-			continue;
 
 		si = &obj->sockinfo;
 		if (si->fd < 0)
