@@ -421,16 +421,36 @@ struct objhead {
  * NULL until num_entries is decremented, so a walker that doesn't hold
  * shm->objlock can legitimately observe a transient NULL mid-removal.
  *
- * The (idx < array_capacity) bound is a defence against a corrupt
- * num_entries (a stray write past the cap): without it a torn count
- * would walk off the end of the array.  array_capacity is fixed at
- * init time for OBJ_GLOBAL pools (GLOBAL_OBJ_MAX_CAPACITY) and never
- * shrinks for OBJ_LOCAL.
+ * Snapshot semantics: at loop entry we take a single ACQUIRE load of
+ * head->num_entries and plain reads of head->array_capacity and
+ * head->array into a per-invocation local struct, and the loop body
+ * thereafter only consults those snapshots -- never re-reads the
+ * objhead fields.  Without this snapshot a sibling value-result
+ * syscall whose buffer aliases this child's objhead can scribble
+ * (num_entries, array_capacity, array) between the loop's per-iter
+ * re-reads and steer the head->array[idx] deref past the end of the
+ * live allocation, three TOCTOU windows per iteration multiplied
+ * across every for_each_obj caller.  Mirrors the snapshot regimes
+ * already established for the symmetric per-call paths in add_object
+ * (b677185d752496ac7ee7751c66e86f432e108c54),
+ * get_random_object_versioned
+ * (2c5d84e5d67b7e843ceb0a0ed42f0a996568caa9), and __destroy_object /
+ * destroy_objects (3058bd1a64ea956627e4dfe097faa07c6a1bae4b) at the
+ * iterator-macro layer.
  *
- * No atomics are emitted by the macro.  Callers that need a stable
- * snapshot of num_entries (lockless child reads of an OBJ_GLOBAL pool)
- * must take it themselves with __ATOMIC_ACQUIRE before iterating, the
- * same way get_random_object() does today.
+ * Entry rejection: if the snapshot's array_capacity exceeds
+ * OBJHEAD_SANE_LIMIT (a smoking-gun wild stomp -- OBJ_GLOBAL is
+ * hard-capped at GLOBAL_OBJ_MAX_CAPACITY=1024 and OBJ_LOCAL working
+ * sets stay well below 64K) or num_entries exceeds the snapshotted
+ * capacity, the loop bumps the existing
+ * local_obj_num_entries_corrupted counter and executes zero
+ * iterations -- same shape as the per-function entry rejects in the
+ * parent fixes.  A snapshot with array == NULL collapses to zero
+ * iterations without a counter bump (legitimate state for an
+ * OBJ_LOCAL pool that has never had an add_object()).
+ *
+ * array_generation is intentionally not snapshotted: iterators do
+ * not validate handles, that is validate_object_handle()'s job.
  *
  * Usage:
  *	struct object *obj;
@@ -440,12 +460,22 @@ struct objhead {
  *		... use obj ...
  *	}
  */
+struct __for_each_obj_state {
+	unsigned int n_snap;
+	struct object **array_snap;
+	int do_iter;
+};
+
+void __for_each_obj_init(struct objhead *head,
+			 struct __for_each_obj_state *s);
+
 #define for_each_obj(head, obj, idx)					\
-	for ((idx) = 0;							\
-	     (idx) < (head)->num_entries &&				\
-	     (idx) < (head)->array_capacity;				\
-	     (idx)++)							\
-		if (((obj) = (head)->array[idx]) != NULL)
+	for (struct __for_each_obj_state __feo = { .do_iter = 1 };	\
+	     __feo.do_iter &&						\
+		     (__for_each_obj_init((head), &__feo), 1);		\
+	     __feo.do_iter = 0)						\
+		for ((idx) = 0; (idx) < __feo.n_snap; (idx)++)		\
+			if (((obj) = __feo.array_snap[(idx)]) != NULL)
 
 struct object * alloc_object(void);
 void add_object(struct object *obj, enum obj_scope scope, enum objecttype type);

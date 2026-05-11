@@ -515,6 +515,52 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
 
 
 /*
+ * Snapshot helper for the for_each_obj iterator macro.  Captures
+ * num_entries (ACQUIRE), array_capacity and array into the caller's
+ * state struct so the loop body never re-reads the live objhead
+ * fields.  Without this freeze every iteration of every for_each_obj
+ * caller exposed three TOCTOU windows (fresh num_entries bound,
+ * fresh array_capacity defensive break, fresh array deref) that a
+ * sibling value-result syscall whose buffer aliases the objhead can
+ * scribble between -- the same wild-stomp shape the per-call snapshot
+ * regimes in add_object(), get_random_object_versioned() and
+ * __destroy_object() / destroy_objects() close on the symmetric
+ * write-entry, read and destroy paths.
+ *
+ * Entry rejection mirrors those parent fixes: a snapshot capacity
+ * past OBJHEAD_SANE_LIMIT (smoking-gun wild stomp -- OBJ_GLOBAL is
+ * hard-capped at GLOBAL_OBJ_MAX_CAPACITY=1024, OBJ_LOCAL working
+ * sets stay well below the 64K ceiling) or n_snap > cap_snap bumps
+ * local_obj_num_entries_corrupted and forces the loop to zero
+ * iterations by zeroing n_snap.  An array_snap == NULL is collapsed
+ * to zero iterations without a counter bump -- legitimate state for
+ * an OBJ_LOCAL pool that has never had an add_object().
+ *
+ * array_generation is intentionally not captured: iterators do not
+ * validate handles, that is validate_object_handle()'s responsibility
+ * for callers that hold an obj across a window where a parent
+ * destroy or a same-process realloc could invalidate the slot.
+ */
+void __for_each_obj_init(struct objhead *head,
+			 struct __for_each_obj_state *s)
+{
+	unsigned int cap_snap;
+
+	s->n_snap = __atomic_load_n(&head->num_entries, __ATOMIC_ACQUIRE);
+	cap_snap = head->array_capacity;
+	s->array_snap = head->array;
+
+	if (cap_snap > OBJHEAD_SANE_LIMIT || s->n_snap > cap_snap) {
+		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
+				   1, __ATOMIC_RELAXED);
+		s->n_snap = 0;
+		return;
+	}
+	if (s->array_snap == NULL)
+		s->n_snap = 0;
+}
+
+/*
  * Fixed capacity for global object arrays.  These are allocated in
  * MAP_SHARED memory so children can safely read them.  Using realloc()
  * on private heap would put the new array in the parent's address space
