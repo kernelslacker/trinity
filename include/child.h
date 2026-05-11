@@ -186,6 +186,7 @@ enum child_op_type {
 	CHILD_OP_RTNL_VF_BROADCAST_GETLINK,
 	CHILD_OP_OBSCURE_AF_CHURN,
 	CHILD_OP_BRIDGE_CT_CHURN,
+	CHILD_OP_ATM_VCC_CHURN,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -626,3 +627,4 @@ bool ipfrag_source_churn(struct childdata *child);
 bool rtnl_vf_broadcast_getlink(struct childdata *child);
 bool obscure_af_churn(struct childdata *child);
 bool bridge_conntrack_churn(struct childdata *child);
+bool atm_vcc_churn(struct childdata *child);

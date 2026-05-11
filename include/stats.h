@@ -1068,6 +1068,13 @@ struct stats_s {
 	unsigned long bridge_ct_flushes;		/* IPCTNL_MSG_CT_FLUSH messages emitted */
 	unsigned long bridge_ct_pkts_sent;		/* UDP packets pushed via veth peer end */
 
+	/* atm_vcc_churn childop counters */
+	unsigned long atm_vcc_churn_runs;		/* total atm_vcc_churn invocations */
+	unsigned long atm_vcc_churn_unsupported;	/* socket(AF_ATM*) returned EAFNOSUPPORT (CONFIG_ATM=n) */
+	unsigned long atm_vcc_churn_socket_ok;		/* AF_ATMPVC/AF_ATMSVC vcc opened */
+	unsigned long atm_vcc_churn_ioctls_sent;	/* ioctls dispatched against the vcc */
+	unsigned long atm_vcc_churn_kernel_rejected;	/* ioctl returned <0 (expected without backend) */
+
 	/* nftables_churn childop counters */
 	unsigned long nftables_churn_runs;		/* total nftables_churn invocations */
 	unsigned long nftables_churn_setup_failed;	/* unshare / nfnl_open / nf_tables latched */
