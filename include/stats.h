@@ -1063,6 +1063,11 @@ struct stats_s {
 	unsigned long bridge_vlan_mass_max_n;		/* largest IFLA_BRIDGE_VLAN_INFO entry count attempted in one msg */
 	unsigned long bridge_vlan_mass_enotbufs;	/* sendmsg -ENOBUFS / -EMSGSIZE on the oversize bulk message */
 
+	/* bridge_conntrack_churn childop counters */
+	unsigned long bridge_ct_runs;			/* total bridge_conntrack_churn invocations */
+	unsigned long bridge_ct_flushes;		/* IPCTNL_MSG_CT_FLUSH messages emitted */
+	unsigned long bridge_ct_pkts_sent;		/* UDP packets pushed via veth peer end */
+
 	/* nftables_churn childop counters */
 	unsigned long nftables_churn_runs;		/* total nftables_churn invocations */
 	unsigned long nftables_churn_setup_failed;	/* unshare / nfnl_open / nf_tables latched */
