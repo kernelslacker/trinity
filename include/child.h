@@ -404,7 +404,30 @@ struct childdata {
 	 * Consulted preferentially when generating ARG_FD arguments. */
 	struct child_fd_ring live_fds;
 
-	struct objhead objects[MAX_OBJECT_TYPES];
+	/*
+	 * Per-child OBJ_LOCAL objhead array.  Lives in its own page-aligned
+	 * MAP_SHARED region (allocated lazily by init_object_lists() via
+	 * local_objects_alloc()) rather than being embedded in struct
+	 * childdata so that the per-child mprotect-RO defence (see
+	 * local_objects_freeze() in objects.c) can target just the objhead
+	 * pages without dragging in the surrounding hot-path fields
+	 * (syscall_ring, sentinel_prev, syscallrecord with its 4 KiB
+	 * prebuffer) that share whatever pages the embedded array used to
+	 * straddle.  The pointer itself lives in the writable section of
+	 * struct childdata; only the region it addresses flips RO/RW.
+	 */
+	struct objhead *objects;
+	/*
+	 * True iff the per-child *objects region is currently mprotect'd
+	 * PROT_READ in this process's address space.  Lives outside the
+	 * protected region (would otherwise be unmodifiable when set) so
+	 * the owning child can flip it as part of the thaw/freeze brackets
+	 * around legit add_object()/destroy_object() writes.  Reads/writes
+	 * are owner-only -- siblings see the childdata page itself RO via
+	 * the freeze_sibling_childdata sweep, and the parent never
+	 * mutates per-child OBJ_LOCAL state.
+	 */
+	bool objects_protected;
 
 	/* Ring of recently completed syscall records, drained by the parent
 	 * during post-mortem to reconstruct a fleet-wide chronology. */

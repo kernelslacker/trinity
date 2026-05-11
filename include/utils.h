@@ -21,11 +21,14 @@
 #define SHARED_REGIONS_GLOBAL_RESERVE 256
 
 /*
- * Per-child shared allocations: childdata + fd_event_ring (see init_shm).
- * The cap formula in derive_max_children_cap() divides the remaining
- * shared_regions[] budget by this number.
+ * Per-child shared allocations: childdata + fd_event_ring (see init_shm)
+ * + the per-child OBJ_LOCAL objhead region carved out of struct
+ * childdata so it can be page-isolated and mprotect'd RO post-init
+ * (see local_objects_alloc() in objects.c).  The cap formula in
+ * derive_max_children_cap() divides the remaining shared_regions[]
+ * budget by this number.
  */
-#define SHARED_REGIONS_PER_CHILD 2
+#define SHARED_REGIONS_PER_CHILD 3
 
 extern unsigned int nr_shared_regions;
 
