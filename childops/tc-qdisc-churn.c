@@ -109,6 +109,9 @@
 #if __has_include(<linux/pkt_cls.h>)
 #include <linux/pkt_cls.h>
 #endif
+#if __has_include(<linux/veth.h>)
+#include <linux/veth.h>
+#endif
 
 #include <errno.h>
 #include <fcntl.h>
@@ -172,6 +175,11 @@
 
 #ifndef ETH_P_ALL
 #define ETH_P_ALL		0x0003
+#endif
+
+/* veth peer attribute (linux/veth.h, stable). */
+#ifndef VETH_INFO_PEER
+#define VETH_INFO_PEER		1
 #endif
 
 /* Reasonable ceiling on a single rtnl message + payload.  The
@@ -255,6 +263,7 @@ static const char * const cls_kinds[] = {
 static bool ns_unsupported_rtnl;
 static bool ns_unsupported_dummy;
 static bool ns_unsupported_inet;
+static bool ns_unsupported_bridge;
 
 /* Per-kind latches: indexed by qdisc_kinds[] / cls_kinds[].  Set
  * on first NEWQDISC / NEWTFILTER rejection with EOPNOTSUPP /
@@ -570,6 +579,150 @@ static int build_dellink(int fd, int ifindex)
 	ifi->ifi_index  = ifindex;
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+	nlh->nlmsg_len = (__u32)off;
+	return rtnl_send_recv(fd, buf, off);
+}
+
+/*
+ * RTM_NEWLINK type=bridge with the supplied dev name.  No
+ * IFLA_INFO_DATA — defaults give us a working bridge that accepts
+ * IFLA_MASTER enslavement.  Mirrors build_dummy_create's wrapping
+ * of IFLA_LINKINFO + IFLA_INFO_KIND.
+ */
+static int build_bridge_create(int fd, const char *name)
+{
+	unsigned char buf[RTNL_BUF_BYTES];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	struct nlattr *linkinfo;
+	size_t off, li_off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
+			   NLM_F_CREATE | NLM_F_EXCL;
+	nlh->nlmsg_seq   = next_seq();
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, name);
+	if (!off)
+		return -EIO;
+
+	li_off = off;
+	off = nla_put(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	if (!off)
+		return -EIO;
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "bridge");
+	if (!off)
+		return -EIO;
+
+	linkinfo = (struct nlattr *)(buf + li_off);
+	linkinfo->nla_len = (unsigned short)(off - li_off);
+
+	nlh->nlmsg_len = (__u32)off;
+	return rtnl_send_recv_retry(fd, buf, off);
+}
+
+/*
+ * RTM_NEWLINK type=veth with peer end created in the same call.
+ * IFLA_LINKINFO -> IFLA_INFO_KIND="veth", IFLA_INFO_DATA ->
+ * VETH_INFO_PEER which itself wraps a fresh ifinfomsg + IFLA_IFNAME
+ * for the peer.  Both ends land in the current netns.
+ */
+static int build_veth_pair(int fd, const char *name, const char *peer)
+{
+	unsigned char buf[RTNL_BUF_BYTES];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi, *peer_ifi;
+	struct nlattr *linkinfo, *infodata, *peer_attr;
+	size_t off, li_off, id_off, p_off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
+			   NLM_F_CREATE | NLM_F_EXCL;
+	nlh->nlmsg_seq   = next_seq();
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, name);
+	if (!off)
+		return -EIO;
+
+	li_off = off;
+	off = nla_put(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	if (!off)
+		return -EIO;
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "veth");
+	if (!off)
+		return -EIO;
+
+	id_off = off;
+	off = nla_put(buf, off, sizeof(buf), IFLA_INFO_DATA, NULL, 0);
+	if (!off)
+		return -EIO;
+
+	p_off = off;
+	off = nla_put(buf, off, sizeof(buf), VETH_INFO_PEER, NULL, 0);
+	if (!off)
+		return -EIO;
+	if (off + NLMSG_ALIGN(sizeof(*peer_ifi)) > sizeof(buf))
+		return -EIO;
+	peer_ifi = (struct ifinfomsg *)(buf + off);
+	memset(peer_ifi, 0, sizeof(*peer_ifi));
+	peer_ifi->ifi_family = AF_UNSPEC;
+	off += NLMSG_ALIGN(sizeof(*peer_ifi));
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, peer);
+	if (!off)
+		return -EIO;
+	peer_attr = (struct nlattr *)(buf + p_off);
+	peer_attr->nla_len = (unsigned short)(off - p_off);
+
+	infodata = (struct nlattr *)(buf + id_off);
+	infodata->nla_len = (unsigned short)(off - id_off);
+
+	linkinfo = (struct nlattr *)(buf + li_off);
+	linkinfo->nla_len = (unsigned short)(off - li_off);
+
+	nlh->nlmsg_len = (__u32)off;
+	return rtnl_send_recv_retry(fd, buf, off);
+}
+
+/*
+ * RTM_SETLINK with IFLA_MASTER=master_idx.  Enslaves slave_idx to
+ * master_idx; for our use the slave is one end of a veth pair and
+ * master is a bridge, so this drives the kernel's br_add_if path.
+ */
+static int build_setlink_master(int fd, int slave_idx, int master_idx)
+{
+	unsigned char buf[256];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	size_t off;
+	__u32 m = (__u32)master_idx;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_SETLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = next_seq();
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	ifi->ifi_index  = slave_idx;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+	off = nla_put(buf, off, sizeof(buf), IFLA_MASTER, &m, sizeof(m));
+	if (!off)
+		return -EIO;
+
 	nlh->nlmsg_len = (__u32)off;
 	return rtnl_send_recv(fd, buf, off);
 }
@@ -1134,10 +1287,15 @@ static void do_peek_stack(int rtnl, int ifindex, const char *dev_name)
 bool tc_qdisc_churn(struct childdata *child)
 {
 	char dummy_name[IFNAMSIZ];
+	char bridge_name[IFNAMSIZ];
+	char peer_name[IFNAMSIZ];
 	int rtnl = -1;
 	int udp = -1;
 	int dummy_idx = 0;
+	int bridge_idx = 0;
 	bool dummy_added = false;
+	bool bridge_mode = false;
+	bool slave_dellinked = false;
 	unsigned int qidx, qidx2, cidx;
 	__u32 major, handle, class1, class2;
 	struct timespec t0;
@@ -1177,24 +1335,76 @@ bool tc_qdisc_churn(struct childdata *child)
 		lo_brought_up = true;
 	}
 
-	snprintf(dummy_name, sizeof(dummy_name), "trtcd%u",
-		 (unsigned int)(rand32() & 0xffffu));
+	/*
+	 * One iteration in three (when supported) builds a bridge
+	 * slave veth port to use as the qdisc parent instead of a
+	 * dummy.  The slave port is the DELLINK target raced against
+	 * a flush burst at cleanup — shape of the dequeue-after-
+	 * parent-free UAF in qdisc_pkt_len_segs_init.
+	 */
+	bridge_mode = !ns_unsupported_bridge && ONE_IN(3);
+	if (bridge_mode) {
+		snprintf(bridge_name, sizeof(bridge_name), "trbr%u",
+			 (unsigned int)(rand32() & 0xffffu));
+		snprintf(dummy_name, sizeof(dummy_name), "trv%u",
+			 (unsigned int)(rand32() & 0xffffu));
+		snprintf(peer_name, sizeof(peer_name), "trvp%u",
+			 (unsigned int)(rand32() & 0xffffu));
 
-	rc = build_dummy_create(rtnl, dummy_name);
-	if (rc != 0) {
-		if (is_unsupported_err(rc))
-			ns_unsupported_dummy = true;
-		goto out;
+		rc = build_bridge_create(rtnl, bridge_name);
+		if (rc != 0) {
+			if (is_unsupported_err(rc))
+				ns_unsupported_bridge = true;
+			bridge_mode = false;
+		} else {
+			bridge_idx = (int)if_nametoindex(bridge_name);
+			rc = build_veth_pair(rtnl, dummy_name, peer_name);
+			if (rc != 0) {
+				if (bridge_idx > 0)
+					(void)build_dellink(rtnl, bridge_idx);
+				bridge_idx = 0;
+				bridge_mode = false;
+			} else {
+				dummy_idx = (int)if_nametoindex(dummy_name);
+				if (dummy_idx > 0 && bridge_idx > 0)
+					(void)build_setlink_master(rtnl, dummy_idx,
+								   bridge_idx);
+				if (bridge_idx > 0)
+					(void)build_setlink_up(rtnl, bridge_idx);
+				if (dummy_idx > 0)
+					(void)build_setlink_up(rtnl, dummy_idx);
+				dummy_added = true;
+				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_create_ok,
+						   1, __ATOMIC_RELAXED);
+				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_bridge_parent_runs,
+						   1, __ATOMIC_RELAXED);
+			}
+		}
 	}
-	dummy_added = true;
-	__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_create_ok,
-			   1, __ATOMIC_RELAXED);
 
-	dummy_idx = (int)if_nametoindex(dummy_name);
-	if (dummy_idx == 0)
+	if (!bridge_mode) {
+		snprintf(dummy_name, sizeof(dummy_name), "trtcd%u",
+			 (unsigned int)(rand32() & 0xffffu));
+
+		rc = build_dummy_create(rtnl, dummy_name);
+		if (rc != 0) {
+			if (is_unsupported_err(rc))
+				ns_unsupported_dummy = true;
+			goto out;
+		}
+		dummy_added = true;
+		__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_create_ok,
+				   1, __ATOMIC_RELAXED);
+
+		dummy_idx = (int)if_nametoindex(dummy_name);
+		if (dummy_idx == 0)
+			goto out;
+
+		(void)build_setlink_up(rtnl, dummy_idx);
+	}
+
+	if (dummy_idx <= 0)
 		goto out;
-
-	(void)build_setlink_up(rtnl, dummy_idx);
 
 	/*
 	 * One iteration in four runs the deliberate peek-x-peek stack
@@ -1327,36 +1537,80 @@ bool tc_qdisc_churn(struct childdata *child)
 		}
 	}
 
-	/*
-	 * Bulk-delete every filter on root, racing in-flight skb
-	 * classification still draining from the send loop.  The
-	 * cls_*_destroy commit-time codepaths (CVE-2023-3776 cls_fw
-	 * lineage) live here.
-	 */
-	if (build_deltfilter(rtnl, dummy_idx, handle) == 0)
-		__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tfilter_del_ok,
-				   1, __ATOMIC_RELAXED);
+	if (!bridge_mode) {
+		/*
+		 * Bulk-delete every filter on root, racing in-flight skb
+		 * classification still draining from the send loop.  The
+		 * cls_*_destroy commit-time codepaths (CVE-2023-3776 cls_fw
+		 * lineage) live here.
+		 */
+		if (build_deltfilter(rtnl, dummy_idx, handle) == 0)
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tfilter_del_ok,
+					   1, __ATOMIC_RELAXED);
 
-	/*
-	 * Drop the root qdisc, racing the same in-flight skbs.
-	 * Cascades cleanup of class / filter survivors via
-	 * qdisc_destroy.  This is the primary teardown-vs-traffic
-	 * window the op exists to open.
-	 */
-	if (build_delqdisc(rtnl, dummy_idx, handle, TC_H_ROOT) == 0)
-		__atomic_add_fetch(&shm->stats.tc_qdisc_churn_qdisc_del_ok,
-				   1, __ATOMIC_RELAXED);
+		/*
+		 * Drop the root qdisc, racing the same in-flight skbs.
+		 * Cascades cleanup of class / filter survivors via
+		 * qdisc_destroy.  This is the primary teardown-vs-traffic
+		 * window the op exists to open.
+		 */
+		if (build_delqdisc(rtnl, dummy_idx, handle, TC_H_ROOT) == 0)
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_qdisc_del_ok,
+					   1, __ATOMIC_RELAXED);
+	} else if (udp >= 0 && dummy_idx > 0) {
+		/*
+		 * Bridge-slave-port DELLINK race.  In place of the
+		 * explicit delqdisc, tear the qdisc down by removing the
+		 * underlying netdev: prime a small flush burst to seed
+		 * the qdisc, then RTM_DELLINK the slave veth, then push
+		 * a final flush burst.  netdev unregister hands off to a
+		 * workqueue, so subsequent sends can hit the dequeue path
+		 * while qdisc cleanup is still in flight — the
+		 * dequeue-after-parent-free window for
+		 * qdisc_pkt_len_segs_init.
+		 */
+		struct sockaddr_in dst;
+		unsigned char payload[64];
+		unsigned int j;
+
+		memset(&dst, 0, sizeof(dst));
+		dst.sin_family      = AF_INET;
+		dst.sin_port        = htons(TC_INNER_PORT);
+		dst.sin_addr.s_addr = htonl(0x7f000001U);
+
+		for (j = 0; j < 8; j++) {
+			generate_rand_bytes(payload, sizeof(payload));
+			(void)sendto(udp, payload, sizeof(payload),
+				     MSG_DONTWAIT,
+				     (struct sockaddr *)&dst, sizeof(dst));
+		}
+		if (build_dellink(rtnl, dummy_idx) == 0) {
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_del_ok,
+					   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_bridge_dellink_race_ok,
+					   1, __ATOMIC_RELAXED);
+			slave_dellinked = true;
+		}
+		for (j = 0; j < 8; j++) {
+			generate_rand_bytes(payload, sizeof(payload));
+			(void)sendto(udp, payload, sizeof(payload),
+				     MSG_DONTWAIT,
+				     (struct sockaddr *)&dst, sizeof(dst));
+		}
+	}
 
 out:
 	if (udp >= 0)
 		close(udp);
 
 	if (rtnl >= 0) {
-		if (dummy_added && dummy_idx > 0) {
+		if (dummy_added && dummy_idx > 0 && !slave_dellinked) {
 			if (build_dellink(rtnl, dummy_idx) == 0)
 				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_del_ok,
 						   1, __ATOMIC_RELAXED);
 		}
+		if (bridge_idx > 0)
+			(void)build_dellink(rtnl, bridge_idx);
 		close(rtnl);
 	}
 
