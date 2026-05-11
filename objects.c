@@ -2208,7 +2208,8 @@ void remove_object_by_fd(int fd)
 static void __prune_objects(struct childdata *child, enum objecttype type, enum obj_scope scope)
 {
 	struct objhead *head;
-	unsigned int snapshot, expected_kills, i;
+	unsigned int n_snap, cap_snap, expected_kills, i;
+	struct object **array_snap;
 
 	head = &child->objects[type];
 
@@ -2228,7 +2229,7 @@ static void __prune_objects(struct childdata *child, enum objecttype type, enum 
 	 * to perform ~N/10 destroys.  Pick expected_kills victims directly:
 	 * ~N/10 rand() calls and N/10 branches for the same eviction rate.
 	 *
-	 * snapshot is taken once: destroy_object() decrements num_entries
+	 * n_snap is taken once: destroy_object() decrements num_entries
 	 * via swap-with-last, but we sample over the original index space.
 	 * Slots beyond the shrunken num_entries are NULLed by
 	 * __destroy_object, so the obj == NULL skip absorbs them.  When a
@@ -2238,16 +2239,53 @@ static void __prune_objects(struct childdata *child, enum objecttype type, enum 
 	 * visited exactly once) is no longer load-bearing.
 	 *
 	 * Duplicate picks land on the same idx with probability
-	 * ~expected_kills/snapshot (~10%); a duplicate finds NULL on the
-	 * second visit and is silently skipped. */
-	snapshot = head->num_entries;
-	expected_kills = snapshot / 10U;
+	 * ~expected_kills/n_snap (~10%); a duplicate finds NULL on the
+	 * second visit and is silently skipped.
+	 *
+	 * Snapshot num_entries, array_capacity and array together at
+	 * picker entry so the bound (rand() % n_snap) and the slot deref
+	 * see one self-consistent view of the objhead.  Without this,
+	 * num_entries was snapshotted but head->array was re-loaded fresh
+	 * inside the loop at every deref site, so a sibling value-result
+	 * write whose buffer aliased this child's objhead could scribble
+	 * (num_entries, array_capacity) to mutually-consistent large
+	 * values between our num_entries snapshot and the deref, and
+	 * reseat head->array between iterations -- the rand() % n_snap
+	 * index would then run off a region whose actual allocation was
+	 * sized under the pre-poisoning capacity.  Mirror the snapshot
+	 * regime add_object() established on the write side and the
+	 * sibling read-side fixes carried in get_random_object_versioned,
+	 * __destroy_object/destroy_objects and the for_each_obj iterator.
+	 */
+	n_snap = __atomic_load_n(&head->num_entries, __ATOMIC_ACQUIRE);
+	cap_snap = head->array_capacity;
+	array_snap = head->array;
+
+	/*
+	 * A snapshot of array_capacity above the ceiling
+	 * objhead_looks_sane() uses for the dump path can only have come
+	 * from a wild stomp -- OBJ_GLOBAL is hard-capped at
+	 * GLOBAL_OBJ_MAX_CAPACITY=1024 and OBJ_LOCAL working sets stay
+	 * well below 64K -- so acting on it (and on the n_snap snapshot
+	 * we paired it with) is the joint-stomp shape the cap_snap defence
+	 * in add_object() exists to reject.  An n_snap above cap_snap is
+	 * the same shape via the other limb.  Bail through the existing
+	 * local_obj_num_entries_corrupted counter for symmetry with the
+	 * sibling read-side guards.
+	 */
+	if (cap_snap > OBJHEAD_SANE_LIMIT || n_snap > cap_snap) {
+		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	expected_kills = n_snap / 10U;
 	if (expected_kills == 0)
 		expected_kills = 1U;
 
 	for (i = 0; i < expected_kills; i++) {
-		unsigned int idx = rand() % snapshot;
-		struct object *obj = head->array[idx];
+		unsigned int idx = rand() % n_snap;
+		struct object *obj = array_snap[idx];
 
 		if (obj == NULL)
 			continue;
