@@ -799,6 +799,9 @@ struct stats_s {
 	unsigned long cgroup_mkdirs;		/* successful mkdir() under /sys/fs/cgroup/ */
 	unsigned long cgroup_rmdirs;		/* successful rmdir() under /sys/fs/cgroup/ */
 	unsigned long cgroup_failed;		/* mkdir or rmdir returned -1 */
+	unsigned long cgroup_psi_race_runs;	/* PSI pressure_write race sub-mode entries */
+	unsigned long cgroup_psi_race_writes;	/* successful pressure-file write() inside race */
+	unsigned long cgroup_psi_race_failed;	/* pressure-file open() failed for the whole sub-mode */
 
 	/* mount_churn childop counters */
 	unsigned long mount_churn_runs;		/* total mount_churn invocations */

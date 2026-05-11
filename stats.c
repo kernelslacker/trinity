@@ -699,7 +699,8 @@ static void dump_stats_json(void)
 		"\"xattr_thrash\":{\"runs\":%lu,\"set\":%lu,\"get\":%lu,"
 			"\"remove\":%lu,\"list\":%lu,\"failed\":%lu},"
 		"\"epoll_volatility\":{\"runs\":%lu,\"ctl_calls\":%lu,\"failed\":%lu},"
-		"\"cgroup_churn\":{\"runs\":%lu,\"mkdirs\":%lu,\"rmdirs\":%lu,\"failed\":%lu},"
+		"\"cgroup_churn\":{\"runs\":%lu,\"mkdirs\":%lu,\"rmdirs\":%lu,\"failed\":%lu,"
+			"\"psi_race_runs\":%lu,\"psi_race_writes\":%lu,\"psi_race_failed\":%lu},"
 		"\"mount_churn\":{\"runs\":%lu,\"mounts\":%lu,\"umounts\":%lu,\"failed\":%lu},"
 		"\"uffd_churn\":{\"runs\":%lu,\"registers\":%lu,\"unregisters\":%lu,\"failed\":%lu},"
 		"\"iouring_flood\":{\"runs\":%lu,\"submits\":%lu,\"reaped\":%lu,\"failed\":%lu},"
@@ -938,6 +939,9 @@ static void dump_stats_json(void)
 		shm->stats.epoll_volatility_failed,
 		shm->stats.cgroup_churn_runs, shm->stats.cgroup_mkdirs,
 		shm->stats.cgroup_rmdirs, shm->stats.cgroup_failed,
+		shm->stats.cgroup_psi_race_runs,
+		shm->stats.cgroup_psi_race_writes,
+		shm->stats.cgroup_psi_race_failed,
 		shm->stats.mount_churn_runs, shm->stats.mount_churn_mounts,
 		shm->stats.mount_churn_umounts, shm->stats.mount_churn_failed,
 		shm->stats.uffd_runs, shm->stats.uffd_registers,
@@ -2879,6 +2883,12 @@ void dump_stats(void)
 		stat_row("cgroup_churn", "mkdirs", shm->stats.cgroup_mkdirs);
 		stat_row("cgroup_churn", "rmdirs", shm->stats.cgroup_rmdirs);
 		stat_row("cgroup_churn", "failed", shm->stats.cgroup_failed);
+		stat_row("cgroup_churn", "psi_race_runs",
+			 shm->stats.cgroup_psi_race_runs);
+		stat_row("cgroup_churn", "psi_race_writes",
+			 shm->stats.cgroup_psi_race_writes);
+		stat_row("cgroup_churn", "psi_race_failed",
+			 shm->stats.cgroup_psi_race_failed);
 	}
 
 	if (shm->stats.mount_churn_runs) {
