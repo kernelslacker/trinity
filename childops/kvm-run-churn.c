@@ -37,6 +37,7 @@
 #ifdef USE_KVM
 
 #include <errno.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -54,12 +55,24 @@
 #include "trinity.h"
 #include "utils.h"
 
-#define KVM_RUN_CHURN_INNER_MAX	3
+#define KVM_RUN_CHURN_INNER_MAX		3
+#define KVM_RUN_CHURN_MEMSLOT_BURN	8
 
 /* Cached KVM_CAP_SYNC_REGS bitmask.  0 == cap absent or not yet probed
  * (sync-regs scribble suppressed in either case). */
 static uint64_t sync_regs_caps;
 static bool sync_regs_probed;
+
+/* Memslot-race sub-mode state.  user_memory2_supported is the cached
+ * KVM_CAP_USER_MEMORY2 result: false skips the v2 ioctl variant in the
+ * writer rotation.  memslot_race_unsupported latches the whole sub-mode
+ * off for the rest of the child's lifetime once the kernel has told us
+ * the underlying interface is not available -- either v2 is missing
+ * outright, or KVM_SET_USER_MEMORY_REGION came back with ENODEV /
+ * EOPNOTSUPP from a writer iteration. */
+static bool memslot_race_user_memory2_probed;
+static bool memslot_race_user_memory2_supported;
+static bool memslot_race_unsupported;
 
 static void probe_sync_regs_caps(void)
 {
@@ -188,6 +201,109 @@ static void run_one(int vcpufd, struct kvm_run *kr, size_t kvm_run_size)
 	tally_exit(kr, kvm_run_size);
 }
 
+static void probe_user_memory2_cap(void)
+{
+	struct objhead *head;
+	struct object *obj;
+	unsigned int idx;
+	int rc;
+
+	if (memslot_race_user_memory2_probed)
+		return;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_KVM_SYSTEM);
+	if (head == NULL || head->array == NULL)
+		return;
+
+	for_each_obj(head, obj, idx) {
+		if (obj->kvmsysobj.fd < 0)
+			continue;
+		rc = ioctl(obj->kvmsysobj.fd, KVM_CHECK_EXTENSION,
+			   (unsigned long)KVM_CAP_USER_MEMORY2);
+		memslot_race_user_memory2_supported = (rc > 0);
+		memslot_race_user_memory2_probed = true;
+		if (rc == 0) {
+			memslot_race_unsupported = true;
+			__atomic_add_fetch(
+				&shm->stats.kvm_gpc_memslot_race_unsupported,
+				1, __ATOMIC_RELAXED);
+		}
+		return;
+	}
+}
+
+struct memslot_race_args {
+	int vmfd;
+	uint32_t slot;
+	bool use_v2;
+};
+
+static void *memslot_race_writer(void *p)
+{
+	struct memslot_race_args *a = p;
+	int i;
+
+	/* Sleep briefly so the main thread is inside KVM_RUN before the
+	 * first delete lands.  The kernel race window is the gpc cache
+	 * walk vs memslot tree mutation; without overlap this op is just
+	 * a no-op delete. */
+	usleep(500);
+
+	for (i = 0; i < KVM_RUN_CHURN_MEMSLOT_BURN; i++) {
+		int rc;
+
+		if (a->use_v2 && (i & 1)) {
+			struct kvm_userspace_memory_region2 r = {
+				.slot = a->slot,
+			};
+			rc = ioctl(a->vmfd, KVM_SET_USER_MEMORY_REGION2, &r);
+		} else {
+			struct kvm_userspace_memory_region r = {
+				.slot = a->slot,
+			};
+			rc = ioctl(a->vmfd, KVM_SET_USER_MEMORY_REGION, &r);
+		}
+		__atomic_add_fetch(&shm->stats.kvm_gpc_memslot_race_deletes,
+				   1, __ATOMIC_RELAXED);
+		if (rc < 0 && (errno == ENODEV || errno == EOPNOTSUPP)) {
+			__atomic_store_n(&memslot_race_unsupported, true,
+					 __ATOMIC_RELAXED);
+			__atomic_add_fetch(
+				&shm->stats.kvm_gpc_memslot_race_unsupported,
+				1, __ATOMIC_RELAXED);
+			break;
+		}
+	}
+	return NULL;
+}
+
+static void run_memslot_race(int vmfd, int vcpufd,
+			     struct kvm_run *kr, size_t kvm_run_size)
+{
+	struct memslot_race_args args;
+	pthread_t tid;
+	bool spawned = false;
+
+	probe_user_memory2_cap();
+	if (memslot_race_unsupported || vmfd < 0)
+		return;
+
+	args.vmfd = vmfd;
+	args.slot = (uint32_t)(rand() & 0x7);
+	args.use_v2 = memslot_race_user_memory2_supported;
+
+	__atomic_add_fetch(&shm->stats.kvm_gpc_memslot_race_runs, 1,
+			   __ATOMIC_RELAXED);
+
+	if (pthread_create(&tid, NULL, memslot_race_writer, &args) == 0)
+		spawned = true;
+
+	run_one(vcpufd, kr, kvm_run_size);
+
+	if (spawned)
+		(void)pthread_join(tid, NULL);
+}
+
 bool kvm_run_churn(struct childdata *child __attribute__((unused)))
 {
 	struct object *obj;
@@ -225,6 +341,12 @@ bool kvm_run_churn(struct childdata *child __attribute__((unused)))
 	 */
 	if (!range_in_tracked_shared((unsigned long)kr, kvm_run_size))
 		return true;
+
+	if (ONE_IN(8)) {
+		run_memslot_race(obj->kvmvcpuobj.parent_vmfd, vcpufd, kr,
+				 kvm_run_size);
+		return true;
+	}
 
 	iters = 1 + (rand() % KVM_RUN_CHURN_INNER_MAX);
 	for (i = 0; i < iters; i++)
