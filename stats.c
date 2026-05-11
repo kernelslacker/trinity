@@ -748,7 +748,7 @@ static void dump_stats_json(void)
 		"\"ublk_lifecycle\":{\"iters\":%lu,\"eperm\":%lu,\"add_ok\":%lu,\"fetch_ok\":%lu,\"del_ok\":%lu,\"race_observed\":%lu},"
 		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
 		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
-		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu},"
+		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu,\"burn_iters\":%lu},"
 		"\"ipv6_ndisc_proxy\":{\"runs\":%lu,\"ns_sent_ok\":%lu,\"setup_failed\":%lu,\"proxy_enable_ok\":%lu},"
 		"\"ipfrag_source_churn\":{\"runs\":%lu,\"packets_sent_ok\":%lu,\"send_failed\":%lu,\"unique_srcs\":%lu},"
 		"\"rtnl_vf_broadcast_getlink\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"getlink_ok\":%lu}"
@@ -1367,6 +1367,7 @@ static void dump_stats_json(void)
 		shm->stats.ipvs_sysctl_writer_writes_ok,
 		shm->stats.ipvs_sysctl_writer_writes_failed,
 		shm->stats.ipvs_sysctl_writer_unsupported_latched,
+		shm->stats.ipvs_sysctl_writer_burn_iters,
 		shm->stats.ipv6_ndisc_proxy_runs,
 		shm->stats.ipv6_ndisc_proxy_ns_sent_ok,
 		shm->stats.ipv6_ndisc_proxy_setup_failed,
