@@ -1339,6 +1339,13 @@ struct stats_s {
 	unsigned long psp_key_rotate_spi_switch_ok;		/* mid-flow PSP_CMD_TX_ASSOC re-bind accepted */
 	unsigned long psp_key_rotate_shutdown_ok;		/* shutdown(SHUT_RDWR) on PSP-bound socket returned 0 */
 
+	/* psp_key_rotate sub-mode: psp_devlink_port_churn counters */
+	unsigned long psp_devlink_port_churn_runs;		/* sub-mode invocations */
+	unsigned long psp_devlink_port_churn_port_add_ok;	/* DEVLINK_CMD_PORT_NEW accepted */
+	unsigned long psp_devlink_port_churn_port_del_ok;	/* DEVLINK_CMD_PORT_DEL accepted */
+	unsigned long psp_devlink_port_churn_vf_spawn_ok;	/* sriov_numvfs write accepted */
+	unsigned long psp_devlink_port_churn_unsupported_latched; /* family resolve / netdevsim spawn latched */
+
 	/* afxdp_churn childop counters */
 	unsigned long afxdp_churn_runs;				/* total afxdp_churn invocations */
 	unsigned long afxdp_churn_setup_failed;			/* socket / mmap / setsockopt / cap-gate latched */
