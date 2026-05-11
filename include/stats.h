@@ -981,6 +981,16 @@ struct stats_s {
 	unsigned long rtnl_vf_broadcast_setup_failed;	/* netdevsim absent / unshare / sriov write failed */
 	unsigned long rtnl_vf_broadcast_getlink_ok;	/* RTM_GETLINK with RTEXT_FILTER_VF drained a response */
 
+	/* obscure_af_churn childop counters.  Per-pattern arrays are
+	 * indexed by enum abuse_pattern (childops/obscure-af-churn.c);
+	 * NR_AP is currently 6.  Sized at 8 to leave headroom for a
+	 * couple more patterns without re-cutting the shm layout. */
+	unsigned long obscure_af_churn_runs;
+	unsigned long obscure_af_churn_no_viable_pf;	/* every pf attempt was no_domains[] / proto NULL */
+	unsigned long obscure_af_churn_pattern_runs[8];
+	unsigned long obscure_af_churn_pattern_kernel_rejected[8];
+	unsigned long obscure_af_churn_pattern_unexpected_success[8];
+
 	/* vrf_fib_churn childop counters */
 	unsigned long vrf_fib_churn_runs;		/* total vrf_fib_churn invocations */
 	unsigned long vrf_fib_churn_setup_failed;	/* unshare(CLONE_NEWNET) or rtnl socket failed */
