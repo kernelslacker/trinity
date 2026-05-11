@@ -1684,8 +1684,54 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 {
 	struct objhead *head;
 	unsigned int idx, last;
+	unsigned int n_snap;
+	unsigned int cap_snap;
+	struct object **array_snap;
 
 	head = get_objhead(scope, type);
+
+	/*
+	 * Snapshot the objhead fields the swap-with-last path consults so
+	 * a sibling value-result syscall whose buffer aliases this
+	 * objhead cannot scribble (num_entries, array_capacity, array)
+	 * past our entry-time read and steer the array[idx] = array[last]
+	 * / array[last] = NULL stores past the end of the live
+	 * allocation.  Mirrors the regime add_object() established
+	 * (b677185d752496ac7ee7751c66e86f432e108c54) and the read-side
+	 * companion in get_random_object_versioned()
+	 * (2c5d84e5d67b7e843ceb0a0ed42f0a996568caa9).  Locking is
+	 * unchanged -- objlock for OBJ_GLOBAL acquired by the
+	 * destroy_object()/destroy_objects() callers, single-child for
+	 * OBJ_LOCAL.  array_generation is intentionally not snapshotted:
+	 * the destroy path neither returns generation to a caller nor
+	 * pairs with a reader on it, only the OBJ_LOCAL teardown in
+	 * destroy_objects() bumps it via RMW which keeps the existing
+	 * pairing with validate_object_handle().
+	 */
+	n_snap = __atomic_load_n(&head->num_entries, __ATOMIC_ACQUIRE);
+	cap_snap = head->array_capacity;
+	array_snap = head->array;
+
+	/*
+	 * Reject snapshots whose array_capacity is past the
+	 * OBJHEAD_SANE_LIMIT ceiling objhead_looks_sane() uses for the
+	 * dump path -- a smoking-gun wild stomp, since OBJ_GLOBAL is
+	 * hard-capped at GLOBAL_OBJ_MAX_CAPACITY=1024 and OBJ_LOCAL
+	 * working sets stay well below 64K.  Same shape as the entry
+	 * cap_snap reject in add_object().
+	 */
+	if (cap_snap > OBJHEAD_SANE_LIMIT) {
+		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+	if (n_snap > cap_snap) {
+		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+	if (n_snap == 0 || array_snap == NULL)
+		return;
 
 	/*
 	 * obj->array_idx is the slot we're about to swap-with-last and
@@ -1703,11 +1749,11 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 	 *
 	 * Indexing without verifying the invariant therefore produces one
 	 * of two silent failures:
-	 *   - array_idx >= num_entries: the head->array[idx] = head->array[last]
+	 *   - array_idx >= num_entries: the array_snap[idx] = array_snap[last]
 	 *     write lands past the live window, smashing whichever slot the
 	 *     stomp's index pointed at (or, for OBJ_GLOBAL, OOB past the
 	 *     fixed GLOBAL_OBJ_MAX_CAPACITY allocation entirely);
-	 *   - array_idx < num_entries but head->array[idx] != obj: we NULL
+	 *   - array_idx < num_entries but array_snap[idx] != obj: we NULL
 	 *     and free a different live object, then call its type-correct
 	 *     destructor on what we still believe is `obj` — a UAF on the
 	 *     unrelated object's backing storage on the very next read of
@@ -1719,14 +1765,14 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 	 * any more, so touching it is exactly the wrong move.
 	 */
 	idx = obj->array_idx;
-	if (idx >= head->num_entries || head->array[idx] != obj) {
+	if (idx >= n_snap || array_snap[idx] != obj) {
 		__atomic_add_fetch(&shm->stats.destroy_object_idx_corrupt, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	}
 
 	/* Swap-with-last removal from the parallel array */
-	last = head->num_entries - 1;
+	last = n_snap - 1;
 
 	/*
 	 * Bump the per-slot version BEFORE mutating the array, on every
@@ -1754,11 +1800,11 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 	}
 
 	if (idx != last) {
-		head->array[idx] = head->array[last];
-		if (head->array[idx] != NULL)
-			head->array[idx]->array_idx = idx;
+		array_snap[idx] = array_snap[last];
+		if (array_snap[idx] != NULL)
+			array_snap[idx]->array_idx = idx;
 	}
-	head->array[last] = NULL;
+	array_snap[last] = NULL;
 
 	/*
 	 * Publish the new count with RELEASE semantics so a concurrent
@@ -1767,12 +1813,15 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 	 * of the array slots.  See the design comment above
 	 * get_random_object().  __prune_objects(OBJ_GLOBAL) is currently
 	 * disabled but routes through here, so this also covers it
-	 * defensively.
+	 * defensively.  Write `last` (== n_snap - 1) rather than reading
+	 * head->num_entries fresh and decrementing -- a sibling stomp
+	 * landing between snapshot and store would otherwise propagate
+	 * the wild value back into the field.
 	 */
 	if (scope == OBJ_GLOBAL)
 		__atomic_store_n(&head->num_entries, last, __ATOMIC_RELEASE);
 	else
-		head->num_entries--;
+		head->num_entries = last;
 
 	/* Remove from fd hash table */
 	if (scope == OBJ_GLOBAL && is_fd_type(type))
@@ -1820,44 +1869,99 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 {
 	struct objhead *head;
 	unsigned int prev_n;
+	unsigned int n_snap;
+	unsigned int cap_snap;
+	struct object **array_snap;
 
 	head = get_objhead(scope, type);
-	if (head->num_entries == 0)
+
+	/*
+	 * Snapshot at entry the same three objhead fields the drain loop
+	 * and the post-loop OBJ_GLOBAL memset consult.  Without this the
+	 * loop's per-iter head->array[0] deref and the final
+	 *     memset(head->array, 0, head->array_capacity * sizeof(...))
+	 * both re-load array and array_capacity fresh from shm, so a
+	 * sibling value-result syscall whose buffer aliases this objhead
+	 * can scribble (array_capacity, array, num_entries) to wild
+	 * values mid-teardown and turn the global-pool zero-out into an
+	 * OOB write of (cap_snap_wild * 8) bytes through array_snap_wild.
+	 * Mirrors the regime add_object() established
+	 * (b677185d752496ac7ee7751c66e86f432e108c54) and the read-side
+	 * companion in get_random_object_versioned()
+	 * (2c5d84e5d67b7e843ceb0a0ed42f0a996568caa9).  array_generation
+	 * is intentionally not snapshotted: this function does not read
+	 * it, and the OBJ_LOCAL teardown bump below stays a RELEASE RMW
+	 * to preserve the existing pairing with validate_object_handle().
+	 *
+	 * head->array is never reseated mid-teardown -- only add_object()'s
+	 * OBJ_LOCAL grow branch reseats it, and that path does not run
+	 * concurrently with destroy_objects() (the OBJ_GLOBAL caller
+	 * holds objlock; OBJ_LOCAL is single-child).  array_snap therefore
+	 * remains the live array pointer for the entire loop and the
+	 * post-loop free()/memset.
+	 */
+	n_snap = __atomic_load_n(&head->num_entries, __ATOMIC_ACQUIRE);
+	cap_snap = head->array_capacity;
+	array_snap = head->array;
+
+	if (n_snap == 0)
 		return;
 
-	if (head->array == NULL)
+	if (array_snap == NULL)
 		return;
 
-	/* Drain the array via repeated head->array[0] destroy.
+	/*
+	 * OBJHEAD_SANE_LIMIT bail mirrors add_object()'s entry guard.  A
+	 * snapshot capacity above the 64K ceiling can only have come
+	 * from a wild stomp; acting on it would let the post-loop memset
+	 * write (cap_snap * 8) bytes past the real allocation.
+	 */
+	if (cap_snap > OBJHEAD_SANE_LIMIT) {
+		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+	if (n_snap > cap_snap) {
+		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	/* Drain the array via repeated array_snap[0] destroy.
 	 * __destroy_object() does swap-with-last on the parallel array,
 	 * so consuming the front slot each time pulls a fresh entry into
-	 * slot 0 until num_entries reaches 0. */
-	while (head->num_entries > 0) {
-		struct object *obj = head->array[0];
+	 * slot 0 until num_entries reaches 0.  Use n_snap as the loop
+	 * bound so a sibling stomp re-bumping head->num_entries cannot
+	 * extend the drain past the entries we counted at snapshot
+	 * time. */
+	while (n_snap > 0) {
+		struct object *obj = array_snap[0];
 
 		if (obj == NULL) {
-			/* Shouldn't happen — num_entries says it's live —
+			/* Shouldn't happen — num_entries said it was live —
 			 * but guard against a torn state rather than
 			 * looping forever. */
 			head->num_entries--;
+			n_snap--;
 			continue;
 		}
 		prev_n = head->num_entries;
 		__destroy_object(obj, scope, type, false);
-		if (head->num_entries == prev_n && head->array[0] == obj) {
+		if (head->num_entries == prev_n && array_snap[0] == obj) {
 			/* __destroy_object early-returned without making progress —
 			 * obj has corrupt array_idx invariant.  Skip past it the
 			 * same way we skip a torn NULL slot, otherwise we spin
 			 * forever at parent shutdown blocking process reaping. */
-			head->array[0] = NULL;
+			array_snap[0] = NULL;
 			head->num_entries--;
 		}
+		n_snap--;
 	}
 
 	/* Only free private-heap arrays (OBJ_LOCAL).  OBJ_GLOBAL arrays
 	 * were allocated with alloc_shared() and cannot be freed. */
 	if (scope == OBJ_LOCAL) {
-		free(head->array);
+		free(array_snap);
 		head->array = NULL;
 		head->array_capacity = 0;
 		/*
@@ -1868,8 +1972,12 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 		__atomic_add_fetch(&head->array_generation, 1,
 				   __ATOMIC_RELEASE);
 	} else {
-		/* Zero out the shared array for reuse. */
-		memset(head->array, 0, head->array_capacity * sizeof(struct object *));
+		/* Zero out the shared array for reuse.  cap_snap rather than
+		 * a fresh head->array_capacity re-load: a sibling stomp on
+		 * the capacity field landing between the entry sanity check
+		 * and this memset would otherwise size the zero-out off the
+		 * post-stomp wild value through the snapshot array pointer. */
+		memset(array_snap, 0, cap_snap * sizeof(struct object *));
 	}
 }
 
