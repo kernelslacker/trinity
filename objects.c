@@ -655,8 +655,9 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 				  "type=%u caller=%s\n", fd, type,
 				  pc_to_string(__builtin_return_address(0),
 					       pcbuf, sizeof(pcbuf)));
-			post_handler_corrupt_ptr_bump(NULL,
-						      __builtin_return_address(0));
+			post_handler_corrupt_ptr_bump_site(NULL,
+							   __builtin_return_address(0),
+							   "add_object:fd");
 			release_obj(obj, scope, type);
 			return;
 		}
@@ -767,6 +768,9 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			  type, array_snap, n, cap_snap);
 		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted, 1,
 				   __ATOMIC_RELAXED);
+		post_handler_corrupt_ptr_bump_site(NULL,
+						   __builtin_return_address(0),
+						   "add_object:array");
 		if (is_fd_type(type)) {
 			int fd = fd_from_object(obj, type);
 			if (fd >= 0)
@@ -795,6 +799,9 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			  type, cap_snap, n);
 		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted, 1,
 				   __ATOMIC_RELAXED);
+		post_handler_corrupt_ptr_bump_site(NULL,
+						   __builtin_return_address(0),
+						   "add_object:cap");
 		if (is_fd_type(type)) {
 			int fd = fd_from_object(obj, type);
 			if (fd >= 0)
@@ -816,6 +823,9 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			  type, n, cap_snap);
 		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted, 1,
 				   __ATOMIC_RELAXED);
+		post_handler_corrupt_ptr_bump_site(NULL,
+						   __builtin_return_address(0),
+						   "add_object:num");
 		if (is_fd_type(type)) {
 			int fd = fd_from_object(obj, type);
 			if (fd >= 0)

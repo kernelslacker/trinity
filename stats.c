@@ -1870,7 +1870,21 @@ static void corrupt_ptr_pc_dump_for(const struct corrupt_ptr_pc_entry *snap,
 		if (snap[i].pc == NULL || !pc_in_text(snap[i].pc))
 			continue;
 		src = pc_to_source_line(snap[i].pc, srcbuf, sizeof(srcbuf));
-		if (src != NULL)
+		/* When the caller of post_handler_corrupt_ptr_bump_site
+		 * supplied a site tag (e.g. add_object: defence-in-depth
+		 * walls that all share dispatch_step+0x336 after LTO inlining
+		 * collapses __builtin_return_address(0)), render it inline so
+		 * the dump disambiguates rejection sites that the bare PC
+		 * cannot.  Falls back to PC-only when no tag was passed. */
+		if (snap[i].site != NULL && src != NULL)
+			stats_log_write("    %-32s [%s] (%s) %lu\n",
+					pc_to_string(snap[i].pc, pcbuf, sizeof(pcbuf)),
+					snap[i].site, src, snap[i].count);
+		else if (snap[i].site != NULL)
+			stats_log_write("    %-32s [%s] %lu\n",
+					pc_to_string(snap[i].pc, pcbuf, sizeof(pcbuf)),
+					snap[i].site, snap[i].count);
+		else if (src != NULL)
 			stats_log_write("    %-32s (%s) %lu\n",
 					pc_to_string(snap[i].pc, pcbuf, sizeof(pcbuf)),
 					src, snap[i].count);
