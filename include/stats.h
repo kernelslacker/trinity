@@ -1059,6 +1059,9 @@ struct stats_s {
 	unsigned long bridge_fdb_stp_stp_toggle_ok;	/* /sys/.../bridge/stp_state write succeeded */
 	unsigned long bridge_fdb_stp_fdb_del_ok;	/* RTM_DELNEIGH on a learned fdb entry accepted */
 	unsigned long bridge_fdb_stp_link_del_ok;	/* RTM_DELLINK on bridge accepted */
+	unsigned long bridge_vlan_mass_runs;		/* mass-VLAN-add sub-mode invocations */
+	unsigned long bridge_vlan_mass_max_n;		/* largest IFLA_BRIDGE_VLAN_INFO entry count attempted in one msg */
+	unsigned long bridge_vlan_mass_enotbufs;	/* sendmsg -ENOBUFS / -EMSGSIZE on the oversize bulk message */
 
 	/* nftables_churn childop counters */
 	unsigned long nftables_churn_runs;		/* total nftables_churn invocations */
