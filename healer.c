@@ -949,18 +949,29 @@ static int healer_pred_leader_cmp(const void *a, const void *b)
 #define HEALER_PRED_LEADERS_TOP_N 5
 
 /*
- * True if the syscall's per-entry attempted counter is still zero --
- * i.e. no child has ever called this syscall this run.  Backs the
+ * True if the syscall's per-entry successes counter is still zero --
+ * i.e. either no child has ever called this syscall this run, OR every
+ * call has failed (typical for syscalls the running kernel does not
+ * support: landlock_* on a no-LANDLOCK kernel, etc.).  Backs the
  * dump-path pollution filter (HEALER_POLLUTION_FILTER_THRESHOLD).
  *
- * NULL or out-of-range entries are treated as unattempted: a slot
+ * The earlier check on entry->attempted only caught the never-picked
+ * case and missed unsupported-syscall noise: landlock_create_ruleset
+ * gets picked normally on a no-LANDLOCK kernel, returns ENOSYS, bumps
+ * attempted but not successes, and slipped past the filter despite
+ * being exactly the noise the filter exists to suppress.  Using
+ * successes covers both shapes -- attempted == 0 implies successes ==
+ * 0 -- and the outer HEALER_POLLUTION_FILTER_THRESHOLD already gates
+ * on the run being mature enough that "no successes yet" means
+ * "structurally won't succeed" rather than "warmup".
+ *
+ * NULL or out-of-range entries are treated as unproductive: a slot
  * the build's syscall table does not even carry cannot meaningfully
- * have been attempted, and the surrounding filter still requires the
- * total observation threshold before acting on the result, so a
- * mis-seeded out-of-range nr cannot suppress anything until the run
- * is well past warmup.  do32 is left at false to match the call shape
- * print_syscall_name uses everywhere else in the dump path -- HEALER
- * does not separately track 32-bit dispatches.
+ * succeed, and the surrounding filter still requires the total
+ * observation threshold before acting on the result.  do32 is left at
+ * false to match the call shape print_syscall_name uses everywhere
+ * else in the dump path -- HEALER does not separately track 32-bit
+ * dispatches.
  */
 static bool healer_syscall_unattempted(unsigned int nr)
 {
@@ -971,7 +982,7 @@ static bool healer_syscall_unattempted(unsigned int nr)
 	entry = get_syscall_entry(nr, false);
 	if (entry == NULL)
 		return true;
-	return entry->attempted == 0;
+	return entry->successes == 0;
 }
 
 void healer_table_dump(void)
