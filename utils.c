@@ -1280,7 +1280,8 @@ static void corrupt_ptr_attr_record(unsigned int nr, bool do32bit)
  * (defensive -- a caller without a usable return address has no
  * useful PC to record).
  */
-static void corrupt_ptr_pc_record(unsigned int nr, bool do32bit, void *pc)
+static void corrupt_ptr_pc_record(unsigned int nr, bool do32bit, void *pc,
+				  const char *site)
 {
 	struct corrupt_ptr_pc_entry *ring = shm->stats.corrupt_ptr_pc;
 	unsigned int i, victim;
@@ -1296,6 +1297,12 @@ static void corrupt_ptr_pc_record(unsigned int nr, bool do32bit, void *pc)
 		    ring[i].nr == nr && ring[i].do32bit == do32bit &&
 		    ring[i].pc == pc) {
 			ring[i].count++;
+			/* Late-arriving site tag for an existing entry — fill
+			 * it in so the dump can disambiguate even when the
+			 * first bump for this PC came through a tagless caller
+			 * (e.g. the legacy macro wrapper with site=NULL). */
+			if (ring[i].site == NULL && site != NULL)
+				ring[i].site = site;
 			unlock(&shm->stats.corrupt_ptr_pc_lock);
 			return;
 		}
@@ -1315,12 +1322,14 @@ static void corrupt_ptr_pc_record(unsigned int nr, bool do32bit, void *pc)
 	ring[victim].nr = nr;
 	ring[victim].do32bit = do32bit;
 	ring[victim].pc = pc;
+	ring[victim].site = site;
 	ring[victim].count = victim_count + 1;
 
 	unlock(&shm->stats.corrupt_ptr_pc_lock);
 }
 
-void post_handler_corrupt_ptr_bump(struct syscallrecord *rec, void *caller_pc)
+void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
+					void *caller_pc, const char *site)
 {
 	struct childdata *child;
 	unsigned int nr;
@@ -1344,7 +1353,7 @@ void post_handler_corrupt_ptr_bump(struct syscallrecord *rec, void *caller_pc)
 		nr = CORRUPT_PTR_ATTR_NR_NONE;
 		do32bit = false;
 	}
-	corrupt_ptr_pc_record(nr, do32bit, caller_pc);
+	corrupt_ptr_pc_record(nr, do32bit, caller_pc, site);
 	corrupt_ptr_attr_record(nr, do32bit);
 }
 

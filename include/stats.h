@@ -354,6 +354,14 @@ struct stats_s {
 		unsigned int nr;
 		bool do32bit;
 		void *pc;
+		/* Optional site tag passed by the caller of
+		 * post_handler_corrupt_ptr_bump_site to disambiguate distinct
+		 * rejection sites that share a single PC bucket after LTO
+		 * inlining (e.g. the four add_object: defence-in-depth walls
+		 * that all collapse onto dispatch_step+0x336 under
+		 * __builtin_return_address(0) capture).  NULL when the caller
+		 * passed no tag; the dump path then renders the bare PC. */
+		const char *site;
 		unsigned long count;
 	} corrupt_ptr_pc[CORRUPT_PTR_PC_SLOTS];
 	lock_t corrupt_ptr_pc_lock;

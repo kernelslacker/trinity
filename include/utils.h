@@ -195,7 +195,20 @@ static inline bool looks_like_corrupted_ptr(struct syscallrecord *rec,
  * is unavailable; a NULL skips the PC ring but still records the
  * (nr, do32bit) attribution.
  */
-void post_handler_corrupt_ptr_bump(struct syscallrecord *rec, void *caller_pc);
+/*
+ * @site is an optional human-readable tag identifying the specific
+ * rejection site, used to disambiguate distinct call sites that share
+ * one __builtin_return_address(0) PC bucket after LTO inlining (e.g.
+ * the four add_object: defence-in-depth walls that all symbolise as
+ * dispatch_step+0x336).  Pass NULL when the caller PC alone is
+ * unambiguous; the dump path then renders the bare PC.  Most callers
+ * use the post_handler_corrupt_ptr_bump() compatibility macro below
+ * which forwards site=NULL.
+ */
+void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
+					void *caller_pc, const char *site);
+#define post_handler_corrupt_ptr_bump(rec, caller_pc) \
+	post_handler_corrupt_ptr_bump_site((rec), (caller_pc), NULL)
 
 /*
  * Bump the deferred_free_reject counter and record per-callsite
