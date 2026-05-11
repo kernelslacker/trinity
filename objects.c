@@ -46,6 +46,18 @@ static inline bool local_array_holds_capacity(struct object **array_snap,
 {
 	if (array_snap == NULL)
 		return cap_snap == 0;
+	/*
+	 * Bail before invoking malloc_usable_size on a pointer that does
+	 * not even look like a heap allocation we could have handed out.
+	 * malloc_usable_size on a non-malloc'd pointer is UB per glibc and
+	 * in practice walks chunk-header metadata at a region the pointer
+	 * names -- ASAN reports an OOB read on the chunk header for wild
+	 * pointers, and the helper itself is what gets blamed.  The shape
+	 * check covers NULL-ish, non-canonical, and misaligned pointers
+	 * before we reach into glibc internals.
+	 */
+	if (is_corrupt_ptr_shape(array_snap))
+		return false;
 	return malloc_usable_size(array_snap) >=
 		(size_t)cap_snap * sizeof(struct object *);
 }
