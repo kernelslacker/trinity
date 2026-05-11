@@ -1,11 +1,14 @@
+#include <errno.h>
 #include <limits.h>
 #include <malloc.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
+#include "arch.h"
 #include "child.h"
 #include "debug.h"
 #include "deferred-free.h"
@@ -666,7 +669,9 @@ void __for_each_obj_init(struct objhead *head,
 void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
 	struct objhead *head;
+	struct childdata *local_child = NULL;
 	bool was_protected = false;
+	bool local_was_protected = false;
 	char pcbuf[128];
 
 	if (unlikely(verbosity > 1)) {
@@ -731,6 +736,24 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		if (globals_are_protected()) {
 			thaw_global_objects();
 			was_protected = true;
+		}
+	} else {
+		/*
+		 * OBJ_LOCAL mirror of the OBJ_GLOBAL thaw/freeze bracket
+		 * above.  Once init_child() has called local_objects_freeze()
+		 * the per-child objhead region is mprotect'd RO; every legit
+		 * head-field write (num_entries, array, array_capacity,
+		 * array_generation publish, fd_hash lazy-init, plus the slot
+		 * store at array_snap[n] when array_snap == head->array)
+		 * needs the page writable.  this_child() is a cached lookup,
+		 * the are_protected check is one bool read; on a child whose
+		 * defence is inert (alloc failed, or freeze short-circuited)
+		 * both branches no-op and the bracket adds nothing.
+		 */
+		local_child = this_child();
+		if (local_objects_are_protected(local_child)) {
+			local_objects_thaw(local_child);
+			local_was_protected = true;
 		}
 	}
 
@@ -1200,18 +1223,139 @@ out_unlock:
 		if (was_protected)
 			freeze_global_objects();
 		unlock(&shm->objlock);
+	} else if (local_was_protected) {
+		local_objects_freeze(local_child);
 	}
 
 	/* if we just added something to a child list, check
 	 * to see if we need to do some pruning.
+	 *
+	 * prune_objects() routes destroys through destroy_object(), which
+	 * carries its own thaw/freeze bracket -- runs OUTSIDE our refreeze
+	 * above so the inner brackets do not collide with this one and
+	 * each call's bracket is bounded by the destroy it pairs with.
 	 */
 	if (scope == OBJ_LOCAL)
 		prune_objects();
 }
 
+/*
+ * Page-aligned size of the per-child OBJ_LOCAL objhead array.  Computed
+ * once on first use (page_size is resolved at runtime in trinity.c).
+ * Used by local_objects_alloc() for the mmap-backed alloc and by
+ * local_objects_freeze/thaw for the matching mprotect range.
+ */
+static size_t local_objects_region_size(void)
+{
+	size_t raw = sizeof(struct objhead) * MAX_OBJECT_TYPES;
+
+	return (raw + page_size - 1) & PAGE_MASK;
+}
+
+/*
+ * Lazy per-child page-aligned alloc for the OBJ_LOCAL objhead array.
+ * Carved out of struct childdata into its own MAP_SHARED region so the
+ * mprotect-RO defence in local_objects_freeze() can target just the
+ * objhead pages -- the embedded form straddled pages with the hot-path
+ * syscall_ring / sentinel_prev / 4 KiB syscallrecord prebuffer that
+ * mprotect-RO would have made unwritable.  alloc_shared() registers the
+ * region with the mm-syscall sanitiser bitmap so a fuzzed
+ * munmap/mremap/mprotect targeting it is rejected, same as for any
+ * other tracked shared mapping.
+ *
+ * Idempotent: a slot recycled across child generations keeps its
+ * existing region; init_object_lists() re-zeroes the head fields
+ * inside.  Failure leaves child->objects == NULL and the OBJ_LOCAL
+ * defence inert for this child -- callers must NULL-check before
+ * touching child->objects.
+ */
+static void local_objects_alloc(struct childdata *child)
+{
+	size_t alloc_size;
+
+	if (child == NULL || child->objects != NULL)
+		return;
+
+	alloc_size = local_objects_region_size();
+	child->objects = alloc_shared(alloc_size);
+	child->objects_protected = false;
+}
+
+void local_objects_freeze(struct childdata *child)
+{
+	size_t alloc_size;
+
+	if (child == NULL || child->objects == NULL)
+		return;
+	if (child->objects_protected)
+		return;
+
+	alloc_size = local_objects_region_size();
+	if (mprotect(child->objects, alloc_size, PROT_READ) != 0) {
+		log_mprotect_failure(child->objects, alloc_size, PROT_READ,
+				     __builtin_return_address(0), errno);
+		outputerr("local_objects_freeze: mprotect RO failed for child %u; OBJ_LOCAL wild-write defence inert\n",
+			  child->num);
+		return;
+	}
+	child->objects_protected = true;
+}
+
+void local_objects_thaw(struct childdata *child)
+{
+	size_t alloc_size;
+
+	if (child == NULL || child->objects == NULL)
+		return;
+	if (!child->objects_protected)
+		return;
+
+	alloc_size = local_objects_region_size();
+	if (mprotect(child->objects, alloc_size, PROT_READ | PROT_WRITE) != 0) {
+		/*
+		 * Unrecoverable: callers (add_object publish, destroy
+		 * swap-with-last) are about to write to the still-RO region
+		 * and would SIGSEGV mid-critical-section.  Mirror the
+		 * thaw_global_objects() BUG path rather than silently
+		 * proceeding into the wall.
+		 */
+		log_mprotect_failure(child->objects, alloc_size,
+				     PROT_READ | PROT_WRITE,
+				     __builtin_return_address(0), errno);
+		BUG("local_objects_thaw: mprotect RW failed -- per-child OBJ_LOCAL region is half-thawed, unrecoverable");
+	}
+	child->objects_protected = false;
+}
+
+bool local_objects_are_protected(struct childdata *child)
+{
+	if (child == NULL)
+		return false;
+	return child->objects_protected;
+}
+
 void init_object_lists(enum obj_scope scope, struct childdata *child)
 {
 	unsigned int i;
+
+	if (scope == OBJ_LOCAL) {
+		if (child == NULL)
+			return;
+		local_objects_alloc(child);
+		if (child->objects == NULL)
+			return;
+		/*
+		 * Defensive: if a previous occupant of this slot left the
+		 * objects_protected flag set in shared memory, the per-AS
+		 * mprotect state was theirs and is gone with their address
+		 * space -- our inherited mapping is RW, so re-sync the flag
+		 * to match reality before init writes.  Subsequent freeze
+		 * happens once after init_child completes its post-fork
+		 * setup, mirroring the OBJ_GLOBAL freeze-once-after-bulk-
+		 * init pattern in trinity.c:475.
+		 */
+		child->objects_protected = false;
+	}
 
 	for (i = 0; i < MAX_OBJECT_TYPES; i++) {
 		struct objhead *head;
@@ -1219,8 +1363,6 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
 		if (scope == OBJ_GLOBAL)
 			head = &shm->global_objects[i];
 		else {
-			if (child == NULL)
-				return;
 			head = &child->objects[i];
 		}
 
@@ -2003,7 +2145,9 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 
 void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
+	struct childdata *local_child = NULL;
 	bool was_protected = false;
+	bool local_was_protected = false;
 
 	if (scope == OBJ_GLOBAL && getpid() != mainpid)
 		return;
@@ -2014,6 +2158,21 @@ void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype ty
 			thaw_global_objects();
 			was_protected = true;
 		}
+	} else {
+		/*
+		 * OBJ_LOCAL mirror of the OBJ_GLOBAL thaw/freeze bracket.
+		 * __destroy_object()'s swap-with-last writes head->num_entries,
+		 * the array slots through head->array, the per-slot version
+		 * counters (OBJ_GLOBAL only -- skipped on the OBJ_LOCAL leg
+		 * but the head field reads still walk the protected page),
+		 * and the fd-hash slot writes route through head->fd_hash --
+		 * any of which need the per-child objhead region writable.
+		 */
+		local_child = this_child();
+		if (local_objects_are_protected(local_child)) {
+			local_objects_thaw(local_child);
+			local_was_protected = true;
+		}
 	}
 
 	__destroy_object(obj, scope, type, false);
@@ -2022,6 +2181,8 @@ void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype ty
 		if (was_protected)
 			freeze_global_objects();
 		unlock(&shm->objlock);
+	} else if (local_was_protected) {
+		local_objects_freeze(local_child);
 	}
 }
 
