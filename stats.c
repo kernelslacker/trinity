@@ -752,7 +752,14 @@ static void dump_stats_json(void)
 		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu,\"burn_iters\":%lu},"
 		"\"ipv6_ndisc_proxy\":{\"runs\":%lu,\"ns_sent_ok\":%lu,\"setup_failed\":%lu,\"proxy_enable_ok\":%lu},"
 		"\"ipfrag_source_churn\":{\"runs\":%lu,\"packets_sent_ok\":%lu,\"send_failed\":%lu,\"unique_srcs\":%lu},"
-		"\"rtnl_vf_broadcast_getlink\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"getlink_ok\":%lu}"
+		"\"rtnl_vf_broadcast_getlink\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"getlink_ok\":%lu},"
+		"\"obscure_af_churn\":{\"runs\":%lu,\"no_viable_pf\":%lu,"
+			"\"sendmsg_no_bind\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
+			"\"bind_then_sendmsg\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
+			"\"connect_no_listen\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
+			"\"ioctl_rotation\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
+			"\"setsockopt_zero_len\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
+			"\"close_via_dup\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu}}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1386,7 +1393,27 @@ static void dump_stats_json(void)
 		shm->stats.rtnl_vf_broadcast_runs,
 		shm->stats.rtnl_vf_broadcast_setup_ok,
 		shm->stats.rtnl_vf_broadcast_setup_failed,
-		shm->stats.rtnl_vf_broadcast_getlink_ok);
+		shm->stats.rtnl_vf_broadcast_getlink_ok,
+		shm->stats.obscure_af_churn_runs,
+		shm->stats.obscure_af_churn_no_viable_pf,
+		shm->stats.obscure_af_churn_pattern_runs[0],
+		shm->stats.obscure_af_churn_pattern_kernel_rejected[0],
+		shm->stats.obscure_af_churn_pattern_unexpected_success[0],
+		shm->stats.obscure_af_churn_pattern_runs[1],
+		shm->stats.obscure_af_churn_pattern_kernel_rejected[1],
+		shm->stats.obscure_af_churn_pattern_unexpected_success[1],
+		shm->stats.obscure_af_churn_pattern_runs[2],
+		shm->stats.obscure_af_churn_pattern_kernel_rejected[2],
+		shm->stats.obscure_af_churn_pattern_unexpected_success[2],
+		shm->stats.obscure_af_churn_pattern_runs[3],
+		shm->stats.obscure_af_churn_pattern_kernel_rejected[3],
+		shm->stats.obscure_af_churn_pattern_unexpected_success[3],
+		shm->stats.obscure_af_churn_pattern_runs[4],
+		shm->stats.obscure_af_churn_pattern_kernel_rejected[4],
+		shm->stats.obscure_af_churn_pattern_unexpected_success[4],
+		shm->stats.obscure_af_churn_pattern_runs[5],
+		shm->stats.obscure_af_churn_pattern_kernel_rejected[5],
+		shm->stats.obscure_af_churn_pattern_unexpected_success[5]);
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -3389,6 +3416,34 @@ void dump_stats(void)
 		stat_row("rtnl_vf_broadcast_getlink", "setup_ok",      shm->stats.rtnl_vf_broadcast_setup_ok);
 		stat_row("rtnl_vf_broadcast_getlink", "setup_failed",  shm->stats.rtnl_vf_broadcast_setup_failed);
 		stat_row("rtnl_vf_broadcast_getlink", "getlink_ok",    shm->stats.rtnl_vf_broadcast_getlink_ok);
+	}
+
+	if (shm->stats.obscure_af_churn_runs) {
+		static const char * const ap_names[] = {
+			"sendmsg_no_bind",
+			"bind_then_sendmsg",
+			"connect_no_listen",
+			"ioctl_rotation",
+			"setsockopt_zero_len",
+			"close_via_dup",
+		};
+		char key[64];
+		unsigned int ap;
+
+		stat_row("obscure_af_churn", "runs",         shm->stats.obscure_af_churn_runs);
+		stat_row("obscure_af_churn", "no_viable_pf", shm->stats.obscure_af_churn_no_viable_pf);
+
+		for (ap = 0; ap < ARRAY_SIZE(ap_names); ap++) {
+			snprintf(key, sizeof(key), "%s_runs", ap_names[ap]);
+			stat_row("obscure_af_churn", key,
+				 shm->stats.obscure_af_churn_pattern_runs[ap]);
+			snprintf(key, sizeof(key), "%s_kernel_rejected", ap_names[ap]);
+			stat_row("obscure_af_churn", key,
+				 shm->stats.obscure_af_churn_pattern_kernel_rejected[ap]);
+			snprintf(key, sizeof(key), "%s_unexpected_success", ap_names[ap]);
+			stat_row("obscure_af_churn", key,
+				 shm->stats.obscure_af_churn_pattern_unexpected_success[ap]);
+		}
 	}
 
 	if (shm->stats.afxdp_churn_runs) {

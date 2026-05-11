@@ -183,6 +183,7 @@ enum child_op_type {
 	CHILD_OP_IPV6_NDISC_PROXY,
 	CHILD_OP_IPFRAG_SOURCE_CHURN,
 	CHILD_OP_RTNL_VF_BROADCAST_GETLINK,
+	CHILD_OP_OBSCURE_AF_CHURN,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -620,3 +621,4 @@ bool tcp_md5_listener_race(struct childdata *child);
 bool ipv6_ndisc_proxy(struct childdata *child);
 bool ipfrag_source_churn(struct childdata *child);
 bool rtnl_vf_broadcast_getlink(struct childdata *child);
+bool obscure_af_churn(struct childdata *child);
