@@ -1341,20 +1341,25 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
 	if (scope == OBJ_LOCAL) {
 		if (child == NULL)
 			return;
+		/*
+		 * struct childdata lives in alloc_shared() memory, which
+		 * __alloc_shared() poisons with random bytes to expose
+		 * uninitialised reads.  The objects pointer therefore
+		 * arrives at first init holding a wild value, not NULL --
+		 * local_objects_alloc()'s "skip if non-NULL" guard would
+		 * then leave child->objects pointing at the poison and the
+		 * first head->num_entries store would SIGSEGV through that
+		 * wild address.  Zero both fields before the alloc and
+		 * protected-flag reads to neutralise the poison.  This is
+		 * also the right reset for slot-reuse: the prior occupant's
+		 * mprotect state died with its address space, so our
+		 * inherited mapping is unconditionally RW.
+		 */
+		child->objects = NULL;
+		child->objects_protected = false;
 		local_objects_alloc(child);
 		if (child->objects == NULL)
 			return;
-		/*
-		 * Defensive: if a previous occupant of this slot left the
-		 * objects_protected flag set in shared memory, the per-AS
-		 * mprotect state was theirs and is gone with their address
-		 * space -- our inherited mapping is RW, so re-sync the flag
-		 * to match reality before init writes.  Subsequent freeze
-		 * happens once after init_child completes its post-fork
-		 * setup, mirroring the OBJ_GLOBAL freeze-once-after-bulk-
-		 * init pattern in trinity.c:475.
-		 */
-		child->objects_protected = false;
 	}
 
 	for (i = 0; i < MAX_OBJECT_TYPES; i++) {
