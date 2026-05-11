@@ -1,4 +1,5 @@
 #include <limits.h>
+#include <malloc.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -18,6 +19,36 @@
 #include "utils.h"
 
 static struct list_head global_obj_list = { &global_obj_list, &global_obj_list };
+
+/*
+ * Joint-stomp defence for OBJ_LOCAL pools.  head->num_entries and
+ * head->array_capacity are adjacent fields in struct objhead and live in
+ * the per-child childdata page.  A single 8-byte value-result write that
+ * lands on that vicinity stomps both jointly, leaving a (n_snap,
+ * cap_snap) pair that's internally consistent (n_snap <= cap_snap) and
+ * within OBJHEAD_SANE_LIMIT -- defeating the per-snapshot bail.
+ *
+ * malloc_usable_size() reads the glibc chunk header for array_snap,
+ * geographically separate from the childdata page and from any address
+ * reachable by get_writable_address() (the writable-pool slots live in a
+ * different mmap region).  If the snapshot capacity claims more slots
+ * than the original allocation can hold, the snapshot is the smoking gun
+ * of a joint stomp -- bail.
+ *
+ * OBJ_GLOBAL arrays are pre-allocated in shm and not malloc'd, so
+ * malloc_usable_size returns 0 and the helper would always reject; only
+ * call this on the OBJ_LOCAL paths.  GLOBAL is hard-capped at
+ * GLOBAL_OBJ_MAX_CAPACITY=1024 and the existing OBJHEAD_SANE_LIMIT bail
+ * is sufficient there.
+ */
+static inline bool local_array_holds_capacity(struct object **array_snap,
+					      unsigned int cap_snap)
+{
+	if (array_snap == NULL)
+		return cap_snap == 0;
+	return malloc_usable_size(array_snap) >=
+		(size_t)cap_snap * sizeof(struct object *);
+}
 
 void register_global_obj_init(struct global_obj_entry *entry)
 {
@@ -745,7 +776,9 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	 * at snapshot time.  Same release_obj + counter path as the other
 	 * snapshot-rejection sites.
 	 */
-	if (cap_snap > OBJHEAD_SANE_LIMIT) {
+	if (cap_snap > OBJHEAD_SANE_LIMIT ||
+	    (scope == OBJ_LOCAL &&
+	     !local_array_holds_capacity(array_snap, cap_snap))) {
 		outputerr("add_object: stomped capacity type=%u capacity=%u num_entries=%u\n",
 			  type, cap_snap, n);
 		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted, 1,
@@ -1445,7 +1478,9 @@ struct object * get_random_object_versioned(enum objecttype type,
 
 		if (snapshot == 0) {
 			obj = NULL;
-		} else if (cap_snap > OBJHEAD_SANE_LIMIT) {
+		} else if (cap_snap > OBJHEAD_SANE_LIMIT ||
+			   (scope == OBJ_LOCAL &&
+			    !local_array_holds_capacity(array_snap, cap_snap))) {
 			/*
 			 * Snapshot of array_capacity above the ceiling
 			 * objhead_looks_sane() uses for the dump path can
@@ -1455,7 +1490,14 @@ struct object * get_random_object_versioned(enum objecttype type,
 			 * acting on it (and on the num_entries snapshot we
 			 * paired it with) is the joint-stomp shape the
 			 * cap_snap defence in add_object() exists to reject.
-			 * Mirror that bail here on the read side.
+			 * For OBJ_LOCAL also check the malloc_usable_size of
+			 * array_snap: a joint stomp that bumped both
+			 * num_entries and array_capacity into a self-
+			 * consistent (n_snap <= cap_snap) range within
+			 * OBJHEAD_SANE_LIMIT bypasses the cap-vs-ceiling
+			 * bail; the chunk-header allocation size is geo-
+			 * graphically separate from the childdata page and
+			 * exposes the joint stomp where snapshots cannot.
 			 */
 			__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
 					   1, __ATOMIC_RELAXED);
@@ -1766,7 +1808,9 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 	 * working sets stay well below 64K.  Same shape as the entry
 	 * cap_snap reject in add_object().
 	 */
-	if (cap_snap > OBJHEAD_SANE_LIMIT) {
+	if (cap_snap > OBJHEAD_SANE_LIMIT ||
+	    (scope == OBJ_LOCAL &&
+	     !local_array_holds_capacity(array_snap, cap_snap))) {
 		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
 				   1, __ATOMIC_RELAXED);
 		return;
@@ -1960,9 +2004,12 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 	 * OBJHEAD_SANE_LIMIT bail mirrors add_object()'s entry guard.  A
 	 * snapshot capacity above the 64K ceiling can only have come
 	 * from a wild stomp; acting on it would let the post-loop memset
-	 * write (cap_snap * 8) bytes past the real allocation.
+	 * write (cap_snap * 8) bytes past the real allocation.  Joint-
+	 * stomp defence via local_array_holds_capacity() for OBJ_LOCAL.
 	 */
-	if (cap_snap > OBJHEAD_SANE_LIMIT) {
+	if (cap_snap > OBJHEAD_SANE_LIMIT ||
+	    (scope == OBJ_LOCAL &&
+	     !local_array_holds_capacity(array_snap, cap_snap))) {
 		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
 				   1, __ATOMIC_RELAXED);
 		return;
@@ -2273,7 +2320,9 @@ static void __prune_objects(struct childdata *child, enum objecttype type, enum 
 	 * local_obj_num_entries_corrupted counter for symmetry with the
 	 * sibling read-side guards.
 	 */
-	if (cap_snap > OBJHEAD_SANE_LIMIT || n_snap > cap_snap) {
+	if (cap_snap > OBJHEAD_SANE_LIMIT || n_snap > cap_snap ||
+	    (scope == OBJ_LOCAL &&
+	     !local_array_holds_capacity(array_snap, cap_snap))) {
 		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
 				   1, __ATOMIC_RELAXED);
 		return;
