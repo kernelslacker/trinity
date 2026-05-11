@@ -177,17 +177,41 @@ int get_rand_pagecache_fd(void)
 	 * indexes head->array directly, so it doesn't pick up the
 	 * slot-version validation below.  Same UAF class applies (the
 	 * setuid slot can be destroyed/recycled out from under the read of
-	 * head->array[slot]->fileobj.fd), but reworking the bias path to
+	 * array_snap[slot]->fileobj.fd), but reworking the bias path to
 	 * round-trip through the versioned API would require teaching it
 	 * about specific slots rather than picks, which is out of scope
-	 * for the mechanical fd-getter wireup.  Tracked separately. */
+	 * for the mechanical fd-getter wireup.  Tracked separately.
+	 *
+	 * Snapshot num_entries / array_capacity / array together before the
+	 * bound check and the deref so a sibling value-result syscall whose
+	 * buffer aliases this child's objhead can't scribble those fields
+	 * between the bound check and the slot deref.  Same TOCTOU shape
+	 * the parent fixes closed in add_object (b677185d7524),
+	 * get_random_object_versioned (2c5d84e5d67b),
+	 * __destroy_object/destroy_objects (3058bd1a64ea), the for_each_obj
+	 * iterator (16682afe606b) and __prune_objects (6a389bbc7f6b). */
 	if (nr_setuid > 0 && (int)(rand() % 100) < SETUID_BIAS_PCT) {
 		unsigned int slot = setuid_indices[rand() % nr_setuid];
 
 		head = get_objhead(OBJ_GLOBAL, OBJ_FD_PAGECACHE);
-		if (head != NULL && slot < head->num_entries &&
-		    head->array[slot] != NULL)
-			return head->array[slot]->fileobj.fd;
+		if (head != NULL) {
+			unsigned int n_snap, cap_snap;
+			struct object **array_snap;
+
+			n_snap = __atomic_load_n(&head->num_entries,
+						 __ATOMIC_ACQUIRE);
+			cap_snap = head->array_capacity;
+			array_snap = head->array;
+
+			if (cap_snap > OBJHEAD_SANE_LIMIT ||
+			    n_snap > cap_snap) {
+				__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
+						   1, __ATOMIC_RELAXED);
+				/* fall through to the versioned API path below */
+			} else if (slot < n_snap && array_snap[slot] != NULL) {
+				return array_snap[slot]->fileobj.fd;
+			}
+		}
 	}
 
 	/*
