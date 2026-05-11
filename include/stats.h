@@ -1154,6 +1154,8 @@ struct stats_s {
 	unsigned long tc_qdisc_peek_stack_install_ok;	/* parent + child grafted successfully */
 	unsigned long tc_qdisc_peek_stack_install_fail;	/* parent or child install rejected */
 	unsigned long tc_qdisc_peek_stack_burst_ok;	/* loopback UDP sendto on stacked tree returned >0 */
+	unsigned long tc_qdisc_churn_bridge_parent_runs;	/* iter used a bridge slave veth as qdisc parent */
+	unsigned long tc_qdisc_churn_bridge_dellink_race_ok;	/* RTM_DELLINK on bridge slave port accepted (raced flush burst) */
 
 	/* xfrm_churn childop counters */
 	unsigned long xfrm_churn_runs;			/* total xfrm_churn invocations */
