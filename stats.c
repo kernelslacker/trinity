@@ -1685,6 +1685,19 @@ static const struct {
 	 * the fleet's syscall throughput when the bandit picker selects it. */
 	{ "frontier_strategy_picks",
 	  offsetof(struct stats_s, frontier_strategy_picks) },
+	/* STRATEGY_HEALER picker counters: cold-start (no predecessor, biarch
+	 * skip), pair-path success, triple-path success (subset that also
+	 * mixed in the triple table), and zero-weight fallback.  Surface the
+	 * arm's effective behaviour at the same dump granularity as the other
+	 * per-strategy counters above. */
+	{ "healer_picker_cold_start",
+	  offsetof(struct stats_s, healer_picker_cold_start) },
+	{ "healer_picker_pair_path",
+	  offsetof(struct stats_s, healer_picker_pair_path) },
+	{ "healer_picker_triple_path",
+	  offsetof(struct stats_s, healer_picker_triple_path) },
+	{ "healer_picker_zero_weight_fallback",
+	  offsetof(struct stats_s, healer_picker_zero_weight_fallback) },
 	/* Picks the explorer pool forced to STRATEGY_RANDOM.  Rate-of-change
 	 * over the run divided by explorer_children gives the per-explorer
 	 * picker throughput; deviation from the bandit-pool throughput
@@ -2796,6 +2809,18 @@ void dump_stats(void)
 	if (shm->stats.frontier_strategy_picks)
 		stat_row("strategy", "frontier_strategy_picks",
 			 shm->stats.frontier_strategy_picks);
+	if (shm->stats.healer_picker_cold_start)
+		stat_row("strategy", "healer_picker_cold_start",
+			 shm->stats.healer_picker_cold_start);
+	if (shm->stats.healer_picker_pair_path)
+		stat_row("strategy", "healer_picker_pair_path",
+			 shm->stats.healer_picker_pair_path);
+	if (shm->stats.healer_picker_triple_path)
+		stat_row("strategy", "healer_picker_triple_path",
+			 shm->stats.healer_picker_triple_path);
+	if (shm->stats.healer_picker_zero_weight_fallback)
+		stat_row("strategy", "healer_picker_zero_weight_fallback",
+			 shm->stats.healer_picker_zero_weight_fallback);
 	if (shm->stats.strategy_explorer_picks)
 		stat_row("strategy", "strategy_explorer_picks",
 			 shm->stats.strategy_explorer_picks);

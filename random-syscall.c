@@ -240,8 +240,8 @@ retry:
  * those are correctness gates, not selection biases — bypassing them
  * just wastes iterations on calls we know we can't make.
  */
-static bool set_syscall_nr_random(struct syscallrecord *rec,
-				   struct childdata *child)
+bool set_syscall_nr_random(struct syscallrecord *rec,
+			    struct childdata *child)
 {
 	struct syscallentry *entry;
 	unsigned int syscallnr;
@@ -435,6 +435,8 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 		return set_syscall_nr_random(rec, child);
 	case STRATEGY_COVERAGE_FRONTIER:
 		return set_syscall_nr_coverage_frontier(rec, child);
+	case STRATEGY_HEALER:
+		return set_syscall_nr_healer(rec, child);
 	default:
 		__builtin_unreachable();
 	}
@@ -680,9 +682,10 @@ static void maybe_rotate_strategy(void)
 				__ATOMIC_RELAXED);
 	__atomic_store_n(&shm->current_strategy, next, __ATOMIC_RELEASE);
 
-	output(0, "strategy: switched to %d (prev %d: edges=%lu, syscalls=%lu, cmp_novel=%lu)\n",
-	       next, prev, edges_in_window, syscalls_in_window,
-	       cmp_in_window);
+	output(0, "strategy: switched to %s (%d) (prev %s (%d): edges=%lu, syscalls=%lu, cmp_novel=%lu)\n",
+	       strategy_name(next), next,
+	       strategy_name(prev), prev,
+	       edges_in_window, syscalls_in_window, cmp_in_window);
 }
 
 /*

@@ -29,6 +29,7 @@
 #include <string.h>
 
 #include "debug.h"
+#include "healer.h"		/* healer_pair_get */
 #include "kcov.h"		/* KCOV_CMP_RECORDS_MAX */
 #include "params.h"
 #include "shm.h"
@@ -36,6 +37,30 @@
 #include "strategy.h"
 #include "syscall.h"		/* MAX_NR_SYSCALL */
 #include "utils.h"
+
+/*
+ * STRATEGY_HEALER eligibility threshold: number of pair-table cells
+ * with weight strictly greater than the static-seed value (i.e. cells
+ * the runtime observer has actually bumped at least once, or that
+ * received multiple seed-installs from overlapping classifier matches)
+ * required before the picker has enough signal to score arms against
+ * uniform random.  Picked to roughly match the inflection point at
+ * which the operator-side dump starts surfacing relations whose
+ * normalised score clears the noise floor.
+ */
+#define HEALER_PICKER_PAIR_CELL_THRESHOLD 1000
+
+/*
+ * Hard cap on cells inspected per is_strategy_eligible(STRATEGY_HEALER)
+ * call.  The pair table is dense (MAX_NR_SYSCALL^2 = ~1M cells); a full
+ * scan at every rotation boundary is bounded but not free, so we
+ * early-out as soon as we have either crossed the threshold or scanned
+ * enough cells to know we are not going to.  The pair table is mutated
+ * lock-free; relaxed loads here race observer bumps benignly because the
+ * eligibility check itself is a coarse gate, not an exact count.
+ */
+#define HEALER_PICKER_ELIGIBILITY_SCAN_CAP \
+	((unsigned long)MAX_NR_SYSCALL * (unsigned long)MAX_NR_SYSCALL)
 
 /* Same KCOV_CMP_CONST bit cmp_hints.c uses; from uapi/linux/kcov.h. */
 #define KCOV_CMP_CONST  (1U << 0)
@@ -91,6 +116,66 @@ const char *picker_mode_name(enum picker_mode_t mode)
 	case PICKER_BANDIT_UCB1:	return "bandit-ucb1";
 	}
 	return "unknown";
+}
+
+const char *strategy_name(int arm)
+{
+	switch (arm) {
+	case STRATEGY_HEURISTIC:		return "HEURISTIC";
+	case STRATEGY_RANDOM:			return "RANDOM";
+	case STRATEGY_COVERAGE_FRONTIER:	return "COVERAGE_FRONTIER";
+	case STRATEGY_HEALER:			return "HEALER";
+	default:				return "?";
+	}
+}
+
+/*
+ * STRATEGY_HEALER readiness gate.  Scans the pair-relation table for
+ * cells with weight > 1 (i.e. observer-bumped or multiply-seeded; a
+ * single seed install at HEALER_STATIC_SEED_WEIGHT == 3 counts because
+ * the test is strict-greater-than-one) and short-circuits as soon as
+ * HEALER_PICKER_PAIR_CELL_THRESHOLD have been seen.  When the kcov
+ * plateau detector reports the fleet is stalled, the threshold is
+ * bypassed -- a stalled bandit benefits from any signal that nudges it
+ * off the current local minimum, even one whose own data is thin.
+ */
+static bool healer_picker_eligible(void)
+{
+	unsigned long scanned = 0;
+	unsigned long hits = 0;
+	unsigned int pred, succ;
+
+	if (kcov_shm != NULL && kcov_shm->plateau_active)
+		return true;
+
+	for (pred = 0; pred < MAX_NR_SYSCALL; pred++) {
+		for (succ = 0; succ < MAX_NR_SYSCALL; succ++) {
+			unsigned int w = __atomic_load_n(
+				&shm->healer_pair_table[pred][succ],
+				__ATOMIC_RELAXED);
+
+			scanned++;
+			if (w > 1) {
+				hits++;
+				if (hits >= HEALER_PICKER_PAIR_CELL_THRESHOLD)
+					return true;
+			}
+			if (scanned >= HEALER_PICKER_ELIGIBILITY_SCAN_CAP)
+				return false;
+		}
+	}
+	return false;
+}
+
+bool is_strategy_eligible(int arm)
+{
+	if (arm < 0 || arm >= NR_STRATEGIES)
+		return false;
+
+	if (arm == STRATEGY_HEALER)
+		return healer_picker_eligible();
+
+	return true;
 }
 
 /*
@@ -454,16 +539,35 @@ static double ucb1_score(int arm, unsigned long total_pulls,
 int pick_next_strategy(int prev)
 {
 	enum picker_mode_t mode;
+	bool eligible[NR_STRATEGIES];
 	unsigned long total_pulls = 0;
 	double max_mean = 0.0;
 	double best_score;
-	int best_arm = 0;
+	int best_arm = -1;
 	int i;
 
 	mode = __atomic_load_n(&shm->picker_mode, __ATOMIC_RELAXED);
 
-	if (mode == PICKER_ROUND_ROBIN)
+	/* Cache per-arm eligibility once: the check can scan O(MAX_NR_SYSCALL^2)
+	 * cells for STRATEGY_HEALER and we consult it twice (cold-start scan
+	 * and UCB1 score loop).  Round-robin still needs the cache so it can
+	 * skip past an ineligible arm without falling off NR_STRATEGIES. */
+	for (i = 0; i < NR_STRATEGIES; i++)
+		eligible[i] = is_strategy_eligible(i);
+
+	if (mode == PICKER_ROUND_ROBIN) {
+		int next = prev;
+		for (i = 0; i < NR_STRATEGIES; i++) {
+			next = (next + 1) % NR_STRATEGIES;
+			if (eligible[next])
+				return next;
+		}
+		/* Every arm ineligible — should not happen because at least
+		 * STRATEGY_HEURISTIC and STRATEGY_RANDOM have no preconditions.
+		 * Fall back to the historical Phase 1 behaviour rather than
+		 * returning -1 to a caller that expects a valid index. */
 		return (prev + 1) % NR_STRATEGIES;
+	}
 
 	/* Plateau-detector override: when KCOV's edge-discovery rate is
 	 * stalled, the bandit has likely settled into an exploit-heavy
@@ -478,35 +582,46 @@ int pick_next_strategy(int prev)
 	if (kcov_shm != NULL && kcov_shm->plateau_active)
 		return STRATEGY_RANDOM;
 
-	/* Cold-start: prefer any unpulled arm before scoring. */
+	/* Cold-start: prefer any unpulled eligible arm before scoring. */
 	for (i = 0; i < NR_STRATEGIES; i++) {
+		if (!eligible[i])
+			continue;
 		if (shm->bandit_pulls[i] == 0)
 			return i;
 		total_pulls += shm->bandit_pulls[i];
 	}
 
-	/* Normalise by the largest mean-reward across arms so the
-	 * exploit term lives in the same numeric range as the
-	 * exploration term.  Falls back to 1.0 when every arm has
-	 * yielded zero edges so far (well-defined and harmless). */
+	/* Normalise by the largest mean-reward across eligible arms so the
+	 * exploit term lives in the same numeric range as the exploration
+	 * term.  Falls back to 1.0 when every arm has yielded zero edges
+	 * so far (well-defined and harmless). */
 	for (i = 0; i < NR_STRATEGIES; i++) {
-		double mean = (double)shm->bandit_reward[i] /
-			      (double)shm->bandit_pulls[i];
+		double mean;
+
+		if (!eligible[i])
+			continue;
+		mean = (double)shm->bandit_reward[i] /
+		       (double)shm->bandit_pulls[i];
 		if (mean > max_mean)
 			max_mean = mean;
 	}
 	if (max_mean <= 0.0)
 		max_mean = 1.0;
 
-	best_score = ucb1_score(0, total_pulls, max_mean);
-	best_arm = 0;
-	for (i = 1; i < NR_STRATEGIES; i++) {
-		double s = ucb1_score(i, total_pulls, max_mean);
-		if (s > best_score) {
+	best_score = -1.0;
+	for (i = 0; i < NR_STRATEGIES; i++) {
+		double s;
+
+		if (!eligible[i])
+			continue;
+		s = ucb1_score(i, total_pulls, max_mean);
+		if (best_arm < 0 || s > best_score) {
 			best_score = s;
 			best_arm = i;
 		}
 	}
+	if (best_arm < 0)
+		best_arm = STRATEGY_HEURISTIC;
 	return best_arm;
 }
 
