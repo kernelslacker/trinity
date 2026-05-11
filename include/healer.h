@@ -247,6 +247,22 @@ unsigned int healer_count_pc_pairs(void);
  */
 unsigned int healer_load_static_seed(void);
 
+struct syscallrecord;
+
+/*
+ * STRATEGY_HEALER picker (Phase B).  Builds a per-call weighted
+ * distribution over the active syscall table from the pair-relation
+ * table indexed by the child's most-recent predecessor, optionally
+ * augmented by the triple-relation table when the child has both
+ * predecessor slots populated.  Falls back to set_syscall_nr_random()
+ * on cold-start (no predecessor recorded yet), zero-weight (the
+ * predecessor has no recorded productive relations), or any
+ * downstream validation/EXPENSIVE-skip dead-end.  Returns the same
+ * true/FAIL convention as the other set_syscall_nr_* variants so the
+ * dispatch in random-syscall.c can switch on it uniformly.
+ */
+bool set_syscall_nr_healer(struct syscallrecord *rec, struct childdata *child);
+
 /*
  * Phase 1 stub for the coverage-plateau auto-response path.  Invoked
  * from kcov_plateau_check() on the rising-edge transition into PLATEAU

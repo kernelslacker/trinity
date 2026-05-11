@@ -348,6 +348,14 @@ struct childdata;
 
 void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		struct kcov_child *kc, struct childdata *child);
+
+/*
+ * Uniform-random syscall picker.  Public so STRATEGY_HEALER (and any
+ * future strategy with a "no usable signal here" branch) can delegate
+ * to the canonical uniform-pick + correctness-gate implementation
+ * rather than re-implementing it.
+ */
+bool set_syscall_nr_random(struct syscallrecord *rec, struct childdata *child);
 void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry);
 void generic_post_close_fd(struct syscallrecord *rec);
 void post_mount_fd(struct syscallrecord *rec);

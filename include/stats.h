@@ -1935,6 +1935,41 @@ struct stats_s {
 	 * counter only feeds the dump path.
 	 */
 	unsigned long healer_pred_appearance[MAX_NR_SYSCALL];
+	/*
+	 * STRATEGY_HEALER picker counters (Phase B).  Sum of the four equals
+	 * the total number of times the dispatch in random-syscall.c entered
+	 * set_syscall_nr_healer; the per-counter ratios surface what fraction
+	 * of the picker's calls actually rode the pair / triple table vs.
+	 * fell back to uniform random.
+	 *
+	 * healer_picker_cold_start: predecessor sequence empty / sentinel /
+	 *   biarch-skip -- the picker had no usable predecessor and degraded
+	 *   to STRATEGY_RANDOM behaviour.  Persistent dominance here means
+	 *   children's healer_seq buffers aren't being populated (observer
+	 *   gate misconfigured) or the bandit is scheduling HEALER too early
+	 *   in child lifetimes.
+	 * healer_picker_pair_path: success path using only the pair table's
+	 *   (predecessor -> succ) row.  The headline counter for "HEALER
+	 *   actually steered the pick"; rate-of-change tracks the arm's
+	 *   contribution to the fleet's syscall mix.
+	 * healer_picker_triple_path: success path where the triple table's
+	 *   matching (pred_a, pred_b) slot also contributed promoted-entry
+	 *   weights to the distribution.  Subset of pair_path conceptually
+	 *   (the pair contribution still ran underneath); a low triple/pair
+	 *   ratio indicates the triple table is too sparse to meaningfully
+	 *   refine the pair distribution yet.
+	 * healer_picker_zero_weight_fallback: predecessor row was all-zero
+	 *   weight, OR every weighted candidate retired during the retry
+	 *   loop; the picker collapsed to STRATEGY_RANDOM.  Persistent
+	 *   growth here on a warm fleet means HEALER is being scheduled for
+	 *   predecessors the observer never built any signal for, which the
+	 *   eligibility gate should be filtering out -- worth tightening the
+	 *   gate threshold if so.
+	 */
+	unsigned long healer_picker_cold_start;
+	unsigned long healer_picker_pair_path;
+	unsigned long healer_picker_triple_path;
+	unsigned long healer_picker_zero_weight_fallback;
 };
 
 unsigned int stats_syscall_category(const char *name);

@@ -69,10 +69,15 @@
 #include "arch.h"		/* biarch */
 #include "child.h"
 #include "edgepair.h"		/* EDGEPAIR_NO_PREV */
+#include "exit.h"		/* EXIT_NO_SYSCALLS_ENABLED */
 #include "healer.h"
+#include "locks.h"
 #include "params.h"		/* do_32_arch, do_64_arch */
+#include "pids.h"		/* getpid wrapper */
+#include "random.h"		/* ONE_IN */
 #include "shm.h"
 #include "stats.h"
+#include "syscall.h"		/* set_syscall_nr_random, EXPENSIVE */
 #include "tables.h"		/* print_syscall_name */
 #include "trinity.h"
 
@@ -2532,4 +2537,288 @@ unsigned int healer_load_static_seed(void)
 	stats_log_write("HEALER static seed: %u producer/consumer pairs installed\n",
 			installed);
 	return installed;
+}
+
+/*
+ * --- STRATEGY_HEALER picker (Phase B) ---
+ *
+ * Implements the SOSP'21 HEALER paper's bias-toward-known-productive-
+ * relations principle on top of the Phase A observer's pair and triple
+ * relation tables.  At each pick:
+ *
+ *   - Picks the most-recent predecessor out of the per-child sequence
+ *     buffer (healer_seq[1] when both slots are populated, healer_seq[0]
+ *     when only one is).
+ *   - Builds a per-call weighted distribution over the active syscall
+ *     table using shm->healer_pair_table[pred][succ] for each candidate
+ *     succ.  When both predecessor slots are populated, the matching
+ *     triple-table slot's promoted (succ, weight) entries are summed
+ *     into the same distribution so candidates that appear in both
+ *     tables get extra weight without a separate normalisation step.
+ *   - Picks weighted-random via a CDF walk; on a validate / EXPENSIVE
+ *     dead-end the chosen index is dropped from the distribution and
+ *     the pick is re-rolled until the budget is exhausted or no weight
+ *     remains.
+ *   - Falls back to set_syscall_nr_random() when the predecessor is
+ *     missing (cold-start), is the EDGEPAIR_NO_PREV sentinel, or when
+ *     the predecessor row carries no positive weight at all (the
+ *     observer has not yet learned anything productive about it).
+ *
+ * The bandit picker decides WHEN to schedule this arm via UCB1 reward;
+ * is_strategy_eligible(STRATEGY_HEALER) gates the arm out entirely
+ * until the pair table has accumulated enough signal to score against
+ * uniform random.  The picker itself stays zero-malloc on the hot path
+ * by building the distribution into a stack array sized to the dense
+ * MAX_NR_SYSCALL bound (a per-call ~4 KiB stack frame, comfortably
+ * inside the syscall-pick stack budget).
+ *
+ * Biarch builds: defer to set_syscall_nr_random.  The pair table is a
+ * single MAX_NR_SYSCALL x MAX_NR_SYSCALL matrix indexed by raw syscall
+ * number, so 32-bit and 64-bit syscalls collide on the same cells when
+ * their numbers happen to overlap; the picker has no clean way to
+ * disentangle that without a per-arch table split, which is out of
+ * scope here.  Falling back keeps the bandit's reward signal honest
+ * (the arm reverts to RANDOM-equivalent behaviour) while leaving the
+ * uniarch path -- where the observer's signal is unambiguous -- to
+ * exercise the full HEALER algorithm.
+ */
+bool set_syscall_nr_healer(struct syscallrecord *rec, struct childdata *child)
+{
+	struct syscallentry *entry;
+	unsigned int weights[MAX_NR_SYSCALL];
+	unsigned long total_weight = 0;
+	unsigned int nr_syscalls;
+	unsigned int pred;
+	unsigned int idx;
+	unsigned int outer_attempts = 0;
+	unsigned int syscallnr;
+	int val;
+	bool used_triple = false;
+
+	if (biarch) {
+		__atomic_fetch_add(&shm->stats.healer_picker_cold_start, 1UL,
+				   __ATOMIC_RELAXED);
+		return set_syscall_nr_random(rec, child);
+	}
+
+	if (child == NULL || child->active_syscalls == NULL ||
+	    child->healer_seq_count == 0) {
+		__atomic_fetch_add(&shm->stats.healer_picker_cold_start, 1UL,
+				   __ATOMIC_RELAXED);
+		return set_syscall_nr_random(rec, child);
+	}
+
+	pred = (child->healer_seq_count >= 2) ? child->healer_seq[1]
+					      : child->healer_seq[0];
+	if (pred == EDGEPAIR_NO_PREV || pred >= MAX_NR_SYSCALL) {
+		__atomic_fetch_add(&shm->stats.healer_picker_cold_start, 1UL,
+				   __ATOMIC_RELAXED);
+		return set_syscall_nr_random(rec, child);
+	}
+
+	nr_syscalls = max_nr_syscalls;
+	if (nr_syscalls > MAX_NR_SYSCALL)
+		nr_syscalls = MAX_NR_SYSCALL;
+	memset(weights, 0, sizeof(weights[0]) * nr_syscalls);
+
+	/* Pair-table contribution: one dense row read.  active_syscalls[idx]
+	 * encodes (syscall_nr + 1) for active entries and 0 for inactive,
+	 * so an idx whose value is 0 contributes nothing to the distribution
+	 * and is silently skipped. */
+	for (idx = 0; idx < nr_syscalls; idx++) {
+		unsigned int nr;
+		unsigned int w;
+
+		val = child->active_syscalls[idx];
+		if (val == 0)
+			continue;
+		nr = (unsigned int)val - 1U;
+		if (nr >= MAX_NR_SYSCALL)
+			continue;
+		w = healer_pair_get(pred, nr);
+		if (w == 0)
+			continue;
+		weights[idx] = w;
+		total_weight += w;
+	}
+
+	/* Triple-table contribution: when the child has both predecessor
+	 * slots populated, sum the matching triple slot's promoted-entry
+	 * weights into the per-succ distribution so candidates that appear
+	 * in BOTH tables ride a higher combined weight without a separate
+	 * normalisation step.  Raw sum (rather than a fixed e.g. 70/30 mix)
+	 * keeps the picker zero-FP and lets the relative magnitudes of the
+	 * two tables speak for themselves -- the pair table dominates by
+	 * design (static seed + dense observer) and the triple table acts
+	 * as a sparse boost for higher-confidence relations. */
+	if (child->healer_seq_count >= 2) {
+		unsigned int pa = child->healer_seq[0];
+		unsigned int pb = child->healer_seq[1];
+
+		if (pa != EDGEPAIR_NO_PREV && pb != EDGEPAIR_NO_PREV &&
+		    pa < MAX_NR_SYSCALL && pb < MAX_NR_SYSCALL) {
+			unsigned int predset_hash;
+			unsigned int slot_idx;
+			unsigned int probe;
+			uint64_t target_key;
+
+			if (pa > pb) {
+				unsigned int tmp = pa;
+				pa = pb;
+				pb = tmp;
+			}
+			predset_hash = healer_predset_hash(pa, pb);
+			slot_idx = predset_hash & (HEALER_RELATION_SLOTS - 1);
+			target_key = healer_pack_key(pa, pb, predset_hash);
+
+			for (probe = 0; probe < HEALER_PROBE_LIMIT; probe++) {
+				struct healer_relation *slot;
+				unsigned int slot_idx_real;
+				uint64_t slot_key;
+				unsigned int j;
+
+				slot_idx_real = (slot_idx + probe) &
+						(HEALER_RELATION_SLOTS - 1);
+				slot = &shm->healer_relations[slot_idx_real];
+				slot_key = __atomic_load_n(&slot->key,
+							   __ATOMIC_ACQUIRE);
+				if (slot_key == 0)
+					break;
+				if (slot_key != target_key)
+					continue;
+
+				/* Slot match -- walk promoted[] and add each
+				 * (nr, weight) to the matching active_syscalls
+				 * index.  We linear-scan active_syscalls per
+				 * promoted entry; promoted is at most 8 wide so
+				 * the inner cost is bounded at 8*nr_syscalls,
+				 * negligible vs. the pair-table walk above. */
+				for (j = 0; j < HEALER_PROMOTED_PER_SLOT; j++) {
+					uint64_t entry_packed;
+					unsigned int p_nr, p_w;
+					unsigned int k;
+
+					entry_packed = __atomic_load_n(
+						&slot->promoted[j].entry,
+						__ATOMIC_RELAXED);
+					if (entry_packed == 0)
+						continue;
+					healer_unpack_promoted(entry_packed,
+							       &p_nr, &p_w);
+					if (p_w == 0 || p_nr >= MAX_NR_SYSCALL)
+						continue;
+					for (k = 0; k < nr_syscalls; k++) {
+						val = child->active_syscalls[k];
+						if (val == 0)
+							continue;
+						if ((unsigned int)val - 1U == p_nr) {
+							weights[k] += p_w;
+							total_weight += p_w;
+							used_triple = true;
+							break;
+						}
+					}
+				}
+				break;
+			}
+		}
+	}
+
+	if (total_weight == 0) {
+		__atomic_fetch_add(&shm->stats.healer_picker_zero_weight_fallback,
+				   1UL, __ATOMIC_RELAXED);
+		return set_syscall_nr_random(rec, child);
+	}
+
+retry:
+	if (no_syscalls_enabled() == true) {
+		output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
+		__atomic_store_n(&shm->exit_reason, EXIT_NO_SYSCALLS_ENABLED,
+				 __ATOMIC_RELAXED);
+		return FAIL;
+	}
+
+	if (outer_attempts++ > 10000) {
+		output(0, "[%d] set_syscall_nr_healer exceeded retry budget\n",
+		       getpid());
+		return FAIL;
+	}
+
+	if (total_weight == 0) {
+		/* Every candidate retired by validate / EXPENSIVE / table-
+		 * deactivation during the retry loop -- there is nothing left
+		 * to weight, so collapse to the canonical fallback rather than
+		 * spinning. */
+		__atomic_fetch_add(&shm->stats.healer_picker_zero_weight_fallback,
+				   1UL, __ATOMIC_RELAXED);
+		return set_syscall_nr_random(rec, child);
+	}
+
+	{
+		unsigned long roll = (unsigned long)rand() % total_weight;
+		unsigned int picked = nr_syscalls;
+
+		for (idx = 0; idx < nr_syscalls; idx++) {
+			if (weights[idx] == 0)
+				continue;
+			if (roll < weights[idx]) {
+				picked = idx;
+				break;
+			}
+			roll -= weights[idx];
+		}
+		if (picked >= nr_syscalls) {
+			/* Defensive: total_weight desynced from weights[].  Drop
+			 * to fallback rather than dereferencing an out-of-range
+			 * index. */
+			__atomic_fetch_add(
+				&shm->stats.healer_picker_zero_weight_fallback,
+				1UL, __ATOMIC_RELAXED);
+			return set_syscall_nr_random(rec, child);
+		}
+		idx = picked;
+	}
+
+	val = child->active_syscalls[idx];
+	if (val == 0) {
+		/* Race: another child deactivated this slot between distribution
+		 * build and pick.  Drop and re-roll. */
+		total_weight -= weights[idx];
+		weights[idx] = 0;
+		goto retry;
+	}
+	syscallnr = (unsigned int)val - 1U;
+
+	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
+		deactivate_syscall(syscallnr, false);
+		total_weight -= weights[idx];
+		weights[idx] = 0;
+		goto retry;
+	}
+
+	entry = get_syscall_entry(syscallnr, false);
+	if (entry->flags & EXPENSIVE) {
+		if (!ONE_IN(1000)) {
+			/* EXPENSIVE: keep the index in the distribution -- a
+			 * future re-roll might still pick it on the 1-in-1000
+			 * acceptance path -- but consume a retry to avoid a
+			 * tight spin on a pair-table row dominated by
+			 * EXPENSIVE entries. */
+			goto retry;
+		}
+	}
+
+	lock(&rec->lock);
+	rec->do32bit = false;
+	rec->nr = syscallnr;
+	unlock(&rec->lock);
+
+	if (used_triple)
+		__atomic_fetch_add(&shm->stats.healer_picker_triple_path, 1UL,
+				   __ATOMIC_RELAXED);
+	else
+		__atomic_fetch_add(&shm->stats.healer_picker_pair_path, 1UL,
+				   __ATOMIC_RELAXED);
+
+	return true;
 }

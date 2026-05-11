@@ -33,6 +33,12 @@ enum strategy_t {
 	STRATEGY_COVERAGE_FRONTIER, /* roulette-wheel weighted by per-syscall
 				     * frontier-edge count (see frontier_*
 				     * APIs below) */
+	STRATEGY_HEALER,	/* HEALER (SOSP'21): bias picks toward
+				 * known-productive (predecessor -> succ)
+				 * relations recorded by the Phase A
+				 * observer.  Eligibility gated on either
+				 * a meaningfully-populated pair table or
+				 * a coverage-plateau signal. */
 	NR_STRATEGIES,
 };
 
@@ -111,9 +117,32 @@ void bandit_record_pull(int arm, unsigned long pc_edges,
  * Pick the arm to run during the next window.  In PICKER_ROUND_ROBIN
  * mode this is just (prev + 1) % NR_STRATEGIES; in PICKER_BANDIT_UCB1
  * mode this runs the UCB1 score across all arms (any unpulled arm
- * wins immediately during cold-start).
+ * wins immediately during cold-start).  Ineligible arms (per
+ * is_strategy_eligible) are skipped in both the cold-start and
+ * UCB1-score loops so the bandit only schedules an arm when its
+ * preconditions are met.
  */
 int pick_next_strategy(int prev);
+
+/*
+ * Per-arm eligibility check used by pick_next_strategy() to skip arms
+ * whose preconditions are not yet met.  Arms without preconditions
+ * return true unconditionally.  STRATEGY_HEALER is the first arm with
+ * a real precondition: it returns true once the pair-relation table
+ * has accumulated at least HEALER_PICKER_PAIR_CELL_THRESHOLD cells with
+ * weight > 1, OR when the coverage-plateau detector reports the fleet
+ * is stalled (in which case the bandit benefits from any signal that
+ * pushes it off the current local minimum, even one whose own data is
+ * thin).  Cheap to call: bounded scan of the pair table with early-out.
+ */
+bool is_strategy_eligible(int arm);
+
+/*
+ * Human-readable arm name for the rotation log line so the operator can
+ * see WHICH strategy the bandit just selected without cross-referencing
+ * the enum.  Returns "?" for out-of-range input.
+ */
+const char *strategy_name(int arm);
 
 /*
  * Walk a per-child KCOV_TRACE_CMP buffer and feed each interesting
