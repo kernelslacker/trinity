@@ -735,7 +735,7 @@ static void dump_stats_json(void)
 		"\"vsock_transport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bind_ok\":%lu,\"connect_ok\":%lu,\"send_ok\":%lu,\"buffer_size_ok\":%lu,\"timeout_ok\":%lu,\"get_cid_ok\":%lu,\"seq_eom_runs\":%lu,\"seq_eom_sends_ok\":%lu,\"seq_eom_sends_failed\":%lu,\"seq_eom_skipped\":%lu},"
 		"\"bridge_vlan_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"vlan_add_ok\":%lu,\"vlan_del_ok\":%lu,\"tunnel_add_ok\":%lu,\"mst_set_ok\":%lu,\"raw_send_ok\":%lu},"
 		"\"igmp_mld_source_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"join_ok\":%lu,\"leave_ok\":%lu,\"block_ok\":%lu,\"msfilter_ok\":%lu,\"drop_ok\":%lu,\"send_ok\":%lu},"
-		"\"psp_key_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"netdev_create_ok\":%lu,\"family_resolve_ok\":%lu,\"dev_get_ok\":%lu,\"key_install_ok\":%lu,\"spi_set_ok\":%lu,\"send_ok\":%lu,\"rotate_ok\":%lu,\"spi_switch_ok\":%lu,\"shutdown_ok\":%lu},"
+		"\"psp_key_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"netdev_create_ok\":%lu,\"family_resolve_ok\":%lu,\"dev_get_ok\":%lu,\"key_install_ok\":%lu,\"spi_set_ok\":%lu,\"send_ok\":%lu,\"rotate_ok\":%lu,\"spi_switch_ok\":%lu,\"shutdown_ok\":%lu,\"devlink_port_churn_runs\":%lu,\"devlink_port_churn_port_add_ok\":%lu,\"devlink_port_churn_port_del_ok\":%lu,\"devlink_port_churn_vf_spawn_ok\":%lu,\"devlink_port_churn_unsupported_latched\":%lu},"
 		"\"afxdp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"umem_reg_ok\":%lu,\"rings_setup_ok\":%lu,\"prog_load_ok\":%lu,\"map_create_ok\":%lu,\"map_update_ok\":%lu,\"bind_ok\":%lu,\"link_attach_ok\":%lu,\"netlink_attach_ok\":%lu,\"attach_failed\":%lu,\"send_ok\":%lu,\"recv_ok\":%lu,\"map_delete_ok\":%lu,\"munmap_race_ok\":%lu,\"xsg_iters\":%lu,\"tx_metadata_iters\":%lu,\"tun_bind_iters\":%lu,\"xsg_bind_failed\":%lu,\"tx_md_bind_failed\":%lu},"
 		"\"kvm\":{\"vcpu_ioctls_dispatched\":%lu},"
 		"\"kvm_run_churn\":{\"invocations\":%lu,\"exit_io\":%lu,\"exit_mmio\":%lu,\"exit_hlt\":%lu,\"exit_shutdown\":%lu,\"exit_fail_entry\":%lu,\"exit_internal_error\":%lu,\"exit_intr\":%lu,\"exit_other\":%lu,\"errors\":%lu},"
@@ -1254,6 +1254,11 @@ static void dump_stats_json(void)
 		shm->stats.psp_key_rotate_rotate_ok,
 		shm->stats.psp_key_rotate_spi_switch_ok,
 		shm->stats.psp_key_rotate_shutdown_ok,
+		shm->stats.psp_devlink_port_churn_runs,
+		shm->stats.psp_devlink_port_churn_port_add_ok,
+		shm->stats.psp_devlink_port_churn_port_del_ok,
+		shm->stats.psp_devlink_port_churn_vf_spawn_ok,
+		shm->stats.psp_devlink_port_churn_unsupported_latched,
 		shm->stats.afxdp_churn_runs,
 		shm->stats.afxdp_churn_setup_failed,
 		shm->stats.afxdp_churn_umem_reg_ok,
@@ -3316,6 +3321,14 @@ void dump_stats(void)
 		stat_row("psp_key_rotate", "rotate_ok",         shm->stats.psp_key_rotate_rotate_ok);
 		stat_row("psp_key_rotate", "spi_switch_ok",     shm->stats.psp_key_rotate_spi_switch_ok);
 		stat_row("psp_key_rotate", "shutdown_ok",       shm->stats.psp_key_rotate_shutdown_ok);
+	}
+
+	if (shm->stats.psp_devlink_port_churn_runs) {
+		stat_row("psp_devlink_port_churn", "runs",                 shm->stats.psp_devlink_port_churn_runs);
+		stat_row("psp_devlink_port_churn", "port_add_ok",          shm->stats.psp_devlink_port_churn_port_add_ok);
+		stat_row("psp_devlink_port_churn", "port_del_ok",          shm->stats.psp_devlink_port_churn_port_del_ok);
+		stat_row("psp_devlink_port_churn", "vf_spawn_ok",          shm->stats.psp_devlink_port_churn_vf_spawn_ok);
+		stat_row("psp_devlink_port_churn", "unsupported_latched",  shm->stats.psp_devlink_port_churn_unsupported_latched);
 	}
 
 	if (shm->stats.veth_asym_iters) {
