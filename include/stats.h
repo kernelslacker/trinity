@@ -1389,6 +1389,7 @@ struct stats_s {
 	unsigned long ipvs_sysctl_writer_writes_ok;		/* sysctl write returned >0 */
 	unsigned long ipvs_sysctl_writer_writes_failed;		/* open or write failed (kernel rejected payload) */
 	unsigned long ipvs_sysctl_writer_unsupported_latched;	/* unshare/open ENOENT latched op off */
+	unsigned long ipvs_sysctl_writer_burn_iters;		/* short-lived TCP connect/close iters into the in-test virtual service */
 
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept

@@ -12,13 +12,17 @@
  * op forces the per-netns init then writes a curated path list.
  */
 
+#include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <net/if.h>
+#include <netinet/in.h>
 #include <sched.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -36,6 +40,19 @@
 #define IPVS_WRITE_BASE		4U
 #define IPVS_WRITE_CAP		16U
 
+/* Conn-table burn-in: a virtual TCP service is set up once via ipvsadm
+ * inside the netns, then short-lived non-blocking TCP sockets to the VIP
+ * drive sustained insert/expire pressure on the per-net ip_vs_conn table.
+ * That is the shape that exposed an upstream sleeping-while-atomic in
+ * ip_vs_conn_expire on PREEMPT_RT; the same path is harmless but cheap
+ * coverage on non-RT.  Iteration cap + parent-armed SIGALRM bound the
+ * worst case; ONE_IN gate keeps overall cost low. */
+#define IPVS_BURN_VIP		"127.0.0.7:80"
+#define IPVS_BURN_RIP		"127.0.0.2:80"
+#define IPVS_BURN_FREQ		8U
+#define IPVS_BURN_BASE		6U
+#define IPVS_BURN_CAP		32U
+
 static const char * const ipvs_sysctls[] = {
 	"/proc/sys/net/ipv4/vs/conn_tab_bits",
 	"/proc/sys/net/ipv4/vs/am_droprate",
@@ -51,6 +68,7 @@ static const char * const ipvs_sysctls[] = {
 
 static bool ns_unsupported_ipvs_sysctl;
 static bool setup_done;
+static bool burn_setup_done;
 
 static void try_modprobe(const char *mod)
 {
@@ -71,6 +89,69 @@ static void try_modprobe(const char *mod)
 		_exit(127);
 	}
 	(void)waitpid(pid, &status, 0);
+}
+
+static void try_ipvsadm(const char *const argv[])
+{
+	pid_t pid = fork();
+	int status;
+
+	if (pid < 0)
+		return;
+	if (pid == 0) {
+		int devnull = open("/dev/null", O_RDWR | O_CLOEXEC);
+		if (devnull >= 0) {
+			(void)dup2(devnull, 0);
+			(void)dup2(devnull, 1);
+			(void)dup2(devnull, 2);
+			close(devnull);
+		}
+		execvp("ipvsadm", (char *const *)argv);
+		_exit(127);
+	}
+	(void)waitpid(pid, &status, 0);
+}
+
+static void ipvs_conn_burn(void)
+{
+	struct sockaddr_in dst = {
+		.sin_family = AF_INET,
+		.sin_port = htons(80),
+	};
+	unsigned int i, iters;
+
+	if (!burn_setup_done) {
+		const char *svc[] = { "ipvsadm", "-A", "-t", IPVS_BURN_VIP,
+				      "-s", "rr", NULL };
+		const char *rs[]  = { "ipvsadm", "-a", "-t", IPVS_BURN_VIP,
+				      "-r", IPVS_BURN_RIP, "-m", NULL };
+		struct ifreq ifr = { .ifr_name = "lo", .ifr_flags = IFF_UP };
+		int s = socket(AF_INET, SOCK_DGRAM, 0);
+
+		if (s >= 0) {
+			(void)ioctl(s, SIOCSIFFLAGS, &ifr);
+			close(s);
+		}
+		try_ipvsadm(svc);
+		try_ipvsadm(rs);
+		burn_setup_done = true;
+	}
+
+	(void)inet_pton(AF_INET, "127.0.0.7", &dst.sin_addr);
+	iters = BUDGETED(CHILD_OP_IPVS_SYSCTL_WRITER, JITTER_RANGE(IPVS_BURN_BASE));
+	if (iters > IPVS_BURN_CAP)
+		iters = IPVS_BURN_CAP;
+
+	for (i = 0; i < iters; i++) {
+		int fd = socket(AF_INET,
+				SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+		if (fd < 0)
+			continue;
+		(void)connect(fd, (struct sockaddr *)&dst, sizeof(dst));
+		close(fd);
+		__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_burn_iters,
+				   1, __ATOMIC_RELAXED);
+	}
 }
 
 bool ipvs_sysctl_writer(struct childdata *child)
@@ -144,6 +225,9 @@ bool ipvs_sysctl_writer(struct childdata *child)
 			__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_writes_failed,
 					   1, __ATOMIC_RELAXED);
 	}
+
+	if (ONE_IN(IPVS_BURN_FREQ))
+		ipvs_conn_burn();
 
 	return true;
 }
