@@ -19,13 +19,17 @@
  *      with an 8-32 byte randomised IV (zero length included).
  *   5. sendmsg() with rotating payload iov layouts -- single-zero,
  *      single-one, 8-iov scatter with a 4096-byte trailer
- *      (af_alg_pull_tsgl shape), oversize 64KB single iov, and a
- *      cmsg-only sendmsg with empty payload + no MSG_MORE (the
- *      documented af_alg_pull_tsgl trigger shape).
- *   6. recvmsg() with rotating output iov layouts -- 0-length,
- *      oversize, many-small, mismatched-length.  All recv/sendmsg use
- *      MSG_DONTWAIT on top of the SO_RCVTIMEO floor.
- *   7. close() both fds.
+ *      (af_alg_pull_tsgl shape), oversize 64KB single iov.
+ *   6. ALWAYS: a dedicated cmsg-only sendmsg() with empty payload and
+ *      no MSG_MORE.  This is the documented af_alg_pull_tsgl trigger
+ *      shape -- previously buried as 1-of-5 in the rotating shape
+ *      switch, now emitted unconditionally per iter so the slab-OOB
+ *      window is hit on every successful bind+accept.
+ *   7. recvmsg() with rotating output iov layouts -- 0-length,
+ *      oversize, many-small, mismatched-length.  Per-shape counters
+ *      (zerolen/oversize) record which path the kernel walked.  All
+ *      recv/sendmsg use MSG_DONTWAIT on top of the SO_RCVTIMEO floor.
+ *   8. close() both fds.
  *
  * Hard error gates: socket(AF_ALG) returning EAFNOSUPPORT (no
  * CONFIG_CRYPTO_USER_API) latches alg_unsupported for the child's
@@ -231,7 +235,7 @@ static bool send_rotating_payload(int fd)
 	bool oob = false;
 	unsigned int i;
 
-	shape = (unsigned int)RAND_RANGE(0, 4);
+	shape = (unsigned int)RAND_RANGE(0, 3);
 	switch (shape) {
 	case 0:		/* single zero-length */
 		iov[0].iov_base = small_buf;
@@ -260,7 +264,7 @@ static bool send_rotating_payload(int fd)
 		mh.msg_iovlen = 8;
 		oob = true;
 		break;
-	case 3:		/* oversize 64KB single iov */
+	default:	/* oversize 64KB single iov */
 		big = calloc(1, ARC_BIG_IOV_BYTES);
 		if (big == NULL)
 			return false;
@@ -270,10 +274,6 @@ static bool send_rotating_payload(int fd)
 		mh.msg_iov = iov;
 		mh.msg_iovlen = 1;
 		break;
-	default:	/* cmsg-only sendmsg with empty payload + no MSG_MORE */
-		mh.msg_iov = NULL;
-		mh.msg_iovlen = 0;
-		break;
 	}
 
 	(void)sendmsg(fd, &mh, MSG_DONTWAIT);
@@ -281,8 +281,26 @@ static bool send_rotating_payload(int fd)
 	return oob;
 }
 
+/* Dedicated trigger for the af_alg_pull_tsgl slab-OOB shape: a
+ * cmsg-only sendmsg() with empty payload and no MSG_MORE.  Pulled out
+ * of the rotating shape switch so it fires unconditionally per iter
+ * rather than 1-of-N -- the trigger is cheap and the shape is the
+ * exact one upstream CI has a C reproducer for. */
+static void send_empty_cmsg_no_more(int fd)
+{
+	struct msghdr mh = {0};
+
+	mh.msg_iov = NULL;
+	mh.msg_iovlen = 0;
+	mh.msg_control = NULL;
+	mh.msg_controllen = 0;
+	(void)sendmsg(fd, &mh, MSG_DONTWAIT);
+}
+
 /* recvmsg() with a rotating output iov.  Mirrors the send shapes so
- * the kernel walks both ends of the sg/tsgl rotation logic. */
+ * the kernel walks both ends of the sg/tsgl rotation logic.  Each
+ * shape is accounted on its own counter so operators can see which
+ * recv-side path the kernel actually walked when a crash lands. */
 static void recv_rotating(int fd)
 {
 	unsigned char tiny[1];
@@ -298,6 +316,8 @@ static void recv_rotating(int fd)
 		iov[0].iov_len = 0;
 		mh.msg_iov = iov;
 		mh.msg_iovlen = 1;
+		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_zerolen,
+				   1, __ATOMIC_RELAXED);
 		break;
 	case 1:		/* oversize single iov */
 		big = calloc(1, ARC_BIG_IOV_BYTES);
@@ -307,6 +327,8 @@ static void recv_rotating(int fd)
 		iov[0].iov_len = ARC_BIG_IOV_BYTES;
 		mh.msg_iov = iov;
 		mh.msg_iovlen = 1;
+		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_oversize,
+				   1, __ATOMIC_RELAXED);
 		break;
 	case 2:		/* many small iovs */
 		big = calloc(16, 64);
@@ -400,6 +422,13 @@ static void iter_one(void)
 	if (send_rotating_payload(op_fd))
 		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_oob_iov,
 				   1, __ATOMIC_RELAXED);
+
+	/* Always emit the af_alg_pull_tsgl trigger shape (cmsg-only,
+	 * empty payload, no MSG_MORE) before recvmsg() so the slab-OOB
+	 * window is exercised on every iter, not just statistically. */
+	send_empty_cmsg_no_more(op_fd);
+	__atomic_add_fetch(&shm->stats.af_alg_recvmsg_empty_cmsg_no_more,
+			   1, __ATOMIC_RELAXED);
 
 	recv_rotating(op_fd);
 

@@ -1796,9 +1796,12 @@ struct stats_s {
 	 * existing af_alg_template/af_alg_weak_cipher probes only walk
 	 * bind+accept and so don't reach the sg/tsgl rotation logic. */
 	unsigned long af_alg_recvmsg_runs;		/* total invocations */
-	unsigned long af_alg_recvmsg_setkey_sent;	/* CMSG_ALG_SET_KEY emitted */
-	unsigned long af_alg_recvmsg_iv_sent;		/* CMSG_ALG_SET_IV emitted */
+	unsigned long af_alg_recvmsg_setkey_sent;	/* CMSG_ALG_SET_KEY emitted (alg_setkey_cmsg) */
+	unsigned long af_alg_recvmsg_iv_sent;		/* CMSG_ALG_SET_IV emitted (alg_setiv_cmsg) */
 	unsigned long af_alg_recvmsg_oob_iov;		/* slab-OOB-shaped sendmsg iov layout used */
+	unsigned long af_alg_recvmsg_zerolen;		/* recvmsg() with a 0-length output iov */
+	unsigned long af_alg_recvmsg_oversize;		/* recvmsg() with an oversize (64KB) output iov */
+	unsigned long af_alg_recvmsg_empty_cmsg_no_more; /* sendmsg() cmsg-only, empty payload, no MSG_MORE */
 	unsigned long af_alg_recvmsg_unsupported;	/* socket(AF_ALG)/proc-crypto latched off */
 
 	/* sock_diag_walker childop counters */
