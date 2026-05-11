@@ -746,6 +746,7 @@ static void dump_stats_json(void)
 		"\"rxrpc_key_install\":{\"runs\":%lu,\"calls\":%lu,\"revokes\":%lu,\"quota_hits\":%lu,\"unsupported\":%lu},"
 		"\"af_alg_weak_cipher_probe\":{\"runs\":%lu,\"socket_failed\":%lu,\"total_bind_attempts\":%lu,\"total_bind_accepted\":%lu,\"weak_accepted_total\":%lu,\"setkey_accepted_total\":%lu,\"skcipher_weak_accepted\":%lu,\"aead_weak_accepted\":%lu,\"hash_weak_accepted\":%lu,\"strong_rejected\":%lu},"
 		"\"af_alg_probe\":{\"runs\":%lu,\"unsupported\":%lu,\"accept_total\":%lu,\"reject_total\":%lu},"
+		"\"af_alg_recvmsg\":{\"runs\":%lu,\"setkey_sent\":%lu,\"iv_sent\":%lu,\"oob_iov\":%lu,\"unsupported\":%lu},"
 		"\"ublk_lifecycle\":{\"iters\":%lu,\"eperm\":%lu,\"add_ok\":%lu,\"fetch_ok\":%lu,\"del_ok\":%lu,\"race_observed\":%lu},"
 		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
 		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
@@ -1359,6 +1360,11 @@ static void dump_stats_json(void)
 		shm->stats.af_alg_probe_unsupported,
 		shm->stats.af_alg_probe_accept_total,
 		shm->stats.af_alg_probe_reject_total,
+		shm->stats.af_alg_recvmsg_runs,
+		shm->stats.af_alg_recvmsg_setkey_sent,
+		shm->stats.af_alg_recvmsg_iv_sent,
+		shm->stats.af_alg_recvmsg_oob_iov,
+		shm->stats.af_alg_recvmsg_unsupported,
 		shm->stats.ublk_lifecycle_iters,
 		shm->stats.ublk_lifecycle_eperm,
 		shm->stats.ublk_lifecycle_add_ok,
@@ -3580,6 +3586,14 @@ void dump_stats(void)
 			snprintf(metric, sizeof(metric), "%s.reject", label);
 			stat_row("af_alg_probe", metric, shm->stats.af_alg_probe_reject[tmpl]);
 		}
+	}
+
+	if (shm->stats.af_alg_recvmsg_runs) {
+		stat_row("af_alg_recvmsg_churn", "runs",        shm->stats.af_alg_recvmsg_runs);
+		stat_row("af_alg_recvmsg_churn", "setkey_sent", shm->stats.af_alg_recvmsg_setkey_sent);
+		stat_row("af_alg_recvmsg_churn", "iv_sent",     shm->stats.af_alg_recvmsg_iv_sent);
+		stat_row("af_alg_recvmsg_churn", "oob_iov",     shm->stats.af_alg_recvmsg_oob_iov);
+		stat_row("af_alg_recvmsg_churn", "unsupported", shm->stats.af_alg_recvmsg_unsupported);
 	}
 
 	if (kcov_shm != NULL) {
