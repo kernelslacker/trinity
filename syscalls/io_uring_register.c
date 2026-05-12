@@ -510,6 +510,55 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	}
 
 	/*
+	 * IORING_REGISTER_RING_FDS / IORING_UNREGISTER_RING_FDS:
+	 * arg = struct io_uring_rsrc_update[], nr_args = entry count
+	 * (kernel cap IO_RINGFD_REG_MAX = 16).  Both opcodes share the same
+	 * payload shape -- io_ringfd_register iterates the array consuming
+	 * data as the io_uring fd to install and offset as the slot id;
+	 * io_ringfd_unregister consumes offset only.  Seed data with a real
+	 * io_uring fd from the existing object pool ~75% of the time so the
+	 * register path actually installs slots rather than -EBADF'ing on
+	 * the first entry; the rest of the time inject -1 / garbage to walk
+	 * the validator's reject paths.  resv must be 0 or io_ringfd_register
+	 * bails at -EINVAL; occasionally fuzz it to exercise that gate.
+	 * NULL-guard the writable buffer -- get_writable_struct() can return
+	 * NULL on pool exhaustion and the populate loop must not deref it;
+	 * a NULL rec->a3 still EFAULTs cleanly past the kernel's first
+	 * copy_from_user, and the trailing avoid_shared_buffer scrub runs
+	 * unconditionally for both paths.
+	 */
+	case IORING_REGISTER_RING_FDS:
+	case IORING_UNREGISTER_RING_FDS: {
+		struct io_uring_rsrc_update *u;
+		unsigned int i;
+		nr = 1 + (rand() % 16);
+		u = (struct io_uring_rsrc_update *)
+			get_writable_struct(nr * sizeof(*u));
+		if (u) {
+			memset(u, 0, nr * sizeof(*u));
+			for (i = 0; i < nr; i++) {
+				unsigned int roll = rand() % 100;
+				u[i].offset = rand() & 0xf;
+				if ((rand() % 32) == 0)
+					u[i].resv = rand();
+				if (roll < 75) {
+					struct io_uringobj *r2 = get_io_uring_ring();
+					u[i].data = (r2 != NULL) ?
+						(__u64) r2->fd : (__u64) -1;
+				} else if (roll < 87) {
+					u[i].data = (__u64) -1;
+				} else {
+					u[i].data = ((__u64) rand() << 32) |
+						(__u32) rand();
+				}
+			}
+		}
+		rec->a3 = (unsigned long) u;
+		rec->a4 = nr;
+		break;
+	}
+
+	/*
 	 * IORING_REGISTER_PBUF_RING / IORING_UNREGISTER_PBUF_RING:
 	 * arg = struct io_uring_buf_reg, nr_args = 1.  Seed ring_entries
 	 * with a small power-of-2 so io_register_pbuf_ring's
