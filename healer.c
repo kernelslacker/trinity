@@ -1649,13 +1649,31 @@ void healer_table_dump(void)
  * Periodic snapshot trigger.  Every HEALER_SNAPSHOT_OBSERVATIONS the
  * fleet-wide observation counter advances past, one CAS-elected child
  * runs the save while everyone else early-returns; the next window opens
- * once the next slice has accumulated.  50000 was picked to amortise the
- * ~1.13MB write across roughly a minute of steady-state fuzzing on a
- * typical fleet host -- frequent enough that an OOM-mid-run only loses
- * the last cadence window of observations, infrequent enough that the
- * write-back pressure stays in the noise.
+ * once the next slice has accumulated.  5000 was picked against measured
+ * post-saturation observation rates of ~0.7-1.5/sec: at 50000 the window
+ * stretched to 9-20 hours of wall time and the typical 15min-2h fuzz run
+ * died (OOM-kill, ASAN cascade, hard crash) without ever firing a single
+ * snapshot, losing the entire run's HEALER table back to cold start.  At
+ * 5000 the window collapses to roughly 1-2 hours of post-saturation
+ * runtime, and the wall-clock secondary trigger below (5min floor) catches
+ * the rest -- crashes now lose at most a few minutes of relations.
  */
-#define HEALER_SNAPSHOT_OBSERVATIONS	50000UL
+#define HEALER_SNAPSHOT_OBSERVATIONS	5000UL
+
+/*
+ * Wall-clock secondary trigger for healer_maybe_snapshot().  The
+ * observation-based trigger above only fires when relations are being
+ * actively observed; on a saturated fuzz the observation rate collapses
+ * (~0.7-1.5/sec) and even the reduced 5000-observation window can take
+ * over an hour to cross, longer than many runs survive before being
+ * killed.  300s caps the worst-case loss-on-crash at five minutes of
+ * relations regardless of observation rate, while still leaving the
+ * cheap obs-trigger fast path in charge during the early-run discovery
+ * burst (where it fires several times within a single 5-minute window).
+ * Hardcoded -- no operator knob, no expectation that fleet boxes will
+ * need to retune this.
+ */
+#define HEALER_SNAPSHOT_INTERVAL_SEC	300UL
 
 /* Header layout is naturally packed under the LP64 ABIs trinity targets:
  * 6 uint32_t fields, a uint64_t, then two fixed-width char arrays plus
@@ -2142,11 +2160,21 @@ void healer_enable_snapshots(const char *path)
 		return;
 	memcpy(healer_snapshot_path, path, len + 1);
 	healer_snapshot_enabled = true;
+
+	/* Anchor the wall-clock floor to fuzz-start so the first time-trigger
+	 * fires HEALER_SNAPSHOT_INTERVAL_SEC after enable rather than
+	 * immediately on the first child's first call against a near-empty
+	 * table.  Defensive shm guard mirrors healer_maybe_snapshot()'s. */
+	if (shm != NULL)
+		__atomic_store_n(&shm->stats.healer_last_snapshot_time,
+				 (unsigned long)time(NULL), __ATOMIC_RELAXED);
 }
 
 void healer_maybe_snapshot(void)
 {
 	unsigned long obs_now, old, expect;
+	unsigned long now_sec, old_time, new_obs;
+	bool obs_trigger, time_trigger;
 
 	if (!healer_snapshot_enabled || shm == NULL)
 		return;
@@ -2155,8 +2183,14 @@ void healer_maybe_snapshot(void)
 				  __ATOMIC_RELAXED);
 	old = __atomic_load_n(&shm->stats.healer_obs_at_last_snapshot,
 			      __ATOMIC_RELAXED);
+	old_time = __atomic_load_n(&shm->stats.healer_last_snapshot_time,
+				   __ATOMIC_RELAXED);
+	now_sec = (unsigned long)time(NULL);
 
-	if (obs_now < old + HEALER_SNAPSHOT_OBSERVATIONS)
+	obs_trigger = (obs_now >= old + HEALER_SNAPSHOT_OBSERVATIONS);
+	time_trigger = (now_sec >= old_time + HEALER_SNAPSHOT_INTERVAL_SEC);
+
+	if (!obs_trigger && !time_trigger)
 		return;
 
 	/* Race for the window slot.  Whoever wins this CAS owns the
@@ -2164,9 +2198,19 @@ void healer_maybe_snapshot(void)
 	 * their next call and early-return.  RELAXED ordering is enough
 	 * -- the save itself reads the relation table via the same
 	 * atomic-load discipline the dump path uses, and the counter is
-	 * just gating who runs, not what they observe. */
+	 * just gating who runs, not what they observe.
+	 *
+	 * When only the time trigger fires, obs_now may equal `old` (no
+	 * new observations since the last snapshot, but 5min has elapsed),
+	 * and a CAS of (old -> old) would succeed for every concurrent
+	 * caller rather than electing one.  Force the new value to be
+	 * strictly greater in that case so the CAS is a real change and
+	 * contested calls actually serialise.  The +1 skew on the next
+	 * observation-trigger boundary is irrelevant against a 5000-obs
+	 * window.  Mirrors the same trick in healer_maybe_decay(). */
+	new_obs = (obs_now > old) ? obs_now : old + 1;
 	if (!__atomic_compare_exchange_n(&shm->stats.healer_obs_at_last_snapshot,
-					 &old, obs_now,
+					 &old, new_obs,
 					 false,
 					 __ATOMIC_RELAXED, __ATOMIC_RELAXED))
 		return;
@@ -2190,6 +2234,12 @@ void healer_maybe_snapshot(void)
 
 	healer_save_file(healer_snapshot_path);
 
+	/* Advance the wall-clock baseline so the next time-trigger window
+	 * starts cleanly regardless of which trigger fired this time.  No
+	 * CAS needed: the save-in-progress flag above already guarantees
+	 * we're the sole writer for this snapshot boundary. */
+	__atomic_store_n(&shm->stats.healer_last_snapshot_time, now_sec,
+			 __ATOMIC_RELAXED);
 	__atomic_store_n(&shm->stats.healer_save_in_progress, 0,
 			 __ATOMIC_RELAXED);
 }

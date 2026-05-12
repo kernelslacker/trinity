@@ -1941,6 +1941,37 @@ struct stats_s {
 	 */
 	unsigned long healer_snapshot_overruns;
 	/*
+	 * Wall-clock companion to healer_obs_at_last_snapshot: time(NULL) value
+	 * captured the last time healer_save_file() completed.  Drives the
+	 * secondary time-based trigger inside healer_maybe_snapshot() so that
+	 * short runs (typical fuzz windows are 15min-2h, often dying uncleanly
+	 * to OOM-kill or crash) still get at least one persisted snapshot
+	 * before exit -- the observation-based threshold alone takes hours to
+	 * cross at the post-saturation observation rate, so a crashed run was
+	 * losing the entire HEALER table back to cold start.  Initialised in
+	 * the parent at healer_enable_snapshots() time so the first time-
+	 * trigger window is anchored to fuzz-start rather than firing
+	 * immediately against an empty table.  Advanced (RELAXED store) by
+	 * whichever child wins both the window-CAS and the active-saver CAS,
+	 * after healer_save_file() returns -- the singleton-saver discipline
+	 * is unchanged; the time check is just an EARLY trigger ORed into the
+	 * obs-window check, not a bypass.
+	 */
+	unsigned long healer_last_snapshot_time;
+	/*
+	 * Wall-clock high-water-mark for the periodic minicorpus snapshot.
+	 * Companion to minicorpus_shm->edges_at_last_snapshot but lives in
+	 * shm->stats so the field is allocated alongside the rest of the
+	 * snapshot trigger state and the operator's stats dump can surface
+	 * it without crossing into the corpus-only shared region.  Same
+	 * rationale as healer_last_snapshot_time above: short runs that die
+	 * before the edge-delta threshold trips would otherwise lose the
+	 * entire mid-run corpus.  Initialised at minicorpus_enable_snapshots()
+	 * time and advanced by the single CAS-elected saver after
+	 * minicorpus_save_file() returns.
+	 */
+	unsigned long minicorpus_last_snapshot_time;
+	/*
 	 * Decay-window high-water-mark for healer_maybe_decay(): the value of
 	 * healer_relations_observed at the last completed decay walk.  Children
 	 * CAS this forward to elect a single runner per HEALER_DECAY_OBSERVATIONS
