@@ -14,6 +14,8 @@ static void sanitise_rt_sigtimedwait(struct syscallrecord *rec)
 	struct timespec *ts;
 
 	set = (sigset_t *) get_writable_address(sizeof(*set));
+	if (set == NULL)
+		return;
 	sigemptyset(set);
 	sigaddset(set, SIGUSR1);
 	sigaddset(set, SIGUSR2);
@@ -21,6 +23,8 @@ static void sanitise_rt_sigtimedwait(struct syscallrecord *rec)
 
 	/* short timeout: 0-1ms to avoid blocking */
 	ts = (struct timespec *) get_writable_address(sizeof(*ts));
+	if (ts == NULL)
+		return;
 	ts->tv_sec = 0;
 	ts->tv_nsec = rand() % 1000000;
 
