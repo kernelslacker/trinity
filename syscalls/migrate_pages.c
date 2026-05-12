@@ -85,9 +85,13 @@ static void sanitise_migrate_pages(struct syscallrecord *rec)
 	maxnode = 1 + (rand() % (max_node < MAX_NUMNODES - 1 ? max_node + 1 : MAX_NUMNODES));
 
 	old_nodes = (unsigned long *) get_writable_address(sizeof(unsigned long) * 2);
+	if (old_nodes == NULL)
+		return;
 	fill_nodemask(old_nodes, max_node);
 
 	new_nodes = (unsigned long *) get_writable_address(sizeof(unsigned long) * 2);
+	if (new_nodes == NULL)
+		return;
 	fill_nodemask(new_nodes, max_node);
 
 	rec->a2 = maxnode;
