@@ -1113,6 +1113,129 @@ done:
 	return p;
 }
 
+/*
+ * Ownership table for syscall handlers that snapshot state into a
+ * zmalloc'd struct hung off rec->post_state.  Currently only execve /
+ * execveat use it, but the API is shape-agnostic so any post handler
+ * that needs the same guarantee can call in.
+ *
+ * Background: rec->post_state is private to the post handler in the
+ * syscall ABI sense, but the whole syscallrecord is reachable from
+ * sibling fuzz writes -- a value-result write that lands on the
+ * post_state slot can redirect it to a different, smaller heap
+ * allocation that another syscall's own post_state owns.  The
+ * post handler then copies sizeof(struct ...) bytes out of the foreign
+ * chunk and trips an OOB read.
+ *
+ * The original guard against this was malloc_usable_size(snap) <
+ * sizeof(*snap), which reads glibc's chunk-header allocation size.
+ * That works under glibc but is undefined behaviour on a
+ * non-malloc-owned pointer; libsanitizer treats it as a runtime error
+ * and aborts the child with a SIGABRT cascade -- the guard meant to
+ * catch sibling-stomp redirection becomes the new crash site under
+ * ASAN.
+ *
+ * Replace the chunk-header probe with an explicit ownership table:
+ * each handler registers its post_state pointer at allocation time and
+ * unregisters before the deferred_freeptr() that releases it.  A snap
+ * value that doesn't appear in the table cannot be a chunk we
+ * produced, so the post handler bails without dereferencing.  The
+ * lookup is pure pointer comparison -- well-defined under both glibc
+ * and ASAN.
+ *
+ * Storage layout: 64-slot fixed pointer table in BSS, COW-shared at
+ * fork, written single-threaded by the owning child.  No locking
+ * needed.  Each child has at most one in-flight execve post_state at a
+ * time (syscalls execute sequentially within a child), so the typical
+ * working set is 0-1 entries; 64 slots leaves ample headroom for
+ * collision tolerance and silent-drop on the rare table-full case.
+ *
+ * Hash: top bits of the pointer above glibc's 16-byte chunk
+ * alignment.  Open addressing with linear probing for insert.  Lookup
+ * and delete scan the table (bounded by POST_STATE_TABLE_SIZE) instead
+ * of stopping at the first NULL slot, so a delete-induced gap can't
+ * truncate a collision chain and leave a registered pointer
+ * unreachable.  The scan cost is a couple of cache lines on the hot
+ * path (per-syscall post handler) -- the typical hit lands at the
+ * hash slot on the first probe.
+ *
+ * Scope: this is for the post_state ownership question specifically,
+ * not a general validator for every __zmalloc() return.  Wrap the
+ * allocation site at each interested caller rather than hooking
+ * __zmalloc itself -- the vast majority of zmalloc callers don't need
+ * this and the indirection cost would be wasted.
+ */
+#define POST_STATE_TABLE_SIZE	64
+#define POST_STATE_TABLE_MASK	(POST_STATE_TABLE_SIZE - 1)
+
+static void *post_state_table[POST_STATE_TABLE_SIZE];
+
+static unsigned int post_state_hash(const void *p)
+{
+	return (unsigned int) (((uintptr_t) p >> 4) & POST_STATE_TABLE_MASK);
+}
+
+void post_state_register(void *p)
+{
+	unsigned int idx;
+	unsigned int i;
+
+	if (p == NULL)
+		return;
+
+	idx = post_state_hash(p);
+	for (i = 0; i < POST_STATE_TABLE_SIZE; i++) {
+		if (post_state_table[idx] == NULL) {
+			post_state_table[idx] = p;
+			return;
+		}
+		if (post_state_table[idx] == p)
+			return;
+		idx = (idx + 1) & POST_STATE_TABLE_MASK;
+	}
+	/*
+	 * Table full: silently drop the registration.  Lookup will miss,
+	 * the post handler will bail without dereferencing (leaks the
+	 * chunk), and the child turns over fast enough that the leak is
+	 * benign.  Failing safe beats failing hard here.
+	 */
+}
+
+void post_state_unregister(void *p)
+{
+	unsigned int idx;
+	unsigned int i;
+
+	if (p == NULL)
+		return;
+
+	idx = post_state_hash(p);
+	for (i = 0; i < POST_STATE_TABLE_SIZE; i++) {
+		if (post_state_table[idx] == p) {
+			post_state_table[idx] = NULL;
+			return;
+		}
+		idx = (idx + 1) & POST_STATE_TABLE_MASK;
+	}
+}
+
+bool post_state_is_owned(const void *p)
+{
+	unsigned int idx;
+	unsigned int i;
+
+	if (p == NULL)
+		return false;
+
+	idx = post_state_hash(p);
+	for (i = 0; i < POST_STATE_TABLE_SIZE; i++) {
+		if (post_state_table[idx] == p)
+			return true;
+		idx = (idx + 1) & POST_STATE_TABLE_MASK;
+	}
+	return false;
+}
+
 void sizeunit(unsigned long size, char *buf, size_t buflen)
 {
 	/* non kilobyte aligned size? */

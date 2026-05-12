@@ -9,7 +9,6 @@
  */
 #include <errno.h>
 #include <fcntl.h>
-#include <malloc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -203,6 +202,14 @@ static void sanitise_execve(struct syscallrecord *rec)
 	 * expose, so a sibling syscall scribbling rec->a2/a3/a4 between the
 	 * syscall returning and the post handler running cannot misdirect
 	 * the array walk into an unrelated heap allocation.
+	 *
+	 * Register the snap pointer in the post_state ownership table so
+	 * the post handler can verify the value it reads back out of
+	 * rec->post_state really came from this allocation -- a sibling
+	 * scribble that redirects rec->post_state to a foreign chunk is
+	 * caught by the post_state_is_owned() lookup before we copy bytes
+	 * out of an allocation that may be smaller than struct
+	 * execve_post_state.
 	 */
 	snap = zmalloc(sizeof(*snap));
 	snap->argv = (void **) argv;
@@ -210,6 +217,7 @@ static void sanitise_execve(struct syscallrecord *rec)
 	snap->argvcount = argvcount;
 	snap->envpcount = envpcount;
 	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
 }
 
 /* if execve succeeds, we'll never get back here, so this only
@@ -274,18 +282,24 @@ static void post_execve(struct syscallrecord *rec)
 	 * aligned -- typically a smaller struct from another syscall's own
 	 * post_state slot.  Copying *snap into local_snap then reads
 	 * sizeof(struct execve_post_state) bytes past the end of the foreign
-	 * allocation (heap-buffer-overflow).  malloc_usable_size on a
-	 * shape-valid heap pointer reads glibc chunk-header metadata and is
-	 * well-defined; the looks_like_corrupted_ptr check above already
-	 * rejected the NULL/non-canonical/misaligned shapes that would make
-	 * it UB.  Bail without freeing -- the underlying allocation is owned
-	 * by whatever syscall originally produced it, and handing it to
-	 * deferred-free here would double-account it.
+	 * allocation (heap-buffer-overflow).
+	 *
+	 * The earlier guard probed glibc's chunk-header allocation size via
+	 * malloc_usable_size().  That works under glibc but is undefined
+	 * behaviour on any pointer the runtime did not hand out; libsanitizer
+	 * treats the call as a hard runtime error and aborts the child --
+	 * the guard meant to catch sibling-stomp becomes the new crash site
+	 * under -fsanitize=address.
+	 *
+	 * Replace the chunk probe with an explicit ownership check.
+	 * sanitise_execve() registers each snap in the post_state ownership
+	 * table at allocation time; a value that fails the lookup cannot be
+	 * one we produced, so we bail without freeing.  The lookup is pure
+	 * pointer comparison and well-defined under both glibc and ASAN.
 	 */
-	if (malloc_usable_size(snap) < sizeof(*snap)) {
-		outputerr("post_execve: rejected post_state=%p backing chunk %zu < %zu "
-			  "(post_state-redirected?)\n",
-			  snap, malloc_usable_size(snap), sizeof(*snap));
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_execve: rejected post_state=%p not in ownership table "
+			  "(post_state-redirected?)\n", snap);
 		rec->post_state = 0;
 		return;
 	}
@@ -312,6 +326,7 @@ static void post_execve(struct syscallrecord *rec)
 	    looks_like_corrupted_ptr(rec, local_snap.envp)) {
 		outputerr("post_execve: rejected suspicious argv=%p envp=%p "
 			  "(post_state-scribbled?)\n", local_snap.argv, local_snap.envp);
+		post_state_unregister(snap);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
@@ -325,11 +340,13 @@ static void post_execve(struct syscallrecord *rec)
 		outputerr("post_execve: rejected suspicious argvcount=%lu envpcount=%lu "
 			  "(post_state-scribbled?)\n",
 			  local_snap.argvcount, local_snap.envpcount);
+		post_state_unregister(snap);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
 	enqueue_execve_ptrs(local_snap.argv, local_snap.envp,
 			    local_snap.argvcount, local_snap.envpcount);
+	post_state_unregister(snap);
 	deferred_freeptr(&rec->post_state);
 }
 
@@ -351,13 +368,14 @@ static void post_execveat(struct syscallrecord *rec)
 		return;
 	}
 
-	/* See post_execve() — backing-chunk size guard against post_state
-	 * redirected to a smaller foreign allocation by sibling stomp.
+	/* See post_execve() — ownership-table guard against post_state
+	 * redirected to a foreign allocation by sibling stomp.  Replaces
+	 * the prior malloc_usable_size() probe, which was UB on a
+	 * non-malloc-owned pointer and aborted the child under ASAN.
 	 */
-	if (malloc_usable_size(snap) < sizeof(*snap)) {
-		outputerr("post_execveat: rejected post_state=%p backing chunk %zu < %zu "
-			  "(post_state-redirected?)\n",
-			  snap, malloc_usable_size(snap), sizeof(*snap));
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_execveat: rejected post_state=%p not in ownership table "
+			  "(post_state-redirected?)\n", snap);
 		rec->post_state = 0;
 		return;
 	}
@@ -374,6 +392,7 @@ static void post_execveat(struct syscallrecord *rec)
 	    looks_like_corrupted_ptr(rec, local_snap.envp)) {
 		outputerr("post_execveat: rejected suspicious argv=%p envp=%p "
 			  "(post_state-scribbled?)\n", local_snap.argv, local_snap.envp);
+		post_state_unregister(snap);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
@@ -381,11 +400,13 @@ static void post_execveat(struct syscallrecord *rec)
 		outputerr("post_execveat: rejected suspicious argvcount=%lu envpcount=%lu "
 			  "(post_state-scribbled?)\n",
 			  local_snap.argvcount, local_snap.envpcount);
+		post_state_unregister(snap);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
 	enqueue_execve_ptrs(local_snap.argv, local_snap.envp,
 			    local_snap.argvcount, local_snap.envpcount);
+	post_state_unregister(snap);
 	deferred_freeptr(&rec->post_state);
 }
 
