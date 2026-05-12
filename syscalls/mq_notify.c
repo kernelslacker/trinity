@@ -20,6 +20,8 @@ static void sanitise_mq_notify(struct syscallrecord *rec)
 	}
 
 	sev = (struct sigevent *) get_writable_address(sizeof(*sev));
+	if (sev == NULL)
+		return;
 	memset(sev, 0, sizeof(*sev));
 
 	switch (rand() % 3) {
