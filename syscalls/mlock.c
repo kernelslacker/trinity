@@ -10,7 +10,11 @@
 
 static void sanitise_mlock(__unused__ struct syscallrecord *rec)
 {
-	(void) common_set_mmap_ptr_len();
+	struct map *map;
+
+	map = common_set_mmap_ptr_len();
+	if (map == NULL)
+		return;
 }
 
 struct syscallentry syscall_mlock = {
