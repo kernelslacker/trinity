@@ -628,7 +628,7 @@ void healer_observe_relation(struct childdata *child, unsigned int current_nr)
  * unaged for hours.  Hardcoded -- no operator knob, no expectation that
  * fleet boxes will need to retune this.
  */
-#define HEALER_DECAY_INTERVAL_SEC	600UL
+#define HEALER_DECAY_INTERVAL_SEC	1800UL
 
 /*
  * Single-runner election + decay walk.  Mirrors healer_maybe_snapshot's
