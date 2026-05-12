@@ -177,6 +177,8 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 			rec->a2 = 0;
 		} else {
 			buf = (char *) get_writable_address(32);
+			if (buf == NULL)
+				break;
 			strncpy(buf, "trinity_sess", 31);
 			buf[31] = '\0';
 			rec->a2 = (unsigned long) buf;
@@ -187,6 +189,8 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 		/* arg2=key, arg3=payload, arg4=plen */
 		rec->a2 = (unsigned long) random_key_id();
 		buf = (char *) get_writable_address(64);
+		if (buf == NULL)
+			break;
 		strncpy(buf, "test_payload", 63);
 		buf[63] = '\0';
 		rec->a3 = (unsigned long) buf;
@@ -236,10 +240,14 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 		/* arg2=keyring, arg3=type, arg4=description, arg5=dest_keyring */
 		rec->a2 = (unsigned long) random_key_id();
 		buf = (char *) get_writable_address(32);
+		if (buf == NULL)
+			break;
 		strncpy(buf, "user", 31);
 		buf[31] = '\0';
 		rec->a3 = (unsigned long) buf;
 		buf = (char *) get_writable_address(32);
+		if (buf == NULL)
+			break;
 		strncpy(buf, "trinity_key", 31);
 		buf[31] = '\0';
 		rec->a4 = (unsigned long) buf;
