@@ -88,6 +88,7 @@ void clamp_default_explorer_children(void);
 
 extern unsigned long epoch_iterations;
 extern unsigned int epoch_timeout;
+extern bool max_runtime_set;
 
 extern bool no_warm_start;
 extern char *warm_start_path;
