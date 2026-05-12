@@ -16,6 +16,8 @@ static struct sigaction *alloc_sigaction(void)
 	struct sigaction *sa;
 
 	sa = (struct sigaction *) get_writable_address(sizeof(*sa));
+	if (sa == NULL)
+		return NULL;
 	sigemptyset(&sa->sa_mask);
 	sa->sa_flags = 0;
 	sa->sa_handler = RAND_BOOL() ? SIG_DFL : SIG_IGN;
