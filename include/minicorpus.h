@@ -178,11 +178,28 @@ const char *minicorpus_default_path(void);
  * run doesn't burn I/O on snapshots that capture nothing new, while a
  * productive burst snapshots quickly enough to bound loss.
  *
- * 100k is the loss-vs-overhead trade.  Smaller gaps cap loss tighter
+ * 10k is the loss-vs-overhead trade.  Smaller gaps cap loss tighter
  * but spend more I/O bandwidth on the save path; larger gaps risk
- * losing more progress per crash.  At observed steady-state edge growth
- * (~10-30k edges/min on a busy fleet) this fires every few minutes. */
-#define MINICORPUS_SNAPSHOT_EDGES 100000
+ * losing more progress per crash.  The previous 100k value was tuned for
+ * sustained steady-state runs that don't reflect typical crash-prone
+ * fuzzing: at peak edge rate (~10-30k/min) the window was ~10min, but
+ * post-saturation edge growth slows to a near-stall and the gap stretched
+ * to many tens of minutes -- longer than most short runs survive before
+ * an OOM-kill or hard crash.  10k captures the early-burst phase well
+ * before crashes typically land, and the wall-clock floor below catches
+ * the saturated-rate case. */
+#define MINICORPUS_SNAPSHOT_EDGES 10000
+
+/* Wall-clock secondary trigger for minicorpus_maybe_snapshot(): caps the
+ * worst-case loss-on-crash at 5 minutes of corpus updates regardless of
+ * edge-discovery rate.  Companion to MINICORPUS_SNAPSHOT_EDGES; the two
+ * are ORed inside minicorpus_maybe_snapshot() so a productive burst still
+ * fires the cheap edge-trigger fast path several times per 5min window
+ * during early-run discovery, while a saturated steady-state run that
+ * finds no new edges for an hour still snapshots once every 5min instead
+ * of going arbitrarily long without persistence.  Hardcoded -- mirrors
+ * HEALER_SNAPSHOT_INTERVAL_SEC's rationale. */
+#define MINICORPUS_SNAPSHOT_INTERVAL_SEC 300UL
 
 /* Configure the path that minicorpus_maybe_snapshot() will save to.
  * Call once from the parent before fork (the path string is copied into

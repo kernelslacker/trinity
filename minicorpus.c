@@ -21,6 +21,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/utsname.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "effector-map.h"
@@ -29,6 +30,7 @@
 #include "minicorpus.h"
 #include "random.h"
 #include "sanitise.h"
+#include "shm.h"
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
@@ -1153,32 +1155,65 @@ void minicorpus_enable_snapshots(const char *path)
 		return;
 	memcpy(snapshot_path, path, len + 1);
 	snapshot_enabled = true;
+
+	/* Anchor the wall-clock floor to fuzz-start so the first time-trigger
+	 * fires MINICORPUS_SNAPSHOT_INTERVAL_SEC after enable rather than
+	 * immediately on the first child's first call against an empty
+	 * corpus.  Defensive shm guard mirrors minicorpus_maybe_snapshot(). */
+	if (shm != NULL)
+		__atomic_store_n(&shm->stats.minicorpus_last_snapshot_time,
+				 (unsigned long)time(NULL), __ATOMIC_RELAXED);
 }
 
 void minicorpus_maybe_snapshot(void)
 {
-	unsigned long edges_now, old;
+	unsigned long edges_now, old, new_edges;
+	unsigned long now_sec, old_time;
+	bool edges_trigger, time_trigger;
 
-	if (!snapshot_enabled || minicorpus_shm == NULL || kcov_shm == NULL)
+	if (!snapshot_enabled || minicorpus_shm == NULL ||
+	    kcov_shm == NULL || shm == NULL)
 		return;
 
 	edges_now = __atomic_load_n(&kcov_shm->edges_found, __ATOMIC_RELAXED);
 	old = __atomic_load_n(&minicorpus_shm->edges_at_last_snapshot,
 			      __ATOMIC_RELAXED);
+	old_time = __atomic_load_n(&shm->stats.minicorpus_last_snapshot_time,
+				   __ATOMIC_RELAXED);
+	now_sec = (unsigned long)time(NULL);
 
-	if (edges_now < old + MINICORPUS_SNAPSHOT_EDGES)
+	edges_trigger = (edges_now >= old + MINICORPUS_SNAPSHOT_EDGES);
+	time_trigger = (now_sec >= old_time + MINICORPUS_SNAPSHOT_INTERVAL_SEC);
+
+	if (!edges_trigger && !time_trigger)
 		return;
 
 	/* Race for the slot.  Whoever wins the CAS is responsible for the
 	 * save; the others see the new high-water-mark on their next call
 	 * and early-return.  RELAXED ordering is enough — the save itself
 	 * is independently consistent (per-ring lock during read), and the
-	 * counter is just gating who runs, not what they observe. */
+	 * counter is just gating who runs, not what they observe.
+	 *
+	 * When only the time trigger fires, edges_now may equal `old` (no
+	 * new edges since the last snapshot, but 5min has elapsed), and a
+	 * CAS of (old -> old) would succeed for every concurrent caller
+	 * rather than electing one.  Force the new value to be strictly
+	 * greater in that case so the CAS is a real change and contested
+	 * calls actually serialise.  The +1 skew on the next edge-trigger
+	 * boundary is irrelevant against a 10000-edge window. */
+	new_edges = (edges_now > old) ? edges_now : old + 1;
 	if (!__atomic_compare_exchange_n(&minicorpus_shm->edges_at_last_snapshot,
-					 &old, edges_now,
+					 &old, new_edges,
 					 false,
 					 __ATOMIC_RELAXED, __ATOMIC_RELAXED))
 		return;
 
 	minicorpus_save_file(snapshot_path);
+
+	/* Advance the wall-clock baseline so the next time-trigger window
+	 * starts cleanly regardless of which trigger fired this time.  No
+	 * CAS needed: the window-CAS above already elected us as the sole
+	 * writer for this snapshot boundary. */
+	__atomic_store_n(&shm->stats.minicorpus_last_snapshot_time, now_sec,
+			 __ATOMIC_RELAXED);
 }
