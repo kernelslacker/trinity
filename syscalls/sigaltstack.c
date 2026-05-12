@@ -47,6 +47,8 @@ static void sanitise_sigaltstack(struct syscallrecord *rec)
 #endif
 
 	ss = (stack_t *) get_writable_address(sizeof(*ss));
+	if (ss == NULL)
+		return;
 
 	switch (rand() % 5) {
 	case 0: /* disable the signal stack */
