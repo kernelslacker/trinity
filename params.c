@@ -244,9 +244,9 @@ static unsigned long derive_max_children_cap(enum max_children_binding *out_bind
 
 /*
  * Compute the default explorer-pool size when --explorer-children was not
- * passed.  Default is max_children/8 (12.5%): for -C64 → 8 explorers, -C16
- * → 2, -C8 → 1, -C4 → 0.  Small fleets get zero explorers because the
- * bandit's per-arm pull count needs the full slot budget to converge.
+ * passed.  Default is max_children/4 (25%): for -C64 → 16 explorers, -C16
+ * → 4, -C8 → 2, -C4 → 1.  Small fleets get a minimal explorer slice so
+ * the bandit retains enough slot budget for UCB1 to converge.
  *
  * Validates the explicit operator value (post-parse) against the ceiling
  * of max_children/2: more than half being explorers leaves the bandit
@@ -260,7 +260,7 @@ void clamp_default_explorer_children(void)
 	unsigned int ceiling = max_children / 2;
 
 	if (!user_specified_explorer_children) {
-		explorer_children = max_children / 8;
+		explorer_children = max_children / 4;
 		return;
 	}
 

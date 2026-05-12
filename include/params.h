@@ -77,7 +77,7 @@ extern unsigned int alt_op_children;
  * canary rather than biasing arm selection.
  *
  * Default (when --explorer-children is not passed) is computed as
- * max_children/8 by clamp_default_explorer_children() after parse_args
+ * max_children/4 by clamp_default_explorer_children() after parse_args
  * has finalised max_children.  user_specified_explorer_children records
  * whether the operator passed the flag explicitly so the default-fill
  * path can leave their value alone.
