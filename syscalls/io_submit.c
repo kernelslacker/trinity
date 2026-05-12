@@ -24,10 +24,14 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 
 	nr = 1 + (rand() % 4);
 	iocbs = (struct iocb *) get_writable_address(nr * sizeof(*iocbs));
+	if (iocbs == NULL)
+		return;
 	memset(iocbs, 0, nr * sizeof(*iocbs));
 	iocbpp = (struct iocb **) get_writable_address(nr * sizeof(*iocbpp));
 
 	buf = (char *) get_writable_address(4096);
+	if (iocbpp == NULL || buf == NULL)
+		return;
 
 	for (i = 0; i < nr; i++) {
 		iocbs[i].aio_lio_opcode = iocb_cmds[rand() % ARRAY_SIZE(iocb_cmds)];
