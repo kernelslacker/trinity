@@ -2,6 +2,7 @@
  *   SYSCALL_DEFINE4(io_uring_register, unsigned int, fd, unsigned int, opcode, void __user *, arg, unsigned int, nr_args)
  */
 #include <limits.h>
+#include <sched.h>
 #include <string.h>
 #include <linux/io_uring.h>
 #include "arch.h"
@@ -98,6 +99,12 @@ struct trinity_io_uring_buf_reg {
 	__u16	bgid;
 	__u16	flags;
 	__u64	resv[3];
+};
+
+struct trinity_io_uring_buf_status {
+	__u32	buf_group;
+	__u32	head;
+	__u32	resv[8];
 };
 
 struct trinity_io_uring_napi {
@@ -421,6 +428,30 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		break;
 
 	/*
+	 * IORING_REGISTER_EVENTFD / IORING_REGISTER_EVENTFD_ASYNC:
+	 * arg = int *eventfd_fd, nr_args = 1.  Seed *u with a real eventfd
+	 * from the OBJ_FD_EVENTFD pool ~75% of the time so io_eventfd_register
+	 * reaches eventfd_ctx_fdget() rather than -EBADF'ing on a garbage fd;
+	 * the rest of the time inject a random int32 to walk the validator's
+	 * "wrong fd type / closed fd" reject paths.
+	 */
+	case IORING_REGISTER_EVENTFD:
+	case IORING_REGISTER_EVENTFD_ASYNC: {
+		int *u = (int *) get_writable_struct(sizeof(int));
+		if (u) {
+			if ((rand() % 4) != 0) {
+				int efd = get_typed_fd(ARG_FD_EVENTFD);
+				*u = (efd >= 0) ? efd : (int) rand();
+			} else {
+				*u = (int) rand();
+			}
+		}
+		rec->a3 = (unsigned long) u;
+		rec->a4 = 1;
+		break;
+	}
+
+	/*
 	 * IORING_REGISTER_PROBE: arg = struct io_uring_probe with trailing
 	 * ops[], nr_args = number of op slots.
 	 */
@@ -446,6 +477,27 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		rec->a3 = (unsigned long) buf;
 		rec->a4 = 2;
 		break;
+
+	/*
+	 * IORING_REGISTER_IOWQ_AFF: arg = cpu_set_t *, nr_args = sizeof(cpu_set_t).
+	 * Build a small valid affinity mask (a couple of bits set on online CPUs)
+	 * so io_register_iowq_aff's cpumask_parse / cpumask_subset checks pass
+	 * and the call reaches io_wq_cpu_affinity().  Skip memset -- the
+	 * cpu_set_t bit layout matters for the cpumask validator.
+	 */
+	case IORING_REGISTER_IOWQ_AFF: {
+		cpu_set_t *cs = (cpu_set_t *) get_writable_address(sizeof(cpu_set_t));
+		if (cs) {
+			unsigned int n = num_online_cpus ? num_online_cpus : 1;
+			unsigned int i, k = 1 + (rand() % 3);
+			CPU_ZERO(cs);
+			for (i = 0; i < k; i++)
+				CPU_SET(rand() % n, cs);
+		}
+		rec->a3 = (unsigned long) cs;
+		rec->a4 = sizeof(cpu_set_t);
+		break;
+	}
 
 	/*
 	 * IORING_REGISTER_FILE_ALLOC_RANGE: arg = struct io_uring_file_index_range,
@@ -578,6 +630,31 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 			r->bgid = rand() % 16;
 		}
 		rec->a3 = (unsigned long) r;
+		rec->a4 = 1;
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_PBUF_STATUS: arg = struct io_uring_buf_status,
+	 * nr_args = 1.  Seed buf_group small so io_register_pbuf_status's
+	 * xa_load() lookup actually hits a registered buf-ring slot some of
+	 * the time; head is an output field, leave 0.  The kernel walks resv[]
+	 * with memchr_inv() and rejects non-zero -- mostly leave it zero, but
+	 * 1-in-32 fuzz a slot to exercise that gate.
+	 */
+	case IORING_REGISTER_PBUF_STATUS: {
+		struct trinity_io_uring_buf_status *s;
+		s = (struct trinity_io_uring_buf_status *)
+			get_writable_struct(sizeof(*s));
+		if (s) {
+			unsigned int i;
+			memset(s, 0, sizeof(*s));
+			s->buf_group = rand() & 0xf;
+			for (i = 0; i < 8; i++)
+				if ((rand() % 32) == 0)
+					s->resv[i] = rand();
+		}
+		rec->a3 = (unsigned long) s;
 		rec->a4 = 1;
 		break;
 	}
