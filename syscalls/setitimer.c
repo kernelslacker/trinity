@@ -24,6 +24,8 @@ static void sanitise_setitimer(struct syscallrecord *rec)
 	struct itimerval *itv;
 
 	itv = (struct itimerval *) get_writable_address(sizeof(*itv));
+	if (itv == NULL)
+		return;
 
 	fill_timeval(&itv->it_interval);
 	fill_timeval(&itv->it_value);
