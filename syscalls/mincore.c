@@ -17,6 +17,8 @@ static void sanitise_mincore(struct syscallrecord *rec)
 	void *vec;
 
 	map = common_set_mmap_ptr_len();
+	if (map == NULL)
+		return;
 
 	len = min(GB(1), map->size);
 	len = (len + page_size - 1) / page_size;
