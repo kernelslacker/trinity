@@ -14,6 +14,22 @@
 #include "socket-family-grammar.h"
 #include "compat.h"
 
+/* Older <linux/if_packet.h> may predate the PACKET_FANOUT_FLAG_*
+ * additions.  Define the bits locally so the fuzzer can name them
+ * even when building against an old UAPI header. */
+#ifndef PACKET_FANOUT_FLAG_ROLLOVER
+#define PACKET_FANOUT_FLAG_ROLLOVER		0x1000
+#endif
+#ifndef PACKET_FANOUT_FLAG_UNIQUEID
+#define PACKET_FANOUT_FLAG_UNIQUEID		0x2000
+#endif
+#ifndef PACKET_FANOUT_FLAG_IGNORE_OUTGOING
+#define PACKET_FANOUT_FLAG_IGNORE_OUTGOING	0x4000
+#endif
+#ifndef PACKET_FANOUT_FLAG_DEFRAG
+#define PACKET_FANOUT_FLAG_DEFRAG		0x8000
+#endif
+
 /* ETH_P_* values are big-endian Ethernet types; socket() for PF_PACKET
  * expects them in network byte order.  Use a compile-time byte-swap so
  * the constant can appear in a static initializer. */
@@ -125,11 +141,13 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 		unsigned int flags = 0;
 
 		if (RAND_BOOL())
-			flags |= 0x1000;	/* PACKET_FANOUT_FLAG_ROLLOVER */
+			flags |= PACKET_FANOUT_FLAG_ROLLOVER;
 		if (RAND_BOOL())
-			flags |= 0x2000;	/* PACKET_FANOUT_FLAG_UNIQUEID */
+			flags |= PACKET_FANOUT_FLAG_UNIQUEID;
 		if (RAND_BOOL())
-			flags |= 0x4000;	/* PACKET_FANOUT_FLAG_DEFRAG */
+			flags |= PACKET_FANOUT_FLAG_IGNORE_OUTGOING;
+		if (RAND_BOOL())
+			flags |= PACKET_FANOUT_FLAG_DEFRAG;
 		*optval32 = type | (flags << 16) | ((rand() % 256) << 8);
 		so->optlen = sizeof(unsigned int);
 		break;
@@ -195,9 +213,6 @@ const struct netproto proto_packet = {
 
 #ifndef PACKET_FANOUT_HASH
 #define PACKET_FANOUT_HASH		0
-#endif
-#ifndef PACKET_FANOUT_FLAG_DEFRAG
-#define PACKET_FANOUT_FLAG_DEFRAG	0x8000
 #endif
 
 static const int packet_grammar_protos[] = {
@@ -297,7 +312,7 @@ static void packet_grammar_walk_setsockopts(int fd, struct socket_triplet *t,
 
 	if (step++ < n) {
 		fanout = (PACKET_FANOUT_HASH |
-			  (PACKET_FANOUT_FLAG_DEFRAG << 16));
+			  ((unsigned int) PACKET_FANOUT_FLAG_DEFRAG << 16));
 		(void) setsockopt(fd, SOL_PACKET, PACKET_FANOUT,
 				  &fanout, sizeof(fanout));
 	}
