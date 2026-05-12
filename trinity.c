@@ -297,6 +297,19 @@ int main(int argc, char* argv[])
 
 	parse_args(argc, argv);
 
+	/* --dry-run: validate the argument set and exit before any cgroup,
+	 * fork, shm, or init work runs.  Previously the flag only gated the
+	 * actual syscall() inside __do_syscall(), so a dry run still spun up
+	 * children and burned the full init path before doing nothing — which
+	 * defeated the point (cheap parse-validation in CI, reproducer triage)
+	 * and silently masked real failures inside open_fds / freeze_global_objects
+	 * behind an exit code that looked like a successful no-op.  Honour the
+	 * flag at parse-and-exit instead. */
+	if (dry_run) {
+		output(0, "--dry-run: parse complete, exiting without fuzzing\n");
+		exit(EXIT_SUCCESS);
+	}
+
 	/* Banner is deferred until after parse_args so --stats-json (which
 	 * reserves stdout for the JSON document) can redirect it to stderr.
 	 * Without this, the banner would land on stdout before the flag is
