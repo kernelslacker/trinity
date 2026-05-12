@@ -26,6 +26,8 @@ static void sanitise_landlock_create_ruleset(struct syscallrecord *rec)
 	struct landlock_ruleset_attr *attr;
 
 	attr = (struct landlock_ruleset_attr *) get_writable_address(sizeof(*attr));
+	if (attr == NULL)
+		return;
 	memset(attr, 0, sizeof(*attr));
 
 	/* Random combination of FS access rights. */
