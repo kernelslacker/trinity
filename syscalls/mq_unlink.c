@@ -10,6 +10,8 @@ static void sanitise_mq_unlink(struct syscallrecord *rec)
 
 	/* POSIX MQ names must start with '/' */
 	name = (char *) get_writable_address(8);
+	if (name == NULL)
+		return;
 	name[0] = '/';
 	name[1] = 't';
 	name[2] = 'r';
