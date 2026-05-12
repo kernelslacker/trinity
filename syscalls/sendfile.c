@@ -11,6 +11,8 @@
 static void sanitise_sendfile(struct syscallrecord *rec)
 {
 	off_t *offset = (off_t *) get_writable_address(sizeof(off_t));
+	if (offset == NULL)
+		return;
 	*offset = RAND_RANGE(0, 1ULL << 30);
 	rec->a3 = (unsigned long) offset;
 }
@@ -18,6 +20,8 @@ static void sanitise_sendfile(struct syscallrecord *rec)
 static void sanitise_sendfile64(struct syscallrecord *rec)
 {
 	off_t *offset = (off_t *) get_writable_address(sizeof(off_t));
+	if (offset == NULL)
+		return;
 	*offset = RAND_RANGE(0, 1ULL << 30);
 	rec->a3 = (unsigned long) offset;
 }
