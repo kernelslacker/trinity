@@ -404,6 +404,24 @@ struct map * common_set_mmap_ptr_len(void)
 		return NULL;
 	}
 
+	/*
+	 * ARG_MMAP plumbed a struct map * into rec->a1 at args-generation
+	 * time, but a sibling kernel-write to childdata.syscall.a1 can
+	 * replace it with a fuzzed value before we get here.  Validate the
+	 * shape before the map->ptr / map->size derefs below; an unmapped
+	 * or non-canonical pointer would SEGV the consumer (mincore,
+	 * mremap, madvise, mlock, munlock, mbind, getrandom, ...).  Mirror
+	 * the failure mode of the NULL path so existing callers' NULL
+	 * short-circuits handle it cleanly.
+	 */
+	if (looks_like_corrupted_ptr(rec, map)) {
+		outputerr("common_set_mmap_ptr_len: rejected suspicious map=%p (pid-scribbled?)\n",
+			  map);
+		rec->a1 = 0;
+		rec->a2 = 0;
+		return NULL;
+	}
+
 	rec->a1 = (unsigned long) map->ptr;
 	if (map->size == 0) {
 		rec->a2 = 0;
