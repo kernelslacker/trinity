@@ -57,6 +57,8 @@ static void sanitise_futex_waitv(struct syscallrecord *rec)
 	futex_words = (__u32 *) get_writable_address(nr * sizeof(*futex_words));
 
 	waiters = (struct futex_waitv *) get_writable_address(nr * sizeof(*waiters));
+	if (futex_words == NULL || waiters == NULL)
+		return;
 	memset(waiters, 0, nr * sizeof(*waiters));
 
 	for (i = 0; i < nr; i++) {
@@ -90,6 +92,8 @@ static void sanitise_futex_waitv(struct syscallrecord *rec)
 
 	/* Short timeout so we don't block forever. */
 	ts = (struct timespec *) get_writable_address(sizeof(*ts));
+	if (ts == NULL)
+		return;
 	ts->tv_sec = 0;
 	ts->tv_nsec = rand() % 1000000;	/* up to 1ms */
 
