@@ -30,6 +30,8 @@ static void sanitise_clock_nanosleep(struct syscallrecord *rec)
 	struct timespec *ts;
 
 	ts = (struct timespec *) get_writable_address(sizeof(*ts));
+	if (ts == NULL)
+		return;
 
 	/* Keep sleep durations tiny so we don't block the fuzzer. */
 	ts->tv_sec = 0;
