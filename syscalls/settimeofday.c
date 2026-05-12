@@ -11,6 +11,8 @@ static void sanitise_settimeofday(struct syscallrecord *rec)
 	struct timezone *tz;
 
 	tv = (struct timeval *) get_writable_address(sizeof(*tv));
+	if (tv == NULL)
+		return;
 	switch (rand() % 4) {
 	case 0:	/* epoch */
 		tv->tv_sec = 0;
@@ -34,6 +36,8 @@ static void sanitise_settimeofday(struct syscallrecord *rec)
 	/* timezone is mostly deprecated but exercise it sometimes. */
 	if (RAND_BOOL()) {
 		tz = (struct timezone *) get_writable_address(sizeof(*tz));
+		if (tz == NULL)
+			return;
 		tz->tz_minuteswest = (rand() % 1560) - 780;	/* -13h to +13h */
 		tz->tz_dsttime = rand() % 4;
 		rec->a2 = (unsigned long) tz;
