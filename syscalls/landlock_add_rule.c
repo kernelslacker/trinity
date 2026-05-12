@@ -31,6 +31,8 @@ static void sanitise_landlock_add_rule(struct syscallrecord *rec)
 		struct landlock_path_beneath_attr *pb;
 
 		pb = (struct landlock_path_beneath_attr *) get_writable_address(sizeof(*pb));
+		if (pb == NULL)
+			break;
 		memset(pb, 0, sizeof(*pb));
 		pb->allowed_access = rand32() & ((1ULL << 16) - 1);
 		pb->parent_fd = get_random_fd();
@@ -41,6 +43,8 @@ static void sanitise_landlock_add_rule(struct syscallrecord *rec)
 		struct landlock_net_port_attr *np;
 
 		np = (struct landlock_net_port_attr *) get_writable_address(sizeof(*np));
+		if (np == NULL)
+			break;
 		memset(np, 0, sizeof(*np));
 		np->allowed_access = rand() % 4;
 
