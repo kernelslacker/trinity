@@ -1536,13 +1536,15 @@ void deferred_free_reject_bump(void *caller_pc)
 __attribute__((noinline))
 void post_handler_corrupt_ptr_bump_rzs(struct syscallrecord *rec)
 {
-	post_handler_corrupt_ptr_bump(rec, __builtin_return_address(0));
+	post_handler_corrupt_ptr_bump_site(rec, __builtin_return_address(0),
+					   "handle_syscall_ret:rzs_blanket");
 }
 
 __attribute__((noinline))
 void post_handler_corrupt_ptr_bump_retfd(struct syscallrecord *rec)
 {
-	post_handler_corrupt_ptr_bump(rec, __builtin_return_address(0));
+	post_handler_corrupt_ptr_bump_site(rec, __builtin_return_address(0),
+					   "handle_syscall_ret:retfd_invalid");
 }
 
 /*
