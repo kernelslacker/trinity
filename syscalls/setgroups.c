@@ -41,6 +41,8 @@ static void sanitise_setgroups(struct syscallrecord *rec)
 
 	if (count > 0 && count <= 65536) {
 		list = (gid_t *) get_writable_address(count * sizeof(gid_t));
+		if (list == NULL)
+			return;
 		for (i = 0; i < count; i++)
 			list[i] = (gid_t) rand();
 		rec->a2 = (unsigned long) list;
