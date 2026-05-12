@@ -30,3 +30,4 @@ void output_set_pid(pid_t pid);
 void outputerr(const char *fmt, ...);
 void outputstd(const char *fmt, ...);
 void debugf(const char *fmt, ...);
+bool should_route_to_stdout(void);
