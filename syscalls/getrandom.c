@@ -19,7 +19,12 @@
 
 static void sanitise_getrandom(struct syscallrecord *rec)
 {
-	(void) common_set_mmap_ptr_len();
+	struct map *map;
+
+	map = common_set_mmap_ptr_len();
+	if (map == NULL)
+		return;
+
 	avoid_shared_buffer(&rec->a1, rec->a2);
 }
 
