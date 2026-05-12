@@ -18,6 +18,8 @@ static void sanitise_futimesat(struct syscallrecord *rec)
 	}
 
 	tv = (struct timeval *) get_writable_address(sizeof(*tv) * 2);
+	if (tv == NULL)
+		return;
 
 	for (i = 0; i < 2; i++) {
 		tv[i].tv_sec = rand() % 2000000000;
