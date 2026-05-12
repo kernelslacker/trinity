@@ -30,6 +30,8 @@ static void sanitise_setrlimit(struct syscallrecord *rec)
 	struct rlimit *rlim;
 
 	rlim = (struct rlimit *) get_writable_address(sizeof(*rlim));
+	if (rlim == NULL)
+		return;
 	rlim->rlim_cur = random_rlim();
 	rlim->rlim_max = random_rlim();
 
