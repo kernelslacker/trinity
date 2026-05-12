@@ -43,10 +43,11 @@
  *     strategies pick syscalls from coverage feedback alone.
  *     "Phase B" above is where this is supposed to change.
  *
- *   - TF-IDF normalisation, per-predecessor frequency tracking,
- *     decay walks, the corrupt-entry filter, and the low-confidence
- *     and minimum-raw qualification floors are all trinity-specific
- *     additions that don't appear in the original paper.
+ *   - Beta-Binomial smoothed score normalisation, per-predecessor
+ *     frequency tracking, decay walks, the corrupt-entry filter, and
+ *     the low-confidence and minimum-raw qualification floors are all
+ *     trinity-specific additions that don't appear in the original
+ *     paper.
  *
  * In practice the module is closer to a "syscall relation observer
  * + dump" than to HEALER's program generator.  Name retained because
@@ -95,9 +96,10 @@
  * predecessor pair has a zero appearance counter on at least one side
  * lack this-run evidence and are dropped before the normalised score
  * is even computed -- a complementary mechanism to the
- * HEALER_NORM_PREDFREQ_BIAS pseudo-count that dampens the score for
- * entries that survive the filter (predfreq >= 1 on both sides) and
- * for the pair-side dump path which has no equivalent filter at all.
+ * HEALER_NORM_ALPHA / HEALER_NORM_BETA Bayesian shrinkage that dampens
+ * the score for entries that survive the filter (predfreq >= 1 on both
+ * sides) and for the pair-side dump path which has no equivalent
+ * filter at all.
  * Two real shapes hit this filter:
  *   - warm-started entries inherited from a prior run, whose pair
  *     hasn't yet been observed in the new run (both counters still 0);
@@ -115,15 +117,15 @@
  * Minimum raw-observation floor for top-N qualification.  A promoted
  * entry's weight is the raw count of times that (predset -> successor)
  * triple has been observed; entries with raw=1 are single-shot events
- * and carry no statistical signal yet.  Without this floor the TF-IDF
- * normalisation in healer_normalised_score_milli amplifies a single
- * observation into a high norm score whenever either predecessor's
- * appearance count is small (the isqrt(a*b+1) denominator is tiny when
- * one side is in the low single digits), so raw=1 noise was repeatedly
- * elevating itself into the dump's top-10 alongside genuinely repeated
- * patterns.  Filter at top-N qualification only; observation, save/load
- * and decay all keep handling these entries normally so they remain
- * available to graduate into the ranking once they accumulate evidence.
+ * and carry no statistical signal yet.  Without this floor the
+ * normalisation in healer_normalised_score_milli amplifies a small
+ * observation count into a misleadingly high norm score whenever the
+ * combined predecessor frequency is also small -- the noise pairs that
+ * dominated the top-10 before the bias bumps were precisely small-raw
+ * entries riding a small denominator.  Filter at top-N qualification
+ * only; observation, save/load and decay all keep handling these
+ * entries normally so they remain available to graduate into the
+ * ranking once they accumulate evidence.
  */
 #define HEALER_DUMP_MIN_RAW 20
 
@@ -139,25 +141,33 @@
 #define HEALER_STATIC_SEED_WEIGHT 3
 
 /*
- * Additive bias applied to each predecessor-appearance count before the
- * normalisation denominator is computed.  Acts as a Bayesian-style
- * pseudo-count: a predecessor that has not yet been observed in the
- * current run is treated as if it had been observed this many times,
- * so the denominator never collapses to its minimum value (isqrt(0+1)
- * == isqrt(1) == 1) and seeded entries with predfreq == 0 stop scoring
- * at raw_weight * 1000 -- which on the pair-side dump made every static
- * seed install render as norm == raw and crowd dynamically observed
- * entries (whose denominator was already > 1) out of the top-N entirely.
+ * Bayesian smoothing constants applied to the relation-table dump's
+ * normalised score.  The displayed score is
  *
- * Sized at 5 because the dynamic-pair entries that demonstrably carry
- * signal (the post-load observer-bumped pairs that actually fired in
- * the run) hit predfreq counts in the low single digits within the
- * first dump tick, and crossing K is what lets a real entry rise above
- * the seed-baseline.  Lower K leaves seeds visible in the ranking;
- * higher K over-suppresses early-run dynamic signal before the
- * counters have had time to accumulate.
+ *   norm = (raw + ALPHA) / (predfreq + ALPHA + BETA)
+ *
+ * which is the posterior mean of a Beta-Binomial model over the
+ * "observed | predecessor appeared" rate, with a Beta(ALPHA, BETA)
+ * prior centred at ALPHA/(ALPHA+BETA) ~= 0.2.  The shrinkage suppresses
+ * spurious co-occurrence pairs whose raw and predfreq are both small
+ * (where the unsmoothed raw/predfreq metric inflated noise into the
+ * top-N) without distorting high-N entries: at predfreq in the
+ * hundreds the +ALPHA / +BETA terms are dwarfed by the live counts and
+ * the score tracks the raw ratio closely.  Replaces the prior
+ * isqrt-dampened TF-IDF formulation, whose square-root denominator
+ * compressed the large-N range too aggressively while still rewarding
+ * single-digit-predfreq pairs at the noise floor.
+ *
+ * ALPHA == 5 matches the pseudo-count the prior PREDFREQ_BIAS used to
+ * keep the denominator off its minimum value, calibrated to the
+ * dynamic-pair entries that demonstrably carry signal in the first
+ * dump tick.  BETA == 20 matches HEALER_DUMP_MIN_RAW: a fresh entry at
+ * the qualification floor with no predecessor history scores at most
+ * raw/(raw + BETA) == 0.5, capping the prior's influence on barely-
+ * qualified entries while letting genuinely repeated triples climb.
  */
-#define HEALER_NORM_PREDFREQ_BIAS 5
+#define HEALER_NORM_ALPHA 5
+#define HEALER_NORM_BETA  20
 
 /*
  * Display-time pollution filter: minimum total HEALER observation
@@ -498,7 +508,7 @@ void healer_observe_relation(struct childdata *child, unsigned int current_nr)
 
 	/*
 	 * Bump the per-syscall predecessor-appearance counter that feeds the
-	 * TF-IDF-style normalisation on the dump path.  Done before the
+	 * Bayesian-smoothed normalisation on the dump path.  Done before the
 	 * lookup so a probe-limit miss still increments the denominator --
 	 * the syscall *did* appear as a predecessor in an observation, even
 	 * if no slot was available to credit the pair.  Skip the second
@@ -786,40 +796,26 @@ static unsigned long healer_isqrt(unsigned long n)
 }
 
 /*
- * TF-IDF-style normalisation for the relation-table dump.  Returns a
- * fixed-point score scaled by 1000 so the dump path can sort and emit
- * two-decimal precision without dragging floating point onto the hot
+ * Bayesian-smoothed normalisation for the relation-table dump.  Returns
+ * a fixed-point score scaled by 1000 so the dump path can sort and emit
+ * three-decimal precision without dragging floating point onto the hot
  * stats output.
  *
  * Formula:
- *   a     = pred_a_freq + HEALER_NORM_PREDFREQ_BIAS
- *   b     = pred_b_freq + HEALER_NORM_PREDFREQ_BIAS
- *   norm  = (raw_weight * 1000) / isqrt(a * b + 1)
+ *   combined_freq = isqrt(pred_a_freq * pred_b_freq)
+ *   norm          = (raw_weight + ALPHA) * 1000
+ *                 / (combined_freq + ALPHA + BETA)
  *
- * Rationale (chose sqrt-dampening over log2 or one-sided / max):
- *   - sqrt has the right monotonic shape: a predecessor that appears 100x
- *     gets penalised ~10x, one that appears 10000x gets penalised ~100x.
- *     The penalty grows with frequency but not as steeply as plain
- *     division by frequency, so a pair with one slightly-frequent and
- *     one rare predecessor still scores meaningfully higher than a pair
- *     of two frequent ones.
- *   - HEALER_NORM_PREDFREQ_BIAS shifts each predfreq by a constant
- *     pseudo-count before the multiply-and-sqrt, so a not-yet-observed
- *     predecessor (predfreq == 0) no longer collapses the denominator
- *     to isqrt(0*0 + 1) == 1.  Without that bias, every entry whose
- *     pair was static-seeded but not yet dynamically observed scored
- *     at raw_weight * 1000 -- the entire top-N degenerated into the
- *     seed floor and dynamically observed entries with real signal
- *     (denominator > 1) were buried below them.
- *   - The "+1" inside the isqrt is now redundant for divide-by-zero
- *     protection (the K-bias guarantees a*b >= K*K > 0), but is kept
- *     so the formula's textual shape stays comparable to the prior
- *     baseline and the post-isqrt `denom == 0` guard below remains a
- *     trivial cheap check.
- *   - Cheaper to compute than a portable integer log2 (no special-case
- *     handling for small values, no __builtin_clzl shape-fixup) and
- *     less aggressive than `weight / max(a, b)` which would over-penalise
- *     a pair where both predecessors are productive.
+ * The two predecessor appearance counts are folded into a single
+ * combined frequency via geometric mean, matching the prior formula's
+ * intent that a triple with one rare predecessor still scores
+ * meaningfully higher than one with two frequent predecessors.  The
+ * Beta(ALPHA, BETA) pseudo-counts then shrink the resulting ratio
+ * toward the prior mean, so a small-raw / small-predfreq pair no
+ * longer races to the top of the ranking on a tiny denominator.  At
+ * combined_freq in the hundreds the +ALPHA / +BETA terms are dominated
+ * by the live counts and the score tracks the raw ratio closely, so
+ * genuinely high-signal entries are not perturbed.
  *
  * Raw weight is preserved on the per-entry display so the operator can
  * still see the underlying signal alongside the normalised ranking.
@@ -828,14 +824,11 @@ static unsigned long healer_normalised_score_milli(unsigned long raw_weight,
 						   unsigned long pred_a_freq,
 						   unsigned long pred_b_freq)
 {
-	unsigned long a = pred_a_freq + HEALER_NORM_PREDFREQ_BIAS;
-	unsigned long b = pred_b_freq + HEALER_NORM_PREDFREQ_BIAS;
-	unsigned long product = a * b + 1;
-	unsigned long denom = healer_isqrt(product);
+	unsigned long combined_freq = healer_isqrt(pred_a_freq * pred_b_freq);
+	unsigned long denom = combined_freq + HEALER_NORM_ALPHA +
+			      HEALER_NORM_BETA;
 
-	if (denom == 0)
-		denom = 1;
-	return (raw_weight * 1000UL) / denom;
+	return ((raw_weight + HEALER_NORM_ALPHA) * 1000UL) / denom;
 }
 
 static int healer_dump_entry_cmp(const void *a, const void *b)
@@ -1038,8 +1031,9 @@ void healer_table_dump(void)
 	/*
 	 * Counts entries skipped from top-N qualification because their raw
 	 * observation count is below HEALER_DUMP_MIN_RAW — single-shot triples
-	 * that the TF-IDF amplification path would otherwise float to the top.
-	 * Kept separate from low_confidence_skipped because the two filters
+	 * that the smoothed normalisation could still float to the top of
+	 * the prior-dominated regime where ALPHA outweighs raw_weight.  Kept
+	 * separate from low_confidence_skipped because the two filters
 	 * answer different questions (predecessor evidence vs triple-level
 	 * evidence) and an operator wants to see them independently.
 	 */
@@ -1201,15 +1195,16 @@ void healer_table_dump(void)
 			 * this-run appearance signal.  Both warm-start
 			 * zombies (both counters at zero) and predecessor-
 			 * skipped leftovers (one counter pinned at zero)
-			 * land here.  HEALER_NORM_PREDFREQ_BIAS already
-			 * keeps the denominator off its minimum value, but
-			 * this filter additionally insists on at least some
-			 * this-run evidence before an entry can rank --
-			 * "denominator no longer pathological" is not the
-			 * same standard as "this entry was actually
-			 * observed in the current run".  Per-promoted
-			 * accounting matches the corruption skip a few
-			 * lines up so the surfaced counts are comparable.
+			 * land here.  The Beta(ALPHA, BETA) shrinkage in
+			 * healer_normalised_score_milli already keeps the
+			 * score off its raw-ratio extreme, but this filter
+			 * additionally insists on at least some this-run
+			 * evidence before an entry can rank -- "score
+			 * no longer pathological" is not the same standard
+			 * as "this entry was actually observed in the
+			 * current run".  Per-promoted accounting matches the
+			 * corruption skip a few lines up so the surfaced
+			 * counts are comparable.
 			 */
 			if (pred_a_freq < HEALER_DUMP_MIN_PRED_APPEARANCES ||
 			    pred_b_freq < HEALER_DUMP_MIN_PRED_APPEARANCES) {
@@ -1220,10 +1215,11 @@ void healer_table_dump(void)
 			/*
 			 * Raw-observation floor: a single sighting carries no
 			 * statistical weight on its own and would otherwise be
-			 * lifted into the top-N by the TF-IDF denominator when
-			 * either predecessor's appearance count is small.  Same
-			 * top-N-only treatment as the low-confidence filter
-			 * above, counted per promoted entry for parity.
+			 * lifted into the top-N by the smoothed score when
+			 * the combined predfreq is small enough that the
+			 * Beta prior dominates raw_weight.  Same top-N-only
+			 * treatment as the low-confidence filter above,
+			 * counted per promoted entry for parity.
 			 */
 			if (weight < HEALER_DUMP_MIN_RAW) {
 				low_raw_skipped++;
@@ -1347,30 +1343,24 @@ void healer_table_dump(void)
 			}
 
 			/*
-			 * Single-predecessor TF-IDF analog: the triple form
-			 * dampens by isqrt((a+K)*(b+K) + 1) over both
-			 * predecessor antecedents; a pair has only one
-			 * antecedent (the producer), so the denominator
-			 * collapses to isqrt(producer_freq + K + 1).  Reuses
-			 * healer_isqrt() rather than repeating the Newton
-			 * iteration.  HEALER_NORM_PREDFREQ_BIAS is the same
-			 * pseudo-count shift the triple-side formula uses,
-			 * applied here for the same reason: without it,
-			 * every static-seeded pair whose producer had not
-			 * yet been observed (producer_freq == 0) collapsed
-			 * the denominator to isqrt(1) == 1 and rendered as
-			 * norm == raw * 1000, dominating the top-N over any
-			 * dynamically observed pair whose producer had a
-			 * non-zero appearance count.  The trailing "+1" is
-			 * redundant for divide-by-zero with the bias in
-			 * place but is retained so the formula reads as a
-			 * direct K-shift of the prior baseline.
+			 * Bayesian-smoothed single-predecessor analog of the
+			 * triple-side formula: a pair has only one antecedent
+			 * (the producer), so the combined predfreq collapses
+			 * directly to producer_freq with no isqrt step.  Same
+			 * Beta(ALPHA, BETA) pseudo-counts shrink the ratio
+			 * toward the prior, so a static-seeded pair whose
+			 * producer has never fired (producer_freq == 0) now
+			 * scores at (raw + ALPHA) / (ALPHA + BETA) instead of
+			 * raw -- noise pairs no longer crowd out dynamically-
+			 * observed entries with non-zero producer counts, and
+			 * the unsmoothed raw/predfreq pathology that elevated
+			 * small-raw / small-predfreq cells into the top-N is
+			 * directly corrected.
 			 */
-			denom = healer_isqrt(producer_freq +
-					     HEALER_NORM_PREDFREQ_BIAS + 1);
-			if (denom == 0)
-				denom = 1;
-			norm_score = (weight * 1000UL) / denom;
+			denom = producer_freq + HEALER_NORM_ALPHA +
+				HEALER_NORM_BETA;
+			norm_score = ((weight + HEALER_NORM_ALPHA) * 1000UL) /
+				     denom;
 
 			cand.pred_a = 0;
 			cand.pred_b = i;
