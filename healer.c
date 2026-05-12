@@ -125,7 +125,7 @@
  * and decay all keep handling these entries normally so they remain
  * available to graduate into the ranking once they accumulate evidence.
  */
-#define HEALER_DUMP_MIN_RAW 3
+#define HEALER_DUMP_MIN_RAW 20
 
 /*
  * Initial weight installed by the static-seed loader for each producer/
