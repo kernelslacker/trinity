@@ -25,6 +25,8 @@ static void sanitise_rt_sigqueueinfo(struct syscallrecord *rec)
 		rec->a2 = SIGRTMIN + (rand() % (SIGRTMAX - SIGRTMIN + 1));
 
 	info = (siginfo_t *) get_writable_address(sizeof(*info));
+	if (info == NULL)
+		return;
 	memset(info, 0, sizeof(*info));
 
 	/* Kernel requires si_code to be SI_QUEUE (or < 0 for user-generated). */
