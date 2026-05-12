@@ -22,6 +22,8 @@ static void sanitise_io_cancel(struct syscallrecord *rec)
 	iocb->aio_nbytes = 4096;
 
 	result = (struct io_event *) get_writable_address(sizeof(*result));
+	if (iocb == NULL || result == NULL)
+		return;
 	memset(result, 0, sizeof(*result));
 
 	rec->a2 = (unsigned long) iocb;
