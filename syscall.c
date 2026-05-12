@@ -137,9 +137,11 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 			 enum syscallstate state,
 			 struct kcov_child *kc, struct childdata *child)
 {
-	unsigned long ret = dry_run ? -1UL : 0;
+	unsigned long ret = 0;
 	bool fault_armed = false;
 	int saved_errno = 0;
+	int call;
+	bool needalarm;
 
 	errno = 0;
 
@@ -156,74 +158,69 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		__atomic_add_fetch(&shm->stats.op_count, 1, __ATOMIC_RELAXED);
 	}
 
-	if (dry_run == false) {
-		int call;
-		bool needalarm;
+	call = rec->nr + SYSCALL_OFFSET;
+	needalarm = entry->flags & NEED_ALARM;
 
-		call = rec->nr + SYSCALL_OFFSET;
-		needalarm = entry->flags & NEED_ALARM;
+	lock(&rec->lock);
+	rec->state = state;
+	/* Stamp the wholesale-stomp canary just before dispatch so
+	 * handle_syscall_ret() can tell whether anything overwrote
+	 * the rec while the kernel had control.  One store on the hot
+	 * path; the matching load is paired with the AFTER snapshot
+	 * read inside the post handler. */
+	rec->_canary = REC_CANARY_MAGIC;
+	unlock(&rec->lock);
 
-		lock(&rec->lock);
-		rec->state = state;
-		/* Stamp the wholesale-stomp canary just before dispatch so
-		 * handle_syscall_ret() can tell whether anything overwrote
-		 * the rec while the kernel had control.  One store on the hot
-		 * path; the matching load is paired with the AFTER snapshot
-		 * read inside the post handler. */
-		rec->_canary = REC_CANARY_MAGIC;
-		unlock(&rec->lock);
+	/* Arm the alarm after releasing rec->lock.  Previously
+	 * alarm(1) was above the lock region, creating a window
+	 * where SIGALRM could fire while we held the lock.  The
+	 * siglongjmp in the handler would then orphan it. */
+	if (needalarm)
+		(void)alarm(1);
 
-		/* Arm the alarm after releasing rec->lock.  Previously
-		 * alarm(1) was above the lock region, creating a window
-		 * where SIGALRM could fire while we held the lock.  The
-		 * siglongjmp in the handler would then orphan it. */
-		if (needalarm)
-			(void)alarm(1);
-
-		if (rec->do32bit == false) {
-			if (kc != NULL && kc->remote_mode)
-				kcov_enable_remote(kc, child != NULL ? child->num : 0);
-			else
-				kcov_enable_trace(kc);
-			/* CMP collection runs on a dedicated second fd in
-			 * parallel with whichever PC mode (per-thread or
-			 * remote) is active above; both buffers populate
-			 * simultaneously per syscall. */
-			kcov_enable_cmp(kc);
-			fault_armed = maybe_inject_fault(child, state);
-			ret = syscall(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
-			saved_errno = errno;
-			kcov_disable(kc);
-		} else {
-			if (kc != NULL && kc->remote_mode)
-				kcov_enable_remote(kc, child != NULL ? child->num : 0);
-			else
-				kcov_enable_trace(kc);
-			kcov_enable_cmp(kc);
-			fault_armed = maybe_inject_fault(child, state);
-			ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
-			saved_errno = errno;
-			kcov_disable(kc);
-		}
-
-		/* fail-nth resets to 0 in the kernel after the syscall completes.
-		 * Tally whether the armed fault actually triggered (-ENOMEM) vs
-		 * went unconsumed (the syscall didn't reach an allocation we hit). */
-		if (fault_armed) {
-			__atomic_add_fetch(&shm->stats.fault_injected, 1, __ATOMIC_RELAXED);
-			if (ret == (unsigned long)-1L && saved_errno == ENOMEM)
-				__atomic_add_fetch(&shm->stats.fault_consumed, 1, __ATOMIC_RELAXED);
-		}
-
-		/* If we became tainted, get out as fast as we can. */
-		if (is_tainted() == true) {
-			panic(EXIT_KERNEL_TAINTED);
-			_exit(EXIT_KERNEL_TAINTED);
-		}
-
-		if (needalarm)
-			(void)alarm(0);
+	if (rec->do32bit == false) {
+		if (kc != NULL && kc->remote_mode)
+			kcov_enable_remote(kc, child != NULL ? child->num : 0);
+		else
+			kcov_enable_trace(kc);
+		/* CMP collection runs on a dedicated second fd in
+		 * parallel with whichever PC mode (per-thread or
+		 * remote) is active above; both buffers populate
+		 * simultaneously per syscall. */
+		kcov_enable_cmp(kc);
+		fault_armed = maybe_inject_fault(child, state);
+		ret = syscall(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
+		saved_errno = errno;
+		kcov_disable(kc);
+	} else {
+		if (kc != NULL && kc->remote_mode)
+			kcov_enable_remote(kc, child != NULL ? child->num : 0);
+		else
+			kcov_enable_trace(kc);
+		kcov_enable_cmp(kc);
+		fault_armed = maybe_inject_fault(child, state);
+		ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
+		saved_errno = errno;
+		kcov_disable(kc);
 	}
+
+	/* fail-nth resets to 0 in the kernel after the syscall completes.
+	 * Tally whether the armed fault actually triggered (-ENOMEM) vs
+	 * went unconsumed (the syscall didn't reach an allocation we hit). */
+	if (fault_armed) {
+		__atomic_add_fetch(&shm->stats.fault_injected, 1, __ATOMIC_RELAXED);
+		if (ret == (unsigned long)-1L && saved_errno == ENOMEM)
+			__atomic_add_fetch(&shm->stats.fault_consumed, 1, __ATOMIC_RELAXED);
+	}
+
+	/* If we became tainted, get out as fast as we can. */
+	if (is_tainted() == true) {
+		panic(EXIT_KERNEL_TAINTED);
+		_exit(EXIT_KERNEL_TAINTED);
+	}
+
+	if (needalarm)
+		(void)alarm(0);
 
 	lock(&rec->lock);
 	rec->errno_post = saved_errno;
