@@ -74,6 +74,8 @@ static void sanitise_io_setup(struct syscallrecord *rec)
 
 	/* ctxp must point to a zero-initialized aio_context_t */
 	ctxp = (unsigned long *) get_writable_address(sizeof(*ctxp));
+	if (ctxp == NULL)
+		return;
 	*ctxp = 0;
 	rec->a2 = (unsigned long) ctxp;
 
