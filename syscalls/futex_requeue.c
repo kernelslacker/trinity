@@ -23,10 +23,14 @@ static void sanitise_futex_requeue(struct syscallrecord *rec)
 
 	/* futex_requeue takes exactly 2 waiters: [0]=wake source, [1]=requeue target */
 	futex_words = (__u32 *) get_writable_address(2 * sizeof(*futex_words));
+	if (futex_words == NULL)
+		return;
 	futex_words[0] = rand32();
 	futex_words[1] = rand32();
 
 	waiters = (struct futex_waitv *) get_writable_address(2 * sizeof(*waiters));
+	if (waiters == NULL)
+		return;
 	memset(waiters, 0, 2 * sizeof(*waiters));
 
 	waiters[0].uaddr = (__u64)(unsigned long) &futex_words[0];
