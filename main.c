@@ -652,6 +652,34 @@ static void process_zombie_pending(void)
 }
 
 /*
+ * Pick a slot for a freshly-forked child.  A slot is only usable when
+ * BOTH the live-pid slot and the zombie-pending slot are empty: a
+ * pids[i] == EMPTY_PIDSLOT alone does not mean the kernel has finished
+ * tearing down the previous occupant.  If the previous occupant is
+ * still in the kernel as a D-state task, handing the slot to a new
+ * child lets the dying task's late writes corrupt the new child's
+ * childdata (same race shape documented at the top of this file).
+ *
+ * Returns CHILD_NOT_FOUND when no slot is available; the caller
+ * decides whether that means "pid map exhausted" (fatal) or "all empty
+ * slots are zombie-pending" (transient, retry once
+ * process_zombie_pending() has run).
+ */
+static int find_free_childno(void)
+{
+	unsigned int i;
+
+	for_each_child(i) {
+		if (__atomic_load_n(&pids[i], __ATOMIC_RELAXED) != EMPTY_PIDSLOT)
+			continue;
+		if (zombie_pids[i] != EMPTY_PIDSLOT)
+			continue;
+		return i;
+	}
+	return CHILD_NOT_FOUND;
+}
+
+/*
  * Check that a child is making forward progress by comparing the timestamps it
  * recorded before making its last syscall.
  * If no progress is being made, send SIGKILLs to it.
@@ -711,10 +739,18 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 		return true;
 	}
 
-	/* if we're blocked in uninteruptible sleep, SIGKILL won't help.
-	 * Still increment kill_count so we eventually reap the slot. */
+	/* Uninterruptible sleep: SIGKILL cannot preempt a D-state task,
+	 * but queueing it ensures the kernel delivers it the moment the
+	 * task wakes from D and the syscall returns to the signal-check
+	 * path.  Without this, kill_count saturates at 10 purely from
+	 * passive D-state observations and register_zombie_slot fires
+	 * for a task that has never had a SIGKILL pending — letting it
+	 * resume execution (and write into childdata) the moment the
+	 * kernel finally schedules it.  Pair every kill_count++ with an
+	 * actual queued kill so the >= 10 threshold means "we tried." */
 	state = get_pid_state(childno);
 	if (state == 'D') {
+		kill_pid(pid);
 		child->kill_count++;
 		return false;
 	}
@@ -907,12 +943,23 @@ static void fork_children(void)
 		if (__atomic_load_n(&shm->spawn_no_more, __ATOMIC_ACQUIRE))
 			return;
 
-		/* Find a space for it in the pid map */
-		childno = find_childno(EMPTY_PIDSLOT);
+		/* Find a space for it in the pid map.  A slot is only
+		 * usable when both the live-pid and zombie-pending slots
+		 * are empty — see find_free_childno() and the
+		 * zombie_pids[] comment at the top of this file. */
+		childno = find_free_childno();
 		if (childno == CHILD_NOT_FOUND) {
-			outputerr("## Pid map was full!\n");
-			dump_childnos();
-			exit(EXIT_LOST_CHILD);
+			/* Distinguish a genuinely-full pid map (a fatal
+			 * bookkeeping bug) from "every empty slot is in
+			 * zombie-pending state" (transient — a future
+			 * process_zombie_pending() pass will retire them
+			 * and main_loop will call us again). */
+			if (find_childno(EMPTY_PIDSLOT) == CHILD_NOT_FOUND) {
+				outputerr("## Pid map was full!\n");
+				dump_childnos();
+				exit(EXIT_LOST_CHILD);
+			}
+			return;
 		}
 
 		{
