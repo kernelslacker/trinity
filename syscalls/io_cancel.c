@@ -15,6 +15,8 @@ static void sanitise_io_cancel(struct syscallrecord *rec)
 	struct io_event *result;
 
 	iocb = (struct iocb *) get_writable_address(sizeof(*iocb));
+	if (iocb == NULL)
+		return;
 	memset(iocb, 0, sizeof(*iocb));
 	iocb->aio_lio_opcode = IOCB_CMD_PREAD;
 	iocb->aio_fildes = get_random_fd();
@@ -22,7 +24,7 @@ static void sanitise_io_cancel(struct syscallrecord *rec)
 	iocb->aio_nbytes = 4096;
 
 	result = (struct io_event *) get_writable_address(sizeof(*result));
-	if (iocb == NULL || result == NULL)
+	if (result == NULL)
 		return;
 	memset(result, 0, sizeof(*result));
 
