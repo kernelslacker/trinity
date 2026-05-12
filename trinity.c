@@ -545,8 +545,12 @@ int main(int argc, char* argv[])
 		{
 			const char *epath = effector_map_default_path();
 
-			if (epath != NULL && effector_map_load_file(epath))
-				output(0, "effector-map: loaded from %s\n", epath);
+			if (epath != NULL) {
+				if (effector_map_load_file(epath))
+					output(0, "effector-map: loaded from %s\n", epath);
+				else
+					output(0, "effector-map: no calibrated map found for this kernel — run `trinity --effector-map` once to enable per-bit input-significance picking (boosts coverage-per-iter)\n");
+			}
 		}
 	}
 
