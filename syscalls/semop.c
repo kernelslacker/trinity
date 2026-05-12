@@ -34,6 +34,8 @@ static void sanitise_semop(struct syscallrecord *rec)
 
 	nsops = 1 + (rand() % MAX_SOPS);
 	sops = (struct sembuf *) get_writable_address(nsops * sizeof(*sops));
+	if (sops == NULL)
+		return;
 	fill_sembuf_array(sops, nsops);
 
 	rec->a2 = (unsigned long) sops;
