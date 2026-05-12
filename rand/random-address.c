@@ -25,6 +25,7 @@ void * get_writable_address(unsigned long size)
 	struct object *obj;
 	void *addr = NULL;
 	int tries = 0;
+	int mincore_retries = 0;
 
 retry:	tries++;
 	if (tries == 100)
@@ -200,6 +201,39 @@ retry:	tries++;
 				c->local_scribbled_slots_caught++;
 		}
 		goto retry;
+	}
+
+	/*
+	 * Final gate: confirm the page backing addr still has a VMA.
+	 * Sibling sanitisers issue raw syscall(2) mm calls (munmap,
+	 * mremap, MADV_DONTNEED on file mappings) that bypass libasan's
+	 * mm-interceptors, so the libasan inline shadow-probe consumers
+	 * rely on can return "addressable" for a slot whose underlying
+	 * VMA was already torn down -- the shadow byte still says ok,
+	 * but the hardware deref faults SEGV_MAPERR on first store.
+	 * mincore() on the head page returns -ENOMEM when the kernel has
+	 * no VMA for that address, which is the exact signal we need.
+	 * On EAGAIN/EFAULT/EINVAL etc. fall through; only ENOMEM is
+	 * actionable.  Bound the residency-driven retries separately
+	 * from the outer tries cap so a transient pool-wide unmap storm
+	 * doesn't spin -- after a few ENOMEMs in a row, log and return
+	 * the address anyway (the caller has no fallback path; an
+	 * occasional SEGV_MAPERR is strictly better than handing back
+	 * NULL and changing the failure shape for every consumer).
+	 */
+	{
+		unsigned char vec;
+		void *probe_addr = (void *)((uintptr_t) addr & PAGE_MASK);
+
+		if (mincore(probe_addr, 1, &vec) != 0 && errno == ENOMEM) {
+			mincore_retries++;
+			if (mincore_retries < 4)
+				goto retry;
+			outputerr("get_writable_address: page residency probe "
+				  "exhausted after %d ENOMEM retries — returning "
+				  "addr %p anyway\n",
+				  mincore_retries, addr);
+		}
 	}
 
 	return addr;
