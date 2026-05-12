@@ -720,6 +720,7 @@ static void dump_stats_json(void)
 		"\"tipc_link_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bearer_enable_ok\":%lu,\"sock_rdm_ok\":%lu,\"topsrv_connect_ok\":%lu,\"sub_ports_sent\":%lu,\"publish_ok\":%lu,\"bearer_disable_ok\":%lu},"
 		"\"tls_ulp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_install_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"splice_ok\":%lu,\"rekey_ok\":%lu,\"recv_ok\":%lu},"
 		"\"vxlan_encap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"fdb_add_ok\":%lu,\"link_up_ok\":%lu,\"packet_sent_ok\":%lu,\"link_del_ok\":%lu},"
+		"\"ovs_tunnel_vport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"create_ok\":%lu,\"delete_ok\":%lu,\"race_dellink_attempted\":%lu},"
 		"\"bridge_fdb_stp\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"raw_send_ok\":%lu,\"stp_toggle_ok\":%lu,\"fdb_del_ok\":%lu,\"link_del_ok\":%lu,\"vlan_mass_runs\":%lu,\"vlan_mass_max_n\":%lu,\"vlan_mass_enotbufs\":%lu},"
 		"\"bridge_conntrack_churn\":{\"runs\":%lu,\"flushes\":%lu,\"pkts_sent\":%lu},"
 		"\"nftables_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"table_create_ok\":%lu,\"set_create_ok\":%lu,\"chain_create_ok\":%lu,\"rule_create_ok\":%lu,\"packet_sent_ok\":%lu,\"rule_insert_ok\":%lu,\"rule_del_ok\":%lu,\"table_del_ok\":%lu,\"payload_expr_emit\":%lu,\"compat_validate_install_ok\":%lu,\"compat_validate_install_fail\":%lu,\"compat_validate_unsupported\":%lu,\"compat_validate_per_hook_pairs\":%lu,\"dormant_abort_iters\":%lu,\"dormant_abort_eperm\":%lu,\"dormant_abort_emsg\":%lu,\"dormant_abort_ok\":%lu,\"xt_ct_iters\":%lu,\"xt_ct_eperm\":%lu,\"xt_ct_unsupported\":%lu,\"xt_ct_set_ok\":%lu,\"xt_ct_get_ok\":%lu,\"xt_ct_v2_seen\":%lu,\"fwd_loop_runs\":%lu,\"fwd_loop_ns_setup_failed\":%lu,\"fwd_loop_probe_sent_ok\":%lu,\"fwd_loop_completed_ok\":%lu,\"l4frag_iters\":%lu,\"l4frag_install_ok\":%lu,\"l4frag_rule_ok\":%lu,\"l4frag_send_ok\":%lu,\"l4frag_send_failed\":%lu},"
@@ -1070,6 +1071,11 @@ static void dump_stats_json(void)
 		shm->stats.vxlan_encap_churn_link_up_ok,
 		shm->stats.vxlan_encap_churn_packet_sent_ok,
 		shm->stats.vxlan_encap_churn_link_del_ok,
+		shm->stats.ovs_tunnel_vport_churn_runs,
+		shm->stats.ovs_tunnel_vport_churn_setup_failed,
+		shm->stats.ovs_tunnel_vport_churn_create_ok,
+		shm->stats.ovs_tunnel_vport_churn_delete_ok,
+		shm->stats.ovs_tunnel_vport_churn_race_dellink_attempted,
 		shm->stats.bridge_fdb_stp_runs,
 		shm->stats.bridge_fdb_stp_setup_failed,
 		shm->stats.bridge_fdb_stp_bridge_create_ok,
@@ -3288,6 +3294,14 @@ void dump_stats(void)
 		stat_row("vxlan_encap_churn", "link_up_ok",     shm->stats.vxlan_encap_churn_link_up_ok);
 		stat_row("vxlan_encap_churn", "packet_sent_ok", shm->stats.vxlan_encap_churn_packet_sent_ok);
 		stat_row("vxlan_encap_churn", "link_del_ok",    shm->stats.vxlan_encap_churn_link_del_ok);
+	}
+
+	if (shm->stats.ovs_tunnel_vport_churn_runs) {
+		stat_row("ovs_tunnel_vport_churn", "runs",                   shm->stats.ovs_tunnel_vport_churn_runs);
+		stat_row("ovs_tunnel_vport_churn", "setup_failed",           shm->stats.ovs_tunnel_vport_churn_setup_failed);
+		stat_row("ovs_tunnel_vport_churn", "create_ok",              shm->stats.ovs_tunnel_vport_churn_create_ok);
+		stat_row("ovs_tunnel_vport_churn", "delete_ok",              shm->stats.ovs_tunnel_vport_churn_delete_ok);
+		stat_row("ovs_tunnel_vport_churn", "race_dellink_attempted", shm->stats.ovs_tunnel_vport_churn_race_dellink_attempted);
 	}
 
 	if (shm->stats.bridge_fdb_stp_runs) {

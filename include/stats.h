@@ -1065,6 +1065,13 @@ struct stats_s {
 	unsigned long vxlan_encap_churn_packet_sent_ok;	/* sendto on AF_PACKET raw bound to tunnel returned >0 */
 	unsigned long vxlan_encap_churn_link_del_ok;	/* RTM_DELLINK accepted */
 
+	/* ovs_tunnel_vport_churn childop counters */
+	unsigned long ovs_tunnel_vport_churn_runs;		/* total ovs_tunnel_vport_churn invocations */
+	unsigned long ovs_tunnel_vport_churn_setup_failed;	/* genl open / family resolve / dp create latched */
+	unsigned long ovs_tunnel_vport_churn_create_ok;		/* OVS_VPORT_CMD_NEW accepted */
+	unsigned long ovs_tunnel_vport_churn_delete_ok;		/* OVS_VPORT_CMD_DEL accepted */
+	unsigned long ovs_tunnel_vport_churn_race_dellink_attempted;	/* RTM_DELLINK racer fired at helper netdev */
+
 	/* bridge_fdb_stp childop counters */
 	unsigned long bridge_fdb_stp_runs;		/* total bridge_fdb_stp invocations */
 	unsigned long bridge_fdb_stp_setup_failed;	/* unshare(CLONE_NEWNET) / rtnl_open / bridge latched */
