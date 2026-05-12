@@ -43,6 +43,8 @@ static void sanitise_capget(struct syscallrecord *rec)
 	rec->post_state = 0;
 
 	hdr = (struct __user_cap_header_struct *) get_writable_address(sizeof(*hdr));
+	if (hdr == NULL)
+		return;
 	hdr->version = RAND_ARRAY(cap_versions);
 	hdr->pid = get_pid();
 
