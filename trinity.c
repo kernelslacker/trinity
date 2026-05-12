@@ -242,6 +242,17 @@ static void epoch_loop(void)
 			return;
 		}
 
+		/*
+		 * --max-runtime is a one-shot ceiling, not a recurring epoch.
+		 * The parser routes it through epoch_timeout to bound the first
+		 * epoch's wall-clock; once that epoch ends we exit instead of
+		 * spinning up another.
+		 */
+		if (max_runtime_set) {
+			output(0, "Max runtime reached after epoch %u, exiting.\n", epoch_nr);
+			return;
+		}
+
 		output(0, "Epoch %u complete, resetting for next epoch.\n", epoch_nr);
 		reset_epoch_state();
 	}

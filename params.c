@@ -58,6 +58,7 @@ bool group_bias = false;
 
 unsigned long epoch_iterations = 0;
 unsigned int epoch_timeout = 0;
+bool max_runtime_set = false;
 
 /*
  * Parse a duration string with optional suffix:
@@ -481,7 +482,6 @@ void parse_args(int argc, char *argv[])
 {
 	int opt;
 	int opt_index = 0;
-	bool max_runtime_set = false;
 	bool epoch_timeout_set = false;
 
 	while ((opt = getopt_long(argc, argv, paramstr, longopts, &opt_index)) != -1) {
