@@ -19,6 +19,8 @@ static void sanitise_clock_settime(struct syscallrecord *rec)
 	struct timespec *ts;
 
 	ts = (struct timespec *) get_writable_address(sizeof(*ts));
+	if (ts == NULL)
+		return;
 
 	switch (rand() % 5) {
 	case 0:	/* epoch */
