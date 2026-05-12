@@ -41,6 +41,8 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 	rec->post_state = 0;
 
 	mask = (cpu_set_t *) get_writable_address(sizeof(*mask));
+	if (mask == NULL)
+		return;
 
 	/* len must be at least sizeof(cpumask_t) for success, but exercise
 	 * various sizes including too-small for error paths. */
