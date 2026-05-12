@@ -18,6 +18,19 @@ void output_set_pid(pid_t pid)
 }
 
 /*
+ * In --stats-json mode, stdout is reserved for the single JSON document
+ * emitted by dump_stats_json() so consumers can pipe trinity directly into
+ * jq / json.loads / serde_json without stripping a banner or status lines.
+ * Every other human-readable line is routed to stderr instead.  Callers that
+ * legitimately need to write to stdout (the startup banner, etc.) consult
+ * this helper before deciding which stream to use.
+ */
+bool should_route_to_stdout(void)
+{
+	return !stats_json;
+}
+
+/*
  * level defines whether it gets displayed to the screen.
  * verbosity defaults to 1 (only level 0 prints).
  * Each -v increases verbosity: -v shows 0+1, -vv shows 0+1+2.
@@ -68,7 +81,8 @@ skip_pid:
 		exit(EXIT_FAILURE);
 	}
 
-	printf("%s%s", prefix, outputbuf);
+	fprintf(should_route_to_stdout() ? stdout : stderr,
+		"%s%s", prefix, outputbuf);
 }
 
 /*
@@ -97,5 +111,5 @@ void outputstd(const char *fmt, ...)
 void output_rendered_buffer(char *buffer)
 {
 	if (verbosity > 1)
-		fprintf(stdout, "%s", buffer);
+		fprintf(should_route_to_stdout() ? stdout : stderr, "%s", buffer);
 }

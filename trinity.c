@@ -263,8 +263,6 @@ int main(int argc, char* argv[])
 	int ret = EXIT_SUCCESS;
 	const char taskname[13]="trinity-main";
 
-	outputstd("Trinity " VERSION "  Dave Jones <davej@codemonkey.org.uk>\n");
-
 	setlinebuf(stdout);
 
 	progname = argv[0];
@@ -298,6 +296,15 @@ int main(int argc, char* argv[])
 	sanitize_inherited_fds();
 
 	parse_args(argc, argv);
+
+	/* Banner is deferred until after parse_args so --stats-json (which
+	 * reserves stdout for the JSON document) can redirect it to stderr.
+	 * Without this, the banner would land on stdout before the flag is
+	 * known and corrupt the JSON stream consumers expect to parse. */
+	if (should_route_to_stdout())
+		outputstd("Trinity " VERSION "  Dave Jones <davej@codemonkey.org.uk>\n");
+	else
+		outputerr("Trinity " VERSION "  Dave Jones <davej@codemonkey.org.uk>\n");
 
 	/* Place ourselves into a dedicated cgroup v2 sub-cgroup with a
 	 * memory cap so a runaway allocation triggers a scoped OOM kill of
