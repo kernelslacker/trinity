@@ -80,13 +80,14 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 		int signo;
 
 		sigev = (struct sigevent *) get_writable_address(sizeof(struct sigevent));
+		if (sigev != NULL) {
+			/* do not let created timer send SIGINT signal */
+			do {
+				signo = random() % _NSIG;
+			} while (signo  == SIGINT);
 
-		/* do not let created timer send SIGINT signal */
-		do {
-			signo = random() % _NSIG;
-		} while (signo  == SIGINT);
-
-		sigev->sigev_signo = signo;
+			sigev->sigev_signo = signo;
+		}
 	} else
 		sigev = NULL;
 
