@@ -83,6 +83,19 @@ void log_mprotect_failure(void *addr, size_t len, int prot,
 void * __zmalloc(size_t size, const char *func);
 #define zmalloc(size)	__zmalloc(size, __func__)
 
+/*
+ * Ownership table for syscall handlers that snapshot state into a
+ * zmalloc'd struct hung off rec->post_state.  Register at allocation
+ * time, unregister immediately before the deferred_freeptr() that
+ * releases the chunk, and lookup in the post handler to verify the
+ * snap pointer wasn't redirected to a foreign chunk by a sibling-stomp
+ * write.  See utils.c for the full rationale and the libsanitizer-UB
+ * regression in the prior malloc_usable_size-based guard this replaces.
+ */
+void post_state_register(void *p);
+void post_state_unregister(void *p);
+bool post_state_is_owned(const void *p);
+
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 #define min(x, y) ({				\
