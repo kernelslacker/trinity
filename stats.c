@@ -764,7 +764,10 @@ static void dump_stats_json(void)
 			"\"ioctl_rotation\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
 			"\"setsockopt_zero_len\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
 			"\"close_via_dup\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu}},"
-		"\"flowtable_encap_vlan\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"offloaded_pkts\":%lu,\"gso_sends\":%lu,\"vlan_teardown_races\":%lu,\"unsupported_latched\":%lu}"
+		"\"flowtable_encap_vlan\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"offloaded_pkts\":%lu,\"gso_sends\":%lu,\"vlan_teardown_races\":%lu,\"unsupported_latched\":%lu},"
+		"\"rxrpc_sendmsg_cmsg_churn\":{\"runs\":%lu,\"socket_failed\":%lu,\"sendmsg_ok\":%lu,\"sendmsg_fail\":%lu,"
+			"\"user_call_id\":%lu,\"abort\":%lu,\"accept\":%lu,\"exclusive_call\":%lu,"
+			"\"upgrade_service\":%lu,\"tx_length\":%lu,\"set_call_timeout\":%lu,\"charge_accept\":%lu}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1454,7 +1457,19 @@ static void dump_stats_json(void)
 		shm->stats.flowtable_vlan_offloaded_pkts,
 		shm->stats.flowtable_vlan_gso_sends,
 		shm->stats.flowtable_vlan_vlan_teardown_races,
-		shm->stats.flowtable_vlan_unsupported_latched);
+		shm->stats.flowtable_vlan_unsupported_latched,
+		shm->stats.rxrpc_sendmsg_cmsg_runs,
+		shm->stats.rxrpc_sendmsg_cmsg_socket_failed,
+		shm->stats.rxrpc_sendmsg_cmsg_sendmsg_ok,
+		shm->stats.rxrpc_sendmsg_cmsg_sendmsg_fail,
+		shm->stats.rxrpc_sendmsg_cmsg_sent[0],
+		shm->stats.rxrpc_sendmsg_cmsg_sent[1],
+		shm->stats.rxrpc_sendmsg_cmsg_sent[2],
+		shm->stats.rxrpc_sendmsg_cmsg_sent[3],
+		shm->stats.rxrpc_sendmsg_cmsg_sent[4],
+		shm->stats.rxrpc_sendmsg_cmsg_sent[5],
+		shm->stats.rxrpc_sendmsg_cmsg_sent[6],
+		shm->stats.rxrpc_sendmsg_cmsg_sent[7]);
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -3564,6 +3579,32 @@ void dump_stats(void)
 		stat_row("flowtable_encap_vlan", "gso_sends",            shm->stats.flowtable_vlan_gso_sends);
 		stat_row("flowtable_encap_vlan", "vlan_teardown_races",  shm->stats.flowtable_vlan_vlan_teardown_races);
 		stat_row("flowtable_encap_vlan", "unsupported_latched",  shm->stats.flowtable_vlan_unsupported_latched);
+	}
+
+	if (shm->stats.rxrpc_sendmsg_cmsg_runs) {
+		static const char * const rxrpc_cmsg_slot_names[8] = {
+			"user_call_id",
+			"abort",
+			"accept",
+			"exclusive_call",
+			"upgrade_service",
+			"tx_length",
+			"set_call_timeout",
+			"charge_accept",
+		};
+		char key[64];
+		unsigned int slot;
+
+		stat_row("rxrpc_sendmsg_cmsg_churn", "runs",          shm->stats.rxrpc_sendmsg_cmsg_runs);
+		stat_row("rxrpc_sendmsg_cmsg_churn", "socket_failed", shm->stats.rxrpc_sendmsg_cmsg_socket_failed);
+		stat_row("rxrpc_sendmsg_cmsg_churn", "sendmsg_ok",    shm->stats.rxrpc_sendmsg_cmsg_sendmsg_ok);
+		stat_row("rxrpc_sendmsg_cmsg_churn", "sendmsg_fail",  shm->stats.rxrpc_sendmsg_cmsg_sendmsg_fail);
+		for (slot = 0; slot < 8U; slot++) {
+			snprintf(key, sizeof(key), "cmsg_sent_%s",
+				 rxrpc_cmsg_slot_names[slot]);
+			stat_row("rxrpc_sendmsg_cmsg_churn", key,
+				 shm->stats.rxrpc_sendmsg_cmsg_sent[slot]);
+		}
 	}
 
 	if (shm->stats.afxdp_churn_runs) {
