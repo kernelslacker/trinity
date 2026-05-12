@@ -792,6 +792,18 @@ static void prot_to_string(int prot, char *buf, size_t buflen)
 		snprintf(buf, buflen, "NONE");
 }
 
+static const char *mprotect_errstr(int err)
+{
+	switch (err) {
+	case ENOMEM:	return "ENOMEM";
+	case EACCES:	return "EACCES";
+	case EINVAL:	return "EINVAL";
+	case EAGAIN:	return "EAGAIN";
+	case EFAULT:	return "EFAULT";
+	default:	return "unknown error";
+	}
+}
+
 void log_mprotect_failure(void *addr, size_t len, int prot,
 			  void *caller, int err)
 {
@@ -802,7 +814,7 @@ void log_mprotect_failure(void *addr, size_t len, int prot,
 	outputerr("mprotect(addr=%p, len=%zu, prot=0x%x [%s]) failed at %s: %s\n",
 		  addr, len, prot, protbuf,
 		  pc_to_string(caller, pcbuf, sizeof(pcbuf)),
-		  strerror(err));
+		  mprotect_errstr(err));
 }
 
 static bool global_objects_protected;
