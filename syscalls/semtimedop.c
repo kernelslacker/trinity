@@ -37,13 +37,17 @@ static void sanitise_semtimedop(struct syscallrecord *rec)
 
 	nsops = 1 + (rand() % MAX_SOPS);
 	sops = (struct sembuf *) get_writable_address(nsops * sizeof(*sops));
+
+	/* Short timeout to avoid blocking. */
+	ts = (struct timespec *) get_writable_address(sizeof(*ts));
+	if (sops == NULL || ts == NULL)
+		return;
+
 	fill_sembuf_array(sops, nsops);
 
 	rec->a2 = (unsigned long) sops;
 	rec->a3 = nsops;
 
-	/* Short timeout to avoid blocking. */
-	ts = (struct timespec *) get_writable_address(sizeof(*ts));
 	ts->tv_sec = 0;
 	ts->tv_nsec = rand() % 1000000;	/* up to 1ms */
 	rec->a4 = (unsigned long) ts;
