@@ -123,6 +123,8 @@ static unsigned long random_ioctl_arg(void)
 		void *page;
 
 		page = get_writable_address(page_size);
+		if (page == NULL)
+			return (unsigned long) rand64();
 		generate_random_page(page);
 
 		return (unsigned long) page;
