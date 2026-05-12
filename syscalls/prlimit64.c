@@ -70,6 +70,8 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 #endif
 
 	rlim = (struct rlimit64 *) get_writable_address(sizeof(*rlim));
+	if (rlim == NULL)
+		return;
 	rlim->rlim_cur = random_rlim64();
 	rlim->rlim_max = random_rlim64();
 
