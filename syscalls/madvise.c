@@ -18,7 +18,11 @@
 
 static void sanitise_madvise(struct syscallrecord *rec)
 {
-	(void) common_set_mmap_ptr_len();
+	struct map *map;
+
+	map = common_set_mmap_ptr_len();
+	if (map == NULL)
+		return;
 
 	if (range_overlaps_shared(rec->a1, rec->a2)) {
 		rec->a1 = 0;
