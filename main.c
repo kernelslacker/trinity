@@ -1446,6 +1446,8 @@ void main_loop(void)
 
 		top_syscalls_periodic_dump();
 
+		vma_count_periodic_dump();
+
 		kcov_plateau_check();
 
 		print_stats();

@@ -2069,6 +2069,14 @@ void defense_counters_periodic_dump(void);
  * something. */
 void top_syscalls_periodic_dump(void);
 
+/* Per-tick scan paired with defense_counters_periodic_dump: every dump
+ * window, snapshot the parent's /proc/self/maps line count and walk the
+ * live child pid slots to sum/max/min the children's per-process VMA
+ * counts.  Surfaces VMA-count growth (e.g. a thaw/freeze path that
+ * leaks a split VMA per cycle) before a host OOM-kill removes the
+ * post-mortem evidence; children_max specifically is the leak-finder. */
+void vma_count_periodic_dump(void);
+
 /* --stats-log-file backing.  Open at startup (append, header line on each
  * open), close at shutdown (footer line).  stats_log_write() mirrors its
  * formatted line to stdout via output(0,...) AND, if the log is open, to
