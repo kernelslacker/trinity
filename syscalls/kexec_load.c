@@ -34,6 +34,8 @@ static void sanitise_kexec_load(struct syscallrecord *rec)
 	/* 1-4 segments (KEXEC_SEGMENT_MAX is 16, keep it small) */
 	nr = 1 + (rand() % 4);
 	segs = (struct kexec_segment *) get_writable_address(nr * sizeof(*segs));
+	if (segs == NULL)
+		return;
 	memset(segs, 0, nr * sizeof(*segs));
 
 	for (i = 0; i < nr; i++) {
@@ -41,6 +43,8 @@ static void sanitise_kexec_load(struct syscallrecord *rec)
 		void *buf;
 
 		buf = get_writable_address(sz);
+		if (buf == NULL)
+			return;
 		memset(buf, 0, sz);
 
 		segs[i].buf = buf;
