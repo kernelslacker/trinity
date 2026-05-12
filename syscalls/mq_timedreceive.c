@@ -24,6 +24,8 @@ static void sanitise_mq_timedreceive(struct syscallrecord *rec)
 
 	/* Short timeout to avoid blocking. */
 	ts = (struct timespec *) get_writable_address(sizeof(*ts));
+	if (msg == NULL || prio == NULL || ts == NULL)
+		return;
 	ts->tv_sec = 0;
 	ts->tv_nsec = rand() % 1000000;	/* up to 1ms */
 
