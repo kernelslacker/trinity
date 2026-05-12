@@ -10,6 +10,8 @@ static void sanitise_stime(struct syscallrecord *rec)
 	time_t *t;
 
 	t = (time_t *) get_writable_address(sizeof(*t));
+	if (t == NULL)
+		return;
 
 	switch (rand() % 3) {
 	case 0:	/* near current time */
