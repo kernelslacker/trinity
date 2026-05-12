@@ -26,6 +26,8 @@ static void sanitise_clock_adjtime(struct syscallrecord *rec)
 	struct timex *tx;
 
 	tx = (struct timex *) get_writable_address(sizeof(*tx));
+	if (tx == NULL)
+		return;
 	memset(tx, 0, sizeof(*tx));
 
 	tx->modes = RAND_ARRAY(clock_adj_modes);
