@@ -493,14 +493,9 @@ static int gen_tier2(struct bpf_insn *insns, int max_insns)
 		insns[pos++] = EBPF_MOV64_IMM(BPF_REG_4, rand());
 		reg_set(&rs, BPF_REG_4);
 		while (pos < body_len - 2) {
-			int remaining = body_len - pos;
-			int skip = 1;
-
-			if (skip > remaining - 2)
-				break;
 			insns[pos++] = EBPF_JMP32_IMM(RAND_ARRAY(jmp_ops),
 						       BPF_REG_4,
-						       rand() % 1000, skip);
+						       rand() % 1000, 1);
 			insns[pos++] = EBPF_ALU32_IMM(BPF_ADD, BPF_REG_4, 1);
 		}
 		break;
