@@ -50,6 +50,8 @@ retry_maxnode:
 
 	/* Generate a valid nodemask bitmap instead of a random address. */
 	mask = (unsigned long *) get_writable_address(sizeof(unsigned long) * 2);
+	if (mask == NULL)
+		return;
 	mask[0] = 0;
 	mask[1] = 0;
 	switch (rand() % 3) {
