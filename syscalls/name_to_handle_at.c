@@ -21,9 +21,12 @@ static void sanitise_name_to_handle_at(struct syscallrecord *rec)
 {
 	struct file_handle *fh;
 	int *mnt_id;
+	void *pathname;
 
 	/* Allocate enough for the handle struct plus max handle data. */
 	fh = (struct file_handle *) get_writable_address(sizeof(*fh) + MAX_HANDLE_SZ);
+	if (fh == NULL)
+		return;
 
 	switch (rand() % 3) {
 	case 0: fh->handle_bytes = 0; break;		/* query size needed */
@@ -32,8 +35,14 @@ static void sanitise_name_to_handle_at(struct syscallrecord *rec)
 	}
 
 	mnt_id = (int *) get_writable_address(sizeof(*mnt_id));
+	if (mnt_id == NULL)
+		return;
 
-	rec->a2 = (unsigned long) get_writable_address(256);	/* pathname */
+	pathname = get_writable_address(256);
+	if (pathname == NULL)
+		return;
+
+	rec->a2 = (unsigned long) pathname;
 	rec->a3 = (unsigned long) fh;
 	rec->a4 = (unsigned long) mnt_id;
 
