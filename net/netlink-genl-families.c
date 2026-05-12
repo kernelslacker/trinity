@@ -318,10 +318,9 @@ static void parse_family_response(const struct nlmsghdr *nlh)
 			}
 			break;
 		case CTRL_ATTR_FAMILY_NAME: {
-			size_t copy = payload_len;
+			size_t copy = payload_len < sizeof(name) - 1 ?
+					payload_len : sizeof(name) - 1;
 
-			if (copy >= sizeof(name))
-				copy = sizeof(name) - 1;
 			memcpy(name, payload, copy);
 			name[copy] = '\0';
 			have_name = 1;
