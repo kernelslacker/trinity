@@ -21,6 +21,8 @@ static void sanitise_mq_getsetattr(struct syscallrecord *rec)
 		mqstat->mq_flags = O_NONBLOCK;
 
 	omqstat = (struct mq_attr *) get_writable_address(sizeof(*omqstat));
+	if (mqstat == NULL || omqstat == NULL)
+		return;
 
 	rec->a2 = (unsigned long) mqstat;
 	rec->a3 = (unsigned long) omqstat;
