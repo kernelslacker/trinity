@@ -21,9 +21,13 @@ static void sanitise_io_getevents(struct syscallrecord *rec)
 
 	nr = 1 + (rand() % 16);
 	events = (struct io_event *) get_writable_address(nr * sizeof(*events));
+	if (events == NULL)
+		return;
 	memset(events, 0, nr * sizeof(*events));
 
 	ts = (struct timespec *) get_writable_address(sizeof(*ts));
+	if (ts == NULL)
+		return;
 	ts->tv_sec = 0;
 	ts->tv_nsec = rand() % 1000000;	/* up to 1ms */
 
