@@ -21,6 +21,8 @@ static void sanitise_timerfd_settime(struct syscallrecord *rec)
 	struct itimerspec *its;
 
 	its = (struct itimerspec *) get_writable_address(sizeof(*its));
+	if (its == NULL)
+		return;
 
 	/* interval: 1-10 seconds */
 	its->it_interval.tv_sec = 1 + (rand() % 10);
