@@ -31,6 +31,8 @@ static void sanitise_utimensat(struct syscallrecord *rec)
 	}
 
 	ts = (struct timespec *) get_writable_address(sizeof(*ts) * 2);
+	if (ts == NULL)
+		return;
 
 	for (i = 0; i < 2; i++) {
 		switch (rand() % 4) {
