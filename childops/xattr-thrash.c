@@ -118,7 +118,8 @@ bool xattr_thrash(struct childdata *child)
 	struct timespec start;
 	unsigned int opened = 0;
 	unsigned int iter;
-	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
+	unsigned int iters = BUDGETED(CHILD_OP_XATTR_THRASH,
+				      JITTER_RANGE(MAX_ITERATIONS));
 	unsigned int i;
 
 	(void)child;
