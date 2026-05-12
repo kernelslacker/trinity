@@ -51,6 +51,8 @@ static void sanitise_mprotect(struct syscallrecord *rec)
 	rec->post_state = 0;
 
 	map = common_set_mmap_ptr_len();
+	if (map == NULL)
+		return;
 
 	if (range_overlaps_shared(rec->a1, rec->a2)) {
 		rec->a1 = 0;
