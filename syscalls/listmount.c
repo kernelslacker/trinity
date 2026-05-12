@@ -65,6 +65,8 @@ static void sanitise_listmount(struct syscallrecord *rec)
 #endif
 
 	req = (struct mnt_id_req *) get_writable_address(sizeof(*req));
+	if (req == NULL)
+		return;
 	memset(req, 0, sizeof(*req));
 
 	req->size = MNT_ID_REQ_SIZE_VER0;
@@ -77,6 +79,8 @@ static void sanitise_listmount(struct syscallrecord *rec)
 
 	nr = 1 + (rand() % 64);
 	mnt_ids = (__u64 *) get_writable_address(nr * sizeof(*mnt_ids));
+	if (mnt_ids == NULL)
+		return;
 
 	rec->a1 = (unsigned long) req;
 	rec->a2 = (unsigned long) mnt_ids;
