@@ -38,6 +38,8 @@ static void sanitise_set_mempolicy(struct syscallrecord *rec)
 	/* Nodemask is a bitmap, one bit per NUMA node. */
 	maxnode = 1 + (rand() % MAX_NUMNODES);
 	mask = (unsigned long *) get_writable_address(sizeof(unsigned long) * 2);
+	if (mask == NULL)
+		return;
 	mask[0] = 0;
 	mask[1] = 0;
 
