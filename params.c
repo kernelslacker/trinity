@@ -123,6 +123,16 @@ static bool parse_unsigned(const char *s, const char *name,
 		return false;
 	}
 
+	/*
+	 * strtoul() silently accepts a leading '-' and returns the negation
+	 * modulo ULONG_MAX+1, turning "-1" into a huge "unsigned" limit.
+	 * Reject it up front so the parser matches its documented contract.
+	 */
+	if (s[0] == '-') {
+		outputerr("--%s: negative value '%s' not allowed\n", name, s);
+		return false;
+	}
+
 	errno = 0;
 	val = strtoul(s, &end, 10);
 	if (end == s || *end != '\0') {
@@ -589,6 +599,10 @@ void parse_args(int argc, char *argv[])
 		case 'N': {
 			char *end;
 
+			if (optarg[0] == '-') {
+				outputerr("-N: negative value '%s' not allowed\n", optarg);
+				exit(EXIT_FAILURE);
+			}
 			errno = 0;
 			syscalls_todo = strtoul(optarg, &end, 10);
 			if (end == optarg || *end != '\0' || errno == ERANGE) {
@@ -598,19 +612,15 @@ void parse_args(int argc, char *argv[])
 			break;
 		}
 
-		case 'P': {
-			char *end;
-
-			errno = 0;
-			specific_domain = strtoul(optarg, &end, 10);
-			if (end == optarg || *end != '\0' || errno == ERANGE) {
-				outputerr("can't parse '%s' as a number\n", optarg);
-				exit(EXIT_FAILURE);
-			}
+		case 'P':
+			/*
+			 * -P takes a domain name (e.g. INET, PF_INET6); the
+			 * actual lookup happens later in find_specific_domain()
+			 * via the domains[] table.  Just stash optarg here.
+			 */
 			do_specific_domain = true;
 			specific_domain_optarg = optarg;
 			break;
-		}
 
 		case 'q':
 			quiet = true;
