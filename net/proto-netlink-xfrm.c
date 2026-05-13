@@ -182,6 +182,7 @@
 #define XFRM_MSG_ALLOCSPI		0x16
 #define XFRM_MSG_EXPIRE			0x18
 #define XFRM_MSG_UPDSA			0x1a
+#define XFRM_MSG_POLEXPIRE		0x1b
 #define XFRM_MSG_FLUSHSA		0x1c
 #define XFRM_MSG_FLUSHPOLICY		0x1d
 #define XFRM_MSG_NEWAE			0x1e
@@ -417,6 +418,11 @@ struct xfrm_userpolicy_id {
 	struct xfrm_selector		sel;
 	__u32				index;
 	__u8				dir;
+};
+
+struct xfrm_user_polexpire {
+	struct xfrm_userpolicy_info	pol;
+	__u8				hard;
 };
 
 struct xfrm_user_migrate {
@@ -695,6 +701,76 @@ static void sa_ring_drain(void)
 
 	for (i = 0; i < NR_SA_RING_SLOTS; i++)
 		sa_ring[i].used = false;
+}
+
+/*
+ * Policy tracking ring.  NEWPOLICY acceptances push (sel, dir, family)
+ * entries; POLEXPIRE targets a random entry; FLUSHPOLICY drains every
+ * slot.  Smaller than the SA ring because POLEXPIRE is the only consumer
+ * today.  No eviction-emit on push -- a stale slot just gets overwritten;
+ * the kernel handles a POLEXPIRE on a no-longer-installed policy by
+ * bouncing on ESRCH which is a fine no-op.
+ */
+#define NR_POLICY_RING_SLOTS	4
+
+struct xfrm_policy_track {
+	struct xfrm_selector	sel;
+	__u8			dir;
+	__u16			family;
+	bool			used;
+};
+
+static struct xfrm_policy_track policy_ring[NR_POLICY_RING_SLOTS];
+static unsigned int policy_ring_next;
+
+static unsigned int policy_ring_count(void)
+{
+	unsigned int i, n = 0;
+
+	for (i = 0; i < NR_POLICY_RING_SLOTS; i++)
+		if (policy_ring[i].used)
+			n++;
+	return n;
+}
+
+static void policy_ring_push(const struct xfrm_policy_track *entry)
+{
+	struct xfrm_policy_track *slot = &policy_ring[policy_ring_next];
+
+	*slot = *entry;
+	slot->used = true;
+	policy_ring_next = (policy_ring_next + 1) % NR_POLICY_RING_SLOTS;
+}
+
+static bool policy_ring_pick(struct xfrm_policy_track *out, unsigned int *idx_out)
+{
+	unsigned int i, count = policy_ring_count();
+	unsigned int pick, seen = 0;
+
+	if (count == 0)
+		return false;
+
+	pick = rand32() % count;
+	for (i = 0; i < NR_POLICY_RING_SLOTS; i++) {
+		if (!policy_ring[i].used)
+			continue;
+		if (seen == pick) {
+			*out = policy_ring[i];
+			if (idx_out)
+				*idx_out = i;
+			return true;
+		}
+		seen++;
+	}
+	return false;
+}
+
+static void policy_ring_drain(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < NR_POLICY_RING_SLOTS; i++)
+		policy_ring[i].used = false;
 }
 
 /*
@@ -1543,6 +1619,7 @@ static int xfrm_emit_newpolicy(int fd)
 	struct xfrm_sa_track t;
 	__u16 family;
 	size_t off;
+	int rc;
 
 	memset(buf, 0, sizeof(buf));
 	nlh = (struct nlmsghdr *)buf;
@@ -1600,7 +1677,17 @@ static int xfrm_emit_newpolicy(int fd)
 		return -EIO;
 
 	nlh->nlmsg_len = (__u32)off;
-	return xfrm_send_recv(fd, buf, off);
+	rc = xfrm_send_recv(fd, buf, off);
+	if (rc == 0) {
+		struct xfrm_policy_track entry = {
+			.sel    = pol->sel,
+			.dir    = pol->dir,
+			.family = family,
+			.used   = true,
+		};
+		policy_ring_push(&entry);
+	}
+	return rc;
 }
 
 static int xfrm_emit_delpolicy(int fd)
@@ -1663,6 +1750,7 @@ static int xfrm_emit_flushpolicy(int fd)
 	unsigned char buf[64];
 	struct nlmsghdr *nlh;
 	size_t off = NLMSG_HDRLEN;
+	int rc;
 
 	memset(buf, 0, sizeof(buf));
 	nlh = (struct nlmsghdr *)buf;
@@ -1670,7 +1758,14 @@ static int xfrm_emit_flushpolicy(int fd)
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
 	nlh->nlmsg_seq   = xfrm_next_seq();
 	nlh->nlmsg_len   = (__u32)off;
-	return xfrm_send_recv(fd, buf, off);
+	rc = xfrm_send_recv(fd, buf, off);
+
+	/* Whether or not the kernel accepts (a partial flush may leave
+	 * some entries), drain the policy ring -- the next POLEXPIRE on
+	 * a stale entry would just bounce off ESRCH anyway. */
+	if (rc == 0)
+		policy_ring_drain();
+	return rc;
 }
 
 /*
@@ -1726,6 +1821,59 @@ static int xfrm_emit_migrate(int fd)
 	if (!off)
 		return -EIO;
 
+	nlh->nlmsg_len = (__u32)off;
+	return xfrm_send_recv(fd, buf, off);
+}
+
+/*
+ * Build XFRM_MSG_POLEXPIRE.  Body is xfrm_user_polexpire = embedded
+ * xfrm_userpolicy_info shell + trailing __u8 hard.  The kernel handler
+ * (xfrm_add_pol_expire in net/xfrm/xfrm_user.c) looks up the policy by
+ * (sel, dir) from the embedded shell, then calls km_policy_expired() with
+ * the trailing ->hard byte; hard==1 also tears the policy down via
+ * xfrm_policy_delete().  Pick from the policy ring when one exists so the
+ * lookup hits a real installed policy; otherwise synthesise (sel, dir)
+ * with random values and let the kernel bounce on ESRCH -- still walks
+ * the parser arms.
+ */
+static int xfrm_emit_polexpire(int fd)
+{
+	unsigned char buf[XFRM_BUF_BYTES];
+	struct nlmsghdr *nlh;
+	struct xfrm_user_polexpire *upe;
+	struct xfrm_userpolicy_info *pol;
+	struct xfrm_policy_track t;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_POLEXPIRE;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = xfrm_next_seq();
+
+	upe = (struct xfrm_user_polexpire *)NLMSG_DATA(nlh);
+	pol = &upe->pol;
+
+	if (policy_ring_pick(&t, NULL)) {
+		pol->sel = t.sel;
+		pol->dir = t.dir;
+	} else {
+		fill_selector(&pol->sel, pick_family());
+		pol->dir = (__u8)(rand32() % 3);	/* IN / OUT / FWD */
+	}
+	fill_lifetime(&pol->lft);
+	pol->priority = (__u32)(rand32() & 0xffff);
+	pol->index    = 0;	/* kernel matches by sel+dir */
+	pol->action   = XFRM_POLICY_ALLOW;
+	pol->flags    = (__u8)(rand32() & 0x7);
+	pol->share    = XFRM_SHARE_ANY;
+
+	/* Rotate hard 0/1 -- soft hits the km_policy_expired notification
+	 * path without teardown; hard additionally drives xfrm_policy_delete
+	 * and the audit_policy_delete arm. */
+	upe->hard = (__u8)(rand32() & 1);
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*upe));
 	nlh->nlmsg_len = (__u32)off;
 	return xfrm_send_recv(fd, buf, off);
 }
@@ -1812,6 +1960,7 @@ enum xfrm_msg_kind {
 	XMK_FLUSHPOLICY,
 	XMK_SETDEFAULT,
 	XMK_GETDEFAULT,
+	XMK_POLEXPIRE,
 	XMK_MAX,
 };
 
@@ -1838,6 +1987,7 @@ static const unsigned int xmk_weights_empty_ring[XMK_MAX] = {
 	[XMK_FLUSHPOLICY]	= 1,
 	[XMK_SETDEFAULT]	= 5,
 	[XMK_GETDEFAULT]	= 3,
+	[XMK_POLEXPIRE]		= 0,
 };
 static const unsigned int xmk_weights_full_ring[XMK_MAX] = {
 	[XMK_NEWSA]		= 20,
@@ -1853,6 +2003,7 @@ static const unsigned int xmk_weights_full_ring[XMK_MAX] = {
 	[XMK_FLUSHPOLICY]	= 1,
 	[XMK_SETDEFAULT]	= 5,
 	[XMK_GETDEFAULT]	= 3,
+	[XMK_POLEXPIRE]		= 5,
 };
 
 static enum xfrm_msg_kind pick_msg_kind(void)
@@ -1895,6 +2046,7 @@ static void dispatch_msg_kind(int fd, enum xfrm_msg_kind k)
 	case XMK_FLUSHPOLICY:	rc = xfrm_emit_flushpolicy(fd); break;
 	case XMK_SETDEFAULT:	rc = xfrm_emit_setdefault(fd); break;
 	case XMK_GETDEFAULT:	rc = xfrm_emit_getdefault(fd); break;
+	case XMK_POLEXPIRE:	rc = xfrm_emit_polexpire(fd); break;
 	default:		rc = 0; break;
 	}
 
