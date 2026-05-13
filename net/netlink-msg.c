@@ -58,7 +58,7 @@ static const unsigned short rtnl_types[] = {
 	RTM_NEWCHAIN, RTM_GETCHAIN,
 	RTM_NEWNEXTHOP, RTM_GETNEXTHOP,
 	RTM_NEWLINKPROP,
-	RTM_NEWVLAN, RTM_GETVLAN,
+	RTM_NEWVLAN, RTM_DELVLAN, RTM_GETVLAN,
 };
 
 static const unsigned short xfrm_types[] = {
@@ -1047,6 +1047,16 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		*out_family = bpm.family;
 		memcpy(body, &bpm, sizeof(bpm));
 		return sizeof(bpm);
+	}
+	case 18: { /* RTM_*VLAN: struct br_vlan_msg */
+		struct br_vlan_msg bvm;
+		bvm.family = rand_family();
+		bvm.reserved1 = 0;
+		bvm.reserved2 = 0;
+		bvm.ifindex = rand32() % 64;
+		*out_family = bvm.family;
+		memcpy(body, &bvm, sizeof(bvm));
+		return sizeof(bvm);
 	}
 	case 5: /* RTM_*QDISC */
 	case 6: /* RTM_*TCLASS */
