@@ -913,6 +913,13 @@ static const unsigned short nha_attrs[] = {
 	NHA_HW_STATS_USED, NHA_HW_STATS_ENABLE,
 };
 
+static const unsigned short netconfa_attrs[] = {
+	NETCONFA_IFINDEX, NETCONFA_FORWARDING, NETCONFA_RP_FILTER,
+	NETCONFA_MC_FORWARDING, NETCONFA_PROXY_NEIGH,
+	NETCONFA_IGNORE_ROUTES_WITH_LINKDOWN,
+	NETCONFA_INPUT, NETCONFA_BC_FORWARDING,
+};
+
 /* Pick an nlattr type appropriate for an rtnetlink message group.
  * Returns 0 for unknown groups (caller falls back to random). */
 static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
@@ -932,7 +939,9 @@ static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
 	case 5:
 	case 6:
 	case 7: return RAND_ARRAY(tca_attrs);
-	case 22: return RAND_ARRAY(nha_attrs);
+	case 16: return RAND_ARRAY(netconfa_attrs);
+	case 22:
+	case 25: return RAND_ARRAY(nha_attrs);
 	default: return 0;
 	}
 }
