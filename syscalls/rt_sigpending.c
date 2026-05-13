@@ -1,11 +1,13 @@
 /*
  * SYSCALL_DEFINE2(rt_sigpending, sigset_t __user *, set, size_t, sigsetsize)
  */
+#include <fcntl.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
@@ -74,12 +76,14 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 {
 	struct rt_sigpending_post_state *snap =
 		(struct rt_sigpending_post_state *) rec->post_state;
-	FILE *f;
-	char line[128];
+	char buf[2048];
+	char *line;
+	ssize_t n;
+	int fd;
 	uint64_t syscall_pending, proc_pending = 0;
 	unsigned long sigpnd = 0, shdpnd = 0;
 	bool have_sigpnd = false, have_shdpnd = false;
-	sigset_t buf;
+	sigset_t sset;
 
 	if (snap == NULL)
 		return;
@@ -117,24 +121,33 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 		goto out_free;
 	}
 
-	memcpy(&buf, (const void *) snap->set, sizeof(buf));
-	memcpy(&syscall_pending, &buf, sizeof(syscall_pending));
+	memcpy(&sset, (const void *) snap->set, sizeof(sset));
+	memcpy(&syscall_pending, &sset, sizeof(syscall_pending));
 
-	f = fopen("/proc/self/status", "r");
-	if (!f)
+	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
+	 * thousands of times per second under fuzz, and stdio's per-call malloc
+	 * of FILE struct + IO buffer is heap traffic we don't need. */
+	fd = open("/proc/self/status", O_RDONLY);
+	if (fd < 0)
 		goto out_free;
-	while (fgets(line, sizeof(line), f)) {
-		if (!have_sigpnd && strncmp(line, "SigPnd:", 7) == 0) {
-			if (sscanf(line + 7, "%lx", &sigpnd) == 1)
-				have_sigpnd = true;
-		} else if (!have_shdpnd && strncmp(line, "ShdPnd:", 7) == 0) {
-			if (sscanf(line + 7, "%lx", &shdpnd) == 1)
-				have_shdpnd = true;
-		}
-		if (have_sigpnd && have_shdpnd)
-			break;
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		goto out_free;
+	buf[n] = '\0';
+	/* Anchor on a newline so a "SigPnd:"/"ShdPnd:" substring inside an
+	 * earlier field cannot mis-target the parse.  Both halves must be
+	 * located independently before the comparison runs. */
+	line = strstr(buf, "\nSigPnd:");
+	if (line != NULL) {
+		if (sscanf(line + 8, "%lx", &sigpnd) == 1)
+			have_sigpnd = true;
 	}
-	fclose(f);
+	line = strstr(buf, "\nShdPnd:");
+	if (line != NULL) {
+		if (sscanf(line + 8, "%lx", &shdpnd) == 1)
+			have_shdpnd = true;
+	}
 
 	if (!have_sigpnd || !have_shdpnd)
 		goto out_free;
