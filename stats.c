@@ -567,6 +567,7 @@ static void dump_stats_json(void)
 			"\"closed_tracked\":%lu,\"regenerated\":%lu,\"duped\":%lu,"
 			"\"events_processed\":%lu,\"events_dropped\":%lu,"
 			"\"hash_reinsert_dropped\":%lu,"
+			"\"local_hash_insert_dropped\":%lu,"
 			"\"runtime_registered\":%lu,\"epoll_lazy_armed\":%lu,"
 			"\"epoll_blocking_poll_skipped\":%lu},"
 		"\"oracle\":{\"fd_anomalies\":%lu,\"mmap_anomalies\":%lu,"
@@ -779,6 +780,7 @@ static void dump_stats_json(void)
 		shm->stats.fd_closed_tracked, shm->stats.fd_regenerated,
 		shm->stats.fd_duped, shm->stats.fd_events_processed,
 		shm->stats.fd_events_dropped, shm->stats.fd_hash_reinsert_dropped,
+		shm->stats.local_fd_hash_insert_dropped,
 		shm->stats.fd_runtime_registered,
 		shm->stats.epoll_lazy_armed,
 		shm->stats.epoll_blocking_poll_skipped,
@@ -2513,6 +2515,7 @@ void dump_stats(void)
 	    shm->stats.fd_regenerated || shm->stats.fd_stale_by_generation ||
 	    shm->stats.fd_duped || shm->stats.fd_events_processed ||
 	    shm->stats.fd_hash_reinsert_dropped ||
+	    shm->stats.local_fd_hash_insert_dropped ||
 	    shm->stats.epoll_lazy_armed ||
 	    shm->stats.epoll_blocking_poll_skipped) {
 		stat_row("fd_lifecycle", "stale_detected",      shm->stats.fd_stale_detected);
@@ -2523,6 +2526,8 @@ void dump_stats(void)
 		stat_row("fd_lifecycle", "events_processed",    shm->stats.fd_events_processed);
 		stat_row("fd_lifecycle", "events_dropped",      shm->stats.fd_events_dropped);
 		stat_row("fd_lifecycle", "hash_reinsert_dropped", shm->stats.fd_hash_reinsert_dropped);
+		stat_row("fd_lifecycle", "local_hash_insert_dropped",
+			 shm->stats.local_fd_hash_insert_dropped);
 		stat_row("fd_lifecycle", "epoll_lazy_armed",    shm->stats.epoll_lazy_armed);
 		stat_row("fd_lifecycle", "epoll_blocking_poll_skipped",
 			 shm->stats.epoll_blocking_poll_skipped);

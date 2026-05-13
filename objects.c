@@ -444,8 +444,11 @@ static void local_fd_hash_insert(struct objhead *head, int fd,
 	 * but if it ever happens the caller gracefully falls back to the
 	 * uninserted state: find_local_object_by_fd() returns NULL and
 	 * register_returned_fd() simply re-adds, which is the same outcome
-	 * as the pre-hash linear walk missing the entry.
+	 * as the pre-hash linear walk missing the entry.  Bump a stat so
+	 * the silent drop is observable in the end-of-run summary.
 	 */
+	__atomic_add_fetch(&shm->stats.local_fd_hash_insert_dropped, 1,
+			   __ATOMIC_RELAXED);
 }
 
 static void local_fd_hash_remove(struct objhead *head, int fd)

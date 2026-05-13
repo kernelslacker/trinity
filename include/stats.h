@@ -1524,6 +1524,16 @@ struct stats_s {
 	 * re-seat and the per-iter outputerr names which fd. */
 	unsigned long fd_hash_reinsert_dropped;
 
+	/* local_fd_hash_insert() exhausted the linear-probe chain in a
+	 * per-child objhead's fd_hash[] (LOCAL_FD_HASH_SIZE slots) and
+	 * silently returned without inserting.  Subsequent
+	 * find_local_object_by_fd() lookups for that fd will return NULL
+	 * and the operation drops the object metadata.  Non-zero means
+	 * a child has more concurrent fds of one type than the per-child
+	 * hash can index; the existing behaviour is preserved (still a
+	 * silent return) — this counter just makes the loss visible. */
+	unsigned long local_fd_hash_insert_dropped;
+
 	/* Number of times a child won the CAS in arm_epoll_if_needed() and
 	 * actually performed the EPOLL_CTL_ADD population for an unarmed
 	 * epfd.  Should rise once per new epfd (init pool seeds + every
