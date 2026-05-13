@@ -63,6 +63,7 @@ static const unsigned short rtnl_types[] = {
 	RTM_NEWLINKPROP,
 	RTM_NEWVLAN, RTM_DELVLAN, RTM_GETVLAN,
 	RTM_NEWNEXTHOPBUCKET, RTM_DELNEXTHOPBUCKET, RTM_GETNEXTHOPBUCKET,
+	RTM_NEWTUNNEL, RTM_DELTUNNEL, RTM_GETTUNNEL,
 };
 
 static const unsigned short xfrm_types[] = {
@@ -1130,6 +1131,16 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		*out_family = nh.nh_family;
 		memcpy(body, &nh, sizeof(nh));
 		return sizeof(nh);
+	}
+	case 26: { /* RTM_*TUNNEL: struct tunnel_msg */
+		struct tunnel_msg tm;
+		tm.family = rand_family();
+		tm.flags = rand32() & 0xff;
+		tm.reserved2 = 0;
+		tm.ifindex = rand32() % 64;
+		*out_family = tm.family;
+		memcpy(body, &tm, sizeof(tm));
+		return sizeof(tm);
 	}
 	case 5: /* RTM_*QDISC */
 	case 6: /* RTM_*TCLASS */
