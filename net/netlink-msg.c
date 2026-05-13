@@ -1001,7 +1001,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		rtm.rtm_table = rand() % 256;
 		rtm.rtm_protocol = rand() % 256;
 		rtm.rtm_scope = rand() % 256;
-		rtm.rtm_type = rand() % (RTN_MAX + 1);
+		rtm.rtm_type = RAND_BOOL() ? rand() % (RTN_MAX + 1) : rand() % 256;
 		rtm.rtm_flags = rand32();
 		*out_family = rtm.rtm_family;
 		memcpy(body, &rtm, sizeof(rtm));
