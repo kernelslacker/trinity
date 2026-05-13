@@ -906,6 +906,13 @@ static const unsigned short tca_attrs[] = {
 	TCA_INGRESS_BLOCK, TCA_EXT_WARN_MSG,
 };
 
+static const unsigned short nha_attrs[] = {
+	NHA_GROUP, NHA_GROUP_TYPE, NHA_BLACKHOLE, NHA_OIF, NHA_GATEWAY,
+	NHA_ENCAP_TYPE, NHA_ENCAP, NHA_GROUPS, NHA_MASTER, NHA_FDB,
+	NHA_RES_GROUP, NHA_RES_BUCKET, NHA_OP_FLAGS,
+	NHA_HW_STATS_USED, NHA_HW_STATS_ENABLE,
+};
+
 /* Pick an nlattr type appropriate for an rtnetlink message group.
  * Returns 0 for unknown groups (caller falls back to random). */
 static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
@@ -925,6 +932,7 @@ static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
 	case 5:
 	case 6:
 	case 7: return RAND_ARRAY(tca_attrs);
+	case 22: return RAND_ARRAY(nha_attrs);
 	default: return 0;
 	}
 }
