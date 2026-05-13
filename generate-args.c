@@ -536,7 +536,7 @@ static void blanket_address_scrub(struct syscallentry *entry, struct syscallreco
 	unsigned int i;
 	for (i = 1; i <= entry->num_args; i++) {
 		enum argtype t = entry->argtype[i - 1];
-		if (t != ARG_ADDRESS && t != ARG_NON_NULL_ADDRESS)
+		if (t != ARG_ADDRESS && t != ARG_NON_NULL_ADDRESS && t != ARG_RANGE)
 			continue;
 		unsigned long *slot;
 		switch (i) {
