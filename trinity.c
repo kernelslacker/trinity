@@ -353,7 +353,7 @@ int main(int argc, char* argv[])
 		alt_op_children = clamped;
 	}
 
-	/* Compute the default explorer-pool size (max_children/8) when the
+	/* Compute the default explorer-pool size (max_children/4) when the
 	 * operator did not pass --explorer-children, and clamp an explicit
 	 * value to max_children/2.  Runs after the alt-op clamp so both
 	 * partitions see the final max_children. */
