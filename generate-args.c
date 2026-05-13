@@ -524,6 +524,34 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
 	BUG("unreachable!\n");
 }
 
+/* Default-on scrub: any ARG_ADDRESS/ARG_NON_NULL_ADDRESS slot left
+ * aliasing shared_regions or the libc heap arena gets redirected to
+ * a writable address before the syscall is issued. Catches the
+ * coverage-gap class where per-syscall sanitisers either don't call
+ * avoid_shared_buffer() or miss specific slots. Length default is
+ * page_size (conservative; bare ARG_ADDRESS carries no length info
+ * and walking adjacent slots per dispatch is too expensive). */
+static void blanket_address_scrub(struct syscallentry *entry, struct syscallrecord *rec)
+{
+	unsigned int i;
+	for (i = 1; i <= entry->num_args; i++) {
+		enum argtype t = entry->argtype[i - 1];
+		if (t != ARG_ADDRESS && t != ARG_NON_NULL_ADDRESS)
+			continue;
+		unsigned long *slot;
+		switch (i) {
+		case 1: slot = &rec->a1; break;
+		case 2: slot = &rec->a2; break;
+		case 3: slot = &rec->a3; break;
+		case 4: slot = &rec->a4; break;
+		case 5: slot = &rec->a5; break;
+		case 6: slot = &rec->a6; break;
+		default: continue;
+		}
+		avoid_shared_buffer(slot, page_size);
+	}
+}
+
 void generic_sanitise(struct syscallentry *entry, struct syscallrecord *rec)
 {
 	/* Defensive: zero arg slots so any ARG_UNDEFINED entry doesn't
@@ -611,6 +639,7 @@ void generate_syscall_args(struct syscallrecord *rec)
 	 * skip generic_sanitise — the args are already populated. */
 	if (entry->sanitise == NULL && minicorpus_replay(rec)) {
 		rec->rettype = entry->rettype;
+		blanket_address_scrub(entry, rec);
 		unlock(&rec->lock);
 		return;
 	}
@@ -619,6 +648,7 @@ void generate_syscall_args(struct syscallrecord *rec)
 	rec->rettype = entry->rettype;
 	if (entry->sanitise)
 		entry->sanitise(rec);
+	blanket_address_scrub(entry, rec);
 
 	unlock(&rec->lock);
 }
