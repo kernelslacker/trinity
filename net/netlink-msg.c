@@ -924,6 +924,10 @@ static const unsigned short ifal_attrs[] = {
 	IFAL_ADDRESS, IFAL_LABEL,
 };
 
+static const unsigned short mdba_attrs[] = {
+	MDBA_MDB, MDBA_ROUTER, MDBA_SET_ENTRY, MDBA_SET_ENTRY_ATTRS,
+};
+
 /* Pick an nlattr type appropriate for an rtnetlink message group.
  * Returns 0 for unknown groups (caller falls back to random). */
 static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
@@ -945,6 +949,7 @@ static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
 	case 7: return RAND_ARRAY(tca_attrs);
 	case 14: return RAND_ARRAY(ifal_attrs);
 	case 16: return RAND_ARRAY(netconfa_attrs);
+	case 17: return RAND_ARRAY(mdba_attrs);
 	case 22:
 	case 25: return RAND_ARRAY(nha_attrs);
 	default: return 0;
