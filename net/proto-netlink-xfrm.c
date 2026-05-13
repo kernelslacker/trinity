@@ -179,6 +179,7 @@
 #define XFRM_MSG_DELSA			0x11
 #define XFRM_MSG_NEWPOLICY		0x13
 #define XFRM_MSG_DELPOLICY		0x14
+#define XFRM_MSG_ALLOCSPI		0x16
 #define XFRM_MSG_EXPIRE			0x18
 #define XFRM_MSG_UPDSA			0x1a
 #define XFRM_MSG_FLUSHSA		0x1c
@@ -1179,6 +1180,118 @@ static int xfrm_emit_newsa(int fd)
 }
 
 /*
+ * Pick a (min, max) SPI range, rotating across happy-path and edge
+ * cases the kernel scan loop and validation arms care about:
+ *
+ *   60% normal happy-path 0x100..0x1000-ish range
+ *   10% min == max single-value scan
+ *   10% min  > max EINVAL early-return arm
+ *   10% min == 0 IPCOMP-distinguishing boundary
+ *   10% max == ~0U top-of-range edge
+ */
+static void pick_spi_range(__u32 *out_min, __u32 *out_max)
+{
+	unsigned int r = rand32() % 100U;
+	__u32 a, b;
+
+	if (r < 60U) {
+		*out_min = 0x100U + (rand32() % 0x1000U);
+		*out_max = *out_min + 0x100U + (rand32() % 0xff00U);
+	} else if (r < 70U) {
+		*out_min = *out_max = 0x100U + (rand32() % 0xfffffU);
+	} else if (r < 80U) {
+		a = 0x100U + (rand32() % 0xff00U);
+		b = 0x100U + (rand32() % 0xff00U);
+		if (a == b)
+			b++;
+		*out_min = (a > b ? a : b) + 1U;
+		*out_max = (a < b ? a : b);
+	} else if (r < 90U) {
+		*out_min = 0U;
+		*out_max = 0x100U + (rand32() % 0xff00U);
+	} else {
+		*out_min = rand32() | 0x80000000U;
+		*out_max = ~0U;
+	}
+}
+
+/*
+ * Build XFRM_MSG_ALLOCSPI -- NEWSA-shaped shell asking the kernel to
+ * pick a free SPI within [min, max].  No SA-ring push: the kernel-
+ * allocated SPI value is returned in the response payload but the
+ * grammar has no path to thread that back into the ring shape.
+ */
+static int xfrm_emit_allocspi(int fd)
+{
+	unsigned char buf[XFRM_BUF_BYTES];
+	struct nlmsghdr *nlh;
+	struct xfrm_userspi_info *spi;
+	struct xfrm_usersa_info *sa;
+	__u16 family = pick_family();
+	__u8 mode = pick_mode();
+	__u8 proto = pick_sa_proto();
+	__u32 reqid = (rand32() & 0xff) + 1U;
+	size_t off;
+	int rc;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_ALLOCSPI;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = xfrm_next_seq();
+
+	spi = (struct xfrm_userspi_info *)NLMSG_DATA(nlh);
+	sa = &spi->info;
+	fill_selector(&sa->sel, family);
+	sa->id.proto      = proto;
+	sa->id.spi        = 0;	/* kernel allocates */
+	fill_addresses(family, &sa->saddr, &sa->id.daddr);
+	fill_lifetime(&sa->lft);
+	sa->reqid         = reqid;
+	sa->family        = family;
+	sa->mode          = mode;
+	sa->replay_window = (__u8)(rand32() % 64);
+	sa->flags         = (__u8)(rand32() & 0x7f);
+	pick_spi_range(&spi->min, &spi->max);
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*spi));
+
+	if (proto == IPPROTO_AH) {
+		off = append_auth_trunc(buf, off, sizeof(buf));
+	} else if (proto == IPPROTO_COMP) {
+		off = append_comp(buf, off, sizeof(buf));
+	} else {
+		if (rand32() & 1) {
+			off = append_aead(buf, off, sizeof(buf));
+		} else {
+			off = append_crypt(buf, off, sizeof(buf));
+			if (off)
+				off = append_auth_trunc(buf, off, sizeof(buf));
+		}
+	}
+	if (!off)
+		return -EIO;
+
+	off = append_encap_maybe(buf, off, sizeof(buf));
+	if (!off)
+		return -EIO;
+
+	off = append_replay_maybe(buf, off, sizeof(buf), &sa->flags);
+	if (!off)
+		return -EIO;
+
+	off = append_marks_and_if(buf, off, sizeof(buf));
+	if (!off)
+		return -EIO;
+
+	nlh->nlmsg_len = (__u32)off;
+	rc = xfrm_send_recv(fd, buf, off);
+	if (rc != 0 && is_structural_reject(rc))
+		latch_unsupported(rc);
+	return rc;
+}
+
+/*
  * Build XFRM_MSG_UPDSA targeting a ring SA.  Same shell with a fresh
  * random key + rotated attribute set.  No-op when ring is empty.
  */
@@ -1615,6 +1728,7 @@ static int xfrm_emit_getdefault(int fd)
  */
 enum xfrm_msg_kind {
 	XMK_NEWSA,
+	XMK_ALLOCSPI,
 	XMK_UPDSA,
 	XMK_NEWAE,
 	XMK_EXPIRE,
@@ -1639,6 +1753,7 @@ enum xfrm_msg_kind {
  * subsequent UPDSA / NEWAE keep working against the same shell. */
 static const unsigned int xmk_weights_empty_ring[XMK_MAX] = {
 	[XMK_NEWSA]		= 50,
+	[XMK_ALLOCSPI]		= 15,
 	[XMK_UPDSA]		= 0,
 	[XMK_NEWAE]		= 0,
 	[XMK_EXPIRE]		= 0,
@@ -1652,6 +1767,7 @@ static const unsigned int xmk_weights_empty_ring[XMK_MAX] = {
 };
 static const unsigned int xmk_weights_full_ring[XMK_MAX] = {
 	[XMK_NEWSA]		= 20,
+	[XMK_ALLOCSPI]		= 10,
 	[XMK_UPDSA]		= 18,
 	[XMK_NEWAE]		= 13,
 	[XMK_EXPIRE]		= 12,
@@ -1692,6 +1808,7 @@ static void dispatch_msg_kind(int fd, enum xfrm_msg_kind k)
 
 	switch (k) {
 	case XMK_NEWSA:		rc = xfrm_emit_newsa(fd); break;
+	case XMK_ALLOCSPI:	rc = xfrm_emit_allocspi(fd); break;
 	case XMK_UPDSA:		rc = xfrm_emit_updsa(fd); break;
 	case XMK_NEWAE:		rc = xfrm_emit_newae(fd); break;
 	case XMK_EXPIRE:	rc = xfrm_emit_expire(fd); break;
