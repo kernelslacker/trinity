@@ -1858,11 +1858,14 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 
 	/* Set nlmsg_len — usually correct, sometimes corrupted */
 	if (ONE_IN(10)) {
-		switch (rand() % 4) {
+		switch (rand() % 5) {
 		case 0: nlh->nlmsg_len = 0; break;
 		case 1: nlh->nlmsg_len = NLMSG_HDRLEN - 1; break;
 		case 2: nlh->nlmsg_len = (offset - msg_start) * 2; break;
 		case 3: nlh->nlmsg_len = rand32(); break;
+		case 4: /* understate by K — leave K trailing bytes for the next NLMSG_NEXT walk */
+			nlh->nlmsg_len = (offset - msg_start) - RAND_RANGE(NLMSG_HDRLEN, 64);
+			break;
 		}
 	} else {
 		nlh->nlmsg_len = offset - msg_start;
