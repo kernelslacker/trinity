@@ -68,6 +68,9 @@ static const unsigned short xfrm_types[] = {
 	XFRM_MSG_NEWAE, XFRM_MSG_GETAE,
 	XFRM_MSG_GETSADINFO, XFRM_MSG_GETSPDINFO,
 	XFRM_MSG_MIGRATE,
+	XFRM_MSG_NEWSADINFO, XFRM_MSG_NEWSPDINFO,
+	XFRM_MSG_MAPPING, XFRM_MSG_REPORT,
+	XFRM_MSG_SETDEFAULT, XFRM_MSG_GETDEFAULT,
 };
 
 static const unsigned short audit_types[] = {
@@ -1240,7 +1243,19 @@ static size_t gen_xfrm_body(unsigned char *body, unsigned short nlmsg_type)
 		break;
 	case XFRM_MSG_GETSADINFO:
 	case XFRM_MSG_GETSPDINFO:
+	case XFRM_MSG_NEWSADINFO:
+	case XFRM_MSG_NEWSPDINFO:
 		body_len = sizeof(__u32);
+		break;
+	case XFRM_MSG_SETDEFAULT:
+	case XFRM_MSG_GETDEFAULT:
+		body_len = sizeof(struct xfrm_userpolicy_default);
+		break;
+	case XFRM_MSG_MAPPING:
+		body_len = sizeof(struct xfrm_user_mapping);
+		break;
+	case XFRM_MSG_REPORT:
+		body_len = sizeof(struct xfrm_user_report);
 		break;
 	default:
 		/* Unknown xfrm type: random body */
