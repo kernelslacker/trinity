@@ -1041,6 +1041,14 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		memcpy(body, &frh, sizeof(frh));
 		return sizeof(frh);
 	}
+	case 12: { /* RTM_*NEIGHTBL: struct ndtmsg */
+		struct ndtmsg ndt;
+		memset(&ndt, 0, sizeof(ndt));
+		ndt.ndtm_family = rand_family();
+		*out_family = ndt.ndtm_family;
+		memcpy(body, &ndt, sizeof(ndt));
+		return sizeof(ndt);
+	}
 	case 16: { /* RTM_*NETCONF: struct netconfmsg */
 		struct netconfmsg ncm;
 		ncm.ncm_family = rand_family();
