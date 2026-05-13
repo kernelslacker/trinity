@@ -185,6 +185,7 @@
 #define XFRM_MSG_FLUSHSA		0x1c
 #define XFRM_MSG_FLUSHPOLICY		0x1d
 #define XFRM_MSG_NEWAE			0x1e
+#define XFRM_MSG_MIGRATE		0x21
 #define XFRM_MSG_SETDEFAULT		0x27
 #define XFRM_MSG_GETDEFAULT		0x28
 #endif
@@ -208,6 +209,7 @@ struct xfrm_userpolicy_default {
 #define XFRMA_TMPL			5
 #define XFRMA_LTIME_VAL			9
 #define XFRMA_REPLAY_VAL		10
+#define XFRMA_MIGRATE			17
 #define XFRMA_ALG_AEAD			18
 #define XFRMA_ALG_AUTH_TRUNC		20
 #define XFRMA_REPLAY_ESN_VAL		23
@@ -415,6 +417,19 @@ struct xfrm_userpolicy_id {
 	struct xfrm_selector		sel;
 	__u32				index;
 	__u8				dir;
+};
+
+struct xfrm_user_migrate {
+	xfrm_address_t			old_daddr;
+	xfrm_address_t			old_saddr;
+	xfrm_address_t			new_daddr;
+	xfrm_address_t			new_saddr;
+	__u8				proto;
+	__u8				mode;
+	__u16				reserved;
+	__u32				reqid;
+	__u16				old_family;
+	__u16				new_family;
 };
 
 struct xfrm_user_tmpl {
@@ -1659,6 +1674,63 @@ static int xfrm_emit_flushpolicy(int fd)
 }
 
 /*
+ * Build XFRM_MSG_MIGRATE coherently: a xfrm_userpolicy_id body
+ * (selector + dir, index=0 to take the match-by-selector path) plus a
+ * required XFRMA_MIGRATE attribute carrying 1-3 xfrm_user_migrate
+ * slots.  Per-tmpl old_family == new_family here so the per-template
+ * family validation arm sees the coherent shape; the random-body path
+ * in xfrm_types[] still covers garbage payloads.
+ */
+static int xfrm_emit_migrate(int fd)
+{
+	unsigned char buf[XFRM_BUF_BYTES];
+	struct nlmsghdr *nlh;
+	struct xfrm_userpolicy_id *id;
+	struct xfrm_user_migrate mig[3];
+	__u16 family = pick_family();
+	__u8 dir = (__u8)(rand32() % 3);
+	unsigned int n_slots = 1 + (rand32() % 3);
+	size_t off, addr_bytes;
+	unsigned int i;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_MIGRATE;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = xfrm_next_seq();
+
+	id = (struct xfrm_userpolicy_id *)NLMSG_DATA(nlh);
+	fill_selector(&id->sel, family);
+	id->index = 0;
+	id->dir   = dir;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*id));
+
+	addr_bytes = (family == AF_INET6) ? 16 : 4;
+	memset(mig, 0, sizeof(mig));
+	for (i = 0; i < n_slots; i++) {
+		generate_rand_bytes((unsigned char *)&mig[i].old_daddr, addr_bytes);
+		generate_rand_bytes((unsigned char *)&mig[i].old_saddr, addr_bytes);
+		generate_rand_bytes((unsigned char *)&mig[i].new_daddr, addr_bytes);
+		generate_rand_bytes((unsigned char *)&mig[i].new_saddr, addr_bytes);
+		mig[i].proto      = pick_sa_proto();
+		mig[i].mode       = pick_mode();
+		mig[i].reserved   = 0;
+		mig[i].reqid      = (rand32() & 0xff) + 1U;
+		mig[i].old_family = family;
+		mig[i].new_family = family;
+	}
+
+	off = xfrm_nla_put(buf, off, sizeof(buf), XFRMA_MIGRATE, mig,
+			   n_slots * sizeof(struct xfrm_user_migrate));
+	if (!off)
+		return -EIO;
+
+	nlh->nlmsg_len = (__u32)off;
+	return xfrm_send_recv(fd, buf, off);
+}
+
+/*
  * SETDEFAULT/GETDEFAULT body bytes are small enums (0..2).  Bias the
  * rotation toward valid values but keep low-probability edge bytes so
  * any future reserved-bit handling on the kernel side gets exercised.
@@ -1735,6 +1807,7 @@ enum xfrm_msg_kind {
 	XMK_DELSA,
 	XMK_NEWPOLICY,
 	XMK_DELPOLICY,
+	XMK_MIGRATE,
 	XMK_FLUSHSA,
 	XMK_FLUSHPOLICY,
 	XMK_SETDEFAULT,
@@ -1760,6 +1833,7 @@ static const unsigned int xmk_weights_empty_ring[XMK_MAX] = {
 	[XMK_DELSA]		= 0,
 	[XMK_NEWPOLICY]		= 30,
 	[XMK_DELPOLICY]		= 5,
+	[XMK_MIGRATE]		= 4,
 	[XMK_FLUSHSA]		= 1,
 	[XMK_FLUSHPOLICY]	= 1,
 	[XMK_SETDEFAULT]	= 5,
@@ -1774,6 +1848,7 @@ static const unsigned int xmk_weights_full_ring[XMK_MAX] = {
 	[XMK_DELSA]		= 13,
 	[XMK_NEWPOLICY]		= 14,
 	[XMK_DELPOLICY]		= 8,
+	[XMK_MIGRATE]		= 4,
 	[XMK_FLUSHSA]		= 2,
 	[XMK_FLUSHPOLICY]	= 1,
 	[XMK_SETDEFAULT]	= 5,
@@ -1815,6 +1890,7 @@ static void dispatch_msg_kind(int fd, enum xfrm_msg_kind k)
 	case XMK_DELSA:		rc = xfrm_emit_delsa_random(fd); break;
 	case XMK_NEWPOLICY:	rc = xfrm_emit_newpolicy(fd); break;
 	case XMK_DELPOLICY:	rc = xfrm_emit_delpolicy(fd); break;
+	case XMK_MIGRATE:	rc = xfrm_emit_migrate(fd); break;
 	case XMK_FLUSHSA:	rc = xfrm_emit_flushsa(fd); break;
 	case XMK_FLUSHPOLICY:	rc = xfrm_emit_flushpolicy(fd); break;
 	case XMK_SETDEFAULT:	rc = xfrm_emit_setdefault(fd); break;
