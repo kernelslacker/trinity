@@ -3,8 +3,8 @@
 	 unsigned long __user *, user_mask_ptr)
  */
 #include <ctype.h>
+#include <fcntl.h>
 #include <sched.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -93,11 +93,12 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 static void post_sched_getaffinity(struct syscallrecord *rec)
 {
 	struct sched_getaffinity_post_state *snap = (struct sched_getaffinity_post_state *) rec->post_state;
-	FILE *f;
-	char line[4096];
+	char buf[2048];
+	char *line;
+	ssize_t n;
+	int fd;
 	cpu_set_t syscall_buf, proc_buf;
 	size_t copied, cmp_len;
-	bool have_line = false;
 	const char *p;
 	uint32_t chunks[sizeof(cpu_set_t) / sizeof(uint32_t)];
 	int nchunks = 0, i;
@@ -166,26 +167,32 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 	memset(&syscall_buf, 0, sizeof(syscall_buf));
 	memcpy(&syscall_buf, (void *)(unsigned long) snap->mask, copied);
 
-	f = fopen("/proc/self/status", "r");
-	if (!f)
+	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
+	 * thousands of times per second under fuzz, and stdio's per-call malloc
+	 * of FILE struct + IO buffer is heap traffic we don't need. */
+	fd = open("/proc/self/status", O_RDONLY);
+	if (fd < 0)
 		goto out_free;
-	while (fgets(line, sizeof(line), f)) {
-		if (strncmp(line, "Cpus_allowed:", 13) == 0) {
-			have_line = true;
-			break;
-		}
-	}
-	fclose(f);
-
-	if (!have_line)
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		goto out_free;
+	buf[n] = '\0';
+	/* Anchor on a newline so a "Cpus_allowed:" substring inside an earlier
+	 * field cannot mis-target the parse, and keep the trailing colon in the
+	 * needle so the sibling Cpus_allowed_list: line does not match. */
+	line = strstr(buf, "\nCpus_allowed:");
+	if (line == NULL)
 		goto out_free;
 
 	memset(chunks, 0, sizeof(chunks));
-	p = line + 13;
-	while (*p) {
-		while (*p && !isxdigit((unsigned char)*p))
+	/* Past "\nCpus_allowed:" (14 bytes).  Stop at the trailing newline so
+	 * the chunk walker cannot stride into the next field's value. */
+	p = line + 14;
+	while (*p && *p != '\n') {
+		while (*p && *p != '\n' && !isxdigit((unsigned char)*p))
 			p++;
-		if (!*p)
+		if (!*p || *p == '\n')
 			break;
 		if (nchunks >= (int)(sizeof(chunks) / sizeof(chunks[0])))
 			break;
