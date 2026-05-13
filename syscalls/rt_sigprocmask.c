@@ -2,11 +2,13 @@
  * SYSCALL_DEFINE4(rt_sigprocmask, int, how, sigset_t __user *, set,
 	sigset_t __user *, oset, size_t, sigsetsize)
  */
+#include <fcntl.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
@@ -97,8 +99,10 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 {
 	struct rt_sigprocmask_post_state *snap =
 		(struct rt_sigprocmask_post_state *) rec->post_state;
-	FILE *f;
-	char line[128];
+	char procbuf[2048];
+	char *p;
+	ssize_t n;
+	int fd;
 	uint64_t syscall_blocked, proc_blocked = 0;
 	unsigned long sigblk = 0;
 	bool have_sigblk = false;
@@ -145,17 +149,24 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 	memcpy(&buf, (const void *) snap->oset, sizeof(buf));
 	memcpy(&syscall_blocked, &buf, sizeof(syscall_blocked));
 
-	f = fopen("/proc/self/status", "r");
-	if (!f)
+	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
+	 * thousands of times per second under fuzz, and stdio's per-call malloc
+	 * of FILE struct + IO buffer is heap traffic we don't need. */
+	fd = open("/proc/self/status", O_RDONLY);
+	if (fd < 0)
 		goto out_free;
-	while (fgets(line, sizeof(line), f)) {
-		if (strncmp(line, "SigBlk:", 7) == 0) {
-			if (sscanf(line + 7, "%lx", &sigblk) == 1)
-				have_sigblk = true;
-			break;
-		}
+	n = read(fd, procbuf, sizeof(procbuf) - 1);
+	close(fd);
+	if (n <= 0)
+		goto out_free;
+	procbuf[n] = '\0';
+	/* Anchor on a newline so a "SigBlk:" substring inside an earlier field
+	 * (e.g. a process name) cannot mis-target the parse. */
+	p = strstr(procbuf, "\nSigBlk:");
+	if (p != NULL) {
+		if (sscanf(p + 8, "%lx", &sigblk) == 1)
+			have_sigblk = true;
 	}
-	fclose(f);
 
 	if (!have_sigblk)
 		goto out_free;
