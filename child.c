@@ -895,6 +895,7 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 	case CHILD_OP_RXRPC_KEY_INSTALL:	return 30;
 	case CHILD_OP_AF_ALG_WEAK_CIPHER_PROBE:	return 20;
 	case CHILD_OP_AF_ALG_TEMPLATE_PROBE:	return 20;
+	case CHILD_OP_TTY_LDISC_CHURN:		return 30;
 	default:				return 10;
 	}
 }
@@ -996,7 +997,7 @@ static void check_fd_leaks(struct childdata *child)
  * Enable the dormant ops one at a time once each has been load-tested.
  * To enable an op: set its entry below to 0.
  */
-static const int dormant_op_disabled[99] = {
+static const int dormant_op_disabled[100] = {
 	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
 	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
 	1, 1, 1, 0, 1,	/* 10-14: fault_injector active; dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, recipe_runner */
@@ -1039,6 +1040,7 @@ static const int dormant_op_disabled[99] = {
 	1,		/* 96: dormant: ipv6_pmtu_teardown_race */
 	1,		/* 97: dormant: rxrpc_sendmsg_cmsg_churn */
 	1,		/* 98: dormant: ovs_tunnel_vport_churn */
+	1,		/* 99: dormant: tty_ldisc_churn */
 };
 
 /*
@@ -1118,6 +1120,7 @@ static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_SOCK_DIAG_WALKER,
 	CHILD_OP_ALTNAME_THRASH,
 	CHILD_OP_OVS_TUNNEL_VPORT_CHURN,
+	CHILD_OP_TTY_LDISC_CHURN,
 };
 #define NR_ALT_OP_ROTATION	ARRAY_SIZE(alt_op_rotation)
 
@@ -1224,6 +1227,7 @@ static const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_IPV6_PMTU_TEARDOWN_RACE:	return "ipv6_pmtu_teardown_race";
 	case CHILD_OP_RXRPC_SENDMSG_CMSG_CHURN:	return "rxrpc_sendmsg_cmsg_churn";
 	case CHILD_OP_OVS_TUNNEL_VPORT_CHURN:	return "ovs_tunnel_vport_churn";
+	case CHILD_OP_TTY_LDISC_CHURN:	return "tty_ldisc_churn";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1278,7 +1282,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[99] = {
+static const enum child_op_type pick_op_type_table[100] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -1378,6 +1382,7 @@ static const enum child_op_type pick_op_type_table[99] = {
 	[96] = CHILD_OP_IPV6_PMTU_TEARDOWN_RACE,
 	[97] = CHILD_OP_RXRPC_SENDMSG_CMSG_CHURN,
 	[98] = CHILD_OP_OVS_TUNNEL_VPORT_CHURN,
+	[99] = CHILD_OP_TTY_LDISC_CHURN,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1648,6 +1653,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_IPV6_PMTU_TEARDOWN_RACE]	= ipv6_pmtu_teardown_race,
 	[CHILD_OP_RXRPC_SENDMSG_CMSG_CHURN]	= rxrpc_sendmsg_cmsg_churn,
 	[CHILD_OP_OVS_TUNNEL_VPORT_CHURN]	= ovs_tunnel_vport_churn,
+	[CHILD_OP_TTY_LDISC_CHURN]	= tty_ldisc_churn,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,

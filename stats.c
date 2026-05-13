@@ -769,7 +769,10 @@ static void dump_stats_json(void)
 		"\"flowtable_encap_vlan\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"offloaded_pkts\":%lu,\"gso_sends\":%lu,\"vlan_teardown_races\":%lu,\"unsupported_latched\":%lu},"
 		"\"rxrpc_sendmsg_cmsg_churn\":{\"runs\":%lu,\"socket_failed\":%lu,\"sendmsg_ok\":%lu,\"sendmsg_fail\":%lu,"
 			"\"user_call_id\":%lu,\"abort\":%lu,\"accept\":%lu,\"exclusive_call\":%lu,"
-			"\"upgrade_service\":%lu,\"tx_length\":%lu,\"set_call_timeout\":%lu,\"charge_accept\":%lu}"
+			"\"upgrade_service\":%lu,\"tx_length\":%lu,\"set_call_timeout\":%lu,\"charge_accept\":%lu},"
+		"\"tty_ldisc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"ldisc_set_ok\":%lu,\"ldisc_set_failed\":%lu,"
+			"\"write_ok\":%lu,\"read_ok\":%lu,"
+			"\"per_disc\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu]}"
 		"}",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
@@ -1476,7 +1479,38 @@ static void dump_stats_json(void)
 		shm->stats.rxrpc_sendmsg_cmsg_sent[4],
 		shm->stats.rxrpc_sendmsg_cmsg_sent[5],
 		shm->stats.rxrpc_sendmsg_cmsg_sent[6],
-		shm->stats.rxrpc_sendmsg_cmsg_sent[7]);
+		shm->stats.rxrpc_sendmsg_cmsg_sent[7],
+		shm->stats.tty_ldisc_churn_runs,
+		shm->stats.tty_ldisc_churn_setup_failed,
+		shm->stats.tty_ldisc_churn_ldisc_set_ok,
+		shm->stats.tty_ldisc_churn_ldisc_set_failed,
+		shm->stats.tty_ldisc_churn_write_ok,
+		shm->stats.tty_ldisc_churn_read_ok,
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[0],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[1],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[2],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[3],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[4],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[5],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[6],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[7],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[8],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[9],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[10],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[11],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[12],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[13],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[14],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[15],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[16],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[17],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[18],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[19],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[20],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[21],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[22],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[23],
+		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[24]);
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -3718,6 +3752,25 @@ void dump_stats(void)
 				 rxrpc_cmsg_slot_names[slot]);
 			stat_row("rxrpc_sendmsg_cmsg_churn", key,
 				 shm->stats.rxrpc_sendmsg_cmsg_sent[slot]);
+		}
+	}
+
+	if (shm->stats.tty_ldisc_churn_runs) {
+		char key[64];
+		unsigned int slot;
+
+		stat_row("tty_ldisc_churn", "runs",             shm->stats.tty_ldisc_churn_runs);
+		stat_row("tty_ldisc_churn", "setup_failed",     shm->stats.tty_ldisc_churn_setup_failed);
+		stat_row("tty_ldisc_churn", "ldisc_set_ok",     shm->stats.tty_ldisc_churn_ldisc_set_ok);
+		stat_row("tty_ldisc_churn", "ldisc_set_failed", shm->stats.tty_ldisc_churn_ldisc_set_failed);
+		stat_row("tty_ldisc_churn", "write_ok",         shm->stats.tty_ldisc_churn_write_ok);
+		stat_row("tty_ldisc_churn", "read_ok",          shm->stats.tty_ldisc_churn_read_ok);
+		for (slot = 0; slot < 25U; slot++) {
+			if (shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[slot] == 0)
+				continue;
+			snprintf(key, sizeof(key), "ldisc_set_ok_n%u", slot);
+			stat_row("tty_ldisc_churn", key,
+				 shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[slot]);
 		}
 	}
 
