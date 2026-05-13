@@ -1151,6 +1151,32 @@ static size_t gen_nfnl_body(unsigned char *body, unsigned short nlmsg_type)
 	return sizeof(nfg);
 }
 
+/* Newer XFRMA_* attrs may be missing from older system headers. */
+#ifndef XFRMA_NAT_KEEPALIVE_INTERVAL
+#define XFRMA_NAT_KEEPALIVE_INTERVAL	35
+#endif
+#ifndef XFRMA_SA_PCPU
+#define XFRMA_SA_PCPU			36
+#endif
+#ifndef XFRMA_IPTFS_DROP_TIME
+#define XFRMA_IPTFS_DROP_TIME		37
+#endif
+#ifndef XFRMA_IPTFS_REORDER_WINDOW
+#define XFRMA_IPTFS_REORDER_WINDOW	38
+#endif
+#ifndef XFRMA_IPTFS_DONT_FRAG
+#define XFRMA_IPTFS_DONT_FRAG		39
+#endif
+#ifndef XFRMA_IPTFS_INIT_DELAY
+#define XFRMA_IPTFS_INIT_DELAY		40
+#endif
+#ifndef XFRMA_IPTFS_MAX_QSIZE
+#define XFRMA_IPTFS_MAX_QSIZE		41
+#endif
+#ifndef XFRMA_IPTFS_PKT_SIZE
+#define XFRMA_IPTFS_PKT_SIZE		42
+#endif
+
 /* XFRM attribute spec table (XFRMA_*) */
 static const struct nla_attr_spec xfrma_specs[] = {
 	{ XFRMA_ALG_AUTH,        NLA_KIND_BINARY, 128 },
@@ -1185,6 +1211,14 @@ static const struct nla_attr_spec xfrma_specs[] = {
 	{ XFRMA_IF_ID,           NLA_KIND_U32,    4 },
 	{ XFRMA_MTIMER_THRESH,   NLA_KIND_U32,    4 },
 	{ XFRMA_SA_DIR,          NLA_KIND_U8,     1 },
+	{ XFRMA_NAT_KEEPALIVE_INTERVAL, NLA_KIND_U32,  4 },
+	{ XFRMA_SA_PCPU,                NLA_KIND_U32,  4 },
+	{ XFRMA_IPTFS_DROP_TIME,        NLA_KIND_U32,  4 },
+	{ XFRMA_IPTFS_REORDER_WINDOW,   NLA_KIND_U16,  2 },
+	{ XFRMA_IPTFS_DONT_FRAG,        NLA_KIND_FLAG, 0 },
+	{ XFRMA_IPTFS_INIT_DELAY,       NLA_KIND_U32,  4 },
+	{ XFRMA_IPTFS_MAX_QSIZE,        NLA_KIND_U32,  4 },
+	{ XFRMA_IPTFS_PKT_SIZE,         NLA_KIND_U32,  4 },
 };
 
 /*
