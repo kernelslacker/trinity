@@ -1,9 +1,11 @@
 /*
  * SYSCALL_DEFINE1(umask, int, mask)
  */
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
@@ -34,9 +36,11 @@
  */
 static void post_umask(struct syscallrecord *rec)
 {
-	FILE *f;
-	char line[256];
-	unsigned int kumask;
+	char buf[2048];
+	char *line;
+	ssize_t n;
+	int fd;
+	unsigned int kumask = (unsigned int)-1;
 	unsigned int expected;
 
 	/* Kernel ABI: sys_umask cannot fail and the kernel masks the
@@ -57,30 +61,34 @@ static void post_umask(struct syscallrecord *rec)
 
 	expected = (unsigned int) rec->a1 & 0777;
 
-	f = fopen("/proc/self/status", "r");
-	if (!f)
+	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
+	 * thousands of times per second under fuzz, and stdio's per-call malloc
+	 * of FILE struct + IO buffer is heap traffic we don't need. */
+	fd = open("/proc/self/status", O_RDONLY);
+	if (fd < 0)
 		return;
-	while (fgets(line, sizeof(line), f)) {
-		if (strncmp(line, "Umask:", 6) == 0) {
-			if (sscanf(line + 6, "%o", &kumask) != 1) {
-				fclose(f);
-				return;
-			}
-			fclose(f);
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return;
+	buf[n] = '\0';
+	/* Anchor on a newline so a "Umask:" substring inside an earlier field
+	 * (e.g. a process name) cannot mis-target the parse. */
+	line = strstr(buf, "\nUmask:");
+	if (line != NULL)
+		(void) sscanf(line + 7, "%o", &kumask);
 
-			if (kumask != expected) {
-				output(0, "umask oracle: syscall installed "
-				       "mask=%04o (from a1=%#lx) but "
-				       "/proc/self/status Umask: %04o\n",
-				       expected, (unsigned long) rec->a1,
-				       kumask);
-				__atomic_add_fetch(&shm->stats.umask_oracle_anomalies, 1,
-						   __ATOMIC_RELAXED);
-			}
-			return;
-		}
+	if (kumask == (unsigned int)-1)
+		return;
+
+	if (kumask != expected) {
+		output(0, "umask oracle: syscall installed "
+		       "mask=%04o (from a1=%#lx) but "
+		       "/proc/self/status Umask: %04o\n",
+		       expected, (unsigned long) rec->a1, kumask);
+		__atomic_add_fetch(&shm->stats.umask_oracle_anomalies, 1,
+				   __ATOMIC_RELAXED);
 	}
-	fclose(f);
 }
 
 struct syscallentry syscall_umask = {
