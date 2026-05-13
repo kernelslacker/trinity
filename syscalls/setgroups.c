@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE2(setgroups, int, gidsetsize, gid_t __user *, grouplist)
  */
+#include <fcntl.h>
 #include <grp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -78,59 +79,57 @@ static int gid_cmp(const void *a, const void *b)
  */
 static int read_proc_groups(gid_t **out, int *n_out)
 {
-	FILE *f;
-	char *line = NULL;
-	size_t cap = 0;
+	char buf[2048];
+	char *p, *end;
 	gid_t *vec = NULL;
 	int count = 0, alloc = 0;
-	int found = 0;
+	ssize_t n;
+	int fd;
 
-	f = fopen("/proc/self/status", "r");
-	if (!f)
+	/* Raw open/read instead of fopen/getline/fclose: this oracle runs
+	 * thousands of times per second under fuzz, and stdio's per-call
+	 * malloc of FILE struct + IO buffer plus getline's line-buffer
+	 * malloc/realloc is heap traffic we don't need. */
+	fd = open("/proc/self/status", O_RDONLY);
+	if (fd < 0)
 		return -1;
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return -1;
+	buf[n] = '\0';
 
-	while (getline(&line, &cap, f) != -1) {
-		char *p, *end;
+	/* Anchor on a newline so a "Groups:" substring inside an earlier
+	 * field (e.g. a process name) cannot mis-target the parse. */
+	p = strstr(buf, "\nGroups:");
+	if (p == NULL)
+		return -1;
+	p += 8;
+	while (*p == ' ' || *p == '\t')
+		p++;
 
-		if (strncmp(line, "Groups:", 7) != 0)
-			continue;
-		found = 1;
-		p = line + 7;
+	while (*p && *p != '\n') {
+		unsigned long v = strtoul(p, &end, 10);
+
+		if (end == p)
+			break;
+		if (count == alloc) {
+			int newcap = alloc ? alloc * 2 : 16;
+			gid_t *nv = realloc(vec, (size_t) newcap *
+					    sizeof(gid_t));
+			if (!nv) {
+				free(vec);
+				return -1;
+			}
+			vec = nv;
+			alloc = newcap;
+		}
+		vec[count++] = (gid_t) v;
+		p = end;
 		while (*p == ' ' || *p == '\t')
 			p++;
-
-		while (*p && *p != '\n') {
-			unsigned long v = strtoul(p, &end, 10);
-
-			if (end == p)
-				break;
-			if (count == alloc) {
-				int newcap = alloc ? alloc * 2 : 16;
-				gid_t *nv = realloc(vec, (size_t) newcap *
-						    sizeof(gid_t));
-				if (!nv) {
-					free(vec);
-					free(line);
-					fclose(f);
-					return -1;
-				}
-				vec = nv;
-				alloc = newcap;
-			}
-			vec[count++] = (gid_t) v;
-			p = end;
-			while (*p == ' ' || *p == '\t')
-				p++;
-		}
-		break;
 	}
-	free(line);
-	fclose(f);
 
-	if (!found) {
-		free(vec);
-		return -1;
-	}
 	*out = vec;
 	*n_out = count;
 	return 0;
