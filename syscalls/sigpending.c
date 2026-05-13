@@ -1,12 +1,14 @@
 /*
  * SYSCALL_DEFINE1(sigpending, old_sigset_t __user *, set)
  */
+#include <fcntl.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/syscall.h>
+#include <unistd.h>
 #include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
@@ -107,8 +109,10 @@ static void post_sigpending(struct syscallrecord *rec)
 {
 	struct sigpending_post_state *snap =
 		(struct sigpending_post_state *) rec->post_state;
-	FILE *f;
-	char line[128];
+	char buf[2048];
+	char *line;
+	ssize_t n;
+	int fd;
 	char raw[128] = "";
 	unsigned long user_snap;	/* old_sigset_t == unsigned long on x86_64 */
 	uint64_t syscall_pending, proc_pending;
@@ -157,19 +161,31 @@ static void post_sigpending(struct syscallrecord *rec)
 	memcpy(&user_snap, (const void *) snap->set, sizeof(user_snap));
 	syscall_pending = (uint64_t)user_snap;
 
-	f = fopen("/proc/self/status", "r");
-	if (!f)
+	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
+	 * thousands of times per second under fuzz, and stdio's per-call malloc
+	 * of FILE struct + IO buffer is heap traffic we don't need. */
+	fd = open("/proc/self/status", O_RDONLY);
+	if (fd < 0)
 		goto out_free;
-	while (fgets(line, sizeof(line), f)) {
-		if (strncmp(line, "SigPnd:", 7) == 0) {
-			strncpy(raw, line, sizeof(raw) - 1);
-			raw[sizeof(raw) - 1] = '\0';
-			if (sscanf(line + 7, "%lx", &sigpnd) == 1)
-				have_sigpnd = true;
-			break;
-		}
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		goto out_free;
+	buf[n] = '\0';
+	/* Anchor on a newline so a "SigPnd:" substring inside an earlier field
+	 * (e.g. a process name) cannot mis-target the parse. */
+	line = strstr(buf, "\nSigPnd:");
+	if (line != NULL) {
+		const char *eol = strchr(line + 1, '\n');
+		size_t rl = eol ? (size_t)(eol - (line + 1)) : strlen(line + 1);
+
+		if (rl >= sizeof(raw))
+			rl = sizeof(raw) - 1;
+		memcpy(raw, line + 1, rl);
+		raw[rl] = '\0';
+		if (sscanf(line + 8, "%lx", &sigpnd) == 1)
+			have_sigpnd = true;
 	}
-	fclose(f);
 
 	if (!have_sigpnd)
 		goto out_free;
@@ -177,9 +193,6 @@ static void post_sigpending(struct syscallrecord *rec)
 	proc_pending = (uint64_t)sigpnd;
 
 	if (syscall_pending != proc_pending) {
-		size_t rl = strlen(raw);
-		if (rl && raw[rl - 1] == '\n')
-			raw[rl - 1] = '\0';
 		output(0, "sigpending oracle: syscall=0x%016lx but "
 		       "/proc/self/status SigPnd=0x%016lx (raw=\"%s\")\n",
 		       (unsigned long)syscall_pending,
