@@ -66,6 +66,7 @@
 #include <fcntl.h>
 #include <net/if.h>
 #include <netinet/in.h>
+#include <sched.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -74,6 +75,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <linux/genetlink.h>
@@ -733,66 +735,96 @@ static int ovs_delete_vport(int fd, int dp_ifindex, const char *vname)
 }
 
 /*
- * Fire-and-forget RTM_DELLINK at a tunnel helper netdev by name.  No
- * ack handshake -- the goal is to widen the race window between the
- * still-in-flight OVS_VPORT_CMD_NEW (which is busy registering the
- * helper netdev) and an rtnetlink delete from a separate netlink
- * client.  Best-effort: a missing helper or refused ifindex lookup
- * just means the racer didn't catch the window this iteration.
+ * Bounded-deadline RTM_DELLINK racer.  Designed to run in a forked
+ * helper that overlaps with the parent's still-in-flight
+ * OVS_VPORT_CMD_NEW.  The kernel's CMD_NEW handler drops and reacquires
+ * rtnl while registering the shared geneve_sys_<port> / vxlan_sys_<port>
+ * / gre_sys_<port> helper netdev; in that window a separate rtnetlink
+ * writer can race an unregister against the OVS register-vport path,
+ * leaving dangling pointers in ovs_net->dps[] (the bug fixed upstream
+ * by 83861c48ba12).  A post-ack racer can't reach that window because
+ * the helper netdev has already been linked into ovs_net->dps[] by the
+ * time CMD_NEW returns NLM_F_ACK -- the racer has to be in flight
+ * during the kernel handler, not after it.
+ *
+ * Loop body keeps the original fresh-socket + fire-and-forget shape: a
+ * missing helper / refused ifindex / send failure just costs one wasted
+ * iteration.  Exit conditions: deadline reached, hard iteration cap
+ * tripped, or clock_gettime failure.  sched_yield() at the tail of each
+ * iteration keeps the parent (and the kernel handler) scheduled.
  */
-static void ovs_race_dellink(const char *helper_name)
+#define OVS_RACE_DELLINK_MAX_ITERS	50U
+
+static void ovs_race_dellink_loop(const char *helper_name,
+				  unsigned int deadline_ms)
 {
-	struct sockaddr_nl sa;
-	struct sockaddr_nl dst;
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	struct iovec iov;
-	struct msghdr mh;
-	int ifindex;
-	int fd;
+	struct timespec start, now;
+	unsigned int iter;
 
-	ifindex = (int)if_nametoindex(helper_name);
-	if (ifindex <= 0)
+	if (clock_gettime(CLOCK_MONOTONIC, &start) != 0)
 		return;
 
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return;
+	for (iter = 0; iter < OVS_RACE_DELLINK_MAX_ITERS; iter++) {
+		struct sockaddr_nl sa;
+		struct sockaddr_nl dst;
+		unsigned char buf[256];
+		struct nlmsghdr *nlh;
+		struct ifinfomsg *ifi;
+		struct iovec iov;
+		struct msghdr mh;
+		long elapsed_ms;
+		int ifindex;
+		int fd;
 
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return;
+		ifindex = (int)if_nametoindex(helper_name);
+		if (ifindex > 0) {
+			fd = socket(AF_NETLINK,
+				    SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
+			if (fd >= 0) {
+				memset(&sa, 0, sizeof(sa));
+				sa.nl_family = AF_NETLINK;
+				if (bind(fd, (struct sockaddr *)&sa,
+					 sizeof(sa)) == 0) {
+					memset(buf, 0, sizeof(buf));
+					nlh = (struct nlmsghdr *)buf;
+					nlh->nlmsg_type  = RTM_DELLINK;
+					nlh->nlmsg_flags = NLM_F_REQUEST;
+					nlh->nlmsg_seq   = next_ovs_seq();
+
+					ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+					ifi->ifi_family = AF_UNSPEC;
+					ifi->ifi_index  = ifindex;
+
+					nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN +
+						NLMSG_ALIGN(sizeof(*ifi)));
+
+					memset(&dst, 0, sizeof(dst));
+					dst.nl_family = AF_NETLINK;
+
+					iov.iov_base = buf;
+					iov.iov_len  = nlh->nlmsg_len;
+
+					memset(&mh, 0, sizeof(mh));
+					mh.msg_name    = &dst;
+					mh.msg_namelen = sizeof(dst);
+					mh.msg_iov     = &iov;
+					mh.msg_iovlen  = 1;
+
+					(void)sendmsg(fd, &mh, 0);
+				}
+				close(fd);
+			}
+		}
+
+		sched_yield();
+
+		if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+			break;
+		elapsed_ms = (long)(now.tv_sec - start.tv_sec) * 1000L +
+			     (now.tv_nsec - start.tv_nsec) / 1000000L;
+		if (elapsed_ms >= 0 && (unsigned long)elapsed_ms >= deadline_ms)
+			break;
 	}
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_DELLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST;
-	nlh->nlmsg_seq   = next_ovs_seq();
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = ifindex;
-
-	nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi)));
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = buf;
-	iov.iov_len  = nlh->nlmsg_len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	(void)sendmsg(fd, &mh, 0);
-	close(fd);
 }
 
 /*
@@ -860,6 +892,7 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 	__u32 iter;
 	unsigned int spin;
 	unsigned int i;
+	pid_t racer_pid = 0;
 	int rc;
 
 	__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn_runs, 1,
@@ -885,6 +918,30 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 		       (unsigned int)(child->num & 0xffu),
 		       (unsigned int)(iter & 0xffffu));
 
+	/* Pre-CMD_NEW racer fork.  The kernel CMD_NEW handler for tunnel
+	 * vports drops and reacquires rtnl while registering the shared
+	 * helper netdev; that drop is the bug-2 (83861c48ba12) UAF window.
+	 * A post-ack racer can't reach it -- by the time CMD_NEW returns,
+	 * the helper netdev is already linked into ovs_net->dps[].  So
+	 * fork a short-lived helper that loops RTM_DELLINK at the helper
+	 * name across the kernel handler's lifetime; the helper inherits
+	 * our netns automatically.  Reaped after CMD_DEL below. */
+	if (ONE_IN(2)) {
+		ovs_fill_helper_netdev(kind, dst_port, helper, sizeof(helper));
+		if (helper[0] != '\0') {
+			racer_pid = fork();
+			if (racer_pid == 0) {
+				ovs_race_dellink_loop(helper, 5);
+				_exit(0);
+			}
+			if (racer_pid < 0)
+				racer_pid = 0;
+			else
+				__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn_race_dellink_attempted,
+						   1, __ATOMIC_RELAXED);
+		}
+	}
+
 	rc = ovs_create_vport(ovs_genl_sock, 0, kind, vname, dst_port);
 	if (rc != 0) {
 		/* Module-not-loaded / type-not-registered errors latch the
@@ -894,27 +951,18 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 		if (rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT ||
 		    rc == -EPROTONOSUPPORT || rc == -ENOENT)
 			*ovs_kind_latch(kind) = true;
+		if (racer_pid > 0) {
+			int wstatus;
+
+			(void)waitpid(racer_pid, &wstatus, 0);
+		}
 		return true;
 	}
 	__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn_create_ok, 1,
 			   __ATOMIC_RELAXED);
 
-	/* 50% chance to race the helper netdev with an rtnetlink delete
-	 * before we send the matching CMD_DEL.  The race window is the
-	 * gap between OVS finishing its CMD_NEW handshake and the next
-	 * netlink writer getting rtnl. */
-	if (ONE_IN(2)) {
-		ovs_fill_helper_netdev(kind, dst_port, helper, sizeof(helper));
-		if (helper[0] != '\0') {
-			ovs_race_dellink(helper);
-			__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn_race_dellink_attempted,
-					   1, __ATOMIC_RELAXED);
-		}
-	}
-
-	/* Short jitter spin so the racer's RTM_DELLINK has a chance to
-	 * land before we tear the vport down ourselves.  BUDGETED keeps
-	 * an unproductive run from melting cycles here. */
+	/* Short jitter spin between CMD_NEW and the trailing CMD_DEL.
+	 * BUDGETED keeps an unproductive run from melting cycles here. */
 	spin = BUDGETED(CHILD_OP_OVS_TUNNEL_VPORT_CHURN,
 			JITTER_RANGE(OVS_DELAY_BASE));
 	for (i = 0; i < spin; i++) {
@@ -924,6 +972,14 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 	if (ovs_delete_vport(ovs_genl_sock, 0, vname) == 0)
 		__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn_delete_ok,
 				   1, __ATOMIC_RELAXED);
+
+	if (racer_pid > 0) {
+		int wstatus;
+
+		/* Helper has a bounded ~5ms deadline + 50-iter cap, so this
+		 * is fast.  Reap to avoid leaking a zombie back to child.c. */
+		(void)waitpid(racer_pid, &wstatus, 0);
+	}
 
 	return true;
 }
