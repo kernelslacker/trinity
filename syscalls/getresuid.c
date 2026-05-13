@@ -1,9 +1,11 @@
 /*
  * SYSCALL_DEFINE3(getresuid, uid_t __user *, ruid, uid_t __user *, euid, uid_t __user *, suid)
  */
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include "deferred-free.h"
 #include "random.h"
 #include "shm.h"
@@ -87,8 +89,10 @@ static void post_getresuid(struct syscallrecord *rec)
 {
 	struct getresuid_post_state *snap =
 		(struct getresuid_post_state *) rec->post_state;
-	FILE *f;
-	char line[256];
+	char buf[2048];
+	char *line;
+	ssize_t n;
+	int fd;
 	uid_t kruid, keuid, ksuid;
 	unsigned long puid_real, puid_eff, puid_saved;
 
@@ -136,35 +140,40 @@ static void post_getresuid(struct syscallrecord *rec)
 	keuid = *(uid_t *) snap->euid;
 	ksuid = *(uid_t *) snap->suid;
 
-	f = fopen("/proc/self/status", "r");
-	if (!f)
+	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
+	 * many times per second under fuzz, and stdio's per-call malloc of
+	 * FILE struct + IO buffer is heap traffic we don't need. */
+	fd = open("/proc/self/status", O_RDONLY);
+	if (fd < 0)
 		goto out_free;
-	while (fgets(line, sizeof(line), f)) {
-		if (strncmp(line, "Uid:", 4) == 0) {
-			if (sscanf(line + 4, "%lu %lu %lu",
-				   &puid_real, &puid_eff, &puid_saved) != 3) {
-				fclose(f);
-				goto out_free;
-			}
-			fclose(f);
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		goto out_free;
+	buf[n] = '\0';
+	/* Anchor on a newline so a "Uid:" substring inside an earlier field
+	 * (e.g. a sibling fuzzer's prctl(PR_SET_NAME) value in Name:) cannot
+	 * mis-target the parse. */
+	line = strstr(buf, "\nUid:");
+	if (line == NULL)
+		goto out_free;
+	if (sscanf(line + 5, "%lu %lu %lu",
+		   &puid_real, &puid_eff, &puid_saved) != 3)
+		goto out_free;
 
-			if ((unsigned long) kruid != puid_real ||
-			    (unsigned long) keuid != puid_eff ||
-			    (unsigned long) ksuid != puid_saved) {
-				output(0, "getresuid oracle: syscall returned "
-				       "r=%lu e=%lu s=%lu but /proc/self/status "
-				       "Uid: %lu %lu %lu\n",
-				       (unsigned long) kruid,
-				       (unsigned long) keuid,
-				       (unsigned long) ksuid,
-				       puid_real, puid_eff, puid_saved);
-				__atomic_add_fetch(&shm->stats.getresuid_oracle_anomalies, 1,
-						   __ATOMIC_RELAXED);
-			}
-			goto out_free;
-		}
+	if ((unsigned long) kruid != puid_real ||
+	    (unsigned long) keuid != puid_eff ||
+	    (unsigned long) ksuid != puid_saved) {
+		output(0, "getresuid oracle: syscall returned "
+		       "r=%lu e=%lu s=%lu but /proc/self/status "
+		       "Uid: %lu %lu %lu\n",
+		       (unsigned long) kruid,
+		       (unsigned long) keuid,
+		       (unsigned long) ksuid,
+		       puid_real, puid_eff, puid_saved);
+		__atomic_add_fetch(&shm->stats.getresuid_oracle_anomalies, 1,
+				   __ATOMIC_RELAXED);
 	}
-	fclose(f);
 
 out_free:
 	deferred_freeptr(&rec->post_state);
