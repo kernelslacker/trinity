@@ -19,6 +19,7 @@
 #include <linux/fib_rules.h>
 #include <linux/netconf.h>
 #include <linux/nexthop.h>
+#include <linux/dcbnl.h>
 #include <linux/genetlink.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/xfrm.h>
@@ -55,6 +56,7 @@ static const unsigned short rtnl_types[] = {
 	RTM_NEWNEIGHTBL, RTM_GETNEIGHTBL,
 	RTM_NEWNDUSEROPT,
 	RTM_NEWADDRLABEL, RTM_GETADDRLABEL,
+	RTM_GETDCB, RTM_SETDCB,
 	RTM_NEWNETCONF, RTM_GETNETCONF,
 	RTM_NEWMDB, RTM_DELMDB, RTM_GETMDB,
 	RTM_NEWNSID, RTM_GETNSID,
@@ -1097,6 +1099,16 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		*out_family = ifal.ifal_family;
 		memcpy(body, &ifal, sizeof(ifal));
 		return sizeof(ifal);
+	}
+	case 15: { /* RTM_{GET,SET}DCB: struct dcbmsg */
+		struct dcbmsg dcb;
+		memset(&dcb, 0, sizeof(dcb));
+		dcb.dcb_family = rand_family();
+		dcb.cmd = rand() % 256;
+		dcb.dcb_pad = rand16();
+		*out_family = dcb.dcb_family;
+		memcpy(body, &dcb, sizeof(dcb));
+		return sizeof(dcb);
 	}
 	case 16: { /* RTM_*NETCONF: struct netconfmsg */
 		struct netconfmsg ncm;
