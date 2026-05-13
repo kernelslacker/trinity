@@ -53,6 +53,7 @@ static const unsigned short rtnl_types[] = {
 	RTM_NEWACTION, RTM_GETACTION,
 	RTM_NEWPREFIX, RTM_GETMULTICAST, RTM_GETANYCAST,
 	RTM_NEWNEIGHTBL, RTM_GETNEIGHTBL,
+	RTM_NEWNDUSEROPT,
 	RTM_NEWADDRLABEL, RTM_GETADDRLABEL,
 	RTM_NEWNETCONF, RTM_GETNETCONF,
 	RTM_NEWMDB, RTM_DELMDB, RTM_GETMDB,
@@ -1072,6 +1073,18 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		*out_family = ndt.ndtm_family;
 		memcpy(body, &ndt, sizeof(ndt));
 		return sizeof(ndt);
+	}
+	case 13: { /* RTM_*NDUSEROPT: struct nduseroptmsg */
+		struct nduseroptmsg ndu;
+		memset(&ndu, 0, sizeof(ndu));
+		ndu.nduseropt_family = rand_family();
+		ndu.nduseropt_opts_len = htons(rand() % 256);
+		ndu.nduseropt_ifindex = rand32();
+		ndu.nduseropt_icmp_type = rand() % 256;
+		ndu.nduseropt_icmp_code = rand() % 256;
+		*out_family = ndu.nduseropt_family;
+		memcpy(body, &ndu, sizeof(ndu));
+		return sizeof(ndu);
 	}
 	case 14: { /* RTM_*ADDRLABEL: struct ifaddrlblmsg */
 		struct ifaddrlblmsg ifal;
