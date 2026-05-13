@@ -18,6 +18,7 @@
 #include <linux/neighbour.h>
 #include <linux/fib_rules.h>
 #include <linux/netconf.h>
+#include <linux/nexthop.h>
 #include <linux/genetlink.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/xfrm.h>
@@ -61,6 +62,7 @@ static const unsigned short rtnl_types[] = {
 	RTM_NEWNEXTHOP, RTM_GETNEXTHOP,
 	RTM_NEWLINKPROP,
 	RTM_NEWVLAN, RTM_DELVLAN, RTM_GETVLAN,
+	RTM_NEWNEXTHOPBUCKET, RTM_DELNEXTHOPBUCKET, RTM_GETNEXTHOPBUCKET,
 };
 
 static const unsigned short xfrm_types[] = {
@@ -1116,6 +1118,18 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		*out_family = smsg.family;
 		memcpy(body, &smsg, sizeof(smsg));
 		return sizeof(smsg);
+	}
+	case 22: /* RTM_*NEXTHOP */
+	case 25: { /* RTM_*NEXTHOPBUCKET: struct nhmsg */
+		struct nhmsg nh;
+		memset(&nh, 0, sizeof(nh));
+		nh.nh_family = rand_family();
+		nh.nh_scope = rand32() & 0xff;
+		nh.nh_protocol = rand32() & 0xff;
+		nh.nh_flags = rand32();
+		*out_family = nh.nh_family;
+		memcpy(body, &nh, sizeof(nh));
+		return sizeof(nh);
 	}
 	case 5: /* RTM_*QDISC */
 	case 6: /* RTM_*TCLASS */
