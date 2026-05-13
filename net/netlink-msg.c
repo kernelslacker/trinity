@@ -13,6 +13,7 @@
 #include <linux/rtnetlink.h>
 #include <linux/if_addr.h>
 #include <linux/if_link.h>
+#include <linux/if_bridge.h>
 #include <linux/neighbour.h>
 #include <linux/fib_rules.h>
 #include <linux/genetlink.h>
@@ -51,7 +52,7 @@ static const unsigned short rtnl_types[] = {
 	RTM_NEWNEIGHTBL, RTM_GETNEIGHTBL,
 	RTM_NEWADDRLABEL, RTM_GETADDRLABEL,
 	RTM_NEWNETCONF, RTM_GETNETCONF,
-	RTM_NEWMDB, RTM_GETMDB,
+	RTM_NEWMDB, RTM_DELMDB, RTM_GETMDB,
 	RTM_NEWNSID, RTM_GETNSID,
 	RTM_NEWSTATS, RTM_GETSTATS,
 	RTM_NEWCHAIN, RTM_GETCHAIN,
@@ -1038,6 +1039,14 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		*out_family = frh.family;
 		memcpy(body, &frh, sizeof(frh));
 		return sizeof(frh);
+	}
+	case 17: { /* RTM_*MDB: struct br_port_msg */
+		struct br_port_msg bpm;
+		bpm.family = rand_family();
+		bpm.ifindex = rand32() % 64;
+		*out_family = bpm.family;
+		memcpy(body, &bpm, sizeof(bpm));
+		return sizeof(bpm);
 	}
 	case 5: /* RTM_*QDISC */
 	case 6: /* RTM_*TCLASS */
