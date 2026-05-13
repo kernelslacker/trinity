@@ -184,6 +184,19 @@
 #define XFRM_MSG_FLUSHSA		0x1c
 #define XFRM_MSG_FLUSHPOLICY		0x1d
 #define XFRM_MSG_NEWAE			0x1e
+#define XFRM_MSG_SETDEFAULT		0x27
+#define XFRM_MSG_GETDEFAULT		0x28
+#endif
+
+#ifndef XFRM_USERPOLICY_BLOCK
+struct xfrm_userpolicy_default {
+	__u8 in;
+	__u8 fwd;
+	__u8 out;
+};
+#define XFRM_USERPOLICY_UNSPEC		0
+#define XFRM_USERPOLICY_BLOCK		1
+#define XFRM_USERPOLICY_ACCEPT		2
 #endif
 
 #ifndef XFRMA_ALG_AUTH
@@ -1533,6 +1546,68 @@ static int xfrm_emit_flushpolicy(int fd)
 }
 
 /*
+ * SETDEFAULT/GETDEFAULT body bytes are small enums (0..2).  Bias the
+ * rotation toward valid values but keep low-probability edge bytes so
+ * any future reserved-bit handling on the kernel side gets exercised.
+ */
+static __u8 pick_default_byte(void)
+{
+	unsigned int r = rand32() % 100;
+
+	if (r < 75)
+		return r % 3;		/* UNSPEC / BLOCK / ACCEPT */
+	if (r < 90)
+		return 0xff;		/* top-byte edge */
+	return rand32() & 0xff;		/* full-byte fuzz */
+}
+
+static int xfrm_emit_setdefault(int fd)
+{
+	unsigned char buf[64];
+	struct nlmsghdr *nlh;
+	struct xfrm_userpolicy_default *upd;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_SETDEFAULT;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = xfrm_next_seq();
+
+	upd = (struct xfrm_userpolicy_default *)NLMSG_DATA(nlh);
+	upd->in  = pick_default_byte();
+	upd->fwd = pick_default_byte();
+	upd->out = pick_default_byte();
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*upd));
+	nlh->nlmsg_len = (__u32)off;
+	return xfrm_send_recv(fd, buf, off);
+}
+
+static int xfrm_emit_getdefault(int fd)
+{
+	unsigned char buf[64];
+	struct nlmsghdr *nlh;
+	struct xfrm_userpolicy_default *upd;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_GETDEFAULT;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = xfrm_next_seq();
+
+	upd = (struct xfrm_userpolicy_default *)NLMSG_DATA(nlh);
+	upd->in  = pick_default_byte();
+	upd->fwd = pick_default_byte();
+	upd->out = pick_default_byte();
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*upd));
+	nlh->nlmsg_len = (__u32)off;
+	return xfrm_send_recv(fd, buf, off);
+}
+
+/*
  * Message rotation table.  Each grammar invocation rolls one slot.
  * NEWSA / NEWPOLICY get higher weight when the SA ring is empty so
  * the ring fills before UPDSA / NEWAE / DELSA show up; FLUSHSA /
@@ -1548,6 +1623,8 @@ enum xfrm_msg_kind {
 	XMK_DELPOLICY,
 	XMK_FLUSHSA,
 	XMK_FLUSHPOLICY,
+	XMK_SETDEFAULT,
+	XMK_GETDEFAULT,
 	XMK_MAX,
 };
 
@@ -1570,6 +1647,8 @@ static const unsigned int xmk_weights_empty_ring[XMK_MAX] = {
 	[XMK_DELPOLICY]		= 5,
 	[XMK_FLUSHSA]		= 1,
 	[XMK_FLUSHPOLICY]	= 1,
+	[XMK_SETDEFAULT]	= 5,
+	[XMK_GETDEFAULT]	= 3,
 };
 static const unsigned int xmk_weights_full_ring[XMK_MAX] = {
 	[XMK_NEWSA]		= 20,
@@ -1581,6 +1660,8 @@ static const unsigned int xmk_weights_full_ring[XMK_MAX] = {
 	[XMK_DELPOLICY]		= 8,
 	[XMK_FLUSHSA]		= 2,
 	[XMK_FLUSHPOLICY]	= 1,
+	[XMK_SETDEFAULT]	= 5,
+	[XMK_GETDEFAULT]	= 3,
 };
 
 static enum xfrm_msg_kind pick_msg_kind(void)
@@ -1619,6 +1700,8 @@ static void dispatch_msg_kind(int fd, enum xfrm_msg_kind k)
 	case XMK_DELPOLICY:	rc = xfrm_emit_delpolicy(fd); break;
 	case XMK_FLUSHSA:	rc = xfrm_emit_flushsa(fd); break;
 	case XMK_FLUSHPOLICY:	rc = xfrm_emit_flushpolicy(fd); break;
+	case XMK_SETDEFAULT:	rc = xfrm_emit_setdefault(fd); break;
+	case XMK_GETDEFAULT:	rc = xfrm_emit_getdefault(fd); break;
 	default:		rc = 0; break;
 	}
 
