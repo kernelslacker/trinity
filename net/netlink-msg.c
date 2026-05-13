@@ -1107,6 +1107,16 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		memcpy(body, &bvm, sizeof(bvm));
 		return sizeof(bvm);
 	}
+	case 19: { /* RTM_*STATS: struct if_stats_msg */
+		struct if_stats_msg smsg;
+		memset(&smsg, 0, sizeof(smsg));
+		smsg.family = rand_family();
+		smsg.ifindex = rand32() % 64;
+		smsg.filter_mask = rand32();
+		*out_family = smsg.family;
+		memcpy(body, &smsg, sizeof(smsg));
+		return sizeof(smsg);
+	}
 	case 5: /* RTM_*QDISC */
 	case 6: /* RTM_*TCLASS */
 	case 7: /* RTM_*TFILTER */
