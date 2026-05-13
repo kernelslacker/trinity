@@ -1,10 +1,12 @@
 /*
  * SYSCALL_DEFINE3(setpriority, int, which, int, who, int, niceval)
  */
+#include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/resource.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include "random.h"
 #include "sanitise.h"
@@ -22,8 +24,10 @@ static void sanitise_setpriority(struct syscallrecord *rec)
 
 static void post_setpriority(struct syscallrecord *rec)
 {
-	FILE *f;
-	char line[128];
+	char buf[2048];
+	char *line;
+	ssize_t n;
+	int fd;
 	int got = INT_MIN;
 	int expected;
 	pid_t who;
@@ -52,16 +56,22 @@ static void post_setpriority(struct syscallrecord *rec)
 
 	expected = (int) rec->a3;
 
-	f = fopen("/proc/self/status", "r");
-	if (!f)
+	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
+	 * thousands of times per second under fuzz, and stdio's per-call malloc
+	 * of FILE struct + IO buffer is heap traffic we don't need. */
+	fd = open("/proc/self/status", O_RDONLY);
+	if (fd < 0)
 		return;
-	while (fgets(line, sizeof(line), f)) {
-		if (strncmp(line, "Nice:", 5) == 0) {
-			sscanf(line + 5, "%d", &got);
-			break;
-		}
-	}
-	fclose(f);
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return;
+	buf[n] = '\0';
+	/* Anchor on a newline so a "Nice:" substring inside an earlier field
+	 * (e.g. a process name) cannot mis-target the parse. */
+	line = strstr(buf, "\nNice:");
+	if (line != NULL)
+		(void) sscanf(line + 6, "%d", &got);
 
 	if (got == INT_MIN)
 		return;
