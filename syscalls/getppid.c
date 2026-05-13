@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE0(getppid)
  */
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
@@ -24,8 +25,10 @@
  */
 static void post_getppid(struct syscallrecord *rec)
 {
-	FILE *f;
-	char line[128];
+	char buf[2048];
+	char *line;
+	ssize_t n;
+	int fd;
 	pid_t got, proc_ppid = (pid_t)-1;
 	unsigned int ppid;
 
@@ -47,17 +50,24 @@ static void post_getppid(struct syscallrecord *rec)
 
 	got = (pid_t) rec->retval;
 
-	f = fopen("/proc/self/status", "r");
-	if (!f)
+	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
+	 * thousands of times per second under fuzz, and stdio's per-call malloc
+	 * of FILE struct + IO buffer is heap traffic we don't need. */
+	fd = open("/proc/self/status", O_RDONLY);
+	if (fd < 0)
 		return;
-	while (fgets(line, sizeof(line), f)) {
-		if (strncmp(line, "PPid:", 5) == 0) {
-			if (sscanf(line + 5, "%u", &ppid) == 1)
-				proc_ppid = (pid_t)ppid;
-			break;
-		}
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return;
+	buf[n] = '\0';
+	/* Anchor on a newline so a "PPid:" substring inside an earlier field
+	 * (e.g. a process name) cannot mis-target the parse. */
+	line = strstr(buf, "\nPPid:");
+	if (line != NULL) {
+		if (sscanf(line + 6, "%u", &ppid) == 1)
+			proc_ppid = (pid_t)ppid;
 	}
-	fclose(f);
 
 	if (proc_ppid == (pid_t)-1)
 		return;
