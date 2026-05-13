@@ -7,6 +7,7 @@
  */
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <stddef.h>
 #include <netinet/in.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
@@ -1222,6 +1223,104 @@ static const struct nla_attr_spec xfrma_specs[] = {
 };
 
 /*
+ * Per-message-type family-field offsets within the xfrm body.
+ * Most xfrm structs carry an AF_INET/AF_INET6 family value (sometimes
+ * two — the SA family and the selector family). Random bytes set these
+ * to garbage so the kernel rejects the message at family validation,
+ * giving terrible coverage past the entry point. Writing a real family
+ * value gets us into the deeper code paths.
+ *
+ * sel_family_offset == ~0u means the message has no separate selector
+ * family to pin.
+ */
+static const struct {
+	unsigned short msg_type;
+	unsigned int family_offset;
+	unsigned int sel_family_offset;
+} xfrm_family_offsets[] = {
+	{ XFRM_MSG_NEWSA,
+	  offsetof(struct xfrm_usersa_info, family),
+	  offsetof(struct xfrm_usersa_info, sel) +
+		offsetof(struct xfrm_selector, family) },
+	{ XFRM_MSG_UPDSA,
+	  offsetof(struct xfrm_usersa_info, family),
+	  offsetof(struct xfrm_usersa_info, sel) +
+		offsetof(struct xfrm_selector, family) },
+	{ XFRM_MSG_DELSA,
+	  offsetof(struct xfrm_usersa_id, family), ~0u },
+	{ XFRM_MSG_GETSA,
+	  offsetof(struct xfrm_usersa_id, family), ~0u },
+	{ XFRM_MSG_NEWPOLICY,
+	  offsetof(struct xfrm_userpolicy_info, sel) +
+		offsetof(struct xfrm_selector, family), ~0u },
+	{ XFRM_MSG_UPDPOLICY,
+	  offsetof(struct xfrm_userpolicy_info, sel) +
+		offsetof(struct xfrm_selector, family), ~0u },
+	{ XFRM_MSG_DELPOLICY,
+	  offsetof(struct xfrm_userpolicy_id, sel) +
+		offsetof(struct xfrm_selector, family), ~0u },
+	{ XFRM_MSG_GETPOLICY,
+	  offsetof(struct xfrm_userpolicy_id, sel) +
+		offsetof(struct xfrm_selector, family), ~0u },
+	{ XFRM_MSG_ALLOCSPI,
+	  offsetof(struct xfrm_userspi_info, info) +
+		offsetof(struct xfrm_usersa_info, family),
+	  offsetof(struct xfrm_userspi_info, info) +
+		offsetof(struct xfrm_usersa_info, sel) +
+		offsetof(struct xfrm_selector, family) },
+	{ XFRM_MSG_ACQUIRE,
+	  offsetof(struct xfrm_user_acquire, policy) +
+		offsetof(struct xfrm_userpolicy_info, sel) +
+		offsetof(struct xfrm_selector, family),
+	  offsetof(struct xfrm_user_acquire, sel) +
+		offsetof(struct xfrm_selector, family) },
+	{ XFRM_MSG_EXPIRE,
+	  offsetof(struct xfrm_user_expire, state) +
+		offsetof(struct xfrm_usersa_info, family),
+	  offsetof(struct xfrm_user_expire, state) +
+		offsetof(struct xfrm_usersa_info, sel) +
+		offsetof(struct xfrm_selector, family) },
+	{ XFRM_MSG_POLEXPIRE,
+	  offsetof(struct xfrm_user_polexpire, pol) +
+		offsetof(struct xfrm_userpolicy_info, sel) +
+		offsetof(struct xfrm_selector, family), ~0u },
+	{ XFRM_MSG_NEWAE,
+	  offsetof(struct xfrm_aevent_id, sa_id) +
+		offsetof(struct xfrm_usersa_id, family), ~0u },
+	{ XFRM_MSG_GETAE,
+	  offsetof(struct xfrm_aevent_id, sa_id) +
+		offsetof(struct xfrm_usersa_id, family), ~0u },
+	{ XFRM_MSG_REPORT,
+	  offsetof(struct xfrm_user_report, sel) +
+		offsetof(struct xfrm_selector, family), ~0u },
+	{ XFRM_MSG_MAPPING,
+	  offsetof(struct xfrm_user_mapping, id) +
+		offsetof(struct xfrm_usersa_id, family), ~0u },
+};
+
+static void xfrm_pin_family(unsigned char *body, size_t body_len,
+			    unsigned short nlmsg_type)
+{
+	unsigned char family = RAND_BOOL() ? AF_INET : AF_INET6;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(xfrm_family_offsets); i++) {
+		if (xfrm_family_offsets[i].msg_type != nlmsg_type)
+			continue;
+		if (xfrm_family_offsets[i].family_offset + 1 < body_len) {
+			body[xfrm_family_offsets[i].family_offset] = family;
+			body[xfrm_family_offsets[i].family_offset + 1] = 0;
+		}
+		if (xfrm_family_offsets[i].sel_family_offset != ~0u &&
+		    xfrm_family_offsets[i].sel_family_offset + 1 < body_len) {
+			body[xfrm_family_offsets[i].sel_family_offset] = family;
+			body[xfrm_family_offsets[i].sel_family_offset + 1] = 0;
+		}
+		return;
+	}
+}
+
+/*
  * Generate body for NETLINK_XFRM messages.
  * Body struct varies by message type. The big structs (xfrm_usersa_info
  * at 224 bytes, xfrm_userpolicy_info at 168 bytes) are filled with
@@ -1297,8 +1396,10 @@ static size_t gen_xfrm_body(unsigned char *body, unsigned short nlmsg_type)
 		break;
 	}
 
-	if (body_len > 0)
+	if (body_len > 0) {
 		generate_rand_bytes(body, body_len);
+		xfrm_pin_family(body, body_len, nlmsg_type);
+	}
 	return body_len;
 }
 
