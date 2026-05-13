@@ -1041,7 +1041,8 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	case 5: /* RTM_*QDISC */
 	case 6: /* RTM_*TCLASS */
-	case 7: { /* RTM_*TFILTER: struct tcmsg */
+	case 7: /* RTM_*TFILTER */
+	case 21: { /* RTM_*CHAIN: struct tcmsg */
 		struct tcmsg tc;
 		tc.tcm_family = rand_family();
 		tc.tcm__pad1 = 0;
