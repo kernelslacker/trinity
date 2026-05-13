@@ -12,6 +12,7 @@
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/if_addr.h>
+#include <linux/if_addrlabel.h>
 #include <linux/if_link.h>
 #include <linux/if_bridge.h>
 #include <linux/neighbour.h>
@@ -1048,6 +1049,18 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		*out_family = ndt.ndtm_family;
 		memcpy(body, &ndt, sizeof(ndt));
 		return sizeof(ndt);
+	}
+	case 14: { /* RTM_*ADDRLABEL: struct ifaddrlblmsg */
+		struct ifaddrlblmsg ifal;
+		memset(&ifal, 0, sizeof(ifal));
+		ifal.ifal_family = rand_family();
+		ifal.ifal_prefixlen = rand() % 129;
+		ifal.ifal_flags = rand() % 256;
+		ifal.ifal_index = rand32();
+		ifal.ifal_seq = rand32();
+		*out_family = ifal.ifal_family;
+		memcpy(body, &ifal, sizeof(ifal));
+		return sizeof(ifal);
 	}
 	case 16: { /* RTM_*NETCONF: struct netconfmsg */
 		struct netconfmsg ncm;
