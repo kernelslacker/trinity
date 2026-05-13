@@ -16,6 +16,7 @@
 #include <linux/if_bridge.h>
 #include <linux/neighbour.h>
 #include <linux/fib_rules.h>
+#include <linux/netconf.h>
 #include <linux/genetlink.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/xfrm.h>
@@ -1039,6 +1040,13 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		*out_family = frh.family;
 		memcpy(body, &frh, sizeof(frh));
 		return sizeof(frh);
+	}
+	case 16: { /* RTM_*NETCONF: struct netconfmsg */
+		struct netconfmsg ncm;
+		ncm.ncm_family = rand_family();
+		*out_family = ncm.ncm_family;
+		memcpy(body, &ncm, sizeof(ncm));
+		return sizeof(ncm);
 	}
 	case 17: { /* RTM_*MDB: struct br_port_msg */
 		struct br_port_msg bpm;
