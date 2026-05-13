@@ -1050,6 +1050,18 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		memcpy(body, &tca, sizeof(tca));
 		return sizeof(tca);
 	}
+	case 9: { /* RTM_*PREFIX: struct prefixmsg */
+		struct prefixmsg pmsg;
+		memset(&pmsg, 0, sizeof(pmsg));
+		pmsg.prefix_family = rand_family();
+		pmsg.prefix_ifindex = rand32() % 64;
+		pmsg.prefix_type = rand() % 256;
+		pmsg.prefix_len = rand() % 129;
+		pmsg.prefix_flags = rand() % 256;
+		*out_family = pmsg.prefix_family;
+		memcpy(body, &pmsg, sizeof(pmsg));
+		return sizeof(pmsg);
+	}
 	case 12: { /* RTM_*NEIGHTBL: struct ndtmsg */
 		struct ndtmsg ndt;
 		memset(&ndt, 0, sizeof(ndt));
