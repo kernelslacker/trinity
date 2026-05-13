@@ -272,7 +272,18 @@ err_free_dedup:
 void kcov_cleanup_child(struct kcov_child *kc)
 {
 	if (kc->trace_buf != NULL) {
-		munmap(kc->trace_buf, KCOV_TRACE_SIZE * sizeof(unsigned long));
+		/*
+		 * If a wild write stomped trace_buf with a non-pointer (pid,
+		 * small int, scribbled offset) the libc munmap shadow walk
+		 * trips on a non-canonical/misaligned address before the
+		 * syscall is even issued.  Drop the obviously-bogus value
+		 * instead of dispatching it.
+		 */
+		if (is_corrupt_ptr_shape(kc->trace_buf))
+			outputerr("kcov_cleanup_child: skipping munmap on shape-corrupt trace_buf=%p\n",
+				  kc->trace_buf);
+		else
+			munmap(kc->trace_buf, KCOV_TRACE_SIZE * sizeof(unsigned long));
 		kc->trace_buf = NULL;
 	}
 	if (kc->fd >= 0) {
@@ -280,8 +291,12 @@ void kcov_cleanup_child(struct kcov_child *kc)
 		kc->fd = -1;
 	}
 	if (kc->cmp_trace_buf != NULL) {
-		munmap(kc->cmp_trace_buf,
-			KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long));
+		if (is_corrupt_ptr_shape(kc->cmp_trace_buf))
+			outputerr("kcov_cleanup_child: skipping munmap on shape-corrupt cmp_trace_buf=%p\n",
+				  kc->cmp_trace_buf);
+		else
+			munmap(kc->cmp_trace_buf,
+				KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long));
 		kc->cmp_trace_buf = NULL;
 	}
 	if (kc->cmp_fd >= 0) {
