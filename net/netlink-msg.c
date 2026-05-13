@@ -1042,6 +1042,14 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		memcpy(body, &frh, sizeof(frh));
 		return sizeof(frh);
 	}
+	case 8: { /* RTM_*ACTION: struct tcamsg */
+		struct tcamsg tca;
+		memset(&tca, 0, sizeof(tca));
+		tca.tca_family = rand_family();
+		*out_family = tca.tca_family;
+		memcpy(body, &tca, sizeof(tca));
+		return sizeof(tca);
+	}
 	case 12: { /* RTM_*NEIGHTBL: struct ndtmsg */
 		struct ndtmsg ndt;
 		memset(&ndt, 0, sizeof(ndt));
