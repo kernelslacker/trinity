@@ -62,10 +62,10 @@ static void sanitise_fsconfig(struct syscallrecord *rec)
 
 	case FSCONFIG_SET_STRING:
 		key = (char *) get_writable_address(32);
-		fill_key(key);
 		val = (char *) get_writable_address(64);
 		if (key == NULL || val == NULL)
 			break;
+		fill_key(key);
 		switch (rand() % 3) {
 		case 0: strncpy(val, "1", 63); break;
 		case 1: strncpy(val, "/dev/sda1", 63); break;
@@ -79,10 +79,10 @@ static void sanitise_fsconfig(struct syscallrecord *rec)
 
 	case FSCONFIG_SET_BINARY:
 		key = (char *) get_writable_address(32);
-		fill_key(key);
 		val = (char *) get_writable_address(64);
 		if (key == NULL || val == NULL)
 			break;
+		fill_key(key);
 		rec->a3 = (unsigned long) key;
 		rec->a4 = (unsigned long) val;
 		rec->a5 = 1 + (rand() % 64);	/* aux = length */
@@ -91,10 +91,10 @@ static void sanitise_fsconfig(struct syscallrecord *rec)
 	case FSCONFIG_SET_PATH:
 	case FSCONFIG_SET_PATH_EMPTY:
 		key = (char *) get_writable_address(32);
-		fill_key(key);
 		val = (char *) get_writable_address(32);
 		if (key == NULL || val == NULL)
 			break;
+		fill_key(key);
 		strncpy(val, "/", 31);
 		val[31] = '\0';
 		rec->a3 = (unsigned long) key;
