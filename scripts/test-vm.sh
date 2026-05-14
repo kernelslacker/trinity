@@ -8,7 +8,7 @@
 . scripts/taint.sh
 
 chmod 755 $TRINITY_TMP
-cd $TRINITY_TMP
+cd "$TRINITY_TMP" || exit 1
 
 while true;
 do
