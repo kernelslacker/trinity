@@ -551,6 +551,104 @@ static void json_emit_edgepair_section(void)
 }
 
 /*
+ * Descriptor-table form for stat categories whose JSON / text emit shape
+ * is "object name + N (field, value) scalar pairs".  Each category lists
+ * its fields once; the JSON walker and the text walker iterate the same
+ * descriptor so a new counter is added by declaring the struct member and
+ * appending one STAT_FIELD() row -- the JSON key is derived from the
+ * field-name suffix so the schema cannot drift from the struct.
+ *
+ * Generalises the in-tree pattern already used by defense_counters[] for
+ * the periodic-window dump; here it replaces correlated edits in
+ * struct stats_s + dump_stats_json() + dump_stats() with a single edit
+ * site per counter.
+ */
+struct stat_field {
+	const char *name;	/* JSON key / text metric column */
+	size_t      offset;	/* offsetof(struct stats_s, <field>) */
+};
+
+struct stat_category {
+	const char              *name;		/* JSON object key / text category column */
+	size_t                   gate_offset;	/* offsetof of the "is this category active" counter */
+	const struct stat_field *fields;
+	size_t                   n_fields;
+};
+
+#define STAT_FIELD(cat, suffix) \
+	{ #suffix, offsetof(struct stats_s, cat##_##suffix) }
+
+#define STAT_CATEGORY(cat_name, gate_field, fields_array) \
+	{ (cat_name), \
+	  offsetof(struct stats_s, gate_field), \
+	  (fields_array), \
+	  ARRAY_SIZE(fields_array) }
+
+static unsigned long stat_field_load(const struct stat_field *f)
+{
+	unsigned long *p = (unsigned long *)((char *)&shm->stats + f->offset);
+	return __atomic_load_n(p, __ATOMIC_RELAXED);
+}
+
+static unsigned long stat_gate_load(const struct stat_category *cat)
+{
+	unsigned long *p = (unsigned long *)((char *)&shm->stats + cat->gate_offset);
+	return __atomic_load_n(p, __ATOMIC_RELAXED);
+}
+
+/*
+ * Emit one category as a JSON object: "name":{"field":N,"field":N,...}.
+ * Caller is responsible for the surrounding comma separator.
+ */
+static void stat_category_emit_json(const struct stat_category *cat)
+{
+	size_t i;
+
+	printf("\"%s\":{", cat->name);
+	for (i = 0; i < cat->n_fields; i++) {
+		printf("%s\"%s\":%lu",
+		       i ? "," : "",
+		       cat->fields[i].name,
+		       stat_field_load(&cat->fields[i]));
+	}
+	putchar('}');
+}
+
+/*
+ * Emit one category as text rows.  Mirrors the existing
+ * "if (shm->stats.<gate>) { stat_row(...); ... }" idiom: when the gate
+ * counter is zero the whole block is suppressed so quiet runs stay terse.
+ */
+static void stat_category_emit_text(const struct stat_category *cat)
+{
+	size_t i;
+
+	if (stat_gate_load(cat) == 0)
+		return;
+	for (i = 0; i < cat->n_fields; i++)
+		stat_row(cat->name, cat->fields[i].name,
+		         stat_field_load(&cat->fields[i]));
+}
+
+static const struct stat_field msg_zerocopy_churn_fields[] = {
+	STAT_FIELD(msg_zerocopy_churn, runs),
+	STAT_FIELD(msg_zerocopy_churn, setup_failed),
+	STAT_FIELD(msg_zerocopy_churn, sends_ok),
+	STAT_FIELD(msg_zerocopy_churn, sends_efault),
+	STAT_FIELD(msg_zerocopy_churn, sends_eagain),
+	STAT_FIELD(msg_zerocopy_churn, errqueue_drained),
+	STAT_FIELD(msg_zerocopy_churn, errqueue_empty),
+	STAT_FIELD(msg_zerocopy_churn, munmap_ok),
+	STAT_FIELD(msg_zerocopy_churn, send_after_munmap_caught),
+	STAT_FIELD(msg_zerocopy_churn, sndzc_disable_ok),
+};
+
+static const struct stat_category msg_zerocopy_churn_category =
+	STAT_CATEGORY("msg_zerocopy_churn",
+	              msg_zerocopy_churn_runs,
+	              msg_zerocopy_churn_fields);
+
+/*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
  * schema regardless of which subsystems happened to fire on this run.
@@ -735,46 +833,7 @@ static void dump_stats_json(void)
 		"\"nf_conntrack_helper_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_helper\":%lu,\"attach_ok\":%lu,\"attach_fail\":%lu,\"exp_ok\":%lu,\"packet_sent\":%lu,\"delete_ok\":%lu,\"zone_swap\":%lu,\"detach_ok\":%lu},"
 		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"peek_ok\":%lu,\"iouring_variant_ok\":%lu},"
 		"\"netns_teardown\":{\"runs\":%lu,\"setup_failed\":%lu,\"unshare_ok\":%lu,\"socket_pair_ok\":%lu,\"fork_ok\":%lu,\"setns_ok\":%lu,\"kill_ok\":%lu,\"completed_ok\":%lu},"
-		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},"
-		"\"msg_zerocopy_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sends_ok\":%lu,\"sends_efault\":%lu,\"sends_eagain\":%lu,\"errqueue_drained\":%lu,\"errqueue_empty\":%lu,\"munmap_ok\":%lu,\"send_after_munmap_caught\":%lu,\"sndzc_disable_ok\":%lu},"
-		"\"iouring_send_zc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"register_bufs_ok\":%lu,\"send_zc_ok\":%lu,\"sendmsg_zc_ok\":%lu,\"unregister_race_ok\":%lu,\"update_race_ok\":%lu,\"cqe_drained\":%lu},"
-		"\"vsock_transport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bind_ok\":%lu,\"connect_ok\":%lu,\"send_ok\":%lu,\"buffer_size_ok\":%lu,\"timeout_ok\":%lu,\"get_cid_ok\":%lu,\"seq_eom_runs\":%lu,\"seq_eom_sends_ok\":%lu,\"seq_eom_sends_failed\":%lu,\"seq_eom_skipped\":%lu},"
-		"\"bridge_vlan_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"vlan_add_ok\":%lu,\"vlan_del_ok\":%lu,\"tunnel_add_ok\":%lu,\"mst_set_ok\":%lu,\"raw_send_ok\":%lu},"
-		"\"igmp_mld_source_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"join_ok\":%lu,\"leave_ok\":%lu,\"block_ok\":%lu,\"msfilter_ok\":%lu,\"drop_ok\":%lu,\"send_ok\":%lu},"
-		"\"psp_key_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"netdev_create_ok\":%lu,\"family_resolve_ok\":%lu,\"dev_get_ok\":%lu,\"key_install_ok\":%lu,\"spi_set_ok\":%lu,\"send_ok\":%lu,\"rotate_ok\":%lu,\"spi_switch_ok\":%lu,\"shutdown_ok\":%lu,\"devlink_port_churn_runs\":%lu,\"devlink_port_churn_port_add_ok\":%lu,\"devlink_port_churn_port_del_ok\":%lu,\"devlink_port_churn_vf_spawn_ok\":%lu,\"devlink_port_churn_unsupported_latched\":%lu},"
-		"\"afxdp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"umem_reg_ok\":%lu,\"rings_setup_ok\":%lu,\"prog_load_ok\":%lu,\"map_create_ok\":%lu,\"map_update_ok\":%lu,\"bind_ok\":%lu,\"link_attach_ok\":%lu,\"netlink_attach_ok\":%lu,\"attach_failed\":%lu,\"send_ok\":%lu,\"recv_ok\":%lu,\"map_delete_ok\":%lu,\"munmap_race_ok\":%lu,\"xsg_iters\":%lu,\"tx_metadata_iters\":%lu,\"tun_bind_iters\":%lu,\"xsg_bind_failed\":%lu,\"tx_md_bind_failed\":%lu},"
-		"\"kvm\":{\"vcpu_ioctls_dispatched\":%lu},"
-		"\"kvm_run_churn\":{\"invocations\":%lu,\"exit_io\":%lu,\"exit_mmio\":%lu,\"exit_hlt\":%lu,\"exit_shutdown\":%lu,\"exit_fail_entry\":%lu,\"exit_internal_error\":%lu,\"exit_intr\":%lu,\"exit_other\":%lu,\"errors\":%lu,\"gpc_memslot_race_runs\":%lu,\"gpc_memslot_race_deletes\":%lu,\"gpc_memslot_race_unsupported\":%lu},"
-		"\"nl80211\":{\"runs\":%lu,\"setup_failed\":%lu,\"scan_triggered\":%lu,\"connect_attempted\":%lu,\"connect_succeeded\":%lu,\"disconnect_attempted\":%lu,\"regdom_changed\":%lu,\"iface_created\":%lu,\"iface_destroyed\":%lu,\"bursts_sent\":%lu,\"pmsr_runs\":%lu,\"pmsr_ok\":%lu,\"admin_gate_runs\":%lu,\"admin_gate_eperm_ok\":%lu,\"admin_gate_unexpected\":%lu},"
-		"\"nat_t_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_deleted\":%lu,\"frames_sent\":%lu,\"xfrm6_setup_ok\":%lu,\"xfrm6_setup_fail\":%lu,\"xfrm6_sendto_runs\":%lu,\"xfrm6_delsa_races\":%lu},"
-		"\"splice_protocols\":{\"runs\":%lu,\"setup_failed\":%lu,\"chain_ok\":%lu,\"in_bytes\":%lu,\"out_bytes\":%lu,\"udp_encap_attempted\":%lu,\"tcp_repair_attempted\":%lu,\"packet_ring_attempted\":%lu,\"alg_attempted\":%lu,\"rxrpc_attempted\":%lu,\"msg_splice_pages_attempted\":%lu,\"msg_splice_pages_path_taken_inferred\":%lu},"
-		"\"rxrpc_key_install\":{\"runs\":%lu,\"calls\":%lu,\"revokes\":%lu,\"quota_hits\":%lu,\"unsupported\":%lu},"
-		"\"af_alg_weak_cipher_probe\":{\"runs\":%lu,\"socket_failed\":%lu,\"total_bind_attempts\":%lu,\"total_bind_accepted\":%lu,\"weak_accepted_total\":%lu,\"setkey_accepted_total\":%lu,\"skcipher_weak_accepted\":%lu,\"aead_weak_accepted\":%lu,\"hash_weak_accepted\":%lu,\"strong_rejected\":%lu},"
-		"\"af_alg_probe\":{\"runs\":%lu,\"unsupported\":%lu,\"accept_total\":%lu,\"reject_total\":%lu},"
-		"\"af_alg_recvmsg\":{\"runs\":%lu,\"setkey_sent\":%lu,\"iv_sent\":%lu,\"oob_iov\":%lu,\"zerolen\":%lu,\"oversize\":%lu,\"empty_cmsg_no_more\":%lu,\"unsupported\":%lu},"
-		"\"ublk_lifecycle\":{\"iters\":%lu,\"eperm\":%lu,\"add_ok\":%lu,\"fetch_ok\":%lu,\"del_ok\":%lu,\"race_observed\":%lu},"
-		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
-		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
-		"\"ip6gre_bond_lapb_stack\":{\"runs\":%lu,\"setup_failed\":%lu,\"flag_toggles\":%lu},"
-		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu,\"burn_iters\":%lu},"
-		"\"ipv6_ndisc_proxy\":{\"runs\":%lu,\"ns_sent_ok\":%lu,\"setup_failed\":%lu,\"proxy_enable_ok\":%lu},"
-		"\"ipfrag_source_churn\":{\"runs\":%lu,\"packets_sent_ok\":%lu,\"send_failed\":%lu,\"unique_srcs\":%lu},"
-		"\"rtnl_vf_broadcast_getlink\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"getlink_ok\":%lu},"
-		"\"obscure_af_churn\":{\"runs\":%lu,\"no_viable_pf\":%lu,"
-			"\"sendmsg_no_bind\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
-			"\"bind_then_sendmsg\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
-			"\"connect_no_listen\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
-			"\"ioctl_rotation\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
-			"\"setsockopt_zero_len\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
-			"\"close_via_dup\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu}},"
-		"\"flowtable_encap_vlan\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"offloaded_pkts\":%lu,\"gso_sends\":%lu,\"vlan_teardown_races\":%lu,\"unsupported_latched\":%lu},"
-		"\"rxrpc_sendmsg_cmsg_churn\":{\"runs\":%lu,\"socket_failed\":%lu,\"sendmsg_ok\":%lu,\"sendmsg_fail\":%lu,"
-			"\"user_call_id\":%lu,\"abort\":%lu,\"accept\":%lu,\"exclusive_call\":%lu,"
-			"\"upgrade_service\":%lu,\"tx_length\":%lu,\"set_call_timeout\":%lu,\"charge_accept\":%lu},"
-		"\"tty_ldisc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"ldisc_set_ok\":%lu,\"ldisc_set_failed\":%lu,"
-			"\"write_ok\":%lu,\"read_ok\":%lu,"
-			"\"per_disc\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu]}"
-		"}",
+		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},",
 		shm->stats.fault_injected, shm->stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
 		shm->stats.fd_closed_tracked, shm->stats.fd_regenerated,
@@ -1245,17 +1304,48 @@ static void dump_stats_json(void)
 		shm->stats.tcp_ulp_swap_churn_ifname_probe_ok,
 		shm->stats.tcp_ulp_swap_churn_uninstall_ok,
 		shm->stats.tcp_ulp_swap_churn_reinstall_ok,
-		shm->stats.tcp_ulp_swap_churn_install_failed,
-		shm->stats.msg_zerocopy_churn_runs,
-		shm->stats.msg_zerocopy_churn_setup_failed,
-		shm->stats.msg_zerocopy_churn_sends_ok,
-		shm->stats.msg_zerocopy_churn_sends_efault,
-		shm->stats.msg_zerocopy_churn_sends_eagain,
-		shm->stats.msg_zerocopy_churn_errqueue_drained,
-		shm->stats.msg_zerocopy_churn_errqueue_empty,
-		shm->stats.msg_zerocopy_churn_munmap_ok,
-		shm->stats.msg_zerocopy_churn_send_after_munmap_caught,
-		shm->stats.msg_zerocopy_churn_sndzc_disable_ok,
+		shm->stats.tcp_ulp_swap_churn_install_failed);
+
+	stat_category_emit_json(&msg_zerocopy_churn_category);
+
+	printf(",\"iouring_send_zc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"register_bufs_ok\":%lu,\"send_zc_ok\":%lu,\"sendmsg_zc_ok\":%lu,\"unregister_race_ok\":%lu,\"update_race_ok\":%lu,\"cqe_drained\":%lu},"
+		"\"vsock_transport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bind_ok\":%lu,\"connect_ok\":%lu,\"send_ok\":%lu,\"buffer_size_ok\":%lu,\"timeout_ok\":%lu,\"get_cid_ok\":%lu,\"seq_eom_runs\":%lu,\"seq_eom_sends_ok\":%lu,\"seq_eom_sends_failed\":%lu,\"seq_eom_skipped\":%lu},"
+		"\"bridge_vlan_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"vlan_add_ok\":%lu,\"vlan_del_ok\":%lu,\"tunnel_add_ok\":%lu,\"mst_set_ok\":%lu,\"raw_send_ok\":%lu},"
+		"\"igmp_mld_source_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"join_ok\":%lu,\"leave_ok\":%lu,\"block_ok\":%lu,\"msfilter_ok\":%lu,\"drop_ok\":%lu,\"send_ok\":%lu},"
+		"\"psp_key_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"netdev_create_ok\":%lu,\"family_resolve_ok\":%lu,\"dev_get_ok\":%lu,\"key_install_ok\":%lu,\"spi_set_ok\":%lu,\"send_ok\":%lu,\"rotate_ok\":%lu,\"spi_switch_ok\":%lu,\"shutdown_ok\":%lu,\"devlink_port_churn_runs\":%lu,\"devlink_port_churn_port_add_ok\":%lu,\"devlink_port_churn_port_del_ok\":%lu,\"devlink_port_churn_vf_spawn_ok\":%lu,\"devlink_port_churn_unsupported_latched\":%lu},"
+		"\"afxdp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"umem_reg_ok\":%lu,\"rings_setup_ok\":%lu,\"prog_load_ok\":%lu,\"map_create_ok\":%lu,\"map_update_ok\":%lu,\"bind_ok\":%lu,\"link_attach_ok\":%lu,\"netlink_attach_ok\":%lu,\"attach_failed\":%lu,\"send_ok\":%lu,\"recv_ok\":%lu,\"map_delete_ok\":%lu,\"munmap_race_ok\":%lu,\"xsg_iters\":%lu,\"tx_metadata_iters\":%lu,\"tun_bind_iters\":%lu,\"xsg_bind_failed\":%lu,\"tx_md_bind_failed\":%lu},"
+		"\"kvm\":{\"vcpu_ioctls_dispatched\":%lu},"
+		"\"kvm_run_churn\":{\"invocations\":%lu,\"exit_io\":%lu,\"exit_mmio\":%lu,\"exit_hlt\":%lu,\"exit_shutdown\":%lu,\"exit_fail_entry\":%lu,\"exit_internal_error\":%lu,\"exit_intr\":%lu,\"exit_other\":%lu,\"errors\":%lu,\"gpc_memslot_race_runs\":%lu,\"gpc_memslot_race_deletes\":%lu,\"gpc_memslot_race_unsupported\":%lu},"
+		"\"nl80211\":{\"runs\":%lu,\"setup_failed\":%lu,\"scan_triggered\":%lu,\"connect_attempted\":%lu,\"connect_succeeded\":%lu,\"disconnect_attempted\":%lu,\"regdom_changed\":%lu,\"iface_created\":%lu,\"iface_destroyed\":%lu,\"bursts_sent\":%lu,\"pmsr_runs\":%lu,\"pmsr_ok\":%lu,\"admin_gate_runs\":%lu,\"admin_gate_eperm_ok\":%lu,\"admin_gate_unexpected\":%lu},"
+		"\"nat_t_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_deleted\":%lu,\"frames_sent\":%lu,\"xfrm6_setup_ok\":%lu,\"xfrm6_setup_fail\":%lu,\"xfrm6_sendto_runs\":%lu,\"xfrm6_delsa_races\":%lu},"
+		"\"splice_protocols\":{\"runs\":%lu,\"setup_failed\":%lu,\"chain_ok\":%lu,\"in_bytes\":%lu,\"out_bytes\":%lu,\"udp_encap_attempted\":%lu,\"tcp_repair_attempted\":%lu,\"packet_ring_attempted\":%lu,\"alg_attempted\":%lu,\"rxrpc_attempted\":%lu,\"msg_splice_pages_attempted\":%lu,\"msg_splice_pages_path_taken_inferred\":%lu},"
+		"\"rxrpc_key_install\":{\"runs\":%lu,\"calls\":%lu,\"revokes\":%lu,\"quota_hits\":%lu,\"unsupported\":%lu},"
+		"\"af_alg_weak_cipher_probe\":{\"runs\":%lu,\"socket_failed\":%lu,\"total_bind_attempts\":%lu,\"total_bind_accepted\":%lu,\"weak_accepted_total\":%lu,\"setkey_accepted_total\":%lu,\"skcipher_weak_accepted\":%lu,\"aead_weak_accepted\":%lu,\"hash_weak_accepted\":%lu,\"strong_rejected\":%lu},"
+		"\"af_alg_probe\":{\"runs\":%lu,\"unsupported\":%lu,\"accept_total\":%lu,\"reject_total\":%lu},"
+		"\"af_alg_recvmsg\":{\"runs\":%lu,\"setkey_sent\":%lu,\"iv_sent\":%lu,\"oob_iov\":%lu,\"zerolen\":%lu,\"oversize\":%lu,\"empty_cmsg_no_more\":%lu,\"unsupported\":%lu},"
+		"\"ublk_lifecycle\":{\"iters\":%lu,\"eperm\":%lu,\"add_ok\":%lu,\"fetch_ok\":%lu,\"del_ok\":%lu,\"race_observed\":%lu},"
+		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
+		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
+		"\"ip6gre_bond_lapb_stack\":{\"runs\":%lu,\"setup_failed\":%lu,\"flag_toggles\":%lu},"
+		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu,\"burn_iters\":%lu},"
+		"\"ipv6_ndisc_proxy\":{\"runs\":%lu,\"ns_sent_ok\":%lu,\"setup_failed\":%lu,\"proxy_enable_ok\":%lu},"
+		"\"ipfrag_source_churn\":{\"runs\":%lu,\"packets_sent_ok\":%lu,\"send_failed\":%lu,\"unique_srcs\":%lu},"
+		"\"rtnl_vf_broadcast_getlink\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"getlink_ok\":%lu},"
+		"\"obscure_af_churn\":{\"runs\":%lu,\"no_viable_pf\":%lu,"
+			"\"sendmsg_no_bind\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
+			"\"bind_then_sendmsg\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
+			"\"connect_no_listen\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
+			"\"ioctl_rotation\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
+			"\"setsockopt_zero_len\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
+			"\"close_via_dup\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu}},"
+		"\"flowtable_encap_vlan\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"offloaded_pkts\":%lu,\"gso_sends\":%lu,\"vlan_teardown_races\":%lu,\"unsupported_latched\":%lu},"
+		"\"rxrpc_sendmsg_cmsg_churn\":{\"runs\":%lu,\"socket_failed\":%lu,\"sendmsg_ok\":%lu,\"sendmsg_fail\":%lu,"
+			"\"user_call_id\":%lu,\"abort\":%lu,\"accept\":%lu,\"exclusive_call\":%lu,"
+			"\"upgrade_service\":%lu,\"tx_length\":%lu,\"set_call_timeout\":%lu,\"charge_accept\":%lu},"
+		"\"tty_ldisc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"ldisc_set_ok\":%lu,\"ldisc_set_failed\":%lu,"
+			"\"write_ok\":%lu,\"read_ok\":%lu,"
+			"\"per_disc\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu]}"
+		"}",
 		shm->stats.iouring_send_zc_churn_runs,
 		shm->stats.iouring_send_zc_churn_setup_failed,
 		shm->stats.iouring_send_zc_churn_register_bufs_ok,
@@ -3562,18 +3652,7 @@ void dump_stats(void)
 		stat_row("tcp_ulp_swap_churn", "install_failed",    shm->stats.tcp_ulp_swap_churn_install_failed);
 	}
 
-	if (shm->stats.msg_zerocopy_churn_runs) {
-		stat_row("msg_zerocopy_churn", "runs",                     shm->stats.msg_zerocopy_churn_runs);
-		stat_row("msg_zerocopy_churn", "setup_failed",             shm->stats.msg_zerocopy_churn_setup_failed);
-		stat_row("msg_zerocopy_churn", "sends_ok",                 shm->stats.msg_zerocopy_churn_sends_ok);
-		stat_row("msg_zerocopy_churn", "sends_efault",             shm->stats.msg_zerocopy_churn_sends_efault);
-		stat_row("msg_zerocopy_churn", "sends_eagain",             shm->stats.msg_zerocopy_churn_sends_eagain);
-		stat_row("msg_zerocopy_churn", "errqueue_drained",         shm->stats.msg_zerocopy_churn_errqueue_drained);
-		stat_row("msg_zerocopy_churn", "errqueue_empty",           shm->stats.msg_zerocopy_churn_errqueue_empty);
-		stat_row("msg_zerocopy_churn", "munmap_ok",                shm->stats.msg_zerocopy_churn_munmap_ok);
-		stat_row("msg_zerocopy_churn", "send_after_munmap_caught", shm->stats.msg_zerocopy_churn_send_after_munmap_caught);
-		stat_row("msg_zerocopy_churn", "sndzc_disable_ok",         shm->stats.msg_zerocopy_churn_sndzc_disable_ok);
-	}
+	stat_category_emit_text(&msg_zerocopy_churn_category);
 
 	if (shm->stats.iouring_send_zc_churn_runs) {
 		stat_row("iouring_send_zc_churn", "runs",               shm->stats.iouring_send_zc_churn_runs);
