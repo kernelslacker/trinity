@@ -17,7 +17,7 @@ cd $TRINITY_TMP
 
 NR_CPUS=$(nproc)
 
-while [ 1 ];
+while true;
 do
   pushd $(mktemp -d tmp.XXXXXX)
 
