@@ -1329,6 +1329,7 @@ static void dump_stats_json(void)
 		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
 		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
 		"\"ip6gre_bond_lapb_stack\":{\"runs\":%lu,\"setup_failed\":%lu,\"flag_toggles\":%lu},"
+		"\"wireguard_decrypt_flood\":{\"runs\":%lu,\"setup_failed\":%lu,\"packets_sent\":%lu,\"unsupported_latched\":%lu},"
 		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu,\"burn_iters\":%lu},"
 		"\"ipv6_ndisc_proxy\":{\"runs\":%lu,\"ns_sent_ok\":%lu,\"setup_failed\":%lu,\"proxy_enable_ok\":%lu},"
 		"\"ipfrag_source_churn\":{\"runs\":%lu,\"packets_sent_ok\":%lu,\"send_failed\":%lu,\"unique_srcs\":%lu},"
@@ -1519,6 +1520,10 @@ static void dump_stats_json(void)
 		shm->stats.ip6gre_lapb_runs,
 		shm->stats.ip6gre_lapb_setup_failed,
 		shm->stats.ip6gre_lapb_flag_toggles,
+		shm->stats.wgdf_runs,
+		shm->stats.wgdf_setup_failed,
+		shm->stats.wgdf_packets_sent,
+		shm->stats.wgdf_unsupported_latched,
 		shm->stats.ipvs_sysctl_writer_runs,
 		shm->stats.ipvs_sysctl_writer_writes_ok,
 		shm->stats.ipvs_sysctl_writer_writes_failed,
@@ -3751,6 +3756,13 @@ void dump_stats(void)
 		stat_row("ip6gre_bond_lapb_stack", "runs",          shm->stats.ip6gre_lapb_runs);
 		stat_row("ip6gre_bond_lapb_stack", "setup_failed",  shm->stats.ip6gre_lapb_setup_failed);
 		stat_row("ip6gre_bond_lapb_stack", "flag_toggles",  shm->stats.ip6gre_lapb_flag_toggles);
+	}
+
+	if (shm->stats.wgdf_runs) {
+		stat_row("wireguard_decrypt_flood", "runs",                shm->stats.wgdf_runs);
+		stat_row("wireguard_decrypt_flood", "setup_failed",        shm->stats.wgdf_setup_failed);
+		stat_row("wireguard_decrypt_flood", "packets_sent",        shm->stats.wgdf_packets_sent);
+		stat_row("wireguard_decrypt_flood", "unsupported_latched", shm->stats.wgdf_unsupported_latched);
 	}
 
 	if (shm->stats.ipvs_sysctl_writer_runs) {

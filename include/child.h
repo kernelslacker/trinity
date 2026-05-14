@@ -193,6 +193,7 @@ enum child_op_type {
 	CHILD_OP_RXRPC_SENDMSG_CMSG_CHURN,
 	CHILD_OP_OVS_TUNNEL_VPORT_CHURN,
 	CHILD_OP_TTY_LDISC_CHURN,
+	CHILD_OP_WIREGUARD_DECRYPT_FLOOD,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -663,3 +664,4 @@ bool ipv6_pmtu_teardown_race(struct childdata *child);
 bool rxrpc_sendmsg_cmsg_churn(struct childdata *child);
 bool ovs_tunnel_vport_churn(struct childdata *child);
 bool tty_ldisc_churn(struct childdata *child);
+bool wireguard_decrypt_flood(struct childdata *child);

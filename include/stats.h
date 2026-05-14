@@ -1454,6 +1454,12 @@ struct stats_s {
 	unsigned long ip6gre_lapb_setup_failed;			/* unshare/NEWLINK/SETLINK/lapb-resolve rejected */
 	unsigned long ip6gre_lapb_flag_toggles;			/* RTM_SETLINK IFF_UP/IFF_DOWN messages issued on the lapb dev */
 
+	/* wireguard_decrypt_flood childop counters */
+	unsigned long wgdf_runs;				/* total wireguard_decrypt_flood invocations */
+	unsigned long wgdf_setup_failed;			/* setup couldn't complete (transient: bind race etc.) */
+	unsigned long wgdf_packets_sent;			/* MESSAGE_DATA frames pushed at wg0 listen port */
+	unsigned long wgdf_unsupported_latched;			/* WIREGUARD module / family absent — op latched off */
+
 	/* ip6erspan_netns_migrate childop counters */
 	unsigned long inm_iters;				/* total ip6erspan_netns_migrate invocations */
 	unsigned long inm_eperm;				/* unshare/NEWLINK rejected with EPERM */
