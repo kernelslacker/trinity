@@ -7,7 +7,7 @@
 . scripts/privs.sh
 . scripts/taint.sh
 
-while [ 1 ]
+while true
 do
 for syscall in $($TRINITY_PATH/trinity -L | grep entrypoint | grep -v AVOID | awk '{ print $3 }' | sort -u)
 do
