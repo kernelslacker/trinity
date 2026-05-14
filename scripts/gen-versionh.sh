@@ -14,7 +14,7 @@ else
   OLD=""
 fi
 
-DEVEL=$(grep VERSION Makefile | head -n1 | grep pre | wc -l)
+DEVEL=$(grep -c '^VERSION.*pre' Makefile)
 
 # if we don't have git installed, or we're a release version
 # get the version number from the makefile.
