@@ -15,8 +15,6 @@
 chmod 755 $TRINITY_TMP
 cd $TRINITY_TMP
 
-NR_CPUS=$(nproc)
-
 while true;
 do
   pushd $(mktemp -d tmp.XXXXXX)
