@@ -1330,6 +1330,7 @@ static void dump_stats_json(void)
 		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
 		"\"ip6gre_bond_lapb_stack\":{\"runs\":%lu,\"setup_failed\":%lu,\"flag_toggles\":%lu},"
 		"\"wireguard_decrypt_flood\":{\"runs\":%lu,\"setup_failed\":%lu,\"packets_sent\":%lu,\"unsupported_latched\":%lu},"
+		"\"blkdev_lifecycle_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"set_fd_ok\":%lu,\"clr_fd\":%lu,\"ebusy\":%lu,\"rescans\":%lu},"
 		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu,\"burn_iters\":%lu},"
 		"\"ipv6_ndisc_proxy\":{\"runs\":%lu,\"ns_sent_ok\":%lu,\"setup_failed\":%lu,\"proxy_enable_ok\":%lu},"
 		"\"ipfrag_source_churn\":{\"runs\":%lu,\"packets_sent_ok\":%lu,\"send_failed\":%lu,\"unique_srcs\":%lu},"
@@ -1524,6 +1525,12 @@ static void dump_stats_json(void)
 		shm->stats.wgdf_setup_failed,
 		shm->stats.wgdf_packets_sent,
 		shm->stats.wgdf_unsupported_latched,
+		shm->stats.blkdev_lifecycle_runs,
+		shm->stats.blkdev_lifecycle_setup_failed,
+		shm->stats.blkdev_lifecycle_set_fd_ok,
+		shm->stats.blkdev_lifecycle_clr_fd,
+		shm->stats.blkdev_lifecycle_ebusy,
+		shm->stats.blkdev_lifecycle_rescans,
 		shm->stats.ipvs_sysctl_writer_runs,
 		shm->stats.ipvs_sysctl_writer_writes_ok,
 		shm->stats.ipvs_sysctl_writer_writes_failed,
@@ -3763,6 +3770,15 @@ void dump_stats(void)
 		stat_row("wireguard_decrypt_flood", "setup_failed",        shm->stats.wgdf_setup_failed);
 		stat_row("wireguard_decrypt_flood", "packets_sent",        shm->stats.wgdf_packets_sent);
 		stat_row("wireguard_decrypt_flood", "unsupported_latched", shm->stats.wgdf_unsupported_latched);
+	}
+
+	if (shm->stats.blkdev_lifecycle_runs) {
+		stat_row("blkdev_lifecycle_race", "runs",          shm->stats.blkdev_lifecycle_runs);
+		stat_row("blkdev_lifecycle_race", "setup_failed",  shm->stats.blkdev_lifecycle_setup_failed);
+		stat_row("blkdev_lifecycle_race", "set_fd_ok",     shm->stats.blkdev_lifecycle_set_fd_ok);
+		stat_row("blkdev_lifecycle_race", "clr_fd",        shm->stats.blkdev_lifecycle_clr_fd);
+		stat_row("blkdev_lifecycle_race", "ebusy",         shm->stats.blkdev_lifecycle_ebusy);
+		stat_row("blkdev_lifecycle_race", "rescans",       shm->stats.blkdev_lifecycle_rescans);
 	}
 
 	if (shm->stats.ipvs_sysctl_writer_runs) {

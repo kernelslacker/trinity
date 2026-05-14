@@ -1460,6 +1460,14 @@ struct stats_s {
 	unsigned long wgdf_packets_sent;			/* MESSAGE_DATA frames pushed at wg0 listen port */
 	unsigned long wgdf_unsupported_latched;			/* WIREGUARD module / family absent — op latched off */
 
+	/* blkdev_lifecycle_race childop counters */
+	unsigned long blkdev_lifecycle_runs;			/* total blkdev_lifecycle_race invocations */
+	unsigned long blkdev_lifecycle_setup_failed;		/* /dev/loop0 probe failed (latched if persistent) */
+	unsigned long blkdev_lifecycle_set_fd_ok;		/* LOOP_SET_FD bound a backing file */
+	unsigned long blkdev_lifecycle_clr_fd;			/* LOOP_CLR_FD ran (post-cycle teardown) */
+	unsigned long blkdev_lifecycle_ebusy;			/* LOOP_SET_FD raced sibling: EBUSY/ENXIO/EPERM */
+	unsigned long blkdev_lifecycle_rescans;			/* BLKRRPART issued from rescan thread */
+
 	/* ip6erspan_netns_migrate childop counters */
 	unsigned long inm_iters;				/* total ip6erspan_netns_migrate invocations */
 	unsigned long inm_eperm;				/* unshare/NEWLINK rejected with EPERM */

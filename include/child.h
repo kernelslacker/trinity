@@ -194,6 +194,7 @@ enum child_op_type {
 	CHILD_OP_OVS_TUNNEL_VPORT_CHURN,
 	CHILD_OP_TTY_LDISC_CHURN,
 	CHILD_OP_WIREGUARD_DECRYPT_FLOOD,
+	CHILD_OP_BLKDEV_LIFECYCLE_RACE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -665,3 +666,4 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child);
 bool ovs_tunnel_vport_churn(struct childdata *child);
 bool tty_ldisc_churn(struct childdata *child);
 bool wireguard_decrypt_flood(struct childdata *child);
+bool blkdev_lifecycle_race(struct childdata *child);
