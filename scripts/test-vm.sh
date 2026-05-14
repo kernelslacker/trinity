@@ -10,7 +10,7 @@
 chmod 755 $TRINITY_TMP
 cd $TRINITY_TMP
 
-while [ 1 ];
+while true;
 do
   for syscall in madvise mbind migrate_pages mincore mlockall mlock move_pages mprotect mremap msync munlockall munlock munmap remap_file_pages vmsplice
   do
