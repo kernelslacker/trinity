@@ -23,7 +23,7 @@ makefilever()
   VER=$(grep VERSION= Makefile | sed -re '1 s/.*=.*"(.*)".*/\1/')
   if [ "$OLD" != "$VER" ]; then
     hdr
-    echo "#define VERSION \""$VER\" >> $HEADER
+    printf '#define VERSION "%s"\n' "$VER" >> $HEADER
   fi
 }
 
@@ -34,7 +34,7 @@ if [ "$DEVEL" == "1" ]; then
       VER=$(${GIT} describe --always)
       if [ "$OLD" != "$VER" ]; then
 	hdr
-	echo "#define VERSION \""$VER\" >> $HEADER
+	printf '#define VERSION "%s"\n' "$VER" >> $HEADER
       fi
     else
       # can't find .git
