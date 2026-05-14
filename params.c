@@ -630,32 +630,34 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'r': {
-			char *end;
+			unsigned long val;
 
 			if (do_exclude_syscall == true) {
 				outputerr("-r needs to be before any -x options.\n");
 				exit(EXIT_FAILURE);
 			}
-			errno = 0;
-			random_selection_num = strtoul(optarg, &end, 10);
-			if (end == optarg || *end != '\0' || errno == ERANGE) {
-				outputerr("can't parse '%s' as a number\n", optarg);
+			if (!parse_unsigned(optarg, "r", false, &val))
+				exit(EXIT_FAILURE);
+			if (val > UINT_MAX) {
+				outputerr("-r: value %lu exceeds UINT_MAX\n", val);
 				exit(EXIT_FAILURE);
 			}
+			random_selection_num = (unsigned int)val;
 			random_selection = true;
 			break;
 		}
 
 		/* Set seed */
 		case 's': {
-			char *end;
+			unsigned long val;
 
-			errno = 0;
-			seed = strtoul(optarg, &end, 10);
-			if (end == optarg || *end != '\0' || errno == ERANGE) {
-				outputerr("can't parse '%s' as a number\n", optarg);
+			if (!parse_unsigned(optarg, "s", true, &val))
+				exit(EXIT_FAILURE);
+			if (val > UINT_MAX) {
+				outputerr("-s: value %lu exceeds UINT_MAX\n", val);
 				exit(EXIT_FAILURE);
 			}
+			seed = (unsigned int)val;
 			user_set_seed = true;
 			break;
 		}
