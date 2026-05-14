@@ -105,6 +105,7 @@
 #include <netinet/ip.h>
 #include <sched.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -5320,6 +5321,163 @@ static size_t build_nft_ct_expr(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Plan describing which optional expressions a NEWRULE message should
+ * carry.  Replaces a 34-bool argument list to build_newrule().  Named
+ * fields (rather than a flag array) keep designated-initialiser call
+ * sites and debugger inspection legible.
+ */
+struct nft_expr_plan {
+	bool with_payload;
+	bool with_meta;
+	bool with_lookup;
+	bool with_log;
+	bool with_bitwise;
+	bool with_cmp;
+	bool with_range;
+	bool with_byteorder;
+	bool with_socket;
+	bool with_quota;
+	bool with_limit;
+	bool with_numgen;
+	bool with_hash;
+	bool with_synproxy;
+	bool with_counter;
+	bool with_connlimit;
+	bool with_masq;
+	bool with_redir;
+	bool with_tproxy;
+	bool with_xfrm;
+	bool with_dup_netdev;
+	bool with_dup_ipv4;
+	bool with_dup_ipv6;
+	bool with_fwd_netdev;
+	bool with_last;
+	bool with_rt;
+	bool with_fib;
+	bool with_exthdr;
+	bool with_osf;
+	bool with_queue;
+	bool with_immediate;
+	bool with_dynset;
+	bool with_ct;
+	bool with_objref;
+};
+
+typedef size_t (*nft_expr_builder_fn)(unsigned char *buf, size_t off,
+				      size_t cap);
+typedef size_t (*nft_expr_set_builder_fn)(unsigned char *buf, size_t off,
+					  size_t cap, const char *set_name,
+					  __u32 set_id);
+
+/*
+ * Per-expression descriptor.  Exactly one of build / build_set is
+ * non-NULL; build_set is for expressions that need the (set_name,
+ * set_id) pair (lookup, dynset).  odds_one_in is the ONE_IN(N) value
+ * used by nft_expr_plan_randomize() — must match the historical odds
+ * of the if-chain this table replaces (log/bitwise are 1/4, the rest
+ * are 1/3).  Table order is the wire-emission order: nf_tables
+ * validates the expression sequence at commit time.
+ */
+struct nft_expr_desc {
+	const char			*name;
+	size_t				 plan_offset;
+	size_t				 stat_offset;
+	unsigned int			 odds_one_in;
+	nft_expr_builder_fn		 build;
+	nft_expr_set_builder_fn		 build_set;
+};
+
+#define NFT_EXPR_PLAN_OFF(field)	offsetof(struct nft_expr_plan, with_##field)
+#define NFT_EXPR_STAT_OFF(field) \
+	offsetof(struct stats_s, nftables_churn_##field##_expr_emit)
+
+static const struct nft_expr_desc nft_expr_table[] = {
+	{ "payload",    NFT_EXPR_PLAN_OFF(payload),    NFT_EXPR_STAT_OFF(payload),    3, build_nft_payload_expr,    NULL },
+	{ "meta",       NFT_EXPR_PLAN_OFF(meta),       NFT_EXPR_STAT_OFF(meta),       3, build_nft_meta_expr,       NULL },
+	{ "lookup",     NFT_EXPR_PLAN_OFF(lookup),     NFT_EXPR_STAT_OFF(lookup),     3, NULL,                      build_nft_lookup_expr },
+	{ "log",        NFT_EXPR_PLAN_OFF(log),        NFT_EXPR_STAT_OFF(log),        4, build_nft_log_expr,        NULL },
+	{ "bitwise",    NFT_EXPR_PLAN_OFF(bitwise),    NFT_EXPR_STAT_OFF(bitwise),    4, build_nft_bitwise_expr,    NULL },
+	{ "cmp",        NFT_EXPR_PLAN_OFF(cmp),        NFT_EXPR_STAT_OFF(cmp),        3, build_nft_cmp_expr,        NULL },
+	{ "range",      NFT_EXPR_PLAN_OFF(range),      NFT_EXPR_STAT_OFF(range),      3, build_nft_range_expr,      NULL },
+	{ "byteorder",  NFT_EXPR_PLAN_OFF(byteorder),  NFT_EXPR_STAT_OFF(byteorder),  3, build_nft_byteorder_expr,  NULL },
+	{ "socket",     NFT_EXPR_PLAN_OFF(socket),     NFT_EXPR_STAT_OFF(socket),     3, build_nft_socket_expr,     NULL },
+	{ "quota",      NFT_EXPR_PLAN_OFF(quota),      NFT_EXPR_STAT_OFF(quota),      3, build_nft_quota_expr,      NULL },
+	{ "limit",      NFT_EXPR_PLAN_OFF(limit),      NFT_EXPR_STAT_OFF(limit),      3, build_nft_limit_expr,      NULL },
+	{ "numgen",     NFT_EXPR_PLAN_OFF(numgen),     NFT_EXPR_STAT_OFF(numgen),     3, build_nft_numgen_expr,     NULL },
+	{ "hash",       NFT_EXPR_PLAN_OFF(hash),       NFT_EXPR_STAT_OFF(hash),       3, build_nft_hash_expr,       NULL },
+	{ "synproxy",   NFT_EXPR_PLAN_OFF(synproxy),   NFT_EXPR_STAT_OFF(synproxy),   3, build_nft_synproxy_expr,   NULL },
+	{ "counter",    NFT_EXPR_PLAN_OFF(counter),    NFT_EXPR_STAT_OFF(counter),    3, build_nft_counter_expr,    NULL },
+	{ "connlimit",  NFT_EXPR_PLAN_OFF(connlimit),  NFT_EXPR_STAT_OFF(connlimit),  3, build_nft_connlimit_expr,  NULL },
+	{ "masq",       NFT_EXPR_PLAN_OFF(masq),       NFT_EXPR_STAT_OFF(masq),       3, build_nft_masq_expr,       NULL },
+	{ "redir",      NFT_EXPR_PLAN_OFF(redir),      NFT_EXPR_STAT_OFF(redir),      3, build_nft_redir_expr,      NULL },
+	{ "tproxy",     NFT_EXPR_PLAN_OFF(tproxy),     NFT_EXPR_STAT_OFF(tproxy),     3, build_nft_tproxy_expr,     NULL },
+	{ "xfrm",       NFT_EXPR_PLAN_OFF(xfrm),       NFT_EXPR_STAT_OFF(xfrm),       3, build_nft_xfrm_expr,       NULL },
+	{ "dup_netdev", NFT_EXPR_PLAN_OFF(dup_netdev), NFT_EXPR_STAT_OFF(dup_netdev), 3, build_nft_dup_netdev_expr, NULL },
+	{ "dup_ipv4",   NFT_EXPR_PLAN_OFF(dup_ipv4),   NFT_EXPR_STAT_OFF(dup_ipv4),   3, build_nft_dup_ipv4_expr,   NULL },
+	{ "dup_ipv6",   NFT_EXPR_PLAN_OFF(dup_ipv6),   NFT_EXPR_STAT_OFF(dup_ipv6),   3, build_nft_dup_ipv6_expr,   NULL },
+	{ "fwd_netdev", NFT_EXPR_PLAN_OFF(fwd_netdev), NFT_EXPR_STAT_OFF(fwd_netdev), 3, build_nft_fwd_netdev_expr, NULL },
+	{ "last",       NFT_EXPR_PLAN_OFF(last),       NFT_EXPR_STAT_OFF(last),       3, build_nft_last_expr,       NULL },
+	{ "rt",         NFT_EXPR_PLAN_OFF(rt),         NFT_EXPR_STAT_OFF(rt),         3, build_nft_rt_expr,         NULL },
+	{ "fib",        NFT_EXPR_PLAN_OFF(fib),        NFT_EXPR_STAT_OFF(fib),        3, build_nft_fib_expr,        NULL },
+	{ "exthdr",     NFT_EXPR_PLAN_OFF(exthdr),     NFT_EXPR_STAT_OFF(exthdr),     3, build_nft_exthdr_expr,     NULL },
+	{ "osf",        NFT_EXPR_PLAN_OFF(osf),        NFT_EXPR_STAT_OFF(osf),        3, build_nft_osf_expr,        NULL },
+	{ "queue",      NFT_EXPR_PLAN_OFF(queue),      NFT_EXPR_STAT_OFF(queue),      3, build_nft_queue_expr,      NULL },
+	{ "immediate",  NFT_EXPR_PLAN_OFF(immediate),  NFT_EXPR_STAT_OFF(immediate),  3, build_nft_immediate_expr,  NULL },
+	{ "dynset",     NFT_EXPR_PLAN_OFF(dynset),     NFT_EXPR_STAT_OFF(dynset),     3, NULL,                      build_nft_dynset_expr },
+	{ "ct",         NFT_EXPR_PLAN_OFF(ct),         NFT_EXPR_STAT_OFF(ct),         3, build_nft_ct_expr,         NULL },
+	{ "objref",     NFT_EXPR_PLAN_OFF(objref),     NFT_EXPR_STAT_OFF(objref),     3, build_nft_objref_expr,     NULL },
+};
+
+#define NFT_EXPR_TABLE_LEN	(sizeof(nft_expr_table) / sizeof(nft_expr_table[0]))
+
+static inline bool *plan_field(struct nft_expr_plan *plan, size_t off)
+{
+	return (bool *)((char *)plan + off);
+}
+
+static inline const bool *plan_field_const(const struct nft_expr_plan *plan,
+					   size_t off)
+{
+	return (const bool *)((const char *)plan + off);
+}
+
+/* Roll one ONE_IN(d->odds_one_in) per descriptor to populate the plan. */
+static void nft_expr_plan_randomize(struct nft_expr_plan *plan)
+{
+	size_t i;
+
+	memset(plan, 0, sizeof(*plan));
+	for (i = 0; i < NFT_EXPR_TABLE_LEN; i++) {
+		const struct nft_expr_desc *d = &nft_expr_table[i];
+
+		if (d->odds_one_in && ONE_IN(d->odds_one_in))
+			*plan_field(plan, d->plan_offset) = true;
+	}
+}
+
+/*
+ * Bump every per-expression stat counter whose plan flag is set.  Only
+ * the random-plan callers invoke this — fixed-plan callers (e.g. the
+ * L4-aware sweep) intentionally skip it to keep their own dedicated
+ * rule_ok counter the only signal they emit.
+ */
+static void nft_expr_plan_record_stats(const struct nft_expr_plan *plan)
+{
+	size_t i;
+
+	for (i = 0; i < NFT_EXPR_TABLE_LEN; i++) {
+		const struct nft_expr_desc *d = &nft_expr_table[i];
+		unsigned long *counter;
+
+		if (!*plan_field_const(plan, d->plan_offset))
+			continue;
+		counter = (unsigned long *)((char *)&shm->stats +
+					    d->stat_offset);
+		__atomic_add_fetch(counter, 1, __ATOMIC_RELAXED);
+	}
+}
+
+/*
  * NFT_MSG_NEWRULE on (table, chain) carrying one immediate-verdict
  * expression that jumps/gotos to target_chain.  The expression list
  * layout is:
@@ -5337,40 +5495,21 @@ static size_t build_nft_ct_expr(unsigned char *buf, size_t off, size_t cap)
  * semantics) and NLM_F_CREATE alone is used (no NLM_F_EXCL — the
  * existing rule referenced by the position keeps living after the
  * insert).  Otherwise the rule is appended to the chain.
+ *
+ * The optional expressions emitted before the trailing immediate
+ * verdict are described by *plan, which is walked against
+ * nft_expr_table[] in declared order.
  */
 static int build_newrule(int fd, __u8 family, const char *table_name,
 			 const char *chain_name, const char *target_chain,
-			 __u32 verdict_code, __u64 position, bool with_payload,
-			 bool with_meta, bool with_lookup, bool with_log,
-			 bool with_bitwise, bool with_cmp, bool with_range,
-			 bool with_byteorder, bool with_socket,
-			 bool with_quota, bool with_limit,
-			 bool with_numgen, bool with_hash,
-			 bool with_synproxy,
-			 bool with_counter,
-			 bool with_connlimit,
-			 bool with_masq,
-			 bool with_redir,
-			 bool with_tproxy,
-			 bool with_xfrm,
-			 bool with_dup_netdev,
-			 bool with_dup_ipv4,
-			 bool with_dup_ipv6,
-			 bool with_fwd_netdev,
-			 bool with_last,
-			 bool with_rt,
-			 bool with_fib,
-			 bool with_exthdr,
-			 bool with_osf,
-			 bool with_queue,
-			 bool with_immediate,
-			 bool with_dynset, bool with_ct,
-			 bool with_objref,
+			 __u32 verdict_code, __u64 position,
+			 const struct nft_expr_plan *plan,
 			 const char *set_name, __u32 set_id)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
 	struct nlattr *exprs, *elem, *expr_data, *imm_data, *verdict;
 	size_t off, exprs_off, elem_off, expr_data_off, imm_data_off, verdict_off;
+	size_t i;
 	__u16 flags = NLM_F_CREATE;
 
 	memset(buf, 0, sizeof(buf));
@@ -5400,208 +5539,16 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 	if (!off)
 		return -EIO;
 
-	if (with_payload) {
-		off = build_nft_payload_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
+	for (i = 0; i < NFT_EXPR_TABLE_LEN; i++) {
+		const struct nft_expr_desc *d = &nft_expr_table[i];
 
-	if (with_meta) {
-		off = build_nft_meta_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_lookup) {
-		off = build_nft_lookup_expr(buf, off, sizeof(buf),
-					    set_name, set_id);
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_log) {
-		off = build_nft_log_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_bitwise) {
-		off = build_nft_bitwise_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_cmp) {
-		off = build_nft_cmp_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_range) {
-		off = build_nft_range_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_byteorder) {
-		off = build_nft_byteorder_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_socket) {
-		off = build_nft_socket_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_quota) {
-		off = build_nft_quota_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_limit) {
-		off = build_nft_limit_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_numgen) {
-		off = build_nft_numgen_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_hash) {
-		off = build_nft_hash_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_synproxy) {
-		off = build_nft_synproxy_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_counter) {
-		off = build_nft_counter_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_connlimit) {
-		off = build_nft_connlimit_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_masq) {
-		off = build_nft_masq_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_redir) {
-		off = build_nft_redir_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_tproxy) {
-		off = build_nft_tproxy_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_xfrm) {
-		off = build_nft_xfrm_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_dup_netdev) {
-		off = build_nft_dup_netdev_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_dup_ipv4) {
-		off = build_nft_dup_ipv4_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_dup_ipv6) {
-		off = build_nft_dup_ipv6_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_fwd_netdev) {
-		off = build_nft_fwd_netdev_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_last) {
-		off = build_nft_last_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_rt) {
-		off = build_nft_rt_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_fib) {
-		off = build_nft_fib_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_exthdr) {
-		off = build_nft_exthdr_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_osf) {
-		off = build_nft_osf_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_queue) {
-		off = build_nft_queue_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_immediate) {
-		off = build_nft_immediate_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_dynset) {
-		off = build_nft_dynset_expr(buf, off, sizeof(buf),
-					    set_name, set_id);
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_ct) {
-		off = build_nft_ct_expr(buf, off, sizeof(buf));
-		if (!off)
-			return -EIO;
-	}
-
-	if (with_objref) {
-		off = build_nft_objref_expr(buf, off, sizeof(buf));
+		if (!*plan_field_const(plan, d->plan_offset))
+			continue;
+		if (d->build_set)
+			off = d->build_set(buf, off, sizeof(buf),
+					   set_name, set_id);
+		else
+			off = d->build(buf, off, sizeof(buf));
 		if (!off)
 			return -EIO;
 	}
@@ -6936,22 +6883,22 @@ static void nft_l4_aware_frag_sweep(int nfnl)
 
 	/* with_socket, with_tproxy, with_exthdr (SCTP path), with_osf — every
 	 * other expression slot disabled so the rule body is exclusively the
-	 * L4-aware quartet under test. */
-	if (build_newrule(nfnl, NFPROTO_IPV4, table, base, aux, NFT_JUMP, 0,
-			  false, false, false, false, false, false, false,
-			  false,		/* payload..byteorder */
-			  true,			/* with_socket */
-			  false, false, false, false, false, false, false,
-			  false, false,		/* quota..redir */
-			  true,			/* with_tproxy */
-			  false, false, false, false, false, false, false,
-			  false,		/* xfrm..fib */
-			  true,			/* with_exthdr */
-			  true,			/* with_osf */
-			  false, false, false, false, false,
-			  anon_set, set_id) == 0)
-		__atomic_add_fetch(&shm->stats.nft_l4frag_rule_ok, 1,
-				   __ATOMIC_RELAXED);
+	 * L4-aware quartet under test.  No call to nft_expr_plan_record_stats
+	 * here: this sweep tracks success via its own nft_l4frag_rule_ok and
+	 * does not feed the per-expression churn counters. */
+	{
+		struct nft_expr_plan plan = {
+			.with_socket = true,
+			.with_tproxy = true,
+			.with_exthdr = true,
+			.with_osf    = true,
+		};
+
+		if (build_newrule(nfnl, NFPROTO_IPV4, table, base, aux,
+				  NFT_JUMP, 0, &plan, anon_set, set_id) == 0)
+			__atomic_add_fetch(&shm->stats.nft_l4frag_rule_ok, 1,
+					   __ATOMIC_RELAXED);
+	}
 
 	l4frag_send_pair(proto);
 
@@ -7108,171 +7055,15 @@ bool nftables_churn(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 
 	{
-		bool with_payload = ONE_IN(3);
-		bool with_meta = ONE_IN(3);
-		bool with_lookup = ONE_IN(3);
-		bool with_log = ONE_IN(4);
-		bool with_bitwise = ONE_IN(4);
-		bool with_cmp = ONE_IN(3);
-		bool with_range = ONE_IN(3);
-		bool with_byteorder = ONE_IN(3);
-		bool with_socket = ONE_IN(3);
-		bool with_quota = ONE_IN(3);
-		bool with_limit = ONE_IN(3);
-		bool with_numgen = ONE_IN(3);
-		bool with_hash = ONE_IN(3);
-		bool with_synproxy = ONE_IN(3);
-		bool with_counter = ONE_IN(3);
-		bool with_connlimit = ONE_IN(3);
-		bool with_masq = ONE_IN(3);
-		bool with_redir = ONE_IN(3);
-		bool with_tproxy = ONE_IN(3);
-		bool with_xfrm = ONE_IN(3);
-		bool with_dup_netdev = ONE_IN(3);
-		bool with_dup_ipv4 = ONE_IN(3);
-		bool with_dup_ipv6 = ONE_IN(3);
-		bool with_fwd_netdev = ONE_IN(3);
-		bool with_last = ONE_IN(3);
-		bool with_rt = ONE_IN(3);
-		bool with_fib = ONE_IN(3);
-		bool with_exthdr = ONE_IN(3);
-		bool with_osf = ONE_IN(3);
-		bool with_queue = ONE_IN(3);
-		bool with_immediate = ONE_IN(3);
-		bool with_dynset = ONE_IN(3);
-		bool with_ct = ONE_IN(3);
-		bool with_objref = ONE_IN(3);
+		struct nft_expr_plan plan;
 
+		nft_expr_plan_randomize(&plan);
 		if (build_newrule(nfnl, family, table_name, base_chain,
-				  aux_chain, verdict, 0, with_payload,
-				  with_meta, with_lookup, with_log,
-				  with_bitwise, with_cmp, with_range,
-				  with_byteorder, with_socket,
-				  with_quota, with_limit, with_numgen,
-				  with_hash, with_synproxy, with_counter,
-				  with_connlimit,
-				  with_masq,
-				  with_redir,
-				  with_tproxy,
-				  with_xfrm,
-				  with_dup_netdev,
-				  with_dup_ipv4,
-				  with_dup_ipv6,
-				  with_fwd_netdev,
-				  with_last,
-				  with_rt,
-				  with_fib,
-				  with_exthdr,
-				  with_osf,
-				  with_queue,
-				  with_immediate,
-				  with_dynset, with_ct,
-				  with_objref,
+				  aux_chain, verdict, 0, &plan,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
 					   1, __ATOMIC_RELAXED);
-			if (with_payload)
-				__atomic_add_fetch(&shm->stats.nftables_churn_payload_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_meta)
-				__atomic_add_fetch(&shm->stats.nftables_churn_meta_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_lookup)
-				__atomic_add_fetch(&shm->stats.nftables_churn_lookup_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_log)
-				__atomic_add_fetch(&shm->stats.nftables_churn_log_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_bitwise)
-				__atomic_add_fetch(&shm->stats.nftables_churn_bitwise_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_cmp)
-				__atomic_add_fetch(&shm->stats.nftables_churn_cmp_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_range)
-				__atomic_add_fetch(&shm->stats.nftables_churn_range_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_byteorder)
-				__atomic_add_fetch(&shm->stats.nftables_churn_byteorder_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_socket)
-				__atomic_add_fetch(&shm->stats.nftables_churn_socket_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_quota)
-				__atomic_add_fetch(&shm->stats.nftables_churn_quota_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_limit)
-				__atomic_add_fetch(&shm->stats.nftables_churn_limit_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_numgen)
-				__atomic_add_fetch(&shm->stats.nftables_churn_numgen_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_hash)
-				__atomic_add_fetch(&shm->stats.nftables_churn_hash_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_synproxy)
-				__atomic_add_fetch(&shm->stats.nftables_churn_synproxy_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_counter)
-				__atomic_add_fetch(&shm->stats.nftables_churn_counter_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_connlimit)
-				__atomic_add_fetch(&shm->stats.nftables_churn_connlimit_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_masq)
-				__atomic_add_fetch(&shm->stats.nftables_churn_masq_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_redir)
-				__atomic_add_fetch(&shm->stats.nftables_churn_redir_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_tproxy)
-				__atomic_add_fetch(&shm->stats.nftables_churn_tproxy_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_xfrm)
-				__atomic_add_fetch(&shm->stats.nftables_churn_xfrm_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_dup_netdev)
-				__atomic_add_fetch(&shm->stats.nftables_churn_dup_netdev_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_dup_ipv4)
-				__atomic_add_fetch(&shm->stats.nftables_churn_dup_ipv4_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_dup_ipv6)
-				__atomic_add_fetch(&shm->stats.nftables_churn_dup_ipv6_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_fwd_netdev)
-				__atomic_add_fetch(&shm->stats.nftables_churn_fwd_netdev_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_last)
-				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_rt)
-				__atomic_add_fetch(&shm->stats.nftables_churn_rt_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_fib)
-				__atomic_add_fetch(&shm->stats.nftables_churn_fib_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_exthdr)
-				__atomic_add_fetch(&shm->stats.nftables_churn_exthdr_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_osf)
-				__atomic_add_fetch(&shm->stats.nftables_churn_osf_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_queue)
-				__atomic_add_fetch(&shm->stats.nftables_churn_queue_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_immediate)
-				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_dynset)
-				__atomic_add_fetch(&shm->stats.nftables_churn_dynset_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_ct)
-				__atomic_add_fetch(&shm->stats.nftables_churn_ct_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_objref)
-				__atomic_add_fetch(&shm->stats.nftables_churn_objref_expr_emit,
-						   1, __ATOMIC_RELAXED);
+			nft_expr_plan_record_stats(&plan);
 		}
 	}
 
@@ -7331,171 +7122,15 @@ bool nftables_churn(struct childdata *child)
 	 * commit-time validation still ran.
 	 */
 	{
-		bool with_payload = ONE_IN(3);
-		bool with_meta = ONE_IN(3);
-		bool with_lookup = ONE_IN(3);
-		bool with_log = ONE_IN(4);
-		bool with_bitwise = ONE_IN(4);
-		bool with_cmp = ONE_IN(3);
-		bool with_range = ONE_IN(3);
-		bool with_byteorder = ONE_IN(3);
-		bool with_socket = ONE_IN(3);
-		bool with_quota = ONE_IN(3);
-		bool with_limit = ONE_IN(3);
-		bool with_numgen = ONE_IN(3);
-		bool with_hash = ONE_IN(3);
-		bool with_synproxy = ONE_IN(3);
-		bool with_counter = ONE_IN(3);
-		bool with_connlimit = ONE_IN(3);
-		bool with_masq = ONE_IN(3);
-		bool with_redir = ONE_IN(3);
-		bool with_tproxy = ONE_IN(3);
-		bool with_xfrm = ONE_IN(3);
-		bool with_dup_netdev = ONE_IN(3);
-		bool with_dup_ipv4 = ONE_IN(3);
-		bool with_dup_ipv6 = ONE_IN(3);
-		bool with_fwd_netdev = ONE_IN(3);
-		bool with_last = ONE_IN(3);
-		bool with_rt = ONE_IN(3);
-		bool with_fib = ONE_IN(3);
-		bool with_exthdr = ONE_IN(3);
-		bool with_osf = ONE_IN(3);
-		bool with_queue = ONE_IN(3);
-		bool with_immediate = ONE_IN(3);
-		bool with_dynset = ONE_IN(3);
-		bool with_ct = ONE_IN(3);
-		bool with_objref = ONE_IN(3);
+		struct nft_expr_plan plan;
 
+		nft_expr_plan_randomize(&plan);
 		if (build_newrule(nfnl, family, table_name, base_chain,
-				  aux_chain, verdict, 1, with_payload,
-				  with_meta, with_lookup, with_log,
-				  with_bitwise, with_cmp, with_range,
-				  with_byteorder, with_socket,
-				  with_quota, with_limit, with_numgen,
-				  with_hash, with_synproxy, with_counter,
-				  with_connlimit,
-				  with_masq,
-				  with_redir,
-				  with_tproxy,
-				  with_xfrm,
-				  with_dup_netdev,
-				  with_dup_ipv4,
-				  with_dup_ipv6,
-				  with_fwd_netdev,
-				  with_last,
-				  with_rt,
-				  with_fib,
-				  with_exthdr,
-				  with_osf,
-				  with_queue,
-				  with_immediate,
-				  with_dynset, with_ct,
-				  with_objref,
+				  aux_chain, verdict, 1, &plan,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
 					   1, __ATOMIC_RELAXED);
-			if (with_payload)
-				__atomic_add_fetch(&shm->stats.nftables_churn_payload_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_meta)
-				__atomic_add_fetch(&shm->stats.nftables_churn_meta_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_lookup)
-				__atomic_add_fetch(&shm->stats.nftables_churn_lookup_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_log)
-				__atomic_add_fetch(&shm->stats.nftables_churn_log_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_bitwise)
-				__atomic_add_fetch(&shm->stats.nftables_churn_bitwise_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_cmp)
-				__atomic_add_fetch(&shm->stats.nftables_churn_cmp_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_range)
-				__atomic_add_fetch(&shm->stats.nftables_churn_range_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_byteorder)
-				__atomic_add_fetch(&shm->stats.nftables_churn_byteorder_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_socket)
-				__atomic_add_fetch(&shm->stats.nftables_churn_socket_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_quota)
-				__atomic_add_fetch(&shm->stats.nftables_churn_quota_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_limit)
-				__atomic_add_fetch(&shm->stats.nftables_churn_limit_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_numgen)
-				__atomic_add_fetch(&shm->stats.nftables_churn_numgen_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_hash)
-				__atomic_add_fetch(&shm->stats.nftables_churn_hash_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_synproxy)
-				__atomic_add_fetch(&shm->stats.nftables_churn_synproxy_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_counter)
-				__atomic_add_fetch(&shm->stats.nftables_churn_counter_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_connlimit)
-				__atomic_add_fetch(&shm->stats.nftables_churn_connlimit_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_masq)
-				__atomic_add_fetch(&shm->stats.nftables_churn_masq_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_redir)
-				__atomic_add_fetch(&shm->stats.nftables_churn_redir_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_tproxy)
-				__atomic_add_fetch(&shm->stats.nftables_churn_tproxy_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_xfrm)
-				__atomic_add_fetch(&shm->stats.nftables_churn_xfrm_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_dup_netdev)
-				__atomic_add_fetch(&shm->stats.nftables_churn_dup_netdev_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_dup_ipv4)
-				__atomic_add_fetch(&shm->stats.nftables_churn_dup_ipv4_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_dup_ipv6)
-				__atomic_add_fetch(&shm->stats.nftables_churn_dup_ipv6_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_fwd_netdev)
-				__atomic_add_fetch(&shm->stats.nftables_churn_fwd_netdev_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_last)
-				__atomic_add_fetch(&shm->stats.nftables_churn_last_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_rt)
-				__atomic_add_fetch(&shm->stats.nftables_churn_rt_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_fib)
-				__atomic_add_fetch(&shm->stats.nftables_churn_fib_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_exthdr)
-				__atomic_add_fetch(&shm->stats.nftables_churn_exthdr_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_osf)
-				__atomic_add_fetch(&shm->stats.nftables_churn_osf_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_queue)
-				__atomic_add_fetch(&shm->stats.nftables_churn_queue_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_immediate)
-				__atomic_add_fetch(&shm->stats.nftables_churn_immediate_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_dynset)
-				__atomic_add_fetch(&shm->stats.nftables_churn_dynset_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_ct)
-				__atomic_add_fetch(&shm->stats.nftables_churn_ct_expr_emit,
-						   1, __ATOMIC_RELAXED);
-			if (with_objref)
-				__atomic_add_fetch(&shm->stats.nftables_churn_objref_expr_emit,
-						   1, __ATOMIC_RELAXED);
+			nft_expr_plan_record_stats(&plan);
 		}
 	}
 
