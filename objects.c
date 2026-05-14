@@ -982,7 +982,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 					close(fd);
 			}
 			release_obj(obj, scope, type);
-			return;
+			goto out_unlock;
 		}
 		newcap = cap_snap ? cap_snap * 2 : 16;
 		while (newcap <= n) {
@@ -995,7 +995,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 						close(fd);
 				}
 				release_obj(obj, scope, type);
-				return;
+				goto out_unlock;
 			}
 			newcap *= 2;
 		}
@@ -1009,7 +1009,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 					close(fd);
 			}
 			release_obj(obj, scope, type);
-			return;
+			goto out_unlock;
 		}
 		oldcap = cap_snap;
 		oldarray = head->array;
