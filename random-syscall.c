@@ -787,7 +787,8 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		 * sees the two completed syscalls before the current one,
 		 * which is exactly the predset the new edge should be
 		 * credited to. */
-		healer_observe_relation(child, rec->nr);
+		if (!no_healer)
+			healer_observe_relation(child, rec->nr);
 
 		/* Single-predecessor companion to the (predset -> nr) bump
 		 * above.  Same new-edge gating, but the pair table is the
@@ -803,7 +804,8 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		 * (0xFFFF, e.g. on the first syscall of a child's life) is
 		 * filtered by healer_pair_observe()'s own MAX_NR_SYSCALL
 		 * guard, so no extra check is needed here. */
-		healer_pair_observe(child->last_syscall_nr, rec->nr);
+		if (!no_healer)
+			healer_pair_observe(child->last_syscall_nr, rec->nr);
 
 		/* Observation-delta-triggered persistence: same shape as the
 		 * minicorpus snapshot below, but gated on the cumulative

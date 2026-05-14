@@ -299,6 +299,7 @@ char *warm_start_path = NULL;
 
 bool no_healer_warm_start = false;
 bool no_healer_snapshot = false;
+bool no_healer = false;
 
 char *memory_max_arg = NULL;
 char *memory_high_arg = NULL;
@@ -393,6 +394,7 @@ static const struct option_help option_descs[] = {
 	{ "warm-start-path",	 0,  "override the on-disk minicorpus path (default: $XDG_CACHE_HOME/trinity/corpus/<arch>)" },
 	{ "no-healer-warm-start", 0, "skip loading the persisted HEALER relation table on startup" },
 	{ "no-healer-snapshot",	 0,  "skip periodic and end-of-run HEALER relation-table snapshots" },
+	{ "no-healer",		 0,  "fully disable HEALER: skip the observer hooks and gate the bandit picker arm out" },
 	{ NULL,			 0,  NULL },
 };
 
@@ -476,6 +478,7 @@ static const struct option longopts[] = {
 	{ "warm-start-path", required_argument, NULL, 0 },
 	{ "no-healer-warm-start", no_argument, NULL, 0 },
 	{ "no-healer-snapshot", no_argument, NULL, 0 },
+	{ "no-healer", no_argument, NULL, 0 },
 	{ NULL, 0, NULL, 0 } };
 
 void parse_args(int argc, char *argv[])
@@ -866,6 +869,10 @@ void parse_args(int argc, char *argv[])
 			if (strcmp("no-healer-snapshot",
 				   longopts[opt_index].name) == 0)
 				no_healer_snapshot = true;
+
+			if (strcmp("no-healer",
+				   longopts[opt_index].name) == 0)
+				no_healer = true;
 
 			break;
 		}

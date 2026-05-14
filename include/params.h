@@ -95,6 +95,7 @@ extern char *warm_start_path;
 
 extern bool no_healer_warm_start;
 extern bool no_healer_snapshot;
+extern bool no_healer;
 
 /* self-cgroup containment knobs (see self_cgroup.c).  NULL string args
  * mean "use the default" (60%/50%/20% of MemTotal).  no_cgroup skips

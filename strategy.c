@@ -172,8 +172,11 @@ bool is_strategy_eligible(int arm)
 	if (arm < 0 || arm >= NR_STRATEGIES)
 		return false;
 
-	if (arm == STRATEGY_HEALER)
+	if (arm == STRATEGY_HEALER) {
+		if (no_healer)
+			return false;
 		return healer_picker_eligible();
+	}
 
 	return true;
 }
