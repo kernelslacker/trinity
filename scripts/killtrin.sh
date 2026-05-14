@@ -1,6 +1,6 @@
 #!/bin/sh
 
-for i in $(ps ax | grep trinity | grep -v grep | awk '{ print $1 }');
+for i in $(pgrep -x trinity);
 do
   kill -9 $i
 done
