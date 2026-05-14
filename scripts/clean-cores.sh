@@ -3,7 +3,7 @@
 TRINITY_PATH=${TRINITY_PATH:-.}
 
 # remove old cores
-for i in `find . -name "core.*" -exec ls -l {} \; | grep -v "$(date +%b\ %e)" | awk '{ print $9 }'`; do rm -f $i; done
+find . -name "core.*" -mtime +0 -delete
 
 # Remove corrupted cores
 find . -empty -name "core.*" -exec rm -f {} \;
