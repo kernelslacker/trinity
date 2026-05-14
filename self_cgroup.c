@@ -49,6 +49,10 @@ static char *cg_container;	/* trinity-<pid>/ */
 static char *cg_parent;		/* trinity-<pid>/parent/ */
 static char *cg_workload;	/* trinity-<pid>/children/ in split mode,
 				 * or the single trinity-<pid>/ in fallback */
+static char *cg_original;	/* full /sys/fs/cgroup<parent> path we joined
+				 * from at startup; cleanup moves trinity-main
+				 * back here so the parent rmdir succeeds.
+				 * Populated only in split mode. */
 static int  cg_workload_fd = -1;	/* O_DIRECTORY on cg_workload */
 static bool cg_split_mode;	/* true if parent/children sub-cgroups are live */
 static bool clone3_unavailable;	/* latched on first ENOSYS */
@@ -509,7 +513,11 @@ void self_cgroup_setup(void)
 	 * way; we then attach memory.* directly to it for the fallback.
 	 */
 	if (setup_split(cg_container, max_str, high_str, swap_str, max_bytes)) {
-		/* split mode established; cg_parent/cg_workload populated. */
+		/* split mode established; cg_parent/cg_workload populated.
+		 * Save the original /sys/fs/cgroup path so cleanup can move
+		 * trinity-main back before tearing down parent/. */
+		if (asprintf(&cg_original, "/sys/fs/cgroup%s", parent_cg) < 0)
+			cg_original = NULL;
 	} else {
 		output(1, "self-cgroup: parent/children split unavailable; "
 		       "falling back to single-cgroup mode\n");
@@ -543,10 +551,19 @@ void self_cgroup_cleanup(void)
 
 	/*
 	 * rmdir order: workload (children) first, then parent, then
-	 * container.  Best-effort: trinity-main is still in cg_parent at
-	 * this point, so its rmdir will EBUSY.  The kernel will reap empty
-	 * cgroups when the last process exits, so leaks are short-lived.
+	 * container.  Move trinity-main back to its original cgroup first
+	 * so the parent rmdir succeeds — cgroup v2 does not auto-reap
+	 * empty directories, so anything we leave behind is a stale
+	 * /sys/fs/cgroup/.../trinity-<pid>/ until the next manual sweep.
 	 */
+	if (cg_original != NULL) {
+		char buf[32];
+		int n = snprintf(buf, sizeof(buf), "%d\n", (int)getpid());
+
+		if (n > 0 && (size_t)n < sizeof(buf))
+			(void)write_cg_file(cg_original, "cgroup.procs", buf);
+	}
+
 	if (cg_workload != NULL) {
 		rmdir(cg_workload);
 		free(cg_workload);
@@ -562,6 +579,8 @@ void self_cgroup_cleanup(void)
 		free(cg_container);
 		cg_container = NULL;
 	}
+	free(cg_original);
+	cg_original = NULL;
 	cg_split_mode = false;
 }
 
