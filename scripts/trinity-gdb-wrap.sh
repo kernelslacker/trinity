@@ -79,13 +79,13 @@ trap 'rm -f "${tmp_cmds}"' EXIT
         printf " '%s'" "${esc}"
     done
     printf "\n"
-    echo "echo \\n===== nr_shared_regions =====\\n"
+    printf '%s\n' 'echo \n===== nr_shared_regions =====\n'
     echo "p nr_shared_regions"
-    echo "echo \\n===== global_objects_protected =====\\n"
+    printf '%s\n' 'echo \n===== global_objects_protected =====\n'
     echo "p global_objects_protected"
-    echo "echo \\n===== info proc mappings =====\\n"
+    printf '%s\n' 'echo \n===== info proc mappings =====\n'
     echo "info proc mappings"
-    echo "echo \\n===== thread apply all bt full =====\\n"
+    printf '%s\n' 'echo \n===== thread apply all bt full =====\n'
     echo "thread apply all bt full"
 } > "${tmp_cmds}"
 
