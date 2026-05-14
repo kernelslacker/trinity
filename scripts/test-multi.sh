@@ -23,8 +23,6 @@ do
 
   pushd tmp > /dev/null
 
-  rm -f trinity.socketcache
-
   MALLOC_CHECK_=2 ../trinity -C $NR_PROCESSES $DROPPRIVS -N 1000000 -E SMC -a64
 
   chmod 755 $TRINITY_TMP

@@ -4,7 +4,6 @@ core.*
 trinity
 logs/
 trinity*.log
-trinity.socketcache
 tmp
 trinity-*.tar.xz
 victims
