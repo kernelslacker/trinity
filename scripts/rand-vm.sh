@@ -23,7 +23,7 @@ ARRAY[12]="munmap"
 ARRAY[13]="remap_file_pages"
 ARRAY[14]="vmsplice"
 
-while [ 1 ];
+while true;
 do
 	syscalls="-c mmap"
 	for _ in 1 2 3
