@@ -170,5 +170,3 @@ coverity:
 	@cov-build --dir cov-int make -j $(NR_CPUS)
 	@tar cJvf trinity-coverity.tar.xz cov-int
 
-cppcheck:
-	@scripts/cppcheck.sh
