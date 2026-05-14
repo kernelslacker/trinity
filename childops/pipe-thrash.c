@@ -54,7 +54,9 @@
 /* Hard upper bound on create-syscalls per invocation.  Each syscall
  * yields 2 fds, so at the cap we can hold 512 fds open transiently if
  * we never closed in between — instead we drain the batch buffer
- * whenever it fills, keeping peak fd usage at FD_BATCH. */
+ * whenever it fills, keeping peak fd usage at FD_BATCH.  This is the
+ * BUDGETED() base — adapt_budget() can scale it from 0.25x to 4x
+ * (64 to 1024 iters) based on the recent kcov edge-rate signal. */
 #define MAX_ITERATIONS		256
 
 /* Number of fds buffered before we shuffle-and-close.  Sized so that
@@ -128,7 +130,7 @@ bool pipe_thrash(struct childdata *child)
 	int batch[FD_BATCH];
 	unsigned int filled = 0;
 	unsigned int iter;
-	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
+	unsigned int iters = BUDGETED(CHILD_OP_PIPE_THRASH, JITTER_RANGE(MAX_ITERATIONS));
 
 	(void)child;
 
