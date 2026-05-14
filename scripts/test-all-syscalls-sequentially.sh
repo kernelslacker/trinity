@@ -11,7 +11,7 @@ while true
 do
 for syscall in $($TRINITY_PATH/trinity -L | grep entrypoint | grep -v AVOID | awk '{ print $3 }' | sort -u)
 do
-	pushd $TRINITY_TMP
+	pushd "$TRINITY_TMP" || exit 1
 
 	if [ ! -f $TRINITY_PATH/trinity ]; then
 		echo lost!
