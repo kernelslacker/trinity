@@ -19,8 +19,7 @@ NR_CPUS=$(nproc)
 
 while [ 1 ];
 do
-  mkdir -p tmp.$i
-  pushd tmp.$i
+  pushd $(mktemp -d tmp.XXXXXX)
 
   if [ ! -f $TRINITY_PATH/trinity ]; then
     echo lost!
