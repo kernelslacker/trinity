@@ -8,7 +8,7 @@ chmod 755 $TRINITY_TMP
 cd $TRINITY_TMP
 
 
-while [ 1 ];
+while true;
 do
   for syscall in $($TRINITY_PATH/trinity -L | grep entrypoint | grep -v AVOID | awk '{ print $3 }' | sort -u)
   do
