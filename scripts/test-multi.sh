@@ -9,7 +9,7 @@ cd $TRINITY_TMP
 NR_CPUS=$(nproc)
 NR_PROCESSES=$(($NR_CPUS * 16))
 
-while [ 1 ];
+while true;
 do
   rm -f trinity
   cp $TRINITY_PATH/trinity .
