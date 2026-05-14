@@ -170,6 +170,19 @@
 #define HEALER_NORM_BETA  20
 
 /*
+ * Empirical-Bayes pseudocount bonus added to HEALER_NORM_ALPHA when
+ * (pred_a, pred_b, succ) all share the same syscallentry .group
+ * (and the group is not GROUP_NONE).  Same-family syscall triples
+ * are more likely to share kernel state and thus more likely to have
+ * a real causal coupling; a thin-evidence intra-family triple deserves
+ * a head-start over an equally-thin cross-family triple.  The bonus
+ * is dwarfed by raw counts in the hundreds, so high-N entries
+ * (intra-family or not) are unaffected -- the prior fades out
+ * automatically once raw evidence accumulates.
+ */
+#define HEALER_FAMILY_BONUS 5
+
+/*
  * Display-time pollution filter: minimum total HEALER observation
  * count before the dump suppresses static-seeded entries whose
  * participating syscalls have never been attempted by any child this
@@ -803,8 +816,9 @@ static unsigned long healer_isqrt(unsigned long n)
  *
  * Formula:
  *   combined_freq = isqrt(pred_a_freq * pred_b_freq)
- *   norm          = (raw_weight + ALPHA) * 1000
- *                 / (combined_freq + ALPHA + BETA)
+ *   alpha         = ALPHA + (same_family ? FAMILY_BONUS : 0)
+ *   norm          = (raw_weight + alpha) * 1000
+ *                 / (combined_freq + alpha + BETA)
  *
  * The two predecessor appearance counts are folded into a single
  * combined frequency via geometric mean, matching the prior formula's
@@ -817,18 +831,57 @@ static unsigned long healer_isqrt(unsigned long n)
  * by the live counts and the score tracks the raw ratio closely, so
  * genuinely high-signal entries are not perturbed.
  *
+ * The same_family flag inflates the alpha pseudocount by
+ * HEALER_FAMILY_BONUS for intra-family triples (all three syscalls
+ * sharing the same syscallentry .group, e.g. GROUP_NET / GROUP_VFS).
+ * Same-family triples are a priori more likely to share kernel state
+ * and thus more likely to express a real causal coupling, so the
+ * empirical-Bayes prior gives them a head-start when raw evidence is
+ * thin.  The bonus is automatically washed out once raw evidence
+ * accumulates -- alpha terms in the single digits do not perturb a
+ * triple with raw counts in the hundreds.
+ *
  * Raw weight is preserved on the per-entry display so the operator can
  * still see the underlying signal alongside the normalised ranking.
  */
+static bool healer_same_family(unsigned int pred_a_nr,
+			       unsigned int pred_b_nr,
+			       unsigned int succ_nr)
+{
+	struct syscallentry *a, *b, *s;
+
+	if (syscalls == NULL)
+		return false;
+	if (pred_a_nr >= max_nr_syscalls ||
+	    pred_b_nr >= max_nr_syscalls ||
+	    succ_nr   >= max_nr_syscalls)
+		return false;
+
+	a = syscalls[pred_a_nr].entry;
+	b = syscalls[pred_b_nr].entry;
+	s = syscalls[succ_nr].entry;
+
+	if (a == NULL || b == NULL || s == NULL)
+		return false;
+	if (a->group == GROUP_NONE)
+		return false;
+	return (a->group == b->group) && (b->group == s->group);
+}
+
 static unsigned long healer_normalised_score_milli(unsigned long raw_weight,
 						   unsigned long pred_a_freq,
-						   unsigned long pred_b_freq)
+						   unsigned long pred_b_freq,
+						   bool same_family)
 {
 	unsigned long combined_freq = healer_isqrt(pred_a_freq * pred_b_freq);
-	unsigned long denom = combined_freq + HEALER_NORM_ALPHA +
-			      HEALER_NORM_BETA;
+	unsigned long alpha = HEALER_NORM_ALPHA;
+	unsigned long denom;
 
-	return ((raw_weight + HEALER_NORM_ALPHA) * 1000UL) / denom;
+	if (same_family)
+		alpha += HEALER_FAMILY_BONUS;
+
+	denom = combined_freq + alpha + HEALER_NORM_BETA;
+	return ((raw_weight + alpha) * 1000UL) / denom;
 }
 
 static int healer_dump_entry_cmp(const void *a, const void *b)
@@ -1187,7 +1240,10 @@ void healer_table_dump(void)
 
 			norm_score = healer_normalised_score_milli(weight,
 								   pred_a_freq,
-								   pred_b_freq);
+								   pred_b_freq,
+								   healer_same_family(slot_pred_a,
+										      slot_pred_b,
+										      nr));
 
 			/*
 			 * Low-confidence floor: drop entries from top-N
