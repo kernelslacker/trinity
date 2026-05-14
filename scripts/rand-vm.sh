@@ -28,7 +28,7 @@ do
 	syscalls="-c mmap"
 	for _ in 1 2 3
 	do
-	  syscalls=$(echo $syscalls -c ${ARRAY[$(($RANDOM % 15))]})
+	  syscalls="$syscalls -c ${ARRAY[$((RANDOM % 15))]}"
 	done
 
 	echo testing $syscalls
