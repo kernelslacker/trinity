@@ -23,6 +23,7 @@ do
 
   pushd tmp > /dev/null
 
+  # -E SMC: SMC sockets have historically wedged this script under heavy parallel load; keep them excluded.
   MALLOC_CHECK_=2 ../trinity -C $NR_PROCESSES $DROPPRIVS -N 1000000 -E SMC -a64
 
   chmod 755 $TRINITY_TMP
