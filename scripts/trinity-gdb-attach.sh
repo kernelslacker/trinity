@@ -89,8 +89,8 @@ end
 document regions
 Dump shared_regions[] — every mmap'd region tracked by alloc_shared().
 Shows index, start, end, size, and whether the region backs a global
-object pool.  Note: the array is file-static in utils.c (the task spec
-says shm.c — this is a documentation drift, the symbol lives in utils.c).
+object pool.  shared_regions[] is file-static in utils.c, hence the
+'utils.c'::name qualifier used by the inspection commands above.
 end
 
 # ---------------------------------------------------------------------
