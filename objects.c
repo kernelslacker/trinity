@@ -761,6 +761,8 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	}
 
 	head = get_objhead(scope, type);
+	if (head == NULL)
+		goto out_unlock;	/* OBJ_LOCAL from non-child context — see get_objhead() */
 
 	/*
 	 * Snapshot head->num_entries once and use the snapshot for the
@@ -2000,6 +2002,8 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 	struct object **array_snap;
 
 	head = get_objhead(scope, type);
+	if (head == NULL)
+		return;			/* OBJ_LOCAL from non-child context — see get_objhead() */
 
 	/*
 	 * Snapshot the objhead fields the swap-with-last path consults so
@@ -2206,6 +2210,8 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 	struct object **array_snap;
 
 	head = get_objhead(scope, type);
+	if (head == NULL)
+		return;			/* OBJ_LOCAL from non-child context — see get_objhead() */
 
 	/*
 	 * Snapshot at entry the same three objhead fields the drain loop
