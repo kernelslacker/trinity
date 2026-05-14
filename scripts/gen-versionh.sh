@@ -27,9 +27,9 @@ makefilever()
   fi
 }
 
-GIT=`which git 2>/dev/null`
+GIT=$(which git 2>/dev/null)
 if [ "$DEVEL" == "1" ]; then
-  if [ ! -z ${GIT} ]; then
+  if [ -n "${GIT}" ]; then
     if [ -f "${GIT}" ] && [ -d "${0%/*}/../.git" ]; then
       VER=$(${GIT} describe --always)
       if [ "$OLD" != "$VER" ]; then
