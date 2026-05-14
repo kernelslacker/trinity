@@ -667,7 +667,8 @@ static void dump_stats_json(void)
 			"\"hash_reinsert_dropped\":%lu,"
 			"\"local_hash_insert_dropped\":%lu,"
 			"\"runtime_registered\":%lu,\"epoll_lazy_armed\":%lu,"
-			"\"epoll_blocking_poll_skipped\":%lu},"
+			"\"epoll_blocking_poll_skipped\":%lu,"
+			"\"random_exhausted\":%lu},"
 		"\"oracle\":{\"fd_anomalies\":%lu,\"mmap_anomalies\":%lu,"
 			"\"cred_anomalies\":%lu,\"sched_anomalies\":%lu,"
 			"\"uid_anomalies\":%lu,\"gid_anomalies\":%lu,"
@@ -843,6 +844,7 @@ static void dump_stats_json(void)
 		shm->stats.fd_runtime_registered,
 		shm->stats.epoll_lazy_armed,
 		shm->stats.epoll_blocking_poll_skipped,
+		shm->stats.fd_random_exhausted,
 		shm->stats.fd_oracle_anomalies, shm->stats.mmap_oracle_anomalies,
 		shm->stats.cred_oracle_anomalies, shm->stats.sched_oracle_anomalies,
 		shm->stats.uid_oracle_anomalies, shm->stats.gid_oracle_anomalies,
@@ -2608,7 +2610,8 @@ void dump_stats(void)
 	    shm->stats.fd_hash_reinsert_dropped ||
 	    shm->stats.local_fd_hash_insert_dropped ||
 	    shm->stats.epoll_lazy_armed ||
-	    shm->stats.epoll_blocking_poll_skipped) {
+	    shm->stats.epoll_blocking_poll_skipped ||
+	    shm->stats.fd_random_exhausted) {
 		stat_row("fd_lifecycle", "stale_detected",      shm->stats.fd_stale_detected);
 		stat_row("fd_lifecycle", "stale_by_generation", shm->stats.fd_stale_by_generation);
 		stat_row("fd_lifecycle", "closed_tracked",      shm->stats.fd_closed_tracked);
@@ -2622,6 +2625,7 @@ void dump_stats(void)
 		stat_row("fd_lifecycle", "epoll_lazy_armed",    shm->stats.epoll_lazy_armed);
 		stat_row("fd_lifecycle", "epoll_blocking_poll_skipped",
 			 shm->stats.epoll_blocking_poll_skipped);
+		stat_row("fd_lifecycle", "random_exhausted",    shm->stats.fd_random_exhausted);
 	}
 
 	if (shm->stats.fd_oracle_anomalies)

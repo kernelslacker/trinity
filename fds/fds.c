@@ -227,6 +227,8 @@ int get_random_fd(void)
 	/* return the same fd as last time if we haven't over-used it yet. */
 regen:
 	if (outer_retries++ >= GET_RANDOM_FD_BUDGET) {
+		__atomic_add_fetch(&shm->stats.fd_random_exhausted, 1,
+				   __ATOMIC_RELAXED);
 		outputerr("get_random_fd: outer retry budget (%u) exhausted, "
 			  "returning -1\n", GET_RANDOM_FD_BUDGET);
 		return -1;

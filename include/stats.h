@@ -1518,6 +1518,14 @@ struct stats_s {
 	unsigned long fd_events_processed;
 	unsigned long fd_events_dropped;
 
+	/* get_random_fd() hit GET_RANDOM_FD_BUDGET outer iterations and
+	 * returned -1 to its caller.  Non-zero means a child was about
+	 * to tight-loop in argument generation (PREP-state record, so
+	 * is_child_making_progress() can't see it) and we bailed instead.
+	 * Persistent non-zero indicates fd providers exhausted, broken,
+	 * or persistently returning untracked/<=2 fds. */
+	unsigned long fd_random_exhausted;
+
 	/* fd_hash_reinsert() exhausted the linear-probe chain without
 	 * finding a free slot and silently dropped the displaced entry.
 	 * Only reachable when fd_hash_count == FD_HASH_SIZE; non-zero
