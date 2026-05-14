@@ -4,16 +4,8 @@
 # (Always do mmap, so the child processes have some local maps)
 
 . scripts/paths.sh
-
-check_tainted()
-{
-    if [ "$(cat /proc/sys/kernel/tainted)" != $TAINT ]; then
-      echo ERROR: Taint flag changed $(cat /proc/sys/kernel/tainted)
-      exit
-    fi
-}
-
-TAINT=$(cat /proc/sys/kernel/tainted)
+. scripts/privs.sh
+. scripts/taint.sh
 
 ARRAY[0]="madvise"
 ARRAY[1]="mbind"
