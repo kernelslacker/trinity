@@ -177,10 +177,30 @@ retry:
 	return fd;
 }
 
+/*
+ * Outer-loop retry budget for get_random_fd().  Each iteration of
+ * `regen:` re-runs get_new_random_fd() (itself bounded to 10 inner
+ * sub-retries) plus the fd_hash_lookup recovery path.  If we still
+ * cannot produce a usable fd (>2, tracked-or-over-budget) after this
+ * many outer iterations, bail and return -1.  Callers cast the result
+ * to unsigned long and pass it as a syscall arg, so an exhausted-pool
+ * bail surfaces to the kernel as EBADF — same handling already in
+ * place for the existing -1/<=2 returns.
+ *
+ * Without this bound, an empty/broken provider pool combined with a
+ * persistently <=2 or untracked return from get_new_random_fd() can
+ * tight-loop in argument generation.  Because the syscall record is
+ * still in PREP at that point, the parent's progress check (which
+ * only acts from BEFORE onward) does not consider the child stuck and
+ * will not kill it, so a single child can burn a CPU indefinitely.
+ */
+#define GET_RANDOM_FD_BUDGET 64
+
 int get_random_fd(void)
 {
 	struct childdata *child = this_child();
 	unsigned int retries = 0;
+	unsigned int outer_retries = 0;
 
 	/* During init (no child context), skip fd_lifetime caching. */
 	if (child == NULL)
@@ -206,6 +226,12 @@ int get_random_fd(void)
 
 	/* return the same fd as last time if we haven't over-used it yet. */
 regen:
+	if (outer_retries++ >= GET_RANDOM_FD_BUDGET) {
+		outputerr("get_random_fd: outer retry budget (%u) exhausted, "
+			  "returning -1\n", GET_RANDOM_FD_BUDGET);
+		return -1;
+	}
+
 	if (child->fd_lifetime == 0) {
 		struct fd_hash_entry *e;
 
