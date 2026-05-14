@@ -19,7 +19,7 @@ do
 		exit
 	fi
 
-	MALLOC_CHECK_=2 $TRINITY_PATH/trinity -c $syscall -N 1000000 -C 64 $DROPPRIVS -x execve
+	MALLOC_CHECK_=2 $TRINITY_PATH/trinity -c $syscall -N 1000000 -C 64 $DROPPRIVS -x execve -x execveat
 
 	chmod 755 $TRINITY_TMP
 	popd
