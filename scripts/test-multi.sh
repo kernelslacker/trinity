@@ -13,6 +13,7 @@ while [ 1 ];
 do
   rm -f trinity
   cp $TRINITY_PATH/trinity .
+  # chmod -w guards against in-place overwrite mid-run; rm -f next iteration still cleans it.
   chmod -w trinity
 
   if [ -d tmp ]; then
