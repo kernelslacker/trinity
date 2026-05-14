@@ -7270,6 +7270,9 @@ bool nftables_churn(struct childdata *child)
 			if (with_ct)
 				__atomic_add_fetch(&shm->stats.nftables_churn_ct_expr_emit,
 						   1, __ATOMIC_RELAXED);
+			if (with_objref)
+				__atomic_add_fetch(&shm->stats.nftables_churn_objref_expr_emit,
+						   1, __ATOMIC_RELAXED);
 		}
 	}
 
@@ -7489,6 +7492,9 @@ bool nftables_churn(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			if (with_ct)
 				__atomic_add_fetch(&shm->stats.nftables_churn_ct_expr_emit,
+						   1, __ATOMIC_RELAXED);
+			if (with_objref)
+				__atomic_add_fetch(&shm->stats.nftables_churn_objref_expr_emit,
 						   1, __ATOMIC_RELAXED);
 		}
 	}

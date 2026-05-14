@@ -1156,6 +1156,7 @@ struct stats_s {
 	unsigned long nftables_churn_immediate_expr_emit;	/* NEWRULE carried a structured nft_immediate expression */
 	unsigned long nftables_churn_dynset_expr_emit;	/* NEWRULE carried a structured nft_dynset expression */
 	unsigned long nftables_churn_ct_expr_emit;	/* NEWRULE carried a structured nft_ct expression */
+	unsigned long nftables_churn_objref_expr_emit;	/* NEWRULE carried a structured nft_objref expression */
 	unsigned long nft_compat_validate_install_ok;		/* (target, hook) chain+rule accepted */
 	unsigned long nft_compat_validate_install_fail;		/* (target, hook) chain+rule rejected (non-unsupported) */
 	unsigned long nft_compat_validate_unsupported;		/* EOPNOTSUPP/EPROTONOSUPPORT (compat target absent) */
