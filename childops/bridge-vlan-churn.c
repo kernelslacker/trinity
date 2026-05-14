@@ -106,6 +106,7 @@
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -194,134 +195,11 @@
 #define BVC_OUTER_FLOOR			8U
 #define BVC_OUTER_CAP			16U
 #define BVC_WALL_CAP_NS			(200ULL * 1000ULL * 1000ULL)
-#define BVC_NL_RECV_TIMEO_S		1
 #define BVC_RAW_TIMEO_MS		100
 #define BVC_RTNL_BUF			2048
 
 static bool ns_unsupported_bridge_vlan_churn;
 static bool bvc_unshared;
-
-static __u32 g_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
-
-static long long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (long long)(now.tv_sec - t0->tv_sec) * 1000000000LL +
-	       (long long)(now.tv_nsec - t0->tv_nsec);
-}
-
-static int rtnl_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = BVC_NL_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	return fd;
-}
-
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static size_t nla_put_u8(unsigned char *buf, size_t off, size_t cap,
-			 unsigned short type, __u8 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t nla_put_u16(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u16 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t nla_put_u32(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u32 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t nla_put_str(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, const char *s)
-{
-	return nla_put(buf, off, cap, type, s, strlen(s) + 1);
-}
-
-static int rtnl_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[1024];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0)
-		return -EIO;
-	if ((size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	return -EIO;
-}
 
 /*
  * RTM_NEWLINK type=bridge with IFLA_BR_VLAN_FILTERING=1 inside
@@ -330,13 +208,11 @@ static int rtnl_send_recv(int fd, void *msg, size_t len)
  * invocation latches ns_unsupported_bridge_vlan_churn) and as the
  * per-iteration bridge create.
  */
-static int build_bridge_create(int fd, const char *name)
+static int build_bridge_create(struct nl_ctx *ctx, const char *name)
 {
 	unsigned char buf[BVC_RTNL_BUF];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
-	struct nlattr *linkinfo;
-	struct nlattr *infodata;
 	size_t off, li_off, id_off;
 
 	memset(buf, 0, sizeof(buf));
@@ -344,7 +220,7 @@ static int build_bridge_create(int fd, const char *name)
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -355,7 +231,7 @@ static int build_bridge_create(int fd, const char *name)
 		return -EIO;
 
 	li_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
 	if (!off)
 		return -EIO;
 
@@ -364,7 +240,7 @@ static int build_bridge_create(int fd, const char *name)
 		return -EIO;
 
 	id_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_INFO_DATA, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
 	if (!off)
 		return -EIO;
 
@@ -372,25 +248,20 @@ static int build_bridge_create(int fd, const char *name)
 	if (!off)
 		return -EIO;
 
-	infodata = (struct nlattr *)(buf + id_off);
-	infodata->nla_len = (unsigned short)(off - id_off);
-
-	linkinfo = (struct nlattr *)(buf + li_off);
-	linkinfo->nla_len = (unsigned short)(off - li_off);
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_veth_create(int fd, const char *name, const char *peer)
+static int build_veth_create(struct nl_ctx *ctx, const char *name,
+			     const char *peer)
 {
 	unsigned char buf[BVC_RTNL_BUF];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
 	struct ifinfomsg *peer_ifi;
-	struct nlattr *linkinfo;
-	struct nlattr *infodata;
-	struct nlattr *peer_attr;
 	size_t off, li_off, id_off, peer_off;
 
 	memset(buf, 0, sizeof(buf));
@@ -398,7 +269,7 @@ static int build_veth_create(int fd, const char *name, const char *peer)
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -409,7 +280,7 @@ static int build_veth_create(int fd, const char *name, const char *peer)
 		return -EIO;
 
 	li_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
 	if (!off)
 		return -EIO;
 
@@ -418,12 +289,12 @@ static int build_veth_create(int fd, const char *name, const char *peer)
 		return -EIO;
 
 	id_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_INFO_DATA, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
 	if (!off)
 		return -EIO;
 
 	peer_off = off;
-	off = nla_put(buf, off, sizeof(buf), VETH_INFO_PEER, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), VETH_INFO_PEER);
 	if (!off)
 		return -EIO;
 
@@ -438,20 +309,16 @@ static int build_veth_create(int fd, const char *name, const char *peer)
 	if (!off)
 		return -EIO;
 
-	peer_attr = (struct nlattr *)(buf + peer_off);
-	peer_attr->nla_len = (unsigned short)(off - peer_off);
-
-	infodata = (struct nlattr *)(buf + id_off);
-	infodata->nla_len = (unsigned short)(off - id_off);
-
-	linkinfo = (struct nlattr *)(buf + li_off);
-	linkinfo->nla_len = (unsigned short)(off - li_off);
+	nla_nest_end(buf, peer_off, off);
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_setlink_master(int fd, int ifindex, int master_ifindex)
+static int build_setlink_master(struct nl_ctx *ctx, int ifindex,
+				int master_ifindex)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -462,7 +329,7 @@ static int build_setlink_master(int fd, int ifindex, int master_ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_SETLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -475,10 +342,10 @@ static int build_setlink_master(int fd, int ifindex, int master_ifindex)
 		return -EIO;
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_setlink_up(int fd, int ifindex)
+static int build_setlink_up(struct nl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -489,7 +356,7 @@ static int build_setlink_up(int fd, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_SETLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -499,7 +366,7 @@ static int build_setlink_up(int fd, int ifindex)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -512,14 +379,13 @@ static int build_setlink_up(int fd, int ifindex)
  * the entry.  If is_range is true, emit a range-begin entry at vid, and
  * a range-end entry at vid_end.
  */
-static int build_vlan_info(int fd, __u16 nlmsg_type, int port_idx,
+static int build_vlan_info(struct nl_ctx *ctx, __u16 nlmsg_type, int port_idx,
 			   __u16 vid, __u16 vid_end,
 			   bool is_range, bool pvid)
 {
 	unsigned char buf[512];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
-	struct nlattr *afspec;
 	struct bridge_vlan_info bvi;
 	size_t off, af_off;
 	__u16 br_flags = BRIDGE_FLAGS_MASTER;
@@ -528,7 +394,7 @@ static int build_vlan_info(int fd, __u16 nlmsg_type, int port_idx,
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = nlmsg_type;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_BRIDGE;
@@ -537,8 +403,7 @@ static int build_vlan_info(int fd, __u16 nlmsg_type, int port_idx,
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 
 	af_off = off;
-	off = nla_put(buf, off, sizeof(buf),
-		      IFLA_AF_SPEC, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_AF_SPEC);
 	if (!off)
 		return -EIO;
 
@@ -571,11 +436,10 @@ static int build_vlan_info(int fd, __u16 nlmsg_type, int port_idx,
 			return -EIO;
 	}
 
-	afspec = (struct nlattr *)(buf + af_off);
-	afspec->nla_len = (unsigned short)(off - af_off);
+	nla_nest_end(buf, af_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -584,14 +448,12 @@ static int build_vlan_info(int fd, __u16 nlmsg_type, int port_idx,
  * Drives br_vlan_tunnel_info_add via the rarely-walked tunnel-info
  * attribute branch.
  */
-static int build_vlan_tunnel_add(int fd, int port_idx,
+static int build_vlan_tunnel_add(struct nl_ctx *ctx, int port_idx,
 				 __u16 vid, __u32 tunnel_id)
 {
 	unsigned char buf[512];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
-	struct nlattr *afspec;
-	struct nlattr *tinfo;
 	size_t off, af_off, ti_off;
 	__u16 br_flags = BRIDGE_FLAGS_MASTER;
 
@@ -599,7 +461,7 @@ static int build_vlan_tunnel_add(int fd, int port_idx,
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_SETLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_BRIDGE;
@@ -608,8 +470,7 @@ static int build_vlan_tunnel_add(int fd, int port_idx,
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 
 	af_off = off;
-	off = nla_put(buf, off, sizeof(buf),
-		      IFLA_AF_SPEC, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_AF_SPEC);
 	if (!off)
 		return -EIO;
 
@@ -619,8 +480,8 @@ static int build_vlan_tunnel_add(int fd, int port_idx,
 		return -EIO;
 
 	ti_off = off;
-	off = nla_put(buf, off, sizeof(buf),
-		      IFLA_BRIDGE_VLAN_TUNNEL_INFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf),
+			     IFLA_BRIDGE_VLAN_TUNNEL_INFO);
 	if (!off)
 		return -EIO;
 
@@ -639,14 +500,11 @@ static int build_vlan_tunnel_add(int fd, int port_idx,
 	if (!off)
 		return -EIO;
 
-	tinfo = (struct nlattr *)(buf + ti_off);
-	tinfo->nla_len = (unsigned short)(off - ti_off);
-
-	afspec = (struct nlattr *)(buf + af_off);
-	afspec->nla_len = (unsigned short)(off - af_off);
+	nla_nest_end(buf, ti_off, off);
+	nla_nest_end(buf, af_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -654,22 +512,19 @@ static int build_vlan_tunnel_add(int fd, int port_idx,
  * IFLA_BRIDGE_MST -> IFLA_BRIDGE_MST_ENTRY { MSTI, STATE }.
  * br_mst_set_state path; topology change while traffic flows.
  */
-static int build_mst_set(int fd, int port_idx,
+static int build_mst_set(struct nl_ctx *ctx, int port_idx,
 			 __u16 msti, __u8 state)
 {
 	unsigned char buf[512];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
-	struct nlattr *afspec;
-	struct nlattr *mst;
-	struct nlattr *entry;
 	size_t off, af_off, mst_off, ent_off;
 
 	memset(buf, 0, sizeof(buf));
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_SETLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_BRIDGE;
@@ -678,20 +533,17 @@ static int build_mst_set(int fd, int port_idx,
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 
 	af_off = off;
-	off = nla_put(buf, off, sizeof(buf),
-		      IFLA_AF_SPEC, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_AF_SPEC);
 	if (!off)
 		return -EIO;
 
 	mst_off = off;
-	off = nla_put(buf, off, sizeof(buf),
-		      IFLA_BRIDGE_MST, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_BRIDGE_MST);
 	if (!off)
 		return -EIO;
 
 	ent_off = off;
-	off = nla_put(buf, off, sizeof(buf),
-		      IFLA_BRIDGE_MST_ENTRY, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_BRIDGE_MST_ENTRY);
 	if (!off)
 		return -EIO;
 
@@ -705,20 +557,15 @@ static int build_mst_set(int fd, int port_idx,
 	if (!off)
 		return -EIO;
 
-	entry = (struct nlattr *)(buf + ent_off);
-	entry->nla_len = (unsigned short)(off - ent_off);
-
-	mst = (struct nlattr *)(buf + mst_off);
-	mst->nla_len = (unsigned short)(off - mst_off);
-
-	afspec = (struct nlattr *)(buf + af_off);
-	afspec->nla_len = (unsigned short)(off - af_off);
+	nla_nest_end(buf, ent_off, off);
+	nla_nest_end(buf, mst_off, off);
+	nla_nest_end(buf, af_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_dellink(int fd, int ifindex)
+static int build_dellink(struct nl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
@@ -729,7 +576,7 @@ static int build_dellink(int fd, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_DELLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -737,7 +584,7 @@ static int build_dellink(int fd, int ifindex)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -778,7 +625,11 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	char br_name[IFNAMSIZ];
 	char v0a[IFNAMSIZ], v0b[IFNAMSIZ];
 	char v1a[IFNAMSIZ], v1b[IFNAMSIZ];
-	int rtnl = -1;
+	struct nl_ctx ctx = { .fd = -1 };
+	struct nl_open_opts nl_opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
 	int raw = -1;
 	int br_idx = 0;
 	int v0a_idx = 0, v0b_idx = 0, v1a_idx = 0, v1b_idx = 0;
@@ -796,8 +647,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	if ((unsigned long long)ns_since(t_outer) >= BVC_WALL_CAP_NS)
 		return;
 
-	rtnl = rtnl_open();
-	if (rtnl < 0) {
+	if (nl_open(&ctx, &nl_opts) < 0) {
 		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
@@ -810,7 +660,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	snprintf(v1a, sizeof(v1a), "trvb%ua1", rng);
 	snprintf(v1b, sizeof(v1b), "trvb%ub1", rng);
 
-	rc = build_bridge_create(rtnl, br_name);
+	rc = build_bridge_create(&ctx, br_name);
 	if (rc != 0) {
 		if (rc == -EPERM || rc == -ENOSYS ||
 		    rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
@@ -828,14 +678,14 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	if (br_idx == 0)
 		goto out;
 
-	if (build_veth_create(rtnl, v0a, v0b) == 0) {
+	if (build_veth_create(&ctx, v0a, v0b) == 0) {
 		veth0_added = true;
 		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_veth_create_ok,
 				   1, __ATOMIC_RELAXED);
 		v0a_idx = (int)if_nametoindex(v0a);
 		v0b_idx = (int)if_nametoindex(v0b);
 	}
-	if (build_veth_create(rtnl, v1a, v1b) == 0) {
+	if (build_veth_create(&ctx, v1a, v1b) == 0) {
 		veth1_added = true;
 		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_veth_create_ok,
 				   1, __ATOMIC_RELAXED);
@@ -844,9 +694,9 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	}
 
 	if (v0a_idx > 0)
-		(void)build_setlink_master(rtnl, v0a_idx, br_idx);
+		(void)build_setlink_master(&ctx, v0a_idx, br_idx);
 	if (v1a_idx > 0)
-		(void)build_setlink_master(rtnl, v1a_idx, br_idx);
+		(void)build_setlink_master(&ctx, v1a_idx, br_idx);
 
 	vid_base  = vid_bases[iter_idx % 3U];
 	pvid      = (__u16)(vid_base + 5U);
@@ -854,22 +704,22 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 
 	/* Range add of vid_base..range_end on v0a. */
 	if (v0a_idx > 0) {
-		if (build_vlan_info(rtnl, RTM_SETLINK, v0a_idx,
+		if (build_vlan_info(&ctx, RTM_SETLINK, v0a_idx,
 				    vid_base, range_end, true, false) == 0)
 			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_add_ok,
 					   1, __ATOMIC_RELAXED);
 		/* Single PVID add at pvid. */
-		if (build_vlan_info(rtnl, RTM_SETLINK, v0a_idx,
+		if (build_vlan_info(&ctx, RTM_SETLINK, v0a_idx,
 				    pvid, 0, false, true) == 0)
 			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_add_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
-	(void)build_setlink_up(rtnl, br_idx);
-	if (v0a_idx > 0) (void)build_setlink_up(rtnl, v0a_idx);
-	if (v0b_idx > 0) (void)build_setlink_up(rtnl, v0b_idx);
-	if (v1a_idx > 0) (void)build_setlink_up(rtnl, v1a_idx);
-	if (v1b_idx > 0) (void)build_setlink_up(rtnl, v1b_idx);
+	(void)build_setlink_up(&ctx, br_idx);
+	if (v0a_idx > 0) (void)build_setlink_up(&ctx, v0a_idx);
+	if (v0b_idx > 0) (void)build_setlink_up(&ctx, v0b_idx);
+	if (v1a_idx > 0) (void)build_setlink_up(&ctx, v1a_idx);
+	if (v1b_idx > 0) (void)build_setlink_up(&ctx, v1b_idx);
 
 	if (v0b_idx > 0) {
 		raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC,
@@ -912,7 +762,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	case 0:
 		/* RACE A: delete vid pvid mid-flight. */
 		if (v0a_idx > 0 &&
-		    build_vlan_info(rtnl, RTM_DELLINK, v0a_idx,
+		    build_vlan_info(&ctx, RTM_DELLINK, v0a_idx,
 				    pvid, 0, false, false) == 0)
 			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_del_ok,
 					   1, __ATOMIC_RELAXED);
@@ -920,14 +770,14 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	case 1:
 		/* RACE B: vlan-tunnel add. */
 		if (v0a_idx > 0 &&
-		    build_vlan_tunnel_add(rtnl, v0a_idx, pvid, 42U) == 0)
+		    build_vlan_tunnel_add(&ctx, v0a_idx, pvid, 42U) == 0)
 			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_tunnel_add_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 2:
 		/* RACE C: MST topology change on the port. */
 		if (v0a_idx > 0 &&
-		    build_mst_set(rtnl, v0a_idx, 1U,
+		    build_mst_set(&ctx, v0a_idx, 1U,
 				  (__u8)BR_STATE_FORWARDING) == 0)
 			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_mst_set_ok,
 					   1, __ATOMIC_RELAXED);
@@ -935,7 +785,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	case 3:
 		/* RACE D: re-issue overlapping range add. */
 		if (v0a_idx > 0 &&
-		    build_vlan_info(rtnl, RTM_SETLINK, v0a_idx,
+		    build_vlan_info(&ctx, RTM_SETLINK, v0a_idx,
 				    (__u16)(vid_base + 3U),
 				    (__u16)(vid_base + 7U),
 				    true, false) == 0)
@@ -973,17 +823,16 @@ teardown:
 	/* DELLINK the bridge first; cascades to enslaved veths via
 	 * br_dev_delete and races any in-flight rx still draining. */
 	if (bridge_added && br_idx > 0)
-		(void)build_dellink(rtnl, br_idx);
+		(void)build_dellink(&ctx, br_idx);
 	if (veth0_added && v0a_idx > 0)
-		(void)build_dellink(rtnl, v0a_idx);
+		(void)build_dellink(&ctx, v0a_idx);
 	if (veth1_added && v1a_idx > 0)
-		(void)build_dellink(rtnl, v1a_idx);
+		(void)build_dellink(&ctx, v1a_idx);
 
 out:
 	if (raw >= 0)
 		close(raw);
-	if (rtnl >= 0)
-		close(rtnl);
+	nl_close(&ctx);
 }
 
 bool bridge_vlan_churn(struct childdata *child)
