@@ -7,14 +7,14 @@
 #
 check()
 {
-  if [ ! -f $1 ]; then
+  if [ ! -f "$1" ]; then
     echo "$1 is no longer present"
   else
-    NEW=$(grep "[0123456789]" $1 | grep "$3" | sha1sum | awk '{ print $1 }')
+    NEW=$(grep "[0123456789]" "$1" | grep "$3" | sha1sum | awk '{ print $1 }')
     if [ "$NEW" != "$2" ]; then
       echo "$1 $3 changed. ($NEW)"
       YEAR=$(date +%Y -d "1 month ago")
-      git annotate $1 | grep $YEAR | grep "$3"
+      git annotate "$1" | grep "$YEAR" | grep "$3"
       echo
     fi
   fi
