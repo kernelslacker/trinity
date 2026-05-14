@@ -135,6 +135,7 @@
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -187,7 +188,6 @@
  * largest we emit; well under 512 B.  2 KiB leaves headroom for
  * future per-kind option blobs without resizing. */
 #define RTNL_BUF_BYTES		2048
-#define RTNL_RECV_TIMEO_S	1
 
 /* Per-iteration packet burst base.  BUDGETED+JITTER scales it.
  * Sends are MSG_DONTWAIT; the inner loop also clamps to
@@ -203,12 +203,6 @@
  * fixed non-privileged port keeps any escaped packet trivially
  * identifiable in a tcpdump trace during triage. */
 #define TC_INNER_PORT		34569
-
-/* Bounded retries on EAGAIN/EBUSY for the netlink config plane.
- * The qdisc / class / filter create paths can briefly return EBUSY
- * while a sibling iteration is mid-teardown — bounded retry rides
- * through it instead of giving up the whole iteration. */
-#define TC_RETRY_MAX		8
 
 /*
  * Qdisc kind rotation.  Each entry is the kind name as the kernel
@@ -281,134 +275,6 @@ static bool ns_unshared;
 static bool ns_setup_failed;
 static bool lo_brought_up;
 
-static __u32 g_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
-
-static long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (now.tv_sec - t0->tv_sec) * 1000000000L +
-	       (now.tv_nsec - t0->tv_nsec);
-}
-
-static int rtnl_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = RTNL_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-	return fd;
-}
-
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static size_t nla_put_str(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, const char *s)
-{
-	return nla_put(buf, off, cap, type, s, strlen(s) + 1);
-}
-
-/*
- * Send via NETLINK_ROUTE and consume one ack.  Returns 0 on a
- * positive ack (nlmsgerr.error == 0), the negated kernel errno on a
- * rejection, and -EIO on local sendmsg / recv failure.
- */
-static int rtnl_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[1024];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0)
-		return -EIO;
-	if ((size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	return -EIO;
-}
-
-/*
- * Wrap rtnl_send_recv with bounded retry on EAGAIN / EBUSY so a
- * sibling iteration mid-teardown doesn't waste this iteration's
- * config-plane work.  Other errnos pass through unchanged.
- */
-static int rtnl_send_recv_retry(int fd, void *msg, size_t len)
-{
-	int rc = -EIO;
-	int i;
-
-	for (i = 0; i < TC_RETRY_MAX; i++) {
-		rc = rtnl_send_recv(fd, msg, len);
-		if (rc != -EAGAIN && rc != -EBUSY)
-			return rc;
-	}
-	return rc;
-}
-
 /*
  * Best-effort modprobe.  fork+execvp; child redirects stdio to
  * /dev/null so any module-load chatter doesn't pollute trinity's
@@ -466,7 +332,7 @@ static void modprobe_cls(unsigned int idx)
  * Failures are ignored — the rest of the sequence will fail
  * visibly if rtnl is genuinely broken.
  */
-static void bring_lo_up(int rtnl)
+static void bring_lo_up(struct nl_ctx *ctx)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -480,7 +346,7 @@ static void bring_lo_up(int rtnl)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -489,7 +355,7 @@ static void bring_lo_up(int rtnl)
 	ifi->ifi_change = IFF_UP;
 
 	nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi)));
-	(void)rtnl_send_recv(rtnl, buf, nlh->nlmsg_len);
+	(void)nl_send_recv(ctx, buf, nlh->nlmsg_len);
 }
 
 /*
@@ -498,12 +364,11 @@ static void bring_lo_up(int rtnl)
  * other iteration's leftovers.  No IFLA_INFO_DATA — defaults give us
  * a working netif_tx_lock dummy that accepts UDP traffic.
  */
-static int build_dummy_create(int fd, const char *name)
+static int build_dummy_create(struct nl_ctx *ctx, const char *name)
 {
 	unsigned char buf[RTNL_BUF_BYTES];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
-	struct nlattr *linkinfo;
 	size_t off, li_off;
 
 	memset(buf, 0, sizeof(buf));
@@ -511,7 +376,7 @@ static int build_dummy_create(int fd, const char *name)
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -522,7 +387,7 @@ static int build_dummy_create(int fd, const char *name)
 		return -EIO;
 
 	li_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
 	if (!off)
 		return -EIO;
 
@@ -530,14 +395,13 @@ static int build_dummy_create(int fd, const char *name)
 	if (!off)
 		return -EIO;
 
-	linkinfo = (struct nlattr *)(buf + li_off);
-	linkinfo->nla_len = (unsigned short)(off - li_off);
+	nla_nest_end(buf, li_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv_retry(fd, buf, off);
+	return nl_send_recv_retry(ctx, buf, off);
 }
 
-static int build_setlink_up(int fd, int ifindex)
+static int build_setlink_up(struct nl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -548,7 +412,7 @@ static int build_setlink_up(int fd, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_SETLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -558,10 +422,10 @@ static int build_setlink_up(int fd, int ifindex)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_dellink(int fd, int ifindex)
+static int build_dellink(struct nl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
@@ -572,7 +436,7 @@ static int build_dellink(int fd, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_DELLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -580,7 +444,7 @@ static int build_dellink(int fd, int ifindex)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -589,12 +453,11 @@ static int build_dellink(int fd, int ifindex)
  * IFLA_MASTER enslavement.  Mirrors build_dummy_create's wrapping
  * of IFLA_LINKINFO + IFLA_INFO_KIND.
  */
-static int build_bridge_create(int fd, const char *name)
+static int build_bridge_create(struct nl_ctx *ctx, const char *name)
 {
 	unsigned char buf[RTNL_BUF_BYTES];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
-	struct nlattr *linkinfo;
 	size_t off, li_off;
 
 	memset(buf, 0, sizeof(buf));
@@ -602,7 +465,7 @@ static int build_bridge_create(int fd, const char *name)
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -613,18 +476,17 @@ static int build_bridge_create(int fd, const char *name)
 		return -EIO;
 
 	li_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
 	if (!off)
 		return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "bridge");
 	if (!off)
 		return -EIO;
 
-	linkinfo = (struct nlattr *)(buf + li_off);
-	linkinfo->nla_len = (unsigned short)(off - li_off);
+	nla_nest_end(buf, li_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv_retry(fd, buf, off);
+	return nl_send_recv_retry(ctx, buf, off);
 }
 
 /*
@@ -633,12 +495,12 @@ static int build_bridge_create(int fd, const char *name)
  * VETH_INFO_PEER which itself wraps a fresh ifinfomsg + IFLA_IFNAME
  * for the peer.  Both ends land in the current netns.
  */
-static int build_veth_pair(int fd, const char *name, const char *peer)
+static int build_veth_pair(struct nl_ctx *ctx, const char *name,
+			   const char *peer)
 {
 	unsigned char buf[RTNL_BUF_BYTES];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi, *peer_ifi;
-	struct nlattr *linkinfo, *infodata, *peer_attr;
 	size_t off, li_off, id_off, p_off;
 
 	memset(buf, 0, sizeof(buf));
@@ -646,7 +508,7 @@ static int build_veth_pair(int fd, const char *name, const char *peer)
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -657,7 +519,7 @@ static int build_veth_pair(int fd, const char *name, const char *peer)
 		return -EIO;
 
 	li_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
 	if (!off)
 		return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "veth");
@@ -665,12 +527,12 @@ static int build_veth_pair(int fd, const char *name, const char *peer)
 		return -EIO;
 
 	id_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_INFO_DATA, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
 	if (!off)
 		return -EIO;
 
 	p_off = off;
-	off = nla_put(buf, off, sizeof(buf), VETH_INFO_PEER, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), VETH_INFO_PEER);
 	if (!off)
 		return -EIO;
 	if (off + NLMSG_ALIGN(sizeof(*peer_ifi)) > sizeof(buf))
@@ -682,17 +544,12 @@ static int build_veth_pair(int fd, const char *name, const char *peer)
 	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, peer);
 	if (!off)
 		return -EIO;
-	peer_attr = (struct nlattr *)(buf + p_off);
-	peer_attr->nla_len = (unsigned short)(off - p_off);
-
-	infodata = (struct nlattr *)(buf + id_off);
-	infodata->nla_len = (unsigned short)(off - id_off);
-
-	linkinfo = (struct nlattr *)(buf + li_off);
-	linkinfo->nla_len = (unsigned short)(off - li_off);
+	nla_nest_end(buf, p_off, off);
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv_retry(fd, buf, off);
+	return nl_send_recv_retry(ctx, buf, off);
 }
 
 /*
@@ -700,7 +557,8 @@ static int build_veth_pair(int fd, const char *name, const char *peer)
  * master_idx; for our use the slave is one end of a veth pair and
  * master is a bridge, so this drives the kernel's br_add_if path.
  */
-static int build_setlink_master(int fd, int slave_idx, int master_idx)
+static int build_setlink_master(struct nl_ctx *ctx, int slave_idx,
+				int master_idx)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -712,7 +570,7 @@ static int build_setlink_master(int fd, int slave_idx, int master_idx)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_SETLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -724,7 +582,7 @@ static int build_setlink_master(int fd, int slave_idx, int master_idx)
 		return -EIO;
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -732,7 +590,8 @@ static int build_setlink_master(int fd, int slave_idx, int master_idx)
  * flags.  Returns the offset past the tcmsg payload header where
  * caller-supplied attributes start.
  */
-static size_t tcmsg_hdr(unsigned char *buf, __u16 msg_type, __u16 extra_flags,
+static size_t tcmsg_hdr(struct nl_ctx *ctx, unsigned char *buf,
+			__u16 msg_type, __u16 extra_flags,
 			int ifindex, __u32 handle, __u32 parent, __u32 info)
 {
 	struct nlmsghdr *nlh;
@@ -741,7 +600,7 @@ static size_t tcmsg_hdr(unsigned char *buf, __u16 msg_type, __u16 extra_flags,
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = msg_type;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | extra_flags;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	tcm = (struct tcmsg *)NLMSG_DATA(nlh);
 	tcm->tcm_family  = AF_UNSPEC;
@@ -768,15 +627,14 @@ static void tcmsg_finalize(unsigned char *buf, size_t off)
  * mapping in the caller.  Flags select between create, replace,
  * and create-or-replace as the caller requires.
  */
-static int build_newqdisc(int fd, int ifindex, __u32 handle, __u32 parent,
-			  const char *kind, __u16 extra_flags)
+static int build_newqdisc(struct nl_ctx *ctx, int ifindex, __u32 handle,
+			  __u32 parent, const char *kind, __u16 extra_flags)
 {
 	unsigned char buf[RTNL_BUF_BYTES];
-	struct nlattr *opts;
 	size_t off, opts_off;
 
 	memset(buf, 0, sizeof(buf));
-	off = tcmsg_hdr(buf, RTM_NEWQDISC, extra_flags, ifindex,
+	off = tcmsg_hdr(ctx, buf, RTM_NEWQDISC, extra_flags, ifindex,
 			handle, parent, 0);
 
 	off = nla_put_str(buf, off, sizeof(buf), TCA_KIND, kind);
@@ -784,25 +642,25 @@ static int build_newqdisc(int fd, int ifindex, __u32 handle, __u32 parent,
 		return -EIO;
 
 	opts_off = off;
-	off = nla_put(buf, off, sizeof(buf), TCA_OPTIONS, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), TCA_OPTIONS);
 	if (!off)
 		return -EIO;
-	opts = (struct nlattr *)(buf + opts_off);
-	opts->nla_len = (unsigned short)(off - opts_off);
+	nla_nest_end(buf, opts_off, off);
 
 	tcmsg_finalize(buf, off);
-	return rtnl_send_recv_retry(fd, buf, off);
+	return nl_send_recv_retry(ctx, buf, off);
 }
 
-static int build_delqdisc(int fd, int ifindex, __u32 handle, __u32 parent)
+static int build_delqdisc(struct nl_ctx *ctx, int ifindex, __u32 handle,
+			  __u32 parent)
 {
 	unsigned char buf[256];
 	size_t off;
 
 	memset(buf, 0, sizeof(buf));
-	off = tcmsg_hdr(buf, RTM_DELQDISC, 0, ifindex, handle, parent, 0);
+	off = tcmsg_hdr(ctx, buf, RTM_DELQDISC, 0, ifindex, handle, parent, 0);
 	tcmsg_finalize(buf, off);
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -813,15 +671,14 @@ static int build_delqdisc(int fd, int ifindex, __u32 handle, __u32 parent)
  * the class; the lookup-side commit path is what we're after, not
  * the per-class scheduling parameters.
  */
-static int build_newtclass(int fd, int ifindex, __u32 handle, __u32 parent,
-			   const char *kind)
+static int build_newtclass(struct nl_ctx *ctx, int ifindex, __u32 handle,
+			   __u32 parent, const char *kind)
 {
 	unsigned char buf[RTNL_BUF_BYTES];
-	struct nlattr *opts;
 	size_t off, opts_off;
 
 	memset(buf, 0, sizeof(buf));
-	off = tcmsg_hdr(buf, RTM_NEWTCLASS, NLM_F_CREATE | NLM_F_EXCL,
+	off = tcmsg_hdr(ctx, buf, RTM_NEWTCLASS, NLM_F_CREATE | NLM_F_EXCL,
 			ifindex, handle, parent, 0);
 
 	off = nla_put_str(buf, off, sizeof(buf), TCA_KIND, kind);
@@ -829,14 +686,13 @@ static int build_newtclass(int fd, int ifindex, __u32 handle, __u32 parent,
 		return -EIO;
 
 	opts_off = off;
-	off = nla_put(buf, off, sizeof(buf), TCA_OPTIONS, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), TCA_OPTIONS);
 	if (!off)
 		return -EIO;
-	opts = (struct nlattr *)(buf + opts_off);
-	opts->nla_len = (unsigned short)(off - opts_off);
+	nla_nest_end(buf, opts_off, off);
 
 	tcmsg_finalize(buf, off);
-	return rtnl_send_recv_retry(fd, buf, off);
+	return nl_send_recv_retry(ctx, buf, off);
 }
 
 /*
@@ -847,16 +703,15 @@ static int build_newtclass(int fd, int ifindex, __u32 handle, __u32 parent,
  * _change codepaths anyway; the few that demand options reject
  * with EINVAL which trips the per-kind latch.
  */
-static int build_newtfilter(int fd, int ifindex, __u32 parent,
+static int build_newtfilter(struct nl_ctx *ctx, int ifindex, __u32 parent,
 			    const char *kind)
 {
 	unsigned char buf[RTNL_BUF_BYTES];
-	struct nlattr *opts;
 	size_t off, opts_off;
 	__u32 info = ((__u32)1U << 16) | (__u32)htons(ETH_P_ALL);
 
 	memset(buf, 0, sizeof(buf));
-	off = tcmsg_hdr(buf, RTM_NEWTFILTER, NLM_F_CREATE | NLM_F_EXCL,
+	off = tcmsg_hdr(ctx, buf, RTM_NEWTFILTER, NLM_F_CREATE | NLM_F_EXCL,
 			ifindex, 0, parent, info);
 
 	off = nla_put_str(buf, off, sizeof(buf), TCA_KIND, kind);
@@ -864,14 +719,13 @@ static int build_newtfilter(int fd, int ifindex, __u32 parent,
 		return -EIO;
 
 	opts_off = off;
-	off = nla_put(buf, off, sizeof(buf), TCA_OPTIONS, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), TCA_OPTIONS);
 	if (!off)
 		return -EIO;
-	opts = (struct nlattr *)(buf + opts_off);
-	opts->nla_len = (unsigned short)(off - opts_off);
+	nla_nest_end(buf, opts_off, off);
 
 	tcmsg_finalize(buf, off);
-	return rtnl_send_recv_retry(fd, buf, off);
+	return nl_send_recv_retry(ctx, buf, off);
 }
 
 /*
@@ -879,16 +733,16 @@ static int build_newtfilter(int fd, int ifindex, __u32 parent,
  * treats this as "delete every filter on parent".  Races any
  * in-flight skb classification still draining through the qdisc.
  */
-static int build_deltfilter(int fd, int ifindex, __u32 parent)
+static int build_deltfilter(struct nl_ctx *ctx, int ifindex, __u32 parent)
 {
 	unsigned char buf[256];
 	__u32 info = ((__u32)1U << 16) | (__u32)htons(ETH_P_ALL);
 	size_t off;
 
 	memset(buf, 0, sizeof(buf));
-	off = tcmsg_hdr(buf, RTM_DELTFILTER, 0, ifindex, 0, parent, info);
+	off = tcmsg_hdr(ctx, buf, RTM_DELTFILTER, 0, ifindex, 0, parent, info);
 	tcmsg_finalize(buf, off);
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -1019,17 +873,17 @@ static size_t encode_tbf_opts(unsigned char *buf, size_t cap)
  * bytes; this wraps them as TCA_OPTIONS{ inner_type{ ... } }.  When
  * encoder is NULL emits an empty TCA_OPTIONS, matching build_newqdisc.
  */
-static int build_newqdisc_opts(int fd, int ifindex, __u32 handle, __u32 parent,
-			       const char *kind, peek_opts_encoder enc,
+static int build_newqdisc_opts(struct nl_ctx *ctx, int ifindex, __u32 handle,
+			       __u32 parent, const char *kind,
+			       peek_opts_encoder enc,
 			       unsigned short inner_type, __u16 extra_flags)
 {
 	unsigned char buf[RTNL_BUF_BYTES];
-	struct nlattr *opts;
 	size_t off, opts_off, inner_off, inner_len;
 	unsigned char inner[256];
 
 	memset(buf, 0, sizeof(buf));
-	off = tcmsg_hdr(buf, RTM_NEWQDISC, extra_flags, ifindex,
+	off = tcmsg_hdr(ctx, buf, RTM_NEWQDISC, extra_flags, ifindex,
 			handle, parent, 0);
 
 	off = nla_put_str(buf, off, sizeof(buf), TCA_KIND, kind);
@@ -1037,7 +891,7 @@ static int build_newqdisc_opts(int fd, int ifindex, __u32 handle, __u32 parent,
 		return -EIO;
 
 	opts_off = off;
-	off = nla_put(buf, off, sizeof(buf), TCA_OPTIONS, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), TCA_OPTIONS);
 	if (!off)
 		return -EIO;
 
@@ -1052,11 +906,10 @@ static int build_newqdisc_opts(int fd, int ifindex, __u32 handle, __u32 parent,
 		off = inner_off;
 	}
 
-	opts = (struct nlattr *)(buf + opts_off);
-	opts->nla_len = (unsigned short)(off - opts_off);
+	nla_nest_end(buf, opts_off, off);
 
 	tcmsg_finalize(buf, off);
-	return rtnl_send_recv_retry(fd, buf, off);
+	return nl_send_recv_retry(ctx, buf, off);
 }
 
 /*
@@ -1066,15 +919,15 @@ static int build_newqdisc_opts(int fd, int ifindex, __u32 handle, __u32 parent,
  * path and ensures the class is actually installable so the
  * matchall filter has somewhere to point.
  */
-static int build_qfq_class(int fd, int ifindex, __u32 handle, __u32 parent)
+static int build_qfq_class(struct nl_ctx *ctx, int ifindex, __u32 handle,
+			   __u32 parent)
 {
 	unsigned char buf[RTNL_BUF_BYTES];
-	struct nlattr *opts;
 	size_t off, opts_off;
 	__u32 weight = 1;
 
 	memset(buf, 0, sizeof(buf));
-	off = tcmsg_hdr(buf, RTM_NEWTCLASS, NLM_F_CREATE | NLM_F_EXCL,
+	off = tcmsg_hdr(ctx, buf, RTM_NEWTCLASS, NLM_F_CREATE | NLM_F_EXCL,
 			ifindex, handle, parent, 0);
 
 	off = nla_put_str(buf, off, sizeof(buf), TCA_KIND, "qfq");
@@ -1082,18 +935,17 @@ static int build_qfq_class(int fd, int ifindex, __u32 handle, __u32 parent)
 		return -EIO;
 
 	opts_off = off;
-	off = nla_put(buf, off, sizeof(buf), TCA_OPTIONS, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), TCA_OPTIONS);
 	if (!off)
 		return -EIO;
 	off = nla_put(buf, off, sizeof(buf), TCA_QFQ_WEIGHT,
 		      &weight, sizeof(weight));
 	if (!off)
 		return -EIO;
-	opts = (struct nlattr *)(buf + opts_off);
-	opts->nla_len = (unsigned short)(off - opts_off);
+	nla_nest_end(buf, opts_off, off);
 
 	tcmsg_finalize(buf, off);
-	return rtnl_send_recv_retry(fd, buf, off);
+	return nl_send_recv_retry(ctx, buf, off);
 }
 
 /*
@@ -1157,7 +1009,7 @@ static unsigned int qdisc_kind_idx(const char *name)
  * tc_qdisc_churn out: label so any installed qdisc tree gets
  * cascaded down via dev_qdisc_destroy when the dummy goes.
  */
-static void do_peek_stack(int rtnl, int ifindex, const char *dev_name)
+static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name)
 {
 	const struct peek_parent *p;
 	const char *child_name;
@@ -1196,7 +1048,7 @@ static void do_peek_stack(int rtnl, int ifindex, const char *dev_name)
 	c_handle = c_major << 16;
 	c_parent = p_handle | p->child_classid;
 
-	rc = build_newqdisc_opts(rtnl, ifindex, p_handle, TC_H_ROOT,
+	rc = build_newqdisc_opts(ctx, ifindex, p_handle, TC_H_ROOT,
 				 p->name, p->enc, p->inner_type,
 				 NLM_F_CREATE | NLM_F_EXCL);
 	if (rc != 0) {
@@ -1207,14 +1059,14 @@ static void do_peek_stack(int rtnl, int ifindex, const char *dev_name)
 		return;
 	}
 
-	rc = build_newqdisc(rtnl, ifindex, c_handle, c_parent,
+	rc = build_newqdisc(ctx, ifindex, c_handle, c_parent,
 			    child_name, NLM_F_CREATE | NLM_F_EXCL);
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_qdisc_kind[c_kind_idx] = true;
 		__atomic_add_fetch(&shm->stats.tc_qdisc_peek_stack_install_fail,
 				   1, __ATOMIC_RELAXED);
-		(void)build_delqdisc(rtnl, ifindex, p_handle, TC_H_ROOT);
+		(void)build_delqdisc(ctx, ifindex, p_handle, TC_H_ROOT);
 		return;
 	}
 
@@ -1232,8 +1084,8 @@ static void do_peek_stack(int rtnl, int ifindex, const char *dev_name)
 	if (strcmp(child_name, "qfq") == 0) {
 		__u32 qfq_class = c_handle | 1U;
 
-		(void)build_qfq_class(rtnl, ifindex, qfq_class, c_handle);
-		(void)build_newtfilter(rtnl, ifindex, c_handle, "matchall");
+		(void)build_qfq_class(ctx, ifindex, qfq_class, c_handle);
+		(void)build_newtfilter(ctx, ifindex, c_handle, "matchall");
 	}
 
 	if (!ns_unsupported_inet) {
@@ -1289,7 +1141,11 @@ bool tc_qdisc_churn(struct childdata *child)
 	char dummy_name[IFNAMSIZ];
 	char bridge_name[IFNAMSIZ];
 	char peer_name[IFNAMSIZ];
-	int rtnl = -1;
+	struct nl_ctx ctx = { .fd = -1 };
+	struct nl_open_opts nl_opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
 	int udp = -1;
 	int dummy_idx = 0;
 	int bridge_idx = 0;
@@ -1321,8 +1177,7 @@ bool tc_qdisc_churn(struct childdata *child)
 		ns_unshared = true;
 	}
 
-	rtnl = rtnl_open();
-	if (rtnl < 0) {
+	if (nl_open(&ctx, &nl_opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
 			ns_unsupported_rtnl = true;
 		__atomic_add_fetch(&shm->stats.tc_qdisc_churn_setup_failed,
@@ -1331,7 +1186,7 @@ bool tc_qdisc_churn(struct childdata *child)
 	}
 
 	if (!lo_brought_up) {
-		bring_lo_up(rtnl);
+		bring_lo_up(&ctx);
 		lo_brought_up = true;
 	}
 
@@ -1351,28 +1206,28 @@ bool tc_qdisc_churn(struct childdata *child)
 		snprintf(peer_name, sizeof(peer_name), "trvp%u",
 			 (unsigned int)(rand32() & 0xffffu));
 
-		rc = build_bridge_create(rtnl, bridge_name);
+		rc = build_bridge_create(&ctx, bridge_name);
 		if (rc != 0) {
 			if (is_unsupported_err(rc))
 				ns_unsupported_bridge = true;
 			bridge_mode = false;
 		} else {
 			bridge_idx = (int)if_nametoindex(bridge_name);
-			rc = build_veth_pair(rtnl, dummy_name, peer_name);
+			rc = build_veth_pair(&ctx, dummy_name, peer_name);
 			if (rc != 0) {
 				if (bridge_idx > 0)
-					(void)build_dellink(rtnl, bridge_idx);
+					(void)build_dellink(&ctx, bridge_idx);
 				bridge_idx = 0;
 				bridge_mode = false;
 			} else {
 				dummy_idx = (int)if_nametoindex(dummy_name);
 				if (dummy_idx > 0 && bridge_idx > 0)
-					(void)build_setlink_master(rtnl, dummy_idx,
+					(void)build_setlink_master(&ctx, dummy_idx,
 								   bridge_idx);
 				if (bridge_idx > 0)
-					(void)build_setlink_up(rtnl, bridge_idx);
+					(void)build_setlink_up(&ctx, bridge_idx);
 				if (dummy_idx > 0)
-					(void)build_setlink_up(rtnl, dummy_idx);
+					(void)build_setlink_up(&ctx, dummy_idx);
 				dummy_added = true;
 				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_create_ok,
 						   1, __ATOMIC_RELAXED);
@@ -1386,7 +1241,7 @@ bool tc_qdisc_churn(struct childdata *child)
 		snprintf(dummy_name, sizeof(dummy_name), "trtcd%u",
 			 (unsigned int)(rand32() & 0xffffu));
 
-		rc = build_dummy_create(rtnl, dummy_name);
+		rc = build_dummy_create(&ctx, dummy_name);
 		if (rc != 0) {
 			if (is_unsupported_err(rc))
 				ns_unsupported_dummy = true;
@@ -1400,7 +1255,7 @@ bool tc_qdisc_churn(struct childdata *child)
 		if (dummy_idx == 0)
 			goto out;
 
-		(void)build_setlink_up(rtnl, dummy_idx);
+		(void)build_setlink_up(&ctx, dummy_idx);
 	}
 
 	if (dummy_idx <= 0)
@@ -1414,7 +1269,7 @@ bool tc_qdisc_churn(struct childdata *child)
 	 * cascaded down via dev_qdisc_destroy when the link goes.
 	 */
 	if (ONE_IN(4)) {
-		do_peek_stack(rtnl, dummy_idx, dummy_name);
+		do_peek_stack(&ctx, dummy_idx, dummy_name);
 		goto out;
 	}
 
@@ -1431,7 +1286,7 @@ bool tc_qdisc_churn(struct childdata *child)
 	class2 = handle | 2U;
 
 	modprobe_qdisc(qidx);
-	rc = build_newqdisc(rtnl, dummy_idx, handle, TC_H_ROOT,
+	rc = build_newqdisc(&ctx, dummy_idx, handle, TC_H_ROOT,
 			    qdisc_kinds[qidx].name, NLM_F_CREATE | NLM_F_EXCL);
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
@@ -1442,11 +1297,11 @@ bool tc_qdisc_churn(struct childdata *child)
 			   1, __ATOMIC_RELAXED);
 
 	if (qdisc_kinds[qidx].classful) {
-		if (build_newtclass(rtnl, dummy_idx, class1, TC_H_ROOT,
+		if (build_newtclass(&ctx, dummy_idx, class1, TC_H_ROOT,
 				    qdisc_kinds[qidx].name) == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tclass_create_ok,
 					   1, __ATOMIC_RELAXED);
-		if (build_newtclass(rtnl, dummy_idx, class2, TC_H_ROOT,
+		if (build_newtclass(&ctx, dummy_idx, class2, TC_H_ROOT,
 				    qdisc_kinds[qidx].name) == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tclass_create_ok,
 					   1, __ATOMIC_RELAXED);
@@ -1455,7 +1310,7 @@ bool tc_qdisc_churn(struct childdata *child)
 	cidx = pick_cls_idx();
 	if (cidx < NR_CLS_KINDS) {
 		modprobe_cls(cidx);
-		rc = build_newtfilter(rtnl, dummy_idx, handle,
+		rc = build_newtfilter(&ctx, dummy_idx, handle,
 				      cls_kinds[cidx]);
 		if (rc == 0) {
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tfilter_create_ok,
@@ -1526,7 +1381,7 @@ bool tc_qdisc_churn(struct childdata *child)
 	qidx2 = pick_qdisc_idx_other(qidx);
 	if (qidx2 < NR_QDISC_KINDS) {
 		modprobe_qdisc(qidx2);
-		rc = build_newqdisc(rtnl, dummy_idx, handle, TC_H_ROOT,
+		rc = build_newqdisc(&ctx, dummy_idx, handle, TC_H_ROOT,
 				    qdisc_kinds[qidx2].name,
 				    NLM_F_CREATE | NLM_F_REPLACE);
 		if (rc == 0) {
@@ -1544,7 +1399,7 @@ bool tc_qdisc_churn(struct childdata *child)
 		 * cls_*_destroy commit-time codepaths (CVE-2023-3776 cls_fw
 		 * lineage) live here.
 		 */
-		if (build_deltfilter(rtnl, dummy_idx, handle) == 0)
+		if (build_deltfilter(&ctx, dummy_idx, handle) == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tfilter_del_ok,
 					   1, __ATOMIC_RELAXED);
 
@@ -1554,7 +1409,7 @@ bool tc_qdisc_churn(struct childdata *child)
 		 * qdisc_destroy.  This is the primary teardown-vs-traffic
 		 * window the op exists to open.
 		 */
-		if (build_delqdisc(rtnl, dummy_idx, handle, TC_H_ROOT) == 0)
+		if (build_delqdisc(&ctx, dummy_idx, handle, TC_H_ROOT) == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_qdisc_del_ok,
 					   1, __ATOMIC_RELAXED);
 	} else if (udp >= 0 && dummy_idx > 0) {
@@ -1584,7 +1439,7 @@ bool tc_qdisc_churn(struct childdata *child)
 				     MSG_DONTWAIT,
 				     (struct sockaddr *)&dst, sizeof(dst));
 		}
-		if (build_dellink(rtnl, dummy_idx) == 0) {
+		if (build_dellink(&ctx, dummy_idx) == 0) {
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_del_ok,
 					   1, __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_bridge_dellink_race_ok,
@@ -1603,15 +1458,15 @@ out:
 	if (udp >= 0)
 		close(udp);
 
-	if (rtnl >= 0) {
+	if (ctx.fd >= 0) {
 		if (dummy_added && dummy_idx > 0 && !slave_dellinked) {
-			if (build_dellink(rtnl, dummy_idx) == 0)
+			if (build_dellink(&ctx, dummy_idx) == 0)
 				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_del_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 		if (bridge_idx > 0)
-			(void)build_dellink(rtnl, bridge_idx);
-		close(rtnl);
+			(void)build_dellink(&ctx, bridge_idx);
+		nl_close(&ctx);
 	}
 
 	return true;
