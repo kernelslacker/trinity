@@ -26,7 +26,7 @@ ARRAY[14]="vmsplice"
 while [ 1 ];
 do
 	syscalls="-c mmap"
-	for i in $(seq 0 2)
+	for _ in 1 2 3
 	do
 	  syscalls=$(echo $syscalls -c ${ARRAY[$(($RANDOM % 15))]})
 	done
