@@ -4,7 +4,7 @@
 . scripts/privs.sh
 . scripts/taint.sh
 
-cd $TRINITY_TMP
+cd "$TRINITY_TMP" || exit 1
 
 NR_CPUS=$(nproc)
 NR_PROCESSES=$(($NR_CPUS * 16))
