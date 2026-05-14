@@ -4,14 +4,21 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <linux/l2tp.h>
 #include <linux/netlink.h>
-#include <net/if_packet.h>
 #include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include "../include/utils.h"
+
+/*
+ * IPPROTO_L2TP lives in <linux/l2tp.h>, but that header pulls in
+ * <linux/in.h>, which collides with libc's <netinet/in.h>. Define it
+ * locally instead.
+ */
+#ifndef IPPROTO_L2TP
+#define IPPROTO_L2TP 115
+#endif
 
 struct family {
 	const char *name;
