@@ -120,7 +120,7 @@ end
 define attach
     shell pid=""; \
         for p in $(pgrep -x trinity 2>/dev/null); do \
-            ppid=$(awk '{print $4}' /proc/$p/stat 2>/dev/null); \
+            ppid=$(awk '/^PPid:/ {print $2}' /proc/$p/status 2>/dev/null); \
             if [ "$ppid" = "1" ]; then pid=$p; break; fi; \
         done; \
         if [ -z "$pid" ]; then \
