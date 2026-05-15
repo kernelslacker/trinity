@@ -641,7 +641,7 @@ int main(int argc, char* argv[])
 	destroy_global_objects();
 
 	output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
-		parent_stats.op_count + sum_local_op_counts(),
+		parent_stats.op_count,
 		parent_stats.successes, parent_stats.failures);
 	if (show_stats == true)
 		dump_stats();

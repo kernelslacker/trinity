@@ -13,7 +13,6 @@ const char *trinity_tmpdir_abs(void);
 
 void main_loop(void);
 void reset_epoch_state(void);
-unsigned long sum_local_op_counts(void);
 
 void panic(int reason);
 

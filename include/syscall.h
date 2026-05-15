@@ -344,8 +344,6 @@ struct syscalltable {
 struct kcov_child;
 struct childdata;
 
-#define LOCAL_OP_FLUSH_BATCH	1000
-
 void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		struct kcov_child *kc, struct childdata *child);
 

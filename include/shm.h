@@ -269,7 +269,7 @@ struct shm_s {
 	 * hooks drop it; calls that find the count already at
 	 * MAX_CONCURRENT_NEWNET strip CLONE_NEWNET from the flag arg
 	 * instead of admitting another in-flight caller and bump
-	 * shm->stats.unshare_newnet_throttled.  See the long comment on
+	 * the unshare_newnet_throttled aggregate counter.  See the long comment on
 	 * MAX_CONCURRENT_NEWNET above for the kernel-side reason this
 	 * cap exists.  Stored in shm so all children plus any untracked
 	 * grandchildren they fork share one counter — a process-local
@@ -314,8 +314,8 @@ struct shm_s {
 	 *   it on every syscall pick (relaxed atomic, single int read — cheap).
 	 *   Updated only by the CAS-winning child at a rotation boundary.
 	 *
-	 * syscalls_at_last_switch: shm->stats.op_count at the most recent
-	 *   rotation.  Doubles as the CAS guard — a child computes
+	 * syscalls_at_last_switch: shm_published->fleet_op_count at the most
+	 *   recent rotation.  Doubles as the CAS guard — a child computes
 	 *   (op_count - syscalls_at_last_switch); if that crosses
 	 *   STRATEGY_WINDOW it tries to CAS this field forward to op_count.
 	 *   The CAS winner performs the strategy switch and emits the stats

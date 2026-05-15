@@ -599,11 +599,12 @@ static void apply_chain_substitution(struct syscallrecord *rec,
  * switch and update shm->current_strategy to whatever the configured
  * picker (round-robin or UCB1 bandit, see strategy.h) selects next.
  *
- * The rotation clock is shm->stats.op_count (fleet-wide ops, including
- * non-syscall alt-ops — every child contributes ticks at the same rate).
- * A child that observes (op_count - syscalls_at_last_switch) >=
- * STRATEGY_WINDOW tries to CAS syscalls_at_last_switch forward to the
- * current op_count; the CAS winner performs the switch and emits the
+ * The rotation clock is shm_published->fleet_op_count, which mirrors
+ * the parent-private fleet op_count (every child contributes ticks at
+ * the same rate, including non-syscall alt-ops).  A child that observes
+ * (op_count - syscalls_at_last_switch) >= STRATEGY_WINDOW tries to CAS
+ * syscalls_at_last_switch forward to the current op_count; the CAS
+ * winner performs the switch and emits the
  * stats line, the losers fall through and continue with the new strategy
  * on their next syscall pick.
  *

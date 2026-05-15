@@ -146,22 +146,14 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 
 	errno = 0;
 
-	/* Bump our per-child counter; flush to the parent's stats ring in
-	 * batches so we don't fill the ring on every call.  The ring drain
-	 * applies the delta to parent_stats.op_count -- the canonical
-	 * counter no longer lives in shared memory. */
-	if (child != NULL) {
-		child->local_op_count++;
-		if (child->local_op_count >= LOCAL_OP_FLUSH_BATCH) {
-			stats_ring_enqueue(child->stats_ring,
-					   STATS_FIELD_OP_COUNT, 0,
-					   (uint32_t)child->local_op_count);
-			child->local_op_count = 0;
-		}
-	} else {
-		/* Parent / no-child fallback: bump the aggregate directly. */
+	/* Bump op_count via the parent's stats ring.  The drain folds
+	 * many slots into parent_stats.op_count in one pass, which is the
+	 * batching the previous per-child accumulator existed to provide. */
+	if (child != NULL)
+		stats_ring_enqueue(child->stats_ring,
+				   STATS_FIELD_OP_COUNT, 0, 1);
+	else
 		parent_stats.op_count++;
-	}
 
 	call = rec->nr + SYSCALL_OFFSET;
 	needalarm = entry->flags & NEED_ALARM;
@@ -659,7 +651,7 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 	 * forced errno_post = EINVAL drops cleanly into the errno bucket.
 	 *
 	 * Capture the rejection so we can both (a) tally it under a
-	 * dedicated counter -- shm->stats.failures aggregates this with
+	 * dedicated counter -- the failures aggregate folds this with
 	 * legitimate -1UL returns and would drown the corruption signal
 	 * in the noise of normal failed syscalls -- and (b) skip
 	 * entry->post() on the corrupt path so a .post handler that
@@ -718,7 +710,7 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		 * rec->retval as whatever the previous syscall stamped
 		 * into shm.  Without this gate handle_success() would
 		 * scoreboard a stale fd/len, and entry->successes /
-		 * shm->stats.successes would tally a syscall that
+		 * the successes aggregate would tally a syscall that
 		 * never actually returned. */
 		handle_success(rec);	// Believe me folks, you'll never get bored with winning
 		__atomic_add_fetch(&entry->successes, 1, __ATOMIC_RELAXED);

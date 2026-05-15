@@ -47,16 +47,13 @@ static FILE **pidstatfiles;
  * syscall and let it write back into our shared childdata.  If we hand
  * the slot to a freshly-forked replacement child before the kernel has
  * fully torn the zombie down, those late writes corrupt fields the new
- * child owns (local_op_count, tp, fd_event_ring head/tail, etc.).
+ * child owns (tp, fd_event_ring head/tail, etc.).
  *
- * Two observed corruption cases trace back to exactly this race:
- *   1. local_op_count appearing with bit 58 set ("Ran 288230376159883121
- *      syscalls"), which is the new child's small counter ORed with a
- *      stale write from the post-reap zombie.
- *   2. fd_event_ring contents containing a non-canonical pointer
- *      0x9c000000890000 that segfaulted fd_event_drain — a half-written
- *      ring index from a ghost producer that no longer existed by the
- *      time the parent looked.
+ * One observed corruption case traces back to exactly this race:
+ * fd_event_ring contents containing a non-canonical pointer
+ * 0x9c000000890000 that segfaulted fd_event_drain — a half-written
+ * ring index from a ghost producer that no longer existed by the time
+ * the parent looked.
  *
  * zombie_pids[childno] holds the pid we are still waiting on, or
  * EMPTY_PIDSLOT if the slot is not in zombie-pending state.
@@ -207,20 +204,6 @@ void reap_child(struct childdata *child, int childno)
 		return;
 	child->tp = (struct timespec){ .tv_sec = 0, .tv_nsec = 0 };
 	force_bust_lock(&child->syscall.lock);
-
-	/* Flush any unbatched per-child syscall count into the parent
-	 * aggregate so it isn't lost when the child slot is recycled.
-	 * Direct write: we are the parent here, the aggregate is in our
-	 * private heap, no atomic needed. */
-	{
-		unsigned long local = __atomic_load_n(&child->local_op_count,
-						      __ATOMIC_RELAXED);
-		if (local > 0) {
-			parent_stats.op_count += local;
-			__atomic_store_n(&child->local_op_count, 0,
-					 __ATOMIC_RELAXED);
-		}
-	}
 
 	unsigned int cur;
 	do {
@@ -1331,45 +1314,9 @@ static void check_children_progressing(void)
 		stall_genocide();
 }
 
-unsigned long sum_local_op_counts(void)
-{
-	unsigned long sum = 0;
-	unsigned int i;
-
-	if (children == NULL)
-		return 0;
-
-	for_each_child(i) {
-		struct childdata *child = __atomic_load_n(&children[i], __ATOMIC_ACQUIRE);
-		unsigned long count;
-
-		if (child == NULL)
-			continue;
-
-		count = __atomic_load_n(&child->local_op_count, __ATOMIC_RELAXED);
-		/* The child flushes and zeroes local_op_count once it hits
-		 * LOCAL_OP_FLUSH_BATCH, so a higher value can only come from
-		 * a stray write — most likely a former occupant of this slot
-		 * that the kernel woke up after we reaped it.  Cap the value
-		 * we report, zero it so we don't keep tripping on the same
-		 * corruption, and log a stat for the operator. */
-		if (count >= LOCAL_OP_FLUSH_BATCH) {
-			output(0, "child %u local_op_count corrupted (0x%lx), "
-				"capping. Possible stray write into recycled slot.\n",
-				i, count);
-			__atomic_store_n(&child->local_op_count, 0, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.local_op_count_corrupted, 1,
-					   __ATOMIC_RELAXED);
-			count = LOCAL_OP_FLUSH_BATCH;
-		}
-		sum += count;
-	}
-	return sum;
-}
-
 static void print_stats(void)
 {
-	unsigned long op_count = parent_stats.op_count + sum_local_op_counts();
+	unsigned long op_count = parent_stats.op_count;
 
 	if (quiet)
 		return;

@@ -122,12 +122,12 @@ struct kcov_child {
 	/* Field order is constrained by the hot-cacheline budget in struct
 	 * childdata (see static_assert in child.c).  Sized to 48 bytes:
 	 * 4 ints/u32 (16) + 5 bools (5) + 3 padding + 3 pointers (24).
-	 * That leaves exactly 16 bytes in the 64-byte hot leading cacheline
-	 * for the four childdata fields that follow (last_syscall_nr,
-	 * last_group, op_nr, local_op_count).  child_id is intentionally
-	 * not stored here — kcov_enable_remote() takes it as a parameter
-	 * (sourced from childdata->num) so the second fd's metadata fits
-	 * without overflowing the cacheline. */
+	 * That leaves room in the 64-byte hot leading cacheline for the
+	 * three childdata fields that follow (last_syscall_nr, last_group,
+	 * op_nr).  child_id is intentionally not stored here —
+	 * kcov_enable_remote() takes it as a parameter (sourced from
+	 * childdata->num) so the second fd's metadata fits without
+	 * overflowing the cacheline. */
 	int fd;
 	int cmp_fd;                     /* second fd for KCOV_TRACE_CMP, -1 if unavailable */
 	uint32_t current_generation;	/* bumped per kcov_collect() to invalidate dedup */

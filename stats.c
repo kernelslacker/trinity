@@ -769,7 +769,7 @@ static void dump_stats_json(void)
 		"\"iouring_eventfd\":{\"register_ok\":%lu,\"register_fail\":%lu,"
 			"\"recursive_runs\":%lu,\"recursive_cqes\":%lu},"
 		"\"zombie_slots\":{\"pending\":%lu,\"reaped\":%lu,\"timed_out\":%lu},"
-		"\"corruption\":{\"local_op_count\":%lu,\"fd_event_ring_noncanon\":%lu,"
+		"\"corruption\":{\"fd_event_ring_noncanon\":%lu,"
 			"\"fd_event_ring_canary\":%lu,\"fd_event_payload\":%lu,"
 			"\"deferred_free_corrupt_ptr\":%lu,"
 			"\"post_handler_corrupt_ptr\":%lu,\"deferred_free_reject\":%lu,"
@@ -973,7 +973,7 @@ static void dump_stats_json(void)
 		shm->stats.iouring_eventfd_recursive_cqes,
 		shm->stats.zombie_slots_pending, shm->stats.zombies_reaped,
 		shm->stats.zombies_timed_out,
-		shm->stats.local_op_count_corrupted, shm->stats.fd_event_ring_corrupted,
+		shm->stats.fd_event_ring_corrupted,
 		shm->stats.fd_event_ring_overwritten,
 		shm->stats.fd_event_payload_corrupt,
 		shm->stats.deferred_free_corrupt_ptr,
@@ -1770,17 +1770,18 @@ void corrupt_ptr_spike_check(void)
 static const struct {
 	const char *name;
 	size_t off;
+	bool    from_aggregate;	/* true: read from parent_stats; false: shm->stats */
 } defense_counters[] = {
 	{ "shared_buffer_redirected",
-	  offsetof(struct stats_s, shared_buffer_redirected) },
+	  offsetof(struct stats_aggregate, shared_buffer_redirected), true },
 	{ "range_overlaps_shared_rejects",
-	  offsetof(struct stats_s, range_overlaps_shared_rejects) },
+	  offsetof(struct stats_aggregate, range_overlaps_shared_rejects), true },
 	{ "libc_heap_redirected",
-	  offsetof(struct stats_s, libc_heap_redirected) },
+	  offsetof(struct stats_aggregate, libc_heap_redirected), true },
 	{ "libc_heap_embedded_redirected",
-	  offsetof(struct stats_s, libc_heap_embedded_redirected) },
+	  offsetof(struct stats_aggregate, libc_heap_embedded_redirected), true },
 	{ "get_writable_address_scribbled_slots_caught",
-	  offsetof(struct stats_s, get_writable_address_scribbled_slots_caught) },
+	  offsetof(struct stats_aggregate, get_writable_address_scribbled_slots_caught), true },
 	{ "post_handler_corrupt_ptr",
 	  offsetof(struct stats_s, post_handler_corrupt_ptr) },
 	{ "deferred_free_reject",
@@ -1805,8 +1806,6 @@ static const struct {
 	  offsetof(struct stats_s, divergence_sentinel_anomalies) },
 	{ "iouring_enter_mask_corrupt",
 	  offsetof(struct stats_s, iouring_enter_mask_corrupt) },
-	{ "local_op_count_corrupted",
-	  offsetof(struct stats_s, local_op_count_corrupted) },
 	{ "fd_event_ring_corrupted",
 	  offsetof(struct stats_s, fd_event_ring_corrupted) },
 	{ "fd_event_ring_overwritten",
@@ -1953,8 +1952,11 @@ static const struct {
 
 static unsigned long defense_counter_load(unsigned int i)
 {
-	unsigned long *p = (unsigned long *)((char *)&shm->stats +
-					     defense_counters[i].off);
+	const char *base = defense_counters[i].from_aggregate
+			   ? (const char *)&parent_stats
+			   : (const char *)&shm->stats;
+	unsigned long *p = (unsigned long *)(base + defense_counters[i].off);
+
 	return __atomic_load_n(p, __ATOMIC_RELAXED);
 }
 
@@ -3006,8 +3008,6 @@ void dump_stats(void)
 		stat_row("zombie_slots", "timed_out", shm->stats.zombies_timed_out);
 	}
 
-	if (shm->stats.local_op_count_corrupted)
-		stat_row("corruption", "local_op_count",         shm->stats.local_op_count_corrupted);
 	if (shm->stats.fd_event_ring_corrupted)
 		stat_row("corruption", "fd_event_ring_noncanon", shm->stats.fd_event_ring_corrupted);
 	if (shm->stats.fd_event_ring_overwritten)

@@ -53,8 +53,9 @@ enum stats_field {
 struct stats_ring_slot {
 	uint16_t field_id;	/* enum stats_field */
 	uint16_t aux;		/* per-array index, or 0 for scalars */
-	uint32_t delta;		/* +1 in the common case; LOCAL_OP_FLUSH_BATCH
-				 * for op_count flushes */
+	uint32_t delta;		/* +1 per syscall on the common paths;
+				 * larger values reserved for future batched
+				 * paths */
 	uint64_t _reserved;	/* pad to 16 B; future use (e.g. caller PC) */
 };
 

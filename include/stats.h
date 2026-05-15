@@ -117,107 +117,6 @@ enum syscall_category {
  */
 
 struct stats_s {
-	/* ---- Group A: hot per-syscall ---- */
-	unsigned long op_count;
-	unsigned long successes;
-	unsigned long failures;
-
-	/* Fault injection (/proc/self/fail-nth):
-	 *   fault_injected  — number of syscalls we armed fail-nth for
-	 *   fault_consumed  — subset that returned -ENOMEM, i.e. the fault
-	 *                     actually triggered an allocation failure */
-	unsigned long fault_injected;
-	unsigned long fault_consumed;
-
-	/* avoid_shared_buffer() caught an output-buffer syscall arg whose
-	 * address overlapped one of trinity's alloc_shared() regions and
-	 * rewrote it to a non-shared address.  A non-zero count means the
-	 * arg-generation path is producing pointers into our own shared
-	 * state — without this redirect the kernel would write the syscall
-	 * result on top of trinity bookkeeping. */
-	unsigned long shared_buffer_redirected;
-
-	/* Same defense as shared_buffer_redirected, but for arg pointers
-	 * that landed inside the per-child libc brk arena rather than in
-	 * an alloc_shared() region.  A kernel write into the brk arena
-	 * scribbles a glibc chunk header and the next malloc anywhere in
-	 * trinity finds the corruption and aborts -- the libasan abort()
-	 * inside __interceptor_malloc cluster from the asan-self-kill
-	 * triage.  Non-zero count means fuzzed arg generation is still
-	 * producing pointers into the private heap; without this redirect
-	 * each one would manifest as a confusing crash far from the
-	 * upstream syscall that did the scribble. */
-	unsigned long libc_heap_redirected;
-
-	/* Same shape as libc_heap_redirected, but bumped from the second-
-	 * pass scrub of struct-embedded pointer fields (iovec arrays passed
-	 * to readv / writev / process_vm_*v / process_madvise / recvmsg /
-	 * sendmsg / recvmmsg / sendmmsg).  alloc_iovec() already runs
-	 * avoid_shared_buffer() per iov_base at iovec build time, but a
-	 * sibling syscall that scribbles the iovec heap allocation between
-	 * sanitise and the kernel reading the array can replace iov_base
-	 * with a fuzzed value that lands in the libc brk arena.  The next
-	 * malloc anywhere in trinity then finds the corruption and aborts
-	 * -- glibc heap-corruption assert in non-ASAN runs traces through
-	 * __zmalloc paths whose syscall arg structs contain embedded fuzzed
-	 * pointers.  Non-zero count tells how often the second-pass scrub
-	 * caught one before the kernel scribbled the arena. */
-	unsigned long libc_heap_embedded_redirected;
-
-	/* range_overlaps_shared() rejected an addr/len because it overlapped
-	 * one of trinity's tracked alloc_shared regions.  Tells you whether
-	 * the wild-write defense is doing meaningful work or trivially
-	 * bypassing every input. */
-	unsigned long range_overlaps_shared_rejects;
-
-	/* get_writable_address() refused to return a freshly-picked pool
-	 * address because the slot's stored ptr (map->ptr or
-	 * obj->sysv_shm.ptr) no longer resolved to any registered shared
-	 * region -- the slot was scribbled to a value that either failed
-	 * mprotect(PROT_READ|PROT_WRITE) outright or pointed at a heap-
-	 * shaped userspace address that happened to be RW already.  Either
-	 * way the next sanitiser dereference would SEGV inside the
-	 * sanitiser; the retry instead picks a different slot.  Non-zero
-	 * count means the upstream pool-slot scribble is happening; the
-	 * fix here only converts the resulting SEGV into a clean retry. */
-	unsigned long get_writable_address_scribbled_slots_caught;
-
-	/* Bumped each time a child exits voluntarily because one of its
-	 * per-child corruption-rate signals (post_handler_corrupt_ptr,
-	 * maps_uaf_caught, get_writable_address_scribbled_slots_caught)
-	 * sustained LOCAL_STORM_RATE_THRESHOLD events/sec for at least
-	 * LOCAL_STORM_WINDOW_SEC seconds.  Surfaces how often the storm
-	 * containment is firing -- a steadily climbing value during a run
-	 * means the corruption source is still active and the parent is
-	 * paying recurring fork cost to keep coverage moving; a stuck-at-
-	 * zero value means the threshold is set too high or no storm is
-	 * being produced. */
-	unsigned long children_recycled_on_storm;
-
-	/* Bumped by the sanitise hooks for unshare / clone / clone3 each
-	 * time a CLONE_NEWNET request was rejected because shm->newnet_in_flight
-	 * had already hit MAX_CONCURRENT_NEWNET.  Non-zero count is the
-	 * fleet-visible signal that the netns-forkbomb throttle (see the
-	 * comment on MAX_CONCURRENT_NEWNET in include/shm.h) is firing —
-	 * a steadily climbing value during a run means the kernel netns
-	 * cleanup workqueue is the slow path and the cap is doing real
-	 * work; stuck-at-zero means the fuzzer is not currently producing
-	 * enough concurrent unshares to trip it. */
-	unsigned long unshare_newnet_throttled;
-
-	/* Per-syscall reject counts indexed by syscall.nr, bumped from the
-	 * range_overlaps_shared() trip site so dump_stats() can name the top
-	 * offenders.  Two arrays so 32/64-bit syscall numbers don't smear
-	 * (same nr means a different syscall on each table). */
-	unsigned long range_overlaps_shared_rejects_per_syscall_64[MAX_NR_SYSCALL];
-	unsigned long range_overlaps_shared_rejects_per_syscall_32[MAX_NR_SYSCALL];
-
-	/* Coarse-grained histogram of which syscall categories the random
-	 * picker has been dispatching, bumped per syscall in dispatch_step().
-	 * Lets the operator spot when sanitiser/group-bias drift has skewed
-	 * the distribution away from the table they expected. */
-	unsigned long syscall_category_count[NR_SYSCAT];
-
 	/* ---- Group B: per-syscall, rare-condition ---- */
 
 	/* post-syscall oracle anomaly counts */
@@ -492,8 +391,8 @@ struct stats_s {
 	/* handle_syscall_ret() saw reject_corrupt_retfd() flag a structurally
 	 * out-of-bound rec->retval on a RET_FD-class syscall (negative,
 	 * >= NR_OPEN, or otherwise outside [0, 1<<20)) BEFORE the
-	 * success/failure dispatch.  Distinct from shm->stats.failures: the
-	 * latter aggregates legitimate -1UL returns alongside the coerced
+	 * success/failure dispatch.  Distinct from the failures aggregate
+	 * counter: the latter aggregates legitimate -1UL returns alongside the coerced
 	 * corruption returns, drowning the corruption signal in the noise
 	 * of normal failed syscalls (>50% of every fuzz run).  This counter
 	 * surfaces only the structurally-corrupt RET_FD subset, so a quiet
@@ -1520,11 +1419,8 @@ struct stats_s {
 
 	/* ---- Group D: diagnostic / parent-side / one-shot ---- */
 
-	/* Counts to tell if we're making progress or not. */
-	unsigned long previous_op_count __attribute__((aligned(64)));	/* combined total of all children */
-
 	/* fd lifecycle tracking */
-	unsigned long fd_stale_detected;
+	unsigned long fd_stale_detected __attribute__((aligned(64)));
 	unsigned long fd_stale_by_generation;
 	unsigned long fd_closed_tracked;
 	unsigned long fd_regenerated;
@@ -1603,12 +1499,6 @@ struct stats_s {
 	unsigned long zombie_slots_pending;	/* current count (gauge) */
 	unsigned long zombies_reaped;		/* total successfully reaped */
 	unsigned long zombies_timed_out;	/* force-reused after timeout */
-
-	/* Times we caught a child's local_op_count above LOCAL_OP_FLUSH_BATCH,
-	 * which is impossible during normal operation (the child flushes and
-	 * resets at that threshold).  Indicates a stray write into childdata
-	 * from somebody other than the slot's current owner. */
-	unsigned long local_op_count_corrupted;
 
 	/* sanitize_inherited_fds() closed an fd that the parent inherited
 	 * from its launcher (or the launcher's parent) at startup.  We

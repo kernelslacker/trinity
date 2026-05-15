@@ -46,9 +46,9 @@
 /*
  * Pin op_nr — the trailing field of the per-syscall hot block — to an
  * offset under 64 so a future field reorder that moves any of the hot
- * block (kcov, last_syscall_nr, last_group, op_nr, local_op_count) past
- * the leading cacheline boundary fails the build instead of silently
- * regressing the per-call cache-miss budget the layout was tuned for.
+ * block (kcov, last_syscall_nr, last_group, op_nr) past the leading
+ * cacheline boundary fails the build instead of silently regressing the
+ * per-call cache-miss budget the layout was tuned for.
  */
 _Static_assert(offsetof(struct childdata, op_nr) < 64,
 	"struct childdata: op_nr (per-syscall hot field) escaped the leading cacheline");
@@ -332,7 +332,6 @@ void clean_childdata(struct childdata *child)
 	child->dontkillme = false;
 	child->xcpu_count = 0;
 	child->op_nr = 0;
-	child->local_op_count = 0;
 	child->current_fd = -1;
 	child->fd_lifetime = 0;
 	child->cached_fd_generation = 0;

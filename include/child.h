@@ -243,12 +243,6 @@ struct childdata {
 	 * child_process and consulted by the stall detector. */
 	unsigned long op_nr;
 
-	/* Per-child syscall counter, batch-flushed to shm->stats.op_count
-	 * every LOCAL_OP_FLUSH_BATCH ops to avoid contending one cache line
-	 * across all children.  Incremented inside __do_syscall on every
-	 * call.  Aggregated by the parent when an exact total is needed. */
-	unsigned long local_op_count;
-
 	/* ---- End of hot leading cacheline ---- */
 
 	/* Warm fields: read or written per call but not in inner retry

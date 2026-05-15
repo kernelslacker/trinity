@@ -93,9 +93,6 @@ void init_shm(void)
 	if (set_debug == true)
 		shm->debug = true;
 
-	shm->stats.op_count = 0;
-	shm->stats.previous_op_count = 0;
-
 	/* Seed the per-childop adaptive-budget multipliers at unity (1.0x in
 	 * Q8.8) so a fresh run starts with every opt-in childop running its
 	 * hardcoded MAX_ITERATIONS / BUDGET_NS unchanged.  adapt_budget()
