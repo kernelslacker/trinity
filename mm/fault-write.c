@@ -3,12 +3,18 @@
  */
 
 #include <errno.h>
+#include <setjmp.h>
+#include <signal.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>	// getpagesize
 #include "arch.h"
 #include "maps.h"
 #include "random.h"
 #include "sanitise.h"	// get_address
+#include "shm.h"
 #include "utils.h"
 
 static bool mark_map_rw(struct map *map)
@@ -198,15 +204,119 @@ static const struct faultfn write_faultfns[] = {
 	{ .func = dirty_last_page },
 };
 
+/*
+ * Per-walk SIGBUS / SIGSEGV guard.  dirty_random_mapping (mm/maps.c)
+ * already snapshot+fstat-clamps the walkable extent before dispatch,
+ * but two TOCTOU races remain unclosable without a signal handler:
+ *
+ *   - File-backed: between the clamp and the per-page store, a sibling
+ *     ftruncate() can shrink the file and a sibling fallocate(
+ *     FALLOC_FL_PUNCH_HOLE) / fallocate(FALLOC_FL_COLLAPSE_RANGE) /
+ *     madvise(MADV_REMOVE) can leave a hole inside the live extent.
+ *     The per-page store then SIGBUSes BUS_ADRERR on the holed page.
+ *   - Anonymous: a sibling munmap / mremap MAYMOVE / MAP_FIXED replace
+ *     can drop the VMA underneath us.  No backing inode involved, so
+ *     the kernel raises SIGSEGV SEGV_MAPERR instead of SIGBUS.
+ *
+ * The handler longjmps back to random_map_writefn iff the fault
+ * si_addr lands inside the active mapping range, otherwise it
+ * restores SIG_DFL and re-raises so child_fault_handler diagnoses
+ * + exits and the per-pid bug log path is preserved for genuine
+ * unrelated faults.
+ *
+ * volatile / sigjmp_buf rationale matches the equivalent statics in
+ * mm/fault-read.c and childops/madvise-pattern-cycler.c: ISO C
+ * 7.13.2.1 only guarantees post-longjmp values for objects with
+ * volatile-qualified type, and GCC's -Wclobbered analysis flags
+ * non-volatile locals as possibly clobbered through the wrap.
+ */
+static sigjmp_buf write_walk_jmp;
+static volatile uintptr_t write_walk_lo;
+static volatile uintptr_t write_walk_hi;
+static volatile sig_atomic_t write_walk_armed;
+
+static void write_walk_signal_handler(int sig, siginfo_t *info, void *ctx)
+{
+	uintptr_t fault_addr;
+
+	(void)ctx;
+
+	if (!write_walk_armed) {
+		signal(sig, SIG_DFL);
+		raise(sig);
+		return;
+	}
+	if (info->si_code <= 0 && info->si_pid != getpid()) {
+		/* Sibling-spoofed — kernel has consumed it already. */
+		return;
+	}
+	if (info->si_code <= 0) {
+		/* Self-sent (glibc abort etc.) — restore default and
+		 * re-raise so child_fault_handler diagnoses + exits.
+		 * siglongjmp here would skip in-flight cleanup. */
+		signal(sig, SIG_DFL);
+		raise(sig);
+		return;
+	}
+
+	fault_addr = (uintptr_t)info->si_addr;
+	if (fault_addr < write_walk_lo || fault_addr >= write_walk_hi) {
+		/* Real kernel fault but si_addr is outside the active
+		 * mapping range — not the race we're guarding against.
+		 * Restore default and re-raise so child_fault_handler
+		 * diagnoses + exits and the bug log path is preserved. */
+		signal(sig, SIG_DFL);
+		raise(sig);
+		return;
+	}
+	siglongjmp(write_walk_jmp, 1);
+}
+
 void random_map_writefn(struct map *map)
 {
-	if (map->size == page_size) {
-		write_faultfns_single[rand() % ARRAY_SIZE(write_faultfns_single)].func(map);
-	} else {
-		if (RAND_BOOL()) {
-			write_faultfns[rand() % ARRAY_SIZE(write_faultfns)].func(map);
-		} else {
-			write_faultfns_single[rand() % ARRAY_SIZE(write_faultfns_single)].func(map);
-		}
+	struct sigaction sa, old_segv, old_bus;
+	volatile bool aborted = false;
+
+	if (map->size == 0)
+		return;
+
+	write_walk_lo = (uintptr_t) map->ptr;
+	write_walk_hi = (uintptr_t) map->ptr + map->size;
+
+	memset(&sa, 0, sizeof(sa));
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_SIGINFO;
+	sa.sa_sigaction = write_walk_signal_handler;
+	if (sigaction(SIGBUS,  &sa, &old_bus) != 0)
+		return;
+	if (sigaction(SIGSEGV, &sa, &old_segv) != 0) {
+		(void)sigaction(SIGBUS, &old_bus, NULL);
+		return;
 	}
+
+	write_walk_armed = 1;
+
+	if (sigsetjmp(write_walk_jmp, 1) == 0) {
+		if (map->size == page_size) {
+			write_faultfns_single[rand() % ARRAY_SIZE(write_faultfns_single)].func(map);
+		} else {
+			if (RAND_BOOL()) {
+				write_faultfns[rand() % ARRAY_SIZE(write_faultfns)].func(map);
+			} else {
+				write_faultfns_single[rand() % ARRAY_SIZE(write_faultfns_single)].func(map);
+			}
+		}
+	} else {
+		aborted = true;
+	}
+
+	write_walk_armed = 0;
+	write_walk_lo = 0;
+	write_walk_hi = 0;
+	(void)sigaction(SIGSEGV, &old_segv, NULL);
+	(void)sigaction(SIGBUS,  &old_bus,  NULL);
+
+	if (aborted)
+		__atomic_add_fetch(&shm->stats.write_walk_aborted, 1,
+				   __ATOMIC_RELAXED);
 }

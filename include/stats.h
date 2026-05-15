@@ -1698,6 +1698,20 @@ struct stats_s {
 	 * narrows but cannot fully close. */
 	unsigned long read_walk_aborted;
 
+	/* Per-call abort counter for random_map_writefn().  Bumped each time
+	 * the per-page user store in one of the write walks (dirty_one_page,
+	 * dirty_first_page, dirty_whole_mapping, dirty_every_other_page,
+	 * dirty_mapping_reverse, dirty_random_pages, dirty_last_page) takes
+	 * a SIGBUS or SIGSEGV inside the sigsetjmp-guarded section and the
+	 * walk siglongjmps out cleanly instead of killing the child.  The
+	 * write side already clamps via dirty_random_mapping (mm/maps.c)
+	 * before dispatch, so this counter primarily reflects the residual
+	 * sibling fallocate(PUNCH_HOLE) / fallocate(COLLAPSE_RANGE) /
+	 * madvise(MADV_REMOVE) and ftruncate-shrink race rate that the
+	 * pre-dispatch fstat cannot catch (st_size unchanged for hole punch,
+	 * shrunk between clamp and store for ftruncate). */
+	unsigned long write_walk_aborted;
+
 	/* Shared obj-heap pressure counters: cumulative successful allocs
 	 * and frees through alloc_shared_obj() / free_shared_obj().  Read
 	 * by dump_stats() under -v to print a one-line utilisation summary
