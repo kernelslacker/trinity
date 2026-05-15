@@ -71,6 +71,39 @@ static time_t *zombie_since;
  * one-shot corruption in exchange for not stalling fuzzing forever. */
 #define ZOMBIE_REAP_TIMEOUT_SEC 300
 
+/*
+ * Detect a fork-die-respawn busy-loop: when something corrupts shm such
+ * that freshly-spawned children trip a startup check (e.g.
+ * EXIT_SHM_CORRUPTION at child.c:613 or EXIT_REPARENT_PROBLEM at
+ * child.c:795) and exit within milliseconds of being forked, the parent
+ * enters a perpetual reap-replace cycle.  The existing
+ * consecutive_fork_failures cap in fork_children() only counts
+ * spawn_child() returning false (fork() itself failing); it does NOT
+ * trigger when fork SUCCEEDS but the child dies fast on startup.
+ *
+ * Track the spawn time of each slot, then maintain a small ring of
+ * recent reap outcomes.  When the ring fills with WIFEXITED-with-non-
+ * SUCCESS reaps that all happened within FAST_DIE_LIFETIME_THRESHOLD_S
+ * of their fork, bail loudly instead of busy-looping forever.  Signal
+ * deaths (SIGSEGV in the fuzz target, SIGABRT, etc.) are normal during
+ * fuzzing and are explicitly excluded from the bail trigger via the
+ * exit_status > 0 gate (signal deaths are encoded as negative below).
+ */
+#define FAST_DIE_RING_SIZE 16
+#define FAST_DIE_LIFETIME_THRESHOLD_S 2
+
+struct reap_record {
+	time_t reaped_at;
+	time_t lifetime;	/* reaped_at - spawn_times[childno] */
+	int    exit_status;	/* WEXITSTATUS, or -WTERMSIG for signal deaths */
+	int    childno;
+};
+
+static time_t *spawn_times;
+static struct reap_record reap_ring[FAST_DIE_RING_SIZE];
+static unsigned int reap_ring_head;
+static unsigned int reap_ring_count;
+
 static unsigned long hiscore = 0;
 
 /*
@@ -811,6 +844,11 @@ static bool spawn_child(int childno)
 
 	child = children[childno];
 
+	/* Wipe any stale spawn timestamp so a slot that fails to spawn
+	 * doesn't leave a misleading lifetime in the next reap record. */
+	if (spawn_times != NULL)
+		spawn_times[childno] = 0;
+
 	/* a new child means a new seed, or the new child
 	 * will do the same syscalls as the one in the child it's replacing.
 	 * (special case startup, or we reseed unnecessarily)
@@ -864,6 +902,8 @@ static bool spawn_child(int childno)
 		if (was_protected)
 			freeze_global_objects();
 	}
+	if (spawn_times != NULL)
+		spawn_times[childno] = time(NULL);
 	if (pidstatfiles[childno]) {
 		fclose(pidstatfiles[childno]);
 		pidstatfiles[childno] = NULL;
@@ -1086,6 +1126,94 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 	}
 }
 
+static void bail_fast_die_loop(void)
+{
+	unsigned int i;
+
+	outputerr("FAST-DIE LOOP DETECTED: %u consecutive child reaps with lifetime < %ds and non-SUCCESS exit status. Parent is in a fork-die-respawn busy-loop. Dumping ring...\n",
+		FAST_DIE_RING_SIZE, FAST_DIE_LIFETIME_THRESHOLD_S);
+
+	for (i = 0; i < FAST_DIE_RING_SIZE; i++) {
+		struct reap_record *r = &reap_ring[i];
+
+		if (r->exit_status > 0 && r->exit_status < NUM_EXIT_REASONS)
+			outputerr("  ring[%u]: childno=%d lifetime=%lds exit_status=%d (%s)\n",
+				i, r->childno, (long)r->lifetime, r->exit_status,
+				decode_exit((enum exit_reasons)r->exit_status));
+		else
+			outputerr("  ring[%u]: childno=%d lifetime=%lds exit_status=%d\n",
+				i, r->childno, (long)r->lifetime, r->exit_status);
+	}
+
+	dump_proc_self_status();
+
+	if (shm != NULL) {
+		outputerr("shm->exit_reason=%d running_childs=%u buglock.state=0x%lx\n",
+			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED),
+			__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED),
+			__atomic_load_n(&shm->buglock.state, __ATOMIC_RELAXED));
+		if (pids != NULL) {
+			unsigned int j;
+
+			for_each_child(j)
+				outputerr("  pids[%u]=%d\n", j,
+					__atomic_load_n(&pids[j], __ATOMIC_RELAXED));
+			dump_pids_page_state();
+		}
+	}
+
+	panic(EXIT_SHM_CORRUPTION);
+}
+
+static void record_reap(int childno, int childstatus)
+{
+	struct reap_record *r;
+	time_t now = time(NULL);
+	time_t lifetime;
+	int exit_status;
+	unsigned int i;
+
+	if (spawn_times == NULL)
+		return;
+
+	if (spawn_times[childno] != 0)
+		lifetime = now - spawn_times[childno];
+	else
+		lifetime = 0;
+
+	if (WIFEXITED(childstatus))
+		exit_status = WEXITSTATUS(childstatus);
+	else if (WIFSIGNALED(childstatus))
+		exit_status = -WTERMSIG(childstatus);
+	else
+		return;
+
+	r = &reap_ring[reap_ring_head];
+	r->reaped_at = now;
+	r->lifetime = lifetime;
+	r->exit_status = exit_status;
+	r->childno = childno;
+
+	reap_ring_head = (reap_ring_head + 1) % FAST_DIE_RING_SIZE;
+	if (reap_ring_count < FAST_DIE_RING_SIZE)
+		reap_ring_count++;
+
+	if (reap_ring_count < FAST_DIE_RING_SIZE)
+		return;
+
+	/* Bail only when EVERY entry is a fast WIFEXITED with non-SUCCESS
+	 * status.  Signal-deaths are negative, EXIT_SUCCESS is 0 — both
+	 * fail the > 0 gate so a single benign reap clears the bail. */
+	for (i = 0; i < FAST_DIE_RING_SIZE; i++) {
+		if (reap_ring[i].lifetime >= FAST_DIE_LIFETIME_THRESHOLD_S)
+			return;
+		if (reap_ring[i].exit_status <= 0)
+			return;
+	}
+
+	bail_fast_die_loop();
+}
+
 static void handle_child(int childno, pid_t childpid, int childstatus)
 {
 	switch (childpid) {
@@ -1104,6 +1232,7 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 
 			debugf("Child %d (pid:%u) exited after %ld operations.\n",
 				childno, childpid, child->op_nr);
+			record_reap(childno, childstatus);
 			reap_child(children[childno], childno);
 			if (pidstatfiles[childno] != NULL)
 				fclose(pidstatfiles[childno]);
@@ -1113,6 +1242,7 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 			break;
 
 		} else if (WIFSIGNALED(childstatus)) {
+			record_reap(childno, childstatus);
 			handle_childsig(childno, childstatus, false);
 		} else if (WIFSTOPPED(childstatus)) {
 			handle_childsig(childno, childstatus, true);
@@ -1379,6 +1509,7 @@ void main_loop(void)
 	pidstatfiles = zmalloc(max_children * sizeof(FILE *));
 	zombie_pids = zmalloc(max_children * sizeof(pid_t));
 	zombie_since = zmalloc(max_children * sizeof(time_t));
+	spawn_times = zmalloc(max_children * sizeof(time_t));
 	for_each_child(i)
 		zombie_pids[i] = EMPTY_PIDSLOT;
 
