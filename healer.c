@@ -183,6 +183,23 @@
 #define HEALER_FAMILY_BONUS 5
 
 /*
+ * Coverage-weighted promotion floor.  HEALER's normalised score is
+ * multiplied by a productivity ratio derived from the existing edgepair
+ * table (new_edges / total for the immediate-predecessor -> successor
+ * pair, smoothed with the same Beta(ALPHA, BETA) shape as the score
+ * itself).  The multiplier is held in milli-fixed-point and bottoms out
+ * at this floor so triples whose last-step pair has shown zero coverage
+ * productivity still rank -- they keep the floor's contribution while
+ * fully-productive triples climb to floor + 1000.  At the default of 250
+ * a zero-productivity triple scores ~0.2x base and a maximally
+ * productive triple scores 1.0x base, i.e. a 5x relative spread.
+ * Lowering the floor makes the coverage signal more dominant; raising
+ * it makes it more advisory.  Expect retuning after the top-N rerank
+ * settles.
+ */
+#define HEALER_COVERAGE_FLOOR_MILLI 250
+
+/*
  * Display-time pollution filter: minimum total HEALER observation
  * count before the dump suppresses static-seeded entries whose
  * participating syscalls have never been attempted by any child this
@@ -868,20 +885,58 @@ static bool healer_same_family(unsigned int pred_a_nr,
 	return (a->group == b->group) && (b->group == s->group);
 }
 
+/*
+ * Coverage-productivity multiplier derived from the existing edgepair
+ * table.  HEALER triples are sorted by predset before they reach the
+ * dump path (pred_a <= pred_b), so we no longer know which of the two
+ * predecessors was the immediate predecessor at observation time.
+ * Probe both orderings via edgepair_get_stats() and pick the more
+ * productive ratio -- both are valid candidates for the last-step pair,
+ * and the optimistic pick keeps a triple from being penalised by a
+ * coincidentally-quiet alternative ordering.  The ratio reuses the
+ * scoring side's HEALER_NORM_ALPHA / HEALER_NORM_BETA so the operator
+ * only learns one Bayesian shape; the result is in milli-fixed-point
+ * and clamped at HEALER_COVERAGE_FLOOR_MILLI.  Returns a multiplier in
+ * the range [floor, floor + 1000] which the caller normalises against
+ * (floor + 1000) to recover a 0.x..1.0 scaling factor.
+ */
+static unsigned long healer_coverage_multiplier_milli(unsigned int pred_a,
+						      unsigned int pred_b,
+						      unsigned int succ)
+{
+	struct edgepair_stats sa = edgepair_get_stats(pred_a, succ);
+	struct edgepair_stats sb = edgepair_get_stats(pred_b, succ);
+	unsigned long ra, rb, ratio;
+
+	ra = ((sa.new_edges + HEALER_NORM_ALPHA) * 1000UL) /
+	     (sa.total + HEALER_NORM_ALPHA + HEALER_NORM_BETA);
+	rb = ((sb.new_edges + HEALER_NORM_ALPHA) * 1000UL) /
+	     (sb.total + HEALER_NORM_ALPHA + HEALER_NORM_BETA);
+
+	ratio = (ra > rb) ? ra : rb;
+	return HEALER_COVERAGE_FLOOR_MILLI + ratio;
+}
+
 static unsigned long healer_normalised_score_milli(unsigned long raw_weight,
 						   unsigned long pred_a_freq,
 						   unsigned long pred_b_freq,
-						   bool same_family)
+						   bool same_family,
+						   unsigned int pred_a,
+						   unsigned int pred_b,
+						   unsigned int succ)
 {
 	unsigned long combined_freq = healer_isqrt(pred_a_freq * pred_b_freq);
 	unsigned long alpha = HEALER_NORM_ALPHA;
-	unsigned long denom;
+	unsigned long denom, base, mult;
 
 	if (same_family)
 		alpha += HEALER_FAMILY_BONUS;
 
 	denom = combined_freq + alpha + HEALER_NORM_BETA;
-	return ((raw_weight + alpha) * 1000UL) / denom;
+	base = ((raw_weight + alpha) * 1000UL) / denom;
+
+	mult = healer_coverage_multiplier_milli(pred_a, pred_b, succ);
+	return (base * mult) / (HEALER_COVERAGE_FLOOR_MILLI + 1000UL);
 }
 
 static int healer_dump_entry_cmp(const void *a, const void *b)
@@ -1243,7 +1298,10 @@ void healer_table_dump(void)
 								   pred_b_freq,
 								   healer_same_family(slot_pred_a,
 										      slot_pred_b,
-										      nr));
+										      nr),
+								   slot_pred_a,
+								   slot_pred_b,
+								   nr);
 
 			/*
 			 * Low-confidence floor: drop entries from top-N
@@ -1365,7 +1423,7 @@ void healer_table_dump(void)
 
 		for (j = 0; j < MAX_NR_SYSCALL; j++) {
 			unsigned int weight;
-			unsigned long denom, norm_score;
+			unsigned long norm_score;
 			struct healer_dump_entry cand;
 
 			weight = healer_pair_get(i, j);
@@ -1413,10 +1471,11 @@ void healer_table_dump(void)
 			 * small-raw / small-predfreq cells into the top-N is
 			 * directly corrected.
 			 */
-			denom = producer_freq + HEALER_NORM_ALPHA +
-				HEALER_NORM_BETA;
-			norm_score = ((weight + HEALER_NORM_ALPHA) * 1000UL) /
-				     denom;
+			norm_score = healer_normalised_score_milli(weight,
+								   producer_freq,
+								   producer_freq,
+								   false,
+								   i, i, j);
 
 			cand.pred_a = 0;
 			cand.pred_b = i;

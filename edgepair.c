@@ -225,6 +225,27 @@ bool edgepair_is_productive(unsigned int prev_nr, unsigned int curr_nr)
 	return __atomic_load_n(&e->new_edge_count, __ATOMIC_RELAXED) > 0;
 }
 
+struct edgepair_stats edgepair_get_stats(unsigned int prev_nr,
+					 unsigned int curr_nr)
+{
+	struct edgepair_stats s = { 0, 0 };
+	struct edgepair_entry *e;
+
+	if (edgepair_shm == NULL)
+		return s;
+
+	if (prev_nr >= MAX_NR_SYSCALL || curr_nr >= MAX_NR_SYSCALL)
+		return s;
+
+	e = find_entry(prev_nr, curr_nr);
+	if (e == NULL)
+		return s;
+
+	s.new_edges = __atomic_load_n(&e->new_edge_count, __ATOMIC_RELAXED);
+	s.total     = __atomic_load_n(&e->total_count,    __ATOMIC_RELAXED);
+	return s;
+}
+
 void edgepair_dump_to_file(const char *path)
 {
 	FILE *f;
