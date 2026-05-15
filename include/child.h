@@ -373,6 +373,12 @@ struct childdata {
 	 * Allocated in shared memory, one per child. */
 	struct fd_event_ring *fd_event_ring;
 
+	/* Ring buffer for child-produced stats deltas drained by the parent
+	 * into struct stats_aggregate.  Allocated in shared memory, one per
+	 * child, write-only-by-this-child / read-only-by-parent.  See
+	 * include/stats_ring.h for the field set and overflow policy. */
+	struct stats_ring *stats_ring;
+
 	/* Name of the recipe currently executing inside recipe_runner(),
 	 * or NULL when no recipe is in flight.  Read by post-mortem to
 	 * attribute a kernel taint to a specific multi-syscall sequence. */

@@ -33,6 +33,7 @@
 #include "shm.h"
 #include "signals.h"
 #include "stats.h"
+#include "stats_ring.h"
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"	// ARRAY_SIZE
@@ -390,6 +391,9 @@ void clean_childdata(struct childdata *child)
 
 	if (child->fd_event_ring)
 		fd_event_ring_init(child->fd_event_ring);
+
+	if (child->stats_ring)
+		stats_ring_init(child->stats_ring);
 }
 
 static void bind_child_to_cpu(struct childdata *child)

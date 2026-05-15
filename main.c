@@ -25,6 +25,7 @@
 #include "self_cgroup.h"
 #include "shm.h"
 #include "stats.h"
+#include "stats_ring.h"
 #include "syscall.h"
 #include "tables.h"
 #include "taint.h"
@@ -1530,6 +1531,11 @@ void main_loop(void)
 		 * This processes dup/close events that children couldn't
 		 * apply directly (COW heap prevents global pool mutation). */
 		fd_event_drain_all();
+
+		/* Drain stats deltas from all children's rings into the
+		 * parent-private aggregate.  Republishes the mirror page
+		 * inside its own thaw/refreeze bracket. */
+		stats_ring_drain_all();
 
 		taint_check();
 

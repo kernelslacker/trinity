@@ -23,6 +23,7 @@
 #include "random.h"
 #include "sequence.h"
 #include "shm.h"
+#include "stats_ring.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -257,7 +258,27 @@ void init_shm(void)
 		 * is mprotected PROT_READ by freeze_global_objects() before
 		 * any child runs, so any post-init write to it will fault. */
 		expected_fd_event_rings[i] = child->fd_event_ring;
+
+		/* Per-child stats ring.  Same alloc_shared() vs alloc_shared_
+		 * global() reasoning as fd_event_ring above: the child IS the
+		 * producer (every syscall enqueues at least one slot), so the
+		 * ring contents stay child-writable.  The ring POINTER is in
+		 * struct childdata which sits in shared memory; a wild write
+		 * that swapped it would surface in the same overflow / payload
+		 * validation paths the drain already runs.  No dedicated canary
+		 * array yet -- the structural improvement here is moving the
+		 * COUNTER VALUES out of shm; the ring storage being shared is
+		 * inherent to the SPSC contract. */
+		child->stats_ring = alloc_shared(sizeof(struct stats_ring));
+		stats_ring_init(child->stats_ring);
 	}
+
+	/* Allocate the parent-write / child-read mirror page before
+	 * freeze_global_objects() runs so the page joins the frozen-RO set.
+	 * Children read shm_published->fleet_op_count off the cold path
+	 * (rotation clock, syscalls_todo termination); the parent re-publishes
+	 * inside stats_ring_drain_all()'s thaw/refreeze bracket. */
+	stats_published_init();
 	if (mprotect(children, childptrslen, PROT_READ) != 0)
 		log_mprotect_failure(children, (size_t) childptrslen, PROT_READ,
 				     __builtin_return_address(0), errno);
