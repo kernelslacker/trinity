@@ -18,6 +18,7 @@
 #include "sequence.h"
 #include "shm.h"
 #include "stats.h"
+#include "stats_ring.h"
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
@@ -132,13 +133,13 @@ static void dump_syscall_category_histogram(void)
 	unsigned int i;
 
 	for (i = 0; i < NR_SYSCAT; i++)
-		total += shm->stats.syscall_category_count[i];
+		total += parent_stats.syscall_category_count[i];
 	if (total == 0)
 		return;
 
 	output(0, "Syscall category histogram (total: %lu):\n", total);
 	for (i = 0; i < NR_SYSCAT; i++) {
-		unsigned long c = shm->stats.syscall_category_count[i];
+		unsigned long c = parent_stats.syscall_category_count[i];
 		unsigned long pct10 = total ? (c * 1000UL / total) : 0UL;
 
 		output(0, "  %-8s %10lu  (%lu.%lu%%)\n",
@@ -835,7 +836,7 @@ static void dump_stats_json(void)
 		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"peek_ok\":%lu,\"iouring_variant_ok\":%lu},"
 		"\"netns_teardown\":{\"runs\":%lu,\"setup_failed\":%lu,\"unshare_ok\":%lu,\"socket_pair_ok\":%lu,\"fork_ok\":%lu,\"setns_ok\":%lu,\"kill_ok\":%lu,\"completed_ok\":%lu},"
 		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},",
-		shm->stats.fault_injected, shm->stats.fault_consumed,
+		parent_stats.fault_injected, parent_stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
 		shm->stats.fd_closed_tracked, shm->stats.fd_regenerated,
 		shm->stats.fd_duped, shm->stats.fd_events_processed,
@@ -987,9 +988,9 @@ static void dump_stats_json(void)
 		shm->stats.global_obj_uaf_caught,
 		shm->stats.maps_uaf_caught,
 		shm->stats.pagecache_canary_corrupt_caught,
-		shm->stats.shared_buffer_redirected, shm->stats.range_overlaps_shared_rejects,
-		shm->stats.libc_heap_redirected, shm->stats.libc_heap_embedded_redirected,
-		shm->stats.get_writable_address_scribbled_slots_caught,
+		parent_stats.shared_buffer_redirected, parent_stats.range_overlaps_shared_rejects,
+		parent_stats.libc_heap_redirected, parent_stats.libc_heap_embedded_redirected,
+		parent_stats.get_writable_address_scribbled_slots_caught,
 		shm->stats.refcount_audit_runs, shm->stats.refcount_audit_fd_anomalies,
 		shm->stats.refcount_audit_mmap_anomalies, shm->stats.refcount_audit_sock_anomalies,
 		shm->stats.fs_lifecycle_tmpfs, shm->stats.fs_lifecycle_ramfs,
@@ -1661,8 +1662,8 @@ static void dump_range_overlaps_shared_top_offenders(void)
 	memset(top, 0, sizeof(top));
 
 	for (i = 0; i < MAX_NR_SYSCALL; i++) {
-		unsigned long c64 = shm->stats.range_overlaps_shared_rejects_per_syscall_64[i];
-		unsigned long c32 = shm->stats.range_overlaps_shared_rejects_per_syscall_32[i];
+		unsigned long c64 = parent_stats.range_overlaps_shared_rejects_per_syscall_64[i];
+		unsigned long c32 = parent_stats.range_overlaps_shared_rejects_per_syscall_32[i];
 		unsigned int pass;
 		unsigned long c;
 		bool is32;
@@ -2611,9 +2612,9 @@ void dump_stats(void)
 
 	stats_emit_header();
 
-	if (shm->stats.fault_injected) {
-		stat_row("fault_injection", "armed_fail_nth",  shm->stats.fault_injected);
-		stat_row("fault_injection", "returned_enomem", shm->stats.fault_consumed);
+	if (parent_stats.fault_injected) {
+		stat_row("fault_injection", "armed_fail_nth",  parent_stats.fault_injected);
+		stat_row("fault_injection", "returned_enomem", parent_stats.fault_consumed);
 	}
 
 	if (shm->stats.fd_stale_detected || shm->stats.fd_closed_tracked ||
@@ -3102,25 +3103,25 @@ void dump_stats(void)
 		}
 	}
 
-	if (shm->stats.shared_buffer_redirected)
-		stat_row("shared_buffer", "args_redirected",     shm->stats.shared_buffer_redirected);
-	if (shm->stats.libc_heap_redirected)
-		stat_row("shared_buffer", "libc_heap_redirected", shm->stats.libc_heap_redirected);
-	if (shm->stats.libc_heap_embedded_redirected)
+	if (parent_stats.shared_buffer_redirected)
+		stat_row("shared_buffer", "args_redirected",     parent_stats.shared_buffer_redirected);
+	if (parent_stats.libc_heap_redirected)
+		stat_row("shared_buffer", "libc_heap_redirected", parent_stats.libc_heap_redirected);
+	if (parent_stats.libc_heap_embedded_redirected)
 		stat_row("shared_buffer", "libc_heap_embedded_redirected",
-			 shm->stats.libc_heap_embedded_redirected);
-	if (shm->stats.range_overlaps_shared_rejects) {
+			 parent_stats.libc_heap_embedded_redirected);
+	if (parent_stats.range_overlaps_shared_rejects) {
 		stat_row("shared_buffer", "range_overlaps_shared_rejects",
-			 shm->stats.range_overlaps_shared_rejects);
+			 parent_stats.range_overlaps_shared_rejects);
 		if (verbosity > 1)
 			dump_range_overlaps_shared_top_offenders();
 	}
-	if (shm->stats.get_writable_address_scribbled_slots_caught)
+	if (parent_stats.get_writable_address_scribbled_slots_caught)
 		stat_row("shared_buffer", "get_writable_address_scribbled_slots_caught",
-			 shm->stats.get_writable_address_scribbled_slots_caught);
-	if (shm->stats.children_recycled_on_storm)
+			 parent_stats.get_writable_address_scribbled_slots_caught);
+	if (parent_stats.children_recycled_on_storm)
 		stat_row("corruption", "children_recycled_on_storm",
-			 shm->stats.children_recycled_on_storm);
+			 parent_stats.children_recycled_on_storm);
 
 	if (verbosity > 1)
 		dump_syscall_category_histogram();

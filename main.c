@@ -117,22 +117,39 @@ static int shm_is_corrupt(void)
 {
 	unsigned int i;
 
-	unsigned long current_previous_op_count = __atomic_load_n(&shm->stats.previous_op_count, __ATOMIC_RELAXED);
-	unsigned long current_op_count = __atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED);
+	/* Both op_count and previous_op_count are now parent-private (live
+	 * in the stats_aggregate, not in shm).  A wild kernel write through
+	 * a child syscall arg cannot reach either field, so this regression
+	 * check no longer fires for that scribble class.  Kept as defence
+	 * in depth: it still trips on a parent-side bug that decrements
+	 * op_count or on a stale read of either field, both of which would
+	 * be real corruption signals. */
+	unsigned long current_previous_op_count = parent_stats.previous_op_count;
+	unsigned long current_op_count = parent_stats.op_count;
 
 	if (current_op_count < current_previous_op_count) {
 		output(0, "Execcount went backwards! (old:%lu new:%lu):\n",
 			current_previous_op_count, current_op_count);
-		/* op_count regression is a shm-wide corruption signal.  Dump
-		 * pids[] page state too — if the same wild write that hit
-		 * stats also hit the pid array, we want to see it; if pids[]
-		 * is intact the /proc/self/maps line still tells us whether
-		 * the freeze is silently gone. */
 		dump_pids_page_state();
 		panic(EXIT_SHM_CORRUPTION);
 		return true;
 	}
-	__atomic_store_n(&shm->stats.previous_op_count, current_op_count, __ATOMIC_RELAXED);
+	parent_stats.previous_op_count = current_op_count;
+
+	/* Mirror page integrity check: republish-time we wrote
+	 * parent_stats.op_count into shm_published->fleet_op_count and then
+	 * mprotected the page PROT_READ.  A read-back here that disagrees
+	 * with the canonical aggregate means somebody found a write window
+	 * (a freeze gap, or somehow a wild write succeeded against the
+	 * mprotected page).  Log + bump rather than panic -- the canonical
+	 * value is still trustworthy. */
+	if (shm_published != NULL &&
+	    shm_published->fleet_op_count != current_op_count) {
+		output(0, "shm_published mirror: fleet_op_count=%lu, "
+			  "aggregate=%lu (mirror scribbled?)\n",
+			  shm_published->fleet_op_count, current_op_count);
+		parent_stats.shm_published_corrupt++;
+	}
 
 	for_each_child(i) {
 		struct childdata *child;
@@ -191,14 +208,15 @@ void reap_child(struct childdata *child, int childno)
 	child->tp = (struct timespec){ .tv_sec = 0, .tv_nsec = 0 };
 	force_bust_lock(&child->syscall.lock);
 
-	/* Flush any unbatched per-child syscall count into the shared total
-	 * so it isn't lost when the child slot is recycled. */
+	/* Flush any unbatched per-child syscall count into the parent
+	 * aggregate so it isn't lost when the child slot is recycled.
+	 * Direct write: we are the parent here, the aggregate is in our
+	 * private heap, no atomic needed. */
 	{
 		unsigned long local = __atomic_load_n(&child->local_op_count,
 						      __ATOMIC_RELAXED);
 		if (local > 0) {
-			__atomic_add_fetch(&shm->stats.op_count, local,
-					   __ATOMIC_RELAXED);
+			parent_stats.op_count += local;
 			__atomic_store_n(&child->local_op_count, 0,
 					 __ATOMIC_RELAXED);
 		}
@@ -1351,8 +1369,7 @@ unsigned long sum_local_op_counts(void)
 
 static void print_stats(void)
 {
-	unsigned long op_count = __atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED) +
-				 sum_local_op_counts();
+	unsigned long op_count = parent_stats.op_count + sum_local_op_counts();
 
 	if (quiet)
 		return;
@@ -1474,7 +1491,7 @@ static void periodic_global_sanity_walk(void)
 	if (verbosity <= 2)
 		return;
 
-	op = __atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED);
+	op = parent_stats.op_count;
 	if (op - last_walk_op < GLOBAL_SANITY_WALK_INTERVAL)
 		return;
 
@@ -1552,7 +1569,7 @@ void main_loop(void)
 				kill_all_kids();
 		}
 
-		unsigned long op = __atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED);
+		unsigned long op = parent_stats.op_count;
 
 		if (syscalls_todo && (op >= syscalls_todo)) {
 			output(0, "Reached limit %lu. Telling children to exit.\n", syscalls_todo);
@@ -1675,13 +1692,18 @@ void reset_epoch_state(void)
 	__atomic_store_n(&shm->ready, false, __ATOMIC_RELEASE);
 	__atomic_store_n(&shm->running_childs, 0, __ATOMIC_RELAXED);
 
-	shm->stats.op_count = 0;
-	shm->stats.previous_op_count = 0;
+	parent_stats.op_count = 0;
+	parent_stats.previous_op_count = 0;
 
 	{
 		bool was_protected = globals_are_protected();
 		if (was_protected)
 			thaw_global_objects();
+		/* shm_published lives in the alloc_shared_global frozen set;
+		 * write it inside the thaw bracket so the PROT_READ on the
+		 * page is lifted. */
+		if (shm_published != NULL)
+			shm_published->fleet_op_count = 0;
 		for_each_child(i) {
 			__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);
 			clean_childdata(children[i]);

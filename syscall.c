@@ -26,6 +26,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "signals.h"
+#include "stats_ring.h"
 #include "syscall.h"
 #include "tables.h"
 #include "taint.h"
@@ -145,17 +146,21 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 
 	errno = 0;
 
-	/* Bump our per-child counter; flush to the shared atomic in batches
-	 * so we don't bounce shm->stats.op_count's cache line on every call. */
+	/* Bump our per-child counter; flush to the parent's stats ring in
+	 * batches so we don't fill the ring on every call.  The ring drain
+	 * applies the delta to parent_stats.op_count -- the canonical
+	 * counter no longer lives in shared memory. */
 	if (child != NULL) {
 		child->local_op_count++;
 		if (child->local_op_count >= LOCAL_OP_FLUSH_BATCH) {
-			__atomic_add_fetch(&shm->stats.op_count,
-					   child->local_op_count, __ATOMIC_RELAXED);
+			stats_ring_enqueue(child->stats_ring,
+					   STATS_FIELD_OP_COUNT, 0,
+					   (uint32_t)child->local_op_count);
 			child->local_op_count = 0;
 		}
 	} else {
-		__atomic_add_fetch(&shm->stats.op_count, 1, __ATOMIC_RELAXED);
+		/* Parent / no-child fallback: bump the aggregate directly. */
+		parent_stats.op_count++;
 	}
 
 	call = rec->nr + SYSCALL_OFFSET;
@@ -208,9 +213,18 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * Tally whether the armed fault actually triggered (-ENOMEM) vs
 	 * went unconsumed (the syscall didn't reach an allocation we hit). */
 	if (fault_armed) {
-		__atomic_add_fetch(&shm->stats.fault_injected, 1, __ATOMIC_RELAXED);
-		if (ret == (unsigned long)-1L && saved_errno == ENOMEM)
-			__atomic_add_fetch(&shm->stats.fault_consumed, 1, __ATOMIC_RELAXED);
+		if (child != NULL) {
+			stats_ring_enqueue(child->stats_ring,
+					   STATS_FIELD_FAULT_INJECTED, 0, 1);
+			if (ret == (unsigned long)-1L && saved_errno == ENOMEM)
+				stats_ring_enqueue(child->stats_ring,
+						   STATS_FIELD_FAULT_CONSUMED,
+						   0, 1);
+		} else {
+			parent_stats.fault_injected++;
+			if (ret == (unsigned long)-1L && saved_errno == ENOMEM)
+				parent_stats.fault_consumed++;
+		}
 	}
 
 	/* If we became tainted, get out as fast as we can. */
@@ -686,7 +700,15 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 						entry->name,
 						err, strerror(err));
 			}
-			__atomic_add_fetch(&shm->stats.failures, 1, __ATOMIC_RELAXED);
+			{
+				struct childdata *c = this_child();
+
+				if (c != NULL && c->stats_ring != NULL)
+					stats_ring_enqueue(c->stats_ring,
+							   STATS_FIELD_FAILURES, 0, 1);
+				else
+					parent_stats.failures++;
+			}
 		}
 	} else if (rec->state == AFTER) {
 		/* Symmetric guard to the failure branch above: an
@@ -700,7 +722,15 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		 * never actually returned. */
 		handle_success(rec);	// Believe me folks, you'll never get bored with winning
 		__atomic_add_fetch(&entry->successes, 1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.successes, 1, __ATOMIC_RELAXED);
+		{
+			struct childdata *c = this_child();
+
+			if (c != NULL && c->stats_ring != NULL)
+				stats_ring_enqueue(c->stats_ring,
+						   STATS_FIELD_SUCCESSES, 0, 1);
+			else
+				parent_stats.successes++;
+		}
 	}
 	/* attempted stays ungated: an attempted invocation IS still an
 	 * attempt even if the grandchild never reached AFTER, and

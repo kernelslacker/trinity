@@ -29,6 +29,7 @@
 #include "signals.h"
 #include "sanitise.h"
 #include "stats.h"
+#include "stats_ring.h"
 #include "strategy.h"
 #include "syscall.h"
 #include "tables.h"
@@ -621,7 +622,13 @@ static void maybe_rotate_strategy(void)
 	unsigned long edges_now, edges_in_window, syscalls_in_window;
 	unsigned long cmp_now, cmp_in_window;
 
-	now = __atomic_load_n(&shm->stats.op_count, __ATOMIC_RELAXED);
+	/* Read fleet op_count off the parent-published mirror page; the
+	 * canonical aggregate is parent-private and not visible to children.
+	 * The mirror is republished once per parent main_loop iteration so
+	 * a stale read here only delays the rotation by drain cadence. */
+	now = (shm_published != NULL)
+	      ? __atomic_load_n(&shm_published->fleet_op_count, __ATOMIC_RELAXED)
+	      : 0;
 	last = __atomic_load_n(&shm->syscalls_at_last_switch, __ATOMIC_RELAXED);
 
 	if (now - last < STRATEGY_WINDOW)
@@ -868,9 +875,11 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	/* Dispatch-time category histogram, surfaced under -vv.
 	 * entry->syscall_category is resolved once at table-init
 	 * time (copy_syscall_table) so this stays a single indexed
-	 * atomic increment on the hot path. */
-	__atomic_add_fetch(&shm->stats.syscall_category_count[entry->syscall_category],
-			   1, __ATOMIC_RELAXED);
+	 * ring enqueue on the hot path; the parent drain folds it
+	 * into parent_stats.syscall_category_count[]. */
+	stats_ring_enqueue(child->stats_ring,
+			   STATS_FIELD_SYSCALL_CATEGORY_COUNT,
+			   (uint16_t)entry->syscall_category, 1);
 
 	/* FD leak tracking: count successful fd-creating and
 	 * fd-closing syscalls per child for leak diagnosis. */

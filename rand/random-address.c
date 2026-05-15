@@ -15,6 +15,7 @@
 #include "sanitise.h"
 #include "maps.h"
 #include "shm.h"
+#include "stats_ring.h"
 #include "tables.h"
 #include "utils.h"
 
@@ -141,13 +142,15 @@ retry:	tries++;
 		 */
 		if (!range_in_tracked_shared((unsigned long) addr,
 					     (unsigned long) size)) {
-			__atomic_add_fetch(
-				&shm->stats.get_writable_address_scribbled_slots_caught,
-				1, __ATOMIC_RELAXED);
-			{
-				struct childdata *c = this_child();
-				if (c != NULL)
-					c->local_scribbled_slots_caught++;
+			struct childdata *c = this_child();
+
+			if (c != NULL && c->stats_ring != NULL) {
+				stats_ring_enqueue(c->stats_ring,
+						   STATS_FIELD_GET_WRITABLE_SCRIBBLED,
+						   0, 1);
+				c->local_scribbled_slots_caught++;
+			} else {
+				parent_stats.get_writable_address_scribbled_slots_caught++;
 			}
 			goto retry;
 		}
@@ -167,13 +170,17 @@ retry:	tries++;
 		 * that SEGV_ACCERRs on first dereference; retrying
 		 * picks a different slot and rolls past the bad one.
 		 */
-		__atomic_add_fetch(
-			&shm->stats.get_writable_address_scribbled_slots_caught,
-			1, __ATOMIC_RELAXED);
 		{
 			struct childdata *c = this_child();
-			if (c != NULL)
+
+			if (c != NULL && c->stats_ring != NULL) {
+				stats_ring_enqueue(c->stats_ring,
+						   STATS_FIELD_GET_WRITABLE_SCRIBBLED,
+						   0, 1);
 				c->local_scribbled_slots_caught++;
+			} else {
+				parent_stats.get_writable_address_scribbled_slots_caught++;
+			}
 		}
 		goto retry;
 	}
@@ -192,13 +199,15 @@ retry:	tries++;
 	 */
 	if (!range_in_tracked_shared((unsigned long) addr,
 				     (unsigned long) size)) {
-		__atomic_add_fetch(
-			&shm->stats.get_writable_address_scribbled_slots_caught,
-			1, __ATOMIC_RELAXED);
-		{
-			struct childdata *c = this_child();
-			if (c != NULL)
-				c->local_scribbled_slots_caught++;
+		struct childdata *c = this_child();
+
+		if (c != NULL && c->stats_ring != NULL) {
+			stats_ring_enqueue(c->stats_ring,
+					   STATS_FIELD_GET_WRITABLE_SCRIBBLED,
+					   0, 1);
+			c->local_scribbled_slots_caught++;
+		} else {
+			parent_stats.get_writable_address_scribbled_slots_caught++;
 		}
 		goto retry;
 	}
@@ -294,10 +303,23 @@ void avoid_shared_buffer(unsigned long *addr, unsigned long len)
 
 	*addr = (unsigned long) replacement;
 	if (shm != NULL) {
-		if (overlap_shared)
-			__atomic_add_fetch(&shm->stats.shared_buffer_redirected, 1, __ATOMIC_RELAXED);
-		if (overlap_heap)
-			__atomic_add_fetch(&shm->stats.libc_heap_redirected, 1, __ATOMIC_RELAXED);
+		struct childdata *c = this_child();
+
+		if (c != NULL && c->stats_ring != NULL) {
+			if (overlap_shared)
+				stats_ring_enqueue(c->stats_ring,
+						   STATS_FIELD_SHARED_BUFFER_REDIRECTED,
+						   0, 1);
+			if (overlap_heap)
+				stats_ring_enqueue(c->stats_ring,
+						   STATS_FIELD_LIBC_HEAP_REDIRECTED,
+						   0, 1);
+		} else {
+			if (overlap_shared)
+				parent_stats.shared_buffer_redirected++;
+			if (overlap_heap)
+				parent_stats.libc_heap_redirected++;
+		}
 	}
 }
 
@@ -397,9 +419,16 @@ void scrub_iovec_for_kernel_write(struct iovec *iov, unsigned long count)
 
 		iov[i].iov_base = NULL;
 		iov[i].iov_len = 0;
-		if (shm != NULL && overlap_heap)
-			__atomic_add_fetch(&shm->stats.libc_heap_embedded_redirected,
-					   1, __ATOMIC_RELAXED);
+		if (shm != NULL && overlap_heap) {
+			struct childdata *c = this_child();
+
+			if (c != NULL && c->stats_ring != NULL)
+				stats_ring_enqueue(c->stats_ring,
+						   STATS_FIELD_LIBC_HEAP_EMBEDDED_REDIRECTED,
+						   0, 1);
+			else
+				parent_stats.libc_heap_embedded_redirected++;
+		}
 	}
 }
 

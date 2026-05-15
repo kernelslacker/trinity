@@ -23,6 +23,7 @@
 #include "random.h"
 #include "shm.h"
 #include "stats.h"
+#include "stats_ring.h"
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
@@ -1018,24 +1019,41 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len)
 	if (!overlap)
 		return false;
 
-	n = __atomic_add_fetch(&shm->stats.range_overlaps_shared_rejects,
-			       1, __ATOMIC_RELAXED);
-
 	child = this_child();
-	if (child != NULL) {
+	if (child != NULL && child->stats_ring != NULL) {
 		unsigned int nr = child->syscall.nr;
 		bool do32 = child->syscall.do32bit;
 
+		stats_ring_enqueue(child->stats_ring,
+				   STATS_FIELD_RANGE_OVERLAPS_SHARED_REJECTS,
+				   0, 1);
 		if (nr < MAX_NR_SYSCALL) {
-			unsigned long *bucket = do32 ?
-				&shm->stats.range_overlaps_shared_rejects_per_syscall_32[nr] :
-				&shm->stats.range_overlaps_shared_rejects_per_syscall_64[nr];
-			__atomic_add_fetch(bucket, 1, __ATOMIC_RELAXED);
+			enum stats_field f = do32
+				? STATS_FIELD_RANGE_REJECTS_PER_SYSCALL_32
+				: STATS_FIELD_RANGE_REJECTS_PER_SYSCALL_64;
+			stats_ring_enqueue(child->stats_ring, f,
+					   (uint16_t)nr, 1);
 		}
 
 		last_reject_syscall_nr = nr;
 		last_reject_do32bit = do32 ? 1 : 0;
 		last_reject_have_syscall = 1;
+	} else {
+		/* Parent / pre-fork context: bump the aggregate directly. */
+		parent_stats.range_overlaps_shared_rejects++;
+	}
+
+	/* Per-process monotonic counter feeding the verbose rate-limited
+	 * log below.  The canonical aggregate now lives in parent-private
+	 * memory and is not directly visible from child context, so the
+	 * "fleet-wide every Nth reject" cadence the original counter
+	 * provided cannot be recovered cheaply.  Each child rate-limits
+	 * its own log lines independently; the parent does the same.
+	 * Verbosity-gated, informational only. */
+	{
+		static unsigned long local_n;
+
+		n = ++local_n;
 	}
 
 	if (verbosity > 1 &&

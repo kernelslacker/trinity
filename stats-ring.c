@@ -173,34 +173,14 @@ unsigned int stats_ring_drain(struct stats_ring *ring)
  * thawed the global-obj freeze (so the parent can write through to the
  * mprotected page) and will refreeze afterwards.
  *
- * Verifies the prior published value before overwriting; a mismatch
- * means somebody scribbled the page between publishes (the structural
- * defence against that is mprotect PROT_READ, but a freeze gap could
- * still permit a write -- log it).
+ * Mirror integrity is verified separately by shm_is_corrupt(): between
+ * this publish and the next iteration's read-back, nothing should write
+ * to the mirror, so a mismatch there flags a scribble.
  */
 static void stats_publish_locked(void)
 {
 	if (shm_published == NULL)
 		return;
-
-	if (shm_published->fleet_op_count != parent_stats.op_count &&
-	    /* On the very first publish the page is freshly zeroed; do not
-	     * count zero-vs-zero as corruption. */
-	    !(shm_published->fleet_op_count == 0 && parent_stats.op_count == 0)) {
-		/* Mismatch: the mirror disagrees with the canonical aggregate.
-		 * The canonical wins; log + bump. */
-		if (shm_published->fleet_op_count != 0 &&
-		    parent_stats.op_count > shm_published->fleet_op_count) {
-			/* Could be expected lag from the previous publish if
-			 * we just incremented; only flag when the published
-			 * value moved independently of our writes. */
-			parent_stats.shm_published_corrupt++;
-			output(0, "stats_publish: mirror page op_count=%lu, "
-				  "aggregate=%lu (mirror scribbled?)\n",
-				  shm_published->fleet_op_count,
-				  parent_stats.op_count);
-		}
-	}
 
 	shm_published->fleet_op_count = parent_stats.op_count;
 }

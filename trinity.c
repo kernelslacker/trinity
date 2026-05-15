@@ -31,6 +31,7 @@
 #include "signals.h"
 #include "shm.h"
 #include "stats.h"
+#include "stats_ring.h"
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"
@@ -640,8 +641,8 @@ int main(int argc, char* argv[])
 	destroy_global_objects();
 
 	output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
-		shm->stats.op_count + sum_local_op_counts(),
-		shm->stats.successes, shm->stats.failures);
+		parent_stats.op_count + sum_local_op_counts(),
+		parent_stats.successes, parent_stats.failures);
 	if (show_stats == true)
 		dump_stats();
 

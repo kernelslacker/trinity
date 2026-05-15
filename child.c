@@ -1836,8 +1836,9 @@ void child_process(struct childdata *child, int childno)
 		 * fix; the upstream scribble source is still active. */
 		if ((child->op_nr & (LOCAL_STORM_CHECK_PERIOD - 1)) == 0 &&
 		    storm_rate_recycle(child)) {
-			__atomic_add_fetch(&shm->stats.children_recycled_on_storm,
-					   1, __ATOMIC_RELAXED);
+			stats_ring_enqueue(child->stats_ring,
+					   STATS_FIELD_CHILDREN_RECYCLED_ON_STORM,
+					   0, 1);
 			goto out;
 		}
 
@@ -1933,7 +1934,8 @@ void child_process(struct childdata *child, int childno)
 
 		if (is_alt_op) {
 			alarm(0);
-			__atomic_add_fetch(&shm->stats.op_count, 1, __ATOMIC_RELAXED);
+			stats_ring_enqueue(child->stats_ring,
+					   STATS_FIELD_OP_COUNT, 0, 1);
 		}
 
 		/* Feed the post-invocation edge delta back into the per-op
@@ -1967,7 +1969,13 @@ void child_process(struct childdata *child, int childno)
 			goto out;
 
 		if (syscalls_todo) {
-			if (shm->stats.op_count >= syscalls_todo) {
+			/* Read the parent-published mirror page rather than the
+			 * canonical aggregate (which is parent-private and not
+			 * visible from a child).  Mirror lag is bounded by the
+			 * parent's drain cadence (~ms), well inside the
+			 * termination granularity callers expect. */
+			if (shm_published != NULL &&
+			    shm_published->fleet_op_count >= syscalls_todo) {
 				__atomic_store_n(&shm->exit_reason,
 						EXIT_REACHED_COUNT, __ATOMIC_RELAXED);
 				goto out;

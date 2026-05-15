@@ -33,6 +33,7 @@
 #include "child.h"
 #include "random.h"
 #include "shm.h"
+#include "stats_ring.h"
 #include "trinity.h"
 
 static void arm_fail_nth(int fd, unsigned int n)
@@ -152,14 +153,15 @@ bool fault_injector(struct childdata *child)
 
 	arm_fail_nth(child->fail_nth_fd, n);
 
-	__atomic_add_fetch(&shm->stats.fault_injected, 1, __ATOMIC_RELAXED);
+	stats_ring_enqueue(child->stats_ring, STATS_FIELD_FAULT_INJECTED, 0, 1);
 
 	ret = do_alloc_syscall();
 
 	disarm_fail_nth(child->fail_nth_fd);
 
 	if (ret == -1 && errno == ENOMEM)
-		__atomic_add_fetch(&shm->stats.fault_consumed, 1, __ATOMIC_RELAXED);
+		stats_ring_enqueue(child->stats_ring,
+				   STATS_FIELD_FAULT_CONSUMED, 0, 1);
 
 	return true;
 }

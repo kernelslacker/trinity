@@ -6,9 +6,11 @@
  */
 
 #include <linux/sched.h>
+#include "child.h"
 #include "clone.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "stats_ring.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -57,9 +59,15 @@ static void sanitise_clone(struct syscallrecord *rec)
 
 	if (__atomic_load_n(&shm->newnet_in_flight, __ATOMIC_RELAXED) >=
 	    MAX_CONCURRENT_NEWNET) {
+		struct childdata *c = this_child();
+
 		rec->a1 &= ~CLONE_NEWNET;
-		__atomic_fetch_add(&shm->stats.unshare_newnet_throttled, 1,
-				   __ATOMIC_RELAXED);
+		if (c != NULL && c->stats_ring != NULL)
+			stats_ring_enqueue(c->stats_ring,
+					   STATS_FIELD_UNSHARE_NEWNET_THROTTLED,
+					   0, 1);
+		else
+			parent_stats.unshare_newnet_throttled++;
 		return;
 	}
 

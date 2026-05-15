@@ -2,8 +2,10 @@
  * SYSCALL_DEFINE1(unshare, unsigned long, unshare_flags)
  */
 #include <linux/sched.h>
+#include "child.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "stats_ring.h"
 
 #ifndef UNSHARE_EMPTY_MNTNS
 #define UNSHARE_EMPTY_MNTNS	0x00100000
@@ -45,8 +47,16 @@ static void sanitise_unshare(struct syscallrecord *rec)
 		 * another in-flight netns clone into copy_net_ns().
 		 */
 		rec->a1 &= ~CLONE_NEWNET;
-		__atomic_fetch_add(&shm->stats.unshare_newnet_throttled, 1,
-				   __ATOMIC_RELAXED);
+		{
+			struct childdata *c = this_child();
+
+			if (c != NULL && c->stats_ring != NULL)
+				stats_ring_enqueue(c->stats_ring,
+						   STATS_FIELD_UNSHARE_NEWNET_THROTTLED,
+						   0, 1);
+			else
+				parent_stats.unshare_newnet_throttled++;
+		}
 		return;
 	}
 
