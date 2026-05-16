@@ -72,6 +72,7 @@
 #include "edgepair.h"		/* EDGEPAIR_NO_PREV */
 #include "exit.h"		/* EXIT_NO_SYSCALLS_ENABLED */
 #include "healer.h"
+#include "healer_ring.h"
 #include "locks.h"
 #include "params.h"		/* do_32_arch, do_64_arch */
 #include "pids.h"		/* getpid wrapper */
@@ -259,8 +260,6 @@ _Static_assert(offsetof(struct healer_promoted, weight) == 4,
 _Static_assert(sizeof(unsigned int) == 4,
 	       "unsigned int must be 4 bytes for packed CAS");
 
-static void healer_maybe_decay(void);
-
 static unsigned int healer_predset_hash(unsigned int pred_a, unsigned int pred_b)
 {
 	uint32_t h = FNV1A_OFFSET_BASIS;
@@ -336,24 +335,6 @@ static void healer_unpack_key(uint64_t key, unsigned int *pred_a,
 	*pred_b = tmp.pb;
 }
 
-/*
- * Pack (nr, weight) into the uint64_t entry view of struct
- * healer_promoted.  weight == 0 marks an empty entry; a real entry
- * always carries weight >= 1, so the packed value is non-zero
- * whenever the slot is populated.
- */
-static uint64_t healer_pack_promoted(unsigned int nr, unsigned int weight)
-{
-	struct {
-		unsigned int n;
-		unsigned int w;
-	} tmp = { nr, weight };
-	uint64_t packed;
-
-	memcpy(&packed, &tmp, sizeof(packed));
-	return packed;
-}
-
 static void healer_unpack_promoted(uint64_t entry, unsigned int *nr,
 				   unsigned int *weight)
 {
@@ -367,151 +348,11 @@ static void healer_unpack_promoted(uint64_t entry, unsigned int *nr,
 	*weight = tmp.w;
 }
 
-/*
- * Bump the (predset, current_nr) tuple in `slot`, evicting the lowest-
- * weight existing promoted entry when the slot is full.  Returns true
- * if an eviction took place, so the caller can bump the eviction
- * counter without re-scanning the array.  Lockless: each promoted
- * entry is mutated via a 64-bit CAS on the (nr, weight) packed view,
- * weight == 0 is the empty-entry sentinel, and CAS failure restarts
- * the scan so we re-pick up any state another observer just published
- * (a concurrent insert of the same nr collapses onto the bump path
- * on the next pass; a concurrent eviction reopens an empty entry that
- * the next pass tries to claim before scanning for a new victim).
- */
-static bool healer_slot_record(struct healer_relation *slot,
-			       unsigned int current_nr)
-{
-	unsigned int i;
-	unsigned int victim_idx = 0;
-	unsigned int victim_weight = 0;
-	uint64_t victim_packed = 0;
-	bool victim_found;
-	uint64_t expected, target;
-	int restart_budget = HEALER_PROMOTED_PER_SLOT * 2;
-
-restart:
-	if (--restart_budget < 0) {
-		/* Defensive bound on the lockless retry loop -- under
-		 * pathological CAS contention we'd rather drop one
-		 * observation than spin forever.  In practice the
-		 * observer-hook fire rate keeps per-slot contention
-		 * vanishingly small; this exists for the worst-case
-		 * tail and never trips in steady state. */
-		return false;
-	}
-
-	/* Phase 1: scan for an existing (predset, current_nr) entry and
-	 * bump its weight.  Atomic load gives us a coherent snapshot of
-	 * the (nr, weight) pair; weight == 0 means the entry is empty
-	 * (and not in flight, since claim/evict CASes publish weight >=
-	 * 1 atomically). */
-	for (i = 0; i < HEALER_PROMOTED_PER_SLOT; i++) {
-		uint64_t entry;
-		unsigned int weight, nr;
-
-		entry = __atomic_load_n(&slot->promoted[i].entry,
-					__ATOMIC_RELAXED);
-		healer_unpack_promoted(entry, &nr, &weight);
-
-		if (weight != 0 && nr == current_nr) {
-			__atomic_fetch_add(&slot->promoted[i].weight,
-					   1, __ATOMIC_RELAXED);
-			return false;
-		}
-	}
-
-	/* Phase 2: try to claim an empty entry for current_nr.  CAS the
-	 * packed (nr, weight) field from the all-zero empty marker to
-	 * (current_nr, 1); a competing observer that wins the CAS for
-	 * some nr' instead leaves us to restart, so we either land on
-	 * the existing-match path (if nr' == current_nr) or claim a
-	 * different empty entry on the next pass. */
-	for (i = 0; i < HEALER_PROMOTED_PER_SLOT; i++) {
-		uint64_t loaded;
-
-		loaded = __atomic_load_n(&slot->promoted[i].entry,
-					 __ATOMIC_RELAXED);
-		if (loaded != 0)
-			continue;
-
-		expected = 0;
-		target = healer_pack_promoted(current_nr, 1);
-
-		if (__atomic_compare_exchange_n(&slot->promoted[i].entry,
-						&expected, target, false,
-						__ATOMIC_RELEASE,
-						__ATOMIC_RELAXED))
-			return false;
-
-		/* CAS lost: another observer just published into this
-		 * entry.  Restart from Phase 1 in case they published
-		 * our nr (in which case we want the bump path). */
-		goto restart;
-	}
-
-	/* Phase 3: slot is full -- displace the lowest-weight entry.
-	 * Mirrors the original eviction policy: the new entry inherits
-	 * victim_weight + 1 so a freshly displaced predset is not
-	 * instantly re-evicted on its next observation.  CAS the
-	 * victim's exact prior packed value so a concurrent bump or
-	 * eviction is detected and triggers a re-scan. */
-	victim_found = false;
-	for (i = 0; i < HEALER_PROMOTED_PER_SLOT; i++) {
-		uint64_t entry;
-		unsigned int weight, nr;
-
-		entry = __atomic_load_n(&slot->promoted[i].entry,
-					__ATOMIC_RELAXED);
-		healer_unpack_promoted(entry, &nr, &weight);
-
-		/* Re-check for a concurrent insert of current_nr before
-		 * we evict -- another observer might have published our
-		 * nr while we were scanning Phases 1-2. */
-		if (weight != 0 && nr == current_nr) {
-			__atomic_fetch_add(&slot->promoted[i].weight,
-					   1, __ATOMIC_RELAXED);
-			return false;
-		}
-
-		/* A concurrent eviction may have just opened a fresh
-		 * empty entry; restart so we can try the cheaper Phase 2
-		 * claim path before resorting to another eviction. */
-		if (weight == 0)
-			goto restart;
-
-		if (!victim_found || weight < victim_weight) {
-			victim_idx = i;
-			victim_weight = weight;
-			victim_packed = entry;
-			victim_found = true;
-		}
-	}
-
-	expected = victim_packed;
-	target = healer_pack_promoted(current_nr, victim_weight + 1);
-
-	if (__atomic_compare_exchange_n(&slot->promoted[victim_idx].entry,
-					&expected, target, false,
-					__ATOMIC_RELEASE,
-					__ATOMIC_RELAXED))
-		return true;
-
-	/* Victim was bumped or evicted out from under us -- restart. */
-	goto restart;
-}
-
 void healer_observe_relation(struct childdata *child, unsigned int current_nr)
 {
 	unsigned int pred_a, pred_b;
-	unsigned int predset_hash;
-	unsigned int slot_idx;
-	unsigned int probe;
-	struct healer_relation *table;
-	uint64_t target_key;
-	bool evicted = false;
 
-	if (child == NULL)
+	if (child == NULL || child->healer_ring == NULL)
 		return;
 
 	/* Need both predecessor slots populated.  The first two syscalls of
@@ -536,242 +377,23 @@ void healer_observe_relation(struct childdata *child, unsigned int current_nr)
 		pred_b = tmp;
 	}
 
-	/*
-	 * Bump the per-syscall predecessor-appearance counter that feeds the
-	 * Bayesian-smoothed normalisation on the dump path.  Done before the
-	 * lookup so a probe-limit miss still increments the denominator --
-	 * the syscall *did* appear as a predecessor in an observation, even
-	 * if no slot was available to credit the pair.  Skip the second
-	 * bump when pred_a == pred_b so a self-paired predset (same syscall
-	 * fired twice in a row) doesn't get double-counted against itself.
-	 */
-	if (pred_a < MAX_NR_SYSCALL)
-		__atomic_add_fetch(&shm->stats.healer_pred_appearance[pred_a],
-				   1, __ATOMIC_RELAXED);
-	if (pred_b != pred_a && pred_b < MAX_NR_SYSCALL)
-		__atomic_add_fetch(&shm->stats.healer_pred_appearance[pred_b],
-				   1, __ATOMIC_RELAXED);
-
-	predset_hash = healer_predset_hash(pred_a, pred_b);
-	slot_idx = predset_hash & (HEALER_RELATION_SLOTS - 1);
-	table = shm->healer_relations;
-	target_key = healer_pack_key(pred_a, pred_b, predset_hash);
-
-	for (probe = 0; probe < HEALER_PROBE_LIMIT; probe++) {
-		struct healer_relation *slot;
-		unsigned int idx;
-		uint64_t slot_key;
-
-		idx = (slot_idx + probe) & (HEALER_RELATION_SLOTS - 1);
-		slot = &table[idx];
-		slot_key = __atomic_load_n(&slot->key, __ATOMIC_ACQUIRE);
-
-		if (slot_key == 0) {
-			uint64_t expected = 0;
-
-			if (__atomic_compare_exchange_n(
-					&slot->key, &expected, target_key,
-					false, __ATOMIC_RELEASE,
-					__ATOMIC_RELAXED)) {
-				/* Slot is now ours.  Fall through to
-				 * healer_slot_record so the first promoted
-				 * entry goes in via the same CAS-claim
-				 * machinery any concurrent observer also
-				 * uses -- a second observer that ACQUIREs
-				 * slot->key right after our publish and
-				 * races into promoted[0] is handled
-				 * uniformly without needing a special
-				 * "winner stores promoted[0] directly"
-				 * path that would race against them. */
-				evicted = healer_slot_record(slot, current_nr);
-				break;
-			}
-
-			/* CAS lost: another observer claimed this slot.
-			 * `expected` now holds the winning key -- if it
-			 * matches our predset, fall through to the match
-			 * path so we still bump (predset, current_nr). */
-			slot_key = expected;
-			if (slot_key != target_key)
-				continue;
-		}
-
-		if (slot_key == target_key) {
-			evicted = healer_slot_record(slot, current_nr);
-			break;
-		}
-	}
-
-	if (probe == HEALER_PROBE_LIMIT) {
-		/* Ran off the end of the probe window without finding
-		 * either the matching predset or an empty slot.  Drop the
-		 * observation and surface the table-full event so the
-		 * operator can spot a saturated table in the periodic dump. */
-		__atomic_fetch_add(&shm->stats.healer_table_full, 1,
-				   __ATOMIC_RELAXED);
-	}
-
-	__atomic_fetch_add(&shm->stats.healer_relations_observed, 1,
-			   __ATOMIC_RELAXED);
-	if (evicted)
-		__atomic_fetch_add(&shm->stats.healer_evictions, 1,
-				   __ATOMIC_RELAXED);
-
-	/* Periodic weight-decay: every HEALER_DECAY_OBSERVATIONS one
-	 * CAS-elected observer halves all entry weights (floor 1) so the
-	 * relation table converges on persistently-correlated tuples
-	 * rather than accumulating weight=1 co-occurrence noise that
-	 * eviction alone only sheds at slot saturation.  Cheap fast path
-	 * when the gap isn't reached. */
-	healer_maybe_decay();
-}
-
-/*
- * Periodic weight-decay trigger.
- *
- * Without decay, every (predset, nr) tuple ever observed accumulates
- * weight monotonically until the slot saturates and the lowest-weight
- * entry gets evicted -- which means a single one-time co-occurrence
- * (weight=1) sits in the table forever as long as the slot has room,
- * dragging the top-N dump toward syscall-frequency noise rather than
- * causal correlation.  Periodic halving lets the table converge on
- * persistently-correlated tuples: anything getting bumped at least
- * every other window holds its rank, while a one-shot weight=1 entry
- * stays at the noise floor and gets displaced when a real follow-up
- * needs the slot.
- *
- * 5000 observations: tighter than the snapshot cadence (50000) on
- * purpose -- fleet data shows the observation rate collapses an order
- * of magnitude (~30/sec early-run -> ~0.5/sec post-saturation) once
- * KCOV coverage flattens, so a 50K threshold meant decay never fired
- * during the saturated steady state where it's most needed (top-N
- * dominated by frozen historical bursts that don't reflect current
- * causation).  5K fires several times during the hot phase too, but
- * the decay walk is a single relaxed-atomic sweep so the cost is
- * negligible vs the snapshot cadence on which the operator's only
- * visible artifact (the dump line) rides.  Decoupled from the
- * snapshot interval since the two don't need to share a value.
- */
-#define HEALER_DECAY_OBSERVATIONS	5000UL
-
-/*
- * Wall-clock secondary trigger for the decay walk.  The observation-based
- * trigger above only fires when new edges are being discovered, but on a
- * long-running fuzz the KCOV edge set saturates and the observation rate
- * collapses to ~0 -- which leaves the table frozen with whatever
- * historical weights it had at saturation, defeating the purpose of
- * decay (the top-N becomes a snapshot of the early-run discovery burst
- * rather than what's productive right now).  600s is comfortably longer
- * than a hot-phase observation window (decay fires several times during
- * the burst via the observation trigger, well before 10 minutes elapses)
- * but short enough that a saturated steady-state table doesn't sit
- * unaged for hours.  Hardcoded -- no operator knob, no expectation that
- * fleet boxes will need to retune this.
- */
-#define HEALER_DECAY_INTERVAL_SEC	1800UL
-
-/*
- * Single-runner election + decay walk.  Mirrors healer_maybe_snapshot's
- * window-CAS pattern so concurrent observers don't all walk the table
- * at the same boundary; the decay walk itself is best-effort relaxed
- * stores against the live table -- a concurrent observer's
- * fetch-add-1 on an entry the decay walk just halved loses at most one
- * weight bump, which the next observation re-credits.  Intentionally
- * cheaper than the snapshot path: no staging buffer, no fsync, no
- * rename -- just one pass over HEALER_RELATION_SLOTS * HEALER_PROMOTED_PER_SLOT
- * entries (= 128K relaxed atomic ops worst case, well under a millisecond).
- */
-static void healer_maybe_decay(void)
-{
-	unsigned long obs_now, old;
-	unsigned long now_sec, old_time, new_obs;
-	unsigned int i, j;
-	bool obs_trigger, time_trigger;
-
-	if (shm == NULL)
-		return;
-
-	obs_now = __atomic_load_n(&shm->stats.healer_relations_observed,
-				  __ATOMIC_RELAXED);
-	old = __atomic_load_n(&shm->stats.healer_obs_at_last_decay,
-			      __ATOMIC_RELAXED);
-	old_time = __atomic_load_n(&shm->stats.healer_time_at_last_decay,
-				   __ATOMIC_RELAXED);
-	now_sec = (unsigned long)time(NULL);
-
-	obs_trigger = (obs_now >= old + HEALER_DECAY_OBSERVATIONS);
-	time_trigger = (now_sec >= old_time + HEALER_DECAY_INTERVAL_SEC);
-
-	if (!obs_trigger && !time_trigger)
-		return;
-
-	/* Window-CAS election on healer_obs_at_last_decay: whichever observer
-	 * wins owns this decay boundary; losers see the advanced high-water-
-	 * mark on their next call and early-return.  RELAXED is enough -- the
-	 * walk's atomic stores carry their own ordering against concurrent
-	 * observer bumps, and the counter is just gating who runs, not what
-	 * they observe.
+	/* Enqueue a TRIPLE event for the parent's drain to apply.  The
+	 * pred_appearance bumps for both predecessors, the open-addressed
+	 * probe walk, the table-full / evictions / relations_observed
+	 * counter updates, and the periodic decay election all run in
+	 * parent context now -- single-writer, no CAS loop, no defensive
+	 * retry budget.  See apply_triple() in healer-ring.c.
 	 *
-	 * When only the time trigger fires, obs_now may equal `old` (no new
-	 * observations since the last decay), and a CAS of (old -> old) would
-	 * succeed for every concurrent observer rather than electing one.
-	 * Force the new value to be strictly greater in that case so the CAS
-	 * is a real change and contested calls actually serialise.  The +1
-	 * skew on the next observation-trigger boundary is irrelevant against
-	 * the 5000-observation window. */
-	new_obs = (obs_now > old) ? obs_now : old + 1;
-	if (!__atomic_compare_exchange_n(&shm->stats.healer_obs_at_last_decay,
-					 &old, new_obs,
-					 false,
-					 __ATOMIC_RELAXED, __ATOMIC_RELAXED))
-		return;
-
-	/* Won the election -- advance the time baseline so the next time-
-	 * trigger window starts cleanly regardless of which trigger fired
-	 * this time.  No CAS needed: the obs-field election above already
-	 * guarantees we're the sole writer for this decay boundary. */
-	__atomic_store_n(&shm->stats.healer_time_at_last_decay, now_sec,
-			 __ATOMIC_RELAXED);
-
-	/* Walk the table once, halving every populated entry's weight with
-	 * a floor of 1.  Floor 1 (rather than evicting weight=0 entries) is
-	 * deliberate: a borderline-real relation that hasn't yet accumulated
-	 * a second bump still gets one more decay window to prove itself
-	 * before the slot's eviction policy gets a crack at it.  Race window
-	 * with concurrent observers is fine: a fetch_add on an entry we
-	 * halved races, but the worst case is one lost bump per racing
-	 * observer per decay -- vanishing against the per-window observation
-	 * count. */
-	for (i = 0; i < HEALER_RELATION_SLOTS; i++) {
-		struct healer_relation *slot = &shm->healer_relations[i];
-		uint64_t slot_key;
-
-		slot_key = __atomic_load_n(&slot->key, __ATOMIC_ACQUIRE);
-		if (slot_key == 0)
-			continue;
-
-		for (j = 0; j < HEALER_PROMOTED_PER_SLOT; j++) {
-			uint64_t entry;
-			unsigned int weight, nr, halved;
-
-			entry = __atomic_load_n(&slot->promoted[j].entry,
-						__ATOMIC_RELAXED);
-			healer_unpack_promoted(entry, &nr, &weight);
-
-			if (weight <= 1)
-				continue;
-
-			halved = weight / 2;
-			if (halved < 1)
-				halved = 1;
-			__atomic_store_n(&slot->promoted[j].weight, halved,
-					 __ATOMIC_RELAXED);
-		}
-	}
-
-	__atomic_fetch_add(&shm->stats.healer_weight_decays_run, 1,
-			   __ATOMIC_RELAXED);
+	 * Drop on ring overflow: parent_healer.ring_overflow_total
+	 * already conveys "we lost samples".  In the cold-start regime
+	 * (~30 observations/sec) the ring drains every main_loop tick well
+	 * before it can fill; in the post-saturation steady state the
+	 * observation rate collapses to ~0.5/sec so the ring is essentially
+	 * always empty. */
+	(void)healer_ring_enqueue_triple(child->healer_ring,
+					 pred_a, pred_b, current_nr);
 }
+
 
 /*
  * Snapshot tuple emitted to the dump's top-N selector.  Each promoted
@@ -1186,16 +808,11 @@ void healer_table_dump(void)
 	if (succ_weight == NULL)
 		return;
 
-	/* Drive a time-triggered decay from the dump path.  Decay is
-	 * primarily called from healer_observe_relation on every observation,
-	 * but observations dry up once KCOV coverage saturates -- with no
-	 * observation-side caller, the wall-clock secondary trigger inside
-	 * healer_maybe_decay would never get a chance to fire.  The dump runs
-	 * on a fixed cadence regardless of observation activity, so calling
-	 * maybe_decay here gives the time trigger a guaranteed evaluation
-	 * point.  CAS election inside maybe_decay makes it safe to be called
-	 * concurrently with the observation-path callers. */
-	healer_maybe_decay();
+	/* Decay runs from the parent's healer_ring_drain_all() now -- the
+	 * drain fires once per main_loop iteration regardless of observer
+	 * activity, so the wall-clock secondary trigger inside
+	 * healer_apply_maybe_decay() always gets evaluated.  The dump no
+	 * longer needs to chase the trigger from this side. */
 
 	/* Snapshot the total observation count once up-front so the
 	 * pollution filter inside the scan loops compares every
@@ -1206,8 +823,7 @@ void healer_table_dump(void)
 	 * not.  Reused for the summary line below in place of a second
 	 * load; the older code read it again there only because nothing
 	 * upstream had needed it yet. */
-	observed = __atomic_load_n(&shm->stats.healer_relations_observed,
-				   __ATOMIC_RELAXED);
+	observed = parent_healer.relations_observed;
 
 	/* Lockless sweep: each slot is read via a single ACQUIRE-load of
 	 * slot->key so the (pred_a, pred_b, predset_hash) tuple is a
@@ -1219,23 +835,25 @@ void healer_table_dump(void)
 	 * top-10 right now" intent and is the same tolerance
 	 * cmp_hints' lockless reader documents. */
 	for (i = 0; i < HEALER_RELATION_SLOTS; i++) {
-		const struct healer_relation *slot = &shm->healer_relations[i];
+		const struct healer_relation *slot = &parent_healer.relations[i];
 		uint64_t slot_key;
 		unsigned int slot_pred_a, slot_pred_b;
 		unsigned int slot_promoted = 0;
 		unsigned long pred_a_freq, pred_b_freq;
 
-		slot_key = __atomic_load_n(&slot->key, __ATOMIC_ACQUIRE);
+		/* Parent-private read: single-writer aggregate, no atomic
+		 * load needed.  Slot scribbles were the original motivation
+		 * for the corrupt_in_table accounting below; that pathway is
+		 * gone now (the kernel cannot reach this memory) but the
+		 * bound checks stay as defence-in-depth and to keep the
+		 * dump format stable.  C3 will simplify them out alongside
+		 * the in-shm field decls and the related scrub helpers. */
+		slot_key = slot->key;
 		if (slot_key == 0)
 			continue;
 
 		healer_unpack_key(slot_key, &slot_pred_a, &slot_pred_b);
 
-		/* Slot-level corruption check: pred_a / pred_b stamped with a
-		 * non-syscall value mean a stray write hit this slot's key.
-		 * Skip the entire slot — all its promoted entries inherit the
-		 * bad predecessor pair and have nothing to contribute to the
-		 * dump.  Count once per corrupt slot, not per promoted entry. */
 		if (slot_pred_a >= MAX_NR_SYSCALL ||
 		    slot_pred_b >= MAX_NR_SYSCALL) {
 			corrupt_in_table++;
@@ -1244,15 +862,9 @@ void healer_table_dump(void)
 
 		/* Hoist the per-syscall appearance reads out of the per-promoted
 		 * inner loop -- they are slot-constant (every promoted entry in
-		 * the slot shares the same predecessor pair) and the dump path
-		 * shouldn't pay HEALER_PROMOTED_PER_SLOT extra atomic loads per
-		 * slot for a value it could read once. */
-		pred_a_freq = __atomic_load_n(
-			&shm->stats.healer_pred_appearance[slot_pred_a],
-			__ATOMIC_RELAXED);
-		pred_b_freq = __atomic_load_n(
-			&shm->stats.healer_pred_appearance[slot_pred_b],
-			__ATOMIC_RELAXED);
+		 * the slot shares the same predecessor pair). */
+		pred_a_freq = parent_healer.pred_appearance[slot_pred_a];
+		pred_b_freq = parent_healer.pred_appearance[slot_pred_b];
 
 		for (j = 0; j < HEALER_PROMOTED_PER_SLOT; j++) {
 			uint64_t entry;
@@ -1260,18 +872,12 @@ void healer_table_dump(void)
 			unsigned long norm_score;
 			struct healer_dump_entry cand;
 
-			entry = __atomic_load_n(&slot->promoted[j].entry,
-						__ATOMIC_RELAXED);
+			entry = slot->promoted[j].entry;
 			healer_unpack_promoted(entry, &nr, &weight);
 
 			if (weight == 0)
 				continue;
 
-			/* Per-entry corruption check: stray scribble may have
-			 * left pred_a/pred_b intact but trashed the promoted
-			 * entry's nr.  Skip from gt counts + top-N — a corrupt
-			 * weight=1 entry would otherwise inflate the noise
-			 * floor and chase the normalised ranking. */
 			if (nr >= MAX_NR_SYSCALL) {
 				corrupt_in_table++;
 				continue;
@@ -1417,9 +1023,7 @@ void healer_table_dump(void)
 	 * "low-raw skipped: N" line covers both the triple and pair sides.
 	 */
 	for (i = 0; i < MAX_NR_SYSCALL; i++) {
-		unsigned long producer_freq = __atomic_load_n(
-			&shm->stats.healer_pred_appearance[i],
-			__ATOMIC_RELAXED);
+		unsigned long producer_freq = parent_healer.pred_appearance[i];
 
 		for (j = 0; j < MAX_NR_SYSCALL; j++) {
 			unsigned int weight;
@@ -1505,18 +1109,13 @@ void healer_table_dump(void)
 		}
 	}
 
-	/* Refresh the lazily-maintained occupancy counter so the dump
-	 * we are about to emit reflects the slot scan we just did.  The
-	 * hot observer-hook path stays free of an extra counter store. */
-	__atomic_store_n(&shm->stats.healer_unique_predsets, occupied,
-			 __ATOMIC_RELAXED);
-
-	table_full = __atomic_load_n(&shm->stats.healer_table_full,
-				     __ATOMIC_RELAXED);
-	evictions = __atomic_load_n(&shm->stats.healer_evictions,
-				    __ATOMIC_RELAXED);
-	decays_run = __atomic_load_n(&shm->stats.healer_weight_decays_run,
-				     __ATOMIC_RELAXED);
+	/* Parent-private aggregate reads -- no atomic load needed since
+	 * the apply path is single-writer in parent context.  Occupancy
+	 * is no longer surfaced through a separate stats field; the
+	 * `occupied` local from the slot scan above is dumped directly. */
+	table_full = parent_healer.table_full;
+	evictions = parent_healer.evictions;
+	decays_run = parent_healer.weight_decays_run;
 
 	if (occupied == 0 && observed == 0 && pair_populated == 0) {
 		free(succ_weight);
@@ -1619,9 +1218,7 @@ void healer_table_dump(void)
 			unsigned int min_idx = 0;
 			unsigned int k;
 
-			appearances = __atomic_load_n(
-				&shm->stats.healer_pred_appearance[n],
-				__ATOMIC_RELAXED);
+			appearances = parent_healer.pred_appearance[n];
 			if (appearances == 0)
 				continue;
 
@@ -1947,31 +1544,28 @@ bool healer_save_file(const char *path)
 	int fd;
 	int ret;
 
-	if (path == NULL || shm == NULL)
+	if (path == NULL)
 		return false;
 
 	if (uname(&u) != 0)
 		return false;
 
-	/* Stage the payload through a heap buffer so healer_crc32() and
-	 * healer_write_all() see byte-identical bytes.  Observer hooks CAS
-	 * into shm->healer_relations continuously during the ~1.13MB write;
-	 * computing the CRC straight from shm and then writing straight
-	 * from shm again would describe T1 in the on-disk CRC and T2 in the
-	 * on-disk payload, which the loader's CRC check would then reject.
-	 * Mirror the load path's staging discipline. */
+	/* Stage the payload through a heap buffer so the scrub pass below
+	 * doesn't mutate the live canonical.  The canonical is parent-
+	 * private and (post-retrofit) the kernel cannot scribble it, so
+	 * the CRC-tear-against-concurrent-writers argument the original
+	 * staging existed for is moot -- the apply path is single-writer
+	 * in parent context and runs sequentially with this save -- but
+	 * the scrub helper still wants a heap buffer to operate on. */
 	snapshot = malloc(HEALER_PAYLOAD_BYTES);
 	if (snapshot == NULL)
 		return false;
-	memcpy(snapshot, shm->healer_relations, HEALER_PAYLOAD_BYTES);
+	memcpy(snapshot, parent_healer.relations, HEALER_PAYLOAD_BYTES);
 
-	/* Sanitise the heap snapshot before computing the CRC and writing
-	 * it out, so corrupt-slot scribbles in the live table don't get
-	 * persisted to disk and reloaded back into shm on warm-start,
-	 * carrying garbage across runs.  See healer_scrub_snapshot() for
-	 * the slot-level + per-entry rules.  The on-disk file becomes an
-	 * idealised clean view; the live shm->healer_relations[] is
-	 * untouched -- decay and eviction handle it in the normal way. */
+	/* Defence-in-depth scrub before writing.  Vestigial post-retrofit
+	 * (parent-private canonical isn't scribbleable by stray syscall
+	 * writes any more) but harmless to keep until C3 cleans up the
+	 * corruption-aging codepath alongside the in-shm field decls. */
 	scrubbed = healer_scrub_snapshot(snapshot);
 
 	memset(&hdr, 0, sizeof(hdr));
@@ -1981,8 +1575,7 @@ bool healer_save_file(const char *path)
 	hdr.promoted_per_slot = HEALER_PROMOTED_PER_SLOT;
 	hdr.max_nr_syscall = MAX_NR_SYSCALL;
 	hdr.payload_crc32 = healer_crc32(snapshot, HEALER_PAYLOAD_BYTES);
-	hdr.observations = __atomic_load_n(&shm->stats.healer_relations_observed,
-					   __ATOMIC_RELAXED);
+	hdr.observations = parent_healer.relations_observed;
 	strncpy(hdr.kernel_release, u.release, sizeof(hdr.kernel_release) - 1);
 	hdr.kernel_release[sizeof(hdr.kernel_release) - 1] = '\0';
 	strncpy(hdr.kernel_version, u.version, sizeof(hdr.kernel_version) - 1);
@@ -2042,7 +1635,7 @@ bool healer_load_file(const char *path)
 	int fd;
 	bool ok = false;
 
-	if (path == NULL || shm == NULL)
+	if (path == NULL)
 		return false;
 
 	fd = open(path, O_RDONLY);
@@ -2084,8 +1677,8 @@ bool healer_load_file(const char *path)
 	}
 
 	/* Stage the payload into a heap buffer first so a partial read or
-	 * CRC failure leaves shm->healer_relations untouched (a torn load
-	 * straight into shm would poison every child's view of the table). */
+	 * CRC failure leaves parent_healer.relations untouched (a torn
+	 * load would poison the dump and the next publish). */
 	tmpbuf = malloc(HEALER_PAYLOAD_BYTES);
 	if (tmpbuf == NULL)
 		goto out_close;
@@ -2102,17 +1695,21 @@ bool healer_load_file(const char *path)
 	 * with what was written, the file itself may carry corrupt slots --
 	 * an old snapshot saved before the save-side scrub commit, or a
 	 * tail-probability bit-flip in a hex value that still satisfies CRC.
-	 * Run the same sanitiser the save side runs so the bytes we're about
-	 * to memcpy into shm match the slot-level + per-entry invariants the
-	 * dump path enforces.  The scrub touches tmpbuf only; shm still gets
-	 * the cleaned bytes via the existing memcpy below. */
+	 * Vestigial post-retrofit but kept until C3 trims the corruption-
+	 * aging codepath alongside the in-shm field decls. */
 	scrubbed = healer_scrub_snapshot(tmpbuf);
 
-	memcpy(shm->healer_relations, tmpbuf, HEALER_PAYLOAD_BYTES);
-	__atomic_store_n(&shm->stats.healer_relations_observed,
-			 hdr.observations, __ATOMIC_RELAXED);
-	__atomic_store_n(&shm->stats.healer_obs_at_last_snapshot,
-			 hdr.observations, __ATOMIC_RELAXED);
+	memcpy(parent_healer.relations, tmpbuf, HEALER_PAYLOAD_BYTES);
+	parent_healer.relations_observed = hdr.observations;
+	parent_healer.obs_at_last_snapshot = hdr.observations;
+	/* Mark every populated slot dirty so the first publish step
+	 * propagates the loaded table into the mirror page. */
+	{
+		unsigned int n;
+		for (n = 0; n < HEALER_RELATION_SLOTS; n++)
+			if (parent_healer.relations[n].key != 0)
+				parent_healer.relations_dirty[n] = 1;
+	}
 	ok = true;
 	if (scrubbed != 0)
 		output(0, "healer_load_file: scrubbed %u corrupt slots/entries from loaded snapshot\n",
@@ -2268,28 +1865,27 @@ void healer_enable_snapshots(const char *path)
 
 	/* Anchor the wall-clock floor to fuzz-start so the first time-trigger
 	 * fires HEALER_SNAPSHOT_INTERVAL_SEC after enable rather than
-	 * immediately on the first child's first call against a near-empty
-	 * table.  Defensive shm guard mirrors healer_maybe_snapshot()'s. */
-	if (shm != NULL)
-		__atomic_store_n(&shm->stats.healer_last_snapshot_time,
-				 (unsigned long)time(NULL), __ATOMIC_RELAXED);
+	 * immediately on the first drain against a near-empty table. */
+	parent_healer.last_snapshot_time = (unsigned long)time(NULL);
 }
 
 void healer_maybe_snapshot(void)
 {
-	unsigned long obs_now, old, expect;
-	unsigned long now_sec, old_time, new_obs;
+	unsigned long obs_now, old, now_sec, old_time;
 	bool obs_trigger, time_trigger;
 
-	if (!healer_snapshot_enabled || shm == NULL)
+	if (!healer_snapshot_enabled)
 		return;
 
-	obs_now = __atomic_load_n(&shm->stats.healer_relations_observed,
-				  __ATOMIC_RELAXED);
-	old = __atomic_load_n(&shm->stats.healer_obs_at_last_snapshot,
-			      __ATOMIC_RELAXED);
-	old_time = __atomic_load_n(&shm->stats.healer_last_snapshot_time,
-				   __ATOMIC_RELAXED);
+	/* Single-writer parent-context state -- the CAS election that
+	 * existed to serialise concurrent child callers collapses to a
+	 * plain comparison now that healer_maybe_snapshot() runs only
+	 * from healer_ring_drain_all().  Same trigger pair as before
+	 * (observation-count + wall-clock), same thresholds, same on-
+	 * disk output: only the locking discipline changed. */
+	obs_now = parent_healer.relations_observed;
+	old = parent_healer.obs_at_last_snapshot;
+	old_time = parent_healer.last_snapshot_time;
 	now_sec = (unsigned long)time(NULL);
 
 	obs_trigger = (obs_now >= old + HEALER_SNAPSHOT_OBSERVATIONS);
@@ -2298,55 +1894,9 @@ void healer_maybe_snapshot(void)
 	if (!obs_trigger && !time_trigger)
 		return;
 
-	/* Race for the window slot.  Whoever wins this CAS owns the
-	 * WINDOW boundary; the others see the new high-water-mark on
-	 * their next call and early-return.  RELAXED ordering is enough
-	 * -- the save itself reads the relation table via the same
-	 * atomic-load discipline the dump path uses, and the counter is
-	 * just gating who runs, not what they observe.
-	 *
-	 * When only the time trigger fires, obs_now may equal `old` (no
-	 * new observations since the last snapshot, but 5min has elapsed),
-	 * and a CAS of (old -> old) would succeed for every concurrent
-	 * caller rather than electing one.  Force the new value to be
-	 * strictly greater in that case so the CAS is a real change and
-	 * contested calls actually serialise.  The +1 skew on the next
-	 * observation-trigger boundary is irrelevant against a 5000-obs
-	 * window.  Mirrors the same trick in healer_maybe_decay(). */
-	new_obs = (obs_now > old) ? obs_now : old + 1;
-	if (!__atomic_compare_exchange_n(&shm->stats.healer_obs_at_last_snapshot,
-					 &old, new_obs,
-					 false,
-					 __ATOMIC_RELAXED, __ATOMIC_RELAXED))
-		return;
-
-	/* Race for the active-saver slot.  A previous WINDOW's saver may
-	 * still be mid-healer_save_file() (slow disk, hot fleet); if so,
-	 * bail before starting a second concurrent save into the same
-	 * path -- two savers would race on the final rename and the
-	 * on-disk file would end up being whichever finished second.
-	 * The window-CAS above is left advanced; that boundary belongs
-	 * to the in-flight saver. */
-	expect = 0;
-	if (!__atomic_compare_exchange_n(&shm->stats.healer_save_in_progress,
-					 &expect, 1UL,
-					 false,
-					 __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
-		__atomic_fetch_add(&shm->stats.healer_snapshot_overruns, 1,
-				   __ATOMIC_RELAXED);
-		return;
-	}
-
+	parent_healer.obs_at_last_snapshot = obs_now;
 	healer_save_file(healer_snapshot_path);
-
-	/* Advance the wall-clock baseline so the next time-trigger window
-	 * starts cleanly regardless of which trigger fired this time.  No
-	 * CAS needed: the save-in-progress flag above already guarantees
-	 * we're the sole writer for this snapshot boundary. */
-	__atomic_store_n(&shm->stats.healer_last_snapshot_time, now_sec,
-			 __ATOMIC_RELAXED);
-	__atomic_store_n(&shm->stats.healer_save_in_progress, 0,
-			 __ATOMIC_RELAXED);
+	parent_healer.last_snapshot_time = now_sec;
 }
 
 /*
@@ -2382,54 +1932,48 @@ void healer_maybe_snapshot(void)
 
 void healer_pair_seed(unsigned int pred, unsigned int succ, unsigned int weight)
 {
-	unsigned int expected = 0;
-
-	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
-		return;
-
-	/* Don't overwrite a cell that already carries a weight -- a
-	 * previous seed call or an in-flight observation for this
-	 * (pred, succ) pair is more authoritative than this caller, and
-	 * the seed loader is expected to be idempotent.  CAS failure is
-	 * a silent no-op so the loader can re-run without double-counting. */
-	if (__atomic_compare_exchange_n(&shm->healer_pair_table[pred][succ],
-					&expected, weight, false,
-					__ATOMIC_RELAXED, __ATOMIC_RELAXED))
-		__atomic_fetch_add(&shm->stats.healer_pair_seeded, 1,
-				   __ATOMIC_RELAXED);
+	/* Forward to the parent-private canonical setter.  The seed
+	 * loader runs pre-fork in the parent and writes parent_healer
+	 * directly; the first publish step inside healer_ring_drain_all()
+	 * propagates the seeded weights to the mirror page that children
+	 * then read from set_syscall_nr_healer.  Idempotent (skips a
+	 * cell already carrying a weight). */
+	healer_aggregate_pair_set(pred, succ, weight);
 }
 
 void healer_pair_observe(unsigned int pred, unsigned int succ)
 {
-	unsigned int cur;
+	struct childdata *child;
 
 	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
 		return;
 
-	/* Load + CAS loop instead of a bare fetch_add so the cell
-	 * saturates at HEALER_PAIR_MAX_WEIGHT cleanly.  Concurrent
-	 * observers retry on CAS failure; under steady-state observer-
-	 * hook fire rates per-cell contention is vanishingly small, and
-	 * once a cell hits the cap every observer short-circuits without
-	 * touching the line at all. */
-	cur = __atomic_load_n(&shm->healer_pair_table[pred][succ],
-			      __ATOMIC_RELAXED);
-	while (cur < HEALER_PAIR_MAX_WEIGHT) {
-		if (__atomic_compare_exchange_n(
-				&shm->healer_pair_table[pred][succ],
-				&cur, cur + 1, false,
-				__ATOMIC_RELAXED, __ATOMIC_RELAXED))
-			return;
-	}
+	/* Enqueue a PAIR event onto the calling child's healer_ring.  The
+	 * parent's drain applies the bump with saturation at
+	 * HEALER_PAIR_MAX_WEIGHT under single-writer discipline -- no CAS
+	 * loop, no per-cell contention.  See apply_pair() in
+	 * healer-ring.c. */
+	child = this_child();
+	if (child == NULL || child->healer_ring == NULL)
+		return;
+	(void)healer_ring_enqueue_pair(child->healer_ring, pred, succ);
 }
 
 unsigned int healer_pair_get(unsigned int pred, unsigned int succ)
 {
 	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
 		return 0;
+	if (healer_pair_published == NULL)
+		return 0;
 
-	return __atomic_load_n(&shm->healer_pair_table[pred][succ],
-			       __ATOMIC_RELAXED);
+	/* Mirror read.  Picker (child context) and dump (parent context)
+	 * both call through here; the parent's drain refreshes dirty
+	 * rows of healer_pair_published from parent_healer.pair_table on
+	 * every iteration, so the worst-case staleness is one drain
+	 * cadence (~ms) -- operationally indistinguishable from fresh
+	 * given the second-to-hour timescale on which (pred -> succ)
+	 * relations evolve. */
+	return healer_pair_published[pred][succ];
 }
 
 /*
@@ -2681,8 +2225,7 @@ unsigned int healer_load_static_seed(void)
 	unsigned long before, after;
 	unsigned int installed;
 
-	before = (shm != NULL) ?
-		__atomic_load_n(&shm->stats.healer_pair_seeded, __ATOMIC_RELAXED) : 0;
+	before = parent_healer.pair_seeded;
 
 	if (biarch == true) {
 		/* Only walk a table if its arch is active; -a64 / -a32 / uniarch all naturally avoid the pair_R cross-arch number collision. */
@@ -2696,8 +2239,7 @@ unsigned int healer_load_static_seed(void)
 		healer_load_pc_pairs_in_table(syscalls, max_nr_syscalls);
 	}
 
-	after = (shm != NULL) ?
-		__atomic_load_n(&shm->stats.healer_pair_seeded, __ATOMIC_RELAXED) : 0;
+	after = parent_healer.pair_seeded;
 	installed = (unsigned int)(after - before);
 
 	stats_log_write("HEALER static seed: %u producer/consumer pairs installed\n",
@@ -2837,17 +2379,27 @@ bool set_syscall_nr_healer(struct syscallrecord *rec, struct childdata *child)
 			slot_idx = predset_hash & (HEALER_RELATION_SLOTS - 1);
 			target_key = healer_pack_key(pa, pb, predset_hash);
 
+			if (healer_relations_published == NULL)
+				goto skip_triple;
+
 			for (probe = 0; probe < HEALER_PROBE_LIMIT; probe++) {
-				struct healer_relation *slot;
+				const struct healer_relation *slot;
 				unsigned int slot_idx_real;
 				uint64_t slot_key;
 				unsigned int j;
 
 				slot_idx_real = (slot_idx + probe) &
 						(HEALER_RELATION_SLOTS - 1);
-				slot = &shm->healer_relations[slot_idx_real];
-				slot_key = __atomic_load_n(&slot->key,
-							   __ATOMIC_ACQUIRE);
+				slot = &healer_relations_published[slot_idx_real];
+				/* Read from the mirror page (PROT_READ from
+				 * children).  The published view lags the
+				 * canonical by at most one drain (~ms); a torn
+				 * row from a publish racing this read leaves
+				 * the picker with a mix of old and new weights,
+				 * which is acceptable for a syscall-prior bias
+				 * where relative magnitudes matter rather than
+				 * exact values. */
+				slot_key = slot->key;
 				if (slot_key == 0)
 					break;
 				if (slot_key != target_key)
@@ -2864,9 +2416,7 @@ bool set_syscall_nr_healer(struct syscallrecord *rec, struct childdata *child)
 					unsigned int p_nr, p_w;
 					unsigned int k;
 
-					entry_packed = __atomic_load_n(
-						&slot->promoted[j].entry,
-						__ATOMIC_RELAXED);
+					entry_packed = slot->promoted[j].entry;
 					if (entry_packed == 0)
 						continue;
 					healer_unpack_promoted(entry_packed,
@@ -2887,6 +2437,8 @@ bool set_syscall_nr_healer(struct syscallrecord *rec, struct childdata *child)
 				}
 				break;
 			}
+skip_triple:
+			;
 		}
 	}
 

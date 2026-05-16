@@ -17,6 +17,7 @@
 #include "fd.h"
 #include "files.h"
 #include "healer.h"
+#include "healer_ring.h"
 #include "ioctls.h"
 #include "kmsg-monitor.h"
 #include "maps.h"
@@ -592,6 +593,13 @@ int main(int argc, char* argv[])
 		if (hpath != NULL)
 			healer_enable_snapshots(hpath);
 	}
+
+	/* Propagate the warm-started canonical to the mirror pages before
+	 * forking so the first child to enter set_syscall_nr_healer sees
+	 * the loaded weights instead of an empty mirror.  Drain-all with
+	 * no children allocated yet is a no-op for the ring loop and runs
+	 * the publish step only. */
+	healer_ring_drain_all();
 
 	if (epoch_iterations || epoch_timeout)
 		epoch_loop();

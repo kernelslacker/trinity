@@ -469,6 +469,10 @@ void healer_ring_drain_all(void)
 
 	healer_apply_maybe_decay();
 	healer_publish_locked();
+	/* Snapshot trigger evaluated against parent-private counters and
+	 * fired from drain context (single writer); save-file is a normal
+	 * sequential call from here, no CAS election needed. */
+	healer_maybe_snapshot();
 
 	if (was_protected)
 		freeze_global_objects();

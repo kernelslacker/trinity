@@ -815,15 +815,10 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		if (!no_healer)
 			healer_pair_observe(child->last_syscall_nr, rec->nr);
 
-		/* Observation-delta-triggered persistence: same shape as the
-		 * minicorpus snapshot below, but gated on the cumulative
-		 * HEALER observation counter rather than fleet-wide edge
-		 * count.  HEALER's table needs ~24-48h to settle; without
-		 * this cross-run save the table is reset on every
-		 * trinity restart and the picker work in Phase B can never
-		 * reach the maturity threshold its bandit-arm activation
-		 * depends on. */
-		healer_maybe_snapshot();
+		/* HEALER snapshot trigger runs in parent context from
+		 * healer_ring_drain_all() now; the child-side observer
+		 * just enqueues the relation/pair events and lets the
+		 * drain decide when to persist. */
 
 		/* Coverage-delta-triggered persistence: snapshot the
 		 * minicorpus to disk every MINICORPUS_SNAPSHOT_EDGES
