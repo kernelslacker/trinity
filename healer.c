@@ -234,31 +234,26 @@
 #define FNV1A_PRIME        0x01000193U
 
 /*
- * Layout-pinning asserts so the (pred_a, pred_b, predset_hash) tuple
- * accessed via the .key uint64_t union member matches what the
- * struct-member view writes, and likewise for (nr, weight) inside
- * struct healer_promoted.  A future struct reorder that breaks the
- * packing fails to compile rather than silently desynchronising the
- * lockless CAS payload from the field view.  Mirrors the static
- * asserts edgepair.c uses to pin its own packed-key claim path.
+ * Layout-pinning asserts: the (pred_a, pred_b, predset_hash) tuple is
+ * accessed both as struct fields and as a 64-bit .key union member by
+ * the on-disk file format and the apply/dump paths.  Likewise (nr,
+ * weight) inside struct healer_promoted.  A struct reorder that broke
+ * the packing would fail to compile rather than silently producing
+ * unreadable healer snapshot files.
  */
 _Static_assert(offsetof(struct healer_relation, pred_a) == 0,
-	       "pred_a must be at offset 0 for packed CAS");
+	       "pred_a must be at offset 0 for packed key view");
 _Static_assert(offsetof(struct healer_relation, pred_b) == 2,
-	       "pred_b must be at offset 2 for packed CAS");
+	       "pred_b must be at offset 2 for packed key view");
 _Static_assert(offsetof(struct healer_relation, predset_hash) == 4,
-	       "predset_hash must be at offset 4 for packed CAS");
-_Static_assert(sizeof(uint16_t) == 2,
-	       "uint16_t must be 2 bytes for packed CAS");
-_Static_assert(sizeof(uint32_t) == 4,
-	       "uint32_t must be 4 bytes for packed CAS");
-
+	       "predset_hash must be at offset 4 for packed key view");
+_Static_assert(sizeof(uint16_t) == 2, "uint16_t must be 2 bytes");
+_Static_assert(sizeof(uint32_t) == 4, "uint32_t must be 4 bytes");
 _Static_assert(offsetof(struct healer_promoted, nr) == 0,
-	       "nr must be at offset 0 for packed CAS");
+	       "nr must be at offset 0 for packed promoted view");
 _Static_assert(offsetof(struct healer_promoted, weight) == 4,
-	       "weight must be at offset 4 for packed CAS");
-_Static_assert(sizeof(unsigned int) == 4,
-	       "unsigned int must be 4 bytes for packed CAS");
+	       "weight must be at offset 4 for packed promoted view");
+_Static_assert(sizeof(unsigned int) == 4, "unsigned int must be 4 bytes");
 
 static unsigned int healer_predset_hash(unsigned int pred_a, unsigned int pred_b)
 {
@@ -734,20 +729,6 @@ void healer_table_dump(void)
 	unsigned long weight_gt_10 = 0;
 	unsigned long mean_milli = 0;
 	/*
-	 * Counts relation-table slots whose unpacked (pred_a, pred_b) tuple
-	 * or whose inner promoted entry's nr is >= MAX_NR_SYSCALL — i.e. not
-	 * a real syscall number.  Real syscall nrs top out around 471 today;
-	 * any larger value in a slot is the signature of a stray scribble
-	 * landing on healer_relations[] in shm (same broad corruption class
-	 * being chased separately for rec->retval).  Skip these from both
-	 * the gt counts and the top-N display so they don't poison the
-	 * normalised ranking — a corrupt entry has appearance counters of
-	 * zero and would otherwise sort to the top via the divide-by-tiny-
-	 * denominator code path.  The count itself is surfaced on the dump
-	 * line so the operator can see corruption is actually there.
-	 */
-	unsigned long corrupt_in_table = 0;
-	/*
 	 * Counts entries skipped from top-N qualification because their
 	 * predecessor pair has at least one appearance counter still at
 	 * zero — see HEALER_DUMP_MIN_PRED_APPEARANCES for why.  Surfaced
@@ -842,23 +823,16 @@ void healer_table_dump(void)
 		unsigned long pred_a_freq, pred_b_freq;
 
 		/* Parent-private read: single-writer aggregate, no atomic
-		 * load needed.  Slot scribbles were the original motivation
-		 * for the corrupt_in_table accounting below; that pathway is
-		 * gone now (the kernel cannot reach this memory) but the
-		 * bound checks stay as defence-in-depth and to keep the
-		 * dump format stable.  C3 will simplify them out alongside
-		 * the in-shm field decls and the related scrub helpers. */
+		 * load needed.  The slot-level / per-entry MAX_NR_SYSCALL
+		 * bound checks that the in-shm path needed (to skip stray
+		 * kernel scribbles) are gone -- the canonical lives in
+		 * MAP_PRIVATE parent memory and the apply path itself
+		 * rejects out-of-range events on enqueue. */
 		slot_key = slot->key;
 		if (slot_key == 0)
 			continue;
 
 		healer_unpack_key(slot_key, &slot_pred_a, &slot_pred_b);
-
-		if (slot_pred_a >= MAX_NR_SYSCALL ||
-		    slot_pred_b >= MAX_NR_SYSCALL) {
-			corrupt_in_table++;
-			continue;
-		}
 
 		/* Hoist the per-syscall appearance reads out of the per-promoted
 		 * inner loop -- they are slot-constant (every promoted entry in
@@ -878,11 +852,6 @@ void healer_table_dump(void)
 			if (weight == 0)
 				continue;
 
-			if (nr >= MAX_NR_SYSCALL) {
-				corrupt_in_table++;
-				continue;
-			}
-
 			slot_promoted++;
 			total_weight += weight;
 			if (weight > 1)
@@ -896,8 +865,7 @@ void healer_table_dump(void)
 			 * as successor" score is the sum of weights of every
 			 * promoted entry whose nr is this syscall, regardless
 			 * of which predset led there. */
-			if (nr < MAX_NR_SYSCALL)
-				succ_weight[nr] += weight;
+			succ_weight[nr] += weight;
 
 			norm_score = healer_normalised_score_milli(weight,
 								   pred_a_freq,
@@ -1136,9 +1104,9 @@ void healer_table_dump(void)
 			weight_gt_1, weight_gt_5, weight_gt_10,
 			mean_milli / 1000, mean_milli % 1000, decays_run);
 
-	if (corrupt_in_table != 0)
-		stats_log_write("  corrupt entries skipped: %lu (slot-key or promoted-nr >= MAX_NR_SYSCALL)\n",
-				corrupt_in_table);
+	if (parent_healer.published_corrupt != 0)
+		stats_log_write("  mirror integrity mismatches: %lu (canonical vs published page)\n",
+				parent_healer.published_corrupt);
 
 	if (low_confidence_skipped != 0)
 		stats_log_write("  low-confidence skipped: %lu (min predfreq < %u)\n",
@@ -1260,22 +1228,21 @@ void healer_table_dump(void)
 /*
  * Cross-run persistence.
  *
- * The relation table lives in shm and dies with the trinity process; every
- * restart is otherwise a cold start.  Phase B's syscall picker needs the
- * table to settle (24-48h of observations) before the bandit arm has any
- * usable signal, but trinity's children OOM/crash long before that on
- * realistic fleet hosts -- so without persistence the table never reaches
- * the maturity threshold and Phase B stays gated indefinitely.
+ * The relation table is process-private parent state that dies with the
+ * trinity process; every restart is otherwise a cold start.  Phase B's
+ * syscall picker needs the table to settle (24-48h of observations)
+ * before the bandit arm has any usable signal, but trinity's children
+ * OOM/crash long before that on realistic fleet hosts -- so without
+ * persistence the table never reaches the maturity threshold and Phase
+ * B stays gated indefinitely.
  *
- * The save/load wire-format and election machinery here mirror the same
- * pattern minicorpus.c and effector-map.c established for their own per-
- * run-vs-cross-run state: an XDG_CACHE_HOME / mkdir-p / atomic-rename-via-
- * tmp-file save path, a header carrying magic + version + dimensions +
- * kernel-utsname + payload CRC32, and a CAS-elected snapshot trigger so
- * concurrent fuzz children don't race into the save.  See effector-map.c
- * for the mirrored header-shape rationale; the duplication is deliberate
- * (a future divergence in any one persistence file's format shouldn't
- * ripple into the others).
+ * The save/load wire-format mirrors the same pattern minicorpus.c and
+ * effector-map.c established for their own per-run-vs-cross-run state:
+ * an XDG_CACHE_HOME / mkdir-p / atomic-rename-via-tmp-file save path,
+ * a header carrying magic + version + dimensions + kernel-utsname +
+ * payload CRC32.  See effector-map.c for the mirrored header-shape
+ * rationale; the duplication is deliberate (a future divergence in any
+ * one persistence file's format shouldn't ripple into the others).
  *
  * File layout (little-endian, packed as written):
  *
@@ -1298,7 +1265,7 @@ void healer_table_dump(void)
  *                          (header-internal fields are not covered; the
  *                          dimension/magic/version checks catch tampered
  *                          headers earlier and cheaper).
- *       24     8   observations = shm->stats.healer_relations_observed at
+ *       24     8   observations = parent_healer.relations_observed at
  *                          write time.  Restored on load so the snapshot
  *                          gating threshold is anchored to the cumulative
  *                          observation count rather than the post-load
@@ -1325,22 +1292,16 @@ void healer_table_dump(void)
  *      168 onwards  payload = HEALER_RELATION_SLOTS * sizeof(struct
  *                  healer_relation) bytes of relation table, laid out
  *                  in C row-major order matching the in-memory
- *                  shm->healer_relations[] indexing.  No per-slot
- *                  framing; reads/writes are bulk into the in-shm
- *                  array.  payload_crc32 is computed over exactly
+ *                  parent_healer.relations[] indexing.  No per-slot
+ *                  framing; reads/writes are bulk against the
+ *                  canonical.  payload_crc32 is computed over exactly
  *                  these bytes.
  *
- * Atomicity: save writes to "<path>.tmp.<pid>", fsyncs, then renames into
- * place; the per-pid suffix stops two concurrent --healer-snapshot saves
- * (e.g. snapshot-trigger fire racing with the atexit save) from
- * interleaving writes.  Snapshot-window concurrent observers are handled
- * by copying the live shm payload into a heap buffer before the CRC is
- * computed, so the on-disk CRC and the on-disk payload describe
- * byte-identical bytes -- without that staging, observer hooks CASing
- * into the relation table during the ~1.13MB write would leave the CRC
- * describing the table at T1 and the payload at T2, and the loader's
- * CRC check would reject the snapshot.  The loader's CRC still catches
- * the (much rarer) bytes-written-mid-rename failure mode on top.
+ * Atomicity: save writes to "<path>.tmp.<pid>", fsyncs, then renames
+ * into place.  Both saver and loader run from parent context (single
+ * writer); the staging-buffer-against-concurrent-observers discipline
+ * the in-shm path required is gone.  The loader's CRC still catches a
+ * bytes-written-mid-rename failure mode.
  */
 
 #define HEALER_FILE_MAGIC		0x48524C54U	/* "HRLT" */
@@ -1349,16 +1310,16 @@ void healer_table_dump(void)
 
 /*
  * Periodic snapshot trigger.  Every HEALER_SNAPSHOT_OBSERVATIONS the
- * fleet-wide observation counter advances past, one CAS-elected child
- * runs the save while everyone else early-returns; the next window opens
- * once the next slice has accumulated.  5000 was picked against measured
- * post-saturation observation rates of ~0.7-1.5/sec: at 50000 the window
- * stretched to 9-20 hours of wall time and the typical 15min-2h fuzz run
- * died (OOM-kill, ASAN cascade, hard crash) without ever firing a single
- * snapshot, losing the entire run's HEALER table back to cold start.  At
- * 5000 the window collapses to roughly 1-2 hours of post-saturation
- * runtime, and the wall-clock secondary trigger below (5min floor) catches
- * the rest -- crashes now lose at most a few minutes of relations.
+ * fleet-wide observation counter advances past, the parent drain calls
+ * healer_save_file().  5000 was picked against measured post-saturation
+ * observation rates of ~0.7-1.5/sec: at 50000 the window stretched to
+ * 9-20 hours of wall time and the typical 15min-2h fuzz run died
+ * (OOM-kill, ASAN cascade, hard crash) without ever firing a single
+ * snapshot, losing the entire run's HEALER table back to cold start.
+ * At 5000 the window collapses to roughly 1-2 hours of post-saturation
+ * runtime, and the wall-clock secondary trigger below (5min floor)
+ * catches the rest -- crashes now lose at most a few minutes of
+ * relations.
  */
 #define HEALER_SNAPSHOT_OBSERVATIONS	5000UL
 
@@ -1471,76 +1432,11 @@ static ssize_t healer_read_all(int fd, void *buf, size_t len)
 	return (ssize_t)(len - left);
 }
 
-/*
- * Scrub a heap snapshot of the relation table (HEALER_PAYLOAD_BYTES of
- * back-to-back struct healer_relation slots) of any per-slot or per-entry
- * scribbles where pred_a / pred_b / promoted_nr was stamped with a
- * non-syscall value by a stray write hitting the live table in shm.
- * Mirrors the slot-level + per-entry bound checks the dump path uses to
- * skip corrupt slots: if pred_a or pred_b is >= MAX_NR_SYSCALL the whole
- * slot is unrecoverable (every promoted entry inherits the bad pair) and
- * gets memset to zero -- key == 0 is the empty-slot sentinel and
- * weight == 0 the empty-entry one, so a zeroed slot loads back as
- * cleanly empty.  Otherwise each promoted entry is checked individually
- * and only entries with nr >= MAX_NR_SYSCALL get zeroed, preserving the
- * slot's legitimate promoted entries.  Returns the count of slots and
- * per-entry zeroings performed.
- *
- * Used by both healer_save_file() (so the on-disk file is an idealised
- * clean view and the loader sees no corruption to begin with) and
- * healer_load_file() (defence-in-depth: an old file written before the
- * save-side scrub, or a tail-probability bit-flip in a hex value that
- * still satisfies the on-disk CRC, still gets cleaned before the memcpy
- * into shm).  Operates ONLY on the heap buffer it is handed; the live
- * shm->healer_relations[] is never touched here -- decay and eviction
- * age corrupt slots out in the normal way.
- */
-static unsigned int healer_scrub_snapshot(void *snapshot)
-{
-	struct healer_relation *snap_slots = snapshot;
-	unsigned int scrubbed = 0;
-	unsigned int i, j;
-
-	for (i = 0; i < HEALER_RELATION_SLOTS; i++) {
-		struct healer_relation *slot = &snap_slots[i];
-		unsigned int slot_pred_a, slot_pred_b;
-
-		if (slot->key == 0)
-			continue;
-
-		healer_unpack_key(slot->key, &slot_pred_a, &slot_pred_b);
-
-		if (slot_pred_a >= MAX_NR_SYSCALL ||
-		    slot_pred_b >= MAX_NR_SYSCALL) {
-			memset(slot, 0, sizeof(*slot));
-			scrubbed++;
-			continue;
-		}
-
-		for (j = 0; j < HEALER_PROMOTED_PER_SLOT; j++) {
-			unsigned int nr, weight;
-
-			healer_unpack_promoted(slot->promoted[j].entry,
-					       &nr, &weight);
-			if (weight == 0)
-				continue;
-			if (nr >= MAX_NR_SYSCALL) {
-				slot->promoted[j].entry = 0;
-				scrubbed++;
-			}
-		}
-	}
-
-	return scrubbed;
-}
-
 bool healer_save_file(const char *path)
 {
 	struct healer_file_header hdr;
 	struct utsname u;
 	char tmppath[PATH_MAX];
-	void *snapshot;
-	unsigned int scrubbed;
 	int fd;
 	int ret;
 
@@ -1550,31 +1446,14 @@ bool healer_save_file(const char *path)
 	if (uname(&u) != 0)
 		return false;
 
-	/* Stage the payload through a heap buffer so the scrub pass below
-	 * doesn't mutate the live canonical.  The canonical is parent-
-	 * private and (post-retrofit) the kernel cannot scribble it, so
-	 * the CRC-tear-against-concurrent-writers argument the original
-	 * staging existed for is moot -- the apply path is single-writer
-	 * in parent context and runs sequentially with this save -- but
-	 * the scrub helper still wants a heap buffer to operate on. */
-	snapshot = malloc(HEALER_PAYLOAD_BYTES);
-	if (snapshot == NULL)
-		return false;
-	memcpy(snapshot, parent_healer.relations, HEALER_PAYLOAD_BYTES);
-
-	/* Defence-in-depth scrub before writing.  Vestigial post-retrofit
-	 * (parent-private canonical isn't scribbleable by stray syscall
-	 * writes any more) but harmless to keep until C3 cleans up the
-	 * corruption-aging codepath alongside the in-shm field decls. */
-	scrubbed = healer_scrub_snapshot(snapshot);
-
 	memset(&hdr, 0, sizeof(hdr));
 	hdr.magic = HEALER_FILE_MAGIC;
 	hdr.version = HEALER_FILE_VERSION;
 	hdr.relation_slots = HEALER_RELATION_SLOTS;
 	hdr.promoted_per_slot = HEALER_PROMOTED_PER_SLOT;
 	hdr.max_nr_syscall = MAX_NR_SYSCALL;
-	hdr.payload_crc32 = healer_crc32(snapshot, HEALER_PAYLOAD_BYTES);
+	hdr.payload_crc32 = healer_crc32(parent_healer.relations,
+					 HEALER_PAYLOAD_BYTES);
 	hdr.observations = parent_healer.relations_observed;
 	strncpy(hdr.kernel_release, u.release, sizeof(hdr.kernel_release) - 1);
 	hdr.kernel_release[sizeof(hdr.kernel_release) - 1] = '\0';
@@ -1583,45 +1462,35 @@ bool healer_save_file(const char *path)
 
 	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d",
 			path, (int)getpid());
-	if (ret < 0 || (size_t)ret >= sizeof(tmppath)) {
-		free(snapshot);
+	if (ret < 0 || (size_t)ret >= sizeof(tmppath))
 		return false;
-	}
 
 	fd = open(tmppath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	if (fd < 0) {
-		free(snapshot);
+	if (fd < 0)
 		return false;
-	}
 
 	if (healer_write_all(fd, &hdr, sizeof(hdr)) < 0)
 		goto fail;
-	if (healer_write_all(fd, snapshot, HEALER_PAYLOAD_BYTES) < 0)
+	if (healer_write_all(fd, parent_healer.relations,
+			     HEALER_PAYLOAD_BYTES) < 0)
 		goto fail;
 
 	if (fsync(fd) != 0)
 		goto fail;
 	if (close(fd) != 0) {
 		(void)unlink(tmppath);
-		free(snapshot);
 		return false;
 	}
 
 	if (rename(tmppath, path) != 0) {
 		(void)unlink(tmppath);
-		free(snapshot);
 		return false;
 	}
-	free(snapshot);
-	if (scrubbed != 0)
-		output(0, "healer_save_file: scrubbed %u corrupt slots/entries from snapshot\n",
-		       scrubbed);
 	return true;
 
 fail:
 	(void)close(fd);
 	(void)unlink(tmppath);
-	free(snapshot);
 	return false;
 }
 
@@ -1631,7 +1500,6 @@ bool healer_load_file(const char *path)
 	struct utsname u;
 	void *tmpbuf;
 	uint32_t want_crc;
-	unsigned int scrubbed = 0;
 	int fd;
 	bool ok = false;
 
@@ -1691,14 +1559,6 @@ bool healer_load_file(const char *path)
 	if (want_crc != hdr.payload_crc32)
 		goto out_free;
 
-	/* Defence-in-depth: even after CRC has confirmed bit-for-bit fidelity
-	 * with what was written, the file itself may carry corrupt slots --
-	 * an old snapshot saved before the save-side scrub commit, or a
-	 * tail-probability bit-flip in a hex value that still satisfies CRC.
-	 * Vestigial post-retrofit but kept until C3 trims the corruption-
-	 * aging codepath alongside the in-shm field decls. */
-	scrubbed = healer_scrub_snapshot(tmpbuf);
-
 	memcpy(parent_healer.relations, tmpbuf, HEALER_PAYLOAD_BYTES);
 	parent_healer.relations_observed = hdr.observations;
 	parent_healer.obs_at_last_snapshot = hdr.observations;
@@ -1711,9 +1571,6 @@ bool healer_load_file(const char *path)
 				parent_healer.relations_dirty[n] = 1;
 	}
 	ok = true;
-	if (scrubbed != 0)
-		output(0, "healer_load_file: scrubbed %u corrupt slots/entries from loaded snapshot\n",
-		       scrubbed);
 
 out_free:
 	free(tmpbuf);
@@ -1807,46 +1664,16 @@ const char *healer_default_path(void)
 }
 
 /*
- * Periodic snapshot trigger.
- *
- * Mirror of minicorpus_maybe_snapshot(): the save path is set in the
- * parent before fork via healer_enable_snapshots() and inherited COW by
- * every child.  All children call healer_maybe_snapshot() from the
- * observer-hook fire path; the function early-returns cheaply unless the
- * fleet-wide observation counter has advanced HEALER_SNAPSHOT_OBSERVATIONS
- * past the last snapshot's high-water-mark.
- *
- * The election is two-step:
- *
- *   1. CAS shm->stats.healer_obs_at_last_snapshot forward to obs_now.
- *      Whichever caller wins this CAS owns the WINDOW boundary -- the
- *      losers see the new high-water-mark on their next call and
- *      early-return.  This step is unchanged.
- *
- *   2. CAS shm->stats.healer_save_in_progress 0 -> 1.  The window-CAS
- *      alone is not enough to keep healer_save_file() singleton: the
- *      save takes wall-clock time (snapshot the relation table, write to
- *      .tmp.<pid>, fsync, rename) and during that window non-saving
- *      children continue to bump healer_relations_observed.  On a hot
- *      fleet the counter can pile up by another full WINDOW before the
- *      first saver returns; the next caller's window-CAS would then
- *      also succeed and a second healer_save_file() would race the
- *      first on the rename(.tmp.<pid>, healer_snapshot_path) step --
- *      last rename wins, so the on-disk file ends up being whichever
- *      saver finishes second, not necessarily the one with the more
- *      recent observations.  The in-progress CAS closes that hole: if
- *      it loses, a previous saver is still mid-write, so we bump
- *      shm->stats.healer_snapshot_overruns and return without rolling
- *      back the window-CAS (that boundary belongs to the in-flight
- *      saver -- the next post-completion call sees the advanced
- *      high-water-mark and waits another full WINDOW).
- *
- * Folding the two CAS attempts together would be wrong: the window-CAS
- * advances the high-water-mark unconditionally so the next snapshot
- * opportunity opens after exactly one more WINDOW; if that single CAS
- * also gated the in-progress check, an overrun-skip would silently
- * advance the high-water-mark without a save running, delaying the
- * next save attempt by a second WINDOW.  Keep them separate.
+ * Periodic snapshot trigger.  The save path is set in the parent at
+ * startup via healer_enable_snapshots() and inherited COW by every
+ * child.  healer_maybe_snapshot() runs from the parent drain
+ * (healer_ring_drain_all in healer-ring.c), evaluated against
+ * parent_healer's observation-count and wall-clock high-water-marks;
+ * the function early-returns cheaply unless one of the two triggers
+ * has fired.  The two-step CAS election the in-shm path used to
+ * serialise concurrent child callers collapses to a plain comparison
+ * here -- drain context is single-writer, and a sequential call to
+ * healer_save_file cannot race itself.
  */
 static char healer_snapshot_path[PATH_MAX];
 static bool healer_snapshot_enabled;
@@ -2197,23 +2024,20 @@ static void healer_load_pc_pairs_in_table(const struct syscalltable *tbl,
  * table is process-private BSS and is not persisted across runs, so
  * this loader is the only path that pre-populates it.
  *
- * Idempotent: healer_pair_seed CAS-installs from 0, so cells already
- * carrying a weight (either from a previous loader call within this
- * process, or, once the observer-bump merge lands in a follow-up
- * commit, from an in-flight observation) silently no-op.  This
- * matters on biarch builds where the 32-bit and 64-bit tables can
- * map the same raw syscall number to different syscalls; the second
- * walk's CAS just fails on any cell the first walk already filled,
- * and the cell keeps the first walk's weight.
+ * Idempotent: healer_pair_seed forwards to healer_aggregate_pair_set
+ * which skips a cell already carrying a weight.  This matters on
+ * biarch builds where the 32-bit and 64-bit tables can map the same
+ * raw syscall number to different syscalls; the second walk's set
+ * just no-ops on any cell the first walk already filled and the cell
+ * keeps the first walk's weight.
  *
- * Returns the number of fresh CAS-successful seed installs over the
- * course of this call, measured as the delta on
- * shm->stats.healer_pair_seeded across the load.  Cells already
- * populated when the loader runs are silently skipped and do not
- * contribute to the return value.  On a cold-start run with an empty
- * pair table the return value matches one side of the (producer-
- * consumer-edges-on-this-arch) inventory healer_count_pc_pairs()
- * reports, modulo the self-pair skip.
+ * Returns the number of fresh seed installs over the course of this
+ * call, measured as the delta on parent_healer.pair_seeded across the
+ * load.  Cells already populated when the loader runs are silently
+ * skipped and do not contribute to the return value.  On a cold-start
+ * run with an empty pair table the return value matches one side of
+ * the (producer-consumer-edges-on-this-arch) inventory
+ * healer_count_pc_pairs() reports, modulo the self-pair skip.
  *
  * Logs the install count through stats_log_write so the seeding event
  * is captured in the per-run stats.log alongside the periodic dumps;
@@ -2258,11 +2082,13 @@ unsigned int healer_load_static_seed(void)
  *     buffer (healer_seq[1] when both slots are populated, healer_seq[0]
  *     when only one is).
  *   - Builds a per-call weighted distribution over the active syscall
- *     table using shm->healer_pair_table[pred][succ] for each candidate
- *     succ.  When both predecessor slots are populated, the matching
- *     triple-table slot's promoted (succ, weight) entries are summed
- *     into the same distribution so candidates that appear in both
- *     tables get extra weight without a separate normalisation step.
+ *     table using healer_pair_published[pred][succ] for each candidate
+ *     succ (reads the parent-published mirror page, not the canonical
+ *     parent_healer.pair_table).  When both predecessor slots are
+ *     populated, the matching triple-table slot's promoted (succ,
+ *     weight) entries are summed into the same distribution so
+ *     candidates that appear in both tables get extra weight without
+ *     a separate normalisation step.
  *   - Picks weighted-random via a CDF walk; on a validate / EXPENSIVE
  *     dead-end the chosen index is dropped from the distribution and
  *     the pick is re-rolled until the budget is exhausted or no weight

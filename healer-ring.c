@@ -438,6 +438,23 @@ static void healer_publish_locked(void)
 			parent_healer.pair_dirty[i] = 0;
 		}
 	}
+
+	/* Mirror-integrity sample.  After the publish completes the
+	 * mirror's first relation slot and pair-table cell should match
+	 * the canonical's; the only thing that could write to the mirror
+	 * between publishes is a wild kernel store, and the PROT_READ
+	 * mprotect should SEGV that in the offending child instead.  A
+	 * non-zero published_corrupt counter implies either a hole in
+	 * the freeze/thaw bracket or a wild store that somehow bypassed
+	 * the read-only mapping -- log + count, same shape as Stage 1's
+	 * shm_published_corrupt mirror integrity check. */
+	if (healer_relations_published != NULL &&
+	    healer_relations_published[0].key !=
+		parent_healer.relations[0].key)
+		parent_healer.published_corrupt++;
+	if (healer_pair_published != NULL &&
+	    healer_pair_published[0][0] != parent_healer.pair_table[0][0])
+		parent_healer.published_corrupt++;
 }
 
 void healer_ring_drain_all(void)

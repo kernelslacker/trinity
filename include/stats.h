@@ -1836,161 +1836,27 @@ struct stats_s {
 	unsigned long ublk_lifecycle_race_observed;	/* FETCH_REQ in flight when DEL_DEV fired (the f7700a4415af window) */
 
 	/*
-	 * HEALER Phase A observer counters -- see include/healer.h.
-	 * All four are bumped from healer_observe_relation() / the periodic
-	 * dump path; surfaced once per dump tick alongside the relation
-	 * top-10 so the operator can spot a saturated table or a runaway
-	 * eviction rate without grepping the shm dump.
-	 *
-	 * healer_relations_observed: every observer-hook fire (both first
-	 *   inserts and weight bumps), so the ratio of unique predsets to
-	 *   total observations is recoverable.
-	 * healer_table_full: probe-limit hits where the lookup ran off the
-	 *   end of HEALER_PROBE_LIMIT slots without finding either the
-	 *   matching predset or an empty slot; persistent non-zero growth
-	 *   means HEALER_RELATION_SLOTS is too small for the working set.
-	 * healer_evictions: the slot was full (all HEALER_PROMOTED_PER_SLOT
-	 *   promoted entries populated) and we displaced the lowest-weight
-	 *   entry to insert a new follow-up; rapid growth here suggests
-	 *   HEALER_PROMOTED_PER_SLOT is too tight.
-	 * healer_unique_predsets: number of occupied slots, recomputed by
-	 *   sweeping healer_relations[] inside healer_table_dump().
-	 *   Lazy refresh keeps the hot observer-hook path free of an extra
-	 *   counter store while the periodic dump still has a stable read.
+	 * HEALER observer/decay/snapshot bookkeeping counters that used
+	 * to live here moved to struct healer_aggregate alongside the two
+	 * tables they served.  The CAS-election machinery they backed
+	 * (snapshot window/active-saver + decay window) collapsed to
+	 * straight comparisons once apply and snapshot moved to single-
+	 * writer parent context; see healer-ring.c.  The healer_picker_*
+	 * counters below stay in shm because the picker remains a child
+	 * hot path that bumps them directly.
 	 */
-	unsigned long healer_relations_observed;
-	unsigned long healer_table_full;
-	unsigned long healer_evictions;
-	unsigned long healer_unique_predsets;
-	/*
-	 * Snapshot-trigger high-water-mark for healer_maybe_snapshot(): the
-	 * value of healer_relations_observed at the last completed snapshot.
-	 * Children CAS this forward to elect a single saver per
-	 * HEALER_SNAPSHOT_OBSERVATIONS window; the loser-side branch falls
-	 * out cheaply via the gap-check before any CAS attempt.  Restored
-	 * from the on-disk header on a successful warm-start so the first
-	 * post-warm-start window is anchored to the cumulative count rather
-	 * than triggering an immediate save against a freshly loaded table.
-	 */
-	unsigned long healer_obs_at_last_snapshot;
-	/*
-	 * Active-saver gate for healer_maybe_snapshot().  CAS'd 0 -> 1 by
-	 * the caller that just won the window-CAS; cleared back to 0 once
-	 * healer_save_file() returns.  Closes the multi-window concurrent-
-	 * save hole: healer_save_file() takes wall-clock time (snapshot the
-	 * relation table, write to .tmp.<pid>, fsync, rename), and during
-	 * that window non-saving children keep bumping
-	 * healer_relations_observed -- enough to advance another full
-	 * HEALER_SNAPSHOT_OBSERVATIONS boundary while the first saver is
-	 * still mid-write.  Without this flag the second window-CAS would
-	 * also succeed and a second healer_save_file() would race the first
-	 * on the rename(.tmp.<pid>, healer_snapshot_path) step (last rename
-	 * wins, and the loser's bytes can be the more-recent ones).  Not
-	 * persisted to the on-disk header -- runtime-only state.
-	 */
-	unsigned long healer_save_in_progress;
-	/*
-	 * Bumped from healer_maybe_snapshot() when the window-CAS won the
-	 * boundary but the in-progress CAS lost (a previous saver is still
-	 * writing).  Persistent non-zero growth means healer_save_file()
-	 * wall-clock cost is approaching or exceeding the time the fleet
-	 * takes to accumulate one HEALER_SNAPSHOT_OBSERVATIONS window of
-	 * relations -- consider widening the window or speeding up the save
-	 * path.
-	 */
-	unsigned long healer_snapshot_overruns;
-	/*
-	 * Wall-clock companion to healer_obs_at_last_snapshot: time(NULL) value
-	 * captured the last time healer_save_file() completed.  Drives the
-	 * secondary time-based trigger inside healer_maybe_snapshot() so that
-	 * short runs (typical fuzz windows are 15min-2h, often dying uncleanly
-	 * to OOM-kill or crash) still get at least one persisted snapshot
-	 * before exit -- the observation-based threshold alone takes hours to
-	 * cross at the post-saturation observation rate, so a crashed run was
-	 * losing the entire HEALER table back to cold start.  Initialised in
-	 * the parent at healer_enable_snapshots() time so the first time-
-	 * trigger window is anchored to fuzz-start rather than firing
-	 * immediately against an empty table.  Advanced (RELAXED store) by
-	 * whichever child wins both the window-CAS and the active-saver CAS,
-	 * after healer_save_file() returns -- the singleton-saver discipline
-	 * is unchanged; the time check is just an EARLY trigger ORed into the
-	 * obs-window check, not a bypass.
-	 */
-	unsigned long healer_last_snapshot_time;
 	/*
 	 * Wall-clock high-water-mark for the periodic minicorpus snapshot.
 	 * Companion to minicorpus_shm->edges_at_last_snapshot but lives in
 	 * shm->stats so the field is allocated alongside the rest of the
 	 * snapshot trigger state and the operator's stats dump can surface
-	 * it without crossing into the corpus-only shared region.  Same
-	 * rationale as healer_last_snapshot_time above: short runs that die
-	 * before the edge-delta threshold trips would otherwise lose the
-	 * entire mid-run corpus.  Initialised at minicorpus_enable_snapshots()
-	 * time and advanced by the single CAS-elected saver after
-	 * minicorpus_save_file() returns.
+	 * it without crossing into the corpus-only shared region.  Short
+	 * runs that die before the edge-delta threshold trips would
+	 * otherwise lose the entire mid-run corpus.  Initialised at
+	 * minicorpus_enable_snapshots() time and advanced by the single
+	 * CAS-elected saver after minicorpus_save_file() returns.
 	 */
 	unsigned long minicorpus_last_snapshot_time;
-	/*
-	 * Decay-window high-water-mark for healer_maybe_decay(): the value of
-	 * healer_relations_observed at the last completed decay walk.  Children
-	 * CAS this forward to elect a single runner per HEALER_DECAY_OBSERVATIONS
-	 * window; losers see the advanced high-water-mark on their next call and
-	 * early-return.  Decay halves every promoted entry's weight (floor 1) so
-	 * the relation table converges on persistently-correlated (predset, nr)
-	 * tuples rather than accumulating one-time co-occurrence noise that
-	 * eviction alone only sheds at slot saturation.
-	 */
-	unsigned long healer_obs_at_last_decay;
-	/*
-	 * Wall-clock companion to healer_obs_at_last_decay: time(NULL) value
-	 * captured at the last completed decay walk.  Drives the secondary
-	 * time-based trigger inside healer_maybe_decay() so the relation
-	 * table keeps aging even when KCOV coverage saturates and the
-	 * observation rate collapses to ~0 -- in that regime the
-	 * observation-window threshold may take hours or never to cross,
-	 * which leaves frozen historical bursts dominating the top-N.  Both
-	 * counters are advanced together by whichever observer wins the
-	 * window-CAS election so a triggered decay (regardless of which
-	 * trigger fired) starts the next window cleanly on both axes.
-	 */
-	unsigned long healer_time_at_last_decay;
-	/*
-	 * Bumped each time healer_maybe_decay() wins the window-CAS and walks
-	 * the relation table halving weights.  Operator can grep stats to see
-	 * the decay rate -- a runaway value relative to runtime suggests
-	 * HEALER_DECAY_OBSERVATIONS is too tight, and a value stuck at zero on
-	 * a long-running fuzz means the observation rate is too low to ever
-	 * cross the window threshold.
-	 */
-	unsigned long healer_weight_decays_run;
-	/*
-	 * Bumped from healer_pair_seed() each time the install-CAS actually
-	 * publishes a fresh (pred -> succ) entry into the pair-relation
-	 * table; the no-op fall-through path (the cell was already
-	 * populated) is silent.  Lets the operator confirm the static-seed
-	 * loader (separate follow-up commit) actually ran and roughly how
-	 * many distinct pairs it carried in -- a stuck-at-zero value on a
-	 * fuzz where seeds are expected means the loader path didn't fire.
-	 * Per-run only; the pair table itself is process-private BSS rather
-	 * than shm so this counter is the only fleet-visible signal that
-	 * the pair-side of the HEALER pipeline is active.
-	 */
-	unsigned long healer_pair_seeded;
-	/*
-	 * Per-syscall counter of how often this syscall appears as either
-	 * pred_a or pred_b in a recorded HEALER pair observation.  Used to
-	 * compute a TF-IDF-style normalisation on the relation-table dump:
-	 * frequent neutral syscalls (getppid, gettid, timer_delete, ...) ride
-	 * the predecessor slot constantly without contributing any state of
-	 * their own, so pair weights involving them get scaled down at
-	 * display time and the operator's top-N view surfaces the genuinely
-	 * productive predecessors instead.  Per-run only; not persisted
-	 * across snapshots (a warm-start sees zeros, which back-pressure-free
-	 * regrows over the first few thousand observations).  The relation
-	 * table itself still records and evicts on raw weights -- this
-	 * counter only feeds the dump path.
-	 */
-	unsigned long healer_pred_appearance[MAX_NR_SYSCALL];
 	/*
 	 * STRATEGY_HEALER picker counters (Phase B).  Sum of the four equals
 	 * the total number of times the dispatch in random-syscall.c entered

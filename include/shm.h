@@ -482,48 +482,15 @@ struct shm_s {
 	_Atomic uint64_t ioctl_efault_cache[IOCTL_EFAULT_CACHE_SIZE];
 
 	/*
-	 * HEALER syscall-relation observer table -- see include/healer.h
-	 * for the design.  Indexed by FNV-1a(sorted (pred_a, pred_b)) masked
-	 * to HEALER_RELATION_SLOTS; collisions linear-probe up to
-	 * HEALER_PROBE_LIMIT slots before dropping the observation and
-	 * bumping shm->stats.healer_table_full.  Empty slots are identified
-	 * by the packed key word being all-zero (a real predset never has
-	 * predset_hash == 0 thanks to healer_predset_hash()'s zero remap),
-	 * leaving the surrounding shm memset(0) as the only initialisation
-	 * the table needs.
-	 *
-	 * Sized HEALER_RELATION_SLOTS * sizeof(struct healer_relation)
-	 * ~= 16384 * 72B = 1.13 MiB -- comfortably below the existing
-	 * cmp_novelty[] / frontier_history[] envelope.
-	 *
-	 * Lockless: each slot's identifier triple (pred_a, pred_b,
-	 * predset_hash) lives in a 64-bit packed `key` word that observers
-	 * CAS-claim with RELEASE on first publication, and each promoted[]
-	 * entry is mutated via a 64-bit CAS on its (nr, weight) packed
-	 * view.  The dump path uses ACQUIRE/RELAXED atomic loads of the
-	 * same words for a coherent per-slot snapshot, mirroring the
-	 * lockless reader pattern in cmp_hints_get().  Cross-slot stats
-	 * counters (stats.healer_relations_observed, .healer_table_full,
-	 * .healer_evictions) are bumped via __atomic_fetch_add.
+	 * The HEALER relation + pair tables that used to live here moved
+	 * to a parent-private canonical (struct healer_aggregate) fed by
+	 * per-child SPSC observation rings, with two child-RO mirror
+	 * pages serving the picker's reads.  See include/healer_ring.h
+	 * for the topology and healer-ring.c for the apply / publish
+	 * machinery.  The migration removed 5.13 MiB from shm and
+	 * eliminated the wild-write attack surface for the largest
+	 * region in the shared mapping.
 	 */
-	struct healer_relation healer_relations[HEALER_RELATION_SLOTS];
-
-	/*
-	 * Pair-relation table (single-predecessor companion to
-	 * healer_relations[] above).  Dense MAX_NR_SYSCALL x MAX_NR_SYSCALL
-	 * matrix indexed (pred -> succ); each cell is a relaxed-atomic
-	 * weight counter.  Sized 1024 * 1024 * 4 = 4 MiB, the largest single
-	 * region in shm but still a small fraction of the surrounding shm
-	 * budget.  Lives in shm rather than process-private BSS so the
-	 * per-child observer bumps converge into a single fleet-wide table:
-	 * a private-BSS layout would let the parent seed the table pre-fork
-	 * and have children inherit a COW snapshot, but each child's
-	 * subsequent observation would only mutate its own copy and
-	 * cross-child convergence (the entire point of the observer wire-up)
-	 * would never happen.  Zeroed by the surrounding shm memset(0); the
-	 * static-seed loader runs parent-side post-zero and pre-fork.
-	 */
-	unsigned int healer_pair_table[MAX_NR_SYSCALL][MAX_NR_SYSCALL];
 };
 extern struct shm_s *shm;
 extern unsigned int shm_size;

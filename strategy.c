@@ -150,9 +150,12 @@ static bool healer_picker_eligible(void)
 
 	for (pred = 0; pred < MAX_NR_SYSCALL; pred++) {
 		for (succ = 0; succ < MAX_NR_SYSCALL; succ++) {
-			unsigned int w = __atomic_load_n(
-				&shm->healer_pair_table[pred][succ],
-				__ATOMIC_RELAXED);
+			/* Reads through the picker's mirror page so the
+			 * eligibility scan sees the same published view
+			 * the picker itself would; bounded staleness
+			 * (~ms per drain) is acceptable for a coarse
+			 * gating decision. */
+			unsigned int w = healer_pair_get(pred, succ);
 
 			scanned++;
 			if (w > 1) {

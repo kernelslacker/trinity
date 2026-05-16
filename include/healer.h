@@ -52,7 +52,7 @@
  * Open-addressing probe limit.  A short cap bounds the worst-case
  * lookup cost under heavy collision load; if the probe runs off the
  * end of the cap without finding either the matching predset or an
- * empty slot, the observation is dropped and shm->stats.healer_table_full
+ * empty slot, the observation is dropped and parent_healer.table_full
  * is bumped so the operator can spot a saturated table.  16 slots is
  * a reasonable compromise: with 16K slots and a 50%-full table the
  * expected probe length is ~2, so 16 leaves ample headroom for the
@@ -150,12 +150,11 @@ void healer_seq_push(struct childdata *child, unsigned int nr);
 void healer_table_dump(void);
 
 /*
- * Cross-run persistence.  Serialise the entire shm->healer_relations[]
- * table to `path` (atomic via tmp-file + rename) so a subsequent run
- * can warm-start from it.  Returns true on success; on failure the
- * destination file is left untouched.  Safe to call concurrently with
- * fuzz children: per-slot snapshots tear at most one observation, which
- * the next snapshot resyncs.
+ * Cross-run persistence.  Serialise the parent_healer.relations table
+ * to `path` (atomic via tmp-file + rename) so a subsequent run can
+ * warm-start from it.  Returns true on success; on failure the
+ * destination file is left untouched.  Runs from parent drain context
+ * (single writer), so no concurrent-observer staging is needed.
  */
 bool healer_save_file(const char *path);
 
@@ -163,12 +162,12 @@ bool healer_save_file(const char *path);
  * Reverse of healer_save_file().  Stages the file payload through a
  * heap buffer, validates the header (magic, version, table dimensions,
  * MAX_NR_SYSCALL, kernel utsname.release/.version) and the payload
- * CRC32, then bulk-copies into shm->healer_relations[] and restores
- * shm->stats.healer_relations_observed / .healer_obs_at_last_snapshot.
- * Caller must invoke before fork: the load is not safe against
- * concurrent observers.  Returns true on a successful warm-start; a
- * kernel-utsname mismatch logs a one-line cold-start notice and returns
- * false.
+ * CRC32, then bulk-copies into parent_healer.relations and restores
+ * parent_healer.relations_observed / .obs_at_last_snapshot.  Caller
+ * must invoke pre-fork from the parent so the first drain after fork
+ * has the populated canonical to publish to the mirror.  Returns true
+ * on a successful warm-start; a kernel-utsname mismatch logs a one-line
+ * cold-start notice and returns false.
  */
 bool healer_load_file(const char *path);
 
@@ -201,11 +200,12 @@ void healer_maybe_snapshot(void);
 /*
  * Pair-relation table -- single-predecessor companion to the
  * (predset -> nr) triple table above.  Indexed (pred -> succ); each
- * cell holds a single weight counter mutated via relaxed atomics.
- * The backing store lives in shm (shm->healer_pair_table) so the
- * parent's pre-fork static seed and each child's runtime observer
- * bumps converge into a single fleet-wide table; see the declaration
- * in include/shm.h for the rationale.
+ * cell holds a single weight counter.  The canonical lives in
+ * parent_healer.pair_table (parent-private, fed by the per-child
+ * healer_ring observer events the drain applies under single-writer
+ * discipline); the picker reads its values through the published
+ * mirror page (healer_pair_published).  See include/healer_ring.h
+ * for the retrofit topology.
  *
  * Bootstrapped from a static (producer -> consumer) prior derived from
  * existing ARG_FD_* / ret_objtype metadata via healer_load_static_seed(),

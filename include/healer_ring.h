@@ -9,7 +9,7 @@
 /*
  * Per-child SPSC ring carrying HEALER observation events from the child
  * (sole producer) to the parent (sole consumer).  Replaces direct child
- * writes to shm->healer_relations[] and shm->healer_pair_table[][] for
+ * writes to the previously-in-shm healer_relations[] / pair_table[][] for
  * the hot new-edge observer-hook path: both tables move into a parent-
  * private canonical (struct healer_aggregate) that no kernel-visible
  * shared mapping points at, structurally removing the wild-write attack
@@ -74,9 +74,9 @@ struct healer_ring {
  * healer_aggregate is read-only from child context and accessed via
  * the published mirror pages.
  *
- * Mirrors the field set of the in-shm healer_relations[] +
- * healer_pair_table[][] pair: same dimensions, same slot layout,
- * different storage class.  The ring drain is the only writer beyond
+ * Holds the relation + pair tables (formerly in shm) at their
+ * original dimensions: same slot layout, different storage class.
+ * The ring drain is the only writer beyond
  * the parent's own seed/load paths (healer_load_static_seed,
  * healer_load_file).
  */
