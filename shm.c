@@ -23,6 +23,7 @@
 #include "random.h"
 #include "sequence.h"
 #include "shm.h"
+#include "healer_ring.h"
 #include "stats_ring.h"
 #include "trinity.h"
 #include "utils.h"
@@ -268,6 +269,16 @@ void init_shm(void)
 		 * inherent to the SPSC contract. */
 		child->stats_ring = alloc_shared(sizeof(struct stats_ring));
 		stats_ring_init(child->stats_ring);
+
+		/* Per-child HEALER observation ring.  Same alloc_shared()
+		 * reasoning as the stats and fd_event rings above: the child
+		 * IS the producer (every observer-hook fire on the new-edge
+		 * path enqueues both a TRIPLE and a PAIR slot), so the ring
+		 * contents stay child-writable.  Dark-launched in this commit
+		 * -- no call site enqueues yet -- so the drain runs empty and
+		 * the canonical aggregate stays at zero. */
+		child->healer_ring = alloc_shared(sizeof(struct healer_ring));
+		healer_ring_init(child->healer_ring);
 	}
 
 	/* Allocate the parent-write / child-read mirror page before
@@ -276,6 +287,14 @@ void init_shm(void)
 	 * (rotation clock, syscalls_todo termination); the parent re-publishes
 	 * inside stats_ring_drain_all()'s thaw/refreeze bracket. */
 	stats_published_init();
+
+	/* HEALER mirror pages: parent-write / child-read.  Picker reads
+	 * the relation table and pair table through these pages, refreshed
+	 * once per drain inside the same freeze bracket the stats drain
+	 * uses.  Allocated alloc_shared_global so they join the frozen-RO
+	 * set; a child wild-write into either page SEGVs the offending
+	 * child at the source. */
+	healer_published_init();
 	if (mprotect(children, childptrslen, PROT_READ) != 0)
 		log_mprotect_failure(children, (size_t) childptrslen, PROT_READ,
 				     __builtin_return_address(0), errno);

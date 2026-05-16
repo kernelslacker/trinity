@@ -16,6 +16,7 @@
 #include "debug.h"
 #include "fd-event.h"
 #include "healer.h"
+#include "healer_ring.h"
 #include "kcov.h"
 #include "objects.h"
 #include "params.h"
@@ -1500,6 +1501,12 @@ void main_loop(void)
 		 * parent-private aggregate.  Republishes the mirror page
 		 * inside its own thaw/refreeze bracket. */
 		stats_ring_drain_all();
+
+		/* Drain HEALER observation events from all children's rings
+		 * into the parent-private healer_aggregate.  Republishes the
+		 * dirty rows of the relation and pair mirror pages inside
+		 * its own thaw/refreeze bracket. */
+		healer_ring_drain_all();
 
 		taint_check();
 

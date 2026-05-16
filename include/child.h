@@ -373,6 +373,13 @@ struct childdata {
 	 * include/stats_ring.h for the field set and overflow policy. */
 	struct stats_ring *stats_ring;
 
+	/* Ring buffer for child-produced HEALER observation events drained
+	 * by the parent into struct healer_aggregate.  Allocated in shared
+	 * memory, one per child, write-only-by-this-child / read-only-by-
+	 * parent.  See include/healer_ring.h for the slot layout and
+	 * overflow policy. */
+	struct healer_ring *healer_ring;
+
 	/* Name of the recipe currently executing inside recipe_runner(),
 	 * or NULL when no recipe is in flight.  Read by post-mortem to
 	 * attribute a kernel taint to a specific multi-syscall sequence. */
