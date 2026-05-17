@@ -198,6 +198,46 @@ enum child_op_type {
 	NR_CHILD_OP_TYPES,
 };
 
+/* Per-handler attribution ring for the post_handler_corrupt_ptr counter.
+ * Sized to comfortably hold the long tail of distinct handlers without
+ * inflating the per-child footprint -- 32 entries cover the unique
+ * post-handler count with headroom (the syscall table currently has
+ * ~30 .post hooks that call looks_like_corrupted_ptr).  A reserved nr
+ * value tags the non-syscall (rec==NULL) pseudo-handler bucket. */
+#define CORRUPT_PTR_ATTR_SLOTS		32
+#define CORRUPT_PTR_ATTR_NR_NONE	((unsigned int) ~0u)
+
+/* Caller-PC sub-attribution ring keyed by (nr, do32bit, pc).  Sized to
+ * comfortably hold ~30 hot post handlers x ~2 distinct caller PCs each
+ * plus the deferred-free call sites and headroom. */
+#define CORRUPT_PTR_PC_SLOTS		64
+
+struct corrupt_ptr_attr_entry {
+	unsigned int nr;
+	bool do32bit;
+	unsigned long count;
+};
+
+struct corrupt_ptr_pc_entry {
+	unsigned int nr;
+	bool do32bit;
+	void *pc;
+	/* Optional site tag passed by the caller of
+	 * post_handler_corrupt_ptr_bump_site to disambiguate distinct
+	 * rejection sites that share a single PC bucket after LTO
+	 * inlining (e.g. the four add_object: defence-in-depth walls
+	 * that all collapse onto dispatch_step+0x336 under
+	 * __builtin_return_address(0) capture).  NULL when the caller
+	 * passed no tag; the dump path then renders the bare PC. */
+	const char *site;
+	unsigned long count;
+};
+
+struct deferred_free_reject_pc_entry {
+	void *pc;
+	unsigned long count;
+};
+
 /*
  * Layout note — the leading 64 bytes are the per-syscall hot block.
  *
@@ -447,6 +487,20 @@ struct childdata {
 	 * mutates per-child OBJ_LOCAL state.
 	 */
 	bool objects_protected;
+
+	/* Per-child shards of the corrupted-pointer attribution rings.
+	 * Sole writer is the owning child (the *_record functions in
+	 * utils.c); sole reader is the parent at periodic-dump time,
+	 * which merges every child's shard into a single ranked table.
+	 * No cross-process lock because the writer and reader sets are
+	 * each a single context.  this_child()==NULL callers (parent
+	 * post-mortem paths, deferred-free tick on the main process)
+	 * drop the record -- per-child storage has no parent fallback,
+	 * and those callers are vanishingly rare relative to the per-
+	 * child rejection volume the dump is summarising. */
+	struct corrupt_ptr_attr_entry local_corrupt_ptr_attr[CORRUPT_PTR_ATTR_SLOTS];
+	struct corrupt_ptr_pc_entry local_corrupt_ptr_pc[CORRUPT_PTR_PC_SLOTS];
+	struct deferred_free_reject_pc_entry local_deferred_free_reject_pc[CORRUPT_PTR_PC_SLOTS];
 
 	/* Ring of recently completed syscall records, drained by the parent
 	 * during post-mortem to reconstruct a fleet-wide chronology. */

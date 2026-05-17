@@ -2001,8 +2001,10 @@ static int corrupt_ptr_pc_cmp(const void *a, const void *b)
  * Render PC sub-attribution entries that match (nr, do32bit) as
  * indented sub-rows beneath the matching per-handler row.  Caller
  * passes a snapshot already sorted descending by count so all rows
- * share one snap+sort across the dump pass.  Silent when no entry
- * matches -- pre-sub-attribution runs and quiet handlers stay terse.
+ * share one snap+sort across the dump pass; @n_entries is the number
+ * of populated slots in @snap (everything from index @n_entries onward
+ * is guaranteed zero-count and skipped).  Silent when no entry matches
+ * -- pre-sub-attribution runs and quiet handlers stay terse.
  *
  * Each row is annotated with a best-effort "file.c:NNN" from addr2line
  * because pc_to_string() alone renders a PIE-relative offset that gets
@@ -2014,11 +2016,12 @@ static int corrupt_ptr_pc_cmp(const void *a, const void *b)
  * addr2line is unavailable or the address can't be resolved.
  */
 static void corrupt_ptr_pc_dump_for(const struct corrupt_ptr_pc_entry *snap,
+				    unsigned int n_entries,
 				    unsigned int nr, bool do32bit)
 {
 	unsigned int i;
 
-	for (i = 0; i < CORRUPT_PTR_PC_SLOTS; i++) {
+	for (i = 0; i < n_entries; i++) {
 		char pcbuf[128];
 		char srcbuf[256];
 		const char *src;
@@ -2062,39 +2065,132 @@ static void corrupt_ptr_pc_dump_for(const struct corrupt_ptr_pc_entry *snap,
 	}
 }
 
+/*
+ * Walk every child's local_corrupt_ptr_attr shard and merge into @out
+ * by summing counts on (nr, do32bit) key matches.  Returns the number
+ * of populated entries written to @out (bounded by @out_cap).  Reads
+ * the per-child shards without a lock -- the owning child is the sole
+ * writer, so a torn read at most shaves a count by one on a single
+ * shard slot, which is in the noise once all shards are summed.
+ */
+static unsigned int merge_corrupt_ptr_attr_shards(struct corrupt_ptr_attr_entry *out,
+						  unsigned int out_cap)
+{
+	unsigned int i, j, k, n_merged = 0;
+
+	for_each_child(i) {
+		struct childdata *child;
+		const struct corrupt_ptr_attr_entry *shard;
+
+		child = __atomic_load_n(&children[i], __ATOMIC_ACQUIRE);
+		if (child == NULL)
+			continue;
+		shard = child->local_corrupt_ptr_attr;
+
+		for (j = 0; j < CORRUPT_PTR_ATTR_SLOTS; j++) {
+			if (shard[j].count == 0)
+				continue;
+			for (k = 0; k < n_merged; k++) {
+				if (out[k].nr == shard[j].nr &&
+				    out[k].do32bit == shard[j].do32bit) {
+					out[k].count += shard[j].count;
+					break;
+				}
+			}
+			if (k == n_merged && n_merged < out_cap) {
+				out[n_merged] = shard[j];
+				n_merged++;
+			}
+		}
+	}
+	return n_merged;
+}
+
+/*
+ * Walk every child's local_corrupt_ptr_pc shard and merge into @out
+ * by summing counts on (nr, do32bit, pc) key matches.  The first
+ * non-NULL site tag wins -- later shards may carry NULL for the same
+ * PC if they only saw it through the legacy tagless caller path.
+ */
+static unsigned int merge_corrupt_ptr_pc_shards(struct corrupt_ptr_pc_entry *out,
+						unsigned int out_cap)
+{
+	unsigned int i, j, k, n_merged = 0;
+
+	for_each_child(i) {
+		struct childdata *child;
+		const struct corrupt_ptr_pc_entry *shard;
+
+		child = __atomic_load_n(&children[i], __ATOMIC_ACQUIRE);
+		if (child == NULL)
+			continue;
+		shard = child->local_corrupt_ptr_pc;
+
+		for (j = 0; j < CORRUPT_PTR_PC_SLOTS; j++) {
+			if (shard[j].count == 0)
+				continue;
+			for (k = 0; k < n_merged; k++) {
+				if (out[k].nr == shard[j].nr &&
+				    out[k].do32bit == shard[j].do32bit &&
+				    out[k].pc == shard[j].pc) {
+					out[k].count += shard[j].count;
+					if (out[k].site == NULL &&
+					    shard[j].site != NULL)
+						out[k].site = shard[j].site;
+					break;
+				}
+			}
+			if (k == n_merged && n_merged < out_cap) {
+				out[n_merged] = shard[j];
+				n_merged++;
+			}
+		}
+	}
+	return n_merged;
+}
+
 static void corrupt_ptr_attr_dump(void)
 {
-	struct corrupt_ptr_attr_entry snap[CORRUPT_PTR_ATTR_SLOTS];
-	struct corrupt_ptr_pc_entry pc_snap[CORRUPT_PTR_PC_SLOTS];
-	unsigned int i, n = 0;
+	struct corrupt_ptr_attr_entry *snap;
+	struct corrupt_ptr_pc_entry *pc_snap;
+	unsigned int snap_cap, pc_cap, n, n_pc, i;
 
-	lock(&shm->stats.corrupt_ptr_attr_lock);
-	memcpy(snap, shm->stats.corrupt_ptr_attr, sizeof(snap));
-	unlock(&shm->stats.corrupt_ptr_attr_lock);
-
-	lock(&shm->stats.corrupt_ptr_pc_lock);
-	memcpy(pc_snap, shm->stats.corrupt_ptr_pc, sizeof(pc_snap));
-	unlock(&shm->stats.corrupt_ptr_pc_lock);
-
-	for (i = 0; i < CORRUPT_PTR_ATTR_SLOTS; i++)
-		if (snap[i].count != 0)
-			n++;
-
-	if (n == 0)
+	/*
+	 * Sized for the worst case where every child's shard is full of
+	 * unique keys.  In practice the hot keys collide across children
+	 * (post-handler attribution is dominated by a handful of syscalls)
+	 * and n_merged stays near CORRUPT_PTR_*_SLOTS; the upper bound is
+	 * just to avoid truncating when the long tail is unusually wide.
+	 * Both allocations are bounded by max_children * SLOTS so a fleet
+	 * with a few hundred children stays well under a MiB.
+	 */
+	snap_cap = max_children * CORRUPT_PTR_ATTR_SLOTS;
+	pc_cap = max_children * CORRUPT_PTR_PC_SLOTS;
+	snap = calloc(snap_cap, sizeof(*snap));
+	pc_snap = calloc(pc_cap, sizeof(*pc_snap));
+	if (snap == NULL || pc_snap == NULL) {
+		free(snap);
+		free(pc_snap);
 		return;
+	}
 
-	qsort(snap, CORRUPT_PTR_ATTR_SLOTS, sizeof(snap[0]),
-	      corrupt_ptr_attr_cmp);
-	qsort(pc_snap, CORRUPT_PTR_PC_SLOTS, sizeof(pc_snap[0]),
-	      corrupt_ptr_pc_cmp);
+	n = merge_corrupt_ptr_attr_shards(snap, snap_cap);
+	if (n == 0) {
+		free(snap);
+		free(pc_snap);
+		return;
+	}
+	n_pc = merge_corrupt_ptr_pc_shards(pc_snap, pc_cap);
+
+	qsort(snap, n, sizeof(snap[0]), corrupt_ptr_attr_cmp);
+	if (n_pc > 0)
+		qsort(pc_snap, n_pc, sizeof(pc_snap[0]), corrupt_ptr_pc_cmp);
 
 	stats_log_write("post_handler_corrupt_ptr attribution (top %u handlers):\n", n);
-	for (i = 0; i < CORRUPT_PTR_ATTR_SLOTS; i++) {
+	for (i = 0; i < n; i++) {
 		const char *name;
 		const char *width;
 
-		if (snap[i].count == 0)
-			break;
 		if (snap[i].nr == CORRUPT_PTR_ATTR_NR_NONE) {
 			name = "<deferred-free / non-syscall>";
 			width = "(all)";
@@ -2103,8 +2199,11 @@ static void corrupt_ptr_attr_dump(void)
 			width = snap[i].do32bit ? "(32)" : "(64)";
 		}
 		stats_log_write("  %-32s %s %lu\n", name, width, snap[i].count);
-		corrupt_ptr_pc_dump_for(pc_snap, snap[i].nr, snap[i].do32bit);
+		corrupt_ptr_pc_dump_for(pc_snap, n_pc, snap[i].nr, snap[i].do32bit);
 	}
+
+	free(snap);
+	free(pc_snap);
 }
 
 /*
@@ -2127,27 +2226,64 @@ static int deferred_free_reject_pc_cmp(const void *a, const void *b)
 	return 0;
 }
 
+/*
+ * Walk every child's local_deferred_free_reject_pc shard and merge into
+ * @out by summing counts on pc matches.  Same locking model as
+ * merge_corrupt_ptr_attr_shards -- single writer per shard, torn reads
+ * are tolerable noise on the 600-second dump cadence.
+ */
+static unsigned int merge_deferred_free_reject_pc_shards(struct deferred_free_reject_pc_entry *out,
+							 unsigned int out_cap)
+{
+	unsigned int i, j, k, n_merged = 0;
+
+	for_each_child(i) {
+		struct childdata *child;
+		const struct deferred_free_reject_pc_entry *shard;
+
+		child = __atomic_load_n(&children[i], __ATOMIC_ACQUIRE);
+		if (child == NULL)
+			continue;
+		shard = child->local_deferred_free_reject_pc;
+
+		for (j = 0; j < CORRUPT_PTR_PC_SLOTS; j++) {
+			if (shard[j].count == 0)
+				continue;
+			for (k = 0; k < n_merged; k++) {
+				if (out[k].pc == shard[j].pc) {
+					out[k].count += shard[j].count;
+					break;
+				}
+			}
+			if (k == n_merged && n_merged < out_cap) {
+				out[n_merged] = shard[j];
+				n_merged++;
+			}
+		}
+	}
+	return n_merged;
+}
+
 static void deferred_free_reject_pc_dump(void)
 {
-	struct deferred_free_reject_pc_entry snap[CORRUPT_PTR_PC_SLOTS];
-	unsigned int i, n = 0;
+	struct deferred_free_reject_pc_entry *snap;
+	unsigned int snap_cap, n, i;
 
-	lock(&shm->stats.deferred_free_reject_pc_lock);
-	memcpy(snap, shm->stats.deferred_free_reject_pc, sizeof(snap));
-	unlock(&shm->stats.deferred_free_reject_pc_lock);
-
-	for (i = 0; i < CORRUPT_PTR_PC_SLOTS; i++)
-		if (snap[i].count != 0)
-			n++;
-
-	if (n == 0)
+	snap_cap = max_children * CORRUPT_PTR_PC_SLOTS;
+	snap = calloc(snap_cap, sizeof(*snap));
+	if (snap == NULL)
 		return;
 
-	qsort(snap, CORRUPT_PTR_PC_SLOTS, sizeof(snap[0]),
-	      deferred_free_reject_pc_cmp);
+	n = merge_deferred_free_reject_pc_shards(snap, snap_cap);
+	if (n == 0) {
+		free(snap);
+		return;
+	}
+
+	qsort(snap, n, sizeof(snap[0]), deferred_free_reject_pc_cmp);
 
 	stats_log_write("deferred_free_reject attribution (top %u callers):\n", n);
-	for (i = 0; i < CORRUPT_PTR_PC_SLOTS; i++) {
+	for (i = 0; i < n; i++) {
 		char pcbuf[128];
 		char srcbuf[256];
 		const char *src;
@@ -2181,6 +2317,8 @@ static void deferred_free_reject_pc_dump(void)
 					pc_to_string(snap[i].pc, pcbuf, sizeof(pcbuf)),
 					snap[i].count);
 	}
+
+	free(snap);
 }
 
 /*

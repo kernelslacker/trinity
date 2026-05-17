@@ -358,6 +358,16 @@ void clean_childdata(struct childdata *child)
 	child->storm_check_last_maps_uaf = 0;
 	child->storm_check_last_scribbled = 0;
 
+	/* Reset per-child corruption-attribution shards so a fresh
+	 * occupant's first dump-window samples are not contaminated by
+	 * the previous occupant's accumulated counts. */
+	memset(child->local_corrupt_ptr_attr, 0,
+	       sizeof(child->local_corrupt_ptr_attr));
+	memset(child->local_corrupt_ptr_pc, 0,
+	       sizeof(child->local_corrupt_ptr_pc));
+	memset(child->local_deferred_free_reject_pc, 0,
+	       sizeof(child->local_deferred_free_reject_pc));
+
 	/* Reset live fd ring: -1 marks all slots as empty. */
 	for (int i = 0; i < CHILD_FD_RING_SIZE; i++)
 		child->live_fds.fds[i] = -1;

@@ -2,7 +2,6 @@
 
 #include <stdint.h>
 #include "child.h"	/* NR_CHILD_OP_TYPES */
-#include "locks.h"	/* lock_t */
 #include "syscall.h"	/* MAX_NR_SYSCALL */
 
 /*
@@ -51,25 +50,6 @@
  * can live inside struct stats_s.  A static_assert in slab-cache-thrash.c
  * fails the build if the two ever drift. */
 #define NR_SLAB_TARGETS 7
-
-/* Per-handler attribution ring for the post_handler_corrupt_ptr counter.
- * Sized to comfortably hold the long tail of distinct handlers without
- * inflating the shm footprint -- 32 entries cover the unique post-handler
- * count with headroom (the syscall table currently has ~30 .post hooks
- * that call looks_like_corrupted_ptr).  A reserved nr value tags the
- * non-syscall (rec==NULL) pseudo-handler bucket. */
-#define CORRUPT_PTR_ATTR_SLOTS		32
-#define CORRUPT_PTR_ATTR_NR_NONE	((unsigned int) ~0u)
-
-/* Caller-PC sub-attribution ring keyed by (nr, do32bit, pc).  Originally
- * scoped to the deferred-free / non-syscall pseudo-handler bucket so we
- * could break that row down by call site; now also captures rec!=NULL
- * post-handler bumps so each per-handler row in the dump can be broken
- * down by the specific looks_like_corrupted_ptr() callsite that fired.
- * Sized to comfortably hold ~30 hot post handlers x ~2 distinct caller
- * PCs each plus the deferred-free call sites and headroom -- a wider
- * keyspace than the original deferred-free-only design needed. */
-#define CORRUPT_PTR_PC_SLOTS		64
 
 /* Coarse syscall categories used by the dispatch-time histogram.  Order
  * is also the dump order; SYSCAT_OTHER is the catch-all for anything not
@@ -217,53 +197,12 @@ struct stats_s {
 	 * doing its job and converting would-be SIGSEGVs into a counter. */
 	unsigned long post_handler_corrupt_ptr;
 
-	/* Per-handler attribution ring for post_handler_corrupt_ptr.  The
-	 * global counter above tells us _that_ snapshot guards are firing,
-	 * but not _which_ post handlers -- with rejections sustained at
-	 * hundreds per minute that is the question that decides whether the
-	 * shape heuristic is doing real work or false-positiving on a
-	 * specific caller.  Each entry is keyed by (nr, do32bit); the ring
-	 * holds the top CORRUPT_PTR_ATTR_SLOTS handlers seen so far,
-	 * evicting the lowest-count entry on insertion of a new key.  The
-	 * lock serialises insertion + eviction; bumping an existing entry
-	 * still takes the lock so a concurrent eviction cannot race with the
-	 * increment.  rec==NULL callers (deferred_free_enqueue and other
-	 * non-syscall paths) fold into the reserved nr=CORRUPT_PTR_ATTR_NR_NONE
-	 * pseudo-handler bucket so the attribution ring still surfaces them.
-	 * Dumped by defense_counters_periodic_dump(). */
-	struct corrupt_ptr_attr_entry {
-		unsigned int nr;
-		bool do32bit;
-		unsigned long count;
-	} corrupt_ptr_attr[CORRUPT_PTR_ATTR_SLOTS];
-	lock_t corrupt_ptr_attr_lock;
-
-	/* Per-callsite sub-attribution keyed by (nr, do32bit, pc) so each
-	 * row of corrupt_ptr_attr can be broken down by the specific
-	 * looks_like_corrupted_ptr() callsite that fired.  Populated on
-	 * both rec==NULL bumps (deferred_free_enqueue, etc., where nr is
-	 * CORRUPT_PTR_ATTR_NR_NONE so PCs cluster under the deferred-free
-	 * row) and rec!=NULL post-handler bumps (so a sibling-syscall
-	 * scribble of rec->retval is identified by which post handler's
-	 * line of code rejected the value).  Same eviction policy as
-	 * corrupt_ptr_attr -- the lowest-count slot is displaced when a
-	 * new key arrives.  Dumped as an indented sub-table beneath each
-	 * matching row of the per-handler attribution table. */
-	struct corrupt_ptr_pc_entry {
-		unsigned int nr;
-		bool do32bit;
-		void *pc;
-		/* Optional site tag passed by the caller of
-		 * post_handler_corrupt_ptr_bump_site to disambiguate distinct
-		 * rejection sites that share a single PC bucket after LTO
-		 * inlining (e.g. the four add_object: defence-in-depth walls
-		 * that all collapse onto dispatch_step+0x336 under
-		 * __builtin_return_address(0) capture).  NULL when the caller
-		 * passed no tag; the dump path then renders the bare PC. */
-		const char *site;
-		unsigned long count;
-	} corrupt_ptr_pc[CORRUPT_PTR_PC_SLOTS];
-	lock_t corrupt_ptr_pc_lock;
+	/* Per-handler and per-callsite attribution rings for
+	 * post_handler_corrupt_ptr live in each child's struct childdata
+	 * (see include/child.h) and are merged by the parent at dump time.
+	 * The global counter above remains here so the spike-check and the
+	 * periodic-window dump can both report headline rates without
+	 * coordinating with the per-child shards. */
 
 	/* deferred_free_enqueue() rejected a pointer at the obj-pool /
 	 * arg-cleanup boundary because the value either failed the shape
@@ -280,19 +219,9 @@ struct stats_s {
 	 * caller PC routes through deferred_free_reject_pc below. */
 	unsigned long deferred_free_reject;
 
-	/* Per-callsite attribution ring for deferred_free_reject.  Keyed by
-	 * the deferred_free_enqueue caller PC -- the obj-pool / arg-cleanup
-	 * site that handed over the suspect pointer.  Same eviction policy
-	 * as corrupt_ptr_pc: bump the matching slot if present, otherwise
-	 * displace the lowest-count slot.  No (nr, do32bit) key -- every
-	 * bump originates from rec==NULL deferred_free_enqueue calls, so a
-	 * single PC dimension is enough.  Dumped by
-	 * defense_counters_periodic_dump() alongside corrupt_ptr_attr. */
-	struct deferred_free_reject_pc_entry {
-		void *pc;
-		unsigned long count;
-	} deferred_free_reject_pc[CORRUPT_PTR_PC_SLOTS];
-	lock_t deferred_free_reject_pc_lock;
+	/* Per-callsite attribution ring for deferred_free_reject lives in
+	 * each child's struct childdata (see include/child.h).  The parent
+	 * merges every child's shard at periodic-dump time. */
 
 	/* Bumped each time check_uid sees the child's uid drift away from
 	 * orig_uid + overflowuid; was previously a hard bail

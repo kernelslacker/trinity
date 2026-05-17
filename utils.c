@@ -1375,33 +1375,38 @@ void freeptr(unsigned long *p)
  * drop it instead of dereferencing or freeing.
  */
 /*
- * Update the per-handler attribution ring for a post_handler_corrupt_ptr
- * rejection.  Linear scan of the 32-entry ring: if @nr is already present
- * we bump its count; otherwise the lowest-count slot is evicted in favour
- * of the new key.  Eviction churn at steady state is bounded -- once the
- * ring is full of the genuinely-hot handlers, a new low-rate offender
- * displaces another low-rate offender and the high-rate slots stay put.
+ * Update this child's per-handler attribution shard for a
+ * post_handler_corrupt_ptr rejection.  Linear scan of the 32-entry shard:
+ * if @nr is already present we bump its count; otherwise the lowest-count
+ * slot is evicted in favour of the new key.  Eviction stays child-local,
+ * so global LRU ordering across the fleet is lost on the long tail; the
+ * parent merges every child's shard at dump time and the hot handlers
+ * still surface in the top rows because they land in every shard.
  *
- * Single coarse lock around the whole update: contention is limited to
- * actual rejection events, which by construction are rare relative to
- * the per-syscall hot path; the cost of a spin here is dwarfed by the
- * per-rejection outputerr() the caller is about to emit.  The lock is
- * also taken on the bump-existing path so a concurrent eviction cannot
- * race with the increment and lose the bump.
+ * Each child is the sole writer of its own shard, so no lock is needed.
+ * The parent is the sole reader and only at periodic-dump time -- torn
+ * reads on the dump side may shave a count by one off a single shard
+ * slot, which is in the noise once 32 shards are merged.
+ *
+ * this_child()==NULL callers (parent post-mortem paths, deferred-free
+ * tick on the main process) have no shard to bump and drop the record.
  */
 static void corrupt_ptr_attr_record(unsigned int nr, bool do32bit)
 {
-	struct corrupt_ptr_attr_entry *ring = shm->stats.corrupt_ptr_attr;
+	struct childdata *child = this_child();
+	struct corrupt_ptr_attr_entry *ring;
 	unsigned int i, victim;
 	unsigned long victim_count;
 
-	lock(&shm->stats.corrupt_ptr_attr_lock);
+	if (child == NULL)
+		return;
+
+	ring = child->local_corrupt_ptr_attr;
 
 	for (i = 0; i < CORRUPT_PTR_ATTR_SLOTS; i++) {
 		if (ring[i].count != 0 &&
 		    ring[i].nr == nr && ring[i].do32bit == do32bit) {
 			ring[i].count++;
-			unlock(&shm->stats.corrupt_ptr_attr_lock);
 			return;
 		}
 	}
@@ -1420,30 +1425,29 @@ static void corrupt_ptr_attr_record(unsigned int nr, bool do32bit)
 	ring[victim].nr = nr;
 	ring[victim].do32bit = do32bit;
 	ring[victim].count = victim_count + 1;
-
-	unlock(&shm->stats.corrupt_ptr_attr_lock);
 }
 
 /*
- * Record a (nr, do32bit, pc) triple into the per-callsite sub-attribution
- * ring.  Same eviction policy as corrupt_ptr_attr_record: bump the
- * matching slot if present, otherwise displace the lowest-count slot.
- * The lock is held across both the search and the eviction so a
- * concurrent insertion cannot lose a bump.  Skipped when pc==NULL
- * (defensive -- a caller without a usable return address has no
- * useful PC to record).
+ * Record a (nr, do32bit, pc) triple into this child's per-callsite
+ * sub-attribution shard.  Same eviction policy as corrupt_ptr_attr_record:
+ * bump the matching slot if present, otherwise displace the lowest-count
+ * slot.  No lock for the same reason -- the owning child is the sole
+ * writer.  Skipped when pc==NULL (defensive -- a caller without a usable
+ * return address has no useful PC to record) or when this_child() returns
+ * NULL (no shard to bump).
  */
 static void corrupt_ptr_pc_record(unsigned int nr, bool do32bit, void *pc,
 				  const char *site)
 {
-	struct corrupt_ptr_pc_entry *ring = shm->stats.corrupt_ptr_pc;
+	struct childdata *child = this_child();
+	struct corrupt_ptr_pc_entry *ring;
 	unsigned int i, victim;
 	unsigned long victim_count;
 
-	if (pc == NULL)
+	if (pc == NULL || child == NULL)
 		return;
 
-	lock(&shm->stats.corrupt_ptr_pc_lock);
+	ring = child->local_corrupt_ptr_pc;
 
 	for (i = 0; i < CORRUPT_PTR_PC_SLOTS; i++) {
 		if (ring[i].count != 0 &&
@@ -1456,7 +1460,6 @@ static void corrupt_ptr_pc_record(unsigned int nr, bool do32bit, void *pc,
 			 * (e.g. the legacy macro wrapper with site=NULL). */
 			if (ring[i].site == NULL && site != NULL)
 				ring[i].site = site;
-			unlock(&shm->stats.corrupt_ptr_pc_lock);
 			return;
 		}
 	}
@@ -1477,8 +1480,6 @@ static void corrupt_ptr_pc_record(unsigned int nr, bool do32bit, void *pc,
 	ring[victim].pc = pc;
 	ring[victim].site = site;
 	ring[victim].count = victim_count + 1;
-
-	unlock(&shm->stats.corrupt_ptr_pc_lock);
 }
 
 void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
@@ -1511,31 +1512,32 @@ void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
 }
 
 /*
- * Record a caller PC into the deferred_free_reject sub-attribution ring.
- * Same eviction policy as corrupt_ptr_pc_record: bump the matching slot
- * if present, otherwise displace the lowest-count slot.  Skipped when
- * pc==NULL (defensive -- a caller without a usable return address has
- * no useful PC to record).  Slimmer key than corrupt_ptr_pc_record
- * because every bump originates from rec==NULL deferred_free_enqueue
- * calls so (nr, do32bit) carry no information.
+ * Record a caller PC into this child's deferred_free_reject sub-attribution
+ * shard.  Same eviction policy and ownership model as corrupt_ptr_pc_record
+ * -- the owning child is the sole writer of its own shard, so no lock is
+ * needed; the parent merges every child's shard at dump time.  Skipped when
+ * pc==NULL (defensive -- a caller without a usable return address has no
+ * useful PC to record) or when this_child() returns NULL (parent post-mortem
+ * path, deferred-free tick on the main process -- no shard to bump).
+ * Slimmer key than corrupt_ptr_pc_record because every bump originates from
+ * rec==NULL deferred_free_enqueue calls so (nr, do32bit) carry no
+ * information.
  */
 static void deferred_free_reject_pc_record(void *pc)
 {
+	struct childdata *child = this_child();
 	struct deferred_free_reject_pc_entry *ring;
 	unsigned int i, victim;
 	unsigned long victim_count;
 
-	if (pc == NULL)
+	if (pc == NULL || child == NULL)
 		return;
 
-	ring = shm->stats.deferred_free_reject_pc;
-
-	lock(&shm->stats.deferred_free_reject_pc_lock);
+	ring = child->local_deferred_free_reject_pc;
 
 	for (i = 0; i < CORRUPT_PTR_PC_SLOTS; i++) {
 		if (ring[i].count != 0 && ring[i].pc == pc) {
 			ring[i].count++;
-			unlock(&shm->stats.deferred_free_reject_pc_lock);
 			return;
 		}
 	}
@@ -1553,8 +1555,6 @@ static void deferred_free_reject_pc_record(void *pc)
 
 	ring[victim].pc = pc;
 	ring[victim].count = victim_count + 1;
-
-	unlock(&shm->stats.deferred_free_reject_pc_lock);
 }
 
 void deferred_free_reject_bump(void *caller_pc)
