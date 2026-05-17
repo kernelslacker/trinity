@@ -80,8 +80,13 @@ static void socketcall_socketpair(unsigned long *args)
 	args[2] = st.protocol;
 	/* SYS_SOCKETPAIR needs a writable int[2] for the kernel to deposit
 	 * the pair of fds.  Without it the kernel returns -EFAULT and the
-	 * post handler has nothing to register.  Freed in post_socketcall. */
-	args[3] = (unsigned long) zmalloc(sizeof(int) * 2);
+	 * post handler has nothing to register.  Route through
+	 * avoid_shared_buffer() so the kernel can't scribble fds into the
+	 * trinity-shared allocator pool or libc heap chunk metadata --
+	 * blanket_address_scrub() only walks rec->a1..a6 and never reaches
+	 * inner pointers inside multiplexer args. */
+	args[3] = (unsigned long) get_writable_address(sizeof(int) * 2);
+	avoid_shared_buffer(&args[3], sizeof(int) * 2);
 }
 
 static void socketcall_send(unsigned long *args)
@@ -276,7 +281,9 @@ static void post_socketcall(struct syscallrecord *rec)
 				register_sock_fd(fds[0], args[0], args[1], args[2]);
 				register_sock_fd(fds[1], args[0], args[1], args[2]);
 			}
-			free(fds);
+			/* fds points into the trinity writable pool (see
+			 * socketcall_socketpair); the pool owns the memory,
+			 * so no free here. */
 			args[3] = 0;
 		}
 		break;
