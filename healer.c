@@ -1469,6 +1469,13 @@ bool healer_save_file(const char *path)
 	if (fd < 0)
 		return false;
 
+	/* Neutralise any fuzzer-installed umask so the save mode is 0644. */
+	if (fchmod(fd, 0644) != 0) {
+		(void)close(fd);
+		(void)unlink(tmppath);
+		return false;
+	}
+
 	if (healer_write_all(fd, &hdr, sizeof(hdr)) < 0)
 		goto fail;
 	if (healer_write_all(fd, parent_healer.relations,
