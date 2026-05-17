@@ -7,6 +7,13 @@
 #include "random.h"
 #include "sanitise.h"
 
+#ifndef CLONE_NEWCGROUP
+#define CLONE_NEWCGROUP 0x02000000
+#endif
+#ifndef CLONE_NEWTIME
+#define CLONE_NEWTIME 0x00000080
+#endif
+
 static const char *ns_entries[] = {
 	"/proc/self/ns/mnt",
 	"/proc/self/ns/pid",
@@ -20,6 +27,8 @@ static const char *ns_entries[] = {
 
 static unsigned long setns_types[] = {
 	0, CLONE_NEWIPC, CLONE_NEWNET, CLONE_NEWUTS,
+	CLONE_NEWNS, CLONE_NEWUSER, CLONE_NEWPID,
+	CLONE_NEWCGROUP, CLONE_NEWTIME,
 };
 
 /*
