@@ -159,32 +159,6 @@ void dump_syscallrec(struct syscallrecord *rec)
 	output(0, " -> %.*s\n", POSTBUFFER_LEN, rec->postbuffer);
 }
 
-/*
- * dump_childdata is only called from the shm-corruption path, so the
- * struct we're handed is by definition untrustworthy.  Refuse to call
- * head->dump (a function pointer) unless the surrounding counters
- * pass a basic sanity check; otherwise we crash dereferencing junk
- * while trying to *report* the corruption.  OBJHEAD_SANE_LIMIT is
- * defined in include/objects.h so add_object() can share the same
- * ceiling for its snapshot-time wild-stomp rejects.
- */
-static bool objhead_looks_sane(const struct objhead *head)
-{
-	if (head->num_entries > OBJHEAD_SANE_LIMIT)
-		return false;
-	if (head->max_entries > OBJHEAD_SANE_LIMIT)
-		return false;
-	if (head->array_capacity > OBJHEAD_SANE_LIMIT)
-		return false;
-	if (head->num_entries > head->array_capacity)
-		return false;
-	if (head->max_entries > head->array_capacity)
-		return false;
-	if (head->num_entries > 0 && head->array == NULL)
-		return false;
-	return true;
-}
-
 void dump_childdata(struct childdata *child)
 {
 	output(0, "child struct @%p\n", child);
@@ -194,75 +168,14 @@ void dump_childdata(struct childdata *child)
 	output(0, "syscall: %p\n", &child->syscall);
 	dump_syscallrec(&child->syscall);
 
-	output(0, "objects: %p\n", child->objects);
-	{
-		unsigned int i;
-		for (i = 0; i < MAX_OBJECT_TYPES; i++) {
-			struct objhead *head = &child->objects[i];
-
-			if (head->num_entries == 0)
-				continue;
-
-			if (!objhead_looks_sane(head)) {
-				output(0, " objhead[%u]: <corrupt: entries=%u max=%u capacity=%u array=%p>\n",
-					i, head->num_entries, head->max_entries,
-					head->array_capacity, head->array);
-				continue;
-			}
-
-			output(0, " objhead[%u]: %u entries (max %u, capacity %u)\n",
-				i, head->num_entries, head->max_entries,
-				head->array_capacity);
-
-			if (head->dump != NULL) {
-				unsigned int j;
-				for (j = 0; j < head->num_entries; j++) {
-					/*
-					 * dump_childdata is called from the shm-corruption /
-					 * sanity-check path against another process's per-
-					 * child OBJ_LOCAL pool, so head->array[] may be in
-					 * the middle of an add/destroy when we read it.  A
-					 * NULL slot inside the [0..num_entries) window
-					 * indicates an in-flight mutation (or earlier
-					 * corruption); skip it rather than dereferencing
-					 * NULL inside the type-specific dump function.
-					 */
-					if (head->array[j] == NULL) {
-						output(0, "  array[%u]: NULL (in-flight or corrupt)\n", j);
-						continue;
-					}
-					/*
-					 * dump_childdata always runs in the parent against another
-					 * process's per-child OBJ_LOCAL pool.  Legitimate OBJ_LOCAL
-					 * obj structs live in the owning child's private heap
-					 * (alloc_object → zmalloc → malloc — see the architectural
-					 * note above alloc_object()), so dereferencing the pointer
-					 * from this process would touch unmapped or unrelated
-					 * memory and SEGV.  We cannot deref it here even when the
-					 * entry is perfectly healthy in its owner.
-					 *
-					 * range_overlaps_shared() narrows that to the one case
-					 * where deref IS safe from the parent: the entry happens
-					 * to point inside a tracked shared region (the most likely
-					 * cause being a wild write that stamped a shared-heap
-					 * pointer into the per-child array).  Anything else —
-					 * private-heap pointer from the owning child OR genuine
-					 * post-corruption garbage — gets logged as an address and
-					 * skipped, which prevents the type-specific dumper from
-					 * SEGVing mid-diagnostic and hiding the higher-level shm
-					 * sanity report.
-					 */
-					if (!range_overlaps_shared((unsigned long)head->array[j],
-								   sizeof(struct object))) {
-						output(0, "  array[%u]: %p (private-heap or wild — not safe to deref from this process)\n",
-						       j, head->array[j]);
-						continue;
-					}
-					head->dump(head->array[j], OBJ_LOCAL);
-				}
-			}
-		}
-	}
+	/*
+	 * dump_childdata runs in the parent against another process's
+	 * childdata.  The objects pointer lives in shared childdata but
+	 * addresses the owning child's private heap, so neither the
+	 * pointer nor anything it points at is safe to deref from this
+	 * process.  Print the address and stop.
+	 */
+	output(0, "objects: %p (private to owning child)\n", child->objects);
 
 	output(0, " tp.tv_sec=%ld tp.tv_nsec=%ld\n", child->tp.tv_sec, child->tp.tv_nsec);
 

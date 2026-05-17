@@ -765,22 +765,6 @@ static void init_child(struct childdata *child, int childno)
 	}
 #endif
 
-	/*
-	 * Freeze the per-child OBJ_LOCAL objhead region PROT_READ now that
-	 * all post-fork init writes (init_object_lists, open_fail_nth,
-	 * open_tainted_fd, init_child_mappings -- anything that may have
-	 * routed an add_object on an OBJ_LOCAL pool) have completed.  From
-	 * here on every legitimate add_object/destroy_object on this
-	 * child's OBJ_LOCAL pools brackets through local_objects_thaw/
-	 * local_objects_freeze in objects.c; any wild write that lands
-	 * inside the region SIGSEGVs the writing syscall in this child
-	 * with a clean stack trace of the actual stomping code path,
-	 * rather than the corruption surfacing later as a snapshot
-	 * mismatch reject in add_object after the head fields have already
-	 * been clobbered.  Mirrors the once-after-bulk-init OBJ_GLOBAL
-	 * freeze in trinity.c:475.
-	 */
-	local_objects_freeze(child);
 }
 
 /*

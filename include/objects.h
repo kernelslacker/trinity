@@ -502,31 +502,6 @@ void init_global_objects(void);
 struct childdata;
 void init_object_lists(enum obj_scope scope, struct childdata *child);
 
-/*
- * Per-child OBJ_LOCAL objhead protection.  Symmetric to the OBJ_GLOBAL
- * freeze_global_objects/thaw_global_objects/globals_are_protected trio
- * in utils.c, but scoped to a single child's objhead region rather
- * than the global shared-obj heap.
- *
- * local_objects_freeze() mprotects the page-aligned per-child objhead
- * region PROT_READ in the calling process's address space.  Any wild
- * write that lands inside the region thereafter SIGSEGVs the writing
- * syscall in the WRITER -- naming the actual stomping code path,
- * rather than the failure surfacing later as a snapshot mismatch in
- * add_object() / __destroy_object() after the head fields have
- * already been corrupted.
- *
- * local_objects_thaw() reverses the protection so a legitimate
- * add_object()/destroy_object() write can land.
- *
- * local_objects_are_protected() reports the current state so the
- * thaw/freeze brackets at the OBJ_LOCAL write sites can short-circuit
- * when the region is already thawed (mirrors the was_protected gate
- * the OBJ_GLOBAL brackets use at objects.c:679 / 1138).
- */
-void local_objects_freeze(struct childdata *child);
-void local_objects_thaw(struct childdata *child);
-bool local_objects_are_protected(struct childdata *child);
 struct object * get_random_object(enum objecttype type, enum obj_scope scope);
 
 /*

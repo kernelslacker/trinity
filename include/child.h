@@ -464,29 +464,16 @@ struct childdata {
 	struct child_fd_ring live_fds;
 
 	/*
-	 * Per-child OBJ_LOCAL objhead array.  Lives in its own page-aligned
-	 * MAP_SHARED region (allocated lazily by init_object_lists() via
-	 * local_objects_alloc()) rather than being embedded in struct
-	 * childdata so that the per-child mprotect-RO defence (see
-	 * local_objects_freeze() in objects.c) can target just the objhead
-	 * pages without dragging in the surrounding hot-path fields
-	 * (syscall_ring, sentinel_prev, syscallrecord with its 4 KiB
-	 * prebuffer) that share whatever pages the embedded array used to
-	 * straddle.  The pointer itself lives in the writable section of
-	 * struct childdata; only the region it addresses flips RO/RW.
+	 * Per-child OBJ_LOCAL objhead array.  Allocated lazily by
+	 * init_object_lists() in the owning child's private heap (zmalloc).
+	 * Unreachable from any other process's address space, so a sibling
+	 * fuzzed value-result write cannot land here and the parent must
+	 * not deref it for foreign-child diagnostic dumps.  The pointer
+	 * itself sits in the writable section of struct childdata (in
+	 * MAP_SHARED), but every byte it addresses is private to this
+	 * child.
 	 */
 	struct objhead *objects;
-	/*
-	 * True iff the per-child *objects region is currently mprotect'd
-	 * PROT_READ in this process's address space.  Lives outside the
-	 * protected region (would otherwise be unmodifiable when set) so
-	 * the owning child can flip it as part of the thaw/freeze brackets
-	 * around legit add_object()/destroy_object() writes.  Reads/writes
-	 * are owner-only -- siblings see the childdata page itself RO via
-	 * the freeze_sibling_childdata sweep, and the parent never
-	 * mutates per-child OBJ_LOCAL state.
-	 */
-	bool objects_protected;
 
 	/* Per-child shards of the corrupted-pointer attribution rings.
 	 * Sole writer is the owning child (the *_record functions in

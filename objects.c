@@ -1,11 +1,8 @@
-#include <errno.h>
 #include <limits.h>
-#include <malloc.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
 #include "arch.h"
@@ -25,48 +22,6 @@
 #include "utils.h"
 
 static struct list_head global_obj_list = { &global_obj_list, &global_obj_list };
-
-/*
- * Joint-stomp defence for OBJ_LOCAL pools.  head->num_entries and
- * head->array_capacity are adjacent fields in struct objhead and live in
- * the per-child childdata page.  A single 8-byte value-result write that
- * lands on that vicinity stomps both jointly, leaving a (n_snap,
- * cap_snap) pair that's internally consistent (n_snap <= cap_snap) and
- * within OBJHEAD_SANE_LIMIT -- defeating the per-snapshot bail.
- *
- * malloc_usable_size() reads the glibc chunk header for array_snap,
- * geographically separate from the childdata page and from any address
- * reachable by get_writable_address() (the writable-pool slots live in a
- * different mmap region).  If the snapshot capacity claims more slots
- * than the original allocation can hold, the snapshot is the smoking gun
- * of a joint stomp -- bail.
- *
- * OBJ_GLOBAL arrays are pre-allocated in shm and not malloc'd, so
- * malloc_usable_size returns 0 and the helper would always reject; only
- * call this on the OBJ_LOCAL paths.  GLOBAL is hard-capped at
- * GLOBAL_OBJ_MAX_CAPACITY=1024 and the existing OBJHEAD_SANE_LIMIT bail
- * is sufficient there.
- */
-static inline bool local_array_holds_capacity(struct object **array_snap,
-					      unsigned int cap_snap)
-{
-	if (array_snap == NULL)
-		return cap_snap == 0;
-	/*
-	 * Bail before invoking malloc_usable_size on a pointer that does
-	 * not even look like a heap allocation we could have handed out.
-	 * malloc_usable_size on a non-malloc'd pointer is UB per glibc and
-	 * in practice walks chunk-header metadata at a region the pointer
-	 * names -- ASAN reports an OOB read on the chunk header for wild
-	 * pointers, and the helper itself is what gets blamed.  The shape
-	 * check covers NULL-ish, non-canonical, and misaligned pointers
-	 * before we reach into glibc internals.
-	 */
-	if (is_corrupt_ptr_shape(array_snap))
-		return false;
-	return malloc_usable_size(array_snap) >=
-		(size_t)cap_snap * sizeof(struct object *);
-}
 
 /*
  * Crash-safe diagnostic for add_object's wild-stomp detection branches.
@@ -518,15 +473,14 @@ static struct object *local_fd_hash_lookup(struct objhead *head, int fd)
  *               from these pools (enforced by the early return in
  *               add_object/destroy_object when getpid() != mainpid).
  *
- *   OBJ_LOCAL:  the obj struct lives in the calling process's private
- *               heap (alloc_object → zmalloc → malloc).  Each child
- *               manages its own pool independently — head->array
- *               itself sits in shm (under child->objects[type]) so
- *               the parent's sanity walker can see slot count and
- *               raw addresses, but the obj structs the array points
- *               to are unreachable from any other process's address
- *               space.  head->shared_alloc is ignored for OBJ_LOCAL
- *               pools; release_obj() routes to plain free().
+ *   OBJ_LOCAL:  every byte is in the owning child's private heap.
+ *               The objhead array (child->objects), the parallel
+ *               head->array, and the obj structs the array points
+ *               to all come from zmalloc/malloc and are unreachable
+ *               from any other process's address space.  Each child
+ *               manages its own pool independently.  head->shared_
+ *               alloc is ignored for OBJ_LOCAL pools; release_obj()
+ *               routes to plain free().
  *
  * The split is intentional.  OBJ_GLOBAL types are parent-curated
  * resources visible fleet-wide (testfiles, mq's, pidfds, ...).
@@ -672,9 +626,7 @@ void __for_each_obj_init(struct objhead *head,
 void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
 	struct objhead *head;
-	struct childdata *local_child = NULL;
 	bool was_protected = false;
-	bool local_was_protected = false;
 	char pcbuf[128];
 
 	if (unlikely(verbosity > 1)) {
@@ -739,24 +691,6 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		if (globals_are_protected()) {
 			thaw_global_objects();
 			was_protected = true;
-		}
-	} else {
-		/*
-		 * OBJ_LOCAL mirror of the OBJ_GLOBAL thaw/freeze bracket
-		 * above.  Once init_child() has called local_objects_freeze()
-		 * the per-child objhead region is mprotect'd RO; every legit
-		 * head-field write (num_entries, array, array_capacity,
-		 * array_generation publish, fd_hash lazy-init, plus the slot
-		 * store at array_snap[n] when array_snap == head->array)
-		 * needs the page writable.  this_child() is a cached lookup,
-		 * the are_protected check is one bool read; on a child whose
-		 * defence is inert (alloc failed, or freeze short-circuited)
-		 * both branches no-op and the bracket adds nothing.
-		 */
-		local_child = this_child();
-		if (local_objects_are_protected(local_child)) {
-			local_objects_thaw(local_child);
-			local_was_protected = true;
 		}
 	}
 
@@ -860,20 +794,15 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	}
 
 	/*
-	 * Reject snapshots whose array_capacity is past the OBJHEAD_SANE_
-	 * LIMIT ceiling objhead_looks_sane() already uses for the dump
-	 * path.  A snapshot above this is a smoking-gun wild stomp -- no
-	 * legitimate grow can produce a capacity here (OBJ_GLOBAL is hard-
-	 * capped at GLOBAL_OBJ_MAX_CAPACITY=1024, OBJ_LOCAL working sets
-	 * stay well below 64K) -- and acting on it lets the joint
-	 * (num_entries, array_capacity) stomp described above slip through
-	 * the capacity-routed checks because cap_snap was already poisoned
-	 * at snapshot time.  Same release_obj + counter path as the other
-	 * snapshot-rejection sites.
+	 * Reject OBJ_GLOBAL snapshots whose array_capacity is past the
+	 * OBJHEAD_SANE_LIMIT ceiling -- a smoking-gun sibling wild stomp
+	 * (OBJ_GLOBAL is hard-capped at GLOBAL_OBJ_MAX_CAPACITY=1024 so
+	 * any larger value originated from cross-process scribble of the
+	 * shm-resident objhead).  OBJ_LOCAL pools live in the owning
+	 * child's private heap and cannot be reached by a sibling, so the
+	 * defence is omitted there.
 	 */
-	if (cap_snap > OBJHEAD_SANE_LIMIT ||
-	    (scope == OBJ_LOCAL &&
-	     !local_array_holds_capacity(array_snap, cap_snap))) {
+	if (scope == OBJ_GLOBAL && cap_snap > OBJHEAD_SANE_LIMIT) {
 		crashsafe_corruption_log("stomped capacity", type,
 					 array_snap, n, cap_snap);
 		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted, 1,
@@ -1228,115 +1157,28 @@ out_unlock:
 		if (was_protected)
 			freeze_global_objects();
 		unlock(&shm->objlock);
-	} else if (local_was_protected) {
-		local_objects_freeze(local_child);
 	}
 
 	/* if we just added something to a child list, check
-	 * to see if we need to do some pruning.
-	 *
-	 * prune_objects() routes destroys through destroy_object(), which
-	 * carries its own thaw/freeze bracket -- runs OUTSIDE our refreeze
-	 * above so the inner brackets do not collide with this one and
-	 * each call's bracket is bounded by the destroy it pairs with.
-	 */
+	 * to see if we need to do some pruning. */
 	if (scope == OBJ_LOCAL)
 		prune_objects();
 }
 
 /*
- * Page-aligned size of the per-child OBJ_LOCAL objhead array.  Computed
- * once on first use (page_size is resolved at runtime in trinity.c).
- * Used by local_objects_alloc() for the mmap-backed alloc and by
- * local_objects_freeze/thaw for the matching mprotect range.
- */
-static size_t local_objects_region_size(void)
-{
-	size_t raw = sizeof(struct objhead) * MAX_OBJECT_TYPES;
-
-	return (raw + page_size - 1) & PAGE_MASK;
-}
-
-/*
- * Lazy per-child page-aligned alloc for the OBJ_LOCAL objhead array.
- * Carved out of struct childdata into its own MAP_SHARED region so the
- * mprotect-RO defence in local_objects_freeze() can target just the
- * objhead pages -- the embedded form straddled pages with the hot-path
- * syscall_ring / sentinel_prev / 4 KiB syscallrecord prebuffer that
- * mprotect-RO would have made unwritable.  alloc_shared() registers the
- * region with the mm-syscall sanitiser bitmap so a fuzzed
- * munmap/mremap/mprotect targeting it is rejected, same as for any
- * other tracked shared mapping.
- *
- * Idempotent: a slot recycled across child generations keeps its
- * existing region; init_object_lists() re-zeroes the head fields
- * inside.  Failure leaves child->objects == NULL and the OBJ_LOCAL
- * defence inert for this child -- callers must NULL-check before
- * touching child->objects.
+ * Lazy per-child alloc for the OBJ_LOCAL objhead array, in the owning
+ * child's private heap.  Runs from init_child() after fork, so the
+ * allocation lands in the child's own address space and is unreachable
+ * from any other process.  Failure leaves child->objects == NULL and
+ * the OBJ_LOCAL path inert for this child -- callers must NULL-check
+ * before touching child->objects.
  */
 static void local_objects_alloc(struct childdata *child)
 {
-	size_t alloc_size;
-
 	if (child == NULL || child->objects != NULL)
 		return;
 
-	alloc_size = local_objects_region_size();
-	child->objects = alloc_shared(alloc_size);
-	child->objects_protected = false;
-}
-
-void local_objects_freeze(struct childdata *child)
-{
-	size_t alloc_size;
-
-	if (child == NULL || child->objects == NULL)
-		return;
-	if (child->objects_protected)
-		return;
-
-	alloc_size = local_objects_region_size();
-	if (mprotect(child->objects, alloc_size, PROT_READ) != 0) {
-		log_mprotect_failure(child->objects, alloc_size, PROT_READ,
-				     __builtin_return_address(0), errno);
-		outputerr("local_objects_freeze: mprotect RO failed for child %u; OBJ_LOCAL wild-write defence inert\n",
-			  child->num);
-		return;
-	}
-	child->objects_protected = true;
-}
-
-void local_objects_thaw(struct childdata *child)
-{
-	size_t alloc_size;
-
-	if (child == NULL || child->objects == NULL)
-		return;
-	if (!child->objects_protected)
-		return;
-
-	alloc_size = local_objects_region_size();
-	if (mprotect(child->objects, alloc_size, PROT_READ | PROT_WRITE) != 0) {
-		/*
-		 * Unrecoverable: callers (add_object publish, destroy
-		 * swap-with-last) are about to write to the still-RO region
-		 * and would SIGSEGV mid-critical-section.  Mirror the
-		 * thaw_global_objects() BUG path rather than silently
-		 * proceeding into the wall.
-		 */
-		log_mprotect_failure(child->objects, alloc_size,
-				     PROT_READ | PROT_WRITE,
-				     __builtin_return_address(0), errno);
-		BUG("local_objects_thaw: mprotect RW failed -- per-child OBJ_LOCAL region is half-thawed, unrecoverable");
-	}
-	child->objects_protected = false;
-}
-
-bool local_objects_are_protected(struct childdata *child)
-{
-	if (child == NULL)
-		return false;
-	return child->objects_protected;
+	child->objects = zmalloc(sizeof(struct objhead) * MAX_OBJECT_TYPES);
 }
 
 void init_object_lists(enum obj_scope scope, struct childdata *child)
@@ -1352,16 +1194,10 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
 		 * uninitialised reads.  The objects pointer therefore
 		 * arrives at first init holding a wild value, not NULL --
 		 * local_objects_alloc()'s "skip if non-NULL" guard would
-		 * then leave child->objects pointing at the poison and the
-		 * first head->num_entries store would SIGSEGV through that
-		 * wild address.  Zero both fields before the alloc and
-		 * protected-flag reads to neutralise the poison.  This is
-		 * also the right reset for slot-reuse: the prior occupant's
-		 * mprotect state died with its address space, so our
-		 * inherited mapping is unconditionally RW.
+		 * then leave child->objects pointing at the poison.  Zero
+		 * the field before the alloc to neutralise the poison.
 		 */
 		child->objects = NULL;
-		child->objects_protected = false;
 		local_objects_alloc(child);
 		if (child->objects == NULL)
 			return;
@@ -1703,26 +1539,17 @@ struct object * get_random_object_versioned(enum objecttype type,
 
 		if (snapshot == 0) {
 			obj = NULL;
-		} else if (cap_snap > OBJHEAD_SANE_LIMIT ||
-			   (scope == OBJ_LOCAL &&
-			    !local_array_holds_capacity(array_snap, cap_snap))) {
+		} else if (scope == OBJ_GLOBAL &&
+			   cap_snap > OBJHEAD_SANE_LIMIT) {
 			/*
-			 * Snapshot of array_capacity above the ceiling
-			 * objhead_looks_sane() uses for the dump path can
-			 * only have come from a wild stomp -- OBJ_GLOBAL is
-			 * hard-capped at GLOBAL_OBJ_MAX_CAPACITY=1024 and
-			 * OBJ_LOCAL working sets stay well below 64K -- so
-			 * acting on it (and on the num_entries snapshot we
-			 * paired it with) is the joint-stomp shape the
-			 * cap_snap defence in add_object() exists to reject.
-			 * For OBJ_LOCAL also check the malloc_usable_size of
-			 * array_snap: a joint stomp that bumped both
-			 * num_entries and array_capacity into a self-
-			 * consistent (n_snap <= cap_snap) range within
-			 * OBJHEAD_SANE_LIMIT bypasses the cap-vs-ceiling
-			 * bail; the chunk-header allocation size is geo-
-			 * graphically separate from the childdata page and
-			 * exposes the joint stomp where snapshots cannot.
+			 * OBJ_GLOBAL is hard-capped at
+			 * GLOBAL_OBJ_MAX_CAPACITY=1024, so a snapshot
+			 * past OBJHEAD_SANE_LIMIT can only be a sibling
+			 * wild stomp on the shm-resident objhead -- reject
+			 * the pair (the matching num_entries snapshot is
+			 * presumed equally poisoned by the same stomp).
+			 * OBJ_LOCAL pools are in the owning child's
+			 * private heap, beyond reach of sibling writes.
 			 */
 			__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
 					   1, __ATOMIC_RELAXED);
@@ -2028,16 +1855,15 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 	array_snap = head->array;
 
 	/*
-	 * Reject snapshots whose array_capacity is past the
-	 * OBJHEAD_SANE_LIMIT ceiling objhead_looks_sane() uses for the
-	 * dump path -- a smoking-gun wild stomp, since OBJ_GLOBAL is
-	 * hard-capped at GLOBAL_OBJ_MAX_CAPACITY=1024 and OBJ_LOCAL
-	 * working sets stay well below 64K.  Same shape as the entry
-	 * cap_snap reject in add_object().
+	 * OBJ_GLOBAL sibling-stomp reject: a snapshot capacity past
+	 * OBJHEAD_SANE_LIMIT could only have come from a cross-process
+	 * scribble of the shm-resident objhead (legit OBJ_GLOBAL is
+	 * hard-capped at GLOBAL_OBJ_MAX_CAPACITY=1024).  Same shape as
+	 * the entry cap_snap reject in add_object().  OBJ_LOCAL pools
+	 * are in the owning child's private heap and unreachable from
+	 * siblings -- no analogous defence required there.
 	 */
-	if (cap_snap > OBJHEAD_SANE_LIMIT ||
-	    (scope == OBJ_LOCAL &&
-	     !local_array_holds_capacity(array_snap, cap_snap))) {
+	if (scope == OBJ_GLOBAL && cap_snap > OBJHEAD_SANE_LIMIT) {
 		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
 				   1, __ATOMIC_RELAXED);
 		return;
@@ -2157,9 +1983,7 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 
 void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
-	struct childdata *local_child = NULL;
 	bool was_protected = false;
-	bool local_was_protected = false;
 
 	if (scope == OBJ_GLOBAL && getpid() != mainpid)
 		return;
@@ -2170,21 +1994,6 @@ void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype ty
 			thaw_global_objects();
 			was_protected = true;
 		}
-	} else {
-		/*
-		 * OBJ_LOCAL mirror of the OBJ_GLOBAL thaw/freeze bracket.
-		 * __destroy_object()'s swap-with-last writes head->num_entries,
-		 * the array slots through head->array, the per-slot version
-		 * counters (OBJ_GLOBAL only -- skipped on the OBJ_LOCAL leg
-		 * but the head field reads still walk the protected page),
-		 * and the fd-hash slot writes route through head->fd_hash --
-		 * any of which need the per-child objhead region writable.
-		 */
-		local_child = this_child();
-		if (local_objects_are_protected(local_child)) {
-			local_objects_thaw(local_child);
-			local_was_protected = true;
-		}
 	}
 
 	__destroy_object(obj, scope, type, false);
@@ -2193,8 +2002,6 @@ void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype ty
 		if (was_protected)
 			freeze_global_objects();
 		unlock(&shm->objlock);
-	} else if (local_was_protected) {
-		local_objects_freeze(local_child);
 	}
 }
 
@@ -2249,15 +2056,14 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 		return;
 
 	/*
-	 * OBJHEAD_SANE_LIMIT bail mirrors add_object()'s entry guard.  A
-	 * snapshot capacity above the 64K ceiling can only have come
-	 * from a wild stomp; acting on it would let the post-loop memset
-	 * write (cap_snap * 8) bytes past the real allocation.  Joint-
-	 * stomp defence via local_array_holds_capacity() for OBJ_LOCAL.
+	 * OBJ_GLOBAL sibling-stomp bail: a snapshot capacity above
+	 * OBJHEAD_SANE_LIMIT could only have come from a cross-process
+	 * scribble of the shm-resident objhead; acting on it would let
+	 * the post-loop memset write (cap_snap * 8) bytes past the real
+	 * allocation.  OBJ_LOCAL pools live in the owning child's
+	 * private heap and need no analogous defence.
 	 */
-	if (cap_snap > OBJHEAD_SANE_LIMIT ||
-	    (scope == OBJ_LOCAL &&
-	     !local_array_holds_capacity(array_snap, cap_snap))) {
+	if (scope == OBJ_GLOBAL && cap_snap > OBJHEAD_SANE_LIMIT) {
 		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
 				   1, __ATOMIC_RELAXED);
 		return;
@@ -2503,7 +2309,7 @@ void remove_object_by_fd(int fd)
 static void __prune_objects(struct childdata *child, enum objecttype type, enum obj_scope scope)
 {
 	struct objhead *head;
-	unsigned int n_snap, cap_snap, expected_kills, i;
+	unsigned int n_snap, expected_kills, i;
 	struct object **array_snap;
 
 	head = &child->objects[type];
@@ -2536,45 +2342,12 @@ static void __prune_objects(struct childdata *child, enum objecttype type, enum 
 	 * Duplicate picks land on the same idx with probability
 	 * ~expected_kills/n_snap (~10%); a duplicate finds NULL on the
 	 * second visit and is silently skipped.
-	 *
-	 * Snapshot num_entries, array_capacity and array together at
-	 * picker entry so the bound (rand() % n_snap) and the slot deref
-	 * see one self-consistent view of the objhead.  Without this,
-	 * num_entries was snapshotted but head->array was re-loaded fresh
-	 * inside the loop at every deref site, so a sibling value-result
-	 * write whose buffer aliased this child's objhead could scribble
-	 * (num_entries, array_capacity) to mutually-consistent large
-	 * values between our num_entries snapshot and the deref, and
-	 * reseat head->array between iterations -- the rand() % n_snap
-	 * index would then run off a region whose actual allocation was
-	 * sized under the pre-poisoning capacity.  Mirror the snapshot
-	 * regime add_object() established on the write side and the
-	 * sibling read-side fixes carried in get_random_object_versioned,
-	 * __destroy_object/destroy_objects and the for_each_obj iterator.
 	 */
 	n_snap = __atomic_load_n(&head->num_entries, __ATOMIC_ACQUIRE);
-	cap_snap = head->array_capacity;
 	array_snap = head->array;
 
-	/*
-	 * A snapshot of array_capacity above the ceiling
-	 * objhead_looks_sane() uses for the dump path can only have come
-	 * from a wild stomp -- OBJ_GLOBAL is hard-capped at
-	 * GLOBAL_OBJ_MAX_CAPACITY=1024 and OBJ_LOCAL working sets stay
-	 * well below 64K -- so acting on it (and on the n_snap snapshot
-	 * we paired it with) is the joint-stomp shape the cap_snap defence
-	 * in add_object() exists to reject.  An n_snap above cap_snap is
-	 * the same shape via the other limb.  Bail through the existing
-	 * local_obj_num_entries_corrupted counter for symmetry with the
-	 * sibling read-side guards.
-	 */
-	if (cap_snap > OBJHEAD_SANE_LIMIT || n_snap > cap_snap ||
-	    (scope == OBJ_LOCAL &&
-	     !local_array_holds_capacity(array_snap, cap_snap))) {
-		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
-				   1, __ATOMIC_RELAXED);
+	if (array_snap == NULL)
 		return;
-	}
 
 	expected_kills = n_snap / 10U;
 	if (expected_kills == 0)
