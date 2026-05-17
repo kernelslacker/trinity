@@ -23,6 +23,7 @@
 #include "random.h"
 #include "sequence.h"
 #include "shm.h"
+#include "edgepair_ring.h"
 #include "healer_ring.h"
 #include "stats_ring.h"
 #include "trinity.h"
@@ -279,6 +280,16 @@ void init_shm(void)
 		 * the canonical aggregate stays at zero. */
 		child->healer_ring = alloc_shared(sizeof(struct healer_ring));
 		healer_ring_init(child->healer_ring);
+
+		/* Per-child edgepair observation ring.  Same alloc_shared()
+		 * reasoning as the stats and fd_event and healer rings above:
+		 * the child IS the producer (every non-cmp dispatched syscall
+		 * enqueues one slot once the per-child sentinel is past), so
+		 * the ring contents stay child-writable.  Dark-launched in
+		 * this commit -- no call site enqueues yet -- so the drain
+		 * runs empty and the canonical aggregate stays at zero. */
+		child->edgepair_ring = alloc_shared(sizeof(struct edgepair_ring));
+		edgepair_ring_init(child->edgepair_ring);
 	}
 
 	/* Allocate the parent-write / child-read mirror page before
@@ -295,6 +306,14 @@ void init_shm(void)
 	 * set; a child wild-write into either page SEGVs the offending
 	 * child at the source. */
 	healer_published_init();
+
+	/* Edgepair mirror page: parent-write / child-read.  edgepair_is_cold
+	 * reads its three fields off this page on the syscall-selection
+	 * biasing path, refreshed once per drain inside the same freeze
+	 * bracket the stats and healer drains use.  Allocated
+	 * alloc_shared_global so it joins the frozen-RO set; a child wild-
+	 * write into the page SEGVs the offending child at the source. */
+	edgepair_published_init();
 	if (mprotect(children, childptrslen, PROT_READ) != 0)
 		log_mprotect_failure(children, (size_t) childptrslen, PROT_READ,
 				     __builtin_return_address(0), errno);

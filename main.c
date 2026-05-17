@@ -14,6 +14,7 @@
 
 #include "child.h"
 #include "debug.h"
+#include "edgepair_ring.h"
 #include "fd-event.h"
 #include "healer.h"
 #include "healer_ring.h"
@@ -1507,6 +1508,11 @@ void main_loop(void)
 		 * dirty rows of the relation and pair mirror pages inside
 		 * its own thaw/refreeze bracket. */
 		healer_ring_drain_all();
+
+		/* Drain edgepair observation events from all children's rings
+		 * into the parent-private edgepair_aggregate.  Republishes
+		 * the mirror page inside its own thaw/refreeze bracket. */
+		edgepair_ring_drain_all();
 
 		taint_check();
 
