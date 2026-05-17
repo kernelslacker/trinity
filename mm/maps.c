@@ -15,22 +15,12 @@
 #include "utils.h"
 
 /*
- * Populate a slot-version handle for a randomly-picked entry in the
+ * Populate a handle for a randomly-picked entry in the
  * OBJ_MMAP_ANON / OBJ_MMAP_FILE / OBJ_MMAP_TESTFILE pools.  Same
- * pick-and-validate flow as get_map() (heap-range guard, size guard,
- * just-before-return validate_object_handle()) but additionally
- * captures (slot_idx, slot_version, slot_array_gen) into *h so the
- * caller can re-validate the slot via validate_map_handle() right before its
- * own deref of map->ptr / map->size / map->prot.  Returns true on
- * success with h->map pointing at &obj->map; false (and h->map = NULL)
- * if the 1000-iter retry budget is exhausted by repeated concurrent
- * destroys, in which case shm->stats.maps_uaf_caught is bumped.
- *
- * For OBJ_LOCAL pools (no lockless reader, no slot_versions array)
- * the validate path degenerates to "always true" inside
- * validate_object_handle() so the handle still works as a thin
- * wrapper around get_map() — the consumer doesn't need to special-
- * case scope.
+ * pick-and-deref flow as get_map() (heap-range guard, size guard);
+ * post-Stage-5 the pools live in private heap so there is no
+ * concurrent destroyer racing the consumer's deref of map->ptr /
+ * map->size / map->prot.
  */
 bool get_map_handle(struct map_handle *h)
 {
@@ -42,9 +32,6 @@ bool get_map_handle(struct map_handle *h)
 		return false;
 
 	h->map = NULL;
-	h->slot_idx = 0;
-	h->slot_version = 0;
-	h->slot_array_gen = 0;
 
 	if (child == NULL)
 		scope = OBJ_GLOBAL;
@@ -52,7 +39,6 @@ bool get_map_handle(struct map_handle *h)
 		scope = OBJ_LOCAL;
 
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 
 		static const enum objecttype map_pool_types[3] = {
@@ -60,31 +46,7 @@ bool get_map_handle(struct map_handle *h)
 		};
 		type = map_pool_types[rand() % 3];
 
-		/*
-		 * Use the versioned API so we can re-validate the slot
-		 * right before handing &obj->map back to the caller.  The
-		 * lockless OBJ_GLOBAL reader race surfaced in the 2026-05-05
-		 * overnight asan run as 30x SEGVs at asan-poisoned addresses
-		 * (si_addr=0x51900064f758 family, SEGV_ACCERR — the asan
-		 * redzone signature) inside the consumer's map->ptr deref:
-		 * the parent destroyed the obj between the lockless pick
-		 * and this caller's deref, free_shared_obj() had already
-		 * routed the chunk back to the shared-heap freelist, and
-		 * a concurrent alloc_shared_obj() recycled it underneath us.
-		 * The version+array-generation snapshot below plus
-		 * validate_object_handle() just before return narrows that
-		 * window to a few cycles; the handle exported in *h lets a
-		 * downstream consumer re-narrow it again right before its
-		 * own deref.  The array-generation snapshot additionally
-		 * catches the OBJ_LOCAL pool's own grow path reseating
-		 * head->array — without it, a slot picked from one
-		 * generation of head->array but dereffed after a same-child
-		 * add_object() doubling reads the deferred-free chunk that
-		 * libc may have already recycled.
-		 */
-		obj = get_random_object_versioned(type, scope, &slot_idx,
-						  &slot_version,
-						  &slot_array_gen);
+		obj = get_random_object(type, scope);
 		if (obj == NULL)
 			continue;
 
@@ -164,23 +126,9 @@ bool get_map_handle(struct map_handle *h)
 			continue;
 		}
 
-		/*
-		 * Last-line check: if the parent destroyed/replaced this
-		 * slot between get_random_object_versioned() and now, the
-		 * version no longer matches and obj is unsafe to deref.
-		 * Drop it and pick again rather than handing &obj->map to
-		 * the caller.
-		 */
-		if (!validate_object_handle(type, scope, obj, slot_idx,
-					    slot_version, slot_array_gen))
-			continue;
-
 		h->map = &obj->map;
 		h->type = type;
 		h->scope = scope;
-		h->slot_idx = slot_idx;
-		h->slot_version = slot_version;
-		h->slot_array_gen = slot_array_gen;
 		return true;
 	}
 
@@ -194,49 +142,14 @@ bool get_map_handle(struct map_handle *h)
 }
 
 /*
- * Re-validate a previously-obtained map handle right before the caller
- * dereferences h->map.  Recovers the owning obj via container_of() —
- * &obj->map is in a union inside struct object, so the back-pointer is
- * a fixed offset — and asks the object-pool slot-version primitive
- * whether the slot still holds the same obj at the same version we
- * picked.  Returns true if the slot is consistent; false (and bumps
- * shm->stats.maps_uaf_caught) if the parent destroyed or replaced the
- * entry in the meantime, in which case the caller MUST drop h->map
- * rather than dereferencing it.
- *
- * Defends the longer windows that get_map_handle() itself can't close:
- *  - arg-gen paths that hold &obj->map across multiple frames before
- *    the syscall is dispatched
- *  - dirty/iovec loops that draw a map then walk every page
- *  - any consumer where a sibling syscall could land between the pick
- *    and the use
- *
- * For the OBJ_LOCAL scope (no slot_versions array, no lockless reader)
- * validate_object_handle() returns true unconditionally so this helper
- * is a no-op — matches the OBJ_LOCAL behaviour of the underlying
- * primitive without forcing the caller to special-case scope.
+ * Post-Stage-5 every pool is private-heap; the handle stays valid for
+ * the consumer's lifetime.  The check collapses to a NULL guard so
+ * callers that always re-validate before dereferencing still have a
+ * cheap canonical entry point and don't need to special-case scope.
  */
 bool validate_map_handle(struct map_handle *h)
 {
-	struct object *obj;
-
-	if (h == NULL || h->map == NULL)
-		return false;
-
-	obj = container_of(h->map, struct object, map);
-
-	if (!validate_object_handle(h->type, h->scope, obj, h->slot_idx,
-				    h->slot_version, h->slot_array_gen)) {
-		struct childdata *c;
-
-		__atomic_add_fetch(&shm->stats.maps_uaf_caught, 1,
-				   __ATOMIC_RELAXED);
-		c = this_child();
-		if (c != NULL)
-			c->local_maps_uaf_caught++;
-		return false;
-	}
-	return true;
+	return h != NULL && h->map != NULL;
 }
 
 /*
@@ -543,12 +456,12 @@ void mmap_fd(int fd, const char *name, size_t len, int prot, enum obj_scope scop
 	 * the OBJ_GLOBAL sweep closed).
 	 */
 	if (scope == OBJ_GLOBAL) {
-		obj = alloc_shared_obj(sizeof(struct object));
+		obj = alloc_object();
 		if (obj == NULL)
 			return;
 		obj->map.name = alloc_shared_strdup(name);
 		if (obj->map.name == NULL) {
-			free_shared_obj(obj, sizeof(struct object));
+			free(obj);
 			return;
 		}
 	} else {
@@ -579,7 +492,7 @@ retry_mmap:
 				free_shared_str(obj->map.name,
 						strlen(obj->map.name) + 1);
 				obj->map.name = NULL;
-				free_shared_obj(obj, sizeof(struct object));
+				free(obj);
 			} else {
 				free(obj->map.name);
 				obj->map.name = NULL;
@@ -640,7 +553,7 @@ retry_mmap:
 			free_shared_str(obj->map.name,
 					strlen(obj->map.name) + 1);
 			obj->map.name = NULL;
-			free_shared_obj(obj, sizeof(struct object));
+			free(obj);
 		} else {
 			free(obj->map.name);
 			obj->map.name = NULL;
@@ -654,7 +567,6 @@ retry_mmap:
 	head = get_objhead(scope, type);
 	head->dump = &map_dump;
 	if (scope == OBJ_GLOBAL) {
-		head->shared_alloc = true;
 		head->destroy = &map_destructor_shared;
 	}
 

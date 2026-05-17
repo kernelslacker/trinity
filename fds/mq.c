@@ -75,7 +75,7 @@ static int open_one_mq(int idx)
 	if (fd < 0)
 		return false;
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
 		return false;
@@ -112,7 +112,6 @@ static int init_mq_fds(void)
 	 * obj struct itself, so it migrates to shm automatically with the
 	 * rest of the struct.  No alloc_shared_str needed.
 	 */
-	head->shared_alloc = true;
 
 	for (i = 0; i < 5; i++) {
 		if (open_one_mq(i))
@@ -152,12 +151,10 @@ static int get_rand_mq_fd(void)
 	 * alloc_shared_obj() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_MQ, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_MQ, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -172,10 +169,6 @@ static int get_rand_mq_fd(void)
 				  "OBJ_FD_MQ pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_MQ, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->mqobj.fd;
 		if (fd < 0)

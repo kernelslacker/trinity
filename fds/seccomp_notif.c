@@ -40,7 +40,7 @@ static void seccomp_notif_destructor(struct object *obj)
 
 /*
  * Cross-process safe: only reads obj->seccomp_notifobj.fd (now in shm
- * via alloc_shared_obj) and the scope scalar.  No process-local
+ * via alloc_object) and the scope scalar.  No process-local
  * pointers are dereferenced, so it is correct to call this from a
  * different process than the one that allocated the obj — which
  * matters because head->dump runs from dump_childdata() in the
@@ -102,9 +102,9 @@ static int open_seccomp_notif(void)
 		return false;
 	}
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
-		outputerr("open_seccomp_notif: alloc_shared_obj failed\n");
+		outputerr("open_seccomp_notif: alloc_object failed\n");
 		close(fd);
 		return false;
 	}
@@ -128,7 +128,6 @@ static int init_seccomp_notif_fds(void)
 	 * with no pointer members, so this is a mechanical conversion that
 	 * matches the pidfd template exactly.
 	 */
-	head->shared_alloc = true;
 
 	/* Create a small pool.  Each call installs a new seccomp filter,
 	 * so don't go overboard. */
@@ -155,15 +154,13 @@ static int get_rand_seccomp_notif_fd(void)
 	 * the seccomp notif fd handed to ioctl(SECCOMP_IOCTL_NOTIF_*) via the fd_provider .get callback,
 	 * the parent can destroy the obj, free_shared_obj() returns the
 	 * chunk to the shared-heap freelist, and a concurrent
-	 * alloc_shared_obj() recycles it underneath us.
+	 * alloc_object() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_SECCOMP_NOTIF, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_SECCOMP_NOTIF, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -178,10 +175,6 @@ static int get_rand_seccomp_notif_fd(void)
 				  "OBJ_FD_SECCOMP_NOTIF pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_SECCOMP_NOTIF, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->seccomp_notifobj.fd;
 		if (fd < 0)

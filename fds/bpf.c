@@ -112,7 +112,7 @@ static int open_bpf_fd(void)
 	if (fd < 0)
 		return false;
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
 		return false;
@@ -142,7 +142,6 @@ static int init_bpf_fds(void)
 	 * int map_fd;} with no pointer members, so this is a mechanical
 	 * conversion matching the pidfd template.
 	 */
-	head->shared_alloc = true;
 
 	for (i = 0; i < ARRAY_SIZE(bpf_fds); i++)
 		open_bpf_fd();
@@ -197,12 +196,10 @@ int get_rand_bpf_fd(void)
 	 * alloc_shared_obj() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_BPF_MAP, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_BPF_MAP, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -217,10 +214,6 @@ int get_rand_bpf_fd(void)
 				  "OBJ_FD_BPF_MAP pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_BPF_MAP, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->bpfobj.map_fd;
 		if (fd < 0)
@@ -350,7 +343,7 @@ static int open_bpf_prog_fd(void)
 	if (fd < 0)
 		return false;
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
 		return false;
@@ -384,7 +377,6 @@ static int init_bpf_prog_fds(void)
 	 * {int fd; u32 prog_type;} with no pointer members — mechanical
 	 * conversion matching the pidfd template.
 	 */
-	head->shared_alloc = true;
 
 	for (i = 0; i < ARRAY_SIZE(bpf_prog_templates); i++) {
 		struct object *obj;
@@ -403,7 +395,7 @@ static int init_bpf_prog_fds(void)
 			continue;
 		}
 
-		obj = alloc_shared_obj(sizeof(struct object));
+		obj = alloc_object();
 		if (obj == NULL) {
 			close(fd);
 			continue;
@@ -452,12 +444,10 @@ int get_rand_bpf_prog_fd(void)
 	 * obj and a concurrent alloc_shared_obj() recycles the chunk.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_BPF_PROG, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_BPF_PROG, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -467,10 +457,6 @@ int get_rand_bpf_prog_fd(void)
 				  "OBJ_FD_BPF_PROG pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_BPF_PROG, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->bpfprogobj.fd;
 		if (fd < 0)
@@ -540,7 +526,6 @@ static int init_bpf_link_fds(void)
 	 * {int fd; u32 attach_type;} with no pointer members — mechanical
 	 * conversion matching the pidfd template.
 	 */
-	head->shared_alloc = true;
 
 	return true;
 }
@@ -575,12 +560,10 @@ int get_rand_bpf_link_fd(void)
 	 * the obj and a concurrent alloc_shared_obj() recycles the chunk.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_BPF_LINK, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_BPF_LINK, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -590,10 +573,6 @@ int get_rand_bpf_link_fd(void)
 				  "OBJ_FD_BPF_LINK pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_BPF_LINK, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->bpflinkobj.fd;
 		if (fd < 0)
@@ -659,7 +638,6 @@ static int init_bpf_btf_fds(void)
 	 * {int fd;} with no pointer members — mechanical conversion
 	 * matching the pidfd template.
 	 */
-	head->shared_alloc = true;
 
 	return true;
 }
@@ -694,12 +672,10 @@ int get_rand_bpf_btf_fd(void)
 	 * concurrent alloc_shared_obj() recycles the chunk.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_BPF_BTF, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_BPF_BTF, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -709,10 +685,6 @@ int get_rand_bpf_btf_fd(void)
 				  "OBJ_FD_BPF_BTF pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_BPF_BTF, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->bpfbtfobj.fd;
 		if (fd < 0)

@@ -93,9 +93,9 @@ static int open_perf_fd(void)
 		return false;
 	}
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
-		outputerr("open_perf_fd: alloc_shared_obj failed\n");
+		outputerr("open_perf_fd: alloc_object failed\n");
 		close(fd);
 		return false;
 	}
@@ -103,7 +103,7 @@ static int open_perf_fd(void)
 	obj->perfobj.eventattr = alloc_shared_str(sizeof(struct perf_event_attr));
 	if (obj->perfobj.eventattr == NULL) {
 		outputerr("open_perf_fd: alloc_shared_str(perf_event_attr) failed\n");
-		free_shared_obj(obj, sizeof(struct object));
+		free(obj);
 		close(fd);
 		return false;
 	}
@@ -137,7 +137,6 @@ static int init_perf_fds(void)
 	 * is transient — freed in the same call after memcpy — and stays
 	 * on the private heap.
 	 */
-	head->shared_alloc = true;
 
 	while (i < MAX_PERF_FDS) {
 		if (open_perf_fd() == true) {
@@ -196,15 +195,13 @@ int get_rand_perf_fd(void)
 	 * the perf_event fd routed into ioctl(PERF_EVENT_IOC_*)/read via the fd_provider .get callback,
 	 * the parent can destroy the obj, free_shared_obj() returns the
 	 * chunk to the shared-heap freelist, and a concurrent
-	 * alloc_shared_obj() recycles it underneath us.
+	 * alloc_object() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_PERF, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_PERF, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -219,10 +216,6 @@ int get_rand_perf_fd(void)
 				  "OBJ_FD_PERF pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_PERF, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->perfobj.fd;
 		if (fd < 0)

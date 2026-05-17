@@ -69,12 +69,11 @@ bool fd_event_enqueue(struct fd_event_ring *ring,
 /*
  * Validate a child-supplied event before acting on it.  Children run
  * hostile fuzzed workloads and have unfettered write access to their
- * own ring, so any field — including the type tag — can be arbitrary
+ * own ring, so any field -- including the type tag -- can be arbitrary
  * garbage.  Reject events whose enum/index fields fall outside the
- * ranges the dispatch code treats as array-safe: a bad objtype would
- * OOB-write shm->fd_regen_pending[MAX_OBJECT_TYPES], and a bad family
- * would OOB-read net_protocols[TRINITY_PF_MAX] inside add_socket().
- * The socktype/protocol caps are looser — neither is used as an array
+ * ranges the dispatch code treats as array-safe: a bad family would
+ * OOB-read net_protocols[TRINITY_PF_MAX] inside add_socket().  The
+ * socktype/protocol caps are looser -- neither is used as an array
  * index downstream, but a 0xFFFFFFFF here is still a clear corruption
  * signal worth dropping rather than recording into the obj triplet.
  */
@@ -83,9 +82,6 @@ static bool fd_event_payload_valid(const struct fd_event *ev)
 	switch (ev->type) {
 	case FD_EVENT_CLOSE:
 		return ev->fd1 >= 0;
-	case FD_EVENT_REGEN_REQUEST:
-		return ev->objtype != OBJ_NONE &&
-		       (unsigned int)ev->objtype < MAX_OBJECT_TYPES;
 	case FD_EVENT_NEWSOCK:
 		return ev->fd1 >= 0 &&
 		       (unsigned int)ev->fd2 < TRINITY_PF_MAX &&
@@ -136,16 +132,6 @@ unsigned int fd_event_drain(struct fd_event_ring *ring)
 			switch (ev->type) {
 			case FD_EVENT_CLOSE:
 				remove_object_by_fd(ev->fd1);
-				break;
-			case FD_EVENT_REGEN_REQUEST:
-				/* Clear the rate-limit slot first so any
-				 * child that races with us still gets to
-				 * enqueue a follow-up request rather than
-				 * silently dropping it. */
-				atomic_store_explicit(
-					&shm->fd_regen_pending[ev->objtype],
-					0, memory_order_relaxed);
-				try_regenerate_fd(ev->objtype);
 				break;
 			case FD_EVENT_NEWSOCK: {
 				struct object *obj;
@@ -203,16 +189,6 @@ void fd_event_drain_all(void)
 {
 	unsigned int i;
 	unsigned int total = 0;
-	bool was_protected;
-
-	/* Bracket the entire drain with a single thaw/refreeze pair.
-	 * Each remove_object_by_fd() call would otherwise issue O(N)
-	 * mprotect syscalls per event; with high fd churn that adds
-	 * up to thousands of mprotects per drain. Lift once, drain,
-	 * refreeze. */
-	was_protected = globals_are_protected();
-	if (was_protected)
-		thaw_global_objects();
 
 	for_each_child(i) {
 		struct childdata *child;
@@ -288,7 +264,4 @@ void fd_event_drain_all(void)
 	if (total > 0)
 		__atomic_add_fetch(&shm->stats.fd_events_processed, total,
 				   __ATOMIC_RELAXED);
-
-	if (was_protected)
-		freeze_global_objects();
 }

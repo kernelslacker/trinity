@@ -49,7 +49,7 @@ static void open_pipe_pair(unsigned int flags)
 		return;
 	}
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(pipes[0]);
 		close(pipes[1]);
@@ -60,7 +60,7 @@ static void open_pipe_pair(unsigned int flags)
 	obj->pipeobj.reader = true;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIPE);
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(pipes[1]);
 		return;
@@ -97,7 +97,6 @@ static int init_pipes(void)
 	 * checks this flag to route the obj struct release through
 	 * free_shared_obj() instead of free().
 	 */
-	head->shared_alloc = true;
 
 	for (i = 0; i < 16; i++)
 		open_pipe();
@@ -123,12 +122,10 @@ int get_rand_pipe_fd(void)
 	 * alloc_shared_obj() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_PIPE, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_PIPE, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -143,10 +140,6 @@ int get_rand_pipe_fd(void)
 				  "OBJ_FD_PIPE pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_PIPE, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->pipeobj.fd;
 		if (fd < 0)

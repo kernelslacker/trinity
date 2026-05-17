@@ -330,49 +330,12 @@ struct local_fd_hash_slot {
 struct objhead {
 	struct object **array;		/* parallel array for O(1) random access */
 	/*
-	 * Whole-array generation counter.  Bumped on every reassignment of
-	 * ->array (the OBJ_LOCAL grow path's zmalloc-copy-defer-free in
-	 * add_object(), and the destroy_objects() teardown that NULLs the
-	 * pointer on shutdown).  Independent of the per-slot ->slot_versions
-	 * scheme: slot_versions catches a slot being destroyed or replaced
-	 * underneath a reader, while array_generation catches the entire
-	 * backing buffer being swapped (the doubling realloc) or wild-write-
-	 * stomped to a stale pointer.  A reader snapshots this at slot-pick
-	 * time and validate_object_handle() compares the snapshot against
-	 * the current value before trusting any cached array index — a
-	 * mismatch means the buffer the snapshot was indexing has since
-	 * been deferred-freed back to the libc cache and may now alias
-	 * something else (the failure mode the OBJ_LOCAL maps pool hit when
-	 * a prior generation of head->array was reused for a stdio FILE
-	 * buffer).  OBJ_GLOBAL arrays are pre-allocated at fixed capacity
-	 * and never reseated, so the counter stays 0 there in steady state;
-	 * the check is still wired up for defence-in-depth against a wild
-	 * write that clobbers head->array alongside head->array_generation.
-	 */
-	unsigned int array_generation;
-	/*
-	 * Per-slot version counter, parallel to ->array.  Bumped by
-	 * add_object()/__destroy_object() on every slot mutation (insert,
-	 * swap-in from the prior tail, NULL-out of the prior tail).  The
-	 * lockless child reader in get_random_object() snapshots
-	 * slot_versions[idx] before and after sampling array[idx]; a
-	 * mismatch means the parent destroyed or replaced the slot during
-	 * the sample window and the picked obj pointer is no longer trust-
-	 * worthy (it may have been free_shared_obj()'d into the shared
-	 * heap freelist between the snapshot and the deref).  Allocated
-	 * only for OBJ_GLOBAL pools — OBJ_LOCAL has no lockless reader
-	 * path, so the field stays NULL there.  Lives in the same shared-
-	 * global region as ->array so freeze_global_objects() covers it.
-	 */
-	unsigned int *slot_versions;
-	/*
 	 * Per-objhead fd→object hash for OBJ_LOCAL fd-typed pools.  Lazily
 	 * allocated in the child's private heap on the first add_object()
 	 * insert and kept in sync by add_object()/__destroy_object() on every
 	 * slot mutation.  find_local_object_by_fd() consults this instead of
 	 * walking head->array linearly, which collapses an O(n) scan with
 	 * one cache line per slot into an O(1) probe.  Stays NULL for
-	 * OBJ_GLOBAL pools (those use the global shm fd_hash) and for
 	 * non-fd OBJ_LOCAL pools.
 	 */
 	struct local_fd_hash_slot *fd_hash;
@@ -381,36 +344,7 @@ struct objhead {
 	unsigned int max_entries;
 	void (*destroy)(struct object *obj);
 	void (*dump)(struct object *obj, enum obj_scope scope);
-	/*
-	 * If true, obj structs for this (scope=OBJ_GLOBAL) type came from
-	 * alloc_shared_obj() and __destroy_object() must release them via
-	 * free_shared_obj() rather than free().  Set per-type by an
-	 * fd_provider/REG_GLOBAL_OBJ init that opted into shared-heap
-	 * allocation.  Ignored for OBJ_LOCAL pools — child-private objs
-	 * always come from zmalloc().
-	 */
-	bool shared_alloc;
 };
-
-/*
- * Cap for the number of objects on a global objhead list.  Allocated up
- * front in shm so children never need to follow a parent-private array
- * pointer.  See the matching comment above add_object().
- */
-#define GLOBAL_OBJ_MAX_CAPACITY	1024
-
-/*
- * Upper bound for any objhead counter we treat as plausible.  Picked well
- * above any legitimate working set (OBJ_GLOBAL is hard-capped at
- * GLOBAL_OBJ_MAX_CAPACITY, OBJ_LOCAL working sets observed in the fleet
- * never exceed a few hundred entries) and well below the 32-bit wrap
- * window the grow path's UINT_MAX/2 guards work against.  A snapshot of
- * num_entries / max_entries / array_capacity past this is a smoking-gun
- * wild stomp and any caller that observes one should reject the snapshot
- * rather than act on it.  Used by objhead_looks_sane() in debug.c and the
- * snapshot-validation guards in add_object().
- */
-#define OBJHEAD_SANE_LIMIT	(1U << 16)
 
 /*
  * Iterate the parallel array of an objhead.
@@ -418,39 +352,14 @@ struct objhead {
  * Walks head->array[0..num_entries) and yields each non-NULL slot as
  * `obj`, with `idx` set to the slot index.  NULL slots are skipped:
  * __destroy_object()'s swap-with-last leaves the previously-last slot
- * NULL until num_entries is decremented, so a walker that doesn't hold
- * shm->objlock can legitimately observe a transient NULL mid-removal.
+ * NULL until num_entries is decremented, so a walker can legitimately
+ * observe a transient NULL mid-removal in the owning process.
  *
- * Snapshot semantics: at loop entry we take a single ACQUIRE load of
- * head->num_entries and plain reads of head->array_capacity and
- * head->array into a per-invocation local struct, and the loop body
- * thereafter only consults those snapshots -- never re-reads the
- * objhead fields.  Without this snapshot a sibling value-result
- * syscall whose buffer aliases this child's objhead can scribble
- * (num_entries, array_capacity, array) between the loop's per-iter
- * re-reads and steer the head->array[idx] deref past the end of the
- * live allocation, three TOCTOU windows per iteration multiplied
- * across every for_each_obj caller.  Mirrors the snapshot regimes
- * already established for the symmetric per-call paths in add_object
- * (b677185d752496ac7ee7751c66e86f432e108c54),
- * get_random_object_versioned
- * (2c5d84e5d67b7e843ceb0a0ed42f0a996568caa9), and __destroy_object /
- * destroy_objects (3058bd1a64ea956627e4dfe097faa07c6a1bae4b) at the
- * iterator-macro layer.
- *
- * Entry rejection: if the snapshot's array_capacity exceeds
- * OBJHEAD_SANE_LIMIT (a smoking-gun wild stomp -- OBJ_GLOBAL is
- * hard-capped at GLOBAL_OBJ_MAX_CAPACITY=1024 and OBJ_LOCAL working
- * sets stay well below 64K) or num_entries exceeds the snapshotted
- * capacity, the loop bumps the existing
- * local_obj_num_entries_corrupted counter and executes zero
- * iterations -- same shape as the per-function entry rejects in the
- * parent fixes.  A snapshot with array == NULL collapses to zero
- * iterations without a counter bump (legitimate state for an
- * OBJ_LOCAL pool that has never had an add_object()).
- *
- * array_generation is intentionally not snapshotted: iterators do
- * not validate handles, that is validate_object_handle()'s job.
+ * The pool lives entirely in the owning process's private heap
+ * post-Stage-5; head->num_entries and head->array are not reachable
+ * from any other address space, so the snapshot is just a hoist
+ * convenience for the compiler and there are no TOCTOU windows to
+ * defend against.
  *
  * Usage:
  *	struct object *obj;
@@ -516,52 +425,7 @@ void clone_global_objects_to_child(struct childdata *child);
 
 struct object * get_random_object(enum objecttype type, enum obj_scope scope);
 
-/*
- * Versioned variant of get_random_object().  On success returns the
- * picked obj and stores the slot index, the per-slot version, and the
- * whole-array generation observed at pick time into
- * *idx_out / *version_out / *array_gen_out.  Callers that hold the obj
- * across a window in which a parent destroy or a same-process realloc
- * could invalidate the slot (e.g. get_map passes &obj->map outwards
- * and the consumer derefs map->ptr later) pass the saved triple into
- * validate_object_handle() right before the deref to confirm neither
- * the slot was mutated nor the entire backing array was reseated
- * underneath us.  Returns NULL if the pool is empty or the lockless
- * reader's retry budget was exhausted by repeated concurrent destroys.
- * For OBJ_LOCAL (no lockless reader, no slot_versions array) the
- * version out is set to 0 but array_gen_out still carries the snapshot
- * needed by validate_object_handle()'s OBJ_LOCAL path.
- */
-struct object * get_random_object_versioned(enum objecttype type,
-					    enum obj_scope scope,
-					    unsigned int *idx_out,
-					    unsigned int *version_out,
-					    unsigned int *array_gen_out);
-
-/*
- * Re-validate an obj handle previously returned by
- * get_random_object_versioned().  First compares the snapshotted
- * head->array_generation against the current value: a mismatch means
- * the entire backing array was reseated since the pick (the OBJ_LOCAL
- * grow path's zmalloc-copy-defer-free, or a wild write that stomped
- * head->array), so the caller's cached idx is indexing into either a
- * deferred-free chunk that may have been recycled by libc or an
- * unrelated buffer entirely; reject without dereferencing the stale
- * array.  For OBJ_GLOBAL also re-acquires slot_versions[idx] and
- * array[idx] and confirms the per-slot version matches and the slot
- * still points at the same obj — the seqlock-style protection against
- * the parent destroying or replacing the slot in the meantime.
- * Returns true if every check passes, false on any mismatch — in
- * which case the caller MUST drop the handle and pick a fresh one
- * rather than dereferencing the stale obj pointer.  Bumps the
- * global_obj_uaf_caught counter on a detected mismatch.
- */
-bool validate_object_handle(enum objecttype type, enum obj_scope scope,
-			    struct object *obj, unsigned int idx,
-			    unsigned int version, unsigned int array_gen);
-
 bool objects_empty(enum objecttype type);
-void validate_global_objects(void);
 struct objhead * get_objhead(enum obj_scope scope, enum objecttype type);
 void prune_objects(void);
 int fd_from_object(struct object *obj, enum objecttype type);

@@ -161,7 +161,6 @@ static void setup_kvm_vm_head(void)
 
 	head->destroy = &kvm_vm_destructor;
 	head->dump = &kvm_vm_dump;
-	head->shared_alloc = true;
 }
 
 static void setup_kvm_vcpu_head(void)
@@ -170,7 +169,6 @@ static void setup_kvm_vcpu_head(void)
 
 	head->destroy = &kvm_vcpu_destructor;
 	head->dump = &kvm_vcpu_dump;
-	head->shared_alloc = true;
 }
 
 /*
@@ -237,7 +235,7 @@ static struct object *peek_vm_obj(void)
  * so the mm-syscall sanitisers refuse a fuzzed munmap/mremap targeting
  * it -- same defence io_uring's SQ ring + SQE array use.
  *
- * On any failure after KVM_CREATE_VCPU succeeds (mmap, alloc_shared_obj)
+ * On any failure after KVM_CREATE_VCPU succeeds (mmap, alloc_object)
  * we close the vCPU fd before returning false so the kernel-side vCPU
  * state and the userspace fd are released together rather than leaking.
  * If kvm_vcpu_mmap_size is 0 (init failed to cache it) we skip the mmap
@@ -279,9 +277,9 @@ static bool create_one_vcpu(struct object *vmobj)
 		track_shared_region((unsigned long)kvm_run, kvm_run_sz);
 	}
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
-		outputerr("init_kvm: alloc_shared_obj(vcpu) failed\n");
+		outputerr("init_kvm: alloc_object(vcpu) failed\n");
 		if (kvm_run != NULL)
 			munmap(kvm_run, kvm_run_sz);
 		close(vcpufd);
@@ -325,9 +323,9 @@ static bool create_one_vm(int sysfd)
 		return false;
 	}
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
-		outputerr("init_kvm: alloc_shared_obj(vm) failed\n");
+		outputerr("init_kvm: alloc_object(vm) failed\n");
 		close(vmfd);
 		return false;
 	}
@@ -348,7 +346,6 @@ static int init_kvm_system(void)
 	syshead = get_objhead(OBJ_GLOBAL, OBJ_FD_KVM_SYSTEM);
 	syshead->destroy = &kvm_system_destructor;
 	syshead->dump = &kvm_system_dump;
-	syshead->shared_alloc = true;
 
 	/*
 	 * Prepare the VM and vCPU heads here too — the cascade below adds
@@ -397,9 +394,9 @@ static int init_kvm_system(void)
 		outputerr("init_kvm_system: KVM_GET_VCPU_MMAP_SIZE returned %d (errno=%s)\n",
 			mmap_size, strerror(errno));
 
-	sysobj = alloc_shared_obj(sizeof(struct object));
+	sysobj = alloc_object();
 	if (sysobj == NULL) {
-		outputerr("init_kvm_system: alloc_shared_obj(sys) failed\n");
+		outputerr("init_kvm_system: alloc_object(sys) failed\n");
 		close(sysfd);
 		unsupported_kvm = true;
 		return false;
@@ -497,7 +494,7 @@ static int open_kvm_system_fd(void)
 		return false;
 	}
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(sysfd);
 		return false;
@@ -545,12 +542,10 @@ static int get_rand_kvm_system_fd(void)
 		return -1;
 
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_KVM_SYSTEM, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_KVM_SYSTEM, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -560,10 +555,6 @@ static int get_rand_kvm_system_fd(void)
 				  "OBJ_FD_KVM_SYSTEM pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_KVM_SYSTEM, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->kvmsysobj.fd;
 		if (fd < 0)
@@ -582,12 +573,10 @@ static int get_rand_kvm_vm_fd(void)
 		return -1;
 
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_KVM_VM, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_KVM_VM, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -597,10 +586,6 @@ static int get_rand_kvm_vm_fd(void)
 				  "OBJ_FD_KVM_VM pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_KVM_VM, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->kvmvmobj.fd;
 		if (fd < 0)
@@ -619,12 +604,10 @@ static int get_rand_kvm_vcpu_fd(void)
 		return -1;
 
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_KVM_VCPU, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_KVM_VCPU, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -634,10 +617,6 @@ static int get_rand_kvm_vcpu_fd(void)
 				  "OBJ_FD_KVM_VCPU pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_KVM_VCPU, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->kvmvcpuobj.fd;
 		if (fd < 0)

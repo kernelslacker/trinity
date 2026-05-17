@@ -61,7 +61,6 @@ static int init_signalfd_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SIGNALFD);
 	head->destroy = &signalfd_destructor;
 	head->dump = &signalfd_dump;
-	head->shared_alloc = true;
 
 	for (i = 0; i < SIGNALFD_INIT_POOL; i++) {
 		struct object *obj;
@@ -71,7 +70,7 @@ static int init_signalfd_fds(void)
 		if (fd < 0)
 			continue;
 
-		obj = alloc_shared_obj(sizeof(struct object));
+		obj = alloc_object();
 		if (obj == NULL) {
 			close(fd);
 			return false;
@@ -101,12 +100,10 @@ static int get_rand_signalfd_fd(void)
 	 * alloc_shared_obj() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_SIGNALFD, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_SIGNALFD, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -121,10 +118,6 @@ static int get_rand_signalfd_fd(void)
 				  "OBJ_FD_SIGNALFD pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_SIGNALFD, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->signalfdobj.fd;
 		if (fd < 0)
@@ -145,7 +138,7 @@ static int open_signalfd_fd(void)
 	if (fd < 0)
 		return false;
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
 		return false;

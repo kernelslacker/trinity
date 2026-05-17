@@ -272,47 +272,6 @@ regen:
 }
 
 /*
- * Ask the parent to top up the global pool for objtype.  Safe from
- * either parent or child context: in the parent we just call
- * try_regenerate_fd() directly (the only path the global pool can be
- * mutated from), while in a child we hand the request to the parent
- * via the per-child fd_event ring.
- *
- * The shm-wide fd_regen_pending[type] flag dedups concurrent requests:
- * if the parent has already been notified for this type and hasn't
- * drained the request yet, additional notifications are skipped to
- * avoid filling the ring with duplicates while a single regen would
- * satisfy them all.
- */
-static void request_fd_regen(enum objecttype type)
-{
-	struct childdata *child;
-	uint8_t prev;
-
-	if (getpid() == mainpid) {
-		try_regenerate_fd(type);
-		return;
-	}
-
-	child = this_child();
-	if (child == NULL || child->fd_event_ring == NULL)
-		return;
-
-	prev = atomic_exchange_explicit(&shm->fd_regen_pending[type], 1,
-					memory_order_relaxed);
-	if (prev != 0)
-		return;
-
-	if (!fd_event_enqueue(child->fd_event_ring, FD_EVENT_REGEN_REQUEST,
-			      -1, -1, type, 0, 0)) {
-		/* Ring overflow — drop the rate-limit so the next caller
-		 * gets to retry instead of permanently muting this type. */
-		atomic_store_explicit(&shm->fd_regen_pending[type], 0,
-				      memory_order_relaxed);
-	}
-}
-
-/*
  * Return an fd of a specific type for syscalls that expect a particular
  * kind of fd (epoll, timerfd, socket, etc.).  Falls back to get_random_fd()
  * if no objects of that type exist.
@@ -357,64 +316,30 @@ retry:
 	if (retries >= 10)
 		return get_random_fd();
 
-	{
-		unsigned int slot_idx, slot_version, slot_array_gen;
+	obj = get_random_object(objtype, OBJ_GLOBAL);
+	if (obj == NULL)
+		return get_random_fd();
 
-		/*
-		 * Versioned slot pick + validate_object_handle() before
-		 * fd_from_object() derefs obj->...obj.fd, mirroring the
-		 * wireup at 15b6257b8206 (fds/sockets.c get_rand_socketinfo)
-		 * and 5ef98298f6ad (syscalls/keyctl.c KEYCTL_WATCH_KEY).
-		 * Same OBJ_GLOBAL lockless-reader UAF window the framework
-		 * commit a7fdbb97830c addresses: between the lockless slot
-		 * pick and fd_from_object()'s deref, the parent can destroy
-		 * the obj, free_shared_obj() returns the chunk to the
-		 * shared-heap freelist, and a concurrent alloc_shared_obj()
-		 * recycles it underneath us.
-		 *
-		 * Adapted shape: get_typed_fd() already had a bounded
-		 * retry loop (retries >= 10) for the existing
-		 * fd_hash_lookup() stale-fd recovery path, plus a
-		 * request_fd_regen() side effect.  Reuse that same retry
-		 * budget for version-validate failures rather than nesting
-		 * a second retry loop — both failure modes are
-		 * "this slot got stomped, try another", and the existing
-		 * fd_hash check stays in place after the deref since it
-		 * catches a different failure (fd closed by another path
-		 * after the obj was published).
-		 */
-		obj = get_random_object_versioned(objtype, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
-		if (obj == NULL)
-			return get_random_fd();
-
-		if ((uintptr_t)obj < 0x10000UL ||
-		    (uintptr_t)obj >= 0x800000000000UL) {
-			outputerr("get_typed_fd: bogus obj %p in objtype=%d "
-				  "pool\n", obj, objtype);
-			retries++;
-			goto retry;
-		}
-
-		if (!validate_object_handle(objtype, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen)) {
-			retries++;
-			goto retry;
-		}
-
-		/*
-		 * Lazy-arm epoll fds in child context.  arm_epoll() invokes
-		 * epoll_ctl(EPOLL_CTL_ADD) on a fuzzer-controlled target_fd
-		 * whose ->poll handler can block indefinitely (e.g. /dev/fuse
-		 * waiting on its userspace daemon).  Doing this from the
-		 * parent's main loop wedges the whole session because the
-		 * watchdog cannot kill the parent; doing it from a child is
-		 * recoverable via is_child_making_progress().  See the block
-		 * comment above arm_epoll() in fds/epoll.c.
-		 */
-		if (objtype == OBJ_FD_EPOLL)
-			arm_epoll_if_needed(&obj->epollobj);
+	if ((uintptr_t)obj < 0x10000UL ||
+	    (uintptr_t)obj >= 0x800000000000UL) {
+		outputerr("get_typed_fd: bogus obj %p in objtype=%d pool\n",
+			  obj, objtype);
+		retries++;
+		goto retry;
 	}
+
+	/*
+	 * Lazy-arm epoll fds in child context.  arm_epoll() invokes
+	 * epoll_ctl(EPOLL_CTL_ADD) on a fuzzer-controlled target_fd
+	 * whose ->poll handler can block indefinitely (e.g. /dev/fuse
+	 * waiting on its userspace daemon).  Doing this from the
+	 * parent's main loop wedges the whole session because the
+	 * watchdog cannot kill the parent; doing it from a child is
+	 * recoverable via is_child_making_progress().  See the block
+	 * comment above arm_epoll() in fds/epoll.c.
+	 */
+	if (objtype == OBJ_FD_EPOLL)
+		arm_epoll_if_needed(&obj->epollobj);
 
 	fd = fd_from_object(obj, objtype);
 	if (fd < 0)
@@ -424,10 +349,13 @@ retry:
 	if (fd <= 2)
 		return get_random_fd();
 
-	/* Validate fd is still tracked. */
+	/*
+	 * Validate fd is still tracked in this child's snapshot of the
+	 * fd_hash.  A miss means the fd was closed (in this child) and
+	 * the snapshot is stale; fall through to another pick.
+	 */
 	if (fd_hash_lookup(fd) == NULL) {
 		__atomic_add_fetch(&shm->stats.fd_stale_detected, 1, __ATOMIC_RELAXED);
-		request_fd_regen(objtype);
 		retries++;
 		goto retry;
 	}
@@ -502,31 +430,6 @@ bool fd_poll_can_block(int fd)
 	if (provider == NULL)
 		return false;
 	return provider->poll_can_block;
-}
-
-/*
- * Try to create a replacement fd after one was destroyed.
- * Finds the provider for the given object type and calls its
- * .open hook if available.
- */
-void try_regenerate_fd(enum objecttype type)
-{
-	struct list_head *node;
-
-	if (fd_providers == NULL)
-		return;
-
-	list_for_each(node, &fd_providers->list) {
-		struct fd_provider *provider;
-
-		provider = (struct fd_provider *) node;
-		if (provider->objtype == type && provider->open != NULL &&
-		    provider->initialized == true) {
-			if (provider->open() == true)
-				__atomic_add_fetch(&shm->stats.fd_regenerated, 1, __ATOMIC_RELAXED);
-			return;
-		}
-	}
 }
 
 /*

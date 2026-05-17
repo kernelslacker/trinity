@@ -109,26 +109,22 @@ static void audit_fd_bucket(void)
 
 	/*
 	 * Read the live-fd list from this child's fork-time snapshot.
-	 * Falls back to the shm-resident view in the early-init window
-	 * before clone_global_objects_to_child() has run, matching the
-	 * same per-process router shape get_objhead() and fd_hash_lookup()
-	 * use.  The snapshot does not pick up post-fork inserts in the
-	 * parent's table, which is acceptable for a sampling auditor.
+	 * The snapshot does not pick up post-fork inserts in the parent's
+	 * table, which is acceptable for a sampling auditor.  Skip if the
+	 * snapshot has not yet been allocated (early-init window).
 	 */
-	if (child != NULL && child->fd_live != NULL) {
-		fd_live = child->fd_live;
-		count = child->fd_live_count;
-	} else {
-		fd_live = shm->fd_live;
-		count = __atomic_load_n(&shm->fd_live_count, __ATOMIC_ACQUIRE);
-	}
+	if (child == NULL || child->fd_live == NULL)
+		return;
+
+	fd_live = child->fd_live;
+	count = child->fd_live_count;
 
 	for (i = 0; i < count; i++) {
 		char path[64];
 		struct stat st;
 		int fd, newfd;
 
-		fd = __atomic_load_n(&fd_live[i], __ATOMIC_RELAXED);
+		fd = fd_live[i];
 		if (fd < 0)
 			continue;
 

@@ -39,7 +39,7 @@ static bool register_cgroup_fd(int fd)
 {
 	struct object *obj;
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
 		return false;
@@ -60,7 +60,6 @@ static int init_cgroup_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_CGROUP);
 	head->destroy = &cgroup_destructor;
 	head->dump = &cgroup_dump;
-	head->shared_alloc = true;
 
 	/* Always register the root itself first; it's the one cgroup dir
 	 * we're certain exists if /sys/fs/cgroup is mounted at all. */
@@ -129,12 +128,10 @@ int get_rand_cgroup_fd(void)
 	 * and a concurrent alloc_shared_obj() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_CGROUP, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_CGROUP, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -149,10 +146,6 @@ int get_rand_cgroup_fd(void)
 				  "OBJ_FD_CGROUP pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_CGROUP, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->cgroupfdobj.fd;
 		if (fd < 0)

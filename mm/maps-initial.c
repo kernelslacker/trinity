@@ -25,9 +25,9 @@ static void alloc_zero_map(unsigned long size, int prot, int flags, const char *
 	if (size == 0)
 		return;
 
-	new = alloc_shared_obj(sizeof(struct object));
+	new = alloc_object();
 	if (new == NULL) {
-		outputerr("alloc_shared_obj failure for OBJ_MMAP_ANON\n");
+		outputerr("alloc_object failure for OBJ_MMAP_ANON\n");
 		exit(EXIT_FAILURE);
 	}
 	new->map.size = size;
@@ -63,7 +63,7 @@ static bool try_alloc_zero_map(unsigned long size, int prot, int flags, const ch
 	if (size == 0)
 		return false;
 
-	new = alloc_shared_obj(sizeof(struct object));
+	new = alloc_object();
 	if (new == NULL)
 		return false;
 	new->map.size = size;
@@ -73,7 +73,7 @@ static bool try_alloc_zero_map(unsigned long size, int prot, int flags, const ch
 	new->map.type = INITIAL_ANON;
 	new->map.ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | flags, -1, 0);
 	if (new->map.ptr == MAP_FAILED) {
-		free_shared_obj(new, sizeof(struct object));
+		free(new);
 		return false;
 	}
 	track_shared_region((unsigned long)new->map.ptr, size);
@@ -81,7 +81,7 @@ static bool try_alloc_zero_map(unsigned long size, int prot, int flags, const ch
 	new->map.name = alloc_shared_str(80);
 	if (new->map.name == NULL) {
 		munmap(new->map.ptr, new->map.size);
-		free_shared_obj(new, sizeof(struct object));
+		free(new);
 		return false;
 	}
 	snprintf(new->map.name, 80, "anon(%s)", name);
@@ -167,7 +167,6 @@ void setup_initial_mappings(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_MMAP_ANON);
 	head->destroy = &map_destructor_shared;
 	head->dump = &map_dump;
-	head->shared_alloc = true;
 
 	setup_mapping_sizes();
 

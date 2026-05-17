@@ -62,7 +62,6 @@ int get_random_fd(void);
 int get_new_random_fd(void);
 int get_typed_fd(enum argtype type);
 int get_child_live_fd(struct childdata *child);
-void try_regenerate_fd(enum objecttype type);
 
 /* Defined in fds/epoll.c — child-side lazy arm.  See block comment
  * above arm_epoll() for why arming must not run in parent context. */

@@ -34,7 +34,6 @@ void create_sysv_shms(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_SYSV_SHM);
 	head->dump = dump_sysv_shm;
-	head->shared_alloc = true;
 
 	for (i = 0; i < ARRAY_SIZE(shmget_flags); i++) {
 		void *p;
@@ -43,7 +42,7 @@ void create_sysv_shms(void)
 		int flags;
 		int id;
 
-		obj = alloc_shared_obj(sizeof(struct object));
+		obj = alloc_object();
 		if (obj == NULL)
 			continue;
 
@@ -53,7 +52,7 @@ void create_sysv_shms(void)
 
 		id = shmget(IPC_PRIVATE, size, flags);
 		if (id == -1) {
-			free_shared_obj(obj, sizeof(struct object));
+			free(obj);
 			continue;
 		}
 		obj->sysv_shm.id = id;
@@ -67,7 +66,7 @@ void create_sysv_shms(void)
 			p = shmat(id, NULL, SHM_EXEC);
 		if (p == (void *) -1) {
 			shmctl(id, IPC_RMID, NULL);
-			free_shared_obj(obj, sizeof(struct object));
+			free(obj);
 			continue;
 		}
 		obj->sysv_shm.ptr = p;

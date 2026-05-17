@@ -1471,14 +1471,6 @@ struct stats_s {
 	 * shrunk between clamp and store for ftruncate). */
 	unsigned long write_walk_aborted;
 
-	/* Shared obj-heap pressure counters: cumulative successful allocs
-	 * and frees through alloc_shared_obj() / free_shared_obj().  Read
-	 * by dump_stats() under -v to print a one-line utilisation summary
-	 * — a busy run with many allocs but few frees flags a leak before
-	 * the heap actually exhausts. */
-	unsigned long obj_heap_allocs;
-	unsigned long obj_heap_frees;
-
 	/* Number of bandit windows where the CMP-novelty term was non-zero
 	 * after weighting -- i.e. the just-finished window saw at least
 	 * CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL fresh comparison constants

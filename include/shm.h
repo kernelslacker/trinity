@@ -96,38 +96,6 @@ struct shm_s {
 	 */
 	_Atomic unsigned int sibling_freeze_gen;
 
-	/*
-	 * fd→object hash table.  Lives in shm so children can read the
-	 * per-slot generation counter the parent updates on every
-	 * fd_table mutation.  Reads from children are unlocked; writes
-	 * from the parent happen under shm->objlock.
-	 */
-	struct fd_hash_entry fd_hash[FD_HASH_SIZE] __attribute__((aligned(64)));
-	unsigned int fd_hash_count;
-
-	/*
-	 * Parallel compact list of live fds for "iterate every live fd"
-	 * consumers (currently refcount-auditor's audit_fd_bucket).  The
-	 * fd_hash[] table is sized for hash-collision headroom and is
-	 * sparsely populated — a typical fleet run holds a few hundred
-	 * live fds in 4096 slots, so a naive walk wastes >90% of its
-	 * iterations on empty slots.  fd_live[0..fd_live_count) holds
-	 * the fd value of every currently-occupied fd_hash slot, and
-	 * the consumer resolves each fd back to its slot via the
-	 * existing hash + linear-probe chain (fd_hash_lookup).
-	 *
-	 * Maintained by fd_hash_insert (append-on-claim) and
-	 * fd_hash_remove (swap-remove) under shm->objlock; reads from
-	 * children are unlocked and use ACQUIRE on fd_live_count to
-	 * synchronise with the publishing RELEASE store on the writer
-	 * side.  Order does not match fd_hash[] slot order — a
-	 * displacement-driven re-seat in fd_hash_remove leaves the live
-	 * fd's position in fd_live[] unchanged because the entry's fd
-	 * identity is unchanged.
-	 */
-	int fd_live[FD_LIVE_MAX];
-	unsigned int fd_live_count;
-
 	/* Written by main process — own cache line to avoid
 	 * false sharing with child-written stats above. */
 	unsigned int running_childs __attribute__((aligned(64)));
@@ -166,50 +134,23 @@ struct shm_s {
 	unsigned int syscalls32_succeeded;
 	unsigned int syscalls32_attempted;
 #endif
-	/* generic object cache*/
-	struct objhead global_objects[MAX_OBJECT_TYPES];
-
-	/*
-	 * Per-objecttype hint: a child enqueueing FD_EVENT_REGEN_REQUEST
-	 * sets the slot to 1, the parent's drain loop clears it before
-	 * running the regen.  Stops the ring filling up with duplicate
-	 * regen hints when many children notice the same exhausted pool
-	 * inside the same drain cycle.  A late-arriving request that
-	 * happens after the parent clears just gets a fresh enqueue,
-	 * so this is purely a hint, not a correctness gate.
-	 */
-	_Atomic uint8_t fd_regen_pending[MAX_OBJECT_TYPES] __attribute__((aligned(64)));
-
 	/* io_uring ring with valid mappings, shared across children.
 	 * Init write uses RELEASE; child reads use ACQUIRE (lockless).
-	 * Destructor nulls this under objlock. */
+	 * Destructor nulls this. */
 	struct io_uringobj *mapped_ring;
 
 	/* Contended child<>child locks — own cache line. */
 	lock_t syscalltable_lock __attribute__((aligned(64)));
-	lock_t objlock;
 	lock_t buglock;
 
 	/*
-	 * Bump-pointer cursor into the shared obj heap (see
-	 * alloc_shared_obj() in utils.c).  In shm so concurrent
-	 * allocators across processes share one cursor — the heap is
-	 * mmap'd MAP_SHARED before fork, but post-fork allocs need a
-	 * cross-process view of "which slot is next".
-	 */
-	_Atomic size_t shared_obj_heap_used __attribute__((aligned(64)));
-
-	/*
 	 * Sibling cursor for the shared string heap (see
-	 * alloc_shared_str() in utils.c).  Same shm-cursor argument as
-	 * shared_obj_heap_used; kept in a separate slab so string and
-	 * obj allocations don't crowd each other and so each pool's
-	 * exhaustion message names the right pool.
+	 * alloc_shared_str() in utils.c).
 	 */
-	_Atomic size_t shared_str_heap_used;
+	_Atomic size_t shared_str_heap_used __attribute__((aligned(64)));
 
 	/*
-	 * Per-bucket freelist heads for the shared obj and str heaps.
+	 * Per-bucket freelist head for the shared string heap.
 	 * NUM_SHM_FREELIST_BUCKETS fixed-size slots (8..1024 bytes, powers of
 	 * two); allocations above 1024 bytes bypass the freelist and use the
 	 * bump allocator directly.  Each head is a 64-bit tagged pointer:
@@ -223,7 +164,6 @@ struct shm_s {
 	 * in utils.c.
 	 */
 #define NUM_SHM_FREELIST_BUCKETS 8
-	_Atomic uint64_t shared_obj_freelist[NUM_SHM_FREELIST_BUCKETS];
 	_Atomic uint64_t shared_str_freelist[NUM_SHM_FREELIST_BUCKETS];
 
 	/* various flags. */

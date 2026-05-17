@@ -168,7 +168,6 @@ static int init_epoll_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_EPOLL);
 	head->destroy = &epoll_destructor;
 	head->dump = &epoll_dump;
-	head->shared_alloc = true;
 
 	while (i < MAX_EPOLL_FDS) {
 		use_create1 = RAND_BOOL();
@@ -182,7 +181,7 @@ static int init_epoll_fds(void)
 			return false;
 		}
 
-		obj = alloc_shared_obj(sizeof(struct object));
+		obj = alloc_object();
 		if (obj == NULL) {
 			close(fd);
 			return false;
@@ -211,7 +210,7 @@ static int open_epoll_fd(void)
 	if (fd == -1)
 		return false;
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
 		return false;
@@ -242,12 +241,10 @@ static int get_rand_epoll_fd(void)
 	 * alloc_shared_obj() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_EPOLL, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_EPOLL, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -262,10 +259,6 @@ static int get_rand_epoll_fd(void)
 				  "OBJ_FD_EPOLL pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_EPOLL, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->epollobj.fd;
 		if (fd < 0)

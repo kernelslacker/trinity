@@ -39,39 +39,17 @@ struct map * get_map(void);
 struct map * get_map_with_prot(int required_prot);
 
 /*
- * Slot-version handle for the lockless OBJ_GLOBAL maps-pool reader.
- *
- * get_map() narrows the destroy-vs-deref window to the few cycles
- * between its internal validate_object_handle() call and the caller's
- * first deref.  Consumers that hold the returned struct map * across
- * a longer window — multi-frame arg-gen paths, periodic dirty loops
- * that walk every page, iovec builders that draw many maps before
- * any syscall is issued — can reopen that window for the parent's
- * __destroy_object() to race in.  The handle bundles the picked
- * (map, owning obj, slot idx, slot version) so the consumer can
- * re-validate right before the deref via validate_map_handle() and
- * drop the slot rather than dereferencing a recycled obj.
- *
- * The map pointer is &owner->map; the owner is recovered via
- * container_of() inside validate_map_handle() and re-checked against
- * head->array[slot_idx] / head->slot_versions[slot_idx] using the
- * existing object-pool slot-version primitive.
+ * Lightweight handle for an entry in the OBJ_MMAP_* pools.  Post-
+ * Stage-5 every pool lives in private heap so there is no concurrent
+ * destroyer to coordinate with; validate_map_handle() collapses to a
+ * NULL check.  Kept as a thin wrapper rather than inlining so callers
+ * that already pass a handle around (multi-frame arg-gen paths,
+ * iovec builders) don't need to change shape.
  */
 struct map_handle {
 	struct map *map;
 	enum objecttype type;
 	enum obj_scope scope;
-	unsigned int slot_idx;
-	unsigned int slot_version;
-	/*
-	 * Snapshot of head->array_generation captured at pick time.  Lets
-	 * validate_object_handle() detect a stale slot index that was
-	 * captured against a prior generation of head->array — the
-	 * OBJ_LOCAL grow path reseats the buffer and routes the old chunk
-	 * through deferred_free, so an idx held across a grow points into
-	 * a libc-reclaimed region.  See struct objhead.array_generation.
-	 */
-	unsigned int slot_array_gen;
 };
 
 bool get_map_handle(struct map_handle *h);

@@ -94,7 +94,6 @@ static int init_memfd_fds(void)
 	 * The name field is the second pointer hung off this obj — it
 	 * goes through the shared string heap below.
 	 */
-	head->shared_alloc = true;
 
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
 		struct object *obj;
@@ -110,7 +109,7 @@ static int init_memfd_fds(void)
 		if (flags[i] & MFD_ALLOW_SEALING)
 			arm_memfd(fd);
 
-		obj = alloc_shared_obj(sizeof(struct object));
+		obj = alloc_object();
 		if (obj == NULL) {
 			close(fd);
 			continue;
@@ -119,7 +118,7 @@ static int init_memfd_fds(void)
 		obj->memfdobj.name = alloc_shared_strdup(namestr);
 		if (obj->memfdobj.name == NULL) {
 			close(fd);
-			free_shared_obj(obj, sizeof(struct object));
+			free(obj);
 			continue;
 		}
 		obj->memfdobj.flags = flags[i];
@@ -147,12 +146,10 @@ static int get_rand_memfd_fd(void)
 	 * alloc_shared_obj() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_MEMFD, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_MEMFD, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -167,10 +164,6 @@ static int get_rand_memfd_fd(void)
 				  "OBJ_FD_MEMFD pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_MEMFD, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->memfdobj.fd;
 		if (fd < 0)
@@ -198,7 +191,7 @@ static int open_memfd_fd(void)
 	if (flags & MFD_ALLOW_SEALING)
 		arm_memfd(fd);
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
 		return false;
@@ -207,7 +200,7 @@ static int open_memfd_fd(void)
 	obj->memfdobj.name = alloc_shared_strdup("memfd");
 	if (obj->memfdobj.name == NULL) {
 		close(fd);
-		free_shared_obj(obj, sizeof(struct object));
+		free(obj);
 		return false;
 	}
 	obj->memfdobj.flags = flags;

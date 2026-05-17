@@ -20,15 +20,11 @@
 
 enum fd_event_type {
 	FD_EVENT_CLOSE,		/* fd was closed */
-	FD_EVENT_REGEN_REQUEST,	/* refill the pool of objtype */
 	FD_EVENT_NEWSOCK,	/* child accept4'd a socket; parent adds it to the pool */
 };
 
 /*
- * For FD_EVENT_CLOSE the closed fd is in fd1.  For FD_EVENT_REGEN_REQUEST
- * fd1/fd2 are unused (-1) and only objtype is meaningful — the parent
- * runs that provider's open hook in its own context where add_object()
- * on OBJ_GLOBAL is allowed to mutate the pool.  For FD_EVENT_NEWSOCK
+ * For FD_EVENT_CLOSE the closed fd is in fd1.  For FD_EVENT_NEWSOCK
  * fd1 is the accepted fd, fd2 is the socket family, socktype and protocol
  * carry the remaining triplet fields; objtype is unused.
  */
@@ -36,7 +32,7 @@ struct fd_event {
 	enum fd_event_type type;
 	int fd1;		/* fd (FD_EVENT_CLOSE, FD_EVENT_NEWSOCK) */
 	int fd2;		/* FD_EVENT_NEWSOCK: socket family */
-	enum objecttype objtype;  /* FD_EVENT_REGEN_REQUEST: object type to regen */
+	enum objecttype objtype;  /* unused in CLOSE/NEWSOCK; reserved for future event payloads */
 	unsigned int socktype;	  /* FD_EVENT_NEWSOCK: socket type */
 	unsigned int protocol;	  /* FD_EVENT_NEWSOCK: socket protocol */
 };

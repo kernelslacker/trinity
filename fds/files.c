@@ -104,7 +104,6 @@ int open_pool_files(unsigned int pool_id, enum objecttype objtype)
 	head = get_objhead(OBJ_GLOBAL, objtype);
 	head->destroy = &filefd_destructor;
 	head->dump = &filefd_dump;
-	head->shared_alloc = true;
 
 	generate_filelist();
 
@@ -124,7 +123,7 @@ int open_pool_files(unsigned int pool_id, enum objecttype objtype)
 		int fd = -1;
 		int flags;
 
-		obj = alloc_shared_obj(sizeof(struct object));
+		obj = alloc_object();
 		if (obj == NULL)
 			break;
 
@@ -147,7 +146,7 @@ int open_pool_files(unsigned int pool_id, enum objecttype objtype)
 		} while (fd == -1);
 
 		if (fd == -1) {
-			free_shared_obj(obj, sizeof(struct object));
+			free(obj);
 			break;
 		}
 
@@ -180,27 +179,15 @@ int get_rand_pool_fd(enum objecttype objtype)
 		return -1;
 
 	/*
-	 * Versioned slot pick + validate_object_handle() before the
-	 * obj->fileobj.fd deref, mirroring the wireup at 15b6257b8206
-	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
-	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
-	 * reader UAF window the framework commit a7fdbb97830c spelled out:
-	 * between the lockless slot pick and the consumer's read of the
-	 * returned fd, the parent can destroy the obj, free_shared_obj()
-	 * returns the chunk to the shared-heap freelist, and a concurrent
-	 * alloc_shared_obj() recycles it underneath us.
-	 *
 	 * Shared helper for procfs/sysfs/devfs (and any other file-pool
 	 * fd_provider whose .get points at this function); covers all
 	 * three providers with a single wireup.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(objtype, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(objtype, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -215,10 +202,6 @@ int get_rand_pool_fd(enum objecttype objtype)
 				  "objtype=%d pool\n", obj, objtype);
 			continue;
 		}
-
-		if (!validate_object_handle(objtype, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->fileobj.fd;
 		if (fd < 0)
@@ -250,12 +233,12 @@ int open_pool_fd(unsigned int pool_id, enum objecttype objtype)
 		if (flags == -1)
 			continue;
 
-		obj = alloc_shared_obj(sizeof(struct object));
+		obj = alloc_object();
 		if (obj == NULL)
 			return false;
 		fd = open_file(obj, filename, flags);
 		if (fd == -1) {
-			free_shared_obj(obj, sizeof(struct object));
+			free(obj);
 			continue;
 		}
 

@@ -58,7 +58,7 @@ static int open_fanotify_fd(void)
 	if (fd < 0)
 		return false;
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
 		return false;
@@ -86,7 +86,6 @@ static int init_fanotify_fds(void)
 	 * {int fd; int flags; int eventflags;} with no pointer members,
 	 * so this is a mechanical conversion matching the pidfd template.
 	 */
-	head->shared_alloc = true;
 
 	for (i = 0; i < NR_FANOTIFYFDS; i++) {
 		if (open_fanotify_fd())
@@ -114,12 +113,10 @@ static int get_rand_fanotifyfd(void)
 	 * alloc_shared_obj() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_FANOTIFY, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_FANOTIFY, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -134,10 +131,6 @@ static int get_rand_fanotifyfd(void)
 				  "OBJ_FD_FANOTIFY pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_FANOTIFY, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->fanotifyobj.fd;
 		if (fd < 0)

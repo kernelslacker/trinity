@@ -55,7 +55,6 @@ static int init_eventfd_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_EVENTFD);
 	head->destroy = &eventfd_destructor;
 	head->dump = &eventfd_dump;
-	head->shared_alloc = true;
 
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
 		struct object *obj;
@@ -66,7 +65,7 @@ static int init_eventfd_fds(void)
 		if (fd < 0)
 			continue;
 
-		obj = alloc_shared_obj(sizeof(struct object));
+		obj = alloc_object();
 		if (obj == NULL) {
 			close(fd);
 			return false;
@@ -98,12 +97,10 @@ static int get_rand_eventfd_fd(void)
 	 * alloc_shared_obj() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_EVENTFD, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_EVENTFD, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -118,10 +115,6 @@ static int get_rand_eventfd_fd(void)
 				  "OBJ_FD_EVENTFD pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_EVENTFD, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->eventfdobj.fd;
 		if (fd < 0)
@@ -149,7 +142,7 @@ static int open_eventfd_fd(void)
 	if (fd < 0)
 		return false;
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
 		return false;

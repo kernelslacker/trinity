@@ -72,7 +72,7 @@ static void add_drm_obj(int fd)
 {
 	struct object *obj;
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
 		return;
@@ -107,7 +107,6 @@ static int open_drm_fds(void)
 	 * straight obj-struct-only migration with no companion string
 	 * heap allocations.
 	 */
-	head->shared_alloc = true;
 
 	dir = opendir("/dev/dri/");
 	if (!dir)

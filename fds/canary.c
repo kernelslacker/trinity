@@ -178,7 +178,7 @@ static bool canary_create_one(unsigned int idx)
 		return false;
 	}
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		free_shared_str(shared_path, strlen(shared_path) + 1);
 		close(rfd);
@@ -211,7 +211,6 @@ static int init_canary_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_CANARY);
 	head->destroy = &canary_destructor;
 	head->dump = &canary_dump;
-	head->shared_alloc = true;
 
 	canary_pool = alloc_shared(sizeof(*canary_pool));
 	if (canary_pool == NULL) {
@@ -272,12 +271,10 @@ static int get_rand_canary_fd(void)
 	 * a7fdbb97830c spelled out.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_CANARY, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_CANARY, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -287,10 +284,6 @@ static int get_rand_canary_fd(void)
 				  "OBJ_FD_CANARY pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_CANARY, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->fileobj.fd;
 		if (fd < 0)

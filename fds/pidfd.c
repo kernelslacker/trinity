@@ -79,7 +79,7 @@ static int open_pidfd_fd(void)
 	if (fd < 0)
 		return false;
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
 		return false;
@@ -107,13 +107,12 @@ static int init_pidfd_fds(void)
 	 * crashes; the rest of the providers stay on alloc_object()
 	 * until each is converted in turn.
 	 */
-	head->shared_alloc = true;
 
 	/* Children haven't been forked yet at init time, so only pid 1
 	 * is available.  open_pidfd_fd() will pick child pids at runtime. */
 	fd = open_pidfd(1, 0);
 	if (fd >= 0) {
-		obj = alloc_shared_obj(sizeof(struct object));
+		obj = alloc_object();
 		if (obj == NULL) {
 			close(fd);
 			return false;
@@ -153,12 +152,10 @@ static int get_rand_pidfd(void)
 	 * both want the same retry budget.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_PIDFD, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_PIDFD, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -173,10 +170,6 @@ static int get_rand_pidfd(void)
 				  "OBJ_FD_PIDFD pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_PIDFD, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->pidfdobj.fd;
 		if (fd < 0)

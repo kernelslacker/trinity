@@ -71,7 +71,7 @@ struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsig
 	struct object *obj;
 	const struct netproto *proto;
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
 		return NULL;
@@ -537,7 +537,6 @@ static int open_sockets(void)
 	 * same function via free(sa); it is not attached to the obj and
 	 * therefore stays on the private heap.
 	 */
-	head->shared_alloc = true;
 
 #ifdef USE_IF_ALG
 	/* Build the AF_ALG algorithm dictionary in the parent before any
@@ -562,7 +561,6 @@ struct socketinfo * get_rand_socketinfo(void)
 		return NULL;
 
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		struct socketinfo *si;
 
@@ -581,8 +579,7 @@ struct socketinfo * get_rand_socketinfo(void)
 		 * version snapshot below + validate_object_handle() just
 		 * before return narrows that window to a few cycles.
 		 */
-		obj = get_random_object_versioned(OBJ_FD_SOCKET, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_SOCKET, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -630,10 +627,6 @@ struct socketinfo * get_rand_socketinfo(void)
 		 * Drop it and pick again rather than handing &obj->sockinfo
 		 * to the caller.
 		 */
-		if (!validate_object_handle(OBJ_FD_SOCKET, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
-
 		return si;
 	}
 

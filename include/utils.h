@@ -56,8 +56,6 @@ void * alloc_shared_global(size_t size);
  * the caller is about to do.
  */
 bool shared_size_mul(size_t a, size_t b, size_t *out);
-void * alloc_shared_obj(size_t size);
-void free_shared_obj(void *p, size_t size);
 void * alloc_shared_str(size_t size);
 char * alloc_shared_strdup(const char *src);
 void free_shared_str(void *p, size_t size);
@@ -76,8 +74,6 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len);
 bool range_in_tracked_shared(unsigned long addr, unsigned long len);
 void track_shared_region(unsigned long addr, unsigned long size);
 void register_loaded_image_segments(void);
-void dump_obj_heap_stats(void);
-size_t obj_heap_get_capacity(void);
 
 /*
  * Log an mprotect() failure as:

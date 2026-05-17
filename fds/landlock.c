@@ -155,9 +155,9 @@ static int open_landlock_fd(void)
 
 	arm_landlock(fd);
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
-		outputerr("open_landlock_fd: alloc_shared_obj failed\n");
+		outputerr("open_landlock_fd: alloc_object failed\n");
 		close(fd);
 		return false;
 	}
@@ -180,7 +180,6 @@ static int init_landlock_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_LANDLOCK);
 	head->destroy = &landlock_destructor;
 	head->dump = &landlock_dump;
-	head->shared_alloc = true;
 
 	return open_landlock_fd();
 }
@@ -203,15 +202,13 @@ static int get_rand_landlock_fd(void)
 	 * the landlock ruleset fd routed into landlock_add_rule/restrict_self via the fd_provider .get callback,
 	 * the parent can destroy the obj, free_shared_obj() returns the
 	 * chunk to the shared-heap freelist, and a concurrent
-	 * alloc_shared_obj() recycles it underneath us.
+	 * alloc_object() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_LANDLOCK, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_LANDLOCK, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -226,10 +223,6 @@ static int get_rand_landlock_fd(void)
 				  "OBJ_FD_LANDLOCK pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_LANDLOCK, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->landlockobj.fd;
 		if (fd < 0)

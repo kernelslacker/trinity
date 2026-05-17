@@ -48,10 +48,9 @@ static void create_shared_futex_pool(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FUTEX_SHARED);
 	head->dump = dump_shared_futex;
-	head->shared_alloc = true;
 
 	for (i = 0; i < NR_SHARED_FUTEX_WORDS; i++) {
-		struct object *obj = alloc_shared_obj(sizeof(struct object));
+		struct object *obj = alloc_object();
 
 		if (obj == NULL)
 			break;

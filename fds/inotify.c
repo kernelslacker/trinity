@@ -90,7 +90,6 @@ static int init_inotify_fds(void)
 	 * with no pointer members, so this is a mechanical conversion that
 	 * matches the pidfd template exactly.
 	 */
-	head->shared_alloc = true;
 
 	fd = inotify_init();
 	if (fd < 0)
@@ -100,7 +99,7 @@ static int init_inotify_fds(void)
 
 	arm_inotify(fd);
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
 		return false;
@@ -116,7 +115,7 @@ static int init_inotify_fds(void)
 
 		arm_inotify(fd);
 
-		obj = alloc_shared_obj(sizeof(struct object));
+		obj = alloc_object();
 		if (obj == NULL) {
 			close(fd);
 			continue;
@@ -147,12 +146,10 @@ static int get_rand_inotify_fd(void)
 	 * alloc_shared_obj() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_INOTIFY, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_INOTIFY, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -167,10 +164,6 @@ static int get_rand_inotify_fd(void)
 				  "OBJ_FD_INOTIFY pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_INOTIFY, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->inotifyobj.fd;
 		if (fd < 0)
@@ -197,7 +190,7 @@ static int open_inotify_fd(void)
 
 	arm_inotify(fd);
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
 		return false;

@@ -52,7 +52,7 @@ static void userfaultfd_destructor(struct object *obj)
 
 /*
  * Cross-process safe: only reads obj->userfaultobj fields (now in shm
- * via alloc_shared_obj) and the scope scalar.  No process-local
+ * via alloc_object) and the scope scalar.  No process-local
  * pointers are dereferenced, so it is correct to call this from a
  * different process than the one that allocated the obj — which
  * matters because head->dump runs from dump_childdata() in the
@@ -128,9 +128,9 @@ static int open_userfaultfd(void)
 
 	arm_userfaultfd(fd);
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
-		outputerr("open_userfaultfd: alloc_shared_obj failed\n");
+		outputerr("open_userfaultfd: alloc_object failed\n");
 		close(fd);
 		return false;
 	}
@@ -156,7 +156,6 @@ static int init_userfaultfds(void)
 	 * {int fd; int flags;} — no pointer members — so the migration is
 	 * purely mechanical.
 	 */
-	head->shared_alloc = true;
 
 	for (i = 0; i < 4; i++) {
 		if (open_userfaultfd())
@@ -181,15 +180,13 @@ static int get_rand_userfaultfd(void)
 	 * the userfaultfd handed to ioctl(UFFDIO_*)/read via the fd_provider .get callback,
 	 * the parent can destroy the obj, free_shared_obj() returns the
 	 * chunk to the shared-heap freelist, and a concurrent
-	 * alloc_shared_obj() recycles it underneath us.
+	 * alloc_object() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_USERFAULTFD, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_USERFAULTFD, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -204,10 +201,6 @@ static int get_rand_userfaultfd(void)
 				  "OBJ_FD_USERFAULTFD pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_USERFAULTFD, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->userfaultobj.fd;
 		if (fd < 0)

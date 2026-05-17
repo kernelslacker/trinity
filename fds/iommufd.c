@@ -24,7 +24,7 @@ static void iommufd_destructor(struct object *obj)
 
 /*
  * Cross-process safe: only reads obj->iommufdobj.fd (now in shm via
- * alloc_shared_obj) and the scope scalar.  No process-local pointers
+ * alloc_object) and the scope scalar.  No process-local pointers
  * are dereferenced, so it is correct to call this from a different
  * process than the one that allocated the obj.
  */
@@ -59,7 +59,6 @@ static int init_iommufd_fds(void)
 	 * with no pointer members, so this is a mechanical conversion that
 	 * matches the pidfd template exactly.
 	 */
-	head->shared_alloc = true;
 
 	fd = open_iommufd();
 	if (fd < 0) {
@@ -68,9 +67,9 @@ static int init_iommufd_fds(void)
 		return false;
 	}
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
-		outputerr("init_iommufd_fds: alloc_shared_obj failed\n");
+		outputerr("init_iommufd_fds: alloc_object failed\n");
 		close(fd);
 		return false;
 	}
@@ -94,15 +93,13 @@ static int get_rand_iommufd_fd(void)
 	 * the iommufd handed to ioctl(IOMMU_*) via the fd_provider .get callback,
 	 * the parent can destroy the obj, free_shared_obj() returns the
 	 * chunk to the shared-heap freelist, and a concurrent
-	 * alloc_shared_obj() recycles it underneath us.
+	 * alloc_object() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_IOMMUFD, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_IOMMUFD, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -117,10 +114,6 @@ static int get_rand_iommufd_fd(void)
 				  "OBJ_FD_IOMMUFD pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_IOMMUFD, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->iommufdobj.fd;
 		if (fd < 0)
@@ -144,9 +137,9 @@ static int open_iommufd_fd(void)
 		return false;
 	}
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
-		outputerr("open_iommufd_fd: alloc_shared_obj failed\n");
+		outputerr("open_iommufd_fd: alloc_object failed\n");
 		close(fd);
 		return false;
 	}

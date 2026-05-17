@@ -174,7 +174,7 @@ static int open_io_uring_fd_config(unsigned int entries, unsigned int flags,
 	}
 	track_shared_region((unsigned long)sqes, sqes_sz);
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		munmap(sqes, sqes_sz);
 		munmap(sq_ring, sq_ring_sz);
@@ -266,7 +266,6 @@ static int init_io_uring_fds(void)
 	 * sq_ring/sqes pointers that already-forked siblings would fault
 	 * on the moment they load shm->mapped_ring.
 	 */
-	head->shared_alloc = true;
 
 	for (i = 0; i < ARRAY_SIZE(ring_configs); i++)
 		count += open_io_uring_fd_config(ring_configs[i].entries,
@@ -293,12 +292,10 @@ static int get_rand_io_uring_fd(void)
 	 * alloc_shared_obj() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_IO_URING, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_IO_URING, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -313,10 +310,6 @@ static int get_rand_io_uring_fd(void)
 				  "OBJ_FD_IO_URING pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_IO_URING, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->io_uringobj.fd;
 		if (fd < 0)

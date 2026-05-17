@@ -83,7 +83,6 @@ static int open_testfile_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TESTFILE);
 	head->destroy = &testfile_destructor;
 	head->dump = &testfile_dump;
-	head->shared_alloc = true;
 
 	while (nr < MAX_TESTFILE_FDS) {
 		char *filename;
@@ -100,7 +99,7 @@ static int open_testfile_fds(void)
 		snprintf(filename, 64, "trinity-testfile%u", i);
 
 		if (obj == NULL) {
-			obj = alloc_shared_obj(sizeof(struct object));
+			obj = alloc_object();
 			if (obj == NULL) {
 				free_shared_str(filename, 64);
 				fails++;
@@ -140,7 +139,7 @@ static int open_testfile_fds(void)
 	}
 
 	if (obj != NULL)
-		free_shared_obj(obj, sizeof(struct object));
+		free(obj);
 
 	return true;
 }
@@ -156,7 +155,7 @@ static int open_testfile_fd(void)
 		return false;	/* shared str heap exhausted; skip regen */
 	snprintf(filename, 64, "trinity-testfile%d", 1 + (rand() % MAX_TESTFILES));
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		free_shared_str(filename, 64);
 		return false;
@@ -164,7 +163,7 @@ static int open_testfile_fd(void)
 	fd = open_testfile(obj, filename);
 	if (fd == -1) {
 		free_shared_str(filename, 64);
-		free_shared_obj(obj, sizeof(struct object));
+		free(obj);
 		return false;
 	}
 
@@ -191,12 +190,10 @@ int get_rand_testfile_fd(void)
 	 * alloc_shared_obj() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_TESTFILE, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_TESTFILE, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -211,10 +208,6 @@ int get_rand_testfile_fd(void)
 				  "OBJ_FD_TESTFILE pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_TESTFILE, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->testfileobj.fd;
 		if (fd < 0)

@@ -95,7 +95,6 @@ static int init_pagecache_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PAGECACHE);
 	head->destroy = &pagecache_destructor;
 	head->dump = &pagecache_dump;
-	head->shared_alloc = true;
 
 	generate_filelist();
 
@@ -130,7 +129,7 @@ static int init_pagecache_fds(void)
 			continue;
 		}
 
-		obj = alloc_shared_obj(sizeof(struct object));
+		obj = alloc_object();
 		if (obj == NULL) {
 			close(fd);
 			break;
@@ -194,24 +193,9 @@ int get_rand_pagecache_fd(void)
 		unsigned int slot = setuid_indices[rand() % nr_setuid];
 
 		head = get_objhead(OBJ_GLOBAL, OBJ_FD_PAGECACHE);
-		if (head != NULL) {
-			unsigned int n_snap, cap_snap;
-			struct object **array_snap;
-
-			n_snap = __atomic_load_n(&head->num_entries,
-						 __ATOMIC_ACQUIRE);
-			cap_snap = head->array_capacity;
-			array_snap = head->array;
-
-			if (cap_snap > OBJHEAD_SANE_LIMIT ||
-			    n_snap > cap_snap) {
-				__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
-						   1, __ATOMIC_RELAXED);
-				/* fall through to the versioned API path below */
-			} else if (slot < n_snap && array_snap[slot] != NULL) {
-				return array_snap[slot]->fileobj.fd;
-			}
-		}
+		if (head != NULL && slot < head->num_entries &&
+		    head->array != NULL && head->array[slot] != NULL)
+			return head->array[slot]->fileobj.fd;
 	}
 
 	/*
@@ -227,12 +211,10 @@ int get_rand_pagecache_fd(void)
 	 * underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_PAGECACHE, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_PAGECACHE, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -247,10 +229,6 @@ int get_rand_pagecache_fd(void)
 				  "OBJ_FD_PAGECACHE pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_PAGECACHE, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->fileobj.fd;
 		if (fd < 0)

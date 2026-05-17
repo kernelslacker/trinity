@@ -91,7 +91,6 @@ static int init_watch_queue_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_WATCH_QUEUE);
 	head->destroy = &watch_queue_destructor;
 	head->dump = &watch_queue_dump;
-	head->shared_alloc = true;
 
 	for (i = 0; i < WATCH_QUEUE_INIT_POOL; i++) {
 		struct object *obj;
@@ -102,7 +101,7 @@ static int init_watch_queue_fds(void)
 		if (rc < 0)
 			continue;
 
-		obj = alloc_shared_obj(sizeof(struct object));
+		obj = alloc_object();
 		if (obj == NULL) {
 			close(pipefd[0]);
 			close(pipefd[1]);
@@ -142,12 +141,10 @@ static int get_rand_watch_queue_fd(void)
 	 * alloc_shared_obj() recycles it underneath us.
 	 */
 	for (int i = 0; i < 1000; i++) {
-		unsigned int slot_idx, slot_version, slot_array_gen;
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object_versioned(OBJ_FD_WATCH_QUEUE, OBJ_GLOBAL,
-						  &slot_idx, &slot_version, &slot_array_gen);
+		obj = get_random_object(OBJ_FD_WATCH_QUEUE, OBJ_GLOBAL);
 		if (obj == NULL)
 			continue;
 
@@ -162,10 +159,6 @@ static int get_rand_watch_queue_fd(void)
 				  "OBJ_FD_WATCH_QUEUE pool\n", obj);
 			continue;
 		}
-
-		if (!validate_object_handle(OBJ_FD_WATCH_QUEUE, OBJ_GLOBAL, obj,
-					    slot_idx, slot_version, slot_array_gen))
-			continue;
 
 		fd = obj->watch_queueobj.fd;
 		if (fd < 0)
@@ -185,7 +178,7 @@ static int open_watch_queue_fd(void)
 	if (do_watch_queue(pipefd) < 0)
 		return false;
 
-	obj = alloc_shared_obj(sizeof(struct object));
+	obj = alloc_object();
 	if (obj == NULL) {
 		close(pipefd[0]);
 		close(pipefd[1]);

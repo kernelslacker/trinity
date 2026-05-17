@@ -24,52 +24,26 @@
 static struct list_head global_obj_list = { &global_obj_list, &global_obj_list };
 
 /*
- * Crash-safe diagnostic for add_object's wild-stomp detection branches.
- * The surrounding objhead/shm state is by definition unreliable when one
- * of these branches fires, and outputerr() routes through vfprintf() ->
- * stdio FILE locks / glibc varargs machinery.  In practice that path has
- * itself SIGSEGV'd inside libc on the same wild stomp that triggered the
- * detection, drowning out the primary signal.  Build the message in a
- * fixed-size stack buffer with snprintf (no malloc) and write(2) it raw
- * to stderr -- no FILE state, no allocator, no shm touched after the
- * caller's own snapshot.
- *
- * Rate-limited to ~one line per 100 ms via a process-wide monotonic
- * timestamp and a single CAS, so a wild writer that re-fires the
- * detection on every retry does not flood the log.
+ * Parent-private OBJ_GLOBAL pool.  Populated pre-fork by every
+ * REG_GLOBAL_OBJ provider via add_object(OBJ_GLOBAL); the per-child
+ * snapshot in clone_global_objects_to_child() reads this array.
+ * Lives in the parent's data segment, fork-COW'd into children whose
+ * resolver (get_objhead) routes around it in favour of their own
+ * private copy.
  */
-static void crashsafe_corruption_log(const char *what, unsigned int type,
-				     void *array, unsigned int n,
-				     unsigned int cap)
-{
-	static uint64_t last_ns;
-	struct timespec ts;
-	uint64_t now_ns, prev;
-	char buf[256];
-	int len;
+static struct objhead parent_global_objects[MAX_OBJECT_TYPES];
 
-	if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
-		return;
-	now_ns = (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
-	prev = __atomic_load_n(&last_ns, __ATOMIC_RELAXED);
-	if (prev != 0 && now_ns - prev < 100000000ull)
-		return;
-	if (!__atomic_compare_exchange_n(&last_ns, &prev, now_ns, 0,
-					 __ATOMIC_RELAXED,
-					 __ATOMIC_RELAXED))
-		return;
-
-	len = snprintf(buf, sizeof(buf),
-		       "add_object: %s type=%u array=%p num_entries=%u capacity=%u\n",
-		       what, type, array, n, cap);
-	if (len <= 0)
-		return;
-	if ((size_t)len >= sizeof(buf))
-		len = sizeof(buf) - 1;
-	if (write(STDERR_FILENO, buf, (size_t)len) < 0) {
-		/* nothing useful to do here -- the diagnostic itself failed */
-	}
-}
+/*
+ * Parent-private fd->object hash and parallel compact live-fd list.
+ * Same shape as the per-child snapshots; fd_hash_insert / fd_hash_remove
+ * mutate these from the parent's pre-fork init and post-fork fd-event
+ * drains.  Children read their own snapshots; the parent reads these
+ * directly when servicing remove_object_by_fd() out of fd_event_drain().
+ */
+static struct fd_hash_entry parent_fd_hash[FD_HASH_SIZE];
+static int parent_fd_live[FD_LIVE_MAX];
+static unsigned int parent_fd_hash_count;
+static unsigned int parent_fd_live_count;
 
 void register_global_obj_init(struct global_obj_entry *entry)
 {
@@ -89,13 +63,11 @@ void init_global_objects(void)
 }
 
 /*
- * Hash table mapping fd → (object, type) for O(1) lookup in
- * remove_object_by_fd().  Open-addressing with linear probing.
- *
- * The table itself lives in shm (shm->fd_hash) so children can read
- * the per-slot generation counter the parent updates on every fd-table
- * mutation.  Mutations happen under shm->objlock; child reads of the
- * gen field are unlocked and use ACQUIRE semantics.
+ * Hash table mapping fd → (object, type) for O(1) lookup in the
+ * parent's remove_object_by_fd().  Open-addressing with linear
+ * probing.  The parent's view sits in parent_fd_hash[]; each child
+ * holds an independent snapshot in child->fd_hash[] populated by
+ * clone_global_objects_to_child().
  */
 
 void fd_hash_init(void)
@@ -103,66 +75,53 @@ void fd_hash_init(void)
 	unsigned int i;
 
 	for (i = 0; i < FD_HASH_SIZE; i++) {
-		shm->fd_hash[i].fd = -1;
-		shm->fd_hash[i].gen = 0;
+		parent_fd_hash[i].fd = -1;
+		parent_fd_hash[i].gen = 0;
 	}
-	shm->fd_hash_count = 0;
+	parent_fd_hash_count = 0;
 	/*
 	 * fd_live[] entries are gated by fd_live_count, so initialising
 	 * just the count is sufficient; stale slot contents past the
 	 * count are never read.
 	 */
-	shm->fd_live_count = 0;
+	parent_fd_live_count = 0;
 }
 
 /*
- * Append fd to the parallel live-fd list.  Caller must hold shm->objlock
- * and have just transitioned an fd_hash[] slot from empty to occupied.
- * Publishes the new entry first, then bumps fd_live_count with RELEASE
- * so a lockless reader that ACQUIREs the count is guaranteed to see the
- * entry.  Silently drops the entry if the cap is hit; the only consumer
- * (refcount-auditor) is a sampling auditor and tolerates a missed fd.
+ * Append fd to the parent's parallel live-fd list.  Called from
+ * fd_hash_insert() after transitioning a slot from empty to occupied.
+ * Single-writer (the parent); no cross-process coherence required.
+ * Silently drops the entry if the cap is hit; the auditor that reads
+ * via the per-child snapshot tolerates a missed fd.
  */
 static void fd_live_append(int fd)
 {
-	unsigned int idx = shm->fd_live_count;
+	unsigned int idx = parent_fd_live_count;
 
 	if (idx >= FD_LIVE_MAX)
 		return;
 
-	__atomic_store_n(&shm->fd_live[idx], fd, __ATOMIC_RELEASE);
-	__atomic_store_n(&shm->fd_live_count, idx + 1, __ATOMIC_RELEASE);
+	parent_fd_live[idx] = fd;
+	parent_fd_live_count = idx + 1;
 }
 
 /*
- * Swap-remove fd from the parallel live-fd list.  Caller must hold
- * shm->objlock and have just transitioned an fd_hash[] slot from
- * occupied to empty.  Linear scan over fd_live[0..count) is cheap —
- * the list is bounded by FD_HASH_SIZE in the worst case but typically
- * holds a few hundred entries.  The replacement-then-decrement order
- * keeps the visible window of fd_live[] entries valid: a concurrent
- * lockless reader that loads count after the decrement sees a list
- * whose every slot is a real live fd; one that loads count before the
- * decrement may re-read the just-removed fd, which the auditor's
- * dup() check naturally tolerates.
+ * Swap-remove fd from the parent's parallel live-fd list.  Linear scan
+ * over parent_fd_live[0..count); typical occupancy is a few hundred
+ * entries so the cost is negligible.
  */
 static void fd_live_remove(int fd)
 {
-	unsigned int count = shm->fd_live_count;
+	unsigned int count = parent_fd_live_count;
 	unsigned int i;
 
 	for (i = 0; i < count; i++) {
-		if (shm->fd_live[i] != fd)
+		if (parent_fd_live[i] != fd)
 			continue;
 
-		if (i != count - 1) {
-			int last = shm->fd_live[count - 1];
-
-			__atomic_store_n(&shm->fd_live[i], last,
-					 __ATOMIC_RELEASE);
-		}
-		__atomic_store_n(&shm->fd_live_count, count - 1,
-				 __ATOMIC_RELEASE);
+		if (i != count - 1)
+			parent_fd_live[i] = parent_fd_live[count - 1];
+		parent_fd_live_count = count - 1;
 		return;
 	}
 }
@@ -175,8 +134,7 @@ static unsigned int fd_hash_slot(int fd)
 /*
  * Internal insert that preserves the entry's existing generation and
  * doesn't update fd_hash_count.  Used by fd_hash_remove to re-hash
- * displaced entries: the entry's identity is unchanged, only its slot,
- * so any cached gen on a child must continue to match.
+ * displaced entries: the entry's identity is unchanged, only its slot.
  */
 static void fd_hash_reinsert(int fd, struct object *obj, enum objecttype type,
 			     uint32_t gen)
@@ -186,7 +144,7 @@ static void fd_hash_reinsert(int fd, struct object *obj, enum objecttype type,
 
 	slot = fd_hash_slot(fd);
 	for (probe = 0; probe < FD_HASH_SIZE; probe++) {
-		if (shm->fd_hash[slot].fd == -1)
+		if (parent_fd_hash[slot].fd == -1)
 			break;
 		slot = (slot + 1) & (FD_HASH_SIZE - 1);
 	}
@@ -196,43 +154,35 @@ static void fd_hash_reinsert(int fd, struct object *obj, enum objecttype type,
 		return;
 	}
 
-	shm->fd_hash[slot].obj = obj;
-	shm->fd_hash[slot].type = type;
-	__atomic_store_n(&shm->fd_hash[slot].gen, gen, __ATOMIC_RELEASE);
-	__atomic_store_n(&shm->fd_hash[slot].fd, fd, __ATOMIC_RELEASE);
+	parent_fd_hash[slot].obj = obj;
+	parent_fd_hash[slot].type = type;
+	parent_fd_hash[slot].gen = gen;
+	parent_fd_hash[slot].fd = fd;
 }
 
 bool fd_hash_insert(int fd, struct object *obj, enum objecttype type)
 {
 	unsigned int slot;
-	uint32_t gen;
 
 	if (fd < 0)
 		return true;
 
-	if (shm->fd_hash_count >= FD_HASH_SIZE)
+	if (parent_fd_hash_count >= FD_HASH_SIZE)
 		return false;
 
 	slot = fd_hash_slot(fd);
-	while (shm->fd_hash[slot].fd != -1 && shm->fd_hash[slot].fd != fd)
+	while (parent_fd_hash[slot].fd != -1 && parent_fd_hash[slot].fd != fd)
 		slot = (slot + 1) & (FD_HASH_SIZE - 1);
 
-	if (shm->fd_hash[slot].fd == -1) {
-		shm->fd_hash_count++;
+	if (parent_fd_hash[slot].fd == -1) {
+		parent_fd_hash_count++;
 		fd_live_append(fd);
 	}
 
-	shm->fd_hash[slot].obj = obj;
-	shm->fd_hash[slot].type = type;
-	/*
-	 * Bump the slot's generation so any child that cached the
-	 * previous occupant's (or absence) gen sees a mismatch.  The
-	 * RELEASE-store on fd publishes the entry — children using
-	 * ACQUIRE-load on fd see the updated gen too.
-	 */
-	gen = shm->fd_hash[slot].gen + 1;
-	__atomic_store_n(&shm->fd_hash[slot].gen, gen, __ATOMIC_RELEASE);
-	__atomic_store_n(&shm->fd_hash[slot].fd, fd, __ATOMIC_RELEASE);
+	parent_fd_hash[slot].obj = obj;
+	parent_fd_hash[slot].type = type;
+	parent_fd_hash[slot].gen++;
+	parent_fd_hash[slot].fd = fd;
 	return true;
 }
 
@@ -245,41 +195,21 @@ void fd_hash_remove(int fd)
 
 	slot = fd_hash_slot(fd);
 	for (i = 0; i < FD_HASH_SIZE; i++) {
-		if (shm->fd_hash[slot].fd == -1)
+		if (parent_fd_hash[slot].fd == -1)
 			return;
-		if (shm->fd_hash[slot].fd == fd) {
-			uint32_t gen;
-
-			/*
-			 * Mark the slot empty and bump its generation so a
-			 * child that cached this fd's gen sees a mismatch
-			 * even before any replacement is inserted here.
-			 */
-			gen = shm->fd_hash[slot].gen + 1;
-			__atomic_store_n(&shm->fd_hash[slot].gen, gen,
-					 __ATOMIC_RELEASE);
-			__atomic_store_n(&shm->fd_hash[slot].fd, -1,
-					 __ATOMIC_RELEASE);
+		if (parent_fd_hash[slot].fd == fd) {
+			parent_fd_hash[slot].gen++;
+			parent_fd_hash[slot].fd = -1;
 			fd_live_remove(fd);
 			next = (slot + 1) & (FD_HASH_SIZE - 1);
-			while (shm->fd_hash[next].fd != -1) {
-				struct fd_hash_entry displaced = shm->fd_hash[next];
-				__atomic_store_n(&shm->fd_hash[next].fd, -1,
-						 __ATOMIC_RELEASE);
+			while (parent_fd_hash[next].fd != -1) {
+				struct fd_hash_entry displaced = parent_fd_hash[next];
+				parent_fd_hash[next].fd = -1;
 				fd_hash_reinsert(displaced.fd, displaced.obj,
 						 displaced.type, displaced.gen);
 				next = (next + 1) & (FD_HASH_SIZE - 1);
 			}
-			/*
-			 * Decrement after the displaced-entry walk: between
-			 * the slot clear and the reinsert loop the table
-			 * still holds the same number of live entries (the
-			 * displaced ones get re-seated, not added).
-			 * Decrementing here keeps fd_hash_count from
-			 * undershooting the true occupancy for any reader
-			 * that samples it during the walk.
-			 */
-			shm->fd_hash_count--;
+			parent_fd_hash_count--;
 			return;
 		}
 		slot = (slot + 1) & (FD_HASH_SIZE - 1);
@@ -296,23 +226,22 @@ struct fd_hash_entry *fd_hash_lookup(int fd)
 
 	/*
 	 * Children resolve against their fork-time snapshot of the
-	 * parent's table.  The shm-resident table stays the parent's
-	 * writer view; once the per-child snapshot is in place, no
-	 * child read crosses the shared mapping for fd lookups.  Fall
-	 * back to shm in the early init_child window where the snapshot
-	 * has not yet been allocated.
+	 * parent's table; the parent resolves against its own writer
+	 * view.  Fall back to the parent view in the early init_child
+	 * window where the snapshot has not yet been allocated.
 	 */
-	table = shm->fd_hash;
-	if (getpid() != mainpid) {
+	if (getpid() == mainpid) {
+		table = parent_fd_hash;
+	} else {
 		struct childdata *child = this_child();
 
-		if (child != NULL && child->fd_hash != NULL)
-			table = child->fd_hash;
+		table = (child != NULL && child->fd_hash != NULL)
+			? child->fd_hash : parent_fd_hash;
 	}
 
 	slot = fd_hash_slot(fd);
 	for (i = 0; i < FD_HASH_SIZE; i++) {
-		int slot_fd = __atomic_load_n(&table[slot].fd, __ATOMIC_ACQUIRE);
+		int slot_fd = table[slot].fd;
 
 		if (slot_fd == -1)
 			return NULL;
@@ -477,41 +406,11 @@ static struct object *local_fd_hash_lookup(struct objhead *head, int fd)
 }
 
 /*
- * The trinity obj pool is split across two allocators by design:
- *
- *   OBJ_GLOBAL: the obj struct lives in the shared obj heap
- *               (alloc_shared_obj).  Every OBJ_GLOBAL provider sets
- *               head->shared_alloc=true in its init function and
- *               allocates each obj from the shared heap.  Initialised
- *               in the parent before fork so children inherit the
- *               array via the shm mapping; children then read those
- *               pointers and follow them to the per-obj struct in
- *               shared memory.  Children MUST NOT add to or destroy
- *               from these pools (enforced by the early return in
- *               add_object/destroy_object when getpid() != mainpid).
- *
- *   OBJ_LOCAL:  every byte is in the owning child's private heap.
- *               The objhead array (child->objects), the parallel
- *               head->array, and the obj structs the array points
- *               to all come from zmalloc/malloc and are unreachable
- *               from any other process's address space.  Each child
- *               manages its own pool independently.  head->shared_
- *               alloc is ignored for OBJ_LOCAL pools; release_obj()
- *               routes to plain free().
- *
- * The split is intentional.  OBJ_GLOBAL types are parent-curated
- * resources visible fleet-wide (testfiles, mq's, pidfds, ...).
- * OBJ_LOCAL types are per-child runtime state (sockets the child
- * opened, futexes the child created, ...).  Migrating OBJ_LOCAL into
- * the shared heap would mix per-child state into shared bookkeeping
- * with no benefit and would force every child to coordinate against
- * alloc_shared_obj's lock-free CAS bump on every syscall pre/post
- * hook — pointless contention on the hot path.
- *
- * Anything that walks another process's OBJ_LOCAL pool (debug.c
- * dump_childdata is the one current caller) cannot dereference the
- * obj pointers — they are foreign-private.  See the matching note
- * in dump_childdata().
+ * Every obj struct comes from alloc_object() (zmalloc) and lives in
+ * the allocating process's private heap.  OBJ_GLOBAL pools are
+ * populated pre-fork in the parent, then fork-COW'd into children's
+ * snapshots; OBJ_LOCAL pools are wholly per-child.  No path crosses
+ * the shared mapping for obj storage.
  */
 struct object * alloc_object(void)
 {
@@ -519,50 +418,25 @@ struct object * alloc_object(void)
 }
 
 /*
- * Release an obj struct via the right deallocator for its (scope, type).
+ * Release an obj struct.  Routed through deferred_free_enqueue()
+ * rather than free()'d immediately so a stale slot pointer that
+ * survived past __destroy_object() lands on a chunk with a 5-50
+ * syscall TTL (effective 80-800 with DEFERRED_TICK_BATCH) instead
+ * of glibc-reclaimed memory: get_map() and friends read &obj->map
+ * after taking the slot pointer out of head->array, and the arg-gen
+ * path that invoked get_map() can hold the pointer across the
+ * window in which the slot's owner destroys the obj.
  *
- * OBJ_GLOBAL types that opted into the shared obj heap (shared_alloc=true,
- * set by the type's init function) came from alloc_shared_obj() and must
- * be returned via free_shared_obj() — calling free() on a pointer into
- * the shared heap would hand a non-malloc'd address to glibc.
- *
- * Everything else (OBJ_LOCAL always, plus any OBJ_GLOBAL type that did
- * not opt into the shared heap) came from alloc_object() → zmalloc()
- * and is routed through deferred_free_enqueue() rather than free()'d
- * immediately.  Plain free() ends an obj struct's lifetime the moment
- * __destroy_object() drops the slot, but get_map() and friends read
- * &obj->map after taking the slot pointer out of head->array — if the
- * arg-gen path that invoked get_map() (or a stale slot pointer that
- * survived a wild value-result-syscall write) hands the freed chunk
- * back, the next deref hits a glibc-reclaimed cache line.  Routing
- * through deferred_free gives the chunk a 5-50 syscall TTL, which is
- * far longer than any in-flight get_map() consumer holds the pointer.
- *
- * Before handing the chunk to the deferred-free ring we memset it to
- * zero.  The destructor (called by __destroy_object before us) has
- * already torn down the obj's referenced state — for OBJ_MMAP_*
- * map_destructor() unmaps the VMA and frees map->name, so the
- * unzeroed remainder (map.ptr, map.size, map.prot, map.flags, fd,
- * type, array_idx) describes a mapping that no longer exists.  A
- * later get_map() read of those fields via a stale slot pointer
- * would happily pass the size>0 / size<4GB sanity check at
- * mm/maps.c:85 and return a map* whose ptr addresses an unmapped
- * VMA — a SIGSEGV/EFAULT in the very next consumer.  Zeroing makes
- * the post-destroy contents trip the size==0 band of that same check
- * instead, so a stale-slot read is rejected at the get_map boundary
- * rather than propagating into the syscall.  The memset is also
- * cheap on never-published objs (the add_object failure paths give
- * us a zmalloc'd chunk whose contents are already zero) and the
- * zeroed pointer fields make any double-deref reachable via a wild
- * slot pointer fault on a NULL access instead of a wild address.
+ * Zero the chunk before handing it to the deferred-free ring so a
+ * post-destroy read (via a stale slot pointer) trips the size==0
+ * band of consumer sanity checks instead of dereferencing an obj
+ * whose name string or mmap pointer was already torn down by the
+ * destructor.
  */
-static void release_obj(struct object *obj, enum obj_scope scope,
-			enum objecttype type)
+static void release_obj(struct object *obj,
+			enum obj_scope scope __attribute__((unused)),
+			enum objecttype type __attribute__((unused)))
 {
-	if (scope == OBJ_GLOBAL && shm->global_objects[type].shared_alloc) {
-		free_shared_obj(obj, sizeof(struct object));
-		return;
-	}
 	memset(obj, 0, sizeof(*obj));
 	deferred_free_enqueue(obj, free);
 }
@@ -575,12 +449,10 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
 		/*
 		 * Children resolve against their fork-time snapshot of the
 		 * parent's pre-fork pool (allocated by
-		 * clone_global_objects_to_child).  The shm-resident pool
-		 * remains the parent's authoritative view; child reads and
-		 * any child-local destroys mutate only their private copy.
-		 * In the early init_child window before the clone runs,
-		 * fall back to shm->global_objects so any incidental lookup
-		 * still resolves.
+		 * clone_global_objects_to_child).  The parent's writer view
+		 * lives in parent_global_objects[] in this file.  Fall back
+		 * to the parent view in the early init_child window before
+		 * the clone runs, so any incidental lookup still resolves.
 		 */
 		if (getpid() != mainpid) {
 			struct childdata *child = this_child();
@@ -588,7 +460,7 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
 			if (child != NULL && child->global_objects != NULL)
 				return &child->global_objects[type];
 		}
-		head = &shm->global_objects[type];
+		head = &parent_global_objects[type];
 	} else {
 		struct childdata *child;
 
@@ -603,46 +475,18 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
 
 /*
  * Snapshot helper for the for_each_obj iterator macro.  Captures
- * num_entries (ACQUIRE), array_capacity and array into the caller's
- * state struct so the loop body never re-reads the live objhead
- * fields.  Without this freeze every iteration of every for_each_obj
- * caller exposed three TOCTOU windows (fresh num_entries bound,
- * fresh array_capacity defensive break, fresh array deref) that a
- * sibling value-result syscall whose buffer aliases the objhead can
- * scribble between -- the same wild-stomp shape the per-call snapshot
- * regimes in add_object(), get_random_object_versioned() and
- * __destroy_object() / destroy_objects() close on the symmetric
- * write-entry, read and destroy paths.
- *
- * Entry rejection mirrors those parent fixes: a snapshot capacity
- * past OBJHEAD_SANE_LIMIT (smoking-gun wild stomp -- OBJ_GLOBAL is
- * hard-capped at GLOBAL_OBJ_MAX_CAPACITY=1024, OBJ_LOCAL working
- * sets stay well below the 64K ceiling) or n_snap > cap_snap bumps
- * local_obj_num_entries_corrupted and forces the loop to zero
- * iterations by zeroing n_snap.  An array_snap == NULL is collapsed
- * to zero iterations without a counter bump -- legitimate state for
- * an OBJ_LOCAL pool that has never had an add_object().
- *
- * array_generation is intentionally not captured: iterators do not
- * validate handles, that is validate_object_handle()'s responsibility
- * for callers that hold an obj across a window where a parent
- * destroy or a same-process realloc could invalidate the slot.
+ * num_entries and array into the caller's state struct so the loop
+ * body operates on a per-invocation hoist rather than re-loading
+ * head fields on every iteration.  No cross-process coherence is
+ * required post-Stage-5 — every pool lives in the iterating
+ * process's private heap.
  */
 void __for_each_obj_init(struct objhead *head,
 			 struct __for_each_obj_state *s)
 {
-	unsigned int cap_snap;
-
-	s->n_snap = __atomic_load_n(&head->num_entries, __ATOMIC_ACQUIRE);
-	cap_snap = head->array_capacity;
+	s->n_snap = head->num_entries;
 	s->array_snap = head->array;
 
-	if (cap_snap > OBJHEAD_SANE_LIMIT || s->n_snap > cap_snap) {
-		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
-				   1, __ATOMIC_RELAXED);
-		s->n_snap = 0;
-		return;
-	}
 	if (s->array_snap == NULL)
 		s->n_snap = 0;
 }
@@ -659,7 +503,7 @@ void __for_each_obj_init(struct objhead *head,
 void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
 	struct objhead *head;
-	bool was_protected = false;
+	unsigned int n, cap;
 	char pcbuf[128];
 
 	if (unlikely(verbosity > 1)) {
@@ -676,20 +520,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	 * corruption (sign-extended or wholesale-stomped rec->retval) that
 	 * the existing "(long)retval >= 0" gate in register_returned_fd /
 	 * the per-syscall .post handlers let through because the lower bits
-	 * happened to be positive.  Registering such a value into an
-	 * OBJ_FD_* pool causes a later get_random_object() consumer to hand
-	 * it back to the kernel as a real fd, where it either trips EBADF
-	 * noise or, worse, a coincidentally-truncated int slot lands on a
-	 * file-table entry an unrelated path opened.  This is the same wild-
-	 * write hazard class the per-caller-PC attribution ring landed in
-	 * 8d1eade3b63c was built to surface; routing the rejection through
-	 * post_handler_corrupt_ptr_bump on the rec==NULL path feeds that
-	 * ring with the .post handler's return address so the dump names
-	 * the syscall whose retval produced the bogus fd.
-	 * __builtin_return_address read at depth 0 only -- depth >0 trips
-	 * -Wframe-address and the resulting PC is unsafe under aggressive
-	 * optimisation, so the PC capture site is always add_object itself
-	 * and the recorded address names add_object's immediate caller.
+	 * happened to be positive.
 	 */
 	if (is_fd_type(type)) {
 		int fd = fd_from_object(obj, type);
@@ -707,261 +538,95 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		}
 	}
 
-	/* Children must not mutate global objects — the objhead metadata
-	 * is in shared memory but the objects/arrays are in per-process
-	 * heap (COW after fork).  Mixing the two corrupts everything. */
+	/*
+	 * OBJ_GLOBAL is pre-fork-only by construction: every provider
+	 * REG_GLOBAL_OBJ init runs in the parent before fork_children(),
+	 * and the per-child snapshot is taken at fork time.  A post-fork
+	 * child that reached add_object(OBJ_GLOBAL) would mutate only its
+	 * private copy with no benefit, so route the call to nowhere.
+	 */
 	if (scope == OBJ_GLOBAL && getpid() != mainpid) {
 		release_obj(obj, scope, type);
 		return;
 	}
 
-	if (scope == OBJ_GLOBAL) {
-		lock(&shm->objlock);
-		/* Most parent-side OBJ_GLOBAL adds happen during init,
-		 * before freeze.  The post-freeze case is fd regeneration
-		 * via try_regenerate_fd() — temporarily lift the RO
-		 * protection so the array writes can land. */
-		if (globals_are_protected()) {
-			thaw_global_objects();
-			was_protected = true;
-		}
-	}
-
 	head = get_objhead(scope, type);
-	if (head == NULL)
-		goto out_unlock;	/* OBJ_LOCAL from non-child context — see get_objhead() */
-
-	/*
-	 * Snapshot head->num_entries once and use the snapshot for the
-	 * grow check, the size computation, the slot write, and the
-	 * publish below.  head->num_entries lives in shm (per-child for
-	 * OBJ_LOCAL, shm->global_objects[] for OBJ_GLOBAL) and is reachable
-	 * from any fuzzed value-result syscall whose length argument lands
-	 * inside that struct -- the same wild-write hazard that motivated
-	 * the OBJHEAD_SANE_LIMIT defence in objhead_looks_sane().  Without
-	 * a local snapshot, a stomp landing between the grow check and the
-	 * slot write lets the index used at head->array[N]=obj diverge
-	 * from the index the grow check sized for, and the slot write
-	 * lands past the array's bounds (heap-buffer-overflow at
-	 * objects.c:411).  Snapshotting once also collapses two reloads
-	 * the compiler can't elide across the malloc / mprotect calls in
-	 * the OBJ_LOCAL grow path, where every reload of head->num_entries
-	 * widens the same TOCTOU window.
-	 */
-	unsigned int n = head->num_entries;
-
-	/*
-	 * Parallel snapshot of head->array and head->array_generation.
-	 * The n snapshot above only addresses the index used at the slot
-	 * write; head->array itself is re-loaded from shm at the deref
-	 * (mov (%rcx),%rax immediately before mov %rbx,(%rax,%rdx,8) at
-	 * objects.c:777 in the prod disasm), so a sibling value-result
-	 * write that scribbles head->array between the grow check and the
-	 * slot store faults on a freshly-corrupted pointer with the n
-	 * snapshot intact.  Snapshot the array pointer alongside n and
-	 * route the slot write through the snapshot so the deref is
-	 * decoupled from any post-snapshot stomp.  gen_snap pairs with
-	 * the RELEASE bump in the OBJ_LOCAL grow branch below and the
-	 * read-side ACQUIRE-load in get_random_object_versioned() / the
-	 * matching check in validate_object_handle(): a wild write that
-	 * also clobbered head->array_generation is caught at the pre-
-	 * write re-check before the store dereferences a stale snapshot
-	 * (the wild-write may have invalidated array_snap in the same
-	 * vicinity).  OBJ_LOCAL grow legitimately reseats head->array
-	 * and bumps the generation, so the snapshots are refreshed
-	 * inside that branch to the post-grow values.
-	 */
-	struct object **array_snap = head->array;
-	unsigned int gen_snap = __atomic_load_n(&head->array_generation,
-						__ATOMIC_ACQUIRE);
-	/*
-	 * Snapshot head->array_capacity alongside n / array_snap / gen_snap.
-	 * Every capacity-bound decision below (the entry stomp-bound bail,
-	 * the OBJ_GLOBAL "global array full" reject, the OBJ_LOCAL grow
-	 * trigger and grow-loop arithmetic) routes through cap_snap so a
-	 * sibling value-result write that scribbles head->array_capacity
-	 * between two re-loads cannot let n=K pass a "K > cap_load_A"
-	 * check at one site and then fail to trigger a grow at a later
-	 * "K >= cap_load_B" check because a different load saw a stomped
-	 * larger value.  Without this snapshot a joint stomp of
-	 * (num_entries, array_capacity) to mutually-consistent large values
-	 * passes the entry n>cap bail (cap_load_A also large), passes the
-	 * OBJ_LOCAL grow trigger n>=cap (cap_load_B also large), and lands
-	 * array_snap[n] = obj 153+ slots past the original 16-slot
-	 * allocation -- the heap-buffer-overflow ASAN caught in add_object
-	 * via post_eventfd_create.  Closes the last objhead field that was
-	 * still being read fresh from shm at every use; mirrors the
-	 * snapshot regimes added for num_entries (1ca419778f42), array
-	 * (5f3851f029d8) and array_generation (58e9d01ac4d2).  The OBJ_LOCAL
-	 * grow branch refreshes cap_snap to the post-grow newcap below
-	 * alongside the existing array_snap / gen_snap refresh.
-	 */
-	unsigned int cap_snap = head->array_capacity;
-
-	/*
-	 * Reject snapshots whose head->array pointer is itself shape-
-	 * unhealthy (sub-page / non-canonical / misaligned).  NULL is the
-	 * legitimate first-add state -- head->array is only allocated by
-	 * the OBJ_LOCAL grow branch below or init_object_lists() for
-	 * OBJ_GLOBAL -- so skip the shape check on NULL.  Any non-NULL
-	 * value that fails is_corrupt_ptr_shape() came from a wild stomp
-	 * that hit head->array; fall through to the same release_obj +
-	 * counter bump path the entry-time num_entries guard uses so the
-	 * failure mode collapses onto one shape.
-	 */
-	if (array_snap != NULL && is_corrupt_ptr_shape(array_snap)) {
-		crashsafe_corruption_log("stomped head->array", type,
-					 array_snap, n, cap_snap);
-		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted, 1,
-				   __ATOMIC_RELAXED);
-		post_handler_corrupt_ptr_bump_site(NULL,
-						   __builtin_return_address(0),
-						   "add_object:array");
-		if (is_fd_type(type)) {
-			int fd = fd_from_object(obj, type);
-			if (fd >= 0)
-				close(fd);
-		}
+	if (head == NULL) {
 		release_obj(obj, scope, type);
-		goto out_unlock;
+		return;
 	}
 
-	/*
-	 * Reject OBJ_GLOBAL snapshots whose array_capacity is past the
-	 * OBJHEAD_SANE_LIMIT ceiling -- a smoking-gun sibling wild stomp
-	 * (OBJ_GLOBAL is hard-capped at GLOBAL_OBJ_MAX_CAPACITY=1024 so
-	 * any larger value originated from cross-process scribble of the
-	 * shm-resident objhead).  OBJ_LOCAL pools live in the owning
-	 * child's private heap and cannot be reached by a sibling, so the
-	 * defence is omitted there.
-	 */
-	if (scope == OBJ_GLOBAL && cap_snap > OBJHEAD_SANE_LIMIT) {
-		crashsafe_corruption_log("stomped capacity", type,
-					 array_snap, n, cap_snap);
-		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted, 1,
-				   __ATOMIC_RELAXED);
-		post_handler_corrupt_ptr_bump_site(NULL,
-						   __builtin_return_address(0),
-						   "add_object:cap");
-		if (is_fd_type(type)) {
-			int fd = fd_from_object(obj, type);
-			if (fd >= 0)
-				close(fd);
-		}
-		release_obj(obj, scope, type);
-		goto out_unlock;
-	}
+	n = head->num_entries;
+	cap = head->array_capacity;
 
-	if (n > cap_snap) {
-		/* Wild-stomp defence — refuse to act on a snapshot that was already
-		 * out-of-bounds at the moment we read it.  The grow loop's UINT_MAX/2
-		 * guard would eventually catch this, but bail earlier so we don't
-		 * attempt large allocations we know up-front to be illegitimate.
-		 * Mirrors the symmetric pick-side guard in get_random_object_
-		 * versioned()'s OBJ_LOCAL branch and the OBJ_GLOBAL guard at the
-		 * grow check just below this line. */
-		crashsafe_corruption_log("stomped num_entries", type,
-					 array_snap, n, cap_snap);
-		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted, 1,
-				   __ATOMIC_RELAXED);
-		post_handler_corrupt_ptr_bump_site(NULL,
-						   __builtin_return_address(0),
-						   "add_object:num");
-		if (is_fd_type(type)) {
-			int fd = fd_from_object(obj, type);
-			if (fd >= 0)
-				close(fd);
-		}
-		release_obj(obj, scope, type);
-		goto out_unlock;
-	}
-
-	/* For global objects, the array was pre-allocated in shared
-	 * memory by init_object_lists().  Never realloc — just reject
-	 * if we've hit the fixed capacity. */
 	if (scope == OBJ_GLOBAL) {
-		if (n >= cap_snap) {
-			crashsafe_corruption_log("global array full", type,
-						 array_snap, n, cap_snap);
-			if (is_fd_type(type)) {
-				int fd = fd_from_object(obj, type);
-				if (fd >= 0)
-					close(fd);
-			}
-			release_obj(obj, scope, type);
-			goto out_unlock;
-		}
-	} else if (n >= cap_snap) {
-		/*
-		 * Local objects: grow on the private heap.
-		 *
-		 * Hand-rolled allocate-copy-defer-free instead of plain
-		 * realloc().  realloc() returns the old chunk to glibc the
-		 * moment the resize forces a move, but get_random_object()
-		 * (and find_local_object_by_fd, for_each_obj iterators, the
-		 * arg-gen path get_map → alloc_iovec → ...) read head->array
-		 * lockless from the same child without any temporal barrier.
-		 * A compiler-hoisted load of head->array, an interrupted code
-		 * path holding the prior pointer, or a stale slot pointer
-		 * that survived a wild value-result write can all keep the
-		 * OLD array container live past the resize -- next deref
-		 * lands inside a glibc-reclaimed chunk.
-		 *
-		 * Routing the old container through deferred_free_enqueue()
-		 * gives it the same 5-50 syscall (effective 80-800 with
-		 * DEFERRED_TICK_BATCH) TTL the obj struct frees already
-		 * enjoy via release_obj() above.  That is far longer than
-		 * any in-flight head->array reader's window, and closes the
-		 * UAF on the array container the same way the get_map fix
-		 * (3a8d344f0f73, 546f576fae24) closed the UAF on the obj
-		 * struct.  Same hazard shape, same defence.
-		 *
-		 * The deferred_free ring rejects sub-page / canonical-out-of-
-		 * range / misaligned ptrs (looks_like_corrupted_ptr) and ptrs
-		 * overlapping any tracked shared region.  The OBJ_LOCAL
-		 * head->array sits in private heap returned by malloc, so it
-		 * passes both bands trivially.
-		 */
-		struct object **newarray;
-		struct object **oldarray;
-		unsigned int newcap, oldcap;
+		if (n >= cap) {
+			/*
+			 * Grow on the parent's private heap.  No concurrent
+			 * reader to coordinate with -- children see a snapshot
+			 * pinned at fork time, so a post-fork grow in the
+			 * parent is invisible to them and a pre-fork grow has
+			 * no readers yet.
+			 */
+			struct object **newarray;
+			unsigned int newcap = cap ? cap * 2 : 16;
 
-		/*
-		 * Doubling-then-walk: the entry condition n >= array_capacity
-		 * normally means n == array_capacity, so doubling
-		 * array_capacity gives newcap = 2*n which strictly exceeds
-		 * the index we are about to write.  If a wild write has
-		 * scribbled head->num_entries past array_capacity, the
-		 * single double can come back smaller than the snapshot --
-		 * walk the doubling until newcap > n.  Bail with a
-		 * release_obj if a further double would overflow unsigned
-		 * int rather than letting the OOB land.
-		 */
-		if (cap_snap > UINT_MAX / 2) {
-			outputerr("add_object: cap overflow type=%u num_entries=%u capacity=%u\n",
-				  type, n, cap_snap);
-			if (is_fd_type(type)) {
-				int fd = fd_from_object(obj, type);
-				if (fd >= 0)
-					close(fd);
-			}
-			release_obj(obj, scope, type);
-			goto out_unlock;
-		}
-		newcap = cap_snap ? cap_snap * 2 : 16;
-		while (newcap <= n) {
-			if (newcap > UINT_MAX / 2) {
+			if (cap > UINT_MAX / 2) {
 				outputerr("add_object: cap overflow type=%u num_entries=%u capacity=%u\n",
-					  type, n, cap_snap);
+					  type, n, cap);
 				if (is_fd_type(type)) {
 					int fd = fd_from_object(obj, type);
 					if (fd >= 0)
 						close(fd);
 				}
 				release_obj(obj, scope, type);
-				goto out_unlock;
+				return;
 			}
-			newcap *= 2;
+			newarray = zmalloc(newcap * sizeof(struct object *));
+			if (newarray == NULL) {
+				outputerr("add_object: malloc failed for type %u (cap %u)\n",
+					  type, newcap);
+				if (is_fd_type(type)) {
+					int fd = fd_from_object(obj, type);
+					if (fd >= 0)
+						close(fd);
+				}
+				release_obj(obj, scope, type);
+				return;
+			}
+			if (head->array != NULL && cap > 0)
+				memcpy(newarray, head->array,
+				       cap * sizeof(struct object *));
+			free(head->array);
+			head->array = newarray;
+			head->array_capacity = newcap;
+			cap = newcap;
+		}
+	} else if (n >= cap) {
+		/*
+		 * OBJ_LOCAL grow on the owning child's private heap.  Use
+		 * the same allocate-copy-defer-free shape that closed the
+		 * UAF on the array container reachable through cached
+		 * head->array reads in the arg-gen path: the deferred-free
+		 * ring gives the old chunk a 5-50 syscall (effective
+		 * 80-800 with DEFERRED_TICK_BATCH) TTL, far longer than
+		 * any in-flight reader's window.  Same hazard shape as
+		 * the obj-struct fix (3a8d344f0f73, 546f576fae24).
+		 */
+		struct object **newarray;
+		struct object **oldarray;
+		unsigned int newcap = cap ? cap * 2 : 16;
+
+		if (cap > UINT_MAX / 2) {
+			outputerr("add_object: cap overflow type=%u num_entries=%u capacity=%u\n",
+				  type, n, cap);
+			if (is_fd_type(type)) {
+				int fd = fd_from_object(obj, type);
+				if (fd >= 0)
+					close(fd);
+			}
+			release_obj(obj, scope, type);
+			return;
 		}
 		newarray = zmalloc(newcap * sizeof(struct object *));
 		if (newarray == NULL) {
@@ -973,152 +638,21 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 					close(fd);
 			}
 			release_obj(obj, scope, type);
-			goto out_unlock;
+			return;
 		}
-		oldcap = cap_snap;
 		oldarray = head->array;
-		if (oldarray != NULL && oldcap > 0)
-			memcpy(newarray, oldarray,
-			       oldcap * sizeof(struct object *));
+		if (oldarray != NULL && cap > 0)
+			memcpy(newarray, oldarray, cap * sizeof(struct object *));
 		head->array = newarray;
 		head->array_capacity = newcap;
-		/*
-		 * Bump the whole-array generation AFTER the new buffer is
-		 * published.  A reader that snapshots the generation BEFORE
-		 * loading head->array sees either (gen=N, array=oldarray) or
-		 * (gen=N+1, array=newarray); validate_object_handle() compares
-		 * its snapshotted gen against the current value and rejects
-		 * any handle whose snapshot pre-dates the swap, so a consumer
-		 * that loaded head->array into a local variable before this
-		 * point and is now holding a slot pointer from the prior
-		 * generation drops it instead of dereferencing into the
-		 * deferred-free queue's pending chunk.  RELEASE so the bump
-		 * orders after the head->array store from a reader's
-		 * perspective.
-		 */
-		__atomic_add_fetch(&head->array_generation, 1,
-				   __ATOMIC_RELEASE);
-		/*
-		 * Refresh the snapshots taken at the top of the function: we
-		 * just legitimately reseated head->array and bumped
-		 * head->array_generation, so the stale array_snap (== old
-		 * deferred-freed buffer) and gen_snap (== pre-bump value)
-		 * would both be rejected by the pre-write re-check below.
-		 * Re-load with ACQUIRE so a sibling-scribble that also lands
-		 * on head->array_generation between the bump and here is
-		 * caught at the re-check rather than silently accepted.
-		 */
-		array_snap = head->array;
-		gen_snap = __atomic_load_n(&head->array_generation,
-					   __ATOMIC_ACQUIRE);
-		/*
-		 * Refresh cap_snap to the post-grow capacity for the same
-		 * reason array_snap and gen_snap are refreshed above: the
-		 * pre-write re-check below compares cap_snap against
-		 * head->array_capacity to catch a sibling stomp landing
-		 * between the entry snapshot and the slot store, and the
-		 * legitimate grow we just performed bumped capacity itself.
-		 * Use newcap rather than re-reading head->array_capacity so
-		 * the refresh window stays closed on a sibling stomp landing
-		 * between the publish at line ~768 and here.
-		 */
-		cap_snap = newcap;
+		cap = newcap;
 		if (oldarray != NULL)
 			deferred_free_enqueue(oldarray, free);
 	}
 
-	/*
-	 * Bump the slot's version BEFORE publishing the new pointer so a
-	 * concurrent lockless reader that snapshots slot_versions[n]
-	 * after this point and reads array[n] sees a (version, ptr)
-	 * pair that's internally consistent.  RELEASE so the bump is
-	 * visible to the child's ACQUIRE-load in get_random_object().
-	 * Skipped for OBJ_LOCAL (no slot_versions array there — no
-	 * lockless reader to coordinate with).
-	 */
-	if (scope == OBJ_GLOBAL && head->slot_versions != NULL)
-		__atomic_add_fetch(&head->slot_versions[n], 1,
-				   __ATOMIC_RELEASE);
-
-	/*
-	 * Re-check head->array_generation immediately before the store.
-	 * A sibling value-result write that scribbled head->array between
-	 * the snapshot at the top and this point would also land in the
-	 * same shm vicinity as head->array_generation; mirror the read-
-	 * side mismatch reject in validate_object_handle() here on the
-	 * write side.  Route through the existing local_obj_num_entries_
-	 * corrupted path used by the entry-time stomped-num_entries guard
-	 * so the failure mode collapses onto one counter and one error
-	 * shape -- both observations are the same hazard class (a wild
-	 * stomp on objhead state past the snapshot).  ACQUIRE pairs with
-	 * the bumper's RELEASE in the OBJ_LOCAL grow branch above and in
-	 * destroy_objects().  OBJ_GLOBAL arrays are pre-allocated and
-	 * never legitimately reseated, so gen stays at the snapshotted
-	 * value in steady state -- a mismatch there means a wild write
-	 * has clobbered head->array_generation (and presumably head->array
-	 * with it), which is exactly the case the snapshot is here to
-	 * catch.
-	 */
-	{
-		unsigned int gen_now = __atomic_load_n(&head->array_generation,
-						       __ATOMIC_ACQUIRE);
-		unsigned int cap_now;
-
-		if (gen_now != gen_snap) {
-			outputerr("add_object: stomped array_generation type=%u gen_snap=%u gen_now=%u\n",
-				  type, gen_snap, gen_now);
-			__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
-					   1, __ATOMIC_RELAXED);
-			if (is_fd_type(type)) {
-				int fd = fd_from_object(obj, type);
-				if (fd >= 0)
-					close(fd);
-			}
-			release_obj(obj, scope, type);
-			goto out_unlock;
-		}
-		/*
-		 * Pair with the cap_snap entry-snapshot above: re-check
-		 * head->array_capacity hasn't been scribbled between the
-		 * snapshot (or its post-grow refresh) and the slot store.
-		 * The gen re-check just above catches a stomp that touched
-		 * head->array_generation; a sibling value-result write that
-		 * landed in the same shm vicinity but missed the gen field
-		 * and only stomped array_capacity is caught here.  array_snap
-		 * was sized for cap_snap slots; if the live capacity now
-		 * disagrees, the snapshot we are about to deref no longer
-		 * matches the array's true bound and the store at
-		 * array_snap[n] = obj is no longer provably in-bounds.
-		 */
-		cap_now = head->array_capacity;
-		if (cap_now != cap_snap) {
-			outputerr("add_object: stomped array_capacity type=%u cap_snap=%u cap_now=%u num_entries=%u\n",
-				  type, cap_snap, cap_now, n);
-			__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
-					   1, __ATOMIC_RELAXED);
-			if (is_fd_type(type)) {
-				int fd = fd_from_object(obj, type);
-				if (fd >= 0)
-					close(fd);
-			}
-			release_obj(obj, scope, type);
-			goto out_unlock;
-		}
-	}
-
-	array_snap[n] = obj;
+	head->array[n] = obj;
 	obj->array_idx = n;
-
-	/*
-	 * RELEASE-publish the new count so a child doing a lockless
-	 * ACQUIRE-load in get_random_object() that sees count=N+1 also
-	 * sees the array[N] = obj write that preceded it.  For OBJ_LOCAL
-	 * the pool is per-child private, so a plain store suffices.
-	 */
-	if (scope == OBJ_GLOBAL)
-		__atomic_store_n(&head->num_entries, n + 1, __ATOMIC_RELEASE);
-	else
-		head->num_entries = n + 1;
+	head->num_entries = n + 1;
 
 	/* Mirror the parent-side global fd hash for OBJ_LOCAL fd-typed
 	 * pools so find_local_object_by_fd() resolves in O(1).  The buffer
@@ -1130,67 +664,28 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			local_fd_hash_insert(head, fd, obj);
 	}
 
-	/* Track global fd-type objects in the hash table */
+	/* Track global fd-type objects in the parent's fd_hash so
+	 * remove_object_by_fd() and the per-child snapshot can resolve
+	 * them by fd. */
 	if (scope == OBJ_GLOBAL && is_fd_type(type)) {
 		int fd = fd_from_object(obj, type);
+
 		if (!fd_hash_insert(fd, obj, type)) {
 			outputerr("add_object: fd hash full for type %u, dropping fd %d\n",
 				  type, fd);
-			/*
-			 * Drop the count first so a concurrent lockless child
-			 * read picking up the new snapshot sees the lower
-			 * count and won't index past the (about-to-be-NULLed)
-			 * tail slot.  RELEASE pairs with the child's ACQUIRE.
-			 * Roll back to the same n the slot write used so a
-			 * wild write that scribbled head->num_entries between
-			 * the publish above and here can't drop the count to
-			 * a stale value or NULL the wrong slot.
-			 */
-			__atomic_store_n(&head->num_entries, n,
-					 __ATOMIC_RELEASE);
-			/*
-			 * Roll back through the same snapshotted pointer the
-			 * publishing store at array_snap[n] = obj used.  A
-			 * sibling-scribble that landed between the slot write
-			 * above and the fd_hash_insert() reject here would
-			 * fault on a freshly-corrupted head->array re-load
-			 * otherwise; the snapshot was validated by the gen
-			 * re-check before the publish, and OBJ_GLOBAL arrays
-			 * never legitimately reseat, so the snapshot still
-			 * names the slot we wrote.
-			 */
-			array_snap[n] = NULL;
-			/*
-			 * Rollback bump: a lockless reader that briefly
-			 * observed snapshot=n+1 may have captured the pre-
-			 * rollback (slot_versions[n], array[n]) pair and be
-			 * mid-validation.  Bump the version again so its post-
-			 * use re-acquire diverges and the obj — about to be
-			 * release_obj()'d into the freelist — is rejected.
-			 */
-			if (head->slot_versions != NULL)
-				__atomic_add_fetch(&head->slot_versions[n], 1,
-						   __ATOMIC_RELEASE);
+			head->num_entries = n;
+			head->array[n] = NULL;
 			if (fd >= 0)
 				close(fd);
 			release_obj(obj, scope, type);
-			goto out_unlock;
+			return;
 		}
 	}
 
 	/* Per-object dumps are debug noise at startup (NFUTEXES = 5 * cpus
-	 * identical "futex: 0 owner:0 scope:1" lines, etc.).  Gate on -vv.
-	 * dump_childdata() calls head->dump directly for crash diagnostics
-	 * and is unaffected by this gate. */
+	 * identical "futex: 0 owner:0 scope:1" lines, etc.).  Gate on -vv. */
 	if (head->dump != NULL && verbosity > 2)
 		head->dump(obj, scope);
-
-out_unlock:
-	if (scope == OBJ_GLOBAL) {
-		if (was_protected)
-			freeze_global_objects();
-		unlock(&shm->objlock);
-	}
 
 	/* if we just added something to a child list, check
 	 * to see if we need to do some pruning. */
@@ -1240,50 +735,13 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
 		struct objhead *head;
 
 		if (scope == OBJ_GLOBAL)
-			head = &shm->global_objects[i];
-		else {
+			head = &parent_global_objects[i];
+		else
 			head = &child->objects[i];
-		}
 
 		head->num_entries = 0;
-		head->array_generation = 0;
-
-		if (scope == OBJ_GLOBAL) {
-			/* Pre-allocate the parallel array in MAP_SHARED memory
-			 * so children can safely read it.  Never realloc.
-			 * Tagged global so freeze_global_objects() will mprotect
-			 * it RO once init is done. */
-			head->array = alloc_shared_global(GLOBAL_OBJ_MAX_CAPACITY *
-							  sizeof(struct object *));
-			memset(head->array, 0, GLOBAL_OBJ_MAX_CAPACITY *
-			       sizeof(struct object *));
-			head->array_capacity = GLOBAL_OBJ_MAX_CAPACITY;
-			/*
-			 * Parallel per-slot version counter for the lockless
-			 * child reader's seqlock-style consistency check.
-			 * Same backing region as ->array (alloc_shared_global)
-			 * so freeze/thaw/mprotect cycles cover both.
-			 */
-			head->slot_versions =
-				alloc_shared_global(GLOBAL_OBJ_MAX_CAPACITY *
-						    sizeof(unsigned int));
-			memset(head->slot_versions, 0, GLOBAL_OBJ_MAX_CAPACITY *
-			       sizeof(unsigned int));
-		} else {
-			head->array = NULL;
-			head->array_capacity = 0;
-			head->slot_versions = NULL;
-		}
-
-		/*
-		 * Per-OBJ_LOCAL fd→object hash starts empty.  Lazily
-		 * allocated in private heap on the first add_object() insert
-		 * for fd-typed pools.  Reset here even on the OBJ_GLOBAL path
-		 * because shm slot reuse across child generations could leave
-		 * a stale pointer from a prior child in the shared objhead;
-		 * an unconditional NULL write keeps the lazy-alloc check in
-		 * local_fd_hash_insert() honest.
-		 */
+		head->array = NULL;
+		head->array_capacity = 0;
 		head->fd_hash = NULL;
 
 		/*
@@ -1291,7 +749,7 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
 		 */
 		if (scope == OBJ_LOCAL) {
 			struct objhead *globalhead;
-			globalhead = &shm->global_objects[i];
+			globalhead = &parent_global_objects[i];
 			head->max_entries = globalhead->max_entries;
 			head->destroy = globalhead->destroy;
 			head->dump = globalhead->dump;
@@ -1342,18 +800,15 @@ void clone_global_objects_to_child(struct childdata *child)
 		return;
 
 	for (i = 0; i < MAX_OBJECT_TYPES; i++) {
-		struct objhead *src = &shm->global_objects[i];
+		struct objhead *src = &parent_global_objects[i];
 		struct objhead *dst = &child->global_objects[i];
 		unsigned int n = src->num_entries;
 
 		dst->max_entries = src->max_entries;
 		dst->destroy = src->destroy;
 		dst->dump = src->dump;
-		dst->shared_alloc = src->shared_alloc;
 		dst->num_entries = n;
 		dst->array_capacity = n;
-		dst->array_generation = 0;
-		dst->slot_versions = NULL;
 		dst->fd_hash = NULL;
 		dst->array = NULL;
 
@@ -1371,410 +826,39 @@ void clone_global_objects_to_child(struct childdata *child)
 
 	child->fd_hash = zmalloc(FD_HASH_SIZE * sizeof(struct fd_hash_entry));
 	if (child->fd_hash != NULL) {
-		memcpy(child->fd_hash, shm->fd_hash,
+		memcpy(child->fd_hash, parent_fd_hash,
 		       FD_HASH_SIZE * sizeof(struct fd_hash_entry));
-		child->fd_hash_count = shm->fd_hash_count;
+		child->fd_hash_count = parent_fd_hash_count;
 	}
 
 	child->fd_live = zmalloc(FD_LIVE_MAX * sizeof(int));
 	if (child->fd_live != NULL) {
-		memcpy(child->fd_live, shm->fd_live, FD_LIVE_MAX * sizeof(int));
-		child->fd_live_count = shm->fd_live_count;
+		memcpy(child->fd_live, parent_fd_live, FD_LIVE_MAX * sizeof(int));
+		child->fd_live_count = parent_fd_live_count;
 	}
 }
 
 /*
- * Pick a random object from a pool.
- *
- * Lockless child read path (OBJ_GLOBAL):
- *   Children must NOT take shm->objlock here.  Doing so deadlocks the
- *   fleet whenever a child is killed mid-syscall while holding objlock —
- *   the parent's reaper then blocks forever waiting for the dead child
- *   to release a lock it can never release.  The defensive pid_alive()
- *   bypass added in e4e32ff0 (zombie pid_alive) papered over one
- *   instance of this; eliminating the lock acquisition on the child
- *   read path closes the whole class.  Audit (task 4LSD-ae2QTmkKyPKHPo7hQ)
- *   identified 23 HIGH sites where children reach this lock; this fix
- *   collapses the entire category-A cluster (get_random_object on the
- *   syscall arg-pickers' hot path).
- *
- * Memory ordering:
- *   The child snapshots head->num_entries with __ATOMIC_ACQUIRE,
- *   pairing with the parent mutators (add_object, __destroy_object)
- *   that publish updates with __ATOMIC_RELEASE.  Acquire/release
- *   guarantees that if the child observes count = N+1, it also
- *   observes the parent's array[N] = obj store that preceded the
- *   count bump.  Without this pairing, a child could pick an index
- *   into a slot whose backing store hadn't yet propagated.
- *   Modeled on fd_hash_lookup() (objects.c:159) which uses the same
- *   pattern for the parallel fd hash table.
- *
- * Worst-case race:
- *   The child reads array[idx] without taking objlock, so it can read
- *   a stale pointer that the parent is concurrently overwriting (swap-
- *   with-last in __destroy_object) or whose target object the parent
- *   has just free()d.  This is the SAME failure mode as the existing
- *   "OBJ_GLOBAL objects allocated in parent heap break for children"
- *   problem tracked in trinity-todo.md (item: OBJ_GLOBAL pool entries
- *   allocated in parent heap break for children) — the structural fix
- *   is to allocate the struct objects themselves in shared memory.
- *   Until that lands, the caller validates the returned pointer and
- *   the catch-all sighandler turns any raw deref crash into _exit;
- *   we are NOT making it worse, only widening an existing window.
- *
- * Why lockless is safe enough:
- *   1. Parent mutators run while shm->global_objects is mprotect-thawed
- *      and re-freeze on completion — the array memory itself isn't
- *      remapped or relocated under the child (capacity is fixed at
- *      init, GLOBAL_OBJ_MAX_CAPACITY).
- *   2. ACQUIRE/RELEASE on num_entries gives a consistent (count, slots)
- *      pair w.r.t. the most recent publish.
- *   3. The remaining race (stale array[idx] pointer) is upper-bounded
- *      by the OBJ_GLOBAL-in-parent-heap problem and addressed by the
- *      separately-tracked structural fix.
+ * Pick a random object from a pool.  Single-writer per pool, single
+ * reader per call (the owning process) -- no locks, no version
+ * counters, no snapshot defences.  Children read their fork-time
+ * snapshot of the parent's pre-fork OBJ_GLOBAL pool; OBJ_LOCAL pools
+ * are wholly per-child.  An empty pool returns NULL.
  */
-/*
- * Lockless seqlock-style sample of one OBJ_GLOBAL slot from a child.
- *
- * Reads slot_versions[idx] before and after sampling array[idx]; if the
- * two versions match AND the obj pointer is non-NULL we have a (version,
- * obj) pair that no concurrent destroy interleaved with.  On mismatch
- * the parent mutated the slot inside our window — return NULL to the
- * caller's retry loop.  On a stable but NULL slot (transient swap-with-
- * last torn state) likewise return NULL so the retry picks a fresh idx.
- *
- * The caller saves *version_out for a later validate_object_handle()
- * re-acquire if it carries the obj past its own deref window (e.g. the
- * arg-gen path, where get_map() returns &obj->map and the consumer
- * derefs map->ptr several frames downstream).
- */
-static struct object *sample_global_slot(struct objhead *head,
-					 unsigned int idx,
-					 unsigned int *version_out)
-{
-	unsigned int v_a, v_b;
-	struct object *obj;
-
-	v_a = __atomic_load_n(&head->slot_versions[idx], __ATOMIC_ACQUIRE);
-	obj = __atomic_load_n(&head->array[idx], __ATOMIC_ACQUIRE);
-	v_b = __atomic_load_n(&head->slot_versions[idx], __ATOMIC_ACQUIRE);
-	if (v_a != v_b || obj == NULL)
-		return NULL;
-	*version_out = v_a;
-	return obj;
-}
-
-/*
- * Bounded retry budget for the lockless reader's seqlock loop.
- *
- * A single mismatch means one parent-side destroy raced with the
- * sample; a small handful of retries absorbs back-to-back regen churn
- * on the same pool without spinning forever in the (theoretical) case
- * of a parent that destroys faster than the child can sample.  Beyond
- * that, surface NULL to the caller — most consumers (get_map, the
- * fd_provider syscalls) treat NULL as "pick something else this round"
- * and just retry at their own granularity.
- */
-#define GET_RANDOM_OBJECT_RETRY_BUDGET 8
-
-static struct object *get_random_object_global_lockless(struct objhead *head,
-							unsigned int *idx_out,
-							unsigned int *version_out,
-							unsigned int *array_gen_out)
-{
-	unsigned int snapshot;
-	unsigned int idx;
-	unsigned int version;
-	struct object *obj;
-	int attempt;
-	/*
-	 * For OBJ_GLOBAL pools array_capacity is fixed at
-	 * GLOBAL_OBJ_MAX_CAPACITY in init_object_lists() and is never
-	 * resized (the parallel array is alloc_shared_global()'d once and
-	 * frozen RO via freeze_global_objects()).  Hoist the load out of
-	 * the retry loop so we don't reread it on every attempt.
-	 */
-	const unsigned int cap = head->array_capacity;
-
-	for (attempt = 0; attempt < GET_RANDOM_OBJECT_RETRY_BUDGET; attempt++) {
-		unsigned int gen;
-
-		snapshot = __atomic_load_n(&head->num_entries,
-					   __ATOMIC_ACQUIRE);
-		if (snapshot == 0)
-			return NULL;
-		/*
-		 * Defence against a wild-write-stomped num_entries that
-		 * exceeds the array bound; sample_global_slot below would
-		 * OOB-read slot_versions/array otherwise.  validate_global_
-		 * objects() reports this on the parent's idle pass; here we
-		 * just fall back gracefully to NULL.
-		 */
-		if (snapshot > cap)
-			return NULL;
-		/*
-		 * Snapshot the whole-array generation BEFORE the per-slot
-		 * sample.  ACQUIRE pairs with the bumper's RELEASE in
-		 * add_object()/destroy_objects().  OBJ_GLOBAL arrays don't
-		 * realloc, so this is 0 in steady state — but a wild write
-		 * that reseats head->array would also be visible here, and
-		 * the matching check in validate_object_handle() rejects the
-		 * handle before any consumer derefs the obj it references.
-		 */
-		gen = __atomic_load_n(&head->array_generation,
-				      __ATOMIC_ACQUIRE);
-		idx = rand() % snapshot;
-		obj = sample_global_slot(head, idx, &version);
-		if (obj != NULL) {
-			*idx_out = idx;
-			*version_out = version;
-			*array_gen_out = gen;
-			return obj;
-		}
-	}
-
-	__atomic_add_fetch(&shm->stats.global_obj_uaf_caught, 1,
-			   __ATOMIC_RELAXED);
-	return NULL;
-}
-
 struct object * get_random_object(enum objecttype type, enum obj_scope scope)
 {
-	unsigned int idx, version, array_gen;
-
-	return get_random_object_versioned(type, scope, &idx, &version,
-					   &array_gen);
-}
-
-struct object * get_random_object_versioned(enum objecttype type,
-					    enum obj_scope scope,
-					    unsigned int *idx_out,
-					    unsigned int *version_out,
-					    unsigned int *array_gen_out)
-{
 	struct objhead *head;
-	struct object *obj;
-
-	*idx_out = 0;
-	*version_out = 0;
-	*array_gen_out = 0;
+	unsigned int n;
 
 	head = get_objhead(scope, type);
 	if (head == NULL)
 		return NULL;
 
-	if (scope == OBJ_GLOBAL && getpid() != mainpid) {
-		if (head->slot_versions == NULL) {
-			/* Pool was never initialised (no
-			 * REG_GLOBAL_OBJ for this type, or init was
-			 * skipped); fall through to the legacy lockless
-			 * read with no version validation rather than
-			 * deref a NULL slot_versions[]. */
-			unsigned int snapshot;
-			unsigned int cap_snap;
-			unsigned int gen_snap;
-			struct object **array_snap;
+	n = head->num_entries;
+	if (n == 0 || head->array == NULL)
+		return NULL;
 
-			/*
-			 * Snapshot every objhead field consulted below in
-			 * one block so the bound check and the slot deref
-			 * see a self-consistent view.  Mirror the regime
-			 * add_object() uses on the write side: a sibling
-			 * value-result write that scribbles
-			 * (num_entries, array_capacity, array) past the
-			 * point where we read num_entries cannot let
-			 * snapshot pass a stale "snapshot > cap" check
-			 * against a freshly-poisoned head->array_capacity
-			 * and then deref a freshly-reseated head->array
-			 * many slots out of the original allocation.
-			 * Loading array_generation before head->array keeps
-			 * the existing reader semantics: validate_object_
-			 * handle()'s gen re-check fires on any reseating
-			 * that races our deref.
-			 */
-			snapshot = __atomic_load_n(&head->num_entries,
-						   __ATOMIC_ACQUIRE);
-			cap_snap = head->array_capacity;
-			gen_snap = __atomic_load_n(&head->array_generation,
-						   __ATOMIC_ACQUIRE);
-			array_snap = head->array;
-
-			if (snapshot == 0)
-				return NULL;
-			if (cap_snap > OBJHEAD_SANE_LIMIT) {
-				__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
-						   1, __ATOMIC_RELAXED);
-				return NULL;
-			}
-			if (snapshot > cap_snap)
-				return NULL;
-			*array_gen_out = gen_snap;
-			return array_snap[rand() % snapshot];
-		}
-		return get_random_object_global_lockless(head, idx_out,
-							 version_out,
-							 array_gen_out);
-	}
-
-	if (scope == OBJ_GLOBAL)
-		lock(&shm->objlock);
-
-	{
-		unsigned int snapshot;
-		unsigned int cap_snap;
-		unsigned int gen_snap;
-		struct object **array_snap;
-
-		/*
-		 * Snapshot num_entries, array_capacity, array_generation and
-		 * array together at branch entry so the bound check, the gen
-		 * handed back to the caller and the slot deref all consult
-		 * one self-consistent view.  Without this, num_entries was
-		 * snapshotted but array_capacity and array were re-loaded
-		 * fresh at the bound check and the deref respectively, so a
-		 * sibling value-result write that scribbled
-		 * (num_entries, array_capacity) to mutually-consistent large
-		 * values between our num_entries snapshot and the deref
-		 * would let snapshot pass the "snapshot > cap" check
-		 * (cap re-load also poisoned) and then the rand() % snapshot
-		 * index would deref into a head->array region whose actual
-		 * allocation was sized under the pre-poisoning capacity --
-		 * the symmetric read-side shape of the OOB write
-		 * add_object() now defends against (parent fix
-		 * b677185d752496ac7ee7751c66e86f432e108c54).  Loading
-		 * array_generation before head->array preserves the existing
-		 * reader semantics: validate_object_handle()'s gen re-check
-		 * pairs with the RELEASE bump on the writer side and fires
-		 * on any reseating that races our array_snap read.
-		 */
-		snapshot = __atomic_load_n(&head->num_entries,
-					   __ATOMIC_ACQUIRE);
-		cap_snap = head->array_capacity;
-		gen_snap = __atomic_load_n(&head->array_generation,
-					   __ATOMIC_ACQUIRE);
-		array_snap = head->array;
-
-		if (snapshot == 0) {
-			obj = NULL;
-		} else if (scope == OBJ_GLOBAL &&
-			   cap_snap > OBJHEAD_SANE_LIMIT) {
-			/*
-			 * OBJ_GLOBAL is hard-capped at
-			 * GLOBAL_OBJ_MAX_CAPACITY=1024, so a snapshot
-			 * past OBJHEAD_SANE_LIMIT can only be a sibling
-			 * wild stomp on the shm-resident objhead -- reject
-			 * the pair (the matching num_entries snapshot is
-			 * presumed equally poisoned by the same stomp).
-			 * OBJ_LOCAL pools are in the owning child's
-			 * private heap, beyond reach of sibling writes.
-			 */
-			__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
-					   1, __ATOMIC_RELAXED);
-			obj = NULL;
-		} else if (snapshot > cap_snap) {
-			/*
-			 * Wild-stomp defence — mirror the OBJ_GLOBAL guards at
-			 * the lockless-reader path and the legacy fall-through
-			 * just above (snapshot > cap returns NULL).  A fuzzed
-			 * value-result write whose buffer aliased an objhead
-			 * has scribbled head->num_entries past the array
-			 * bound; converting that into a NULL return keeps the
-			 * array_snap[idx] deref below from running off the
-			 * end.  See struct stats::local_obj_num_entries_
-			 * corrupted in include/stats.h for the broader hazard
-			 * description; the symmetric write-side guard in
-			 * add_object() bumps the same counter.
-			 */
-			__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
-					   1, __ATOMIC_RELAXED);
-			obj = NULL;
-		} else {
-			unsigned int idx = rand() % snapshot;
-
-			*array_gen_out = gen_snap;
-			obj = array_snap[idx];
-			*idx_out = idx;
-			if (scope == OBJ_GLOBAL && head->slot_versions != NULL)
-				*version_out = head->slot_versions[idx];
-		}
-	}
-
-	if (scope == OBJ_GLOBAL)
-		unlock(&shm->objlock);
-
-	return obj;
-}
-
-bool validate_object_handle(enum objecttype type, enum obj_scope scope,
-			    struct object *obj, unsigned int idx,
-			    unsigned int version, unsigned int array_gen)
-{
-	struct objhead *head;
-	unsigned int gen_now;
-	unsigned int v_now;
-	struct object *cur;
-
-	if (obj == NULL)
-		return false;
-
-	/*
-	 * Parent OBJ_GLOBAL reads run under shm->objlock and synchronously
-	 * with all mutators, so neither the slot-version nor the array-
-	 * generation race window exists from the parent's perspective.
-	 * (The parent never touches OBJ_LOCAL — get_objhead returns NULL
-	 * for OBJ_LOCAL when this_child() is NULL — so the parent path
-	 * collapses cleanly to OBJ_GLOBAL only.)
-	 */
-	if (scope == OBJ_GLOBAL && getpid() == mainpid)
-		return true;
-
-	head = get_objhead(scope, type);
-	if (head == NULL)
-		return true;
-
-	/*
-	 * Whole-array generation check.  A mismatch means head->array was
-	 * reseated since the caller snapshotted array_gen at pick time —
-	 * the OBJ_LOCAL grow path's zmalloc-copy-defer-free, the teardown
-	 * NULL-out, or a wild write that stomped both head->array and
-	 * head->array_generation in the same vicinity.  The caller's idx
-	 * is now indexing into either a deferred-free chunk that may have
-	 * been recycled by libc (the failure mode that surfaced as a UAF
-	 * read inside a stdio FILE buffer the OBJ_LOCAL maps pool's prior
-	 * generation had been free()'d into) or an unrelated buffer
-	 * entirely.  Reject without dereferencing array[idx].  ACQUIRE
-	 * pairs with the bumper's RELEASE in add_object()/destroy_objects.
-	 *
-	 * For OBJ_LOCAL this is the whole validation: there is no
-	 * lockless reader to coordinate with via slot_versions, the bug
-	 * we are catching is buffer-level rather than slot-level, and any
-	 * deref of head->array inside this function would simply re-trip
-	 * the same UAF we are trying to detect.
-	 */
-	gen_now = __atomic_load_n(&head->array_generation, __ATOMIC_ACQUIRE);
-	if (gen_now != array_gen) {
-		__atomic_add_fetch(&shm->stats.global_obj_uaf_caught, 1,
-				   __ATOMIC_RELAXED);
-		return false;
-	}
-
-	if (scope != OBJ_GLOBAL)
-		return true;
-
-	if (head->slot_versions == NULL)
-		return true;
-
-	if (idx >= head->array_capacity)
-		return false;
-
-	v_now = __atomic_load_n(&head->slot_versions[idx], __ATOMIC_ACQUIRE);
-	cur = __atomic_load_n(&head->array[idx], __ATOMIC_ACQUIRE);
-	if (v_now != version || cur != obj) {
-		__atomic_add_fetch(&shm->stats.global_obj_uaf_caught, 1,
-				   __ATOMIC_RELAXED);
-		return false;
-	}
-	return true;
+	return head->array[rand() % n];
 }
 
 bool objects_empty(enum objecttype type)
@@ -1784,108 +868,6 @@ bool objects_empty(enum objecttype type)
 	if (head == NULL)
 		return true;
 	return head->num_entries == 0;
-}
-
-/*
- * Periodic global-pool sanity walk.
- *
- * Post-Q3.1 OBJ_GLOBAL pools have no list ring — objects are tracked
- * exclusively through head->array[0..num_entries).  This routine is
- * the tripwire we lacked during the 2026-04-22 wild-write hunt: a
- * stomp into a global head or array slot is reported here, on the
- * parent's idle pass, instead of waiting for the next innocent caller
- * to deref the trampled slot and SEGV ~80k iterations later.
- *
- * For every type, we check:
- *   - array_capacity is either 0 (uninitialised slot) or exactly the
- *     pre-init cap (GLOBAL_OBJ_MAX_CAPACITY).  Anything else means the
- *     head struct itself has been overwritten — the array allocation
- *     is fixed at init and never resized for OBJ_GLOBAL.
- *   - num_entries is bounded by array_capacity.
- *   - head->array is non-NULL whenever num_entries > 0.
- *   - Every slot in [0, num_entries) is non-NULL.  Unlike OBJ_LOCAL
- *     where __destroy_object's swap-with-last can transiently leave a
- *     NULL inside the window between the array store and the count
- *     decrement, on OBJ_GLOBAL pools we hold shm->objlock around the
- *     whole mutation, so a NULL slot inside the live window from
- *     under the lock is unambiguously corruption.
- *   - For shared_alloc heads, every slot points into a tracked shared
- *     region.  A parent-private heap pointer here is the canonical
- *     "stray write stamped a malloc'd address into shared bookkeeping"
- *     failure mode the wild-write hunt was chasing.
- *
- * Parent-only.  Children's COW snapshot of head->array would be
- * stale relative to parent mutations and would generate spurious
- * reports.  The walker takes shm->objlock so it sees a consistent
- * snapshot even if a regen path is mid-mutation.  The mprotect-RO
- * guard on the array is left in place — reads work fine on RO maps
- * and we have no need to write.
- *
- * Reporting style follows the existing list-validator class
- * (debug.c::__list_add_valid_or_die et al.): one outputerr line per
- * finding, including type index and slot coordinates so a corruption
- * report can be cross-referenced against the -vv ADD-OBJ trace.
- */
-void validate_global_objects(void)
-{
-	unsigned int type;
-	unsigned int corruptions = 0;
-
-	lock(&shm->objlock);
-
-	for (type = 0; type < MAX_OBJECT_TYPES; type++) {
-		struct objhead *head = &shm->global_objects[type];
-		unsigned int n = head->num_entries;
-		unsigned int cap = head->array_capacity;
-		unsigned int idx;
-
-		if (cap != 0 && cap != GLOBAL_OBJ_MAX_CAPACITY) {
-			outputerr("global-list sanity: type=%u corrupt head: array_capacity=%u (expected 0 or %u) num_entries=%u max_entries=%u array=%p\n",
-				type, cap, GLOBAL_OBJ_MAX_CAPACITY,
-				n, head->max_entries, head->array);
-			corruptions++;
-			continue;
-		}
-
-		if (n > cap) {
-			outputerr("global-list sanity: type=%u corrupt head: num_entries=%u > array_capacity=%u max_entries=%u array=%p\n",
-				type, n, cap, head->max_entries, head->array);
-			corruptions++;
-			continue;
-		}
-
-		if (n > 0 && head->array == NULL) {
-			outputerr("global-list sanity: type=%u corrupt head: num_entries=%u but array=NULL\n",
-				type, n);
-			corruptions++;
-			continue;
-		}
-
-		for (idx = 0; idx < n; idx++) {
-			struct object *obj = head->array[idx];
-
-			if (obj == NULL) {
-				outputerr("global-list sanity: type=%u slot %u/%u is NULL inside live window — wild write or torn destroy\n",
-					type, idx, n);
-				corruptions++;
-				continue;
-			}
-
-			if (head->shared_alloc &&
-			    !range_overlaps_shared((unsigned long)obj,
-						   sizeof(struct object))) {
-				outputerr("global-list sanity: type=%u slot %u/%u: obj=%p not in any tracked shared region (shared_alloc head — stamped private pointer?)\n",
-					type, idx, n, obj);
-				corruptions++;
-			}
-		}
-	}
-
-	unlock(&shm->objlock);
-
-	if (corruptions > 0)
-		outputerr("global-list sanity: %u corruption(s) detected this pass\n",
-			corruptions);
 }
 
 /*
@@ -1944,148 +926,43 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 			     enum objecttype type, bool already_closed)
 {
 	struct objhead *head;
-	unsigned int idx, last;
-	unsigned int n_snap;
-	unsigned int cap_snap;
-	struct object **array_snap;
+	unsigned int idx, n, last;
 
 	head = get_objhead(scope, type);
 	if (head == NULL)
-		return;			/* OBJ_LOCAL from non-child context — see get_objhead() */
-
-	/*
-	 * Snapshot the objhead fields the swap-with-last path consults so
-	 * a sibling value-result syscall whose buffer aliases this
-	 * objhead cannot scribble (num_entries, array_capacity, array)
-	 * past our entry-time read and steer the array[idx] = array[last]
-	 * / array[last] = NULL stores past the end of the live
-	 * allocation.  Mirrors the regime add_object() established
-	 * (b677185d752496ac7ee7751c66e86f432e108c54) and the read-side
-	 * companion in get_random_object_versioned()
-	 * (2c5d84e5d67b7e843ceb0a0ed42f0a996568caa9).  Locking is
-	 * unchanged -- objlock for OBJ_GLOBAL acquired by the
-	 * destroy_object()/destroy_objects() callers, single-child for
-	 * OBJ_LOCAL.  array_generation is intentionally not snapshotted:
-	 * the destroy path neither returns generation to a caller nor
-	 * pairs with a reader on it, only the OBJ_LOCAL teardown in
-	 * destroy_objects() bumps it via RMW which keeps the existing
-	 * pairing with validate_object_handle().
-	 */
-	n_snap = __atomic_load_n(&head->num_entries, __ATOMIC_ACQUIRE);
-	cap_snap = head->array_capacity;
-	array_snap = head->array;
-
-	/*
-	 * OBJ_GLOBAL sibling-stomp reject: a snapshot capacity past
-	 * OBJHEAD_SANE_LIMIT could only have come from a cross-process
-	 * scribble of the shm-resident objhead (legit OBJ_GLOBAL is
-	 * hard-capped at GLOBAL_OBJ_MAX_CAPACITY=1024).  Same shape as
-	 * the entry cap_snap reject in add_object().  OBJ_LOCAL pools
-	 * are in the owning child's private heap and unreachable from
-	 * siblings -- no analogous defence required there.
-	 */
-	if (scope == OBJ_GLOBAL && cap_snap > OBJHEAD_SANE_LIMIT) {
-		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
-				   1, __ATOMIC_RELAXED);
 		return;
-	}
-	if (n_snap > cap_snap) {
-		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
-				   1, __ATOMIC_RELAXED);
-		return;
-	}
-	if (n_snap == 0 || array_snap == NULL)
+	n = head->num_entries;
+	if (n == 0 || head->array == NULL)
 		return;
 
 	/*
 	 * obj->array_idx is the slot we're about to swap-with-last and
-	 * NULL.  add_object() set it once at insertion (objects.c:516)
-	 * and the swap branch below maintains it on every reshuffle —
-	 * the canonical invariant is head->array[obj->array_idx] == obj.
+	 * NULL.  add_object() set it once at insertion and the swap branch
+	 * maintains it on every reshuffle -- the canonical invariant is
+	 * head->array[obj->array_idx] == obj.
 	 *
-	 * obj itself lives in either the shared obj heap (OBJ_GLOBAL with
-	 * shared_alloc=true) or per-process heap (everything else).  The
-	 * shared path is reachable to every child's wild fuzzed writes and
-	 * a value-result syscall whose length-arg lands inside an obj
-	 * struct will scribble its array_idx field; the private path is
-	 * still reachable to a stale slot pointer that survived the
-	 * deferred-free TTL and got handed back through get_random_object().
-	 *
-	 * Indexing without verifying the invariant therefore produces one
-	 * of two silent failures:
-	 *   - array_idx >= num_entries: the array_snap[idx] = array_snap[last]
-	 *     write lands past the live window, smashing whichever slot the
-	 *     stomp's index pointed at (or, for OBJ_GLOBAL, OOB past the
-	 *     fixed GLOBAL_OBJ_MAX_CAPACITY allocation entirely);
-	 *   - array_idx < num_entries but array_snap[idx] != obj: we NULL
-	 *     and free a different live object, then call its type-correct
-	 *     destructor on what we still believe is `obj` — a UAF on the
-	 *     unrelated object's backing storage on the very next read of
-	 *     it through the pool.
-	 *
-	 * Validate the invariant up front.  On mismatch, drop the destroy
-	 * cleanly (no slot mutation, no destructor, no release) and bump
-	 * the corruption counter — `obj` may not even belong to this pool
-	 * any more, so touching it is exactly the wrong move.
+	 * Validate the invariant up front.  On mismatch the obj may not
+	 * even belong to this pool any more (a stale slot pointer that
+	 * survived deferred_free's TTL and got handed back through
+	 * get_random_object()).  Drop the destroy cleanly rather than
+	 * touching the wrong slot.
 	 */
 	idx = obj->array_idx;
-	if (idx >= n_snap || array_snap[idx] != obj) {
+	if (idx >= n || head->array[idx] != obj) {
 		__atomic_add_fetch(&shm->stats.destroy_object_idx_corrupt, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	}
 
 	/* Swap-with-last removal from the parallel array */
-	last = n_snap - 1;
-
-	/*
-	 * Bump the per-slot version BEFORE mutating the array, on every
-	 * slot we are about to touch (the destroyed slot at idx, plus the
-	 * formerly-last slot at `last` we are about to NULL).  A lockless
-	 * child reader running through the seqlock-style protocol in
-	 * get_random_object()/validate_object_handle() snapshots the
-	 * slot version, samples array[idx], then re-snapshots the version;
-	 * a mismatch means a destroy raced with the read and the picked
-	 * obj must NOT be dereferenced (release_obj() may already have
-	 * routed it through free_shared_obj()'s freelist where a sibling
-	 * alloc_shared_obj() can recycle it under us — the asan-poisoned
-	 * redzone reads at 0x51900064f758 in the overnight 2026-05-05 run
-	 * were exactly this).  Order matters: version bump first, then
-	 * array mutation, then count decrement; the reader's ACQUIRE on
-	 * the version pairs with these RELEASEs.  Skipped for OBJ_LOCAL
-	 * (no slot_versions array, no lockless reader).
-	 */
-	if (head->slot_versions != NULL) {
-		__atomic_add_fetch(&head->slot_versions[idx], 1,
-				   __ATOMIC_RELEASE);
-		if (last != idx)
-			__atomic_add_fetch(&head->slot_versions[last], 1,
-					   __ATOMIC_RELEASE);
-	}
-
+	last = n - 1;
 	if (idx != last) {
-		array_snap[idx] = array_snap[last];
-		if (array_snap[idx] != NULL)
-			array_snap[idx]->array_idx = idx;
+		head->array[idx] = head->array[last];
+		if (head->array[idx] != NULL)
+			head->array[idx]->array_idx = idx;
 	}
-	array_snap[last] = NULL;
-
-	/*
-	 * Publish the new count with RELEASE semantics so a concurrent
-	 * lockless child read in get_random_object() that observes the
-	 * shrunk count cannot also observe an inconsistent earlier state
-	 * of the array slots.  See the design comment above
-	 * get_random_object().  __prune_objects(OBJ_GLOBAL) is currently
-	 * disabled but routes through here, so this also covers it
-	 * defensively.  Write `last` (== n_snap - 1) rather than reading
-	 * head->num_entries fresh and decrementing -- a sibling stomp
-	 * landing between snapshot and store would otherwise propagate
-	 * the wild value back into the field.
-	 */
-	if (scope == OBJ_GLOBAL)
-		__atomic_store_n(&head->num_entries, last, __ATOMIC_RELEASE);
-	else
-		head->num_entries = last;
+	head->array[last] = NULL;
+	head->num_entries = last;
 
 	/* Remove from fd hash table */
 	if (scope == OBJ_GLOBAL && is_fd_type(type))
@@ -2104,26 +981,10 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 
 void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
-	bool was_protected = false;
-
 	if (scope == OBJ_GLOBAL && getpid() != mainpid)
 		return;
 
-	if (scope == OBJ_GLOBAL) {
-		lock(&shm->objlock);
-		if (globals_are_protected()) {
-			thaw_global_objects();
-			was_protected = true;
-		}
-	}
-
 	__destroy_object(obj, scope, type, false);
-
-	if (scope == OBJ_GLOBAL) {
-		if (was_protected)
-			freeze_global_objects();
-		unlock(&shm->objlock);
-	}
 }
 
 /*
@@ -2132,133 +993,41 @@ void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype ty
 static void destroy_objects(enum objecttype type, enum obj_scope scope)
 {
 	struct objhead *head;
-	unsigned int prev_n;
-	unsigned int n_snap;
-	unsigned int cap_snap;
-	struct object **array_snap;
 
 	head = get_objhead(scope, type);
-	if (head == NULL)
-		return;			/* OBJ_LOCAL from non-child context — see get_objhead() */
-
-	/*
-	 * Snapshot at entry the same three objhead fields the drain loop
-	 * and the post-loop OBJ_GLOBAL memset consult.  Without this the
-	 * loop's per-iter head->array[0] deref and the final
-	 *     memset(head->array, 0, head->array_capacity * sizeof(...))
-	 * both re-load array and array_capacity fresh from shm, so a
-	 * sibling value-result syscall whose buffer aliases this objhead
-	 * can scribble (array_capacity, array, num_entries) to wild
-	 * values mid-teardown and turn the global-pool zero-out into an
-	 * OOB write of (cap_snap_wild * 8) bytes through array_snap_wild.
-	 * Mirrors the regime add_object() established
-	 * (b677185d752496ac7ee7751c66e86f432e108c54) and the read-side
-	 * companion in get_random_object_versioned()
-	 * (2c5d84e5d67b7e843ceb0a0ed42f0a996568caa9).  array_generation
-	 * is intentionally not snapshotted: this function does not read
-	 * it, and the OBJ_LOCAL teardown bump below stays a RELEASE RMW
-	 * to preserve the existing pairing with validate_object_handle().
-	 *
-	 * head->array is never reseated mid-teardown -- only add_object()'s
-	 * OBJ_LOCAL grow branch reseats it, and that path does not run
-	 * concurrently with destroy_objects() (the OBJ_GLOBAL caller
-	 * holds objlock; OBJ_LOCAL is single-child).  array_snap therefore
-	 * remains the live array pointer for the entire loop and the
-	 * post-loop free()/memset.
-	 */
-	n_snap = __atomic_load_n(&head->num_entries, __ATOMIC_ACQUIRE);
-	cap_snap = head->array_capacity;
-	array_snap = head->array;
-
-	if (n_snap == 0)
+	if (head == NULL || head->array == NULL)
 		return;
 
-	if (array_snap == NULL)
-		return;
-
-	/*
-	 * OBJ_GLOBAL sibling-stomp bail: a snapshot capacity above
-	 * OBJHEAD_SANE_LIMIT could only have come from a cross-process
-	 * scribble of the shm-resident objhead; acting on it would let
-	 * the post-loop memset write (cap_snap * 8) bytes past the real
-	 * allocation.  OBJ_LOCAL pools live in the owning child's
-	 * private heap and need no analogous defence.
-	 */
-	if (scope == OBJ_GLOBAL && cap_snap > OBJHEAD_SANE_LIMIT) {
-		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
-				   1, __ATOMIC_RELAXED);
-		return;
-	}
-	if (n_snap > cap_snap) {
-		__atomic_add_fetch(&shm->stats.local_obj_num_entries_corrupted,
-				   1, __ATOMIC_RELAXED);
-		return;
-	}
-
-	/* Drain the array via repeated array_snap[0] destroy.
+	/* Drain the array via repeated array[0] destroy.
 	 * __destroy_object() does swap-with-last on the parallel array,
 	 * so consuming the front slot each time pulls a fresh entry into
-	 * slot 0 until num_entries reaches 0.  Use n_snap as the loop
-	 * bound so a sibling stomp re-bumping head->num_entries cannot
-	 * extend the drain past the entries we counted at snapshot
-	 * time. */
-	while (n_snap > 0) {
-		struct object *obj = array_snap[0];
+	 * slot 0 until num_entries reaches 0. */
+	while (head->num_entries > 0) {
+		struct object *obj = head->array[0];
+		unsigned int prev_n;
 
 		if (obj == NULL) {
-			/* Shouldn't happen — num_entries said it was live —
-			 * but guard against a torn state rather than
-			 * looping forever. */
 			head->num_entries--;
-			n_snap--;
 			continue;
 		}
 		prev_n = head->num_entries;
 		__destroy_object(obj, scope, type, false);
-		if (head->num_entries == prev_n && array_snap[0] == obj) {
-			/* __destroy_object early-returned without making progress —
-			 * obj has corrupt array_idx invariant.  Skip past it the
-			 * same way we skip a torn NULL slot, otherwise we spin
-			 * forever at parent shutdown blocking process reaping. */
-			array_snap[0] = NULL;
+		if (head->num_entries == prev_n && head->array[0] == obj) {
+			/* corrupt array_idx invariant -- skip past it. */
+			head->array[0] = NULL;
 			head->num_entries--;
 		}
-		n_snap--;
 	}
 
-	/* Only free private-heap arrays (OBJ_LOCAL).  OBJ_GLOBAL arrays
-	 * were allocated with alloc_shared() and cannot be freed. */
-	if (scope == OBJ_LOCAL) {
-		free(array_snap);
-		head->array = NULL;
-		head->array_capacity = 0;
-		/*
-		 * Bump the generation so any handle still snapshotted from
-		 * the just-freed buffer fails validation rather than indexing
-		 * back into a libc-reclaimed chunk.
-		 */
-		__atomic_add_fetch(&head->array_generation, 1,
-				   __ATOMIC_RELEASE);
-	} else {
-		/* Zero out the shared array for reuse.  cap_snap rather than
-		 * a fresh head->array_capacity re-load: a sibling stomp on
-		 * the capacity field landing between the entry sanity check
-		 * and this memset would otherwise size the zero-out off the
-		 * post-stomp wild value through the snapshot array pointer. */
-		memset(array_snap, 0, cap_snap * sizeof(struct object *));
-	}
+	free(head->array);
+	head->array = NULL;
+	head->array_capacity = 0;
 }
 
 /* Destroy all global objects on exit. */
 void destroy_global_objects(void)
 {
 	unsigned int i;
-
-	/* The parallel arrays were mprotected RO after init.  Cleanup
-	 * needs to mutate them, so re-enable writes in this process first.
-	 * Children are gone by the time we get here so we do not need to
-	 * coordinate with them. */
-	thaw_global_objects();
 
 	for (i = 0; i < MAX_OBJECT_TYPES; i++)
 		destroy_objects(i, OBJ_GLOBAL);
@@ -2375,12 +1144,12 @@ int fd_from_object(struct object *obj, enum objecttype type)
 }
 
 /*
- * Look up an fd in the hash table and destroy its object.
- * Called from fd_event_drain() after a child reported a close or dup2.
+ * Look up an fd in the parent's hash table and destroy its object.
+ * Called from fd_event_drain() after a child reported a close.
  *
  * The child closed its own copy of the fd (children have independent
  * fd tables after fork).  The parent's copy is still open and must be
- * closed here — pass already_closed=false so the destructor runs
+ * closed here -- pass already_closed=false so the destructor runs
  * close() on the parent's fd.  Without this, every child close event
  * leaks one fd in the parent, leading to fd exhaustion.
  */
@@ -2389,49 +1158,26 @@ void remove_object_by_fd(int fd)
 	struct fd_hash_entry *entry;
 	struct object *obj;
 	enum objecttype type;
-	bool was_protected = false;
 
 	if (getpid() != mainpid)
 		return;
 
-	lock(&shm->objlock);
-
-	if (globals_are_protected()) {
-		thaw_global_objects();
-		was_protected = true;
-	}
-
 	entry = fd_hash_lookup(fd);
-	if (entry == NULL) {
-		if (was_protected)
-			freeze_global_objects();
-		unlock(&shm->objlock);
+	if (entry == NULL)
 		return;
-	}
 
 	obj = entry->obj;
 	type = entry->type;
 
 	__atomic_add_fetch(&shm->stats.fd_closed_tracked, 1, __ATOMIC_RELAXED);
 	__destroy_object(obj, OBJ_GLOBAL, type, false);
-
-	unlock(&shm->objlock);
-
-	/* try_regenerate_fd() may call add_object() which sees the
-	 * thawed state (globals_are_protected() returns false here)
-	 * and skips its own thaw/refreeze.  We refreeze afterwards
-	 * so the regeneration's writes stay covered by our window. */
-	try_regenerate_fd(type);
-
-	if (was_protected)
-		freeze_global_objects();
 }
 
 static void __prune_objects(struct childdata *child, enum objecttype type, enum obj_scope scope)
 {
 	struct objhead *head;
-	unsigned int n_snap, expected_kills, i;
-	struct object **array_snap;
+	unsigned int n, expected_kills, i;
+	struct object **array;
 
 	head = &child->objects[type];
 
@@ -2443,7 +1189,8 @@ static void __prune_objects(struct childdata *child, enum objecttype type, enum 
 	if (head->num_entries < head->max_entries)
 		return;
 
-	if (head->array == NULL)
+	array = head->array;
+	if (array == NULL)
 		return;
 
 	/* Direct random-victim sampling.  The old form walked all N slots
@@ -2451,32 +1198,22 @@ static void __prune_objects(struct childdata *child, enum objecttype type, enum 
 	 * to perform ~N/10 destroys.  Pick expected_kills victims directly:
 	 * ~N/10 rand() calls and N/10 branches for the same eviction rate.
 	 *
-	 * n_snap is taken once: destroy_object() decrements num_entries
-	 * via swap-with-last, but we sample over the original index space.
-	 * Slots beyond the shrunken num_entries are NULLed by
-	 * __destroy_object, so the obj == NULL skip absorbs them.  When a
-	 * swap lands a previously-tail entry into a not-yet-picked slot,
-	 * that resident is statistically equivalent to having been picked
-	 * directly -- so the old reverse-walk invariant (each live entry
-	 * visited exactly once) is no longer load-bearing.
-	 *
-	 * Duplicate picks land on the same idx with probability
-	 * ~expected_kills/n_snap (~10%); a duplicate finds NULL on the
-	 * second visit and is silently skipped.
+	 * Take n once: destroy_object() decrements num_entries via swap-
+	 * with-last, but we sample over the original index space.  Slots
+	 * beyond the shrunken num_entries are NULLed by __destroy_object,
+	 * so the obj == NULL skip absorbs them.  Duplicate picks land on
+	 * the same idx with probability ~expected_kills/n (~10%); a
+	 * duplicate finds NULL on the second visit and is silently skipped.
 	 */
-	n_snap = __atomic_load_n(&head->num_entries, __ATOMIC_ACQUIRE);
-	array_snap = head->array;
+	n = head->num_entries;
 
-	if (array_snap == NULL)
-		return;
-
-	expected_kills = n_snap / 10U;
+	expected_kills = n / 10U;
 	if (expected_kills == 0)
 		expected_kills = 1U;
 
 	for (i = 0; i < expected_kills; i++) {
-		unsigned int idx = rand() % n_snap;
-		struct object *obj = array_snap[idx];
+		unsigned int idx = rand() % n;
+		struct object *obj = array[idx];
 
 		if (obj == NULL)
 			continue;
