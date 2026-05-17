@@ -977,10 +977,10 @@ static void dump_stats_json(void)
 		shm->stats.fd_event_ring_corrupted,
 		shm->stats.fd_event_ring_overwritten,
 		shm->stats.fd_event_payload_corrupt,
-		shm->stats.deferred_free_corrupt_ptr,
-		shm->stats.post_handler_corrupt_ptr,
-		shm->stats.deferred_free_reject,
-		shm->stats.snapshot_non_heap_reject,
+		parent_stats.deferred_free_corrupt_ptr,
+		parent_stats.post_handler_corrupt_ptr,
+		parent_stats.deferred_free_reject,
+		parent_stats.snapshot_non_heap_reject,
 		shm->stats.rec_canary_stomped,
 		shm->stats.rzs_blanket_reject,
 		shm->stats.retfd_blanket_reject,
@@ -1703,7 +1703,7 @@ static void dump_range_overlaps_shared_top_offenders(void)
 }
 
 /*
- * Spike detector for shm->stats.post_handler_corrupt_ptr.  Called once
+ * Spike detector for parent_stats.post_handler_corrupt_ptr.  Called once
  * per main_loop tick from the parent.  Emits a single-line WARNING when
  * the counter advances by at least CORRUPT_PTR_SPIKE_THRESHOLD over a
  * CORRUPT_PTR_SPIKE_WINDOW_SEC window.
@@ -1730,19 +1730,20 @@ void corrupt_ptr_spike_check(void)
 
 	/* First call: arm the window from the live counter so any
 	 * pre-existing count carried over from earlier in the run is
-	 * not mis-attributed to this window. */
+	 * not mis-attributed to this window.  Reads from parent_stats
+	 * since the counter now lives in the parent aggregate (no
+	 * atomic needed -- parent is the sole writer via the ring
+	 * drain and the sole reader here). */
 	if (window_start.tv_sec == 0) {
 		window_start = now;
-		window_baseline = __atomic_load_n(&shm->stats.post_handler_corrupt_ptr,
-						  __ATOMIC_RELAXED);
+		window_baseline = parent_stats.post_handler_corrupt_ptr;
 		return;
 	}
 
 	if ((now.tv_sec - window_start.tv_sec) < CORRUPT_PTR_SPIKE_WINDOW_SEC)
 		return;
 
-	current = __atomic_load_n(&shm->stats.post_handler_corrupt_ptr,
-				  __ATOMIC_RELAXED);
+	current = parent_stats.post_handler_corrupt_ptr;
 	delta = current - window_baseline;
 
 	if (delta >= CORRUPT_PTR_SPIKE_THRESHOLD)
@@ -1784,13 +1785,13 @@ static const struct {
 	{ "get_writable_address_scribbled_slots_caught",
 	  offsetof(struct stats_aggregate, get_writable_address_scribbled_slots_caught), true },
 	{ "post_handler_corrupt_ptr",
-	  offsetof(struct stats_s, post_handler_corrupt_ptr) },
+	  offsetof(struct stats_aggregate, post_handler_corrupt_ptr), true },
 	{ "deferred_free_reject",
-	  offsetof(struct stats_s, deferred_free_reject) },
+	  offsetof(struct stats_aggregate, deferred_free_reject), true },
 	{ "snapshot_non_heap_reject",
-	  offsetof(struct stats_s, snapshot_non_heap_reject) },
+	  offsetof(struct stats_aggregate, snapshot_non_heap_reject), true },
 	{ "deferred_free_corrupt_ptr",
-	  offsetof(struct stats_s, deferred_free_corrupt_ptr) },
+	  offsetof(struct stats_aggregate, deferred_free_corrupt_ptr), true },
 	{ "rec_canary_stomped",
 	  offsetof(struct stats_s, rec_canary_stomped) },
 	{ "rzs_blanket_reject",
@@ -3153,14 +3154,14 @@ void dump_stats(void)
 		stat_row("corruption", "fd_event_ring_canary",   shm->stats.fd_event_ring_overwritten);
 	if (shm->stats.fd_event_payload_corrupt)
 		stat_row("corruption", "fd_event_payload",       shm->stats.fd_event_payload_corrupt);
-	if (shm->stats.deferred_free_corrupt_ptr)
-		stat_row("corruption", "deferred_free_corrupt_ptr", shm->stats.deferred_free_corrupt_ptr);
-	if (shm->stats.post_handler_corrupt_ptr)
-		stat_row("corruption", "post_handler_corrupt_ptr", shm->stats.post_handler_corrupt_ptr);
-	if (shm->stats.deferred_free_reject)
-		stat_row("corruption", "deferred_free_reject",   shm->stats.deferred_free_reject);
-	if (shm->stats.snapshot_non_heap_reject)
-		stat_row("corruption", "snapshot_non_heap_reject", shm->stats.snapshot_non_heap_reject);
+	if (parent_stats.deferred_free_corrupt_ptr)
+		stat_row("corruption", "deferred_free_corrupt_ptr", parent_stats.deferred_free_corrupt_ptr);
+	if (parent_stats.post_handler_corrupt_ptr)
+		stat_row("corruption", "post_handler_corrupt_ptr", parent_stats.post_handler_corrupt_ptr);
+	if (parent_stats.deferred_free_reject)
+		stat_row("corruption", "deferred_free_reject",   parent_stats.deferred_free_reject);
+	if (parent_stats.snapshot_non_heap_reject)
+		stat_row("corruption", "snapshot_non_heap_reject", parent_stats.snapshot_non_heap_reject);
 	if (shm->stats.rec_canary_stomped)
 		stat_row("corruption", "rec_canary_stomped",     shm->stats.rec_canary_stomped);
 	if (shm->stats.rzs_blanket_reject)

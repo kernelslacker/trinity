@@ -188,40 +188,11 @@ struct stats_s {
 	unsigned long readlinkat_oracle_anomalies;
 	unsigned long sysfs_oracle_anomalies;
 
-	/* A post handler caught a pid-scribbled / canonical-out-of-range /
-	 * misaligned value in rec->aN (or a struct reachable from it) and
-	 * refused to deref or free it.  Bumped by both the per-handler
-	 * looks_like_corrupted_ptr() guards and the central guard inside
-	 * deferred_free_enqueue().  Non-zero means cluster-1/2/3 scribbles
-	 * are still landing in rec-> memory -- the post-handler guard is
-	 * doing its job and converting would-be SIGSEGVs into a counter. */
-	unsigned long post_handler_corrupt_ptr;
-
-	/* Per-handler and per-callsite attribution rings for
-	 * post_handler_corrupt_ptr live in each child's struct childdata
-	 * (see include/child.h) and are merged by the parent at dump time.
-	 * The global counter above remains here so the spike-check and the
-	 * periodic-window dump can both report headline rates without
-	 * coordinating with the per-child shards. */
-
-	/* deferred_free_enqueue() rejected a pointer at the obj-pool /
-	 * arg-cleanup boundary because the value either failed the shape
-	 * heuristic or missed the alloc-track set.  Distinct from
-	 * post_handler_corrupt_ptr above -- that counter measures syscall
-	 * .post handlers writing garbage into rec->aN; this one measures
-	 * release-time corruption arriving at the deferred-free queue (an
-	 * obj struct that no longer looks heap-shaped, an argv pointer that
-	 * was never __zmalloc'd, etc.).  Conflating the two onto a single
-	 * counter made attribution unreadable -- release_obj's deferred-free
-	 * misses (legitimate "untracked pointer reaching deferred-free"
-	 * signal) swamped the syscall-.post-scribble signal the original
-	 * counter was designed for.  Sub-attribution by deferred_free_enqueue
-	 * caller PC routes through deferred_free_reject_pc below. */
-	unsigned long deferred_free_reject;
-
-	/* Per-callsite attribution ring for deferred_free_reject lives in
-	 * each child's struct childdata (see include/child.h).  The parent
-	 * merges every child's shard at periodic-dump time. */
+	/* post_handler_corrupt_ptr / deferred_free_reject live in
+	 * struct stats_aggregate (parent-private) and are bumped via the
+	 * per-child stats_ring.  Their per-handler / per-callsite shards
+	 * live in each child's struct childdata.  See include/stats_ring.h
+	 * and include/child.h. */
 
 	/* Bumped each time check_uid sees the child's uid drift away from
 	 * orig_uid + overflowuid; was previously a hard bail
@@ -244,41 +215,10 @@ struct stats_s {
 	 * fleet, only roughly so. */
 	unsigned long corrupt_ptr_sample_seq;
 
-	/* deferred_free_enqueue() saw a pointer that passed the pid-shape
-	 * heuristic but landed outside the cached brk arena -- can't be a
-	 * real __zmalloc() result.  Defense-in-depth alongside the live-
-	 * malloc ring: catches the case where a wholesale stomp scribbles
-	 * a snapshot/arg slot with a value pointing into the stack, an
-	 * mmap'd library, an executable mapping, or one of trinity's own
-	 * MAP_PRIVATE regions.  The ground-truth alloc-track ring catches
-	 * heap-region values that weren't malloc'd; this counter catches
-	 * non-heap values entirely.  Non-zero means rec-> stomps are
-	 * still landing -- the validator converted what would have been
-	 * a libc free()-on-non-heap (ASAN bad-free, or silent allocator
-	 * corruption on non-ASAN builds) into a counter bump. */
-	unsigned long snapshot_non_heap_reject;
-
-	/* deferred_free_enqueue() evicted the oldest ring slot to make
-	 * room on a full ring and the slot's ptr failed re-validation
-	 * against the same three guards the enqueue side runs (heap-
-	 * bounds via is_in_glibc_heap, ground-truth via
-	 * alloc_track_consume, shared-region overlap via
-	 * range_overlaps_shared).  The slot was validated when it was
-	 * originally enqueued, but the ring page sits RW between
-	 * ring_unlock() and ring_lock() during enqueue, so an in-flight
-	 * stomp from a sibling fuzzed value-result syscall can scribble
-	 * ring[i].ptr in that window.  Non-zero means the eviction
-	 * guard converted what would have been a wild free() into a
-	 * counter bump.  Only counted for free_func == free callers;
-	 * custom free routines are exempt, mirroring the enqueue-side
-	 * gating convention. */
-	unsigned long ring_eviction_corrupt;
-
-	/* deferred_free_tick() saw a sub-page (pid-shaped) pointer in a
-	 * ring slot and refused to call free() on it.  Non-zero means the
-	 * mprotect guard around the ring is being bypassed somehow, or
-	 * the corruption happened before the guard was active. */
-	unsigned long deferred_free_corrupt_ptr;
+	/* snapshot_non_heap_reject / ring_eviction_corrupt /
+	 * deferred_free_corrupt_ptr live in struct stats_aggregate
+	 * (parent-private) and are bumped via the per-child stats_ring.
+	 * See include/stats_ring.h. */
 
 	/* get_random_object_versioned() OBJ_LOCAL pick path or add_object()
 	 * pre-grow snapshot saw head->num_entries > head->array_capacity and
@@ -1834,7 +1774,7 @@ unsigned int stats_syscall_category(const char *name);
 
 void dump_stats(void);
 
-/* Per-tick scan: emits a WARNING when shm->stats.post_handler_corrupt_ptr
+/* Per-tick scan: emits a WARNING when parent_stats.post_handler_corrupt_ptr
  * advances by a threshold count over a one-minute window. */
 void corrupt_ptr_spike_check(void);
 

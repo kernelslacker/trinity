@@ -6,6 +6,7 @@
 #include "deferred-free.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "stats_ring.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -127,8 +128,16 @@ static void post_getitimer(struct syscallrecord *rec)
 		       "[oracle:getitimer] tv_usec out of range: it_value.tv_usec=%ld it_interval.tv_usec=%ld (must be in [0, 999999])\n",
 		       (long) first.it_value.tv_usec,
 		       (long) first.it_interval.tv_usec);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
-				   __ATOMIC_RELAXED);
+		{
+			struct childdata *c = this_child();
+
+			if (c != NULL && c->stats_ring != NULL)
+				stats_ring_enqueue(c->stats_ring,
+						   STATS_FIELD_POST_HANDLER_CORRUPT_PTR,
+						   0, 1);
+			else
+				parent_stats.post_handler_corrupt_ptr++;
+		}
 	}
 
 out_free:

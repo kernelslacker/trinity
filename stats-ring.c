@@ -129,6 +129,21 @@ static void apply_slot(const struct stats_ring_slot *s)
 		if (aux < NR_SYSCAT)
 			parent_stats.syscall_category_count[aux] += delta;
 		break;
+	case STATS_FIELD_POST_HANDLER_CORRUPT_PTR:
+		parent_stats.post_handler_corrupt_ptr += delta;
+		break;
+	case STATS_FIELD_DEFERRED_FREE_REJECT:
+		parent_stats.deferred_free_reject += delta;
+		break;
+	case STATS_FIELD_SNAPSHOT_NON_HEAP_REJECT:
+		parent_stats.snapshot_non_heap_reject += delta;
+		break;
+	case STATS_FIELD_RING_EVICTION_CORRUPT:
+		parent_stats.ring_eviction_corrupt += delta;
+		break;
+	case STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR:
+		parent_stats.deferred_free_corrupt_ptr += delta;
+		break;
 	case STATS_FIELD_NR:
 	default:
 		/* Out-of-range field_id: silent drop.  A scribbled slot can

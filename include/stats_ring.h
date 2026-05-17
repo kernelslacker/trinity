@@ -47,6 +47,11 @@ enum stats_field {
 	STATS_FIELD_RANGE_REJECTS_PER_SYSCALL_64,	/* aux = syscall nr */
 	STATS_FIELD_RANGE_REJECTS_PER_SYSCALL_32,	/* aux = syscall nr */
 	STATS_FIELD_SYSCALL_CATEGORY_COUNT,		/* aux = enum syscall_category */
+	STATS_FIELD_POST_HANDLER_CORRUPT_PTR,
+	STATS_FIELD_DEFERRED_FREE_REJECT,
+	STATS_FIELD_SNAPSHOT_NON_HEAP_REJECT,
+	STATS_FIELD_RING_EVICTION_CORRUPT,
+	STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR,
 	STATS_FIELD_NR,
 };
 
@@ -103,6 +108,16 @@ struct stats_aggregate {
 	unsigned long range_overlaps_shared_rejects_per_syscall_64[MAX_NR_SYSCALL];
 	unsigned long range_overlaps_shared_rejects_per_syscall_32[MAX_NR_SYSCALL];
 	unsigned long syscall_category_count[NR_SYSCAT];
+
+	/* Group B headline counters lifted out of struct stats_s alongside
+	 * the corruption-attribution shards.  Children enqueue +1 deltas via
+	 * the stats_ring; the parent drain accumulates here.  The defense-
+	 * counter periodic dump reads these via the from_aggregate path. */
+	unsigned long post_handler_corrupt_ptr;
+	unsigned long deferred_free_reject;
+	unsigned long snapshot_non_heap_reject;
+	unsigned long ring_eviction_corrupt;
+	unsigned long deferred_free_corrupt_ptr;
 
 	/* Visibility / health counters surfaced via dump_stats. */
 	unsigned long ring_overflow_total;	/* sum of dropped enqueues across all rings */

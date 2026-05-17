@@ -1489,14 +1489,21 @@ void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
 	unsigned int nr;
 	bool do32bit;
 
-	__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1, __ATOMIC_RELAXED);
+	/* Headline aggregate routes through the per-child stats_ring on
+	 * the child path (parent drain accumulates into parent_stats).
+	 * Parent-context callers (post-mortem paths, deferred-free tick
+	 * on the main process) bump parent_stats directly since the
+	 * parent is the sole writer in that case. */
+	child = this_child();
+	if (child != NULL && child->stats_ring != NULL)
+		stats_ring_enqueue(child->stats_ring,
+				   STATS_FIELD_POST_HANDLER_CORRUPT_PTR, 0, 1);
+	else
+		parent_stats.post_handler_corrupt_ptr++;
 
 	/* Per-child shadow of the same event, scored by the storm-rate
-	 * check in child_process.  this_child() returns NULL when called
-	 * outside a child context (parent post-mortem paths, deferred-free
-	 * tick on the main process), in which case there is no per-child
-	 * counter to bump. */
-	child = this_child();
+	 * check in child_process.  Stays per-child (not in shm) -- the
+	 * storm check reads it directly off childdata. */
 	if (child != NULL)
 		child->local_post_handler_corrupt_ptr++;
 
@@ -1559,7 +1566,13 @@ static void deferred_free_reject_pc_record(void *pc)
 
 void deferred_free_reject_bump(void *caller_pc)
 {
-	__atomic_add_fetch(&shm->stats.deferred_free_reject, 1, __ATOMIC_RELAXED);
+	struct childdata *child = this_child();
+
+	if (child != NULL && child->stats_ring != NULL)
+		stats_ring_enqueue(child->stats_ring,
+				   STATS_FIELD_DEFERRED_FREE_REJECT, 0, 1);
+	else
+		parent_stats.deferred_free_reject++;
 	deferred_free_reject_pc_record(caller_pc);
 }
 

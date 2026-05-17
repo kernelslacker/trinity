@@ -6,6 +6,7 @@
 #include "deferred-free.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "stats_ring.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -122,8 +123,16 @@ static void post_timerfd_gettime(struct syscallrecord *rec)
 		       "[oracle:timerfd_gettime] tv_nsec out of range: it_value.tv_nsec=%ld it_interval.tv_nsec=%ld (must be in [0, 999999999])\n",
 		       (long) first.it_value.tv_nsec,
 		       (long) first.it_interval.tv_nsec);
-		__atomic_add_fetch(&shm->stats.post_handler_corrupt_ptr, 1,
-				   __ATOMIC_RELAXED);
+		{
+			struct childdata *c = this_child();
+
+			if (c != NULL && c->stats_ring != NULL)
+				stats_ring_enqueue(c->stats_ring,
+						   STATS_FIELD_POST_HANDLER_CORRUPT_PTR,
+						   0, 1);
+			else
+				parent_stats.post_handler_corrupt_ptr++;
+		}
 	}
 
 out_free:

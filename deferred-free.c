@@ -21,10 +21,12 @@
 #include <limits.h>
 #include <sys/mman.h>
 
+#include "child.h"
 #include "deferred-free.h"
 #include "pc_format.h"
 #include "random.h"
 #include "shm.h"
+#include "stats_ring.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -340,7 +342,16 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 				  pc_to_string(__builtin_return_address(0),
 					       pcbuf, sizeof(pcbuf)), n);
 		}
-		__atomic_add_fetch(&shm->stats.snapshot_non_heap_reject, 1, __ATOMIC_RELAXED);
+		{
+			struct childdata *c = this_child();
+
+			if (c != NULL && c->stats_ring != NULL)
+				stats_ring_enqueue(c->stats_ring,
+						   STATS_FIELD_SNAPSHOT_NON_HEAP_REJECT,
+						   0, 1);
+			else
+				parent_stats.snapshot_non_heap_reject++;
+		}
 		return;
 	}
 
@@ -455,10 +466,18 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 				    range_overlaps_shared((unsigned long)evict_ptr, 1))
 					corrupt = true;
 			}
-			if (corrupt)
-				__atomic_add_fetch(&shm->stats.ring_eviction_corrupt, 1, __ATOMIC_RELAXED);
-			else
+			if (corrupt) {
+				struct childdata *c = this_child();
+
+				if (c != NULL && c->stats_ring != NULL)
+					stats_ring_enqueue(c->stats_ring,
+							   STATS_FIELD_RING_EVICTION_CORRUPT,
+							   0, 1);
+				else
+					parent_stats.ring_eviction_corrupt++;
+			} else {
 				evict_free(evict_ptr);
+			}
 			ring[oldest].ptr = NULL;
 			occupied_mask &= ~(1ULL << oldest);
 			ring_count--;
@@ -514,16 +533,30 @@ void deferred_freeptr(unsigned long *p)
 static void free_ring_entry(void *ptr, void (*fn)(void *), unsigned int slot)
 {
 	if ((unsigned long)ptr < 0x10000) {
+		struct childdata *c = this_child();
+
 		outputerr("deferred_free: rejected suspicious ptr=%p "
 			  "in slot %u (looks pid-shaped)\n", ptr, slot);
-		__atomic_add_fetch(&shm->stats.deferred_free_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		if (c != NULL && c->stats_ring != NULL)
+			stats_ring_enqueue(c->stats_ring,
+					   STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR,
+					   0, 1);
+		else
+			parent_stats.deferred_free_corrupt_ptr++;
 		return;
 	}
 
 	if (((unsigned long)ptr & 0x7) != 0) {
+		struct childdata *c = this_child();
+
 		outputerr("deferred_free: rejected misaligned ptr=%p "
 			  "in slot %u\n", ptr, slot);
-		__atomic_add_fetch(&shm->stats.deferred_free_corrupt_ptr, 1, __ATOMIC_RELAXED);
+		if (c != NULL && c->stats_ring != NULL)
+			stats_ring_enqueue(c->stats_ring,
+					   STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR,
+					   0, 1);
+		else
+			parent_stats.deferred_free_corrupt_ptr++;
 		return;
 	}
 
