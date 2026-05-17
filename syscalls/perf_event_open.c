@@ -1542,8 +1542,13 @@ static void post_perf_event_open(struct syscallrecord *rec)
 	rec->a1 = 0;
 }
 
+#ifndef PERF_FLAG_FD_CLOEXEC
+#define PERF_FLAG_FD_CLOEXEC (1UL << 3)
+#endif
+
 static unsigned long perf_event_open_flags[] = {
 	PERF_FLAG_FD_NO_GROUP, PERF_FLAG_FD_OUTPUT, PERF_FLAG_PID_CGROUP,
+	PERF_FLAG_FD_CLOEXEC,
 };
 
 struct syscallentry syscall_perf_event_open = {
