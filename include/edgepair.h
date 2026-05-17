@@ -9,9 +9,13 @@
  * which syscall *sequences* find new kernel code paths, feeding into
  * group biasing so Trinity prioritizes productive sequences.
  *
- * Implementation: open-addressed hash table in shared memory with
- * linear probing.  Lock-free via atomics — multiple children can
- * update concurrently with minor hash collisions being acceptable.
+ * Implementation: open-addressed hash table.  Canonical lives in
+ * parent-private struct edgepair_aggregate (parent_edgepair in
+ * edgepair-ring.c), fed by per-child SPSC observation rings the parent
+ * drains each main_loop iteration.  Child reads consult the published
+ * mirror page (edgepair_published); parent-side consumers walk the
+ * canonical directly.  See include/edgepair_ring.h for the retrofit
+ * topology and storage discipline.
  */
 
 /* Must be power of two for fast modulo.
@@ -47,26 +51,12 @@
 #define EDGEPAIR_DUMP_MAGIC	0xEDDA7A02U
 
 struct edgepair_entry {
-	union {
-		struct {
-			unsigned int prev_nr;	/* previous syscall number */
-			unsigned int curr_nr;	/* current syscall number */
-		};
-		uint64_t key;		/* atomic view of {prev_nr, curr_nr} pair */
-	};
+	unsigned int prev_nr;		/* previous syscall number */
+	unsigned int curr_nr;		/* current syscall number */
 	unsigned long new_edge_count;	/* times this pair found new edges */
 	unsigned long total_count;	/* total times this pair was executed */
 	unsigned long last_new_at;	/* global pair-call number when last new */
 };
-
-struct edgepair_shared {
-	struct edgepair_entry table[EDGEPAIR_TABLE_SIZE];
-	unsigned long total_pair_calls;	/* global monotonic counter */
-	unsigned long pairs_tracked;	/* number of unique pairs inserted */
-	unsigned long pairs_dropped;	/* inserts that overflowed the probe window */
-};
-
-extern struct edgepair_shared *edgepair_shm;
 
 struct childdata;
 
@@ -97,12 +87,6 @@ void edgepair_record(struct childdata *child,
 bool edgepair_is_cold(unsigned int prev_nr, unsigned int curr_nr);
 
 /*
- * Returns true if the pair (prev_nr, curr_nr) has found new edges
- * at least once.  Used to boost productive sequences.
- */
-bool edgepair_is_productive(unsigned int prev_nr, unsigned int curr_nr);
-
-/*
  * Read-only accessor returning the raw (new_edges, total) counters for a
  * given (prev, curr) pair.  Returns {0, 0} on miss or before the table is
  * initialised.  Callers compute their own productivity ratio (e.g. HEALER's
@@ -118,6 +102,12 @@ struct edgepair_stats edgepair_get_stats(unsigned int prev_nr,
 
 /*
  * Dump the edge-pair hash table to a binary file for offline analysis.
- * File format: 4-byte EDGEPAIR_DUMP_MAGIC followed by struct edgepair_shared.
+ * File format: 4-byte EDGEPAIR_DUMP_MAGIC, then
+ *   - struct edgepair_entry table[EDGEPAIR_TABLE_SIZE]
+ *   - unsigned long total_pair_calls
+ *   - unsigned long pairs_tracked
+ *   - unsigned long pairs_dropped
+ * Byte layout below the magic matches the pre-retrofit dump prefix; the
+ * magic bump from 0xEDDA7A01U to 0xEDDA7A02U marks the producer change.
  */
 void edgepair_dump_to_file(const char *path);

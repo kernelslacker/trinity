@@ -28,7 +28,7 @@
 #define EDGEPAIR_TABLE_MASK	(EDGEPAIR_TABLE_SIZE - 1)
 #define EDGEPAIR_EMPTY		0xFFFFFFFFU
 #define EDGEPAIR_MAX_PROBE	32
-#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A01U
+#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A02U
 
 struct edgepair_entry {
 	unsigned int  prev_nr;

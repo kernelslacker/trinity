@@ -17,20 +17,12 @@
  */
 
 #include <stdbool.h>
-#include <stddef.h>
 #include <stdio.h>
-#include <string.h>
 
 #include "child.h"
 #include "edgepair.h"
 #include "edgepair_ring.h"
-#include "pids.h"
 #include "trinity.h"
-#include "utils.h"
-
-/* Left allocated through this commit so the next commit's compile catches
- * any leftover reference; the alloc and the extern both go away there. */
-struct edgepair_shared *edgepair_shm = NULL;
 
 static bool edgepair_enabled;
 
@@ -41,12 +33,6 @@ bool edgepair_is_enabled(void)
 
 void edgepair_init_global(void)
 {
-	/* Legacy in-shm region: no longer read or written by any code path
-	 * post-retrofit.  Kept for one commit so the next commit's compile
-	 * is the audit step that catches any missed call site. */
-	edgepair_shm = alloc_shared(sizeof(struct edgepair_shared));
-	memset(edgepair_shm, 0, sizeof(struct edgepair_shared));
-
 	edgepair_enabled = true;
 
 	output(0, "KCOV: edge-pair tracking enabled (%lu KB canonical, %u slots)\n",
@@ -118,29 +104,6 @@ bool edgepair_is_cold(unsigned int prev_nr, unsigned int curr_nr)
 	return false;
 }
 
-bool edgepair_is_productive(unsigned int prev_nr, unsigned int curr_nr)
-{
-	unsigned int idx;
-	unsigned int probe;
-
-	if (!edgepair_enabled)
-		return false;
-
-	idx = pair_hash(prev_nr, curr_nr);
-	for (probe = 0; probe < EDGEPAIR_MAX_PROBE; probe++) {
-		const struct edgepair_entry *e = &parent_edgepair.table[idx];
-
-		if (e->prev_nr == EDGEPAIR_EMPTY)
-			return false;
-		if (e->prev_nr == prev_nr && e->curr_nr == curr_nr)
-			return e->new_edge_count > 0;
-
-		idx = (idx + 1) & EDGEPAIR_TABLE_MASK;
-	}
-
-	return false;
-}
-
 struct edgepair_stats edgepair_get_stats(unsigned int prev_nr,
 					 unsigned int curr_nr)
 {
@@ -186,11 +149,11 @@ void edgepair_dump_to_file(const char *path)
 	}
 
 	/* On-disk layout: 4-byte magic, then the canonical table followed
-	 * by the three top-level counters in the order matching the
-	 * pre-retrofit struct edgepair_shared.  The magic bump from
+	 * by the three top-level counters.  The magic bump from
 	 * 0xEDDA7A01U to 0xEDDA7A02U lets edge_analyzer reject pre-retrofit
-	 * dumps cleanly; the byte layout below the magic is the same prefix
-	 * the old fwrite(edgepair_shm, ...) produced. */
+	 * dumps cleanly; the byte layout below the magic matches the
+	 * pre-retrofit prefix so the analyzer's table walk needs only the
+	 * magic constant updated. */
 	if (fwrite(&magic, sizeof(magic), 1, f) != 1 ||
 	    fwrite(parent_edgepair.table,
 		   sizeof(parent_edgepair.table), 1, f) != 1 ||
