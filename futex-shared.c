@@ -21,10 +21,9 @@
  * keys.  Larger would dilute the cross-child collisions; smaller would
  * make the picker biased toward whichever entry the rand() landed on
  * first.  All entries are populated by the parent in
- * create_shared_futex_pool() and never destroyed -- the pool is
- * frozen-in-place once init runs and freeze_global_objects() flips the
- * shared obj heap to PROT_READ.  Children only ever read the obj
- * pointers via the lockless reader in get_random_object().
+ * create_shared_futex_pool() and never destroyed.  Children only
+ * ever read the obj pointers via the lockless reader in
+ * get_random_object().
  */
 
 #include <stdint.h>

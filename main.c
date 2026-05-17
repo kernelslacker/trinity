@@ -215,14 +215,7 @@ void reap_child(struct childdata *child, int childno)
 	} while (!__atomic_compare_exchange_n(&shm->running_childs, &cur, cur - 1,
 					       0, __ATOMIC_RELAXED, __ATOMIC_RELAXED));
 
-	{
-		bool was_protected = globals_are_protected();
-		if (was_protected)
-			thaw_global_objects();
-		__atomic_store_n(&pids[childno], EMPTY_PIDSLOT, __ATOMIC_RELEASE);
-		if (was_protected)
-			freeze_global_objects();
-	}
+	__atomic_store_n(&pids[childno], EMPTY_PIDSLOT, __ATOMIC_RELEASE);
 
 	/* Catch the SIGKILL'd-child case where inode_spewer_cleanup()
 	 * never ran in the child.  No-op when the dir doesn't exist. */
@@ -897,14 +890,7 @@ static bool spawn_child(int childno)
 	}
 
 	/* Child won't get out of init_child until we write the pid */
-	{
-		bool was_protected = globals_are_protected();
-		if (was_protected)
-			thaw_global_objects();
-		__atomic_store_n(&pids[childno], pid, __ATOMIC_RELEASE);
-		if (was_protected)
-			freeze_global_objects();
-	}
+	__atomic_store_n(&pids[childno], pid, __ATOMIC_RELEASE);
 	if (spawn_times != NULL)
 		spawn_times[childno] = time(NULL);
 	if (pidstatfiles[childno]) {
@@ -1623,22 +1609,12 @@ void reset_epoch_state(void)
 	parent_stats.op_count = 0;
 	parent_stats.previous_op_count = 0;
 
-	{
-		bool was_protected = globals_are_protected();
-		if (was_protected)
-			thaw_global_objects();
-		/* shm_published lives in the alloc_shared_global frozen set;
-		 * write it inside the thaw bracket so the PROT_READ on the
-		 * page is lifted. */
-		if (shm_published != NULL)
-			shm_published->fleet_op_count = 0;
-		for_each_child(i) {
-			__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);
-			clean_childdata(children[i]);
-			fd_event_ring_init(children[i]->fd_event_ring);
-		}
-		if (was_protected)
-			freeze_global_objects();
+	if (shm_published != NULL)
+		shm_published->fleet_op_count = 0;
+	for_each_child(i) {
+		__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);
+		clean_childdata(children[i]);
+		fd_event_ring_init(children[i]->fd_event_ring);
 	}
 
 	reseed();

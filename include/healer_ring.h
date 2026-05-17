@@ -182,8 +182,7 @@ unsigned int healer_ring_drain(struct healer_ring *ring);
 void healer_ring_drain_all(void);
 
 /*
- * Allocate the two mirror pages.  Called from init_shm() before
- * freeze_global_objects() so the pages join the frozen-RO set.
+ * Allocate the two mirror pages.  Called from init_shm().
  */
 void healer_published_init(void);
 

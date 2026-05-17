@@ -239,14 +239,9 @@ static void edgepair_publish_locked(void)
 void edgepair_ring_drain_all(void)
 {
 	unsigned int i;
-	bool was_protected;
 
 	if (children == NULL)
 		return;
-
-	was_protected = globals_are_protected();
-	if (was_protected)
-		thaw_global_objects();
 
 	for_each_child(i) {
 		struct childdata *child;
@@ -264,9 +259,6 @@ void edgepair_ring_drain_all(void)
 	}
 
 	edgepair_publish_locked();
-
-	if (was_protected)
-		freeze_global_objects();
 }
 
 void edgepair_published_init(void)

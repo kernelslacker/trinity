@@ -185,10 +185,8 @@ void init_shm(void)
 	children = alloc_shared(childptrslen);
 
 	/*
-	 * Allocate the canary array as a global object so freeze_global_objects()
-	 * will mprotect it PROT_READ before the first child forks.  Any write
-	 * to it after that point will SIGSEGV at the source.  We store one
-	 * pointer per child slot and compare in fd_event_drain_all().
+	 * Allocate the canary array.  We store one pointer per child slot
+	 * and compare in fd_event_drain_all().
 	 */
 	if (!shared_size_mul(max_children, sizeof(struct fd_event_ring *),
 			     &fd_event_ring_arr_bytes)) {
@@ -253,9 +251,7 @@ void init_shm(void)
 		child->fd_event_ring = alloc_shared(sizeof(struct fd_event_ring));
 		fd_event_ring_init(child->fd_event_ring);
 
-		/* Record the ring address in the canary array.  The array
-		 * is mprotected PROT_READ by freeze_global_objects() before
-		 * any child runs, so any post-init write to it will fault. */
+		/* Record the ring address in the canary array. */
 		expected_fd_event_rings[i] = child->fd_event_ring;
 
 		/* Per-child stats ring.  Same alloc_shared() vs alloc_shared_
@@ -292,11 +288,10 @@ void init_shm(void)
 		edgepair_ring_init(child->edgepair_ring);
 	}
 
-	/* Allocate the parent-write / child-read mirror page before
-	 * freeze_global_objects() runs so the page joins the frozen-RO set.
+	/* Allocate the parent-write / child-read mirror page.
 	 * Children read shm_published->fleet_op_count off the cold path
 	 * (rotation clock, syscalls_todo termination); the parent re-publishes
-	 * inside stats_ring_drain_all()'s thaw/refreeze bracket. */
+	 * inside stats_ring_drain_all(). */
 	stats_published_init();
 
 	/* HEALER mirror pages: parent-write / child-read.  Picker reads

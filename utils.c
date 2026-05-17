@@ -215,10 +215,7 @@ void * alloc_shared(size_t size)
 
 /*
  * Allocate shared memory for global object data (parallel arrays, obj
- * structs themselves, etc.).  Tagged so freeze_global_objects() can
- * mprotect just these regions PROT_READ once init is done — children
- * that stray-write into the global object pool then SIGSEGV at the
- * source instead of silently corrupting parent state.
+ * structs themselves, etc.).
  */
 void * alloc_shared_global(size_t size)
 {
@@ -464,28 +461,7 @@ static void shared_str_heap_init(void)
 	/* Same pre-fork-mapping requirement as the obj heap: the first
 	 * caller must run in the parent before any child forks, which
 	 * holds for all current callers (init_*_fds via open_fds()
-	 * before fork_children()).
-	 *
-	 * Tagged is_global_obj=true so freeze_global_objects() mprotects
-	 * the region PROT_READ once init is done.  Same defence as the
-	 * obj heap (commit fbce60744dfb): a child syscall whose user-
-	 * pointer arg aliases into a slot here would otherwise let the
-	 * kernel scribble through it and silently corrupt a name string,
-	 * a perf_event_attr replay buffer, or an OBJ_MMAP_ANON map name —
-	 * surfacing later as a libc string-fn SEGV in the parent's dump
-	 * path or as a perf_event_open EINVAL once the cached eventattr
-	 * stops parsing.  The freeze closes that wild-write surface.
-	 *
-	 * Parent-side writers (alloc_shared_str, alloc_shared_strdup,
-	 * free_shared_str, plus caller snprintf/memcpy into freshly-
-	 * allocated slots) all run from the same paths the obj heap
-	 * commit already covered: pre-freeze init_*_fds(), and post-
-	 * freeze regen via try_regenerate_fd() inside fd_event_drain_all
-	 * or remove_object_by_fd's outer thaw bracket.  No new brackets
-	 * needed — every existing alloc_shared_strdup site is paired
-	 * with an alloc_shared_obj() in the same function, and those
-	 * sites are exactly the ones the obj heap freeze already
-	 * established as safe. */
+	 * before fork_children()). */
 	shared_str_heap_capacity = SHARED_STR_HEAP_SIZE;
 	shared_str_heap = alloc_shared_global(shared_str_heap_capacity);
 }
@@ -663,7 +639,7 @@ void log_mprotect_failure(void *addr, size_t len, int prot,
  * silently let the fuzzer clobber trinity's own shared state).  Runs
  * once -- the bitmap only grows with new registrations, so a single
  * positive assert is sufficient to prove the wiring works. */
-static void shared_bitmap_self_check(void)
+void shared_bitmap_self_check(void)
 {
 	static bool checked;
 	unsigned long base, bit;
@@ -679,38 +655,6 @@ static void shared_bitmap_self_check(void)
 			  "@ 0x%lx (bit %lu)\n", base, bit);
 		BUG("shared region bitmap inconsistent");
 	}
-}
-
-/*
- * freeze/thaw/globals_are_protected are now no-ops.  The OBJ_GLOBAL pool
- * they used to protect lives in per-child private heap since the object-
- * pool shm extraction, so the wild-write surface those PROT_READ brackets
- * defended no longer crosses processes.  Stubs kept because callers still
- * bracket their critical sections with the historical pattern; the bracket
- * collapses to a pair of empty calls and the surrounding
- * if (globals_are_protected()) guard always picks the no-thaw path.
- *
- * Side-effect: shared_str_heap stays PROT_READ|PROT_WRITE throughout the
- * run.  Required because destroy_global_objects() at shutdown writes
- * through free_shared_str -> freelist_push -> memset on slots that used
- * to be in the frozen-RO set.  Leaving the freeze in place after the
- * object-pool extraction faulted on shutdown.
- *
- * shared_bitmap_self_check() runs once at first call so the bitmap
- * accelerator self-test still fires before any fuzz iteration.
- */
-void freeze_global_objects(void)
-{
-	shared_bitmap_self_check();
-}
-
-void thaw_global_objects(void)
-{
-}
-
-bool globals_are_protected(void)
-{
-	return false;
 }
 
 /* Tunable: how often range_overlaps_shared() emits a -v summary line.

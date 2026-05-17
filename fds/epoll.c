@@ -87,8 +87,7 @@ static void arm_epoll(int epfd)
 /*
  * Per-process bitmap of "have I already armed this epfd?".  Lives in
  * BSS, so each forked child gets its own COW copy and the writes never
- * touch the OBJ_GLOBAL shm region (which freeze_global_objects() has
- * mprotected PROT_READ before fork).  Indexed by epollobj.pool_idx,
+ * touch the OBJ_GLOBAL shm region.  Indexed by epollobj.pool_idx,
  * which the parent stamps once at alloc time.
  *
  * Per-process state is correct even though the same epfd may end up
@@ -151,7 +150,7 @@ static void epoll_dump(struct object *obj, enum obj_scope scope)
 /*
  * Monotonically incremented for each epollobj allocated by this
  * provider (init pool + post-init regens).  Parent-only writer; lives
- * in the parent's BSS so freeze_global_objects() doesn't cover it.
+ * in the parent's BSS.
  * Stamped into eo->pool_idx so children can use it as a stable bitmap
  * key.  Values >= MAX_EPOLL_FDS are intentionally allowed and are
  * filtered by arm_epoll_if_needed()'s safety belt.

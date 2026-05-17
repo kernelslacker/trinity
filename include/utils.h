@@ -59,9 +59,7 @@ bool shared_size_mul(size_t a, size_t b, size_t *out);
 void * alloc_shared_str(size_t size);
 char * alloc_shared_strdup(const char *src);
 void free_shared_str(void *p, size_t size);
-void freeze_global_objects(void);
-void thaw_global_objects(void);
-bool globals_are_protected(void);
+void shared_bitmap_self_check(void);
 bool range_overlaps_shared(unsigned long addr, unsigned long len);
 /*
  * Inverse-polarity check: returns true iff [addr, addr+len) is fully

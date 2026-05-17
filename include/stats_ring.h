@@ -166,7 +166,6 @@ unsigned int stats_ring_drain(struct stats_ring *ring);
 void stats_ring_drain_all(void);
 
 /*
- * Allocate the shm_published mirror page.  Called from init_shm()
- * before freeze_global_objects() so the page joins the frozen-RO set.
+ * Allocate the shm_published mirror page.  Called from init_shm().
  */
 void stats_published_init(void);

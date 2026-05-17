@@ -35,8 +35,7 @@
  * EFFECTOR_NR_ARGS * EFFECTOR_BITS_PER_ARG single-bit toggles per
  * syscall against KCOV.  Returns 0 on success, non-zero if KCOV is not
  * available.  Runs in the parent process; expected to be invoked once
- * after init_shm / open_fds / freeze_global_objects, in lieu of the
- * normal fuzz loop.  On success the populated map is persisted via
+ * after init_shm / open_fds, in lieu of the normal fuzz loop.  On success the populated map is persisted via
  * effector_map_save_file() to the path returned by
  * effector_map_default_path(). */
 int effector_map_calibrate(void);

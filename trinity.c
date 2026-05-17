@@ -305,7 +305,7 @@ int main(int argc, char* argv[])
 	 * actual syscall() inside __do_syscall(), so a dry run still spun up
 	 * children and burned the full init path before doing nothing — which
 	 * defeated the point (cheap parse-validation in CI, reproducer triage)
-	 * and silently masked real failures inside open_fds / freeze_global_objects
+	 * and silently masked real failures inside open_fds
 	 * behind an exit code that looked like a successful no-op.  Honour the
 	 * flag at parse-and-exit instead. */
 	if (dry_run) {
@@ -497,16 +497,7 @@ int main(int argc, char* argv[])
 		_exit(EXIT_FD_INIT_FAILURE);
 	}
 
-	/*
-	 * After open_fds() returns no caller adds new global objects, and
-	 * children are rejected from add_object() anyway.  Lock the global
-	 * object metadata and parallel arrays read-only before forking
-	 * the first fuzz child so stray writes from children SIGSEGV at
-	 * the source instead of corrupting array entries the parent (or a
-	 * later child) trips over during init_child_mappings().
-	 */
-	output(1, "phase: freeze_global_objects\n");
-	freeze_global_objects();
+	shared_bitmap_self_check();
 
 	/*
 	 * One-shot childop discovery passes that walk large directory trees.
@@ -517,9 +508,9 @@ int main(int argc, char* argv[])
 
 	/*
 	 * --effector-map: one-shot calibration pass that probes per-bit
-	 * input significance under KCOV and exits.  Runs after open_fds /
-	 * freeze_global_objects so fill_arg() has the full fd, address,
-	 * and pid pools available, but before warm-start so the calibration
+	 * input significance under KCOV and exits.  Runs after open_fds
+	 * so fill_arg() has the full fd, address, and pid pools available,
+	 * but before warm-start so the calibration
 	 * baseline isn't biased by a replayed corpus snapshot (the
 	 * calibration path itself bypasses minicorpus_replay; skipping
 	 * warm-start here also avoids loading a corpus we will not use).

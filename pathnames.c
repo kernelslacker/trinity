@@ -297,9 +297,7 @@ static void open_fds_from_path(const char *dirpath)
 /*
  * Build the fileindex from the namelist, storing all strings in a single
  * alloc_shared_global() slab so children inherit them via MAP_SHARED rather
- * than as COW heap pages.  The index array itself is also shared-global so
- * freeze_global_objects() can mprotect it read-only before the first child
- * is forked.
+ * than as COW heap pages.
  */
 static const char ** list_to_index(struct namelist *namelist)
 {

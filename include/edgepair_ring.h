@@ -155,7 +155,6 @@ unsigned int edgepair_ring_drain(struct edgepair_ring *ring);
 void edgepair_ring_drain_all(void);
 
 /*
- * Allocate the mirror page.  Called from init_shm() before
- * freeze_global_objects() so the page joins the frozen-RO set.
+ * Allocate the mirror page.  Called from init_shm().
  */
 void edgepair_published_init(void);
