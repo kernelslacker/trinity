@@ -14,6 +14,7 @@
 #include "arch.h"
 #include "child.h"
 #include "edgepair.h"
+#include "edgepair_ring.h"
 #include "kcov.h"
 #include "pids.h"
 #include "shm.h"
@@ -430,10 +431,10 @@ static void dump_kcov_state(FILE *fp)
 	}
 	fprintf(fp, "KCOV: %u cold syscalls\n", cold);
 
-	if (edgepair_shm != NULL)
+	if (edgepair_is_enabled())
 		fprintf(fp, "KCOV: edgepairs: %lu unique, %lu dropped\n",
-			edgepair_shm->pairs_tracked,
-			edgepair_shm->pairs_dropped);
+			parent_edgepair.pairs_tracked,
+			parent_edgepair.pairs_dropped);
 }
 
 void tainted_postmortem(void)

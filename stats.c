@@ -9,6 +9,7 @@
 #include "arch.h"
 #include "cmp_hints.h"
 #include "edgepair.h"
+#include "edgepair_ring.h"
 #include "healer.h"
 #include "kcov.h"
 #include "minicorpus.h"
@@ -490,14 +491,14 @@ static void json_emit_edgepair_section(void)
 	const struct syscalltable *table;
 	unsigned int nr_max;
 
-	if (edgepair_shm == NULL) {
+	if (!edgepair_is_enabled()) {
 		fputs(",\"edgepair\":null", stdout);
 		return;
 	}
 
 	memset(top, 0, sizeof(top));
 	for (i = 0; i < EDGEPAIR_TABLE_SIZE; i++) {
-		struct edgepair_entry *e = &edgepair_shm->table[i];
+		struct edgepair_entry *e = &parent_edgepair.table[i];
 		unsigned long edges;
 
 		if (e->prev_nr == EDGEPAIR_EMPTY)
@@ -523,8 +524,8 @@ static void json_emit_edgepair_section(void)
 
 	printf(",\"edgepair\":{\"unique_pairs\":%lu,\"total_pair_calls\":%lu,"
 		"\"inserts_dropped\":%lu,\"cold_pairs\":%u,\"top_pairs\":[",
-		edgepair_shm->pairs_tracked, edgepair_shm->total_pair_calls,
-		edgepair_shm->pairs_dropped, cold_pairs);
+		parent_edgepair.pairs_tracked, parent_edgepair.total_pair_calls,
+		parent_edgepair.pairs_dropped, cold_pairs);
 
 	table = biarch ? syscalls_64bit : syscalls;
 	nr_max = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
@@ -4250,7 +4251,7 @@ void dump_stats(void)
 		stat_row("cmp_hints", "syscalls_with_hints", syscalls_with_hints);
 	}
 
-	if (edgepair_shm != NULL) {
+	if (edgepair_is_enabled()) {
 		unsigned int top_count = 0;
 		unsigned int cold_pairs = 0;
 		struct {
@@ -4262,14 +4263,14 @@ void dump_stats(void)
 
 		memset(top, 0, sizeof(top));
 
-		stat_row("edgepair_coverage", "unique_pairs",     edgepair_shm->pairs_tracked);
-		stat_row("edgepair_coverage", "total_pair_calls", edgepair_shm->total_pair_calls);
+		stat_row("edgepair_coverage", "unique_pairs",     parent_edgepair.pairs_tracked);
+		stat_row("edgepair_coverage", "total_pair_calls", parent_edgepair.total_pair_calls);
 
-		if (edgepair_shm->pairs_dropped > 0)
-			stat_row("edgepair_coverage", "inserts_dropped", edgepair_shm->pairs_dropped);
+		if (parent_edgepair.pairs_dropped > 0)
+			stat_row("edgepair_coverage", "inserts_dropped", parent_edgepair.pairs_dropped);
 
 		for (i = 0; i < EDGEPAIR_TABLE_SIZE; i++) {
-			struct edgepair_entry *e = &edgepair_shm->table[i];
+			struct edgepair_entry *e = &parent_edgepair.table[i];
 			unsigned long edges;
 
 			if (e->prev_nr == EDGEPAIR_EMPTY)

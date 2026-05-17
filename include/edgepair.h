@@ -40,9 +40,11 @@
 #define EDGEPAIR_NO_PREV	0xFFFFU
 
 /* Magic number for edgepair binary dump files.  Bumped when the on-disk
- * struct edgepair_shared layout changes so edge_analyzer rejects stale
- * dumps cleanly instead of misinterpreting them. */
-#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A01U
+ * layout changes so edge_analyzer rejects stale dumps cleanly instead of
+ * misinterpreting them.  0xEDDA7A02U: post-retrofit, the dump is sourced
+ * from the parent-private canonical aggregate rather than the in-shm
+ * region; the field set is identical but the producer has changed. */
+#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A02U
 
 struct edgepair_entry {
 	union {
@@ -66,14 +68,25 @@ struct edgepair_shared {
 
 extern struct edgepair_shared *edgepair_shm;
 
-/* Allocate the shared hash table.  Called from init_shm(). */
+struct childdata;
+
+/* Set the edgepair_enabled flag.  Called from kcov_init_global() once
+ * KCOV is confirmed available.  The parent-private canonical and the
+ * child-RO mirror page are allocated and initialised separately in
+ * edgepair_published_init() (called unconditionally from init_shm). */
 void edgepair_init_global(void);
+
+bool edgepair_is_enabled(void);
 
 /*
  * Record a pair (prev_nr, curr_nr) after kcov_collect().
  * found_new: whether kcov_collect() reported new edges.
+ *
+ * Enqueues a slot onto the calling child's edgepair_ring; the parent's
+ * edgepair_ring_drain_all() applies it under single-writer discipline.
  */
-void edgepair_record(unsigned int prev_nr, unsigned int curr_nr,
+void edgepair_record(struct childdata *child,
+		     unsigned int prev_nr, unsigned int curr_nr,
 		     bool found_new);
 
 /*

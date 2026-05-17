@@ -776,7 +776,7 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 
 	/* Record the (prev, curr) syscall pair for sequence coverage. */
 	if (child->last_syscall_nr != EDGEPAIR_NO_PREV)
-		edgepair_record(child->last_syscall_nr, rec->nr, new_edges);
+		edgepair_record(child, child->last_syscall_nr, rec->nr, new_edges);
 
 	/* Credit each mutator case picked during this call's arg
 	 * generation, with wins iff this call found new edges. */
