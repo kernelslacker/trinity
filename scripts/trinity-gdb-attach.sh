@@ -25,7 +25,8 @@ if [[ ! -x "${trinity_bin}" ]]; then
 fi
 
 tmp_gdbinit=$(mktemp -t trinity-gdbinit.XXXXXX)
-trap 'rm -f "${tmp_gdbinit}"' EXIT
+tmp_cmdfile=$(mktemp -t trinity-gdb-attach.XXXXXX)
+trap 'rm -f "${tmp_gdbinit}" "${tmp_cmdfile}"' EXIT
 
 cat > "${tmp_gdbinit}" <<'GDBEOF'
 set pagination off
@@ -130,10 +131,10 @@ define attach
             echo "trinity-attach: no trinity process found" >&2; \
         else \
             echo "trinity-attach: parent pid = $pid"; \
-            echo "attach $pid" > /tmp/trinity-gdb-attach.cmd; \
+	    echo "attach $pid" > "@CMDFILE@"; \
         fi
-    source /tmp/trinity-gdb-attach.cmd
-    shell rm -f /tmp/trinity-gdb-attach.cmd
+    source @CMDFILE@
+    shell rm -f "@CMDFILE@"
 end
 document attach
 Find the parent trinity process and attach to it.
@@ -147,5 +148,7 @@ end
 printf "Trinity gdb helpers loaded — commands: obj, regions, sym, attach\n"
 printf "  `help <cmd>` for details on each.\n"
 GDBEOF
+
+sed -i "s|@CMDFILE@|${tmp_cmdfile}|g" "${tmp_gdbinit}"
 
 exec gdb -q -x "${tmp_gdbinit}" "${trinity_bin}" "$@"
