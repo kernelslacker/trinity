@@ -655,32 +655,6 @@ void log_mprotect_failure(void *addr, size_t len, int prot,
 		  mprotect_errstr(err));
 }
 
-static bool global_objects_protected;
-
-static bool mprotect_global_obj_regions(int prot)
-{
-	unsigned int i;
-	bool ok = true;
-
-	for (i = 0; i < nr_shared_regions; i++) {
-		void *addr;
-		size_t len;
-
-		if (!shared_regions[i].is_global_obj)
-			continue;
-
-		addr = (void *) shared_regions[i].addr;
-		len = (size_t) shared_regions[i].size;
-		if (mprotect(addr, len, prot) != 0) {
-			log_mprotect_failure(addr, len, prot,
-					     __builtin_return_address(0),
-					     errno);
-			ok = false;
-		}
-	}
-	return ok;
-}
-
 /*
  * Self-check: confirm range_overlaps_shared()'s bitmap accelerator
  * actually rejects the first registered region.  Catches construction
@@ -707,38 +681,36 @@ static void shared_bitmap_self_check(void)
 	}
 }
 
+/*
+ * freeze/thaw/globals_are_protected are now no-ops.  The OBJ_GLOBAL pool
+ * they used to protect lives in per-child private heap since the object-
+ * pool shm extraction, so the wild-write surface those PROT_READ brackets
+ * defended no longer crosses processes.  Stubs kept because callers still
+ * bracket their critical sections with the historical pattern; the bracket
+ * collapses to a pair of empty calls and the surrounding
+ * if (globals_are_protected()) guard always picks the no-thaw path.
+ *
+ * Side-effect: shared_str_heap stays PROT_READ|PROT_WRITE throughout the
+ * run.  Required because destroy_global_objects() at shutdown writes
+ * through free_shared_str -> freelist_push -> memset on slots that used
+ * to be in the frozen-RO set.  Leaving the freeze in place after the
+ * object-pool extraction faulted on shutdown.
+ *
+ * shared_bitmap_self_check() runs once at first call so the bitmap
+ * accelerator self-test still fires before any fuzz iteration.
+ */
 void freeze_global_objects(void)
 {
-	/*
-	 * Only advertise the defence as armed if every region actually went
-	 * PROT_READ.  On partial failure, leave the flag false and log loudly
-	 * so triage can see the wild-write defence is degraded; the program
-	 * still runs because writes through the unprotected regions remain
-	 * legal (they were already writable before this call).
-	 */
-	if (mprotect_global_obj_regions(PROT_READ))
-		global_objects_protected = true;
-	else
-		outputerr("freeze_global_objects: mprotect RO failed on at least one region; wild-write defence is partial\n");
 	shared_bitmap_self_check();
 }
 
 void thaw_global_objects(void)
 {
-	/*
-	 * Failure here is unrecoverable: callers (add_object publish, regen
-	 * field writes, free_shared_obj zero-fill) will observe the cleared
-	 * flag and write into a region that is still PROT_READ, taking a
-	 * SIGSEGV mid-critical-section in the parent.  Bail loudly instead.
-	 */
-	if (!mprotect_global_obj_regions(PROT_READ | PROT_WRITE))
-		BUG("thaw_global_objects: mprotect RW failed -- heap is half-thawed, unrecoverable");
-	global_objects_protected = false;
 }
 
 bool globals_are_protected(void)
 {
-	return global_objects_protected;
+	return false;
 }
 
 /* Tunable: how often range_overlaps_shared() emits a -v summary line.
