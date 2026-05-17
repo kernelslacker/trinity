@@ -4,12 +4,13 @@
  */
 #include <sys/resource.h>
 #include <sys/wait.h>
+#include "compat.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
 
 static unsigned long wait_options[] = {
-	WNOHANG, WUNTRACED, WCONTINUED, __WALL, __WCLONE,
+	WNOHANG, WUNTRACED, WCONTINUED, __WALL, __WCLONE, __WNOTHREAD,
 };
 
 static void sanitise_wait4(struct syscallrecord *rec)

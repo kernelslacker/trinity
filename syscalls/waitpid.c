@@ -2,12 +2,13 @@
  * SYSCALL_DEFINE3(waitpid, pid_t, pid, int __user *, stat_addr, int, options)
  */
 #include <sys/wait.h>
+#include "compat.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
 
 static unsigned long wait_options[] = {
-	WNOHANG, WUNTRACED, WCONTINUED,
+	WNOHANG, WUNTRACED, WCONTINUED, __WALL, __WCLONE, __WNOTHREAD,
 };
 
 static void sanitise_waitpid(struct syscallrecord *rec)

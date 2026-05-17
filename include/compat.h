@@ -1862,6 +1862,17 @@ struct kvm_get_htab_fd {
 #define RWF_NOSIGNAL 0x00000100 /* do not raise SIGPIPE on pipe write */
 #endif
 
+/* linux/wait.h -- GNU-extension wait options, used by wait4/waitpid/waitid */
+#ifndef __WNOTHREAD
+#define __WNOTHREAD 0x20000000
+#endif
+#ifndef __WALL
+#define __WALL      0x40000000
+#endif
+#ifndef __WCLONE
+#define __WCLONE    0x80000000
+#endif
+
 /* sys/epoll.h */
 #ifndef EPOLLWAKEUP
 #define EPOLLWAKEUP (1u << 29)
