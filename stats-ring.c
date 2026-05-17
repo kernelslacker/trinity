@@ -11,9 +11,7 @@
  * The mirror page (struct stats_published) carries the small subset of
  * the aggregate that children also need to read -- currently just
  * fleet_op_count for the strategy rotation clock and the syscalls_todo
- * termination check.  Mirror is alloc_shared_global() so it is mprotected
- * PROT_READ after init; the drain thaws + publishes + refreezes inside
- * the same bracket that fd_event_drain_all() already uses.
+ * termination check.  Republished once per drain.
  */
 
 #include <stdatomic.h>
@@ -227,6 +225,6 @@ void stats_ring_drain_all(void)
 
 void stats_published_init(void)
 {
-	shm_published = alloc_shared_global(sizeof(struct stats_published));
+	shm_published = alloc_shared(sizeof(struct stats_published));
 	memset(shm_published, 0, sizeof(*shm_published));
 }

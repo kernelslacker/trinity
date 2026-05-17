@@ -14,9 +14,6 @@
  * One mirror page (edgepair_published) is republished from the
  * canonical at every drain so the child-side cold-pair check
  * (edgepair_is_cold) can read weights without a ring round-trip.
- * The page is alloc_shared_global, mprotected PROT_READ after init,
- * thawed + written + refrozen inside the same bracket that
- * stats_ring_drain_all() and healer_ring_drain_all() already use.
  *
  * Single-writer apply collapses the CAS machinery the in-shm path
  * needed: find_or_insert becomes a plain hash probe + store, no
@@ -270,14 +267,14 @@ void edgepair_published_init(void)
 	 * fields so the hash probe terminates the chain at the first miss
 	 * instead of walking 32 slots of zeroed (prev=0, curr=0) entries
 	 * that would alias to syscall 0.  parent_edgepair lives in .bss
-	 * and is zero by default; the mirror is fresh from alloc_shared_
-	 * global() and also zero. */
+	 * and is zero by default; the mirror is fresh from alloc_shared()
+	 * and also zero. */
 	for (i = 0; i < EDGEPAIR_TABLE_SIZE; i++) {
 		parent_edgepair.table[i].prev_nr = EDGEPAIR_EMPTY;
 		parent_edgepair.table[i].curr_nr = EDGEPAIR_EMPTY;
 	}
 
-	edgepair_published = alloc_shared_global(sizeof(struct edgepair_published));
+	edgepair_published = alloc_shared(sizeof(struct edgepair_published));
 	memset(edgepair_published, 0, sizeof(struct edgepair_published));
 
 	for (i = 0; i < EDGEPAIR_TABLE_SIZE; i++) {

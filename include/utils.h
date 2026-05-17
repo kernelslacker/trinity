@@ -44,7 +44,6 @@
 extern unsigned int nr_shared_regions;
 
 void * alloc_shared(size_t size);
-void * alloc_shared_global(size_t size);
 
 /*
  * Checked size = a * b for shared-allocation call sites with a variable

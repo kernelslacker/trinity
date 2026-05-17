@@ -75,23 +75,22 @@ end
 define regions
     set $n = (unsigned int) 'utils.c'::nr_shared_regions
     printf "shared_regions: %u entr%s\n", $n, ($n == 1 ? "y" : "ies")
-    printf "  %-4s  %-18s  %-18s  %-12s  %-13s\n", "idx", "start", "end", "size", "is_global_obj"
+    printf "  %-4s  %-18s  %-18s  %-12s\n", "idx", "start", "end", "size"
     set $i = 0
     while $i < $n
         set $r     = &(('utils.c'::shared_regions)[$i])
         set $start = $r->addr
         set $size  = $r->size
         set $end   = $start + $size
-        set $gobj  = $r->is_global_obj
-        printf "  %-4u  0x%016lx  0x%016lx  %-12lu  %s\n", $i, $start, $end, $size, ($gobj ? "true" : "false")
+	printf "  %-4u  0x%016lx  0x%016lx  %-12lu\n", $i, $start, $end, $size
         set $i = $i + 1
     end
 end
 document regions
 Dump shared_regions[] — every mmap'd region tracked by alloc_shared().
-Shows index, start, end, size, and whether the region backs a global
-object pool.  shared_regions[] is file-static in utils.c, hence the
-'utils.c'::name qualifier used by the inspection commands above.
+Shows index, start, end, and size.  shared_regions[] is file-static in
+utils.c, hence the 'utils.c'::name qualifier used by the inspection
+commands above.
 end
 
 # ---------------------------------------------------------------------

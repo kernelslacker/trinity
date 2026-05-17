@@ -49,33 +49,15 @@ void create_shm(void)
 
 	/* Waste some address space to set up some "protection" near the SHM location.
 	 *
-	 * Stays alloc_shared() rather than alloc_shared_global().  The shm
-	 * struct itself is the most pervasive shared region in trinity:
-	 * children write to shm->stats counters on every syscall, to
-	 * shm->shared_obj_freelist / shm->shared_str_freelist on every
-	 * shared-heap free, to shm->shared_obj_heap_used / shm->shared_str_
-	 * heap_used on every alloc, to shm->fd_regen_pending[] on every fd
-	 * regen request, to shm->fd_hash[] generation counters indirectly
-	 * via the parent's fd-event drain, and to shm->seed via reseed().
-	 * The parent writes shm->global_objects[*].array entries through
-	 * the bracketed add_object / __destroy_object paths but the array
-	 * pointers themselves point into already-frozen alloc_shared_global
-	 * regions (shm.c init_shm + objects.c init_object_lists), so the
-	 * structurally important freeze coverage already exists at the
-	 * sub-region level.  Promoting struct shm_s itself to is_global_obj
-	 * would require thaw / refreeze brackets around effectively every
-	 * counter increment in the codebase — net negative.
-	 *
-	 * Wild-write risk this leaves open: a child wild-write into shm
-	 * could corrupt any of the above scalar / counter fields.  The
+	 * Wild-write risk: a child wild-write into shm could corrupt any
+	 * scalar / counter field — children write to shm->stats counters on
+	 * every syscall, to shm->shared_obj_freelist / shm->shared_str_
+	 * freelist on every shared-heap free, to shm->shared_obj_heap_used /
+	 * shm->shared_str_heap_used on every alloc, to shm->fd_regen_pending[]
+	 * on every fd regen request, and to shm->seed via reseed().  The
 	 * per-bucket freelist heads in particular are sensitive — a wrong
 	 * value there would hand a bogus pointer to alloc_shared_obj's
-	 * freelist_pop and crash the next allocator.  This is the same
-	 * residual risk the obj heap freeze (fbce60744dfb) was designed
-	 * to MITIGATE rather than eliminate; the heap freeze ensures the
-	 * pointer freelist_pop returns lands in a frozen page so the
-	 * caller's first write to it faults at the source — but the head
-	 * pointer itself is in shm and stays writable.
+	 * freelist_pop and crash the next allocator.
 	 */
 	shm = alloc_shared(shm_size);
 
@@ -173,14 +155,10 @@ void init_shm(void)
 	childptrslen &= PAGE_MASK;
 
 	/*
-	 * children[] (the array of childdata pointers) stays alloc_shared()
-	 * rather than alloc_shared_global() because it pre-dates the freeze
-	 * pattern and is already protected by the explicit mprotect() at
-	 * the bottom of init_shm — children only ever read these slots, and
-	 * the parent writes them once during init then never again.  The
-	 * existing mprotect is functionally equivalent to is_global_obj for
-	 * a region that has no post-init parent writes; converting would
-	 * just churn the call site without changing behaviour.
+	 * children[] (the array of childdata pointers) is protected by the
+	 * explicit mprotect(PROT_READ) at the bottom of init_shm — children
+	 * only ever read these slots, and the parent writes them once during
+	 * init then never again.
 	 */
 	children = alloc_shared(childptrslen);
 
@@ -194,7 +172,7 @@ void init_shm(void)
 			  max_children);
 		exit(EXIT_FAILURE);
 	}
-	expected_fd_event_rings = alloc_shared_global(fd_event_ring_arr_bytes);
+	expected_fd_event_rings = alloc_shared(fd_event_ring_arr_bytes);
 
 	/* We allocate the childdata structs as shared mappings, because
 	 * the forking process needs to peek into each childs syscall records
@@ -204,25 +182,16 @@ void init_shm(void)
 		struct childdata *child;
 
 		/*
-		 * Per-child childdata stays alloc_shared() rather than
-		 * alloc_shared_global() because each child writes its own slot
-		 * extensively: child->syscall (rec->nr / args / retval before
-		 * each syscall), child->kcov (per-call remote_mode
-		 * flag), child->objects[] (OBJ_LOCAL pools the child mutates
-		 * without parent involvement), child->last_syscall_nr,
-		 * child->fd_lifetime / current_fd, etc.  Freeze would EFAULT
-		 * the child's syscall dispatch loop on the first write to its
-		 * own record.
-		 *
-		 * The wild-write risk is bounded: a child can only realistically
-		 * corrupt its OWN childdata via its own syscall args, and the
-		 * parent's reads (handle_children's progress check, dump_child
-		 * data on crash) tolerate inconsistency by design.  Cross-child
-		 * corruption would require a child syscall arg pointing into
-		 * another child's slot — possible but exceedingly unlikely
-		 * given the address-space layout, and the parent's overwatch
-		 * (pidmap sanity, fd_event_ring canary) catches the structural
-		 * fallout when it does happen.
+		 * Wild-write risk on per-child childdata is bounded: a child
+		 * can only realistically corrupt its OWN childdata via its
+		 * own syscall args, and the parent's reads (handle_children's
+		 * progress check, dump_childdata on crash) tolerate
+		 * inconsistency by design.  Cross-child corruption would
+		 * require a child syscall arg pointing into another child's
+		 * slot — possible but exceedingly unlikely given the address-
+		 * space layout, and the parent's overwatch (pidmap sanity,
+		 * fd_event_ring canary) catches the structural fallout when
+		 * it does happen.
 		 */
 		child = alloc_shared(sizeof(struct childdata));
 		children[i] = child;
@@ -234,19 +203,10 @@ void init_shm(void)
 		/* Allocate per-child fd event ring in shared memory.
 		 * The ring is used by the child (producer) and parent
 		 * (consumer) for lock-free fd state change reporting.
-		 *
-		 * Stays alloc_shared() rather than alloc_shared_global()
-		 * because the child IS the producer: fd_event_enqueue writes
-		 * ring->events[head] / ring->head / ring->overflow from child
-		 * context on every fd close / dup2 / new-socket event.
-		 * mprotect PROT_READ would EFAULT the enqueue store and
-		 * disable the parent's fd lifecycle tracking entirely.  The
-		 * canary array (expected_fd_event_rings) handles the related
-		 * concern of detecting wild-write damage to the per-child
-		 * ring POINTER itself — the canary is alloc_shared_global
-		 * and frozen, so a stray write that swaps ring pointers gets
-		 * caught at the next drain.  The ring CONTENTS necessarily
-		 * stay child-writable.
+		 * Wild-write damage to the per-child ring POINTER itself is
+		 * caught at the next drain via the canary array
+		 * (expected_fd_event_rings); the ring CONTENTS are necessarily
+		 * child-writable.
 		 */
 		child->fd_event_ring = alloc_shared(sizeof(struct fd_event_ring));
 		fd_event_ring_init(child->fd_event_ring);
@@ -254,36 +214,33 @@ void init_shm(void)
 		/* Record the ring address in the canary array. */
 		expected_fd_event_rings[i] = child->fd_event_ring;
 
-		/* Per-child stats ring.  Same alloc_shared() vs alloc_shared_
-		 * global() reasoning as fd_event_ring above: the child IS the
-		 * producer (every syscall enqueues at least one slot), so the
-		 * ring contents stay child-writable.  The ring POINTER is in
-		 * struct childdata which sits in shared memory; a wild write
-		 * that swapped it would surface in the same overflow / payload
-		 * validation paths the drain already runs.  No dedicated canary
-		 * array yet -- the structural improvement here is moving the
-		 * COUNTER VALUES out of shm; the ring storage being shared is
-		 * inherent to the SPSC contract. */
+		/* Per-child stats ring.  The child IS the producer (every
+		 * syscall enqueues at least one slot), so the ring contents
+		 * stay child-writable.  The ring POINTER is in struct
+		 * childdata which sits in shared memory; a wild write that
+		 * swapped it would surface in the same overflow / payload
+		 * validation paths the drain already runs.  No dedicated
+		 * canary array yet -- the structural improvement here is
+		 * moving the COUNTER VALUES out of shm; the ring storage
+		 * being shared is inherent to the SPSC contract. */
 		child->stats_ring = alloc_shared(sizeof(struct stats_ring));
 		stats_ring_init(child->stats_ring);
 
-		/* Per-child HEALER observation ring.  Same alloc_shared()
-		 * reasoning as the stats and fd_event rings above: the child
-		 * IS the producer (every observer-hook fire on the new-edge
-		 * path enqueues both a TRIPLE and a PAIR slot), so the ring
+		/* Per-child HEALER observation ring.  The child IS the
+		 * producer (every observer-hook fire on the new-edge path
+		 * enqueues both a TRIPLE and a PAIR slot), so the ring
 		 * contents stay child-writable.  Dark-launched in this commit
 		 * -- no call site enqueues yet -- so the drain runs empty and
 		 * the canonical aggregate stays at zero. */
 		child->healer_ring = alloc_shared(sizeof(struct healer_ring));
 		healer_ring_init(child->healer_ring);
 
-		/* Per-child edgepair observation ring.  Same alloc_shared()
-		 * reasoning as the stats and fd_event and healer rings above:
-		 * the child IS the producer (every non-cmp dispatched syscall
-		 * enqueues one slot once the per-child sentinel is past), so
-		 * the ring contents stay child-writable.  Dark-launched in
-		 * this commit -- no call site enqueues yet -- so the drain
-		 * runs empty and the canonical aggregate stays at zero. */
+		/* Per-child edgepair observation ring.  The child IS the
+		 * producer (every non-cmp dispatched syscall enqueues one
+		 * slot once the per-child sentinel is past), so the ring
+		 * contents stay child-writable.  Dark-launched in this commit
+		 * -- no call site enqueues yet -- so the drain runs empty and
+		 * the canonical aggregate stays at zero. */
 		child->edgepair_ring = alloc_shared(sizeof(struct edgepair_ring));
 		edgepair_ring_init(child->edgepair_ring);
 	}
@@ -296,18 +253,12 @@ void init_shm(void)
 
 	/* HEALER mirror pages: parent-write / child-read.  Picker reads
 	 * the relation table and pair table through these pages, refreshed
-	 * once per drain inside the same freeze bracket the stats drain
-	 * uses.  Allocated alloc_shared_global so they join the frozen-RO
-	 * set; a child wild-write into either page SEGVs the offending
-	 * child at the source. */
+	 * once per drain. */
 	healer_published_init();
 
 	/* Edgepair mirror page: parent-write / child-read.  edgepair_is_cold
 	 * reads its three fields off this page on the syscall-selection
-	 * biasing path, refreshed once per drain inside the same freeze
-	 * bracket the stats and healer drains use.  Allocated
-	 * alloc_shared_global so it joins the frozen-RO set; a child wild-
-	 * write into the page SEGVs the offending child at the source. */
+	 * biasing path, refreshed once per drain. */
 	edgepair_published_init();
 	if (mprotect(children, childptrslen, PROT_READ) != 0)
 		log_mprotect_failure(children, (size_t) childptrslen, PROT_READ,

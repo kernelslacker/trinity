@@ -129,13 +129,8 @@ extern struct stats_aggregate parent_stats;
 /*
  * Mirror page: parent-write / child-read.  Carries the coarse fleet
  * op_count that random-syscall.c's rotation clock and child.c's
- * syscalls_todo termination need to see.  The page is alloc_shared_global,
- * so it is mprotected PROT_READ after init; the parent thaws + writes +
- * refreezes on each drain via the existing global-objects freeze bracket.
- *
- * A child wild-write into this page SEGVs the offending child at the
- * source (PROT_READ), strictly stronger than the silent in-place
- * scribble the original shm->stats.op_count permitted.
+ * syscalls_todo termination need to see.  The parent republishes on
+ * each drain.
  */
 struct stats_published {
 	unsigned long fleet_op_count;

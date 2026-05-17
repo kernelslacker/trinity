@@ -447,10 +447,9 @@ extern struct childdata **children;
 
 /*
  * Canary copy of each child's fd_event_ring pointer, taken at init time
- * and stored in an alloc_shared_global() region so it is mprotected
- * PROT_READ before any child starts running.  fd_event_drain_all()
- * compares the live pointer against this array; a mismatch means the
- * pointer was overwritten after init, and we use the known-good value
- * to keep draining while logging the incident.
+ * so wild-write damage to the per-child ring pointer can be detected.
+ * fd_event_drain_all() compares the live pointer against this array;
+ * a mismatch means the pointer was overwritten after init, and we use
+ * the known-good value to keep draining while logging the incident.
  */
 extern struct fd_event_ring **expected_fd_event_rings;

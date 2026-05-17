@@ -97,9 +97,7 @@ extern struct edgepair_aggregate parent_edgepair;
  * Mirror page: parent-write / child-read.  Carries the published view
  * of the canonical table so the child-side cold-pair check
  * (edgepair_is_cold at random-syscall.c) can read its three fields
- * without a ring round-trip.  Allocated alloc_shared_global so it
- * joins the frozen-RO set; a child wild-write into the mirror SEGVs
- * the offending child at the source.
+ * without a ring round-trip.
  *
  * Carries the trimmed slot view (prev_nr, curr_nr, new_edge_count,
  * last_new_at) plus the total_pair_calls "now" anchor in a header

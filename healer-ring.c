@@ -13,11 +13,9 @@
  * Two mirror pages (healer_relations_published, healer_pair_published)
  * are republished from the canonical at every drain so the child-side
  * picker (set_syscall_nr_healer) can read weights without a ring round-
- * trip.  Both pages are alloc_shared_global, mprotected PROT_READ after
- * init, thawed + written + refrozen inside the same bracket that
- * stats_ring_drain_all() already uses.  Dirty-row tracking keeps the
- * publish cost at ~KiB/drain steady state instead of the worst-case
- * 5 MiB memcpy a naive full-table publish would cost.
+ * trip.  Dirty-row tracking keeps the publish cost at ~KiB/drain steady
+ * state instead of the worst-case 5 MiB memcpy a naive full-table
+ * publish would cost.
  *
  * Single-writer apply collapses the CAS machinery the in-shm path
  * needed: triple-table promoted-entry insertion is a straight scan +
@@ -489,12 +487,12 @@ void healer_ring_drain_all(void)
 
 void healer_published_init(void)
 {
-	healer_relations_published = alloc_shared_global(
+	healer_relations_published = alloc_shared(
 		sizeof(struct healer_relation) * HEALER_RELATION_SLOTS);
 	memset(healer_relations_published, 0,
 	       sizeof(struct healer_relation) * HEALER_RELATION_SLOTS);
 
-	healer_pair_published = alloc_shared_global(
+	healer_pair_published = alloc_shared(
 		sizeof(unsigned int) * MAX_NR_SYSCALL * MAX_NR_SYSCALL);
 	memset(healer_pair_published, 0,
 	       sizeof(unsigned int) * MAX_NR_SYSCALL * MAX_NR_SYSCALL);

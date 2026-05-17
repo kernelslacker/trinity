@@ -320,7 +320,7 @@ void pids_init(void)
 				  max_children);
 			exit(EXIT_FAILURE);
 		}
-		pids = alloc_shared_global(pids_bytes);
+		pids = alloc_shared(pids_bytes);
 	}
 	for_each_child(i)
 		__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);

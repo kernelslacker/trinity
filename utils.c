@@ -40,7 +40,6 @@
 static struct {
 	unsigned long addr;
 	unsigned long size;
-	bool is_global_obj;
 } shared_regions[MAX_SHARED_ALLOCS];
 unsigned int nr_shared_regions;
 
@@ -99,7 +98,7 @@ static inline void shared_bitmap_set(unsigned long bit)
 
 /*
  * Mark every 2 MiB chunk that intersects [addr, addr+size).  Called
- * from the tail of __alloc_shared() and track_shared_region() so the
+ * from the tail of alloc_shared() and track_shared_region() so the
  * bitmap stays in sync with shared_regions[].  size==0 is a no-op
  * (matches the "empty region overlaps nothing" semantics callers rely
  * on).  An out-of-span registration BUG()s loudly: the linear-scan
@@ -152,7 +151,7 @@ static void note_shared_overflow(const char *who, const void *addr)
 		who, MAX_SHARED_ALLOCS, addr);
 }
 
-static void * __alloc_shared(size_t size, bool is_global_obj)
+void * alloc_shared(size_t size)
 {
 	void *ret;
 
@@ -177,7 +176,6 @@ static void * __alloc_shared(size_t size, bool is_global_obj)
 	if (nr_shared_regions < MAX_SHARED_ALLOCS) {
 		shared_regions[nr_shared_regions].addr = (unsigned long) ret;
 		shared_regions[nr_shared_regions].size = size;
-		shared_regions[nr_shared_regions].is_global_obj = is_global_obj;
 		shared_bitmap_mark((unsigned long) ret, size);
 		nr_shared_regions++;
 	} else {
@@ -200,26 +198,11 @@ void track_shared_region(unsigned long addr, unsigned long size)
 	if (nr_shared_regions < MAX_SHARED_ALLOCS) {
 		shared_regions[nr_shared_regions].addr = addr;
 		shared_regions[nr_shared_regions].size = size;
-		shared_regions[nr_shared_regions].is_global_obj = false;
 		shared_bitmap_mark(addr, size);
 		nr_shared_regions++;
 	} else {
 		note_shared_overflow("track_shared_region", (const void *)addr);
 	}
-}
-
-void * alloc_shared(size_t size)
-{
-	return __alloc_shared(size, false);
-}
-
-/*
- * Allocate shared memory for global object data (parallel arrays, obj
- * structs themselves, etc.).
- */
-void * alloc_shared_global(size_t size)
-{
-	return __alloc_shared(size, true);
 }
 
 bool shared_size_mul(size_t a, size_t b, size_t *out)
@@ -463,7 +446,7 @@ static void shared_str_heap_init(void)
 	 * holds for all current callers (init_*_fds via open_fds()
 	 * before fork_children()). */
 	shared_str_heap_capacity = SHARED_STR_HEAP_SIZE;
-	shared_str_heap = alloc_shared_global(shared_str_heap_capacity);
+	shared_str_heap = alloc_shared(shared_str_heap_capacity);
 }
 
 void * alloc_shared_str(size_t size)

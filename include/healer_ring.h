@@ -135,14 +135,8 @@ extern struct healer_aggregate parent_healer;
 /*
  * Mirror pages: parent-write / child-read.  Carry the published view of
  * the canonical tables so the child-side picker (set_syscall_nr_healer)
- * can read weights without a ring round-trip.  Both pages are
- * alloc_shared_global, so they are mprotected PROT_READ after init; the
- * parent thaws + writes the dirty rows + refreezes inside the drain's
- * existing freeze bracket.
- *
- * A child wild-write into either mirror SEGVs the offending child at
- * the source (PROT_READ), strictly stronger than the silent in-place
- * scribble shm->healer_* permitted.
+ * can read weights without a ring round-trip.  The parent writes the
+ * dirty rows once per drain.
  *
  * The picker reads from these pages directly -- same probe + row-scan
  * shape as the in-shm version, different base pointer.  Bounded
