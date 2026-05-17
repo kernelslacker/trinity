@@ -11,8 +11,13 @@ enum rseq_flags_compat {
 	RSEQ_FLAG_UNREGISTER_COMPAT = (1 << 0),
 };
 
+#ifndef RSEQ_FLAG_SLICE_EXT_DEFAULT_ON
+#define RSEQ_FLAG_SLICE_EXT_DEFAULT_ON (1 << 1)
+#endif
+
 static unsigned long rseq_flags[] = {
 	RSEQ_FLAG_UNREGISTER_COMPAT,
+	RSEQ_FLAG_SLICE_EXT_DEFAULT_ON,
 };
 
 static void sanitise_rseq(struct syscallrecord *rec)
