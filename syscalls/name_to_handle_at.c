@@ -12,9 +12,20 @@
 #define MAX_HANDLE_SZ 128
 #endif
 
+#ifndef AT_HANDLE_MNT_ID_UNIQUE
+#define AT_HANDLE_MNT_ID_UNIQUE 0x001
+#endif
+#ifndef AT_HANDLE_CONNECTABLE
+#define AT_HANDLE_CONNECTABLE   0x002
+#endif
+#ifndef AT_HANDLE_FID
+#define AT_HANDLE_FID           0x200
+#endif
+
 static unsigned long name_to_handle_at_flags[] = {
-	AT_FDCWD, AT_SYMLINK_NOFOLLOW, AT_REMOVEDIR, AT_SYMLINK_FOLLOW,
+	AT_SYMLINK_NOFOLLOW, AT_HANDLE_FID, AT_SYMLINK_FOLLOW,
 	AT_NO_AUTOMOUNT, AT_EMPTY_PATH,
+	AT_HANDLE_MNT_ID_UNIQUE, AT_HANDLE_CONNECTABLE,
 };
 
 static void sanitise_name_to_handle_at(struct syscallrecord *rec)
