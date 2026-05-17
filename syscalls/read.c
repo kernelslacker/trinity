@@ -110,6 +110,8 @@ struct syscallentry syscall_preadv = {
  */
 static unsigned long preadv2_flags[] = {
 	RWF_HIPRI, RWF_DSYNC, RWF_SYNC,
+	RWF_NOWAIT, RWF_APPEND, RWF_NOAPPEND,
+	RWF_ATOMIC, RWF_DONTCACHE, RWF_NOSIGNAL,
 };
 
 static void sanitise_preadv2(struct syscallrecord *rec)
