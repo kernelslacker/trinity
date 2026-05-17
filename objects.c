@@ -288,19 +288,36 @@ void fd_hash_remove(int fd)
 
 struct fd_hash_entry *fd_hash_lookup(int fd)
 {
+	struct fd_hash_entry *table;
 	unsigned int slot, i;
 
 	if (fd < 0)
 		return NULL;
 
+	/*
+	 * Children resolve against their fork-time snapshot of the
+	 * parent's table.  The shm-resident table stays the parent's
+	 * writer view; once the per-child snapshot is in place, no
+	 * child read crosses the shared mapping for fd lookups.  Fall
+	 * back to shm in the early init_child window where the snapshot
+	 * has not yet been allocated.
+	 */
+	table = shm->fd_hash;
+	if (getpid() != mainpid) {
+		struct childdata *child = this_child();
+
+		if (child != NULL && child->fd_hash != NULL)
+			table = child->fd_hash;
+	}
+
 	slot = fd_hash_slot(fd);
 	for (i = 0; i < FD_HASH_SIZE; i++) {
-		int slot_fd = __atomic_load_n(&shm->fd_hash[slot].fd, __ATOMIC_ACQUIRE);
+		int slot_fd = __atomic_load_n(&table[slot].fd, __ATOMIC_ACQUIRE);
 
 		if (slot_fd == -1)
 			return NULL;
 		if (slot_fd == fd)
-			return &shm->fd_hash[slot];
+			return &table[slot];
 		slot = (slot + 1) & (FD_HASH_SIZE - 1);
 	}
 	return NULL;
@@ -554,9 +571,25 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
 {
 	struct objhead *head;
 
-	if (scope == OBJ_GLOBAL)
+	if (scope == OBJ_GLOBAL) {
+		/*
+		 * Children resolve against their fork-time snapshot of the
+		 * parent's pre-fork pool (allocated by
+		 * clone_global_objects_to_child).  The shm-resident pool
+		 * remains the parent's authoritative view; child reads and
+		 * any child-local destroys mutate only their private copy.
+		 * In the early init_child window before the clone runs,
+		 * fall back to shm->global_objects so any incidental lookup
+		 * still resolves.
+		 */
+		if (getpid() != mainpid) {
+			struct childdata *child = this_child();
+
+			if (child != NULL && child->global_objects != NULL)
+				return &child->global_objects[type];
+		}
 		head = &shm->global_objects[type];
-	else {
+	} else {
 		struct childdata *child;
 
 		child = this_child();
@@ -1267,6 +1300,90 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
 }
 
 /*
+ * Lift the parent's pre-fork OBJ_GLOBAL pool into the owning child's
+ * private heap.  The parent populates shm->global_objects[] in
+ * init_global_objects() before fork; each child then runs this routine
+ * from init_child() to take a shallow snapshot of the head fields and
+ * the live slot pointers into the child's own zmalloc'd backing.
+ *
+ * Bookkeeping only.  The obj structs themselves (and the kernel-side
+ * fds / mmap regions they describe) are reached via fork's table dup
+ * and the existing MAP_SHARED obj heap that backs the parent's pool —
+ * snapshotting the directory of pointers is sufficient for the child
+ * to pick, dereference and locally destroy entries without crossing
+ * back into shared memory.
+ *
+ * Per-type array allocation is sized to the parent's current
+ * num_entries rather than the pre-fork GLOBAL_OBJ_MAX_CAPACITY ceiling
+ * so an empty pool costs zero heap bytes here and a small pool costs
+ * exactly num_entries pointers, keeping the per-child memory cost
+ * proportional to the live working set.
+ *
+ * NULL on out-of-memory leaves child->global_objects unset so the
+ * get_objhead() fallback to shm->global_objects[] is selected for
+ * this child's lifetime; the OBJ_GLOBAL path degrades to its pre-
+ * lift behaviour rather than crashing.
+ */
+void clone_global_objects_to_child(struct childdata *child)
+{
+	unsigned int i;
+
+	if (child == NULL)
+		return;
+
+	child->global_objects = NULL;
+	child->fd_hash = NULL;
+	child->fd_live = NULL;
+	child->fd_hash_count = 0;
+	child->fd_live_count = 0;
+
+	child->global_objects = zmalloc(sizeof(struct objhead) * MAX_OBJECT_TYPES);
+	if (child->global_objects == NULL)
+		return;
+
+	for (i = 0; i < MAX_OBJECT_TYPES; i++) {
+		struct objhead *src = &shm->global_objects[i];
+		struct objhead *dst = &child->global_objects[i];
+		unsigned int n = src->num_entries;
+
+		dst->max_entries = src->max_entries;
+		dst->destroy = src->destroy;
+		dst->dump = src->dump;
+		dst->shared_alloc = src->shared_alloc;
+		dst->num_entries = n;
+		dst->array_capacity = n;
+		dst->array_generation = 0;
+		dst->slot_versions = NULL;
+		dst->fd_hash = NULL;
+		dst->array = NULL;
+
+		if (n == 0 || src->array == NULL)
+			continue;
+
+		dst->array = zmalloc(n * sizeof(struct object *));
+		if (dst->array == NULL) {
+			dst->array_capacity = 0;
+			dst->num_entries = 0;
+			continue;
+		}
+		memcpy(dst->array, src->array, n * sizeof(struct object *));
+	}
+
+	child->fd_hash = zmalloc(FD_HASH_SIZE * sizeof(struct fd_hash_entry));
+	if (child->fd_hash != NULL) {
+		memcpy(child->fd_hash, shm->fd_hash,
+		       FD_HASH_SIZE * sizeof(struct fd_hash_entry));
+		child->fd_hash_count = shm->fd_hash_count;
+	}
+
+	child->fd_live = zmalloc(FD_LIVE_MAX * sizeof(int));
+	if (child->fd_live != NULL) {
+		memcpy(child->fd_live, shm->fd_live, FD_LIVE_MAX * sizeof(int));
+		child->fd_live_count = shm->fd_live_count;
+	}
+}
+
+/*
  * Pick a random object from a pool.
  *
  * Lockless child read path (OBJ_GLOBAL):
@@ -1662,7 +1779,11 @@ bool validate_object_handle(enum objecttype type, enum obj_scope scope,
 
 bool objects_empty(enum objecttype type)
 {
-	return shm->global_objects[type].num_entries == 0;
+	struct objhead *head = get_objhead(OBJ_GLOBAL, type);
+
+	if (head == NULL)
+		return true;
+	return head->num_entries == 0;
 }
 
 /*

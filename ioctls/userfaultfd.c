@@ -17,7 +17,7 @@ static int userfaultfd_fd_test(int fd, const struct stat *st __attribute__((unus
 	struct object *obj;
 	unsigned int idx;
 
-	head = &shm->global_objects[OBJ_FD_USERFAULTFD];
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
 
 	for_each_obj(head, obj, idx) {
 		if (obj->userfaultobj.fd == fd)

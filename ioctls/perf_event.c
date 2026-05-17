@@ -29,8 +29,8 @@ static int perf_event_fd_test(int fd, const struct stat *st __attribute__((unuse
 	struct object *obj;
 	unsigned int idx;
 
-	head = &shm->global_objects[OBJ_FD_PERF];
-	if (head->array == NULL)
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PERF);
+	if (head == NULL || head->array == NULL)
 		return -1;
 
 	for_each_obj(head, obj, idx) {

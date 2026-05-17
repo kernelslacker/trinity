@@ -348,8 +348,8 @@ void init_child_mappings(void)
 	head->destroy = &map_destructor;
 	head->dump = &map_dump;
 
-	globalhead = &shm->global_objects[OBJ_MMAP_ANON];
-	if (globalhead->array == NULL)
+	globalhead = get_objhead(OBJ_GLOBAL, OBJ_MMAP_ANON);
+	if (globalhead == NULL || globalhead->array == NULL)
 		return;
 
 	/* Copy the initial mapping list to the child.

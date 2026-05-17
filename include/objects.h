@@ -502,6 +502,18 @@ void init_global_objects(void);
 struct childdata;
 void init_object_lists(enum obj_scope scope, struct childdata *child);
 
+/*
+ * Shallow-copy the parent's OBJ_GLOBAL pool into the owning child's
+ * private heap.  Called from init_child() after the OBJ_LOCAL pool is
+ * brought up and before the bring-up of any caller that resolves an
+ * OBJ_GLOBAL objhead.  Allocates child->global_objects[MAX_OBJECT_TYPES]
+ * and per-type slot arrays sized to the parent's current num_entries,
+ * plus child-private copies of shm->fd_hash[] and shm->fd_live[].
+ * Cross-process fd / mmap resources are inherited by fork; the
+ * snapshot only duplicates the bookkeeping pointers that name them.
+ */
+void clone_global_objects_to_child(struct childdata *child);
+
 struct object * get_random_object(enum objecttype type, enum obj_scope scope);
 
 /*

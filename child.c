@@ -640,6 +640,15 @@ static void init_child(struct childdata *child, int childno)
 
 	init_object_lists(OBJ_LOCAL, child);
 
+	/*
+	 * Take the fork-time snapshot of the parent's OBJ_GLOBAL pool into
+	 * this child's private heap before any caller below resolves an
+	 * OBJ_GLOBAL objhead (init_child_mappings walks OBJ_MMAP_ANON,
+	 * init_child_futexes walks OBJ_FUTEX).  Subsequent get_objhead()
+	 * calls in this child return the local copy.
+	 */
+	clone_global_objects_to_child(child);
+
 	init_child_mappings();
 	init_child_futexes();
 

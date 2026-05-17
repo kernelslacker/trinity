@@ -31,7 +31,7 @@ static int kvm_vm_fd_test(int fd, const struct stat *st __attribute__((unused)))
 	struct object *obj;
 	unsigned int idx;
 
-	head = &shm->global_objects[OBJ_FD_KVM_VM];
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_KVM_VM);
 
 	for_each_obj(head, obj, idx) {
 		if (obj->kvmvmobj.fd == fd)

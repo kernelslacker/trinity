@@ -21,7 +21,7 @@ static int seccomp_notif_fd_test(int fd, const struct stat *st __attribute__((un
 	struct object *obj;
 	unsigned int idx;
 
-	head = &shm->global_objects[OBJ_FD_SECCOMP_NOTIF];
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SECCOMP_NOTIF);
 
 	for_each_obj(head, obj, idx) {
 		if (obj->seccomp_notifobj.fd == fd)

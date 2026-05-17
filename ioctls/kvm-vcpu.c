@@ -54,7 +54,7 @@ static int kvm_vcpu_fd_test(int fd, const struct stat *st __attribute__((unused)
 	struct object *obj;
 	unsigned int idx;
 
-	head = &shm->global_objects[OBJ_FD_KVM_VCPU];
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_KVM_VCPU);
 
 	for_each_obj(head, obj, idx) {
 		if (obj->kvmvcpuobj.fd == fd)

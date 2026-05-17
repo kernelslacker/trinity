@@ -30,7 +30,7 @@ static int kvm_system_fd_test(int fd, const struct stat *st __attribute__((unuse
 	struct object *obj;
 	unsigned int idx;
 
-	head = &shm->global_objects[OBJ_FD_KVM_SYSTEM];
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_KVM_SYSTEM);
 
 	for_each_obj(head, obj, idx) {
 		if (obj->kvmsysobj.fd == fd)

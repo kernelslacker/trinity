@@ -18,43 +18,43 @@ static int vfs_fd_test(int fd, const struct stat *st __attribute__((unused)))
 	struct object *obj;
 	unsigned int idx;
 
-	head = &shm->global_objects[OBJ_FD_PIPE];
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PIPE);
 	for_each_obj(head, obj, idx) {
 		if (obj->pipeobj.fd == fd)
 			return 0;
 	}
 
-	head = &shm->global_objects[OBJ_FD_DEVFILE];
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_DEVFILE);
 	for_each_obj(head, obj, idx) {
 		if (obj->fileobj.fd == fd)
 			return 0;
 	}
 
-	head = &shm->global_objects[OBJ_FD_PROCFILE];
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PROCFILE);
 	for_each_obj(head, obj, idx) {
 		if (obj->fileobj.fd == fd)
 			return 0;
 	}
 
-	head = &shm->global_objects[OBJ_FD_SYSFILE];
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SYSFILE);
 	for_each_obj(head, obj, idx) {
 		if (obj->fileobj.fd == fd)
 			return 0;
 	}
 
-	head = &shm->global_objects[OBJ_FD_TESTFILE];
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TESTFILE);
 	for_each_obj(head, obj, idx) {
 		if (obj->testfileobj.fd == fd)
 			return 0;
 	}
 
-	head = &shm->global_objects[OBJ_FD_MEMFD];
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_MEMFD);
 	for_each_obj(head, obj, idx) {
 		if (obj->memfdobj.fd == fd)
 			return 0;
 	}
 
-	head = &shm->global_objects[OBJ_FD_TIMERFD];
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TIMERFD);
 	for_each_obj(head, obj, idx) {
 		if (obj->timerfdobj.fd == fd)
 			return 0;

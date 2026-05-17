@@ -158,8 +158,8 @@ void init_child_futexes(void)
 	head = get_objhead(OBJ_LOCAL, OBJ_FUTEX);
 	head->dump = dump_futex;
 
-	globalhead = &shm->global_objects[OBJ_FUTEX];
-	if (globalhead->array == NULL)
+	globalhead = get_objhead(OBJ_GLOBAL, OBJ_FUTEX);
+	if (globalhead == NULL || globalhead->array == NULL)
 		return;
 
 	for_each_obj(globalhead, globalobj, idx) {

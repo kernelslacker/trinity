@@ -475,6 +475,39 @@ struct childdata {
 	 */
 	struct objhead *objects;
 
+	/*
+	 * Per-child snapshot copy of the parent's pre-fork OBJ_GLOBAL
+	 * pool.  Populated by clone_global_objects_to_child() in init_child
+	 * right after the fork-time OBJ_LOCAL bring-up; sized
+	 * MAX_OBJECT_TYPES.  Each objhead's array[] holds shallow copies of
+	 * the parent's slot pointers — the obj structs themselves and any
+	 * kernel resources they describe (fds, mmap regions) are reached
+	 * via fork's table dup, so a snapshot of bookkeeping is the only
+	 * per-child state this lift adds.  Mutations from inside this
+	 * child stay local; sibling pools cannot reach each other through
+	 * cross-process scribble.  NULL between fork and the clone — the
+	 * resolver (get_objhead) falls back to shm->global_objects in that
+	 * window so any early lookup degrades gracefully instead of
+	 * dereferencing NULL.
+	 */
+	struct objhead *global_objects;
+
+	/*
+	 * Per-child snapshot of the parent's pre-fork fd->object hash and
+	 * its parallel compact live-fd list.  Captures every entry the
+	 * parent published via fd_hash_insert before fork; child lookups
+	 * resolve against this snapshot instead of the shm-resident table,
+	 * which lets the shm table die alongside the OBJ_GLOBAL pool.
+	 * Allocated by clone_global_objects_to_child(); NULL between fork
+	 * and the clone, in which case the per-process router falls back
+	 * to shm->fd_hash / shm->fd_live the same way the objhead resolver
+	 * does for early lookups.
+	 */
+	struct fd_hash_entry *fd_hash;
+	int *fd_live;
+	unsigned int fd_hash_count;
+	unsigned int fd_live_count;
+
 	/* Per-child shards of the corrupted-pointer attribution rings.
 	 * Sole writer is the owning child (the *_record functions in
 	 * utils.c); sole reader is the parent at periodic-dump time,
