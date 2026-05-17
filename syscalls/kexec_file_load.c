@@ -7,11 +7,15 @@
 #define KEXEC_FILE_UNLOAD       0x00000001
 #define KEXEC_FILE_ON_CRASH     0x00000002
 #define KEXEC_FILE_NO_INITRAMFS 0x00000004
+#define KEXEC_FILE_DEBUG        0x00000008
+#define KEXEC_FILE_NO_CMA       0x00000010
+#define KEXEC_FILE_FORCE_DTB    0x00000020
 
 #include "sanitise.h"
 
 static unsigned long kexec_file_load_flags[] = {
 	KEXEC_FILE_UNLOAD, KEXEC_FILE_ON_CRASH, KEXEC_FILE_NO_INITRAMFS,
+	KEXEC_FILE_DEBUG, KEXEC_FILE_NO_CMA, KEXEC_FILE_FORCE_DTB,
 };
 
 struct syscallentry syscall_kexec_file_load = {
