@@ -1564,6 +1564,8 @@ void main_loop(void)
 
 		kcov_plateau_check();
 
+		kcov_bitmap_maybe_snapshot();
+
 		print_stats();
 
 		/* This should never happen, but just to catch corner cases, like if

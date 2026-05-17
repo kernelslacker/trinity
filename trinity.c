@@ -19,6 +19,7 @@
 #include "healer.h"
 #include "healer_ring.h"
 #include "ioctls.h"
+#include "kcov.h"
 #include "kmsg-monitor.h"
 #include "maps.h"
 #include "minicorpus.h"
@@ -570,6 +571,24 @@ int main(int argc, char* argv[])
 	}
 
 	/*
+	 * kcov bucket_seen[] warm-start.  The 8 MB bitmap and edges_found
+	 * counter are the dominant carriers of cross-run coverage state;
+	 * without persistence, every restart re-discovers the full 50-200k
+	 * edge curve at fuzz speed.  Gated independently of --no-warm-start
+	 * via --no-kcov-warm-start so an operator can opt out of one without
+	 * losing the other.  Done pre-fork, before any child writes to
+	 * bucket_seen[], so the memcpy lands without racing the producers.
+	 */
+	if (!no_kcov_warm_start && kcov_shm != NULL) {
+		const char *kpath = kcov_bitmap_default_path();
+
+		if (kpath != NULL) {
+			(void)kcov_bitmap_load_file(kpath);
+			kcov_bitmap_enable_snapshots(kpath);
+		}
+	}
+
+	/*
 	 * HEALER relation-table warm-start.  Independent of the minicorpus
 	 * warm-start gate so an operator can opt out of one without losing
 	 * the other (--no-healer-warm-start covers the load, the load is
@@ -643,6 +662,27 @@ int main(int argc, char* argv[])
 			if (hpath != NULL && healer_save_file(hpath))
 				output(0, "healer: persisted relation table to %s\n",
 					hpath);
+		}
+	}
+
+	/*
+	 * End-of-run kcov bitmap persistence.  Same clean-exit gate as the
+	 * minicorpus and healer saves -- a poisoned shm after a corruption-
+	 * aborted run could feed garbage back into the next warm-start, so
+	 * we skip the save unless the shutdown was clean.  The periodic
+	 * snapshot trigger covers crashes; this captures the trailing
+	 * window of edges that the periodic cadence had not yet flushed.
+	 */
+	if (!no_kcov_warm_start && kcov_shm != NULL) {
+		enum exit_reasons er =
+			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+
+		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
+		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
+			const char *kpath = kcov_bitmap_default_path();
+
+			if (kpath != NULL && kcov_bitmap_save_file(kpath))
+				output(0, "kcov-bitmap: persisted to %s\n", kpath);
 		}
 	}
 

@@ -246,3 +246,37 @@ unsigned int kcov_syscall_cold_skip_pct(unsigned int nr);
  * PLATEAU CLEARED line when the rate recovers.  Detection only — does
  * not touch bandit, explorer, or syscall-pool state. */
 void kcov_plateau_check(void);
+
+/* Mid-run snapshot cadence for kcov_bitmap_maybe_snapshot().  The bitmap
+ * is 8 MB and writing it is bursty I/O, so the triggers are coarser than
+ * the minicorpus or healer snapshot intervals: 1000 new edges OR 300s
+ * since the last save, whichever fires first.  Hardcoded -- no operator
+ * knob, fleet boxes shouldn't need to retune. */
+#define KCOV_BITMAP_SNAPSHOT_EDGES		1000UL
+#define KCOV_BITMAP_SNAPSHOT_INTERVAL_SEC	300UL
+
+/* Warm-start persistence for the kcov_shm bucket_seen[] hit-count bitmap
+ * and the edges_found counter.  Save/load are gated on a kernel-binary
+ * fingerprint -- sha256 over /proc/kallsyms with the address column
+ * stripped -- so a rebuilt kernel (even with an unchanged utsname.release
+ * / utsname.version pair) gets a fresh bitmap instead of loading stale
+ * data against a different edge layout.  The address-stripping step
+ * makes the fingerprint identical whether kallsyms is read as root or
+ * non-root (kptr_restrict zeroes the addresses for the latter) and also
+ * invariant across KASLR vs nokaslr boots of the same build.  Stale or
+ * unreadable files are silently discarded and the loader returns false;
+ * cold-start is the legitimate first-run state. */
+bool kcov_bitmap_save_file(const char *path);
+bool kcov_bitmap_load_file(const char *path);
+const char *kcov_bitmap_default_path(void);
+
+/* Wire periodic mid-run snapshots of the bucket_seen bitmap to PATH.
+ * Subsequent kcov_bitmap_maybe_snapshot() calls become live; a no-op
+ * before this is called.  Path is copied. */
+void kcov_bitmap_enable_snapshots(const char *path);
+
+/* Cheap per-tick gate: writes the snapshot if either trigger has elapsed
+ * since the last successful save, otherwise returns immediately.  Called
+ * from the parent's stats tick and from kcov_plateau_check() when a
+ * plateau is first entered. */
+void kcov_bitmap_maybe_snapshot(void);
