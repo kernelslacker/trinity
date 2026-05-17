@@ -5,8 +5,16 @@
 #include "sanitise.h"
 #include "compat.h"
 
+#ifndef SWAP_FLAG_DISCARD_ONCE
+#define SWAP_FLAG_DISCARD_ONCE  0x20000
+#endif
+#ifndef SWAP_FLAG_DISCARD_PAGES
+#define SWAP_FLAG_DISCARD_PAGES 0x40000
+#endif
+
 static unsigned long swapon_flags[] = {
 	SWAP_FLAG_PREFER, SWAP_FLAG_DISCARD,
+	SWAP_FLAG_DISCARD_ONCE, SWAP_FLAG_DISCARD_PAGES,
 };
 
 struct syscallentry syscall_swapon = {
