@@ -2,5 +2,12 @@
 
 for i in $(pgrep -x trinity);
 do
+  kill $i
+done
+
+sleep 2
+
+for i in $(pgrep -x trinity);
+do
   kill -9 $i
 done
