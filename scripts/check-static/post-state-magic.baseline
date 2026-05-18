@@ -29,7 +29,6 @@ syscalls/file_getattr.c:file_getattr
 syscalls/fstatfs.c:fstatfs
 syscalls/fstatfs.c:fstatfs64
 syscalls/get_mempolicy.c:get_mempolicy
-syscalls/getresgid.c:getresgid
 syscalls/getresuid.c:getresuid
 syscalls/get_robust_list.c:get_robust_list
 syscalls/getxattr.c:getxattr

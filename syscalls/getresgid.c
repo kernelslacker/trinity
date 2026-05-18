@@ -21,7 +21,9 @@
  * handler running cannot redirect the source reads at foreign rgid /
  * egid / sgid user buffers.
  */
+#define GETRESGID_POST_STATE_MAGIC	0x47524749UL	/* "GRGI" */
 struct getresgid_post_state {
+	unsigned long magic;
 	unsigned long rgid;
 	unsigned long egid;
 	unsigned long sgid;
@@ -61,6 +63,7 @@ static void sanitise_getresgid(struct syscallrecord *rec)
 	 * it has no .post handler and would leak the snapshot.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = GETRESGID_POST_STATE_MAGIC;
 	snap->rgid = rec->a1;
 	snap->egid = rec->a2;
 	snap->sgid = rec->a3;
@@ -107,6 +110,23 @@ static void post_getresgid(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_getresgid: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * getresgid_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon rather than feed wild bytes into
+	 * the rgid / egid / sgid inner derefs.
+	 */
+	if (snap->magic != GETRESGID_POST_STATE_MAGIC) {
+		outputerr("post_getresgid: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
