@@ -503,20 +503,22 @@ bool plateau_rescue_bias_active_for(enum random_rescue_class c);
 bool plateau_anti_prior_active(void);
 
 /*
- * Anti-prior accept gate.  Compares this syscall's lifetime call count
- * (kcov_shm->per_syscall_calls[nr]) against the cached per-intervention
- * baseline mean and returns true iff the candidate clears a rejection
- * roll whose acceptance probability scales as
+ * Anti-prior accept gate.  Returns true iff the candidate clears a
+ * rejection roll whose acceptance probability scales as
  * (baseline / clamp(calls, baseline/MAX_BOOST, MAX_BOOST*baseline)) /
  * MAX_BOOST -- low-count syscalls saturate at full uniform acceptance,
  * the median syscall accepts at 1/MAX_BOOST rate, and over-picked
- * syscalls bottom out at 1/MAX_BOOST^2.
+ * syscalls bottom out at 1/MAX_BOOST^2.  The clamp / divide / cap
+ * math is pre-computed per syscall by plateau_anti_prior_refresh_
+ * baseline at every PIM_ANTI_PRIOR rotation; the hot path here reduces
+ * to one relaxed load plus a single (rand() % SCALE) < weight roll.
  *
- * Returns true (pass) when baseline is zero or kcov_shm is unavailable,
- * so the gate degenerates gracefully to uniform pick before any window
- * has refreshed the baseline cache.  Safe to call without first
- * checking plateau_anti_prior_active(); the caller in
- * set_syscall_nr_random goes through that gate to skip the per-call
+ * Returns true (pass) when baseline is zero, so the gate degenerates
+ * gracefully to uniform pick before any window has refreshed the
+ * cache (kcov_shm-unavailable falls under the same short-circuit
+ * because refresh_baseline forces baseline=0 on that path).  Safe to
+ * call without first checking plateau_anti_prior_active(); the caller
+ * in set_syscall_nr_random goes through that gate to skip the per-call
  * load entirely outside an intervention.
  */
 bool plateau_anti_prior_accept(unsigned int nr);
@@ -524,11 +526,16 @@ bool plateau_anti_prior_accept(unsigned int nr);
 /*
  * Recompute and publish the anti-prior baseline -- the mean of
  * kcov_shm->per_syscall_calls across the full MAX_NR_SYSCALL slot
- * range.  Called by the orchestrator at every rotation that selects
- * PIM_ANTI_PRIOR so the bias targets the picker's CURRENT distribution
- * rather than a snapshot frozen at the start of the run.  Cheap: one
- * O(MAX_NR_SYSCALL) walk on the rotation path, never on the hot pick
- * path.
+ * range -- and the matching per-syscall acceptance weight table
+ * plateau_anti_prior_accept consumes.  Called by the orchestrator at
+ * every rotation that selects PIM_ANTI_PRIOR so the bias targets the
+ * picker's CURRENT distribution rather than a snapshot frozen at the
+ * start of the run.  Cheap: two O(MAX_NR_SYSCALL) walks on the
+ * rotation path (one for the baseline sum, one for the per-syscall
+ * weight), never on the hot pick path.  Visibility of the weight
+ * table is published by the RELEASE-store of current_strategy that
+ * maybe_rotate_strategy emits after select_next_strategy returns;
+ * see the weight-array comment in struct shm_s.
  */
 void plateau_anti_prior_refresh_baseline(void);
 

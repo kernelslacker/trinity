@@ -1152,65 +1152,36 @@ bool plateau_anti_prior_active(void)
 
 bool plateau_anti_prior_accept(unsigned int nr)
 {
-	unsigned long calls, baseline, floor_calls, ceil_calls;
-	unsigned long clamped, weight;
+	unsigned long baseline;
+	uint8_t weight;
 
-	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
+	if (nr >= MAX_NR_SYSCALL)
 		return true;
 
 	baseline = __atomic_load_n(&shm->plateau_anti_prior_baseline_calls,
 				   __ATOMIC_RELAXED);
 	/* No baseline yet -- the orchestrator has not selected an
 	 * anti-prior rotation in this run.  Pass unconditionally so the
-	 * picker degenerates to uniform until the cache is populated. */
+	 * picker degenerates to uniform until the cache is populated.
+	 * Also covers the kcov_shm==NULL case: refresh_baseline writes
+	 * baseline=0 on that path, so the gate short-circuits without
+	 * needing a separate kcov_shm probe here. */
 	if (baseline == 0)
 		return true;
 
-	calls = __atomic_load_n(&kcov_shm->per_syscall_calls[nr],
-				__ATOMIC_RELAXED);
+	/* Read the pre-computed acceptance weight.  Visibility of the
+	 * weight table is guaranteed by the caller's prior ACQUIRE-load of
+	 * current_strategy (via plateau_anti_prior_active), which pairs
+	 * with the RELEASE-store in maybe_rotate_strategy that publishes
+	 * every store refresh_baseline made on the rotation path.  See the
+	 * weight-array comment in struct shm_s for the publish ordering
+	 * contract.  The full inversion math (clamp / divide / cap) lives
+	 * in plateau_anti_prior_refresh_baseline so the per-retry inner
+	 * loop in set_syscall_nr_random reduces to one relaxed load, one
+	 * modulo, and one compare. */
+	weight = __atomic_load_n(&shm->plateau_anti_prior_accept_weight[nr],
+				 __ATOMIC_RELAXED);
 
-	/* Clamp the per-syscall call count into [baseline/MAX_BOOST,
-	 * MAX_BOOST*baseline] before the divide so the inversion saturates
-	 * at the cap on both ends.  Without the floor clamp a syscall stuck
-	 * at calls=0 (broken arm or a syscall the picker has never reached)
-	 * would dominate the intervention; without the ceiling clamp the
-	 * acceptance weight for an arm the picker has been hammering would
-	 * underflow toward zero and the rejection roll would never land on
-	 * it even when no other candidate is eligible.  The clamp range is
-	 * symmetric around baseline so the median syscall lands exactly on
-	 * baseline post-clamp and the weight formula below resolves to
-	 * ANTI_PRIOR_MAX_BOOST for it. */
-	floor_calls = baseline / ANTI_PRIOR_MAX_BOOST;
-	if (floor_calls == 0)
-		floor_calls = 1;
-	ceil_calls = baseline * ANTI_PRIOR_MAX_BOOST;
-	clamped = calls;
-	if (clamped < floor_calls)
-		clamped = floor_calls;
-	else if (clamped > ceil_calls)
-		clamped = ceil_calls;
-
-	/* weight = (MAX_BOOST * baseline) / clamped
-	 *   - clamped = floor (= baseline/MAX_BOOST): weight = MAX_BOOST^2
-	 *     -- maximum boost, the cold-end saturation point.
-	 *   - clamped = baseline (median): weight = MAX_BOOST -- the
-	 *     "neutral" anti-prior rate.
-	 *   - clamped = ceil (= MAX_BOOST*baseline): weight = 1 -- the
-	 *     minimum acceptance, the over-picked saturation point.
-	 * The numerator is clamped at THRESHOLD_SCALE as a numeric guard
-	 * for the corner case where (MAX_BOOST * baseline) overflows the
-	 * unsigned long product on extreme baselines; the value would
-	 * already be at the cap regardless. */
-	weight = (ANTI_PRIOR_MAX_BOOST * baseline) / clamped;
-	if (weight > ANTI_PRIOR_THRESHOLD_SCALE)
-		weight = ANTI_PRIOR_THRESHOLD_SCALE;
-
-	/* Acceptance probability = weight / THRESHOLD_SCALE.  Median
-	 * syscall accepts at 1/MAX_BOOST (12.5% with MAX_BOOST=8); that
-	 * sounds aggressive but the picker's outer retry budget (10000
-	 * iterations) absorbs it without budget exhaustion under any
-	 * realistic active-syscall count, and the intervention is by
-	 * construction a temporary modifier on a single rotation window. */
 	return (unsigned long)rand() % ANTI_PRIOR_THRESHOLD_SCALE < weight;
 }
 
@@ -1219,6 +1190,7 @@ void plateau_anti_prior_refresh_baseline(void)
 	unsigned long sum = 0;
 	unsigned int i;
 	unsigned long baseline;
+	unsigned long floor_calls, ceil_calls;
 
 	if (kcov_shm == NULL) {
 		__atomic_store_n(&shm->plateau_anti_prior_baseline_calls, 0UL,
@@ -1246,6 +1218,63 @@ void plateau_anti_prior_refresh_baseline(void)
 	 * rotation silently degenerate to uniform pick. */
 	if (baseline == 0 && sum > 0)
 		baseline = 1;
+
+	/* Pre-compute the per-syscall acceptance weights so the hot-path
+	 * picker only does one load + modulo + compare per candidate.  The
+	 * formula mirrors what plateau_anti_prior_accept used to do per
+	 * call, exactly:
+	 *
+	 *   floor   = max(1, baseline / MAX_BOOST)
+	 *   ceil    = baseline * MAX_BOOST
+	 *   clamped = clamp(calls, floor, ceil)
+	 *   weight  = min((MAX_BOOST * baseline) / clamped,
+	 *                 ANTI_PRIOR_THRESHOLD_SCALE)
+	 *
+	 * For the same baseline and the same per-syscall calls reading,
+	 * the resulting weight is bit-identical to what the per-call path
+	 * computed.  The only behavioural delta is that calls[nr] is
+	 * snapshotted here at rotation time rather than re-read on every
+	 * candidate; an intervention window is short relative to the rate
+	 * any single syscall's lifetime count can shift, and the
+	 * statistical bias the gate imposes is keyed off the baseline-
+	 * relative ratio, not the absolute call count.
+	 *
+	 * weight is bounded by ANTI_PRIOR_THRESHOLD_SCALE (= 64 today, =
+	 * MAX_BOOST^2) and never zero, so the uint8_t slot is sufficient.
+	 *
+	 * The whole array is written under RELAXED ordering; visibility
+	 * rides on the RELEASE-store of current_strategy that
+	 * maybe_rotate_strategy emits after select_next_strategy returns,
+	 * paired with the picker-side ACQUIRE-load inside
+	 * plateau_anti_prior_active.  Mirrors the existing publish pattern
+	 * for plateau_intervention_mode_current. */
+	if (baseline > 0) {
+		floor_calls = baseline / ANTI_PRIOR_MAX_BOOST;
+		if (floor_calls == 0)
+			floor_calls = 1;
+		ceil_calls = baseline * ANTI_PRIOR_MAX_BOOST;
+
+		for (i = 0; i < MAX_NR_SYSCALL; i++) {
+			unsigned long calls, clamped, weight;
+
+			calls = __atomic_load_n(
+				&kcov_shm->per_syscall_calls[i],
+				__ATOMIC_RELAXED);
+			clamped = calls;
+			if (clamped < floor_calls)
+				clamped = floor_calls;
+			else if (clamped > ceil_calls)
+				clamped = ceil_calls;
+
+			weight = (ANTI_PRIOR_MAX_BOOST * baseline) / clamped;
+			if (weight > ANTI_PRIOR_THRESHOLD_SCALE)
+				weight = ANTI_PRIOR_THRESHOLD_SCALE;
+
+			__atomic_store_n(
+				&shm->plateau_anti_prior_accept_weight[i],
+				(uint8_t)weight, __ATOMIC_RELAXED);
+		}
+	}
 
 	__atomic_store_n(&shm->plateau_anti_prior_baseline_calls, baseline,
 			 __ATOMIC_RELAXED);

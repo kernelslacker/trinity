@@ -537,6 +537,27 @@ struct shm_s {
 	 *   short-circuits to "pass" in that state so cold-start picks
 	 *   degenerate to uniform.
 	 *
+	 * plateau_anti_prior_accept_weight[MAX_NR_SYSCALL]: per-syscall
+	 *   pre-computed acceptance numerator in [1, ANTI_PRIOR_THRESHOLD_
+	 *   SCALE] (= 64 today), populated alongside the baseline at every
+	 *   PIM_ANTI_PRIOR rotation.  The picker's rejection roll reduces
+	 *   to (rand() % SCALE) < weight[nr], which lets the per-retry
+	 *   inner loop in set_syscall_nr_random skip the clamp / divide /
+	 *   cap math the accept gate used to redo on every candidate.
+	 *   uint8_t suffices because SCALE = ANTI_PRIOR_MAX_BOOST^2 = 64
+	 *   today and no per-syscall weight can exceed SCALE by
+	 *   construction.  Visibility hand-off rides on the same RELEASE
+	 *   store of current_strategy that publishes
+	 *   plateau_intervention_mode_current — the refresh runs from
+	 *   inside select_next_strategy, sequenced before
+	 *   maybe_rotate_strategy's release-store, so any picker that
+	 *   ACQUIRE-loads PIM_ANTI_PRIOR also sees the matching weight
+	 *   table.  Stale weights from a previous PIM_ANTI_PRIOR window
+	 *   are harmless: the baseline=0 short-circuit only covers the
+	 *   never-refreshed state, and subsequent rotations always
+	 *   overwrite both the baseline and the array before the next
+	 *   release-store.
+	 *
 	 * plateau_intervention_rotation_counter: monotonic per-intervention
 	 *   counter.  Bumped via fetch_add on every plateau-window rotation;
 	 *   the selected mode is the (post-increment) modulo against
@@ -555,6 +576,7 @@ struct shm_s {
 	 */
 	int plateau_intervention_mode_current;
 	unsigned long plateau_anti_prior_baseline_calls;
+	uint8_t plateau_anti_prior_accept_weight[MAX_NR_SYSCALL];
 	unsigned long plateau_intervention_rotation_counter;
 	unsigned long plateau_intervention_mode_windows[NR_PIM_MODES];
 
