@@ -21,7 +21,6 @@
 #
 # Lines starting with `#` and blank lines are ignored.
 syscalls/bpf.c:bpf
-syscalls/capget.c:capget
 syscalls/capset.c:capset
 syscalls/execve.c:execve
 syscalls/fgetxattr.c:fgetxattr
