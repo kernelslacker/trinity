@@ -979,10 +979,17 @@ void dump_strategy_stats(void)
 	 * no explorers reserved (explorer_children == 0) -- the bandit-pool
 	 * counter still ran but there is nothing to compare it against.
 	 *
-	 * Beyond the raw per-pool edge counts, this block derives:
+	 * Framed as a head-to-head competition: both pools feed the same
+	 * global KCOV edge bitmap and CMP bloom, so each first-discovery
+	 * edge is credited to whichever pool reached it first.  The lead
+	 * line shows the direct edge-share split so the operator can see
+	 * at a glance whether the always-on STRATEGY_RANDOM baseline is
+	 * stealing a disproportionate share of easy coverage from the
+	 * learned strategy.  Beyond the head-to-head line this block
+	 * derives:
 	 *   - per-child rate for each pool (edges / pool size), so the
 	 *     larger pool isn't credited just for having more workers
-	 *   - explorer share of total edges (vs fleet share)
+	 *   - explorer fleet share for context against the edge share
 	 *   - one-line verdict (over-performing / at parity / under-)
 	 *     against the 2x-fleet-share threshold from the design doc.
 	 *     Hitting >=2x sustained across multiple runs is the trigger
@@ -991,7 +998,6 @@ void dump_strategy_stats(void)
 		unsigned int bandit_children;
 		unsigned long total_edges;
 		unsigned long per_explorer, per_bandit;
-		unsigned long share_pct_x10;
 		unsigned long ratio_x100;
 		const char *verdict;
 
@@ -1005,27 +1011,52 @@ void dump_strategy_stats(void)
 			max_children - explorer_children : 0;
 		total_edges = explorer_edges + bandit_edges;
 
-		output(0, "  explorer pool: %u children, %lu edges\n",
-		       explorer_children, explorer_edges);
-		output(0, "  bandit pool:   %u children, %lu edges\n",
-		       bandit_children, bandit_edges);
-
 		/* Per-child rate: rounded down to nearest whole edge.  A run
 		 * too short for meaningful per-child rates renders as zero
 		 * and that's an informative diagnostic. */
 		per_explorer = explorer_edges / explorer_children;
 		per_bandit = bandit_children > 0 ?
 			bandit_edges / bandit_children : 0;
-		output(0, "  per-explorer-child: %lu edges, per-bandit-child: %lu edges\n",
-		       per_explorer, per_bandit);
 
-		/* Edge-share comparison and verdict.  Suppressed on a
-		 * zero-edge run -- nothing meaningful to compare. */
+		/* Head-to-head competing-pools line.  The two pools both
+		 * feed the same global KCOV edge bitmap and CMP bloom -- a
+		 * first-discovery edge is credited to whichever pool reached
+		 * it first, so the per-pool counters represent direct
+		 * competition for the same coverage surface, not two
+		 * independent measurements.  Render them on one line with
+		 * the edge-share split as a percentage so the operator can
+		 * see the head-to-head outcome at a glance, then break the
+		 * components out beneath for the per-child rate. */
+		if (total_edges > 0) {
+			unsigned long e_share_pct_x10 =
+				(explorer_edges * 1000UL) / total_edges;
+			unsigned long b_share_pct_x10 = 1000UL - e_share_pct_x10;
+
+			output(0, "  edge race: explorer %lu (%lu.%lu%%) vs bandit %lu (%lu.%lu%%) of %lu first-discovery edges\n",
+			       explorer_edges,
+			       e_share_pct_x10 / 10, e_share_pct_x10 % 10,
+			       bandit_edges,
+			       b_share_pct_x10 / 10, b_share_pct_x10 % 10,
+			       total_edges);
+		} else {
+			output(0, "  edge race: explorer %lu vs bandit %lu (no edges yet)\n",
+			       explorer_edges, bandit_edges);
+		}
+		output(0, "    explorer: %u children, %lu edges (%lu per child)\n",
+		       explorer_children, explorer_edges, per_explorer);
+		output(0, "    bandit:   %u children, %lu edges (%lu per child)\n",
+		       bandit_children, bandit_edges, per_bandit);
+
+		/* Edge-share verdict against the fleet-share-normalised
+		 * ratio.  Suppressed on a zero-edge run or when there are
+		 * no bandit children -- nothing meaningful to compare. */
 		if (total_edges > 0 && bandit_children > 0) {
-			share_pct_x10 = (explorer_edges * 1000UL) / total_edges;
-			output(0, "  explorer share: %lu.%lu%% of edges (fleet share %u/%u children)\n",
-			       share_pct_x10 / 10, share_pct_x10 % 10,
-			       explorer_children, max_children);
+			unsigned int fleet_pct_x10 =
+				explorer_children * 1000U / max_children;
+
+			output(0, "    fleet share: explorer %u/%u children (%u.%u%%)\n",
+			       explorer_children, max_children,
+			       fleet_pct_x10 / 10U, fleet_pct_x10 % 10U);
 
 			/* ratio = (explorer_edges / total_edges) /
 			 *        (explorer_children / max_children)
@@ -1039,10 +1070,10 @@ void dump_strategy_stats(void)
 			if (ratio_x100 >= 200)
 				verdict = "explorer pool over-performing (>=2x fleet share -- per-child bandit trigger met)";
 			else if (ratio_x100 <= 50)
-				verdict = "explorer pool under-performing";
+				verdict = "explorer pool under-performing (bandit is winning the easy edges)";
 			else
 				verdict = "explorer pool at parity";
-			output(0, "  verdict: %s (ratio %lu.%02lux)\n",
+			output(0, "    verdict: %s (edge-share/fleet-share ratio %lu.%02lux)\n",
 			       verdict,
 			       ratio_x100 / 100, ratio_x100 % 100);
 		}
