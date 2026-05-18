@@ -20,7 +20,9 @@
  * handler running cannot retarget the pid self-filter or redirect the
  * source memcpy at a foreign user buffer.
  */
+#define SCHED_GETPARAM_POST_STATE_MAGIC	0x53475052UL	/* "SGPR" */
 struct sched_getparam_post_state {
+	unsigned long magic;
 	unsigned long pid;
 	unsigned long param;
 };
@@ -48,6 +50,7 @@ static void sanitise_sched_getparam(struct syscallrecord *rec)
 	 * post_state is private to the post handler.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = SCHED_GETPARAM_POST_STATE_MAGIC;
 	snap->pid   = rec->a1;
 	snap->param = rec->a2;
 	rec->post_state = (unsigned long) snap;
@@ -100,6 +103,23 @@ static void post_sched_getparam(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_sched_getparam: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * sched_getparam_post_state.  A cookie mismatch means snap does
+	 * not point at our struct -- abandon rather than feed wild bytes
+	 * into the pid self-filter and inner param deref.
+	 */
+	if (snap->magic != SCHED_GETPARAM_POST_STATE_MAGIC) {
+		outputerr("post_sched_getparam: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
