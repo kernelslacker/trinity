@@ -918,6 +918,7 @@ bool minicorpus_load_file(const char *path,
 	uint32_t cur_major, cur_minor;
 	unsigned int nloaded = 0;
 	unsigned int ndiscarded = 0;
+	ssize_t hn;
 	int fd;
 
 	if (loaded)
@@ -929,10 +930,20 @@ bool minicorpus_load_file(const char *path,
 		return false;
 
 	fd = open(path, O_RDONLY);
-	if (fd < 0)
+	if (fd < 0) {
+		if (errno == ENOENT)
+			output(0, "minicorpus: no persisted state at %s -- cold start\n",
+			       path);
+		else
+			output(0, "minicorpus: open(%s) failed: %s -- cold start\n",
+			       path, strerror(errno));
 		return false;
+	}
 
-	if (read_all(fd, &hdr, sizeof(hdr)) != (ssize_t)sizeof(hdr)) {
+	hn = read_all(fd, &hdr, sizeof(hdr));
+	if (hn != (ssize_t)sizeof(hdr)) {
+		output(0, "minicorpus: header truncated at %s (got %zd, want %zu) -- cold start\n",
+		       path, hn, sizeof(hdr));
 		close(fd);
 		return false;
 	}
