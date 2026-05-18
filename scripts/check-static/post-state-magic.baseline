@@ -33,7 +33,6 @@ syscalls/fstatfs.c:fstatfs
 syscalls/fstatfs.c:fstatfs64
 syscalls/getcpu.c:getcpu
 syscalls/getcwd.c:getcwd
-syscalls/getitimer.c:getitimer
 syscalls/get_mempolicy.c:get_mempolicy
 syscalls/getresgid.c:getresgid
 syscalls/getresuid.c:getresuid
