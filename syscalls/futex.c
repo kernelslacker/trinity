@@ -156,6 +156,8 @@ void init_child_futexes(void)
 	unsigned int idx;
 
 	head = get_objhead(OBJ_LOCAL, OBJ_FUTEX);
+	if (head == NULL)
+		return;
 	head->dump = dump_futex;
 
 	globalhead = get_objhead(OBJ_GLOBAL, OBJ_FUTEX);
