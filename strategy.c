@@ -473,29 +473,43 @@ unsigned long frontier_recent_count(unsigned int nr)
 
 void frontier_window_advance(void)
 {
-	uint32_t next;
+	uint32_t cur, next;
 	unsigned int nr;
 	unsigned long max_weight = 0;
+	bool underflow_seen = false;
 
-	/* Bump the slot index FIRST so producers racing the rotation start
-	 * targeting the new slot before we clear it.  We then zero the new
-	 * slot to drop the K-windows-old contents.  A producer that bumps
-	 * the slot between the store and the clear loses its add (rare,
-	 * benign for a noisy weight signal); a producer bumping after the
-	 * clear lands on the freshly zeroed slot as intended. */
-	next = __atomic_add_fetch(&shm->frontier_slot, 1U, __ATOMIC_RELAXED);
-	next &= (FRONTIER_DECAY_WINDOWS - 1);
+	/* Clear-then-publish, the opposite of the previous order.  The old
+	 * code bumped frontier_slot first and then aged out the slot it had
+	 * just published, which opened a window in which a producer could
+	 * (a) add into the new slot before we cleared it, (b) have that
+	 * write exchanged back to zero, and (c) issue its cached-sum
+	 * increment AFTER our subtract.  In the worst case the rotator's
+	 * fetch_sub ran with an old_slot value that was larger than the
+	 * cached running sum -- because part of the producer's contribution
+	 * was already in the slot but not yet in the cached counter -- so
+	 * the subtract wrapped negative and the cached count flipped to a
+	 * near-UINT32_MAX weight.  That bogus weight is consumed by
+	 * random-syscall.c's frontier roulette wheel; an arm-wide blow-up
+	 * either collapses the wheel onto one syscall or pushes the
+	 * rejection sampler into an effectively-uniform reject loop.
+	 *
+	 * We now compute the next slot index without publishing it, age out
+	 * the slot's contents from every per-nr running sum while no
+	 * producer is targeting that slot (frontier_slot still points to
+	 * the previous slot), and only then bump frontier_slot.  A producer
+	 * racing the rotation keeps adding into the previous slot for a
+	 * handful of instructions -- a bounded window-boundary attribution
+	 * error -- instead of having its addition silently dropped or
+	 * inverting the cached sum.
+	 *
+	 * The saturating subtract is kept as a hard guard: even with the
+	 * reorder, a CAS-clamped update means a producer that races our
+	 * read-modify-write on cached can't drive it negative.  Hitting the
+	 * clamp bumps frontier_underflow_prevented -- the metric is
+	 * expected to read zero in steady state. */
+	cur = __atomic_load_n(&shm->frontier_slot, __ATOMIC_RELAXED);
+	next = (cur + 1U) & (FRONTIER_DECAY_WINDOWS - 1);
 
-	/* Single fused pass: drop the K-windows-old slot and recompute the
-	 * authoritative cached max over the just-rotated ring at the same
-	 * time.  Per-syscall the work is one exchange (zero the slot, hand
-	 * back its contribution), one fetch_sub (remove that contribution
-	 * from the per-nr running sum), and a max compare -- two atomics
-	 * total instead of one store plus an FRONTIER_DECAY_WINDOWS-deep
-	 * ring walk per syscall.  Reads here are RELAXED; a producer's add
-	 * that interleaves with the exchange/sub on the same nr can leave
-	 * the cached running sum one bump above the live ring sum, bounded
-	 * by one window and folded back in by the next rotation. */
 	for (nr = 0; nr < MAX_NR_SYSCALL; nr++) {
 		uint32_t old_slot;
 		uint32_t old_cached;
@@ -503,17 +517,45 @@ void frontier_window_advance(void)
 
 		old_slot = __atomic_exchange_n(&shm->frontier_history[nr][next],
 					       0U, __ATOMIC_RELAXED);
-		old_cached = __atomic_fetch_sub(
+
+		/* CAS loop so a concurrent producer's fetch_add against the
+		 * cached counter cannot be lost and cannot underflow the
+		 * sum.  Producers should not be racing this nr at this
+		 * point (frontier_slot still names the previous slot) but
+		 * the loop costs at most a handful of retries and removes
+		 * the underflow case unconditionally. */
+		old_cached = __atomic_load_n(
 			&shm->frontier_recent_count_cached[nr],
-			old_slot, __ATOMIC_RELAXED);
-		new_sum = old_cached - old_slot;
+			__ATOMIC_RELAXED);
+		for (;;) {
+			if (old_cached >= old_slot)
+				new_sum = old_cached - old_slot;
+			else
+				new_sum = 0;
+			if (__atomic_compare_exchange_n(
+				    &shm->frontier_recent_count_cached[nr],
+				    &old_cached, new_sum, false,
+				    __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+				break;
+		}
+		if (old_cached < old_slot)
+			underflow_seen = true;
 		if (new_sum > max_weight)
 			max_weight = new_sum;
 	}
+
+	/* Publish the new slot only after every per-nr clear has landed.
+	 * From this point producers see the freshly-zeroed slot. */
+	__atomic_store_n(&shm->frontier_slot, cur + 1U, __ATOMIC_RELAXED);
+
 	if (max_weight > UINT_MAX)
 		max_weight = UINT_MAX;
 	__atomic_store_n(&shm->frontier_max_weight_cached,
 			 (unsigned int)max_weight, __ATOMIC_RELAXED);
+
+	if (underflow_seen)
+		__atomic_add_fetch(&shm->stats.frontier_underflow_prevented,
+				   1UL, __ATOMIC_RELAXED);
 }
 
 /*

@@ -1503,6 +1503,17 @@ struct stats_s {
 	 * the average accepted picks per window the arm ran. */
 	unsigned long frontier_strategy_picks;
 
+	/* Number of times the ring rotation's per-nr subtract against
+	 * frontier_recent_count_cached would have produced a negative value
+	 * (i.e. the value being aged out was larger than the cached running
+	 * sum) and was clamped to zero instead.  Should normally be zero;
+	 * non-zero indicates either a producer/rotator interleaving we did
+	 * not anticipate or accounting drift large enough to invert the
+	 * sum.  Bumped from frontier_window_advance(); read alongside
+	 * frontier_strategy_picks to gauge whether the picker is being fed
+	 * a sane weight signal. */
+	unsigned long frontier_underflow_prevented;
+
 	/* Number of syscall picks the explorer pool forced to STRATEGY_RANDOM
 	 * regardless of the bandit's current arm.  Bumped from set_syscall_nr
 	 * when child->is_explorer is true.  Rate-of-change should track

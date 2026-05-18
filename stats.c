@@ -1891,6 +1891,11 @@ static const struct {
 	 * the fleet's syscall throughput when the bandit picker selects it. */
 	{ "frontier_strategy_picks",
 	  offsetof(struct stats_s, frontier_strategy_picks) },
+	/* Saturating-subtract clamps fired during frontier ring rotation --
+	 * see comment on struct field.  Non-zero is a correctness flag, not
+	 * tuning data. */
+	{ "frontier_underflow_prevented",
+	  offsetof(struct stats_s, frontier_underflow_prevented) },
 	/* STRATEGY_HEALER picker counters: cold-start (no predecessor, biarch
 	 * skip), pair-path success, triple-path success (subset that also
 	 * mixed in the triple table), and zero-weight fallback.  Surface the
@@ -3275,6 +3280,9 @@ void dump_stats(void)
 	if (shm->stats.frontier_strategy_picks)
 		stat_row("strategy", "frontier_strategy_picks",
 			 shm->stats.frontier_strategy_picks);
+	if (shm->stats.frontier_underflow_prevented)
+		stat_row("strategy", "frontier_underflow_prevented",
+			 shm->stats.frontier_underflow_prevented);
 	if (shm->stats.healer_picker_cold_start)
 		stat_row("strategy", "healer_picker_cold_start",
 			 shm->stats.healer_picker_cold_start);
