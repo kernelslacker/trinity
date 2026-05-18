@@ -1,0 +1,95 @@
+# post-state-magic.baseline
+#
+# Grandfathered list of `struct *_post_state` definitions that predate
+# the magic-cookie convention.  Each line is `path/to/file.c:tag`
+# where `tag` is the prefix of `struct <tag>_post_state`.
+#
+# The convention (see syscalls/pipe.c, recv.c, send.c, write.c) is:
+#   1. struct foo_post_state { unsigned long magic; ... }
+#   2. #define FOO_POST_STATE_MAGIC 0x<8 bytes of ascii>
+#   3. assign and verify the magic in setup / post-mortem
+#
+# That convention exists because tonight's ppoll bad-free was a vuln
+# in a post_state struct that lacked a cookie: a stale or corrupt
+# post_state pointer could not be recognised as such.
+#
+# This baseline file should SHRINK over time, never grow.  When a
+# struct is hardened (magic field + MAGIC constant), remove its line
+# from this file.  A new post_state struct added without a magic
+# cookie will FAIL `make check-static` rather than be silently added
+# to this list.
+#
+# Lines starting with `#` and blank lines are ignored.
+syscalls/alarm.c:alarm
+syscalls/bpf.c:bpf
+syscalls/capget.c:capget
+syscalls/capset.c:capset
+syscalls/clock_getres.c:clock_getres
+syscalls/clock_gettime.c:clock_gettime
+syscalls/execve.c:execve
+syscalls/fgetxattr.c:fgetxattr
+syscalls/file_getattr.c:file_getattr
+syscalls/fstatfs.c:fstatfs
+syscalls/fstatfs.c:fstatfs64
+syscalls/getcpu.c:getcpu
+syscalls/getcwd.c:getcwd
+syscalls/getitimer.c:getitimer
+syscalls/get_mempolicy.c:get_mempolicy
+syscalls/getpeername.c:getpeername
+syscalls/getresgid.c:getresgid
+syscalls/getresuid.c:getresuid
+syscalls/getrlimit.c:getrlimit
+syscalls/get_robust_list.c:get_robust_list
+syscalls/getrusage.c:getrusage
+syscalls/getsockname.c:getsockname
+syscalls/gettimeofday.c:gettimeofday
+syscalls/getxattr.c:getxattr
+syscalls/io_uring_register.c:io_uring_register
+syscalls/lgetxattr.c:lgetxattr
+syscalls/listmount.c:listmount
+syscalls/listns.c:listns
+syscalls/listxattrat.c:listxattrat
+syscalls/listxattr.c:listxattr
+syscalls/lookup_dcookie.c:lookup_dcookie
+syscalls/lsm_get_self_attr.c:lsm_get_self_attr
+syscalls/lsm_list_modules.c:lsm_list_modules
+syscalls/move_pages.c:move_pages
+syscalls/mprotect.c:mprotect
+syscalls/mq_open.c:mq_open
+syscalls/mremap.c:mremap
+syscalls/munmap.c:munmap
+syscalls/newfstat.c:newfstat
+syscalls/newfstat.c:newfstatat
+syscalls/newlstat.c:newlstat
+syscalls/newstat.c:newstat
+syscalls/newuname.c:newuname
+syscalls/olduname.c:olduname
+syscalls/poll.c:ppoll
+syscalls/prctl.c:prctl
+syscalls/prlimit64.c:prlimit64
+syscalls/pselect6.c:pselect6
+syscalls/ptrace.c:ptrace
+syscalls/readlink.c:readlink
+syscalls/readlink.c:readlinkat
+syscalls/rt_sigpending.c:rt_sigpending
+syscalls/rt_sigprocmask.c:rt_sigprocmask
+syscalls/sched_getaffinity.c:sched_getaffinity
+syscalls/sched_getattr.c:sched_getattr
+syscalls/sched_getparam.c:sched_getparam
+syscalls/sched_rr_get_interval.c:sched_rr_get_interval
+syscalls/seccomp.c:seccomp
+syscalls/select.c:select
+syscalls/setgroups.c:setgroups
+syscalls/sigaltstack.c:sigaltstack
+syscalls/sigpending.c:sigpending
+syscalls/stat.c:statx
+syscalls/statfs.c:statfs
+syscalls/statfs.c:statfs64
+syscalls/statmount.c:statmount
+syscalls/sysfs.c:sysfs
+syscalls/sysinfo.c:sysinfo
+syscalls/timerfd_gettime.c:timerfd_gettime
+syscalls/timer_gettime.c:timer_gettime
+syscalls/times.c:times
+syscalls/uname.c:uname
+syscalls/x86/modify_ldt.c:modify_ldt
