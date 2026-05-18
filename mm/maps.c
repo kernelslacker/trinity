@@ -258,6 +258,8 @@ void init_child_mappings(void)
 	unsigned int idx;
 
 	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_ANON);
+	if (head == NULL)
+		return;
 	head->destroy = &map_destructor;
 	head->dump = &map_dump;
 
