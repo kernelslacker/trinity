@@ -96,15 +96,34 @@ struct syscallentry syscall_recvfrom = {
  * read 496 bytes past the foreign 16-byte allocation.  The cookie is
  * an arbitrary 64-bit constant: the chance a sibling scribble forges
  * the exact value is 2^-64 per stomp, so a mismatch is treated as a
- * stomp signature rather than as benign noise.  Sized 24 bytes so the
- * struct also no longer collides with the 16-byte free-list bucket
- * that holds alloc_iovec(1) and the existing post_state structs.
+ * stomp signature rather than as benign noise.
+ *
+ * The inner-pointer fields (control, name) are snapshotted alongside
+ * the outer msghdr pointer because the kernel writes through the
+ * msghdr in a recvmsg() call -- in particular msg_control gets the
+ * cmsg buffer and msg_namelen gets the actual sockaddr length, and
+ * the kernel can also write past msg_control if an iov_base alias
+ * lands inside the msghdr struct itself.  After return the inner
+ * pointer slots in the current msghdr cannot be trusted: a kernel
+ * scribble of msg_control to a within-array offset (e.g. &msgs[5]
+ * for a 4-elem array) is a heap-shaped value that passed the inner
+ * shape-only check but is not the allocation we made, and free()ing
+ * it aborts in libasan.  Stash the originals at sanitise time so the
+ * post handler can free the allocations we made, not the values the
+ * kernel left behind.  Mirrors the outer-pointer magic-cookie pattern
+ * already in place for rec->post_state.
+ *
+ * Sized 40 bytes (lands in the 48-byte glibc malloc chunk bucket) so
+ * the struct still does not collide with the 16-byte free-list bucket
+ * that holds alloc_iovec(1).
  */
 #define RECVMSG_POST_STATE_MAGIC	0x52435653504F5354UL	/* "RCVSPOST" */
 struct recvmsg_post_state {
 	unsigned long magic;
 	struct msghdr *msg;
 	unsigned long iov_len_sum;
+	void *control;
+	void *name;
 };
 
 static void sanitise_recvmsg(struct syscallrecord *rec)
@@ -170,6 +189,8 @@ skip_si:
 	snap->magic = RECVMSG_POST_STATE_MAGIC;
 	snap->msg = msg;
 	snap->iov_len_sum = iov_len_sum;
+	snap->control = msg->msg_control;
+	snap->name = msg->msg_name;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -250,11 +271,19 @@ static void post_recvmsg(struct syscallrecord *rec)
 	}
 skip_bound:
 
-	if (inner_ptr_ok_to_free(rec, msg->msg_control, "post_recvmsg/msg_control"))
-		free(msg->msg_control);
+	/*
+	 * Free from the trusted snap, not from the current msghdr.  The
+	 * kernel writes through msg_control on success, and a sibling
+	 * iov_base aliased into the msghdr can scribble msg_control with
+	 * a heap-shaped within-array offset that the inner shape-only
+	 * check accepts but free() aborts on in libasan.  The snap fields
+	 * are wrapped in the magic-cookie struct above, so they hold the
+	 * sanitise-time allocations regardless of what the kernel (or a
+	 * sibling) left in the live msghdr.
+	 */
+	free(snap->control);
 	deferred_free_enqueue(msg->msg_iov, NULL);
-	if (inner_ptr_ok_to_free(rec, msg->msg_name, "post_recvmsg/msg_name"))
-		free(msg->msg_name);
+	free(snap->name);
 	rec->a2 = 0;
 	deferred_free_enqueue(msg, NULL);
 
