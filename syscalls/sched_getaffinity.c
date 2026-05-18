@@ -55,7 +55,6 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 
 	rec->a3 = (unsigned long) mask;
 
-	avoid_shared_buffer(&rec->a2, sizeof(u32));
 	avoid_shared_buffer(&rec->a3, page_size);
 
 	/*
