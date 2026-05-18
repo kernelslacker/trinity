@@ -50,7 +50,6 @@ syscalls/mprotect.c:mprotect
 syscalls/mq_open.c:mq_open
 syscalls/mremap.c:mremap
 syscalls/munmap.c:munmap
-syscalls/newfstat.c:newfstat
 syscalls/newfstat.c:newfstatat
 syscalls/newlstat.c:newlstat
 syscalls/newstat.c:newstat
