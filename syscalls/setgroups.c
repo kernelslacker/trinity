@@ -26,7 +26,9 @@
  * the rest of the snapshot family and to make the rec->aN read sites
  * uniformly route through the snapshot.
  */
+#define SETGROUPS_POST_STATE_MAGIC	0x53475250UL	/* "SGRP" */
 struct setgroups_post_state {
+	unsigned long magic;
 	unsigned long count;
 	unsigned long list;
 };
@@ -58,6 +60,7 @@ static void sanitise_setgroups(struct syscallrecord *rec)
 	 * allocation.  post_state is private to the post handler.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = SETGROUPS_POST_STATE_MAGIC;
 	snap->count = rec->a1;
 	snap->list = rec->a2;
 	rec->post_state = (unsigned long) snap;
@@ -188,6 +191,24 @@ static void post_setgroups(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_setgroups: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * setgroups_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon rather than feed wild bytes into
+	 * the gidsetsize bounds check, the grouplist deref, and the
+	 * sorted-multiset compare.
+	 */
+	if (snap->magic != SETGROUPS_POST_STATE_MAGIC) {
+		outputerr("post_setgroups: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
