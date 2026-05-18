@@ -25,7 +25,9 @@ static unsigned long getrusage_who[] = {
  * domain (RUSAGE_SELF vs RUSAGE_THREAD vs RUSAGE_CHILDREN diverge wildly)
  * or redirect the source memcpy at a foreign user buffer.
  */
+#define GETRUSAGE_POST_STATE_MAGIC	0x47525553UL	/* "GRUS" */
 struct getrusage_post_state {
+	unsigned long magic;
 	unsigned long who;
 	unsigned long ru;
 };
@@ -61,6 +63,7 @@ static void sanitise_getrusage(struct syscallrecord *rec)
 	 * and a snapshot only the post handler can free would leak.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic     = GETRUSAGE_POST_STATE_MAGIC;
 	snap->who       = rec->a1;
 	snap->ru        = rec->a2;
 	rec->post_state = (unsigned long) snap;
@@ -157,6 +160,23 @@ static void post_getrusage(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_getrusage: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * getrusage_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon rather than feed wild bytes into
+	 * the inner-field deref.  Mirrors recv.c post_recvmsg.
+	 */
+	if (snap->magic != GETRUSAGE_POST_STATE_MAGIC) {
+		outputerr("post_getrusage: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}

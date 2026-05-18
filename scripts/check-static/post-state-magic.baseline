@@ -38,7 +38,6 @@ syscalls/getresgid.c:getresgid
 syscalls/getresuid.c:getresuid
 syscalls/getrlimit.c:getrlimit
 syscalls/get_robust_list.c:get_robust_list
-syscalls/getrusage.c:getrusage
 syscalls/gettimeofday.c:gettimeofday
 syscalls/getxattr.c:getxattr
 syscalls/io_uring_register.c:io_uring_register
