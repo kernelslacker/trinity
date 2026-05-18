@@ -1,5 +1,6 @@
 #pragma once
 
+#include "compiler.h"
 #include "types.h"
 #include "syscall.h"
 #include "child.h"
@@ -79,7 +80,7 @@ void init_syscalls_uniarch(void);
 
 int munge_tables(void);
 
-struct syscallentry * get_syscall_entry(unsigned int calln, bool do32);
+struct syscallentry * get_syscall_entry(unsigned int calln, bool do32) __must_check;
 
 bool this_syscallname(const char *thisname);
 
