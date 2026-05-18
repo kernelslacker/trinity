@@ -623,15 +623,26 @@ void frontier_window_advance(void)
 }
 
 /*
- * Compute the UCB1 score for one arm.  Standard formulation:
+ * Compute the UCB1 score for one arm.  Discounted formulation
+ * (D-UCB): the lifetime bandit_pulls[]/bandit_reward_calls[] series
+ * is replaced by the rolling exponentially-decayed counters
+ * recent_pulls_x1000[]/recent_reward_x1000[] so the picker tracks
+ * recent yield instead of the lifetime average.  Kernel coverage
+ * discovery is non-stationary -- early windows mine out easy edges
+ * and late windows degrade -- so an arm's last few windows are the
+ * relevant signal, not its 2024 mean.
  *
  *     score_i = mean_reward_i / norm + c * sqrt(ln(N) / n_i)
  *
  * where:
- *   mean_reward_i = bandit_reward_calls[i] / bandit_pulls[i]
+ *   mean_reward_i = recent_reward_x1000[i] / recent_pulls_x1000[i]
+ *                   (the x1000 fixed-point cancels, leaving the
+ *                   discounted mean reward in the original calls
+ *                   units the lifetime series used)
  *   norm          = max over arms of mean_reward_j (or 1 if all zero)
- *   N             = sum of pulls across arms (== total_pulls)
- *   n_i           = bandit_pulls[i]
+ *   N             = sum across arms of n_j (effective discounted
+ *                   sample size, the D-UCB analogue of total_pulls)
+ *   n_i           = recent_pulls_x1000[i] / 1000.0
  *   c             = UCB1_EXPLORATION_C
  *
  * Normalising the exploit term by the largest observed mean keeps it
@@ -641,24 +652,34 @@ void frontier_window_advance(void)
  * window degenerates into "always pick the arm with the highest
  * cumulative average" because the exploit term dwarfs sqrt(ln/n).
  *
- * The reward signal consumed here is the CALL-COUNT series
- * (bandit_reward_calls[] -- calls-with-≥1-edge plus the weighted CMP
+ * The reward signal consumed here is still the CALL-COUNT series
+ * (recent_reward_x1000[] is the discounted form of
+ * bandit_reward_calls[] -- calls-with-≥1-edge plus the weighted CMP
  * novelty term).  The parallel real bucket-count series
- * (bandit_reward_pc_edge_count[]) is recorded for the operator dump
- * but does not feed the score; switching the learner to consume it
- * (or a transform of it) is a separate decision once both signals
- * have been observed against real run data.
+ * (bandit_reward_pc_edge_count[]) remains a lifetime diagnostic and
+ * does not feed the score; switching the learner to a discounted
+ * bucket-count signal is a separate decision once both signals have
+ * been observed under discounting against real run data.
+ *
+ * pulls_x1000 == 0 clamps to 1: an arm whose discounted count
+ * decayed all the way to zero (≈140 windows of no selection at
+ * gamma=0.95) is by definition starved, the resulting huge explore
+ * term is the correct outcome.  The clamp keeps the division
+ * well-defined rather than relying on a separate guard.
  */
-static double ucb1_score(int arm, unsigned long total_pulls,
-			 double norm)
+static double ucb1_score(int arm, double total_n, double norm)
 {
-	unsigned long pulls = shm->bandit_pulls[arm];
-	unsigned long reward = shm->bandit_reward_calls[arm];
-	double exploit, explore;
+	unsigned long pulls_x1000 = shm->recent_pulls_x1000[arm];
+	unsigned long reward_x1000 = shm->recent_reward_x1000[arm];
+	double n_i, mean, exploit, explore;
 
-	exploit = (double)reward / (double)pulls / norm;
-	explore = UCB1_EXPLORATION_C *
-		  sqrt(log((double)total_pulls) / (double)pulls);
+	if (pulls_x1000 == 0)
+		pulls_x1000 = 1;
+
+	n_i = (double)pulls_x1000 / (double)BANDIT_EMA_SCALE;
+	mean = (double)reward_x1000 / (double)pulls_x1000;
+	exploit = mean / norm;
+	explore = UCB1_EXPLORATION_C * sqrt(log(total_n) / n_i);
 
 	return exploit + explore;
 }
@@ -669,13 +690,20 @@ static double ucb1_score(int arm, unsigned long total_pulls,
  * and writes the reason path through *reason_out.  The caller
  * (maybe_rotate_strategy via select_next_strategy) has already
  * updated bandit_pulls[]/bandit_reward_calls[] (plus the parallel
- * bandit_reward_pc_edge_count[] diagnostic series) for the
- * just-finished window unless that window was a forced intervention.
+ * bandit_reward_pc_edge_count[] diagnostic series) AND the
+ * discounted recent_pulls_x1000[]/recent_reward_x1000[] series for
+ * the just-finished window unless that window was a forced
+ * intervention.  UCB1 scoring reads the discounted recent series
+ * (D-UCB, see ucb1_score) so non-stationary kernel coverage
+ * discovery doesn't let early-run wins dominate late-run picks.
  *
- * Cold-start: any arm with zero pulls wins immediately (UCB1's
- * convention — every arm gets one pull before the score formula
- * makes sense).  Ties broken in favour of the lower index, which
- * keeps the warm-up deterministic.
+ * Cold-start: any arm with zero LIFETIME pulls wins immediately
+ * (UCB1's convention — every arm gets one pull before the score
+ * formula makes sense).  Lifetime rather than discounted pulls
+ * because cold-start is a once-per-arm trigger; using the decayed
+ * count would re-fire after the discount horizon and turn the
+ * learner into slow round-robin.  Ties broken in favour of the
+ * lower index, which keeps the warm-up deterministic.
  *
  * Round-robin mode bypasses the bandit entirely and just steps to
  * the next arm — same behaviour as Phase 1.
@@ -690,7 +718,7 @@ int pick_next_strategy(int prev, enum strategy_selection_reason *reason_out)
 {
 	enum picker_mode_t mode;
 	bool eligible[NR_STRATEGIES];
-	unsigned long total_pulls = 0;
+	double total_n = 0.0;
 	double max_mean = 0.0;
 	double best_score;
 	int best_arm = -1;
@@ -720,7 +748,13 @@ int pick_next_strategy(int prev, enum strategy_selection_reason *reason_out)
 		return (prev + 1) % NR_STRATEGIES;
 	}
 
-	/* Cold-start: prefer any unpulled eligible arm before scoring. */
+	/* Cold-start uses LIFETIME bandit_pulls -- cold-start is a
+	 * "never been observed" trigger, not a "haven't been observed
+	 * lately" trigger.  Reading recent_pulls_x1000 here would re-fire
+	 * cold-start every ~140 windows for any arm the picker has
+	 * stopped choosing (the half-life-driven decay back to zero),
+	 * which is just slow round-robin in disguise and defeats the
+	 * point of a learner. */
 	for (i = 0; i < NR_STRATEGIES; i++) {
 		if (!eligible[i])
 			continue;
@@ -728,20 +762,41 @@ int pick_next_strategy(int prev, enum strategy_selection_reason *reason_out)
 			*reason_out = SR_COLD_START;
 			return i;
 		}
-		total_pulls += shm->bandit_pulls[i];
 	}
 
-	/* Normalise by the largest mean-reward across eligible arms so the
-	 * exploit term lives in the same numeric range as the exploration
-	 * term.  Falls back to 1.0 when every arm has yielded zero edges
-	 * so far (well-defined and harmless). */
+	/* total_n: sum of discounted effective-sample counts across
+	 * eligible arms.  D-UCB analogue of vanilla UCB1's "total pulls"
+	 * in the ln(N) explore-term numerator.  Floor at 1.0 so log()
+	 * stays non-negative on a fresh post-cold-start run where the
+	 * sum hasn't grown above unity yet. */
 	for (i = 0; i < NR_STRATEGIES; i++) {
+		if (!eligible[i])
+			continue;
+		total_n += (double)shm->recent_pulls_x1000[i] /
+			   (double)BANDIT_EMA_SCALE;
+	}
+	if (total_n < 1.0)
+		total_n = 1.0;
+
+	/* Normalise by the largest discounted mean-reward across eligible
+	 * arms so the exploit term lives in the same numeric range as the
+	 * exploration term.  Falls back to 1.0 when every arm has yielded
+	 * zero edges in the recent horizon (well-defined and harmless).
+	 * Skips arms whose discounted pulls decayed to zero -- their
+	 * "mean" is undefined, and they will get a huge explore-term
+	 * score from ucb1_score's pulls_x1000==0 clamp so the picker will
+	 * re-try them on this pass anyway. */
+	for (i = 0; i < NR_STRATEGIES; i++) {
+		unsigned long p, r;
 		double mean;
 
 		if (!eligible[i])
 			continue;
-		mean = (double)shm->bandit_reward_calls[i] /
-		       (double)shm->bandit_pulls[i];
+		p = shm->recent_pulls_x1000[i];
+		r = shm->recent_reward_x1000[i];
+		if (p == 0)
+			continue;
+		mean = (double)r / (double)p;
 		if (mean > max_mean)
 			max_mean = mean;
 	}
@@ -754,7 +809,7 @@ int pick_next_strategy(int prev, enum strategy_selection_reason *reason_out)
 
 		if (!eligible[i])
 			continue;
-		s = ucb1_score(i, total_pulls, max_mean);
+		s = ucb1_score(i, total_n, max_mean);
 		if (best_arm < 0 || s > best_score) {
 			best_score = s;
 			best_arm = i;
