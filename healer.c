@@ -771,6 +771,23 @@ void healer_table_dump(void)
 	 */
 	unsigned long pair_populated = 0;
 	unsigned long pair_weighted = 0;
+	/*
+	 * Pressure-tracking stats surfaced on the dump so an operator can
+	 * see whether decay + slot pruning are actually reclaiming
+	 * capacity.  active_predsets shadows `occupied` for the pressure
+	 * line's self-contained shape; prunable_predsets counts slots
+	 * whose every populated promoted entry has decayed to the floor
+	 * (the prune walk in healer-ring.c needs one more aged-out epoch
+	 * before evicting these); pair_rows_with_dynamic_mass counts pair-
+	 * table rows where at least one cell still carries weight above
+	 * the static-seed install weight (i.e. dynamic observation has
+	 * accumulated on top of the bare prior).  All three are recomputed
+	 * from the canonical at every dump so the values track the live
+	 * table rather than a stale snapshot taken at the last decay run.
+	 */
+	unsigned long active_predsets = 0;
+	unsigned long prunable_predsets = 0;
+	unsigned long pair_rows_with_dynamic_mass = 0;
 	unsigned int i, j;
 	unsigned long observed, table_full, evictions, decays_run;
 	/*
@@ -820,6 +837,7 @@ void healer_table_dump(void)
 		uint64_t slot_key;
 		unsigned int slot_pred_a, slot_pred_b;
 		unsigned int slot_promoted = 0;
+		unsigned int slot_max_weight = 0;
 		unsigned long pred_a_freq, pred_b_freq;
 
 		/* Parent-private read: single-writer aggregate, no atomic
@@ -854,6 +872,8 @@ void healer_table_dump(void)
 
 			slot_promoted++;
 			total_weight += weight;
+			if (weight > slot_max_weight)
+				slot_max_weight = weight;
 			if (weight > 1)
 				weight_gt_1++;
 			if (weight > 5)
@@ -963,8 +983,16 @@ void healer_table_dump(void)
 		if (slot_promoted > 0) {
 			occupied++;
 			total_promoted += slot_promoted;
+			/* Slots whose every populated entry is at the decay
+			 * floor would prune on the next sufficiently-aged
+			 * decay run -- surface the count so an operator can
+			 * tell at a glance how much capacity is sitting one
+			 * cycle away from reclamation. */
+			if (slot_max_weight <= 1)
+				prunable_predsets++;
 		}
 	}
+	active_predsets = occupied;
 
 	/*
 	 * Pair-table sweep.  Walks the producer/consumer pair matrix that
@@ -992,6 +1020,7 @@ void healer_table_dump(void)
 	 */
 	for (i = 0; i < MAX_NR_SYSCALL; i++) {
 		unsigned long producer_freq = parent_healer.pred_appearance[i];
+		bool row_dynamic_mass = false;
 
 		for (j = 0; j < MAX_NR_SYSCALL; j++) {
 			unsigned int weight;
@@ -1005,6 +1034,16 @@ void healer_table_dump(void)
 			pair_populated++;
 			if (weight >= 2)
 				pair_weighted++;
+			/* HEALER_STATIC_SEED_WEIGHT is the install weight for
+			 * static-seed cells; anything strictly above that has
+			 * accumulated at least one dynamic observation on top
+			 * of the bare prior (or is a runtime-only pair the
+			 * dynamic path bumped past the threshold).  Counting
+			 * rows rather than cells gives an operator a sense of
+			 * how widely dynamic evidence has spread without
+			 * conflating it with the seed install footprint. */
+			if (weight > HEALER_STATIC_SEED_WEIGHT)
+				row_dynamic_mass = true;
 
 			if (weight < HEALER_DUMP_MIN_RAW) {
 				low_raw_skipped++;
@@ -1075,6 +1114,8 @@ void healer_table_dump(void)
 				healer_top_n_insert(top_seed, &top_seed_count,
 						    &cand);
 		}
+		if (row_dynamic_mass)
+			pair_rows_with_dynamic_mass++;
 	}
 
 	/* Parent-private aggregate reads -- no atomic load needed since
@@ -1165,6 +1206,27 @@ void healer_table_dump(void)
 			pair_populated,
 			(unsigned long)MAX_NR_SYSCALL * MAX_NR_SYSCALL,
 			pair_weighted);
+
+	/*
+	 * Decay/prune pressure stats.  Together with the existing probe-
+	 * limit-hits figure on the relation-table summary line, these tell
+	 * an operator whether the decay + slot-prune machinery is keeping
+	 * pace with the run's observation churn: a healthy fleet shows
+	 * active_predsets well below HEALER_RELATION_SLOTS, a non-zero
+	 * prunable_predsets value (decay is pushing entries toward the
+	 * floor), and pair_rows_with_dynamic_mass climbing over the run as
+	 * dynamic observations refine the static seed prior.  A run where
+	 * active_predsets has saturated against HEALER_RELATION_SLOTS and
+	 * probe-limit-hits is climbing past zero is the picture of a stuck
+	 * table -- the prune threshold (HEALER_PRUNE_EPOCHS) likely needs
+	 * lowering, or the workload is genuinely producing more distinct
+	 * predsets than the table can hold and the slot count needs to
+	 * grow.
+	 */
+	stats_log_write("HEALER pressure: %lu active predsets, %lu prunable (all entries at floor), %lu pair rows with dynamic mass (weight > %u)\n",
+			active_predsets, prunable_predsets,
+			pair_rows_with_dynamic_mass,
+			HEALER_STATIC_SEED_WEIGHT);
 
 	/*
 	 * Predecessor-frequency leader display.  Surfaces the top-N
