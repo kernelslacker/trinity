@@ -20,10 +20,26 @@
  * syscall return and post_write() running cannot redirect us at a foreign
  * buffer or hand the count-bound validator the wrong length.  Shared by
  * write(2) and pwrite64(2): both register post_write.
+ *
+ * Leading magic cookie because the heap-shape check on rec->post_state
+ * is value-based only -- a sibling scribbling rec->post_state with any
+ * heap-shaped 8-byte aligned pointer to a foreign allocation sails past
+ * looks_like_corrupted_ptr() and the post handler then reads snap->count
+ * from foreign bytes and free()s snap->buf as a foreign address; both
+ * surface as the dominant __zmalloc -> malloc -> malloc_printerr ->
+ * abort crash cluster.  Mirrors RECVMSG_POST_STATE_MAGIC at recv.c:103.
+ * Padded to 32 bytes (48-byte glibc malloc chunk) so the snap does not
+ * land in the 32-byte chunk bucket shared with size=1 bufs (the
+ * RAND_BOOL branch below uses size=1 half the time) and with the small
+ * post_state structs.  Bucket separation is defense-in-depth; the
+ * cookie is the primary defense.
  */
+#define WRITE_POST_STATE_MAGIC	0x5752495445504F53UL	/* "WRITEPOS" */
 struct write_post_state {
+	unsigned long magic;
 	unsigned long buf;
 	unsigned long count;
+	unsigned long _bucket_pad;
 };
 
 static void sanitise_write(struct syscallrecord *rec)
@@ -56,6 +72,7 @@ static void sanitise_write(struct syscallrecord *rec)
 	 * slot rather than the sibling-stomp-vulnerable rec->a3.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = WRITE_POST_STATE_MAGIC;
 	snap->buf = (unsigned long) ptr;
 	snap->count = size;
 	rec->post_state = (unsigned long) snap;
@@ -72,6 +89,24 @@ static void post_write(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_write: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->a2 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * write_post_state -- the subsequent free(snap->buf) would feed
+	 * a foreign address back to glibc and the count-bound check would
+	 * compare retval against garbage.  Mirrors recv.c:212.
+	 */
+	if (snap->magic != WRITE_POST_STATE_MAGIC) {
+		outputerr("post_write: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
