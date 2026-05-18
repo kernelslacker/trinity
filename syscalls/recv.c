@@ -328,11 +328,20 @@ struct syscallentry syscall_recvmsg = {
  * looks_like_corrupted_ptr() and the post handler then loads snap->msgs
  * from foreign bytes; the subsequent cleanup loop walks wild memory and
  * surfaces as the dominant __zmalloc -> malloc -> malloc_printerr ->
- * abort crash cluster.  Mirrors RECVMSG_POST_STATE_MAGIC above.  Padded
- * to 32 bytes (48-byte glibc malloc chunk) so the snap lands in a
- * different free-list bucket than recvmsg_post_state (24B -> 32B chunk)
- * and the 16-byte alloc_iovec(1) bucket -- defense-in-depth on top of
- * the cookie.
+ * abort crash cluster.  Mirrors RECVMSG_POST_STATE_MAGIC above.
+ *
+ * The per-i inner pointer fields (msg_control, msg_name) are also
+ * snapshotted here.  recvmmsg(2) is a kernel write through the msgs
+ * array, and a sibling syscall whose iov_base aliases bytes inside
+ * the msgs[] allocation can let the kernel scribble msgs[i].msg_hdr.
+ * msg_control with a heap-shaped within-array offset of msgs[] itself
+ * (e.g. &msgs[5] for a 4-element array).  Such a value passes the
+ * inner shape-only validator but free() of an interior offset aborts
+ * in libasan's PoisonShadow alignment CHECK -- ASAN caught that exact
+ * pattern.  Stash the originals at sanitise time so the post handler
+ * frees the allocations we made, not the values the kernel left
+ * behind.  Matches the post-state hardening already in place for the
+ * outer msgs pointer.
  */
 #define RECVMMSG_POST_STATE_MAGIC	0x5243564D54534154UL	/* "RCVMTSAT" */
 struct recvmmsg_post_state {
@@ -340,7 +349,8 @@ struct recvmmsg_post_state {
 	struct mmsghdr *msgs;
 	unsigned int vlen;
 	unsigned int _pad;
-	unsigned long _bucket_pad;
+	void *control[RECVMMSG_MAX_VLEN];
+	void *name[RECVMMSG_MAX_VLEN];
 };
 
 static void sanitise_recvmmsg(struct syscallrecord *rec)
@@ -356,6 +366,11 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 	vlen = RAND_RANGE(1, RECVMMSG_MAX_VLEN);
 	msgs = zmalloc(vlen * sizeof(struct mmsghdr));
 
+	snap = zmalloc(sizeof(*snap));
+	snap->magic = RECVMMSG_POST_STATE_MAGIC;
+	snap->msgs = msgs;
+	snap->vlen = vlen;
+
 	for (i = 0; i < vlen; i++) {
 		struct msghdr *msg = &msgs[i].msg_hdr;
 		unsigned int num_entries = RAND_RANGE(1, 3);
@@ -369,10 +384,12 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 			generate_sockaddr(&sa, &salen, si->triplet.family);
 		msg->msg_name = sa;
 		msg->msg_namelen = salen;
+		snap->name[i] = sa;
 
 		if (RAND_BOOL()) {
 			msg->msg_controllen = rand32() % 4096;
 			msg->msg_control = zmalloc(msg->msg_controllen);
+			snap->control[i] = msg->msg_control;
 		}
 
 		/*
@@ -389,11 +406,6 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 
 	rec->a2 = (unsigned long) msgs;
 	rec->a3 = vlen;
-
-	snap = zmalloc(sizeof(*snap));
-	snap->magic = RECVMMSG_POST_STATE_MAGIC;
-	snap->msgs = msgs;
-	snap->vlen = vlen;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -481,14 +493,21 @@ static void post_recvmmsg(struct syscallrecord *rec)
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 
+	/*
+	 * Free from the trusted per-i snap, not from the live msgs[]
+	 * array.  The kernel writes through msg_control / msg_name on
+	 * success, and a sibling iov_base aliased inside the msgs[]
+	 * allocation can scribble those slots with a heap-shaped
+	 * within-array offset of msgs[] (e.g. &msgs[5] for a 4-elem
+	 * array).  That value passes the inner shape-only check but
+	 * free() of an interior offset aborts in libasan.  The snap
+	 * fields are wrapped in the magic-cookie struct above, so they
+	 * still hold the sanitise-time allocations.
+	 */
 	for (i = 0; i < vlen; i++) {
 		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov, NULL);
-		if (inner_ptr_ok_to_free(rec, msgs[i].msg_hdr.msg_control,
-					 "post_recvmmsg/msg_control"))
-			free(msgs[i].msg_hdr.msg_control);
-		if (inner_ptr_ok_to_free(rec, msgs[i].msg_hdr.msg_name,
-					 "post_recvmmsg/msg_name"))
-			free(msgs[i].msg_hdr.msg_name);
+		free(snap->control[i]);
+		free(snap->name[i]);
 	}
 	rec->a2 = 0;
 	deferred_free_enqueue(msgs, NULL);
