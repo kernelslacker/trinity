@@ -109,6 +109,7 @@ enum strategy_selection_reason {
 	SR_ROUND_ROBIN,
 	SR_COLD_START,
 	SR_PLATEAU_FORCE,
+	NR_SELECTION_REASONS,	/* sentinel, must stay last */
 };
 
 /* Set by parse_args() before init_shm(). */
@@ -137,9 +138,29 @@ const char *picker_mode_name(enum picker_mode_t mode);
 
 /*
  * Record the just-finished window's outcome for the bandit picker.
- * Bumps bandit_pulls[arm], adds (pc_edge_calls + cmp_term) to
- * bandit_reward_calls[arm], adds pc_edge_count to
- * bandit_reward_pc_edge_count[arm], and folds in
+ * Always bumps the per-arm-per-reason buckets
+ * bandit_pulls_by_reason[arm][reason] /
+ * bandit_reward_calls_by_reason[arm][reason] /
+ * bandit_reward_pc_edge_count_by_reason[arm][reason] so dump-side
+ * analysis can split each arm's total exposure by selection path
+ * (NORMAL_UCB vs COLD_START vs ROUND_ROBIN vs PLATEAU_FORCE).
+ *
+ * Updates to the LEARNER-facing series (bandit_pulls[],
+ * bandit_reward_calls[], bandit_reward_pc_edge_count[], and the
+ * discounted recent_pulls_x1000[] / recent_reward_x1000[] / EMA
+ * decay) are gated on reason != SR_PLATEAU_FORCE.  A
+ * forced-intervention window ran STRATEGY_RANDOM because every arm
+ * was stalled, which is structurally different from "RANDOM scored
+ * best under UCB"; folding the forced window into the learner's
+ * history conflates the two cohorts and biases UCB toward RANDOM
+ * for the rest of the run.  The by-reason buckets are diagnostic
+ * (not consumed by the picker) so they capture every window
+ * regardless of cohort -- the forced-cohort reward is exactly the
+ * signal a future intervention classifier wants to see.
+ *
+ * For non-forced reasons, this bumps bandit_pulls[arm], adds
+ * (pc_edge_calls + cmp_term) to bandit_reward_calls[arm], adds
+ * pc_edge_count to bandit_reward_pc_edge_count[arm], and folds in
  * (cmp_new_constants / CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL) as a
  * secondary CMP-novelty term on the call-count reward only.
  *
@@ -150,10 +171,11 @@ const char *picker_mode_name(enum picker_mode_t mode);
  * series are recorded so the operator can see how the two reward
  * shapes would score the same windows without flipping the learner.
  *
- * Called from the CAS-winning child during maybe_rotate_strategy();
- * a no-op when arm is out of range.
+ * Called from the CAS-winning child during maybe_rotate_strategy()
+ * on every window close including SR_PLATEAU_FORCE windows; a
+ * no-op when arm or reason is out of range.
  */
-void bandit_record_pull(int arm,
+void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 			unsigned long pc_edge_calls,
 			unsigned long pc_edge_count,
 			unsigned long cmp_new_constants);

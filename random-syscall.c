@@ -733,19 +733,18 @@ static void maybe_rotate_strategy(void)
 	 * harmless and lets the end-of-run summary print pulls under either
 	 * picker.
 	 *
-	 * SR_PLATEAU_FORCE windows skip the update: an intervention window
-	 * ran STRATEGY_RANDOM because every arm was stalled, which is
-	 * structurally different from "RANDOM scored best under UCB"
-	 * (the bandit had no input on the pick).  Bumping the RANDOM arm's
-	 * pulls/reward from a forced window contaminates the learner so
-	 * the bandit can't tell policy-chosen RANDOM windows from forced
-	 * RANDOM windows once the plateau clears.  All other bookkeeping
+	 * Called on EVERY window including SR_PLATEAU_FORCE.  The
+	 * per-arm-per-reason bucketing inside bandit_record_pull captures
+	 * every cohort (forced included) so dump-side analysis can split
+	 * each arm's exposure by selection path, while the learner-facing
+	 * update (bandit_pulls[] / bandit_reward_calls[] / EMA) skips
+	 * SR_PLATEAU_FORCE internally to keep the UCB scorer's view of
+	 * RANDOM uncontaminated.  All other bookkeeping
 	 * (bandit_window_count tick, frontier ring advance, window-start
-	 * snapshot reseed) runs unconditionally — those are coverage-side
+	 * snapshot reseed) runs unconditionally -- those are coverage-side
 	 * structures and must stay aligned with the rotation cadence. */
-	if (prev_reason != SR_PLATEAU_FORCE)
-		bandit_record_pull(prev, calls_in_window, edges_in_window,
-				   cmp_in_window);
+	bandit_record_pull(prev, prev_reason, calls_in_window,
+			   edges_in_window, cmp_in_window);
 
 	/* Tick the rotation counter so bandit_cmp_observe()'s per-syscall
 	 * bloom decay sees the new window index on subsequent calls.

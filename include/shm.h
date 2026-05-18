@@ -412,6 +412,49 @@ struct shm_s {
 	unsigned long strategy_completed_calls[NR_STRATEGIES];
 
 	/*
+	 * Per-arm-per-selection-reason reward attribution.  Each window's
+	 * outcome is bucketed into [arm][reason] independent of the
+	 * learner-facing bandit_pulls[]/bandit_reward_calls[] series above
+	 * so the operator and the future intervention classifier can see
+	 * how each arm's exposure splits across selection paths:
+	 *
+	 *   bandit_pulls_by_reason[a][SR_NORMAL_UCB]    -- arm a was
+	 *     chosen by the UCB1 scorer (the bandit's policy decision).
+	 *   bandit_pulls_by_reason[a][SR_COLD_START]    -- arm a was
+	 *     chosen because UCB1 had not seen it pulled yet.
+	 *   bandit_pulls_by_reason[a][SR_ROUND_ROBIN]   -- arm a's slot
+	 *     in the fixed cycle (round-robin mode only).
+	 *   bandit_pulls_by_reason[a][SR_PLATEAU_FORCE] -- arm a (always
+	 *     STRATEGY_RANDOM today) was forced by the intervention
+	 *     orchestrator over the top of the bandit's pick.  These
+	 *     windows are deliberately EXCLUDED from bandit_pulls[] and
+	 *     the recent_*_x1000 EMA so the learner's view of RANDOM
+	 *     stays uncontaminated, but they ARE recorded here so the
+	 *     operator can see the intervention cohort's reward
+	 *     separately and a future plateau-rescue classifier can
+	 *     read pulls_by_reason[*][SR_PLATEAU_FORCE] +
+	 *     pc_edge_calls_by_strategy[*] to decide which arm to force
+	 *     next time.
+	 *
+	 * Three parallel matrices mirror the lifetime series:
+	 *
+	 *   bandit_pulls_by_reason[a][r]              -- window count
+	 *   bandit_reward_calls_by_reason[a][r]       -- combined reward
+	 *     (pc_edge_calls + cmp_term), same units as
+	 *     bandit_reward_calls[].
+	 *   bandit_reward_pc_edge_count_by_reason[a][r] -- real bucket-
+	 *     edge count, same units as bandit_reward_pc_edge_count[].
+	 *
+	 * Same single-writer protocol as bandit_pulls[] (CAS-serialised
+	 * rotation path).  dump_strategy_stats() uses RELAXED loads.
+	 * 4 strategies * 4 reasons * 3 series * 8 bytes = 384 bytes,
+	 * trivial against existing shm consumers.
+	 */
+	unsigned long bandit_pulls_by_reason[NR_STRATEGIES][NR_SELECTION_REASONS];
+	unsigned long bandit_reward_calls_by_reason[NR_STRATEGIES][NR_SELECTION_REASONS];
+	unsigned long bandit_reward_pc_edge_count_by_reason[NR_STRATEGIES][NR_SELECTION_REASONS];
+
+	/*
 	 * Discounted "recent" counters that the UCB1 picker scores against
 	 * instead of the lifetime bandit_pulls[]/bandit_reward_calls[]
 	 * series above.  Kernel coverage discovery is strongly

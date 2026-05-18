@@ -273,7 +273,7 @@ bool is_strategy_eligible(int arm)
  * parallel diagnostic reward (no cmp term folded in) so the operator
  * can compare what the real-count reward would have looked like.
  */
-void bandit_record_pull(int arm,
+void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 			unsigned long pc_edge_calls,
 			unsigned long pc_edge_count,
 			unsigned long cmp_new_constants)
@@ -285,9 +285,39 @@ void bandit_record_pull(int arm,
 
 	if (arm < 0 || arm >= NR_STRATEGIES)
 		return;
+	if (reason < 0 || reason >= NR_SELECTION_REASONS)
+		return;
 
 	cmp_term = cmp_new_constants / CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL;
 	total = pc_edge_calls + cmp_term;
+
+	/* Always bucket the just-finished window by (arm, reason) before
+	 * any cohort-gated learner update.  These matrices are diagnostic
+	 * (the picker does not score against them) so they capture every
+	 * window including SR_PLATEAU_FORCE -- intervention reward is the
+	 * exact signal a future plateau-rescue classifier wants to read
+	 * back, and excluding it here would silently zero the cohort the
+	 * classifier is meant to study. */
+	__atomic_fetch_add(&shm->bandit_pulls_by_reason[arm][reason], 1UL,
+			   __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->bandit_reward_calls_by_reason[arm][reason],
+			   total, __ATOMIC_RELAXED);
+	__atomic_fetch_add(
+		&shm->bandit_reward_pc_edge_count_by_reason[arm][reason],
+		pc_edge_count, __ATOMIC_RELAXED);
+
+	/* SR_PLATEAU_FORCE windows skip the learner-facing updates: an
+	 * intervention window ran STRATEGY_RANDOM because every arm was
+	 * stalled, which is structurally different from "RANDOM scored
+	 * best under UCB" (the bandit had no input on the pick).  Folding
+	 * the forced window into bandit_pulls[] / bandit_reward_calls[] /
+	 * the recent_*_x1000 EMA contaminates the learner so the bandit
+	 * can't tell policy-chosen RANDOM windows from forced RANDOM
+	 * windows once the plateau clears.  The caller-side guard that
+	 * used to gate this call moved in here so the by-reason bucketing
+	 * above stays unconditional. */
+	if (reason == SR_PLATEAU_FORCE)
+		return;
 
 	__atomic_fetch_add(&shm->bandit_pulls[arm], 1UL, __ATOMIC_RELAXED);
 	__atomic_fetch_add(&shm->bandit_reward_calls[arm], total,
@@ -889,6 +919,7 @@ const char *strategy_selection_reason_name(enum strategy_selection_reason r)
 	case SR_ROUND_ROBIN:	return "ROUND_ROBIN";
 	case SR_COLD_START:	return "COLD_START";
 	case SR_PLATEAU_FORCE:	return "PLATEAU_FORCE";
+	case NR_SELECTION_REASONS:	break;	/* sentinel */
 	}
 	return "?";
 }
@@ -1081,6 +1112,43 @@ void dump_strategy_stats(void)
 			output(0, "    exposure: picks=%lu bandit_ops=%lu completed=%lu (success=%lu.%lu%%)\n",
 			       picks, bandit_ops, completed,
 			       success_x1000 / 10UL, success_x1000 % 10UL);
+		}
+
+		/* Reason breakdown: split this arm's window count and reward
+		 * by selection path.  Walk all reasons but only print the
+		 * ones with nonzero pulls so cold paths (e.g. SR_ROUND_ROBIN
+		 * under PICKER_BANDIT_UCB1, SR_PLATEAU_FORCE on a run that
+		 * never hit a plateau) stay quiet.  PLATEAU_FORCE rewards
+		 * appear here even though they are excluded from the
+		 * per-arm bandit_pulls / bandit_reward_calls totals above --
+		 * the per-reason matrix is exactly where the intervention
+		 * cohort's reward goes so the operator can size it against
+		 * the policy cohort.  Format: REASON=pulls/reward_calls, one
+		 * leading-space-indented continuation line per arm. */
+		{
+			bool any_reason = false;
+			int r;
+
+			for (r = 0; r < NR_SELECTION_REASONS; r++) {
+				unsigned long rp = __atomic_load_n(
+					&shm->bandit_pulls_by_reason[i][r],
+					__ATOMIC_RELAXED);
+				unsigned long rr = __atomic_load_n(
+					&shm->bandit_reward_calls_by_reason[i][r],
+					__ATOMIC_RELAXED);
+				if (rp == 0)
+					continue;
+				if (!any_reason) {
+					output(0, "    reasons:");
+					any_reason = true;
+				}
+				output(0, " %s=%lu/%lu",
+				       strategy_selection_reason_name(
+					       (enum strategy_selection_reason)r),
+				       rp, rr);
+			}
+			if (any_reason)
+				output(0, "\n");
 		}
 	}
 }
