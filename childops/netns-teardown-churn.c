@@ -94,7 +94,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -115,6 +114,7 @@
 #include <linux/if_addr.h>
 #include <linux/if.h>
 
+#include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
 
@@ -141,90 +141,11 @@ static bool netns_teardown_probed;
 #define NETNS_TD_PAYLOAD_BYTES		16U
 
 /*
- * Rtnetlink helpers.  Inlined here to avoid pulling another childop's
- * symbols across translation units; sequence ids are a per-process
- * counter (own AF_NETLINK socket per invocation, no cross-talk).
- */
-static __u32 g_rtnl_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_rtnl_seq;
-}
-
-static int rtnl_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = 1;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	return fd;
-}
-
-/*
- * Send a fully formed nlmsghdr and consume one ack.  Returns 0 on
- * positive ack, the negated kernel errno on rejection, or -EIO on
- * local sendmsg/recv failure.  Best-effort: callers don't propagate
- * the value beyond bumping a counter.
- */
-static int rtnl_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[256];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0)
-		return -EIO;
-	if ((size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	return 0;
-}
-
-/*
  * RTM_NEWLINK setlink ifindex IFLA_IFI_UP — flip the loopback
  * device's IFF_UP bit on inside the fresh net ns.  ifi_change set
  * to IFF_UP only so we don't mask any other flags.
  */
-static int lo_set_up(int fd, int ifindex)
+static int lo_set_up(struct nl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
@@ -235,7 +156,7 @@ static int lo_set_up(int fd, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -245,7 +166,7 @@ static int lo_set_up(int fd, int ifindex)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -255,21 +176,20 @@ static int lo_set_up(int fd, int ifindex)
  * a freshly-created net ns on most kernels via the v4 zero-config
  * path — bring-up is just belt-and-braces.
  */
-static int lo_add_addr(int fd, int ifindex)
+static int lo_add_addr(struct nl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
 	struct ifaddrmsg *ifa;
 	__u32 addr;
-	struct nlattr *nla;
-	size_t off, addr_off, total, aligned;
+	size_t off;
 
 	memset(buf, 0, sizeof(buf));
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_NEWADDR;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifa = (struct ifaddrmsg *)NLMSG_DATA(nlh);
 	ifa->ifa_family    = AF_INET;
@@ -281,50 +201,39 @@ static int lo_add_addr(int fd, int ifindex)
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifa));
 
 	addr = htonl(0x7f000001U);
-	addr_off = off;
-	total = NLA_HDRLEN + sizeof(addr);
-	aligned = NLA_ALIGN(total);
-	if (off + aligned > sizeof(buf))
+	off = nla_put(buf, off, sizeof(buf), IFA_LOCAL, &addr, sizeof(addr));
+	if (!off)
 		return -EIO;
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = IFA_LOCAL;
-	nla->nla_len  = (unsigned short)total;
-	memcpy(buf + off + NLA_HDRLEN, &addr, sizeof(addr));
-	off += aligned;
-
-	if (off + aligned > sizeof(buf))
+	off = nla_put(buf, off, sizeof(buf), IFA_ADDRESS, &addr, sizeof(addr));
+	if (!off)
 		return -EIO;
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = IFA_ADDRESS;
-	nla->nla_len  = (unsigned short)total;
-	memcpy(buf + off + NLA_HDRLEN, &addr, sizeof(addr));
-	off += aligned;
 
-	(void)addr_off;
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
  * Bring the loopback interface up and assign 127.0.0.1.  Best-effort;
  * any rtnl error is non-fatal — the send/recv burst still races
- * pernet teardown even with a half-configured lo.  Returns 0 on full
- * success, -1 on rtnl_open failure.
+ * pernet teardown even with a half-configured lo.  Returns 0 on
+ * full success, -1 on nl_open failure.
  */
 static int bring_up_loopback(void)
 {
-	int fd;
-	int rc = 0;
+	struct nl_ctx ctx = { .fd = -1 };
+	struct nl_open_opts opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
 	const int lo_ifindex = 1;	/* lo is always ifindex 1 in a fresh net ns */
 
-	fd = rtnl_open();
-	if (fd < 0)
+	if (nl_open(&ctx, &opts) < 0)
 		return -1;
 
-	(void)lo_add_addr(fd, lo_ifindex);
-	(void)lo_set_up(fd, lo_ifindex);
-	close(fd);
-	return rc;
+	(void)lo_add_addr(&ctx, lo_ifindex);
+	(void)lo_set_up(&ctx, lo_ifindex);
+	nl_close(&ctx);
+	return 0;
 }
 
 /*
