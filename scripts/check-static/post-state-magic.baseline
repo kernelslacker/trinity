@@ -26,7 +26,6 @@ syscalls/file_getattr.c:file_getattr
 syscalls/get_mempolicy.c:get_mempolicy
 syscalls/get_robust_list.c:get_robust_list
 syscalls/io_uring_register.c:io_uring_register
-syscalls/lgetxattr.c:lgetxattr
 syscalls/listmount.c:listmount
 syscalls/listns.c:listns
 syscalls/listxattrat.c:listxattrat
