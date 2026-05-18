@@ -358,11 +358,27 @@ static ssize_t cmp_hints_read_all(int fd, void *buf, size_t len)
 	return (ssize_t)(len - left);
 }
 
+/* Parent-private scratch buffer for the per-pool snapshot phase of
+ * cmp_hints_serialise().  cmp_hints_save_file (the sole caller) only
+ * runs in parent context -- from cmp_hints_maybe_snapshot()'s stats-tick
+ * path and from the trinity.c shutdown save -- so a single static
+ * buffer is safe and avoids a per-pool malloc on the snapshot path. */
+static struct cmp_hint_pool cmp_hints_pool_scratch;
+
 /* Serialise the live shm pools[] into a heap-allocated on-disk buffer.
- * Each pool is locked across its snapshot so a concurrent collector
- * can't tear an entries[] slot mid-write -- the same lock the collector
- * already takes for its own dedup pass, so this is the natural place to
- * synchronise. */
+ *
+ * Per pool: lock, memcpy the raw struct into a parent-private scratch
+ * copy, unlock, then do the on-disk format translation from the scratch
+ * without any lock held.  Holding pool->lock only for the duration of a
+ * fixed-size struct copy bounds the critical section to O(sizeof(pool))
+ * memory traffic regardless of how full the pool is, instead of the old
+ * O(count) field-by-field translation loop.
+ *
+ * Why this matters: if a child SIGSEGV/SIGABRTs while holding pool->lock
+ * during cmp_hints_collect, the parent's snapshot path has to acquire
+ * that lock -- and shorter windows mean exponentially fewer crash sites
+ * land inside the locked region.  Does not eliminate the leaked-lock
+ * race; the broader fix is a pid-owned-lock pattern landing separately. */
 static struct cmp_hints_pool_ondisk *cmp_hints_serialise(void)
 {
 	struct cmp_hints_pool_ondisk *out;
@@ -377,18 +393,20 @@ static struct cmp_hints_pool_ondisk *cmp_hints_serialise(void)
 		unsigned int count;
 
 		pool_lock(pool);
-		count = pool->count;
+		memcpy(&cmp_hints_pool_scratch, pool, sizeof(*pool));
+		pool_unlock(pool);
+
+		count = cmp_hints_pool_scratch.count;
 		if (count > CMP_HINTS_PER_SYSCALL)
 			count = CMP_HINTS_PER_SYSCALL;
 		out[i].count = count;
-		out[i].generation = pool->generation;
+		out[i].generation = cmp_hints_pool_scratch.generation;
 		for (j = 0; j < count; j++) {
-			out[i].entries[j].value     = pool->entries[j].value;
-			out[i].entries[j].cmp_ip    = pool->entries[j].cmp_ip;
-			out[i].entries[j].size      = pool->entries[j].size;
-			out[i].entries[j].last_used = pool->entries[j].last_used;
+			out[i].entries[j].value     = cmp_hints_pool_scratch.entries[j].value;
+			out[i].entries[j].cmp_ip    = cmp_hints_pool_scratch.entries[j].cmp_ip;
+			out[i].entries[j].size      = cmp_hints_pool_scratch.entries[j].size;
+			out[i].entries[j].last_used = cmp_hints_pool_scratch.entries[j].last_used;
 		}
-		pool_unlock(pool);
 	}
 	return out;
 }
