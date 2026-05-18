@@ -139,44 +139,53 @@ int pick_successful_fd(struct results *results)
 void handle_success(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
-	unsigned int i, call;
+	unsigned int call;
+	uint8_t mask;
 
 	call = rec->nr;
 	entry = get_syscall_entry(call, rec->do32bit);
 	BUG_ON(entry == NULL);
 
-	for_each_arg(entry, i) {
-		struct results *results;
-		enum argtype argtype = get_argtype(entry, i);
+	/* Walk only the slots that feed a scoreboard.  fd_arg_mask is the
+	 * is_fdarg() projection and len_arg_mask is the ARG_LEN projection;
+	 * they are disjoint by construction (ARG_LEN is neither ARG_FD nor
+	 * a typed-fd argtype), so OR-ing them gives every eligible slot.
+	 * Most syscalls have no fd/len args -- mask==0 short-circuits the
+	 * loop entirely. */
+	mask = (uint8_t)(entry->fd_arg_mask | entry->len_arg_mask);
+	while (mask != 0) {
+		unsigned int i = (unsigned int)__builtin_ctz(mask) + 1;
+		uint8_t bit = (uint8_t)(1u << (i - 1));
+		struct results *results = get_results_ptr(entry, i);
 		unsigned long value = get_argval(rec, i);
 
-		results = get_results_ptr(entry, i);
-
-		if (argtype == ARG_LEN)
+		if (entry->len_arg_mask & bit)
 			store_successful_len(results, value);
-		else if (is_fdarg(argtype))
+		else
 			store_successful_fd(results, value);
+		mask &= (uint8_t)(mask - 1);
 	}
 }
 
 void handle_failure(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
-	unsigned int i, call;
+	unsigned int call;
+	uint8_t mask;
 
 	call = rec->nr;
 	entry = get_syscall_entry(call, rec->do32bit);
 	BUG_ON(entry == NULL);
 
-	for_each_arg(entry, i) {
-		struct results *results;
-		enum argtype argtype = get_argtype(entry, i);
+	/* Only fd args feed the failed-fd scoreboard.  Skip the walk
+	 * entirely when no slot is an fd. */
+	mask = entry->fd_arg_mask;
+	while (mask != 0) {
+		unsigned int i = (unsigned int)__builtin_ctz(mask) + 1;
+		struct results *results = get_results_ptr(entry, i);
 		unsigned long value = get_argval(rec, i);
 
-		if (!is_fdarg(argtype))
-			continue;
-
-		results = get_results_ptr(entry, i);
 		store_failed_fd(results, value);
+		mask &= (uint8_t)(mask - 1);
 	}
 }
