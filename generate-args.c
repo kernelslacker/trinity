@@ -977,13 +977,11 @@ const struct argtype_ops argtype_table[] = {
 	[ARG_STRUCT_PTR_IN] = {
 		.name = "ARG_STRUCT_PTR_IN",
 		.generate = gen_arg_struct_ptr_in,
-		.default_address_scrub = true,
 		.paired_length = ARG_STRUCT_SIZE,
 	},
 	[ARG_STRUCT_PTR_OUT] = {
 		.name = "ARG_STRUCT_PTR_OUT",
 		.generate = gen_arg_struct_ptr_out,
-		.default_address_scrub = true,
 		.paired_length = ARG_STRUCT_SIZE,
 	},
 	[ARG_STRUCT_SIZE] = {
