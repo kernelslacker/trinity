@@ -26,7 +26,6 @@ syscalls/capset.c:capset
 syscalls/execve.c:execve
 syscalls/fgetxattr.c:fgetxattr
 syscalls/file_getattr.c:file_getattr
-syscalls/fstatfs.c:fstatfs
 syscalls/fstatfs.c:fstatfs64
 syscalls/get_mempolicy.c:get_mempolicy
 syscalls/get_robust_list.c:get_robust_list
