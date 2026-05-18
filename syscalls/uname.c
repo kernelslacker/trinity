@@ -34,7 +34,9 @@
  * handler running cannot redirect the source memcpy at a foreign user
  * buffer.
  */
+#define UNAME_POST_STATE_MAGIC	0x554E414DUL	/* "UNAM" */
 struct uname_post_state {
+	unsigned long magic;
 	unsigned long name;
 };
 
@@ -60,6 +62,7 @@ static void sanitise_uname(struct syscallrecord *rec)
 	 * allocation.  post_state is private to the post handler.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = UNAME_POST_STATE_MAGIC;
 	snap->name = rec->a1;
 	rec->post_state = (unsigned long) snap;
 }
@@ -121,6 +124,23 @@ static void post_uname(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_uname: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * uname_post_state.  A cookie mismatch means snap does not point
+	 * at our struct -- abandon rather than feed wild bytes into the
+	 * source memcpy of the user name buffer.
+	 */
+	if (snap->magic != UNAME_POST_STATE_MAGIC) {
+		outputerr("post_uname: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}

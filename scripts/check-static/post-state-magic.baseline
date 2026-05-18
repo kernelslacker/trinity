@@ -60,5 +60,4 @@ syscalls/seccomp.c:seccomp
 syscalls/statfs.c:statfs64
 syscalls/statmount.c:statmount
 syscalls/sysfs.c:sysfs
-syscalls/uname.c:uname
 syscalls/x86/modify_ldt.c:modify_ldt
