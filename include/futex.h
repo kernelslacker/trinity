@@ -2,6 +2,7 @@
 
 #include <sys/types.h>
 #include <stdint.h>
+#include "compiler.h"
 #include "types.h"
 
 struct __lock {
@@ -12,7 +13,7 @@ struct __lock {
 void create_futexes(void);
 void init_child_futexes(void);
 u32 * get_futex(void);
-struct __lock * get_random_lock(void);
+struct __lock * get_random_lock(void) __must_check;
 
 /*
  * Pick a random futex word from the shared cross-child pool
