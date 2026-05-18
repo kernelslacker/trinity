@@ -94,3 +94,20 @@ uint32_t spsc_ring_drain(struct spsc_ring *r,
 			 const void *slots, uint32_t nslots, size_t slot_size,
 			 spsc_apply_fn apply, void *ctx,
 			 uint32_t *overflow_out);
+
+/*
+ * Rolling-history enqueue from producer context.  Copies slot_size bytes
+ * from payload into slots[head & (nslots-1)] and publishes with a
+ * release-store of head+1.  No fullness check, no tail consultation,
+ * overflow counter untouched -- old slots are silently overwritten when
+ * head wraps the ring.
+ *
+ * head is left UNMASKED (monotonic counter), so a post-mortem reader can
+ * acquire-load head and walk back min(head, nslots) slots to recover the
+ * most recent history.  Use when the "consumer" is a snapshot reader
+ * rather than a draining consumer; tail stays at zero for the lifetime
+ * of the ring.  nslots must be a power of two.
+ */
+void spsc_ring_overwrite_enqueue(struct spsc_ring *r,
+				 void *slots, uint32_t nslots, size_t slot_size,
+				 const void *payload);

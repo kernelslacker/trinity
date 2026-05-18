@@ -98,3 +98,25 @@ uint32_t spsc_ring_drain(struct spsc_ring *r,
 	__atomic_store_n(&r->tail, tail, __ATOMIC_RELEASE);
 	return processed;
 }
+
+void spsc_ring_overwrite_enqueue(struct spsc_ring *r,
+				 void *slots, uint32_t nslots, size_t slot_size,
+				 const void *payload)
+{
+	uint32_t head;
+	uint32_t mask = nslots - 1;
+	unsigned char *base = slots;
+
+	if (r == NULL || slots == NULL)
+		return;
+
+	/* Single-producer relaxed load: only this producer writes head. */
+	head = __atomic_load_n(&r->head, __ATOMIC_RELAXED);
+	memcpy(base + (size_t)(head & mask) * slot_size, payload, slot_size);
+
+	/* Release so the slot bytes are visible to a snapshot reader before
+	 * head advances past them.  Keep head monotonic (unmasked) so the
+	 * reader can distinguish "empty" from "wrapped once" and walk back
+	 * min(head, nslots) slots. */
+	__atomic_store_n(&r->head, head + 1, __ATOMIC_RELEASE);
+}
