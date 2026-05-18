@@ -7,7 +7,9 @@
 #include "debug.h"
 #include "exit.h"
 #include "locks.h"
+#include "minicorpus.h"
 #include "pids.h"
+#include "sequence.h"
 #include "shm.h"
 #include "stats_ring.h"
 #include "trinity.h"
@@ -68,6 +70,13 @@ bool check_all_locks(void)
 
 	check_lock(&shm->syscalltable_lock);
 
+	/* check_parent_pid (child.c) is the only taker; held briefly on the
+	 * EXIT_REPARENT_PROBLEM fatal path.  A second child entering reparent
+	 * recovery while the first died mid-update would otherwise spin until
+	 * the in-primitive pid_alive recovery fires.  Same shm struct as
+	 * syscalltable_lock above — no NULL gate needed. */
+	check_lock(&shm->buglock);
+
 	if (children == NULL)
 		return false;
 
@@ -84,6 +93,25 @@ bool check_all_locks(void)
 		for (i = 0; i < ARRAY_SIZE(cmp_hints_shm->pools); i++)
 			ret |= check_lock(&cmp_hints_shm->pools[i].lock);
 	}
+
+	/* Per-syscall minicorpus rings.  Writers are children on the hot
+	 * save/replay path; the parent also takes every ring lock at
+	 * shutdown via minicorpus_save_file, so a leaked ring lock wedges
+	 * the shutdown save and burns the accumulated corpus.  Same
+	 * per-array idiom as the cmp_hints walk above. */
+	if (minicorpus_shm != NULL) {
+		for (i = 0; i < ARRAY_SIZE(minicorpus_shm->rings); i++)
+			ret |= check_lock(&minicorpus_shm->rings[i].lock);
+	}
+
+	/* Global chain-corpus ring lock.  Written by children only
+	 * (chain_corpus_save); readers are lockless.  No parent-side
+	 * caller today, but the lock has no other reaper — without this
+	 * scan a SIGSEGV inside chain_corpus_save leaves the ring wedged
+	 * for every subsequent child saver until the million-spin
+	 * try_release_dead_holder eventually fires. */
+	if (chain_corpus_shm != NULL)
+		ret |= check_lock(&chain_corpus_shm->lock);
 
 	return ret;
 }
