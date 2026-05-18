@@ -342,14 +342,32 @@ static unsigned long pick_io_uring_register_opcode(void)
  *
  * The other opcodes feed rec->a3 with non-heap values -- get_writable_
  * struct() / get_writable_address() pool pointers, or zero -- and leave
- * heap_buf NULL.  The post handler dispatches off the snapshot's
+ * original_alloc NULL.  The post handler dispatches off the snapshot's
  * opcode, not rec->a2, so a sibling scribble of the opcode also cannot
  * redirect the free into a non-heap rec->a3 (which would UAF the
  * OBJ_MMAP pool).
+ *
+ * original_alloc captures the alloc_iovec() return value BEFORE the
+ * trailing avoid_shared_buffer() call -- ASB relocates rec->a3 off the
+ * libc heap into a parent-private writable region whenever the buffer
+ * overlaps the shared regions, so by the time the post handler runs
+ * rec->a3 may no longer point at the zmalloc()'d iovec at all.
+ * deferred_free_enqueue()'s heap-bounds and alloc-track gates reject the
+ * relocated pointer (writable-address pool, mmap'd, alloc-track-unknown),
+ * so the original allocation would leak every IORING_REGISTER_BUFFERS
+ * invocation if the post handler routed the free through rec->a3.
+ *
+ * The magic cookie hardens the post handler against rec->post_state
+ * being scribbled with a heap-shaped pointer to a foreign allocation
+ * (a sibling syscall's post_state, a stale alloc_iovec(1) in the same
+ * free-list bucket, ...) -- a cookie mismatch rejects the forgery
+ * before any inner-field deref.
  */
+#define IO_URING_REGISTER_POST_STATE_MAGIC	0x494F5F55524D4147UL	/* "IO_URMAG" */
 struct io_uring_register_post_state {
+	unsigned long magic;
 	unsigned int opcode;
-	void *heap_buf;
+	void *original_alloc;
 };
 
 static void sanitise_io_uring_register(struct syscallrecord *rec)
@@ -359,6 +377,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	unsigned int opcode;
 	unsigned int nr;
 	void *buf;
+	void *iov_alloc = NULL;
 
 	rec->a2 = pick_io_uring_register_opcode();
 
@@ -410,7 +429,8 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 */
 	case IORING_REGISTER_BUFFERS:
 		nr = 1 + (rand() % 8);
-		rec->a3 = (unsigned long) alloc_iovec(nr);
+		iov_alloc = alloc_iovec(nr);
+		rec->a3 = (unsigned long) iov_alloc;
 		rec->a4 = nr;
 		break;
 
@@ -915,9 +935,10 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 * post handler, so the scribblers have nothing to scribble there.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = IO_URING_REGISTER_POST_STATE_MAGIC;
 	snap->opcode = opcode;
-	snap->heap_buf = (opcode == IORING_REGISTER_BUFFERS) ?
-		(void *)(unsigned long) rec->a3 : NULL;
+	snap->original_alloc = (opcode == IORING_REGISTER_BUFFERS) ?
+		iov_alloc : NULL;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -948,6 +969,23 @@ static void post_io_uring_register(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_io_uring_register: rejected suspicious "
 			  "post_state=%p (pid-scribbled?)\n", snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as an
+	 * io_uring_register_post_state -- post_io_uring_register would
+	 * then dispatch off a foreign opcode field and hand a foreign
+	 * pointer to deferred_free_enqueue().
+	 */
+	if (snap->magic != IO_URING_REGISTER_POST_STATE_MAGIC) {
+		outputerr("post_io_uring_register: rejected snap with bad "
+			  "magic 0x%lx (post_state-stomped to foreign "
+			  "allocation?)\n", snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
@@ -1023,9 +1061,11 @@ static void post_io_uring_register(struct syscallrecord *rec)
 	 * so only flag a non-NULL value that fails the heuristic.  Leak
 	 * rather than hand garbage to free().
 	 */
-	if (snap->heap_buf != NULL && looks_like_corrupted_ptr(rec, snap->heap_buf)) {
+	if (snap->original_alloc != NULL &&
+	    looks_like_corrupted_ptr(rec, snap->original_alloc)) {
 		outputerr("post_io_uring_register: rejected suspicious snap "
-			  "heap_buf=%p (post_state-scribbled?)\n", snap->heap_buf);
+			  "original_alloc=%p (post_state-scribbled?)\n",
+			  snap->original_alloc);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
@@ -1037,8 +1077,8 @@ static void post_io_uring_register(struct syscallrecord *rec)
 	 * deferred_freeptr) so concurrent observers that grabbed the
 	 * address from rec->a3 before a scribble do not UAF.
 	 */
-	if (snap->heap_buf != NULL && snap->opcode == IORING_REGISTER_BUFFERS)
-		deferred_free_enqueue(snap->heap_buf, NULL);
+	if (snap->original_alloc != NULL && snap->opcode == IORING_REGISTER_BUFFERS)
+		deferred_free_enqueue(snap->original_alloc, NULL);
 
 	deferred_freeptr(&rec->post_state);
 }
