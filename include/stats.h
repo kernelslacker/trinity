@@ -1378,6 +1378,17 @@ struct stats_s {
 	 * watch set and blocking the parent's epoll/poll loop). */
 	unsigned long parent_inherited_fds_closed;
 
+	/* alloc_shared() / track_shared_region() ran with
+	 * nr_shared_regions == MAX_SHARED_ALLOCS and parked the new region
+	 * in the bounded overflow tail.  Non-zero means the static cap is
+	 * demonstrably undersized -- consult this counter (not a guess) when
+	 * deciding whether to raise MAX_SHARED_ALLOCS or move shared_regions[]
+	 * to a dynamic registry.  Untracked-and-silent is no longer an option:
+	 * range_overlaps_shared() relies on the bitmap, which the overflow
+	 * path still sets, but a tail-exhaust BUG()s rather than under-
+	 * protect. */
+	unsigned long shared_region_overflow;
+
 	/* fd_event_drain_all() found a child->fd_event_ring pointer that
 	 * failed the canonical-address / minimum-address sanity check.
 	 * Defense-in-depth against D-state zombie write-after-reap. */

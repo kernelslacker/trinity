@@ -44,6 +44,29 @@ static struct {
 unsigned int nr_shared_regions;
 
 /*
+ * Bounded overflow tail for registrations that arrive once
+ * shared_regions[] is full.  Exists so range_overlaps_shared() (via the
+ * bitmap, which is still updated) and range_in_tracked_shared() (via the
+ * linear walk extension below) keep protecting fuzzed mm syscalls from
+ * clobbering the untracked region instead of silently failing open.
+ *
+ * Intentionally small: 256 slots is "absorb a moderately over-budget
+ * fleet host long enough to fail loudly and tell the operator to raise
+ * MAX_SHARED_ALLOCS or move to dynamic resize", not "a second pool to
+ * keep growing into".  Exhausting the tail BUG()s in both debug and
+ * release; under-protection of a writable shared mapping is the failure
+ * class the whole tracker exists to prevent and is never preferable to
+ * a loud abort.
+ */
+#define SHARED_REGIONS_OVERFLOW_TAIL 256
+
+static struct {
+	unsigned long addr;
+	unsigned long size;
+} shared_regions_overflow[SHARED_REGIONS_OVERFLOW_TAIL];
+static unsigned int nr_shared_regions_overflow;
+
+/*
  * Bitmap accelerator for range_overlaps_shared().  One bit per
  * SHARED_BITMAP_GRANULARITY-byte chunk of user VA; a set bit means at
  * least one byte in that chunk belongs to a registered shared region.
@@ -131,24 +154,72 @@ static void shared_bitmap_mark(unsigned long addr, unsigned long size)
 }
 
 /*
- * Fire once when shared_regions[] first runs out of slots.  Per-call
- * outputerr() would spam stderr from inside init_shm()'s for_each_child
- * loop on a host whose max_children pushes the table past capacity --
- * one warning is enough to flag the overflow class and tell the operator
- * to either raise MAX_SHARED_ALLOCS or move the table to dynamic resize.
+ * Handle a registration that arrived once shared_regions[] is full.
+ *
+ * The previous "warn once, then silently drop the region" policy turned
+ * an over-budget host into the exact failure mode this whole tracker
+ * exists to prevent: range_overlaps_shared() can no longer guard an
+ * untracked writable MAP_SHARED region from a fuzzed
+ * munmap/mremap/madvise/mprotect, so the next call that picks an
+ * unlucky address scribbles trinity's own shared state and the
+ * resulting crash looks like a kernel bug.  Silent under-protection of
+ * a writable shared mapping is never preferable to a loud abort.
+ *
+ * New policy, per call:
+ *
+ *   - Always emit a LOUD outputerr() naming the caller PC (resolved via
+ *     pc_to_string, same idiom as log_mprotect_failure()), the offending
+ *     region, and the tail occupancy.  Per-call (not cap-once): the
+ *     cap-once predecessor hid how badly the cap was over budget, which
+ *     is the one piece of data needed to size a real fix.
+ *
+ *   - Under ASAN (the developer / debug build), BUG() immediately --
+ *     overflow is a tree-state bug and we want a stack trace, not a
+ *     production-shaped degradation.
+ *
+ *   - In release, register the region in the bounded overflow tail so
+ *     the bitmap stays correct (shared_bitmap_mark already covers the
+ *     range) and range_in_tracked_shared() can still match precisely.
+ *     Bump shm->stats.shared_region_overflow so the over-budget state
+ *     is visible in the periodic stats dump.
+ *
+ *   - If the overflow tail itself fills, BUG() in both debug and
+ *     release.  Two layers of bounded storage is enough; a third would
+ *     just be a slower path to the same silent-under-protection bug.
  */
-static void note_shared_overflow(const char *who, const void *addr)
+static void register_shared_overflow(const char *who, unsigned long addr,
+				     unsigned long size, void *caller)
 {
-	static bool warned;
+	char pcbuf[128];
 
-	if (warned)
-		return;
-	warned = true;
-	outputerr("%s: MAX_SHARED_ALLOCS (%d) reached at region %p; "
-		"this and later regions are untracked -- raise "
-		"MAX_SHARED_ALLOCS or move shared_regions[] to dynamic "
-		"resize\n",
-		who, MAX_SHARED_ALLOCS, addr);
+	outputerr("shared_regions: %s overflow: region 0x%lx+0x%lx from %s; "
+		  "MAX_SHARED_ALLOCS=%d exhausted, overflow tail at %u/%d -- "
+		  "raise the cap or move shared_regions[] to dynamic resize\n",
+		  who, addr, size,
+		  pc_to_string(caller, pcbuf, sizeof(pcbuf)),
+		  MAX_SHARED_ALLOCS,
+		  nr_shared_regions_overflow, SHARED_REGIONS_OVERFLOW_TAIL);
+
+#ifdef __SANITIZE_ADDRESS__
+	BUG("shared_regions[] overflow (debug build)");
+#else
+	if (nr_shared_regions_overflow >= SHARED_REGIONS_OVERFLOW_TAIL) {
+		outputerr("shared_regions: overflow tail also exhausted "
+			  "(%d slots); refusing to leave region 0x%lx+0x%lx "
+			  "untracked\n",
+			  SHARED_REGIONS_OVERFLOW_TAIL, addr, size);
+		BUG("shared_regions overflow tail exhausted");
+	}
+
+	shared_regions_overflow[nr_shared_regions_overflow].addr = addr;
+	shared_regions_overflow[nr_shared_regions_overflow].size = size;
+	shared_bitmap_mark(addr, size);
+	nr_shared_regions_overflow++;
+
+	if (shm != NULL)
+		__atomic_add_fetch(&shm->stats.shared_region_overflow, 1,
+				   __ATOMIC_RELAXED);
+#endif
 }
 
 void * alloc_shared(size_t size)
@@ -179,7 +250,8 @@ void * alloc_shared(size_t size)
 		shared_bitmap_mark((unsigned long) ret, size);
 		nr_shared_regions++;
 	} else {
-		note_shared_overflow("alloc_shared", ret);
+		register_shared_overflow("alloc_shared", (unsigned long) ret,
+					 size, __builtin_return_address(0));
 	}
 
 	return ret;
@@ -201,7 +273,8 @@ void track_shared_region(unsigned long addr, unsigned long size)
 		shared_bitmap_mark(addr, size);
 		nr_shared_regions++;
 	} else {
-		note_shared_overflow("track_shared_region", (const void *)addr);
+		register_shared_overflow("track_shared_region", addr, size,
+					 __builtin_return_address(0));
 	}
 }
 
@@ -793,6 +866,17 @@ bool range_in_tracked_shared(unsigned long addr, unsigned long len)
 	for (i = 0; i < nr_shared_regions; i++) {
 		unsigned long rstart = shared_regions[i].addr;
 		unsigned long rend = rstart + shared_regions[i].size;
+
+		if (addr >= rstart && end <= rend)
+			return true;
+	}
+	/* Same byte-precise walk over the overflow tail: a region parked
+	 * there is no less tracked from the caller's perspective, and a
+	 * false negative would let get_writable_address() hand back a
+	 * pool slot that no longer resolves to a tracked mapping. */
+	for (i = 0; i < nr_shared_regions_overflow; i++) {
+		unsigned long rstart = shared_regions_overflow[i].addr;
+		unsigned long rend = rstart + shared_regions_overflow[i].size;
 
 		if (addr >= rstart && end <= rend)
 			return true;

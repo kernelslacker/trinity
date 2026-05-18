@@ -3256,6 +3256,9 @@ void dump_stats(void)
 		if (verbosity > 1)
 			dump_range_overlaps_shared_top_offenders();
 	}
+	if (shm->stats.shared_region_overflow)
+		stat_row("shared_buffer", "shared_region_overflow",
+			 shm->stats.shared_region_overflow);
 	if (parent_stats.get_writable_address_scribbled_slots_caught)
 		stat_row("shared_buffer", "get_writable_address_scribbled_slots_caught",
 			 parent_stats.get_writable_address_scribbled_slots_caught);
