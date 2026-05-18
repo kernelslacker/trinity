@@ -72,14 +72,27 @@ bool check_all_locks(void)
 
 bool trylock(lock_t *lk)
 {
-	unsigned long expected = 0;
+	unsigned long current = __atomic_load_n(&lk->state, __ATOMIC_RELAXED);
 	unsigned long desired = MAKE_LOCK(cached_pid, LOCKED);
 
-	/* Single CAS sets both lock state AND owner atomically.
-	 * No torn state possible — if we die after this, the lock
-	 * appears fully held by us, and the next check_lock pass
-	 * will recognize the dead pid and release it. */
-	return __atomic_compare_exchange_n(&lk->state, &expected, desired,
+	/* Acquire on any word with the state bit clear, even if the
+	 * reserved or owner bits are dirty.  A corrupted-but-unlocked
+	 * word (e.g. a stray write from a fuzzed syscall scribbling
+	 * through an aliased iov_base into shared lock memory) is
+	 * logically unlocked -- treating it as held would spin trylock
+	 * forever waiting for an unlock that never comes because
+	 * nobody actually owns it.  The CAS uses the sampled current
+	 * value, so a concurrent acquirer that flips the state bit
+	 * between our load and our CAS just makes the CAS fail; the
+	 * caller loops, same as before.
+	 *
+	 * Single CAS still sets state and owner together, so a death
+	 * after this point leaves the lock cleanly held by us, and the
+	 * next check_lock pid_alive scan will release it. */
+	if (LOCK_STATE(current) != UNLOCKED)
+		return false;
+
+	return __atomic_compare_exchange_n(&lk->state, &current, desired,
 					   0, __ATOMIC_ACQUIRE,
 					   __ATOMIC_RELAXED);
 }
