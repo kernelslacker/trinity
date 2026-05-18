@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "compiler.h"
+
 #define MB(_x) ((_x) * 1024UL * 1024UL)
 #define GB(_x) ((_x) * 1024UL * MB(1))
 
@@ -183,7 +185,7 @@ static inline bool is_corrupt_ptr_shape(const void *p)
  * broken down by the specific looks_like_corrupted_ptr() callsite.
  */
 bool looks_like_corrupted_ptr_pc(struct syscallrecord *rec, const void *p,
-				 void *caller_pc);
+				 void *caller_pc) __must_check;
 
 /*
  * Inline wrapper so each call site automatically supplies its own
@@ -192,6 +194,7 @@ bool looks_like_corrupted_ptr_pc(struct syscallrecord *rec, const void *p,
  * __builtin_return_address(0)) so the recorded PC is the syscall
  * handler's own callsite rather than this wrapper's.
  */
+__must_check
 static inline bool looks_like_corrupted_ptr(struct syscallrecord *rec,
 					    const void *p)
 {
@@ -278,7 +281,7 @@ void post_handler_corrupt_ptr_bump_retfd(struct syscallrecord *rec);
  * offending field.
  */
 bool inner_ptr_ok_to_free(struct syscallrecord *rec, const void *p,
-			  const char *site);
+			  const char *site) __must_check;
 
 /*
  * Cache the [heap] extent from /proc/self/maps.  Call once before

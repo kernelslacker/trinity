@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include "compiler.h"
 #include "futex.h"
 #include "list.h"
 #include "maps.h"
@@ -426,7 +427,7 @@ void clone_global_objects_to_child(struct childdata *child);
 struct object * get_random_object(enum objecttype type, enum obj_scope scope);
 
 bool objects_empty(enum objecttype type);
-struct objhead * get_objhead(enum obj_scope scope, enum objecttype type);
+struct objhead * get_objhead(enum obj_scope scope, enum objecttype type) __must_check;
 void prune_objects(void);
 int fd_from_object(struct object *obj, enum objecttype type);
 void set_object_fd(struct object *obj, enum objecttype type, int fd);
