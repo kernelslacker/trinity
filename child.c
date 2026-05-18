@@ -1281,7 +1281,7 @@ void log_alt_op_config(void)
 	if (show < NR_ALT_OP_ROTATION && off < sizeof(buf) - 1)
 		(void) snprintf(buf + off, sizeof(buf) - off, ", ...");
 
-	output(1, "[main] alt-op children: %u reserved, rotation = %s\n",
+	output(1, "alt-op children: %u reserved, rotation = %s\n",
 		alt_op_children, buf);
 }
 
@@ -1453,11 +1453,11 @@ void init_altop_dispatch(void)
 	enabled_altop_count = count;
 
 	if (count == 0) {
-		output(1, "[main] altop dispatch: nominal=5%% effective=0%% (all altops dormant, falling back to syscall)\n");
+		output(1, "altop dispatch: nominal=5%% effective=0%% (all altops dormant, falling back to syscall)\n");
 		return;
 	}
 
-	output(1, "[main] altop dispatch: nominal=5%% effective=5%% (%u enabled altops: %s)\n",
+	output(1, "altop dispatch: nominal=5%% effective=5%% (%u enabled altops: %s)\n",
 		count, buf);
 }
 

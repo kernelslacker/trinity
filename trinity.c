@@ -404,7 +404,7 @@ int main(int argc, char* argv[])
 		unsigned int active_seed =
 			__atomic_load_n(&shm->seed, __ATOMIC_RELAXED);
 
-		output(0, "[main] seed=0x%x\n", active_seed);
+		output(0, "seed=0x%x\n", active_seed);
 
 		if (user_set_seed == false) {
 			FILE *f = fopen("last-run-seed.tmp", "w");

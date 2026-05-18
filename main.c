@@ -1371,14 +1371,14 @@ static void print_stats(void)
 					(unsigned int)(e_cur * 100UL / total) : 0;
 				unsigned int b_share_pct = 100U - e_share_pct;
 
-				output(0, "[main] explorer: %u/%u children, %lu edges (%u%%/+%lu)  bandit: %u/%u, %lu edges (%u%%/+%lu)\n",
+				output(0, "explorer: %u/%u children, %lu edges (%u%%/+%lu)  bandit: %u/%u, %lu edges (%u%%/+%lu)\n",
 					explorer_children, max_children,
 					e_cur, e_share_pct, e_delta,
 					max_children - explorer_children, max_children,
 					b_cur, b_share_pct, b_delta);
 				last_explorer_edges = e_cur;
 			} else {
-				output(0, "[main] bandit: %u/%u children, %lu edges (+%lu)\n",
+				output(0, "bandit: %u/%u children, %lu edges (+%lu)\n",
 					max_children, max_children,
 					b_cur, b_delta);
 			}
