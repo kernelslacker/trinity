@@ -33,6 +33,7 @@
 #include "edgepair_ring.h"
 #include "pids.h"
 #include "shm.h"
+#include "spsc-ring.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -54,10 +55,8 @@ static unsigned int aggregate_pair_hash(unsigned int prev, unsigned int curr)
 
 void edgepair_ring_init(struct edgepair_ring *ring)
 {
-	memset(ring, 0, sizeof(*ring));
-	__atomic_store_n(&ring->head, 0, __ATOMIC_RELAXED);
-	__atomic_store_n(&ring->tail, 0, __ATOMIC_RELAXED);
-	__atomic_store_n(&ring->overflow, 0, __ATOMIC_RELAXED);
+	memset(ring->slots, 0, sizeof(ring->slots));
+	spsc_ring_init(&ring->base);
 }
 
 /*
@@ -93,27 +92,13 @@ bool edgepair_ring_enqueue(struct edgepair_ring *ring,
 		.curr_nr = (uint16_t)curr_nr,
 		.new_edges = new_edges ? 1 : 0,
 	};
-	uint32_t head, tail, next;
 
 	if (ring == NULL)
 		return false;
 
-	head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
-	head &= (EDGEPAIR_RING_SIZE - 1);
-	tail = __atomic_load_n(&ring->tail, __ATOMIC_ACQUIRE);
-	tail &= (EDGEPAIR_RING_SIZE - 1);
-
-	next = (head + 1) & (EDGEPAIR_RING_SIZE - 1);
-	if (next == tail) {
-		__atomic_fetch_add(&ring->overflow, 1,
-					  __ATOMIC_RELAXED);
-		return false;
-	}
-
-	ring->slots[head] = slot;
-
-	__atomic_store_n(&ring->head, next, __ATOMIC_RELEASE);
-	return true;
+	return spsc_ring_try_enqueue(&ring->base, ring->slots,
+				     EDGEPAIR_RING_SIZE, sizeof(ring->slots[0]),
+				     &slot);
 }
 
 /*
@@ -153,8 +138,9 @@ static struct edgepair_entry *aggregate_find_or_insert(unsigned int prev_nr,
  * stamp last_new_at -- minus the atomic_fetch_add / CAS machinery the
  * multi-writer path needed.
  */
-static void apply_slot(const struct edgepair_event_slot *s)
+static void apply_slot(const void *p, void *ctx __unused__)
 {
+	const struct edgepair_event_slot *s = p;
 	struct edgepair_entry *e;
 	unsigned long call_nr;
 
@@ -179,31 +165,16 @@ static void apply_slot(const struct edgepair_event_slot *s)
 
 unsigned int edgepair_ring_drain(struct edgepair_ring *ring)
 {
-	uint32_t head, tail, overflow;
-	unsigned int processed = 0;
+	uint32_t overflow = 0;
+	uint32_t processed;
 
 	if (ring == NULL)
 		return 0;
 
-	overflow = __atomic_load_n(&ring->overflow, __ATOMIC_RELAXED);
-	if (overflow != 0)
-		overflow = __atomic_exchange_n(&ring->overflow, 0,
-						    __ATOMIC_RELAXED);
-	if (overflow > 0)
-		parent_edgepair.ring_overflow_total += overflow;
-
-	tail = __atomic_load_n(&ring->tail, __ATOMIC_RELAXED);
-	tail &= (EDGEPAIR_RING_SIZE - 1);
-	head = __atomic_load_n(&ring->head, __ATOMIC_ACQUIRE);
-	head &= (EDGEPAIR_RING_SIZE - 1);
-
-	while (tail != head) {
-		apply_slot(&ring->slots[tail]);
-		tail = (tail + 1) & (EDGEPAIR_RING_SIZE - 1);
-		processed++;
-	}
-
-	__atomic_store_n(&ring->tail, tail, __ATOMIC_RELEASE);
+	processed = spsc_ring_drain(&ring->base, ring->slots,
+				    EDGEPAIR_RING_SIZE, sizeof(ring->slots[0]),
+				    apply_slot, NULL, &overflow);
+	parent_edgepair.ring_overflow_total += overflow;
 	return processed;
 }
 

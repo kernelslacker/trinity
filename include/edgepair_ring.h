@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "edgepair.h"	/* EDGEPAIR_TABLE_SIZE, struct edgepair_entry */
+#include "spsc-ring.h"
 #include "syscall.h"	/* MAX_NR_SYSCALL */
 
 /*
@@ -43,16 +44,7 @@ struct edgepair_event_slot {
 };				/* 16 bytes total */
 
 struct edgepair_ring {
-	/* Producer (child) writes head and overflow. */
-	uint32_t head;
-	uint32_t overflow;
-
-	/* Padding to put producer and consumer fields on separate cache lines. */
-	char __pad[56];
-
-	/* Consumer (parent) writes tail. */
-	uint32_t tail;
-
+	struct spsc_ring base;
 	struct edgepair_event_slot slots[EDGEPAIR_RING_SIZE];
 };
 
