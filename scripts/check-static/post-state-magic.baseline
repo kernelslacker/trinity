@@ -72,6 +72,5 @@ syscalls/statfs.c:statfs
 syscalls/statfs.c:statfs64
 syscalls/statmount.c:statmount
 syscalls/sysfs.c:sysfs
-syscalls/timer_gettime.c:timer_gettime
 syscalls/uname.c:uname
 syscalls/x86/modify_ldt.c:modify_ldt
