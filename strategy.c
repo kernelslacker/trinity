@@ -1048,6 +1048,7 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 	unsigned int prev, curr;
 	unsigned int pair_weight, dyn_hits;
 	unsigned int static_prior;
+	unsigned int arch;
 
 	if (rec == NULL || child == NULL)
 		return RRC_UNKNOWN;
@@ -1056,6 +1057,11 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 
 	curr = (unsigned int)rec->nr;
 	prev = child->last_syscall_nr;
+	/* HEALER's pair table is indexed by the successor call's arch
+	 * dimension; classify_random_rescue is reasoning about the rescue
+	 * call (rec), so the arch read off rec->do32bit is the right
+	 * lookup key for the (prev, curr) cell. */
+	arch = healer_arch_id(rec->do32bit);
 
 	/* RRC_COLD_SKIP.  Heuristic picker would have rejected this nr at
 	 * least half the time on the cold-skip retry path, so a RANDOM
@@ -1073,8 +1079,8 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 	 * attribution buckets do not apply and the rescue falls through to
 	 * the unattributable bucket (or matches CMP_DERIVED below). */
 	if (prev != EDGEPAIR_NO_PREV && prev < MAX_NR_SYSCALL) {
-		pair_weight = healer_pair_get(prev, curr);
-		dyn_hits = healer_pair_dynamic_hits(prev, curr);
+		pair_weight = healer_pair_get(arch, prev, curr);
+		dyn_hits = healer_pair_dynamic_hits(arch, prev, curr);
 		/* healer_pair_get sums static_prior + dynamic_hits; backing
 		 * the dynamic component out reconstructs the static prior
 		 * without adding a third accessor.  pair_weight >= dyn_hits
@@ -1100,7 +1106,7 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 			     scanned < RRC_UNSEEN_SUCCESSOR_SCAN_CAP;
 			     scanned++) {
 				if (succ != curr &&
-				    healer_pair_get(prev, succ) >=
+				    healer_pair_get(arch, prev, succ) >=
 					    RRC_HOT_PAIR_THRESHOLD)
 					return RRC_UNSEEN_SUCCESSOR;
 				succ = (succ + 1) % MAX_NR_SYSCALL;

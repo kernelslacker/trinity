@@ -48,7 +48,7 @@
 
 struct healer_aggregate parent_healer;
 struct healer_relation *healer_relations_published;
-struct healer_pair_cell (*healer_pair_published)[MAX_NR_SYSCALL];
+struct healer_pair_cell (*healer_pair_published)[MAX_NR_SYSCALL][MAX_NR_SYSCALL];
 
 /* Mirror healer.c's per-cell saturation cap and decay cadences.  Kept
  * as local statics so this file is self-contained for the dark-launch
@@ -102,15 +102,20 @@ struct healer_pair_cell (*healer_pair_published)[MAX_NR_SYSCALL];
 #define FNV1A_OFFSET_BASIS 0x811c9dc5U
 #define FNV1A_PRIME        0x01000193U
 
-static unsigned int aggregate_predset_hash(unsigned int pred_a,
+static unsigned int aggregate_predset_hash(unsigned int arch,
+					   unsigned int pred_a,
 					   unsigned int pred_b)
 {
 	uint32_t h = FNV1A_OFFSET_BASIS;
-	unsigned char buf[sizeof(unsigned int) * 2];
+	unsigned char buf[sizeof(uint8_t) + sizeof(unsigned int) * 2];
 	size_t i;
 
-	memcpy(buf, &pred_a, sizeof(pred_a));
-	memcpy(buf + sizeof(pred_a), &pred_b, sizeof(pred_b));
+	/* arch first so the same (pa, pb) under a different arch starts on
+	 * a distinct probe chain; one byte is enough headroom -- the enum
+	 * has two values today and any future growth fits comfortably. */
+	buf[0] = (uint8_t)arch;
+	memcpy(buf + 1, &pred_a, sizeof(pred_a));
+	memcpy(buf + 1 + sizeof(pred_a), &pred_b, sizeof(pred_b));
 
 	for (i = 0; i < sizeof(buf); i++) {
 		h ^= buf[i];
@@ -203,6 +208,7 @@ bool healer_ring_enqueue_observation(struct healer_ring *ring,
 				     unsigned int pred_prev,
 				     unsigned int pred_last,
 				     unsigned int succ,
+				     unsigned int succ_arch,
 				     unsigned int flags,
 				     unsigned int edge_delta,
 				     unsigned int result_class)
@@ -215,6 +221,7 @@ bool healer_ring_enqueue_observation(struct healer_ring *ring,
 		.edge_delta = (uint16_t)(edge_delta > UINT16_MAX ? UINT16_MAX
 								 : edge_delta),
 		.result_class = (uint16_t)result_class,
+		.succ_arch = (uint16_t)succ_arch,
 	};
 
 	if (ring == NULL)
@@ -241,8 +248,9 @@ bool healer_ring_enqueue_observation(struct healer_ring *ring,
  * (A, B) and (B, A) predsets collapse into the same slot; the caller
  * does the sort just before this function runs.
  */
-static void apply_triple(unsigned int pred_a, unsigned int pred_b,
-			 unsigned int succ, unsigned int weight_inc)
+static void apply_triple(unsigned int arch, unsigned int pred_a,
+			 unsigned int pred_b, unsigned int succ,
+			 unsigned int weight_inc)
 {
 	unsigned int predset_hash;
 	unsigned int slot_idx;
@@ -258,8 +266,11 @@ static void apply_triple(unsigned int pred_a, unsigned int pred_b,
 	bool evicted = false;
 
 	/* A scribbled ring slot can carry any 16-bit value -- bound-check
-	 * before indexing. */
-	if (pred_a >= MAX_NR_SYSCALL || pred_b >= MAX_NR_SYSCALL ||
+	 * before indexing.  arch is the successor call's arch dimension;
+	 * a scribbled out-of-range value here would index past the
+	 * pred_appearance array, so range-gate it too. */
+	if (arch >= HEALER_NR_ARCHES ||
+	    pred_a >= MAX_NR_SYSCALL || pred_b >= MAX_NR_SYSCALL ||
 	    succ >= MAX_NR_SYSCALL)
 		return;
 
@@ -270,11 +281,11 @@ static void apply_triple(unsigned int pred_a, unsigned int pred_b,
 	 * probe-limit branches share one store. */
 	healer_snapshot_dirty = true;
 
-	parent_healer.pred_appearance[pred_a]++;
+	parent_healer.pred_appearance[arch][pred_a]++;
 	if (pred_b != pred_a)
-		parent_healer.pred_appearance[pred_b]++;
+		parent_healer.pred_appearance[arch][pred_b]++;
 
-	predset_hash = aggregate_predset_hash(pred_a, pred_b);
+	predset_hash = aggregate_predset_hash(arch, pred_a, pred_b);
 	slot_idx = predset_hash & (HEALER_RELATION_SLOTS - 1);
 	target_key = aggregate_pack_key(pred_a, pred_b, predset_hash);
 
@@ -284,10 +295,11 @@ static void apply_triple(unsigned int pred_a, unsigned int pred_b,
 		slot = &table[idx];
 		if (slot->key == 0) {
 			slot->key = target_key;
+			slot->arch = (uint16_t)arch;
 			parent_healer.relations_dirty[idx] = 1;
 			break;
 		}
-		if (slot->key == target_key) {
+		if (slot->key == target_key && slot->arch == arch) {
 			parent_healer.relations_dirty[idx] = 1;
 			break;
 		}
@@ -362,16 +374,17 @@ out:
  * weight_inc is the per-observation magnitude derived from the call's
  * edge_delta (capped at HEALER_EDGE_AMPLIFY_CAP by the caller).
  */
-static void apply_pair(unsigned int pred, unsigned int succ,
+static void apply_pair(unsigned int arch, unsigned int pred, unsigned int succ,
 		       unsigned int weight_inc)
 {
 	struct healer_pair_cell *cell;
 	uint32_t hits, new_hits;
 
-	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
+	if (arch >= HEALER_NR_ARCHES ||
+	    pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
 		return;
 
-	cell = &parent_healer.pair_table[pred][succ];
+	cell = &parent_healer.pair_table[arch][pred][succ];
 	hits = cell->dynamic_hits;
 	if (hits >= HEALER_PAIR_MAX_WEIGHT)
 		return;
@@ -381,7 +394,7 @@ static void apply_pair(unsigned int pred, unsigned int succ,
 		new_hits = HEALER_PAIR_MAX_WEIGHT;
 	cell->dynamic_hits = new_hits;
 	cell->last_observed_epoch = parent_healer.decay_epoch;
-	parent_healer.pair_dirty[pred] = 1;
+	parent_healer.pair_dirty[arch][pred] = 1;
 	healer_snapshot_dirty = true;
 }
 
@@ -419,23 +432,28 @@ static void apply_observation(const void *p, void *ctx __unused__)
 {
 	const struct healer_observation *obs = p;
 	unsigned int weight_inc;
-	unsigned int pred_prev, pred_last, succ;
+	unsigned int pred_prev, pred_last, succ, arch;
 
 	pred_prev = obs->pred_prev;
 	pred_last = obs->pred_last;
 	succ = obs->succ;
+	arch = obs->succ_arch;
 
 	/* succ is always required.  pred_last must be valid for either
 	 * update; without it there is no relation to learn from this
-	 * observation. */
+	 * observation.  arch is the successor's arch dim (clamped to
+	 * HEALER_NR_ARCHES at enqueue is the producer's responsibility,
+	 * but bounds-check defensively too). */
 	if (succ >= MAX_NR_SYSCALL)
 		return;
 	if (pred_last == EDGEPAIR_NO_PREV)
 		return;
+	if (arch >= HEALER_NR_ARCHES)
+		return;
 
 	weight_inc = healer_edge_weight_inc(obs->edge_delta);
 
-	apply_pair(pred_last, succ, weight_inc);
+	apply_pair(arch, pred_last, succ, weight_inc);
 
 	if (pred_prev != EDGEPAIR_NO_PREV) {
 		unsigned int pa = pred_prev;
@@ -446,7 +464,7 @@ static void apply_observation(const void *p, void *ctx __unused__)
 			pa = pb;
 			pb = tmp;
 		}
-		apply_triple(pa, pb, succ, weight_inc);
+		apply_triple(arch, pa, pb, succ, weight_inc);
 	}
 }
 
@@ -481,7 +499,7 @@ unsigned int healer_ring_drain(struct healer_ring *ring)
  * pair that has stopped firing recently loses its picker-side
  * advantage to fresher signal.
  */
-static bool healer_decay_pair_row(unsigned int pred)
+static bool healer_decay_pair_row(unsigned int arch, unsigned int pred)
 {
 	bool row_modified = false;
 	unsigned int succ;
@@ -490,7 +508,7 @@ static bool healer_decay_pair_row(unsigned int pred)
 		struct healer_pair_cell *cell;
 		uint32_t hits;
 
-		cell = &parent_healer.pair_table[pred][succ];
+		cell = &parent_healer.pair_table[arch][pred][succ];
 		hits = cell->dynamic_hits;
 		if (hits <= 1)
 			continue;
@@ -595,9 +613,14 @@ static void healer_apply_maybe_decay(void)
 		}
 	}
 
-	for (i = 0; i < MAX_NR_SYSCALL; i++) {
-		if (healer_decay_pair_row(i))
-			parent_healer.pair_dirty[i] = 1;
+	{
+		unsigned int a;
+		for (a = 0; a < HEALER_NR_ARCHES; a++) {
+			for (i = 0; i < MAX_NR_SYSCALL; i++) {
+				if (healer_decay_pair_row(a, i))
+					parent_healer.pair_dirty[a][i] = 1;
+			}
+		}
 	}
 
 	parent_healer.decay_epoch++;
@@ -625,13 +648,16 @@ static void healer_publish_locked(void)
 	}
 
 	if (healer_pair_published != NULL) {
-		for (i = 0; i < MAX_NR_SYSCALL; i++) {
-			if (!parent_healer.pair_dirty[i])
-				continue;
-			memcpy(healer_pair_published[i],
-			       parent_healer.pair_table[i],
-			       sizeof(parent_healer.pair_table[i]));
-			parent_healer.pair_dirty[i] = 0;
+		unsigned int a;
+		for (a = 0; a < HEALER_NR_ARCHES; a++) {
+			for (i = 0; i < MAX_NR_SYSCALL; i++) {
+				if (!parent_healer.pair_dirty[a][i])
+					continue;
+				memcpy(healer_pair_published[a][i],
+				       parent_healer.pair_table[a][i],
+				       sizeof(parent_healer.pair_table[a][i]));
+				parent_healer.pair_dirty[a][i] = 0;
+			}
 		}
 	}
 
@@ -649,8 +675,8 @@ static void healer_publish_locked(void)
 		parent_healer.relations[0].key)
 		parent_healer.published_corrupt++;
 	if (healer_pair_published != NULL &&
-	    memcmp(&healer_pair_published[0][0],
-		   &parent_healer.pair_table[0][0],
+	    memcmp(&healer_pair_published[0][0][0],
+		   &parent_healer.pair_table[0][0][0],
 		   sizeof(struct healer_pair_cell)) != 0)
 		parent_healer.published_corrupt++;
 }
@@ -693,9 +719,11 @@ void healer_published_init(void)
 	       sizeof(struct healer_relation) * HEALER_RELATION_SLOTS);
 
 	healer_pair_published = alloc_shared(
-		sizeof(struct healer_pair_cell) * MAX_NR_SYSCALL * MAX_NR_SYSCALL);
+		sizeof(struct healer_pair_cell) * HEALER_NR_ARCHES *
+		MAX_NR_SYSCALL * MAX_NR_SYSCALL);
 	memset(healer_pair_published, 0,
-	       sizeof(struct healer_pair_cell) * MAX_NR_SYSCALL * MAX_NR_SYSCALL);
+	       sizeof(struct healer_pair_cell) * HEALER_NR_ARCHES *
+	       MAX_NR_SYSCALL * MAX_NR_SYSCALL);
 }
 
 /*
@@ -735,7 +763,8 @@ void healer_published_freeze(void)
 	}
 
 	if (healer_pair_published != NULL) {
-		bytes = sizeof(unsigned int) * MAX_NR_SYSCALL * MAX_NR_SYSCALL;
+		bytes = sizeof(struct healer_pair_cell) * HEALER_NR_ARCHES *
+			MAX_NR_SYSCALL * MAX_NR_SYSCALL;
 		bytes = (bytes + page_size - 1) & PAGE_MASK;
 		if (mprotect(healer_pair_published, bytes, PROT_READ) != 0)
 			log_mprotect_failure(healer_pair_published, bytes,
@@ -744,15 +773,16 @@ void healer_published_freeze(void)
 	}
 }
 
-void healer_aggregate_pair_set(unsigned int pred, unsigned int succ,
-			       unsigned int weight)
+void healer_aggregate_pair_set(unsigned int arch, unsigned int pred,
+			       unsigned int succ, unsigned int weight)
 {
 	struct healer_pair_cell *cell;
 
-	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
+	if (arch >= HEALER_NR_ARCHES ||
+	    pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
 		return;
 
-	cell = &parent_healer.pair_table[pred][succ];
+	cell = &parent_healer.pair_table[arch][pred][succ];
 
 	/* Idempotent: a previous loader call already installed a prior
 	 * here -- skip silently rather than overwriting an authoritative
@@ -768,7 +798,7 @@ void healer_aggregate_pair_set(unsigned int pred, unsigned int succ,
 	if (weight > UINT8_MAX)
 		weight = UINT8_MAX;
 	cell->static_prior = (uint8_t)weight;
-	parent_healer.pair_dirty[pred] = 1;
+	parent_healer.pair_dirty[arch][pred] = 1;
 	parent_healer.pair_seeded++;
 	healer_snapshot_dirty = true;
 }

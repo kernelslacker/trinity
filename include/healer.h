@@ -1,6 +1,51 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
+
+#include "arch.h"	/* ARCH_IS_BIARCH */
+
+/*
+ * HEALER arch dimension.  Pair and triple keys are indexed by the
+ * successor call's arch so a (pred, succ) cell observed under a 64-bit
+ * successor doesn't collide with the same numeric pair under a 32-bit
+ * successor on biarch builds (where the 32-bit and 64-bit syscall
+ * tables map the same raw nr to different syscalls).  On uniarch builds
+ * the dimension collapses to a constant 1 -- the per-cell footprint and
+ * picker-side indexing cost are identical to the pre-arch layout, and
+ * the picker's previous biarch-fallback comment goes away because the
+ * picker can index the arch dimension directly.
+ *
+ * HEALER_ARCH_64 is the do-not-care fallback on uniarch (every cell
+ * lands at arch=0 regardless of compile-time word size).  HEALER_ARCH_32
+ * is defined only on biarch so callers that mention it on uniarch fail
+ * to compile rather than silently picking the wrong cell.
+ */
+#ifdef ARCH_IS_BIARCH
+#define HEALER_NR_ARCHES	2U
+#define HEALER_ARCH_64		0U
+#define HEALER_ARCH_32		1U
+#else
+#define HEALER_NR_ARCHES	1U
+#define HEALER_ARCH_64		0U
+#endif
+
+/*
+ * Map a do32 flag to the arch dimension index.  Returns HEALER_ARCH_64
+ * on uniarch unconditionally (HEALER_NR_ARCHES == 1 collapses every
+ * call to the single slot).  On biarch the picker's choose_syscall_table
+ * decision and the seed loader's per-table walk both feed do32 through
+ * here so the indexing convention stays in one place.
+ */
+static inline unsigned int healer_arch_id(bool do32)
+{
+#ifdef ARCH_IS_BIARCH
+	return do32 ? HEALER_ARCH_32 : HEALER_ARCH_64;
+#else
+	(void)do32;
+	return HEALER_ARCH_64;
+#endif
+}
 
 /*
  * HEALER syscall-relation observer (Phase A: instrumentation only).
@@ -83,18 +128,34 @@ struct healer_promoted {
 
 /*
  * One relation-table slot.  The leading (pred_a, pred_b, predset_hash)
- * tuple is laid out so a single 64-bit atomic load/CAS through the
- * `key` union member sees a coherent identifier triple, mirroring
- * edgepair_entry's packed-key claim protocol in edgepair.c.
+ * tuple is laid out so a single 64-bit load through the `key` union
+ * member sees a coherent identifier triple in one memory access,
+ * mirroring edgepair_entry's packed-key shape in edgepair.c.
  * `predset_hash == 0` (and therefore `key == 0`) is the empty-slot
  * sentinel; healer_predset_hash() remaps the vanishingly rare FNV-1a
  * output of 0 to 1 so a real predset never collides with empty,
- * leaving the surrounding shm memset(0) as the only initialisation
- * the table needs.  pred_a and pred_b are stored sorted (pred_a <=
- * pred_b) so the (A, B) / (B, A) symmetry holds at insertion time;
- * they are narrowed to uint16_t -- syscall numbers fit (MAX_NR_SYSCALL
- * is 1024) and the caller already filters the EDGEPAIR_NO_PREV
- * (0xFFFF) sentinel before we ever reach a slot.
+ * leaving the surrounding aggregate memset(0) as the only
+ * initialisation the table needs.  pred_a and pred_b are stored sorted
+ * (pred_a <= pred_b) so the (A, B) / (B, A) symmetry holds at
+ * insertion time; they are narrowed to uint16_t -- syscall numbers fit
+ * (MAX_NR_SYSCALL is 1024) and the caller already filters the
+ * EDGEPAIR_NO_PREV (0xFFFF) sentinel before we ever reach a slot.
+ *
+ * `arch` carries the successor call's arch dimension (0..HEALER_NR_ARCHES
+ * -1; see healer_arch_id above).  The same numeric (pred_a, pred_b)
+ * pair under a different arch hashes to a different probe-chain start
+ * via healer_predset_hash(arch, pa, pb), and a slot match on the chain
+ * requires both .key AND .arch to agree -- so a biarch host that maps
+ * the same raw syscall numbers to different syscalls in its 32-bit and
+ * 64-bit tables no longer collapses both arches onto one shared slot.
+ * On uniarch builds HEALER_NR_ARCHES == 1 and arch is always 0, with
+ * zero memory/runtime cost vs the pre-arch layout.
+ *
+ * The 8-byte arch chunk (arch + padding) sits AFTER the 8-byte packed
+ * key so the original packed-key offset asserts in healer.c stay
+ * valid; total slot header is 16 bytes (was 8), and the on-disk
+ * persistence format bumps to v3 with this commit to reflect the new
+ * layout (a v2 file is auto-rejected at load by the version check).
  */
 struct healer_relation {
 	union {
@@ -105,6 +166,9 @@ struct healer_relation {
 		};
 		uint64_t key;
 	};
+	uint16_t arch;
+	uint16_t _pad0;
+	uint32_t _pad1;
 	struct healer_promoted promoted[HEALER_PROMOTED_PER_SLOT];
 };
 
@@ -130,13 +194,19 @@ struct childdata;
  * (sort(pred_prev, pred_last) -> succ) from the same slot under
  * single-writer discipline.
  *
+ * `do32` is the SUCCESSOR call's arch -- the predecessor's arch is not
+ * tracked because the pair and triple tables index by the successor's
+ * arch dimension (see struct healer_relation::arch and the per-arch
+ * pair_table layout in struct healer_aggregate).  On uniarch builds
+ * do32 collapses to a no-op through healer_arch_id().
+ *
  * Drops the observation when no predecessor is available (the very
  * first syscall of a child's life, or a child whose seq buffer was
  * just reset).  Triple-table updates additionally require both
  * predecessor slots populated; pair-table updates only need pred_last.
  */
 void healer_observe(struct childdata *child, unsigned int current_nr,
-		    unsigned int flags, unsigned int edge_delta,
+		    bool do32, unsigned int flags, unsigned int edge_delta,
 		    unsigned int result_class);
 
 /*
@@ -234,28 +304,34 @@ void healer_maybe_snapshot(void);
  * when either syscall number is out of range, so callers don't have
  * to gate on MAX_NR_SYSCALL themselves.
  */
-void healer_pair_seed(unsigned int pred, unsigned int succ, unsigned int weight);
+void healer_pair_seed(unsigned int arch, unsigned int pred, unsigned int succ,
+		      unsigned int weight);
 
 /*
- * Combined picker weight for a (pred -> succ) cell: static prior
+ * Combined picker weight for an (arch, pred -> succ) cell: static prior
  * (carries the metadata-derived bootstrap signal) plus the runtime
  * dynamic_hits accumulator.  Returned as a single value so the picker's
  * existing distribution-build loop stays a single load per candidate.
  * Reads through the published mirror page; bounded staleness (~ms per
- * drain) is operationally indistinguishable from fresh.
+ * drain) is operationally indistinguishable from fresh.  arch is the
+ * successor's arch dimension (see healer_arch_id); on uniarch the
+ * argument is unused and always indexes the single slot.
  */
-unsigned int healer_pair_get(unsigned int pred, unsigned int succ);
+unsigned int healer_pair_get(unsigned int arch, unsigned int pred,
+			     unsigned int succ);
 
 /*
- * Dynamic-hits component for a (pred -> succ) cell.  Used by callers
- * that need to reason about runtime evidence specifically, separately
- * from the static prior -- the eligibility gate (which would otherwise
- * count bare seeds as evidence) and the dump path (which routes cells
- * to the seed-only vs dynamically-confirmed pools).  Returns 0 if the
- * mirror page is not yet allocated or the indices are out of range,
- * matching healer_pair_get's defensive shape.
+ * Dynamic-hits component for an (arch, pred -> succ) cell.  Used by
+ * callers that need to reason about runtime evidence specifically,
+ * separately from the static prior -- the eligibility gate (which
+ * would otherwise count bare seeds as evidence) and the dump path
+ * (which routes cells to the seed-only vs dynamically-confirmed
+ * pools).  Returns 0 if the mirror page is not yet allocated or the
+ * indices are out of range, matching healer_pair_get's defensive
+ * shape.
  */
-unsigned int healer_pair_dynamic_hits(unsigned int pred, unsigned int succ);
+unsigned int healer_pair_dynamic_hits(unsigned int arch, unsigned int pred,
+				      unsigned int succ);
 
 /*
  * Static-seed classifier dry-run.  Walks the active syscall table once

@@ -252,6 +252,8 @@ _Static_assert(offsetof(struct healer_relation, pred_b) == 2,
 	       "pred_b must be at offset 2 for packed key view");
 _Static_assert(offsetof(struct healer_relation, predset_hash) == 4,
 	       "predset_hash must be at offset 4 for packed key view");
+_Static_assert(offsetof(struct healer_relation, arch) == 8,
+	       "arch must follow the 8-byte packed key");
 _Static_assert(sizeof(uint16_t) == 2, "uint16_t must be 2 bytes");
 _Static_assert(sizeof(uint32_t) == 4, "uint32_t must be 4 bytes");
 _Static_assert(offsetof(struct healer_promoted, nr) == 0,
@@ -260,14 +262,19 @@ _Static_assert(offsetof(struct healer_promoted, weight) == 4,
 	       "weight must be at offset 4 for packed promoted view");
 _Static_assert(sizeof(unsigned int) == 4, "unsigned int must be 4 bytes");
 
-static unsigned int healer_predset_hash(unsigned int pred_a, unsigned int pred_b)
+static unsigned int healer_predset_hash(unsigned int arch, unsigned int pred_a,
+					unsigned int pred_b)
 {
 	uint32_t h = FNV1A_OFFSET_BASIS;
-	unsigned char buf[sizeof(unsigned int) * 2];
+	unsigned char buf[sizeof(uint8_t) + sizeof(unsigned int) * 2];
 	size_t i;
 
-	memcpy(buf, &pred_a, sizeof(pred_a));
-	memcpy(buf + sizeof(pred_a), &pred_b, sizeof(pred_b));
+	/* arch first so the same (pa, pb) under a different successor
+	 * arch starts on a distinct probe chain; one byte covers the
+	 * current two-value enum with headroom for future growth. */
+	buf[0] = (uint8_t)arch;
+	memcpy(buf + 1, &pred_a, sizeof(pred_a));
+	memcpy(buf + 1 + sizeof(pred_a), &pred_b, sizeof(pred_b));
 
 	for (i = 0; i < sizeof(buf); i++) {
 		h ^= buf[i];
@@ -349,10 +356,11 @@ static void healer_unpack_promoted(uint64_t entry, unsigned int *nr,
 }
 
 void healer_observe(struct childdata *child, unsigned int current_nr,
-		    unsigned int flags, unsigned int edge_delta,
+		    bool do32, unsigned int flags, unsigned int edge_delta,
 		    unsigned int result_class)
 {
 	unsigned int pred_prev, pred_last;
+	unsigned int succ_arch;
 
 	if (child == NULL || child->healer_ring == NULL)
 		return;
@@ -377,6 +385,8 @@ void healer_observe(struct childdata *child, unsigned int current_nr,
 	if (pred_last == EDGEPAIR_NO_PREV)
 		return;
 
+	succ_arch = healer_arch_id(do32);
+
 	/* Enqueue one unified observation slot for the parent's drain to
 	 * apply.  Drives BOTH the pair-table bump (pred_last -> current_nr)
 	 * AND the triple-table bump (sort(pred_prev, pred_last) -> current_nr)
@@ -392,7 +402,8 @@ void healer_observe(struct childdata *child, unsigned int current_nr,
 	 * always empty. */
 	(void)healer_ring_enqueue_observation(child->healer_ring,
 					      pred_prev, pred_last, current_nr,
-					      flags, edge_delta, result_class);
+					      succ_arch, flags, edge_delta,
+					      result_class);
 }
 
 
@@ -840,6 +851,7 @@ void healer_table_dump(void)
 	for (i = 0; i < HEALER_RELATION_SLOTS; i++) {
 		const struct healer_relation *slot = &parent_healer.relations[i];
 		uint64_t slot_key;
+		unsigned int slot_arch;
 		unsigned int slot_pred_a, slot_pred_b;
 		unsigned int slot_promoted = 0;
 		unsigned int slot_max_weight = 0;
@@ -854,14 +866,21 @@ void healer_table_dump(void)
 		slot_key = slot->key;
 		if (slot_key == 0)
 			continue;
+		slot_arch = slot->arch;
+		if (slot_arch >= HEALER_NR_ARCHES)
+			continue;
 
 		healer_unpack_key(slot_key, &slot_pred_a, &slot_pred_b);
 
 		/* Hoist the per-syscall appearance reads out of the per-promoted
 		 * inner loop -- they are slot-constant (every promoted entry in
-		 * the slot shares the same predecessor pair). */
-		pred_a_freq = parent_healer.pred_appearance[slot_pred_a];
-		pred_b_freq = parent_healer.pred_appearance[slot_pred_b];
+		 * the slot shares the same predecessor pair).  Indexed by the
+		 * slot's arch so the per-arch appearance denominators line up
+		 * with the slot's accumulation -- a triple observed under a
+		 * 32-bit successor is scored against the 32-bit predecessor
+		 * appearance counts, not the 64-bit ones. */
+		pred_a_freq = parent_healer.pred_appearance[slot_arch][slot_pred_a];
+		pred_b_freq = parent_healer.pred_appearance[slot_arch][slot_pred_b];
 
 		for (j = 0; j < HEALER_PROMOTED_PER_SLOT; j++) {
 			uint64_t entry;
@@ -1023,114 +1042,105 @@ void healer_table_dump(void)
 	 * the seed-only pool ignores it -- a bare seed is itself the entry
 	 * the section exists to surface.
 	 */
-	for (i = 0; i < MAX_NR_SYSCALL; i++) {
-		unsigned long producer_freq = parent_healer.pred_appearance[i];
-		bool row_dynamic_mass = false;
+	{
+		unsigned int arch;
 
-		for (j = 0; j < MAX_NR_SYSCALL; j++) {
-			unsigned int weight, dyn_hits;
-			unsigned long norm_score;
-			struct healer_dump_entry cand;
+		for (arch = 0; arch < HEALER_NR_ARCHES; arch++) {
+			for (i = 0; i < MAX_NR_SYSCALL; i++) {
+				unsigned long producer_freq =
+					parent_healer.pred_appearance[arch][i];
+				bool row_dynamic_mass = false;
 
-			weight = healer_pair_get(i, j);
-			if (weight == 0)
-				continue;
+				for (j = 0; j < MAX_NR_SYSCALL; j++) {
+					unsigned int weight, dyn_hits;
+					unsigned long norm_score;
+					struct healer_dump_entry cand;
 
-			pair_populated++;
-			/*
-			 * Dynamic-hits is the runtime-evidence half of the
-			 * cell.  Counting cells with dyn_hits > 0 (rather
-			 * than `weight >= 2` against the combined value)
-			 * keeps the per-dump pair_weighted statistic from
-			 * conflating the seed install footprint with
-			 * dynamic observation -- the old test counted bare
-			 * seeds at weight == 3 as "weighted", which is the
-			 * exact confusion the cell-struct split exists to
-			 * remove.
-			 */
-			dyn_hits = healer_pair_dynamic_hits(i, j);
-			if (dyn_hits > 0) {
-				pair_weighted++;
-				row_dynamic_mass = true;
+					weight = healer_pair_get(arch, i, j);
+					if (weight == 0)
+						continue;
+
+					pair_populated++;
+					/*
+					 * Dynamic-hits is the runtime-evidence
+					 * half of the cell.  Counting cells
+					 * with dyn_hits > 0 (rather than
+					 * `weight >= 2` against the combined
+					 * value) keeps the per-dump
+					 * pair_weighted statistic from
+					 * conflating the seed install
+					 * footprint with dynamic observation
+					 * -- the old test counted bare seeds
+					 * at weight == 3 as "weighted",
+					 * which is the exact confusion the
+					 * cell-struct split exists to
+					 * remove.
+					 */
+					dyn_hits = healer_pair_dynamic_hits(arch, i, j);
+					if (dyn_hits > 0) {
+						pair_weighted++;
+						row_dynamic_mass = true;
+					}
+
+					if (dyn_hits > 0 && dyn_hits < HEALER_DUMP_MIN_RAW) {
+						low_raw_skipped++;
+						continue;
+					}
+
+					if (observed >= HEALER_POLLUTION_FILTER_THRESHOLD &&
+					    healer_syscall_unattempted(i) &&
+					    healer_syscall_unattempted(j)) {
+						pollution_filtered++;
+						continue;
+					}
+
+					/*
+					 * Bayesian-smoothed
+					 * single-predecessor analog of the
+					 * triple-side formula: a pair has
+					 * only one antecedent (the
+					 * producer), so the combined
+					 * predfreq collapses directly to
+					 * producer_freq with no isqrt step.
+					 * Same Beta(ALPHA, BETA) pseudo-
+					 * counts shrink the ratio toward the
+					 * prior, so a static-seeded pair
+					 * whose producer has never fired
+					 * (producer_freq == 0) now scores at
+					 * (raw + ALPHA) / (ALPHA + BETA)
+					 * instead of raw -- noise pairs no
+					 * longer crowd out dynamically-
+					 * observed entries with non-zero
+					 * producer counts.
+					 */
+					norm_score = healer_normalised_score_milli(weight,
+										   producer_freq,
+										   producer_freq,
+										   false,
+										   i, i, j);
+
+					cand.pred_a = 0;
+					cand.pred_b = i;
+					cand.promoted_nr = j;
+					cand.weight = weight;
+					cand.pred_a_freq = 0;
+					cand.pred_b_freq = producer_freq;
+					cand.norm_score_milli = norm_score;
+					cand.is_pair = true;
+
+					if (dyn_hits > 0)
+						healer_top_n_insert(top_dyn,
+								    &top_dyn_count,
+								    &cand);
+					else
+						healer_top_n_insert(top_seed,
+								    &top_seed_count,
+								    &cand);
+				}
+				if (row_dynamic_mass)
+					pair_rows_with_dynamic_mass++;
 			}
-
-			/* Dynamic-pool floor: a single sighting carries no
-			 * statistical weight even when stacked on a static
-			 * prior.  Pure seeds (dyn_hits == 0) skip this floor
-			 * -- they land in the seed-only pool, where the
-			 * point IS to surface the static prior itself. */
-			if (dyn_hits > 0 && dyn_hits < HEALER_DUMP_MIN_RAW) {
-				low_raw_skipped++;
-				continue;
-			}
-
-			/*
-			 * Pollution filter, pair-side: same shape as the
-			 * triple-side check above, applied to the producer
-			 * (i) / consumer (j) syscall pair the dump renders as
-			 * `{*, producer} -> consumer`.  This is the section
-			 * the original landlock_create_ruleset pollution
-			 * showed up in -- pair seeds for syscalls the kernel
-			 * keeps rejecting accumulate at the top of the
-			 * seed-only ranking with predfreq=0 forever.
-			 */
-			if (observed >= HEALER_POLLUTION_FILTER_THRESHOLD &&
-			    healer_syscall_unattempted(i) &&
-			    healer_syscall_unattempted(j)) {
-				pollution_filtered++;
-				continue;
-			}
-
-			/*
-			 * Bayesian-smoothed single-predecessor analog of the
-			 * triple-side formula: a pair has only one antecedent
-			 * (the producer), so the combined predfreq collapses
-			 * directly to producer_freq with no isqrt step.  Same
-			 * Beta(ALPHA, BETA) pseudo-counts shrink the ratio
-			 * toward the prior, so a static-seeded pair whose
-			 * producer has never fired (producer_freq == 0) now
-			 * scores at (raw + ALPHA) / (ALPHA + BETA) instead of
-			 * raw -- noise pairs no longer crowd out dynamically-
-			 * observed entries with non-zero producer counts, and
-			 * the unsmoothed raw/predfreq pathology that elevated
-			 * small-raw / small-predfreq cells into the top-N is
-			 * directly corrected.
-			 */
-			norm_score = healer_normalised_score_milli(weight,
-								   producer_freq,
-								   producer_freq,
-								   false,
-								   i, i, j);
-
-			cand.pred_a = 0;
-			cand.pred_b = i;
-			cand.promoted_nr = j;
-			cand.weight = weight;
-			cand.pred_a_freq = 0;
-			cand.pred_b_freq = producer_freq;
-			cand.norm_score_milli = norm_score;
-			cand.is_pair = true;
-
-			/*
-			 * Pool routing is per-cell now: a cell with any
-			 * dynamic_hits is dynamically-confirmed regardless of
-			 * whether a static prior underlies it, and a cell with
-			 * dynamic_hits == 0 is seed-only regardless of the
-			 * producer's overall appearance count.  The previous
-			 * proxy (producer_freq > 0) lifted seed-only cells
-			 * whose producer happened to fire as part of some
-			 * other (pred, succ) pair into the dynamic pool even
-			 * though THIS pair had no runtime evidence.
-			 */
-			if (dyn_hits > 0)
-				healer_top_n_insert(top_dyn, &top_dyn_count,
-						    &cand);
-			else
-				healer_top_n_insert(top_seed, &top_seed_count,
-						    &cand);
 		}
-		if (row_dynamic_mass)
-			pair_rows_with_dynamic_mass++;
 	}
 
 	/* Parent-private aggregate reads -- no atomic load needed since
@@ -1220,7 +1230,8 @@ void healer_table_dump(void)
 	 */
 	stats_log_write("HEALER pair table: %lu/%lu populated, %lu dynamically-confirmed (dynamic_hits>0)\n",
 			pair_populated,
-			(unsigned long)MAX_NR_SYSCALL * MAX_NR_SYSCALL,
+			(unsigned long)HEALER_NR_ARCHES *
+				(unsigned long)MAX_NR_SYSCALL * MAX_NR_SYSCALL,
 			pair_weighted);
 
 	/*
@@ -1259,11 +1270,19 @@ void healer_table_dump(void)
 		unsigned int n;
 
 		for (n = 0; n < MAX_NR_SYSCALL; n++) {
-			unsigned long appearances;
+			unsigned long appearances = 0;
 			unsigned int min_idx = 0;
 			unsigned int k;
+			unsigned int arch;
 
-			appearances = parent_healer.pred_appearance[n];
+			/* Sum the per-arch counters into a syscall-global
+			 * appearance count for the operator-facing leader
+			 * display.  A predecessor that appeared frequently
+			 * under either arch deserves to show up here; the
+			 * per-arch breakdown stays the dump's internal
+			 * scoring concern. */
+			for (arch = 0; arch < HEALER_NR_ARCHES; arch++)
+				appearances += parent_healer.pred_appearance[arch][n];
 			if (appearances == 0)
 				continue;
 
@@ -1350,84 +1369,62 @@ void healer_table_dump(void)
  * mirrored shape; the duplication is deliberate (a future divergence in
  * any one persistence file's format shouldn't ripple into the others).
  *
- * File layout (little-endian, packed as written):
+ * File layout (little-endian, packed as written), v3:
  *
  *   offset  size   field
  *   ------  ----   ----------------------------------------------------
- *        0     4   magic = 0x48524C54 ('H','R','L','T' -- HEALER
- *                          Relation-table) sniff anchor.  Retained from
- *                          v1.
- *        4     4   version = HEALER_FILE_VERSION (currently 2).  A
+ *        0     4   magic = 0x48524C54 ('H','R','L','T') sniff anchor.
+ *        4     4   version = HEALER_FILE_VERSION (currently 3).  A
  *                          loader compiled against a different version
- *                          refuses the file outright; the v1 -> v2
- *                          rewrite below changes the payload shape
- *                          materially.
+ *                          refuses the file outright; v2 -> v3 changes
+ *                          the relation slot layout (adds arch field)
+ *                          and the pair_table / pred_appearance shapes
+ *                          (gain a HEALER_NR_ARCHES outer dimension).
+ *                          One-time invalidation note: all in-flight v2
+ *                          files are auto-rejected at load by the
+ *                          version mismatch and replaced by the next
+ *                          snapshot in v3 shape.
  *        8     4   relation_slots = HEALER_RELATION_SLOTS at write time.
- *       12     4   promoted_per_slot = HEALER_PROMOTED_PER_SLOT at write
- *                          time.
- *       16     4   max_nr_syscall = MAX_NR_SYSCALL at write time.
- *       20     4   relation_size = sizeof(struct healer_relation) at
- *                          write time.  Reject on mismatch -- the
- *                          packed-key / promoted-array layout determines
- *                          how the bulk-copied payload is interpreted.
- *       24     4   pair_cell_size = sizeof(struct healer_pair_cell) at
- *                          write time.  Reject on mismatch -- a v1
- *                          loader treating cells as a single uint
- *                          would silently mis-read dynamic_hits.
- *       28     4   payload_crc32 over the concatenated payload regions
- *                          that follow (header-internal fields are not
- *                          covered; the dimension/magic/version checks
- *                          catch tampered headers earlier and cheaper).
- *       32     8   payload_bytes = expected total payload size in bytes
- *                          (sum of the four regions below).  Cross-
- *                          checked against the dimension-derived
- *                          expectation on load.
- *       40     8   observations = parent_healer.relations_observed at
- *                          write time.  Restored on load.
- *       48     8   obs_at_last_decay / time_at_last_decay /
- *       56     8     weight_decays_run / pair_seeded /
- *       64     8     table_full / evictions
- *       72     8     -- accumulated counters restored verbatim so the
- *       80     8     decay schedule and dump totals continue from
- *       88     8     where the previous run left off.
- *       96     2   decay_epoch = parent_healer.decay_epoch at write
- *                          time.  Restored on load so the relation-slot
- *                          prune clock (which reads age = decay_epoch -
- *                          relations_last_refreshed[i]) stays in lock-
- *                          step with the per-slot last_refreshed values
- *                          in payload region 4.
- *       98     6   pad6a -- align to 8.
- *      104    65   kernel_release = utsname.release captured at write
- *                          time, NUL-terminated, fixed-width.  Loader
- *                          compares strncmp(); a mismatch logs and
- *                          cold-starts (the relation/pair tables are
- *                          meaningful only against the kernel they were
- *                          learned on; release-level mismatches can
- *                          shift syscall numbers outright).
- *      169    65   kernel_version = utsname.version captured at write
- *                          time, NUL-terminated, fixed-width.  Stored
- *                          for forensic value but NOT compared on load.
- *      234    32   kallsyms_sha256 = kcov_get_kernel_fp() result at
- *                          write time.  A rebuilt kernel changes the
- *                          fingerprint and the loader cold-starts -- the
- *                          same gate the kcov bitmap and cmp-hints
- *                          files use, so a rebuilt kernel invalidates
- *                          all three in lock-step.  dynamic_hits and
- *                          relation weights both reflect per-kernel
- *                          edge behaviour, not just syscall numbering,
- *                          so a CFG-shifting rebuild can poison them
- *                          even when .release is unchanged.
- *      266     6   pad_end -- round struct healer_file_header to 8 bytes.
+ *       12     4   promoted_per_slot = HEALER_PROMOTED_PER_SLOT.
+ *       16     4   max_nr_syscall = MAX_NR_SYSCALL.
+ *       20     4   relation_size = sizeof(struct healer_relation).
+ *                          Grows in v3 (now carries the arch field +
+ *                          padding); mismatched value rejects.
+ *       24     4   pair_cell_size = sizeof(struct healer_pair_cell).
+ *       28     4   nr_arches = HEALER_NR_ARCHES (v3): writer's arch
+ *                          dimension.  A uniarch reader of a biarch
+ *                          file (or vice versa) cold-starts -- the
+ *                          per-arch regions would otherwise be laid out
+ *                          with a dimension the reader cannot describe.
+ *       32     4   payload_crc32 over the four concatenated payload
+ *                          regions that follow.
+ *       36     4   pad4a -- align payload_bytes uint64_t to 8 bytes.
+ *       40     8   payload_bytes = expected total payload size in bytes.
+ *       48     8   observations = parent_healer.relations_observed.
+ *       56     8   obs_at_last_decay / time_at_last_decay /
+ *       64     8     weight_decays_run / pair_seeded /
+ *       72     8     table_full / evictions
+ *       80     8     -- accumulated counters restored verbatim so the
+ *       88     8     decay schedule and dump totals continue from
+ *       96     8     where the previous run left off.
+ *      104     2   decay_epoch = parent_healer.decay_epoch.
+ *      106     6   pad6a -- align to 8.
+ *      112    65   kernel_release = utsname.release.
+ *      177    65   kernel_version = utsname.version (informational).
+ *      242    32   kallsyms_sha256 = kcov_get_kernel_fp() result.
+ *      274     6   pad_end -- round struct healer_file_header to 8 bytes.
  *
- *      272 onwards  payload, four concatenated regions:
+ *      280 onwards  payload, four concatenated regions:
  *                      region 1: relations[]      HEALER_RELATION_SLOTS *
  *                                                   sizeof(struct
  *                                                   healer_relation)
- *                      region 2: pair_table[][]   MAX_NR_SYSCALL *
+ *                      region 2: pair_table       HEALER_NR_ARCHES *
+ *                                                   MAX_NR_SYSCALL *
  *                                                   MAX_NR_SYSCALL *
  *                                                   sizeof(struct
  *                                                   healer_pair_cell)
- *                      region 3: pred_appearance  MAX_NR_SYSCALL *
+ *                      region 3: pred_appearance  HEALER_NR_ARCHES *
+ *                                                   MAX_NR_SYSCALL *
  *                                                   sizeof(uint64_t)
  *                      region 4: relations_last_refreshed
  *                                                 HEALER_RELATION_SLOTS *
@@ -1444,7 +1441,21 @@ void healer_table_dump(void)
  */
 
 #define HEALER_FILE_MAGIC		0x48524C54U	/* "HRLT" */
-#define HEALER_FILE_VERSION		2U
+/*
+ * Version history:
+ *   v1 -- initial relations-only persistence (long since superseded).
+ *   v2 -- added pair table, pred_appearance, decay/snapshot counters,
+ *         relations_last_refreshed, kallsyms fingerprint.
+ *   v3 -- arch-aware keys: struct healer_relation gains an arch field,
+ *         pair_table grows the HEALER_NR_ARCHES dimension, and
+ *         pred_appearance grows the same dimension.  The header carries
+ *         the writer's nr_arches so a uniarch reader of a biarch-written
+ *         file (and vice versa) cold-starts instead of mis-laying out
+ *         the per-arch regions.  One-time invalidation for all in-flight
+ *         v2 files; the version check below catches them and the next
+ *         snapshot rewrites in v3 shape.
+ */
+#define HEALER_FILE_VERSION		3U
 #define HEALER_UTSNAME_LEN		65	/* matches Linux __NEW_UTS_LEN+1 */
 
 /*
@@ -1493,11 +1504,10 @@ void healer_table_dump(void)
  */
 #define HEALER_SNAPSHOT_INTERVAL_SEC	300UL
 
-/* Header layout is naturally packed under the LP64 ABIs trinity targets:
- * 8 uint32_t fields, 8 uint64_t fields, a uint16_t, two 6-byte pads,
- * two 65-byte char arrays and a 32-byte fingerprint sum to 272 bytes
- * with no compiler-inserted padding.  No __attribute__((packed))
- * needed -- and adding one would trip -Wpacked. */
+/* Header layout is naturally packed under the LP64 ABIs trinity targets;
+ * v3 adds nr_arches at offset 28, pushing the existing fields after it
+ * forward by 4 bytes.  No __attribute__((packed)) needed -- and adding
+ * one would trip -Wpacked. */
 struct healer_file_header {
 	uint32_t magic;			/*   0  4 */
 	uint32_t version;		/*   4  4 */
@@ -1506,29 +1516,32 @@ struct healer_file_header {
 	uint32_t max_nr_syscall;	/*  16  4 */
 	uint32_t relation_size;		/*  20  4 */
 	uint32_t pair_cell_size;	/*  24  4 */
-	uint32_t payload_crc32;		/*  28  4 */
-	uint64_t payload_bytes;		/*  32  8 */
-	uint64_t observations;		/*  40  8 */
-	uint64_t obs_at_last_decay;	/*  48  8 */
-	uint64_t time_at_last_decay;	/*  56  8 */
-	uint64_t weight_decays_run;	/*  64  8 */
-	uint64_t pair_seeded;		/*  72  8 */
-	uint64_t table_full;		/*  80  8 */
-	uint64_t evictions;		/*  88  8 */
-	uint16_t decay_epoch;		/*  96  2 */
-	uint8_t  pad6a[6];		/*  98  6 */
-	char kernel_release[HEALER_UTSNAME_LEN];	/* 104 65 */
-	char kernel_version[HEALER_UTSNAME_LEN];	/* 169 65 */
-	uint8_t  kallsyms_sha256[32];	/* 234 32 */
-	uint8_t  pad_end[6];		/* 266  6 */
+	uint32_t nr_arches;		/*  28  4  (v3) */
+	uint32_t payload_crc32;		/*  32  4 */
+	uint32_t pad4a;			/*  36  4 */
+	uint64_t payload_bytes;		/*  40  8 */
+	uint64_t observations;		/*  48  8 */
+	uint64_t obs_at_last_decay;	/*  56  8 */
+	uint64_t time_at_last_decay;	/*  64  8 */
+	uint64_t weight_decays_run;	/*  72  8 */
+	uint64_t pair_seeded;		/*  80  8 */
+	uint64_t table_full;		/*  88  8 */
+	uint64_t evictions;		/*  96  8 */
+	uint16_t decay_epoch;		/* 104  2 */
+	uint8_t  pad6a[6];		/* 106  6 */
+	char kernel_release[HEALER_UTSNAME_LEN];	/* 112 65 */
+	char kernel_version[HEALER_UTSNAME_LEN];	/* 177 65 */
+	uint8_t  kallsyms_sha256[32];	/* 242 32 */
+	uint8_t  pad_end[6];		/* 274  6 */
 };
 
 #define HEALER_RELATIONS_BYTES \
 	((size_t)HEALER_RELATION_SLOTS * sizeof(struct healer_relation))
 #define HEALER_PAIR_TABLE_BYTES \
-	((size_t)MAX_NR_SYSCALL * MAX_NR_SYSCALL * sizeof(struct healer_pair_cell))
+	((size_t)HEALER_NR_ARCHES * MAX_NR_SYSCALL * MAX_NR_SYSCALL * \
+	 sizeof(struct healer_pair_cell))
 #define HEALER_PRED_APPEARANCE_BYTES \
-	((size_t)MAX_NR_SYSCALL * sizeof(uint64_t))
+	((size_t)HEALER_NR_ARCHES * MAX_NR_SYSCALL * sizeof(uint64_t))
 #define HEALER_LAST_REFRESHED_BYTES \
 	((size_t)HEALER_RELATION_SLOTS * sizeof(uint16_t))
 #define HEALER_PAYLOAD_BYTES \
@@ -1623,7 +1636,7 @@ static uint8_t *healer_serialise_payload(void)
 {
 	uint8_t *buf;
 	size_t off = 0;
-	unsigned int i;
+	unsigned int i, arch;
 	uint64_t *appear_widened;
 
 	buf = malloc(HEALER_PAYLOAD_BYTES);
@@ -1637,8 +1650,11 @@ static uint8_t *healer_serialise_payload(void)
 	off += HEALER_PAIR_TABLE_BYTES;
 
 	appear_widened = (uint64_t *)(buf + off);
-	for (i = 0; i < MAX_NR_SYSCALL; i++)
-		appear_widened[i] = (uint64_t)parent_healer.pred_appearance[i];
+	for (arch = 0; arch < HEALER_NR_ARCHES; arch++) {
+		for (i = 0; i < MAX_NR_SYSCALL; i++)
+			appear_widened[arch * MAX_NR_SYSCALL + i] =
+				(uint64_t)parent_healer.pred_appearance[arch][i];
+	}
 	off += HEALER_PRED_APPEARANCE_BYTES;
 
 	memcpy(buf + off, parent_healer.relations_last_refreshed,
@@ -1679,6 +1695,7 @@ bool healer_save_file(const char *path)
 	hdr.max_nr_syscall = MAX_NR_SYSCALL;
 	hdr.relation_size = (uint32_t)sizeof(struct healer_relation);
 	hdr.pair_cell_size = (uint32_t)sizeof(struct healer_pair_cell);
+	hdr.nr_arches = HEALER_NR_ARCHES;
 	hdr.payload_bytes = (uint64_t)HEALER_PAYLOAD_BYTES;
 	hdr.observations = parent_healer.relations_observed;
 	hdr.obs_at_last_decay = parent_healer.obs_at_last_decay;
@@ -1779,6 +1796,7 @@ static bool healer_loaded_relation_valid(const struct healer_relation *slot)
 {
 	unsigned int pred_a = slot->pred_a;
 	unsigned int pred_b = slot->pred_b;
+	unsigned int arch = slot->arch;
 	uint32_t hash;
 
 	if (slot->key == 0)
@@ -1788,13 +1806,18 @@ static bool healer_loaded_relation_valid(const struct healer_relation *slot)
 		return false;
 	if (pred_a > pred_b)
 		return false;
+	if (arch >= HEALER_NR_ARCHES)
+		return false;
 
-	hash = healer_predset_hash(pred_a, pred_b);
+	hash = healer_predset_hash(arch, pred_a, pred_b);
 	if (hash != slot->predset_hash)
 		return false;
 	/* key is a packed view of (pred_a, pred_b, predset_hash); the
 	 * upper bits must agree with the recomputed hash since the lower
-	 * bits already agreed (they're the same pred_a/pred_b we hashed). */
+	 * bits already agreed (they're the same pred_a/pred_b we hashed).
+	 * arch is checked separately above -- the FNV mix folds it into
+	 * the hash, so a bit-rotted arch would already have failed the
+	 * hash-match a few lines up. */
 	if (slot->key != healer_pack_key(pred_a, pred_b, hash))
 		return false;
 
@@ -1880,6 +1903,11 @@ bool healer_load_file(const char *path)
 		output(0, "healer: pair_cell_size %u != expected %zu at %s (struct healer_pair_cell layout changed) -- cold start\n",
 		       hdr.pair_cell_size,
 		       sizeof(struct healer_pair_cell), path);
+		goto out_close;
+	}
+	if (hdr.nr_arches != HEALER_NR_ARCHES) {
+		output(0, "healer: nr_arches %u != expected %u at %s (uniarch vs biarch mismatch; per-arch regions cannot be laid out) -- cold start\n",
+		       hdr.nr_arches, HEALER_NR_ARCHES, path);
 		goto out_close;
 	}
 	expected_payload = HEALER_PAYLOAD_BYTES;
@@ -2017,50 +2045,60 @@ bool healer_load_file(const char *path)
 	}
 	off += HEALER_RELATIONS_BYTES;
 
-	/* Region 2: pair_table[][].  Bulk-copy then walk to clamp
-	 * dynamic_hits at the saturation cap (a corrupt file with a
+	/* Region 2: pair_table[arch][pred][succ].  Bulk-copy then walk to
+	 * clamp dynamic_hits at the saturation cap (a corrupt file with a
 	 * higher value would otherwise bypass the saturation discipline
 	 * apply_pair maintains).  Mark rows dirty so the first publish
 	 * refreshes the mirror page. */
 	memcpy(parent_healer.pair_table, tmpbuf + off, HEALER_PAIR_TABLE_BYTES);
 	off += HEALER_PAIR_TABLE_BYTES;
-	for (i = 0; i < MAX_NR_SYSCALL; i++) {
-		bool row_populated = false;
+	{
+		unsigned int arch;
+		for (arch = 0; arch < HEALER_NR_ARCHES; arch++) {
+			for (i = 0; i < MAX_NR_SYSCALL; i++) {
+				bool row_populated = false;
 
-		for (j = 0; j < MAX_NR_SYSCALL; j++) {
-			struct healer_pair_cell *cell =
-				&parent_healer.pair_table[i][j];
+				for (j = 0; j < MAX_NR_SYSCALL; j++) {
+					struct healer_pair_cell *cell =
+						&parent_healer.pair_table[arch][i][j];
 
-			if (cell->dynamic_hits > HEALER_PAIR_MAX_WEIGHT) {
-				cell->dynamic_hits = HEALER_PAIR_MAX_WEIGHT;
-				pair_cells_clamped++;
+					if (cell->dynamic_hits > HEALER_PAIR_MAX_WEIGHT) {
+						cell->dynamic_hits = HEALER_PAIR_MAX_WEIGHT;
+						pair_cells_clamped++;
+					}
+					if (cell->dynamic_hits != 0 ||
+					    cell->static_prior != 0)
+						row_populated = true;
+				}
+
+				if (row_populated) {
+					parent_healer.pair_dirty[arch][i] = 1;
+					pair_rows_loaded++;
+				}
 			}
-			if (cell->dynamic_hits != 0 || cell->static_prior != 0)
-				row_populated = true;
-		}
-
-		if (row_populated) {
-			parent_healer.pair_dirty[i] = 1;
-			pair_rows_loaded++;
 		}
 	}
 
-	/* Region 3: pred_appearance[].  Widen from on-disk uint64_t back
-	 * to in-memory unsigned long; on 64-bit hosts this is a straight
-	 * copy, on 32-bit hosts the file value is saturated at ULONG_MAX
-	 * (capping rather than truncating preserves the "predecessor has
-	 * fired a lot" signal even on a builder whose word size is too
-	 * narrow for the original count). */
+	/* Region 3: pred_appearance[arch][nr].  Widen from on-disk
+	 * uint64_t back to in-memory unsigned long; on 64-bit hosts this
+	 * is a straight copy, on 32-bit hosts the file value is saturated
+	 * at ULONG_MAX (capping rather than truncating preserves the
+	 * "predecessor has fired a lot" signal even on a builder whose
+	 * word size is too narrow for the original count). */
 	{
 		const uint64_t *appear_on_disk =
 			(const uint64_t *)(tmpbuf + off);
+		unsigned int arch;
 
-		for (i = 0; i < MAX_NR_SYSCALL; i++) {
-			uint64_t v = appear_on_disk[i];
+		for (arch = 0; arch < HEALER_NR_ARCHES; arch++) {
+			for (i = 0; i < MAX_NR_SYSCALL; i++) {
+				uint64_t v = appear_on_disk[arch * MAX_NR_SYSCALL + i];
 
-			if (v > (uint64_t)ULONG_MAX)
-				v = (uint64_t)ULONG_MAX;
-			parent_healer.pred_appearance[i] = (unsigned long)v;
+				if (v > (uint64_t)ULONG_MAX)
+					v = (uint64_t)ULONG_MAX;
+				parent_healer.pred_appearance[arch][i] =
+					(unsigned long)v;
+			}
 		}
 	}
 	off += HEALER_PRED_APPEARANCE_BYTES;
@@ -2309,7 +2347,8 @@ void healer_maybe_snapshot(void)
  * for the observer bump.  No new lock or pattern is introduced here.
  */
 
-void healer_pair_seed(unsigned int pred, unsigned int succ, unsigned int weight)
+void healer_pair_seed(unsigned int arch, unsigned int pred, unsigned int succ,
+		      unsigned int weight)
 {
 	/* Forward to the parent-private canonical setter.  The seed
 	 * loader runs pre-fork in the parent and writes parent_healer
@@ -2317,7 +2356,7 @@ void healer_pair_seed(unsigned int pred, unsigned int succ, unsigned int weight)
 	 * propagates the seeded weights to the mirror page that children
 	 * then read from set_syscall_nr_healer.  Idempotent (skips a
 	 * cell already carrying a weight). */
-	healer_aggregate_pair_set(pred, succ, weight);
+	healer_aggregate_pair_set(arch, pred, succ, weight);
 }
 
 /*
@@ -2333,9 +2372,11 @@ static unsigned int healer_pair_cell_picker_weight(const struct healer_pair_cell
 	return (unsigned int)cell->static_prior + cell->dynamic_hits;
 }
 
-unsigned int healer_pair_get(unsigned int pred, unsigned int succ)
+unsigned int healer_pair_get(unsigned int arch, unsigned int pred,
+			     unsigned int succ)
 {
-	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
+	if (arch >= HEALER_NR_ARCHES ||
+	    pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
 		return 0;
 	if (healer_pair_published == NULL)
 		return 0;
@@ -2347,17 +2388,19 @@ unsigned int healer_pair_get(unsigned int pred, unsigned int succ)
 	 * cadence (~ms) -- operationally indistinguishable from fresh
 	 * given the second-to-hour timescale on which (pred -> succ)
 	 * relations evolve. */
-	return healer_pair_cell_picker_weight(&healer_pair_published[pred][succ]);
+	return healer_pair_cell_picker_weight(&healer_pair_published[arch][pred][succ]);
 }
 
-unsigned int healer_pair_dynamic_hits(unsigned int pred, unsigned int succ)
+unsigned int healer_pair_dynamic_hits(unsigned int arch, unsigned int pred,
+				      unsigned int succ)
 {
-	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
+	if (arch >= HEALER_NR_ARCHES ||
+	    pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
 		return 0;
 	if (healer_pair_published == NULL)
 		return 0;
 
-	return healer_pair_published[pred][succ].dynamic_hits;
+	return healer_pair_published[arch][pred][succ].dynamic_hits;
 }
 
 /*
@@ -2401,44 +2444,43 @@ unsigned int healer_pair_dynamic_hits(unsigned int pred, unsigned int succ)
  * readiness check itself is a coarse gate, not an exact count.
  */
 #define HEALER_STRATEGY_SCAN_CAP \
-	((unsigned long)MAX_NR_SYSCALL * (unsigned long)MAX_NR_SYSCALL)
+	((unsigned long)HEALER_NR_ARCHES * (unsigned long)MAX_NR_SYSCALL * \
+	 (unsigned long)MAX_NR_SYSCALL)
 
 bool healer_strategy_ready_explicit(enum healer_readiness *out)
 {
 	unsigned long scanned = 0;
 	unsigned long dyn_cells = 0;
 	bool any_seed = false;
-	unsigned int pred, succ;
+	unsigned int arch, pred, succ;
 
-	for (pred = 0; pred < MAX_NR_SYSCALL; pred++) {
-		for (succ = 0; succ < MAX_NR_SYSCALL; succ++) {
-			/* Mirror reads through the same view the picker
-			 * sees.  Bounded staleness (~ms per drain) is
-			 * acceptable for a coarse gate.  Compute both halves
-			 * of the cell up front so the seed-only check can
-			 * test the static-prior side directly without a
-			 * second mirror lookup. */
-			unsigned int dyn = healer_pair_dynamic_hits(pred, succ);
-			unsigned int total = healer_pair_get(pred, succ);
+	for (arch = 0; arch < HEALER_NR_ARCHES; arch++) {
+		for (pred = 0; pred < MAX_NR_SYSCALL; pred++) {
+			for (succ = 0; succ < MAX_NR_SYSCALL; succ++) {
+				/* Mirror reads through the same view the
+				 * picker sees.  Bounded staleness (~ms per
+				 * drain) is acceptable for a coarse gate.
+				 * Compute both halves of the cell up front so
+				 * the seed-only check can test the
+				 * static-prior side directly without a second
+				 * mirror lookup. */
+				unsigned int dyn = healer_pair_dynamic_hits(arch, pred, succ);
+				unsigned int total = healer_pair_get(arch, pred, succ);
 
-			scanned++;
-			if (dyn >= HEALER_STRATEGY_PAIR_CELL_MIN_HITS) {
-				dyn_cells++;
-				if (dyn_cells >= HEALER_STRATEGY_PAIR_CELL_THRESHOLD) {
-					if (out != NULL)
-						*out = HEALER_READY_DYNAMIC;
-					return true;
+				scanned++;
+				if (dyn >= HEALER_STRATEGY_PAIR_CELL_MIN_HITS) {
+					dyn_cells++;
+					if (dyn_cells >= HEALER_STRATEGY_PAIR_CELL_THRESHOLD) {
+						if (out != NULL)
+							*out = HEALER_READY_DYNAMIC;
+						return true;
+					}
+				} else if (total > 0) {
+					any_seed = true;
 				}
-			} else if (total > 0) {
-				/* Cell carries a static prior (and/or sub-floor
-				 * dynamic hits) but does not contribute to the
-				 * strict threshold.  Latching `any_seed` lets us
-				 * return seed-only readiness even if the strict
-				 * threshold is never reached. */
-				any_seed = true;
+				if (scanned >= HEALER_STRATEGY_SCAN_CAP)
+					goto done;
 			}
-			if (scanned >= HEALER_STRATEGY_SCAN_CAP)
-				goto done;
 		}
 	}
 done:
@@ -2598,6 +2640,52 @@ static unsigned int healer_count_pc_pairs_in_table(const struct syscalltable *tb
 }
 
 /*
+ * Per-table seed installer.  Walks one syscall table and installs each
+ * producer/consumer match at the arch the table represents -- the
+ * canonical (arch, pred, succ) cell so a biarch host's 32-bit and
+ * 64-bit successor priors live in separate matrices and a cell observed
+ * dynamically on one arch doesn't conflict with the seed-only cell of
+ * the other.  On uniarch the arch argument collapses to 0 with no
+ * memory or runtime cost.  Skips self-pairs (a == b) for the same
+ * reason the count helper does -- see healer_load_pc_pairs_in_table.
+ */
+static void healer_load_pc_pairs_in_table_arch(const struct syscalltable *tbl,
+					       unsigned int n,
+					       unsigned int arch)
+{
+	unsigned int a, b;
+
+	if (tbl == NULL)
+		return;
+
+	for (a = 0; a < n; a++) {
+		const struct syscallentry *entry_a = tbl[a].entry;
+		enum objecttype kind;
+
+		if (entry_a == NULL)
+			continue;
+
+		kind = healer_produces_objtype(entry_a);
+		if (kind == OBJ_NONE)
+			continue;
+
+		for (b = 0; b < n; b++) {
+			const struct syscallentry *entry_b = tbl[b].entry;
+
+			if (entry_b == NULL)
+				continue;
+			if (a == b)
+				continue;
+			if (healer_consumes_objtype(entry_b, kind))
+				healer_pair_seed(arch,
+						 entry_a->number,
+						 entry_b->number,
+						 HEALER_STATIC_SEED_WEIGHT);
+		}
+	}
+}
+
+/*
  * Classifier dry-run: count seed-eligible (producer, consumer) pairs
  * across the active syscall table(s) without writing to the pair
  * table.  Lets the seed loader (a follow-up commit) be split in two:
@@ -2634,80 +2722,21 @@ unsigned int healer_count_pc_pairs(void)
 }
 
 /*
- * Per-table static-seed installer.  Walks one syscall table and calls
- * healer_pair_seed(HEALER_STATIC_SEED_WEIGHT) for every (producer A,
- * consumer B) match where A's ret_objtype is consumed by one of B's
- * argtype slots.  Mirrors healer_count_pc_pairs_in_table by shape so
- * the "what gets seeded" inventory matches the dry-run counter exactly,
- * with two differences: the per-match action is a write rather than a
- * counter increment, and self-pairs (a == b) are skipped.  A self-pair
- * captures the dup/dup2/dup3 shape (consume an fd of kind K, produce an
- * fd of kind K), which is a duplicate-class shape rather than a
- * productive state-transition prior, so seeding (a -> a) would inject
- * a synthetic edge with no underlying semantics.
- */
-static void healer_load_pc_pairs_in_table(const struct syscalltable *tbl,
-					  unsigned int n)
-{
-	unsigned int a, b;
-
-	if (tbl == NULL)
-		return;
-
-	for (a = 0; a < n; a++) {
-		const struct syscallentry *entry_a = tbl[a].entry;
-		enum objecttype kind;
-
-		if (entry_a == NULL)
-			continue;
-
-		kind = healer_produces_objtype(entry_a);
-		if (kind == OBJ_NONE)
-			continue;
-
-		for (b = 0; b < n; b++) {
-			const struct syscallentry *entry_b = tbl[b].entry;
-
-			if (entry_b == NULL)
-				continue;
-			if (a == b)
-				continue;
-			if (healer_consumes_objtype(entry_b, kind))
-				healer_pair_seed(entry_a->number,
-						 entry_b->number,
-						 HEALER_STATIC_SEED_WEIGHT);
-		}
-	}
-}
-
-/*
  * Static-seed loader entry point.  Walks the active syscall table(s)
  * at startup and pre-populates the pair-relation table with
  * HEALER_STATIC_SEED_WEIGHT for every (producer, consumer) edge
- * implied by the metadata already attached to each syscallentry.  Run
- * pre-fork so children inherit the populated table by COW; the pair
- * table is process-private BSS and is not persisted across runs, so
- * this loader is the only path that pre-populates it.
- *
- * Idempotent: healer_pair_seed forwards to healer_aggregate_pair_set
- * which skips a cell already carrying a weight.  This matters on
- * biarch builds where the 32-bit and 64-bit tables can map the same
- * raw syscall number to different syscalls; the second walk's set
- * just no-ops on any cell the first walk already filled and the cell
- * keeps the first walk's weight.
+ * implied by the metadata already attached to each syscallentry.  Each
+ * arch's seeds land in its own pair_table[arch][..][..] slice -- the
+ * 64-bit table feeds HEALER_ARCH_64 and the 32-bit table feeds
+ * HEALER_ARCH_32 -- so the picker on a biarch host can index the right
+ * arch's prior directly instead of falling back to uniform random.  On
+ * uniarch the per-table walk runs once at arch=HEALER_ARCH_64 with no
+ * change in semantics from the pre-arch layout.  Run pre-fork so
+ * children inherit the populated table by COW.
  *
  * Returns the number of fresh seed installs over the course of this
  * call, measured as the delta on parent_healer.pair_seeded across the
- * load.  Cells already populated when the loader runs are silently
- * skipped and do not contribute to the return value.  On a cold-start
- * run with an empty pair table the return value matches one side of
- * the (producer-consumer-edges-on-this-arch) inventory
- * healer_count_pc_pairs() reports, modulo the self-pair skip.
- *
- * Logs the install count through stats_log_write so the seeding event
- * is captured in the per-run stats.log alongside the periodic dumps;
- * this is the only fleet-visible signal that the static-seed path
- * actually fired on a given startup.
+ * load.
  */
 unsigned int healer_load_static_seed(void)
 {
@@ -2717,15 +2746,24 @@ unsigned int healer_load_static_seed(void)
 	before = parent_healer.pair_seeded;
 
 	if (biarch == true) {
-		/* Only walk a table if its arch is active; -a64 / -a32 / uniarch all naturally avoid the pair_R cross-arch number collision. */
+#ifdef ARCH_IS_BIARCH
 		if (do_64_arch == true)
-			healer_load_pc_pairs_in_table(syscalls_64bit,
-						      max_nr_64bit_syscalls);
+			healer_load_pc_pairs_in_table_arch(syscalls_64bit,
+							   max_nr_64bit_syscalls,
+							   HEALER_ARCH_64);
 		if (do_32_arch == true)
-			healer_load_pc_pairs_in_table(syscalls_32bit,
-						      max_nr_32bit_syscalls);
+			healer_load_pc_pairs_in_table_arch(syscalls_32bit,
+							   max_nr_32bit_syscalls,
+							   HEALER_ARCH_32);
+#endif
 	} else {
-		healer_load_pc_pairs_in_table(syscalls, max_nr_syscalls);
+		/* Uniarch (or biarch host with one arch disabled): seed the
+		 * sole syscall table into HEALER_ARCH_64, which is the only
+		 * valid arch dim when HEALER_NR_ARCHES == 1 (and the
+		 * conventional "default arch" slot on biarch where the
+		 * runtime walk above never ran). */
+		healer_load_pc_pairs_in_table_arch(syscalls, max_nr_syscalls,
+						   HEALER_ARCH_64);
 	}
 
 	after = parent_healer.pair_seeded;
@@ -2771,15 +2809,12 @@ unsigned int healer_load_static_seed(void)
  * MAX_NR_SYSCALL bound (a per-call ~4 KiB stack frame, comfortably
  * inside the syscall-pick stack budget).
  *
- * Biarch builds: defer to set_syscall_nr_random.  The pair table is a
- * single MAX_NR_SYSCALL x MAX_NR_SYSCALL matrix indexed by raw syscall
- * number, so 32-bit and 64-bit syscalls collide on the same cells when
- * their numbers happen to overlap; the picker has no clean way to
- * disentangle that without a per-arch table split, which is out of
- * scope here.  Falling back keeps the bandit's reward signal honest
- * (the arm reverts to RANDOM-equivalent behaviour) while leaving the
- * uniarch path -- where the observer's signal is unambiguous -- to
- * exercise the full HEALER algorithm.
+ * Biarch builds: choose the per-call arch via choose_syscall_table()
+ * (the same path the other set_syscall_nr_* variants use) and index
+ * pair_table[arch][..][..] / the arch-aware triple slot directly.  The
+ * arch dimension keeps 32-bit and 64-bit successor cells separated so
+ * the picker's pair-row read no longer aliases the wrong arch's
+ * priors -- the previous "fall back to random on biarch" hatch is gone.
  */
 bool set_syscall_nr_healer(struct syscallrecord *rec, struct childdata *child)
 {
@@ -2791,17 +2826,32 @@ bool set_syscall_nr_healer(struct syscallrecord *rec, struct childdata *child)
 	unsigned int idx;
 	unsigned int outer_attempts = 0;
 	unsigned int syscallnr;
+	unsigned int arch;
+	bool do32;
 	int val;
 	bool used_triple = false;
 
-	if (biarch) {
+	if (child == NULL || child->healer_seq_count == 0) {
 		__atomic_fetch_add(&shm->stats.healer_picker_cold_start, 1UL,
 				   __ATOMIC_RELAXED);
 		return set_syscall_nr_random(rec, child);
 	}
 
-	if (child == NULL || child->active_syscalls == NULL ||
-	    child->healer_seq_count == 0) {
+	/* Pick the syscall table once per call: in uniarch the result is
+	 * a constant; in biarch the do32 dice picks one table and the
+	 * pair/triple lookups below all index the arch dim that matches.
+	 * Skipping this on the cold-start retry-out paths is fine -- the
+	 * fallback to set_syscall_nr_random does its own choose_syscall_table
+	 * call internally. */
+	if (biarch) {
+		do32 = choose_syscall_table(child, &nr_syscalls);
+	} else {
+		do32 = false;
+		nr_syscalls = max_nr_syscalls;
+	}
+	arch = healer_arch_id(do32);
+
+	if (child->active_syscalls == NULL) {
 		__atomic_fetch_add(&shm->stats.healer_picker_cold_start, 1UL,
 				   __ATOMIC_RELAXED);
 		return set_syscall_nr_random(rec, child);
@@ -2815,7 +2865,6 @@ bool set_syscall_nr_healer(struct syscallrecord *rec, struct childdata *child)
 		return set_syscall_nr_random(rec, child);
 	}
 
-	nr_syscalls = max_nr_syscalls;
 	if (nr_syscalls > MAX_NR_SYSCALL)
 		nr_syscalls = MAX_NR_SYSCALL;
 	memset(weights, 0, sizeof(weights[0]) * nr_syscalls);
@@ -2834,7 +2883,7 @@ bool set_syscall_nr_healer(struct syscallrecord *rec, struct childdata *child)
 		nr = (unsigned int)val - 1U;
 		if (nr >= MAX_NR_SYSCALL)
 			continue;
-		w = healer_pair_get(pred, nr);
+		w = healer_pair_get(arch, pred, nr);
 		if (w == 0)
 			continue;
 		weights[idx] = w;
@@ -2866,7 +2915,7 @@ bool set_syscall_nr_healer(struct syscallrecord *rec, struct childdata *child)
 				pa = pb;
 				pb = tmp;
 			}
-			predset_hash = healer_predset_hash(pa, pb);
+			predset_hash = healer_predset_hash(arch, pa, pb);
 			slot_idx = predset_hash & (HEALER_RELATION_SLOTS - 1);
 			target_key = healer_pack_key(pa, pb, predset_hash);
 
@@ -2889,11 +2938,18 @@ bool set_syscall_nr_healer(struct syscallrecord *rec, struct childdata *child)
 				 * the picker with a mix of old and new weights,
 				 * which is acceptable for a syscall-prior bias
 				 * where relative magnitudes matter rather than
-				 * exact values. */
+				 * exact values.  Slot match requires both the
+				 * packed key AND the arch field to agree --
+				 * the same (pa, pb) under a different
+				 * successor arch occupies a distinct probe-
+				 * chain slot via the arch-aware predset
+				 * hash above. */
 				slot_key = slot->key;
 				if (slot_key == 0)
 					break;
 				if (slot_key != target_key)
+					continue;
+				if (slot->arch != arch)
 					continue;
 
 				/* Slot match -- walk promoted[] and add each
@@ -3018,7 +3074,7 @@ retry:
 	}
 
 	lock(&rec->lock);
-	rec->do32bit = false;
+	rec->do32bit = do32;
 	rec->nr = syscallnr;
 	unlock(&rec->lock);
 

@@ -47,9 +47,14 @@
  * caller's per-child active_syscalls pointer, and return do32.  Uniarch
  * builds bypass this entirely — child->active_syscalls is set once at
  * init time to shm->active_syscalls and never re-evaluated.
+ *
+ * Non-static so STRATEGY_HEALER's picker can share the same per-call
+ * arch-pick decision the other set_syscall_nr_* variants already
+ * route through here, rather than re-implementing it (which would
+ * desync the picker's arch dim from the rest of the call dispatch).
  */
-static bool choose_syscall_table(struct childdata *child,
-				 unsigned int *nr_syscalls_out)
+bool choose_syscall_table(struct childdata *child,
+			  unsigned int *nr_syscalls_out)
 {
 	bool do32 = false;
 
@@ -900,8 +905,8 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		if (!no_healer) {
 			unsigned int flags = child->is_explorer
 				? HEALER_OBS_FLAG_EXPLORER : 0;
-			healer_observe(child, rec->nr, flags, new_edge_count,
-				       /* result_class */ 0);
+			healer_observe(child, rec->nr, rec->do32bit, flags,
+				       new_edge_count, /* result_class */ 0);
 		}
 
 		/* HEALER snapshot trigger runs in parent context from

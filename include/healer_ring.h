@@ -70,7 +70,8 @@ struct healer_observation {
 	uint16_t flags;			/* HEALER_OBS_FLAG_* bits (see healer.h) */
 	uint16_t edge_delta;		/* kcov_collect bucket-edge count, uint16 cap */
 	uint16_t result_class;		/* reserved: return-class bucket */
-};					/* 12 bytes total */
+	uint16_t succ_arch;		/* successor call's arch dim (healer_arch_id) */
+};					/* 14 bytes total */
 
 struct healer_ring {
 	struct spsc_ring base;
@@ -131,26 +132,35 @@ struct healer_pair_cell {
  * healer_load_file).
  */
 struct healer_aggregate {
-	/* Canonical triple table: same shape as the shm version, indexed
-	 * by FNV-1a(sorted (pred_a, pred_b)) masked to HEALER_RELATION_SLOTS.
-	 * Parent is the sole writer; no per-slot atomic discipline needed. */
+	/* Canonical triple table: indexed by
+	 * FNV-1a(arch, (pred_a, pred_b)) masked to HEALER_RELATION_SLOTS.
+	 * Each slot now carries an arch field so the same numeric
+	 * (pred_a, pred_b) pair under a different successor arch occupies
+	 * a distinct probe-chain slot; see struct healer_relation.  Parent
+	 * is the sole writer; no per-slot atomic discipline needed. */
 	struct healer_relation relations[HEALER_RELATION_SLOTS];
 
-	/* Canonical pair table: dense MAX_NR_SYSCALL x MAX_NR_SYSCALL
-	 * matrix indexed (pred -> succ).  Each cell carries the (static
-	 * prior, dynamic hits, last observation epoch) triple separately
-	 * so decay, dump and the eligibility gate can speak directly to
-	 * the component they care about; see struct healer_pair_cell. */
-	struct healer_pair_cell pair_table[MAX_NR_SYSCALL][MAX_NR_SYSCALL];
+	/* Canonical pair table: per-arch dense MAX_NR_SYSCALL x
+	 * MAX_NR_SYSCALL matrix, indexed (arch, pred -> succ).  The arch
+	 * dimension is the successor call's arch; it collapses to 1 on
+	 * uniarch (HEALER_NR_ARCHES == 1) at zero memory cost, and
+	 * separates 32-bit and 64-bit successor cells on biarch so the
+	 * picker doesn't have to fall back to uniform random when the
+	 * predecessor's syscall nr happens to overlap both tables.  Each
+	 * cell carries the (static prior, dynamic hits, last observation
+	 * epoch) triple separately; see struct healer_pair_cell. */
+	struct healer_pair_cell pair_table[HEALER_NR_ARCHES][MAX_NR_SYSCALL][MAX_NR_SYSCALL];
 
 	/* Dirty-row tracking for the publish step.  Set when the parent's
 	 * drain mutates a slot or row; cleared after the publish copies
 	 * the row into the mirror page.  Without this, the worst-case
 	 * publish would memcpy ~5 MiB per drain (a few GB/s of memory
 	 * bandwidth on a hot fleet box) -- with it, steady-state publish
-	 * cost is <10 KiB per drain. */
+	 * cost is <10 KiB per drain.  pair_dirty grows the arch dimension
+	 * in lockstep with pair_table so the publish walks each arch's
+	 * rows independently. */
 	uint8_t relations_dirty[HEALER_RELATION_SLOTS];
-	uint8_t pair_dirty[MAX_NR_SYSCALL];
+	uint8_t pair_dirty[HEALER_NR_ARCHES][MAX_NR_SYSCALL];
 
 	/* Per-slot prune clock.  Each entry holds the decay_epoch value
 	 * the slot was last refreshed at (apply_triple stamps it on every
@@ -166,11 +176,18 @@ struct healer_aggregate {
 
 	/* Eviction / probe-limit / observation counters lifted out of
 	 * shm->stats.healer_*.  Parent-private, written by apply, read by
-	 * dump.  Same semantics as the in-shm counters they shadow. */
+	 * dump.  Same semantics as the in-shm counters they shadow.
+	 *
+	 * pred_appearance is bumped per-(arch, predecessor) on every
+	 * triple apply.  arch is the SUCCESSOR's arch, so the denominator
+	 * the dump's normalised score uses matches the slot's arch
+	 * exactly.  The dump's predecessor-frequency leader display sums
+	 * across the arch dimension to render a syscall-global view of
+	 * how often each nr appeared as a predecessor. */
 	unsigned long relations_observed;
 	unsigned long table_full;
 	unsigned long evictions;
-	unsigned long pred_appearance[MAX_NR_SYSCALL];
+	unsigned long pred_appearance[HEALER_NR_ARCHES][MAX_NR_SYSCALL];
 
 	/* Decay election state.  Becomes single-writer parent state once
 	 * apply runs in parent context, so no CAS election is needed --
@@ -227,7 +244,7 @@ extern bool healer_snapshot_dirty;
  * timescales.
  */
 extern struct healer_relation *healer_relations_published;
-extern struct healer_pair_cell (*healer_pair_published)[MAX_NR_SYSCALL];
+extern struct healer_pair_cell (*healer_pair_published)[MAX_NR_SYSCALL][MAX_NR_SYSCALL];
 
 void healer_ring_init(struct healer_ring *ring);
 
@@ -251,6 +268,7 @@ bool healer_ring_enqueue_observation(struct healer_ring *ring,
 				     unsigned int pred_prev,
 				     unsigned int pred_last,
 				     unsigned int succ,
+				     unsigned int succ_arch,
 				     unsigned int flags,
 				     unsigned int edge_delta,
 				     unsigned int result_class);
@@ -296,5 +314,5 @@ void healer_published_freeze(void);
  * not touch dynamic_hits -- the seed install is a metadata-only fact
  * about the (pred, succ) pair and carries no runtime observation.
  */
-void healer_aggregate_pair_set(unsigned int pred, unsigned int succ,
-			       unsigned int weight);
+void healer_aggregate_pair_set(unsigned int arch, unsigned int pred,
+			       unsigned int succ, unsigned int weight);
