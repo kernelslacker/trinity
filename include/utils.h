@@ -45,7 +45,7 @@
 
 extern unsigned int nr_shared_regions;
 
-void * alloc_shared(size_t size);
+void * alloc_shared(size_t size) __must_check;
 
 /*
  * Checked size = a * b for shared-allocation call sites with a variable
@@ -57,8 +57,8 @@ void * alloc_shared(size_t size);
  * the caller is about to do.
  */
 bool shared_size_mul(size_t a, size_t b, size_t *out);
-void * alloc_shared_str(size_t size);
-char * alloc_shared_strdup(const char *src);
+void * alloc_shared_str(size_t size) __must_check;
+char * alloc_shared_strdup(const char *src) __must_check;
 void free_shared_str(void *p, size_t size);
 void shared_bitmap_self_check(void);
 bool range_overlaps_shared(unsigned long addr, unsigned long len);
@@ -168,6 +168,7 @@ struct syscallrecord;
  * Returns true when @p does NOT look like a heap pointer we could have
  * handed out -- i.e. NULL-ish, non-canonical, or misaligned.
  */
+__must_check
 static inline bool is_corrupt_ptr_shape(const void *p)
 {
 	unsigned long v = (unsigned long) p;
