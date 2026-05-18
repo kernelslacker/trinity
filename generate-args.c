@@ -1122,6 +1122,102 @@ const struct argtype_ops *argtype_get_ops(enum argtype t)
 	return &argtype_table[t];
 }
 
+/*
+ * Build the address-scrub slot bitmap for entry's argtype[] table.
+ * Called once per syscallentry at table-init time from copy_syscall_table()
+ * in tables.c; the cached mask in entry->address_scrub_mask drives
+ * blanket_address_scrub() below without re-walking argtype[] or re-running
+ * argtype_get_ops() per slot.  Bit k (k=0..5) set means slot (k+1)'s
+ * argtype carries the default_address_scrub descriptor flag.
+ */
+uint8_t compute_address_scrub_mask(const struct syscallentry *entry)
+{
+	uint8_t mask = 0;
+	unsigned int i;
+
+	if (entry == NULL)
+		return 0;
+
+	for (i = 0; i < entry->num_args && i < 6; i++) {
+		const struct argtype_ops *ops = argtype_get_ops(entry->argtype[i]);
+
+		if (ops->default_address_scrub)
+			mask |= (uint8_t)(1u << i);
+	}
+	return mask;
+}
+
+/*
+ * Build the cleanup-hook slot bitmap for entry's argtype[] table.  Called
+ * once per syscallentry at table-init time from copy_syscall_table() in
+ * tables.c; the cached mask in entry->cleanup_arg_mask drives
+ * generic_free_arg() below without re-walking argtype[] or re-running
+ * argtype_get_ops() per slot.  Bit k (k=0..5) set means slot (k+1)'s
+ * argtype has a non-NULL .cleanup hook in the descriptor table.
+ */
+uint8_t compute_cleanup_arg_mask(const struct syscallentry *entry)
+{
+	uint8_t mask = 0;
+	unsigned int i;
+
+	if (entry == NULL)
+		return 0;
+
+	for (i = 0; i < entry->num_args && i < 6; i++) {
+		const struct argtype_ops *ops = argtype_get_ops(entry->argtype[i]);
+
+		if (ops->cleanup != NULL)
+			mask |= (uint8_t)(1u << i);
+	}
+	return mask;
+}
+
+/*
+ * Build the fd-arg slot bitmap for entry's argtype[] table.  Called once
+ * per syscallentry at table-init time from copy_syscall_table() in
+ * tables.c; the cached mask in entry->fd_arg_mask drives the fd-scoreboard
+ * update loops in handle_success() / handle_failure() (results.c) without
+ * re-running is_fdarg() per slot.  Bit k (k=0..5) set means slot (k+1)'s
+ * argtype is ARG_FD or any typed-fd argtype.
+ */
+uint8_t compute_fd_arg_mask(const struct syscallentry *entry)
+{
+	uint8_t mask = 0;
+	unsigned int i;
+
+	if (entry == NULL)
+		return 0;
+
+	for (i = 0; i < entry->num_args && i < 6; i++) {
+		if (is_fdarg(entry->argtype[i]))
+			mask |= (uint8_t)(1u << i);
+	}
+	return mask;
+}
+
+/*
+ * Build the ARG_LEN slot bitmap for entry's argtype[] table.  Called once
+ * per syscallentry at table-init time from copy_syscall_table() in
+ * tables.c; the cached mask in entry->len_arg_mask drives the
+ * successful-length scoreboard update in handle_success() (results.c)
+ * without re-running get_argtype() per slot.  Bit k (k=0..5) set means
+ * slot (k+1)'s argtype is ARG_LEN.
+ */
+uint8_t compute_len_arg_mask(const struct syscallentry *entry)
+{
+	uint8_t mask = 0;
+	unsigned int i;
+
+	if (entry == NULL)
+		return 0;
+
+	for (i = 0; i < entry->num_args && i < 6; i++) {
+		if (entry->argtype[i] == ARG_LEN)
+			mask |= (uint8_t)(1u << i);
+	}
+	return mask;
+}
+
 static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum)
 {
 	const struct argtype_ops *ops;

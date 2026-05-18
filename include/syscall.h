@@ -289,6 +289,33 @@ struct syscallentry {
 	uint8_t numeric_substitute_mask;
 
 	/*
+	 * Cached bitmaps of arg slots (1..6) that participate in the per-call
+	 * hot loops that used to walk the full argtype[] table for every
+	 * dispatch.  Bit k (k=0..5) set means slot (k+1) qualifies:
+	 *
+	 *   address_scrub_mask  -- argtype_get_ops()->default_address_scrub
+	 *                          eligible slot (blanket_address_scrub() in
+	 *                          generate-args.c).
+	 *   cleanup_arg_mask    -- argtype_get_ops()->cleanup is non-NULL
+	 *                          (generic_free_arg() in generate-args.c).
+	 *   fd_arg_mask         -- is_fdarg(argtype) -- ARG_FD or any typed-fd
+	 *                          argtype (handle_success/handle_failure in
+	 *                          results.c).
+	 *   len_arg_mask        -- argtype == ARG_LEN (handle_success in
+	 *                          results.c).
+	 *
+	 * Resolved once at table-init time in copy_syscall_table() via the
+	 * matching compute_*_mask() helpers so the hot loops can early-return
+	 * on a zero mask and dispatch via __builtin_ctz instead of walking
+	 * the argtype array and re-running argtype_get_ops() / is_fdarg() per
+	 * slot.  6 bits used per mask; upper 2 bits always zero.
+	 */
+	uint8_t address_scrub_mask;
+	uint8_t cleanup_arg_mask;
+	uint8_t fd_arg_mask;
+	uint8_t len_arg_mask;
+
+	/*
 	 * Trinity 1-based index (1..6) of the syscall argument whose value
 	 * upper-bounds rec->retval -- typically the "count" / "size" / "len"
 	 * argument of read/write/recv/send-class syscalls.  Consumed at the
@@ -372,6 +399,10 @@ void generic_post_close_fd(struct syscallrecord *rec);
 void post_mount_fd(struct syscallrecord *rec);
 void post_fs_ctx_fd(struct syscallrecord *rec);
 uint8_t compute_numeric_substitute_mask(const struct syscallentry *entry);
+uint8_t compute_address_scrub_mask(const struct syscallentry *entry);
+uint8_t compute_cleanup_arg_mask(const struct syscallentry *entry);
+uint8_t compute_fd_arg_mask(const struct syscallentry *entry);
+uint8_t compute_len_arg_mask(const struct syscallentry *entry);
 
 #define for_each_arg(_e, _i) \
 	for (_i = 1; _i <= (_e)->num_args; _i++)

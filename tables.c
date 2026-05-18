@@ -518,6 +518,10 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		copy[m].is_epoll_create1 = (strcmp(copy[m].name, "epoll_create1") == 0);
 		copy[m].is_execve = (strcmp(copy[m].name, "execve") == 0);
 		copy[m].numeric_substitute_mask = compute_numeric_substitute_mask(&copy[m]);
+		copy[m].address_scrub_mask = compute_address_scrub_mask(&copy[m]);
+		copy[m].cleanup_arg_mask = compute_cleanup_arg_mask(&copy[m]);
+		copy[m].fd_arg_mask = compute_fd_arg_mask(&copy[m]);
+		copy[m].len_arg_mask = compute_len_arg_mask(&copy[m]);
 
 		from[n].entry = &copy[m];
 		m++;
