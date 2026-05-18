@@ -21,7 +21,9 @@
  * handler running cannot redirect the source reads at foreign ruid /
  * euid / suid user buffers.
  */
+#define GETRESUID_POST_STATE_MAGIC	0x47525549UL	/* "GRUI" */
 struct getresuid_post_state {
+	unsigned long magic;
 	unsigned long ruid;
 	unsigned long euid;
 	unsigned long suid;
@@ -61,6 +63,7 @@ static void sanitise_getresuid(struct syscallrecord *rec)
 	 * it has no .post handler and would leak the snapshot.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = GETRESUID_POST_STATE_MAGIC;
 	snap->ruid = rec->a1;
 	snap->euid = rec->a2;
 	snap->suid = rec->a3;
@@ -107,6 +110,23 @@ static void post_getresuid(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_getresuid: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * getresuid_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon rather than feed wild bytes into
+	 * the ruid / euid / suid inner derefs.
+	 */
+	if (snap->magic != GETRESUID_POST_STATE_MAGIC) {
+		outputerr("post_getresuid: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
