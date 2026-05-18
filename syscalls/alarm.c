@@ -18,7 +18,9 @@
  * handler running cannot raise the bound and silently launder a wild
  * remaining-seconds retval past the prev-bound check.
  */
+#define ALARM_POST_STATE_MAGIC	0x414C524DUL	/* "ALRM" */
 struct alarm_post_state {
+	unsigned long magic;
 	unsigned int seconds;
 };
 
@@ -29,6 +31,7 @@ static void sanitise_alarm(struct syscallrecord *rec)
 	rec->post_state = 0;
 
 	snap = zmalloc(sizeof(*snap));
+	snap->magic   = ALARM_POST_STATE_MAGIC;
 	snap->seconds = (unsigned int) rec->a1;
 	rec->post_state = (unsigned long) snap;
 }
@@ -72,6 +75,23 @@ static void post_alarm(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_alarm: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as an
+	 * alarm_post_state.  A cookie mismatch means snap does not point
+	 * at our struct -- abandon rather than feed wild bytes into the
+	 * prev-bound check.
+	 */
+	if (snap->magic != ALARM_POST_STATE_MAGIC) {
+		outputerr("post_alarm: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}

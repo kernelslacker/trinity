@@ -20,7 +20,6 @@
 # to this list.
 #
 # Lines starting with `#` and blank lines are ignored.
-syscalls/alarm.c:alarm
 syscalls/bpf.c:bpf
 syscalls/capget.c:capget
 syscalls/capset.c:capset
