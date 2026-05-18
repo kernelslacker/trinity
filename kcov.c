@@ -996,8 +996,10 @@ static bool    kcov_kernel_fp_valid;
 static bool kcov_get_kernel_fp(uint8_t out[32])
 {
 	if (!kcov_kernel_fp_valid) {
-		if (!kcov_fingerprint_kernel(kcov_kernel_fp))
+		if (!kcov_fingerprint_kernel(kcov_kernel_fp)) {
+			output(0, "kcov-bitmap: kcov_fingerprint_kernel failed (/proc/kallsyms unreadable?) -- cold start\n");
 			return false;
+		}
 		kcov_kernel_fp_valid = true;
 	}
 	memcpy(out, kcov_kernel_fp, 32);
@@ -1114,6 +1116,7 @@ bool kcov_bitmap_load_file(const char *path)
 	uint8_t cur_fp[32];
 	unsigned char *scratch;
 	uint32_t want_crc;
+	ssize_t n;
 	int fd;
 
 	if (path == NULL || kcov_shm == NULL)
@@ -1125,11 +1128,20 @@ bool kcov_bitmap_load_file(const char *path)
 	}
 
 	fd = open(path, O_RDONLY);
-	if (fd < 0)
+	if (fd < 0) {
+		if (errno == ENOENT)
+			output(0, "kcov-bitmap: no persisted state at %s -- cold start\n",
+			       path);
+		else
+			output(0, "kcov-bitmap: open(%s) failed: %s -- cold start\n",
+			       path, strerror(errno));
 		return false;
+	}
 
-	if (kcov_bitmap_read_all(fd, &hdr, sizeof(hdr))
-			!= (ssize_t)sizeof(hdr)) {
+	n = kcov_bitmap_read_all(fd, &hdr, sizeof(hdr));
+	if (n != (ssize_t)sizeof(hdr)) {
+		output(0, "kcov-bitmap: header truncated at %s (got %zd, want %zu) -- cold start\n",
+		       path, n, sizeof(hdr));
 		(void)close(fd);
 		return false;
 	}
@@ -1149,11 +1161,15 @@ bool kcov_bitmap_load_file(const char *path)
 	 * shared bitmap half-overwritten with garbage. */
 	scratch = malloc(KCOV_NUM_EDGES);
 	if (scratch == NULL) {
+		output(0, "kcov-bitmap: scratch alloc fail (%zu bytes) -- cold start\n",
+		       (size_t)KCOV_NUM_EDGES);
 		(void)close(fd);
 		return false;
 	}
-	if (kcov_bitmap_read_all(fd, scratch, KCOV_NUM_EDGES)
-			!= (ssize_t)KCOV_NUM_EDGES) {
+	n = kcov_bitmap_read_all(fd, scratch, KCOV_NUM_EDGES);
+	if (n != (ssize_t)KCOV_NUM_EDGES) {
+		output(0, "kcov-bitmap: payload truncated at %s (got %zd, want %zu) -- cold start\n",
+		       path, n, (size_t)KCOV_NUM_EDGES);
 		free(scratch);
 		(void)close(fd);
 		return false;
