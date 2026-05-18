@@ -68,7 +68,6 @@ syscalls/seccomp.c:seccomp
 syscalls/setgroups.c:setgroups
 syscalls/sigaltstack.c:sigaltstack
 syscalls/sigpending.c:sigpending
-syscalls/stat.c:statx
 syscalls/statfs.c:statfs
 syscalls/statfs.c:statfs64
 syscalls/statmount.c:statmount

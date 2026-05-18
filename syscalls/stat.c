@@ -117,7 +117,9 @@ static unsigned long statx_mask[] = {
  * cannot flip the dfd, and cannot smear the lookup flags or the field-
  * select mask used to seed the re-issue.
  */
+#define STATX_POST_STATE_MAGIC	0x53545458UL	/* "STTX" */
 struct statx_post_state {
+	unsigned long magic;
 	unsigned long dfd;
 	unsigned long pathname;
 	unsigned long flags;
@@ -145,6 +147,7 @@ static void sanitise_statx(struct syscallrecord *rec)
 	 * re-issue.  post_state is private to the post handler.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic    = STATX_POST_STATE_MAGIC;
 	snap->dfd      = rec->a1;
 	snap->pathname = rec->a2;
 	snap->flags    = rec->a3;
@@ -255,6 +258,23 @@ static void post_statx(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_statx: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * statx_post_state.  A cookie mismatch means snap does not point
+	 * at our struct -- abandon rather than feed wild bytes into the
+	 * inner-field deref.
+	 */
+	if (snap->magic != STATX_POST_STATE_MAGIC) {
+		outputerr("post_statx: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
