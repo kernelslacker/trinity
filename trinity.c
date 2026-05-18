@@ -35,6 +35,7 @@
 #include "shm.h"
 #include "stats.h"
 #include "stats_ring.h"
+#include "strategy.h"
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"
@@ -357,11 +358,22 @@ int main(int argc, char* argv[])
 		alt_op_children = clamped;
 	}
 
-	/* Compute the default explorer-pool size (max_children/4) when the
-	 * operator did not pass --explorer-children, and clamp an explicit
-	 * value to max_children/2.  Runs after the alt-op clamp so both
-	 * partitions see the final max_children. */
+	/* Compute the default explorer-pool size when the operator did not
+	 * pass --explorer-children (max_children/4 under PICKER_BANDIT_UCB1,
+	 * zero otherwise), and clamp an explicit value to max_children/2.
+	 * Runs after the alt-op clamp so both partitions see the final
+	 * max_children. */
 	clamp_default_explorer_children();
+
+	/* Surface the resolved picker/explorer split unconditionally so the
+	 * operator can confirm what the run will actually do -- the explorer
+	 * default is mode-aware, and an operator passing --strategy without
+	 * also setting --explorer-children would otherwise have to read the
+	 * source to know whether 25% of children are silently diverted to
+	 * STRATEGY_RANDOM. */
+	output(0, "picker_mode=%s explorer_children=%u (of %u)\n",
+	       picker_mode_name(picker_mode_arg),
+	       explorer_children, max_children);
 
 	/* Register trinity's own .data/.bss + every loaded DSO's writable
 	 * PT_LOAD segments with shared_regions[] BEFORE fork_children() so

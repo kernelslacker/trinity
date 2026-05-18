@@ -77,10 +77,18 @@ extern unsigned int alt_op_children;
  * canary rather than biasing arm selection.
  *
  * Default (when --explorer-children is not passed) is computed as
- * max_children/4 by clamp_default_explorer_children() after parse_args
- * has finalised max_children.  user_specified_explorer_children records
- * whether the operator passed the flag explicitly so the default-fill
- * path can leave their value alone.
+ * max_children/4 by clamp_default_explorer_children() AFTER parse_args
+ * has finalised max_children, but ONLY when picker_mode_arg ==
+ * PICKER_BANDIT_UCB1.  Under any other picker mode (round-robin,
+ * heuristic, etc.) the explorer pool defaults to zero so the active
+ * strategy is what every child slot actually runs -- the explorer pool
+ * is a bandit-specific baseline and would otherwise silently divert 25%
+ * of the fleet to STRATEGY_RANDOM regardless of the operator's
+ * --strategy choice.  The operator can still override with
+ * --explorer-children=N in any picker mode; that path is unconditional.
+ * user_specified_explorer_children records whether the operator passed
+ * the flag explicitly so the default-fill path can leave their value
+ * alone.
  */
 extern unsigned int explorer_children;
 extern bool user_specified_explorer_children;

@@ -244,13 +244,26 @@ static unsigned long derive_max_children_cap(enum max_children_binding *out_bind
 
 /*
  * Compute the default explorer-pool size when --explorer-children was not
- * passed.  Default is max_children/4 (25%): for -C64 → 16 explorers, -C16
- * → 4, -C8 → 2, -C4 → 1.  Small fleets get a minimal explorer slice so
- * the bandit retains enough slot budget for UCB1 to converge.
+ * passed.  The default is mode-aware: max_children/4 (25%) under
+ * PICKER_BANDIT_UCB1 (for -C64 → 16 explorers, -C16 → 4, -C8 → 2, -C4
+ * → 1), zero under every other picker mode.
  *
- * Validates the explicit operator value (post-parse) against the ceiling
- * of max_children/2: more than half being explorers leaves the bandit
- * pool too small for UCB1 to differentiate arms.
+ * The explorer pool exists to provide a strategy-independent baseline
+ * alongside the bandit's learned policy, with its coverage discoveries
+ * recorded separately and excluded from the bandit's reward signal.
+ * That role only makes sense when the bandit is the active picker --
+ * under round-robin or any other deterministic picker the explorer
+ * slots would silently divert 25% of the fleet to STRATEGY_RANDOM and
+ * the active strategy would only actually run on 75% of children, which
+ * contradicts what --strategy advertises.  Default to zero outside
+ * bandit mode so non-bandit pickers run pure.
+ *
+ * The operator can still force a non-zero pool in any mode by passing
+ * --explorer-children=N; that path is unconditional and only the upper
+ * ceiling (max_children/2) is enforced -- more than half being
+ * explorers would leave the bandit pool too small for UCB1 to
+ * differentiate arms, and even in non-bandit modes the same imbalance
+ * argument applies to the active strategy.
  *
  * Called from main() after clamp_default_max_children() so max_children
  * is final.  Mirrors the alt_op_children clamp pattern in trinity.c.
@@ -260,7 +273,10 @@ void clamp_default_explorer_children(void)
 	unsigned int ceiling = max_children / 2;
 
 	if (!user_specified_explorer_children) {
-		explorer_children = max_children / 4;
+		if (picker_mode_arg == PICKER_BANDIT_UCB1)
+			explorer_children = max_children / 4;
+		/* else: leave explorer_children at its 0 init so the
+		 * active strategy runs on every child slot. */
 		return;
 	}
 
@@ -368,7 +384,7 @@ static const struct option_help option_descs[] = {
 	{ "epoch-iterations",	 0,  "syscalls per epoch before restarting (must be > 0; omit to disable)" },
 	{ "epoch-timeout",	 0,  "seconds per epoch before restarting (must be > 0; omit to disable)" },
 	{ "exclude",		'x', "don't call a specific syscall" },
-	{ "explorer-children",	 0,  "reserve N children to always run STRATEGY_RANDOM as a bandit-independent explorer pool (default: max_children/4; max: max_children/2)" },
+	{ "explorer-children",	 0,  "reserve N children to always run STRATEGY_RANDOM as a strategy-independent explorer pool (default: max_children/4 under --strategy=bandit, 0 otherwise; max: max_children/2). Works in any picker mode; non-bandit modes get no explorer pool unless this is set." },
 	{ "group",		'g', "only run syscalls from a certain group (vfs,vm,net,ipc,process,signal,io_uring,bpf,sched,time)" },
 	{ "group-bias",		 0,  "bias syscall selection toward the same group as the previous call" },
 	{ "help",		'h', "show this help" },
