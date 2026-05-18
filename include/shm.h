@@ -511,6 +511,36 @@ struct shm_s {
 	int plateau_rescue_amplified_class;
 
 	/*
+	 * Plateau intervention mode rotation state.  When the kcov plateau
+	 * detector has the fleet in an intervention window
+	 * (SR_PLATEAU_FORCE), the orchestrator round-robins among
+	 * PIM_UNIFORM_RANDOM / PIM_ANTI_PRIOR / PIM_RRC_BIASED at each
+	 * rotation so the three rescue shapes get equal exposure and per-
+	 * mode A/B comparison stays defensible.
+	 *
+	 * plateau_intervention_mode_current: latched mode for the current
+	 *   intervention window, published by select_next_strategy at every
+	 *   rotation boundary.  Held as int so the shm layout stays
+	 *   language-stable across future enum reorders, same convention as
+	 *   plateau_rescue_amplified_class above.  Read by
+	 *   plateau_anti_prior_active() on the hot pick path.  Reset to
+	 *   PIM_UNIFORM_RANDOM on every non-intervention rotation so a
+	 *   stale mode from a previous plateau cannot leave the anti-prior
+	 *   gate latched on after the plateau lifts.
+	 *
+	 * plateau_anti_prior_baseline_calls: cached mean of
+	 *   kcov_shm->per_syscall_calls across MAX_NR_SYSCALL, refreshed by
+	 *   plateau_anti_prior_refresh_baseline() at every rotation that
+	 *   selects PIM_ANTI_PRIOR.  Read once per pick on the hot path
+	 *   inside plateau_anti_prior_accept().  Zero means "no baseline
+	 *   yet" (no anti-prior rotation has fired) and the accept gate
+	 *   short-circuits to "pass" in that state so cold-start picks
+	 *   degenerate to uniform.
+	 */
+	int plateau_intervention_mode_current;
+	unsigned long plateau_anti_prior_baseline_calls;
+
+	/*
 	 * Discounted "recent" counters that the UCB1 picker scores against
 	 * instead of the lifetime bandit_pulls[]/bandit_reward_calls[]
 	 * series above.  Kernel coverage discovery is strongly

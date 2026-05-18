@@ -1027,6 +1027,152 @@ bool plateau_rescue_bias_active_for(enum random_rescue_class c)
 			       __ATOMIC_RELAXED) == (int)c;
 }
 
+/*
+ * Anti-prior boost cap.  The acceptance formula is structured so a
+ * syscall at the baseline mean accepts at 1/ANTI_PRIOR_MAX_BOOST,
+ * cold-end saturates at full uniform acceptance (1.0), and over-picked
+ * syscalls bottom out at 1/ANTI_PRIOR_MAX_BOOST^2.  8 keeps the cold-
+ * end boost large enough to materially shift the picker's distribution
+ * away from its learned priors during the intervention without
+ * collapsing the rotation onto a single syscall whose calls=0 reading
+ * reflects a genuine broken-in-this-kernel arm rather than picker
+ * suppression.  The cap is the SOLE knob trinity exposes against the
+ * "100x boost a stuck syscall" pathology the design comment in
+ * include/strategy.h warns about.
+ */
+#define ANTI_PRIOR_MAX_BOOST 8UL
+
+/*
+ * Pre-computed threshold range for the rejection-sampling roll.  Held
+ * as a literal so the inner-loop divides fold to a single shift on the
+ * target ISA; ANTI_PRIOR_MAX_BOOST stays as the human-meaningful knob.
+ */
+#define ANTI_PRIOR_THRESHOLD_SCALE \
+	(ANTI_PRIOR_MAX_BOOST * ANTI_PRIOR_MAX_BOOST)
+
+bool plateau_anti_prior_active(void)
+{
+	if (kcov_shm == NULL || !kcov_shm->plateau_active)
+		return false;
+	if (__atomic_load_n(&shm->current_selection_reason, __ATOMIC_RELAXED) !=
+	    SR_PLATEAU_FORCE)
+		return false;
+	return __atomic_load_n(&shm->plateau_intervention_mode_current,
+			       __ATOMIC_RELAXED) == (int)PIM_ANTI_PRIOR;
+}
+
+bool plateau_anti_prior_accept(unsigned int nr)
+{
+	unsigned long calls, baseline, floor_calls, ceil_calls;
+	unsigned long clamped, weight;
+
+	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return true;
+
+	baseline = __atomic_load_n(&shm->plateau_anti_prior_baseline_calls,
+				   __ATOMIC_RELAXED);
+	/* No baseline yet -- the orchestrator has not selected an
+	 * anti-prior rotation in this run.  Pass unconditionally so the
+	 * picker degenerates to uniform until the cache is populated. */
+	if (baseline == 0)
+		return true;
+
+	calls = __atomic_load_n(&kcov_shm->per_syscall_calls[nr],
+				__ATOMIC_RELAXED);
+
+	/* Clamp the per-syscall call count into [baseline/MAX_BOOST,
+	 * MAX_BOOST*baseline] before the divide so the inversion saturates
+	 * at the cap on both ends.  Without the floor clamp a syscall stuck
+	 * at calls=0 (broken arm or a syscall the picker has never reached)
+	 * would dominate the intervention; without the ceiling clamp the
+	 * acceptance weight for an arm the picker has been hammering would
+	 * underflow toward zero and the rejection roll would never land on
+	 * it even when no other candidate is eligible.  The clamp range is
+	 * symmetric around baseline so the median syscall lands exactly on
+	 * baseline post-clamp and the weight formula below resolves to
+	 * ANTI_PRIOR_MAX_BOOST for it. */
+	floor_calls = baseline / ANTI_PRIOR_MAX_BOOST;
+	if (floor_calls == 0)
+		floor_calls = 1;
+	ceil_calls = baseline * ANTI_PRIOR_MAX_BOOST;
+	clamped = calls;
+	if (clamped < floor_calls)
+		clamped = floor_calls;
+	else if (clamped > ceil_calls)
+		clamped = ceil_calls;
+
+	/* weight = (MAX_BOOST * baseline) / clamped
+	 *   - clamped = floor (= baseline/MAX_BOOST): weight = MAX_BOOST^2
+	 *     -- maximum boost, the cold-end saturation point.
+	 *   - clamped = baseline (median): weight = MAX_BOOST -- the
+	 *     "neutral" anti-prior rate.
+	 *   - clamped = ceil (= MAX_BOOST*baseline): weight = 1 -- the
+	 *     minimum acceptance, the over-picked saturation point.
+	 * The numerator is clamped at THRESHOLD_SCALE as a numeric guard
+	 * for the corner case where (MAX_BOOST * baseline) overflows the
+	 * unsigned long product on extreme baselines; the value would
+	 * already be at the cap regardless. */
+	weight = (ANTI_PRIOR_MAX_BOOST * baseline) / clamped;
+	if (weight > ANTI_PRIOR_THRESHOLD_SCALE)
+		weight = ANTI_PRIOR_THRESHOLD_SCALE;
+
+	/* Acceptance probability = weight / THRESHOLD_SCALE.  Median
+	 * syscall accepts at 1/MAX_BOOST (12.5% with MAX_BOOST=8); that
+	 * sounds aggressive but the picker's outer retry budget (10000
+	 * iterations) absorbs it without budget exhaustion under any
+	 * realistic active-syscall count, and the intervention is by
+	 * construction a temporary modifier on a single rotation window. */
+	return (unsigned long)rand() % ANTI_PRIOR_THRESHOLD_SCALE < weight;
+}
+
+void plateau_anti_prior_refresh_baseline(void)
+{
+	unsigned long sum = 0;
+	unsigned int i;
+	unsigned long baseline;
+
+	if (kcov_shm == NULL) {
+		__atomic_store_n(&shm->plateau_anti_prior_baseline_calls, 0UL,
+				 __ATOMIC_RELAXED);
+		return;
+	}
+
+	/* Mean across the full per_syscall_calls slot range.  Indexing by
+	 * MAX_NR_SYSCALL (not max_nr_syscalls) matches the array
+	 * dimension and keeps the baseline stable across biarch builds
+	 * where the per_syscall_calls slot is shared by both arches.
+	 * O(MAX_NR_SYSCALL) walk on the rotation path, never on the hot
+	 * pick path. */
+	for (i = 0; i < MAX_NR_SYSCALL; i++)
+		sum += __atomic_load_n(&kcov_shm->per_syscall_calls[i],
+				       __ATOMIC_RELAXED);
+	baseline = sum / MAX_NR_SYSCALL;
+
+	/* Publish at least 1 when the mean truncates to zero so the accept
+	 * gate's "baseline=0 short-circuit to pass" branch only fires
+	 * before any rotation has populated the cache, not when the fleet
+	 * is genuinely too young for any syscall to have averaged a full
+	 * call.  Without the floor a cold-start run that hit a plateau
+	 * within its first MAX_NR_SYSCALL ops would have the anti-prior
+	 * rotation silently degenerate to uniform pick. */
+	if (baseline == 0 && sum > 0)
+		baseline = 1;
+
+	__atomic_store_n(&shm->plateau_anti_prior_baseline_calls, baseline,
+			 __ATOMIC_RELAXED);
+}
+
+const char *plateau_intervention_mode_name(enum plateau_intervention_mode m)
+{
+	switch (m) {
+	case PIM_UNIFORM_RANDOM:	return "UNIFORM_RANDOM";
+	case PIM_ANTI_PRIOR:		return "ANTI_PRIOR";
+	case PIM_RRC_BIASED:		return "RRC_BIASED";
+	case NR_PIM_MODES:		break;	/* sentinel */
+	}
+	return "?";
+}
+
 const char *random_rescue_class_name(enum random_rescue_class c)
 {
 	switch (c) {

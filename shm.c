@@ -162,6 +162,17 @@ void init_shm(void)
 	__atomic_store_n(&shm->plateau_rescue_amplified_class,
 			 (int)RRC_NR_CLASSES, __ATOMIC_RELAXED);
 
+	/* Plateau intervention mode starts on PIM_UNIFORM_RANDOM (the
+	 * zero-init value) so any pre-plateau read sees the
+	 * unmodified-RANDOM shape; the orchestrator's rotation latches a
+	 * fresh mode at every plateau-window boundary.  Baseline calls
+	 * starts at zero so plateau_anti_prior_accept() short-circuits to
+	 * "pass" until the first PIM_ANTI_PRIOR rotation populates it. */
+	__atomic_store_n(&shm->plateau_intervention_mode_current,
+			 (int)PIM_UNIFORM_RANDOM, __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->plateau_anti_prior_baseline_calls, 0UL,
+			 __ATOMIC_RELAXED);
+
 	__atomic_store_n(&shm->seed, init_seed(seed), __ATOMIC_RELAXED);
 
 	if (!shared_size_mul(max_children, sizeof(struct childdata *),

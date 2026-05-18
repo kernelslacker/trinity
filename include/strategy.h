@@ -183,6 +183,57 @@ enum random_rescue_class {
 	RRC_NR_CLASSES,		/* sentinel, must stay last */
 };
 
+/*
+ * Plateau intervention mode.
+ *
+ * During a coverage plateau the orchestrator forces an arm over the top
+ * of the bandit; without further structure that arm has been plain
+ * STRATEGY_RANDOM (PIM_UNIFORM_RANDOM) or, once the random-rescue
+ * classifier has accumulated evidence, a class-amplified replay
+ * (PIM_RRC_BIASED, dispatched through dominant_rescue_class).  Both
+ * modes leave one rescue avenue untouched: the bandit's learned priors
+ * over per-syscall pick rate.  A learner that has converged on a
+ * handful of "winning" syscalls keeps replaying them across the
+ * intervention even when those wins are stale -- the priors themselves
+ * are part of why the fleet is at plateau.
+ *
+ * PIM_ANTI_PRIOR is the complement: STRATEGY_RANDOM with a per-call
+ * acceptance gate that INVERTS the learned per-syscall call-count
+ * distribution.  Syscalls the bandit has been suppressing (low per-
+ * syscall call count) get full acceptance; syscalls the bandit has
+ * been over-picking (high count) get rejected at up to MAX_BOOST^-2 of
+ * baseline acceptance.  The inversion is capped so a syscall stuck at
+ * calls=0 (genuinely broken in this kernel, or simply never picked
+ * before the plateau started) cannot 100x dominate the intervention.
+ *
+ * The orchestrator round-robins among the three modes at each rotation
+ * boundary while the plateau is active, so the per-mode rescue yield is
+ * directly comparable: each mode runs the same number of windows over
+ * the lifetime of any plateau long enough for the rotation to cycle.
+ * Anti-prior and RRC-biased modes are designed as complements --
+ * anti-prior biases AWAY from the learned distribution, RRC-biased
+ * biases TOWARD a specific failure class -- and both layer over the
+ * UNIFORM_RANDOM baseline that makes the A/B shape interpretable.
+ *
+ * PIM_UNIFORM_RANDOM: STRATEGY_RANDOM with no per-call bias.  The
+ *                     historical pre-classifier intervention shape;
+ *                     kept as the third rotation slot to anchor the
+ *                     comparison.
+ * PIM_ANTI_PRIOR:     STRATEGY_RANDOM with the inverted-weight accept
+ *                     gate active (see plateau_anti_prior_accept()).
+ * PIM_RRC_BIASED:     dispatch via dominant_rescue_class() +
+ *                     amplified_intervention_arm() -- HEALER / HEURISTIC
+ *                     replay biased by the random-rescue classifier's
+ *                     dominant class, or plain RANDOM when no class
+ *                     dominates.
+ */
+enum plateau_intervention_mode {
+	PIM_UNIFORM_RANDOM = 0,
+	PIM_ANTI_PRIOR,
+	PIM_RRC_BIASED,
+	NR_PIM_MODES,		/* sentinel, must stay last */
+};
+
 /* Set by parse_args() before init_shm(). */
 extern enum picker_mode_t picker_mode_arg;
 
@@ -440,6 +491,52 @@ const char *random_rescue_class_name(enum random_rescue_class c);
  * on the hottest per-pick / per-arg paths.
  */
 bool plateau_rescue_bias_active_for(enum random_rescue_class c);
+
+/*
+ * Hot-path gate for the anti-prior accept filter in set_syscall_nr_random.
+ * Returns true only when the fleet is inside a SR_PLATEAU_FORCE
+ * intervention window AND the orchestrator has rotated into the
+ * PIM_ANTI_PRIOR mode for this window.  Same gating shape as
+ * plateau_rescue_bias_active_for so the relaxed-load short-circuit
+ * outside intervention windows costs one atomic load and one compare.
+ */
+bool plateau_anti_prior_active(void);
+
+/*
+ * Anti-prior accept gate.  Compares this syscall's lifetime call count
+ * (kcov_shm->per_syscall_calls[nr]) against the cached per-intervention
+ * baseline mean and returns true iff the candidate clears a rejection
+ * roll whose acceptance probability scales as
+ * (baseline / clamp(calls, baseline/MAX_BOOST, MAX_BOOST*baseline)) /
+ * MAX_BOOST -- low-count syscalls saturate at full uniform acceptance,
+ * the median syscall accepts at 1/MAX_BOOST rate, and over-picked
+ * syscalls bottom out at 1/MAX_BOOST^2.
+ *
+ * Returns true (pass) when baseline is zero or kcov_shm is unavailable,
+ * so the gate degenerates gracefully to uniform pick before any window
+ * has refreshed the baseline cache.  Safe to call without first
+ * checking plateau_anti_prior_active(); the caller in
+ * set_syscall_nr_random goes through that gate to skip the per-call
+ * load entirely outside an intervention.
+ */
+bool plateau_anti_prior_accept(unsigned int nr);
+
+/*
+ * Recompute and publish the anti-prior baseline -- the mean of
+ * kcov_shm->per_syscall_calls across the full MAX_NR_SYSCALL slot
+ * range.  Called by the orchestrator at every rotation that selects
+ * PIM_ANTI_PRIOR so the bias targets the picker's CURRENT distribution
+ * rather than a snapshot frozen at the start of the run.  Cheap: one
+ * O(MAX_NR_SYSCALL) walk on the rotation path, never on the hot pick
+ * path.
+ */
+void plateau_anti_prior_refresh_baseline(void);
+
+/*
+ * Human-readable name for the intervention mode, for the dump path and
+ * the rotation log.  Returns "?" for out-of-range input.
+ */
+const char *plateau_intervention_mode_name(enum plateau_intervention_mode m);
 
 /*
  * End-of-run summary: per-arm pulls + cumulative reward + mean

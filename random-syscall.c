@@ -248,6 +248,21 @@ retry:
 }
 
 /*
+ * Anti-prior reject-retry budget.  The accept gate's per-call rejection
+ * rate sits at 1 - 1/MAX_BOOST = 87.5% at the median; over a sparse
+ * active table this still resolves in a handful of retries on average,
+ * but a pathological mix (e.g. every active syscall sitting at the
+ * over-picked saturation point, accept = 1/MAX_BOOST^2) could push past
+ * the natural recovery budget.  Bound at 64 so the inner loop never
+ * burns more than the per-iteration cost is worth; falling through
+ * means accepting whatever the picker happened to land on, which
+ * degrades anti-prior gracefully to uniform pick rather than wedging
+ * the syscall picker.  Kept well below the outer 10000 budget so the
+ * gate cannot starve the rest of the validate / EXPENSIVE gates.
+ */
+#define ANTI_PRIOR_RETRY_CAP 64U
+
+/*
  * Pick the syscall to run under STRATEGY_RANDOM: uniform draw from
  * active_syscalls with no further biasing.  The "shake the dust off"
  * pass — useless on its own, but exposes paths the heuristic biases
@@ -256,6 +271,15 @@ retry:
  * Active_syscalls + EXPENSIVE + AVOID_SYSCALL gating remain because
  * those are correctness gates, not selection biases — bypassing them
  * just wastes iterations on calls we know we can't make.
+ *
+ * Anti-prior plateau intervention: during an SR_PLATEAU_FORCE window
+ * the orchestrator may have rotated into PIM_ANTI_PRIOR mode, in which
+ * case the per-candidate accept gate inverts the picker's learned
+ * per-syscall pick-rate distribution -- syscalls the bandit has been
+ * over-selecting get rejected at up to MAX_BOOST^2:1, low-count
+ * syscalls accept at full uniform rate.  Outside the intervention the
+ * gate's atomic load short-circuits and the picker is the historical
+ * pure-uniform draw.
  */
 bool set_syscall_nr_random(struct syscallrecord *rec,
 			    struct childdata *child)
@@ -266,6 +290,8 @@ bool set_syscall_nr_random(struct syscallrecord *rec,
 	bool do32;
 	unsigned int outer_attempts = 0;
 	unsigned int nr_syscalls;
+	unsigned int anti_prior_attempts = 0;
+	bool anti_prior_on;
 
 	/* See the matching comment in set_syscall_nr_heuristic — the table
 	 * pick is a per-call decision, not a per-retry one. */
@@ -275,6 +301,13 @@ bool set_syscall_nr_random(struct syscallrecord *rec,
 		do32 = false;
 		nr_syscalls = max_nr_syscalls;
 	}
+
+	/* Latch the anti-prior mode once per pick so the per-retry inner
+	 * loop reads a stable answer; a rotation that lands mid-pick is
+	 * harmless either way (we either over-shoot one retry budget or
+	 * under-shoot one) but caching avoids redoing the relaxed atomic
+	 * load on every retry. */
+	anti_prior_on = plateau_anti_prior_active();
 
 retry:
 	if (no_syscalls_enabled() == true) {
@@ -305,6 +338,22 @@ retry:
 	if (entry->flags & EXPENSIVE) {
 		if (!ONE_IN(1000))
 			goto retry;
+	}
+
+	/* Anti-prior accept gate.  Applied AFTER the active/validate/
+	 * EXPENSIVE correctness gates so a rejected anti-prior candidate
+	 * goes back through the uniform pick rather than burning the gate
+	 * budget on disabled or AVOID-flagged syscalls.  Bounded retry
+	 * budget so an extreme distribution falls back to uniform instead
+	 * of wedging the picker. */
+	if (anti_prior_on && !plateau_anti_prior_accept(syscallnr)) {
+		anti_prior_attempts++;
+		if (anti_prior_attempts < ANTI_PRIOR_RETRY_CAP)
+			goto retry;
+		/* Budget exhausted -- accept the current candidate and let
+		 * the next pick re-roll.  The intervention's per-window
+		 * shape stays anti-prior on average even if individual
+		 * picks fall through. */
 	}
 
 	lock(&rec->lock);
