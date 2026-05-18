@@ -30,7 +30,9 @@
  * smear the bufsiz value the retval > bufsiz anomaly gate compares
  * against.
  */
+#define READLINK_POST_STATE_MAGIC	0x524C4E4BUL	/* "RLNK" */
 struct readlink_post_state {
+	unsigned long magic;
 	unsigned long path;
 	unsigned long buf;
 	unsigned long bufsiz;
@@ -71,6 +73,7 @@ static void sanitise_readlink(struct syscallrecord *rec)
 	 * and a snapshot only the post handler can free would leak.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic     = READLINK_POST_STATE_MAGIC;
 	snap->path      = rec->a1;
 	snap->buf       = rec->a2;
 	snap->bufsiz    = rec->a3;
@@ -145,6 +148,24 @@ static void post_readlink(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_readlink: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * readlink_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon rather than feed wild bytes into
+	 * the bufsiz strong-val gate, the path strncpy, the source memcpy
+	 * of the user buffer, and the syscall<->syscall byte compare.
+	 */
+	if (snap->magic != READLINK_POST_STATE_MAGIC) {
+		outputerr("post_readlink: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}

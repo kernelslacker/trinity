@@ -45,7 +45,6 @@ syscalls/munmap.c:munmap
 syscalls/poll.c:ppoll
 syscalls/prctl.c:prctl
 syscalls/ptrace.c:ptrace
-syscalls/readlink.c:readlink
 syscalls/readlink.c:readlinkat
 syscalls/sched_getaffinity.c:sched_getaffinity
 syscalls/sched_getattr.c:sched_getattr
