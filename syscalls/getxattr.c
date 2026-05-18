@@ -25,7 +25,9 @@
  * handler running cannot redirect us at a foreign value buffer or hand
  * the re-call the wrong (pathname, name) tuple.
  */
+#define GETXATTR_POST_STATE_MAGIC	0x47585452UL	/* "GXTR" */
 struct getxattr_post_state {
+	unsigned long magic;
 	unsigned long pathname;
 	unsigned long name;
 	unsigned long value;
@@ -57,6 +59,7 @@ static void sanitise_getxattr(struct syscallrecord *rec)
 	 * snapshot only the post handler can free would leak.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic    = GETXATTR_POST_STATE_MAGIC;
 	snap->pathname = rec->a1;
 	snap->name     = rec->a2;
 	snap->value    = rec->a3;
@@ -133,6 +136,23 @@ static void post_getxattr(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_getxattr: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * getxattr_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon rather than feed wild bytes into
+	 * the pathname / name / value inner derefs and re-issue recheck.
+	 */
+	if (snap->magic != GETXATTR_POST_STATE_MAGIC) {
+		outputerr("post_getxattr: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
