@@ -561,6 +561,7 @@ static bool argtype_accepts_numeric_substitute(enum argtype t)
 	case ARG_SOCKADDR:
 	case ARG_MMAP:
 	case ARG_SOCKETINFO:
+	case ARG_STRUCT_PTR_IN:
 		return false;
 	}
 	return false;

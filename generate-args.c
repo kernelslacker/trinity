@@ -20,9 +20,11 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "strategy.h"	// plateau_rescue_bias_active_for, RRC_CMP_DERIVED
+#include "struct_catalog.h"
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"	// num_online_cpus
+#include "utils.h"	// zmalloc
 
 /*
  * CMP-hint injection rate.  Baseline is 1-in-16 (the historical rate the
@@ -556,6 +558,80 @@ static unsigned long gen_arg_socketinfo(struct syscallentry *entry __unused__,
 }
 
 /*
+ * Size used when the slot is declared ARG_STRUCT_PTR_IN but the struct
+ * catalog has no entry for (syscall, arg).  Big enough to cover the
+ * common kernel-side copy_from_user() sizes (sizeof(struct sched_attr)
+ * etc.) without us guessing wrong about the specific layout.
+ */
+#define STRUCT_PTR_IN_FALLBACK_SIZE	256U
+
+/*
+ * ARG_STRUCT_PTR_IN: hand the kernel a heap-allocated buffer sized for
+ * the cataloged struct at this (syscall, arg).  Walks struct_catalog for
+ * the layout; for each addressable field of natural width <= 4 bytes,
+ * splats a fresh random value of that width.  Wider fields (typically
+ * pointers and u64 flags) are left as the zmalloc zero -- a random
+ * 8-byte value in a pointer slot just bounces at copy_from_user with
+ * -EFAULT and would starve every other field of fuzz coverage.
+ *
+ * Catalog miss: fall back to STRUCT_PTR_IN_FALLBACK_SIZE bytes of zeros.
+ * The slot stays a valid kernel-readable buffer, so the kernel still
+ * gets past its first copy_from_user() boundary check; it just won't
+ * see varied field content until the catalog learns this syscall.
+ *
+ * The allocation is enqueued on the deferred-free queue at generation
+ * time rather than via the argtype_ops cleanup hook, so a downstream
+ * sanitise() that reallocates and overwrites the arg slot doesn't end
+ * up double-enqueueing the sanitise's own pointer (which has its own
+ * post-handler-driven free path).
+ */
+static unsigned long gen_arg_struct_ptr_in(struct syscallentry *entry __unused__,
+					   struct syscallrecord *rec,
+					   unsigned int argnum)
+{
+	const struct struct_desc *desc;
+	unsigned int size;
+	unsigned char *buf;
+
+	desc = struct_arg_lookup(rec->nr, argnum, rec->do32bit);
+	size = desc ? desc->struct_size : STRUCT_PTR_IN_FALLBACK_SIZE;
+
+	buf = zmalloc(size);
+
+	if (desc != NULL) {
+		unsigned int i;
+
+		for (i = 0; i < desc->num_fields; i++) {
+			const struct struct_field *f = &desc->fields[i];
+
+			if (f->offset + f->size > size)
+				continue;
+			switch (f->size) {
+			case 1:
+				buf[f->offset] = (unsigned char) rand32();
+				break;
+			case 2: {
+				uint16_t v = (uint16_t) rand32();
+				memcpy(buf + f->offset, &v, sizeof(v));
+				break;
+			}
+			case 4: {
+				uint32_t v = rand32();
+				memcpy(buf + f->offset, &v, sizeof(v));
+				break;
+			}
+			default:
+				/* leave wider fields zeroed -- see above */
+				break;
+			}
+		}
+	}
+
+	deferred_free_enqueue(buf, NULL);
+	return (unsigned long) buf;
+}
+
+/*
  * Shared cleanup helper for any argtype whose generator hands back a
  * heap allocation that must be released after the syscall returns
  * (ARG_PATHNAME, ARG_IOVEC, ARG_SOCKADDR).
@@ -693,6 +769,11 @@ const struct argtype_ops argtype_table[] = {
 	[ARG_SOCKETINFO] = {
 		.name = "ARG_SOCKETINFO",
 		.generate = gen_arg_socketinfo,
+	},
+	[ARG_STRUCT_PTR_IN] = {
+		.name = "ARG_STRUCT_PTR_IN",
+		.generate = gen_arg_struct_ptr_in,
+		.default_address_scrub = true,
 	},
 	[ARG_FD_BPF_BTF] = {
 		.name = "ARG_FD_BPF_BTF",
