@@ -632,6 +632,76 @@ static unsigned long gen_arg_struct_ptr_in(struct syscallentry *entry __unused__
 }
 
 /*
+ * Size used when the slot is declared ARG_STRUCT_PTR_OUT but the struct
+ * catalog has no entry for (syscall, arg).  Big enough to cover the
+ * common kernel-side copy_to_user() sizes (struct statx is 256 bytes,
+ * struct stat ~144, struct sysinfo ~64) without guessing wrong about
+ * the specific layout.
+ */
+#define STRUCT_PTR_OUT_FALLBACK_SIZE	256U
+
+/*
+ * Byte the buffer is pre-filled with before the kernel writes into it.
+ * Any non-zero, easily-recognisable value works; 0xAA is the historical
+ * "uninitialised heap" pattern and survives both the kernel's
+ * copy_to_user destination check and direct byte comparison.  Bytes the
+ * kernel does not overwrite remain 0xAA, which lets a future post-
+ * validation pass tell touched-bytes apart from untouched-bytes
+ * without an explicit length out-parameter.
+ */
+#define STRUCT_PTR_OUT_POISON_BYTE	0xAAU
+
+/*
+ * ARG_STRUCT_PTR_OUT: hand the kernel a heap-allocated buffer sized for
+ * the cataloged struct at this (syscall, arg) and pre-filled with a
+ * recognisable poison byte (0xAA).  The kernel's copy_to_user() lands
+ * on a buffer of exactly the right size and the post handler sees the
+ * kernel's writes against a known background pattern.
+ *
+ * Differs from ARG_STRUCT_PTR_IN in two ways: there is no per-field
+ * random splat (the kernel writes the bytes, the fuzzer does not read
+ * them as input) and the buffer is poison-filled rather than zero-
+ * filled so untouched-bytes are visually distinct.
+ *
+ * Catalog miss: fall back to STRUCT_PTR_OUT_FALLBACK_SIZE bytes of
+ * poison.  The slot stays a valid kernel-writable buffer big enough for
+ * the largest struct in our migration list (struct statx), so the
+ * kernel still copies its full output without truncation; once the
+ * catalog learns the syscall, the allocation shrinks to the exact
+ * struct size.
+ *
+ * The allocation is enqueued on the deferred-free queue at generation
+ * time, mirroring ARG_STRUCT_PTR_IN: several callers we expect to
+ * migrate still carry sanitise/post pairs that snapshot the pointer
+ * for re-read in the post handler, and the deferred queue keeps the
+ * buffer alive long enough for that re-read while the post handler's
+ * own free path remains independent.
+ *
+ * Follow-up worth flagging: post-validation that checks whether the
+ * 0xAA canary was overwritten is out of scope for this commit -- it
+ * needs the catalog to land first so the per-slot allocation is
+ * actually reaching the kernel before we start asserting on the bytes
+ * the kernel wrote back.
+ */
+static unsigned long gen_arg_struct_ptr_out(struct syscallentry *entry __unused__,
+					    struct syscallrecord *rec,
+					    unsigned int argnum)
+{
+	const struct struct_desc *desc;
+	unsigned int size;
+	unsigned char *buf;
+
+	desc = struct_arg_lookup(rec->nr, argnum, rec->do32bit);
+	size = desc ? desc->struct_size : STRUCT_PTR_OUT_FALLBACK_SIZE;
+
+	buf = zmalloc(size);
+	memset(buf, STRUCT_PTR_OUT_POISON_BYTE, size);
+
+	deferred_free_enqueue(buf, NULL);
+	return (unsigned long) buf;
+}
+
+/*
  * Shared cleanup helper for any argtype whose generator hands back a
  * heap allocation that must be released after the syscall returns
  * (ARG_PATHNAME, ARG_IOVEC, ARG_SOCKADDR).
@@ -773,6 +843,11 @@ const struct argtype_ops argtype_table[] = {
 	[ARG_STRUCT_PTR_IN] = {
 		.name = "ARG_STRUCT_PTR_IN",
 		.generate = gen_arg_struct_ptr_in,
+		.default_address_scrub = true,
+	},
+	[ARG_STRUCT_PTR_OUT] = {
+		.name = "ARG_STRUCT_PTR_OUT",
+		.generate = gen_arg_struct_ptr_out,
 		.default_address_scrub = true,
 	},
 	[ARG_FD_BPF_BTF] = {
