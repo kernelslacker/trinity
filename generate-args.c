@@ -702,6 +702,140 @@ static unsigned long gen_arg_struct_ptr_out(struct syscallentry *entry __unused_
 }
 
 /*
+ * Per-struct-name table of older ABI sizes for extensible structs.  The
+ * kernel's copy_struct_from_user() path branches heavily on the size
+ * word: smaller-than-current is the "old userspace, new kernel" leg, and
+ * exact older-ABI sizes (CLONE_ARGS_SIZE_VER0/1/2, SCHED_ATTR_SIZE_VER0
+ * etc) walk a different validator than the current sizeof().  Picking
+ * these sizes explicitly keeps the old-ABI branches exercised long after
+ * the catalog's struct_size has grown past them.
+ */
+struct struct_old_abi_sizes {
+	const char *name;
+	const unsigned int *sizes;
+	unsigned int num_sizes;
+};
+
+static const unsigned int clone_args_old_sizes[] = { 64, 80, 88 };
+static const unsigned int sched_attr_old_sizes[] = { 48, 56 };
+static const unsigned int mount_attr_old_sizes[] = { 32 };
+
+static const struct struct_old_abi_sizes struct_old_abi_table[] = {
+	{ "clone_args",	clone_args_old_sizes,	ARRAY_SIZE(clone_args_old_sizes) },
+	{ "sched_attr",	sched_attr_old_sizes,	ARRAY_SIZE(sched_attr_old_sizes) },
+	{ "mount_attr",	mount_attr_old_sizes,	ARRAY_SIZE(mount_attr_old_sizes) },
+};
+
+static const struct struct_old_abi_sizes *lookup_old_abi(const char *name)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(struct_old_abi_table); i++) {
+		if (strcmp(struct_old_abi_table[i].name, name) == 0)
+			return &struct_old_abi_table[i];
+	}
+	return NULL;
+}
+
+/*
+ * Find the catalog struct paired with this syscall by scanning its
+ * argtype slots for an ARG_STRUCT_PTR_IN / ARG_STRUCT_PTR_OUT and
+ * resolving that slot via struct_arg_lookup().  Returns NULL if the
+ * syscall has no paired struct ptr slot, or has one but the struct
+ * isn't cataloged.
+ */
+static const struct struct_desc *paired_struct_desc(struct syscallentry *entry,
+						    struct syscallrecord *rec)
+{
+	unsigned int i;
+
+	for (i = 0; i < entry->num_args; i++) {
+		enum argtype t = entry->argtype[i];
+
+		if (t == ARG_STRUCT_PTR_IN || t == ARG_STRUCT_PTR_OUT)
+			return struct_arg_lookup(rec->nr, i + 1, rec->do32bit);
+	}
+	return NULL;
+}
+
+/*
+ * Catalog-gap fallback cap for ARG_STRUCT_SIZE when no paired struct
+ * is registered for this syscall.  Keeps the scalar in a plausible
+ * size_t range without spraying ULONG_MAX values into a slot the
+ * kernel will trivially reject.
+ */
+#define ARG_STRUCT_SIZE_FALLBACK_CAP	4096U
+
+/*
+ * ARG_STRUCT_SIZE: produce a size value for an extensible-struct
+ * syscall's size argument.  These syscalls (clone3, sched_setattr/
+ * sched_getattr, openat2, statmount, mount_setattr, open_tree_attr ...)
+ * are dispatched by copy_struct_from_user(), which branches on the
+ * size word before it ever inspects the struct's fields: an undersize
+ * value is rejected outright (-E2BIG/-EINVAL), an oversize value walks
+ * a zero-padding leg, and exact older-ABI sizes (CLONE_ARGS_SIZE_VER0
+ * etc) walk a different validator than the current sizeof().
+ *
+ * Distribution (when a paired catalog struct exists):
+ *   50%  exact current sizeof()         -- the kernel's fast path
+ *   20%  known older-ABI size           -- exercises the size-shrink legs
+ *   10%  sizeof+/-1 boundary            -- off-by-one in the size check
+ *   10%  0 / small / UINT_MAX / huge    -- structural rejection paths
+ *   10%  CMP-hint-derived for this nr   -- learned-from-kernel sizes
+ *
+ * Catalog gap: no paired struct cataloged, so the exact size is not
+ * derivable.  Fall back to a bounded random scalar; better than zeroing
+ * the slot and starving any field-shape sensitive path of variance.
+ */
+static unsigned long gen_arg_struct_size(struct syscallentry *entry,
+					 struct syscallrecord *rec,
+					 unsigned int argnum __unused__)
+{
+	const struct struct_desc *desc;
+	const struct struct_old_abi_sizes *oa;
+	unsigned long hint;
+	unsigned int roll;
+
+	if (ONE_IN(10) && cmp_hints_try_get(rec->nr, &hint))
+		return hint;
+
+	desc = paired_struct_desc(entry, rec);
+	if (desc == NULL)
+		return (unsigned long) (rand32() % ARG_STRUCT_SIZE_FALLBACK_CAP);
+
+	roll = rand() % 10;
+
+	/* 50%: exact current sizeof() */
+	if (roll < 5)
+		return desc->struct_size;
+
+	/* 20%: known older-ABI size, else exact sizeof() */
+	if (roll < 7) {
+		oa = lookup_old_abi(desc->name);
+		if (oa != NULL)
+			return oa->sizes[rand() % oa->num_sizes];
+		return desc->struct_size;
+	}
+
+	/* 10%: sizeof +/- 1 boundary */
+	if (roll < 8) {
+		if (RAND_BOOL())
+			return desc->struct_size + 1;
+		return desc->struct_size > 0 ? desc->struct_size - 1 : 0;
+	}
+
+	/* 20% remaining: structural-rejection stress */
+	switch (rand() % 6) {
+	case 0: return 0;
+	case 1: return 1 + (rand() % 16);
+	case 2: return UINT_MAX;
+	case 3: return INT_MAX;
+	case 4: return ((unsigned long) rand32()) << 16;
+	default: return ULONG_MAX;
+	}
+}
+
+/*
  * Shared cleanup helper for any argtype whose generator hands back a
  * heap allocation that must be released after the syscall returns
  * (ARG_PATHNAME, ARG_IOVEC, ARG_SOCKADDR).
@@ -844,11 +978,17 @@ const struct argtype_ops argtype_table[] = {
 		.name = "ARG_STRUCT_PTR_IN",
 		.generate = gen_arg_struct_ptr_in,
 		.default_address_scrub = true,
+		.paired_length = ARG_STRUCT_SIZE,
 	},
 	[ARG_STRUCT_PTR_OUT] = {
 		.name = "ARG_STRUCT_PTR_OUT",
 		.generate = gen_arg_struct_ptr_out,
 		.default_address_scrub = true,
+		.paired_length = ARG_STRUCT_SIZE,
+	},
+	[ARG_STRUCT_SIZE] = {
+		.name = "ARG_STRUCT_SIZE",
+		.generate = gen_arg_struct_size,
 	},
 	[ARG_FD_BPF_BTF] = {
 		.name = "ARG_FD_BPF_BTF",
