@@ -318,7 +318,7 @@ static void cmp_bloom_maybe_decay(struct cmp_novelty_entry *e,
  * byte granularity; the caller treats "either hash bit was clear" as
  * "constant is novel".
  */
-static bool cmp_bloom_set(_Atomic uint8_t *bloom, uint32_t bit)
+static bool cmp_bloom_set(uint8_t *bloom, uint32_t bit)
 {
 	uint8_t mask = (uint8_t)(1U << (bit & 7));
 	uint8_t prev = __atomic_fetch_or(&bloom[bit >> 3], mask,

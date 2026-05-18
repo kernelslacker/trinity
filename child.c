@@ -115,7 +115,7 @@ void child_syscall_ring_push(struct child_syscall_ring *ring,
 	struct chronicle_slot *slot;
 	uint32_t head;
 
-	head = atomic_load_explicit(&ring->head, memory_order_relaxed);
+	head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
 	slot = &ring->recent[head & (CHILD_SYSCALL_RING_SIZE - 1)];
 
 	slot->tp = rec->tp;
@@ -131,7 +131,7 @@ void child_syscall_ring_push(struct child_syscall_ring *ring,
 	slot->do32bit = rec->do32bit;
 	slot->valid = true;
 
-	atomic_store_explicit(&ring->head, head + 1, memory_order_release);
+	__atomic_store_n(&ring->head, head + 1, __ATOMIC_RELEASE);
 }
 
 /*
@@ -377,8 +377,7 @@ void clean_childdata(struct childdata *child)
 	 * by the post-mortem reader so a freshly-spawned child contributes
 	 * nothing until it has actually completed a syscall. */
 	memset(child->syscall_ring.recent, 0, sizeof(child->syscall_ring.recent));
-	atomic_store_explicit(&child->syscall_ring.head, 0,
-			      memory_order_relaxed);
+	__atomic_store_n(&child->syscall_ring.head, 0, __ATOMIC_RELAXED);
 
 	child->fail_nth_fd = -1;
 	child->tainted_fd = -1;

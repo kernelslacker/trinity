@@ -54,7 +54,7 @@ struct chronicle_slot {
 
 struct child_syscall_ring {
 	struct chronicle_slot recent[CHILD_SYSCALL_RING_SIZE];
-	_Atomic uint32_t head;
+	uint32_t head;
 };
 
 /*

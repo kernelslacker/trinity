@@ -24,9 +24,9 @@
 void fd_event_ring_init(struct fd_event_ring *ring)
 {
 	memset(ring, 0, sizeof(*ring));
-	atomic_store_explicit(&ring->head, 0, memory_order_relaxed);
-	atomic_store_explicit(&ring->tail, 0, memory_order_relaxed);
-	atomic_store_explicit(&ring->overflow, 0, memory_order_relaxed);
+	__atomic_store_n(&ring->head, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&ring->tail, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&ring->overflow, 0, __ATOMIC_RELAXED);
 }
 
 /*
@@ -41,16 +41,16 @@ bool fd_event_enqueue(struct fd_event_ring *ring,
 {
 	uint32_t head, tail, next;
 
-	head = atomic_load_explicit(&ring->head, memory_order_relaxed);
+	head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
 	head &= (FD_EVENT_RING_SIZE - 1);
-	tail = atomic_load_explicit(&ring->tail, memory_order_acquire);
+	tail = __atomic_load_n(&ring->tail, __ATOMIC_ACQUIRE);
 	tail &= (FD_EVENT_RING_SIZE - 1);
 
 	next = (head + 1) & (FD_EVENT_RING_SIZE - 1);
 	if (next == tail) {
 		/* Ring full — drop the event.  Stale detection is backstop. */
-		atomic_fetch_add_explicit(&ring->overflow, 1,
-					  memory_order_relaxed);
+		__atomic_fetch_add(&ring->overflow, 1,
+					  __ATOMIC_RELAXED);
 		return false;
 	}
 
@@ -62,7 +62,7 @@ bool fd_event_enqueue(struct fd_event_ring *ring,
 	ring->events[head].protocol = protocol;
 
 	/* Ensure the event data is visible before advancing head. */
-	atomic_store_explicit(&ring->head, next, memory_order_release);
+	__atomic_store_n(&ring->head, next, __ATOMIC_RELEASE);
 	return true;
 }
 
@@ -105,10 +105,10 @@ unsigned int fd_event_drain(struct fd_event_ring *ring)
 	 * peek with a relaxed load to avoid a locked RMW that would
 	 * dirty the cacheline shared with the producer.
 	 */
-	overflow = atomic_load_explicit(&ring->overflow, memory_order_relaxed);
+	overflow = __atomic_load_n(&ring->overflow, __ATOMIC_RELAXED);
 	if (overflow != 0)
-		overflow = atomic_exchange_explicit(&ring->overflow, 0,
-						    memory_order_relaxed);
+		overflow = __atomic_exchange_n(&ring->overflow, 0,
+						    __ATOMIC_RELAXED);
 	if (overflow > 0) {
 		output(1, "fd_event: ring overflow, %u events dropped\n",
 		       overflow);
@@ -116,10 +116,10 @@ unsigned int fd_event_drain(struct fd_event_ring *ring)
 				   __ATOMIC_RELAXED);
 	}
 
-	tail = atomic_load_explicit(&ring->tail, memory_order_relaxed);
+	tail = __atomic_load_n(&ring->tail, __ATOMIC_RELAXED);
 	tail &= (FD_EVENT_RING_SIZE - 1);
 	/* Acquire pairs with child's release-store of head. */
-	head = atomic_load_explicit(&ring->head, memory_order_acquire);
+	head = __atomic_load_n(&ring->head, __ATOMIC_ACQUIRE);
 	head &= (FD_EVENT_RING_SIZE - 1);
 
 	while (tail != head) {
@@ -177,7 +177,7 @@ unsigned int fd_event_drain(struct fd_event_ring *ring)
 	}
 
 	/* Release-store so the child sees the updated tail. */
-	atomic_store_explicit(&ring->tail, tail, memory_order_release);
+	__atomic_store_n(&ring->tail, tail, __ATOMIC_RELEASE);
 	return processed;
 }
 

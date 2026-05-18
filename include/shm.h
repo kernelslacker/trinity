@@ -94,14 +94,14 @@ struct shm_s {
 	 * written on spawn (rare); reads are RELAXED-equivalent loads on
 	 * the loop top — one pulled cacheline shared across all readers.
 	 */
-	_Atomic unsigned int sibling_freeze_gen;
+	unsigned int sibling_freeze_gen;
 
 	/* Written by main process — own cache line to avoid
 	 * false sharing with child-written stats above. */
 	unsigned int running_childs __attribute__((aligned(64)));
 
 	/* rng related state */
-	_Atomic unsigned int seed;
+	unsigned int seed;
 
 	/* Indices of syscall in syscall table that are active.
 	 * All indices shifted by +1. Empty index equals to 0.
@@ -147,7 +147,7 @@ struct shm_s {
 	 * Sibling cursor for the shared string heap (see
 	 * alloc_shared_str() in utils.c).
 	 */
-	_Atomic size_t shared_str_heap_used __attribute__((aligned(64)));
+	size_t shared_str_heap_used __attribute__((aligned(64)));
 
 	/*
 	 * Per-bucket freelist head for the shared string heap.
@@ -164,21 +164,21 @@ struct shm_s {
 	 * in utils.c.
 	 */
 #define NUM_SHM_FREELIST_BUCKETS 8
-	_Atomic uint64_t shared_str_freelist[NUM_SHM_FREELIST_BUCKETS];
+	uint64_t shared_str_freelist[NUM_SHM_FREELIST_BUCKETS];
 
 	/* various flags. */
 	enum exit_reasons exit_reason;
 	/* set by check_uid alongside panic(EXIT_UID_CHANGED) so main can
 	 * include the offending uid in the bail message. */
 	uid_t uid_at_exit;
-	_Atomic bool dont_make_it_fail;
+	bool dont_make_it_fail;
 
 	/* Set to true once we detect that /proc/self/fail-nth can't be
 	 * opened (kernel built without CONFIG_FAULT_INJECTION, etc.).
 	 * Lives in shm so the flag propagates across fork(). */
 	bool no_fail_nth;
-	_Atomic bool spawn_no_more;
-	_Atomic bool ready;
+	bool spawn_no_more;
+	bool ready;
 	bool postmortem_in_progress;
 
 	/* global debug flag.
@@ -192,7 +192,7 @@ struct shm_s {
 	 * unshare(CLONE_NEWPID). Stored in shm so the flag propagates
 	 * across fork() — a process-local static would be duplicated
 	 * into each child's address space. */
-	_Atomic bool no_pidns;
+	bool no_pidns;
 
 	/* set to true if a child fails the MS_REC|MS_PRIVATE remount
 	 * after unshare(CLONE_NEWNS). Stored in shm so the flag
@@ -200,7 +200,7 @@ struct shm_s {
 	 * duplicated into each child's address space. Used to suppress
 	 * log spam over long fuzz runs and to skip the unshare+remount
 	 * dance once we know it can't be made private. */
-	_Atomic bool no_private_ns;
+	bool no_private_ns;
 
 	/*
 	 * Fleet-wide in-flight count of unshare(CLONE_NEWNET) and the
@@ -216,7 +216,7 @@ struct shm_s {
 	 * static would be duplicated across the COW fork tree and let
 	 * each subtree run its own unbounded admission rate.
 	 */
-	_Atomic int newnet_in_flight;
+	int newnet_in_flight;
 
 	/* recipe_runner discovery latches: a recipe whose first invocation
 	 * detects an absent kernel feature (ENOSYS, missing config) flips
@@ -275,8 +275,8 @@ struct shm_s {
 	 *   was active at the moment of attribution.  Cmp-mode runs do not
 	 *   produce a new-edge signal and are not attributed.
 	 */
-	_Atomic int current_strategy;
-	_Atomic unsigned long syscalls_at_last_switch;
+	int current_strategy;
+	unsigned long syscalls_at_last_switch;
 	unsigned long edges_at_window_start;
 	unsigned long edges_by_strategy[NR_STRATEGIES];
 
@@ -297,7 +297,7 @@ struct shm_s {
 	 *   was active.  Sum of per-window edge deltas, written under
 	 *   the same CAS-serialised path as bandit_pulls[].
 	 */
-	_Atomic int picker_mode;
+	int picker_mode;
 	unsigned long bandit_pulls[NR_STRATEGIES];
 	unsigned long bandit_reward[NR_STRATEGIES];
 
@@ -331,8 +331,8 @@ struct shm_s {
 	 *   term inside bandit_record_pull().
 	 */
 	struct cmp_novelty_entry {
-		_Atomic uint32_t window_tag;
-		_Atomic uint8_t bloom[128];
+		uint32_t window_tag;
+		uint8_t bloom[128];
 	} cmp_novelty[MAX_NR_SYSCALL];
 	unsigned long bandit_cmp_new_constants[NR_STRATEGIES];
 
@@ -377,8 +377,8 @@ struct shm_s {
 	 * Sized MAX_NR_SYSCALL * FRONTIER_DECAY_WINDOWS * 4 = 32 KiB, a
 	 * rounding error against the cmp_novelty[] block above.
 	 */
-	_Atomic uint32_t frontier_history[MAX_NR_SYSCALL][FRONTIER_DECAY_WINDOWS];
-	_Atomic uint32_t frontier_slot;
+	uint32_t frontier_history[MAX_NR_SYSCALL][FRONTIER_DECAY_WINDOWS];
+	uint32_t frontier_slot;
 
 	/*
 	 * Per-syscall cached recent-edge count -- running sum of
@@ -393,7 +393,7 @@ struct shm_s {
 	 * cached one bump above the live sum, bounded by one window and
 	 * folded back in by the next rotation.
 	 */
-	_Atomic uint32_t frontier_recent_count_cached[MAX_NR_SYSCALL];
+	uint32_t frontier_recent_count_cached[MAX_NR_SYSCALL];
 
 	/*
 	 * Cached max of frontier_recent_count() across all syscalls --
@@ -419,7 +419,7 @@ struct shm_s {
 	 * we want to amortise.  Zero-initialised by create_shm(); packed ==
 	 * 0 is the empty-slot sentinel.
 	 */
-	_Atomic uint64_t ioctl_efault_cache[IOCTL_EFAULT_CACHE_SIZE];
+	uint64_t ioctl_efault_cache[IOCTL_EFAULT_CACHE_SIZE];
 
 	/*
 	 * The HEALER relation + pair tables that used to live here moved

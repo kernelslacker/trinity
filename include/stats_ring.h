@@ -66,14 +66,14 @@ struct stats_ring_slot {
 
 struct stats_ring {
 	/* Producer (child) writes head and overflow. */
-	_Atomic uint32_t head;
-	_Atomic uint32_t overflow;
+	uint32_t head;
+	uint32_t overflow;
 
 	/* Padding to put producer and consumer fields on separate cache lines. */
 	char __pad[56];
 
 	/* Consumer (parent) writes tail. */
-	_Atomic uint32_t tail;
+	uint32_t tail;
 
 	struct stats_ring_slot slots[STATS_RING_SIZE];
 };

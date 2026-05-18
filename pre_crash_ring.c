@@ -36,7 +36,7 @@ void pre_crash_ring_record(struct childdata *child,
 	ring = &child->pre_crash;
 
 	/* Single-producer relaxed load: only this child writes head. */
-	head = atomic_load_explicit(&ring->head, memory_order_relaxed);
+	head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
 	e = &ring->entries[head & (PRE_CRASH_RING_SIZE - 1)];
 
 	e->syscall_nr = rec->nr;
@@ -55,7 +55,7 @@ void pre_crash_ring_record(struct childdata *child,
 	/* Publish only after the entry is fully populated, so a post-mortem
 	 * reader that acquire-loads head and walks back N slots never sees
 	 * a torn entry. */
-	atomic_store_explicit(&ring->head, head + 1, memory_order_release);
+	__atomic_store_n(&ring->head, head + 1, __ATOMIC_RELEASE);
 }
 
 void pre_crash_ring_record_taint(struct childdata *child,
@@ -73,7 +73,7 @@ void pre_crash_ring_record_taint(struct childdata *child,
 
 	ring = &child->pre_crash;
 
-	head = atomic_load_explicit(&ring->head, memory_order_relaxed);
+	head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
 	e = &ring->entries[head & (PRE_CRASH_RING_SIZE - 1)];
 
 	e->args[0] = delta;
@@ -89,7 +89,7 @@ void pre_crash_ring_record_taint(struct childdata *child,
 	e->kind = PRE_CRASH_KIND_TAINT;
 	clock_gettime(CLOCK_MONOTONIC, &e->ts);
 
-	atomic_store_explicit(&ring->head, head + 1, memory_order_release);
+	__atomic_store_n(&ring->head, head + 1, __ATOMIC_RELEASE);
 }
 
 void pre_crash_ring_record_canary(struct childdata *child,
@@ -105,7 +105,7 @@ void pre_crash_ring_record_canary(struct childdata *child,
 
 	ring = &child->pre_crash;
 
-	head = atomic_load_explicit(&ring->head, memory_order_relaxed);
+	head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
 	e = &ring->entries[head & (PRE_CRASH_RING_SIZE - 1)];
 
 	/* Preserve the nominal call context (post-mortem usually wants
@@ -125,7 +125,7 @@ void pre_crash_ring_record_canary(struct childdata *child,
 	e->kind = PRE_CRASH_KIND_CANARY;
 	clock_gettime(CLOCK_MONOTONIC, &e->ts);
 
-	atomic_store_explicit(&ring->head, head + 1, memory_order_release);
+	__atomic_store_n(&ring->head, head + 1, __ATOMIC_RELEASE);
 }
 
 static void format_ts_relative(char *out, size_t outlen,
@@ -148,7 +148,7 @@ static void dump_one_ring(struct childdata *child,
 	struct pre_crash_ring *ring = &child->pre_crash;
 	uint32_t head, count, i;
 
-	head = atomic_load_explicit(&ring->head, memory_order_acquire);
+	head = __atomic_load_n(&ring->head, __ATOMIC_ACQUIRE);
 	if (head == 0) {
 		outputerr("pre-crash ring (child %u): empty\n", child->num);
 		return;

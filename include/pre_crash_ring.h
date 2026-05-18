@@ -60,7 +60,7 @@ struct pre_crash_ring {
 	/* Lock-free SPSC: only the owning child writes head, with a release
 	 * store after the slot is fully populated.  Post-mortem readers do
 	 * an acquire load to observe the matching slot intact. */
-	_Atomic uint32_t head;
+	uint32_t head;
 };
 
 void pre_crash_ring_record(struct childdata *child,

@@ -305,7 +305,7 @@ static int freelist_bucket(size_t aligned_size)
  * slot of slot_size bytes.  ABA-safe via the version tag in the high
  * bits of the head — see the block comment above.
  */
-static void *freelist_pop(_Atomic uint64_t *head, size_t slot_size)
+static void *freelist_pop(uint64_t *head, size_t slot_size)
 {
 	uint64_t old_tagged, new_tagged;
 	uintptr_t ptr, next;
@@ -339,7 +339,7 @@ static void *freelist_pop(_Atomic uint64_t *head, size_t slot_size)
  * the head is incremented on every successful CAS to keep poppers safe
  * from ABA — see the block comment above.
  */
-static void freelist_push(_Atomic uint64_t *head, void *p, size_t slot_size)
+static void freelist_push(uint64_t *head, void *p, size_t slot_size)
 {
 	uint64_t old_tagged, new_tagged;
 	uint16_t new_ver;

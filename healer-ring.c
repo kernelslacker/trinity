@@ -120,9 +120,9 @@ static void aggregate_unpack_promoted(uint64_t entry, unsigned int *nr,
 void healer_ring_init(struct healer_ring *ring)
 {
 	memset(ring, 0, sizeof(*ring));
-	atomic_store_explicit(&ring->head, 0, memory_order_relaxed);
-	atomic_store_explicit(&ring->tail, 0, memory_order_relaxed);
-	atomic_store_explicit(&ring->overflow, 0, memory_order_relaxed);
+	__atomic_store_n(&ring->head, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&ring->tail, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&ring->overflow, 0, __ATOMIC_RELAXED);
 }
 
 static bool healer_ring_enqueue_slot(struct healer_ring *ring,
@@ -133,21 +133,21 @@ static bool healer_ring_enqueue_slot(struct healer_ring *ring,
 	if (ring == NULL)
 		return false;
 
-	head = atomic_load_explicit(&ring->head, memory_order_relaxed);
+	head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
 	head &= (HEALER_RING_SIZE - 1);
-	tail = atomic_load_explicit(&ring->tail, memory_order_acquire);
+	tail = __atomic_load_n(&ring->tail, __ATOMIC_ACQUIRE);
 	tail &= (HEALER_RING_SIZE - 1);
 
 	next = (head + 1) & (HEALER_RING_SIZE - 1);
 	if (next == tail) {
-		atomic_fetch_add_explicit(&ring->overflow, 1,
-					  memory_order_relaxed);
+		__atomic_fetch_add(&ring->overflow, 1,
+					  __ATOMIC_RELAXED);
 		return false;
 	}
 
 	ring->slots[head] = *slot;
 
-	atomic_store_explicit(&ring->head, next, memory_order_release);
+	__atomic_store_n(&ring->head, next, __ATOMIC_RELEASE);
 	return true;
 }
 
@@ -331,16 +331,16 @@ unsigned int healer_ring_drain(struct healer_ring *ring)
 	if (ring == NULL)
 		return 0;
 
-	overflow = atomic_load_explicit(&ring->overflow, memory_order_relaxed);
+	overflow = __atomic_load_n(&ring->overflow, __ATOMIC_RELAXED);
 	if (overflow != 0)
-		overflow = atomic_exchange_explicit(&ring->overflow, 0,
-						    memory_order_relaxed);
+		overflow = __atomic_exchange_n(&ring->overflow, 0,
+						    __ATOMIC_RELAXED);
 	if (overflow > 0)
 		parent_healer.ring_overflow_total += overflow;
 
-	tail = atomic_load_explicit(&ring->tail, memory_order_relaxed);
+	tail = __atomic_load_n(&ring->tail, __ATOMIC_RELAXED);
 	tail &= (HEALER_RING_SIZE - 1);
-	head = atomic_load_explicit(&ring->head, memory_order_acquire);
+	head = __atomic_load_n(&ring->head, __ATOMIC_ACQUIRE);
 	head &= (HEALER_RING_SIZE - 1);
 
 	while (tail != head) {
@@ -349,7 +349,7 @@ unsigned int healer_ring_drain(struct healer_ring *ring)
 		processed++;
 	}
 
-	atomic_store_explicit(&ring->tail, tail, memory_order_release);
+	__atomic_store_n(&ring->tail, tail, __ATOMIC_RELEASE);
 	return processed;
 }
 
