@@ -1663,6 +1663,11 @@ bool healer_save_file(const char *path)
 	if (path == NULL)
 		return false;
 
+	if (!healer_snapshot_dirty) {
+		output(0, "healer: snapshot skipped, no changes since last save\n");
+		return true;
+	}
+
 	if (uname(&u) != 0)
 		return false;
 
@@ -1744,6 +1749,7 @@ bool healer_save_file(const char *path)
 		return false;
 	}
 	free(payload);
+	healer_snapshot_dirty = false;
 	return true;
 
 fail:
@@ -2093,6 +2099,14 @@ bool healer_load_file(const char *path)
 	       (unsigned long)hdr.observations,
 	       (unsigned int)hdr.decay_epoch, path);
 
+	/* Canonical now matches the on-disk image bit-for-bit -- mark
+	 * clean so a load-then-immediate-exit cycle (warm-start under a
+	 * Ctrl-C restart loop) skips the redundant end-of-run save.  Any
+	 * subsequent mutation (load_static_seed installing fresh cells,
+	 * the drain applying observations, the decay walk firing) will
+	 * flip this true again. */
+	healer_snapshot_dirty = false;
+
 	ok = true;
 
 out_free:
@@ -2200,6 +2214,33 @@ const char *healer_default_path(void)
  */
 static char healer_snapshot_path[PATH_MAX];
 static bool healer_snapshot_enabled;
+
+/*
+ * Dirty-bit for healer_save_file().  Set by every parent-private mutation
+ * to parent_healer that lands in the persisted file (apply_triple,
+ * apply_pair, the decay/prune walk, the static-seed installer); cleared
+ * after a successful save and on a successful warm-start load.  When
+ * clear, healer_save_file() short-circuits without touching disk -- the
+ * canonical and on-disk images are bit-for-bit identical, so the rename()
+ * would just narrow the window in which a concurrent reader could be
+ * looking at the old file with no compensating benefit.
+ *
+ * Default false: a cold-start run with no save file and no static-seed
+ * installs has nothing to persist; load_static_seed() runs after
+ * load_file() in the parent startup path and flips this true if any new
+ * cells get installed.  Parent-private (sits next to healer_snapshot_path
+ * above).  Visible to healer-ring.c via the extern in include/healer_ring.h
+ * so the mutating apply paths can flip it without each one needing a
+ * round-trip back through a setter.
+ *
+ * Counter-style proxies (relations_observed, weight_decays_run, pair_seeded)
+ * were considered but rejected: apply_pair mutates pair_table without
+ * advancing any of those counters, so any single existing counter would
+ * miss a real mutation class and any combined-counter aggregate would have
+ * to be re-summed on every save call.  A plain bool is cheaper and covers
+ * every mutation path uniformly.
+ */
+bool healer_snapshot_dirty;
 
 void healer_enable_snapshots(const char *path)
 {

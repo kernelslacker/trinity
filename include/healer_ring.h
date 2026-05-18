@@ -204,6 +204,17 @@ struct healer_aggregate {
 extern struct healer_aggregate parent_healer;
 
 /*
+ * Snapshot dirty-bit.  Defined in healer.c next to healer_snapshot_path.
+ * Set by every parent-private mutation to parent_healer that lands in
+ * the persisted file; cleared after a successful healer_save_file() or
+ * healer_load_file().  Lives here next to parent_healer because every
+ * file that mutates the canonical also needs to flip this -- exposing
+ * it through a setter would just add an unconditional store and a
+ * function-call boundary on the hot apply path.
+ */
+extern bool healer_snapshot_dirty;
+
+/*
  * Mirror pages: parent-write / child-read.  Carry the published view of
  * the canonical tables so the child-side picker (set_syscall_nr_healer)
  * can read weights without a ring round-trip.  The parent writes the

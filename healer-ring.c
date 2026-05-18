@@ -263,6 +263,13 @@ static void apply_triple(unsigned int pred_a, unsigned int pred_b,
 	    succ >= MAX_NR_SYSCALL)
 		return;
 
+	/* Every path past the bounds check mutates persisted state:
+	 * pred_appearance bumps below, plus either a relations slot
+	 * write (success path) or table_full/relations_observed bumps
+	 * (probe-limit path).  Flip once here so the success and
+	 * probe-limit branches share one store. */
+	healer_snapshot_dirty = true;
+
 	parent_healer.pred_appearance[pred_a]++;
 	if (pred_b != pred_a)
 		parent_healer.pred_appearance[pred_b]++;
@@ -375,6 +382,7 @@ static void apply_pair(unsigned int pred, unsigned int succ,
 	cell->dynamic_hits = new_hits;
 	cell->last_observed_epoch = parent_healer.decay_epoch;
 	parent_healer.pair_dirty[pred] = 1;
+	healer_snapshot_dirty = true;
 }
 
 /*
@@ -522,6 +530,12 @@ static void healer_apply_maybe_decay(void)
 
 	if (!obs_trigger && !time_trigger)
 		return;
+
+	/* Past the trigger gate every branch below mutates persisted
+	 * header state (obs_at_last_decay / time_at_last_decay / decay_epoch
+	 * / weight_decays_run) at minimum, and typically prunes/halves a
+	 * handful of relation and pair-table entries on top of that. */
+	healer_snapshot_dirty = true;
 
 	parent_healer.obs_at_last_decay = obs_now;
 	parent_healer.time_at_last_decay = now_sec;
@@ -756,4 +770,5 @@ void healer_aggregate_pair_set(unsigned int pred, unsigned int succ,
 	cell->static_prior = (uint8_t)weight;
 	parent_healer.pair_dirty[pred] = 1;
 	parent_healer.pair_seeded++;
+	healer_snapshot_dirty = true;
 }
