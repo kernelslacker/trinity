@@ -2361,6 +2361,85 @@ unsigned int healer_pair_dynamic_hits(unsigned int pred, unsigned int succ)
 }
 
 /*
+ * STRATEGY_HEALER readiness threshold: number of pair-table cells with
+ * dynamic_hits >= HEALER_STRATEGY_PAIR_CELL_MIN_HITS required before the
+ * picker has enough runtime signal to score against uniform random.
+ * Picked to roughly match the inflection point at which the operator-
+ * side dump starts surfacing relations whose normalised score clears
+ * the noise floor.
+ */
+#define HEALER_STRATEGY_PAIR_CELL_THRESHOLD 1000
+
+/*
+ * Per-cell dynamic-hits floor for the readiness scan.  A single hit on
+ * a pair is observation noise; demanding several confirms the runtime
+ * observer has actually seen the (pred, succ) pair lead to a new edge
+ * more than once before that cell contributes to the fleet-wide "we
+ * have enough signal to schedule the arm" decision.  Small (3) so the
+ * gate still trips early in a run -- the dump-side HEALER_DUMP_MIN_RAW
+ * threshold is for displaying confident relations; this one is for
+ * confirming the picker is worth waking up at all.
+ *
+ * Critically, this test reads dynamic_hits SPECIFICALLY rather than
+ * the combined picker weight (static_prior + dynamic_hits): the
+ * previous gate counted any cell with weight > 1, which a freshly-
+ * seeded pair at static_prior=HEALER_STATIC_SEED_WEIGHT=3 trivially
+ * cleared even though no runtime evidence existed.  That made the gate
+ * trip on a cold table whose populated cells were entirely the seed
+ * loader's, with no runtime confirmation that the relations actually
+ * mattered for the kernel under test.
+ */
+#define HEALER_STRATEGY_PAIR_CELL_MIN_HITS 3
+
+/*
+ * Hard cap on cells inspected per healer_strategy_ready() call.  The
+ * pair table is dense (MAX_NR_SYSCALL^2 = ~1M cells); a full scan at
+ * every rotation boundary is bounded but not free, so we early-out as
+ * soon as we have either crossed the threshold or scanned the whole
+ * table.  The pair table is mutated lock-free; relaxed loads via
+ * healer_pair_dynamic_hits() race observer bumps benignly because the
+ * readiness check itself is a coarse gate, not an exact count.
+ */
+#define HEALER_STRATEGY_SCAN_CAP \
+	((unsigned long)MAX_NR_SYSCALL * (unsigned long)MAX_NR_SYSCALL)
+
+bool healer_strategy_ready(void)
+{
+	unsigned long scanned = 0;
+	unsigned long dyn_cells = 0;
+	unsigned int pred, succ;
+
+	/* Plateau bypass: kcov reports the fleet is stalled, so any
+	 * signal that nudges the bandit off its current local minimum
+	 * is worth scheduling -- even one whose evidence base is thin.
+	 * The picker itself still falls back to uniform random when the
+	 * predecessor row is empty, so a bypass on a wholly-empty table
+	 * is self-correcting. */
+	if (kcov_shm != NULL && kcov_shm->plateau_active)
+		return true;
+
+	for (pred = 0; pred < MAX_NR_SYSCALL; pred++) {
+		for (succ = 0; succ < MAX_NR_SYSCALL; succ++) {
+			/* Mirror read via healer_pair_dynamic_hits(); the
+			 * scan sees the same published view the picker
+			 * itself reads, and bounded staleness (~ms per
+			 * drain) is acceptable for a coarse gate. */
+			unsigned int dyn = healer_pair_dynamic_hits(pred, succ);
+
+			scanned++;
+			if (dyn >= HEALER_STRATEGY_PAIR_CELL_MIN_HITS) {
+				dyn_cells++;
+				if (dyn_cells >= HEALER_STRATEGY_PAIR_CELL_THRESHOLD)
+					return true;
+			}
+			if (scanned >= HEALER_STRATEGY_SCAN_CAP)
+				return false;
+		}
+	}
+	return false;
+}
+
+/*
  * --- Producer/consumer classifier (static-seed prior) ---
  *
  * Bootstraps the (pred -> succ) pair table above from the metadata

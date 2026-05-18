@@ -35,7 +35,7 @@
 #include "cmp_hints.h"		/* cmp_hints_shm */
 #include "debug.h"
 #include "edgepair.h"		/* EDGEPAIR_NO_PREV */
-#include "healer.h"		/* healer_pair_dynamic_hits */
+#include "healer.h"		/* healer_strategy_ready */
 #include "kcov.h"		/* KCOV_CMP_RECORDS_MAX, kcov_shm */
 #include "params.h"
 #include "shm.h"
@@ -43,50 +43,6 @@
 #include "strategy.h"
 #include "syscall.h"		/* MAX_NR_SYSCALL */
 #include "utils.h"
-
-/*
- * STRATEGY_HEALER eligibility threshold: number of pair-table cells
- * with dynamic_hits >= HEALER_PICKER_PAIR_CELL_MIN_HITS required
- * before the picker has enough signal to score arms against uniform
- * random.  Picked to roughly match the inflection point at which the
- * operator-side dump starts surfacing relations whose normalised
- * score clears the noise floor.
- */
-#define HEALER_PICKER_PAIR_CELL_THRESHOLD 1000
-
-/*
- * Per-cell dynamic-hits floor for the eligibility scan.  A single hit
- * on a pair is observation noise; demanding several confirms the
- * runtime observer has actually seen the (pred, succ) pair lead to a
- * new edge more than once before that cell contributes to the
- * fleet-wide "we have enough signal to bias picks" decision.  Small
- * (3) so the gate still trips early in a run -- the dump-side
- * HEALER_DUMP_MIN_RAW=20 threshold is for displaying confident
- * relations, this one is for confirming the picker is worth waking up
- * at all.
- *
- * Critically, this test reads dynamic_hits SPECIFICALLY rather than
- * the combined picker weight (static_prior + dynamic_hits): the
- * previous gate counted any cell with weight > 1, which a freshly-
- * seeded pair at static_prior=HEALER_STATIC_SEED_WEIGHT=3 trivially
- * cleared even though no runtime evidence existed.  That made the gate
- * trip on a cold table whose populated cells were entirely the seed
- * loader's, with no runtime confirmation that the relations actually
- * mattered for the kernel under test.
- */
-#define HEALER_PICKER_PAIR_CELL_MIN_HITS 3
-
-/*
- * Hard cap on cells inspected per is_strategy_eligible(STRATEGY_HEALER)
- * call.  The pair table is dense (MAX_NR_SYSCALL^2 = ~1M cells); a full
- * scan at every rotation boundary is bounded but not free, so we
- * early-out as soon as we have either crossed the threshold or scanned
- * enough cells to know we are not going to.  The pair table is mutated
- * lock-free; relaxed loads here race observer bumps benignly because the
- * eligibility check itself is a coarse gate, not an exact count.
- */
-#define HEALER_PICKER_ELIGIBILITY_SCAN_CAP \
-	((unsigned long)MAX_NR_SYSCALL * (unsigned long)MAX_NR_SYSCALL)
 
 /* Same KCOV_CMP_CONST bit cmp_hints.c uses; from uapi/linux/kcov.h. */
 #define KCOV_CMP_CONST  (1U << 0)
@@ -186,50 +142,6 @@ const char *strategy_name(int arm)
 	}
 }
 
-/*
- * STRATEGY_HEALER readiness gate.  Scans the pair-relation table for
- * cells whose dynamic_hits has reached HEALER_PICKER_PAIR_CELL_MIN_HITS
- * (i.e. cells the runtime observer has confirmed at least that many
- * times) and short-circuits as soon as HEALER_PICKER_PAIR_CELL_THRESHOLD
- * have been seen.  Bare seeds do NOT count: a freshly-seeded but
- * never-observed pair is not evidence the picker can act on, and the
- * previous combined-weight test let those seeds satisfy the gate on a
- * cold table.  When the kcov plateau detector reports the fleet is
- * stalled, the threshold is bypassed -- a stalled bandit benefits from
- * any signal that nudges it off the current local minimum, even one
- * whose own data is thin.
- */
-static bool healer_picker_eligible(void)
-{
-	unsigned long scanned = 0;
-	unsigned long hits = 0;
-	unsigned int pred, succ;
-
-	if (kcov_shm != NULL && kcov_shm->plateau_active)
-		return true;
-
-	for (pred = 0; pred < MAX_NR_SYSCALL; pred++) {
-		for (succ = 0; succ < MAX_NR_SYSCALL; succ++) {
-			/* Reads dynamic_hits through the picker's mirror
-			 * page so the eligibility scan sees the same
-			 * published view the picker itself would; bounded
-			 * staleness (~ms per drain) is acceptable for a
-			 * coarse gating decision. */
-			unsigned int dyn = healer_pair_dynamic_hits(pred, succ);
-
-			scanned++;
-			if (dyn >= HEALER_PICKER_PAIR_CELL_MIN_HITS) {
-				hits++;
-				if (hits >= HEALER_PICKER_PAIR_CELL_THRESHOLD)
-					return true;
-			}
-			if (scanned >= HEALER_PICKER_ELIGIBILITY_SCAN_CAP)
-				return false;
-		}
-	}
-	return false;
-}
-
 bool is_strategy_eligible(int arm)
 {
 	if (arm < 0 || arm >= NR_STRATEGIES)
@@ -238,7 +150,7 @@ bool is_strategy_eligible(int arm)
 	if (arm == STRATEGY_HEALER) {
 		if (no_healer)
 			return false;
-		return healer_picker_eligible();
+		return healer_strategy_ready();
 	}
 
 	return true;

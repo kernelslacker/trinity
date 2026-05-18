@@ -316,12 +316,10 @@ void strategy_plateau_response(void);
  * Per-arm eligibility check used by pick_next_strategy() to skip arms
  * whose preconditions are not yet met.  Arms without preconditions
  * return true unconditionally.  STRATEGY_HEALER is the first arm with
- * a real precondition: it returns true once the pair-relation table
- * has accumulated at least HEALER_PICKER_PAIR_CELL_THRESHOLD cells with
- * weight > 1, OR when the coverage-plateau detector reports the fleet
- * is stalled (in which case the bandit benefits from any signal that
- * pushes it off the current local minimum, even one whose own data is
- * thin).  Cheap to call: bounded scan of the pair table with early-out.
+ * a real precondition; the readiness decision itself lives next to the
+ * encoding it inspects -- see healer_strategy_ready() in healer.h --
+ * and this function delegates after checking the operator-facing
+ * no_healer kill switch.
  */
 bool is_strategy_eligible(int arm);
 

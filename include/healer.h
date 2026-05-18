@@ -282,6 +282,28 @@ unsigned int healer_count_pc_pairs(void);
  */
 unsigned int healer_load_static_seed(void);
 
+/*
+ * STRATEGY_HEALER readiness gate.  Returns true when the picker has
+ * enough accumulated signal to be worth scheduling: a fixed minimum
+ * number of pair cells whose dynamic_hits crosses the per-cell evidence
+ * floor (i.e. cells the runtime observer has confirmed at least that
+ * many times).  Bare static seeds do NOT satisfy the gate -- a freshly
+ * seeded pair carries no runtime evidence and the previous combined-
+ * weight gate let those seeds trip a cold table.  When the kcov plateau
+ * detector reports the fleet is stalled, the gate is bypassed (see the
+ * sibling helper below): a stalled bandit benefits from any signal that
+ * nudges it off the current local minimum, even one whose data is thin.
+ *
+ * Owned by the healer module so the readiness decision sits next to
+ * the encoding it reads (struct healer_pair_cell's static_prior /
+ * dynamic_hits split).  Callers above the picker only see the boolean
+ * verdict; the threshold itself is an internal tuning knob.
+ *
+ * Cheap to call: bounded scan of the pair table with early-out once
+ * the threshold is hit or the scan cap is reached.
+ */
+bool healer_strategy_ready(void);
+
 struct syscallrecord;
 
 /*
