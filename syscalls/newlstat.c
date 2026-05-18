@@ -23,7 +23,9 @@
  * foreign pathname or steer the source memcpy at a foreign user
  * statbuf.
  */
+#define NEWLSTAT_POST_STATE_MAGIC	0x4E4C5354UL	/* "NLST" */
 struct newlstat_post_state {
+	unsigned long magic;
 	unsigned long filename;
 	unsigned long statbuf;
 };
@@ -46,6 +48,7 @@ static void sanitise_newlstat(struct syscallrecord *rec)
 	 * symlink entirely.  post_state is private to the post handler.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic    = NEWLSTAT_POST_STATE_MAGIC;
 	snap->filename = rec->a1;
 	snap->statbuf  = rec->a2;
 	rec->post_state = (unsigned long) snap;
@@ -106,6 +109,23 @@ static void post_newlstat(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_newlstat: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * newlstat_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon rather than feed wild bytes
+	 * into the inner-field deref.
+	 */
+	if (snap->magic != NEWLSTAT_POST_STATE_MAGIC) {
+		outputerr("post_newlstat: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
