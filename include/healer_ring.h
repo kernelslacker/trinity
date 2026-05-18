@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "healer.h"	/* HEALER_RELATION_SLOTS, struct healer_relation */
+#include "spsc-ring.h"
 #include "syscall.h"	/* MAX_NR_SYSCALL */
 
 /*
@@ -72,16 +73,7 @@ struct healer_observation {
 };					/* 12 bytes total */
 
 struct healer_ring {
-	/* Producer (child) writes head and overflow. */
-	uint32_t head;
-	uint32_t overflow;
-
-	/* Padding to put producer and consumer fields on separate cache lines. */
-	char __pad[56];
-
-	/* Consumer (parent) writes tail. */
-	uint32_t tail;
-
+	struct spsc_ring base;
 	struct healer_observation slots[HEALER_RING_SIZE];
 };
 

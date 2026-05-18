@@ -42,6 +42,7 @@
 #include "healer_ring.h"
 #include "pids.h"
 #include "shm.h"
+#include "spsc-ring.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -162,10 +163,8 @@ static void aggregate_unpack_promoted(uint64_t entry, unsigned int *nr,
 
 void healer_ring_init(struct healer_ring *ring)
 {
-	memset(ring, 0, sizeof(*ring));
-	__atomic_store_n(&ring->head, 0, __ATOMIC_RELAXED);
-	__atomic_store_n(&ring->tail, 0, __ATOMIC_RELAXED);
-	__atomic_store_n(&ring->overflow, 0, __ATOMIC_RELAXED);
+	memset(ring->slots, 0, sizeof(ring->slots));
+	spsc_ring_init(&ring->base);
 }
 
 /*
@@ -217,26 +216,13 @@ bool healer_ring_enqueue_observation(struct healer_ring *ring,
 								 : edge_delta),
 		.result_class = (uint16_t)result_class,
 	};
-	uint32_t head, tail, next;
 
 	if (ring == NULL)
 		return false;
 
-	head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
-	head &= (HEALER_RING_SIZE - 1);
-	tail = __atomic_load_n(&ring->tail, __ATOMIC_ACQUIRE);
-	tail &= (HEALER_RING_SIZE - 1);
-
-	next = (head + 1) & (HEALER_RING_SIZE - 1);
-	if (next == tail) {
-		__atomic_fetch_add(&ring->overflow, 1, __ATOMIC_RELAXED);
-		return false;
-	}
-
-	ring->slots[head] = slot;
-
-	__atomic_store_n(&ring->head, next, __ATOMIC_RELEASE);
-	return true;
+	return spsc_ring_try_enqueue(&ring->base, ring->slots,
+				     HEALER_RING_SIZE, sizeof(ring->slots[0]),
+				     &slot);
 }
 
 /*
@@ -421,8 +407,9 @@ static unsigned int healer_edge_weight_inc(uint16_t edge_delta)
  * apply time so the on-wire slot preserves chronological ordering for
  * downstream consumers that want it.
  */
-static void apply_observation(const struct healer_observation *obs)
+static void apply_observation(const void *p, void *ctx __unused__)
 {
+	const struct healer_observation *obs = p;
 	unsigned int weight_inc;
 	unsigned int pred_prev, pred_last, succ;
 
@@ -457,31 +444,16 @@ static void apply_observation(const struct healer_observation *obs)
 
 unsigned int healer_ring_drain(struct healer_ring *ring)
 {
-	uint32_t head, tail, overflow;
-	unsigned int processed = 0;
+	uint32_t overflow = 0;
+	uint32_t processed;
 
 	if (ring == NULL)
 		return 0;
 
-	overflow = __atomic_load_n(&ring->overflow, __ATOMIC_RELAXED);
-	if (overflow != 0)
-		overflow = __atomic_exchange_n(&ring->overflow, 0,
-						    __ATOMIC_RELAXED);
-	if (overflow > 0)
-		parent_healer.ring_overflow_total += overflow;
-
-	tail = __atomic_load_n(&ring->tail, __ATOMIC_RELAXED);
-	tail &= (HEALER_RING_SIZE - 1);
-	head = __atomic_load_n(&ring->head, __ATOMIC_ACQUIRE);
-	head &= (HEALER_RING_SIZE - 1);
-
-	while (tail != head) {
-		apply_observation(&ring->slots[tail]);
-		tail = (tail + 1) & (HEALER_RING_SIZE - 1);
-		processed++;
-	}
-
-	__atomic_store_n(&ring->tail, tail, __ATOMIC_RELEASE);
+	processed = spsc_ring_drain(&ring->base, ring->slots,
+				    HEALER_RING_SIZE, sizeof(ring->slots[0]),
+				    apply_observation, NULL, &overflow);
+	parent_healer.ring_overflow_total += overflow;
 	return processed;
 }
 
