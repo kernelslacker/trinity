@@ -59,7 +59,6 @@ syscalls/sched_getparam.c:sched_getparam
 syscalls/sched_rr_get_interval.c:sched_rr_get_interval
 syscalls/seccomp.c:seccomp
 syscalls/setgroups.c:setgroups
-syscalls/statfs.c:statfs
 syscalls/statfs.c:statfs64
 syscalls/statmount.c:statmount
 syscalls/sysfs.c:sysfs
