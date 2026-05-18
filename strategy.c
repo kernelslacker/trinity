@@ -897,6 +897,96 @@ int pick_next_strategy(int prev, enum strategy_selection_reason *reason_out)
  * separation between intervention and learner keeps that work from
  * disturbing the UCB scoring path.
  */
+/*
+ * Random-rescue amplification thresholds.  A class must clear an
+ * absolute floor (so a handful of stray rescues do not whip the
+ * orchestrator around between arms) AND a 2x lead over the second-best
+ * class (so two near-tied classes default back to plain RANDOM rather
+ * than coin-flipping the intervention).  Both numbers are conservative
+ * -- the amplification is a temporary modifier on a single intervention
+ * window, easy to recover from on the next rotation if the dominant
+ * class shifts.
+ */
+#define RRC_AMPLIFY_MIN_COUNT  32UL
+#define RRC_AMPLIFY_LEAD_RATIO 2UL
+
+/*
+ * Compute the dominant rescue class from the cumulative counters.
+ * Returns RRC_NR_CLASSES (the "no amplification" sentinel) when no
+ * class clears both the floor and the lead-over-second-best threshold.
+ * Placeholder classes (RRC_UNUSUAL_FD_PRODUCER, RRC_WRONG_TYPE_FD,
+ * RRC_PERSONA_GATED) are scanned so the comparison sees them, but the
+ * classifier never credits a rescue to them today so they cannot win;
+ * the orchestrator's bias dispatch treats them as plain RANDOM
+ * regardless, which is also the behaviour for RRC_UNKNOWN.
+ */
+static enum random_rescue_class dominant_rescue_class(void)
+{
+	unsigned long best = 0;
+	unsigned long second = 0;
+	enum random_rescue_class best_class = RRC_NR_CLASSES;
+	int i;
+
+	for (i = 0; i < RRC_NR_CLASSES; i++) {
+		unsigned long c = __atomic_load_n(
+			&shm->random_rescue_class_count[i], __ATOMIC_RELAXED);
+		if (c > best) {
+			second = best;
+			best = c;
+			best_class = (enum random_rescue_class)i;
+		} else if (c > second) {
+			second = c;
+		}
+	}
+
+	if (best < RRC_AMPLIFY_MIN_COUNT)
+		return RRC_NR_CLASSES;
+	if (best < second * RRC_AMPLIFY_LEAD_RATIO)
+		return RRC_NR_CLASSES;
+	return best_class;
+}
+
+/*
+ * Map a dominant rescue class to the targeted intervention arm.
+ * Defaults to STRATEGY_RANDOM (the historical pre-classifier
+ * behaviour) for classes that do not have a structured replay
+ * available -- placeholder classes whose underlying infrastructure
+ * does not exist yet, the unknown bucket, and the "no class
+ * dominant" sentinel.
+ *
+ * HEALER targeted arms fall back to RANDOM when HEALER is ineligible
+ * (compiled out, --no-healer, or the eligibility scan still says no)
+ * so the intervention does not stall on an arm that cannot run.  The
+ * plateau_active path inside is_strategy_eligible already bypasses
+ * the pair-cell threshold, so the eligibility check here is
+ * primarily a guard against the no_healer case.
+ */
+static int amplified_intervention_arm(enum random_rescue_class c)
+{
+	switch (c) {
+	case RRC_MISSING_PAIR:
+	case RRC_UNSEEN_SUCCESSOR:
+	case RRC_STALE_PAIR:
+		if (is_strategy_eligible(STRATEGY_HEALER))
+			return STRATEGY_HEALER;
+		return STRATEGY_RANDOM;
+	case RRC_COLD_SKIP:
+		/* Heuristic with cold-skip suppressed -- the set_syscall_nr_
+		 * heuristic read of plateau_rescue_amplified_class will
+		 * short-circuit the kcov_syscall_cold_skip_pct retry while
+		 * the intervention runs. */
+		return STRATEGY_HEURISTIC;
+	case RRC_CMP_DERIVED:
+	case RRC_UNUSUAL_FD_PRODUCER:
+	case RRC_WRONG_TYPE_FD:
+	case RRC_PERSONA_GATED:
+	case RRC_UNKNOWN:
+	case RRC_NR_CLASSES:
+		break;
+	}
+	return STRATEGY_RANDOM;
+}
+
 int select_next_strategy(int prev,
 			 enum strategy_selection_reason *reason_out)
 {
@@ -906,11 +996,33 @@ int select_next_strategy(int prev,
 
 	if (mode == PICKER_BANDIT_UCB1 &&
 	    kcov_shm != NULL && kcov_shm->plateau_active) {
+		enum random_rescue_class amplified = dominant_rescue_class();
+		int arm;
+
+		/* Publish the amplified class BEFORE the reason store on
+		 * current_selection_reason in maybe_rotate_strategy.  The
+		 * rotation site stores current_selection_reason with
+		 * RELAXED ordering and pairs it with the current_strategy
+		 * RELEASE store, so a child observing the new strategy
+		 * also sees the freshly-published amplification class on
+		 * its next pick.  RRC_NR_CLASSES means "no class
+		 * dominant" and the children's gated reads at the bias
+		 * sites short-circuit to the unmodified behaviour. */
+		__atomic_store_n(&shm->plateau_rescue_amplified_class,
+				 (int)amplified, __ATOMIC_RELAXED);
+
+		arm = amplified_intervention_arm(amplified);
 		__atomic_fetch_add(&shm->stats.plateau_forced_windows, 1UL,
 				   __ATOMIC_RELAXED);
 		*reason_out = SR_PLATEAU_FORCE;
-		return STRATEGY_RANDOM;
+		return arm;
 	}
+
+	/* Not in a plateau intervention -- clear the amplification so a
+	 * stale dominant class from a previous intervention does not bleed
+	 * into the structured pickers' hot paths after the plateau lifts. */
+	__atomic_store_n(&shm->plateau_rescue_amplified_class,
+			 (int)RRC_NR_CLASSES, __ATOMIC_RELAXED);
 
 	return pick_next_strategy(prev, reason_out);
 }
@@ -978,6 +1090,19 @@ void strategy_plateau_response(void)
  * the structured picker is actually investing in that branch).
  */
 #define RRC_HOT_PAIR_THRESHOLD 4U
+
+bool plateau_rescue_bias_active_for(enum random_rescue_class c)
+{
+	if (c < 0 || c >= RRC_NR_CLASSES)
+		return false;
+	if (kcov_shm == NULL || !kcov_shm->plateau_active)
+		return false;
+	if (__atomic_load_n(&shm->current_selection_reason, __ATOMIC_RELAXED) !=
+	    SR_PLATEAU_FORCE)
+		return false;
+	return __atomic_load_n(&shm->plateau_rescue_amplified_class,
+			       __ATOMIC_RELAXED) == (int)c;
+}
 
 const char *random_rescue_class_name(enum random_rescue_class c)
 {
@@ -1129,8 +1254,66 @@ void dump_strategy_stats(void)
 	plateau_forced = __atomic_load_n(&shm->stats.plateau_forced_windows,
 					 __ATOMIC_RELAXED);
 	if (plateau_forced > 0)
-		output(0, "  plateau-forced windows: %lu (STRATEGY_RANDOM via SR_PLATEAU_FORCE, excluded from UCB learner)\n",
+		output(0, "  plateau-forced windows: %lu (forced over picker via SR_PLATEAU_FORCE, excluded from UCB learner)\n",
 		       plateau_forced);
+
+	/* Random-rescue classifier distribution.  Per-class counts only
+	 * accumulate during SR_PLATEAU_FORCE intervention windows, so a
+	 * run that never plateaued prints nothing here; on a run that
+	 * did, the dominant class plus the currently-published
+	 * amplification field together tell the operator which targeted
+	 * intervention the orchestrator settled on by run-end.  Zero
+	 * buckets are suppressed so the placeholder classes (UNUSUAL_FD_
+	 * PRODUCER, WRONG_TYPE_FD, PERSONA_GATED) stay quiet until their
+	 * detection infrastructure lands and starts crediting rescues to
+	 * them. */
+	{
+		unsigned long total_rescues = 0;
+		int c;
+
+		for (c = 0; c < RRC_NR_CLASSES; c++)
+			total_rescues += __atomic_load_n(
+				&shm->random_rescue_class_count[c],
+				__ATOMIC_RELAXED);
+
+		if (total_rescues > 0) {
+			int amp = __atomic_load_n(
+				&shm->plateau_rescue_amplified_class,
+				__ATOMIC_RELAXED);
+
+			output(0, "  rescue classes: total=%lu", total_rescues);
+			for (c = 0; c < RRC_NR_CLASSES; c++) {
+				unsigned long count = __atomic_load_n(
+					&shm->random_rescue_class_count[c],
+					__ATOMIC_RELAXED);
+				if (count == 0)
+					continue;
+				output(0, " %s=%lu",
+				       random_rescue_class_name(
+					       (enum random_rescue_class)c),
+				       count);
+			}
+			output(0, "\n");
+
+			/* Amplified class is the orchestrator's current
+			 * pick; RRC_NR_CLASSES means no class is being
+			 * amplified (either the run is not in a plateau
+			 * intervention right now or no class cleared the
+			 * dominance threshold).  Print the threshold
+			 * outcome explicitly so the operator can
+			 * distinguish "no amplification because below
+			 * floor" from "no amplification because the lead
+			 * over the runner-up was too thin". */
+			if (amp >= 0 && amp < RRC_NR_CLASSES)
+				output(0, "  rescue amplified: %s (next intervention biased toward this class's structured replay)\n",
+				       random_rescue_class_name(
+					       (enum random_rescue_class)amp));
+			else
+				output(0, "  rescue amplified: none (no class crossed the %lu-rescue floor with a %lux lead)\n",
+				       RRC_AMPLIFY_MIN_COUNT,
+				       RRC_AMPLIFY_LEAD_RATIO);
+		}
+	}
 
 	/* Hybrid bandit/explorer split summary.  Suppressed when the run had
 	 * no explorers reserved (explorer_children == 0) -- the bandit-pool

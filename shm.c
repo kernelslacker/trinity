@@ -154,6 +154,14 @@ void init_shm(void)
 	 * needed. */
 	__atomic_store_n(&shm->picker_mode, picker_mode_arg, __ATOMIC_RELAXED);
 
+	/* Random-rescue amplification has no "zero is none" representation
+	 * (RRC_COLD_SKIP = 0), so the orchestrator's "no class amplified"
+	 * sentinel is RRC_NR_CLASSES.  Explicit init so a fresh run starts
+	 * in the unamplified state even though the surrounding shm memset
+	 * already zeroed the field. */
+	__atomic_store_n(&shm->plateau_rescue_amplified_class,
+			 (int)RRC_NR_CLASSES, __ATOMIC_RELAXED);
+
 	__atomic_store_n(&shm->seed, init_seed(seed), __ATOMIC_RELAXED);
 
 	if (!shared_size_mul(max_children, sizeof(struct childdata *),

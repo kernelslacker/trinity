@@ -18,9 +18,29 @@
 #include "results.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "strategy.h"	// plateau_rescue_bias_active_for, RRC_CMP_DERIVED
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"	// num_online_cpus
+
+/*
+ * CMP-hint injection rate.  Baseline is 1-in-16 (the historical rate the
+ * ARG_OP / ARG_LIST paths shipped with); boosted to 1-in-4 inside a
+ * SR_PLATEAU_FORCE intervention whose dominant rescue class is
+ * RRC_CMP_DERIVED, so the learned constants the classifier credited
+ * for the recent rescues fire more aggressively during the targeted
+ * intervention.  Wrapped in a helper so any future tuning lands in one
+ * place rather than scattered across the three call sites.
+ */
+#define CMP_HINT_INJECT_DENOM_BASELINE  16U
+#define CMP_HINT_INJECT_DENOM_AMPLIFIED 4U
+
+static unsigned int cmp_hint_inject_denom(void)
+{
+	return plateau_rescue_bias_active_for(RRC_CMP_DERIVED) ?
+		CMP_HINT_INJECT_DENOM_AMPLIFIED :
+		CMP_HINT_INJECT_DENOM_BASELINE;
+}
 
 /* ONE_IN denominator for substituting a wrong-subtype fd (or a generic
  * pool fd) into a typed-fd argument slot.  Trades a small fraction of
@@ -135,8 +155,11 @@ static unsigned long handle_arg_op(struct syscallentry *entry, unsigned int argn
 
 	get_num_and_values(entry, argnum, &num, &values);
 
-	/* ~1 in 16: try a CMP hint as an undocumented command code. */
-	if (ONE_IN(16) && cmp_hints_try_get(call, &hint))
+	/* ~1 in 16: try a CMP hint as an undocumented command code.
+	 * Bumped to ~1 in 4 inside a SR_PLATEAU_FORCE intervention whose
+	 * dominant rescue class is RRC_CMP_DERIVED. */
+	if (ONE_IN(cmp_hint_inject_denom()) &&
+	    cmp_hints_try_get(call, &hint))
 		return hint;
 
 	return values[rand() % num];
@@ -161,8 +184,11 @@ static unsigned long handle_arg_list(struct syscallentry *entry, unsigned int ar
 		return mask;
 	}
 
-	/* ~1 in 16: OR in a CMP hint as an undocumented flag bit. */
-	if (ONE_IN(16) && cmp_hints_try_get(call, &hint)) {
+	/* ~1 in 16: OR in a CMP hint as an undocumented flag bit.
+	 * Bumped to ~1 in 4 inside a SR_PLATEAU_FORCE intervention whose
+	 * dominant rescue class is RRC_CMP_DERIVED. */
+	if (ONE_IN(cmp_hint_inject_denom()) &&
+	    cmp_hints_try_get(call, &hint)) {
 		mask = set_rand_bitmask(num, values);
 		mask |= hint;
 		return mask;

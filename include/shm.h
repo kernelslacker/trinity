@@ -477,6 +477,40 @@ struct shm_s {
 	unsigned long random_rescue_class_count[RRC_NR_CLASSES];
 
 	/*
+	 * Currently-amplified random-rescue class, published by the
+	 * orchestrator (select_next_strategy) at every rotation boundary.
+	 * RRC_NR_CLASSES is the "no amplification" sentinel -- either the
+	 * fleet is not in a plateau intervention or no class has cleared
+	 * the dominance threshold against its peers.  Held as int rather
+	 * than the enum so the shm layout stays language-stable across any
+	 * future enum reorder.
+	 *
+	 * Read by children on the hot pick / arg-generation path to
+	 * conditionally relax structured filters that the classifier
+	 * blamed for the recent rescue cohort:
+	 *
+	 *   RRC_COLD_SKIP    -> set_syscall_nr_heuristic skips its
+	 *                       kcov_syscall_cold_skip_pct retry, so
+	 *                       cold syscalls flow through the heuristic
+	 *                       arm during the intervention.
+	 *   RRC_CMP_DERIVED  -> generate-args.c's 1-in-16
+	 *                       cmp_hints_try_get rolls flip to 1-in-4
+	 *                       so the learned constants the classifier
+	 *                       credited the rescues to fire more often.
+	 *
+	 * Gated on (shm->plateau_active && current_selection_reason ==
+	 * SR_PLATEAU_FORCE) at every read site so the relaxation applies
+	 * only inside the intervention window, never as a permanent
+	 * change to the structured pickers.  Bias choices for the other
+	 * classes (MISSING_PAIR / STALE_PAIR / UNSEEN_SUCCESSOR) are
+	 * encoded in the intervention arm itself -- the orchestrator
+	 * forces STRATEGY_HEALER instead of RANDOM when one of those
+	 * classes dominates, and HEALER's eligibility gate is already
+	 * bypassed under plateau_active.
+	 */
+	int plateau_rescue_amplified_class;
+
+	/*
 	 * Discounted "recent" counters that the UCB1 picker scores against
 	 * instead of the lifetime bandit_pulls[]/bandit_reward_calls[]
 	 * series above.  Kernel coverage discovery is strongly

@@ -197,8 +197,19 @@ retry:
 	 * finding new edges, skip it with a probability that grows the
 	 * staler it gets — a syscall stuck for one threshold-window gets
 	 * the same 50% baseline as before, but one stuck for ten gets
-	 * skipped 90% of the time. */
-	{
+	 * skipped 90% of the time.
+	 *
+	 * Suppressed inside a SR_PLATEAU_FORCE intervention when the
+	 * random-rescue classifier has accumulated enough RRC_COLD_SKIP
+	 * evidence to amplify that class: the rescues that have been
+	 * carrying the fleet past the plateau are mostly cold-skipped
+	 * syscalls, and structured replay means letting the heuristic
+	 * actually pick them.  Both gates checked because either alone
+	 * is insufficient -- plateau_active without amplification means
+	 * a different class won, and amplification cannot stay live
+	 * after the plateau lifts (the orchestrator clears the field on
+	 * its next non-intervention rotation). */
+	if (!plateau_rescue_bias_active_for(RRC_COLD_SKIP)) {
 		unsigned int skip_pct = kcov_syscall_cold_skip_pct(syscallnr);
 
 		if (skip_pct > 0 && (unsigned int)(rand() % 100) < skip_pct) {

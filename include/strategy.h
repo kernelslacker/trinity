@@ -422,6 +422,23 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 const char *random_rescue_class_name(enum random_rescue_class c);
 
 /*
+ * Hot-path gate for the per-class structured-replay biases inside the
+ * heuristic picker (RRC_COLD_SKIP suppresses cold-skip) and arg
+ * generation (RRC_CMP_DERIVED boosts cmp_hints injection rate).
+ * Returns true only when the fleet is inside a SR_PLATEAU_FORCE
+ * intervention window AND the orchestrator's published amplification
+ * class matches the caller's expected class.  Both gates checked
+ * because either alone is insufficient -- the amplification field can
+ * carry a stale value briefly after the plateau clears (cleared on the
+ * next non-intervention rotation) and the plateau_active flag alone
+ * does not tell the bias site whether THIS class won.
+ *
+ * Cheap: three relaxed atomic loads and two comparisons; safe to call
+ * on the hottest per-pick / per-arg paths.
+ */
+bool plateau_rescue_bias_active_for(enum random_rescue_class c);
+
+/*
  * End-of-run summary: per-arm pulls + cumulative reward + mean
  * edges/window.  Called from dump_stats().
  */
