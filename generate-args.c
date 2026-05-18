@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "arch.h"
+#include "argtype-ops.h"
 #include "cmp_hints.h"
 #include "debug.h"
 #include "deferred-free.h"
@@ -96,7 +97,9 @@ static unsigned long handle_arg_address(struct syscallentry *entry, struct sysca
 	return addr;
 }
 
-static unsigned long handle_arg_range(struct syscallentry *entry, unsigned int argnum)
+static unsigned long handle_arg_range(struct syscallentry *entry,
+				      struct syscallrecord *rec __unused__,
+				      unsigned int argnum)
 {
 	unsigned long i;
 	unsigned long low = entry->arg_params[argnum - 1].range.low;
@@ -147,10 +150,13 @@ static void get_num_and_values(struct syscallentry *entry, unsigned int argnum,
 /*
  * Get a single entry from the list of values.
  */
-static unsigned long handle_arg_op(struct syscallentry *entry, unsigned int argnum, unsigned int call)
+static unsigned long handle_arg_op(struct syscallentry *entry,
+				   struct syscallrecord *rec,
+				   unsigned int argnum)
 {
 	const unsigned long *values = NULL;
 	unsigned int num = 0;
+	unsigned int call = rec->nr;
 	unsigned long hint;
 
 	get_num_and_values(entry, argnum, &num, &values);
@@ -168,11 +174,14 @@ static unsigned long handle_arg_op(struct syscallentry *entry, unsigned int argn
 /*
  * OR a random number of bits from the list of values into a bitmask, and return it.
  */
-static unsigned long handle_arg_list(struct syscallentry *entry, unsigned int argnum, unsigned int call)
+static unsigned long handle_arg_list(struct syscallentry *entry,
+				     struct syscallrecord *rec,
+				     unsigned int argnum)
 {
 	unsigned long mask = 0;
 	unsigned int num = 0;
 	const unsigned long *values = NULL;
+	unsigned int call = rec->nr;
 	unsigned long hint;
 
 	get_num_and_values(entry, argnum, &num, &values);
@@ -244,7 +253,9 @@ static unsigned long handle_arg_sockaddr(struct syscallentry *entry, struct sysc
 	return (unsigned long) sockaddr;
 }
 
-static unsigned long handle_arg_mode_t(void)
+static unsigned long handle_arg_mode_t(struct syscallentry *entry __unused__,
+				       struct syscallrecord *rec __unused__,
+				       unsigned int argnum __unused__)
 {
 	unsigned int i, count;
 	mode_t mode = 0, op = 0;
@@ -288,8 +299,11 @@ enum argtype get_argtype(struct syscallentry *entry, unsigned int argnum)
 	return entry->argtype[argnum - 1];
 }
 
-static unsigned long gen_undefined_arg(unsigned int call)
+static unsigned long gen_undefined_arg(struct syscallentry *entry __unused__,
+				       struct syscallrecord *rec,
+				       unsigned int argnum __unused__)
 {
+	unsigned int call = rec->nr;
 	unsigned long hint;
 
 	switch (rand() % 9) {
@@ -309,9 +323,498 @@ static unsigned long gen_undefined_arg(unsigned int call)
 	return rand64();
 }
 
+/*
+ * Thin generator wrappers used by argtype_table[].  Each one encodes the
+ * body of the matching case in fill_arg's switch so the table can dispatch
+ * directly off the argtype.  Where the inline case is a single expression
+ * (ARG_LEN, ARG_MMAP, ARG_CPU, ...) the wrapper is one return statement.
+ * Where the inline case used a pool-vs-garbage substitution (ARG_PID and
+ * friends), the wrapper preserves the ~1-in-8 bias.
+ */
+
+static unsigned long gen_arg_fd(struct syscallentry *entry,
+				struct syscallrecord *rec __unused__,
+				unsigned int argnum)
+{
+	struct results *results = &entry->results[argnum - 1];
+	bool filter;
+	int fd = 0;
+	int tries;
+
+	/* Prefer live fds returned by recent syscalls (70% of the time). */
+	if (rand() % 10 < 7) {
+		struct childdata *child = this_child();
+
+		if (child != NULL) {
+			int live_fd = get_child_live_fd(child);
+
+			if (live_fd >= 0)
+				return live_fd;
+		}
+	}
+	if (RAND_BOOL()) {
+		unsigned int i;
+		/* If this is the 2nd or more ARG_FD, make it unique */
+		for (i = 1; i < argnum; i++) {
+			enum argtype arg;
+			arg = get_argtype(entry, i);
+			if (arg == ARG_FD)
+				return get_new_random_fd();
+		}
+	}
+
+	/* Same failed_fds re-roll bias as the typed-fd path. */
+	filter = (rand() % 10) < 7;
+	for (tries = 0; tries < FAILED_FD_REROLL_LIMIT; tries++) {
+		fd = get_random_fd();
+		if (!filter || !fd_recently_failed(results, fd))
+			break;
+	}
+	return (unsigned long) fd;
+}
+
+static unsigned long gen_arg_typed_fd(struct syscallentry *entry,
+				      struct syscallrecord *rec __unused__,
+				      unsigned int argnum)
+{
+	enum argtype argtype = get_argtype(entry, argnum);
+	struct results *results = &entry->results[argnum - 1];
+	bool filter = (rand() % 10) < 7;
+	enum argtype effective_argtype = argtype;
+	bool use_generic = false;
+	int fd = 0;
+	int tries;
+
+	/* With ~1/WRONG_FD_TYPE_FREQ probability, swap the requested typed-fd
+	 * subtype for a different one (or, less often, a generic fd from the
+	 * global pool) before entering the reroll loop.  The swap is sticky
+	 * across rerolls so the failed-fd filter still has a chance to drop
+	 * known-bad (slot, fd) pairs for whatever fd source we ended up with. */
+	if (ONE_IN(WRONG_FD_TYPE_FREQ)) {
+		__atomic_fetch_add(&shm->stats.wrong_fd_type_substitutions,
+				   1UL, __ATOMIC_RELAXED);
+		if (ONE_IN(4)) {
+			use_generic = true;
+			__atomic_fetch_add(&shm->stats.wrong_fd_type_subst_generic,
+					   1UL, __ATOMIC_RELAXED);
+		} else {
+			unsigned int range = ARG_FD_TIMERFD - ARG_FD_BPF_BTF;
+			unsigned int pick = rand() % range;
+
+			effective_argtype = ARG_FD_BPF_BTF + pick;
+			if (effective_argtype >= argtype)
+				effective_argtype++;
+		}
+	}
+
+	for (tries = 0; tries < FAILED_FD_REROLL_LIMIT; tries++) {
+		fd = use_generic ? get_random_fd()
+				 : get_typed_fd(effective_argtype);
+		if (!filter || !fd_recently_failed(results, fd))
+			break;
+	}
+	return (unsigned long) fd;
+}
+
+static unsigned long gen_arg_len(struct syscallentry *entry __unused__,
+				 struct syscallrecord *rec __unused__,
+				 unsigned int argnum __unused__)
+{
+	return (unsigned long) get_len();
+}
+
+static unsigned long gen_arg_non_null_address(struct syscallentry *entry __unused__,
+					      struct syscallrecord *rec __unused__,
+					      unsigned int argnum __unused__)
+{
+	return (unsigned long) get_non_null_address();
+}
+
+static unsigned long gen_arg_mmap(struct syscallentry *entry __unused__,
+				  struct syscallrecord *rec __unused__,
+				  unsigned int argnum __unused__)
+{
+	return (unsigned long) get_map();
+}
+
+static unsigned long gen_arg_pid(struct syscallentry *entry __unused__,
+				 struct syscallrecord *rec __unused__,
+				 unsigned int argnum __unused__)
+{
+	if (ONE_IN(8))
+		return (unsigned long) (int32_t) rand32();
+	return (unsigned long) get_random_pid_from_pool();
+}
+
+static unsigned long gen_arg_key_serial(struct syscallentry *entry __unused__,
+					struct syscallrecord *rec __unused__,
+					unsigned int argnum __unused__)
+{
+	if (ONE_IN(8))
+		return (unsigned long) (int32_t) rand32();
+	return (unsigned long) get_random_key_serial();
+}
+
+static unsigned long gen_arg_timerid(struct syscallentry *entry __unused__,
+				     struct syscallrecord *rec __unused__,
+				     unsigned int argnum __unused__)
+{
+	if (ONE_IN(8))
+		return (unsigned long) (int32_t) rand32();
+	return (unsigned long) get_random_timerid();
+}
+
+static unsigned long gen_arg_aio_ctx(struct syscallentry *entry __unused__,
+				     struct syscallrecord *rec __unused__,
+				     unsigned int argnum __unused__)
+{
+	if (ONE_IN(8))
+		return (unsigned long) rand64();
+	return get_random_aio_ctx();
+}
+
+static unsigned long gen_arg_sem_id(struct syscallentry *entry __unused__,
+				    struct syscallrecord *rec __unused__,
+				    unsigned int argnum __unused__)
+{
+	if (ONE_IN(8))
+		return (unsigned long) (int) rand32();
+	return (unsigned long) get_random_sysv_sem();
+}
+
+static unsigned long gen_arg_msg_id(struct syscallentry *entry __unused__,
+				    struct syscallrecord *rec __unused__,
+				    unsigned int argnum __unused__)
+{
+	if (ONE_IN(8))
+		return (unsigned long) (int) rand32();
+	return (unsigned long) get_random_sysv_msg();
+}
+
+static unsigned long gen_arg_sysv_shm(struct syscallentry *entry __unused__,
+				      struct syscallrecord *rec __unused__,
+				      unsigned int argnum __unused__)
+{
+	if (ONE_IN(8))
+		return (unsigned long) (int) rand32();
+	return (unsigned long) get_random_sysv_shm();
+}
+
+static unsigned long gen_arg_cpu(struct syscallentry *entry __unused__,
+				 struct syscallrecord *rec __unused__,
+				 unsigned int argnum __unused__)
+{
+	return (unsigned long) get_cpu();
+}
+
+static unsigned long gen_arg_numa_node(struct syscallentry *entry __unused__,
+				       struct syscallrecord *rec __unused__,
+				       unsigned int argnum __unused__)
+{
+	if (ONE_IN(8))
+		return (unsigned long) (rand32() & 0xFFFF);
+	return (unsigned long) random_numa_node();
+}
+
+static unsigned long gen_arg_pathname(struct syscallentry *entry __unused__,
+				      struct syscallrecord *rec __unused__,
+				      unsigned int argnum __unused__)
+{
+	return (unsigned long) generate_pathname();
+}
+
+/* ARG_IOVECLEN / ARG_SOCKADDRLEN: the value was published into the slot
+ * by the paired ARG_IOVEC / ARG_SOCKADDR generator that ran earlier in
+ * this dispatch.  Just hand it back. */
+static unsigned long gen_arg_paired_length(struct syscallentry *entry __unused__,
+					   struct syscallrecord *rec,
+					   unsigned int argnum)
+{
+	return get_argval(rec, argnum);
+}
+
+static unsigned long gen_arg_socketinfo(struct syscallentry *entry __unused__,
+					struct syscallrecord *rec __unused__,
+					unsigned int argnum __unused__)
+{
+	return (unsigned long) get_rand_socketinfo();
+}
+
+/*
+ * Shared cleanup helper for any argtype whose generator hands back a
+ * heap allocation that must be released after the syscall returns
+ * (ARG_PATHNAME, ARG_IOVEC, ARG_SOCKADDR).
+ */
+static void cleanup_deferred_free(struct syscallrecord *rec, unsigned int argnum)
+{
+	deferred_free_enqueue((void *) get_argval(rec, argnum), NULL);
+}
+
+/*
+ * Per-argtype policy descriptor table.
+ *
+ * Indexed by enum argtype.  Each entry concentrates everything fill_arg,
+ * generic_free_arg, and blanket_address_scrub need to know about that
+ * argtype: how to produce a value, how to release it afterwards, whether
+ * the slot participates in the fd biases, the blanket address scrub, the
+ * numeric-substitute fuzzer technique, and whether it has a paired
+ * length slot that follows it in the argument list.
+ */
+const struct argtype_ops argtype_table[] = {
+	[ARG_UNDEFINED] = {
+		.name = "ARG_UNDEFINED",
+		.generate = gen_undefined_arg,
+	},
+	[ARG_FD] = {
+		.name = "ARG_FD",
+		.generate = gen_arg_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_LEN] = {
+		.name = "ARG_LEN",
+		.generate = gen_arg_len,
+	},
+	[ARG_ADDRESS] = {
+		.name = "ARG_ADDRESS",
+		.generate = handle_arg_address,
+		.default_address_scrub = true,
+	},
+	[ARG_MODE_T] = {
+		.name = "ARG_MODE_T",
+		.generate = handle_arg_mode_t,
+	},
+	[ARG_NON_NULL_ADDRESS] = {
+		.name = "ARG_NON_NULL_ADDRESS",
+		.generate = gen_arg_non_null_address,
+		.default_address_scrub = true,
+	},
+	[ARG_PID] = {
+		.name = "ARG_PID",
+		.generate = gen_arg_pid,
+		.accepts_numeric_substitute = true,
+	},
+	[ARG_KEY_SERIAL] = {
+		.name = "ARG_KEY_SERIAL",
+		.generate = gen_arg_key_serial,
+		.accepts_numeric_substitute = true,
+	},
+	[ARG_TIMERID] = {
+		.name = "ARG_TIMERID",
+		.generate = gen_arg_timerid,
+		.accepts_numeric_substitute = true,
+	},
+	[ARG_AIO_CTX] = {
+		.name = "ARG_AIO_CTX",
+		.generate = gen_arg_aio_ctx,
+		.accepts_numeric_substitute = true,
+	},
+	[ARG_SEM_ID] = {
+		.name = "ARG_SEM_ID",
+		.generate = gen_arg_sem_id,
+		.accepts_numeric_substitute = true,
+	},
+	[ARG_MSG_ID] = {
+		.name = "ARG_MSG_ID",
+		.generate = gen_arg_msg_id,
+		.accepts_numeric_substitute = true,
+	},
+	[ARG_SYSV_SHM] = {
+		.name = "ARG_SYSV_SHM",
+		.generate = gen_arg_sysv_shm,
+		.accepts_numeric_substitute = true,
+	},
+	[ARG_RANGE] = {
+		.name = "ARG_RANGE",
+		.generate = handle_arg_range,
+		.default_address_scrub = true,
+	},
+	[ARG_OP] = {
+		.name = "ARG_OP",
+		.generate = handle_arg_op,
+	},
+	[ARG_LIST] = {
+		.name = "ARG_LIST",
+		.generate = handle_arg_list,
+	},
+	[ARG_CPU] = {
+		.name = "ARG_CPU",
+		.generate = gen_arg_cpu,
+	},
+	[ARG_NUMA_NODE] = {
+		.name = "ARG_NUMA_NODE",
+		.generate = gen_arg_numa_node,
+		.accepts_numeric_substitute = true,
+	},
+	[ARG_PATHNAME] = {
+		.name = "ARG_PATHNAME",
+		.generate = gen_arg_pathname,
+		.cleanup = cleanup_deferred_free,
+	},
+	[ARG_IOVEC] = {
+		.name = "ARG_IOVEC",
+		.generate = handle_arg_iovec,
+		.cleanup = cleanup_deferred_free,
+		.paired_length = ARG_IOVECLEN,
+	},
+	[ARG_IOVECLEN] = {
+		.name = "ARG_IOVECLEN",
+		.generate = gen_arg_paired_length,
+	},
+	[ARG_SOCKADDR] = {
+		.name = "ARG_SOCKADDR",
+		.generate = handle_arg_sockaddr,
+		.cleanup = cleanup_deferred_free,
+		.paired_length = ARG_SOCKADDRLEN,
+	},
+	[ARG_SOCKADDRLEN] = {
+		.name = "ARG_SOCKADDRLEN",
+		.generate = gen_arg_paired_length,
+	},
+	[ARG_MMAP] = {
+		.name = "ARG_MMAP",
+		.generate = gen_arg_mmap,
+	},
+	[ARG_SOCKETINFO] = {
+		.name = "ARG_SOCKETINFO",
+		.generate = gen_arg_socketinfo,
+	},
+	[ARG_FD_BPF_BTF] = {
+		.name = "ARG_FD_BPF_BTF",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_BPF_LINK] = {
+		.name = "ARG_FD_BPF_LINK",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_BPF_MAP] = {
+		.name = "ARG_FD_BPF_MAP",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_BPF_PROG] = {
+		.name = "ARG_FD_BPF_PROG",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_EPOLL] = {
+		.name = "ARG_FD_EPOLL",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_EVENTFD] = {
+		.name = "ARG_FD_EVENTFD",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_FANOTIFY] = {
+		.name = "ARG_FD_FANOTIFY",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_FS_CTX] = {
+		.name = "ARG_FD_FS_CTX",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_INOTIFY] = {
+		.name = "ARG_FD_INOTIFY",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_IO_URING] = {
+		.name = "ARG_FD_IO_URING",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_LANDLOCK] = {
+		.name = "ARG_FD_LANDLOCK",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_MEMFD] = {
+		.name = "ARG_FD_MEMFD",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_MOUNT] = {
+		.name = "ARG_FD_MOUNT",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_MQ] = {
+		.name = "ARG_FD_MQ",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_PERF] = {
+		.name = "ARG_FD_PERF",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_PIDFD] = {
+		.name = "ARG_FD_PIDFD",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_PIPE] = {
+		.name = "ARG_FD_PIPE",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_SIGNALFD] = {
+		.name = "ARG_FD_SIGNALFD",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_SOCKET] = {
+		.name = "ARG_FD_SOCKET",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+	[ARG_FD_TIMERFD] = {
+		.name = "ARG_FD_TIMERFD",
+		.generate = gen_arg_typed_fd,
+		.can_use_success_fd_bias = true,
+		.can_use_failed_fd_filter = true,
+	},
+};
+
+const unsigned int argtype_table_size =
+	sizeof(argtype_table) / sizeof(argtype_table[0]);
+
+const struct argtype_ops *argtype_get_ops(enum argtype t)
+{
+	if ((unsigned int) t >= argtype_table_size)
+		BUG("argtype_get_ops: argtype out of range\n");
+	if (argtype_table[t].generate == NULL)
+		BUG("argtype_get_ops: argtype has no generator\n");
+	return &argtype_table[t];
+}
+
 static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum)
 {
-	unsigned int call = rec->nr;
 	enum argtype argtype;
 
 	if (argnum > entry->num_args)
@@ -382,7 +885,7 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
 
 	switch (argtype) {
 	case ARG_UNDEFINED:
-		return gen_undefined_arg(call);
+		return gen_undefined_arg(entry, rec, argnum);
 
 	case ARG_FD: {
 		struct results *results = &entry->results[argnum - 1];
@@ -499,13 +1002,13 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
 		return (unsigned long) get_random_sysv_shm();
 
 	case ARG_RANGE:
-		return handle_arg_range(entry, argnum);
+		return handle_arg_range(entry, rec, argnum);
 
 	case ARG_OP:	/* Like ARG_LIST, but just a single value. */
-		return handle_arg_op(entry, argnum, call);
+		return handle_arg_op(entry, rec, argnum);
 
 	case ARG_LIST:
-		return handle_arg_list(entry, argnum, call);
+		return handle_arg_list(entry, rec, argnum);
 
 	case ARG_CPU:
 		return (unsigned long) get_cpu();
@@ -536,14 +1039,14 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
 		return handle_arg_sockaddr(entry, rec, argnum);
 
 	case ARG_MODE_T:
-		return handle_arg_mode_t();
+		return handle_arg_mode_t(entry, rec, argnum);
 
 	case ARG_SOCKETINFO:
 		return (unsigned long) get_rand_socketinfo();
 
 	default:
 		outputerr("fill_arg: unhandled argtype %d for syscall %s (nr %d) arg %d\n",
-			argtype, entry->name, call, argnum);
+			argtype, entry->name, rec->nr, argnum);
 		break;
 	}
 
