@@ -298,21 +298,38 @@ static unsigned long bpf_attach_types[] = {
 };
 
 /*
- * Snapshot of the dispatch cmd and the heap-allocated union bpf_attr
- * the post handler reads, captured at sanitise time and consumed by the
- * post handler.  Lives in rec->post_state, a slot the syscall ABI does
- * not expose, so the post path is immune to a sibling syscall scribbling
- * rec->a1 (the cmd) or rec->a2 (the attr pointer) between the syscall
- * returning and the post handler running.  The old post handler
- * dispatched off rec->a1 directly: a sibling scribble of the cmd
- * between syscall return and post entry would steer object-pool seeding
- * and the BPF_PROG_LOAD instruction-buffer free into the wrong arms,
- * misclassifying a fresh map fd as a prog fd (or vice versa) and
- * silently leaking the program insns.
+ * Snapshot of the dispatch cmd and the pre-relocation attr pointer the
+ * post handler reads, captured at sanitise time and consumed by the
+ * post handler.  Two layers of protection here:
+ *
+ *  - Lives in rec->post_state, a slot the syscall ABI does not expose,
+ *    so the post path is immune to a sibling syscall scribbling rec->a1
+ *    (the cmd) or rec->a2 (the attr pointer) between the syscall
+ *    returning and the post handler running.  The old post handler
+ *    dispatched off rec->a1 directly: a sibling scribble of the cmd
+ *    between syscall return and post entry would steer object-pool
+ *    seeding and the BPF_PROG_LOAD instruction-buffer free into the
+ *    wrong arms, misclassifying a fresh map fd as a prog fd (or vice
+ *    versa) and silently leaking the program insns.
+ *
+ *  - attr_original is the pre-avoid_shared_buffer pointer.  ASB
+ *    relocated rec->a2 into a writable-pool region without copying the
+ *    sanitised fields, so the kernel consumed whatever uninitialised
+ *    bytes the pool page held -- post-handler reads off the relocated
+ *    rec->a2 would see pool garbage, not the values sanitise wrote.
+ *    Reads of map_type / prog_type / link_create.attach_type drive
+ *    object-pool tagging that classifies what trinity asked for, and
+ *    the attr->insns free at BPF_PROG_LOAD must reach the
+ *    sanitise-time allocation, not the pool buffer -- all four read
+ *    sites want sanitise intent, so attr_original is the only pointer
+ *    we store.  attr_original is also what deferred_free_enqueue()
+ *    must receive: the relocated pool address lives in the writable
+ *    allocator, not the libc heap, and would be rejected by the
+ *    heap-bounds gate.
  */
 struct bpf_post_state {
 	unsigned int cmd;
-	union bpf_attr *attr;
+	union bpf_attr *attr_original;
 };
 
 static void sanitise_bpf(struct syscallrecord *rec)
@@ -507,17 +524,24 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	avoid_shared_buffer(&rec->a2, rec->a3);
 
 	/*
-	 * Snapshot the cmd alongside the heap pointer.  rec->a1 (cmd) and
-	 * rec->a2 (attr) are both ABI-exposed and a sibling syscall can
-	 * scribble either between syscall return and post entry; the old
-	 * post handler dispatched off rec->a1 directly, so a flip from a
-	 * pool-seeding cmd to BPF_PROG_LOAD would skip the insn-buffer free
-	 * and a flip in the other direction would dereference attr fields
-	 * that bpf_prog_load() never wrote.
+	 * Snapshot the cmd alongside the pre-relocation attr pointer.
+	 * rec->a1 (cmd) and rec->a2 (attr) are both ABI-exposed and a
+	 * sibling syscall can scribble either between syscall return and
+	 * post entry; the old post handler dispatched off rec->a1 directly,
+	 * so a flip from a pool-seeding cmd to BPF_PROG_LOAD would skip the
+	 * insn-buffer free and a flip in the other direction would
+	 * dereference attr fields that bpf_prog_load() never wrote.
+	 *
+	 * The local attr still references the zmalloc above -- ASB only
+	 * rewrote rec->a2 and did not touch attr -- so storing it here
+	 * captures the sanitise-intent struct the post handler must read,
+	 * not the writable-pool address the kernel actually consumed.  See
+	 * the struct bpf_post_state comment for why every post-handler read
+	 * site wants sanitise intent rather than kernel-observed bytes.
 	 */
 	snap = zmalloc(sizeof(*snap));
 	snap->cmd = cmd;
-	snap->attr = attr;
+	snap->attr_original = attr;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -550,21 +574,21 @@ static void post_bpf(struct syscallrecord *rec)
 
 	/*
 	 * Defense in depth: if something corrupted the snapshot itself,
-	 * the inner attr pointer may no longer reference our heap
-	 * allocation.  attr is always allocated by sanitise (no opcode
+	 * the inner attr_original pointer may no longer reference our heap
+	 * allocation.  attr_original is always set by sanitise (no opcode
 	 * skips the zmalloc), so NULL here is itself corruption -- the
 	 * < 0x10000 band of looks_like_corrupted_ptr() catches it without
 	 * a separate NULL guard.
 	 */
-	if (looks_like_corrupted_ptr(rec, snap->attr)) {
-		outputerr("post_bpf: rejected suspicious snap attr=%p (post_state-scribbled?)\n",
-			  snap->attr);
+	if (looks_like_corrupted_ptr(rec, snap->attr_original)) {
+		outputerr("post_bpf: rejected suspicious snap attr_original=%p (post_state-scribbled?)\n",
+			  snap->attr_original);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
 
 	cmd = snap->cmd;
-	attr = snap->attr;
+	attr = snap->attr_original;
 
 	/*
 	 * Per-cmd STRONG-VAL on retval for the *_GET_NEXT_ID dispatch.
