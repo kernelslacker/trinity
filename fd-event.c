@@ -18,15 +18,14 @@
 #include "objects.h"
 #include "pids.h"
 #include "shm.h"
+#include "spsc-ring.h"
 #include "trinity.h"
 #include "utils.h"
 
 void fd_event_ring_init(struct fd_event_ring *ring)
 {
-	memset(ring, 0, sizeof(*ring));
-	__atomic_store_n(&ring->head, 0, __ATOMIC_RELAXED);
-	__atomic_store_n(&ring->tail, 0, __ATOMIC_RELAXED);
-	__atomic_store_n(&ring->overflow, 0, __ATOMIC_RELAXED);
+	memset(ring->events, 0, sizeof(ring->events));
+	spsc_ring_init(&ring->base);
 }
 
 /*
@@ -39,31 +38,21 @@ bool fd_event_enqueue(struct fd_event_ring *ring,
 		      enum objecttype objtype,
 		      unsigned int socktype, unsigned int protocol)
 {
-	uint32_t head, tail, next;
+	struct fd_event ev = {
+		.type = type,
+		.fd1 = fd1,
+		.fd2 = fd2,
+		.objtype = objtype,
+		.socktype = socktype,
+		.protocol = protocol,
+	};
 
-	head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
-	head &= (FD_EVENT_RING_SIZE - 1);
-	tail = __atomic_load_n(&ring->tail, __ATOMIC_ACQUIRE);
-	tail &= (FD_EVENT_RING_SIZE - 1);
-
-	next = (head + 1) & (FD_EVENT_RING_SIZE - 1);
-	if (next == tail) {
-		/* Ring full — drop the event.  Stale detection is backstop. */
-		__atomic_fetch_add(&ring->overflow, 1,
-					  __ATOMIC_RELAXED);
+	if (ring == NULL)
 		return false;
-	}
 
-	ring->events[head].type = type;
-	ring->events[head].fd1 = fd1;
-	ring->events[head].fd2 = fd2;
-	ring->events[head].objtype = objtype;
-	ring->events[head].socktype = socktype;
-	ring->events[head].protocol = protocol;
-
-	/* Ensure the event data is visible before advancing head. */
-	__atomic_store_n(&ring->head, next, __ATOMIC_RELEASE);
-	return true;
+	return spsc_ring_try_enqueue(&ring->base, ring->events,
+				     FD_EVENT_RING_SIZE, sizeof(ring->events[0]),
+				     &ev);
 }
 
 /*
@@ -92,92 +81,79 @@ static bool fd_event_payload_valid(const struct fd_event *ev)
 	}
 }
 
+static void apply_slot(const void *p, void *ctx __unused__)
+{
+	const struct fd_event *ev = p;
+	bool corrupt = false;
+
+	if (!fd_event_payload_valid(ev)) {
+		corrupt = true;
+	} else {
+		switch (ev->type) {
+		case FD_EVENT_CLOSE:
+			remove_object_by_fd(ev->fd1);
+			break;
+		case FD_EVENT_NEWSOCK: {
+			struct object *obj;
+
+			/* add_socket() owns the fd on failure: on
+			 * shared-heap exhaustion it close()s the fd
+			 * before returning NULL.  Capture the return
+			 * so we don't silently treat a failed
+			 * allocation as a successful publish.  Same
+			 * hazard as the open_socket() call site
+			 * fixed in commit 5373a93f1782. */
+			obj = add_socket(ev->fd1,
+					 (unsigned int)ev->fd2,
+					 ev->socktype, ev->protocol);
+			if (obj == NULL)
+				output(1, "fd_event: NEWSOCK add_socket() failed for fd %d (heap exhausted?)\n",
+				       ev->fd1);
+			break;
+		}
+		default:
+			/* Defense in depth: payload_valid() already
+			 * screened type, so reaching this arm means
+			 * the field flipped underneath us between
+			 * validate and dispatch. */
+			corrupt = true;
+			break;
+		}
+	}
+
+	if (corrupt) {
+		output(0, "fd_event: dropping corrupt event "
+			  "(type=%u objtype=%u fd1=%d fd2=%d sock=%u/%u)\n",
+		       (unsigned int)ev->type,
+		       (unsigned int)ev->objtype,
+		       ev->fd1, ev->fd2,
+		       ev->socktype, ev->protocol);
+		__atomic_add_fetch(&shm->stats.fd_event_payload_corrupt,
+				   1, __ATOMIC_RELAXED);
+	}
+}
+
 /*
  * Drain all pending events from one child's ring.
  * Single-consumer: only the parent writes tail.
  */
 unsigned int fd_event_drain(struct fd_event_ring *ring)
 {
-	uint32_t head, tail, overflow;
-	unsigned int processed = 0;
+	uint32_t overflow = 0;
+	uint32_t processed;
 
-	/* Check and reset overflow counter.  Common case is zero, so
-	 * peek with a relaxed load to avoid a locked RMW that would
-	 * dirty the cacheline shared with the producer.
-	 */
-	overflow = __atomic_load_n(&ring->overflow, __ATOMIC_RELAXED);
-	if (overflow != 0)
-		overflow = __atomic_exchange_n(&ring->overflow, 0,
-						    __ATOMIC_RELAXED);
+	if (ring == NULL)
+		return 0;
+
+	processed = spsc_ring_drain(&ring->base, ring->events,
+				    FD_EVENT_RING_SIZE, sizeof(ring->events[0]),
+				    apply_slot, NULL, &overflow);
 	if (overflow > 0) {
 		output(1, "fd_event: ring overflow, %u events dropped\n",
 		       overflow);
 		__atomic_add_fetch(&shm->stats.fd_events_dropped, overflow,
 				   __ATOMIC_RELAXED);
 	}
-
-	tail = __atomic_load_n(&ring->tail, __ATOMIC_RELAXED);
-	tail &= (FD_EVENT_RING_SIZE - 1);
-	/* Acquire pairs with child's release-store of head. */
-	head = __atomic_load_n(&ring->head, __ATOMIC_ACQUIRE);
-	head &= (FD_EVENT_RING_SIZE - 1);
-
-	while (tail != head) {
-		struct fd_event *ev = &ring->events[tail];
-		bool corrupt = false;
-
-		if (!fd_event_payload_valid(ev)) {
-			corrupt = true;
-		} else {
-			switch (ev->type) {
-			case FD_EVENT_CLOSE:
-				remove_object_by_fd(ev->fd1);
-				break;
-			case FD_EVENT_NEWSOCK: {
-				struct object *obj;
-
-				/* add_socket() owns the fd on failure: on
-				 * shared-heap exhaustion it close()s the fd
-				 * before returning NULL.  Capture the return
-				 * so we don't silently treat a failed
-				 * allocation as a successful publish.  Same
-				 * hazard as the open_socket() call site
-				 * fixed in commit 5373a93f1782. */
-				obj = add_socket(ev->fd1,
-						 (unsigned int)ev->fd2,
-						 ev->socktype, ev->protocol);
-				if (obj == NULL)
-					output(1, "fd_event: NEWSOCK add_socket() failed for fd %d (heap exhausted?)\n",
-					       ev->fd1);
-				break;
-			}
-			default:
-				/* Defense in depth: payload_valid() already
-				 * screened type, so reaching this arm means
-				 * the field flipped underneath us between
-				 * validate and dispatch. */
-				corrupt = true;
-				break;
-			}
-		}
-
-		if (corrupt) {
-			output(0, "fd_event: dropping corrupt event "
-				  "(type=%u objtype=%u fd1=%d fd2=%d sock=%u/%u)\n",
-			       (unsigned int)ev->type,
-			       (unsigned int)ev->objtype,
-			       ev->fd1, ev->fd2,
-			       ev->socktype, ev->protocol);
-			__atomic_add_fetch(&shm->stats.fd_event_payload_corrupt,
-					   1, __ATOMIC_RELAXED);
-		}
-
-		tail = (tail + 1) & (FD_EVENT_RING_SIZE - 1);
-		processed++;
-	}
-
-	/* Release-store so the child sees the updated tail. */
-	__atomic_store_n(&ring->tail, tail, __ATOMIC_RELEASE);
 	return processed;
 }
 

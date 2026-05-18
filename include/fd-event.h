@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include "object-types.h"
+#include "spsc-ring.h"
 
 /*
  * Lock-free single-producer single-consumer ring buffer for reporting
@@ -38,18 +39,7 @@ struct fd_event {
 };
 
 struct fd_event_ring {
-	/* Written by child (producer), read by parent (consumer). */
-	uint32_t head;
-
-	/* Overflow counter — bumped by child on ring-full drops. */
-	uint32_t overflow;
-
-	/* Padding to put producer and consumer fields on separate cache lines. */
-	char __pad[56];
-
-	/* Written by parent (consumer), read by child (producer). */
-	uint32_t tail;
-
+	struct spsc_ring base;
 	struct fd_event events[FD_EVENT_RING_SIZE];
 };
 
