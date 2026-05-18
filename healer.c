@@ -2403,40 +2403,69 @@ unsigned int healer_pair_dynamic_hits(unsigned int pred, unsigned int succ)
 #define HEALER_STRATEGY_SCAN_CAP \
 	((unsigned long)MAX_NR_SYSCALL * (unsigned long)MAX_NR_SYSCALL)
 
-bool healer_strategy_ready(void)
+bool healer_strategy_ready_explicit(enum healer_readiness *out)
 {
 	unsigned long scanned = 0;
 	unsigned long dyn_cells = 0;
+	bool any_seed = false;
 	unsigned int pred, succ;
-
-	/* Plateau bypass: kcov reports the fleet is stalled, so any
-	 * signal that nudges the bandit off its current local minimum
-	 * is worth scheduling -- even one whose evidence base is thin.
-	 * The picker itself still falls back to uniform random when the
-	 * predecessor row is empty, so a bypass on a wholly-empty table
-	 * is self-correcting. */
-	if (kcov_shm != NULL && kcov_shm->plateau_active)
-		return true;
 
 	for (pred = 0; pred < MAX_NR_SYSCALL; pred++) {
 		for (succ = 0; succ < MAX_NR_SYSCALL; succ++) {
-			/* Mirror read via healer_pair_dynamic_hits(); the
-			 * scan sees the same published view the picker
-			 * itself reads, and bounded staleness (~ms per
-			 * drain) is acceptable for a coarse gate. */
+			/* Mirror reads through the same view the picker
+			 * sees.  Bounded staleness (~ms per drain) is
+			 * acceptable for a coarse gate.  Compute both halves
+			 * of the cell up front so the seed-only check can
+			 * test the static-prior side directly without a
+			 * second mirror lookup. */
 			unsigned int dyn = healer_pair_dynamic_hits(pred, succ);
+			unsigned int total = healer_pair_get(pred, succ);
 
 			scanned++;
 			if (dyn >= HEALER_STRATEGY_PAIR_CELL_MIN_HITS) {
 				dyn_cells++;
-				if (dyn_cells >= HEALER_STRATEGY_PAIR_CELL_THRESHOLD)
+				if (dyn_cells >= HEALER_STRATEGY_PAIR_CELL_THRESHOLD) {
+					if (out != NULL)
+						*out = HEALER_READY_DYNAMIC;
 					return true;
+				}
+			} else if (total > 0) {
+				/* Cell carries a static prior (and/or sub-floor
+				 * dynamic hits) but does not contribute to the
+				 * strict threshold.  Latching `any_seed` lets us
+				 * return seed-only readiness even if the strict
+				 * threshold is never reached. */
+				any_seed = true;
 			}
 			if (scanned >= HEALER_STRATEGY_SCAN_CAP)
-				return false;
+				goto done;
 		}
 	}
+done:
+	if (any_seed) {
+		if (out != NULL)
+			*out = HEALER_READY_SEED_ONLY;
+		return true;
+	}
+	if (out != NULL)
+		*out = HEALER_NOT_READY;
 	return false;
+}
+
+bool healer_strategy_ready(void)
+{
+	enum healer_readiness r;
+
+	(void)healer_strategy_ready_explicit(&r);
+	return r == HEALER_READY_DYNAMIC;
+}
+
+bool healer_strategy_ready_plateau_bypass(void)
+{
+	enum healer_readiness r;
+
+	(void)healer_strategy_ready_explicit(&r);
+	return r != HEALER_NOT_READY;
 }
 
 /*

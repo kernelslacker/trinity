@@ -283,16 +283,38 @@ unsigned int healer_count_pc_pairs(void);
 unsigned int healer_load_static_seed(void);
 
 /*
- * STRATEGY_HEALER readiness gate.  Returns true when the picker has
- * enough accumulated signal to be worth scheduling: a fixed minimum
- * number of pair cells whose dynamic_hits crosses the per-cell evidence
- * floor (i.e. cells the runtime observer has confirmed at least that
- * many times).  Bare static seeds do NOT satisfy the gate -- a freshly
- * seeded pair carries no runtime evidence and the previous combined-
- * weight gate let those seeds trip a cold table.  When the kcov plateau
- * detector reports the fleet is stalled, the gate is bypassed (see the
- * sibling helper below): a stalled bandit benefits from any signal that
- * nudges it off the current local minimum, even one whose data is thin.
+ * Three-way classification of HEALER readiness.
+ *
+ *   HEALER_NOT_READY        -- pair table carries neither enough dynamic
+ *                              evidence nor any static seeds, so the
+ *                              picker has nothing useful to bias from.
+ *   HEALER_READY_SEED_ONLY  -- static seeds are present (i.e. the static
+ *                              prior loader has run) but the runtime
+ *                              observer has not yet confirmed enough
+ *                              cells to clear the dynamic threshold.
+ *                              Not eligible under the strict gate, but
+ *                              eligible under a plateau bypass and
+ *                              useful to surface in the operator dump.
+ *   HEALER_READY_DYNAMIC    -- enough cells have crossed the per-cell
+ *                              dynamic-hits floor to score the arm
+ *                              against uniform random honestly.  This
+ *                              is the only state that satisfies the
+ *                              non-bypassed gate.
+ */
+enum healer_readiness {
+	HEALER_NOT_READY,
+	HEALER_READY_SEED_ONLY,
+	HEALER_READY_DYNAMIC,
+};
+
+/*
+ * STRATEGY_HEALER readiness gate (strict).  Returns true only when the
+ * pair table has accumulated enough RUNTIME evidence to be worth
+ * scheduling the arm: a fixed minimum number of cells whose
+ * dynamic_hits crosses the per-cell evidence floor.  Bare static seeds
+ * do NOT satisfy this gate -- a freshly seeded pair carries no runtime
+ * evidence, and the previous combined-weight gate let those seeds trip
+ * a cold table.
  *
  * Owned by the healer module so the readiness decision sits next to
  * the encoding it reads (struct healer_pair_cell's static_prior /
@@ -300,9 +322,38 @@ unsigned int healer_load_static_seed(void);
  * verdict; the threshold itself is an internal tuning knob.
  *
  * Cheap to call: bounded scan of the pair table with early-out once
- * the threshold is hit or the scan cap is reached.
+ * the threshold is hit or the scan cap is reached.  See
+ * healer_strategy_ready_explicit() for the seed-only vs dynamic
+ * distinction the operator dump surfaces, and
+ * healer_strategy_ready_plateau_bypass() for the looser variant the
+ * plateau-intervention path uses.
  */
 bool healer_strategy_ready(void);
+
+/*
+ * Diagnostic variant of the readiness gate.  Returns true if the table
+ * has any usable signal at all (HEALER_READY_SEED_ONLY or
+ * HEALER_READY_DYNAMIC) and stamps *out with which.  Used by the dump
+ * path to print 'HEALER eligible (seed only)' vs 'HEALER eligible
+ * (dynamic)' so the operator can tell whether the strict gate has
+ * fired or only the static prior is carrying the signal.  *out is
+ * always stamped (HEALER_NOT_READY when the return is false), so
+ * callers can read it unconditionally.
+ */
+bool healer_strategy_ready_explicit(enum healer_readiness *out);
+
+/*
+ * Plateau-bypass variant.  Returns true if the pair table carries ANY
+ * content -- a static seed or a runtime hit -- without insisting on
+ * the strict dynamic-evidence threshold.  Used by the plateau
+ * intervention path: when kcov reports the fleet is stalled, any
+ * signal that nudges the bandit off the current local minimum is
+ * worth scheduling, even one whose evidence base is thin.  An
+ * entirely-empty table still returns false: the picker would only
+ * fall back to uniform random in that case, which the intervention
+ * path can pick directly without going through HEALER.
+ */
+bool healer_strategy_ready_plateau_bypass(void);
 
 struct syscallrecord;
 
