@@ -358,6 +358,64 @@ struct shm_s {
 	unsigned long bandit_reward_pc_edge_count[NR_STRATEGIES];
 
 	/*
+	 * Discounted "recent" counters that the UCB1 picker scores against
+	 * instead of the lifetime bandit_pulls[]/bandit_reward_calls[]
+	 * series above.  Kernel coverage discovery is strongly
+	 * non-stationary: easy edges are mined out in the first windows of
+	 * a run, the surface degrades over time, and any picker that
+	 * averages reward over the lifetime of the run lets early-window
+	 * wins dominate late-window arm selection forever.  Discounting the
+	 * counters with a rolling exponential weight keeps the picker
+	 * responsive to recent yield.
+	 *
+	 * Both arrays are fixed-point parts-per-thousand (suffix _x1000) so
+	 * the EMA arithmetic stays in unsigned-long integer math without
+	 * dragging a double into shm.  The exact alpha and the EMA update
+	 * site live in strategy.c (BANDIT_EMA_ALPHA_X1000); a half-life of
+	 * ~10-30 windows is the design target so an arm whose yield
+	 * collapses after a configuration change (e.g. cgroup mount,
+	 * netns unshare) loses its grip on the picker within minutes
+	 * rather than hours.
+	 *
+	 * recent_pulls_x1000[]: discounted effective sample count.  Each
+	 *   non-intervention window decays every arm by (1 - alpha) and
+	 *   adds 1.0 (== BANDIT_EMA_SCALE) to the active arm, so the
+	 *   asymptote for an always-picked arm is SCALE/alpha (20000 at
+	 *   alpha=0.05) and arms that stop being picked decay back toward
+	 *   zero over the half-life.
+	 * recent_reward_x1000[]: discounted total reward in the same
+	 *   fixed-point.  Mean per-window reward is
+	 *   recent_reward_x1000[i] / recent_pulls_x1000[i] (the x1000
+	 *   cancels) so the UCB1 exploit term works without an explicit
+	 *   rescale step.
+	 * last_selected_window[]: bandit_window_count snapshot at the last
+	 *   pull of each arm.  Diagnostic only — surfaced in
+	 *   dump_strategy_stats() so the operator can see how stale each
+	 *   arm's recent estimate is.
+	 *
+	 * Decaying EVERY arm each window (not just the pulled one) is what
+	 * keeps the UCB1 exploration term n_i denominator meaningful under
+	 * discounting: an arm that stops being picked must see its
+	 * effective sample count shrink so the explore bonus grows and the
+	 * picker eventually re-tries it.  EMA-on-pull-only (decay only the
+	 * pulled arm) would leave un-pulled arms' counts frozen forever,
+	 * which breaks the formula.
+	 *
+	 * SR_PLATEAU_FORCE windows skip both the decay and the increment,
+	 * mirroring the lifetime bandit_pulls[] path: an intervention
+	 * window is not a learner observation, and bleeding intervention
+	 * noise into the discount cadence would shift every arm toward
+	 * the post-plateau distribution every time the orchestrator fires.
+	 *
+	 * Same CAS-serialised single-writer protocol as bandit_pulls[];
+	 * dump_strategy_stats() uses RELAXED loads to tolerate the writer
+	 * race the same way it does for the lifetime fields.
+	 */
+	unsigned long recent_pulls_x1000[NR_STRATEGIES];
+	unsigned long recent_reward_x1000[NR_STRATEGIES];
+	unsigned long last_selected_window[NR_STRATEGIES];
+
+	/*
 	 * Monotonic rotation counter, bumped by the CAS-winning child in
 	 * maybe_rotate_strategy() once per completed window.  Used as the
 	 * generation tag for the cmp_novelty[] bloom decay below: a bloom

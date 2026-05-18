@@ -88,6 +88,37 @@ enum picker_mode_t picker_mode_arg = PICKER_ROUND_ROBIN;
 #define UCB1_EXPLORATION_C 1.41421356  /* sqrt(2) */
 
 /*
+ * EMA discount for the recent_pulls_x1000[]/recent_reward_x1000[]
+ * counters defined in shm.h.  Each non-intervention window multiplies
+ * every arm's counter by gamma = 1 - alpha, then increments the
+ * active arm by 1.0 / window_reward.  Alpha = 0.05 gives a half-life
+ * of log(0.5)/log(0.95) ≈ 13.5 windows -- around 22 minutes of fleet
+ * wall time at the ~100 sec/window cadence, comfortably inside the
+ * 10-30 window design target and short enough that the picker
+ * recovers within a few rotations when an arm's yield collapses.
+ *
+ * BANDIT_EMA_SCALE is the fixed-point divisor: counters are stored
+ * as their real value times 1000 so the integer math stays exact for
+ * the alpha=0.05 step.
+ */
+#define BANDIT_EMA_ALPHA_X1000  50UL
+#define BANDIT_EMA_SCALE        1000UL
+
+/*
+ * Decay one fixed-point counter by gamma = 1 - alpha.  Operates on
+ * the parts-per-thousand value: 950/1000 stays integer and the
+ * multiplication can't overflow because the inputs cap at
+ * ~SCALE/alpha * (typical per-window reward) = a few million for
+ * recent_pulls_x1000 (≤ 20000) and on the order of 1e9 for
+ * recent_reward_x1000 (bounded by the headroom of unsigned long).
+ */
+static inline unsigned long bandit_ema_decay(unsigned long x_x1000)
+{
+	return (x_x1000 * (BANDIT_EMA_SCALE - BANDIT_EMA_ALPHA_X1000)) /
+	       BANDIT_EMA_SCALE;
+}
+
+/*
  * Translate the --strategy=NAME argument into a picker_mode_t.
  * Recognises the human-friendly aliases ("round-robin", "rr",
  * "bandit", "ucb1", "bandit-ucb1").  Returns false on unknown
@@ -226,6 +257,8 @@ void bandit_record_pull(int arm,
 {
 	unsigned long cmp_term;
 	unsigned long total;
+	unsigned long now_window;
+	int i;
 
 	if (arm < 0 || arm >= NR_STRATEGIES)
 		return;
@@ -238,6 +271,37 @@ void bandit_record_pull(int arm,
 			   __ATOMIC_RELAXED);
 	__atomic_fetch_add(&shm->bandit_reward_pc_edge_count[arm],
 			   pc_edge_count, __ATOMIC_RELAXED);
+
+	/* Discounted "recent" series update.  Decay every arm's counters
+	 * by gamma = 1 - alpha first, THEN credit the active arm with one
+	 * effective pull and the window's reward.  Decaying all arms (not
+	 * just the pulled one) is what keeps the UCB1 explore-term
+	 * denominator meaningful under discounting -- an arm that stops
+	 * being picked must see its effective sample count shrink so the
+	 * picker eventually re-tries it.  Single writer (CAS-serialised
+	 * rotation path) so plain reads of the old values are safe;
+	 * RELEASE stores back so the parent-side dump's RELAXED loads see
+	 * complete values rather than torn intermediates.  This update
+	 * runs alongside the lifetime fields above; the picker still reads
+	 * the lifetime fields today and will be flipped to the recent
+	 * series in a follow-up commit. */
+	now_window = __atomic_load_n(&shm->bandit_window_count,
+				     __ATOMIC_RELAXED);
+	for (i = 0; i < NR_STRATEGIES; i++) {
+		unsigned long p = shm->recent_pulls_x1000[i];
+		unsigned long r = shm->recent_reward_x1000[i];
+
+		__atomic_store_n(&shm->recent_pulls_x1000[i],
+				 bandit_ema_decay(p), __ATOMIC_RELAXED);
+		__atomic_store_n(&shm->recent_reward_x1000[i],
+				 bandit_ema_decay(r), __ATOMIC_RELAXED);
+	}
+	__atomic_fetch_add(&shm->recent_pulls_x1000[arm], BANDIT_EMA_SCALE,
+			   __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->recent_reward_x1000[arm],
+			   total * BANDIT_EMA_SCALE, __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->last_selected_window[arm], now_window,
+			 __ATOMIC_RELAXED);
 
 	if (cmp_term == 0)
 		return;
