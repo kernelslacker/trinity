@@ -211,6 +211,18 @@ void healer_ring_drain_all(void);
 void healer_published_init(void);
 
 /*
+ * Mprotect the two mirror pages PROT_READ in the calling process.
+ * Called from the per-child post-fork init hook so children see the
+ * mirrors read-only -- a wild kernel store through a fuzzed syscall
+ * arg pointer that lands in the mirror page now SIGSEGVs in the
+ * offending child instead of silently corrupting the picker's view.
+ * The parent's mapping stays RW (mprotect is per-process) so the
+ * drain-side publish keeps working unchanged.  Best-effort: logs and
+ * continues on failure rather than crashing the child.
+ */
+void healer_published_freeze(void);
+
+/*
  * Mark a pair row dirty on the apply path that runs from the parent's
  * own pre-fork seed installer.  The seed installer writes parent_healer
  * directly (no ring) and needs the dirty bits set so the first publish

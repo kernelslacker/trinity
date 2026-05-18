@@ -631,6 +631,15 @@ static void init_child(struct childdata *child, int childno)
 				   __ATOMIC_RELAXED);
 	}
 
+	/* Freeze the HEALER published mirror pages PROT_READ in this child.
+	 * The mirrors are parent-write / child-read (the picker reads
+	 * relation + pair weights through them; the parent's drain is the
+	 * sole writer), but the mprotect call enforcing that contract was
+	 * missing -- only the comment-side claim existed.  Per-process
+	 * mprotect leaves the parent's mapping RW so the publish keeps
+	 * working; only children get the read-only view. */
+	healer_published_freeze();
+
 	/* Wait for parent to set our childno */
 	while (__atomic_load_n(&pids[childno], __ATOMIC_ACQUIRE) != pid) {
 		sched_yield();

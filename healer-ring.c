@@ -24,6 +24,7 @@
  * becomes a straight walk on its trigger; no CAS election.
  */
 
+#include <errno.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -31,6 +32,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "arch.h"		/* page_size */
 #include "child.h"
 #include "edgepair.h"		/* EDGEPAIR_NO_PREV */
 #include "healer.h"
@@ -634,6 +636,52 @@ void healer_published_init(void)
 		sizeof(unsigned int) * MAX_NR_SYSCALL * MAX_NR_SYSCALL);
 	memset(healer_pair_published, 0,
 	       sizeof(unsigned int) * MAX_NR_SYSCALL * MAX_NR_SYSCALL);
+}
+
+/*
+ * Per-child mprotect freeze of the HEALER mirror pages.  The two
+ * published mirrors are intended parent-write / child-read (the picker
+ * in child context reads relations + pair weights through these pages;
+ * the parent's drain is the sole writer).  The mirror-integrity sample
+ * at the bottom of healer_publish_locked() documents the PROT_READ
+ * contract -- "the only thing that could write to the mirror between
+ * publishes is a wild kernel store, and the PROT_READ mprotect should
+ * SEGV that in the offending child instead" -- but the matching
+ * mprotect() call was missing, leaving the contract as comment only.
+ *
+ * Called from the per-child post-fork init hook so the freeze applies
+ * in child address space.  mprotect is per-process, so the parent's
+ * mapping stays PROT_READ|PROT_WRITE and the drain's publish keeps
+ * writing through; only children see the read-only view.
+ *
+ * Best-effort on failure: log via the canonical helper and continue.
+ * mprotect can ENOMEM if the kernel runs out of VMA slots splitting
+ * the mapping that backs the mirror (same failure mode as the
+ * freeze_sibling_childdata sweep) and turning a transient kernel limit
+ * into a fleet-wide crash would be worse than leaving the mirror RW
+ * for the lifetime of the affected child.
+ */
+void healer_published_freeze(void)
+{
+	size_t bytes;
+
+	if (healer_relations_published != NULL) {
+		bytes = sizeof(struct healer_relation) * HEALER_RELATION_SLOTS;
+		bytes = (bytes + page_size - 1) & PAGE_MASK;
+		if (mprotect(healer_relations_published, bytes, PROT_READ) != 0)
+			log_mprotect_failure(healer_relations_published, bytes,
+					     PROT_READ,
+					     __builtin_return_address(0), errno);
+	}
+
+	if (healer_pair_published != NULL) {
+		bytes = sizeof(unsigned int) * MAX_NR_SYSCALL * MAX_NR_SYSCALL;
+		bytes = (bytes + page_size - 1) & PAGE_MASK;
+		if (mprotect(healer_pair_published, bytes, PROT_READ) != 0)
+			log_mprotect_failure(healer_pair_published, bytes,
+					     PROT_READ,
+					     __builtin_return_address(0), errno);
+	}
 }
 
 void healer_aggregate_pair_set(unsigned int pred, unsigned int succ,
