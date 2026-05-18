@@ -2,6 +2,8 @@
 
 #include <stdbool.h>
 
+#include "compiler.h"
+
 /*
  * Deferred-free queue for syscall argument allocations.
  *
@@ -39,7 +41,7 @@ void deferred_alloc_track(void *ptr);
  * relies on.  Returns false if the pointer was never tracked, was
  * already consumed, or was evicted by ring rollover.
  */
-bool alloc_track_lookup(void *ptr);
+bool alloc_track_lookup(void *ptr) __must_check;
 
 /*
  * Enqueue a pointer for deferred freeing.  free_func is called when
