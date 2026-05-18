@@ -22,6 +22,7 @@
 #include "child.h"
 #include "pids.h"
 #include "shm.h"
+#include "spsc-ring.h"
 #include "stats_ring.h"
 #include "trinity.h"
 #include "utils.h"
@@ -31,39 +32,25 @@ struct stats_published *shm_published;
 
 void stats_ring_init(struct stats_ring *ring)
 {
-	memset(ring, 0, sizeof(*ring));
-	__atomic_store_n(&ring->head, 0, __ATOMIC_RELAXED);
-	__atomic_store_n(&ring->tail, 0, __ATOMIC_RELAXED);
-	__atomic_store_n(&ring->overflow, 0, __ATOMIC_RELAXED);
+	memset(ring->slots, 0, sizeof(ring->slots));
+	spsc_ring_init(&ring->base);
 }
 
 bool stats_ring_enqueue(struct stats_ring *ring, enum stats_field field,
 			uint16_t aux, uint32_t delta)
 {
-	uint32_t head, tail, next;
+	struct stats_ring_slot slot = {
+		.field_id = (uint16_t)field,
+		.aux = aux,
+		.delta = delta,
+		._reserved = 0,
+	};
 
 	if (ring == NULL)
 		return false;
 
-	head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
-	head &= (STATS_RING_SIZE - 1);
-	tail = __atomic_load_n(&ring->tail, __ATOMIC_ACQUIRE);
-	tail &= (STATS_RING_SIZE - 1);
-
-	next = (head + 1) & (STATS_RING_SIZE - 1);
-	if (next == tail) {
-		__atomic_fetch_add(&ring->overflow, 1,
-					  __ATOMIC_RELAXED);
-		return false;
-	}
-
-	ring->slots[head].field_id = (uint16_t)field;
-	ring->slots[head].aux = aux;
-	ring->slots[head].delta = delta;
-	ring->slots[head]._reserved = 0;
-
-	__atomic_store_n(&ring->head, next, __ATOMIC_RELEASE);
-	return true;
+	return spsc_ring_try_enqueue(&ring->base, ring->slots, STATS_RING_SIZE,
+				     sizeof(ring->slots[0]), &slot);
 }
 
 /*
@@ -72,8 +59,9 @@ bool stats_ring_enqueue(struct stats_ring *ring, enum stats_field field,
  * hostile fuzzed workload and a wild value-result syscall buffer that
  * scribbled a slot can leave any field at any value.
  */
-static void apply_slot(const struct stats_ring_slot *s)
+static void apply_slot(const void *p, void *ctx __unused__)
 {
+	const struct stats_ring_slot *s = p;
 	enum stats_field field = (enum stats_field)s->field_id;
 	uint16_t aux = s->aux;
 	unsigned long delta = s->delta;
@@ -153,31 +141,16 @@ static void apply_slot(const struct stats_ring_slot *s)
 
 unsigned int stats_ring_drain(struct stats_ring *ring)
 {
-	uint32_t head, tail, overflow;
-	unsigned int processed = 0;
+	uint32_t overflow = 0;
+	uint32_t processed;
 
 	if (ring == NULL)
 		return 0;
 
-	overflow = __atomic_load_n(&ring->overflow, __ATOMIC_RELAXED);
-	if (overflow != 0)
-		overflow = __atomic_exchange_n(&ring->overflow, 0,
-						    __ATOMIC_RELAXED);
-	if (overflow > 0)
-		parent_stats.ring_overflow_total += overflow;
-
-	tail = __atomic_load_n(&ring->tail, __ATOMIC_RELAXED);
-	tail &= (STATS_RING_SIZE - 1);
-	head = __atomic_load_n(&ring->head, __ATOMIC_ACQUIRE);
-	head &= (STATS_RING_SIZE - 1);
-
-	while (tail != head) {
-		apply_slot(&ring->slots[tail]);
-		tail = (tail + 1) & (STATS_RING_SIZE - 1);
-		processed++;
-	}
-
-	__atomic_store_n(&ring->tail, tail, __ATOMIC_RELEASE);
+	processed = spsc_ring_drain(&ring->base, ring->slots, STATS_RING_SIZE,
+				    sizeof(ring->slots[0]),
+				    apply_slot, NULL, &overflow);
+	parent_stats.ring_overflow_total += overflow;
 	return processed;
 }
 

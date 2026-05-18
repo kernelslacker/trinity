@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "spsc-ring.h"
 #include "stats.h"	/* NR_SYSCAT */
 #include "syscall.h"	/* MAX_NR_SYSCALL */
 
@@ -65,16 +66,7 @@ struct stats_ring_slot {
 };
 
 struct stats_ring {
-	/* Producer (child) writes head and overflow. */
-	uint32_t head;
-	uint32_t overflow;
-
-	/* Padding to put producer and consumer fields on separate cache lines. */
-	char __pad[56];
-
-	/* Consumer (parent) writes tail. */
-	uint32_t tail;
-
+	struct spsc_ring base;
 	struct stats_ring_slot slots[STATS_RING_SIZE];
 };
 
