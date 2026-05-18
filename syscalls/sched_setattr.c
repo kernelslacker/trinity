@@ -55,7 +55,7 @@ struct syscallentry syscall_sched_setattr = {
 	.name = "sched_setattr",
 	.group = GROUP_SCHED,
 	.num_args = 3,
-	.argtype = { [0] = ARG_PID },
+	.argtype = { [0] = ARG_PID, [1] = ARG_STRUCT_PTR_IN },
 	.argname = { [0] = "pid", [1] = "uattr", [2] = "flags" },
 	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_sched_setattr,

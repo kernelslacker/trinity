@@ -130,7 +130,7 @@ struct syscallentry syscall_io_uring_setup = {
 	.name = "io_uring_setup",
 	.group = GROUP_IO_URING,
 	.num_args = 2,
-	.argtype = { [1] = ARG_ADDRESS },
+	.argtype = { [1] = ARG_STRUCT_PTR_IN },
 	.argname = { [0] = "entries", [1] = "params" },
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_IO_URING,

@@ -103,7 +103,7 @@ static unsigned long epoll_ctl_ops[] = {
 struct syscallentry syscall_epoll_ctl = {
 	.name = "epoll_ctl",
 	.num_args = 4,
-	.argtype = { [0] = ARG_FD_EPOLL, [1] = ARG_OP, [2] = ARG_FD },
+	.argtype = { [0] = ARG_FD_EPOLL, [1] = ARG_OP, [2] = ARG_FD, [3] = ARG_STRUCT_PTR_IN },
 	.argname = { [0] = "epfd", [1] = "op", [2] = "fd", [3] = "event" },
 	.arg_params[1].list = ARGLIST(epoll_ctl_ops),
 	.rettype = RET_ZERO_SUCCESS,

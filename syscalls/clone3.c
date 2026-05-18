@@ -257,7 +257,7 @@ struct syscallentry syscall_clone3 = {
 	.group = GROUP_PROCESS,
 	.num_args = 2,
 	.flags = AVOID_SYSCALL,
-	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LEN },
+	.argtype = { [0] = ARG_STRUCT_PTR_IN, [1] = ARG_LEN },
 	.argname = { [0] = "uargs", [1] = "size" },
 	.sanitise = sanitise_clone3,
 	.post = post_clone3,
