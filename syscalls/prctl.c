@@ -118,7 +118,9 @@ static unsigned long cap_values[] = {
  * filter; a flip to PR_SET_NO_NEW_PRIVS would fire the cred oracle on
  * an unrelated retval and report bogus divergences.
  */
+#define PRCTL_POST_STATE_MAGIC	0x50524354UL	/* "PRCT" */
 struct prctl_post_state {
+	unsigned long magic;
 	int option;
 	struct sock_fprog *bpf;
 };
@@ -239,6 +241,7 @@ static void sanitise_prctl(struct syscallrecord *rec)
 	case PR_GET_SECCOMP: {
 		struct prctl_post_state *snap = zmalloc(sizeof(*snap));
 
+		snap->magic = PRCTL_POST_STATE_MAGIC;
 		snap->option = option;
 		snap->bpf = bpf;
 		rec->post_state = (unsigned long) snap;
@@ -268,6 +271,25 @@ static void post_prctl(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_prctl: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * prctl_post_state.  A cookie mismatch means snap does not point
+	 * at our struct -- abandon rather than dispatch off snap->option
+	 * (which steers into the PR_SET_SECCOMP bpf->filter free path and
+	 * the per-PR_GET_* strong-val retval bound checks) or free()
+	 * snap->bpf as a sock_fprog.
+	 */
+	if (snap->magic != PRCTL_POST_STATE_MAGIC) {
+		outputerr("post_prctl: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}

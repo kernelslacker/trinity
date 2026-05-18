@@ -43,7 +43,6 @@ syscalls/mq_open.c:mq_open
 syscalls/mremap.c:mremap
 syscalls/munmap.c:munmap
 syscalls/poll.c:ppoll
-syscalls/prctl.c:prctl
 syscalls/ptrace.c:ptrace
 syscalls/sched_getaffinity.c:sched_getaffinity
 syscalls/sched_getattr.c:sched_getattr
