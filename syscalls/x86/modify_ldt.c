@@ -27,7 +27,9 @@
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot smear the size bound used to validate the retval.
  */
+#define MODIFY_LDT_POST_STATE_MAGIC	0x4D4C4454UL	/* "MLDT" */
 struct modify_ldt_post_state {
+	unsigned long magic;
 	unsigned long func;
 	unsigned long ldt;
 	unsigned long bytecount;
@@ -54,6 +56,7 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 		/* Snapshot for the post handler -- a1 / a2 / a3 may be
 		 * scribbled by a sibling syscall before post_modify_ldt() runs. */
 		snap = zmalloc(sizeof(*snap));
+		snap->magic = MODIFY_LDT_POST_STATE_MAGIC;
 		snap->func = rec->a1;
 		snap->ldt = (unsigned long) ldt;
 		snap->bytecount = rec->a3;
@@ -94,6 +97,25 @@ static void post_modify_ldt(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_modify_ldt: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->a2 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * modify_ldt_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon rather than feed wild bytes into
+	 * the func / bytecount retval bound check and the inner ldt
+	 * deferred-free.
+	 */
+	if (snap->magic != MODIFY_LDT_POST_STATE_MAGIC) {
+		outputerr("post_modify_ldt: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;

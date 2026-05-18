@@ -44,4 +44,3 @@ syscalls/sched_getattr.c:sched_getattr
 syscalls/seccomp.c:seccomp
 syscalls/statmount.c:statmount
 syscalls/sysfs.c:sysfs
-syscalls/x86/modify_ldt.c:modify_ldt
