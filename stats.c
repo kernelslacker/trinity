@@ -781,7 +781,8 @@ static void dump_stats_json(void)
 			"\"destroy_object_idx\":%lu,"
 			"\"global_obj_uaf_caught\":%lu,"
 			"\"maps_uaf_caught\":%lu,"
-			"\"pagecache_canary_corrupt_caught\":%lu},"
+			"\"pagecache_canary_corrupt_caught\":%lu,"
+			"\"lock_word_scribbled\":%lu},"
 		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu,"
 			"\"libc_heap_redirected\":%lu,\"libc_heap_embedded_redirected\":%lu,"
 			"\"get_writable_address_scribbled_slots_caught\":%lu},"
@@ -989,6 +990,7 @@ static void dump_stats_json(void)
 		shm->stats.global_obj_uaf_caught,
 		shm->stats.maps_uaf_caught,
 		shm->stats.pagecache_canary_corrupt_caught,
+		parent_stats.lock_word_scribbled,
 		parent_stats.shared_buffer_redirected, parent_stats.range_overlaps_shared_rejects,
 		parent_stats.libc_heap_redirected, parent_stats.libc_heap_embedded_redirected,
 		parent_stats.get_writable_address_scribbled_slots_caught,
@@ -1792,6 +1794,8 @@ static const struct {
 	  offsetof(struct stats_aggregate, snapshot_non_heap_reject), true },
 	{ "deferred_free_corrupt_ptr",
 	  offsetof(struct stats_aggregate, deferred_free_corrupt_ptr), true },
+	{ "lock_word_scribbled",
+	  offsetof(struct stats_aggregate, lock_word_scribbled), true },
 	{ "rec_canary_stomped",
 	  offsetof(struct stats_s, rec_canary_stomped) },
 	{ "rzs_blanket_reject",
@@ -3167,6 +3171,8 @@ void dump_stats(void)
 		stat_row("corruption", "deferred_free_reject",   parent_stats.deferred_free_reject);
 	if (parent_stats.snapshot_non_heap_reject)
 		stat_row("corruption", "snapshot_non_heap_reject", parent_stats.snapshot_non_heap_reject);
+	if (parent_stats.lock_word_scribbled)
+		stat_row("corruption", "lock_word_scribbled",   parent_stats.lock_word_scribbled);
 	if (shm->stats.rec_canary_stomped)
 		stat_row("corruption", "rec_canary_stomped",     shm->stats.rec_canary_stomped);
 	if (shm->stats.rzs_blanket_reject)

@@ -9,11 +9,15 @@
 #include "locks.h"
 #include "pids.h"
 #include "shm.h"
+#include "stats_ring.h"
 #include "trinity.h"
 #include "utils.h"
 
 /*
- * Check that the processes holding locks are still alive.
+ * Periodic sanity walker.  Recovers the lock word in two failure
+ * modes: a scribbled word whose reserved bits got smeared by a
+ * stray fuzz write (force_bust_lock + bump shm-wide counter), and a
+ * cleanly-encoded lock held by a dead pid (released via unlock()).
  */
 static bool check_lock(lock_t *lk)
 {
@@ -24,6 +28,20 @@ static bool check_lock(lock_t *lk)
 		return false;
 
 	s = __atomic_load_n(&lk->state, __ATOMIC_ACQUIRE);
+
+	/* Reserved bits dirty -- the lock word has been scribbled by a
+	 * fuzzed syscall.  State and owner are both untrustworthy now;
+	 * recover by clearing the whole word and surface the event on a
+	 * dedicated counter so an operator can tell scribble activity
+	 * apart from the regular dead-pid reaper signal.  Reset the
+	 * load-path dirty_logged latch so a fresh scribble after this
+	 * recovery can log again. */
+	if (LOCK_RESERVED_DIRTY(s)) {
+		force_bust_lock(lk);
+		parent_stats.lock_word_scribbled++;
+		__atomic_store_n(&lk->dirty_logged, false, __ATOMIC_RELAXED);
+		return true;
+	}
 
 	/* We don't care about unlocked locks */
 	if (LOCK_STATE(s) != LOCKED)
@@ -74,6 +92,19 @@ bool trylock(lock_t *lk)
 {
 	unsigned long current = __atomic_load_n(&lk->state, __ATOMIC_RELAXED);
 	unsigned long desired = MAKE_LOCK(cached_pid, LOCKED);
+
+	/* Scribbled reserved bits on the live word.  One-shot diagnostic
+	 * per lock instance: the exchange returns the previous value of
+	 * the latch, so only the first caller to see dirty bits logs --
+	 * subsequent acquires on the same persistently-corrupted word stay
+	 * quiet until check_lock() recovers and clears the latch.
+	 * Acquire still proceeds on the sampled word below; the diagnostic
+	 * here is for visibility, not correctness. */
+	if (LOCK_RESERVED_DIRTY(current)) {
+		if (!__atomic_exchange_n(&lk->dirty_logged, true, __ATOMIC_RELAXED))
+			outputerr("trylock: lock word scribbled (state=0x%lx) -- reserved bits 0x%lx\n",
+				  current, LOCK_RESERVED_DIRTY(current));
+	}
 
 	/* Acquire on any word with the state bit clear, even if the
 	 * reserved or owner bits are dirty.  A corrupted-but-unlocked
@@ -218,6 +249,17 @@ void force_bust_lock(lock_t *lk)
 {
 	unsigned long s = __atomic_load_n(&lk->state, __ATOMIC_ACQUIRE);
 	pid_t owner;
+
+	/* Scribbled reserved bits: the encoded state and owner are both
+	 * untrustworthy, so the pid_alive gate below cannot help.  Clear
+	 * the whole word back to a known-good zero unconditionally; ABA
+	 * via a fresh acquirer racing us just gets clobbered (acceptable
+	 * -- the alternative is leaving the scribble in place for the
+	 * next acquirer to inherit). */
+	if (LOCK_RESERVED_DIRTY(s)) {
+		__atomic_store_n(&lk->state, 0, __ATOMIC_RELEASE);
+		return;
+	}
 
 	if (LOCK_STATE(s) != LOCKED)
 		return;

@@ -114,6 +114,14 @@ struct stats_aggregate {
 	/* Visibility / health counters surfaced via dump_stats. */
 	unsigned long ring_overflow_total;	/* sum of dropped enqueues across all rings */
 	unsigned long shm_published_corrupt;	/* mirror page disagreed with parent_stats */
+
+	/* check_lock() observed LOCK_RESERVED_DIRTY(state) on the periodic
+	 * sanity walk and called force_bust_lock() to recover.  Bumped from
+	 * main context only (sole walker), so plain ++ is safe.  Lives in
+	 * parent_stats rather than shm->stats so a wild kernel write through
+	 * a fuzzed syscall arg -- the very class of event this counter
+	 * tracks -- cannot scribble the diagnostic that detects it. */
+	unsigned long lock_word_scribbled;
 };
 
 extern struct stats_aggregate parent_stats;
