@@ -106,8 +106,8 @@
  * stable UAPI -- RXRPC_SECURITY_RXKAD == 2, RXRPC_SECURITY_YFS_RXGK == 6.
  * AFSTOKEN_MAX == 8, AFSTOKEN_CELL_MAX == 64 (cap on cellname length in
  * the XDR envelope). */
-#define RXKAD_SEC_IDX		2
-#define RXGK_SEC_IDX		6
+#define RXKAD_SEC_IDX		2u
+#define RXGK_SEC_IDX		6u
 #define XDR_AFSTOKEN_MAX	8
 #define XDR_AFSTOKEN_CELL_MAX	64
 
