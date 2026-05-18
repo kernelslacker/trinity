@@ -79,7 +79,6 @@ syscalls/statfs.c:statfs
 syscalls/statfs.c:statfs64
 syscalls/statmount.c:statmount
 syscalls/sysfs.c:sysfs
-syscalls/sysinfo.c:sysinfo
 syscalls/timerfd_gettime.c:timerfd_gettime
 syscalls/timer_gettime.c:timer_gettime
 syscalls/uname.c:uname
