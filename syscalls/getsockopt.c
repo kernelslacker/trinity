@@ -10,11 +10,35 @@
 #include "shm.h"
 #include "utils.h"
 
+/*
+ * Snapshot for the post handler.  Both the optval buffer (a4) and the
+ * lenp pointer (a5) are zmalloc()'d and then handed to
+ * avoid_shared_buffer(), which relocates them off the libc heap into a
+ * parent-private writable region.  deferred_free_enqueue() rejects the
+ * relocated address (heap-bounds and alloc-track gates both fail) so
+ * freeing rec->a4 / rec->a5 in the post handler leaks the originals.
+ *
+ * Wrap both originals in a magic-cookie struct: ->optval_original and
+ * ->lenp_original are the zmalloc results we hand back to
+ * deferred_free_enqueue(), and the cookie hardens the post handler
+ * against a sibling scribbling rec->post_state with a heap-shaped
+ * pointer to a foreign allocation -- the cookie mismatch rejects the
+ * forgery before any inner-field deref.
+ */
+#define GETSOCKOPT_POST_STATE_MAGIC	0x474554534F50545FUL	/* "GETSOPT_" */
+struct getsockopt_post_state {
+	unsigned long magic;
+	void *optval_original;
+	void *lenp_original;
+};
+
 static void sanitise_getsockopt(struct syscallrecord *rec)
 {
 	struct sockopt so = { 0, 0, 0, 0 };
 	struct socketinfo *si;
 	struct socket_triplet *triplet = NULL;
+	struct getsockopt_post_state *snap;
+	void *optval;
 	socklen_t *lenp;
 	int fd;
 
@@ -42,32 +66,34 @@ static void sanitise_getsockopt(struct syscallrecord *rec)
 	free((void *) so.optval);
 
 	/* Allocate an output buffer for the kernel to write into. */
-	rec->a4 = (unsigned long) zmalloc(page_size);
+	optval = zmalloc(page_size);
+	rec->a4 = (unsigned long) optval;
 
 	/* Provide a valid socklen_t pointer initialized to the buffer size. */
 	lenp = zmalloc(sizeof(*lenp));
 	*lenp = page_size;
 	rec->a5 = (unsigned long) lenp;
 
-	/* Snapshot the optval pointer for the post handler -- a4 may be
-	 * scribbled by a sibling syscall before post_getsockopt() runs,
-	 * leaving a real-but-wrong heap pointer that the corruption guard
-	 * cannot distinguish from the original page-sized output buffer.
-	 * Without the snapshot the post handler frees the wrong allocation,
-	 * leaking ours and corrupting another sanitise routine's live
-	 * buffer.  The lenp slot in a5 is a 4-byte allocation that is not
-	 * walked, only freed; it is left under the existing path. */
-	rec->post_state = rec->a4;
+	/*
+	 * Snapshot both originals BEFORE avoid_shared_buffer() runs.  a4
+	 * and a5 are both about to be relocated off the libc heap; the
+	 * post handler must free the zmalloc results, not the relocated
+	 * pointers (which the deferred-free heap-bounds gate rejects).
+	 * The snap also doubles as a sibling-scribble shield: a foreign
+	 * heap-shaped pointer parked in rec->post_state survives
+	 * looks_like_corrupted_ptr() but fails the magic check.
+	 */
+	snap = zmalloc(sizeof(*snap));
+	snap->magic = GETSOCKOPT_POST_STATE_MAGIC;
+	snap->optval_original = optval;
+	snap->lenp_original = lenp;
+	rec->post_state = (unsigned long) snap;
 
 	/*
 	 * The kernel writes the option value through optval (a4) up to
 	 * *optlen bytes and updates *optlen (a5) with the actual count.
 	 * Both args must be redirected if they overlap an alloc_shared
 	 * region or the libc brk arena before the syscall is issued.
-	 * Order matters: post_state above captures the original zmalloc
-	 * result so the post handler frees what we own even when
-	 * avoid_shared_buffer swaps a4 out for a get_writable_address
-	 * pointer here.
 	 */
 	avoid_shared_buffer(&rec->a4, page_size);
 	avoid_shared_buffer(&rec->a5, sizeof(socklen_t));
@@ -75,26 +101,40 @@ static void sanitise_getsockopt(struct syscallrecord *rec)
 
 static void post_getsockopt(struct syscallrecord *rec)
 {
-	void *optval = (void *) rec->post_state;
+	struct getsockopt_post_state *snap =
+		(struct getsockopt_post_state *) rec->post_state;
 
-	if (optval != NULL) {
-		/*
-		 * post_state is private to the post handler, but the whole
-		 * syscallrecord can still be wholesale-stomped, so guard the
-		 * free path against handing a non-heap value to free().
-		 */
-		if (looks_like_corrupted_ptr(rec, optval)) {
-			outputerr("post_getsockopt: rejected suspicious optval=%p "
-				  "(pid-scribbled?)\n", optval);
-			rec->a4 = 0;
-			rec->post_state = 0;
-		} else {
-			rec->a4 = 0;
-			deferred_freeptr(&rec->post_state);
-		}
+	if (snap == NULL) {
+		rec->a4 = 0;
+		rec->a5 = 0;
+		return;
 	}
 
-	deferred_freeptr(&rec->a5);
+	if (looks_like_corrupted_ptr(rec, snap)) {
+		outputerr("post_getsockopt: rejected suspicious post_state=%p "
+			  "(pid-scribbled?)\n", snap);
+		rec->a4 = 0;
+		rec->a5 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	if (snap->magic != GETSOCKOPT_POST_STATE_MAGIC) {
+		outputerr("post_getsockopt: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		rec->a4 = 0;
+		rec->a5 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a4 = 0;
+	rec->a5 = 0;
+	deferred_free_enqueue(snap->optval_original, NULL);
+	deferred_free_enqueue(snap->lenp_original, NULL);
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_getsockopt = {
