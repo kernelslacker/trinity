@@ -302,6 +302,7 @@ bool no_healer_snapshot = false;
 bool no_healer = false;
 
 bool no_kcov_warm_start = false;
+bool no_cmp_hints_warm_start = false;
 
 char *memory_max_arg = NULL;
 char *memory_high_arg = NULL;
@@ -398,6 +399,7 @@ static const struct option_help option_descs[] = {
 	{ "no-healer-snapshot",	 0,  "skip periodic and end-of-run HEALER relation-table snapshots" },
 	{ "no-healer",		 0,  "fully disable HEALER: skip the observer hooks and gate the bandit picker arm out" },
 	{ "no-kcov-warm-start",	 0,  "skip loading and saving the persisted kcov edge bitmap" },
+	{ "no-cmp-hints-warm-start", 0, "skip loading and saving the persisted kcov CMP-hint pool" },
 	{ NULL,			 0,  NULL },
 };
 
@@ -483,6 +485,7 @@ static const struct option longopts[] = {
 	{ "no-healer-snapshot", no_argument, NULL, 0 },
 	{ "no-healer", no_argument, NULL, 0 },
 	{ "no-kcov-warm-start", no_argument, NULL, 0 },
+	{ "no-cmp-hints-warm-start", no_argument, NULL, 0 },
 	{ NULL, 0, NULL, 0 } };
 
 void parse_args(int argc, char *argv[])
@@ -883,6 +886,10 @@ void parse_args(int argc, char *argv[])
 			if (strcmp("no-kcov-warm-start",
 				   longopts[opt_index].name) == 0)
 				no_kcov_warm_start = true;
+
+			if (strcmp("no-cmp-hints-warm-start",
+				   longopts[opt_index].name) == 0)
+				no_cmp_hints_warm_start = true;
 
 			break;
 		}

@@ -98,6 +98,7 @@ extern bool no_healer_snapshot;
 extern bool no_healer;
 
 extern bool no_kcov_warm_start;
+extern bool no_cmp_hints_warm_start;
 
 /* self-cgroup containment knobs (see self_cgroup.c).  NULL string args
  * mean "use the default" (60%/50%/20% of MemTotal).  no_cgroup skips

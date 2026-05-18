@@ -13,6 +13,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "cmp_hints.h"
 #include "effector-map.h"
 #include "fd.h"
 #include "files.h"
@@ -580,6 +581,26 @@ int main(int argc, char* argv[])
 	}
 
 	/*
+	 * cmp-hints pool warm-start.  Each KCOV CMP record requires a
+	 * kernel-side comparison to actually fire on a syscall-derived
+	 * input, so the pool grows orders of magnitude slower than the
+	 * kcov bitmap and a cold start leaves the first windows after
+	 * restart injecting no hints at all.  Gated independently of
+	 * --no-kcov-warm-start via --no-cmp-hints-warm-start so an
+	 * operator can opt out of one without losing the other.  Done
+	 * pre-fork, before any child writes to a pool, so the load lands
+	 * without racing the producers.
+	 */
+	if (!no_cmp_hints_warm_start && cmp_hints_shm != NULL) {
+		const char *cpath = cmp_hints_default_path();
+
+		if (cpath != NULL) {
+			(void)cmp_hints_load_file(cpath);
+			cmp_hints_enable_snapshots(cpath);
+		}
+	}
+
+	/*
 	 * HEALER relation-table warm-start.  Independent of the minicorpus
 	 * warm-start gate so an operator can opt out of one without losing
 	 * the other (--no-healer-warm-start covers the load, the load is
@@ -674,6 +695,28 @@ int main(int argc, char* argv[])
 
 			if (kpath != NULL && kcov_bitmap_save_file(kpath))
 				output(0, "kcov-bitmap: persisted to %s\n", kpath);
+		}
+	}
+
+	/*
+	 * End-of-run cmp-hints pool persistence.  Same clean-exit gate
+	 * the kcov-bitmap save uses -- a poisoned shm after a corruption-
+	 * aborted run could feed garbage back into the next warm-start,
+	 * so we skip the save unless the shutdown was clean.  The
+	 * periodic snapshot trigger covers crashes; this captures the
+	 * trailing window of entries the periodic cadence had not yet
+	 * flushed.
+	 */
+	if (!no_cmp_hints_warm_start && cmp_hints_shm != NULL) {
+		enum exit_reasons er =
+			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+
+		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
+		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
+			const char *cpath = cmp_hints_default_path();
+
+			if (cpath != NULL && cmp_hints_save_file(cpath))
+				output(0, "cmp-hints: persisted to %s\n", cpath);
 		}
 	}
 

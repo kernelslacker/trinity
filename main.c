@@ -13,6 +13,7 @@
 #include <time.h>
 
 #include "child.h"
+#include "cmp_hints.h"
 #include "debug.h"
 #include "edgepair_ring.h"
 #include "fd-event.h"
@@ -1517,6 +1518,8 @@ void main_loop(void)
 		kcov_plateau_check();
 
 		kcov_bitmap_maybe_snapshot();
+
+		cmp_hints_maybe_snapshot();
 
 		print_stats();
 

@@ -1022,7 +1022,7 @@ static bool kcov_fingerprint_kernel(uint8_t out[32])
 static uint8_t kcov_kernel_fp[32];
 static bool    kcov_kernel_fp_valid;
 
-static bool kcov_get_kernel_fp(uint8_t out[32])
+bool kcov_get_kernel_fp(uint8_t out[32])
 {
 	if (!kcov_kernel_fp_valid) {
 		if (!kcov_fingerprint_kernel(kcov_kernel_fp)) {

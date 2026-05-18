@@ -270,6 +270,18 @@ bool kcov_bitmap_save_file(const char *path);
 bool kcov_bitmap_load_file(const char *path);
 const char *kcov_bitmap_default_path(void);
 
+/* Fill OUT[32] with the cached kallsyms-derived kernel fingerprint
+ * (sha256 over /proc/kallsyms with the leading address column stripped
+ * and module / BPF runtime symbols filtered out -- see the comment on
+ * kcov_fingerprint_kernel() for the precise filter rules).  First call
+ * streams /proc/kallsyms and caches; subsequent calls memcpy from the
+ * cache.  Returns false (with OUT untouched) when /proc/kallsyms is
+ * unreadable; caller should treat that as "warm-start disabled this
+ * run".  Exposed so cross-run-state files outside kcov.c (e.g. the
+ * cmp-hints pool) can stamp the same fingerprint into their headers
+ * and stay in lock-step with the kcov-bitmap warm-start invariants. */
+bool kcov_get_kernel_fp(uint8_t out[32]);
+
 /* Wire periodic mid-run snapshots of the bucket_seen bitmap to PATH.
  * Subsequent kcov_bitmap_maybe_snapshot() calls become live; a no-op
  * before this is called.  Path is copied. */
