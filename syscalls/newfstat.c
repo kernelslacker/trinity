@@ -202,7 +202,7 @@ out_free:
 struct syscallentry syscall_newfstat = {
 	.name = "newfstat",
 	.num_args = 2,
-	.argtype = { [0] = ARG_FD, [1] = ARG_NON_NULL_ADDRESS },
+	.argtype = { [0] = ARG_FD, [1] = ARG_STRUCT_PTR_OUT },
 	.argname = { [0] = "fd", [1] = "statbuf" },
 	.sanitise = sanitise_newfstat,
 	.post = post_newfstat,

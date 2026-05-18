@@ -163,7 +163,7 @@ struct syscallentry syscall_timerfd_gettime = {
 	.name = "timerfd_gettime",
 	.group = GROUP_TIME,
 	.num_args = 2,
-	.argtype = { [0] = ARG_FD_TIMERFD, [1] = ARG_NON_NULL_ADDRESS },
+	.argtype = { [0] = ARG_FD_TIMERFD, [1] = ARG_STRUCT_PTR_OUT },
 	.argname = { [0] = "ufd", [1] = "otmr" },
 	.sanitise = sanitise_timerfd_gettime,
 	.post = post_timerfd_gettime,

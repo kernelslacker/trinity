@@ -198,7 +198,7 @@ out_free:
 struct syscallentry syscall_sysinfo = {
 	.name = "sysinfo",
 	.num_args = 1,
-	.argtype = { [0] = ARG_NON_NULL_ADDRESS },
+	.argtype = { [0] = ARG_STRUCT_PTR_OUT },
 	.argname = { [0] = "info" },
 	.sanitise = sanitise_sysinfo,
 	.post = post_sysinfo,

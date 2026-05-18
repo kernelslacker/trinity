@@ -195,7 +195,7 @@ out_free:
 struct syscallentry syscall_getrlimit = {
 	.name = "getrlimit",
 	.num_args = 2,
-	.argtype = { [0] = ARG_OP, [1] = ARG_NON_NULL_ADDRESS },
+	.argtype = { [0] = ARG_OP, [1] = ARG_STRUCT_PTR_OUT },
 	.argname = { [0] = "resource", [1] = "rlim" },
 	.arg_params[0].list = ARGLIST(getrlimit_resources),
 	.sanitise = sanitise_getrlimit,
