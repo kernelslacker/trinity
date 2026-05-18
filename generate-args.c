@@ -1320,15 +1320,20 @@ void generic_sanitise(struct syscallentry *entry, struct syscallrecord *rec)
 
 void generic_free_arg(struct syscallentry *entry, struct syscallrecord *rec)
 {
-	unsigned int i;
+	uint8_t mask;
 
 	BUG_ON(entry == NULL);
 
-	for_each_arg(entry, i) {
+	/* Most syscalls own no freeable resources in any slot; the cached
+	 * cleanup_arg_mask lets us skip the per-arg argtype_get_ops() walk
+	 * outright in that common case. */
+	mask = entry->cleanup_arg_mask;
+	while (mask != 0) {
+		unsigned int i = (unsigned int)__builtin_ctz(mask) + 1;
 		const struct argtype_ops *ops = argtype_get_ops(get_argtype(entry, i));
 
-		if (ops->cleanup != NULL)
-			ops->cleanup(rec, i);
+		ops->cleanup(rec, i);
+		mask &= (uint8_t)(mask - 1);
 	}
 }
 
