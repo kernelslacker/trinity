@@ -387,7 +387,7 @@ void __for_each_obj_init(struct objhead *head,
 		for ((idx) = 0; (idx) < __feo.n_snap; (idx)++)		\
 			if (((obj) = __feo.array_snap[(idx)]) != NULL)
 
-struct object * alloc_object(void);
+struct object * alloc_object(void) __must_check;
 void add_object(struct object *obj, enum obj_scope scope, enum objecttype type);
 void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype type);
 void destroy_global_objects(void);
@@ -424,7 +424,7 @@ void init_object_lists(enum obj_scope scope, struct childdata *child);
  */
 void clone_global_objects_to_child(struct childdata *child);
 
-struct object * get_random_object(enum objecttype type, enum obj_scope scope);
+struct object * get_random_object(enum objecttype type, enum obj_scope scope) __must_check;
 
 bool objects_empty(enum objecttype type);
 struct objhead * get_objhead(enum obj_scope scope, enum objecttype type) __must_check;
