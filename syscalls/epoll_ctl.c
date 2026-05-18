@@ -4,9 +4,7 @@
  * When successful, epoll_ctl() returns zero.
  * When an error occurs, epoll_ctl() returns -1 and errno is set appropriately.
  */
-#include <stdlib.h>
 #include <sys/epoll.h>
-#include "deferred-free.h"
 #include "fd.h"
 #include "sanitise.h"
 #include "random.h"
@@ -36,13 +34,28 @@ static const unsigned long epoll_flags[] = {
 	EPOLL_URING_WAKE,
 };
 
+/*
+ * The base struct epoll_event buffer is allocated and zero-filled by
+ * ARG_STRUCT_PTR_IN's catalog-driven generator (registered against
+ * arg 4) before this runs, and is freed via the deferred-free queue
+ * the catalog enqueues at generation time.  All this hook does is
+ * tweak two fields the catalog can't reasonably populate on its own:
+ *
+ *   - .data is a union and the catalog only walks named scalar fields,
+ *     so .data.fd is left zero (== stdin) without a tweak here.
+ *   - .events is a uint32 the catalog will randomise, but a wild u32
+ *     almost never hits a valid EPOLL* bit-set; pin it to a random
+ *     subset of the real epoll flags so the kernel's event-mask
+ *     validators actually accept the value occasionally.
+ */
 static void sanitise_epoll_ctl(struct syscallrecord *rec)
 {
-	struct epoll_event *ep;
+	struct epoll_event *ep = (struct epoll_event *) rec->a4;
 	int target_fd;
 	unsigned int tries;
 
-	ep = zmalloc(sizeof(struct epoll_event));
+	if (ep == NULL)
+		return;
 
 	/*
 	 * Reroll target_fd until we land on one whose fd_provider has not
@@ -71,29 +84,6 @@ static void sanitise_epoll_ctl(struct syscallrecord *rec)
 
 	ep->data.fd = target_fd;
 	ep->events = set_rand_bitmask(ARRAY_SIZE(epoll_flags), epoll_flags);
-	rec->a4 = (unsigned long) ep;
-
-	/* Snapshot for the post handler -- a4 may be scribbled by a sibling
-	 * syscall before post_epoll_ctl() runs. */
-	rec->post_state = (unsigned long) ep;
-}
-
-static void post_epoll_ctl(struct syscallrecord *rec)
-{
-	void *ep = (void *) rec->post_state;
-
-	if (ep == NULL)
-		return;
-
-	if (looks_like_corrupted_ptr(rec, ep)) {
-		outputerr("post_epoll_ctl: rejected suspicious ep=%p "
-			  "(pid-scribbled?)\n", ep);
-		rec->a4 = 0;
-		rec->post_state = 0;
-		return;
-	}
-	rec->a4 = 0;
-	deferred_freeptr(&rec->post_state);
 }
 
 static unsigned long epoll_ctl_ops[] = {
@@ -109,6 +99,5 @@ struct syscallentry syscall_epoll_ctl = {
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_epoll_ctl,
-	.post = post_epoll_ctl,
 	.group = GROUP_VFS,
 };
