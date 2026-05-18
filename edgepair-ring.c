@@ -60,6 +60,30 @@ void edgepair_ring_init(struct edgepair_ring *ring)
 	__atomic_store_n(&ring->overflow, 0, __ATOMIC_RELAXED);
 }
 
+/*
+ * Per-child edgepair reset contract.  Called from clean_childdata()
+ * when a child slot is reused so a fresh occupant starts with an empty
+ * observation ring rather than inheriting the prior occupant's
+ * head/tail/overflow cursors.  Without this the new child's first
+ * enqueue lands at an arbitrary offset (the prior occupant's head) and
+ * the parent's drain reads stale (or wrapped-around) slots from before
+ * clean_childdata ran, attributing the prior occupant's (prev, curr)
+ * pairs to the new child.
+ *
+ * Note: last_syscall_nr (the per-call predecessor read by
+ * edgepair_is_cold) is also per-child edgepair state and is reset to
+ * EDGEPAIR_NO_PREV earlier in clean_childdata; this helper owns the
+ * ring side of the contract.
+ */
+void edgepair_child_reset(struct childdata *child)
+{
+	if (child == NULL)
+		return;
+
+	if (child->edgepair_ring != NULL)
+		edgepair_ring_init(child->edgepair_ring);
+}
+
 bool edgepair_ring_enqueue(struct edgepair_ring *ring,
 			   unsigned int prev_nr, unsigned int curr_nr,
 			   bool new_edges)

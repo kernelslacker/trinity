@@ -130,6 +130,15 @@ extern struct edgepair_published *edgepair_published;
 void edgepair_ring_init(struct edgepair_ring *ring);
 
 /*
+ * Per-child edgepair reset contract called from clean_childdata() when
+ * a child slot is reused.  Reinitialises the per-child observation
+ * ring so a fresh occupant cannot inherit pending ring state from the
+ * prior occupant of the slot.
+ */
+struct childdata;
+void edgepair_child_reset(struct childdata *child);
+
+/*
  * Enqueue an edgepair observation event from child context.  Lock-free,
  * returns false if the ring is full (slot dropped, overflow counter
  * bumped).

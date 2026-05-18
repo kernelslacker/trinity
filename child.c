@@ -21,6 +21,7 @@
 #include "child.h"
 #include "fd.h"
 #include "futex.h"
+#include "edgepair_ring.h"
 #include "fd-event.h"
 #include "healer_ring.h"
 #include "kcov.h"
@@ -405,6 +406,7 @@ void clean_childdata(struct childdata *child)
 		stats_ring_init(child->stats_ring);
 
 	healer_child_reset(child);
+	edgepair_child_reset(child);
 }
 
 static void bind_child_to_cpu(struct childdata *child)
