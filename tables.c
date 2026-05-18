@@ -156,7 +156,7 @@ void count_syscalls_enabled(void)
 			char *end = str32 + sizeof(str32);
 			int n;
 
-			n = snprintf(p, end - p, "%d enabled", shm->nr_active_32bit_syscalls);
+			n = snprintf(p, end - p, "%u enabled", shm->nr_active_32bit_syscalls);
 			if (n > 0 && n < end - p)
 				p += n;
 
@@ -173,7 +173,7 @@ void count_syscalls_enabled(void)
 			char *end = str64 + sizeof(str64);
 			int n;
 
-			n = snprintf(p, end - p, "%d enabled", shm->nr_active_64bit_syscalls);
+			n = snprintf(p, end - p, "%u enabled", shm->nr_active_64bit_syscalls);
 			if (n > 0 && n < end - p)
 				p += n;
 
