@@ -506,7 +506,14 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 		return set_syscall_nr_random(rec, child);
 	}
 
-	strat = __atomic_load_n(&shm->current_strategy, __ATOMIC_RELAXED);
+	/* ACQUIRE pairs with the RELEASE store on current_strategy in
+	 * maybe_rotate_strategy below.  Without it, a child observing the
+	 * new strategy id is not guaranteed to also see the companion
+	 * fields (current_selection_reason, plateau_rescue_amplified_class,
+	 * plateau_intervention_mode_current) the orchestrator published
+	 * just before the rotation -- the gates downstream that consult
+	 * those fields would mis-fire under weak memory. */
+	strat = __atomic_load_n(&shm->current_strategy, __ATOMIC_ACQUIRE);
 
 	if (strat < 0 || strat >= NR_STRATEGIES)
 		strat = STRATEGY_HEURISTIC;
@@ -843,9 +850,11 @@ static void maybe_rotate_strategy(void)
 		__atomic_load_n(&shm->bandit_cmp_new_constants[next],
 				__ATOMIC_RELAXED);
 	/* Publish the selection reason BEFORE current_strategy: the RELEASE
-	 * store on current_strategy below pairs with the next rotation's
-	 * RELAXED loads of both fields and makes the reason visible to any
-	 * child that observes the new strategy. */
+	 * store on current_strategy below pairs with the picker's and the
+	 * plateau gates' ACQUIRE loads of current_strategy, making the
+	 * reason and the companion plateau fields (published earlier under
+	 * RELAXED in select_next_strategy) visible to any child that
+	 * observes the new strategy. */
 	__atomic_store_n(&shm->current_selection_reason,
 			 (int)next_reason, __ATOMIC_RELAXED);
 	__atomic_store_n(&shm->current_strategy, next, __ATOMIC_RELEASE);

@@ -1091,6 +1091,14 @@ bool plateau_rescue_bias_active_for(enum random_rescue_class c)
 		return false;
 	if (kcov_shm == NULL || !kcov_shm->plateau_active)
 		return false;
+	/* ACQUIRE-load current_strategy pairs with the RELEASE-store in
+	 * maybe_rotate_strategy.  Callers reach this gate from paths that
+	 * may not have done their own acquire (notably the explorer pool,
+	 * which short-circuits past set_syscall_nr's hot-picker acquire),
+	 * so fence here to guarantee the subsequent relaxed reads of
+	 * current_selection_reason and plateau_rescue_amplified_class see
+	 * the values the orchestrator published before the rotation. */
+	(void)__atomic_load_n(&shm->current_strategy, __ATOMIC_ACQUIRE);
 	if (__atomic_load_n(&shm->current_selection_reason, __ATOMIC_RELAXED) !=
 	    SR_PLATEAU_FORCE)
 		return false;
@@ -1125,6 +1133,16 @@ bool plateau_anti_prior_active(void)
 {
 	if (kcov_shm == NULL || !kcov_shm->plateau_active)
 		return false;
+	/* ACQUIRE-load current_strategy pairs with the RELEASE-store in
+	 * maybe_rotate_strategy.  Fenced here rather than relying on the
+	 * caller because set_syscall_nr_random is also entered from the
+	 * explorer path, which bypasses set_syscall_nr's hot-picker
+	 * acquire.  Without this fence the subsequent relaxed reads of
+	 * current_selection_reason and plateau_intervention_mode_current
+	 * could disagree with the just-rotated strategy, e.g. masking an
+	 * intended PIM_ANTI_PRIOR window or leaving stale intervention
+	 * state visible after a plateau lifts. */
+	(void)__atomic_load_n(&shm->current_strategy, __ATOMIC_ACQUIRE);
 	if (__atomic_load_n(&shm->current_selection_reason, __ATOMIC_RELAXED) !=
 	    SR_PLATEAU_FORCE)
 		return false;
