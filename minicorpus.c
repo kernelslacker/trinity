@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -167,6 +168,8 @@ void minicorpus_save(struct syscallrecord *rec)
 		ring->count++;
 
 	ring_unlock(ring);
+
+	__atomic_fetch_add(&minicorpus_shm->mutations, 1UL, __ATOMIC_RELAXED);
 }
 
 /*
@@ -798,18 +801,44 @@ static ssize_t read_all(int fd, void *buf, size_t len)
 	return (ssize_t)(len - left);
 }
 
+/*
+ * Dirty-bit proxy for minicorpus_save_file().  Compared against
+ * minicorpus_shm->mutations at the top of the save path; when equal,
+ * no ring has been touched since the last successful save and the on-disk
+ * image is bit-for-bit identical to what we would write.  Initialised to
+ * ULONG_MAX so the first save in a process always fires; advanced on
+ * every successful save and seeded by the warm-start loader so the
+ * load-then-immediate-exit cycle skips its end-of-run save.
+ *
+ * Mostly-parent-private: the maybe_snapshot path runs in children but is
+ * already throttled by its own CAS gate to roughly one save per
+ * MINICORPUS_SNAPSHOT_EDGES window, so the worst case for a CAS-elected
+ * child whose stale process-local baseline misses a true short-circuit
+ * is bounded by that outer gate.  The redundant-save scenario this
+ * commit targets is the parent end-of-run save, which is fully covered.
+ */
+static unsigned long minicorpus_mutations_at_last_save = ULONG_MAX;
+
 bool minicorpus_save_file(const char *path)
 {
 	struct corpus_file_header hdr;
 	struct corpus_file_entry ent;
 	struct corpus_entry snapshot[CORPUS_RING_SIZE];
 	char tmppath[PATH_MAX];
+	unsigned long mutations_now;
 	int fd;
 	unsigned int nr;
 	int ret;
 
 	if (minicorpus_shm == NULL || path == NULL)
 		return false;
+
+	mutations_now = __atomic_load_n(&minicorpus_shm->mutations,
+					__ATOMIC_RELAXED);
+	if (mutations_now == minicorpus_mutations_at_last_save) {
+		output(0, "minicorpus: snapshot skipped, no ring changes since last save\n");
+		return true;
+	}
 
 	memset(&hdr, 0, sizeof(hdr));
 	hdr.magic = CORPUS_FILE_MAGIC;
@@ -902,6 +931,7 @@ bool minicorpus_save_file(const char *path)
 		unlink(tmppath);
 		return false;
 	}
+	minicorpus_mutations_at_last_save = mutations_now;
 	return true;
 
 fail:
@@ -1048,10 +1078,19 @@ bool minicorpus_load_file(const char *path,
 		if (ring->count < CORPUS_RING_SIZE)
 			ring->count++;
 		ring_unlock(ring);
+		__atomic_fetch_add(&minicorpus_shm->mutations, 1UL,
+				   __ATOMIC_RELAXED);
 		nloaded++;
 	}
 
 	close(fd);
+
+	/* Seed the dirty-bit baseline so a load-then-immediate-exit cycle
+	 * skips the redundant end-of-run save.  The load loop already bumped
+	 * minicorpus_shm->mutations once per admitted entry, so the current
+	 * counter exactly reflects the just-loaded state. */
+	minicorpus_mutations_at_last_save =
+		__atomic_load_n(&minicorpus_shm->mutations, __ATOMIC_RELAXED);
 
 	if (loaded)
 		*loaded = nloaded;

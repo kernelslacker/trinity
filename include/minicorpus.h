@@ -103,6 +103,16 @@ struct minicorpus_shared {
 	 * call and early-return until another window's worth of edges
 	 * accumulates. */
 	unsigned long edges_at_last_snapshot;
+
+	/* Monotonic mutation counter.  Bumped via __atomic_fetch_add on every
+	 * ring-entry insert (minicorpus_save) and every entry admitted from the
+	 * warm-start loader (minicorpus_load_file).  minicorpus_save_file
+	 * compares this against a parent-private baseline; when equal, the
+	 * on-disk image is bit-for-bit identical to what we already wrote and
+	 * the save is skipped.  RELAXED order is sufficient -- the counter only
+	 * gates whether to write, not what to write (the per-ring lock taken by
+	 * the serialiser provides the ordering for the entries[] contents). */
+	unsigned long mutations;
 };
 
 extern struct minicorpus_shared *minicorpus_shm;
