@@ -608,19 +608,22 @@ static void apply_chain_substitution(struct syscallrecord *rec,
  * stats line, the losers fall through and continue with the new strategy
  * on their next syscall pick.
  *
- * Per-strategy attribution: the just-finished window's edge delta is
- * computed as edges_by_strategy[prev] - edges_at_window_start.  After
- * the switch, edges_at_window_start is reseeded with the new strategy's
- * current cumulative edge count, so the next switch will compute the
- * delta correctly even if other strategies' counters are bumped during
- * the grace period.
+ * Per-strategy attribution: the just-finished window's call-count delta
+ * is pc_edge_calls_by_strategy[prev] - pc_edge_calls_at_window_start and
+ * the parallel real bucket-count delta is pc_edge_count_by_strategy[prev]
+ * - pc_edge_count_at_window_start.  After the switch, both *at_window_start
+ * snapshots are reseeded from the new strategy's current cumulative
+ * counters, so the next switch will compute the deltas correctly even if
+ * other strategies' counters are bumped during the grace period.
  */
 static void maybe_rotate_strategy(void)
 {
 	unsigned long now;
 	unsigned long last;
 	int prev, next;
-	unsigned long edges_now, edges_in_window, syscalls_in_window;
+	unsigned long calls_now, calls_in_window;
+	unsigned long edges_now, edges_in_window;
+	unsigned long syscalls_in_window;
 	unsigned long cmp_now, cmp_in_window;
 
 	/* Read fleet op_count off the parent-published mirror page; the
@@ -645,8 +648,12 @@ static void maybe_rotate_strategy(void)
 	if (prev < 0 || prev >= NR_STRATEGIES)
 		prev = STRATEGY_HEURISTIC;
 
-	edges_now = __atomic_load_n(&shm->edges_by_strategy[prev], __ATOMIC_RELAXED);
-	edges_in_window = edges_now - shm->edges_at_window_start;
+	calls_now = __atomic_load_n(&shm->pc_edge_calls_by_strategy[prev],
+				    __ATOMIC_RELAXED);
+	calls_in_window = calls_now - shm->pc_edge_calls_at_window_start;
+	edges_now = __atomic_load_n(&shm->pc_edge_count_by_strategy[prev],
+				    __ATOMIC_RELAXED);
+	edges_in_window = edges_now - shm->pc_edge_count_at_window_start;
 	syscalls_in_window = now - last;
 
 	/* CMP-novelty delta: number of comparison constants the active arm
@@ -661,10 +668,15 @@ static void maybe_rotate_strategy(void)
 
 	/* Feed the just-finished window into the bandit before asking
 	 * the picker to choose the next arm, so UCB1 sees up-to-date
-	 * pulls/reward when scoring.  Round-robin mode ignores the
-	 * counters but the bookkeeping is harmless and lets the
-	 * end-of-run summary print pulls under either picker. */
-	bandit_record_pull(prev, edges_in_window, cmp_in_window);
+	 * pulls/reward when scoring.  The learner consumes the call-count
+	 * delta as today; the real bucket-count delta is recorded into the
+	 * parallel diagnostic reward series so the operator can compare the
+	 * two reward shapes without changing the learner's behaviour.
+	 * Round-robin mode ignores the counters but the bookkeeping is
+	 * harmless and lets the end-of-run summary print pulls under either
+	 * picker. */
+	bandit_record_pull(prev, calls_in_window, edges_in_window,
+			   cmp_in_window);
 
 	/* Tick the rotation counter so bandit_cmp_observe()'s per-syscall
 	 * bloom decay sees the new window index on subsequent calls.
@@ -683,17 +695,22 @@ static void maybe_rotate_strategy(void)
 	if (next < 0 || next >= NR_STRATEGIES)
 		next = (prev + 1) % NR_STRATEGIES;
 
-	shm->edges_at_window_start =
-		__atomic_load_n(&shm->edges_by_strategy[next], __ATOMIC_RELAXED);
+	shm->pc_edge_calls_at_window_start =
+		__atomic_load_n(&shm->pc_edge_calls_by_strategy[next],
+				__ATOMIC_RELAXED);
+	shm->pc_edge_count_at_window_start =
+		__atomic_load_n(&shm->pc_edge_count_by_strategy[next],
+				__ATOMIC_RELAXED);
 	shm->bandit_cmp_at_window_start =
 		__atomic_load_n(&shm->bandit_cmp_new_constants[next],
 				__ATOMIC_RELAXED);
 	__atomic_store_n(&shm->current_strategy, next, __ATOMIC_RELEASE);
 
-	output(0, "strategy: switched to %s (%d) (prev %s (%d): edges=%lu, syscalls=%lu, cmp_novel=%lu)\n",
+	output(0, "strategy: switched to %s (%d) (prev %s (%d): edge_calls=%lu, edge_count=%lu, syscalls=%lu, cmp_novel=%lu)\n",
 	       strategy_name(next), next,
 	       strategy_name(prev), prev,
-	       edges_in_window, syscalls_in_window, cmp_in_window);
+	       calls_in_window, edges_in_window, syscalls_in_window,
+	       cmp_in_window);
 }
 
 /*
@@ -713,8 +730,7 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 {
 	struct syscallrecord *rec = &child->syscall;
 	bool new_edges;
-	unsigned long edges_before = 0, edges_after, edges_delta;
-	bool have_kcov_counter = (kcov_shm != NULL);
+	unsigned long new_edge_count = 0;
 
 	/* Stamp the resolved entry on the rec so .sanitise / .post handlers
 	 * (and helpers like this_syscallname()) can reach it without
@@ -733,26 +749,13 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 
 	do_syscall(rec, entry, &child->kcov, child);
 
-	/* Snapshot edges_found around kcov_collect so the per-syscall
-	 * attribution counters below can be bumped by the actual count of
-	 * distinct new edges this call produced (kcov_collect() returns a
-	 * bool, so the count has to be reconstructed here from the global
-	 * counter delta). */
-	if (have_kcov_counter)
-		edges_before = __atomic_load_n(&kcov_shm->edges_found,
-					       __ATOMIC_RELAXED);
-
-	new_edges = kcov_collect(&child->kcov, rec->nr);
+	/* kcov_collect() returns the real per-call bucket-edge count via the
+	 * out-param alongside its bool found_new return.  Diff-ing the global
+	 * kcov_shm->edges_found around the call would race other children's
+	 * concurrent increments and over-attribute their edges to this
+	 * syscall; the per-call count is the authoritative number. */
+	new_edges = kcov_collect(&child->kcov, rec->nr, &new_edge_count);
 	kcov_collect_cmp(&child->kcov, rec->nr, child->is_explorer);
-
-	if (have_kcov_counter) {
-		edges_after = __atomic_load_n(&kcov_shm->edges_found,
-					      __ATOMIC_RELAXED);
-		edges_delta = (edges_after >= edges_before)
-			? (edges_after - edges_before) : 0;
-	} else {
-		edges_delta = 0;
-	}
 
 	/* Per-syscall new-edge attribution split by strategy pool.  Skipped
 	 * when the call produced no new edges (the dump only consumes the
@@ -761,11 +764,11 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * existing kcov_shm->per_syscall_edges array uses; the dump iterates
 	 * only the active 64-bit table when biarch, so 32-bit calls are
 	 * effectively ignored there as they are everywhere else. */
-	if (edges_delta > 0 && rec->nr < MAX_NR_SYSCALL) {
+	if (new_edge_count > 0 && rec->nr < MAX_NR_SYSCALL) {
 		unsigned long *bucket = child->is_explorer
 			? shm->stats.edges_per_syscall_explorer
 			: shm->stats.edges_per_syscall_bandit;
-		__atomic_fetch_add(&bucket[rec->nr], edges_delta,
+		__atomic_fetch_add(&bucket[rec->nr], new_edge_count,
 				   __ATOMIC_RELAXED);
 	}
 
@@ -840,15 +843,24 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			__atomic_fetch_add(&shm->stats.explorer_pool_edges_discovered,
 					   1, __ATOMIC_RELAXED);
 		} else {
-			/* Attribute this new edge to the strategy that was
-			 * active when it was discovered.  Cumulative; the
-			 * window delta is computed by maybe_rotate_strategy
-			 * against shm->edges_at_window_start. */
+			/* Attribute this new-edge call to the strategy that
+			 * was active when it was discovered.  Two parallel
+			 * cumulative counters: pc_edge_calls_by_strategy[]
+			 * bumps by 1 (calls-with-≥1-edge, the historical
+			 * "edges_by_strategy[]" signal under its honest name)
+			 * and pc_edge_count_by_strategy[] bumps by the real
+			 * bucket-edge count from kcov_collect().  Window
+			 * deltas are computed by maybe_rotate_strategy against
+			 * the matching *_at_window_start snapshots. */
 			int strat = __atomic_load_n(&shm->current_strategy,
 						    __ATOMIC_RELAXED);
-			if (strat >= 0 && strat < NR_STRATEGIES)
-				__atomic_fetch_add(&shm->edges_by_strategy[strat],
+			if (strat >= 0 && strat < NR_STRATEGIES) {
+				__atomic_fetch_add(&shm->pc_edge_calls_by_strategy[strat],
 						   1, __ATOMIC_RELAXED);
+				__atomic_fetch_add(&shm->pc_edge_count_by_strategy[strat],
+						   new_edge_count,
+						   __ATOMIC_RELAXED);
+			}
 			__atomic_fetch_add(&shm->stats.bandit_pool_edges_discovered,
 					   1, __ATOMIC_RELAXED);
 		}

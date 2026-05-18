@@ -1511,27 +1511,34 @@ struct stats_s {
 	 * partition. */
 	unsigned long strategy_explorer_picks;
 
-	/* New PC edges discovered by explorer-pool children, bumped from
-	 * dispatch_step's new-edge branch when child->is_explorer is true.
-	 * Counted separately from edges_by_strategy[] (which excludes
-	 * explorer contributions to keep the bandit's reward signal honest)
-	 * so the per-pool edge-discovery ratio is recoverable for tuning. */
+	/* Calls by explorer-pool children that produced at least one new
+	 * edge, bumped from dispatch_step's new-edge branch when
+	 * child->is_explorer is true.  CALL-COUNT semantics: a call that
+	 * uncovers 50 distinct edges bumps by 1, not 50 -- matches
+	 * pc_edge_calls_by_strategy[]'s shape so the two are directly
+	 * comparable.  Counted separately from the per-strategy series
+	 * (which excludes explorer contributions to keep the bandit's
+	 * reward signal honest) so the per-pool ratio is recoverable for
+	 * tuning. */
 	unsigned long explorer_pool_edges_discovered;
 
-	/* New PC edges discovered by non-explorer (bandit-pool) children,
-	 * bumped from the same branch in dispatch_step.  Equal to
-	 * sum(edges_by_strategy[]) modulo the brief race between an
-	 * edges_by_strategy[] increment and the syscalls_at_last_switch CAS:
-	 * the per-strategy counter is meaningful; this scalar gives the
-	 * bandit-pool aggregate without iterating the per-strategy array. */
+	/* Calls by non-explorer (bandit-pool) children that produced at least
+	 * one new edge, bumped from the same branch in dispatch_step.  Equal
+	 * to sum(pc_edge_calls_by_strategy[]) modulo the brief race between
+	 * the per-strategy increment and the syscalls_at_last_switch CAS: the
+	 * per-strategy counter is meaningful; this scalar gives the
+	 * bandit-pool aggregate without iterating the per-strategy array.
+	 * CALL-COUNT semantics, see explorer_pool_edges_discovered above. */
 	unsigned long bandit_pool_edges_discovered;
 
 	/* Per-syscall new-edge attribution, split by strategy pool.  Bumped
-	 * from dispatch_step's new-edge branch with the (edges_after -
-	 * edges_before) delta of kcov_shm->edges_found around kcov_collect,
-	 * so the increment matches the count of distinct new edges this
-	 * syscall produced rather than 1-per-call (per_syscall_edges in
-	 * kcov_shm uses the latter shape).
+	 * from dispatch_step's new-edge branch with the real bucket-edge
+	 * count returned by kcov_collect()'s new_edge_count out-param, so
+	 * the increment matches the count of distinct new edges this syscall
+	 * produced (NOT 1-per-call -- per_syscall_edges in kcov_shm uses
+	 * that shape).  Earlier shape diff'd kcov_shm->edges_found around
+	 * the call, which over-attributed other children's concurrent
+	 * discoveries to whichever syscall happened to bracket them.
 	 *
 	 * Surfaced only via top_syscalls_periodic_dump() -- the array is
 	 * sized 2 * MAX_NR_SYSCALL * sizeof(unsigned long) ~= 16 KiB and

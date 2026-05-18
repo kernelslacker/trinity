@@ -457,12 +457,17 @@ static unsigned int dedup_inc(struct kcov_dedup_slot *dedup, unsigned int edge,
 	return 1;
 }
 
-bool kcov_collect(struct kcov_child *kc, unsigned int nr)
+bool kcov_collect(struct kcov_child *kc, unsigned int nr,
+		  unsigned long *new_edge_count)
 {
 	unsigned long count;
 	unsigned long idx;
 	unsigned long call_nr;
+	unsigned long edges_this_call = 0;
 	bool found_new = false;
+
+	if (new_edge_count != NULL)
+		*new_edge_count = 0;
 
 	if (!kc->active)
 		return false;
@@ -536,6 +541,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 		if (!(old & mask)) {
 			__atomic_fetch_add(&kcov_shm->edges_found,
 				1, __ATOMIC_RELAXED);
+			edges_this_call++;
 			found_new = true;
 		}
 
@@ -549,6 +555,10 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 		__atomic_fetch_add(&kcov_shm->per_syscall_calls[nr],
 			1, __ATOMIC_RELAXED);
 		if (found_new) {
+			/* per_syscall_edges bumps by 1 (call-count semantics --
+			 * see the comment on the field in include/kcov.h).  The
+			 * real bucket-edge count is surfaced via the
+			 * new_edge_count out-param below. */
 			__atomic_fetch_add(&kcov_shm->per_syscall_edges[nr],
 				1, __ATOMIC_RELAXED);
 			__atomic_store_n(&kcov_shm->last_edge_at[nr],
@@ -560,6 +570,9 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr)
 			frontier_record_new_edge(nr);
 		}
 	}
+
+	if (new_edge_count != NULL)
+		*new_edge_count = edges_this_call;
 
 	return found_new;
 }

@@ -262,23 +262,44 @@ struct shm_s {
 	 *   line; losers just continue with the new strategy on their next
 	 *   pick.
 	 *
-	 * edges_at_window_start: snapshot of edges_by_strategy[prev] taken
-	 *   at the previous switch.  Lets the next switch compute
-	 *   "edges discovered in the window that just ended" as
-	 *   edges_by_strategy[prev] - edges_at_window_start.  Written only
-	 *   by the CAS-winning child during a switch — sequential w.r.t.
-	 *   the CAS, so no atomic needed.
+	 * pc_edge_calls_at_window_start / pc_edge_count_at_window_start:
+	 *   snapshots of pc_edge_calls_by_strategy[prev] and
+	 *   pc_edge_count_by_strategy[prev] taken at the previous switch.
+	 *   Let the next switch compute the per-window deltas as
+	 *   pc_edge_calls_by_strategy[prev] - pc_edge_calls_at_window_start
+	 *   (call-count delta), and similarly for the bucket-count series.
+	 *   Written only by the CAS-winning child during a switch —
+	 *   sequential w.r.t. the CAS, so no atomic needed.
 	 *
-	 * edges_by_strategy[]: cumulative count of new-edge discoveries
-	 *   attributed to each strategy.  Bumped from dispatch_step when
-	 *   kcov_collect reports a new edge, indexed by the strategy that
-	 *   was active at the moment of attribution.  Cmp-mode runs do not
-	 *   produce a new-edge signal and are not attributed.
+	 * pc_edge_calls_by_strategy[]: cumulative count of SYSCALL CALLS
+	 *   attributed to each strategy whose post-call kcov_collect()
+	 *   flipped at least one never-seen bucket bit.  Bumped by +1 per
+	 *   such call, NOT by the number of distinct edges that call
+	 *   uncovered: a syscall that exposes 50 fresh edges in one shot
+	 *   still bumps the call-count series by 1.  This is the historical
+	 *   "edges_by_strategy[]" signal renamed to match its actual shape
+	 *   (calls-with-≥1-edge, not edges).  It is the signal the UCB1
+	 *   learner reads via bandit_reward_calls[] below.
+	 *
+	 * pc_edge_count_by_strategy[]: cumulative count of REAL bucket-edge
+	 *   bits flipped by syscalls attributed to each strategy — the
+	 *   per-call new_edge_count from kcov_collect(), summed across all
+	 *   contributing calls.  Strictly >= the call-count series, often
+	 *   far larger when individual calls uncover deep paths.  Added
+	 *   alongside the call-count series so both signals are visible
+	 *   without changing the learner's behaviour; a future commit may
+	 *   switch UCB1 to consume this series instead, or fold a transform
+	 *   of it (e.g. log2(1 + count)) into the reward.
+	 *
+	 * Cmp-mode runs do not produce a new-edge signal and are not
+	 * attributed to either series.
 	 */
 	int current_strategy;
 	unsigned long syscalls_at_last_switch;
-	unsigned long edges_at_window_start;
-	unsigned long edges_by_strategy[NR_STRATEGIES];
+	unsigned long pc_edge_calls_at_window_start;
+	unsigned long pc_edge_count_at_window_start;
+	unsigned long pc_edge_calls_by_strategy[NR_STRATEGIES];
+	unsigned long pc_edge_count_by_strategy[NR_STRATEGIES];
 
 	/*
 	 * UCB1 bandit picker (Phase 2) — see include/strategy.h.
@@ -293,13 +314,33 @@ struct shm_s {
 	 *   which is serialised by the syscalls_at_last_switch CAS, so
 	 *   plain integer writes are safe (no concurrent writers).
 	 *
-	 * bandit_reward[]: cumulative edges discovered while each arm
-	 *   was active.  Sum of per-window edge deltas, written under
-	 *   the same CAS-serialised path as bandit_pulls[].
+	 * bandit_reward_calls[]: cumulative reward attributed to each arm,
+	 *   in CALL-COUNT units — sum of per-window
+	 *   (pc_edge_calls_by_strategy delta + cmp_term).  Despite the
+	 *   historical "reward" name, the PC component here counts CALLS
+	 *   that produced at least one new edge, not real bucket edges (see
+	 *   the pc_edge_calls_by_strategy comment above).  This is the
+	 *   signal the UCB1 picker scores against; renamed from
+	 *   bandit_reward[] to make the call-count shape explicit.  Future
+	 *   work may switch the learner to consume
+	 *   bandit_reward_pc_edge_count[] below (real bucket count) or a
+	 *   transform of it; this commit only makes both signals visible.
+	 *
+	 * bandit_reward_pc_edge_count[]: cumulative PC-edge BUCKET COUNT
+	 *   attributed to each arm — sum of per-window
+	 *   pc_edge_count_by_strategy deltas, no cmp term folded in.
+	 *   Diagnostic-only today: visible alongside the call-count series
+	 *   in dump_strategy_stats() so the operator can see how the two
+	 *   signals would score the same set of windows differently before
+	 *   we commit to flipping the learner.
+	 *
+	 * Both reward series are written under the same CAS-serialised
+	 * rotation path as bandit_pulls[].
 	 */
 	int picker_mode;
 	unsigned long bandit_pulls[NR_STRATEGIES];
-	unsigned long bandit_reward[NR_STRATEGIES];
+	unsigned long bandit_reward_calls[NR_STRATEGIES];
+	unsigned long bandit_reward_pc_edge_count[NR_STRATEGIES];
 
 	/*
 	 * Monotonic rotation counter, bumped by the CAS-winning child in
@@ -308,7 +349,7 @@ struct shm_s {
 	 * entry with window_tag more than CMP_NOVELTY_DECAY_WINDOWS behind
 	 * this counter is considered stale and gets cleared on next access.
 	 * Stays plain unsigned long with explicit __atomic_* accessors to
-	 * match the existing bandit_pulls[]/bandit_reward[] convention.
+	 * match the existing bandit_pulls[]/bandit_reward_calls[] convention.
 	 */
 	unsigned long bandit_window_count;
 
@@ -338,7 +379,8 @@ struct shm_s {
 
 	/*
 	 * Snapshot of bandit_cmp_new_constants[active_arm] at the start of
-	 * the current window, by symmetry with edges_at_window_start.  The
+	 * the current window, by symmetry with pc_edge_calls_at_window_start.
+	 * The
 	 * rotation hook reads bandit_cmp_new_constants[prev] and subtracts
 	 * this snapshot to compute the cmp-novelty delta the just-finished
 	 * window produced, then reseeds the snapshot from the next arm's
@@ -353,7 +395,7 @@ struct shm_s {
 	 * of run to print the average per-window CMP contribution share, so
 	 * the operator can tune CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL on real
 	 * run data.  Written only by the CAS-winning child, same path as
-	 * bandit_pulls/bandit_reward.
+	 * bandit_pulls/bandit_reward_calls.
 	 */
 	unsigned long bandit_cmp_share_sum_x1000[NR_STRATEGIES];
 

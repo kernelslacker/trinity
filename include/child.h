@@ -358,8 +358,9 @@ struct childdata {
 	 * Stamped once in init_child() and never mutated for the child's
 	 * lifetime, so the syscall picker can branch off it without an
 	 * atomic load and the bandit-reward attribution can filter
-	 * explorer contributions out of edges_by_strategy[] /
-	 * bandit_cmp_new_constants[].  Always false when
+	 * explorer contributions out of pc_edge_calls_by_strategy[] /
+	 * pc_edge_count_by_strategy[] / bandit_cmp_new_constants[].
+	 * Always false when
 	 * explorer_children is 0. */
 	bool is_explorer;
 

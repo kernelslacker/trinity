@@ -120,7 +120,8 @@ void init_shm(void)
 	 * rotation fires. */
 	__atomic_store_n(&shm->current_strategy, STRATEGY_HEURISTIC, __ATOMIC_RELAXED);
 	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL, __ATOMIC_RELAXED);
-	shm->edges_at_window_start = 0;
+	shm->pc_edge_calls_at_window_start = 0;
+	shm->pc_edge_count_at_window_start = 0;
 
 	/* Optimistic seed for the biarch picker's per-table validity cache.
 	 * The authoritative pass through validate_syscall_table_{32,64}() at
@@ -138,8 +139,9 @@ void init_shm(void)
 	/* Picker mode (round-robin vs UCB1 bandit) was selected by
 	 * parse_args via --strategy.  Stash it in shm so the CAS-winning
 	 * child at each rotation reads a consistent value.  bandit_pulls/
-	 * bandit_reward are zeroed by the shm_zero default and only
-	 * touched by the bandit picker, so no further init is needed. */
+	 * bandit_reward_calls/bandit_reward_pc_edge_count are zeroed by the
+	 * shm_zero default and only touched by the bandit picker, so no
+	 * further init is needed. */
 	__atomic_store_n(&shm->picker_mode, picker_mode_arg, __ATOMIC_RELAXED);
 
 	__atomic_store_n(&shm->seed, init_seed(seed), __ATOMIC_RELAXED);

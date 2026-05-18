@@ -16,10 +16,14 @@
  * Phase 2 adds a UCB1 bandit picker that consumes the per-strategy
  * edge-attribution counters as the reward signal.
  *
- * Per-strategy edge attribution is recorded in shm->edges_by_strategy[]
- * so the operator can A/B compare strategies across many windows; the
- * bandit picker derives its reward signal from the same counters via
- * the per-window edge delta computed at rotation time.
+ * Per-strategy edge attribution is recorded in two parallel series --
+ * shm->pc_edge_calls_by_strategy[] (calls that produced >=1 new edge)
+ * and shm->pc_edge_count_by_strategy[] (real bucket-edge counts) --
+ * so the operator can A/B compare strategies across many windows.
+ * The bandit picker currently derives its reward signal from the
+ * call-count series; the bucket-count series is recorded in parallel
+ * so the alternative reward shape is visible without changing the
+ * learner's behaviour.
  *
  * Phase 1 ships two strategies (heuristic + uniform random); follow-up
  * commits add coverage-frontier, HEALER pair-bias, group-saturation,
@@ -104,13 +108,25 @@ const char *picker_mode_name(enum picker_mode_t mode);
 
 /*
  * Record the just-finished window's outcome for the bandit picker.
- * Bumps bandit_pulls[arm], adds the per-window edge delta to
- * bandit_reward[arm], and folds in (cmp_new_constants /
- * CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL) as a secondary CMP-novelty
- * term.  Called from the CAS-winning child during
- * maybe_rotate_strategy(); a no-op when arm is out of range.
+ * Bumps bandit_pulls[arm], adds (pc_edge_calls + cmp_term) to
+ * bandit_reward_calls[arm], adds pc_edge_count to
+ * bandit_reward_pc_edge_count[arm], and folds in
+ * (cmp_new_constants / CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL) as a
+ * secondary CMP-novelty term on the call-count reward only.
+ *
+ * pc_edge_calls is the per-window delta of pc_edge_calls_by_strategy
+ * for the just-finished arm — calls that produced >=1 new edge.
+ * pc_edge_count is the parallel per-window delta of
+ * pc_edge_count_by_strategy — real bucket-edge bits flipped.  Both
+ * series are recorded so the operator can see how the two reward
+ * shapes would score the same windows without flipping the learner.
+ *
+ * Called from the CAS-winning child during maybe_rotate_strategy();
+ * a no-op when arm is out of range.
  */
-void bandit_record_pull(int arm, unsigned long pc_edges,
+void bandit_record_pull(int arm,
+			unsigned long pc_edge_calls,
+			unsigned long pc_edge_count,
 			unsigned long cmp_new_constants);
 
 /*

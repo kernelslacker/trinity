@@ -164,11 +164,20 @@ struct kcov_shared {
 	/* Number of kcov_collect_cmp() calls where the cmp buffer filled
 	 * up.  Mirror of trace_truncated, sized off KCOV_CMP_BUFFER_SIZE. */
 	unsigned long cmp_trace_truncated;
+	/* Per-syscall count of CALLS that produced at least one new edge.
+	 * NOT a real edge bucket count — a syscall that uncovers 50 distinct
+	 * new edges in one call bumps this by 1, not by 50.  The real
+	 * bucket-edge count is the kcov_collect() new_edge_count out-param,
+	 * accumulated into per-strategy and per-pool fields elsewhere.  The
+	 * field name predates the call-count vs edge-count distinction; kept
+	 * for ABI compatibility with the cold-skip heuristic and the
+	 * top-syscalls dump in stats.c. */
 	unsigned long per_syscall_edges[MAX_NR_SYSCALL];
 	unsigned long per_syscall_calls[MAX_NR_SYSCALL];
 	unsigned long last_edge_at[MAX_NR_SYSCALL];
 	/* Snapshot of per_syscall_edges at the previous stats interval.
-	 * Used to compute per-interval edge growth rate. */
+	 * Used to compute per-interval growth rate of the call-count signal
+	 * above. */
 	unsigned long per_syscall_edges_previous[MAX_NR_SYSCALL];
 	/* Sliding-window edge-rate plateau detector state.  Sampled at the
 	 * 600s parent stats tick: each tick, delta = edges_found -
@@ -207,9 +216,23 @@ void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id);
 void kcov_disable(struct kcov_child *kc);
 
 /* After disabling, collect PCs and update the global bitmap.
- * Returns true if new coverage was found. nr is the syscall number
- * for per-syscall edge tracking. */
-bool kcov_collect(struct kcov_child *kc, unsigned int nr);
+ *
+ * Returns true if new coverage was found (i.e. this call set at least one
+ * never-seen bucket bit); the returned bool collapses the per-call count
+ * to a {0,1} signal that the caller's name-and-shame attribution paths
+ * already expect.
+ *
+ * If new_edge_count is non-NULL it is written with the actual number of
+ * bucket bits this call flipped — the real edge-count signal, distinct
+ * from the bool return.  Callers needing only the boolean signal pass
+ * NULL.  Computed during the same pass that updates kcov_shm->edges_found,
+ * so it costs no extra atomics: the caller would otherwise have to read
+ * the global counter before/after and diff it, which is racy under
+ * concurrent children that also bump the global.
+ *
+ * nr is the syscall number for per-syscall edge tracking. */
+bool kcov_collect(struct kcov_child *kc, unsigned int nr,
+		  unsigned long *new_edge_count);
 
 /* After disabling, drain the CMP buffer into the per-syscall hint pool
  * and bump the CMP-records-collected counter.  No-op when cmp_capable

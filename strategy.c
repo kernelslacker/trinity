@@ -3,11 +3,14 @@
  *
  * Phase 1 shipped a fixed round-robin between STRATEGY_HEURISTIC and
  * STRATEGY_RANDOM, with per-strategy edge attribution recorded in
- * shm->edges_by_strategy[].  This file adds a UCB1 bandit-arm picker
- * that consumes those same per-strategy edge counts as the reward
- * signal and biases future window picks toward arms producing edges
- * the fastest, while still occasionally exploring the others so a
- * temporarily-stuck arm doesn't starve forever.
+ * shm->pc_edge_calls_by_strategy[].  This file adds a UCB1 bandit-arm
+ * picker that consumes those same per-strategy call counts as the
+ * reward signal and biases future window picks toward arms producing
+ * new-edge calls the fastest, while still occasionally exploring the
+ * others so a temporarily-stuck arm doesn't starve forever.  The
+ * parallel pc_edge_count_by_strategy[] series (real bucket counts) is
+ * surfaced in dump_strategy_stats() as a diagnostic but does not
+ * currently feed the learner.
  *
  * Picker mode is selected once at parse_args() time via --strategy
  * and stashed in shm->picker_mode so every child agrees on the
@@ -190,9 +193,10 @@ bool is_strategy_eligible(int arm)
  * cumulative reward, and update the diagnostic CMP-share running sum.
  * Called by the CAS-winning child during maybe_rotate_strategy(),
  * which serialises with the picker — so picker-side reads of
- * bandit_pulls[] / bandit_reward[] / bandit_cmp_share_sum_x1000[]
- * inside pick_next_strategy() are covered by the strategy-switch
- * store's release semantics on the next CAS winner.
+ * bandit_pulls[] / bandit_reward_calls[] / bandit_reward_pc_edge_count[]
+ * / bandit_cmp_share_sum_x1000[] inside pick_next_strategy() are
+ * covered by the strategy-switch store's release semantics on the
+ * next CAS winner.
  *
  * dump_strategy_stats() is parent-side and runs outside the CAS
  * protocol, so it can race a child that is mid-update here.  To keep
@@ -203,14 +207,21 @@ bool is_strategy_eligible(int arm)
  * other shm fields.  The stats counter bump uses an atomic add for the
  * same reason.
  *
- * pc_edges is the per-window edges-by-strategy delta; cmp_new_constants
- * is the per-window bandit_cmp_new_constants delta.  Combined reward
- * is pc_edges + cmp_new_constants /
- * CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL (integer division — sub-weight
- * residues round to zero, deliberately so a window with a handful
- * of novel constants doesn't perturb the headline PC signal).
+ * pc_edge_calls is the per-window pc_edge_calls_by_strategy delta
+ * (calls with >=1 new edge).  pc_edge_count is the parallel
+ * pc_edge_count_by_strategy delta (real bucket-edge bits flipped).
+ * cmp_new_constants is the per-window bandit_cmp_new_constants delta.
+ * The learner-facing combined reward is pc_edge_calls +
+ * cmp_new_constants / CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL (integer
+ * division — sub-weight residues round to zero, deliberately so a
+ * window with a handful of novel constants doesn't perturb the
+ * headline PC signal).  The pc_edge_count delta accumulates into the
+ * parallel diagnostic reward (no cmp term folded in) so the operator
+ * can compare what the real-count reward would have looked like.
  */
-void bandit_record_pull(int arm, unsigned long pc_edges,
+void bandit_record_pull(int arm,
+			unsigned long pc_edge_calls,
+			unsigned long pc_edge_count,
 			unsigned long cmp_new_constants)
 {
 	unsigned long cmp_term;
@@ -220,10 +231,13 @@ void bandit_record_pull(int arm, unsigned long pc_edges,
 		return;
 
 	cmp_term = cmp_new_constants / CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL;
-	total = pc_edges + cmp_term;
+	total = pc_edge_calls + cmp_term;
 
 	__atomic_fetch_add(&shm->bandit_pulls[arm], 1UL, __ATOMIC_RELAXED);
-	__atomic_fetch_add(&shm->bandit_reward[arm], total, __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->bandit_reward_calls[arm], total,
+			   __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->bandit_reward_pc_edge_count[arm],
+			   pc_edge_count, __ATOMIC_RELAXED);
 
 	if (cmp_term == 0)
 		return;
@@ -502,7 +516,7 @@ void frontier_window_advance(void)
  *     score_i = mean_reward_i / norm + c * sqrt(ln(N) / n_i)
  *
  * where:
- *   mean_reward_i = bandit_reward[i] / bandit_pulls[i]
+ *   mean_reward_i = bandit_reward_calls[i] / bandit_pulls[i]
  *   norm          = max over arms of mean_reward_j (or 1 if all zero)
  *   N             = sum of pulls across arms (== total_pulls)
  *   n_i           = bandit_pulls[i]
@@ -514,12 +528,20 @@ void frontier_window_advance(void)
  * thousands.  Without normalisation, a UCB1 picker over edges-per-
  * window degenerates into "always pick the arm with the highest
  * cumulative average" because the exploit term dwarfs sqrt(ln/n).
+ *
+ * The reward signal consumed here is the CALL-COUNT series
+ * (bandit_reward_calls[] -- calls-with-≥1-edge plus the weighted CMP
+ * novelty term).  The parallel real bucket-count series
+ * (bandit_reward_pc_edge_count[]) is recorded for the operator dump
+ * but does not feed the score; switching the learner to consume it
+ * (or a transform of it) is a separate decision once both signals
+ * have been observed against real run data.
  */
 static double ucb1_score(int arm, unsigned long total_pulls,
 			 double norm)
 {
 	unsigned long pulls = shm->bandit_pulls[arm];
-	unsigned long reward = shm->bandit_reward[arm];
+	unsigned long reward = shm->bandit_reward_calls[arm];
 	double exploit, explore;
 
 	exploit = (double)reward / (double)pulls / norm;
@@ -532,7 +554,9 @@ static double ucb1_score(int arm, unsigned long total_pulls,
 /*
  * Pick the arm to run during the next window.  Returns an index in
  * [0, NR_STRATEGIES).  The caller (maybe_rotate_strategy) has already
- * updated bandit_pulls[]/bandit_reward[] for the just-finished window.
+ * updated bandit_pulls[]/bandit_reward_calls[] (plus the parallel
+ * bandit_reward_pc_edge_count[] diagnostic series) for the
+ * just-finished window.
  *
  * Cold-start: any arm with zero pulls wins immediately (UCB1's
  * convention — every arm gets one pull before the score formula
@@ -606,7 +630,7 @@ int pick_next_strategy(int prev)
 
 		if (!eligible[i])
 			continue;
-		mean = (double)shm->bandit_reward[i] /
+		mean = (double)shm->bandit_reward_calls[i] /
 		       (double)shm->bandit_pulls[i];
 		if (mean > max_mean)
 			max_mean = mean;
@@ -732,13 +756,21 @@ void dump_strategy_stats(void)
 	for (i = 0; i < NR_STRATEGIES; i++) {
 		unsigned long pulls = __atomic_load_n(&shm->bandit_pulls[i],
 						      __ATOMIC_RELAXED);
-		unsigned long reward = __atomic_load_n(&shm->bandit_reward[i],
-						       __ATOMIC_RELAXED);
+		unsigned long reward = __atomic_load_n(
+			&shm->bandit_reward_calls[i], __ATOMIC_RELAXED);
+		unsigned long reward_pc_edges = __atomic_load_n(
+			&shm->bandit_reward_pc_edge_count[i], __ATOMIC_RELAXED);
 		unsigned long cmp_new = __atomic_load_n(
 			&shm->bandit_cmp_new_constants[i], __ATOMIC_RELAXED);
 		unsigned long share_sum = __atomic_load_n(
 			&shm->bandit_cmp_share_sum_x1000[i], __ATOMIC_RELAXED);
-		unsigned long mean_x1000 = pulls ? (reward * 1000UL / pulls) : 0;
+		unsigned long mean_calls_x1000 = pulls ? (reward * 1000UL / pulls) : 0;
+		/* Parallel mean for the real bucket-edge series, so the operator
+		 * can eyeball how the two reward shapes would score each arm.
+		 * Strictly >= the call-count mean (a call that produces N edges
+		 * adds N to this series but only 1 to the call-count series). */
+		unsigned long mean_pc_edges_x1000 =
+			pulls ? (reward_pc_edges * 1000UL / pulls) : 0;
 		/* Average per-window CMP share, parts per thousand.  Divides
 		 * by total pulls (not just CMP-contributing pulls) so a low
 		 * value can mean either "CMP rarely fires" or "CMP fires but
@@ -746,9 +778,12 @@ void dump_strategy_stats(void)
 		 * tuning the 0.25 weight constant. */
 		unsigned long share_avg_x1000 = pulls ? (share_sum / pulls) : 0;
 
-		output(0, "  arm[%d]: pulls=%lu reward=%lu mean=%lu.%03lu edges/window cmp_novel=%lu cmp_share=%lu.%lu%%\n",
+		output(0, "  arm[%d]: pulls=%lu reward_calls=%lu mean_calls=%lu.%03lu/window reward_edge_count=%lu mean_edge_count=%lu.%03lu/window cmp_novel=%lu cmp_share=%lu.%lu%%\n",
 		       i, pulls, reward,
-		       mean_x1000 / 1000UL, mean_x1000 % 1000UL,
+		       mean_calls_x1000 / 1000UL, mean_calls_x1000 % 1000UL,
+		       reward_pc_edges,
+		       mean_pc_edges_x1000 / 1000UL,
+		       mean_pc_edges_x1000 % 1000UL,
 		       cmp_new,
 		       share_avg_x1000 / 10UL, share_avg_x1000 % 10UL);
 	}
