@@ -23,7 +23,9 @@
  * handler running cannot redirect the oracle at a foreign set user
  * buffer or alias the sigsetsize length check.
  */
+#define RT_SIGPENDING_POST_STATE_MAGIC	0x52545350UL	/* "RTSP" */
 struct rt_sigpending_post_state {
+	unsigned long magic;
 	unsigned long set;
 	unsigned long sigsetsize;
 };
@@ -52,6 +54,7 @@ static void sanitise_rt_sigpending(struct syscallrecord *rec)
 	 * scribbled value.  post_state is private to the post handler.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic      = RT_SIGPENDING_POST_STATE_MAGIC;
 	snap->set        = rec->a1;
 	snap->sigsetsize = rec->a2;
 	rec->post_state = (unsigned long) snap;
@@ -96,6 +99,23 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_rt_sigpending: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * rt_sigpending_post_state.  A cookie mismatch means snap does
+	 * not point at our struct -- abandon rather than feed wild bytes
+	 * into the inner-field deref.
+	 */
+	if (snap->magic != RT_SIGPENDING_POST_STATE_MAGIC) {
+		outputerr("post_rt_sigpending: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
