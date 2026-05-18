@@ -210,6 +210,37 @@ static unsigned long handle_arg_list(struct syscallentry *entry,
 	return mask;
 }
 
+/*
+ * If this argtype declares a paired_length in the descriptor table and
+ * the next slot is actually of that paired type, publish len there so
+ * the corresponding ARG_IOVECLEN / ARG_SOCKADDRLEN generator can hand
+ * it back unchanged.  Replaces the hardcoded
+ * `entry->argtype[argnum] == ARG_IOVECLEN/ARG_SOCKADDRLEN` checks that
+ * used to live inside handle_arg_iovec / handle_arg_sockaddr.
+ */
+static void publish_paired_length(struct syscallentry *entry,
+				  struct syscallrecord *rec,
+				  unsigned int argnum,
+				  unsigned long len)
+{
+	const struct argtype_ops *ops = argtype_get_ops(get_argtype(entry, argnum));
+
+	if (ops->paired_length == ARG_UNDEFINED)
+		return;
+	if (argnum >= 6)
+		return;
+	if (entry->argtype[argnum] != ops->paired_length)
+		return;
+
+	switch (argnum) {
+	case 1:	rec->a2 = len; break;
+	case 2:	rec->a3 = len; break;
+	case 3:	rec->a4 = len; break;
+	case 4:	rec->a5 = len; break;
+	case 5:	rec->a6 = len; break;
+	}
+}
+
 static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum)
 {
 	unsigned long num_entries;
@@ -222,15 +253,7 @@ static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscall
 	else
 		num_entries = RAND_RANGE(1, 8);
 
-	if (argnum < 6 && entry->argtype[argnum] == ARG_IOVECLEN) {
-		switch (argnum) {
-		case 1:	rec->a2 = num_entries; break;
-		case 2:	rec->a3 = num_entries; break;
-		case 3:	rec->a4 = num_entries; break;
-		case 4:	rec->a5 = num_entries; break;
-		case 5:	rec->a6 = num_entries; break;
-		}
-	}
+	publish_paired_length(entry, rec, argnum, num_entries);
 	return (unsigned long) alloc_iovec(num_entries);
 }
 
@@ -241,15 +264,7 @@ static unsigned long handle_arg_sockaddr(struct syscallentry *entry, struct sysc
 
 	generate_sockaddr((struct sockaddr **)&sockaddr, &sockaddrlen, PF_NOHINT);
 
-	if (argnum < 6 && entry->argtype[argnum] == ARG_SOCKADDRLEN) {
-		switch (argnum) {
-		case 1:	rec->a2 = sockaddrlen; break;
-		case 2:	rec->a3 = sockaddrlen; break;
-		case 3:	rec->a4 = sockaddrlen; break;
-		case 4:	rec->a5 = sockaddrlen; break;
-		case 5:	rec->a6 = sockaddrlen; break;
-		}
-	}
+	publish_paired_length(entry, rec, argnum, sockaddrlen);
 	return (unsigned long) sockaddr;
 }
 
@@ -815,248 +830,33 @@ const struct argtype_ops *argtype_get_ops(enum argtype t)
 
 static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum)
 {
-	enum argtype argtype;
+	const struct argtype_ops *ops;
 
 	if (argnum > entry->num_args)
 		return 0;
 
-	argtype = get_argtype(entry, argnum);
+	ops = argtype_get_ops(get_argtype(entry, argnum));
 
-	/* For fd-typed args, occasionally re-pick a low fd that previously
-	 * succeeded for this exact (syscall, argnum) slot.  Targets the
-	 * sweet spot where the kernel accepted the fd last time, so we keep
-	 * exercising the post-validation path instead of bouncing off
-	 * EBADF/EINVAL on a fresh random pick. */
-	if (is_fdarg(argtype) && RAND_BOOL()) {
+	/* Pre-generate bias: for fd-typed args, occasionally re-pick a low
+	 * fd that previously succeeded for this exact (syscall, argnum)
+	 * slot.  Targets the sweet spot where the kernel accepted the fd
+	 * last time, so we keep exercising the post-validation path instead
+	 * of bouncing off EBADF/EINVAL on a fresh random pick. */
+	if (ops->can_use_success_fd_bias && RAND_BOOL()) {
 		int fd = pick_successful_fd(&entry->results[argnum - 1]);
 
 		if (fd >= 0)
 			return (unsigned long) fd;
 	}
 
-	/* Inverse of the success-bias above: with 70% probability, reject
-	 * candidates whose bit is set in this slot's failed_fds bitmap and
-	 * re-roll, up to FAILED_FD_REROLL_LIMIT times.  After that we fall
-	 * through with whatever the last roll returned, so the explored fd
-	 * space is never strictly closed off. */
-	if (is_typed_fdarg(argtype)) {
-		struct results *results = &entry->results[argnum - 1];
-		bool filter = (rand() % 10) < 7;
-		enum argtype effective_argtype = argtype;
-		bool use_generic = false;
-		int fd = 0;
-		int tries;
-
-		/* With ~1/WRONG_FD_TYPE_FREQ probability, swap the requested
-		 * typed-fd subtype for a different one (or, less often, a
-		 * generic fd from the global pool) before entering the reroll
-		 * loop.  The swap is sticky across rerolls so the failed-fd
-		 * filter still has a chance to drop known-bad (slot, fd)
-		 * pairs for whatever fd source we ended up with. */
-		if (ONE_IN(WRONG_FD_TYPE_FREQ)) {
-			__atomic_fetch_add(&shm->stats.wrong_fd_type_substitutions,
-					   1UL, __ATOMIC_RELAXED);
-			if (ONE_IN(4)) {
-				use_generic = true;
-				__atomic_fetch_add(&shm->stats.wrong_fd_type_subst_generic,
-						   1UL, __ATOMIC_RELAXED);
-			} else {
-				/* Pick uniformly from the ARG_FD_BPF_BTF .. ARG_FD_TIMERFD
-				 * range excluding the requested argtype: sample one of
-				 * the (range) other slots, then bump past argtype if
-				 * we landed at-or-above it. */
-				unsigned int range = ARG_FD_TIMERFD - ARG_FD_BPF_BTF;
-				unsigned int pick = rand() % range;
-
-				effective_argtype = ARG_FD_BPF_BTF + pick;
-				if (effective_argtype >= argtype)
-					effective_argtype++;
-			}
-		}
-
-		for (tries = 0; tries < FAILED_FD_REROLL_LIMIT; tries++) {
-			fd = use_generic ? get_random_fd()
-					 : get_typed_fd(effective_argtype);
-			if (!filter || !fd_recently_failed(results, fd))
-				break;
-		}
-		return (unsigned long) fd;
-	}
-
-	switch (argtype) {
-	case ARG_UNDEFINED:
-		return gen_undefined_arg(entry, rec, argnum);
-
-	case ARG_FD: {
-		struct results *results = &entry->results[argnum - 1];
-		bool filter;
-		int fd = 0;
-		int tries;
-
-		/* Prefer live fds returned by recent syscalls (70% of the time). */
-		if (rand() % 10 < 7) {
-			struct childdata *child = this_child();
-
-			if (child != NULL) {
-				int live_fd = get_child_live_fd(child);
-
-				if (live_fd >= 0)
-					return live_fd;
-			}
-		}
-		if (RAND_BOOL()) {
-			unsigned int i;
-			/* If this is the 2nd or more ARG_FD, make it unique */
-			for (i = 1; i < argnum; i++) {
-				enum argtype arg;
-				arg = get_argtype(entry, i);
-				if (arg == ARG_FD)
-					return get_new_random_fd();
-			}
-		}
-
-		/* Same failed_fds re-roll bias as the typed-fd path above. */
-		filter = (rand() % 10) < 7;
-		for (tries = 0; tries < FAILED_FD_REROLL_LIMIT; tries++) {
-			fd = get_random_fd();
-			if (!filter || !fd_recently_failed(results, fd))
-				break;
-		}
-		return (unsigned long) fd;
-	}
-
-	case ARG_LEN:
-		return (unsigned long) get_len();
-
-	case ARG_ADDRESS:
-		return handle_arg_address(entry, rec, argnum);
-
-	case ARG_NON_NULL_ADDRESS:
-		return (unsigned long) get_non_null_address();
-
-	case ARG_MMAP:
-		return (unsigned long) get_map();
-
-	case ARG_PID:
-		/* ~1 in 8: pass garbage to keep the ARG_PID consumers
-		 * (kill, tkill, tgkill, ptrace, setpgid, getpgid, getsid,
-		 * setpriority, getpriority, waitpid, wait4, sched_set...,
-		 * sched_get..., perf_event_open, ...) hitting their
-		 * input-validation paths; otherwise pull a pid from the
-		 * producer-fed OBJ_PID pool fed by fork, vfork, clone,
-		 * clone3, getpid, gettid, getppid.  Cold-pool fallback
-		 * defers to get_pid()'s live-children bias inside
-		 * get_random_pid_from_pool. */
-		if (ONE_IN(8))
-			return (unsigned long) (int32_t) rand32();
-		return (unsigned long) get_random_pid_from_pool();
-
-	case ARG_KEY_SERIAL:
-		/* ~1 in 8: pass garbage to keep keyctl/add_key/request_key
-		 * input-validation paths exercised; otherwise pull a serial
-		 * from the producer-fed OBJ_KEY_SERIAL pool. */
-		if (ONE_IN(8))
-			return (unsigned long) (int32_t) rand32();
-		return (unsigned long) get_random_key_serial();
-
-	case ARG_TIMERID:
-		/* ~1 in 8: pass garbage to keep timer_settime/_gettime/
-		 * _getoverrun/_delete input-validation paths exercised;
-		 * otherwise pull a tid from the producer-fed OBJ_TIMERID
-		 * pool fed by timer_create. */
-		if (ONE_IN(8))
-			return (unsigned long) (int32_t) rand32();
-		return (unsigned long) get_random_timerid();
-
-	case ARG_AIO_CTX:
-		/* ~1 in 8: pass garbage to keep io_submit/io_getevents/
-		 * io_pgetevents/io_destroy/io_cancel input-validation paths
-		 * exercised; otherwise pull a context from the producer-fed
-		 * OBJ_AIO_CTX pool fed by io_setup. */
-		if (ONE_IN(8))
-			return (unsigned long) rand64();
-		return get_random_aio_ctx();
-
-	case ARG_SEM_ID:
-		/* ~1 in 8: pass garbage to keep semctl/semop/semtimedop
-		 * input-validation paths exercised; otherwise pull a semid
-		 * from the producer-fed OBJ_SYSV_SEM pool fed by semget. */
-		if (ONE_IN(8))
-			return (unsigned long) (int) rand32();
-		return (unsigned long) get_random_sysv_sem();
-
-	case ARG_MSG_ID:
-		/* ~1 in 8: pass garbage to keep msgctl/msgsnd/msgrcv
-		 * input-validation paths exercised; otherwise pull a msqid
-		 * from the producer-fed OBJ_SYSV_MSG pool fed by msgget. */
-		if (ONE_IN(8))
-			return (unsigned long) (int) rand32();
-		return (unsigned long) get_random_sysv_msg();
-
-	case ARG_SYSV_SHM:
-		/* ~1 in 8: pass garbage to keep shmat/shmctl input-
-		 * validation paths exercised; otherwise pull a shmid from
-		 * the producer-fed OBJ_SYSV_SHM pool fed by shmget. */
-		if (ONE_IN(8))
-			return (unsigned long) (int) rand32();
-		return (unsigned long) get_random_sysv_shm();
-
-	case ARG_RANGE:
-		return handle_arg_range(entry, rec, argnum);
-
-	case ARG_OP:	/* Like ARG_LIST, but just a single value. */
-		return handle_arg_op(entry, rec, argnum);
-
-	case ARG_LIST:
-		return handle_arg_list(entry, rec, argnum);
-
-	case ARG_CPU:
-		return (unsigned long) get_cpu();
-
-	case ARG_NUMA_NODE:
-		/* ~1 in 8: emit a wild small int so the kernel's
-		 * nodes_valid / MAX_NUMNODES bound checks in mm/mempolicy.c
-		 * stay exercised; otherwise pull a real online node id from
-		 * the pool seeded at startup from
-		 * /sys/devices/system/node/online. */
-		if (ONE_IN(8))
-			return (unsigned long) (rand32() & 0xFFFF);
-		return (unsigned long) random_numa_node();
-
-	case ARG_PATHNAME:
-		return (unsigned long) generate_pathname();
-
-	case ARG_IOVEC:
-		return handle_arg_iovec(entry, rec, argnum);
-
-	case ARG_IOVECLEN:
-	case ARG_SOCKADDRLEN:
-		/* We already set the len in the ARG_IOVEC/ARG_SOCKADDR case
-		 * So here we just return what we had set there. */
-		return get_argval(rec, argnum);
-
-	case ARG_SOCKADDR:
-		return handle_arg_sockaddr(entry, rec, argnum);
-
-	case ARG_MODE_T:
-		return handle_arg_mode_t(entry, rec, argnum);
-
-	case ARG_SOCKETINFO:
-		return (unsigned long) get_rand_socketinfo();
-
-	default:
-		outputerr("fill_arg: unhandled argtype %d for syscall %s (nr %d) arg %d\n",
-			argtype, entry->name, rec->nr, argnum);
-		break;
-	}
-
-	BUG("unreachable!\n");
+	return ops->generate(entry, rec, argnum);
 }
 
-/* Default-on scrub: any ARG_ADDRESS/ARG_NON_NULL_ADDRESS slot left
- * aliasing shared_regions or the libc heap arena gets redirected to
- * a writable address before the syscall is issued. Catches the
- * coverage-gap class where per-syscall sanitisers either don't call
+/* Default-on scrub: any argtype with default_address_scrub set in the
+ * descriptor table (today ARG_ADDRESS / ARG_NON_NULL_ADDRESS / ARG_RANGE)
+ * that ended up aliasing shared_regions or the libc heap arena gets
+ * redirected to a writable address before the syscall is issued. Catches
+ * the coverage-gap class where per-syscall sanitisers either don't call
  * avoid_shared_buffer() or miss specific slots. Length default is
  * page_size (conservative; bare ARG_ADDRESS carries no length info
  * and walking adjacent slots per dispatch is too expensive). */
@@ -1064,10 +864,11 @@ static void blanket_address_scrub(struct syscallentry *entry, struct syscallreco
 {
 	unsigned int i;
 	for (i = 1; i <= entry->num_args; i++) {
-		enum argtype t = entry->argtype[i - 1];
-		if (t != ARG_ADDRESS && t != ARG_NON_NULL_ADDRESS && t != ARG_RANGE)
-			continue;
+		const struct argtype_ops *ops = argtype_get_ops(entry->argtype[i - 1]);
 		unsigned long *slot;
+
+		if (!ops->default_address_scrub)
+			continue;
 		switch (i) {
 		case 1: slot = &rec->a1; break;
 		case 2: slot = &rec->a2; break;
@@ -1131,18 +932,10 @@ void generic_free_arg(struct syscallentry *entry, struct syscallrecord *rec)
 	BUG_ON(entry == NULL);
 
 	for_each_arg(entry, i) {
-		enum argtype argtype;
+		const struct argtype_ops *ops = argtype_get_ops(get_argtype(entry, i));
 
-		argtype = get_argtype(entry, i);
-
-		if (argtype == ARG_PATHNAME)
-			deferred_free_enqueue((void *) get_argval(rec, i), NULL);
-
-		if (argtype == ARG_IOVEC)
-			deferred_free_enqueue((void *) get_argval(rec, i), NULL);
-
-		if (argtype == ARG_SOCKADDR)
-			deferred_free_enqueue((void *) get_argval(rec, i), NULL);
+		if (ops->cleanup != NULL)
+			ops->cleanup(rec, i);
 	}
 }
 
