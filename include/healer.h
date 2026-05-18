@@ -200,12 +200,17 @@ void healer_maybe_snapshot(void);
 /*
  * Pair-relation table -- single-predecessor companion to the
  * (predset -> nr) triple table above.  Indexed (pred -> succ); each
- * cell holds a single weight counter.  The canonical lives in
+ * cell is a struct healer_pair_cell that separately tracks the static
+ * prior (metadata-derived bootstrap), runtime dynamic_hits
+ * (accumulated runtime evidence), and last_observed_epoch (decay
+ * clock).  Decay halves dynamic_hits only -- the static prior is
+ * stable, so a long quiet phase relaxes the dynamic signal without
+ * erasing the bootstrap beneath it.  The canonical lives in
  * parent_healer.pair_table (parent-private, fed by the per-child
  * healer_ring observer events the drain applies under single-writer
  * discipline); the picker reads its values through the published
  * mirror page (healer_pair_published).  See include/healer_ring.h
- * for the retrofit topology.
+ * for the retrofit topology and the cell layout.
  *
  * Bootstrapped from a static (producer -> consumer) prior derived from
  * existing ARG_FD_* / ret_objtype metadata via healer_load_static_seed(),
@@ -214,13 +219,33 @@ void healer_maybe_snapshot(void);
  * coarser-grained than the triples but converge MUCH faster from a
  * static prior than triples can.
  *
- * All three accessors silently no-op (or, for the read accessor,
- * return 0) when either syscall number is out of range, so callers
- * don't have to gate on MAX_NR_SYSCALL themselves.
+ * The accessors silently no-op (or, for read accessors, return 0)
+ * when either syscall number is out of range, so callers don't have
+ * to gate on MAX_NR_SYSCALL themselves.
  */
 void healer_pair_seed(unsigned int pred, unsigned int succ, unsigned int weight);
 void healer_pair_observe(unsigned int pred, unsigned int succ);
+
+/*
+ * Combined picker weight for a (pred -> succ) cell: static prior
+ * (carries the metadata-derived bootstrap signal) plus the runtime
+ * dynamic_hits accumulator.  Returned as a single value so the picker's
+ * existing distribution-build loop stays a single load per candidate.
+ * Reads through the published mirror page; bounded staleness (~ms per
+ * drain) is operationally indistinguishable from fresh.
+ */
 unsigned int healer_pair_get(unsigned int pred, unsigned int succ);
+
+/*
+ * Dynamic-hits component for a (pred -> succ) cell.  Used by callers
+ * that need to reason about runtime evidence specifically, separately
+ * from the static prior -- the eligibility gate (which would otherwise
+ * count bare seeds as evidence) and the dump path (which routes cells
+ * to the seed-only vs dynamically-confirmed pools).  Returns 0 if the
+ * mirror page is not yet allocated or the indices are out of range,
+ * matching healer_pair_get's defensive shape.
+ */
+unsigned int healer_pair_dynamic_hits(unsigned int pred, unsigned int succ);
 
 /*
  * Static-seed classifier dry-run.  Walks the active syscall table once

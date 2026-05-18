@@ -133,11 +133,15 @@
 /*
  * Initial weight installed by the static-seed loader for each producer/
  * consumer pair derived from the existing ret_objtype / argtype metadata
- * the syscall table already carries.  Held at the same value as
- * HEALER_DUMP_MIN_RAW so seeded pairs clear the top-N qualification
- * floor immediately, but a real triple with raw>=4 still beats them
- * once observations actually accumulate.  Bootstraps the picker's pair
- * prior on cold runs without dominating the ranking long-term.
+ * the syscall table already carries.  Bootstraps the picker's pair
+ * prior on cold runs; the seed value is now stored separately from
+ * runtime dynamic_hits in each pair cell (see struct healer_pair_cell)
+ * so the dump can route seed-only pairs to their own pool and the
+ * eligibility gate can require real dynamic evidence regardless of
+ * how many cells the seed installer populated.  3 is small enough that
+ * a handful of dynamic observations easily overtake it in the picker
+ * weight (static_prior + dynamic_hits) and the seed contribution
+ * becomes negligible in the long run.
  */
 #define HEALER_STATIC_SEED_WEIGHT 3
 
@@ -761,13 +765,11 @@ void healer_table_dump(void)
 	 */
 	unsigned long pollution_filtered = 0;
 	/*
-	 * Per-dump tally of the static-seed pair table: total nonzero
-	 * cells and the subset of those whose weight has reached >=2 (i.e.
-	 * either a seed that has been confirmed by at least one dynamic
-	 * observation, or a runtime-only pair that has been observed at
-	 * least twice).  Walked here so the second figure tracks "how many
-	 * pairs have evidence on top of the prior" without standing up a
-	 * separate dump pass.
+	 * Per-dump tally of the pair table: total nonzero cells and the
+	 * subset with any dynamic_hits.  Walked here so the second figure
+	 * tracks "how many pairs the runtime observer has actually
+	 * touched" cleanly, separate from the static-seed install
+	 * footprint that populates pair_populated independently.
 	 */
 	unsigned long pair_populated = 0;
 	unsigned long pair_weighted = 0;
@@ -779,11 +781,12 @@ void healer_table_dump(void)
 	 * whose every populated promoted entry has decayed to the floor
 	 * (the prune walk in healer-ring.c needs one more aged-out epoch
 	 * before evicting these); pair_rows_with_dynamic_mass counts pair-
-	 * table rows where at least one cell still carries weight above
-	 * the static-seed install weight (i.e. dynamic observation has
-	 * accumulated on top of the bare prior).  All three are recomputed
-	 * from the canonical at every dump so the values track the live
-	 * table rather than a stale snapshot taken at the last decay run.
+	 * table rows where at least one cell has dynamic_hits > 0 (i.e.
+	 * the runtime observer has touched it, separately from any
+	 * static prior installed by the seed loader).  All three are
+	 * recomputed from the canonical at every dump so the values track
+	 * the live table rather than a stale snapshot taken at the last
+	 * decay run.
 	 */
 	unsigned long active_predsets = 0;
 	unsigned long prunable_predsets = 0;
@@ -1009,21 +1012,21 @@ void healer_table_dump(void)
 	 * The pair table is a dense [MAX_NR_SYSCALL][MAX_NR_SYSCALL] matrix
 	 * (a few hundred K cells, mostly zero on a fresh run), so the bulk
 	 * walk happens once per dump tick and is cheap enough not to need
-	 * any sparser indexing.  HEALER_DUMP_MIN_RAW gates pair entries the
-	 * same way it gates triples: with HEALER_STATIC_SEED_WEIGHT == 3 ==
-	 * HEALER_DUMP_MIN_RAW the floor lets every fresh seed install
-	 * qualify on its first dump while still dropping a raw=1 or raw=2
-	 * dynamic-only pair (which the same statistical-noise argument that
-	 * motivates the triple-side floor applies to verbatim).  Skips are
-	 * tallied into the existing low_raw_skipped counter so the
-	 * "low-raw skipped: N" line covers both the triple and pair sides.
+	 * any sparser indexing.  Static prior and dynamic evidence live in
+	 * separate fields of each cell, so the routing test is direct:
+	 * cells with any dynamic_hits go to the dynamically-confirmed
+	 * pool, the rest land in the seed-only pool.  HEALER_DUMP_MIN_RAW
+	 * still gates the dynamically-confirmed pool against single-shot
+	 * noise (dropped entries are tallied into low_raw_skipped), but
+	 * the seed-only pool ignores it -- a bare seed is itself the entry
+	 * the section exists to surface.
 	 */
 	for (i = 0; i < MAX_NR_SYSCALL; i++) {
 		unsigned long producer_freq = parent_healer.pred_appearance[i];
 		bool row_dynamic_mass = false;
 
 		for (j = 0; j < MAX_NR_SYSCALL; j++) {
-			unsigned int weight;
+			unsigned int weight, dyn_hits;
 			unsigned long norm_score;
 			struct healer_dump_entry cand;
 
@@ -1032,20 +1035,29 @@ void healer_table_dump(void)
 				continue;
 
 			pair_populated++;
-			if (weight >= 2)
+			/*
+			 * Dynamic-hits is the runtime-evidence half of the
+			 * cell.  Counting cells with dyn_hits > 0 (rather
+			 * than `weight >= 2` against the combined value)
+			 * keeps the per-dump pair_weighted statistic from
+			 * conflating the seed install footprint with
+			 * dynamic observation -- the old test counted bare
+			 * seeds at weight == 3 as "weighted", which is the
+			 * exact confusion the cell-struct split exists to
+			 * remove.
+			 */
+			dyn_hits = healer_pair_dynamic_hits(i, j);
+			if (dyn_hits > 0) {
 				pair_weighted++;
-			/* HEALER_STATIC_SEED_WEIGHT is the install weight for
-			 * static-seed cells; anything strictly above that has
-			 * accumulated at least one dynamic observation on top
-			 * of the bare prior (or is a runtime-only pair the
-			 * dynamic path bumped past the threshold).  Counting
-			 * rows rather than cells gives an operator a sense of
-			 * how widely dynamic evidence has spread without
-			 * conflating it with the seed install footprint. */
-			if (weight > HEALER_STATIC_SEED_WEIGHT)
 				row_dynamic_mass = true;
+			}
 
-			if (weight < HEALER_DUMP_MIN_RAW) {
+			/* Dynamic-pool floor: a single sighting carries no
+			 * statistical weight even when stacked on a static
+			 * prior.  Pure seeds (dyn_hits == 0) skip this floor
+			 * -- they land in the seed-only pool, where the
+			 * point IS to surface the static prior itself. */
+			if (dyn_hits > 0 && dyn_hits < HEALER_DUMP_MIN_RAW) {
 				low_raw_skipped++;
 				continue;
 			}
@@ -1098,16 +1110,17 @@ void healer_table_dump(void)
 			cand.is_pair = true;
 
 			/*
-			 * Pair entries split on producer_freq: a producer that
-			 * has been observed at least once this run lifts the
-			 * pair into the dynamic pool, otherwise it is a pure
-			 * static-seed prior and lands in the seed-only pool.
-			 * This is the case the split exists for -- without it,
-			 * un-confirmed seeds at norm=raw*1000/isqrt(K+1)
-			 * dominate any dynamic pair whose denominator has been
-			 * dampened by an actual producer appearance count.
+			 * Pool routing is per-cell now: a cell with any
+			 * dynamic_hits is dynamically-confirmed regardless of
+			 * whether a static prior underlies it, and a cell with
+			 * dynamic_hits == 0 is seed-only regardless of the
+			 * producer's overall appearance count.  The previous
+			 * proxy (producer_freq > 0) lifted seed-only cells
+			 * whose producer happened to fire as part of some
+			 * other (pred, succ) pair into the dynamic pool even
+			 * though THIS pair had no runtime evidence.
 			 */
-			if (producer_freq > 0)
+			if (dyn_hits > 0)
 				healer_top_n_insert(top_dyn, &top_dyn_count,
 						    &cand);
 			else
@@ -1189,20 +1202,21 @@ void healer_table_dump(void)
 		qsort(top_seed, top_seed_count, sizeof(top_seed[0]),
 		      healer_dump_entry_cmp);
 		healer_dump_emit_top(
-			"HEALER top %u seed-only relations (predfreq=0, awaiting dynamic confirmation):\n",
+			"HEALER top %u seed-only relations (dynamic_hits=0, awaiting runtime confirmation):\n",
 			top_seed, top_seed_count);
 	}
 
 	/*
 	 * Pair-table summary line: total cells holding any weight, plus
-	 * the subset whose weight has reached >=2.  The first figure
-	 * reflects the static-seed install size; the second tracks how
-	 * many pairs have evidence beyond the bare prior, so an operator
-	 * can tell whether dynamic observation is accumulating on top of
-	 * the seed (rising weighted_count) or whether the table is still
-	 * the loader's first install (weighted_count near zero).
+	 * the subset with at least one dynamic_hits observation.  The
+	 * first figure reflects the static-seed install size; the second
+	 * is a direct count of cells the runtime observer has actually
+	 * touched, so an operator can tell at a glance whether dynamic
+	 * evidence is accumulating on top of the seed (rising
+	 * dynamically_confirmed) or whether the table is still the
+	 * loader's first install (dynamically_confirmed near zero).
 	 */
-	stats_log_write("HEALER pair table: %lu/%lu populated, %lu with weight>=2\n",
+	stats_log_write("HEALER pair table: %lu/%lu populated, %lu dynamically-confirmed (dynamic_hits>0)\n",
 			pair_populated,
 			(unsigned long)MAX_NR_SYSCALL * MAX_NR_SYSCALL,
 			pair_weighted);
@@ -1223,10 +1237,9 @@ void healer_table_dump(void)
 	 * predsets than the table can hold and the slot count needs to
 	 * grow.
 	 */
-	stats_log_write("HEALER pressure: %lu active predsets, %lu prunable (all entries at floor), %lu pair rows with dynamic mass (weight > %u)\n",
+	stats_log_write("HEALER pressure: %lu active predsets, %lu prunable (all entries at floor), %lu pair rows with dynamic mass (any cell dynamic_hits>0)\n",
 			active_predsets, prunable_predsets,
-			pair_rows_with_dynamic_mass,
-			HEALER_STATIC_SEED_WEIGHT);
+			pair_rows_with_dynamic_mass);
 
 	/*
 	 * Predecessor-frequency leader display.  Surfaces the top-N
@@ -1883,6 +1896,19 @@ void healer_pair_observe(unsigned int pred, unsigned int succ)
 	(void)healer_ring_enqueue_pair(child->healer_ring, pred, succ);
 }
 
+/*
+ * Picker-side weight formula.  Sums the static-prior bootstrap value
+ * (held in uint8_t but widened here for the add) and the runtime
+ * dynamic_hits accumulator into a single picker weight.  Kept as a
+ * single point-of-truth so any future tuning (weight the dynamic side
+ * more, ignore the prior past some hit count, etc.) lands in one
+ * place rather than scattered across the picker's distribution loop.
+ */
+static unsigned int healer_pair_cell_picker_weight(const struct healer_pair_cell *cell)
+{
+	return (unsigned int)cell->static_prior + cell->dynamic_hits;
+}
+
 unsigned int healer_pair_get(unsigned int pred, unsigned int succ)
 {
 	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
@@ -1897,7 +1923,17 @@ unsigned int healer_pair_get(unsigned int pred, unsigned int succ)
 	 * cadence (~ms) -- operationally indistinguishable from fresh
 	 * given the second-to-hour timescale on which (pred -> succ)
 	 * relations evolve. */
-	return healer_pair_published[pred][succ];
+	return healer_pair_cell_picker_weight(&healer_pair_published[pred][succ]);
+}
+
+unsigned int healer_pair_dynamic_hits(unsigned int pred, unsigned int succ)
+{
+	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
+		return 0;
+	if (healer_pair_published == NULL)
+		return 0;
+
+	return healer_pair_published[pred][succ].dynamic_hits;
 }
 
 /*

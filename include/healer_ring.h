@@ -66,6 +66,44 @@ struct healer_ring {
 };
 
 /*
+ * One pair-table cell.  Splits the predecessor->successor relation into
+ * three named components instead of cramming all of them into a single
+ * integer weight:
+ *
+ *   static_prior        - install weight from the producer/consumer
+ *                         classifier (healer_load_static_seed).  Never
+ *                         decays; carries the prior independently of any
+ *                         runtime evidence.  uint8_t is comfortable for
+ *                         HEALER_STATIC_SEED_WEIGHT (currently 3) and any
+ *                         plausible re-tuning.
+ *   dynamic_hits        - count of runtime observations (apply_pair
+ *                         increments under saturation cap).  This is the
+ *                         only field the pair-row decay halves, so a
+ *                         long quiet phase relaxes the dynamic signal
+ *                         without erasing the static prior beneath it.
+ *   last_observed_epoch - decay_epoch stamped at the most recent
+ *                         apply_pair bump.  Placeholder for the pair-
+ *                         table prune walk (separate follow-up); stamped
+ *                         here so the prune logic can land without
+ *                         backfilling history.
+ *
+ * Layout is naturally aligned: uint32_t at offset 0, uint16_t at 4,
+ * two uint8_t at 6-7, total 8 bytes.  The mirror page is a flat array
+ * of these cells so picker reads see static_prior and dynamic_hits in
+ * a single 8-byte cell load.  Reads are not atomic against the parent's
+ * publish step; the existing comment on healer_pair_published already
+ * documents that picker tolerates bounded per-drain staleness, and a
+ * partially-published cell only mixes old and new field values from
+ * the same cell -- relative magnitudes stay sane.
+ */
+struct healer_pair_cell {
+	uint32_t dynamic_hits;
+	uint16_t last_observed_epoch;
+	uint8_t static_prior;
+	uint8_t _pad;
+};
+
+/*
  * Parent-private aggregate.  Lives in the parent's MAP_PRIVATE heap
  * (post-fork .bss); no kernel-visible shared mapping addresses it, so
  * a wild kernel write through any child syscall arg cannot scribble
@@ -87,10 +125,11 @@ struct healer_aggregate {
 	struct healer_relation relations[HEALER_RELATION_SLOTS];
 
 	/* Canonical pair table: dense MAX_NR_SYSCALL x MAX_NR_SYSCALL
-	 * matrix indexed (pred -> succ).  Same shape as the shm version,
-	 * same HEALER_PAIR_MAX_WEIGHT saturation cap applied at apply
-	 * time. */
-	unsigned int pair_table[MAX_NR_SYSCALL][MAX_NR_SYSCALL];
+	 * matrix indexed (pred -> succ).  Each cell carries the (static
+	 * prior, dynamic hits, last observation epoch) triple separately
+	 * so decay, dump and the eligibility gate can speak directly to
+	 * the component they care about; see struct healer_pair_cell. */
+	struct healer_pair_cell pair_table[MAX_NR_SYSCALL][MAX_NR_SYSCALL];
 
 	/* Dirty-row tracking for the publish step.  Set when the parent's
 	 * drain mutates a slot or row; cleared after the publish copies
@@ -165,7 +204,7 @@ extern struct healer_aggregate parent_healer;
  * timescales.
  */
 extern struct healer_relation *healer_relations_published;
-extern unsigned int (*healer_pair_published)[MAX_NR_SYSCALL];
+extern struct healer_pair_cell (*healer_pair_published)[MAX_NR_SYSCALL];
 
 void healer_ring_init(struct healer_ring *ring);
 
@@ -223,10 +262,14 @@ void healer_published_init(void);
 void healer_published_freeze(void);
 
 /*
- * Mark a pair row dirty on the apply path that runs from the parent's
- * own pre-fork seed installer.  The seed installer writes parent_healer
- * directly (no ring) and needs the dirty bits set so the first publish
- * propagates the seed values to the mirror.
+ * Set a pair cell's static prior on the apply path that runs from the
+ * parent's own pre-fork seed installer.  The seed installer writes
+ * parent_healer directly (no ring) and needs the row's dirty bit set
+ * so the first publish propagates the seed values to the mirror.
+ * Idempotent: only installs when the cell's static_prior is still zero,
+ * so a second walk over an already-seeded cell is a silent no-op.  Does
+ * not touch dynamic_hits -- the seed install is a metadata-only fact
+ * about the (pred, succ) pair and carries no runtime observation.
  */
 void healer_aggregate_pair_set(unsigned int pred, unsigned int succ,
 			       unsigned int weight);

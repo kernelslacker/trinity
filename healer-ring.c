@@ -44,7 +44,7 @@
 
 struct healer_aggregate parent_healer;
 struct healer_relation *healer_relations_published;
-unsigned int (*healer_pair_published)[MAX_NR_SYSCALL];
+struct healer_pair_cell (*healer_pair_published)[MAX_NR_SYSCALL];
 
 /* Mirror healer.c's per-cell saturation cap and decay cadences.  Kept
  * as local statics so this file is self-contained for the dark-launch
@@ -353,20 +353,25 @@ out:
 
 /*
  * Apply a PAIR event to the canonical pair table.  Single-writer
- * parent context: plain increment with saturation clamp at
- * HEALER_PAIR_MAX_WEIGHT, mirrors the in-shm path's CAS loop without
- * the loop.
+ * parent context: plain increment of dynamic_hits with saturation
+ * clamp at HEALER_PAIR_MAX_WEIGHT, mirrors the in-shm path's CAS loop
+ * without the loop.  Leaves static_prior untouched -- the seed is a
+ * stable metadata fact about the pair, distinct from the runtime
+ * observation evidence accumulating on top of it.  Stamps
+ * last_observed_epoch so the pair-table prune walk (follow-up commit)
+ * can tell live cells from quiet ones.
  */
 static void apply_pair(unsigned int pred, unsigned int succ)
 {
-	unsigned int *cell;
+	struct healer_pair_cell *cell;
 
 	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
 		return;
 
 	cell = &parent_healer.pair_table[pred][succ];
-	if (*cell < HEALER_PAIR_MAX_WEIGHT) {
-		(*cell)++;
+	if (cell->dynamic_hits < HEALER_PAIR_MAX_WEIGHT) {
+		cell->dynamic_hits++;
+		cell->last_observed_epoch = parent_healer.decay_epoch;
 		parent_healer.pair_dirty[pred] = 1;
 	}
 }
@@ -420,17 +425,19 @@ unsigned int healer_ring_drain(struct healer_ring *ring)
 
 /*
  * Decay one (pred -> succ) row of the pair table in place.  Halves
- * every cell above the floor and reports whether anything changed so
- * the caller can flip the row's dirty bit for the next publish.
+ * every cell's dynamic_hits above the floor and reports whether
+ * anything changed so the caller can flip the row's dirty bit for the
+ * next publish.
  *
- * The uniform-decay policy is deliberate for this commit: every
- * non-floor cell halves, regardless of how it got there (static seed
- * vs accumulated dynamic evidence).  A future change to separate the
- * static-prior contribution from dynamic-evidence accumulation will
- * add a gate here (e.g. "skip cells whose dynamic-evidence component
- * is below their seed weight") -- the per-cell branch is the single
- * decision point, so that follow-up is a one-line addition rather
- * than a restructure.
+ * Touches dynamic_hits only.  static_prior is the static-metadata
+ * fact about the (producer, consumer) pair and carries no decay
+ * semantics: a kernel that exposes a producer/consumer relation today
+ * still exposes it after an hour of quiet runtime, so attenuating the
+ * prior would deprive the cold-start picker of its bootstrap signal
+ * the longer the run goes.  dynamic_hits, by contrast, is the
+ * runtime-evidence half and SHOULD relax during quiet phases so a
+ * pair that has stopped firing recently loses its picker-side
+ * advantage to fresher signal.
  */
 static bool healer_decay_pair_row(unsigned int pred)
 {
@@ -438,12 +445,15 @@ static bool healer_decay_pair_row(unsigned int pred)
 	unsigned int succ;
 
 	for (succ = 0; succ < MAX_NR_SYSCALL; succ++) {
-		unsigned int w = parent_healer.pair_table[pred][succ];
+		struct healer_pair_cell *cell;
+		uint32_t hits;
 
-		if (w <= 1)
+		cell = &parent_healer.pair_table[pred][succ];
+		hits = cell->dynamic_hits;
+		if (hits <= 1)
 			continue;
 
-		parent_healer.pair_table[pred][succ] = w / 2;
+		cell->dynamic_hits = hits / 2;
 		row_modified = true;
 	}
 	return row_modified;
@@ -591,7 +601,9 @@ static void healer_publish_locked(void)
 		parent_healer.relations[0].key)
 		parent_healer.published_corrupt++;
 	if (healer_pair_published != NULL &&
-	    healer_pair_published[0][0] != parent_healer.pair_table[0][0])
+	    memcmp(&healer_pair_published[0][0],
+		   &parent_healer.pair_table[0][0],
+		   sizeof(struct healer_pair_cell)) != 0)
 		parent_healer.published_corrupt++;
 }
 
@@ -633,9 +645,9 @@ void healer_published_init(void)
 	       sizeof(struct healer_relation) * HEALER_RELATION_SLOTS);
 
 	healer_pair_published = alloc_shared(
-		sizeof(unsigned int) * MAX_NR_SYSCALL * MAX_NR_SYSCALL);
+		sizeof(struct healer_pair_cell) * MAX_NR_SYSCALL * MAX_NR_SYSCALL);
 	memset(healer_pair_published, 0,
-	       sizeof(unsigned int) * MAX_NR_SYSCALL * MAX_NR_SYSCALL);
+	       sizeof(struct healer_pair_cell) * MAX_NR_SYSCALL * MAX_NR_SYSCALL);
 }
 
 /*
@@ -687,17 +699,27 @@ void healer_published_freeze(void)
 void healer_aggregate_pair_set(unsigned int pred, unsigned int succ,
 			       unsigned int weight)
 {
+	struct healer_pair_cell *cell;
+
 	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
 		return;
 
-	/* Idempotent CAS-from-zero: a previous loader call (or the in-shm
-	 * seed installer, while both coexist during the staged migration)
-	 * already populated this cell -- skip silently rather than
-	 * overwriting an authoritative existing value. */
-	if (parent_healer.pair_table[pred][succ] != 0)
+	cell = &parent_healer.pair_table[pred][succ];
+
+	/* Idempotent: a previous loader call already installed a prior
+	 * here -- skip silently rather than overwriting an authoritative
+	 * existing value.  Independent of dynamic_hits, since the static
+	 * prior is metadata-derived and a runtime observation never
+	 * conjures one up.  Clamp at the uint8_t field width; callers
+	 * pass HEALER_STATIC_SEED_WEIGHT (currently 3) but a future
+	 * re-tuning that overflows uint8_t should saturate visibly rather
+	 * than silently truncate. */
+	if (cell->static_prior != 0)
 		return;
 
-	parent_healer.pair_table[pred][succ] = weight;
+	if (weight > UINT8_MAX)
+		weight = UINT8_MAX;
+	cell->static_prior = (uint8_t)weight;
 	parent_healer.pair_dirty[pred] = 1;
 	parent_healer.pair_seeded++;
 }
