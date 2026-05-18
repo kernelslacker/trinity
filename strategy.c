@@ -342,13 +342,12 @@ static bool cmp_bloom_set(uint8_t *bloom, uint32_t bit)
 }
 
 void bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr,
-			bool is_explorer)
+			bool is_explorer, int strategy_at_pick)
 {
 	struct cmp_novelty_entry *e;
 	unsigned long count, i;
 	unsigned long novel = 0;
 	uint32_t now;
-	int strat;
 
 	if (trace_buf == NULL || nr >= MAX_NR_SYSCALL)
 		return;
@@ -390,19 +389,26 @@ void bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr,
 		return;
 
 	/* Explorer-pool children run a different strategy than whatever the
-	 * bandit picked for the bandit pool; crediting their CMP novelty to
-	 * shm->current_strategy would misattribute their work and bias the
-	 * bandit's reward calculation.  The bloom updates above still run so
-	 * the global novelty horizon stays consistent across the fleet. */
+	 * bandit picked for the bandit pool; crediting their CMP novelty
+	 * into bandit_cmp_new_constants[] would misattribute their work and
+	 * bias the bandit's reward calculation.  The bloom updates above
+	 * still run so the global novelty horizon stays consistent across
+	 * the fleet. */
 	if (is_explorer)
 		return;
 
-	strat = __atomic_load_n(&shm->current_strategy, __ATOMIC_RELAXED);
-	if (strat < 0 || strat >= NR_STRATEGIES)
+	/* Attribute to the arm that PICKED the syscall, snapshotted in
+	 * set_syscall_nr().  Re-reading shm->current_strategy here would
+	 * misattribute any call whose syscall started under one arm and
+	 * completed under another (rotation lands mid-syscall) -- frequent
+	 * for long or blocking syscalls.  -1 sentinel and any other
+	 * out-of-range value (e.g. a wild shm write landing on the field)
+	 * skip attribution naturally via the bounds check. */
+	if (strategy_at_pick < 0 || strategy_at_pick >= NR_STRATEGIES)
 		return;
 
-	__atomic_fetch_add(&shm->bandit_cmp_new_constants[strat], novel,
-			   __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->bandit_cmp_new_constants[strategy_at_pick],
+			   novel, __ATOMIC_RELAXED);
 }
 
 /*

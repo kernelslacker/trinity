@@ -403,11 +403,15 @@ retry:
 
 /*
  * Dispatch syscall selection through the active strategy's picker.
- * Reads shm->current_strategy with relaxed atomic — the value can change
- * mid-call (another child wins the rotation CAS) but the worst case is a
- * single misattribution at the boundary, which is acceptable noise over
- * a 1M-op window.  Out-of-range guard preserves correctness even if a
- * wild write into shm corrupts the strategy index.
+ * Reads shm->current_strategy with relaxed atomic, then snapshots the
+ * chosen arm into child->strategy_at_pick so the post-syscall reward
+ * attribution sites credit the arm that actually picked the syscall --
+ * not whichever arm happens to be current_strategy by the time the
+ * syscall returns.  Without the stamp, a rotation that lands mid-call
+ * (especially common on long or blocking syscalls) would misattribute
+ * the reward and contaminate the bandit's learning signal.  Out-of-range
+ * guard preserves correctness even if a wild write into shm corrupts
+ * the strategy index.
  */
 static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 {
@@ -417,7 +421,11 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 	 * STRATEGY_RANDOM unconditionally -- including when the bandit has
 	 * picked STRATEGY_COVERAGE_FRONTIER.  The pool is the always-on
 	 * uniform baseline that lets the bandit's reward signal stay honest
-	 * even when its winning arm goes stale. */
+	 * even when its winning arm goes stale.  Skip the strategy_at_pick
+	 * stamp too: explorer contributions are filtered out of the bandit's
+	 * per-arm reward counters in the post-syscall path on is_explorer
+	 * alone, and leaving the -1 sentinel here makes that intent explicit
+	 * if a future reader forgets the is_explorer gate. */
 	if (child->is_explorer) {
 		__atomic_fetch_add(&shm->stats.strategy_explorer_picks, 1UL,
 				   __ATOMIC_RELAXED);
@@ -428,6 +436,13 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 
 	if (strat < 0 || strat >= NR_STRATEGIES)
 		strat = STRATEGY_HEURISTIC;
+
+	/* Stamp the picked arm before dispatching so the post-syscall PC
+	 * and CMP reward sites read a stable value even if shm->current_
+	 * strategy rotates mid-call.  Written exactly once per pick on the
+	 * bandit-pool path; explorers (handled above) leave the -1 sentinel
+	 * from clean_childdata in place. */
+	child->strategy_at_pick = strat;
 
 	switch (strat) {
 	case STRATEGY_HEURISTIC:
@@ -755,7 +770,8 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * concurrent increments and over-attribute their edges to this
 	 * syscall; the per-call count is the authoritative number. */
 	new_edges = kcov_collect(&child->kcov, rec->nr, &new_edge_count);
-	kcov_collect_cmp(&child->kcov, rec->nr, child->is_explorer);
+	kcov_collect_cmp(&child->kcov, rec->nr, child->is_explorer,
+			 child->strategy_at_pick);
 
 	/* Per-syscall new-edge attribution split by strategy pool.  Skipped
 	 * when the call produced no new edges (the dump only consumes the
@@ -844,16 +860,25 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 					   1, __ATOMIC_RELAXED);
 		} else {
 			/* Attribute this new-edge call to the strategy that
-			 * was active when it was discovered.  Two parallel
-			 * cumulative counters: pc_edge_calls_by_strategy[]
-			 * bumps by 1 (calls-with-≥1-edge, the historical
-			 * "edges_by_strategy[]" signal under its honest name)
-			 * and pc_edge_count_by_strategy[] bumps by the real
+			 * PICKED the syscall, not whichever strategy happens
+			 * to be shm->current_strategy by the time the syscall
+			 * has returned and we got around to scoring the
+			 * reward.  The two values can disagree any time a
+			 * rotation lands between set_syscall_nr() and here,
+			 * which is frequent for long or blocking syscalls;
+			 * reading the pick-time stamp keeps the bandit's
+			 * reward signal pointed at the arm that actually
+			 * earned the credit.
+			 *
+			 * Two parallel cumulative counters:
+			 * pc_edge_calls_by_strategy[] bumps by 1 (the
+			 * historical "edges_by_strategy[]" signal under its
+			 * honest name -- calls-with-≥1-edge) and
+			 * pc_edge_count_by_strategy[] bumps by the real
 			 * bucket-edge count from kcov_collect().  Window
 			 * deltas are computed by maybe_rotate_strategy against
 			 * the matching *_at_window_start snapshots. */
-			int strat = __atomic_load_n(&shm->current_strategy,
-						    __ATOMIC_RELAXED);
+			int strat = child->strategy_at_pick;
 			if (strat >= 0 && strat < NR_STRATEGIES) {
 				__atomic_fetch_add(&shm->pc_edge_calls_by_strategy[strat],
 						   1, __ATOMIC_RELAXED);

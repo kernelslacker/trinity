@@ -238,9 +238,14 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr,
  * and bump the CMP-records-collected counter.  No-op when cmp_capable
  * is false.  is_explorer is forwarded to bandit_cmp_observe() so the
  * explorer pool's novelty observations skip per-arm reward attribution
- * (they ran a different strategy than the bandit's current arm). */
+ * (they ran a different strategy than the bandit's current arm).
+ * strategy_at_pick is the enum strategy_t snapshotted in set_syscall_nr
+ * when this syscall was picked (or -1 for explorers / pre-first-pick);
+ * forwarded so bandit_cmp_observe attributes CMP novelty to the arm
+ * that picked the call rather than re-reading shm->current_strategy
+ * (which may have rotated mid-syscall). */
 void kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
-		      bool is_explorer);
+		      bool is_explorer, int strategy_at_pick);
 
 /* Accessor for the raw CMP record stream after kcov_disable().
  * On return, *out points at the first record (NULL when cmp_capable

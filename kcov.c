@@ -578,7 +578,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr,
 }
 
 void kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
-		      bool is_explorer)
+		      bool is_explorer, int strategy_at_pick)
 {
 	unsigned long count;
 
@@ -599,7 +599,7 @@ void kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
 		return;
 
 	cmp_hints_collect(kc->cmp_trace_buf, nr);
-	bandit_cmp_observe(kc->cmp_trace_buf, nr, is_explorer);
+	bandit_cmp_observe(kc->cmp_trace_buf, nr, is_explorer, strategy_at_pick);
 
 	__atomic_fetch_add(&kcov_shm->cmp_records_collected, count,
 		__ATOMIC_RELAXED);

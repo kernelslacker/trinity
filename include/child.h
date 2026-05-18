@@ -364,6 +364,20 @@ struct childdata {
 	 * explorer_children is 0. */
 	bool is_explorer;
 
+	/* Strategy enum (enum strategy_t) snapshotted in set_syscall_nr()
+	 * at the moment this child's current syscall was picked.  Read by
+	 * the post-syscall reward attribution sites (PC edges in
+	 * random_syscall_step and CMP novelty in bandit_cmp_observe) so a
+	 * strategy rotation that lands between pick and reward credits the
+	 * new edges/constants to the arm that actually selected the
+	 * syscall, not whichever arm happens to be shm->current_strategy by
+	 * the time the syscall returns.  -1 is the "unstamped" sentinel;
+	 * both reward sites gate on (strat >= 0 && strat < NR_STRATEGIES)
+	 * so the sentinel naturally skips attribution for explorer children
+	 * (who bypass the stamp write entirely) and for any pre-first-pick
+	 * reads.  Owner-only field, no cross-process coherence needed. */
+	int strategy_at_pick;
+
 	/* FD leak instrumentation: count fds created and closed by
 	 * this child's syscalls, with per-group breakdown.
 	 * On child exit, if fd_created - fd_closed > threshold,

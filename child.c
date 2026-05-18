@@ -348,6 +348,15 @@ void clean_childdata(struct childdata *child)
 	memset(child->fd_created_by_group, 0, sizeof(child->fd_created_by_group));
 	clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
+	/* -1 sentinel = "no syscall picked yet on this child".  Reward
+	 * attribution gates on (strat >= 0 && strat < NR_STRATEGIES), so an
+	 * unstamped slot naturally skips attribution.  Explorer children
+	 * never write this field (they bypass the strategy switch entirely
+	 * in set_syscall_nr), so the sentinel persists for their lifetime;
+	 * the PC and CMP reward sites also gate on !is_explorer ahead of the
+	 * stamp read for clarity. */
+	child->strategy_at_pick = -1;
+
 	/* Reset per-child storm-containment counters and reseed the
 	 * sliding-window snapshot to "right now, all zeros" so the first
 	 * check after fork has a clean baseline rather than measuring a

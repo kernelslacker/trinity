@@ -165,12 +165,11 @@ const char *strategy_name(int arm);
  * comparison constant through the per-syscall novelty bloom in
  * shm->cmp_novelty[].  Constants that miss the bloom (and so are
  * "novel" within the last CMP_NOVELTY_DECAY_WINDOWS rotations) bump
- * shm->bandit_cmp_new_constants[strat] for the active strategy, where
- * strat is the value of shm->current_strategy at the time of the
- * call.  Called by every child from kcov_collect_cmp() right after
- * cmp_hints_collect; the bloom is a separate data structure from the
- * cmp_hints pool so the (deduplicated) hint pool entries do not skew
- * the novelty signal.
+ * shm->bandit_cmp_new_constants[strategy_at_pick] for the arm that
+ * picked the syscall.  Called by every child from kcov_collect_cmp()
+ * right after cmp_hints_collect; the bloom is a separate data
+ * structure from the cmp_hints pool so the (deduplicated) hint pool
+ * entries do not skew the novelty signal.
  *
  * Window-rotation count is read from shm->bandit_window_count, which
  * the rotation hook bumps once per completed window.
@@ -184,9 +183,20 @@ const char *strategy_name(int arm);
  * bandit_cmp_new_constants[]: explorers run a different strategy from
  * whatever the bandit picked for the bandit pool, so crediting their
  * CMP novelty to the bandit's current arm would be a misattribution.
+ *
+ * strategy_at_pick is the enum strategy_t snapshotted by
+ * set_syscall_nr() into child->strategy_at_pick when the syscall was
+ * picked.  Using the pick-time stamp rather than re-reading
+ * shm->current_strategy here closes the rotation-mid-syscall window
+ * where the strategy that picked the call differs from the strategy
+ * current by the time the call returns -- without the stamp, long or
+ * blocking syscalls routinely have their CMP novelty credited to the
+ * wrong arm, contaminating the bandit's reward signal.  -1 sentinel
+ * (and any other out-of-range value, e.g. from a wild shm write
+ * landing on the field) skips attribution.
  */
 void bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr,
-			bool is_explorer);
+			bool is_explorer, int strategy_at_pick);
 
 /*
  * Bump the per-syscall frontier-edge ring slot when kcov_collect
