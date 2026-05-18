@@ -1252,13 +1252,14 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
  * and walking adjacent slots per dispatch is too expensive). */
 static void blanket_address_scrub(struct syscallentry *entry, struct syscallrecord *rec)
 {
-	unsigned int i;
-	for (i = 1; i <= entry->num_args; i++) {
-		const struct argtype_ops *ops = argtype_get_ops(entry->argtype[i - 1]);
+	uint8_t mask = entry->address_scrub_mask;
+
+	/* Most syscalls have no scrub-eligible slots; skip the walk entirely
+	 * via the cached mask instead of running argtype_get_ops() per arg. */
+	while (mask != 0) {
+		unsigned int i = (unsigned int)__builtin_ctz(mask) + 1;
 		unsigned long *slot;
 
-		if (!ops->default_address_scrub)
-			continue;
 		switch (i) {
 		case 1: slot = &rec->a1; break;
 		case 2: slot = &rec->a2; break;
@@ -1266,9 +1267,11 @@ static void blanket_address_scrub(struct syscallentry *entry, struct syscallreco
 		case 4: slot = &rec->a4; break;
 		case 5: slot = &rec->a5; break;
 		case 6: slot = &rec->a6; break;
-		default: continue;
+		default: slot = NULL; break;
 		}
-		avoid_shared_buffer(slot, page_size);
+		if (slot != NULL)
+			avoid_shared_buffer(slot, page_size);
+		mask &= (uint8_t)(mask - 1);
 	}
 }
 
