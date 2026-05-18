@@ -60,7 +60,9 @@ static unsigned long ns_types[] = {
  * rec->aN between the syscall returning and the post handler running cannot
  * smear the size bound used to validate the retval.
  */
+#define LISTNS_POST_STATE_MAGIC	0x4C4E5321UL	/* "LNS!" */
 struct listns_post_state {
+	unsigned long magic;
 	unsigned long req;
 	unsigned long nr_ns_ids;
 };
@@ -88,6 +90,7 @@ static void sanitise_listns(struct syscallrecord *rec)
 	/* Snapshot for the post handler -- a1 / a3 may be scribbled by a
 	 * sibling syscall before post_listns() runs. */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = LISTNS_POST_STATE_MAGIC;
 	snap->req = rec->a1;
 	snap->nr_ns_ids = rec->a3;
 	rec->post_state = (unsigned long) snap;
@@ -103,6 +106,24 @@ static void post_listns(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_listns: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->a1 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * listns_post_state.  A cookie mismatch means snap does not point
+	 * at our struct -- abandon rather than feed wild bytes into the
+	 * inner req deferred-free and the nr_ns_ids retval bound check.
+	 */
+	if (snap->magic != LISTNS_POST_STATE_MAGIC) {
+		outputerr("post_listns: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->a1 = 0;
 		rec->post_state = 0;
 		return;

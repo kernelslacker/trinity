@@ -27,7 +27,6 @@ syscalls/get_mempolicy.c:get_mempolicy
 syscalls/get_robust_list.c:get_robust_list
 syscalls/io_uring_register.c:io_uring_register
 syscalls/listmount.c:listmount
-syscalls/listns.c:listns
 syscalls/listxattrat.c:listxattrat
 syscalls/listxattr.c:listxattr
 syscalls/lookup_dcookie.c:lookup_dcookie
