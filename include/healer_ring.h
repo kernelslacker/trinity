@@ -101,6 +101,18 @@ struct healer_aggregate {
 	uint8_t relations_dirty[HEALER_RELATION_SLOTS];
 	uint8_t pair_dirty[MAX_NR_SYSCALL];
 
+	/* Per-slot prune clock.  Each entry holds the decay_epoch value
+	 * the slot was last refreshed at (apply_triple stamps it on every
+	 * claim/bump/evict).  The decay walk uses (decay_epoch -
+	 * last_refreshed) to decide when a slot has aged out of usefulness
+	 * and can be reclaimed -- see HEALER_PRUNE_EPOCHS in healer-ring.c.
+	 * Lives parallel to relations[] rather than inside struct
+	 * healer_relation so the on-disk persistence layout (which bulk
+	 * memcpys the relations array) stays unchanged.  uint16_t matches
+	 * decay_epoch and is wrap-safe for the small comparison distance
+	 * the prune check needs. */
+	uint16_t relations_last_refreshed[HEALER_RELATION_SLOTS];
+
 	/* Eviction / probe-limit / observation counters lifted out of
 	 * shm->stats.healer_*.  Parent-private, written by apply, read by
 	 * dump.  Same semantics as the in-shm counters they shadow. */

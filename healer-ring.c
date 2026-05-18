@@ -52,6 +52,29 @@ unsigned int (*healer_pair_published)[MAX_NR_SYSCALL];
 #define HEALER_DECAY_OBSERVATIONS	5000UL
 #define HEALER_DECAY_INTERVAL_SEC	1800UL
 
+/*
+ * Relation-slot prune threshold, expressed in decay epochs.  A slot
+ * whose promoted entries have all decayed to the floor (weight <= 1)
+ * AND that hasn't been refreshed by an observation in the last
+ * HEALER_PRUNE_EPOCHS decay cycles is cleared so its open-addressing
+ * slot becomes available again.  Without pruning, once a distinct
+ * predset claims a slot the slot stays claimed forever -- decay can
+ * push the weights to 1 but never reclaims the slot, and apply_triple
+ * has nowhere to put a new high-value predset whose hash collides
+ * into the same probe chain once HEALER_PROBE_LIMIT is exhausted.
+ *
+ * 4 epochs is the smallest value that still lets a genuinely-useful
+ * relation survive a quiet phase: at HEALER_DECAY_INTERVAL_SEC=1800
+ * it requires at least ~2 hours of wall time with no observation
+ * touching the slot, and at HEALER_DECAY_OBSERVATIONS=5000 it
+ * requires ~20K observations elapsed without a refresh.  Either
+ * timescale is past the point where the slot is plausibly carrying
+ * load; smaller N risks evicting still-useful relations during a
+ * temporary lull, larger N lets stale entries clog the probe chain
+ * for longer than necessary.
+ */
+#define HEALER_PRUNE_EPOCHS		4U
+
 /* FNV-1a parameters and packed-key helpers mirror healer.c.  Duplicated
  * rather than hoisted into a shared header to keep the file count down
  * and the dark-launch commit self-contained; the in-shm copies remain
@@ -230,6 +253,7 @@ static void apply_triple(unsigned int pred_a, unsigned int pred_b,
 	unsigned int predset_hash;
 	unsigned int slot_idx;
 	unsigned int probe;
+	unsigned int idx = 0;
 	uint64_t target_key;
 	struct healer_relation *table = parent_healer.relations;
 	struct healer_relation *slot = NULL;
@@ -256,7 +280,7 @@ static void apply_triple(unsigned int pred_a, unsigned int pred_b,
 	target_key = aggregate_pack_key(pred_a, pred_b, predset_hash);
 
 	for (probe = 0; probe < HEALER_PROBE_LIMIT; probe++) {
-		unsigned int idx = (slot_idx + probe) & (HEALER_RELATION_SLOTS - 1);
+		idx = (slot_idx + probe) & (HEALER_RELATION_SLOTS - 1);
 
 		slot = &table[idx];
 		if (slot->key == 0) {
@@ -314,6 +338,12 @@ static void apply_triple(unsigned int pred_a, unsigned int pred_b,
 	evicted = true;
 
 out:
+	/* Mark the slot as refreshed at the current decay epoch so the
+	 * prune walk knows this slot has live observation traffic and
+	 * can't be considered stale.  Stamped on every successful
+	 * claim/bump/evict; only the probe-limit-overflow path above
+	 * skips it (that path doesn't touch a slot at all). */
+	parent_healer.relations_last_refreshed[idx] = parent_healer.decay_epoch;
 	parent_healer.relations_observed++;
 	if (evicted)
 		parent_healer.evictions++;
@@ -452,6 +482,8 @@ static void healer_apply_maybe_decay(void)
 
 	for (i = 0; i < HEALER_RELATION_SLOTS; i++) {
 		struct healer_relation *slot = &parent_healer.relations[i];
+		bool slot_at_floor;
+		uint16_t age;
 
 		if (slot->key == 0)
 			continue;
@@ -472,6 +504,35 @@ static void healer_apply_maybe_decay(void)
 		}
 		if (any_dirty)
 			parent_healer.relations_dirty[i] = 1;
+
+		/* Prune-eligibility: every populated promoted entry decayed
+		 * down to the floor AND no apply_triple has stamped this
+		 * slot's last_refreshed in HEALER_PRUNE_EPOCHS or more
+		 * cycles.  Clearing key + promoted releases the slot back
+		 * to the open-addressing pool so an incoming high-value
+		 * predset whose hash collided here can claim it on the
+		 * next observation.  uint16_t subtraction is wrap-safe at
+		 * the small distances the comparison cares about (a slot
+		 * stale enough to prune is by definition not within
+		 * 65535-HEALER_PRUNE_EPOCHS epochs of decay_epoch). */
+		slot_at_floor = true;
+		for (j = 0; j < HEALER_PROMOTED_PER_SLOT; j++) {
+			unsigned int weight, nr;
+
+			aggregate_unpack_promoted(slot->promoted[j].entry,
+						  &nr, &weight);
+			if (weight > 1) {
+				slot_at_floor = false;
+				break;
+			}
+		}
+		age = (uint16_t)(parent_healer.decay_epoch -
+				 parent_healer.relations_last_refreshed[i]);
+		if (slot_at_floor && age >= HEALER_PRUNE_EPOCHS) {
+			memset(slot, 0, sizeof(*slot));
+			parent_healer.relations_last_refreshed[i] = 0;
+			parent_healer.relations_dirty[i] = 1;
+		}
 	}
 
 	for (i = 0; i < MAX_NR_SYSCALL; i++) {

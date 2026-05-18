@@ -1588,12 +1588,22 @@ bool healer_load_file(const char *path)
 	parent_healer.relations_observed = hdr.observations;
 	parent_healer.obs_at_last_snapshot = hdr.observations;
 	/* Mark every populated slot dirty so the first publish step
-	 * propagates the loaded table into the mirror page. */
+	 * propagates the loaded table into the mirror page.  Also stamp
+	 * each loaded slot's last_refreshed counter at the current
+	 * decay_epoch (zero at warm-start) so the prune walk gives
+	 * loaded relations a full HEALER_PRUNE_EPOCHS grace window
+	 * before considering them stale -- otherwise an unstamped slot
+	 * (initialised to 0) would fall under (decay_epoch - 0 >= N)
+	 * the moment decay_epoch reaches N, evicting the entire warm
+	 * start. */
 	{
 		unsigned int n;
 		for (n = 0; n < HEALER_RELATION_SLOTS; n++)
-			if (parent_healer.relations[n].key != 0)
+			if (parent_healer.relations[n].key != 0) {
 				parent_healer.relations_dirty[n] = 1;
+				parent_healer.relations_last_refreshed[n] =
+					parent_healer.decay_epoch;
+			}
 	}
 	ok = true;
 
