@@ -24,7 +24,6 @@ syscalls/alarm.c:alarm
 syscalls/bpf.c:bpf
 syscalls/capget.c:capget
 syscalls/capset.c:capset
-syscalls/clock_gettime.c:clock_gettime
 syscalls/execve.c:execve
 syscalls/fgetxattr.c:fgetxattr
 syscalls/file_getattr.c:file_getattr
