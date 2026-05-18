@@ -636,6 +636,9 @@ static void maybe_rotate_strategy(void)
 	unsigned long now;
 	unsigned long last;
 	int prev, next;
+	int prev_reason_raw;
+	enum strategy_selection_reason prev_reason;
+	enum strategy_selection_reason next_reason = SR_NORMAL_UCB;
 	unsigned long calls_now, calls_in_window;
 	unsigned long edges_now, edges_in_window;
 	unsigned long syscalls_in_window;
@@ -663,6 +666,25 @@ static void maybe_rotate_strategy(void)
 	if (prev < 0 || prev >= NR_STRATEGIES)
 		prev = STRATEGY_HEURISTIC;
 
+	/* Selection reason for the just-finished window -- the intervention
+	 * orchestrator stamped this when it picked prev.  Treated as raw int
+	 * across the shm boundary and re-validated here so a wild write
+	 * landing on the field falls back to the "policy chose this" path
+	 * rather than skipping the learner update spuriously. */
+	prev_reason_raw = __atomic_load_n(&shm->current_selection_reason,
+					  __ATOMIC_RELAXED);
+	switch (prev_reason_raw) {
+	case SR_NORMAL_UCB:
+	case SR_ROUND_ROBIN:
+	case SR_COLD_START:
+	case SR_PLATEAU_FORCE:
+		prev_reason = (enum strategy_selection_reason)prev_reason_raw;
+		break;
+	default:
+		prev_reason = SR_NORMAL_UCB;
+		break;
+	}
+
 	calls_now = __atomic_load_n(&shm->pc_edge_calls_by_strategy[prev],
 				    __ATOMIC_RELAXED);
 	calls_in_window = calls_now - shm->pc_edge_calls_at_window_start;
@@ -689,9 +711,21 @@ static void maybe_rotate_strategy(void)
 	 * two reward shapes without changing the learner's behaviour.
 	 * Round-robin mode ignores the counters but the bookkeeping is
 	 * harmless and lets the end-of-run summary print pulls under either
-	 * picker. */
-	bandit_record_pull(prev, calls_in_window, edges_in_window,
-			   cmp_in_window);
+	 * picker.
+	 *
+	 * SR_PLATEAU_FORCE windows skip the update: an intervention window
+	 * ran STRATEGY_RANDOM because every arm was stalled, which is
+	 * structurally different from "RANDOM scored best under UCB"
+	 * (the bandit had no input on the pick).  Bumping the RANDOM arm's
+	 * pulls/reward from a forced window contaminates the learner so
+	 * the bandit can't tell policy-chosen RANDOM windows from forced
+	 * RANDOM windows once the plateau clears.  All other bookkeeping
+	 * (bandit_window_count tick, frontier ring advance, window-start
+	 * snapshot reseed) runs unconditionally — those are coverage-side
+	 * structures and must stay aligned with the rotation cadence. */
+	if (prev_reason != SR_PLATEAU_FORCE)
+		bandit_record_pull(prev, calls_in_window, edges_in_window,
+				   cmp_in_window);
 
 	/* Tick the rotation counter so bandit_cmp_observe()'s per-syscall
 	 * bloom decay sees the new window index on subsequent calls.
@@ -706,9 +740,11 @@ static void maybe_rotate_strategy(void)
 	 * above. */
 	frontier_window_advance();
 
-	next = pick_next_strategy(prev);
-	if (next < 0 || next >= NR_STRATEGIES)
+	next = select_next_strategy(prev, &next_reason);
+	if (next < 0 || next >= NR_STRATEGIES) {
 		next = (prev + 1) % NR_STRATEGIES;
+		next_reason = SR_ROUND_ROBIN;
+	}
 
 	shm->pc_edge_calls_at_window_start =
 		__atomic_load_n(&shm->pc_edge_calls_by_strategy[next],
@@ -719,13 +755,23 @@ static void maybe_rotate_strategy(void)
 	shm->bandit_cmp_at_window_start =
 		__atomic_load_n(&shm->bandit_cmp_new_constants[next],
 				__ATOMIC_RELAXED);
+	/* Publish the selection reason BEFORE current_strategy: the RELEASE
+	 * store on current_strategy below pairs with the next rotation's
+	 * RELAXED loads of both fields and makes the reason visible to any
+	 * child that observes the new strategy. */
+	__atomic_store_n(&shm->current_selection_reason,
+			 (int)next_reason, __ATOMIC_RELAXED);
 	__atomic_store_n(&shm->current_strategy, next, __ATOMIC_RELEASE);
 
-	output(0, "strategy: switched to %s (%d) (prev %s (%d): edge_calls=%lu, edge_count=%lu, syscalls=%lu, cmp_novel=%lu)\n",
+	output(0, "strategy: switched to %s (%d) [%s] (prev %s (%d) [%s]: edge_calls=%lu, edge_count=%lu, syscalls=%lu, cmp_novel=%lu%s)\n",
 	       strategy_name(next), next,
+	       strategy_selection_reason_name(next_reason),
 	       strategy_name(prev), prev,
+	       strategy_selection_reason_name(prev_reason),
 	       calls_in_window, edges_in_window, syscalls_in_window,
-	       cmp_in_window);
+	       cmp_in_window,
+	       prev_reason == SR_PLATEAU_FORCE ?
+	       ", learner-update skipped" : "");
 }
 
 /*

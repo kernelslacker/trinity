@@ -23,6 +23,7 @@
 #include "random.h"
 #include "sequence.h"
 #include "shm.h"
+#include "strategy.h"
 #include "edgepair_ring.h"
 #include "healer_ring.h"
 #include "stats_ring.h"
@@ -119,6 +120,13 @@ void init_shm(void)
 	 * a full STRATEGY_WINDOW ops on the heuristic before the first
 	 * rotation fires. */
 	__atomic_store_n(&shm->current_strategy, STRATEGY_HEURISTIC, __ATOMIC_RELAXED);
+	/* SR_COLD_START matches the cold-start convention in the picker:
+	 * the very first window is the initial seed, no policy or
+	 * intervention has scored it.  Keeps the rotation site's
+	 * "was the prev window forced?" check unambiguous on the first
+	 * close. */
+	__atomic_store_n(&shm->current_selection_reason,
+			 (int)SR_COLD_START, __ATOMIC_RELAXED);
 	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL, __ATOMIC_RELAXED);
 	shm->pc_edge_calls_at_window_start = 0;
 	shm->pc_edge_count_at_window_start = 0;

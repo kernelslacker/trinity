@@ -1563,6 +1563,16 @@ struct stats_s {
 	unsigned long plateau_entered;
 	unsigned long plateau_exited;
 
+	/* Number of windows the orchestrator above the strategy picker
+	 * forced STRATEGY_RANDOM in response to plateau_active, i.e. windows
+	 * with selection_reason == SR_PLATEAU_FORCE.  Excluded from the
+	 * UCB learner's reward history; surfaced separately in
+	 * dump_strategy_stats() so the operator can size the intervention
+	 * cohort against the policy-chosen cohort.  Bumped by the CAS-winning
+	 * child inside select_next_strategy(); relaxed because the rotation
+	 * path already serialises via syscalls_at_last_switch CAS. */
+	unsigned long plateau_forced_windows;
+
 	/* Per-vCPU ioctl dispatches into kvm_vcpu_grp.  Bumped from
 	 * kvm_vcpu_sanitise() each time pick_random_ioctl() lands on an ioctl
 	 * destined for an OBJ_FD_KVM_VCPU fd.  Distinct from the flat KVM

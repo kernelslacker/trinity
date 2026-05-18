@@ -82,6 +82,35 @@ enum picker_mode_t {
 	PICKER_BANDIT_UCB1,	/* Phase 2: UCB1 over per-arm reward */
 };
 
+/*
+ * Why select_next_strategy() returned the arm it returned.  Stamped on
+ * each window so the rotation site can tell a policy-chosen arm from an
+ * intervention forced over the top of the picker, and so end-of-run
+ * stats can report the two cohorts separately.
+ *
+ * SR_NORMAL_UCB:    UCB1 scored this arm highest among eligible arms.
+ * SR_ROUND_ROBIN:   PICKER_ROUND_ROBIN cycled to this arm (or the
+ *                   "everything ineligible" fallback ran).
+ * SR_COLD_START:    UCB1 picked this arm because it had zero pulls and
+ *                   the score formula is undefined until each arm has
+ *                   been observed at least once.
+ * SR_PLATEAU_FORCE: The plateau-intervention orchestrator overrode the
+ *                   picker and forced this arm because kcov reports
+ *                   edge discovery is stalled.  Windows with this
+ *                   reason are NOT fed back into the UCB learner: a
+ *                   forced-RANDOM intervention window is structurally
+ *                   different from a policy-chosen RANDOM window
+ *                   (every arm was stalled when this one ran), so
+ *                   mixing them into bandit_pulls[]/bandit_reward_calls[]
+ *                   contaminates the reward signal.
+ */
+enum strategy_selection_reason {
+	SR_NORMAL_UCB = 0,
+	SR_ROUND_ROBIN,
+	SR_COLD_START,
+	SR_PLATEAU_FORCE,
+};
+
 /* Set by parse_args() before init_shm(). */
 extern enum picker_mode_t picker_mode_arg;
 
@@ -130,15 +159,67 @@ void bandit_record_pull(int arm,
 			unsigned long cmp_new_constants);
 
 /*
- * Pick the arm to run during the next window.  In PICKER_ROUND_ROBIN
- * mode this is just (prev + 1) % NR_STRATEGIES; in PICKER_BANDIT_UCB1
- * mode this runs the UCB1 score across all arms (any unpulled arm
- * wins immediately during cold-start).  Ineligible arms (per
+ * Pick the arm to run during the next window using the configured
+ * arm-selection POLICY only -- this is the raw UCB1 / round-robin
+ * picker with no intervention layer.  In PICKER_ROUND_ROBIN mode this
+ * is just (prev + 1) % NR_STRATEGIES; in PICKER_BANDIT_UCB1 mode this
+ * runs the UCB1 score across all arms (any unpulled arm wins
+ * immediately during cold-start).  Ineligible arms (per
  * is_strategy_eligible) are skipped in both the cold-start and
  * UCB1-score loops so the bandit only schedules an arm when its
  * preconditions are met.
+ *
+ * *reason_out is set to SR_ROUND_ROBIN, SR_COLD_START, or SR_NORMAL_UCB
+ * depending on which path produced the winning arm.  Callers above the
+ * intervention layer should call select_next_strategy() instead; this
+ * raw picker is exposed so the orchestrator can delegate to it.
  */
-int pick_next_strategy(int prev);
+int pick_next_strategy(int prev, enum strategy_selection_reason *reason_out);
+
+/*
+ * Select the arm to run during the next window, applying the plateau
+ * intervention layer on top of the raw picker.  When PICKER_BANDIT_UCB1
+ * is active and kcov reports the fleet is in a coverage plateau, this
+ * returns STRATEGY_RANDOM with reason SR_PLATEAU_FORCE without
+ * consulting the UCB1 scorer -- breaking out of whatever local minimum
+ * the bandit has settled into.  Round-robin mode bypasses the
+ * intervention (its own cycling already includes RANDOM, so forcing it
+ * here would collapse the cycle).  In all other cases the call
+ * delegates straight through to pick_next_strategy().
+ *
+ * This is the entry point the rotation site should call.  Splitting
+ * the intervention layer above the picker keeps forced-intervention
+ * windows out of the UCB learner's reward history -- see the
+ * SR_PLATEAU_FORCE comment on enum strategy_selection_reason.
+ */
+int select_next_strategy(int prev,
+			 enum strategy_selection_reason *reason_out);
+
+/*
+ * Human-readable name for a strategy_selection_reason, for the rotation
+ * log line and the end-of-run dump.  Returns "?" for out-of-range
+ * input (e.g. a wild shm write landing on the field).
+ */
+const char *strategy_selection_reason_name(enum strategy_selection_reason r);
+
+/*
+ * Coverage-plateau response: invoked by kcov_plateau_check() on the
+ * rising-edge transition into PLATEAU state.  Resets
+ * shm->syscalls_at_last_switch to 0 so the next maybe_rotate_strategy
+ * call from any child trips the window boundary immediately, instead
+ * of waiting up to STRATEGY_WINDOW (~1M ops, ~9 minutes at 2K iter/sec)
+ * for the natural rotation cadence.  The CAS guard in
+ * maybe_rotate_strategy still serialises the rotation work to one
+ * child even though every child observes the trigger.
+ *
+ * This used to live alongside HEALER (the original consumer) but the
+ * intervention is now picker-agnostic: select_next_strategy() above
+ * the picker decides what to force based on plateau state.  Future
+ * dispatches will replace the current "force STRATEGY_RANDOM" policy
+ * with smarter interventions inside the orchestrator without touching
+ * this trigger.
+ */
+void strategy_plateau_response(void);
 
 /*
  * Per-arm eligibility check used by pick_next_strategy() to skip arms

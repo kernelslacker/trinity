@@ -33,10 +33,10 @@
 
 #include "debug.h"
 #include "healer.h"		/* healer_pair_get */
-#include "kcov.h"		/* KCOV_CMP_RECORDS_MAX */
+#include "kcov.h"		/* KCOV_CMP_RECORDS_MAX, kcov_shm */
 #include "params.h"
 #include "shm.h"
-#include "stats.h"
+#include "stats.h"		/* stats_log_write */
 #include "strategy.h"
 #include "syscall.h"		/* MAX_NR_SYSCALL */
 #include "utils.h"
@@ -558,11 +558,13 @@ static double ucb1_score(int arm, unsigned long total_pulls,
 }
 
 /*
- * Pick the arm to run during the next window.  Returns an index in
- * [0, NR_STRATEGIES).  The caller (maybe_rotate_strategy) has already
+ * Pick the arm to run during the next window using the configured
+ * arm-selection POLICY only.  Returns an index in [0, NR_STRATEGIES)
+ * and writes the reason path through *reason_out.  The caller
+ * (maybe_rotate_strategy via select_next_strategy) has already
  * updated bandit_pulls[]/bandit_reward_calls[] (plus the parallel
  * bandit_reward_pc_edge_count[] diagnostic series) for the
- * just-finished window.
+ * just-finished window unless that window was a forced intervention.
  *
  * Cold-start: any arm with zero pulls wins immediately (UCB1's
  * convention — every arm gets one pull before the score formula
@@ -571,8 +573,14 @@ static double ucb1_score(int arm, unsigned long total_pulls,
  *
  * Round-robin mode bypasses the bandit entirely and just steps to
  * the next arm — same behaviour as Phase 1.
+ *
+ * Plateau-driven interventions used to live inside this function as
+ * an early-return override; they now sit one level up in
+ * select_next_strategy() so forced-intervention windows can be kept
+ * out of the UCB learner's pull/reward history.  This picker is pure
+ * policy — no intervention awareness.
  */
-int pick_next_strategy(int prev)
+int pick_next_strategy(int prev, enum strategy_selection_reason *reason_out)
 {
 	enum picker_mode_t mode;
 	bool eligible[NR_STRATEGIES];
@@ -593,6 +601,7 @@ int pick_next_strategy(int prev)
 
 	if (mode == PICKER_ROUND_ROBIN) {
 		int next = prev;
+		*reason_out = SR_ROUND_ROBIN;
 		for (i = 0; i < NR_STRATEGIES; i++) {
 			next = (next + 1) % NR_STRATEGIES;
 			if (eligible[next])
@@ -605,25 +614,14 @@ int pick_next_strategy(int prev)
 		return (prev + 1) % NR_STRATEGIES;
 	}
 
-	/* Plateau-detector override: when KCOV's edge-discovery rate is
-	 * stalled, the bandit has likely settled into an exploit-heavy
-	 * arm whose own gradient has gone flat.  Force STRATEGY_RANDOM
-	 * (uniform pick, no biases) to break out of the local minimum;
-	 * subsequent rotations stay on RANDOM until kcov_plateau_check()
-	 * detects edge discovery resuming and clears plateau_active, at
-	 * which point UCB1 scoring takes over again on the next call.
-	 * Round-robin mode bypasses this — its own cycling already
-	 * includes RANDOM and forcing it here would just collapse the
-	 * cycle to one arm. */
-	if (kcov_shm != NULL && kcov_shm->plateau_active)
-		return STRATEGY_RANDOM;
-
 	/* Cold-start: prefer any unpulled eligible arm before scoring. */
 	for (i = 0; i < NR_STRATEGIES; i++) {
 		if (!eligible[i])
 			continue;
-		if (shm->bandit_pulls[i] == 0)
+		if (shm->bandit_pulls[i] == 0) {
+			*reason_out = SR_COLD_START;
 			return i;
+		}
 		total_pulls += shm->bandit_pulls[i];
 	}
 
@@ -658,7 +656,76 @@ int pick_next_strategy(int prev)
 	}
 	if (best_arm < 0)
 		best_arm = STRATEGY_HEURISTIC;
+	*reason_out = SR_NORMAL_UCB;
 	return best_arm;
+}
+
+/*
+ * Intervention layer above pick_next_strategy().  Today's only
+ * intervention is plateau-driven: when kcov reports the fleet's
+ * edge-discovery rate is stalled, force STRATEGY_RANDOM with reason
+ * SR_PLATEAU_FORCE without consulting the UCB scorer, so the bandit
+ * is shaken out of whatever local minimum it has settled into.  The
+ * rotation site checks the stamped reason at window close and skips
+ * the bandit_record_pull() call for SR_PLATEAU_FORCE windows so the
+ * learner's reward history stays clean of intervention noise.
+ *
+ * Round-robin mode bypasses the intervention -- its own cycling
+ * already includes RANDOM, and forcing it here would collapse the
+ * cycle to one arm.
+ *
+ * Future dispatches will replace the "force STRATEGY_RANDOM" policy
+ * with smarter interventions (e.g. a classifier that picks the arm
+ * most likely to break the stall) inside this function; the
+ * separation between intervention and learner keeps that work from
+ * disturbing the UCB scoring path.
+ */
+int select_next_strategy(int prev,
+			 enum strategy_selection_reason *reason_out)
+{
+	enum picker_mode_t mode;
+
+	mode = __atomic_load_n(&shm->picker_mode, __ATOMIC_RELAXED);
+
+	if (mode == PICKER_BANDIT_UCB1 &&
+	    kcov_shm != NULL && kcov_shm->plateau_active) {
+		__atomic_fetch_add(&shm->stats.plateau_forced_windows, 1UL,
+				   __ATOMIC_RELAXED);
+		*reason_out = SR_PLATEAU_FORCE;
+		return STRATEGY_RANDOM;
+	}
+
+	return pick_next_strategy(prev, reason_out);
+}
+
+const char *strategy_selection_reason_name(enum strategy_selection_reason r)
+{
+	switch (r) {
+	case SR_NORMAL_UCB:	return "NORMAL_UCB";
+	case SR_ROUND_ROBIN:	return "ROUND_ROBIN";
+	case SR_COLD_START:	return "COLD_START";
+	case SR_PLATEAU_FORCE:	return "PLATEAU_FORCE";
+	}
+	return "?";
+}
+
+void strategy_plateau_response(void)
+{
+	/* Force the strategy picker to rotate on the next syscall dispatch
+	 * so the intervention layer in select_next_strategy (returns
+	 * STRATEGY_RANDOM with SR_PLATEAU_FORCE while plateau_active is set)
+	 * takes effect within seconds rather than waiting up to
+	 * STRATEGY_WINDOW (~1M ops, ~9 minutes at 2K iter/sec) for the
+	 * natural rotation cadence.  Setting syscalls_at_last_switch to 0
+	 * makes maybe_rotate_strategy trip on the next call from any child;
+	 * the CAS guard there ensures only one child does the rotation work
+	 * even though every child sees the trigger.  After this fires once,
+	 * the field advances to op_count and the next forced rotation waits
+	 * for the usual window — which is fine, because the intervention
+	 * stays latched on plateau_active for as long as the plateau
+	 * persists. */
+	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL, __ATOMIC_RELAXED);
+	stats_log_write("PLATEAU RESPONSE: forcing STRATEGY_RANDOM until plateau clears\n");
 }
 
 /*
@@ -673,11 +740,25 @@ void dump_strategy_stats(void)
 	enum picker_mode_t mode;
 	unsigned long total_pulls = 0;
 	unsigned long explorer_edges, bandit_edges;
+	unsigned long plateau_forced;
 	int i;
 
 	mode = __atomic_load_n(&shm->picker_mode, __ATOMIC_RELAXED);
 
 	output(0, "strategy picker: %s\n", picker_mode_name(mode));
+
+	/* Forced-intervention cohort.  These windows ran STRATEGY_RANDOM
+	 * over the picker's head because the kcov plateau detector
+	 * reported the fleet was stalled; their pulls/reward are
+	 * deliberately NOT folded into the per-arm bandit_pulls[] /
+	 * bandit_reward_calls[] series so a forced-RANDOM intervention
+	 * does not get conflated with a policy-chosen RANDOM in the
+	 * learner's history. */
+	plateau_forced = __atomic_load_n(&shm->stats.plateau_forced_windows,
+					 __ATOMIC_RELAXED);
+	if (plateau_forced > 0)
+		output(0, "  plateau-forced windows: %lu (STRATEGY_RANDOM via SR_PLATEAU_FORCE, excluded from UCB learner)\n",
+		       plateau_forced);
 
 	/* Hybrid bandit/explorer split summary.  Suppressed when the run had
 	 * no explorers reserved (explorer_children == 0) -- the bandit-pool

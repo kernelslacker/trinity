@@ -295,6 +295,21 @@ struct shm_s {
 	 * attributed to either series.
 	 */
 	int current_strategy;
+
+	/*
+	 * current_selection_reason: enum strategy_selection_reason for the
+	 *   current_strategy above -- why select_next_strategy() returned
+	 *   that arm for this window.  Stored alongside current_strategy
+	 *   so the rotation site can read it back at window close and
+	 *   decide whether to feed the just-finished window into the UCB
+	 *   learner.  Forced-intervention windows (SR_PLATEAU_FORCE) skip
+	 *   the learner update so policy-chosen RANDOM windows and
+	 *   intervention RANDOM windows do not get conflated in
+	 *   bandit_pulls[]/bandit_reward_calls[].  Held as int rather than
+	 *   the enum type so the shm layout stays language-stable across
+	 *   any future enum reorder.
+	 */
+	int current_selection_reason;
 	unsigned long syscalls_at_last_switch;
 	unsigned long pc_edge_calls_at_window_start;
 	unsigned long pc_edge_count_at_window_start;

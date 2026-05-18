@@ -723,7 +723,7 @@ void kcov_plateau_check(void)
 					delta, KCOV_PLATEAU_WINDOW_SEC,
 					KCOV_PLATEAU_RATE_THRESHOLD,
 					KCOV_PLATEAU_WINDOW_SEC / 60);
-			healer_plateau_response();
+			strategy_plateau_response();
 			/* Lock in the current bitmap on plateau entry --
 			 * discovery has stalled, so the bucket_seen table
 			 * is at its high-water mark for this run.  Snapshot
