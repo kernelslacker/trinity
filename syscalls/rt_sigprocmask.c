@@ -23,7 +23,9 @@
  * buffer, smear the sigsetsize length check, or steer the set != NULL
  * gate that decides whether to run the procfs cross-check at all.
  */
+#define RT_SIGPROCMASK_POST_STATE_MAGIC	0x5254534DUL	/* "RTSM" */
 struct rt_sigprocmask_post_state {
+	unsigned long magic;
 	unsigned long how;
 	unsigned long set;
 	unsigned long oset;
@@ -65,6 +67,7 @@ static void sanitise_rt_sigprocmask(struct syscallrecord *rec)
 	 * post_state is private to the post handler.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic      = RT_SIGPROCMASK_POST_STATE_MAGIC;
 	snap->how        = rec->a1;
 	snap->set        = rec->a2;
 	snap->oset       = rec->a3;
@@ -113,6 +116,23 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_rt_sigprocmask: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * rt_sigprocmask_post_state.  A cookie mismatch means snap does
+	 * not point at our struct -- abandon rather than feed wild bytes
+	 * into the set / oset gate and the sigsetsize length check.
+	 */
+	if (snap->magic != RT_SIGPROCMASK_POST_STATE_MAGIC) {
+		outputerr("post_rt_sigprocmask: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}

@@ -53,7 +53,6 @@ syscalls/prlimit64.c:prlimit64
 syscalls/ptrace.c:ptrace
 syscalls/readlink.c:readlink
 syscalls/readlink.c:readlinkat
-syscalls/rt_sigprocmask.c:rt_sigprocmask
 syscalls/sched_getaffinity.c:sched_getaffinity
 syscalls/sched_getattr.c:sched_getattr
 syscalls/sched_getparam.c:sched_getparam
