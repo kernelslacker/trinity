@@ -34,17 +34,14 @@ struct lgetxattr_post_state {
 
 static void sanitise_lgetxattr(struct syscallrecord *rec)
 {
-	char *name = (char *) get_writable_struct(256);
 #if defined(SYS_lgetxattr) || defined(__NR_lgetxattr)
 	struct lgetxattr_post_state *snap;
 
 	rec->post_state = 0;
 #endif
 
-	if (!name)
+	if (!sanitise_xattr_name_arg(rec, 2))
 		return;
-	gen_xattr_name(name, 256);
-	rec->a2 = (unsigned long) name;
 	avoid_shared_buffer(&rec->a3, rec->a4);
 
 #if defined(SYS_lgetxattr) || defined(__NR_lgetxattr)
