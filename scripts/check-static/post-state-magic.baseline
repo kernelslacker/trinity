@@ -41,7 +41,6 @@ syscalls/poll.c:ppoll
 syscalls/ptrace.c:ptrace
 syscalls/sched_getaffinity.c:sched_getaffinity
 syscalls/sched_getattr.c:sched_getattr
-syscalls/sched_rr_get_interval.c:sched_rr_get_interval
 syscalls/seccomp.c:seccomp
 syscalls/statmount.c:statmount
 syscalls/sysfs.c:sysfs

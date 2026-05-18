@@ -21,7 +21,9 @@
  * the post handler running cannot retarget the pid self-filter or
  * redirect the source memcpy at a foreign user buffer.
  */
+#define SCHED_RR_GET_INTERVAL_POST_STATE_MAGIC	0x53525249UL	/* "SRRI" */
 struct sched_rr_get_interval_post_state {
+	unsigned long magic;
 	unsigned long pid;
 	unsigned long tp;
 };
@@ -49,6 +51,7 @@ static void sanitise_sched_rr_get_interval(struct syscallrecord *rec)
 	 * post_state is private to the post handler.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = SCHED_RR_GET_INTERVAL_POST_STATE_MAGIC;
 	snap->pid = rec->a1;
 	snap->tp  = rec->a2;
 	rec->post_state = (unsigned long) snap;
@@ -112,6 +115,23 @@ static void post_sched_rr_get_interval(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_sched_rr_get_interval: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * sched_rr_get_interval_post_state.  A cookie mismatch means snap
+	 * does not point at our struct -- abandon rather than feed wild
+	 * bytes into the pid self-filter and inner timespec deref.
+	 */
+	if (snap->magic != SCHED_RR_GET_INTERVAL_POST_STATE_MAGIC) {
+		outputerr("post_sched_rr_get_interval: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
