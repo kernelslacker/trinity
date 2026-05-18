@@ -93,14 +93,34 @@ struct syscallentry syscall_sendto = {
  * from foreign bytes, treats the result as a struct msghdr *, and
  * dereferences into poisoned heap.  That is the dominant non-ASAN
  * crash cluster (__zmalloc -> malloc -> malloc_printerr -> abort).
- * Mirrors RECVMSG_POST_STATE_MAGIC at recv.c:103.  Sized 24 bytes to
- * stay clear of the 16-byte free-list bucket that holds alloc_iovec(1).
+ * Mirrors RECVMSG_POST_STATE_MAGIC at recv.c.
+ *
+ * The inner pointer fields (name, iov_base) are also snapshotted
+ * here.  sendmsg(2) is mostly a kernel-read of the buffers, but some
+ * paths (SCM_RIGHTS cmsg, copy_from_iter_full fault-in) do write
+ * back through the msghdr, and a sibling iov_base aliased inside the
+ * msghdr struct can let the kernel scribble msg_name with a
+ * heap-shaped within-array offset of an unrelated allocation.  Such
+ * a value passes the inner shape-only validator but free() of an
+ * interior offset aborts in libasan's PoisonShadow alignment CHECK.
+ * Stash the originals at sanitise time so the post handler frees
+ * the allocations we made, not the values left in the live msghdr.
+ * iov_base is only populated on the gen_msg path (rec->a4 == 1);
+ * on the alloc_iovec path nothing is freed because alloc_iovec()
+ * buffers are routed through deferred_free_enqueue() with the iov
+ * itself.
+ *
+ * Sized 40 bytes, landing in the 48-byte glibc malloc chunk bucket,
+ * still clear of the 16-byte free-list bucket that holds
+ * alloc_iovec(1).
  */
 #define SENDMSG_POST_STATE_MAGIC	0x53454E44505354UL	/* "SENDPST" */
 struct sendmsg_post_state {
 	unsigned long magic;
 	struct msghdr *msg;
 	unsigned long iov_len_sum;
+	void *name;
+	void *iov_base;
 };
 
 static void sanitise_sendmsg(struct syscallrecord *rec)
@@ -200,6 +220,9 @@ set_control:
 	snap->magic = SENDMSG_POST_STATE_MAGIC;
 	snap->msg = msg;
 	snap->iov_len_sum = iov_len_sum;
+	snap->name = msg->msg_name;
+	if (rec->a4 && msg->msg_iov != NULL)
+		snap->iov_base = msg->msg_iov[0].iov_base;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -275,15 +298,23 @@ static void post_sendmsg(struct syscallrecord *rec)
 	}
 skip_bound:
 
-	if (msg->msg_iov != NULL) {
-		if (rec->a4 &&
-		    inner_ptr_ok_to_free(rec, msg->msg_iov[0].iov_base,
-					 "post_sendmsg/iov_base"))
-			free(msg->msg_iov[0].iov_base);
+	/*
+	 * Free from the trusted snap, not from the live msghdr.  The
+	 * kernel can write back through msghdr fields on SCM_RIGHTS /
+	 * fault-in paths, and a sibling iov_base aliased inside the
+	 * msghdr can leave a heap-shaped within-array offset in
+	 * msg_name (or in iov_base on the gen_msg path) that passes
+	 * the inner shape-only check but aborts in libasan free().
+	 * The snap fields are wrapped in the magic-cookie struct above
+	 * and hold the sanitise-time allocations.  iov_base is only
+	 * non-NULL on the gen_msg path; gating on it directly is
+	 * stronger than re-reading the scribbleable rec->a4 / msg_iov.
+	 */
+	if (snap->iov_base != NULL)
+		free(snap->iov_base);
+	if (msg->msg_iov != NULL)
 		deferred_free_enqueue(msg->msg_iov, NULL);
-	}
-	if (inner_ptr_ok_to_free(rec, msg->msg_name, "post_sendmsg/msg_name"))
-		free(msg->msg_name);	// free sockaddr
+	free(snap->name);	// free sockaddr
 	rec->a2 = 0;
 	deferred_free_enqueue(msg, NULL);
 
