@@ -429,6 +429,15 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 	if (child->is_explorer) {
 		__atomic_fetch_add(&shm->stats.strategy_explorer_picks, 1UL,
 				   __ATOMIC_RELAXED);
+		/* Explorer-pool exposure: explorers always run STRATEGY_RANDOM
+		 * regardless of the bandit's pick.  Bump strategy_picks for
+		 * RANDOM directly (strategy_at_pick stays at the -1 sentinel
+		 * so the post-syscall PC/CMP reward attribution still skips
+		 * explorers as before).  strategy_bandit_pool_ops is NOT
+		 * bumped here -- it is a bandit-pool-only sub-counter so the
+		 * operator can derive the explorer contribution per arm. */
+		__atomic_fetch_add(&shm->strategy_picks[STRATEGY_RANDOM], 1UL,
+				   __ATOMIC_RELAXED);
 		return set_syscall_nr_random(rec, child);
 	}
 
@@ -443,6 +452,17 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 	 * bandit-pool path; explorers (handled above) leave the -1 sentinel
 	 * from clean_childdata in place. */
 	child->strategy_at_pick = strat;
+
+	/* Bandit-pool exposure: bump both the wide picks counter and the
+	 * bandit-pool-only sub-counter so post-run analysis can separate
+	 * bandit dispatches from explorer dispatches per arm.  Bumped
+	 * before the picker-specific set_syscall_nr_* call -- a FAIL from
+	 * that path still counts as a pick attributed to this arm; the
+	 * matching strategy_completed_calls bump in dispatch_step lets
+	 * the operator read off the per-arm dispatch success rate. */
+	__atomic_fetch_add(&shm->strategy_picks[strat], 1UL, __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->strategy_bandit_pool_ops[strat], 1UL,
+			   __ATOMIC_RELAXED);
 
 	switch (strat) {
 	case STRATEGY_HEURISTIC:
@@ -996,6 +1016,25 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		/* nothing — keep the previous predecessor in place */
 	} else {
 		healer_seq_push(child, rec->nr);
+	}
+
+	/* Per-arm completion exposure: bump the arm this call was attributed
+	 * to.  Explorer-pool children left strategy_at_pick at -1 (see
+	 * set_syscall_nr); credit STRATEGY_RANDOM directly for them so the
+	 * counter mirrors the explorer-side pick bump in set_syscall_nr.
+	 * Reaching this point means the syscall ran end-to-end (do_syscall +
+	 * kcov_collect + post-call bookkeeping all completed); a FAIL from
+	 * set_syscall_nr or earlier would have skipped dispatch_step entirely
+	 * and left the picks counter ahead of the completions counter,
+	 * which is the intended diagnostic. */
+	{
+		int sap = child->strategy_at_pick;
+		if (sap < 0)
+			sap = STRATEGY_RANDOM;
+		if (sap >= 0 && sap < NR_STRATEGIES)
+			__atomic_fetch_add(
+				&shm->strategy_completed_calls[sap],
+				1UL, __ATOMIC_RELAXED);
 	}
 
 	/* Cheap end-of-call check for the strategy rotation boundary.

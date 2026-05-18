@@ -358,6 +358,60 @@ struct shm_s {
 	unsigned long bandit_reward_pc_edge_count[NR_STRATEGIES];
 
 	/*
+	 * Per-arm syscall-level exposure counters.  The existing per-arm
+	 * series (bandit_pulls[], pc_edge_calls_by_strategy[],
+	 * bandit_reward_calls[]) all measure WINDOWS or NEW-EDGE CALLS --
+	 * the bandit reward signal -- and leave the denominator side
+	 * implicit.  Without an explicit per-arm dispatch count the only
+	 * way to derive "how many syscalls actually ran under this arm
+	 * this run" is to scale stats.reward_per_fleet_op_window by the
+	 * window mix, which mixes in syscall latency, explorer/alt-op
+	 * share, blocking behaviour, and rotation drift.  That makes
+	 * tuning A/B comparisons across runs hard: a reward delta might
+	 * mean the arm is genuinely better, or just that this run's
+	 * background changed enough to shift exposure.
+	 *
+	 * The counters here are the denominators those analyses need:
+	 *
+	 * strategy_picks[]: every syscall pick credited to an arm,
+	 *   bumped in set_syscall_nr() right after the arm is resolved
+	 *   for this pick.  Explorer-pool children always run
+	 *   STRATEGY_RANDOM and bump strategy_picks[STRATEGY_RANDOM]
+	 *   directly; the bandit pool bumps the arm shm->current_strategy
+	 *   resolved to.  This is the widest population -- all dispatched
+	 *   syscalls.
+	 *
+	 * strategy_bandit_pool_ops[]: strict subset of strategy_picks --
+	 *   bumped only on the bandit-pool path.  Lets the operator
+	 *   compute (strategy_picks[a] - strategy_bandit_pool_ops[a]) as
+	 *   the explorer-pool contribution per arm (zero for non-RANDOM
+	 *   arms, monotonic with explorer_children for RANDOM).  This is
+	 *   the population that pairs cleanly with
+	 *   pc_edge_calls_by_strategy[] -- both are bandit-pool only and
+	 *   exclude explorer contributions.
+	 *
+	 * strategy_completed_calls[]: bumped at the end of dispatch_step
+	 *   after the syscall has returned and post-call bookkeeping has
+	 *   run.  Excludes set_syscall_nr() FAIL returns (no syscall
+	 *   was dispatched), so the ratio
+	 *   strategy_completed_calls[a] / strategy_picks[a] is the
+	 *   per-arm dispatch success rate -- a low ratio surfaces an arm
+	 *   whose picker policy is repeatedly hitting unsatisfiable
+	 *   eligibility / validation gates.
+	 *
+	 * Multi-producer (every child writes); RELAXED fetch_add on the
+	 * write side, RELAXED loads in dump_strategy_stats() at end of
+	 * run.  Per-arm cacheline contention is acceptable because these
+	 * are diagnostic counters consulted at run-end and by future
+	 * intervention classifiers (plateau #5 reads these alongside
+	 * pc_edge_calls_by_strategy to decide which arm to force during
+	 * a plateau intervention) -- not on the hot pick path.
+	 */
+	unsigned long strategy_picks[NR_STRATEGIES];
+	unsigned long strategy_bandit_pool_ops[NR_STRATEGIES];
+	unsigned long strategy_completed_calls[NR_STRATEGIES];
+
+	/*
 	 * Discounted "recent" counters that the UCB1 picker scores against
 	 * instead of the lifetime bandit_pulls[]/bandit_reward_calls[]
 	 * series above.  Kernel coverage discovery is strongly

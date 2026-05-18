@@ -1035,6 +1035,12 @@ void dump_strategy_stats(void)
 			&shm->bandit_cmp_new_constants[i], __ATOMIC_RELAXED);
 		unsigned long share_sum = __atomic_load_n(
 			&shm->bandit_cmp_share_sum_x1000[i], __ATOMIC_RELAXED);
+		unsigned long picks = __atomic_load_n(&shm->strategy_picks[i],
+						      __ATOMIC_RELAXED);
+		unsigned long bandit_ops = __atomic_load_n(
+			&shm->strategy_bandit_pool_ops[i], __ATOMIC_RELAXED);
+		unsigned long completed = __atomic_load_n(
+			&shm->strategy_completed_calls[i], __ATOMIC_RELAXED);
 		unsigned long mean_calls_x1000 = pulls ? (reward * 1000UL / pulls) : 0;
 		/* Parallel mean for the real bucket-edge series, so the operator
 		 * can eyeball how the two reward shapes would score each arm.
@@ -1057,5 +1063,24 @@ void dump_strategy_stats(void)
 		       mean_pc_edges_x1000 % 1000UL,
 		       cmp_new,
 		       share_avg_x1000 / 10UL, share_avg_x1000 % 10UL);
+
+		/* Exposure line: per-arm syscall-level denominators alongside
+		 * the window-level reward summary above.  picks is the widest
+		 * population (all dispatched syscalls credited to the arm,
+		 * explorer included); bandit_ops is the strict bandit-pool
+		 * subset (picks - bandit_ops is the explorer contribution,
+		 * which is zero for non-RANDOM arms by construction);
+		 * completed is the count that reached the end of dispatch_step
+		 * without a set_syscall_nr FAIL upstream.  The
+		 * completed/picks ratio surfaces arms whose picker policy is
+		 * burning picks on unsatisfiable pick-side gates without
+		 * actually dispatching a call. */
+		if (picks > 0) {
+			unsigned long success_x1000 =
+				(completed * 1000UL) / picks;
+			output(0, "    exposure: picks=%lu bandit_ops=%lu completed=%lu (success=%lu.%lu%%)\n",
+			       picks, bandit_ops, completed,
+			       success_x1000 / 10UL, success_x1000 % 10UL);
+		}
 	}
 }
