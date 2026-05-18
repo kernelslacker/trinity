@@ -23,7 +23,9 @@
  * handler running cannot redirect the procfs cross-check at a foreign
  * struct utsname user buffer.
  */
+#define NEWUNAME_POST_STATE_MAGIC	0x4E554E4DUL	/* "NUNM" */
 struct newuname_post_state {
+	unsigned long magic;
 	unsigned long name;
 };
 
@@ -50,6 +52,7 @@ static void sanitise_newuname(struct syscallrecord *rec)
 	 * to the post handler.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = NEWUNAME_POST_STATE_MAGIC;
 	snap->name = rec->a1;
 	rec->post_state = (unsigned long) snap;
 }
@@ -123,6 +126,23 @@ static void post_newuname(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_newuname: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * newuname_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon rather than feed wild bytes into
+	 * the procfs cross-check source memcpy of the user name buffer.
+	 */
+	if (snap->magic != NEWUNAME_POST_STATE_MAGIC) {
+		outputerr("post_newuname: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
