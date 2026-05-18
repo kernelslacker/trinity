@@ -32,6 +32,7 @@
 #include <time.h>
 
 #include "child.h"
+#include "edgepair.h"		/* EDGEPAIR_NO_PREV */
 #include "healer.h"
 #include "healer_ring.h"
 #include "pids.h"
@@ -123,6 +124,38 @@ void healer_ring_init(struct healer_ring *ring)
 	__atomic_store_n(&ring->head, 0, __ATOMIC_RELAXED);
 	__atomic_store_n(&ring->tail, 0, __ATOMIC_RELAXED);
 	__atomic_store_n(&ring->overflow, 0, __ATOMIC_RELAXED);
+}
+
+/*
+ * Per-child HEALER reset contract.  Called from clean_childdata() when
+ * a child slot is reused so a fresh occupant starts with an empty seq
+ * buffer and an empty observation ring rather than inheriting the
+ * predecessor's (pred_a, pred_b) window and any pending unfdrained
+ * slots.  Without this:
+ *   - healer_seq[] / healer_seq_count carry forward from the prior
+ *     occupant, so the first observer-hook fire under the new child
+ *     attributes its succ to predecessors that ran in a different
+ *     process under different fds and a different rng stream;
+ *   - the per-child healer_ring inherits the prior occupant's head/tail
+ *     cursor, so the first enqueue lands at an arbitrary offset and the
+ *     parent's drain reads stale (or wrapped-around) slots.
+ * EDGEPAIR_NO_PREV is the documented "no usable predecessor" sentinel:
+ * the observer-hook already filters seq slots carrying it (see
+ * healer_observe_relation in healer.c), so stamping it on reset keeps
+ * any path that reads healer_seq[] before healer_seq_count gates from
+ * seeing stale syscall numbers.
+ */
+void healer_child_reset(struct childdata *child)
+{
+	if (child == NULL)
+		return;
+
+	child->healer_seq[0] = EDGEPAIR_NO_PREV;
+	child->healer_seq[1] = EDGEPAIR_NO_PREV;
+	child->healer_seq_count = 0;
+
+	if (child->healer_ring != NULL)
+		healer_ring_init(child->healer_ring);
 }
 
 static bool healer_ring_enqueue_slot(struct healer_ring *ring,

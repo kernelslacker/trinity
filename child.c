@@ -22,6 +22,7 @@
 #include "fd.h"
 #include "futex.h"
 #include "fd-event.h"
+#include "healer_ring.h"
 #include "kcov.h"
 #include "list.h"
 #include "maps.h"
@@ -402,6 +403,8 @@ void clean_childdata(struct childdata *child)
 
 	if (child->stats_ring)
 		stats_ring_init(child->stats_ring);
+
+	healer_child_reset(child);
 }
 
 static void bind_child_to_cpu(struct childdata *child)

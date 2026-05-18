@@ -150,6 +150,16 @@ extern unsigned int (*healer_pair_published)[MAX_NR_SYSCALL];
 void healer_ring_init(struct healer_ring *ring);
 
 /*
+ * Per-child HEALER reset contract called from clean_childdata() when a
+ * child slot is reused.  Clears the per-child seq buffer (slots stamped
+ * with EDGEPAIR_NO_PREV, count zeroed) and reinitialises the per-child
+ * observation ring so a fresh occupant cannot inherit predecessor
+ * context or pending ring state from the prior occupant of the slot.
+ */
+struct childdata;
+void healer_child_reset(struct childdata *child);
+
+/*
  * Enqueue a HEALER observation event from child context.  Lock-free,
  * returns false if the ring is full (slot dropped, overflow counter
  * bumped).  Two helpers for the two event kinds so call sites don't
