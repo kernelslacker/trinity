@@ -95,20 +95,45 @@ bool fd_recently_failed(struct results *results, int fd)
  * or -1 if no fd has succeeded for this slot yet.  Skips 0/1/2 defensively
  * even though store_successful_fd() never sets them (get_random_fd /
  * get_typed_fd refuse to hand them out).
+ *
+ * Sample a random byte of the bitmap and find a set bit with ctz; retry a
+ * bounded number of times so the common case (a handful of low fds set)
+ * costs O(1) instead of scanning all 256 bits.  Fall back to a linear scan
+ * when sampling keeps hitting zero bytes -- preserves correctness in the
+ * sparse case and the all-empty case (returns -1).
  */
+#define PICK_FD_SAMPLE_ATTEMPTS 8
+
 int pick_successful_fd(struct results *results)
 {
-	int candidates[SUCCESS_FD_SCOREBOARD_BITS];
-	int n = 0;
+	int attempt;
 	int fd;
+
+	for (attempt = 0; attempt < PICK_FD_SAMPLE_ATTEMPTS; attempt++) {
+		unsigned int bidx = (unsigned int)rand() % SUCCESS_FD_SCOREBOARD_BYTES;
+		unsigned int byte = results->success_fds[bidx];
+		unsigned int rot, rb;
+		int bit;
+
+		if (byte == 0)
+			continue;
+
+		/* Pick a uniformly-random set bit within the byte by rotating
+		 * by a random shift before taking ctz. */
+		rot = (unsigned int)rand() & 7;
+		rb = ((byte >> rot) | (byte << (8 - rot))) & 0xff;
+		bit = __builtin_ctz(rb);
+		bit = (bit + (int)rot) & 7;
+		fd = (int)(bidx << 3) + bit;
+		if (fd >= 3)
+			return fd;
+	}
 
 	for (fd = 3; fd < SUCCESS_FD_SCOREBOARD_BITS; fd++) {
 		if (results->success_fds[fd >> 3] & (unsigned char)(1U << (fd & 7)))
-			candidates[n++] = fd;
+			return fd;
 	}
-	if (n == 0)
-		return -1;
-	return candidates[rand() % n];
+	return -1;
 }
 
 void handle_success(struct syscallrecord *rec)
