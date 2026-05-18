@@ -111,7 +111,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -124,6 +123,7 @@
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "jitter.h"
 #include "params.h"
 #include "random.h"
@@ -180,7 +180,6 @@ struct rtvia_compat {
 #define MPLS_RC_OUTER_FLOOR		8U
 #define MPLS_RC_OUTER_CAP		16U
 #define MPLS_RC_WALL_CAP_NS		(200ULL * 1000ULL * 1000ULL)
-#define MPLS_RC_NL_RECV_TIMEO_S		1
 #define MPLS_RC_RTNL_BUF		2048
 #define MPLS_RC_MAX_RETRIES		8
 #define MPLS_RC_MAX_STACK		3U
@@ -194,23 +193,6 @@ static bool ns_unsupported_mpls;
 static bool ns_unsupported_lwtunnel;
 static bool modprobe_tried_mpls_router;
 static bool mpls_rc_unshared;
-
-static __u32 g_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
-
-static long long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (long long)(now.tv_sec - t0->tv_sec) * 1000000000LL +
-	       (long long)(now.tv_nsec - t0->tv_nsec);
-}
 
 /*
  * Best-effort modprobe.  Same fork+execvp shape as xfrm-churn's
@@ -275,118 +257,24 @@ static void latch_ns_unsupported_lwtunnel(int rc)
 			  rc);
 }
 
-static int rtnl_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = MPLS_RC_NL_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	return fd;
-}
-
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static size_t nla_put_u8(unsigned char *buf, size_t off, size_t cap,
-			 unsigned short type, __u8 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t nla_put_u16(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u16 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t nla_put_u32(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u32 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static int rtnl_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[1024];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0)
-		return -EIO;
-	if ((size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	return -EIO;
-}
-
 /*
  * Bounded retry wrapper for the mpls operations.  Retries -EAGAIN /
  * -ENOMEM up to MPLS_RC_MAX_RETRIES.  All other return codes (success
  * 0, -EAFNOSUPPORT, -EOPNOTSUPP, etc.) propagate immediately so the
  * caller can drive its latch.
+ *
+ * The shared nl_send_recv_retry covers -EAGAIN / -EBUSY only;
+ * widening it to also cover -ENOMEM would change behaviour for every
+ * existing ROUTE-plane consumer.  Keep this wrapper local so the
+ * mpls-specific -ENOMEM retry stays an mpls concern.
  */
-static int rtnl_send_recv_retry(int fd, void *msg, size_t len)
+static int mpls_send_recv_retry(struct nl_ctx *ctx, void *msg, size_t len)
 {
 	int retries = 0;
 	int rc;
 
 	for (;;) {
-		rc = rtnl_send_recv(fd, msg, len);
+		rc = nl_send_recv(ctx, msg, len);
 		if (rc != -EAGAIN && rc != -ENOMEM)
 			return rc;
 		if (++retries >= MPLS_RC_MAX_RETRIES)
@@ -449,7 +337,7 @@ static size_t mpls_build_label_stack(struct mpls_label *stack,
  * failure.  *out_in_label is set to the in-label so the caller can
  * issue the matching RTM_DELROUTE.
  */
-static int build_mpls_label_install(int fd, int lo_ifindex,
+static int build_mpls_label_install(struct nl_ctx *ctx, int lo_ifindex,
 				    __u32 *out_in_label)
 {
 	unsigned char buf[MPLS_RC_RTNL_BUF];
@@ -469,7 +357,7 @@ static int build_mpls_label_install(int fd, int lo_ifindex,
 	nlh->nlmsg_type  = RTM_NEWROUTE;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	rtm = (struct rtmsg *)NLMSG_DATA(nlh);
 	rtm->rtm_family   = AF_MPLS;
@@ -518,13 +406,13 @@ static int build_mpls_label_install(int fd, int lo_ifindex,
 	nlh->nlmsg_len = (__u32)off;
 
 	*out_in_label = in_label;
-	return rtnl_send_recv_retry(fd, buf, off);
+	return mpls_send_recv_retry(ctx, buf, off);
 }
 
 /*
  * Arm A rollback: RTM_DELROUTE family=AF_MPLS keyed on in-label.
  */
-static int build_mpls_label_delete(int fd, __u32 in_label)
+static int build_mpls_label_delete(struct nl_ctx *ctx, __u32 in_label)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -536,7 +424,7 @@ static int build_mpls_label_delete(int fd, __u32 in_label)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_DELROUTE;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	rtm = (struct rtmsg *)NLMSG_DATA(nlh);
 	rtm->rtm_family   = AF_MPLS;
@@ -558,7 +446,7 @@ static int build_mpls_label_delete(int fd, __u32 in_label)
 		return -EIO;
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv_retry(fd, buf, off);
+	return mpls_send_recv_retry(ctx, buf, off);
 }
 
 /*
@@ -575,12 +463,12 @@ static int build_mpls_label_delete(int fd, __u32 in_label)
  * failure.  *out_dst is set to the IPv4 destination so the caller can
  * issue the matching RTM_DELROUTE.
  */
-static int build_iptunnel_install(int fd, int lo_ifindex, __be32 *out_dst)
+static int build_iptunnel_install(struct nl_ctx *ctx, int lo_ifindex,
+				  __be32 *out_dst)
 {
 	unsigned char buf[MPLS_RC_RTNL_BUF];
 	struct nlmsghdr *nlh;
 	struct rtmsg *rtm;
-	struct nlattr *encap;
 	struct mpls_label out_stack[MPLS_RC_MAX_STACK];
 	__be32 dst, gw;
 	__u16 encap_type;
@@ -596,7 +484,7 @@ static int build_iptunnel_install(int fd, int lo_ifindex, __be32 *out_dst)
 	nlh->nlmsg_type  = RTM_NEWROUTE;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	rtm = (struct rtmsg *)NLMSG_DATA(nlh);
 	rtm->rtm_family   = AF_INET;
@@ -629,7 +517,7 @@ static int build_iptunnel_install(int fd, int lo_ifindex, __be32 *out_dst)
 		return -EIO;
 
 	encap_off = off;
-	off = nla_put(buf, off, sizeof(buf), RTA_ENCAP, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), RTA_ENCAP);
 	if (!off)
 		return -EIO;
 
@@ -645,19 +533,18 @@ static int build_iptunnel_install(int fd, int lo_ifindex, __be32 *out_dst)
 	if (!off)
 		return -EIO;
 
-	encap = (struct nlattr *)(buf + encap_off);
-	encap->nla_len = (unsigned short)(off - encap_off);
+	nla_nest_end(buf, encap_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
 
 	*out_dst = dst;
-	return rtnl_send_recv_retry(fd, buf, off);
+	return mpls_send_recv_retry(ctx, buf, off);
 }
 
 /*
  * Arm B rollback: RTM_DELROUTE family=AF_INET keyed on destination.
  */
-static int build_iptunnel_delete(int fd, __be32 dst, int lo_ifindex)
+static int build_iptunnel_delete(struct nl_ctx *ctx, __be32 dst, int lo_ifindex)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -668,7 +555,7 @@ static int build_iptunnel_delete(int fd, __be32 dst, int lo_ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_DELROUTE;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	rtm = (struct rtmsg *)NLMSG_DATA(nlh);
 	rtm->rtm_family   = AF_INET;
@@ -691,7 +578,7 @@ static int build_iptunnel_delete(int fd, __be32 dst, int lo_ifindex)
 	}
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv_retry(fd, buf, off);
+	return mpls_send_recv_retry(ctx, buf, off);
 }
 
 /*
@@ -731,7 +618,11 @@ bool mpls_route_churn(struct childdata *child)
 {
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
-	int rtnl;
+	struct nl_ctx ctx = { .fd = -1 };
+	struct nl_open_opts opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
 	int lo_ifindex;
 
 	(void)child;
@@ -758,8 +649,7 @@ bool mpls_route_churn(struct childdata *child)
 		mpls_rc_unshared = true;
 	}
 
-	rtnl = rtnl_open();
-	if (rtnl < 0)
+	if (nl_open(&ctx, &opts) < 0)
 		return true;
 
 	lo_ifindex = (int)if_nametoindex("lo");
@@ -787,14 +677,14 @@ bool mpls_route_churn(struct childdata *child)
 
 		if (pick_arm_a && !ns_unsupported_mpls) {
 			__u32 in_label = 0;
-			int rc = build_mpls_label_install(rtnl, lo_ifindex,
+			int rc = build_mpls_label_install(&ctx, lo_ifindex,
 							  &in_label);
 
 			if (rc == 0) {
 				__atomic_add_fetch(
 					&shm->stats.mpls_route_churn_label_install_ok,
 					1, __ATOMIC_RELAXED);
-				if (build_mpls_label_delete(rtnl,
+				if (build_mpls_label_delete(&ctx,
 							    in_label) == 0)
 					__atomic_add_fetch(
 						&shm->stats.mpls_route_churn_delete_ok,
@@ -804,14 +694,14 @@ bool mpls_route_churn(struct childdata *child)
 			}
 		} else if (!pick_arm_a && !ns_unsupported_lwtunnel) {
 			__be32 dst = 0;
-			int rc = build_iptunnel_install(rtnl, lo_ifindex,
+			int rc = build_iptunnel_install(&ctx, lo_ifindex,
 							&dst);
 
 			if (rc == 0) {
 				__atomic_add_fetch(
 					&shm->stats.mpls_route_churn_iptunnel_install_ok,
 					1, __ATOMIC_RELAXED);
-				if (build_iptunnel_delete(rtnl, dst,
+				if (build_iptunnel_delete(&ctx, dst,
 							  lo_ifindex) == 0)
 					__atomic_add_fetch(
 						&shm->stats.mpls_route_churn_delete_ok,
@@ -825,7 +715,7 @@ bool mpls_route_churn(struct childdata *child)
 			break;
 	}
 
-	close(rtnl);
+	nl_close(&ctx);
 	return true;
 }
 
