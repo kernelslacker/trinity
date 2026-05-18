@@ -111,10 +111,18 @@ struct healer_aggregate {
 
 	/* Decay election state.  Becomes single-writer parent state once
 	 * apply runs in parent context, so no CAS election is needed --
-	 * see healer_apply_maybe_decay() in healer-ring.c. */
+	 * see healer_apply_maybe_decay() in healer-ring.c.  decay_epoch
+	 * advances by one on every decay run and is the reference clock
+	 * used by the per-slot prune machinery (see relations_last_refreshed
+	 * below) to decide when an untouched slot has aged out.  uint16_t
+	 * because the prune comparison only needs wrap-distance accuracy,
+	 * and even at the fastest decay cadence (~5000 observations) the
+	 * counter wraps no sooner than years of continuous fuzzing -- far
+	 * past any plausible run lifetime. */
 	unsigned long obs_at_last_decay;
 	unsigned long time_at_last_decay;
 	unsigned long weight_decays_run;
+	uint16_t decay_epoch;
 
 	/* Snapshot election state, same single-writer collapse. */
 	unsigned long obs_at_last_snapshot;

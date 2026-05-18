@@ -387,11 +387,49 @@ unsigned int healer_ring_drain(struct healer_ring *ring)
 }
 
 /*
+ * Decay one (pred -> succ) row of the pair table in place.  Halves
+ * every cell above the floor and reports whether anything changed so
+ * the caller can flip the row's dirty bit for the next publish.
+ *
+ * The uniform-decay policy is deliberate for this commit: every
+ * non-floor cell halves, regardless of how it got there (static seed
+ * vs accumulated dynamic evidence).  A future change to separate the
+ * static-prior contribution from dynamic-evidence accumulation will
+ * add a gate here (e.g. "skip cells whose dynamic-evidence component
+ * is below their seed weight") -- the per-cell branch is the single
+ * decision point, so that follow-up is a one-line addition rather
+ * than a restructure.
+ */
+static bool healer_decay_pair_row(unsigned int pred)
+{
+	bool row_modified = false;
+	unsigned int succ;
+
+	for (succ = 0; succ < MAX_NR_SYSCALL; succ++) {
+		unsigned int w = parent_healer.pair_table[pred][succ];
+
+		if (w <= 1)
+			continue;
+
+		parent_healer.pair_table[pred][succ] = w / 2;
+		row_modified = true;
+	}
+	return row_modified;
+}
+
+/*
  * Parent-side decay walk.  Same trigger pair as the in-shm path
  * (observation count + wall-clock) but evaluated against parent-
  * private counters during drain.  No CAS election (single writer).
  * Marks the entire relation table dirty on a real decay so the next
- * publish propagates the halved weights.
+ * publish propagates the halved weights.  Same trigger fires the
+ * pair-table decay so both tables age in lockstep -- without that,
+ * long-running fuzzes (or runs warm-started from a saturated
+ * snapshot) leave the pair table holding stale weights that no live
+ * observation ever displaces, since apply_pair only saturates
+ * upward.  decay_epoch advances by one on every fire and is the
+ * reference clock for the per-slot prune logic the next commit
+ * builds on top.
  */
 static void healer_apply_maybe_decay(void)
 {
@@ -436,6 +474,12 @@ static void healer_apply_maybe_decay(void)
 			parent_healer.relations_dirty[i] = 1;
 	}
 
+	for (i = 0; i < MAX_NR_SYSCALL; i++) {
+		if (healer_decay_pair_row(i))
+			parent_healer.pair_dirty[i] = 1;
+	}
+
+	parent_healer.decay_epoch++;
 	parent_healer.weight_decays_run++;
 }
 
