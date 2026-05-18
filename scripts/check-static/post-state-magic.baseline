@@ -22,7 +22,6 @@
 # Lines starting with `#` and blank lines are ignored.
 syscalls/bpf.c:bpf
 syscalls/execve.c:execve
-syscalls/file_getattr.c:file_getattr
 syscalls/get_mempolicy.c:get_mempolicy
 syscalls/get_robust_list.c:get_robust_list
 syscalls/io_uring_register.c:io_uring_register
