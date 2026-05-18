@@ -292,10 +292,26 @@ struct syscallentry syscall_recvmsg = {
  * vlen * sizeof(struct mmsghdr) zmalloc — heap-buffer-overflow.  Capture
  * both into a post_state-private heap struct that no syscall ABI slot
  * points at.  Mirrors capset_post_state.
+ *
+ * Leading magic cookie because the heap-shape check on rec->post_state
+ * is value-based only -- a sibling scribbling rec->post_state with any
+ * heap-shaped 8-byte aligned pointer to a foreign allocation sails past
+ * looks_like_corrupted_ptr() and the post handler then loads snap->msgs
+ * from foreign bytes; the subsequent cleanup loop walks wild memory and
+ * surfaces as the dominant __zmalloc -> malloc -> malloc_printerr ->
+ * abort crash cluster.  Mirrors RECVMSG_POST_STATE_MAGIC above.  Padded
+ * to 32 bytes (48-byte glibc malloc chunk) so the snap lands in a
+ * different free-list bucket than recvmsg_post_state (24B -> 32B chunk)
+ * and the 16-byte alloc_iovec(1) bucket -- defense-in-depth on top of
+ * the cookie.
  */
+#define RECVMMSG_POST_STATE_MAGIC	0x5243564D54534154UL	/* "RCVMTSAT" */
 struct recvmmsg_post_state {
+	unsigned long magic;
 	struct mmsghdr *msgs;
 	unsigned int vlen;
+	unsigned int _pad;
+	unsigned long _bucket_pad;
 };
 
 static void sanitise_recvmmsg(struct syscallrecord *rec)
@@ -346,6 +362,7 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 	rec->a3 = vlen;
 
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = RECVMMSG_POST_STATE_MAGIC;
 	snap->msgs = msgs;
 	snap->vlen = vlen;
 	rec->post_state = (unsigned long) snap;
@@ -370,6 +387,25 @@ static void post_recvmmsg(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_recvmmsg: rejected suspicious post_state=%p "
 			  "(pid-scribbled?)\n", snap);
+		rec->a2 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * recvmmsg_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon both the snap and the msgs
+	 * cleanup rather than walk the cleanup loop over foreign memory.
+	 * Mirrors recv.c:212 (post_recvmsg).
+	 */
+	if (snap->magic != RECVMMSG_POST_STATE_MAGIC) {
+		outputerr("post_recvmmsg: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
