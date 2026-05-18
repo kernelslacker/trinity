@@ -129,8 +129,10 @@ static void post_lsm_list_modules(struct syscallrecord *rec)
 	u32 first_size;
 	u64 first_ids[64];
 	size_t first_count;
-	u64 recheck_ids[64];
+	u64 recheck_ids[64] = { 0 };
 	u32 recheck_size = sizeof(recheck_ids);
+	size_t recheck_count;
+	size_t cmp_count;
 	bool size_diverged;
 	bool ids_diverged;
 	int rc;
@@ -192,19 +194,21 @@ static void post_lsm_list_modules(struct syscallrecord *rec)
 	if (rc != 0)
 		goto out_free;
 
+	recheck_count = recheck_size / sizeof(u64);
+	if (recheck_count > 64)
+		recheck_count = 64;
+
+	cmp_count = first_count < recheck_count ? first_count : recheck_count;
+
 	size_diverged = (first_size != recheck_size);
 	ids_diverged = (memcmp(first_ids, recheck_ids,
-			       first_count * sizeof(u64)) != 0);
+			       cmp_count * sizeof(u64)) != 0);
 
 	if (size_diverged || ids_diverged) {
-		size_t recheck_count = recheck_size / sizeof(u64);
 		size_t i;
 		char first_hex[64 * 17 + 1];
 		char recheck_hex[64 * 17 + 1];
 		size_t off;
-
-		if (recheck_count > 64)
-			recheck_count = 64;
 
 		off = 0;
 		for (i = 0; i < first_count; i++)
@@ -222,9 +226,15 @@ static void post_lsm_list_modules(struct syscallrecord *rec)
 					(unsigned long) recheck_ids[i]);
 		recheck_hex[off > 0 ? off - 1 : 0] = '\0';
 
+		if (size_diverged)
+			output(0,
+			       "[oracle:lsm_list_modules] size divergence %u vs %u\n",
+			       first_size, recheck_size);
+
 		output(0,
-		       "[oracle:lsm_list_modules] size %u vs %u ids [%s] vs [%s]\n",
-		       first_size, recheck_size, first_hex, recheck_hex);
+		       "[oracle:lsm_list_modules] size %u vs %u ids [%s] vs [%s] (cmp_count=%zu)\n",
+		       first_size, recheck_size, first_hex, recheck_hex,
+		       cmp_count);
 		__atomic_add_fetch(&shm->stats.lsm_list_modules_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
