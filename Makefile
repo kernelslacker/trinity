@@ -165,6 +165,9 @@ tags:	$(SRCS)
 scan:
 	@scan-build --use-analyzer=/usr/bin/clang make -j $(NR_CPUS)
 
+check-static:
+	@./scripts/check-static.sh
+
 coverity:
 	@rm -rf cov-int trinity-coverity.tar.xz
 	@cov-build --dir cov-int make -j $(NR_CPUS)
