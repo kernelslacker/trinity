@@ -348,41 +348,41 @@ static void healer_unpack_promoted(uint64_t entry, unsigned int *nr,
 	*weight = tmp.w;
 }
 
-void healer_observe_relation(struct childdata *child, unsigned int current_nr)
+void healer_observe(struct childdata *child, unsigned int current_nr,
+		    unsigned int flags, unsigned int edge_delta,
+		    unsigned int result_class)
 {
-	unsigned int pred_a, pred_b;
+	unsigned int pred_prev, pred_last;
 
 	if (child == NULL || child->healer_ring == NULL)
 		return;
 
-	/* Need both predecessor slots populated.  The first two syscalls of
-	 * a child's life have nothing to point at; skipping them costs us
-	 * at most a handful of observations per child lifetime. */
-	if (child->healer_seq_count < 2)
+	/* Read predecessors in their original chronological order.  The
+	 * triple-table apply sorts before hashing so (A, B) and (B, A)
+	 * collapse into the same slot; the pair-table apply uses the
+	 * immediate predecessor directly.  Storing them unsorted on the
+	 * wire preserves ordering for downstream consumers that want it. */
+	pred_prev = (child->healer_seq_count >= 2) ? child->healer_seq[0]
+						   : EDGEPAIR_NO_PREV;
+	pred_last = (child->healer_seq_count >= 1) ? child->healer_seq[1]
+						   : EDGEPAIR_NO_PREV;
+
+	/* No usable immediate predecessor -- nothing to learn.  Covers
+	 * the very first syscall of a child's life and any window where
+	 * the seq buffer was just reset (clean_childdata stamps both
+	 * slots with EDGEPAIR_NO_PREV).  Triple-table updates additionally
+	 * need pred_prev != EDGEPAIR_NO_PREV; the apply path handles that
+	 * gating per-update so the pair half still runs when only the
+	 * immediate predecessor is valid. */
+	if (pred_last == EDGEPAIR_NO_PREV)
 		return;
 
-	pred_a = child->healer_seq[0];
-	pred_b = child->healer_seq[1];
-
-	/* An EDGEPAIR_NO_PREV sentinel can ride into the buffer if the
-	 * child resets its sequence (e.g. between op-types); treat that as
-	 * "no usable predset" and skip rather than learning a relation
-	 * anchored on a sentinel value. */
-	if (pred_a == EDGEPAIR_NO_PREV || pred_b == EDGEPAIR_NO_PREV)
-		return;
-
-	if (pred_a > pred_b) {
-		unsigned int tmp = pred_a;
-		pred_a = pred_b;
-		pred_b = tmp;
-	}
-
-	/* Enqueue a TRIPLE event for the parent's drain to apply.  The
-	 * pred_appearance bumps for both predecessors, the open-addressed
-	 * probe walk, the table-full / evictions / relations_observed
-	 * counter updates, and the periodic decay election all run in
-	 * parent context now -- single-writer, no CAS loop, no defensive
-	 * retry budget.  See apply_triple() in healer-ring.c.
+	/* Enqueue one unified observation slot for the parent's drain to
+	 * apply.  Drives BOTH the pair-table bump (pred_last -> current_nr)
+	 * AND the triple-table bump (sort(pred_prev, pred_last) -> current_nr)
+	 * atomically from one slot, eliminating the partial-observation-loss
+	 * window where one of the two enqueues could succeed while the
+	 * other dropped.  See apply_observation() in healer-ring.c.
 	 *
 	 * Drop on ring overflow: parent_healer.ring_overflow_total
 	 * already conveys "we lost samples".  In the cold-start regime
@@ -390,8 +390,9 @@ void healer_observe_relation(struct childdata *child, unsigned int current_nr)
 	 * before it can fill; in the post-saturation steady state the
 	 * observation rate collapses to ~0.5/sec so the ring is essentially
 	 * always empty. */
-	(void)healer_ring_enqueue_triple(child->healer_ring,
-					 pred_a, pred_b, current_nr);
+	(void)healer_ring_enqueue_observation(child->healer_ring,
+					      pred_prev, pred_last, current_nr,
+					      flags, edge_delta, result_class);
 }
 
 
@@ -2276,24 +2277,6 @@ void healer_pair_seed(unsigned int pred, unsigned int succ, unsigned int weight)
 	 * then read from set_syscall_nr_healer.  Idempotent (skips a
 	 * cell already carrying a weight). */
 	healer_aggregate_pair_set(pred, succ, weight);
-}
-
-void healer_pair_observe(unsigned int pred, unsigned int succ)
-{
-	struct childdata *child;
-
-	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
-		return;
-
-	/* Enqueue a PAIR event onto the calling child's healer_ring.  The
-	 * parent's drain applies the bump with saturation at
-	 * HEALER_PAIR_MAX_WEIGHT under single-writer discipline -- no CAS
-	 * loop, no per-cell contention.  See apply_pair() in
-	 * healer-ring.c. */
-	child = this_child();
-	if (child == NULL || child->healer_ring == NULL)
-		return;
-	(void)healer_ring_enqueue_pair(child->healer_ring, pred, succ);
 }
 
 /*

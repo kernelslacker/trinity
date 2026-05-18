@@ -21,13 +21,16 @@
  * validated in this codebase for the write-only-by-child / read-only-by-
  * parent contract under hostile fuzzed workload.
  *
- * Two event kinds packed into a single fixed slot type so the drain
- * stays branchless on slot fetch and only branches on `kind` for the
- * apply step.  Triple events carry (pred_a, pred_b, succ) and feed the
- * relation table; pair events carry (pred, succ) and feed the dense
- * pair-relation matrix.  Both kinds fire together from the same
- * observer-hook call site on every new-edge fire (random-syscall.c),
- * so two enqueues per fire is the expected steady-state cost.
+ * One slot carries the full observation: the two predecessor syscall
+ * numbers (in original chronological order, NOT sorted), the new-edge
+ * successor, the bucket-edge count from kcov_collect, and reserved
+ * flags / result-class fields for downstream consumers.  Apply-time
+ * drains both the pair-table update (pred_last -> succ) and the
+ * triple-table update (sort(pred_prev, pred_last) -> succ) from the
+ * same slot, halving ring traffic relative to the two-event scheme it
+ * replaces and removing the partial-observation-loss window where the
+ * triple enqueue could succeed while the pair enqueue dropped (or
+ * vice versa).
  *
  * Overflow policy: drop the slot silently, bump a per-ring overflow
  * counter the parent surfaces in the aggregate.  HEALER's per-sample
@@ -37,19 +40,36 @@
  * right default and blocking a child on an observer enqueue is not.
  */
 
-#define HEALER_RING_SIZE 1024	/* power of 2; 8 KiB at 8 B/slot */
+#define HEALER_RING_SIZE 1024	/* power of 2; 12 KiB at 12 B/slot */
 
-enum healer_event_kind {
-	HEALER_EVT_TRIPLE = 1,	/* (pred_a, pred_b, succ) into relation table */
-	HEALER_EVT_PAIR   = 2,	/* (pred, succ) into pair-relation matrix */
-};
-
-struct healer_event_slot {
-	uint16_t kind;		/* enum healer_event_kind; 0 marks "scribbled" */
-	uint16_t pred_a;	/* HEALER_EVT_TRIPLE only; 0 for PAIR */
-	uint16_t pred_b;	/* triple's pred_b OR pair's pred */
-	uint16_t succ;		/* in both kinds */
-};				/* 8 bytes total */
+/*
+ * One observation slot.  pred_prev and pred_last preserve the original
+ * chronological order (pred_prev is two completed syscalls back,
+ * pred_last is one back); the triple-table apply sorts before hashing
+ * so (A, B) and (B, A) collapse into one slot, while the pair-table
+ * apply uses pred_last directly.  EDGEPAIR_NO_PREV (0xFFFF) in either
+ * predecessor field means that slot is unpopulated -- pair updates run
+ * whenever pred_last is valid, triple updates require both.
+ *
+ * edge_delta is the bucket-edge count reported by kcov_collect for the
+ * call that fired this observation, capped at uint16_t range at enqueue
+ * (the picker amplification cap applied at the apply path is much
+ * smaller still, so the on-wire value carries headroom for future
+ * consumers that want full magnitude).
+ *
+ * flags and result_class are reserved for downstream consumers (the
+ * latter for return-class bucketing into the future-work picker; the
+ * former for tagging explorer-vs-bandit attribution); the parent's
+ * apply path doesn't branch on either today.
+ */
+struct healer_observation {
+	uint16_t pred_prev;		/* two-back syscall nr; or EDGEPAIR_NO_PREV */
+	uint16_t pred_last;		/* one-back syscall nr; or EDGEPAIR_NO_PREV */
+	uint16_t succ;			/* the new-edge syscall nr */
+	uint16_t flags;			/* HEALER_OBS_FLAG_* bits (see healer.h) */
+	uint16_t edge_delta;		/* kcov_collect bucket-edge count, uint16 cap */
+	uint16_t result_class;		/* reserved: return-class bucket */
+};					/* 12 bytes total */
 
 struct healer_ring {
 	/* Producer (child) writes head and overflow. */
@@ -62,7 +82,7 @@ struct healer_ring {
 	/* Consumer (parent) writes tail. */
 	uint32_t tail;
 
-	struct healer_event_slot slots[HEALER_RING_SIZE];
+	struct healer_observation slots[HEALER_RING_SIZE];
 };
 
 /*
@@ -219,16 +239,18 @@ struct childdata;
 void healer_child_reset(struct childdata *child);
 
 /*
- * Enqueue a HEALER observation event from child context.  Lock-free,
+ * Enqueue a HEALER observation slot from child context.  Lock-free,
  * returns false if the ring is full (slot dropped, overflow counter
- * bumped).  Two helpers for the two event kinds so call sites don't
- * have to build the slot struct by hand.
+ * bumped).  One enqueue per new-edge event drives both the pair-table
+ * and triple-table updates on the parent side.
  */
-bool healer_ring_enqueue_triple(struct healer_ring *ring,
-				unsigned int pred_a, unsigned int pred_b,
-				unsigned int succ);
-bool healer_ring_enqueue_pair(struct healer_ring *ring,
-			      unsigned int pred, unsigned int succ);
+bool healer_ring_enqueue_observation(struct healer_ring *ring,
+				     unsigned int pred_prev,
+				     unsigned int pred_last,
+				     unsigned int succ,
+				     unsigned int flags,
+				     unsigned int edge_delta,
+				     unsigned int result_class);
 
 /*
  * Drain all pending slots from one child's ring, applying events to

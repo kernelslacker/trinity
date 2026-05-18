@@ -883,32 +883,26 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		if (entry->sanitise == NULL)
 			minicorpus_save(rec);
 
-		/* HEALER Phase A observer -- credit the (predset -> rec->nr)
-		 * relation for this new-edge event.  Reads the per-child
-		 * sequence buffer's two predecessor slots; the buffer is
-		 * pushed below (alongside last_syscall_nr) so the read here
-		 * sees the two completed syscalls before the current one,
-		 * which is exactly the predset the new edge should be
-		 * credited to. */
-		if (!no_healer)
-			healer_observe_relation(child, rec->nr);
-
-		/* Single-predecessor companion to the (predset -> nr) bump
-		 * above.  Same new-edge gating, but the pair table is the
-		 * coarser (immediate-pred -> nr) signal that the static-seed
-		 * loader bootstraps from ret_objtype/argtype metadata --
-		 * firing the bump alongside the relation observer keeps the
-		 * pair side learning from runtime evidence too instead of
-		 * staying frozen at the static seed forever.  child->last_
-		 * syscall_nr is the immediate predecessor (mirrors the
-		 * edgepair_record() call above) and is still the prior
-		 * value here -- it gets updated to rec->nr further down,
-		 * after this block.  An EDGEPAIR_NO_PREV sentinel value
-		 * (0xFFFF, e.g. on the first syscall of a child's life) is
-		 * filtered by healer_pair_observe()'s own MAX_NR_SYSCALL
-		 * guard, so no extra check is needed here. */
-		if (!no_healer)
-			healer_pair_observe(child->last_syscall_nr, rec->nr);
+		/* HEALER observer -- credit BOTH the pair-table
+		 * (pred_last -> rec->nr) and the triple-table
+		 * (sort(pred_prev, pred_last) -> rec->nr) relations for
+		 * this new-edge event.  One unified slot drives both
+		 * applies on the parent side; partial-loss-on-overflow
+		 * (where one of the two enqueues drops while the other
+		 * succeeds) is no longer possible.  Predecessors come
+		 * from the per-child sequence buffer, which is updated
+		 * below (alongside last_syscall_nr) so the read here sees
+		 * the two completed syscalls before the current one --
+		 * exactly the chain the new edge should be credited to.
+		 * new_edge_count from kcov_collect feeds the per-event
+		 * weight amplification (capped at HEALER_EDGE_AMPLIFY_CAP
+		 * inside the apply path). */
+		if (!no_healer) {
+			unsigned int flags = child->is_explorer
+				? HEALER_OBS_FLAG_EXPLORER : 0;
+			healer_observe(child, rec->nr, flags, new_edge_count,
+				       /* result_class */ 0);
+		}
 
 		/* HEALER snapshot trigger runs in parent context from
 		 * healer_ring_drain_all() now; the child-side observer

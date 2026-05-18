@@ -2,10 +2,13 @@
  * Per-child HEALER observation ring buffer + parent-side canonical
  * aggregate + child-RO mirror pages.
  *
- * Children produce HEALER observation events (TRIPLE: (pred_a, pred_b,
- * succ); PAIR: (pred, succ)) into their own ring (write-only-by-owner);
- * the parent drains every ring once per main_loop iteration and applies
- * the events to a parent-private struct healer_aggregate that lives in
+ * Children produce unified observation slots (one per new-edge syscall:
+ * pred_prev, pred_last, succ, plus the edge-bucket count and reserved
+ * flags / result-class fields) into their own ring (write-only-by-
+ * owner); the parent drains every ring once per main_loop iteration and
+ * applies BOTH the pair-table bump (pred_last -> succ) AND the triple-
+ * table bump (sort(pred_prev, pred_last) -> succ) from the same slot,
+ * writing into a parent-private struct healer_aggregate that lives in
  * MAP_PRIVATE memory invisible to the kernel.  The kernel can no longer
  * scribble either table via a wild syscall arg pointer because the
  * authoritative copy is not at any kernel-visible address.
@@ -53,6 +56,20 @@ struct healer_pair_cell (*healer_pair_published)[MAX_NR_SYSCALL];
 #define HEALER_PAIR_MAX_WEIGHT		(1U << 24)
 #define HEALER_DECAY_OBSERVATIONS	5000UL
 #define HEALER_DECAY_INTERVAL_SEC	1800UL
+
+/*
+ * Per-event weight cap.  edge_delta from kcov_collect can spike on a
+ * single new-edge call that uncovers a whole subsystem's worth of
+ * coverage at once; without a cap a lucky observation would dominate
+ * an entire decay cycle and pin the picker on one (pred -> succ) cell
+ * for thousands of iterations.  8 was picked to amplify the obvious
+ * tail (most new-edge calls produce 1-2 edges; a handful produce 4-8;
+ * outliers can reach hundreds) without letting an outlier set the
+ * picker's policy.  The full magnitude is preserved on-wire in
+ * struct healer_observation.edge_delta so a future picker can use the
+ * unclamped value if a more discriminating amplification model lands.
+ */
+#define HEALER_EDGE_AMPLIFY_CAP		8U
 
 /*
  * Relation-slot prune threshold, expressed in decay epochs.  A slot
@@ -166,9 +183,9 @@ void healer_ring_init(struct healer_ring *ring)
  *     parent's drain reads stale (or wrapped-around) slots.
  * EDGEPAIR_NO_PREV is the documented "no usable predecessor" sentinel:
  * the observer-hook already filters seq slots carrying it (see
- * healer_observe_relation in healer.c), so stamping it on reset keeps
- * any path that reads healer_seq[] before healer_seq_count gates from
- * seeing stale syscall numbers.
+ * healer_observe in healer.c), so stamping it on reset keeps any path
+ * that reads healer_seq[] before healer_seq_count gates from seeing
+ * stale syscall numbers.
  */
 void healer_child_reset(struct childdata *child)
 {
@@ -183,9 +200,23 @@ void healer_child_reset(struct childdata *child)
 		healer_ring_init(child->healer_ring);
 }
 
-static bool healer_ring_enqueue_slot(struct healer_ring *ring,
-				     const struct healer_event_slot *slot)
+bool healer_ring_enqueue_observation(struct healer_ring *ring,
+				     unsigned int pred_prev,
+				     unsigned int pred_last,
+				     unsigned int succ,
+				     unsigned int flags,
+				     unsigned int edge_delta,
+				     unsigned int result_class)
 {
+	struct healer_observation slot = {
+		.pred_prev = (uint16_t)pred_prev,
+		.pred_last = (uint16_t)pred_last,
+		.succ = (uint16_t)succ,
+		.flags = (uint16_t)flags,
+		.edge_delta = (uint16_t)(edge_delta > UINT16_MAX ? UINT16_MAX
+								 : edge_delta),
+		.result_class = (uint16_t)result_class,
+	};
 	uint32_t head, tail, next;
 
 	if (ring == NULL)
@@ -198,59 +229,34 @@ static bool healer_ring_enqueue_slot(struct healer_ring *ring,
 
 	next = (head + 1) & (HEALER_RING_SIZE - 1);
 	if (next == tail) {
-		__atomic_fetch_add(&ring->overflow, 1,
-					  __ATOMIC_RELAXED);
+		__atomic_fetch_add(&ring->overflow, 1, __ATOMIC_RELAXED);
 		return false;
 	}
 
-	ring->slots[head] = *slot;
+	ring->slots[head] = slot;
 
 	__atomic_store_n(&ring->head, next, __ATOMIC_RELEASE);
 	return true;
 }
 
-bool healer_ring_enqueue_triple(struct healer_ring *ring,
-				unsigned int pred_a, unsigned int pred_b,
-				unsigned int succ)
-{
-	struct healer_event_slot slot = {
-		.kind = HEALER_EVT_TRIPLE,
-		.pred_a = (uint16_t)pred_a,
-		.pred_b = (uint16_t)pred_b,
-		.succ = (uint16_t)succ,
-	};
-
-	return healer_ring_enqueue_slot(ring, &slot);
-}
-
-bool healer_ring_enqueue_pair(struct healer_ring *ring,
-			      unsigned int pred, unsigned int succ)
-{
-	struct healer_event_slot slot = {
-		.kind = HEALER_EVT_PAIR,
-		.pred_a = 0,
-		.pred_b = (uint16_t)pred,
-		.succ = (uint16_t)succ,
-	};
-
-	return healer_ring_enqueue_slot(ring, &slot);
-}
-
 /*
- * Apply a TRIPLE event to the canonical relation table.  Single-writer
- * parent context: no CAS, no restart loop, no defensive retry budget.
- * Bumps pred_appearance for both predecessors (skipping the second on
- * a self-paired predset so the same syscall doesn't get double-counted),
- * walks the open-addressed probe chain looking for the matching predset
- * or an empty slot, then bumps / claims / evicts inside the slot.
+ * Apply a triple-table update to the canonical relation table.  Single-
+ * writer parent context: no CAS, no restart loop, no defensive retry
+ * budget.  Bumps pred_appearance for both predecessors (skipping the
+ * second on a self-paired predset so the same syscall doesn't get
+ * double-counted), walks the open-addressed probe chain looking for the
+ * matching predset or an empty slot, then bumps / claims / evicts
+ * inside the slot.  weight_inc is the per-observation weight magnitude
+ * derived from the call's edge_delta (capped at HEALER_EDGE_AMPLIFY_CAP
+ * by the caller) so a bursty edge-rich call contributes proportional
+ * weight instead of always bumping by one.
  *
- * Mirrors the apply discipline of the in-shm path (healer.c
- * healer_observe_relation + healer_slot_record) but collapsed to
- * straight-line code -- the lockless retry machinery only existed
- * because multiple observers wrote concurrently.
+ * The slot key is hashed from the sorted (pred_a, pred_b) tuple so the
+ * (A, B) and (B, A) predsets collapse into the same slot; the caller
+ * does the sort just before this function runs.
  */
 static void apply_triple(unsigned int pred_a, unsigned int pred_b,
-			 unsigned int succ)
+			 unsigned int succ, unsigned int weight_inc)
 {
 	unsigned int predset_hash;
 	unsigned int slot_idx;
@@ -265,10 +271,8 @@ static void apply_triple(unsigned int pred_a, unsigned int pred_b,
 	bool victim_found = false;
 	bool evicted = false;
 
-	/* The child-side enqueue already sorted (pred_a, pred_b) and
-	 * filtered EDGEPAIR_NO_PREV before placing the event in the ring,
-	 * but a scribbled ring slot can carry any 16-bit value -- bound-
-	 * check before indexing. */
+	/* A scribbled ring slot can carry any 16-bit value -- bound-check
+	 * before indexing. */
 	if (pred_a >= MAX_NR_SYSCALL || pred_b >= MAX_NR_SYSCALL ||
 	    succ >= MAX_NR_SYSCALL)
 		return;
@@ -308,7 +312,7 @@ static void apply_triple(unsigned int pred_a, unsigned int pred_b,
 
 		aggregate_unpack_promoted(slot->promoted[i].entry, &nr, &weight);
 		if (weight != 0 && nr == succ) {
-			slot->promoted[i].weight++;
+			slot->promoted[i].weight += weight_inc;
 			goto out;
 		}
 	}
@@ -317,14 +321,15 @@ static void apply_triple(unsigned int pred_a, unsigned int pred_b,
 	for (i = 0; i < HEALER_PROMOTED_PER_SLOT; i++) {
 		if (slot->promoted[i].entry == 0) {
 			slot->promoted[i].entry =
-				aggregate_pack_promoted(succ, 1);
+				aggregate_pack_promoted(succ, weight_inc);
 			goto out;
 		}
 	}
 
-	/* Phase 3: evict lowest-weight entry.  Inherit victim weight + 1
-	 * so a freshly displaced predset isn't instantly re-evicted on
-	 * its next observation -- mirrors the in-shm eviction policy. */
+	/* Phase 3: evict lowest-weight entry.  Inherit victim weight +
+	 * weight_inc so a freshly displaced predset isn't instantly re-
+	 * evicted on its next observation -- mirrors the in-shm eviction
+	 * policy. */
 	for (i = 0; i < HEALER_PROMOTED_PER_SLOT; i++) {
 		unsigned int weight, nr;
 
@@ -336,7 +341,7 @@ static void apply_triple(unsigned int pred_a, unsigned int pred_b,
 		}
 	}
 	slot->promoted[victim_idx].entry =
-		aggregate_pack_promoted(succ, victim_weight + 1);
+		aggregate_pack_promoted(succ, victim_weight + weight_inc);
 	evicted = true;
 
 out:
@@ -352,44 +357,101 @@ out:
 }
 
 /*
- * Apply a PAIR event to the canonical pair table.  Single-writer
- * parent context: plain increment of dynamic_hits with saturation
- * clamp at HEALER_PAIR_MAX_WEIGHT, mirrors the in-shm path's CAS loop
- * without the loop.  Leaves static_prior untouched -- the seed is a
- * stable metadata fact about the pair, distinct from the runtime
- * observation evidence accumulating on top of it.  Stamps
+ * Apply a pair-table update to the canonical pair table.  Single-
+ * writer parent context: increment dynamic_hits by weight_inc with
+ * saturation clamp at HEALER_PAIR_MAX_WEIGHT, mirrors the in-shm
+ * path's CAS loop without the loop.  Leaves static_prior untouched --
+ * the seed is a stable metadata fact about the pair, distinct from
+ * the runtime observation evidence accumulating on top of it.  Stamps
  * last_observed_epoch so the pair-table prune walk (follow-up commit)
  * can tell live cells from quiet ones.
+ *
+ * weight_inc is the per-observation magnitude derived from the call's
+ * edge_delta (capped at HEALER_EDGE_AMPLIFY_CAP by the caller).
  */
-static void apply_pair(unsigned int pred, unsigned int succ)
+static void apply_pair(unsigned int pred, unsigned int succ,
+		       unsigned int weight_inc)
 {
 	struct healer_pair_cell *cell;
+	uint32_t hits, new_hits;
 
 	if (pred >= MAX_NR_SYSCALL || succ >= MAX_NR_SYSCALL)
 		return;
 
 	cell = &parent_healer.pair_table[pred][succ];
-	if (cell->dynamic_hits < HEALER_PAIR_MAX_WEIGHT) {
-		cell->dynamic_hits++;
-		cell->last_observed_epoch = parent_healer.decay_epoch;
-		parent_healer.pair_dirty[pred] = 1;
-	}
+	hits = cell->dynamic_hits;
+	if (hits >= HEALER_PAIR_MAX_WEIGHT)
+		return;
+
+	new_hits = hits + weight_inc;
+	if (new_hits > HEALER_PAIR_MAX_WEIGHT || new_hits < hits)
+		new_hits = HEALER_PAIR_MAX_WEIGHT;
+	cell->dynamic_hits = new_hits;
+	cell->last_observed_epoch = parent_healer.decay_epoch;
+	parent_healer.pair_dirty[pred] = 1;
 }
 
-static void apply_slot(const struct healer_event_slot *s)
+/*
+ * Convert the on-wire edge_delta to a bounded weight increment.  A new-
+ * edge observation always counts for at least one bump (the historical
+ * "one event = one increment" semantic); a bursty observation that
+ * uncovered N bucket edges contributes min(N, HEALER_EDGE_AMPLIFY_CAP)
+ * so an outlier can't pin the picker on a single (pred -> succ) cell
+ * for thousands of iterations.  See HEALER_EDGE_AMPLIFY_CAP for the
+ * rationale on the cap value.
+ */
+static unsigned int healer_edge_weight_inc(uint16_t edge_delta)
 {
-	switch (s->kind) {
-	case HEALER_EVT_TRIPLE:
-		apply_triple(s->pred_a, s->pred_b, s->succ);
-		break;
-	case HEALER_EVT_PAIR:
-		apply_pair(s->pred_b, s->succ);
-		break;
-	default:
-		/* Out-of-range kind: silent drop.  A scribbled slot can
-		 * carry any value; the surrounding ring overflow counter
-		 * already conveys "we lost samples". */
-		break;
+	unsigned int w = edge_delta;
+
+	if (w == 0)
+		w = 1;
+	if (w > HEALER_EDGE_AMPLIFY_CAP)
+		w = HEALER_EDGE_AMPLIFY_CAP;
+	return w;
+}
+
+/*
+ * Drive both the pair-table and triple-table updates from one unified
+ * observation slot.  pred_last is the immediate predecessor (drives
+ * the pair update); pred_prev is the syscall before that (combined
+ * with pred_last to drive the triple update when populated).  Either
+ * predecessor missing is signalled by EDGEPAIR_NO_PREV; pair updates
+ * still fire as long as pred_last is valid.  Sort happens here at
+ * apply time so the on-wire slot preserves chronological ordering for
+ * downstream consumers that want it.
+ */
+static void apply_observation(const struct healer_observation *obs)
+{
+	unsigned int weight_inc;
+	unsigned int pred_prev, pred_last, succ;
+
+	pred_prev = obs->pred_prev;
+	pred_last = obs->pred_last;
+	succ = obs->succ;
+
+	/* succ is always required.  pred_last must be valid for either
+	 * update; without it there is no relation to learn from this
+	 * observation. */
+	if (succ >= MAX_NR_SYSCALL)
+		return;
+	if (pred_last == EDGEPAIR_NO_PREV)
+		return;
+
+	weight_inc = healer_edge_weight_inc(obs->edge_delta);
+
+	apply_pair(pred_last, succ, weight_inc);
+
+	if (pred_prev != EDGEPAIR_NO_PREV) {
+		unsigned int pa = pred_prev;
+		unsigned int pb = pred_last;
+
+		if (pa > pb) {
+			unsigned int tmp = pa;
+			pa = pb;
+			pb = tmp;
+		}
+		apply_triple(pa, pb, succ, weight_inc);
 	}
 }
 
@@ -414,7 +476,7 @@ unsigned int healer_ring_drain(struct healer_ring *ring)
 	head &= (HEALER_RING_SIZE - 1);
 
 	while (tail != head) {
-		apply_slot(&ring->slots[tail]);
+		apply_observation(&ring->slots[tail]);
 		tail = (tail + 1) & (HEALER_RING_SIZE - 1);
 		processed++;
 	}

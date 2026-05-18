@@ -111,22 +111,33 @@ struct healer_relation {
 struct childdata;
 
 /*
+ * Reserved flag bits for healer_observe()'s flags argument.  Carried
+ * on the on-wire observation slot for downstream consumers; the
+ * parent's apply path doesn't branch on them today.
+ */
+#define HEALER_OBS_FLAG_EXPLORER	(1U << 0)	/* fired from an explorer-pool child */
+
+/*
  * Observer hook fired on the new-edge branch of dispatch_step (and only
  * the new-edge branch -- the cost has to stay zero on the syscall hot
  * path).  Reads the child's last-2 completed syscall numbers out of
- * the per-child sequence buffer, sorts them, hashes the predset, and
- * either bumps the matching (predset, current_nr) entry or evicts the
- * lowest-weight entry to make room.  All updates are lockless: the
- * slot's identifier triple is CAS-claimed via the packed `key` field
- * and each promoted entry is mutated via a 64-bit CAS on its (nr,
- * weight) packed view, so concurrent observers never serialise on a
- * shared lock (see the table declaration in include/shm.h for the
- * memory-ordering argument).
+ * the per-child sequence buffer and enqueues a single unified
+ * observation slot carrying both predecessors (in chronological order,
+ * NOT sorted), the new-edge succ, the call's bucket-edge count from
+ * kcov_collect (for weight amplification at apply time), and reserved
+ * flags / result-class fields.  The parent's drain applies both the
+ * pair-table bump (pred_last -> succ) AND the triple-table bump
+ * (sort(pred_prev, pred_last) -> succ) from the same slot under
+ * single-writer discipline.
  *
- * No-op until the child has executed at least two syscalls (the
- * sequence buffer needs both predecessor slots populated).
+ * Drops the observation when no predecessor is available (the very
+ * first syscall of a child's life, or a child whose seq buffer was
+ * just reset).  Triple-table updates additionally require both
+ * predecessor slots populated; pair-table updates only need pred_last.
  */
-void healer_observe_relation(struct childdata *child, unsigned int current_nr);
+void healer_observe(struct childdata *child, unsigned int current_nr,
+		    unsigned int flags, unsigned int edge_delta,
+		    unsigned int result_class);
 
 /*
  * Push the just-completed syscall nr onto the child's per-child
@@ -192,8 +203,8 @@ void healer_enable_snapshots(const char *path);
  * wide observation count hasn't advanced HEALER_SNAPSHOT_OBSERVATIONS
  * past the last snapshot's high-water-mark.  When the gap is reached,
  * one CAS-elected caller runs healer_save_file() to the configured
- * path; everyone else loses the CAS and returns.  Called from the same
- * observer-hook fire path that drives healer_observe_relation().
+ * path; everyone else loses the CAS and returns.  Called from the
+ * parent drain context now (see healer_ring_drain_all()).
  */
 void healer_maybe_snapshot(void);
 
@@ -214,17 +225,16 @@ void healer_maybe_snapshot(void);
  *
  * Bootstrapped from a static (producer -> consumer) prior derived from
  * existing ARG_FD_* / ret_objtype metadata via healer_load_static_seed(),
- * then refined at runtime by healer_pair_observe() firing on the
- * new-edge path alongside healer_observe_relation().  Pairs are
- * coarser-grained than the triples but converge MUCH faster from a
- * static prior than triples can.
+ * then refined at runtime by the unified healer_observe() firing on
+ * the new-edge path -- the same slot drives both the pair-table and
+ * triple-table updates.  Pairs are coarser-grained than the triples
+ * but converge MUCH faster from a static prior than triples can.
  *
  * The accessors silently no-op (or, for read accessors, return 0)
  * when either syscall number is out of range, so callers don't have
  * to gate on MAX_NR_SYSCALL themselves.
  */
 void healer_pair_seed(unsigned int pred, unsigned int succ, unsigned int weight);
-void healer_pair_observe(unsigned int pred, unsigned int succ);
 
 /*
  * Combined picker weight for a (pred -> succ) cell: static prior
