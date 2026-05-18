@@ -3,14 +3,23 @@
  *
  * Parses KCOV_TRACE_CMP trace buffers to extract constants that the
  * kernel compared syscall-derived values against. These constants
- * are stored in per-syscall hint pools and used during argument
+ * are stored in per-syscall in-memory pools and used during argument
  * generation to produce values more likely to pass kernel validation.
  *
  * Buffer format (each record is 4 x u64):
  *   [0] type  - KCOV_CMP_CONST | KCOV_CMP_SIZE(n)
  *   [1] arg1  - first comparison operand
  *   [2] arg2  - second comparison operand
- *   [3] ip    - instruction pointer (unused here)
+ *   [3] ip    - instruction pointer of the comparison
+ *
+ * Pool entries are keyed by (cmp_ip, value, size).  Distinguishing on
+ * cmp_ip means the same constant compared at two different kernel
+ * sites occupies two slots rather than colliding -- the precision
+ * matters once a downstream consumer wants to attribute which site a
+ * hint came from.  When a pool fills, the entry with the lowest
+ * last_used generation is evicted (least-recently-inserted), so a
+ * fresh constant displaces stale long-tail noise instead of stomping
+ * a slot at random.
  */
 
 #include <errno.h>
@@ -25,8 +34,12 @@
 #include "trinity.h"
 #include "utils.h"
 
-/* From uapi/linux/kcov.h */
-#define KCOV_CMP_CONST  (1U << 0)
+/* From uapi/linux/kcov.h.  KCOV_CMP_SIZE(n) packs the operand-width
+ * index n in {0,1,2,3} into bits 1..2 of the type word; the actual
+ * operand width in bytes is (1U << n). */
+#define KCOV_CMP_CONST		(1U << 0)
+#define KCOV_CMP_SIZE_SHIFT	1
+#define KCOV_CMP_SIZE_MASK	3U
 
 /* Words per comparison record in the trace buffer. */
 #define WORDS_PER_CMP 4
@@ -40,9 +53,9 @@ void cmp_hints_init(void)
 
 	/*
 	 * Wild-write risk: a child syscall whose user-buffer arg aliases
-	 * into a pool could let the kernel scribble into pool->values[]
+	 * into a pool could let the kernel scribble into pool->entries[]
 	 * (worst case: a duplicate slips past the linear-scan dedup, or a
-	 * stale value is handed back as a hint — not a crash) or into the
+	 * stale value is handed back as a hint -- not a crash) or into the
 	 * lock byte (a stuck lock would deadlock subsequent
 	 * cmp_hints_collect callers in that one syscall slot).
 	 * Diagnostic-grade only.
@@ -64,29 +77,60 @@ static void pool_unlock(struct cmp_hint_pool *pool)
 }
 
 /*
- * Insert val into the unordered values[] array. Dedups via linear scan.
- * When the pool is full, overwrites a random slot in place. Caller must
+ * Insert (cmp_ip, val, size) into the entries[] array.  Dedups via linear
+ * scan on the full (cmp_ip, value, size) key.  When the pool is full,
+ * evicts the entry with the smallest last_used (least-recently-inserted)
+ * to make room.  Duplicate hits refresh last_used so an actively-observed
+ * constant doesn't get evicted by transient long-tail noise.  Caller must
  * hold pool->lock.
  */
-static void pool_add_locked(struct cmp_hint_pool *pool, unsigned long val)
+static void pool_add_locked(struct cmp_hint_pool *pool,
+			    unsigned long cmp_ip,
+			    unsigned long val,
+			    unsigned int size)
 {
 	unsigned int i, count = pool->count;
+	unsigned int stamp = ++pool->generation;
+	unsigned int victim;
+	unsigned int oldest;
 
-	for (i = 0; i < count; i++)
-		if (pool->values[i] == val)
+	for (i = 0; i < count; i++) {
+		struct cmp_hint_entry *e = &pool->entries[i];
+
+		if (e->value == val && e->cmp_ip == cmp_ip && e->size == size) {
+			e->last_used = stamp;
 			return;
+		}
+	}
 
 	if (count < CMP_HINTS_PER_SYSCALL) {
-		pool->values[count] = val;
+		struct cmp_hint_entry *e = &pool->entries[count];
+
+		e->value = val;
+		e->cmp_ip = cmp_ip;
+		e->size = size;
+		e->last_used = stamp;
 		/*
 		 * RELEASE-store count so a lockless reader in cmp_hints_try_get
 		 * that observes the new count is guaranteed to also see the
-		 * values[] store above.
+		 * entries[] store above.
 		 */
 		__atomic_store_n(&pool->count, count + 1, __ATOMIC_RELEASE);
-	} else {
-		pool->values[rand() % CMP_HINTS_PER_SYSCALL] = val;
+		return;
 	}
+
+	victim = 0;
+	oldest = pool->entries[0].last_used;
+	for (i = 1; i < CMP_HINTS_PER_SYSCALL; i++) {
+		if (pool->entries[i].last_used < oldest) {
+			oldest = pool->entries[i].last_used;
+			victim = i;
+		}
+	}
+	pool->entries[victim].value = val;
+	pool->entries[victim].cmp_ip = cmp_ip;
+	pool->entries[victim].size = size;
+	pool->entries[victim].last_used = stamp;
 }
 
 void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
@@ -120,6 +164,9 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 		unsigned long type = rec[0];
 		unsigned long arg1 = rec[1];
 		unsigned long arg2 = rec[2];
+		unsigned long ip   = rec[3];
+		unsigned int size  = 1U << ((type >> KCOV_CMP_SIZE_SHIFT)
+					    & KCOV_CMP_SIZE_MASK);
 
 		/* We only care about comparisons where one side is a
 		 * compile-time constant — those reveal what the kernel
@@ -134,9 +181,9 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 		 * and the all-ones sentinel.
 		 */
 		if (((arg1 & ~3UL) != 0) && (arg1 != (unsigned long) -1))
-			pool_add_locked(pool, arg1);
+			pool_add_locked(pool, ip, arg1, size);
 		if (((arg2 & ~3UL) != 0) && (arg2 != (unsigned long) -1))
-			pool_add_locked(pool, arg2);
+			pool_add_locked(pool, ip, arg2, size);
 	}
 	pool_unlock(pool);
 }
@@ -158,17 +205,21 @@ bool cmp_hints_try_get(unsigned int nr, unsigned long *out)
 	 * Tolerated race: a stale count snapshot still indexes a populated
 	 * slot — count is monotonic up to the CMP_HINTS_PER_SYSCALL cap, and
 	 * once full it stops moving (full-pool eviction overwrites in place).
-	 * Each slot is a naturally-aligned unsigned long, so a concurrent
-	 * eviction yields either the pre- or post-overwrite value at the
-	 * hardware level; both are valid hints that lived in the pool.
+	 * The per-entry .value field is a naturally-aligned unsigned long, so
+	 * a concurrent eviction yields either the pre- or post-overwrite
+	 * value at the hardware level; both are valid hints that lived in
+	 * the pool.
 	 *
-	 * For fuzzer hints this is benign — values[] entries are direct
-	 * unsigned longs substituted as syscall args, never dereferenced.
+	 * For fuzzer hints this is benign — values are direct unsigned longs
+	 * substituted as syscall args, never dereferenced.  We do not refresh
+	 * the entry's last_used field on lookup: the LRU stamp tracks
+	 * insertion freshness from cmp_hints_collect(), which is what the
+	 * dedup-vs-eviction policy is built around.
 	 */
 	count = __atomic_load_n(&pool->count, __ATOMIC_ACQUIRE);
 	if (count == 0)
 		return false;
 
-	*out = pool->values[rand() % count];
+	*out = pool->entries[rand() % count].value;
 	return true;
 }
