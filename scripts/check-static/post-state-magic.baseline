@@ -83,6 +83,5 @@ syscalls/sysfs.c:sysfs
 syscalls/sysinfo.c:sysinfo
 syscalls/timerfd_gettime.c:timerfd_gettime
 syscalls/timer_gettime.c:timer_gettime
-syscalls/times.c:times
 syscalls/uname.c:uname
 syscalls/x86/modify_ldt.c:modify_ldt
