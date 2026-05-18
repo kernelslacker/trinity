@@ -152,10 +152,25 @@ struct syscallentry syscall_poll = {
  * rec->post_state, a slot the syscall ABI does not expose, so the post
  * path is immune to a sibling syscall scribbling rec->a1/a3 between the
  * syscall returning and the post handler running.
+ *
+ * Leading magic cookie because the heap-shape check on rec->post_state
+ * is value-based only -- a sibling scribbling rec->post_state with any
+ * heap-shaped 8-byte aligned pointer to a foreign allocation sails past
+ * looks_like_corrupted_ptr() and the post handler then loads snap->fds
+ * from foreign bytes; deferred_free_enqueue() queues that bogus pointer
+ * for free and glibc aborts in malloc_printerr when the chunk is later
+ * released.  Mirrors RECVMMSG_POST_STATE_MAGIC at recv.c:305.  Padded
+ * to 32 bytes (48-byte glibc malloc chunk) so the snap lands in a
+ * different free-list bucket than the 16-byte alloc_iovec(1) bucket and
+ * the 24-byte pipe_post_state bucket -- defense-in-depth on top of the
+ * cookie.
  */
+#define PPOLL_POST_STATE_MAGIC	0x50504F4C5F4D4147UL	/* "PPOL_MAG" */
 struct ppoll_post_state {
+	unsigned long magic;
 	struct pollfd *fds;
 	struct timespec *ts;
+	unsigned long _bucket_pad;
 };
 
 static void sanitise_ppoll(struct syscallrecord *rec)
@@ -203,6 +218,7 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 	 * get_writable_address() pool, not the glibc heap.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = PPOLL_POST_STATE_MAGIC;
 	snap->fds = fds;
 	snap->ts = ts;
 	rec->post_state = (unsigned long) snap;
@@ -241,6 +257,25 @@ static void post_ppoll(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_ppoll: rejected suspicious post_state=%p "
 			  "(pid-scribbled?)\n", snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * ppoll_post_state.  A cookie mismatch means snap does not point
+	 * at our struct -- abandon the cleanup rather than hand the inner
+	 * (foreign) pointers to deferred_free_enqueue(), which would queue
+	 * a bogus free that glibc aborts on in malloc_printerr.  Mirrors
+	 * recv.c:445 (post_recvmmsg).
+	 */
+	if (snap->magic != PPOLL_POST_STATE_MAGIC) {
+		outputerr("post_ppoll: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
