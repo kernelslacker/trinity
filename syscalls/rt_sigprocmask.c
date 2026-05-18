@@ -2,14 +2,12 @@
  * SYSCALL_DEFINE4(rt_sigprocmask, int, how, sigset_t __user *, set,
 	sigset_t __user *, oset, size_t, sigsetsize)
  */
-#include <fcntl.h>
 #include <signal.h>
-#include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include "deferred-free.h"
+#include "proc-status.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -100,12 +98,8 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 	struct rt_sigprocmask_post_state *snap =
 		(struct rt_sigprocmask_post_state *) rec->post_state;
 	char procbuf[2048];
-	char *p;
-	ssize_t n;
-	int fd;
-	uint64_t syscall_blocked, proc_blocked = 0;
-	unsigned long sigblk = 0;
-	bool have_sigblk = false;
+	const char *value;
+	uint64_t syscall_blocked, proc_blocked;
 	sigset_t buf;
 
 	if (snap == NULL)
@@ -149,29 +143,13 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 	memcpy(&buf, (const void *) snap->oset, sizeof(buf));
 	memcpy(&syscall_blocked, &buf, sizeof(syscall_blocked));
 
-	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
-	 * thousands of times per second under fuzz, and stdio's per-call malloc
-	 * of FILE struct + IO buffer is heap traffic we don't need. */
-	fd = open("/proc/self/status", O_RDONLY);
-	if (fd < 0)
+	if (proc_status_read(procbuf, sizeof(procbuf)) < 0)
 		goto out_free;
-	n = read(fd, procbuf, sizeof(procbuf) - 1);
-	close(fd);
-	if (n <= 0)
+	value = proc_status_find_field(procbuf, "SigBlk");
+	if (value == NULL)
 		goto out_free;
-	procbuf[n] = '\0';
-	/* Anchor on a newline so a "SigBlk:" substring inside an earlier field
-	 * (e.g. a process name) cannot mis-target the parse. */
-	p = strstr(procbuf, "\nSigBlk:");
-	if (p != NULL) {
-		if (sscanf(p + 8, "%lx", &sigblk) == 1)
-			have_sigblk = true;
-	}
-
-	if (!have_sigblk)
+	if (!proc_status_parse_hex_mask(value, &proc_blocked))
 		goto out_free;
-
-	proc_blocked = (uint64_t)sigblk;
 
 	if (syscall_blocked != proc_blocked) {
 		output(0, "rt_sigprocmask oracle: syscall=0x%016lx but "

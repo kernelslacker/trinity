@@ -1,11 +1,9 @@
 /*
  * SYSCALL_DEFINE0(getpid)
  */
-#include <fcntl.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "proc-status.h"
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
@@ -27,11 +25,9 @@
 static void post_getpid(struct syscallrecord *rec)
 {
 	char buf[2048];
-	char *line;
-	ssize_t n;
-	int fd;
-	pid_t got, proc_tgid = (pid_t)-1;
-	unsigned int tgid;
+	const char *value;
+	pid_t got, proc_tgid;
+	unsigned long tgid;
 	long ret = (long) rec->retval;
 
 	/* Kernel ABI: getpid() cannot fail; retval must be in [1, PID_MAX_LIMIT=4194304]. */
@@ -47,27 +43,14 @@ static void post_getpid(struct syscallrecord *rec)
 
 	got = (pid_t) rec->retval;
 
-	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
-	 * thousands of times per second under fuzz, and stdio's per-call malloc
-	 * of FILE struct + IO buffer is heap traffic we don't need. */
-	fd = open("/proc/self/status", O_RDONLY);
-	if (fd < 0)
+	if (proc_status_read(buf, sizeof(buf)) < 0)
 		return;
-	n = read(fd, buf, sizeof(buf) - 1);
-	close(fd);
-	if (n <= 0)
+	value = proc_status_find_field(buf, "Tgid");
+	if (value == NULL)
 		return;
-	buf[n] = '\0';
-	/* Anchor on a newline so a "Tgid:" substring inside an earlier field
-	 * (e.g. a process name) cannot mis-target the parse. */
-	line = strstr(buf, "\nTgid:");
-	if (line != NULL) {
-		if (sscanf(line + 6, "%u", &tgid) == 1)
-			proc_tgid = (pid_t)tgid;
-	}
-
-	if (proc_tgid == (pid_t)-1)
+	if (!proc_status_parse_u(value, &tgid))
 		return;
+	proc_tgid = (pid_t)tgid;
 
 	if (proc_tgid != got) {
 		output(0, "getpid oracle: getpid()=%d but "

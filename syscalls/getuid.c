@@ -1,11 +1,9 @@
 /*
  * SYSCALL_DEFINE0(getuid)
  */
-#include <fcntl.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "proc-status.h"
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
@@ -26,11 +24,9 @@
 static void post_getuid(struct syscallrecord *rec)
 {
 	char buf[2048];
-	char *line;
-	ssize_t n;
-	int fd;
-	uid_t got, proc_ruid = (uid_t)-1;
-	unsigned int ruid, euid, suid, fsuid;
+	const char *value;
+	unsigned long uids[4];
+	uid_t got, proc_ruid;
 
 	/* Kernel ABI: getuid() is infallible — from_kuid_munged(current_user_ns(),
 	 * current_uid()) cannot fail and the syscall return path has no error case.
@@ -48,30 +44,15 @@ static void post_getuid(struct syscallrecord *rec)
 
 	got = (uid_t) rec->retval;
 
-	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
-	 * thousands of times per second under fuzz, and stdio's per-call malloc
-	 * of FILE struct + IO buffer is heap traffic we don't need. */
-	fd = open("/proc/self/status", O_RDONLY);
-	if (fd < 0)
+	if (proc_status_read(buf, sizeof(buf)) < 0)
 		return;
-	n = read(fd, buf, sizeof(buf) - 1);
-	close(fd);
-	if (n <= 0)
+	value = proc_status_find_field(buf, "Uid");
+	if (value == NULL)
 		return;
-	buf[n] = '\0';
-	/* Anchor on a newline so a "Uid:" substring inside an earlier field
-	 * (e.g. a process name) cannot mis-target the parse. */
-	line = strstr(buf, "\nUid:");
-	if (line != NULL) {
-		/* Uid: ruid euid suid fsuid — getuid() returns ruid
-		 * (first field), so compare against that. */
-		if (sscanf(line + 5, "%u %u %u %u",
-			   &ruid, &euid, &suid, &fsuid) == 4)
-			proc_ruid = ruid;
-	}
-
-	if (proc_ruid == (uid_t)-1)
+	/* Uid: ruid euid suid fsuid — getuid() returns ruid (first field). */
+	if (!proc_status_parse_uid_gid_quad(value, uids))
 		return;
+	proc_ruid = (uid_t)uids[0];
 
 	if (proc_ruid != got) {
 		output(0, "getuid oracle: getuid()=%u but "
