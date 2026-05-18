@@ -4,6 +4,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+#include "compiler.h"
 #include "fd.h"
 #include "syscall.h"
 #include "socketinfo.h"
@@ -48,7 +49,7 @@ struct protoptr {
 };
 extern const struct protoptr net_protocols[TRINITY_PF_MAX];
 
-struct socketinfo * get_rand_socketinfo(void);
+struct socketinfo * get_rand_socketinfo(void) __must_check;
 int fd_from_socketinfo(struct socketinfo *si);
 
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf);
