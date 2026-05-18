@@ -23,12 +23,13 @@
  * parent contract under hostile fuzzed workload.
  *
  * One slot carries the full observation: the two predecessor syscall
- * numbers (in original chronological order, NOT sorted), the new-edge
+ * numbers in chronological order (pred_prev, pred_last), the new-edge
  * successor, the bucket-edge count from kcov_collect, and reserved
  * flags / result-class fields for downstream consumers.  Apply-time
  * drains both the pair-table update (pred_last -> succ) and the
- * triple-table update (sort(pred_prev, pred_last) -> succ) from the
- * same slot, halving ring traffic relative to the two-event scheme it
+ * triple-table update ((pred_prev, pred_last) -> succ, hashed without
+ * sorting so direction-asymmetric chains stay distinct) from the same
+ * slot, halving ring traffic relative to the two-event scheme it
  * replaces and removing the partial-observation-loss window where the
  * triple enqueue could succeed while the pair enqueue dropped (or
  * vice versa).
@@ -44,13 +45,14 @@
 #define HEALER_RING_SIZE 1024	/* power of 2; 12 KiB at 12 B/slot */
 
 /*
- * One observation slot.  pred_prev and pred_last preserve the original
+ * One observation slot.  pred_prev and pred_last are stored in
  * chronological order (pred_prev is two completed syscalls back,
- * pred_last is one back); the triple-table apply sorts before hashing
- * so (A, B) and (B, A) collapse into one slot, while the pair-table
- * apply uses pred_last directly.  EDGEPAIR_NO_PREV (0xFFFF) in either
- * predecessor field means that slot is unpopulated -- pair updates run
- * whenever pred_last is valid, triple updates require both.
+ * pred_last is one back).  The triple-table apply hashes
+ * (arch, pred_prev, pred_last) without sorting so (A, B) and (B, A)
+ * occupy distinct relation slots; the pair-table apply uses pred_last
+ * directly.  EDGEPAIR_NO_PREV (0xFFFF) in either predecessor field
+ * means that slot is unpopulated -- pair updates run whenever
+ * pred_last is valid, triple updates require both.
  *
  * edge_delta is the bucket-edge count reported by kcov_collect for the
  * call that fired this observation, capped at uint16_t range at enqueue

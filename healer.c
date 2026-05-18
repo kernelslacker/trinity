@@ -230,8 +230,9 @@
 
 /*
  * FNV-1a parameters from the canonical 32-bit FNV definition.  Used
- * over the byte representation of the sorted (pred_a, pred_b) tuple
- * to derive the initial slot index.  Cheap enough on the (rare)
+ * over the byte representation of the (arch, pred_a, pred_b) tuple
+ * (pred_a, pred_b kept in chronological order, not sorted) to derive
+ * the initial slot index.  Cheap enough on the (rare)
  * observer-hook path that adding a stronger hash is not worth the
  * dependency cost.
  */
@@ -365,11 +366,12 @@ void healer_observe(struct childdata *child, unsigned int current_nr,
 	if (child == NULL || child->healer_ring == NULL)
 		return;
 
-	/* Read predecessors in their original chronological order.  The
-	 * triple-table apply sorts before hashing so (A, B) and (B, A)
-	 * collapse into the same slot; the pair-table apply uses the
-	 * immediate predecessor directly.  Storing them unsorted on the
-	 * wire preserves ordering for downstream consumers that want it. */
+	/* Read predecessors in their original chronological order.  Both
+	 * the triple-table and pair-table applies use this same ordering
+	 * (the triple key hashes (arch, pred_prev, pred_last) without
+	 * sorting so direction-asymmetric chains stay distinct).  The
+	 * wire format preserves chronological order so downstream
+	 * consumers see the same shape the apply path keys on. */
 	pred_prev = (child->healer_seq_count >= 2) ? child->healer_seq[0]
 						   : EDGEPAIR_NO_PREV;
 	pred_last = (child->healer_seq_count >= 1) ? child->healer_seq[1]
@@ -389,8 +391,9 @@ void healer_observe(struct childdata *child, unsigned int current_nr,
 
 	/* Enqueue one unified observation slot for the parent's drain to
 	 * apply.  Drives BOTH the pair-table bump (pred_last -> current_nr)
-	 * AND the triple-table bump (sort(pred_prev, pred_last) -> current_nr)
-	 * atomically from one slot, eliminating the partial-observation-loss
+	 * AND the triple-table bump ((pred_prev, pred_last) -> current_nr,
+	 * chronological order, no sort) atomically from one slot,
+	 * eliminating the partial-observation-loss
 	 * window where one of the two enqueues could succeed while the
 	 * other dropped.  See apply_observation() in healer-ring.c.
 	 *
@@ -521,13 +524,14 @@ static bool healer_same_family(unsigned int pred_a_nr,
 
 /*
  * Coverage-productivity multiplier derived from the existing edgepair
- * table.  HEALER triples are sorted by predset before they reach the
- * dump path (pred_a <= pred_b), so we no longer know which of the two
- * predecessors was the immediate predecessor at observation time.
- * Probe both orderings via edgepair_get_stats() and pick the more
- * productive ratio -- both are valid candidates for the last-step pair,
- * and the optimistic pick keeps a triple from being penalised by a
- * coincidentally-quiet alternative ordering.  The ratio reuses the
+ * table.  HEALER triples are stored in chronological order
+ * (pred_a == pred_prev, pred_b == pred_last) so the last-step pair is
+ * unambiguous: (pred_b -> succ) is THE pair edgepair_get_stats should
+ * score.  We retain the optimistic max(ra, rb) shape from the pre-
+ * chronological-key version though -- a triple's productivity story
+ * is often best told by whichever of the two participating pairs has
+ * accumulated more new-edge evidence, even though only one is the
+ * causal last-step pair on the wire.  The ratio reuses the
  * scoring side's HEALER_NORM_ALPHA / HEALER_NORM_BETA so the operator
  * only learns one Bayesian shape; the result is in milli-fixed-point
  * and clamped at HEALER_COVERAGE_FLOOR_MILLI.  Returns a multiplier in
@@ -1446,16 +1450,25 @@ void healer_table_dump(void)
  *   v1 -- initial relations-only persistence (long since superseded).
  *   v2 -- added pair table, pred_appearance, decay/snapshot counters,
  *         relations_last_refreshed, kallsyms fingerprint.
- *   v3 -- arch-aware keys: struct healer_relation gains an arch field,
- *         pair_table grows the HEALER_NR_ARCHES dimension, and
- *         pred_appearance grows the same dimension.  The header carries
- *         the writer's nr_arches so a uniarch reader of a biarch-written
- *         file (and vice versa) cold-starts instead of mis-laying out
- *         the per-arch regions.  One-time invalidation for all in-flight
- *         v2 files; the version check below catches them and the next
- *         snapshot rewrites in v3 shape.
+ *   v3 -- arch-aware keys: struct healer_relation gains an arch field;
+ *         pair_table and pred_appearance grow the HEALER_NR_ARCHES
+ *         outer dimension.  Header carries writer's nr_arches.
+ *   v4 -- triple key is no longer sorted before hashing: (pred_a,
+ *         pred_b) is chronological now (pred_prev, pred_last), so
+ *         (A, B) and (B, A) chains occupy distinct relation slots.
+ *         The on-disk slot bytes are unchanged in shape (the relation_size
+ *         and pair_cell_size header fields still match v3), but their
+ *         (pred_a, pred_b) SEMANTIC changed from sorted-pair to
+ *         observation-ordered, and a v3 reader of a v4 file (or vice
+ *         versa) would mis-interpret every relation by treating B-then-A
+ *         observations as a different slot than the v3 sort would have
+ *         merged with A-then-B.  HEALER_RELATION_SLOTS also doubled
+ *         from 16384 to 32768 to absorb the post-split distinct-predset
+ *         growth, so the version check catches the slot-count mismatch
+ *         too on any v3 file built at the old size.  One-time
+ *         invalidation; the next snapshot rewrites in v4 shape.
  */
-#define HEALER_FILE_VERSION		3U
+#define HEALER_FILE_VERSION		4U
 #define HEALER_UTSNAME_LEN		65	/* matches Linux __NEW_UTS_LEN+1 */
 
 /*
@@ -1804,10 +1817,13 @@ static bool healer_loaded_relation_valid(const struct healer_relation *slot)
 
 	if (pred_a >= MAX_NR_SYSCALL || pred_b >= MAX_NR_SYSCALL)
 		return false;
-	if (pred_a > pred_b)
-		return false;
 	if (arch >= HEALER_NR_ARCHES)
 		return false;
+	/* No pred_a <= pred_b sortedness invariant any more: the
+	 * relation key is chronological (pred_a == pred_prev,
+	 * pred_b == pred_last), so either ordering is valid on the
+	 * wire and the hash recomputation below is the sole
+	 * authoritative check. */
 
 	hash = healer_predset_hash(arch, pred_a, pred_b);
 	if (hash != slot->predset_hash)
@@ -2900,8 +2916,8 @@ bool set_syscall_nr_healer(struct syscallrecord *rec, struct childdata *child)
 	 * design (static seed + dense observer) and the triple table acts
 	 * as a sparse boost for higher-confidence relations. */
 	if (child->healer_seq_count >= 2) {
-		unsigned int pa = child->healer_seq[0];
-		unsigned int pb = child->healer_seq[1];
+		unsigned int pa = child->healer_seq[0];	/* older */
+		unsigned int pb = child->healer_seq[1];	/* more recent */
 
 		if (pa != EDGEPAIR_NO_PREV && pb != EDGEPAIR_NO_PREV &&
 		    pa < MAX_NR_SYSCALL && pb < MAX_NR_SYSCALL) {
@@ -2910,11 +2926,11 @@ bool set_syscall_nr_healer(struct syscallrecord *rec, struct childdata *child)
 			unsigned int probe;
 			uint64_t target_key;
 
-			if (pa > pb) {
-				unsigned int tmp = pa;
-				pa = pb;
-				pb = tmp;
-			}
+			/* No sort: the picker reads predecessors in
+			 * chronological order so the key matches the
+			 * observer's apply-time key shape.  See
+			 * apply_observation for the canonical ordering
+			 * convention. */
 			predset_hash = healer_predset_hash(arch, pa, pb);
 			slot_idx = predset_hash & (HEALER_RELATION_SLOTS - 1);
 			target_key = healer_pack_key(pa, pb, predset_hash);

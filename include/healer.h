@@ -67,9 +67,11 @@ static inline unsigned int healer_arch_id(bool do32)
  * with the highest accumulated weight).
  *
  * Predecessor sequence depth is fixed at 2 (the immediately-preceding
- * two completed syscalls); the predset is sorted before hashing so
- * (A, B) and (B, A) collapse into one slot.  Lookup is open-addressing
- * over an FNV-1a hash of the sorted (pred_a, pred_b) tuple; collisions
+ * two completed syscalls); the predset is stored in CHRONOLOGICAL
+ * order (pred_a = pred_prev, pred_b = pred_last) so (A, B) and (B, A)
+ * occupy distinct slots and the direction-asymmetric kernel-causal
+ * relations they encode stay separate.  Lookup is open-addressing
+ * over an FNV-1a hash of the (arch, pred_a, pred_b) tuple; collisions
  * linear-probe up to HEALER_PROBE_LIMIT slots.  Inside each predset
  * slot a small dense array tracks up to HEALER_PROMOTED_PER_SLOT
  * promoted syscalls, evicting the lowest-weight entry when full.
@@ -77,11 +79,15 @@ static inline unsigned int healer_arch_id(bool do32)
 
 /*
  * Power-of-two table size keeps the slot index a cheap mask of the
- * hash output.  16384 slots * 72 bytes per slot ~= 1.13 MiB of shm,
- * well within the existing per-arena budget (cmp_novelty[] alone is
- * ~132 KiB, frontier_history[] another 32 KiB).
+ * hash output.  Bumped from 16384 to 32768 when the triple key flipped
+ * from sorted to chronological order: (A, B) and (B, A) used to share
+ * a slot but now occupy distinct slots, so the steady-state distinct-
+ * predset count under realistic workloads can roughly double.  At 80
+ * bytes per slot the table is now 2.5 MiB (was 1.25 MiB), still well
+ * inside the per-arena budget (cmp_novelty[] alone is ~132 KiB,
+ * frontier_history[] another 32 KiB).
  */
-#define HEALER_RELATION_SLOTS    16384
+#define HEALER_RELATION_SLOTS    32768
 
 /*
  * Per-predset cap on the number of (promoted_nr) entries we track.
@@ -135,10 +141,11 @@ struct healer_promoted {
  * sentinel; healer_predset_hash() remaps the vanishingly rare FNV-1a
  * output of 0 to 1 so a real predset never collides with empty,
  * leaving the surrounding aggregate memset(0) as the only
- * initialisation the table needs.  pred_a and pred_b are stored sorted
- * (pred_a <= pred_b) so the (A, B) / (B, A) symmetry holds at
- * insertion time; they are narrowed to uint16_t -- syscall numbers fit
- * (MAX_NR_SYSCALL is 1024) and the caller already filters the
+ * initialisation the table needs.  pred_a and pred_b are stored in
+ * CHRONOLOGICAL order (pred_a is two completed syscalls back,
+ * pred_b is one back) so the (A, B) and (B, A) chains stay
+ * direction-distinct; they are narrowed to uint16_t -- syscall numbers
+ * fit (MAX_NR_SYSCALL is 1024) and the caller already filters the
  * EDGEPAIR_NO_PREV (0xFFFF) sentinel before we ever reach a slot.
  *
  * `arch` carries the successor call's arch dimension (0..HEALER_NR_ARCHES

@@ -7,7 +7,8 @@
  * flags / result-class fields) into their own ring (write-only-by-
  * owner); the parent drains every ring once per main_loop iteration and
  * applies BOTH the pair-table bump (pred_last -> succ) AND the triple-
- * table bump (sort(pred_prev, pred_last) -> succ) from the same slot,
+ * table bump ((pred_prev, pred_last) -> succ, chronological order,
+ * no sort) from the same slot,
  * writing into a parent-private struct healer_aggregate that lives in
  * MAP_PRIVATE memory invisible to the kernel.  The kernel can no longer
  * scribble either table via a wild syscall arg pointer because the
@@ -244,9 +245,14 @@ bool healer_ring_enqueue_observation(struct healer_ring *ring,
  * by the caller) so a bursty edge-rich call contributes proportional
  * weight instead of always bumping by one.
  *
- * The slot key is hashed from the sorted (pred_a, pred_b) tuple so the
- * (A, B) and (B, A) predsets collapse into the same slot; the caller
- * does the sort just before this function runs.
+ * The slot key is hashed from (pred_a, pred_b) in CHRONOLOGICAL order
+ * (pred_a is two completed syscalls back, pred_b is one back) so
+ * (A, B) and (B, A) predsets occupy distinct slots.  The picker reads
+ * the same chronological key from the child's per-call sequence
+ * buffer; observer-side and picker-side both see the same ordering, so
+ * the kernel-causal "X then Y produced edge Z" relation is no longer
+ * collapsed with the symmetric "Y then X produced edge Z" event into
+ * one cell.
  */
 static void apply_triple(unsigned int arch, unsigned int pred_a,
 			 unsigned int pred_b, unsigned int succ,
@@ -456,15 +462,14 @@ static void apply_observation(const void *p, void *ctx __unused__)
 	apply_pair(arch, pred_last, succ, weight_inc);
 
 	if (pred_prev != EDGEPAIR_NO_PREV) {
-		unsigned int pa = pred_prev;
-		unsigned int pb = pred_last;
-
-		if (pa > pb) {
-			unsigned int tmp = pa;
-			pa = pb;
-			pb = tmp;
-		}
-		apply_triple(arch, pa, pb, succ, weight_inc);
+		/* Chronological order: pa is the older predecessor
+		 * (pred_prev), pb is the more recent one (pred_last).  The
+		 * key is no longer sorted before hashing so the kernel-
+		 * causal "X then Y produced edge Z" relation indexes a
+		 * different slot than "Y then X produced edge Z" -- both
+		 * direction-asymmetric chains stay distinct in the
+		 * relation table. */
+		apply_triple(arch, pred_prev, pred_last, succ, weight_inc);
 	}
 }
 
