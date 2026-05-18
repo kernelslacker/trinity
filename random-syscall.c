@@ -953,6 +953,30 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			}
 			__atomic_fetch_add(&shm->stats.bandit_pool_edges_discovered,
 					   1, __ATOMIC_RELAXED);
+
+			/* Random-rescue classification.  Only meaningful when
+			 * the current window is a SR_PLATEAU_FORCE intervention
+			 * -- the classifier exists to explain why a forced
+			 * RANDOM rescue produced the edge a structured picker
+			 * missed.  Reading current_selection_reason rather than
+			 * stamping it at pick-time is fine here: the
+			 * intervention windows are long (~100 sec at 10K
+			 * iter/sec) and a child whose syscall straddled a
+			 * rotation boundary is rare enough that misattributing
+			 * a handful of rescues per rotation is below the
+			 * noise floor on the per-class counts.  The orchestrator
+			 * reads the cumulative distribution at the next
+			 * rotation boundary to decide which class to amplify. */
+			if (__atomic_load_n(&shm->current_selection_reason,
+					    __ATOMIC_RELAXED) ==
+			    SR_PLATEAU_FORCE) {
+				enum random_rescue_class rrc =
+					classify_random_rescue(rec, child);
+				if (rrc >= 0 && rrc < RRC_NR_CLASSES)
+					__atomic_fetch_add(
+						&shm->random_rescue_class_count[rrc],
+						1UL, __ATOMIC_RELAXED);
+			}
 		}
 	}
 

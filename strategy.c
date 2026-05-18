@@ -31,7 +31,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "child.h"		/* struct childdata */
+#include "cmp_hints.h"		/* cmp_hints_shm */
 #include "debug.h"
+#include "edgepair.h"		/* EDGEPAIR_NO_PREV */
 #include "healer.h"		/* healer_pair_dynamic_hits */
 #include "kcov.h"		/* KCOV_CMP_RECORDS_MAX, kcov_shm */
 #include "params.h"
@@ -941,6 +944,160 @@ void strategy_plateau_response(void)
 	 * persists. */
 	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL, __ATOMIC_RELAXED);
 	stats_log_write("PLATEAU RESPONSE: forcing STRATEGY_RANDOM until plateau clears\n");
+}
+
+/*
+ * RRC_COLD_SKIP threshold.  STRATEGY_HEURISTIC's kcov_syscall_cold_skip_pct
+ * returns the per-syscall probability the heuristic picker rejects the
+ * candidate on the cold-skip retry; 50 is the baseline the heuristic uses
+ * for a freshly-cold syscall (see kcov.c).  A SR_PLATEAU_FORCE rescue
+ * whose rec->nr scores at or above the baseline would have been skipped
+ * by the heuristic at least half the time -- enough that the RANDOM
+ * intervention is plausibly the only path that exercised it.
+ */
+#define RRC_COLD_SKIP_PCT 50U
+
+/*
+ * RRC_UNSEEN_SUCCESSOR scan budget.  The classifier walks (pred -> *)
+ * looking for at least one hot OUTGOING pair from the same predecessor;
+ * the existence proof is enough, no need to count.  Capped so a
+ * pathological pred with no hot successors does not turn the rescue
+ * path into an O(MAX_NR_SYSCALL) walk under high rescue rate.  The
+ * scan starts at (pred + 1) and wraps so the same nr is not inspected
+ * twice in a single call.
+ */
+#define RRC_UNSEEN_SUCCESSOR_SCAN_CAP 256U
+
+/*
+ * Minimum HEALER pair weight required for a (pred -> X) cell to count
+ * as a "hot outgoing pair" during the RRC_UNSEEN_SUCCESSOR existence
+ * scan.  Set above the bare HEALER_STATIC_SEED_WEIGHT=3 floor so the
+ * existence proof requires either runtime evidence or a seed-plus-
+ * dynamic hit, matching the spirit of the eligibility gate's
+ * dynamic_hits-only test (a freshly-seeded pair is not yet evidence
+ * the structured picker is actually investing in that branch).
+ */
+#define RRC_HOT_PAIR_THRESHOLD 4U
+
+const char *random_rescue_class_name(enum random_rescue_class c)
+{
+	switch (c) {
+	case RRC_COLD_SKIP:		return "COLD_SKIP";
+	case RRC_MISSING_PAIR:		return "MISSING_PAIR";
+	case RRC_UNSEEN_SUCCESSOR:	return "UNSEEN_SUCCESSOR";
+	case RRC_STALE_PAIR:		return "STALE_PAIR";
+	case RRC_UNUSUAL_FD_PRODUCER:	return "UNUSUAL_FD_PRODUCER";
+	case RRC_WRONG_TYPE_FD:		return "WRONG_TYPE_FD";
+	case RRC_CMP_DERIVED:		return "CMP_DERIVED";
+	case RRC_PERSONA_GATED:		return "PERSONA_GATED";
+	case RRC_UNKNOWN:		return "UNKNOWN";
+	case RRC_NR_CLASSES:		break;	/* sentinel */
+	}
+	return "?";
+}
+
+enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
+						struct childdata *child)
+{
+	unsigned int prev, curr;
+	unsigned int pair_weight, dyn_hits;
+	unsigned int static_prior;
+
+	if (rec == NULL || child == NULL)
+		return RRC_UNKNOWN;
+	if (rec->nr >= MAX_NR_SYSCALL)
+		return RRC_UNKNOWN;
+
+	curr = (unsigned int)rec->nr;
+	prev = child->last_syscall_nr;
+
+	/* RRC_COLD_SKIP.  Heuristic picker would have rejected this nr at
+	 * least half the time on the cold-skip retry path, so a RANDOM
+	 * rescue that lands new edges on it is most plausibly recovering
+	 * coverage the heuristic was filtering out.  The check runs against
+	 * the same kcov_syscall_cold_skip_pct() the heuristic consults, so
+	 * the classifier and the picker can never disagree on what "cold"
+	 * means. */
+	if (kcov_syscall_cold_skip_pct(curr) >= RRC_COLD_SKIP_PCT)
+		return RRC_COLD_SKIP;
+
+	/* HEALER-pair classes need a real predecessor.  EDGEPAIR_NO_PREV is
+	 * the first-call-in-a-child sentinel; without it there is no (pred
+	 * -> succ) edge to reason about, so the structured-picker
+	 * attribution buckets do not apply and the rescue falls through to
+	 * the unattributable bucket (or matches CMP_DERIVED below). */
+	if (prev != EDGEPAIR_NO_PREV && prev < MAX_NR_SYSCALL) {
+		pair_weight = healer_pair_get(prev, curr);
+		dyn_hits = healer_pair_dynamic_hits(prev, curr);
+		/* healer_pair_get sums static_prior + dynamic_hits; backing
+		 * the dynamic component out reconstructs the static prior
+		 * without adding a third accessor.  pair_weight >= dyn_hits
+		 * by construction (static_prior is unsigned, the sum cannot
+		 * underflow). */
+		static_prior = pair_weight >= dyn_hits ?
+			pair_weight - dyn_hits : 0;
+
+		if (pair_weight == 0) {
+			unsigned int scanned;
+			unsigned int succ;
+
+			/* RRC_MISSING_PAIR vs RRC_UNSEEN_SUCCESSOR.  No cell
+			 * for (prev, curr) at all.  If prev has at least one
+			 * hot outgoing pair to some OTHER successor, HEALER
+			 * has evidence about this predecessor but is investing
+			 * elsewhere; classify as UNSEEN_SUCCESSOR so the
+			 * orchestrator's HEALER-boost bias is the right
+			 * answer.  Otherwise prev is entirely unattested and
+			 * MISSING_PAIR is the narrower truth. */
+			succ = (curr + 1) % MAX_NR_SYSCALL;
+			for (scanned = 0;
+			     scanned < RRC_UNSEEN_SUCCESSOR_SCAN_CAP;
+			     scanned++) {
+				if (succ != curr &&
+				    healer_pair_get(prev, succ) >=
+					    RRC_HOT_PAIR_THRESHOLD)
+					return RRC_UNSEEN_SUCCESSOR;
+				succ = (succ + 1) % MAX_NR_SYSCALL;
+				if (succ == ((curr + 1) % MAX_NR_SYSCALL))
+					break;
+			}
+			return RRC_MISSING_PAIR;
+		}
+
+		if (dyn_hits == 0 && static_prior > 0) {
+			/* Seed bootstrap saw this edge but the runtime
+			 * observer never confirmed it (or confirmed it and
+			 * decayed back to zero).  HEALER's eligibility gate
+			 * counts dynamic_hits only, so this cell looks dead
+			 * to the picker even though the static prior is
+			 * still on it.  Boosting HEALER eligibility past the
+			 * gate during the next intervention is the
+			 * structured replay. */
+			return RRC_STALE_PAIR;
+		}
+	}
+
+	/* RRC_CMP_DERIVED.  generate-args.c's ARG_OP / ARG_LIST /
+	 * gen_undefined_arg paths roll a 1-in-16 cmp_hints_try_get on every
+	 * call; if rec->nr has any hints in its pool, a learned constant
+	 * may have carried this RANDOM call past a kernel validation check
+	 * the structured pickers were not aware of.  Hint-pool occupancy is
+	 * a soft signal (the per-call substitution probability is fixed and
+	 * we have no per-call attribution), but a non-empty pool is the
+	 * narrowest evidence available without adding per-call tracking. */
+	if (cmp_hints_shm != NULL && curr < 1024 &&
+	    __atomic_load_n(&cmp_hints_shm->pools[curr].count,
+			    __ATOMIC_RELAXED) > 0)
+		return RRC_CMP_DERIVED;
+
+	/* RRC_UNUSUAL_FD_PRODUCER / RRC_WRONG_TYPE_FD / RRC_PERSONA_GATED
+	 * detection requires per-call fd-source tracking and persona
+	 * attribution infrastructure that does not yet exist.  Rescues that
+	 * land here fall through to UNKNOWN; the orchestrator's bias
+	 * dispatch handles those classes for the future infrastructure to
+	 * wire in without an enum reorder. */
+
+	return RRC_UNKNOWN;
 }
 
 /*

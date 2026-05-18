@@ -112,6 +112,75 @@ enum strategy_selection_reason {
 	NR_SELECTION_REASONS,	/* sentinel, must stay last */
 };
 
+/*
+ * Random-rescue classifier.
+ *
+ * When the orchestrator forces STRATEGY_RANDOM during a coverage plateau
+ * (SR_PLATEAU_FORCE) and that forced window's RANDOM picks produce new
+ * edges, those edges are evidence that some structured bias the normal
+ * picker imposes was filtering out a productive path.  The classifier
+ * inspects the (predecessor, syscall) pair against the existing
+ * heuristic / HEALER / cmp-hint state and assigns the rescue to the
+ * narrowest category that explains why the structured path missed it.
+ *
+ * Counts accumulate in shm->random_rescue_class_count[] across all
+ * intervention windows and the dominant class feeds back into the
+ * orchestrator (see select_next_strategy) as a hint for which targeted
+ * intervention to run next instead of plain RANDOM.
+ *
+ * Classes are checked in order; the FIRST matching class wins, so the
+ * enum ordering encodes priority.  Classes whose detection requires
+ * infrastructure that does not yet exist (persona / namespace
+ * attribution, per-call fd-producer tracking) are defined here so the
+ * orchestrator's bias dispatch covers the full surface even though the
+ * classifier will not credit a rescue to them today; they sit as
+ * placeholder buckets the future infrastructure can fill in without an
+ * enum reorder.
+ *
+ * RRC_COLD_SKIP:           rec->nr would have been skipped under
+ *                          STRATEGY_HEURISTIC's kcov cold-skip gate
+ *                          (kcov_syscall_cold_skip_pct >= 50).
+ * RRC_MISSING_PAIR:        the (immediate-pred -> rec->nr) cell in the
+ *                          HEALER pair table has zero static prior AND
+ *                          zero dynamic_hits -- a relation the
+ *                          structured pickers cannot see at all.
+ * RRC_UNSEEN_SUCCESSOR:    immediate-pred has hot outgoing pairs to
+ *                          OTHER successors but this (pred, rec->nr) is
+ *                          empty -- HEALER is investing in a different
+ *                          branch from this predecessor.
+ * RRC_STALE_PAIR:          (pred, rec->nr) has a non-zero static prior
+ *                          but dynamic_hits has decayed to zero -- the
+ *                          seed bootstrap saw the edge but the runtime
+ *                          weight has rotted past HEALER's gate.
+ * RRC_UNUSUAL_FD_PRODUCER: placeholder for per-call fd-source tracking;
+ *                          today never selected by the classifier.
+ * RRC_WRONG_TYPE_FD:       placeholder; typed-fd substitution gave a
+ *                          wrong-class fd that worked.  Today never
+ *                          selected by the classifier.
+ * RRC_CMP_DERIVED:         this syscall has a non-empty cmp_hints pool,
+ *                          so generate-args.c's 1-in-16 cmp_hints_try_get
+ *                          path may have injected a learned constant that
+ *                          carried the call past a kernel validation
+ *                          check the structured pickers were not pushing
+ *                          through.
+ * RRC_PERSONA_GATED:       placeholder for namespace/cgroup/childop
+ *                          persona attribution; persona infrastructure
+ *                          does not exist yet, never selected today.
+ * RRC_UNKNOWN:             rescue did not match any structured class.
+ */
+enum random_rescue_class {
+	RRC_COLD_SKIP = 0,
+	RRC_MISSING_PAIR,
+	RRC_UNSEEN_SUCCESSOR,
+	RRC_STALE_PAIR,
+	RRC_UNUSUAL_FD_PRODUCER,
+	RRC_WRONG_TYPE_FD,
+	RRC_CMP_DERIVED,
+	RRC_PERSONA_GATED,
+	RRC_UNKNOWN,
+	RRC_NR_CLASSES,		/* sentinel, must stay last */
+};
+
 /* Set by parse_args() before init_shm(). */
 extern enum picker_mode_t picker_mode_arg;
 
@@ -328,6 +397,29 @@ unsigned long frontier_recent_count(unsigned int nr);
  * kcov_collect callers may still be racing in.
  */
 void frontier_window_advance(void);
+
+/*
+ * Classify a new-edge rescue produced during a SR_PLATEAU_FORCE window.
+ * Walks the structured-picker state for (child->last_syscall_nr,
+ * rec->nr) and returns the FIRST class whose precondition matches; the
+ * caller bumps shm->random_rescue_class_count[class] so dump and
+ * orchestrator amplification can read the cumulative distribution.
+ *
+ * Only meaningful when shm->current_selection_reason == SR_PLATEAU_FORCE
+ * AND the call produced new edges -- the caller is responsible for both
+ * gates.  Returns RRC_UNKNOWN if no class matched (a falling-through
+ * rescue from the catch-all bucket).
+ */
+struct childdata;
+struct syscallrecord;
+enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
+						struct childdata *child);
+
+/*
+ * Human-readable rescue-class name for the dump and the rotation log.
+ * Returns "?" for out-of-range input.
+ */
+const char *random_rescue_class_name(enum random_rescue_class c);
 
 /*
  * End-of-run summary: per-arm pulls + cumulative reward + mean

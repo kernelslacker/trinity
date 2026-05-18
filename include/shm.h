@@ -455,6 +455,28 @@ struct shm_s {
 	unsigned long bandit_reward_pc_edge_count_by_reason[NR_STRATEGIES][NR_SELECTION_REASONS];
 
 	/*
+	 * Random-rescue classifier counters -- see classify_random_rescue
+	 * in include/strategy.h.  Each new-edge syscall completed during a
+	 * SR_PLATEAU_FORCE window is classified into one of the
+	 * RRC_* buckets and the corresponding slot here is bumped.  The
+	 * cumulative distribution is what the next plateau intervention
+	 * reads to decide whether plain RANDOM is still the right rescue
+	 * arm or whether the classifier has accumulated enough evidence to
+	 * point at a more targeted intervention (cold-skip disable, HEALER,
+	 * cmp-hint boost, etc.).
+	 *
+	 * Multi-producer (every child that completes a rescue increments
+	 * its class slot); RELAXED fetch_add on the write side, RELAXED
+	 * loads on the orchestrator-side reads in select_next_strategy and
+	 * dump_strategy_stats.  Per-class cacheline contention is
+	 * acceptable: the writer set is small (only children whose syscall
+	 * landed in a forced-intervention window and produced new edges)
+	 * and the readers consult these counts at rotation boundaries and
+	 * at end-of-run, not on the hot pick path.
+	 */
+	unsigned long random_rescue_class_count[RRC_NR_CLASSES];
+
+	/*
 	 * Discounted "recent" counters that the UCB1 picker scores against
 	 * instead of the lifetime bandit_pulls[]/bandit_reward_calls[]
 	 * series above.  Kernel coverage discovery is strongly
