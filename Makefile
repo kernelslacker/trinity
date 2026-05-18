@@ -44,7 +44,7 @@ LDLIBS += -ldl
 LDLIBS += -lm
 
 # gcc only.
-ifneq ($(shell $(CC) -v 2>&1 | grep -c "clang"), 1)
+ifeq ($(shell $(CC) -v 2>&1 | grep -c "clang"), 0)
 CFLAGS += -Wlogical-op
 CFLAGS += -Wstrict-aliasing=3
 endif
