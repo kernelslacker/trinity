@@ -73,6 +73,7 @@
 #include "exit.h"		/* EXIT_NO_SYSCALLS_ENABLED */
 #include "healer.h"
 #include "healer_ring.h"
+#include "kcov.h"		/* kcov_get_kernel_fp */
 #include "locks.h"
 #include "params.h"		/* do_32_arch, do_64_arch */
 #include "pids.h"		/* getpid wrapper */
@@ -1303,74 +1304,136 @@ void healer_table_dump(void)
 /*
  * Cross-run persistence.
  *
- * The relation table is process-private parent state that dies with the
- * trinity process; every restart is otherwise a cold start.  Phase B's
- * syscall picker needs the table to settle (24-48h of observations)
- * before the bandit arm has any usable signal, but trinity's children
- * OOM/crash long before that on realistic fleet hosts -- so without
- * persistence the table never reaches the maturity threshold and Phase
- * B stays gated indefinitely.
+ * The relation table, pair table, decay clock and per-syscall appearance
+ * counters are all parent-private state that dies with the trinity
+ * process; every restart is otherwise a cold start.  Phase B's syscall
+ * picker needs both tables to settle (24-48h of observations) before the
+ * bandit arm has any usable signal, but trinity's children OOM/crash
+ * long before that on realistic fleet hosts -- so without persistence
+ * the tables never reach the maturity threshold and Phase B stays gated
+ * indefinitely.
  *
- * The save/load wire-format mirrors the same pattern minicorpus.c and
- * effector-map.c established for their own per-run-vs-cross-run state:
- * an XDG_CACHE_HOME / mkdir-p / atomic-rename-via-tmp-file save path,
- * a header carrying magic + version + dimensions + kernel-utsname +
- * payload CRC32.  See effector-map.c for the mirrored header-shape
- * rationale; the duplication is deliberate (a future divergence in any
- * one persistence file's format shouldn't ripple into the others).
+ * Earlier versions of this file persisted parent_healer.relations only;
+ * the pair table, pred_appearance counters and decay state were lost on
+ * every restart even when the file was successfully loaded.  That gap
+ * mattered increasingly as the picker grew direct dependencies on each
+ * of those fields:
+ *
+ *   - The pair table now distinguishes the static prior installed by
+ *     the seed loader from the dynamic_hits accumulated by the runtime
+ *     observer (see struct healer_pair_cell in include/healer_ring.h);
+ *     warm-starting only the static side throws away the runtime
+ *     evidence the picker was supposed to converge on.
+ *   - The eligibility gate in strategy.c reads dynamic_hits directly to
+ *     decide whether the runtime observer has seen a pair, so a missing
+ *     warm-start makes the picker fall back to the seed-only signal on
+ *     every restart.
+ *   - pred_appearance is the denominator of the low-confidence filter
+ *     in the periodic dump; losing it leaves the per-run filter
+ *     mis-calibrated for the first thousands of observations after
+ *     restart.
+ *   - decay_epoch is the prune clock anchor; losing it forces the
+ *     loader to either treat every slot as freshly-stamped (which
+ *     postpones legitimate eviction of stale slots) or as
+ *     unconditionally ancient (which evicts every loaded relation on
+ *     the first decay walk).  Persisting the epoch alongside the per-
+ *     slot last-refreshed array preserves the correct age relationship.
+ *
+ * The save/load wire-format mirrors the cmp_hints / minicorpus / kcov-
+ * bitmap pattern: XDG_CACHE_HOME / mkdir-p / atomic-rename-via-tmp-file
+ * save path, fixed-size header carrying magic + version + dimensions +
+ * kernel-utsname + kallsyms fingerprint + CRC32, then the payload as
+ * four concatenated regions: relations[], pair_table[][],
+ * pred_appearance[], relations_last_refreshed[].  CRC covers all four
+ * payload regions exactly as they are written.  See cmp_hints.c for the
+ * mirrored shape; the duplication is deliberate (a future divergence in
+ * any one persistence file's format shouldn't ripple into the others).
  *
  * File layout (little-endian, packed as written):
  *
  *   offset  size   field
  *   ------  ----   ----------------------------------------------------
  *        0     4   magic = 0x48524C54 ('H','R','L','T' -- HEALER
- *                          Relation-table) sniff anchor.
- *        4     4   version = HEALER_FILE_VERSION (currently 1).
+ *                          Relation-table) sniff anchor.  Retained from
+ *                          v1.
+ *        4     4   version = HEALER_FILE_VERSION (currently 2).  A
+ *                          loader compiled against a different version
+ *                          refuses the file outright; the v1 -> v2
+ *                          rewrite below changes the payload shape
+ *                          materially.
  *        8     4   relation_slots = HEALER_RELATION_SLOTS at write time.
- *                          A loader compiled with a different value
- *                          refuses the file (the on-disk layout is
- *                          dimensioned by it).
  *       12     4   promoted_per_slot = HEALER_PROMOTED_PER_SLOT at write
- *                          time.  Same dimension-mismatch reject.
- *       16     4   max_nr_syscall = MAX_NR_SYSCALL at write time.  Reject
- *                          on mismatch -- the (pred_a, pred_b, nr) fields
- *                          are uint16_t and a build with different syscall
- *                          numbering would silently misinterpret entries.
- *       20     4   payload_crc32 over the relation payload that follows
- *                          (header-internal fields are not covered; the
- *                          dimension/magic/version checks catch tampered
- *                          headers earlier and cheaper).
- *       24     8   observations = parent_healer.relations_observed at
- *                          write time.  Restored on load so the snapshot
- *                          gating threshold is anchored to the cumulative
- *                          observation count rather than the post-load
- *                          delta.
- *       32    65   kernel_release = utsname.release captured at write
+ *                          time.
+ *       16     4   max_nr_syscall = MAX_NR_SYSCALL at write time.
+ *       20     4   relation_size = sizeof(struct healer_relation) at
+ *                          write time.  Reject on mismatch -- the
+ *                          packed-key / promoted-array layout determines
+ *                          how the bulk-copied payload is interpreted.
+ *       24     4   pair_cell_size = sizeof(struct healer_pair_cell) at
+ *                          write time.  Reject on mismatch -- a v1
+ *                          loader treating cells as a single uint
+ *                          would silently mis-read dynamic_hits.
+ *       28     4   payload_crc32 over the concatenated payload regions
+ *                          that follow (header-internal fields are not
+ *                          covered; the dimension/magic/version checks
+ *                          catch tampered headers earlier and cheaper).
+ *       32     8   payload_bytes = expected total payload size in bytes
+ *                          (sum of the four regions below).  Cross-
+ *                          checked against the dimension-derived
+ *                          expectation on load.
+ *       40     8   observations = parent_healer.relations_observed at
+ *                          write time.  Restored on load.
+ *       48     8   obs_at_last_decay / time_at_last_decay /
+ *       56     8     weight_decays_run / pair_seeded /
+ *       64     8     table_full / evictions
+ *       72     8     -- accumulated counters restored verbatim so the
+ *       80     8     decay schedule and dump totals continue from
+ *       88     8     where the previous run left off.
+ *       96     2   decay_epoch = parent_healer.decay_epoch at write
+ *                          time.  Restored on load so the relation-slot
+ *                          prune clock (which reads age = decay_epoch -
+ *                          relations_last_refreshed[i]) stays in lock-
+ *                          step with the per-slot last_refreshed values
+ *                          in payload region 4.
+ *       98     6   pad6a -- align to 8.
+ *      104    65   kernel_release = utsname.release captured at write
  *                          time, NUL-terminated, fixed-width.  Loader
  *                          compares strncmp(); a mismatch logs and
- *                          cold-starts (the relation table is meaningful
- *                          only against the kernel it was learned on,
- *                          since syscall numbering and per-syscall edge
- *                          fingerprints can shift between kernels).
- *       97    65   kernel_version = utsname.version captured at write
+ *                          cold-starts (the relation/pair tables are
+ *                          meaningful only against the kernel they were
+ *                          learned on; release-level mismatches can
+ *                          shift syscall numbers outright).
+ *      169    65   kernel_version = utsname.version captured at write
  *                          time, NUL-terminated, fixed-width.  Stored
- *                          for forensic value (strings(1) on a stale
- *                          snapshot can still identify the exact build
- *                          it came from) but NOT compared on load: the
- *                          build timestamp changes on every kernel
- *                          rebuild, and the relation table is indexed
- *                          by syscall number -- which is stable across
- *                          rebuilds of the same source -- so .release
- *                          alone is the right warm-start gate.
- *      162     6   pad to round struct healer_file_header to 8 bytes.
+ *                          for forensic value but NOT compared on load.
+ *      234    32   kallsyms_sha256 = kcov_get_kernel_fp() result at
+ *                          write time.  A rebuilt kernel changes the
+ *                          fingerprint and the loader cold-starts -- the
+ *                          same gate the kcov bitmap and cmp-hints
+ *                          files use, so a rebuilt kernel invalidates
+ *                          all three in lock-step.  dynamic_hits and
+ *                          relation weights both reflect per-kernel
+ *                          edge behaviour, not just syscall numbering,
+ *                          so a CFG-shifting rebuild can poison them
+ *                          even when .release is unchanged.
+ *      266     6   pad_end -- round struct healer_file_header to 8 bytes.
  *
- *      168 onwards  payload = HEALER_RELATION_SLOTS * sizeof(struct
- *                  healer_relation) bytes of relation table, laid out
- *                  in C row-major order matching the in-memory
- *                  parent_healer.relations[] indexing.  No per-slot
- *                  framing; reads/writes are bulk against the
- *                  canonical.  payload_crc32 is computed over exactly
- *                  these bytes.
+ *      272 onwards  payload, four concatenated regions:
+ *                      region 1: relations[]      HEALER_RELATION_SLOTS *
+ *                                                   sizeof(struct
+ *                                                   healer_relation)
+ *                      region 2: pair_table[][]   MAX_NR_SYSCALL *
+ *                                                   MAX_NR_SYSCALL *
+ *                                                   sizeof(struct
+ *                                                   healer_pair_cell)
+ *                      region 3: pred_appearance  MAX_NR_SYSCALL *
+ *                                                   sizeof(uint64_t)
+ *                      region 4: relations_last_refreshed
+ *                                                 HEALER_RELATION_SLOTS *
+ *                                                   sizeof(uint16_t)
+ *                  Regions are laid out in C row-major order matching
+ *                  the in-memory parent_healer fields, with no per-slot
+ *                  framing.  payload_crc32 covers exactly these bytes.
  *
  * Atomicity: save writes to "<path>.tmp.<pid>", fsyncs, then renames
  * into place.  Both saver and loader run from parent context (single
@@ -1380,8 +1443,24 @@ void healer_table_dump(void)
  */
 
 #define HEALER_FILE_MAGIC		0x48524C54U	/* "HRLT" */
-#define HEALER_FILE_VERSION		1U
+#define HEALER_FILE_VERSION		2U
 #define HEALER_UTSNAME_LEN		65	/* matches Linux __NEW_UTS_LEN+1 */
+
+/*
+ * Per-cell saturation cap for pair_table[][].dynamic_hits.  A single hot
+ * (pred, succ) pair fired in a tight loop would otherwise drive its
+ * cell's weight into the millions within seconds and dominate the dump-
+ * side ranking forever; the cap lets a steady observer signal accumulate
+ * well above the noise floor while still leaving room for late-arriving
+ * pairs to overtake an early hotspot via decay (when decay lands).
+ * Picked at 1<<24 (~16M) to comfortably outrun any realistic per-run
+ * observation count for a single pair while staying far below uint32
+ * saturation.  Defined here so the persistence loader can clamp a
+ * corrupt on-disk dynamic_hits value against the same ceiling apply_pair
+ * enforces; the same constant is also re-defined locally in healer-ring.c
+ * so that file stays self-contained.
+ */
+#define HEALER_PAIR_MAX_WEIGHT		(1U << 24)
 
 /*
  * Periodic snapshot trigger.  Every HEALER_SNAPSHOT_OBSERVATIONS the
@@ -1414,25 +1493,46 @@ void healer_table_dump(void)
 #define HEALER_SNAPSHOT_INTERVAL_SEC	300UL
 
 /* Header layout is naturally packed under the LP64 ABIs trinity targets:
- * 6 uint32_t fields, a uint64_t, then two fixed-width char arrays plus
- * a 6-byte tail pad summing to 168 bytes with no compiler-inserted
- * padding.  No __attribute__((packed)) needed -- and adding one would
- * trip -Wpacked. */
+ * 8 uint32_t fields, 8 uint64_t fields, a uint16_t, two 6-byte pads,
+ * two 65-byte char arrays and a 32-byte fingerprint sum to 272 bytes
+ * with no compiler-inserted padding.  No __attribute__((packed))
+ * needed -- and adding one would trip -Wpacked. */
 struct healer_file_header {
-	uint32_t magic;
-	uint32_t version;
-	uint32_t relation_slots;
-	uint32_t promoted_per_slot;
-	uint32_t max_nr_syscall;
-	uint32_t payload_crc32;
-	uint64_t observations;
-	char kernel_release[HEALER_UTSNAME_LEN];
-	char kernel_version[HEALER_UTSNAME_LEN];
-	uint8_t pad[6];
+	uint32_t magic;			/*   0  4 */
+	uint32_t version;		/*   4  4 */
+	uint32_t relation_slots;	/*   8  4 */
+	uint32_t promoted_per_slot;	/*  12  4 */
+	uint32_t max_nr_syscall;	/*  16  4 */
+	uint32_t relation_size;		/*  20  4 */
+	uint32_t pair_cell_size;	/*  24  4 */
+	uint32_t payload_crc32;		/*  28  4 */
+	uint64_t payload_bytes;		/*  32  8 */
+	uint64_t observations;		/*  40  8 */
+	uint64_t obs_at_last_decay;	/*  48  8 */
+	uint64_t time_at_last_decay;	/*  56  8 */
+	uint64_t weight_decays_run;	/*  64  8 */
+	uint64_t pair_seeded;		/*  72  8 */
+	uint64_t table_full;		/*  80  8 */
+	uint64_t evictions;		/*  88  8 */
+	uint16_t decay_epoch;		/*  96  2 */
+	uint8_t  pad6a[6];		/*  98  6 */
+	char kernel_release[HEALER_UTSNAME_LEN];	/* 104 65 */
+	char kernel_version[HEALER_UTSNAME_LEN];	/* 169 65 */
+	uint8_t  kallsyms_sha256[32];	/* 234 32 */
+	uint8_t  pad_end[6];		/* 266  6 */
 };
 
-#define HEALER_PAYLOAD_BYTES \
+#define HEALER_RELATIONS_BYTES \
 	((size_t)HEALER_RELATION_SLOTS * sizeof(struct healer_relation))
+#define HEALER_PAIR_TABLE_BYTES \
+	((size_t)MAX_NR_SYSCALL * MAX_NR_SYSCALL * sizeof(struct healer_pair_cell))
+#define HEALER_PRED_APPEARANCE_BYTES \
+	((size_t)MAX_NR_SYSCALL * sizeof(uint64_t))
+#define HEALER_LAST_REFRESHED_BYTES \
+	((size_t)HEALER_RELATION_SLOTS * sizeof(uint16_t))
+#define HEALER_PAYLOAD_BYTES \
+	(HEALER_RELATIONS_BYTES + HEALER_PAIR_TABLE_BYTES + \
+	 HEALER_PRED_APPEARANCE_BYTES + HEALER_LAST_REFRESHED_BYTES)
 
 /* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Same algorithm the
  * minicorpus and effector-map persistence files use; kept local rather
@@ -1507,10 +1607,54 @@ static ssize_t healer_read_all(int fd, void *buf, size_t len)
 	return (ssize_t)(len - left);
 }
 
+/*
+ * Pack the four payload regions into a single heap buffer in the order
+ * the on-disk layout specifies.  Caller frees on success; returns NULL
+ * on alloc failure.  Used both to write the file and to feed the CRC
+ * computation -- a single contiguous buffer avoids running the CRC over
+ * four separate ranges and keeps the on-disk and in-memory views byte-
+ * identical.  pred_appearance is widened to uint64_t in the on-disk
+ * record (parent_healer holds it as unsigned long, which is 32-bit on
+ * the 32-bit arches trinity still builds for) so the file shape is
+ * stable across word size.
+ */
+static uint8_t *healer_serialise_payload(void)
+{
+	uint8_t *buf;
+	size_t off = 0;
+	unsigned int i;
+	uint64_t *appear_widened;
+
+	buf = malloc(HEALER_PAYLOAD_BYTES);
+	if (buf == NULL)
+		return NULL;
+
+	memcpy(buf + off, parent_healer.relations, HEALER_RELATIONS_BYTES);
+	off += HEALER_RELATIONS_BYTES;
+
+	memcpy(buf + off, parent_healer.pair_table, HEALER_PAIR_TABLE_BYTES);
+	off += HEALER_PAIR_TABLE_BYTES;
+
+	appear_widened = (uint64_t *)(buf + off);
+	for (i = 0; i < MAX_NR_SYSCALL; i++)
+		appear_widened[i] = (uint64_t)parent_healer.pred_appearance[i];
+	off += HEALER_PRED_APPEARANCE_BYTES;
+
+	memcpy(buf + off, parent_healer.relations_last_refreshed,
+	       HEALER_LAST_REFRESHED_BYTES);
+	off += HEALER_LAST_REFRESHED_BYTES;
+
+	/* off == HEALER_PAYLOAD_BYTES by construction; the macro is the
+	 * sum of the four region sizes appended above. */
+	(void)off;
+	return buf;
+}
+
 bool healer_save_file(const char *path)
 {
 	struct healer_file_header hdr;
 	struct utsname u;
+	uint8_t *payload;
 	char tmppath[PATH_MAX];
 	int fd;
 	int ret;
@@ -1527,67 +1671,154 @@ bool healer_save_file(const char *path)
 	hdr.relation_slots = HEALER_RELATION_SLOTS;
 	hdr.promoted_per_slot = HEALER_PROMOTED_PER_SLOT;
 	hdr.max_nr_syscall = MAX_NR_SYSCALL;
-	hdr.payload_crc32 = healer_crc32(parent_healer.relations,
-					 HEALER_PAYLOAD_BYTES);
+	hdr.relation_size = (uint32_t)sizeof(struct healer_relation);
+	hdr.pair_cell_size = (uint32_t)sizeof(struct healer_pair_cell);
+	hdr.payload_bytes = (uint64_t)HEALER_PAYLOAD_BYTES;
 	hdr.observations = parent_healer.relations_observed;
-	strncpy(hdr.kernel_release, u.release, sizeof(hdr.kernel_release) - 1);
-	hdr.kernel_release[sizeof(hdr.kernel_release) - 1] = '\0';
-	strncpy(hdr.kernel_version, u.version, sizeof(hdr.kernel_version) - 1);
-	hdr.kernel_version[sizeof(hdr.kernel_version) - 1] = '\0';
+	hdr.obs_at_last_decay = parent_healer.obs_at_last_decay;
+	hdr.time_at_last_decay = parent_healer.time_at_last_decay;
+	hdr.weight_decays_run = parent_healer.weight_decays_run;
+	hdr.pair_seeded = parent_healer.pair_seeded;
+	hdr.table_full = parent_healer.table_full;
+	hdr.evictions = parent_healer.evictions;
+	hdr.decay_epoch = parent_healer.decay_epoch;
+	/* snprintf guarantees NUL termination at sizeof(dst)-1 without
+	 * tripping -Wstringop-truncation the way the strncpy-plus-explicit-
+	 * NUL idiom does once the function is large enough for GCC to
+	 * partially inline it. */
+	(void)snprintf(hdr.kernel_release, sizeof(hdr.kernel_release),
+		       "%s", u.release);
+	(void)snprintf(hdr.kernel_version, sizeof(hdr.kernel_version),
+		       "%s", u.version);
+
+	/* Fingerprint failure is non-fatal at write time: the existing
+	 * loader gate still falls through to utsname.release matching, and
+	 * a saved file with a zero fingerprint will simply cold-start on
+	 * any reader that reaches the fingerprint check.  Logging is left
+	 * to kcov_get_kernel_fp's own diagnostic. */
+	(void)kcov_get_kernel_fp(hdr.kallsyms_sha256);
+
+	payload = healer_serialise_payload();
+	if (payload == NULL)
+		return false;
+	hdr.payload_crc32 = healer_crc32(payload, HEALER_PAYLOAD_BYTES);
 
 	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d",
 			path, (int)getpid());
-	if (ret < 0 || (size_t)ret >= sizeof(tmppath))
+	if (ret < 0 || (size_t)ret >= sizeof(tmppath)) {
+		free(payload);
 		return false;
+	}
 
 	fd = open(tmppath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	if (fd < 0)
+	if (fd < 0) {
+		free(payload);
 		return false;
+	}
 
 	/* Neutralise any fuzzer-installed umask so the save mode is 0644. */
 	if (fchmod(fd, 0644) != 0) {
 		(void)close(fd);
 		(void)unlink(tmppath);
+		free(payload);
 		return false;
 	}
 
 	if (healer_write_all(fd, &hdr, sizeof(hdr)) < 0)
 		goto fail;
-	if (healer_write_all(fd, parent_healer.relations,
-			     HEALER_PAYLOAD_BYTES) < 0)
+	if (healer_write_all(fd, payload, HEALER_PAYLOAD_BYTES) < 0)
 		goto fail;
 
 	if (fsync(fd) != 0)
 		goto fail;
 	if (close(fd) != 0) {
 		(void)unlink(tmppath);
+		free(payload);
 		return false;
 	}
 
 	if (rename(tmppath, path) != 0) {
 		(void)unlink(tmppath);
+		free(payload);
 		return false;
 	}
+	free(payload);
 	return true;
 
 fail:
 	(void)close(fd);
 	(void)unlink(tmppath);
+	free(payload);
 	return false;
+}
+
+/*
+ * Per-slot validation for the relations region.  Returns true if the
+ * slot looks intact AND occupies the position the in-memory hash/probe
+ * walk would assign to its (pred_a, pred_b) key.  An empty slot (key=0)
+ * is valid trivially.  Promoted entries are checked in-place by the
+ * caller after this returns true; a populated slot with one invalid
+ * promoted entry doesn't cause the whole slot to be rejected (the
+ * promoted entry alone is cleared, matching the cmp-hints loader's
+ * per-entry rejection policy).
+ *
+ * predset_hash is recomputed from the slot's stored (pred_a, pred_b)
+ * pair and required to match the on-disk hash.  A mismatch indicates
+ * either bit-rot in the file or that the FNV-1a hash constants changed
+ * underneath us; either way, accepting the slot would put it on the
+ * wrong probe chain and apply_triple would never find it again.
+ */
+static bool healer_loaded_relation_valid(const struct healer_relation *slot)
+{
+	unsigned int pred_a = slot->pred_a;
+	unsigned int pred_b = slot->pred_b;
+	uint32_t hash;
+
+	if (slot->key == 0)
+		return true;
+
+	if (pred_a >= MAX_NR_SYSCALL || pred_b >= MAX_NR_SYSCALL)
+		return false;
+	if (pred_a > pred_b)
+		return false;
+
+	hash = healer_predset_hash(pred_a, pred_b);
+	if (hash != slot->predset_hash)
+		return false;
+	/* key is a packed view of (pred_a, pred_b, predset_hash); the
+	 * upper bits must agree with the recomputed hash since the lower
+	 * bits already agreed (they're the same pred_a/pred_b we hashed). */
+	if (slot->key != healer_pack_key(pred_a, pred_b, hash))
+		return false;
+
+	return true;
 }
 
 bool healer_load_file(const char *path)
 {
 	struct healer_file_header hdr;
 	struct utsname u;
-	void *tmpbuf;
+	uint8_t cur_fp[32];
+	uint8_t *tmpbuf = NULL;
 	uint32_t want_crc;
+	size_t expected_payload;
+	size_t off;
 	ssize_t hn;
-	int fd;
+	unsigned int slots_loaded = 0;
+	unsigned int slots_rejected = 0;
+	unsigned int slots_duplicate = 0;
+	unsigned int promoted_rejected = 0;
+	unsigned int pair_cells_clamped = 0;
+	unsigned int pair_rows_loaded = 0;
+	bool have_fp;
 	bool ok = false;
+	int fd;
+	unsigned int i, j;
 
 	if (path == NULL)
 		return false;
+
+	have_fp = kcov_get_kernel_fp(cur_fp);
 
 	fd = open(path, O_RDONLY);
 	if (fd < 0) {
@@ -1607,30 +1838,59 @@ bool healer_load_file(const char *path)
 		goto out_close;
 	}
 
-	if (hdr.magic != HEALER_FILE_MAGIC ||
-	    hdr.version != HEALER_FILE_VERSION ||
-	    hdr.relation_slots != HEALER_RELATION_SLOTS ||
-	    hdr.promoted_per_slot != HEALER_PROMOTED_PER_SLOT ||
-	    hdr.max_nr_syscall != MAX_NR_SYSCALL)
+	if (hdr.magic != HEALER_FILE_MAGIC) {
+		output(0, "healer: file magic 0x%08x != expected 0x%08x at %s -- cold start\n",
+		       hdr.magic, HEALER_FILE_MAGIC, path);
 		goto out_close;
+	}
+	if (hdr.version != HEALER_FILE_VERSION) {
+		output(0, "healer: file version %u != expected %u at %s (format changed; previous-version files will be regenerated by the next snapshot) -- cold start\n",
+		       hdr.version, HEALER_FILE_VERSION, path);
+		goto out_close;
+	}
+	if (hdr.relation_slots != HEALER_RELATION_SLOTS) {
+		output(0, "healer: relation_slots %u != expected %u at %s (file built with a different HEALER_RELATION_SLOTS) -- cold start\n",
+		       hdr.relation_slots, HEALER_RELATION_SLOTS, path);
+		goto out_close;
+	}
+	if (hdr.promoted_per_slot != HEALER_PROMOTED_PER_SLOT) {
+		output(0, "healer: promoted_per_slot %u != expected %u at %s (file built with a different HEALER_PROMOTED_PER_SLOT) -- cold start\n",
+		       hdr.promoted_per_slot, HEALER_PROMOTED_PER_SLOT, path);
+		goto out_close;
+	}
+	if (hdr.max_nr_syscall != MAX_NR_SYSCALL) {
+		output(0, "healer: max_nr_syscall %u != expected %u at %s (file built with a different MAX_NR_SYSCALL) -- cold start\n",
+		       hdr.max_nr_syscall, MAX_NR_SYSCALL, path);
+		goto out_close;
+	}
+	if (hdr.relation_size != (uint32_t)sizeof(struct healer_relation)) {
+		output(0, "healer: relation_size %u != expected %zu at %s (struct healer_relation layout changed) -- cold start\n",
+		       hdr.relation_size,
+		       sizeof(struct healer_relation), path);
+		goto out_close;
+	}
+	if (hdr.pair_cell_size != (uint32_t)sizeof(struct healer_pair_cell)) {
+		output(0, "healer: pair_cell_size %u != expected %zu at %s (struct healer_pair_cell layout changed) -- cold start\n",
+		       hdr.pair_cell_size,
+		       sizeof(struct healer_pair_cell), path);
+		goto out_close;
+	}
+	expected_payload = HEALER_PAYLOAD_BYTES;
+	if (hdr.payload_bytes != (uint64_t)expected_payload) {
+		output(0, "healer: payload_bytes %llu != expected %zu at %s -- cold start\n",
+		       (unsigned long long)hdr.payload_bytes,
+		       expected_payload, path);
+		goto out_close;
+	}
 
-	if (uname(&u) != 0)
+	if (uname(&u) != 0) {
+		output(0, "healer: uname() failed: %s -- cold start\n",
+		       strerror(errno));
 		goto out_close;
+	}
 
 	hdr.kernel_release[sizeof(hdr.kernel_release) - 1] = '\0';
 	hdr.kernel_version[sizeof(hdr.kernel_version) - 1] = '\0';
-	/* Cold-start path: gate warm-start on utsname.release only.  The
-	 * relation table is indexed by syscall number, and syscall numbers
-	 * are stable across kernel rebuilds of the same source tree, so a
-	 * fresh build with an unchanged release should reuse the cache.
-	 * utsname.version (the build timestamp) was previously also gated
-	 * on, but that was over-strict: it threw away the entire warm-start
-	 * cache after every kernel rebuild for no functional reason.  The
-	 * relations might be slightly stale at the margins if the kernel's
-	 * CFG shifted under recompile, but they're not wrong -- at worst
-	 * a few pairs point at slightly less-productive paths.  A release
-	 * mismatch, by contrast, can shift syscall numbers outright, so
-	 * that one still cold-starts. */
 	if (strncmp(hdr.kernel_release, u.release,
 			sizeof(hdr.kernel_release)) != 0) {
 		outputerr("healer: skipping warm-start of %s -- file built against release %s, running release %s\n",
@@ -1638,48 +1898,200 @@ bool healer_load_file(const char *path)
 		goto out_close;
 	}
 
-	/* Stage the payload into a heap buffer first so a partial read or
-	 * CRC failure leaves parent_healer.relations untouched (a torn
-	 * load would poison the dump and the next publish). */
-	tmpbuf = malloc(HEALER_PAYLOAD_BYTES);
-	if (tmpbuf == NULL) {
-		output(0, "healer: scratch alloc fail (%zu bytes) -- cold start\n",
-		       (size_t)HEALER_PAYLOAD_BYTES);
+	if (have_fp &&
+	    memcmp(hdr.kallsyms_sha256, cur_fp, sizeof(cur_fp)) != 0) {
+		output(0, "healer: kernel fingerprint mismatch at %s (kallsyms content differs from when the file was written) -- cold start\n",
+		       path);
 		goto out_close;
 	}
 
-	hn = healer_read_all(fd, tmpbuf, HEALER_PAYLOAD_BYTES);
-	if (hn != (ssize_t)HEALER_PAYLOAD_BYTES) {
+	/* Stage the payload into a heap buffer first so a partial read or
+	 * CRC failure leaves parent_healer untouched (a torn load would
+	 * poison the dump and the next publish). */
+	tmpbuf = malloc(expected_payload);
+	if (tmpbuf == NULL) {
+		output(0, "healer: scratch alloc fail (%zu bytes) -- cold start\n",
+		       expected_payload);
+		goto out_close;
+	}
+
+	hn = healer_read_all(fd, tmpbuf, expected_payload);
+	if (hn != (ssize_t)expected_payload) {
 		output(0, "healer: payload truncated at %s (got %zd, want %zu) -- cold start\n",
-		       path, hn, (size_t)HEALER_PAYLOAD_BYTES);
+		       path, hn, expected_payload);
 		goto out_free;
 	}
 
-	want_crc = healer_crc32(tmpbuf, HEALER_PAYLOAD_BYTES);
-	if (want_crc != hdr.payload_crc32)
+	want_crc = healer_crc32(tmpbuf, expected_payload);
+	if (want_crc != hdr.payload_crc32) {
+		output(0, "healer: payload CRC mismatch at %s (got 0x%08x, want 0x%08x) -- cold start\n",
+		       path, want_crc, hdr.payload_crc32);
 		goto out_free;
+	}
 
-	memcpy(parent_healer.relations, tmpbuf, HEALER_PAYLOAD_BYTES);
+	/* Past header / fingerprint / CRC gates the payload is considered
+	 * authoritative against the running kernel.  Per-region apply
+	 * below; per-slot bounds rejection on the relations region drops
+	 * any slot whose hash/probe identity doesn't reconstruct, so a
+	 * single bit-rotted slot doesn't sink the whole warm-start.  Pair
+	 * cells and counters are validated by simple range clamp. */
+
+	/* Region 1: relations[].  Validate each slot; copy good ones to
+	 * parent_healer.relations.  Track keys we've seen so a duplicate
+	 * key in two slots (which would put two cells on the same probe
+	 * chain and confuse apply_triple's "first matching key" probe)
+	 * is detected and the duplicate dropped. */
+	memset(parent_healer.relations, 0, HEALER_RELATIONS_BYTES);
+	off = 0;
+	{
+		const struct healer_relation *src =
+			(const struct healer_relation *)(tmpbuf + off);
+		bool key_seen_in_chain;
+		unsigned int probe;
+		unsigned int chain_idx;
+
+		for (i = 0; i < HEALER_RELATION_SLOTS; i++) {
+			struct healer_relation slot = src[i];
+
+			if (slot.key == 0)
+				continue;
+
+			if (!healer_loaded_relation_valid(&slot)) {
+				slots_rejected++;
+				continue;
+			}
+
+			/* Duplicate detection: probe the same chain
+			 * apply_triple would use; if a slot in that chain
+			 * already carries this key, this is the duplicate.
+			 * Document choice: reject (drop the duplicate),
+			 * keeping the first occurrence in the file. */
+			key_seen_in_chain = false;
+			chain_idx = slot.predset_hash &
+				    (HEALER_RELATION_SLOTS - 1);
+			for (probe = 0; probe < HEALER_PROBE_LIMIT; probe++) {
+				unsigned int idx = (chain_idx + probe) &
+					(HEALER_RELATION_SLOTS - 1);
+				if (parent_healer.relations[idx].key ==
+				    slot.key) {
+					key_seen_in_chain = true;
+					break;
+				}
+				if (parent_healer.relations[idx].key == 0)
+					break;
+			}
+			if (key_seen_in_chain) {
+				slots_duplicate++;
+				continue;
+			}
+
+			/* Per-promoted-entry range check.  An entry with
+			 * weight 0 is the empty sentinel and stays.  An
+			 * entry with nr >= MAX_NR_SYSCALL is bit-rot; zero
+			 * the entry and count the rejection but keep the
+			 * surrounding slot. */
+			for (j = 0; j < HEALER_PROMOTED_PER_SLOT; j++) {
+				unsigned int weight, nr;
+
+				healer_unpack_promoted(slot.promoted[j].entry,
+							  &nr, &weight);
+				if (weight == 0)
+					continue;
+				if (nr >= MAX_NR_SYSCALL) {
+					slot.promoted[j].entry = 0;
+					promoted_rejected++;
+				}
+			}
+
+			parent_healer.relations[i] = slot;
+			parent_healer.relations_dirty[i] = 1;
+			slots_loaded++;
+		}
+	}
+	off += HEALER_RELATIONS_BYTES;
+
+	/* Region 2: pair_table[][].  Bulk-copy then walk to clamp
+	 * dynamic_hits at the saturation cap (a corrupt file with a
+	 * higher value would otherwise bypass the saturation discipline
+	 * apply_pair maintains).  Mark rows dirty so the first publish
+	 * refreshes the mirror page. */
+	memcpy(parent_healer.pair_table, tmpbuf + off, HEALER_PAIR_TABLE_BYTES);
+	off += HEALER_PAIR_TABLE_BYTES;
+	for (i = 0; i < MAX_NR_SYSCALL; i++) {
+		bool row_populated = false;
+
+		for (j = 0; j < MAX_NR_SYSCALL; j++) {
+			struct healer_pair_cell *cell =
+				&parent_healer.pair_table[i][j];
+
+			if (cell->dynamic_hits > HEALER_PAIR_MAX_WEIGHT) {
+				cell->dynamic_hits = HEALER_PAIR_MAX_WEIGHT;
+				pair_cells_clamped++;
+			}
+			if (cell->dynamic_hits != 0 || cell->static_prior != 0)
+				row_populated = true;
+		}
+
+		if (row_populated) {
+			parent_healer.pair_dirty[i] = 1;
+			pair_rows_loaded++;
+		}
+	}
+
+	/* Region 3: pred_appearance[].  Widen from on-disk uint64_t back
+	 * to in-memory unsigned long; on 64-bit hosts this is a straight
+	 * copy, on 32-bit hosts the file value is saturated at ULONG_MAX
+	 * (capping rather than truncating preserves the "predecessor has
+	 * fired a lot" signal even on a builder whose word size is too
+	 * narrow for the original count). */
+	{
+		const uint64_t *appear_on_disk =
+			(const uint64_t *)(tmpbuf + off);
+
+		for (i = 0; i < MAX_NR_SYSCALL; i++) {
+			uint64_t v = appear_on_disk[i];
+
+			if (v > (uint64_t)ULONG_MAX)
+				v = (uint64_t)ULONG_MAX;
+			parent_healer.pred_appearance[i] = (unsigned long)v;
+		}
+	}
+	off += HEALER_PRED_APPEARANCE_BYTES;
+
+	/* Region 4: relations_last_refreshed[].  Restored verbatim;
+	 * combined with the restored decay_epoch in the header this
+	 * preserves each slot's "epochs since last observation" age so
+	 * the prune walk picks up where the previous run left off
+	 * instead of either resetting every slot to fresh or marking
+	 * every slot as ancient. */
+	memcpy(parent_healer.relations_last_refreshed, tmpbuf + off,
+	       HEALER_LAST_REFRESHED_BYTES);
+	off += HEALER_LAST_REFRESHED_BYTES;
+	(void)off;
+
+	/* Restore the accumulated counters and decay clock.  Doing this
+	 * here, after the per-region copy succeeds, keeps the warm-start
+	 * either complete or skipped -- partial state is never installed.
+	 * obs_at_last_snapshot is anchored at the restored observation
+	 * count so the next snapshot fires after a fresh
+	 * HEALER_SNAPSHOT_OBSERVATIONS delta of new evidence rather than
+	 * triggering immediately on top of an empty delta. */
 	parent_healer.relations_observed = hdr.observations;
 	parent_healer.obs_at_last_snapshot = hdr.observations;
-	/* Mark every populated slot dirty so the first publish step
-	 * propagates the loaded table into the mirror page.  Also stamp
-	 * each loaded slot's last_refreshed counter at the current
-	 * decay_epoch (zero at warm-start) so the prune walk gives
-	 * loaded relations a full HEALER_PRUNE_EPOCHS grace window
-	 * before considering them stale -- otherwise an unstamped slot
-	 * (initialised to 0) would fall under (decay_epoch - 0 >= N)
-	 * the moment decay_epoch reaches N, evicting the entire warm
-	 * start. */
-	{
-		unsigned int n;
-		for (n = 0; n < HEALER_RELATION_SLOTS; n++)
-			if (parent_healer.relations[n].key != 0) {
-				parent_healer.relations_dirty[n] = 1;
-				parent_healer.relations_last_refreshed[n] =
-					parent_healer.decay_epoch;
-			}
-	}
+	parent_healer.obs_at_last_decay = hdr.obs_at_last_decay;
+	parent_healer.time_at_last_decay = hdr.time_at_last_decay;
+	parent_healer.weight_decays_run = hdr.weight_decays_run;
+	parent_healer.pair_seeded = hdr.pair_seeded;
+	parent_healer.table_full = hdr.table_full;
+	parent_healer.evictions = hdr.evictions;
+	parent_healer.decay_epoch = hdr.decay_epoch;
+
+	output(0, "healer: loaded %u relations (%u rejected, %u duplicate, %u promoted entries rejected) + %u pair rows (%u cells clamped) + %lu observations + decay_epoch=%u from %s\n",
+	       slots_loaded, slots_rejected, slots_duplicate,
+	       promoted_rejected, pair_rows_loaded, pair_cells_clamped,
+	       (unsigned long)hdr.observations,
+	       (unsigned int)hdr.decay_epoch, path);
+
 	ok = true;
 
 out_free:
@@ -1854,18 +2266,6 @@ void healer_maybe_snapshot(void)
  * and a relaxed-atomic load + CAS loop bounded by HEALER_PAIR_MAX_WEIGHT
  * for the observer bump.  No new lock or pattern is introduced here.
  */
-
-/*
- * Per-cell saturation cap.  A single hot (pred, succ) pair fired in a
- * tight loop would otherwise drive its cell's weight into the millions
- * within seconds and dominate the dump-side ranking forever; the cap
- * lets a steady observer signal accumulate well above the noise floor
- * while still leaving room for late-arriving pairs to overtake an
- * early hotspot via decay (when decay lands).  Picked at 1<<24 (~16M)
- * to comfortably outrun any realistic per-run observation count for a
- * single pair while staying far below uint32 saturation.
- */
-#define HEALER_PAIR_MAX_WEIGHT (1U << 24)
 
 void healer_pair_seed(unsigned int pred, unsigned int succ, unsigned int weight)
 {
