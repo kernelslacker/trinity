@@ -1379,17 +1379,90 @@ static unsigned long heap_start;
 static unsigned long heap_end;
 
 /*
- * Parse /proc/self/maps once and stash the [heap] extent.  Must be
- * called before fork; the result is read by every child via the
- * inherited COW BSS.  The [heap] line in /proc/self/maps looks like:
- *   55a1b3c00000-55a1b3c21000 rw-p 00000000 00:00 0   [heap]
- * Two hex addresses separated by '-', followed by perms and the
- * trailing path component being the literal string "[heap]".
+ * Cached extents of non-brk allocator arenas, captured alongside the
+ * [heap] line at heap_bounds_init() time.  glibc's mmap'd arenas, the
+ * sanitiser-runtime allocator reservations (libasan primary/secondary
+ * at 0x511000000000+, the shadow region, ...), scudo / jemalloc /
+ * tcmalloc -- every well-behaved allocator labels its anonymous
+ * mappings via prctl(PR_SET_VMA_ANON_NAME), which shows up in
+ * /proc/self/maps as "[anon:NAME]" after the inode column.  Trinity
+ * itself does not label any of its scratch mappings, so an
+ * "[anon:*]" tag in the pre-fork snapshot identifies a region whose
+ * contents must not be overwritten by a fuzzed kernel-write
+ * argument (the alternative is a write into glibc / libasan chunk
+ * metadata, surfacing later as an arena-corruption abort or an
+ * ASAN bad-free).
  *
- * If the line is missing (rare: glibc tuned to MALLOC_MMAP_THRESHOLD_=0
- * or the binary somehow hasn't grown brk yet), heap_start stays 0 and
- * the validator becomes a no-op -- we'd rather permit a marginal free
- * than reject every malloc result on a misconfigured host.
+ * 16 entries comfortably covers the regions seen on a libasan-built
+ * trinity under glibc 2.39 (one [heap], two glibc mmap arenas, four
+ * libasan shadow / allocator regions); an overflow logs once and
+ * leaves the trailing regions unprotected -- the wrong direction for
+ * safety, so the cap exists to be hit and bumped if a future libsan
+ * layout adds more regions.
+ */
+#define MAX_EXTRA_HEAP_REGIONS	16
+static struct {
+	unsigned long start;
+	unsigned long end;
+} extra_heap_regions[MAX_EXTRA_HEAP_REGIONS];
+static unsigned int nr_extra_heap_regions;
+
+/*
+ * Parse a /proc/self/maps line just enough to extract the
+ * [start, end), the perms field, and the trailing path/label.  Returns
+ * true on success.  The label pointer (which may be NULL or point at
+ * the empty string) is written into *label_out; it points into @line,
+ * which the caller owns.
+ *
+ * A line looks like:
+ *   55a1b3c00000-55a1b3c21000 rw-p 00000000 00:00 0   [heap]
+ *   7f2c1b400000-7f2c1b421000 rw-p 00000000 00:00 0   [anon:libc_malloc]
+ *   55a1b3a00000-55a1b3a21000 rw-p 00000000 00:00 0
+ * i.e. start-end perms offset major:minor inode optional-label.
+ */
+static bool parse_maps_line(char *line, unsigned long *start_out,
+			    unsigned long *end_out, char perms_out[5],
+			    const char **label_out)
+{
+	unsigned long start, end;
+	char perms[8];
+	int label_off = -1;
+	const char *label;
+	char *nl;
+
+	nl = strchr(line, '\n');
+	if (nl != NULL)
+		*nl = '\0';
+
+	if (sscanf(line, "%lx-%lx %7s %*x %*x:%*x %*u %n",
+		   &start, &end, perms, &label_off) < 3)
+		return false;
+	if (end <= start)
+		return false;
+
+	if (label_off < 0 || (size_t) label_off > strlen(line))
+		label = "";
+	else
+		label = line + label_off;
+
+	*start_out = start;
+	*end_out = end;
+	memcpy(perms_out, perms, 4);
+	perms_out[4] = '\0';
+	*label_out = label;
+	return true;
+}
+
+/*
+ * Parse /proc/self/maps once and stash the brk arena plus every
+ * labeled non-brk allocator region.  Must be called before fork; the
+ * results are read by every child via the inherited COW BSS.
+ *
+ * If the [heap] line is missing (rare: glibc tuned to
+ * MALLOC_MMAP_THRESHOLD_=0 or the binary somehow hasn't grown brk
+ * yet), heap_start stays 0 and is_in_glibc_heap() falls back to
+ * "always true" -- we'd rather permit a marginal free than reject
+ * every malloc result on a misconfigured host.
  */
 void heap_bounds_init(void)
 {
@@ -1405,17 +1478,63 @@ void heap_bounds_init(void)
 
 	while (fgets(line, sizeof(line), f) != NULL) {
 		unsigned long start, end;
+		char perms[5];
+		const char *label;
 
-		if (strstr(line, "[heap]") == NULL)
-			continue;
-		if (sscanf(line, "%lx-%lx", &start, &end) != 2)
-			continue;
-		if (end <= start)
+		if (!parse_maps_line(line, &start, &end, perms, &label))
 			continue;
 
-		heap_start = start;
-		heap_end = end;
-		break;
+		/*
+		 * Only writable private mappings can hold allocator
+		 * metadata that the kernel scribbling would corrupt.
+		 * Read-only and shared mappings either can't be written
+		 * by the kernel (r-- / r-x) or are trinity-controlled
+		 * (MAP_SHARED via alloc_shared / track_shared_region,
+		 * handled separately by range_overlaps_shared()).
+		 */
+		if (perms[1] != 'w' || perms[3] != 'p')
+			continue;
+
+		if (strncmp(label, "[heap]", 6) == 0 &&
+		    (label[6] == '\0' || label[6] == ' ')) {
+			heap_start = start;
+			heap_end = end;
+			continue;
+		}
+
+		/*
+		 * "[anon:NAME]" labels come from
+		 * prctl(PR_SET_VMA_ANON_NAME) -- glibc malloc tags its
+		 * mmap'd arenas, libasan tags its primary / secondary
+		 * allocator and shadow reservations, similarly for
+		 * scudo / jemalloc / tcmalloc.  Trinity never labels
+		 * its own anonymous mappings, so any "[anon:*]" line
+		 * in the snapshot belongs to a non-trinity allocator.
+		 * Trinity's BSS, stack, vdso, vvar, file-backed
+		 * mappings and unlabeled scratch regions are filtered
+		 * out by the perms / label tests above.
+		 */
+		if (strncmp(label, "[anon:", 6) != 0)
+			continue;
+
+		if (nr_extra_heap_regions >= MAX_EXTRA_HEAP_REGIONS) {
+			static bool warned;
+
+			if (!warned) {
+				warned = true;
+				outputerr("heap_bounds_init: "
+					"MAX_EXTRA_HEAP_REGIONS (%d) reached "
+					"-- '%s' and any subsequent allocator "
+					"regions are unprotected; raise the "
+					"cap\n",
+					MAX_EXTRA_HEAP_REGIONS, label);
+			}
+			continue;
+		}
+
+		extra_heap_regions[nr_extra_heap_regions].start = start;
+		extra_heap_regions[nr_extra_heap_regions].end = end;
+		nr_extra_heap_regions++;
 	}
 
 	fclose(f);
@@ -1462,24 +1581,24 @@ bool is_in_glibc_heap(const void *p)
 
 /*
  * Range-overlap variant of is_in_glibc_heap() with the opposite
- * unknown-bounds polarity: returns true only when [addr, addr+len)
- * intersects the cached brk arena AND the bounds were captured.
- * Used by avoid_shared_buffer() to redirect output-buffer syscall
- * args away from the libc heap arena -- a fuzzed pointer pointing
- * here would let the kernel scribble glibc chunk metadata, and the
- * next malloc anywhere in trinity finds the corruption and aborts
- * (the libasan abort() inside __interceptor_malloc cluster from
- * the overnight asan-self-kill triage).  Mirrors range_overlaps_shared()
- * semantics: a single byte of overlap is enough to redirect, and an
- * unknown arena (heap_bounds_init() never found a [heap] line) is
- * treated as no-overlap so we don't redirect every legitimate write.
+ * unknown-bounds polarity: returns true when [addr, addr+len)
+ * intersects the cached brk arena or any captured non-brk allocator
+ * region (glibc mmap arenas, libasan primary / secondary / shadow,
+ * scudo / jemalloc / tcmalloc tagged regions -- see
+ * extra_heap_regions[] above).  Used by avoid_shared_buffer() to
+ * redirect output-buffer syscall args away from any allocator-managed
+ * memory: a fuzzed pointer pointing there lets the kernel scribble
+ * chunk metadata, and the next malloc anywhere in trinity finds the
+ * corruption and aborts (the cluster from the overnight asan-self-
+ * kill triage).  Mirrors range_overlaps_shared() semantics: a single
+ * byte of overlap is enough to redirect, and a fully unknown layout
+ * (no [heap] line and no captured allocator regions) is treated as
+ * no-overlap so we don't redirect every legitimate write.
  */
 bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 {
 	unsigned long end, hend, cur;
-
-	if (heap_start == 0)
-		return false;
+	unsigned int i;
 
 	/* Treat wrapped ranges as overlapping so callers reject them. */
 	if (len != 0 && addr > ULONG_MAX - len)
@@ -1489,20 +1608,46 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 	if (end == addr)
 		end = addr + 1;
 
-	/*
-	 * Same brk-grew-past-snapshot story as is_in_glibc_heap().
-	 * Missing the redirect here is the safety-critical failure
-	 * mode: a fuzzed pointer landing in the brk extension above
-	 * the cached heap_end gets through avoid_shared_buffer(), the
-	 * kernel scribbles glibc chunk metadata in the extension, and
-	 * the next malloc in the child aborts.
-	 */
-	hend = heap_end;
-	cur = (unsigned long) sbrk(0);
-	if (cur != (unsigned long) -1 && cur > hend)
-		hend = cur;
+	if (heap_start != 0) {
+		/*
+		 * Same brk-grew-past-snapshot story as
+		 * is_in_glibc_heap().  Missing the redirect here is
+		 * the safety-critical failure mode: a fuzzed pointer
+		 * landing in the brk extension above the cached
+		 * heap_end gets through avoid_shared_buffer(), the
+		 * kernel scribbles glibc chunk metadata in the
+		 * extension, and the next malloc in the child aborts.
+		 */
+		hend = heap_end;
+		cur = (unsigned long) sbrk(0);
+		if (cur != (unsigned long) -1 && cur > hend)
+			hend = cur;
 
-	return addr < hend && end > heap_start;
+		if (addr < hend && end > heap_start)
+			return true;
+	}
+
+	/*
+	 * Walk the captured non-brk allocator regions.  Each entry is
+	 * a fixed [start, end) snapshot from heap_bounds_init() -- the
+	 * underlying VMAs are large pre-reservations (libasan's primary
+	 * allocator at 0x511000000000+ is one ~16 TiB reservation, glibc
+	 * mmap arenas are a few MiB each) whose bounds don't move at
+	 * runtime, so a one-shot snapshot is sufficient.  Post-fork
+	 * secondary mmaps (large mallocs that bypass the primary
+	 * allocator into one-VMA-per-alloc) can land outside the
+	 * snapshot, but the dominant failure mode this guards against
+	 * is sibling stomp on a co-located primary-allocator chunk that
+	 * holds inner pointers (the recvmmsg msg_control bad-free), and
+	 * that lives in the captured primary-allocator VMA.
+	 */
+	for (i = 0; i < nr_extra_heap_regions; i++) {
+		if (addr < extra_heap_regions[i].end &&
+		    end > extra_heap_regions[i].start)
+			return true;
+	}
+
+	return false;
 }
 
 void sanitize_inherited_fds(void)

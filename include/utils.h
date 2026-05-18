@@ -285,8 +285,11 @@ bool inner_ptr_ok_to_free(struct syscallrecord *rec, const void *p,
 			  const char *site) __must_check;
 
 /*
- * Cache the [heap] extent from /proc/self/maps.  Call once before
- * fork; every child inherits the cached bounds via COW BSS.
+ * Cache the [heap] extent plus every non-brk allocator region tagged
+ * via prctl(PR_SET_VMA_ANON_NAME) ("[anon:NAME]" lines in
+ * /proc/self/maps -- glibc mmap arenas, libasan primary / secondary /
+ * shadow, etc.).  Call once before fork; every child inherits the
+ * cached bounds via COW BSS.
  */
 void heap_bounds_init(void);
 
@@ -300,9 +303,12 @@ bool is_in_glibc_heap(const void *p);
 
 /*
  * Range-overlap variant for the avoid_shared_buffer() redirect path.
- * Returns true only when [addr, addr+len) intersects the cached brk
- * arena AND the bounds were captured (unknown arena -> false, so we
- * never redirect every write on a misconfigured init).
+ * Returns true when [addr, addr+len) intersects the cached brk arena
+ * or any captured non-brk allocator region (glibc mmap arenas, libasan
+ * primary / secondary / shadow, scudo / jemalloc / tcmalloc tagged
+ * regions).  A fully unknown layout (no [heap] line and no captured
+ * allocator regions) returns false so we never redirect every write
+ * on a misconfigured init.
  */
 bool range_overlaps_libc_heap(unsigned long addr, unsigned long len);
 
