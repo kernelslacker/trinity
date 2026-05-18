@@ -23,7 +23,9 @@
  * path is immune to a sibling syscall scribbling rec->a2/a3/a4/a5
  * between the syscall returning and the post handler running.
  */
+#define SELECT_POST_STATE_MAGIC	0x53454C43UL	/* "SELC" */
 struct select_post_state {
+	unsigned long magic;
 	fd_set *rfds;
 	fd_set *wfds;
 	fd_set *exfds;
@@ -118,6 +120,7 @@ static void sanitise_select(struct syscallrecord *rec)
 	 * handler, so the scribblers have nothing to scribble there.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = SELECT_POST_STATE_MAGIC;
 	snap->rfds = (fd_set *) rec->a2;
 	snap->wfds = (fd_set *) rec->a3;
 	snap->exfds = (fd_set *) rec->a4;
@@ -146,6 +149,23 @@ static void post_select(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_select: rejected suspicious post_state=%p "
 			  "(pid-scribbled?)\n", snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * select_post_state.  A cookie mismatch means snap does not point
+	 * at our struct -- abandon rather than feed wild bytes into the
+	 * inner-pointer free path.
+	 */
+	if (snap->magic != SELECT_POST_STATE_MAGIC) {
+		outputerr("post_select: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
