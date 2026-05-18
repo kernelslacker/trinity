@@ -1,16 +1,16 @@
 /*
  * Multi-strategy syscall-picker rotation: arm-selection policies.
  *
- * Phase 1 shipped a fixed round-robin between STRATEGY_HEURISTIC and
- * STRATEGY_RANDOM, with per-strategy edge attribution recorded in
- * shm->pc_edge_calls_by_strategy[].  This file adds a UCB1 bandit-arm
- * picker that consumes those same per-strategy call counts as the
- * reward signal and biases future window picks toward arms producing
- * new-edge calls the fastest, while still occasionally exploring the
- * others so a temporarily-stuck arm doesn't starve forever.  The
- * parallel pc_edge_count_by_strategy[] series (real bucket counts) is
- * surfaced in dump_strategy_stats() as a diagnostic but does not
- * currently feed the learner.
+ * Two arm-selection policies are wired in here: a fixed round-robin
+ * (the original picker) and a UCB1 bandit picker.  Both consume the
+ * per-strategy edge attribution recorded in
+ * shm->pc_edge_calls_by_strategy[]; the bandit treats those call
+ * counts as the reward signal and biases future window picks toward
+ * arms producing new-edge calls the fastest, while still occasionally
+ * exploring the others so a temporarily-stuck arm doesn't starve
+ * forever.  The parallel pc_edge_count_by_strategy[] series (real
+ * bucket counts) is surfaced in dump_strategy_stats() as a diagnostic
+ * but does not currently feed the learner.
  *
  * Picker mode is selected once at parse_args() time via --strategy
  * and stashed in shm->picker_mode so every child agrees on the
@@ -18,11 +18,11 @@
  * pick_next_strategy() and bandit_record_pull(), runs the bandit
  * math itself, and writes the outcome back to shm->current_strategy.
  *
- * UCB1 is tractable here because the arm count is tiny (2 today,
- * a handful tomorrow) and the picker only runs once per
- * STRATEGY_WINDOW (~100 sec at 10K iter/sec).  Floating-point sqrt
- * and log inside the picker are noise relative to the work done in
- * the window itself.
+ * UCB1 is tractable here because the arm count is tiny (NR_STRATEGIES
+ * is a handful -- four today, see enum strategy_t) and the picker only
+ * runs once per STRATEGY_WINDOW (~100 sec at 10K iter/sec).
+ * Floating-point sqrt and log inside the picker are noise relative to
+ * the work done in the window itself.
  */
 
 #include <limits.h>
@@ -259,9 +259,11 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 	 * rotation path) so plain reads of the old values are safe;
 	 * RELEASE stores back so the parent-side dump's RELAXED loads see
 	 * complete values rather than torn intermediates.  This update
-	 * runs alongside the lifetime fields above; the picker still reads
-	 * the lifetime fields today and will be flipped to the recent
-	 * series in a follow-up commit. */
+	 * runs alongside the lifetime fields above; ucb1_score() reads the
+	 * recent series for both exploit and explore terms (D-UCB), while
+	 * cold-start in pick_next_strategy() still reads lifetime
+	 * bandit_pulls[] -- "never observed" rather than "not observed
+	 * lately" -- and the lifetime fields also back dump_strategy_stats. */
 	now_window = __atomic_load_n(&shm->bandit_window_count,
 				     __ATOMIC_RELAXED);
 	for (i = 0; i < NR_STRATEGIES; i++) {
@@ -1155,9 +1157,12 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 /*
  * Operator-facing summary, called from dump_stats() at end of run.
  * Always shows the picker mode (cheap context); per-arm pulls and
- * mean reward are skipped for the round-robin path because Phase 1
- * already prints the per-window switch line on every rotation and
- * the totals are uninteresting under a fixed rotation.
+ * mean reward are printed in both modes whenever any window has
+ * completed (total_pulls > 0) -- round-robin runs through
+ * bandit_record_pull() too, so its per-arm yield is meaningful even
+ * though the picker itself ignores the reward signal.  Suppressed
+ * only when total_pulls is zero (run too short for any window to
+ * close).
  */
 void dump_strategy_stats(void)
 {

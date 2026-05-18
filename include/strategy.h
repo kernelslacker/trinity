@@ -25,10 +25,12 @@
  * so the alternative reward shape is visible without changing the
  * learner's behaviour.
  *
- * Phase 1 ships two strategies (heuristic + uniform random); follow-up
- * commits add coverage-frontier, HEALER pair-bias, group-saturation,
- * newly-discovered, and genetic strategies (each becomes a new arm
- * the bandit picker can score against the existing ones).
+ * Today's arms are heuristic, uniform random, coverage-frontier, and
+ * HEALER pair-bias (see enum strategy_t below); each becomes an arm
+ * the bandit picker scores against the others.  Future arms under
+ * consideration (group-saturation, newly-discovered, genetic) slot
+ * into the same dispatch -- adding one is an enum entry plus a
+ * pick_syscall hook.
  */
 
 enum strategy_t {
@@ -381,9 +383,12 @@ void frontier_record_new_edge(unsigned int nr);
 
 /*
  * Sum of the per-syscall frontier ring across all slots, capped to
- * a sensible u32.  Cheap O(FRONTIER_DECAY_WINDOWS) per call.  Called
- * by the coverage-frontier picker once per syscall slot during the
- * weighted-pick walk.
+ * a sensible u32.  O(1): the running sum is maintained in
+ * shm->frontier_recent_count_cached[] -- producers bump the cache on
+ * each new-edge add and frontier_window_advance() ages out the
+ * outgoing slot's contribution -- so this is a single relaxed load.
+ * Called by the coverage-frontier picker once per syscall slot during
+ * the weighted-pick walk.
  */
 unsigned long frontier_recent_count(unsigned int nr);
 

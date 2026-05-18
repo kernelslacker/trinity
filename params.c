@@ -405,7 +405,7 @@ static const struct option_help option_descs[] = {
 	{ "stats",		 0,  "show errno distribution per syscall before exiting" },
 	{ "stats-json",		 0,  "emit dump_stats output as a single JSON object on stdout (machine-readable)" },
 	{ "stats-log-file",	 0,  "path to append periodic stats dumps to (in addition to stdout)" },
-	{ "strategy",		 0,  "arm-selection policy for the multi-strategy rotation: round-robin (default) or bandit (UCB1)" },
+	{ "strategy",		 0,  "arm-selection POLICY for the multi-strategy rotation (NOT a specific arm): round-robin (default) or bandit (UCB1). The set of arms is fixed (heuristic, random, coverage-frontier, HEALER); this flag picks how the rotation chooses between them." },
 	{ "syslog",		'S', "log important info to syslog (useful if syslog is remote)" },
 	{ "verbose",		'v', "increase output verbosity. Repeat for more detail (-vv)" },
 	{ "victims",		'V', "path to victim files (may be repeated)" },
