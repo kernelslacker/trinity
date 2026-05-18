@@ -1090,15 +1090,36 @@ static ssize_t kcov_bitmap_read_all(int fd, void *buf, size_t len)
 	return (ssize_t)(len - left);
 }
 
+/*
+ * Dirty-bit proxy for kcov_bitmap_save_file().  edges_found increments
+ * once per (edge, bucket) bit-flip in kcov_collect(); when it equals the
+ * value at the last successful save, the bitmap contents are bit-for-bit
+ * identical and the write would just re-serialise the same bytes.
+ * Initialised to ULONG_MAX so the first save in a fresh process always
+ * fires; subsequently advanced on every successful save and seeded by
+ * the warm-start loader so a load-then-immediate-exit cycle skips its
+ * end-of-run save.  Parent-private: the only callers of save_file are
+ * the parent (end-of-run path in trinity.c and kcov_bitmap_maybe_snapshot
+ * from main_loop / kcov_plateau_check).
+ */
+static unsigned long kcov_bitmap_edges_at_last_save = ULONG_MAX;
+
 bool kcov_bitmap_save_file(const char *path)
 {
 	struct kcov_bitmap_file_header hdr;
+	unsigned long edges_now;
 	char tmppath[PATH_MAX];
 	int fd;
 	int ret;
 
 	if (path == NULL || kcov_shm == NULL)
 		return false;
+
+	edges_now = __atomic_load_n(&kcov_shm->edges_found, __ATOMIC_RELAXED);
+	if (edges_now == kcov_bitmap_edges_at_last_save) {
+		output(0, "kcov-bitmap: snapshot skipped, no new edges since last save\n");
+		return true;
+	}
 
 	memset(&hdr, 0, sizeof(hdr));
 	if (!kcov_get_kernel_fp(hdr.kallsyms_sha256))
@@ -1108,8 +1129,7 @@ bool kcov_bitmap_save_file(const char *path)
 	hdr.version = KCOV_BITMAP_FILE_VERSION;
 	hdr.num_edges = KCOV_NUM_EDGES;
 	hdr.num_buckets = KCOV_NUM_BUCKETS;
-	hdr.edges_found = __atomic_load_n(&kcov_shm->edges_found,
-					  __ATOMIC_RELAXED);
+	hdr.edges_found = edges_now;
 	hdr.payload_crc32 = kcov_bitmap_crc32(kcov_shm->bucket_seen,
 					      KCOV_NUM_EDGES);
 
@@ -1144,6 +1164,7 @@ bool kcov_bitmap_save_file(const char *path)
 		(void)unlink(tmppath);
 		return false;
 	}
+	kcov_bitmap_edges_at_last_save = edges_now;
 	return true;
 
 fail:
@@ -1250,6 +1271,9 @@ bool kcov_bitmap_load_file(const char *path)
 	free(scratch);
 	__atomic_store_n(&kcov_shm->edges_found, hdr.edges_found,
 			 __ATOMIC_RELAXED);
+	/* Seed the dirty-bit baseline so a load-then-immediate-exit cycle
+	 * skips the redundant end-of-run save. */
+	kcov_bitmap_edges_at_last_save = hdr.edges_found;
 	output(0, "kcov-bitmap: loaded %lu edges from %s\n",
 	       (unsigned long)hdr.edges_found, path);
 	return true;
