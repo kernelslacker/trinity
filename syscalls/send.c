@@ -84,8 +84,21 @@ struct syscallentry syscall_sendto = {
  * of msg->msg_iovlen / msg->msg_iov[].iov_len that the count-bound
  * validator below relies on.  Captured at sanitise time into a
  * post_state-private heap struct that no syscall ABI slot points at.
+ *
+ * Leading magic cookie because the heap-shape check on rec->post_state
+ * is value-based only -- a sibling scribbling rec->post_state with any
+ * heap-shaped 8-byte aligned pointer (a different syscall's post_state,
+ * a stale alloc_iovec(1) in the same free-list bucket, ...) sails past
+ * looks_like_corrupted_ptr() and the post handler then loads snap->msg
+ * from foreign bytes, treats the result as a struct msghdr *, and
+ * dereferences into poisoned heap.  That is the dominant non-ASAN
+ * crash cluster (__zmalloc -> malloc -> malloc_printerr -> abort).
+ * Mirrors RECVMSG_POST_STATE_MAGIC at recv.c:103.  Sized 24 bytes to
+ * stay clear of the 16-byte free-list bucket that holds alloc_iovec(1).
  */
+#define SENDMSG_POST_STATE_MAGIC	0x53454E44505354UL	/* "SENDPST" */
 struct sendmsg_post_state {
+	unsigned long magic;
 	struct msghdr *msg;
 	unsigned long iov_len_sum;
 };
@@ -184,6 +197,7 @@ set_control:
 	rec->a2 = (unsigned long) msg;
 
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = SENDMSG_POST_STATE_MAGIC;
 	snap->msg = msg;
 	snap->iov_len_sum = iov_len_sum;
 	rec->post_state = (unsigned long) snap;
@@ -206,6 +220,26 @@ static void post_sendmsg(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_sendmsg: rejected suspicious post_state=%p "
 			  "(pid-scribbled?)\n", snap);
+		rec->a2 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * sendmsg_post_state.  A cookie mismatch means snap does not point
+	 * at our struct -- abandon both the snap and the msghdr cleanup
+	 * rather than feed wild bytes into the inner-field deref.  Cannot
+	 * deferred_freeptr the snap because we cannot prove it is one of
+	 * our allocations.  Mirrors recv.c:212.
+	 */
+	if (snap->magic != SENDMSG_POST_STATE_MAGIC) {
+		outputerr("post_sendmsg: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
