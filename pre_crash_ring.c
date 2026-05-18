@@ -18,44 +18,42 @@
 #include "pids.h"
 #include "pre_crash_ring.h"
 #include "shm.h"
+#include "spsc-ring.h"
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
+
+static void publish(struct pre_crash_ring *ring,
+		    const struct pre_crash_entry *e)
+{
+	spsc_ring_overwrite_enqueue(&ring->base, ring->entries,
+				    PRE_CRASH_RING_SIZE,
+				    sizeof(ring->entries[0]), e);
+}
 
 void pre_crash_ring_record(struct childdata *child,
 			   const struct syscallrecord *rec,
 			   const struct timespec *now)
 {
-	struct pre_crash_ring *ring;
-	struct pre_crash_entry *e;
-	uint32_t head;
+	struct pre_crash_entry e = {};
 
 	if (child == NULL || rec == NULL)
 		return;
 
-	ring = &child->pre_crash;
+	e.syscall_nr = rec->nr;
+	e.do32bit = rec->do32bit;
+	e.args[0] = rec->a1;
+	e.args[1] = rec->a2;
+	e.args[2] = rec->a3;
+	e.args[3] = rec->a4;
+	e.args[4] = rec->a5;
+	e.args[5] = rec->a6;
+	e.retval = (long) rec->retval;
+	e.errno_post = rec->errno_post;
+	e.ts = (now != NULL) ? *now : rec->tp;
+	e.kind = PRE_CRASH_KIND_SYSCALL;
 
-	/* Single-producer relaxed load: only this child writes head. */
-	head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
-	e = &ring->entries[head & (PRE_CRASH_RING_SIZE - 1)];
-
-	e->syscall_nr = rec->nr;
-	e->do32bit = rec->do32bit;
-	e->args[0] = rec->a1;
-	e->args[1] = rec->a2;
-	e->args[2] = rec->a3;
-	e->args[3] = rec->a4;
-	e->args[4] = rec->a5;
-	e->args[5] = rec->a6;
-	e->retval = (long) rec->retval;
-	e->errno_post = rec->errno_post;
-	e->ts = (now != NULL) ? *now : rec->tp;
-	e->kind = PRE_CRASH_KIND_SYSCALL;
-
-	/* Publish only after the entry is fully populated, so a post-mortem
-	 * reader that acquire-loads head and walks back N slots never sees
-	 * a torn entry. */
-	__atomic_store_n(&ring->head, head + 1, __ATOMIC_RELEASE);
+	publish(&child->pre_crash, &e);
 }
 
 void pre_crash_ring_record_taint(struct childdata *child,
@@ -64,68 +62,48 @@ void pre_crash_ring_record_taint(struct childdata *child,
 				 unsigned int op_type,
 				 unsigned long op_nr)
 {
-	struct pre_crash_ring *ring;
-	struct pre_crash_entry *e;
-	uint32_t head;
+	struct pre_crash_entry e = {};
 
 	if (child == NULL)
 		return;
 
-	ring = &child->pre_crash;
+	e.args[0] = delta;
+	e.args[1] = tainted_now;
+	e.args[2] = (unsigned long) op_type;
+	e.args[3] = op_nr;
+	e.kind = PRE_CRASH_KIND_TAINT;
+	clock_gettime(CLOCK_MONOTONIC, &e.ts);
 
-	head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
-	e = &ring->entries[head & (PRE_CRASH_RING_SIZE - 1)];
-
-	e->args[0] = delta;
-	e->args[1] = tainted_now;
-	e->args[2] = (unsigned long) op_type;
-	e->args[3] = op_nr;
-	e->args[4] = 0;
-	e->args[5] = 0;
-	e->retval = 0;
-	e->syscall_nr = 0;
-	e->errno_post = 0;
-	e->do32bit = false;
-	e->kind = PRE_CRASH_KIND_TAINT;
-	clock_gettime(CLOCK_MONOTONIC, &e->ts);
-
-	__atomic_store_n(&ring->head, head + 1, __ATOMIC_RELEASE);
+	publish(&child->pre_crash, &e);
 }
 
 void pre_crash_ring_record_canary(struct childdata *child,
 				  const struct syscallrecord *rec,
 				  uint64_t observed)
 {
-	struct pre_crash_ring *ring;
-	struct pre_crash_entry *e;
-	uint32_t head;
+	struct pre_crash_entry e = {};
 
 	if (child == NULL || rec == NULL)
 		return;
-
-	ring = &child->pre_crash;
-
-	head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
-	e = &ring->entries[head & (PRE_CRASH_RING_SIZE - 1)];
 
 	/* Preserve the nominal call context (post-mortem usually wants
 	 * the syscall name, even though the args themselves are now
 	 * untrustworthy) and stash the observed canary in a slot we can
 	 * pretty-print at dump time. */
-	e->syscall_nr = rec->nr;
-	e->do32bit = rec->do32bit;
-	e->args[0] = rec->a1;
-	e->args[1] = rec->a2;
-	e->args[2] = rec->a3;
-	e->args[3] = rec->a4;
-	e->args[4] = rec->a5;
-	e->args[5] = (unsigned long) observed;
-	e->retval = (long) rec->retval;
-	e->errno_post = rec->errno_post;
-	e->kind = PRE_CRASH_KIND_CANARY;
-	clock_gettime(CLOCK_MONOTONIC, &e->ts);
+	e.syscall_nr = rec->nr;
+	e.do32bit = rec->do32bit;
+	e.args[0] = rec->a1;
+	e.args[1] = rec->a2;
+	e.args[2] = rec->a3;
+	e.args[3] = rec->a4;
+	e.args[4] = rec->a5;
+	e.args[5] = (unsigned long) observed;
+	e.retval = (long) rec->retval;
+	e.errno_post = rec->errno_post;
+	e.kind = PRE_CRASH_KIND_CANARY;
+	clock_gettime(CLOCK_MONOTONIC, &e.ts);
 
-	__atomic_store_n(&ring->head, head + 1, __ATOMIC_RELEASE);
+	publish(&child->pre_crash, &e);
 }
 
 static void format_ts_relative(char *out, size_t outlen,
@@ -148,7 +126,7 @@ static void dump_one_ring(struct childdata *child,
 	struct pre_crash_ring *ring = &child->pre_crash;
 	uint32_t head, count, i;
 
-	head = __atomic_load_n(&ring->head, __ATOMIC_ACQUIRE);
+	head = __atomic_load_n(&ring->base.head, __ATOMIC_ACQUIRE);
 	if (head == 0) {
 		outputerr("pre-crash ring (child %u): empty\n", child->num);
 		return;

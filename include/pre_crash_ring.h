@@ -1,9 +1,10 @@
 #pragma once
 
-#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <time.h>
+
+#include "spsc-ring.h"
 
 struct childdata;
 struct syscallrecord;
@@ -56,11 +57,13 @@ struct pre_crash_entry {
 };
 
 struct pre_crash_ring {
+	/* Rolling-history SPSC ring: only the owning child writes head, with
+	 * a release store after the slot is fully populated.  Post-mortem
+	 * readers do an acquire load to observe the matching slot intact.
+	 * No tail / drop policy -- old slots are overwritten when head wraps;
+	 * see spsc_ring_overwrite_enqueue() in include/spsc-ring.h. */
+	struct spsc_ring base;
 	struct pre_crash_entry entries[PRE_CRASH_RING_SIZE];
-	/* Lock-free SPSC: only the owning child writes head, with a release
-	 * store after the slot is fully populated.  Post-mortem readers do
-	 * an acquire load to observe the matching slot intact. */
-	uint32_t head;
 };
 
 void pre_crash_ring_record(struct childdata *child,
