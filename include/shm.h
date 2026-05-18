@@ -436,6 +436,81 @@ extern struct shm_s *shm;
 extern unsigned int shm_size;
 
 /*
+ * Low-bit ticket the CLONE_NEWNET throttle stamps onto rec->post_state
+ * after a successful admission.  clone3 packs the args pointer in the
+ * high bits of post_state; zmalloc returns >=8-byte-aligned pointers,
+ * so bit 0 is free.  unshare and clone leave the rest of post_state as
+ * zero, so the same bit overlays cleanly there too.
+ */
+#define NEWNET_INFLIGHT_TICKET	0x1UL
+
+/*
+ * Single-CAS admission for the CLONE_NEWNET throttle.  Returns true if
+ * the caller now owns one ticket against shm->newnet_in_flight; the
+ * caller MUST stamp NEWNET_INFLIGHT_TICKET onto rec->post_state and
+ * release with release_newnet_ticket() from the post hook.  Returns
+ * false if the cap is full -- caller strips CLONE_NEWNET and bumps the
+ * throttled stat.
+ *
+ * A relaxed load followed by a separate __atomic_fetch_add() (the
+ * shape these three call sites used to share) lets several callers
+ * all observe the counter below the cap then all increment, over-
+ * admitting by an entire wave.  CAS closes that window: the
+ * increment only commits if the value we tested against is still
+ * what we read.
+ *
+ * Unconditional fetch-add + rollback is not equivalent -- the
+ * transient over-admission still feeds copy_net_ns() and is the whole
+ * thing the cap exists to prevent.
+ */
+static inline bool try_admit_newnet(void)
+{
+	int old = __atomic_load_n(&shm->newnet_in_flight, __ATOMIC_RELAXED);
+
+	while (old < MAX_CONCURRENT_NEWNET) {
+		if (__atomic_compare_exchange_n(&shm->newnet_in_flight,
+						&old, old + 1,
+						false,
+						__ATOMIC_RELAXED,
+						__ATOMIC_RELAXED))
+			return true;
+		/* CAS failure refreshed `old` with the witnessed value;
+		 * loop re-checks the cap against the fresh observation. */
+	}
+	return false;
+}
+
+/*
+ * Single-RMW ticket release.  Atomically clears NEWNET_INFLIGHT_TICKET
+ * on rec->post_state and decrements shm->newnet_in_flight iff the bit
+ * was set on entry.  Idempotent: a second caller racing in observes
+ * the bit already cleared and skips the decrement.
+ *
+ * The race this guards against is raw clone()/clone3(): the kernel
+ * returns in both the calling task and the newly created one, the
+ * syscallrecord lives in shared memory (children[] -> alloc_shared),
+ * and both branches run the post hook against the same post_state.
+ * A plain check-then-clear-then-decrement lets both branches decrement
+ * for one admission, drifting the counter toward negative and
+ * permanently disabling the cap.
+ *
+ * post_state for clone3 carries the args pointer in the high bits;
+ * fetch_and(~NEWNET_INFLIGHT_TICKET) clears only bit 0 and leaves
+ * the pointer intact for the post handler's downstream
+ * deferred_freeptr().
+ */
+static inline void release_newnet_ticket(struct syscallrecord *rec)
+{
+	unsigned long old = __atomic_fetch_and(&rec->post_state,
+					       ~NEWNET_INFLIGHT_TICKET,
+					       __ATOMIC_RELAXED);
+
+	if (old & NEWNET_INFLIGHT_TICKET)
+		__atomic_fetch_sub(&shm->newnet_in_flight, 1,
+				   __ATOMIC_RELAXED);
+}
+
+/*
  * Global pointer to the children array.  Lives in normal data segment
  * (NOT in shm), so each forked process gets its own COW copy.  A stray
  * child write to this pointer corrupts only that one child's copy and

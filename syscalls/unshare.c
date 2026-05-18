@@ -28,48 +28,43 @@ static unsigned long unshare_flags[] = {
  * post-call value of rec->a1 -- a sibling syscall can scribble the
  * arg slot between BEFORE and AFTER, and an unbalanced decrement would
  * let the in-flight counter underflow into a giant unsigned value and
- * permanently disable the cap.
+ * permanently disable the cap.  The admission / release atomics live
+ * in include/shm.h alongside MAX_CONCURRENT_NEWNET.
  */
-#define NEWNET_INFLIGHT_TICKET	0x1UL
 
 static void sanitise_unshare(struct syscallrecord *rec)
 {
 	if ((rec->a1 & CLONE_NEWNET) == 0)
 		return;
 
-	if (__atomic_load_n(&shm->newnet_in_flight, __ATOMIC_RELAXED) >=
-	    MAX_CONCURRENT_NEWNET) {
-		/*
-		 * Cap reached -- strip CLONE_NEWNET.  The remaining bits in
-		 * unshare_flags[] are still a valid unshare bitmask (the
-		 * kernel takes any subset, including zero), so the syscall
-		 * still exercises the unshare path; we only avoid feeding
-		 * another in-flight netns clone into copy_net_ns().
-		 */
-		rec->a1 &= ~CLONE_NEWNET;
-		{
-			struct childdata *c = this_child();
-
-			if (c != NULL && c->stats_ring != NULL)
-				stats_ring_enqueue(c->stats_ring,
-						   STATS_FIELD_UNSHARE_NEWNET_THROTTLED,
-						   0, 1);
-			else
-				parent_stats.unshare_newnet_throttled++;
-		}
+	if (try_admit_newnet()) {
+		rec->post_state = NEWNET_INFLIGHT_TICKET;
 		return;
 	}
 
-	__atomic_fetch_add(&shm->newnet_in_flight, 1, __ATOMIC_RELAXED);
-	rec->post_state = NEWNET_INFLIGHT_TICKET;
+	/*
+	 * Cap reached -- strip CLONE_NEWNET.  The remaining bits in
+	 * unshare_flags[] are still a valid unshare bitmask (the kernel
+	 * takes any subset, including zero), so the syscall still
+	 * exercises the unshare path; we only avoid feeding another
+	 * in-flight netns clone into copy_net_ns().
+	 */
+	rec->a1 &= ~CLONE_NEWNET;
+	{
+		struct childdata *c = this_child();
+
+		if (c != NULL && c->stats_ring != NULL)
+			stats_ring_enqueue(c->stats_ring,
+					   STATS_FIELD_UNSHARE_NEWNET_THROTTLED,
+					   0, 1);
+		else
+			parent_stats.unshare_newnet_throttled++;
+	}
 }
 
 static void post_unshare(struct syscallrecord *rec)
 {
-	if (rec->post_state != NEWNET_INFLIGHT_TICKET)
-		return;
-	rec->post_state = 0;
-	__atomic_fetch_sub(&shm->newnet_in_flight, 1, __ATOMIC_RELAXED);
+	release_newnet_ticket(rec);
 }
 
 struct syscallentry syscall_unshare = {

@@ -69,9 +69,10 @@ static unsigned long clone3_sizes[] = {
  * sanitise_clone3() about the throttle bookkeeping.  zmalloc returns
  * >=8-byte-aligned pointers so this bit is free to overlay on the
  * args pointer, but the post handler must mask it off before any
- * dereference or deferred_freeptr() of post_state.
+ * dereference or deferred_freeptr() of post_state.  The bit constant
+ * and the admission / release atomics live in include/shm.h alongside
+ * MAX_CONCURRENT_NEWNET.
  */
-#define NEWNET_INFLIGHT_TICKET	0x1UL
 
 static void sanitise_clone3(struct syscallrecord *rec)
 {
@@ -104,8 +105,9 @@ static void sanitise_clone3(struct syscallrecord *rec)
 	 * unsigned value and permanently disable the cap.
 	 */
 	if (args->flags & CLONE_NEWNET) {
-		if (__atomic_load_n(&shm->newnet_in_flight, __ATOMIC_RELAXED) >=
-		    MAX_CONCURRENT_NEWNET) {
+		if (try_admit_newnet()) {
+			newnet_admitted = true;
+		} else {
 			struct childdata *c = this_child();
 
 			args->flags &= ~CLONE_NEWNET;
@@ -115,10 +117,6 @@ static void sanitise_clone3(struct syscallrecord *rec)
 						   0, 1);
 			else
 				parent_stats.unshare_newnet_throttled++;
-		} else {
-			__atomic_fetch_add(&shm->newnet_in_flight, 1,
-					   __ATOMIC_RELAXED);
-			newnet_admitted = true;
 		}
 	}
 
@@ -197,17 +195,26 @@ static void post_clone3(struct syscallrecord *rec)
 	struct clone_args *args;
 
 	/*
-	 * Drop the throttle ticket first and unconditionally, before any
+	 * Drop the throttle ticket first and atomically, before any
 	 * branch that might early-return or call deferred_freeptr() on
-	 * post_state.  The ticket bit overlays the args pointer and must
-	 * be masked off before any dereference; doing it once at the top
-	 * keeps the corrupt-retval and normal paths from each having to
-	 * remember.
+	 * post_state.  Two reasons it has to be atomic:
+	 *
+	 *   1. The ticket bit overlays the args pointer; the pointer
+	 *      must be intact for the post handler's downstream
+	 *      dereference and deferred_freeptr().  fetch_and clears
+	 *      only bit 0 and leaves the rest of post_state alone.
+	 *
+	 *   2. clone3() returns in BOTH the parent and the newly
+	 *      created task; the syscallrecord lives in shared memory
+	 *      (children[] is alloc_shared), so both tasks reach this
+	 *      hook against the same rec->post_state.
+	 *      release_newnet_ticket() test-and-clears in a single RMW
+	 *      so only one branch's decrement lands -- a plain
+	 *      check-then-clear-then-fetch_sub would let both branches
+	 *      decrement for one admission and drift the counter toward
+	 *      negative, permanently disabling the cap.
 	 */
-	if (rec->post_state & NEWNET_INFLIGHT_TICKET) {
-		rec->post_state &= ~NEWNET_INFLIGHT_TICKET;
-		__atomic_fetch_sub(&shm->newnet_in_flight, 1, __ATOMIC_RELAXED);
-	}
+	release_newnet_ticket(rec);
 
 	/*
 	 * Kernel ABI: parent retval is the child pid in [1, PID_MAX_LIMIT=4194304],

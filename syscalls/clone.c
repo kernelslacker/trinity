@@ -20,14 +20,14 @@
 
 /*
  * Mirrors the convention in syscalls/unshare.c: when sanitise admits
- * a CLONE_NEWNET clone() it stamps post_state with this magic value so
- * post_clone() knows to drop shm->newnet_in_flight.  We do not derive
- * the bookkeeping from rec->a1 at post time -- the wholesale-stomp
- * detector exists precisely because sibling syscalls can scribble the
- * rec, and an unbalanced decrement would permanently unbalance the
- * cap.
+ * a CLONE_NEWNET clone() it stamps post_state with NEWNET_INFLIGHT_TICKET
+ * so post_clone() knows to drop shm->newnet_in_flight.  We do not
+ * derive the bookkeeping from rec->a1 at post time -- the wholesale-
+ * stomp detector exists precisely because sibling syscalls can
+ * scribble the rec, and an unbalanced decrement would permanently
+ * unbalance the cap.  The admission / release atomics live in
+ * include/shm.h alongside MAX_CONCURRENT_NEWNET.
  */
-#define NEWNET_INFLIGHT_TICKET	0x1UL
 
 static unsigned long clone_flags[] = {
 	CSIGNAL,
@@ -57,8 +57,12 @@ static void sanitise_clone(struct syscallrecord *rec)
 	if ((rec->a1 & CLONE_NEWNET) == 0)
 		return;
 
-	if (__atomic_load_n(&shm->newnet_in_flight, __ATOMIC_RELAXED) >=
-	    MAX_CONCURRENT_NEWNET) {
+	if (try_admit_newnet()) {
+		rec->post_state = NEWNET_INFLIGHT_TICKET;
+		return;
+	}
+
+	{
 		struct childdata *c = this_child();
 
 		rec->a1 &= ~CLONE_NEWNET;
@@ -68,19 +72,23 @@ static void sanitise_clone(struct syscallrecord *rec)
 					   0, 1);
 		else
 			parent_stats.unshare_newnet_throttled++;
-		return;
 	}
-
-	__atomic_fetch_add(&shm->newnet_in_flight, 1, __ATOMIC_RELAXED);
-	rec->post_state = NEWNET_INFLIGHT_TICKET;
 }
 
 static void post_clone(struct syscallrecord *rec)
 {
-	if (rec->post_state == NEWNET_INFLIGHT_TICKET) {
-		rec->post_state = 0;
-		__atomic_fetch_sub(&shm->newnet_in_flight, 1, __ATOMIC_RELAXED);
-	}
+	/*
+	 * Release the ticket up front, atomically.  clone() returns in
+	 * BOTH the parent and the newly created task; the syscallrecord
+	 * lives in shared memory (children[] is alloc_shared), so both
+	 * tasks reach this hook against the same rec->post_state.
+	 * release_newnet_ticket() test-and-clears the ticket bit in a
+	 * single RMW so only one branch's decrement lands -- a plain
+	 * check-then-clear-then-fetch_sub would let both decrement and
+	 * drift the counter toward negative, permanently disabling the
+	 * cap.
+	 */
+	release_newnet_ticket(rec);
 
 	/* Child branch: caller-side differentiation, nothing to validate here. */
 	if (rec->retval == 0)
