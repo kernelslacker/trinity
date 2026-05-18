@@ -166,6 +166,8 @@ bool mmap_lifecycle(struct childdata *child)
 	(void)child;
 
 	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_ANON);
+	if (head == NULL)
+		return false;
 	nr_maps = head->num_entries;
 
 	/*
