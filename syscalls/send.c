@@ -360,11 +360,19 @@ struct syscallentry syscall_sendmsg = {
  * looks_like_corrupted_ptr() and the post handler then loads snap->msgs
  * from foreign bytes; the subsequent cleanup-loop walk into wild memory
  * surfaces as the dominant __zmalloc -> malloc -> malloc_printerr ->
- * abort crash cluster.  Mirrors RECVMSG_POST_STATE_MAGIC at recv.c:103.
- * Padded to 32 bytes so the snap lands in the 48-byte glibc malloc
- * chunk bucket, distinct from sendmsg_post_state (24B -> 32B chunk)
- * and the 16-byte alloc_iovec(1) bucket.  Bucket separation is just
- * defense-in-depth; the cookie is the primary defense.
+ * abort crash cluster.  Mirrors RECVMSG_POST_STATE_MAGIC at recv.c.
+ *
+ * The per-i msg_name slots are also snapshotted here.  A sibling
+ * iov_base aliased inside the msgs[] allocation can let SCM_RIGHTS /
+ * fault-in write-backs scribble msgs[i].msg_hdr.msg_name with a
+ * heap-shaped within-array offset of msgs[] itself (e.g. &msgs[5]
+ * for a 4-elem array); the inner shape-only check accepts it but
+ * free() of an interior offset aborts in libasan.  Stash the
+ * originals at sanitise time so the post handler frees the
+ * allocations we made.  iov_base is intentionally not snapshotted
+ * here because the sendmmsg sanitiser does not free any iov_base
+ * (alloc_iovec()'d buffers are routed through deferred_free_enqueue
+ * with the iov itself, and there is no per-i gen_msg path).
  */
 #define SENDMMSG_POST_STATE_MAGIC	0x53454E444D5453UL	/* "SENDMTS" */
 struct sendmmsg_post_state {
@@ -372,7 +380,7 @@ struct sendmmsg_post_state {
 	struct mmsghdr *msgs;
 	unsigned int vlen;
 	unsigned int _pad;
-	unsigned long _bucket_pad;
+	void *name[SENDMMSG_MAX_VLEN];
 };
 
 static void sanitise_sendmmsg(struct syscallrecord *rec)
@@ -388,6 +396,11 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 	vlen = RAND_RANGE(1, SENDMMSG_MAX_VLEN);
 	msgs = zmalloc(vlen * sizeof(struct mmsghdr));
 
+	snap = zmalloc(sizeof(*snap));
+	snap->magic = SENDMMSG_POST_STATE_MAGIC;
+	snap->msgs = msgs;
+	snap->vlen = vlen;
+
 	for (i = 0; i < vlen; i++) {
 		struct msghdr *msg = &msgs[i].msg_hdr;
 		unsigned int num_entries = RAND_RANGE(1, 3);
@@ -401,6 +414,7 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 			generate_sockaddr(&sa, &salen, si->triplet.family);
 		msg->msg_name = sa;
 		msg->msg_namelen = salen;
+		snap->name[i] = sa;
 
 		if (RAND_BOOL()) {
 			msg->msg_controllen = rand32() % 20480;
@@ -420,11 +434,6 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 
 	rec->a2 = (unsigned long) msgs;
 	rec->a3 = vlen;
-
-	snap = zmalloc(sizeof(*snap));
-	snap->magic = SENDMMSG_POST_STATE_MAGIC;
-	snap->msgs = msgs;
-	snap->vlen = vlen;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -514,11 +523,18 @@ static void post_sendmmsg(struct syscallrecord *rec)
 		goto out_free;
 	}
 
+	/*
+	 * Free from the trusted per-i snap, not from the live msgs[]
+	 * array.  A sibling iov_base aliased inside msgs[] can let
+	 * SCM_RIGHTS / fault-in write-backs scribble msg_name with a
+	 * heap-shaped within-array offset of msgs[] that passes the
+	 * inner shape-only check but aborts in libasan free().  The
+	 * snap fields are wrapped in the magic-cookie struct above
+	 * and hold the sanitise-time allocations.
+	 */
 	for (i = 0; i < vlen; i++) {
 		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov, NULL);
-		if (inner_ptr_ok_to_free(rec, msgs[i].msg_hdr.msg_name,
-					 "post_sendmmsg/msg_name"))
-			free(msgs[i].msg_hdr.msg_name);
+		free(snap->name[i]);
 	}
 	rec->a2 = 0;
 	deferred_free_enqueue(msgs, NULL);
