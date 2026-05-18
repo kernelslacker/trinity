@@ -42,12 +42,22 @@ static void register_pipe_fd(int fd, bool reader)
  * inner-field deref.  Mirrors RECVMSG_POST_STATE_MAGIC at recv.c:103.
  * Sized 24 bytes to stay clear of the 16-byte free-list bucket that
  * holds alloc_iovec(1) and other small allocations.
+ *
+ * Two pointers are stored.  ->fildes is the address the kernel actually
+ * writes the returned int[2] into -- avoid_shared_buffer() relocates
+ * rec->a1 off the libc heap into a parent-private writable region, so
+ * post_pipe must read fds from the relocated buffer, not the zmalloc
+ * result.  ->original_alloc is the zmalloc()'d pointer we hand back to
+ * deferred_free_enqueue(): the relocated buffer is owned by the
+ * writable-address allocator (mmap'd, alloc-track-unknown) and would be
+ * rejected by deferred_free_enqueue()'s heap-bounds and alloc-track
+ * gates.
  */
 #define PIPE_POST_STATE_MAGIC	0x504950455F4D4147UL	/* "PIPE_MAG" */
 struct pipe_post_state {
 	unsigned long magic;
 	int *fildes;
-	unsigned long _bucket_pad;
+	int *original_alloc;
 };
 
 static void sanitise_pipe(struct syscallrecord *rec)
@@ -61,7 +71,8 @@ static void sanitise_pipe(struct syscallrecord *rec)
 
 	snap = zmalloc(sizeof(*snap));
 	snap->magic = PIPE_POST_STATE_MAGIC;
-	snap->fildes = fildes;
+	snap->fildes = (int *) rec->a1;
+	snap->original_alloc = fildes;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -115,7 +126,7 @@ static void post_pipe(struct syscallrecord *rec)
 	}
 
 	rec->a1 = 0;
-	deferred_free_enqueue(fildes, NULL);
+	deferred_free_enqueue(snap->original_alloc, NULL);
 
 out_free:
 	deferred_freeptr(&rec->post_state);
@@ -154,7 +165,8 @@ static void sanitise_pipe2(struct syscallrecord *rec)
 
 	snap = zmalloc(sizeof(*snap));
 	snap->magic = PIPE_POST_STATE_MAGIC;
-	snap->fildes = fildes;
+	snap->fildes = (int *) rec->a1;
+	snap->original_alloc = fildes;
 	rec->post_state = (unsigned long) snap;
 }
 
