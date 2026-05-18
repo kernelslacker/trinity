@@ -2,6 +2,7 @@
 
 #include <limits.h>
 #include <stdbool.h>
+#include "compiler.h"
 #include "types.h"
 #include "list.h"
 #include "object-types.h"
@@ -35,8 +36,8 @@ void map_dump(struct object *obj, enum obj_scope scope);
 
 void setup_initial_mappings(void);
 
-struct map * get_map(void);
-struct map * get_map_with_prot(int required_prot);
+struct map * get_map(void) __must_check;
+struct map * get_map_with_prot(int required_prot) __must_check;
 
 /*
  * Lightweight handle for an entry in the OBJ_MMAP_* pools.  Post-
@@ -52,8 +53,8 @@ struct map_handle {
 	enum obj_scope scope;
 };
 
-bool get_map_handle(struct map_handle *h);
-bool validate_map_handle(struct map_handle *h);
+bool get_map_handle(struct map_handle *h) __must_check;
+bool validate_map_handle(struct map_handle *h) __must_check;
 
 struct map * common_set_mmap_ptr_len(void);
 
