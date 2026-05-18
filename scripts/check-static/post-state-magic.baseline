@@ -44,7 +44,6 @@ syscalls/mremap.c:mremap
 syscalls/munmap.c:munmap
 syscalls/poll.c:ppoll
 syscalls/prctl.c:prctl
-syscalls/prlimit64.c:prlimit64
 syscalls/ptrace.c:ptrace
 syscalls/readlink.c:readlink
 syscalls/readlink.c:readlinkat

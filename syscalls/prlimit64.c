@@ -33,7 +33,9 @@
  * buffer, retarget the pid self-filter, or smear the resource bound
  * used to gate the re-issue.
  */
+#define PRLIMIT64_POST_STATE_MAGIC	0x50524C36UL	/* "PRL6" */
 struct prlimit64_post_state {
+	unsigned long magic;
 	unsigned long pid;
 	unsigned long resource;
 	unsigned long new_rlim;
@@ -103,6 +105,7 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 	 * leak.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic     = PRLIMIT64_POST_STATE_MAGIC;
 	snap->pid       = rec->a1;
 	snap->resource  = rec->a2;
 	snap->new_rlim  = rec->a3;
@@ -185,6 +188,24 @@ static void post_prlimit64(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_prlimit64: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * prlimit64_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon rather than feed wild bytes into
+	 * the pid self-filter, resource bound, old_rlim deref, and the
+	 * stable-equality re-issue against task->signal->rlim[].
+	 */
+	if (snap->magic != PRLIMIT64_POST_STATE_MAGIC) {
+		outputerr("post_prlimit64: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
