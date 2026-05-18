@@ -1507,6 +1507,7 @@ bool healer_load_file(const char *path)
 	struct utsname u;
 	void *tmpbuf;
 	uint32_t want_crc;
+	ssize_t hn;
 	int fd;
 	bool ok = false;
 
@@ -1514,11 +1515,22 @@ bool healer_load_file(const char *path)
 		return false;
 
 	fd = open(path, O_RDONLY);
-	if (fd < 0)
+	if (fd < 0) {
+		if (errno == ENOENT)
+			output(0, "healer: no persisted state at %s -- cold start\n",
+			       path);
+		else
+			output(0, "healer: open(%s) failed: %s -- cold start\n",
+			       path, strerror(errno));
 		return false;
+	}
 
-	if (healer_read_all(fd, &hdr, sizeof(hdr)) != (ssize_t)sizeof(hdr))
+	hn = healer_read_all(fd, &hdr, sizeof(hdr));
+	if (hn != (ssize_t)sizeof(hdr)) {
+		output(0, "healer: header truncated at %s (got %zd, want %zu) -- cold start\n",
+		       path, hn, sizeof(hdr));
 		goto out_close;
+	}
 
 	if (hdr.magic != HEALER_FILE_MAGIC ||
 	    hdr.version != HEALER_FILE_VERSION ||
@@ -1555,12 +1567,18 @@ bool healer_load_file(const char *path)
 	 * CRC failure leaves parent_healer.relations untouched (a torn
 	 * load would poison the dump and the next publish). */
 	tmpbuf = malloc(HEALER_PAYLOAD_BYTES);
-	if (tmpbuf == NULL)
+	if (tmpbuf == NULL) {
+		output(0, "healer: scratch alloc fail (%zu bytes) -- cold start\n",
+		       (size_t)HEALER_PAYLOAD_BYTES);
 		goto out_close;
+	}
 
-	if (healer_read_all(fd, tmpbuf, HEALER_PAYLOAD_BYTES)
-			!= (ssize_t)HEALER_PAYLOAD_BYTES)
+	hn = healer_read_all(fd, tmpbuf, HEALER_PAYLOAD_BYTES);
+	if (hn != (ssize_t)HEALER_PAYLOAD_BYTES) {
+		output(0, "healer: payload truncated at %s (got %zd, want %zu) -- cold start\n",
+		       path, hn, (size_t)HEALER_PAYLOAD_BYTES);
 		goto out_free;
+	}
 
 	want_crc = healer_crc32(tmpbuf, HEALER_PAYLOAD_BYTES);
 	if (want_crc != hdr.payload_crc32)
