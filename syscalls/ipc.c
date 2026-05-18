@@ -375,8 +375,7 @@ static void post_ipc(struct syscallrecord *rec)
 		output(0, "ipc oracle: returned IPC id 0x%lx out of "
 			  "range (must be 0..INT_MAX)\n",
 			  (unsigned long) rec->retval);
-		(void) looks_like_corrupted_ptr(rec,
-						(const void *) rec->retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		return;
 	}
 
