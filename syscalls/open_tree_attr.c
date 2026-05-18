@@ -58,7 +58,7 @@ static void sanitise_open_tree_attr(struct syscallrecord *rec)
 struct syscallentry syscall_open_tree_attr = {
 	.name = "open_tree_attr",
 	.num_args = 5,
-	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_LIST },
+	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_LIST, [4] = ARG_STRUCT_SIZE },
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "flags", [3] = "uattr", [4] = "usize" },
 	.arg_params[2].list = ARGLIST(open_tree_attr_flags),
 	.rettype = RET_FD,

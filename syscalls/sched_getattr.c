@@ -250,7 +250,7 @@ struct syscallentry syscall_sched_getattr = {
 	.name = "sched_getattr",
 	.group = GROUP_SCHED,
 	.num_args = 4,
-	.argtype = { [0] = ARG_PID, [1] = ARG_STRUCT_PTR_OUT, [2] = ARG_LEN, [3] = ARG_LIST },
+	.argtype = { [0] = ARG_PID, [1] = ARG_STRUCT_PTR_OUT, [2] = ARG_STRUCT_SIZE, [3] = ARG_LIST },
 	.argname = { [0] = "pid", [1] = "param", [2] = "size", [3] = "flags" },
 	.arg_params[3].list = ARGLIST(sched_getattr_flags),
 	.sanitise = sanitise_sched_getattr,

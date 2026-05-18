@@ -312,7 +312,7 @@ out_free:
 struct syscallentry syscall_statmount = {
 	.name = "statmount",
 	.num_args = 4,
-	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS, [2] = ARG_LEN },
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS, [2] = ARG_STRUCT_SIZE },
 	.argname = { [0] = "req", [1] = "buf", [2] = "bufsize", [3] = "flags" },
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,

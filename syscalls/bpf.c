@@ -812,7 +812,7 @@ struct syscallentry syscall_bpf = {
 	.group = GROUP_BPF,
 	.num_args = 3,
 
-	.argtype = { [0] = ARG_OP, [1] = ARG_ADDRESS, [2] = ARG_LEN },
+	.argtype = { [0] = ARG_OP, [1] = ARG_ADDRESS, [2] = ARG_STRUCT_SIZE },
 	.argname = { [0] = "cmd", [1] = "uattr", [2] = "size" },
 	.arg_params[0].list = ARGLIST(bpf_cmds),
 	.sanitise = sanitise_bpf,
