@@ -536,9 +536,27 @@ struct shm_s {
 	 *   yet" (no anti-prior rotation has fired) and the accept gate
 	 *   short-circuits to "pass" in that state so cold-start picks
 	 *   degenerate to uniform.
+	 *
+	 * plateau_intervention_rotation_counter: monotonic per-intervention
+	 *   counter.  Bumped via fetch_add on every plateau-window rotation;
+	 *   the selected mode is the (post-increment) modulo against
+	 *   NR_PIM_MODES.  The counter only ticks while plateau_active is
+	 *   set so each plateau intervention starts from wherever the
+	 *   previous one left off -- adjacent plateaus separated by a
+	 *   healthy stretch see the rotation pick up cleanly rather than
+	 *   always re-running the same mode first.
+	 *
+	 * plateau_intervention_mode_windows[NR_PIM_MODES]: per-mode
+	 *   intervention-window count.  Bumped at the same rotation site
+	 *   that selects the mode, so end-of-run analysis can divide each
+	 *   mode's rescue yield by the windows it actually ran without
+	 *   reconstructing the rotation history from the bandit_pulls_by_
+	 *   reason matrix.
 	 */
 	int plateau_intervention_mode_current;
 	unsigned long plateau_anti_prior_baseline_calls;
+	unsigned long plateau_intervention_rotation_counter;
+	unsigned long plateau_intervention_mode_windows[NR_PIM_MODES];
 
 	/*
 	 * Discounted "recent" counters that the UCB1 picker scores against

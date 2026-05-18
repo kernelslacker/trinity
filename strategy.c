@@ -919,33 +919,104 @@ int select_next_strategy(int prev,
 
 	if (mode == PICKER_BANDIT_UCB1 &&
 	    kcov_shm != NULL && kcov_shm->plateau_active) {
-		enum random_rescue_class amplified = dominant_rescue_class();
+		enum random_rescue_class amplified = RRC_NR_CLASSES;
+		enum plateau_intervention_mode pim;
+		unsigned long rot;
 		int arm;
 
-		/* Publish the amplified class BEFORE the reason store on
-		 * current_selection_reason in maybe_rotate_strategy.  The
-		 * rotation site stores current_selection_reason with
-		 * RELAXED ordering and pairs it with the current_strategy
-		 * RELEASE store, so a child observing the new strategy
-		 * also sees the freshly-published amplification class on
-		 * its next pick.  RRC_NR_CLASSES means "no class
-		 * dominant" and the children's gated reads at the bias
-		 * sites short-circuit to the unmodified behaviour. */
+		/* Round-robin among the three intervention modes.  The
+		 * fetch_add returns the PREVIOUS counter value, so each
+		 * rotation picks a mode cleanly without coordination
+		 * between concurrent rotations -- the CAS in
+		 * maybe_rotate_strategy already serialises which child
+		 * runs select_next_strategy in the first place, but the
+		 * fetch_add semantics keep the rotation correct even if a
+		 * future refactor lets multiple writers in.
+		 *
+		 * The counter only ticks during plateau windows, so a
+		 * fresh plateau picks up wherever the previous one left
+		 * off rather than always starting from PIM_UNIFORM_RANDOM
+		 * -- this matters when the plateau detector flaps between
+		 * active and inactive across consecutive rotations and an
+		 * always-from-zero counter would bias the early windows of
+		 * each plateau toward the same mode. */
+		rot = __atomic_fetch_add(
+			&shm->plateau_intervention_rotation_counter, 1UL,
+			__ATOMIC_RELAXED);
+		pim = (enum plateau_intervention_mode)(rot % NR_PIM_MODES);
+
+		switch (pim) {
+		case PIM_RRC_BIASED:
+			/* Random-rescue classifier dispatch path.  Reuses
+			 * the existing dominant_rescue_class +
+			 * amplified_intervention_arm pair so the classifier-
+			 * driven HEALER / HEURISTIC replay shape stays
+			 * exactly what landed when amplification was the only
+			 * intervention mode -- this commit changes the
+			 * SCHEDULING of when it runs, not its internals. */
+			amplified = dominant_rescue_class();
+			arm = amplified_intervention_arm(amplified);
+			break;
+		case PIM_ANTI_PRIOR:
+			/* Refresh the baseline at the rotation boundary so
+			 * the per-call accept gate inside set_syscall_nr_
+			 * random reads a value that matches the picker's
+			 * CURRENT distribution.  Recomputing every rotation
+			 * (rather than once-at-init) lets the bias track the
+			 * learned distribution as it drifts across the run.
+			 *
+			 * STRATEGY_RANDOM is the arm regardless of mode -- the
+			 * anti-prior bias rides per-call inside the random
+			 * picker, not at the strategy-selection layer. */
+			plateau_anti_prior_refresh_baseline();
+			arm = STRATEGY_RANDOM;
+			break;
+		case PIM_UNIFORM_RANDOM:
+		default:
+			/* Baseline mode: STRATEGY_RANDOM with no per-call
+			 * bias.  Kept as the third rotation slot so the A/B
+			 * comparison has an anchor -- without it,
+			 * "anti-prior helped" and "RRC-bias helped" both
+			 * reduce to comparisons against each other rather
+			 * than against the historical pre-classifier
+			 * intervention shape. */
+			arm = STRATEGY_RANDOM;
+			break;
+		}
+
+		/* Publish the amplified class and intervention mode BEFORE
+		 * the reason store on current_selection_reason in
+		 * maybe_rotate_strategy.  The rotation site stores
+		 * current_selection_reason with RELAXED ordering and pairs
+		 * it with the current_strategy RELEASE store, so a child
+		 * observing the new strategy also sees both freshly-
+		 * published fields on its next pick.  RRC_NR_CLASSES means
+		 * "no class dominant"; PIM_UNIFORM_RANDOM is published
+		 * outside the intervention branch below so the anti-prior
+		 * gate cannot stay latched on after the plateau lifts. */
 		__atomic_store_n(&shm->plateau_rescue_amplified_class,
 				 (int)amplified, __ATOMIC_RELAXED);
-
-		arm = amplified_intervention_arm(amplified);
+		__atomic_store_n(&shm->plateau_intervention_mode_current,
+				 (int)pim, __ATOMIC_RELAXED);
+		__atomic_fetch_add(
+			&shm->plateau_intervention_mode_windows[pim], 1UL,
+			__ATOMIC_RELAXED);
 		__atomic_fetch_add(&shm->stats.plateau_forced_windows, 1UL,
 				   __ATOMIC_RELAXED);
 		*reason_out = SR_PLATEAU_FORCE;
 		return arm;
 	}
 
-	/* Not in a plateau intervention -- clear the amplification so a
-	 * stale dominant class from a previous intervention does not bleed
-	 * into the structured pickers' hot paths after the plateau lifts. */
+	/* Not in a plateau intervention -- clear the amplification AND the
+	 * mode so neither the RRC bias dispatch nor the anti-prior accept
+	 * gate can stay latched on after the plateau lifts.  Both reset to
+	 * the "no bias" sentinel (RRC_NR_CLASSES / PIM_UNIFORM_RANDOM)
+	 * because their hot-path gates short-circuit cleanly on those
+	 * values. */
 	__atomic_store_n(&shm->plateau_rescue_amplified_class,
 			 (int)RRC_NR_CLASSES, __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->plateau_intervention_mode_current,
+			 (int)PIM_UNIFORM_RANDOM, __ATOMIC_RELAXED);
 
 	return pick_next_strategy(prev, reason_out);
 }
@@ -1358,6 +1429,58 @@ void dump_strategy_stats(void)
 	if (plateau_forced > 0)
 		output(0, "  plateau-forced windows: %lu (forced over picker via SR_PLATEAU_FORCE, excluded from UCB learner)\n",
 		       plateau_forced);
+
+	/* Plateau intervention mode rotation distribution.  Suppressed when
+	 * no plateau-forced window has run yet (plateau_forced == 0); when
+	 * it has, the per-mode window counts let the operator divide each
+	 * mode's contribution to rescue yield by the windows it actually
+	 * ran without reconstructing the rotation history from bandit_
+	 * pulls_by_reason.  The current mode line names what the next pick
+	 * during a live intervention would run; PIM_UNIFORM_RANDOM is the
+	 * resting value outside an intervention so a "current mode:
+	 * UNIFORM_RANDOM" reading at end-of-run is correct (the
+	 * orchestrator cleared the mode on the last non-intervention
+	 * rotation), not the most recent intervention mode. */
+	if (plateau_forced > 0) {
+		unsigned long mode_windows[NR_PIM_MODES];
+		int pim;
+		int cur_mode;
+
+		for (pim = 0; pim < NR_PIM_MODES; pim++)
+			mode_windows[pim] = __atomic_load_n(
+				&shm->plateau_intervention_mode_windows[pim],
+				__ATOMIC_RELAXED);
+
+		output(0, "  intervention modes:");
+		for (pim = 0; pim < NR_PIM_MODES; pim++)
+			output(0, " %s=%lu",
+			       plateau_intervention_mode_name(
+				       (enum plateau_intervention_mode)pim),
+			       mode_windows[pim]);
+		output(0, "\n");
+
+		cur_mode = __atomic_load_n(
+			&shm->plateau_intervention_mode_current,
+			__ATOMIC_RELAXED);
+		if (cur_mode >= 0 && cur_mode < NR_PIM_MODES)
+			output(0, "  intervention mode current: %s (live during an active plateau, resets to UNIFORM_RANDOM otherwise)\n",
+			       plateau_intervention_mode_name(
+				       (enum plateau_intervention_mode)cur_mode));
+
+		/* Anti-prior baseline (mean per-syscall call count cached at
+		 * the last PIM_ANTI_PRIOR rotation).  Zero means no
+		 * anti-prior rotation has fired yet; non-zero means the
+		 * accept gate has been live at some point with this
+		 * baseline value as the inversion midpoint. */
+		{
+			unsigned long ap_baseline = __atomic_load_n(
+				&shm->plateau_anti_prior_baseline_calls,
+				__ATOMIC_RELAXED);
+			if (ap_baseline > 0)
+				output(0, "  anti-prior baseline: %lu calls/syscall (mean across MAX_NR_SYSCALL at last refresh)\n",
+				       ap_baseline);
+		}
+	}
 
 	/* Random-rescue classifier distribution.  Per-class counts only
 	 * accumulate during SR_PLATEAU_FORCE intervention windows, so a
