@@ -30,7 +30,9 @@
  * user buffer.  rec->a3 (the deprecated tcache buffer) is not read by the
  * post handler and is therefore not snapshotted.
  */
+#define GETCPU_POST_STATE_MAGIC	0x47435055UL	/* "GCPU" */
 struct getcpu_post_state {
+	unsigned long magic;
 	unsigned long cpup;
 	unsigned long nodep;
 };
@@ -67,6 +69,7 @@ static void sanitise_getcpu(struct syscallrecord *rec)
 	 * a snapshot only the post handler can free would leak.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = GETCPU_POST_STATE_MAGIC;
 	snap->cpup  = rec->a1;
 	snap->nodep = rec->a2;
 	rec->post_state = (unsigned long) snap;
@@ -232,6 +235,23 @@ static void post_getcpu(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_getcpu: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * getcpu_post_state.  A cookie mismatch means snap does not point
+	 * at our struct -- abandon rather than feed wild bytes into the
+	 * inner-field deref.
+	 */
+	if (snap->magic != GETCPU_POST_STATE_MAGIC) {
+		outputerr("post_getcpu: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}

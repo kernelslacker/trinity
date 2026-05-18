@@ -28,7 +28,6 @@ syscalls/fgetxattr.c:fgetxattr
 syscalls/file_getattr.c:file_getattr
 syscalls/fstatfs.c:fstatfs
 syscalls/fstatfs.c:fstatfs64
-syscalls/getcpu.c:getcpu
 syscalls/getcwd.c:getcwd
 syscalls/get_mempolicy.c:get_mempolicy
 syscalls/getresgid.c:getresgid
