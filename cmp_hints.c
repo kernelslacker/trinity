@@ -393,17 +393,45 @@ static struct cmp_hints_pool_ondisk *cmp_hints_serialise(void)
 	return out;
 }
 
+static unsigned long cmp_hints_total_generation(void);
+
+/*
+ * Dirty-bit proxy for cmp_hints_save_file().  cmp_hints_total_generation()
+ * is the sum of pool->generation across all MAX_NR_SYSCALL pools;
+ * pool->generation increments once per pool_add_locked() call (insert OR
+ * duplicate-refresh), so the sum is monotonic and changes whenever any
+ * pool absorbs a comparison record.  When it equals the value at the last
+ * successful save, no pool has been touched and the on-disk image is
+ * bit-for-bit identical to what we would write.
+ *
+ * Initialised to ULONG_MAX so the first save in a process always fires;
+ * advanced on every successful save and seeded by the warm-start loader
+ * (which restores pool->generation from disk) so the
+ * load-then-immediate-exit cycle skips its end-of-run save.
+ *
+ * Parent-private: cmp_hints_maybe_snapshot() and the trinity.c shutdown
+ * save are both parent-context callers; no race with children.
+ */
+static unsigned long cmp_hints_generation_at_last_save = ULONG_MAX;
+
 bool cmp_hints_save_file(const char *path)
 {
 	struct cmp_hints_file_header hdr;
 	struct cmp_hints_pool_ondisk *payload;
 	char tmppath[PATH_MAX];
 	size_t payload_bytes;
+	unsigned long gen_now;
 	int fd;
 	int ret;
 
 	if (path == NULL || cmp_hints_shm == NULL)
 		return false;
+
+	gen_now = cmp_hints_total_generation();
+	if (gen_now == cmp_hints_generation_at_last_save) {
+		output(0, "cmp-hints: snapshot skipped, no pool changes since last save\n");
+		return true;
+	}
 
 	memset(&hdr, 0, sizeof(hdr));
 	if (!kcov_get_kernel_fp(hdr.kallsyms_sha256))
@@ -461,6 +489,7 @@ bool cmp_hints_save_file(const char *path)
 		return false;
 	}
 	free(payload);
+	cmp_hints_generation_at_last_save = gen_now;
 	return true;
 
 fail:
@@ -641,6 +670,11 @@ bool cmp_hints_load_file(const char *path)
 
 	free(payload);
 	cmp_hints_load_rejected_entries = rejected;
+	/* Seed the dirty-bit baseline so a load-then-immediate-exit cycle
+	 * skips the redundant end-of-run save.  The load loop already restored
+	 * each pool->generation from disk, so the current sum exactly reflects
+	 * the just-loaded state. */
+	cmp_hints_generation_at_last_save = cmp_hints_total_generation();
 	output(0, "cmp-hints: loaded %lu entries across %u syscalls from %s%s\n",
 	       loaded_entries, populated_pools, path,
 	       rejected ? " (rejected entries on warm-start: see counter)" : "");
