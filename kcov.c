@@ -956,17 +956,46 @@ static bool kcov_fingerprint_kernel(uint8_t out[32])
 	sha256_init(&ctx);
 	while (fgets(line, sizeof(line), f) != NULL) {
 		const char *p = line;
+		const char *name;
 		size_t len;
 
 		/* Skip the address column (one whitespace-delimited token)
 		 * and any whitespace that follows.  The remainder -- type,
 		 * name, optional [module], trailing newline -- is what we
-		 * hash.  A malformed all-whitespace line ends up hashing
-		 * the empty string and is fine. */
+		 * would consider hashing.  A malformed all-whitespace line
+		 * collapses to the empty string and is just skipped. */
 		while (*p && *p != ' ' && *p != '\t')
 			p++;
 		while (*p == ' ' || *p == '\t')
 			p++;
+
+		/* Filter to static built-in kernel symbols only.  Trinity's
+		 * own fuzzing of bpf(), kprobes, module loading, etc. adds
+		 * runtime entries to /proc/kallsyms whose presence (and even
+		 * whose names -- BPF JIT entries embed a per-load hash)
+		 * differs across runs of the same kernel binary.  If we hash
+		 * those, the fingerprint becomes a function of prior fuzz
+		 * activity and the warm-start invariant ("same kernel ->
+		 * same fingerprint") breaks. */
+
+		/* Module symbols carry a "[module-name]" suffix; static
+		 * built-in symbols never do. */
+		if (strchr(p, '[') != NULL)
+			continue;
+
+		/* Locate the symbol name: skip the single type char and the
+		 * whitespace separating it from the name. */
+		if (*p == '\0')
+			continue;
+		name = p + 1;
+		while (*name == ' ' || *name == '\t')
+			name++;
+
+		/* BPF JIT programs / trampolines appear as bpf_prog_<hash>
+		 * and bpf_trampoline_<id>; both vary per load. */
+		if (strncmp(name, "bpf_prog_", 9) == 0 ||
+		    strncmp(name, "bpf_trampoline_", 15) == 0)
+			continue;
 
 		len = strlen(p);
 		if (len > 0)
