@@ -640,6 +640,12 @@ static void init_child(struct childdata *child, int childno)
 	 * working; only children get the read-only view. */
 	healer_published_freeze();
 
+	/* Same shape for the edgepair published mirror: edgepair_is_cold
+	 * is the lone child-side reader, the parent's drain is the lone
+	 * writer, and the mirror-integrity sample at edgepair_publish_locked
+	 * already documents the PROT_READ contract. */
+	edgepair_published_freeze();
+
 	/* Wait for parent to set our childno */
 	while (__atomic_load_n(&pids[childno], __ATOMIC_ACQUIRE) != pid) {
 		sched_yield();

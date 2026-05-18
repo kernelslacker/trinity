@@ -22,12 +22,14 @@
  * on drain).
  */
 
+#include <errno.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
+#include "arch.h"		/* page_size */
 #include "child.h"
 #include "edgepair.h"
 #include "edgepair_ring.h"
@@ -276,4 +278,43 @@ void edgepair_published_init(void)
 		edgepair_published->slots[i].prev_nr = EDGEPAIR_EMPTY;
 		edgepair_published->slots[i].curr_nr = EDGEPAIR_EMPTY;
 	}
+}
+
+/*
+ * Per-child mprotect freeze of the edgepair mirror page.  The mirror
+ * is intended parent-write / child-read (edgepair_is_cold reads
+ * total_pair_calls + the matching slot's new_edge_count / last_new_at
+ * off this page on the syscall-selection biasing path; the parent's
+ * drain in edgepair_publish_locked() is the sole writer).  The
+ * mirror-integrity sample at the bottom of that function documents
+ * the PROT_READ contract -- "the only thing that could write to the
+ * mirror between publishes is a wild kernel store, and the PROT_READ
+ * mprotect should SEGV that in the offending child instead" -- but
+ * the matching mprotect() call was missing, leaving the contract as
+ * comment only.
+ *
+ * Called from the per-child post-fork init hook so the freeze applies
+ * in child address space.  mprotect is per-process, so the parent's
+ * mapping stays PROT_READ|PROT_WRITE and the drain's publish keeps
+ * writing through; only children see the read-only view.
+ *
+ * Best-effort on failure: log via the canonical helper and continue.
+ * mprotect can ENOMEM if the kernel runs out of VMA slots splitting
+ * the mapping that backs the mirror (same failure mode as the
+ * freeze_sibling_childdata sweep) and turning a transient kernel
+ * limit into a fleet-wide crash would be worse than leaving the
+ * mirror RW for the lifetime of the affected child.
+ */
+void edgepair_published_freeze(void)
+{
+	size_t bytes;
+
+	if (edgepair_published == NULL)
+		return;
+
+	bytes = sizeof(struct edgepair_published);
+	bytes = (bytes + page_size - 1) & PAGE_MASK;
+	if (mprotect(edgepair_published, bytes, PROT_READ) != 0)
+		log_mprotect_failure(edgepair_published, bytes, PROT_READ,
+				     __builtin_return_address(0), errno);
 }

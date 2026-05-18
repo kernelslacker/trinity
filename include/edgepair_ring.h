@@ -157,3 +157,16 @@ void edgepair_ring_drain_all(void);
  * Allocate the mirror page.  Called from init_shm().
  */
 void edgepair_published_init(void);
+
+/*
+ * Mprotect the mirror page PROT_READ in the calling process.  Called
+ * from the per-child post-fork init hook so children see the mirror
+ * read-only -- a wild kernel store through a fuzzed syscall arg
+ * pointer that lands in the mirror page now SIGSEGVs in the offending
+ * child instead of silently corrupting edgepair_is_cold's view of the
+ * (prev, curr) hot/cold table.  The parent's mapping stays RW
+ * (mprotect is per-process) so the drain-side publish keeps working
+ * unchanged.  Best-effort: logs and continues on failure rather than
+ * crashing the child.
+ */
+void edgepair_published_freeze(void);
