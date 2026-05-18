@@ -1146,12 +1146,32 @@ bool kcov_bitmap_load_file(const char *path)
 		return false;
 	}
 
-	if (hdr.magic != KCOV_BITMAP_FILE_MAGIC ||
-	    hdr.version != KCOV_BITMAP_FILE_VERSION ||
-	    hdr.num_edges != KCOV_NUM_EDGES ||
-	    hdr.num_buckets != KCOV_NUM_BUCKETS ||
-	    memcmp(hdr.kallsyms_sha256, cur_fp, sizeof(cur_fp)) != 0) {
-		output(0, "kcov-bitmap: skipping warm-start of %s -- fingerprint/dims mismatch\n",
+	if (hdr.magic != KCOV_BITMAP_FILE_MAGIC) {
+		output(0, "kcov-bitmap: file magic 0x%08x != expected 0x%08x at %s -- cold start\n",
+		       hdr.magic, KCOV_BITMAP_FILE_MAGIC, path);
+		(void)close(fd);
+		return false;
+	}
+	if (hdr.version != KCOV_BITMAP_FILE_VERSION) {
+		output(0, "kcov-bitmap: file version %u != expected %u at %s -- cold start\n",
+		       hdr.version, KCOV_BITMAP_FILE_VERSION, path);
+		(void)close(fd);
+		return false;
+	}
+	if (hdr.num_edges != KCOV_NUM_EDGES) {
+		output(0, "kcov-bitmap: num_edges %u != expected %u at %s (file built with a different KCOV_NUM_EDGES) -- cold start\n",
+		       hdr.num_edges, KCOV_NUM_EDGES, path);
+		(void)close(fd);
+		return false;
+	}
+	if (hdr.num_buckets != KCOV_NUM_BUCKETS) {
+		output(0, "kcov-bitmap: num_buckets %u != expected %u at %s (file built with a different KCOV_NUM_BUCKETS) -- cold start\n",
+		       hdr.num_buckets, KCOV_NUM_BUCKETS, path);
+		(void)close(fd);
+		return false;
+	}
+	if (memcmp(hdr.kallsyms_sha256, cur_fp, sizeof(cur_fp)) != 0) {
+		output(0, "kcov-bitmap: kernel fingerprint mismatch at %s (kallsyms content differs from when the file was written) -- cold start\n",
 		       path);
 		(void)close(fd);
 		return false;
