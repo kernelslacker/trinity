@@ -157,7 +157,7 @@ static int open_drm_fd(void)
 		return false;
 
 	obj = get_random_object(OBJ_FD_DRM, OBJ_GLOBAL);
-	if (obj == NULL)
+	if (!objpool_check(obj, OBJ_FD_DRM))
 		return false;
 	base_fd = obj->drmfd;
 
@@ -185,7 +185,7 @@ static int get_rand_drm_fd(void)
 		return -1;
 
 	obj = get_random_object(OBJ_FD_DRM, OBJ_GLOBAL);
-	if (obj == NULL)
+	if (!objpool_check(obj, OBJ_FD_DRM))
 		return -1;
 	return obj->drmfd;
 }
