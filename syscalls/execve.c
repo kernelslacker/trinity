@@ -31,7 +31,9 @@
  * values immune to a sibling syscall scribbling rec->a2/a3/a4 between the
  * syscall returning and the post handler running.
  */
+#define EXECVE_POST_STATE_MAGIC	0x455845435F4D4147UL	/* "EXEC_MAG" */
 struct execve_post_state {
+	unsigned long magic;
 	void **argv;
 	void **envp;
 	unsigned long argvcount;
@@ -212,6 +214,7 @@ static void sanitise_execve(struct syscallrecord *rec)
 	 * execve_post_state.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = EXECVE_POST_STATE_MAGIC;
 	snap->argv = (void **) argv;
 	snap->envp = (void **) envp;
 	snap->argvcount = argvcount;
@@ -272,6 +275,22 @@ static void post_execve(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_execve: rejected suspicious post_state=%p "
 			  "(pid-scribbled?)\n", snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * execve_post_state.  A cookie mismatch means snap does not point
+	 * at our struct -- bail without freeing, the pointer is suspect.
+	 */
+	if (snap->magic != EXECVE_POST_STATE_MAGIC) {
+		outputerr("post_execve: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
@@ -364,6 +383,20 @@ static void post_execveat(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_execveat: rejected suspicious post_state=%p "
 			  "(pid-scribbled?)\n", snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/* See post_execve() — magic-cookie gate against a sibling
+	 * scribble redirecting rec->post_state to a foreign heap-shaped
+	 * allocation that would otherwise pose as our struct.  Bail
+	 * without freeing on mismatch; the pointer is suspect.
+	 */
+	if (snap->magic != EXECVE_POST_STATE_MAGIC) {
+		outputerr("post_execveat: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
