@@ -40,7 +40,10 @@ static void sanitise_quotactl_fd(struct syscallrecord *rec)
 			dqb->dqb_isoftlimit = rand() % 100000;
 		}
 		rec->a4 = (unsigned long) dqb;
-		avoid_shared_buffer(&rec->a4, sizeof(*dqb));
+		/* Shared branch: Q_SETQUOTA input bytes must survive
+		 * the relocation -- use _inout.  See quotactl.c for the
+		 * full rationale. */
+		avoid_shared_buffer_inout(&rec->a4, sizeof(*dqb));
 		break;
 	}
 	case Q_GETINFO:
@@ -55,7 +58,9 @@ static void sanitise_quotactl_fd(struct syscallrecord *rec)
 			dqi->dqi_igrace = 3600 * (1 + (rand() % 168));
 		}
 		rec->a4 = (unsigned long) dqi;
-		avoid_shared_buffer(&rec->a4, sizeof(*dqi));
+		/* Same shape as the dqb branch above: Q_SETINFO carries
+		 * input bytes -- use _inout. */
+		avoid_shared_buffer_inout(&rec->a4, sizeof(*dqi));
 		break;
 	}
 	case Q_GETFMT: {
