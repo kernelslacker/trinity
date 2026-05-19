@@ -1203,7 +1203,7 @@ static const enum child_op_type alt_op_rotation[] = {
 };
 #define NR_ALT_OP_ROTATION	ARRAY_SIZE(alt_op_rotation)
 
-static const char *alt_op_name(enum child_op_type op)
+const char *alt_op_name(enum child_op_type op)
 {
 	switch (op) {
 	case CHILD_OP_SYSCALL:		return "syscall";
@@ -1312,6 +1312,30 @@ static const char *alt_op_name(enum child_op_type op)
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
+}
+
+/*
+ * Reverse of alt_op_name(): looks up an op by its string form (as
+ * emitted by alt_op_name) and returns the matching enum value.  Used
+ * by the --canary-seed CLI flag parser to translate operator-supplied
+ * op names into an override seed list.  Linear scan over
+ * NR_CHILD_OP_TYPES; called at most a few times at startup, never on
+ * the hot path.  Returns NR_CHILD_OP_TYPES when no match is found so
+ * the caller can distinguish "unknown name" from any real enum value.
+ */
+enum child_op_type alt_op_lookup_by_name(const char *name)
+{
+	unsigned int i;
+
+	if (name == NULL || *name == '\0')
+		return NR_CHILD_OP_TYPES;
+
+	for (i = 0; i < NR_CHILD_OP_TYPES; i++) {
+		const char *n = alt_op_name((enum child_op_type)i);
+		if (n != NULL && strcmp(n, name) == 0)
+			return (enum child_op_type)i;
+	}
+	return NR_CHILD_OP_TYPES;
 }
 
 void assign_dedicated_alt_op(struct childdata *child, int childno)

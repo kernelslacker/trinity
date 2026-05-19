@@ -35,6 +35,16 @@ unsigned int alt_op_children = 0;
 unsigned int explorer_children = 0;
 bool user_specified_explorer_children = false;
 
+/* Canary queue knobs.  Defaults match the design doc and the
+ * CANARY_WINDOW_ITERS_DEFAULT / canary_slots-default constants in
+ * child-canary.c.  Operator overrides land in --canary-slots /
+ * --canary-window / --no-canary-queue / --canary-seed. */
+unsigned int canary_slots = 1;
+unsigned int canary_window_iters = 10000;
+bool canary_queue_disabled = false;
+unsigned char canary_seed_override[CANARY_SEED_OVERRIDE_MAX];
+unsigned int canary_seed_override_count = 0;
+
 bool do_specific_domain = false;
 bool no_domains[TRINITY_PF_MAX];
 
@@ -372,6 +382,9 @@ static const struct option_help option_descs[] = {
 	{ "alt-op-children",	 0,  "reserve N children to run dedicated alt ops (mmap_lifecycle, mprotect_split, ...) round-robin instead of mixing them at 1% in every child" },
 	{ "arch",		'a', "selects syscalls for the specified architecture (32 or 64). Both by default." },
 	{ "bdev",		'b', "Add /dev node to list of block devices to use for destructive tests." },
+	{ "canary-seed",	 0,  "comma-separated list of childop names to override the built-in wave-1 canary seed list. Names match alt_op_name (e.g. 'genetlink_fuzzer,bpf_lifecycle'). Unknown names abort startup." },
+	{ "canary-slots",	 0,  "reserve N slots from the front of --alt-op-children to run the dormant-op canary queue (default 1). Clamped to min(N, alt_op_children); N=0 disables the queue identically to --no-canary-queue." },
+	{ "canary-window",	 0,  "iterations per canary window (default 10000, range 1000..1000000). Lower windows are too noisy to promote on; higher windows let a useless op squat a slot for too long." },
 	{ "children",		'C', "specify number of child processes" },
 	{ "clowntown",		 0,  "enable clowntown mode" },
 	{ "dangerous",		'd', "enable dangerous mode" },
@@ -396,6 +409,7 @@ static const struct option_help option_descs[] = {
 	{ "memory-max",		 0,  "total trinity memory budget. Split into children/memory.max=<this>-parent_high and a small parent reservation parent_high=min(200M,this/16) so worker OOM doesn't take the parent. Accepts \"max\", N% of MemTotal, or N[KMG] bytes. Default: 60%." },
 	{ "memory-swap-max",	 0,  "children/memory.swap.max cap (workers cgroup). Accepts \"max\", N% of MemTotal, or N[KMG] bytes. Default: 20%." },
 	{ "no-cgroup",		 0,  "skip self-cgroup creation entirely (no in-binary memory containment)" },
+	{ "no-canary-queue",	 0,  "disable the dormant-childop canary queue entirely; the dormant gate is consulted as a static compile-time vector and no canary slots are reserved." },
 	{ "domain",		'P', "specify specific network domain for sockets" },
 	{ "quiet",		'q', "suppress the per-second progress line (other output unchanged)" },
 	{ "no_domain",		'E', "specify network domains to be excluded from testing" },
@@ -458,6 +472,9 @@ static const struct option longopts[] = {
 	{ "alt-op-children", required_argument, NULL, 0 },
 	{ "arch", required_argument, NULL, 'a' },
 	{ "bdev", required_argument, NULL, 'b' },
+	{ "canary-seed", required_argument, NULL, 0 },
+	{ "canary-slots", required_argument, NULL, 0 },
+	{ "canary-window", required_argument, NULL, 0 },
 	{ "children", required_argument, NULL, 'C' },
 	{ "clowntown", no_argument, NULL, 0 },
 	{ "dangerous", no_argument, NULL, 'd' },
@@ -481,6 +498,7 @@ static const struct option longopts[] = {
 	{ "memory-max", required_argument, NULL, 0 },
 	{ "memory-swap-max", required_argument, NULL, 0 },
 	{ "no-cgroup", no_argument, NULL, 0 },
+	{ "no-canary-queue", no_argument, NULL, 0 },
 	{ "ioctls", no_argument, NULL, 'I' },
 	{ "no_domain", required_argument, NULL, 'E' },
 	{ "domain", required_argument, NULL, 'P' },
@@ -747,6 +765,73 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("clowntown", longopts[opt_index].name) == 0)
 				clowntown = true;
+
+			if (strcmp("canary-slots", longopts[opt_index].name) == 0) {
+				unsigned long val;
+
+				if (!parse_unsigned(optarg, "canary-slots", true, &val))
+					exit(EXIT_FAILURE);
+				if (val > UINT_MAX) {
+					outputerr("--canary-slots value %lu exceeds UINT_MAX\n", val);
+					exit(EXIT_FAILURE);
+				}
+				canary_slots = (unsigned int)val;
+			}
+
+			if (strcmp("canary-window", longopts[opt_index].name) == 0) {
+				unsigned long val;
+
+				if (!parse_unsigned(optarg, "canary-window", false, &val))
+					exit(EXIT_FAILURE);
+				if (val < 1000 || val > 1000000) {
+					outputerr("--canary-window=%lu out of range (1000..1000000)\n", val);
+					exit(EXIT_FAILURE);
+				}
+				canary_window_iters = (unsigned int)val;
+			}
+
+			if (strcmp("no-canary-queue", longopts[opt_index].name) == 0)
+				canary_queue_disabled = true;
+
+			if (strcmp("canary-seed", longopts[opt_index].name) == 0) {
+				/* Parse a comma-separated list of childop names
+				 * into canary_seed_override[].  Names match
+				 * alt_op_name() output (e.g.
+				 * "genetlink_fuzzer,bpf_lifecycle").  Unknown
+				 * names are fatal -- the operator typed something
+				 * and we owe them a clean error, not a silent
+				 * skip that runs the wrong seed list. */
+				char *dup = strdup(optarg);
+				char *tok, *save = NULL;
+
+				if (dup == NULL) {
+					outputerr("strdup failed\n");
+					exit(EXIT_FAILURE);
+				}
+				canary_seed_override_count = 0;
+				for (tok = strtok_r(dup, ",", &save);
+				     tok != NULL;
+				     tok = strtok_r(NULL, ",", &save)) {
+					enum child_op_type op;
+
+					if (canary_seed_override_count >=
+					    CANARY_SEED_OVERRIDE_MAX) {
+						outputerr("--canary-seed: too many entries (max %d)\n",
+							CANARY_SEED_OVERRIDE_MAX);
+						exit(EXIT_FAILURE);
+					}
+					op = alt_op_lookup_by_name(tok);
+					if (op == NR_CHILD_OP_TYPES ||
+					    op == CHILD_OP_SYSCALL) {
+						outputerr("--canary-seed: unknown childop name '%s'\n",
+							tok);
+						exit(EXIT_FAILURE);
+					}
+					canary_seed_override[canary_seed_override_count++] =
+						(unsigned char)op;
+				}
+				free(dup);
+			}
 
 			if (strcmp("explorer-children", longopts[opt_index].name) == 0) {
 				char *end;

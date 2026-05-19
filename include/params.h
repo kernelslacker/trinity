@@ -68,6 +68,23 @@ extern bool kernel_taint_param_occured;
 extern unsigned int user_specified_children;
 extern unsigned int alt_op_children;
 
+/* Canary queue (child-canary.c).  canary_slots is carved from the
+ * front of the alt_op_children pool: the first canary_slots dedicated
+ * alt-op slots are stamped with the queue's currently-canarying op
+ * instead of the alt_op_rotation[] entry they would otherwise use.
+ * canary_window_iters is the iteration budget per canary window.
+ * canary_queue_disabled forces the queue to behave as a no-op (the
+ * dormant gate is consulted as the historical compile-time-static
+ * vector).  canary_seed_override / canary_seed_override_count is the
+ * --canary-seed override list, parsed at startup; when count is zero
+ * the queue uses the built-in wave-1 seed list. */
+extern unsigned int canary_slots;
+extern unsigned int canary_window_iters;
+extern bool canary_queue_disabled;
+#define CANARY_SEED_OVERRIDE_MAX	32
+extern unsigned char canary_seed_override[CANARY_SEED_OVERRIDE_MAX];
+extern unsigned int canary_seed_override_count;
+
 /*
  * Hybrid bandit/explorer split: when --strategy=bandit is in effect, the
  * first `explorer_children` child slots ignore the bandit's pick and run

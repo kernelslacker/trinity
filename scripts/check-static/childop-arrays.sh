@@ -62,7 +62,7 @@ fi
 
 # Count case labels in alt_op_name().
 altname_count=$(awk '
-	/static const char \*alt_op_name\(/ { inside = 1; brace = 0; next }
+	/(static[[:space:]]+)?const char \*alt_op_name\(/ { inside = 1; brace = 0; next }
 	inside && /\{/  { brace++ }
 	inside && /\}/  { brace--; if (brace == 0) inside = 0 }
 	inside && /^\s*case CHILD_OP_[A-Z0-9_]+\s*:/ { print }

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include <time.h>
 #include "types.h"
 #include "cmp_hints.h"
 #include "edgepair.h"
@@ -656,8 +657,79 @@ void log_alt_op_config(void);
 /* init_altop_dispatch() builds the dense vector of currently-enabled
  * alt-ops from dormant_op_disabled[].  Must run before pick_op_type()
  * is first invoked (i.e. before fork_children); a fresh call is required
- * if dormant gates ever become runtime mutable. */
+ * if dormant gates ever become runtime mutable -- the canary queue
+ * re-invokes it on every state transition that mutates the gate.  See
+ * child-canary.c. */
 void init_altop_dispatch(void);
+
+/* String form of a child_op_type for log/diagnostic output.  Returns
+ * a stable string literal; the returned pointer is never freed.
+ * alt_op_lookup_by_name() is the inverse: returns NR_CHILD_OP_TYPES
+ * if the name is unknown.  Lives in child.c next to the op tables. */
+const char *alt_op_name(enum child_op_type op);
+enum child_op_type alt_op_lookup_by_name(const char *name);
+
+/* ---- Canary queue (child-canary.c) ---------------------------------
+ *
+ * Promotes dormant childops by reserving a small number of canary
+ * child slots (carved from the front of the --alt-op-children pool),
+ * running one dormant op at a time for a fixed iteration budget, and
+ * flipping dormant_op_disabled[] when the op proves itself by
+ * producing edges without self-crashing.  Parent-private state; the
+ * children only observe the queue's effect via the existing
+ * enabled_altops[] dense vector init_altop_dispatch() rebuilds.
+ */
+enum canary_state {
+	CANARY_STATE_DORMANT = 0,	/* in queue, not currently running */
+	CANARY_STATE_CANARYING,		/* currently in canary window */
+	CANARY_STATE_PROMOTED,		/* graduated into random picker */
+	CANARY_STATE_DEMOTED,		/* failed window; backoff before re-queue */
+	CANARY_STATE_CONFIG_BLOCKED,	/* terminal: kconfig/prereq absent */
+};
+
+struct canary_op_state {
+	/* identity */
+	enum child_op_type op;		/* keyed by op enum */
+	const char *name;		/* cached alt_op_name(op) for log lines */
+	enum canary_state state;
+
+	/* per-window counters (reset on CANARYING entry) */
+	unsigned long window_start_op_count;	/* per-op fleet op counter snapshot */
+	unsigned long window_start_edges;	/* childop_edges_discovered[op] snapshot */
+	unsigned int  window_crashes;		/* incremented by parent reap path */
+	unsigned int  consecutive_zero_edge_windows;
+
+	/* cumulative diagnostics */
+	unsigned int  canary_iterations;	/* lifetime windows entered */
+	unsigned int  total_promotions;
+	unsigned int  total_demotions;
+
+	/* timestamps (CLOCK_MONOTONIC seconds, parent context) */
+	time_t        last_state_transition;
+	time_t        last_canary_window_start;
+
+	/* Set at startup for ops the audit flagged as needing isolation
+	 * (root-only / inner fork / SR-IOV / driver-binding prereq).  The
+	 * picker silently skips entries with this bit set; the dormant
+	 * gate is left untouched so the op behaves identically to before
+	 * the queue existed. */
+	bool          phase1_ineligible;
+};
+
+void canary_queue_init(void);
+void canary_queue_tick(void);
+void canary_queue_summary(void);
+void canary_queue_on_crash(int childno, int signo);
+void canary_queue_on_child_respawn(int childno);
+
+/* Predicate used by the dedicated-alt-op stamping path: returns true
+ * if the given child slot is reserved as a canary slot AND the queue
+ * is currently running an op.  When true, the caller stamps
+ * child->op_type with canary_active_op() rather than the
+ * alt_op_rotation[] entry it would otherwise use.  Returns false when
+ * the queue is disabled (--no-canary-queue or canary_slots==0). */
+bool canary_slot_active(int childno);
+enum child_op_type canary_active_op(void);
 
 void set_dontkillme(struct childdata *child, bool state);
 
