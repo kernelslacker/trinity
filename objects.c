@@ -539,6 +539,19 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	}
 
 	/*
+	 * Stamp the pool tag now that the obj has passed the fd-bound
+	 * gate and is about to enter a pool.  Read back by
+	 * objpool_check() in consumers (the post-2026-05-18 audit sweep
+	 * across fds/ + syscalls/keyctl.c + childops/kvm-run-churn.c)
+	 * to catch wild-obj-pointer derefs the loose 47-bit VA-range
+	 * shape check lets through.  release_obj()'s memset zeroes the
+	 * chunk on the way back to the deferred-free ring, which
+	 * naturally invalidates the tag to OBJ_NONE for any future
+	 * stale-pointer reader.
+	 */
+	obj->obj_type = type;
+
+	/*
 	 * OBJ_GLOBAL is pre-fork-only by construction: every provider
 	 * REG_GLOBAL_OBJ init runs in the parent before fork_children(),
 	 * and the per-child snapshot is taken at fork time.  A post-fork

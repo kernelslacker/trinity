@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 #include "compiler.h"
 #include "futex.h"
@@ -222,6 +223,17 @@ struct sysvmsgobj {
 };
 
 struct object {
+	/*
+	 * Per-obj pool tag.  First field so consumers can spot-check
+	 * obj->obj_type before dereferencing any union member.  Set by
+	 * add_object() once the obj has passed the fd-bound gate and is
+	 * about to enter a pool, and naturally invalidated back to
+	 * OBJ_NONE (the enum-zero sentinel) by release_obj()'s memset
+	 * when an obj is torn down or rejected at insert time, so a
+	 * stale pointer into a recycled chunk reads as OBJ_NONE and
+	 * fails the canonical objpool_check() below.
+	 */
+	enum objecttype obj_type;
 	unsigned int array_idx;		/* index in objhead->array */
 	union {
 		struct map map;
@@ -425,6 +437,43 @@ void init_object_lists(enum obj_scope scope, struct childdata *child);
 void clone_global_objects_to_child(struct childdata *child);
 
 struct object * get_random_object(enum objecttype type, enum obj_scope scope) __must_check;
+
+/*
+ * Canonical shape check before dereferencing an obj returned by
+ * get_random_object().  Defends the fds/ and adjacent consumer
+ * sites from the wild-obj-pointer class of failure catalogued in the
+ * 2026-05-18 objpool shape-check audit: a slot the lockless picker
+ * resolved to an address that happens to land in the user/heap VA
+ * window but doesn't actually name a live obj of the expected pool
+ * (typically because the parent destroyed the obj and the shared-heap
+ * freelist recycled the chunk underneath the reader, or because
+ * memory corruption stomped a slot pointer).
+ *
+ * Three layers, cheapest first:
+ *   1. NULL — the lockless picker can return NULL legitimately on an
+ *      empty pool, and consumers must skip such picks.
+ *   2. VA-range — heap pointers land at >= 0x10000 and below the
+ *      47-bit user/kernel boundary on every distro we exercise;
+ *      anything outside that window can't be a real obj struct.
+ *   3. Pool tag — obj->obj_type must equal the type the caller asked
+ *      for.  Catches the cross-pool recycling case the VA-range gate
+ *      cannot, and reads OBJ_NONE (== 0) for a free/zero'd chunk
+ *      after release_obj()'s memset.
+ *
+ * Returns true if obj is safe to dereference as the expected type.
+ */
+static inline bool objpool_check(const struct object *obj,
+				 enum objecttype expected)
+{
+	if (obj == NULL)
+		return false;
+	if ((uintptr_t)obj < 0x10000UL ||
+	    (uintptr_t)obj >= 0x800000000000UL)
+		return false;
+	if (obj->obj_type != expected)
+		return false;
+	return true;
+}
 
 bool objects_empty(enum objecttype type);
 struct objhead * get_objhead(enum obj_scope scope, enum objecttype type) __must_check;
