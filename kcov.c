@@ -220,16 +220,24 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	 */
 	if (kc->active) {
 		kc->cmp_fd = open("/sys/kernel/debug/kcov", O_RDWR);
-		if (kc->cmp_fd >= 0) {
+		if (kc->cmp_fd < 0) {
+			output(0, "KCOV CMP probe: open(/sys/kernel/debug/kcov) failed (errno=%d %s) -- cmp disabled\n",
+			       errno, strerror(errno));
+		} else {
 			if (ioctl(kc->cmp_fd, KCOV_INIT_TRACE,
-					(unsigned long)KCOV_CMP_BUFFER_SIZE) < 0)
+					(unsigned long)KCOV_CMP_BUFFER_SIZE) < 0) {
+				output(0, "KCOV CMP probe: KCOV_INIT_TRACE failed (errno=%d %s) -- cmp disabled\n",
+				       errno, strerror(errno));
 				goto err_close_cmp;
+			}
 
 			kc->cmp_trace_buf = mmap(NULL,
 				KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long),
 				PROT_READ | PROT_WRITE, MAP_SHARED,
 				kc->cmp_fd, 0);
 			if (kc->cmp_trace_buf == MAP_FAILED) {
+				output(0, "KCOV CMP probe: mmap failed (errno=%d %s) -- cmp disabled\n",
+				       errno, strerror(errno));
 				kc->cmp_trace_buf = NULL;
 				goto err_close_cmp;
 			}
@@ -237,10 +245,16 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 			/* Probe KCOV_TRACE_CMP support.  An older kernel
 			 * without CMP returns -ENOTSUPP from ENABLE; tear
 			 * down the cmp fd and leave cmp_capable = false. */
-			if (ioctl(kc->cmp_fd, KCOV_ENABLE, KCOV_TRACE_CMP) < 0)
+			if (ioctl(kc->cmp_fd, KCOV_ENABLE, KCOV_TRACE_CMP) < 0) {
+				output(0, "KCOV CMP probe: KCOV_ENABLE(KCOV_TRACE_CMP) failed (errno=%d %s) -- cmp disabled\n",
+				       errno, strerror(errno));
 				goto err_unmap_cmp;
-			if (ioctl(kc->cmp_fd, KCOV_DISABLE, 0) < 0)
+			}
+			if (ioctl(kc->cmp_fd, KCOV_DISABLE, 0) < 0) {
+				output(0, "KCOV CMP probe: KCOV_DISABLE failed (errno=%d %s) -- cmp disabled\n",
+				       errno, strerror(errno));
 				goto err_unmap_cmp;
+			}
 
 			kc->cmp_capable = true;
 			track_shared_region((unsigned long)kc->cmp_trace_buf,
