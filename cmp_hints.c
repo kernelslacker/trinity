@@ -439,6 +439,9 @@ bool cmp_hints_save_file(const char *path)
 	char tmppath[PATH_MAX];
 	size_t payload_bytes;
 	unsigned long gen_now;
+	unsigned long saved_entries;
+	unsigned int populated_pools;
+	unsigned int i;
 	int fd;
 	int ret;
 
@@ -458,6 +461,18 @@ bool cmp_hints_save_file(const char *path)
 	payload = cmp_hints_serialise();
 	if (payload == NULL)
 		return false;
+
+	/* Counted off the on-disk image so the success log mirrors what
+	 * the warm-start loader will print on the next run.  Cheap relative
+	 * to the fsync that follows. */
+	saved_entries = 0;
+	populated_pools = 0;
+	for (i = 0; i < MAX_NR_SYSCALL; i++) {
+		if (payload[i].count > 0) {
+			saved_entries += payload[i].count;
+			populated_pools++;
+		}
+	}
 
 	payload_bytes = (size_t)MAX_NR_SYSCALL * sizeof(*payload);
 
@@ -508,6 +523,8 @@ bool cmp_hints_save_file(const char *path)
 	}
 	free(payload);
 	cmp_hints_generation_at_last_save = gen_now;
+	output(0, "cmp-hints: snapshot saved (%lu entries across %u syscalls) to %s\n",
+	       saved_entries, populated_pools, path);
 	return true;
 
 fail:
