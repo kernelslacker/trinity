@@ -31,7 +31,9 @@
  * handler running cannot retarget the pid self-filter or redirect the
  * oracle at a foreign head_ptr / len_ptr user buffer.
  */
+#define GET_ROBUST_LIST_POST_STATE_MAGIC	0x4752424CUL	/* "GRBL" */
 struct get_robust_list_post_state {
+	unsigned long magic;
 	unsigned long pid;
 	unsigned long head_ptr;
 	unsigned long len_ptr;
@@ -75,6 +77,7 @@ static void sanitise_get_robust_list(struct syscallrecord *rec)
 	 * leak.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic    = GET_ROBUST_LIST_POST_STATE_MAGIC;
 	snap->pid      = rec->a1;
 	snap->head_ptr = rec->a2;
 	snap->len_ptr  = rec->a3;
@@ -144,6 +147,24 @@ static void post_get_robust_list(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_get_robust_list: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * get_robust_list_post_state.  A cookie mismatch means snap does
+	 * not point at our struct -- abandon without freeing rather than
+	 * feed wild bytes into the pid self-filter or the head_ptr/len_ptr
+	 * memcpy (and don't deferred_freeptr() a pointer we don't own).
+	 */
+	if (snap->magic != GET_ROBUST_LIST_POST_STATE_MAGIC) {
+		outputerr("post_get_robust_list: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
