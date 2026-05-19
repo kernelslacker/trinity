@@ -275,15 +275,8 @@ static int get_rand_canary_fd(void)
 		int fd;
 
 		obj = get_random_object(OBJ_FD_CANARY, OBJ_GLOBAL);
-		if (obj == NULL)
+		if (!objpool_check(obj, OBJ_FD_CANARY))
 			continue;
-
-		if ((uintptr_t)obj < 0x10000UL ||
-		    (uintptr_t)obj >= 0x800000000000UL) {
-			outputerr("get_rand_canary_fd: bogus obj %p in "
-				  "OBJ_FD_CANARY pool\n", obj);
-			continue;
-		}
 
 		fd = obj->fileobj.fd;
 		if (fd < 0)
