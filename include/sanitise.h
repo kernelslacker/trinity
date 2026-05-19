@@ -23,6 +23,23 @@ void *get_address(void);
 void *get_non_null_address(void);
 void *get_writable_address(unsigned long size);
 void *get_writable_struct(size_t size);
+/*
+ * Output-only redirect: relocate *addr away from shared/heap if it
+ * overlaps, without copying the original bytes. Use for buffers the
+ * kernel writes (read, recv, getdents, getsockname, …).
+ */
+void avoid_shared_buffer_out(unsigned long *addr, unsigned long len);
+/*
+ * Input or value-result redirect: relocate AND memcpy the original
+ * bytes into the replacement before rewriting the pointer. Use for
+ * buffers the kernel reads from (or both reads and writes).
+ */
+void avoid_shared_buffer_inout(unsigned long *addr, unsigned long len);
+/*
+ * Transitional shim around avoid_shared_buffer_out(). New code must
+ * pick one of the explicit _out / _inout variants above; this symbol
+ * is scheduled for deletion once every existing caller is migrated.
+ */
 void avoid_shared_buffer(unsigned long *addr, unsigned long len);
 void scrub_iovec_for_kernel_write(struct iovec *iov, unsigned long count);
 void scrub_msghdr_for_kernel_write(struct msghdr *msg);

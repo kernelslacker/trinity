@@ -281,10 +281,36 @@ void * get_writable_struct(size_t size)
  * the address out for a known-safe one before the syscall is issued.
  * Both regions are checked; the per-region counters tell which class
  * the redirect saved us from.
+ *
+ * Two flavors are exposed:
+ *
+ *   avoid_shared_buffer_out()   — relocate only. Correct for buffers the
+ *                                 kernel *writes* into (read, recv,
+ *                                 getdents, getsockname, …): trinity has
+ *                                 no input bytes to preserve, and the
+ *                                 kernel will populate the replacement
+ *                                 page itself.
+ *
+ *   avoid_shared_buffer_inout() — relocate AND memcpy the original bytes
+ *                                 into the replacement before rewriting
+ *                                 the pointer. Required for buffers the
+ *                                 kernel *reads* (or value-result: read
+ *                                 then write). Without the copy, the
+ *                                 kernel consumes whatever pool garbage
+ *                                 happens to live at the replacement
+ *                                 address instead of the sanitiser's
+ *                                 curated input.
+ *
+ * The unsuffixed avoid_shared_buffer() entry point is a transitional
+ * wrapper around _out() so existing callers continue to build while a
+ * per-caller sweep classifies each site as _out or _inout. It will be
+ * removed once that sweep completes.
  */
-void avoid_shared_buffer(unsigned long *addr, unsigned long len)
+static void asb_relocate(unsigned long *addr, unsigned long len,
+			 bool copy_original)
 {
 	void *replacement;
+	void *original;
 	bool overlap_shared, overlap_heap;
 
 	if (addr == NULL)
@@ -300,6 +326,10 @@ void avoid_shared_buffer(unsigned long *addr, unsigned long len)
 	replacement = get_writable_address(len ? len : page_size);
 	if (replacement == NULL)
 		return;
+
+	original = (void *) *addr;
+	if (copy_original && len != 0)
+		memcpy(replacement, original, len);
 
 	*addr = (unsigned long) replacement;
 	if (shm != NULL) {
@@ -321,6 +351,29 @@ void avoid_shared_buffer(unsigned long *addr, unsigned long len)
 				parent_stats.libc_heap_redirected++;
 		}
 	}
+}
+
+void avoid_shared_buffer_out(unsigned long *addr, unsigned long len)
+{
+	asb_relocate(addr, len, false);
+}
+
+void avoid_shared_buffer_inout(unsigned long *addr, unsigned long len)
+{
+	asb_relocate(addr, len, true);
+}
+
+/*
+ * Transitional wrapper — preserves the historical no-copy behaviour for
+ * callers that have not yet been classified as _out or _inout. Once the
+ * per-file sweep finishes, this symbol is deleted and any stragglers
+ * fail to link, forcing an explicit choice.
+ *
+ * TODO: explicit _out vs _inout — migrate this caller.
+ */
+void avoid_shared_buffer(unsigned long *addr, unsigned long len)
+{
+	avoid_shared_buffer_out(addr, len);
 }
 
 void * get_address(void)
