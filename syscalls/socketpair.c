@@ -134,7 +134,7 @@ static void post_socketpair(struct syscallrecord *rec)
 	}
 
 	rec->a4 = 0;
-	deferred_free_enqueue(snap->original_alloc, NULL);
+	deferred_free_enqueue(snap->original_alloc);
 
 out_free:
 	deferred_freeptr(&rec->post_state);

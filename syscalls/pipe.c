@@ -126,7 +126,7 @@ static void post_pipe(struct syscallrecord *rec)
 	}
 
 	rec->a1 = 0;
-	deferred_free_enqueue(snap->original_alloc, NULL);
+	deferred_free_enqueue(snap->original_alloc);
 
 out_free:
 	deferred_freeptr(&rec->post_state);

@@ -132,8 +132,8 @@ static void post_getsockopt(struct syscallrecord *rec)
 
 	rec->a4 = 0;
 	rec->a5 = 0;
-	deferred_free_enqueue(snap->optval_original, NULL);
-	deferred_free_enqueue(snap->lenp_original, NULL);
+	deferred_free_enqueue(snap->optval_original);
+	deferred_free_enqueue(snap->lenp_original);
 	deferred_freeptr(&rec->post_state);
 }
 

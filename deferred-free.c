@@ -56,7 +56,6 @@
 
 struct deferred_entry {
 	void *ptr;
-	void (*free_func)(void *);
 	unsigned int ttl;
 };
 
@@ -253,15 +252,12 @@ void deferred_free_init(void)
 	heap_bounds_init();
 }
 
-void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
+void deferred_free_enqueue(void *ptr)
 {
 	unsigned int i;
 
 	if (ptr == NULL)
 		return;
-
-	if (free_func == NULL)
-		free_func = free;
 
 	/*
 	 * Alignment is non-negotiable.  glibc malloc returns >= 8-byte
@@ -272,16 +268,6 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 	 * the misaligned address before its bad-free reporter ever runs --
 	 * the cluster shows up as a CHECK-failed crash without an ASAN
 	 * report attached, which is harder to triage than a normal bad-free.
-	 *
-	 * Enforced unconditionally (independent of free_func) because an
-	 * alt-allocator wrapper that ultimately routes to libasan-protected
-	 * free() inherits the same alignment constraint -- the sentinel /
-	 * non-heap-token tolerance carved out for custom free_func callers
-	 * by the bands below cannot relax this one.  The existing shape
-	 * heuristic also rejects misaligned values, but only for the
-	 * free_func == free path; this guard closes the custom-free_func
-	 * gap and provides a single explicit chokepoint that survives
-	 * future refactors of the conditional bands.
 	 */
 	if (((unsigned long)ptr & 0x7) != 0) {
 		static unsigned long misalign_drops;
@@ -305,12 +291,9 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 	 * later deferred_free_tick() free()s the pid -- SIGSEGV with
 	 * si_addr==si_pid.  Drop the bad value at the post-handler boundary
 	 * (one counter bumped, ring slot stays empty) instead of letting
-	 * the corruption propagate into the ring.  Gated on free_func==free
-	 * because custom free funcs may legitimately receive non-heap
-	 * tokens (caller knows what they're doing); same gating convention
-	 * as the range_overlaps_shared check below.
+	 * the corruption propagate into the ring.
 	 */
-	if (free_func == free && is_corrupt_ptr_shape(ptr)) {
+	if (is_corrupt_ptr_shape(ptr)) {
 		outputerr("deferred_free_enqueue: rejected suspicious ptr=%p "
 			  "(pid-scribbled?)\n", ptr);
 		deferred_free_reject_bump(__builtin_return_address(0));
@@ -327,11 +310,9 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 	 * compares, branch-predictable, no syscalls; cheaper than the
 	 * O(N) alloc-track scan below and catches the case where the
 	 * stomp value coincidentally matches a recently-evicted ring
-	 * slot the alloc-track ring no longer remembers.  Custom
-	 * free_func callers stay exempt -- mirrors the gating convention
-	 * used by the shape and shared-region bands.
+	 * slot the alloc-track ring no longer remembers.
 	 */
-	if (free_func == free && !is_in_glibc_heap(ptr)) {
+	if (!is_in_glibc_heap(ptr)) {
 		static unsigned long non_heap_drops;
 		unsigned long n = ++non_heap_drops;
 		if ((n % 1000) == 1) {
@@ -362,13 +343,9 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 	 * a snapshot/arg slot with a heap-region-shaped value that defeats
 	 * the heuristic guard above.  Eight ASAN bad-frees in a recent run
 	 * all matched this shape: 8-byte aligned, in user VA, sitting inside
-	 * the heap arena, but not at any malloc-returned offset.  The custom
-	 * free_func path is exempt -- callers using their own free routine
-	 * may legitimately pass non-heap tokens (sentinel values, mmap
-	 * pointers managed by the alt allocator) the same gating convention
-	 * the looks_like_corrupted_ptr check above uses.
+	 * the heap arena, but not at any malloc-returned offset.
 	 */
-	if (free_func == free && !alloc_track_consume(ptr)) {
+	if (!alloc_track_consume(ptr)) {
 		static unsigned long unknown_drops;
 		unsigned long n = ++unknown_drops;
 		if ((n % 1000) == 1) {
@@ -400,7 +377,7 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 	 * This range check runs BEFORE ring_unlock() so we don't pay the
 	 * mprotect cost on rejected enqueues.
 	 */
-	if (range_overlaps_shared((unsigned long)ptr, 1) && free_func == free) {
+	if (range_overlaps_shared((unsigned long)ptr, 1)) {
 		static unsigned long rejects;
 		unsigned long n = ++rejects;
 		if ((n % 1000) == 1) {
@@ -419,7 +396,7 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 	 * directly so the caller's contract (ptr is no longer their
 	 * problem) still holds. */
 	if (!ring_unlock()) {
-		free_func(ptr);
+		free(ptr);
 		return;
 	}
 
@@ -436,36 +413,30 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 				oldest = i;
 			}
 		}
-		if (ring[oldest].ptr != NULL && ring[oldest].free_func != NULL) {
+		if (ring[oldest].ptr != NULL) {
 			void *evict_ptr = ring[oldest].ptr;
-			void (*evict_free)(void *) = ring[oldest].free_func;
 			bool corrupt = false;
 
 			/*
-			 * The enqueue path validates ptr against three
-			 * ground-truth bands (heap-bounds via
-			 * is_in_glibc_heap, alloc-track ring via
-			 * alloc_track_consume, shared-region overlap via
-			 * range_overlaps_shared) BEFORE ring_unlock().  Once
-			 * unlocked, the slot sits RW until ring_lock() runs,
-			 * so an in-flight stomp from a sibling fuzzed value-
-			 * result syscall can scribble ring[oldest].ptr between
-			 * when the slot was last validated and when the full-
-			 * ring eviction here decides to free it.  Re-run the
-			 * same three guards before free()ing so a wild pointer
-			 * becomes a telemetry bump instead of a crash.  Custom
-			 * free_func callers stay exempt -- mirrors the gating
-			 * convention used on the enqueue side.  Counter only
-			 * (no per-rejection log): the eviction case is rarer
+			 * The enqueue path validates ptr against the heap-
+			 * bounds and shared-region bands BEFORE ring_unlock().
+			 * Once unlocked, the slot sits RW until ring_lock()
+			 * runs, so an in-flight stomp from a sibling fuzzed
+			 * value-result syscall can scribble ring[oldest].ptr
+			 * between when the slot was last validated and when
+			 * the full-ring eviction here decides to free it.
+			 * Re-run the surviving stateless guards before
+			 * free()ing so a wild pointer becomes a telemetry
+			 * bump instead of a crash.  alloc_track_consume()
+			 * already fired at enqueue and would always miss
+			 * here -- skipped, not re-run.  Counter only (no
+			 * per-rejection log): the eviction case is rarer
 			 * than the enqueue rejection paths, whose 1-in-1000
 			 * caller-PC logs already prove the stomp pattern.
 			 */
-			if (evict_free == free) {
-				if (!is_in_glibc_heap(evict_ptr) ||
-				    !alloc_track_consume(evict_ptr) ||
-				    range_overlaps_shared((unsigned long)evict_ptr, 1))
-					corrupt = true;
-			}
+			if (!is_in_glibc_heap(evict_ptr) ||
+			    range_overlaps_shared((unsigned long)evict_ptr, 1))
+				corrupt = true;
 			if (corrupt) {
 				struct childdata *c = this_child();
 
@@ -476,7 +447,7 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 				else
 					parent_stats.ring_eviction_corrupt++;
 			} else {
-				evict_free(evict_ptr);
+				free(evict_ptr);
 			}
 			ring[oldest].ptr = NULL;
 			occupied_mask &= ~(1ULL << oldest);
@@ -489,7 +460,6 @@ void deferred_free_enqueue(void *ptr, void (*free_func)(void *))
 	 * non-zero and __builtin_ctzll's UB-on-zero case can't fire. */
 	i = __builtin_ctzll(~occupied_mask);
 	ring[i].ptr = ptr;
-	ring[i].free_func = free_func;
 	ring[i].ttl = RAND_RANGE(DEFERRED_TTL_MIN, DEFERRED_TTL_MAX);
 	occupied_mask |= 1ULL << i;
 	ring_count++;
@@ -501,7 +471,7 @@ void deferred_freeptr(unsigned long *p)
 {
 	void *ptr = (void *) *p;
 	*p = 0;
-	deferred_free_enqueue(ptr, NULL);
+	deferred_free_enqueue(ptr);
 }
 
 /*
@@ -530,7 +500,7 @@ void deferred_freeptr(unsigned long *p)
  * (asan_poisoning.cpp: "AddrIsAlignedByGranularity(addr) != 0"),
  * which is harder to triage than a normal bad-free.
  */
-static void free_ring_entry(void *ptr, void (*fn)(void *), unsigned int slot)
+static void free_ring_entry(void *ptr, unsigned int slot)
 {
 	if ((unsigned long)ptr < 0x10000) {
 		struct childdata *c = this_child();
@@ -560,7 +530,7 @@ static void free_ring_entry(void *ptr, void (*fn)(void *), unsigned int slot)
 		return;
 	}
 
-	fn(ptr);
+	free(ptr);
 }
 
 void deferred_free_tick(void)
@@ -595,7 +565,6 @@ void deferred_free_tick(void)
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
 		void *ptr;
-		void (*fn)(void *);
 
 		if (ring[i].ptr == NULL)
 			continue;
@@ -609,12 +578,11 @@ void deferred_free_tick(void)
 		 * the free function so that if a signal interrupts us
 		 * mid-free and we longjmp, the slot is already empty. */
 		ptr = ring[i].ptr;
-		fn = ring[i].free_func;
 		ring[i].ptr = NULL;
 		occupied_mask &= ~(1ULL << i);
 		ring_count--;
 
-		free_ring_entry(ptr, fn, i);
+		free_ring_entry(ptr, i);
 	}
 
 	ring_lock();
@@ -632,7 +600,6 @@ void deferred_free_flush(void)
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
 		void *ptr;
-		void (*fn)(void *);
 
 		if (ring[i].ptr == NULL)
 			continue;
@@ -640,9 +607,8 @@ void deferred_free_flush(void)
 		/* Clear before invoking, mirroring tick: a signal that
 		 * longjmps mid-free leaves the slot empty either way. */
 		ptr = ring[i].ptr;
-		fn = ring[i].free_func;
 		ring[i].ptr = NULL;
-		free_ring_entry(ptr, fn, i);
+		free_ring_entry(ptr, i);
 	}
 	ring_count = 0;
 	occupied_mask = 0;

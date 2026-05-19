@@ -282,7 +282,7 @@ static void post_ptrace(struct syscallrecord *rec)
 	 * enqueue (not deferred_freeptr) so concurrent observers that
 	 * grabbed the address from rec->a4 before a scribble do not UAF.
 	 */
-	deferred_free_enqueue(snap->data, NULL);
+	deferred_free_enqueue(snap->data);
 	deferred_freeptr(&rec->post_state);
 }
 

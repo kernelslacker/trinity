@@ -109,7 +109,7 @@ static void sanitise_io_uring_setup(struct syscallrecord *rec)
 	 * reject_corrupt_retfd() flags retfd, handle_syscall_ret() skips .post
 	 * entirely, and a post-side free would leak the snap.
 	 */
-	deferred_free_enqueue(params, NULL);
+	deferred_free_enqueue(params);
 }
 
 static void post_io_uring_setup(struct syscallrecord *rec)

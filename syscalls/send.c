@@ -313,10 +313,10 @@ skip_bound:
 	if (snap->iov_base != NULL)
 		free(snap->iov_base);
 	if (msg->msg_iov != NULL)
-		deferred_free_enqueue(msg->msg_iov, NULL);
+		deferred_free_enqueue(msg->msg_iov);
 	free(snap->name);	// free sockaddr
 	rec->a2 = 0;
-	deferred_free_enqueue(msg, NULL);
+	deferred_free_enqueue(msg);
 
 out_free:
 	deferred_freeptr(&rec->post_state);
@@ -533,11 +533,11 @@ static void post_sendmmsg(struct syscallrecord *rec)
 	 * and hold the sanitise-time allocations.
 	 */
 	for (i = 0; i < vlen; i++) {
-		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov, NULL);
+		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov);
 		free(snap->name[i]);
 	}
 	rec->a2 = 0;
-	deferred_free_enqueue(msgs, NULL);
+	deferred_free_enqueue(msgs);
 
 out_free:
 	deferred_freeptr(&rec->post_state);

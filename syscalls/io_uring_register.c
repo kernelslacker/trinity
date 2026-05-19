@@ -1078,7 +1078,7 @@ static void post_io_uring_register(struct syscallrecord *rec)
 	 * address from rec->a3 before a scribble do not UAF.
 	 */
 	if (snap->original_alloc != NULL && snap->opcode == IORING_REGISTER_BUFFERS)
-		deferred_free_enqueue(snap->original_alloc, NULL);
+		deferred_free_enqueue(snap->original_alloc);
 
 	deferred_freeptr(&rec->post_state);
 }

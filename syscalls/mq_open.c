@@ -118,7 +118,7 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 	 * still reads rec->post_state to drive same-iteration mq_unlink within
 	 * the deferred-queue TTL window, but no longer frees the snap itself.
 	 */
-	deferred_free_enqueue(snap, NULL);
+	deferred_free_enqueue(snap);
 }
 
 static void post_mq_open(struct syscallrecord *rec)

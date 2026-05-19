@@ -245,12 +245,12 @@ static void enqueue_execve_ptrs(void **argv, void **envp,
 	unsigned int i;
 
 	for (i = 0; i < argvcount; i++)
-		deferred_free_enqueue(argv[i], NULL);
-	deferred_free_enqueue(argv, NULL);
+		deferred_free_enqueue(argv[i]);
+	deferred_free_enqueue(argv);
 
 	for (i = 0; i < envpcount; i++)
-		deferred_free_enqueue(envp[i], NULL);
-	deferred_free_enqueue(envp, NULL);
+		deferred_free_enqueue(envp[i]);
+	deferred_free_enqueue(envp);
 }
 
 static void post_execve(struct syscallrecord *rec)

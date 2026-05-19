@@ -247,7 +247,7 @@ static void post_clone3(struct syscallrecord *rec)
 	}
 
 	if (args->set_tid != 0)
-		deferred_free_enqueue((void *)(unsigned long) args->set_tid, NULL);
+		deferred_free_enqueue((void *)(unsigned long) args->set_tid);
 	rec->a1 = 0;
 	deferred_freeptr(&rec->post_state);
 }

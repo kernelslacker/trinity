@@ -805,7 +805,7 @@ static void post_bpf(struct syscallrecord *rec)
 		}
 	}
 
-	deferred_free_enqueue(attr, NULL);
+	deferred_free_enqueue(attr);
 	deferred_freeptr(&rec->post_state);
 }
 

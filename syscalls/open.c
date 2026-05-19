@@ -218,7 +218,7 @@ static void sanitise_openat2(struct syscallrecord *rec)
 	 * reject_corrupt_retfd() flags retfd, handle_syscall_ret() skips .post
 	 * entirely, and a post-side free would leak the snap.
 	 */
-	deferred_free_enqueue(how, NULL);
+	deferred_free_enqueue(how);
 }
 
 static void post_openat2(struct syscallrecord *rec)

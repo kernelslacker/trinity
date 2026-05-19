@@ -44,10 +44,12 @@ void deferred_alloc_track(void *ptr);
 bool alloc_track_lookup(void *ptr) __must_check;
 
 /*
- * Enqueue a pointer for deferred freeing.  free_func is called when
- * the entry's TTL expires; pass NULL to use free().
+ * Enqueue a pointer for deferred freeing.  Always released with free()
+ * when the entry's TTL expires; the function-pointer parameter was
+ * removed to eliminate the ROP/JOP surface a corrupted ring entry's
+ * free_func slot would otherwise hand an attacker.
  */
-void deferred_free_enqueue(void *ptr, void (*free_func)(void *));
+void deferred_free_enqueue(void *ptr);
 
 /*
  * Drop-in replacement for freeptr(): saves the pointer value, zeros

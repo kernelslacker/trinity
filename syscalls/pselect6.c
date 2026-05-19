@@ -227,11 +227,11 @@ static void post_pselect6(struct syscallrecord *rec)
 		return;
 	}
 
-	deferred_free_enqueue(snap->rfds, NULL);
-	deferred_free_enqueue(snap->wfds, NULL);
-	deferred_free_enqueue(snap->exfds, NULL);
-	deferred_free_enqueue(snap->ts, NULL);
-	deferred_free_enqueue(snap->sigmask, NULL);
+	deferred_free_enqueue(snap->rfds);
+	deferred_free_enqueue(snap->wfds);
+	deferred_free_enqueue(snap->exfds);
+	deferred_free_enqueue(snap->ts);
+	deferred_free_enqueue(snap->sigmask);
 	deferred_freeptr(&rec->post_state);
 }
 

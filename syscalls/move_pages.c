@@ -216,9 +216,9 @@ static void post_move_pages(struct syscallrecord *rec)
 		/* fall through to release allocations */
 	}
 
-	deferred_free_enqueue(snap->pages, NULL);
-	deferred_free_enqueue(snap->nodes, NULL);
-	deferred_free_enqueue(snap->status, NULL);
+	deferred_free_enqueue(snap->pages);
+	deferred_free_enqueue(snap->nodes);
+	deferred_free_enqueue(snap->status);
 	deferred_freeptr(&rec->post_state);
 }
 

@@ -288,8 +288,8 @@ static void post_ppoll(struct syscallrecord *rec)
 		return;
 	}
 
-	deferred_free_enqueue(snap->fds, NULL);
-	deferred_free_enqueue(snap->ts, NULL);
+	deferred_free_enqueue(snap->fds);
+	deferred_free_enqueue(snap->ts);
 	deferred_freeptr(&rec->post_state);
 }
 

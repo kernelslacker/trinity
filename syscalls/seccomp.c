@@ -251,13 +251,13 @@ static void post_seccomp(struct syscallrecord *rec)
 		if (inner_ptr_ok_to_free(rec, fprog->filter,
 					 "post_seccomp/fprog_filter"))
 			free(fprog->filter);
-		deferred_free_enqueue(fprog, NULL);
+		deferred_free_enqueue(fprog);
 		break;
 	}
 #endif
 	case SECCOMP_GET_ACTION_AVAIL:
 	case SECCOMP_GET_NOTIF_SIZES:
-		deferred_free_enqueue(snap->heap, NULL);
+		deferred_free_enqueue(snap->heap);
 		break;
 	}
 

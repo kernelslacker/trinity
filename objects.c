@@ -438,7 +438,7 @@ static void release_obj(struct object *obj,
 			enum objecttype type __attribute__((unused)))
 {
 	memset(obj, 0, sizeof(*obj));
-	deferred_free_enqueue(obj, free);
+	deferred_free_enqueue(obj);
 }
 
 struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
@@ -647,7 +647,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		head->array_capacity = newcap;
 		cap = newcap;
 		if (oldarray != NULL)
-			deferred_free_enqueue(oldarray, free);
+			deferred_free_enqueue(oldarray);
 	}
 
 	head->array[n] = obj;

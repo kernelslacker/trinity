@@ -627,7 +627,7 @@ static unsigned long gen_arg_struct_ptr_in(struct syscallentry *entry __unused__
 		}
 	}
 
-	deferred_free_enqueue(buf, NULL);
+	deferred_free_enqueue(buf);
 	return (unsigned long) buf;
 }
 
@@ -697,7 +697,7 @@ static unsigned long gen_arg_struct_ptr_out(struct syscallentry *entry __unused_
 	buf = zmalloc(size);
 	memset(buf, STRUCT_PTR_OUT_POISON_BYTE, size);
 
-	deferred_free_enqueue(buf, NULL);
+	deferred_free_enqueue(buf);
 	return (unsigned long) buf;
 }
 
@@ -842,7 +842,7 @@ static unsigned long gen_arg_struct_size(struct syscallentry *entry,
  */
 static void cleanup_deferred_free(struct syscallrecord *rec, unsigned int argnum)
 {
-	deferred_free_enqueue((void *) get_argval(rec, argnum), NULL);
+	deferred_free_enqueue((void *) get_argval(rec, argnum));
 }
 
 /*

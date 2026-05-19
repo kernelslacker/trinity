@@ -282,10 +282,10 @@ skip_bound:
 	 * sibling) left in the live msghdr.
 	 */
 	free(snap->control);
-	deferred_free_enqueue(msg->msg_iov, NULL);
+	deferred_free_enqueue(msg->msg_iov);
 	free(snap->name);
 	rec->a2 = 0;
-	deferred_free_enqueue(msg, NULL);
+	deferred_free_enqueue(msg);
 
 out_free:
 	deferred_freeptr(&rec->post_state);
@@ -505,12 +505,12 @@ static void post_recvmmsg(struct syscallrecord *rec)
 	 * still hold the sanitise-time allocations.
 	 */
 	for (i = 0; i < vlen; i++) {
-		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov, NULL);
+		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov);
 		free(snap->control[i]);
 		free(snap->name[i]);
 	}
 	rec->a2 = 0;
-	deferred_free_enqueue(msgs, NULL);
+	deferred_free_enqueue(msgs);
 
 out_free:
 	deferred_freeptr(&rec->post_state);

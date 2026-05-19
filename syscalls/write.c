@@ -139,7 +139,7 @@ skip_bound:
 
 out_free:
 	rec->a2 = 0;
-	deferred_free_enqueue((void *) snap->buf, NULL);
+	deferred_free_enqueue((void *) snap->buf);
 	snap->buf = 0;
 	deferred_freeptr(&rec->post_state);
 }
