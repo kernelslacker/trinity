@@ -292,6 +292,7 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	 * small N (4) used here; the population mix doesn't need
 	 * cryptographic uniformity.
 	 */
+select_mode:
 	if (kc->cmp_capable && (rand() % KCOV_CMP_CHILD_RECIPROCAL) == 0)
 		kc->mode = KCOV_MODE_CMP;
 	else
@@ -312,7 +313,16 @@ err_unmap_cmp:
 err_close_cmp:
 	close(kc->cmp_fd);
 	kc->cmp_fd = -1;
-	return;
+	/*
+	 * CMP probe failed but the PC fd is still active.  Fall through
+	 * to the mode-selection block so this child is counted in
+	 * pc_mode_children — without this, the KCOV CMP MODES diagnostic
+	 * silently undercounts PC-mode children on kernels where CMP
+	 * support is broken.  cmp_capable is false here, so the
+	 * random-pick branch above will deterministically choose
+	 * KCOV_MODE_PC.
+	 */
+	goto select_mode;
 
 err_free_dedup:
 	free(kc->dedup);
