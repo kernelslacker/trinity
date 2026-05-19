@@ -101,7 +101,7 @@ static void sanitise_io_uring_setup(struct syscallrecord *rec)
 
 	rec->a2 = (unsigned long) params;
 
-	avoid_shared_buffer(&rec->a2, sizeof(struct io_uring_params));
+	avoid_shared_buffer_inout(&rec->a2, sizeof(struct io_uring_params));
 
 	/*
 	 * Hand the snap to the deferred-free queue at sanitise time so cleanup
