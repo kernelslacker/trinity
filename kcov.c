@@ -325,7 +325,12 @@ void kcov_enable_cmp(struct kcov_child *kc)
 	if (ioctl(kc->cmp_fd, KCOV_ENABLE, KCOV_TRACE_CMP) < 0) {
 		/* Runtime failure on a previously-probed-good fd.  Leave
 		 * kc->active alone — PC tracing on the other fd is
-		 * independent and still valid; just stop attempting CMP. */
+		 * independent and still valid; just stop attempting CMP.
+		 * The early-return at the top of this function fires once
+		 * cmp_capable flips to false, so this output runs exactly
+		 * once per child instead of spamming per-syscall. */
+		output(0, "KCOV CMP: KCOV_ENABLE(KCOV_TRACE_CMP) failed (errno=%d %s), disabling cmp_capable for this child\n",
+		       errno, strerror(errno));
 		kc->cmp_capable = false;
 		return;
 	}
