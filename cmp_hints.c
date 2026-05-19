@@ -124,6 +124,9 @@ static void pool_add_locked(struct cmp_hint_pool *pool,
 		 * entries[] store above.
 		 */
 		__atomic_store_n(&pool->count, count + 1, __ATOMIC_RELEASE);
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_hints_unique_inserts,
+					   1UL, __ATOMIC_RELAXED);
 		return;
 	}
 
@@ -139,6 +142,9 @@ static void pool_add_locked(struct cmp_hint_pool *pool,
 	pool->entries[victim].cmp_ip = cmp_ip;
 	pool->entries[victim].size = size;
 	pool->entries[victim].last_used = stamp;
+	if (kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_hints_unique_inserts, 1UL,
+				   __ATOMIC_RELAXED);
 }
 
 /*

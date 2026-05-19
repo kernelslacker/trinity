@@ -223,6 +223,17 @@ struct kcov_shared {
 	 * granularity (vs per-cmp_hints_collect-call) makes the saved work
 	 * directly comparable to cmp_records_collected. */
 	unsigned long cmp_hints_bloom_skipped;
+	/* Per-record CMP hints that produced an actual content change in a
+	 * per-syscall pool — either a fresh insert into a non-full pool or an
+	 * evict-replace once the pool was saturated.  Dedup-refresh hits (the
+	 * tuple was already in the pool, only its last_used stamp was bumped)
+	 * are NOT counted.  This is the right denominator for "how much unique
+	 * signal did KCOV_TRACE_CMP actually contribute": cmp_records_collected
+	 * counts every raw record the kernel emitted (hugely inflated by
+	 * repetition on hot syscalls), bloom_skipped counts the per-child
+	 * short-circuits, and unique_inserts is what's left — the records that
+	 * survived bloom + pool dedup and changed pool state. */
+	unsigned long cmp_hints_unique_inserts;
 	/* See struct kcov_cmp_diag — child-context writes are routed here
 	 * because the child's stdout has already been dup2'd to /dev/null
 	 * by the time KCOV_TRACE_CMP setup runs. */

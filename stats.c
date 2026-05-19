@@ -274,7 +274,7 @@ static void json_emit_kcov_section(void)
 	const struct syscalltable *table;
 	unsigned int nr_syscalls_to_scan;
 	unsigned long kc_edges, kc_pcs, kc_calls, kc_remote;
-	unsigned long kc_cmp_records, kc_cmp_trunc, kc_cmp_bloom_skipped;
+	unsigned long kc_cmp_records, kc_cmp_trunc, kc_cmp_bloom_skipped, kc_cmp_unique;
 	unsigned int top_nr[10];
 	unsigned long top_edges[10];
 	unsigned int top_count = 0;
@@ -296,6 +296,8 @@ static void json_emit_kcov_section(void)
 	kc_cmp_trunc = __atomic_load_n(&kcov_shm->cmp_trace_truncated,
 		__ATOMIC_RELAXED);
 	kc_cmp_bloom_skipped = __atomic_load_n(&kcov_shm->cmp_hints_bloom_skipped,
+		__ATOMIC_RELAXED);
+	kc_cmp_unique = __atomic_load_n(&kcov_shm->cmp_hints_unique_inserts,
 		__ATOMIC_RELAXED);
 
 	nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
@@ -343,9 +345,9 @@ static void json_emit_kcov_section(void)
 	printf(",\"kcov\":{\"unique_edges\":%lu,\"total_pcs\":%lu,"
 		"\"total_calls\":%lu,\"remote_calls\":%lu,"
 		"\"cmp_records_collected\":%lu,\"cmp_trace_truncated\":%lu,"
-		"\"cmp_hints_bloom_skipped\":%lu",
+		"\"cmp_hints_bloom_skipped\":%lu,\"cmp_hints_unique_inserts\":%lu",
 		kc_edges, kc_pcs, kc_calls, kc_remote,
-		kc_cmp_records, kc_cmp_trunc, kc_cmp_bloom_skipped);
+		kc_cmp_records, kc_cmp_trunc, kc_cmp_bloom_skipped, kc_cmp_unique);
 
 	fputs(",\"top_syscalls\":[", stdout);
 	for (j = 0; j < top_count; j++) {
@@ -2744,11 +2746,12 @@ void kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_records;
 	static unsigned long prev_truncated;
 	static unsigned long prev_bloom_skipped;
+	static unsigned long prev_unique;
 	static struct timespec last_dump;
 	struct timespec now;
 	long elapsed;
-	unsigned long cur_records, cur_truncated, cur_bloom_skipped;
-	unsigned long delta_records, delta_truncated, delta_bloom_skipped;
+	unsigned long cur_records, cur_truncated, cur_bloom_skipped, cur_unique;
+	unsigned long delta_records, delta_truncated, delta_bloom_skipped, delta_unique;
 	unsigned int pc_kids, cmp_kids;
 	struct kcov_cmp_diag *d;
 	unsigned int open_c, init_trace_c, mmap_c, enable_c, disable_c, rt_enable_c;
@@ -2761,6 +2764,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	cur_records       = __atomic_load_n(&kcov_shm->cmp_records_collected,   __ATOMIC_RELAXED);
 	cur_truncated     = __atomic_load_n(&kcov_shm->cmp_trace_truncated,     __ATOMIC_RELAXED);
 	cur_bloom_skipped = __atomic_load_n(&kcov_shm->cmp_hints_bloom_skipped, __ATOMIC_RELAXED);
+	cur_unique        = __atomic_load_n(&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);
 
 	/* First call: arm the window so any pre-existing counts carried
 	 * over from earlier in the run are not mis-attributed to the
@@ -2770,6 +2774,7 @@ void kcov_cmp_stats_periodic_dump(void)
 		prev_records       = cur_records;
 		prev_truncated     = cur_truncated;
 		prev_bloom_skipped = cur_bloom_skipped;
+		prev_unique        = cur_unique;
 		return;
 	}
 
@@ -2780,8 +2785,9 @@ void kcov_cmp_stats_periodic_dump(void)
 	delta_records       = cur_records       - prev_records;
 	delta_truncated     = cur_truncated     - prev_truncated;
 	delta_bloom_skipped = cur_bloom_skipped - prev_bloom_skipped;
+	delta_unique        = cur_unique        - prev_unique;
 
-	if ((delta_records | delta_truncated | delta_bloom_skipped) != 0) {
+	if ((delta_records | delta_truncated | delta_bloom_skipped | delta_unique) != 0) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
 
 		if (delta_records) {
@@ -2801,6 +2807,12 @@ void kcov_cmp_stats_periodic_dump(void)
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
 					"cmp_hints_bloom_skipped", delta_bloom_skipped,
 					rate_milli / 1000, rate_milli % 1000, cur_bloom_skipped);
+		}
+		if (delta_unique) {
+			unsigned long rate_milli = (delta_unique * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_hints_unique_inserts", delta_unique,
+					rate_milli / 1000, rate_milli % 1000, cur_unique);
 		}
 	}
 
@@ -2862,6 +2874,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	prev_records       = cur_records;
 	prev_truncated     = cur_truncated;
 	prev_bloom_skipped = cur_bloom_skipped;
+	prev_unique        = cur_unique;
 	last_dump = now;
 }
 
@@ -4315,6 +4328,7 @@ void dump_stats(void)
 		unsigned long kc_cmp_records = __atomic_load_n(&kcov_shm->cmp_records_collected,  __ATOMIC_RELAXED);
 		unsigned long kc_cmp_trunc   = __atomic_load_n(&kcov_shm->cmp_trace_truncated,    __ATOMIC_RELAXED);
 		unsigned long kc_cmp_bloom_skipped = __atomic_load_n(&kcov_shm->cmp_hints_bloom_skipped, __ATOMIC_RELAXED);
+		unsigned long kc_cmp_unique  = __atomic_load_n(&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);
 
 		stat_row("kcov_coverage", "unique_edges",          kc_edges);
 		stat_row("kcov_coverage", "total_pcs",             kc_pcs);
@@ -4325,6 +4339,8 @@ void dump_stats(void)
 			stat_row("kcov_coverage", "cmp_trace_truncated", kc_cmp_trunc);
 		if (kc_cmp_bloom_skipped > 0)
 			stat_row("kcov_coverage", "cmp_hints_bloom_skipped", kc_cmp_bloom_skipped);
+		if (kc_cmp_unique > 0)
+			stat_row("kcov_coverage", "cmp_hints_unique_inserts", kc_cmp_unique);
 
 		/* Find top 10 edge-producing syscalls via insertion sort. */
 		unsigned int nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
