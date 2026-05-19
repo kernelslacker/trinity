@@ -35,6 +35,5 @@ syscalls/mremap.c:mremap
 syscalls/munmap.c:munmap
 syscalls/sched_getaffinity.c:sched_getaffinity
 syscalls/sched_getattr.c:sched_getattr
-syscalls/seccomp.c:seccomp
 syscalls/statmount.c:statmount
 syscalls/sysfs.c:sysfs

@@ -94,7 +94,9 @@ static const uint32_t seccomp_ret_actions[] = {
  * extra close() of a non-fd or a missed close() of a real listener
  * fd), not a UAF.
  */
+#define SECCOMP_POST_STATE_MAGIC	0x534543434F4D505FUL	/* "SECCOMP_" */
 struct seccomp_post_state {
+	unsigned long magic;
 	unsigned int op;
 	void *heap;
 };
@@ -191,6 +193,7 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 	 */
 	if (heap != NULL) {
 		snap = zmalloc(sizeof(*snap));
+		snap->magic = SECCOMP_POST_STATE_MAGIC;
 		snap->op = rec->a1;
 		snap->heap = heap;
 		rec->post_state = (unsigned long) snap;
@@ -214,6 +217,23 @@ static void post_seccomp(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_seccomp: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * seccomp_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon without freeing rather than
+	 * dispatch on a wild op or hand snap->heap to free().
+	 */
+	if (snap->magic != SECCOMP_POST_STATE_MAGIC) {
+		outputerr("post_seccomp: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
