@@ -1354,6 +1354,14 @@ bool kcov_bitmap_load_file(const char *path)
 	free(scratch);
 	__atomic_store_n(&kcov_shm->edges_found, hdr.edges_found,
 			 __ATOMIC_RELAXED);
+	/* Snapshot the warm-loaded count so print_stats() can split
+	 * displayed coverage into the warm-vs-cold contribution.  Set
+	 * exactly here — after the bitmap + edges_found are in place and
+	 * before any child has had a chance to discover new coverage — so
+	 * a later (edges_found - edges_warm_loaded) subtraction is the
+	 * count of edges this run actually discovered itself. */
+	__atomic_store_n(&kcov_shm->edges_warm_loaded, hdr.edges_found,
+			 __ATOMIC_RELAXED);
 	/* Seed the dirty-bit baseline so a load-then-immediate-exit cycle
 	 * skips the redundant end-of-run save. */
 	kcov_bitmap_edges_at_last_save = hdr.edges_found;

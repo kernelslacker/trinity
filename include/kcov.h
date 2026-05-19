@@ -219,6 +219,16 @@ struct kcov_shared {
 	 * minicorpus, edgepair, and mutator-attribution feedback loops. */
 	unsigned char bucket_seen[KCOV_NUM_EDGES];
 	unsigned long edges_found;
+	/* Count of edges seeded into bucket_seen[] / edges_found by the
+	 * warm-start cache loader at startup.  Zero on a cold-start run
+	 * (no cache file, version/fingerprint mismatch, CRC failure, etc.).
+	 * Set once after the cache-load loop completes and never mutated
+	 * thereafter, so cold = edges_found - edges_warm_loaded is the
+	 * subset of coverage actually discovered by this process — the
+	 * operator-facing split that distinguishes "plateau near the prior
+	 * corpus ceiling" from "plateau after genuinely exhausting easy
+	 * edges this run". */
+	unsigned long edges_warm_loaded;
 	unsigned long total_pcs;
 	unsigned long total_calls;
 	unsigned long remote_calls;	/* calls using KCOV_REMOTE_ENABLE */

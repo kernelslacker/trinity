@@ -1455,12 +1455,37 @@ static void print_stats(void)
 				 * when non-zero (rare; per-syscall KCOV_CMP_RECORDS_MAX
 				 * overflow signal). */
 				char edges_delta_str[24] = "";
+				char warm_cold_str[48] = "";
 				char unique_str[80] = "";
 				char modes_str[48] = "";
 				char trunc_str[48] = "";
 				if (last_edges > 0 && delta != 0)
 					snprintf(edges_delta_str, sizeof(edges_delta_str),
 						", %+ld", delta);
+				/* Warm vs cold split: edges_warm_loaded is the count
+				 * the warm-start cache loader seeded at startup; the
+				 * remainder of edges_found is what this process has
+				 * discovered on its own.  Suppress the parens entirely
+				 * on cold-start runs (no cache loaded -> warm == 0) so
+				 * the line shape matches the pre-instrumentation form
+				 * and doesn't add noise to the common case.  Defensive
+				 * clamp: if warm somehow exceeds the current total
+				 * (shouldn't happen — warm is set once at load time and
+				 * edges_found only grows), report cold as 0 rather than
+				 * printing a negative cold count. */
+				{
+					unsigned long warm = __atomic_load_n(
+						&kcov_shm->edges_warm_loaded,
+						__ATOMIC_RELAXED);
+					if (warm > 0) {
+						unsigned long cold = edges > warm ?
+							edges - warm : 0UL;
+						snprintf(warm_cold_str,
+							sizeof(warm_cold_str),
+							" (warm=%lu cold=%lu)",
+							warm, cold);
+					}
+				}
 				if (cmp_unique > 0) {
 					if (last_cmp_unique > 0 && cmp_unique_delta != 0)
 						snprintf(unique_str, sizeof(unique_str),
@@ -1483,12 +1508,13 @@ static void print_stats(void)
 						snprintf(trunc_str, sizeof(trunc_str),
 							" [%lu trunc]", cmp_trunc);
 				}
-				output(0, "%ld iterations. [HI:%ld%s] %lu/sec  KCOV: [%lu edges%s%s%s]%s\n",
+				output(0, "%ld iterations. [HI:%ld%s] %lu/sec  KCOV: [%lu edges%s%s%s%s]%s\n",
 					op_count,
 					hiscore,
 					stall_count ? stalltxt : "",
 					rate,
 					edges, edges_delta_str,
+					warm_cold_str,
 					unique_str,
 					modes_str,
 					trunc_str);
