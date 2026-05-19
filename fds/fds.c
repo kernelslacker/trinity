@@ -320,10 +320,7 @@ retry:
 	if (obj == NULL)
 		return get_random_fd();
 
-	if ((uintptr_t)obj < 0x10000UL ||
-	    (uintptr_t)obj >= 0x800000000000UL) {
-		outputerr("get_typed_fd: bogus obj %p in objtype=%d pool\n",
-			  obj, objtype);
+	if (!objpool_check(obj, objtype)) {
 		retries++;
 		goto retry;
 	}
