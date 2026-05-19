@@ -1418,15 +1418,37 @@ static void print_stats(void)
 				 * The trunc counter is the per-syscall KCOV_CMP_RECORDS_MAX
 				 * overflow bumped in kcov_collect_cmp().  A growing delta
 				 * here means cmp_records is systematically undercounted
-				 * for whichever syscalls are tripping the cap. */
-				output(0, "%ld iterations. [HI:%ld%s] %lu/sec  KCOV: [%lu edges, %+ld]  KCOV CMP: [%lu cmp_records, %+ld] [%lu trunc, %+ld]\n",
+				 * for whichever syscalls are tripping the cap.
+				 *
+				 * Suppress zero-deltas (and the entire trunc bracket when
+				 * count is zero) so plateau windows read cleanly without
+				 * a wall of "+0" noise. */
+				char edges_delta_str[24] = "";
+				char cmp_delta_str[24] = "";
+				char trunc_str[48] = "";
+				if (last_edges > 0 && delta != 0)
+					snprintf(edges_delta_str, sizeof(edges_delta_str),
+						", %+ld", delta);
+				if (last_cmp_records > 0 && cmp_delta != 0)
+					snprintf(cmp_delta_str, sizeof(cmp_delta_str),
+						", %+ld", cmp_delta);
+				if (cmp_trunc > 0) {
+					if (last_cmp_trunc > 0 && cmp_trunc_delta != 0)
+						snprintf(trunc_str, sizeof(trunc_str),
+							" [%lu trunc, %+ld]",
+							cmp_trunc, cmp_trunc_delta);
+					else
+						snprintf(trunc_str, sizeof(trunc_str),
+							" [%lu trunc]", cmp_trunc);
+				}
+				output(0, "%ld iterations. [HI:%ld%s] %lu/sec  KCOV: [%lu edges%s]  KCOV CMP: [%lu cmp_records%s]%s\n",
 					op_count,
 					hiscore,
 					stall_count ? stalltxt : "",
 					rate,
-					edges, last_edges > 0 ? delta : 0,
-					cmp_records, last_cmp_records > 0 ? cmp_delta : 0,
-					cmp_trunc, last_cmp_trunc > 0 ? cmp_trunc_delta : 0);
+					edges, edges_delta_str,
+					cmp_records, cmp_delta_str,
+					trunc_str);
 				last_edges = edges;
 				last_cmp_records = cmp_records;
 				last_cmp_trunc = cmp_trunc;
@@ -1460,17 +1482,29 @@ static void print_stats(void)
 				unsigned int e_share_pct = total > 0 ?
 					(unsigned int)(e_cur * 100UL / total) : 0;
 				unsigned int b_share_pct = 100U - e_share_pct;
+				char e_delta_str[24] = "";
+				char b_delta_str[24] = "";
+				if (e_delta > 0)
+					snprintf(e_delta_str, sizeof(e_delta_str),
+						"/+%lu", e_delta);
+				if (b_delta > 0)
+					snprintf(b_delta_str, sizeof(b_delta_str),
+						"/+%lu", b_delta);
 
-				output(0, "explorer: %u/%u children, %lu edges (%u%%/+%lu)  bandit: %u/%u, %lu edges (%u%%/+%lu)\n",
+				output(0, "explorer: %u/%u children, %lu edges (%u%%%s)  bandit: %u/%u, %lu edges (%u%%%s)\n",
 					explorer_children, max_children,
-					e_cur, e_share_pct, e_delta,
+					e_cur, e_share_pct, e_delta_str,
 					max_children - explorer_children, max_children,
-					b_cur, b_share_pct, b_delta);
+					b_cur, b_share_pct, b_delta_str);
 				last_explorer_edges = e_cur;
 			} else {
-				output(0, "bandit: %u/%u children, %lu edges (+%lu)\n",
-					max_children, max_children,
-					b_cur, b_delta);
+				if (b_delta > 0)
+					output(0, "bandit: %u/%u children, %lu edges (+%lu)\n",
+						max_children, max_children,
+						b_cur, b_delta);
+				else
+					output(0, "bandit: %u/%u children, %lu edges\n",
+						max_children, max_children, b_cur);
 			}
 			last_bandit_edges = b_cur;
 
