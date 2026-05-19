@@ -124,7 +124,7 @@ static void sanitise_ipc(struct syscallrecord *rec)
 				break;
 			memset(buf, 0, sizeof(*buf));
 			rec->a5 = (unsigned long) buf;
-			avoid_shared_buffer(&rec->a5, sizeof(*buf));
+			avoid_shared_buffer_inout(&rec->a5, sizeof(*buf));
 			break;
 		}
 		case SETVAL:
@@ -142,7 +142,7 @@ static void sanitise_ipc(struct syscallrecord *rec)
 			for (j = 0; j < nsems; j++)
 				arr[j] = rand() % 32768;
 			rec->a5 = (unsigned long) arr;
-			avoid_shared_buffer(&rec->a5, nsems * sizeof(*arr));
+			avoid_shared_buffer_inout(&rec->a5, nsems * sizeof(*arr));
 			break;
 		}
 		case IPC_INFO:
@@ -154,7 +154,7 @@ static void sanitise_ipc(struct syscallrecord *rec)
 				break;
 			memset(buf, 0, 256);
 			rec->a5 = (unsigned long) buf;
-			avoid_shared_buffer(&rec->a5, 256);
+			avoid_shared_buffer_inout(&rec->a5, 256);
 			break;
 		}
 		}
@@ -206,7 +206,7 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		 * publish it through tmp->msgp -- the kernel writes the
 		 * received message into *tmp->msgp. */
 		mb_addr = (unsigned long) mb;
-		avoid_shared_buffer(&mb_addr, sizeof(long) + 256);
+		avoid_shared_buffer_out(&mb_addr, sizeof(long) + 256);
 		mb = (struct msgbuf *) mb_addr;
 
 		tmp = (void *) get_writable_struct(sizeof(*tmp));
@@ -219,7 +219,7 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		rec->a3 = 256;			/* msgsz */
 		rec->a4 = RAND_BOOL() ? IPC_NOWAIT : 0;
 		rec->a5 = (unsigned long) tmp;
-		avoid_shared_buffer(&rec->a5, sizeof(*tmp));
+		avoid_shared_buffer_inout(&rec->a5, sizeof(*tmp));
 		break;
 	}
 
@@ -251,7 +251,7 @@ static void sanitise_ipc(struct syscallrecord *rec)
 				break;
 			memset(buf, 0, sizeof(*buf));
 			rec->a5 = (unsigned long) buf;
-			avoid_shared_buffer(&rec->a5, sizeof(*buf));
+			avoid_shared_buffer_inout(&rec->a5, sizeof(*buf));
 			break;
 		}
 		case IPC_INFO:
@@ -262,7 +262,7 @@ static void sanitise_ipc(struct syscallrecord *rec)
 				break;
 			memset(buf, 0, 256);
 			rec->a5 = (unsigned long) buf;
-			avoid_shared_buffer(&rec->a5, 256);
+			avoid_shared_buffer_inout(&rec->a5, 256);
 			break;
 		}
 		}
@@ -317,7 +317,7 @@ static void sanitise_ipc(struct syscallrecord *rec)
 				break;
 			memset(buf, 0, sizeof(*buf));
 			rec->a5 = (unsigned long) buf;
-			avoid_shared_buffer(&rec->a5, sizeof(*buf));
+			avoid_shared_buffer_inout(&rec->a5, sizeof(*buf));
 			break;
 		}
 		case IPC_INFO:
@@ -328,7 +328,7 @@ static void sanitise_ipc(struct syscallrecord *rec)
 				break;
 			memset(buf, 0, 256);
 			rec->a5 = (unsigned long) buf;
-			avoid_shared_buffer(&rec->a5, 256);
+			avoid_shared_buffer_inout(&rec->a5, 256);
 			break;
 		}
 		}
