@@ -2864,11 +2864,13 @@ void kcov_cmp_stats_periodic_dump(void)
 				" runtime_enable=%d/%u",
 				__atomic_load_n(&d->runtime_enable_errno, __ATOMIC_RELAXED), rt_enable_c);
 
-		stats_log_write("KCOV CMP DIAG errnos (first-failure-wins, cumulative count):\n");
-		if (ni > 0)
-			stats_log_write(" %s\n", init_buf);
-		if (nr > 0)
-			stats_log_write(" %s\n", rt_buf);
+		if (ni > 0 || nr > 0) {
+			stats_log_write("KCOV CMP DIAG errnos (first-failure-wins, cumulative count):\n");
+			if (ni > 0)
+				stats_log_write(" %s\n", init_buf);
+			if (nr > 0)
+				stats_log_write(" %s\n", rt_buf);
+		}
 	}
 
 	prev_records       = cur_records;
