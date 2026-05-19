@@ -296,6 +296,13 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 		kc->mode = KCOV_MODE_CMP;
 	else
 		kc->mode = KCOV_MODE_PC;
+
+	if (kc->mode == KCOV_MODE_CMP)
+		__atomic_fetch_add(&kcov_shm->cmp_mode_children, 1,
+			__ATOMIC_RELAXED);
+	else
+		__atomic_fetch_add(&kcov_shm->pc_mode_children, 1,
+			__ATOMIC_RELAXED);
 	return;
 
 err_unmap_cmp:

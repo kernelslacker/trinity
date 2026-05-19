@@ -1316,6 +1316,7 @@ static void print_kcov_cmp_diag(void)
 	char buf[512];
 	int n = 0;
 	unsigned int open_c, init_trace_c, mmap_c, enable_c, disable_c, rt_enable_c;
+	unsigned int pc_kids, cmp_kids;
 
 	if (kcov_shm == NULL)
 		return;
@@ -1327,6 +1328,17 @@ static void print_kcov_cmp_diag(void)
 	enable_c     = __atomic_load_n(&d->init_enable_count,     __ATOMIC_RELAXED);
 	disable_c    = __atomic_load_n(&d->init_disable_count,    __ATOMIC_RELAXED);
 	rt_enable_c  = __atomic_load_n(&d->runtime_enable_count,  __ATOMIC_RELAXED);
+
+	pc_kids  = __atomic_load_n(&kcov_shm->pc_mode_children,  __ATOMIC_RELAXED);
+	cmp_kids = __atomic_load_n(&kcov_shm->cmp_mode_children, __ATOMIC_RELAXED);
+
+	/* Emit the MODES line only when both populations are non-zero —
+	 * a PC-only run (cmp probe failed kernel-wide, or all children
+	 * happened to roll PC) doesn't need a line that would just read
+	 * "cmp=0" and add noise to the stats cadence. */
+	if (pc_kids > 0 && cmp_kids > 0)
+		output(0, "[main] KCOV CMP MODES: pc=%u cmp=%u\n",
+			pc_kids, cmp_kids);
 
 	if ((open_c | init_trace_c | mmap_c | enable_c | disable_c | rt_enable_c) == 0)
 		return;

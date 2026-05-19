@@ -220,6 +220,13 @@ struct kcov_shared {
 	 * because the child's stdout has already been dup2'd to /dev/null
 	 * by the time KCOV_TRACE_CMP setup runs. */
 	struct kcov_cmp_diag cmp_diag;
+	/* Per-mode child population counters, bumped once per child in
+	 * kcov_init_child after the cmp_capable probe.  Surfaced through
+	 * print_kcov_cmp_diag so the operator can confirm the realised
+	 * mode mix matches KCOV_CMP_CHILD_RECIPROCAL.  Diagnostic only —
+	 * nothing depends on these for control flow. */
+	unsigned int pc_mode_children;
+	unsigned int cmp_mode_children;
 	/* Per-syscall count of CALLS that produced at least one new edge.
 	 * NOT a real edge bucket count — a syscall that uncovers 50 distinct
 	 * new edges in one call bumps this by 1, not by 50.  The real
