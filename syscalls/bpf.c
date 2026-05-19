@@ -98,7 +98,7 @@ static void bpf_prog_load(union bpf_attr *attr)
 	attr->log_buf = (u64) get_writable_address(page_size);
 	{
 		unsigned long log_buf_addr = attr->log_buf;
-		avoid_shared_buffer(&log_buf_addr, page_size);
+		avoid_shared_buffer_inout(&log_buf_addr, page_size);
 		attr->log_buf = log_buf_addr;
 	}
 	attr->kern_version = get_kern_version();
@@ -414,7 +414,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		attr->test.data_out = (u64) get_writable_address(page_size);
 		{
 			unsigned long data_out_addr = attr->test.data_out;
-			avoid_shared_buffer(&data_out_addr, page_size);
+			avoid_shared_buffer_inout(&data_out_addr, page_size);
 			attr->test.data_out = data_out_addr;
 		}
 		attr->test.repeat = rand() % 256;
@@ -465,7 +465,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		attr->info.info = (u64) get_writable_address(page_size);
 		{
 			unsigned long info_addr = attr->info.info;
-			avoid_shared_buffer(&info_addr, page_size);
+			avoid_shared_buffer_inout(&info_addr, page_size);
 			attr->info.info = info_addr;
 		}
 		rec->a3 = sizeof(attr->info);
@@ -521,7 +521,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		break;
 	}
 
-	avoid_shared_buffer(&rec->a2, rec->a3);
+	avoid_shared_buffer_inout(&rec->a2, rec->a3);
 
 	/*
 	 * Snapshot the cmd alongside the pre-relocation attr pointer.
