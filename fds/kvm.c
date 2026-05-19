@@ -546,15 +546,8 @@ static int get_rand_kvm_system_fd(void)
 		int fd;
 
 		obj = get_random_object(OBJ_FD_KVM_SYSTEM, OBJ_GLOBAL);
-		if (obj == NULL)
+		if (!objpool_check(obj, OBJ_FD_KVM_SYSTEM))
 			continue;
-
-		if ((uintptr_t)obj < 0x10000UL ||
-		    (uintptr_t)obj >= 0x800000000000UL) {
-			outputerr("get_rand_kvm_system_fd: bogus obj %p in "
-				  "OBJ_FD_KVM_SYSTEM pool\n", obj);
-			continue;
-		}
 
 		fd = obj->kvmsysobj.fd;
 		if (fd < 0)
@@ -577,15 +570,8 @@ static int get_rand_kvm_vm_fd(void)
 		int fd;
 
 		obj = get_random_object(OBJ_FD_KVM_VM, OBJ_GLOBAL);
-		if (obj == NULL)
+		if (!objpool_check(obj, OBJ_FD_KVM_VM))
 			continue;
-
-		if ((uintptr_t)obj < 0x10000UL ||
-		    (uintptr_t)obj >= 0x800000000000UL) {
-			outputerr("get_rand_kvm_vm_fd: bogus obj %p in "
-				  "OBJ_FD_KVM_VM pool\n", obj);
-			continue;
-		}
 
 		fd = obj->kvmvmobj.fd;
 		if (fd < 0)
@@ -608,15 +594,8 @@ static int get_rand_kvm_vcpu_fd(void)
 		int fd;
 
 		obj = get_random_object(OBJ_FD_KVM_VCPU, OBJ_GLOBAL);
-		if (obj == NULL)
+		if (!objpool_check(obj, OBJ_FD_KVM_VCPU))
 			continue;
-
-		if ((uintptr_t)obj < 0x10000UL ||
-		    (uintptr_t)obj >= 0x800000000000UL) {
-			outputerr("get_rand_kvm_vcpu_fd: bogus obj %p in "
-				  "OBJ_FD_KVM_VCPU pool\n", obj);
-			continue;
-		}
 
 		fd = obj->kvmvcpuobj.fd;
 		if (fd < 0)
