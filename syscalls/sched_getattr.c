@@ -119,6 +119,22 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 	}
 
 	/*
+	 * Clamp the size argument the kernel sees to the buffer's actual
+	 * allocation.  rec->a3 was picked from [SCHED_ATTR_SIZE_VER0,
+	 * page_size) independently of the buffer the generator handed the
+	 * kernel at rec->a2 -- when the catalog (or fallback) sized that
+	 * buffer smaller than rec->a3 (e.g. a 56-byte sched_attr_v0
+	 * zmalloc), the kernel's copy_to_user writes min(user_size,
+	 * kernel_attr_size) bytes and overruns the live allocation into
+	 * adjacent heap-arena objects.  Bounding user_size at sanitise
+	 * time preserves the freedom to fuzz across the SCHED_ATTR_SIZE_VER0
+	 * .. attr_alloc_size range while keeping the kernel's write inside
+	 * the buffer.
+	 */
+	if ((size_t) rec->a3 > attr_alloc_size)
+		rec->a3 = (unsigned long) attr_alloc_size;
+
+	/*
 	 * Snapshot all four post-oracle inputs.  Without this the post
 	 * handler reads rec->aN at post-time, when a sibling syscall may
 	 * have scribbled the slots: looks_like_corrupted_ptr() cannot tell
