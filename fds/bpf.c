@@ -177,7 +177,7 @@ int get_rand_bpf_fd(void)
 	if (local != NULL && local->num_entries > 0 && RAND_BOOL()) {
 		struct object *obj = get_random_object(OBJ_FD_BPF_MAP,
 						       OBJ_LOCAL);
-		if (obj != NULL)
+		if (objpool_check(obj, OBJ_FD_BPF_MAP))
 			return obj->bpfobj.map_fd;
 	}
 
@@ -200,20 +200,8 @@ int get_rand_bpf_fd(void)
 		int fd;
 
 		obj = get_random_object(OBJ_FD_BPF_MAP, OBJ_GLOBAL);
-		if (obj == NULL)
+		if (!objpool_check(obj, OBJ_FD_BPF_MAP))
 			continue;
-
-		/*
-		 * Heap pointers land at >= 0x10000 and below the 47-bit
-		 * user/kernel boundary; anything outside that window can't
-		 * be a real obj struct.  Reject before deref.
-		 */
-		if ((uintptr_t)obj < 0x10000UL ||
-		    (uintptr_t)obj >= 0x800000000000UL) {
-			outputerr("get_rand_bpf_fd: bogus obj %p in "
-				  "OBJ_FD_BPF_MAP pool\n", obj);
-			continue;
-		}
 
 		fd = obj->bpfobj.map_fd;
 		if (fd < 0)
@@ -426,7 +414,7 @@ int get_rand_bpf_prog_fd(void)
 	if (local != NULL && local->num_entries > 0 && RAND_BOOL()) {
 		struct object *obj = get_random_object(OBJ_FD_BPF_PROG,
 						       OBJ_LOCAL);
-		if (obj != NULL)
+		if (objpool_check(obj, OBJ_FD_BPF_PROG))
 			return obj->bpfprogobj.fd;
 	}
 
@@ -448,15 +436,8 @@ int get_rand_bpf_prog_fd(void)
 		int fd;
 
 		obj = get_random_object(OBJ_FD_BPF_PROG, OBJ_GLOBAL);
-		if (obj == NULL)
+		if (!objpool_check(obj, OBJ_FD_BPF_PROG))
 			continue;
-
-		if ((uintptr_t)obj < 0x10000UL ||
-		    (uintptr_t)obj >= 0x800000000000UL) {
-			outputerr("get_rand_bpf_prog_fd: bogus obj %p in "
-				  "OBJ_FD_BPF_PROG pool\n", obj);
-			continue;
-		}
 
 		fd = obj->bpfprogobj.fd;
 		if (fd < 0)
@@ -542,7 +523,7 @@ int get_rand_bpf_link_fd(void)
 	if (local != NULL && local->num_entries > 0 && RAND_BOOL()) {
 		struct object *obj = get_random_object(OBJ_FD_BPF_LINK,
 						       OBJ_LOCAL);
-		if (obj != NULL)
+		if (objpool_check(obj, OBJ_FD_BPF_LINK))
 			return obj->bpflinkobj.fd;
 	}
 
@@ -564,15 +545,8 @@ int get_rand_bpf_link_fd(void)
 		int fd;
 
 		obj = get_random_object(OBJ_FD_BPF_LINK, OBJ_GLOBAL);
-		if (obj == NULL)
+		if (!objpool_check(obj, OBJ_FD_BPF_LINK))
 			continue;
-
-		if ((uintptr_t)obj < 0x10000UL ||
-		    (uintptr_t)obj >= 0x800000000000UL) {
-			outputerr("get_rand_bpf_link_fd: bogus obj %p in "
-				  "OBJ_FD_BPF_LINK pool\n", obj);
-			continue;
-		}
 
 		fd = obj->bpflinkobj.fd;
 		if (fd < 0)
@@ -654,7 +628,7 @@ int get_rand_bpf_btf_fd(void)
 	if (local != NULL && local->num_entries > 0 && RAND_BOOL()) {
 		struct object *obj = get_random_object(OBJ_FD_BPF_BTF,
 						       OBJ_LOCAL);
-		if (obj != NULL)
+		if (objpool_check(obj, OBJ_FD_BPF_BTF))
 			return obj->bpfbtfobj.fd;
 	}
 
@@ -676,15 +650,8 @@ int get_rand_bpf_btf_fd(void)
 		int fd;
 
 		obj = get_random_object(OBJ_FD_BPF_BTF, OBJ_GLOBAL);
-		if (obj == NULL)
+		if (!objpool_check(obj, OBJ_FD_BPF_BTF))
 			continue;
-
-		if ((uintptr_t)obj < 0x10000UL ||
-		    (uintptr_t)obj >= 0x800000000000UL) {
-			outputerr("get_rand_bpf_btf_fd: bogus obj %p in "
-				  "OBJ_FD_BPF_BTF pool\n", obj);
-			continue;
-		}
 
 		fd = obj->bpfbtfobj.fd;
 		if (fd < 0)
