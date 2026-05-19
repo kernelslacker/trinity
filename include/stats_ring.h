@@ -198,3 +198,11 @@ void stats_ring_drain_all(void);
  * Allocate the shm_published mirror page.  Called from init_shm().
  */
 void stats_published_init(void);
+
+/*
+ * Per-child mprotect freeze of the shm_published mirror page to
+ * PROT_READ.  Called from init_child() so children see a read-only
+ * view of the parent-write / child-read mirror.  Mirrors the
+ * healer_published_freeze() / edgepair_published_freeze() helpers.
+ */
+void stats_published_freeze(void);

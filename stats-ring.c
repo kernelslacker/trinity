@@ -14,11 +14,14 @@
  * termination check.  Republished once per drain.
  */
 
+#include <errno.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include <sys/mman.h>
 
+#include "arch.h"		/* page_size, PAGE_MASK */
 #include "child.h"
 #include "pids.h"
 #include "shm.h"
@@ -229,4 +232,48 @@ void stats_published_init(void)
 {
 	shm_published = alloc_shared(sizeof(struct stats_published));
 	memset(shm_published, 0, sizeof(*shm_published));
+}
+
+/*
+ * Per-child mprotect freeze of the shm_published mirror page.  The
+ * mirror is parent-write / child-read: children read fleet_op_count
+ * off it on the cold path (maybe_rotate_strategy()'s rotation clock
+ * in random-syscall.c and the syscalls_todo termination check in
+ * child_process()), and the parent's stats_publish_locked() inside
+ * stats_ring_drain_all() is the sole writer.  The mirror-integrity
+ * sample in shm_is_corrupt() (main.c) already documents the
+ * PROT_READ contract -- "republish-time we wrote ... and then
+ * mprotected the page PROT_READ" -- but the matching mprotect()
+ * call was missing, leaving the contract as comment only.  A wild
+ * kernel store through a fuzzed syscall arg pointer could scribble
+ * fleet_op_count between publishes, perturbing the rotation clock
+ * and syscalls_todo progress; the integrity check would only flag
+ * the damage post-hoc.
+ *
+ * Called from the per-child post-fork init hook so the freeze
+ * applies in child address space.  mprotect is per-process, so the
+ * parent's mapping stays PROT_READ|PROT_WRITE and the drain's
+ * publish keeps writing through; only children see the read-only
+ * view.
+ *
+ * Best-effort on failure: log via the canonical helper and continue.
+ * mprotect can ENOMEM if the kernel runs out of VMA slots splitting
+ * the mapping that backs the mirror (same failure mode as the
+ * healer/edgepair freeze helpers and the freeze_sibling_childdata
+ * sweep) and turning a transient kernel limit into a fleet-wide
+ * crash would be worse than leaving the mirror RW for the lifetime
+ * of the affected child.
+ */
+void stats_published_freeze(void)
+{
+	size_t bytes;
+
+	if (shm_published == NULL)
+		return;
+
+	bytes = sizeof(struct stats_published);
+	bytes = (bytes + page_size - 1) & PAGE_MASK;
+	if (mprotect(shm_published, bytes, PROT_READ) != 0)
+		log_mprotect_failure(shm_published, bytes, PROT_READ,
+				     __builtin_return_address(0), errno);
 }

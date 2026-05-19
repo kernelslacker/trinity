@@ -689,6 +689,17 @@ static void init_child(struct childdata *child, int childno)
 	 * already documents the PROT_READ contract. */
 	edgepair_published_freeze();
 
+	/* Same shape for the shm_published stats mirror: children read
+	 * fleet_op_count off it on the cold path (maybe_rotate_strategy()'s
+	 * rotation clock, syscalls_todo termination); the parent's
+	 * stats_publish_locked() inside stats_ring_drain_all() is the
+	 * sole writer.  The integrity check in shm_is_corrupt() already
+	 * documents the PROT_READ contract, but the matching mprotect()
+	 * call was missing -- a wild kernel write through a fuzzed syscall
+	 * arg pointer could scribble fleet_op_count between publishes and
+	 * perturb rotation / termination behavior. */
+	stats_published_freeze();
+
 	/* Wait for parent to set our childno */
 	while (__atomic_load_n(&pids[childno], __ATOMIC_ACQUIRE) != pid) {
 		sched_yield();

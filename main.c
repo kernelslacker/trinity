@@ -137,13 +137,16 @@ static int shm_is_corrupt(void)
 	}
 	parent_stats.previous_op_count = current_op_count;
 
-	/* Mirror page integrity check: republish-time we wrote
-	 * parent_stats.op_count into shm_published->fleet_op_count and then
-	 * mprotected the page PROT_READ.  A read-back here that disagrees
-	 * with the canonical aggregate means somebody found a write window
-	 * (a freeze gap, or somehow a wild write succeeded against the
-	 * mprotected page).  Log + bump rather than panic -- the canonical
-	 * value is still trustworthy. */
+	/* Mirror page integrity check: stats_publish_locked() in the
+	 * parent's drain wrote parent_stats.op_count into
+	 * shm_published->fleet_op_count, and each child has the page
+	 * mprotected PROT_READ in its own address space via the
+	 * stats_published_freeze() called from init_child().  A read-back
+	 * here that disagrees with the canonical aggregate means somebody
+	 * found a write window (a freeze gap before the per-child mprotect
+	 * lands, or somehow a wild write succeeded against the read-only
+	 * mapping in a child).  Log + bump rather than panic -- the
+	 * canonical value is still trustworthy. */
 	if (shm_published != NULL &&
 	    shm_published->fleet_op_count != current_op_count) {
 		output(0, "shm_published mirror: fleet_op_count=%lu, "
