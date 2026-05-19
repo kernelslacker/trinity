@@ -1397,10 +1397,15 @@ static void print_stats(void)
 			if (kcov_shm != NULL) {
 				static unsigned long last_edges = 0;
 				static unsigned long last_cmp_records = 0;
+				static unsigned long last_cmp_trunc = 0;
 				unsigned long edges = kcov_shm->edges_found;
 				unsigned long cmp_records = kcov_shm->cmp_records_collected;
+				unsigned long cmp_trunc = __atomic_load_n(
+					&kcov_shm->cmp_trace_truncated,
+					__ATOMIC_RELAXED);
 				long delta = edges - last_edges;
 				long cmp_delta = cmp_records - last_cmp_records;
+				long cmp_trunc_delta = cmp_trunc - last_cmp_trunc;
 
 				/* cmp_records surfaced alongside edges so cmp-hints
 				 * health is visible in out.log without --show-stats.
@@ -1408,16 +1413,23 @@ static void print_stats(void)
 				 * pool changes" for its entire length should also show
 				 * cmp_records=0 here, distinguishing "KCOV_TRACE_CMP
 				 * produced no records" from "kcov_enable_cmp silently
-				 * flipped cmp_capable=false for every child". */
-				output(0, "%ld iterations. [HI:%ld%s] %lu/sec  KCOV: [%lu edges, %+ld]  KCOV CMP: [%lu cmp_records, %+ld]\n",
+				 * flipped cmp_capable=false for every child".
+				 *
+				 * The trunc counter is the per-syscall KCOV_CMP_RECORDS_MAX
+				 * overflow bumped in kcov_collect_cmp().  A growing delta
+				 * here means cmp_records is systematically undercounted
+				 * for whichever syscalls are tripping the cap. */
+				output(0, "%ld iterations. [HI:%ld%s] %lu/sec  KCOV: [%lu edges, %+ld]  KCOV CMP: [%lu cmp_records, %+ld] [%lu trunc, %+ld]\n",
 					op_count,
 					hiscore,
 					stall_count ? stalltxt : "",
 					rate,
 					edges, last_edges > 0 ? delta : 0,
-					cmp_records, last_cmp_records > 0 ? cmp_delta : 0);
+					cmp_records, last_cmp_records > 0 ? cmp_delta : 0,
+					cmp_trunc, last_cmp_trunc > 0 ? cmp_trunc_delta : 0);
 				last_edges = edges;
 				last_cmp_records = cmp_records;
+				last_cmp_trunc = cmp_trunc;
 				print_kcov_cmp_diag();
 			} else {
 				output(0, "%ld iterations. [HI:%ld%s] %lu/sec\n",
