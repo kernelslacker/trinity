@@ -92,11 +92,13 @@ static void sanitise_getsockopt(struct syscallrecord *rec)
 	/*
 	 * The kernel writes the option value through optval (a4) up to
 	 * *optlen bytes and updates *optlen (a5) with the actual count.
-	 * Both args must be redirected if they overlap an alloc_shared
-	 * region or the libc brk arena before the syscall is issued.
+	 * a4 is purely output -- use _out so the relocated buffer is left
+	 * untouched.  a5 is value-result -- the kernel reads the initial
+	 * size before writing back the actual count, so it must be _inout
+	 * to preserve the *lenp = page_size we just stored.
 	 */
-	avoid_shared_buffer(&rec->a4, page_size);
-	avoid_shared_buffer(&rec->a5, sizeof(socklen_t));
+	avoid_shared_buffer_out(&rec->a4, page_size);
+	avoid_shared_buffer_inout(&rec->a5, sizeof(socklen_t));
 }
 
 static void post_getsockopt(struct syscallrecord *rec)
