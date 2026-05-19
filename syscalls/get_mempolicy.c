@@ -50,12 +50,14 @@ static unsigned long get_mempolicy_flags[] = {
  * (maxnode, addr, flags) tuple.
  */
 struct get_mempolicy_post_state {
+	unsigned long magic;
 	unsigned long policy;
 	unsigned long nmask;
 	unsigned long maxnode;
 	unsigned long addr;
 	unsigned long flags;
 };
+#define GET_MEMPOLICY_POST_STATE_MAGIC	0x474D504CUL	/* "GMPL" */
 #endif
 
 static void sanitise_get_mempolicy(struct syscallrecord *rec)
@@ -90,6 +92,7 @@ static void sanitise_get_mempolicy(struct syscallrecord *rec)
 	 * allocation.  post_state is private to the post handler.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic   = GET_MEMPOLICY_POST_STATE_MAGIC;
 	snap->policy  = rec->a1;
 	snap->nmask   = rec->a2;
 	snap->maxnode = rec->a3;
@@ -169,6 +172,24 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_get_mempolicy: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * get_mempolicy_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon without freeing rather than feed
+	 * wild bytes into the policy/nmask compare or the re-call (and
+	 * don't deferred_freeptr() a pointer we don't own).
+	 */
+	if (snap->magic != GET_MEMPOLICY_POST_STATE_MAGIC) {
+		outputerr("post_get_mempolicy: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}

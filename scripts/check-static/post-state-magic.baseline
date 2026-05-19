@@ -20,7 +20,6 @@
 # to this list.
 #
 # Lines starting with `#` and blank lines are ignored.
-syscalls/get_mempolicy.c:get_mempolicy
 syscalls/get_robust_list.c:get_robust_list
 syscalls/listmount.c:listmount
 syscalls/listxattrat.c:listxattrat
