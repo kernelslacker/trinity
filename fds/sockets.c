@@ -580,25 +580,8 @@ struct socketinfo * get_rand_socketinfo(void)
 		 * before return narrows that window to a few cycles.
 		 */
 		obj = get_random_object(OBJ_FD_SOCKET, OBJ_GLOBAL);
-		if (obj == NULL)
+		if (!objpool_check(obj, OBJ_FD_SOCKET))
 			continue;
-
-		/*
-		 * Defend against stale or corrupted slot pointers leaking
-		 * out of the OBJ_FD_SOCKET pool.  Heap pointers land at
-		 * >= 0x10000 and below the 47-bit user/kernel boundary;
-		 * any obj pointer outside that window can't be a real obj
-		 * struct, and dereferencing &obj->sockinfo then si->fd or
-		 * si->triplet.family scribbles garbage into whatever
-		 * sanitise_* hook is consuming the socketinfo (recvmsg's
-		 * msg_name, setsockopt's level/optname dispatch).
-		 */
-		if ((uintptr_t)obj < 0x10000UL ||
-		    (uintptr_t)obj >= 0x800000000000UL) {
-			outputerr("get_rand_socketinfo: bogus obj %p in "
-				  "OBJ_FD_SOCKET pool\n", obj);
-			continue;
-		}
 
 		si = &obj->sockinfo;
 
