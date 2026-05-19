@@ -64,6 +64,26 @@ struct kcov_remote_arg {
 
 struct kcov_shared *kcov_shm = NULL;
 
+/*
+ * Record a KCOV_TRACE_CMP setup/runtime failure into the parent-visible
+ * cmp_diag slots.  Called from child context (post-dup2-to-/dev/null),
+ * where output() to stdout is silently dropped — the shm fields are
+ * the only diagnostic channel that survives back to the parent.
+ *
+ * First failure wins for the errno slot: CAS-from-zero so subsequent
+ * failures at the same site don't overwrite the original errno.  The
+ * count slot atomically tallies every failure so the parent can see
+ * how many children hit each site even when they all hit the same one.
+ */
+static void kcov_cmp_diag_record(int *errno_slot, unsigned int *count_slot,
+				 int err)
+{
+	int expected = 0;
+	__atomic_compare_exchange_n(errno_slot, &expected, err, false,
+		__ATOMIC_RELAXED, __ATOMIC_RELAXED);
+	__atomic_fetch_add(count_slot, 1, __ATOMIC_RELAXED);
+}
+
 void kcov_init_global(void)
 {
 	int fd;
@@ -221,13 +241,13 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	if (kc->active) {
 		kc->cmp_fd = open("/sys/kernel/debug/kcov", O_RDWR);
 		if (kc->cmp_fd < 0) {
-			output(0, "KCOV CMP probe: open(/sys/kernel/debug/kcov) failed (errno=%d %s) -- cmp disabled\n",
-			       errno, strerror(errno));
+			kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_open_errno,
+				&kcov_shm->cmp_diag.init_open_count, errno);
 		} else {
 			if (ioctl(kc->cmp_fd, KCOV_INIT_TRACE,
 					(unsigned long)KCOV_CMP_BUFFER_SIZE) < 0) {
-				output(0, "KCOV CMP probe: KCOV_INIT_TRACE failed (errno=%d %s) -- cmp disabled\n",
-				       errno, strerror(errno));
+				kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_init_trace_errno,
+					&kcov_shm->cmp_diag.init_init_trace_count, errno);
 				goto err_close_cmp;
 			}
 
@@ -236,8 +256,8 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 				PROT_READ | PROT_WRITE, MAP_SHARED,
 				kc->cmp_fd, 0);
 			if (kc->cmp_trace_buf == MAP_FAILED) {
-				output(0, "KCOV CMP probe: mmap failed (errno=%d %s) -- cmp disabled\n",
-				       errno, strerror(errno));
+				kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_mmap_errno,
+					&kcov_shm->cmp_diag.init_mmap_count, errno);
 				kc->cmp_trace_buf = NULL;
 				goto err_close_cmp;
 			}
@@ -246,13 +266,13 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 			 * without CMP returns -ENOTSUPP from ENABLE; tear
 			 * down the cmp fd and leave cmp_capable = false. */
 			if (ioctl(kc->cmp_fd, KCOV_ENABLE, KCOV_TRACE_CMP) < 0) {
-				output(0, "KCOV CMP probe: KCOV_ENABLE(KCOV_TRACE_CMP) failed (errno=%d %s) -- cmp disabled\n",
-				       errno, strerror(errno));
+				kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_enable_errno,
+					&kcov_shm->cmp_diag.init_enable_count, errno);
 				goto err_unmap_cmp;
 			}
 			if (ioctl(kc->cmp_fd, KCOV_DISABLE, 0) < 0) {
-				output(0, "KCOV CMP probe: KCOV_DISABLE failed (errno=%d %s) -- cmp disabled\n",
-				       errno, strerror(errno));
+				kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_disable_errno,
+					&kcov_shm->cmp_diag.init_disable_count, errno);
 				goto err_unmap_cmp;
 			}
 
@@ -341,10 +361,10 @@ void kcov_enable_cmp(struct kcov_child *kc)
 		 * kc->active alone — PC tracing on the other fd is
 		 * independent and still valid; just stop attempting CMP.
 		 * The early-return at the top of this function fires once
-		 * cmp_capable flips to false, so this output runs exactly
-		 * once per child instead of spamming per-syscall. */
-		output(0, "KCOV CMP: KCOV_ENABLE(KCOV_TRACE_CMP) failed (errno=%d %s), disabling cmp_capable for this child\n",
-		       errno, strerror(errno));
+		 * cmp_capable flips to false, so the shm record gets one
+		 * bump per child instead of spamming per-syscall. */
+		kcov_cmp_diag_record(&kcov_shm->cmp_diag.runtime_enable_errno,
+			&kcov_shm->cmp_diag.runtime_enable_count, errno);
 		kc->cmp_capable = false;
 		return;
 	}

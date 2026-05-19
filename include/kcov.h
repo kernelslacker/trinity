@@ -118,6 +118,27 @@ struct kcov_cmp_record {
 	uint64_t ip;
 };
 
+/* Per-failure-site diagnostic slots for the KCOV_TRACE_CMP setup and
+ * runtime paths.  Written from child context (post-dup2-to-/dev/null,
+ * so output() to stdout is silently swallowed) but read by the parent
+ * via shared memory, which is how the data survives back out.  First
+ * failure wins for *_errno (CAS-from-zero); *_count tallies every
+ * failure at that site across all children. */
+struct kcov_cmp_diag {
+	int init_open_errno;
+	int init_init_trace_errno;
+	int init_mmap_errno;
+	int init_enable_errno;
+	int init_disable_errno;
+	int runtime_enable_errno;
+	unsigned int init_open_count;
+	unsigned int init_init_trace_count;
+	unsigned int init_mmap_count;
+	unsigned int init_enable_count;
+	unsigned int init_disable_count;
+	unsigned int runtime_enable_count;
+};
+
 struct kcov_child {
 	/* Field order is constrained by the hot-cacheline budget in struct
 	 * childdata (see static_assert in child.c).  Sized to 48 bytes:
@@ -164,6 +185,10 @@ struct kcov_shared {
 	/* Number of kcov_collect_cmp() calls where the cmp buffer filled
 	 * up.  Mirror of trace_truncated, sized off KCOV_CMP_BUFFER_SIZE. */
 	unsigned long cmp_trace_truncated;
+	/* See struct kcov_cmp_diag — child-context writes are routed here
+	 * because the child's stdout has already been dup2'd to /dev/null
+	 * by the time KCOV_TRACE_CMP setup runs. */
+	struct kcov_cmp_diag cmp_diag;
 	/* Per-syscall count of CALLS that produced at least one new edge.
 	 * NOT a real edge bucket count — a syscall that uncovers 50 distinct
 	 * new edges in one call bumps this by 1, not by 50.  The real
