@@ -31,7 +31,9 @@
  * a clean compare against an unrelated /proc/self/maps slice or an
  * "mprotect did not land" anomaly that never happened.
  */
+#define MPROTECT_POST_STATE_MAGIC	0x4D505254UL	/* "MPRT" */
 struct mprotect_post_state {
+	unsigned long magic;
 	unsigned long addr;
 	unsigned long len;
 	unsigned long prot;
@@ -72,6 +74,7 @@ static void sanitise_mprotect(struct syscallrecord *rec)
 	 * to the post handler.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = MPROTECT_POST_STATE_MAGIC;
 	snap->addr = rec->a1;
 	snap->len  = rec->a2;
 	snap->prot = rec->a3;
@@ -99,6 +102,24 @@ static void post_mprotect(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_mprotect: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * mprotect_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon without freeing rather than feed
+	 * wild bytes into the map->prot update or the proc-maps oracle
+	 * (and don't deferred_freeptr() a pointer we don't own).
+	 */
+	if (snap->magic != MPROTECT_POST_STATE_MAGIC) {
+		outputerr("post_mprotect: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
