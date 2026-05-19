@@ -490,37 +490,42 @@ void deferred_freeptr(unsigned long *p)
  * that longjmps out of fn() can't leave a freed pointer pending in
  * the ring.
  *
- * Sub-page guard: a ptr below 0x10000 cannot be a real heap address;
- * almost certainly a fuzzed value-result syscall scribbled a pid-shape
- * into the slot.  Drop rather than crash on free().
+ * Re-run the same stateless gates deferred_free_enqueue used to admit
+ * the pointer in the first place: shape (pid-scribbled / sub-page /
+ * non-canonical / misaligned), heap-bounds, shared-region overlap.
+ * Today's ASAN run logged 105 "attempting free on un-malloc'd"
+ * crashes whose root cause is the ring entry being scribbled between
+ * the enqueue admission check and TTL expiry -- the slot lives RW
+ * inside ring_unlock() brackets, but a sibling fuzzed value-result
+ * syscall can still land a stomp into the same page during that
+ * window.  Before this guard, free_ring_entry checked only sub-page
+ * and alignment; every stomp that landed on something heap-shaped
+ * but not actually malloc-returned was being fed straight to free().
  *
- * Alignment guard: defense in depth at the free() boundary.  glibc
- * malloc returns >= 8-byte aligned chunks; libasan internally CHECKs
- * alignment and aborts the child without an ASAN bad-free report
- * (asan_poisoning.cpp: "AddrIsAlignedByGranularity(addr) != 0"),
- * which is harder to triage than a normal bad-free.
+ * alloc_track_consume already fired at enqueue and would always miss
+ * here -- skipped, not re-run.  The remaining gates are stateless and
+ * cheap enough to re-evaluate per drain.
+ *
+ * Bumps STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR (or its parent
+ * fallback) on any rejection, matching the existing pattern; the
+ * specific gate that fired shows up in the outputerr log line.
  */
 static void free_ring_entry(void *ptr, unsigned int slot)
 {
-	if ((unsigned long)ptr < 0x10000) {
-		struct childdata *c = this_child();
+	struct childdata *c;
+	const char *reason = NULL;
 
-		outputerr("deferred_free: rejected suspicious ptr=%p "
-			  "in slot %u (looks pid-shaped)\n", ptr, slot);
-		if (c != NULL && c->stats_ring != NULL)
-			stats_ring_enqueue(c->stats_ring,
-					   STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR,
-					   0, 1);
-		else
-			parent_stats.deferred_free_corrupt_ptr++;
-		return;
-	}
+	if (is_corrupt_ptr_shape(ptr))
+		reason = "shape";
+	else if (!is_in_glibc_heap(ptr))
+		reason = "non-heap";
+	else if (range_overlaps_shared((unsigned long)ptr, 1))
+		reason = "shared-region";
 
-	if (((unsigned long)ptr & 0x7) != 0) {
-		struct childdata *c = this_child();
-
-		outputerr("deferred_free: rejected misaligned ptr=%p "
-			  "in slot %u\n", ptr, slot);
+	if (reason != NULL) {
+		c = this_child();
+		outputerr("deferred_free: rejected ptr=%p in slot %u (%s)\n",
+			  ptr, slot, reason);
 		if (c != NULL && c->stats_ring != NULL)
 			stats_ring_enqueue(c->stats_ring,
 					   STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR,
