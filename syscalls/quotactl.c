@@ -51,7 +51,15 @@ static void sanitise_quotactl(struct syscallrecord *rec)
 			dqb->dqb_isoftlimit = rand() % 100000;
 		}
 		rec->a4 = (unsigned long) dqb;
-		avoid_shared_buffer(&rec->a4, sizeof(*dqb));
+		/*
+		 * Shared branch: Q_GETQUOTA/Q_GETNEXTQUOTA only write back
+		 * (zero-filled dqb is harmless to relocate), but Q_SETQUOTA
+		 * is input -- the limits we just populated above must survive
+		 * the relocation.  Use _inout so the populated bytes are
+		 * memcpy'd into the replacement allocation for the SETQUOTA
+		 * case; the GET cases tolerate the extra copy.
+		 */
+		avoid_shared_buffer_inout(&rec->a4, sizeof(*dqb));
 		break;
 	}
 	case Q_GETINFO:
@@ -66,7 +74,14 @@ static void sanitise_quotactl(struct syscallrecord *rec)
 			dqi->dqi_igrace = 3600 * (1 + (rand() % 168));
 		}
 		rec->a4 = (unsigned long) dqi;
-		avoid_shared_buffer(&rec->a4, sizeof(*dqi));
+		/*
+		 * Same shape as the dqb branch above: Q_GETINFO is write-
+		 * only but Q_SETINFO carries the dqi_bgrace/dqi_igrace bytes
+		 * we just populated.  Use _inout so the populated bytes
+		 * survive the relocation for SETINFO; GETINFO tolerates the
+		 * extra copy of zeros.
+		 */
+		avoid_shared_buffer_inout(&rec->a4, sizeof(*dqi));
 		break;
 	}
 	case Q_GETFMT: {
