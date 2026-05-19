@@ -296,20 +296,8 @@ static int get_rand_io_uring_fd(void)
 		int fd;
 
 		obj = get_random_object(OBJ_FD_IO_URING, OBJ_GLOBAL);
-		if (obj == NULL)
+		if (!objpool_check(obj, OBJ_FD_IO_URING))
 			continue;
-
-		/*
-		 * Heap pointers land at >= 0x10000 and below the 47-bit
-		 * user/kernel boundary; anything outside that window can't
-		 * be a real obj struct.  Reject before deref.
-		 */
-		if ((uintptr_t)obj < 0x10000UL ||
-		    (uintptr_t)obj >= 0x800000000000UL) {
-			outputerr("get_rand_io_uring_fd: bogus obj %p in "
-				  "OBJ_FD_IO_URING pool\n", obj);
-			continue;
-		}
 
 		fd = obj->io_uringobj.fd;
 		if (fd < 0)
