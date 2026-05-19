@@ -962,8 +962,14 @@ void cmp_hints_maybe_snapshot(void)
 	gen_now = cmp_hints_total_generation();
 	now = time(NULL);
 
+	/* Both gates must expire before a snapshot fires: enough generations
+	 * (so we don't write a near-identical payload to disk) AND enough
+	 * wall time (so a high-churn period doesn't trigger one save per
+	 * second).  The original && meant either gate alone could fire;
+	 * with post-fix CMP record rate the generation gate now trips in
+	 * milliseconds, making the time gate dead and the save loop spam. */
 	if (gen_now < cmp_hints_generation_at_last_snapshot
-			+ CMP_HINTS_SNAPSHOT_NEW &&
+			+ CMP_HINTS_SNAPSHOT_NEW ||
 	    now < cmp_hints_last_snapshot_time
 			+ (time_t)CMP_HINTS_SNAPSHOT_INTERVAL_SEC)
 		return;
