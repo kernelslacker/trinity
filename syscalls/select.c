@@ -99,18 +99,24 @@ static void sanitise_select(struct syscallrecord *rec)
 	rec->a5 = (unsigned long) tv;
 
 	/*
-	 * Redirect any output buffer that landed inside the SHM region or
-	 * the libc heap to a writable-address pool buffer.
-	 * avoid_shared_buffer() rewrites rec->aN in place to the pool
-	 * address (no bytes are copied -- the kernel just writes to the
-	 * replacement buffer instead), so the snapshot below captures the
-	 * post-redirect pointer and the post handler frees what the kernel
+	 * Redirect any buffer that landed inside the SHM region or the
+	 * libc heap to a writable-address pool buffer.  All four args are
+	 * value-result: the three fd_sets carry the requested-bit mask we
+	 * just populated via FD_SET() and are also written back with the
+	 * ready-bit mask, and the timeval carries the requested timeout
+	 * (tv_sec=0, tv_usec=10) that the kernel reads and rewrites with
+	 * the remaining time on signal interrupt.  Use
+	 * avoid_shared_buffer_inout() so the populated bytes survive the
+	 * relocation -- _out would zero the replacement allocation,
+	 * defeating every FD_SET above and turning the 10us probe into
+	 * an indefinite block.  The snapshot below captures the post-
+	 * redirect pointer and the post handler frees what the kernel
 	 * actually wrote to.
 	 */
-	avoid_shared_buffer(&rec->a2, sizeof(fd_set));
-	avoid_shared_buffer(&rec->a3, sizeof(fd_set));
-	avoid_shared_buffer(&rec->a4, sizeof(fd_set));
-	avoid_shared_buffer(&rec->a5, sizeof(struct timeval));
+	avoid_shared_buffer_inout(&rec->a2, sizeof(fd_set));
+	avoid_shared_buffer_inout(&rec->a3, sizeof(fd_set));
+	avoid_shared_buffer_inout(&rec->a4, sizeof(fd_set));
+	avoid_shared_buffer_inout(&rec->a5, sizeof(struct timeval));
 
 	/*
 	 * Snapshot all four heap pointers for the post handler.  A sibling
