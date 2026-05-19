@@ -355,27 +355,8 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 				struct object *obj;
 
 				obj = get_random_object(OBJ_FD_WATCH_QUEUE, OBJ_GLOBAL);
-				if (obj == NULL)
+				if (!objpool_check(obj, OBJ_FD_WATCH_QUEUE))
 					continue;
-
-				/*
-				 * Defend against stale or corrupted slot
-				 * pointers leaking out of the
-				 * OBJ_FD_WATCH_QUEUE pool.  Heap pointers
-				 * land at >= 0x10000 and below the 47-bit
-				 * user/kernel boundary; anything outside
-				 * that window can't be a real obj struct,
-				 * and dereferencing &obj->watch_queueobj.fd
-				 * would scribble whatever happens to live
-				 * at that address into rec->a3.
-				 */
-				if ((uintptr_t)obj < 0x10000UL ||
-				    (uintptr_t)obj >= 0x800000000000UL) {
-					outputerr("KEYCTL_WATCH_KEY: bogus obj %p "
-						  "in OBJ_FD_WATCH_QUEUE pool\n",
-						  obj);
-					continue;
-				}
 
 				/*
 				 * Last-line check: if the parent destroyed or
