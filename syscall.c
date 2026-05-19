@@ -166,26 +166,33 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	if (needalarm)
 		(void)alarm(1);
 
+	/* Per-child mode picked once in kcov_init_child: PC-mode children
+	 * enable the PC fd (per-thread or remote) and feed edge coverage,
+	 * CMP-mode children enable the cmp fd and feed comparison-operand
+	 * hints.  Exactly one fd is enabled per syscall because the kernel's
+	 * one-`t->kcov`-per-task rule returns -EBUSY on a second simultaneous
+	 * enable; the fleet-wide PC/CMP signal split comes from the
+	 * population mix instead of per-call mode toggling. */
 	if (rec->do32bit == false) {
-		if (kc != NULL && kc->remote_mode)
+		if (kc != NULL && kc->mode == KCOV_MODE_CMP) {
+			kcov_enable_cmp(kc);
+		} else if (kc != NULL && kc->remote_mode) {
 			kcov_enable_remote(kc, child != NULL ? child->num : 0);
-		else
+		} else {
 			kcov_enable_trace(kc);
-		/* CMP collection runs on a dedicated second fd in
-		 * parallel with whichever PC mode (per-thread or
-		 * remote) is active above; both buffers populate
-		 * simultaneously per syscall. */
-		kcov_enable_cmp(kc);
+		}
 		fault_armed = maybe_inject_fault(child, state);
 		ret = syscall(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 		saved_errno = errno;
 		kcov_disable(kc);
 	} else {
-		if (kc != NULL && kc->remote_mode)
+		if (kc != NULL && kc->mode == KCOV_MODE_CMP) {
+			kcov_enable_cmp(kc);
+		} else if (kc != NULL && kc->remote_mode) {
 			kcov_enable_remote(kc, child != NULL ? child->num : 0);
-		else
+		} else {
 			kcov_enable_trace(kc);
-		kcov_enable_cmp(kc);
+		}
 		fault_armed = maybe_inject_fault(child, state);
 		ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
 		saved_errno = errno;

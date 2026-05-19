@@ -896,13 +896,18 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 
 	output_syscall_prefix(rec, entry);
 
-	/* PC and CMP coverage now run on separate kcov fds in parallel,
-	 * so every syscall produces both — no more 1-in-N tradeoff between
-	 * the two.  The only remaining mode toggle is whether to use
-	 * KCOV_REMOTE_ENABLE on the PC fd to also pick up softirq /
-	 * threaded-irq / kthread coverage. */
-	child->kcov.remote_mode = child->kcov.remote_capable &&
-				  ONE_IN(KCOV_REMOTE_RATIO);
+	/* PC mode: per-child kcov fd collects edge coverage, optionally
+	 * via KCOV_REMOTE_ENABLE to also pick up softirq / threaded-irq /
+	 * kthread coverage triggered by this syscall.  CMP mode: per-child
+	 * cmp fd collects comparison-operand records that feed the
+	 * cmp_hints pool.  Mode is fixed at child init; remote_mode is
+	 * only meaningful in PC mode (KCOV_REMOTE_ENABLE applies to the PC
+	 * fd, not the cmp fd). */
+	if (child->kcov.mode == KCOV_MODE_PC)
+		child->kcov.remote_mode = child->kcov.remote_capable &&
+					  ONE_IN(KCOV_REMOTE_RATIO);
+	else
+		child->kcov.remote_mode = false;
 
 	do_syscall(rec, entry, &child->kcov, child);
 
@@ -910,10 +915,22 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * out-param alongside its bool found_new return.  Diff-ing the global
 	 * kcov_shm->edges_found around the call would race other children's
 	 * concurrent increments and over-attribute their edges to this
-	 * syscall; the per-call count is the authoritative number. */
-	new_edges = kcov_collect(&child->kcov, rec->nr, &new_edge_count);
-	kcov_collect_cmp(&child->kcov, rec->nr, child->is_explorer,
-			 child->strategy_at_pick);
+	 * syscall; the per-call count is the authoritative number.
+	 *
+	 * CMP-mode children contribute zero PC edges (their PC fd is never
+	 * enabled), so new_edge_count stays 0 and the per-strategy edge
+	 * attribution block below naturally skips on its `new_edge_count > 0`
+	 * gate.  HEALER observation, minicorpus saves, frontier ring updates,
+	 * and bandit reward attribution all also skip cleanly via
+	 * `if (new_edges)` further down — CMP-mode children just don't
+	 * contribute to those paths, which is by design. */
+	if (child->kcov.mode == KCOV_MODE_PC) {
+		new_edges = kcov_collect(&child->kcov, rec->nr, &new_edge_count);
+	} else {
+		kcov_collect_cmp(&child->kcov, rec->nr, child->is_explorer,
+				 child->strategy_at_pick);
+		new_edges = false;
+	}
 
 	/* Per-syscall new-edge attribution split by strategy pool.  Skipped
 	 * when the call produced no new edges (the dump only consumes the

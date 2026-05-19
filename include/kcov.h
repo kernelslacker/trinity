@@ -85,6 +85,30 @@
 #define KCOV_TRACE_PC  0
 #define KCOV_TRACE_CMP 1
 
+/*
+ * Per-child KCOV mode.  The kernel rejects a second KCOV_ENABLE on the
+ * same task with -EBUSY (the one-`t->kcov`-per-task rule in kernel/kcov.c),
+ * so PC and CMP collection cannot run simultaneously inside a single
+ * child.  Each child picks one mode at init and keeps it for its
+ * lifetime; the fleet-wide PC/CMP signal split comes from the population
+ * mix of children, not from per-call mode toggling.
+ */
+enum kcov_child_mode {
+	KCOV_MODE_PC = 0,
+	KCOV_MODE_CMP,
+};
+
+/*
+ * Reciprocal probability that a child runs in CMP-only mode.  CMP records
+ * feed the constant-comparison hint pool, which helps the fuzzer break
+ * plateaus by unblocking comparison-gated kernel branches; PC coverage is
+ * the load-bearing signal for everything else (HEALER observation, bandit
+ * reward attribution, edge-discovery rate, cold-syscall skipping).
+ * Biased toward PC mode so the high-frequency signal isn't starved; retune
+ * after A/B if cmp_records throughput is the bottleneck.
+ */
+#define KCOV_CMP_CHILD_RECIPROCAL 4   /* 1-in-4 children run CMP-only */
+
 /* KCOV remote coverage handle construction.
  * KCOV_SUBSYSTEM_COMMON covers softirqs and threaded IRQ handlers. */
 #define KCOV_SUBSYSTEM_COMMON	(0x00ULL << 56)
@@ -142,7 +166,9 @@ struct kcov_cmp_diag {
 struct kcov_child {
 	/* Field order is constrained by the hot-cacheline budget in struct
 	 * childdata (see static_assert in child.c).  Sized to 48 bytes:
-	 * 4 ints/u32 (16) + 5 bools (5) + 3 padding + 3 pointers (24).
+	 * 3 ints/u32 (12) + 5 bools + 1 uint8_t mode (6) + 6 padding +
+	 * 3 pointers (24).  The mode byte slots into the bool block so the
+	 * struct stays at 48 bytes without disturbing pointer alignment.
 	 * That leaves room in the 64-byte hot leading cacheline for the
 	 * three childdata fields that follow (last_syscall_nr, last_group,
 	 * op_nr).  child_id is intentionally not stored here —
@@ -157,6 +183,11 @@ struct kcov_child {
 	bool cmp_enabled_this_call;	/* true between kcov_enable_cmp() and kcov_disable() */
 	bool remote_mode;  /* true when using KCOV_REMOTE_ENABLE */
 	bool remote_capable; /* true if kernel supports KCOV_REMOTE_ENABLE */
+	/* Logically enum kcov_child_mode; stored as uint8_t so the field
+	 * lives inside the existing pad bytes after the bool block instead
+	 * of forcing an int-sized hole that would push the pointer triplet
+	 * out past 48 bytes and break the hot-cacheline budget. */
+	uint8_t mode;
 	unsigned long *trace_buf;
 	unsigned long *cmp_trace_buf;	/* mmap of cmp_fd, NULL if unavailable */
 	struct kcov_dedup_slot *dedup;	/* KCOV_DEDUP_SIZE entries, child-private */

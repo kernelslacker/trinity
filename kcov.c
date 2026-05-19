@@ -122,6 +122,7 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	kc->cmp_enabled_this_call = false;
 	kc->remote_mode = false;
 	kc->remote_capable = false;
+	kc->mode = KCOV_MODE_PC;
 	kc->dedup = NULL;
 	kc->current_generation = 0;
 
@@ -281,6 +282,20 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 				KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long));
 		}
 	}
+
+	/*
+	 * Pick this child's collection mode for its lifetime.  Gated on
+	 * cmp_capable so a kernel without KCOV_TRACE_CMP (or any failure
+	 * in the probe above) degrades cleanly to PC-only across the
+	 * fleet — KCOV_MODE_CMP is only reachable when the cmp fd is
+	 * actually usable.  rand() % N has bias O(1/RAND_MAX) for the
+	 * small N (4) used here; the population mix doesn't need
+	 * cryptographic uniformity.
+	 */
+	if (kc->cmp_capable && (rand() % KCOV_CMP_CHILD_RECIPROCAL) == 0)
+		kc->mode = KCOV_MODE_CMP;
+	else
+		kc->mode = KCOV_MODE_PC;
 	return;
 
 err_unmap_cmp:
@@ -398,14 +413,22 @@ void kcov_disable(struct kcov_child *kc)
 	if (kc == NULL)
 		return;
 
-	if (kc->fd >= 0 && kc->trace_buf != NULL)
-		ioctl(kc->fd, KCOV_DISABLE, 0);
-
-	/* Skip the cmp-fd DISABLE when cmp wasn't enabled this call —
-	 * the kernel would just return -EINVAL, and effector-map
-	 * calibration runs that wasted ioctl O(num_syscalls × num_args
-	 * × 64) times per child. */
-	if (kc->cmp_fd >= 0 && kc->cmp_trace_buf != NULL && kc->cmp_enabled_this_call) {
+	/* Mode is fixed per child at init (see kcov_init_child), so only
+	 * one of the two fds is ever enabled per syscall.  Branching here
+	 * keeps a CMP-mode child from spamming KCOV_DISABLE -EINVAL on the
+	 * PC fd every call (and a PC-mode child from spamming it on the cmp
+	 * fd).  The kernel's one-`t->kcov`-per-task rule makes this
+	 * exclusive: simultaneously enabling both fds returns -EBUSY on
+	 * the second enable, so a child only ever has one fd active. */
+	if (kc->mode == KCOV_MODE_PC) {
+		if (kc->fd >= 0 && kc->trace_buf != NULL)
+			ioctl(kc->fd, KCOV_DISABLE, 0);
+	} else if (kc->cmp_fd >= 0 && kc->cmp_trace_buf != NULL &&
+		   kc->cmp_enabled_this_call) {
+		/* cmp_enabled_this_call gate preserves the pre-existing
+		 * defence against a runtime KCOV_TRACE_CMP enable failure
+		 * mid-run flipping cmp_capable=false — the disable then
+		 * knows not to fire on an fd the kernel never enabled. */
 		ioctl(kc->cmp_fd, KCOV_DISABLE, 0);
 		kc->cmp_enabled_this_call = false;
 	}
