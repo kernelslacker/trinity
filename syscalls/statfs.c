@@ -34,7 +34,7 @@ struct statfs_post_state {
 
 static void sanitise_statfs(struct syscallrecord *rec)
 {
-	avoid_shared_buffer(&rec->a2, page_size);
+	avoid_shared_buffer_out(&rec->a2, page_size);
 
 #if defined(SYS_statfs) || defined(__NR_statfs)
 	{
@@ -267,7 +267,7 @@ struct statfs64_post_state {
 
 static void sanitise_statfs64(struct syscallrecord *rec)
 {
-	avoid_shared_buffer(&rec->a3, rec->a2 ? rec->a2 : page_size);
+	avoid_shared_buffer_out(&rec->a3, rec->a2 ? rec->a2 : page_size);
 
 #ifdef SYS_statfs64
 	{

@@ -75,7 +75,7 @@ static void sanitise_quotactl(struct syscallrecord *rec)
 		if (!fmt)
 			break;
 		rec->a4 = (unsigned long) fmt;
-		avoid_shared_buffer(&rec->a4, sizeof(*fmt));
+		avoid_shared_buffer_out(&rec->a4, sizeof(*fmt));
 		break;
 	}
 	default:

@@ -39,7 +39,7 @@ static void sanitise_flistxattr(struct syscallrecord *rec)
 
 	rec->post_state = 0;
 
-	avoid_shared_buffer(&rec->a2, rec->a3);
+	avoid_shared_buffer_out(&rec->a2, rec->a3);
 
 	/*
 	 * Snapshot the fd and list buffer pointer for the post oracle.
@@ -238,7 +238,7 @@ static void sanitise_listxattr(struct syscallrecord *rec)
 
 	rec->post_state = 0;
 
-	avoid_shared_buffer(&rec->a2, rec->a3);
+	avoid_shared_buffer_out(&rec->a2, rec->a3);
 
 	/*
 	 * Snapshot the pathname and list buffer pointer for the post
@@ -441,7 +441,7 @@ static void sanitise_llistxattr(struct syscallrecord *rec)
 
 	rec->post_state = 0;
 
-	avoid_shared_buffer(&rec->a2, rec->a3);
+	avoid_shared_buffer_out(&rec->a2, rec->a3);
 
 	/*
 	 * Snapshot the pathname and list buffer pointer for the post

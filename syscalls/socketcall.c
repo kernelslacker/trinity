@@ -81,12 +81,12 @@ static void socketcall_socketpair(unsigned long *args)
 	/* SYS_SOCKETPAIR needs a writable int[2] for the kernel to deposit
 	 * the pair of fds.  Without it the kernel returns -EFAULT and the
 	 * post handler has nothing to register.  Route through
-	 * avoid_shared_buffer() so the kernel can't scribble fds into the
+	 * avoid_shared_buffer_out() so the kernel can't scribble fds into the
 	 * trinity-shared allocator pool or libc heap chunk metadata --
 	 * blanket_address_scrub() only walks rec->a1..a6 and never reaches
 	 * inner pointers inside multiplexer args. */
 	args[3] = (unsigned long) get_writable_address(sizeof(int) * 2);
-	avoid_shared_buffer(&args[3], sizeof(int) * 2);
+	avoid_shared_buffer_out(&args[3], sizeof(int) * 2);
 }
 
 static void socketcall_send(unsigned long *args)

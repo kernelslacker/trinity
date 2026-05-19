@@ -44,7 +44,7 @@ static void sanitise_rt_sigprocmask(struct syscallrecord *rec)
 	 * fuzzed pointer can land inside an alloc_shared region and let the
 	 * kernel scribble bookkeeping.
 	 */
-	avoid_shared_buffer(&rec->a3, rec->a4);
+	avoid_shared_buffer_out(&rec->a3, rec->a4);
 
 	/*
 	 * Clear post_state up front so an early return below leaves the

@@ -36,7 +36,7 @@ static void sanitise_newlstat(struct syscallrecord *rec)
 
 	rec->post_state = 0;
 
-	avoid_shared_buffer(&rec->a2, page_size);
+	avoid_shared_buffer_out(&rec->a2, page_size);
 
 	/*
 	 * Snapshot the two input args for the post oracle.  Without this

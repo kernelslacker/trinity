@@ -35,7 +35,7 @@ static void sanitise_sysinfo(struct syscallrecord *rec)
 	 */
 	rec->post_state = 0;
 
-	avoid_shared_buffer(&rec->a1, sizeof(struct sysinfo));
+	avoid_shared_buffer_out(&rec->a1, sizeof(struct sysinfo));
 
 	/*
 	 * Snapshot the one input arg for the post oracle.  Without this

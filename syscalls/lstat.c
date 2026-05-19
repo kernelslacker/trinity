@@ -7,7 +7,7 @@
 
 static void sanitise_lstat_buf(struct syscallrecord *rec)
 {
-	avoid_shared_buffer(&rec->a2, page_size);
+	avoid_shared_buffer_out(&rec->a2, page_size);
 }
 
 struct syscallentry syscall_lstat = {

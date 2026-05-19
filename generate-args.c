@@ -1247,7 +1247,7 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
  * that ended up aliasing shared_regions or the libc heap arena gets
  * redirected to a writable address before the syscall is issued. Catches
  * the coverage-gap class where per-syscall sanitisers either don't call
- * avoid_shared_buffer() or miss specific slots. Length default is
+ * avoid_shared_buffer_out() or miss specific slots. Length default is
  * page_size (conservative; bare ARG_ADDRESS carries no length info
  * and walking adjacent slots per dispatch is too expensive). */
 static void blanket_address_scrub(struct syscallentry *entry, struct syscallrecord *rec)
@@ -1270,7 +1270,7 @@ static void blanket_address_scrub(struct syscallentry *entry, struct syscallreco
 		default: slot = NULL; break;
 		}
 		if (slot != NULL)
-			avoid_shared_buffer(slot, page_size);
+			avoid_shared_buffer_out(slot, page_size);
 		mask &= (uint8_t)(mask - 1);
 	}
 }

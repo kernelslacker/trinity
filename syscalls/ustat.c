@@ -70,7 +70,7 @@ static void sanitise_ustat(struct syscallrecord *rec)
 	 * struct ustat is not exposed by glibc, so use a page as an upper
 	 * bound on the kernel's writeback window.
 	 */
-	avoid_shared_buffer(&rec->a2, page_size);
+	avoid_shared_buffer_out(&rec->a2, page_size);
 }
 
 struct syscallentry syscall_ustat = {

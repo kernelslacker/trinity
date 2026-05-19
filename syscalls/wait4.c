@@ -15,8 +15,8 @@ static unsigned long wait_options[] = {
 
 static void sanitise_wait4(struct syscallrecord *rec)
 {
-	avoid_shared_buffer(&rec->a2, sizeof(int));
-	avoid_shared_buffer(&rec->a4, sizeof(struct rusage));
+	avoid_shared_buffer_out(&rec->a2, sizeof(int));
+	avoid_shared_buffer_out(&rec->a4, sizeof(struct rusage));
 }
 
 /*

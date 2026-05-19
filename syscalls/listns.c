@@ -85,7 +85,7 @@ static void sanitise_listns(struct syscallrecord *rec)
 	 * draws from the random pool, so a fuzzed pointer can land inside
 	 * an alloc_shared region.
 	 */
-	avoid_shared_buffer(&rec->a2, rec->a3 * sizeof(__u64));
+	avoid_shared_buffer_out(&rec->a2, rec->a3 * sizeof(__u64));
 
 	/* Snapshot for the post handler -- a1 / a3 may be scribbled by a
 	 * sibling syscall before post_listns() runs. */

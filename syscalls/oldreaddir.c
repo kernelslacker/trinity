@@ -13,7 +13,7 @@ static void sanitise_oldreaddir(struct syscallrecord *rec)
 	 * conservative upper bound (matches what getdents/readlink fall
 	 * back to when the fuzzer hands them a zero count).
 	 */
-	avoid_shared_buffer(&rec->a2, page_size);
+	avoid_shared_buffer_out(&rec->a2, page_size);
 }
 
 struct syscallentry syscall_oldreaddir = {

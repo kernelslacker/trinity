@@ -98,7 +98,7 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 	 * the new timer_t there on success.  Random pool can land it inside
 	 * an alloc_shared region, so scrub.
 	 */
-	avoid_shared_buffer(&rec->a3, sizeof(timer_t));
+	avoid_shared_buffer_out(&rec->a3, sizeof(timer_t));
 
 	/*
 	 * Snapshot the user out-pointer for the post handler.  Sibling

@@ -17,7 +17,7 @@
 
 static void sanitise_statbuf_a2(struct syscallrecord *rec)
 {
-	avoid_shared_buffer(&rec->a2, page_size);
+	avoid_shared_buffer_out(&rec->a2, page_size);
 }
 
 struct syscallentry syscall_stat = {
@@ -133,7 +133,7 @@ static void sanitise_statx(struct syscallrecord *rec)
 
 	rec->post_state = 0;
 
-	avoid_shared_buffer(&rec->a5, page_size);
+	avoid_shared_buffer_out(&rec->a5, page_size);
 
 	/*
 	 * Snapshot the five input args for the post oracle.  Without this

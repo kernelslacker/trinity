@@ -31,7 +31,7 @@ static void sanitise_io_cancel(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) iocb;
 	rec->a3 = (unsigned long) result;
 
-	avoid_shared_buffer(&rec->a3, sizeof(struct io_event));
+	avoid_shared_buffer_out(&rec->a3, sizeof(struct io_event));
 }
 
 struct syscallentry syscall_io_cancel = {

@@ -137,7 +137,7 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	 * the random pool, so a fuzzed pointer can land inside an
 	 * alloc_shared region.
 	 */
-	avoid_shared_buffer(&rec->a2, rec->a3);
+	avoid_shared_buffer_out(&rec->a2, rec->a3);
 
 #ifdef HAVE_SYS_STATMOUNT
 	/*

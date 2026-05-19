@@ -38,7 +38,7 @@ static void sanitise_setitimer(struct syscallrecord *rec)
 
 	rec->a2 = (unsigned long) itv;
 
-	avoid_shared_buffer(&rec->a3, sizeof(struct itimerval));
+	avoid_shared_buffer_out(&rec->a3, sizeof(struct itimerval));
 }
 
 struct syscallentry syscall_setitimer = {

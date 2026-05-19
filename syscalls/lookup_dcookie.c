@@ -65,7 +65,7 @@ static void sanitise_lookup_dcookie(struct syscallrecord *rec)
 	 * region.  Mirror the readlink/getcwd shape: use a3 if it's set,
 	 * otherwise fall back to a page.
 	 */
-	avoid_shared_buffer(&rec->a2, rec->a3 ? rec->a3 : page_size);
+	avoid_shared_buffer_out(&rec->a2, rec->a3 ? rec->a3 : page_size);
 
 #if defined(SYS_lookup_dcookie) || defined(__NR_lookup_dcookie)
 	/*

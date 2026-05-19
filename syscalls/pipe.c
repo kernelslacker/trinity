@@ -44,7 +44,7 @@ static void register_pipe_fd(int fd, bool reader)
  * holds alloc_iovec(1) and other small allocations.
  *
  * Two pointers are stored.  ->fildes is the address the kernel actually
- * writes the returned int[2] into -- avoid_shared_buffer() relocates
+ * writes the returned int[2] into -- avoid_shared_buffer_out() relocates
  * rec->a1 off the libc heap into a parent-private writable region, so
  * post_pipe must read fds from the relocated buffer, not the zmalloc
  * result.  ->original_alloc is the zmalloc()'d pointer we hand back to
@@ -67,7 +67,7 @@ static void sanitise_pipe(struct syscallrecord *rec)
 
 	rec->a1 = (unsigned long) fildes;
 
-	avoid_shared_buffer(&rec->a1, 2 * sizeof(int));
+	avoid_shared_buffer_out(&rec->a1, 2 * sizeof(int));
 
 	snap = zmalloc(sizeof(*snap));
 	snap->magic = PIPE_POST_STATE_MAGIC;
@@ -161,7 +161,7 @@ static void sanitise_pipe2(struct syscallrecord *rec)
 
 	rec->a1 = (unsigned long) fildes;
 
-	avoid_shared_buffer(&rec->a1, 2 * sizeof(int));
+	avoid_shared_buffer_out(&rec->a1, 2 * sizeof(int));
 
 	snap = zmalloc(sizeof(*snap));
 	snap->magic = PIPE_POST_STATE_MAGIC;

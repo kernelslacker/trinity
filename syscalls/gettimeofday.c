@@ -38,8 +38,8 @@ static void sanitise_gettimeofday(struct syscallrecord *rec)
 	 */
 	rec->post_state = 0;
 
-	avoid_shared_buffer(&rec->a1, sizeof(struct timeval));
-	avoid_shared_buffer(&rec->a2, sizeof(struct timezone));
+	avoid_shared_buffer_out(&rec->a1, sizeof(struct timeval));
+	avoid_shared_buffer_out(&rec->a2, sizeof(struct timezone));
 
 	/*
 	 * Snapshot the one input arg the post oracle reads.  Without this

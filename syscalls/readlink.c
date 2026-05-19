@@ -52,7 +52,7 @@ static void sanitise_readlink(struct syscallrecord *rec)
 	rec->post_state = 0;
 #endif
 
-	avoid_shared_buffer(&rec->a2, rec->a3 ? rec->a3 : page_size);
+	avoid_shared_buffer_out(&rec->a2, rec->a3 ? rec->a3 : page_size);
 
 #if defined(SYS_readlink) || defined(__NR_readlink)
 	/*
@@ -330,7 +330,7 @@ static void sanitise_readlinkat(struct syscallrecord *rec)
 	rec->post_state = 0;
 #endif
 
-	avoid_shared_buffer(&rec->a3, rec->a4 ? rec->a4 : page_size);
+	avoid_shared_buffer_out(&rec->a3, rec->a4 ? rec->a4 : page_size);
 
 #if defined(SYS_readlinkat) || defined(__NR_readlinkat)
 	/*

@@ -9,7 +9,7 @@
 
 static void sanitise_time(struct syscallrecord *rec)
 {
-	avoid_shared_buffer(&rec->a1, sizeof(time_t));
+	avoid_shared_buffer_out(&rec->a1, sizeof(time_t));
 }
 
 /*

@@ -88,7 +88,7 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 	 * limit values: ARG_ADDRESS draws from the random pool, so a fuzzed
 	 * pointer can land inside an alloc_shared region.  Scrub it.
 	 */
-	avoid_shared_buffer(&rec->a4, sizeof(struct rlimit64));
+	avoid_shared_buffer_out(&rec->a4, sizeof(struct rlimit64));
 
 #ifdef HAVE_SYS_PRLIMIT64
 	/*

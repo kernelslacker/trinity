@@ -34,8 +34,8 @@ static void sanitise_mq_timedreceive(struct syscallrecord *rec)
 	rec->a4 = (unsigned long) prio;
 	rec->a5 = (unsigned long) ts;
 
-	avoid_shared_buffer(&rec->a2, rec->a3);
-	avoid_shared_buffer(&rec->a4, sizeof(unsigned int));
+	avoid_shared_buffer_out(&rec->a2, rec->a3);
+	avoid_shared_buffer_out(&rec->a4, sizeof(unsigned int));
 }
 
 static void post_mq_timedreceive(struct syscallrecord *rec)

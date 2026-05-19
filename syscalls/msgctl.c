@@ -43,7 +43,7 @@ static void sanitise_msgctl(struct syscallrecord *rec)
 	 * syscall before post_msgctl() runs. */
 	rec->post_state = (unsigned long) buf;
 
-	avoid_shared_buffer(&rec->a3, allocated_size);
+	avoid_shared_buffer_out(&rec->a3, allocated_size);
 }
 
 static void post_msgctl(struct syscallrecord *rec)

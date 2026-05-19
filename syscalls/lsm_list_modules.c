@@ -60,7 +60,7 @@ static void sanitise_lsm_list_modules(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) size;
 	rec->a3 = 0;	/* flags must be zero */
 
-	avoid_shared_buffer(&rec->a1, page_size);
+	avoid_shared_buffer_out(&rec->a1, page_size);
 	avoid_shared_buffer(&rec->a2, sizeof(u32));
 
 #ifdef HAVE_SYS_LSM_LIST_MODULES

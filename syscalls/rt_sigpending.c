@@ -41,7 +41,7 @@ static void sanitise_rt_sigpending(struct syscallrecord *rec)
 	 */
 	rec->post_state = 0;
 
-	avoid_shared_buffer(&rec->a1, rec->a2);
+	avoid_shared_buffer_out(&rec->a1, rec->a2);
 
 	/*
 	 * Snapshot the two input args read by the post oracle.  Without

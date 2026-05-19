@@ -21,8 +21,8 @@ static unsigned long waitid_which[] = {
 
 static void sanitise_waitid(struct syscallrecord *rec)
 {
-	avoid_shared_buffer(&rec->a3, sizeof(siginfo_t));
-	avoid_shared_buffer(&rec->a5, sizeof(struct rusage));
+	avoid_shared_buffer_out(&rec->a3, sizeof(siginfo_t));
+	avoid_shared_buffer_out(&rec->a5, sizeof(struct rusage));
 }
 
 /*

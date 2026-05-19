@@ -46,7 +46,7 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 	rec->post_state = 0;
 #endif
 
-	avoid_shared_buffer(&rec->a4, rec->a5);
+	avoid_shared_buffer_out(&rec->a4, rec->a5);
 
 #if defined(SYS_listxattrat) || defined(__NR_listxattrat)
 	/*

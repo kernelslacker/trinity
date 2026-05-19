@@ -44,7 +44,7 @@ static void sanitise_getxattr(struct syscallrecord *rec)
 
 	if (!sanitise_xattr_name_arg(rec, 2))
 		return;
-	avoid_shared_buffer(&rec->a3, rec->a4);
+	avoid_shared_buffer_out(&rec->a3, rec->a4);
 
 #if defined(SYS_getxattr) || defined(__NR_getxattr)
 	/*

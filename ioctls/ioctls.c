@@ -232,10 +232,10 @@ void pick_random_ioctl(const struct ioctl_group *grp, struct syscallrecord *rec)
 	 * a4..a6 still come from the unconstrained generator and need
 	 * the scrub directly.
 	 */
-	avoid_shared_buffer(&rec->a3, page_size);
-	avoid_shared_buffer(&rec->a4, page_size);
-	avoid_shared_buffer(&rec->a5, page_size);
-	avoid_shared_buffer(&rec->a6, page_size);
+	avoid_shared_buffer_out(&rec->a3, page_size);
+	avoid_shared_buffer_out(&rec->a4, page_size);
+	avoid_shared_buffer_out(&rec->a5, page_size);
+	avoid_shared_buffer_out(&rec->a6, page_size);
 }
 
 void dump_ioctls(void)

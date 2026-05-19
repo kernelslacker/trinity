@@ -62,7 +62,7 @@ static void sanitise_olduname(struct syscallrecord *rec)
 	 * declaration; one page is a generous overestimate of the kernel's
 	 * writeback window for any of the legacy uname variants.
 	 */
-	avoid_shared_buffer(&rec->a1, page_size);
+	avoid_shared_buffer_out(&rec->a1, page_size);
 
 #if defined(SYS_olduname) || defined(__NR_olduname)
 	/*

@@ -38,7 +38,7 @@ static void sanitise_sched_getparam(struct syscallrecord *rec)
 	 */
 	rec->post_state = 0;
 
-	avoid_shared_buffer(&rec->a2, sizeof(struct sched_param));
+	avoid_shared_buffer_out(&rec->a2, sizeof(struct sched_param));
 
 	/*
 	 * Snapshot both input args for the post oracle.  Without this the

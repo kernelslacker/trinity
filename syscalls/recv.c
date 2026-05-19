@@ -24,7 +24,7 @@ static void sanitise_recv(struct syscallrecord *rec)
 	 * us a struct map pointer rather than a real buffer, so the kernel
 	 * scribbles into adjacent heap memory; defensively redirect away
 	 * from any range that overlaps trinity's alloc_shared regions. */
-	avoid_shared_buffer(&rec->a2, rec->a3);
+	avoid_shared_buffer_out(&rec->a2, rec->a3);
 }
 
 #ifndef MSG_SOCK_DEVMEM
@@ -170,7 +170,7 @@ skip_si:
 
 	/*
 	 * Second-pass scrub of msg_iov before the kernel walks the array.
-	 * alloc_iovec() above already runs avoid_shared_buffer() per
+	 * alloc_iovec() above already runs avoid_shared_buffer_out() per
 	 * iov_base at build time, but the iovec array lives in heap as a
 	 * vlen * sizeof(struct iovec) zmalloc() and a sibling syscall can
 	 * scribble bytes into that allocation between this sanitiser

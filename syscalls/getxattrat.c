@@ -33,7 +33,7 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
 		rec->a6 = sizeof(*args);
 	}
 #else
-	avoid_shared_buffer(&rec->a5, page_size);
+	avoid_shared_buffer_out(&rec->a5, page_size);
 #endif
 }
 

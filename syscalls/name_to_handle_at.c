@@ -57,8 +57,8 @@ static void sanitise_name_to_handle_at(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) fh;
 	rec->a4 = (unsigned long) mnt_id;
 
-	avoid_shared_buffer(&rec->a3, sizeof(struct file_handle) + MAX_HANDLE_SZ);
-	avoid_shared_buffer(&rec->a4, sizeof(int));
+	avoid_shared_buffer_out(&rec->a3, sizeof(struct file_handle) + MAX_HANDLE_SZ);
+	avoid_shared_buffer_out(&rec->a4, sizeof(int));
 }
 
 struct syscallentry syscall_name_to_handle_at = {

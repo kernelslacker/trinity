@@ -131,7 +131,7 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 
 	/* arg = struct f_owner_ex *) */
 	case F_GETOWN_EX:
-		avoid_shared_buffer(&rec->a3, sizeof(struct f_owner_ex));
+		avoid_shared_buffer_out(&rec->a3, sizeof(struct f_owner_ex));
 		break;
 	case F_SETOWN_EX:
 		break;
@@ -139,13 +139,13 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 	/* arg = (uint64_t *) */
 	case F_GET_RW_HINT:
 	case F_GET_FILE_RW_HINT:
-		avoid_shared_buffer(&rec->a3, sizeof(uint64_t));
+		avoid_shared_buffer_out(&rec->a3, sizeof(uint64_t));
 		break;
 
 	/* arg = (int *) */
 	case F_DUPFD_QUERY:
 	case F_CREATED_QUERY:
-		avoid_shared_buffer(&rec->a3, sizeof(int));
+		avoid_shared_buffer_out(&rec->a3, sizeof(int));
 		break;
 
 	case F_SETSIG:

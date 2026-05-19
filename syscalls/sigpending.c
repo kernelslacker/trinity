@@ -58,7 +58,7 @@ static void sanitise_sigpending(struct syscallrecord *rec)
 	 * caller-supplied a2 length; sigpending has no length arg, so use
 	 * sigset_t as the conservative upper bound.
 	 */
-	avoid_shared_buffer(&rec->a1, sizeof(sigset_t));
+	avoid_shared_buffer_out(&rec->a1, sizeof(sigset_t));
 
 #ifdef HAVE_SYS_SIGPENDING
 	/*

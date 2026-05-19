@@ -56,7 +56,7 @@ static unsigned long sched_getattr_flags[] = {
  *
  * attr_alloc_size is the real allocation size of the buffer at .attr,
  * resolved at sanitise time (catalog struct_size, or the fallback when
- * the catalog misses; bumped to rec->a3 when avoid_shared_buffer()
+ * the catalog misses; bumped to rec->a3 when avoid_shared_buffer_out()
  * redirected to a fresh writable region sized for the fuzzed length).
  * The post oracle's source memcpy MUST clamp to this -- snap->size is
  * the fuzzed size argument the kernel got, not the size of the buffer
@@ -91,13 +91,13 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 #endif
 
 	rec->a3 = (rand() % range) + SCHED_ATTR_SIZE_VER0;
-	avoid_shared_buffer(&rec->a2, rec->a3);
+	avoid_shared_buffer_out(&rec->a2, rec->a3);
 
 #ifdef HAVE_SYS_SCHED_GETATTR
 	/*
 	 * Resolve the actual allocation size of the buffer at rec->a2:
 	 *
-	 *   - If avoid_shared_buffer() redirected (the pointer changed),
+	 *   - If avoid_shared_buffer_out() redirected (the pointer changed),
 	 *     the replacement came from get_writable_address(rec->a3) which
 	 *     guarantees a region of at least rec->a3 bytes.
 	 *   - Otherwise rec->a2 is still the buffer gen_arg_struct_ptr_out()

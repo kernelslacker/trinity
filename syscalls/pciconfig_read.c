@@ -14,7 +14,7 @@ static void sanitise_pciconfig_read(struct syscallrecord *rec)
 	 * here; clamp the overlap-scan length to a page when len is large
 	 * to avoid spurious redirects.
 	 */
-	avoid_shared_buffer(&rec->a5,
+	avoid_shared_buffer_out(&rec->a5,
 			    (rec->a4 > 0 && rec->a4 <= page_size) ?
 				    rec->a4 : page_size);
 }

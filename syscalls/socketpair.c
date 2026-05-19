@@ -42,7 +42,7 @@ static void register_socketpair_fd(int fd, struct syscallrecord *rec)
  * forgeries before any inner-field deref.
  *
  * Two pointers are stored.  ->usockvec is the address the kernel actually
- * writes the returned int[2] into -- avoid_shared_buffer() relocates
+ * writes the returned int[2] into -- avoid_shared_buffer_out() relocates
  * rec->a4 off the libc heap into a parent-private writable region, so
  * post_socketpair must read fds from the relocated buffer, not the zmalloc
  * result.  ->original_alloc is the zmalloc()'d pointer we hand back to
@@ -75,7 +75,7 @@ static void sanitise_socketpair(struct syscallrecord *rec)
 	if (!rec->a4)
 		return;
 
-	avoid_shared_buffer(&rec->a4, 2 * sizeof(int));
+	avoid_shared_buffer_out(&rec->a4, 2 * sizeof(int));
 
 	snap = zmalloc(sizeof(*snap));
 	snap->magic = SOCKETPAIR_POST_STATE_MAGIC;

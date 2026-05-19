@@ -30,7 +30,7 @@ static void sanitise_rt_sigaction(struct syscallrecord *rec)
 	rec->a3 = RAND_BOOL() ? 0 : (unsigned long) alloc_sigaction();
 	rec->a4 = sizeof(sigset_t);
 
-	avoid_shared_buffer(&rec->a3, sizeof(struct sigaction));
+	avoid_shared_buffer_out(&rec->a3, sizeof(struct sigaction));
 }
 
 struct syscallentry syscall_rt_sigaction = {

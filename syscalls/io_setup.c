@@ -80,7 +80,7 @@ static void sanitise_io_setup(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) ctxp;
 
 	/* Re-route ctxp out of any alloc_shared / libc-heap region. */
-	avoid_shared_buffer(&rec->a2, sizeof(aio_context_t));
+	avoid_shared_buffer_out(&rec->a2, sizeof(aio_context_t));
 
 	/*
 	 * Snapshot the user out-pointer for the post handler.  Sibling

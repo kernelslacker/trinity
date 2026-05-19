@@ -58,7 +58,7 @@ static void sanitise_getrlimit(struct syscallrecord *rec)
 	rec->post_state = 0;
 #endif
 
-	avoid_shared_buffer(&rec->a2, sizeof(struct rlimit));
+	avoid_shared_buffer_out(&rec->a2, sizeof(struct rlimit));
 
 #ifdef HAVE_SYS_GETRLIMIT
 	/*

@@ -31,9 +31,9 @@ struct getresuid_post_state {
 
 static void sanitise_getresuid16(struct syscallrecord *rec)
 {
-	avoid_shared_buffer(&rec->a1, sizeof(uid_t));
-	avoid_shared_buffer(&rec->a2, sizeof(uid_t));
-	avoid_shared_buffer(&rec->a3, sizeof(uid_t));
+	avoid_shared_buffer_out(&rec->a1, sizeof(uid_t));
+	avoid_shared_buffer_out(&rec->a2, sizeof(uid_t));
+	avoid_shared_buffer_out(&rec->a3, sizeof(uid_t));
 }
 
 static void sanitise_getresuid(struct syscallrecord *rec)
@@ -47,9 +47,9 @@ static void sanitise_getresuid(struct syscallrecord *rec)
 	 */
 	rec->post_state = 0;
 
-	avoid_shared_buffer(&rec->a1, sizeof(uid_t));
-	avoid_shared_buffer(&rec->a2, sizeof(uid_t));
-	avoid_shared_buffer(&rec->a3, sizeof(uid_t));
+	avoid_shared_buffer_out(&rec->a1, sizeof(uid_t));
+	avoid_shared_buffer_out(&rec->a2, sizeof(uid_t));
+	avoid_shared_buffer_out(&rec->a3, sizeof(uid_t));
 
 	/*
 	 * Snapshot the three input args read by the post oracle.  Without

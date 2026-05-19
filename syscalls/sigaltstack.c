@@ -88,7 +88,7 @@ static void sanitise_sigaltstack(struct syscallrecord *rec)
 	 * ARG_ADDRESS draws from the random pool, so a fuzzed pointer can
 	 * land inside an alloc_shared region.
 	 */
-	avoid_shared_buffer(&rec->a2, sizeof(stack_t));
+	avoid_shared_buffer_out(&rec->a2, sizeof(stack_t));
 
 #ifdef HAVE_SYS_SIGALTSTACK
 	/*

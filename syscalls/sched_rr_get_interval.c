@@ -39,7 +39,7 @@ static void sanitise_sched_rr_get_interval(struct syscallrecord *rec)
 	 */
 	rec->post_state = 0;
 
-	avoid_shared_buffer(&rec->a2, sizeof(struct timespec));
+	avoid_shared_buffer_out(&rec->a2, sizeof(struct timespec));
 
 	/*
 	 * Snapshot both input args for the post oracle.  Without this the

@@ -183,22 +183,22 @@ static void sanitise_prctl(struct syscallrecord *rec)
 	case PR_GET_TSC:
 	case PR_GET_ENDIAN:
 	case PR_GET_CHILD_SUBREAPER:
-		avoid_shared_buffer(&rec->a2, sizeof(int));
+		avoid_shared_buffer_out(&rec->a2, sizeof(int));
 		break;
 
 	case PR_GET_NAME:
-		avoid_shared_buffer(&rec->a2, 16);
+		avoid_shared_buffer_out(&rec->a2, 16);
 		break;
 
 	case PR_GET_TID_ADDRESS:
 	case PR_GET_SHADOW_STACK_STATUS:
-		avoid_shared_buffer(&rec->a2, sizeof(unsigned long));
+		avoid_shared_buffer_out(&rec->a2, sizeof(unsigned long));
 		break;
 
 	case PR_GET_AUXV:
 		if (rec->a3 == 0 || rec->a3 > page_size)
 			rec->a3 = page_size;
-		avoid_shared_buffer(&rec->a2, rec->a3);
+		avoid_shared_buffer_out(&rec->a2, rec->a3);
 		break;
 
 	default:

@@ -91,7 +91,7 @@ static void sanitise_arch_prctl(struct syscallrecord *rec)
 	case ARCH_SHSTK_STATUS:
 		/* Kernel writes a u64 (or smaller) to *addr -- redirect off
 		 * shared / heap pages so a sibling cannot see the write. */
-		avoid_shared_buffer(&rec->a2, sizeof(unsigned long));
+		avoid_shared_buffer_out(&rec->a2, sizeof(unsigned long));
 		break;
 
 	case ARCH_REQ_XCOMP_PERM:

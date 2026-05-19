@@ -27,7 +27,7 @@ static void sanitise_semctl(struct syscallrecord *rec)
 	 * an alloc_shared region.  page_size is the conservative upper
 	 * bound across all the variants.
 	 */
-	avoid_shared_buffer(&rec->a4, page_size);
+	avoid_shared_buffer_out(&rec->a4, page_size);
 }
 
 struct syscallentry syscall_semctl = {

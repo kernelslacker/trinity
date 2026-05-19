@@ -19,7 +19,7 @@ static void sanitise_read(struct syscallrecord *rec)
 		rec->a3 = rand() % page_size;
 	else
 		rec->a3 = page_size;
-	avoid_shared_buffer(&rec->a2, rec->a3);
+	avoid_shared_buffer_out(&rec->a2, rec->a3);
 }
 
 struct syscallentry syscall_read = {
@@ -63,7 +63,7 @@ static void sanitise_pread64(struct syscallrecord *rec)
 {
 	rec->a3 = rand() % page_size;
 	rec->a4 = rand64() & 0x7fffffffffffffffULL;
-	avoid_shared_buffer(&rec->a2, rec->a3);
+	avoid_shared_buffer_out(&rec->a2, rec->a3);
 }
 
 struct syscallentry syscall_pread64 = {

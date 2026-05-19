@@ -16,7 +16,7 @@ static void sanitise_sigprocmask(struct syscallrecord *rec)
 	 * sigprocmask predates rt_sigprocmask and uses old_sigset_t, which
 	 * is one word; sigset_t is the conservative upper bound.
 	 */
-	avoid_shared_buffer(&rec->a3, sizeof(sigset_t));
+	avoid_shared_buffer_out(&rec->a3, sizeof(sigset_t));
 }
 
 struct syscallentry syscall_sigprocmask = {

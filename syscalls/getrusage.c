@@ -46,7 +46,7 @@ static void sanitise_getrusage(struct syscallrecord *rec)
 	rec->post_state = 0;
 #endif
 
-	avoid_shared_buffer(&rec->a2, sizeof(struct rusage));
+	avoid_shared_buffer_out(&rec->a2, sizeof(struct rusage));
 
 #if defined(SYS_getrusage) || defined(__NR_getrusage)
 	/*

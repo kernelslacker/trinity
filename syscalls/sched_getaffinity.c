@@ -54,7 +54,7 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 
 	rec->a3 = (unsigned long) mask;
 
-	avoid_shared_buffer(&rec->a3, page_size);
+	avoid_shared_buffer_out(&rec->a3, page_size);
 
 	/*
 	 * Snapshot the three input args for the post oracle.  Without this

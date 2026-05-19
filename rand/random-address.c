@@ -548,7 +548,16 @@ struct iovec * alloc_iovec(unsigned int num)
 		 * every caller is covered in one place.
 		 */
 		base = (unsigned long) iov[i].iov_base;
-		avoid_shared_buffer(&base, iov[i].iov_len);
+		/*
+		 * Output-only scrub. Today's alloc_iovec() callers
+		 * (readv/preadv/preadv2/recvmsg/recvmmsg) only treat the
+		 * iov_base buffer as kernel-write, so the no-copy variant
+		 * matches the contract. A future writev/sendmsg-class
+		 * caller that hands kernel-read bytes via this helper
+		 * would need _inout per element to preserve those bytes
+		 * across relocation.
+		 */
+		avoid_shared_buffer_out(&base, iov[i].iov_len);
 		iov[i].iov_base = (void *) base;
 	}
 

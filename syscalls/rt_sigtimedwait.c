@@ -37,7 +37,7 @@ static void sanitise_rt_sigtimedwait(struct syscallrecord *rec)
 	 * dequeued signal.  ARG_ADDRESS draws from the random pool, so scrub
 	 * it against the alloc_shared regions before the syscall is issued.
 	 */
-	avoid_shared_buffer(&rec->a2, sizeof(siginfo_t));
+	avoid_shared_buffer_out(&rec->a2, sizeof(siginfo_t));
 }
 
 struct syscallentry syscall_rt_sigtimedwait = {
