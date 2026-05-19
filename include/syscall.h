@@ -370,6 +370,19 @@ struct syscalltable {
 #define IGNORE_ENOSYS		(1<<7)
 #define EXPENSIVE		(1<<8)
 #define NEEDS_ROOT		(1<<9)
+/*
+ * KCOV_REMOTE_HEAVY: this syscall does most of its interesting kernel
+ * work via deferred contexts (kthreads, workqueues, softirqs, io_uring
+ * SQ workers, netlink async delivery, mount/cgroup workqueues, namespace
+ * setup helpers) that are only visible through KCOV_REMOTE_ENABLE.  When
+ * the random-syscall dispatcher decides whether to enter remote mode for
+ * the upcoming call it picks the heavier 1-in-KCOV_REMOTE_RATIO_HEAVY
+ * sample rate for syscalls flagged here, instead of the default
+ * 1-in-KCOV_REMOTE_RATIO trickle that's calibrated for synchronous,
+ * caller-thread-only syscalls.  Used by PC-mode children only;
+ * CMP-mode children never enter remote mode.
+ */
+#define KCOV_REMOTE_HEAVY	(1<<10)
 
 struct kcov_child;
 struct childdata;

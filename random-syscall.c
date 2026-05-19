@@ -902,12 +902,24 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * cmp fd collects comparison-operand records that feed the
 	 * cmp_hints pool.  Mode is fixed at child init; remote_mode is
 	 * only meaningful in PC mode (KCOV_REMOTE_ENABLE applies to the PC
-	 * fd, not the cmp fd). */
-	if (child->kcov.mode == KCOV_MODE_PC)
+	 * fd, not the cmp fd).
+	 *
+	 * Sample rate is per-syscall: calls whose interesting kernel work
+	 * is deferred to kthreads / workqueues / softirqs (netlink async
+	 * delivery, io_uring workers, BPF attach, mount workqueues, cgroup
+	 * migration, namespace setup) are flagged with KCOV_REMOTE_HEAVY
+	 * and sampled at the heavier 1-in-KCOV_REMOTE_RATIO_HEAVY rate so
+	 * those deferred-work edges don't get stuck cold; everything else
+	 * uses the default 1-in-KCOV_REMOTE_RATIO trickle. */
+	if (child->kcov.mode == KCOV_MODE_PC) {
+		unsigned int remote_reciprocal =
+			(entry->flags & KCOV_REMOTE_HEAVY) ?
+				KCOV_REMOTE_RATIO_HEAVY : KCOV_REMOTE_RATIO;
 		child->kcov.remote_mode = child->kcov.remote_capable &&
-					  ONE_IN(KCOV_REMOTE_RATIO);
-	else
+					  ONE_IN(remote_reciprocal);
+	} else {
 		child->kcov.remote_mode = false;
+	}
 
 	do_syscall(rec, entry, &child->kcov, child);
 

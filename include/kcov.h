@@ -116,8 +116,26 @@ enum kcov_child_mode {
 #define KCOV_INSTANCE_MASK	(0xffffffffULL)
 
 /* Fraction of syscalls that use remote mode instead of per-thread mode.
- * 1 in KCOV_REMOTE_RATIO syscalls will use KCOV_REMOTE_ENABLE. */
+ * 1 in KCOV_REMOTE_RATIO syscalls will use KCOV_REMOTE_ENABLE.  This is
+ * the default rate for syscalls that do most of their kernel work on the
+ * calling task: remote sampling is comparatively expensive (extra
+ * KCOV_REMOTE_ENABLE/disable round-trip plus a softirq/threaded-IRQ
+ * coverage merge) and a 1-in-10 trickle is enough to keep softirq-only
+ * edges from going completely cold. */
 #define KCOV_REMOTE_RATIO 10
+
+/* Heavier sampling rate for syscalls flagged with KCOV_REMOTE_HEAVY in
+ * their per-syscall flags (see include/syscall.h).  These are the calls
+ * whose interesting kernel work is scheduled onto kthreads / workqueues
+ * / softirqs and is therefore *only* visible through the remote KCOV
+ * handle: netlink async delivery, io_uring SQ/IO workers, BPF attach
+ * paths, mount workqueues, cgroup migration, namespace setup, etc.  At
+ * the default 1-in-10 rate those deferred-work edges are persistently
+ * under-sampled and stay cold long after the synchronous syscall
+ * surface has saturated, so flagged syscalls bump to 1-in-2.  Cost is
+ * ~5x more remote enables on those specific calls, not a fleet-wide
+ * regression. */
+#define KCOV_REMOTE_RATIO_HEAVY 2
 
 /* Per-call dedup slot — counts how many times a single trace hit a given
  * edge so the hit count can be classified into a bucket.  A slot is "live"
