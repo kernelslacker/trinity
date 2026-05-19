@@ -192,58 +192,46 @@ static int set_exit_code(enum exit_reasons reason)
 }
 
 /*
- * Epoch-based forking wrapper around main_loop().
+ * Epoch-based wrapper around main_loop().
  *
- * Forks a child process that runs main_loop() for a bounded number of
- * iterations or wall-clock seconds.  When the epoch limit is reached,
- * the child exits cleanly and the parent resets shared state and forks
- * a new epoch child.  Coverage data (kcov bitmap, cmp_hints, minicorpus,
- * edgepair) lives in MAP_SHARED memory and accumulates across epochs.
+ * Runs main_loop() for a bounded number of iterations or wall-clock
+ * seconds.  When the epoch limit is reached, main_loop() returns with
+ * shm->exit_reason == EXIT_EPOCH_DONE; we reset the per-epoch shared
+ * state in-place and call main_loop() again.  Coverage data (kcov
+ * bitmap, cmp_hints, minicorpus, edgepair) lives in MAP_SHARED memory
+ * and accumulates across epochs.
  *
- * This periodic restart prevents state accumulation (leaked fds, stale
- * mappings, corrupted objects) from degrading fuzzing effectiveness.
+ * This used to run main_loop() in a forked epoch-child process, with
+ * the outer parent reaping the child between epochs.  That gave the
+ * appearance of crash isolation but provided none in practice: the
+ * outer parent doesn't run any fuzzed syscalls itself (real wild-write
+ * exposure lives in the per-iteration child fork, which is unchanged),
+ * and every piece of state the old fork "reset" lived in MAP_SHARED
+ * shm pages that were already shared with the outer parent anyway.
+ * The one thing the fork did reset -- parent_stats, which is a
+ * process-private global in stats-ring.c -- was actually a bug: the
+ * aggregating process was the epoch child, so when it exited at epoch
+ * end the running totals went with it and the outer parent never saw
+ * the aggregated stats.  Running main_loop() in-process keeps
+ * parent_stats alive across epochs, and reset_epoch_state() zeroes
+ * what we want zeroed.
  */
 static void epoch_loop(void)
 {
 	unsigned int epoch_nr = 0;
-	pid_t epoch_pid;
-	int status;
 
 	while (1) {
+		enum exit_reasons reason;
+
 		epoch_nr++;
 		output(0, "Starting epoch %u\n", epoch_nr);
 
-		epoch_pid = fork();
-		if (epoch_pid == -1) {
-			outputerr("epoch_loop: fork failed: %s\n", strerror(errno));
-			return;
-		}
+		main_loop();
 
-		if (epoch_pid == 0) {
-			/* Epoch child: become the effective main process. */
-			mainpid = getpid();
-			cached_pid = mainpid;
-			setup_main_signals();
-			main_loop();
-			_exit(set_exit_code(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED)));
-		}
-
-		/* Epoch parent: wait for the epoch child to finish. */
-		if (waitpid(epoch_pid, &status, 0) == -1) {
-			outputerr("epoch_loop: waitpid failed: %s\n", strerror(errno));
-			return;
-		}
-
-		if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
-			output(0, "Epoch %u exited abnormally (status=%d), stopping.\n",
-				epoch_nr, status);
-			return;
-		}
-
-		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != EXIT_EPOCH_DONE) {
+		reason = __atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+		if (reason != EXIT_EPOCH_DONE) {
 			output(0, "Epoch %u ended with reason %s, stopping.\n",
-				epoch_nr,
-				decode_exit(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED)));
+				epoch_nr, decode_exit(reason));
 			return;
 		}
 
