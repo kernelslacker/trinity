@@ -1065,14 +1065,26 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * recent syscall.  rec->tp was just refreshed in do_syscall(). */
 	pre_crash_ring_record(child, rec, &rec->tp);
 
-	/* Dispatch-time category histogram, surfaced under -vv.
-	 * entry->syscall_category is resolved once at table-init
-	 * time (copy_syscall_table) so this stays a single indexed
-	 * ring enqueue on the hot path; the parent drain folds it
-	 * into parent_stats.syscall_category_count[]. */
-	stats_ring_enqueue(child->stats_ring,
-			   STATS_FIELD_SYSCALL_CATEGORY_COUNT,
-			   (uint16_t)entry->syscall_category, 1);
+	/* Single combined enqueue: op_count + success/failure +
+	 * syscall_category_count[] all ride on one STATS_FIELD_CALL_COMPLETE
+	 * slot.  The drain expands it back into three logical bumps.
+	 * Result class is derived post-handle_syscall_ret(), which has
+	 * already coerced rec->retval for retfd_rejected and is the
+	 * canonical settle point for rec->state. */
+	{
+		enum stats_result_class result;
+
+		if (rec->state != AFTER)
+			result = STATS_RESULT_INCOMPLETE;
+		else if (rec->retval == (unsigned long)-1L)
+			result = STATS_RESULT_FAILURE;
+		else
+			result = STATS_RESULT_SUCCESS;
+
+		stats_ring_enqueue_call_complete(child->stats_ring,
+						 (uint16_t)entry->syscall_category,
+						 result);
+	}
 
 	/* FD leak tracking: count successful fd-creating and
 	 * fd-closing syscalls per child for leak diagnosis. */

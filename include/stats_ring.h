@@ -33,9 +33,8 @@
  * the syscall-category histogram), and is unused (0) for plain scalars.
  */
 enum stats_field {
-	STATS_FIELD_OP_COUNT = 0,
-	STATS_FIELD_SUCCESSES,
-	STATS_FIELD_FAILURES,
+	STATS_FIELD_OP_COUNT = 0,	/* alt-op bumps only; dispatched syscalls
+					 * fold op_count into CALL_COMPLETE */
 	STATS_FIELD_FAULT_INJECTED,
 	STATS_FIELD_FAULT_CONSUMED,
 	STATS_FIELD_SHARED_BUFFER_REDIRECTED,
@@ -47,13 +46,38 @@ enum stats_field {
 	STATS_FIELD_UNSHARE_NEWNET_THROTTLED,
 	STATS_FIELD_RANGE_REJECTS_PER_SYSCALL_64,	/* aux = syscall nr */
 	STATS_FIELD_RANGE_REJECTS_PER_SYSCALL_32,	/* aux = syscall nr */
-	STATS_FIELD_SYSCALL_CATEGORY_COUNT,		/* aux = enum syscall_category */
 	STATS_FIELD_POST_HANDLER_CORRUPT_PTR,
 	STATS_FIELD_DEFERRED_FREE_REJECT,
 	STATS_FIELD_SNAPSHOT_NON_HEAP_REJECT,
 	STATS_FIELD_RING_EVICTION_CORRUPT,
 	STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR,
+	/*
+	 * Combined "call complete" slot.  A single enqueue carries the
+	 * three bumps every completed dispatched syscall used to emit
+	 * separately (op_count, success/failure, syscall_category_count):
+	 *   - aux        = enum syscall_category
+	 *   - delta      = op_count delta (always 1 on the hot path)
+	 *   - _reserved  = enum stats_result_class in low byte
+	 * Drain expands one slot into three logical bumps, cutting the
+	 * SPSC enqueue count per dispatched syscall from three to one.
+	 */
+	STATS_FIELD_CALL_COMPLETE,
 	STATS_FIELD_NR,
+};
+
+/*
+ * Result class encoded in stats_ring_slot._reserved low byte for
+ * STATS_FIELD_CALL_COMPLETE.  INCOMPLETE covers EXTRA_FORK grandchildren
+ * that were SIGKILL'd before reaching __do_syscall's AFTER block: the
+ * dispatched call still earned its op_count and category bumps but
+ * neither successes nor failures applies.  Any other byte value seen on
+ * drain is treated as INCOMPLETE so a scribbled slot can't manufacture
+ * a success/failure attribution.
+ */
+enum stats_result_class {
+	STATS_RESULT_INCOMPLETE = 0,
+	STATS_RESULT_SUCCESS = 1,
+	STATS_RESULT_FAILURE = 2,
 };
 
 struct stats_ring_slot {
@@ -146,6 +170,16 @@ void stats_ring_init(struct stats_ring *ring);
  */
 bool stats_ring_enqueue(struct stats_ring *ring, enum stats_field field,
 			uint16_t aux, uint32_t delta);
+
+/*
+ * Enqueue one combined "call complete" slot covering op_count,
+ * success/failure, and syscall_category_count[] in a single SPSC
+ * operation.  Use from the dispatch path after handle_syscall_ret()
+ * has settled rec->retval and rec->state.
+ */
+bool stats_ring_enqueue_call_complete(struct stats_ring *ring,
+				      uint16_t category,
+				      enum stats_result_class result);
 
 /*
  * Drain all pending slots from one child's ring, applying deltas to

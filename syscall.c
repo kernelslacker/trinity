@@ -146,15 +146,6 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 
 	errno = 0;
 
-	/* Bump op_count via the parent's stats ring.  The drain folds
-	 * many slots into parent_stats.op_count in one pass, which is the
-	 * batching the previous per-child accumulator existed to provide. */
-	if (child != NULL)
-		stats_ring_enqueue(child->stats_ring,
-				   STATS_FIELD_OP_COUNT, 0, 1);
-	else
-		parent_stats.op_count++;
-
 	call = rec->nr + SYSCALL_OFFSET;
 	needalarm = entry->flags & NEED_ALARM;
 
@@ -692,15 +683,6 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 						entry->name,
 						err, strerror(err));
 			}
-			{
-				struct childdata *c = this_child();
-
-				if (c != NULL && c->stats_ring != NULL)
-					stats_ring_enqueue(c->stats_ring,
-							   STATS_FIELD_FAILURES, 0, 1);
-				else
-					parent_stats.failures++;
-			}
 		}
 	} else if (rec->state == AFTER) {
 		/* Symmetric guard to the failure branch above: an
@@ -714,15 +696,6 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		 * never actually returned. */
 		handle_success(rec);	// Believe me folks, you'll never get bored with winning
 		__atomic_add_fetch(&entry->successes, 1, __ATOMIC_RELAXED);
-		{
-			struct childdata *c = this_child();
-
-			if (c != NULL && c->stats_ring != NULL)
-				stats_ring_enqueue(c->stats_ring,
-						   STATS_FIELD_SUCCESSES, 0, 1);
-			else
-				parent_stats.successes++;
-		}
 	}
 	/* attempted stays ungated: an attempted invocation IS still an
 	 * attempt even if the grandchild never reached AFTER, and

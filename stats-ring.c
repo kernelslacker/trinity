@@ -53,6 +53,24 @@ bool stats_ring_enqueue(struct stats_ring *ring, enum stats_field field,
 				     sizeof(ring->slots[0]), &slot);
 }
 
+bool stats_ring_enqueue_call_complete(struct stats_ring *ring,
+				      uint16_t category,
+				      enum stats_result_class result)
+{
+	struct stats_ring_slot slot = {
+		.field_id = (uint16_t)STATS_FIELD_CALL_COMPLETE,
+		.aux = category,
+		.delta = 1,
+		._reserved = (uint64_t)(uint8_t)result,
+	};
+
+	if (ring == NULL)
+		return false;
+
+	return spsc_ring_try_enqueue(&ring->base, ring->slots, STATS_RING_SIZE,
+				     sizeof(ring->slots[0]), &slot);
+}
+
 /*
  * Apply a single ring slot to parent_stats.  Validates the field_id /
  * aux combination before touching any array index -- children produce
@@ -69,12 +87,6 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	switch (field) {
 	case STATS_FIELD_OP_COUNT:
 		parent_stats.op_count += delta;
-		break;
-	case STATS_FIELD_SUCCESSES:
-		parent_stats.successes += delta;
-		break;
-	case STATS_FIELD_FAILURES:
-		parent_stats.failures += delta;
 		break;
 	case STATS_FIELD_FAULT_INJECTED:
 		parent_stats.fault_injected += delta;
@@ -111,10 +123,6 @@ static void apply_slot(const void *p, void *ctx __unused__)
 		if (aux < MAX_NR_SYSCALL)
 			parent_stats.range_overlaps_shared_rejects_per_syscall_32[aux] += delta;
 		break;
-	case STATS_FIELD_SYSCALL_CATEGORY_COUNT:
-		if (aux < NR_SYSCAT)
-			parent_stats.syscall_category_count[aux] += delta;
-		break;
 	case STATS_FIELD_POST_HANDLER_CORRUPT_PTR:
 		parent_stats.post_handler_corrupt_ptr += delta;
 		break;
@@ -130,6 +138,27 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	case STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR:
 		parent_stats.deferred_free_corrupt_ptr += delta;
 		break;
+	case STATS_FIELD_CALL_COMPLETE: {
+		/* One slot, three logical bumps.  op_count is unconditional
+		 * (the SPSC slot wouldn't have made it past spsc_ring_drain
+		 * without head/tail ordering, so its arrival IS the proof
+		 * that a child dispatched a syscall).  category is gated on
+		 * aux < NR_SYSCAT; a scribbled aux loses just the category
+		 * bump for this slot.  successes/failures is gated on a
+		 * known result_class; any other byte value in _reserved is
+		 * treated as INCOMPLETE so a scribbled slot cannot fabricate
+		 * a success/failure attribution. */
+		uint8_t result = (uint8_t)s->_reserved;
+
+		parent_stats.op_count += delta;
+		if (aux < NR_SYSCAT)
+			parent_stats.syscall_category_count[aux] += delta;
+		if (result == STATS_RESULT_SUCCESS)
+			parent_stats.successes += delta;
+		else if (result == STATS_RESULT_FAILURE)
+			parent_stats.failures += delta;
+		break;
+	}
 	case STATS_FIELD_NR:
 	default:
 		/* Out-of-range field_id: silent drop.  A scribbled slot can
