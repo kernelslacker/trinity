@@ -326,8 +326,20 @@ static unsigned long bpf_attach_types[] = {
  *    must receive: the relocated pool address lives in the writable
  *    allocator, not the libc heap, and would be rejected by the
  *    heap-bounds gate.
+ *
+ * The leading `magic` cookie distinguishes a real bpf_post_state from
+ * arbitrary attacker-influenced memory: rec->post_state is opaque to
+ * the syscall ABI, but the whole syscallrecord can still be wholesale
+ * scribbled, and a heap-shaped post_state pointer rewritten to a
+ * foreign allocation would otherwise survive looks_like_corrupted_ptr
+ * and let post_bpf parse the foreign bytes as if they were a snap.
+ * The cookie check catches that — the magic byte-pattern is unique
+ * across the codebase and unlikely to appear at the start of an
+ * unrelated allocation by chance.
  */
+#define BPF_POST_STATE_MAGIC	0x4250465F4D41475FUL	/* "BPF_MAG_" */
 struct bpf_post_state {
+	unsigned long magic;
 	unsigned int cmd;
 	union bpf_attr *attr_original;
 };
@@ -540,6 +552,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	 * site wants sanitise intent rather than kernel-observed bytes.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = BPF_POST_STATE_MAGIC;
 	snap->cmd = cmd;
 	snap->attr_original = attr;
 	rec->post_state = (unsigned long) snap;
@@ -568,6 +581,25 @@ static void post_bpf(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_bpf: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * bpf_post_state.  A cookie mismatch means snap does not point at
+	 * our struct -- abandon the post handler entirely rather than
+	 * read attr_original / cmd out of wild memory.  Do NOT free: the
+	 * pointer is suspect and may not be heap-owned, so handing it to
+	 * deferred_free_enqueue() would corrupt the allocator's bookkeeping.
+	 */
+	if (snap->magic != BPF_POST_STATE_MAGIC) {
+		outputerr("post_bpf: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
