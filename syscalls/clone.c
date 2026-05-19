@@ -116,7 +116,7 @@ struct syscallentry syscall_clone = {
 	.name = "clone",
 	.group = GROUP_PROCESS,
 	.num_args = 5,
-	.flags = AVOID_SYSCALL,
+	.flags = AVOID_SYSCALL | KCOV_REMOTE_HEAVY,
 	.argtype = { [0] = ARG_LIST, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS, [3] = ARG_ADDRESS, [4] = ARG_ADDRESS },
 	.argname = { [0] = "clone_flags", [1] = "newsp", [2] = "parent_tid", [3] = "child_tid", [4] = "regs" },
 	.arg_params[0].list = ARGLIST(clone_flags),

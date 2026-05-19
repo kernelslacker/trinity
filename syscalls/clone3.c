@@ -256,7 +256,7 @@ struct syscallentry syscall_clone3 = {
 	.name = "clone3",
 	.group = GROUP_PROCESS,
 	.num_args = 2,
-	.flags = AVOID_SYSCALL,
+	.flags = AVOID_SYSCALL | KCOV_REMOTE_HEAVY,
 	.argtype = { [0] = ARG_STRUCT_PTR_IN, [1] = ARG_STRUCT_SIZE },
 	.argname = { [0] = "uargs", [1] = "size" },
 	.sanitise = sanitise_clone3,

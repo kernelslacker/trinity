@@ -64,7 +64,7 @@ struct syscallentry syscall_open_tree_attr = {
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_MOUNT,
 	.group = GROUP_VFS,
-	.flags = NEEDS_ROOT,
+	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_open_tree_attr,
 	.post = post_mount_fd,
 };

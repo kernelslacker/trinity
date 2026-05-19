@@ -19,5 +19,5 @@ struct syscallentry syscall_move_mount = {
 	.arg_params[4].list = ARGLIST(move_mount_flags),
 	.group = GROUP_VFS,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEEDS_ROOT,
+	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY,
 };

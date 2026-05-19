@@ -68,7 +68,7 @@ struct syscallentry syscall_setns= {
 	.argtype = { [0] = ARG_FD, [1] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "nstype" },
 	.arg_params[1].list = ARGLIST(setns_types),
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_setns,
 	.post = post_setns,
 	.rettype = RET_ZERO_SUCCESS,

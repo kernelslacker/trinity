@@ -74,6 +74,7 @@ struct syscallentry syscall_unshare = {
 	.argtype = { [0] = ARG_LIST },
 	.argname = { [0] = "unshare_flags" },
 	.arg_params[0].list = ARGLIST(unshare_flags),
+	.flags = KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_unshare,
 	.post = post_unshare,
 	.rettype = RET_ZERO_SUCCESS,

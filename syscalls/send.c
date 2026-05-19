@@ -330,7 +330,7 @@ struct syscallentry syscall_sendmsg = {
 	.arg_params[2].list = ARGLIST(sendflags),
 	.sanitise = sanitise_sendmsg,
 	.post = post_sendmsg,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
 	.group = GROUP_NET,
 	.rettype = RET_NUM_BYTES,
 };
@@ -550,7 +550,7 @@ struct syscallentry syscall_sendmmsg = {
 	.argname = { [0] = "fd", [1] = "mmsg", [2] = "vlen", [3] = "flags" },
 	.arg_params[3].list = ARGLIST(sendflags),
 	.arg_params[2].range.low = 1, .arg_params[2].range.hi = 1024,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
 	.group = GROUP_NET,
 	.sanitise = sanitise_sendmmsg,
 	.post = post_sendmmsg,

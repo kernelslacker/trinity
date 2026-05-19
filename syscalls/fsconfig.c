@@ -130,7 +130,7 @@ struct syscallentry syscall_fsconfig = {
 	.argname = { [0] = "fd", [1] = "cmd", [2] = "_key", [3] = "_value", [4] = "aux" },
 	.arg_params[1].list = ARGLIST(fsconfig_ops),
 	.group = GROUP_VFS,
-	.flags = NEEDS_ROOT,
+	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_fsconfig,
 	.rettype = RET_ZERO_SUCCESS,
 };

@@ -19,7 +19,7 @@ struct syscallentry syscall_bind = {
 	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_SOCKADDR, [2] = ARG_SOCKADDRLEN },
 	.argname = { [0] = "fd", [1] = "umyaddr", [2] = "addrlen" },
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
 	.group = GROUP_NET,
 	.sanitise = sanitise_bind,
 };

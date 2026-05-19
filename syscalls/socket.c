@@ -155,6 +155,7 @@ struct syscallentry syscall_socket = {
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_SOCKET,
 	.group = GROUP_NET,
+	.flags = KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_socket,
 	.post = post_socket,
 };

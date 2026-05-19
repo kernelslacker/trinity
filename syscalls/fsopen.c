@@ -43,7 +43,7 @@ struct syscallentry syscall_fsopen = {
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_FS_CTX,
 	.group = GROUP_VFS,
-	.flags = NEEDS_ROOT,
+	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_fsopen,
 	.post = post_fs_ctx_fd,
 };
