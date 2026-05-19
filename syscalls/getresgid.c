@@ -31,9 +31,9 @@ struct getresgid_post_state {
 
 static void sanitise_getresgid16(struct syscallrecord *rec)
 {
-	avoid_shared_buffer(&rec->a1, sizeof(gid_t));
-	avoid_shared_buffer(&rec->a2, sizeof(gid_t));
-	avoid_shared_buffer(&rec->a3, sizeof(gid_t));
+	avoid_shared_buffer_out(&rec->a1, sizeof(gid_t));
+	avoid_shared_buffer_out(&rec->a2, sizeof(gid_t));
+	avoid_shared_buffer_out(&rec->a3, sizeof(gid_t));
 }
 
 static void sanitise_getresgid(struct syscallrecord *rec)
@@ -47,9 +47,9 @@ static void sanitise_getresgid(struct syscallrecord *rec)
 	 */
 	rec->post_state = 0;
 
-	avoid_shared_buffer(&rec->a1, sizeof(gid_t));
-	avoid_shared_buffer(&rec->a2, sizeof(gid_t));
-	avoid_shared_buffer(&rec->a3, sizeof(gid_t));
+	avoid_shared_buffer_out(&rec->a1, sizeof(gid_t));
+	avoid_shared_buffer_out(&rec->a2, sizeof(gid_t));
+	avoid_shared_buffer_out(&rec->a3, sizeof(gid_t));
 
 	/*
 	 * Snapshot the three input args read by the post oracle.  Without

@@ -74,11 +74,11 @@ static void sanitise_get_mempolicy(struct syscallrecord *rec)
 	 * up to whole longs; bound it to a sane page in case maxnode came
 	 * out at the high end of its range.
 	 */
-	avoid_shared_buffer(&rec->a1, sizeof(int));
+	avoid_shared_buffer_out(&rec->a1, sizeof(int));
 	nmask_bytes = ((maxnode + 63) / 64) * sizeof(long);
 	if (nmask_bytes == 0)
 		nmask_bytes = sizeof(long);
-	avoid_shared_buffer(&rec->a2, nmask_bytes);
+	avoid_shared_buffer_out(&rec->a2, nmask_bytes);
 
 #ifdef HAVE_SYS_GET_MEMPOLICY
 	/*

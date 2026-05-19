@@ -25,7 +25,7 @@ static void sanitise_getrandom(struct syscallrecord *rec)
 	if (map == NULL)
 		return;
 
-	avoid_shared_buffer(&rec->a1, rec->a2);
+	avoid_shared_buffer_out(&rec->a1, rec->a2);
 }
 
 static unsigned long getrandom_flags[] = {

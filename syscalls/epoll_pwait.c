@@ -25,12 +25,12 @@ static void sanitise_epoll_pwait(struct syscallrecord *rec)
 	case 1: rec->a4 = 0; break;			/* immediate */
 	default: rec->a4 = 1 + (rand() % 100); break;	/* short wait */
 	}
-	avoid_shared_buffer(&rec->a2, rec->a3 * sizeof(struct epoll_event));
+	avoid_shared_buffer_out(&rec->a2, rec->a3 * sizeof(struct epoll_event));
 }
 
 static void sanitise_epoll_pwait2(struct syscallrecord *rec)
 {
-	avoid_shared_buffer(&rec->a2, rec->a3 * sizeof(struct epoll_event));
+	avoid_shared_buffer_out(&rec->a2, rec->a3 * sizeof(struct epoll_event));
 }
 
 static void post_epoll_pwait(struct syscallrecord *rec)

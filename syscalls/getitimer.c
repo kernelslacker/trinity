@@ -39,7 +39,7 @@ static void sanitise_getitimer(struct syscallrecord *rec)
 	 */
 	rec->post_state = 0;
 
-	avoid_shared_buffer(&rec->a2, sizeof(struct itimerval));
+	avoid_shared_buffer_out(&rec->a2, sizeof(struct itimerval));
 
 	/*
 	 * Snapshot the one input arg for the post oracle.  Without this

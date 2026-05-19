@@ -39,7 +39,7 @@ static void sanitise_getcwd(struct syscallrecord *rec)
 	 */
 	rec->post_state = 0;
 
-	avoid_shared_buffer(&rec->a1, rec->a2 ? rec->a2 : page_size);
+	avoid_shared_buffer_out(&rec->a1, rec->a2 ? rec->a2 : page_size);
 
 	/*
 	 * Snapshot the one input arg the post oracle reads.  Without this

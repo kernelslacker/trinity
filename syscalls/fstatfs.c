@@ -37,7 +37,7 @@ static void sanitise_fstatfs(struct syscallrecord *rec)
 
 	rec->post_state = 0;
 
-	avoid_shared_buffer(&rec->a2, page_size);
+	avoid_shared_buffer_out(&rec->a2, page_size);
 
 	/*
 	 * Snapshot the two input args for the post oracle.  Without this
@@ -260,7 +260,7 @@ struct fstatfs64_post_state {
 
 static void sanitise_fstatfs64(struct syscallrecord *rec)
 {
-	avoid_shared_buffer(&rec->a3, rec->a2 ? rec->a2 : page_size);
+	avoid_shared_buffer_out(&rec->a3, rec->a2 ? rec->a2 : page_size);
 
 #ifdef SYS_fstatfs64
 	{

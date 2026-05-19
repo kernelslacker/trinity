@@ -10,7 +10,7 @@
 
 static void sanitise_getdents(struct syscallrecord *rec)
 {
-	avoid_shared_buffer(&rec->a2, rec->a3 ? rec->a3 : page_size);
+	avoid_shared_buffer_out(&rec->a2, rec->a3 ? rec->a3 : page_size);
 }
 
 /*

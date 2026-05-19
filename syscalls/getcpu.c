@@ -51,9 +51,9 @@ static void sanitise_getcpu(struct syscallrecord *rec)
 	rec->post_state = 0;
 #endif
 
-	avoid_shared_buffer(&rec->a1, sizeof(unsigned int));
-	avoid_shared_buffer(&rec->a2, sizeof(unsigned int));
-	avoid_shared_buffer(&rec->a3, page_size);
+	avoid_shared_buffer_out(&rec->a1, sizeof(unsigned int));
+	avoid_shared_buffer_out(&rec->a2, sizeof(unsigned int));
+	avoid_shared_buffer_out(&rec->a3, page_size);
 
 #ifdef HAVE_SYS_GETCPU
 	/*

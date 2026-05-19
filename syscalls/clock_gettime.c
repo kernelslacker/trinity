@@ -45,7 +45,7 @@ static void sanitise_clock_gettime(struct syscallrecord *rec)
 	rec->post_state = 0;
 #endif
 
-	avoid_shared_buffer(&rec->a2, sizeof(struct timespec));
+	avoid_shared_buffer_out(&rec->a2, sizeof(struct timespec));
 
 #if defined(SYS_clock_gettime) || defined(__NR_clock_gettime)
 	/*

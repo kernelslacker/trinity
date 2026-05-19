@@ -14,7 +14,7 @@
 
 static void sanitise_getgroups(struct syscallrecord *rec)
 {
-	avoid_shared_buffer(&rec->a2, rec->a1 * sizeof(gid_t));
+	avoid_shared_buffer_out(&rec->a2, rec->a1 * sizeof(gid_t));
 }
 
 /*

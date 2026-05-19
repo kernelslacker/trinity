@@ -57,8 +57,8 @@ static void sanitise_get_robust_list(struct syscallrecord *rec)
 	 * ARG_NON_NULL_ADDRESS, so generic_sanitise sources them from the
 	 * random pool with no overlap check against the alloc_shared regions.
 	 */
-	avoid_shared_buffer(&rec->a2, sizeof(void *));
-	avoid_shared_buffer(&rec->a3, sizeof(size_t));
+	avoid_shared_buffer_out(&rec->a2, sizeof(void *));
+	avoid_shared_buffer_out(&rec->a3, sizeof(size_t));
 
 #ifdef HAVE_SYS_GET_ROBUST_LIST
 	/*

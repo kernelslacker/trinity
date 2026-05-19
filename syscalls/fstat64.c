@@ -10,7 +10,7 @@
 
 static void sanitise_fstat64(struct syscallrecord *rec)
 {
-	avoid_shared_buffer(&rec->a2, page_size);
+	avoid_shared_buffer_out(&rec->a2, page_size);
 }
 
 struct syscallentry syscall_fstat64 = {
@@ -38,7 +38,7 @@ static unsigned long fstatat_flags[] = {
 
 static void sanitise_fstatat64(struct syscallrecord *rec)
 {
-	avoid_shared_buffer(&rec->a3, page_size);
+	avoid_shared_buffer_out(&rec->a3, page_size);
 }
 
 struct syscallentry syscall_fstatat64 = {

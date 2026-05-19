@@ -50,7 +50,7 @@ static void sanitise_clock_nanosleep(struct syscallrecord *rec)
 	 * timespec there.  Random pool can land it inside an alloc_shared
 	 * region, so scrub.
 	 */
-	avoid_shared_buffer(&rec->a4, sizeof(struct timespec));
+	avoid_shared_buffer_out(&rec->a4, sizeof(struct timespec));
 }
 
 static void post_clock_nanosleep(struct syscallrecord *rec)

@@ -59,7 +59,7 @@ static void sanitise_file_getattr(struct syscallrecord *rec)
 	rec->post_state = 0;
 #endif
 
-	avoid_shared_buffer(&rec->a3, rec->a4);
+	avoid_shared_buffer_out(&rec->a3, rec->a4);
 
 #ifdef HAVE_SYS_FILE_GETATTR
 	/*
