@@ -73,14 +73,17 @@ static void sanitise_poll(struct syscallrecord *rec)
 	struct pollfd *pollfd = alloc_pollfds(rec);
 
 	/*
-	 * The kernel writes pollfd[i].revents back into the user-supplied
-	 * array.  alloc_pollfds() handed us a zmalloc()'d buffer that lives
-	 * inside the libc brk arena, so a fuzzed ufds pointer (or even the
-	 * legitimate one) lets the kernel scribble glibc chunk metadata.
-	 * Route the output buffer through avoid_shared_buffer() so the
+	 * The kernel both reads pollfd[i].fd and pollfd[i].events from
+	 * the caller and writes pollfd[i].revents back, so this is a
+	 * value-result buffer.  alloc_pollfds() handed us a zmalloc()'d
+	 * buffer that lives inside the libc brk arena, so a fuzzed ufds
+	 * pointer (or even the legitimate one) lets the kernel scribble
+	 * glibc chunk metadata.  Route the array through
+	 * avoid_shared_buffer_inout() so the redirected allocation
+	 * preserves the fd/events we just populated and the revents
 	 * write lands in a known-safe writable region instead.
 	 */
-	avoid_shared_buffer(&rec->a1, rec->a2 * sizeof(struct pollfd));
+	avoid_shared_buffer_inout(&rec->a1, rec->a2 * sizeof(struct pollfd));
 
 	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
 	 * syscall before post_poll() runs.  Snapshot the original heap
@@ -195,17 +198,19 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 	rec->a5 = sizeof(sigset_t);
 
 	/*
-	 * ppoll(2) writes pollfd[i].revents back into ufds and rewrites
-	 * tsp with the remaining timeout when a signal interrupts the
-	 * wait.  Both buffers come from zmalloc(), i.e. the libc brk
-	 * arena, so the kernel writes can land on top of glibc chunk
-	 * metadata.  Route both output buffers through
-	 * avoid_shared_buffer() so the writes hit a known-safe writable
-	 * region when the original ranges overlap the libc heap or any
-	 * tracked shared region.
+	 * ppoll(2) reads pollfd[i].fd/events and writes pollfd[i].revents
+	 * back; tsp is also value-result (kernel reads the requested
+	 * timeout and rewrites it with the remaining time when a signal
+	 * interrupts the wait).  Both buffers come from zmalloc(), i.e.
+	 * the libc brk arena, so the kernel writes can land on top of
+	 * glibc chunk metadata.  Route both through
+	 * avoid_shared_buffer_inout() so the initial fd/events/timeout
+	 * values survive the relocation and the kernel's writeback hits
+	 * a known-safe writable region when the original ranges overlap
+	 * the libc heap or any tracked shared region.
 	 */
-	avoid_shared_buffer(&rec->a1, rec->a2 * sizeof(struct pollfd));
-	avoid_shared_buffer(&rec->a3, sizeof(struct timespec));
+	avoid_shared_buffer_inout(&rec->a1, rec->a2 * sizeof(struct pollfd));
+	avoid_shared_buffer_inout(&rec->a3, sizeof(struct timespec));
 
 	/*
 	 * Snapshot both heap pointers for the post handler.  rec->a1 and
