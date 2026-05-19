@@ -91,6 +91,17 @@ static void pool_unlock(struct cmp_hint_pool *pool)
  * to make room.  Duplicate hits refresh last_used so an actively-observed
  * constant doesn't get evicted by transient long-tail noise.  Caller must
  * hold pool->lock.
+ *
+ * pool->generation is bumped ONLY on real content changes (fresh insert
+ * or evict-replace), never on dedup-refresh.  That keeps the
+ * cmp_hints_total_generation() snapshot dirty-bit honest: a saturated
+ * pool whose hot tuples keep dedup-refreshing produces no generation
+ * delta and therefore no redundant snapshot save.  The LRU clock that
+ * stamps each entry's last_used uses a separate per-pool counter
+ * (pool->last_used_stamp) which advances on every call — including
+ * dedup-refresh — so the eviction policy is unchanged from before this
+ * split: an actively-observed tuple still gets its stamp refreshed and
+ * is still the last thing the evictor will pick.
  */
 static void pool_add_locked(struct cmp_hint_pool *pool,
 			    unsigned long cmp_ip,
@@ -98,7 +109,7 @@ static void pool_add_locked(struct cmp_hint_pool *pool,
 			    unsigned int size)
 {
 	unsigned int i, count = pool->count;
-	unsigned int stamp = ++pool->generation;
+	unsigned int stamp = ++pool->last_used_stamp;
 	unsigned int victim;
 	unsigned int oldest;
 
@@ -118,6 +129,7 @@ static void pool_add_locked(struct cmp_hint_pool *pool,
 		e->cmp_ip = cmp_ip;
 		e->size = size;
 		e->last_used = stamp;
+		pool->generation++;
 		/*
 		 * RELEASE-store count so a lockless reader in cmp_hints_try_get
 		 * that observes the new count is guaranteed to also see the
@@ -142,6 +154,7 @@ static void pool_add_locked(struct cmp_hint_pool *pool,
 	pool->entries[victim].cmp_ip = cmp_ip;
 	pool->entries[victim].size = size;
 	pool->entries[victim].last_used = stamp;
+	pool->generation++;
 	if (kcov_shm != NULL)
 		__atomic_fetch_add(&kcov_shm->cmp_hints_unique_inserts, 1UL,
 				   __ATOMIC_RELAXED);
@@ -575,11 +588,13 @@ static unsigned long cmp_hints_total_generation(void);
 /*
  * Dirty-bit proxy for cmp_hints_save_file().  cmp_hints_total_generation()
  * is the sum of pool->generation across all MAX_NR_SYSCALL pools;
- * pool->generation increments once per pool_add_locked() call (insert OR
- * duplicate-refresh), so the sum is monotonic and changes whenever any
- * pool absorbs a comparison record.  When it equals the value at the last
- * successful save, no pool has been touched and the on-disk image is
- * bit-for-bit identical to what we would write.
+ * pool->generation increments only when pool content actually changes
+ * (fresh insert or evict-replace), NOT on a dedup-refresh that only
+ * bumps an existing entry's last_used stamp.  The sum is therefore
+ * monotonic and changes precisely when the on-disk payload would
+ * differ from what was last written; when it equals the value at the
+ * last successful save, no pool has been touched and the snapshot can
+ * be skipped.
  *
  * Initialised to ULONG_MAX so the first save in a process always fires;
  * advanced on every successful save and seeded by the warm-start loader
@@ -832,6 +847,7 @@ bool cmp_hints_load_file(const char *path)
 		struct cmp_hints_pool_ondisk *src = &payload[i];
 		unsigned int src_count = src->count;
 		unsigned int dst_count = 0;
+		unsigned int max_stamp = 0;
 
 		if (src_count > CMP_HINTS_PER_SYSCALL) {
 			rejected += src_count;
@@ -850,9 +866,17 @@ bool cmp_hints_load_file(const char *path)
 			pool->entries[dst_count].cmp_ip    = src->entries[j].cmp_ip;
 			pool->entries[dst_count].size      = src->entries[j].size;
 			pool->entries[dst_count].last_used = src->entries[j].last_used;
+			if (src->entries[j].last_used > max_stamp)
+				max_stamp = src->entries[j].last_used;
 			dst_count++;
 		}
 		pool->generation = src->generation;
+		/* Seed the per-pool LRU clock to the max last_used we just loaded
+		 * so fresh inserts after warm-start get strictly larger stamps
+		 * and don't appear LRU-older than the warm-started entries (which
+		 * would invert the eviction order and let new traffic immediately
+		 * evict the just-loaded pool). */
+		pool->last_used_stamp = max_stamp;
 		__atomic_store_n(&pool->count, dst_count, __ATOMIC_RELEASE);
 		pool_unlock(pool);
 
@@ -972,12 +996,13 @@ const char *cmp_hints_default_path(void)
  * private statics -- no CAS race with children to worry about.
  *
  * Cadence is driven off the sum of pool->generation across all
- * MAX_NR_SYSCALL pools.  generation increments on every insertion or
- * duplicate-refresh under pool->lock; summing it gives a cheap
- * monotonically-non-decreasing proxy for "how many CMP records did the
- * children fold into the pool since we last snapshotted".  Recomputing
- * the sum on every tick is O(MAX_NR_SYSCALL) of plain unsigned-int
- * reads, well below the tick budget.
+ * MAX_NR_SYSCALL pools.  generation increments only on real pool
+ * content changes (insert or evict-replace) under pool->lock; summing
+ * it gives a cheap monotonically-non-decreasing proxy for "how many
+ * novel CMP records did the children fold into the pool since we last
+ * snapshotted".  Recomputing the sum on every tick is
+ * O(MAX_NR_SYSCALL) of plain unsigned-int reads, well below the tick
+ * budget.
  */
 static char cmp_hints_snapshot_path[PATH_MAX];
 static bool cmp_hints_snapshot_enabled;
@@ -1026,8 +1051,9 @@ void cmp_hints_maybe_snapshot(void)
 	 * (so we don't write a near-identical payload to disk) AND enough
 	 * wall time (so a high-churn period doesn't trigger one save per
 	 * second).  The original && meant either gate alone could fire;
-	 * with post-fix CMP record rate the generation gate now trips in
-	 * milliseconds, making the time gate dead and the save loop spam. */
+	 * with generation now advancing only on real content changes the
+	 * generation gate stays quiet once the pools saturate, but during
+	 * the initial fill it would still over-fire without the time gate. */
 	if (gen_now < cmp_hints_generation_at_last_snapshot
 			+ CMP_HINTS_SNAPSHOT_NEW ||
 	    now < cmp_hints_last_snapshot_time

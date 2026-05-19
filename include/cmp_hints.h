@@ -72,11 +72,27 @@ struct cmp_hint_entry {
 struct cmp_hint_pool {
 	lock_t lock;
 	unsigned int count;
-	/* Monotonic counter bumped under pool->lock on every insertion /
-	 * duplicate-refresh.  The current value stamps the entry's
-	 * last_used field; the entry with the lowest last_used is the LRU
-	 * eviction victim when count == CMP_HINTS_PER_SYSCALL. */
+	/* Monotonic counter bumped under pool->lock only when pool content
+	 * actually changes -- a fresh insert or an evict-replace, never on a
+	 * dedup-refresh hit.  Summed across all MAX_NR_SYSCALL pools by
+	 * cmp_hints_total_generation() to gate the snapshot dirty-bit in
+	 * cmp_hints_save_file; bumping it on dedup-refresh used to defeat
+	 * that gate by advancing the sum every time a hot tuple re-touched
+	 * its last_used field, even though the bytes serialised to disk
+	 * (modulo the last_used timestamps themselves) were identical.
+	 * last_used_stamp below carries the LRU-clock role generation used
+	 * to play. */
 	unsigned int generation;
+	/* Per-pool monotonic LRU clock, bumped under pool->lock on every
+	 * pool_add_locked call (including dedup-refresh hits).  The current
+	 * value stamps the entry's last_used field; the entry with the
+	 * smallest last_used is the eviction victim when count ==
+	 * CMP_HINTS_PER_SYSCALL.  Deliberately NOT included in the
+	 * snapshot-dirty-bit (cmp_hints_total_generation): dedup-refresh
+	 * advances this clock to keep an actively-observed tuple from
+	 * being evicted, but does not change which tuples live in the
+	 * pool, so it should not force a snapshot save. */
+	unsigned int last_used_stamp;
 	struct cmp_hint_entry entries[CMP_HINTS_PER_SYSCALL];
 };
 
@@ -103,10 +119,10 @@ bool cmp_hints_try_get(unsigned int nr, unsigned long *out);
  * triggers are slacker than the kcov bitmap's: snapshots fire only when
  * BOTH 200 newly-added entries have accumulated across all pools AND
  * 600s have elapsed since the last save.  Either gate alone is
- * insufficient -- the generation gate trips in milliseconds at the
- * post-rate-fix CMP record rate, so AND-ing it with the time gate is
- * what actually paces snapshots.  Hardcoded -- no operator knob, fleet
- * boxes shouldn't need to retune. */
+ * insufficient -- the generation gate would still over-fire during the
+ * initial fill phase before pools saturate, and the time gate alone
+ * would write near-identical payloads on a long-since-saturated pool.
+ * Hardcoded -- no operator knob, fleet boxes shouldn't need to retune. */
 #define CMP_HINTS_SNAPSHOT_NEW			200UL
 #define CMP_HINTS_SNAPSHOT_INTERVAL_SEC		600UL
 
