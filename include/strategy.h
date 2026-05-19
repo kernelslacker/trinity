@@ -2,6 +2,8 @@
 
 #include <stdbool.h>
 
+#include "syscall.h"		/* NR_GROUPS */
+
 /*
  * Multi-strategy syscall-selection rotation.
  *
@@ -544,6 +546,85 @@ void plateau_anti_prior_refresh_baseline(void);
  * the rotation log.  Returns "?" for out-of-range input.
  */
 const char *plateau_intervention_mode_name(enum plateau_intervention_mode m);
+
+/*
+ * Plateau hypothesis machinery (Phase 1 -- diagnostics only).
+ *
+ * On the rising-edge transition into plateau_active the orchestrator
+ * captures a snapshot of every counter the rule evaluator (Phase 2)
+ * will need to classify WHY discovery has stalled.  A later periodic
+ * tick computes the current snapshot, derives the per-counter delta
+ * vs the entry snapshot, and feeds the delta into the rule evaluator.
+ *
+ * struct plateau_window_snapshot lives in shm-free memory -- the
+ * entry snapshot is parent-private (only the parent walks the plateau
+ * detector + rule check) and ride-along snapshots are stack-local on
+ * the tick path.
+ *
+ * Field origins (all sourced from existing counters; no new wiring):
+ *
+ *   pc_edges     -- kcov_shm->edges_found.  Headline coverage signal,
+ *                   the same counter the plateau detector itself
+ *                   watches the rate of.
+ *   cmp_unique   -- kcov_shm->cmp_hints_unique_inserts.  Counts CMP
+ *                   records that survived bloom + pool dedup and
+ *                   changed pool state -- the right denominator for
+ *                   "how much unique CMP signal is the kernel still
+ *                   emitting" while pc_edges has flattened.
+ *   bandit_edges, explorer_edges -- shm->stats.{bandit,explorer}_pool_
+ *                   edges_discovered.  Per-pool new-edge calls
+ *                   attributed to the syscall path (excludes alt-op
+ *                   childops).
+ *   childop_edges_total -- sum of shm->stats.childop_edges_discovered[]
+ *                   across enum child_op_type.  Per-alt-op edge
+ *                   attribution -- bumped per alt-op invocation in the
+ *                   post-call have_kcov block.
+ *   remote_calls, total_calls -- kcov_shm->{remote,total}_calls.
+ *                   KCOV_REMOTE_ENABLE share of the dispatch mix;
+ *                   inline = total - remote.
+ *   frontier_picks -- shm->stats.frontier_strategy_picks.  Calls that
+ *                   went through the coverage-frontier roulette wheel.
+ *   group_edges[NR_GROUPS] -- per-syscall-group sum of
+ *                   kcov_shm->per_syscall_edges[], grouped by
+ *                   syscalls[nr].entry->group.  Maps the call-count
+ *                   new-edge signal onto the GROUP_* axis the
+ *                   classifier needs for the single-group-dominant
+ *                   rule.
+ *
+ * Captured at entry; deltas read at every tick.  Saturating-subtract
+ * so a counter that wraps or briefly inverts (concurrent readers /
+ * resets) produces 0 instead of UINT_MAX, which would otherwise blow
+ * past every threshold in the rule evaluator.
+ */
+struct plateau_window_snapshot {
+	unsigned long pc_edges;
+	unsigned long cmp_unique;
+	unsigned long bandit_edges;
+	unsigned long explorer_edges;
+	unsigned long childop_edges_total;
+	unsigned long remote_calls;
+	unsigned long total_calls;
+	unsigned long frontier_picks;
+	unsigned long group_edges[NR_GROUPS];
+};
+
+/*
+ * Populate snap with a fresh read of every counter listed above.
+ * Safe under concurrent writers -- every field is loaded RELAXED and
+ * any cross-field inconsistency only matters to the saturating-
+ * subtract in plateau_snapshot_delta below, which folds inversions
+ * to zero.
+ */
+void plateau_snapshot_capture(struct plateau_window_snapshot *snap);
+
+/*
+ * Per-field delta out = now - entry, saturating to 0 on inversion.
+ * Used by the rule evaluator (Phase 2) to score the deltas against
+ * the conservative thresholds in each rule branch.
+ */
+void plateau_snapshot_delta(struct plateau_window_snapshot *out,
+			    const struct plateau_window_snapshot *entry,
+			    const struct plateau_window_snapshot *now);
 
 /*
  * End-of-run summary: per-arm pulls + cumulative reward + mean

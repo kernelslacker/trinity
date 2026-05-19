@@ -42,6 +42,7 @@
 #include "stats.h"		/* stats_log_write */
 #include "strategy.h"
 #include "syscall.h"		/* MAX_NR_SYSCALL */
+#include "tables.h"		/* syscalls, max_nr_syscalls */
 #include "utils.h"
 
 /* Same KCOV_CMP_CONST bit cmp_hints.c uses; from uapi/linux/kcov.h. */
@@ -1062,6 +1063,102 @@ void strategy_plateau_response(void)
 	 * persists. */
 	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL, __ATOMIC_RELAXED);
 	stats_log_write("PLATEAU RESPONSE: forcing STRATEGY_RANDOM until plateau clears\n");
+}
+
+void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
+{
+	unsigned int op, nr, nr_max;
+
+	if (snap == NULL)
+		return;
+
+	memset(snap, 0, sizeof(*snap));
+
+	if (kcov_shm != NULL) {
+		snap->pc_edges = __atomic_load_n(&kcov_shm->edges_found,
+						 __ATOMIC_RELAXED);
+		snap->cmp_unique = __atomic_load_n(
+			&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);
+		snap->remote_calls = __atomic_load_n(&kcov_shm->remote_calls,
+						     __ATOMIC_RELAXED);
+		snap->total_calls = __atomic_load_n(&kcov_shm->total_calls,
+						    __ATOMIC_RELAXED);
+
+		/* Per-group new-edge attribution.  per_syscall_edges is a
+		 * CALL-COUNT signal (a syscall that uncovers 50 distinct
+		 * edges in one call bumps by 1, not 50 -- see the field
+		 * comment in include/kcov.h) so the per-group sum here is
+		 * the headline "how many CALLS in this group produced any
+		 * new coverage" series.  The single-group-dominant rule
+		 * compares per-group deltas against the total delta; both
+		 * sides share the same units so the ratio is well-defined. */
+		nr_max = max_nr_syscalls;
+		if (nr_max > MAX_NR_SYSCALL)
+			nr_max = MAX_NR_SYSCALL;
+		for (nr = 0; nr < nr_max; nr++) {
+			struct syscallentry *entry;
+			unsigned int grp;
+			unsigned long e;
+
+			if (syscalls == NULL)
+				break;
+			entry = syscalls[nr].entry;
+			if (entry == NULL)
+				continue;
+			grp = entry->group;
+			if (grp >= NR_GROUPS)
+				continue;
+			e = __atomic_load_n(&kcov_shm->per_syscall_edges[nr],
+					    __ATOMIC_RELAXED);
+			snap->group_edges[grp] += e;
+		}
+	}
+
+	snap->bandit_edges = __atomic_load_n(
+		&shm->stats.bandit_pool_edges_discovered, __ATOMIC_RELAXED);
+	snap->explorer_edges = __atomic_load_n(
+		&shm->stats.explorer_pool_edges_discovered, __ATOMIC_RELAXED);
+	snap->frontier_picks = __atomic_load_n(
+		&shm->stats.frontier_strategy_picks, __ATOMIC_RELAXED);
+
+	for (op = 0; op < NR_CHILD_OP_TYPES; op++) {
+		snap->childop_edges_total += __atomic_load_n(
+			&shm->stats.childop_edges_discovered[op],
+			__ATOMIC_RELAXED);
+	}
+}
+
+/* Saturating-subtract: a - b clamped to 0.  See the field comment on
+ * struct plateau_window_snapshot for why an inversion (concurrent
+ * writer / counter reset) needs to fold to zero rather than wrap. */
+static unsigned long sat_sub(unsigned long a, unsigned long b)
+{
+	return (a >= b) ? (a - b) : 0UL;
+}
+
+void plateau_snapshot_delta(struct plateau_window_snapshot *out,
+			    const struct plateau_window_snapshot *entry,
+			    const struct plateau_window_snapshot *now)
+{
+	unsigned int grp;
+
+	if (out == NULL || entry == NULL || now == NULL)
+		return;
+
+	out->pc_edges = sat_sub(now->pc_edges, entry->pc_edges);
+	out->cmp_unique = sat_sub(now->cmp_unique, entry->cmp_unique);
+	out->bandit_edges = sat_sub(now->bandit_edges, entry->bandit_edges);
+	out->explorer_edges = sat_sub(now->explorer_edges,
+				      entry->explorer_edges);
+	out->childop_edges_total = sat_sub(now->childop_edges_total,
+					   entry->childop_edges_total);
+	out->remote_calls = sat_sub(now->remote_calls, entry->remote_calls);
+	out->total_calls = sat_sub(now->total_calls, entry->total_calls);
+	out->frontier_picks = sat_sub(now->frontier_picks,
+				      entry->frontier_picks);
+	for (grp = 0; grp < NR_GROUPS; grp++)
+		out->group_edges[grp] = sat_sub(now->group_edges[grp],
+						entry->group_edges[grp]);
 }
 
 /*
