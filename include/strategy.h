@@ -627,6 +627,97 @@ void plateau_snapshot_delta(struct plateau_window_snapshot *out,
 			    const struct plateau_window_snapshot *now);
 
 /*
+ * Plateau hypothesis classifier (Phase 1 -- diagnostics only).
+ *
+ * Each value names ONE hypothesis about why discovery has stalled.
+ * The orchestrator does NOT yet act on the hypothesis -- when a rule
+ * matches we only log which rule fired and bump a per-hypothesis fire
+ * counter so the operator can see the cumulative distribution across
+ * a long run.  The intervention layer (changing strategy, explorer
+ * mix, remote-KCOV rate, cold-skip threshold in response to a fired
+ * rule) is Phase 2 territory.
+ *
+ * Conservative thresholds throughout: each rule needs evidence that
+ * would not show up in a healthy or short-lived plateau window.  See
+ * strategy_plateau_hypothesis_check() in strategy.c for the exact
+ * comparisons.
+ *
+ * Rules are checked in enum order and the FIRST match wins, so the
+ * ordering encodes precedence -- CMP_RISING_PC_FLAT is the most
+ * specific (we can see CMP signal still arriving while PC has gone
+ * cold) and SINGLE_GROUP_DOMINANT is the most general (one group
+ * accounting for >70% of edges is informative but compatible with
+ * several finer-grained explanations).
+ */
+enum plateau_hypothesis {
+	PLATEAU_HYPOTHESIS_NONE = 0,
+	PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT,
+	PLATEAU_HYPOTHESIS_CHILDOP_DOMINANT,
+	PLATEAU_HYPOTHESIS_REMOTE_DOMINANT,
+	PLATEAU_HYPOTHESIS_FRONTIER_COLD,
+	PLATEAU_HYPOTHESIS_SINGLE_GROUP_DOMINANT,
+	NR_PLATEAU_HYPOTHESES,	/* sentinel, must stay last */
+};
+
+/*
+ * Human-readable name for a hypothesis enum value -- used in both the
+ * stats_log_write() one-shot on hypothesis transitions and the
+ * print_stats() per-tick visibility line.  Returns "?" for out-of-range
+ * input (e.g. a wild write landing on a stored hypothesis field).
+ */
+const char *strategy_plateau_hypothesis_name(enum plateau_hypothesis h);
+
+/*
+ * Evaluate the rule tree against the (entry, now) delta.  Pure function
+ * over the snapshot deltas -- no side effects, no logging, no counter
+ * bumps.  Callers (print_stats below; future Phase 2 intervention
+ * dispatcher) handle the bookkeeping and side effects.
+ *
+ * Returns PLATEAU_HYPOTHESIS_NONE when no rule matches the deltas;
+ * this is the expected state for a freshly-entered plateau where
+ * neither side of the window has accumulated enough samples for any
+ * threshold to fire.
+ */
+enum plateau_hypothesis strategy_plateau_hypothesis_check(
+		const struct plateau_window_snapshot *entry,
+		const struct plateau_window_snapshot *now);
+
+/*
+ * Plateau-entry hook: capture the snapshot the rule evaluator will
+ * diff against.  Idempotent within a single plateau episode -- the
+ * entry snapshot is cleared when plateau_active drops, so the next
+ * plateau gets a fresh baseline.  Called from strategy_plateau_
+ * response() on the rising edge.
+ */
+void strategy_plateau_hypothesis_enter(void);
+
+/*
+ * Per-tick driver: if a plateau is in progress, compute the current
+ * snapshot, run the rule evaluator, bump the per-hypothesis fire
+ * counter on every transition into a non-NONE class (and once on the
+ * matching transition into NONE so the stats line can show the rule
+ * dropped out), and stash the deltas + result for the print_stats()
+ * one-line block.  When plateau_active is false, drops the stashed
+ * state so the print_stats block suppresses cleanly.
+ *
+ * Called from main.c print_stats() once per stats tick -- the
+ * cadence matches the cadence the operator reads the periodic
+ * dump at, so the hypothesis-transition log lines and the per-tick
+ * visibility line stay in sync.
+ */
+void strategy_plateau_hypothesis_tick(void);
+
+/*
+ * Read-side accessors used by main.c print_stats() to format the
+ * one-line plateau hypothesis block.  The deltas + last hypothesis +
+ * fire-count array live as parent-private state in strategy.c (the
+ * tick driver only runs on the parent path).
+ */
+enum plateau_hypothesis strategy_plateau_hypothesis_current(void);
+const struct plateau_window_snapshot *strategy_plateau_hypothesis_delta(void);
+unsigned long strategy_plateau_hypothesis_fires(enum plateau_hypothesis h);
+
+/*
  * End-of-run summary: per-arm pulls + cumulative reward + mean
  * edges/window.  Called from dump_stats().
  */

@@ -1063,6 +1063,13 @@ void strategy_plateau_response(void)
 	 * persists. */
 	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL, __ATOMIC_RELAXED);
 	stats_log_write("PLATEAU RESPONSE: forcing STRATEGY_RANDOM until plateau clears\n");
+
+	/* Arm the per-plateau-window snapshot the rule evaluator diffs
+	 * against on every subsequent stats tick.  Called on the rising
+	 * edge into plateau_active so the entry baseline reflects the
+	 * counter values at the moment discovery actually stalled, not
+	 * whatever they happened to be at the previous stats tick. */
+	strategy_plateau_hypothesis_enter();
 }
 
 void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
@@ -1159,6 +1166,226 @@ void plateau_snapshot_delta(struct plateau_window_snapshot *out,
 	for (grp = 0; grp < NR_GROUPS; grp++)
 		out->group_edges[grp] = sat_sub(now->group_edges[grp],
 						entry->group_edges[grp]);
+}
+
+/*
+ * Plateau hypothesis classifier (Phase 1 -- diagnostics only).
+ *
+ * Parent-private state: the tick driver only runs on the parent path
+ * (called from print_stats()) so no atomics or locking are needed.
+ *
+ * hypothesis_entry_snap is captured once on the rising edge into
+ * plateau_active and held until the matching falling edge.  Per-tick
+ * deltas are diff'd against this snapshot rather than against the
+ * previous tick so a rule that requires sustained signal (e.g.
+ * cmp_unique delta of 1000+) trips on the cumulative growth across
+ * the plateau window rather than racing with whatever the last tick
+ * happened to capture.
+ *
+ * hypothesis_current is the rule that fired on the LAST tick; tracked
+ * so we only stats_log_write on transitions (entry to FOO, FOO to BAR,
+ * BAR to NONE) instead of every tick.  Long plateaus would otherwise
+ * spam stats.log with one line per stats interval per hypothesis.
+ */
+static struct plateau_window_snapshot hypothesis_entry_snap;
+static bool hypothesis_entry_armed;
+static struct plateau_window_snapshot hypothesis_last_delta;
+static enum plateau_hypothesis hypothesis_current = PLATEAU_HYPOTHESIS_NONE;
+static unsigned long hypothesis_fires[NR_PLATEAU_HYPOTHESES];
+
+const char *strategy_plateau_hypothesis_name(enum plateau_hypothesis h)
+{
+	switch (h) {
+	case PLATEAU_HYPOTHESIS_NONE:
+		return "NONE";
+	case PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT:
+		return "cmp_rising_pc_flat";
+	case PLATEAU_HYPOTHESIS_CHILDOP_DOMINANT:
+		return "childop_dominant";
+	case PLATEAU_HYPOTHESIS_REMOTE_DOMINANT:
+		return "remote_dominant";
+	case PLATEAU_HYPOTHESIS_FRONTIER_COLD:
+		return "frontier_cold";
+	case PLATEAU_HYPOTHESIS_SINGLE_GROUP_DOMINANT:
+		return "single_group_dominant";
+	case NR_PLATEAU_HYPOTHESES:
+		break;	/* sentinel */
+	}
+	return "?";
+}
+
+/* Rule 1: cmp_unique still climbing while pc_edges is flat.
+ *
+ * Direct evidence the kernel is still emitting novel CMP records that
+ * survive bloom + pool dedup, but those records aren't translating
+ * into PC-edge coverage gains.  Either the cmp_hints consumer isn't
+ * injecting the new constants effectively or the constants are
+ * landing on argument slots the syscall doesn't validate against.
+ * Either way the operator-meaningful signal is "CMP says progress,
+ * PC says stalled". */
+#define PHC_CMP_RISING_DELTA		1000UL
+
+/* Rule 2: childop alt-op invocations are out-discovering generic
+ * syscall picks by 2:1 on the per-pool new-edge attribution.
+ * generic_edges is (bandit_edges + explorer_edges) -- both pools dispatch
+ * through CHILD_OP_SYSCALL exclusively, so the sum is the
+ * non-alt-op denominator the rule needs. */
+#define PHC_CHILDOP_DOMINANT_RATIO	2UL
+
+/* Rule 3: KCOV_REMOTE_ENABLE share has outgrown inline KCOV by 2:1
+ * AND the remote-mode delta is non-trivial (the rule only matters
+ * when remote is actually contributing -- a kernel without remote
+ * KCOV reports remote_calls == 0 forever and the ratio is
+ * meaningless).  remote_calls is a SUBSET of total_calls (a call
+ * with KCOV_REMOTE_ENABLE bumps both); inline = total - remote. */
+#define PHC_REMOTE_DOMINANT_RATIO	2UL
+#define PHC_REMOTE_DOMINANT_MIN		100UL
+
+/* Rule 5: one syscall group accounts for more than 70% of the
+ * fleet's per-syscall-edges delta.  Conservative: only fires when
+ * the total per-group sum is non-trivial so a fresh plateau window
+ * with two edges in one group doesn't immediately trip a 100%
+ * single-group classification. */
+#define PHC_SINGLE_GROUP_PCT		70UL
+#define PHC_SINGLE_GROUP_MIN		50UL
+
+enum plateau_hypothesis strategy_plateau_hypothesis_check(
+		const struct plateau_window_snapshot *entry,
+		const struct plateau_window_snapshot *now)
+{
+	struct plateau_window_snapshot delta;
+	unsigned long generic_edges, total_group_edges, max_group, inline_calls;
+	unsigned int grp;
+
+	if (entry == NULL || now == NULL)
+		return PLATEAU_HYPOTHESIS_NONE;
+
+	plateau_snapshot_delta(&delta, entry, now);
+
+	/* Rule 1: CMP climbing, PC flat. */
+	if (delta.cmp_unique > PHC_CMP_RISING_DELTA &&
+	    delta.pc_edges == 0)
+		return PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT;
+
+	/* Rule 2: childop alt-ops dominate. */
+	generic_edges = delta.bandit_edges + delta.explorer_edges;
+	if (delta.childop_edges_total >
+	    PHC_CHILDOP_DOMINANT_RATIO * generic_edges &&
+	    delta.childop_edges_total > 0)
+		return PLATEAU_HYPOTHESIS_CHILDOP_DOMINANT;
+
+	/* Rule 3: remote KCOV dominates inline KCOV.  inline_calls is
+	 * derived rather than stored to avoid carrying redundant state. */
+	inline_calls = sat_sub(delta.total_calls, delta.remote_calls);
+	if (delta.remote_calls > PHC_REMOTE_DOMINANT_MIN &&
+	    delta.remote_calls > PHC_REMOTE_DOMINANT_RATIO * inline_calls)
+		return PLATEAU_HYPOTHESIS_REMOTE_DOMINANT;
+
+	/* Rule 4: frontier cold.  Phase 1 proxy: the coverage-frontier
+	 * picker has accepted ZERO picks since plateau entry.  The
+	 * stricter "there exists a cold-pool syscall with 0 picks since
+	 * entry" formulation needs a per-syscall snapshot the snapshot
+	 * struct does not yet carry; the proxy fires under the same
+	 * underlying condition (no frontier-weighted progress) without
+	 * the per-syscall walk.  The full per-syscall variant ships when
+	 * Phase 2's intervention layer needs the picked-vs-skipped
+	 * partition to drive a concrete response. */
+	if (delta.frontier_picks == 0)
+		return PLATEAU_HYPOTHESIS_FRONTIER_COLD;
+
+	/* Rule 5: single group dominates. */
+	total_group_edges = 0;
+	max_group = 0;
+	for (grp = 0; grp < NR_GROUPS; grp++) {
+		total_group_edges += delta.group_edges[grp];
+		if (delta.group_edges[grp] > max_group)
+			max_group = delta.group_edges[grp];
+	}
+	if (total_group_edges > PHC_SINGLE_GROUP_MIN &&
+	    max_group * 100UL > PHC_SINGLE_GROUP_PCT * total_group_edges)
+		return PLATEAU_HYPOTHESIS_SINGLE_GROUP_DOMINANT;
+
+	return PLATEAU_HYPOTHESIS_NONE;
+}
+
+void strategy_plateau_hypothesis_enter(void)
+{
+	plateau_snapshot_capture(&hypothesis_entry_snap);
+	hypothesis_entry_armed = true;
+	memset(&hypothesis_last_delta, 0, sizeof(hypothesis_last_delta));
+	hypothesis_current = PLATEAU_HYPOTHESIS_NONE;
+}
+
+void strategy_plateau_hypothesis_tick(void)
+{
+	struct plateau_window_snapshot now;
+	enum plateau_hypothesis fired;
+
+	if (kcov_shm == NULL)
+		return;
+
+	if (!kcov_shm->plateau_active) {
+		/* Plateau cleared: drop the entry snapshot so the next
+		 * plateau gets a fresh baseline.  hypothesis_fires[] is
+		 * NOT cleared -- the fire-count distribution is a
+		 * cumulative across-plateau statistic. */
+		if (hypothesis_entry_armed) {
+			hypothesis_entry_armed = false;
+			hypothesis_current = PLATEAU_HYPOTHESIS_NONE;
+			memset(&hypothesis_last_delta, 0,
+			       sizeof(hypothesis_last_delta));
+		}
+		return;
+	}
+
+	/* Plateau detector fired before the orchestrator armed the entry
+	 * snapshot (e.g. operator started under an existing plateau).
+	 * Arm lazily so subsequent ticks see real deltas. */
+	if (!hypothesis_entry_armed)
+		strategy_plateau_hypothesis_enter();
+
+	plateau_snapshot_capture(&now);
+	plateau_snapshot_delta(&hypothesis_last_delta,
+			       &hypothesis_entry_snap, &now);
+	fired = strategy_plateau_hypothesis_check(&hypothesis_entry_snap, &now);
+
+	if (fired != hypothesis_current) {
+		if (fired != PLATEAU_HYPOTHESIS_NONE) {
+			hypothesis_fires[fired]++;
+			stats_log_write(
+				"plateau hypothesis: %s fired (cmp_delta=+%lu/window pc_delta=+%lu/window childop_delta=+%lu generic_delta=+%lu remote_delta=+%lu/+%lu frontier_picks=%lu)\n",
+				strategy_plateau_hypothesis_name(fired),
+				hypothesis_last_delta.cmp_unique,
+				hypothesis_last_delta.pc_edges,
+				hypothesis_last_delta.childop_edges_total,
+				hypothesis_last_delta.bandit_edges +
+				hypothesis_last_delta.explorer_edges,
+				hypothesis_last_delta.remote_calls,
+				hypothesis_last_delta.total_calls,
+				hypothesis_last_delta.frontier_picks);
+		} else {
+			stats_log_write(
+				"plateau hypothesis: NONE (no rule matched window deltas)\n");
+		}
+		hypothesis_current = fired;
+	}
+}
+
+enum plateau_hypothesis strategy_plateau_hypothesis_current(void)
+{
+	return hypothesis_current;
+}
+
+const struct plateau_window_snapshot *strategy_plateau_hypothesis_delta(void)
+{
+	return &hypothesis_last_delta;
+}
+
+unsigned long strategy_plateau_hypothesis_fires(enum plateau_hypothesis h)
+{
+	if (h < 0 || h >= NR_PLATEAU_HYPOTHESES)
+		return 0;
+	return hypothesis_fires[h];
 }
 
 /*

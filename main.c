@@ -1564,6 +1564,51 @@ static void print_stats(void)
 				} else if (!plateau) {
 					warned_this_plateau = false;
 				}
+
+				/*
+				 * Plateau hypothesis ruleset (Phase 1 --
+				 * diagnostics only).  Drive the per-tick check
+				 * here so the hypothesis classification cadence
+				 * matches the cadence the operator reads the
+				 * KCOV/PICKER block at -- a transition log
+				 * line in stats.log will be accompanied by the
+				 * same window's hypothesis line in the periodic
+				 * dump.  Suppress the visibility line entirely
+				 * when plateau is idle so healthy runs do not
+				 * carry a perpetual NONE annotation.  The fire-
+				 * count tail stays visible across plateau
+				 * transitions only -- printing it on every
+				 * stats tick during healthy windows would
+				 * obscure that nothing has fired yet on a
+				 * fresh run.
+				 */
+				strategy_plateau_hypothesis_tick();
+				if (plateau) {
+					enum plateau_hypothesis ph =
+						strategy_plateau_hypothesis_current();
+					const struct plateau_window_snapshot *d =
+						strategy_plateau_hypothesis_delta();
+					output(0,
+						"plateau_hypothesis: %s (cmp_delta=+%lu pc_delta=+%lu childop_delta=+%lu generic_delta=+%lu remote_delta=+%lu/+%lu frontier_picks=%lu) fires: cmp_rising_pc_flat=%lu childop_dominant=%lu remote_dominant=%lu frontier_cold=%lu single_group_dominant=%lu\n",
+						strategy_plateau_hypothesis_name(ph),
+						d->cmp_unique,
+						d->pc_edges,
+						d->childop_edges_total,
+						d->bandit_edges + d->explorer_edges,
+						d->remote_calls,
+						d->total_calls,
+						d->frontier_picks,
+						strategy_plateau_hypothesis_fires(
+							PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT),
+						strategy_plateau_hypothesis_fires(
+							PLATEAU_HYPOTHESIS_CHILDOP_DOMINANT),
+						strategy_plateau_hypothesis_fires(
+							PLATEAU_HYPOTHESIS_REMOTE_DOMINANT),
+						strategy_plateau_hypothesis_fires(
+							PLATEAU_HYPOTHESIS_FRONTIER_COLD),
+						strategy_plateau_hypothesis_fires(
+							PLATEAU_HYPOTHESIS_SINGLE_GROUP_DOMINANT));
+				}
 			} else {
 				output(0, "%ld iterations. [HI:%ld%s] %lu/sec\n",
 					op_count,
