@@ -114,16 +114,27 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 	rec->a6 = (unsigned long) sigmask;
 
 	/*
-	 * Relocate any output buffers that landed in the shared SHM region
-	 * before the snapshot is taken — the snapshot must reference the
-	 * post-relocation pointers, not the original heap addresses, so the
-	 * post handler frees what the kernel actually wrote to.
+	 * Relocate any buffers that landed in the shared SHM region or
+	 * the libc brk arena before the snapshot is taken — the snapshot
+	 * must reference the post-relocation pointers, not the original
+	 * heap addresses, so the post handler frees what the kernel
+	 * actually wrote to.
+	 *
+	 * All five buffers must be _inout: the three fd_sets are
+	 * value-result (kernel reads the requested-bit mask we populated
+	 * via FD_SET() and writes back the ready-bit mask), the timespec
+	 * carries the requested timeout (tv_sec/tv_nsec we just stored)
+	 * and is also written back with the remaining time on signal,
+	 * and the sigmask carries the bits the kernel installs around
+	 * the wait.  avoid_shared_buffer_out() would zero the relocated
+	 * allocation, defeating every FD_SET above and turning the short
+	 * 10us timeout into an indefinite wait.
 	 */
-	avoid_shared_buffer(&rec->a2, sizeof(fd_set));
-	avoid_shared_buffer(&rec->a3, sizeof(fd_set));
-	avoid_shared_buffer(&rec->a4, sizeof(fd_set));
-	avoid_shared_buffer(&rec->a5, sizeof(struct timespec));
-	avoid_shared_buffer(&rec->a6, sizeof(sigset_t));
+	avoid_shared_buffer_inout(&rec->a2, sizeof(fd_set));
+	avoid_shared_buffer_inout(&rec->a3, sizeof(fd_set));
+	avoid_shared_buffer_inout(&rec->a4, sizeof(fd_set));
+	avoid_shared_buffer_inout(&rec->a5, sizeof(struct timespec));
+	avoid_shared_buffer_inout(&rec->a6, sizeof(sigset_t));
 
 	/*
 	 * Snapshot all five heap pointers for the post handler.  A sibling
