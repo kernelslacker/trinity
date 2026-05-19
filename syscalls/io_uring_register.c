@@ -348,12 +348,13 @@ static unsigned long pick_io_uring_register_opcode(void)
  * OBJ_MMAP pool).
  *
  * original_alloc captures the alloc_iovec() return value BEFORE the
- * trailing avoid_shared_buffer() call -- ASB relocates rec->a3 off the
- * libc heap into a parent-private writable region whenever the buffer
- * overlaps the shared regions, so by the time the post handler runs
- * rec->a3 may no longer point at the zmalloc()'d iovec at all.
+ * trailing avoid_shared_buffer() call -- ASB rewrites rec->a3 in place
+ * to a writable-address pool buffer (no byte copy) whenever the
+ * original buffer overlaps a shared region OR the libc heap, so by the
+ * time the post handler runs rec->a3 may no longer point at the
+ * zmalloc()'d iovec at all.
  * deferred_free_enqueue()'s heap-bounds and alloc-track gates reject the
- * relocated pointer (writable-address pool, mmap'd, alloc-track-unknown),
+ * redirected pointer (writable-address pool, mmap'd, alloc-track-unknown),
  * so the original allocation would leak every IORING_REGISTER_BUFFERS
  * invocation if the post handler routed the free through rec->a3.
  *

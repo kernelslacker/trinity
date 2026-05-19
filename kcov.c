@@ -231,13 +231,17 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	 * Second KCOV fd dedicated to KCOV_TRACE_CMP.  Trinity used to
 	 * mode-toggle the single PC fd into CMP for 1-in-CMP_MODE_RATIO
 	 * syscalls, which traded a sliver of every-syscall PC coverage for
-	 * occasional comparison-operand hints.  With a dedicated fd we run
-	 * both modes simultaneously on every syscall — PC coverage is no
-	 * longer sacrificed, and CMP records accumulate at the maximum
-	 * possible rate.  Probe enable/disable here so a kernel without
-	 * KCOV_TRACE_CMP support degrades cleanly to PC-only without
-	 * disabling the rest of KCOV.  Per-child cost: one extra fd plus
-	 * KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long) (~2MB) of mmap.
+	 * occasional comparison-operand hints.  We now open a dedicated cmp
+	 * fd here but each child still runs in a single mode for its
+	 * lifetime -- KCOV_MODE_PC or KCOV_MODE_CMP, picked once below from
+	 * the cmp_capable + random-draw block -- so the cmp fd is only
+	 * actually enabled for CMP-mode children.  This per-child split (vs
+	 * per-syscall toggling) keeps each child's collection loop simple
+	 * and avoids interleaving PC and CMP reads on the same fd.  Probe
+	 * enable/disable here so a kernel without KCOV_TRACE_CMP support
+	 * degrades cleanly to PC-only without disabling the rest of KCOV.
+	 * Per-CMP-child cost: one extra fd plus KCOV_CMP_BUFFER_SIZE *
+	 * sizeof(unsigned long) (~2MB) of mmap.
 	 */
 	if (kc->active) {
 		kc->cmp_fd = open("/sys/kernel/debug/kcov", O_RDWR);

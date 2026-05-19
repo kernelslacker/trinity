@@ -99,10 +99,13 @@ static void sanitise_select(struct syscallrecord *rec)
 	rec->a5 = (unsigned long) tv;
 
 	/*
-	 * Relocate any output buffer that landed inside the SHM region to a
-	 * private heap page.  avoid_shared_buffer() rewrites rec->aN in place,
-	 * so the snapshot below captures the post-relocation pointer and the
-	 * post handler frees what the kernel actually wrote to.
+	 * Redirect any output buffer that landed inside the SHM region or
+	 * the libc heap to a writable-address pool buffer.
+	 * avoid_shared_buffer() rewrites rec->aN in place to the pool
+	 * address (no bytes are copied -- the kernel just writes to the
+	 * replacement buffer instead), so the snapshot below captures the
+	 * post-redirect pointer and the post handler frees what the kernel
+	 * actually wrote to.
 	 */
 	avoid_shared_buffer(&rec->a2, sizeof(fd_set));
 	avoid_shared_buffer(&rec->a3, sizeof(fd_set));

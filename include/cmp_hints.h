@@ -100,9 +100,13 @@ bool cmp_hints_try_get(unsigned int nr, unsigned long *out);
 /* Mid-run snapshot cadence for cmp_hints_maybe_snapshot().  CMP records
  * are expensive to collect -- each one requires a kernel-side comparison
  * to fire on a syscall-derived input -- so the pool grows slowly and the
- * triggers are slacker than the kcov bitmap's: 200 newly-added entries
- * across all pools OR 600s since the last save, whichever comes first.
- * Hardcoded -- no operator knob, fleet boxes shouldn't need to retune. */
+ * triggers are slacker than the kcov bitmap's: snapshots fire only when
+ * BOTH 200 newly-added entries have accumulated across all pools AND
+ * 600s have elapsed since the last save.  Either gate alone is
+ * insufficient -- the generation gate trips in milliseconds at the
+ * post-rate-fix CMP record rate, so AND-ing it with the time gate is
+ * what actually paces snapshots.  Hardcoded -- no operator knob, fleet
+ * boxes shouldn't need to retune. */
 #define CMP_HINTS_SNAPSHOT_NEW			200UL
 #define CMP_HINTS_SNAPSHOT_INTERVAL_SEC		600UL
 
