@@ -104,6 +104,42 @@ void child_fd_ring_push(struct child_fd_ring *ring, int fd)
 }
 
 /*
+ * Sentinel-out any occurrences of `fd` in the ring.  Called from
+ * close-like post handlers when the child knows an fd has just been
+ * closed, so subsequent get_child_live_fd() picks don't waste an
+ * fcntl(F_GETFD) syscall validating a known-dead entry.  Scans all 16
+ * slots — bounded constant work; cheaper than the avoided fcntl.
+ */
+void child_fd_ring_remove(struct child_fd_ring *ring, int fd)
+{
+	int i;
+
+	if (fd <= 2)
+		return;
+	for (i = 0; i < CHILD_FD_RING_SIZE; i++) {
+		if (ring->fds[i] == fd)
+			ring->fds[i] = -1;
+	}
+}
+
+/*
+ * Sentinel-out any ring entries whose fd falls within [lo, hi].
+ * For close_range() post handlers — one pass over the ring instead of
+ * `hi - lo + 1` calls to child_fd_ring_remove().
+ */
+void child_fd_ring_remove_range(struct child_fd_ring *ring, int lo, int hi)
+{
+	int i;
+
+	for (i = 0; i < CHILD_FD_RING_SIZE; i++) {
+		int fd = ring->fds[i];
+
+		if (fd > 2 && fd >= lo && fd <= hi)
+			ring->fds[i] = -1;
+	}
+}
+
+/*
  * Single-producer push: extract the structured fields the post-mortem
  * reader consumes into the chronicle slot, then publish the new head
  * with a release-store so the reader observes a fully-written entry

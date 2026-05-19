@@ -605,6 +605,8 @@ struct childdata * this_child(void);
 void clean_childdata(struct childdata *child);
 
 void child_fd_ring_push(struct child_fd_ring *ring, int fd);
+void child_fd_ring_remove(struct child_fd_ring *ring, int fd);
+void child_fd_ring_remove_range(struct child_fd_ring *ring, int lo, int hi);
 
 void child_syscall_ring_push(struct child_syscall_ring *ring,
 			     const struct syscallrecord *rec);
