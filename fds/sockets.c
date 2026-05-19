@@ -576,7 +576,7 @@ struct socketinfo * get_rand_socketinfo(void)
 		 * si->fd, and free_shared_obj() routes the chunk back to
 		 * the shared-heap freelist where a concurrent
 		 * alloc_shared_obj() recycles it underneath us.  The
-		 * version snapshot below + validate_object_handle() just
+		 * version snapshot below + objpool_check() just
 		 * before return narrows that window to a few cycles.
 		 */
 		obj = get_random_object(OBJ_FD_SOCKET, OBJ_GLOBAL);

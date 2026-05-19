@@ -264,7 +264,7 @@ static int get_rand_canary_fd(void)
 		return -1;
 
 	/*
-	 * Versioned slot pick + validate_object_handle() before the
+	 * Versioned slot pick + objpool_check() before the
 	 * obj->fileobj.fd deref, mirroring the wireup in
 	 * fds/pagecache.c::get_rand_pagecache_fd() at b7e... — same
 	 * OBJ_GLOBAL lockless-reader UAF window the framework commit

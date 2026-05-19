@@ -81,11 +81,9 @@ bool get_map_handle(struct map_handle *h)
 		 * walk into unmapped memory.  Skip the slot when the obj
 		 * isn't in the live malloc-result set.  OBJ_GLOBAL pool
 		 * objs come from alloc_shared_obj() which does not feed
-		 * the alloc-track ring; the version+array-generation
-		 * snapshot taken above plus validate_object_handle() at
-		 * the end of the loop are the ground-truth check for that
-		 * scope, so the lookup is gated on OBJ_LOCAL to avoid
-		 * spurious rejections of legitimate shared-heap objs.
+		 * the alloc-track ring, so the lookup is gated on
+		 * OBJ_LOCAL to avoid spurious rejections of legitimate
+		 * shared-heap objs.
 		 */
 		if (scope == OBJ_LOCAL && !alloc_track_lookup(obj)) {
 			outputerr("get_map_handle: obj %p not in alloc_track "

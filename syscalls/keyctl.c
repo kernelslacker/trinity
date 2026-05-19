@@ -358,14 +358,6 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 				if (!objpool_check(obj, OBJ_FD_WATCH_QUEUE))
 					continue;
 
-				/*
-				 * Last-line check: if the parent destroyed or
-				 * replaced this slot between the versioned
-				 * pick and now, validate_object_handle() bumps
-				 * global_obj_uaf_caught and returns false.
-				 * Drop the pick and try again rather than
-				 * reading a stale fd out of obj->watch_queueobj.
-				 */
 				fd = obj->watch_queueobj.fd;
 				break;
 			}

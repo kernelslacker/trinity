@@ -145,7 +145,7 @@ static int get_rand_seccomp_notif_fd(void)
 		return -1;
 
 	/*
-	 * Versioned slot pick + validate_object_handle() before the
+	 * Versioned slot pick + objpool_check() before the
 	 * obj->seccomp_notifobj.fd deref, mirroring the wireup at 15b6257b8206
 	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
 	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
