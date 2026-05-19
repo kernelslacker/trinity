@@ -156,20 +156,8 @@ static int get_rand_pidfd(void)
 		int fd;
 
 		obj = get_random_object(OBJ_FD_PIDFD, OBJ_GLOBAL);
-		if (obj == NULL)
+		if (!objpool_check(obj, OBJ_FD_PIDFD))
 			continue;
-
-		/*
-		 * Heap pointers land at >= 0x10000 and below the 47-bit
-		 * user/kernel boundary; anything outside that window can't
-		 * be a real obj struct.  Reject before deref.
-		 */
-		if ((uintptr_t)obj < 0x10000UL ||
-		    (uintptr_t)obj >= 0x800000000000UL) {
-			outputerr("get_rand_pidfd: bogus obj %p in "
-				  "OBJ_FD_PIDFD pool\n", obj);
-			continue;
-		}
 
 		fd = obj->pidfdobj.fd;
 		if (fd < 0)
