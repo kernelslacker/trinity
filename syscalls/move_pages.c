@@ -29,7 +29,9 @@
  * path is immune to a sibling syscall scribbling rec->a3/a4/a5 between
  * the syscall returning and the post handler running.
  */
+#define MOVE_PAGES_POST_STATE_MAGIC	0x4D5650475F4D4147UL	/* "MVPG_MAG" */
 struct move_pages_post_state {
+	unsigned long magic;
 	unsigned long *pages;
 	int *nodes;
 	int *status;
@@ -99,6 +101,7 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 	 * live buffers.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = MOVE_PAGES_POST_STATE_MAGIC;
 	snap->pages = page_alloc;
 	snap->nodes = nodes;
 	snap->status = status;
@@ -164,6 +167,23 @@ static void post_move_pages(struct syscallrecord *rec)
 				  snap,
 				  snap_field_label((unsigned long) snap), n);
 		}
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * move_pages_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon WITHOUT freeing (suspect pointer)
+	 * rather than hand foreign allocations to the deferred-free path.
+	 */
+	if (snap->magic != MOVE_PAGES_POST_STATE_MAGIC) {
+		outputerr("post_move_pages: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
