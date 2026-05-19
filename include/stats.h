@@ -1842,6 +1842,15 @@ void vma_count_periodic_dump(void);
  * time-series of cmp_hints effectiveness. */
 void kcov_cmp_stats_periodic_dump(void);
 
+/* Per-tick scan paired with the other periodic-surface dumps above:
+ * call the canary queue's summary path so the 60-s queue-state line
+ * (dormant/canarying/promoted/demoted/blocked counts plus the last-5-
+ * promotions ring) lands in the operator's log stream alongside the
+ * defense/top-syscalls/vma/cmp blocks.  Self-rate-limits internally
+ * at CANARY_SUMMARY_INTERVAL_SEC; cheap on the calls that fall inside
+ * an open window. */
+void canary_queue_periodic_dump(void);
+
 /* --stats-log-file backing.  Open at startup (append, header line on each
  * open), close at shutdown (footer line).  stats_log_write() mirrors its
  * formatted line to stdout via output(0,...) AND, if the log is open, to

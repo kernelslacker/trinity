@@ -565,11 +565,13 @@ void canary_queue_tick(void)
 		? (now_fleet - canary_ops[op].window_start_op_count) : 0;
 	budget = window_iters_resolved();
 
-	/* Per-window progress line, once per tick while CANARYING. */
+	/* Per-window progress line.  Emitted at -v on every tick while
+	 * CANARYING; the noise floor is bounded by the 1-s tick cadence
+	 * times canary_slots (Phase 1: 1 slot -> ~1 line/sec). */
 	{
 		unsigned long edges = (now_edges >= canary_ops[op].window_start_edges)
 			? (now_edges - canary_ops[op].window_start_edges) : 0;
-		output(2, "canary: %s in window %lu/%u iters (edges=%lu crashes=%u)\n",
+		output(1, "canary: %s in window %lu/%u iters (edges=%lu crashes=%u)\n",
 			canary_ops[op].name, iters, budget,
 			edges, canary_ops[op].window_crashes);
 	}

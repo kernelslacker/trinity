@@ -1807,6 +1807,12 @@ void main_loop(void)
 
 		kcov_cmp_stats_periodic_dump();
 
+		/* Canary queue summary line (60-s cadence, self-rate-limited
+		 * inside the call).  Lives in stats.c next to the other
+		 * periodic-surface dumps so adding new operator visibility
+		 * lines to the queue stays a single-file edit. */
+		canary_queue_periodic_dump();
+
 		kcov_plateau_check();
 
 		kcov_bitmap_maybe_snapshot();
@@ -1818,12 +1824,12 @@ void main_loop(void)
 		/* Canary queue per-tick work: poll the active op's window
 		 * progress, fire promote/demote transitions when the window
 		 * closes, drain backed-off demotes back into the picker pool.
-		 * Cheap when the queue is disabled (single bool check). */
+		 * Cheap when the queue is disabled (single bool check).  The
+		 * matching 60-s summary line is emitted from stats.c alongside
+		 * the other periodic-surface dumps -- keeping it there means
+		 * adding a new periodic visibility surface to the queue does
+		 * not require a separate main_loop edit. */
 		canary_queue_tick();
-
-		/* Periodic summary line (60-s cadence).  Self-rate-limits
-		 * internally; cheap on every other tick. */
-		canary_queue_summary();
 
 		/* This should never happen, but just to catch corner cases, like if
 		 * fork() failed when we tried to replace a child.

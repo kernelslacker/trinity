@@ -7,6 +7,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "arch.h"
+#include "child.h"
 #include "cmp_hints.h"
 #include "edgepair.h"
 #include "edgepair_ring.h"
@@ -2487,6 +2488,21 @@ void defense_counters_periodic_dump(void)
 	healer_table_dump();
 
 	last_dump = now;
+}
+
+/*
+ * Periodic surface for the canary queue.  Calls into the queue's
+ * self-rate-limited summary emitter; lives in stats.c next to the
+ * other periodic-surface dumps so adding a new periodic visibility
+ * line for the queue stays a single-file edit and the main_loop tick
+ * doesn't grow a new visibility call site every time the queue's
+ * operator surface expands.  No-op when the queue is disabled
+ * (canary_queue_summary() early-returns) and a self-rate-limited
+ * no-op when the 60-s summary window has not yet elapsed.
+ */
+void canary_queue_periodic_dump(void)
+{
+	canary_queue_summary();
 }
 
 /* Per-pool top-N entry for top_syscalls_periodic_dump's stack-resident
