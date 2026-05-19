@@ -12,6 +12,7 @@
 #include "signals.h"
 #include "shm.h"
 #include "pids.h"
+#include "child.h"
 
 volatile sig_atomic_t sigalrm_pending;
 volatile sig_atomic_t xcpu_pending;
@@ -214,6 +215,48 @@ static void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 	}
 #endif
 	write_siginfo_safely(sig, info, "trinity child");
+
+	/*
+	 * Stamp the currently-running childop's identity into the per-pid
+	 * bug log so the canary queue (and post-mortem grep-mining) can
+	 * attribute a SIGSEGV/SIGBUS/SIGILL/SIGABRT to a specific op
+	 * rather than bottoming out at child_process+offset like the bare
+	 * libgcc backtrace does.  this_child() reads a plain pointer set
+	 * once per child in init_child() (see pids.c::set_child_cache);
+	 * alt_op_name() is a pure switch over an enum with no allocation
+	 * or locking.  Both are safe to call from this handler.
+	 *
+	 * Hand-roll the formatter rather than dprintf() so the write is a
+	 * single syscall and uses no stdio buffering -- mirrors the
+	 * write_siginfo_safely() pattern just above.  PATH_MAX is
+	 * comfortably oversized for "childop=<longest-name> op_nr=<ulong>\n".
+	 */
+	{
+		struct childdata *me = this_child();
+		const char *opname;
+		unsigned long opnr;
+		char buf[128];
+		int len;
+
+		if (me != NULL) {
+			opname = alt_op_name(me->op_type);
+			opnr = me->op_nr;
+			if (opname == NULL)
+				opname = "unknown";
+		} else {
+			opname = "unknown";
+			opnr = 0;
+		}
+		len = snprintf(buf, sizeof(buf),
+			"childop=%s op_nr=%lu\n", opname, opnr);
+		if (len > 0) {
+			ssize_t w;
+			if ((size_t)len > sizeof(buf))
+				len = sizeof(buf);
+			w = write(STDERR_FILENO, buf, (size_t)len);
+			(void)w;	/* dying anyway; nothing to do on short write */
+		}
+	}
 
 	if (shm->debug == true) {
 		(void)signal(sig, SIG_DFL);
