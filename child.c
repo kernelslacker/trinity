@@ -436,6 +436,13 @@ void clean_childdata(struct childdata *child)
 	 * against state captured under a different child's environment. */
 	child->sentinel_prev.valid = false;
 
+	/* Reset the per-child cmp_hints seen-bloom so a fresh occupant of
+	 * the slot does not inherit dedup-refresh skips that belong to the
+	 * previous child's tuple-emission history. */
+	memset(child->cmp_hints_seen.bits, 0,
+	       sizeof(child->cmp_hints_seen.bits));
+	child->cmp_hints_seen.calls = 0;
+
 	/* Clear any __BUG() stamp left by the prior occupant of this slot
 	 * so the parent's zombie-pending warning doesn't mis-attribute the
 	 * fresh child's eventual exit to the previous one's assertion. */

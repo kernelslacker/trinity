@@ -34,6 +34,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "child.h"
 #include "cmp_hints.h"
 #include "kcov.h"
 #include "random.h"
@@ -140,11 +141,74 @@ static void pool_add_locked(struct cmp_hint_pool *pool,
 	pool->entries[victim].last_used = stamp;
 }
 
+/*
+ * Per-child seen-bloom hashes over the (cmp_ip, val, size) tuple.  Two
+ * independent splitmix64-style mixes -- the same shape the cmp_novelty
+ * bloom in strategy.c uses, kept local so the two hash families are
+ * free to drift if one turns out to need a different mixing constant
+ * for the load it actually sees.  Indices are masked to
+ * CMP_HINTS_BLOOM_MASK so the bloom width can change without touching
+ * the hashes.
+ */
+static inline uint32_t cmp_hints_bloom_h1(unsigned long ip, unsigned long val,
+					  unsigned int size)
+{
+	uint64_t x = (uint64_t)ip
+		   ^ ((uint64_t)val * 0x9e3779b97f4a7c15ULL)
+		   ^ ((uint64_t)size << 13);
+
+	x ^= x >> 32;
+	x *= 0xbf58476d1ce4e5b9ULL;
+	x ^= x >> 27;
+	return (uint32_t)(x & CMP_HINTS_BLOOM_MASK);
+}
+
+static inline uint32_t cmp_hints_bloom_h2(unsigned long ip, unsigned long val,
+					  unsigned int size)
+{
+	uint64_t x = (uint64_t)val
+		   ^ ((uint64_t)ip * 0x94d049bb133111ebULL)
+		   ^ ((uint64_t)size * 0xff51afd7ed558ccdULL);
+
+	x ^= x >> 30;
+	x *= 0xc4ceb9fe1a85ec53ULL;
+	x ^= x >> 31;
+	return (uint32_t)(x & CMP_HINTS_BLOOM_MASK);
+}
+
+/*
+ * Test-and-set both bloom bits for the tuple.  Returns true when both
+ * bits were already set -- the tuple has been seen within the current
+ * bloom window, so the caller can skip pool_add_locked.  A miss on
+ * either bit returns false AND leaves both bits set, so the next
+ * encounter with the same tuple hits.
+ */
+static bool cmp_hints_bloom_check_and_set(struct cmp_hints_bloom *b,
+					  unsigned long ip,
+					  unsigned long val,
+					  unsigned int size)
+{
+	uint32_t i1 = cmp_hints_bloom_h1(ip, val, size);
+	uint32_t i2 = cmp_hints_bloom_h2(ip, val, size);
+	uint8_t m1 = (uint8_t)(1U << (i1 & 7));
+	uint8_t m2 = (uint8_t)(1U << (i2 & 7));
+	uint8_t *p1 = &b->bits[i1 >> 3];
+	uint8_t *p2 = &b->bits[i2 >> 3];
+	bool seen = ((*p1 & m1) != 0) && ((*p2 & m2) != 0);
+
+	*p1 |= m1;
+	*p2 |= m2;
+	return seen;
+}
+
 void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 {
 	unsigned long count;
 	unsigned long i;
+	unsigned long skipped = 0;
 	struct cmp_hint_pool *pool;
+	struct cmp_hints_bloom *bloom = NULL;
+	struct childdata *child;
 
 	if (cmp_hints_shm == NULL || trace_buf == NULL)
 		return;
@@ -164,6 +228,20 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 
 	if (count == 0)
 		return;
+
+	/* The bloom is per-child storage in struct childdata.  Parent-context
+	 * callers (this_child() == NULL) bypass the bloom entirely and fall
+	 * back to the original pool-only path; cmp_hints_collect() is only
+	 * meant to be driven from kcov_collect_cmp() in the child, so the
+	 * fallback is just belt-and-braces. */
+	child = this_child();
+	if (child != NULL) {
+		bloom = &child->cmp_hints_seen;
+		if (++bloom->calls >= CMP_HINTS_BLOOM_RESET) {
+			memset(bloom->bits, 0, sizeof(bloom->bits));
+			bloom->calls = 0;
+		}
+	}
 
 	pool_lock(pool);
 	for (i = 0; i < count; i++) {
@@ -187,12 +265,26 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 		 * branches: skip 0/1/2/3 (caught by the ~3UL mask going to 0)
 		 * and the all-ones sentinel.
 		 */
-		if (((arg1 & ~3UL) != 0) && (arg1 != (unsigned long) -1))
-			pool_add_locked(pool, ip, arg1, size);
-		if (((arg2 & ~3UL) != 0) && (arg2 != (unsigned long) -1))
-			pool_add_locked(pool, ip, arg2, size);
+		if (((arg1 & ~3UL) != 0) && (arg1 != (unsigned long) -1)) {
+			if (bloom != NULL &&
+			    cmp_hints_bloom_check_and_set(bloom, ip, arg1, size))
+				skipped++;
+			else
+				pool_add_locked(pool, ip, arg1, size);
+		}
+		if (((arg2 & ~3UL) != 0) && (arg2 != (unsigned long) -1)) {
+			if (bloom != NULL &&
+			    cmp_hints_bloom_check_and_set(bloom, ip, arg2, size))
+				skipped++;
+			else
+				pool_add_locked(pool, ip, arg2, size);
+		}
 	}
 	pool_unlock(pool);
+
+	if (skipped != 0 && kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_hints_bloom_skipped, skipped,
+				   __ATOMIC_RELAXED);
 }
 
 bool cmp_hints_try_get(unsigned int nr, unsigned long *out)

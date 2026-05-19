@@ -274,7 +274,7 @@ static void json_emit_kcov_section(void)
 	const struct syscalltable *table;
 	unsigned int nr_syscalls_to_scan;
 	unsigned long kc_edges, kc_pcs, kc_calls, kc_remote;
-	unsigned long kc_cmp_records, kc_cmp_trunc;
+	unsigned long kc_cmp_records, kc_cmp_trunc, kc_cmp_bloom_skipped;
 	unsigned int top_nr[10];
 	unsigned long top_edges[10];
 	unsigned int top_count = 0;
@@ -294,6 +294,8 @@ static void json_emit_kcov_section(void)
 	kc_cmp_records = __atomic_load_n(&kcov_shm->cmp_records_collected,
 		__ATOMIC_RELAXED);
 	kc_cmp_trunc = __atomic_load_n(&kcov_shm->cmp_trace_truncated,
+		__ATOMIC_RELAXED);
+	kc_cmp_bloom_skipped = __atomic_load_n(&kcov_shm->cmp_hints_bloom_skipped,
 		__ATOMIC_RELAXED);
 
 	nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
@@ -340,9 +342,10 @@ static void json_emit_kcov_section(void)
 
 	printf(",\"kcov\":{\"unique_edges\":%lu,\"total_pcs\":%lu,"
 		"\"total_calls\":%lu,\"remote_calls\":%lu,"
-		"\"cmp_records_collected\":%lu,\"cmp_trace_truncated\":%lu",
+		"\"cmp_records_collected\":%lu,\"cmp_trace_truncated\":%lu,"
+		"\"cmp_hints_bloom_skipped\":%lu",
 		kc_edges, kc_pcs, kc_calls, kc_remote,
-		kc_cmp_records, kc_cmp_trunc);
+		kc_cmp_records, kc_cmp_trunc, kc_cmp_bloom_skipped);
 
 	fputs(",\"top_syscalls\":[", stdout);
 	for (j = 0; j < top_count; j++) {
@@ -4169,6 +4172,7 @@ void dump_stats(void)
 		unsigned long kc_remote      = __atomic_load_n(&kcov_shm->remote_calls,           __ATOMIC_RELAXED);
 		unsigned long kc_cmp_records = __atomic_load_n(&kcov_shm->cmp_records_collected,  __ATOMIC_RELAXED);
 		unsigned long kc_cmp_trunc   = __atomic_load_n(&kcov_shm->cmp_trace_truncated,    __ATOMIC_RELAXED);
+		unsigned long kc_cmp_bloom_skipped = __atomic_load_n(&kcov_shm->cmp_hints_bloom_skipped, __ATOMIC_RELAXED);
 
 		stat_row("kcov_coverage", "unique_edges",          kc_edges);
 		stat_row("kcov_coverage", "total_pcs",             kc_pcs);
@@ -4177,6 +4181,8 @@ void dump_stats(void)
 		stat_row("kcov_coverage", "cmp_records_collected", kc_cmp_records);
 		if (kc_cmp_trunc > 0)
 			stat_row("kcov_coverage", "cmp_trace_truncated", kc_cmp_trunc);
+		if (kc_cmp_bloom_skipped > 0)
+			stat_row("kcov_coverage", "cmp_hints_bloom_skipped", kc_cmp_bloom_skipped);
 
 		/* Find top 10 edge-producing syscalls via insertion sort. */
 		unsigned int nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;

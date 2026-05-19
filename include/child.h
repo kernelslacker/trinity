@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include "types.h"
+#include "cmp_hints.h"
 #include "edgepair.h"
 #include "kcov.h"
 #include "objects.h"
@@ -551,6 +552,15 @@ struct childdata {
 	 * .valid is false on the first tick after clean_childdata so the
 	 * first sample populates without a (meaningless) compare. */
 	struct sentinel_reading sentinel_prev;
+
+	/* Per-child seen-bloom over (cmp_ip, value, size) tuples consulted
+	 * by cmp_hints_collect() to short-circuit pool_add_locked's per-call
+	 * linear-scan dedup when this child has already pushed the tuple into
+	 * the pool within the last CMP_HINTS_BLOOM_RESET cmp_hints_collect()
+	 * calls.  See include/cmp_hints.h for the size / FPR tradeoff and the
+	 * "false positives are benign" argument.  Owner-only writes from
+	 * inside the child, no cross-process coherence needed. */
+	struct cmp_hints_bloom cmp_hints_seen;
 
 	/* The actual syscall records each child uses.  Dominated by a 4 KiB
 	 * prebuffer + 128 B postbuffer used by -v rendering — only nr / a1..a6

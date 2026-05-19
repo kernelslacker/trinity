@@ -216,6 +216,13 @@ struct kcov_shared {
 	/* Number of kcov_collect_cmp() calls where the cmp buffer filled
 	 * up.  Mirror of trace_truncated, sized off KCOV_CMP_BUFFER_SIZE. */
 	unsigned long cmp_trace_truncated;
+	/* Per-record CMP hints skipped because the calling child's seen-bloom
+	 * indicated the (cmp_ip, value, size) tuple had already been pushed
+	 * to the per-syscall pool within the recent window.  Each skip avoids
+	 * a pool_lock + linear-scan dedup-refresh round-trip; the per-record
+	 * granularity (vs per-cmp_hints_collect-call) makes the saved work
+	 * directly comparable to cmp_records_collected. */
+	unsigned long cmp_hints_bloom_skipped;
 	/* See struct kcov_cmp_diag — child-context writes are routed here
 	 * because the child's stdout has already been dup2'd to /dev/null
 	 * by the time KCOV_TRACE_CMP setup runs. */

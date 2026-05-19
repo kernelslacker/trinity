@@ -27,6 +27,33 @@
 /* Max unique hints stored per syscall number. */
 #define CMP_HINTS_PER_SYSCALL 32
 
+/*
+ * Per-child seen-bloom over (cmp_ip, value, size) tuples.  Consulted in
+ * cmp_hints_collect() before the per-pool lock + linear-scan dedup so a
+ * tuple this child has already pushed into the pool within the recent
+ * window skips the pool_add_locked() round-trip entirely.  Pure cache:
+ * a false positive just means the LRU stamp on a real pool entry is not
+ * refreshed (the entry may evict sooner), never a correctness bug --
+ * cmp_hints are advisory.  Bloom misses still call pool_add_locked()
+ * because the bloom never lies about novelty in the other direction.
+ *
+ * Sized 8192 bits (1 KiB) per child with k=2 hashes -- the textbook
+ * efficient point for FPR well under 10% at the few-hundred-unique-
+ * tuples-per-window load the dedup-refresh path sees in practice.
+ * Reset every CMP_HINTS_BLOOM_RESET cmp_hints_collect() calls (a fixed
+ * cadence per child; trades stale-skip risk against contention savings).
+ * Per-child storage so the check needs no cross-process atomic.
+ */
+#define CMP_HINTS_BLOOM_BITS	8192
+#define CMP_HINTS_BLOOM_BYTES	(CMP_HINTS_BLOOM_BITS / 8)
+#define CMP_HINTS_BLOOM_MASK	(CMP_HINTS_BLOOM_BITS - 1)
+#define CMP_HINTS_BLOOM_RESET	4096U
+
+struct cmp_hints_bloom {
+	uint8_t bits[CMP_HINTS_BLOOM_BYTES];
+	unsigned int calls;	/* cmp_hints_collect() calls since last reset */
+};
+
 struct cmp_hint_entry {
 	unsigned long value;
 	unsigned long cmp_ip;
