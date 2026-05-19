@@ -1332,16 +1332,28 @@ static void print_stats(void)
 
 			if (kcov_shm != NULL) {
 				static unsigned long last_edges = 0;
+				static unsigned long last_cmp_records = 0;
 				unsigned long edges = kcov_shm->edges_found;
+				unsigned long cmp_records = kcov_shm->cmp_records_collected;
 				long delta = edges - last_edges;
+				long cmp_delta = cmp_records - last_cmp_records;
 
-				output(0, "%ld iterations. [HI:%ld%s] %lu/sec  KCOV: [%lu edges, %+ld]\n",
+				/* cmp_records surfaced alongside edges so cmp-hints
+				 * health is visible in out.log without --show-stats.
+				 * A run that prints "cmp-hints: snapshot skipped, no
+				 * pool changes" for its entire length should also show
+				 * cmp_records=0 here, distinguishing "KCOV_TRACE_CMP
+				 * produced no records" from "kcov_enable_cmp silently
+				 * flipped cmp_capable=false for every child". */
+				output(0, "%ld iterations. [HI:%ld%s] %lu/sec  KCOV: [%lu edges, %+ld]  KCOV CMP: [%lu cmp_records, %+ld]\n",
 					op_count,
 					hiscore,
 					stall_count ? stalltxt : "",
 					rate,
-					edges, last_edges > 0 ? delta : 0);
+					edges, last_edges > 0 ? delta : 0,
+					cmp_records, last_cmp_records > 0 ? cmp_delta : 0);
 				last_edges = edges;
+				last_cmp_records = cmp_records;
 			} else {
 				output(0, "%ld iterations. [HI:%ld%s] %lu/sec\n",
 					op_count,
