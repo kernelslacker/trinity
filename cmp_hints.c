@@ -201,6 +201,36 @@ static bool cmp_hints_bloom_check_and_set(struct cmp_hints_bloom *b,
 	return seen;
 }
 
+/*
+ * Per-call staging buffer for cmp_hints_collect's bloom-miss batch.
+ * Sized to balance: small enough that the worst-case 3KB stack
+ * footprint is comfortable in child context, large enough that the
+ * common case (a hot bloom yielding tens of misses per call) clears
+ * the loop with a single pool_lock cycle.  Bursts that exceed the
+ * batch fall back to multiple flushes -- correct, just less optimal. */
+#define CMP_HINTS_PENDING_BATCH 128
+
+struct cmp_hints_pending {
+	unsigned long ip;
+	unsigned long val;
+	unsigned int size;
+};
+
+static void cmp_hints_flush_pending(struct cmp_hint_pool *pool,
+				    const struct cmp_hints_pending *batch,
+				    unsigned int n)
+{
+	unsigned int j;
+
+	if (n == 0)
+		return;
+	pool_lock(pool);
+	for (j = 0; j < n; j++)
+		pool_add_locked(pool, batch[j].ip, batch[j].val,
+				batch[j].size);
+	pool_unlock(pool);
+}
+
 void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 {
 	unsigned long count;
@@ -209,6 +239,8 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 	struct cmp_hint_pool *pool;
 	struct cmp_hints_bloom *bloom = NULL;
 	struct childdata *child;
+	struct cmp_hints_pending batch[CMP_HINTS_PENDING_BATCH];
+	unsigned int n_batch = 0;
 
 	if (cmp_hints_shm == NULL || trace_buf == NULL)
 		return;
@@ -243,7 +275,13 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 		}
 	}
 
-	pool_lock(pool);
+	/* Two-phase split: the per-child bloom is lock-free child-private
+	 * storage, so the filter pass runs entirely outside pool->lock.
+	 * Only confirmed bloom misses get staged into the batch and folded
+	 * into the pool under a single (per-batch) lock acquisition --
+	 * which is the point of the bloom in the first place: bloom-hit
+	 * records skip the pool lock outright instead of serialising on it
+	 * just to discover they had nothing new to add. */
 	for (i = 0; i < count; i++) {
 		unsigned long *rec = &trace_buf[1 + i * WORDS_PER_CMP];
 		unsigned long type = rec[0];
@@ -274,15 +312,29 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 		 * skip 0/1/2/3 (caught by the ~3UL mask going to 0) and the
 		 * all-ones sentinel.
 		 */
-		if (((arg1 & ~3UL) != 0) && (arg1 != (unsigned long) -1)) {
-			if (bloom != NULL &&
-			    cmp_hints_bloom_check_and_set(bloom, ip, arg1, size))
-				skipped++;
-			else
-				pool_add_locked(pool, ip, arg1, size);
+		if ((arg1 & ~3UL) == 0)
+			continue;
+		if (arg1 == (unsigned long) -1)
+			continue;
+
+		if (bloom != NULL &&
+		    cmp_hints_bloom_check_and_set(bloom, ip, arg1, size)) {
+			skipped++;
+			continue;
+		}
+
+		batch[n_batch].ip = ip;
+		batch[n_batch].val = arg1;
+		batch[n_batch].size = size;
+		n_batch++;
+
+		if (n_batch == CMP_HINTS_PENDING_BATCH) {
+			cmp_hints_flush_pending(pool, batch, n_batch);
+			n_batch = 0;
 		}
 	}
-	pool_unlock(pool);
+
+	cmp_hints_flush_pending(pool, batch, n_batch);
 
 	if (skipped != 0 && kcov_shm != NULL)
 		__atomic_fetch_add(&kcov_shm->cmp_hints_bloom_skipped, skipped,
