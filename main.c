@@ -1332,13 +1332,10 @@ static void print_kcov_cmp_diag(void)
 	pc_kids  = __atomic_load_n(&kcov_shm->pc_mode_children,  __ATOMIC_RELAXED);
 	cmp_kids = __atomic_load_n(&kcov_shm->cmp_mode_children, __ATOMIC_RELAXED);
 
-	/* Emit the MODES line only when both populations are non-zero —
-	 * a PC-only run (cmp probe failed kernel-wide, or all children
-	 * happened to roll PC) doesn't need a line that would just read
-	 * "cmp=0" and add noise to the stats cadence. */
-	if (pc_kids > 0 && cmp_kids > 0)
-		output(0, "KCOV CMP MODES: pc=%u cmp=%u\n",
-			pc_kids, cmp_kids);
+	/* MODES has been folded into the KCOV bracket on the main
+	 * iterations line — no separate emission here. */
+	(void)pc_kids;
+	(void)cmp_kids;
 
 	if ((open_c | init_trace_c | mmap_c | enable_c | disable_c | rt_enable_c) == 0)
 		return;
@@ -1363,7 +1360,16 @@ static void print_kcov_cmp_diag(void)
 			__atomic_load_n(&d->runtime_enable_errno, __ATOMIC_RELAXED), rt_enable_c);
 
 	(void)n;
-	output(0, "KCOV CMP DIAG:%s\n", buf);
+	/* Only emit if the DIAG payload changed since last dump — a
+	 * stable run with a handful of init-time errnos shouldn't repeat
+	 * the same line every cycle. */
+	{
+		static char last_buf[512];
+		if (strcmp(buf, last_buf) != 0) {
+			output(0, "KCOV CMP DIAG:%s\n", buf);
+			snprintf(last_buf, sizeof(last_buf), "%s", buf);
+		}
+	}
 }
 
 static void print_stats(void)
@@ -1396,57 +1402,57 @@ static void print_stats(void)
 
 			if (kcov_shm != NULL) {
 				static unsigned long last_edges = 0;
-				static unsigned long last_cmp_records = 0;
 				static unsigned long last_cmp_trunc = 0;
 				static unsigned long last_cmp_unique = 0;
 				unsigned long edges = kcov_shm->edges_found;
-				unsigned long cmp_records = kcov_shm->cmp_records_collected;
 				unsigned long cmp_trunc = __atomic_load_n(
 					&kcov_shm->cmp_trace_truncated,
 					__ATOMIC_RELAXED);
 				unsigned long cmp_unique = __atomic_load_n(
 					&kcov_shm->cmp_hints_unique_inserts,
 					__ATOMIC_RELAXED);
+				unsigned int pc_kids = __atomic_load_n(
+					&kcov_shm->pc_mode_children, __ATOMIC_RELAXED);
+				unsigned int cmp_kids = __atomic_load_n(
+					&kcov_shm->cmp_mode_children, __ATOMIC_RELAXED);
 				long delta = edges - last_edges;
-				long cmp_delta = cmp_records - last_cmp_records;
 				long cmp_trunc_delta = cmp_trunc - last_cmp_trunc;
 				long cmp_unique_delta = cmp_unique - last_cmp_unique;
 
-				/* cmp_records surfaced alongside edges so cmp-hints
-				 * health is visible in out.log without --show-stats.
-				 * A run that prints "cmp-hints: snapshot skipped, no
-				 * pool changes" for its entire length should also show
-				 * cmp_records=0 here, distinguishing "KCOV_TRACE_CMP
-				 * produced no records" from "kcov_enable_cmp silently
-				 * flipped cmp_capable=false for every child".
+				/* Compact KCOV bracket: edges + CMP unique + MODES.
+				 * Raw cmp_records is dropped -- it's massively inflated by
+				 * dedup-refresh on hot syscalls and tells us nothing about
+				 * novel CMP signal.  unique is the per-record subset that
+				 * actually changed pool state (insert or evict-replace),
+				 * i.e. the records that survived bloom + pool dedup.
+				 * MODES is folded inline so the periodic dump is one line
+				 * instead of two/three.
 				 *
-				 * The trunc counter is the per-syscall KCOV_CMP_RECORDS_MAX
-				 * overflow bumped in kcov_collect_cmp().  A growing delta
-				 * here means cmp_records is systematically undercounted
-				 * for whichever syscalls are tripping the cap.
-				 *
-				 * The unique bracket is the per-record subset that
-				 * actually changed pool state (fresh insert or
-				 * evict-replace), i.e. the records that survived bloom
-				 * + pool dedup.  cmp_records is hugely inflated by
-				 * dedup-refresh on hot syscalls; unique is the real
-				 * "how much novel signal did CMP contribute" number.
-				 * Suppressed entirely until the counter is non-zero so
-				 * pre-CMP-traffic windows aren't padded with [0 unique].
-				 *
-				 * Suppress zero-deltas (and the entire trunc bracket when
-				 * count is zero) so plateau windows read cleanly without
-				 * a wall of "+0" noise. */
+				 * Suppress zero-deltas; suppress unique and MODES sections
+				 * when their counters are zero so plateau / no-CMP windows
+				 * read cleanly.  trunc still gets its own trailing bracket
+				 * when non-zero (rare; per-syscall KCOV_CMP_RECORDS_MAX
+				 * overflow signal). */
 				char edges_delta_str[24] = "";
-				char cmp_delta_str[24] = "";
+				char unique_str[80] = "";
+				char modes_str[48] = "";
 				char trunc_str[48] = "";
-				char unique_str[64] = "";
 				if (last_edges > 0 && delta != 0)
 					snprintf(edges_delta_str, sizeof(edges_delta_str),
 						", %+ld", delta);
-				if (last_cmp_records > 0 && cmp_delta != 0)
-					snprintf(cmp_delta_str, sizeof(cmp_delta_str),
-						", %+ld", cmp_delta);
+				if (cmp_unique > 0) {
+					if (last_cmp_unique > 0 && cmp_unique_delta != 0)
+						snprintf(unique_str, sizeof(unique_str),
+							" CMP: %lu unique, %+ld",
+							cmp_unique, cmp_unique_delta);
+					else
+						snprintf(unique_str, sizeof(unique_str),
+							" CMP: %lu unique", cmp_unique);
+				}
+				if (cmp_kids > 0)
+					snprintf(modes_str, sizeof(modes_str),
+						"  CMP MODES: pc=%u cmp=%u",
+						pc_kids, cmp_kids);
 				if (cmp_trunc > 0) {
 					if (last_cmp_trunc > 0 && cmp_trunc_delta != 0)
 						snprintf(trunc_str, sizeof(trunc_str),
@@ -1456,26 +1462,16 @@ static void print_stats(void)
 						snprintf(trunc_str, sizeof(trunc_str),
 							" [%lu trunc]", cmp_trunc);
 				}
-				if (cmp_unique > 0) {
-					if (last_cmp_unique > 0 && cmp_unique_delta != 0)
-						snprintf(unique_str, sizeof(unique_str),
-							" [%lu unique, %+ld]",
-							cmp_unique, cmp_unique_delta);
-					else
-						snprintf(unique_str, sizeof(unique_str),
-							" [%lu unique]", cmp_unique);
-				}
-				output(0, "%ld iterations. [HI:%ld%s] %lu/sec  KCOV: [%lu edges%s]  KCOV CMP: [%lu cmp_records%s]%s%s\n",
+				output(0, "%ld iterations. [HI:%ld%s] %lu/sec  KCOV: [%lu edges%s%s%s]%s\n",
 					op_count,
 					hiscore,
 					stall_count ? stalltxt : "",
 					rate,
 					edges, edges_delta_str,
-					cmp_records, cmp_delta_str,
 					unique_str,
+					modes_str,
 					trunc_str);
 				last_edges = edges;
-				last_cmp_records = cmp_records;
 				last_cmp_trunc = cmp_trunc;
 				last_cmp_unique = cmp_unique;
 				print_kcov_cmp_diag();
