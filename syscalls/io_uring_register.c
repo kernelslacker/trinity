@@ -918,7 +918,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 * pick_random_ioctl() runs after ioctl_arg_for_request() — same
 	 * reasoning, same shape, same negligible cost.
 	 */
-	avoid_shared_buffer(&rec->a3, page_size);
+	avoid_shared_buffer_inout(&rec->a3, page_size);
 
 	/*
 	 * Snapshot the opcode and the (possibly heap) pointer for the
