@@ -29,6 +29,7 @@
 #include "shm.h"
 #include "stats.h"
 #include "stats_ring.h"
+#include "strategy.h"
 #include "syscall.h"
 #include "tables.h"
 #include "taint.h"
@@ -1495,6 +1496,48 @@ static void print_stats(void)
 				last_cmp_trunc = cmp_trunc;
 				last_cmp_unique = cmp_unique;
 				print_kcov_cmp_diag();
+
+				/*
+				 * Operator-facing picker state.  The plateau-
+				 * intervention path in select_next_strategy() and
+				 * the mode-aware explorer_children default are both
+				 * bandit-gated, so when something looks wrong with
+				 * the adaptive response the first question is always
+				 * "which picker is actually running, and is the
+				 * explorer pool non-empty?".  Surface it on every
+				 * KCOV dump so the answer is in the same log line
+				 * window as the edge counters that prompt the
+				 * question.  No separate timer -- piggybacks on the
+				 * existing periodic dump cadence.
+				 */
+				enum picker_mode_t pmode = (enum picker_mode_t)__atomic_load_n(
+					&shm->picker_mode, __ATOMIC_RELAXED);
+				bool plateau = kcov_shm->plateau_active;
+				output(0, "PICKER: [picker=%s explorers=%u plateau=%s]\n",
+					picker_mode_name(pmode),
+					explorer_children,
+					plateau ? "active" : "idle");
+
+				/*
+				 * One-shot warning when the plateau detector fires
+				 * under a non-bandit picker: the intervention
+				 * rotation (RRC-bias / anti-prior / uniform-random)
+				 * only runs in PICKER_BANDIT_UCB1 mode, so the
+				 * round-robin / future-picker operator needs to know
+				 * the plateau machinery they're watching go active
+				 * isn't going to respond.  One-shot per plateau
+				 * transition (active rising edge), not per dump, so a
+				 * long plateau doesn't spam the log.
+				 */
+				static bool warned_this_plateau = false;
+				if (plateau && pmode != PICKER_BANDIT_UCB1) {
+					if (!warned_this_plateau) {
+						output(0, "WARNING: plateau detected under non-bandit picker; plateau response is bandit-only\n");
+						warned_this_plateau = true;
+					}
+				} else if (!plateau) {
+					warned_this_plateau = false;
+				}
 			} else {
 				output(0, "%ld iterations. [HI:%ld%s] %lu/sec\n",
 					op_count,
