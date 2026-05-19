@@ -662,6 +662,16 @@ void log_alt_op_config(void);
  * child-canary.c. */
 void init_altop_dispatch(void);
 
+/* Runtime mutators for the dormant-op gate.  Exposed for the canary
+ * queue's promote/demote transitions; both functions live in child.c
+ * next to the gate storage so the array itself stays file-static.
+ * dormant_op_set() implicitly re-invokes init_altop_dispatch() to
+ * keep the dense enabled_altops[] vector in sync; the canary queue
+ * therefore never has to know that vector exists. */
+void dormant_op_set(enum child_op_type op, bool dormant);
+bool dormant_op_is_active(enum child_op_type op);
+int dormant_op_slot_for(enum child_op_type op);
+
 /* String form of a child_op_type for log/diagnostic output.  Returns
  * a stable string literal; the returned pointer is never freed.
  * alt_op_lookup_by_name() is the inverse: returns NR_CHILD_OP_TYPES

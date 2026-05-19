@@ -346,6 +346,23 @@ int main(int argc, char* argv[])
 		alt_op_children = clamped;
 	}
 
+	/* --canary-slots clamp.  The canary queue carves from the front
+	 * of the alt-op pool, so it cannot reserve more slots than the
+	 * pool has.  A bigger N here than alt_op_children would be a
+	 * silent loss: the queue would think it had N canary slots, but
+	 * assign_dedicated_alt_op() walks slots 0..alt_op_children-1.
+	 * Clamp loudly. */
+	if (alt_op_children == 0 && canary_slots > 0 && !canary_queue_disabled) {
+		outputerr("warning: --canary-slots=%u requested but --alt-op-children=0; canary queue has no slot to canary on, disabling\n",
+			canary_slots);
+		canary_slots = 0;
+	}
+	if (canary_slots > alt_op_children) {
+		outputerr("warning: --canary-slots=%u > --alt-op-children=%u; clamping to %u\n",
+			canary_slots, alt_op_children, alt_op_children);
+		canary_slots = alt_op_children;
+	}
+
 	/* Compute the default explorer-pool size when the operator did not
 	 * pass --explorer-children (max_children/4 under PICKER_BANDIT_UCB1,
 	 * zero otherwise), and clamp an explicit value to max_children/2.

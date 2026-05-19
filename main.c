@@ -863,6 +863,16 @@ static bool spawn_child(int childno)
 	 * its dispatch loop runs.  No-op when --alt-op-children is 0. */
 	assign_dedicated_alt_op(child, childno);
 
+	/* Tell the canary queue the canary slot has just received the
+	 * staged op.  The queue uses this to commit canary_active_op:
+	 * the new op only becomes the slot's running op once a child
+	 * actually starts on it, so straggler iterations of the old op
+	 * (the previous canary, killed via kill_pid on transition) do not
+	 * pollute the new op's window counters.  Cheap (single bool
+	 * check) when the queue is disabled or the slot is not a canary
+	 * slot. */
+	canary_queue_on_child_respawn(childno);
+
 	nr_fds = get_num_fds();
 	if ((max_files_rlimit.rlim_cur - nr_fds) < 3) {
 		outputerr("current number of fd: %d, please consider ulimit -n xxx to increase fd limition\n", nr_fds);
@@ -1253,6 +1263,17 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 			break;
 
 		} else if (WIFSIGNALED(childstatus)) {
+			int sig = WTERMSIG(childstatus);
+
+			/* Feed canary attribution.  Only SIGSEGV/SIGBUS/SIGILL/
+			 * SIGABRT count as canary-relevant crashes; the queue
+			 * filters them internally.  Reads child->op_type out of
+			 * the shared childdata slot, which the child stamped on
+			 * its last iteration via the dedicated-alt-op stamp path
+			 * (assign_dedicated_alt_op) -- the parent is the sole
+			 * reader and is consulting it post-mortem, so no
+			 * coherence work is needed. */
+			canary_queue_on_crash(childno, sig);
 			record_reap(childno, childstatus);
 			handle_childsig(childno, childstatus, false);
 		} else if (WIFSTOPPED(childstatus)) {
@@ -1702,6 +1723,14 @@ void main_loop(void)
 	init_altop_dispatch();
 	log_alt_op_config();
 
+	/* Dormant-childop canary queue.  Brings the queue up after
+	 * init_altop_dispatch() has populated the dense vector from the
+	 * static gate, so the queue's startup pass over
+	 * dormant_op_disabled[] sees the same state the dispatcher
+	 * will.  When --no-canary-queue is in effect, canary_queue_init()
+	 * still runs but stays in its disabled-no-op mode. */
+	canary_queue_init();
+
 	output(1, "phase: fork_children\n");
 	fork_children();
 
@@ -1785,6 +1814,16 @@ void main_loop(void)
 		cmp_hints_maybe_snapshot();
 
 		print_stats();
+
+		/* Canary queue per-tick work: poll the active op's window
+		 * progress, fire promote/demote transitions when the window
+		 * closes, drain backed-off demotes back into the picker pool.
+		 * Cheap when the queue is disabled (single bool check). */
+		canary_queue_tick();
+
+		/* Periodic summary line (60-s cadence).  Self-rate-limits
+		 * internally; cheap on every other tick. */
+		canary_queue_summary();
 
 		/* This should never happen, but just to catch corner cases, like if
 		 * fork() failed when we tried to replace a child.

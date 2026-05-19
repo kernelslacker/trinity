@@ -1063,63 +1063,43 @@ static void check_fd_leaks(struct childdata *child)
 }
 
 /*
- * Source of truth for which alt-op slots are enabled.  Picked uniformly by
- * pick_op_type() — but only via the derived enabled_altops[] dense vector
- * (see init_altop_dispatch() below), so the EFFECTIVE altop rate matches
- * the nominal 95/5 split regardless of how many slots are gated off here.
+ * Initial state of the dormant-op gate consulted by init_altop_dispatch()
+ * to build the dense enabled_altops[] vector.  Pre-canary-queue this was
+ * a `static const int` and the per-row inline comments tried to describe
+ * which ops were active vs dormant; with the canary queue mutating this
+ * array at runtime, both the `const` qualifier and any compile-time
+ * description of the state are wrong.
  *
- * Cases 5-18 are gated here: they are structurally reachable (the r%19 bug
- * is fixed) but their throughput cost is unknown.  procfs_writer (case 4)
- * crashed iters/s 8x at default rate before its discovery path was hoisted.
- * Enable the dormant ops one at a time once each has been load-tested.
- * To enable an op: set its entry below to 0.
+ * To check what's CURRENTLY active, read the periodic `canary queue:`
+ * log lines, not this table.  See canary_queue_init() and child-canary.c
+ * for the live state.  The sole writer at runtime is the parent's queue
+ * transition path (enter_canarying / close_window_and_decide); the rows
+ * here are just the queue's startup snapshot.
+ *
+ * The slot ordering matches pick_op_type_table[] (the _Static_assert
+ * below pins ARRAY_SIZE equality between the two).  Slot 53 is the
+ * post-removal sentinel hole now filled with CHILD_OP_MPLS_ROUTE_CHURN.
  */
-static const int dormant_op_disabled[102] = {
-	0, 0, 0, 0, 0,	/* 0-4:  active: mmap_lifecycle, mprotect_split, mlock_pressure, inode_spewer, procfs_writer */
-	0, 1, 1, 1, 1,	/* 5-9:  memory_pressure active (first dormant-op enable); dormant: userns_fuzzer, sched_cycler, barrier_racer, genetlink_fuzzer */
-	1, 1, 1, 0, 1,	/* 10-14: fault_injector active; dormant: perf_chains, tracefs_fuzzer, bpf_lifecycle, recipe_runner */
-	1, 0, 0, 1, 1,	/* 15-19: iouring_recipes + fd_stress active; dormant: recipe_runner, refcount_auditor, fs_lifecycle */
-	1, 1, 1, 1, 1,	/* 20-24: dormant: futex_storm, pipe_thrash, fork_storm, flock_thrash, cgroup_churn */
-	1, 1, 1, 1, 1,	/* 25-29: dormant: mount_churn, uffd_churn, iouring_flood, close_racer, socket_family_chain */
-	1, 1, 1, 1, 1,	/* 30-34: dormant: xattr_thrash, pidfd_storm, madvise_cycler, epoll_volatility, keyring_spam */
-	1, 1, 1, 0, 1,	/* 35-39: slab_cache_thrash active; dormant: vdso_mremap_race, numa_migration, cpu_hotplug_rider, tls_rotate */
-	1, 1, 1, 1, 1,	/* 40-44: dormant: packet_fanout_thrash, iouring_net_multishot, tcp_ao_rotate, vrf_fib_churn, netlink_monitor_race */
-	1, 1, 1, 1, 1,	/* 45-49: dormant: tipc_link_churn, tls_ulp_churn, vxlan_encap_churn, bridge_fdb_stp, nftables_churn */
-	1, 1, 1, 1, 1,	/* 50-54: dormant: tc_qdisc_churn, xfrm_churn, bpf_cgroup_attach, mpls_route_churn, sctp_assoc_churn */
-	1, 1, 1, 1, 1,	/* 55-59: dormant: mptcp_pm_churn, devlink_port_churn, handshake_req_abort, nf_conntrack_helper_churn, af_unix_scm_rights_gc_churn */
-	1, 1, 1, 1, 1,	/* 60-64: dormant: netns_teardown_churn, tcp_ulp_swap_churn, msg_zerocopy_churn, iouring_send_zc_churn, vsock_transport_churn */
-	1, 1, 1, 1, 0,	/* 65-69: kvm_run_churn active; dormant: bridge_vlan_churn, igmp_mld_source_churn, psp_key_rotate, afxdp_churn */
-	1, 1,		/* 70-71: dormant: nl80211_churn, nat_t_churn */
-	1,		/* 72: dormant: splice_protocols */
-	1,		/* 73: dormant: rxrpc_key_install */
-	1,		/* 74: dormant: inplace_crypto_oracle */
-	1,		/* 75: dormant: af_alg_weak_cipher_probe */
-	1,		/* 76: dormant: af_alg_template_probe */
-	1,		/* 77: dormant: iouring_cmd_passthrough */
-	0,		/* 78: active: pagecache_canary_check (verifier — runs at the altop bucket rate) */
-	1,		/* 79: dormant: sock_diag_walker */
-	1,		/* 80: dormant: altname_thrash */
-	1,		/* 81: dormant: ipmr_cache_report */
-	1,		/* 82: dormant: ublk_lifecycle */
-	1,		/* 83: dormant: veth_asymmetric_xdp */
-	1,		/* 84: dormant: ip6erspan_netns_migrate */
-	1,		/* 85: dormant: ipvs_sysctl_writer */
-	1,		/* 86: dormant: tcp_md5_listener_race */
-	1,		/* 87: dormant: ipv6_ndisc_proxy */
-	1,		/* 88: dormant: ipfrag_source_churn */
-	1,		/* 89: dormant: rtnl_vf_broadcast_getlink */
-	1,		/* 90: dormant: obscure_af_churn */
-	1,		/* 91: dormant: af_alg_recvmsg_churn */
-	1,		/* 92: dormant: bridge_conntrack_churn */
-	1,		/* 93: dormant: atm_vcc_churn */
-	1,		/* 94: dormant: ip6gre_bond_lapb_stack */
-	1,		/* 95: dormant: flowtable_encap_vlan */
-	1,		/* 96: dormant: ipv6_pmtu_teardown_race */
-	1,		/* 97: dormant: rxrpc_sendmsg_cmsg_churn */
-	1,		/* 98: dormant: ovs_tunnel_vport_churn */
-	1,		/* 99: dormant: tty_ldisc_churn */
-	1,		/* 100: dormant: wireguard_decrypt_flood */
-	1,		/* 101: dormant: blkdev_lifecycle_race */
+static int dormant_op_disabled[102] = {
+	0, 0, 0, 0, 0,
+	0, 1, 1, 1, 1,
+	1, 1, 1, 0, 1,
+	1, 0, 0, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 0, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 0,
+	1, 1,
+	1, 1, 1, 1, 1, 1,
+	0,	/* pagecache_canary_check stays active: it's an in-tree verifier, not a fuzz target the queue should ever demote. */
+	1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 };
 
 /*
@@ -1344,7 +1324,26 @@ void assign_dedicated_alt_op(struct childdata *child, int childno)
 		return;
 	if ((unsigned int)childno >= alt_op_children)
 		return;
-	child->op_type = alt_op_rotation[(unsigned int)childno % NR_ALT_OP_ROTATION];
+
+	/* Canary slots are carved from the FRONT of the alt-op pool: the
+	 * first canary_slots slots get the canary queue's currently-
+	 * canarying op stamped here at spawn time, instead of the
+	 * alt_op_rotation[] entry they would otherwise use.  The
+	 * remaining alt-op slots continue with the rotation, shifted past
+	 * the canary carve so the rotation walk stays stable.  When the
+	 * queue is disabled (--no-canary-queue or canary_slots=0), or
+	 * before the first canarying op has been selected,
+	 * canary_slot_active() returns false and the rotation handles
+	 * every slot from index 0 as it did pre-queue. */
+	if (canary_slot_active(childno)) {
+		child->op_type = canary_active_op();
+		return;
+	}
+
+	unsigned int rotation_idx = (unsigned int)childno;
+	if (canary_slots > 0 && rotation_idx >= canary_slots)
+		rotation_idx -= canary_slots;
+	child->op_type = alt_op_rotation[rotation_idx % NR_ALT_OP_ROTATION];
 }
 
 void log_alt_op_config(void)
@@ -1493,6 +1492,65 @@ static const enum child_op_type pick_op_type_table[102] = {
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
+
+/*
+ * Reverse of pick_op_type_table[]: given a child_op_type, find the
+ * slot index in dormant_op_disabled[] whose pick_op_type_table[]
+ * entry points to that op.  Returns -1 if no slot matches (slot-53
+ * sentinel for CHILD_OP_SYSCALL would return -1 in current builds;
+ * the canary queue never asks for that mapping).  Linear scan over
+ * ~100 entries; called once per state transition, never on the hot
+ * path.
+ *
+ * Exists so child-canary.c can flip the gate for a specific op
+ * without taking a direct reference to pick_op_type_table[] / the
+ * dormant_op_disabled[] storage.  Keeps both arrays file-static.
+ */
+int dormant_op_slot_for(enum child_op_type op)
+{
+	unsigned int i;
+
+	if (op == CHILD_OP_SYSCALL || op >= NR_CHILD_OP_TYPES)
+		return -1;
+	for (i = 0; i < ARRAY_SIZE(pick_op_type_table); i++) {
+		if (pick_op_type_table[i] == op)
+			return (int)i;
+	}
+	return -1;
+}
+
+/*
+ * Mutate the dormant-op gate for `op` and rebuild the dense vector.
+ * Called from the canary queue's promote / demote transitions.
+ * Single store on the parent path (the parent is the sole writer);
+ * children re-read the rebuilt enabled_altops[] on their next pick.
+ * See the design note in init_altop_dispatch() about the deliberately
+ * non-atomic rebuild -- both gate states are safe to dispatch on.
+ */
+void dormant_op_set(enum child_op_type op, bool dormant)
+{
+	int slot = dormant_op_slot_for(op);
+
+	if (slot < 0)
+		return;
+	dormant_op_disabled[slot] = dormant ? 1 : 0;
+	init_altop_dispatch();
+}
+
+/*
+ * Read-only view used by the canary queue's startup pass: it walks
+ * the dormant gate to figure out which ops are already promoted
+ * (gate == 0) at startup so the queue's PROMOTED state matches what
+ * the dispatcher will actually pick from t=0.
+ */
+bool dormant_op_is_active(enum child_op_type op)
+{
+	int slot = dormant_op_slot_for(op);
+
+	if (slot < 0)
+		return false;
+	return dormant_op_disabled[slot] == 0;
+}
 
 /*
  * Dense vector of currently-enabled alt-ops, derived from
