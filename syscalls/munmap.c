@@ -32,11 +32,14 @@
  *     or an "unmap leaked" anomaly that never happened).
  */
 struct munmap_post_state {
+	unsigned long magic;
 	unsigned long addr;
 	unsigned long len;
 	unsigned long map;
 	unsigned long action;
 };
+
+#define MUNMAP_POST_STATE_MAGIC	0x4D554E4D41505F5FUL	/* "MUNMAP__" */
 
 static void sanitise_munmap(struct syscallrecord *rec)
 {
@@ -124,6 +127,7 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	 * handler.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic  = MUNMAP_POST_STATE_MAGIC;
 	snap->addr   = rec->a1;
 	snap->len    = rec->a2;
 	snap->map    = rec->a3;
@@ -149,6 +153,21 @@ static void post_munmap(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_munmap: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Validate the magic cookie before touching any other snap field.
+	 * looks_like_corrupted_ptr only filters obviously bogus pointers;
+	 * a wholesale stomp could leave snap pointing at an attacker-chosen
+	 * but plausibly-addressed slab object whose contents would otherwise
+	 * drive the destroy_object / map->prot=0 / proc-maps oracle paths.
+	 * On mismatch the pointer is suspect, so do NOT free it; just bump
+	 * the counter, clear the slot, and bail.
+	 */
+	if (snap->magic != MUNMAP_POST_STATE_MAGIC) {
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
