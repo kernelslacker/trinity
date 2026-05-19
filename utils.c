@@ -1625,17 +1625,30 @@ void heap_bounds_init(void)
 }
 
 /*
- * Bounds check: is @p inside the cached glibc brk arena?  Two
- * compares, branch-predictable, no syscalls.  Returns true if the
- * heap extent is unknown (init never found a [heap] line) so the
- * caller treats the validator as permissive in that case.
+ * Bounds check: is @p inside any captured glibc-managed allocator
+ * region?  Accepts the cached brk arena AND the labeled non-brk
+ * allocator regions stashed by heap_bounds_init() (glibc mmap arenas,
+ * libasan primary/secondary/shadow, scudo / jemalloc / tcmalloc
+ * tagged regions -- see extra_heap_regions[]).  Returns true if no
+ * allocator extent is known at all (init found neither a [heap] line
+ * nor any [anon:NAME] regions) so the caller treats the validator as
+ * permissive in that case.
+ *
+ * Earlier revisions only checked the brk arena, which silently
+ * rejected legitimate frees of two important pointer classes:
+ *   - allocations above MMAP_THRESHOLD (default 128 KiB), which glibc
+ *     services from mmap'd arenas rather than brk, and
+ *   - every allocation under ASAN, whose libasan-runtime allocator
+ *     hands back chunks from its shadow-mapped pools outside brk.
+ * The high deferred_free_reject rate seen in ASAN runs was this gate
+ * dropping valid zmalloc() results.
  *
  * Backstop for the bad-free class where a sibling stomp scribbles a
  * snapshot/arg slot with a value that defeats both the pointer-shape
  * heuristic (looks_like_corrupted_ptr) and -- in the worst case --
  * coincidentally matches a tracked malloc result still resident in
  * the alloc-track ring.  An attacker-controlled or wildly-stomped
- * value that lands outside the brk arena entirely (stack, shared
+ * value that lands outside every allocator region (stack, shared
  * region, mmap'd library, executable mapping) is rejected here even
  * if the upstream guards let it through.
  */
@@ -1643,24 +1656,36 @@ bool is_in_glibc_heap(const void *p)
 {
 	unsigned long v = (unsigned long) p;
 	unsigned long end, cur;
+	unsigned int i;
 
-	if (heap_start == 0)
+	if (heap_start == 0 && nr_extra_heap_regions == 0)
 		return true;
 
-	/*
-	 * heap_end is a pre-fork snapshot.  A long-running child can
-	 * extend brk past it, so consult sbrk(0) for the live break;
-	 * brk only grows in the steady state, so the larger of the two
-	 * is the live upper bound.  Guard against sbrk failure -- the
-	 * (void *)-1 sentinel cast to unsigned long would over-include
-	 * every address.
-	 */
-	end = heap_end;
-	cur = (unsigned long) sbrk(0);
-	if (cur != (unsigned long) -1 && cur > end)
-		end = cur;
+	if (heap_start != 0) {
+		/*
+		 * heap_end is a pre-fork snapshot.  A long-running child
+		 * can extend brk past it, so consult sbrk(0) for the live
+		 * break; brk only grows in the steady state, so the larger
+		 * of the two is the live upper bound.  Guard against sbrk
+		 * failure -- the (void *)-1 sentinel cast to unsigned long
+		 * would over-include every address.
+		 */
+		end = heap_end;
+		cur = (unsigned long) sbrk(0);
+		if (cur != (unsigned long) -1 && cur > end)
+			end = cur;
 
-	return v >= heap_start && v < end;
+		if (v >= heap_start && v < end)
+			return true;
+	}
+
+	for (i = 0; i < nr_extra_heap_regions; i++) {
+		if (v >= extra_heap_regions[i].start &&
+		    v < extra_heap_regions[i].end)
+			return true;
+	}
+
+	return false;
 }
 
 /*
