@@ -24,11 +24,11 @@
  * If edgepair.h changes its struct layout or hash function, update here
  * and bump EDGEPAIR_DUMP_MAGIC so old dumps fail loudly.
  */
-#define EDGEPAIR_TABLE_SIZE	65536
+#define EDGEPAIR_TABLE_SIZE	262144
 #define EDGEPAIR_TABLE_MASK	(EDGEPAIR_TABLE_SIZE - 1)
 #define EDGEPAIR_EMPTY		0xFFFFFFFFU
 #define EDGEPAIR_MAX_PROBE	32
-#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A02U
+#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A03U
 
 struct edgepair_entry {
 	unsigned int  prev_nr;

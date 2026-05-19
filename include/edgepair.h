@@ -24,9 +24,19 @@
  * than ~1024 distinct (prev, curr) pairs — load factor over 25% pushed
  * the linear-probe chains past EDGEPAIR_MAX_PROBE, after which inserts
  * silently dropped on the floor and edgepair-driven boosting / cold
- * detection ran on a stale view of the world.  64K slots gives us about
- * 16x headroom for ~2MB of shared memory. */
-#define EDGEPAIR_TABLE_SIZE	65536
+ * detection ran on a stale view of the world.
+ *
+ * Bumped from 64K to 256K after observing 53,791 unique pairs against a
+ * 65,536-slot table (82% load factor) and a 37% insert drop rate in a
+ * healthy run -- well into the linear-probe collapse zone the 4K -> 64K
+ * bump was already meant to escape.  256K slots brings the load factor
+ * for that same workload back down to ~21%, below the 25% probe-chain
+ * danger threshold the original sizing note calls out.  Memory cost:
+ * the parent-private canonical grows from 2 MiB to 8 MiB (.bss, parent
+ * only) and the child-RO published mirror page grows from ~1.5 MiB to
+ * ~6 MiB (alloc_shared, single existing call site -- shared-region-
+ * budget call-site count unchanged). */
+#define EDGEPAIR_TABLE_SIZE	262144
 #define EDGEPAIR_TABLE_MASK	(EDGEPAIR_TABLE_SIZE - 1)
 
 /* Sentinel value for empty slots. */
@@ -45,10 +55,13 @@
 
 /* Magic number for edgepair binary dump files.  Bumped when the on-disk
  * layout changes so edge_analyzer rejects stale dumps cleanly instead of
- * misinterpreting them.  0xEDDA7A02U: post-retrofit, the dump is sourced
- * from the parent-private canonical aggregate rather than the in-shm
- * region; the field set is identical but the producer has changed. */
-#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A02U
+ * misinterpreting them.  0xEDDA7A03U: EDGEPAIR_TABLE_SIZE grew from
+ * 65536 to 262144, so the byte length of the table[] section in the
+ * dump quadrupled; old analyzers must reject these dumps cleanly
+ * rather than walk past the end of their fixed 65K-slot view.  The
+ * previous bump (0xEDDA7A01 -> 0xEDDA7A02) marked the retrofit to a
+ * parent-private canonical producer; this one marks the table grow. */
+#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A03U
 
 struct edgepair_entry {
 	unsigned int prev_nr;		/* previous syscall number */
