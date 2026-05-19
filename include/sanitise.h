@@ -35,12 +35,6 @@ void avoid_shared_buffer_out(unsigned long *addr, unsigned long len);
  * buffers the kernel reads from (or both reads and writes).
  */
 void avoid_shared_buffer_inout(unsigned long *addr, unsigned long len);
-/*
- * Transitional shim around avoid_shared_buffer_out(). New code must
- * pick one of the explicit _out / _inout variants above; this symbol
- * is scheduled for deletion once every existing caller is migrated.
- */
-void avoid_shared_buffer(unsigned long *addr, unsigned long len);
 void scrub_iovec_for_kernel_write(struct iovec *iov, unsigned long count);
 void scrub_msghdr_for_kernel_write(struct msghdr *msg);
 unsigned long find_previous_arg_address(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum);

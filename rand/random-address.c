@@ -300,11 +300,6 @@ void * get_writable_struct(size_t size)
  *                                 happens to live at the replacement
  *                                 address instead of the sanitiser's
  *                                 curated input.
- *
- * The unsuffixed avoid_shared_buffer() entry point is a transitional
- * wrapper around _out() so existing callers continue to build while a
- * per-caller sweep classifies each site as _out or _inout. It will be
- * removed once that sweep completes.
  */
 static void asb_relocate(unsigned long *addr, unsigned long len,
 			 bool copy_original)
@@ -361,19 +356,6 @@ void avoid_shared_buffer_out(unsigned long *addr, unsigned long len)
 void avoid_shared_buffer_inout(unsigned long *addr, unsigned long len)
 {
 	asb_relocate(addr, len, true);
-}
-
-/*
- * Transitional wrapper — preserves the historical no-copy behaviour for
- * callers that have not yet been classified as _out or _inout. Once the
- * per-file sweep finishes, this symbol is deleted and any stragglers
- * fail to link, forcing an explicit choice.
- *
- * TODO: explicit _out vs _inout — migrate this caller.
- */
-void avoid_shared_buffer(unsigned long *addr, unsigned long len)
-{
-	avoid_shared_buffer_out(addr, len);
 }
 
 void * get_address(void)
