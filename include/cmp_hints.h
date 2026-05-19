@@ -24,8 +24,16 @@
  * and forces a cold start.
  */
 
-/* Max unique hints stored per syscall number. */
-#define CMP_HINTS_PER_SYSCALL 32
+/* Max unique hints stored per syscall number.  Halved from the original
+ * 32 once the per-child seen-bloom (below) absorbed the dedup-refresh
+ * volume: with the bloom short-circuiting most refresh hits before they
+ * touch the pool, the eviction loop runs more often on real "least
+ * useful" entries instead of "least recently dedup-refreshed", so a
+ * smaller pool retains its useful tail without needing the 32-slot
+ * cushion.  Halves the per-syscall pool_add_locked linear-scan cost
+ * (insert + eviction) and the per-syscall struct size, dropping the
+ * fleet-wide hint cap from MAX_NR_SYSCALL * 32 to MAX_NR_SYSCALL * 16. */
+#define CMP_HINTS_PER_SYSCALL 16
 
 /*
  * Per-child seen-bloom over (cmp_ip, value, size) tuples.  Consulted in

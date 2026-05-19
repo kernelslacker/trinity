@@ -349,7 +349,14 @@ bool cmp_hints_try_get(unsigned int nr, unsigned long *out)
  * different function layout.
  */
 #define CMP_HINTS_FILE_MAGIC	0x4348505FU	/* "CHP_" */
-#define CMP_HINTS_FILE_VERSION	1U
+/* Bumped to 2 when CMP_HINTS_PER_SYSCALL halved from 32 to 16: the on-
+ * disk pool slice is a fixed CMP_HINTS_PER_SYSCALL-wide array, so the
+ * payload layout is not backward-compatible.  The per_syscall mismatch
+ * gate in cmp_hints_load_file would also catch this on its own, but a
+ * version-level guard makes the cold-start reason explicit in the log
+ * and leaves a hook for any future schema changes that don't ride on
+ * top of a constant change. */
+#define CMP_HINTS_FILE_VERSION	2U
 
 struct cmp_hints_entry_ondisk {
 	uint64_t value;
