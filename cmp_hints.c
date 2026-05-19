@@ -248,22 +248,31 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 		unsigned long *rec = &trace_buf[1 + i * WORDS_PER_CMP];
 		unsigned long type = rec[0];
 		unsigned long arg1 = rec[1];
-		unsigned long arg2 = rec[2];
 		unsigned long ip   = rec[3];
 		unsigned int size  = 1U << ((type >> KCOV_CMP_SIZE_SHIFT)
 					    & KCOV_CMP_SIZE_MASK);
 
 		/* We only care about comparisons where one side is a
 		 * compile-time constant — those reveal what the kernel
-		 * actually checks for. */
+		 * actually checks for.  Non-CONST records are dropped
+		 * entirely; both operands are runtime values and feeding
+		 * them back would just recycle the fuzzer's own inputs. */
 		if (!(type & KCOV_CMP_CONST))
 			continue;
 
 		/*
-		 * Filter out uninteresting comparison operands inline so the
-		 * compiler can fold the per-record check to a couple of
-		 * branches: skip 0/1/2/3 (caught by the ~3UL mask going to 0)
-		 * and the all-ones sentinel.
+		 * KCOV's __sanitizer_cov_trace_const_cmpN clang/gcc helpers
+		 * always place the compile-time constant in arg1; arg2 holds
+		 * the runtime (variable) operand the kernel compared it
+		 * against.  Adding arg2 to the pool would feed trinity's own
+		 * generated syscall values back as "hints", evicting genuine
+		 * kernel constants from the now-16-slot pool, so only arg1
+		 * is ingested.
+		 *
+		 * Filter out uninteresting constants inline so the compiler
+		 * can fold the per-record check to a couple of branches:
+		 * skip 0/1/2/3 (caught by the ~3UL mask going to 0) and the
+		 * all-ones sentinel.
 		 */
 		if (((arg1 & ~3UL) != 0) && (arg1 != (unsigned long) -1)) {
 			if (bloom != NULL &&
@@ -271,13 +280,6 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 				skipped++;
 			else
 				pool_add_locked(pool, ip, arg1, size);
-		}
-		if (((arg2 & ~3UL) != 0) && (arg2 != (unsigned long) -1)) {
-			if (bloom != NULL &&
-			    cmp_hints_bloom_check_and_set(bloom, ip, arg2, size))
-				skipped++;
-			else
-				pool_add_locked(pool, ip, arg2, size);
 		}
 	}
 	pool_unlock(pool);

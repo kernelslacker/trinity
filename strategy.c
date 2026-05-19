@@ -409,20 +409,21 @@ void bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr,
 	for (i = 0; i < count; i++) {
 		unsigned long type = trace_buf[1 + i * WORDS_PER_CMP];
 		unsigned long arg1 = trace_buf[1 + i * WORDS_PER_CMP + 1];
-		unsigned long arg2 = trace_buf[1 + i * WORDS_PER_CMP + 2];
-		unsigned long c;
 		bool novel_here;
 
 		if (!(type & KCOV_CMP_CONST))
 			continue;
 
-		c = cmp_novelty_interesting(arg1) ? arg1 :
-		    cmp_novelty_interesting(arg2) ? arg2 : 0;
-		if (c == 0)
+		/* arg1 is the compile-time constant under KCOV_CMP_CONST
+		 * (clang/gcc's __sanitizer_cov_trace_const_cmpN convention);
+		 * arg2 is the runtime value the kernel compared it against
+		 * and would just credit the bandit for novelty in the
+		 * fuzzer's own input distribution. */
+		if (!cmp_novelty_interesting(arg1))
 			continue;
 
-		novel_here = cmp_bloom_set(e->bloom, cmp_bloom_h1(c));
-		novel_here = cmp_bloom_set(e->bloom, cmp_bloom_h2(c)) ||
+		novel_here = cmp_bloom_set(e->bloom, cmp_bloom_h1(arg1));
+		novel_here = cmp_bloom_set(e->bloom, cmp_bloom_h2(arg1)) ||
 			     novel_here;
 		if (novel_here)
 			novel++;
