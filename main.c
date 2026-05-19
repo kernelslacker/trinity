@@ -1806,6 +1806,36 @@ void reset_epoch_state(void)
 
 	if (shm_published != NULL)
 		shm_published->fleet_op_count = 0;
+
+	/*
+	 * Strategy-rotation window-start snapshots.  maybe_rotate_strategy()
+	 * in random-syscall.c computes the window interval as
+	 *   (shm_published->fleet_op_count - shm->syscalls_at_last_switch)
+	 * with unsigned subtraction.  fleet_op_count is reset above; if we
+	 * leave the four window-start fields holding the previous epoch's
+	 * final values, the next maybe_rotate_strategy() call sees
+	 * (0 - large), underflows to a huge unsigned, and trips the
+	 * STRATEGY_WINDOW threshold immediately -- a bogus forced rotation
+	 * on the first syscall of the new epoch.  The per-strategy delta
+	 * series (pc_edge_calls/_count, bandit_cmp_new_constants) are
+	 * cumulative and intentionally NOT reset; only their window-start
+	 * snapshots need to drop to 0 so the first window of the new epoch
+	 * sees a valid 'now - last' interval.
+	 *
+	 * Bandit arm state (bandit_pulls, bandit_reward_calls, ...) is
+	 * intentionally NOT reset -- warm-start across epochs is the desired
+	 * UCB1 semantics.  cmp_hints pool, HEALER tables, edgepair tables,
+	 * the kcov bitmap, and the alloc_track ring are also intentionally
+	 * preserved across epochs for the same reason.
+	 */
+	/* fleet_op_count anchor for the next STRATEGY_WINDOW interval */
+	shm->syscalls_at_last_switch = 0;
+	/* pc_edge_calls_by_strategy[prev] snapshot for next call-count delta */
+	shm->pc_edge_calls_at_window_start = 0;
+	/* pc_edge_count_by_strategy[prev] snapshot for next bucket-count delta */
+	shm->pc_edge_count_at_window_start = 0;
+	/* bandit_cmp_new_constants[prev] snapshot for next cmp-novelty delta */
+	shm->bandit_cmp_at_window_start = 0;
 	for_each_child(i) {
 		__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);
 		clean_childdata(children[i]);
