@@ -1833,6 +1833,15 @@ void top_syscalls_periodic_dump(void);
  * post-mortem evidence; children_max specifically is the leak-finder. */
 void vma_count_periodic_dump(void);
 
+/* Per-tick scan paired with defense_counters_periodic_dump: every dump
+ * window, emit the KCOV CMP counter block (per-window deltas + rates for
+ * cmp_records_collected / cmp_trace_truncated / cmp_hints_bloom_skipped,
+ * cumulative per-mode child population, and first-failure-wins DIAG
+ * errnos).  Without this the cmp counters are only visible at run
+ * shutdown via dump_stats(), so a long overnight run produces no
+ * time-series of cmp_hints effectiveness. */
+void kcov_cmp_stats_periodic_dump(void);
+
 /* --stats-log-file backing.  Open at startup (append, header line on each
  * open), close at shutdown (footer line).  stats_log_write() mirrors its
  * formatted line to stdout via output(0,...) AND, if the log is open, to

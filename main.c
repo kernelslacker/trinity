@@ -1586,6 +1586,8 @@ void main_loop(void)
 
 		vma_count_periodic_dump();
 
+		kcov_cmp_stats_periodic_dump();
+
 		kcov_plateau_check();
 
 		kcov_bitmap_maybe_snapshot();

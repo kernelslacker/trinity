@@ -2723,6 +2723,148 @@ void vma_count_periodic_dump(void)
 	last_dump = now;
 }
 
+/*
+ * Surface the KCOV CMP counters in the same 600s periodic stats-log-file
+ * dump as defense_counters_periodic_dump.  Without this the cmp counters
+ * are only visible from dump_stats() (run shutdown) and the JSON dump
+ * (on enable), so a long overnight run produces no time-series — just a
+ * single end-snapshot — making it impossible to correlate cmp_hints
+ * effectiveness with edge-discovery cadence over the run.
+ *
+ * Three sub-blocks, each gated independently so a healthy run that has
+ * no DIAG errnos doesn't carry an empty "DIAG:" line into the log:
+ *  - per-window deltas + rates + cumulative totals for the three cmp
+ *    counters, formatted to match defense_counters_periodic_dump;
+ *  - per-mode child population (cumulative) so the realised PC/CMP
+ *    mode mix is visible in the time series, not just at shutdown;
+ *  - first-failure-wins errno/count per cmp-init/runtime site.
+ */
+void kcov_cmp_stats_periodic_dump(void)
+{
+	static unsigned long prev_records;
+	static unsigned long prev_truncated;
+	static unsigned long prev_bloom_skipped;
+	static struct timespec last_dump;
+	struct timespec now;
+	long elapsed;
+	unsigned long cur_records, cur_truncated, cur_bloom_skipped;
+	unsigned long delta_records, delta_truncated, delta_bloom_skipped;
+	unsigned int pc_kids, cmp_kids;
+	struct kcov_cmp_diag *d;
+	unsigned int open_c, init_trace_c, mmap_c, enable_c, disable_c, rt_enable_c;
+
+	if (kcov_shm == NULL)
+		return;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	cur_records       = __atomic_load_n(&kcov_shm->cmp_records_collected,   __ATOMIC_RELAXED);
+	cur_truncated     = __atomic_load_n(&kcov_shm->cmp_trace_truncated,     __ATOMIC_RELAXED);
+	cur_bloom_skipped = __atomic_load_n(&kcov_shm->cmp_hints_bloom_skipped, __ATOMIC_RELAXED);
+
+	/* First call: arm the window so any pre-existing counts carried
+	 * over from earlier in the run are not mis-attributed to the
+	 * first window, mirroring defense_counters_periodic_dump. */
+	if (last_dump.tv_sec == 0) {
+		last_dump = now;
+		prev_records       = cur_records;
+		prev_truncated     = cur_truncated;
+		prev_bloom_skipped = cur_bloom_skipped;
+		return;
+	}
+
+	elapsed = now.tv_sec - last_dump.tv_sec;
+	if (elapsed < DEFENSE_DUMP_INTERVAL_SEC)
+		return;
+
+	delta_records       = cur_records       - prev_records;
+	delta_truncated     = cur_truncated     - prev_truncated;
+	delta_bloom_skipped = cur_bloom_skipped - prev_bloom_skipped;
+
+	if ((delta_records | delta_truncated | delta_bloom_skipped) != 0) {
+		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
+
+		if (delta_records) {
+			unsigned long rate_milli = (delta_records * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_records_collected", delta_records,
+					rate_milli / 1000, rate_milli % 1000, cur_records);
+		}
+		if (delta_truncated) {
+			unsigned long rate_milli = (delta_truncated * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_trace_truncated", delta_truncated,
+					rate_milli / 1000, rate_milli % 1000, cur_truncated);
+		}
+		if (delta_bloom_skipped) {
+			unsigned long rate_milli = (delta_bloom_skipped * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_hints_bloom_skipped", delta_bloom_skipped,
+					rate_milli / 1000, rate_milli % 1000, cur_bloom_skipped);
+		}
+	}
+
+	pc_kids  = __atomic_load_n(&kcov_shm->pc_mode_children,  __ATOMIC_RELAXED);
+	cmp_kids = __atomic_load_n(&kcov_shm->cmp_mode_children, __ATOMIC_RELAXED);
+
+	if ((pc_kids | cmp_kids) != 0) {
+		stats_log_write("KCOV CMP modes (cumulative):\n");
+		stats_log_write("  pc_mode_children=%u cmp_mode_children=%u\n",
+				pc_kids, cmp_kids);
+	}
+
+	d = &kcov_shm->cmp_diag;
+	open_c       = __atomic_load_n(&d->init_open_count,       __ATOMIC_RELAXED);
+	init_trace_c = __atomic_load_n(&d->init_init_trace_count, __ATOMIC_RELAXED);
+	mmap_c       = __atomic_load_n(&d->init_mmap_count,       __ATOMIC_RELAXED);
+	enable_c     = __atomic_load_n(&d->init_enable_count,     __ATOMIC_RELAXED);
+	disable_c    = __atomic_load_n(&d->init_disable_count,    __ATOMIC_RELAXED);
+	rt_enable_c  = __atomic_load_n(&d->runtime_enable_count,  __ATOMIC_RELAXED);
+
+	if ((open_c | init_trace_c | mmap_c | enable_c | disable_c | rt_enable_c) != 0) {
+		char init_buf[256];
+		char rt_buf[256];
+		int ni = 0;
+		int nr = 0;
+
+		if (open_c)
+			ni += snprintf(init_buf + ni, sizeof(init_buf) - ni,
+				" init_open=%d/%u",
+				__atomic_load_n(&d->init_open_errno, __ATOMIC_RELAXED), open_c);
+		if (init_trace_c)
+			ni += snprintf(init_buf + ni, sizeof(init_buf) - ni,
+				" init_init_trace=%d/%u",
+				__atomic_load_n(&d->init_init_trace_errno, __ATOMIC_RELAXED), init_trace_c);
+		if (mmap_c)
+			ni += snprintf(init_buf + ni, sizeof(init_buf) - ni,
+				" init_mmap=%d/%u",
+				__atomic_load_n(&d->init_mmap_errno, __ATOMIC_RELAXED), mmap_c);
+		if (enable_c)
+			nr += snprintf(rt_buf + nr, sizeof(rt_buf) - nr,
+				" init_enable=%d/%u",
+				__atomic_load_n(&d->init_enable_errno, __ATOMIC_RELAXED), enable_c);
+		if (disable_c)
+			nr += snprintf(rt_buf + nr, sizeof(rt_buf) - nr,
+				" init_disable=%d/%u",
+				__atomic_load_n(&d->init_disable_errno, __ATOMIC_RELAXED), disable_c);
+		if (rt_enable_c)
+			nr += snprintf(rt_buf + nr, sizeof(rt_buf) - nr,
+				" runtime_enable=%d/%u",
+				__atomic_load_n(&d->runtime_enable_errno, __ATOMIC_RELAXED), rt_enable_c);
+
+		stats_log_write("KCOV CMP DIAG errnos (first-failure-wins, cumulative count):\n");
+		if (ni > 0)
+			stats_log_write(" %s\n", init_buf);
+		if (nr > 0)
+			stats_log_write(" %s\n", rt_buf);
+	}
+
+	prev_records       = cur_records;
+	prev_truncated     = cur_truncated;
+	prev_bloom_skipped = cur_bloom_skipped;
+	last_dump = now;
+}
+
 void dump_stats(void)
 {
 	unsigned int i;
