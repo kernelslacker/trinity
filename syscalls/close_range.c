@@ -48,6 +48,12 @@ static void post_close_range(struct syscallrecord *rec)
 
 	child = this_child();
 
+	/* One-pass purge of the live-fd ring for the whole range so we don't
+	 * walk the 16-slot ring fd-by-fd inside the loop below. */
+	if (child != NULL)
+		child_fd_ring_remove_range(&child->live_fds,
+					   (int) fd, (int) max_fd);
+
 	for (; fd <= max_fd; fd++) {
 		if (child != NULL && child->fd_event_ring != NULL)
 			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
