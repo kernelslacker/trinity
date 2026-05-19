@@ -935,22 +935,42 @@ static void replace_child(int childno)
 /* Dump /proc/self/status so a stuck-fork bail report shows the parent's
  * thread/process accounting (Threads:, FDSize:, etc.) at the moment we
  * gave up.  Useful for triaging whether the kernel-side resource we ran
- * out of was process slots, pid_max, or something else. */
+ * out of was process slots, pid_max, or something else.
+ *
+ * Raw open/read/close rather than fopen/getline: this runs from the
+ * stuck-fork bail path, exactly the moment heap allocation is most
+ * likely to misbehave (we're already out of some kernel resource, and
+ * may be on the heel of a flurry of ENOMEM/EAGAIN).  stdio's per-call
+ * malloc of the FILE struct and IO buffer, plus getline's malloc'd
+ * line buffer, are extra allocation we should not require here.  Use
+ * a fixed stack buffer big enough for any realistic /proc/self/status
+ * (procfs caps the file at PAGE_SIZE per read but is usually <4KB)
+ * and split on '\n' in-place. */
 static void dump_proc_self_status(void)
 {
-	FILE *fp;
-	char *line = NULL;
-	size_t n = 0;
+	char buf[8192];
+	ssize_t n;
+	char *p, *eol;
+	int fd;
 
-	fp = fopen("/proc/self/status", "r");
-	if (fp == NULL)
+	fd = open("/proc/self/status", O_RDONLY);
+	if (fd < 0)
 		return;
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return;
+	buf[n] = '\0';
 
-	while (getline(&line, &n, fp) != -1)
-		outputerr("/proc/self/status: %s", line);
-
-	free(line);
-	fclose(fp);
+	for (p = buf; *p != '\0'; p = eol + 1) {
+		eol = strchr(p, '\n');
+		if (eol == NULL) {
+			outputerr("/proc/self/status: %s\n", p);
+			break;
+		}
+		*eol = '\0';
+		outputerr("/proc/self/status: %s\n", p);
+	}
 }
 
 /* Generate children*/
