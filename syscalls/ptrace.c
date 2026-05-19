@@ -37,7 +37,22 @@
  * the request opcode also cannot redirect the free into a non-heap
  * rec->a4 slot.
  */
+/*
+ * Magic cookie stamped into every freshly-allocated ptrace_post_state
+ * and verified at the top of post_ptrace().  rec->post_state is private
+ * to the post handler, but a wholesale syscallrecord scribble can still
+ * point rec->post_state at a foreign heap allocation that has the right
+ * shape to clear looks_like_corrupted_ptr() but is not actually our
+ * snapshot.  Without a cookie, the post handler would then deref
+ * arbitrary bytes as snap->data and feed them into deferred_free, which
+ * either leaks the real allocation or hands the wrong pointer to free.
+ *
+ * The check-static post-state-magic gate enforces this pattern for new
+ * post_state structs; this one was previously grandfathered.
+ */
+#define PTRACE_POST_STATE_MAGIC	0x505452435F4D4147UL	/* "PTRC_MAG" */
 struct ptrace_post_state {
+	unsigned long magic;
 	void *data;
 };
 
@@ -238,6 +253,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 	 */
 	snap = zmalloc(sizeof(*snap));
 	snap->data = data;
+	snap->magic = PTRACE_POST_STATE_MAGIC;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -258,6 +274,24 @@ static void post_ptrace(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_ptrace: rejected suspicious post_state=%p "
 			  "(pid-scribbled?)\n", snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * ptrace_post_state.  A cookie mismatch means snap does not point
+	 * at our struct -- bump the post-handler corrupt-ptr counter and
+	 * return without touching snap->data or freeing the suspect
+	 * allocation (it is not ours to free).
+	 */
+	if (snap->magic != PTRACE_POST_STATE_MAGIC) {
+		outputerr("post_ptrace: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
