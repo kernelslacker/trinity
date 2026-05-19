@@ -125,10 +125,12 @@ static void fill_sqe(struct trinity_io_uring_sqe *sqe)
 	 * the kernel writes into it; for write-direction opcodes it only
 	 * reads.  Maintaining an opcode-to-direction table here would rot
 	 * the moment a new opcode lands upstream, so just scrub
-	 * unconditionally.  For write-direction ops the redirect is a
-	 * no-op cost (kernel reads the same bytes from the replacement
-	 * buffer); for read-direction ops it closes the same shm-overlap
-	 * window the read/recv/getdents sanitisers already close.
+	 * unconditionally.  For write-direction ops the redirect would
+	 * lose the sanitiser-prepared payload if a same-sized replacement
+	 * were allocated without copying, so use the inout variant which
+	 * memcpys the original bytes into the replacement before rewriting
+	 * the pointer; for read-direction ops it closes the same
+	 * shm-overlap window the read/recv/getdents sanitisers already close.
 	 *
 	 * Pass the full sqe->len so the entire buffer range is checked
 	 * against shared regions and a same-sized replacement is chosen.
@@ -139,7 +141,7 @@ static void fill_sqe(struct trinity_io_uring_sqe *sqe)
 	 * since some opcodes don't consult sqe->len at all.
 	 */
 	addr = (unsigned long) sqe->addr;
-	avoid_shared_buffer(&addr, sqe->len > 0 ? sqe->len : page_size);
+	avoid_shared_buffer_inout(&addr, sqe->len > 0 ? sqe->len : page_size);
 	sqe->addr = addr;
 
 	/* op_flags: varies by opcode but we just fuzz it. */
