@@ -405,7 +405,7 @@ static const struct option_help option_descs[] = {
 	{ "stats",		 0,  "show errno distribution per syscall before exiting" },
 	{ "stats-json",		 0,  "emit dump_stats output as a single JSON object on stdout (machine-readable)" },
 	{ "stats-log-file",	 0,  "path to append periodic stats dumps to (in addition to stdout)" },
-	{ "strategy",		 0,  "arm-selection POLICY for the multi-strategy rotation (NOT a specific arm): round-robin (default) or bandit (UCB1). The set of arms is fixed (heuristic, random, coverage-frontier, HEALER); this flag picks how the rotation chooses between them." },
+	{ "strategy",		 0,  "arm-selection POLICY for the multi-strategy rotation (NOT a specific arm): bandit/ucb1 (default) or round-robin/rr. The set of arms is fixed (heuristic, random, coverage-frontier, HEALER); this flag picks how the rotation chooses between them." },
 	{ "syslog",		'S', "log important info to syslog (useful if syslog is remote)" },
 	{ "verbose",		'v', "increase output verbosity. Repeat for more detail (-vv)" },
 	{ "victims",		'V', "path to victim files (may be repeated)" },
@@ -866,7 +866,7 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("strategy", longopts[opt_index].name) == 0) {
 				if (!parse_picker_mode(optarg, &picker_mode_arg)) {
-					outputerr("--strategy: unknown picker '%s' (try round-robin or bandit)\n",
+					outputerr("--strategy: unknown picker '%s' (try bandit or round-robin)\n",
 						  optarg);
 					exit(EXIT_FAILURE);
 				}
