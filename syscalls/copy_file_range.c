@@ -29,8 +29,8 @@ static void sanitise_copy_file_range(struct syscallrecord *rec)
 	*off_out = RAND_RANGE(0, 1ULL << 30);
 	rec->a2 = (unsigned long) off_in;
 	rec->a4 = (unsigned long) off_out;
-	avoid_shared_buffer(&rec->a2, sizeof(loff_t));
-	avoid_shared_buffer(&rec->a4, sizeof(loff_t));
+	avoid_shared_buffer_inout(&rec->a2, sizeof(loff_t));
+	avoid_shared_buffer_inout(&rec->a4, sizeof(loff_t));
 }
 
 static void post_copy_file_range(struct syscallrecord *rec)

@@ -61,7 +61,7 @@ static void sanitise_clock_adjtime(struct syscallrecord *rec)
 	}
 
 	rec->a2 = (unsigned long) tx;
-	avoid_shared_buffer(&rec->a2, sizeof(struct timex));
+	avoid_shared_buffer_inout(&rec->a2, sizeof(struct timex));
 }
 
 static void post_clock_adjtime(struct syscallrecord *rec)

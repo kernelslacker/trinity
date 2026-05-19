@@ -110,14 +110,14 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 	/* arg = (struct flock *) */
 	case F_GETLK:
 	case F_OFD_GETLK:
-		avoid_shared_buffer(&rec->a3, sizeof(struct flock));
+		avoid_shared_buffer_inout(&rec->a3, sizeof(struct flock));
 		break;
 	case F_SETLK:
 	case F_SETLKW:
 		break;
 #ifdef HAVE_LK64
 	case F_GETLK64:
-		avoid_shared_buffer(&rec->a3, sizeof(struct flock64));
+		avoid_shared_buffer_inout(&rec->a3, sizeof(struct flock64));
 		break;
 	case F_SETLK64:
 		break;

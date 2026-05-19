@@ -60,7 +60,7 @@ static void sanitise_adjtimex(struct syscallrecord *rec)
 	}
 
 	rec->a1 = (unsigned long) tx;
-	avoid_shared_buffer(&rec->a1, sizeof(struct timex));
+	avoid_shared_buffer_inout(&rec->a1, sizeof(struct timex));
 }
 
 static void post_adjtimex(struct syscallrecord *rec)
