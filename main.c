@@ -1337,7 +1337,7 @@ static void print_kcov_cmp_diag(void)
 	 * happened to roll PC) doesn't need a line that would just read
 	 * "cmp=0" and add noise to the stats cadence. */
 	if (pc_kids > 0 && cmp_kids > 0)
-		output(0, "[main] KCOV CMP MODES: pc=%u cmp=%u\n",
+		output(0, "KCOV CMP MODES: pc=%u cmp=%u\n",
 			pc_kids, cmp_kids);
 
 	if ((open_c | init_trace_c | mmap_c | enable_c | disable_c | rt_enable_c) == 0)
