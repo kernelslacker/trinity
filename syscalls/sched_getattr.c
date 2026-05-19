@@ -14,10 +14,20 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "struct_catalog.h"
 #include "trinity.h"
 #include "utils.h"
 
 #define SCHED_ATTR_SIZE_VER0	48
+
+/*
+ * Cap used when struct_arg_lookup() returns no catalog entry for
+ * sched_getattr's arg2 -- mirrors STRUCT_PTR_OUT_FALLBACK_SIZE in
+ * generate-args.c, which is the actual allocation gen_arg_struct_ptr_out()
+ * makes on a catalog miss.  Kept in sync by hand: if the generator's
+ * fallback grows, so must this.
+ */
+#define SCHED_GETATTR_ATTR_FALLBACK_SIZE	256U
 
 #ifndef SCHED_GETATTR_FLAG_DL_DYNAMIC
 #define SCHED_GETATTR_FLAG_DL_DYNAMIC	0x01
@@ -43,11 +53,21 @@ static unsigned long sched_getattr_flags[] = {
  * handler running cannot retarget the pid self-filter, redirect the
  * source memcpy at a foreign user buffer, or smear the size word that
  * bounds the comparison.
+ *
+ * attr_alloc_size is the real allocation size of the buffer at .attr,
+ * resolved at sanitise time (catalog struct_size, or the fallback when
+ * the catalog misses; bumped to rec->a3 when avoid_shared_buffer()
+ * redirected to a fresh writable region sized for the fuzzed length).
+ * The post oracle's source memcpy MUST clamp to this -- snap->size is
+ * the fuzzed size argument the kernel got, not the size of the buffer
+ * backing snap->attr, and the two diverge whenever fuzz picks a size
+ * larger than the catalog struct.
  */
 struct sched_getattr_post_state {
 	unsigned long pid;
 	unsigned long attr;
 	unsigned long size;
+	size_t attr_alloc_size;
 };
 #endif
 
@@ -56,6 +76,9 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 	unsigned long range = page_size - SCHED_ATTR_SIZE_VER0;
 #ifdef HAVE_SYS_SCHED_GETATTR
 	struct sched_getattr_post_state *snap;
+	const struct struct_desc *desc;
+	unsigned long pre_a2;
+	size_t attr_alloc_size;
 
 	/*
 	 * Clear post_state up front so an early return below leaves the
@@ -63,6 +86,8 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 	 * pointer carried over from an earlier syscall on this record.
 	 */
 	rec->post_state = 0;
+
+	pre_a2 = rec->a2;
 #endif
 
 	rec->a3 = (rand() % range) + SCHED_ATTR_SIZE_VER0;
@@ -70,23 +95,50 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 
 #ifdef HAVE_SYS_SCHED_GETATTR
 	/*
-	 * Snapshot all three input args for the post oracle.  Without this
-	 * the post handler reads rec->aN at post-time, when a sibling
-	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original user
-	 * attr pointer, so the source memcpy would touch a foreign
-	 * allocation; a stomped pid retargets the gettid() self-filter; and
-	 * a stomped size word smears the SCHED_ATTR_SIZE_VER0 floor check
-	 * and the cpy_len bound used to seed the re-issue.  post_state is
-	 * private to the post handler.  Gated on HAVE_SYS_SCHED_GETATTR to
-	 * mirror the .post body -- on systems without SYS_sched_getattr the
-	 * post handler is a no-op stub and a snapshot only the post handler
-	 * can free would leak.
+	 * Resolve the actual allocation size of the buffer at rec->a2:
+	 *
+	 *   - If avoid_shared_buffer() redirected (the pointer changed),
+	 *     the replacement came from get_writable_address(rec->a3) which
+	 *     guarantees a region of at least rec->a3 bytes.
+	 *   - Otherwise rec->a2 is still the buffer gen_arg_struct_ptr_out()
+	 *     zmalloc'd: desc->struct_size if the catalog has an entry for
+	 *     (nr, arg 2), else STRUCT_PTR_OUT_FALLBACK_SIZE bytes (256).
+	 *
+	 * Snapshotting this at sanitise time keeps the post oracle's source
+	 * memcpy from reading past the live allocation when fuzz picks a
+	 * size argument (rec->a3 -> snap->size) larger than the buffer the
+	 * generator handed the kernel: ASAN otherwise trips on a 256-byte
+	 * read out of a 56-byte sched_attr_v0 allocation.
+	 */
+	if (rec->a2 != pre_a2) {
+		attr_alloc_size = (size_t) rec->a3;
+	} else {
+		desc = struct_arg_lookup(rec->nr, 2, rec->do32bit);
+		attr_alloc_size = desc ? (size_t) desc->struct_size
+				       : (size_t) SCHED_GETATTR_ATTR_FALLBACK_SIZE;
+	}
+
+	/*
+	 * Snapshot all four post-oracle inputs.  Without this the post
+	 * handler reads rec->aN at post-time, when a sibling syscall may
+	 * have scribbled the slots: looks_like_corrupted_ptr() cannot tell
+	 * a real-but-wrong heap address from the original user attr
+	 * pointer, so the source memcpy would touch a foreign allocation;
+	 * a stomped pid retargets the gettid() self-filter; and a stomped
+	 * size word smears the SCHED_ATTR_SIZE_VER0 floor check and the
+	 * cpy_len bound used to seed the re-issue.  attr_alloc_size is
+	 * resolvable only at sanitise time -- the buffer is on the
+	 * deferred-free queue and the catalog descriptor isn't otherwise
+	 * threaded through.  post_state is private to the post handler.
+	 * Gated on HAVE_SYS_SCHED_GETATTR to mirror the .post body -- on
+	 * systems without SYS_sched_getattr the post handler is a no-op
+	 * stub and a snapshot only the post handler can free would leak.
 	 */
 	snap = zmalloc(sizeof(*snap));
-	snap->pid  = rec->a1;
-	snap->attr = rec->a2;
-	snap->size = rec->a3;
+	snap->pid             = rec->a1;
+	snap->attr            = rec->a2;
+	snap->size            = rec->a3;
+	snap->attr_alloc_size = attr_alloc_size;
 	rec->post_state = (unsigned long) snap;
 #endif
 }
@@ -206,9 +258,35 @@ static void post_sched_getattr(struct syscallrecord *rec)
 		}
 	}
 
+	/*
+	 * cpy_len bound by THREE inputs:
+	 *   - snap->size:           the size argument the kernel was given,
+	 *                           caps how many bytes the kernel can have
+	 *                           legitimately written into the user buffer.
+	 *   - sizeof(user_snap):    the local stack buffer the snapshot lands in.
+	 *   - snap->attr_alloc_size: the real allocation backing snap->attr.
+	 *                           snap->size is fuzz-chosen and routinely
+	 *                           exceeds the buffer's actual size (e.g. a
+	 *                           256-byte size argument over a 56-byte
+	 *                           sched_attr_v0 allocation).  Without this
+	 *                           bound memcpy reads past the live region
+	 *                           and ASAN reports an out-of-bounds load.
+	 */
 	cpy_len = (size_t) snap->size;
 	if (cpy_len > sizeof(user_snap))
 		cpy_len = sizeof(user_snap);
+	if (cpy_len > snap->attr_alloc_size)
+		cpy_len = snap->attr_alloc_size;
+	/*
+	 * After the alloc-size clamp cpy_len can drop below the V0 floor
+	 * (catalog struct_size shrank under us, fallback path with a tiny
+	 * desc, etc.).  The kernel never writes less than V0, so a
+	 * truncated source cannot back a meaningful comparison; also keeps
+	 * the leading-size memcpy below from reading uninitialised stack
+	 * when cpy_len < sizeof(__u32).
+	 */
+	if (cpy_len < SCHED_ATTR_SIZE_VER0)
+		goto out_free;
 	memcpy(user_snap, (const void *)(unsigned long) snap->attr, cpy_len);
 	memcpy(&user_size_returned, user_snap, sizeof(user_size_returned));
 
