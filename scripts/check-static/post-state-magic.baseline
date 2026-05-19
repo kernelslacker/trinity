@@ -30,7 +30,6 @@ syscalls/lsm_get_self_attr.c:lsm_get_self_attr
 syscalls/lsm_list_modules.c:lsm_list_modules
 syscalls/move_pages.c:move_pages
 syscalls/mprotect.c:mprotect
-syscalls/mq_open.c:mq_open
 syscalls/mremap.c:mremap
 syscalls/munmap.c:munmap
 syscalls/sched_getaffinity.c:sched_getaffinity

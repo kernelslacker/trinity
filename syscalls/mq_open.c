@@ -35,7 +35,9 @@ static unsigned long mq_open_flags[] = {
  * cannot tell apart from the original name pointer, and mq_unlink
  * would then operate on a foreign string.
  */
+#define MQ_OPEN_POST_STATE_MAGIC	0x4D515F4F50454E5FUL	/* "MQ_OPEN_" */
 struct mq_open_post_state {
+	unsigned long magic;
 	unsigned long name;
 	unsigned long oflag;
 	unsigned long mode;
@@ -104,6 +106,7 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 	 * string.  post_state is private to the post handler.
 	 */
 	snap = zmalloc(sizeof(*snap));
+	snap->magic = MQ_OPEN_POST_STATE_MAGIC;
 	snap->name  = rec->a1;
 	snap->oflag = rec->a2;
 	snap->mode  = rec->a3;
@@ -137,6 +140,26 @@ static void post_mq_open(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_mq_open: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * mq_open_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon rather than feed a wild pointer
+	 * to mq_unlink.  The snap is owned by the deferred-free queue
+	 * (enqueued at sanitise time), so do NOT free here even on the
+	 * abandon path: the pointer is suspect and the queue still holds
+	 * the original allocation for delayed reclamation.
+	 */
+	if (snap->magic != MQ_OPEN_POST_STATE_MAGIC) {
+		outputerr("post_mq_open: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
