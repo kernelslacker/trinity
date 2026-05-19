@@ -317,7 +317,7 @@ bool kvm_run_churn(struct childdata *child __attribute__((unused)))
 		return true;
 
 	obj = get_random_object(OBJ_FD_KVM_VCPU, OBJ_GLOBAL);
-	if (obj == NULL)
+	if (!objpool_check(obj, OBJ_FD_KVM_VCPU))
 		return true;
 
 	vcpufd = obj->kvmvcpuobj.fd;
