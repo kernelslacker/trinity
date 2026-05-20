@@ -89,7 +89,7 @@ static void sanitise_io_uring_setup(struct syscallrecord *rec)
 
 	rec->a1 = RAND_RANGE(1, 4096);
 
-	params = zmalloc(sizeof(struct io_uring_params));
+	params = zmalloc_tracked(sizeof(struct io_uring_params));
 	params->flags = set_rand_bitmask(ARRAY_SIZE(io_uring_setup_flags),
 					 io_uring_setup_flags);
 	if (params->flags & IORING_SETUP_CQSIZE)
