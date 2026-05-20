@@ -39,7 +39,7 @@ bool user_specified_explorer_children = false;
  * CANARY_WINDOW_ITERS_DEFAULT / canary_slots-default constants in
  * child-canary.c.  Operator overrides land in --canary-slots /
  * --canary-window / --no-canary-queue / --canary-seed. */
-unsigned int canary_slots = 1;
+unsigned int canary_slots = 2;
 unsigned int canary_window_iters = 10000;
 bool canary_queue_disabled = false;
 unsigned char canary_seed_override[CANARY_SEED_OVERRIDE_MAX];
