@@ -35,12 +35,16 @@
 #define KCOV_CMP_RECORDS_MAX ((KCOV_CMP_BUFFER_SIZE - 1) / 4)
 
 /* Number of distinct edge slots PCs hash into.
- * 8M slots preserves the prior bitmap's birthday-paradox headroom: 50%
- * collision threshold is ~1.177 * sqrt(N), so the table stays useful out
- * to ~3400 distinct PCs before false saturation skews the cold-syscall,
- * edgepair, and minicorpus heuristics that all consume the coverage signal.
- * Modern kernel builds easily blow past the old 512K-slot budget within
- * seconds. */
+ * edges_found counts unique occupied slots in this 8M-entry table.
+ * The birthday-paradox figure (50% chance of *any* collision at
+ * ~1.177 * sqrt(N) ~= 3400 PCs) is the first-collision threshold, not
+ * a practical saturation point: an isolated collision does not skew
+ * the cold-syscall, edgepair, or minicorpus heuristics that read
+ * edges_found.  What skews them is fractional occupancy -- expected
+ * unique slots after k inserts is N * (1 - (1 - 1/N)^k), reaching 50%
+ * at k ~= N * ln(2) ~= 5.8M PCs.  Real runs see edges_found in the
+ * hundreds of thousands without measurable bias.  Modern kernel builds
+ * easily blow past the old 512K-slot budget within seconds. */
 #define KCOV_NUM_EDGES (1 << 23)
 
 /* AFL-style hit-count bucketing.  Each edge stores an 8-bit mask where bit
@@ -295,8 +299,13 @@ struct kcov_shared {
 	 * below KCOV_PLATEAU_RATE_THRESHOLD (rate < 1 edge per 60s sustained
 	 * over the 10-minute window) the parent enters PLATEAU state and
 	 * emits a one-line warning to stats.log; a matching CLEARED line is
-	 * emitted when the rate climbs back above threshold.  Detection only
-	 * — no automatic response. */
+	 * emitted when the rate climbs back above threshold.  Entry into
+	 * PLATEAU also fires strategy_plateau_response(), which forces an
+	 * immediate strategy rotation into the plateau-intervention layer.
+	 * That layer round-robins among RRC-biased replay, anti-prior accept
+	 * gating, and uniform random, and pins PIM_ANTI_PRIOR when the
+	 * hypothesis classifier has tagged the run as frontier_cold.
+	 * Interventions unwind automatically on the matching CLEARED edge. */
 	time_t plateau_window_start;
 	unsigned long plateau_prev_edges;
 	unsigned long plateau_last_window_delta;
@@ -387,8 +396,11 @@ unsigned int kcov_syscall_cold_skip_pct(unsigned int nr);
  * main_loop tick alongside the other periodic samplers.  Emits a
  * one-line PLATEAU warning to stats.log when the per-window edge
  * discovery rate drops below KCOV_PLATEAU_RATE_THRESHOLD and a matching
- * PLATEAU CLEARED line when the rate recovers.  Detection only — does
- * not touch bandit, explorer, or syscall-pool state. */
+ * PLATEAU CLEARED line when the rate recovers.  On the PLATEAU rising
+ * edge it also fires strategy_plateau_response(), which forces a
+ * strategy rotation into the plateau-intervention layer (RRC-biased
+ * replay, anti-prior accept gating, or uniform random; frontier_cold
+ * hypotheses pin anti-prior).  Interventions unwind on CLEARED. */
 void kcov_plateau_check(void);
 
 /* Mid-run snapshot cadence for kcov_bitmap_maybe_snapshot().  The bitmap
