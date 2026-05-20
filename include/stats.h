@@ -1473,6 +1473,17 @@ struct stats_s {
 	 * (sockets, fd providers, keyctl, futex). */
 	unsigned long maps_uaf_caught;
 
+	/* Bumped by run_sequence_chain() when chain_corpus_pick() returns
+	 * a chain_entry whose len is zero or greater than MAX_SEQ_LEN.
+	 * The chain corpus is shared memory and tolerates lockless reads
+	 * plus wild-write corruption; an out-of-range len would otherwise
+	 * cause the replay loop to index past the stack-local replay.steps
+	 * array before per-step safety checks ran.  Non-zero values mean
+	 * the corpus saw either a torn lockless read or a real wild write
+	 * into ring->slots[].len -- both are defended (fall back to a
+	 * fresh chain) but worth tracking so spikes are visible. */
+	unsigned long chain_replay_len_corrupt;
+
 	/* Per-call abort counter for random_map_readfn().  Bumped each time
 	 * the per-page memcpy in one of the read walks (read_one_page,
 	 * read_whole_mapping, read_every_other_page, read_mapping_reverse,

@@ -244,11 +244,25 @@ bool run_sequence_chain(struct childdata *child)
 	 * syscall, sanitise that wasn't there at save time, etc.). */
 	if (chain_corpus_shm != NULL && ONE_IN(CHAIN_REPLAY_RATIO) &&
 	    chain_corpus_pick(&replay)) {
-		replaying = true;
-		replay_template = replay.steps;
-		len = replay.len;
-		__atomic_fetch_add(&chain_corpus_shm->replay_count, 1UL,
-				   __ATOMIC_RELAXED);
+		/* chain_corpus_pick() is intentionally lockless and the
+		 * ring lives in shared memory that fuzzed syscalls can
+		 * scribble.  A torn read or a wild write into the slot's
+		 * len field would let the loop below index past the
+		 * fixed-size replay.steps[MAX_SEQ_LEN] before the per-
+		 * step safety checks in replay_syscall_step ever ran.
+		 * Reject the picked entry and fall back to a fresh chain
+		 * if len escapes the [1, MAX_SEQ_LEN] range. */
+		if (replay.len == 0 || replay.len > MAX_SEQ_LEN) {
+			__atomic_fetch_add(&shm->stats.chain_replay_len_corrupt,
+					   1UL, __ATOMIC_RELAXED);
+			len = pick_chain_length();
+		} else {
+			replaying = true;
+			replay_template = replay.steps;
+			len = replay.len;
+			__atomic_fetch_add(&chain_corpus_shm->replay_count, 1UL,
+					   __ATOMIC_RELAXED);
+		}
 	} else {
 		len = pick_chain_length();
 	}

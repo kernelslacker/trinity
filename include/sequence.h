@@ -111,7 +111,11 @@ void chain_corpus_save(const struct chain_step *steps, unsigned int len);
 /*
  * Snapshot a random saved chain into @out.  Returns true on success
  * (out->len populated, out->steps[] copied), false if the corpus is
- * empty.  The snapshot is taken under the ring lock so the caller's
- * copy is stable across subsequent saves and evictions.
+ * empty.  The snapshot is intentionally lockless -- see the long
+ * comment in chain_corpus_pick() (sequence.c) for the race tolerance
+ * argument.  Callers MUST validate out->len before indexing
+ * out->steps[]: a torn lockless read or wild write into the shared
+ * slot can leave len outside [1, MAX_SEQ_LEN].  run_sequence_chain()
+ * does that validation and falls back to a fresh chain on failure.
  */
 bool chain_corpus_pick(struct chain_entry *out);
