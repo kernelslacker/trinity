@@ -27,6 +27,37 @@ static void sanitise_recv(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
 }
 
+/*
+ * recvfrom shares the ubuf handling with recv but additionally writes
+ * the peer's sockaddr into a5 and its length into a6.  ARG_SOCKADDRLEN
+ * published a scalar into the a6 slot, which the kernel reads as a
+ * __user pointer and EFAULTs the call every time -- recvfrom never
+ * actually surfaced a peer address.  Replace a6 with a real heap-
+ * resident socklen_t* initialised to the addr buffer's full
+ * sockaddr_storage capacity (the kernel reads *lenp as max_addrlen
+ * before writing back), and allocate a fresh sockaddr_storage-sized
+ * addr buffer at a5 so the kernel has room for any family it surfaces.
+ * Mirrors getsockopt.c:73-101.
+ */
+static void sanitise_recvfrom(struct syscallrecord *rec)
+{
+	struct sockaddr_storage *addr;
+	socklen_t *lenp;
+
+	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
+
+	avoid_shared_buffer_out(&rec->a2, rec->a3);
+
+	addr = (struct sockaddr_storage *) get_writable_address(sizeof(*addr));
+	if (addr != NULL)
+		rec->a5 = (unsigned long) addr;
+
+	lenp = zmalloc(sizeof(*lenp));
+	*lenp = sizeof(struct sockaddr_storage);
+	rec->a6 = (unsigned long) lenp;
+	avoid_shared_buffer_inout(&rec->a6, sizeof(socklen_t));
+}
+
 #ifndef MSG_SOCK_DEVMEM
 #define MSG_SOCK_DEVMEM	0x2000000	/* 6.10+ */
 #endif
@@ -67,7 +98,7 @@ struct syscallentry syscall_recvfrom = {
 	.arg_params[3].list = ARGLIST(recv_flags),
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
-	.sanitise = sanitise_recv,	// same as recv
+	.sanitise = sanitise_recvfrom,
 	.bound_arg = 3,
 	.rettype = RET_NUM_BYTES,
 };

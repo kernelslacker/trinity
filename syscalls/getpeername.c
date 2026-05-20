@@ -49,11 +49,27 @@ static void sanitise_getpeername(struct syscallrecord *rec)
 
 	rec->post_state = 0;
 #endif
+	socklen_t *lenp;
 
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 
 	avoid_shared_buffer_out(&rec->a2, sizeof(struct sockaddr_storage));
-	avoid_shared_buffer_out(&rec->a3, sizeof(int));
+
+	/*
+	 * usockaddr_len is a value-result socklen_t pointer.  ARG_SOCKADDRLEN
+	 * published a scalar (the addr buffer's generated length) into the
+	 * slot, but the kernel reads it as a __user pointer and EFAULTs every
+	 * call -- the post oracle below was effectively never reachable.
+	 * Replace with a real heap-resident socklen_t* initialised to the
+	 * addr buffer's full sockaddr_storage capacity, then _inout (not
+	 * _out) so the init value survives any heap-overlap relocation: the
+	 * kernel reads *lenp as max_addrlen BEFORE writing the actual length
+	 * back.  Mirrors getsockopt.c:73-101.
+	 */
+	lenp = zmalloc(sizeof(*lenp));
+	*lenp = sizeof(struct sockaddr_storage);
+	rec->a3 = (unsigned long) lenp;
+	avoid_shared_buffer_inout(&rec->a3, sizeof(socklen_t));
 
 #ifdef HAVE_SYS_GETPEERNAME
 	/*

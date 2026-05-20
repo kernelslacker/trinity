@@ -4,16 +4,35 @@
  * On success, these system calls return a nonnegative integer that is a descriptor for the accepted socket.
  * On error, -1 is returned, and errno is set appropriately.
  */
+#include <sys/socket.h>
 #include "net.h"
 #include "objects.h"
 #include "sanitise.h"
+#include "utils.h"
 
 static void sanitise_accept(struct syscallrecord *rec)
 {
+	socklen_t *lenp;
+
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 
 	avoid_shared_buffer_out(&rec->a2, sizeof(struct sockaddr_storage));
-	avoid_shared_buffer_out(&rec->a3, sizeof(int));
+
+	/*
+	 * upeer_addrlen is a value-result socklen_t pointer.  ARG_SOCKADDRLEN
+	 * published a scalar (the addr buffer's generated length) into the
+	 * slot, but the kernel reads it as a __user pointer and EFAULTs the
+	 * call every time -- accept never actually returned a connected fd.
+	 * Replace with a real heap-resident socklen_t* initialised to the
+	 * addr buffer's full sockaddr_storage capacity, then _inout (not
+	 * _out) so the init value survives any heap-overlap relocation: the
+	 * kernel reads *lenp as max_addrlen BEFORE writing the actual length
+	 * back.  Mirrors getsockopt.c:73-101.
+	 */
+	lenp = zmalloc(sizeof(*lenp));
+	*lenp = sizeof(struct sockaddr_storage);
+	rec->a3 = (unsigned long) lenp;
+	avoid_shared_buffer_inout(&rec->a3, sizeof(socklen_t));
 }
 
 static void post_accept(struct syscallrecord *rec)
@@ -65,10 +84,17 @@ static unsigned long accept4_flags[] = {
 
 static void sanitise_accept4(struct syscallrecord *rec)
 {
+	socklen_t *lenp;
+
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 
 	avoid_shared_buffer_out(&rec->a2, sizeof(struct sockaddr_storage));
-	avoid_shared_buffer_out(&rec->a3, sizeof(int));
+
+	/* See sanitise_accept above for the value-result socklen_t* rationale. */
+	lenp = zmalloc(sizeof(*lenp));
+	*lenp = sizeof(struct sockaddr_storage);
+	rec->a3 = (unsigned long) lenp;
+	avoid_shared_buffer_inout(&rec->a3, sizeof(socklen_t));
 }
 
 struct syscallentry syscall_accept4 = {
