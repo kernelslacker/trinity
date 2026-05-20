@@ -77,8 +77,27 @@ extern unsigned int alt_op_children;
  * dormant gate is consulted as the historical compile-time-static
  * vector).  canary_seed_override / canary_seed_override_count is the
  * --canary-seed override list, parsed at startup; when count is zero
- * the queue uses the built-in wave-1 seed list. */
+ * the queue uses the built-in wave-1 seed list.
+ *
+ * canary_slots auto-couples to alt_op_children.  The queue carves
+ * slots from the front of the alt-op pool, so a non-zero default is
+ * only meaningful once alt_op_children is also non-zero -- otherwise
+ * the queue has nowhere to host a canary and the run would emit a
+ * warning and silently disable the feature on every default
+ * invocation.  When --canary-slots is not passed, canary_slots is
+ * filled in by clamp_default_canary_slots() AFTER parse_args has
+ * finalised alt_op_children, and the derived value is
+ * min(alt_op_children, 2): zero on a default run, and the historical
+ * default of 2 once the operator opts into a pool with at least 2
+ * slots.  An explicit --canary-slots=N records the operator's intent
+ * in user_specified_canary_slots and bypasses the auto-derive; the
+ * downstream clamp against alt_op_children in trinity.c still
+ * applies, and the warning for --canary-slots=N with
+ * --alt-op-children=0 fires only on that explicit-override path,
+ * since the auto-derive can no longer reach that state. */
 extern unsigned int canary_slots;
+extern bool user_specified_canary_slots;
+void clamp_default_canary_slots(void);
 extern unsigned int canary_window_iters;
 extern bool canary_queue_disabled;
 #define CANARY_SEED_OVERRIDE_MAX	32

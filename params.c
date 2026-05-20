@@ -35,11 +35,20 @@ unsigned int alt_op_children = 0;
 unsigned int explorer_children = 0;
 bool user_specified_explorer_children = false;
 
-/* Canary queue knobs.  Defaults match the design doc and the
- * CANARY_WINDOW_ITERS_DEFAULT / canary_slots-default constants in
- * child-canary.c.  Operator overrides land in --canary-slots /
- * --canary-window / --no-canary-queue / --canary-seed. */
-unsigned int canary_slots = 2;
+/* Canary queue knobs.  The canary queue carves slots from the front
+ * of the alt_op_children pool, so a non-zero canary_slots default is
+ * only meaningful when alt_op_children is also non-zero.  Rather than
+ * hardcode a value that produces a noisy startup warning whenever the
+ * operator runs trinity with default flags (alt_op_children=0), the
+ * default tracks min(alt_op_children, 2) and is filled in by
+ * clamp_default_canary_slots() AFTER parse_args has finalised
+ * alt_op_children.  An explicit --canary-slots=N records operator
+ * intent in user_specified_canary_slots and bypasses the auto-derive
+ * -- range enforcement against alt_op_children still applies in
+ * trinity.c.  CANARY_WINDOW_ITERS_DEFAULT and the queue's other
+ * defaults live in child-canary.c. */
+unsigned int canary_slots = 0;
+bool user_specified_canary_slots = false;
 unsigned int canary_window_iters = 10000;
 bool canary_queue_disabled = false;
 unsigned char canary_seed_override[CANARY_SEED_OVERRIDE_MAX];
@@ -278,6 +287,25 @@ static unsigned long derive_max_children_cap(enum max_children_binding *out_bind
  * Called from main() after clamp_default_max_children() so max_children
  * is final.  Mirrors the alt_op_children clamp pattern in trinity.c.
  */
+/* Default-fill canary_slots when the operator did not pass
+ * --canary-slots.  Called from main() after parse_args has finalised
+ * alt_op_children so the derived value tracks the final pool size.
+ * The auto-couple is min(alt_op_children, 2): zero when there is no
+ * alt-op pool to carve from (skipping the noisy --canary-slots-vs-
+ * --alt-op-children=0 warning on default runs), and the historical
+ * default of 2 once the operator opts into an alt-op pool with at
+ * least 2 slots.  An explicit --canary-slots=N is recorded in
+ * user_specified_canary_slots and left untouched here -- the
+ * downstream clamps in trinity.c handle range enforcement against
+ * alt_op_children for both auto-derived and explicit values. */
+void clamp_default_canary_slots(void)
+{
+	if (user_specified_canary_slots)
+		return;
+
+	canary_slots = (alt_op_children < 2) ? alt_op_children : 2;
+}
+
 void clamp_default_explorer_children(void)
 {
 	/* Explorer slots are reserved AFTER the dedicated alt-op slots
@@ -391,7 +419,7 @@ static const struct option_help option_descs[] = {
 	{ "arch",		'a', "selects syscalls for the specified architecture (32 or 64). Both by default." },
 	{ "bdev",		'b', "Add /dev node to list of block devices to use for destructive tests." },
 	{ "canary-seed",	 0,  "comma-separated list of childop names to override the built-in wave-1 canary seed list. Names match alt_op_name (e.g. 'genetlink_fuzzer,bpf_lifecycle'). Unknown names abort startup." },
-	{ "canary-slots",	 0,  "reserve N slots from the front of --alt-op-children to run the dormant-op canary queue (default 1). Clamped to min(N, alt_op_children); N=0 disables the queue identically to --no-canary-queue." },
+	{ "canary-slots",	 0,  "reserve N slots from the front of --alt-op-children to run the dormant-op canary queue (default: min(alt-op-children, 2) when unset). Clamped to min(N, alt_op_children); N=0 disables the queue identically to --no-canary-queue." },
 	{ "canary-window",	 0,  "invocations of the active canary op per window (default 10000, range 1000..1000000). Counted against the per-op invocation counter, not the fleet-wide op count, so window size is independent of -C and --canary-slots. Lower windows are too noisy to promote on; higher windows let a useless op squat a slot for too long." },
 	{ "children",		'C', "specify number of child processes" },
 	{ "clowntown",		 0,  "enable clowntown mode" },
@@ -784,6 +812,7 @@ void parse_args(int argc, char *argv[])
 					exit(EXIT_FAILURE);
 				}
 				canary_slots = (unsigned int)val;
+				user_specified_canary_slots = true;
 			}
 
 			if (strcmp("canary-window", longopts[opt_index].name) == 0) {

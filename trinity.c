@@ -346,13 +346,22 @@ int main(int argc, char* argv[])
 		alt_op_children = clamped;
 	}
 
+	/* Auto-couple canary_slots to alt_op_children when the operator
+	 * did not pass --canary-slots.  Runs before the clamps below so
+	 * the derived value is range-checked alongside an explicit
+	 * override. */
+	clamp_default_canary_slots();
+
 	/* --canary-slots clamp.  The canary queue carves from the front
 	 * of the alt-op pool, so it cannot reserve more slots than the
 	 * pool has.  A bigger N here than alt_op_children would be a
 	 * silent loss: the queue would think it had N canary slots, but
 	 * assign_dedicated_alt_op() walks slots 0..alt_op_children-1.
-	 * Clamp loudly. */
-	if (alt_op_children == 0 && canary_slots > 0 && !canary_queue_disabled) {
+	 * Clamp loudly.  With the auto-couple above, this warning can
+	 * only fire when the operator explicitly set --canary-slots --
+	 * the default-derive path zeros canary_slots when alt_op_children
+	 * is zero, so it never reaches this state on a default run. */
+	if (alt_op_children == 0 && canary_slots > 0 && !canary_queue_disabled && user_specified_canary_slots) {
 		outputerr("warning: --canary-slots=%u requested but --alt-op-children=0; canary queue has no slot to canary on, disabling\n",
 			canary_slots);
 		canary_slots = 0;
