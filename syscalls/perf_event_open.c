@@ -1370,7 +1370,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	 * PAGE_SIZE matches the kernel's own upper bound, so any size the
 	 * kernel will actually try to copy stays within our buffer.
 	 */
-	addr = zmalloc(page_size);
+	addr = zmalloc_tracked(page_size);
 	rec->a1 = (unsigned long) addr;
 	attr = (struct perf_event_attr *) addr;
 
