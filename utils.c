@@ -1098,15 +1098,6 @@ void kill_pid(pid_t pid)
 		debugf("couldn't kill pid %d [%s]\n", pid, strerror(errno));
 }
 
-void freeptr(unsigned long *p)
-{
-	void *ptr = (void *) *p;
-
-	if (ptr != NULL)
-		free(ptr);
-	*p = 0L;
-}
-
 /*
  * looks_like_corrupted_ptr - heuristic test for "this slot used to hold
  * a pointer we malloc'd, but somebody scribbled a non-pointer over it".

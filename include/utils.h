@@ -153,8 +153,6 @@ void sizeunit(unsigned long size, char *buf, size_t buflen);
 
 void kill_pid(pid_t pid);
 
-void freeptr(unsigned long *p);
-
 /*
  * Heuristic: does `p` look like a fuzzed value-result syscall scribbled
  * a non-pointer (typically a pid/tid or a small int) into a slot trinity

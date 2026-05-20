@@ -54,8 +54,9 @@ bool alloc_track_lookup(void *ptr) __must_check;
 void deferred_free_enqueue(void *ptr);
 
 /*
- * Drop-in replacement for freeptr(): saves the pointer value, zeros
- * the source field, and enqueues for deferred free(). */
+ * Save the pointer value, zero the source field, and enqueue the
+ * saved value for deferred free().
+ */
 void deferred_freeptr(unsigned long *p);
 
 /*
