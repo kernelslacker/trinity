@@ -1611,6 +1611,18 @@ struct stats_s {
 	 * relaxed for the same reason plateau_forced_windows is. */
 	unsigned long frontier_cold_intervention_windows;
 
+	/* Phase 2 plateau intervention (childop_dominant): count of
+	 * pick_op_type() calls observed by non-dedicated children
+	 * while shm->plateau_current_hypothesis ==
+	 * PLATEAU_HYPOTHESIS_CHILDOP_DOMINANT, where the 25% alt-op
+	 * burst threshold was applied in place of the default 5%
+	 * rate.  Counts predicate-active picker invocations rather
+	 * than picks that resolved to an alt-op -- cross-reference
+	 * with the childop_invocations[] delta over plateau windows
+	 * for the realised alt-op yield.  Bumped RELAXED for the same
+	 * reason as frontier_cold_intervention_windows. */
+	unsigned long childop_burst_alt_picks_window;
+
 	/* Per-vCPU ioctl dispatches into kvm_vcpu_grp.  Bumped from
 	 * kvm_vcpu_sanitise() each time pick_random_ioctl() lands on an ioctl
 	 * destined for an OBJ_FD_KVM_VCPU fd.  Distinct from the flat KVM

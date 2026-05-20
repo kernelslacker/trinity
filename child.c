@@ -36,6 +36,7 @@
 #include "signals.h"
 #include "stats.h"
 #include "stats_ring.h"
+#include "strategy.h"
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"	// ARRAY_SIZE
@@ -1637,9 +1638,47 @@ void init_altop_dispatch(void)
 
 static enum child_op_type pick_op_type(void)
 {
-	unsigned int r = rand() % 100;
+	unsigned int threshold = 95;
+	unsigned int r;
 
-	if (r < 95 || enabled_altop_count == 0)
+	/* Phase 2 plateau intervention: when the classifier has the
+	 * fleet in the childop_dominant regime (alt-op-driven edges
+	 * out-running generic-syscall edges by PHC_CHILDOP_DOMINANT_
+	 * RATIO), raise the non-dedicated-child alt-op share from 5%
+	 * to 25% for the plateau duration.  Leans into the channel
+	 * that's actually discovering edges instead of letting the
+	 * 95% generic-syscall mass dilute its yield.
+	 *
+	 * Dedicated alt-op children (alt_op_children + canary slots)
+	 * skip this picker entirely via the use_dedicated_op hoist in
+	 * child_process(), so the canary queue's measurement window is
+	 * untouched -- the burst only retargets the non-dedicated
+	 * child pool.
+	 *
+	 * Gate is a derived predicate over shm->plateau_current_
+	 * hypothesis (NOT a latched flag); deactivates automatically
+	 * when the tick driver writes NONE on plateau clear or when
+	 * the classifier transitions to a different hypothesis.
+	 *
+	 * The counter bump tracks predicate-active picker invocations
+	 * (not picks that resolved to an alt-op).  We want to validate
+	 * "did the burst predicate fire while childop_dominant was
+	 * live?"; the realised alt-op yield can be cross-checked via
+	 * the existing childop_invocations[] delta during plateau
+	 * windows.
+	 */
+	if (__atomic_load_n(&shm->plateau_current_hypothesis,
+			    __ATOMIC_RELAXED) ==
+	    (int)PLATEAU_HYPOTHESIS_CHILDOP_DOMINANT) {
+		threshold = 75;
+		__atomic_fetch_add(
+			&shm->stats.childop_burst_alt_picks_window,
+			1UL, __ATOMIC_RELAXED);
+	}
+
+	r = rand() % 100;
+
+	if (r < threshold || enabled_altop_count == 0)
 		return CHILD_OP_SYSCALL;
 
 	return enabled_altops[rand() % enabled_altop_count];
