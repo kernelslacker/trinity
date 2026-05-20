@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <asm/unistd.h>
 #include <linux/fs.h>
+#include "arch.h"
 #include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
@@ -48,6 +49,7 @@ struct file_getattr_post_state {
 	unsigned long ufattr;
 	unsigned long usize;
 	unsigned long at_flags;
+	size_t buf_alloc_size;
 };
 #endif
 
@@ -55,13 +57,62 @@ static void sanitise_file_getattr(struct syscallrecord *rec)
 {
 #ifdef HAVE_SYS_FILE_GETATTR
 	struct file_getattr_post_state *snap;
+	unsigned long pre_a3;
+	size_t buf_alloc_size;
 
 	rec->post_state = 0;
+
+	pre_a3 = rec->a3;
 #endif
 
 	avoid_shared_buffer_out(&rec->a3, rec->a4);
 
 #ifdef HAVE_SYS_FILE_GETATTR
+	/*
+	 * Resolve the actual allocation size of the buffer at rec->a3:
+	 *
+	 *   - If avoid_shared_buffer_out() redirected (the pointer
+	 *     changed), the replacement came from get_writable_address(rec->a4)
+	 *     which guarantees a region of at least max(rec->a4, page_size)
+	 *     bytes (get_writable_address falls back to page_size for a 0
+	 *     length, and every backing pool slot is at least page_size).
+	 *   - Otherwise rec->a3 is still the pool pointer the generator
+	 *     handed us via gen_arg_non_null_address() / get_address(),
+	 *     which routes through get_writable_address(RAND_ARRAY(
+	 *     mapping_sizes)).  mapping_sizes[0] == page_size, so the
+	 *     slot is provably at least page_size bytes; we cannot prove
+	 *     more than that without re-resolving the slot, so use
+	 *     page_size as the conservative bound.
+	 *
+	 * Mirrors the resolution pattern from sched_getattr's clamp
+	 * (862ee5c6ae3a) but for the pool-backed ARG_NON_NULL_ADDRESS
+	 * buffer family rather than the catalog-backed ARG_STRUCT_PTR_OUT
+	 * family.
+	 */
+	if (rec->a3 != pre_a3)
+		buf_alloc_size = rec->a4 > (unsigned long) page_size
+				       ? (size_t) rec->a4
+				       : (size_t) page_size;
+	else
+		buf_alloc_size = (size_t) page_size;
+
+	/*
+	 * Clamp the size argument the kernel sees to the buffer's actual
+	 * allocation.  rec->a4 (usize) comes from ARG_LEN via generic_sanitise
+	 * -- get_len() returns boundary values including UINT_MAX, sizeof-
+	 * boundary values, and page_size-1 -- chosen independently of the
+	 * buffer at rec->a3.  When fuzz picks a usize larger than the buffer
+	 * the generator handed the kernel, the kernel's copy_to_user writes
+	 * min(usize, sizeof(struct file_attr)) bytes and overruns the live
+	 * allocation into adjacent heap-arena or pool-neighbour objects --
+	 * the same kernel write-OOB shape the sched_getattr clamp
+	 * (862ee5c6ae3a) closed for sched_attr.  Bounding usize at sanitise
+	 * time preserves the freedom to fuzz across the buffer-bounded range
+	 * while keeping the kernel's write inside the allocation.
+	 */
+	if ((size_t) rec->a4 > buf_alloc_size)
+		rec->a4 = (unsigned long) buf_alloc_size;
+
 	/*
 	 * Snapshot the five input args for the post oracle.  Without this
 	 * the post handler reads rec->a1..a5 at post-time, when a sibling
@@ -82,6 +133,7 @@ static void sanitise_file_getattr(struct syscallrecord *rec)
 	snap->ufattr   = rec->a3;
 	snap->usize    = rec->a4;
 	snap->at_flags = rec->a5;
+	snap->buf_alloc_size = buf_alloc_size;
 	rec->post_state = (unsigned long) snap;
 #endif
 }
@@ -189,6 +241,19 @@ static void post_file_getattr(struct syscallrecord *rec)
 		goto out_free;
 	if (usize > sizeof(struct file_attr))
 		usize = sizeof(struct file_attr);
+	/*
+	 * Belt-and-braces: the sanitise-time clamp guarantees snap->usize
+	 * <= snap->buf_alloc_size, but a sibling that scribbled snap->usize
+	 * could push it past the actual allocation backing snap->ufattr.
+	 * The memcpy below reads `usize` bytes from snap->ufattr; bound it
+	 * by the snapshotted allocation size so a stomped snap->usize
+	 * cannot turn the oracle's source memcpy into a read-OOB on the
+	 * pool slot.
+	 */
+	if (snap->buf_alloc_size != 0 && usize > snap->buf_alloc_size)
+		usize = snap->buf_alloc_size;
+	if (usize < sizeof(struct file_attr))
+		goto out_free;
 
 	dfd = (int) snap->dfd;
 	at_flags = (unsigned int) snap->at_flags;
