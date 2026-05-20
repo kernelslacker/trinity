@@ -816,7 +816,8 @@ static void dump_stats_json(void)
 			"\"chain_replay_len_corrupt\":%lu},"
 		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu,"
 			"\"libc_heap_redirected\":%lu,\"libc_heap_embedded_redirected\":%lu,"
-			"\"get_writable_address_scribbled_slots_caught\":%lu},"
+			"\"get_writable_address_scribbled_slots_caught\":%lu,"
+			"\"get_writable_address_enomem_exhausted\":%lu},"
 		"\"refcount_audit\":{\"runs\":%lu,\"fd_anomalies\":%lu,"
 			"\"mmap_anomalies\":%lu,\"sock_anomalies\":%lu},"
 		"\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
@@ -1026,6 +1027,7 @@ static void dump_stats_json(void)
 		parent_stats.shared_buffer_redirected, parent_stats.range_overlaps_shared_rejects,
 		parent_stats.libc_heap_redirected, parent_stats.libc_heap_embedded_redirected,
 		parent_stats.get_writable_address_scribbled_slots_caught,
+		parent_stats.get_writable_address_enomem_exhausted,
 		shm->stats.refcount_audit_runs, shm->stats.refcount_audit_fd_anomalies,
 		shm->stats.refcount_audit_mmap_anomalies, shm->stats.refcount_audit_sock_anomalies,
 		shm->stats.fs_lifecycle_tmpfs, shm->stats.fs_lifecycle_ramfs,
@@ -3477,6 +3479,9 @@ void dump_stats(void)
 	if (parent_stats.get_writable_address_scribbled_slots_caught)
 		stat_row("shared_buffer", "get_writable_address_scribbled_slots_caught",
 			 parent_stats.get_writable_address_scribbled_slots_caught);
+	if (parent_stats.get_writable_address_enomem_exhausted)
+		stat_row("shared_buffer", "get_writable_address_enomem_exhausted",
+			 parent_stats.get_writable_address_enomem_exhausted);
 	if (parent_stats.children_recycled_on_storm)
 		stat_row("corruption", "children_recycled_on_storm",
 			 parent_stats.children_recycled_on_storm);

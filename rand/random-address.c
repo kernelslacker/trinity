@@ -225,10 +225,12 @@ retry:	tries++;
 	 * On EAGAIN/EFAULT/EINVAL etc. fall through; only ENOMEM is
 	 * actionable.  Bound the residency-driven retries separately
 	 * from the outer tries cap so a transient pool-wide unmap storm
-	 * doesn't spin -- after a few ENOMEMs in a row, log and return
-	 * the address anyway (the caller has no fallback path; an
-	 * occasional SEGV_MAPERR is strictly better than handing back
-	 * NULL and changing the failure shape for every consumer).
+	 * doesn't spin.  Once the residency budget is exhausted the
+	 * address has been proven unmapped; honour the documented NULL-
+	 * or-valid contract that the writable-buffer rework established
+	 * rather than handing back a pointer that will SEGV_MAPERR on
+	 * first store.  Bump a dedicated stat so spikes in exhausted-
+	 * retry returns are visible.
 	 */
 	{
 		unsigned char vec;
@@ -238,10 +240,22 @@ retry:	tries++;
 			mincore_retries++;
 			if (mincore_retries < 4)
 				goto retry;
+			{
+				struct childdata *c = this_child();
+
+				if (c != NULL && c->stats_ring != NULL) {
+					stats_ring_enqueue(c->stats_ring,
+							   STATS_FIELD_GET_WRITABLE_ENOMEM_EXHAUSTED,
+							   0, 1);
+				} else {
+					parent_stats.get_writable_address_enomem_exhausted++;
+				}
+			}
 			outputerr("get_writable_address: page residency probe "
 				  "exhausted after %d ENOMEM retries — returning "
-				  "addr %p anyway\n",
-				  mincore_retries, addr);
+				  "NULL\n",
+				  mincore_retries);
+			return NULL;
 		}
 	}
 

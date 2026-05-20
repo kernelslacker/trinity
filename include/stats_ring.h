@@ -42,6 +42,7 @@ enum stats_field {
 	STATS_FIELD_LIBC_HEAP_EMBEDDED_REDIRECTED,
 	STATS_FIELD_RANGE_OVERLAPS_SHARED_REJECTS,
 	STATS_FIELD_GET_WRITABLE_SCRIBBLED,
+	STATS_FIELD_GET_WRITABLE_ENOMEM_EXHAUSTED,
 	STATS_FIELD_CHILDREN_RECYCLED_ON_STORM,
 	STATS_FIELD_UNSHARE_NEWNET_THROTTLED,
 	STATS_FIELD_RANGE_REJECTS_PER_SYSCALL_64,	/* aux = syscall nr */
@@ -119,6 +120,7 @@ struct stats_aggregate {
 	unsigned long libc_heap_embedded_redirected;
 	unsigned long range_overlaps_shared_rejects;
 	unsigned long get_writable_address_scribbled_slots_caught;
+	unsigned long get_writable_address_enomem_exhausted;
 	unsigned long children_recycled_on_storm;
 	unsigned long unshare_newnet_throttled;
 	unsigned long range_overlaps_shared_rejects_per_syscall_64[MAX_NR_SYSCALL];
