@@ -87,7 +87,11 @@ int setup_syscall_group_uniarch(unsigned int group)
 	unsigned int i;
 
 	for_each_syscall(i) {
-		if (syscalls[i].entry->group == group)
+		struct syscallentry *entry = syscalls[i].entry;
+		if (entry == NULL)
+			continue;
+
+		if (entry->group == group)
 			activate_syscall(i);
 	}
 
