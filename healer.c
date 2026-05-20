@@ -1,18 +1,35 @@
 /*
- * HEALER syscall-relation observer (Phase A: instrumentation only).
+ * HEALER syscall-relation observer + STRATEGY_HEALER picker.
  *
- * Records (predset -> nr) edges discovered when a new kcov PC edge fires
- * after a syscall sequence whose two-syscall predecessor window has been
- * captured in the per-child sequence buffer.  Phase A populates the
- * relation table only -- the syscall picker does not consult it, no
- * STRATEGY_HEALER bandit arm exists yet, and there is no CLI flag.  The
- * goal is to gather enough operator-visible data over a review window
- * to validate that the relations the observer learns look plausible
- * before authorising the picker work in Phase B.
+ * The observer half maintains a per-child two-slot sequence buffer
+ * (healer_seq[0..1], updated on every successful syscall) that records
+ * the most recent predecessor window.  When a child's kcov stream
+ * reports a new PC edge, the (predset -> nr) edge is committed to the
+ * relation tables: the pair table parent_healer.pair_table[pred][succ]
+ * for single-predecessor signal, and a sparse triple table keyed on
+ * (pred_a, pred_b) -> succ for two-predecessor signal.  Both tables
+ * are Beta-Binomial smoothed, decayed, and surfaced via a periodic
+ * stats dump.  A coarse static prior is seeded at startup from
+ * trinity's ARG_FD_* / ret_objtype metadata so cold-start runs have
+ * something better than uniform to bias from.
  *
- * See include/healer.h for the data structure and per-field comments,
- * and ~/gdrive/Obsidian/projects/trinity/trinity-todo.md (Multi-Strategy
- * Rotation Phase 2 -> HEALER section) for the broader two-phase design.
+ * The picker half (set_syscall_nr_healer, further down in this file)
+ * implements STRATEGY_HEALER: it reads the most-recent predecessor
+ * from healer_seq, builds a weighted distribution over the active
+ * syscall table from the published pair-row mirror page (plus any
+ * matching triple-slot promoted entries when both predecessor slots
+ * are populated), and picks weighted-random via a CDF walk, falling
+ * back to uniform random when there is no learned signal for the
+ * current predecessor.  Whether the strategy arm is offered to the
+ * rotation bandit at all is gated by is_strategy_eligible() and the
+ * readiness helpers (healer_strategy_ready / _explicit /
+ * _plateau_bypass), which require an accumulated relation-table cell
+ * count before the arm is considered competitive with uniform random;
+ * the plateau-bypass variant relaxes that floor for emergency
+ * rotation when other arms have stalled.
+ *
+ * See include/healer.h for the data-structure layout and per-field
+ * comments.
  *
  * --- Lineage note ---
  *
@@ -38,10 +55,11 @@
  *     analysis cost.
  *
  *   - The original HEALER's R is consumed by upstream fuzzing's program
- *     generator to bias A->B sequence picks.  The trinity picker
- *     does NOT yet consult this table -- the bandit/explorer
- *     strategies pick syscalls from coverage feedback alone.
- *     "Phase B" above is where this is supposed to change.
+ *     generator to bias A->B sequence picks.  Trinity's analogue is
+ *     STRATEGY_HEALER (set_syscall_nr_healer in this file), one arm
+ *     of the multi-strategy rotation bandit; the other arms still
+ *     pick from coverage feedback alone, and the bandit's UCB reward
+ *     decides when each arm runs.
  *
  *   - Beta-Binomial smoothed score normalisation, per-predecessor
  *     frequency tracking, decay walks, the corrupt-entry filter, and
@@ -49,10 +67,11 @@
  *     trinity-specific additions that don't appear in the original
  *     paper.
  *
- * In practice the module is closer to a "syscall relation observer
- * + dump" than to HEALER's program generator.  Name retained because
- * the intellectual lineage is real and the literature reference is
- * useful for new contributors.
+ * The module is therefore a relation observer + a single picker arm
+ * that consumes the observer's output, rather than a faithful port of
+ * the SOSP'21 generator.  Name retained because the intellectual
+ * lineage is real and the literature reference is useful for new
+ * contributors.
  */
 
 #include <errno.h>
