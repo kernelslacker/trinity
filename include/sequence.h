@@ -91,6 +91,16 @@ struct chain_corpus_ring {
 	unsigned long save_count;		/* chains saved on new-coverage (atomic) */
 	unsigned long replay_count;		/* chains dispatched as replays (atomic) */
 	/*
+	 * Step-granular replay attribution counter.  replay_count above
+	 * tracks chains; replay_steps_dispatched tracks individual replayed
+	 * syscall steps that actually reached dispatch_step.  Replayed steps
+	 * bypass set_syscall_nr() so they do not stamp child->strategy_at_pick
+	 * and the post-syscall bandit-attribution sites deliberately skip
+	 * them — this counter lets operators see how much of the workload
+	 * has gone through that no-attribution path.
+	 */
+	unsigned long replay_steps_dispatched;	/* per-step replays dispatched (atomic) */
+	/*
 	 * Inline storage instead of a pointer table.  The original design
 	 * alloc_shared_obj'd each entry from the same heap that backs
 	 * struct object, which forced the obj heap to remain writable from

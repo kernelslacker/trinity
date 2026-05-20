@@ -1211,17 +1211,26 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	}
 
 	/* Per-arm completion exposure: bump the arm this call was attributed
-	 * to.  Explorer-pool children left strategy_at_pick at -1 (see
-	 * set_syscall_nr); credit STRATEGY_RANDOM directly for them so the
-	 * counter mirrors the explorer-side pick bump in set_syscall_nr.
-	 * Reaching this point means the syscall ran end-to-end (do_syscall +
-	 * kcov_collect + post-call bookkeeping all completed); a FAIL from
-	 * set_syscall_nr or earlier would have skipped dispatch_step entirely
-	 * and left the picks counter ahead of the completions counter,
-	 * which is the intended diagnostic. */
+	 * to.  Two distinct cases reach here with strategy_at_pick == -1:
+	 *
+	 *   - Explorer-pool children: set_syscall_nr() leaves the sentinel
+	 *     in place and bumps strategy_picks[STRATEGY_RANDOM] directly.
+	 *     The completion bump mirrors that pick by crediting RANDOM
+	 *     here so picks and completions stay symmetric for the explorer
+	 *     contribution.
+	 *
+	 *   - Replay steps from run_sequence_chain(): replay_syscall_step()
+	 *     deliberately clears strategy_at_pick to -1 to avoid crediting
+	 *     replay work to whichever arm started the chain.  Replays did
+	 *     not bump strategy_picks[] either, so the completion bump must
+	 *     skip them to keep picks and completions paired.
+	 *
+	 * Gate the fallback on child->is_explorer specifically rather than
+	 * sap < 0 so the two cases stay separated.  Replay-step visibility
+	 * lives in chain_corpus_shm->replay_steps_dispatched. */
 	{
 		int sap = child->strategy_at_pick;
-		if (sap < 0)
+		if (sap < 0 && child->is_explorer)
 			sap = STRATEGY_RANDOM;
 		if (sap >= 0 && sap < NR_STRATEGIES)
 			__atomic_fetch_add(
@@ -1320,6 +1329,27 @@ bool replay_syscall_step(struct childdata *child,
 
 	memcpy(args, saved->args, sizeof(args));
 	minicorpus_mutate_args(args, entry, saved->nr);
+
+	/* Replay steps bypass set_syscall_nr() (which is where the bandit's
+	 * per-arm pick stamp normally lands), so the child still holds the
+	 * strategy_at_pick value from whichever fresh pick started the
+	 * chain.  Letting that stale stamp ride through dispatch_step would
+	 * credit replay-step PC/CMP novelty -- and the per-arm completion
+	 * bump -- to an arm that did not actually pick the replayed syscall,
+	 * contaminating the reward signal the bandit is meant to learn
+	 * from.  Reset to the -1 sentinel so the existing strategy_at_pick
+	 * gates at the consumer sites (kcov_collect_cmp / bandit_cmp_observe,
+	 * the PC-edge per-strategy attribution in dispatch_step, the per-arm
+	 * completion bump) all skip attribution for this step.
+	 *
+	 * The next fresh set_syscall_nr() overwrites strategy_at_pick
+	 * unconditionally on the bandit-pool path, so leaving -1 here does
+	 * not leak into subsequent non-replay calls. */
+	child->strategy_at_pick = -1;
+
+	if (chain_corpus_shm != NULL)
+		__atomic_fetch_add(&chain_corpus_shm->replay_steps_dispatched,
+				   1UL, __ATOMIC_RELAXED);
 
 	/* Hold rec->lock across the (nr, do32bit) advance, the arg writes,
 	 * the postbuffer reset, and the chain substitution.  An outside
