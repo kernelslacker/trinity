@@ -697,9 +697,21 @@ void canary_queue_on_child_respawn(int childno)
 	 * means the new op only becomes the slot's running op once a
 	 * child has actually been forked with it stamped -- straggler
 	 * iterations of the OLD op (the previous canary, asked to die
-	 * via kill_pid) do not pollute the new op's counters. */
+	 * via kill_pid) do not pollute the new op's counters.
+	 *
+	 * The caller (spawn_child) invokes us BEFORE
+	 * assign_dedicated_alt_op() so the dedicated stamp sees the
+	 * just-committed active op rather than the previous canary; if
+	 * we committed after the stamp, the freshly-spawned child would
+	 * have the old op stamped while the queue tracked the new op.
+	 *
+	 * Clear canary_pending_op_set once committed so that stale
+	 * pending state cannot influence later canary_active_op() reads
+	 * (e.g. the picker-exhausted path in canary_queue_tick() then
+	 * sees a clean slate). */
 	canary_active_op_cell = canary_pending_op;
 	canary_active_op_set = true;
+	canary_pending_op_set = false;
 }
 
 bool canary_slot_active(int childno)

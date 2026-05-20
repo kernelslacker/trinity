@@ -860,21 +860,27 @@ static bool spawn_child(int childno)
 	/* Wipe out any state left from a previous child running in this slot. */
 	clean_childdata(child);
 
+	/* Commit any staged canary op BEFORE the dedicated-alt-op stamp
+	 * below reads canary_active_op().  enter_canarying() stages the
+	 * next op in canary_pending_op while leaving the previous op as
+	 * the active cell; if assign_dedicated_alt_op() runs first it
+	 * would stamp the OLD op into the freshly-spawned child, and the
+	 * subsequent pending->active commit would leave the queue
+	 * measuring one op while the child is actually running another.
+	 * Committing here -- before the stamp -- closes that race: the
+	 * new op becomes the slot's running op the moment a fresh child
+	 * is forked with it, and straggler iterations of the old op (the
+	 * previous canary, killed via kill_pid on transition) cannot
+	 * pollute the new op's counters because they belong to a child
+	 * that has already exited.  No-op when the queue is disabled or
+	 * the slot is not a canary slot. */
+	canary_queue_on_child_respawn(childno);
+
 	/* If this slot is reserved for a dedicated alt op (the first
 	 * --alt-op-children=N slots), stamp the assigned op_type now so
 	 * the freshly-spawned child reads it out of shared memory before
 	 * its dispatch loop runs.  No-op when --alt-op-children is 0. */
 	assign_dedicated_alt_op(child, childno);
-
-	/* Tell the canary queue the canary slot has just received the
-	 * staged op.  The queue uses this to commit canary_active_op:
-	 * the new op only becomes the slot's running op once a child
-	 * actually starts on it, so straggler iterations of the old op
-	 * (the previous canary, killed via kill_pid on transition) do not
-	 * pollute the new op's window counters.  Cheap (single bool
-	 * check) when the queue is disabled or the slot is not a canary
-	 * slot. */
-	canary_queue_on_child_respawn(childno);
 
 	nr_fds = get_num_fds();
 	if ((max_files_rlimit.rlim_cur - nr_fds) < 3) {
