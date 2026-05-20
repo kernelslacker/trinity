@@ -151,6 +151,70 @@ bool validate_map_handle(struct map_handle *h)
 }
 
 /*
+ * Walk the current child's OBJ_LOCAL OBJ_MMAP_* pools and report
+ * whether [addr, addr+len) lies entirely inside a runtime mapping
+ * the child created (CHILD_ANON / MMAPED_FILE).  Runtime mmap() results
+ * land in the per-child object pool via post_mmap() but are not added
+ * to shared_regions[] -- that tracker exists to defend trinity's own
+ * bookkeeping from fuzzed kernel writes, not to enumerate every VMA
+ * the child legitimately owns.  Without this helper the post-mprotect
+ * tracked-shared gate in get_writable_address() drops every runtime
+ * mapping as if it were a scribbled slot.
+ *
+ * INITIAL_ANON entries copied in by init_child_mappings() share their
+ * ptr with the OBJ_GLOBAL entry seeded by setup_initial_mappings(),
+ * which IS registered with track_shared_region().  range_in_tracked_
+ * shared() already accepts those, so we deliberately skip them here
+ * to keep the two acceptance paths from masking double-tracking bugs.
+ *
+ * Overflow defense: a wild write into map->size could fabricate a
+ * (ptr, size) pair that wraps past ULONG_MAX, which would otherwise
+ * make the containment test vacuously true for any addr.  Reject the
+ * slot rather than accepting on wrap.
+ */
+bool addr_in_local_runtime_map(unsigned long addr, unsigned long len)
+{
+	static const enum objecttype map_pool_types[3] = {
+		OBJ_MMAP_ANON, OBJ_MMAP_FILE, OBJ_MMAP_TESTFILE,
+	};
+	unsigned int i;
+
+	if (len == 0)
+		return false;
+
+	for (i = 0; i < 3; i++) {
+		struct objhead *head;
+		struct object *obj;
+		unsigned int idx;
+
+		head = get_objhead(OBJ_LOCAL, map_pool_types[i]);
+		if (head == NULL || head->array == NULL)
+			continue;
+
+		for_each_obj(head, obj, idx) {
+			struct map *m = &obj->map;
+			unsigned long base, end;
+
+			if (m->type != CHILD_ANON && m->type != MMAPED_FILE)
+				continue;
+			if (m->ptr == NULL || m->size == 0)
+				continue;
+
+			base = (unsigned long) m->ptr;
+			end = base + m->size;
+			if (end < base)
+				continue;
+
+			if (addr >= base && addr + len <= end &&
+			    addr + len >= addr)
+				return true;
+		}
+	}
+
+	return false;
+}
+
+/*
  * Return a pointer a previous mmap() that we did, either during startup,
  * or from a fuzz result.  Thin wrapper around get_map_handle() for
  * callers that don't need to re-validate the slot at deref time.

@@ -187,18 +187,39 @@ retry:	tries++;
 
 	/*
 	 * Defense: even when mprotect succeeded, validate addr lives in
-	 * a tracked shared region.  A scribbled slot can hold a heap-
-	 * shaped userspace address whose pages are already RW (libc heap,
-	 * a stack page, another mmap'd region we don't own) -- mprotect
-	 * succeeds as a no-op upgrade and we'd hand back a pointer that
-	 * doesn't belong to any trinity-tracked mapping.  The next
-	 * sanitiser dereference scribbles glibc bookkeeping or some
+	 * a mapping the child legitimately owns.  A scribbled slot can
+	 * hold a heap-shaped userspace address whose pages are already RW
+	 * (libc heap, a stack page, another mmap'd region we don't own)
+	 * -- mprotect succeeds as a no-op upgrade and we'd hand back a
+	 * pointer that doesn't belong to any trinity-owned mapping.  The
+	 * next sanitiser dereference scribbles glibc bookkeeping or some
 	 * unrelated mapping, surfacing far from the scribble origin.
+	 *
+	 * Two acceptance paths because trinity owns mappings in two
+	 * distinct registries:
+	 *
+	 *   - range_in_tracked_shared(): the global shared_regions[]
+	 *     tracker.  Holds startup mappings (setup_initial_mappings),
+	 *     kcov trace buffers, child-data, the obj/str heaps -- the
+	 *     bookkeeping range_overlaps_shared() defends from fuzzed
+	 *     kernel writes.  INITIAL_ANON entries in the OBJ_LOCAL pool
+	 *     alias these and pass here.
+	 *
+	 *   - addr_in_local_runtime_map(): runtime mmap() results seeded
+	 *     into the per-child OBJ_LOCAL pool by post_mmap().  These are
+	 *     not in shared_regions[] (no need -- they belong to one child
+	 *     and there is no bookkeeping to protect).  Previously the
+	 *     tracked-shared gate dropped every runtime mapping as if it
+	 *     were a scribbled slot, reducing writable-buffer diversity
+	 *     for sanitisers and inflating the scribbled diagnostic.
+	 *
 	 * The retry loop's tries==100 cap keeps a mostly-scribbled pool
 	 * from spinning forever.
 	 */
 	if (!range_in_tracked_shared((unsigned long) addr,
-				     (unsigned long) size)) {
+				     (unsigned long) size) &&
+	    !addr_in_local_runtime_map((unsigned long) addr,
+				       (unsigned long) size)) {
 		struct childdata *c = this_child();
 
 		if (c != NULL && c->stats_ring != NULL) {

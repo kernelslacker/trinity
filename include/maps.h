@@ -56,6 +56,23 @@ struct map_handle {
 bool get_map_handle(struct map_handle *h) __must_check;
 bool validate_map_handle(struct map_handle *h) __must_check;
 
+/*
+ * Process-local ownership validator for runtime mmap() results.
+ * Walks the current child's OBJ_LOCAL OBJ_MMAP_* pool and returns true
+ * iff [addr, addr+len) is fully contained in at least one runtime
+ * mapping the child created itself (CHILD_ANON / MMAPED_FILE entries
+ * seeded by post_mmap()).  Used by get_writable_address() as a
+ * second-chance acceptance test when range_in_tracked_shared() rejects:
+ * runtime mmap results are not registered in shared_regions[] (which
+ * exists for self-protection of trinity bookkeeping), so the global
+ * tracker cannot validate them.
+ *
+ * INITIAL_ANON OBJ_LOCAL entries alias the global initial-mapping ptrs
+ * and are already covered by range_in_tracked_shared(); this helper
+ * intentionally skips them so the two acceptance paths stay disjoint.
+ */
+bool addr_in_local_runtime_map(unsigned long addr, unsigned long len) __must_check;
+
 struct map * common_set_mmap_ptr_len(void);
 
 void dirty_mapping(struct map *map);
