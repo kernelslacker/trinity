@@ -58,20 +58,38 @@
  *
  * The pool-mapping range is captured into the file-scope statics
  * below by the wrap site after the get_map_with_prot draw; the
- * handler reads them.  Volatile-qualified so the compiler does not
- * hoist or coalesce reads across the asynchronous signal-handler
- * entry.  Aligned word reads are atomic on the supported arches,
- * and the writes complete before sigaction installs the handler so
- * ordering is provided by the kernel-side sigaction barrier.
+ * handler reads them.  Writers publish via __atomic_store_n with
+ * RELEASE on the addr_high half of the pair; the handler observes
+ * via __atomic_load_n with ACQUIRE on the same half then RELAXED
+ * on addr_low, so a kernel fault delivered mid-publish either sees
+ * the fully-installed [low, high) range (and may siglongjmp) or
+ * sees a stale range (and re-raises).  No "low updated, high not"
+ * window for the handler to mis-classify into.
+ *
+ * Re-entry: sa_mask blocks SIGSEGV and SIGBUS for the duration of
+ * the handler.  Without that, a SIGBUS arriving inside the SIGSEGV
+ * handler invokes the same function recursively on the kernel signal
+ * stack, and the inner siglongjmp unwinds past the outer handler's
+ * frame without sigreturn — leaving the kernel-side handler-active
+ * accounting half-installed for the lifetime of the wrap.  Blocking
+ * both signals serialises handler invocations on this thread.
+ *
+ * old_segv / old_bus are file-scope statics rather than wrap-site
+ * automatics so their values survive the longjmp without needing
+ * volatile qualification on a struct that sigaction() takes by
+ * non-volatile pointer.  memory_pressure() is single-call per
+ * process so the non-reentrancy is not a constraint here.
  */
 static sigjmp_buf memory_pressure_pool_race_jmp;
-static volatile uintptr_t memory_pressure_pool_race_addr_low;
-static volatile uintptr_t memory_pressure_pool_race_addr_high;
+static uintptr_t memory_pressure_pool_race_addr_low;
+static uintptr_t memory_pressure_pool_race_addr_high;
+static struct sigaction memory_pressure_pool_race_old_segv;
+static struct sigaction memory_pressure_pool_race_old_bus;
 
 static void memory_pressure_pool_race_handler(int sig, siginfo_t *info,
 					      void *ctx)
 {
-	uintptr_t fault_addr;
+	uintptr_t fault_addr, range_low, range_high;
 
 	(void)ctx;
 	if (info->si_code <= 0 && info->si_pid != getpid()) {
@@ -89,8 +107,14 @@ static void memory_pressure_pool_race_handler(int sig, siginfo_t *info,
 	}
 
 	fault_addr = (uintptr_t)info->si_addr;
-	if (fault_addr < memory_pressure_pool_race_addr_low ||
-	    fault_addr >= memory_pressure_pool_race_addr_high) {
+	/* ACQUIRE on addr_high pairs with the wrap site's RELEASE store;
+	 * a publish observable here guarantees the addr_low RELAXED load
+	 * below sees the matching half of the [low, high) pair. */
+	range_high = __atomic_load_n(&memory_pressure_pool_race_addr_high,
+				     __ATOMIC_ACQUIRE);
+	range_low = __atomic_load_n(&memory_pressure_pool_race_addr_low,
+				    __ATOMIC_RELAXED);
+	if (fault_addr < range_low || fault_addr >= range_high) {
 		/* Real kernel fault but si_addr is outside the drawn
 		 * pool range — not the race we're guarding against.
 		 * Restore default and re-raise so child_fault_handler
@@ -143,20 +167,42 @@ bool memory_pressure(struct childdata *child)
 	stride = 3 * page_size;
 
 	{
-		struct sigaction sa, old_segv, old_bus;
+		struct sigaction sa;
 		bool aborted = false;
 
-		memory_pressure_pool_race_addr_low  = (uintptr_t)region;
-		memory_pressure_pool_race_addr_high = (uintptr_t)region + len;
-
-		memset(&sa, 0, sizeof(sa));
-		sigemptyset(&sa.sa_mask);
-		sa.sa_flags = SA_SIGINFO;
-		sa.sa_sigaction = memory_pressure_pool_race_handler;
-		sigaction(SIGSEGV, &sa, &old_segv);
-		sigaction(SIGBUS,  &sa, &old_bus);
-
+		/* sigsetjmp captures the jmp_buf before sigaction installs
+		 * the handler.  Reversing this order leaves a window where
+		 * the handler is live but jmp_buf still points at a stack
+		 * frame from a previous memory_pressure() invocation; a
+		 * fault delivered in that window siglongjmps to a dead
+		 * frame and restores sp/bp to stale values, which the
+		 * subsequent code path then writes through.  Capturing
+		 * first means any pool-range fault after install
+		 * siglongjmps to the current-call epilogue below. */
 		if (sigsetjmp(memory_pressure_pool_race_jmp, 1) == 0) {
+			/* RELEASE on addr_high pairs with the handler's
+			 * ACQUIRE load: a handler that observes the new
+			 * addr_high is guaranteed to see the matching
+			 * addr_low.  Publish before sigaction so the
+			 * handler's first possible invocation already
+			 * sees the [low, high) range. */
+			__atomic_store_n(&memory_pressure_pool_race_addr_low,
+					 (uintptr_t)region, __ATOMIC_RELAXED);
+			__atomic_store_n(&memory_pressure_pool_race_addr_high,
+					 (uintptr_t)region + len,
+					 __ATOMIC_RELEASE);
+
+			memset(&sa, 0, sizeof(sa));
+			sigemptyset(&sa.sa_mask);
+			sigaddset(&sa.sa_mask, SIGSEGV);
+			sigaddset(&sa.sa_mask, SIGBUS);
+			sa.sa_flags = SA_SIGINFO;
+			sa.sa_sigaction = memory_pressure_pool_race_handler;
+			sigaction(SIGSEGV, &sa,
+				  &memory_pressure_pool_race_old_segv);
+			sigaction(SIGBUS,  &sa,
+				  &memory_pressure_pool_race_old_bus);
+
 			/*
 			 * Dirty each page so MADV_PAGEOUT has real work to do.
 			 * Without this the pages are zero-filled and the
@@ -190,11 +236,13 @@ bool memory_pressure(struct childdata *child)
 			aborted = true;
 		}
 
-		sigaction(SIGSEGV, &old_segv, NULL);
-		sigaction(SIGBUS,  &old_bus,  NULL);
+		sigaction(SIGSEGV, &memory_pressure_pool_race_old_segv, NULL);
+		sigaction(SIGBUS,  &memory_pressure_pool_race_old_bus,  NULL);
 
-		memory_pressure_pool_race_addr_low  = 0;
-		memory_pressure_pool_race_addr_high = 0;
+		__atomic_store_n(&memory_pressure_pool_race_addr_low, 0,
+				 __ATOMIC_RELAXED);
+		__atomic_store_n(&memory_pressure_pool_race_addr_high, 0,
+				 __ATOMIC_RELAXED);
 
 		if (aborted) {
 			/* siglongjmp skipped any in-flight cleanup —
