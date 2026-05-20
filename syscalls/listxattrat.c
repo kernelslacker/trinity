@@ -35,6 +35,7 @@ struct listxattrat_post_state {
 	unsigned long at_flags;
 	unsigned long list;
 	unsigned long size;
+	size_t buf_alloc_size;
 };
 #endif
 
@@ -42,13 +43,50 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 {
 #if defined(SYS_listxattrat) || defined(__NR_listxattrat)
 	struct listxattrat_post_state *snap;
+	unsigned long pre_a4;
+	size_t buf_alloc_size;
 
 	rec->post_state = 0;
+
+	pre_a4 = rec->a4;
 #endif
 
 	avoid_shared_buffer_out(&rec->a4, rec->a5);
 
 #if defined(SYS_listxattrat) || defined(__NR_listxattrat)
+	/*
+	 * Resolve the actual allocation size of the buffer at rec->a4 and
+	 * clamp rec->a5 (size) to it before the kernel sees the syscall.
+	 * rec->a5 comes from ARG_LEN / get_len() which freely returns
+	 * UINT_MAX-class values picked independently of the pool slot at
+	 * rec->a4.  The kernel's vfs_listxattr writes min(size, name_list_len)
+	 * bytes into the user buffer; when size > the live allocation the
+	 * write spills into adjacent heap-arena / pool-neighbour objects
+	 * and corrupts glibc chunk metadata, with the abort surfacing far
+	 * downstream (deferred_free_flush, _int_malloc on a corrupted
+	 * tcache, etc.).  Same shape as the sched_getattr clamp
+	 * (862ee5c6ae3a), applied here to the pool-backed ARG_ADDRESS
+	 * buffer family.
+	 *
+	 *   - If avoid_shared_buffer_out() redirected (pointer changed),
+	 *     the replacement came from get_writable_address(rec->a5) and
+	 *     is at least max(rec->a5, page_size) bytes.
+	 *   - Otherwise rec->a4 is the original ARG_ADDRESS pool slot from
+	 *     get_address() -> get_writable_address(RAND_ARRAY(
+	 *     mapping_sizes)); mapping_sizes[0] == page_size so the slot
+	 *     is provably at least page_size bytes, the conservative bound
+	 *     we can prove without re-resolving the slot.
+	 */
+	if (rec->a4 != pre_a4)
+		buf_alloc_size = rec->a5 > (unsigned long) page_size
+				       ? (size_t) rec->a5
+				       : (size_t) page_size;
+	else
+		buf_alloc_size = (size_t) page_size;
+
+	if ((size_t) rec->a5 > buf_alloc_size)
+		rec->a5 = (unsigned long) buf_alloc_size;
+
 	/*
 	 * Snapshot all four input args for the post oracle.  Without this
 	 * the post handler reads rec->aN at post-time, when a sibling
@@ -66,6 +104,7 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 	snap->at_flags = rec->a3;
 	snap->list     = rec->a4;
 	snap->size     = rec->a5;
+	snap->buf_alloc_size = buf_alloc_size;
 	rec->post_state = (unsigned long) snap;
 #endif
 }
@@ -210,6 +249,15 @@ static void post_listxattrat(struct syscallrecord *rec)
 	snap_len = (size_t) rec->retval;
 	if (snap_len > sizeof(first_buf))
 		snap_len = sizeof(first_buf);
+	/*
+	 * Belt-and-braces: the sanitise-time clamp guarantees the kernel
+	 * could not have written past snap->buf_alloc_size, so the retval
+	 * never legitimately exceeds it.  Cap snap_len explicitly so a
+	 * sibling-stomped rec->retval cannot turn the memcpy below into a
+	 * read-OOB on the pool slot backing snap->list.
+	 */
+	if (snap->buf_alloc_size != 0 && snap_len > snap->buf_alloc_size)
+		snap_len = snap->buf_alloc_size;
 
 	memcpy(first_buf, (void *)(unsigned long) snap->list, snap_len);
 
