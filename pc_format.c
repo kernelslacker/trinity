@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -71,16 +72,22 @@ const char *pc_to_string(void *pc, char *buf, size_t buflen)
  */
 const char *pc_to_source_line(void *pc, char *buf, size_t buflen)
 {
+	static int resolver_disabled;
 	Dl_info info;
 	char addr_arg[32];
 	int pipefd[2];
 	pid_t pid;
+	int status;
 	ssize_t n;
 	char *nl;
 
 	if (buf == NULL || buflen == 0)
 		return NULL;
 	buf[0] = '\0';
+
+	/* Latched off after a prior abnormal exit -- see waitpid() below. */
+	if (__atomic_load_n(&resolver_disabled, __ATOMIC_RELAXED))
+		return NULL;
 
 	if (dladdr(pc, &info) == 0 || info.dli_fname == NULL ||
 	    info.dli_fbase == NULL)
@@ -100,7 +107,20 @@ const char *pc_to_source_line(void *pc, char *buf, size_t buflen)
 	}
 
 	if (pid == 0) {
+		struct rlimit no_core = { 0, 0 };
 		int devnull;
+
+		/*
+		 * Suppress core dumps from the helper.  GNU binutils
+		 * addr2line has been observed to SEGV mid-DWARF-resolution
+		 * on some installs (binutils version + binary's DWARF shape
+		 * interaction); the parent already treats abnormal exit as
+		 * a resolve miss via the n <= 0 read check below, but the
+		 * kernel still drops a per-spawn core that says nothing
+		 * about trinity itself and fills the spool with addr2line
+		 * dumps -- one per top-N PC per periodic stats dump.
+		 */
+		(void)setrlimit(RLIMIT_CORE, &no_core);
 
 		close(pipefd[0]);
 		dup2(pipefd[1], STDOUT_FILENO);
@@ -118,7 +138,17 @@ const char *pc_to_source_line(void *pc, char *buf, size_t buflen)
 	close(pipefd[1]);
 	n = read(pipefd[0], buf, buflen - 1);
 	close(pipefd[0]);
-	waitpid(pid, NULL, 0);
+	if (waitpid(pid, &status, 0) > 0 && WIFSIGNALED(status)) {
+		/*
+		 * addr2line died by signal (SEGV etc).  If binutils is
+		 * broken on this binary, every subsequent invocation will
+		 * hit the same wall -- latch the resolver off for the rest
+		 * of the run rather than re-fork()ing per top-N PC across
+		 * every periodic stats dump.  Resets naturally on parent
+		 * restart.
+		 */
+		__atomic_store_n(&resolver_disabled, 1, __ATOMIC_RELAXED);
+	}
 
 	if (n <= 0)
 		return NULL;
