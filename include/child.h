@@ -704,7 +704,9 @@ struct canary_op_state {
 	enum canary_state state;
 
 	/* per-window counters (reset on CANARYING entry) */
-	unsigned long window_start_op_count;	/* per-op fleet op counter snapshot */
+	unsigned long window_start_invocations;	/* shm->stats.childop_invocations[op] snapshot at window open;
+						 * window size is measured in invocations of the
+						 * canary op itself, not fleet-wide ops */
 	unsigned long window_start_edges;	/* childop_edges_discovered[op] snapshot */
 	unsigned int  window_crashes;		/* incremented by parent reap path */
 	unsigned int  consecutive_zero_edge_windows;

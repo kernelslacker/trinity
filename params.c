@@ -384,7 +384,7 @@ static const struct option_help option_descs[] = {
 	{ "bdev",		'b', "Add /dev node to list of block devices to use for destructive tests." },
 	{ "canary-seed",	 0,  "comma-separated list of childop names to override the built-in wave-1 canary seed list. Names match alt_op_name (e.g. 'genetlink_fuzzer,bpf_lifecycle'). Unknown names abort startup." },
 	{ "canary-slots",	 0,  "reserve N slots from the front of --alt-op-children to run the dormant-op canary queue (default 1). Clamped to min(N, alt_op_children); N=0 disables the queue identically to --no-canary-queue." },
-	{ "canary-window",	 0,  "iterations per canary window (default 10000, range 1000..1000000). Lower windows are too noisy to promote on; higher windows let a useless op squat a slot for too long." },
+	{ "canary-window",	 0,  "invocations of the active canary op per window (default 10000, range 1000..1000000). Counted against the per-op invocation counter, not the fleet-wide op count, so window size is independent of -C and --canary-slots. Lower windows are too noisy to promote on; higher windows let a useless op squat a slot for too long." },
 	{ "children",		'C', "specify number of child processes" },
 	{ "clowntown",		 0,  "enable clowntown mode" },
 	{ "dangerous",		'd', "enable dangerous mode" },

@@ -381,6 +381,23 @@ struct stats_s {
 	 * an event log. */
 	unsigned long childop_edges_discovered[NR_CHILD_OP_TYPES];
 
+	/* Per-op invocation count: incremented once per alt-op iteration
+	 * in child_process()'s post-call block, parallel to
+	 * childop_edges_discovered[].  Indexed by child_op_type.
+	 * CHILD_OP_SYSCALL is skipped for the same reason as the edges
+	 * counter -- the syscall path attributes invocations through
+	 * parent_stats.op_count / per-strategy totals already.
+	 *
+	 * Read by the canary queue to size its window in invocations of
+	 * the currently-active canary op rather than fleet-wide op count.
+	 * A canary slot in a large fleet otherwise saw its 10k 'iters'
+	 * window close after only ~10000/(max_children/canary_slots) of
+	 * its own invocations, so edge / crash thresholds were calibrated
+	 * against a much smaller canary sample than the CLI help and the
+	 * log labels imply.  RELAXED add-fetch: a cumulative diagnostic,
+	 * not an event log. */
+	unsigned long childop_invocations[NR_CHILD_OP_TYPES];
+
 	/* ---- Group C: per-childop ---- */
 
 	/* procfs_writer childop: per-tree write counts */

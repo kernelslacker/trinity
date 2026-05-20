@@ -2137,6 +2137,19 @@ void child_process(struct childdata *child, int childno)
 			}
 		}
 
+		/* Per-op invocation tally for the canary queue's window
+		 * measurement.  Bumped per alt-op iteration regardless of
+		 * KCOV availability (the canary queue's window-size logic
+		 * must work even on builds without kcov), at the same
+		 * post-call point so a crash mid-call is not counted.
+		 * Skip CHILD_OP_SYSCALL -- parent_stats.op_count already
+		 * aggregates that path. */
+		if (is_alt_op) {
+			__atomic_fetch_add(
+				&shm->stats.childop_invocations[child->op_type],
+				1UL, __ATOMIC_RELAXED);
+		}
+
 		enable_coredumps();
 
 		child->op_nr++;

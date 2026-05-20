@@ -236,13 +236,21 @@ static unsigned long edges_for_op(enum child_op_type op)
 			       __ATOMIC_RELAXED);
 }
 
-static unsigned long fleet_op_count(void)
+/* Per-op invocation count, sourced from the shm-resident counter
+ * bumped by every alt-op child in child_process()'s post-call block.
+ * This is the canary window's clock: with one canary slot in a 16-
+ * child fleet, the canary op's own invocation count grows roughly
+ * 1/16 as fast as parent_stats.op_count, so sizing the window in
+ * fleet-wide ops would close the window after only a fraction of the
+ * intended sample.  Reading the per-op counter directly keeps the
+ * CLI / log 'iters' label honest -- one iter == one canary-op call,
+ * regardless of fleet size or canary-slot count. */
+static unsigned long invocations_for_op(enum child_op_type op)
 {
-	/* The parent maintains parent_stats.op_count by draining the
-	 * per-child stats rings.  Reading it directly here is safe: the
-	 * queue runs in parent context, the same context that updates
-	 * the aggregate. */
-	return parent_stats.op_count;
+	if (op >= NR_CHILD_OP_TYPES)
+		return 0UL;
+	return __atomic_load_n(&shm->stats.childop_invocations[op],
+			       __ATOMIC_RELAXED);
 }
 
 /* op_is_in_table() is reserved for an upcoming Phase 2 audit-skip
@@ -298,7 +306,7 @@ static void enter_canarying(enum child_op_type op)
 	s = &canary_ops[op];
 	s->state = CANARY_STATE_CANARYING;
 	s->window_crashes = 0;
-	s->window_start_op_count = fleet_op_count();
+	s->window_start_invocations = invocations_for_op(op);
 	s->window_start_edges = edges_for_op(op);
 	s->last_canary_window_start = now;
 	s->last_state_transition = now;
@@ -438,10 +446,10 @@ static bool pick_next_canary(enum child_op_type *out)
 static void close_window_and_decide(enum child_op_type op)
 {
 	struct canary_op_state *s = &canary_ops[op];
-	unsigned long now_fleet = fleet_op_count();
+	unsigned long now_invocations = invocations_for_op(op);
 	unsigned long now_edges = edges_for_op(op);
-	unsigned long iters = (now_fleet >= s->window_start_op_count)
-		? (now_fleet - s->window_start_op_count) : 0;
+	unsigned long iters = (now_invocations >= s->window_start_invocations)
+		? (now_invocations - s->window_start_invocations) : 0;
 	unsigned long edges = (now_edges >= s->window_start_edges)
 		? (now_edges - s->window_start_edges) : 0;
 
@@ -576,7 +584,7 @@ void canary_queue_tick(void)
 {
 	enum child_op_type op;
 	unsigned long iters;
-	unsigned long now_fleet;
+	unsigned long now_invocations;
 	unsigned long now_edges;
 	unsigned int budget;
 
@@ -591,10 +599,10 @@ void canary_queue_tick(void)
 	if (canary_ops[op].state != CANARY_STATE_CANARYING)
 		return;
 
-	now_fleet = fleet_op_count();
+	now_invocations = invocations_for_op(op);
 	now_edges = edges_for_op(op);
-	iters = (now_fleet >= canary_ops[op].window_start_op_count)
-		? (now_fleet - canary_ops[op].window_start_op_count) : 0;
+	iters = (now_invocations >= canary_ops[op].window_start_invocations)
+		? (now_invocations - canary_ops[op].window_start_invocations) : 0;
 	budget = window_iters_resolved();
 
 	/* Per-window progress line.  Emitted at -v on every tick while
