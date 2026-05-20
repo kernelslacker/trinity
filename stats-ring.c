@@ -109,8 +109,20 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	case STATS_FIELD_RANGE_OVERLAPS_SHARED_REJECTS:
 		parent_stats.range_overlaps_shared_rejects += delta;
 		break;
-	case STATS_FIELD_GET_WRITABLE_SCRIBBLED:
-		parent_stats.get_writable_address_scribbled_slots_caught += delta;
+	case STATS_FIELD_GET_WRITABLE_SCRIBBLED_SHM_RANGE:
+		parent_stats.get_writable_address_scribbled_shm_range += delta;
+		break;
+	case STATS_FIELD_GET_WRITABLE_SCRIBBLED_MPROTECT_MMAP:
+		parent_stats.get_writable_address_scribbled_mprotect_mmap += delta;
+		break;
+	case STATS_FIELD_GET_WRITABLE_SCRIBBLED_MPROTECT_SHM:
+		parent_stats.get_writable_address_scribbled_mprotect_shm += delta;
+		break;
+	case STATS_FIELD_GET_WRITABLE_SCRIBBLED_POSTMP_MMAP:
+		parent_stats.get_writable_address_scribbled_postmp_mmap += delta;
+		break;
+	case STATS_FIELD_GET_WRITABLE_SCRIBBLED_POSTMP_SHM:
+		parent_stats.get_writable_address_scribbled_postmp_shm += delta;
 		break;
 	case STATS_FIELD_GET_WRITABLE_ENOMEM_EXHAUSTED:
 		parent_stats.get_writable_address_enomem_exhausted += delta;

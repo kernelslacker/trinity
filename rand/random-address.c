@@ -27,12 +27,14 @@ void * get_writable_address(unsigned long size)
 	void *addr = NULL;
 	int tries = 0;
 	int mincore_retries = 0;
+	bool from_mmap = false;
 
 retry:	tries++;
 	if (tries == 100)
 		return NULL;
 
 	if (RAND_BOOL()) {
+		from_mmap = true;
 		if (!get_map_handle(&h))
 			goto retry;
 		map = h.map;
@@ -108,6 +110,7 @@ retry:	tries++;
 		 * owned by the post-syscall hooks.
 		 */
 	} else {
+		from_mmap = false;
 		obj = get_random_object(OBJ_SYSV_SHM, OBJ_GLOBAL);
 		if (obj == NULL)
 			goto retry;
@@ -146,11 +149,11 @@ retry:	tries++;
 
 			if (c != NULL && c->stats_ring != NULL) {
 				stats_ring_enqueue(c->stats_ring,
-						   STATS_FIELD_GET_WRITABLE_SCRIBBLED,
+						   STATS_FIELD_GET_WRITABLE_SCRIBBLED_SHM_RANGE,
 						   0, 1);
 				c->local_scribbled_slots_caught++;
 			} else {
-				parent_stats.get_writable_address_scribbled_slots_caught++;
+				parent_stats.get_writable_address_scribbled_shm_range++;
 			}
 			goto retry;
 		}
@@ -172,14 +175,20 @@ retry:	tries++;
 		 */
 		{
 			struct childdata *c = this_child();
+			enum stats_field field = from_mmap
+				? STATS_FIELD_GET_WRITABLE_SCRIBBLED_MPROTECT_MMAP
+				: STATS_FIELD_GET_WRITABLE_SCRIBBLED_MPROTECT_SHM;
 
 			if (c != NULL && c->stats_ring != NULL) {
 				stats_ring_enqueue(c->stats_ring,
-						   STATS_FIELD_GET_WRITABLE_SCRIBBLED,
+						   field,
 						   0, 1);
 				c->local_scribbled_slots_caught++;
 			} else {
-				parent_stats.get_writable_address_scribbled_slots_caught++;
+				if (from_mmap)
+					parent_stats.get_writable_address_scribbled_mprotect_mmap++;
+				else
+					parent_stats.get_writable_address_scribbled_mprotect_shm++;
 			}
 		}
 		goto retry;
@@ -221,14 +230,20 @@ retry:	tries++;
 	    !addr_in_local_runtime_map((unsigned long) addr,
 				       (unsigned long) size)) {
 		struct childdata *c = this_child();
+		enum stats_field field = from_mmap
+			? STATS_FIELD_GET_WRITABLE_SCRIBBLED_POSTMP_MMAP
+			: STATS_FIELD_GET_WRITABLE_SCRIBBLED_POSTMP_SHM;
 
 		if (c != NULL && c->stats_ring != NULL) {
 			stats_ring_enqueue(c->stats_ring,
-					   STATS_FIELD_GET_WRITABLE_SCRIBBLED,
+					   field,
 					   0, 1);
 			c->local_scribbled_slots_caught++;
 		} else {
-			parent_stats.get_writable_address_scribbled_slots_caught++;
+			if (from_mmap)
+				parent_stats.get_writable_address_scribbled_postmp_mmap++;
+			else
+				parent_stats.get_writable_address_scribbled_postmp_shm++;
 		}
 		goto retry;
 	}

@@ -392,7 +392,7 @@ struct childdata {
 
 	/* Per-child storm-containment counters.  Bumped in lock-step with
 	 * the existing global stats.{post_handler_corrupt_ptr,maps_uaf_caught,
-	 * get_writable_address_scribbled_slots_caught} from the same call
+	 * get_writable_address_scribbled_*} from the same call
 	 * sites; the global counters lose attribution across the fleet, so
 	 * these per-child shadows are what the storm-rate check below scores
 	 * against.  Owner-only writes from inside the child, no cross-process

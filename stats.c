@@ -816,7 +816,11 @@ static void dump_stats_json(void)
 			"\"chain_replay_len_corrupt\":%lu},"
 		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu,"
 			"\"libc_heap_redirected\":%lu,\"libc_heap_embedded_redirected\":%lu,"
-			"\"get_writable_address_scribbled_slots_caught\":%lu,"
+			"\"get_writable_address_scribbled_shm_range\":%lu,"
+			"\"get_writable_address_scribbled_mprotect_mmap\":%lu,"
+			"\"get_writable_address_scribbled_mprotect_shm\":%lu,"
+			"\"get_writable_address_scribbled_postmp_mmap\":%lu,"
+			"\"get_writable_address_scribbled_postmp_shm\":%lu,"
 			"\"get_writable_address_enomem_exhausted\":%lu},"
 		"\"refcount_audit\":{\"runs\":%lu,\"fd_anomalies\":%lu,"
 			"\"mmap_anomalies\":%lu,\"sock_anomalies\":%lu},"
@@ -1026,7 +1030,11 @@ static void dump_stats_json(void)
 		shm->stats.chain_replay_len_corrupt,
 		parent_stats.shared_buffer_redirected, parent_stats.range_overlaps_shared_rejects,
 		parent_stats.libc_heap_redirected, parent_stats.libc_heap_embedded_redirected,
-		parent_stats.get_writable_address_scribbled_slots_caught,
+		parent_stats.get_writable_address_scribbled_shm_range,
+		parent_stats.get_writable_address_scribbled_mprotect_mmap,
+		parent_stats.get_writable_address_scribbled_mprotect_shm,
+		parent_stats.get_writable_address_scribbled_postmp_mmap,
+		parent_stats.get_writable_address_scribbled_postmp_shm,
 		parent_stats.get_writable_address_enomem_exhausted,
 		shm->stats.refcount_audit_runs, shm->stats.refcount_audit_fd_anomalies,
 		shm->stats.refcount_audit_mmap_anomalies, shm->stats.refcount_audit_sock_anomalies,
@@ -1818,8 +1826,16 @@ static const struct {
 	  offsetof(struct stats_aggregate, libc_heap_redirected), true },
 	{ "libc_heap_embedded_redirected",
 	  offsetof(struct stats_aggregate, libc_heap_embedded_redirected), true },
-	{ "get_writable_address_scribbled_slots_caught",
-	  offsetof(struct stats_aggregate, get_writable_address_scribbled_slots_caught), true },
+	{ "get_writable_address_scribbled_shm_range",
+	  offsetof(struct stats_aggregate, get_writable_address_scribbled_shm_range), true },
+	{ "get_writable_address_scribbled_mprotect_mmap",
+	  offsetof(struct stats_aggregate, get_writable_address_scribbled_mprotect_mmap), true },
+	{ "get_writable_address_scribbled_mprotect_shm",
+	  offsetof(struct stats_aggregate, get_writable_address_scribbled_mprotect_shm), true },
+	{ "get_writable_address_scribbled_postmp_mmap",
+	  offsetof(struct stats_aggregate, get_writable_address_scribbled_postmp_mmap), true },
+	{ "get_writable_address_scribbled_postmp_shm",
+	  offsetof(struct stats_aggregate, get_writable_address_scribbled_postmp_shm), true },
 	{ "post_handler_corrupt_ptr",
 	  offsetof(struct stats_aggregate, post_handler_corrupt_ptr), true },
 	{ "deferred_free_reject",
@@ -3476,9 +3492,21 @@ void dump_stats(void)
 	if (shm->stats.shared_region_overflow)
 		stat_row("shared_buffer", "shared_region_overflow",
 			 shm->stats.shared_region_overflow);
-	if (parent_stats.get_writable_address_scribbled_slots_caught)
-		stat_row("shared_buffer", "get_writable_address_scribbled_slots_caught",
-			 parent_stats.get_writable_address_scribbled_slots_caught);
+	if (parent_stats.get_writable_address_scribbled_shm_range)
+		stat_row("shared_buffer", "get_writable_address_scribbled_shm_range",
+			 parent_stats.get_writable_address_scribbled_shm_range);
+	if (parent_stats.get_writable_address_scribbled_mprotect_mmap)
+		stat_row("shared_buffer", "get_writable_address_scribbled_mprotect_mmap",
+			 parent_stats.get_writable_address_scribbled_mprotect_mmap);
+	if (parent_stats.get_writable_address_scribbled_mprotect_shm)
+		stat_row("shared_buffer", "get_writable_address_scribbled_mprotect_shm",
+			 parent_stats.get_writable_address_scribbled_mprotect_shm);
+	if (parent_stats.get_writable_address_scribbled_postmp_mmap)
+		stat_row("shared_buffer", "get_writable_address_scribbled_postmp_mmap",
+			 parent_stats.get_writable_address_scribbled_postmp_mmap);
+	if (parent_stats.get_writable_address_scribbled_postmp_shm)
+		stat_row("shared_buffer", "get_writable_address_scribbled_postmp_shm",
+			 parent_stats.get_writable_address_scribbled_postmp_shm);
 	if (parent_stats.get_writable_address_enomem_exhausted)
 		stat_row("shared_buffer", "get_writable_address_enomem_exhausted",
 			 parent_stats.get_writable_address_enomem_exhausted);

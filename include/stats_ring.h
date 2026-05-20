@@ -41,7 +41,11 @@ enum stats_field {
 	STATS_FIELD_LIBC_HEAP_REDIRECTED,
 	STATS_FIELD_LIBC_HEAP_EMBEDDED_REDIRECTED,
 	STATS_FIELD_RANGE_OVERLAPS_SHARED_REJECTS,
-	STATS_FIELD_GET_WRITABLE_SCRIBBLED,
+	STATS_FIELD_GET_WRITABLE_SCRIBBLED_SHM_RANGE,
+	STATS_FIELD_GET_WRITABLE_SCRIBBLED_MPROTECT_MMAP,
+	STATS_FIELD_GET_WRITABLE_SCRIBBLED_MPROTECT_SHM,
+	STATS_FIELD_GET_WRITABLE_SCRIBBLED_POSTMP_MMAP,
+	STATS_FIELD_GET_WRITABLE_SCRIBBLED_POSTMP_SHM,
 	STATS_FIELD_GET_WRITABLE_ENOMEM_EXHAUSTED,
 	STATS_FIELD_CHILDREN_RECYCLED_ON_STORM,
 	STATS_FIELD_UNSHARE_NEWNET_THROTTLED,
@@ -119,7 +123,11 @@ struct stats_aggregate {
 	unsigned long libc_heap_redirected;
 	unsigned long libc_heap_embedded_redirected;
 	unsigned long range_overlaps_shared_rejects;
-	unsigned long get_writable_address_scribbled_slots_caught;
+	unsigned long get_writable_address_scribbled_shm_range;
+	unsigned long get_writable_address_scribbled_mprotect_mmap;
+	unsigned long get_writable_address_scribbled_mprotect_shm;
+	unsigned long get_writable_address_scribbled_postmp_mmap;
+	unsigned long get_writable_address_scribbled_postmp_shm;
 	unsigned long get_writable_address_enomem_exhausted;
 	unsigned long children_recycled_on_storm;
 	unsigned long unshare_newnet_throttled;
