@@ -550,7 +550,7 @@ static void deactivate_enosys(struct syscallrecord *rec, struct syscallentry *en
 	if (entry->active_number == 0)
 		goto already_done;
 
-	output(1, "%s (%d%s) returned ENOSYS, marking as inactive.\n",
+	output(0, "%s (%d%s) returned ENOSYS, marking as inactive.\n",
 		entry->name,
 		call + SYSCALL_OFFSET,
 		rec->do32bit == true ? ":[32BIT]" : "");
