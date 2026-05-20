@@ -229,26 +229,55 @@ static void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 	 * Hand-roll the formatter rather than dprintf() so the write is a
 	 * single syscall and uses no stdio buffering -- mirrors the
 	 * write_siginfo_safely() pattern just above.  PATH_MAX is
-	 * comfortably oversized for "childop=<longest-name> op_nr=<ulong>\n".
+	 * comfortably oversized for "childop=<longest-name> op_nr=<ulong>
+	 * last_syscall_nr=<int>\n".
+	 *
+	 * last_syscall_nr is the in-flight syscall number sourced from
+	 * me->syscall.nr -- the per-child syscallrecord embedded in
+	 * childdata, populated by set_syscall_nr() before each dispatch.
+	 * Reading a plain unsigned int from process-local shm-resident
+	 * memory is async-signal-safe (no allocation, no lock, no table
+	 * lookup).  We emit the NUMBER rather than the name because the
+	 * number->name map (get_syscall_entry / syscalls[].name) is a
+	 * pointer-chasing table walk that is not on the POSIX async-
+	 * signal-safe list; the bugs.txt post-parser can resolve names
+	 * offline.
+	 *
+	 * We gate on me->syscall.state to avoid emitting a stale number
+	 * when the signal hit between syscalls.  rec->nr is only meaning-
+	 * fully populated once set_syscall_nr() has run for the current
+	 * iteration; states UNKNOWN (child just started, never picked) and
+	 * AFTER (previous call returned, next not yet picked) both mean
+	 * "no syscall in flight".  In those cases we emit -1 rather than a
+	 * misleading number that points at the *previous* call.
 	 */
 	{
 		struct childdata *me = this_child();
 		const char *opname;
 		unsigned long opnr;
-		char buf[128];
+		int last_syscall_nr;
+		char buf[160];
 		int len;
 
 		if (me != NULL) {
+			enum syscallstate st = me->syscall.state;
+
 			opname = alt_op_name(me->op_type);
 			opnr = me->op_nr;
 			if (opname == NULL)
 				opname = "unknown";
+			if (st == PREP || st == BEFORE || st == GOING_AWAY)
+				last_syscall_nr = (int)me->syscall.nr;
+			else
+				last_syscall_nr = -1;
 		} else {
 			opname = "unknown";
 			opnr = 0;
+			last_syscall_nr = -1;
 		}
 		len = snprintf(buf, sizeof(buf),
-			"childop=%s op_nr=%lu\n", opname, opnr);
+			"childop=%s op_nr=%lu last_syscall_nr=%d\n",
+			opname, opnr, last_syscall_nr);
 		if (len > 0) {
 			ssize_t w;
 			if ((size_t)len > sizeof(buf))
