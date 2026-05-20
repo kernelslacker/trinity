@@ -38,7 +38,16 @@ void toggle_syscall_n(int calln, bool state, const char *arg, const char *arg_na
 void activate_syscall(unsigned int calln);
 void activate_syscall32(unsigned int calln);
 void activate_syscall64(unsigned int calln);
-void deactivate_syscall(unsigned int calln, bool do32bit);
+/*
+ * Picker-side deactivations must use deactivate_syscall_locked(); it
+ * takes shm->syscalltable_lock and rechecks entry->active_number, like
+ * deactivate_enosys() does, so concurrent children cannot tear the
+ * swap-with-last update of the shared active_syscall[] arrays.
+ * deactivate_syscall_nolock() is for callers that already hold the
+ * lock (the auto-disable loop in syscall.c and deactivate_enosys()).
+ */
+void deactivate_syscall_locked(unsigned int calln, bool do32bit);
+void deactivate_syscall_nolock(unsigned int calln, bool do32bit);
 void deactivate_syscall_uniarch(unsigned int calln);
 void deactivate_syscall32(unsigned int calln);
 void deactivate_syscall64(unsigned int calln);

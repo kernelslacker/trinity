@@ -162,7 +162,7 @@ retry:
 	syscallnr = val - 1;
 
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
-		deactivate_syscall(syscallnr, do32);
+		deactivate_syscall_locked(syscallnr, do32);
 		goto retry;
 	}
 
@@ -330,7 +330,7 @@ retry:
 	syscallnr = val - 1;
 
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
-		deactivate_syscall(syscallnr, do32);
+		deactivate_syscall_locked(syscallnr, do32);
 		goto retry;
 	}
 
@@ -430,7 +430,7 @@ retry:
 	syscallnr = val - 1;
 
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
-		deactivate_syscall(syscallnr, do32);
+		deactivate_syscall_locked(syscallnr, do32);
 		goto retry;
 	}
 

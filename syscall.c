@@ -66,7 +66,7 @@ static long syscall32(unsigned int call,
 				struct syscallentry *entry = syscalls_32bit[i].entry;
 
 				if (entry->active_number != 0)
-					deactivate_syscall(i, true);
+					deactivate_syscall_nolock(i, true);
 			}
 			/* The per-call deactivate path has already cleared the
 			 * cached validity bit when nr_active hit zero; pin it
@@ -555,7 +555,7 @@ static void deactivate_enosys(struct syscallrecord *rec, struct syscallentry *en
 		call + SYSCALL_OFFSET,
 		rec->do32bit == true ? ":[32BIT]" : "");
 
-	deactivate_syscall(call, rec->do32bit);
+	deactivate_syscall_nolock(call, rec->do32bit);
 already_done:
 	unlock(&shm->syscalltable_lock);
 }

@@ -3071,7 +3071,7 @@ retry:
 	syscallnr = (unsigned int)val - 1U;
 
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
-		deactivate_syscall(syscallnr, false);
+		deactivate_syscall_locked(syscallnr, false);
 		total_weight -= weights[idx];
 		weights[idx] = 0;
 		goto retry;

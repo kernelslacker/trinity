@@ -128,7 +128,14 @@ void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active, co
 	}
 }
 
-void deactivate_syscall(unsigned int call, bool do32bit)
+/*
+ * Remove a syscall from the active table.  Caller must already hold
+ * shm->syscalltable_lock; the swap-with-last update mutates the shared
+ * active_syscall[] array and entry->active_number atomically with the
+ * *nr_active counter, and those three fields must be consistent for
+ * concurrent pickers.
+ */
+void deactivate_syscall_nolock(unsigned int call, bool do32bit)
 {
 	if (biarch == false) {
 		deactivate_syscall_uniarch(call);
@@ -138,6 +145,34 @@ void deactivate_syscall(unsigned int call, bool do32bit)
 		else
 			deactivate_syscall64(call);
 	}
+}
+
+/*
+ * Lock-taking wrapper for picker-side deactivations.  Pickers run
+ * concurrently across children and previously mutated the active table
+ * with no serialisation, which could leave duplicate active entries,
+ * stale entries, a wrong active_number, or a drifted nr_active count
+ * when two children deactivated overlapping slots.  The active_number
+ * recheck under the lock mirrors deactivate_enosys() in syscall.c and
+ * absorbs a concurrent removal by a sibling.
+ */
+void deactivate_syscall_locked(unsigned int call, bool do32bit)
+{
+	struct syscallentry *entry;
+
+	lock(&shm->syscalltable_lock);
+
+	entry = get_syscall_entry(call, do32bit);
+	if (entry == NULL)
+		goto already_done;
+
+	/* Another child may have raced us and already removed this slot. */
+	if (entry->active_number == 0)
+		goto already_done;
+
+	deactivate_syscall_nolock(call, do32bit);
+already_done:
+	unlock(&shm->syscalltable_lock);
 }
 
 void count_syscalls_enabled(void)
