@@ -166,6 +166,16 @@ static void post_mmap(struct syscallrecord *rec)
 	}
 	new->map.size = rec->a2;
 	new->map.prot = rec->a3;
+	/*
+	 * Preserve the actual flags word passed to mmap() so map_dump()
+	 * and any future flag-aware consumer see the real type bit
+	 * (MAP_SHARED / MAP_PRIVATE / MAP_SHARED_VALIDATE) and modifier
+	 * bits (MAP_HUGETLB, MAP_SYNC, MAP_STACK, ...).  Without this,
+	 * runtime mmap pool entries always reported a zero flags field
+	 * and shared/hugetlb mappings looked indistinguishable from
+	 * plain private ones in diagnostics.  Mirrors the alloc_zero_map()
+	 * pattern in mm/maps-initial.c. */
+	new->map.flags = rec->a4;
 	new->map.ptr = p;
 
 	if (is_anon) {

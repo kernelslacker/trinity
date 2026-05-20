@@ -548,7 +548,21 @@ retry_mmap:
 	obj->map.prot = prot;
 	obj->map.fd = fd;
 	obj->map.type = MMAPED_FILE;
-	obj->map.ptr = mmap(NULL, obj->map.size, prot, get_rand_mmap_flags(), fd, offset);
+	/*
+	 * Capture the flags word into a local before mmap() so the actual
+	 * flags used for this mapping are stored on the obj.  Calling
+	 * get_rand_mmap_flags() inline as the mmap() arg threw the bits
+	 * away, leaving obj->map.flags at zero for every entry seeded
+	 * through this path -- map_dump() and any flag-aware consumer
+	 * then saw shared / hugetlb mappings as plain private ones.
+	 * Mirrors the alloc_zero_map() pattern in mm/maps-initial.c. */
+	{
+		int mmap_flags = (int) get_rand_mmap_flags();
+
+		obj->map.flags = mmap_flags;
+		obj->map.ptr = mmap(NULL, obj->map.size, prot, mmap_flags,
+				    fd, offset);
+	}
 	if (obj->map.ptr == MAP_FAILED) {
 		retries++;
 		if (retries == 100) {
