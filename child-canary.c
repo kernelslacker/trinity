@@ -9,11 +9,26 @@
  * the op into the random alt-op picker when it produces new edges
  * without self-crashing.  Failed canaries are demoted with a backoff.
  *
- * State lives entirely in parent-private static memory.  The only
- * cross-process hand-off is the gate vector (dormant_op_disabled[])
- * and the enabled_altops[] dense vector built from it; both are
- * already process-shared by virtue of living in the parent's memory
- * the children fork off, so no new shm allocation is required.
+ * State lives entirely in parent-private static memory.  The gate
+ * vector (dormant_op_disabled[]) and the dense enabled_altops[]
+ * vector rebuilt from it are seeded into children by fork() COW, so
+ * the INITIAL snapshot is shared, but they are not shm-resident: any
+ * runtime flip from dormant_op_set() is parent-only.
+ *
+ * Phase 1 scope: state changes here are seen by NEW children (next
+ * respawn forward).  Already-running random children -- those at slot
+ * index >= alt_op_children, where pick_op_type() may select an alt-op
+ * with ~5% probability -- continue with their fork-time snapshot of
+ * dormant_op_disabled[] / enabled_altops[] until they exit.  Slot
+ * turnover (the natural respawn cadence) propagates the new state
+ * organically across the fleet.  Dedicated canary slots (the first
+ * canary_slots indices) re-stamp their op_type on every respawn via
+ * assign_dedicated_alt_op() and so always see the current queue state.
+ *
+ * The full shm-published gate -- where runtime promotions/demotions
+ * would be visible to already-forked random children -- is a Phase 2
+ * design question combined with persistence; Phase 1 deliberately
+ * does not extend the shared region for this.
  *
  * No childop implementation is modified by this queue.  A broken op
  * is detected via the demote path; the cure is to leave it dormant.
@@ -302,7 +317,7 @@ static void leave_canarying_promote(enum child_op_type op,
 	/* Gate stays at 0 (active).  The random picker keeps the op. */
 	dormant_op_set(op, false);
 
-	output(1, "canary: %s promoted (window edges=%lu crashes=%u in %lu iters)\n",
+	output(1, "canary: %s promoted (window edges=%lu crashes=%u in %lu iters; effective for new children at next respawn)\n",
 		s->name, window_edges, s->window_crashes, window_iters);
 }
 
@@ -321,7 +336,7 @@ static void leave_canarying_demote(enum child_op_type op,
 	 * including this op. */
 	dormant_op_set(op, true);
 
-	output(1, "canary: %s demoted (reason: %s; edges=%lu crashes=%u in %lu iters; backoff=%us)\n",
+	output(1, "canary: %s demoted (reason: %s; edges=%lu crashes=%u in %lu iters; backoff=%us; effective for new children at next respawn)\n",
 		s->name, reason, window_edges, s->window_crashes,
 		window_iters, (unsigned int)CANARY_BACKOFF_TIME);
 }
@@ -620,6 +635,15 @@ void canary_queue_summary(void)
 
 	output(1, "canary queue: %u dormant, %u canarying, %u promoted, %u demoted, %u config-blocked (total=%u)\n",
 		dormant, canarying, promoted, demoted, blocked, total);
+
+	/* When the fleet has any non-dedicated random children (i.e.
+	 * max_children > alt_op_children), those children's snapshots
+	 * of the dormant gate are fork-time COW copies and do not pick
+	 * up promotion/demotion until they respawn.  Flag it in the
+	 * periodic summary so the operator can read the queue state
+	 * without assuming instant propagation. */
+	if (max_children > alt_op_children)
+		output(1, "canary queue: state propagates on respawn (non-dedicated random children carry fork-time gate snapshots)\n");
 
 	if (canary_promotion_ring_count > 0) {
 		char buf[512];

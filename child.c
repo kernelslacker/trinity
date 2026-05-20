@@ -1537,6 +1537,16 @@ int dormant_op_slot_for(enum child_op_type op)
  * children re-read the rebuilt enabled_altops[] on their next pick.
  * See the design note in init_altop_dispatch() about the deliberately
  * non-atomic rebuild -- both gate states are safe to dispatch on.
+ *
+ * Phase 1 propagation contract: both dormant_op_disabled[] and
+ * enabled_altops[] are parent-private after fork() (COW), so the
+ * "children re-read" above means children spawned AFTER this call,
+ * not children already running.  Already-forked random children
+ * continue to consult their fork-time snapshot until the slot turns
+ * over.  Dedicated canary slots are re-stamped on respawn and so see
+ * the new state immediately on the next spawn cycle.  See the header
+ * block in child-canary.c for the full scope statement; the shm-
+ * published variant is Phase 2 work.
  */
 void dormant_op_set(enum child_op_type op, bool dormant)
 {
