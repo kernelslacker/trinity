@@ -341,7 +341,7 @@ static void leave_canarying_promote(enum child_op_type op,
 	/* Gate stays at 0 (active).  The random picker keeps the op. */
 	dormant_op_set(op, false);
 
-	output(1, "canary: %s promoted (window edges=%lu crashes=%u in %lu iters; effective for new children at next respawn)\n",
+	output(0, "canary: %s promoted (window edges=%lu crashes=%u in %lu iters; effective for new children at next respawn)\n",
 		s->name, window_edges, s->window_crashes, window_iters);
 }
 
@@ -360,7 +360,7 @@ static void leave_canarying_demote(enum child_op_type op,
 	 * including this op. */
 	dormant_op_set(op, true);
 
-	output(1, "canary: %s demoted (reason: %s; edges=%lu crashes=%u in %lu iters; backoff=%us; effective for new children at next respawn)\n",
+	output(0, "canary: %s demoted (reason: %s; edges=%lu crashes=%u in %lu iters; backoff=%us; effective for new children at next respawn)\n",
 		s->name, reason, window_edges, s->window_crashes,
 		window_iters, (unsigned int)CANARY_BACKOFF_TIME);
 }
@@ -422,7 +422,7 @@ static bool pick_next_canary(enum child_op_type *out)
 			canary_ops[op].state = CANARY_STATE_DORMANT;
 			canary_ops[op].last_state_transition = now;
 			canary_ops[op].consecutive_zero_edge_windows = 0;
-			output(1, "canary: %s backoff complete, re-queued for canary\n",
+			output(0, "canary: %s backoff complete, re-queued for canary\n",
 				canary_ops[op].name);
 		}
 		/* Skip wave-1 in the FIFO walk only if it's already been
@@ -560,11 +560,11 @@ void canary_queue_init(void)
 	canary_queue_live = (!canary_queue_disabled) && (canary_slots > 0);
 
 	if (!canary_queue_live) {
-		output(1, "canary queue: disabled (--no-canary-queue); dormant_op_disabled[] used as static gate\n");
+		output(0, "canary queue: disabled (--no-canary-queue); dormant_op_disabled[] used as static gate\n");
 		return;
 	}
 
-	output(1, "canary queue: enabled, slots=%u, window=%u iters, wave1_seeds=%u, dormant_eligible=%u, config_blocked=%u\n",
+	output(0, "canary queue: enabled, slots=%u, window=%u iters, wave1_seeds=%u, dormant_eligible=%u, config_blocked=%u\n",
 		canary_slots, window_iters_resolved(),
 		canary_wave1_list_count, dormant_eligible, config_blocked);
 
@@ -648,7 +648,7 @@ void canary_queue_tick(void)
 			canary_active_op_cell = CHILD_OP_SYSCALL;
 			canary_pending_op = CHILD_OP_SYSCALL;
 			canary_slots_parked = true;
-			output(1, "canary queue: picker exhausted, parking slot(s) until next eligible op\n");
+			output(0, "canary queue: picker exhausted, parking slot(s) until next eligible op\n");
 			kill_canary_slot_children();
 		}
 	}
@@ -681,7 +681,7 @@ void canary_queue_summary(void)
 		}
 	}
 
-	output(1, "canary queue: %u dormant, %u canarying, %u promoted, %u demoted, %u config-blocked (total=%u)\n",
+	output(0, "canary queue: %u dormant, %u canarying, %u promoted, %u demoted, %u config-blocked (total=%u)\n",
 		dormant, canarying, promoted, demoted, blocked, total);
 
 	/* When the fleet has any non-dedicated random children (i.e.
@@ -691,7 +691,7 @@ void canary_queue_summary(void)
 	 * periodic summary so the operator can read the queue state
 	 * without assuming instant propagation. */
 	if (max_children > alt_op_children)
-		output(1, "canary queue: state propagates on respawn (non-dedicated random children carry fork-time gate snapshots)\n");
+		output(0, "canary queue: state propagates on respawn (non-dedicated random children carry fork-time gate snapshots)\n");
 
 	if (canary_promotion_ring_count > 0) {
 		char buf[512];
@@ -712,7 +712,7 @@ void canary_queue_summary(void)
 				break;
 			off += (size_t)n;
 		}
-		output(1, "canary queue: last %u promotions: %s\n",
+		output(0, "canary queue: last %u promotions: %s\n",
 			canary_promotion_ring_count, buf);
 	}
 }
