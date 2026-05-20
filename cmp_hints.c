@@ -129,7 +129,7 @@ static void pool_add_locked(struct cmp_hint_pool *pool,
 		e->cmp_ip = cmp_ip;
 		e->size = size;
 		e->last_used = stamp;
-		pool->generation++;
+		__atomic_fetch_add(&pool->generation, 1, __ATOMIC_RELAXED);
 		/*
 		 * RELEASE-store count so a lockless reader in cmp_hints_try_get
 		 * that observes the new count is guaranteed to also see the
@@ -154,7 +154,7 @@ static void pool_add_locked(struct cmp_hint_pool *pool,
 	pool->entries[victim].cmp_ip = cmp_ip;
 	pool->entries[victim].size = size;
 	pool->entries[victim].last_used = stamp;
-	pool->generation++;
+	__atomic_fetch_add(&pool->generation, 1, __ATOMIC_RELAXED);
 	if (kcov_shm != NULL)
 		__atomic_fetch_add(&kcov_shm->cmp_hints_unique_inserts, 1UL,
 				   __ATOMIC_RELAXED);
@@ -870,7 +870,8 @@ bool cmp_hints_load_file(const char *path)
 				max_stamp = src->entries[j].last_used;
 			dst_count++;
 		}
-		pool->generation = src->generation;
+		__atomic_store_n(&pool->generation, src->generation,
+				 __ATOMIC_RELAXED);
 		/* Seed the per-pool LRU clock to the max last_used we just loaded
 		 * so fresh inserts after warm-start get strictly larger stamps
 		 * and don't appear LRU-older than the warm-started entries (which
@@ -1017,7 +1018,8 @@ static unsigned long cmp_hints_total_generation(void)
 	if (cmp_hints_shm == NULL)
 		return 0;
 	for (i = 0; i < MAX_NR_SYSCALL; i++)
-		sum += cmp_hints_shm->pools[i].generation;
+		sum += __atomic_load_n(&cmp_hints_shm->pools[i].generation,
+				       __ATOMIC_RELAXED);
 	return sum;
 }
 

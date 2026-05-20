@@ -169,7 +169,9 @@ bool is_strategy_eligible(int arm)
 		 * burying the plateau check inside the predicate) keeps
 		 * the two decisions -- "is the gate met" vs "may we bend
 		 * the gate right now" -- separately auditable. */
-		if (kcov_shm != NULL && kcov_shm->plateau_active)
+		if (kcov_shm != NULL &&
+		    __atomic_load_n(&kcov_shm->plateau_active,
+				    __ATOMIC_ACQUIRE))
 			return healer_strategy_ready_plateau_bypass();
 		return healer_strategy_ready();
 	}
@@ -934,7 +936,8 @@ int select_next_strategy(int prev,
 	mode = __atomic_load_n(&shm->picker_mode, __ATOMIC_RELAXED);
 
 	if (mode == PICKER_BANDIT_UCB1 &&
-	    kcov_shm != NULL && kcov_shm->plateau_active) {
+	    kcov_shm != NULL &&
+	    __atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE)) {
 		enum random_rescue_class amplified = RRC_NR_CLASSES;
 		enum plateau_intervention_mode pim;
 		unsigned long rot;
@@ -1327,7 +1330,7 @@ void strategy_plateau_hypothesis_tick(void)
 	if (kcov_shm == NULL)
 		return;
 
-	if (!kcov_shm->plateau_active) {
+	if (!__atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE)) {
 		/* Plateau cleared: drop the entry snapshot so the next
 		 * plateau gets a fresh baseline.  hypothesis_fires[] is
 		 * NOT cleared -- the fire-count distribution is a
@@ -1428,7 +1431,8 @@ bool plateau_rescue_bias_active_for(enum random_rescue_class c)
 {
 	if (c < 0 || c >= RRC_NR_CLASSES)
 		return false;
-	if (kcov_shm == NULL || !kcov_shm->plateau_active)
+	if (kcov_shm == NULL ||
+	    !__atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE))
 		return false;
 	/* ACQUIRE-load current_strategy pairs with the RELEASE-store in
 	 * maybe_rotate_strategy.  Callers reach this gate from paths that
@@ -1470,7 +1474,8 @@ bool plateau_rescue_bias_active_for(enum random_rescue_class c)
 
 bool plateau_anti_prior_active(void)
 {
-	if (kcov_shm == NULL || !kcov_shm->plateau_active)
+	if (kcov_shm == NULL ||
+	    !__atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE))
 		return false;
 	/* ACQUIRE-load current_strategy pairs with the RELEASE-store in
 	 * maybe_rotate_strategy.  Fenced here rather than relying on the

@@ -778,11 +778,19 @@ void kcov_plateau_check(void)
 
 	/* Arm the window on the first call so any pre-existing edge count
 	 * (e.g. from the warm-up phase before main_loop entry) is not
-	 * mis-attributed to the first 10-minute window. */
-	if (!kcov_shm->plateau_armed) {
-		kcov_shm->plateau_window_start = now;
-		kcov_shm->plateau_prev_edges = edges_now;
-		kcov_shm->plateau_armed = true;
+	 * mis-attributed to the first 10-minute window.
+	 *
+	 * Companion fields (plateau_window_start, plateau_prev_edges) are
+	 * written before the RELEASE-store of plateau_armed so a child
+	 * reader that observes plateau_armed=true via the ACQUIRE pair is
+	 * guaranteed to also see the seeded companion state. */
+	if (!__atomic_load_n(&kcov_shm->plateau_armed, __ATOMIC_RELAXED)) {
+		__atomic_store_n(&kcov_shm->plateau_window_start, now,
+				 __ATOMIC_RELAXED);
+		__atomic_store_n(&kcov_shm->plateau_prev_edges, edges_now,
+				 __ATOMIC_RELAXED);
+		__atomic_store_n(&kcov_shm->plateau_armed, true,
+				 __ATOMIC_RELEASE);
 		return;
 	}
 
@@ -791,9 +799,12 @@ void kcov_plateau_check(void)
 
 	delta = (edges_now >= kcov_shm->plateau_prev_edges)
 		? edges_now - kcov_shm->plateau_prev_edges : 0;
-	kcov_shm->plateau_last_window_delta = delta;
-	kcov_shm->plateau_prev_edges = edges_now;
-	kcov_shm->plateau_window_start = now;
+	__atomic_store_n(&kcov_shm->plateau_last_window_delta, delta,
+			 __ATOMIC_RELAXED);
+	__atomic_store_n(&kcov_shm->plateau_prev_edges, edges_now,
+			 __ATOMIC_RELAXED);
+	__atomic_store_n(&kcov_shm->plateau_window_start, now,
+			 __ATOMIC_RELAXED);
 
 	if (delta < KCOV_PLATEAU_RATE_THRESHOLD) {
 		/* Edge-triggered: emit the warning, bump the transition
@@ -802,8 +813,16 @@ void kcov_plateau_check(void)
 		 * plateau stay silent so the operator's stats.log gets one
 		 * line per episode rather than one per 600s window. */
 		if (!kcov_shm->plateau_active) {
-			kcov_shm->plateau_active = true;
-			kcov_shm->plateau_entered_at = now;
+			/* Set entered_at BEFORE the RELEASE-store of
+			 * plateau_active so a child reader pairing an
+			 * ACQUIRE-load of plateau_active with a subsequent
+			 * read of plateau_entered_at sees the freshly
+			 * stamped entry time, not a stale 0 from a prior
+			 * clearance. */
+			__atomic_store_n(&kcov_shm->plateau_entered_at, now,
+					 __ATOMIC_RELAXED);
+			__atomic_store_n(&kcov_shm->plateau_active, true,
+					 __ATOMIC_RELEASE);
 			__atomic_fetch_add(&shm->stats.plateau_entered, 1,
 					   __ATOMIC_RELAXED);
 			stats_log_write("PLATEAU: edge-discovery rate %lu edges/%ds < threshold (%d) sustained for >=%d minutes (bandit may be in local minimum, consider intervention)\n",
@@ -821,8 +840,14 @@ void kcov_plateau_check(void)
 	} else if (kcov_shm->plateau_active) {
 		long minutes = (now - kcov_shm->plateau_entered_at) / 60;
 
-		kcov_shm->plateau_active = false;
-		kcov_shm->plateau_entered_at = 0;
+		/* Clear entered_at before publishing plateau_active=false;
+		 * mirrors the entry-path ordering so a child reader sees
+		 * a consistent (active=false, entered_at=0) shape rather
+		 * than a transient (active=false, entered_at=T_old). */
+		__atomic_store_n(&kcov_shm->plateau_entered_at, 0,
+				 __ATOMIC_RELAXED);
+		__atomic_store_n(&kcov_shm->plateau_active, false,
+				 __ATOMIC_RELEASE);
 		__atomic_fetch_add(&shm->stats.plateau_exited, 1,
 				   __ATOMIC_RELAXED);
 		stats_log_write("PLATEAU CLEARED: edge-discovery rate %lu edges/%ds (plateau lasted %ld minutes)\n",
