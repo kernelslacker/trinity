@@ -1719,12 +1719,19 @@ void main_loop(void)
 
 	output(1, "phase: entering main_loop\n");
 
-	pidstatfiles = zmalloc(max_children * sizeof(FILE *));
-	zombie_pids = zmalloc(max_children * sizeof(pid_t));
-	zombie_since = zmalloc(max_children * sizeof(time_t));
-	spawn_times = zmalloc(max_children * sizeof(time_t));
-	for_each_child(i)
-		zombie_pids[i] = EMPTY_PIDSLOT;
+	/* Sized by max_children, which is fixed before the epoch loop
+	 * starts.  Allocate once and reuse across epochs; per-epoch
+	 * contents are cleared in reset_epoch_state().  Without the guard,
+	 * each epoch leaks a fresh set of arrays into the long-lived
+	 * parent. */
+	if (pidstatfiles == NULL) {
+		pidstatfiles = zmalloc(max_children * sizeof(FILE *));
+		zombie_pids = zmalloc(max_children * sizeof(pid_t));
+		zombie_since = zmalloc(max_children * sizeof(time_t));
+		spawn_times = zmalloc(max_children * sizeof(time_t));
+		for_each_child(i)
+			zombie_pids[i] = EMPTY_PIDSLOT;
+	}
 
 	if (epoch_timeout)
 		clock_gettime(CLOCK_MONOTONIC, &epoch_start);
@@ -1967,6 +1974,17 @@ void reset_epoch_state(void)
 		__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);
 		clean_childdata(children[i]);
 		fd_event_ring_init(children[i]->fd_event_ring);
+
+		/* Parent-local per-slot arrays are persistent across epochs
+		 * (allocated once in main_loop) -- clear the stale entries
+		 * the previous epoch left behind. */
+		if (pidstatfiles[i] != NULL) {
+			fclose(pidstatfiles[i]);
+			pidstatfiles[i] = NULL;
+		}
+		zombie_pids[i] = EMPTY_PIDSLOT;
+		zombie_since[i] = 0;
+		spawn_times[i] = 0;
 	}
 
 	reseed();
