@@ -1856,10 +1856,12 @@ void main_loop(void)
 	handle_children();
 
 	/* Are there still children running ? */
+	/* Per-invocation counters: must reset across epochs, otherwise the
+	 * accumulated count from prior epochs can trip the >10 cap on the
+	 * first real wait of a new epoch. */
+	unsigned int last = 0;
+	unsigned int shutdown_attempts = 0;
 	while (pidmap_empty() == false) {
-		static unsigned int last = 0;
-		static unsigned int shutdown_attempts = 0;
-
 		if (++shutdown_attempts > 10) {
 			output(0, "Gave up waiting for children after %u attempts.\n",
 				shutdown_attempts);
