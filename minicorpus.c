@@ -32,6 +32,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "strategy.h"
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
@@ -672,9 +673,33 @@ bool minicorpus_replay(struct syscallrecord *rec)
 	if (ring->count == 0)
 		return false;
 
-	/* ~25% chance to replay, 75% fresh generation. */
-	if (!ONE_IN(4))
-		return false;
+	/* Phase 2 plateau intervention (cmp_rising_pc_flat): when the
+	 * classifier has the fleet in the CMP-novelty-climbing /
+	 * PC-edges-flat regime, the most recent K saves into any ring are
+	 * by construction dominated by CORPUS_SAVE_REASON_CMP entries
+	 * (the rule's own predicate says PC-source saves have stopped
+	 * landing).  Narrow the slot picker to the K newest slots so
+	 * replay biases toward the freshly-admitted CMP-source material
+	 * without needing per-slot source tracking, and double the replay
+	 * rate (25% -> 50%) so the new material actually gets exercised
+	 * inside the plateau window.  Gate is a derived predicate over
+	 * shm->plateau_current_hypothesis -- no latched flag; reverts
+	 * automatically when the tick driver writes NONE or transitions
+	 * to a different hypothesis. */
+	const bool cmp_burst_active =
+		__atomic_load_n(&shm->plateau_current_hypothesis,
+				__ATOMIC_RELAXED) ==
+		(int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT;
+	const unsigned int K_RECENT = 8;
+
+	/* Replay gate.  Default 25%; raised to 50% inside the burst. */
+	if (cmp_burst_active) {
+		if (!ONE_IN(2))
+			return false;
+	} else {
+		if (!ONE_IN(4))
+			return false;
+	}
 
 	ring_lock(ring);
 
@@ -683,11 +708,20 @@ bool minicorpus_replay(struct syscallrecord *rec)
 		return false;
 	}
 
-	/* Pick a random entry from the ring. */
-	slot = rand() % ring->count;
-	/* The ring is written at head and wraps, so the oldest valid
-	 * entry starts at (head - count) mod CORPUS_RING_SIZE. */
-	slot = (ring->head - ring->count + slot) % CORPUS_RING_SIZE;
+	/* Slot pick.  Default: uniform over ring->count.  Inside the
+	 * burst with at least K_RECENT entries: uniform over the K_RECENT
+	 * newest slots, addressing (head - K_RECENT, head). */
+	if (cmp_burst_active && ring->count >= K_RECENT) {
+		slot = rand() % K_RECENT;
+		slot = (ring->head - K_RECENT + slot) % CORPUS_RING_SIZE;
+		__atomic_fetch_add(&minicorpus_shm->cmp_rising_replay_picks,
+				   1UL, __ATOMIC_RELAXED);
+	} else {
+		slot = rand() % ring->count;
+		/* The ring is written at head and wraps, so the oldest valid
+		 * entry starts at (head - count) mod CORPUS_RING_SIZE. */
+		slot = (ring->head - ring->count + slot) % CORPUS_RING_SIZE;
+	}
 	snapshot = ring->entries[slot];
 
 	ring_unlock(ring);

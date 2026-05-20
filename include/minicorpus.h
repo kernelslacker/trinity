@@ -140,6 +140,17 @@ struct minicorpus_shared {
 	 * insert that just preceded the bump. */
 	unsigned long saves_by_reason[CORPUS_SAVE_NR_REASONS];
 
+	/* Phase 2 plateau intervention (cmp_rising_pc_flat): count of
+	 * replay slot picks that took the recent-K narrowed path because
+	 * the classifier had the fleet in the CMP_RISING_PC_FLAT regime.
+	 * Tracks how many replays were biased toward CMP-source material
+	 * during plateau windows; cross-reference with mut_attrib_cmp_wins
+	 * to see whether the bias correlated with win attribution.  Bumps
+	 * only when the burst predicate is active AND the ring held at
+	 * least K_RECENT entries (small rings fall through to the default
+	 * uniform-over-count pick).  RELAXED atomic. */
+	unsigned long cmp_rising_replay_picks;
+
 	/* Mutator wins attributed to CMP-source novelty (i.e. the subset
 	 * of mut_wins[] that came from CMP-novel calls rather than
 	 * PC-novel calls).  Tracked here as a single scalar -- not a
