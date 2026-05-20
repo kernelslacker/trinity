@@ -34,16 +34,25 @@ static struct results * get_results_ptr(struct syscallentry *entry, unsigned int
 
 static void store_successful_len(struct results *results, unsigned long value)
 {
+	/* All three fields (seen, min, max) move together; without the
+	 * lock two children racing past the !seen test can leave the slot
+	 * with min > max (each child seeds min and max to its own value
+	 * independently), and the update branch can drop concurrent
+	 * extrema entirely.  The hot path is the comparison-only update
+	 * once seen flips true, which is single-store-per-child under the
+	 * lock and not on any latency-sensitive call. */
+	lock(&results->lock);
 	if (!results->seen) {
 		results->seen = true;
 		results->min = value;
 		results->max = value;
-		return;
+	} else {
+		if (value < results->min)
+			results->min = value;
+		if (value > results->max)
+			results->max = value;
 	}
-	if (value < results->min)
-		results->min = value;
-	if (value > results->max)
-		results->max = value;
+	unlock(&results->lock);
 }
 
 static void store_successful_fd(struct results *results, unsigned long value)
@@ -54,22 +63,44 @@ static void store_successful_fd(struct results *results, unsigned long value)
 	if (fd < 0 || fd >= SUCCESS_FD_SCOREBOARD_BITS)
 		return;
 	mask = (unsigned char)(1U << (fd & 7));
-	results->success_fds[fd >> 3] |= mask;
+	/* Bitmap RMWs from many children: lock-free atomic_fetch_or /
+	 * atomic_fetch_and on the touched byte so concurrent stores to
+	 * different bits of the same byte don't drop each other's
+	 * updates.  Readers in pick_successful_fd / fd_recently_failed
+	 * stay plain — the exact byte value is best-effort heuristic
+	 * input, not a coherence boundary. */
+	__atomic_fetch_or(&results->success_fds[fd >> 3], mask,
+			  __ATOMIC_RELAXED);
 
 	/* fd is alive again on this slot -- forget any previously-recorded
 	 * consecutive failure run and clear the failed-fds bit. */
-	results->failed_fds[fd >> 3] &= (unsigned char)~mask;
+	__atomic_fetch_and(&results->failed_fds[fd >> 3],
+			   (unsigned char)~mask, __ATOMIC_RELAXED);
+	/* fail_run_fd and fail_run_count must be observed together to be
+	 * meaningful (count is the run length for the fd in fail_run_fd),
+	 * so the pair shares the per-results lock with store_failed_fd. */
+	lock(&results->lock);
 	if (results->fail_run_count > 0 && results->fail_run_fd == (unsigned char) fd)
 		results->fail_run_count = 0;
+	unlock(&results->lock);
 }
 
 static void store_failed_fd(struct results *results, unsigned long value)
 {
 	int fd = (int) value;
+	bool set_failed_bit;
 
 	if (fd < 3 || fd >= SUCCESS_FD_SCOREBOARD_BITS)
 		return;
 
+	/* fail_run_fd and fail_run_count are a paired (fd, count) tuple
+	 * — without the lock, two children can race the !run-in-flight
+	 * branch and end up with one child's fd alongside the other
+	 * child's count, blowing past FAIL_RUN_THRESHOLD against the
+	 * wrong fd.  Capture the threshold-crossing test under the lock
+	 * so the conditional bitmap update reflects the just-committed
+	 * count, not a stale racy read. */
+	lock(&results->lock);
 	if (results->fail_run_count > 0 &&
 	    results->fail_run_fd == (unsigned char) fd) {
 		if (results->fail_run_count < 0xFF)
@@ -78,9 +109,13 @@ static void store_failed_fd(struct results *results, unsigned long value)
 		results->fail_run_fd = (unsigned char) fd;
 		results->fail_run_count = 1;
 	}
+	set_failed_bit = (results->fail_run_count >= FAIL_RUN_THRESHOLD);
+	unlock(&results->lock);
 
-	if (results->fail_run_count >= FAIL_RUN_THRESHOLD)
-		results->failed_fds[fd >> 3] |= (unsigned char)(1U << (fd & 7));
+	if (set_failed_bit)
+		__atomic_fetch_or(&results->failed_fds[fd >> 3],
+				  (unsigned char)(1U << (fd & 7)),
+				  __ATOMIC_RELAXED);
 }
 
 bool fd_recently_failed(struct results *results, int fd)

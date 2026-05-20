@@ -166,6 +166,13 @@ struct arglist {
 #define SUCCESS_FD_SCOREBOARD_BYTES	(SUCCESS_FD_SCOREBOARD_BITS / 8)
 
 struct results {
+	/* Serialises the multi-field RMW paths in store_successful_len()
+	 * (seen/min/max init + range update) and the fail_run_fd /
+	 * fail_run_count pair in store_failed_fd / store_successful_fd.
+	 * The success_fds / failed_fds bitmaps are mutated lock-free via
+	 * __atomic_fetch_or / __atomic_fetch_and on the touched byte.
+	 * Zero-init from alloc_shared() leaves the lock UNLOCKED. */
+	lock_t lock;
 	/* ARG_LEN: range of successful length values. */
 	bool seen;
 	unsigned int min, max;
