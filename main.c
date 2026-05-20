@@ -1455,7 +1455,9 @@ static void print_stats(void)
 				static unsigned long last_edges = 0;
 				static unsigned long last_cmp_trunc = 0;
 				static unsigned long last_cmp_unique = 0;
-				unsigned long edges = kcov_shm->edges_found;
+				unsigned long edges = __atomic_load_n(
+					&kcov_shm->edges_found,
+					__ATOMIC_RELAXED);
 				unsigned long cmp_trunc = __atomic_load_n(
 					&kcov_shm->cmp_trace_truncated,
 					__ATOMIC_RELAXED);
