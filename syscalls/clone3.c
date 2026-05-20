@@ -79,7 +79,7 @@ static void sanitise_clone3(struct syscallrecord *rec)
 	struct clone_args *args;
 	bool newnet_admitted = false;
 
-	args = zmalloc(sizeof(struct clone_args));
+	args = zmalloc_tracked(sizeof(struct clone_args));
 
 	args->flags = set_rand_bitmask(ARRAY_SIZE(clone3_flags), clone3_flags);
 	{
@@ -149,7 +149,7 @@ static void sanitise_clone3(struct syscallrecord *rec)
 
 	if (args->flags & CLONE_NEWPID) {
 		unsigned int count = RAND_RANGE(1, 3);
-		pid_t *set_tid = zmalloc(count * sizeof(pid_t));
+		pid_t *set_tid = zmalloc_tracked(count * sizeof(pid_t));
 		unsigned int i;
 
 		for (i = 0; i < count; i++)
