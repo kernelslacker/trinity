@@ -121,6 +121,15 @@ static bool corpus_args_replayable(const struct syscallentry *entry)
 
 void minicorpus_save(struct syscallrecord *rec)
 {
+	/* Legacy entry point: callers that haven't been updated to thread
+	 * an enum corpus_save_reason through still want PC-source
+	 * accounting, matching the pre-CMP-save-gate behaviour. */
+	minicorpus_save_with_reason(rec, CORPUS_SAVE_REASON_PC);
+}
+
+void minicorpus_save_with_reason(struct syscallrecord *rec,
+				 enum corpus_save_reason reason)
+{
 	struct corpus_ring *ring;
 	struct corpus_entry *ent;
 	struct syscallentry *entry;
@@ -128,6 +137,13 @@ void minicorpus_save(struct syscallrecord *rec)
 	unsigned int i;
 
 	if (minicorpus_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return;
+
+	/* An out-of-range reason would index off the end of
+	 * saves_by_reason[].  Drop the save rather than corrupt unrelated
+	 * shm state -- the caller is buggy if this fires, so don't
+	 * silently re-bucket it as PC either. */
+	if ((unsigned int)reason >= CORPUS_SAVE_NR_REASONS)
 		return;
 
 	entry = get_syscall_entry(nr, rec->do32bit);
@@ -170,6 +186,8 @@ void minicorpus_save(struct syscallrecord *rec)
 	ring_unlock(ring);
 
 	__atomic_fetch_add(&minicorpus_shm->mutations, 1UL, __ATOMIC_RELAXED);
+	__atomic_fetch_add(&minicorpus_shm->saves_by_reason[reason], 1UL,
+			   __ATOMIC_RELAXED);
 }
 
 /*
@@ -194,6 +212,20 @@ static unsigned int mut_attrib[MUT_NUM_OPS];
  */
 static bool this_replay_ran;
 static bool this_replay_spliced;
+
+/*
+ * Process-local CMP-source attribution flag.
+ *
+ * Set by minicorpus_mut_attrib_set_cmp_source() when the post-syscall
+ * coverage signal that's about to drive commit() is CMP-bloom novelty
+ * rather than PC-edge novelty.  Consumed and cleared by
+ * minicorpus_mut_attrib_commit() -- if (found_new && this_attrib_cmp_source)
+ * we bump the dedicated mut_attrib_cmp_wins scalar so stats can
+ * separate the two sources without changing mut_wins[]/mut_trials[]
+ * (which the weighted scheduler reads).  Same fork/single-threaded
+ * guarantee as this_replay_ran above.
+ */
+static bool this_attrib_cmp_source;
 
 /*
  * Floor on the per-case weight in the weighted scheduler.
@@ -282,12 +314,21 @@ static unsigned int weighted_pick_case(enum argtype atype)
 	return MUT_NUM_OPS - 1;
 }
 
+void minicorpus_mut_attrib_set_cmp_source(void)
+{
+	this_attrib_cmp_source = true;
+}
+
 void minicorpus_mut_attrib_commit(bool found_new)
 {
 	unsigned int i;
 
-	if (minicorpus_shm == NULL)
+	if (minicorpus_shm == NULL) {
+		/* Still clear the per-process tag so a future shm-armed
+		 * commit() doesn't see stale state from before init. */
+		this_attrib_cmp_source = false;
 		return;
+	}
 
 	for (i = 0; i < MUT_NUM_OPS; i++) {
 		unsigned int picks = mut_attrib[i];
@@ -314,6 +355,20 @@ void minicorpus_mut_attrib_commit(bool found_new)
 			__atomic_fetch_add(&minicorpus_shm->splice_wins,
 					   1UL, __ATOMIC_RELAXED);
 		this_replay_spliced = false;
+	}
+
+	/* CMP-source wins counter.  Bumped at most once per commit so its
+	 * units match "calls credited as CMP-source wins" not "per-arg
+	 * mutator picks" -- the latter is already covered by mut_wins[]
+	 * which the bandit-weighting math consumes unchanged.  Cleared
+	 * unconditionally so a stale flag from a found_new=false call
+	 * doesn't leak into the next call's attribution. */
+	if (this_attrib_cmp_source) {
+		if (found_new)
+			__atomic_fetch_add(
+				&minicorpus_shm->mut_attrib_cmp_wins,
+				1UL, __ATOMIC_RELAXED);
+		this_attrib_cmp_source = false;
 	}
 }
 

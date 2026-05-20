@@ -18,6 +18,29 @@
  * save and replay.
  */
 
+/* Why an arg set is admitted to the corpus.
+ *
+ * PC: the original signal -- kcov_collect() returned a new PC-bucket
+ * edge for this syscall.  Gold standard for "this argument
+ * neighbourhood reaches code we hadn't reached before".
+ *
+ * CMP: a new bloom-distinct compile-time-constant comparison fired
+ * for this syscall (bandit_cmp_observe returned > 0) but no new
+ * PC-bucket edge.  Catches argument neighbourhoods that exercise new
+ * comparisons even when the resulting branch lands inside
+ * already-covered PC buckets -- the exact gap revealed by the
+ * plateau-Phase-1 cmp_rising_pc_flat diagnostic.
+ *
+ * The numeric IDs back saves_by_reason[]: re-ordering or inserting a
+ * new reason between PC and CMP would silently re-bucket existing
+ * stats.  Append-only.
+ */
+enum corpus_save_reason {
+	CORPUS_SAVE_REASON_PC = 0,
+	CORPUS_SAVE_REASON_CMP = 1,
+	CORPUS_SAVE_NR_REASONS,
+};
+
 /* Number of arg snapshots retained per syscall number.
  *
  * 8 was sized for the original syscall set and very short runs.  Anything
@@ -104,6 +127,29 @@ struct minicorpus_shared {
 	 * accumulates. */
 	unsigned long edges_at_last_snapshot;
 
+	/* Per-reason corpus-save counters.  Bumped inside
+	 * minicorpus_save_with_reason() once the entry has been admitted
+	 * (post-corpus_args_replayable filter and post-ring-insert) so the
+	 * count reflects entries that actually made it into the ring, not
+	 * candidates that were rejected.  Lets dump_stats answer "is the
+	 * CMP-source promotion path firing, and at what rate vs the
+	 * original PC-source path?".
+	 *
+	 * Indexed by enum corpus_save_reason.  RELAXED atomics: dashboards
+	 * read these once per dump, no ordering constraint with the entry
+	 * insert that just preceded the bump. */
+	unsigned long saves_by_reason[CORPUS_SAVE_NR_REASONS];
+
+	/* Mutator wins attributed to CMP-source novelty (i.e. the subset
+	 * of mut_wins[] that came from CMP-novel calls rather than
+	 * PC-novel calls).  Tracked here as a single scalar -- not a
+	 * per-case array -- because we only need the aggregate to verify
+	 * the new attribution path is firing.  The bandit-weighting math
+	 * in weighted_pick_case() keeps reading mut_wins[]/mut_trials[]
+	 * unchanged so the picker's behaviour stays untouched by this
+	 * accounting addition. */
+	unsigned long mut_attrib_cmp_wins;
+
 	/* Monotonic mutation counter.  Bumped via __atomic_fetch_add on every
 	 * ring-entry insert (minicorpus_save) and every entry admitted from the
 	 * warm-start loader (minicorpus_load_file).  minicorpus_save_file
@@ -121,9 +167,21 @@ extern struct minicorpus_shared *minicorpus_shm;
 void minicorpus_init(void);
 
 /* Save a syscall's args into the corpus ring for its syscall number.
- * Only call when kcov_collect() returned true (new edges found)
- * AND entry->sanitise == NULL. */
+ * Only call when entry->sanitise == NULL.  Thin wrapper that records
+ * the save against the PC-source bucket -- equivalent to
+ * minicorpus_save_with_reason(rec, CORPUS_SAVE_REASON_PC) and kept as
+ * the legacy entry point so existing call sites (the PC-edge gate in
+ * random-syscall.c) don't have to change. */
 void minicorpus_save(struct syscallrecord *rec);
+
+/* Save a syscall's args into the corpus ring with the @reason that
+ * triggered the save.  Same admission filter as minicorpus_save() --
+ * sanitise-callback syscalls and pointer-heavy argtypes are still
+ * rejected, so CMP-source saves carry the same replay-safety
+ * guarantees as PC-source saves.  Bumps saves_by_reason[reason] on
+ * successful insert. */
+void minicorpus_save_with_reason(struct syscallrecord *rec,
+				 enum corpus_save_reason reason);
 
 /* Try to replay a saved arg set with mutations into rec.
  * Returns true if replay was performed, false if no corpus entry
@@ -150,6 +208,18 @@ void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry,
  * commit on a syscall would mis-attribute its mutations to the next
  * syscall's coverage event. */
 void minicorpus_mut_attrib_commit(bool found_new);
+
+/* Tag the current process's pending mutator attribution as having
+ * been driven by CMP-source novelty (rather than the default PC-source
+ * novelty).  Called between mutate_arg() and
+ * minicorpus_mut_attrib_commit() on calls where the post-syscall
+ * coverage signal was CMP-bloom novelty.  The flag is consumed and
+ * cleared by the next commit() call; commit() bumps
+ * minicorpus_shm->mut_attrib_cmp_wins once iff found_new && the flag
+ * was set, so we can tell PC-sourced wins from CMP-sourced wins in
+ * stats without changing the bandit-weighting inputs (mut_wins[] /
+ * mut_trials[]) it consults. */
+void minicorpus_mut_attrib_set_cmp_source(void);
 
 /* Persist the in-memory corpus rings to a file at @path.
  * Writes via a per-pid .tmp file and renames atomically — safe under
