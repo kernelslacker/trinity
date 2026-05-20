@@ -429,7 +429,7 @@ static void close_window_and_decide(enum child_op_type op)
 	unsigned long edges = (now_edges >= s->window_start_edges)
 		? (now_edges - s->window_start_edges) : 0;
 
-	if (s->window_crashes > CANARY_CRASH_THRESHOLD) {
+	if (s->window_crashes >= CANARY_CRASH_THRESHOLD) {
 		leave_canarying_demote(op, "crash_threshold", iters, edges);
 		return;
 	}
