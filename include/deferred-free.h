@@ -20,10 +20,11 @@
 void deferred_free_init(void);
 
 /*
- * Record a heap pointer that may later be passed back through
- * deferred_free_enqueue().  Called from __zmalloc() so every malloc
- * result trinity ever produces is registered without needing per-site
- * opt-in.  Pointers are kept in a small per-process ring (LRU eviction);
+ * Record a heap pointer that will later be passed back through
+ * deferred_free_enqueue() / deferred_freeptr().  Opt-in: called
+ * from zmalloc_tracked() (and any other allocation site that intends
+ * deferred-free ownership), NOT unconditionally from __zmalloc().
+ * Pointers are kept in a small per-process ring (LRU eviction);
  * deferred_free_enqueue() consumes the matching entry to confirm the
  * pointer is a real malloc result before queuing it for free().
  *
@@ -33,13 +34,14 @@ void deferred_free_init(void);
 void deferred_alloc_track(void *ptr);
 
 /*
- * Non-consuming probe: returns true if @ptr was returned by a recent
- * __zmalloc() and still sits in the alloc-track ring.  Lets readers
- * that hold a stored pointer (e.g. an object-pool slot) validate it
- * against the live malloc-result set BEFORE the first deref, without
- * perturbing the consume-on-free invariant deferred_free_enqueue
- * relies on.  Returns false if the pointer was never tracked, was
- * already consumed, or was evicted by ring rollover.
+ * Non-consuming probe: returns true if @ptr was registered via
+ * deferred_alloc_track() (typically via zmalloc_tracked) and still
+ * sits in the alloc-track ring.  Lets readers that hold a stored
+ * pointer (e.g. an object-pool slot) validate it against the live
+ * tracked-allocation set BEFORE the first deref, without perturbing
+ * the consume-on-free invariant deferred_free_enqueue relies on.
+ * Returns false if the pointer was never tracked, was already
+ * consumed, or was evicted by ring rollover.
  */
 bool alloc_track_lookup(void *ptr) __must_check;
 

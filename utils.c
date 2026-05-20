@@ -902,7 +902,6 @@ void * __zmalloc(size_t size, const char *func)
 
 done:
 	memset(p, 0, size);
-	deferred_alloc_track(p);
 	return p;
 }
 
@@ -917,11 +916,6 @@ done:
  * fallbacks); registering those would leave stale entries in the ring
  * that a fuzzed value can match against -- the bug Option B of the
  * 2026-05-19 alloc-tracking audit narrows the tracker to avoid.
- *
- * Note: until the unconditional deferred_alloc_track() inside
- * __zmalloc() is removed in a follow-up commit, callers that migrate
- * here transparently double-register; the duplicate is harmless
- * because alloc_track_consume() is single-shot per match.
  */
 void * __zmalloc_tracked(size_t size, const char *func)
 {

@@ -60,10 +60,16 @@ struct deferred_entry {
 };
 
 /*
- * Side-set of "live" malloc results.  __zmalloc() registers every
- * pointer it returns; deferred_free_enqueue() consumes the matching
- * entry to confirm the pointer it has been handed is a real malloc
- * result before letting it through to free().
+ * Side-set of "live" malloc results, opt-in.  Allocation sites that
+ * know their pointer is bound to flow through deferred_free_enqueue
+ * (post_state sanitisers, alloc_object, ARG_STRUCT_PTR_IN/OUT, execve
+ * argv/envp fabrication, the mostly-deferred-freed bpf/setsockopt/
+ * getsockopt/seccomp slots) allocate via zmalloc_tracked(), which
+ * calls deferred_alloc_track() on the returned pointer; plain
+ * zmalloc() leaves the result out of the side-set.
+ * deferred_free_enqueue() consumes the matching entry to confirm the
+ * pointer it has been handed is a real malloc result before letting
+ * it through to free().
  *
  * The pre-existing looks_like_corrupted_ptr() heuristic only rejects
  * sub-page / above-canonical / mis-aligned values.  A wholesale stomp
@@ -73,7 +79,20 @@ struct deferred_entry {
  * malloc-return.  Eight ASAN "bad-free" reports hit exactly that gap:
  * the freed pointer was heap-region but not at an allocation start, so
  * libc's free() rejects it.  Tracking the set of live malloc results
- * gives us ground truth that the pointer-shape heuristic can't.
+ * for the opt-in subset gives us ground truth the pointer-shape
+ * heuristic can't, for the pointers that actually flow through this
+ * gate.
+ *
+ * Opt-in (rather than every __zmalloc result) keeps the ring's input
+ * population aligned with its consumer.  Sites whose pointer is
+ * released via direct free() (process-lifetime tables, per-child obj/
+ * fd/hash arrays, error-path fallbacks) used to leave a stale entry
+ * behind after each release; with opt-in they never enter the ring,
+ * so the previous failure mode -- a fuzzed scribble matching a stale
+ * entry and tricking alloc_track_consume() into approving a wrong-
+ * free -- disappears.  The mirror-image failure (forgetting to opt in
+ * at a site that should have) reduces to a deferred_free_reject
+ * leak, observable in stats; that is the safer direction to err.
  *
  * Sized for the in-flight window: between a sanitise's zmalloc and the
  * matching post handler's deferred_free_enqueue, the same syscall does
@@ -81,6 +100,8 @@ struct deferred_entry {
  * -- well under a hundred in the worst case.  256 entries gives ample
  * headroom; on overflow we evict in arrival order, which only causes a
  * benign drop (memory leak) of the evicted pointer's eventual free.
+ * Narrowing the input set to the opt-in subset buys back ring head-
+ * room that init-time / per-child-table zmallocs used to consume.
  *
  * Process-local: zero-initialised BSS, COW-shared at fork, written
  * single-threaded by the owning child.  No locking needed.
