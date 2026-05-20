@@ -173,6 +173,12 @@ void init_shm(void)
 	__atomic_store_n(&shm->plateau_anti_prior_baseline_calls, 0UL,
 			 __ATOMIC_RELAXED);
 
+	/* Phase 2 plateau intervention: hypothesis mirror starts at NONE
+	 * so any pre-plateau rotation in select_next_strategy sees the
+	 * no-pin sentinel and falls through to the round-robin path. */
+	__atomic_store_n(&shm->plateau_current_hypothesis,
+			 (int)PLATEAU_HYPOTHESIS_NONE, __ATOMIC_RELAXED);
+
 	__atomic_store_n(&shm->seed, init_seed(seed), __ATOMIC_RELAXED);
 
 	if (!shared_size_mul(max_children, sizeof(struct childdata *),

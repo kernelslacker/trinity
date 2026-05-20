@@ -962,7 +962,35 @@ int select_next_strategy(int prev,
 		rot = __atomic_fetch_add(
 			&shm->plateau_intervention_rotation_counter, 1UL,
 			__ATOMIC_RELAXED);
-		pim = (enum plateau_intervention_mode)(rot % NR_PIM_MODES);
+
+		/* Phase 2 frontier_cold intervention: when the plateau
+		 * hypothesis classifier has the fleet in the frontier_cold
+		 * regime, pin PIM_ANTI_PRIOR every rotation instead of
+		 * round-robining across the three modes.  The per-syscall
+		 * anti-prior accept gate inverts the bandit's pick-rate
+		 * distribution, which is the same shape as "boost cold
+		 * syscalls" -- the response the hypothesis rule asks for.
+		 *
+		 * The gate is a derived predicate over plateau_current_
+		 * hypothesis, not a latched flag: deactivation happens
+		 * automatically when the tick driver writes NONE here
+		 * (plateau lifts, or a different rule starts matching).
+		 *
+		 * RELAXED load: the parent-side publish in strategy_
+		 * plateau_hypothesis_tick is also RELAXED; the rotation-
+		 * vs-tick race is harmless either direction (at most one
+		 * extra round-robin window or one extra pinned anti-prior
+		 * window after the predicate transitions). */
+		if (__atomic_load_n(&shm->plateau_current_hypothesis,
+				    __ATOMIC_RELAXED) ==
+		    (int)PLATEAU_HYPOTHESIS_FRONTIER_COLD) {
+			pim = PIM_ANTI_PRIOR;
+			__atomic_fetch_add(
+				&shm->stats.frontier_cold_intervention_windows,
+				1UL, __ATOMIC_RELAXED);
+		} else {
+			pim = (enum plateau_intervention_mode)(rot % NR_PIM_MODES);
+		}
 
 		switch (pim) {
 		case PIM_RRC_BIASED:
@@ -1341,6 +1369,14 @@ void strategy_plateau_hypothesis_tick(void)
 			memset(&hypothesis_last_delta, 0,
 			       sizeof(hypothesis_last_delta));
 		}
+		/* Phase 2: publish the cleared hypothesis so the
+		 * select_next_strategy pin-gate drops on the next
+		 * rotation.  Done outside the entry_armed guard so a
+		 * spurious tick after rearm-cancel (or before the first
+		 * arm) still leaves shm in the NONE sentinel state. */
+		__atomic_store_n(&shm->plateau_current_hypothesis,
+				 (int)PLATEAU_HYPOTHESIS_NONE,
+				 __ATOMIC_RELAXED);
 		return;
 	}
 
@@ -1375,6 +1411,12 @@ void strategy_plateau_hypothesis_tick(void)
 		}
 		hypothesis_current = fired;
 	}
+
+	/* Phase 2: publish the live hypothesis to shm on every tick (not
+	 * just transitions) so a child that missed the transition tick
+	 * still observes the current value on its next rotation. */
+	__atomic_store_n(&shm->plateau_current_hypothesis,
+			 (int)hypothesis_current, __ATOMIC_RELAXED);
 }
 
 enum plateau_hypothesis strategy_plateau_hypothesis_current(void)
@@ -1871,6 +1913,17 @@ void dump_strategy_stats(void)
 				output(0, "  anti-prior baseline: %lu calls/syscall (mean across MAX_NR_SYSCALL at last refresh)\n",
 				       ap_baseline);
 		}
+
+		/* Phase 2 frontier_cold intervention windows: rotations
+		 * that pinned PIM_ANTI_PRIOR because the frontier_cold
+		 * hypothesis was live.  Strict subset of mode_windows[PIM_
+		 * ANTI_PRIOR]; the difference between the two is round-
+		 * robin-selected anti-prior windows from plateaus the
+		 * classifier did not tag frontier_cold. */
+		output(0, "  frontier_cold pinned anti-prior windows: %lu\n",
+		       __atomic_load_n(
+			       &shm->stats.frontier_cold_intervention_windows,
+			       __ATOMIC_RELAXED));
 	}
 
 	/* Random-rescue classifier distribution.  Per-class counts only

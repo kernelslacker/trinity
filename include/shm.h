@@ -581,6 +581,27 @@ struct shm_s {
 	unsigned long plateau_intervention_mode_windows[NR_PIM_MODES];
 
 	/*
+	 * Phase 2 plateau intervention: shm mirror of strategy.c's
+	 * parent-private hypothesis_current.  Published by
+	 * strategy_plateau_hypothesis_tick() (parent only) at every stats
+	 * tick; read RELAXED by select_next_strategy() on every rotation
+	 * to gate the targeted intervention selection.
+	 *
+	 * PLATEAU_HYPOTHESIS_NONE means "no rule matched" or "no plateau
+	 * active" -- both cases revert to the round-robin intervention
+	 * path.  Held as int (not the enum) so the shm layout stays
+	 * language-stable across any future enum reorder, same convention
+	 * as plateau_rescue_amplified_class.
+	 *
+	 * The gate is a derived predicate over this field, not a latched
+	 * flag: when plateau_active falls and the tick driver writes NONE
+	 * here, the next select_next_strategy rotation reverts to round-
+	 * robin automatically.  No standalone activation/deactivation
+	 * state to keep in sync.
+	 */
+	int plateau_current_hypothesis;
+
+	/*
 	 * Discounted "recent" counters that the UCB1 picker scores against
 	 * instead of the lifetime bandit_pulls[]/bandit_reward_calls[]
 	 * series above.  Kernel coverage discovery is strongly
