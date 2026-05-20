@@ -1075,22 +1075,14 @@ static void check_fd_leaks(struct childdata *child)
 }
 
 /*
- * Initial state of the dormant-op gate consulted by init_altop_dispatch()
- * to build the dense enabled_altops[] vector.  Pre-canary-queue this was
- * a `static const int` and the per-row inline comments tried to describe
- * which ops were active vs dormant; with the canary queue mutating this
- * array at runtime, both the `const` qualifier and any compile-time
- * description of the state are wrong.
+ * Startup snapshot of the dormant-op gate consulted by init_altop_dispatch()
+ * to build the dense enabled_altops[] vector.  Mutated at runtime by the
+ * parent's queue transition path (enter_canarying / close_window_and_decide);
+ * to check what's CURRENTLY active, read the periodic `canary queue:` log
+ * lines and see canary_queue_init() in child-canary.c, not this table.
  *
- * To check what's CURRENTLY active, read the periodic `canary queue:`
- * log lines, not this table.  See canary_queue_init() and child-canary.c
- * for the live state.  The sole writer at runtime is the parent's queue
- * transition path (enter_canarying / close_window_and_decide); the rows
- * here are just the queue's startup snapshot.
- *
- * The slot ordering matches pick_op_type_table[] (the _Static_assert
- * below pins ARRAY_SIZE equality between the two).  Slot 53 is the
- * post-removal sentinel hole now filled with CHILD_OP_MPLS_ROUTE_CHURN.
+ * Slot ordering matches pick_op_type_table[]; the _Static_assert below
+ * pins ARRAY_SIZE equality between the two.
  */
 static int dormant_op_disabled[102] = {
 	0, 0, 0, 0, 0,
