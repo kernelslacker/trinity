@@ -35,6 +35,24 @@
 #define DEFERRED_TTL_MAX	50
 
 /*
+ * Argtype tag set by generic_free_arg around each ops->cleanup() call so
+ * deferred_free_reject_bump can attribute rejects to the cleanup hook
+ * that drove them.  Direct (non-cleanup-loop) callers leave this at
+ * ARG_UNDEFINED, which feeds the OTHER shard.
+ */
+static enum argtype current_cleanup_argtype = ARG_UNDEFINED;
+
+void deferred_free_set_cleanup_argtype(enum argtype t)
+{
+	current_cleanup_argtype = t;
+}
+
+enum argtype deferred_free_get_cleanup_argtype(void)
+{
+	return current_cleanup_argtype;
+}
+
+/*
  * Run the actual TTL-decrement-and-free loop on 1-in-N tick calls.
  * The other (N-1) calls bail before taking the mprotect bracket.
  * N must be a power of two so the modulo collapses to a bitmask.

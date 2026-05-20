@@ -147,6 +147,18 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	case STATS_FIELD_DEFERRED_FREE_REJECT:
 		parent_stats.deferred_free_reject += delta;
 		break;
+	case STATS_FIELD_DEFERRED_FREE_REJECT_PATHNAME:
+		parent_stats.deferred_free_reject_pathname += delta;
+		break;
+	case STATS_FIELD_DEFERRED_FREE_REJECT_IOVEC:
+		parent_stats.deferred_free_reject_iovec += delta;
+		break;
+	case STATS_FIELD_DEFERRED_FREE_REJECT_SOCKADDR:
+		parent_stats.deferred_free_reject_sockaddr += delta;
+		break;
+	case STATS_FIELD_DEFERRED_FREE_REJECT_OTHER:
+		parent_stats.deferred_free_reject_other += delta;
+		break;
 	case STATS_FIELD_SNAPSHOT_NON_HEAP_REJECT:
 		parent_stats.snapshot_non_heap_reject += delta;
 		break;

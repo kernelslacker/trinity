@@ -3,6 +3,7 @@
 #include <stdbool.h>
 
 #include "compiler.h"
+#include "syscall.h"
 
 /*
  * Deferred-free queue for syscall argument allocations.
@@ -70,3 +71,14 @@ void deferred_free_tick(void);
  * Called on child exit.
  */
 void deferred_free_flush(void);
+
+/*
+ * Tag the argtype currently being processed by the generic_free_arg
+ * cleanup loop, so deferred_free_reject_bump can attribute rejects to
+ * the cleanup hook that drove them.  Set to the argtype just before
+ * ops->cleanup() is called and reset to ARG_UNDEFINED immediately
+ * after.  Direct (non-cleanup-loop) callers leave the tag at
+ * ARG_UNDEFINED so their rejects fall into the OTHER shard.
+ */
+void deferred_free_set_cleanup_argtype(enum argtype t);
+enum argtype deferred_free_get_cleanup_argtype(void);

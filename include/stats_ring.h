@@ -53,6 +53,10 @@ enum stats_field {
 	STATS_FIELD_RANGE_REJECTS_PER_SYSCALL_32,	/* aux = syscall nr */
 	STATS_FIELD_POST_HANDLER_CORRUPT_PTR,
 	STATS_FIELD_DEFERRED_FREE_REJECT,
+	STATS_FIELD_DEFERRED_FREE_REJECT_PATHNAME,
+	STATS_FIELD_DEFERRED_FREE_REJECT_IOVEC,
+	STATS_FIELD_DEFERRED_FREE_REJECT_SOCKADDR,
+	STATS_FIELD_DEFERRED_FREE_REJECT_OTHER,
 	STATS_FIELD_SNAPSHOT_NON_HEAP_REJECT,
 	STATS_FIELD_RING_EVICTION_CORRUPT,
 	STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR,
@@ -141,6 +145,10 @@ struct stats_aggregate {
 	 * counter periodic dump reads these via the from_aggregate path. */
 	unsigned long post_handler_corrupt_ptr;
 	unsigned long deferred_free_reject;
+	unsigned long deferred_free_reject_pathname;
+	unsigned long deferred_free_reject_iovec;
+	unsigned long deferred_free_reject_sockaddr;
+	unsigned long deferred_free_reject_other;
 	unsigned long snapshot_non_heap_reject;
 	unsigned long ring_eviction_corrupt;
 	unsigned long deferred_free_corrupt_ptr;

@@ -804,6 +804,10 @@ static void dump_stats_json(void)
 			"\"fd_event_ring_canary\":%lu,\"fd_event_payload\":%lu,"
 			"\"deferred_free_corrupt_ptr\":%lu,"
 			"\"post_handler_corrupt_ptr\":%lu,\"deferred_free_reject\":%lu,"
+			"\"deferred_free_reject_pathname\":%lu,"
+			"\"deferred_free_reject_iovec\":%lu,"
+			"\"deferred_free_reject_sockaddr\":%lu,"
+			"\"deferred_free_reject_other\":%lu,"
 			"\"snapshot_non_heap_reject\":%lu,"
 			"\"rec_canary_stomped\":%lu,\"rzs_blanket_reject\":%lu,"
 			"\"retfd_blanket_reject\":%lu,"
@@ -1017,6 +1021,10 @@ static void dump_stats_json(void)
 		parent_stats.deferred_free_corrupt_ptr,
 		parent_stats.post_handler_corrupt_ptr,
 		parent_stats.deferred_free_reject,
+		parent_stats.deferred_free_reject_pathname,
+		parent_stats.deferred_free_reject_iovec,
+		parent_stats.deferred_free_reject_sockaddr,
+		parent_stats.deferred_free_reject_other,
 		parent_stats.snapshot_non_heap_reject,
 		shm->stats.rec_canary_stomped,
 		shm->stats.rzs_blanket_reject,
@@ -1840,6 +1848,14 @@ static const struct {
 	  offsetof(struct stats_aggregate, post_handler_corrupt_ptr), true },
 	{ "deferred_free_reject",
 	  offsetof(struct stats_aggregate, deferred_free_reject), true },
+	{ "deferred_free_reject_pathname",
+	  offsetof(struct stats_aggregate, deferred_free_reject_pathname), true },
+	{ "deferred_free_reject_iovec",
+	  offsetof(struct stats_aggregate, deferred_free_reject_iovec), true },
+	{ "deferred_free_reject_sockaddr",
+	  offsetof(struct stats_aggregate, deferred_free_reject_sockaddr), true },
+	{ "deferred_free_reject_other",
+	  offsetof(struct stats_aggregate, deferred_free_reject_other), true },
 	{ "snapshot_non_heap_reject",
 	  offsetof(struct stats_aggregate, snapshot_non_heap_reject), true },
 	{ "deferred_free_corrupt_ptr",
@@ -3389,6 +3405,14 @@ void dump_stats(void)
 		stat_row("corruption", "post_handler_corrupt_ptr", parent_stats.post_handler_corrupt_ptr);
 	if (parent_stats.deferred_free_reject)
 		stat_row("corruption", "deferred_free_reject",   parent_stats.deferred_free_reject);
+	if (parent_stats.deferred_free_reject_pathname)
+		stat_row("corruption", "deferred_free_reject_pathname", parent_stats.deferred_free_reject_pathname);
+	if (parent_stats.deferred_free_reject_iovec)
+		stat_row("corruption", "deferred_free_reject_iovec", parent_stats.deferred_free_reject_iovec);
+	if (parent_stats.deferred_free_reject_sockaddr)
+		stat_row("corruption", "deferred_free_reject_sockaddr", parent_stats.deferred_free_reject_sockaddr);
+	if (parent_stats.deferred_free_reject_other)
+		stat_row("corruption", "deferred_free_reject_other", parent_stats.deferred_free_reject_other);
 	if (parent_stats.snapshot_non_heap_reject)
 		stat_row("corruption", "snapshot_non_heap_reject", parent_stats.snapshot_non_heap_reject);
 	if (parent_stats.lock_word_scribbled)

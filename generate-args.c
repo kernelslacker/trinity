@@ -1330,9 +1330,12 @@ void generic_free_arg(struct syscallentry *entry, struct syscallrecord *rec)
 	mask = entry->cleanup_arg_mask;
 	while (mask != 0) {
 		unsigned int i = (unsigned int)__builtin_ctz(mask) + 1;
-		const struct argtype_ops *ops = argtype_get_ops(get_argtype(entry, i));
+		enum argtype t = get_argtype(entry, i);
+		const struct argtype_ops *ops = argtype_get_ops(t);
 
+		deferred_free_set_cleanup_argtype(t);
 		ops->cleanup(rec, i);
+		deferred_free_set_cleanup_argtype(ARG_UNDEFINED);
 		mask &= (uint8_t)(mask - 1);
 	}
 }

@@ -1340,12 +1340,44 @@ static void deferred_free_reject_pc_record(void *pc)
 void deferred_free_reject_bump(void *caller_pc)
 {
 	struct childdata *child = this_child();
+	enum stats_field shard;
 
-	if (child != NULL && child->stats_ring != NULL)
+	switch (deferred_free_get_cleanup_argtype()) {
+	case ARG_PATHNAME:
+		shard = STATS_FIELD_DEFERRED_FREE_REJECT_PATHNAME;
+		break;
+	case ARG_IOVEC:
+		shard = STATS_FIELD_DEFERRED_FREE_REJECT_IOVEC;
+		break;
+	case ARG_SOCKADDR:
+		shard = STATS_FIELD_DEFERRED_FREE_REJECT_SOCKADDR;
+		break;
+	default:
+		shard = STATS_FIELD_DEFERRED_FREE_REJECT_OTHER;
+		break;
+	}
+
+	if (child != NULL && child->stats_ring != NULL) {
 		stats_ring_enqueue(child->stats_ring,
 				   STATS_FIELD_DEFERRED_FREE_REJECT, 0, 1);
-	else
+		stats_ring_enqueue(child->stats_ring, shard, 0, 1);
+	} else {
 		parent_stats.deferred_free_reject++;
+		switch (shard) {
+		case STATS_FIELD_DEFERRED_FREE_REJECT_PATHNAME:
+			parent_stats.deferred_free_reject_pathname++;
+			break;
+		case STATS_FIELD_DEFERRED_FREE_REJECT_IOVEC:
+			parent_stats.deferred_free_reject_iovec++;
+			break;
+		case STATS_FIELD_DEFERRED_FREE_REJECT_SOCKADDR:
+			parent_stats.deferred_free_reject_sockaddr++;
+			break;
+		default:
+			parent_stats.deferred_free_reject_other++;
+			break;
+		}
+	}
 	deferred_free_reject_pc_record(caller_pc);
 }
 
