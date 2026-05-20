@@ -570,8 +570,17 @@ static void register_zombie_slot(int childno, pid_t pid)
 	output(0, "child %d (pid %u) unkillable, deferring slot reuse "
 		"until kernel releases the D-state task.\n",
 		childno, pid);
-	dump_pid_stack(pid);
-	dump_pid_syscall(pid);
+
+	/* /proc/$pid/stack and /proc/$pid/syscall reads can block for up
+	 * to ~12s waiting on the kernel when the task is wedged in D-state.
+	 * The parent main loop is single-threaded, so a stall here halves
+	 * the fleet iter rate for the rest of the 10k-iter window.  Gate
+	 * these diagnostics on shm->debug, matching stuck_syscall_info().
+	 */
+	if (shm->debug == true) {
+		dump_pid_stack(pid);
+		dump_pid_syscall(pid);
+	}
 
 	if (pidstatfiles[childno]) {
 		fclose(pidstatfiles[childno]);
