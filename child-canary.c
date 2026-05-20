@@ -184,6 +184,20 @@ static enum child_op_type canary_pending_op = CHILD_OP_SYSCALL;
 static bool canary_active_op_set = false;
 static bool canary_pending_op_set = false;
 
+/* Parked state: when canary_queue_tick() finds the picker exhausted
+ * (no eligible candidate after the active window closes), the queue
+ * has no op to run on the canary slot(s) but the slot children are
+ * still alive with the just-demoted/finished op stamped from a prior
+ * spawn.  Dedicated alt-op children keep child->op_type for life, so
+ * without intervention the demoted op keeps executing on the slot --
+ * and crashes from it are dropped because canary_active_op_set is
+ * false.  Parking the slot stamps it with CHILD_OP_SYSCALL on the
+ * next respawn (the canary path still wins in assign_dedicated_alt_op
+ * because canary_slot_active() returns true while parked), so the
+ * slot drops back to the default syscall picker until the next canary
+ * cycle stages a new pending op via enter_canarying(). */
+static bool canary_slots_parked = false;
+
 /* True once the queue is fully initialised AND not gated off by
  * --no-canary-queue / canary_slots=0.  When false, every public entry
  * point returns immediately and the dormant gate is consulted as a
@@ -300,6 +314,8 @@ static void enter_canarying(enum child_op_type op)
 	 * quickly. */
 	canary_pending_op = op;
 	canary_pending_op_set = true;
+	/* Leaving the parked state -- a new pending op is staged. */
+	canary_slots_parked = false;
 	kill_canary_slot_children();
 }
 
@@ -525,6 +541,7 @@ void canary_queue_init(void)
 	canary_pending_op = CHILD_OP_SYSCALL;
 	canary_active_op_set = false;
 	canary_pending_op_set = false;
+	canary_slots_parked = false;
 	canary_promotion_ring_count = 0;
 	canary_promotion_ring_head = 0;
 	canary_last_summary = time(NULL);
@@ -597,11 +614,34 @@ void canary_queue_tick(void)
 		if (pick_next_canary(&next)) {
 			enter_canarying(next);
 		} else {
-			/* Picker exhausted: leave the slot empty until
-			 * a DEMOTED op's backoff elapses.  The next
-			 * tick re-tries the FIFO walk. */
+			/* Picker exhausted: the just-closed window's child
+			 * is still alive with the demoted/finished op
+			 * stamped at fork time, and dedicated alt-op
+			 * children keep child->op_type for life.  Without
+			 * intervention that slot would keep running the
+			 * just-demoted op throughout the entire backoff
+			 * window, AND crashes from it would be silently
+			 * dropped because canary_active_op_set is false.
+			 *
+			 * Park the slot: clear active/pending state and
+			 * recycle the slot child via the same kill path the
+			 * window-transition uses.  When spawn_child()
+			 * respawns it, canary_slot_active() still returns
+			 * true (we are parked, not disabled) so the canary
+			 * branch of assign_dedicated_alt_op() runs, but
+			 * canary_active_op() returns CHILD_OP_SYSCALL while
+			 * parked, which drops the slot back into the default
+			 * syscall picker -- no demoted alt-op runs in the
+			 * meantime.  The next tick re-tries the FIFO walk
+			 * and enter_canarying() will pick up the slot again
+			 * as soon as a DEMOTED op's backoff elapses. */
 			canary_pending_op_set = false;
 			canary_active_op_set = false;
+			canary_active_op_cell = CHILD_OP_SYSCALL;
+			canary_pending_op = CHILD_OP_SYSCALL;
+			canary_slots_parked = true;
+			output(1, "canary queue: picker exhausted, parking slot(s) until next eligible op\n");
+			kill_canary_slot_children();
 		}
 	}
 }
@@ -750,8 +790,13 @@ bool canary_slot_active(int childno)
 	 * op yet -- stamp the pending op so the first fork picks up
 	 * the queue's first pick rather than starting on a stale
 	 * alt_op_rotation[] entry.  After that, the active cell is
-	 * the source of truth. */
-	return canary_active_op_set || canary_pending_op_set;
+	 * the source of truth.  When parked (picker exhausted), still
+	 * claim the slot so the canary branch of assign_dedicated_alt_op
+	 * runs and canary_active_op() returns CHILD_OP_SYSCALL --
+	 * otherwise the slot would fall back to alt_op_rotation[] and
+	 * pick up an arbitrary alt-op instead of the inert default. */
+	return canary_active_op_set || canary_pending_op_set ||
+	       canary_slots_parked;
 }
 
 enum child_op_type canary_active_op(void)
@@ -760,5 +805,8 @@ enum child_op_type canary_active_op(void)
 		return canary_active_op_cell;
 	if (canary_pending_op_set)
 		return canary_pending_op;
+	/* Parked: stamp the slot with the default syscall op so the
+	 * child runs the normal pick_op_type() path until the queue
+	 * stages a new pending op. */
 	return CHILD_OP_SYSCALL;
 }
