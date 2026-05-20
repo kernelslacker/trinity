@@ -9,7 +9,6 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
-
 /*
  * Snapshot of the two listxattr-family input args read by the post oracle,
  * captured at sanitise time and consumed by the post handler.  Lives in
@@ -23,6 +22,7 @@
 struct listxattr_post_state {
 	unsigned long arg1;
 	unsigned long list;
+	size_t buf_alloc_size;
 };
 
 /*
@@ -36,10 +36,46 @@ struct listxattr_post_state {
 static void sanitise_flistxattr(struct syscallrecord *rec)
 {
 	struct listxattr_post_state *snap;
+	unsigned long pre_a2;
+	size_t buf_alloc_size;
 
 	rec->post_state = 0;
 
+	pre_a2 = rec->a2;
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
+
+	/*
+	 * Resolve the actual allocation size of the buffer at rec->a2 and
+	 * clamp rec->a3 (size) to it before the kernel sees the syscall.
+	 * rec->a3 comes from ARG_LEN / get_len() which freely returns
+	 * UINT_MAX-class values picked independently of the pool slot at
+	 * rec->a2.  The kernel's vfs_listxattr writes min(size, name_list_len)
+	 * bytes into the user buffer; when size > the live allocation the
+	 * write spills into adjacent heap-arena / pool-neighbour objects
+	 * and corrupts glibc chunk metadata, with the abort surfacing far
+	 * downstream (deferred_free_flush, _int_malloc on a corrupted
+	 * tcache, etc.).  Same shape as the sched_getattr clamp
+	 * (862ee5c6ae3a), applied here to the pool-backed ARG_ADDRESS
+	 * buffer family.
+	 *
+	 *   - If avoid_shared_buffer_out() redirected (pointer changed),
+	 *     the replacement came from get_writable_address(rec->a3) and
+	 *     is at least max(rec->a3, page_size) bytes.
+	 *   - Otherwise rec->a2 is the original ARG_ADDRESS pool slot from
+	 *     get_address() -> get_writable_address(RAND_ARRAY(
+	 *     mapping_sizes)); mapping_sizes[0] == page_size so the slot
+	 *     is provably at least page_size bytes, the conservative bound
+	 *     we can prove without re-resolving the slot.
+	 */
+	if (rec->a2 != pre_a2)
+		buf_alloc_size = rec->a3 > (unsigned long) page_size
+				       ? (size_t) rec->a3
+				       : (size_t) page_size;
+	else
+		buf_alloc_size = (size_t) page_size;
+
+	if ((size_t) rec->a3 > buf_alloc_size)
+		rec->a3 = (unsigned long) buf_alloc_size;
 
 	/*
 	 * Snapshot the fd and list buffer pointer for the post oracle.
@@ -53,6 +89,7 @@ static void sanitise_flistxattr(struct syscallrecord *rec)
 	snap = zmalloc(sizeof(*snap));
 	snap->arg1 = rec->a1;
 	snap->list = rec->a2;
+	snap->buf_alloc_size = buf_alloc_size;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -170,6 +207,15 @@ static void post_flistxattr(struct syscallrecord *rec)
 	snap_len = (size_t) rec->retval;
 	if (snap_len > sizeof(first_buf))
 		snap_len = sizeof(first_buf);
+	/*
+	 * Belt-and-braces: the sanitise-time clamp guarantees the kernel
+	 * could not have written past snap->buf_alloc_size, so the retval
+	 * never legitimately exceeds it.  Cap snap_len explicitly so a
+	 * sibling-stomped rec->retval cannot turn the memcpy below into a
+	 * read-OOB on the pool slot backing snap->list.
+	 */
+	if (snap->buf_alloc_size != 0 && snap_len > snap->buf_alloc_size)
+		snap_len = snap->buf_alloc_size;
 
 	memcpy(first_buf, (void *)(unsigned long) snap->list, snap_len);
 
@@ -235,10 +281,28 @@ struct syscallentry syscall_flistxattr = {
 static void sanitise_listxattr(struct syscallrecord *rec)
 {
 	struct listxattr_post_state *snap;
+	unsigned long pre_a2;
+	size_t buf_alloc_size;
 
 	rec->post_state = 0;
 
+	pre_a2 = rec->a2;
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
+
+	/*
+	 * Clamp rec->a3 (size) to the actual allocation backing rec->a2.
+	 * See sanitise_flistxattr above for the full rationale and the
+	 * 862ee5c6ae3a (sched_getattr) precedent -- identical pattern.
+	 */
+	if (rec->a2 != pre_a2)
+		buf_alloc_size = rec->a3 > (unsigned long) page_size
+				       ? (size_t) rec->a3
+				       : (size_t) page_size;
+	else
+		buf_alloc_size = (size_t) page_size;
+
+	if ((size_t) rec->a3 > buf_alloc_size)
+		rec->a3 = (unsigned long) buf_alloc_size;
 
 	/*
 	 * Snapshot the pathname and list buffer pointer for the post
@@ -252,6 +316,7 @@ static void sanitise_listxattr(struct syscallrecord *rec)
 	snap = zmalloc(sizeof(*snap));
 	snap->arg1 = rec->a1;
 	snap->list = rec->a2;
+	snap->buf_alloc_size = buf_alloc_size;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -371,6 +436,13 @@ static void post_listxattr(struct syscallrecord *rec)
 	snap_len = (size_t) rec->retval;
 	if (snap_len > sizeof(first_buf))
 		snap_len = sizeof(first_buf);
+	/*
+	 * Belt-and-braces: see sanitise_flistxattr's clamp -- snap_len is
+	 * additionally bounded by the snapshotted allocation so a stomped
+	 * rec->retval cannot turn the memcpy below into a read-OOB.
+	 */
+	if (snap->buf_alloc_size != 0 && snap_len > snap->buf_alloc_size)
+		snap_len = snap->buf_alloc_size;
 
 	memcpy(first_buf, (void *)(unsigned long) snap->list, snap_len);
 
@@ -438,10 +510,28 @@ struct syscallentry syscall_listxattr = {
 static void sanitise_llistxattr(struct syscallrecord *rec)
 {
 	struct listxattr_post_state *snap;
+	unsigned long pre_a2;
+	size_t buf_alloc_size;
 
 	rec->post_state = 0;
 
+	pre_a2 = rec->a2;
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
+
+	/*
+	 * Clamp rec->a3 (size) to the actual allocation backing rec->a2.
+	 * See sanitise_flistxattr above for the full rationale and the
+	 * 862ee5c6ae3a (sched_getattr) precedent -- identical pattern.
+	 */
+	if (rec->a2 != pre_a2)
+		buf_alloc_size = rec->a3 > (unsigned long) page_size
+				       ? (size_t) rec->a3
+				       : (size_t) page_size;
+	else
+		buf_alloc_size = (size_t) page_size;
+
+	if ((size_t) rec->a3 > buf_alloc_size)
+		rec->a3 = (unsigned long) buf_alloc_size;
 
 	/*
 	 * Snapshot the pathname and list buffer pointer for the post
@@ -455,6 +545,7 @@ static void sanitise_llistxattr(struct syscallrecord *rec)
 	snap = zmalloc(sizeof(*snap));
 	snap->arg1 = rec->a1;
 	snap->list = rec->a2;
+	snap->buf_alloc_size = buf_alloc_size;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -572,6 +663,13 @@ static void post_llistxattr(struct syscallrecord *rec)
 	snap_len = (size_t) rec->retval;
 	if (snap_len > sizeof(first_buf))
 		snap_len = sizeof(first_buf);
+	/*
+	 * Belt-and-braces: see sanitise_flistxattr's clamp -- snap_len is
+	 * additionally bounded by the snapshotted allocation so a stomped
+	 * rec->retval cannot turn the memcpy below into a read-OOB.
+	 */
+	if (snap->buf_alloc_size != 0 && snap_len > snap->buf_alloc_size)
+		snap_len = snap->buf_alloc_size;
 
 	memcpy(first_buf, (void *)(unsigned long) snap->list, snap_len);
 
