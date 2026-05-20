@@ -273,12 +273,20 @@ static void open_fail_nth(struct childdata *child)
 {
 	int fd;
 
-	if (shm->no_fail_nth == true)
+	/* Shared latch: load atomically so a sibling that already proved
+	 * the open() impossible (kernel built without CONFIG_FAULT_INJECTION,
+	 * /proc not mounted, etc.) is observed without relying on tearing-
+	 * free plain reads.  The store is __atomic_store_n rather than
+	 * __atomic_exchange_n because the transition has no observable side
+	 * effect beyond the bool itself -- there is no log to gate on the
+	 * first failer, so we mirror the iouring_enosys pattern
+	 * (childops/iouring-recipes.c) rather than the no_private_ns pattern. */
+	if (__atomic_load_n(&shm->no_fail_nth, __ATOMIC_RELAXED))
 		return;
 
 	fd = open("/proc/self/fail-nth", O_WRONLY);
 	if (fd == -1) {
-		shm->no_fail_nth = true;
+		__atomic_store_n(&shm->no_fail_nth, true, __ATOMIC_RELAXED);
 		return;
 	}
 
