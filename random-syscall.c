@@ -1134,22 +1134,30 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	if (group_bias)
 		child->last_group = entry->group;
 
-	/* Track syscall number for edge-pair sequence coverage. */
-	child->last_syscall_nr = rec->nr;
-
-	/* Mirror the just-completed syscall into the HEALER Phase A
-	 * per-child sequence buffer so the next call's observer-hook
-	 * fire sees this nr as one of its two predecessors.
+	/* Mirror the just-completed syscall into the per-child predecessor
+	 * windows the next call's attribution reads from:
+	 *
+	 *   - child->last_syscall_nr: read by dispatch_step's
+	 *     edgepair_record() as the prev_nr of the next (prev, curr)
+	 *     pair-bump, and by set_syscall_nr_random's edgepair_is_cold
+	 *     check on the syscall-selection biasing path.
+	 *   - child->healer_seq[]: HEALER's pair- and triple-table
+	 *     predecessor windows.
 	 *
 	 * Skip syscalls that returned -ENOSYS or -EOPNOTSUPP: the kernel
 	 * dispatcher rejected the call before its body executed, so kernel
 	 * state is unchanged from the previous syscall.  Crediting them as
 	 * state-setting predecessors of a subsequent new-edge event would
-	 * dilute attribution toward calls that did nothing. */
+	 * dilute attribution toward calls that did nothing — at top-N dump
+	 * time these noise pairs crowd out genuinely interesting
+	 * predecessor relationships.  The gate was originally added for
+	 * healer_seq_push alone; last_syscall_nr shares the same shape and
+	 * needs the same protection. */
 	if (rec->retval == -1UL &&
 	    (rec->errno_post == ENOSYS || rec->errno_post == EOPNOTSUPP)) {
-		/* nothing — keep the previous predecessor in place */
+		/* nothing — keep the previous predecessors in place */
 	} else {
+		child->last_syscall_nr = rec->nr;
 		healer_seq_push(child, rec->nr);
 	}
 
