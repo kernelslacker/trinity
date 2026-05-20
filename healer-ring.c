@@ -57,7 +57,7 @@ struct healer_pair_cell (*healer_pair_published)[MAX_NR_SYSCALL][MAX_NR_SYSCALL]
  * definitions in the tree. */
 #define HEALER_PAIR_MAX_WEIGHT		(1U << 24)
 #define HEALER_DECAY_OBSERVATIONS	5000UL
-#define HEALER_DECAY_INTERVAL_SEC	1800UL
+#define HEALER_DECAY_INTERVAL_SEC	7200UL
 
 /*
  * Per-event weight cap.  edge_delta from kcov_collect can spike on a
