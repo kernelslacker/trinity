@@ -202,7 +202,7 @@ static void sanitise_openat2(struct syscallrecord *rec)
 {
 	struct open_how *how;
 
-	how = zmalloc(sizeof(struct open_how));
+	how = zmalloc_tracked(sizeof(struct open_how));
 	how->flags = RAND_ARRAY(open_o_flags_base) | get_o_flags();
 	if (how->flags & (O_CREAT | O_TMPFILE))
 		how->mode = 0666;
