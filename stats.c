@@ -454,6 +454,30 @@ static void json_emit_minicorpus_section(void)
 	r_wins  = __atomic_load_n(&minicorpus_shm->replay_wins,  __ATOMIC_RELAXED);
 	printf(",\"replay\":{\"count\":%lu,\"wins\":%lu}", r_count, r_wins);
 
+	/* Pure-addition fields: dashboards that pin a strict-schema reader
+	 * against "minicorpus" must tolerate two new keys.  Tracks the
+	 * CMP-source corpus-save gate (saves_by_reason.cmp) and the
+	 * CMP-sourced subset of mutator wins (mut_attrib_cmp_wins); both
+	 * are zero pre-intervention so an unaware reader sees the
+	 * historical signal unchanged.  See
+	 * investigations/corpus-mutator-zero-wins-2026-05-20 for what to
+	 * expect overnight. */
+	{
+		unsigned long saves_pc = __atomic_load_n(
+			&minicorpus_shm->saves_by_reason[CORPUS_SAVE_REASON_PC],
+			__ATOMIC_RELAXED);
+		unsigned long saves_cmp = __atomic_load_n(
+			&minicorpus_shm->saves_by_reason[CORPUS_SAVE_REASON_CMP],
+			__ATOMIC_RELAXED);
+		unsigned long cmp_wins = __atomic_load_n(
+			&minicorpus_shm->mut_attrib_cmp_wins,
+			__ATOMIC_RELAXED);
+
+		printf(",\"saves_by_reason\":{\"pc\":%lu,\"cmp\":%lu}"
+		       ",\"mut_attrib_cmp_wins\":%lu",
+		       saves_pc, saves_cmp, cmp_wins);
+	}
+
 	c_iter   = __atomic_load_n(&minicorpus_shm->chain_iter_count,         __ATOMIC_RELAXED);
 	c_subst  = __atomic_load_n(&minicorpus_shm->chain_substitution_count, __ATOMIC_RELAXED);
 	c_save   = chain_corpus_shm ? __atomic_load_n(&chain_corpus_shm->save_count,   __ATOMIC_RELAXED) : 0UL;
@@ -4538,6 +4562,26 @@ void dump_stats(void)
 			pct10 = r_wins * 1000UL / r_count;
 			output(0, "Corpus replay: %lu replays  %lu wins (%lu.%lu%%)\n",
 			       r_count, r_wins, pct10 / 10, pct10 % 10);
+		}
+
+		/* CMP-source save / win telemetry.  Always emit when the
+		 * minicorpus block is being dumped -- a zero on saves_cmp is
+		 * itself a signal worth seeing ("the gate widening is in but
+		 * the path isn't firing"), per the falsification criteria in
+		 * the investigations/ analysis. */
+		{
+			unsigned long saves_pc = __atomic_load_n(
+				&minicorpus_shm->saves_by_reason[CORPUS_SAVE_REASON_PC],
+				__ATOMIC_RELAXED);
+			unsigned long saves_cmp = __atomic_load_n(
+				&minicorpus_shm->saves_by_reason[CORPUS_SAVE_REASON_CMP],
+				__ATOMIC_RELAXED);
+			unsigned long cmp_wins = __atomic_load_n(
+				&minicorpus_shm->mut_attrib_cmp_wins,
+				__ATOMIC_RELAXED);
+
+			output(0, "Corpus saves: pc=%lu cmp=%lu  mut wins (cmp-source): %lu\n",
+			       saves_pc, saves_cmp, cmp_wins);
 		}
 
 		{

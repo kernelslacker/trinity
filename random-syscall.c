@@ -932,15 +932,29 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * CMP-mode children contribute zero PC edges (their PC fd is never
 	 * enabled), so new_edge_count stays 0 and the per-strategy edge
 	 * attribution block below naturally skips on its `new_edge_count > 0`
-	 * gate.  HEALER observation, minicorpus saves, frontier ring updates,
-	 * and bandit reward attribution all also skip cleanly via
-	 * `if (new_edges)` further down — CMP-mode children just don't
-	 * contribute to those paths, which is by design. */
+	 * gate.  HEALER observation, frontier ring updates, and bandit
+	 * reward attribution also skip cleanly via `if (new_edges)`
+	 * further down -- CMP-mode children deliberately don't contribute
+	 * to those PC-edge concepts.
+	 *
+	 * CMP-source corpus saves are the exception: kcov_collect_cmp
+	 * returns the per-call count of bloom-novel KCOV_CMP_CONST
+	 * comparisons, captured here in new_cmp.  Under a PC-edge plateau
+	 * (cmp_rising_pc_flat) that count is the only available novelty
+	 * signal -- the save gate below widens to `new_edges || new_cmp
+	 * > 0` so the corpus can still grow and mutator wins can still be
+	 * credited, breaking the self-reinforcing
+	 * PC-plateau->no-saves->no-mutator-wins loop.  See
+	 * investigations/corpus-mutator-zero-wins-2026-05-20 for the full
+	 * analysis. */
+	unsigned long new_cmp = 0;
+
 	if (child->kcov.mode == KCOV_MODE_PC) {
 		new_edges = kcov_collect(&child->kcov, rec->nr, &new_edge_count);
 	} else {
-		kcov_collect_cmp(&child->kcov, rec->nr, child->is_explorer,
-				 child->strategy_at_pick);
+		new_cmp = kcov_collect_cmp(&child->kcov, rec->nr,
+					   child->is_explorer,
+					   child->strategy_at_pick);
 		new_edges = false;
 	}
 
@@ -968,16 +982,51 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	if (child->last_syscall_nr != EDGEPAIR_NO_PREV)
 		edgepair_record(child, child->last_syscall_nr, rec->nr, new_edges);
 
+	/* CMP-bloom novelty is an equivalent corpus-save / mutator-win
+	 * signal alongside PC-edge novelty.  Under a PC-edge plateau the
+	 * PC-only gate fires for ~0% of calls; the OR-with-CMP gate keeps
+	 * the corpus growing on arg neighbourhoods that exercise new
+	 * compile-time-constant comparisons (the cmp_rising_pc_flat
+	 * frontier).  PC-edge-specific bookkeeping below (HEALER, frontier
+	 * ring, snapshot cadence, per-strategy edge attribution,
+	 * explorer/bandit pool edge counters) STAYS gated on new_edges --
+	 * those are PC-edge concepts by definition and contaminating them
+	 * with CMP-source events would silently bias the bandit reward
+	 * and corrupt the plateau diagnostics. */
+	bool found_something = new_edges || (new_cmp > 0);
+
+	/* If the win signal came from CMP novelty rather than PC novelty,
+	 * tag the pending mutator attribution.  Tag-before-commit + the
+	 * unconditional clear inside commit() together mean a stale tag
+	 * from a !found_something path never leaks into the next call. */
+	if (new_cmp > 0)
+		minicorpus_mut_attrib_set_cmp_source();
+
 	/* Credit each mutator case picked during this call's arg
-	 * generation, with wins iff this call found new edges. */
-	minicorpus_mut_attrib_commit(new_edges);
+	 * generation, with wins iff this call produced ANY novelty
+	 * signal (PC-edge OR CMP-bloom).  PC-only credit was the matching
+	 * half of the PC-only save gate; expanding both together keeps
+	 * mutator productivity stats and corpus growth in lockstep. */
+	minicorpus_mut_attrib_commit(found_something);
 
-	/* Save args that discovered new coverage, but only for
-	 * syscalls without sanitise (which may stash pointers). */
-	if (unlikely(new_edges)) {
+	/* Save args that produced any novelty signal, but only for
+	 * syscalls without sanitise (which may stash pointers).  Tag with
+	 * the source so saves_by_reason[] separates PC-promoted from
+	 * CMP-promoted entries; PC wins the tag on calls where both
+	 * signals fire so the historical accounting is preserved. */
+	if (unlikely(found_something)) {
 		if (entry->sanitise == NULL)
-			minicorpus_save(rec);
+			minicorpus_save_with_reason(rec,
+				new_edges ? CORPUS_SAVE_REASON_PC
+					  : CORPUS_SAVE_REASON_CMP);
+	}
 
+	/* PC-edge-only bookkeeping below.  Deliberately separate from the
+	 * found_something save block above so CMP-source saves can't
+	 * trigger HEALER observe, snapshot cadence, per-strategy edge
+	 * attribution, or pool edge counters -- see comment above on why
+	 * those must stay PC-only. */
+	if (unlikely(new_edges)) {
 		/* HEALER observer -- credit BOTH the pair-table
 		 * (pred_last -> rec->nr) and the triple-table
 		 * (sort(pred_prev, pred_last) -> rec->nr) relations for
