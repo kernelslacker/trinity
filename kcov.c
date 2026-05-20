@@ -660,13 +660,14 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr,
 	return found_new;
 }
 
-void kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
-		      bool is_explorer, int strategy_at_pick)
+unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
+			       bool is_explorer, int strategy_at_pick)
 {
 	unsigned long count;
+	unsigned long novel;
 
 	if (kc == NULL || !kc->cmp_capable || kc->cmp_trace_buf == NULL)
-		return;
+		return 0;
 
 	count = __atomic_load_n(&kc->cmp_trace_buf[0], __ATOMIC_RELAXED);
 	if (count > KCOV_CMP_RECORDS_MAX) {
@@ -679,13 +680,16 @@ void kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
 	}
 
 	if (count == 0)
-		return;
+		return 0;
 
 	cmp_hints_collect(kc->cmp_trace_buf, nr);
-	bandit_cmp_observe(kc->cmp_trace_buf, nr, is_explorer, strategy_at_pick);
+	novel = bandit_cmp_observe(kc->cmp_trace_buf, nr,
+				   is_explorer, strategy_at_pick);
 
 	__atomic_fetch_add(&kcov_shm->cmp_records_collected, count,
 		__ATOMIC_RELAXED);
+
+	return novel;
 }
 
 void kcov_get_cmp_records(struct kcov_child *kc,

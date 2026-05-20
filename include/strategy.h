@@ -419,9 +419,18 @@ const char *strategy_name(int arm);
  * wrong arm, contaminating the bandit's reward signal.  -1 sentinel
  * (and any other out-of-range value, e.g. from a wild shm write
  * landing on the field) skips attribution.
+ *
+ * Returns the number of bloom-novel KCOV_CMP_CONST constants observed
+ * on this call (sum over all records in trace_buf).  The return value
+ * is independent of is_explorer / strategy_at_pick -- those only gate
+ * the per-arm bandit_cmp_new_constants[] attribution -- so callers can
+ * use a positive return to trigger CMP-source corpus saves even for
+ * explorer-pool children or pre-first-pick syscalls.  Returns 0 if
+ * trace_buf is NULL, nr is out of range, the buffer is empty, or no
+ * compile-time-constant record exercised a never-before-seen value.
  */
-void bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr,
-			bool is_explorer, int strategy_at_pick);
+unsigned long bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr,
+				bool is_explorer, int strategy_at_pick);
 
 /*
  * Bump the per-syscall frontier-edge ring slot when kcov_collect

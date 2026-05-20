@@ -352,9 +352,16 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr,
  * when this syscall was picked (or -1 for explorers / pre-first-pick);
  * forwarded so bandit_cmp_observe attributes CMP novelty to the arm
  * that picked the call rather than re-reading shm->current_strategy
- * (which may have rotated mid-syscall). */
-void kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
-		      bool is_explorer, int strategy_at_pick);
+ * (which may have rotated mid-syscall).
+ *
+ * Returns the count of bloom-novel KCOV_CMP_CONST constants observed
+ * on this call (the bandit_cmp_observe return value).  0 means no
+ * novelty; any positive value means "this call exercised at least one
+ * new compile-time-constant comparison and is a candidate for
+ * CMP-source corpus save".  Returns 0 when cmp_capable is false, the
+ * buffer is empty, or the kernel only produced non-CONST records. */
+unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
+			       bool is_explorer, int strategy_at_pick);
 
 /* Accessor for the raw CMP record stream after kcov_disable().
  * On return, *out points at the first record (NULL when cmp_capable
