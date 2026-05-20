@@ -370,15 +370,27 @@ int main(int argc, char* argv[])
 	 * max_children. */
 	clamp_default_explorer_children();
 
-	/* Surface the resolved picker/explorer split unconditionally so the
-	 * operator can confirm what the run will actually do -- the explorer
-	 * default is mode-aware, and an operator passing --strategy without
-	 * also setting --explorer-children would otherwise have to read the
-	 * source to know whether 25% of children are silently diverted to
-	 * STRATEGY_RANDOM. */
-	output(0, "picker_mode=%s explorer_children=%u (of %u)\n",
-	       picker_mode_name(picker_mode_arg),
-	       explorer_children, max_children);
+	/* Surface the resolved slot partition unconditionally so the operator
+	 * can confirm what the run will actually do -- the explorer default
+	 * is mode-aware, the alt-op range is reserved from the front, and
+	 * the bandit pool is whatever remains.  Printing the resolved counts
+	 * (not the requested ones) makes the disjoint layout legible without
+	 * having to read the source. */
+	{
+		unsigned int bandit_children = max_children;
+		if (bandit_children >= alt_op_children)
+			bandit_children -= alt_op_children;
+		else
+			bandit_children = 0;
+		if (bandit_children >= explorer_children)
+			bandit_children -= explorer_children;
+		else
+			bandit_children = 0;
+		output(0, "picker_mode=%s slot partition: alt_op=%u explorer=%u bandit=%u (of %u)\n",
+		       picker_mode_name(picker_mode_arg),
+		       alt_op_children, explorer_children,
+		       bandit_children, max_children);
+	}
 
 	/* Register trinity's own .data/.bss + every loaded DSO's writable
 	 * PT_LOAD segments with shared_regions[] BEFORE fork_children() so

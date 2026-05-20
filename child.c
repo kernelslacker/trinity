@@ -814,11 +814,17 @@ static void init_child(struct childdata *child, int childno)
 		child->active_syscalls = shm->active_syscalls;
 
 	/* Stamp the explorer-pool flag based on this child's slot index.
-	 * explorer_children is finalised in clamp_default_explorer_children()
-	 * before the first fork, so a single read here suffices for the
-	 * child's lifetime. */
+	 * Layout: dedicated alt-op slots come first [0, alt_op_children),
+	 * explorer slots follow [alt_op_children, alt_op_children +
+	 * explorer_children), and the remainder runs the default/bandit
+	 * mix.  Keeping the partitions disjoint stops --strategy=bandit
+	 * --alt-op-children=N from silently consuming the explorer
+	 * baseline.  Both clamps run before the first fork
+	 * (clamp_default_explorer_children() in trinity.c) so a single
+	 * read here suffices for the child's lifetime. */
 	child->is_explorer = (childno >= 0 &&
-			      (unsigned int)childno < explorer_children);
+			      (unsigned int)childno >= alt_op_children &&
+			      (unsigned int)childno < alt_op_children + explorer_children);
 
 	/*
 	 * Pin RLIMIT_AS as the LAST thing init_child does, just before the

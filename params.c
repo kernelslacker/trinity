@@ -280,18 +280,26 @@ static unsigned long derive_max_children_cap(enum max_children_binding *out_bind
  */
 void clamp_default_explorer_children(void)
 {
-	unsigned int ceiling = max_children / 2;
+	/* Explorer slots are reserved AFTER the dedicated alt-op slots
+	 * (see init_child() in child.c), so the ceiling is computed
+	 * against the slots that remain once alt_op_children has been
+	 * carved off the front -- not against raw max_children, which
+	 * would let the explorer range overlap the alt-op range and
+	 * silently consume the random-explorer baseline. */
+	unsigned int remaining = (max_children > alt_op_children) ?
+				 max_children - alt_op_children : 0;
+	unsigned int ceiling = remaining / 2;
 
 	if (!user_specified_explorer_children) {
 		if (picker_mode_arg == PICKER_BANDIT_UCB1)
-			explorer_children = max_children / 4;
+			explorer_children = remaining / 4;
 		/* else: leave explorer_children at its 0 init so the
-		 * active strategy runs on every child slot. */
+		 * active strategy runs on every non-alt-op child slot. */
 		return;
 	}
 
 	if (explorer_children > ceiling) {
-		outputerr("warning: --explorer-children=%u exceeds max_children/2 (%u); clamping to %u\n",
+		outputerr("warning: --explorer-children=%u exceeds (max_children-alt_op_children)/2 (%u); clamping to %u\n",
 			  explorer_children, ceiling, ceiling);
 		explorer_children = ceiling;
 	}

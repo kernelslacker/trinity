@@ -355,14 +355,16 @@ struct childdata {
 
 	bool dropped_privs;
 
-	/* Hybrid bandit/explorer split: true for the first
-	 * `explorer_children` child slots (childno < explorer_children).
-	 * Stamped once in init_child() and never mutated for the child's
-	 * lifetime, so the syscall picker can branch off it without an
-	 * atomic load and the bandit-reward attribution can filter
-	 * explorer contributions out of pc_edge_calls_by_strategy[] /
-	 * pc_edge_count_by_strategy[] / bandit_cmp_new_constants[].
-	 * Always false when
+	/* Hybrid bandit/explorer split: true for the explorer slice
+	 * [alt_op_children, alt_op_children + explorer_children) of the
+	 * child array.  Slots strictly below alt_op_children are dedicated
+	 * alt-op children; slots at or above the explorer end run the
+	 * default/bandit mix.  Stamped once in init_child() and never
+	 * mutated for the child's lifetime, so the syscall picker can
+	 * branch off it without an atomic load and the bandit-reward
+	 * attribution can filter explorer contributions out of
+	 * pc_edge_calls_by_strategy[] / pc_edge_count_by_strategy[] /
+	 * bandit_cmp_new_constants[].  Always false when
 	 * explorer_children is 0. */
 	bool is_explorer;
 

@@ -86,23 +86,35 @@ extern unsigned char canary_seed_override[CANARY_SEED_OVERRIDE_MAX];
 extern unsigned int canary_seed_override_count;
 
 /*
- * Hybrid bandit/explorer split: when --strategy=bandit is in effect, the
- * first `explorer_children` child slots ignore the bandit's pick and run
- * STRATEGY_RANDOM unconditionally as an always-on uniform baseline.  Their
- * coverage discoveries are recorded separately and excluded from the
- * bandit's reward signal so the explorer pool acts as an independent
- * canary rather than biasing arm selection.
+ * Hybrid bandit/explorer split: when --strategy=bandit is in effect, a
+ * dedicated explorer slice of the child slots ignores the bandit's pick
+ * and runs STRATEGY_RANDOM unconditionally as an always-on uniform
+ * baseline.  Coverage discoveries from those slots are recorded
+ * separately and excluded from the bandit's reward signal so the
+ * explorer pool acts as an independent canary rather than biasing arm
+ * selection.
  *
- * Default (when --explorer-children is not passed) is computed as
- * max_children/4 by clamp_default_explorer_children() AFTER parse_args
- * has finalised max_children, but ONLY when picker_mode_arg ==
+ * Slot layout (disjoint, computed at startup):
+ *   [0,                        alt_op_children)            dedicated alt-op
+ *   [alt_op_children,          alt_op_children+expl)       explorer
+ *   [alt_op_children+expl,     max_children)               default/bandit
+ * Reserving the alt-op slice first keeps the explorer baseline from
+ * silently overlapping the dedicated alt-op range under
+ * --strategy=bandit --alt-op-children=N.
+ *
+ * Default (when --explorer-children is not passed) is
+ * (max_children - alt_op_children) / 4, computed by
+ * clamp_default_explorer_children() AFTER parse_args has finalised both
+ * max_children and alt_op_children, and ONLY when picker_mode_arg ==
  * PICKER_BANDIT_UCB1.  Under any other picker mode (round-robin,
  * heuristic, etc.) the explorer pool defaults to zero so the active
- * strategy is what every child slot actually runs -- the explorer pool
- * is a bandit-specific baseline and would otherwise silently divert 25%
- * of the fleet to STRATEGY_RANDOM regardless of the operator's
- * --strategy choice.  The operator can still override with
- * --explorer-children=N in any picker mode; that path is unconditional.
+ * strategy is what every non-alt-op child slot actually runs -- the
+ * explorer pool is a bandit-specific baseline and would otherwise
+ * silently divert ~25% of the fleet to STRATEGY_RANDOM regardless of
+ * the operator's --strategy choice.  The operator can still override
+ * with --explorer-children=N in any picker mode; that path is clamped
+ * against (max_children - alt_op_children) / 2 to keep both the
+ * disjoint-layout invariant and a viable bandit pool.
  * user_specified_explorer_children records whether the operator passed
  * the flag explicitly so the default-fill path can leave their value
  * alone.
