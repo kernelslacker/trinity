@@ -150,7 +150,7 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 	 * systems without SYS_sched_getattr the post handler is a no-op
 	 * stub and a snapshot only the post handler can free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->pid             = rec->a1;
 	snap->attr            = rec->a2;
 	snap->size            = rec->a3;

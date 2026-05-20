@@ -59,7 +59,7 @@ static void sanitise_setgroups(struct syscallrecord *rec)
 	 * buffer pointer, so the memcpy / qsort would touch a foreign
 	 * allocation.  post_state is private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = SETGROUPS_POST_STATE_MAGIC;
 	snap->count = rec->a1;
 	snap->list = rec->a2;

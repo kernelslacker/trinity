@@ -71,7 +71,7 @@ static void sanitise_write(struct syscallrecord *rec)
 	 * count-bound validator must read count from the post-state-private
 	 * slot rather than the sibling-stomp-vulnerable rec->a3.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = WRITE_POST_STATE_MAGIC;
 	snap->buf = (unsigned long) ptr;
 	snap->count = size;

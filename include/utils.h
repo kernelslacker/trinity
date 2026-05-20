@@ -90,6 +90,18 @@ void * __zmalloc(size_t size, const char *func);
 #define zmalloc(size)	__zmalloc(size, __func__)
 
 /*
+ * Opt-in tracking variant.  Identical to zmalloc() but additionally
+ * registers the returned pointer with the deferred-free alloc-track
+ * ring.  Use at allocation sites whose pointer is bound to flow
+ * through deferred_free_enqueue() / deferred_freeptr(); plain
+ * zmalloc() stays at sites freed directly (process-lifetime tables,
+ * direct-free error fallbacks).  See utils.c __zmalloc_tracked() and
+ * the alloc-tracking audit for the opt-in-vs-default rationale.
+ */
+void * __zmalloc_tracked(size_t size, const char *func);
+#define zmalloc_tracked(size)	__zmalloc_tracked(size, __func__)
+
+/*
  * Ownership table for syscall handlers that snapshot state into a
  * zmalloc'd struct hung off rec->post_state.  Register at allocation
  * time, unregister immediately before the deferred_freeptr() that

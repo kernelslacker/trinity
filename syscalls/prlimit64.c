@@ -104,7 +104,7 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 	 * registered and a snapshot only the post handler can free would
 	 * leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic     = PRLIMIT64_POST_STATE_MAGIC;
 	snap->pid       = rec->a1;
 	snap->resource  = rec->a2;

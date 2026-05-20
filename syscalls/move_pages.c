@@ -100,7 +100,7 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 	 * to free, leaking ours and corrupting another sanitise routine's
 	 * live buffers.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = MOVE_PAGES_POST_STATE_MAGIC;
 	snap->pages = page_alloc;
 	snap->nodes = nodes;

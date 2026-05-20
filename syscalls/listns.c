@@ -89,7 +89,7 @@ static void sanitise_listns(struct syscallrecord *rec)
 
 	/* Snapshot for the post handler -- a1 / a3 may be scribbled by a
 	 * sibling syscall before post_listns() runs. */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = LISTNS_POST_STATE_MAGIC;
 	snap->req = rec->a1;
 	snap->nr_ns_ids = rec->a3;

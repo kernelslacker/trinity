@@ -83,7 +83,7 @@ static void sanitise_lookup_dcookie(struct syscallrecord *rec)
 	 * handler's re-issue would not work and a snapshot only the post
 	 * handler can free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->cookie    = (uint64_t) rec->a1;
 	snap->buf       = rec->a2;
 	snap->len       = rec->a3;

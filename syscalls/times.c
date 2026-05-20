@@ -45,7 +45,7 @@ static void sanitise_times(struct syscallrecord *rec)
 	 * user-buffer pointer, so the source memcpy would touch a foreign
 	 * allocation.  post_state is private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = TIMES_POST_STATE_MAGIC;
 	snap->tbuf = rec->a1;
 	rec->post_state = (unsigned long) snap;

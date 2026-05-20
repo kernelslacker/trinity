@@ -74,7 +74,7 @@ static void sanitise_getrlimit(struct syscallrecord *rec)
 	 * without SYS_getrlimit the post handler is not registered and a
 	 * snapshot only the post handler can free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = GETRLIMIT_POST_STATE_MAGIC;
 	snap->resource = (unsigned int) rec->a1;
 	snap->rlim     = (void *)(unsigned long) rec->a2;

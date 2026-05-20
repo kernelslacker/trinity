@@ -128,7 +128,7 @@ static void sanitise_select(struct syscallrecord *rec)
 	 * routine's live buffers.  rec->post_state is private to the post
 	 * handler, so the scribblers have nothing to scribble there.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = SELECT_POST_STATE_MAGIC;
 	snap->rfds = (fd_set *) rec->a2;
 	snap->wfds = (fd_set *) rec->a3;

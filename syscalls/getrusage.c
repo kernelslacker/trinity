@@ -62,7 +62,7 @@ static void sanitise_getrusage(struct syscallrecord *rec)
 	 * without SYS_getrusage the post handler's re-issue would not work
 	 * and a snapshot only the post handler can free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic     = GETRUSAGE_POST_STATE_MAGIC;
 	snap->who       = rec->a1;
 	snap->ru        = rec->a2;

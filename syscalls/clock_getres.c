@@ -53,7 +53,7 @@ static void sanitise_clock_getres(struct syscallrecord *rec)
 	 * at a different clock and forge a divergence.  post_state is
 	 * private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic   = CLOCK_GETRES_POST_STATE_MAGIC;
 	snap->clockid = rec->a1;
 	snap->tp      = rec->a2;

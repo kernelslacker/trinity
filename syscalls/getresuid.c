@@ -62,7 +62,7 @@ static void sanitise_getresuid(struct syscallrecord *rec)
 	 * 16-bit getresuid16 path uses sanitise_getresuid16 instead because
 	 * it has no .post handler and would leak the snapshot.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = GETRESUID_POST_STATE_MAGIC;
 	snap->ruid = rec->a1;
 	snap->euid = rec->a2;

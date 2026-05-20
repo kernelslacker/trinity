@@ -105,7 +105,7 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 	 * stomp slips the guard and mq_unlink runs against a foreign
 	 * string.  post_state is private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = MQ_OPEN_POST_STATE_MAGIC;
 	snap->name  = rec->a1;
 	snap->oflag = rec->a2;

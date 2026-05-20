@@ -68,7 +68,7 @@ static void sanitise_getcpu(struct syscallrecord *rec)
 	 * systems without SYS_getcpu the post handler is not registered and
 	 * a snapshot only the post handler can free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = GETCPU_POST_STATE_MAGIC;
 	snap->cpup  = rec->a1;
 	snap->nodep = rec->a2;

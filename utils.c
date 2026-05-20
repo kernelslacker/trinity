@@ -907,6 +907,31 @@ done:
 }
 
 /*
+ * Opt-in variant of __zmalloc() that additionally registers the
+ * returned pointer with the deferred-free alloc-track ring.  Callers
+ * use this when the allocation is bound to flow through
+ * deferred_free_enqueue() / deferred_freeptr() so that the consume-on-
+ * free invariant has a matching tracker entry to remove.  Plain
+ * __zmalloc() must be used at sites whose allocations are released
+ * via direct free() (process-lifetime / per-child tables / error-path
+ * fallbacks); registering those would leave stale entries in the ring
+ * that a fuzzed value can match against -- the bug Option B of the
+ * 2026-05-19 alloc-tracking audit narrows the tracker to avoid.
+ *
+ * Note: until the unconditional deferred_alloc_track() inside
+ * __zmalloc() is removed in a follow-up commit, callers that migrate
+ * here transparently double-register; the duplicate is harmless
+ * because alloc_track_consume() is single-shot per match.
+ */
+void * __zmalloc_tracked(size_t size, const char *func)
+{
+	void *p = __zmalloc(size, func);
+
+	deferred_alloc_track(p);
+	return p;
+}
+
+/*
  * Ownership table for syscall handlers that snapshot state into a
  * zmalloc'd struct hung off rec->post_state.  Currently only execve /
  * execveat use it, but the API is shape-agnostic so any post handler

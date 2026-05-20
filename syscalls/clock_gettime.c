@@ -60,7 +60,7 @@ static void sanitise_clock_gettime(struct syscallrecord *rec)
 	 * is not registered and a snapshot only the post handler can free
 	 * would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic   = CLOCK_GETTIME_POST_STATE_MAGIC;
 	snap->clockid = rec->a1;
 	snap->tp      = rec->a2;

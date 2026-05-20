@@ -65,7 +65,7 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 	 * bound would resolve against scribbled values.  post_state is
 	 * private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->pid  = rec->a1;
 	snap->len  = rec->a2;
 	snap->mask = rec->a3;

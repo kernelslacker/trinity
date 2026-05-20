@@ -86,7 +86,7 @@ static void sanitise_capset(struct syscallrecord *rec)
 	 * buffer pointers, so the data[0].effective read would touch a
 	 * foreign allocation.  post_state is private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic  = CAPSET_POST_STATE_MAGIC;
 	snap->header = rec->a1;
 	snap->data   = rec->a2;

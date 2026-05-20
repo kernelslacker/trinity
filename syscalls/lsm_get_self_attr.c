@@ -111,7 +111,7 @@ static void sanitise_lsm_get_self_attr(struct syscallrecord *rec)
 	 * registered and a snapshot only the post handler can free would
 	 * leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->attr  = rec->a1;
 	snap->ctx   = rec->a2;
 	snap->size  = rec->a3;

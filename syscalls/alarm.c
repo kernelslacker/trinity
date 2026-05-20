@@ -30,7 +30,7 @@ static void sanitise_alarm(struct syscallrecord *rec)
 
 	rec->post_state = 0;
 
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic   = ALARM_POST_STATE_MAGIC;
 	snap->seconds = (unsigned int) rec->a1;
 	rec->post_state = (unsigned long) snap;

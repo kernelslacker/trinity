@@ -49,7 +49,7 @@ static void sanitise_fstatfs(struct syscallrecord *rec)
 	 * against a different mount entirely.  post_state is private to
 	 * the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = FSTATFS_POST_STATE_MAGIC;
 	snap->fd  = rec->a1;
 	snap->buf = rec->a2;
@@ -279,7 +279,7 @@ static void sanitise_fstatfs64(struct syscallrecord *rec)
 		 * against a different mount or change the buffer-size
 		 * semantics.  post_state is private to the post handler.
 		 */
-		snap = zmalloc(sizeof(*snap));
+		snap = zmalloc_tracked(sizeof(*snap));
 		snap->magic = FSTATFS64_POST_STATE_MAGIC;
 		snap->fd  = rec->a1;
 		snap->sz  = rec->a2;

@@ -126,7 +126,7 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	 * never-happened anomaly.  post_state is private to the post
 	 * handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic  = MUNMAP_POST_STATE_MAGIC;
 	snap->addr   = rec->a1;
 	snap->len    = rec->a2;

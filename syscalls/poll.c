@@ -222,7 +222,7 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 	 * deferred_free_enqueue(), and the relocated addresses live in the
 	 * get_writable_address() pool, not the glibc heap.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = PPOLL_POST_STATE_MAGIC;
 	snap->fds = fds;
 	snap->ts = ts;

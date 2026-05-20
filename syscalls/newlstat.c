@@ -47,7 +47,7 @@ static void sanitise_newlstat(struct syscallrecord *rec)
 	 * a foreign allocation and the re-issue could resolve a different
 	 * symlink entirely.  post_state is private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = NEWLSTAT_POST_STATE_MAGIC;
 	snap->filename = rec->a1;
 	snap->statbuf  = rec->a2;

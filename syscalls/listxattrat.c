@@ -98,7 +98,7 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 	 * without SYS_listxattrat the post handler is not registered and a
 	 * snapshot only the post handler can free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->dfd      = rec->a1;
 	snap->pathname = rec->a2;
 	snap->at_flags = rec->a3;

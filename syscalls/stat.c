@@ -146,7 +146,7 @@ static void sanitise_statx(struct syscallrecord *rec)
 	 * sets in stx_mask and break the intersection logic on the
 	 * re-issue.  post_state is private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = STATX_POST_STATE_MAGIC;
 	snap->dfd      = rec->a1;
 	snap->pathname = rec->a2;

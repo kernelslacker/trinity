@@ -164,7 +164,7 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 		 * uargs must point to a uint32_t containing the action to probe.
 		 * Pick a random valid SECCOMP_RET_* action.
 		 */
-		uint32_t *action = zmalloc(sizeof(*action));
+		uint32_t *action = zmalloc_tracked(sizeof(*action));
 
 		*action = seccomp_ret_actions[rand() % ARRAY_SIZE(seccomp_ret_actions)];
 		rec->a2 = 0;
@@ -177,7 +177,7 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 		 * uargs must point to a writable struct seccomp_notif_sizes
 		 * (3 x __u16) for the kernel to fill in.
 		 */
-		void *sizes = zmalloc(3 * sizeof(uint16_t));
+		void *sizes = zmalloc_tracked(3 * sizeof(uint16_t));
 
 		rec->a2 = 0;
 		rec->a3 = (unsigned long) sizes;
@@ -192,7 +192,7 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 	 * allocation into being treated as one.
 	 */
 	if (heap != NULL) {
-		snap = zmalloc(sizeof(*snap));
+		snap = zmalloc_tracked(sizeof(*snap));
 		snap->magic = SECCOMP_POST_STATE_MAGIC;
 		snap->op = rec->a1;
 		snap->heap = heap;

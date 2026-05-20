@@ -239,7 +239,7 @@ static void sanitise_prctl(struct syscallrecord *rec)
 	case PR_GET_THP_DISABLE:
 	case PR_GET_CHILD_SUBREAPER:
 	case PR_GET_SECCOMP: {
-		struct prctl_post_state *snap = zmalloc(sizeof(*snap));
+		struct prctl_post_state *snap = zmalloc_tracked(sizeof(*snap));
 
 		snap->magic = PRCTL_POST_STATE_MAGIC;
 		snap->option = option;

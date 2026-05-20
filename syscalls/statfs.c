@@ -52,7 +52,7 @@ static void sanitise_statfs(struct syscallrecord *rec)
 		 * allocation and the re-issue could resolve a different mount
 		 * entirely.  post_state is private to the post handler.
 		 */
-		snap = zmalloc(sizeof(*snap));
+		snap = zmalloc_tracked(sizeof(*snap));
 		snap->magic    = STATFS_POST_STATE_MAGIC;
 		snap->pathname = rec->a1;
 		snap->buf      = rec->a2;
@@ -286,7 +286,7 @@ static void sanitise_statfs64(struct syscallrecord *rec)
 		 * size semantics on the re-issue.  post_state is private to
 		 * the post handler.
 		 */
-		snap = zmalloc(sizeof(*snap));
+		snap = zmalloc_tracked(sizeof(*snap));
 		snap->magic    = STATFS64_POST_STATE_MAGIC;
 		snap->pathname = rec->a1;
 		snap->sz       = rec->a2;

@@ -45,11 +45,14 @@ static unsigned long ** gen_ptrs_to_crap(unsigned int count)
 	void **ptr;
 	unsigned int i;
 
-	/* Fabricate argv */
-	ptr = zmalloc(count * sizeof(void *));
+	/* Fabricate argv -- this outer array and the per-entry page buffers
+	 * are released via enqueue_execve_ptrs() in the post handler, which
+	 * routes them through deferred_free_enqueue().  Opt in to the
+	 * alloc-tracker so the matching consume-on-free pairs up. */
+	ptr = zmalloc_tracked(count * sizeof(void *));
 
 	for (i = 0; i < count; i++) {
-		ptr[i] = zmalloc(page_size);
+		ptr[i] = zmalloc_tracked(page_size);
 		generate_rand_bytes((unsigned char *) ptr[i], rand() % page_size);
 	}
 
@@ -213,7 +216,7 @@ static void sanitise_execve(struct syscallrecord *rec)
 	 * out of an allocation that may be smaller than struct
 	 * execve_post_state.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = EXECVE_POST_STATE_MAGIC;
 	snap->argv = (void **) argv;
 	snap->envp = (void **) envp;

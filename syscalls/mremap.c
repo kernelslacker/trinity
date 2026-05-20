@@ -131,7 +131,7 @@ static void sanitise_mremap(struct syscallrecord *rec)
 	 * trusts m->size walks off the actual mapping.  post_state is
 	 * private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic   = MREMAP_POST_STATE_MAGIC;
 	snap->new_len = rec->a3;
 	snap->map     = rec->a6;

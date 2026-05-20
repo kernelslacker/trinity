@@ -76,7 +76,7 @@ static void sanitise_get_robust_list(struct syscallrecord *rec)
 	 * registered and a snapshot only the post handler can free would
 	 * leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = GET_ROBUST_LIST_POST_STATE_MAGIC;
 	snap->pid      = rec->a1;
 	snap->head_ptr = rec->a2;

@@ -352,7 +352,12 @@ static void sanitise_bpf(struct syscallrecord *rec)
 
 	rec->post_state = 0;
 
-	attr = zmalloc(sizeof(union bpf_attr));
+	/* attr is the BPF sanitise-time allocation that the post handler
+	 * routes through deferred_free_enqueue() (see line ~840).  A rare
+	 * post-state-corruption branch may return without freeing, leaving
+	 * a stale tracker slot to be evicted by LRU -- a benign leak
+	 * relative to the wrong-free failure mode the audit cares about. */
+	attr = zmalloc_tracked(sizeof(union bpf_attr));
 	rec->a2 = (unsigned long) attr;
 
 	switch (cmd) {
@@ -551,7 +556,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	 * the struct bpf_post_state comment for why every post-handler read
 	 * site wants sanitise intent rather than kernel-observed bytes.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = BPF_POST_STATE_MAGIC;
 	snap->cmd = cmd;
 	snap->attr_original = attr;

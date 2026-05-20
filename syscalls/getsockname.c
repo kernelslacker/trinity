@@ -85,7 +85,7 @@ static void sanitise_getsockname(struct syscallrecord *rec)
 	 * handler is not registered and a snapshot only the post handler
 	 * can free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic         = GETSOCKNAME_POST_STATE_MAGIC;
 	snap->fd            = rec->a1;
 	snap->usockaddr     = rec->a2;

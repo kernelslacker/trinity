@@ -49,7 +49,7 @@ static void sanitise_getitimer(struct syscallrecord *rec)
 	 * value user-buffer pointer, so the source memcpy would touch a
 	 * foreign allocation.  post_state is private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = GETITIMER_POST_STATE_MAGIC;
 	snap->value = rec->a2;
 	rec->post_state = (unsigned long) snap;

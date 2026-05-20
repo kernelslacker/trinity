@@ -216,7 +216,7 @@ skip_si:
 
 	rec->a2 = (unsigned long) msg;
 
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = RECVMSG_POST_STATE_MAGIC;
 	snap->msg = msg;
 	snap->iov_len_sum = iov_len_sum;
@@ -397,7 +397,7 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 	vlen = RAND_RANGE(1, RECVMMSG_MAX_VLEN);
 	msgs = zmalloc(vlen * sizeof(struct mmsghdr));
 
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = RECVMMSG_POST_STATE_MAGIC;
 	snap->msgs = msgs;
 	snap->vlen = vlen;

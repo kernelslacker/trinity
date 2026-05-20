@@ -73,7 +73,7 @@ static void sanitise_mprotect(struct syscallrecord *rec)
 	 * addr/len mis-aims the proc-maps oracle.  post_state is private
 	 * to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = MPROTECT_POST_STATE_MAGIC;
 	snap->addr = rec->a1;
 	snap->len  = rec->a2;

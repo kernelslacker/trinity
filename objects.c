@@ -414,7 +414,7 @@ static struct object *local_fd_hash_lookup(struct objhead *head, int fd)
  */
 struct object * alloc_object(void)
 {
-	return zmalloc(sizeof(struct object));
+	return zmalloc_tracked(sizeof(struct object));
 }
 
 /*

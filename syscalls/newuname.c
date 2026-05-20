@@ -51,7 +51,7 @@ static void sanitise_newuname(struct syscallrecord *rec)
 	 * allocation that the guard never inspected.  post_state is private
 	 * to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = NEWUNAME_POST_STATE_MAGIC;
 	snap->name = rec->a1;
 	rec->post_state = (unsigned long) snap;

@@ -72,7 +72,7 @@ static void sanitise_readlink(struct syscallrecord *rec)
 	 * without SYS_readlink the post handler's re-issue would not work
 	 * and a snapshot only the post handler can free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic     = READLINK_POST_STATE_MAGIC;
 	snap->path      = rec->a1;
 	snap->buf       = rec->a2;
@@ -353,7 +353,7 @@ static void sanitise_readlinkat(struct syscallrecord *rec)
 	 * post handler's re-issue would not work and a snapshot only the
 	 * post handler can free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic     = READLINKAT_POST_STATE_MAGIC;
 	snap->dfd       = rec->a1;
 	snap->pathname  = rec->a2;

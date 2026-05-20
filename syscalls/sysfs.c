@@ -78,7 +78,7 @@ static void sanitise_sysfs(struct syscallrecord *rec)
 	 * SYS_sysfs the post handler is not registered and a snapshot
 	 * only the post handler can free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->option = rec->a1;
 	snap->idx    = rec->a2;
 	snap->buf    = rec->a3;

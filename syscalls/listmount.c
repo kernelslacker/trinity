@@ -100,7 +100,7 @@ static void sanitise_listmount(struct syscallrecord *rec)
 	 * without SYS_listmount the post handler is not registered and a
 	 * snapshot only the post handler can free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->req        = rec->a1;
 	snap->mnt_ids    = rec->a2;
 	snap->nr_mnt_ids = rec->a3;

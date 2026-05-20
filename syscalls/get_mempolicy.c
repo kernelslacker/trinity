@@ -91,7 +91,7 @@ static void sanitise_get_mempolicy(struct syscallrecord *rec)
 	 * pointers, so the memcpy / re-call would touch a foreign
 	 * allocation.  post_state is private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic   = GET_MEMPOLICY_POST_STATE_MAGIC;
 	snap->policy  = rec->a1;
 	snap->nmask   = rec->a2;

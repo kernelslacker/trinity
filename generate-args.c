@@ -596,7 +596,7 @@ static unsigned long gen_arg_struct_ptr_in(struct syscallentry *entry __unused__
 	desc = struct_arg_lookup(rec->nr, argnum, rec->do32bit);
 	size = desc ? desc->struct_size : STRUCT_PTR_IN_FALLBACK_SIZE;
 
-	buf = zmalloc(size);
+	buf = zmalloc_tracked(size);
 
 	if (desc != NULL) {
 		unsigned int i;
@@ -694,7 +694,7 @@ static unsigned long gen_arg_struct_ptr_out(struct syscallentry *entry __unused_
 	desc = struct_arg_lookup(rec->nr, argnum, rec->do32bit);
 	size = desc ? desc->struct_size : STRUCT_PTR_OUT_FALLBACK_SIZE;
 
-	buf = zmalloc(size);
+	buf = zmalloc_tracked(size);
 	memset(buf, STRUCT_PTR_OUT_POISON_BYTE, size);
 
 	deferred_free_enqueue(buf);

@@ -77,7 +77,7 @@ static void sanitise_socketpair(struct syscallrecord *rec)
 
 	avoid_shared_buffer_out(&rec->a4, 2 * sizeof(int));
 
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = SOCKETPAIR_POST_STATE_MAGIC;
 	snap->usockvec = (int *) rec->a4;
 	snap->original_alloc = usockvec;

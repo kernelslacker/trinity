@@ -53,7 +53,7 @@ static void sanitise_rt_sigpending(struct syscallrecord *rec)
 	 * inspected, and the sigsetsize gate would resolve against a
 	 * scribbled value.  post_state is private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic      = RT_SIGPENDING_POST_STATE_MAGIC;
 	snap->set        = rec->a1;
 	snap->sigsetsize = rec->a2;

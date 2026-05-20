@@ -65,12 +65,15 @@ static void sanitise_getsockopt(struct syscallrecord *rec)
 	/* do_setsockopt allocates optval — we only needed level/optname. */
 	free((void *) so.optval);
 
-	/* Allocate an output buffer for the kernel to write into. */
-	optval = zmalloc(page_size);
+	/* Allocate an output buffer for the kernel to write into.
+	 * Released via deferred_free_enqueue(snap->optval_original) in the
+	 * post handler -- opt in to alloc tracking. */
+	optval = zmalloc_tracked(page_size);
 	rec->a4 = (unsigned long) optval;
 
-	/* Provide a valid socklen_t pointer initialized to the buffer size. */
-	lenp = zmalloc(sizeof(*lenp));
+	/* Provide a valid socklen_t pointer initialized to the buffer size.
+	 * Released via deferred_free_enqueue(snap->lenp_original). */
+	lenp = zmalloc_tracked(sizeof(*lenp));
 	*lenp = page_size;
 	rec->a5 = (unsigned long) lenp;
 
@@ -83,7 +86,7 @@ static void sanitise_getsockopt(struct syscallrecord *rec)
 	 * heap-shaped pointer parked in rec->post_state survives
 	 * looks_like_corrupted_ptr() but fails the magic check.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = GETSOCKOPT_POST_STATE_MAGIC;
 	snap->optval_original = optval;
 	snap->lenp_original = lenp;

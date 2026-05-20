@@ -45,7 +45,7 @@ static void sanitise_timerfd_gettime(struct syscallrecord *rec)
 	 * otmr user-buffer pointer, so the source memcpy would touch a
 	 * foreign allocation.  post_state is private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = TIMERFD_GETTIME_POST_STATE_MAGIC;
 	snap->otmr  = rec->a2;
 	rec->post_state = (unsigned long) snap;

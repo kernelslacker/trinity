@@ -77,7 +77,7 @@ static void sanitise_lsm_list_modules(struct syscallrecord *rec)
 	 * handler is a no-op stub and a snapshot only the post handler can
 	 * free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->ids  = rec->a1;
 	snap->size = rec->a2;
 	rec->post_state = (unsigned long) snap;

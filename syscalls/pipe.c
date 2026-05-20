@@ -69,7 +69,7 @@ static void sanitise_pipe(struct syscallrecord *rec)
 
 	avoid_shared_buffer_out(&rec->a1, 2 * sizeof(int));
 
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = PIPE_POST_STATE_MAGIC;
 	snap->fildes = (int *) rec->a1;
 	snap->original_alloc = fildes;
@@ -163,7 +163,7 @@ static void sanitise_pipe2(struct syscallrecord *rec)
 
 	avoid_shared_buffer_out(&rec->a1, 2 * sizeof(int));
 
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = PIPE_POST_STATE_MAGIC;
 	snap->fildes = (int *) rec->a1;
 	snap->original_alloc = fildes;

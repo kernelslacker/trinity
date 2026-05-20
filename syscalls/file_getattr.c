@@ -126,7 +126,7 @@ static void sanitise_file_getattr(struct syscallrecord *rec)
 	 * without SYS_file_getattr the post handler is a no-op stub and a
 	 * snapshot only the post handler can free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = FILE_GETATTR_POST_STATE_MAGIC;
 	snap->dfd      = rec->a1;
 	snap->pathname = rec->a2;

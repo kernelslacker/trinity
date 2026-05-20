@@ -46,7 +46,7 @@ static void sanitise_newfstat(struct syscallrecord *rec)
 	 * against a different inode entirely.  post_state is private to
 	 * the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic   = NEWFSTAT_POST_STATE_MAGIC;
 	snap->fd      = rec->a1;
 	snap->statbuf = rec->a2;
@@ -264,7 +264,7 @@ static void sanitise_newfstatat(struct syscallrecord *rec)
 	 * actually resolved.  post_state is private to the post
 	 * handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = NEWFSTATAT_POST_STATE_MAGIC;
 	snap->dfd      = rec->a1;
 	snap->pathname = rec->a2;

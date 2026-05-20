@@ -97,7 +97,7 @@ static void sanitise_lgetxattr(struct syscallrecord *rec)
 	 * without SYS_lgetxattr the post handler is not registered and a
 	 * snapshot only the post handler can free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = LGETXATTR_POST_STATE_MAGIC;
 	snap->pathname = rec->a1;
 	snap->name     = rec->a2;

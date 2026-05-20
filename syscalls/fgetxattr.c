@@ -96,7 +96,7 @@ static void sanitise_fgetxattr(struct syscallrecord *rec)
 	 * without SYS_fgetxattr the post handler is not registered and a
 	 * snapshot only the post handler can free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = FGETXATTR_POST_STATE_MAGIC;
 	snap->fd    = rec->a1;
 	snap->name  = rec->a2;

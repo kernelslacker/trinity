@@ -251,7 +251,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 	 * rec->post_state is private to the post handler, so the scribblers
 	 * have nothing to scribble there.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->data = data;
 	snap->magic = PTRACE_POST_STATE_MAGIC;
 	rec->post_state = (unsigned long) snap;

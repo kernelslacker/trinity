@@ -151,7 +151,7 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	 * without SYS_statmount the post handler is not registered and a
 	 * snapshot only the post handler can free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->req       = rec->a1;
 	snap->buffer    = rec->a2;
 	snap->bufsize   = rec->a3;

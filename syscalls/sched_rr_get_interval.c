@@ -50,7 +50,7 @@ static void sanitise_sched_rr_get_interval(struct syscallrecord *rec)
 	 * and the pid self-filter would resolve against a scribbled value.
 	 * post_state is private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = SCHED_RR_GET_INTERVAL_POST_STATE_MAGIC;
 	snap->pid = rec->a1;
 	snap->tp  = rec->a2;

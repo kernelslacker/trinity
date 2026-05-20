@@ -49,7 +49,7 @@ static void sanitise_sched_getparam(struct syscallrecord *rec)
 	 * and the pid self-filter would resolve against a scribbled value.
 	 * post_state is private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = SCHED_GETPARAM_POST_STATE_MAGIC;
 	snap->pid   = rec->a1;
 	snap->param = rec->a2;

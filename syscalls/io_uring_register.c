@@ -935,7 +935,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 * and UAF the OBJ_MMAP pool.  rec->post_state is private to the
 	 * post handler, so the scribblers have nothing to scribble there.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = IO_URING_REGISTER_POST_STATE_MAGIC;
 	snap->opcode = opcode;
 	snap->original_alloc = (opcode == IORING_REGISTER_BUFFERS) ?

@@ -104,7 +104,7 @@ static void sanitise_sigaltstack(struct syscallrecord *rec)
 	 * registered and a snapshot only the post handler can free would
 	 * leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = SIGALTSTACK_POST_STATE_MAGIC;
 	snap->uss   = rec->a1;
 	snap->uoss  = rec->a2;

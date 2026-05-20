@@ -76,7 +76,7 @@ static void sanitise_olduname(struct syscallrecord *rec)
 	 * systems without SYS_olduname the post handler is not registered
 	 * and a snapshot only the post handler can free would leak.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = OLDUNAME_POST_STATE_MAGIC;
 	snap->name = rec->a1;
 	rec->post_state = (unsigned long) snap;

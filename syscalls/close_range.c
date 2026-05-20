@@ -68,7 +68,7 @@ static void sanitise_close_range(struct syscallrecord *rec)
 	 */
 	rec->post_state = 0;
 
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic  = CLOSE_RANGE_POST_STATE_MAGIC;
 	snap->fd     = (unsigned int) rec->a1;
 	snap->max_fd = (unsigned int) rec->a2;

@@ -62,7 +62,7 @@ static void sanitise_getresgid(struct syscallrecord *rec)
 	 * 16-bit getresgid16 path uses sanitise_getresgid16 instead because
 	 * it has no .post handler and would leak the snapshot.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = GETRESGID_POST_STATE_MAGIC;
 	snap->rgid = rec->a1;
 	snap->egid = rec->a2;

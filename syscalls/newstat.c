@@ -48,7 +48,7 @@ static void sanitise_newstat(struct syscallrecord *rec)
 	 * file (or a different symlink target) entirely.  post_state is
 	 * private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = NEWSTAT_POST_STATE_MAGIC;
 	snap->filename = rec->a1;
 	snap->statbuf  = rec->a2;

@@ -66,7 +66,7 @@ static void sanitise_rt_sigprocmask(struct syscallrecord *rec)
 	 * concurrent mutation, or silently suppressing a real comparison.
 	 * post_state is private to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic      = RT_SIGPROCMASK_POST_STATE_MAGIC;
 	snap->how        = rec->a1;
 	snap->set        = rec->a2;

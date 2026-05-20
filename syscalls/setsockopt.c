@@ -83,7 +83,7 @@ static void socket_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 #ifdef USE_BPF
 		int prog_fd = get_rand_bpf_prog_fd();
 		if (prog_fd >= 0) {
-			int *buf = zmalloc(sizeof(int));
+			int *buf = zmalloc_tracked(sizeof(int));
 			*buf = prog_fd;
 			free((void *) so->optval);
 			so->optval = (unsigned long) buf;
@@ -196,7 +196,12 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	 * each protocol would need its own function pointer and allocation
 	 * strategy, and most protocols are fine with a single page.
 	 */
-	so->optval = (unsigned long) zmalloc(page_size);
+	/* Mostly released via deferred_freeptr(&rec->post_state) in
+	 * post_setsockopt(); a RAND_BOOL fallback below may direct-free.
+	 * Opt in to the alloc tracker: the rare direct-free path leaves
+	 * a stale slot to be evicted (benign leak), which is the safer
+	 * failure mode per the 2026-05-19 alloc-tracking audit. */
+	so->optval = (unsigned long) zmalloc_tracked(page_size);
 
 	/* At the minimum, we want len to be a char or int.
 	 * It gets (overridden below in the per-proto sso->func, so this

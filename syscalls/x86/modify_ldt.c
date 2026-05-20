@@ -55,7 +55,7 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 		rec->a3 = ALLOCSIZE;
 		/* Snapshot for the post handler -- a1 / a2 / a3 may be
 		 * scribbled by a sibling syscall before post_modify_ldt() runs. */
-		snap = zmalloc(sizeof(*snap));
+		snap = zmalloc_tracked(sizeof(*snap));
 		snap->magic = MODIFY_LDT_POST_STATE_MAGIC;
 		snap->func = rec->a1;
 		snap->ldt = (unsigned long) ldt;

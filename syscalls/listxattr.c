@@ -86,7 +86,7 @@ static void sanitise_flistxattr(struct syscallrecord *rec)
 	 * re-call would touch a foreign allocation.  post_state is private
 	 * to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->arg1 = rec->a1;
 	snap->list = rec->a2;
 	snap->buf_alloc_size = buf_alloc_size;
@@ -313,7 +313,7 @@ static void sanitise_listxattr(struct syscallrecord *rec)
 	 * re-call would touch a foreign allocation.  post_state is private
 	 * to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->arg1 = rec->a1;
 	snap->list = rec->a2;
 	snap->buf_alloc_size = buf_alloc_size;
@@ -542,7 +542,7 @@ static void sanitise_llistxattr(struct syscallrecord *rec)
 	 * re-call would touch a foreign allocation.  post_state is private
 	 * to the post handler.
 	 */
-	snap = zmalloc(sizeof(*snap));
+	snap = zmalloc_tracked(sizeof(*snap));
 	snap->arg1 = rec->a1;
 	snap->list = rec->a2;
 	snap->buf_alloc_size = buf_alloc_size;
