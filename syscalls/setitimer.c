@@ -3,6 +3,7 @@
  */
 #include <sys/time.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 static unsigned long setitimer_which[] = {
@@ -11,11 +12,11 @@ static unsigned long setitimer_which[] = {
 
 static void fill_timeval(struct timeval *tv)
 {
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0: tv->tv_sec = 0; tv->tv_usec = 0; break;
-	case 1: tv->tv_sec = 0; tv->tv_usec = 1 + (rand() % 1000); break;
-	case 2: tv->tv_sec = 1 + (rand() % 10); tv->tv_usec = rand() % 1000000; break;
-	default: tv->tv_sec = rand32(); tv->tv_usec = rand() % 1000000; break;
+	case 1: tv->tv_sec = 0; tv->tv_usec = 1 + (rnd_modulo_u32(1000)); break;
+	case 2: tv->tv_sec = 1 + (rnd_modulo_u32(10)); tv->tv_usec = rnd_modulo_u32(1000000); break;
+	default: tv->tv_sec = rand32(); tv->tv_usec = rnd_modulo_u32(1000000); break;
 	}
 }
 
