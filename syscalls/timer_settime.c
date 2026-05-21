@@ -5,6 +5,7 @@
  */
 #include <time.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 static unsigned long timer_settime_flags[] = {
@@ -13,12 +14,12 @@ static unsigned long timer_settime_flags[] = {
 
 static void fill_timespec(struct timespec *ts)
 {
-	switch (rand() % 5) {
+	switch (rnd_modulo_u32(5)) {
 	case 0: ts->tv_sec = 0; ts->tv_nsec = 0; break;
 	case 1: ts->tv_sec = 0; ts->tv_nsec = 1; break;
-	case 2: ts->tv_sec = 0; ts->tv_nsec = rand() % 1000000; break;
-	case 3: ts->tv_sec = 1 + (rand() % 10); ts->tv_nsec = rand() % 1000000000; break;
-	default: ts->tv_sec = rand32(); ts->tv_nsec = rand() % 1000000000; break;
+	case 2: ts->tv_sec = 0; ts->tv_nsec = rnd_modulo_u32(1000000); break;
+	case 3: ts->tv_sec = 1 + (rnd_modulo_u32(10)); ts->tv_nsec = rnd_modulo_u32(1000000000); break;
+	default: ts->tv_sec = rand32(); ts->tv_nsec = rnd_modulo_u32(1000000000); break;
 	}
 }
 
