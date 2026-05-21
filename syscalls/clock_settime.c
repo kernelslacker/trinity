@@ -5,6 +5,7 @@
  */
 #include <time.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "compat.h"
 
@@ -22,14 +23,14 @@ static void sanitise_clock_settime(struct syscallrecord *rec)
 	if (ts == NULL)
 		return;
 
-	switch (rand() % 5) {
+	switch (rnd_modulo_u32(5)) {
 	case 0:	/* epoch */
 		ts->tv_sec = 0;
 		ts->tv_nsec = 0;
 		break;
 	case 1: /* near-current (small offset) */
-		ts->tv_sec = time(NULL) + (rand() % 120) - 60;
-		ts->tv_nsec = rand() % 1000000000;
+		ts->tv_sec = time(NULL) + (rnd_modulo_u32(120)) - 60;
+		ts->tv_nsec = rnd_modulo_u32(1000000000);
 		break;
 	case 2: /* boundary: max nsec */
 		ts->tv_sec = rand32();
@@ -37,11 +38,11 @@ static void sanitise_clock_settime(struct syscallrecord *rec)
 		break;
 	case 3: /* invalid nsec (>= 1 billion) */
 		ts->tv_sec = rand32();
-		ts->tv_nsec = 1000000000 + (rand() % 1000000000);
+		ts->tv_nsec = 1000000000 + (rnd_modulo_u32(1000000000));
 		break;
 	default:
 		ts->tv_sec = rand32();
-		ts->tv_nsec = rand() % 1000000000;
+		ts->tv_nsec = rnd_modulo_u32(1000000000);
 		break;
 	}
 
