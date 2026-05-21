@@ -21,6 +21,7 @@
 #include "pc_format.h"
 #include "pids.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "stats.h"
 #include "stats_ring.h"
@@ -241,7 +242,7 @@ void * alloc_shared(size_t size)
 			memcpy(p + i, &r, sizeof(r));
 		}
 		for (; i < size; i++)
-			p[i] = (unsigned char)rand();
+			p[i] = (unsigned char)rnd_u32();
 	}
 
 	if (nr_shared_regions < MAX_SHARED_ALLOCS) {
