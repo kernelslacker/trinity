@@ -9,6 +9,7 @@
 #include "arch.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -68,12 +69,12 @@ retry_maxnode:
 	if (mask == NULL)
 		return;
 	memset(mask, 0, nbytes);
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0: /* node 0 only (most common on non-NUMA) */
 		mask[0] = 1;
 		break;
 	case 1: /* first few nodes */
-		mask[0] = (1UL << (1 + (rand() % 4))) - 1;
+		mask[0] = (1UL << (1 + (rnd_modulo_u32(4)))) - 1;
 		break;
 	default: /* random bits */
 		mask[0] = rand32();
