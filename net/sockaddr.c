@@ -17,7 +17,7 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 
 		un = (struct sockaddr_un *) *addr;
 		if (un == NULL)
-			un = zmalloc(sizeof(struct sockaddr_un));
+			un = zmalloc_tracked(sizeof(struct sockaddr_un));
 		un->sun_family = PF_UNSPEC;
 		*addr = (struct sockaddr *) un;
 		*addrlen = sizeof(struct sockaddr_un);
@@ -41,6 +41,6 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 	}
 
 	/* Make something up for unknown protocols. */
-	*addr = (struct sockaddr *) zmalloc(page_size);
+	*addr = (struct sockaddr *) zmalloc_tracked(page_size);
 	*addrlen = rand() % page_size;
 }
