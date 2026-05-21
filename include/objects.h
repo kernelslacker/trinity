@@ -476,6 +476,7 @@ static inline bool objpool_check(const struct object *obj,
 }
 
 bool objects_empty(enum objecttype type);
+bool objects_pool_empty(enum obj_scope scope, enum objecttype type);
 struct objhead * get_objhead(enum obj_scope scope, enum objecttype type) __must_check;
 void prune_objects(void);
 int fd_from_object(struct object *obj, enum objecttype type);

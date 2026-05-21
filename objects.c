@@ -884,6 +884,15 @@ bool objects_empty(enum objecttype type)
 	return head->num_entries == 0;
 }
 
+bool objects_pool_empty(enum obj_scope scope, enum objecttype type)
+{
+	struct objhead *head = get_objhead(scope, type);
+
+	if (head == NULL)
+		return true;
+	return head->num_entries == 0;
+}
+
 /*
  * Invalidate the fd stored in an object by setting it to -1.
  * Used before calling the destructor when the fd was already closed
