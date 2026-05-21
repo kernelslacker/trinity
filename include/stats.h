@@ -381,8 +381,31 @@ struct stats_s {
 	 * the per-field counters give the live histogram.  Gaps in the enum
 	 * (5..9) are present in the array as always-zero slots — kept that
 	 * way so the index matches the on-the-wire field id in collected
-	 * logs. */
+	 * logs.
+	 *
+	 * SF_UNAME_RELEASE and SF_UNAME_MACHINE are routed to
+	 * divergence_sentinel_expected_drift below instead of bumping their
+	 * shard here — personality(PER_LINUX32|UNAME26) legitimately
+	 * rewrites those strings every time the fuzzer hits it, so leaving
+	 * them on the anomaly histogram would drown out the real wild-write
+	 * signal. */
 	unsigned long divergence_sentinel_anomalies[SF__MAX];
+
+	/* Counter for divergences in fields that are known to be mutated by
+	 * operator-driven syscalls trinity itself fuzzes — specifically
+	 * SF_UNAME_RELEASE and SF_UNAME_MACHINE, which personality()
+	 * rewrites every time the bandit fixates on PER_LINUX32 / UNAME26.
+	 * Bumped per diverging field, aggregate only (no per-field shard) —
+	 * if a second "expected drift" field is added later this can be
+	 * widened.  Mirror of the 2026-05-09 uid_change_logged split:
+	 * separating expected mutations from corruption keeps the headline
+	 * anomaly array as a real signal rather than a noise floor.
+	 *
+	 * SF_SYSINFO_TOTALSWAP intentionally stays on the anomaly array —
+	 * swapon/swapoff bumps it at a far lower rate than personality()
+	 * bumps RELEASE/MACHINE, and calling that "expected" would muddy
+	 * the meaning of this counter. */
+	unsigned long divergence_sentinel_expected_drift;
 
 	/* Childop taint-watcher: count of times a /proc/sys/kernel/tainted
 	 * bit transition was observed across a non-syscall childop dispatch,

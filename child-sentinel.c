@@ -163,6 +163,20 @@ static void sentinel_report(struct childdata *child,
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	pre_crash_ring_record(child, &rec, &now);
 
+	/* SF_UNAME_RELEASE and SF_UNAME_MACHINE are legitimately rewritten
+	 * by personality(PER_LINUX32|UNAME26), which the fuzzer hits often
+	 * enough during a bandit plateau (~130 bumps/window) to drown the
+	 * real corruption signal if it goes onto the anomaly histogram.
+	 * Route those into a separate "expected drift" counter — the
+	 * pre_crash_ring entry is still recorded above so the post-mortem
+	 * decoder can replay the divergence, only the live histogram is
+	 * carved out.  Mirror of the 2026-05-09 uid_change_logged split. */
+	if (field == SF_UNAME_RELEASE || field == SF_UNAME_MACHINE) {
+		__atomic_add_fetch(&shm->stats.divergence_sentinel_expected_drift,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
 	/* Per-field shard.  The bounds-guard pairs with the _Static_assert
 	 * above; a corrupt `field` value (out-of-range) is dropped from the
 	 * histogram rather than scribbling past the array. */

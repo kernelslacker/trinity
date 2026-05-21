@@ -1896,6 +1896,12 @@ static const struct {
 	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_SYSINFO_TOTALHIGH]) },
 	{ "divergence_sentinel_anomalies_mem_unit",
 	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_SYSINFO_MEM_UNIT]) },
+	/* SF_UNAME_RELEASE / SF_UNAME_MACHINE bumps land here instead of
+	 * on the per-field anomaly shards above — personality()-driven
+	 * legitimate drift, kept separate so the corruption histogram
+	 * stays a real signal. */
+	{ "divergence_sentinel_expected_drift",
+	  offsetof(struct stats_s, divergence_sentinel_expected_drift) },
 	{ "iouring_enter_mask_corrupt",
 	  offsetof(struct stats_s, iouring_enter_mask_corrupt) },
 	{ "fd_event_ring_corrupted",
@@ -3477,6 +3483,9 @@ void dump_stats(void)
 				 divergence_sentinel_rows[s].name, v);
 		}
 	}
+	if (shm->stats.divergence_sentinel_expected_drift)
+		stat_row("corruption", "divergence_sentinel_expected_drift",
+			 shm->stats.divergence_sentinel_expected_drift);
 	if (shm->stats.destroy_object_idx_corrupt)
 		stat_row("corruption", "destroy_object_idx",     shm->stats.destroy_object_idx_corrupt);
 	if (shm->stats.global_obj_uaf_caught)
