@@ -9,14 +9,6 @@
 
 #define BUFSIZE 1024	// decoded syscall args are fprintf'd directly, this is for everything else.
 
-/* Set once at child init to avoid repeated getpid() syscalls in the output hot path. */
-static pid_t my_pid = 0;
-
-void output_set_pid(pid_t pid)
-{
-	my_pid = pid;
-}
-
 /*
  * In --stats-json mode, stdout is reserved for the single JSON document
  * emitted by dump_stats_json() so consumers can pipe trinity directly into
@@ -58,7 +50,7 @@ void output(int level, const char *fmt, ...)
 	}
 
 	/* prefix preparation */
-	pid = my_pid ? my_pid : getpid();
+	pid = mypid();
 
 	if (pid == mainpid)
 		prefix = main_prefix;
