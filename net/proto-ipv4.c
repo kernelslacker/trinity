@@ -27,6 +27,7 @@
 #include "tls.h"
 #include "uid.h"
 #include "utils.h"
+#include "rnd.h"
 
 /* workaround for <linux/in.h> vs. <netinet/in.h> */
 #ifndef IP_MULTICAST_ALL
@@ -98,12 +99,12 @@ static in_addr_t new_ipv4_addr(void)
 		return v4;
 	}
 
-	entry = rand() % ARRAY_SIZE(addresses);
+	entry = rnd_modulo_u32(ARRAY_SIZE(addresses));
 	p = addresses[entry].name;
 	inet_pton(AF_INET, p, &v4);
 
 	if (addresses[entry].classmask != SLASH32)
-		v4 |= htonl(rand() % addresses[entry].classmask);
+		v4 |= htonl(rnd_modulo_u32(addresses[entry].classmask));
 
 	return v4;
 }
@@ -133,7 +134,7 @@ static void ipv4_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	ipv4->sin_family = PF_INET;
 	ipv4->sin_addr.s_addr = random_ipv4_address();
-	ipv4->sin_port = htons(rand() % 65536);
+	ipv4->sin_port = htons(rnd_modulo_u32(65536));
 
 	*addr = (struct sockaddr *) ipv4;
 	*addrlen = sizeof(struct sockaddr_in);
@@ -230,19 +231,19 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 	struct ip_mreq_source *ms;
 	int mcaddr;
 
-	val = rand() % ARRAY_SIZE(ip_opts);
+	val = rnd_modulo_u32(ARRAY_SIZE(ip_opts));
 	so->optname = ip_opts[val].name;
 	so->optlen = sockoptlen(ip_opts[val].len);
 
 	switch (so->optname) {
 	case IP_OPTIONS:
-		so->optlen = rand() % 40;
+		so->optlen = rnd_modulo_u32(40);
 		break;
 
 	case IP_MULTICAST_IF:
 	case IP_ADD_MEMBERSHIP:
 	case IP_DROP_MEMBERSHIP:
-		mcaddr = 0xe0000000 | rand() % 0xff;
+		mcaddr = 0xe0000000 | rnd_modulo_u32(0xff);
 		if (RAND_BOOL()) {
 			struct ip_mreqn *mrn;
 
@@ -262,7 +263,7 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 		break;
 
 	case IP_MSFILTER:
-		so->optlen = rand() % page_size;
+		so->optlen = rnd_modulo_u32(page_size);
 		so->optlen |= IP_MSFILTER_SIZE(0);
 		break;
 
@@ -270,7 +271,7 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 	case IP_UNBLOCK_SOURCE:
 	case IP_ADD_SOURCE_MEMBERSHIP:
 	case IP_DROP_SOURCE_MEMBERSHIP:
-		mcaddr = 0xe0000000 | rand() % 0xff;
+		mcaddr = 0xe0000000 | rnd_modulo_u32(0xff);
 
 		ms = (struct ip_mreq_source *) so->optval;
 		ms->imr_multiaddr.s_addr = htonl(mcaddr);
@@ -283,9 +284,9 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 		struct group_req *gr = (struct group_req *) so->optval;
 		struct sockaddr_in *sin = (struct sockaddr_in *) &gr->gr_group;
 
-		gr->gr_interface = rand() % 10;
+		gr->gr_interface = rnd_modulo_u32(10);
 		sin->sin_family = AF_INET;
-		sin->sin_addr.s_addr = htonl(0xe0000000 | rand() % 0xff);
+		sin->sin_addr.s_addr = htonl(0xe0000000 | rnd_modulo_u32(0xff));
 		so->optlen = sizeof(struct group_req);
 		break;
 	}
@@ -297,10 +298,10 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 		struct group_source_req *gsr = (struct group_source_req *) so->optval;
 		struct sockaddr_in *sin;
 
-		gsr->gsr_interface = rand() % 10;
+		gsr->gsr_interface = rnd_modulo_u32(10);
 		sin = (struct sockaddr_in *) &gsr->gsr_group;
 		sin->sin_family = AF_INET;
-		sin->sin_addr.s_addr = htonl(0xe0000000 | rand() % 0xff);
+		sin->sin_addr.s_addr = htonl(0xe0000000 | rnd_modulo_u32(0xff));
 		sin = (struct sockaddr_in *) &gsr->gsr_source;
 		sin->sin_family = AF_INET;
 		sin->sin_addr.s_addr = random_ipv4_address();
@@ -309,7 +310,7 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 	}
 
 	case MCAST_MSFILTER:
-		so->optlen = rand() % page_size;
+		so->optlen = rnd_modulo_u32(page_size);
 		so->optlen |= GROUP_FILTER_SIZE(0);
 		break;
 
@@ -371,7 +372,7 @@ static void call_inet_sso_ptr(struct sockopt *so, struct socket_triplet *triplet
 	 * Don't adjust the actual triplet though, because it's what the real socket is.
 	 */
 	if (proto >= IPPROTO_MAX)
-		proto = rand() % IPPROTO_MAX;
+		proto = rnd_modulo_u32(IPPROTO_MAX);
 
 	if (ip_ssoptrs[proto].func != NULL) {
 		if (ip_ssoptrs[proto].sol != 0)
@@ -391,7 +392,7 @@ static void call_ulp_sso_ptr(struct sockopt *so)
 	so->level = SOL_TLS;
 
 	/* Pick TX or RX direction */
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0: so->optname = TLS_TX; break;
 	case 1: so->optname = TLS_RX; break;
 	case 2: so->optname = TLS_TX_ZEROCOPY_RO; break;
@@ -399,7 +400,7 @@ static void call_ulp_sso_ptr(struct sockopt *so)
 	}
 
 	/* Pick cipher suite and fill appropriate struct */
-	switch (rand() % 6) {
+	switch (rnd_modulo_u32(6)) {
 	case 0: {
 		struct tls12_crypto_info_aes_gcm_128 *ci = (struct tls12_crypto_info_aes_gcm_128 *) p;
 
@@ -461,7 +462,7 @@ static void inet_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 {
 	so->level = SOL_IP;
 
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0:	ip_setsockopt(so, triplet);
 		break;
 	case 1:	call_inet_sso_ptr(so, triplet);
@@ -601,7 +602,7 @@ static void inet_walk_tcp(int fd, unsigned int n)
 
 	if (step++ >= n)
 		return;
-	cc = tcp_cc_algos[rand() % ARRAY_SIZE(tcp_cc_algos)];
+	cc = tcp_cc_algos[rnd_modulo_u32(ARRAY_SIZE(tcp_cc_algos))];
 	(void) setsockopt(fd, IPPROTO_TCP, TCP_CONGESTION, cc, strlen(cc));
 
 	if (step++ >= n)
@@ -636,11 +637,11 @@ static void inet_walk_udp(int fd, unsigned int n)
 
 	if (step++ >= n)
 		return;
-	cpu = rand() % 16;
+	cpu = rnd_modulo_u32(16);
 	(void) setsockopt(fd, SOL_SOCKET, SO_INCOMING_CPU, &cpu, sizeof(cpu));
 
 	while (step < n) {
-		tos = rand() & 0xff;
+		tos = rnd_u32() & 0xff;
 		(void) setsockopt(fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
 		step++;
 		if (step >= n)
@@ -688,7 +689,7 @@ static void inet_gen_cmsg(int fd, struct socket_triplet *triplet,
 		cmsg->cmsg_len = CMSG_LEN(sizeof(struct in_pktinfo));
 
 		memset(&pkti, 0, sizeof(pkti));
-		pkti.ipi_ifindex = rand() % 8;
+		pkti.ipi_ifindex = rnd_modulo_u32(8);
 		pkti.ipi_spec_dst.s_addr = htonl(INADDR_LOOPBACK);
 		pkti.ipi_addr.s_addr = htonl(INADDR_LOOPBACK);
 		memcpy(CMSG_DATA(cmsg), &pkti, sizeof(pkti));
@@ -703,7 +704,7 @@ static void inet_gen_cmsg(int fd, struct socket_triplet *triplet,
 		cmsg->cmsg_type = IP_TOS;
 		cmsg->cmsg_len = CMSG_LEN(sizeof(int));
 
-		tos = rand() & 0xff;
+		tos = rnd_u32() & 0xff;
 		memcpy(CMSG_DATA(cmsg), &tos, sizeof(tos));
 	}
 }
