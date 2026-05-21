@@ -54,6 +54,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "pids.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -138,7 +139,7 @@ bool mount_churn(struct childdata *child)
 {
 	unsigned int cycles;
 	unsigned int i;
-	pid_t pid = getpid();
+	pid_t pid = mypid();
 
 	(void)child;
 
