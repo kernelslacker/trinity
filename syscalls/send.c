@@ -8,6 +8,7 @@
 #include "maps.h"
 #include "net.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
@@ -28,7 +29,7 @@ static void sanitise_send(struct syscallrecord *rec)
 	if (RAND_BOOL())
 		size = 1;
 	else
-		size = rand() % page_size;
+		size = rnd_modulo_u32(page_size);
 
 	rec->a3 = size;
 }
