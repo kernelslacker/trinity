@@ -11,6 +11,7 @@
 
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -21,23 +22,23 @@ static void sanitise_fb_var_screeninfo(struct syscallrecord *rec)
 	var = (struct fb_var_screeninfo *) get_writable_struct(sizeof(*var));
 	if (!var)
 		return;
-	var->xres = rand() % 1920 + 1;
-	var->yres = rand() % 1080 + 1;
-	var->xres_virtual = var->xres + rand() % 64;
-	var->yres_virtual = var->yres + rand() % 64;
-	var->xoffset = rand() % var->xres;
-	var->yoffset = rand() % var->yres;
-	var->bits_per_pixel = 1 << (rand() % 5);	/* 1, 2, 4, 8, 16 */
+	var->xres = rnd_modulo_u32(1920) + 1;
+	var->yres = rnd_modulo_u32(1080) + 1;
+	var->xres_virtual = var->xres + rnd_modulo_u32(64);
+	var->yres_virtual = var->yres + rnd_modulo_u32(64);
+	var->xoffset = rnd_modulo_u32(var->xres);
+	var->yoffset = rnd_modulo_u32(var->yres);
+	var->bits_per_pixel = 1 << (rnd_modulo_u32(5));	/* 1, 2, 4, 8, 16 */
 	var->grayscale = RAND_BOOL() ? 0 : 1;
-	var->red.offset = rand() % 32;
-	var->red.length = rand() % 8 + 1;
-	var->green.offset = rand() % 32;
-	var->green.length = rand() % 8 + 1;
-	var->blue.offset = rand() % 32;
-	var->blue.length = rand() % 8 + 1;
-	var->activate = rand() & FB_ACTIVATE_MASK;
-	var->pixclock = rand() % 100000 + 1000;
-	var->vmode = rand() % 3;
+	var->red.offset = rnd_modulo_u32(32);
+	var->red.length = rnd_modulo_u32(8) + 1;
+	var->green.offset = rnd_modulo_u32(32);
+	var->green.length = rnd_modulo_u32(8) + 1;
+	var->blue.offset = rnd_modulo_u32(32);
+	var->blue.length = rnd_modulo_u32(8) + 1;
+	var->activate = rnd_u32() & FB_ACTIVATE_MASK;
+	var->pixclock = rnd_modulo_u32(100000) + 1000;
+	var->vmode = rnd_modulo_u32(3);
 	rec->a3 = (unsigned long) var;
 }
 
@@ -49,8 +50,8 @@ static void sanitise_fb_cmap(struct syscallrecord *rec)
 	cmap = (struct fb_cmap *) get_writable_struct(sizeof(*cmap));
 	if (!cmap)
 		return;
-	cmap->start = rand() % 256;
-	len = rand() % 16 + 1;
+	cmap->start = rnd_modulo_u32(256);
+	len = rnd_modulo_u32(16) + 1;
 	cmap->len = len;
 	cmap->red = (unsigned short *) get_writable_struct(len * sizeof(__u16));
 	cmap->green = (unsigned short *) get_writable_struct(len * sizeof(__u16));
@@ -68,15 +69,15 @@ static void sanitise_fb_cursor(struct syscallrecord *rec)
 	cur = (struct fb_cursor *) get_writable_struct(sizeof(*cur));
 	if (!cur)
 		return;
-	cur->set = rand() & FB_CUR_SETALL;
+	cur->set = rnd_u32() & FB_CUR_SETALL;
 	cur->enable = RAND_BOOL();
-	cur->rop = rand() & 1;
-	cur->hot.x = rand() % 64;
-	cur->hot.y = rand() % 64;
-	w = rand() % 32 + 1;
-	h = rand() % 32 + 1;
-	cur->image.dx = rand() % 1024;
-	cur->image.dy = rand() % 768;
+	cur->rop = rnd_u32() & 1;
+	cur->hot.x = rnd_modulo_u32(64);
+	cur->hot.y = rnd_modulo_u32(64);
+	w = rnd_modulo_u32(32) + 1;
+	h = rnd_modulo_u32(32) + 1;
+	cur->image.dx = rnd_modulo_u32(1024);
+	cur->image.dy = rnd_modulo_u32(768);
 	cur->image.width = w;
 	cur->image.height = h;
 	cur->image.depth = 1;
@@ -95,8 +96,8 @@ static void sanitise_fb_con2fbmap(struct syscallrecord *rec)
 	map = (struct fb_con2fbmap *) get_writable_struct(sizeof(*map));
 	if (!map)
 		return;
-	map->console = rand() % 64;
-	map->framebuffer = rand() % 8;
+	map->console = rnd_modulo_u32(64);
+	map->framebuffer = rnd_modulo_u32(8);
 	rec->a3 = (unsigned long) map;
 }
 
@@ -153,7 +154,7 @@ static void fb_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 #ifdef FBIOBLANK
 	case FBIOBLANK:
 		/* arg is a blank level, not a pointer */
-		rec->a3 = rand() % 5;
+		rec->a3 = rnd_modulo_u32(5);
 		break;
 #endif
 
