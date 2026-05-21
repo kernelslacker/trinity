@@ -20,7 +20,7 @@ static void sanitise_msgsnd(struct syscallrecord *rec)
 	struct msgbuf *msgp;
 	size_t msgsz = rand() % 256;
 
-	msgp = zmalloc(sizeof(struct msgbuf) + msgsz);
+	msgp = zmalloc_tracked(sizeof(struct msgbuf) + msgsz);
 	msgp->mtype = (rand() % 255) + 1;	/* mtype must be > 0 */
 	rec->a2 = (unsigned long) msgp;
 	rec->a3 = msgsz;
