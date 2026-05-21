@@ -8,6 +8,7 @@
 #include "net.h"
 #include "random.h"
 #include "compat.h"
+#include "rnd.h"
 
 static void atmpvc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
@@ -16,9 +17,9 @@ static void atmpvc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	atmpvc = zmalloc_tracked(sizeof(struct sockaddr_atmpvc));
 
 	atmpvc->sap_family = PF_ATMPVC;
-	atmpvc->sap_addr.itf = rand();
-	atmpvc->sap_addr.vpi = rand();
-	atmpvc->sap_addr.vci = rand();
+	atmpvc->sap_addr.itf = rnd_u32();
+	atmpvc->sap_addr.vpi = rnd_u32();
+	atmpvc->sap_addr.vci = rnd_u32();
 	*addr = (struct sockaddr *) atmpvc;
 	*addrlen = sizeof(struct sockaddr_atmpvc);
 }
@@ -32,11 +33,11 @@ static void atmsvc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	atmsvc->sas_family = PF_ATMSVC;
 	for (i = 0; i < ATM_ESA_LEN; i++)
-		atmsvc->sas_addr.prv[i] = rand();
+		atmsvc->sas_addr.prv[i] = rnd_u32();
 	for (i = 0; i < ATM_E164_LEN; i++)
-		atmsvc->sas_addr.pub[i] = rand();
-	atmsvc->sas_addr.lij_type = rand();
-	atmsvc->sas_addr.lij_id = rand();
+		atmsvc->sas_addr.pub[i] = rnd_u32();
+	atmsvc->sas_addr.lij_type = rnd_u32();
+	atmsvc->sas_addr.lij_id = rnd_u32();
 	*addr = (struct sockaddr *) atmsvc;
 	*addrlen = sizeof(struct sockaddr_atmsvc);
 }
