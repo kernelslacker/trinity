@@ -37,6 +37,7 @@
 #include "healer.h"
 #include "kcov.h"
 #include "params.h"
+#include "rnd.h"
 #include "shm.h"
 #include "stats.h"
 #include "strategy.h"
@@ -297,7 +298,7 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	 * cryptographic uniformity.
 	 */
 select_mode:
-	if (kc->cmp_capable && (rand() % KCOV_CMP_CHILD_RECIPROCAL) == 0)
+	if (kc->cmp_capable && rnd_modulo_u32(KCOV_CMP_CHILD_RECIPROCAL) == 0)
 		kc->mode = KCOV_MODE_CMP;
 	else
 		kc->mode = KCOV_MODE_PC;
