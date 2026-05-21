@@ -65,7 +65,7 @@ static void sanitise_init_module(struct syscallrecord *rec)
 	payload_sz = 64 + (rand() % 256);
 	total_sz = ehdr_sz + shdrs_sz + strtab_sz + payload_sz;
 
-	buf = zmalloc(total_sz);
+	buf = zmalloc_tracked(total_sz);
 	generate_rand_bytes(buf, total_sz);
 
 	/* ELF header */
