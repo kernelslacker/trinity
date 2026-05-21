@@ -4,6 +4,7 @@
 #include <netiucv/iucv.h>
 #include "net.h"
 #include "compat.h"
+#include "rnd.h"
 
 /*
  * IUCV is an s390-only transport.  Probe the machine type once and cache
@@ -56,9 +57,9 @@ static void iucv_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	sa->siucv_family = AF_IUCV;
 
 	for (i = 0; i < sizeof(sa->siucv_user_id); i++)
-		sa->siucv_user_id[i] = rand();
+		sa->siucv_user_id[i] = rnd_u32();
 	for (i = 0; i < sizeof(sa->siucv_name); i++)
-		sa->siucv_name[i] = rand();
+		sa->siucv_name[i] = rnd_u32();
 
 	*addr = (struct sockaddr *) sa;
 	*addrlen = sizeof(struct sockaddr_iucv);
