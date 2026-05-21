@@ -29,7 +29,7 @@ static void rxrpc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_rxrpc *rxrpc;
 
-	rxrpc = zmalloc(sizeof(struct sockaddr_rxrpc));
+	rxrpc = zmalloc_tracked(sizeof(struct sockaddr_rxrpc));
 	rxrpc->srx_family = AF_RXRPC;
 	rxrpc->srx_service = rand();
 	rxrpc->transport_type = SOCK_DGRAM;
