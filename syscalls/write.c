@@ -57,7 +57,7 @@ static void sanitise_write(struct syscallrecord *rec)
 	else
 		size = rand() % page_size;
 
-	ptr = zmalloc(size);
+	ptr = zmalloc_tracked(size);
 	if (ptr == NULL)
 		return;
 
