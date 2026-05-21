@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "compat.h"
 #include "trinity.h"
@@ -116,7 +117,7 @@ static void sanitise_mount(struct syscallrecord *rec)
 	const char *fstype;
 	char *type;
 
-	fstype = filesystem_types[rand() % nr_filesystem_types];
+	fstype = filesystem_types[rnd_modulo_u32(nr_filesystem_types)];
 	type = (char *) get_writable_struct(32);
 	if (!type)
 		return;
@@ -169,16 +170,16 @@ static void sanitise_mount_setattr(struct syscallrecord *rec)
 
 	/* Build random attr_set (things to turn on). */
 	attrs = 0;
-	nbits = 1 + (rand() % ARRAY_SIZE(mount_attrs));
+	nbits = 1 + (rnd_modulo_u32(ARRAY_SIZE(mount_attrs)));
 	for (i = 0; i < nbits; i++)
-		attrs |= mount_attrs[rand() % ARRAY_SIZE(mount_attrs)];
+		attrs |= mount_attrs[rnd_modulo_u32(ARRAY_SIZE(mount_attrs))];
 	ma->attr_set = attrs;
 
 	/* Build random attr_clr (things to turn off) — non-overlapping with attr_set. */
 	attrs = 0;
-	nbits = rand() % ARRAY_SIZE(mount_attrs);
+	nbits = rnd_modulo_u32(ARRAY_SIZE(mount_attrs));
 	for (i = 0; i < nbits; i++)
-		attrs |= mount_attrs[rand() % ARRAY_SIZE(mount_attrs)];
+		attrs |= mount_attrs[rnd_modulo_u32(ARRAY_SIZE(mount_attrs))];
 	ma->attr_clr = attrs & ~ma->attr_set;
 
 	rec->a4 = (unsigned long) ma;
