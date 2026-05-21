@@ -5,6 +5,7 @@
 
 #include "numa.h"
 #include "random.h"
+#include "rnd.h"
 #include "trinity.h"
 
 /* Linux caps NUMA nodes at MAX_NUMNODES (1024 on x86_64 with current
@@ -80,5 +81,5 @@ int random_numa_node(void)
 {
 	if (nr_numa_nodes == 0)
 		return 0;
-	return numa_node_pool[rand() % nr_numa_nodes];
+	return numa_node_pool[rnd_modulo_u32(nr_numa_nodes)];
 }
