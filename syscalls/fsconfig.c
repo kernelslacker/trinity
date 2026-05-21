@@ -6,6 +6,7 @@
 #include "fd.h"
 #include "object-types.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 enum fsconfig_command {
@@ -36,7 +37,7 @@ static const char *config_keys[] = {
 
 static void fill_key(char *buf)
 {
-	const char *key = config_keys[rand() % ARRAY_SIZE(config_keys)];
+	const char *key = config_keys[rnd_modulo_u32(ARRAY_SIZE(config_keys))];
 	strncpy(buf, key, 31);
 	buf[31] = '\0';
 }
@@ -66,7 +67,7 @@ static void sanitise_fsconfig(struct syscallrecord *rec)
 		if (key == NULL || val == NULL)
 			break;
 		fill_key(key);
-		switch (rand() % 3) {
+		switch (rnd_modulo_u32(3)) {
 		case 0: strncpy(val, "1", 63); break;
 		case 1: strncpy(val, "/dev/sda1", 63); break;
 		default: strncpy(val, "defaults", 63); break;
@@ -85,7 +86,7 @@ static void sanitise_fsconfig(struct syscallrecord *rec)
 		fill_key(key);
 		rec->a3 = (unsigned long) key;
 		rec->a4 = (unsigned long) val;
-		rec->a5 = 1 + (rand() % 64);	/* aux = length */
+		rec->a5 = 1 + (rnd_modulo_u32(64));	/* aux = length */
 		break;
 
 	case FSCONFIG_SET_PATH:
