@@ -58,6 +58,7 @@
 #include <unistd.h>
 
 #include "canary.h"
+#include "pids.h"
 #include "child.h"
 #include "random.h"
 #include "shm.h"
@@ -104,7 +105,7 @@ static void canary_sigbus_handler(int sig, siginfo_t *info, void *ctx)
 		raise(sig);
 		return;
 	}
-	if (info->si_code <= 0 && info->si_pid != getpid()) {
+	if (info->si_code <= 0 && info->si_pid != mypid()) {
 		/* Sibling-spoofed — kernel has consumed it already. */
 		return;
 	}
