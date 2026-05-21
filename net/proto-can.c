@@ -15,7 +15,7 @@ static void can_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_can *can;
 
-	can = zmalloc(sizeof(struct sockaddr_can));
+	can = zmalloc_tracked(sizeof(struct sockaddr_can));
 
 	can->can_family = AF_CAN;
 	can->can_ifindex = rand();
