@@ -6,6 +6,7 @@
 #include "ioctls.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -80,20 +81,20 @@ static void cdrom_send_packet_sanitise(struct syscallrecord *rec)
 	if (!cgc)
 		return;
 
-	cgc->cmd[0] = cdrom_scsi_opcodes[rand() % ARRAY_SIZE(cdrom_scsi_opcodes)];
+	cgc->cmd[0] = cdrom_scsi_opcodes[rnd_modulo_u32(ARRAY_SIZE(cdrom_scsi_opcodes))];
 	for (i = 1; i < CDROM_PACKET_SIZE; i++)
-		cgc->cmd[i] = (unsigned char) rand();
+		cgc->cmd[i] = (unsigned char) rnd_u32();
 
 	{
 		static const unsigned int buflens[] = {
 			0, 1, 4096, 4097, 65535, (unsigned int) INT_MAX,
 		};
-		cgc->buflen = buflens[rand() % ARRAY_SIZE(buflens)];
+		cgc->buflen = buflens[rnd_modulo_u32(ARRAY_SIZE(buflens))];
 		cgc->buffer = (unsigned char *) get_writable_struct(65536);
 	}
 	cgc->sense = (struct request_sense *) get_writable_struct(sizeof(struct request_sense));
 
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0:	cgc->data_direction = CGC_DATA_READ;	break;
 	case 1:	cgc->data_direction = CGC_DATA_WRITE;	break;
 	case 2:	cgc->data_direction = CGC_DATA_NONE;	break;
@@ -125,7 +126,7 @@ static void cdrom_dvd_auth_sanitise(struct syscallrecord *rec)
 	if (!dai)
 		return;
 	memset(dai, 0, sizeof(*dai));
-	dai->type = auth_types[rand() % ARRAY_SIZE(auth_types)];
+	dai->type = auth_types[rnd_modulo_u32(ARRAY_SIZE(auth_types))];
 
 	rec->a3 = (unsigned long) dai;
 }
@@ -137,12 +138,12 @@ static void sanitise_cdrom_playmsf(struct syscallrecord *rec)
 	msf = (struct cdrom_msf *) get_writable_struct(sizeof(*msf));
 	if (!msf)
 		return;
-	msf->cdmsf_min0   = rand() % 80;
-	msf->cdmsf_sec0   = rand() % 60;
-	msf->cdmsf_frame0 = rand() % 75;
-	msf->cdmsf_min1   = rand() % 80;
-	msf->cdmsf_sec1   = rand() % 60;
-	msf->cdmsf_frame1 = rand() % 75;
+	msf->cdmsf_min0   = rnd_modulo_u32(80);
+	msf->cdmsf_sec0   = rnd_modulo_u32(60);
+	msf->cdmsf_frame0 = rnd_modulo_u32(75);
+	msf->cdmsf_min1   = rnd_modulo_u32(80);
+	msf->cdmsf_sec1   = rnd_modulo_u32(60);
+	msf->cdmsf_frame1 = rnd_modulo_u32(75);
 	rec->a3 = (unsigned long) msf;
 }
 
@@ -153,10 +154,10 @@ static void sanitise_cdrom_playtrkind(struct syscallrecord *rec)
 	ti = (struct cdrom_ti *) get_writable_struct(sizeof(*ti));
 	if (!ti)
 		return;
-	ti->cdti_trk0 = 1 + rand() % 99;
-	ti->cdti_ind0 = 1 + rand() % 99;
-	ti->cdti_trk1 = 1 + rand() % 99;
-	ti->cdti_ind1 = 1 + rand() % 99;
+	ti->cdti_trk0 = 1 + rnd_modulo_u32(99);
+	ti->cdti_ind0 = 1 + rnd_modulo_u32(99);
+	ti->cdti_trk1 = 1 + rnd_modulo_u32(99);
+	ti->cdti_ind1 = 1 + rnd_modulo_u32(99);
 	rec->a3 = (unsigned long) ti;
 }
 
@@ -179,7 +180,7 @@ static void sanitise_cdrom_readtocentry(struct syscallrecord *rec)
 	if (!te)
 		return;
 	memset(te, 0, sizeof(*te));
-	te->cdte_track  = RAND_BOOL() ? CDROM_LEADOUT : (1 + rand() % 99);
+	te->cdte_track  = RAND_BOOL() ? CDROM_LEADOUT : (1 + rnd_modulo_u32(99));
 	te->cdte_format = RAND_BOOL() ? CDROM_MSF : CDROM_LBA;
 	rec->a3 = (unsigned long) te;
 }
@@ -191,10 +192,10 @@ static void sanitise_cdrom_volctrl(struct syscallrecord *rec)
 	vc = (struct cdrom_volctrl *) get_writable_struct(sizeof(*vc));
 	if (!vc)
 		return;
-	vc->channel0 = rand() % 256;
-	vc->channel1 = rand() % 256;
-	vc->channel2 = rand() % 256;
-	vc->channel3 = rand() % 256;
+	vc->channel0 = rnd_modulo_u32(256);
+	vc->channel1 = rnd_modulo_u32(256);
+	vc->channel2 = rnd_modulo_u32(256);
+	vc->channel3 = rnd_modulo_u32(256);
 	rec->a3 = (unsigned long) vc;
 }
 
@@ -228,7 +229,7 @@ static void sanitise_cdrom_read(struct syscallrecord *rec, int bufsz)
 	cr = (struct cdrom_read *) get_writable_struct(sizeof(*cr));
 	if (!cr)
 		return;
-	cr->cdread_lba     = rand();
+	cr->cdread_lba     = rnd_u32();
 	cr->cdread_bufaddr = (char *) get_writable_struct(bufsz);
 	cr->cdread_buflen  = bufsz;
 	rec->a3 = (unsigned long) cr;
@@ -244,13 +245,13 @@ static void sanitise_cdrom_readaudio(struct syscallrecord *rec)
 	memset(ra, 0, sizeof(*ra));
 	ra->addr_format = RAND_BOOL() ? CDROM_MSF : CDROM_LBA;
 	if (ra->addr_format == CDROM_MSF) {
-		ra->addr.msf.minute = rand() % 80;
-		ra->addr.msf.second = rand() % 60;
-		ra->addr.msf.frame  = rand() % 75;
+		ra->addr.msf.minute = rnd_modulo_u32(80);
+		ra->addr.msf.second = rnd_modulo_u32(60);
+		ra->addr.msf.frame  = rnd_modulo_u32(75);
 	} else {
-		ra->addr.lba = rand();
+		ra->addr.lba = rnd_u32();
 	}
-	ra->nframes = 1 + rand() % 8;
+	ra->nframes = 1 + rnd_modulo_u32(8);
 	ra->buf = (unsigned char *) get_writable_struct(ra->nframes * 2352);
 	rec->a3 = (unsigned long) ra;
 }
@@ -262,9 +263,9 @@ static void sanitise_cdrom_seek(struct syscallrecord *rec)
 	msf = (struct cdrom_msf *) get_writable_struct(sizeof(*msf));
 	if (!msf)
 		return;
-	msf->cdmsf_min0   = rand() % 80;
-	msf->cdmsf_sec0   = rand() % 60;
-	msf->cdmsf_frame0 = rand() % 75;
+	msf->cdmsf_min0   = rnd_modulo_u32(80);
+	msf->cdmsf_sec0   = rnd_modulo_u32(60);
+	msf->cdmsf_frame0 = rnd_modulo_u32(75);
 	msf->cdmsf_min1   = 0;
 	msf->cdmsf_sec1   = 0;
 	msf->cdmsf_frame1 = 0;
@@ -278,8 +279,8 @@ static void sanitise_cdrom_playblk(struct syscallrecord *rec)
 	blk = (struct cdrom_blk *) get_writable_struct(sizeof(*blk));
 	if (!blk)
 		return;
-	blk->from = rand();
-	blk->len  = rand() % 64;
+	blk->from = rnd_u32();
+	blk->len  = rnd_modulo_u32(64);
 	rec->a3 = (unsigned long) blk;
 }
 
@@ -321,7 +322,7 @@ static void sanitise_dvd_struct(struct syscallrecord *rec)
 	if (!ds)
 		return;
 	memset(ds, 0, sizeof(*ds));
-	ds->type = dvd_types[rand() % ARRAY_SIZE(dvd_types)];
+	ds->type = dvd_types[rnd_modulo_u32(ARRAY_SIZE(dvd_types))];
 	rec->a3 = (unsigned long) ds;
 }
 
@@ -416,23 +417,23 @@ static void cdrom_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 		rec->a3 = (unsigned long) get_writable_struct(4);
 		break;
 	case CDROMSETSPINDOWN:
-		rec->a3 = rand() % 4;
+		rec->a3 = rnd_modulo_u32(4);
 		break;
 	case CDROMEJECT_SW:
 	case CDROM_LOCKDOOR:
 	case CDROM_DEBUG:
-		rec->a3 = rand() % 2;
+		rec->a3 = rnd_modulo_u32(2);
 		break;
 	case CDROM_SET_OPTIONS:
 	case CDROM_CLEAR_OPTIONS:
-		rec->a3 = rand();
+		rec->a3 = rnd_u32();
 		break;
 	case CDROM_MEDIA_CHANGED:
 	case CDROM_DRIVE_STATUS:
-		switch (rand() % 3) {
+		switch (rnd_modulo_u32(3)) {
 		case 0:  rec->a3 = CDSL_CURRENT; break;
 		case 1:  rec->a3 = CDSL_NONE;    break;
-		default: rec->a3 = rand() % 16;  break;
+		default: rec->a3 = rnd_modulo_u32(16);  break;
 		}
 		break;
 	case CDROM_SEND_PACKET:
@@ -442,16 +443,16 @@ static void cdrom_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 		cdrom_dvd_auth_sanitise(rec);
 		break;
 	case CDROMAUDIOBUFSIZ:
-		rec->a3 = rand();
+		rec->a3 = rnd_u32();
 		break;
 	case CDROM_SELECT_SPEED:
-		rec->a3 = rand() % 56;
+		rec->a3 = rnd_modulo_u32(56);
 		break;
 	case CDROM_SELECT_DISC:
-		switch (rand() % 10) {
+		switch (rnd_modulo_u32(10)) {
 		case 0:  rec->a3 = CDSL_CURRENT; break;
 		case 1:  rec->a3 = CDSL_NONE;    break;
-		default: rec->a3 = rand() % 16;  break;
+		default: rec->a3 = rnd_modulo_u32(16);  break;
 		}
 		break;
 	default:
