@@ -38,6 +38,7 @@
 #include "healer.h"		/* healer_strategy_ready */
 #include "kcov.h"		/* KCOV_CMP_RECORDS_MAX, kcov_shm */
 #include "params.h"
+#include "rnd.h"
 #include "shm.h"
 #include "stats.h"		/* stats_log_write */
 #include "strategy.h"
@@ -1568,7 +1569,7 @@ bool plateau_anti_prior_accept(unsigned int nr)
 	weight = __atomic_load_n(&shm->plateau_anti_prior_accept_weight[nr],
 				 __ATOMIC_RELAXED);
 
-	return (unsigned long)rand() % ANTI_PRIOR_THRESHOLD_SCALE < weight;
+	return rnd_modulo_u32(ANTI_PRIOR_THRESHOLD_SCALE) < weight;
 }
 
 void plateau_anti_prior_refresh_baseline(void)
