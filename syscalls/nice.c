@@ -2,13 +2,14 @@
  * SYSCALL_DEFINE1(nice, int, increment)
  */
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
 
 static void sanitise_nice(struct syscallrecord *rec)
 {
-	rec->a1 = (unsigned long)((rand() % 40) - 20);	/* -20 to 19 */
+	rec->a1 = (unsigned long)((rnd_modulo_u32(40)) - 20);	/* -20 to 19 */
 }
 
 /*
