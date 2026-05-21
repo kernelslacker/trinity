@@ -137,7 +137,7 @@ static bool set_syscall_nr_heuristic(struct syscallrecord *rec,
 
 retry:
 	if (no_syscalls_enabled() == true) {
-		output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
+		output(0, "[%d] No more syscalls enabled. Exiting\n", mypid());
 		__atomic_store_n(&shm->exit_reason, EXIT_NO_SYSCALLS_ENABLED, __ATOMIC_RELAXED);
 		return FAIL;
 	}
@@ -147,7 +147,7 @@ retry:
 	 * table or a table dominated by EXPENSIVE syscalls (kept at
 	 * 1-in-1000) can wedge the child in a tight retry loop. */
 	if (outer_attempts++ > 10000) {
-		output(0, "[%d] set_syscall_nr exceeded retry budget\n", getpid());
+		output(0, "[%d] set_syscall_nr exceeded retry budget\n", mypid());
 		return FAIL;
 	}
 
@@ -311,13 +311,13 @@ bool set_syscall_nr_random(struct syscallrecord *rec,
 
 retry:
 	if (no_syscalls_enabled() == true) {
-		output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
+		output(0, "[%d] No more syscalls enabled. Exiting\n", mypid());
 		__atomic_store_n(&shm->exit_reason, EXIT_NO_SYSCALLS_ENABLED, __ATOMIC_RELAXED);
 		return FAIL;
 	}
 
 	if (outer_attempts++ > 10000) {
-		output(0, "[%d] set_syscall_nr_random exceeded retry budget\n", getpid());
+		output(0, "[%d] set_syscall_nr_random exceeded retry budget\n", mypid());
 		return FAIL;
 	}
 
@@ -411,13 +411,13 @@ static bool set_syscall_nr_coverage_frontier(struct syscallrecord *rec,
 
 retry:
 	if (no_syscalls_enabled() == true) {
-		output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
+		output(0, "[%d] No more syscalls enabled. Exiting\n", mypid());
 		__atomic_store_n(&shm->exit_reason, EXIT_NO_SYSCALLS_ENABLED, __ATOMIC_RELAXED);
 		return FAIL;
 	}
 
 	if (outer_attempts++ > 10000) {
-		output(0, "[%d] set_syscall_nr_coverage_frontier exceeded retry budget\n", getpid());
+		output(0, "[%d] set_syscall_nr_coverage_frontier exceeded retry budget\n", mypid());
 		return FAIL;
 	}
 
