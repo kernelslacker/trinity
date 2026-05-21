@@ -29,16 +29,16 @@ static void sanitise_shmctl(struct syscallrecord *rec)
 		return;
 	case IPC_INFO:
 		allocated_size = sizeof(struct shminfo);
-		buf = zmalloc(allocated_size);
+		buf = zmalloc_tracked(allocated_size);
 		break;
 	case SHM_INFO:
 		allocated_size = sizeof(struct shm_info);
-		buf = zmalloc(allocated_size);
+		buf = zmalloc_tracked(allocated_size);
 		break;
 	default:
 		/* IPC_STAT, IPC_SET, SHM_STAT */
 		allocated_size = sizeof(struct shmid_ds);
-		buf = zmalloc(allocated_size);
+		buf = zmalloc_tracked(allocated_size);
 		break;
 	}
 
