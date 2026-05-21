@@ -80,6 +80,7 @@
 #include "stats.h"
 #include "trinity.h"
 #include "utils.h"
+#include "pids.h"
 
 #ifndef MFD_CLOEXEC
 #define MFD_CLOEXEC		0x0001U
@@ -655,7 +656,7 @@ out:
  * — first failure with ENOSYS or ENOENT (mqueue not mounted) latches
  * the recipe off via *unsupported.
  *
- * The queue name embeds getpid() to keep concurrent recipe runs in
+ * The queue name embeds mypid() to keep concurrent recipe runs in
  * sibling children from racing on a shared name; O_EXCL gives us a
  * second layer of safety against name collisions on retry.
  */
@@ -668,7 +669,7 @@ static bool recipe_mq_open(bool *unsupported)
 	bool ok = false;
 
 	snprintf(qname, sizeof(qname), "/trinity-recipe-%d-%u",
-		 (int)getpid(), (unsigned int)rand());
+		 (int)mypid(), (unsigned int)rand());
 
 	memset(&attr, 0, sizeof(attr));
 	attr.mq_maxmsg = 4;
@@ -911,7 +912,7 @@ static bool recipe_vfs_leases(bool *unsupported)
 	bool ok = false;
 
 	snprintf(path, sizeof(path), "/tmp/trinity-recipe-lease-%d-%u",
-		 (int)getpid(), (unsigned int)rand());
+		 (int)mypid(), (unsigned int)rand());
 
 	fd = open(path, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
 	if (fd < 0)
@@ -1542,7 +1543,7 @@ static bool recipe_fsnotify_xwatch(bool *unsupported)
 	bool ok = false;
 
 	snprintf(path, sizeof(path), "/tmp/trinity-recipe-fsx-%d-%u",
-		 (int)getpid(), (unsigned int)rand());
+		 (int)mypid(), (unsigned int)rand());
 
 	wfd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
 	if (wfd < 0) {
@@ -1983,7 +1984,7 @@ static bool recipe_signalfd_delivery(bool *unsupported)
 		goto out;
 	}
 
-	self = getpid();
+	self = mypid();
 
 	/* Queue three deliveries, one per watched signal, with distinct
 	 * payloads.  sigqueue() routes through the per-signal pending
@@ -2961,7 +2962,7 @@ static bool recipe_keys_revoke_race(bool *unsupported)
 
 		snprintf(desc, sizeof(desc),
 			 "trinity-keys-revoke-race-%u-%u",
-			 (unsigned int)getpid(), i);
+			 (unsigned int)mypid(), i);
 
 		key = syscall(__NR_add_key, "user", desc,
 			      payload, (size_t)sizeof(payload),
@@ -3436,10 +3437,10 @@ static bool recipe_mount_userns_dance(bool *unsupported)
  * then execve()s /bin/true to drive the post-filter exec path.
  *
  * uname() is the trap point because glibc never calls it implicitly
- * post-fork along any path we care about — picking getpid() (the
+ * post-fork along any path we care about — picking mypid() (the
  * obvious other "single-arg, side-effect-free" candidate) would risk
  * the supervisor self-deadlocking the moment libc's own bookkeeping
- * called getpid() between seccomp() install and the first NOTIF_RECV.
+ * called mypid() between seccomp() install and the first NOTIF_RECV.
  *
  * syscall(__NR_uname, ...) bypasses any libc wrapping that might cache
  * the result or route via vDSO; we want the raw seccomp trap, not a
@@ -3737,7 +3738,7 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w)
 		       cgroup_path);
 	procs_fd = open(procs_path, O_WRONLY);
 	if (procs_fd >= 0) {
-		len = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)getpid());
+		len = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)mypid());
 		w = write(procs_fd, pidbuf, (size_t)len);
 		close(procs_fd);
 	}
@@ -3787,7 +3788,7 @@ static int recipe_cgroup_kill_supervisor(void)
 	char ack;
 
 	(void)snprintf(cgroup_path, sizeof(cgroup_path),
-		       "/sys/fs/cgroup/trinity-kill-%d", (int)getpid());
+		       "/sys/fs/cgroup/trinity-kill-%d", (int)mypid());
 
 	if (mkdir(cgroup_path, 0755) != 0) {
 		if (errno == EACCES || errno == EPERM || errno == EROFS ||
