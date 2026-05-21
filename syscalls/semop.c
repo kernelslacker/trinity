@@ -3,6 +3,7 @@
  */
 #include <sys/sem.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 #define MAX_SOPS 8
@@ -12,12 +13,12 @@ static void fill_sembuf_array(struct sembuf *sops, unsigned int nsops)
 	unsigned int i;
 
 	for (i = 0; i < nsops; i++) {
-		sops[i].sem_num = rand() % 32;
-		switch (rand() % 4) {
+		sops[i].sem_num = rnd_modulo_u32(32);
+		switch (rnd_modulo_u32(4)) {
 		case 0: sops[i].sem_op = 1; break;		/* V (release) */
 		case 1: sops[i].sem_op = -1; break;		/* P (acquire) */
 		case 2: sops[i].sem_op = 0; break;		/* wait-for-zero */
-		default: sops[i].sem_op = (rand() % 20) - 10; break;
+		default: sops[i].sem_op = (rnd_modulo_u32(20)) - 10; break;
 		}
 		sops[i].sem_flg = 0;
 		if (RAND_BOOL())
@@ -32,7 +33,7 @@ static void sanitise_semop(struct syscallrecord *rec)
 	struct sembuf *sops;
 	unsigned int nsops;
 
-	nsops = 1 + (rand() % MAX_SOPS);
+	nsops = 1 + (rnd_modulo_u32(MAX_SOPS));
 	sops = (struct sembuf *) get_writable_address(nsops * sizeof(*sops));
 	if (sops == NULL)
 		return;
