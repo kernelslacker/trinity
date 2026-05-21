@@ -11,6 +11,7 @@
 #include "deferred-free.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -81,11 +82,11 @@ static void sanitise_mremap(struct syscallrecord *rec)
 	rec->a3 = map->size;
 
 	/* Sometimes request a different size */
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0: break;	/* same size */
 	case 1: rec->a3 /= 2; break;	/* shrink */
 	case 2: rec->a3 *= 2; break;	/* grow */
-	case 3: rec->a3 = page_size * (1 + rand() % 16); break;	/* random pages */
+	case 3: rec->a3 = page_size * (1 + rnd_modulo_u32(16)); break;	/* random pages */
 	}
 
 	if (rec->a4 & MREMAP_FIXED) {
