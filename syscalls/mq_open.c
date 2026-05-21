@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include "deferred-free.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -66,7 +67,7 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 	name[2] = 'r';
 	name[3] = 'i';
 	name[4] = 'n';
-	name[5] = '0' + (rand() % 10);
+	name[5] = '0' + (rnd_modulo_u32(10));
 	name[6] = '\0';
 
 	attr = (struct mq_attr *) get_writable_struct(sizeof(*attr));
@@ -74,7 +75,7 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 		return;
 	memset(attr, 0, sizeof(*attr));
 
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0:	/* small queue */
 		attr->mq_maxmsg = 1;
 		attr->mq_msgsize = 1;
@@ -84,8 +85,8 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 		attr->mq_msgsize = 8192;
 		break;
 	default: /* boundary */
-		attr->mq_maxmsg = 1 + (rand() % 256);
-		attr->mq_msgsize = 1 + (rand() % 65536);
+		attr->mq_maxmsg = 1 + (rnd_modulo_u32(256));
+		attr->mq_msgsize = 1 + (rnd_modulo_u32(65536));
 		break;
 	}
 
