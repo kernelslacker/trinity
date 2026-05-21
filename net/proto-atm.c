@@ -13,7 +13,7 @@ static void atmpvc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_atmpvc *atmpvc;
 
-	atmpvc = zmalloc(sizeof(struct sockaddr_atmpvc));
+	atmpvc = zmalloc_tracked(sizeof(struct sockaddr_atmpvc));
 
 	atmpvc->sap_family = PF_ATMPVC;
 	atmpvc->sap_addr.itf = rand();
@@ -28,7 +28,7 @@ static void atmsvc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	struct sockaddr_atmsvc *atmsvc;
 	unsigned int i;
 
-	atmsvc = zmalloc(sizeof(struct sockaddr_atmsvc));
+	atmsvc = zmalloc_tracked(sizeof(struct sockaddr_atmsvc));
 
 	atmsvc->sas_family = PF_ATMSVC;
 	for (i = 0; i < ATM_ESA_LEN; i++)
