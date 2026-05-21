@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE2(inotify_rm_watch, int, fd, __s32, wd)
  */
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 static void sanitise_inotify_rm_watch(struct syscallrecord *rec)
@@ -12,7 +13,7 @@ static void sanitise_inotify_rm_watch(struct syscallrecord *rec)
 	 * watches per fd, so valid wd values are typically 1-10.
 	 * Generate small values to have a chance of hitting real watches.
 	 */
-	rec->a2 = 1 + (rand() % 10);
+	rec->a2 = 1 + (rnd_modulo_u32(10));
 }
 
 struct syscallentry syscall_inotify_rm_watch = {
