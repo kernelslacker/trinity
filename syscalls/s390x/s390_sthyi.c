@@ -24,7 +24,7 @@ static u64 syscall_s390_sthyi_return_code;
 static void sanitise_s390_sthyi(struct syscallrecord *rec)
 {
 	size_t size = RAND_RANGE(0, page_size);
-	void *addr = size ? zmalloc(size) : NULL;
+	void *addr = size ? zmalloc_tracked(size) : NULL;
 
 	rec->a2 = (unsigned long)addr;
 	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
