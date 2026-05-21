@@ -37,6 +37,7 @@
 #include "stats.h"
 #include "trinity.h"
 #include "utils.h"
+#include "rnd.h"
 
 extern struct genl_family_grammar fam_devlink;
 extern struct genl_family_grammar fam_nl80211;
@@ -436,7 +437,7 @@ struct genl_family_grammar *genl_pick_resolved_family(void)
 	if (resolved_count == 0)
 		return NULL;
 
-	pick = rand() % resolved_count;
+	pick = rnd_modulo_u32(resolved_count);
 	for (i = 0; i < ARRAY_SIZE(registry); i++) {
 		if (registry[i] == NULL || !registry[i]->resolved)
 			continue;
@@ -465,7 +466,7 @@ unsigned char genl_pick_cmd(const struct genl_family_grammar *fam)
 {
 	if (!fam || fam->n_cmds == 0)
 		return 0;
-	return fam->cmds[rand() % fam->n_cmds].cmd;
+	return fam->cmds[rnd_modulo_u32(fam->n_cmds)].cmd;
 }
 
 void genl_family_bump_calls(const struct genl_family_grammar *fam)
