@@ -64,6 +64,7 @@
 #include <unistd.h>
 
 #include "arch.h"
+#include "pids.h"
 #include "child.h"
 #include "effector-map.h"
 #include "jitter.h"
@@ -213,7 +214,7 @@ static void madvise_cycler_pool_race_handler(int sig, siginfo_t *info,
 	uintptr_t fault_addr;
 
 	(void)ctx;
-	if (info->si_code <= 0 && info->si_pid != getpid()) {
+	if (info->si_code <= 0 && info->si_pid != mypid()) {
 		/* Sibling-spoofed — kernel consumed the signal already. */
 		return;
 	}
