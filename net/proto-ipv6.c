@@ -91,7 +91,7 @@ static void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_in6 *ipv6;
 
-	ipv6 = zmalloc(sizeof(struct sockaddr_in6));
+	ipv6 = zmalloc_tracked(sizeof(struct sockaddr_in6));
 
 	ipv6->sin6_family = PF_INET6;
 
