@@ -4,6 +4,7 @@
  *		const struct xattr_args __user *, uargs, size_t, usize)
  */
 #include <fcntl.h>
+#include "rnd.h"
 #include "sanitise.h"
 #include "xattr.h"
 #include "compat.h"
@@ -36,7 +37,7 @@ static void sanitise_setxattrat(struct syscallrecord *rec)
 		if (!args->value)
 			return;
 		args->size = 256;
-		args->flags = flag_choices[rand() % 3];
+		args->flags = flag_choices[rnd_modulo_u32(3)];
 		rec->a5 = (unsigned long) args;
 		rec->a6 = sizeof(*args);
 	}
