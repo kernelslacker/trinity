@@ -59,7 +59,7 @@ unsigned long get_random_aio_ctx(void)
 {
 	struct object *obj;
 
-	if (objects_empty(OBJ_AIO_CTX) == true)
+	if (objects_pool_empty(OBJ_LOCAL, OBJ_AIO_CTX) == true)
 		return 0;
 
 	obj = get_random_object(OBJ_AIO_CTX, OBJ_LOCAL);
