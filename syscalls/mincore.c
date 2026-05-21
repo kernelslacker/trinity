@@ -23,7 +23,7 @@ static void sanitise_mincore(struct syscallrecord *rec)
 	len = min(GB(1), map->size);
 	len = (len + page_size - 1) / page_size;
 
-	vec = zmalloc(len);
+	vec = zmalloc_tracked(len);
 	rec->a3 = (unsigned long) vec;
 
 	avoid_shared_buffer_out(&rec->a3, len);
