@@ -127,15 +127,15 @@ struct childdata * this_child(void)
 	return NULL;
 }
 
-int find_childno(pid_t mypid)
+int find_childno(pid_t pid)
 {
-	if (cached_childno != CHILD_NOT_FOUND && cached_pid == mypid)
+	if (cached_childno != CHILD_NOT_FOUND && cached_pid == pid)
 		return cached_childno;
 
 	unsigned int i;
 
 	for_each_child(i) {
-		if (__atomic_load_n(&pids[i], __ATOMIC_RELAXED) == mypid)
+		if (__atomic_load_n(&pids[i], __ATOMIC_RELAXED) == pid)
 			return i;
 	}
 	return CHILD_NOT_FOUND;
