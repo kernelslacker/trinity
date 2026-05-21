@@ -4,6 +4,7 @@
 	unsigned long, maxnode, unsigned, flags)
  */
 
+#include <string.h>
 #include <linux/mempolicy.h>
 #include "arch.h"
 #include "maps.h"
@@ -26,11 +27,18 @@
 #define MPOL_MF_LAZY (1 << 3)	/* lazy migrate-on-fault */
 #endif
 
+/* maxnode is the bit count the kernel will use to size its copy_from_user
+ * of the nodemask: it copies ((maxnode + BITS_PER_LONG - 1) / BITS_PER_LONG)
+ * longs.  Mirror that here so the buffer matches what the kernel reads. */
+#define NODEMASK_BPL		(sizeof(unsigned long) * 8)
+#define NODEMASK_WORDS(bits)	(((bits) + NODEMASK_BPL - 1) / NODEMASK_BPL)
+
 static void sanitise_mbind(struct syscallrecord *rec)
 {
 	struct map *map;
 	unsigned long *mask;
 	unsigned long maxnode;
+	unsigned long nwords, nbytes;
 
 	map = common_set_mmap_ptr_len();
 	if (map == NULL)
@@ -51,12 +59,15 @@ retry_maxnode:
 		goto retry_maxnode;
 	}
 
-	/* Generate a valid nodemask bitmap instead of a random address. */
-	mask = (unsigned long *) get_writable_address(sizeof(unsigned long) * 2);
+	/* Generate a valid nodemask bitmap instead of a random address.
+	 * Size the buffer to the number of longs the kernel will copy
+	 * from userspace for the advertised maxnode bits. */
+	nwords = NODEMASK_WORDS(maxnode);
+	nbytes = nwords * sizeof(unsigned long);
+	mask = (unsigned long *) get_writable_address(nbytes);
 	if (mask == NULL)
 		return;
-	mask[0] = 0;
-	mask[1] = 0;
+	memset(mask, 0, nbytes);
 	switch (rand() % 3) {
 	case 0: /* node 0 only (most common on non-NUMA) */
 		mask[0] = 1;
