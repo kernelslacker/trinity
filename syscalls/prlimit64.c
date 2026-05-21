@@ -11,6 +11,7 @@
 #include "arch.h"
 #include "deferred-free.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -52,11 +53,11 @@ static unsigned long rlimit_resources[] = {
 
 static rlim64_t random_rlim64(void)
 {
-	switch (rand() % 5) {
+	switch (rnd_modulo_u32(5)) {
 	case 0: return RLIM64_INFINITY;
 	case 1: return 0;
-	case 2: return 1 + (rand() % 1024);
-	case 3: return (rlim64_t) page_size * (1 + (rand() % 256));
+	case 2: return 1 + (rnd_modulo_u32(1024));
+	case 3: return (rlim64_t) page_size * (1 + (rnd_modulo_u32(256)));
 	default: return rand32();
 	}
 }
