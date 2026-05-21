@@ -7,6 +7,7 @@
 #include <string.h>
 #include "fd.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "compat.h"
 
@@ -46,13 +47,13 @@ static void sanitise_landlock_add_rule(struct syscallrecord *rec)
 		if (np == NULL)
 			break;
 		memset(np, 0, sizeof(*np));
-		np->allowed_access = rand() % 4;
+		np->allowed_access = rnd_modulo_u32(4);
 
-		switch (rand() % 4) {
+		switch (rnd_modulo_u32(4)) {
 		case 0: np->port = 0; break;		/* ephemeral */
 		case 1: np->port = 80; break;		/* well-known */
-		case 2: np->port = 1 + (rand() % 1023); break;	/* privileged */
-		default: np->port = 1024 + (rand() % 64512); break; /* unprivileged */
+		case 2: np->port = 1 + (rnd_modulo_u32(1023)); break;	/* privileged */
+		default: np->port = 1024 + (rnd_modulo_u32(64512)); break; /* unprivileged */
 		}
 		rec->a3 = (unsigned long) np;
 		break;
