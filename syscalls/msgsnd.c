@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <sys/types.h>
 #include <linux/msg.h>
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
@@ -18,10 +19,10 @@ static unsigned long msgsnd_flags[] = {
 static void sanitise_msgsnd(struct syscallrecord *rec)
 {
 	struct msgbuf *msgp;
-	size_t msgsz = rand() % 256;
+	size_t msgsz = rnd_modulo_u32(256);
 
 	msgp = zmalloc_tracked(sizeof(struct msgbuf) + msgsz);
-	msgp->mtype = (rand() % 255) + 1;	/* mtype must be > 0 */
+	msgp->mtype = (rnd_modulo_u32(255)) + 1;	/* mtype must be > 0 */
 	rec->a2 = (unsigned long) msgp;
 	rec->a3 = msgsz;
 	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
