@@ -20,7 +20,7 @@ static void qrtr_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_qrtr *qrtr;
 
-	qrtr = zmalloc(sizeof(struct sockaddr_qrtr));
+	qrtr = zmalloc_tracked(sizeof(struct sockaddr_qrtr));
 
 	qrtr->sq_family = PF_QIPCRTR;
 	qrtr->sq_node = rand();
