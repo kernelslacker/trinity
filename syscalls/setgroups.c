@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include "deferred-free.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "sanitise.h"
 #include "trinity.h"
@@ -47,7 +48,7 @@ static void sanitise_setgroups(struct syscallrecord *rec)
 		if (list == NULL)
 			return;
 		for (i = 0; i < count; i++)
-			list[i] = (gid_t) rand();
+			list[i] = (gid_t) rnd_u32();
 		rec->a2 = (unsigned long) list;
 	}
 
