@@ -27,6 +27,7 @@
 #include "stats.h"
 #include "trinity.h"
 #include "utils.h"
+#include "rnd.h"
 
 extern struct nfnl_subsys_grammar sub_ctnetlink;
 extern struct nfnl_subsys_grammar sub_ctnetlink_exp;
@@ -119,7 +120,7 @@ const struct nfnl_subsys_grammar *nfnl_pick_subsys(void)
 	if (real_count == 0)
 		return NULL;
 
-	pick = rand() % real_count;
+	pick = rnd_modulo_u32(real_count);
 	for (i = 0; i < ARRAY_SIZE(registry); i++) {
 		if (registry[i] == NULL)
 			continue;
@@ -133,7 +134,7 @@ unsigned char nfnl_pick_cmd(const struct nfnl_subsys_grammar *sub)
 {
 	if (!sub || sub->n_cmds == 0)
 		return 0;
-	return sub->cmds[rand() % sub->n_cmds].cmd;
+	return sub->cmds[rnd_modulo_u32(sub->n_cmds)].cmd;
 }
 
 void nfnl_subsys_bump_calls(const struct nfnl_subsys_grammar *sub)
