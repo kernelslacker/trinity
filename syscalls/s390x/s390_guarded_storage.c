@@ -25,7 +25,7 @@ static unsigned long syscall_s390_guarded_storage_arg1[] = {
 static void sanitise_s390_gs(struct syscallrecord *rec)
 {
 	size_t size = sizeof(struct gs_cb);
-	void *addr = zmalloc(size);
+	void *addr = zmalloc_tracked(size);
 
 	/* Clear post_state up front so an alloc-failure path leaves the
 	 * post handler with a NULL snapshot to bail on rather than a stale
