@@ -8,6 +8,7 @@
 #include <time.h>
 
 #include "objects.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "random.h"
 #include "shm.h"
@@ -64,11 +65,11 @@ int32_t get_random_timerid(void)
 	struct object *obj;
 
 	if (objects_pool_empty(OBJ_LOCAL, OBJ_TIMERID) == true)
-		return (int32_t) (rand() % 32);
+		return (int32_t) (rnd_modulo_u32(32));
 
 	obj = get_random_object(OBJ_TIMERID, OBJ_LOCAL);
 	if (obj == NULL)
-		return (int32_t) (rand() % 32);
+		return (int32_t) (rnd_modulo_u32(32));
 	return obj->timeridobj.tid;
 }
 
