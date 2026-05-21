@@ -8,6 +8,7 @@
 
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "syscall.h"
 #include "utils.h"
@@ -79,7 +80,7 @@ static void joystick_sanitise(const struct ioctl_group *grp,
 	switch (rec->a2) {
 #ifdef JSIOCGNAME
 	case JSIOCGNAME(0):
-		u = rand();
+		u = rnd_u32();
 		rec->a2 = JSIOCGNAME(u);
 		break;
 #endif
