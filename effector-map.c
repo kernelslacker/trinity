@@ -51,6 +51,7 @@
 #include "tables.h"
 #include "trinity.h"
 #include "utils.h"
+#include "pids.h"
 
 /*
  * Process-local map.  384 KB in BSS in the parent; children inherit
@@ -656,7 +657,7 @@ bool effector_map_save_file(const char *path)
 	hdr.kernel_version[sizeof(hdr.kernel_version) - 1] = '\0';
 
 	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d",
-			path, (int)getpid());
+			path, (int)mypid());
 	if (ret < 0 || (size_t)ret >= sizeof(tmppath))
 		return false;
 
