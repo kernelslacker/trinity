@@ -6,6 +6,7 @@
 #include <linux/kexec.h>
 #include <string.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 #ifndef KEXEC_UPDATE_ELFCOREHDR
@@ -32,14 +33,14 @@ static void sanitise_kexec_load(struct syscallrecord *rec)
 	unsigned long arch;
 
 	/* 1-4 segments (KEXEC_SEGMENT_MAX is 16, keep it small) */
-	nr = 1 + (rand() % 4);
+	nr = 1 + (rnd_modulo_u32(4));
 	segs = (struct kexec_segment *) get_writable_address(nr * sizeof(*segs));
 	if (segs == NULL)
 		return;
 	memset(segs, 0, nr * sizeof(*segs));
 
 	for (i = 0; i < nr; i++) {
-		size_t sz = 4096 * (1 + (rand() % 4));	/* 4K-16K */
+		size_t sz = 4096 * (1 + (rnd_modulo_u32(4)));	/* 4K-16K */
 		void *buf;
 
 		buf = get_writable_address(sz);
@@ -59,7 +60,7 @@ static void sanitise_kexec_load(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) segs;
 
 	/* Combine low flags with arch in upper 16 bits */
-	arch = kexec_arches[rand() % ARRAY_SIZE(kexec_arches)];
+	arch = kexec_arches[rnd_modulo_u32(ARRAY_SIZE(kexec_arches))];
 	rec->a4 = arch;
 	if (RAND_BOOL())
 		rec->a4 |= KEXEC_ON_CRASH;
