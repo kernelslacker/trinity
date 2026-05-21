@@ -99,9 +99,18 @@
  * to 64 NUMA nodes; far beyond anything we'll see in practice. */
 #define NODEMASK_BITS	64
 
-/* maxnode arg to mbind/set_mempolicy is the number of bits in the mask,
- * NOT the highest node id.  See mempolicy(2). */
-#define MAXNODE_ARG	(NODEMASK_BITS + 1)
+/* maxnode arg to mbind/set_mempolicy is the number of bits in the mask.
+ * The kernel sizes its copy_from_user as BITS_TO_LONGS(maxnode) longs,
+ * so MAXNODE_ARG must match the bit width of the buffer we supply --
+ * adding 1 here would advertise a bit beyond the array's last long. */
+#define MAXNODE_ARG	NODEMASK_BITS
+
+/* Mirror BITS_PER_LONG / BITS_TO_LONGS locally; the kernel UAPI headers
+ * we include don't expose them.  BITS_TO_LONGS is a compile-time constant
+ * when its argument is, so it can size stack arrays. */
+#define BITS_PER_LONG		(sizeof(unsigned long) * 8)
+#define BITS_TO_LONGS(n)	(((n) + BITS_PER_LONG - 1) / BITS_PER_LONG)
+#define NODEMASK_LONGS		BITS_TO_LONGS(MAXNODE_ARG)
 
 /* Pages we attempt to move per move_pages() call.  Small enough that the
  * status / target arrays fit on the stack without bloat. */
@@ -245,38 +254,40 @@ static void init_numa_state(void)
 
 /*
  * Build a single-node mask targeting node `node` in the low bits of
- * *mask.  Caller passes a unsigned long array sized at NODEMASK_BITS / 64.
- * Anything outside the first long would require a wider bitmap; we cap
- * node selection at < 64 below.
+ * *mask.  Caller passes an unsigned long array sized at NODEMASK_LONGS.
+ * Anything outside the first long would require setting bits past
+ * mask[0]; we cap node selection at < BITS_PER_LONG below so the entire
+ * mask state lives in mask[0] and the remaining longs stay zero.
  */
 static void build_single_node_mask(unsigned long *mask, unsigned int node)
 {
-	mask[0] = 0;
-	if (node < 64)
+	memset(mask, 0, NODEMASK_LONGS * sizeof(unsigned long));
+	if (node < BITS_PER_LONG)
 		mask[0] = 1UL << node;
 }
 
 /*
  * Build a multi-node mask containing every online node up to max_node_id
- * (capped at 63).  Used as the to/from masks for migrate_pages so the
- * kernel actually has somewhere to migrate from and to.
+ * (capped at BITS_PER_LONG - 1).  Used as the to/from masks for
+ * migrate_pages so the kernel actually has somewhere to migrate from
+ * and to.
  */
 static void build_all_nodes_mask(unsigned long *mask)
 {
 	unsigned int n;
 
-	mask[0] = 0;
-	for (n = 0; n <= max_node_id && n < 64; n++)
+	memset(mask, 0, NODEMASK_LONGS * sizeof(unsigned long));
+	for (n = 0; n <= max_node_id && n < BITS_PER_LONG; n++)
 		mask[0] |= (1UL << n);
 }
 
-/* Pick a random node id in [0, max_node_id], capped at 63. */
+/* Pick a random node id in [0, max_node_id], capped at BITS_PER_LONG - 1. */
 static unsigned int pick_node(void)
 {
 	unsigned int cap = max_node_id;
 
-	if (cap > 63)
-		cap = 63;
+	if (cap > BITS_PER_LONG - 1)
+		cap = BITS_PER_LONG - 1;
 	return (unsigned int) rand() % (cap + 1);
 }
 
@@ -348,9 +359,9 @@ enum migration_op {
 static unsigned int do_one_op(enum migration_op op, void *region,
 			      unsigned long region_len, unsigned int *failed_out)
 {
-	unsigned long mask[NODEMASK_BITS / (sizeof(unsigned long) * 8)];
-	unsigned long from_mask[NODEMASK_BITS / (sizeof(unsigned long) * 8)];
-	unsigned long to_mask[NODEMASK_BITS / (sizeof(unsigned long) * 8)];
+	unsigned long mask[NODEMASK_LONGS];
+	unsigned long from_mask[NODEMASK_LONGS];
+	unsigned long to_mask[NODEMASK_LONGS];
 	void *page_addrs[MOVE_PAGES_BATCH];
 	int target_nodes[MOVE_PAGES_BATCH];
 	int status[MOVE_PAGES_BATCH];
