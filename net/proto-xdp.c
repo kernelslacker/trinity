@@ -14,6 +14,7 @@
 #include "socket-family-grammar.h"
 #include "utils.h"
 #include "compat.h"
+#include "rnd.h"
 
 #ifndef SOL_XDP
 #define SOL_XDP 283
@@ -148,18 +149,18 @@ static void xdp_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	xdp->sxdp_family = PF_XDP;
 
 	/* Flags: various combinations of copy/zerocopy/shared/sg */
-	switch (rand() % 6) {
+	switch (rnd_modulo_u32(6)) {
 	case 0: xdp->sxdp_flags = 0; break;
 	case 1: xdp->sxdp_flags = XDP_COPY; break;
 	case 2: xdp->sxdp_flags = XDP_ZEROCOPY; break;
 	case 3: xdp->sxdp_flags = XDP_SHARED_UMEM; break;
 	case 4: xdp->sxdp_flags = XDP_USE_NEED_WAKEUP; break;
-	case 5: xdp->sxdp_flags = rand() & 0x1f; break;
+	case 5: xdp->sxdp_flags = rnd_u32() & 0x1f; break;
 	}
 
-	xdp->sxdp_ifindex = rand() % 512;
-	xdp->sxdp_queue_id = rand() % 256;
-	xdp->sxdp_shared_umem_fd = rand() % 1024;
+	xdp->sxdp_ifindex = rnd_modulo_u32(512);
+	xdp->sxdp_queue_id = rnd_modulo_u32(256);
+	xdp->sxdp_shared_umem_fd = rnd_modulo_u32(1024);
 
 	*addr = (struct sockaddr *) xdp;
 	*addrlen = sizeof(struct sockaddr_xdp);
@@ -183,12 +184,12 @@ static void xdp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 		/* Ring size — must be power of 2 */
 		int *optval32 = (int *) so->optval;
 
-		switch (rand() % 5) {
+		switch (rnd_modulo_u32(5)) {
 		case 0: *optval32 = 0; break;
 		case 1: *optval32 = 64; break;
 		case 2: *optval32 = 2048; break;
 		case 3: *optval32 = 4096; break;
-		case 4: *optval32 = 1 << (rand() % 16); break;
+		case 4: *optval32 = 1 << (rnd_modulo_u32(16)); break;
 		}
 		so->optlen = sizeof(int);
 		break;
@@ -199,18 +200,18 @@ static void xdp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 
 		memset(reg, 0, sizeof(struct xdp_umem_reg));
 		reg->addr = 0;	/* Will be an invalid addr, exercises error paths */
-		switch (rand() % 3) {
+		switch (rnd_modulo_u32(3)) {
 		case 0: reg->len = 4096; break;
 		case 1: reg->len = 4096 * 64; break;
-		case 2: reg->len = rand(); break;
+		case 2: reg->len = rnd_u32(); break;
 		}
-		switch (rand() % 3) {
+		switch (rnd_modulo_u32(3)) {
 		case 0: reg->chunk_size = 2048; break;
 		case 1: reg->chunk_size = 4096; break;
-		case 2: reg->chunk_size = rand() % 8192 + 1; break;
+		case 2: reg->chunk_size = rnd_modulo_u32(8192) + 1; break;
 		}
-		reg->headroom = rand() % 256;
-		reg->flags = rand() & 0x7;
+		reg->headroom = rnd_modulo_u32(256);
+		reg->flags = rnd_u32() & 0x7;
 		so->optlen = sizeof(struct xdp_umem_reg);
 		break;
 	}
@@ -304,7 +305,7 @@ static int xdp_grammar_bind(int fd, struct socket_triplet *t)
 	ifindex = if_nametoindex("lo");
 	xdp.sxdp_ifindex = ifindex;
 	xdp.sxdp_queue_id = 0;
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0:	xdp.sxdp_flags = 0; break;
 	case 1: xdp.sxdp_flags = XDP_USE_NEED_WAKEUP; break;
 	case 2: xdp.sxdp_flags = XDP_COPY; break;
