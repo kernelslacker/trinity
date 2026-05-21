@@ -6,6 +6,7 @@
 #include <linux/pidfd.h>
 #include "random.h"
 #include "sanitise.h"
+#include "pids.h"
 
 static unsigned long pidfd_signals[] = {
 	SIGHUP, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
@@ -42,7 +43,7 @@ static void sanitise_pidfd_send_signal(struct syscallrecord *rec)
 		return;
 	memset(info, 0, sizeof(*info));
 	info->si_code = SI_QUEUE;
-	info->si_pid = getpid();
+	info->si_pid = mypid();
 	info->si_uid = getuid();
 
 	rec->a3 = (unsigned long) info;
