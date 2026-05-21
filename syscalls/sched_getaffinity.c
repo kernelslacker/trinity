@@ -13,6 +13,7 @@
 #include "deferred-free.h"
 #include "proc-status.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -45,7 +46,7 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 
 	/* len must be at least sizeof(cpumask_t) for success, but exercise
 	 * various sizes including too-small for error paths. */
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0: rec->a2 = sizeof(*mask); break;
 	case 1: rec->a2 = 4; break;		/* too small on most systems */
 	case 2: rec->a2 = 8; break;		/* might work on small systems */
