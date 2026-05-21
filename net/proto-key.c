@@ -10,7 +10,7 @@ static void key_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr *sa;
 
-	sa = zmalloc(sizeof(struct sockaddr));
+	sa = zmalloc_tracked(sizeof(struct sockaddr));
 	sa->sa_family = AF_KEY;
 
 	*addr = sa;
