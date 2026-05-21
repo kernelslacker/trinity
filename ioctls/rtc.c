@@ -3,19 +3,20 @@
 
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
 static void fill_rtc_time(struct rtc_time *t)
 {
-	t->tm_sec = rand() % 60;
-	t->tm_min = rand() % 60;
-	t->tm_hour = rand() % 24;
-	t->tm_mday = rand() % 31 + 1;
-	t->tm_mon = rand() % 12;
-	t->tm_year = rand() % 130 + 70;	/* 1970-2099 relative to 1900 */
-	t->tm_wday = rand() % 7;
-	t->tm_yday = rand() % 366;
+	t->tm_sec = rnd_modulo_u32(60);
+	t->tm_min = rnd_modulo_u32(60);
+	t->tm_hour = rnd_modulo_u32(24);
+	t->tm_mday = rnd_modulo_u32(31) + 1;
+	t->tm_mon = rnd_modulo_u32(12);
+	t->tm_year = rnd_modulo_u32(130) + 70;	/* 1970-2099 relative to 1900 */
+	t->tm_wday = rnd_modulo_u32(7);
+	t->tm_yday = rnd_modulo_u32(366);
 	t->tm_isdst = RAND_BOOL();
 }
 
@@ -50,13 +51,13 @@ static void sanitise_rtc_pll_info(struct syscallrecord *rec)
 	pll = (struct rtc_pll_info *) get_writable_struct(sizeof(*pll));
 	if (!pll)
 		return;
-	pll->pll_ctrl = rand();
-	pll->pll_value = (int)(rand() % 201) - 100;	/* -100 to 100 */
-	pll->pll_max = rand() % 1000;
-	pll->pll_min = -(int)(rand() % 1000);
-	pll->pll_posmult = rand() % 8 + 1;
-	pll->pll_negmult = rand() % 8 + 1;
-	pll->pll_clock = rand() % 1000000 + 1;
+	pll->pll_ctrl = rnd_u32();
+	pll->pll_value = (int)(rnd_modulo_u32(201)) - 100;	/* -100 to 100 */
+	pll->pll_max = rnd_modulo_u32(1000);
+	pll->pll_min = -(int)(rnd_modulo_u32(1000));
+	pll->pll_posmult = rnd_modulo_u32(8) + 1;
+	pll->pll_negmult = rnd_modulo_u32(8) + 1;
+	pll->pll_clock = rnd_modulo_u32(1000000) + 1;
 	rec->a3 = (unsigned long) pll;
 }
 
@@ -88,7 +89,7 @@ static void rtc_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 	case RTC_EPOCH_SET: {
 		unsigned long *p = (unsigned long *) get_writable_struct(sizeof(unsigned long));
 		if (p) {
-			*p = rand();
+			*p = rnd_u32();
 			rec->a3 = (unsigned long) p;
 		}
 		break;
