@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE3(set_mempolicy, int, mode, unsigned long __user *, nmask, unsigned long, maxnode)
  */
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "compat.h"
 
@@ -36,19 +37,19 @@ static void sanitise_set_mempolicy(struct syscallrecord *rec)
 	unsigned int maxnode;
 
 	/* Nodemask is a bitmap, one bit per NUMA node. */
-	maxnode = 1 + (rand() % MAX_NUMNODES);
+	maxnode = 1 + (rnd_modulo_u32(MAX_NUMNODES));
 	mask = (unsigned long *) get_writable_address(sizeof(unsigned long) * 2);
 	if (mask == NULL)
 		return;
 	mask[0] = 0;
 	mask[1] = 0;
 
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0: /* node 0 only (most common on non-NUMA) */
 		mask[0] = 1;
 		break;
 	case 1: /* first few nodes */
-		mask[0] = (1UL << (1 + (rand() % 4))) - 1;
+		mask[0] = (1UL << (1 + (rnd_modulo_u32(4)))) - 1;
 		break;
 	default: /* random bits */
 		mask[0] = rand32();
