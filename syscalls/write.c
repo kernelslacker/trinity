@@ -6,6 +6,7 @@
 #include "fd.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
@@ -55,7 +56,7 @@ static void sanitise_write(struct syscallrecord *rec)
 	if (RAND_BOOL())
 		size = 1;
 	else
-		size = rand() % page_size;
+		size = rnd_modulo_u32(page_size);
 
 	ptr = zmalloc_tracked(size);
 	if (ptr == NULL)
