@@ -4628,6 +4628,58 @@ void dump_stats(void)
 					__atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
 		}
 
+		/* Sibling of "Top syscalls by recent edge growth": top-N by
+		 * delta of per_syscall_cmp_inserts since the last dump_stats().
+		 * A syscall whose CMP-insert rate is high while its edge-growth
+		 * rate is flat is producing CMP signal that is not turning into
+		 * coverage -- the CMP-rising-PC-flat plateau pattern. */
+		{
+			unsigned int cmp_delta_nr[10];
+			unsigned long cmp_delta_inserts[10];
+			unsigned int cmp_delta_count = 0;
+			bool any_cmp_delta = false;
+
+			memset(cmp_delta_inserts, 0, sizeof(cmp_delta_inserts));
+			for (i = 0; i < nr_syscalls_to_scan; i++) {
+				unsigned long prev = kcov_shm->per_syscall_cmp_inserts_previous[i];
+				unsigned long curr = __atomic_load_n(&kcov_shm->per_syscall_cmp_inserts[i], __ATOMIC_RELAXED);
+				unsigned long delta = (curr > prev) ? curr - prev : 0;
+
+				if (delta > 0)
+					any_cmp_delta = true;
+
+				if (delta == 0)
+					continue;
+
+				for (j = cmp_delta_count; j > 0 && delta > cmp_delta_inserts[j - 1]; j--) {
+					if (j < 10) {
+						cmp_delta_inserts[j] = cmp_delta_inserts[j - 1];
+						cmp_delta_nr[j] = cmp_delta_nr[j - 1];
+					}
+				}
+				if (j < 10) {
+					cmp_delta_inserts[j] = delta;
+					cmp_delta_nr[j] = i;
+					if (cmp_delta_count < 10)
+						cmp_delta_count++;
+				}
+			}
+
+			if (any_cmp_delta && cmp_delta_count > 0) {
+				output(0, "Top syscalls by CMP unique inserts (since last dump):\n");
+				for (j = 0; j < cmp_delta_count; j++) {
+					struct syscallentry *entry = table[cmp_delta_nr[j]].entry;
+					const char *name = entry ? entry->name : "???";
+
+					output(0, "  %-24s +%lu\n", name, cmp_delta_inserts[j]);
+				}
+			}
+
+			for (i = 0; i < nr_syscalls_to_scan; i++)
+				kcov_shm->per_syscall_cmp_inserts_previous[i] =
+					__atomic_load_n(&kcov_shm->per_syscall_cmp_inserts[i], __ATOMIC_RELAXED);
+		}
+
 		if (cold_count > 0) {
 			output(0, "Cold syscalls (need better sanitise): %u\n", cold_count);
 			for (i = 0; i < nr_syscalls_to_scan; i++) {

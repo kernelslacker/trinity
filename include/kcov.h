@@ -320,6 +320,20 @@ struct kcov_shared {
 	 * Used to compute per-interval growth rate of the call-count signal
 	 * above. */
 	unsigned long per_syscall_edges_previous[MAX_NR_SYSCALL];
+	/* Per-syscall counterpart of cmp_hints_unique_inserts: every fresh
+	 * insert or evict-replace in pools[nr] bumps slot nr.  Dedup-refresh
+	 * hits are NOT counted, matching the global counter's semantics.
+	 * Drives the "Top syscalls by CMP unique inserts" sibling block in
+	 * dump_stats() that pairs with "Top syscalls by recent edge growth"
+	 * -- a syscall whose CMP insert rate is high while its edge-growth
+	 * rate is flat is generating CMP signal that is not translating into
+	 * coverage, the diagnostic signature of the CMP-rising-PC-flat
+	 * plateau pattern. */
+	unsigned long per_syscall_cmp_inserts[MAX_NR_SYSCALL];
+	/* Snapshot of per_syscall_cmp_inserts at the previous dump_stats()
+	 * call, matching the per_syscall_edges_previous pattern above so the
+	 * sibling top-N block can compute the same kind of delta. */
+	unsigned long per_syscall_cmp_inserts_previous[MAX_NR_SYSCALL];
 	/* Sliding-window edge-rate plateau detector state.  Sampled at the
 	 * 600s parent stats tick: each tick, delta = edges_found -
 	 * plateau_prev_edges is the count of new edges discovered in the

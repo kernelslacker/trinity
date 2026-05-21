@@ -105,7 +105,7 @@ static void pool_unlock(struct cmp_hint_pool *pool)
  * split: an actively-observed tuple still gets its stamp refreshed and
  * is still the last thing the evictor will pick.
  */
-static void pool_add_locked(struct cmp_hint_pool *pool,
+static bool pool_add_locked(struct cmp_hint_pool *pool,
 			    unsigned long cmp_ip,
 			    unsigned long val,
 			    unsigned int size)
@@ -120,7 +120,7 @@ static void pool_add_locked(struct cmp_hint_pool *pool,
 
 		if (e->value == val && e->cmp_ip == cmp_ip && e->size == size) {
 			e->last_used = stamp;
-			return;
+			return false;
 		}
 	}
 
@@ -141,7 +141,7 @@ static void pool_add_locked(struct cmp_hint_pool *pool,
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(&kcov_shm->cmp_hints_unique_inserts,
 					   1UL, __ATOMIC_RELAXED);
-		return;
+		return true;
 	}
 
 	victim = 0;
@@ -160,6 +160,7 @@ static void pool_add_locked(struct cmp_hint_pool *pool,
 	if (kcov_shm != NULL)
 		__atomic_fetch_add(&kcov_shm->cmp_hints_unique_inserts, 1UL,
 				   __ATOMIC_RELAXED);
+	return true;
 }
 
 /*
@@ -237,19 +238,23 @@ struct cmp_hints_pending {
 	unsigned int size;
 };
 
-static void cmp_hints_flush_pending(struct cmp_hint_pool *pool,
-				    const struct cmp_hints_pending *batch,
-				    unsigned int n)
+static unsigned int cmp_hints_flush_pending(struct cmp_hint_pool *pool,
+					    const struct cmp_hints_pending *batch,
+					    unsigned int n)
 {
 	unsigned int j;
+	unsigned int inserted = 0;
 
 	if (n == 0)
-		return;
+		return 0;
 	pool_lock(pool);
-	for (j = 0; j < n; j++)
-		pool_add_locked(pool, batch[j].ip, batch[j].val,
-				batch[j].size);
+	for (j = 0; j < n; j++) {
+		if (pool_add_locked(pool, batch[j].ip, batch[j].val,
+				    batch[j].size))
+			inserted++;
+	}
 	pool_unlock(pool);
+	return inserted;
 }
 
 void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
@@ -257,6 +262,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 	unsigned long count;
 	unsigned long i;
 	unsigned long skipped = 0;
+	unsigned long inserted = 0;
 	struct cmp_hint_pool *pool;
 	struct cmp_hints_bloom *bloom = NULL;
 	struct childdata *child;
@@ -350,16 +356,20 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 		n_batch++;
 
 		if (n_batch == CMP_HINTS_PENDING_BATCH) {
-			cmp_hints_flush_pending(pool, batch, n_batch);
+			inserted += cmp_hints_flush_pending(pool, batch, n_batch);
 			n_batch = 0;
 		}
 	}
 
-	cmp_hints_flush_pending(pool, batch, n_batch);
+	inserted += cmp_hints_flush_pending(pool, batch, n_batch);
 
 	if (skipped != 0 && kcov_shm != NULL)
 		__atomic_fetch_add(&kcov_shm->cmp_hints_bloom_skipped, skipped,
 				   __ATOMIC_RELAXED);
+
+	if (inserted != 0 && kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->per_syscall_cmp_inserts[nr],
+				   inserted, __ATOMIC_RELAXED);
 }
 
 bool cmp_hints_try_get(unsigned int nr, unsigned long *out)
