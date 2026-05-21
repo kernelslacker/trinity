@@ -183,7 +183,7 @@ static void sanitise_socketcall(struct syscallrecord *rec)
 	unsigned long *args;
 	unsigned int r;
 
-	args = zmalloc(6 * sizeof(unsigned long));
+	args = zmalloc_tracked(6 * sizeof(unsigned long));
 
 	r = rand() % ARRAY_SIZE(socketcallptrs);
 	rec->a1 = socketcallptrs[r].call;
