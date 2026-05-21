@@ -9,6 +9,7 @@
 #include <linux/filter.h>
 #include "net.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
@@ -166,7 +167,7 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 		 */
 		uint32_t *action = zmalloc_tracked(sizeof(*action));
 
-		*action = seccomp_ret_actions[rand() % ARRAY_SIZE(seccomp_ret_actions)];
+		*action = seccomp_ret_actions[rnd_modulo_u32(ARRAY_SIZE(seccomp_ret_actions))];
 		rec->a2 = 0;
 		rec->a3 = (unsigned long) action;
 		heap = action;
