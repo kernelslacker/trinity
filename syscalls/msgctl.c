@@ -29,12 +29,12 @@ static void sanitise_msgctl(struct syscallrecord *rec)
 	case IPC_INFO:
 	case MSG_INFO:
 		allocated_size = sizeof(struct msginfo);
-		buf = zmalloc(allocated_size);
+		buf = zmalloc_tracked(allocated_size);
 		break;
 	default:
 		/* IPC_STAT, IPC_SET, MSG_STAT */
 		allocated_size = sizeof(struct msqid_ds);
-		buf = zmalloc(allocated_size);
+		buf = zmalloc_tracked(allocated_size);
 		break;
 	}
 
