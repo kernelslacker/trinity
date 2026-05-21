@@ -12,6 +12,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "pids.h"
 
 static unsigned long setpriority_which[] = {
 	PRIO_PROCESS, PRIO_PGRP, PRIO_USER,
@@ -49,7 +50,7 @@ static void post_setpriority(struct syscallrecord *rec)
 	if ((int) rec->a1 != PRIO_PROCESS)
 		return;
 	who = (pid_t)(int) rec->a2;
-	if (who != 0 && who != getpid())
+	if (who != 0 && who != mypid())
 		return;
 	if (!ONE_IN(100))
 		return;
