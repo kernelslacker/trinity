@@ -70,7 +70,7 @@ static void sanitise_socketpair(struct syscallrecord *rec)
 	rec->a2 = st.type;
 	rec->a3 = st.protocol;
 
-	usockvec = zmalloc(sizeof(int) * 2);
+	usockvec = zmalloc_tracked(sizeof(int) * 2);
 	rec->a4 = (unsigned long) usockvec;
 	if (!rec->a4)
 		return;
