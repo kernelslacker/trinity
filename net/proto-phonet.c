@@ -9,6 +9,7 @@
 #include "net.h"
 #include "random.h"
 #include "compat.h"
+#include "rnd.h"
 
 #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
 
@@ -23,9 +24,9 @@ static void phonet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	pn = zmalloc_tracked(sizeof(struct sockaddr_pn));
 
 	pn->spn_family = PF_PHONET;
-	pn->spn_obj = rand();
-	pn->spn_dev = rand();
-	pn->spn_resource = rand();
+	pn->spn_obj = rnd_u32();
+	pn->spn_dev = rnd_u32();
+	pn->spn_resource = rnd_u32();
 	*addr = (struct sockaddr *) pn;
 	*addrlen = sizeof(struct sockaddr_pn);
 }
@@ -62,9 +63,9 @@ static void phonet_socket_setup(int fd)
 
 	memset(&dest, 0, sizeof(dest));
 	dest.spn_family = PF_PHONET;
-	dest.spn_obj = rand();
-	dest.spn_dev = rand();
-	dest.spn_resource = rand();
+	dest.spn_obj = rnd_u32();
+	dest.spn_dev = rnd_u32();
+	dest.spn_resource = rnd_u32();
 
 	memset(buf, 0, sizeof(buf));
 	iov.iov_base = buf;
