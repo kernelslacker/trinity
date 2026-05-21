@@ -31,8 +31,26 @@
 #include "params.h"	// 'user_set_seed'
 #include "pids.h"
 #include "random.h"
+#include "rnd.h"
 #include "trinity.h"
 #include "utils.h"
+
+/*
+ * Process-global state for the inline PRNG in rnd.h.  fork()
+ * gives each child its own copy; set_seed() reseeds the child
+ * copy via rnd_seed() from the same combined (shm seed, childno)
+ * value that drives srand(), so reproducing a run with `-s`
+ * still reuses the same per-child stream.
+ */
+uint64_t rnd_state;
+
+void rnd_seed(uint64_t s)
+{
+	/* splitmix64 tolerates a zero state, but mix anyway so that
+	 * trivially small seeds don't produce a trivially small first
+	 * batch of outputs. */
+	rnd_state = s ^ 0x9e3779b97f4a7c15ULL;
+}
 
 /* The actual seed lives in the shm. This variable is used
  * to store what gets passed in from the command line -s argument */
@@ -66,6 +84,7 @@ unsigned int init_seed(unsigned int seedparam)
 	 * srand() was only called for the auto-generated seed branch,
 	 * leaving the parent at the default state when -s was used. */
 	srand(seedparam);
+	rnd_seed(seedparam);
 
 	if (do_syslog == true) {
 		openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
@@ -98,7 +117,10 @@ static unsigned int seed_combine(unsigned int seedval, unsigned int childno)
  */
 void set_seed(struct childdata *child)
 {
-	srand(seed_combine(__atomic_load_n(&shm->seed, __ATOMIC_RELAXED), child->num));
+	unsigned int mixed = seed_combine(__atomic_load_n(&shm->seed, __ATOMIC_RELAXED), child->num);
+
+	srand(mixed);
+	rnd_seed(mixed);
 	child->seed = __atomic_load_n(&shm->seed, __ATOMIC_RELAXED);
 }
 
