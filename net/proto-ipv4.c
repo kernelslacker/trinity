@@ -129,7 +129,7 @@ static void ipv4_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_in *ipv4;
 
-	ipv4 = zmalloc(sizeof(struct sockaddr_in));
+	ipv4 = zmalloc_tracked(sizeof(struct sockaddr_in));
 
 	ipv4->sin_family = PF_INET;
 	ipv4->sin_addr.s_addr = random_ipv4_address();
