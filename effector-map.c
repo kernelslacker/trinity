@@ -44,6 +44,7 @@
 #include "effector-map.h"
 #include "kcov.h"
 #include "params.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
@@ -76,8 +77,7 @@ unsigned int effector_pick_bit(unsigned int nr, unsigned int arg)
 	unsigned int b, accum, r;
 
 	if (nr >= MAX_NR_SYSCALL || arg >= EFFECTOR_NR_ARGS)
-		return (unsigned int)(rand() %
-				(int)EFFECTOR_BITS_PER_ARG);
+		return rnd_modulo_u32(EFFECTOR_BITS_PER_ARG);
 
 	/* Floor each weight at 1 so a row that has never been calibrated
 	 * (all zeros) degrades to a uniform pick — same expected behaviour
@@ -92,7 +92,7 @@ unsigned int effector_pick_bit(unsigned int nr, unsigned int arg)
 		total += weights[b];
 	}
 
-	r = (unsigned int)(rand() % (int)total);
+	r = rnd_modulo_u32(total);
 	accum = 0;
 	for (b = 0; b < EFFECTOR_BITS_PER_ARG; b++) {
 		accum += weights[b];
@@ -117,7 +117,7 @@ unsigned int effector_pick_array_index(unsigned int nr, unsigned int arg,
 	if (n > EFFECTOR_BITS_PER_ARG ||
 	    nr >= MAX_NR_SYSCALL ||
 	    arg >= EFFECTOR_NR_ARGS)
-		return (unsigned int)(rand() % (int)n);
+		return rnd_modulo_u32(n);
 
 	/* Per-entry weight = 1 (floor, same rationale as effector_pick_bit)
 	 * + sum of significance over bits the entry actually sets.  Entries
@@ -135,7 +135,7 @@ unsigned int effector_pick_array_index(unsigned int nr, unsigned int arg,
 		total += w;
 	}
 
-	r = (unsigned int)(rand() % (int)total);
+	r = rnd_modulo_u32(total);
 	accum = 0;
 	for (i = 0; i < n; i++) {
 		accum += weights[i];
