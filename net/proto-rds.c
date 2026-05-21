@@ -13,6 +13,7 @@
 #include "socket-family-grammar.h"
 #include "trinity.h"
 #include "utils.h"
+#include "rnd.h"
 #include <linux/rds.h>
 
 #ifndef SO_RDS_TRANSPORT
@@ -27,7 +28,7 @@ static void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		rds = zmalloc_tracked(sizeof(struct sockaddr_in));
 		rds->sin_family = AF_INET;
 		rds->sin_addr.s_addr = random_ipv4_address();
-		rds->sin_port = htons(rand() % 65536);
+		rds->sin_port = htons(rnd_modulo_u32(65536));
 		*addr = (struct sockaddr *) rds;
 		*addrlen = sizeof(struct sockaddr_in);
 	} else {
@@ -40,7 +41,7 @@ static void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 			inet_pton(AF_INET6, "fe80::", &rds6->sin6_addr);
 		else
 			inet_pton(AF_INET6, "::1", &rds6->sin6_addr);
-		rds6->sin6_port = htons(rand() % 65536);
+		rds6->sin6_port = htons(rnd_modulo_u32(65536));
 		*addr = (struct sockaddr *) rds6;
 		*addrlen = sizeof(struct sockaddr_in6);
 	}
@@ -175,7 +176,7 @@ static void rds_configure_pre_bind(int fd, __unused__ struct socket_triplet *tri
 	int recverr = RAND_BOOL();
 	int trans = RAND_BOOL() ? RDS_TRANS_TCP : (int) RDS_TRANS_NONE;
 	unsigned long long cong_mask =
-		((unsigned long long) rand() << 32) | (unsigned int) rand();
+		((unsigned long long) rnd_u32() << 32) | rnd_u32();
 
 	(void) setsockopt(fd, SOL_RDS, RDS_RECVERR, &recverr, sizeof(recverr));
 	(void) setsockopt(fd, SOL_RDS, SO_RDS_TRANSPORT, &trans, sizeof(trans));
@@ -229,8 +230,8 @@ static void rds_walk_setsockopts(int fd, __unused__ struct socket_triplet *tripl
 
 	for (i = 0; i < n; i++) {
 		if (i & 1) {
-			cong_mask = ((unsigned long long) rand() << 32) |
-				    (unsigned int) rand();
+			cong_mask = ((unsigned long long) rnd_u32() << 32) |
+				    rnd_u32();
 			(void) setsockopt(fd, SOL_RDS, RDS_CONG_MONITOR,
 					  &cong_mask, sizeof(cong_mask));
 		} else {
@@ -249,7 +250,7 @@ static socklen_t rds_fill_peer(void *out)
 		memset(sin6, 0, sizeof(*sin6));
 		sin6->sin6_family = AF_INET6;
 		sin6->sin6_addr.s6_addr[15] = 1;
-		sin6->sin6_port = htons(1024 + (rand() % 60000));
+		sin6->sin6_port = htons(1024 + (rnd_modulo_u32(60000)));
 		return sizeof(*sin6);
 	} else {
 		struct sockaddr_in *sin = out;
@@ -257,7 +258,7 @@ static socklen_t rds_fill_peer(void *out)
 		memset(sin, 0, sizeof(*sin));
 		sin->sin_family = AF_INET;
 		sin->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-		sin->sin_port = htons(1024 + (rand() % 60000));
+		sin->sin_port = htons(1024 + (rnd_modulo_u32(60000)));
 		return sizeof(*sin);
 	}
 }
@@ -301,8 +302,8 @@ static size_t rds_build_rdma_cmsgs(unsigned char *buf, size_t buflen,
 	used += need;
 
 	if (RAND_BOOL()) {
-		bogus = ((rds_rdma_cookie_t) rand() << 32) |
-			(unsigned int) rand();
+		bogus = ((rds_rdma_cookie_t) rnd_u32() << 32) |
+			rnd_u32();
 		need = CMSG_SPACE(sizeof(bogus));
 		if (used + need > buflen)
 			return used;
