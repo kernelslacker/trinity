@@ -24,7 +24,7 @@ static void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	if (RAND_BOOL()) {
 		struct sockaddr_in *rds;
 
-		rds = zmalloc(sizeof(struct sockaddr_in));
+		rds = zmalloc_tracked(sizeof(struct sockaddr_in));
 		rds->sin_family = AF_INET;
 		rds->sin_addr.s_addr = random_ipv4_address();
 		rds->sin_port = htons(rand() % 65536);
@@ -33,7 +33,7 @@ static void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	} else {
 		struct sockaddr_in6 *rds6;
 
-		rds6 = zmalloc(sizeof(struct sockaddr_in6));
+		rds6 = zmalloc_tracked(sizeof(struct sockaddr_in6));
 		rds6->sin6_family = AF_INET6;
 		/* 90% of the time, just do localhost */
 		if (ONE_IN(10))
