@@ -96,6 +96,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+#include "pids.h"
 
 #define BUDGET_NS	200000000L	/* 200 ms */
 #define MAX_ITERATIONS	48
@@ -391,7 +392,7 @@ static void arm_null(int32_t *ring, unsigned int iter)
 	int32_t serial;
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-null-%u-%u",
-		 (unsigned int) getpid(), iter);
+		 (unsigned int) mypid(), iter);
 	serial = do_add_rxrpc(desc, NULL, 0);
 	if (serial != 0)
 		ring_insert(ring, serial);
@@ -412,7 +413,7 @@ static void arm_short_random(int32_t *ring, unsigned int iter)
 	generate_rand_bytes(buf, (unsigned int) paylen);
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-short-%u-%u",
-		 (unsigned int) getpid(), iter);
+		 (unsigned int) mypid(), iter);
 	serial = do_add_rxrpc(desc, buf, paylen);
 	if (serial != 0)
 		ring_insert(ring, serial);
@@ -459,7 +460,7 @@ static void arm_v1_binary(int32_t *ring, unsigned int iter)
 		append_rand(buf, &off, actual_ticket);
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-v1-%u-%u",
-		 (unsigned int) getpid(), iter);
+		 (unsigned int) mypid(), iter);
 	serial = do_add_rxrpc(desc, buf, off);
 	if (serial != 0)
 		ring_insert(ring, serial);
@@ -516,7 +517,7 @@ static void arm_xdr_envelope(int32_t *ring, unsigned int iter)
 	(void) header_off;
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-xdr-%u-%u",
-		 (unsigned int) getpid(), iter);
+		 (unsigned int) mypid(), iter);
 	serial = do_add_rxrpc(desc, buf, off);
 	if (serial != 0)
 		ring_insert(ring, serial);
@@ -557,7 +558,7 @@ static void arm_xdr_rxkad(int32_t *ring, unsigned int iter)
 	(void) build_xdr_rxkad_inner(buf, &off, tktlen);
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-xrxkad-%u-%u",
-		 (unsigned int) getpid(), iter);
+		 (unsigned int) mypid(), iter);
 	serial = do_add_rxrpc(desc, buf, off);
 	if (serial != 0)
 		ring_insert(ring, serial);
@@ -607,7 +608,7 @@ static void arm_xdr_rxgk(int32_t *ring, unsigned int iter)
 	build_xdr_rxgk_inner(buf, &off, keylen, tktlen, level, enctype);
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-xrxgk-%u-%u",
-		 (unsigned int) getpid(), iter);
+		 (unsigned int) mypid(), iter);
 	serial = do_add_rxrpc(desc, buf, off);
 	if (serial != 0)
 		ring_insert(ring, serial);
