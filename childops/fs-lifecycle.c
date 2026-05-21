@@ -45,6 +45,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "pids.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -97,7 +98,7 @@ static ssize_t do_copy_file_range(int fd_in, off_t *off_in,
 static void make_base_path(char *buf, size_t len)
 {
 	snprintf(buf, len, "%s/trinity-fslife-%d-%u",
-		 trinity_tmpdir_abs(), (int)getpid(), fslife_seq++);
+		 trinity_tmpdir_abs(), (int)mypid(), fslife_seq++);
 }
 
 /*
