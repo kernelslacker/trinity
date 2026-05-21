@@ -16,7 +16,7 @@ static void smc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	if (RAND_BOOL()) {
 		struct sockaddr_in *sin;
 
-		sin = zmalloc(sizeof(struct sockaddr_in));
+		sin = zmalloc_tracked(sizeof(struct sockaddr_in));
 		sin->sin_family = AF_INET;
 		sin->sin_addr.s_addr = random_ipv4_address();
 		sin->sin_port = htons(rand() % 65536);
@@ -25,7 +25,7 @@ static void smc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	} else {
 		struct sockaddr_in6 *sin6;
 
-		sin6 = zmalloc(sizeof(struct sockaddr_in6));
+		sin6 = zmalloc_tracked(sizeof(struct sockaddr_in6));
 		sin6->sin6_family = AF_INET6;
 		sin6->sin6_port = htons(rand() % 65536);
 		*addr = (struct sockaddr *) sin6;
