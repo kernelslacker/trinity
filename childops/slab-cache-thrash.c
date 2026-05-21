@@ -82,6 +82,7 @@
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
+#include "pids.h"
 
 /* Hard caps on the per-invocation burst size.  Lower bound keeps the
  * burst large enough to span a slab page on any realistic order; upper
@@ -240,7 +241,7 @@ static void burst_dentry(unsigned int n)
 	int fds[SLAB_THRASH_MAX];
 	char path[PATH_MAX + 64];
 	unsigned int i;
-	pid_t pid = getpid();
+	pid_t pid = mypid();
 
 	/* Each open of a fresh path allocates a dentry + inode pair on
 	 * tmpfs.  We use O_CREAT | O_TMPFILE so the tree doesn't grow:
@@ -272,7 +273,7 @@ static void burst_inode_cache(unsigned int n)
 	 * paths; pid + index gives enough uniqueness within a burst. */
 	for (i = 0; i < n; i++) {
 		snprintf(name, sizeof(name), "sc-%u-%u",
-			 (unsigned int)getpid(), i);
+			 (unsigned int)mypid(), i);
 		fds[i] = (int)syscall(__NR_memfd_create, name, 0U);
 	}
 	free_fds_interleaved(fds, n);
