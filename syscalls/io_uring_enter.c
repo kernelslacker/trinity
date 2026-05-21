@@ -8,6 +8,7 @@
 #include "fd.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 
@@ -102,21 +103,21 @@ static void fill_sqe(struct trinity_io_uring_sqe *sqe)
 
 	/* Pick an opcode: mostly valid, occasionally garbage. */
 	if (ONE_IN(8))
-		sqe->opcode = rand() & 0xff;
+		sqe->opcode = rnd_u32() & 0xff;
 	else
-		sqe->opcode = rand() % TRINITY_IORING_OP_LAST;
+		sqe->opcode = rnd_modulo_u32(TRINITY_IORING_OP_LAST);
 
 	/* SQE flags: random combination of valid bits, rarely garbage. */
 	if (ONE_IN(10))
-		sqe->flags = rand() & 0xff;
+		sqe->flags = rnd_u32() & 0xff;
 	else
-		sqe->flags = rand() & 0x7f;	/* bits 0-6 are defined */
+		sqe->flags = rnd_u32() & 0x7f;	/* bits 0-6 are defined */
 
-	sqe->ioprio = RAND_BOOL() ? 0 : rand() & 0xffff;
+	sqe->ioprio = RAND_BOOL() ? 0 : rnd_u32() & 0xffff;
 	sqe->fd = get_random_fd();
 	sqe->off = RAND_BOOL() ? 0 : rand32();
 	sqe->addr = RAND_BOOL() ? 0 : (unsigned long long)(unsigned long)get_address();
-	sqe->len = RAND_BOOL() ? (unsigned int)(rand() % 4096) : rand32();
+	sqe->len = RAND_BOOL() ? (unsigned int)(rnd_modulo_u32(4096)) : rand32();
 	sqe->user_data = rand32();
 
 	/*
@@ -148,8 +149,8 @@ static void fill_sqe(struct trinity_io_uring_sqe *sqe)
 	if (ONE_IN(4))
 		sqe->op_flags = rand32();
 
-	sqe->buf_index = rand() & 0xffff;
-	sqe->personality = RAND_BOOL() ? 0 : rand() & 0xffff;
+	sqe->buf_index = rnd_u32() & 0xffff;
+	sqe->personality = RAND_BOOL() ? 0 : rnd_u32() & 0xffff;
 
 	if (ONE_IN(4))
 		sqe->splice_fd_in = get_random_fd();
