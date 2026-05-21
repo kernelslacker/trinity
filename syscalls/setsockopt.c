@@ -138,6 +138,8 @@ retry:
 		goto retry;
 
 	case 1:	/* protocol-specific setsockopt for this socket's family. */
+		if (triplet == NULL)
+			break;
 		if (triplet->family < TRINITY_PF_MAX) {
 			proto = net_protocols[triplet->family].proto;
 			if (proto != NULL && proto->setsockopt != NULL)
