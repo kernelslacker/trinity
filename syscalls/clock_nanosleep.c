@@ -10,6 +10,7 @@
 
 #include <time.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "compat.h"
 #include "trinity.h"
@@ -35,11 +36,11 @@ static void sanitise_clock_nanosleep(struct syscallrecord *rec)
 
 	/* Keep sleep durations tiny so we don't block the fuzzer. */
 	ts->tv_sec = 0;
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0: ts->tv_nsec = 0; break;
 	case 1: ts->tv_nsec = 1; break;
-	case 2: ts->tv_nsec = rand() % 1000; break;		/* microsecond range */
-	default: ts->tv_nsec = rand() % 1000000; break;	/* millisecond range */
+	case 2: ts->tv_nsec = rnd_modulo_u32(1000); break;		/* microsecond range */
+	default: ts->tv_nsec = rnd_modulo_u32(1000000); break;	/* millisecond range */
 	}
 
 	rec->a3 = (unsigned long) ts;
