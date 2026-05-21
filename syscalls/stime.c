@@ -3,6 +3,7 @@
  */
 #include <time.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 static void sanitise_stime(struct syscallrecord *rec)
@@ -13,9 +14,9 @@ static void sanitise_stime(struct syscallrecord *rec)
 	if (t == NULL)
 		return;
 
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0:	/* near current time */
-		*t = time(NULL) + (rand() % 120) - 60;
+		*t = time(NULL) + (rnd_modulo_u32(120)) - 60;
 		break;
 	case 1:	/* epoch */
 		*t = 0;
