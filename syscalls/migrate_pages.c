@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 #define MAX_NUMNODES 64
@@ -67,12 +68,12 @@ static void fill_nodemask(unsigned long *mask, unsigned int max_node)
 	else
 		node_mask = (2UL << max_node) - 1;
 
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0: /* node 0 only */
 		mask[0] = 1;
 		break;
 	case 1: { /* subset of valid nodes */
-		unsigned int shift = 1 + (rand() % (max_node + 1));
+		unsigned int shift = 1 + (rnd_modulo_u32((max_node + 1)));
 
 		/* shift can land on BITS_PER_LONG when max_node is at or
 		 * above BITS_PER_LONG - 1; (1UL << BITS_PER_LONG) is UB.
@@ -96,7 +97,7 @@ static void sanitise_migrate_pages(struct syscallrecord *rec)
 	unsigned int maxnode, max_node;
 
 	max_node = get_max_node();
-	maxnode = 1 + (rand() % (max_node < MAX_NUMNODES - 1 ? max_node + 1 : MAX_NUMNODES));
+	maxnode = 1 + (rnd_modulo_u32((max_node < MAX_NUMNODES - 1 ? max_node + 1 : MAX_NUMNODES)));
 
 	old_nodes = (unsigned long *) get_writable_address(sizeof(unsigned long) * 2);
 	if (old_nodes == NULL)
