@@ -6,6 +6,7 @@
 
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -90,12 +91,11 @@ static void sanitise_cec_msg(struct syscallrecord *rec)
 	 * the rest of the safety chain.
 	 */
 	initiator = CEC_LOG_ADDR_UNREGISTERED;
-	destination = cec_safe_destinations[rand() %
-					    ARRAY_SIZE(cec_safe_destinations)];
+	destination = cec_safe_destinations[rnd_modulo_u32(ARRAY_SIZE(cec_safe_destinations))];
 	m->msg[0] = (initiator << 4) | (destination & 0xf);
 
 	if (ARRAY_SIZE(cec_safe_opcodes) > 0) {
-		opcode = cec_safe_opcodes[rand() % ARRAY_SIZE(cec_safe_opcodes)];
+		opcode = cec_safe_opcodes[rnd_modulo_u32(ARRAY_SIZE(cec_safe_opcodes))];
 		m->msg[1] = opcode;
 		m->len = 2;
 	} else {
@@ -128,7 +128,7 @@ static void sanitise_cec_phys_addr(struct syscallrecord *rec)
 	p = (__u16 *) get_writable_struct(sizeof(*p));
 	if (!p)
 		return;
-	*p = (__u16) rand();
+	*p = (__u16) rnd_u32();
 	rec->a3 = (unsigned long) p;
 }
 
@@ -143,14 +143,14 @@ static void sanitise_cec_log_addrs(struct syscallrecord *rec)
 	memset(la, 0, sizeof(*la));
 
 	la->cec_version = RAND_BOOL() ? 0x04 : 0x05;	/* 1.4 or 2.0 */
-	la->num_log_addrs = rand() % (CEC_MAX_LOG_ADDRS + 1);
-	la->vendor_id = RAND_BOOL() ? CEC_VENDOR_ID_NONE : (rand() & 0xffffff);
-	la->flags = rand() & 0x7;	/* known flag bits */
+	la->num_log_addrs = rnd_modulo_u32((CEC_MAX_LOG_ADDRS + 1));
+	la->vendor_id = RAND_BOOL() ? CEC_VENDOR_ID_NONE : (rnd_u32() & 0xffffff);
+	la->flags = rnd_u32() & 0x7;	/* known flag bits */
 
 	for (i = 0; i < CEC_MAX_LOG_ADDRS; i++) {
-		la->log_addr_type[i] = rand() % (CEC_LOG_ADDR_TYPE_UNREGISTERED + 1);
-		la->primary_device_type[i] = rand() % 8;
-		la->all_device_types[i] = rand() & 0xff;
+		la->log_addr_type[i] = rnd_modulo_u32((CEC_LOG_ADDR_TYPE_UNREGISTERED + 1));
+		la->primary_device_type[i] = rnd_modulo_u32(8);
+		la->all_device_types[i] = rnd_u32() & 0xff;
 	}
 
 	rec->a3 = (unsigned long) la;
@@ -174,8 +174,8 @@ static void sanitise_cec_mode(struct syscallrecord *rec)
 	m = (__u32 *) get_writable_struct(sizeof(*m));
 	if (!m)
 		return;
-	*m = (rand() & CEC_MODE_INITIATOR_MSK) |
-	     (rand() & CEC_MODE_FOLLOWER_MSK);
+	*m = (rnd_u32() & CEC_MODE_INITIATOR_MSK) |
+	     (rnd_u32() & CEC_MODE_FOLLOWER_MSK);
 	rec->a3 = (unsigned long) m;
 }
 
