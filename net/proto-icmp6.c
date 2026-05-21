@@ -6,6 +6,7 @@
 #include "net.h"
 #include "random.h"
 #include "compat.h"
+#include "rnd.h"
 
 static const unsigned int icmpv6_opts[] = { ICMPV6_FILTER };
 
@@ -19,7 +20,7 @@ void icmpv6_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *tri
 	switch (so->optname) {
 	case ICMPV6_FILTER:
 		filter = (struct icmp6_filter *) so->optval;
-		switch (rand() % 4) {
+		switch (rnd_modulo_u32(4)) {
 		case 0:
 			/* Pass all — clear all bits */
 			memset(filter, 0, sizeof(struct icmp6_filter));
@@ -37,8 +38,8 @@ void icmpv6_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *tri
 			unsigned int i;
 
 			memset(filter, 0, sizeof(struct icmp6_filter));
-			for (i = 0; i < (unsigned int)(rand() % 8) + 1; i++) {
-				unsigned int type = rand() % 256;
+			for (i = 0; i < (unsigned int)(rnd_modulo_u32(8)) + 1; i++) {
+				unsigned int type = rnd_modulo_u32(256);
 
 				filter->data[type >> 5] |= 1U << (type & 31);
 			}
