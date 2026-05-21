@@ -3738,7 +3738,7 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w)
 		       cgroup_path);
 	procs_fd = open(procs_path, O_WRONLY);
 	if (procs_fd >= 0) {
-		len = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)mypid());
+		len = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)getpid());
 		w = write(procs_fd, pidbuf, (size_t)len);
 		close(procs_fd);
 	}
@@ -3788,7 +3788,7 @@ static int recipe_cgroup_kill_supervisor(void)
 	char ack;
 
 	(void)snprintf(cgroup_path, sizeof(cgroup_path),
-		       "/sys/fs/cgroup/trinity-kill-%d", (int)mypid());
+		       "/sys/fs/cgroup/trinity-kill-%d", (int)getpid());
 
 	if (mkdir(cgroup_path, 0755) != 0) {
 		if (errno == EACCES || errno == EPERM || errno == EROFS ||
