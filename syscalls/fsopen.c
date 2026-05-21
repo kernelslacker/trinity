@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include "object-types.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 /* Populated by mount.c constructor from /proc/filesystems. */
@@ -24,7 +25,7 @@ static void sanitise_fsopen(struct syscallrecord *rec)
 	if (nr_filesystem_types == 0)
 		return;
 
-	fstype = filesystem_types[rand() % nr_filesystem_types];
+	fstype = filesystem_types[rnd_modulo_u32(nr_filesystem_types)];
 	name = (char *) get_writable_struct(32);
 	if (!name)
 		return;
