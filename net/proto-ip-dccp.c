@@ -3,6 +3,7 @@
 #include "net.h"
 #include "compat.h"
 #include "random.h"
+#include "rnd.h"
 
 static const unsigned int dccp_opts[] = {
 	DCCP_SOCKOPT_PACKET_SIZE, DCCP_SOCKOPT_SERVICE, DCCP_SOCKOPT_CHANGE_L, DCCP_SOCKOPT_CHANGE_R,
@@ -27,7 +28,7 @@ void dccp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *tripl
 		optval32 = (unsigned int *) so->optval;
 		n = RAND_RANGE(1, 4);
 		for (i = 0; i < n; i++)
-			optval32[i] = rand();
+			optval32[i] = rnd_u32();
 		so->optlen = n * sizeof(unsigned int);
 		break;
 
@@ -39,7 +40,7 @@ void dccp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *tripl
 		optval8 = (unsigned char *) so->optval;
 		n = RAND_RANGE(1, 8);
 		for (i = 0; i < n; i++)
-			optval8[i] = rand();
+			optval8[i] = rnd_u32();
 		so->optlen = n;
 		break;
 
@@ -50,7 +51,7 @@ void dccp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *tripl
 		 * the buffer. Still want a non-empty optlen so the dispatch
 		 * code itself gets exercised. */
 		optval32 = (unsigned int *) so->optval;
-		*optval32 = rand();
+		*optval32 = rnd_u32();
 		so->optlen = sizeof(unsigned int);
 		break;
 	}
