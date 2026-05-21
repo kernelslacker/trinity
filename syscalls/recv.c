@@ -174,7 +174,7 @@ static void sanitise_recvmsg(struct syscallrecord *rec)
 	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, si->triplet.family);
 
 skip_si:
-	msg = zmalloc(sizeof(struct msghdr));
+	msg = zmalloc_tracked(sizeof(struct msghdr));
 	msg->msg_name = sa;
 	msg->msg_namelen = salen;
 
@@ -395,7 +395,7 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 	rec->a1 = fd_from_socketinfo(si);
 
 	vlen = RAND_RANGE(1, RECVMMSG_MAX_VLEN);
-	msgs = zmalloc(vlen * sizeof(struct mmsghdr));
+	msgs = zmalloc_tracked(vlen * sizeof(struct mmsghdr));
 
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = RECVMMSG_POST_STATE_MAGIC;
