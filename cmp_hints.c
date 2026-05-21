@@ -38,6 +38,7 @@
 #include "cmp_hints.h"
 #include "kcov.h"
 #include "random.h"
+#include "rnd.h"
 #include "syscall.h"
 #include "trinity.h"
 #include "utils.h"
@@ -392,7 +393,7 @@ bool cmp_hints_try_get(unsigned int nr, unsigned long *out)
 	if (count == 0)
 		return false;
 
-	*out = pool->entries[rand() % count].value;
+	*out = pool->entries[rnd_modulo_u32(count)].value;
 	return true;
 }
 
