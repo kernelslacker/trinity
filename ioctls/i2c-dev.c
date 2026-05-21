@@ -15,6 +15,7 @@
 
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
@@ -69,7 +70,7 @@ static void build_rdwr(struct syscallrecord *rec)
 		return;
 	}
 
-	n = (rand() % 4) + 1;
+	n = (rnd_modulo_u32(4)) + 1;
 	d->msgs = msgs;
 	d->nmsgs = n;
 
@@ -77,13 +78,13 @@ static void build_rdwr(struct syscallrecord *rec)
 		unsigned short flags = 0;
 		unsigned int j, k;
 
-		k = rand() % ARRAY_SIZE(i2c_msg_flag_bits);
+		k = rnd_modulo_u32(ARRAY_SIZE(i2c_msg_flag_bits));
 		for (j = 0; j <= k; j++)
-			flags |= i2c_msg_flag_bits[rand() % ARRAY_SIZE(i2c_msg_flag_bits)];
+			flags |= i2c_msg_flag_bits[rnd_modulo_u32(ARRAY_SIZE(i2c_msg_flag_bits))];
 
-		msgs[i].addr = rand() & 0x7f;
+		msgs[i].addr = rnd_u32() & 0x7f;
 		msgs[i].flags = flags;
-		msgs[i].len = rand() % 257;
+		msgs[i].len = rnd_modulo_u32(257);
 		msgs[i].buf = get_address();
 	}
 }
@@ -102,8 +103,8 @@ static void build_smbus(struct syscallrecord *rec)
 		return;
 
 	s->read_write = RAND_BOOL() ? I2C_SMBUS_READ : I2C_SMBUS_WRITE;
-	s->command = rand() & 0xff;
-	s->size = rand() % (I2C_SMBUS_I2C_BLOCK_DATA + 1);
+	s->command = rnd_u32() & 0xff;
+	s->size = rnd_modulo_u32((I2C_SMBUS_I2C_BLOCK_DATA + 1));
 
 	data = (union i2c_smbus_data *) get_address();
 	s->data = data;
@@ -113,7 +114,7 @@ static void build_smbus(struct syscallrecord *rec)
 		/* Randomise the whole union including the trailing
 		 * block[I2C_SMBUS_BLOCK_MAX + 2] payload. */
 		for (i = 0; i < sizeof(*data); i++)
-			((unsigned char *) data)[i] = rand();
+			((unsigned char *) data)[i] = rnd_u32();
 
 		/* For block-style transactions, force block[0] (the length
 		 * byte the kernel reads to size the copy) to a boundary
@@ -129,7 +130,7 @@ static void build_smbus(struct syscallrecord *rec)
 			static const unsigned char block_lens[] = {
 				0, 1, 32, 33, 255,
 			};
-			data->block[0] = block_lens[rand() % ARRAY_SIZE(block_lens)];
+			data->block[0] = block_lens[rnd_modulo_u32(ARRAY_SIZE(block_lens))];
 			break;
 		}
 		default:
@@ -150,9 +151,9 @@ static void i2cdev_sanitise(const struct ioctl_group *grp,
 		 * 10-bit range so we do hit the >0x7f path without
 		 * spamming -EINVAL beyond 0x3ff. */
 		if (RAND_BOOL())
-			rec->a3 = rand() & 0x7f;
+			rec->a3 = rnd_u32() & 0x7f;
 		else
-			rec->a3 = rand() & 0x3ff;
+			rec->a3 = rnd_u32() & 0x3ff;
 		break;
 
 	case I2C_TENBIT:
@@ -161,7 +162,7 @@ static void i2cdev_sanitise(const struct ioctl_group *grp,
 		break;
 
 	case I2C_RETRIES:
-		rec->a3 = rand() & 0xff;
+		rec->a3 = rnd_u32() & 0xff;
 		break;
 
 	case I2C_TIMEOUT: {
@@ -178,7 +179,7 @@ static void i2cdev_sanitise(const struct ioctl_group *grp,
 			(unsigned long)INT_MAX,
 			(unsigned long)UINT_MAX,
 		};
-		rec->a3 = timeout_vals[rand() % ARRAY_SIZE(timeout_vals)];
+		rec->a3 = timeout_vals[rnd_modulo_u32(ARRAY_SIZE(timeout_vals))];
 		break;
 	}
 
