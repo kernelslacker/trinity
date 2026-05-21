@@ -16,6 +16,7 @@
 #include "net.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -150,7 +151,7 @@ static struct sock_fprog *do_set_seccomp(__unused__ struct syscallrecord *rec)
 /* We already got a generic_sanitise at this point */
 static void sanitise_prctl(struct syscallrecord *rec)
 {
-	int option = prctl_opts[rand() % NR_PRCTL_OPTS];
+	int option = prctl_opts[rnd_modulo_u32(NR_PRCTL_OPTS)];
 	struct sock_fprog *bpf = NULL;
 
 	rec->post_state = 0;
