@@ -7,6 +7,7 @@
 #include <linux/ptrace.h>
 #include "arch.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
@@ -106,13 +107,13 @@ static const unsigned long ptrace_reqs_control[] = {
 
 static unsigned long pick_ptrace_req(void)
 {
-	unsigned int r = rand() % 100;
+	unsigned int r = rnd_modulo_u32(100);
 
 	if (r < 35)
-		return ptrace_reqs_common[rand() % ARRAY_SIZE(ptrace_reqs_common)];
+		return ptrace_reqs_common[rnd_modulo_u32(ARRAY_SIZE(ptrace_reqs_common))];
 	if (r < 85)
-		return ptrace_reqs_siginfo[rand() % ARRAY_SIZE(ptrace_reqs_siginfo)];
-	return ptrace_reqs_control[rand() % ARRAY_SIZE(ptrace_reqs_control)];
+		return ptrace_reqs_siginfo[rnd_modulo_u32(ARRAY_SIZE(ptrace_reqs_siginfo))];
+	return ptrace_reqs_control[rnd_modulo_u32(ARRAY_SIZE(ptrace_reqs_control))];
 }
 
 static void sanitise_ptrace(struct syscallrecord *rec)
@@ -141,7 +142,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 	case PTRACE_POKETEXT:
 	case PTRACE_POKEUSR:
 		/* Data is the value to write at the address in arg3 */
-		switch (rand() % 4) {
+		switch (rnd_modulo_u32(4)) {
 		case 0: rec->a4 = 0; break;
 		case 1: rec->a4 = rand32(); break;
 		case 2: rec->a4 = rand64(); break;
@@ -153,9 +154,9 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 		/* data must point to a siginfo_t */
 		siginfo_t *si = zmalloc_tracked(sizeof(siginfo_t));
 
-		si->si_signo = (rand() % 31) + 1;
+		si->si_signo = (rnd_modulo_u32(31)) + 1;
 		si->si_code = rand32();
-		si->si_errno = rand() % 133;
+		si->si_errno = rnd_modulo_u32(133);
 		rec->a4 = (unsigned long) si;
 		data = si;
 		break;
@@ -206,7 +207,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 		if (RAND_BOOL())
 			rec->a4 = 0;
 		else
-			rec->a4 = (rand() % 31) + 1;
+			rec->a4 = (rnd_modulo_u32(31)) + 1;
 		break;
 
 	case PTRACE_PEEKDATA:
