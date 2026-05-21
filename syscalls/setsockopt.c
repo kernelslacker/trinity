@@ -10,6 +10,7 @@
 #include "net.h"
 #include "compat.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "utils.h"	// RAND_ARRAY
 
@@ -124,9 +125,9 @@ static void do_random_sso(struct sockopt *so, struct socket_triplet *triplet)
 	const struct netproto *proto;
 
 retry:
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0:	/* do a random protocol, even if it doesn't match this socket. */
-		i = rand() % TRINITY_PF_MAX;
+		i = rnd_modulo_u32(TRINITY_PF_MAX);
 		proto = net_protocols[i].proto;
 		if (proto != NULL) {
 			if (proto->setsockopt != NULL) {
@@ -149,7 +150,7 @@ retry:
 		break;
 
 	case 3:	/* completely random operation. */
-		so->level = rand();
+		so->level = rnd_u32();
 		so->optname = RAND_BYTE();
 		break;
 	}
@@ -219,7 +220,7 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	 * This should catch new options we don't know about, and also maybe some missing bounds checks.
 	 */
 	if (ONE_IN(10))
-		so->optname |= (1UL << (rand() % 32));
+		so->optname |= (1UL << (rnd_modulo_u32(32)));
 
 	/* optval should be nonzero to enable a boolean option, or zero if the option is to be disabled.
 	 * Let's disable it half the time.
