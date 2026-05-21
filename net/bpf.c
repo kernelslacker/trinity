@@ -872,7 +872,7 @@ static int seccomp_choose(const float probs[__STATE_GEN_MAX])
 {
 	int i;
 	float sum = .001f;
-	float thr = (float) rnd_u32() / (float) RAND_MAX;
+	float thr = (float) rnd_u32() / (float) UINT32_MAX;
 
 	for (i = 0; i < __STATE_GEN_MAX; ++i) {
 		sum += probs[i];
