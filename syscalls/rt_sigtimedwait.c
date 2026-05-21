@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <time.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 static void sanitise_rt_sigtimedwait(struct syscallrecord *rec)
@@ -26,7 +27,7 @@ static void sanitise_rt_sigtimedwait(struct syscallrecord *rec)
 	if (ts == NULL)
 		return;
 	ts->tv_sec = 0;
-	ts->tv_nsec = rand() % 1000000;
+	ts->tv_nsec = rnd_modulo_u32(1000000);
 
 	rec->a1 = (unsigned long) set;
 	rec->a3 = (unsigned long) ts;
