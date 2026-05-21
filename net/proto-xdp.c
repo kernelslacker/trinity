@@ -143,7 +143,7 @@ static void xdp_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_xdp *xdp;
 
-	xdp = zmalloc(sizeof(struct sockaddr_xdp));
+	xdp = zmalloc_tracked(sizeof(struct sockaddr_xdp));
 
 	xdp->sxdp_family = PF_XDP;
 
