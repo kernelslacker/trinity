@@ -15,7 +15,7 @@ static void caif_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	struct sockaddr_caif *caif;
 	unsigned int i;
 
-	caif = zmalloc(sizeof(struct sockaddr_caif));
+	caif = zmalloc_tracked(sizeof(struct sockaddr_caif));
 
 	caif->family = PF_CAIF;
 
