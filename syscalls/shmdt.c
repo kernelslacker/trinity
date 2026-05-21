@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE1(shmdt, char __user *, shmaddr)
  */
 #include <sys/shm.h>
+#include "rnd.h"
 #include "sanitise.h"
 
 /*
@@ -16,7 +17,7 @@ static void sanitise_shmdt(struct syscallrecord *rec)
 	void *addr;
 
 	shmdt_shmat_addr = NULL;
-	addr = shmat(rand() % 65536, NULL, 0);
+	addr = shmat(rnd_modulo_u32(65536), NULL, 0);
 	if (addr != (void *) -1) {
 		shmdt_shmat_addr = addr;
 		rec->a1 = (unsigned long) addr;
