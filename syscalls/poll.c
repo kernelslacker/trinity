@@ -6,6 +6,7 @@
 #include <asm/poll.h>
 #include "fd.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
@@ -31,7 +32,7 @@ static struct pollfd *alloc_pollfds(struct syscallrecord *rec)
 {
 	struct pollfd *pollfd;
 	unsigned int i;
-	unsigned int num_fds = rand() % 10;
+	unsigned int num_fds = rnd_modulo_u32(10);
 
 	pollfd = zmalloc_tracked(num_fds * sizeof(struct pollfd));
 
