@@ -74,8 +74,10 @@ static unsigned long bpf_prog_types[] = {
 
 static const char license[] = "GPLv2";
 
-static void bpf_prog_load(union bpf_attr *attr)
+static bool bpf_prog_load(union bpf_attr *attr)
 {
+	bool classic_filter = false;
+
 	attr->prog_type = RAND_ARRAY(bpf_prog_types);
 
 	if (attr->prog_type == BPF_PROG_TYPE_SOCKET_FILTER && ONE_IN(2)) {
@@ -84,6 +86,7 @@ static void bpf_prog_load(union bpf_attr *attr)
 		bpf_gen_filter(&insns, &len);
 		attr->insn_cnt = len;
 		attr->insns = (u64) insns;
+		classic_filter = true;
 	} else {
 		/* eBPF for everything else (and sometimes socket filters) */
 		int insn_count = 0;
@@ -102,6 +105,7 @@ static void bpf_prog_load(union bpf_attr *attr)
 		attr->log_buf = log_buf_addr;
 	}
 	attr->kern_version = get_kern_version();
+	return classic_filter;
 }
 
 /* Commands added after trinity's original definitions */
@@ -341,6 +345,7 @@ static unsigned long bpf_attach_types[] = {
 struct bpf_post_state {
 	unsigned long magic;
 	unsigned int cmd;
+	bool classic_bpf_insns;
 	union bpf_attr *attr_original;
 };
 
@@ -349,6 +354,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	struct bpf_post_state *snap;
 	union bpf_attr *attr;
 	unsigned int cmd = rec->a1;
+	bool classic_bpf_insns = false;
 
 	rec->post_state = 0;
 
@@ -411,7 +417,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		break;
 
 	case BPF_PROG_LOAD:
-		bpf_prog_load(attr);
+		classic_bpf_insns = bpf_prog_load(attr);
 		rec->a3 = 48;
 		break;
 
@@ -559,6 +565,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = BPF_POST_STATE_MAGIC;
 	snap->cmd = cmd;
+	snap->classic_bpf_insns = classic_bpf_insns;
 	snap->attr_original = attr;
 	rec->post_state = (unsigned long) snap;
 }
@@ -695,8 +702,17 @@ static void post_bpf(struct syscallrecord *rec)
 			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_PROG);
 		}
 
-		/* Free the instruction buffer (allocated by both generators) */
-		{
+		/* Two instruction-buffer allocators feed BPF_PROG_LOAD: the
+		 * classic-BPF branch returns a tracked sock_fprog wrapper that
+		 * owns a separate inner filter buffer (both allocations need
+		 * deferred_free_enqueue to consume their tracker slots), and the
+		 * eBPF branch returns a plain insn buffer that's free()'d
+		 * directly through the inner-ptr gate.  classic_bpf_insns is
+		 * captured in the snap at sanitise time so a sibling scribble of
+		 * attr fields cannot misroute the dispatch. */
+		if (snap->classic_bpf_insns) {
+			bpf_free_filter((struct sock_fprog *)(unsigned long)attr->insns);
+		} else {
 			void *ptr = (void *)(unsigned long)attr->insns;
 			if (inner_ptr_ok_to_free(rec, ptr, "post_bpf/attr->insns"))
 				free(ptr);

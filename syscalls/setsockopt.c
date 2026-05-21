@@ -230,12 +230,37 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	}
 }
 
+/*
+ * Snapshot of the optname alongside the heap optval the post handler
+ * frees.  rec->a3 (optname) and rec->a4 (optval) are both ABI-exposed
+ * and a sibling syscall can scribble either between syscall return and
+ * post entry; the old post handler treated post_state as a bare optval
+ * and dispatched freeing through a single path, so a scribble of a4
+ * had to be defended against by the snapshot and a scribble of a3 was
+ * irrelevant because no per-optname dispatch existed.  The classic-BPF
+ * SO_ATTACH_FILTER path needs that dispatch: its optval is a
+ * two-tier sock_fprog wrapper (outer + inner filter) and a plain
+ * deferred_freeptr() on the wrapper leaks the inner buffer.  Store
+ * optname here so the post handler picks the right cleanup independent
+ * of a3 corruption, and keep a magic cookie to reject foreign
+ * allocations that pose as a snap via post_state stomp.
+ */
+#define SETSOCKOPT_POST_STATE_MAGIC	0x534F505453544154UL	/* "SOPTSTAT" */
+struct setsockopt_post_state {
+	unsigned long magic;
+	int optname;
+	void *optval;
+};
+
 static void sanitise_setsockopt(struct syscallrecord *rec)
 {
 	struct sockopt so = { 0, 0, 0, 0 };
+	struct setsockopt_post_state *snap;
 	struct socketinfo *si;
 	struct socket_triplet *triplet = NULL;
 	int fd;
+
+	rec->post_state = 0;
 
 	si = (struct socketinfo *) rec->a1;
 	if (si == NULL) {
@@ -260,36 +285,80 @@ static void sanitise_setsockopt(struct syscallrecord *rec)
 	rec->a3 = so.optname;
 	rec->a4 = so.optval;
 	rec->a5 = so.optlen;
-	/* Snapshot for the post handler -- a4 may be scribbled by a sibling
-	 * syscall before post_setsockopt() runs, leaving a real-but-wrong
-	 * heap pointer that the corruption guard cannot distinguish from the
-	 * original optval.  Without the snapshot the post handler frees the
-	 * wrong allocation, leaking ours and corrupting another sanitise
-	 * routine's live buffer. */
-	rec->post_state = so.optval;
+
+	/* Snap only when there is a heap optval to free.  The RAND_BOOL
+	 * disable path in do_setsockopt() already freed and zeroed optval,
+	 * so post_state stays NULL and the post handler returns early. */
+	if (so.optval == 0)
+		return;
+
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = SETSOCKOPT_POST_STATE_MAGIC;
+	snap->optname = so.optname;
+	snap->optval = (void *) so.optval;
+	rec->post_state = (unsigned long) snap;
 }
 
 static void post_setsockopt(struct syscallrecord *rec)
 {
-	void *optval = (void *) rec->post_state;
+	struct setsockopt_post_state *snap = (void *) rec->post_state;
 
-	if (optval == NULL)
+	rec->a4 = 0;
+
+	if (snap == NULL)
 		return;
 
 	/*
 	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the free
-	 * path against handing a non-heap value to free().
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
 	 */
-	if (looks_like_corrupted_ptr(rec, optval)) {
-		outputerr("post_setsockopt: rejected suspicious optval=%p "
-			  "(pid-scribbled?)\n", optval);
-		rec->a4 = 0;
+	if (looks_like_corrupted_ptr(rec, snap)) {
+		outputerr("post_setsockopt: rejected suspicious post_state=%p "
+			  "(pid-scribbled?)\n", snap);
 		rec->post_state = 0;
 		return;
 	}
 
-	rec->a4 = 0;
+	/*
+	 * Magic-cookie check: a sibling scribble of rec->post_state with a
+	 * heap-shaped pointer to a foreign allocation would survive the
+	 * shape gate above and let post_setsockopt parse arbitrary bytes
+	 * as a setsockopt_post_state, then route the optname dispatch into
+	 * bpf_free_filter() with a wild sock_fprog *.  Abandon without
+	 * freeing on mismatch; the pointer is suspect and may not be heap.
+	 */
+	if (snap->magic != SETSOCKOPT_POST_STATE_MAGIC) {
+		outputerr("post_setsockopt: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Defense in depth: snap survived the gates but the inner optval
+	 * pointer may have been scribbled.  Leak rather than hand garbage
+	 * to free() / bpf_free_filter().  Snap itself is still safe to
+	 * release through the post_state slot.
+	 */
+	if (looks_like_corrupted_ptr(rec, snap->optval)) {
+		outputerr("post_setsockopt: rejected suspicious snap optval=%p (post_state-scribbled?)\n",
+			  snap->optval);
+		deferred_freeptr(&rec->post_state);
+		return;
+	}
+
+#ifdef USE_BPF
+	if (snap->optname == SO_ATTACH_FILTER) {
+		bpf_free_filter((struct sock_fprog *) snap->optval);
+	} else
+#endif
+	{
+		deferred_free_enqueue(snap->optval);
+	}
+
 	deferred_freeptr(&rec->post_state);
 }
 
