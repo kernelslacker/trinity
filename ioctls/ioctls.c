@@ -8,6 +8,7 @@
 #include "files.h"
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "utils.h"	// ARRAY_SIZE
@@ -54,7 +55,7 @@ const struct ioctl_group *find_ioctl_group(int fd)
 	}
 
 	if (matchcount > 0)
-		return grps[matches[rand() % matchcount]];
+		return grps[matches[rnd_modulo_u32(matchcount)]];
 
 	/* We don't have an fd_test, so try matching on type & devname */
 	if (stbuf.st_rdev == 0)
@@ -92,7 +93,7 @@ const struct ioctl_group *get_random_ioctl_group(void)
 	if (grps_cnt == 0)
 		return NULL;
 
-	return grps[rand() % grps_cnt];
+	return grps[rnd_modulo_u32(grps_cnt)];
 }
 
 /*
@@ -215,7 +216,7 @@ void pick_random_ioctl(const struct ioctl_group *grp, struct syscallrecord *rec)
 	int ioctlnr;
 	unsigned int request;
 
-	ioctlnr = rand() % grp->ioctls_cnt;
+	ioctlnr = rnd_modulo_u32(grp->ioctls_cnt);
 	request = grp->ioctls[ioctlnr].request;
 
 	rec->a2 = request;
