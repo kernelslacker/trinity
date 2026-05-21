@@ -9,6 +9,7 @@
 #include "net.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -185,7 +186,7 @@ static void sanitise_socketcall(struct syscallrecord *rec)
 
 	args = zmalloc_tracked(6 * sizeof(unsigned long));
 
-	r = rand() % ARRAY_SIZE(socketcallptrs);
+	r = rnd_modulo_u32(ARRAY_SIZE(socketcallptrs));
 	rec->a1 = socketcallptrs[r].call;
 	socketcallptrs[r].func(args);
 
