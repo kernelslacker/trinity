@@ -44,9 +44,9 @@ static void sanitise_select(struct syscallrecord *rec)
 	nfds = (rand32() % 1023) + 1;
 	rec->a1 = nfds;
 
-	rfds = zmalloc(sizeof(fd_set));
-	wfds = zmalloc(sizeof(fd_set));
-	exfds = zmalloc(sizeof(fd_set));
+	rfds = zmalloc_tracked(sizeof(fd_set));
+	wfds = zmalloc_tracked(sizeof(fd_set));
+	exfds = zmalloc_tracked(sizeof(fd_set));
 
 	FD_ZERO(rfds);
 	FD_ZERO(wfds);
@@ -93,7 +93,7 @@ static void sanitise_select(struct syscallrecord *rec)
 	rec->a4 = (unsigned long) exfds;
 
 	/* Set a really short timeout */
-	tv = zmalloc(sizeof(struct timeval));
+	tv = zmalloc_tracked(sizeof(struct timeval));
 	tv->tv_sec = 0;
 	tv->tv_usec = 10;
 	rec->a5 = (unsigned long) tv;
