@@ -129,13 +129,185 @@ struct deferred_entry {
 static void *alloc_track[ALLOC_TRACK_SIZE];
 static unsigned int alloc_track_head;
 
+/*
+ * Side-set membership accelerator for alloc_track[].
+ *
+ * alloc_track_consume() and alloc_track_lookup() previously did an
+ * O(N) backward scan over alloc_track[] for every call.  Hit cost was
+ * cheap (post handlers free a few syscalls after the matching
+ * __zmalloc, so the hit lives near head), but miss cost was always
+ * the full 256-slot walk -- and misses are the path that fires when
+ * a scribbled snapshot field arrives at deferred_free_enqueue, which
+ * is exactly the case where we want a fast reject, not a slow one.
+ *
+ * alloc_track[] remains the source of truth for lifecycle (which slot
+ * a ptr lives in, who got displaced on rotation); the hash mirrors it
+ * for membership only.  Every write to alloc_track[] in this file is
+ * paired with the matching hash op inside the same function, so the
+ * two stay in lock-step.  A divergence here isn't just a perf miss --
+ * it would be a correctness bug in the deferred-free gate, the very
+ * thing the opt-in zmalloc_tracked() set was built around.
+ *
+ * 1024 slots vs ALLOC_TRACK_SIZE=256 -> 0.25 max load factor, keeping
+ * the average probe length ~1.3 even at full occupancy.  Power of two
+ * so the modulo collapses to a bitmask.  BSS-resident (no mprotect
+ * bracket, not inside the mmap'd ring): the ring is mmap'd-shared
+ * because shared_regions[] only protects mmap'd VAs from fuzzed-write
+ * stomps, but the hash has no pointer values an attacker could turn
+ * into a free() target -- the worst a stomp here can do is induce
+ * the same false-negative we already tolerate in the duplicate edge
+ * case below.
+ *
+ * Fibonacci hashing: ptr>>4 strips the 4 always-zero low bits glibc
+ * malloc gives us on x86_64 (16-byte-aligned chunks on 64-bit), then
+ * multiplies by the golden-ratio constant.  Top 10 bits of the
+ * product become the slot index, which scatters pointer streams that
+ * share a common prefix (e.g. addresses drawn from the same arena)
+ * across the table.
+ *
+ * Duplicate-ptr edge case: if the same address enters alloc_track[]
+ * twice (rare; requires a direct free() outside the deferred path
+ * before a re-malloc returns the same address), the hash records one
+ * membership entry.  When the first array slot rotates out, the
+ * displaced ptr is hash_remove()d -- the second slot's copy is
+ * orphaned (hash says no, array says yes), and a subsequent
+ * deferred_free_enqueue of that ptr is falsely rejected.  That is a
+ * deferred_free_reject leak, not a bad-free; per the opt-in vs.
+ * implicit-track design rationale further up, the safer direction
+ * to err.
+ */
+#define ALLOC_TRACK_HASH_SHIFT	10
+#define ALLOC_TRACK_HASH_SIZE	(1U << ALLOC_TRACK_HASH_SHIFT)
+#define ALLOC_TRACK_HASH_MASK	(ALLOC_TRACK_HASH_SIZE - 1U)
+
+/* 2^64 / phi, rounded to nearest odd: the 64-bit Fibonacci constant. */
+#define ALLOC_TRACK_FIB_MUL	0x9E3779B97F4A7C15ULL
+
+static void *alloc_track_hash[ALLOC_TRACK_HASH_SIZE];
+
+static inline unsigned int alloc_track_hash_index(void *ptr)
+{
+	uint64_t key = (uint64_t)(uintptr_t)ptr >> 4;
+
+	return (unsigned int)((key * ALLOC_TRACK_FIB_MUL) >>
+			      (64 - ALLOC_TRACK_HASH_SHIFT));
+}
+
+/*
+ * Idempotent insert: a second insert of an already-present ptr is a
+ * no-op.  Matches the "ptr appears in array iff present in hash"
+ * mirror semantics when an alloc_track[] write happens to land the
+ * same pointer in the same slot it already occupied.  Bounded loop:
+ * occupancy is capped at ALLOC_TRACK_SIZE (256) << table size, so a
+ * full table is impossible from the mirror path; the bound is a
+ * paranoia rail to keep a corruption-induced runaway from hanging.
+ */
+static void alloc_track_hash_insert(void *ptr)
+{
+	unsigned int idx = alloc_track_hash_index(ptr);
+	unsigned int probes;
+
+	for (probes = 0; probes < ALLOC_TRACK_HASH_SIZE; probes++) {
+		if (alloc_track_hash[idx] == NULL) {
+			alloc_track_hash[idx] = ptr;
+			return;
+		}
+		if (alloc_track_hash[idx] == ptr)
+			return;
+		idx = (idx + 1) & ALLOC_TRACK_HASH_MASK;
+	}
+}
+
+/*
+ * Shift-back deletion: walk forward from the hole, pulling any entry
+ * whose probe chain would have stopped at the hole back into it, until
+ * we hit a NULL slot.  Preserves the open-addressing invariant that
+ * lookup terminates at the first NULL after the entry's natural slot.
+ *
+ * The move test compares "distance from natural to current slot" vs
+ * "distance from hole to current slot".  If the entry's natural slot
+ * is at or before the hole (in chain order, modulo wrap), moving it
+ * back keeps it reachable from natural.
+ */
+static void alloc_track_hash_remove(void *ptr)
+{
+	unsigned int idx = alloc_track_hash_index(ptr);
+	unsigned int hole;
+	unsigned int probes;
+
+	for (probes = 0; probes < ALLOC_TRACK_HASH_SIZE; probes++) {
+		if (alloc_track_hash[idx] == NULL)
+			return;
+		if (alloc_track_hash[idx] == ptr)
+			break;
+		idx = (idx + 1) & ALLOC_TRACK_HASH_MASK;
+	}
+	if (alloc_track_hash[idx] != ptr)
+		return;
+
+	hole = idx;
+	for (probes = 0; probes < ALLOC_TRACK_HASH_SIZE; probes++) {
+		unsigned int natural;
+		unsigned int dist_to_hole;
+		unsigned int dist_to_natural;
+
+		idx = (idx + 1) & ALLOC_TRACK_HASH_MASK;
+		if (alloc_track_hash[idx] == NULL) {
+			alloc_track_hash[hole] = NULL;
+			return;
+		}
+		natural = alloc_track_hash_index(alloc_track_hash[idx]);
+		dist_to_hole = (idx - hole) & ALLOC_TRACK_HASH_MASK;
+		dist_to_natural = (idx - natural) & ALLOC_TRACK_HASH_MASK;
+		if (dist_to_natural >= dist_to_hole) {
+			alloc_track_hash[hole] = alloc_track_hash[idx];
+			hole = idx;
+		}
+	}
+	/* Unreachable in a well-formed table; if we got here, the table
+	 * is corrupt or fully-occupied with no NULLs.  Clear the hole
+	 * we know about and bail. */
+	alloc_track_hash[hole] = NULL;
+}
+
+static bool alloc_track_hash_contains(void *ptr)
+{
+	unsigned int idx = alloc_track_hash_index(ptr);
+	unsigned int probes;
+
+	for (probes = 0; probes < ALLOC_TRACK_HASH_SIZE; probes++) {
+		if (alloc_track_hash[idx] == NULL)
+			return false;
+		if (alloc_track_hash[idx] == ptr)
+			return true;
+		idx = (idx + 1) & ALLOC_TRACK_HASH_MASK;
+	}
+	return false;
+}
+
 void deferred_alloc_track(void *ptr)
 {
+	unsigned int slot;
+	void *displaced;
+
 	if (ptr == NULL)
 		return;
 
-	alloc_track[alloc_track_head % ALLOC_TRACK_SIZE] = ptr;
+	slot = alloc_track_head % ALLOC_TRACK_SIZE;
+	displaced = alloc_track[slot];
+
+	alloc_track[slot] = ptr;
 	alloc_track_head++;
+
+	alloc_track_hash_insert(ptr);
+	/*
+	 * displaced == ptr means the slot already held this same pointer
+	 * (duplicate-ptr edge case described above the hash table): the
+	 * array's net state is unchanged, so the paired hash_remove would
+	 * incorrectly drop the entry we just confirmed.  Skip it.
+	 */
+	if (displaced != NULL && displaced != ptr)
+		alloc_track_hash_remove(displaced);
 }
 
 /*
@@ -143,20 +315,32 @@ void deferred_alloc_track(void *ptr)
  * the slot); false if the pointer was not in the side-set, meaning the
  * caller is about to free something __zmalloc() never produced.
  *
- * Scan backward from the newest entry.  The vast majority of consumers
- * are post handlers running a few syscalls after the matching __zmalloc()
- * (PATHNAME / IOVEC / SOCKADDR generators enqueue 1-3 pointers per arg),
- * so the hit lives near the head.  Average match distance drops from
- * ALLOC_TRACK_SIZE/2 to a handful of compares; miss cost is unchanged.
+ * Hash-gated fast reject: misses short-circuit without touching the
+ * 256-slot array.  This is the path that fires when a fuzzed scribble
+ * arrives at deferred_free_enqueue (heap-shape, not malloc-returned),
+ * and prior to the hash it was always a full 256-slot backward walk.
+ *
+ * Hits proceed to the backward scan to locate the slot for the mirror
+ * clear.  The scan stays cheap in practice because post handlers free
+ * a few syscalls after the matching __zmalloc -- the hit lives near
+ * head (PATHNAME / IOVEC / SOCKADDR generators enqueue 1-3 pointers
+ * per arg).  The fall-through return false at the end covers the
+ * duplicate-ptr edge case where the hash records membership but the
+ * specific slot has rotated out.
  */
 static bool alloc_track_consume(void *ptr)
 {
-	unsigned int idx = (alloc_track_head - 1) & (ALLOC_TRACK_SIZE - 1);
+	unsigned int idx;
 	unsigned int i;
 
+	if (!alloc_track_hash_contains(ptr))
+		return false;
+
+	idx = (alloc_track_head - 1) & (ALLOC_TRACK_SIZE - 1);
 	for (i = 0; i < ALLOC_TRACK_SIZE; i++) {
 		if (alloc_track[idx] == ptr) {
 			alloc_track[idx] = NULL;
+			alloc_track_hash_remove(ptr);
 			return true;
 		}
 		idx = (idx - 1) & (ALLOC_TRACK_SIZE - 1);
@@ -169,22 +353,11 @@ static bool alloc_track_consume(void *ptr)
  * present in the side-set without removing it.  Used by readers that
  * want to validate a stored pointer (e.g. an object-pool slot) before
  * the first deref, but must not perturb the consume-on-free invariant
- * the deferred_free_enqueue path relies on.  Scan logic mirrors
- * alloc_track_consume so behaviour stays in lock-step if the storage
- * shape changes; deliberately NOT factored into a shared helper to
- * keep the consume path's hot codepath untouched.
+ * the deferred_free_enqueue path relies on.
  */
 bool alloc_track_lookup(void *ptr)
 {
-	unsigned int idx = (alloc_track_head - 1) & (ALLOC_TRACK_SIZE - 1);
-	unsigned int i;
-
-	for (i = 0; i < ALLOC_TRACK_SIZE; i++) {
-		if (alloc_track[idx] == ptr)
-			return true;
-		idx = (idx - 1) & (ALLOC_TRACK_SIZE - 1);
-	}
-	return false;
+	return alloc_track_hash_contains(ptr);
 }
 
 /*
