@@ -20,6 +20,7 @@
 #include "trinity.h"
 #include "utils.h"
 #include "compat.h"
+#include "pids.h"
 
 /* UAPI fallbacks for stripped sysroots without <linux/kcm.h>.  The values
  * are stable since the kernel UAPI shipped in 4.7. */
@@ -103,7 +104,7 @@ const struct netproto proto_kcm = {
  * the BPF prog at attach time (bpf_prog_get_type) and drops it at psock
  * teardown.  That means the userspace BPF fd can be closed immediately
  * after attach without disturbing the kernel-side parser callback.  We
- * still cache one prog fd per child process (keyed by getpid() so a
+ * still cache one prog fd per child process (keyed by mypid() so a
  * post-fork child reloads instead of inheriting a parent fd that was
  * closed mid-walk) to avoid churning the BPF subsystem on every walk.
  *
@@ -170,7 +171,7 @@ static int kcm_load_parser_prog(void)
 
 static int kcm_get_parser_prog_fd(void)
 {
-	pid_t self = getpid();
+	pid_t self = mypid();
 
 	if (kcm_bpf_prog_fd >= 0 && kcm_bpf_owner_pid == self)
 		return kcm_bpf_prog_fd;
