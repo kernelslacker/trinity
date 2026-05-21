@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE3(mseal, unsigned long, start, size_t, len, unsigned long, flags)
  */
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 static void sanitise_mseal(struct syscallrecord *rec)
@@ -19,7 +20,7 @@ static void sanitise_mseal(struct syscallrecord *rec)
 	 * regressions sooner than a uniform random 64-bit value.
 	 */
 	if (ONE_IN(16)) {
-		rec->a3 = 1UL << (rand() % 64);
+		rec->a3 = 1UL << (rnd_modulo_u32(64));
 	} else if (ONE_IN(64)) {
 		rec->a3 = rand64();
 	} else {
