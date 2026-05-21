@@ -113,15 +113,15 @@ bool pid_alive(pid_t pid)
 
 struct childdata * this_child(void)
 {
-	if (cached_childno != CHILD_NOT_FOUND && cached_pid == getpid())
+	pid_t self = mypid();
+	unsigned int i;
+
+	if (cached_childno != CHILD_NOT_FOUND && cached_pid == self)
 		return cached_child;
 
 	/* Fallback for main process or before cache is set */
-	pid_t mypid = getpid();
-	unsigned int i;
-
 	for_each_child(i) {
-		if (__atomic_load_n(&pids[i], __ATOMIC_RELAXED) == mypid)
+		if (__atomic_load_n(&pids[i], __ATOMIC_RELAXED) == self)
 			return children[i];
 	}
 	return NULL;
