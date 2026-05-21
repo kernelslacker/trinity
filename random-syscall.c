@@ -676,6 +676,16 @@ static void apply_chain_substitution(struct syscallrecord *rec,
 	mask = entry->numeric_substitute_mask;
 	if (mask == 0)
 		return;
+	if (substitute_retval == (unsigned long)mainpid) {
+		unsigned int i;
+
+		for (i = 0; i < entry->num_args && i < 6; i++) {
+			if (entry->argtype[i] == ARG_PID)
+				mask &= (uint8_t)~(1u << i);
+		}
+		if (mask == 0)
+			return;
+	}
 
 	/*
 	 * Pick a slot via __builtin_ctz of a masked random draw against
