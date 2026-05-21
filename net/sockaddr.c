@@ -7,6 +7,7 @@
 #include "net.h"
 #include "params.h"	// do_specific_domain
 #include "random.h"
+#include "rnd.h"
 
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 {
@@ -30,7 +31,7 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 
 	/* If we got no hint passed down, pick a random proto. */
 	if (pf == -1)
-		pf = rand() % TRINITY_PF_MAX;
+		pf = rnd_modulo_u32(TRINITY_PF_MAX);
 
 	proto = net_protocols[pf].proto;
 	if (proto != NULL) {
@@ -42,5 +43,5 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 
 	/* Make something up for unknown protocols. */
 	*addr = (struct sockaddr *) zmalloc_tracked(page_size);
-	*addrlen = rand() % page_size;
+	*addrlen = rnd_modulo_u32(page_size);
 }
