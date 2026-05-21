@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include "files.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "compat.h"
@@ -36,7 +37,7 @@ static void sanitise_splice(struct syscallrecord *rec)
 	 * the other 75%.  A -1 from get_rand_pagecache_fd() (provider
 	 * disabled or pool empty) leaves rec->a1 untouched.
 	 */
-	if ((rand() % 100) < 25) {
+	if ((rnd_modulo_u32(100)) < 25) {
 		int fd = get_rand_pagecache_fd();
 
 		if (fd >= 0)
