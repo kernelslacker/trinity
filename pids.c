@@ -390,6 +390,8 @@ retry:		i = rnd_modulo_u32(max_children);
  * The pool is fed by the seven pid-returning syscalls
  * (fork, vfork, clone, clone3, getpid, gettid, getppid) via the
  * generic .ret_objtype = OBJ_PID dispatch hook in handle_syscall_ret;
+ * the parent pid is deliberately rejected so later ARG_PID consumers
+ * can't route process-control syscalls back at trinity-main.
  * mirrors the OBJ_KEY_SERIAL / OBJ_TIMERID / OBJ_AIO_CTX shape but
  * with no destructor -- pids are non-resource handles, nothing to
  * release at child teardown.  Consumed by ARG_PIDs fill_arg branch
@@ -419,6 +421,8 @@ void register_returned_pid(pid_t pid)
 	struct object *obj;
 
 	if (pid <= 0)
+		return;
+	if (pid == mainpid)
 		return;
 
 	obj = alloc_object();
