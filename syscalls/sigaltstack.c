@@ -10,6 +10,7 @@
 #include "deferred-free.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -52,7 +53,7 @@ static void sanitise_sigaltstack(struct syscallrecord *rec)
 	if (ss == NULL)
 		return;
 
-	switch (rand() % 5) {
+	switch (rnd_modulo_u32(5)) {
 	case 0: /* disable the signal stack */
 		ss->ss_sp = NULL;
 		ss->ss_flags = SS_DISABLE;
@@ -76,7 +77,7 @@ static void sanitise_sigaltstack(struct syscallrecord *rec)
 	default: /* boundary: too small */
 		ss->ss_sp = (void *) get_writable_address(page_size);
 		ss->ss_flags = RAND_BOOL() ? SS_AUTODISARM : 0;
-		ss->ss_size = rand() % MINSIGSTKSZ;
+		ss->ss_size = rnd_modulo_u32(MINSIGSTKSZ);
 		break;
 	}
 
