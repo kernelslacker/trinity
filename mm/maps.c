@@ -525,14 +525,14 @@ void mmap_fd(int fd, const char *name, size_t len, int prot, enum obj_scope scop
 			return;
 		obj->map.name = alloc_shared_strdup(name);
 		if (obj->map.name == NULL) {
-			free(obj);
+			deferred_free_enqueue(obj);
 			return;
 		}
 	} else {
 		obj = alloc_object();
 		obj->map.name = strdup(name);
 		if (!obj->map.name) {
-			free(obj);
+			deferred_free_enqueue(obj);
 			return;
 		}
 	}
@@ -570,11 +570,11 @@ retry_mmap:
 				free_shared_str(obj->map.name,
 						strlen(obj->map.name) + 1);
 				obj->map.name = NULL;
-				free(obj);
+				deferred_free_enqueue(obj);
 			} else {
 				free(obj->map.name);
 				obj->map.name = NULL;
-				free(obj);
+				deferred_free_enqueue(obj);
 			}
 			obj = NULL;
 			return;
@@ -631,11 +631,11 @@ retry_mmap:
 			free_shared_str(obj->map.name,
 					strlen(obj->map.name) + 1);
 			obj->map.name = NULL;
-			free(obj);
+			deferred_free_enqueue(obj);
 		} else {
 			free(obj->map.name);
 			obj->map.name = NULL;
-			free(obj);
+			deferred_free_enqueue(obj);
 		}
 		return;
 	}
@@ -643,9 +643,11 @@ retry_mmap:
 	track_shared_region((unsigned long)obj->map.ptr, obj->map.size);
 
 	head = get_objhead(scope, type);
-	head->dump = &map_dump;
-	if (scope == OBJ_GLOBAL) {
-		head->destroy = &map_destructor_shared;
+	if (head != NULL) {
+		head->dump = &map_dump;
+		if (scope == OBJ_GLOBAL) {
+			head->destroy = &map_destructor_shared;
+		}
 	}
 
 	add_object(obj, scope, type);
