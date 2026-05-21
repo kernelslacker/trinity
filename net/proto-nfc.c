@@ -14,7 +14,7 @@ static void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		struct sockaddr_nfc_llcp *nfc_llcp;
 		unsigned int i;
 
-		nfc_llcp = zmalloc(sizeof(struct sockaddr_nfc_llcp));
+		nfc_llcp = zmalloc_tracked(sizeof(struct sockaddr_nfc_llcp));
 
 		nfc_llcp->sa_family = PF_NFC;
 		nfc_llcp->dev_idx = rand();
@@ -30,7 +30,7 @@ static void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	} else {
 		struct sockaddr_nfc *nfc;
 
-		nfc = zmalloc(sizeof(struct sockaddr_nfc));
+		nfc = zmalloc_tracked(sizeof(struct sockaddr_nfc));
 
 		nfc->sa_family = PF_NFC;
 		nfc->dev_idx = rand();
