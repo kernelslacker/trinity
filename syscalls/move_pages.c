@@ -86,6 +86,7 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 		deferred_freeptr(&rec->a3);
 		return;
 	}
+	avoid_shared_buffer_out(&rec->a5, count * sizeof(int));
 
 	/* Needs CAP_SYS_NICE */
 	if (getuid() != 0)
