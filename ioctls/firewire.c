@@ -2,6 +2,7 @@
 
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -13,8 +14,8 @@ static void sanitise_fw_send_request(struct syscallrecord *rec)
 	req = (struct fw_cdev_send_request *) get_writable_struct(sizeof(*req));
 	if (!req)
 		return;
-	req->tcode = rand() % 16;
-	payload_len = rand() % 512;
+	req->tcode = rnd_modulo_u32(16);
+	payload_len = rnd_modulo_u32(512);
 	req->length = payload_len;
 	req->offset = rand64() & 0xFFFFFFFFFFFFULL;	/* 48-bit address space */
 	req->closure = rand64();
@@ -32,7 +33,7 @@ static void sanitise_fw_allocate(struct syscallrecord *rec)
 		return;
 	a->offset = rand64() & 0xFFFFFFFFFFFFULL;
 	a->closure = rand64();
-	a->length = rand() % 4096 + 4;
+	a->length = rnd_modulo_u32(4096) + 4;
 	a->region_end = a->offset + a->length;
 	rec->a3 = (unsigned long) a;
 }
@@ -56,8 +57,8 @@ static void sanitise_fw_send_response(struct syscallrecord *rec)
 	resp = (struct fw_cdev_send_response *) get_writable_struct(sizeof(*resp));
 	if (!resp)
 		return;
-	resp->rcode = rand() % 8;
-	payload_len = rand() % 512;
+	resp->rcode = rnd_modulo_u32(8);
+	payload_len = rnd_modulo_u32(512);
 	resp->length = payload_len;
 	resp->data = (unsigned long) get_writable_struct(payload_len + 4);
 	resp->handle = rand32();
@@ -74,7 +75,7 @@ static void sanitise_fw_add_descriptor(struct syscallrecord *rec)
 		return;
 	desc->immediate = RAND_BOOL() ? rand32() : 0;
 	desc->key = 0x81000000;	/* leaf entry type */
-	len = rand() % 16 + 1;
+	len = rnd_modulo_u32(16) + 1;
 	desc->length = len;
 	desc->data = (unsigned long) get_writable_struct(len * 4);
 	rec->a3 = (unsigned long) desc;
@@ -87,10 +88,10 @@ static void sanitise_fw_create_iso_context(struct syscallrecord *rec)
 	ctx = (struct fw_cdev_create_iso_context *) get_writable_struct(sizeof(*ctx));
 	if (!ctx)
 		return;
-	ctx->type = rand() % 3;
-	ctx->header_size = (rand() % 8) * 4;	/* must be multiple of 4 */
-	ctx->channel = rand() % 64;
-	ctx->speed = rand() % 6;
+	ctx->type = rnd_modulo_u32(3);
+	ctx->header_size = (rnd_modulo_u32(8)) * 4;	/* must be multiple of 4 */
+	ctx->channel = rnd_modulo_u32(64);
+	ctx->speed = rnd_modulo_u32(6);
 	ctx->closure = rand64();
 	rec->a3 = (unsigned long) ctx;
 }
@@ -120,9 +121,9 @@ static void sanitise_fw_start_iso(struct syscallrecord *rec)
 	s = (struct fw_cdev_start_iso *) get_writable_struct(sizeof(*s));
 	if (!s)
 		return;
-	s->cycle = RAND_BOOL() ? -1 : (rand() % 8000);
-	s->sync = rand() % 16;
-	s->tags = rand() % 16;
+	s->cycle = RAND_BOOL() ? -1 : (int) rnd_modulo_u32(8000);
+	s->sync = rnd_modulo_u32(16);
+	s->tags = rnd_modulo_u32(16);
 	s->handle = rand32();
 	rec->a3 = (unsigned long) s;
 }
@@ -135,8 +136,8 @@ static void sanitise_fw_alloc_iso_resource(struct syscallrecord *rec)
 	if (!r)
 		return;
 	r->closure = rand64();
-	r->channels = 1ULL << (rand() % 64);
-	r->bandwidth = rand() % 4096;
+	r->channels = 1ULL << (rnd_modulo_u32(64));
+	r->bandwidth = rnd_modulo_u32(4096);
 	rec->a3 = (unsigned long) r;
 }
 
@@ -148,15 +149,15 @@ static void sanitise_fw_send_stream_packet(struct syscallrecord *rec)
 	pkt = (struct fw_cdev_send_stream_packet *) get_writable_struct(sizeof(*pkt));
 	if (!pkt)
 		return;
-	payload_len = rand() % 512;
+	payload_len = rnd_modulo_u32(512);
 	pkt->length = payload_len;
-	pkt->tag = rand() % 4;
-	pkt->channel = rand() % 64;
-	pkt->sy = rand() % 16;
+	pkt->tag = rnd_modulo_u32(4);
+	pkt->channel = rnd_modulo_u32(64);
+	pkt->sy = rnd_modulo_u32(16);
 	pkt->closure = rand64();
 	pkt->data = (unsigned long) get_writable_struct(payload_len + 4);
 	pkt->generation = rand32();
-	pkt->speed = rand() % 6;
+	pkt->speed = rnd_modulo_u32(6);
 	rec->a3 = (unsigned long) pkt;
 }
 
@@ -169,7 +170,7 @@ static void firewire_sanitise(const struct ioctl_group *grp, struct syscallrecor
 		/* mostly output; just allocate and let kernel fill it */
 		struct fw_cdev_get_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
-			info->version = rand() % 6 + 1;
+			info->version = rnd_modulo_u32(6) + 1;
 			info->bus_reset_closure = rand64();
 			rec->a3 = (unsigned long) info;
 		}
@@ -197,7 +198,7 @@ static void firewire_sanitise(const struct ioctl_group *grp, struct syscallrecor
 	case FW_CDEV_IOC_INITIATE_BUS_RESET: {
 		struct fw_cdev_initiate_bus_reset *r = get_writable_struct(sizeof(*r));
 		if (r) {
-			r->type = rand() % 2;	/* FW_CDEV_LONG_RESET or FW_CDEV_SHORT_RESET */
+			r->type = rnd_modulo_u32(2);	/* FW_CDEV_LONG_RESET or FW_CDEV_SHORT_RESET */
 			rec->a3 = (unsigned long) r;
 		}
 		break;
@@ -264,7 +265,7 @@ static void firewire_sanitise(const struct ioctl_group *grp, struct syscallrecor
 		struct fw_cdev_get_cycle_timer2 *ct2 = get_writable_struct(sizeof(*ct2));
 		if (ct2) {
 			/* clk_id is an input field; 0=REALTIME 1=MONOTONIC */
-			ct2->clk_id = rand() % 2;
+			ct2->clk_id = rnd_modulo_u32(2);
 			rec->a3 = (unsigned long) ct2;
 		}
 		break;
@@ -300,7 +301,7 @@ static void firewire_sanitise(const struct ioctl_group *grp, struct syscallrecor
 	case FW_CDEV_IOC_SET_ISO_CHANNELS: {
 		struct fw_cdev_set_iso_channels *sc = get_writable_struct(sizeof(*sc));
 		if (sc) {
-			sc->channels = 1ULL << (rand() % 64);
+			sc->channels = 1ULL << (rnd_modulo_u32(64));
 			sc->handle = rand32();
 			rec->a3 = (unsigned long) sc;
 		}
