@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <linux/pidfd.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 static unsigned long pidfd_getfd_flags[] = {
@@ -15,7 +16,7 @@ static unsigned long pidfd_getfd_flags[] = {
 static void sanitise_pidfd_getfd(struct syscallrecord *rec)
 {
 	/* Sometimes use a self-referencing sentinel instead of a real pidfd. */
-	if (rand() % 4 == 0)
+	if (rnd_modulo_u32(4) == 0)
 		rec->a1 = RAND_BOOL() ? (unsigned long)PIDFD_SELF_THREAD
 				      : (unsigned long)PIDFD_SELF_THREAD_GROUP;
 }
