@@ -2,6 +2,7 @@
 
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -46,7 +47,7 @@ static void watchdog_sanitise(const struct ioctl_group *grp, struct syscallrecor
 				WDIOS_ENABLECARD,
 				WDIOS_TEMPPANIC,
 			};
-			*opts = option_flags[rand() % ARRAY_SIZE(option_flags)];
+			*opts = option_flags[rnd_modulo_u32(ARRAY_SIZE(option_flags))];
 			rec->a3 = (unsigned long) opts;
 		}
 		break;
@@ -56,7 +57,7 @@ static void watchdog_sanitise(const struct ioctl_group *grp, struct syscallrecor
 		/* IOWR: user provides timeout in seconds, kernel writes back actual value */
 		int *timeout = (int *) get_writable_struct(sizeof(int));
 		if (timeout) {
-			*timeout = rand() % 300 + 1;
+			*timeout = rnd_modulo_u32(300) + 1;
 			rec->a3 = (unsigned long) timeout;
 		}
 		break;
@@ -66,7 +67,7 @@ static void watchdog_sanitise(const struct ioctl_group *grp, struct syscallrecor
 		/* IOWR: pre-timeout in seconds, must be less than main timeout */
 		int *pretimeout = (int *) get_writable_struct(sizeof(int));
 		if (pretimeout) {
-			*pretimeout = rand() % 60;
+			*pretimeout = rnd_modulo_u32(60);
 			rec->a3 = (unsigned long) pretimeout;
 		}
 		break;
