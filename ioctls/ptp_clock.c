@@ -6,13 +6,14 @@
 
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
 static void fill_clock_time(struct ptp_clock_time *t)
 {
 	t->sec = (__s64) rand64();
-	t->nsec = rand();
+	t->nsec = rnd_u32();
 	t->reserved = 0;
 }
 
@@ -34,8 +35,8 @@ static void sanitise_extts_request(struct syscallrecord *rec)
 	r = (struct ptp_extts_request *) get_writable_struct(sizeof(*r));
 	if (!r)
 		return;
-	r->index = rand() % 16;
-	r->flags = rand() & PTP_EXTTS_VALID_FLAGS;
+	r->index = rnd_modulo_u32(16);
+	r->flags = rnd_u32() & PTP_EXTTS_VALID_FLAGS;
 	r->rsv[0] = 0;
 	r->rsv[1] = 0;
 	rec->a3 = (unsigned long) r;
@@ -51,8 +52,8 @@ static void sanitise_perout_request(struct syscallrecord *rec)
 	memset(r, 0, sizeof(*r));
 	fill_clock_time(&r->start);
 	fill_clock_time(&r->period);
-	r->index = rand() % 16;
-	r->flags = rand() & PTP_PEROUT_VALID_FLAGS;
+	r->index = rnd_modulo_u32(16);
+	r->flags = rnd_u32() & PTP_PEROUT_VALID_FLAGS;
 	if (r->flags & PTP_PEROUT_DUTY_CYCLE)
 		fill_clock_time(&r->on);
 	rec->a3 = (unsigned long) r;
@@ -77,7 +78,7 @@ static void sanitise_sys_offset(struct syscallrecord *rec)
 	if (!o)
 		return;
 	memset(o, 0, sizeof(*o));
-	o->n_samples = rand() % (PTP_MAX_SAMPLES + 1);
+	o->n_samples = rnd_modulo_u32((PTP_MAX_SAMPLES + 1));
 	rec->a3 = (unsigned long) o;
 }
 
@@ -100,7 +101,7 @@ static void sanitise_sys_offset_extended(struct syscallrecord *rec)
 	if (!o)
 		return;
 	memset(o, 0, sizeof(*o));
-	o->n_samples = rand() % (PTP_MAX_SAMPLES + 1);
+	o->n_samples = rnd_modulo_u32((PTP_MAX_SAMPLES + 1));
 	rec->a3 = (unsigned long) o;
 }
 
@@ -112,9 +113,9 @@ static void sanitise_pin_desc(struct syscallrecord *rec)
 	if (!p)
 		return;
 	memset(p, 0, sizeof(*p));
-	p->index = rand() % 16;
-	p->func = rand() % (PTP_PF_PHYSYNC + 1);
-	p->chan = rand() % 16;
+	p->index = rnd_modulo_u32(16);
+	p->func = rnd_modulo_u32((PTP_PF_PHYSYNC + 1));
+	p->chan = rnd_modulo_u32(16);
 	rec->a3 = (unsigned long) p;
 }
 
@@ -125,7 +126,7 @@ static void sanitise_mask_en_single(struct syscallrecord *rec)
 	p = (unsigned int *) get_writable_struct(sizeof(unsigned int));
 	if (!p)
 		return;
-	*p = rand() % 16;
+	*p = rnd_modulo_u32(16);
 	rec->a3 = (unsigned long) p;
 }
 
