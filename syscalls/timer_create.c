@@ -63,7 +63,7 @@ int32_t get_random_timerid(void)
 {
 	struct object *obj;
 
-	if (objects_empty(OBJ_TIMERID) == true)
+	if (objects_pool_empty(OBJ_LOCAL, OBJ_TIMERID) == true)
 		return (int32_t) (rand() % 32);
 
 	obj = get_random_object(OBJ_TIMERID, OBJ_LOCAL);
