@@ -2466,7 +2466,7 @@ void stats_log_open(const char *path)
 	stats_log_iso_timestamp(ts, sizeof(ts));
 	fprintf(stats_log_fp,
 		"\n=== trinity stats log opened at %s pid=%d ===\n",
-		ts, (int)getpid());
+		ts, (int)mypid());
 	fflush(stats_log_fp);
 }
 
