@@ -28,7 +28,7 @@ static void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		RTNLGRP_NSID, RTNLGRP_MPLS_NETCONF,
 	};
 
-	nl = zmalloc(sizeof(struct sockaddr_nl));
+	nl = zmalloc_tracked(sizeof(struct sockaddr_nl));
 
 	nl->nl_family = PF_NETLINK;
 	nl->nl_pid = 0; // destination is always kernel
