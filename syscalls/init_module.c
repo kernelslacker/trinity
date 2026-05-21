@@ -6,6 +6,7 @@
 #include <string.h>
 #include "arch.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
@@ -56,13 +57,13 @@ static void sanitise_init_module(struct syscallrecord *rec)
 	Elf64_Shdr *shdr;
 	unsigned int i;
 
-	nr_shdrs = 2 + (rand() % 7);	/* 2-8 sections (idx 0 is SHN_UNDEF) */
+	nr_shdrs = 2 + (rnd_modulo_u32(7));	/* 2-8 sections (idx 0 is SHN_UNDEF) */
 	shstrtab_idx = 1;		/* section 1 = .shstrtab */
 
 	ehdr_sz = sizeof(Elf64_Ehdr);
 	shdrs_sz = nr_shdrs * sizeof(Elf64_Shdr);
 	strtab_sz = sizeof(shstrtab);
-	payload_sz = 64 + (rand() % 256);
+	payload_sz = 64 + (rnd_modulo_u32(256));
 	total_sz = ehdr_sz + shdrs_sz + strtab_sz + payload_sz;
 
 	buf = zmalloc_tracked(total_sz);
@@ -91,11 +92,11 @@ static void sanitise_init_module(struct syscallrecord *rec)
 
 	/* Occasionally corrupt a field to exercise error paths */
 	if (ONE_IN(4))
-		ehdr->e_shnum = rand() % 256;
+		ehdr->e_shnum = rnd_modulo_u32(256);
 	if (ONE_IN(4))
-		ehdr->e_shstrndx = rand() % 256;
+		ehdr->e_shstrndx = rnd_modulo_u32(256);
 	if (ONE_IN(8))
-		ehdr->e_shoff = rand() % total_sz;
+		ehdr->e_shoff = rnd_modulo_u32(total_sz);
 
 	/* Section headers start at buf + ehdr_sz */
 	shdr = (Elf64_Shdr *)(buf + ehdr_sz);
@@ -117,21 +118,21 @@ static void sanitise_init_module(struct syscallrecord *rec)
 	for (i = 2; i < nr_shdrs; i++) {
 		memset(&shdr[i], 0, sizeof(Elf64_Shdr));
 		shdr[i].sh_name = RAND_ARRAY(section_names);
-		switch (rand() % 5) {
+		switch (rnd_modulo_u32(5)) {
 		case 0: shdr[i].sh_type = SHT_PROGBITS; break;
 		case 1: shdr[i].sh_type = SHT_NOBITS; break;
 		case 2: shdr[i].sh_type = SHT_RELA; break;
 		case 3: shdr[i].sh_type = SHT_SYMTAB; break;
 		case 4: shdr[i].sh_type = SHT_NOTE; break;
 		}
-		shdr[i].sh_flags = rand() & (SHF_WRITE | SHF_ALLOC | SHF_EXECINSTR);
+		shdr[i].sh_flags = rnd_u32() & (SHF_WRITE | SHF_ALLOC | SHF_EXECINSTR);
 		shdr[i].sh_offset = ehdr_sz + shdrs_sz + strtab_sz;
-		shdr[i].sh_size = rand() % payload_sz;
-		shdr[i].sh_addralign = 1 << (rand() % 5);	/* 1, 2, 4, 8, or 16 */
+		shdr[i].sh_size = rnd_modulo_u32(payload_sz);
+		shdr[i].sh_addralign = 1 << (rnd_modulo_u32(5));	/* 1, 2, 4, 8, or 16 */
 
 		/* Occasionally point offset way out of bounds */
 		if (ONE_IN(8))
-			shdr[i].sh_offset = rand() % (total_sz * 4);
+			shdr[i].sh_offset = rnd_modulo_u32((total_sz * 4));
 	}
 
 	rec->a1 = (unsigned long) buf;
