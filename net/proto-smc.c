@@ -4,6 +4,7 @@
 #include "net.h"
 #include "random.h"
 #include "compat.h"
+#include "rnd.h"
 
 #define SMCPROTO_SMC            0       /* SMC protocol, IPv4 */
 #define SMCPROTO_SMC6           1       /* SMC protocol, IPv6 */
@@ -19,7 +20,7 @@ static void smc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		sin = zmalloc_tracked(sizeof(struct sockaddr_in));
 		sin->sin_family = AF_INET;
 		sin->sin_addr.s_addr = random_ipv4_address();
-		sin->sin_port = htons(rand() % 65536);
+		sin->sin_port = htons(rnd_modulo_u32(65536));
 		*addr = (struct sockaddr *) sin;
 		*addrlen = sizeof(struct sockaddr_in);
 	} else {
@@ -27,7 +28,7 @@ static void smc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 		sin6 = zmalloc_tracked(sizeof(struct sockaddr_in6));
 		sin6->sin6_family = AF_INET6;
-		sin6->sin6_port = htons(rand() % 65536);
+		sin6->sin6_port = htons(rnd_modulo_u32(65536));
 		*addr = (struct sockaddr *) sin6;
 		*addrlen = sizeof(struct sockaddr_in6);
 	}
