@@ -20,6 +20,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscalls.h"
@@ -63,12 +64,12 @@ static const unsigned long fcntl_cmds_rare[] = {
 
 static unsigned long pick_fcntl_cmd(void)
 {
-	unsigned int r = rand() % 100;
+	unsigned int r = rnd_modulo_u32(100);
 
 	if (r < 60)
-		return fcntl_cmds_common[rand() % ARRAY_SIZE(fcntl_cmds_common)];
+		return fcntl_cmds_common[rnd_modulo_u32(ARRAY_SIZE(fcntl_cmds_common))];
 	if (r < 90)
-		return fcntl_cmds_rare[rand() % ARRAY_SIZE(fcntl_cmds_rare)];
+		return fcntl_cmds_rare[rnd_modulo_u32(ARRAY_SIZE(fcntl_cmds_rare))];
 	return (unsigned long) rand32();
 }
 
@@ -85,7 +86,7 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 
 	case F_SETLEASE: {
 		int lease_types[] = { F_RDLCK, F_WRLCK, F_UNLCK };
-		rec->a3 = lease_types[rand() % 3];
+		rec->a3 = lease_types[rnd_modulo_u32(3)];
 		break;
 	}
 
