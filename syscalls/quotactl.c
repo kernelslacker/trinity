@@ -5,6 +5,7 @@
 #include <linux/quota.h>
 #include <string.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 static int quota_subcmds[] = {
@@ -19,8 +20,8 @@ static void sanitise_quotactl(struct syscallrecord *rec)
 	int subcmd, type;
 	char *special;
 
-	subcmd = quota_subcmds[rand() % ARRAY_SIZE(quota_subcmds)];
-	type = quota_types[rand() % ARRAY_SIZE(quota_types)];
+	subcmd = quota_subcmds[rnd_modulo_u32(ARRAY_SIZE(quota_subcmds))];
+	type = quota_types[rnd_modulo_u32(ARRAY_SIZE(quota_types))];
 	rec->a1 = QCMD(subcmd, type);
 
 	/* arg2: block device path */
@@ -32,7 +33,7 @@ static void sanitise_quotactl(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) special;
 
 	/* arg3: uid/gid/projid */
-	rec->a3 = rand() % 65536;
+	rec->a3 = rnd_modulo_u32(65536);
 
 	/* arg4: depends on subcmd */
 	switch (subcmd) {
@@ -47,8 +48,8 @@ static void sanitise_quotactl(struct syscallrecord *rec)
 		if (subcmd == Q_SETQUOTA) {
 			dqb->dqb_bhardlimit = rand32();
 			dqb->dqb_bsoftlimit = rand32();
-			dqb->dqb_ihardlimit = rand() % 100000;
-			dqb->dqb_isoftlimit = rand() % 100000;
+			dqb->dqb_ihardlimit = rnd_modulo_u32(100000);
+			dqb->dqb_isoftlimit = rnd_modulo_u32(100000);
 		}
 		rec->a4 = (unsigned long) dqb;
 		/*
@@ -70,8 +71,8 @@ static void sanitise_quotactl(struct syscallrecord *rec)
 			break;
 		memset(dqi, 0, sizeof(*dqi));
 		if (subcmd == Q_SETINFO) {
-			dqi->dqi_bgrace = 3600 * (1 + (rand() % 168));
-			dqi->dqi_igrace = 3600 * (1 + (rand() % 168));
+			dqi->dqi_bgrace = 3600 * (1 + (rnd_modulo_u32(168)));
+			dqi->dqi_igrace = 3600 * (1 + (rnd_modulo_u32(168)));
 		}
 		rec->a4 = (unsigned long) dqi;
 		/*
