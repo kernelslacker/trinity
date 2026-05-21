@@ -15,6 +15,7 @@
 #include "params.h"
 #include "pathnames.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "uid.h"
 #include "utils.h"
@@ -402,11 +403,11 @@ const char * get_filename(void)
 	/* Pick a pool first so /dev gets equal probability with /proc and /sys
 	 * despite having far fewer files. */
 	if (num_pools > 1) {
-		pool = &pools[rand() % num_pools];
-		return fileindex[pool->start + rand() % pool->count];
+		pool = &pools[rnd_modulo_u32(num_pools)];
+		return fileindex[pool->start + rnd_modulo_u32(pool->count)];
 	}
 
-	return fileindex[rand() % files_in_index];
+	return fileindex[rnd_modulo_u32(files_in_index)];
 }
 
 const char * get_filename_for_pool(unsigned int pool_id)
@@ -420,7 +421,7 @@ const char * get_filename_for_pool(unsigned int pool_id)
 	if (pool->count == 0)
 		return NULL;
 
-	return fileindex[pool->start + rand() % pool->count];
+	return fileindex[pool->start + rnd_modulo_u32(pool->count)];
 }
 
 unsigned int get_pool_file_count(unsigned int pool_id)
@@ -450,10 +451,10 @@ const char * generate_pathname(void)
 	 * This ensures some coverage even in container environments where the
 	 * walk yields few or no readable entries.
 	 */
-	if (files_in_index > 0 && (int)(rand() % 100) < WALKED_PATH_RATIO) {
+	if (files_in_index > 0 && (int)rnd_modulo_u32(100) < WALKED_PATH_RATIO) {
 		pathname = get_filename();
 	} else {
-		pathname = interesting_paths[rand() % ARRAY_SIZE(interesting_paths)];
+		pathname = interesting_paths[rnd_modulo_u32(ARRAY_SIZE(interesting_paths))];
 	}
 
 	if (pathname == NULL)
