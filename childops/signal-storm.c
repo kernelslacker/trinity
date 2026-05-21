@@ -162,7 +162,7 @@ static void reorder_targets(pid_t *t, unsigned int n)
 bool signal_storm(struct childdata *child)
 {
 	pid_t targets[MAX_TARGETS];
-	pid_t self = getpid();
+	pid_t self = mypid();
 	pid_t ppid = getppid();
 	unsigned int ntargets = 0;
 	unsigned int i, iters;
