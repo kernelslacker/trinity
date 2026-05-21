@@ -116,6 +116,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "pids.h"
 
 /* PSP UAPI integers (mainlined in 6.10).  Values mirror
  * include/uapi/linux/psp.h: enum { PSP_CMD_DEV_GET = 1, ... } and
@@ -647,7 +648,7 @@ static bool pdpc_setup_once(void)
 
 	pdpc_modprobe_netdevsim_once();
 
-	base = 50000U + ((__u32)getpid() & 0x3fffU) +
+	base = 50000U + ((__u32)mypid() & 0x3fffU) +
 	       ((__u32)(rand32() & 0xffU) * 4U);
 
 	for (i = 0; i < PDPC_MAX_INSTANCES; i++) {
