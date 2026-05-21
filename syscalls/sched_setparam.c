@@ -3,6 +3,7 @@
  */
 #include <sched.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 static void sanitise_sched_setparam(struct syscallrecord *rec)
@@ -13,11 +14,11 @@ static void sanitise_sched_setparam(struct syscallrecord *rec)
 	if (!sp)
 		return;
 
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0: sp->sched_priority = 0; break;			/* SCHED_OTHER/BATCH/IDLE */
 	case 1: sp->sched_priority = 1; break;			/* minimum RT */
 	case 2: sp->sched_priority = 99; break;			/* maximum RT */
-	default: sp->sched_priority = rand() % 100; break;	/* random valid */
+	default: sp->sched_priority = rnd_modulo_u32(100); break;	/* random valid */
 	}
 
 	rec->a2 = (unsigned long) sp;
