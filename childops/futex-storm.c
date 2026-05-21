@@ -42,6 +42,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "pids.h"
 #include "childops-util.h"
 #include "random.h"
 #include "shm.h"
@@ -181,7 +182,7 @@ static void inner_worker(struct futex_storm_shared *s)
 
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	(void)syscall(__NR_getrandom, &extra, sizeof(extra), 0);
-	srand((unsigned int)(getpid() ^ now.tv_nsec ^
+	srand((unsigned int)(mypid() ^ now.tv_nsec ^
 			     ((unsigned int)extra << 16)));
 
 	pthread_barrier_wait(&s->barrier);
@@ -280,7 +281,7 @@ bool futex_storm(struct childdata *child)
 	pthread_barrierattr_t attr;
 	struct timespec budget;
 	unsigned int nworkers;
-	pid_t pids[MAX_WORKERS];
+	pid_t worker_pids[MAX_WORKERS];
 	int i, alive, status;
 
 	(void)child;
@@ -334,7 +335,7 @@ bool futex_storm(struct childdata *child)
 			inner_worker(s);
 			_exit(0);	/* unreachable */
 		}
-		pids[alive++] = pid;
+		worker_pids[alive++] = pid;
 	}
 
 	/*
@@ -344,9 +345,9 @@ bool futex_storm(struct childdata *child)
 	 */
 	if (alive < (int)nworkers) {
 		for (i = 0; i < alive; i++)
-			kill(pids[i], SIGKILL);
+			kill(worker_pids[i], SIGKILL);
 		for (i = 0; i < alive; i++)
-			waitpid_eintr(pids[i], &status, 0);
+			waitpid_eintr(worker_pids[i], &status, 0);
 		goto out_barrier;
 	}
 
@@ -368,19 +369,19 @@ bool futex_storm(struct childdata *child)
 		int spin;
 
 		for (spin = 0; spin < 50; spin++) {
-			r = waitpid_eintr(pids[i], &status, WNOHANG);
-			if (r == pids[i] || r < 0)
+			r = waitpid_eintr(worker_pids[i], &status, WNOHANG);
+			if (r == worker_pids[i] || r < 0)
 				break;
 			budget.tv_sec  = 0;
 			budget.tv_nsec = 1000000;	/* 1 ms */
 			nanosleep(&budget, NULL);
 		}
 		if (r == 0) {
-			kill(pids[i], SIGKILL);
-			waitpid_eintr(pids[i], &status, 0);
+			kill(worker_pids[i], SIGKILL);
+			waitpid_eintr(worker_pids[i], &status, 0);
 			continue;
 		}
-		if (r == pids[i] && WIFSIGNALED(status))
+		if (r == worker_pids[i] && WIFSIGNALED(status))
 			__atomic_add_fetch(&shm->stats.futex_storm_inner_crashed,
 					   1, __ATOMIC_RELAXED);
 	}
