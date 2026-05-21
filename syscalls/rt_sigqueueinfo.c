@@ -31,7 +31,7 @@ static void sanitise_rt_sigqueueinfo(struct syscallrecord *rec)
 
 	/* Kernel requires si_code to be SI_QUEUE (or < 0 for user-generated). */
 	info->si_code = SI_QUEUE;
-	info->si_pid = getpid();
+	info->si_pid = mypid();
 	info->si_uid = getuid();
 	info->si_int = rand32();
 
