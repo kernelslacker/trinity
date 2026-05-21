@@ -13,6 +13,7 @@
 #include "net.h"
 #include "random.h"
 #include "socket-family-grammar.h"
+#include "rnd.h"
 
 static void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
@@ -99,7 +100,7 @@ static struct socket_triplet netlink_triplets[] = {
   Hm, TBD
 
 	if (st->protocol == NETLINK_SOCK_DIAG)
-		st->type = rand() % 136;
+		st->type = rnd_modulo_u32(136);
 */
 };
 
@@ -166,7 +167,7 @@ static void netlink_grammar_pick_triplet(struct socket_triplet *out)
 	out->family = PF_NETLINK;
 	out->type = SOCK_RAW;
 	out->protocol = netlink_grammar_protos[
-		rand() % ARRAY_SIZE(netlink_grammar_protos)];
+		rnd_modulo_u32(ARRAY_SIZE(netlink_grammar_protos))];
 }
 
 static void netlink_grammar_configure_pre_bind(int fd,
@@ -217,13 +218,13 @@ static void netlink_grammar_walk_setsockopts(int fd,
 	n_drop = n / 4;
 
 	for (i = 0; i < n_add && step < n; i++, step++) {
-		group = 1 + (rand() % 32);
+		group = 1 + (rnd_modulo_u32(32));
 		(void) setsockopt(fd, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
 				  &group, sizeof(group));
 	}
 
 	for (i = 0; i < n_drop && step < n; i++, step++) {
-		group = 1 + (rand() % 32);
+		group = 1 + (rnd_modulo_u32(32));
 		(void) setsockopt(fd, SOL_NETLINK, NETLINK_DROP_MEMBERSHIP,
 				  &group, sizeof(group));
 	}
