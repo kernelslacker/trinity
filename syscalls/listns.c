@@ -72,7 +72,7 @@ static void sanitise_listns(struct syscallrecord *rec)
 	struct ns_id_req *req;
 	struct listns_post_state *snap;
 
-	req = zmalloc(sizeof(struct ns_id_req));
+	req = zmalloc_tracked(sizeof(struct ns_id_req));
 	req->size = NS_ID_REQ_SIZE_VER0;
 	req->ns_type = ns_types[rand() % ARRAY_SIZE(ns_types)];
 
