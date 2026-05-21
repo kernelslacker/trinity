@@ -56,7 +56,7 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 	rec->a2 = count;
 
 	/* setup array of ptrs to pages to move */
-	page_alloc = (unsigned long *) zmalloc(page_size);
+	page_alloc = (unsigned long *) zmalloc_tracked(page_size);
 
 	for (i = 0; i < count; i++) {
 		struct map *map;
