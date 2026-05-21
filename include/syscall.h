@@ -390,6 +390,27 @@ struct syscalltable {
  * CMP-mode children never enter remote mode.
  */
 #define KCOV_REMOTE_HEAVY	(1<<10)
+/*
+ * SKIP_BLANKET_SCRUB: opt this syscall out of blanket_address_scrub() in
+ * generate-args.c.  The blanket walks every default_address_scrub slot
+ * after the per-syscall sanitiser has run and redirects pointers that
+ * overlap shared_regions[] or the libc heap arena to a fresh
+ * get_writable_address() page.  That is the correct defense-in-depth
+ * default for the bulk of syscalls, where any aliasing into trinity's
+ * own bookkeeping is incidental and the kernel-side write/read at the
+ * pointer carries no curated payload.
+ *
+ * A handful of syscalls invert this contract: the sanitiser deliberately
+ * places a pointer at an address whose bytes the kernel must observe
+ * unchanged, and whose VA must remain stable across the dispatch.  For
+ * those the blanket scrub silently substitutes an unrelated writable
+ * page underneath the kernel, dropping the comparison / hashing semantics
+ * the sanitiser carefully set up.  Setting this bit at the entry zeroes
+ * address_scrub_mask at table-init time in copy_syscall_table(), so the
+ * hot-path early-return in blanket_address_scrub() short-circuits with
+ * zero per-dispatch cost.
+ */
+#define SKIP_BLANKET_SCRUB	(1<<11)
 
 struct kcov_child;
 struct childdata;

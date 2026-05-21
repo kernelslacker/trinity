@@ -394,7 +394,23 @@ struct syscallentry syscall_futex = {
 	.argtype = { [0] = ARG_NON_NULL_ADDRESS, [1] = ARG_OP, [3] = ARG_ADDRESS, [4] = ARG_ADDRESS },
 	.argname = { [0] = "uaddr", [1] = "op", [2] = "val", [3] = "utime", [4] = "uaddr2", [5] = "val3" },
 	.arg_params[1].list = ARGLIST(futex_ops),
-	.flags = NEED_ALARM | IGNORE_ENOSYS,
+	/*
+	 * SKIP_BLANKET_SCRUB: sanitise_futex() places a1 / a5 at one of
+	 * three curated pools (per-child OBJ_FUTEX lock words on the libc
+	 * heap, the cross-child shared futex pool in alloc_shared(), or
+	 * mmap-pool words) and rec->a3 carries the FUTEX_LOCKED value that
+	 * must match *uaddr at the moment of dispatch.  All three pools
+	 * deliberately alias either shared_regions[] or the libc heap arena
+	 * -- that is what lets two unrelated children contend on the same
+	 * futex hash bucket cross-child for FUTEX_WAIT / FUTEX_WAKE.
+	 * Without this opt-out, blanket_address_scrub() relocates the
+	 * curated VA to a fresh page underneath the kernel: the FUTEX_WAIT
+	 * comparison reads pool garbage and returns -EAGAIN, the new
+	 * cross-child shared word pool (commit c9124ba765f8) is silently
+	 * disabled, and the per-child private OBJ_FUTEX path is broken in
+	 * the same way.
+	 */
+	.flags = NEED_ALARM | IGNORE_ENOSYS | SKIP_BLANKET_SCRUB,
 	.sanitise = sanitise_futex,
 	.post = post_futex,
 	.group = GROUP_IPC,

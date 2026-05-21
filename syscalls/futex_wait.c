@@ -77,6 +77,22 @@ struct syscallentry syscall_futex_wait = {
 	.arg_params[5].list = ARGLIST(futex_wait_clockids),
 	.sanitise = sanitise_futex_wait,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	/*
+	 * SKIP_BLANKET_SCRUB: sanitise_futex_wait() writes a known value
+	 * into *uaddr via get_writable_struct() and sets a2 (val) to match,
+	 * so the kernel-side futex_wait comparison can succeed and the call
+	 * actually enters the wait queue.  get_writable_struct() draws from
+	 * the OBJ_MMAP / OBJ_SYSV_SHM pool — the SysV shm half of that pool
+	 * is by construction inside range_in_tracked_shared() and routinely
+	 * trips range_overlaps_shared() in the blanket walk.  Letting the
+	 * blanket relocate a1 to an unrelated writable page drops the
+	 * value-match invariant: the kernel reads pool garbage at the new
+	 * VA, the comparison fails, the syscall returns -EAGAIN, and the
+	 * wait-queue path is never exercised.  The argtype[4] = ARG_ADDRESS
+	 * slot (timeout) has the same exposure: the sanitiser-supplied
+	 * timespec would be swapped for one whose tv_sec / tv_nsec are
+	 * random pool bytes, yielding -EINVAL or near-forever timeouts.
+	 */
+	.flags = NEED_ALARM | SKIP_BLANKET_SCRUB,
 	.group = GROUP_IPC,
 };
