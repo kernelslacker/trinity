@@ -14,6 +14,7 @@
 #include "arch.h"
 #include "deferred-free.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -71,13 +72,13 @@ static void sanitise_listmount(struct syscallrecord *rec)
 
 	req->size = MNT_ID_REQ_SIZE_VER0;
 
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0: req->mnt_id = LSMT_ROOT; break;	/* list all mounts */
 	case 1: req->mnt_id = 1; break;		/* root mount */
 	default: req->mnt_id = rand32(); break;		/* random mount id */
 	}
 
-	nr = 1 + (rand() % 64);
+	nr = 1 + (rnd_modulo_u32(64));
 	mnt_ids = (__u64 *) get_writable_address(nr * sizeof(*mnt_ids));
 	if (mnt_ids == NULL)
 		return;
