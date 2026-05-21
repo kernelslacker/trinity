@@ -3,6 +3,7 @@
 
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -60,7 +61,7 @@ static void sanitise_usbmon_get(struct syscallrecord *rec)
 	if (!g)
 		return;
 	g->hdr = get_writable_struct(MON_BIN_HDR_SIZE);
-	alloc = rand() % 4096;
+	alloc = rnd_modulo_u32(4096);
 	g->data = get_writable_struct(alloc + 1);
 	g->alloc = alloc;
 	rec->a3 = (unsigned long) g;
@@ -74,10 +75,10 @@ static void sanitise_usbmon_mfetch(struct syscallrecord *rec)
 	m = (struct mon_bin_mfetch *) get_writable_struct(sizeof(*m));
 	if (!m)
 		return;
-	nfetch = rand() % 32 + 1;
+	nfetch = rnd_modulo_u32(32) + 1;
 	m->offvec = (__u32 *) get_writable_struct(nfetch * sizeof(__u32));
 	m->nfetch = nfetch;
-	m->nflush = rand() % 32;
+	m->nflush = rnd_modulo_u32(32);
 	rec->a3 = (unsigned long) m;
 }
 
@@ -104,7 +105,7 @@ static void usbmon_sanitise(const struct ioctl_group *grp, struct syscallrecord 
 
 	case MON_IOCT_RING_SIZE:
 		/* direct integer argument, not a pointer */
-		rec->a3 = rand() % (1024 * 1024);
+		rec->a3 = rnd_modulo_u32((1024 * 1024));
 		break;
 
 	/* _IO ioctls: return value only, no pointer argument */
