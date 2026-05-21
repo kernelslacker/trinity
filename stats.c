@@ -2849,11 +2849,15 @@ void kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_truncated;
 	static unsigned long prev_bloom_skipped;
 	static unsigned long prev_unique;
+	static unsigned long prev_try_get_attempts;
+	static unsigned long prev_try_get_returned;
 	static struct timespec last_dump;
 	struct timespec now;
 	long elapsed;
 	unsigned long cur_records, cur_truncated, cur_bloom_skipped, cur_unique;
+	unsigned long cur_try_get_attempts, cur_try_get_returned;
 	unsigned long delta_records, delta_truncated, delta_bloom_skipped, delta_unique;
+	unsigned long delta_try_get_attempts, delta_try_get_returned;
 	unsigned int pc_kids, cmp_kids;
 	struct kcov_cmp_diag *d;
 	unsigned int open_c, init_trace_c, mmap_c, enable_c, disable_c, rt_enable_c;
@@ -2867,6 +2871,8 @@ void kcov_cmp_stats_periodic_dump(void)
 	cur_truncated     = __atomic_load_n(&kcov_shm->cmp_trace_truncated,     __ATOMIC_RELAXED);
 	cur_bloom_skipped = __atomic_load_n(&kcov_shm->cmp_hints_bloom_skipped, __ATOMIC_RELAXED);
 	cur_unique        = __atomic_load_n(&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);
+	cur_try_get_attempts = __atomic_load_n(&kcov_shm->cmp_hints_try_get_attempts, __ATOMIC_RELAXED);
+	cur_try_get_returned = __atomic_load_n(&kcov_shm->cmp_hints_try_get_returned, __ATOMIC_RELAXED);
 
 	/* First call: arm the window so any pre-existing counts carried
 	 * over from earlier in the run are not mis-attributed to the
@@ -2877,6 +2883,8 @@ void kcov_cmp_stats_periodic_dump(void)
 		prev_truncated     = cur_truncated;
 		prev_bloom_skipped = cur_bloom_skipped;
 		prev_unique        = cur_unique;
+		prev_try_get_attempts = cur_try_get_attempts;
+		prev_try_get_returned = cur_try_get_returned;
 		return;
 	}
 
@@ -2888,8 +2896,11 @@ void kcov_cmp_stats_periodic_dump(void)
 	delta_truncated     = cur_truncated     - prev_truncated;
 	delta_bloom_skipped = cur_bloom_skipped - prev_bloom_skipped;
 	delta_unique        = cur_unique        - prev_unique;
+	delta_try_get_attempts = cur_try_get_attempts - prev_try_get_attempts;
+	delta_try_get_returned = cur_try_get_returned - prev_try_get_returned;
 
-	if ((delta_records | delta_truncated | delta_bloom_skipped | delta_unique) != 0) {
+	if ((delta_records | delta_truncated | delta_bloom_skipped | delta_unique |
+	     delta_try_get_attempts | delta_try_get_returned) != 0) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
 
 		if (delta_records) {
@@ -2915,6 +2926,18 @@ void kcov_cmp_stats_periodic_dump(void)
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
 					"cmp_hints_unique_inserts", delta_unique,
 					rate_milli / 1000, rate_milli % 1000, cur_unique);
+		}
+		if (delta_try_get_attempts) {
+			unsigned long rate_milli = (delta_try_get_attempts * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_hints_try_get_attempts", delta_try_get_attempts,
+					rate_milli / 1000, rate_milli % 1000, cur_try_get_attempts);
+		}
+		if (delta_try_get_returned) {
+			unsigned long rate_milli = (delta_try_get_returned * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_hints_try_get_returned", delta_try_get_returned,
+					rate_milli / 1000, rate_milli % 1000, cur_try_get_returned);
 		}
 	}
 
@@ -2979,6 +3002,8 @@ void kcov_cmp_stats_periodic_dump(void)
 	prev_truncated     = cur_truncated;
 	prev_bloom_skipped = cur_bloom_skipped;
 	prev_unique        = cur_unique;
+	prev_try_get_attempts = cur_try_get_attempts;
+	prev_try_get_returned = cur_try_get_returned;
 	last_dump = now;
 }
 

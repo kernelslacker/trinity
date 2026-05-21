@@ -370,6 +370,10 @@ bool cmp_hints_try_get(unsigned int nr, unsigned long *out)
 	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return false;
 
+	if (kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_hints_try_get_attempts, 1UL,
+				   __ATOMIC_RELAXED);
+
 	pool = &cmp_hints_shm->pools[nr];
 
 	/*
@@ -395,6 +399,9 @@ bool cmp_hints_try_get(unsigned int nr, unsigned long *out)
 		return false;
 
 	*out = pool->entries[rnd_modulo_u32(count)].value;
+	if (kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_hints_try_get_returned, 1UL,
+				   __ATOMIC_RELAXED);
 	return true;
 }
 

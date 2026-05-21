@@ -266,6 +266,23 @@ struct kcov_shared {
 	 * short-circuits, and unique_inserts is what's left — the records that
 	 * survived bloom + pool dedup and changed pool state. */
 	unsigned long cmp_hints_unique_inserts;
+	/* cmp_hints_try_get() calls that passed the cmp_hints_shm / nr guard
+	 * and reached the pool-snapshot lookup.  Counts consumer demand for
+	 * hints, not setup-time queries: early-return on a NULL shm or an
+	 * out-of-range nr does NOT bump.  Pair with cmp_hints_try_get_returned
+	 * to read the hit rate of the pool from the generator side — a low
+	 * ratio means consumers are asking for hints in syscall slots whose
+	 * pools have not yet accumulated any. */
+	unsigned long cmp_hints_try_get_attempts;
+	/* cmp_hints_try_get() calls that returned true with a populated *out.
+	 * Subset of cmp_hints_try_get_attempts.  Distinct from
+	 * cmp_hints_unique_inserts (producer-side, counts what arrived in the
+	 * pool) — this is consumer-side, counts what left the pool toward an
+	 * argument generator.  Together with the new cmp_hints_injected
+	 * counter at the callsite layer, the chain
+	 * collected → unique_inserts → try_get_returned → injected makes the
+	 * end-to-end CMP-hint pipeline observable. */
+	unsigned long cmp_hints_try_get_returned;
 	/* See struct kcov_cmp_diag — child-context writes are routed here
 	 * because the child's stdout has already been dup2'd to /dev/null
 	 * by the time KCOV_TRACE_CMP setup runs. */
