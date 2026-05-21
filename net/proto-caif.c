@@ -6,6 +6,7 @@
 #include "net.h"
 #include "random.h"
 #include "compat.h"
+#include "rnd.h"
 
 #ifdef USE_CAIF
 #include <linux/caif/caif_socket.h>
@@ -19,27 +20,27 @@ static void caif_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	caif->family = PF_CAIF;
 
-	switch (rand() % CAIFPROTO_MAX) {
+	switch (rnd_modulo_u32(CAIFPROTO_MAX)) {
 	case CAIFPROTO_AT:
-		caif->u.at.type = rand();
+		caif->u.at.type = rnd_u32();
 		break;
 	case CAIFPROTO_UTIL:
 		for (i = 0; i < 16; i++)
-			caif->u.util.service[i] = rand();
+			caif->u.util.service[i] = rnd_u32();
 		break;
 	case CAIFPROTO_DATAGRAM:
 	case CAIFPROTO_DATAGRAM_LOOP:
-		caif->u.dgm.connection_id = rand();
-		caif->u.dgm.nsapi = rand();
+		caif->u.dgm.connection_id = rnd_u32();
+		caif->u.dgm.nsapi = rnd_u32();
 		break;
 	case CAIFPROTO_RFM:
-		caif->u.rfm.connection_id = rand();
+		caif->u.rfm.connection_id = rnd_u32();
 		for (i = 0; i < 16; i++)
-			caif->u.rfm.volume[i] = rand();
+			caif->u.rfm.volume[i] = rnd_u32();
 		break;
 	case CAIFPROTO_DEBUG:
-		caif->u.dbg.type = rand();
-		caif->u.dbg.service = rand();
+		caif->u.dbg.type = rnd_u32();
+		caif->u.dbg.service = rnd_u32();
 		break;
 	}
 	*addr = (struct sockaddr *) caif;
