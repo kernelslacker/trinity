@@ -23,6 +23,7 @@
 #include "uid.h"
 #include "utils.h"
 #include "compat.h"
+#include "rnd.h"
 
 #ifndef SOL_TCP
 #define SOL_TCP 6
@@ -96,9 +97,9 @@ static void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	ipv6->sin6_family = PF_INET6;
 
 	gen_random_ipv6_address(&ipv6->sin6_addr);
-	ipv6->sin6_port = htons(rand() % 65536);
-	ipv6->sin6_flowinfo = rand();
-	ipv6->sin6_scope_id = rand();
+	ipv6->sin6_port = htons(rnd_modulo_u32(65536));
+	ipv6->sin6_flowinfo = rnd_u32();
+	ipv6->sin6_scope_id = rnd_u32();
 
 	*addr = (struct sockaddr *) ipv6;
 	*addrlen = sizeof(struct sockaddr_in6);
@@ -192,7 +193,7 @@ static void __inet6_setsockopt(struct sockopt *so)
 
 	so->level = SOL_IPV6;
 
-	val = rand() % ARRAY_SIZE(inet6_opts);
+	val = rnd_modulo_u32(ARRAY_SIZE(inet6_opts));
 	so->optname = inet6_opts[val].name;
 	so->optlen = sockoptlen(inet6_opts[val].len);
 
@@ -202,18 +203,18 @@ static void __inet6_setsockopt(struct sockopt *so)
 	case IPV6_RTHDR:
 	case IPV6_DSTOPTS:
 		so->optlen = sizeof(struct ipv6_opt_hdr);
-		so->optlen += rand() % ((8 * 255) - so->optlen);
+		so->optlen += rnd_modulo_u32((8 * 255) - so->optlen);
 		so->optlen &= ~0x7;
 		break;
 	case IPV6_2292PKTOPTIONS:
 		if (RAND_BOOL())
 			so->optlen = 0;	// update
 		else
-			so->optlen = rand() % (64 * 1024);
+			so->optlen = rnd_modulo_u32(64 * 1024);
 		break;
 	case IPV6_IPSEC_POLICY:
 	case IPV6_XFRM_POLICY:
-		so->optlen = rand() % page_size;
+		so->optlen = rnd_modulo_u32(page_size);
 		break;
 	}
 }
@@ -224,14 +225,14 @@ static void inet6_ulp_setsockopt(struct sockopt *so)
 
 	so->level = SOL_TLS;
 
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0: so->optname = TLS_TX; break;
 	case 1: so->optname = TLS_RX; break;
 	case 2: so->optname = TLS_TX_ZEROCOPY_RO; break;
 	case 3: so->optname = TLS_RX_EXPECT_NO_PAD; break;
 	}
 
-	switch (rand() % 6) {
+	switch (rnd_modulo_u32(6)) {
 	case 0: {
 		struct tls12_crypto_info_aes_gcm_128 *ci = (struct tls12_crypto_info_aes_gcm_128 *) p;
 
@@ -295,7 +296,7 @@ static void inet6_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	 * Without this, IPv6 TCP sockets never get TCP_NODELAY, TCP_CONGESTION,
 	 * etc., and IPv6 UDP sockets never get UDP_SEGMENT, UDP_GRO, etc.
 	 */
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0:
 		__inet6_setsockopt(so);
 		break;
@@ -436,7 +437,7 @@ static void inet6_walk_tcp(int fd, unsigned int n)
 
 	if (step++ >= n)
 		return;
-	cc = inet6_tcp_cc_algos[rand() % ARRAY_SIZE(inet6_tcp_cc_algos)];
+	cc = inet6_tcp_cc_algos[rnd_modulo_u32(ARRAY_SIZE(inet6_tcp_cc_algos))];
 	(void) setsockopt(fd, IPPROTO_TCP, TCP_CONGESTION, cc, strlen(cc));
 
 	if (step++ >= n)
@@ -467,12 +468,12 @@ static void inet6_walk_udp(int fd, unsigned int n)
 
 	if (step++ >= n)
 		return;
-	tclass = rand() & 0xff;
+	tclass = rnd_u32() & 0xff;
 	(void) setsockopt(fd, SOL_IPV6, IPV6_TCLASS, &tclass, sizeof(tclass));
 
 	if (step++ >= n)
 		return;
-	hops = (rand() % 254) + 1;
+	hops = (rnd_modulo_u32(254)) + 1;
 	(void) setsockopt(fd, SOL_IPV6, IPV6_HOPLIMIT, &hops, sizeof(hops));
 
 	while (step < n) {
@@ -524,7 +525,7 @@ static void inet6_gen_cmsg(int fd, struct socket_triplet *triplet,
 
 		memset(&pkti, 0, sizeof(pkti));
 		inet_pton(AF_INET6, "::1", &pkti.ipi6_addr);
-		pkti.ipi6_ifindex = rand() % 8;
+		pkti.ipi6_ifindex = rnd_modulo_u32(8);
 		memcpy(CMSG_DATA(cmsg), &pkti, sizeof(pkti));
 	} else {
 		if (cmsgbuflen < CMSG_SPACE(sizeof(int)))
@@ -537,7 +538,7 @@ static void inet6_gen_cmsg(int fd, struct socket_triplet *triplet,
 		cmsg->cmsg_type = IPV6_HOPLIMIT;
 		cmsg->cmsg_len = CMSG_LEN(sizeof(int));
 
-		hops = (rand() % 254) + 1;
+		hops = (rnd_modulo_u32(254)) + 1;
 		memcpy(CMSG_DATA(cmsg), &hops, sizeof(hops));
 	}
 }
