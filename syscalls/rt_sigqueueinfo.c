@@ -5,6 +5,7 @@
 #include <string.h>
 #include "pids.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 static unsigned long safe_signals[] = {
@@ -22,7 +23,7 @@ static void sanitise_rt_sigqueueinfo(struct syscallrecord *rec)
 	if (RAND_BOOL())
 		rec->a2 = RAND_ARRAY(safe_signals);
 	else
-		rec->a2 = SIGRTMIN + (rand() % (SIGRTMAX - SIGRTMIN + 1));
+		rec->a2 = SIGRTMIN + (rnd_modulo_u32((SIGRTMAX - SIGRTMIN + 1)));
 
 	info = (siginfo_t *) get_writable_address(sizeof(*info));
 	if (info == NULL)
