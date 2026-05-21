@@ -545,7 +545,7 @@ struct iovec * alloc_iovec(unsigned int num)
 	struct iovec *iov;
 	unsigned int i;
 
-	iov = zmalloc(num * sizeof(struct iovec));	/* freed by generic_free_arg */
+	iov = zmalloc_tracked(num * sizeof(struct iovec));	/* freed by generic_free_arg */
 
 	for (i = 0; i < num; i++) {
 		struct map *map = get_map();
