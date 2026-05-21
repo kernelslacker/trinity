@@ -33,7 +33,7 @@ static struct pollfd *alloc_pollfds(struct syscallrecord *rec)
 	unsigned int i;
 	unsigned int num_fds = rand() % 10;
 
-	pollfd = zmalloc(num_fds * sizeof(struct pollfd));
+	pollfd = zmalloc_tracked(num_fds * sizeof(struct pollfd));
 
 	for (i = 0; i < num_fds; i++) {
 		int fd;
@@ -190,7 +190,7 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 	if (fds == NULL)
 		return;
 
-	ts = zmalloc(sizeof(struct timespec));
+	ts = zmalloc_tracked(sizeof(struct timespec));
 	rec->a3 = (unsigned long) ts;
 	ts->tv_sec = 1;
 	ts->tv_nsec = 0;
