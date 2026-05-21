@@ -11,6 +11,7 @@
 #include "socket-family-grammar.h"
 #include "utils.h"
 #include "compat.h"
+#include "rnd.h"
 
 #define SOL_RXRPC 272
 
@@ -31,19 +32,19 @@ static void rxrpc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	rxrpc = zmalloc_tracked(sizeof(struct sockaddr_rxrpc));
 	rxrpc->srx_family = AF_RXRPC;
-	rxrpc->srx_service = rand();
+	rxrpc->srx_service = rnd_u32();
 	rxrpc->transport_type = SOCK_DGRAM;
 
 	if (RAND_BOOL()) {
 		rxrpc->transport_len = sizeof(struct sockaddr_in);
 		rxrpc->transport.sin.sin_family = AF_INET;
 		rxrpc->transport.sin.sin_addr.s_addr = random_ipv4_address();
-		rxrpc->transport.sin.sin_port = htons(rand() % 65536);
+		rxrpc->transport.sin.sin_port = htons(rnd_modulo_u32(65536));
 	} else {
 		rxrpc->transport_len = sizeof(struct sockaddr_in6);
 		rxrpc->transport.sin6.sin6_family = AF_INET6;
 		rxrpc->transport.sin6.sin6_addr.s6_addr32[3] = htonl(1); /* ::1 */
-		rxrpc->transport.sin6.sin6_port = htons(rand() % 65536);
+		rxrpc->transport.sin6.sin6_port = htons(rnd_modulo_u32(65536));
 	}
 
 	*addr = (struct sockaddr *) rxrpc;
@@ -62,19 +63,19 @@ static void rxrpc_setsockopt(struct sockopt *so, __unused__ struct socket_triple
 	case RXRPC_MIN_SECURITY_LEVEL:
 		/* 0=plain, 1=auth, 2=encrypt */
 		optval32 = (unsigned int *) so->optval;
-		*optval32 = rand() % 3;
+		*optval32 = rnd_modulo_u32(3);
 		so->optlen = sizeof(unsigned int);
 		break;
 	case RXRPC_UPGRADEABLE_SERVICE:
 		/* two unsigned short values: service[0] -> service[1] */
 		optval_us = (unsigned short *) so->optval;
-		optval_us[0] = rand();
-		optval_us[1] = rand();
+		optval_us[0] = rnd_u32();
+		optval_us[1] = rnd_u32();
 		so->optlen = 2 * sizeof(unsigned short);
 		break;
 	default:
 		optval32 = (unsigned int *) so->optval;
-		*optval32 = rand();
+		*optval32 = rnd_u32();
 		so->optlen = sizeof(unsigned int);
 		break;
 	}
@@ -236,7 +237,7 @@ static void rxrpc_configure_pre_bind(int fd, __unused__ struct socket_triplet *t
 	int excl;
 	unsigned short upgrade[2];
 
-	level = rand() % 3;	/* PLAIN / AUTH / ENCRYPT */
+	level = rnd_modulo_u32(3);	/* PLAIN / AUTH / ENCRYPT */
 	(void) setsockopt(fd, SOL_RXRPC, RXRPC_MIN_SECURITY_LEVEL,
 			  &level, sizeof(level));
 
@@ -250,8 +251,8 @@ static void rxrpc_configure_pre_bind(int fd, __unused__ struct socket_triplet *t
 	 * this call is expected to fail validation — it still walks
 	 * the option dispatcher's bound/unbound check, which is the
 	 * coverage we want. */
-	upgrade[0] = (unsigned short) (rand() & 0xffff);
-	upgrade[1] = (unsigned short) (rand() & 0xffff);
+	upgrade[0] = (unsigned short) (rnd_u32() & 0xffff);
+	upgrade[1] = (unsigned short) (rnd_u32() & 0xffff);
 	(void) setsockopt(fd, SOL_RXRPC, RXRPC_UPGRADEABLE_SERVICE,
 			  upgrade, sizeof(upgrade));
 }
@@ -292,7 +293,7 @@ static void rxrpc_walk_setsockopts(int fd, __unused__ struct socket_triplet *tri
 	for (i = 0; i < n; i++) {
 		switch (i & 0x3) {
 		case 0:
-			level = rand() % 3;
+			level = rnd_modulo_u32(3);
 			(void) setsockopt(fd, SOL_RXRPC, RXRPC_MIN_SECURITY_LEVEL,
 					  &level, sizeof(level));
 			break;
@@ -310,7 +311,7 @@ static void rxrpc_walk_setsockopts(int fd, __unused__ struct socket_triplet *tri
 		case 3:
 			/* Undersized buffer to exercise the early
 			 * size-validation reject in the getsockopt path. */
-			slen = (socklen_t) (rand() % sizeof(int));
+			slen = (socklen_t) (rnd_modulo_u32(sizeof(int)));
 			(void) getsockopt(fd, SOL_RXRPC, RXRPC_SUPPORTED_CMSG,
 					  &supported, &slen);
 			break;
@@ -350,7 +351,7 @@ static size_t rxrpc_build_cmsg_burst(unsigned char *buf, size_t buflen,
 
 	/* Optional: RXRPC_TX_LENGTH (s64 — kernel reads __s64) */
 	if (RAND_BOOL()) {
-		long long tx_len = (long long) (rand() % 4096);
+		long long tx_len = (long long) (rnd_modulo_u32(4096));
 
 		need = CMSG_SPACE(sizeof(tx_len));
 		if (used + need > buflen)
@@ -385,12 +386,12 @@ static size_t rxrpc_build_cmsg_burst(unsigned char *buf, size_t buflen,
 	 * timeouts in order). */
 	if (RAND_BOOL()) {
 		unsigned int timeouts[3];
-		unsigned int nr = 1 + (rand() % 3);
+		unsigned int nr = 1 + (rnd_modulo_u32(3));
 		size_t payload = nr * sizeof(unsigned int);
 		unsigned int j;
 
 		for (j = 0; j < nr; j++)
-			timeouts[j] = (unsigned int) (rand() % 5000);
+			timeouts[j] = (unsigned int) (rnd_modulo_u32(5000));
 
 		need = CMSG_SPACE(payload);
 		if (used + need > buflen)
@@ -437,8 +438,8 @@ static void rxrpc_data_leg(int parent_fd, __unused__ int child_fd,
 	/* Synthesised peer: loopback transport, small non-zero service id,
 	 * randomised UDP port.  Delivery is not the point — the cmsg
 	 * parser runs before the packet leaves rxrpc_sendmsg_cmsg(). */
-	service = (unsigned short) (1 + (rand() % 1024));
-	port = (unsigned short) (1024 + (rand() % 60000));
+	service = (unsigned short) (1 + (rnd_modulo_u32(1024)));
+	port = (unsigned short) (1024 + (rnd_modulo_u32(60000)));
 	rxrpc_fill_addr(&peer, triplet->protocol, service, port);
 
 	generate_rand_bytes(payload, sizeof(payload));
