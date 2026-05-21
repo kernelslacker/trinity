@@ -7,6 +7,7 @@
 #include "compat.h"
 #include "net.h"
 #include "random.h"
+#include "rnd.h"
 
 static void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
@@ -17,14 +18,14 @@ static void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		nfc_llcp = zmalloc_tracked(sizeof(struct sockaddr_nfc_llcp));
 
 		nfc_llcp->sa_family = PF_NFC;
-		nfc_llcp->dev_idx = rand();
-		nfc_llcp->target_idx = rand();
-		nfc_llcp->nfc_protocol = rand() % 5;
-		nfc_llcp->dsap = rand();
-		nfc_llcp->ssap = rand();
-		nfc_llcp->service_name_len = rand() % NFC_LLCP_MAX_SERVICE_NAME;
+		nfc_llcp->dev_idx = rnd_u32();
+		nfc_llcp->target_idx = rnd_u32();
+		nfc_llcp->nfc_protocol = rnd_modulo_u32(5);
+		nfc_llcp->dsap = rnd_u32();
+		nfc_llcp->ssap = rnd_u32();
+		nfc_llcp->service_name_len = rnd_modulo_u32(NFC_LLCP_MAX_SERVICE_NAME);
 		for (i = 0; i < nfc_llcp->service_name_len; i++)
-			nfc_llcp->service_name[i] = 'a' + rand() % 26;
+			nfc_llcp->service_name[i] = 'a' + rnd_modulo_u32(26);
 		*addr = (struct sockaddr *) nfc_llcp;
 		*addrlen = sizeof(struct sockaddr_nfc_llcp);
 	} else {
@@ -33,9 +34,9 @@ static void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		nfc = zmalloc_tracked(sizeof(struct sockaddr_nfc));
 
 		nfc->sa_family = PF_NFC;
-		nfc->dev_idx = rand();
-		nfc->target_idx = rand();
-		nfc->nfc_protocol = rand() % 5;
+		nfc->dev_idx = rnd_u32();
+		nfc->target_idx = rnd_u32();
+		nfc->nfc_protocol = rnd_modulo_u32(5);
 		*addr = (struct sockaddr *) nfc;
 		*addrlen = sizeof(struct sockaddr_nfc);
 	}
@@ -54,7 +55,7 @@ static void nfc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	so->optname = RAND_ARRAY(nfc_opts);
 
 	optval32 = (unsigned int *) so->optval;
-	*optval32 = rand();
+	*optval32 = rnd_u32();
 	so->optlen = sizeof(unsigned int);
 }
 
