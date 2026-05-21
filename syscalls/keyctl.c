@@ -96,7 +96,7 @@ int32_t get_random_key_serial(void)
 {
 	struct object *obj;
 
-	if (objects_empty(OBJ_KEY_SERIAL) == true)
+	if (objects_pool_empty(OBJ_LOCAL, OBJ_KEY_SERIAL) == true)
 		return (int32_t) (1 + (rand() % 1000));
 
 	obj = get_random_object(OBJ_KEY_SERIAL, OBJ_LOCAL);
