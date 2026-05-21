@@ -12,6 +12,7 @@
 #include <time.h>
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -21,7 +22,7 @@ static void sanitise_io_pgetevents(struct syscallrecord *rec)
 	struct timespec *ts;
 	long nr;
 
-	nr = 1 + (rand() % 16);
+	nr = 1 + (rnd_modulo_u32(16));
 	events = (struct io_event *) get_writable_address(nr * sizeof(*events));
 	if (events == NULL)
 		return;
@@ -31,7 +32,7 @@ static void sanitise_io_pgetevents(struct syscallrecord *rec)
 	if (ts == NULL)
 		return;
 	ts->tv_sec = 0;
-	ts->tv_nsec = rand() % 1000000;	/* up to 1ms */
+	ts->tv_nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
 
 	rec->a2 = 1;		/* min_nr */
 	rec->a3 = nr;
