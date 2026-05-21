@@ -6,6 +6,7 @@
 
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -84,15 +85,15 @@ static void fill_mei_uuid(uuid_le *u)
 	unsigned int i;
 
 	/* 80% well-known, 20% fully random for -ENOTTY lookup-fail cover. */
-	if ((rand() % 5) != 0) {
+	if ((rnd_modulo_u32(5)) != 0) {
 		const struct mei_uuid_entry *e =
-			&mei_known_uuids[rand() % ARRAY_SIZE(mei_known_uuids)];
+			&mei_known_uuids[rnd_modulo_u32(ARRAY_SIZE(mei_known_uuids))];
 		memcpy(u->b, e->b, sizeof(u->b));
 		return;
 	}
 
 	for (i = 0; i < sizeof(u->b); i++)
-		u->b[i] = rand() & 0xff;
+		u->b[i] = rnd_u32() & 0xff;
 }
 
 static void sanitise_connect_client(struct syscallrecord *rec)
@@ -123,10 +124,10 @@ static void sanitise_connect_client_vtag(struct syscallrecord *rec)
 	/* vtag must be nonzero for valid tagged-channel connect; OR-with-1
 	 * stays in [1, 255] most of the time.  Occasionally let through a
 	 * zero vtag to exercise the -EINVAL branch. */
-	if ((rand() % 8) == 0)
+	if ((rnd_modulo_u32(8)) == 0)
 		d->connect.vtag = 0;
 	else
-		d->connect.vtag = (rand() & 0xff) | 1;
+		d->connect.vtag = (rnd_u32() & 0xff) | 1;
 
 	rec->a3 = (unsigned long) d;
 }
@@ -142,8 +143,8 @@ static void sanitise_notify_set(struct syscallrecord *rec)
 
 	/* Mostly 0/1 (the only values the dispatcher accepts), occasionally
 	 * a random u32 to hit the -EINVAL branch in the validator. */
-	if ((rand() % 8) == 0)
-		*v = (__u32) rand();
+	if ((rnd_modulo_u32(8)) == 0)
+		*v = rnd_u32();
 	else
 		*v = RAND_BOOL();
 
