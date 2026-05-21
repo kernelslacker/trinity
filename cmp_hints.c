@@ -42,6 +42,7 @@
 #include "syscall.h"
 #include "trinity.h"
 #include "utils.h"
+#include "pids.h"
 
 /* From uapi/linux/kcov.h.  KCOV_CMP_SIZE(n) packs the operand-width
  * index n in {0,1,2,3} into bits 1..2 of the type word; the actual
@@ -660,7 +661,7 @@ bool cmp_hints_save_file(const char *path)
 	hdr.payload_crc32 = cmp_hints_crc32(payload, payload_bytes);
 
 	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d",
-		       path, (int)getpid());
+		       path, (int)mypid());
 	if (ret < 0 || (size_t)ret >= sizeof(tmppath)) {
 		free(payload);
 		return false;
