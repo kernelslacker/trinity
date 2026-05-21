@@ -6,6 +6,7 @@
 #include <linux/mman.h>
 #include "arch.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 static void sanitise_cachestat(struct syscallrecord *rec)
@@ -17,7 +18,7 @@ static void sanitise_cachestat(struct syscallrecord *rec)
 	if (!range)
 		return;
 
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0: /* entire file */
 		range->off = 0;
 		range->len = 0;	/* 0 means "to end of file" */
@@ -27,12 +28,12 @@ static void sanitise_cachestat(struct syscallrecord *rec)
 		range->len = page_size;
 		break;
 	case 2: /* random offset, one page */
-		range->off = (unsigned long long) page_size * (rand() % 256);
+		range->off = (unsigned long long) page_size * (rnd_modulo_u32(256));
 		range->len = page_size;
 		break;
 	default: /* random range */
 		range->off = rand32();
-		range->len = 1 + (rand() % (page_size * 64));
+		range->len = 1 + (rnd_modulo_u32((page_size * 64)));
 		break;
 	}
 
