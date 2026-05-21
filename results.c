@@ -8,6 +8,7 @@
 #include "debug.h"
 #include "locks.h"
 #include "results.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
@@ -145,7 +146,7 @@ int pick_successful_fd(struct results *results)
 	int fd;
 
 	for (attempt = 0; attempt < PICK_FD_SAMPLE_ATTEMPTS; attempt++) {
-		unsigned int bidx = (unsigned int)rand() % SUCCESS_FD_SCOREBOARD_BYTES;
+		unsigned int bidx = rnd_modulo_u32(SUCCESS_FD_SCOREBOARD_BYTES);
 		unsigned int byte = results->success_fds[bidx];
 		unsigned int rot, rb;
 		int bit;
@@ -155,7 +156,7 @@ int pick_successful_fd(struct results *results)
 
 		/* Pick a uniformly-random set bit within the byte by rotating
 		 * by a random shift before taking ctz. */
-		rot = (unsigned int)rand() & 7;
+		rot = rnd_u32() & 7;
 		rb = ((byte >> rot) | (byte << (8 - rot))) & 0xff;
 		bit = __builtin_ctz(rb);
 		bit = (bit + (int)rot) & 7;
