@@ -59,7 +59,7 @@ static void show_child_backtrace(void)
 
 void show_backtrace(void)
 {
-	pid_t pid = getpid();
+	pid_t pid = mypid();
 
 	if (pid == mainpid) {
 		__show_backtrace();
@@ -75,7 +75,7 @@ void __attribute__((noreturn)) __BUG(const char *bugtxt, const char *filename, c
 
 	outputerr("BUG!: %s\n", bugtxt);
 	outputerr("BUG!: %s\n", VERSION);
-	outputerr("BUG!: [%d] %s:%s:%u\n", getpid(), filename, funcname, lineno);
+	outputerr("BUG!: [%d] %s:%s:%u\n", mypid(), filename, funcname, lineno);
 
 	show_backtrace();
 
@@ -124,7 +124,7 @@ void __attribute__((noreturn)) __BUG(const char *bugtxt, const char *filename, c
 	__atomic_store_n(&shm->spawn_no_more, true, __ATOMIC_RELEASE);
 
 	outputerr("BUG!: fleet halted — fuzzing stopped, attach gdb to pid %d (or any other live process) to inspect\n",
-		getpid());
+		mypid());
 
 	/* Now spin indefinitely (but allow ctrl-c).  set_dontkillme keeps
 	 * the parent's progress watchdog from SIGKILL'ing us, so the
