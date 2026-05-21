@@ -12,6 +12,7 @@
 #include "socket-family-grammar.h"
 #include "compat.h"
 #include "utils.h"
+#include "pids.h"
 
 #ifndef SO_PEEK_OFF
 #define SO_PEEK_OFF	42
@@ -158,7 +159,7 @@ static void unix_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len
 		switch (rand() % 4) {
 		case 0:
 			/* Real credentials */
-			cred.pid = getpid();
+			cred.pid = mypid();
 			cred.uid = getuid();
 			cred.gid = getgid();
 			break;
@@ -329,7 +330,7 @@ static void unix_grammar_gen_cmsg(int fd, struct socket_triplet *t,
 
 		switch (rand() % 4) {
 		case 0:
-			cred.pid = getpid();
+			cred.pid = mypid();
 			cred.uid = getuid();
 			cred.gid = getgid();
 			break;
