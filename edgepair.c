@@ -94,7 +94,12 @@ bool edgepair_is_cold(unsigned int prev_nr, unsigned int curr_nr)
 			if (e->new_edge_count == 0)
 				return false;
 
-			total = edgepair_published->total_pair_calls;
+			/* Acquire-load pairs with the release-store in
+			 * edgepair_publish_locked() so the subsequent
+			 * last_new_at read sees the matching slot update
+			 * for this publish window.  Plain MOV on x86-64. */
+			total = __atomic_load_n(&edgepair_published->total_pair_calls,
+						__ATOMIC_ACQUIRE);
 			last = e->last_new_at;
 			return (total - last) > EDGEPAIR_COLD_THRESHOLD;
 		}

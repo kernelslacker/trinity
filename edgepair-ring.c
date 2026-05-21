@@ -275,8 +275,6 @@ static void edgepair_publish_locked(void)
 	if (edgepair_published == NULL)
 		return;
 
-	edgepair_published->total_pair_calls = parent_edgepair.total_pair_calls;
-
 	if (edgepair_need_full_publish) {
 		for (i = 0; i < EDGEPAIR_TABLE_SIZE; i++) {
 			struct edgepair_published_slot *ps = &edgepair_published->slots[i];
@@ -303,6 +301,20 @@ static void edgepair_publish_locked(void)
 
 	memset(edgepair_dirty_bitmap, 0, sizeof(edgepair_dirty_bitmap));
 	edgepair_dirty_queue_head = 0;
+
+	/* Release-store the header AFTER all slot stores complete so a
+	 * child reading total_pair_calls with __ATOMIC_ACQUIRE in
+	 * edgepair_is_cold() is guaranteed to see the matching
+	 * last_new_at update too.  Without this ordering, a child could
+	 * observe the new total alongside an old last_new_at for a pair
+	 * that just produced a new edge, making (total - last)
+	 * artificially large and tripping the cold predicate against a
+	 * pair that just got productive.  On x86-64 this lowers to a
+	 * plain MOV -- stores already have release semantics; the
+	 * atomic only constrains the compiler. */
+	__atomic_store_n(&edgepair_published->total_pair_calls,
+			 parent_edgepair.total_pair_calls,
+			 __ATOMIC_RELEASE);
 
 	/* Mirror-integrity sample.  After the publish completes the
 	 * mirror's first slot and total_pair_calls header should match
