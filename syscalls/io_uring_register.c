@@ -9,6 +9,7 @@
 #include "deferred-free.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -299,15 +300,13 @@ static const unsigned long io_uring_register_opcodes_rare[] = {
 
 static unsigned long pick_io_uring_register_opcode(void)
 {
-	unsigned int r = rand() % 100;
+	unsigned int r = rnd_modulo_u32(100);
 	unsigned long base;
 
 	if (r < 40)
-		return io_uring_register_opcodes_common[rand() %
-			ARRAY_SIZE(io_uring_register_opcodes_common)];
+		return io_uring_register_opcodes_common[rnd_modulo_u32(ARRAY_SIZE(io_uring_register_opcodes_common))];
 	if (r < 90)
-		return io_uring_register_opcodes_rare[rand() %
-			ARRAY_SIZE(io_uring_register_opcodes_rare)];
+		return io_uring_register_opcodes_rare[rnd_modulo_u32(ARRAY_SIZE(io_uring_register_opcodes_rare))];
 
 	/*
 	 * 10%: re-roll a base opcode (50/50 common vs rare) and OR in the
@@ -317,12 +316,10 @@ static unsigned long pick_io_uring_register_opcode(void)
 	 * opcode list never reaches when the modifier is listed alone as
 	 * a pool value (it decodes there as opcode 0).
 	 */
-	if (rand() % 2)
-		base = io_uring_register_opcodes_common[rand() %
-			ARRAY_SIZE(io_uring_register_opcodes_common)];
+	if (rnd_modulo_u32(2))
+		base = io_uring_register_opcodes_common[rnd_modulo_u32(ARRAY_SIZE(io_uring_register_opcodes_common))];
 	else
-		base = io_uring_register_opcodes_rare[rand() %
-			ARRAY_SIZE(io_uring_register_opcodes_rare)];
+		base = io_uring_register_opcodes_rare[rnd_modulo_u32(ARRAY_SIZE(io_uring_register_opcodes_rare))];
 	return base | IORING_REGISTER_USE_REGISTERED_RING;
 }
 
@@ -399,14 +396,14 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 * pick_io_uring_register_opcode() returns rather than a new picker
 	 * entry so the override stays decoupled from the picker tables.
 	 */
-	if (ring != NULL && (rand() % 100) < 15) {
+	if (ring != NULL && (rnd_modulo_u32(100)) < 15) {
 		static const unsigned long blind_opcodes[] = {
 			IORING_REGISTER_SEND_MSG_RING,
 			IORING_REGISTER_RESTRICTIONS,
 			IORING_REGISTER_BPF_FILTER,
 		};
 		rec->a1 = (unsigned long) -1U;
-		rec->a2 = blind_opcodes[rand() % ARRAY_SIZE(blind_opcodes)];
+		rec->a2 = blind_opcodes[rnd_modulo_u32(ARRAY_SIZE(blind_opcodes))];
 	}
 
 	opcode = rec->a2;
@@ -429,7 +426,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 * Kernel iterates the array copying each iovec from userspace.
 	 */
 	case IORING_REGISTER_BUFFERS:
-		nr = 1 + (rand() % 8);
+		nr = 1 + (rnd_modulo_u32(8));
 		iov_alloc = alloc_iovec(nr);
 		rec->a3 = (unsigned long) iov_alloc;
 		rec->a4 = nr;
@@ -440,7 +437,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 * Use -1 as placeholder; kernel accepts sparse sets with -1 holes.
 	 */
 	case IORING_REGISTER_FILES:
-		nr = 1 + (rand() % 16);
+		nr = 1 + (rnd_modulo_u32(16));
 		buf = get_writable_struct(nr * sizeof(int));
 		if (buf)
 			memset(buf, 0xff, nr * sizeof(int));  /* fill with -1 */
@@ -460,11 +457,11 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	case IORING_REGISTER_EVENTFD_ASYNC: {
 		int *u = (int *) get_writable_struct(sizeof(int));
 		if (u) {
-			if ((rand() % 4) != 0) {
+			if ((rnd_modulo_u32(4)) != 0) {
 				int efd = get_typed_fd(ARG_FD_EVENTFD);
-				*u = (efd >= 0) ? efd : (int) rand();
+				*u = (efd >= 0) ? efd : (int) rnd_u32();
 			} else {
-				*u = (int) rand();
+				*u = (int) rnd_u32();
 			}
 		}
 		rec->a3 = (unsigned long) u;
@@ -510,10 +507,10 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		cpu_set_t *cs = (cpu_set_t *) get_writable_address(sizeof(cpu_set_t));
 		if (cs) {
 			unsigned int n = num_online_cpus ? num_online_cpus : 1;
-			unsigned int i, k = 1 + (rand() % 3);
+			unsigned int i, k = 1 + (rnd_modulo_u32(3));
 			CPU_ZERO(cs);
 			for (i = 0; i < k; i++)
-				CPU_SET(rand() % n, cs);
+				CPU_SET(rnd_modulo_u32(n), cs);
 		}
 		rec->a3 = (unsigned long) cs;
 		rec->a4 = sizeof(cpu_set_t);
@@ -534,12 +531,12 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 			get_writable_struct(sizeof(*r));
 		if (r) {
 			memset(r, 0, sizeof(*r));
-			if ((rand() % 32) == 0) {
+			if ((rnd_modulo_u32(32)) == 0) {
 				r->off = INT_MAX;
 				r->len = INT_MAX;
 			} else {
-				r->off = rand() % 16;
-				r->len = 1 + (rand() % 16);
+				r->off = rnd_modulo_u32(16);
+				r->len = 1 + (rnd_modulo_u32(16));
 			}
 		}
 		rec->a3 = (unsigned long) r;
@@ -569,13 +566,12 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 			get_writable_struct(sizeof(*cr));
 		if (cr) {
 			memset(cr, 0, sizeof(*cr));
-			if ((rand() % 4) == 0)
-				cr->clockid = rand();
+			if ((rnd_modulo_u32(4)) == 0)
+				cr->clockid = rnd_u32();
 			else
-				cr->clockid = valid_clockids[rand() %
-					ARRAY_SIZE(valid_clockids)];
-			if ((rand() % 16) == 0)
-				cr->__resv[rand() % 3] = rand();
+				cr->clockid = valid_clockids[rnd_modulo_u32(ARRAY_SIZE(valid_clockids))];
+			if ((rnd_modulo_u32(16)) == 0)
+				cr->__resv[rnd_modulo_u32(3)] = rnd_u32();
 		}
 		rec->a3 = (unsigned long) cr;
 		rec->a4 = 0;
@@ -604,16 +600,16 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	case IORING_UNREGISTER_RING_FDS: {
 		struct io_uring_rsrc_update *u;
 		unsigned int i;
-		nr = 1 + (rand() % 16);
+		nr = 1 + (rnd_modulo_u32(16));
 		u = (struct io_uring_rsrc_update *)
 			get_writable_struct(nr * sizeof(*u));
 		if (u) {
 			memset(u, 0, nr * sizeof(*u));
 			for (i = 0; i < nr; i++) {
-				unsigned int roll = rand() % 100;
-				u[i].offset = rand() & 0xf;
-				if ((rand() % 32) == 0)
-					u[i].resv = rand();
+				unsigned int roll = rnd_modulo_u32(100);
+				u[i].offset = rnd_u32() & 0xf;
+				if ((rnd_modulo_u32(32)) == 0)
+					u[i].resv = rnd_u32();
 				if (roll < 75) {
 					struct io_uringobj *r2 = get_io_uring_ring();
 					u[i].data = (r2 != NULL) ?
@@ -621,8 +617,8 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 				} else if (roll < 87) {
 					u[i].data = (__u64) -1;
 				} else {
-					u[i].data = ((__u64) rand() << 32) |
-						(__u32) rand();
+					u[i].data = ((__u64) rnd_u32() << 32) |
+						(__u32) rnd_u32();
 				}
 			}
 		}
@@ -647,8 +643,8 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 			get_writable_struct(sizeof(*r));
 		if (r) {
 			memset(r, 0, sizeof(*r));
-			r->ring_entries = 1U << (4 + (rand() % 4));  /* 16..128 */
-			r->bgid = rand() % 16;
+			r->ring_entries = 1U << (4 + (rnd_modulo_u32(4)));  /* 16..128 */
+			r->bgid = rnd_modulo_u32(16);
 		}
 		rec->a3 = (unsigned long) r;
 		rec->a4 = 1;
@@ -670,10 +666,10 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		if (s) {
 			unsigned int i;
 			memset(s, 0, sizeof(*s));
-			s->buf_group = rand() & 0xf;
+			s->buf_group = rnd_u32() & 0xf;
 			for (i = 0; i < 8; i++)
-				if ((rand() % 32) == 0)
-					s->resv[i] = rand();
+				if ((rnd_modulo_u32(32)) == 0)
+					s->resv[i] = rnd_u32();
 		}
 		rec->a3 = (unsigned long) s;
 		rec->a4 = 1;
@@ -694,10 +690,10 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 			get_writable_struct(sizeof(*n));
 		if (n) {
 			memset(n, 0, sizeof(*n));
-			n->busy_poll_to = rand() % 1000;
-			n->prefer_busy_poll = rand() & 1;
-			n->opcode = (rand() % 8 == 0) ? rand() & 0xff : 0;
-			n->op_param = rand();
+			n->busy_poll_to = rnd_modulo_u32(1000);
+			n->prefer_busy_poll = rnd_u32() & 1;
+			n->opcode = (rnd_modulo_u32(8) == 0) ? rnd_u32() & 0xff : 0;
+			n->op_param = rnd_u32();
 		}
 		rec->a3 = (unsigned long) n;
 		rec->a4 = 0;
@@ -718,9 +714,9 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 			get_writable_struct(sizeof(*z));
 		if (z) {
 			memset(z, 0, sizeof(*z));
-			z->rq_entries = 1U << (4 + (rand() % 4));
-			z->if_idx = 1 + (rand() % 4);
-			z->if_rxq = rand() % 4;
+			z->rq_entries = 1U << (4 + (rnd_modulo_u32(4)));
+			z->if_idx = 1 + (rnd_modulo_u32(4));
+			z->if_rxq = rnd_modulo_u32(4);
 		}
 		rec->a3 = (unsigned long) z;
 		rec->a4 = 1;
@@ -743,7 +739,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 			get_writable_struct(sizeof(*p));
 		if (p) {
 			memset(p, 0, sizeof(*p));
-			p->sq_entries = 1U << (3 + (rand() % 5));   /* 8..128 */
+			p->sq_entries = 1U << (3 + (rnd_modulo_u32(5)));   /* 8..128 */
 			p->cq_entries = p->sq_entries * 2;
 		}
 		rec->a3 = (unsigned long) p;
@@ -788,7 +784,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		if (c) {
 			memset(c, 0, sizeof(*c));
 			c->src_fd = (ring != NULL) ? (__u32) ring->fd : (__u32) -1;
-			c->nr = 1 + (rand() % 16);
+			c->nr = 1 + (rnd_modulo_u32(16));
 		}
 		rec->a3 = (unsigned long) c;
 		rec->a4 = 1;
@@ -808,9 +804,9 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		if (s) {
 			memset(s, 0, sizeof(*s));
 			s->fd = -1;
-			if ((rand() % 8) == 0) {
-				s->opcode = rand() & 0xff;
-				s->flags = rand();
+			if ((rnd_modulo_u32(8)) == 0) {
+				s->opcode = rnd_u32() & 0xff;
+				s->flags = rnd_u32();
 			}
 		}
 		rec->a3 = (unsigned long) s;
@@ -852,7 +848,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 */
 	case IORING_REGISTER_RESTRICTIONS: {
 		struct trinity_io_uring_task_restriction *tr;
-		unsigned int nr_res = rand() % 4;
+		unsigned int nr_res = rnd_modulo_u32(4);
 		size_t sz = sizeof(*tr) +
 			nr_res * sizeof(struct trinity_io_uring_restriction);
 		tr = (struct trinity_io_uring_task_restriction *)
@@ -884,8 +880,8 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		if (bp) {
 			memset(bp, 0, sizeof(*bp));
 			bp->cmd_type = TRINITY_IO_URING_BPF_CMD_FILTER;
-			bp->filter.opcode = rand() % IORING_OP_LAST;
-			bp->filter.filter_len = rand() % 8;
+			bp->filter.opcode = rnd_modulo_u32(IORING_OP_LAST);
+			bp->filter.filter_len = rnd_modulo_u32(8);
 		}
 		rec->a3 = (unsigned long) bp;
 		rec->a4 = 1;
