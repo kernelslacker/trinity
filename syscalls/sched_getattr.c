@@ -12,6 +12,7 @@
 #include "arch.h"
 #include "deferred-free.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "struct_catalog.h"
@@ -90,7 +91,7 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 	pre_a2 = rec->a2;
 #endif
 
-	rec->a3 = (rand() % range) + SCHED_ATTR_SIZE_VER0;
+	rec->a3 = (rnd_modulo_u32(range)) + SCHED_ATTR_SIZE_VER0;
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
 
 #ifdef HAVE_SYS_SCHED_GETATTR
