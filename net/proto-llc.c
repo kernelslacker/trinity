@@ -23,7 +23,7 @@ static void llc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	struct sockaddr_llc *llc;
 	unsigned int i;
 
-	llc = zmalloc(sizeof(struct sockaddr_llc));
+	llc = zmalloc_tracked(sizeof(struct sockaddr_llc));
 
 	llc->sllc_family = AF_LLC;
 	llc->sllc_arphrd = ARPHRD_ETHER;
@@ -82,7 +82,7 @@ static void netbeui_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	struct sockaddr_llc *llc;
 	unsigned int i;
 
-	llc = zmalloc(sizeof(struct sockaddr_llc));
+	llc = zmalloc_tracked(sizeof(struct sockaddr_llc));
 
 	llc->sllc_family = PF_NETBEUI;
 	llc->sllc_arphrd = ARPHRD_ETHER;
