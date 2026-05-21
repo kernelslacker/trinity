@@ -1874,8 +1874,28 @@ static const struct {
 	  offsetof(struct stats_s, sibling_mprotect_failed) },
 	{ "sibling_refreeze_count",
 	  offsetof(struct stats_s, sibling_refreeze_count) },
-	{ "divergence_sentinel_anomalies",
-	  offsetof(struct stats_s, divergence_sentinel_anomalies) },
+	/* divergence-sentinel anomaly counter, sharded by enum
+	 * sentinel_field.  One row per active field id so the periodic
+	 * rate dump shows which monitored field is drifting rather than
+	 * a lumped headline number.  Gaps in the enum (5..9) are simply
+	 * not listed here — their array slots stay zero.
+	 */
+	{ "divergence_sentinel_anomalies_sysname",
+	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_UNAME_SYSNAME]) },
+	{ "divergence_sentinel_anomalies_release",
+	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_UNAME_RELEASE]) },
+	{ "divergence_sentinel_anomalies_version",
+	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_UNAME_VERSION]) },
+	{ "divergence_sentinel_anomalies_machine",
+	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_UNAME_MACHINE]) },
+	{ "divergence_sentinel_anomalies_totalram",
+	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_SYSINFO_TOTALRAM]) },
+	{ "divergence_sentinel_anomalies_totalswap",
+	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_SYSINFO_TOTALSWAP]) },
+	{ "divergence_sentinel_anomalies_totalhigh",
+	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_SYSINFO_TOTALHIGH]) },
+	{ "divergence_sentinel_anomalies_mem_unit",
+	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_SYSINFO_MEM_UNIT]) },
 	{ "iouring_enter_mask_corrupt",
 	  offsetof(struct stats_s, iouring_enter_mask_corrupt) },
 	{ "fd_event_ring_corrupted",
@@ -3425,8 +3445,38 @@ void dump_stats(void)
 		stat_row("corruption", "retfd_blanket_reject",   shm->stats.retfd_blanket_reject);
 	if (shm->stats.sibling_mprotect_failed)
 		stat_row("corruption", "sibling_mprotect_failed", shm->stats.sibling_mprotect_failed);
-	if (shm->stats.divergence_sentinel_anomalies)
-		stat_row("corruption", "divergence_sentinel_anomalies", shm->stats.divergence_sentinel_anomalies);
+	{
+		/* Per-field divergence-sentinel rows: one stat_row per
+		 * non-zero field shard so the operator sees which
+		 * monitored field actually drifted rather than a lumped
+		 * headline number.  Names match the defense_counters[]
+		 * registration above so periodic and end-of-run views
+		 * align. */
+		static const struct {
+			enum sentinel_field field;
+			const char *name;
+		} divergence_sentinel_rows[] = {
+			{ SF_UNAME_SYSNAME,	"divergence_sentinel_anomalies_sysname"   },
+			{ SF_UNAME_RELEASE,	"divergence_sentinel_anomalies_release"   },
+			{ SF_UNAME_VERSION,	"divergence_sentinel_anomalies_version"   },
+			{ SF_UNAME_MACHINE,	"divergence_sentinel_anomalies_machine"   },
+			{ SF_SYSINFO_TOTALRAM,	"divergence_sentinel_anomalies_totalram"  },
+			{ SF_SYSINFO_TOTALSWAP,	"divergence_sentinel_anomalies_totalswap" },
+			{ SF_SYSINFO_TOTALHIGH,	"divergence_sentinel_anomalies_totalhigh" },
+			{ SF_SYSINFO_MEM_UNIT,	"divergence_sentinel_anomalies_mem_unit"  },
+		};
+		unsigned int s;
+
+		for (s = 0; s < ARRAY_SIZE(divergence_sentinel_rows); s++) {
+			enum sentinel_field f = divergence_sentinel_rows[s].field;
+			unsigned long v = shm->stats.divergence_sentinel_anomalies[f];
+
+			if (v == 0)
+				continue;
+			stat_row("corruption",
+				 divergence_sentinel_rows[s].name, v);
+		}
+	}
 	if (shm->stats.destroy_object_idx_corrupt)
 		stat_row("corruption", "destroy_object_idx",     shm->stats.destroy_object_idx_corrupt);
 	if (shm->stats.global_obj_uaf_caught)

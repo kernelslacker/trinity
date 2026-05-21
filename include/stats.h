@@ -67,6 +67,34 @@ enum syscall_category {
 	NR_SYSCAT,
 };
 
+/*
+ * Divergence-sentinel per-field identifiers.  Lives in stats.h (rather
+ * than private to child-sentinel.c) so the per-field anomaly array in
+ * struct stats_s can be sized and indexed by SF__MAX, and so stats.c
+ * can name individual shards via offsetof for periodic / end-of-run
+ * reporting.
+ *
+ * Grouped by source syscall so a post-mortem reader can decode
+ * "which syscall, which field" from the single id without a side
+ * table.  The gaps in the numbering (5..9 and 14..) are intentional --
+ * the post-mortem decoder reads these as raw numeric ids, so leaving
+ * the original group bases in place keeps old sentinel entries in
+ * already-collected logs unambiguous.
+ */
+enum sentinel_field {
+	SF_UNAME_SYSNAME	= 0,
+	SF_UNAME_RELEASE	= 2,
+	SF_UNAME_VERSION	= 3,
+	SF_UNAME_MACHINE	= 4,
+
+	SF_SYSINFO_TOTALRAM	= 10,
+	SF_SYSINFO_TOTALSWAP	= 11,
+	SF_SYSINFO_TOTALHIGH	= 12,
+	SF_SYSINFO_MEM_UNIT	= 13,
+
+	SF__MAX			= 14,	/* array size for shards; keep > max above */
+};
+
 /* Various statistics.
  *
  * Fields are grouped by access pattern with cacheline padding between
@@ -345,8 +373,16 @@ struct stats_s {
 	 * the kernel-managed copy surfaces the same way from the other side.
 	 * Bumped per diverging field, so a single sample with multi-field
 	 * corruption contributes more than one to the count -- intentional,
-	 * to amplify multi-field clobbers above noise from singleton drifts. */
-	unsigned long divergence_sentinel_anomalies;
+	 * to amplify multi-field clobbers above noise from singleton drifts.
+	 *
+	 * Sharded by enum sentinel_field so an operator can see which
+	 * monitored field actually drifted.  pre_crash_ring is only 64 slots
+	 * wide (overwrite-on-full) and gives the last few ids at crash time;
+	 * the per-field counters give the live histogram.  Gaps in the enum
+	 * (5..9) are present in the array as always-zero slots — kept that
+	 * way so the index matches the on-the-wire field id in collected
+	 * logs. */
+	unsigned long divergence_sentinel_anomalies[SF__MAX];
 
 	/* Childop taint-watcher: count of times a /proc/sys/kernel/tainted
 	 * bit transition was observed across a non-syscall childop dispatch,

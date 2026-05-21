@@ -56,25 +56,14 @@
 #endif
 
 /*
- * Per-field identifiers, packed into the synthetic syscallrecord we
- * push into pre_crash_ring on a hit.  Grouped by source syscall so a
- * post-mortem reader can decode "which syscall, which field" from the
- * single id without a side table.  The gaps in the numbering (5..9 and
- * 14..) are intentional -- the post-mortem decoder reads these as raw
- * numeric ids, so leaving the original group bases in place keeps old
- * sentinel entries in already-collected logs unambiguous.
+ * enum sentinel_field is declared in include/stats.h alongside the
+ * per-field anomaly array in struct stats_s.  Pin SF__MAX to the
+ * highest field id so a future field added to the enum without
+ * bumping SF__MAX trips the build instead of silently writing past
+ * the counter array.
  */
-enum sentinel_field {
-	SF_UNAME_SYSNAME	= 0,
-	SF_UNAME_RELEASE	= 2,
-	SF_UNAME_VERSION	= 3,
-	SF_UNAME_MACHINE	= 4,
-
-	SF_SYSINFO_TOTALRAM	= 10,
-	SF_SYSINFO_TOTALSWAP	= 11,
-	SF_SYSINFO_TOTALHIGH	= 12,
-	SF_SYSINFO_MEM_UNIT	= 13,
-};
+_Static_assert((int)SF_SYSINFO_MEM_UNIT < (int)SF__MAX,
+	       "SF__MAX must exceed the highest sentinel_field id");
 
 /*
  * Magic value stuffed into rec.a6 of the synthetic pre_crash_ring entry
@@ -174,8 +163,13 @@ static void sentinel_report(struct childdata *child,
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	pre_crash_ring_record(child, &rec, &now);
 
-	__atomic_add_fetch(&shm->stats.divergence_sentinel_anomalies, 1,
-			   __ATOMIC_RELAXED);
+	/* Per-field shard.  The bounds-guard pairs with the _Static_assert
+	 * above; a corrupt `field` value (out-of-range) is dropped from the
+	 * histogram rather than scribbling past the array. */
+	if ((unsigned int) field < (unsigned int) SF__MAX) {
+		__atomic_add_fetch(&shm->stats.divergence_sentinel_anomalies[field],
+				   1, __ATOMIC_RELAXED);
+	}
 }
 
 static void compare_uname_field(struct childdata *child,
