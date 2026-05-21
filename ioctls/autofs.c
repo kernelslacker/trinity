@@ -4,6 +4,7 @@
 #include "ioctls.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
@@ -300,21 +301,21 @@ static void autofs_sanitise(const struct ioctl_group *grp, struct syscallrecord 
 			break;
 		init_autofs_dev_ioctl(arg);
 		arg->ioctlfd = get_random_fd();
-		arg->fail.token = rand();
-		arg->fail.status = rand();
+		arg->fail.token = rnd_u32();
+		arg->fail.status = rnd_u32();
 		if (RAND_BOOL()) {
 			arg->size += 5;
 			arg->path[0] = '/';
-			arg->path[1] = rand();
-			arg->path[2] = rand();
-			arg->path[3] = rand();
+			arg->path[1] = rnd_u32();
+			arg->path[2] = rnd_u32();
+			arg->path[3] = rnd_u32();
 			arg->path[4] = 0;
 		} else {
 			int i;
 
-			arg->size += rand() % 256;
+			arg->size += rnd_modulo_u32(256);
 			for (i=0; i < 10; ++i)
-				arg->path[i] = rand();
+				arg->path[i] = rnd_u32();
 		}
 		break;
 	default:
