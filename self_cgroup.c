@@ -346,7 +346,7 @@ static bool setup_split(const char *container_path,
 	/* Move trinity-main into parent/.  If this fails the split is moot:
 	 * trinity-main would be left in container/ alongside the empty
 	 * subgroups, which violates v2's "no internal processes" rule. */
-	n = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)getpid());
+	n = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)mypid());
 	if (n < 0 || (size_t)n >= sizeof(pidbuf) ||
 	    !write_cg_file(parent_path, "cgroup.procs", pidbuf)) {
 		outputerr("self-cgroup: parent/cgroup.procs write failed: %s\n",
@@ -412,7 +412,7 @@ static bool setup_single(const char *container_path,
 		output(1, "self-cgroup: write memory.swap.max=%s failed: %s\n",
 		       swap_str, strerror(errno));
 
-	n = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)getpid());
+	n = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)mypid());
 	if (n < 0 || (size_t)n >= sizeof(pidbuf) ||
 	    !write_cg_file(container_path, "cgroup.procs", pidbuf)) {
 		outputerr("self-cgroup: cgroup.procs write failed: %s\n",
@@ -489,7 +489,7 @@ void self_cgroup_setup(void)
 	(void)swap_bytes;
 
 	if (asprintf(&cg_container, "/sys/fs/cgroup%s/trinity-%d",
-		     parent_cg, (int)getpid()) < 0) {
+		     parent_cg, (int)mypid()) < 0) {
 		cg_container = NULL;
 		outputerr("self-cgroup: asprintf failed; "
 			  "running without memory cap\n");
@@ -558,7 +558,7 @@ void self_cgroup_cleanup(void)
 	 */
 	if (cg_original != NULL) {
 		char buf[32];
-		int n = snprintf(buf, sizeof(buf), "%d\n", (int)getpid());
+		int n = snprintf(buf, sizeof(buf), "%d\n", (int)mypid());
 
 		if (n > 0 && (size_t)n < sizeof(buf))
 			(void)write_cg_file(cg_original, "cgroup.procs", buf);
