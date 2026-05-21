@@ -549,7 +549,7 @@ static void munge_process(void)
 	fd = open(cgpath, O_WRONLY);
 	if (fd >= 0) {
 		char pidbuf[16];
-		int len = snprintf(pidbuf, sizeof(pidbuf), "%d", getpid());
+		int len = snprintf(pidbuf, sizeof(pidbuf), "%d", mypid());
 		ssize_t ret __attribute__((unused));
 		ret = write(fd, pidbuf, (size_t) len);
 		close(fd);
@@ -885,7 +885,7 @@ static void check_parent_pid(void)
 	if (ppid == mainpid)
 		return;
 
-	pid = getpid();
+	pid = mypid();
 
 	/*
 	 * Inside a PID namespace our parent may legitimately be pid 1
@@ -2015,7 +2015,7 @@ void child_process(struct childdata *child, int childno)
 			if (check_stall(child))
 				goto out;
 			if (child->kill_count > 0) {
-				output(1, "[%d] Missed a kill signal, exiting\n", getpid());
+				output(1, "[%d] Missed a kill signal, exiting\n", mypid());
 				goto out;
 			}
 		}
@@ -2242,5 +2242,5 @@ out:
 		child->tainted_fd = -1;
 	}
 
-	debugf("child %d %d exiting.\n", childno, getpid());
+	debugf("child %d %d exiting.\n", childno, mypid());
 }
