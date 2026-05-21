@@ -27,7 +27,7 @@ static void bluetooth_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		/* HCI — raw access to Bluetooth controller */
 		struct sockaddr_hci *hci;
 
-		hci = zmalloc(sizeof(struct sockaddr_hci));
+		hci = zmalloc_tracked(sizeof(struct sockaddr_hci));
 		hci->hci_family = PF_BLUETOOTH;
 		hci->hci_dev = rand() % 4;
 		hci->hci_channel = rand() % 5;	/* RAW..LOGGING */
@@ -40,7 +40,7 @@ static void bluetooth_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		/* L2CAP — logical link control */
 		struct sockaddr_l2 *l2;
 
-		l2 = zmalloc(sizeof(struct sockaddr_l2));
+		l2 = zmalloc_tracked(sizeof(struct sockaddr_l2));
 		l2->l2_family = PF_BLUETOOTH;
 		l2->l2_psm = rand() % 2 ? 1 : rand();	/* 1=SDP */
 		generate_rand_bytes(l2->l2_bdaddr.b, 6);
@@ -55,7 +55,7 @@ static void bluetooth_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		/* RFCOMM — serial port emulation */
 		struct sockaddr_rc *rc;
 
-		rc = zmalloc(sizeof(struct sockaddr_rc));
+		rc = zmalloc_tracked(sizeof(struct sockaddr_rc));
 		rc->rc_family = PF_BLUETOOTH;
 		generate_rand_bytes(rc->rc_bdaddr.b, 6);
 		rc->rc_channel = rand() % 31 + 1;	/* 1-30 valid */
@@ -68,7 +68,7 @@ static void bluetooth_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		/* SCO — synchronous connection oriented (voice) */
 		struct sockaddr_sco *sco;
 
-		sco = zmalloc(sizeof(struct sockaddr_sco));
+		sco = zmalloc_tracked(sizeof(struct sockaddr_sco));
 		sco->sco_family = PF_BLUETOOTH;
 		generate_rand_bytes(sco->sco_bdaddr.b, 6);
 		*addr = (struct sockaddr *) sco;
@@ -80,7 +80,7 @@ static void bluetooth_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		/* ISO — LE Audio (unicast, no broadcast extension) */
 		struct sockaddr_iso *iso;
 
-		iso = zmalloc(sizeof(struct sockaddr_iso));
+		iso = zmalloc_tracked(sizeof(struct sockaddr_iso));
 		iso->iso_family = AF_BLUETOOTH;
 		generate_rand_bytes(iso->iso_bdaddr.b, 6);
 		iso->iso_bdaddr_type = rand() % 3;
