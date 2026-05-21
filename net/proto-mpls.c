@@ -13,6 +13,7 @@
 #include "socket-family-grammar.h"
 #include "trinity.h"
 #include "compat.h"
+#include "rnd.h"
 
 #ifndef ETH_P_MPLS_UC
 #define ETH_P_MPLS_UC 0x8847
@@ -34,7 +35,7 @@ static void mpls_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	sa = zmalloc_tracked(sizeof(struct sockaddr_mpls));
 	sa->smpls_family = AF_MPLS;
 	/* keep label in valid range 0..0xFFFFF, set BoS bit, TTL=64 */
-	sa->smpls_addr = htonl(((rand() & 0xFFFFF) << 12) | 0x100 | 64);
+	sa->smpls_addr = htonl(((rnd_u32() & 0xFFFFF) << 12) | 0x100 | 64);
 
 	*addr = (struct sockaddr *)sa;
 	*addrlen = sizeof(struct sockaddr_mpls);
@@ -153,10 +154,10 @@ static void mpls_pick_triplet(struct socket_triplet *out)
  */
 static void mpls_configure_pre_bind(int fd, __unused__ struct socket_triplet *triplet)
 {
-	int rcvbuf = 1024 + (rand() & 0xffff);
-	int sndbuf = 1024 + (rand() & 0xffff);
+	int rcvbuf = 1024 + (rnd_u32() & 0xffff);
+	int sndbuf = 1024 + (rnd_u32() & 0xffff);
 	int reuse = RAND_BOOL();
-	int priority = rand() & 0x7;
+	int priority = rnd_u32() & 0x7;
 
 	(void) setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
 	(void) setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
@@ -186,17 +187,17 @@ static void mpls_walk_setsockopts(int fd, __unused__ struct socket_triplet *trip
 		switch (opt) {
 		case SO_RCVBUF:
 		case SO_SNDBUF:
-			v = 1024 + (rand() & 0xffff);
+			v = 1024 + (rnd_u32() & 0xffff);
 			break;
 		case SO_REUSEADDR:
 		case SO_TIMESTAMP:
 			v = i & 1;
 			break;
 		case SO_PRIORITY:
-			v = rand() & 0x7;
+			v = rnd_u32() & 0x7;
 			break;
 		case SO_RCVLOWAT:
-			v = 1 + (rand() & 0xff);
+			v = 1 + (rnd_u32() & 0xff);
 			break;
 		default:
 			v = 1;
@@ -215,7 +216,7 @@ static int mpls_bind_or_connect(int fd, __unused__ struct socket_triplet *triple
 	/* Valid 20-bit label, BoS bit set, TTL=64 — same shape as
 	 * mpls_gen_sockaddr above so the kernel-side address parser (if
 	 * one ever exists) sees a well-formed label stack entry. */
-	sa.smpls_addr = htonl(((rand() & 0xFFFFF) << 12) | 0x100 | 64);
+	sa.smpls_addr = htonl(((rnd_u32() & 0xFFFFF) << 12) | 0x100 | 64);
 
 	if (bind(fd, (struct sockaddr *) &sa, sizeof(sa)) < 0)
 		return -1;
@@ -236,14 +237,14 @@ static bool mpls_needs_listen_accept(__unused__ struct socket_triplet *triplet)
  */
 static size_t mpls_build_label_stack(uint32_t *stack, size_t max_entries)
 {
-	size_t n = 1 + (rand() % max_entries);
+	size_t n = 1 + (rnd_modulo_u32(max_entries));
 	size_t i;
 
 	for (i = 0; i < n; i++) {
-		uint32_t label = rand() & 0xFFFFF;
-		uint32_t tc = rand() & 0x7;
+		uint32_t label = rnd_u32() & 0xFFFFF;
+		uint32_t tc = rnd_u32() & 0x7;
 		uint32_t bos = (i == n - 1) ? 1 : 0;
-		uint32_t ttl = 1 + (rand() & 0xff);
+		uint32_t ttl = 1 + (rnd_u32() & 0xff);
 
 		stack[i] = htonl((label << 12) | (tc << 9) | (bos << 8) | ttl);
 	}
@@ -262,7 +263,7 @@ static void mpls_data_leg(int parent_fd, __unused__ int child_fd,
 
 	memset(&peer, 0, sizeof(peer));
 	peer.smpls_family = AF_MPLS;
-	peer.smpls_addr = htonl(((rand() & 0xFFFFF) << 12) | 0x100 | 64);
+	peer.smpls_addr = htonl(((rnd_u32() & 0xFFFFF) << 12) | 0x100 | 64);
 
 	payload_len = mpls_build_label_stack(label_stack, ARRAY_SIZE(label_stack));
 	iov.iov_base = label_stack;
