@@ -4,6 +4,7 @@
 #include <linux/types.h>
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
@@ -95,7 +96,7 @@ static void sanitise_io_uring_setup(struct syscallrecord *rec)
 	if (params->flags & IORING_SETUP_CQSIZE)
 		params->cq_entries = RAND_RANGE(1, 4096);
 	if (params->flags & IORING_SETUP_SQ_AFF)
-		params->sq_thread_cpu = rand() % 64;
+		params->sq_thread_cpu = rnd_modulo_u32(64);
 	if (params->flags & IORING_SETUP_SQPOLL)
 		params->sq_thread_idle = RAND_RANGE(100, 10000);
 
