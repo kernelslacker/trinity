@@ -31,7 +31,7 @@ static void mpls_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_mpls *sa;
 
-	sa = zmalloc(sizeof(struct sockaddr_mpls));
+	sa = zmalloc_tracked(sizeof(struct sockaddr_mpls));
 	sa->smpls_family = AF_MPLS;
 	/* keep label in valid range 0..0xFFFFF, set BoS bit, TTL=64 */
 	sa->smpls_addr = htonl(((rand() & 0xFFFFF) << 12) | 0x100 | 64);
