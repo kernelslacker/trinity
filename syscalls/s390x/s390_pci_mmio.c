@@ -33,6 +33,14 @@ static void sanitise_s390_pci_mmio(struct syscallrecord *rec)
 	rec->post_state = rec->a2;
 }
 
+/* Read variant: kernel writes MMIO bytes into the buffer. */
+static void sanitise_s390_pci_mmio_read(struct syscallrecord *rec)
+{
+	sanitise_s390_pci_mmio(rec);
+	if (rec->a2)
+		avoid_shared_buffer_out(&rec->a2, rec->a3);
+}
+
 /* Allocate buffer and generate random data. */
 static void sanitise_s390_pci_mmio_write(struct syscallrecord *rec)
 {
@@ -61,7 +69,7 @@ static void post_s390_pci_mmio(struct syscallrecord *rec)
 
 struct syscallentry syscall_s390_pci_mmio_read = {
 	.name = "s390_pci_mmio_read",
-	.sanitise = sanitise_s390_pci_mmio,
+	.sanitise = sanitise_s390_pci_mmio_read,
 	.post = post_s390_pci_mmio,
 	.num_args = 3,
 	.argtype = { [0] = ARG_UNDEFINED, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_RANGE },
