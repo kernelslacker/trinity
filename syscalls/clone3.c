@@ -10,6 +10,7 @@
 #include "fd.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "utils.h"
@@ -120,7 +121,7 @@ static void sanitise_clone3(struct syscallrecord *rec)
 		}
 	}
 
-	args->exit_signal = rand() % _NSIG;
+	args->exit_signal = rnd_modulo_u32(_NSIG);
 
 	/*
 	 * clone3_args_valid() rejects a non-zero exit_signal when
