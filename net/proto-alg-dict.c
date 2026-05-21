@@ -6,6 +6,7 @@
 #include "proto-alg-dict.h"
 #include "random.h"
 #include "trinity.h"
+#include "rnd.h"
 
 #ifdef USE_IF_ALG
 
@@ -337,8 +338,8 @@ static const char *torture_types[] = {
 
 static void pick_alg_torture(struct sockaddr_alg *alg)
 {
-	const char *name = torture_names[rand() % ARRAY_SIZE(torture_names)];
-	const char *type = torture_types[rand() % ARRAY_SIZE(torture_types)];
+	const char *name = torture_names[rnd_modulo_u32(ARRAY_SIZE(torture_names))];
+	const char *type = torture_types[rnd_modulo_u32(ARRAY_SIZE(torture_types))];
 
 	strncpy((char *)alg->salg_type, type, sizeof(alg->salg_type) - 1);
 	alg->salg_type[sizeof(alg->salg_type) - 1] = '\0';
@@ -379,9 +380,9 @@ void pick_alg(enum alg_dict_type type, const char *type_str,
 
 		alg_static_fallback_get(type, &fallback, &n);
 		if (n != 0)
-			pick = fallback[rand() % n];
+			pick = fallback[rnd_modulo_u32(n)];
 	} else {
-		pick = names[rand() % n];
+		pick = names[rnd_modulo_u32(n)];
 	}
 
 	if (pick != NULL) {
