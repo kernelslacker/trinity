@@ -24,6 +24,7 @@
 
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -81,7 +82,7 @@ static void sanitise_u32(struct syscallrecord *rec)
 	v = (__u32 *) get_writable_struct(sizeof(*v));
 	if (!v)
 		return;
-	*v = rand();
+	*v = rnd_u32();
 	rec->a3 = (unsigned long) v;
 }
 
@@ -91,7 +92,7 @@ static void sanitise_dev_config(struct syscallrecord *rec)
 	size_t cfgsz, total;
 	unsigned int i;
 
-	cfgsz = rand() % VDUSE_FUZZ_CONFIG_MAX;
+	cfgsz = rnd_modulo_u32(VDUSE_FUZZ_CONFIG_MAX);
 	total = sizeof(*c) + cfgsz;
 
 	c = (struct vduse_dev_config *) get_writable_struct(total);
@@ -101,17 +102,17 @@ static void sanitise_dev_config(struct syscallrecord *rec)
 
 	/* Random NUL-terminated name in the fixed-size name buffer. */
 	for (i = 0; i < VDUSE_NAME_MAX - 1; i++)
-		c->name[i] = 'a' + (rand() % 26);
+		c->name[i] = 'a' + (rnd_modulo_u32(26));
 	c->name[VDUSE_NAME_MAX - 1] = '\0';
 
-	c->vendor_id = rand();
-	c->device_id = rand();
+	c->vendor_id = rnd_u32();
+	c->device_id = rnd_u32();
 	c->features = rand64();
-	c->vq_num = rand() % 64;
-	c->vq_align = 1U << (rand() % 13);	/* 1..4096 */
+	c->vq_num = rnd_modulo_u32(64);
+	c->vq_align = 1U << (rnd_modulo_u32(13));	/* 1..4096 */
 	c->config_size = cfgsz;
 	for (i = 0; i < cfgsz; i++)
-		c->config[i] = rand();
+		c->config[i] = rnd_u32();
 
 	rec->a3 = (unsigned long) c;
 }
@@ -125,7 +126,7 @@ static void sanitise_destroy_dev(struct syscallrecord *rec)
 	if (!name)
 		return;
 	for (i = 0; i < VDUSE_NAME_MAX - 1; i++)
-		name[i] = 'a' + (rand() % 26);
+		name[i] = 'a' + (rnd_modulo_u32(26));
 	name[VDUSE_NAME_MAX - 1] = '\0';
 	rec->a3 = (unsigned long) name;
 }
@@ -145,7 +146,7 @@ static void sanitise_iotlb_entry(struct syscallrecord *rec)
 	e->offset = rand64();
 	e->start = start;
 	e->last = start + span - 1;
-	e->perm = (rand() & VDUSE_ACCESS_MASK);
+	e->perm = (rnd_u32() & VDUSE_ACCESS_MASK);
 
 	rec->a3 = (unsigned long) e;
 }
@@ -156,7 +157,7 @@ static void sanitise_config_data(struct syscallrecord *rec)
 	size_t buflen, total;
 	unsigned int i;
 
-	buflen = rand() % VDUSE_FUZZ_CONFIG_MAX;
+	buflen = rnd_modulo_u32(VDUSE_FUZZ_CONFIG_MAX);
 	total = sizeof(*d) + buflen;
 
 	d = (struct vduse_config_data *) get_writable_struct(total);
@@ -164,10 +165,10 @@ static void sanitise_config_data(struct syscallrecord *rec)
 		return;
 	memset(d, 0, total);
 
-	d->offset = rand() % VDUSE_FUZZ_CONFIG_MAX;
+	d->offset = rnd_modulo_u32(VDUSE_FUZZ_CONFIG_MAX);
 	d->length = buflen;
 	for (i = 0; i < buflen; i++)
-		d->buffer[i] = rand();
+		d->buffer[i] = rnd_u32();
 
 	rec->a3 = (unsigned long) d;
 }
@@ -180,8 +181,8 @@ static void sanitise_vq_config(struct syscallrecord *rec)
 	if (!v)
 		return;
 	memset(v, 0, sizeof(*v));
-	v->index = rand() % 64;
-	v->max_size = 1U << ((rand() % 11) + 1);	/* 2..2048 */
+	v->index = rnd_modulo_u32(64);
+	v->max_size = 1U << ((rnd_modulo_u32(11)) + 1);	/* 2..2048 */
 	rec->a3 = (unsigned long) v;
 }
 
@@ -193,7 +194,7 @@ static void sanitise_vq_info(struct syscallrecord *rec)
 	if (!info)
 		return;
 	memset(info, 0, sizeof(*info));
-	info->index = rand() % 64;
+	info->index = rnd_modulo_u32(64);
 	rec->a3 = (unsigned long) info;
 }
 
@@ -204,7 +205,7 @@ static void sanitise_vq_eventfd(struct syscallrecord *rec)
 	e = (struct vduse_vq_eventfd *) get_writable_struct(sizeof(*e));
 	if (!e)
 		return;
-	e->index = rand() % 64;
+	e->index = rnd_modulo_u32(64);
 	e->fd = RAND_BOOL() ? VDUSE_EVENTFD_DEASSIGN : -1;
 	rec->a3 = (unsigned long) e;
 }
