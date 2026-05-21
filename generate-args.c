@@ -16,6 +16,7 @@
 #include "numa.h"
 #include "pathnames.h"
 #include "random.h"
+#include "rnd.h"
 #include "results.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -57,14 +58,14 @@ static unsigned int cmp_hint_inject_denom(void)
 static int get_cpu(void)
 {
 	int i;
-	i = rand() % 100;
+	i = rnd_modulo_u32(100);
 
 	switch (i) {
 	case 0: return -1;
-	case 1: return rand() % 4096;
+	case 1: return rnd_modulo_u32(4096);
 	case 2: return INT_MAX;
 	case 3 ... 99:
-		return rand() % num_online_cpus;
+		return rnd_modulo_u32(num_online_cpus);
 	}
 	return 0;
 }
@@ -86,7 +87,7 @@ static unsigned long handle_arg_address(struct syscallentry *entry, struct sysca
 	if (addr == 0)
 		return (unsigned long) get_address();
 
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0:	break;	/* return unmodified */
 	case 1:	addr++;
 		break;
@@ -120,7 +121,7 @@ static unsigned long handle_arg_range(struct syscallentry *entry,
 
 	/* ~1 in 8: bias toward the range boundaries where off-by-one bugs hide */
 	if (ONE_IN(8)) {
-		switch (rand() % 4) {
+		switch (rnd_modulo_u32(4)) {
 		case 0: return low;
 		case 1: return high;
 		case 2: return (low < high) ? low + 1 : low;
@@ -170,7 +171,7 @@ static unsigned long handle_arg_op(struct syscallentry *entry,
 	    cmp_hints_try_get(call, &hint))
 		return hint;
 
-	return values[rand() % num];
+	return values[rnd_modulo_u32(num)];
 }
 
 /*
@@ -191,7 +192,7 @@ static unsigned long handle_arg_list(struct syscallentry *entry,
 	/* ~1 in 8: OR in a shifted flag to probe for undocumented adjacent bits */
 	if (ONE_IN(8)) {
 		mask = set_rand_bitmask(num, values);
-		mask |= shift_flag_bit(values[rand() % num]);
+		mask |= shift_flag_bit(values[rnd_modulo_u32(num)]);
 		return mask;
 	}
 
@@ -277,12 +278,12 @@ static unsigned long handle_arg_mode_t(struct syscallentry *entry __unused__,
 	unsigned int i, count;
 	mode_t mode = 0, op = 0;
 
-	count = rand() % 9;
+	count = rnd_modulo_u32(9);
 
 	for (i = 0; i < count; i++) {
 		unsigned int j;
 
-		j = rand() % 15;
+		j = rnd_modulo_u32(15);
 		switch (j) {
 		case  0: op = S_IRWXU; break;
 		case  1: op = S_IRUSR; break;
@@ -323,7 +324,7 @@ static unsigned long gen_undefined_arg(struct syscallentry *entry __unused__,
 	unsigned int call = rec->nr;
 	unsigned long hint;
 
-	switch (rand() % 9) {
+	switch (rnd_modulo_u32(9)) {
 	case 0:
 		if (cmp_hints_try_get(call, &hint))
 			return hint;
@@ -359,7 +360,7 @@ static unsigned long gen_arg_fd(struct syscallentry *entry,
 	int tries;
 
 	/* Prefer live fds returned by recent syscalls (70% of the time). */
-	if (rand() % 10 < 7) {
+	if (rnd_modulo_u32(10) < 7) {
 		struct childdata *child = this_child();
 
 		if (child != NULL) {
@@ -381,7 +382,7 @@ static unsigned long gen_arg_fd(struct syscallentry *entry,
 	}
 
 	/* Same failed_fds re-roll bias as the typed-fd path. */
-	filter = (rand() % 10) < 7;
+	filter = rnd_modulo_u32(10) < 7;
 	for (tries = 0; tries < FAILED_FD_REROLL_LIMIT; tries++) {
 		fd = get_random_fd();
 		if (!filter || !fd_recently_failed(results, fd))
@@ -396,7 +397,7 @@ static unsigned long gen_arg_typed_fd(struct syscallentry *entry,
 {
 	enum argtype argtype = get_argtype(entry, argnum);
 	struct results *results = &entry->results[argnum - 1];
-	bool filter = (rand() % 10) < 7;
+	bool filter = rnd_modulo_u32(10) < 7;
 	enum argtype effective_argtype = argtype;
 	bool use_generic = false;
 	int fd = 0;
@@ -416,7 +417,7 @@ static unsigned long gen_arg_typed_fd(struct syscallentry *entry,
 					   1UL, __ATOMIC_RELAXED);
 		} else {
 			unsigned int range = ARG_FD_TIMERFD - ARG_FD_BPF_BTF;
-			unsigned int pick = rand() % range;
+			unsigned int pick = rnd_modulo_u32(range);
 
 			effective_argtype = ARG_FD_BPF_BTF + pick;
 			if (effective_argtype >= argtype)
@@ -803,7 +804,7 @@ static unsigned long gen_arg_struct_size(struct syscallentry *entry,
 	if (desc == NULL)
 		return (unsigned long) (rand32() % ARG_STRUCT_SIZE_FALLBACK_CAP);
 
-	roll = rand() % 10;
+	roll = rnd_modulo_u32(10);
 
 	/* 50%: exact current sizeof() */
 	if (roll < 5)
@@ -813,7 +814,7 @@ static unsigned long gen_arg_struct_size(struct syscallentry *entry,
 	if (roll < 7) {
 		oa = lookup_old_abi(desc->name);
 		if (oa != NULL)
-			return oa->sizes[rand() % oa->num_sizes];
+			return oa->sizes[rnd_modulo_u32(oa->num_sizes)];
 		return desc->struct_size;
 	}
 
@@ -825,9 +826,9 @@ static unsigned long gen_arg_struct_size(struct syscallentry *entry,
 	}
 
 	/* 20% remaining: structural-rejection stress */
-	switch (rand() % 6) {
+	switch (rnd_modulo_u32(6)) {
 	case 0: return 0;
-	case 1: return 1 + (rand() % 16);
+	case 1: return 1 + rnd_modulo_u32(16);
 	case 2: return UINT_MAX;
 	case 3: return INT_MAX;
 	case 4: return ((unsigned long) rand32()) << 16;
