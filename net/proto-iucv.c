@@ -47,12 +47,12 @@ static void iucv_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	unsigned int i;
 
 	if (!iucv_available()) {
-		*addr = zmalloc(sizeof(struct sockaddr));
+		*addr = zmalloc_tracked(sizeof(struct sockaddr));
 		*addrlen = sizeof(struct sockaddr);
 		return;
 	}
 
-	sa = zmalloc(sizeof(struct sockaddr_iucv));
+	sa = zmalloc_tracked(sizeof(struct sockaddr_iucv));
 	sa->siucv_family = AF_IUCV;
 
 	for (i = 0; i < sizeof(sa->siucv_user_id); i++)
