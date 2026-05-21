@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <linux/mount.h>
 #include "object-types.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 #ifndef OPEN_TREE_CLONE
@@ -46,9 +47,9 @@ static void sanitise_open_tree_attr(struct syscallrecord *rec)
 	memset(ma, 0, sizeof(*ma));
 
 	attrs = 0;
-	nbits = 1 + (rand() % ARRAY_SIZE(mount_attr_bits));
+	nbits = 1 + (rnd_modulo_u32(ARRAY_SIZE(mount_attr_bits)));
 	for (i = 0; i < nbits; i++)
-		attrs |= mount_attr_bits[rand() % ARRAY_SIZE(mount_attr_bits)];
+		attrs |= mount_attr_bits[rnd_modulo_u32(ARRAY_SIZE(mount_attr_bits))];
 	ma->attr_set = attrs;
 
 	rec->a4 = (unsigned long) ma;
