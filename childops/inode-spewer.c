@@ -27,6 +27,7 @@
 #include <unistd.h>
 
 #include "arch.h"
+#include "pids.h"
 #include "child.h"
 #include "random.h"
 #include "shm.h"
@@ -51,7 +52,7 @@ static bool spew_dir_created;
 static void ensure_spew_dir(char *dir, size_t len)
 {
 	snprintf(dir, len, "%s/trinity-inodes-%d",
-		 trinity_tmpdir_abs(), getpid());
+		 trinity_tmpdir_abs(), mypid());
 	(void)mkdir(dir, 0700);
 	spew_dir_created = true;
 }
@@ -287,7 +288,7 @@ void inode_spewer_cleanup(void)
 {
 	if (!spew_dir_created)
 		return;
-	cleanup_spew_dir_for(getpid());
+	cleanup_spew_dir_for(mypid());
 	spew_dir_created = false;
 }
 
