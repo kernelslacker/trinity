@@ -11,6 +11,7 @@
 #include "socket-family-grammar.h"
 #include "utils.h"
 #include "compat.h"
+#include "rnd.h"
 
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL	0x4000
@@ -23,8 +24,8 @@ static void qrtr_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	qrtr = zmalloc_tracked(sizeof(struct sockaddr_qrtr));
 
 	qrtr->sq_family = PF_QIPCRTR;
-	qrtr->sq_node = rand();
-	qrtr->sq_port = rand();
+	qrtr->sq_node = rnd_u32();
+	qrtr->sq_port = rnd_u32();
 	*addr = (struct sockaddr *) qrtr;
 	*addrlen = sizeof(struct sockaddr_qrtr);
 }
@@ -190,8 +191,8 @@ static void qrtr_data_leg(int parent_fd, __unused__ int child_fd,
 	unsigned char payload[64];
 	unsigned char rcvbuf[256];
 
-	qrtr_walk_service = 0x5000 + (rand() % 0x100);
-	qrtr_walk_instance = rand();
+	qrtr_walk_service = 0x5000 + (rnd_modulo_u32(0x100));
+	qrtr_walk_instance = rnd_u32();
 
 	qrtr_send_ctrl(parent_fd, QRTR_TYPE_NEW_SERVER,
 		       qrtr_walk_service, qrtr_walk_instance);
@@ -201,7 +202,7 @@ static void qrtr_data_leg(int parent_fd, __unused__ int child_fd,
 	memset(&peer, 0, sizeof(peer));
 	peer.sq_family = AF_QIPCRTR;
 	peer.sq_node = 0;
-	peer.sq_port = 1024 + (rand() % 60000);
+	peer.sq_port = 1024 + (rnd_modulo_u32(60000));
 
 	generate_rand_bytes(payload, sizeof(payload));
 	iov.iov_base = payload;
