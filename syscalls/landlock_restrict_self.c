@@ -4,6 +4,7 @@
  */
 #include <linux/landlock.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 #ifndef LANDLOCK_RESTRICT_SELF_LOG_SAME_EXEC_OFF
@@ -29,7 +30,7 @@ static unsigned long landlock_restrict_self_flags[] = {
 
 static void sanitise_landlock_restrict_self(struct syscallrecord *rec)
 {
-	rec->a2 = landlock_restrict_self_flags[rand() % ARRAY_SIZE(landlock_restrict_self_flags)];
+	rec->a2 = landlock_restrict_self_flags[rnd_modulo_u32(ARRAY_SIZE(landlock_restrict_self_flags))];
 }
 
 struct syscallentry syscall_landlock_restrict_self = {
