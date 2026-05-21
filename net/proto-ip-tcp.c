@@ -4,6 +4,7 @@
 #include "net.h"
 #include "random.h"
 #include "compat.h"
+#include "rnd.h"
 
 static const unsigned int tcp_opts[] = {
 	TCP_NODELAY, TCP_MAXSEG, TCP_CORK, TCP_KEEPIDLE,
@@ -53,11 +54,11 @@ void tcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triple
 		struct tcp_md5sig *md5 = (struct tcp_md5sig *) so->optval;
 
 		memset(md5, 0, sizeof(struct tcp_md5sig));
-		md5->tcpm_keylen = rand() % (TCP_MD5SIG_MAXKEYLEN + 1);
+		md5->tcpm_keylen = rnd_modulo_u32(TCP_MD5SIG_MAXKEYLEN + 1);
 		generate_rand_bytes(md5->tcpm_key, md5->tcpm_keylen);
 		if (so->optname == TCP_MD5SIG_EXT) {
-			md5->tcpm_flags = rand() & 0x3;
-			md5->tcpm_prefixlen = rand() % 129;
+			md5->tcpm_flags = rnd_u32() & 0x3;
+			md5->tcpm_prefixlen = rnd_modulo_u32(129);
 		}
 		so->optlen = sizeof(struct tcp_md5sig);
 		break;
@@ -65,22 +66,22 @@ void tcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triple
 
 	case TCP_FASTOPEN_KEY:
 		/* Key is 16 bytes (AES-128), kernel accepts 1 or 2 keys */
-		switch (rand() % 3) {
+		switch (rnd_modulo_u32(3)) {
 		case 0: so->optlen = 16; break;
 		case 1: so->optlen = 32; break;
-		case 2: so->optlen = rand() % 48 + 1; break;
+		case 2: so->optlen = rnd_modulo_u32(48) + 1; break;
 		}
 		generate_rand_bytes((unsigned char *) so->optval, so->optlen);
 		break;
 
 	case TCP_REPAIR_OPTIONS: {
 		struct tcp_repair_opt *opt = (struct tcp_repair_opt *) so->optval;
-		unsigned int count = rand() % 4 + 1;
+		unsigned int count = rnd_modulo_u32(4) + 1;
 		unsigned int i;
 
 		for (i = 0; i < count; i++) {
-			opt[i].opt_code = rand() % 16;
-			opt[i].opt_val = rand();
+			opt[i].opt_code = rnd_modulo_u32(16);
+			opt[i].opt_val = rnd_u32();
 		}
 		so->optlen = count * sizeof(struct tcp_repair_opt);
 		break;
@@ -92,16 +93,16 @@ void tcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triple
 		memset(ao, 0, sizeof(struct tcp_ao_add));
 		str = RAND_ARRAY(ao_algos);
 		strncpy(ao->alg_name, str, sizeof(ao->alg_name) - 1);
-		ao->sndid = rand();
-		ao->rcvid = rand();
-		ao->keylen = rand() % (TCP_AO_MAXKEYLEN + 1);
+		ao->sndid = rnd_u32();
+		ao->rcvid = rnd_u32();
+		ao->keylen = rnd_modulo_u32(TCP_AO_MAXKEYLEN + 1);
 		generate_rand_bytes(ao->key, ao->keylen);
-		ao->maclen = rand() % 2 ? 12 : 16;
-		ao->keyflags = rand() & 0x3;
-		ao->set_current = rand() & 1;
-		ao->set_rnext = rand() & 1;
-		ao->prefix = rand() % 129;
-		ao->ifindex = rand() % 4;
+		ao->maclen = rnd_modulo_u32(2) ? 12 : 16;
+		ao->keyflags = rnd_u32() & 0x3;
+		ao->set_current = rnd_u32() & 1;
+		ao->set_rnext = rnd_u32() & 1;
+		ao->prefix = rnd_modulo_u32(129);
+		ao->ifindex = rnd_modulo_u32(4);
 		so->optlen = sizeof(struct tcp_ao_add);
 		break;
 	}
@@ -110,16 +111,16 @@ void tcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triple
 		struct tcp_ao_del *del = (struct tcp_ao_del *) so->optval;
 
 		memset(del, 0, sizeof(struct tcp_ao_del));
-		del->sndid = rand();
-		del->rcvid = rand();
-		del->set_current = rand() & 1;
-		del->set_rnext = rand() & 1;
-		del->del_async = rand() & 1;
-		del->current_key = rand();
-		del->rnext = rand();
-		del->prefix = rand() % 129;
-		del->keyflags = rand() & 0x3;
-		del->ifindex = rand() % 4;
+		del->sndid = rnd_u32();
+		del->rcvid = rnd_u32();
+		del->set_current = rnd_u32() & 1;
+		del->set_rnext = rnd_u32() & 1;
+		del->del_async = rnd_u32() & 1;
+		del->current_key = rnd_u32();
+		del->rnext = rnd_u32();
+		del->prefix = rnd_modulo_u32(129);
+		del->keyflags = rnd_u32() & 0x3;
+		del->ifindex = rnd_modulo_u32(4);
 		so->optlen = sizeof(struct tcp_ao_del);
 		break;
 	}
@@ -128,13 +129,13 @@ void tcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triple
 		struct tcp_ao_info_opt *info = (struct tcp_ao_info_opt *) so->optval;
 
 		memset(info, 0, sizeof(struct tcp_ao_info_opt));
-		info->set_current = rand() & 1;
-		info->set_rnext = rand() & 1;
-		info->ao_required = rand() & 1;
-		info->set_counters = rand() & 1;
-		info->accept_icmps = rand() & 1;
-		info->current_key = rand();
-		info->rnext = rand();
+		info->set_current = rnd_u32() & 1;
+		info->set_rnext = rnd_u32() & 1;
+		info->ao_required = rnd_u32() & 1;
+		info->set_counters = rnd_u32() & 1;
+		info->accept_icmps = rnd_u32() & 1;
+		info->current_key = rnd_u32();
+		info->rnext = rnd_u32();
 		so->optlen = sizeof(struct tcp_ao_info_opt);
 		break;
 	}
@@ -142,10 +143,10 @@ void tcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triple
 	case TCP_AO_REPAIR: {
 		struct tcp_ao_repair *repair = (struct tcp_ao_repair *) so->optval;
 
-		repair->snt_isn = rand();
-		repair->rcv_isn = rand();
-		repair->snd_sne = rand();
-		repair->rcv_sne = rand();
+		repair->snt_isn = rnd_u32();
+		repair->rcv_isn = rnd_u32();
+		repair->snd_sne = rnd_u32();
+		repair->rcv_sne = rnd_u32();
 		so->optlen = sizeof(struct tcp_ao_repair);
 		break;
 	}
