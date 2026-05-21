@@ -35,6 +35,7 @@
 #include "ioctls.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
@@ -95,7 +96,7 @@ static void sanitise_kvm_msrs(struct syscallrecord *rec)
 		return;
 
 	generate_rand_bytes((unsigned char *)m, sz);
-	m->nmsrs = (__u32)(rand() % (KVM_FUZZ_MAX_MSRS + 1));
+	m->nmsrs = (__u32)(rnd_modulo_u32((KVM_FUZZ_MAX_MSRS + 1)));
 	m->pad = 0;
 
 	rec->a3 = (unsigned long)m;
@@ -114,7 +115,7 @@ static void sanitise_kvm_cpuid2(struct syscallrecord *rec)
 		return;
 
 	generate_rand_bytes((unsigned char *)c, sz);
-	c->nent = (__u32)(rand() % (KVM_FUZZ_MAX_CPUID + 1));
+	c->nent = (__u32)(rnd_modulo_u32((KVM_FUZZ_MAX_CPUID + 1)));
 	c->padding = 0;
 
 	rec->a3 = (unsigned long)c;
@@ -133,7 +134,7 @@ static void sanitise_kvm_reg_list(struct syscallrecord *rec)
 		return;
 
 	generate_rand_bytes((unsigned char *)r, sz);
-	r->n = (__u64)(rand() % (KVM_FUZZ_MAX_REGS + 1));
+	r->n = (__u64)(rnd_modulo_u32((KVM_FUZZ_MAX_REGS + 1)));
 
 	rec->a3 = (unsigned long)r;
 }
