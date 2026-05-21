@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <time.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 /* From linux/stat.h - special nsec values for utimensat */
@@ -35,7 +36,7 @@ static void sanitise_utimensat(struct syscallrecord *rec)
 		return;
 
 	for (i = 0; i < 2; i++) {
-		switch (rand() % 4) {
+		switch (rnd_modulo_u32(4)) {
 		case 0:
 			ts[i].tv_sec = 0;
 			ts[i].tv_nsec = UTIME_NOW;
@@ -45,8 +46,8 @@ static void sanitise_utimensat(struct syscallrecord *rec)
 			ts[i].tv_nsec = UTIME_OMIT;
 			break;
 		default:
-			ts[i].tv_sec = rand() % 2000000000;
-			ts[i].tv_nsec = rand() % 1000000000;
+			ts[i].tv_sec = rnd_modulo_u32(2000000000);
+			ts[i].tv_nsec = rnd_modulo_u32(1000000000);
 			break;
 		}
 	}
