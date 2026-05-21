@@ -9,6 +9,7 @@
 #include "net.h"
 #include "compat.h"
 #include "proto-alg-dict.h"
+#include "rnd.h"
 
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
@@ -231,7 +232,7 @@ static void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	alg->salg_family = PF_ALG;
 
-	idx = rand() % ARRAY_SIZE(types);
+	idx = rnd_modulo_u32(ARRAY_SIZE(types));
 	pick_alg(types[idx].type, types[idx].str, alg);
 
 	alg->salg_feat = rand32();
@@ -292,14 +293,14 @@ static void alg_socket_setup(int fd)
 	memset(&sa, 0, sizeof(sa));
 	sa.salg_family = AF_ALG;
 
-	idx = rand() % ARRAY_SIZE(setup_types);
+	idx = rnd_modulo_u32(ARRAY_SIZE(setup_types));
 	pick_alg(setup_types[idx].type, setup_types[idx].str, &sa);
 
 	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) == -1)
 		return;
 
 	/* Set a key — required for skcipher/aead, harmless for hash */
-	keylen = (rand() % 32) + 16;	/* 16..47 bytes */
+	keylen = (rnd_modulo_u32(32)) + 16;	/* 16..47 bytes */
 	generate_rand_bytes(key, keylen);
 	(void) setsockopt(fd, SOL_ALG, ALG_SET_KEY, key, keylen);
 
