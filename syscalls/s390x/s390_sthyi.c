@@ -32,6 +32,9 @@ static void sanitise_s390_sthyi(struct syscallrecord *rec)
 	 * leaves addr == NULL, which the snapshot mirrors. */
 	rec->post_state = (unsigned long)addr;
 
+	if (addr)
+		avoid_shared_buffer_out(&rec->a2, size);
+
 	/* Use NULL, random or valid address */
 	switch (rand() % 3) {
 	case 0:	rec->a3 = 0;
