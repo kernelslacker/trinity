@@ -61,6 +61,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+#include "pids.h"
 
 /* Hard cap on mkdir/rmdir cycles per invocation.  Kept modest so a
  * single op completes well inside the alarm(1) window even when the
@@ -215,7 +216,7 @@ bool cgroup_churn(struct childdata *child)
 {
 	unsigned int cycles;
 	unsigned int i;
-	pid_t pid = getpid();
+	pid_t pid = mypid();
 
 	(void)child;
 
