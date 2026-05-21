@@ -10,6 +10,7 @@
 #include <sys/sysmacros.h>
 #include "arch.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "types.h"
@@ -61,7 +62,7 @@ static void init_ustat_devs(void)
 static void sanitise_ustat(struct syscallrecord *rec)
 {
 	init_ustat_devs();
-	rec->a1 = ustat_devs[rand() % ustat_nr_devs];
+	rec->a1 = ustat_devs[rnd_modulo_u32(ustat_nr_devs)];
 
 	/*
 	 * On a successful lookup the kernel writes a struct ustat (~32B)
