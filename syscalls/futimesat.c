@@ -4,6 +4,7 @@
  */
 #include <sys/time.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 static void sanitise_futimesat(struct syscallrecord *rec)
@@ -22,8 +23,8 @@ static void sanitise_futimesat(struct syscallrecord *rec)
 		return;
 
 	for (i = 0; i < 2; i++) {
-		tv[i].tv_sec = rand() % 2000000000;
-		tv[i].tv_usec = rand() % 1000000;
+		tv[i].tv_sec = rnd_modulo_u32(2000000000);
+		tv[i].tv_usec = rnd_modulo_u32(1000000);
 	}
 
 	rec->a3 = (unsigned long) tv;
