@@ -419,7 +419,7 @@ static char get_pid_state(int childno)
 	char procname[100];
 	FILE *fp;
 
-	if (getpid() != mainpid)
+	if (mypid() != mainpid)
 		BUG("get_pid_state can only be called from main!\n");
 
 	fp = pidstatfiles[childno];
