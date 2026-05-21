@@ -30,6 +30,7 @@
 #include "trinity.h"
 #include "utils.h"
 #include "compat.h"		/* keep last — matches net/proto-*.c order */
+#include "rnd.h"
 
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL	0x4000
@@ -112,7 +113,7 @@ const struct socket_family_grammar *sfg_pick_random_active(void)
 	if (nr_active == 0)
 		return NULL;
 
-	return active[rand() % nr_active];
+	return active[rnd_modulo_u32(nr_active)];
 }
 
 bool sfg_can_run_default(int family)
@@ -167,7 +168,7 @@ void sfg_default_pick_triplet(int family, struct socket_triplet *out)
 	    proto->nr_triplets == 0)
 		return;
 
-	*out = proto->valid_triplets[rand() % proto->nr_triplets];
+	*out = proto->valid_triplets[rnd_modulo_u32(proto->nr_triplets)];
 }
 
 int sfg_default_bind(int fd, struct socket_triplet *triplet)
@@ -245,7 +246,7 @@ void sfg_default_data_leg(int data_fd,
 	if (proto != NULL && proto->gen_msg != NULL) {
 		proto->gen_msg(triplet, &payload, &payload_len);
 	} else {
-		payload_len = 16 + (rand() % 64);
+		payload_len = 16 + (rnd_modulo_u32(64));
 		payload = zmalloc(payload_len);
 		generate_rand_bytes(payload, payload_len);
 	}
@@ -304,7 +305,7 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 	if (sfg->configure_pre_bind != NULL)
 		sfg->configure_pre_bind(parent_fd, &triplet);
 
-	n_setsockopts = 2 + (rand() % 5);	/* 2..6 coordinated calls */
+	n_setsockopts = 2 + (rnd_modulo_u32(5));	/* 2..6 coordinated calls */
 	if (sfg->walk_setsockopts != NULL)
 		sfg->walk_setsockopts(parent_fd, &triplet, n_setsockopts);
 	else
