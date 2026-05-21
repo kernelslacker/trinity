@@ -5,6 +5,7 @@
 #include "net.h"
 #include "random.h"
 #include "compat.h"
+#include "rnd.h"
 
 #ifndef SOL_VSOCK
 #define SOL_VSOCK 287
@@ -47,12 +48,12 @@ static void vsock_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	if (RAND_BOOL())
 		vm->svm_cid = RAND_ARRAY(cids);
 	else
-		vm->svm_cid = rand();
+		vm->svm_cid = rnd_u32();
 
 	if (RAND_BOOL())
 		vm->svm_port = VMADDR_PORT_ANY;
 	else
-		vm->svm_port = rand();
+		vm->svm_port = rnd_u32();
 
 	vm->svm_flags = RAND_BOOL() ? VMADDR_FLAG_TO_HOST : 0;
 
@@ -89,13 +90,13 @@ static void vsock_setsockopt(struct sockopt *so, __unused__ struct socket_triple
 		break;
 	case SO_VM_SOCKETS_CONNECT_TIMEOUT:
 		tv = (struct timeval *) so->optval;
-		tv->tv_sec = rand() % 60;
-		tv->tv_usec = rand() % 1000000;
+		tv->tv_sec = rnd_modulo_u32(60);
+		tv->tv_usec = rnd_modulo_u32(1000000);
 		so->optlen = sizeof(struct timeval);
 		break;
 	default:
 		optval32 = (unsigned int *) so->optval;
-		*optval32 = rand();
+		*optval32 = rnd_u32();
 		so->optlen = sizeof(unsigned int);
 		break;
 	}
