@@ -459,7 +459,7 @@ const char * generate_pathname(void)
 	if (pathname == NULL)
 		return NULL;
 
-	newpath = zmalloc(MAX_PATH_LEN);
+	newpath = zmalloc_tracked(MAX_PATH_LEN);
 
 	len = strlen(pathname);
 
