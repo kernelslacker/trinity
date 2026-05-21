@@ -10,6 +10,10 @@
 
 #define MAX_NUMNODES 64
 
+/* Locally mirror BITS_PER_LONG; the kernel UAPI headers we pull in here
+ * don't expose it.  Used to cap a 1UL << shift against word width. */
+#define BITS_PER_LONG (sizeof(unsigned long) * 8)
+
 /*
  * Probe the highest NUMA node number from sysfs. Returns 0 on failure
  * (single-node system). Result is cached after the first call.
@@ -67,9 +71,19 @@ static void fill_nodemask(unsigned long *mask, unsigned int max_node)
 	case 0: /* node 0 only */
 		mask[0] = 1;
 		break;
-	case 1: /* subset of valid nodes */
-		mask[0] = node_mask & ((1UL << (1 + (rand() % (max_node + 1)))) - 1);
+	case 1: { /* subset of valid nodes */
+		unsigned int shift = 1 + (rand() % (max_node + 1));
+
+		/* shift can land on BITS_PER_LONG when max_node is at or
+		 * above BITS_PER_LONG - 1; (1UL << BITS_PER_LONG) is UB.
+		 * At that boundary "bottom N bits set" is all-ones, so
+		 * masking with node_mask just yields node_mask. */
+		if (shift >= BITS_PER_LONG)
+			mask[0] = node_mask;
+		else
+			mask[0] = node_mask & ((1UL << shift) - 1);
 		break;
+	}
 	default: /* random bits within valid node range */
 		mask[0] = rand32() & node_mask;
 		break;
