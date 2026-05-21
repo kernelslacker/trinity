@@ -5,6 +5,7 @@
  */
 #include <time.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 static void sanitise_mq_timedsend(struct syscallrecord *rec)
@@ -14,7 +15,7 @@ static void sanitise_mq_timedsend(struct syscallrecord *rec)
 	unsigned int len;
 
 	/* Generate a message buffer with some data. */
-	len = 1 + (rand() % 8192);
+	len = 1 + (rnd_modulo_u32(8192));
 	msg = (char *) get_writable_address(len);
 
 	/* Short timeout to avoid blocking. */
@@ -22,7 +23,7 @@ static void sanitise_mq_timedsend(struct syscallrecord *rec)
 	if (msg == NULL || ts == NULL)
 		return;
 	ts->tv_sec = 0;
-	ts->tv_nsec = rand() % 1000000;	/* up to 1ms */
+	ts->tv_nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
 
 	rec->a2 = (unsigned long) msg;
 	rec->a3 = len;
