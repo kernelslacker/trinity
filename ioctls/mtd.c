@@ -3,6 +3,7 @@
 
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -38,7 +39,7 @@ static void sanitise_mtd_oob_buf(struct syscallrecord *rec)
 	if (!oob)
 		return;
 	oob->start = rand32();
-	oob->length = rand() % 64;
+	oob->length = rnd_modulo_u32(64);
 	oob->ptr = (unsigned char *) get_writable_struct(oob->length + 1);
 	rec->a3 = (unsigned long) oob;
 }
@@ -51,7 +52,7 @@ static void sanitise_mtd_oob_buf64(struct syscallrecord *rec)
 	if (!oob)
 		return;
 	oob->start = rand64();
-	oob->length = rand() % 64;
+	oob->length = rnd_modulo_u32(64);
 	oob->usr_ptr = (unsigned long) get_writable_struct(oob->length + 1);
 	rec->a3 = (unsigned long) oob;
 }
@@ -63,7 +64,7 @@ static void sanitise_region_info_user(struct syscallrecord *rec)
 	riu = (struct region_info_user *) get_writable_struct(sizeof(*riu));
 	if (!riu)
 		return;
-	riu->regionindex = rand() % 16;
+	riu->regionindex = rnd_modulo_u32(16);
 	rec->a3 = (unsigned long) riu;
 }
 
@@ -75,7 +76,7 @@ static void sanitise_otp_info(struct syscallrecord *rec)
 	if (!oi)
 		return;
 	oi->start = rand32();
-	oi->length = rand() % 4096;
+	oi->length = rnd_modulo_u32(4096);
 	oi->locked = RAND_BOOL();
 	rec->a3 = (unsigned long) oi;
 }
@@ -88,9 +89,9 @@ static void sanitise_mtd_write_req(struct syscallrecord *rec)
 	if (!req)
 		return;
 	req->start = rand64();
-	req->len = rand() % 4096;
-	req->ooblen = rand() % 128;
-	req->mode = rand() % 3;
+	req->len = rnd_modulo_u32(4096);
+	req->ooblen = rnd_modulo_u32(128);
+	req->mode = rnd_modulo_u32(3);
 	req->usr_data = (unsigned long) get_writable_struct(req->len + 1);
 	if (RAND_BOOL())
 		req->usr_oob = (unsigned long) get_writable_struct(req->ooblen + 1);
@@ -106,9 +107,9 @@ static void sanitise_mtd_read_req(struct syscallrecord *rec)
 	if (!req)
 		return;
 	req->start = rand64();
-	req->len = rand() % 4096;
-	req->ooblen = rand() % 128;
-	req->mode = rand() % 3;
+	req->len = rnd_modulo_u32(4096);
+	req->ooblen = rnd_modulo_u32(128);
+	req->mode = rnd_modulo_u32(3);
 	req->usr_data = (unsigned long) get_writable_struct(req->len + 1);
 	if (RAND_BOOL())
 		req->usr_oob = (unsigned long) get_writable_struct(req->ooblen + 1);
@@ -220,7 +221,7 @@ static void mtd_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 
 	case MTDFILEMODE:
 		/* arg is a mode value, not a pointer */
-		rec->a3 = rand() % 4;
+		rec->a3 = rnd_modulo_u32(4);
 		break;
 
 	default:
