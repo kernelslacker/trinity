@@ -25,6 +25,7 @@
 #include "random.h"
 #include "socket-family-grammar.h"
 #include "utils.h"
+#include "rnd.h"
 
 static const unsigned int mptcp_opts[] = {
 	MPTCP_INFO,
@@ -65,7 +66,7 @@ void mptcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *trip
 	case MPTCP_FULL_INFO: {
 		struct mptcp_subflow_data_compat *sd = (void *) p;
 
-		so->optlen = sizeof(*sd) + (rand() % (page_size - sizeof(*sd)));
+		so->optlen = sizeof(*sd) + (rnd_modulo_u32(page_size - sizeof(*sd)));
 		generate_rand_bytes(p, so->optlen);
 
 		/* Half the time, populate the subflow_data prefix with values
@@ -78,7 +79,7 @@ void mptcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *trip
 			sd->size_subflow_data = sizeof(*sd);
 			sd->num_subflows = 0;
 			sd->size_kernel = 0;
-			sd->size_user = rand() % 256;
+			sd->size_user = rnd_modulo_u32(256);
 		}
 		break;
 	}
@@ -221,7 +222,7 @@ static void mptcp_walk_setsockopts(int fd, struct socket_triplet *triplet,
 
 	if (step++ >= n)
 		return;
-	cc = mptcp_cc_algos[rand() % ARRAY_SIZE(mptcp_cc_algos)];
+	cc = mptcp_cc_algos[rnd_modulo_u32(ARRAY_SIZE(mptcp_cc_algos))];
 	(void) setsockopt(fd, IPPROTO_TCP, TCP_CONGESTION, cc, strlen(cc));
 
 	if (step++ >= n)
@@ -258,7 +259,7 @@ static void mptcp_walk_setsockopts(int fd, struct socket_triplet *triplet,
 		case 2:
 			/* Deliberately undersized — must hit the early
 			 * size-validation reject in the dispatcher. */
-			len = (socklen_t)(rand() % sizeof(struct mptcp_subflow_data_compat));
+			len = (socklen_t)(rnd_modulo_u32(sizeof(struct mptcp_subflow_data_compat)));
 			(void) getsockopt(fd, SOL_MPTCP, MPTCP_TCPINFO,
 					  buf, &len);
 			break;
