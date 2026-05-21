@@ -26,7 +26,7 @@ static void sanitise_rt_tgsigqueueinfo(struct syscallrecord *rec)
 	memset(info, 0, sizeof(*info));
 
 	info->si_code = SI_QUEUE;
-	info->si_pid = getpid();
+	info->si_pid = mypid();
 	info->si_uid = getuid();
 	info->si_int = rand32();
 
