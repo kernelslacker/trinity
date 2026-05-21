@@ -17,6 +17,7 @@
 #include "trinity.h"
 #include "utils.h"
 #include "compat.h"
+#include "rnd.h"
 
 static void llc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
@@ -27,12 +28,12 @@ static void llc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	llc->sllc_family = AF_LLC;
 	llc->sllc_arphrd = ARPHRD_ETHER;
-	llc->sllc_test = rand();
-	llc->sllc_xid = rand();
-	llc->sllc_ua = rand();
-	llc->sllc_sap = rand();
+	llc->sllc_test = rnd_u32();
+	llc->sllc_xid = rnd_u32();
+	llc->sllc_ua = rnd_u32();
+	llc->sllc_sap = rnd_u32();
 	for (i = 0; i < IFHWADDRLEN; i++)
-		llc->sllc_mac[i] = rand();
+		llc->sllc_mac[i] = rnd_u32();
 	*addr = (struct sockaddr *) llc;
 	*addrlen = sizeof(struct sockaddr_llc);
 }
@@ -86,12 +87,12 @@ static void netbeui_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	llc->sllc_family = PF_NETBEUI;
 	llc->sllc_arphrd = ARPHRD_ETHER;
-	llc->sllc_test = rand();
-	llc->sllc_xid = rand();
-	llc->sllc_ua = rand();
-	llc->sllc_sap = rand();
+	llc->sllc_test = rnd_u32();
+	llc->sllc_xid = rnd_u32();
+	llc->sllc_ua = rnd_u32();
+	llc->sllc_sap = rnd_u32();
 	for (i = 0; i < IFHWADDRLEN; i++)
-		llc->sllc_mac[i] = rand();
+		llc->sllc_mac[i] = rnd_u32();
 	*addr = (struct sockaddr *) llc;
 	*addrlen = sizeof(struct sockaddr_llc);
 }
@@ -340,7 +341,7 @@ static void llc_walk_setsockopts(int fd, __unused__ struct socket_triplet *t,
 
 	for (i = 0; i < n; i++) {
 		opt = opts_seq[i % ARRAY_SIZE(opts_seq)];
-		v = (unsigned int) rand();
+		v = rnd_u32();
 		switch (opt) {
 		case LLC_OPT_RETRY:
 			v %= LLC_OPT_MAX_RETRY + 4;
@@ -384,7 +385,7 @@ static int llc_bind_or_connect(int fd, __unused__ struct socket_triplet *t)
 	 * allocator across LLC_SAP_DYN_START..LLC_SAP_DYN_STOP; the rest
 	 * pick a non-zero SAP that may collide with an existing one and
 	 * walk the llc_lookup_established arm. */
-	sa.sllc_sap = RAND_BOOL() ? 0 : (__u8) (1 + (rand() & 0xff));
+	sa.sllc_sap = RAND_BOOL() ? 0 : (__u8) (1 + (rnd_u32() & 0xff));
 
 	if (bind(fd, (struct sockaddr *) &sa, sizeof(sa)) < 0)
 		return -1;
@@ -400,8 +401,8 @@ static void llc_configure_post_bind(int fd, __unused__ struct socket_triplet *t)
 	static const unsigned int post_opts[] = {
 		LLC_OPT_RETRY, LLC_OPT_BUSY_TMR_EXP, LLC_OPT_TX_WIN,
 	};
-	unsigned int opt = post_opts[rand() % ARRAY_SIZE(post_opts)];
-	unsigned int v = 1 + (rand() & 0x7);
+	unsigned int opt = post_opts[rnd_modulo_u32(ARRAY_SIZE(post_opts))];
+	unsigned int v = 1 + (rnd_u32() & 0x7);
 
 	(void) setsockopt(fd, SOL_LLC, (int) opt, &v, sizeof(v));
 }
@@ -422,9 +423,9 @@ static void llc_fill_peer(struct sockaddr_llc *sa)
 	memset(sa, 0, sizeof(*sa));
 	sa->sllc_family = AF_LLC;
 	sa->sllc_arphrd = ARPHRD_ETHER;
-	sa->sllc_sap = (__u8) (1 + (rand() & 0xff));
+	sa->sllc_sap = (__u8) (1 + (rnd_u32() & 0xff));
 	for (i = 0; i < IFHWADDRLEN; i++)
-		sa->sllc_mac[i] = (unsigned char) rand();
+		sa->sllc_mac[i] = (unsigned char) rnd_u32();
 	/* Clear the I/G bit (LSB of byte 0) → unicast destination. */
 	sa->sllc_mac[0] &= 0xfe;
 }
