@@ -2820,9 +2820,33 @@ void vma_count_periodic_dump(void)
 		}
 	}
 
-	stats_log_write("[main] VMAs: parent=%lu children_total=%lu children_max=%lu children_min=%lu\n",
-			(parent_vmas < 0) ? 0UL : (unsigned long)parent_vmas,
-			total, max_vmas, min_vmas);
+	/*
+	 * Coalesce identical VMAs lines.  In steady-state runs all four
+	 * counts (parent, total, max, min) are unchanged window after
+	 * window.  Suppress repeats but force a print every 30 windows so
+	 * the stats log still carries a periodic state anchor.
+	 */
+	unsigned long parent = (parent_vmas < 0) ? 0UL : (unsigned long)parent_vmas;
+	static unsigned long last_vma_parent;
+	static unsigned long last_vma_total;
+	static unsigned long last_vma_max;
+	static unsigned long last_vma_min;
+	static unsigned int vma_suppress = 30; /* force first print */
+	if (vma_suppress >= 30 ||
+	    parent != last_vma_parent ||
+	    total != last_vma_total ||
+	    max_vmas != last_vma_max ||
+	    min_vmas != last_vma_min) {
+		stats_log_write("[main] VMAs: parent=%lu children_total=%lu children_max=%lu children_min=%lu\n",
+				parent, total, max_vmas, min_vmas);
+		last_vma_parent = parent;
+		last_vma_total = total;
+		last_vma_max = max_vmas;
+		last_vma_min = min_vmas;
+		vma_suppress = 0;
+	} else {
+		vma_suppress++;
+	}
 
 	last_dump = now;
 }

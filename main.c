@@ -1581,10 +1581,32 @@ static void print_stats(void)
 				enum picker_mode_t pmode = (enum picker_mode_t)__atomic_load_n(
 					&shm->picker_mode, __ATOMIC_RELAXED);
 				bool plateau = kcov_shm->plateau_active;
-				output(0, "PICKER: [picker=%s explorers=%u plateau=%s]\n",
-					picker_mode_name(pmode),
-					explorer_children,
-					plateau ? "active" : "idle");
+				/*
+				 * Coalesce identical PICKER lines.  In steady-state runs
+				 * the tuple (pmode, explorers, plateau) is unchanged
+				 * window after window and the line just repeats.  Skip
+				 * the repeats but force a print every 30 windows so the
+				 * log still carries a periodic state anchor.
+				 */
+				static enum picker_mode_t last_pmode;
+				static unsigned int last_picker_explorers;
+				static bool last_plateau;
+				static unsigned int picker_suppress = 30; /* force first print */
+				if (picker_suppress >= 30 ||
+				    pmode != last_pmode ||
+				    explorer_children != last_picker_explorers ||
+				    plateau != last_plateau) {
+					output(0, "PICKER: [picker=%s explorers=%u plateau=%s]\n",
+						picker_mode_name(pmode),
+						explorer_children,
+						plateau ? "active" : "idle");
+					last_pmode = pmode;
+					last_picker_explorers = explorer_children;
+					last_plateau = plateau;
+					picker_suppress = 0;
+				} else {
+					picker_suppress++;
+				}
 
 				/*
 				 * One-shot warning when the plateau detector fires
@@ -1698,11 +1720,35 @@ static void print_stats(void)
 					snprintf(b_delta_str, sizeof(b_delta_str),
 						"/+%lu", b_delta);
 
-				output(0, "explorer: %u/%u children, %lu edges (%u%%%s)  bandit: %u/%u, %lu edges (%u%%%s)\n",
-					explorer_children, max_children,
-					e_cur, e_share_pct, e_delta_str,
-					max_children - explorer_children, max_children,
-					b_cur, b_share_pct, b_delta_str);
+				/*
+				 * Coalesce identical explorer/bandit lines.  When both
+				 * e_delta and b_delta are zero (steady-state run) the
+				 * line is byte-for-byte unchanged, so suppress repeats
+				 * and force a print every 30 windows to keep an anchor.
+				 */
+				static unsigned int last_eb_explorers;
+				static unsigned int last_eb_max;
+				static unsigned long last_eb_e_cur;
+				static unsigned long last_eb_b_cur;
+				static unsigned int eb_suppress = 30; /* force first print */
+				if (eb_suppress >= 30 ||
+				    explorer_children != last_eb_explorers ||
+				    max_children != last_eb_max ||
+				    e_cur != last_eb_e_cur ||
+				    b_cur != last_eb_b_cur) {
+					output(0, "explorer: %u/%u children, %lu edges (%u%%%s)  bandit: %u/%u, %lu edges (%u%%%s)\n",
+						explorer_children, max_children,
+						e_cur, e_share_pct, e_delta_str,
+						max_children - explorer_children, max_children,
+						b_cur, b_share_pct, b_delta_str);
+					last_eb_explorers = explorer_children;
+					last_eb_max = max_children;
+					last_eb_e_cur = e_cur;
+					last_eb_b_cur = b_cur;
+					eb_suppress = 0;
+				} else {
+					eb_suppress++;
+				}
 				last_explorer_edges = e_cur;
 			} else {
 				if (b_delta > 0)
