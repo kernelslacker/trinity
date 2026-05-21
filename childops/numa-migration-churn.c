@@ -225,13 +225,17 @@ static void parse_online_nodes(void)
  */
 static void probe_recent_policies(void)
 {
-	unsigned long mask = 1;
+	/* Size the probe mask to NODEMASK_LONGS so a 32-bit build with
+	 * MAXNODE_ARG=64 advertises two longs of nodemask to the kernel.
+	 * Passing a single unsigned long here makes set_mempolicy() read
+	 * past the stack word on 32-bit. */
+	unsigned long mask[NODEMASK_LONGS] = { 1 };
 
-	if (sys_set_mempolicy(MPOL_PREFERRED_MANY, &mask, MAXNODE_ARG) == 0 ||
+	if (sys_set_mempolicy(MPOL_PREFERRED_MANY, mask, MAXNODE_ARG) == 0 ||
 	    errno != EINVAL)
 		have_preferred_many = true;
 
-	if (sys_set_mempolicy(MPOL_WEIGHTED_INTERLEAVE, &mask, MAXNODE_ARG) == 0 ||
+	if (sys_set_mempolicy(MPOL_WEIGHTED_INTERLEAVE, mask, MAXNODE_ARG) == 0 ||
 	    errno != EINVAL)
 		have_weighted_interleave = true;
 
