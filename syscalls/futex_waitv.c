@@ -9,6 +9,7 @@
 #include <time.h>
 #include "futex.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "compat.h"
 
@@ -51,7 +52,7 @@ static void sanitise_futex_waitv(struct syscallrecord *rec)
 	unsigned int nr, i;
 	__u32 *futex_words;
 
-	nr = 1 + (rand() % 8);
+	nr = 1 + (rnd_modulo_u32(8));
 
 	/* Allocate the futex words that waiters will point to. */
 	futex_words = (__u32 *) get_writable_address(nr * sizeof(*futex_words));
@@ -95,7 +96,7 @@ static void sanitise_futex_waitv(struct syscallrecord *rec)
 	if (ts == NULL)
 		return;
 	ts->tv_sec = 0;
-	ts->tv_nsec = rand() % 1000000;	/* up to 1ms */
+	ts->tv_nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
 
 	rec->a1 = (unsigned long) waiters;
 	rec->a2 = nr;
