@@ -97,12 +97,15 @@ extern struct edgepair_aggregate parent_edgepair;
  * mirror; pairs_tracked / pairs_dropped are parent-read-only for
  * stats display and served by parent-canonical lookup.
  *
- * Full publish per drain (~1.5 MiB memcpy on the ms-cadence drain).
- * No dirty-row tracking -- the publish path is a straight memcpy and
- * the apply path doesn't naturally produce per-row dirty signal
- * without extra accounting; staleness is bounded by the drain cadence
- * which is operationally indistinguishable from fresh for the
- * EDGEPAIR_COLD_THRESHOLD scale (100000 pair-calls).
+ * Republish is dirty-slot driven: apply_slot() is the sole writer to
+ * parent_edgepair.table and marks each touched slot in a parent-
+ * private bitmap + queue; edgepair_publish_locked() walks that queue
+ * and copies only those slots (~24 B per dirty index) instead of the
+ * full 24 B * EDGEPAIR_TABLE_SIZE memcpy.  First publish and dirty-
+ * queue overflow fall back to a full walk so the mirror is never
+ * stale relative to a slot that was actually touched.  See
+ * edgepair-ring.c for the bitmap / queue declarations and the
+ * fallback bookkeeping.
  */
 struct edgepair_published_slot {
 	unsigned int  prev_nr;		/* matches edgepair_entry.prev_nr */

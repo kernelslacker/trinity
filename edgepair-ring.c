@@ -42,6 +42,43 @@
 struct edgepair_aggregate parent_edgepair;
 struct edgepair_published *edgepair_published;
 
+/*
+ * Dirty-slot tracking for the published-mirror republish path.
+ *
+ * apply_slot() is the SOLE writer to parent_edgepair.table; on every
+ * successful find_or_insert it does one test-and-set against the
+ * bitmap and, on the 0 -> 1 transition, appends the slot index to the
+ * queue.  edgepair_publish_locked() then walks the queue and copies
+ * just those slots into the mirror, replacing the unconditional 6 MiB
+ * memcpy with ~24 B per actually-touched slot.
+ *
+ * Parent-private, single-writer (parent drain context only). No
+ * atomics, same discipline as the rest of struct edgepair_aggregate.
+ *
+ * The bitmap covers EDGEPAIR_TABLE_SIZE bits (32 KiB) so a slot can be
+ * test-and-set in a single masked load + store with no probe.  The
+ * queue is the actual work list; bitmap exists only to debounce
+ * repeated test-and-sets for the same hot pair within one publish
+ * window.  Bitmap and queue MUST stay in sync: a queue push happens
+ * iff the test-and-set transitioned 0 -> 1.
+ *
+ * On queue overflow (more than EDGEPAIR_DIRTY_QUEUE_SIZE unique slots
+ * touched between publishes) we flip need_full_publish and let the
+ * remaining applies in the window stop enqueueing -- the next publish
+ * does a full walk and resets the state, which is cheaper than
+ * tracking a queue spillover separately.  Same fallback handles the
+ * first-ever publish so the mirror is populated even if no apply has
+ * fired yet (need_full_publish is true at startup and re-asserted by
+ * edgepair_published_init).
+ */
+#define EDGEPAIR_DIRTY_BITMAP_WORDS	(EDGEPAIR_TABLE_SIZE / 64)
+#define EDGEPAIR_DIRTY_QUEUE_SIZE	4096
+
+static uint64_t edgepair_dirty_bitmap[EDGEPAIR_DIRTY_BITMAP_WORDS];
+static uint32_t edgepair_dirty_queue[EDGEPAIR_DIRTY_QUEUE_SIZE];
+static unsigned int edgepair_dirty_queue_head;
+static bool edgepair_need_full_publish = true;
+
 /* Same hash as edgepair.c's pair_hash -- duplicated rather than hoisted
  * into a shared header to keep the dark-launch commit self-contained.
  * The in-shm copy remains authoritative until the in-shm path is gone. */
@@ -145,6 +182,9 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	const struct edgepair_event_slot *s = p;
 	struct edgepair_entry *e;
 	unsigned long call_nr;
+	unsigned int idx;
+	uint64_t *word;
+	uint64_t mask;
 
 	if (s->prev_nr >= MAX_NR_SYSCALL || s->curr_nr >= MAX_NR_SYSCALL)
 		return;
@@ -162,6 +202,23 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	if (s->new_edges) {
 		e->new_edge_count++;
 		e->last_new_at = call_nr;
+	}
+
+	/* Mark the slot dirty for the next publish.  Test-and-set
+	 * debounces repeated apply for the same hot pair; queue push
+	 * happens iff the bit transitioned 0 -> 1.  On queue overflow
+	 * flip need_full_publish -- the bitmap can keep being set
+	 * (cheap) but we stop pushing to the queue, and the next
+	 * publish does a full walk + state reset. */
+	idx = (unsigned int)(e - parent_edgepair.table);
+	word = &edgepair_dirty_bitmap[idx >> 6];
+	mask = (uint64_t)1 << (idx & 63);
+	if (!(*word & mask)) {
+		*word |= mask;
+		if (edgepair_dirty_queue_head < EDGEPAIR_DIRTY_QUEUE_SIZE)
+			edgepair_dirty_queue[edgepair_dirty_queue_head++] = idx;
+		else
+			edgepair_need_full_publish = true;
 	}
 }
 
@@ -181,13 +238,30 @@ unsigned int edgepair_ring_drain(struct edgepair_ring *ring)
 }
 
 /*
- * Republish the canonical table into the mirror page.  Full publish
- * per drain: 1.5 MiB memcpy (24 B/slot * 65536 slots + header word) at
- * ms cadence is ~1.5 GB/s memory bandwidth in the worst case, well
- * under one core's memory budget on a DDR4/DDR5 box.  No dirty-row
- * tracking -- the apply path doesn't naturally produce per-row dirty
- * signal without extra accounting, and the simpler publish keeps the
- * critical section short.
+ * Republish the canonical table into the mirror page.  Dirty-slot
+ * publish: apply_slot() is the sole writer to parent_edgepair.table
+ * and marks each touched slot in a parent-private dirty bitmap +
+ * queue (see the declarations above this function); this function
+ * walks the queue and copies only those slots (~24 B per dirty index)
+ * instead of the unconditional 6 MiB memcpy the prior version did.
+ *
+ * Background: a full walk had ~100% of edgepair_ring_drain_all's CPU
+ * sitting on a single load instruction at 76% DRAM stall once the
+ * 8 MiB canonical table and the 6 MiB mirror outgrew L3 under fuzz
+ * pressure.  Every published-row that didn't actually change still
+ * cost a cache-line read + write, and the working set evicted itself
+ * between drains.  In a healthy run the per-drain dirty count is much
+ * smaller than EDGEPAIR_TABLE_SIZE, so the memcpy collapses to
+ * dirty_count * 24 B and the DRAM stall vanishes.
+ *
+ * Fallback to the full walk on:
+ *   - First publish (need_full_publish set at startup and re-asserted
+ *     by edgepair_published_init), so the mirror is populated even if
+ *     no apply has fired yet.
+ *   - Dirty-queue overflow within a publish window (more than
+ *     EDGEPAIR_DIRTY_QUEUE_SIZE unique slots touched between
+ *     publishes).  Republishing everything is cheaper than tracking
+ *     the spillover and the next publish resets the state cleanly.
  *
  * Trims total_count out of the mirror (parent-only consumer) and the
  * CAS-key union (parent doesn't need atomic claim).  Carries
@@ -203,15 +277,32 @@ static void edgepair_publish_locked(void)
 
 	edgepair_published->total_pair_calls = parent_edgepair.total_pair_calls;
 
-	for (i = 0; i < EDGEPAIR_TABLE_SIZE; i++) {
-		struct edgepair_published_slot *ps = &edgepair_published->slots[i];
-		const struct edgepair_entry *e = &parent_edgepair.table[i];
+	if (edgepair_need_full_publish) {
+		for (i = 0; i < EDGEPAIR_TABLE_SIZE; i++) {
+			struct edgepair_published_slot *ps = &edgepair_published->slots[i];
+			const struct edgepair_entry *e = &parent_edgepair.table[i];
 
-		ps->prev_nr = e->prev_nr;
-		ps->curr_nr = e->curr_nr;
-		ps->new_edge_count = e->new_edge_count;
-		ps->last_new_at = e->last_new_at;
+			ps->prev_nr = e->prev_nr;
+			ps->curr_nr = e->curr_nr;
+			ps->new_edge_count = e->new_edge_count;
+			ps->last_new_at = e->last_new_at;
+		}
+		edgepair_need_full_publish = false;
+	} else {
+		for (i = 0; i < edgepair_dirty_queue_head; i++) {
+			unsigned int idx = edgepair_dirty_queue[i];
+			struct edgepair_published_slot *ps = &edgepair_published->slots[idx];
+			const struct edgepair_entry *e = &parent_edgepair.table[idx];
+
+			ps->prev_nr = e->prev_nr;
+			ps->curr_nr = e->curr_nr;
+			ps->new_edge_count = e->new_edge_count;
+			ps->last_new_at = e->last_new_at;
+		}
 	}
+
+	memset(edgepair_dirty_bitmap, 0, sizeof(edgepair_dirty_bitmap));
+	edgepair_dirty_queue_head = 0;
 
 	/* Mirror-integrity sample.  After the publish completes the
 	 * mirror's first slot and total_pair_calls header should match
@@ -221,7 +312,13 @@ static void edgepair_publish_locked(void)
 	 * non-zero published_corrupt counter implies either a hole in
 	 * the freeze/thaw bracket or a wild store that somehow bypassed
 	 * the read-only mapping -- log + count, same shape as Stage 1's
-	 * shm_published_corrupt mirror integrity check. */
+	 * shm_published_corrupt mirror integrity check.
+	 *
+	 * Slot 0 may not be in this round's dirty set; the sample still
+	 * works because between publishes the mirror's slot 0 is only
+	 * written by this function, and a previously-published slot 0
+	 * either matches the canonical (clean) or was scribbled by a
+	 * wild store (caught). */
 	if (edgepair_published->total_pair_calls !=
 	    parent_edgepair.total_pair_calls)
 		parent_edgepair.published_corrupt++;
@@ -278,6 +375,15 @@ void edgepair_published_init(void)
 		edgepair_published->slots[i].prev_nr = EDGEPAIR_EMPTY;
 		edgepair_published->slots[i].curr_nr = EDGEPAIR_EMPTY;
 	}
+
+	/* Re-assert the first-publish fallback so the next
+	 * edgepair_publish_locked() does a full walk -- if init runs
+	 * after any apply has already fired (e.g. a re-init path) the
+	 * bitmap / queue would only describe slots touched since that
+	 * apply, missing the EDGEPAIR_EMPTY sentinel reset above. */
+	memset(edgepair_dirty_bitmap, 0, sizeof(edgepair_dirty_bitmap));
+	edgepair_dirty_queue_head = 0;
+	edgepair_need_full_publish = true;
 }
 
 /*
