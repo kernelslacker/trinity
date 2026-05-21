@@ -4,6 +4,7 @@
 #include <sys/shm.h>
 #include "arch.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -18,7 +19,7 @@ static void sanitise_shmat(struct syscallrecord *rec)
 	 * Non-aligned addresses return EINVAL unless SHM_RND is set.
 	 * Use NULL 80% of the time for better success rate.
 	 */
-	if (rand() % 5 != 0)
+	if (rnd_modulo_u32(5) != 0)
 		rec->a2 = 0;
 	else
 		rec->a2 = (unsigned long) get_map() & PAGE_MASK;
