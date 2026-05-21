@@ -6,6 +6,7 @@
 #include <string.h>
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "fd.h"
 #include "utils.h"
@@ -22,7 +23,7 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 	char *buf;
 	unsigned int nr, i;
 
-	nr = 1 + (rand() % 4);
+	nr = 1 + (rnd_modulo_u32(4));
 	iocbs = (struct iocb *) get_writable_address(nr * sizeof(*iocbs));
 	if (iocbs == NULL)
 		return;
@@ -34,11 +35,11 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 		return;
 
 	for (i = 0; i < nr; i++) {
-		iocbs[i].aio_lio_opcode = iocb_cmds[rand() % ARRAY_SIZE(iocb_cmds)];
+		iocbs[i].aio_lio_opcode = iocb_cmds[rnd_modulo_u32(ARRAY_SIZE(iocb_cmds))];
 		iocbs[i].aio_fildes = get_random_fd();
 		iocbs[i].aio_buf = (__u64)(unsigned long) buf;
 		iocbs[i].aio_nbytes = 4096;
-		iocbs[i].aio_offset = rand() % 65536;
+		iocbs[i].aio_offset = rnd_modulo_u32(65536);
 		iocbs[i].aio_data = i;
 		iocbpp[i] = &iocbs[i];
 	}
