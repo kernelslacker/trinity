@@ -47,6 +47,7 @@
 #include <linux/io_uring.h>
 
 #include "compat.h"
+#include "pids.h"
 
 #ifndef MFD_CLOEXEC
 #define MFD_CLOEXEC	0x0001U
@@ -474,7 +475,7 @@ static void iouring_recipes_pool_race_handler(int sig, siginfo_t *info,
 	uintptr_t fault_addr;
 
 	(void)ctx;
-	if (info->si_code <= 0 && info->si_pid != getpid()) {
+	if (info->si_code <= 0 && info->si_pid != mypid()) {
 		/* Sibling-spoofed — kernel consumed the signal already. */
 		return;
 	}
