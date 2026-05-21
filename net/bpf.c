@@ -890,7 +890,7 @@ void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen)
 	struct sock_fprog *bpf = (void *) *addr;
 
 	if (addrlen != NULL && bpf == NULL)
-		bpf = zmalloc(sizeof(struct sock_fprog));
+		bpf = zmalloc_tracked(sizeof(struct sock_fprog));
 
 	if (bpf == NULL)
 		return;
