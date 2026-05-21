@@ -227,7 +227,7 @@ static void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	struct sockaddr_alg *alg;
 	unsigned int idx;
 
-	alg = zmalloc(sizeof(struct sockaddr_alg));
+	alg = zmalloc_tracked(sizeof(struct sockaddr_alg));
 
 	alg->salg_family = PF_ALG;
 
