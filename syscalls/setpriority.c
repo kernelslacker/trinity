@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -20,7 +21,7 @@ static unsigned long setpriority_which[] = {
 
 static void sanitise_setpriority(struct syscallrecord *rec)
 {
-	rec->a3 = (unsigned long)((rand() % 40) - 20);	/* -20 to 19 */
+	rec->a3 = (unsigned long)((rnd_modulo_u32(40)) - 20);	/* -20 to 19 */
 }
 
 static void post_setpriority(struct syscallrecord *rec)
