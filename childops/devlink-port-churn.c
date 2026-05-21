@@ -125,6 +125,7 @@
 #include "jitter.h"
 #include "netlink-genl-families.h"
 #include "random.h"
+#include "pids.h"
 
 extern struct genl_family_grammar fam_devlink;
 
@@ -174,7 +175,7 @@ static __u32 next_seq(void)
 static __u32 alloc_bus_id(void)
 {
 	if (!g_bus_id_inited) {
-		g_bus_id_next = 10000U + ((__u32)getpid() % 1000U) * 100U;
+		g_bus_id_next = 10000U + ((__u32)mypid() % 1000U) * 100U;
 		g_bus_id_inited = true;
 	}
 	return g_bus_id_next++;
