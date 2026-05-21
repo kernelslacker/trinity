@@ -3,6 +3,7 @@
 #include "net.h"
 #include "random.h"
 #include "trinity.h"
+#include "rnd.h"
 
 #ifndef IPV6_CHECKSUM
 #define IPV6_CHECKSUM	7
@@ -22,18 +23,18 @@ void raw_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triple
 	case ICMP_FILTER:
 		/* struct icmp_filter — bitmask of ICMP types to block */
 		optval32 = (unsigned int *) so->optval;
-		*optval32 = rand();
+		*optval32 = rnd_u32();
 		so->optlen = sizeof(unsigned int);
 		break;
 
 	case IPV6_CHECKSUM:
 		/* Offset of checksum field, or -1 to disable */
 		optval32 = (unsigned int *) so->optval;
-		switch (rand() % 4) {
+		switch (rnd_modulo_u32(4)) {
 		case 0: *optval32 = (unsigned int) -1; break;	/* disable */
 		case 1: *optval32 = 6; break;			/* ICMPv6 offset */
-		case 2: *optval32 = rand() % 256; break;
-		case 3: *optval32 = rand(); break;
+		case 2: *optval32 = rnd_modulo_u32(256); break;
+		case 3: *optval32 = rnd_u32(); break;
 		}
 		so->optlen = sizeof(unsigned int);
 		break;
