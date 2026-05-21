@@ -10,6 +10,7 @@
 #include "ioctls.h"
 #include "net.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
@@ -46,7 +47,7 @@ static void sanitise_atmif_sioc(struct syscallrecord *rec)
 	sioc = (struct atmif_sioc *) get_writable_struct(sizeof(*sioc));
 	if (!sioc)
 		return;
-	sioc->number = rand() % 16;
+	sioc->number = rnd_modulo_u32(16);
 	sioc->length = 64;
 	sioc->arg = get_writable_struct(64);
 	rec->a3 = (unsigned long) sioc;
@@ -64,9 +65,9 @@ static void sanitise_atm_cirange(struct syscallrecord *rec)
 	if (!cir)
 		return;
 	/* ATM_CI_MAX (-1) means use hardware maximum; otherwise 1..8 for vpi, 1..16 for vci */
-	cir->vpi_bits = RAND_BOOL() ? ATM_CI_MAX : (rand() % 8 + 1);
-	cir->vci_bits = RAND_BOOL() ? ATM_CI_MAX : (rand() % 16 + 1);
-	sioc->number = rand() % 16;
+	cir->vpi_bits = RAND_BOOL() ? ATM_CI_MAX : (rnd_modulo_u32(8) + 1);
+	cir->vci_bits = RAND_BOOL() ? ATM_CI_MAX : (rnd_modulo_u32(16) + 1);
+	sioc->number = rnd_modulo_u32(16);
 	sioc->length = sizeof(*cir);
 	sioc->arg = cir;
 	rec->a3 = (unsigned long) sioc;
@@ -80,7 +81,7 @@ static void sanitise_atm_iobuf(struct syscallrecord *rec)
 	iobuf = (struct atm_iobuf *) get_writable_struct(sizeof(*iobuf));
 	if (!iobuf)
 		return;
-	len = rand() % 256 + 4;
+	len = rnd_modulo_u32(256) + 4;
 	iobuf->length = len;
 	iobuf->buffer = get_writable_struct(len);
 	rec->a3 = (unsigned long) iobuf;
@@ -93,12 +94,12 @@ static void sanitise_br2684_filter_set(struct syscallrecord *rec)
 	fs = (struct br2684_filter_set *) get_writable_struct(sizeof(*fs));
 	if (!fs)
 		return;
-	fs->ifspec.method = rand() % 3;	/* BR2684_FIND_BYNOTHING/BYNUM/BYIFNAME */
+	fs->ifspec.method = rnd_modulo_u32(3);	/* BR2684_FIND_BYNOTHING/BYNUM/BYIFNAME */
 	if (fs->ifspec.method == BR2684_FIND_BYNUM)
-		fs->ifspec.spec.devnum = rand() % 16;
+		fs->ifspec.spec.devnum = rnd_modulo_u32(16);
 	/* netmask 0 disables the filter; use a non-zero mask most of the time */
 	fs->filter.netmask = RAND_BOOL() ? 0 : 0xffffff00u;
-	fs->filter.prefix = rand();
+	fs->filter.prefix = rnd_u32();
 	rec->a3 = (unsigned long) fs;
 }
 
@@ -140,7 +141,7 @@ static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 		int *sc = (int *) get_writable_struct(sizeof(int));
 		if (sc) {
 			static const int sc_flags[] = { 0, 1024, 2048, 3072 };
-			*sc = sc_flags[rand() % ARRAY_SIZE(sc_flags)];
+			*sc = sc_flags[rnd_modulo_u32(ARRAY_SIZE(sc_flags))];
 			rec->a3 = (unsigned long) sc;
 		}
 		break;
@@ -151,7 +152,7 @@ static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 		/* atm_backend_t (unsigned short): raw=0, ppp=1, br2684=2 */
 		atm_backend_t *be = (atm_backend_t *) get_writable_struct(sizeof(*be));
 		if (be) {
-			*be = rand() % 3;
+			*be = rnd_modulo_u32(3);
 			rec->a3 = (unsigned long) be;
 		}
 		break;
@@ -161,7 +162,7 @@ static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 		/* int: party endpoint ID (1..127 for N-UNI) */
 		int *pid = (int *) get_writable_struct(sizeof(int));
 		if (pid) {
-			*pid = rand() % 127 + 1;
+			*pid = rnd_modulo_u32(127) + 1;
 			rec->a3 = (unsigned long) pid;
 		}
 		break;
@@ -185,7 +186,7 @@ static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 		/* IOWR(int): set/clear error-insertion bits */
 		int *diag = (int *) get_writable_struct(sizeof(int));
 		if (diag) {
-			*diag = rand() & 0xFF;	/* SONET_INS_* flags, bits 0-7 */
+			*diag = rnd_u32() & 0xFF;	/* SONET_INS_* flags, bits 0-7 */
 			rec->a3 = (unsigned long) diag;
 		}
 		break;
@@ -204,7 +205,7 @@ static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 		/* _IOW(int): 0=SONET, 1=SDH */
 		int *framing = (int *) get_writable_struct(sizeof(int));
 		if (framing) {
-			*framing = rand() % 2;
+			*framing = rnd_modulo_u32(2);
 			rec->a3 = (unsigned long) framing;
 		}
 		break;
