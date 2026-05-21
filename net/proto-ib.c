@@ -8,6 +8,7 @@
 #include "net.h"
 #include "random.h"
 #include "compat.h"
+#include "rnd.h"
 
 #ifndef AF_IB
 #define AF_IB 27
@@ -31,11 +32,11 @@ static void ib_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	sa = zmalloc_tracked(sizeof(struct sockaddr_ib));
 	sa->sib_family = AF_IB;
-	sa->sib_pkey = rand();
-	sa->sib_flowinfo = rand();
+	sa->sib_pkey = rnd_u32();
+	sa->sib_flowinfo = rnd_u32();
 	for (i = 0; i < 16; i++)
-		sa->sib_addr[i] = rand();
-	sa->sib_sid = (uint64_t)rand() << 32 | rand();
+		sa->sib_addr[i] = rnd_u32();
+	sa->sib_sid = (uint64_t)rnd_u32() << 32 | rnd_u32();
 	sa->sib_sid_mask = ~0ULL;
 	sa->sib_scope_id = 0;
 
