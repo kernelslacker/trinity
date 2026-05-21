@@ -6,6 +6,7 @@
 #include <linux/types.h>
 #include <sched.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
@@ -74,7 +75,7 @@ static void sanitise_listns(struct syscallrecord *rec)
 
 	req = zmalloc_tracked(sizeof(struct ns_id_req));
 	req->size = NS_ID_REQ_SIZE_VER0;
-	req->ns_type = ns_types[rand() % ARRAY_SIZE(ns_types)];
+	req->ns_type = ns_types[rnd_modulo_u32(ARRAY_SIZE(ns_types))];
 
 	rec->a1 = (unsigned long) req;
 	rec->a3 = RAND_RANGE(1, 512);
