@@ -13,6 +13,7 @@
 #include <asm/unistd.h>
 #include "deferred-free.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -112,7 +113,7 @@ static void sanitise_statmount(struct syscallrecord *rec)
 
 	req->size = MNT_ID_REQ_SIZE_VER0;
 
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0: req->mnt_id = LSMT_ROOT; break;
 	case 1: req->mnt_id = 1; break;
 	default: req->mnt_id = rand32(); break;
@@ -120,9 +121,9 @@ static void sanitise_statmount(struct syscallrecord *rec)
 
 	/* Build a random combination of STATMOUNT_* request flags. */
 	param = 0;
-	nbits = 1 + (rand() % ARRAY_SIZE(statmount_params));
+	nbits = 1 + (rnd_modulo_u32(ARRAY_SIZE(statmount_params)));
 	for (i = 0; i < nbits; i++)
-		param |= statmount_params[rand() % ARRAY_SIZE(statmount_params)];
+		param |= statmount_params[rnd_modulo_u32(ARRAY_SIZE(statmount_params))];
 	req->param = param;
 
 	rec->a1 = (unsigned long) req;
