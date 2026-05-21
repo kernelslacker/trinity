@@ -39,7 +39,7 @@ static void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_ll *ll;
 
-	ll = zmalloc(sizeof(struct sockaddr_ll));
+	ll = zmalloc_tracked(sizeof(struct sockaddr_ll));
 
 	ll->sll_family = PF_PACKET;
 
