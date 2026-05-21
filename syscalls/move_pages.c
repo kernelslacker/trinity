@@ -16,6 +16,7 @@
 #include "arch.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
@@ -51,7 +52,7 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 	rec->post_state = 0;
 
 	/* number of pages to move */
-	count = rand() % (page_size / sizeof(void *));
+	count = rnd_modulo_u32((page_size / sizeof(void *)));
 	count = max(1U, count);
 	rec->a2 = count;
 
