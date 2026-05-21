@@ -5,6 +5,7 @@
 #include <signal.h>
 #include <string.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "stats_ring.h"
@@ -25,17 +26,17 @@ static void sanitise_mq_notify(struct syscallrecord *rec)
 		return;
 	memset(sev, 0, sizeof(*sev));
 
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0:
 		sev->sigev_notify = SIGEV_NONE;
 		break;
 	case 1:
 		sev->sigev_notify = SIGEV_SIGNAL;
-		sev->sigev_signo = 1 + (rand() % 31);
+		sev->sigev_signo = 1 + (rnd_modulo_u32(31));
 		break;
 	default:
 		sev->sigev_notify = SIGEV_THREAD;
-		sev->sigev_signo = 1 + (rand() % 31);
+		sev->sigev_signo = 1 + (rnd_modulo_u32(31));
 		break;
 	}
 
