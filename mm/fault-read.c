@@ -16,6 +16,7 @@
 #include "random.h"
 #include "shm.h"
 #include "utils.h"
+#include "pids.h"
 
 /* 64KB covers the largest page size (arm64 with 64KB pages). */
 static char page_buf[65536];
@@ -256,7 +257,7 @@ static void read_walk_signal_handler(int sig, siginfo_t *info, void *ctx)
 		raise(sig);
 		return;
 	}
-	if (info->si_code <= 0 && info->si_pid != getpid()) {
+	if (info->si_code <= 0 && info->si_pid != mypid()) {
 		/* Sibling-spoofed — kernel has consumed it already. */
 		return;
 	}
