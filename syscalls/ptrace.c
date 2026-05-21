@@ -151,7 +151,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 
 	case PTRACE_SETSIGINFO: {
 		/* data must point to a siginfo_t */
-		siginfo_t *si = zmalloc(sizeof(siginfo_t));
+		siginfo_t *si = zmalloc_tracked(sizeof(siginfo_t));
 
 		si->si_signo = (rand() % 31) + 1;
 		si->si_code = rand32();
@@ -163,7 +163,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 
 	case PTRACE_GETSIGINFO: {
 		/* data must point to writable siginfo_t buffer */
-		siginfo_t *si = zmalloc(sizeof(siginfo_t));
+		siginfo_t *si = zmalloc_tracked(sizeof(siginfo_t));
 
 		rec->a4 = (unsigned long) si;
 		avoid_shared_buffer_out(&rec->a4, sizeof(siginfo_t));
@@ -176,7 +176,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 		 * data points to a sigset_t; addr (arg3) is sizeof(sigset_t).
 		 * Set a random signal mask.
 		 */
-		sigset_t *set = zmalloc(sizeof(sigset_t));
+		sigset_t *set = zmalloc_tracked(sizeof(sigset_t));
 
 		generate_rand_bytes((unsigned char *) set, sizeof(sigset_t));
 		rec->a3 = sizeof(sigset_t);
@@ -187,7 +187,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 
 	case PTRACE_GETSIGMASK: {
 		/* data points to writable sigset_t; addr is sizeof(sigset_t) */
-		sigset_t *set = zmalloc(sizeof(sigset_t));
+		sigset_t *set = zmalloc_tracked(sizeof(sigset_t));
 
 		rec->a3 = sizeof(sigset_t);
 		rec->a4 = (unsigned long) set;
