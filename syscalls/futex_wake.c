@@ -3,6 +3,7 @@
  *		unsigned long, mask, int, nr, unsigned int, flags)
  */
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "compat.h"
 #include "trinity.h"
@@ -32,7 +33,7 @@ static unsigned long futex2_flags[] = {
 static void sanitise_futex_wake(struct syscallrecord *rec)
 {
 	/* mask: generate a useful comparison mask */
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0: rec->a2 = 0xffffffff; break;	/* all bits (common case) */
 	case 1: rec->a2 = 0xff; break;		/* U8 futex */
 	case 2: rec->a2 = 0xffff; break;	/* U16 futex */
