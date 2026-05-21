@@ -23,6 +23,7 @@
 #include <unistd.h>
 
 #include "arch.h"
+#include "pids.h"
 #include "child.h"
 #include "maps.h"
 #include "random.h"
@@ -92,7 +93,7 @@ static void memory_pressure_pool_race_handler(int sig, siginfo_t *info,
 	uintptr_t fault_addr, range_low, range_high;
 
 	(void)ctx;
-	if (info->si_code <= 0 && info->si_pid != getpid()) {
+	if (info->si_code <= 0 && info->si_pid != mypid()) {
 		/* Sibling-spoofed fatal signal — kernel already consumed
 		 * it; return silently so the counter stays clean of
 		 * signal-storm noise. */
