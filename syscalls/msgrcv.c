@@ -5,12 +5,13 @@
 #include <linux/msg.h>
 #include "compat.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
 static void sanitise_msgrcv(struct syscallrecord *rec)
 {
-	rec->a3 = rand() % MSGMAX;
+	rec->a3 = rnd_modulo_u32(MSGMAX);
 	avoid_shared_buffer_out(&rec->a2, rec->a3 + sizeof(long));
 }
 
