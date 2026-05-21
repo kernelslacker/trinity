@@ -714,9 +714,14 @@ void deferred_freeptr(unsigned long *p)
  * and alignment; every stomp that landed on something heap-shaped
  * but not actually malloc-returned was being fed straight to free().
  *
- * alloc_track_consume already fired at enqueue and would always miss
- * here -- skipped, not re-run.  The remaining gates are stateless and
- * cheap enough to re-evaluate per drain.
+ * alloc_track_consume already fired at enqueue and removed @ptr from
+ * both the 256-slot ring and its 1024-slot hash mirror, so we cannot
+ * re-run the consuming side.  We CAN re-probe the hash mirror via the
+ * non-consuming alloc_track_lookup(): for an in-ring stomp that
+ * scribbled @ptr to a value we never allocated, the lookup misses and
+ * we reject.  Cost is one Fibonacci-hash plus a short linear probe --
+ * a couple of cache lines worst case, negligible against the surrounding
+ * mprotect bracket.
  *
  * Bumps STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR (or its parent
  * fallback) on any rejection, matching the existing pattern; the
@@ -733,6 +738,8 @@ static void free_ring_entry(void *ptr, unsigned int slot)
 		reason = "non-heap";
 	else if (range_overlaps_shared((unsigned long)ptr, 1))
 		reason = "shared-region";
+	else if (!alloc_track_lookup(ptr))
+		reason = "alloc-track-miss";
 
 	if (reason != NULL) {
 		c = this_child();
