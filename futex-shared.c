@@ -29,6 +29,7 @@
  */
 
 #include <stdint.h>
+#include <string.h>
 #include "futex.h"
 #include "objects.h"
 #include "shm.h"
@@ -56,10 +57,15 @@ static void create_shared_futex_pool(void)
 	if (shared_futex_words == NULL)
 		return;	/* alloc_shared logs its own failure */
 
-	/* alloc_shared zero-initialises the region, so every slot is
-	 * already the canonical "unlocked, unowned" starting state for
-	 * both regular and PI futex ops.
+	/* alloc_shared poisons the mapping with random bytes to expose
+	 * uninitialised reads; zero every slot so each starts at the
+	 * canonical "unlocked, unowned" value for both regular and PI
+	 * futex ops.  Without this, FUTEX_WAIT hits EAGAIN and PI ops
+	 * see bogus owner state before any cross-child contention can
+	 * actually occur.
 	 */
+	memset(shared_futex_words, 0, NR_SHARED_FUTEX_WORDS * sizeof(uint32_t));
+
 	for (i = 0; i < NR_SHARED_FUTEX_WORDS; i++) {
 		struct object *obj = alloc_object();
 
