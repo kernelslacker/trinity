@@ -5,6 +5,7 @@
 #include "net.h"
 #include "random.h"
 #include "compat.h"
+#include "rnd.h"
 
 static void key_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
@@ -34,7 +35,7 @@ static void key_gen_msg(__unused__ struct socket_triplet *triplet, void **buf, s
 	msg->sadb_msg_type = RAND_ARRAY(types);
 	msg->sadb_msg_satype = RAND_ARRAY(satypes);
 	msg->sadb_msg_len = sizeof(struct sadb_msg) / 8;
-	msg->sadb_msg_seq = rand();
+	msg->sadb_msg_seq = rnd_u32();
 	msg->sadb_msg_pid = 0;
 
 	*buf = msg;
