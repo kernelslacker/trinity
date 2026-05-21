@@ -405,7 +405,7 @@ pid_t get_random_pid_from_pool(void)
 {
 	struct object *obj;
 
-	if (objects_empty(OBJ_PID) == true)
+	if (objects_pool_empty(OBJ_LOCAL, OBJ_PID) == true)
 		return (pid_t) get_pid();
 
 	obj = get_random_object(OBJ_PID, OBJ_LOCAL);
