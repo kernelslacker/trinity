@@ -40,7 +40,7 @@ static void vsock_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		VMADDR_CID_LOCAL, VMADDR_CID_HOST,
 	};
 
-	vm = zmalloc(sizeof(struct sockaddr_vm));
+	vm = zmalloc_tracked(sizeof(struct sockaddr_vm));
 	vm->svm_family = AF_VSOCK;
 	vm->svm_reserved1 = 0;
 
