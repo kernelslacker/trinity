@@ -14,6 +14,7 @@
 #include "net.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
@@ -97,7 +98,7 @@ static bool bpf_prog_load(union bpf_attr *attr)
 
 	attr->license = (u64) license;
 	attr->log_level = 0;
-	attr->log_size = rand() % page_size;
+	attr->log_size = rnd_modulo_u32(page_size);
 	attr->log_buf = (u64) get_writable_address(page_size);
 	{
 		unsigned long log_buf_addr = attr->log_buf;
@@ -369,9 +370,9 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	switch (cmd) {
 	case BPF_MAP_CREATE:
 		attr->map_type = RAND_ARRAY(bpf_map_types);
-		attr->key_size = rand() % 1024;
-		attr->value_size = rand() % (1024 * 64);
-		attr->max_entries = rand() % 1024;
+		attr->key_size = rnd_modulo_u32(1024);
+		attr->value_size = rnd_modulo_u32((1024 * 64));
+		attr->max_entries = rnd_modulo_u32(1024);
 		attr->flags = RAND_RANGE(0, 4);
 		rec->a3 = 20;
 		break;
@@ -380,15 +381,15 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_MAP_LOOKUP_AND_DELETE_ELEM:
 		attr->map_fd = get_rand_bpf_fd();
 		attr->key = RAND_RANGE(0, 10);
-		attr->value = rand();
+		attr->value = rnd_u32();
 		rec->a3 = 32;
 		break;
 
 	case BPF_MAP_UPDATE_ELEM:
 		attr->map_fd = get_rand_bpf_fd();
 		attr->key = RAND_RANGE(0, 10);
-		attr->value = rand();
-		attr->next_key = rand();
+		attr->value = rnd_u32();
+		attr->next_key = rnd_u32();
 		attr->flags = RAND_RANGE(0, 4);
 		rec->a3 = 32;
 		break;
@@ -402,7 +403,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_MAP_GET_NEXT_KEY:
 		attr->map_fd = get_rand_bpf_fd();
 		attr->key = RAND_RANGE(0, 10);
-		attr->value = rand();
+		attr->value = rnd_u32();
 		rec->a3 = 32;
 		break;
 
@@ -431,16 +432,16 @@ static void sanitise_bpf(struct syscallrecord *rec)
 
 	case BPF_PROG_TEST_RUN:
 		attr->test.prog_fd = get_rand_bpf_prog_fd();
-		attr->test.data_size_in = rand() % page_size;
+		attr->test.data_size_in = rnd_modulo_u32(page_size);
 		attr->test.data_in = (u64) get_address();
-		attr->test.data_size_out = rand() % page_size;
+		attr->test.data_size_out = rnd_modulo_u32(page_size);
 		attr->test.data_out = (u64) get_writable_address(page_size);
 		{
 			unsigned long data_out_addr = attr->test.data_out;
 			avoid_shared_buffer_inout(&data_out_addr, page_size);
 			attr->test.data_out = data_out_addr;
 		}
-		attr->test.repeat = rand() % 256;
+		attr->test.repeat = rnd_modulo_u32(256);
 		rec->a3 = sizeof(attr->test);
 		break;
 
@@ -448,7 +449,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_MAP_GET_NEXT_ID:
 	case BPF_BTF_GET_NEXT_ID:
 	case BPF_LINK_GET_NEXT_ID:
-		attr->start_id = rand();
+		attr->start_id = rnd_u32();
 		rec->a3 = 8;
 		break;
 
@@ -456,7 +457,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_MAP_GET_FD_BY_ID:
 	case BPF_BTF_GET_FD_BY_ID:
 	case BPF_LINK_GET_FD_BY_ID:
-		attr->start_id = rand();
+		attr->start_id = rnd_u32();
 		rec->a3 = 8;
 		break;
 
@@ -472,7 +473,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		 * fuzz path.
 		 */
 		int fd = -1;
-		unsigned int start = rand() % 4;
+		unsigned int start = rnd_modulo_u32(4);
 		unsigned int i;
 
 		for (i = 0; i < 4 && fd == -1; i++) {
@@ -484,7 +485,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 			}
 		}
 		attr->info.bpf_fd = fd;
-		attr->info.info_len = rand() % page_size;
+		attr->info.info_len = rnd_modulo_u32(page_size);
 		attr->info.info = (u64) get_writable_address(page_size);
 		{
 			unsigned long info_addr = attr->info.info;
@@ -499,14 +500,14 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		attr->link_create.prog_fd = get_rand_bpf_prog_fd();
 		attr->link_create.target_fd = get_rand_bpf_fd();
 		attr->link_create.attach_type = RAND_ARRAY(bpf_attach_types);
-		attr->link_create.flags = rand() % 16;
+		attr->link_create.flags = rnd_modulo_u32(16);
 		rec->a3 = sizeof(attr->link_create);
 		break;
 
 	case BPF_LINK_UPDATE:
 		attr->link_update.link_fd = get_rand_bpf_link_fd();
 		attr->link_update.new_prog_fd = get_rand_bpf_prog_fd();
-		attr->link_update.flags = rand() % 4;
+		attr->link_update.flags = rnd_modulo_u32(4);
 		rec->a3 = sizeof(attr->link_update);
 		break;
 
@@ -516,7 +517,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		break;
 
 	case BPF_ENABLE_STATS:
-		attr->enable_stats.type = rand() % 4;
+		attr->enable_stats.type = rnd_modulo_u32(4);
 		rec->a3 = 4;
 		break;
 
