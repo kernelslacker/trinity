@@ -1,27 +1,29 @@
 /*
  * Cross-child shared futex word pool.
  *
- * Existing OBJ_FUTEX entries live in the parent's private heap (via
- * alloc_object()) and are copied into per-child OBJ_LOCAL pools at
- * fork time, so each child writes to its own COW copy of the futex
- * word.  That gives us per-child contention but never crosses a child
- * boundary -- the kernel hashes futex(2) keys by virtual address, and
- * private-COW pages don't share a backing inode with siblings.
+ * Each entry's obj wrapper lives in the parent's private heap
+ * (alloc_object()), but the futex WORD itself lives in a single
+ * shared mapping allocated via alloc_shared() before fork.  Every
+ * obj's sharedfutexobj.word points into that shared region, so
+ * &word[i] is the same virtual address in every child and a pair
+ * of children passing it to FUTEX_WAIT / FUTEX_WAKE actually
+ * exercises cross-task wake/wait -- which the existing OBJ_FUTEX
+ * pool (whose word is per-child private-COW) cannot reach.
  *
- * This pool extends the OBJ_GLOBAL pattern (already used for the
- * anon-mmap / sysv-shm pools) to a non-mmap resource: a fixed pool of
- * uint32_t words allocated from the shared obj heap before fork, so
- * every child sees the SAME virtual address for any given pool entry.
- * Two children passing &pool[idx] to FUTEX_WAIT / FUTEX_WAKE now
- * actually exercise cross-task wake/wait, which the existing per-child
- * COW-private pool cannot reach.
+ * Keeping the obj wrapper in private heap preserves the structural
+ * fix from d7836fef66c8 ("objects: remove shm-resident OBJ_GLOBAL
+ * pool and snapshot defences"): sibling writes can no longer alias
+ * objhead / slot-version metadata and steer derefs past the live
+ * allocation.  Only the value-only futex word -- whose racy
+ * contents are the racy-by-design contract of this pool -- crosses
+ * into shared memory.
  *
- * The pool is small and fixed: NR_SHARED_FUTEX_WORDS entries, sized to
- * concentrate contention across many children onto the same handful of
- * keys.  Larger would dilute the cross-child collisions; smaller would
- * make the picker biased toward whichever entry the rand() landed on
- * first.  All entries are populated by the parent in
- * create_shared_futex_pool() and never destroyed.  Children only
+ * The pool is small and fixed: NR_SHARED_FUTEX_WORDS entries, sized
+ * to concentrate contention across many children onto the same
+ * handful of keys.  Larger would dilute the cross-child collisions;
+ * smaller would make the picker biased toward whichever entry the
+ * rand() landed on first.  All entries are populated by the parent
+ * in create_shared_futex_pool() and never destroyed.  Children only
  * ever read the obj pointers via the lockless reader in
  * get_random_object().
  */
@@ -34,10 +36,12 @@
 
 #define NR_SHARED_FUTEX_WORDS 32
 
+static uint32_t *shared_futex_words;
+
 static void dump_shared_futex(struct object *obj, enum obj_scope scope)
 {
-	output(0, "shared-futex: word=%x owner=%d scope=%d\n",
-	       obj->lock.futex, obj->lock.owner_pid, scope);
+	output(0, "shared-futex: word=%x scope=%d\n",
+	       obj->sharedfutexobj.word ? *obj->sharedfutexobj.word : 0, scope);
 }
 
 static void create_shared_futex_pool(void)
@@ -48,18 +52,21 @@ static void create_shared_futex_pool(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FUTEX_SHARED);
 	head->dump = dump_shared_futex;
 
+	shared_futex_words = alloc_shared(NR_SHARED_FUTEX_WORDS * sizeof(uint32_t));
+	if (shared_futex_words == NULL)
+		return;	/* alloc_shared logs its own failure */
+
+	/* alloc_shared zero-initialises the region, so every slot is
+	 * already the canonical "unlocked, unowned" starting state for
+	 * both regular and PI futex ops.
+	 */
 	for (i = 0; i < NR_SHARED_FUTEX_WORDS; i++) {
 		struct object *obj = alloc_object();
 
 		if (obj == NULL)
 			break;
 
-		/*
-		 * alloc_shared_obj zero-initialises the slot, so .futex and
-		 * .owner_pid are already 0.  No additional setup required --
-		 * a freshly-zeroed futex word is the canonical "unlocked,
-		 * unowned" starting state for both regular and PI ops.
-		 */
+		obj->sharedfutexobj.word = &shared_futex_words[i];
 		add_object(obj, OBJ_GLOBAL, OBJ_FUTEX_SHARED);
 	}
 
@@ -74,7 +81,7 @@ uint32_t * get_shared_futex_word(void)
 	if (obj == NULL)
 		return NULL;
 
-	return &obj->lock.futex;
+	return obj->sharedfutexobj.word;
 }
 
 REG_GLOBAL_OBJ(shared_futex_pool, create_shared_futex_pool);

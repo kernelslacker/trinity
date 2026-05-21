@@ -222,6 +222,10 @@ struct sysvmsgobj {
 	int msqid;
 };
 
+struct sharedfutexobj {
+	uint32_t *word;	/* points into shared region alloc'd in create_shared_futex_pool */
+};
+
 struct object {
 	/*
 	 * Per-obj pool tag.  First field so consumers can spot-check
@@ -315,6 +319,8 @@ struct object {
 		struct socketinfo sockinfo;
 
 		struct __lock lock; /* futex */
+
+		struct sharedfutexobj sharedfutexobj;
 
 		struct sysv_shm sysv_shm;
 	};
