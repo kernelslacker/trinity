@@ -12,6 +12,7 @@
 #include <linux/shm.h>
 #include <string.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
@@ -62,20 +63,20 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		struct sembuf *sops;
 		unsigned int nsops, i;
 
-		nsops = 1 + (rand() % 8);
+		nsops = 1 + (rnd_modulo_u32(8));
 		sops = (struct sembuf *) get_writable_struct(nsops * sizeof(*sops));
 		if (!sops)
 			break;
 		for (i = 0; i < nsops; i++) {
-			sops[i].sem_num = rand() % 32;
-			sops[i].sem_op = (rand() % 5) - 2;	/* -2..2 */
+			sops[i].sem_num = rnd_modulo_u32(32);
+			sops[i].sem_op = (rnd_modulo_u32(5)) - 2;	/* -2..2 */
 			sops[i].sem_flg = 0;
 			if (RAND_BOOL())
 				sops[i].sem_flg |= IPC_NOWAIT;
 			if (RAND_BOOL())
 				sops[i].sem_flg |= SEM_UNDO;
 		}
-		rec->a2 = rand() % 1000;	/* semid */
+		rec->a2 = rnd_modulo_u32(1000);	/* semid */
 		rec->a3 = nsops;
 		rec->a5 = (unsigned long) sops;
 
@@ -85,7 +86,7 @@ static void sanitise_ipc(struct syscallrecord *rec)
 			if (!ts)
 				break;
 			ts->tv_sec = 0;
-			ts->tv_nsec = rand() % 1000000;	/* up to 1ms */
+			ts->tv_nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
 			rec->a6 = (unsigned long) ts;
 		}
 		break;
@@ -94,7 +95,7 @@ static void sanitise_ipc(struct syscallrecord *rec)
 	case SEMGET:
 		/* first=key, second=nsems, third=semflg */
 		rec->a2 = RAND_BOOL() ? IPC_PRIVATE : rand32();
-		rec->a3 = 1 + (rand() % 32);
+		rec->a3 = 1 + (rnd_modulo_u32(32));
 		rec->a4 = 0666;
 		if (RAND_BOOL())
 			rec->a4 |= IPC_CREAT;
@@ -109,9 +110,9 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		 */
 		int cmd;
 
-		rec->a2 = rand() % 1000;	/* semid */
-		rec->a3 = rand() % 32;		/* semnum */
-		cmd = sem_cmds[rand() % ARRAY_SIZE(sem_cmds)];
+		rec->a2 = rnd_modulo_u32(1000);	/* semid */
+		rec->a3 = rnd_modulo_u32(32);		/* semnum */
+		cmd = sem_cmds[rnd_modulo_u32(ARRAY_SIZE(sem_cmds))];
 		rec->a4 = cmd;
 
 		switch (cmd) {
@@ -129,18 +130,18 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		}
 		case SETVAL:
 			/* ptr is the value directly for old-style ipc() */
-			rec->a5 = rand() % 32768;
+			rec->a5 = rnd_modulo_u32(32768);
 			break;
 		case GETALL:
 		case SETALL: {
 			unsigned short *arr;
-			unsigned int nsems = 1 + (rand() % 32);
+			unsigned int nsems = 1 + (rnd_modulo_u32(32));
 			unsigned int j;
 			arr = (unsigned short *) get_writable_struct(nsems * sizeof(*arr));
 			if (!arr)
 				break;
 			for (j = 0; j < nsems; j++)
-				arr[j] = rand() % 32768;
+				arr[j] = rnd_modulo_u32(32768);
 			rec->a5 = (unsigned long) arr;
 			avoid_shared_buffer_inout(&rec->a5, nsems * sizeof(*arr));
 			break;
@@ -168,14 +169,14 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		struct msgbuf *mb;
 		size_t msgsz;
 
-		msgsz = 1 + (rand() % 256);
+		msgsz = 1 + (rnd_modulo_u32(256));
 		mb = (struct msgbuf *) get_writable_struct(sizeof(long) + msgsz);
 		if (!mb)
 			break;
-		mb->mtype = 1 + (rand() % 100);
+		mb->mtype = 1 + (rnd_modulo_u32(100));
 		memset(mb->mtext, 'A', msgsz);
 
-		rec->a2 = rand() % 1000;	/* msqid */
+		rec->a2 = rnd_modulo_u32(1000);	/* msqid */
 		rec->a3 = msgsz;
 		rec->a4 = RAND_BOOL() ? IPC_NOWAIT : 0;
 		rec->a5 = (unsigned long) mb;
@@ -213,9 +214,9 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		if (!tmp)
 			break;
 		tmp->msgp = mb;
-		tmp->msgtyp = rand() % 10;	/* 0=any type */
+		tmp->msgtyp = rnd_modulo_u32(10);	/* 0=any type */
 
-		rec->a2 = rand() % 1000;	/* msqid */
+		rec->a2 = rnd_modulo_u32(1000);	/* msqid */
 		rec->a3 = 256;			/* msgsz */
 		rec->a4 = RAND_BOOL() ? IPC_NOWAIT : 0;
 		rec->a5 = (unsigned long) tmp;
@@ -237,8 +238,8 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		/* first=msqid, second=cmd, ptr=struct msqid_ds */
 		int cmd;
 
-		rec->a2 = rand() % 1000;
-		cmd = msg_cmds[rand() % ARRAY_SIZE(msg_cmds)];
+		rec->a2 = rnd_modulo_u32(1000);
+		cmd = msg_cmds[rnd_modulo_u32(ARRAY_SIZE(msg_cmds))];
 		rec->a3 = cmd;
 
 		switch (cmd) {
@@ -271,7 +272,7 @@ static void sanitise_ipc(struct syscallrecord *rec)
 
 	case SHMAT: {
 		/* first=shmid, ptr=shmaddr, second=shmflg */
-		rec->a2 = rand() % 1000;	/* shmid */
+		rec->a2 = rnd_modulo_u32(1000);	/* shmid */
 		rec->a3 = 0;			/* let kernel pick */
 		rec->a5 = 0;			/* shmaddr=NULL */
 		if (RAND_BOOL())
@@ -291,7 +292,7 @@ static void sanitise_ipc(struct syscallrecord *rec)
 	case SHMGET:
 		/* first=key, second=size, third=shmflg */
 		rec->a2 = RAND_BOOL() ? IPC_PRIVATE : rand32();
-		rec->a3 = 4096 * (1 + (rand() % 16));	/* 4K-64K */
+		rec->a3 = 4096 * (1 + (rnd_modulo_u32(16)));	/* 4K-64K */
 		rec->a4 = 0666;
 		if (RAND_BOOL())
 			rec->a4 |= IPC_CREAT;
@@ -303,8 +304,8 @@ static void sanitise_ipc(struct syscallrecord *rec)
 		/* first=shmid, second=cmd, ptr=struct shmid_ds */
 		int cmd;
 
-		rec->a2 = rand() % 1000;
-		cmd = shm_cmds[rand() % ARRAY_SIZE(shm_cmds)];
+		rec->a2 = rnd_modulo_u32(1000);
+		cmd = shm_cmds[rnd_modulo_u32(ARRAY_SIZE(shm_cmds))];
 		rec->a3 = cmd;
 
 		switch (cmd) {
