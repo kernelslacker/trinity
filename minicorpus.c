@@ -37,6 +37,7 @@
 #include "tables.h"
 #include "trinity.h"
 #include "utils.h"
+#include "pids.h"
 
 struct minicorpus_shared *minicorpus_shm = NULL;
 
@@ -949,7 +950,7 @@ bool minicorpus_save_file(const char *path)
 	 * can't open the same .tmp file with O_TRUNC and interleave their
 	 * writes into a corrupt blob.  The atomic rename still gives the
 	 * final on-disk file all-or-nothing semantics. */
-	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d", path, (int)getpid());
+	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d", path, (int)mypid());
 	if (ret < 0 || (size_t)ret >= sizeof(tmppath))
 		return false;
 
