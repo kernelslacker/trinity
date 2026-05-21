@@ -17,6 +17,7 @@
 #include "arch.h"	// page_size
 #include "deferred-free.h"
 #include "random.h"	// generate_rand_bytes
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "tables.h"
@@ -53,7 +54,7 @@ static unsigned long ** gen_ptrs_to_crap(unsigned int count)
 
 	for (i = 0; i < count; i++) {
 		ptr[i] = zmalloc_tracked(page_size);
-		generate_rand_bytes((unsigned char *) ptr[i], rand() % page_size);
+		generate_rand_bytes((unsigned char *) ptr[i], rnd_modulo_u32(page_size));
 	}
 
 	return (unsigned long **) ptr;
@@ -184,11 +185,11 @@ static void sanitise_execve(struct syscallrecord *rec)
 	redirect_stdio();
 
 	/* Fabricate argv */
-	argvcount = rand() % 32;
+	argvcount = rnd_modulo_u32(32);
 	argv = gen_ptrs_to_crap(argvcount);
 
 	/* Fabricate envp */
-	envpcount = rand() % 32;
+	envpcount = rnd_modulo_u32(32);
 	envp = gen_ptrs_to_crap(envpcount);
 
 	if (current_entry_is_execve()) {
