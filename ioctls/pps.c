@@ -35,6 +35,7 @@
 
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -68,8 +69,8 @@ static const int pps_tsformats[] = {
 
 static void fill_pps_ktime(struct pps_ktime *t)
 {
-	t->sec = (__s64) rand();
-	t->nsec = rand() % 1000000000;
+	t->sec = (__s64) rnd_u32();
+	t->nsec = rnd_modulo_u32(1000000000);
 	/* Never set PPS_TIME_INVALID here; FETCH timeout uses a separate
 	 * sanitiser that must keep that bit clear to avoid blocking. */
 	t->flags = 0;
@@ -80,9 +81,9 @@ static unsigned int random_pps_mode(void)
 	unsigned int mode = 0;
 	unsigned int i, k;
 
-	k = rand() % ARRAY_SIZE(pps_mode_bits);
+	k = rnd_modulo_u32(ARRAY_SIZE(pps_mode_bits));
 	for (i = 0; i <= k; i++)
-		mode |= pps_mode_bits[rand() % ARRAY_SIZE(pps_mode_bits)];
+		mode |= pps_mode_bits[rnd_modulo_u32(ARRAY_SIZE(pps_mode_bits))];
 	return mode;
 }
 
@@ -107,8 +108,8 @@ static void sanitise_setparams(struct syscallrecord *rec)
 
 	/* Mostly the only api version the kernel accepts; occasionally
 	 * a random int to exercise the -EINVAL branch. */
-	if ((rand() % 8) == 0)
-		p->api_version = (int) rand();
+	if ((rnd_modulo_u32(8)) == 0)
+		p->api_version = (int) rnd_u32();
 	else
 		p->api_version = PPS_API_VERS_1;
 
@@ -142,9 +143,9 @@ static void sanitise_fetch(struct syscallrecord *rec)
 	/* Bias hard toward non-blocking (sec=0, nsec=0).  Occasionally a
 	 * very short timeout -- single-digit milliseconds at most -- to
 	 * exercise the wait path without hanging the fuzzer. */
-	if ((rand() % 16) == 0) {
+	if ((rnd_modulo_u32(16)) == 0) {
 		f->timeout.sec = 0;
-		f->timeout.nsec = (rand() % 10) * 1000000;
+		f->timeout.nsec = (rnd_modulo_u32(10)) * 1000000;
 	} else {
 		f->timeout.sec = 0;
 		f->timeout.nsec = 0;
@@ -165,14 +166,14 @@ static void sanitise_kc_bind(struct syscallrecord *rec)
 
 	/* Mostly valid combinations to exercise the bind path; occasionally
 	 * fully random ints to hit the -EINVAL validators. */
-	if ((rand() % 8) == 0) {
-		b->tsformat = (int) rand();
-		b->edge = (int) rand();
-		b->consumer = (int) rand();
+	if ((rnd_modulo_u32(8)) == 0) {
+		b->tsformat = (int) rnd_u32();
+		b->edge = (int) rnd_u32();
+		b->consumer = (int) rnd_u32();
 	} else {
-		b->tsformat = pps_tsformats[rand() % ARRAY_SIZE(pps_tsformats)];
-		b->edge = pps_edge_modes[rand() % ARRAY_SIZE(pps_edge_modes)];
-		b->consumer = pps_kc_consumers[rand() % ARRAY_SIZE(pps_kc_consumers)];
+		b->tsformat = pps_tsformats[rnd_modulo_u32(ARRAY_SIZE(pps_tsformats))];
+		b->edge = pps_edge_modes[rnd_modulo_u32(ARRAY_SIZE(pps_edge_modes))];
+		b->consumer = pps_kc_consumers[rnd_modulo_u32(ARRAY_SIZE(pps_kc_consumers))];
 	}
 
 	rec->a3 = (unsigned long) b;
