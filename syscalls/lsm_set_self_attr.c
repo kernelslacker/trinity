@@ -3,6 +3,7 @@
  *		struct lsm_ctx __user *, ctx, u32, size, u32, flags)
  */
 #include <string.h>
+#include "rnd.h"
 #include "sanitise.h"
 
 #ifndef LSM_ATTR_CURRENT
@@ -54,7 +55,7 @@ static void sanitise_lsm_set_self_attr(struct syscallrecord *rec)
 	if (!ctx)
 		return;
 	memset(ctx, 0, sizeof(*ctx));
-	ctx->id = lsm_ids[rand() % ARRAY_SIZE(lsm_ids)];
+	ctx->id = lsm_ids[rnd_modulo_u32(ARRAY_SIZE(lsm_ids))];
 	ctx->len = sizeof(*ctx);
 
 	rec->a2 = (unsigned long) ctx;
