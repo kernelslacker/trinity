@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE1(mq_unlink, const char __user *, u_name)
  */
 #include <stdlib.h>
+#include "rnd.h"
 #include "sanitise.h"
 
 static void sanitise_mq_unlink(struct syscallrecord *rec)
@@ -17,7 +18,7 @@ static void sanitise_mq_unlink(struct syscallrecord *rec)
 	name[2] = 'r';
 	name[3] = 'i';
 	name[4] = 'n';
-	name[5] = '0' + (rand() % 10);
+	name[5] = '0' + (rnd_modulo_u32(10));
 	name[6] = '\0';
 
 	rec->a1 = (unsigned long) name;
