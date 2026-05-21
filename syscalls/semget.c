@@ -61,7 +61,7 @@ int get_random_sysv_sem(void)
 {
 	struct object *obj;
 
-	if (objects_empty(OBJ_SYSV_SEM) == true)
+	if (objects_pool_empty(OBJ_LOCAL, OBJ_SYSV_SEM) == true)
 		return 0;
 
 	obj = get_random_object(OBJ_SYSV_SEM, OBJ_LOCAL);
