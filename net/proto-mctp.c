@@ -11,6 +11,7 @@
 #include "random.h"
 #include "socket-family-grammar.h"
 #include "compat.h"
+#include "rnd.h"
 
 #ifndef MCTP_NET_ANY
 #define MCTP_NET_ANY		0x0
@@ -46,10 +47,10 @@ static void mctp_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	mctp = zmalloc_tracked(sizeof(struct sockaddr_mctp));
 	mctp->smctp_family = AF_MCTP;
-	mctp->smctp_network = RAND_BOOL() ? MCTP_NET_ANY : rand();
-	mctp->smctp_addr.s_addr = RAND_BOOL() ? MCTP_ADDR_ANY : rand();
-	mctp->smctp_type = rand();
-	mctp->smctp_tag = rand() & (MCTP_TAG_MASK | MCTP_TAG_OWNER);
+	mctp->smctp_network = RAND_BOOL() ? MCTP_NET_ANY : rnd_u32();
+	mctp->smctp_addr.s_addr = RAND_BOOL() ? MCTP_ADDR_ANY : rnd_u32();
+	mctp->smctp_type = rnd_u32();
+	mctp->smctp_tag = rnd_u32() & (MCTP_TAG_MASK | MCTP_TAG_OWNER);
 
 	*addr = (struct sockaddr *) mctp;
 	*addrlen = sizeof(struct sockaddr_mctp);
@@ -190,13 +191,13 @@ static int mctp_bind_or_connect(int fd, __unused__ struct socket_triplet *triple
 	memset(&sa, 0, sizeof(sa));
 	sa.smctp_family = AF_MCTP;
 	sa.smctp_network = RAND_BOOL() ? MCTP_NET_ANY :
-					 (unsigned int) (rand() & 0xff);
+					 (unsigned int) (rnd_u32() & 0xff);
 	/* MCTP_ADDR_NULL is the conventional "bind to all local EIDs"
 	 * value; occasionally probe a synthesised mid-range EID too so
 	 * the bind-collision arm of mctp_bind() runs as well. */
 	sa.smctp_addr.s_addr = RAND_BOOL() ? MCTP_ADDR_NULL :
-					     (mctp_eid_t) (8 + (rand() % 120));
-	sa.smctp_type = (__u8) (rand() & 0xff);
+					     (mctp_eid_t) (8 + (rnd_modulo_u32(120)));
+	sa.smctp_type = (__u8) (rnd_u32() & 0xff);
 	sa.smctp_tag = 0;
 
 	if (bind(fd, (struct sockaddr *) &sa, sizeof(sa)) < 0)
@@ -232,13 +233,13 @@ static void mctp_walk_setsockopts(int fd, __unused__ struct socket_triplet *trip
 			break;
 		case 1:
 			tv.tv_sec = 0;
-			tv.tv_usec = 1000 + (rand() % 5000);
+			tv.tv_usec = 1000 + (rnd_modulo_u32(5000));
 			(void) setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO,
 					  &tv, sizeof(tv));
 			break;
 		case 2:
 			tv.tv_sec = 0;
-			tv.tv_usec = 1000 + (rand() % 5000);
+			tv.tv_usec = 1000 + (rnd_modulo_u32(5000));
 			(void) setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO,
 					  &tv, sizeof(tv));
 			break;
@@ -263,7 +264,7 @@ static void mctp_data_leg(int parent_fd, __unused__ int child_fd,
 	 * surface.  When it succeeds, the returned tag carries TO+PREALLOC
 	 * and we send/drop with it. */
 	memset(&tag_ctl, 0, sizeof(tag_ctl));
-	tag_ctl.peer_addr = (mctp_eid_t) (8 + (rand() % 120));
+	tag_ctl.peer_addr = (mctp_eid_t) (8 + (rnd_modulo_u32(120)));
 	tag_ctl.tag = 0;
 	tag_ctl.flags = 0;
 	if (RAND_BOOL() && ioctl(parent_fd, SIOCMCTPALLOCTAG, &tag_ctl) == 0)
@@ -272,19 +273,19 @@ static void mctp_data_leg(int parent_fd, __unused__ int child_fd,
 	memset(&peer, 0, sizeof(peer));
 	peer.smctp_family = AF_MCTP;
 	peer.smctp_network = RAND_BOOL() ? MCTP_NET_ANY :
-					   (unsigned int) (rand() & 0xff);
+					   (unsigned int) (rnd_u32() & 0xff);
 	if (tag_allocated) {
 		peer.smctp_addr.s_addr = tag_ctl.peer_addr;
 		peer.smctp_tag = tag_ctl.tag;
 	} else {
-		peer.smctp_addr.s_addr = (mctp_eid_t) (8 + (rand() % 120));
+		peer.smctp_addr.s_addr = (mctp_eid_t) (8 + (rnd_modulo_u32(120)));
 		/* Arm B: TAG_OWNER set ⇒ kernel auto-allocates outgoing
 		 * tag during route lookup.  Bare tag bits set ⇒ responder
 		 * pattern (kernel rejects unless a matching key exists). */
 		peer.smctp_tag = RAND_BOOL() ? MCTP_TAG_OWNER
-					     : (rand() & MCTP_TAG_MASK);
+					     : (rnd_u32() & MCTP_TAG_MASK);
 	}
-	peer.smctp_type = (__u8) (rand() & 0xff);
+	peer.smctp_type = (__u8) (rnd_u32() & 0xff);
 
 	generate_rand_bytes(payload, sizeof(payload));
 	iov.iov_base = payload;
