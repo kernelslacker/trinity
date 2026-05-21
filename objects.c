@@ -17,6 +17,7 @@
 #include "pc_format.h"
 #include "pids.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -871,7 +872,7 @@ struct object * get_random_object(enum objecttype type, enum obj_scope scope)
 	if (n == 0 || head->array == NULL)
 		return NULL;
 
-	return head->array[rand() % n];
+	return head->array[rnd_modulo_u32(n)];
 }
 
 bool objects_empty(enum objecttype type)
@@ -1225,7 +1226,7 @@ static void __prune_objects(struct childdata *child, enum objecttype type, enum 
 		expected_kills = 1U;
 
 	for (i = 0; i < expected_kills; i++) {
-		unsigned int idx = rand() % n;
+		unsigned int idx = rnd_modulo_u32(n);
 		struct object *obj = array[idx];
 
 		if (obj == NULL)
