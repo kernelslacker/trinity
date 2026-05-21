@@ -12,7 +12,7 @@ static void x25_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	struct sockaddr_x25 *x25;
 	unsigned int len;
 
-	x25 = zmalloc(sizeof(struct sockaddr_x25));
+	x25 = zmalloc_tracked(sizeof(struct sockaddr_x25));
 
 	x25->sx25_family = PF_X25;
 	len = rand() % 15;
