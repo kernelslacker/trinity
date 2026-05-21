@@ -123,6 +123,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "pids.h"
 
 /*
  * UAPI fallbacks.  xfrm.h on stripped sysroots may be absent; the
@@ -1405,7 +1406,7 @@ static void pfkey_flush_burst(void)
 	msg.sadb_msg_satype   = SADB_SATYPE_ESP;
 	msg.sadb_msg_len      = sizeof(msg) / 8;
 	msg.sadb_msg_seq      = next_seq();
-	msg.sadb_msg_pid      = (__u32)getpid();
+	msg.sadb_msg_pid      = (__u32)mypid();
 	if (send(s, &msg, sizeof(msg), MSG_DONTWAIT) > 0)
 		__atomic_add_fetch(&shm->stats.xfrm_churn_pfkey_send_ok,
 				   1, __ATOMIC_RELAXED);
@@ -1416,7 +1417,7 @@ static void pfkey_flush_burst(void)
 	msg.sadb_msg_satype   = SADB_SATYPE_AH;
 	msg.sadb_msg_len      = sizeof(msg) / 8;
 	msg.sadb_msg_seq      = next_seq();
-	msg.sadb_msg_pid      = (__u32)getpid();
+	msg.sadb_msg_pid      = (__u32)mypid();
 	if (send(s, &msg, sizeof(msg), MSG_DONTWAIT) > 0)
 		__atomic_add_fetch(&shm->stats.xfrm_churn_pfkey_send_ok,
 				   1, __ATOMIC_RELAXED);
