@@ -37,6 +37,7 @@
 #include "healer.h"
 #include "kcov.h"
 #include "params.h"
+#include "pids.h"
 #include "rnd.h"
 #include "shm.h"
 #include "stats.h"
@@ -1247,7 +1248,7 @@ bool kcov_bitmap_save_file(const char *path)
 					      KCOV_NUM_EDGES);
 
 	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d",
-		       path, (int)getpid());
+		       path, (int)mypid());
 	if (ret < 0 || (size_t)ret >= sizeof(tmppath))
 		return false;
 
