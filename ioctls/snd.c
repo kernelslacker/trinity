@@ -22,6 +22,7 @@
 
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -40,7 +41,7 @@ static void sanitise_snd_hwdep(struct syscallrecord *rec)
 	case SNDRV_HWDEP_IOCTL_INFO: {
 		struct snd_hwdep_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
-			info->device = rand() % 8;
+			info->device = rnd_modulo_u32(8);
 			rec->a3 = (unsigned long) info;
 		}
 		break;
@@ -54,8 +55,8 @@ static void sanitise_snd_hwdep(struct syscallrecord *rec)
 	case SNDRV_HWDEP_IOCTL_DSP_LOAD: {
 		struct snd_hwdep_dsp_image *img = get_writable_struct(sizeof(*img));
 		if (img) {
-			img->index = rand() % 8;
-			img->length = rand() % 4096 + 1;
+			img->index = rnd_modulo_u32(8);
+			img->length = rnd_modulo_u32(4096) + 1;
 			img->image = get_writable_struct(img->length);
 			rec->a3 = (unsigned long) img;
 		}
@@ -78,9 +79,9 @@ static void sanitise_snd_hda_verb(struct syscallrecord *rec)
 		if (!v)
 			break;
 		/* nid in the top byte; verb in bits 8-23; param in low byte. */
-		nid = rand() & 0xff;
-		verb = rand() & 0xffff;
-		param = rand() & 0xff;
+		nid = rnd_u32() & 0xff;
+		verb = rnd_u32() & 0xffff;
+		param = rnd_u32() & 0xff;
 		v->verb = (nid << 24) | (verb << 8) | param;
 		rec->a3 = (unsigned long) v;
 		break;
@@ -91,11 +92,11 @@ static void sanitise_snd_hda_verb(struct syscallrecord *rec)
 
 static void fill_snd_ctl_elem_id(struct snd_ctl_elem_id *id)
 {
-	id->numid = RAND_BOOL() ? 0 : rand() % 64;
-	id->iface = rand() % 7;		/* SNDRV_CTL_ELEM_IFACE_* 0-6 */
-	id->device = rand() % 8;
-	id->subdevice = rand() % 8;
-	id->index = rand() % 8;
+	id->numid = RAND_BOOL() ? 0 : rnd_modulo_u32(64);
+	id->iface = rnd_modulo_u32(7);		/* SNDRV_CTL_ELEM_IFACE_* 0-6 */
+	id->device = rnd_modulo_u32(8);
+	id->subdevice = rnd_modulo_u32(8);
+	id->index = rnd_modulo_u32(8);
 }
 
 static void sanitise_snd_ctl(struct syscallrecord *rec)
@@ -110,8 +111,8 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 	case SNDRV_CTL_IOCTL_ELEM_LIST: {
 		struct snd_ctl_elem_list *list = get_writable_struct(sizeof(*list));
 		if (list) {
-			unsigned int space = rand() % 16 + 1;
-			list->offset = rand() % 64;
+			unsigned int space = rnd_modulo_u32(16) + 1;
+			list->offset = rnd_modulo_u32(64);
 			list->space = space;
 			list->pids = get_writable_struct(space * sizeof(*list->pids));
 			rec->a3 = (unsigned long) list;
@@ -150,11 +151,11 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 	case SNDRV_CTL_IOCTL_TLV_READ:
 	case SNDRV_CTL_IOCTL_TLV_WRITE:
 	case SNDRV_CTL_IOCTL_TLV_COMMAND: {
-		unsigned int datalen = (rand() % 8 + 1) * 4;
+		unsigned int datalen = (rnd_modulo_u32(8) + 1) * 4;
 		/* snd_ctl_tlv has a flexible array member, allocate with data */
 		struct snd_ctl_tlv *tlv = get_writable_struct(sizeof(*tlv) + datalen);
 		if (tlv) {
-			tlv->numid = rand() % 64;
+			tlv->numid = rnd_modulo_u32(64);
 			tlv->length = datalen;
 			rec->a3 = (unsigned long) tlv;
 		}
@@ -165,7 +166,7 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 	case SNDRV_CTL_IOCTL_RAWMIDI_NEXT_DEVICE: {
 		int *dev = get_writable_struct(sizeof(int));
 		if (dev) {
-			*dev = (int)(rand() % 8) - 1;	/* -1 to get first, 0-7 otherwise */
+			*dev = (int)(rnd_modulo_u32(8)) - 1;	/* -1 to get first, 0-7 otherwise */
 			rec->a3 = (unsigned long) dev;
 		}
 		break;
@@ -173,7 +174,7 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 	case SNDRV_CTL_IOCTL_HWDEP_INFO: {
 		struct snd_hwdep_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
-			info->device = rand() % 8;
+			info->device = rnd_modulo_u32(8);
 			rec->a3 = (unsigned long) info;
 		}
 		break;
@@ -181,9 +182,9 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 	case SNDRV_CTL_IOCTL_PCM_INFO: {
 		struct snd_pcm_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
-			info->device = rand() % 8;
-			info->subdevice = rand() % 8;
-			info->stream = rand() & 1;
+			info->device = rnd_modulo_u32(8);
+			info->subdevice = rnd_modulo_u32(8);
+			info->stream = rnd_u32() & 1;
 			rec->a3 = (unsigned long) info;
 		}
 		break;
@@ -191,9 +192,9 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 	case SNDRV_CTL_IOCTL_RAWMIDI_INFO: {
 		struct snd_rawmidi_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
-			info->device = rand() % 8;
-			info->subdevice = rand() % 8;
-			info->stream = rand() % 3;
+			info->device = rnd_modulo_u32(8);
+			info->subdevice = rnd_modulo_u32(8);
+			info->stream = rnd_modulo_u32(3);
 			rec->a3 = (unsigned long) info;
 		}
 		break;
@@ -203,7 +204,7 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 	case SNDRV_CTL_IOCTL_POWER: {
 		int *val = get_writable_struct(sizeof(int));
 		if (val) {
-			*val = rand() % 8;
+			*val = rnd_modulo_u32(8);
 			rec->a3 = (unsigned long) val;
 		}
 		break;
@@ -233,8 +234,8 @@ static void fill_snd_pcm_hw_params(struct snd_pcm_hw_params *p)
 	unsigned int rate_idx = SNDRV_PCM_HW_PARAM_RATE - SNDRV_PCM_HW_PARAM_FIRST_INTERVAL;
 	unsigned int chan_idx = SNDRV_PCM_HW_PARAM_CHANNELS - SNDRV_PCM_HW_PARAM_FIRST_INTERVAL;
 
-	rate = pcm_rates[rand() % ARRAY_SIZE(pcm_rates)];
-	channels = rand() % 8 + 1;
+	rate = pcm_rates[rnd_modulo_u32(ARRAY_SIZE(pcm_rates))];
+	channels = rnd_modulo_u32(8) + 1;
 
 	p->rmask = ~0U;		/* request all params */
 	p->intervals[rate_idx].min = rate;
@@ -252,9 +253,9 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 	case SNDRV_PCM_IOCTL_INFO: {
 		struct snd_pcm_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
-			info->device = rand() % 8;
-			info->subdevice = rand() % 8;
-			info->stream = rand() & 1;
+			info->device = rnd_modulo_u32(8);
+			info->subdevice = rnd_modulo_u32(8);
+			info->stream = rnd_u32() & 1;
 			rec->a3 = (unsigned long) info;
 		}
 		break;
@@ -263,7 +264,7 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 	case SNDRV_PCM_IOCTL_TTSTAMP: {
 		int *mode = get_writable_struct(sizeof(int));
 		if (mode) {
-			*mode = rand() % 3;
+			*mode = rnd_modulo_u32(3);
 			rec->a3 = (unsigned long) mode;
 		}
 		break;
@@ -280,10 +281,10 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 	case SNDRV_PCM_IOCTL_SW_PARAMS: {
 		struct snd_pcm_sw_params *p = get_writable_struct(sizeof(*p));
 		if (p) {
-			p->avail_min = rand() % 4096 + 1;
-			p->start_threshold = rand() % 8192 + 1;
-			p->stop_threshold = rand() % 8192 + 1;
-			p->tstamp_mode = rand() % 2;
+			p->avail_min = rnd_modulo_u32(4096) + 1;
+			p->start_threshold = rnd_modulo_u32(8192) + 1;
+			p->stop_threshold = rnd_modulo_u32(8192) + 1;
+			p->tstamp_mode = rnd_modulo_u32(2);
 			p->period_step = 1;
 			rec->a3 = (unsigned long) p;
 		}
@@ -296,7 +297,7 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 			/* STATUS_EXT reads audio_tstamp_data as a request hint
 			 * for which timestamp variant to report. */
 			if (rec->a2 == SNDRV_PCM_IOCTL_STATUS_EXT)
-				st->audio_tstamp_data = rand() % 4;
+				st->audio_tstamp_data = rnd_modulo_u32(4);
 			rec->a3 = (unsigned long) st;
 		}
 		break;
@@ -310,7 +311,7 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 	case SNDRV_PCM_IOCTL_CHANNEL_INFO: {
 		struct snd_pcm_channel_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
-			info->channel = rand() % 8;
+			info->channel = rnd_modulo_u32(8);
 			rec->a3 = (unsigned long) info;
 		}
 		break;
@@ -325,7 +326,7 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 	case SNDRV_PCM_IOCTL_READI_FRAMES: {
 		struct snd_xferi *xfer = get_writable_struct(sizeof(*xfer));
 		if (xfer) {
-			unsigned int frames = rand() % 1024 + 1;
+			unsigned int frames = rnd_modulo_u32(1024) + 1;
 			xfer->frames = frames;
 			xfer->buf = get_writable_struct(frames * 8);	/* up to 8 bytes/frame */
 			rec->a3 = (unsigned long) xfer;
@@ -336,8 +337,8 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 	case SNDRV_PCM_IOCTL_READN_FRAMES: {
 		struct snd_xfern *xfer = get_writable_struct(sizeof(*xfer));
 		if (xfer) {
-			unsigned int frames = rand() % 1024 + 1;
-			unsigned int channels = rand() % 8 + 1;
+			unsigned int frames = rnd_modulo_u32(1024) + 1;
+			unsigned int channels = rnd_modulo_u32(8) + 1;
 			unsigned int i;
 			xfer->frames = frames;
 			xfer->bufs = get_writable_struct(channels * sizeof(void *));
@@ -350,7 +351,7 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 	case SNDRV_PCM_IOCTL_LINK: {
 		int *fd = get_writable_struct(sizeof(int));
 		if (fd) {
-			*fd = rand() % 1024;
+			*fd = rnd_modulo_u32(1024);
 			rec->a3 = (unsigned long) fd;
 		}
 		break;
@@ -367,7 +368,7 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 	case SNDRV_PCM_IOCTL_FORWARD: {
 		snd_pcm_uframes_t *frames = get_writable_struct(sizeof(*frames));
 		if (frames) {
-			*frames = rand() % 4096 + 1;
+			*frames = rnd_modulo_u32(4096) + 1;
 			rec->a3 = (unsigned long) frames;
 		}
 		break;
@@ -383,9 +384,9 @@ static void sanitise_snd_rawmidi(struct syscallrecord *rec)
 	case SNDRV_RAWMIDI_IOCTL_INFO: {
 		struct snd_rawmidi_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
-			info->device = rand() % 8;
-			info->subdevice = rand() % 8;
-			info->stream = rand() % 3;
+			info->device = rnd_modulo_u32(8);
+			info->subdevice = rnd_modulo_u32(8);
+			info->stream = rnd_modulo_u32(3);
 			rec->a3 = (unsigned long) info;
 		}
 		break;
@@ -393,9 +394,9 @@ static void sanitise_snd_rawmidi(struct syscallrecord *rec)
 	case SNDRV_RAWMIDI_IOCTL_PARAMS: {
 		struct snd_rawmidi_params *p = get_writable_struct(sizeof(*p));
 		if (p) {
-			p->stream = rand() & 1;
-			p->buffer_size = (rand() % 16 + 1) * 4096;
-			p->avail_min = rand() % 256 + 1;
+			p->stream = rnd_u32() & 1;
+			p->buffer_size = (rnd_modulo_u32(16) + 1) * 4096;
+			p->avail_min = rnd_modulo_u32(256) + 1;
 			rec->a3 = (unsigned long) p;
 		}
 		break;
@@ -403,7 +404,7 @@ static void sanitise_snd_rawmidi(struct syscallrecord *rec)
 	case SNDRV_RAWMIDI_IOCTL_STATUS: {
 		struct snd_rawmidi_status *st = get_writable_struct(sizeof(*st));
 		if (st) {
-			st->stream = rand() & 1;
+			st->stream = rnd_u32() & 1;
 			rec->a3 = (unsigned long) st;
 		}
 		break;
@@ -412,7 +413,7 @@ static void sanitise_snd_rawmidi(struct syscallrecord *rec)
 	case SNDRV_RAWMIDI_IOCTL_DRAIN: {
 		int *stream = get_writable_struct(sizeof(int));
 		if (stream) {
-			*stream = rand() & 1;
+			*stream = rnd_u32() & 1;
 			rec->a3 = (unsigned long) stream;
 		}
 		break;
@@ -424,11 +425,11 @@ static void sanitise_snd_rawmidi(struct syscallrecord *rec)
 
 static void fill_snd_timer_id(struct snd_timer_id *tid)
 {
-	tid->dev_class = (int)(rand() % 4) - 1;	/* -1 (none) to 3 (PCM) */
-	tid->dev_sclass = rand() % 4;
-	tid->card = RAND_BOOL() ? -1 : (int)(rand() % 8);
-	tid->device = RAND_BOOL() ? -1 : (int)(rand() % 32);
-	tid->subdevice = rand() % 8;
+	tid->dev_class = (int)(rnd_modulo_u32(4)) - 1;	/* -1 (none) to 3 (PCM) */
+	tid->dev_sclass = rnd_modulo_u32(4);
+	tid->card = RAND_BOOL() ? -1 : (int)(rnd_modulo_u32(8));
+	tid->device = RAND_BOOL() ? -1 : (int)(rnd_modulo_u32(32));
+	tid->subdevice = rnd_modulo_u32(8);
 }
 
 static void sanitise_snd_timer(struct syscallrecord *rec)
@@ -454,8 +455,8 @@ static void sanitise_snd_timer(struct syscallrecord *rec)
 		struct snd_timer_gparams *gp = get_writable_struct(sizeof(*gp));
 		if (gp) {
 			fill_snd_timer_id(&gp->tid);
-			gp->period_num = rand() % 1000000 + 1;
-			gp->period_den = rand() % 1000000 + 1;
+			gp->period_num = rnd_modulo_u32(1000000) + 1;
+			gp->period_den = rnd_modulo_u32(1000000) + 1;
 			rec->a3 = (unsigned long) gp;
 		}
 		break;
@@ -491,9 +492,9 @@ static void sanitise_snd_timer(struct syscallrecord *rec)
 	case SNDRV_TIMER_IOCTL_PARAMS: {
 		struct snd_timer_params *p = get_writable_struct(sizeof(*p));
 		if (p) {
-			p->flags = rand() & 0x7;
-			p->ticks = rand() % 64 + 1;
-			p->queue_size = rand() % (1024 - 32) + 32;
+			p->flags = rnd_u32() & 0x7;
+			p->ticks = rnd_modulo_u32(64) + 1;
+			p->queue_size = rnd_modulo_u32((1024 - 32)) + 32;
 			p->filter = ~0U;	/* all events */
 			rec->a3 = (unsigned long) p;
 		}
@@ -515,9 +516,9 @@ static void sanitise_snd_timer(struct syscallrecord *rec)
 	case SNDRV_TIMER_IOCTL_CREATE: {
 		struct snd_timer_uinfo *ui = get_writable_struct(sizeof(*ui));
 		if (ui) {
-			ui->resolution = (rand() % 1000000ULL + 1) * 1000ULL;
+			ui->resolution = (rnd_modulo_u32(1000000ULL) + 1) * 1000ULL;
 			ui->fd = -1;
-			ui->id = rand() % 256;
+			ui->id = rnd_modulo_u32(256);
 			rec->a3 = (unsigned long) ui;
 		}
 		break;
@@ -530,8 +531,8 @@ static void sanitise_snd_timer(struct syscallrecord *rec)
 
 static void fill_snd_seq_addr(struct snd_seq_addr *addr)
 {
-	addr->client = rand() % 128;
-	addr->port = rand() % 256;
+	addr->client = rnd_modulo_u32(128);
+	addr->port = rnd_modulo_u32(256);
 }
 
 static void sanitise_snd_seq(struct syscallrecord *rec)
@@ -546,7 +547,7 @@ static void sanitise_snd_seq(struct syscallrecord *rec)
 	case SNDRV_SEQ_IOCTL_RUNNING_MODE: {
 		struct snd_seq_running_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
-			info->client = rand() % 128;
+			info->client = rnd_modulo_u32(128);
 			rec->a3 = (unsigned long) info;
 		}
 		break;
@@ -556,7 +557,7 @@ static void sanitise_snd_seq(struct syscallrecord *rec)
 	case SNDRV_SEQ_IOCTL_QUERY_NEXT_CLIENT: {
 		struct snd_seq_client_info *ci = get_writable_struct(sizeof(*ci));
 		if (ci) {
-			ci->client = RAND_BOOL() ? -1 : (int)(rand() % 128);
+			ci->client = RAND_BOOL() ? -1 : (int)(rnd_modulo_u32(128));
 			rec->a3 = (unsigned long) ci;
 		}
 		break;
@@ -570,10 +571,10 @@ static void sanitise_snd_seq(struct syscallrecord *rec)
 		if (pi) {
 			fill_snd_seq_addr(&pi->addr);
 			if (rec->a2 == SNDRV_SEQ_IOCTL_QUERY_NEXT_PORT)
-				pi->addr.port = (unsigned char)(rand() % 256) - 1;
-			pi->capability = rand();
-			pi->type = rand();
-			pi->midi_channels = rand() % 16 + 1;
+				pi->addr.port = (unsigned char)(rnd_modulo_u32(256)) - 1;
+			pi->capability = rnd_u32();
+			pi->type = rnd_u32();
+			pi->midi_channels = rnd_modulo_u32(16) + 1;
 			rec->a3 = (unsigned long) pi;
 		}
 		break;
@@ -596,8 +597,8 @@ static void sanitise_snd_seq(struct syscallrecord *rec)
 	case SNDRV_SEQ_IOCTL_GET_NAMED_QUEUE: {
 		struct snd_seq_queue_info *qi = get_writable_struct(sizeof(*qi));
 		if (qi) {
-			qi->queue = rand() % 8;
-			qi->owner = rand() % 128;
+			qi->queue = rnd_modulo_u32(8);
+			qi->owner = rnd_modulo_u32(128);
 			rec->a3 = (unsigned long) qi;
 		}
 		break;
@@ -605,7 +606,7 @@ static void sanitise_snd_seq(struct syscallrecord *rec)
 	case SNDRV_SEQ_IOCTL_GET_QUEUE_STATUS: {
 		struct snd_seq_queue_status *qs = get_writable_struct(sizeof(*qs));
 		if (qs) {
-			qs->queue = rand() % 8;
+			qs->queue = rnd_modulo_u32(8);
 			rec->a3 = (unsigned long) qs;
 		}
 		break;
@@ -614,9 +615,9 @@ static void sanitise_snd_seq(struct syscallrecord *rec)
 	case SNDRV_SEQ_IOCTL_SET_QUEUE_TEMPO: {
 		struct snd_seq_queue_tempo *qt = get_writable_struct(sizeof(*qt));
 		if (qt) {
-			qt->queue = rand() % 8;
-			qt->tempo = rand() % 2000000 + 60000;	/* 60ms-2s per beat */
-			qt->ppq = rand() % 480 + 24;
+			qt->queue = rnd_modulo_u32(8);
+			qt->tempo = rnd_modulo_u32(2000000) + 60000;	/* 60ms-2s per beat */
+			qt->ppq = rnd_modulo_u32(480) + 24;
 			rec->a3 = (unsigned long) qt;
 		}
 		break;
@@ -625,10 +626,10 @@ static void sanitise_snd_seq(struct syscallrecord *rec)
 	case SNDRV_SEQ_IOCTL_SET_QUEUE_TIMER: {
 		struct snd_seq_queue_timer *timer = get_writable_struct(sizeof(*timer));
 		if (timer) {
-			timer->queue = rand() % 8;
-			timer->type = rand() % 3;
+			timer->queue = rnd_modulo_u32(8);
+			timer->type = rnd_modulo_u32(3);
 			fill_snd_timer_id(&timer->u.alsa.id);
-			timer->u.alsa.resolution = rand() % 480 + 24;
+			timer->u.alsa.resolution = rnd_modulo_u32(480) + 24;
 			rec->a3 = (unsigned long) timer;
 		}
 		break;
@@ -637,8 +638,8 @@ static void sanitise_snd_seq(struct syscallrecord *rec)
 	case SNDRV_SEQ_IOCTL_SET_QUEUE_CLIENT: {
 		struct snd_seq_queue_client *qc = get_writable_struct(sizeof(*qc));
 		if (qc) {
-			qc->queue = rand() % 8;
-			qc->client = rand() % 128;
+			qc->queue = rnd_modulo_u32(8);
+			qc->client = rnd_modulo_u32(128);
 			qc->used = RAND_BOOL();
 			rec->a3 = (unsigned long) qc;
 		}
@@ -648,10 +649,10 @@ static void sanitise_snd_seq(struct syscallrecord *rec)
 	case SNDRV_SEQ_IOCTL_SET_CLIENT_POOL: {
 		struct snd_seq_client_pool *cp = get_writable_struct(sizeof(*cp));
 		if (cp) {
-			cp->client = rand() % 128;
-			cp->output_pool = rand() % 1024 + 64;
-			cp->input_pool = rand() % 512 + 32;
-			cp->output_room = rand() % 64 + 1;
+			cp->client = rnd_modulo_u32(128);
+			cp->output_pool = rnd_modulo_u32(1024) + 64;
+			cp->input_pool = rnd_modulo_u32(512) + 32;
+			cp->output_room = rnd_modulo_u32(64) + 1;
 			rec->a3 = (unsigned long) cp;
 		}
 		break;
@@ -659,7 +660,7 @@ static void sanitise_snd_seq(struct syscallrecord *rec)
 	case SNDRV_SEQ_IOCTL_REMOVE_EVENTS: {
 		struct snd_seq_remove_events *re = get_writable_struct(sizeof(*re));
 		if (re) {
-			re->remove_mode = rand() & 0x3ff;
+			re->remove_mode = rnd_u32() & 0x3ff;
 			rec->a3 = (unsigned long) re;
 		}
 		break;
@@ -668,8 +669,8 @@ static void sanitise_snd_seq(struct syscallrecord *rec)
 		struct snd_seq_query_subs *qs = get_writable_struct(sizeof(*qs));
 		if (qs) {
 			fill_snd_seq_addr(&qs->root);
-			qs->type = rand() & 1;
-			qs->index = rand() % 64;
+			qs->type = rnd_u32() & 1;
+			qs->index = rnd_modulo_u32(64);
 			rec->a3 = (unsigned long) qs;
 		}
 		break;
@@ -679,8 +680,8 @@ static void sanitise_snd_seq(struct syscallrecord *rec)
 	case SNDRV_SEQ_IOCTL_SET_CLIENT_UMP_INFO: {
 		struct snd_seq_client_ump_info *ui = get_writable_struct(sizeof(*ui));
 		if (ui) {
-			ui->client = RAND_BOOL() ? -1 : (int)(rand() % 128);
-			ui->type = rand() & 1;	/* ENDPOINT or BLOCK */
+			ui->client = RAND_BOOL() ? -1 : (int)(rnd_modulo_u32(128));
+			ui->type = rnd_u32() & 1;	/* ENDPOINT or BLOCK */
 			rec->a3 = (unsigned long) ui;
 		}
 		break;
@@ -701,8 +702,8 @@ static void sanitise_snd_ump(struct syscallrecord *rec)
 	{
 		struct snd_ump_endpoint_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
-			info->card = rand() % 8;
-			info->device = rand() % 8;
+			info->card = rnd_modulo_u32(8);
+			info->device = rnd_modulo_u32(8);
 			rec->a3 = (unsigned long) info;
 		}
 		break;
@@ -714,9 +715,9 @@ static void sanitise_snd_ump(struct syscallrecord *rec)
 	{
 		struct snd_ump_block_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
-			info->card = rand() % 8;
-			info->device = rand() % 8;
-			info->block_id = rand() % SNDRV_UMP_MAX_BLOCKS;
+			info->card = rnd_modulo_u32(8);
+			info->device = rnd_modulo_u32(8);
+			info->block_id = rnd_modulo_u32(SNDRV_UMP_MAX_BLOCKS);
 			rec->a3 = (unsigned long) info;
 		}
 		break;
@@ -725,7 +726,7 @@ static void sanitise_snd_ump(struct syscallrecord *rec)
 	case SNDRV_CTL_IOCTL_UMP_NEXT_DEVICE: {
 		int *dev = get_writable_struct(sizeof(int));
 		if (dev) {
-			*dev = (int)(rand() % 8) - 1;
+			*dev = (int)(rnd_modulo_u32(8)) - 1;
 			rec->a3 = (unsigned long) dev;
 		}
 		break;
@@ -762,8 +763,8 @@ static void sanitise_oss_copr(struct syscallrecord *rec)
 		/* First two ints in copr_buffer/copr_debug_buf are command
 		 * and parm — drive them with bounded values. */
 		int *p = buf;
-		p[0] = copr_codes[rand() % ARRAY_SIZE(copr_codes)];
-		p[1] = rand() % 1024;
+		p[0] = copr_codes[rnd_modulo_u32(ARRAY_SIZE(copr_codes))];
+		p[1] = rnd_modulo_u32(1024);
 		rec->a3 = (unsigned long) buf;
 	}
 }
@@ -780,7 +781,7 @@ static void sanitise_oss_dsp(struct syscallrecord *rec)
 	case SNDCTL_DSP_SPEED: {
 		int *rate = get_writable_struct(sizeof(int));
 		if (rate) {
-			*rate = pcm_rates[rand() % ARRAY_SIZE(pcm_rates)];
+			*rate = pcm_rates[rnd_modulo_u32(ARRAY_SIZE(pcm_rates))];
 			rec->a3 = (unsigned long) rate;
 		}
 		break;
@@ -788,7 +789,7 @@ static void sanitise_oss_dsp(struct syscallrecord *rec)
 	case SNDCTL_DSP_STEREO: {
 		int *stereo = get_writable_struct(sizeof(int));
 		if (stereo) {
-			*stereo = rand() & 1;
+			*stereo = rnd_u32() & 1;
 			rec->a3 = (unsigned long) stereo;
 		}
 		break;
@@ -796,7 +797,7 @@ static void sanitise_oss_dsp(struct syscallrecord *rec)
 	case SNDCTL_DSP_CHANNELS: {
 		int *ch = get_writable_struct(sizeof(int));
 		if (ch) {
-			*ch = rand() % 8 + 1;
+			*ch = rnd_modulo_u32(8) + 1;
 			rec->a3 = (unsigned long) ch;
 		}
 		break;
@@ -804,7 +805,7 @@ static void sanitise_oss_dsp(struct syscallrecord *rec)
 	case SNDCTL_DSP_SETFMT: {
 		int *fmt = get_writable_struct(sizeof(int));
 		if (fmt) {
-			*fmt = afmt_vals[rand() % ARRAY_SIZE(afmt_vals)];
+			*fmt = afmt_vals[rnd_modulo_u32(ARRAY_SIZE(afmt_vals))];
 			rec->a3 = (unsigned long) fmt;
 		}
 		break;
@@ -813,8 +814,8 @@ static void sanitise_oss_dsp(struct syscallrecord *rec)
 		/* low 16 bits: log2(fragment size), 4-15; high 16 bits: max fragments */
 		int *frag = get_writable_struct(sizeof(int));
 		if (frag) {
-			int fsz = rand() % 12 + 4;
-			int nf = RAND_BOOL() ? 0 : (rand() % 15 + 2);
+			int fsz = rnd_modulo_u32(12) + 4;
+			int nf = RAND_BOOL() ? 0 : (rnd_modulo_u32(15) + 2);
 			*frag = fsz | (nf << 16);
 			rec->a3 = (unsigned long) frag;
 		}
@@ -825,7 +826,7 @@ static void sanitise_oss_dsp(struct syscallrecord *rec)
 		if (sub) {
 			/* legal values are 1, 2, 4 */
 			static const int subdivs[] = { 1, 2, 4 };
-			*sub = subdivs[rand() % 3];
+			*sub = subdivs[rnd_modulo_u32(3)];
 			rec->a3 = (unsigned long) sub;
 		}
 		break;
@@ -833,7 +834,7 @@ static void sanitise_oss_dsp(struct syscallrecord *rec)
 	case SNDCTL_DSP_SETTRIGGER: {
 		int *trig = get_writable_struct(sizeof(int));
 		if (trig) {
-			*trig = rand() & (PCM_ENABLE_INPUT | PCM_ENABLE_OUTPUT);
+			*trig = rnd_u32() & (PCM_ENABLE_INPUT | PCM_ENABLE_OUTPUT);
 			rec->a3 = (unsigned long) trig;
 		}
 		break;
@@ -884,9 +885,9 @@ static void sanitise_oss_mixer(struct syscallrecord *rec)
 	case SOUND_MIXER_SETLEVELS: {
 		mixer_vol_table *vt = get_writable_struct(sizeof(*vt));
 		if (vt) {
-			vt->num = rand() % SOUND_MIXER_NRDEVICES;
-			vt->levels[0] = rand() % 101;
-			vt->levels[1] = rand() % 101;
+			vt->num = rnd_modulo_u32(SOUND_MIXER_NRDEVICES);
+			vt->levels[0] = rnd_modulo_u32(101);
+			vt->levels[1] = rnd_modulo_u32(101);
 			rec->a3 = (unsigned long) vt;
 		}
 		break;
@@ -899,7 +900,7 @@ static void sanitise_oss_mixer(struct syscallrecord *rec)
 		int *val = get_writable_struct(sizeof(int));
 		if (val) {
 			if (_IOC_DIR(rec->a2) & _IOC_WRITE)
-				*val = (rand() % 101) | ((rand() % 101) << 8);
+				*val = (rnd_modulo_u32(101)) | ((rnd_modulo_u32(101)) << 8);
 			rec->a3 = (unsigned long) val;
 		}
 		break;
@@ -922,11 +923,11 @@ static const __u32 compr_codecs[] = {
 
 static void fill_snd_codec(struct snd_codec *c)
 {
-	c->id = compr_codecs[rand() % ARRAY_SIZE(compr_codecs)];
-	c->ch_in = rand() % 8 + 1;
-	c->ch_out = rand() % 8 + 1;
-	c->sample_rate = pcm_rates[rand() % ARRAY_SIZE(pcm_rates)];
-	c->bit_rate = (rand() % 320 + 32) * 1000;
+	c->id = compr_codecs[rnd_modulo_u32(ARRAY_SIZE(compr_codecs))];
+	c->ch_in = rnd_modulo_u32(8) + 1;
+	c->ch_out = rnd_modulo_u32(8) + 1;
+	c->sample_rate = pcm_rates[rnd_modulo_u32(ARRAY_SIZE(pcm_rates))];
+	c->bit_rate = (rnd_modulo_u32(320) + 32) * 1000;
 	/* leave profile/level/format/options zero — kernel validates per codec */
 }
 
@@ -942,7 +943,7 @@ static void sanitise_snd_compress(struct syscallrecord *rec)
 	case SNDRV_COMPRESS_GET_CODEC_CAPS: {
 		struct snd_compr_codec_caps *cc = get_writable_struct(sizeof(*cc));
 		if (cc) {
-			cc->codec = compr_codecs[rand() % ARRAY_SIZE(compr_codecs)];
+			cc->codec = compr_codecs[rnd_modulo_u32(ARRAY_SIZE(compr_codecs))];
 			rec->a3 = (unsigned long) cc;
 		}
 		break;
@@ -951,8 +952,8 @@ static void sanitise_snd_compress(struct syscallrecord *rec)
 		struct snd_compr_params *p = get_writable_struct(sizeof(*p));
 		if (p) {
 			/* fragment_size: power of two between 4 KB and 64 KB */
-			p->buffer.fragment_size = 1U << (rand() % 5 + 12);
-			p->buffer.fragments = rand() % 8 + 2;
+			p->buffer.fragment_size = 1U << (rnd_modulo_u32(5) + 12);
+			p->buffer.fragments = rnd_modulo_u32(8) + 2;
 			fill_snd_codec(&p->codec);
 			p->no_wake_mode = RAND_BOOL();
 			rec->a3 = (unsigned long) p;
