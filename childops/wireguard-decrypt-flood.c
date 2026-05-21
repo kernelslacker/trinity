@@ -25,7 +25,7 @@
  *      curve25519 private key (32 random bytes — the kernel side
  *      clamps), picks our listen port, and registers one peer with a
  *      random public key, allowed-ips 192.0.2.0/24, and endpoint
- *      127.0.0.1:<peer_port>.  Both ports are derived from getpid() so
+ *      127.0.0.1:<peer_port>.  Both ports are derived from mypid() so
  *      concurrent siblings don't collide on bind().  The attribute
  *      tree is the same one walked by the existing genetlink fam-
  *      wireguard grammar, but built inline because we want a peer that
@@ -69,6 +69,7 @@
 #include <linux/wireguard.h>
 
 #include "random.h"
+#include "pids.h"
 
 #define WGDF_BUF_BYTES		2048
 #define WGDF_BURST_MAX		200U
@@ -492,7 +493,7 @@ static int wgdf_open_udp(__u16 peer_port)
  * shared netns, etc.). */
 static bool wgdf_setup(void)
 {
-	pid_t pid = getpid();
+	pid_t pid = mypid();
 	int rtnl, genl_fd, rc;
 
 	g_wgdf_listen_port = (__u16)(WGDF_PORT_BASE + ((unsigned)pid & 0x3fff));
