@@ -51,7 +51,7 @@ static void sigint_handler(__unused__ int sig, siginfo_t *info, __unused__ void 
 	 * SI_USER (0) and below indicate userspace-sent — ignore as
 	 * spoofable. */
 	if (info->si_code > 0) {
-		if (getpid() == mainpid)
+		if (mypid() == mainpid)
 			panic(EXIT_SIGINT);
 		else
 			ctrlc_pending = 1;
@@ -149,7 +149,7 @@ static void write_siginfo_safely(int sig, const siginfo_t *info, const char *who
  */
 static void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 {
-	if (info->si_code <= 0 && info->si_pid != getpid()) {
+	if (info->si_code <= 0 && info->si_pid != mypid()) {
 		/* Sibling spoof — ignore. */
 		return;
 	}
@@ -172,7 +172,7 @@ static void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 	 * raise() from trinity itself) is a real bug that must still be
 	 * logged.
 	 */
-	if (info->si_code <= 0 && info->si_pid == getpid() && in_do_syscall) {
+	if (info->si_code <= 0 && info->si_pid == mypid() && in_do_syscall) {
 		_exit(EXIT_SUCCESS);
 	}
 	/*
@@ -199,7 +199,7 @@ static void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 		int fd;
 
 		snprintf(path, sizeof(path), "%s/trinity-bug-%d.log",
-			 trinity_tmpdir_abs(), (int)getpid());
+			 trinity_tmpdir_abs(), (int)mypid());
 		fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
 		if (fd >= 0) {
 			dup2(fd, STDERR_FILENO);
@@ -331,7 +331,7 @@ static void sigxcpu_handler(__unused__ int sig)
  */
 static void main_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 {
-	if (info->si_code > 0 || info->si_pid == getpid()) {
+	if (info->si_code > 0 || info->si_pid == mypid()) {
 		/* Real fault or self-sent (e.g. glibc abort) — dump a
 		 * backtrace and siginfo to stderr first so we have a handle
 		 * on the crash even when no coredump lands (ulimit -c 0 or a
