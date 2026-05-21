@@ -16,6 +16,7 @@
 #include "sanitise.h"	// get_address
 #include "shm.h"
 #include "utils.h"
+#include "pids.h"
 
 static bool mark_map_rw(struct map *map)
 {
@@ -246,7 +247,7 @@ static void write_walk_signal_handler(int sig, siginfo_t *info, void *ctx)
 		raise(sig);
 		return;
 	}
-	if (info->si_code <= 0 && info->si_pid != getpid()) {
+	if (info->si_code <= 0 && info->si_pid != mypid()) {
 		/* Sibling-spoofed — kernel has consumed it already. */
 		return;
 	}
