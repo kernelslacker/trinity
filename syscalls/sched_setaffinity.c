@@ -4,6 +4,7 @@
  */
 #include <sched.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 static void sanitise_sched_setaffinity(struct syscallrecord *rec)
@@ -16,12 +17,12 @@ static void sanitise_sched_setaffinity(struct syscallrecord *rec)
 		return;
 	CPU_ZERO(mask);
 
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0: /* single CPU */
-		CPU_SET(rand() % CPU_SETSIZE, mask);
+		CPU_SET(rnd_modulo_u32(CPU_SETSIZE), mask);
 		break;
 	case 1: /* first N CPUs (small, realistic) */
-		ncpus = 1 + (rand() % 8);
+		ncpus = 1 + (rnd_modulo_u32(8));
 		for (i = 0; i < ncpus; i++)
 			CPU_SET(i, mask);
 		break;
@@ -30,9 +31,9 @@ static void sanitise_sched_setaffinity(struct syscallrecord *rec)
 			CPU_SET(i, mask);
 		break;
 	default: /* random sparse mask */
-		ncpus = 1 + (rand() % 16);
+		ncpus = 1 + (rnd_modulo_u32(16));
 		for (i = 0; i < ncpus; i++)
-			CPU_SET(rand() % CPU_SETSIZE, mask);
+			CPU_SET(rnd_modulo_u32(CPU_SETSIZE), mask);
 		break;
 	}
 
