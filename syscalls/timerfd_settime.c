@@ -6,6 +6,7 @@
 #include <time.h>
 #include <sys/timerfd.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 #ifndef TFD_TIMER_CANCEL_ON_SET
@@ -25,11 +26,11 @@ static void sanitise_timerfd_settime(struct syscallrecord *rec)
 		return;
 
 	/* interval: 1-10 seconds */
-	its->it_interval.tv_sec = 1 + (rand() % 10);
+	its->it_interval.tv_sec = 1 + (rnd_modulo_u32(10));
 	its->it_interval.tv_nsec = 0;
 
 	/* value: 1-10 seconds */
-	its->it_value.tv_sec = 1 + (rand() % 10);
+	its->it_value.tv_sec = 1 + (rnd_modulo_u32(10));
 	its->it_value.tv_nsec = 0;
 
 	rec->a3 = (unsigned long) its;
