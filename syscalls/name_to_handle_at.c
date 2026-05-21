@@ -5,6 +5,7 @@
  */
 #include <fcntl.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "compat.h"
 
@@ -39,10 +40,10 @@ static void sanitise_name_to_handle_at(struct syscallrecord *rec)
 	if (fh == NULL)
 		return;
 
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0: fh->handle_bytes = 0; break;		/* query size needed */
 	case 1: fh->handle_bytes = MAX_HANDLE_SZ; break;	/* typical */
-	default: fh->handle_bytes = rand() % 256; break;	/* boundary */
+	default: fh->handle_bytes = rnd_modulo_u32(256); break;	/* boundary */
 	}
 
 	mnt_id = (int *) get_writable_address(sizeof(*mnt_id));
