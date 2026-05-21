@@ -13,6 +13,7 @@
 #include "random.h"
 #include "socket-family-grammar.h"
 #include "compat.h"
+#include "rnd.h"
 
 /* Older <linux/if_packet.h> may predate the PACKET_FANOUT_FLAG_*
  * additions.  Define the bits locally so the fuzzer can name them
@@ -43,7 +44,7 @@ static void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	ll->sll_family = PF_PACKET;
 
-	switch (rand() % 5) {
+	switch (rnd_modulo_u32(5)) {
 	case 0:
 		ll->sll_protocol = htons(ETH_P_ALL);
 		break;
@@ -57,13 +58,13 @@ static void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		ll->sll_protocol = htons(ETH_P_8021Q);
 		break;
 	case 4:
-		ll->sll_protocol = htons(rand());
+		ll->sll_protocol = htons(rnd_u32());
 		break;
 	}
 
-	ll->sll_ifindex = rand() % 2;	/* 0=any, 1=lo */
-	ll->sll_hatype = rand() % 2 ? 1 : rand();	/* 1=ARPHRD_ETHER */
-	ll->sll_pkttype = rand() % 5;	/* HOST..OTHERHOST */
+	ll->sll_ifindex = rnd_modulo_u32(2);	/* 0=any, 1=lo */
+	ll->sll_hatype = rnd_modulo_u32(2) ? 1 : rnd_u32();	/* 1=ARPHRD_ETHER */
+	ll->sll_pkttype = rnd_modulo_u32(5);	/* HOST..OTHERHOST */
 	ll->sll_halen = 6;
 	generate_rand_bytes(ll->sll_addr, 8);
 
@@ -137,7 +138,7 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 	case PACKET_FANOUT: {
 		/* type in low 16 bits, flags in high 16 bits */
 		unsigned int *optval32 = (unsigned int *) so->optval;
-		unsigned int type = rand() % 7;	/* HASH..CBPF */
+		unsigned int type = rnd_modulo_u32(7);	/* HASH..CBPF */
 		unsigned int flags = 0;
 
 		if (RAND_BOOL())
@@ -148,7 +149,7 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 			flags |= PACKET_FANOUT_FLAG_IGNORE_OUTGOING;
 		if (RAND_BOOL())
 			flags |= PACKET_FANOUT_FLAG_DEFRAG;
-		*optval32 = type | (flags << 16) | ((rand() % 256) << 8);
+		*optval32 = type | (flags << 16) | ((rnd_modulo_u32(256)) << 8);
 		so->optlen = sizeof(unsigned int);
 		break;
 	}
@@ -158,9 +159,9 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 		struct packet_mreq *mreq = (struct packet_mreq *) so->optval;
 
 		memset(mreq, 0, sizeof(struct packet_mreq));
-		mreq->mr_ifindex = rand() % 4;
-		mreq->mr_type = rand() % 4 + 1;	/* MULTICAST..ALLMULTI */
-		mreq->mr_alen = rand() % 9;
+		mreq->mr_ifindex = rnd_modulo_u32(4);
+		mreq->mr_type = rnd_modulo_u32(4) + 1;	/* MULTICAST..ALLMULTI */
+		mreq->mr_alen = rnd_modulo_u32(9);
 		generate_rand_bytes((unsigned char *) mreq->mr_address, 8);
 		so->optlen = sizeof(struct packet_mreq);
 		break;
@@ -235,7 +236,7 @@ static void packet_grammar_pick_triplet(struct socket_triplet *out)
 	out->family = AF_PACKET;
 	out->type = RAND_BOOL() ? SOCK_RAW : SOCK_DGRAM;
 	out->protocol = htons(packet_grammar_protos[
-		rand() % ARRAY_SIZE(packet_grammar_protos)]);
+		rnd_modulo_u32(ARRAY_SIZE(packet_grammar_protos))]);
 }
 
 static void packet_grammar_configure_pre_bind(int fd, struct socket_triplet *t)
