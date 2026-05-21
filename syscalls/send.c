@@ -142,7 +142,7 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, si->triplet.family);
 
 skip_si:
-	msg = zmalloc(sizeof(struct msghdr));
+	msg = zmalloc_tracked(sizeof(struct msghdr));
 	msg->msg_name = sa;
 	msg->msg_namelen = salen;
 
@@ -163,7 +163,7 @@ skip_si:
 				size_t len = 0;
 
 				proto->gen_msg(&si->triplet, &buf, &len);
-				iov = zmalloc(sizeof(struct iovec));
+				iov = zmalloc_tracked(sizeof(struct iovec));
 				iov->iov_base = buf;
 				iov->iov_len = len;
 				msg->msg_iov = iov;
@@ -394,7 +394,7 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 	rec->a1 = fd_from_socketinfo(si);
 
 	vlen = RAND_RANGE(1, SENDMMSG_MAX_VLEN);
-	msgs = zmalloc(vlen * sizeof(struct mmsghdr));
+	msgs = zmalloc_tracked(vlen * sizeof(struct mmsghdr));
 
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = SENDMMSG_POST_STATE_MAGIC;
