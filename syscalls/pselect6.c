@@ -49,9 +49,9 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 	nfds = (rand32() % 1023) + 1;
 	rec->a1 = nfds;
 
-	rfds = zmalloc(sizeof(fd_set));
-	wfds = zmalloc(sizeof(fd_set));
-	exfds = zmalloc(sizeof(fd_set));
+	rfds = zmalloc_tracked(sizeof(fd_set));
+	wfds = zmalloc_tracked(sizeof(fd_set));
+	exfds = zmalloc_tracked(sizeof(fd_set));
 
 	FD_ZERO(rfds);
 	FD_ZERO(wfds);
@@ -98,7 +98,7 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 	rec->a4 = (unsigned long) exfds;
 
 	/* Set a really short timeout */
-	ts = zmalloc(sizeof(struct timespec));
+	ts = zmalloc_tracked(sizeof(struct timespec));
 	ts->tv_sec = 0;
 	ts->tv_nsec = 10000;
 	rec->a5 = (unsigned long) ts;
@@ -110,7 +110,7 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 	 * purposes of pselect6's signal-blocking dance, but keeps the buffer
 	 * exercised by the SHM-output scrub below.
 	 */
-	sigmask = zmalloc(sizeof(sigset_t));
+	sigmask = zmalloc_tracked(sizeof(sigset_t));
 	rec->a6 = (unsigned long) sigmask;
 
 	/*
