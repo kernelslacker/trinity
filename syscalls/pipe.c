@@ -62,7 +62,7 @@ struct pipe_post_state {
 
 static void sanitise_pipe(struct syscallrecord *rec)
 {
-	int *fildes = zmalloc(sizeof(int) * 2);
+	int *fildes = zmalloc_tracked(sizeof(int) * 2);
 	struct pipe_post_state *snap;
 
 	rec->a1 = (unsigned long) fildes;
@@ -156,7 +156,7 @@ static unsigned long pipe2_flags[] = {
 
 static void sanitise_pipe2(struct syscallrecord *rec)
 {
-	int *fildes = zmalloc(sizeof(int) * 2);
+	int *fildes = zmalloc_tracked(sizeof(int) * 2);
 	struct pipe_post_state *snap;
 
 	rec->a1 = (unsigned long) fildes;
