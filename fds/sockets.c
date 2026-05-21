@@ -95,7 +95,7 @@ struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsig
 	/* add_object frees obj and returns without inserting when called
 	 * from a child process (OBJ_GLOBAL from non-mainpid).  Signal
 	 * failure by returning NULL so callers can close the fd. */
-	if (getpid() != mainpid)
+	if (mypid() != mainpid)
 		return NULL;
 
 	return obj;
