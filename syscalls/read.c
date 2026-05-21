@@ -7,6 +7,7 @@
 #include "arch.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -16,7 +17,7 @@ static void sanitise_read(struct syscallrecord *rec)
 {
 	rec->a2 = (unsigned long) get_non_null_address();
 	if (RAND_BOOL())
-		rec->a3 = rand() % page_size;
+		rec->a3 = rnd_modulo_u32(page_size);
 	else
 		rec->a3 = page_size;
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
@@ -61,7 +62,7 @@ struct syscallentry syscall_readv = {
 
 static void sanitise_pread64(struct syscallrecord *rec)
 {
-	rec->a3 = rand() % page_size;
+	rec->a3 = rnd_modulo_u32(page_size);
 	rec->a4 = rand64() & 0x7fffffffffffffffULL;
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
 }
