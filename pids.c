@@ -11,6 +11,7 @@
 #include "params.h"	// dangerous
 #include "pids.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "utils.h"	// shared_size_mul
@@ -355,12 +356,12 @@ unsigned int get_pid(void)
 	 *  10%: 0 (process group semantics)
 	 *   5%: 1 (init; only when dangerous flag set)
 	 */
-	dice = rand() % 100;
+	dice = rnd_modulo_u32(100);
 
 	if (dice < 70) {
 		pid_t ppid = mainpid;
 		unsigned int retries = 0;
-retry:		i = rand() % max_children;
+retry:		i = rnd_modulo_u32(max_children);
 		pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
 		if (pid == EMPTY_PIDSLOT || pid == ppid) {
 			if (++retries >= 100)
