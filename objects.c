@@ -231,7 +231,7 @@ struct fd_hash_entry *fd_hash_lookup(int fd)
 	 * view.  Fall back to the parent view in the early init_child
 	 * window where the snapshot has not yet been allocated.
 	 */
-	if (getpid() == mainpid) {
+	if (mypid() == mainpid) {
 		table = parent_fd_hash;
 	} else {
 		struct childdata *child = this_child();
@@ -455,7 +455,7 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
 		 * to the parent view in the early init_child window before
 		 * the clone runs, so any incidental lookup still resolves.
 		 */
-		if (getpid() != mainpid) {
+		if (mypid() != mainpid) {
 			struct childdata *child = this_child();
 
 			if (child != NULL && child->global_objects != NULL)
@@ -559,7 +559,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	 * child that reached add_object(OBJ_GLOBAL) would mutate only its
 	 * private copy with no benefit, so route the call to nowhere.
 	 */
-	if (scope == OBJ_GLOBAL && getpid() != mainpid) {
+	if (scope == OBJ_GLOBAL && mypid() != mainpid) {
 		release_obj(obj, scope, type);
 		return;
 	}
@@ -995,7 +995,7 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 
 void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
-	if (scope == OBJ_GLOBAL && getpid() != mainpid)
+	if (scope == OBJ_GLOBAL && mypid() != mainpid)
 		return;
 
 	__destroy_object(obj, scope, type, false);
@@ -1173,7 +1173,7 @@ void remove_object_by_fd(int fd)
 	struct object *obj;
 	enum objecttype type;
 
-	if (getpid() != mainpid)
+	if (mypid() != mainpid)
 		return;
 
 	entry = fd_hash_lookup(fd);
