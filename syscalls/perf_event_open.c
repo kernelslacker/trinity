@@ -26,6 +26,7 @@
 #include "utils.h"
 #include "compat.h"
 #include <time.h>
+#include "pids.h"
 
 #define SYSFS "/sys/bus/event_source/devices/"
 
@@ -1457,7 +1458,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 			pid = -1;
 			break;
 		case 3: /* measure our actual pid */
-			pid=getpid();
+			pid=mypid();
 			break;
 		default:
 			pid = 0;
