@@ -1088,6 +1088,44 @@ void kill_pid(pid_t pid)
 		return;
 	}
 
+	/*
+	 * Refuse to SIGKILL ourselves.  A wrapper run was observed dying
+	 * with mainpid SIGKILL'ing mainpid; bpftrace on signal_generate
+	 * confirmed the kill syscall came from main itself.  The path is
+	 * shm corruption scribbling mainpid into a pids[] slot, then a
+	 * reap/kill loop walking pids[] and feeding that value back in
+	 * here.  pid_is_valid() accepts mainpid as in-range, so without
+	 * this guard main commits suicide.
+	 *
+	 * Scan pids[] first so the diagnostic line names the scribbled
+	 * slot, then dump childnos + the pids page state so we can tell
+	 * whether this was a single wild write or a page-level event.
+	 */
+	if (pid == mainpid) {
+		int i;
+		int corrupt_slot = -1;
+
+		for_each_child(i) {
+			pid_t slot = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
+			if (slot == mainpid) {
+				corrupt_slot = i;
+				break;
+			}
+		}
+
+		if (corrupt_slot == -1)
+			syslogf("kill_pid refused: pid=%d == mainpid=%d, pids[] slot=none\n",
+				pid, mainpid);
+		else
+			syslogf("kill_pid refused: pid=%d == mainpid=%d, pids[] slot=%d\n",
+				pid, mainpid, corrupt_slot);
+
+		show_backtrace();
+		dump_childnos();
+		dump_pids_page_state();
+		return;
+	}
+
 	childno = find_childno(pid);
 	if (childno != CHILD_NOT_FOUND) {
 		if (children[childno]->dontkillme == true)
