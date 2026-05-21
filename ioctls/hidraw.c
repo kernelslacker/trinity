@@ -5,6 +5,7 @@
 
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "syscall.h"
 #include "utils.h"
@@ -79,55 +80,55 @@ static void hidraw_sanitise(const struct ioctl_group *grp,
 	switch (rec->a2) {
 #ifdef HIDIOCGRAWNAME
 	case HIDIOCGRAWNAME(0):
-		u = rand();
+		u = rnd_u32();
 		rec->a2 = HIDIOCGRAWNAME(u);
 		break;
 #endif
 #ifdef HIDIOCGRAWPHYS
 	case HIDIOCGRAWPHYS(0):
-		u = rand();
+		u = rnd_u32();
 		rec->a2 = HIDIOCGRAWPHYS(u);
 		break;
 #endif
 #ifdef HIDIOCGRAWUNIQ
 	case HIDIOCGRAWUNIQ(0):
-		u = rand();
+		u = rnd_u32();
 		rec->a2 = HIDIOCGRAWUNIQ(u);
 		break;
 #endif
 #ifdef HIDIOCSFEATURE
 	case HIDIOCSFEATURE(0):
-		u = rand();
+		u = rnd_u32();
 		rec->a2 = HIDIOCSFEATURE(u);
 		break;
 #endif
 #ifdef HIDIOCGFEATURE
 	case HIDIOCGFEATURE(0):
-		u = rand();
+		u = rnd_u32();
 		rec->a2 = HIDIOCGFEATURE(u);
 		break;
 #endif
 #ifdef HIDIOCSINPUT
 	case HIDIOCSINPUT(0):
-		u = rand();
+		u = rnd_u32();
 		rec->a2 = HIDIOCSINPUT(u);
 		break;
 #endif
 #ifdef HIDIOCGINPUT
 	case HIDIOCGINPUT(0):
-		u = rand();
+		u = rnd_u32();
 		rec->a2 = HIDIOCGINPUT(u);
 		break;
 #endif
 #ifdef HIDIOCSOUTPUT
 	case HIDIOCSOUTPUT(0):
-		u = rand();
+		u = rnd_u32();
 		rec->a2 = HIDIOCSOUTPUT(u);
 		break;
 #endif
 #ifdef HIDIOCGOUTPUT
 	case HIDIOCGOUTPUT(0):
-		u = rand();
+		u = rnd_u32();
 		rec->a2 = HIDIOCGOUTPUT(u);
 		break;
 #endif
