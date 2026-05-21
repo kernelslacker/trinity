@@ -17,6 +17,7 @@
 
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -70,14 +71,14 @@ static void sanitise_lineinfo_unwatch(struct syscallrecord *rec)
 	off = (__u32 *) get_writable_struct(sizeof(*off));
 	if (!off)
 		return;
-	*off = rand() % 256;
+	*off = rnd_modulo_u32(256);
 	rec->a3 = (unsigned long) off;
 }
 
 #ifdef GPIO_V2_GET_LINEINFO_IOCTL
 static void fill_v2_line_attr(struct gpio_v2_line_attribute *a)
 {
-	a->id = (rand() % 3) + 1;	/* FLAGS, OUTPUT_VALUES, DEBOUNCE */
+	a->id = (rnd_modulo_u32(3)) + 1;	/* FLAGS, OUTPUT_VALUES, DEBOUNCE */
 	a->padding = 0;
 
 	switch (a->id) {
@@ -88,7 +89,7 @@ static void fill_v2_line_attr(struct gpio_v2_line_attribute *a)
 		a->values = rand64();
 		break;
 	case GPIO_V2_LINE_ATTR_ID_DEBOUNCE:
-		a->debounce_period_us = rand();
+		a->debounce_period_us = rnd_u32();
 		break;
 	}
 }
@@ -99,7 +100,7 @@ static void fill_v2_line_config(struct gpio_v2_line_config *c)
 
 	memset(c, 0, sizeof(*c));
 	c->flags = rand64() & GPIO_V2_LINE_VALID_FLAGS_MASK;
-	c->num_attrs = rand() % (GPIO_V2_LINE_NUM_ATTRS_MAX + 1);
+	c->num_attrs = rnd_modulo_u32((GPIO_V2_LINE_NUM_ATTRS_MAX + 1));
 	for (i = 0; i < c->num_attrs; i++) {
 		fill_v2_line_attr(&c->attrs[i].attr);
 		c->attrs[i].mask = rand64();
@@ -114,7 +115,7 @@ static void sanitise_v2_lineinfo(struct syscallrecord *rec)
 	if (!info)
 		return;
 	memset(info, 0, sizeof(*info));
-	info->offset = rand() % 256;
+	info->offset = rnd_modulo_u32(256);
 	rec->a3 = (unsigned long) info;
 }
 
@@ -127,10 +128,10 @@ static void sanitise_v2_line_request(struct syscallrecord *rec)
 	if (!r)
 		return;
 	memset(r, 0, sizeof(*r));
-	r->num_lines = (rand() % GPIO_V2_LINES_MAX) + 1;
+	r->num_lines = (rnd_modulo_u32(GPIO_V2_LINES_MAX)) + 1;
 	for (i = 0; i < r->num_lines; i++)
-		r->offsets[i] = rand() % 256;
-	r->event_buffer_size = rand() % 4096;
+		r->offsets[i] = rnd_modulo_u32(256);
+	r->event_buffer_size = rnd_modulo_u32(4096);
 	fill_v2_line_config(&r->config);
 	r->fd = -1;
 	rec->a3 = (unsigned long) r;
@@ -169,7 +170,7 @@ static void sanitise_v1_lineinfo(struct syscallrecord *rec)
 	if (!info)
 		return;
 	memset(info, 0, sizeof(*info));
-	info->line_offset = rand() % 256;
+	info->line_offset = rnd_modulo_u32(256);
 	rec->a3 = (unsigned long) info;
 }
 #endif
@@ -184,12 +185,12 @@ static void sanitise_v1_handle_request(struct syscallrecord *rec)
 	if (!r)
 		return;
 	memset(r, 0, sizeof(*r));
-	r->lines = (rand() % GPIOHANDLES_MAX) + 1;
+	r->lines = (rnd_modulo_u32(GPIOHANDLES_MAX)) + 1;
 	for (i = 0; i < r->lines; i++) {
-		r->lineoffsets[i] = rand() % 256;
+		r->lineoffsets[i] = rnd_modulo_u32(256);
 		r->default_values[i] = RAND_BOOL();
 	}
-	r->flags = rand() & GPIOHANDLE_VALID_FLAGS_MASK;
+	r->flags = rnd_u32() & GPIOHANDLE_VALID_FLAGS_MASK;
 	r->fd = -1;
 	rec->a3 = (unsigned long) r;
 }
@@ -204,9 +205,9 @@ static void sanitise_v1_event_request(struct syscallrecord *rec)
 	if (!r)
 		return;
 	memset(r, 0, sizeof(*r));
-	r->lineoffset = rand() % 256;
-	r->handleflags = rand() & GPIOHANDLE_VALID_FLAGS_MASK;
-	r->eventflags = rand() & GPIOEVENT_VALID_FLAGS_MASK;
+	r->lineoffset = rnd_modulo_u32(256);
+	r->handleflags = rnd_u32() & GPIOHANDLE_VALID_FLAGS_MASK;
+	r->eventflags = rnd_u32() & GPIOEVENT_VALID_FLAGS_MASK;
 	r->fd = -1;
 	rec->a3 = (unsigned long) r;
 }
@@ -237,7 +238,7 @@ static void sanitise_v1_handle_config(struct syscallrecord *rec)
 	if (!c)
 		return;
 	memset(c, 0, sizeof(*c));
-	c->flags = rand() & GPIOHANDLE_VALID_FLAGS_MASK;
+	c->flags = rnd_u32() & GPIOHANDLE_VALID_FLAGS_MASK;
 	for (i = 0; i < GPIOHANDLES_MAX; i++)
 		c->default_values[i] = RAND_BOOL();
 	rec->a3 = (unsigned long) c;
