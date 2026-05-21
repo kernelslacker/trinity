@@ -5,6 +5,7 @@
 #include <linux/quota.h>
 #include <string.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 static int quota_fd_subcmds[] = {
@@ -18,11 +19,11 @@ static void sanitise_quotactl_fd(struct syscallrecord *rec)
 {
 	int subcmd, type;
 
-	subcmd = quota_fd_subcmds[rand() % ARRAY_SIZE(quota_fd_subcmds)];
-	type = quota_fd_types[rand() % ARRAY_SIZE(quota_fd_types)];
+	subcmd = quota_fd_subcmds[rnd_modulo_u32(ARRAY_SIZE(quota_fd_subcmds))];
+	type = quota_fd_types[rnd_modulo_u32(ARRAY_SIZE(quota_fd_types))];
 	rec->a2 = QCMD(subcmd, type);
 
-	rec->a3 = rand() % 65536;
+	rec->a3 = rnd_modulo_u32(65536);
 
 	switch (subcmd) {
 	case Q_GETQUOTA:
@@ -36,8 +37,8 @@ static void sanitise_quotactl_fd(struct syscallrecord *rec)
 		if (subcmd == Q_SETQUOTA) {
 			dqb->dqb_bhardlimit = rand32();
 			dqb->dqb_bsoftlimit = rand32();
-			dqb->dqb_ihardlimit = rand() % 100000;
-			dqb->dqb_isoftlimit = rand() % 100000;
+			dqb->dqb_ihardlimit = rnd_modulo_u32(100000);
+			dqb->dqb_isoftlimit = rnd_modulo_u32(100000);
 		}
 		rec->a4 = (unsigned long) dqb;
 		/* Shared branch: Q_SETQUOTA input bytes must survive
@@ -54,8 +55,8 @@ static void sanitise_quotactl_fd(struct syscallrecord *rec)
 			break;
 		memset(dqi, 0, sizeof(*dqi));
 		if (subcmd == Q_SETINFO) {
-			dqi->dqi_bgrace = 3600 * (1 + (rand() % 168));
-			dqi->dqi_igrace = 3600 * (1 + (rand() % 168));
+			dqi->dqi_bgrace = 3600 * (1 + (rnd_modulo_u32(168)));
+			dqi->dqi_igrace = 3600 * (1 + (rnd_modulo_u32(168)));
 		}
 		rec->a4 = (unsigned long) dqi;
 		/* Same shape as the dqb branch above: Q_SETINFO carries
