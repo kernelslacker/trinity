@@ -13,6 +13,7 @@ SYSCALL_DEFINE6(epoll_pwait2, int, epfd, struct epoll_event __user *, events,
  */
 #include <sys/epoll.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
@@ -20,10 +21,10 @@ SYSCALL_DEFINE6(epoll_pwait2, int, epfd, struct epoll_event __user *, events,
 static void sanitise_epoll_pwait(struct syscallrecord *rec)
 {
 	/* timeout: -1 = block, 0 = return immediately, >0 = ms to wait */
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0: rec->a4 = (unsigned long) -1; break;	/* block */
 	case 1: rec->a4 = 0; break;			/* immediate */
-	default: rec->a4 = 1 + (rand() % 100); break;	/* short wait */
+	default: rec->a4 = 1 + (rnd_modulo_u32(100)); break;	/* short wait */
 	}
 	avoid_shared_buffer_out(&rec->a2, rec->a3 * sizeof(struct epoll_event));
 }
