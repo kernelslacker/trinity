@@ -29,7 +29,7 @@ static void ib_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	struct sockaddr_ib *sa;
 	unsigned int i;
 
-	sa = zmalloc(sizeof(struct sockaddr_ib));
+	sa = zmalloc_tracked(sizeof(struct sockaddr_ib));
 	sa->sib_family = AF_IB;
 	sa->sib_pkey = rand();
 	sa->sib_flowinfo = rand();
