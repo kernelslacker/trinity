@@ -5,6 +5,7 @@
 #include <sys/timex.h>
 #include <string.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -34,29 +35,29 @@ static void sanitise_clock_adjtime(struct syscallrecord *rec)
 
 	switch (tx->modes) {
 	case ADJ_OFFSET:
-		tx->offset = (rand() % 1024001) - 512000;
+		tx->offset = (rnd_modulo_u32(1024001)) - 512000;
 		break;
 	case ADJ_FREQUENCY:
 		tx->freq = (rand32() % 67108865) - 33554432;
 		break;
 	case ADJ_MAXERROR:
-		tx->maxerror = rand() % 1000000;
+		tx->maxerror = rnd_modulo_u32(1000000);
 		break;
 	case ADJ_ESTERROR:
-		tx->esterror = rand() % 1000000;
+		tx->esterror = rnd_modulo_u32(1000000);
 		break;
 	case ADJ_STATUS:
-		tx->status = rand() & 0xff;
+		tx->status = rnd_u32() & 0xff;
 		break;
 	case ADJ_TIMECONST:
-		tx->constant = rand() % 11;
+		tx->constant = rnd_modulo_u32(11);
 		break;
 	case ADJ_TICK:
-		tx->tick = 9000 + (rand() % 2001);
+		tx->tick = 9000 + (rnd_modulo_u32(2001));
 		break;
 	case ADJ_SETOFFSET:
-		tx->time.tv_sec = (rand() % 3) - 1;
-		tx->time.tv_usec = rand() % 1000000;
+		tx->time.tv_sec = (rnd_modulo_u32(3)) - 1;
+		tx->time.tv_usec = rnd_modulo_u32(1000000);
 		break;
 	}
 
