@@ -9,6 +9,7 @@
 #include "deferred-free.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -54,7 +55,7 @@ static void sanitise_sysfs(struct syscallrecord *rec)
 		break;
 	case 2:
 		/* option 2: arg1 = fs type index, arg2 = pointer to buffer */
-		rec->a2 = rand() % 32;
+		rec->a2 = rnd_modulo_u32(32);
 		rec->a3 = (unsigned long) get_writable_address(256);
 		break;
 	case 3:
