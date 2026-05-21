@@ -13,6 +13,7 @@
 #include "compat.h"
 #include "utils.h"
 #include "pids.h"
+#include "rnd.h"
 
 #ifndef SO_PEEK_OFF
 #define SO_PEEK_OFF	42
@@ -43,7 +44,7 @@ static void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	unixsock->sun_family = PF_UNIX;
 
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0:
 		/* Pathname socket — random path */
 		len = RAND_RANGE(1, 20);
@@ -66,9 +67,9 @@ static void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	case 3:
 		/* Varying addrlen to exercise edge cases */
-		len = rand() % 20;
+		len = rnd_modulo_u32(20);
 		generate_rand_bytes((unsigned char *)unixsock->sun_path, len);
-		*addrlen = sizeof(sa_family_t) + rand() % (sizeof(unixsock->sun_path) + 1);
+		*addrlen = sizeof(sa_family_t) + rnd_modulo_u32(sizeof(unixsock->sun_path) + 1);
 		break;
 	}
 
@@ -97,11 +98,11 @@ static void unix_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 
 	case SO_PEEK_OFF:
 		optval32 = (int *) so->optval;
-		switch (rand() % 4) {
+		switch (rnd_modulo_u32(4)) {
 		case 0: *optval32 = -1; break;		/* disable */
 		case 1: *optval32 = 0; break;		/* start of queue */
-		case 2: *optval32 = rand() % 4096; break;
-		case 3: *optval32 = rand(); break;
+		case 2: *optval32 = rnd_modulo_u32(4096); break;
+		case 3: *optval32 = rnd_u32(); break;
 		}
 		so->optlen = sizeof(int);
 		break;
@@ -156,7 +157,7 @@ static void unix_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len
 		/* SCM_CREDENTIALS — pass pid/uid/gid */
 		struct ucred cred;
 
-		switch (rand() % 4) {
+		switch (rnd_modulo_u32(4)) {
 		case 0:
 			/* Real credentials */
 			cred.pid = mypid();
@@ -165,15 +166,15 @@ static void unix_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len
 			break;
 		case 1:
 			/* Random pid, real uid/gid */
-			cred.pid = rand();
+			cred.pid = rnd_u32();
 			cred.uid = getuid();
 			cred.gid = getgid();
 			break;
 		case 2:
 			/* All random */
-			cred.pid = rand();
-			cred.uid = rand();
-			cred.gid = rand();
+			cred.pid = rnd_u32();
+			cred.uid = rnd_u32();
+			cred.gid = rnd_u32();
 			break;
 		case 3:
 			/* Zero — exercise the "unset" path */
@@ -253,7 +254,7 @@ static void unix_grammar_pick_triplet(struct socket_triplet *out)
 {
 	out->family = PF_LOCAL;
 	out->protocol = 0;
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0:	out->type = SOCK_STREAM;	break;
 	case 1:	out->type = SOCK_SEQPACKET;	break;
 	default:out->type = SOCK_DGRAM;		break;
@@ -328,21 +329,21 @@ static void unix_grammar_gen_cmsg(int fd, struct socket_triplet *t,
 		if (cmsgbuflen < need)
 			return;
 
-		switch (rand() % 4) {
+		switch (rnd_modulo_u32(4)) {
 		case 0:
 			cred.pid = mypid();
 			cred.uid = getuid();
 			cred.gid = getgid();
 			break;
 		case 1:
-			cred.pid = rand();
+			cred.pid = rnd_u32();
 			cred.uid = getuid();
 			cred.gid = getgid();
 			break;
 		case 2:
-			cred.pid = rand();
-			cred.uid = rand();
-			cred.gid = rand();
+			cred.pid = rnd_u32();
+			cred.uid = rnd_u32();
+			cred.gid = rnd_u32();
 			break;
 		default:
 			cred.pid = 0;
