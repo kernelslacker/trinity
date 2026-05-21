@@ -5,6 +5,7 @@
 #include <string.h>
 #include <linux/pidfd.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "pids.h"
 
@@ -24,7 +25,7 @@ static void sanitise_pidfd_send_signal(struct syscallrecord *rec)
 {
 #ifdef PIDFD_SELF_THREAD
 	/* Sometimes pass a self-referencing sentinel instead of a real pidfd. */
-	if (rand() % 4 == 0) {
+	if (rnd_modulo_u32(4) == 0) {
 		rec->a1 = RAND_BOOL() ? (unsigned long)PIDFD_SELF_THREAD
 				      : (unsigned long)PIDFD_SELF_THREAD_GROUP;
 		return;
