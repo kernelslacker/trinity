@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "compat.h"
@@ -97,11 +98,11 @@ int32_t get_random_key_serial(void)
 	struct object *obj;
 
 	if (objects_pool_empty(OBJ_LOCAL, OBJ_KEY_SERIAL) == true)
-		return (int32_t) (1 + (rand() % 1000));
+		return (int32_t) (1 + (rnd_modulo_u32(1000)));
 
 	obj = get_random_object(OBJ_KEY_SERIAL, OBJ_LOCAL);
 	if (obj == NULL)
-		return (int32_t) (1 + (rand() % 1000));
+		return (int32_t) (1 + (rnd_modulo_u32(1000)));
 	return obj->keyserialobj.serial;
 }
 
@@ -135,13 +136,13 @@ static long random_key_id(void)
 	 *   ~1/8  fully random low integer to keep input-validation paths
 	 *         exercised independent of pool state
 	 */
-	switch (rand() % 8) {
+	switch (rnd_modulo_u32(8)) {
 	case 0 ... 3:
-		return key_specs[rand() % ARRAY_SIZE(key_specs)];
+		return key_specs[rnd_modulo_u32(ARRAY_SIZE(key_specs))];
 	case 4 ... 6:
 		return (long) get_random_key_serial();
 	default:
-		return 1 + (rand() % 1000);
+		return 1 + (rnd_modulo_u32(1000));
 	}
 }
 
@@ -168,12 +169,12 @@ static const unsigned long keyctl_cmds_rare[] = {
 
 static unsigned long pick_keyctl_cmd(void)
 {
-	unsigned int r = rand() % 100;
+	unsigned int r = rnd_modulo_u32(100);
 
 	if (r < 50)
-		return keyctl_cmds_common[rand() % ARRAY_SIZE(keyctl_cmds_common)];
+		return keyctl_cmds_common[rnd_modulo_u32(ARRAY_SIZE(keyctl_cmds_common))];
 	if (r < 90)
-		return keyctl_cmds_rare[rand() % ARRAY_SIZE(keyctl_cmds_rare)];
+		return keyctl_cmds_rare[rnd_modulo_u32(ARRAY_SIZE(keyctl_cmds_rare))];
 	return (unsigned long) rand32();
 }
 
@@ -229,8 +230,8 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 	case KEYCTL_CHOWN:
 		/* arg2=key, arg3=uid, arg4=gid (-1 = no change) */
 		rec->a2 = (unsigned long) random_key_id();
-		rec->a3 = RAND_BOOL() ? (unsigned long) -1 : (unsigned long)(rand() % 65536);
-		rec->a4 = RAND_BOOL() ? (unsigned long) -1 : (unsigned long)(rand() % 65536);
+		rec->a3 = RAND_BOOL() ? (unsigned long) -1 : (unsigned long)(rnd_modulo_u32(65536));
+		rec->a4 = RAND_BOOL() ? (unsigned long) -1 : (unsigned long)(rnd_modulo_u32(65536));
 		break;
 
 	case KEYCTL_SETPERM:
@@ -277,13 +278,13 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 
 	case KEYCTL_SET_REQKEY_KEYRING:
 		/* arg2=reqkey destination */
-		rec->a2 = rand() % 8;	/* KEY_REQKEY_DEFL_* range */
+		rec->a2 = rnd_modulo_u32(8);	/* KEY_REQKEY_DEFL_* range */
 		break;
 
 	case KEYCTL_SET_TIMEOUT:
 		/* arg2=key, arg3=timeout_secs */
 		rec->a2 = (unsigned long) random_key_id();
-		rec->a3 = rand() % 3600;
+		rec->a3 = rnd_modulo_u32(3600);
 		break;
 
 	case KEYCTL_INSTANTIATE:
@@ -291,22 +292,22 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 		rec->a2 = (unsigned long) random_key_id();
 		buf = (char *) get_writable_address(64);
 		rec->a3 = (unsigned long) buf;
-		rec->a4 = 1 + (rand() % 63);
+		rec->a4 = 1 + (rnd_modulo_u32(63));
 		rec->a5 = (unsigned long) random_key_id();
 		break;
 
 	case KEYCTL_NEGATE:
 		/* arg2=key, arg3=timeout, arg4=dest_keyring */
 		rec->a2 = (unsigned long) random_key_id();
-		rec->a3 = rand() % 60;
+		rec->a3 = rnd_modulo_u32(60);
 		rec->a4 = (unsigned long) random_key_id();
 		break;
 
 	case KEYCTL_REJECT:
 		/* arg2=key, arg3=timeout, arg4=error, arg5=dest_keyring */
 		rec->a2 = (unsigned long) random_key_id();
-		rec->a3 = rand() % 60;
-		rec->a4 = 1 + (rand() % 4095);	/* errno range: 1..MAX_ERRNO */
+		rec->a3 = rnd_modulo_u32(60);
+		rec->a4 = 1 + (rnd_modulo_u32(4095));	/* errno range: 1..MAX_ERRNO */
 		rec->a5 = (unsigned long) random_key_id();
 		break;
 
@@ -320,7 +321,7 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 
 	case KEYCTL_GET_PERSISTENT:
 		/* arg2=uid, arg3=dest_keyring */
-		rec->a2 = RAND_BOOL() ? (unsigned long) -1 : (unsigned long)(rand() % 65536);
+		rec->a2 = RAND_BOOL() ? (unsigned long) -1 : (unsigned long)(rnd_modulo_u32(65536));
 		rec->a3 = (unsigned long) random_key_id();
 		break;
 
