@@ -7,6 +7,7 @@
 #include "ioctls.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
@@ -50,8 +51,8 @@ static void epoll_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 		return;
 
 	if (rec->a2 == EPIOCSPARAMS) {
-		params->busy_poll_usecs = rand() % 1000000;
-		params->busy_poll_budget = rand() % 256;
+		params->busy_poll_usecs = rnd_modulo_u32(1000000);
+		params->busy_poll_budget = rnd_modulo_u32(256);
 		params->prefer_busy_poll = RAND_BOOL();
 		params->__pad = 0;
 	}
