@@ -1102,7 +1102,7 @@ void kill_pid(pid_t pid)
 	 * whether this was a single wild write or a page-level event.
 	 */
 	if (pid == mainpid) {
-		int i;
+		unsigned int i;
 		int corrupt_slot = -1;
 
 		for_each_child(i) {
