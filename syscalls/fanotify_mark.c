@@ -8,6 +8,7 @@
 #include <linux/fanotify.h>
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -108,9 +109,9 @@ static void sanitise_fanotify_mark(struct syscallrecord *rec)
 	}
 
 	if (RAND_BOOL())
-		rec->a2 |= ignore_choice[rand() % ARRAY_SIZE(ignore_choice)];
+		rec->a2 |= ignore_choice[rnd_modulo_u32(ARRAY_SIZE(ignore_choice))];
 
-	chosen_objtype = objtype_choice[rand() % ARRAY_SIZE(objtype_choice)];
+	chosen_objtype = objtype_choice[rnd_modulo_u32(ARRAY_SIZE(objtype_choice))];
 	rec->a2 = (rec->a2 & ~(unsigned long)FAN_MARK_OBJTYPE_MASK) | chosen_objtype;
 
 	/* FAN_MNT_ATTACH/DETACH are only legal when the mark is on a mntns. */
