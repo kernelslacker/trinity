@@ -283,6 +283,17 @@ struct kcov_shared {
 	 * collected → unique_inserts → try_get_returned → injected makes the
 	 * end-to-end CMP-hint pipeline observable. */
 	unsigned long cmp_hints_try_get_returned;
+	/* cmp_hints_try_get() return values that the calling argument
+	 * generator actually committed to the produced syscall argument
+	 * (returned the hint directly, or OR'd it into a flags mask).
+	 * Aggregated across all callsites -- granularity is per-counter,
+	 * not per-callsite, because the operator question this answers
+	 * ("does the hint pipeline reach syscall args at all?") doesn't yet
+	 * need the per-callsite split.  Subset of cmp_hints_try_get_returned:
+	 * the gap between the two is callsites that pulled a hint but then
+	 * discarded it (none today, but the slot exists for future
+	 * branchier consumers). */
+	unsigned long cmp_hints_injected;
 	/* See struct kcov_cmp_diag — child-context writes are routed here
 	 * because the child's stdout has already been dup2'd to /dev/null
 	 * by the time KCOV_TRACE_CMP setup runs. */

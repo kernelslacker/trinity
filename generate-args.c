@@ -10,6 +10,7 @@
 #include "debug.h"
 #include "deferred-free.h"
 #include "fd.h"
+#include "kcov.h"
 #include "maps.h"
 #include "minicorpus.h"
 #include "net.h"
@@ -168,8 +169,12 @@ static unsigned long handle_arg_op(struct syscallentry *entry,
 	 * Bumped to ~1 in 4 inside a SR_PLATEAU_FORCE intervention whose
 	 * dominant rescue class is RRC_CMP_DERIVED. */
 	if (ONE_IN(cmp_hint_inject_denom()) &&
-	    cmp_hints_try_get(call, &hint))
+	    cmp_hints_try_get(call, &hint)) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_hints_injected,
+					   1UL, __ATOMIC_RELAXED);
 		return hint;
+	}
 
 	return values[rnd_modulo_u32(num)];
 }
@@ -201,6 +206,9 @@ static unsigned long handle_arg_list(struct syscallentry *entry,
 	 * dominant rescue class is RRC_CMP_DERIVED. */
 	if (ONE_IN(cmp_hint_inject_denom()) &&
 	    cmp_hints_try_get(call, &hint)) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_hints_injected,
+					   1UL, __ATOMIC_RELAXED);
 		mask = set_rand_bitmask(num, values);
 		mask |= hint;
 		return mask;
@@ -326,8 +334,12 @@ static unsigned long gen_undefined_arg(struct syscallentry *entry __unused__,
 
 	switch (rnd_modulo_u32(9)) {
 	case 0:
-		if (cmp_hints_try_get(call, &hint))
+		if (cmp_hints_try_get(call, &hint)) {
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(&kcov_shm->cmp_hints_injected,
+						   1UL, __ATOMIC_RELAXED);
 			return hint;
+		}
 		return mutate_value(get_boundary_value());
 	case 1: return mutate_value(get_boundary_value());
 	case 2: return mutate_value(rand64());
@@ -797,8 +809,12 @@ static unsigned long gen_arg_struct_size(struct syscallentry *entry,
 	unsigned long hint;
 	unsigned int roll;
 
-	if (ONE_IN(10) && cmp_hints_try_get(rec->nr, &hint))
+	if (ONE_IN(10) && cmp_hints_try_get(rec->nr, &hint)) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_hints_injected,
+					   1UL, __ATOMIC_RELAXED);
 		return hint;
+	}
 
 	desc = paired_struct_desc(entry, rec);
 	if (desc == NULL)

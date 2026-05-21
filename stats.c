@@ -2851,13 +2851,14 @@ void kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_unique;
 	static unsigned long prev_try_get_attempts;
 	static unsigned long prev_try_get_returned;
+	static unsigned long prev_injected;
 	static struct timespec last_dump;
 	struct timespec now;
 	long elapsed;
 	unsigned long cur_records, cur_truncated, cur_bloom_skipped, cur_unique;
-	unsigned long cur_try_get_attempts, cur_try_get_returned;
+	unsigned long cur_try_get_attempts, cur_try_get_returned, cur_injected;
 	unsigned long delta_records, delta_truncated, delta_bloom_skipped, delta_unique;
-	unsigned long delta_try_get_attempts, delta_try_get_returned;
+	unsigned long delta_try_get_attempts, delta_try_get_returned, delta_injected;
 	unsigned int pc_kids, cmp_kids;
 	struct kcov_cmp_diag *d;
 	unsigned int open_c, init_trace_c, mmap_c, enable_c, disable_c, rt_enable_c;
@@ -2873,6 +2874,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	cur_unique        = __atomic_load_n(&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);
 	cur_try_get_attempts = __atomic_load_n(&kcov_shm->cmp_hints_try_get_attempts, __ATOMIC_RELAXED);
 	cur_try_get_returned = __atomic_load_n(&kcov_shm->cmp_hints_try_get_returned, __ATOMIC_RELAXED);
+	cur_injected         = __atomic_load_n(&kcov_shm->cmp_hints_injected,         __ATOMIC_RELAXED);
 
 	/* First call: arm the window so any pre-existing counts carried
 	 * over from earlier in the run are not mis-attributed to the
@@ -2885,6 +2887,7 @@ void kcov_cmp_stats_periodic_dump(void)
 		prev_unique        = cur_unique;
 		prev_try_get_attempts = cur_try_get_attempts;
 		prev_try_get_returned = cur_try_get_returned;
+		prev_injected         = cur_injected;
 		return;
 	}
 
@@ -2898,9 +2901,10 @@ void kcov_cmp_stats_periodic_dump(void)
 	delta_unique        = cur_unique        - prev_unique;
 	delta_try_get_attempts = cur_try_get_attempts - prev_try_get_attempts;
 	delta_try_get_returned = cur_try_get_returned - prev_try_get_returned;
+	delta_injected         = cur_injected         - prev_injected;
 
 	if ((delta_records | delta_truncated | delta_bloom_skipped | delta_unique |
-	     delta_try_get_attempts | delta_try_get_returned) != 0) {
+	     delta_try_get_attempts | delta_try_get_returned | delta_injected) != 0) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
 
 		if (delta_records) {
@@ -2938,6 +2942,12 @@ void kcov_cmp_stats_periodic_dump(void)
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
 					"cmp_hints_try_get_returned", delta_try_get_returned,
 					rate_milli / 1000, rate_milli % 1000, cur_try_get_returned);
+		}
+		if (delta_injected) {
+			unsigned long rate_milli = (delta_injected * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_hints_injected", delta_injected,
+					rate_milli / 1000, rate_milli % 1000, cur_injected);
 		}
 	}
 
@@ -3004,6 +3014,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	prev_unique        = cur_unique;
 	prev_try_get_attempts = cur_try_get_attempts;
 	prev_try_get_returned = cur_try_get_returned;
+	prev_injected         = cur_injected;
 	last_dump = now;
 }
 
