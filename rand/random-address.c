@@ -12,6 +12,7 @@
 #include "arch.h"	// KERNEL_ADDR etc
 #include "child.h"	// this_child(), per-child storm counters
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "maps.h"
 #include "shm.h"
@@ -563,9 +564,9 @@ struct iovec * alloc_iovec(unsigned int num)
 				0, 1, page_size - 1, page_size,
 				page_size + 1, page_size * 2,
 			};
-			iov[i].iov_len = lens[rand() % ARRAY_SIZE(lens)];
+			iov[i].iov_len = lens[rnd_modulo_u32(ARRAY_SIZE(lens))];
 		} else {
-			iov[i].iov_len = map->size > 0 ? rand() % map->size : 0;
+			iov[i].iov_len = map->size > 0 ? rnd_modulo_u32(map->size) : 0;
 		}
 
 		/*
