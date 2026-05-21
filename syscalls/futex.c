@@ -16,6 +16,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "pids.h"
 
 #define FUTEX_UNLOCKED (0)
 #define FUTEX_LOCKED (!FUTEX_UNLOCKED)
@@ -196,7 +197,7 @@ static bool futex_trylock_or_wait(struct __lock *thislock, struct syscallrecord 
 			 * userspace; so do whatever trinity was going to do
 			 * anyway in the first place.
 			 */
-			thislock->owner_pid = getpid();
+			thislock->owner_pid = mypid();
 			return true;
 		}
 	}
