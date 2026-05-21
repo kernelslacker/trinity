@@ -6,6 +6,7 @@
 #include "deferred-free.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -80,11 +81,11 @@ static void sanitise_munmap(struct syscallrecord *rec)
 		nr_pages = map->size / page_size;
 		if (nr_pages == 0)
 			nr_pages = 1;
-		offsetpagenr = rand() % nr_pages;
+		offsetpagenr = rnd_modulo_u32(nr_pages);
 		offset = offsetpagenr * page_size;
 		rec->a1 = (unsigned long) map->ptr + offset;
 
-		len = (rand() % (nr_pages - offsetpagenr)) + 1;
+		len = (rnd_modulo_u32((nr_pages - offsetpagenr))) + 1;
 		len *= page_size;
 		rec->a2 = len;
 	} else {
@@ -92,7 +93,7 @@ static void sanitise_munmap(struct syscallrecord *rec)
 
 		rec->a1 = (unsigned long) map->ptr;
 		if (map->size > 0)
-			rec->a1 += (rand() % map->size) & PAGE_MASK;
+			rec->a1 += (rnd_modulo_u32(map->size)) & PAGE_MASK;
 		rec->a2 = page_size;
 	}
 
