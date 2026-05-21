@@ -14,6 +14,7 @@
 #include "maps.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "pids.h"
@@ -322,7 +323,7 @@ static void sanitise_futex(struct syscallrecord *rec)
 		goto out_setclock;
 	}
 
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0:
 		if (futex_trylock_or_wait(lock1, rec))
 			futex_unlock(lock1);
