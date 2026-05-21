@@ -10,6 +10,7 @@
 #include "net.h"
 #include "random.h"
 #include "compat.h"
+#include "rnd.h"
 
 static void can_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
@@ -18,19 +19,19 @@ static void can_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	can = zmalloc_tracked(sizeof(struct sockaddr_can));
 
 	can->can_family = AF_CAN;
-	can->can_ifindex = rand();
+	can->can_ifindex = rnd_u32();
 
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0:
 		/* ISOTP: fill .tp union member */
-		can->can_addr.tp.rx_id = rand();
-		can->can_addr.tp.tx_id = rand();
+		can->can_addr.tp.rx_id = rnd_u32();
+		can->can_addr.tp.tx_id = rnd_u32();
 		break;
 	case 1:
 		/* J1939: fill .j1939 union member */
 		can->can_addr.j1939.name = rand64();
-		can->can_addr.j1939.pgn = rand() & 0x3ffff;
-		can->can_addr.j1939.addr = RAND_BOOL() ? rand() % 0xfe : 0xff;
+		can->can_addr.j1939.pgn = rnd_u32() & 0x3ffff;
+		can->can_addr.j1939.addr = RAND_BOOL() ? rnd_modulo_u32(0xfe) : 0xff;
 		break;
 	default:
 		/* CAN_RAW: no address needed, zero is fine */
@@ -47,11 +48,11 @@ static void can_gen_msg(__unused__ struct socket_triplet *triplet, void **buf, s
 	struct canfd_frame *cfd;
 	struct canxl_frame *cxl;
 
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0:
 		cf = zmalloc(sizeof(struct can_frame));
-		cf->can_id = rand() & (CAN_EFF_FLAG | CAN_RTR_FLAG | CAN_ERR_FLAG | CAN_EFF_MASK);
-		cf->len = rand() % (CAN_MAX_DLEN + 1);
+		cf->can_id = rnd_u32() & (CAN_EFF_FLAG | CAN_RTR_FLAG | CAN_ERR_FLAG | CAN_EFF_MASK);
+		cf->len = rnd_modulo_u32(CAN_MAX_DLEN + 1);
 		generate_rand_bytes(cf->data, CAN_MAX_DLEN);
 		*buf = cf;
 		*len = sizeof(struct can_frame);
@@ -59,9 +60,9 @@ static void can_gen_msg(__unused__ struct socket_triplet *triplet, void **buf, s
 
 	case 1:
 		cfd = zmalloc(sizeof(struct canfd_frame));
-		cfd->can_id = rand() & (CAN_EFF_FLAG | CAN_RTR_FLAG | CAN_ERR_FLAG | CAN_EFF_MASK);
-		cfd->len = rand() % (CANFD_MAX_DLEN + 1);
-		cfd->flags = rand() & 0x07;
+		cfd->can_id = rnd_u32() & (CAN_EFF_FLAG | CAN_RTR_FLAG | CAN_ERR_FLAG | CAN_EFF_MASK);
+		cfd->len = rnd_modulo_u32(CANFD_MAX_DLEN + 1);
+		cfd->flags = rnd_u32() & 0x07;
 		generate_rand_bytes(cfd->data, CANFD_MAX_DLEN);
 		*buf = cfd;
 		*len = sizeof(struct canfd_frame);
@@ -69,11 +70,11 @@ static void can_gen_msg(__unused__ struct socket_triplet *triplet, void **buf, s
 
 	default:
 		cxl = zmalloc(sizeof(struct canxl_frame));
-		cxl->prio = rand() & CAN_SFF_MASK;
-		cxl->flags = CANXL_XLF | (rand() & 0x03);
-		cxl->sdt = rand();
-		cxl->len = CANXL_MIN_DLEN + rand() % (CANXL_MAX_DLEN - CANXL_MIN_DLEN + 1);
-		cxl->af = rand();
+		cxl->prio = rnd_u32() & CAN_SFF_MASK;
+		cxl->flags = CANXL_XLF | (rnd_u32() & 0x03);
+		cxl->sdt = rnd_u32();
+		cxl->len = CANXL_MIN_DLEN + rnd_modulo_u32(CANXL_MAX_DLEN - CANXL_MIN_DLEN + 1);
+		cxl->af = rnd_u32();
 		generate_rand_bytes(cxl->data, CANXL_MAX_DLEN);
 		*buf = cxl;
 		*len = sizeof(struct canxl_frame);
@@ -112,31 +113,31 @@ static void can_isotp_setsockopt(struct sockopt *so)
 	switch (so->optname) {
 	case CAN_ISOTP_OPTS:
 		opts = (struct can_isotp_options *) so->optval;
-		opts->flags = rand() & 0x3fff;
-		opts->frame_txtime = rand();
-		opts->ext_address = rand();
-		opts->txpad_content = rand();
-		opts->rxpad_content = rand();
-		opts->rx_ext_address = rand();
+		opts->flags = rnd_u32() & 0x3fff;
+		opts->frame_txtime = rnd_u32();
+		opts->ext_address = rnd_u32();
+		opts->txpad_content = rnd_u32();
+		opts->rxpad_content = rnd_u32();
+		opts->rx_ext_address = rnd_u32();
 		so->optlen = sizeof(struct can_isotp_options);
 		break;
 	case CAN_ISOTP_RECV_FC:
 		fc = (struct can_isotp_fc_options *) so->optval;
-		fc->bs = rand();
-		fc->stmin = rand();
-		fc->wftmax = rand();
+		fc->bs = rnd_u32();
+		fc->stmin = rnd_u32();
+		fc->wftmax = rnd_u32();
 		so->optlen = sizeof(struct can_isotp_fc_options);
 		break;
 	case CAN_ISOTP_TX_STMIN:
 	case CAN_ISOTP_RX_STMIN:
-		*(unsigned int *) so->optval = rand();
+		*(unsigned int *) so->optval = rnd_u32();
 		so->optlen = sizeof(unsigned int);
 		break;
 	case CAN_ISOTP_LL_OPTS:
 		ll = (struct can_isotp_ll_options *) so->optval;
 		ll->mtu = RAND_BOOL() ? 16 : 72;
 		ll->tx_dl = 8;
-		ll->tx_flags = rand() & 0x07;
+		ll->tx_flags = rnd_u32() & 0x07;
 		so->optlen = sizeof(struct can_isotp_ll_options);
 		break;
 	}
@@ -158,10 +159,10 @@ static void can_j1939_setsockopt(struct sockopt *so)
 		filter = (struct j1939_filter *) so->optval;
 		filter->name = rand64();
 		filter->name_mask = rand64();
-		filter->pgn = rand() & 0x3ffff;
-		filter->pgn_mask = rand() & 0x3ffff;
-		filter->addr = rand();
-		filter->addr_mask = rand();
+		filter->pgn = rnd_u32() & 0x3ffff;
+		filter->pgn_mask = rnd_u32() & 0x3ffff;
+		filter->addr = rnd_u32();
+		filter->addr_mask = rnd_u32();
 		so->optlen = sizeof(struct j1939_filter);
 		break;
 	case SO_J1939_PROMISC:
@@ -170,7 +171,7 @@ static void can_j1939_setsockopt(struct sockopt *so)
 		so->optlen = sizeof(unsigned int);
 		break;
 	case SO_J1939_SEND_PRIO:
-		*(unsigned int *) so->optval = rand() % 8;
+		*(unsigned int *) so->optval = rnd_modulo_u32(8);
 		so->optlen = sizeof(unsigned int);
 		break;
 	}
@@ -199,14 +200,14 @@ static void can_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	case CAN_RAW_FILTER:
 		/* 1-3 filters with random CAN IDs and masks */
 		filter = (struct can_filter *) so->optval;
-		filter[0].can_id = rand();
-		filter[0].can_mask = rand();
+		filter[0].can_id = rnd_u32();
+		filter[0].can_mask = rnd_u32();
 		so->optlen = sizeof(struct can_filter);
 		break;
 
 	case CAN_RAW_ERR_FILTER:
 		optval32 = (unsigned int *) so->optval;
-		*optval32 = rand() & CAN_ERR_MASK;
+		*optval32 = rnd_u32() & CAN_ERR_MASK;
 		so->optlen = sizeof(unsigned int);
 		break;
 
