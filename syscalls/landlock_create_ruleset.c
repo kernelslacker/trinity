@@ -7,6 +7,7 @@
 #include <string.h>
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 #ifndef LANDLOCK_CREATE_RULESET_VERSION
@@ -35,11 +36,11 @@ static void sanitise_landlock_create_ruleset(struct syscallrecord *rec)
 
 	/* Random combination of net access rights. */
 	if (RAND_BOOL())
-		attr->handled_access_net = rand() % 4;	/* 0, 1, 2, or 3 (bind|connect) */
+		attr->handled_access_net = rnd_modulo_u32(4);	/* 0, 1, 2, or 3 (bind|connect) */
 
 	/* Random combination of IPC scope restrictions (landlock ABI v5+). */
 	if (RAND_BOOL())
-		attr->scoped = rand() & ((1ULL << 2) - 1);	/* bits 0-1: abstract unix socket, signal */
+		attr->scoped = rnd_u32() & ((1ULL << 2) - 1);	/* bits 0-1: abstract unix socket, signal */
 
 	rec->a1 = (unsigned long) attr;
 	rec->a2 = sizeof(*attr);
