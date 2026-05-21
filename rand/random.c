@@ -5,6 +5,7 @@
 #include <limits.h>
 #include "arch.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"	// interesting_numbers
 #include "types.h"
 
@@ -21,7 +22,7 @@ unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 	if (num == 0)
 		return 0;
 
-	bits = rand() / (RAND_MAX / (num + 1) + 1);
+	bits = rnd_modulo_u32(num + 1);
 	/* Always set at least one bit. Returning a zero mask means
 	 * many flag-style ioctls (e.g. UFFDIO_REGISTER) get rejected
 	 * with EINVAL, wasting a syscall. */
@@ -29,7 +30,7 @@ unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 		bits = 1;
 
 	for (i = 0; i < bits; i++)
-		mask |= values[rand() % num];
+		mask |= values[rnd_modulo_u32(num)];
 
 	return mask;
 }
@@ -42,7 +43,7 @@ unsigned long rand_single_bit(unsigned char size)
 	if (size > WORD_BIT)
 		size = WORD_BIT;
 
-	return (1UL << (rand() % size));
+	return (1UL << rnd_modulo_u32(size));
 }
 
 /*
@@ -50,12 +51,12 @@ unsigned long rand_single_bit(unsigned char size)
  */
 static unsigned long randbits(int limit)
 {
-	unsigned int num = rand() % (limit / 2 + 1);
+	unsigned int num = rnd_modulo_u32(limit / 2 + 1);
 	unsigned int i;
 	unsigned long r = 0;
 
 	for (i = 0; i < num; i++)
-		r |= (1UL << (rand() % limit));
+		r |= (1UL << rnd_modulo_u32(limit));
 
 	return r;
 }
@@ -82,7 +83,7 @@ unsigned short rand16(void)
 {
 	unsigned short r = 0, r2;
 
-	switch (rand() % 6) {
+	switch (rnd_modulo_u32(6)) {
 	case 0:	r = RAND_BYTE();
 		break;
 
@@ -90,12 +91,12 @@ unsigned short rand16(void)
 		break;
 	case 2:	r = randbits(16);
 		break;
-	case 3: r = rand();
+	case 3: r = rnd_u32();
 		break;
-	case 4:	r2 = rand() & 0xff;
+	case 4:	r2 = rnd_u32() & 0xff;
 		r = r2 | r2 << 8;
 		break;
-	case 5: return 0 - ((rand() % 10) + 1);
+	case 5: return 0 - (rnd_modulo_u32(10) + 1);
 	}
 
 	/* Sometimes flip sign */
@@ -109,7 +110,7 @@ unsigned short rand16(void)
 
 	if (RAND_BOOL()) {
 		/* limit the size */
-		switch (rand() % 3) {
+		switch (rnd_modulo_u32(3)) {
 		case 0: r &= 0xff;
 			break;
 		case 1: r &= 0xfff;
@@ -128,7 +129,7 @@ unsigned int rand32(void)
 {
 	unsigned int r = 0;
 
-	switch (rand() % 8) {
+	switch (rnd_modulo_u32(8)) {
 	case 0:	r = RAND_BYTE();
 		break;
 	case 1:	r = rand16();
@@ -137,14 +138,14 @@ unsigned int rand32(void)
 		break;
 	case 3:	r = randbits(32);
 		break;
-	case 4: r = rand();
+	case 4: r = rnd_u32();
 		break;
 	case 5:	r = rept_byte();
 		break;
 
 	case 6:	return get_interesting_32bit_value();
 
-	case 7: return 0 - ((rand() % 10) + 1);
+	case 7: return 0 - (rnd_modulo_u32(10) + 1);
 	}
 
 	/* Sometimes deduct it from INT_MAX */
@@ -163,7 +164,7 @@ unsigned int rand32(void)
 
 	if (RAND_BOOL()) {
 		/* limit the size */
-		switch (rand() % 4) {
+		switch (rnd_modulo_u32(4)) {
 		case 0: r &= 0xff;
 			break;
 		case 1: r &= 0xffff;
@@ -185,7 +186,7 @@ u64 rand64(void)
 {
 	u64 r = 0;
 
-	switch (rand() % 9) {
+	switch (rnd_modulo_u32(9)) {
 
 	/* 8-bit ranges */
 	case 0:	r = RAND_BYTE();
@@ -204,11 +205,12 @@ u64 rand64(void)
 		break;
 	case 4:	r = randbits(64);
 		break;
-	case 5:	/* glibc rand() returns only 31 bits, so a single
-		 * shift-and-OR leaves bits 31 and 63 always zero.
-		 * Combine three calls with shifts and XOR to cover
-		 * all 64 bits. */
-		r = ((u64) rand() << 33) ^ ((u64) rand() << 16) ^ (u64) rand();
+	case 5:	/* Combine three draws with shifts and XOR to cover
+		 * all 64 bits.  Originally compensated for libc rand()
+		 * only giving 31 bits; kept as three draws after the
+		 * mechanical conversion to rnd_u32() so the bit-mix
+		 * structure is preserved. */
+		r = ((u64) rnd_u32() << 33) ^ ((u64) rnd_u32() << 16) ^ (u64) rnd_u32();
 		break;
 	case 6:	r = rept_byte();
 		break;
@@ -217,11 +219,11 @@ u64 rand64(void)
 	case 7:	return get_interesting_value();
 
 	// small 64bit negative number.
-	case 8: return 0 - ((rand() % 10) + 1);
+	case 8: return 0 - (rnd_modulo_u32(10) + 1);
 	}
 
 	/* limit the size */
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0: r &= 0x000000ffffffffffULL;
 		break;
 	case 1: r &= 0x0000ffffffffffffULL;
@@ -241,9 +243,9 @@ u64 rand64(void)
 		unsigned int i;
 		unsigned int rounds;
 
-		rounds = rand() % 4;
+		rounds = rnd_modulo_u32(4);
 		for (i = 0; i < rounds; i++)
-			r |= (1UL << ((WORD_BIT - 1) - (rand() % 8)));
+			r |= (1UL << ((WORD_BIT - 1) - rnd_modulo_u32(8)));
 	}
 
 	/* Sometimes flip sign */
