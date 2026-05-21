@@ -3,6 +3,7 @@
 #include "net.h"
 #include "random.h"
 #include "compat.h"
+#include "rnd.h"
 
 #ifndef UDP_NO_CHECK6_TX
 #define UDP_NO_CHECK6_TX	101
@@ -63,12 +64,12 @@ void udplite_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *tr
 
 	case UDP_SEGMENT:
 		optval16 = (unsigned short *) so->optval;
-		switch (rand() % 5) {
+		switch (rnd_modulo_u32(5)) {
 		case 0: *optval16 = 0; break;
 		case 1: *optval16 = 1; break;
 		case 2: *optval16 = 1400; break;
 		case 3: *optval16 = 65535; break;
-		case 4: *optval16 = rand() % 65536; break;
+		case 4: *optval16 = rnd_modulo_u32(65536); break;
 		}
 		so->optlen = sizeof(unsigned short);
 		break;
@@ -79,7 +80,7 @@ void udplite_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *tr
 		if (RAND_BOOL())
 			*optval32 = RAND_ARRAY(cscov_values);
 		else
-			*optval32 = rand() % 65536;
+			*optval32 = rnd_modulo_u32(65536);
 		so->optlen = sizeof(unsigned int);
 		break;
 
