@@ -65,27 +65,18 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 		page_alloc[i] = (unsigned long) (map ? map->ptr : NULL);
 	}
 	rec->a3 = (unsigned long) page_alloc;
+	avoid_shared_buffer_inout(&rec->a3, count * sizeof(unsigned long));
 
 	/* nodes = array of ints specifying desired location for each page */
-	nodes = calloc(count, sizeof(int));
-	if (!nodes) {
-		rec->a5 = 0;
-		deferred_freeptr(&rec->a3);
-		return;
-	}
+	nodes = zmalloc_tracked(count * sizeof(int));
 	for (i = 0; i < count; i++)
 		nodes[i] = (int) RAND_BOOL();
 	rec->a4 = (unsigned long) nodes;
+	avoid_shared_buffer_inout(&rec->a4, count * sizeof(int));
 
 	/* status = array of ints returning status of each page.*/
-	status = calloc(count, sizeof(int));
+	status = zmalloc_tracked(count * sizeof(int));
 	rec->a5 = (unsigned long) status;
-	if (!status) {
-		free(nodes);
-		rec->a4 = 0;
-		deferred_freeptr(&rec->a3);
-		return;
-	}
 	avoid_shared_buffer_out(&rec->a5, count * sizeof(int));
 
 	/* Needs CAP_SYS_NICE */
