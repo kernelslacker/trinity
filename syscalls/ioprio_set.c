@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE3(ioprio_set, int, which, int, who, int, ioprio)
  */
 #include <linux/ioprio.h>
+#include "rnd.h"
 #include "sanitise.h"
 #include "random.h"
 
@@ -14,7 +15,7 @@ static void sanitise_ioprio_set(struct syscallrecord *rec)
 	unsigned int class, level;
 
 	/* ioprio encodes class in bits 15:13, level in bits 12:0. */
-	switch (rand() % 5) {
+	switch (rnd_modulo_u32(5)) {
 	case 0: class = IOPRIO_CLASS_NONE; break;
 	case 1: class = IOPRIO_CLASS_RT; break;
 	case 2: class = IOPRIO_CLASS_BE; break;
@@ -23,7 +24,7 @@ static void sanitise_ioprio_set(struct syscallrecord *rec)
 	default: class = IOPRIO_CLASS_BE; break;
 	}
 
-	level = rand() % 8;
+	level = rnd_modulo_u32(8);
 
 	rec->a3 = (class << IOPRIO_CLASS_SHIFT) | level;
 }
