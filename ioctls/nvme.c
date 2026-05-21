@@ -5,6 +5,7 @@
 #include "compat.h"
 #include "ioctls.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -22,7 +23,7 @@ static void sanitise_nvme_admin_cmd(struct syscallrecord *rec)
 	cmd = (struct nvme_passthru_cmd *) get_writable_struct(sizeof(*cmd));
 	if (!cmd)
 		return;
-	cmd->opcode = admin_opcodes[rand() % ARRAY_SIZE(admin_opcodes)];
+	cmd->opcode = admin_opcodes[rnd_modulo_u32(ARRAY_SIZE(admin_opcodes))];
 	cmd->nsid = RAND_BOOL() ? 0 : rand32();
 	cmd->addr = (unsigned long) get_writable_struct(4096);
 	cmd->data_len = 4096;
@@ -46,7 +47,7 @@ static void sanitise_nvme_admin64_cmd(struct syscallrecord *rec)
 	cmd = (struct nvme_passthru_cmd64 *) get_writable_struct(sizeof(*cmd));
 	if (!cmd)
 		return;
-	cmd->opcode = admin_opcodes[rand() % ARRAY_SIZE(admin_opcodes)];
+	cmd->opcode = admin_opcodes[rnd_modulo_u32(ARRAY_SIZE(admin_opcodes))];
 	cmd->nsid = RAND_BOOL() ? 0 : rand32();
 	cmd->addr = (unsigned long) get_writable_struct(4096);
 	cmd->data_len = 4096;
@@ -98,7 +99,7 @@ static void sanitise_nvme_submit_io(struct syscallrecord *rec)
 	memset(io, 0, sizeof(*io));
 	io->opcode = RAND_BOOL() ? 0x01 : 0x02;
 	io->addr = (unsigned long) get_writable_struct(4096);
-	io->nblocks = rand() % 8;
+	io->nblocks = rnd_modulo_u32(8);
 	rec->a3 = (unsigned long) io;
 }
 
