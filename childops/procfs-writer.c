@@ -36,6 +36,7 @@
 #include <unistd.h>
 
 #include "arch.h"
+#include "pids.h"
 #include "child.h"
 #include "random.h"
 #include "shm.h"
@@ -211,7 +212,7 @@ static void discover_targets(void)
 	walk_dir("/proc/sys", MAX_DISCOVERY_DEPTH);
 
 	add_per_task_files("/proc/self");
-	snprintf(per_pid, sizeof(per_pid), "/proc/%d", getpid());
+	snprintf(per_pid, sizeof(per_pid), "/proc/%d", mypid());
 	add_per_task_files(per_pid);
 }
 
