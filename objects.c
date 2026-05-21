@@ -641,7 +641,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			release_obj(obj, scope, type);
 			return;
 		}
-		newarray = zmalloc(newcap * sizeof(struct object *));
+		newarray = zmalloc_tracked(newcap * sizeof(struct object *));
 		if (newarray == NULL) {
 			outputerr("add_object: malloc failed for type %u (cap %u)\n",
 				  type, newcap);
