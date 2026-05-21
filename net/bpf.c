@@ -11,6 +11,7 @@
 #include "bpf.h"
 #include "arch.h"
 #include "debug.h"
+#include "deferred-free.h"
 #include "net.h"
 #include "params.h"
 #include "random.h"
@@ -944,7 +945,7 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 	if (bpf->len == 0)
 		bpf->len = 50;
 
-	bpf->filter = zmalloc(bpf->len * sizeof(struct sock_filter));
+	bpf->filter = zmalloc_tracked(bpf->len * sizeof(struct sock_filter));
 
 	for (i = 0; i < bpf->len; i++) {
 		if (ONE_IN(100))
@@ -1003,5 +1004,23 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 
 	if (verbosity >= MAX_LOGLEVEL)
 		bpf_disasm_all(bpf->filter, bpf->len);
+}
+
+/*
+ * Two-tier free for a sock_fprog produced by bpf_gen_filter(): inner
+ * filter buffer and outer wrapper are independent zmalloc_tracked()
+ * allocations.  Both go through deferred_free_enqueue() so the alloc
+ * tracker consumes their entries on the same path as every other
+ * sanitise-time allocation -- direct free() on the outer wrapper would
+ * bypass the consume step and leave a stale tracker slot to be evicted
+ * by LRU, and the inner buffer needs explicit handling because the
+ * wrapper-tracking fix in f9913742ec91 only tagged the outer alloc.
+ */
+void bpf_free_filter(struct sock_fprog *bpf)
+{
+	if (bpf == NULL)
+		return;
+	deferred_free_enqueue(bpf->filter);
+	deferred_free_enqueue(bpf);
 }
 #endif

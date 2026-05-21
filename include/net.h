@@ -99,8 +99,10 @@ extern const struct netproto proto_ib;
 extern const struct netproto proto_mpls;
 
 /* bpf */
+struct sock_fprog;
 void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen);
 void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen);
+void bpf_free_filter(struct sock_fprog *bpf);
 
 /* ip setsockopt functions */
 void tcp_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
