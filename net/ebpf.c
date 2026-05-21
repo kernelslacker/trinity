@@ -20,6 +20,7 @@
 #include "random.h"
 #include "trinity.h"	// MAX_LOGLEVEL
 #include "utils.h"
+#include "rnd.h"
 
 #ifdef USE_BPF
 
@@ -185,19 +186,19 @@ static int reg_pick_live(struct reg_state *rs)
 	}
 	if (n == 0)
 		return BPF_REG_1;	/* shouldn't happen, but safe fallback */
-	return candidates[rand() % n];
+	return candidates[rnd_modulo_u32(n)];
 }
 
 /* Pick a writable destination register (r0-r9, not r10) */
 static int reg_pick_dst(void)
 {
-	return rand() % BPF_REG_10;
+	return rnd_modulo_u32(BPF_REG_10);
 }
 
 /* Random stack offset, 8-byte aligned, negative from r10 */
 static int rand_stack_offset(void)
 {
-	int slot = (rand() % EBPF_STACK_SLOTS) + 1;
+	int slot = (rnd_modulo_u32(EBPF_STACK_SLOTS)) + 1;
 	return -(slot * 8);
 }
 
@@ -238,8 +239,8 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns,
 
 	/* Initialize a few registers with small constants for variety */
 	if (ONE_IN(2)) {
-		int reg = 2 + (rand() % 4);	/* r2-r5 */
-		insns[pos++] = EBPF_MOV64_IMM(reg, rand() % 256);
+		int reg = 2 + (rnd_modulo_u32(4));	/* r2-r5 */
+		insns[pos++] = EBPF_MOV64_IMM(reg, rnd_modulo_u32(256));
 		reg_set(&rs, reg);
 	}
 
@@ -247,30 +248,30 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns,
 	if (max_insns <= TIER1_MIN_INSNS + 2)
 		body_len = pos + 1;
 	else
-		body_len = TIER1_MIN_INSNS + (rand() % (max_insns - TIER1_MIN_INSNS - 2));
+		body_len = TIER1_MIN_INSNS + (rnd_modulo_u32(max_insns - TIER1_MIN_INSNS - 2));
 	if (body_len > max_insns - 2)
 		body_len = max_insns - 2;
 
 	while (pos < body_len) {
 		int remaining = body_len - pos;
-		int choice = rand() % 100;
+		int choice = rnd_modulo_u32(100);
 
 		if (choice < 40) {
 			/* ALU64 with immediate */
 			int dst = reg_pick_dst();
 			int op = RAND_ARRAY(alu_ops);
-			int imm = (int)(rand() % 65536) - 32768;
+			int imm = (int)(rnd_modulo_u32(65536)) - 32768;
 
 			/* MOV always initializes, others need dst to be live */
 			if (op != BPF_MOV && !(rs.live & (1 << dst))) {
-				insns[pos++] = EBPF_MOV64_IMM(dst, rand() % 100);
+				insns[pos++] = EBPF_MOV64_IMM(dst, rnd_modulo_u32(100));
 				reg_set(&rs, dst);
 				if (pos >= body_len)
 					break;
 			}
 			/* Avoid shift by >= 64 */
 			if (op == BPF_LSH || op == BPF_RSH || op == BPF_ARSH)
-				imm = rand() % 64;
+				imm = rnd_modulo_u32(64);
 			insns[pos++] = EBPF_ALU64_IMM(op, dst, imm);
 			reg_set(&rs, dst);
 
@@ -292,7 +293,7 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns,
 		} else if (choice < 65) {
 			/* ALU32 with immediate */
 			int dst = reg_pick_dst();
-			int imm = rand() % 256;
+			int imm = rnd_modulo_u32(256);
 
 			insns[pos++] = EBPF_ALU32_IMM(BPF_MOV, dst, imm);
 			reg_set(&rs, dst);
@@ -323,8 +324,8 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns,
 			if (max_skip < 1)
 				break;
 
-			int skip = 1 + (rand() % max_skip);
-			insns[pos++] = EBPF_JMP_IMM(op, src, rand() % 100, skip);
+			int skip = 1 + (rnd_modulo_u32(max_skip));
+			insns[pos++] = EBPF_JMP_IMM(op, src, rnd_modulo_u32(100), skip);
 
 			/* Fill skipped slots with safe NOPs (mov rX, rX) */
 			for (int j = 0; j < skip && pos < body_len; j++) {
@@ -336,7 +337,7 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns,
 			/* Store immediate to stack */
 			int off = rand_stack_offset();
 			int sz = RAND_ARRAY(mem_sizes);
-			int val = rand() % 256;
+			int val = rnd_modulo_u32(256);
 
 			insns[pos++] = EBPF_ST_MEM(sz, BPF_REG_10, off, val);
 
@@ -349,7 +350,7 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns,
 
 		} else if (choice < 97 && remaining >= 2) {
 			/* Helper call from prog-type-appropriate set */
-			int func = hs.helpers[rand() % hs.count];
+			int func = hs.helpers[rnd_modulo_u32(hs.count)];
 			insns[pos++] = EBPF_CALL(func);
 			reg_clear_caller_saved(&rs);
 
@@ -381,7 +382,7 @@ static int gen_tier2(struct bpf_insn *insns, int max_insns)
 	struct reg_state rs;
 	int pos = 0;
 	int body_len;
-	int strategy = rand() % 5;
+	int strategy = rnd_modulo_u32(5);
 
 	reg_init(&rs);
 
@@ -392,7 +393,7 @@ static int gen_tier2(struct bpf_insn *insns, int max_insns)
 	if (max_insns <= TIER2_MIN_INSNS + 2)
 		body_len = pos + 1;
 	else
-		body_len = TIER2_MIN_INSNS + (rand() % (max_insns - TIER2_MIN_INSNS - 2));
+		body_len = TIER2_MIN_INSNS + (rnd_modulo_u32(max_insns - TIER2_MIN_INSNS - 2));
 	if (body_len > max_insns - 2)
 		body_len = max_insns - 2;
 
@@ -403,11 +404,11 @@ static int gen_tier2(struct bpf_insn *insns, int max_insns)
 		 * from the stack to exercise register allocator paths.
 		 */
 		for (int i = 2; i <= 9 && pos < body_len; i++) {
-			insns[pos++] = EBPF_MOV64_IMM(i, rand());
+			insns[pos++] = EBPF_MOV64_IMM(i, rnd_u32());
 			reg_set(&rs, i);
 		}
 		while (pos < body_len - 1) {
-			int reg = 2 + (rand() % 8);
+			int reg = 2 + (rnd_modulo_u32(8));
 			int off = rand_stack_offset();
 			if (!(rs.live & (1 << reg))) {
 				insns[pos++] = EBPF_MOV64_IMM(reg, 0);
@@ -418,7 +419,7 @@ static int gen_tier2(struct bpf_insn *insns, int max_insns)
 			insns[pos++] = EBPF_STX_MEM(BPF_DW, BPF_REG_10, reg, off);
 			if (pos >= body_len - 1)
 				break;
-			int dst = 2 + (rand() % 8);
+			int dst = 2 + (rnd_modulo_u32(8));
 			insns[pos++] = EBPF_LDX_MEM(BPF_DW, dst, BPF_REG_10, off);
 			reg_set(&rs, dst);
 		}
@@ -436,9 +437,9 @@ static int gen_tier2(struct bpf_insn *insns, int max_insns)
 			int imm;
 
 			if (op == BPF_LSH || op == BPF_RSH || op == BPF_ARSH)
-				imm = rand() % 64;
+				imm = rnd_modulo_u32(64);
 			else
-				imm = (int)rand();
+				imm = (int)rnd_u32();
 
 			if (ONE_IN(3))
 				insns[pos++] = EBPF_ALU64_REG(op, BPF_REG_2, BPF_REG_2);
@@ -452,16 +453,16 @@ static int gen_tier2(struct bpf_insn *insns, int max_insns)
 		 * Jump ladder: chain of forward conditional jumps to
 		 * exercise verifier's path exploration.
 		 */
-		insns[pos++] = EBPF_MOV64_IMM(BPF_REG_2, rand() % 1000);
+		insns[pos++] = EBPF_MOV64_IMM(BPF_REG_2, rnd_modulo_u32(1000));
 		reg_set(&rs, BPF_REG_2);
 		while (pos < body_len - 3) {
 			int remaining = body_len - pos;
-			int skip = 1 + (rand() % 3);
+			int skip = 1 + (rnd_modulo_u32(3));
 			int op = RAND_ARRAY(jmp_ops);
 
 			if (skip > remaining - 3)
 				skip = 1;
-			insns[pos++] = EBPF_JMP_IMM(op, BPF_REG_2, rand() % 1000, skip);
+			insns[pos++] = EBPF_JMP_IMM(op, BPF_REG_2, rnd_modulo_u32(1000), skip);
 			for (int j = 0; j < skip && pos < body_len; j++) {
 				insns[pos++] = EBPF_ALU64_IMM(BPF_ADD, BPF_REG_2, 1);
 			}
@@ -478,10 +479,10 @@ static int gen_tier2(struct bpf_insn *insns, int max_insns)
 		while (pos < body_len) {
 			if (ONE_IN(2))
 				insns[pos++] = EBPF_ALU32_IMM(BPF_ADD, BPF_REG_3,
-							      rand() % 256);
+							      rnd_modulo_u32(256));
 			else
 				insns[pos++] = EBPF_ALU64_IMM(BPF_ADD, BPF_REG_3,
-							      rand() % 256);
+							      rnd_modulo_u32(256));
 		}
 		break;
 
@@ -490,12 +491,12 @@ static int gen_tier2(struct bpf_insn *insns, int max_insns)
 		 * JMP32 variations: exercise 32-bit comparison paths
 		 * which have separate verifier logic.
 		 */
-		insns[pos++] = EBPF_MOV64_IMM(BPF_REG_4, rand());
+		insns[pos++] = EBPF_MOV64_IMM(BPF_REG_4, rnd_u32());
 		reg_set(&rs, BPF_REG_4);
 		while (pos < body_len - 2) {
 			insns[pos++] = EBPF_JMP32_IMM(RAND_ARRAY(jmp_ops),
 						       BPF_REG_4,
-						       rand() % 1000, 1);
+						       rnd_modulo_u32(1000), 1);
 			insns[pos++] = EBPF_ALU32_IMM(BPF_ADD, BPF_REG_4, 1);
 		}
 		break;
@@ -522,64 +523,64 @@ static int gen_tier3(struct bpf_insn *insns, int max_insns)
 	if (max_insns <= TIER3_MIN_INSNS)
 		len = TIER3_MIN_INSNS;
 	else
-		len = TIER3_MIN_INSNS + (rand() % (max_insns - TIER3_MIN_INSNS));
+		len = TIER3_MIN_INSNS + (rnd_modulo_u32(max_insns - TIER3_MIN_INSNS));
 
 	for (int i = 0; i < len - 1; i++) {
-		int choice = rand() % 100;
+		int choice = rnd_modulo_u32(100);
 
 		if (choice < 30) {
 			/* Completely random instruction */
-			insns[i].code = (uint8_t)rand();
-			insns[i].dst_reg = rand() % 16;
-			insns[i].src_reg = rand() % 16;
-			insns[i].off = (int16_t)rand();
-			insns[i].imm = (int32_t)rand();
+			insns[i].code = (uint8_t)rnd_u32();
+			insns[i].dst_reg = rnd_modulo_u32(16);
+			insns[i].src_reg = rnd_modulo_u32(16);
+			insns[i].off = (int16_t)rnd_u32();
+			insns[i].imm = (int32_t)rnd_u32();
 
 		} else if (choice < 45) {
 			/* Valid opcode but invalid register (>= MAX_BPF_REG) */
 			int op = RAND_ARRAY(alu_ops);
-			insns[i] = EBPF_ALU64_REG(op, rand() % 16, rand() % 16);
+			insns[i] = EBPF_ALU64_REG(op, rnd_modulo_u32(16), rnd_modulo_u32(16));
 
 		} else if (choice < 55) {
 			/* Backward jump (verifier should reject) */
-			int back = -(1 + (rand() % (i + 1)));
+			int back = -(1 + (rnd_modulo_u32(i + 1)));
 			insns[i] = EBPF_JMP_IMM(BPF_JA, 0, 0, back);
 
 		} else if (choice < 65) {
 			/* Jump way past end of program */
-			insns[i] = EBPF_JMP_IMM(BPF_JA, 0, 0, 1000 + (rand() % 5000));
+			insns[i] = EBPF_JMP_IMM(BPF_JA, 0, 0, 1000 + (rnd_modulo_u32(5000)));
 
 		} else if (choice < 72) {
 			/* Call non-existent helper */
-			insns[i] = EBPF_CALL(EBPF_MAX_HELPER_ID + 1 + (rand() % 1000));
+			insns[i] = EBPF_CALL(EBPF_MAX_HELPER_ID + 1 + (rnd_modulo_u32(1000)));
 
 		} else if (choice < 80) {
 			/* OOB stack access */
-			int off = -(EBPF_STACK_SIZE + 8 + (rand() % 4096));
+			int off = -(EBPF_STACK_SIZE + 8 + (rnd_modulo_u32(4096)));
 			insns[i] = EBPF_STX_MEM(BPF_DW, BPF_REG_10, BPF_REG_0, off);
 
 		} else if (choice < 88) {
 			/* Load from wild pointer (r0 uninitialized or garbage) */
 			insns[i] = EBPF_LDX_MEM(RAND_ARRAY(mem_sizes),
-						 rand() % BPF_REG_10,
-						 rand() % BPF_REG_10,
-						 (int16_t)rand());
+						 rnd_modulo_u32(BPF_REG_10),
+						 rnd_modulo_u32(BPF_REG_10),
+						 (int16_t)rnd_u32());
 
 		} else if (choice < 94) {
 			/* Atomic op with bad src/dst */
 			insns[i].code = BPF_STX | BPF_DW | BPF_ATOMIC;
-			insns[i].dst_reg = rand() % 16;
-			insns[i].src_reg = rand() % 16;
-			insns[i].off = (int16_t)rand();
-			insns[i].imm = BPF_ADD + (rand() % 4) * BPF_FETCH;
+			insns[i].dst_reg = rnd_modulo_u32(16);
+			insns[i].src_reg = rnd_modulo_u32(16);
+			insns[i].off = (int16_t)rnd_u32();
+			insns[i].imm = BPF_ADD + (rnd_modulo_u32(4)) * BPF_FETCH;
 
 		} else {
 			/* Malformed 128-bit load: first half only */
 			insns[i].code = BPF_LD | BPF_DW | BPF_IMM;
-			insns[i].dst_reg = rand() % BPF_REG_10;
-			insns[i].src_reg = rand() % 4;
+			insns[i].dst_reg = rnd_modulo_u32(BPF_REG_10);
+			insns[i].src_reg = rnd_modulo_u32(4);
 			insns[i].off = 0;
-			insns[i].imm = (int32_t)rand();
+			insns[i].imm = (int32_t)rnd_u32();
 			/* Don't emit the second half — malformed */
 		}
 	}
@@ -588,11 +589,11 @@ static int gen_tier3(struct bpf_insn *insns, int max_insns)
 	if (ONE_IN(3))
 		insns[len - 1] = EBPF_EXIT();
 	else {
-		insns[len - 1].code = (uint8_t)rand();
-		insns[len - 1].dst_reg = rand() % 16;
-		insns[len - 1].src_reg = rand() % 16;
-		insns[len - 1].off = (int16_t)rand();
-		insns[len - 1].imm = (int32_t)rand();
+		insns[len - 1].code = (uint8_t)rnd_u32();
+		insns[len - 1].dst_reg = rnd_modulo_u32(16);
+		insns[len - 1].src_reg = rnd_modulo_u32(16);
+		insns[len - 1].off = (int16_t)rnd_u32();
+		insns[len - 1].imm = (int32_t)rnd_u32();
 	}
 
 	return len;
@@ -611,7 +612,7 @@ struct bpf_insn *ebpf_gen_program(int *insn_count, unsigned int prog_type)
 	struct bpf_insn *insns;
 	struct helper_set hs;
 	int max_insns, len;
-	int tier = rand() % 100;
+	int tier = rnd_modulo_u32(100);
 
 	if (tier < 50) {
 		max_insns = TIER1_MAX_INSNS;
