@@ -1759,7 +1759,7 @@ bool healer_save_file(const char *path)
 	hdr.payload_crc32 = healer_crc32(payload, HEALER_PAYLOAD_BYTES);
 
 	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d",
-			path, (int)getpid());
+			path, (int)mypid());
 	if (ret < 0 || (size_t)ret >= sizeof(tmppath)) {
 		free(payload);
 		return false;
@@ -3032,7 +3032,7 @@ skip_triple:
 
 retry:
 	if (no_syscalls_enabled() == true) {
-		output(0, "[%d] No more syscalls enabled. Exiting\n", getpid());
+		output(0, "[%d] No more syscalls enabled. Exiting\n", mypid());
 		__atomic_store_n(&shm->exit_reason, EXIT_NO_SYSCALLS_ENABLED,
 				 __ATOMIC_RELAXED);
 		return FAIL;
@@ -3040,7 +3040,7 @@ retry:
 
 	if (outer_attempts++ > 10000) {
 		output(0, "[%d] set_syscall_nr_healer exceeded retry budget\n",
-		       getpid());
+		       mypid());
 		return FAIL;
 	}
 
