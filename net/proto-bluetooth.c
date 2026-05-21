@@ -9,6 +9,7 @@
 #include "net.h"
 #include "compat.h"
 #include "random.h"
+#include "rnd.h"
 
 /* ISO socket address — added in kernel 5.10; not yet in all libbluetooth versions */
 #ifndef BTPROTO_ISO
@@ -22,15 +23,15 @@ struct sockaddr_iso {
 
 static void bluetooth_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
-	switch (rand() % 5) {
+	switch (rnd_modulo_u32(5)) {
 	case 0: {
 		/* HCI — raw access to Bluetooth controller */
 		struct sockaddr_hci *hci;
 
 		hci = zmalloc_tracked(sizeof(struct sockaddr_hci));
 		hci->hci_family = PF_BLUETOOTH;
-		hci->hci_dev = rand() % 4;
-		hci->hci_channel = rand() % 5;	/* RAW..LOGGING */
+		hci->hci_dev = rnd_modulo_u32(4);
+		hci->hci_channel = rnd_modulo_u32(5);	/* RAW..LOGGING */
 		*addr = (struct sockaddr *) hci;
 		*addrlen = sizeof(struct sockaddr_hci);
 		break;
@@ -42,10 +43,10 @@ static void bluetooth_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 		l2 = zmalloc_tracked(sizeof(struct sockaddr_l2));
 		l2->l2_family = PF_BLUETOOTH;
-		l2->l2_psm = rand() % 2 ? 1 : rand();	/* 1=SDP */
+		l2->l2_psm = rnd_modulo_u32(2) ? 1 : rnd_u32();	/* 1=SDP */
 		generate_rand_bytes(l2->l2_bdaddr.b, 6);
-		l2->l2_cid = rand();
-		l2->l2_bdaddr_type = rand() % 3;	/* BR/EDR, LE public, LE random */
+		l2->l2_cid = rnd_u32();
+		l2->l2_bdaddr_type = rnd_modulo_u32(3);	/* BR/EDR, LE public, LE random */
 		*addr = (struct sockaddr *) l2;
 		*addrlen = sizeof(struct sockaddr_l2);
 		break;
@@ -58,7 +59,7 @@ static void bluetooth_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		rc = zmalloc_tracked(sizeof(struct sockaddr_rc));
 		rc->rc_family = PF_BLUETOOTH;
 		generate_rand_bytes(rc->rc_bdaddr.b, 6);
-		rc->rc_channel = rand() % 31 + 1;	/* 1-30 valid */
+		rc->rc_channel = rnd_modulo_u32(31) + 1;	/* 1-30 valid */
 		*addr = (struct sockaddr *) rc;
 		*addrlen = sizeof(struct sockaddr_rc);
 		break;
@@ -83,7 +84,7 @@ static void bluetooth_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		iso = zmalloc_tracked(sizeof(struct sockaddr_iso));
 		iso->iso_family = AF_BLUETOOTH;
 		generate_rand_bytes(iso->iso_bdaddr.b, 6);
-		iso->iso_bdaddr_type = rand() % 3;
+		iso->iso_bdaddr_type = rnd_modulo_u32(3);
 		*addr = (struct sockaddr *) iso;
 		*addrlen = sizeof(struct sockaddr_iso);
 		break;
@@ -130,7 +131,7 @@ static void bluetooth_setsockopt(struct sockopt *so, __unused__ struct socket_tr
 {
 	so->level = SOL_BLUETOOTH;
 
-	switch(rand() % 5) {
+	switch(rnd_modulo_u32(5)) {
 	case 0: so->level = SOL_HCI; break;
 	case 1: so->level = SOL_L2CAP; break;
 	case 2: so->level = SOL_SCO; break;
