@@ -68,6 +68,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "pids.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -221,7 +222,7 @@ bool keyring_spam(struct childdata *child)
 			 * pressure here). */
 			snprintf(desc, sizeof(desc),
 				 "trinity-keyring-spam-%u-%u",
-				 (unsigned int) getpid(), iter);
+				 (unsigned int) mypid(), iter);
 			rc = syscall(__NR_add_key, "user", desc,
 				     payload, (size_t) sizeof(payload),
 				     (unsigned long) anchor);
