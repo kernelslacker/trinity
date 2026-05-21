@@ -44,7 +44,7 @@ static void mctp_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_mctp *mctp;
 
-	mctp = zmalloc(sizeof(struct sockaddr_mctp));
+	mctp = zmalloc_tracked(sizeof(struct sockaddr_mctp));
 	mctp->smctp_family = AF_MCTP;
 	mctp->smctp_network = RAND_BOOL() ? MCTP_NET_ANY : rand();
 	mctp->smctp_addr.s_addr = RAND_BOOL() ? MCTP_ADDR_ANY : rand();
