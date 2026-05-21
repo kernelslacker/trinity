@@ -7,6 +7,7 @@
  */
 #include <time.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "compat.h"
 
@@ -48,7 +49,7 @@ static void sanitise_futex_wait(struct syscallrecord *rec)
 	rec->a2 = *futex_word;	/* match the value we just wrote */
 
 	/* mask: generate a useful comparison mask */
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0: rec->a3 = 0xffffffff; break;	/* all bits (common case) */
 	case 1: rec->a3 = 0xff; break;		/* U8 futex */
 	case 2: rec->a3 = 0xffff; break;	/* U16 futex */
@@ -63,7 +64,7 @@ static void sanitise_futex_wait(struct syscallrecord *rec)
 		if (!ts)
 			return;
 		ts->tv_sec = 0;
-		ts->tv_nsec = rand() % 1000000;	/* up to 1ms */
+		ts->tv_nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
 		rec->a5 = (unsigned long) ts;
 	}
 }
