@@ -7,6 +7,7 @@
 #include "net.h"
 #include "random.h"
 #include "compat.h"
+#include "rnd.h"
 
 #ifndef TIPC_SERVICE_RANGE
 #define TIPC_SERVICE_RANGE	1
@@ -42,23 +43,23 @@ static void tipc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 
 	tipc->family = AF_TIPC;
 	tipc->addrtype = RAND_ARRAY(tipc_addrtype);
-	tipc->scope = rand();
+	tipc->scope = rnd_u32();
 
 	switch (tipc->addrtype) {
 	case TIPC_ADDR_ID:
-		tipc->addr.id.ref = rand();
-		tipc->addr.id.node = rand();
+		tipc->addr.id.ref = rnd_u32();
+		tipc->addr.id.node = rnd_u32();
 		break;
 	case TIPC_ADDR_NAMESEQ:	/* also TIPC_SERVICE_RANGE */
-		tipc->addr.nameseq.type = rand();
-		tipc->addr.nameseq.lower = rand();
-		tipc->addr.nameseq.upper = rand();
+		tipc->addr.nameseq.type = rnd_u32();
+		tipc->addr.nameseq.lower = rnd_u32();
+		tipc->addr.nameseq.upper = rnd_u32();
 		break;
 	case TIPC_ADDR_NAME:
 	default:
-		tipc->addr.name.name.type = rand();
-		tipc->addr.name.name.instance = rand();
-		tipc->addr.name.domain = rand();
+		tipc->addr.name.name.type = rnd_u32();
+		tipc->addr.name.name.instance = rnd_u32();
+		tipc->addr.name.domain = rnd_u32();
 		break;
 	}
 	*addr = (struct sockaddr *) tipc;
@@ -82,10 +83,10 @@ static void tipc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 	switch (so->optname) {
 	case TIPC_GROUP_JOIN:
 		greq = (struct tipc_group_req *) so->optval;
-		greq->type = rand();
-		greq->instance = rand();
-		greq->scope = rand() % 3 + 1;
-		greq->flags = rand() & (TIPC_GROUP_LOOPBACK | TIPC_GROUP_MEMBER_EVTS);
+		greq->type = rnd_u32();
+		greq->instance = rnd_u32();
+		greq->scope = rnd_modulo_u32(3) + 1;
+		greq->flags = rnd_u32() & (TIPC_GROUP_LOOPBACK | TIPC_GROUP_MEMBER_EVTS);
 		so->optlen = sizeof(struct tipc_group_req);
 		break;
 
