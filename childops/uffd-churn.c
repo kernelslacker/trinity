@@ -56,6 +56,7 @@
 #include "arch.h"		/* page_size */
 #include "child.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -132,7 +133,7 @@ bool uffd_churn(struct childdata *child)
 	if (ns_unsupported)
 		return true;
 
-	cycles = 1 + ((unsigned int)rand() % MAX_CYCLES);
+	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
 		struct uffdio_api api;
@@ -174,7 +175,7 @@ bool uffd_churn(struct childdata *child)
 			continue;
 		}
 
-		npages = 1 + ((unsigned int)rand() % MAX_PAGES);
+		npages = 1 + rnd_modulo_u32(MAX_PAGES);
 		len = (size_t)npages * page_size;
 
 		region = mmap(NULL, len, PROT_READ | PROT_WRITE,
