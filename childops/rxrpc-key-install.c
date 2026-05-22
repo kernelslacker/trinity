@@ -93,6 +93,7 @@
 #include "child.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -157,7 +158,7 @@ static void ring_insert(int32_t *ring, int32_t serial)
 			return;
 		}
 	}
-	slot = (unsigned int) rand() % LIVE_KEYS_RING;
+	slot = rnd_modulo_u32(LIVE_KEYS_RING);
 	ring[slot] = serial;
 }
 
@@ -172,7 +173,7 @@ static int32_t ring_pick(const int32_t *ring)
 	}
 	if (count == 0)
 		return 0;
-	return ring[picks[(unsigned int) rand() % count]];
+	return ring[picks[rnd_modulo_u32(count)]];
 }
 
 static void ring_drop(int32_t *ring, int32_t serial)
@@ -250,7 +251,7 @@ static void build_xdr_head(unsigned char *buf, size_t *off,
 	for (i = 0; i < cell_len; i++)
 		buf[*off + i] = (unsigned char) ('a' + (i % 26));
 	if (inject_bad_byte && cell_len > 0)
-		buf[*off + (size_t)(rand() % (int) cell_len)] = 0x01;
+		buf[*off + (size_t) rnd_modulo_u32(cell_len)] = 0x01;
 	for (i = cell_len; i < paddedlen; i++)
 		buf[*off + i] = 0;
 	*off += paddedlen;
@@ -409,7 +410,7 @@ static void arm_short_random(int32_t *ring, unsigned int iter)
 	 * skips rxrpc_preparse_xdr() entirely and goes straight to the v1
 	 * binary fast path.  Most lengths fail the kver / sizeof(*v1) /
 	 * total-length checks at the top of the v1 branch. */
-	paylen = (size_t) (1 + ((unsigned int) rand() % 27));
+	paylen = (size_t) (1 + rnd_modulo_u32(27));
 	generate_rand_bytes(buf, (unsigned int) paylen);
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-short-%u-%u",
@@ -432,18 +433,18 @@ static void arm_v1_binary(int32_t *ring, unsigned int iter)
 	/* Most of the time we want kver==1 and security_index==RXKAD so the
 	 * parser walks through to the alloc/copy path.  One in four uses a
 	 * deliberately wrong field to drive the early-reject branches. */
-	kver = (rand() % 4 == 0) ? (uint32_t)(rand32() | 2u) : 1u;
-	sec_idx = (rand() % 4 == 0)
+	kver = (rnd_modulo_u32(4) == 0) ? (uint32_t)(rand32() | 2u) : 1u;
+	sec_idx = (rnd_modulo_u32(4) == 0)
 			? (uint16_t)(rand32() & 0xff)
 			: RXKAD_SEC_IDX;
-	ticket_length = (uint16_t)(rand() % 64);
+	ticket_length = (uint16_t) rnd_modulo_u32(64);
 
 	/* On half the iterations we lie: payload size disagrees with
 	 * advertised ticket_length, which trips the
 	 * datalen != sizeof(*v1) + ticket_length check. */
 	actual_ticket = ticket_length;
-	if (rand() % 2 == 0)
-		actual_ticket = (uint16_t)((rand() % 64) + 1);
+	if (rnd_modulo_u32(2) == 0)
+		actual_ticket = (uint16_t)(rnd_modulo_u32(64) + 1);
 
 	append_be32(buf, &off, kver);				/* kver */
 	buf[off++] = (unsigned char)((sec_idx >> 8) & 0xff);	/* security_index hi */
@@ -479,13 +480,13 @@ static void arm_xdr_envelope(int32_t *ring, unsigned int iter)
 
 	/* flags must be 0 to walk past the early not_xdr; force it on
 	 * three quarters of iterations and inject a junk value on the rest. */
-	flags = (rand() % 4 == 0) ? (uint32_t) rand32() : 0;
+	flags = (rnd_modulo_u32(4) == 0) ? (uint32_t) rand32() : 0;
 
-	cell_len = 1 + ((uint32_t) rand() % XDR_AFSTOKEN_CELL_MAX);
-	ntoken = (rand() % 4 == 0)
+	cell_len = 1 + rnd_modulo_u32(XDR_AFSTOKEN_CELL_MAX);
+	ntoken = (rnd_modulo_u32(4) == 0)
 			? (uint32_t)(rand32() & 0xff)
-			: 1u + ((uint32_t) rand() % XDR_AFSTOKEN_MAX);
-	inject_bad_byte = ((rand() % 8) == 0);
+			: 1u + rnd_modulo_u32(XDR_AFSTOKEN_MAX);
+	inject_bad_byte = (rnd_modulo_u32(8) == 0);
 
 	build_xdr_head(buf, &off, flags, cell_len, ntoken, inject_bad_byte);
 
@@ -494,7 +495,7 @@ static void arm_xdr_envelope(int32_t *ring, unsigned int iter)
 	 * of the time, and occasionally hit RXKAD/RXGK with a deliberately
 	 * wrong toklen. */
 	sec_ix = (uint32_t) rand32();
-	toklen = 4 + ((uint32_t) rand() % 64);
+	toklen = 4 + rnd_modulo_u32(64);
 	header_off = off;
 
 	append_be32(buf, &off, toklen);
@@ -538,16 +539,16 @@ static void arm_xdr_rxkad(int32_t *ring, unsigned int iter)
 
 	/* tktlen mostly small (8..64), with occasional spike to drive the
 	 * tktlen > AFSTOKEN_RK_TIX_MAX (12000) reject branch. */
-	tktlen = (rand() % 8 == 0)
-			? (uint32_t)(13000 + (rand() % 1024))
-			: (uint32_t)(8 + (rand() % 56));
+	tktlen = (rnd_modulo_u32(8) == 0)
+			? (uint32_t)(13000 + rnd_modulo_u32(1024))
+			: (uint32_t)(8 + rnd_modulo_u32(56));
 
 	/* One in four iterations advertises a toklen that disagrees with
 	 * what we actually wrote, exercising the
 	 * "toklen < 8*4 + tktlen" / total-length mismatch checks. */
 	toklen = 8 * 4 + ((tktlen + 3) & ~3U);
-	if (rand() % 4 == 0)
-		toklen += (uint32_t)(rand() % 64);
+	if (rnd_modulo_u32(4) == 0)
+		toklen += rnd_modulo_u32(64);
 
 	append_be32(buf, &off, toklen);
 	append_be32(buf, &off, RXKAD_SEC_IDX);
@@ -581,19 +582,19 @@ static void arm_xdr_rxgk(int32_t *ring, unsigned int iter)
 	/* level normally walks the valid -1..2 range so we get past the
 	 * level-bound check; occasionally goes wild to drive the
 	 * tmp < -1 || tmp > RXRPC_SECURITY_ENCRYPT reject_token. */
-	level = (rand() % 4 == 0)
+	level = (rnd_modulo_u32(4) == 0)
 			? (int64_t)(int32_t) rand32()
-			: (int64_t)((rand() % 4) - 1);
-	enctype = (rand() % 4 == 0)
-			? (int64_t)((int64_t) -1 - (rand() % 8))
-			: (int64_t)(17 + (rand() % 4));
+			: (int64_t) rnd_modulo_u32(4) - 1;
+	enctype = (rnd_modulo_u32(4) == 0)
+			? (int64_t) -1 - (int64_t) rnd_modulo_u32(8)
+			: (int64_t)(17 + rnd_modulo_u32(4));
 
-	keylen = (rand() % 8 == 0)
-			? (uint32_t)(70 + (rand() % 64))
-			: (uint32_t)(16 + (rand() % 32));
-	tktlen = (rand() % 16 == 0)
-			? (uint32_t)(17000 + (rand() % 256))
-			: (uint32_t)(64 + (rand() % 256));
+	keylen = (rnd_modulo_u32(8) == 0)
+			? (uint32_t)(70 + rnd_modulo_u32(64))
+			: (uint32_t)(16 + rnd_modulo_u32(32));
+	tktlen = (rnd_modulo_u32(16) == 0)
+			? (uint32_t)(17000 + rnd_modulo_u32(256))
+			: (uint32_t)(64 + rnd_modulo_u32(256));
 
 	toklen = 4 + 6 * 8 + 4 + ((keylen + 3) & ~3U)
 		 + 4 + ((tktlen + 3) & ~3U);
@@ -620,10 +621,10 @@ static void arm_server_key(int32_t *ring, unsigned int iter __unused__)
 	char desc[96];
 	int32_t serial;
 
-	if (rand() % 2 == 0) {
+	if (rnd_modulo_u32(2) == 0) {
 		/* RXKAD server key.  description "<svc>:2", payload exactly
 		 * 8 B per rxkad_preparse_server_key.  Service id is u16. */
-		unsigned int svc = (unsigned int)(rand() % 65536);
+		unsigned int svc = rnd_modulo_u32(65536);
 
 		generate_rand_bytes(buf, 8);
 		snprintf(desc, sizeof(desc), "%u:%u", svc, RXKAD_SEC_IDX);
@@ -632,7 +633,7 @@ static void arm_server_key(int32_t *ring, unsigned int iter __unused__)
 		/* RXGK server key.  description "<svc>:6:<kvno>:<enctype>",
 		 * payload length must equal krb5->key_len for the named
 		 * enctype.  17 = aes128-cts-hmac-sha1-96, key_len=16. */
-		unsigned int svc = (unsigned int)(rand() % 65536);
+		unsigned int svc = rnd_modulo_u32(65536);
 		unsigned int kvno = (unsigned int)(rand32() & 0xffff);
 		size_t paylen = 16;
 
@@ -645,7 +646,7 @@ static void arm_server_key(int32_t *ring, unsigned int iter __unused__)
 		 * intentionally bad description to drive the
 		 * sscanf-mismatch / sec_class out-of-range branches in
 		 * rxrpc_vet_description_s().  Ignore the result. */
-		if (rand() % 8 == 0) {
+		if (rnd_modulo_u32(8) == 0) {
 			snprintf(desc, sizeof(desc), "%u:%u:%u",
 				 svc, 0xffu, kvno);
 			(void) do_add_rxrpc_s(desc, buf, 8);
@@ -709,7 +710,7 @@ bool rxrpc_key_install(struct childdata *child __unused__)
 	iters = JITTER_RANGE(MAX_ITERATIONS);
 	for (iter = 0; iter < iters; iter++) {
 		enum rxrpc_key_arm arm =
-			(enum rxrpc_key_arm)((unsigned int) rand() % ARM_NR);
+			(enum rxrpc_key_arm) rnd_modulo_u32(ARM_NR);
 
 		switch (arm) {
 		case ARM_NULL:
