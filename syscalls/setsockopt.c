@@ -66,7 +66,7 @@ static void socket_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 
 		/* Free any optval allocated by the caller (do_setsockopt)
 		 * before we replace it with the BPF filter. */
-		free((void *) so->optval);
+		tracked_free_now((void *) so->optval);
 		so->optval = 0;
 
 #ifdef USE_BPF
@@ -86,7 +86,7 @@ static void socket_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 		if (prog_fd >= 0) {
 			int *buf = zmalloc_tracked(sizeof(int));
 			*buf = prog_fd;
-			free((void *) so->optval);
+			tracked_free_now((void *) so->optval);
 			so->optval = (unsigned long) buf;
 			so->optlen = sizeof(int);
 		}
@@ -228,7 +228,7 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	 * Let's disable it half the time.
 	 */
 	if (RAND_BOOL()) {
-		free((void *) so->optval);
+		tracked_free_now((void *) so->optval);
 		so->optval = 0;
 	}
 }
