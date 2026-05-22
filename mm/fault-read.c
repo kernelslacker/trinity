@@ -14,6 +14,7 @@
 #include "arch.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "utils.h"
 #include "pids.h"
@@ -50,7 +51,7 @@ static void read_one_page(struct map *map)
 	if (map->size == 0)
 		return;
 
-	offset = (rand() % map->size) & PAGE_MASK;
+	offset = rnd_modulo_u32(map->size) & PAGE_MASK;
 
 	p += offset;
 	read_mprotect((void *) p, page_size, PROT_READ);
@@ -147,7 +148,7 @@ static void read_random_pages(struct map *map)
 	for (i = 0; i < walk; i++) {
 		/* Offset is uniform across the FULL mapping; only the
 		 * iteration count is capped. */
-		char *page = p + ((rand() % total) * page_size);
+		char *page = p + (rnd_modulo_u32(total) * page_size);
 		read_mprotect((void *) page, page_size, PROT_READ);
 		memcpy(page_buf, page, page_size);
 	}
@@ -315,7 +316,7 @@ void random_map_readfn(struct map *map)
 			if (RAND_BOOL())
 				read_one_page(&local);
 			else
-				read_faultfns[rand() % ARRAY_SIZE(read_faultfns)].func(&local);
+				read_faultfns[rnd_modulo_u32(ARRAY_SIZE(read_faultfns))].func(&local);
 		}
 	} else {
 		aborted = true;
