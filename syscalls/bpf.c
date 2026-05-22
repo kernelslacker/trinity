@@ -173,6 +173,9 @@ static bool bpf_prog_load(union bpf_attr *attr)
 #ifndef BPF_TOKEN_CREATE
 #define BPF_TOKEN_CREATE		36
 #endif
+#ifndef BPF_F_TOKEN_FD
+#define BPF_F_TOKEN_FD			(1U << 16)
+#endif
 #ifndef BPF_PROG_STREAM_READ_BY_FD
 #define BPF_PROG_STREAM_READ_BY_FD	37
 #endif
@@ -350,6 +353,25 @@ struct bpf_post_state {
 	union bpf_attr *attr_original;
 };
 
+/*
+ * Source a token fd value for attr->{prog,map,btf,fd_by_id}_token_fd.
+ * The pool is lazy-fill: until a BPF_TOKEN_CREATE roll succeeds the
+ * pool is empty and get_rand_bpf_token_fd() returns -1.  Convert that
+ * (and a ONE_IN(4) sample of live pool draws) into either -1 or a
+ * random integer, so the kernel's token resolution path -- which
+ * EBADFs out on a bad fd -- is exercised even when no real token
+ * exists.  Live token draws otherwise dominate once the pool warms
+ * and the EBADF arm of bpf_token_capable() would never run.
+ */
+static int bpf_random_token_fd(void)
+{
+	int fd = get_rand_bpf_token_fd();
+
+	if (fd < 0 || ONE_IN(4))
+		fd = ONE_IN(2) ? -1 : (int) rnd_u32();
+	return fd;
+}
+
 static void sanitise_bpf(struct syscallrecord *rec)
 {
 	struct bpf_post_state *snap;
@@ -375,6 +397,18 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		attr->max_entries = rnd_modulo_u32(1024);
 		attr->flags = RAND_RANGE(0, 4);
 		rec->a3 = 20;
+		if (ONE_IN(8)) {
+			/* BPF_F_TOKEN_FD in map_flags is the gate the kernel
+			 * uses to decide whether to resolve map_token_fd at
+			 * all; without it the token fd is ignored and
+			 * bpf_token_capable() never runs.  Bump rec->a3 to
+			 * cover map_token_fd so the kernel reads the slot
+			 * we just wrote. */
+			attr->map_token_fd = bpf_random_token_fd();
+			attr->map_flags |= BPF_F_TOKEN_FD;
+			rec->a3 = offsetof(union bpf_attr, map_token_fd) +
+				  sizeof(attr->map_token_fd);
+		}
 		break;
 
 	case BPF_MAP_LOOKUP_ELEM:
@@ -420,6 +454,15 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_PROG_LOAD:
 		classic_bpf_insns = bpf_prog_load(attr);
 		rec->a3 = 48;
+		if (ONE_IN(8)) {
+			/* See the BPF_MAP_CREATE arm for why both the flag
+			 * bit and the fd matter, and why rec->a3 must grow
+			 * to cover prog_token_fd. */
+			attr->prog_token_fd = bpf_random_token_fd();
+			attr->prog_flags |= BPF_F_TOKEN_FD;
+			rec->a3 = offsetof(union bpf_attr, prog_token_fd) +
+				  sizeof(attr->prog_token_fd);
+		}
 		break;
 
 	case BPF_PROG_ATTACH:
@@ -459,6 +502,31 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_LINK_GET_FD_BY_ID:
 		attr->start_id = rnd_u32();
 		rec->a3 = 8;
+		if (ONE_IN(8)) {
+			/* fd_by_id_token_fd lives in the same anonymous
+			 * struct as start_id; the kernel resolves it when
+			 * non-zero without any flag bit gate, then routes
+			 * the per-cmd cap check through bpf_token_capable().
+			 * Bump rec->a3 so the kernel reads the slot. */
+			attr->fd_by_id_token_fd = bpf_random_token_fd();
+			rec->a3 = offsetof(union bpf_attr,
+					   fd_by_id_token_fd) +
+				  sizeof(attr->fd_by_id_token_fd);
+		}
+		break;
+
+	case BPF_BTF_LOAD:
+		/* Without an explicit case BTF_LOAD falls through to default
+		 * with an all-zero attr -- the kernel rejects the empty BTF
+		 * blob with -EINVAL at btf_parse(), but the cap check on
+		 * btf_token_fd runs before parsing.  Inject the token at the
+		 * usual rate so the bpf_token_capable() arm of btf_new_fd()
+		 * actually executes. */
+		rec->a3 = sizeof(union bpf_attr);
+		if (ONE_IN(8)) {
+			attr->btf_token_fd = bpf_random_token_fd();
+			attr->btf_flags |= BPF_F_TOKEN_FD;
+		}
 		break;
 
 	case BPF_OBJ_GET_INFO_BY_FD: {
