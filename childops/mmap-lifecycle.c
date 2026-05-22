@@ -19,6 +19,7 @@
 #include "maps.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -28,9 +29,9 @@
 
 static unsigned long pick_size(void)
 {
-	switch (rand() % 5) {
+	switch (rnd_modulo_u32(5)) {
 	case 0:	return page_size;
-	case 1:	return page_size * (1 + (rand() % 16));
+	case 1:	return page_size * (1 + rnd_modulo_u32(16));
 	case 2:	return page_size * 64;
 	case 3:	return MB(1);
 	default: return RAND_ARRAY(mapping_sizes);
@@ -108,7 +109,7 @@ static bool do_mremap(void)
 
 	/* Grow or shrink. */
 	if (RAND_BOOL())
-		new_size = map->size + page_size * (1 + (rand() % 16));
+		new_size = map->size + page_size * (1 + rnd_modulo_u32(16));
 	else
 		new_size = max((unsigned long)page_size, map->size / 2) & PAGE_MASK;
 
@@ -179,7 +180,7 @@ bool mmap_lifecycle(struct childdata *child)
 	} else if (nr_maps >= MAX_LIFECYCLE_MAPS) {
 		do_teardown();
 	} else {
-		switch (rand() % 10) {
+		switch (rnd_modulo_u32(10)) {
 		case 0 ... 3:	do_create();	break;
 		case 4 ... 5:	do_mremap();	break;
 		case 6 ... 7:	do_dirty();	break;
