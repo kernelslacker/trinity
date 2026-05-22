@@ -70,6 +70,7 @@
 #include "jitter.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -155,11 +156,11 @@ static unsigned long pick_subrange(unsigned long nr_pages, unsigned long *lenp)
 	if (max_pages == 0)
 		max_pages = 1;
 
-	len_pages = 1 + (rand() % max_pages);
+	len_pages = 1 + rnd_modulo_u32(max_pages);
 
 	/* Choose start so [start_page, start_page + len_pages) fits. */
 	max_start = nr_pages - len_pages;
-	start_page = (max_start == 0) ? 0 : (rand() % (max_start + 1));
+	start_page = (max_start == 0) ? 0 : rnd_modulo_u32(max_start + 1);
 
 	*lenp = len_pages * page_size;
 	return start_page * page_size;
