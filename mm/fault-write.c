@@ -13,6 +13,7 @@
 #include "arch.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"	// get_address
 #include "shm.h"
 #include "utils.h"
@@ -62,10 +63,10 @@ static void dirty_one_page(struct map *map)
 	if (map->size == 0)
 		return;
 
-	offset = (rand() % map->size) & PAGE_MASK;
+	offset = rnd_modulo_u32(map->size) & PAGE_MASK;
 
 	if (mark_page_rw(p + offset) == true)
-		p[offset] = rand();
+		p[offset] = rnd_u32();
 }
 
 /*
@@ -100,7 +101,7 @@ static void dirty_whole_mapping(struct map *map)
 
 	for (i = 0; i < nr; i++) {
 		char *p = map->ptr + (i * page_size);
-		*p = rand();
+		*p = rnd_u32();
 	}
 }
 
@@ -122,7 +123,7 @@ static void dirty_every_other_page(struct map *map)
 			break;
 		char *p = map->ptr + (idx * page_size);
 		if (mark_page_rw(p) == true)
-			*p = rand();
+			*p = rnd_u32();
 	}
 }
 
@@ -142,7 +143,7 @@ static void dirty_mapping_reverse(struct map *map)
 		char *p = map->ptr + (idx * page_size);
 
 		if (mark_page_rw(p) == true)
-			*p = rand();
+			*p = rnd_u32();
 	}
 }
 
@@ -161,10 +162,10 @@ static void dirty_random_pages(struct map *map)
 		/* Offset is uniform across the FULL mapping; only the
 		 * iteration count is capped.  Preserves the
 		 * "any page in the mapping" sampling distribution. */
-		off_t offset = (rand() % total) * page_size;
+		off_t offset = rnd_modulo_u32(total) * page_size;
 		char *p = map->ptr + offset;
 		if (mark_page_rw(p) == true)
-			*p = rand();
+			*p = rnd_u32();
 	}
 }
 
@@ -299,12 +300,12 @@ void random_map_writefn(struct map *map)
 
 	if (sigsetjmp(write_walk_jmp, 1) == 0) {
 		if (map->size == page_size) {
-			write_faultfns_single[rand() % ARRAY_SIZE(write_faultfns_single)].func(map);
+			write_faultfns_single[rnd_modulo_u32(ARRAY_SIZE(write_faultfns_single))].func(map);
 		} else {
 			if (RAND_BOOL()) {
-				write_faultfns[rand() % ARRAY_SIZE(write_faultfns)].func(map);
+				write_faultfns[rnd_modulo_u32(ARRAY_SIZE(write_faultfns))].func(map);
 			} else {
-				write_faultfns_single[rand() % ARRAY_SIZE(write_faultfns_single)].func(map);
+				write_faultfns_single[rnd_modulo_u32(ARRAY_SIZE(write_faultfns_single))].func(map);
 			}
 		}
 	} else {
