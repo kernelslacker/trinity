@@ -48,6 +48,7 @@
 #include "childops-util.h"
 #include "effector-map.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -116,7 +117,7 @@ static void worker_close_ioctl(struct racer_shared *s)
 {
 	int val;
 
-	if (rand() & 1)
+	if (rnd_u32() & 1)
 		close(s->fd);
 	else
 		ioctl(s->fd, FIONREAD, &val);
@@ -195,7 +196,7 @@ static bool setup_dup2_race(struct racer_shared *s)
 		return false;
 
 	/* Pick a target fd number well above the standard trio. */
-	target = 100 + (rand() % 100);
+	target = 100 + rnd_modulo_u32(100);
 	close(target);
 	s->fd = pipefd[0];
 	s->fd2 = target;
@@ -280,7 +281,7 @@ static void worker_epoll_race(struct racer_shared *s)
 {
 	struct epoll_event events[1];
 
-	if (rand() & 1)
+	if (rnd_u32() & 1)
 		close(s->fd);
 	else
 		epoll_wait(s->fd, events, 1, 0);
@@ -311,7 +312,7 @@ static void worker_fcntl_race(struct racer_shared *s)
 {
 	int flags = fcntl(s->fd, F_GETFL);
 
-	if (rand() & 1)
+	if (rnd_u32() & 1)
 		fcntl(s->fd, F_SETFL, flags ^ O_NONBLOCK);
 	else
 		fcntl(s->fd, F_SETFL, flags | O_NONBLOCK);
@@ -346,7 +347,7 @@ static void worker_signal_race(struct racer_shared *s)
 	sigset_t set;
 	char buf[4];
 
-	if (rand() & 1) {
+	if (rnd_u32() & 1) {
 		sigemptyset(&set);
 		sigaddset(&set, SIGUSR1);
 		sigprocmask(SIG_BLOCK, &set, NULL);
@@ -401,8 +402,8 @@ bool barrier_racer(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.barrier_racer_runs, 1, __ATOMIC_RELAXED);
 
-	nworkers = 2 + (rand() % 3);	/* 2, 3, or 4 workers */
-	target = &targets[rand() % ARRAY_SIZE(targets)];
+	nworkers = 2 + rnd_modulo_u32(3);	/* 2, 3, or 4 workers */
+	target = &targets[rnd_modulo_u32(ARRAY_SIZE(targets))];
 
 	/*
 	 * Shared memory for the barrier + per-round parameters.
