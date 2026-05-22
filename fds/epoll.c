@@ -10,6 +10,7 @@
 #include "fd.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
@@ -40,7 +41,7 @@ static void arm_epoll(int epfd)
 {
 	unsigned int i, count;
 
-	count = 1 + (rand() % 3);
+	count = 1 + rnd_modulo_u32(3);
 	for (i = 0; i < count; i++) {
 		struct epoll_event ev;
 		int target_fd;
@@ -75,9 +76,9 @@ static void arm_epoll(int epfd)
 		}
 
 		ev.events = 0;
-		nbits = 1 + (rand() % ARRAY_SIZE(epoll_events));
+		nbits = 1 + rnd_modulo_u32(ARRAY_SIZE(epoll_events));
 		for (j = 0; j < nbits; j++)
-			ev.events |= epoll_events[rand() % ARRAY_SIZE(epoll_events)];
+			ev.events |= epoll_events[rnd_modulo_u32(ARRAY_SIZE(epoll_events))];
 		ev.data.fd = target_fd;
 
 		epoll_ctl(epfd, EPOLL_CTL_ADD, target_fd, &ev);
