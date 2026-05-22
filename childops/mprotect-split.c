@@ -19,6 +19,7 @@
 #include "maps.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -40,7 +41,7 @@
  *                        isolates the NX-bit flip and trips the W^X
  *                        edge when paired with the curated negative
  *                        flag escape.
- *   PROT_RANDOM_BITMASK - mask = rand() & 0x07; exhaustive over the
+ *   PROT_RANDOM_BITMASK - mask = random 3-bit pick; exhaustive over the
  *                        valid PROT_R/W/X combinations including
  *                        PROT_NONE, with no temporal correlation
  *                        between consecutive iterations.
@@ -60,7 +61,7 @@ enum prot_mode {
 
 /* Full PROT_R/W/X lattice (8 combinations, indexed by the same 3-bit
  * mask the kernel uses internally).  The PROT_RANDOM_BITMASK mode used
- * to draw rand() & 0x07 directly; routing through the effector-map lets
+ * to draw the 3-bit mask directly; routing through the effector-map lets
  * the per-bit significance scores for mprotect's prot arg bias the pick
  * toward combinations the kernel branches harder on. */
 static const unsigned long prot_lattice[] = {
@@ -106,13 +107,13 @@ static unsigned long pick_subrange(struct map *map, unsigned long *lenp)
 		return 0;
 	}
 
-	start_page = rand() % nr_pages;
+	start_page = rnd_modulo_u32(nr_pages);
 	/*
-	 * end_page is always <= nr_pages: rand() % (nr_pages - start_page)
+	 * end_page is always <= nr_pages: rnd_modulo_u32(nr_pages - start_page)
 	 * is in [0, nr_pages - start_page - 1], so end_page is in
 	 * [start_page + 1, nr_pages].
 	 */
-	end_page = start_page + 1 + (rand() % (nr_pages - start_page));
+	end_page = start_page + 1 + rnd_modulo_u32(nr_pages - start_page);
 
 	*lenp = (end_page - start_page) * page_size;
 	return start_page * page_size;
@@ -141,7 +142,7 @@ bool mprotect_split(struct childdata *child)
 	if (map->size < page_size)
 		return true;
 
-	mode = (enum prot_mode)((unsigned int)rand() % NR_PROT_MODES);
+	mode = (enum prot_mode)rnd_modulo_u32(NR_PROT_MODES);
 
 	for (iter = 0; iter < PROT_MODE_ITERS; iter++) {
 		unsigned long offset, len;
