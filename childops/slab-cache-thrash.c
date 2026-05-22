@@ -79,6 +79,7 @@
 #include "child.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
@@ -325,7 +326,7 @@ bool slab_cache_thrash(struct childdata *child)
 
 	(void)child;
 
-	t = (enum slab_target)((unsigned int)rand() % NR_SLAB_TARGETS);
+	t = (enum slab_target)rnd_modulo_u32(NR_SLAB_TARGETS);
 	n = pick_burst();
 
 	__atomic_add_fetch(&shm->stats.slab_cache_thrash_runs[t],
