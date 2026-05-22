@@ -51,6 +51,7 @@
 #include "child.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -272,7 +273,7 @@ static void fill_sqe(struct io_uring_sqe *s,
 	memset(s, 0, sizeof(*s));
 	s->user_data = seq;
 
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0:
 		s->opcode = IORING_OP_NOP;
 		break;
@@ -413,7 +414,7 @@ bool iouring_flood(struct childdata *child)
 		return true;
 	}
 
-	cycles = 1 + ((unsigned int)rand() % MAX_CYCLES);
+	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
 		struct flood_ctx ctx;
@@ -436,8 +437,7 @@ bool iouring_flood(struct childdata *child)
 			continue;
 		}
 
-		n_pick = MIN_BURST + ((unsigned int)rand() %
-				      (MAX_BURST - MIN_BURST + 1));
+		n_pick = MIN_BURST + rnd_modulo_u32(MAX_BURST - MIN_BURST + 1);
 
 		for (j = 0; j < n_pick; j++)
 			fill_sqe(&burst[j], dev_null_rd, dev_null_wr, j + 1);
