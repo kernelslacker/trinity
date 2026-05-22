@@ -125,6 +125,7 @@
 #include "jitter.h"
 #include "netlink-genl-families.h"
 #include "random.h"
+#include "rnd.h"
 #include "pids.h"
 
 extern struct genl_family_grammar fam_devlink;
@@ -531,7 +532,7 @@ static void churn_sendto_burst(int sock)
 	struct sockaddr_in dst;
 	unsigned char buf[64];
 	unsigned int i;
-	unsigned int n = 1U + ((unsigned int)rand() % DEVLINK_CHURN_PKTS_PER_ITER);
+	unsigned int n = 1U + rnd_modulo_u32(DEVLINK_CHURN_PKTS_PER_ITER);
 
 	memset(&dst, 0, sizeof(dst));
 	dst.sin_family = AF_INET;
@@ -540,7 +541,7 @@ static void churn_sendto_burst(int sock)
 
 	for (i = 0; i < n; i++) {
 		generate_rand_bytes(buf, sizeof(buf));
-		(void)sendto(sock, buf, 1U + ((unsigned int)rand() % sizeof(buf)),
+		(void)sendto(sock, buf, 1U + rnd_modulo_u32(sizeof(buf)),
 			     MSG_DONTWAIT | MSG_NOSIGNAL,
 			     (struct sockaddr *)&dst, sizeof(dst));
 	}
