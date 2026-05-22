@@ -47,6 +47,7 @@
 #include "child.h"
 #include "pids.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -354,7 +355,7 @@ static void do_rdonly_lifecycle(void)
 	struct stat st;
 	unsigned int idx;
 
-	idx = (unsigned int)rand() % ARRAY_SIZE(targets);
+	idx = rnd_modulo_u32(ARRAY_SIZE(targets));
 	fstype = targets[idx].fstype;
 	probe  = targets[idx].probe;
 
@@ -594,7 +595,7 @@ bool fs_lifecycle(struct childdata *child __unused__)
 	if (!ensure_private_ns())
 		return true;
 
-	switch (rand() % 6) {
+	switch (rnd_modulo_u32(6)) {
 	case 0: do_tmpfs_lifecycle();   break;
 	case 1: do_ramfs_lifecycle();   break;
 	case 2: do_rdonly_lifecycle();  break;
