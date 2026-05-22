@@ -90,6 +90,7 @@
 #include "compat.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -184,7 +185,7 @@ static void churn_send(int fd)
 	ssize_t n;
 
 	generate_rand_bytes(buf, sizeof(buf));
-	n = send(fd, buf, 1U + ((unsigned int)rand() % sizeof(buf)),
+	n = send(fd, buf, 1U + rnd_modulo_u32(sizeof(buf)),
 		 MSG_DONTWAIT | MSG_NOSIGNAL);
 	if (n > 0)
 		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_packets_sent,
@@ -227,7 +228,7 @@ bool sctp_assoc_churn(struct childdata *child)
 	 * inside net/sctp/socket.c get exercised.  The two share most of
 	 * the assoc lifecycle code but split on accept / peeloff /
 	 * implicit-assoc-on-sendmsg. */
-	sock_type = (rand() & 1) ? SOCK_STREAM : SOCK_SEQPACKET;
+	sock_type = (rnd_u32() & 1) ? SOCK_STREAM : SOCK_SEQPACKET;
 
 	srv = socket(AF_INET, sock_type | SOCK_CLOEXEC, IPPROTO_SCTP);
 	if (srv < 0) {
