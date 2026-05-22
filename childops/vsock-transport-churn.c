@@ -118,6 +118,7 @@
 #include "compat.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -332,7 +333,7 @@ static void iter_one(const struct timespec *t_outer)
 	 * shrink and grow paths across iterations. */
 	{
 		uint64_t sz = VS_BUFFER_SIZE_LO +
-			      (rand() % (VS_BUFFER_SIZE_HI - VS_BUFFER_SIZE_LO + 1U));
+			      rnd_modulo_u32(VS_BUFFER_SIZE_HI - VS_BUFFER_SIZE_LO + 1U);
 
 		if (setsockopt(cli, AF_VSOCK, SO_VM_SOCKETS_BUFFER_SIZE,
 			       &sz, sizeof(sz)) == 0)
@@ -492,7 +493,7 @@ static void iter_seq_eom_burst(const struct timespec *t_outer)
 	if (srv >= 0)
 		apply_timeouts(srv);
 
-	burst = VS_SEQ_EOM_BURST_MIN + (rand() % VS_SEQ_EOM_BURST_RANGE);
+	burst = VS_SEQ_EOM_BURST_MIN + rnd_modulo_u32(VS_SEQ_EOM_BURST_RANGE);
 	for (i = 0; i < burst; i++) {
 		struct iovec iov;
 		struct msghdr mh;
@@ -562,7 +563,7 @@ bool vsock_transport_churn(struct childdata *child)
 		    VS_WALL_CAP_NS)
 			break;
 
-		if ((rand() % 100U) < VS_UNSHARE_VARIANT_PCT)
+		if (rnd_modulo_u32(100U) < VS_UNSHARE_VARIANT_PCT)
 			iter_one_in_fresh_netns(&t_outer);
 		else
 			iter_one(&t_outer);
