@@ -502,6 +502,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_LINK_GET_FD_BY_ID:
 		attr->start_id = rnd_u32();
 		rec->a3 = 8;
+#ifdef HAVE_BPF_ATTR_FD_BY_ID_TOKEN_FD
 		if (ONE_IN(8)) {
 			/* fd_by_id_token_fd lives in the same anonymous
 			 * struct as start_id; the kernel resolves it when
@@ -513,6 +514,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 					   fd_by_id_token_fd) +
 				  sizeof(attr->fd_by_id_token_fd);
 		}
+#endif
 		break;
 
 	case BPF_BTF_LOAD:
