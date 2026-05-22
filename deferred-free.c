@@ -361,6 +361,27 @@ bool alloc_track_lookup(void *ptr)
 }
 
 /*
+ * Synchronously free a zmalloc_tracked() pointer.  alloc_track_consume()
+ * pulls the entry out of both alloc_track[] and alloc_track_hash[] in
+ * one shot (hash-gated reject, then backward array scan with paired
+ * hash_remove on the hit), which is exactly the removal the deferred
+ * ring would have done at TTL expiry — but here without the queue
+ * latency.  The consume-miss case (pointer was never tracked, was
+ * already consumed, or rotated out) is silently tolerated: free()ing
+ * a non-tracked pointer is not by itself a bug, and a hard error here
+ * would punish callers that legitimately mix tracked and untracked
+ * allocations on the same release path.
+ */
+void tracked_free_now(void *ptr)
+{
+	if (ptr == NULL)
+		return;
+
+	alloc_track_consume(ptr);
+	free(ptr);
+}
+
+/*
  * Ring storage lives in an mmap'd region whose address range is registered
  * with shared_regions[] via track_shared_region().  That tracking lets
  * avoid_shared_buffer() and the mm-syscall sanitisers refuse fuzzed

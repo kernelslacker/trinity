@@ -47,6 +47,20 @@ void deferred_alloc_track(void *ptr);
 bool alloc_track_lookup(void *ptr) __must_check;
 
 /*
+ * tracked_free_now() removes ptr from alloc_track[] LRU and
+ * alloc_track_hash[], then calls free().  Use this when a caller
+ * wants to synchronously dispose of a zmalloc_tracked() allocation
+ * instead of routing it through the deferred ring.  Direct free() on
+ * a tracked pointer leaves a stale entry behind that subsequent
+ * alloc_track_lookup() callers (OBJ_LOCAL validation, deferred-free
+ * gating) will falsely accept; this helper keeps the side-set in
+ * lock-step with the heap.
+ *
+ * Safe to call with NULL.
+ */
+void tracked_free_now(void *ptr);
+
+/*
  * Enqueue a pointer for deferred freeing.  Always released with free()
  * when the entry's TTL expires; the function-pointer parameter was
  * removed to eliminate the ROP/JOP surface a corrupted ring entry's
