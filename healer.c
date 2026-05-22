@@ -22,11 +22,10 @@
  * back to uniform random when there is no learned signal for the
  * current predecessor.  Whether the strategy arm is offered to the
  * rotation bandit at all is gated by is_strategy_eligible() and the
- * readiness helpers (healer_strategy_ready / _explicit /
- * _plateau_bypass), which require an accumulated relation-table cell
- * count before the arm is considered competitive with uniform random;
- * the plateau-bypass variant relaxes that floor for emergency
- * rotation when other arms have stalled.
+ * readiness helpers (healer_strategy_ready / _explicit), which require
+ * the relation table to carry some usable signal -- a static seed or a
+ * runtime hit -- before the arm is considered competitive with uniform
+ * random.
  *
  * See include/healer.h for the data-structure layout and per-field
  * comments.
@@ -2531,14 +2530,6 @@ done:
 }
 
 bool healer_strategy_ready(void)
-{
-	enum healer_readiness r;
-
-	(void)healer_strategy_ready_explicit(&r);
-	return r == HEALER_READY_DYNAMIC;
-}
-
-bool healer_strategy_ready_plateau_bypass(void)
 {
 	enum healer_readiness r;
 

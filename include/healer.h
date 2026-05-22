@@ -392,24 +392,20 @@ enum healer_readiness {
 
 /*
  * STRATEGY_HEALER readiness gate (strict).  Returns true only when the
- * pair table has accumulated enough RUNTIME evidence to be worth
- * scheduling the arm: a fixed minimum number of cells whose
- * dynamic_hits crosses the per-cell evidence floor.  Bare static seeds
- * do NOT satisfy this gate -- a freshly seeded pair carries no runtime
- * evidence, and the previous combined-weight gate let those seeds trip
- * a cold table.
+ * pair table carries usable signal at all -- either a static seed
+ * cell or a runtime hit.  An entirely empty table returns false; the
+ * picker would only fall back to uniform random in that case, which
+ * the caller can pick directly without going through HEALER.
  *
  * Owned by the healer module so the readiness decision sits next to
  * the encoding it reads (struct healer_pair_cell's static_prior /
  * dynamic_hits split).  Callers above the picker only see the boolean
- * verdict; the threshold itself is an internal tuning knob.
+ * verdict; the per-cell thresholds are internal tuning knobs.
  *
  * Cheap to call: bounded scan of the pair table with early-out once
  * the threshold is hit or the scan cap is reached.  See
  * healer_strategy_ready_explicit() for the seed-only vs dynamic
- * distinction the operator dump surfaces, and
- * healer_strategy_ready_plateau_bypass() for the looser variant the
- * plateau-intervention path uses.
+ * distinction the operator dump surfaces.
  */
 bool healer_strategy_ready(void);
 
@@ -424,19 +420,6 @@ bool healer_strategy_ready(void);
  * callers can read it unconditionally.
  */
 bool healer_strategy_ready_explicit(enum healer_readiness *out);
-
-/*
- * Plateau-bypass variant.  Returns true if the pair table carries ANY
- * content -- a static seed or a runtime hit -- without insisting on
- * the strict dynamic-evidence threshold.  Used by the plateau
- * intervention path: when kcov reports the fleet is stalled, any
- * signal that nudges the bandit off the current local minimum is
- * worth scheduling, even one whose evidence base is thin.  An
- * entirely-empty table still returns false: the picker would only
- * fall back to uniform random in that case, which the intervention
- * path can pick directly without going through HEALER.
- */
-bool healer_strategy_ready_plateau_bypass(void);
 
 struct syscallrecord;
 

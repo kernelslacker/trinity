@@ -163,17 +163,6 @@ bool is_strategy_eligible(int arm)
 	if (arm == STRATEGY_HEALER) {
 		if (no_healer)
 			return false;
-		/* Plateau path is willing to schedule HEALER on thinner
-		 * evidence than the strict gate -- a stalled bandit
-		 * benefits from any signal that nudges it off the local
-		 * minimum.  Calling the bypass explicitly (rather than
-		 * burying the plateau check inside the predicate) keeps
-		 * the two decisions -- "is the gate met" vs "may we bend
-		 * the gate right now" -- separately auditable. */
-		if (kcov_shm != NULL &&
-		    __atomic_load_n(&kcov_shm->plateau_active,
-				    __ATOMIC_ACQUIRE))
-			return healer_strategy_ready_plateau_bypass();
 		return healer_strategy_ready();
 	}
 
