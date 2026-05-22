@@ -84,6 +84,7 @@
 #include "child.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -417,7 +418,7 @@ static bool combo_cgroup_skb(void)
 		return false;
 
 	snprintf(path, sizeof(path), "/sys/fs/cgroup/trinity%u",
-		 (unsigned int)(rand() % 8));
+		 rnd_modulo_u32(8));
 	cgroup_fd = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (cgroup_fd < 0) {
 		cgroup_disabled = true;
