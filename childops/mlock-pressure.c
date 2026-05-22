@@ -16,6 +16,7 @@
 #include "maps.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -38,8 +39,8 @@ static void pick_range(struct map *map, void **addrp, unsigned long *lenp)
 		return;
 	}
 
-	start_page = rand() % nr_pages;
-	count = 1 + (rand() % (nr_pages - start_page));
+	start_page = rnd_modulo_u32(nr_pages);
+	count = 1 + rnd_modulo_u32(nr_pages - start_page);
 
 	*addrp = (char *)map->ptr + start_page * page_size;
 	*lenp = count * page_size;
@@ -108,12 +109,12 @@ bool mlock_pressure(struct childdata *child)
 			 * short-lived mappings so the MCL_FUTURE intercept
 			 * path actually fires before we unlock.
 			 */
-			unsigned int i, n = 1 + (rand() % 4);
+			unsigned int i, n = 1 + rnd_modulo_u32(4);
 			void *probes[4] = {NULL, NULL, NULL, NULL};
 			size_t lens[4] = {0, 0, 0, 0};
 
 			for (i = 0; i < n; i++) {
-				size_t len = page_size * (1 + (rand() % 8));
+				size_t len = page_size * (1 + rnd_modulo_u32(8));
 				void *p = mmap(NULL, len,
 					       PROT_READ | PROT_WRITE,
 					       MAP_PRIVATE | MAP_ANONYMOUS,
@@ -155,7 +156,7 @@ bool mlock_pressure(struct childdata *child)
 	 * Bias toward lock (60%) to build pressure, but always
 	 * unlock some to churn the unevictable list.
 	 */
-	if (rand() % 10 < 6)
+	if (rnd_modulo_u32(10) < 6)
 		do_mlock(map);
 	else
 		do_munlock(map);
