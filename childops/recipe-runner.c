@@ -76,6 +76,7 @@
 #include "compat.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
@@ -171,7 +172,7 @@ static bool recipe_eventfd(bool *unsupported __unused__)
 	if (fd < 0)
 		goto out;
 
-	v = 1 + (rand() % 16);
+	v = 1 + rnd_modulo_u32(16);
 	if (write(fd, &v, sizeof(v)) != (ssize_t)sizeof(v))
 		goto out;
 
@@ -299,7 +300,7 @@ static bool recipe_signalfd(bool *unsupported __unused__)
 
 	/* SIGRTMIN+8..+14 — well clear of glibc's reserved RT signals
 	 * and Trinity's own SIGALRM/SIGXCPU/SIGINT. */
-	sig = SIGRTMIN + 8 + (rand() % 7);
+	sig = SIGRTMIN + 8 + (int)rnd_modulo_u32(7);
 	if (sig >= SIGRTMAX)
 		goto out;
 
@@ -356,7 +357,7 @@ static bool recipe_memfd_seal(bool *unsupported __unused__)
 	if (p == MAP_FAILED)
 		goto out;
 
-	((volatile char *)p)[0] = (char)(rand() & 0xff);
+	((volatile char *)p)[0] = (char)(rnd_u32() & 0xff);
 
 	if (munmap(p, page_size) < 0)
 		goto out;
@@ -491,7 +492,7 @@ static bool recipe_shmget(bool *unsupported __unused__)
 	if (addr == (void *)-1)
 		goto out;
 
-	((volatile char *)addr)[0] = (char)(rand() & 0xff);
+	((volatile char *)addr)[0] = (char)(rnd_u32() & 0xff);
 
 	if (shmdt(addr) < 0)
 		goto out;
@@ -669,7 +670,7 @@ static bool recipe_mq_open(bool *unsupported)
 	bool ok = false;
 
 	snprintf(qname, sizeof(qname), "/trinity-recipe-%d-%u",
-		 (int)mypid(), (unsigned int)rand());
+		 (int)mypid(), rnd_u32());
 
 	memset(&attr, 0, sizeof(attr));
 	attr.mq_maxmsg = 4;
@@ -912,7 +913,7 @@ static bool recipe_vfs_leases(bool *unsupported)
 	bool ok = false;
 
 	snprintf(path, sizeof(path), "/tmp/trinity-recipe-lease-%d-%u",
-		 (int)mypid(), (unsigned int)rand());
+		 (int)mypid(), rnd_u32());
 
 	fd = open(path, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
 	if (fd < 0)
@@ -1284,7 +1285,7 @@ static bool recipe_net_tcp(bool *unsupported __unused__)
 	unsigned int spawn_fail_streak = 0;
 	unsigned int completed = 0;
 
-	cycles = 1 + ((unsigned int)rand() % RECIPE_NET_TCP_MAX_CYCLES);
+	cycles = 1 + rnd_modulo_u32(RECIPE_NET_TCP_MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
 		struct tcp_racer_arg ra;
@@ -1332,8 +1333,8 @@ static bool recipe_net_tcp(bool *unsupported __unused__)
 
 		/* Variable race window — 0..100us picks a random sub-window
 		 * of the racer's poll/accept to land the close in. */
-		if ((rand() & 0xff) != 0)
-			usleep((useconds_t)(rand() % 101));
+		if ((rnd_u32() & 0xff) != 0)
+			usleep((useconds_t)rnd_modulo_u32(101));
 
 		(void)close(s);
 
@@ -1543,7 +1544,7 @@ static bool recipe_fsnotify_xwatch(bool *unsupported)
 	bool ok = false;
 
 	snprintf(path, sizeof(path), "/tmp/trinity-recipe-fsx-%d-%u",
-		 (int)mypid(), (unsigned int)rand());
+		 (int)mypid(), rnd_u32());
 
 	wfd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
 	if (wfd < 0) {
@@ -1845,7 +1846,7 @@ static bool recipe_timerfd_xclose(bool *unsupported)
 	unsigned int spawn_fail_streak = 0;
 	unsigned int completed = 0;
 
-	cycles = 1 + ((unsigned int)rand() % RECIPE_TIMERFD_XCLOSE_MAX_CYCLES);
+	cycles = 1 + rnd_modulo_u32(RECIPE_TIMERFD_XCLOSE_MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
 		struct timerfd_xclose_racer_arg ra;
@@ -1889,8 +1890,8 @@ static bool recipe_timerfd_xclose(bool *unsupported)
 
 		/* Variable race window -- 0..100us picks a random sub-window
 		 * of the racer's poll/read to land the close in. */
-		if ((rand() & 0xff) != 0)
-			usleep((useconds_t)(rand() % 101));
+		if ((rnd_u32() & 0xff) != 0)
+			usleep((useconds_t)rnd_modulo_u32(101));
 
 		(void)close(tfd);
 
@@ -2500,7 +2501,7 @@ static bool recipe_bpf_htab_iter_del(bool *unsupported)
 	unsigned int spawn_fail_streak = 0;
 	unsigned int completed = 0;
 
-	cycles = 1 + ((unsigned int)rand() % RECIPE_BPF_HTAB_MAX_CYCLES);
+	cycles = 1 + rnd_modulo_u32(RECIPE_BPF_HTAB_MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
 		struct bpf_htab_racer_arg ra;
@@ -2565,8 +2566,8 @@ static bool recipe_bpf_htab_iter_del(bool *unsupported)
 
 		/* Variable race window -- 0..100us picks a random sub-window
 		 * of the racer's loop to begin our iteration in. */
-		if ((rand() & 0xff) != 0)
-			usleep((useconds_t)(rand() % 101));
+		if ((rnd_u32() & 0xff) != 0)
+			usleep((useconds_t)rnd_modulo_u32(101));
 
 		/* Walk the keyspace with chained GET_NEXT_KEY, starting from
 		 * NULL (returns the first key in iteration order).  Bounded
@@ -2720,7 +2721,7 @@ static bool recipe_perf_mmap_close(bool *unsupported)
 
 	mmap_sz = (size_t)(1U + RECIPE_PERF_MMAP_DATA_PAGES) *
 		  (size_t)page_size;
-	cycles = 1 + ((unsigned int)rand() % RECIPE_PERF_MMAP_MAX_CYCLES);
+	cycles = 1 + rnd_modulo_u32(RECIPE_PERF_MMAP_MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
 		struct perf_mmap_close_racer_arg ra;
@@ -2801,8 +2802,8 @@ static bool recipe_perf_mmap_close(bool *unsupported)
 		/* Variable race window -- 0..100us picks a random sub-
 		 * window of the racer's poll/read loop to land the close
 		 * in. */
-		if ((rand() & 0xff) != 0)
-			usleep((useconds_t)(rand() % 101));
+		if ((rnd_u32() & 0xff) != 0)
+			usleep((useconds_t)rnd_modulo_u32(101));
 
 		(void)close(perf_fd);
 
@@ -2952,7 +2953,7 @@ static bool recipe_keys_revoke_race(bool *unsupported)
 
 	memset(payload, 0xa5, sizeof(payload));
 
-	cycles = 1 + ((unsigned int)rand() % RECIPE_KEYS_REVOKE_MAX_CYCLES);
+	cycles = 1 + rnd_modulo_u32(RECIPE_KEYS_REVOKE_MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
 		struct keys_revoke_racer_arg ra;
@@ -3008,8 +3009,8 @@ static bool recipe_keys_revoke_race(bool *unsupported)
 
 		/* Variable race window -- 0..100us picks a random sub-window
 		 * of the racer's read loop to land the revoke in. */
-		if ((rand() & 0xff) != 0)
-			usleep((useconds_t)(rand() % 101));
+		if ((rnd_u32() & 0xff) != 0)
+			usleep((useconds_t)rnd_modulo_u32(101));
 
 		(void)syscall(__NR_keyctl, (unsigned long)KEYCTL_REVOKE,
 			      (unsigned long)key, 0UL, 0UL, 0UL);
@@ -3111,7 +3112,7 @@ static bool recipe_ptrace_seize_exitkill(bool *unsupported)
 	unsigned int fork_fail_streak = 0;
 	unsigned int completed = 0;
 
-	cycles = 1 + ((unsigned int)rand() % RECIPE_PTRACE_SEIZE_MAX_CYCLES);
+	cycles = 1 + rnd_modulo_u32(RECIPE_PTRACE_SEIZE_MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
 		siginfo_t si;
@@ -4083,7 +4084,7 @@ bool recipe_runner(struct childdata *child)
 	 * enough — even if every discovery-probe recipe is disabled, at
 	 * worst one in four picks will land on a non-discoverable one. */
 	for (tries = 0; tries < 8; tries++) {
-		idx = (unsigned int)rand() % (unsigned int)ARRAY_SIZE(recipes);
+		idx = rnd_modulo_u32((unsigned int)ARRAY_SIZE(recipes));
 		if (!__atomic_load_n(&shm->recipe_disabled[idx],
 				     __ATOMIC_RELAXED))
 			break;
