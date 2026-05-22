@@ -24,6 +24,7 @@
 #include "pids.h"
 #include "pre_crash_ring.h"
 #include "random.h"
+#include "rnd.h"
 #include "sequence.h"
 #include "shm.h"
 #include "signals.h"
@@ -151,7 +152,7 @@ retry:
 		return FAIL;
 	}
 
-	syscallnr = rand() % nr_syscalls;
+	syscallnr = rnd_modulo_u32(nr_syscalls);
 
 	/* If we got a syscallnr which is not active repeat the attempt,
 	 * since another child has switched that syscall off already.*/
@@ -184,7 +185,7 @@ retry:
 	 * fall through and accept whatever we picked.
 	 */
 	if (group_bias && child->last_group != GROUP_NONE) {
-		unsigned int dice = rand() % 100;
+		unsigned int dice = rnd_modulo_u32(100);
 
 		if (dice < 70) {
 			/* Try to pick from same group */
@@ -217,7 +218,7 @@ retry:
 	if (!plateau_rescue_bias_active_for(RRC_COLD_SKIP)) {
 		unsigned int skip_pct = kcov_syscall_cold_skip_pct(syscallnr);
 
-		if (skip_pct > 0 && (unsigned int)(rand() % 100) < skip_pct) {
+		if (skip_pct > 0 && rnd_modulo_u32(100) < skip_pct) {
 			kcov_attempts++;
 			if (kcov_attempts < 20)
 				goto retry;
@@ -321,7 +322,7 @@ retry:
 		return FAIL;
 	}
 
-	syscallnr = rand() % nr_syscalls;
+	syscallnr = rnd_modulo_u32(nr_syscalls);
 
 	val = child->active_syscalls[syscallnr];
 	if (val == 0)
@@ -421,7 +422,7 @@ retry:
 		return FAIL;
 	}
 
-	syscallnr = rand() % nr_syscalls;
+	syscallnr = rnd_modulo_u32(nr_syscalls);
 
 	val = child->active_syscalls[syscallnr];
 	if (val == 0)
@@ -449,7 +450,7 @@ retry:
 	if (max_weight > 0) {
 		unsigned long w = frontier_recent_count(syscallnr);
 		unsigned long denom = max_weight + 1UL;
-		unsigned long roll = (unsigned long)rand() % denom;
+		unsigned long roll = (unsigned long)rnd_u64() % denom;
 
 		if (roll >= w + 1UL)
 			goto retry;
@@ -670,7 +671,7 @@ static void apply_chain_substitution(struct syscallrecord *rec,
 		return;
 	if (entry == NULL || entry->num_args == 0)
 		return;
-	if ((unsigned int)(rand() % 100) >= CHAIN_SUBST_PCT)
+	if (rnd_modulo_u32(100) >= CHAIN_SUBST_PCT)
 		return;
 
 	mask = entry->numeric_substitute_mask;
@@ -696,7 +697,7 @@ static void apply_chain_substitution(struct syscallrecord *rec,
 	 * the old per-call safe_slots[] walk — only the dispatch
 	 * mechanism changes.
 	 */
-	draw = (unsigned int)rand() & mask;
+	draw = rnd_u32() & mask;
 	if (draw == 0)
 		draw = mask;
 	slot = (unsigned int)__builtin_ctz(draw) + 1;
