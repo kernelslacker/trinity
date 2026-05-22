@@ -31,6 +31,7 @@
 
 #include "child.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -175,10 +176,10 @@ static void fill_attr(struct perf_event_attr *attr, __u32 pmu_type)
 		 * range validation against PERF_COUNT_SW_MAX which the
 		 * curated 0..MAX-1 mix never reaches. */
 		attr->config = (uint64_t)RAND_NEGATIVE_OR(
-			rand() % PERF_COUNT_SW_MAX);
+			rnd_modulo_u32(PERF_COUNT_SW_MAX));
 		break;
 	case PERF_TYPE_HARDWARE:
-		attr->config = (uint64_t)(rand() % PERF_COUNT_HW_MAX);
+		attr->config = (uint64_t)rnd_modulo_u32(PERF_COUNT_HW_MAX);
 		break;
 	default:
 		/* Raw event config for hardware PMUs discovered via sysfs. */
@@ -250,7 +251,7 @@ static void fuzz_group_ioctls(int leader_fd, const int *member_fds,
 
 	/* REFRESH with a small count — used by sampling, rarely tested. */
 	if (RAND_BOOL()) {
-		ioctl(leader_fd, PERF_EVENT_IOC_REFRESH, (unsigned long)(rand() % 8 + 1));
+		ioctl(leader_fd, PERF_EVENT_IOC_REFRESH, (unsigned long)(rnd_modulo_u32(8) + 1));
 		__atomic_add_fetch(&shm->stats.perf_chains_ioctl_ops, 1,
 				   __ATOMIC_RELAXED);
 	}
@@ -277,7 +278,7 @@ bool perf_event_chains(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.perf_chains_runs, 1, __ATOMIC_RELAXED);
 
-	pmu = &pmu_catalog[rand() % pmu_count];
+	pmu = &pmu_catalog[rnd_modulo_u32(pmu_count)];
 
 	fill_attr(&attr, pmu->type);
 
@@ -290,7 +291,7 @@ bool perf_event_chains(struct childdata *child)
 			   __ATOMIC_RELAXED);
 
 	/* Open 0 to MAX_GROUP_MEMBERS-1 member events in this group. */
-	nr_members = (unsigned int)(rand() % MAX_GROUP_MEMBERS);
+	nr_members = rnd_modulo_u32(MAX_GROUP_MEMBERS);
 	for (i = 0; i < nr_members; i++) {
 		fill_attr(&attr, pmu->type);
 		/*
