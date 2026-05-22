@@ -80,6 +80,7 @@
 #include "bpf.h"
 #include "child.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -225,7 +226,7 @@ bool bpf_cgroup_attach(struct childdata *child)
 		return true;
 
 	snprintf(path, sizeof(path), "/sys/fs/cgroup/trinity%u",
-		 (unsigned int)(rand() % 8));
+		 rnd_modulo_u32(8));
 	cgroup_fd = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (cgroup_fd < 0) {
 		latched_off = true;
@@ -234,7 +235,7 @@ bool bpf_cgroup_attach(struct childdata *child)
 		return true;
 	}
 
-	c = &combos[(unsigned int)rand() % ARRAY_SIZE(combos)];
+	c = &combos[rnd_modulo_u32(ARRAY_SIZE(combos))];
 
 	prog_fd = load_allow_prog(c);
 	if (prog_fd < 0) {
