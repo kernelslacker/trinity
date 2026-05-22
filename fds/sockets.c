@@ -9,6 +9,7 @@
 
 #include "child.h"
 #include "debug.h"
+#include "deferred-free.h"
 #include "domains.h"
 #include "fd-event.h"
 #include "net.h"
@@ -45,7 +46,7 @@ static void sso_socket(struct socket_triplet *triplet, struct sockopt *so, int f
 
 retry:
 	if (so->optval != 0) {
-		free((void *) so->optval);
+		tracked_free_now((void *) so->optval);
 		so->optval = 0;
 	}
 
@@ -63,7 +64,7 @@ retry:
 	}
 
 	if (so->optval != 0)
-		free((void *) so->optval);
+		tracked_free_now((void *) so->optval);
 }
 
 struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsigned int protocol)
@@ -395,7 +396,7 @@ static void socket_child_ops(void)
 	}
 
 out:
-	free(sa);
+	tracked_free_now(sa);
 }
 
 /*
@@ -533,9 +534,9 @@ static int open_sockets(void)
 	 * — no companion alloc_shared_str() calls for heap-allocated
 	 * members.  The transient sockaddr buffer
 	 * built by generate_sockaddr() inside socket_child_ops() lives
-	 * for the duration of one accept4() attempt and is freed in the
-	 * same function via free(sa); it is not attached to the obj and
-	 * therefore stays on the private heap.
+	 * for the duration of one accept4() attempt and is released in
+	 * the same function via tracked_free_now(sa); it is not attached
+	 * to the obj and therefore stays on the private heap.
 	 */
 
 #ifdef USE_IF_ALG
