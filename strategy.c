@@ -265,9 +265,11 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 	 * complete values rather than torn intermediates.  This update
 	 * runs alongside the lifetime fields above; ucb1_score() reads the
 	 * recent series for both exploit and explore terms (D-UCB), while
-	 * cold-start in pick_next_strategy() still reads lifetime
-	 * bandit_pulls[] -- "never observed" rather than "not observed
-	 * lately" -- and the lifetime fields also back dump_strategy_stats. */
+	 * cold-start in pick_next_strategy() reads the lifetime by-reason
+	 * aggregate (sum across r of bandit_pulls_by_reason[i][r]) -- "never
+	 * observed by any path, including SR_PLATEAU_FORCE" rather than
+	 * "not observed lately" -- and the lifetime fields also back
+	 * dump_strategy_stats. */
 	now_window = __atomic_load_n(&shm->bandit_window_count,
 				     __ATOMIC_RELAXED);
 	for (i = 0; i < NR_STRATEGIES; i++) {
@@ -672,6 +674,28 @@ static double ucb1_score(int arm, double total_n, double norm)
 }
 
 /*
+ * Sum across reasons of the by-reason pull matrix.  Used by the
+ * cold-start scan so an arm exercised under SR_PLATEAU_FORCE counts
+ * as "has been selected": bandit_pulls[] is deliberately not bumped
+ * on forced-intervention windows (see bandit_record_pull) so the UCB
+ * learner's reward history stays clean, but bandit_pulls_by_reason[]
+ * captures every window unconditionally, and summing across reasons
+ * gives the true "ever picked?" answer that cold-start wants.
+ * NR_STRATEGIES * NR_SELECTION_REASONS is currently 16 cells; the
+ * cold-start scan only fires until each eligible arm has been picked
+ * once, so the cost is irrelevant.
+ */
+static unsigned long bandit_total_picks(int arm)
+{
+	unsigned long total = 0;
+	int r;
+
+	for (r = 0; r < NR_SELECTION_REASONS; r++)
+		total += shm->bandit_pulls_by_reason[arm][r];
+	return total;
+}
+
+/*
  * Pick the arm to run during the next window using the configured
  * arm-selection POLICY only.  Returns an index in [0, NR_STRATEGIES)
  * and writes the reason path through *reason_out.  The caller
@@ -684,13 +708,18 @@ static double ucb1_score(int arm, double total_n, double norm)
  * (D-UCB, see ucb1_score) so non-stationary kernel coverage
  * discovery doesn't let early-run wins dominate late-run picks.
  *
- * Cold-start: any arm with zero LIFETIME pulls wins immediately
- * (UCB1's convention — every arm gets one pull before the score
- * formula makes sense).  Lifetime rather than discounted pulls
- * because cold-start is a once-per-arm trigger; using the decayed
- * count would re-fire after the discount horizon and turn the
- * learner into slow round-robin.  Ties broken in favour of the
- * lower index, which keeps the warm-up deterministic.
+ * Cold-start: any arm that has never been selected by any path --
+ * UCB pick, round-robin, prior cold-start, or plateau-force --
+ * wins immediately (UCB1's convention: every arm gets one pull
+ * before the score formula makes sense).  The trigger reads the
+ * lifetime by-reason aggregate rather than bandit_pulls[] so a
+ * plateau-force window counts as "selected" even though the
+ * learner-facing bandit_pulls[] is deliberately not bumped on
+ * forced rotations (see bandit_record_pull).  Lifetime rather than
+ * discounted pulls because cold-start is a once-per-arm trigger;
+ * using the decayed count would re-fire after the discount horizon
+ * and turn the learner into slow round-robin.  Ties broken in
+ * favour of the lower index, which keeps the warm-up deterministic.
  *
  * Round-robin mode bypasses the bandit entirely and just steps to
  * the next arm — same behaviour as Phase 1.
@@ -735,17 +764,29 @@ int pick_next_strategy(int prev, enum strategy_selection_reason *reason_out)
 		return (prev + 1) % NR_STRATEGIES;
 	}
 
-	/* Cold-start uses LIFETIME bandit_pulls -- cold-start is a
-	 * "never been observed" trigger, not a "haven't been observed
-	 * lately" trigger.  Reading recent_pulls_x1000 here would re-fire
-	 * cold-start every ~140 windows for any arm the picker has
-	 * stopped choosing (the half-life-driven decay back to zero),
-	 * which is just slow round-robin in disguise and defeats the
-	 * point of a learner. */
+	/* Cold-start reads the LIFETIME by-reason aggregate (see
+	 * bandit_total_picks) rather than the learner-facing
+	 * bandit_pulls[i].  bandit_pulls[] is deliberately not bumped on
+	 * SR_PLATEAU_FORCE windows -- forced-intervention rotations are
+	 * excluded from the UCB reward history so the learner can't
+	 * confuse a policy-chosen STRATEGY_RANDOM window with a
+	 * plateau-forced one -- so an arm that has only ever been
+	 * exercised under plateau-force still reads zero in
+	 * bandit_pulls[].  Keying cold-start off that would keep firing
+	 * for the same arm every rotation, trapping the picker behind
+	 * the forced-RANDOM slot under low fleet iter rates and starving
+	 * the remaining arms.  The by-reason aggregate captures every
+	 * window (including SR_PLATEAU_FORCE) so it treats "selected at
+	 * least once by any path" as cold-start-satisfying; bandit_pulls[]
+	 * still gates UCB scoring.  Recent (discounted) pulls are
+	 * intentionally NOT consulted here -- cold-start is a "never
+	 * observed" trigger, not a "haven't been observed lately" one,
+	 * and reading recent_pulls_x1000 would re-fire cold-start every
+	 * ~140 windows for any arm the picker has stopped choosing. */
 	for (i = 0; i < NR_STRATEGIES; i++) {
 		if (!eligible[i])
 			continue;
-		if (shm->bandit_pulls[i] == 0) {
+		if (bandit_total_picks(i) == 0) {
 			*reason_out = SR_COLD_START;
 			return i;
 		}
