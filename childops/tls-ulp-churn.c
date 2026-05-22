@@ -72,6 +72,7 @@
 #include "compat.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "tls.h"
 #include "trinity.h"
@@ -372,7 +373,7 @@ bool tls_ulp_churn(struct childdata *child)
 
 	/* Step 5: drive tls_sw_sendmsg. */
 	generate_rand_bytes(payload, sizeof(payload));
-	if (send(s, payload, 1 + ((unsigned int)rand() % sizeof(payload)),
+	if (send(s, payload, 1 + rnd_modulo_u32(sizeof(payload)),
 		 MSG_DONTWAIT | MSG_NOSIGNAL) > 0)
 		__atomic_add_fetch(&shm->stats.tls_ulp_churn_send_ok,
 				   1, __ATOMIC_RELAXED);
@@ -415,7 +416,7 @@ bool tls_ulp_churn(struct childdata *child)
 
 			generate_rand_bytes(payload, sizeof(payload));
 			(void)send(s, payload,
-				   1 + ((unsigned int)rand() % sizeof(payload)),
+				   1 + rnd_modulo_u32(sizeof(payload)),
 				   MSG_DONTWAIT | MSG_NOSIGNAL);
 		}
 		/* Failed rekey is itself an exercised reject edge — kTLS
