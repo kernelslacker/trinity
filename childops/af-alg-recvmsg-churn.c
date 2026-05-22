@@ -60,6 +60,7 @@
 #include "child.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
@@ -187,7 +188,7 @@ static bool pick_algorithm(enum alg_type_idx *type_out, const char **name_out)
 		if (alg_cache_count[t] == 0)
 			continue;
 		*type_out = t;
-		*name_out = alg_cache[t][rand() % alg_cache_count[t]];
+		*name_out = alg_cache[t][rnd_modulo_u32(alg_cache_count[t])];
 		return true;
 	}
 	return false;
