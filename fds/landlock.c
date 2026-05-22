@@ -13,6 +13,7 @@
 #include "fd.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -57,20 +58,20 @@ static void arm_landlock(int ruleset_fd)
 #ifdef __NR_landlock_add_rule
 	unsigned int i, count;
 
-	count = 1 + (rand() % 3);
+	count = 1 + rnd_modulo_u32(3);
 	for (i = 0; i < count; i++) {
 		struct landlock_path_beneath_attr attr;
 		const char *path;
 		int path_fd;
 
-		path = landlock_paths[rand() % ARRAY_SIZE(landlock_paths)];
+		path = landlock_paths[rnd_modulo_u32(ARRAY_SIZE(landlock_paths))];
 		path_fd = open(path, O_PATH | O_CLOEXEC);
 		if (path_fd < 0)
 			continue;
 
 		memset(&attr, 0, sizeof(attr));
 		attr.parent_fd = path_fd;
-		attr.allowed_access = 1 + (rand() % 0xffff);
+		attr.allowed_access = 1 + rnd_modulo_u32(0xffff);
 
 		syscall(__NR_landlock_add_rule, ruleset_fd,
 			LANDLOCK_RULE_PATH_BENEATH, &attr, 0);
