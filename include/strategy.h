@@ -50,8 +50,10 @@ enum strategy_t {
 	NR_STRATEGIES,
 };
 
-/* Fleet-wide rotation boundary, in ops.  ~100 sec at 10K iter/sec. */
-#define STRATEGY_WINDOW (1UL << 20)	/* 1,048,576 ops */
+/* Fleet-wide rotation boundary, in ops.  ~5 min at ~450 ops/sec; tune
+ * down if observed fleet rate is lower so cold-start completes inside
+ * a typical run. */
+#define STRATEGY_WINDOW (1UL << 17)	/* 131,072 ops */
 
 /*
  * How many rotation windows a CMP constant remains "seen" inside the
