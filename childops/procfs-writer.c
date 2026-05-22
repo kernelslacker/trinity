@@ -39,6 +39,7 @@
 #include "pids.h"
 #include "child.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "text-payloads.h"
 #include "trinity.h"
@@ -255,7 +256,7 @@ static void do_one_write(const struct discovered_entry *e)
 		len = gen_text_payload(text_buf, sizeof(text_buf));
 		ret = write(fd, text_buf, len);
 	} else {
-		len = 1 + (rand() % sizeof(buf));
+		len = 1 + rnd_modulo_u32(sizeof(buf));
 		generate_rand_bytes(buf, len);
 		ret = write(fd, buf, len);
 	}
@@ -297,6 +298,6 @@ bool procfs_writer(struct childdata *child)
 	if (nr_entries == 0)
 		return true;
 
-	do_one_write(&entries[rand() % nr_entries]);
+	do_one_write(&entries[rnd_modulo_u32(nr_entries)]);
 	return true;
 }
