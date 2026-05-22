@@ -139,11 +139,39 @@ static void cmp_hints_strip_install(const char * const names[], unsigned int n)
 /*
  * Compiled-in list of syscalls whose per-call CMP records are
  * dominated by kernel-internal state unreachable from the syscall
- * argument surface.  Empty by default; targets are added as they are
- * audited.  See the cmp_hints_strip[] comment above for the semantics.
+ * argument surface.  See the cmp_hints_strip[] comment above for the
+ * semantics; per-target rationale follows.
+ *
+ *   prctl    -- the option dispatch reads task_struct / mm_struct /
+ *               cred / signal_struct fields and compares them against
+ *               compile-time constants in each PR_* arm.  The option
+ *               selector is one of trinity's syscall args, but every
+ *               downstream comparand is kernel-internal state set by
+ *               prior syscalls (or process init); the option value
+ *               itself only feeds the dispatch switch, not any
+ *               KCOV_CMP_CONST record.
+ *   unshare  -- the flags arg drives a switch over CLONE_* bits, but
+ *               the comparisons KCOV traps fire inside the per-
+ *               namespace clone paths against ucounts / user_ns /
+ *               nsproxy state, none of which a single unshare() arg
+ *               can move.
+ *   io_setup -- the constants land on aio_ring_setup() validation of
+ *               table state attached to the mm (existing ioctx count,
+ *               pinned-page accounting), set by earlier io_setup /
+ *               io_destroy calls on the same task; the nr_events arg
+ *               only sizes the ring, it does not drive the compared
+ *               fields.
+ *
+ * Each is a top-volume CMP-record producer whose entries can only
+ * displace constants from edge-producing syscalls in the same
+ * cmp_hints_try_get() namespace (per-nr pools, so no direct
+ * cross-contamination, but the global LRU and the bloom-reset cadence
+ * absorb the wasted work).
  */
 static const char * const cmp_hints_strip_targets[] = {
-	NULL,	/* sentinel; cmp_hints_strip_install() ignores NULL entries */
+	"prctl",
+	"unshare",
+	"io_setup",
 };
 
 void cmp_hints_init(void)
