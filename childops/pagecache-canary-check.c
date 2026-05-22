@@ -61,6 +61,7 @@
 #include "pids.h"
 #include "child.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -264,7 +265,7 @@ static void mode_pread(int fd, unsigned int file_idx, size_t size,
 		size_t mis;
 		ssize_t n;
 
-		off = (off_t)((size_t)rand() % size);
+		off = (off_t)rnd_modulo_u32(size);
 		want = size - (size_t)off;
 		if (want > sizeof(buf))
 			want = sizeof(buf);
@@ -485,7 +486,7 @@ bool pagecache_canary_check(struct childdata *child)
 	if (pool_size == 0)
 		return true;
 
-	idx = (unsigned int)rand() % pool_size;
+	idx = rnd_modulo_u32(pool_size);
 	info = canary_file_get(idx);
 	if (info == NULL || info->path == NULL || info->size == 0)
 		return true;
@@ -495,7 +496,7 @@ bool pagecache_canary_check(struct childdata *child)
 	 * silently on EINVAL — some filesystems reject it outright
 	 * and that isn't an oracle signal. */
 	open_flags = O_RDONLY;
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 1: open_flags |= O_DIRECT;   break;
 	case 2: open_flags |= O_NONBLOCK; break;
 	default: break;
@@ -508,12 +509,12 @@ bool pagecache_canary_check(struct childdata *child)
 	if (fd < 0)
 		return true;
 
-	if ((unsigned int)(rand() % 100) < FADVISE_DONTNEED_PCT) {
+	if (rnd_modulo_u32(100) < FADVISE_DONTNEED_PCT) {
 		(void)posix_fadvise(fd, 0, (off_t)info->size,
 				    POSIX_FADV_DONTNEED);
 	}
 
-	mode = (enum read_mode)(rand() % RM_NR);
+	mode = (enum read_mode)rnd_modulo_u32(RM_NR);
 
 	/* O_DIRECT requires aligned buffers and offsets; mmap of an
 	 * O_DIRECT fd is also a special-case in some FSes.  Fall
