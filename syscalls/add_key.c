@@ -9,17 +9,252 @@
  * On error, the value -1 will be returned and errno will have been set to an appropriate error.
  */
 #include <linux/keyctl.h>
+#include <stdio.h>
+#include <string.h>
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "trinity.h"
 
-static const char *keytypes[] = {
-	"user", "keyring", "big_key",
+/*
+ * Diversify what we hand to add_key().  The kernel routes the payload
+ * through key_type->instantiate() at creation time, so every later
+ * keyctl op on the resulting key (READ / DESCRIBE / SEARCH /
+ * INSTANTIATE / UPDATE / etc.) reads payload bytes whose structure is
+ * dictated by the type.  Always passing type="user" + a fixed
+ * "test_payload" string drives those compare-heavy code paths
+ * (user_key_payload, asymmetric subtype dispatch + x509/pkcs7 parse,
+ * encrypted/logon validators, big_key tmpfs fallback) over identical
+ * bytes on every call and yields ~zero new edges.  Mix in different
+ * type strings, randomized descriptions, and per-type payload shapes
+ * so subsequent keyctl ops land in distinct instantiate()/read()
+ * branches.
+ */
+
+/* Pool of description prefixes; the actual description is one of these
+ * plus an underscore plus 8 random hex digits, so dcache comparisons in
+ * keyring_search_iterator hit different cache slots from call to call. */
+static const char *desc_prefixes[] = {
+	"trinity_key",
+	"trinity_ring",
+	"fuzz_key",
+	"tk",
+	"k",
+	"a_very_long_trinity_key_description_to_stress_keyring_name_compares",
+	"x",
+	"trinity:scratch",
 };
+
+/* Three short, deliberately-malformed blobs that look enough like a
+ * key blob to drive the asymmetric subtype dispatch and x509/pkcs7
+ * parse paths.  We are not trying to make them parse; the parse-error
+ * branches are themselves edge-rich.  Sizes range from ~32 to ~256
+ * bytes so the parser scans different amounts before giving up. */
+static const unsigned char asym_blob_a[] = {
+	0x30, 0x82, 0x01, 0x0a, 0x02, 0x82, 0x01, 0x01,
+	0x00, 0xc1, 0x4d, 0xa3, 0x55, 0x9f, 0x10, 0x2b,
+	0x7b, 0xe9, 0x2e, 0x44, 0x77, 0x11, 0xa2, 0xff,
+	0x9d, 0x42, 0x18, 0xc3, 0x60, 0x84, 0xee, 0xbb,
+	0xa1, 0x55, 0x09, 0x33, 0x8c, 0x55, 0x12, 0x4f,
+};
+static const unsigned char asym_blob_b[] = {
+	'-','-','-','-','-','B','E','G','I','N',' ',
+	'C','E','R','T','I','F','I','C','A','T','E',
+	'-','-','-','-','-','\n',
+	'M','I','I','B','I','j','A','N','B','g','k','q','h','k','i','G','9','w','0','B',
+	'A','Q','E','F','A','A','O','C','A','Q','8','A','M','I','I','B','C','g','K','C',
+	'\n',
+	'-','-','-','-','-','E','N','D',' ','C','E','R','T','I','F','I','C','A','T','E',
+	'-','-','-','-','-','\n',
+};
+static const unsigned char asym_blob_c[] = {
+	0x30, 0x80, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86,
+	0xf7, 0x0d, 0x01, 0x07, 0x02, 0xa0, 0x80, 0x30,
+	0x80, 0x02, 0x01, 0x01, 0x31, 0x00, 0x30, 0x80,
+	0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d,
+	0x01, 0x07, 0x01, 0xa0, 0x80, 0x24, 0x80, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe,
+	0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+};
+
+static const struct {
+	const unsigned char *data;
+	size_t len;
+} asym_blobs[] = {
+	{ asym_blob_a, sizeof(asym_blob_a) },
+	{ asym_blob_b, sizeof(asym_blob_b) },
+	{ asym_blob_c, sizeof(asym_blob_c) },
+};
+
+/* Write a description into buf: "<prefix>_<8 hex digits>".  buf must be
+ * at least 96 bytes; the longest prefix is ~68 chars + underscore + 8
+ * hex + NUL.  For logon-type keys the kernel requires the description
+ * to be prefixed by "<subtype>:" — caller passes a non-NULL ns_prefix
+ * for those. */
+static void build_description(char *buf, size_t bufsz, const char *ns_prefix)
+{
+	const char *prefix = desc_prefixes[rnd_modulo_u32(ARRAY_SIZE(desc_prefixes))];
+	unsigned int suffix = rand32();
+
+	if (ns_prefix)
+		snprintf(buf, bufsz, "%s%s_%08x", ns_prefix, prefix, suffix);
+	else
+		snprintf(buf, bufsz, "%s_%08x", prefix, suffix);
+}
+
+static void set_user_payload(struct syscallrecord *rec)
+{
+	unsigned int len = 8 + rnd_modulo_u32(256 - 8 + 1);	/* [8, 256] */
+	unsigned char *buf;
+
+	buf = (unsigned char *) get_writable_address(len);
+	if (buf == NULL) {
+		rec->a3 = 0;
+		rec->a4 = 0;
+		return;
+	}
+	generate_rand_bytes(buf, len);
+	rec->a3 = (unsigned long) buf;
+	rec->a4 = len;
+}
+
+static void set_keyring_payload(struct syscallrecord *rec)
+{
+	/* keyring type rejects any non-NULL payload */
+	rec->a3 = 0;
+	rec->a4 = 0;
+}
+
+static void set_big_key_payload(struct syscallrecord *rec)
+{
+	/* > 4096 pushes big_key onto the tmpfs-backed slow path */
+	unsigned int len = 4097 + rnd_modulo_u32(65536 - 4097 + 1);
+	unsigned char *buf;
+
+	buf = (unsigned char *) get_writable_address(len);
+	if (buf == NULL) {
+		/* Fall back to a small payload — still exercises the
+		 * inline path rather than failing the call outright. */
+		buf = (unsigned char *) get_writable_address(64);
+		if (buf == NULL) {
+			rec->a3 = 0;
+			rec->a4 = 0;
+			return;
+		}
+		generate_rand_bytes(buf, 64);
+		rec->a3 = (unsigned long) buf;
+		rec->a4 = 64;
+		return;
+	}
+	generate_rand_bytes(buf, len);
+	rec->a3 = (unsigned long) buf;
+	rec->a4 = len;
+}
+
+static void set_asymmetric_payload(struct syscallrecord *rec)
+{
+	unsigned int idx = rnd_modulo_u32(ARRAY_SIZE(asym_blobs));
+	size_t len = asym_blobs[idx].len;
+	unsigned char *buf;
+
+	buf = (unsigned char *) get_writable_address(len);
+	if (buf == NULL) {
+		rec->a3 = 0;
+		rec->a4 = 0;
+		return;
+	}
+	memcpy(buf, asym_blobs[idx].data, len);
+	rec->a3 = (unsigned long) buf;
+	rec->a4 = len;
+}
+
+static void set_encrypted_payload(struct syscallrecord *rec)
+{
+	/* Per Documentation/security/keys/trusted-encrypted.rst the
+	 * encrypted-type payload is an ASCII command string, e.g.
+	 *   "new user:<masterdesc> <hex-bytes>"
+	 * "new" hits the alloc-and-fill path; the master-key lookup and
+	 * hex-decode both run before the payload is rejected. */
+	char *buf;
+	unsigned int hex_bytes = 32 + rnd_modulo_u32(33);	/* [32, 64] */
+	unsigned int i, len;
+
+	buf = (char *) get_writable_address(256);
+	if (buf == NULL) {
+		rec->a3 = 0;
+		rec->a4 = 0;
+		return;
+	}
+	len = snprintf(buf, 256, "new user:trinity_master_%08x ", rand32());
+	for (i = 0; i < hex_bytes && len < 255; i++)
+		len += snprintf(buf + len, 256 - len, "%02x", RAND_BYTE());
+	rec->a3 = (unsigned long) buf;
+	rec->a4 = len;
+}
+
+/* Weighted type picker.  Weights sum to 100; tweak as coverage data
+ * comes in.  user/logon/keyring dominate because they are the common
+ * paths; big_key/asymmetric/encrypted are occasional because each
+ * pulls in a heavier kernel subsystem (tmpfs, asymmetric_keys + x509
+ * parser, trusted/encrypted + hmac/aes). */
+static const char *pick_type_and_payload(struct syscallrecord *rec, const char **out_ns_prefix)
+{
+	unsigned int r = rnd_modulo_u32(100);
+
+	*out_ns_prefix = NULL;
+
+	if (r < 35) {
+		set_user_payload(rec);
+		return "user";
+	}
+	if (r < 55) {
+		set_user_payload(rec);
+		*out_ns_prefix = "trinity:";
+		return "logon";
+	}
+	if (r < 75) {
+		set_keyring_payload(rec);
+		return "keyring";
+	}
+	if (r < 85) {
+		set_big_key_payload(rec);
+		return "big_key";
+	}
+	if (r < 93) {
+		set_asymmetric_payload(rec);
+		return "asymmetric";
+	}
+	set_encrypted_payload(rec);
+	return "encrypted";
+}
 
 static void sanitise_add_key(struct syscallrecord *rec)
 {
-	rec->a1 = (unsigned long) RAND_ARRAY(keytypes);
+	const char *type;
+	const char *ns_prefix;
+	char *type_buf;
+	char *desc_buf;
+
+	type = pick_type_and_payload(rec, &ns_prefix);
+
+	type_buf = (char *) get_writable_address(32);
+	if (type_buf == NULL) {
+		rec->a1 = 0;
+		rec->a2 = 0;
+		return;
+	}
+	strncpy(type_buf, type, 31);
+	type_buf[31] = '\0';
+	rec->a1 = (unsigned long) type_buf;
+
+	desc_buf = (char *) get_writable_address(128);
+	if (desc_buf == NULL) {
+		rec->a2 = 0;
+		return;
+	}
+	build_description(desc_buf, 128, ns_prefix);
+	rec->a2 = (unsigned long) desc_buf;
 }
 
 static unsigned long addkey_ringids[] = {
