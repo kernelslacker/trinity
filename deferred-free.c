@@ -803,8 +803,8 @@ void deferred_free_enqueue(void *ptr)
 				else
 					parent_stats.ring_eviction_corrupt++;
 			} else {
-				free(evict_ptr);
 				inflight_hash_remove(evict_ptr);
+				free(evict_ptr);
 			}
 			ring[oldest].ptr = NULL;
 			occupied_mask &= ~(1ULL << oldest);
@@ -916,8 +916,8 @@ static void free_ring_entry(void *ptr, unsigned int slot)
 		return;
 	}
 
-	free(ptr);
 	inflight_hash_remove(ptr);
+	free(ptr);
 }
 
 /*
