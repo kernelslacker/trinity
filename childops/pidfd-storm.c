@@ -60,6 +60,7 @@
 #include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -215,14 +216,14 @@ bool pidfd_storm(struct childdata *child)
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
 	for (iter = 0; iter < iters; iter++) {
-		struct pidfd_slot *s = &slots[(unsigned int) rand() % active];
+		struct pidfd_slot *s = &slots[rnd_modulo_u32(active)];
 		int rc;
 
 		if (s->pidfd < 0)
 			continue;
 
-		if (rand() % 2 == 0) {
-			int sig = storm_signals[rand() % (int) ARRAY_SIZE(storm_signals)];
+		if (rnd_modulo_u32(2) == 0) {
+			int sig = storm_signals[rnd_modulo_u32(ARRAY_SIZE(storm_signals))];
 
 			/* 1-in-RAND_NEGATIVE_RATIO sub the curated benign signal
 			 * for a curated edge value (-1, 0, INT_MAX, ...) — the
@@ -240,7 +241,7 @@ bool pidfd_storm(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 			}
 		} else {
-			int target = getfd_targets[rand() % (int) ARRAY_SIZE(getfd_targets)];
+			int target = getfd_targets[rnd_modulo_u32(ARRAY_SIZE(getfd_targets))];
 
 			rc = sys_pidfd_getfd(s->pidfd, target, 0);
 			if (rc >= 0) {
