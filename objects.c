@@ -922,6 +922,7 @@ static void invalidate_object_fd(struct object *obj, enum objecttype type)
 	case OBJ_FD_BPF_PROG:	obj->bpfprogobj.fd = -1; break;
 	case OBJ_FD_BPF_LINK:	obj->bpflinkobj.fd = -1; break;
 	case OBJ_FD_BPF_BTF:	obj->bpfbtfobj.fd = -1; break;
+	case OBJ_FD_BPF_TOKEN:	obj->bpftokenobj.fd = -1; break;
 	case OBJ_FD_IO_URING:	obj->io_uringobj.fd = -1; break;
 	case OBJ_FD_LANDLOCK:	obj->landlockobj.fd = -1; break;
 	case OBJ_FD_PIDFD:	obj->pidfdobj.fd = -1; break;
@@ -1084,6 +1085,7 @@ void set_object_fd(struct object *obj, enum objecttype type, int fd)
 	case OBJ_FD_BPF_PROG:	obj->bpfprogobj.fd = fd; break;
 	case OBJ_FD_BPF_LINK:	obj->bpflinkobj.fd = fd; break;
 	case OBJ_FD_BPF_BTF:	obj->bpfbtfobj.fd = fd; break;
+	case OBJ_FD_BPF_TOKEN:	obj->bpftokenobj.fd = fd; break;
 	case OBJ_FD_IO_URING:	obj->io_uringobj.fd = fd; break;
 	case OBJ_FD_LANDLOCK:	obj->landlockobj.fd = fd; break;
 	case OBJ_FD_PIDFD:	obj->pidfdobj.fd = fd; break;
@@ -1152,6 +1154,7 @@ int fd_from_object(struct object *obj, enum objecttype type)
 	case OBJ_FD_BPF_PROG:	return obj->bpfprogobj.fd;
 	case OBJ_FD_BPF_LINK:	return obj->bpflinkobj.fd;
 	case OBJ_FD_BPF_BTF:	return obj->bpfbtfobj.fd;
+	case OBJ_FD_BPF_TOKEN:	return obj->bpftokenobj.fd;
 	case OBJ_FD_IO_URING:	return obj->io_uringobj.fd;
 	case OBJ_FD_LANDLOCK:	return obj->landlockobj.fd;
 	case OBJ_FD_PIDFD:	return obj->pidfdobj.fd;
