@@ -7,6 +7,7 @@
 
 #include "arch.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
@@ -36,10 +37,10 @@ static void sanitise_s390_sthyi(struct syscallrecord *rec)
 		avoid_shared_buffer_out(&rec->a2, size);
 
 	/* Use NULL, random or valid address */
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0:	rec->a3 = 0;
 		break;
-	case 1: rec->a3 = rand();
+	case 1: rec->a3 = rnd_u32();
 		break;
 	case 2: rec->a3 = (unsigned long)&syscall_s390_sthyi_return_code;
 		break;
