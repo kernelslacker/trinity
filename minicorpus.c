@@ -30,6 +30,7 @@
 #include "kcov.h"
 #include "minicorpus.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "strategy.h"
@@ -306,7 +307,7 @@ static unsigned int weighted_pick_case(enum argtype atype)
 		weights[8] = 0;
 	}
 
-	r = (unsigned int)(rand() % total);
+	r = rnd_modulo_u32(total);
 	accum = 0;
 	for (i = 0; i < MUT_NUM_OPS; i++) {
 		accum += weights[i];
@@ -445,13 +446,13 @@ static unsigned long mutate_arg(unsigned long val, enum argtype atype,
 		break;
 	case 1: {
 		/* add small delta, saturate at ULONG_MAX */
-		unsigned long delta = 1 + (unsigned long)(rand() % 16);
+		unsigned long delta = 1 + rnd_modulo_u32(16);
 		val = ((unsigned long)-1 - val < delta) ? (unsigned long)-1 : val + delta;
 		break;
 	}
 	case 2: {
 		/* subtract small delta, saturate at 0 */
-		unsigned long delta = 1 + (unsigned long)(rand() % 16);
+		unsigned long delta = 1 + rnd_modulo_u32(16);
 		val = (val < delta) ? 0 : val - delta;
 		break;
 	}
@@ -462,7 +463,7 @@ static unsigned long mutate_arg(unsigned long val, enum argtype atype,
 	case 4:
 		/* byte-level shuffle: randomize one byte */
 		{
-			unsigned int byte_pos = rand() % sizeof(unsigned long);
+			unsigned int byte_pos = rnd_modulo_u32(sizeof(unsigned long));
 			unsigned long mask = 0xffUL << (byte_pos * 8);
 			val = (val & ~mask) | ((unsigned long) RAND_BYTE() << (byte_pos * 8));
 		}
@@ -479,8 +480,8 @@ static unsigned long mutate_arg(unsigned long val, enum argtype atype,
 		 * because the magnitude byte sits at the opposite end of the
 		 * word.  Width bias matches the prevalence of __be32/__be16/
 		 * __be64 in the kernel API surface. */
-		unsigned long delta = 1 + (unsigned long)(rand() % 16);
-		unsigned int w = rand() % 6;
+		unsigned long delta = 1 + rnd_modulo_u32(16);
+		unsigned int w = rnd_modulo_u32(6);
 		if (w <= 2) {
 			uint32_t v = __builtin_bswap32((uint32_t)val);
 			val = (val & ~0xffffffffUL) |
@@ -499,8 +500,8 @@ static unsigned long mutate_arg(unsigned long val, enum argtype atype,
 		 * network-order interpretation; underflow wraps within the
 		 * chosen width, which is fine — the resulting bit pattern is
 		 * still an interesting boundary in the post-swap space. */
-		unsigned long delta = 1 + (unsigned long)(rand() % 16);
-		unsigned int w = rand() % 6;
+		unsigned long delta = 1 + rnd_modulo_u32(16);
+		unsigned int w = rnd_modulo_u32(6);
 		if (w <= 2) {
 			uint32_t v = __builtin_bswap32((uint32_t)val);
 			val = (val & ~0xffffffffUL) |
@@ -545,7 +546,7 @@ static unsigned long mutate_arg(unsigned long val, enum argtype atype,
 			}
 		}
 		if (!swapped) {
-			unsigned long delta = 1 + (unsigned long)(rand() % 16);
+			unsigned long delta = 1 + rnd_modulo_u32(16);
 			val = ((unsigned long)-1 - val < delta) ?
 			      (unsigned long)-1 : val + delta;
 		}
@@ -625,7 +626,7 @@ void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry,
 		 * is no other slot to splice from). */
 		if (entry->num_args >= 2 && ONE_IN(SPLICE_RATIO)) {
 			unsigned int offset = 1 +
-				(unsigned int)(rand() % (entry->num_args - 1));
+				rnd_modulo_u32(entry->num_args - 1);
 			unsigned int src = (i + offset) % entry->num_args;
 
 			val = snapshot[src];
@@ -713,12 +714,12 @@ bool minicorpus_replay(struct syscallrecord *rec)
 	 * burst with at least K_RECENT entries: uniform over the K_RECENT
 	 * newest slots, addressing (head - K_RECENT, head). */
 	if (cmp_burst_active && ring->count >= K_RECENT) {
-		slot = rand() % K_RECENT;
+		slot = rnd_modulo_u32(K_RECENT);
 		slot = (ring->head - K_RECENT + slot) % CORPUS_RING_SIZE;
 		__atomic_fetch_add(&minicorpus_shm->cmp_rising_replay_picks,
 				   1UL, __ATOMIC_RELAXED);
 	} else {
-		slot = rand() % ring->count;
+		slot = rnd_modulo_u32(ring->count);
 		/* The ring is written at head and wraps, so the oldest valid
 		 * entry starts at (head - count) mod CORPUS_RING_SIZE. */
 		slot = (ring->head - ring->count + slot) % CORPUS_RING_SIZE;
