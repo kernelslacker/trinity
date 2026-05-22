@@ -104,6 +104,7 @@
 #include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -722,9 +723,9 @@ static void bridge_vlan_mass_add(struct nl_ctx *ctx)
 		if (ns_since(&t0) >= VLAN_MASS_BUDGET_NS)
 			break;
 
-		n = vlan_mass_n_choices[rand() %
-			(sizeof(vlan_mass_n_choices) /
-			 sizeof(vlan_mass_n_choices[0]))];
+		n = vlan_mass_n_choices[rnd_modulo_u32(
+			sizeof(vlan_mass_n_choices) /
+			sizeof(vlan_mass_n_choices[0]))];
 
 		rc = build_setlink_vlan_mass(ctx, va_idx, n, &vid_seed);
 		if (rc == -ENOBUFS || rc == -EMSGSIZE)
