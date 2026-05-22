@@ -10,6 +10,7 @@
 
 #include "fd.h"
 #include "objects.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -221,7 +222,7 @@ static int open_io_uring_fd_config(unsigned int entries, unsigned int flags,
 
 static int open_io_uring_fd(void)
 {
-	unsigned int i = rand() % ARRAY_SIZE(ring_configs);
+	unsigned int i = rnd_modulo_u32(ARRAY_SIZE(ring_configs));
 
 	return open_io_uring_fd_config(ring_configs[i].entries,
 				       ring_configs[i].flags, false);
