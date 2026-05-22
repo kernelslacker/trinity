@@ -45,6 +45,7 @@
 #include "pids.h"
 #include "childops-util.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -109,7 +110,7 @@ static void do_wait(struct futex_storm_shared *s, int idx)
 	 * stuck waiter can't gate worker shutdown.
 	 */
 	ts.tv_sec  = 0;
-	ts.tv_nsec = 100000 + (rand() % 900000);
+	ts.tv_nsec = 100000 + rnd_modulo_u32(900000);
 
 	val = __atomic_load_n(&s->futexes[idx], __ATOMIC_RELAXED);
 	syscall(__NR_futex, &s->futexes[idx], FUTEX_WAIT, val, &ts, NULL, 0);
@@ -117,7 +118,7 @@ static void do_wait(struct futex_storm_shared *s, int idx)
 
 static void do_wake(struct futex_storm_shared *s, int idx)
 {
-	int nwake = 1 + (rand() % 4);
+	int nwake = 1 + (int)rnd_modulo_u32(4);
 
 	/*
 	 * Bump the value first so any racing FUTEX_WAIT loaded a stale
@@ -188,7 +189,7 @@ static void inner_worker(struct futex_storm_shared *s)
 	pthread_barrier_wait(&s->barrier);
 
 	while (!__atomic_load_n(&s->done, __ATOMIC_RELAXED)) {
-		unsigned int r = (unsigned int)rand();
+		unsigned int r = rnd_u32();
 		unsigned int op;
 		int idx1, idx2;
 
@@ -288,7 +289,7 @@ bool futex_storm(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.futex_storm_runs, 1, __ATOMIC_RELAXED);
 
-	nworkers = 3 + (rand() % (MAX_WORKERS - 2));	/* 3..MAX_WORKERS */
+	nworkers = 3 + rnd_modulo_u32(MAX_WORKERS - 2);	/* 3..MAX_WORKERS */
 
 	s = mmap(NULL, sizeof(*s), PROT_READ | PROT_WRITE,
 		 MAP_ANONYMOUS | MAP_SHARED, -1, 0);
@@ -305,9 +306,9 @@ bool futex_storm(struct childdata *child)
 	 * indices must differ so REQUEUE_HEAVY actually drives traffic
 	 * across two buckets rather than degenerating into a self-requeue.
 	 */
-	s->mode    = (unsigned int)rand() % STORM_MODE_MAX;
-	s->pinned1 = rand() % NR_FUTEX_WORDS;
-	s->pinned2 = rand() % NR_FUTEX_WORDS;
+	s->mode    = rnd_modulo_u32(STORM_MODE_MAX);
+	s->pinned1 = (int)rnd_modulo_u32(NR_FUTEX_WORDS);
+	s->pinned2 = (int)rnd_modulo_u32(NR_FUTEX_WORDS);
 	if (s->pinned2 == s->pinned1)
 		s->pinned2 = (s->pinned1 + 1) % NR_FUTEX_WORDS;
 
