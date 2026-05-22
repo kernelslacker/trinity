@@ -71,6 +71,7 @@
 #include "pids.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -146,7 +147,7 @@ static void ring_insert(int32_t *ring, int32_t serial)
 			return;
 		}
 	}
-	slot = (unsigned int) rand() % LIVE_KEYS_RING;
+	slot = rnd_modulo_u32(LIVE_KEYS_RING);
 	ring[slot] = serial;
 }
 
@@ -163,7 +164,7 @@ static int32_t ring_pick(const int32_t *ring)
 	}
 	if (count == 0)
 		return 0;
-	return ring[picks[(unsigned int) rand() % count]];
+	return ring[picks[rnd_modulo_u32(count)]];
 }
 
 /* Drop a serial from the ring (post-revoke/invalidate/unlink).  No-op
@@ -204,9 +205,8 @@ bool keyring_spam(struct childdata *child)
 		long rc;
 		int32_t serial;
 
-		op = (enum keyring_op) ((unsigned int) rand() % NR_KEYRING_OPS);
-		anchor = anchor_keyrings[(unsigned int) rand()
-					 % ARRAY_SIZE(anchor_keyrings)];
+		op = (enum keyring_op) rnd_modulo_u32(NR_KEYRING_OPS);
+		anchor = anchor_keyrings[rnd_modulo_u32(ARRAY_SIZE(anchor_keyrings))];
 
 		__atomic_add_fetch(&shm->stats.keyring_spam_calls,
 				   1, __ATOMIC_RELAXED);
