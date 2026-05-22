@@ -1944,7 +1944,8 @@ void vma_count_periodic_dump(void);
 
 /* Per-tick scan paired with defense_counters_periodic_dump: every dump
  * window, emit the KCOV CMP counter block (per-window deltas + rates for
- * cmp_records_collected / cmp_trace_truncated / cmp_hints_bloom_skipped,
+ * cmp_records_collected / cmp_trace_truncated /
+ * cmp_hints_bloom_skipped / cmp_hints_strip_skipped,
  * cumulative per-mode child population, and first-failure-wins DIAG
  * errnos).  Without this the cmp counters are only visible at run
  * shutdown via dump_stats(), so a long overnight run produces no

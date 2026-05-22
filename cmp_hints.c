@@ -34,12 +34,14 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "arch.h"
 #include "child.h"
 #include "cmp_hints.h"
 #include "kcov.h"
 #include "random.h"
 #include "rnd.h"
 #include "syscall.h"
+#include "tables.h"
 #include "trinity.h"
 #include "utils.h"
 #include "pids.h"
@@ -55,6 +57,94 @@
 #define WORDS_PER_CMP 4
 
 struct cmp_hints_shared *cmp_hints_shm = NULL;
+
+/*
+ * Per-syscall CMP-collection strip flags.  When cmp_hints_strip[nr] is
+ * true, cmp_hints_collect() returns immediately after the nr range
+ * check, bypassing the bloom + pool_add_locked path entirely for that
+ * syscall number.  Targets are syscalls whose KCOV_TRACE_CMP records
+ * fire on task_struct / cred / ucounts / aio-table internal state set
+ * by prior syscalls or kernel init, not on values driven by the
+ * current syscall's argument surface -- the resulting pool entries
+ * are unreachable from any subsequent argument generator and only
+ * displace genuinely useful constants from the LRU eviction order.
+ *
+ * Per-record bump of cmp_hints_strip_skipped (mirroring the
+ * cmp_hints_bloom_skipped accounting) makes the avoided work
+ * observable; the stripped syscalls' pool[nr] entries continue to be
+ * served by cmp_hints_try_get() from anything they accumulated before
+ * the strip flag was set, so there is no consumer-side hole.
+ */
+static bool cmp_hints_strip[MAX_NR_SYSCALL];
+
+/*
+ * Mark each named syscall as cmp-collection-stripped.  Names are
+ * resolved via search_syscall_table() against the active table set;
+ * under biarch both the 32-bit and 64-bit indices are flagged since
+ * cmp_hints_collect()'s nr argument comes from rec->nr at the call
+ * site (which uses whichever table the child ran against), and the
+ * same syscall name occupies different slots in each table.
+ *
+ * Unknown names log a warning and are skipped: the strip list is
+ * compiled in and a typo here would otherwise silently fail to take
+ * effect.  NULL entries are tolerated so the strip-target array can
+ * carry a sentinel before any targets are populated.
+ */
+static void cmp_hints_strip_install(const char * const names[], unsigned int n)
+{
+	unsigned int i;
+
+	for (i = 0; i < n; i++) {
+		const char *name = names[i];
+		bool found = false;
+		int nr;
+
+		if (name == NULL)
+			continue;
+
+		if (biarch == true) {
+			nr = search_syscall_table(syscalls_64bit,
+						  max_nr_64bit_syscalls,
+						  name);
+			if (nr >= 0 && (unsigned int)nr < MAX_NR_SYSCALL) {
+				cmp_hints_strip[nr] = true;
+				found = true;
+			}
+
+			nr = search_syscall_table(syscalls_32bit,
+						  max_nr_32bit_syscalls,
+						  name);
+			if (nr >= 0 && (unsigned int)nr < MAX_NR_SYSCALL) {
+				cmp_hints_strip[nr] = true;
+				found = true;
+			}
+		} else {
+			nr = search_syscall_table(syscalls,
+						  max_nr_syscalls, name);
+			if (nr >= 0 && (unsigned int)nr < MAX_NR_SYSCALL) {
+				cmp_hints_strip[nr] = true;
+				found = true;
+			}
+		}
+
+		if (found == true)
+			output(0, "KCOV: CMP collection stripped for %s\n",
+			       name);
+		else
+			output(0, "KCOV: cmp_hints strip target '%s' not found in syscall table\n",
+			       name);
+	}
+}
+
+/*
+ * Compiled-in list of syscalls whose per-call CMP records are
+ * dominated by kernel-internal state unreachable from the syscall
+ * argument surface.  Empty by default; targets are added as they are
+ * audited.  See the cmp_hints_strip[] comment above for the semantics.
+ */
+static const char * const cmp_hints_strip_targets[] = {
+	NULL,	/* sentinel; cmp_hints_strip_install() ignores NULL entries */
+};
 
 void cmp_hints_init(void)
 {
@@ -74,6 +164,9 @@ void cmp_hints_init(void)
 	memset(cmp_hints_shm, 0, sizeof(struct cmp_hints_shared));
 	output(0, "KCOV: CMP hint pool allocated (%lu KB)\n",
 		(unsigned long) sizeof(struct cmp_hints_shared) / 1024);
+
+	cmp_hints_strip_install(cmp_hints_strip_targets,
+				ARRAY_SIZE(cmp_hints_strip_targets));
 }
 
 static void pool_lock(struct cmp_hint_pool *pool)
@@ -274,6 +367,28 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 
 	if (nr >= MAX_NR_SYSCALL)
 		return;
+
+	/*
+	 * Per-syscall CMP-collection strip: bypass the bloom + pool path
+	 * entirely for syscalls whose comparisons fire on kernel-internal
+	 * state (task_struct / cred / ucounts / aio-table) that no
+	 * syscall arg can drive.  Count the trace-buffer record total at
+	 * the same per-record granularity used by cmp_hints_bloom_skipped
+	 * so the two skip-paths are directly comparable in stats output.
+	 */
+	if (cmp_hints_strip[nr]) {
+		if (kcov_shm != NULL) {
+			unsigned long n = __atomic_load_n(&trace_buf[0],
+							  __ATOMIC_RELAXED);
+
+			if (n > KCOV_CMP_RECORDS_MAX)
+				n = KCOV_CMP_RECORDS_MAX;
+			if (n != 0)
+				__atomic_fetch_add(&kcov_shm->cmp_hints_strip_skipped,
+						   n, __ATOMIC_RELAXED);
+		}
+		return;
+	}
 
 	pool = &cmp_hints_shm->pools[nr];
 

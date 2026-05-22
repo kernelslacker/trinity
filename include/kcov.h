@@ -255,6 +255,19 @@ struct kcov_shared {
 	 * granularity (vs per-cmp_hints_collect-call) makes the saved work
 	 * directly comparable to cmp_records_collected. */
 	unsigned long cmp_hints_bloom_skipped;
+	/* Per-record CMP hints skipped because cmp_hints_strip[nr] is set
+	 * for the calling syscall -- the entire trace buffer is short-
+	 * circuited at cmp_hints_collect() entry, bypassing both the bloom
+	 * lookup and the pool_add_locked path.  Targets are syscalls whose
+	 * comparisons fire on task_struct / cred / ucounts / aio-table
+	 * internal state set by prior syscalls or kernel init, not on
+	 * values driven by the current syscall's argument surface; the
+	 * resulting pool entries are unreachable from any consumer and
+	 * only displace useful constants via LRU eviction.  Bumped at the
+	 * per-record granularity (same units as cmp_hints_bloom_skipped
+	 * and cmp_records_collected) so the avoided work is directly
+	 * comparable across the three counters. */
+	unsigned long cmp_hints_strip_skipped;
 	/* Per-record CMP hints that produced an actual content change in a
 	 * per-syscall pool — either a fresh insert into a non-full pool or an
 	 * evict-replace once the pool was saturated.  Dedup-refresh hits (the
