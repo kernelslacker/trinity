@@ -10,6 +10,7 @@
 #include "fd.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
@@ -33,14 +34,14 @@ static void arm_inotify(int fd)
 {
 	unsigned int i, count;
 
-	count = 1 + (rand() % 3);
+	count = 1 + rnd_modulo_u32(3);
 	for (i = 0; i < count; i++) {
-		const char *path = watch_paths[rand() % ARRAY_SIZE(watch_paths)];
-		uint32_t mask = watch_masks[rand() % ARRAY_SIZE(watch_masks)];
+		const char *path = watch_paths[rnd_modulo_u32(ARRAY_SIZE(watch_paths))];
+		uint32_t mask = watch_masks[rnd_modulo_u32(ARRAY_SIZE(watch_masks))];
 
 		/* OR in a second mask bit half the time */
 		if (RAND_BOOL())
-			mask |= watch_masks[rand() % ARRAY_SIZE(watch_masks)];
+			mask |= watch_masks[rnd_modulo_u32(ARRAY_SIZE(watch_masks))];
 
 		inotify_add_watch(fd, path, mask);
 	}
