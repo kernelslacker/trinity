@@ -2442,21 +2442,22 @@ unsigned int healer_pair_dynamic_hits(unsigned int arch, unsigned int pred,
  * STRATEGY_HEALER readiness threshold: number of pair-table cells with
  * dynamic_hits >= HEALER_STRATEGY_PAIR_CELL_MIN_HITS required before the
  * picker has enough runtime signal to score against uniform random.
- * Picked to roughly match the inflection point at which the operator-
- * side dump starts surfacing relations whose normalised score clears
- * the noise floor.
+ * Kept low so the picker becomes eligible while the table is still
+ * warming -- the earlier the arm is allowed to pull, the more cycles it
+ * gets to either confirm or invalidate the static seed priors against
+ * real runtime evidence.  The operator-side HEALER_DUMP_MIN_RAW gate
+ * still hides low-confidence relations from the dump; this constant
+ * governs only "is the picker worth waking up at all".
  */
-#define HEALER_STRATEGY_PAIR_CELL_THRESHOLD 1000
+#define HEALER_STRATEGY_PAIR_CELL_THRESHOLD 50
 
 /*
- * Per-cell dynamic-hits floor for the readiness scan.  A single hit on
- * a pair is observation noise; demanding several confirms the runtime
- * observer has actually seen the (pred, succ) pair lead to a new edge
- * more than once before that cell contributes to the fleet-wide "we
- * have enough signal to schedule the arm" decision.  Small (3) so the
- * gate still trips early in a run -- the dump-side HEALER_DUMP_MIN_RAW
- * threshold is for displaying confident relations; this one is for
- * confirming the picker is worth waking up at all.
+ * Per-cell dynamic-hits floor for the readiness scan.  Set to 1 so a
+ * single runtime observation of a (pred, succ) pair already counts the
+ * cell toward the readiness tally.  This is intentionally lenient: the
+ * gate is a coarse "has anything been observed at all" check, not a
+ * confidence filter.  The dump-side HEALER_DUMP_MIN_RAW threshold is
+ * what keeps low-evidence relations out of the operator view.
  *
  * Critically, this test reads dynamic_hits SPECIFICALLY rather than
  * the combined picker weight (static_prior + dynamic_hits): the
@@ -2467,7 +2468,7 @@ unsigned int healer_pair_dynamic_hits(unsigned int arch, unsigned int pred,
  * loader's, with no runtime confirmation that the relations actually
  * mattered for the kernel under test.
  */
-#define HEALER_STRATEGY_PAIR_CELL_MIN_HITS 3
+#define HEALER_STRATEGY_PAIR_CELL_MIN_HITS 1
 
 /*
  * Hard cap on cells inspected per healer_strategy_ready() call.  The
