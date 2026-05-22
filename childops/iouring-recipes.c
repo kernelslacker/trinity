@@ -66,6 +66,7 @@ struct iour_open_how {
 #include "child.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
@@ -2629,7 +2630,7 @@ static bool recipe_eventfd_recursive(struct iour_recipe_state *s,
 	__atomic_add_fetch(&shm->stats.iouring_eventfd_recursive_runs, 1,
 			   __ATOMIC_RELAXED);
 
-	nreads = 4 + ((unsigned int)rand() % 5);
+	nreads = 4 + rnd_modulo_u32(5);
 
 	for (i = 0; i < nreads; i++) {
 		sqe_clear(&sqes[i]);
@@ -2783,7 +2784,7 @@ bool iouring_recipes(struct childdata *child __unused__)
 
 	/* Pick a recipe that hasn't been disabled. */
 	for (tries = 0; tries < 8; tries++) {
-		idx = (unsigned int)rand() % (unsigned int)ARRAY_SIZE(catalog);
+		idx = rnd_modulo_u32((unsigned int)ARRAY_SIZE(catalog));
 		if (!__atomic_load_n(&shm->iouring_recipe_disabled[idx],
 				     __ATOMIC_RELAXED))
 			break;
