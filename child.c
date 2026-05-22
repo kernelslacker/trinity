@@ -1098,7 +1098,7 @@ static void check_fd_leaks(struct childdata *child)
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[102] = {
+static int dormant_op_disabled[103] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -1118,6 +1118,7 @@ static int dormant_op_disabled[102] = {
 	0,	/* pagecache_canary_check stays active: it's an in-tree verifier, not a fuzz target the queue should ever demote. */
 	1, 1, 1, 1, 1, 1, 1, 1, 1,
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1,
 };
 
 /*
@@ -1307,6 +1308,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_TTY_LDISC_CHURN:	return "tty_ldisc_churn";
 	case CHILD_OP_WIREGUARD_DECRYPT_FLOOD:	return "wireguard_decrypt_flood";
 	case CHILD_OP_BLKDEV_LIFECYCLE_RACE:	return "blkdev_lifecycle_race";
+	case CHILD_OP_ISCSI_TARGET_PROBE:	return "iscsi_target_probe";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1404,7 +1406,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[102] = {
+static const enum child_op_type pick_op_type_table[103] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -1507,6 +1509,7 @@ static const enum child_op_type pick_op_type_table[102] = {
 	[99] = CHILD_OP_TTY_LDISC_CHURN,
 	[100] = CHILD_OP_WIREGUARD_DECRYPT_FLOOD,
 	[101] = CHILD_OP_BLKDEV_LIFECYCLE_RACE,
+	[102] = CHILD_OP_ISCSI_TARGET_PROBE,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1887,6 +1890,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_TTY_LDISC_CHURN]	= tty_ldisc_churn,
 	[CHILD_OP_WIREGUARD_DECRYPT_FLOOD]	= wireguard_decrypt_flood,
 	[CHILD_OP_BLKDEV_LIFECYCLE_RACE]	= blkdev_lifecycle_race,
+	[CHILD_OP_ISCSI_TARGET_PROBE]	= iscsi_target_probe,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,

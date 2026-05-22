@@ -197,6 +197,7 @@ enum child_op_type {
 	CHILD_OP_TTY_LDISC_CHURN,
 	CHILD_OP_WIREGUARD_DECRYPT_FLOOD,
 	CHILD_OP_BLKDEV_LIFECYCLE_RACE,
+	CHILD_OP_ISCSI_TARGET_PROBE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -868,3 +869,4 @@ bool ovs_tunnel_vport_churn(struct childdata *child);
 bool tty_ldisc_churn(struct childdata *child);
 bool wireguard_decrypt_flood(struct childdata *child);
 bool blkdev_lifecycle_race(struct childdata *child);
+bool iscsi_target_probe(struct childdata *child);

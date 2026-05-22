@@ -1,0 +1,530 @@
+/*
+ * iscsi_target_probe - exercise the in-kernel LIO iSCSI target's login
+ * and post-login SCSI Command paths over a real loopback TCP connection.
+ *
+ * The wire-format parsers in drivers/target/iscsi/iscsi_target_nego.c
+ * (Login Request BHS validation + text-key parameter list parsing) and
+ * drivers/target/iscsi/iscsi_target.c (iscsit_handle_scsi_cmd dispatch
+ * into target_core_mod's CDB tables) are unreachable from trinity's
+ * NETLINK_ISCSI fuzzer: that's the configfs / NL control plane, not the
+ * on-the-wire framer.  Hitting them requires an actual TCP connection
+ * to a portal followed by a Login PDU whose BHS passes the opcode /
+ * length validators and whose data segment claims valid-looking text
+ * keys.  After a successful login, SCSI Command PDUs reach the CDB
+ * dispatcher with the kernel-side INITIATOR_NEXUS already established.
+ *
+ * The fuzz box host-side setup leaves an LIO target listening on
+ * 127.0.0.1:3260 with a small ramdisk backstore at LUN 0, configured in
+ * demo mode so InitiatorName / TargetName are sufficient (no CHAP).
+ * When the target isn't present (different host, no module loaded), the
+ * very first connect() returns ECONNREFUSED and this childop latches a
+ * per-child sticky flag so it stops probing.  No noisy spam.
+ *
+ * Per-invocation cycle:
+ *   1. nonblocking connect(127.0.0.1:3260), poll(POLLOUT, 1s)
+ *   2. pick one of three PDU shapes uniformly:
+ *        (a) wholly random 48-byte BHS — exercises BHS validators
+ *        (b) valid Login opcode with fuzzed text-key data segment
+ *        (c) well-formed Login + post-login fuzzed SCSI Command CDB
+ *   3. send() the PDU with MSG_DONTWAIT | MSG_NOSIGNAL
+ *   4. drain any response with poll(POLLIN, 200ms) + recv()
+ *   5. close
+ *
+ * Self-bounding: BUDGETED + JITTER_RANGE around base 2 (so 1-3 iters
+ * per call), per-iteration poll timeouts are 1s connect + 200ms recv,
+ * sockets are O_NONBLOCK so a wedged peer can't pin us past child.c's
+ * SIGALRM(1s) safety net.  Loopback only.
+ *
+ * Failure modes (none propagated as childop failure):
+ *   - ECONNREFUSED on the first connect: no LIO target running.
+ *     Latched per-process via ns_unsupported.
+ *   - socket() ENOMEM / EMFILE: counted, skip cycle.
+ *   - send() EPIPE / ECONNRESET: target reset us mid-PDU — expected
+ *     coverage when the BHS validator rejected the framing.
+ *   - recv() EAGAIN after poll: target didn't reply within 200ms.
+ *     Common for malformed PDUs that just get dropped.
+ */
+
+#include <errno.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+
+#include "child.h"
+#include "jitter.h"
+#include "random.h"
+#include "rnd.h"
+#include "shm.h"
+#include "trinity.h"
+
+/* iSCSI opcode constants from RFC 7143 §11.  Defined locally so we
+ * don't drag in <scsi/iscsi_proto.h> / <linux/scsi/iscsi_proto.h>
+ * which aren't shipped in every sysroot. */
+#define ISCSI_TARGET_PORT		3260
+#define ISCSI_OP_LOGIN			0x03	/* Login Request */
+#define ISCSI_OP_SCSI_CMD		0x01	/* SCSI Command */
+#define ISCSI_OP_IMMEDIATE		0x40	/* I bit in opcode byte */
+#define ISCSI_BHS_LEN			48
+
+/* Login flags byte: T=1 (Transit), C=0, CSG=01 (OperationalNegotiation),
+ * NSG=11 (FullFeature).  Skips the SecurityNegotiation stage entirely,
+ * which matches the demo_mode_write_protect=0 / authentication=0 LIO
+ * target config we're talking to. */
+#define ISCSI_LOGIN_FLAGS_TRANSIT_OP_TO_FF	0x87
+
+/* SCSI Command flags: F=1 (Final PDU), R=1 (Read), ATTR=001 (SIMPLE).
+ * Pairs with a 16-byte INQUIRY / READ_CAPACITY style CDB; the request
+ * side never sends OutData so the W bit stays clear. */
+#define ISCSI_SCSI_CMD_FLAGS_READ_SIMPLE	0xC1
+
+/* Cap on Login text data we'll generate per PDU.  Demo-mode LIO accepts
+ * up to MaxRecvDataSegmentLength bytes, but small keeps us well under
+ * any reasonable receive-buffer pressure and bounds the per-cycle
+ * memcpy / send work. */
+#define LOGIN_TEXT_MAX			512
+
+/* Receive buffer for login / scsi responses.  Login responses are
+ * normally ~256 bytes; SCSI responses + sense data fit in <512.  We
+ * only need to drain the socket, not parse it. */
+#define ISCSI_RX_BUF			1024
+
+/* poll timeouts.  Connect window kept at 1s to absorb scheduler jitter
+ * on a busy fuzz host; per-recv window kept short so a single cycle
+ * never pins the child past the SIGALRM(1s) child.c safety net. */
+#define ISCSI_CONNECT_TIMEOUT_MS	1000
+#define ISCSI_RECV_TIMEOUT_MS		200
+
+/* Inner-loop iteration base.  BUDGETED + JITTER_RANGE keeps actual
+ * iters in the 1-3 range under default budget; adapt_budget can grow
+ * it on productive runs without growing the wall-clock significantly
+ * since each iter is bounded by ISCSI_RECV_TIMEOUT_MS + tiny TCP RTT. */
+#define ISCSI_ITERS_BASE		2U
+
+/* Latched once per child on the first ECONNREFUSED: no LIO target is
+ * listening, so further attempts in this process are pure waste. */
+static bool ns_unsupported;
+
+/* Encode 24-bit big-endian length into bhs[5..7].  iSCSI DataSegment
+ * lengths are 24-bit MSB-first; this is the only multi-byte field
+ * we need to byte-swap by hand (ITT / CmdSN / ExpStatSN are u32 fields
+ * but the kernel treats them as opaque echo cookies for the response
+ * direction, so randomising them in any byte order is fine). */
+static void put_be24(unsigned char *p, uint32_t v)
+{
+	p[0] = (unsigned char)((v >> 16) & 0xff);
+	p[1] = (unsigned char)((v >> 8)  & 0xff);
+	p[2] = (unsigned char)(v & 0xff);
+}
+
+/* Random bytes via rnd_u64() rather than libc rand() — per CLAUDE.md
+ * rules, rand() is migrating out and rnd_u64() is the mutex-free
+ * splitmix64 replacement. */
+static void rnd_fill(unsigned char *buf, size_t len)
+{
+	size_t i;
+	uint64_t r = 0;
+
+	for (i = 0; i < len; i++) {
+		if ((i & 7) == 0)
+			r = rnd_u64();
+		buf[i] = (unsigned char)(r & 0xff);
+		r >>= 8;
+	}
+}
+
+/* Nonblocking connect with a poll-based timeout.  Returns the connected
+ * fd, or -1 with errno preserved on failure / timeout.  Caller checks
+ * errno == ECONNREFUSED specifically to latch the no-target gate. */
+static int iscsi_connect(int timeout_ms)
+{
+	struct sockaddr_in srv;
+	struct pollfd pfd;
+	int sockerr = 0;
+	socklen_t slen = sizeof(sockerr);
+	int fd;
+	int rc;
+
+	fd = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+	if (fd < 0)
+		return -1;
+
+	memset(&srv, 0, sizeof(srv));
+	srv.sin_family = AF_INET;
+	srv.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	srv.sin_port = htons(ISCSI_TARGET_PORT);
+
+	rc = connect(fd, (const struct sockaddr *)&srv, sizeof(srv));
+	if (rc == 0)
+		return fd;
+	if (errno != EINPROGRESS) {
+		int saved = errno;
+
+		close(fd);
+		errno = saved;
+		return -1;
+	}
+
+	pfd.fd = fd;
+	pfd.events = POLLOUT;
+	pfd.revents = 0;
+	rc = poll(&pfd, 1, timeout_ms);
+	if (rc <= 0) {
+		close(fd);
+		errno = (rc == 0) ? ETIMEDOUT : errno;
+		return -1;
+	}
+	if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &sockerr, &slen) < 0 ||
+	    sockerr != 0) {
+		close(fd);
+		errno = sockerr ? sockerr : EIO;
+		return -1;
+	}
+	return fd;
+}
+
+/* Drain whatever the target sent back, up to ISCSI_RX_BUF bytes.
+ * Bumps bytes_in for operator visibility.  Doesn't try to parse the
+ * response — the kernel-side coverage is in handling our request, not
+ * in what comes back. */
+static void iscsi_drain(int fd)
+{
+	unsigned char buf[ISCSI_RX_BUF];
+	struct pollfd pfd;
+	ssize_t n;
+	int rc;
+
+	pfd.fd = fd;
+	pfd.events = POLLIN;
+	pfd.revents = 0;
+	rc = poll(&pfd, 1, ISCSI_RECV_TIMEOUT_MS);
+	if (rc <= 0)
+		return;
+
+	n = recv(fd, buf, sizeof(buf), MSG_DONTWAIT);
+	if (n > 0)
+		__atomic_add_fetch(&shm->stats.iscsi_target_probe_bytes_in,
+				   (unsigned long)n, __ATOMIC_RELAXED);
+}
+
+/* Build a wholly-random 48-byte BHS.  The byte 0 opcode field is
+ * masked into the ISCSI_OP_* range so the front-door opcode validator
+ * has a non-trivial chance of selecting an interesting branch rather
+ * than rejecting on "unknown opcode" every single iteration. */
+static size_t build_random_bhs(unsigned char *out)
+{
+	rnd_fill(out, ISCSI_BHS_LEN);
+	/* Bias the opcode into 0x00-0x1f range (the defined initiator
+	 * opcodes all live there: NOP-Out 0x00, SCSI Cmd 0x01, SCSI
+	 * Task Mgmt 0x02, Login 0x03, Text 0x04, SCSI Data-Out 0x05,
+	 * Logout 0x06, SNACK 0x10).  Leave the I bit (0x40) random. */
+	out[0] = (unsigned char)((out[0] & 0x40) | (out[0] & 0x1f));
+	/* Force AHS length to a small value: most random patterns end up
+	 * with absurd AHS lengths that the target rejects before the
+	 * interesting code paths.  0-3 keeps the dispatcher engaged. */
+	out[4] = (unsigned char)(out[4] & 0x03);
+	/* Bound DataSegmentLength to a small value so the target doesn't
+	 * sit waiting for megabytes of data we'll never send. */
+	out[5] = 0;
+	out[6] = 0;
+	out[7] = (unsigned char)(out[7] & 0x0f);
+	return ISCSI_BHS_LEN;
+}
+
+/* Build a Login Request BHS with valid framing, plus a fuzzed text-key
+ * data segment.  Real key names ("InitiatorName=", "TargetName=",
+ * "AuthMethod=", etc.) are interspersed with garbage so the text-key
+ * parser walks past the recognised prefixes and into the value-parsing
+ * paths it doesn't normally reach with malformed input. */
+static const char * const fuzz_keys[] = {
+	"InitiatorName=",
+	"TargetName=",
+	"AuthMethod=",
+	"HeaderDigest=",
+	"DataDigest=",
+	"MaxRecvDataSegmentLength=",
+	"MaxBurstLength=",
+	"FirstBurstLength=",
+	"DefaultTime2Wait=",
+	"DefaultTime2Retain=",
+	"MaxOutstandingR2T=",
+	"DataPDUInOrder=",
+	"DataSequenceInOrder=",
+	"ErrorRecoveryLevel=",
+	"SessionType=",
+	"OFMarker=",
+	"IFMarker=",
+	"TargetAlias=",
+	"X-com.example.bogus=",
+	"=",
+};
+#define NR_FUZZ_KEYS	(sizeof(fuzz_keys) / sizeof(fuzz_keys[0]))
+
+static size_t build_login_fuzzed(unsigned char *out)
+{
+	unsigned char *bhs = out;
+	unsigned char *data = out + ISCSI_BHS_LEN;
+	size_t data_off = 0;
+	size_t total;
+	unsigned int nr_keys;
+	unsigned int i;
+
+	memset(bhs, 0, ISCSI_BHS_LEN);
+	bhs[0] = ISCSI_OP_LOGIN | ISCSI_OP_IMMEDIATE;
+	bhs[1] = (unsigned char)(rnd_u32() & 0xff);	/* fuzz flags */
+	bhs[2] = 0;					/* Version-max */
+	bhs[3] = 0;					/* Version-min */
+	bhs[4] = 0;					/* TotalAHSLength */
+	rnd_fill(bhs + 8, 6);				/* ISID */
+	/* TSIH = 0 (new session) at bhs[14..15] left as fuzz residue */
+	rnd_fill(bhs + 16, 4);				/* ITT */
+	bhs[20] = 0;
+	bhs[21] = 1;					/* CID = 1 */
+	/* CmdSN / ExpStatSN are echo cookies — random is fine */
+	rnd_fill(bhs + 24, 8);
+
+	/* Build 3-8 key=value pairs. */
+	nr_keys = 3 + rnd_modulo_u32(6);
+	for (i = 0; i < nr_keys; i++) {
+		const char *key = fuzz_keys[rnd_modulo_u32(NR_FUZZ_KEYS)];
+		size_t key_len = strlen(key);
+		size_t val_len = 1 + rnd_modulo_u32(24);
+		size_t need = key_len + val_len + 1;	/* +1 NUL */
+
+		if (data_off + need >= LOGIN_TEXT_MAX)
+			break;
+		memcpy(data + data_off, key, key_len);
+		data_off += key_len;
+		/* Random printable-ish value bytes */
+		while (val_len--) {
+			unsigned int c = 32 + rnd_modulo_u32(95);
+
+			data[data_off++] = (unsigned char)c;
+		}
+		data[data_off++] = '\0';
+	}
+	/* Pad to 4-byte multiple */
+	while (data_off & 3) {
+		data[data_off++] = '\0';
+	}
+
+	put_be24(bhs + 5, (uint32_t)data_off);
+	total = ISCSI_BHS_LEN + data_off;
+	return total;
+}
+
+/* Build a well-formed Login Request that the target should accept under
+ * demo mode: announces a typical InitiatorName and the configured
+ * TargetName, declares AuthMethod=None, SessionType=Normal, and a
+ * basic set of operational parameters.  The kernel walks the full
+ * text-key handler set on this path and replies with a Login
+ * Response. */
+static const char login_text_well_formed[] =
+	"InitiatorName=iqn.1993-08.org.debian:01:t\0"
+	"TargetName=iqn.2026-05.fuzz:t\0"
+	"SessionType=Normal\0"
+	"AuthMethod=None\0"
+	"HeaderDigest=None\0"
+	"DataDigest=None\0"
+	"DefaultTime2Wait=2\0"
+	"DefaultTime2Retain=20\0"
+	"MaxOutstandingR2T=1\0"
+	"MaxConnections=1\0"
+	"InitialR2T=Yes\0"
+	"ImmediateData=Yes\0"
+	"MaxBurstLength=262144\0"
+	"FirstBurstLength=65536\0"
+	"MaxRecvDataSegmentLength=8192\0"
+	"DataPDUInOrder=Yes\0"
+	"DataSequenceInOrder=Yes\0"
+	"ErrorRecoveryLevel=0\0";
+
+static size_t build_login_well_formed(unsigned char *out)
+{
+	unsigned char *bhs = out;
+	unsigned char *data = out + ISCSI_BHS_LEN;
+	/* sizeof includes the trailing implicit '\0'; we want every
+	 * NUL-terminated key in the buffer to land on the wire, including
+	 * the very last one's separator. */
+	size_t data_len = sizeof(login_text_well_formed) - 1;
+	size_t padded = (data_len + 3) & ~(size_t)3;
+
+	memset(bhs, 0, ISCSI_BHS_LEN);
+	bhs[0] = ISCSI_OP_LOGIN | ISCSI_OP_IMMEDIATE;
+	bhs[1] = ISCSI_LOGIN_FLAGS_TRANSIT_OP_TO_FF;
+	bhs[2] = 0;
+	bhs[3] = 0;
+	bhs[4] = 0;
+	rnd_fill(bhs + 8, 6);				/* ISID */
+	bhs[14] = 0;					/* TSIH high */
+	bhs[15] = 0;					/* TSIH low (new session) */
+	rnd_fill(bhs + 16, 4);				/* ITT */
+	bhs[20] = 0;
+	bhs[21] = 1;					/* CID = 1 */
+	/* CmdSN = 0, ExpStatSN = 0 for a fresh login */
+	memset(bhs + 24, 0, 8);
+
+	memcpy(data, login_text_well_formed, data_len);
+	if (padded > data_len)
+		memset(data + data_len, 0, padded - data_len);
+
+	put_be24(bhs + 5, (uint32_t)padded);
+	return ISCSI_BHS_LEN + padded;
+}
+
+/* Build a SCSI Command PDU targeting LUN 0 with a fuzzed 16-byte CDB.
+ * Sent only after a successful login PDU (arm c).  The kernel
+ * dispatches into the per-CDB handler tables; READ-side commands are
+ * the safest fuzz target since they don't transfer initiator-supplied
+ * payload bytes that could exercise unrelated copy_from_user paths. */
+static size_t build_scsi_cmd_fuzzed(unsigned char *out)
+{
+	unsigned char *bhs = out;
+
+	memset(bhs, 0, ISCSI_BHS_LEN);
+	bhs[0] = ISCSI_OP_SCSI_CMD;
+	bhs[1] = ISCSI_SCSI_CMD_FLAGS_READ_SIMPLE;
+	bhs[2] = 0;
+	bhs[3] = 0;
+	bhs[4] = 0;					/* TotalAHSLength */
+	bhs[5] = 0;
+	bhs[6] = 0;
+	bhs[7] = 0;					/* DataSegmentLength = 0 */
+	memset(bhs + 8, 0, 8);				/* LUN 0 */
+	rnd_fill(bhs + 16, 4);				/* ITT */
+	/* Expected Data Transfer Length: small (256-65535) so the target
+	 * doesn't allocate huge buffers for our random CDB. */
+	bhs[20] = 0;
+	bhs[21] = 0;
+	bhs[22] = (unsigned char)(1 + rnd_modulo_u32(255));
+	bhs[23] = (unsigned char)rnd_u32();
+	/* CmdSN, ExpStatSN are echo cookies; non-zero so the target
+	 * advances its window. */
+	bhs[24] = 0;
+	bhs[25] = 0;
+	bhs[26] = 0;
+	bhs[27] = 1;					/* CmdSN = 1 */
+	bhs[28] = 0;
+	bhs[29] = 0;
+	bhs[30] = 0;
+	bhs[31] = 1;					/* ExpStatSN = 1 */
+	/* Fuzz the 16-byte CDB.  Bias the first byte toward defined
+	 * READ-class opcodes so we exercise interesting dispatcher arms
+	 * more often than "unknown opcode" rejects: 0x12 INQUIRY,
+	 * 0x25 READ_CAPACITY, 0x28 READ_10, 0x88 READ_16, 0x9E SERVICE_ACTION_IN_16,
+	 * 0xA0 REPORT_LUNS, 0x00 TEST_UNIT_READY. */
+	rnd_fill(bhs + 32, 16);
+	{
+		static const unsigned char cdb_opcodes[] = {
+			0x00, 0x12, 0x25, 0x28, 0x88, 0x9E, 0xA0, 0x1A, 0x5A,
+		};
+
+		if ((rnd_u32() & 3) != 0)
+			bhs[32] = cdb_opcodes[rnd_modulo_u32(sizeof(cdb_opcodes))];
+	}
+	return ISCSI_BHS_LEN;
+}
+
+bool iscsi_target_probe(struct childdata *child)
+{
+	unsigned char pdu[ISCSI_BHS_LEN + LOGIN_TEXT_MAX];
+	unsigned int iters;
+	unsigned int i;
+	int fd;
+	ssize_t n;
+	size_t pdu_len;
+	unsigned int arm;
+
+	(void)child;
+
+	__atomic_add_fetch(&shm->stats.iscsi_target_probe_runs, 1,
+			   __ATOMIC_RELAXED);
+
+	if (ns_unsupported)
+		return true;
+
+	iters = BUDGETED(CHILD_OP_ISCSI_TARGET_PROBE,
+			 JITTER_RANGE(ISCSI_ITERS_BASE));
+	if (iters == 0)
+		iters = 1;
+
+	for (i = 0; i < iters; i++) {
+		fd = iscsi_connect(ISCSI_CONNECT_TIMEOUT_MS);
+		if (fd < 0) {
+			if (errno == ECONNREFUSED) {
+				/* No LIO target on this host.  Latch and
+				 * be quiet for the rest of this child's
+				 * life — siblings will independently latch
+				 * the first time they try. */
+				if (!ns_unsupported) {
+					ns_unsupported = true;
+					output(2, "iscsi_target_probe: 127.0.0.1:3260 connection refused, disabling for this child\n");
+				}
+				__atomic_add_fetch(&shm->stats.iscsi_target_probe_no_target,
+						   1, __ATOMIC_RELAXED);
+				return true;
+			}
+			__atomic_add_fetch(&shm->stats.iscsi_target_probe_setup_failed,
+					   1, __ATOMIC_RELAXED);
+			continue;
+		}
+		__atomic_add_fetch(&shm->stats.iscsi_target_probe_connected,
+				   1, __ATOMIC_RELAXED);
+
+		arm = rnd_modulo_u32(3);
+		switch (arm) {
+		case 0:
+			pdu_len = build_random_bhs(pdu);
+			break;
+		case 1:
+			pdu_len = build_login_fuzzed(pdu);
+			break;
+		default:
+			pdu_len = build_login_well_formed(pdu);
+			break;
+		}
+
+		n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
+		if (n > 0) {
+			__atomic_add_fetch(&shm->stats.iscsi_target_probe_login_sent,
+					   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.iscsi_target_probe_bytes_out,
+					   (unsigned long)n, __ATOMIC_RELAXED);
+		}
+
+		iscsi_drain(fd);
+		__atomic_add_fetch(&shm->stats.iscsi_target_probe_login_replies,
+				   1, __ATOMIC_RELAXED);
+
+		/* Arm (c): after the well-formed Login, send one fuzzed
+		 * SCSI Command PDU.  We don't track whether the login
+		 * actually succeeded (the target's reply parser is out
+		 * of scope) — if it failed the SCSI Command just gets
+		 * dropped or RST'd, which is itself reasonable coverage
+		 * of the post-login state-machine validators. */
+		if (arm == 2) {
+			pdu_len = build_scsi_cmd_fuzzed(pdu);
+			n = send(fd, pdu, pdu_len,
+				 MSG_DONTWAIT | MSG_NOSIGNAL);
+			if (n > 0) {
+				__atomic_add_fetch(&shm->stats.iscsi_target_probe_scsi_cmd_sent,
+						   1, __ATOMIC_RELAXED);
+				__atomic_add_fetch(&shm->stats.iscsi_target_probe_bytes_out,
+						   (unsigned long)n,
+						   __ATOMIC_RELAXED);
+			}
+			iscsi_drain(fd);
+		}
+
+		(void)shutdown(fd, SHUT_RDWR);
+		close(fd);
+	}
+
+	return true;
+}

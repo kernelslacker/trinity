@@ -1390,6 +1390,7 @@ static void dump_stats_json(void)
 		"\"ip6gre_bond_lapb_stack\":{\"runs\":%lu,\"setup_failed\":%lu,\"flag_toggles\":%lu},"
 		"\"wireguard_decrypt_flood\":{\"runs\":%lu,\"setup_failed\":%lu,\"packets_sent\":%lu,\"unsupported_latched\":%lu},"
 		"\"blkdev_lifecycle_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"set_fd_ok\":%lu,\"clr_fd\":%lu,\"ebusy\":%lu,\"rescans\":%lu},"
+		"\"iscsi_target_probe\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_target\":%lu,\"connected\":%lu,\"login_sent\":%lu,\"login_replies\":%lu,\"scsi_cmd_sent\":%lu,\"bytes_out\":%lu,\"bytes_in\":%lu},"
 		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu,\"burn_iters\":%lu},"
 		"\"ipv6_ndisc_proxy\":{\"runs\":%lu,\"ns_sent_ok\":%lu,\"setup_failed\":%lu,\"proxy_enable_ok\":%lu},"
 		"\"ipfrag_source_churn\":{\"runs\":%lu,\"packets_sent_ok\":%lu,\"send_failed\":%lu,\"unique_srcs\":%lu},"
@@ -1590,6 +1591,15 @@ static void dump_stats_json(void)
 		shm->stats.blkdev_lifecycle_clr_fd,
 		shm->stats.blkdev_lifecycle_ebusy,
 		shm->stats.blkdev_lifecycle_rescans,
+		shm->stats.iscsi_target_probe_runs,
+		shm->stats.iscsi_target_probe_setup_failed,
+		shm->stats.iscsi_target_probe_no_target,
+		shm->stats.iscsi_target_probe_connected,
+		shm->stats.iscsi_target_probe_login_sent,
+		shm->stats.iscsi_target_probe_login_replies,
+		shm->stats.iscsi_target_probe_scsi_cmd_sent,
+		shm->stats.iscsi_target_probe_bytes_out,
+		shm->stats.iscsi_target_probe_bytes_in,
 		shm->stats.ipvs_sysctl_writer_runs,
 		shm->stats.ipvs_sysctl_writer_writes_ok,
 		shm->stats.ipvs_sysctl_writer_writes_failed,
@@ -4320,6 +4330,18 @@ void dump_stats(void)
 		stat_row("blkdev_lifecycle_race", "clr_fd",        shm->stats.blkdev_lifecycle_clr_fd);
 		stat_row("blkdev_lifecycle_race", "ebusy",         shm->stats.blkdev_lifecycle_ebusy);
 		stat_row("blkdev_lifecycle_race", "rescans",       shm->stats.blkdev_lifecycle_rescans);
+	}
+
+	if (shm->stats.iscsi_target_probe_runs) {
+		stat_row("iscsi_target_probe", "runs",          shm->stats.iscsi_target_probe_runs);
+		stat_row("iscsi_target_probe", "setup_failed",  shm->stats.iscsi_target_probe_setup_failed);
+		stat_row("iscsi_target_probe", "no_target",     shm->stats.iscsi_target_probe_no_target);
+		stat_row("iscsi_target_probe", "connected",     shm->stats.iscsi_target_probe_connected);
+		stat_row("iscsi_target_probe", "login_sent",    shm->stats.iscsi_target_probe_login_sent);
+		stat_row("iscsi_target_probe", "login_replies", shm->stats.iscsi_target_probe_login_replies);
+		stat_row("iscsi_target_probe", "scsi_cmd_sent", shm->stats.iscsi_target_probe_scsi_cmd_sent);
+		stat_row("iscsi_target_probe", "bytes_out",     shm->stats.iscsi_target_probe_bytes_out);
+		stat_row("iscsi_target_probe", "bytes_in",      shm->stats.iscsi_target_probe_bytes_in);
 	}
 
 	if (shm->stats.ipvs_sysctl_writer_runs) {

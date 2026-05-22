@@ -1312,6 +1312,22 @@ struct stats_s {
 	unsigned long blkdev_lifecycle_ebusy;			/* LOOP_SET_FD raced sibling: EBUSY/ENXIO/EPERM */
 	unsigned long blkdev_lifecycle_rescans;			/* BLKRRPART issued from rescan thread */
 
+	/* iscsi_target_probe childop counters.  Tracks reach into the
+	 * in-kernel LIO target login + post-login SCSI Command path via a
+	 * real TCP connection to 127.0.0.1:3260.  Latches off
+	 * (no_target) when the very first connect() returns
+	 * ECONNREFUSED, so an operator can spot "target absent" runs
+	 * cheaply by reading no_target vs connected. */
+	unsigned long iscsi_target_probe_runs;			/* total iscsi_target_probe invocations */
+	unsigned long iscsi_target_probe_setup_failed;		/* socket() / non-ECONNREFUSED connect failure */
+	unsigned long iscsi_target_probe_no_target;		/* ECONNREFUSED on connect — latched per-child */
+	unsigned long iscsi_target_probe_connected;		/* TCP connect to 3260 returned 0 / completed */
+	unsigned long iscsi_target_probe_login_sent;		/* Login PDU send() returned >0 */
+	unsigned long iscsi_target_probe_login_replies;		/* drain() executed after a login send */
+	unsigned long iscsi_target_probe_scsi_cmd_sent;		/* post-login SCSI Command PDU sent (arm c) */
+	unsigned long iscsi_target_probe_bytes_out;		/* total bytes successfully send()'d */
+	unsigned long iscsi_target_probe_bytes_in;		/* total bytes successfully recv()'d */
+
 	/* ip6erspan_netns_migrate childop counters */
 	unsigned long inm_iters;				/* total ip6erspan_netns_migrate invocations */
 	unsigned long inm_eperm;				/* unshare/NEWLINK rejected with EPERM */
