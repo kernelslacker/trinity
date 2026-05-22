@@ -529,11 +529,96 @@ const char * get_random_walked_pathname(void)
 	return get_filename();
 }
 
+/*
+ * Mint a brand-new pathname by anchoring under a random pool entry and
+ * appending 1-6 trailing components of random length and content.  Each
+ * call produces a string nobody has seen before, so dentry-cache lookups
+ * in link_path_walk encounter novel components instead of repeatedly
+ * landing on the warm static pool.
+ */
+static const char pathname_component_chars[] =
+	"abcdefghijklmnopqrstuvwxyz0123456789_";
+#define PATHNAME_COMPONENT_CHARS_LEN (sizeof(pathname_component_chars) - 1)
+
+static char *generate_random_pathname(void)
+{
+	const char *base;
+	char *out;
+	unsigned int components, i;
+	int off;
+
+	/* Anchor under a real directory so the early walk hits warm
+	 * dentries before diving into synthetic components. */
+	base = NULL;
+	if (files_in_index > 0)
+		base = get_filename();
+	if (base == NULL)
+		base = "/tmp";
+
+	out = zmalloc_tracked(MAX_PATH_LEN);
+	off = snprintf(out, MAX_PATH_LEN, "%s", base);
+	if (off < 0 || off >= MAX_PATH_LEN) {
+		out[MAX_PATH_LEN - 1] = '\0';
+		return out;
+	}
+
+	components = 1 + rnd_modulo_u32(6);	/* 1-6 trailing components */
+	for (i = 0; i < components; i++) {
+		unsigned int len, c;
+		bool hidden;
+
+		/* Need room for '/', optional '.', up to 32 chars and NUL. */
+		if (off >= MAX_PATH_LEN - 35)
+			break;
+
+		out[off++] = '/';
+
+		hidden = (rnd_modulo_u32(8) == 0);
+		if (hidden)
+			out[off++] = '.';
+
+		len = 8 + rnd_modulo_u32(25);	/* 8-32 chars */
+		if (off + (int) len >= MAX_PATH_LEN - 1)
+			len = MAX_PATH_LEN - 1 - off;
+
+		for (c = 0; c < len; c++)
+			out[off++] = pathname_component_chars[
+				rnd_modulo_u32(PATHNAME_COMPONENT_CHARS_LEN)];
+	}
+
+	/* Occasionally tack on a trailing /, /. or /.. to exercise the
+	 * dot/dotdot handling in link_path_walk. */
+	if (rnd_modulo_u32(8) == 0 && off <= MAX_PATH_LEN - 4) {
+		switch (rnd_modulo_u32(3)) {
+		case 0:
+			out[off++] = '/';
+			break;
+		case 1:
+			out[off++] = '/';
+			out[off++] = '.';
+			break;
+		case 2:
+			out[off++] = '/';
+			out[off++] = '.';
+			out[off++] = '.';
+			break;
+		}
+	}
+
+	out[off] = '\0';
+	return out;
+}
+
 const char * generate_pathname(void)
 {
 	const char *pathname;
 	char *newpath;
 	unsigned int len;
+
+	/* Mint a fresh random pathname some of the time so each call sees
+	 * novel components rather than recycling the warm static pool. */
+	if (rnd_modulo_u32(4) == 0)
+		return generate_random_pathname();
 
 	/*
 	 * WALKED_PATH_RATIO percent of the time, draw from the startup-walked
