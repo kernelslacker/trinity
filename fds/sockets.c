@@ -18,6 +18,7 @@
 #include "params.h"	// verbosity, do_specific_domain
 #include "pids.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -189,7 +190,7 @@ static unsigned int rand_proto_for_family(unsigned int family)
 	case PF_UNIX:
 		return 0;
 	default:
-		return rand() % 16;
+		return rnd_modulo_u32(16);
 	}
 }
 
@@ -290,7 +291,7 @@ static bool generate_sockets(void)
 	}
 
 	while (nr_sockets < NR_SOCKET_FDS) {
-		r = rand() % TRINITY_PF_MAX;
+		r = rnd_modulo_u32(TRINITY_PF_MAX);
 		for (i = 0; i < 10; i++)
 			if (generate_specific_socket(r) == false)
 				break;
@@ -642,7 +643,7 @@ static int open_socket_fd(void)
 	struct socket_triplet st;
 	int r, fd;
 
-	r = rand() % TRINITY_PF_MAX;
+	r = rnd_modulo_u32(TRINITY_PF_MAX);
 	st.family = r;
 
 	if (st.family >= ARRAY_SIZE(no_domains))
