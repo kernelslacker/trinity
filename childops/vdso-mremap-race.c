@@ -82,6 +82,7 @@
 #include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -203,7 +204,7 @@ static void __attribute__((noreturn)) mutator_helper(void)
 	void *vdso_addr = (void *) vdso_start;
 	void *fresh;
 
-	mut = (enum vdso_mutation) ((unsigned int) rand() % NR_VDSO_MUTATIONS);
+	mut = (enum vdso_mutation) rnd_modulo_u32(NR_VDSO_MUTATIONS);
 
 	switch (mut) {
 	case MUT_MREMAP: {
@@ -221,7 +222,7 @@ static void __attribute__((noreturn)) mutator_helper(void)
 		 * EINVAL spam loop. */
 		half = (vdso_size / 2) & ~((unsigned long)pagesize - 1);
 
-		shape = (enum mremap_shape)((unsigned int)rand() % NR_MREMAP_SHAPES);
+		shape = (enum mremap_shape) rnd_modulo_u32(NR_MREMAP_SHAPES);
 		if (half == 0 &&
 		    (shape == MREMAP_SHAPE_SHRINK ||
 		     shape == MREMAP_SHAPE_SHRINK_THEN_GROW))
