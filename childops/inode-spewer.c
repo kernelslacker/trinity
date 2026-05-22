@@ -30,6 +30,7 @@
 #include "pids.h"
 #include "child.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -59,13 +60,13 @@ static void ensure_spew_dir(char *dir, size_t len)
 
 static unsigned long pick_file_size(void)
 {
-	switch (rand() % 6) {
+	switch (rnd_modulo_u32(6)) {
 	case 0:	return 0;
 	case 1:	return 1;
 	case 2:	return page_size;
-	case 3:	return page_size * (1 + (rand() % 64));
+	case 3:	return page_size * (1 + rnd_modulo_u32(64));
 	case 4:	return MB(1);
-	default: return rand() % MB(4);
+	default: return rnd_modulo_u32(MB(4));
 	}
 }
 
@@ -152,7 +153,7 @@ static bool do_batch_spew(void)
 
 	ensure_spew_dir(spew_dir, sizeof(spew_dir));
 
-	count = 4 + (rand() % 28);
+	count = 4 + rnd_modulo_u32(28);
 
 	for (i = 0; i < count; i++) {
 		int fd;
@@ -167,7 +168,7 @@ static bool do_batch_spew(void)
 
 	/* Unlink in random order for extra churn. */
 	for (i = 0; i < count; i++) {
-		unsigned int j = rand() % count;
+		unsigned int j = rnd_modulo_u32(count);
 		char tmp[PATH_MAX + 64];
 		memcpy(tmp, paths[i], sizeof(tmp));
 		memcpy(paths[i], paths[j], sizeof(paths[i]));
@@ -234,7 +235,7 @@ bool inode_spewer(struct childdata *child)
 {
 	(void)child;
 
-	switch (rand() % 10) {
+	switch (rnd_modulo_u32(10)) {
 	case 0 ... 5:	do_create_and_destroy();	break;
 	case 6 ... 7:	do_batch_spew();		break;
 	case 8:		do_mkdir_rmdir();		break;
