@@ -123,6 +123,7 @@
 #include "child.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -658,9 +659,9 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 	 * the moment the kernel rejects them with EINVAL — but we never
 	 * disable the whole childop on either, the existing UMEM/ring/bind
 	 * path is the baseline coverage and must keep running. */
-	want_sg    = !ns_unsupported_xdp_sg     && (rand() & 1);
-	want_tx_md = !ns_unsupported_tx_metadata && (rand() & 1);
-	want_tun   = (rand() & 3) == 0;
+	want_sg    = !ns_unsupported_xdp_sg     && (rnd_u32() & 1);
+	want_tx_md = !ns_unsupported_tx_metadata && (rnd_u32() & 1);
+	want_tun   = (rnd_u32() & 3) == 0;
 
 	memset(&umem_reg, 0, sizeof(umem_reg));
 	umem_reg.addr            = (uint64_t)(uintptr_t)st.umem;
@@ -907,7 +908,7 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 			unsigned char *meta = (unsigned char *)st.umem +
 					      head_addr - AFXDP_TX_META_BYTES;
 			__u64 mflags = XDP_TXMD_FLAGS_CHECKSUM |
-				       ((rand() & 1) ? XDP_TXMD_FLAGS_TIMESTAMP : 0);
+				       ((rnd_u32() & 1) ? XDP_TXMD_FLAGS_TIMESTAMP : 0);
 
 			memset(meta, 0, AFXDP_TX_META_BYTES);
 			memcpy(meta, &mflags, sizeof(mflags));
