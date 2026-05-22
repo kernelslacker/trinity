@@ -371,14 +371,20 @@ static unsigned long gen_arg_fd(struct syscallentry *entry,
 	int fd = 0;
 	int tries;
 
-	/* Prefer live fds returned by recent syscalls (70% of the time). */
+	/* Prefer live fds returned by recent syscalls (70% of the time).
+	 * Filter out the calling child's kcov fds -- the live-fd ring is
+	 * fed from RET_FD syscall returns, and a kernel fd slot that was
+	 * vacated under us (close-then-reopen-to-same-fd recycle, or a
+	 * sibling-driven dup2 that we then re-observed) can produce a
+	 * value that aliases ours.  Returning it here would feed it
+	 * straight into the next close/dup2 sanitiser. */
 	if (rnd_modulo_u32(10) < 7) {
 		struct childdata *child = this_child();
 
 		if (child != NULL) {
 			int live_fd = get_child_live_fd(child);
 
-			if (live_fd >= 0)
+			if (live_fd >= 0 && !kcov_fd_is_protected(live_fd))
 				return live_fd;
 		}
 	}
@@ -388,8 +394,15 @@ static unsigned long gen_arg_fd(struct syscallentry *entry,
 		for (i = 1; i < argnum; i++) {
 			enum argtype arg;
 			arg = get_argtype(entry, i);
-			if (arg == ARG_FD)
-				return get_new_random_fd();
+			if (arg == ARG_FD) {
+				for (tries = 0; tries < FAILED_FD_REROLL_LIMIT;
+				     tries++) {
+					fd = get_new_random_fd();
+					if (!kcov_fd_is_protected(fd))
+						return (unsigned long) fd;
+				}
+				return (unsigned long) fd;
+			}
 		}
 	}
 
@@ -397,6 +410,8 @@ static unsigned long gen_arg_fd(struct syscallentry *entry,
 	filter = rnd_modulo_u32(10) < 7;
 	for (tries = 0; tries < FAILED_FD_REROLL_LIMIT; tries++) {
 		fd = get_random_fd();
+		if (kcov_fd_is_protected(fd))
+			continue;
 		if (!filter || !fd_recently_failed(results, fd))
 			break;
 	}

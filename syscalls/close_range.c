@@ -12,6 +12,7 @@
 #include "child.h"
 #include "deferred-free.h"
 #include "fd-event.h"
+#include "kcov.h"
 #include "objects.h"
 #include "pids.h"
 #include "sanitise.h"
@@ -67,6 +68,44 @@ static void sanitise_close_range(struct syscallrecord *rec)
 	 * pointer carried over from an earlier syscall on this record.
 	 */
 	rec->post_state = 0;
+
+	/*
+	 * If the picked range sweeps over one of this child's kcov fds,
+	 * truncate the upper bound so the kernel never sees the protected
+	 * slot.  Bounds were picked by gen_arg_fd (which already filters
+	 * protected fds), so the endpoints themselves are safe -- it is the
+	 * range walk in between that needs the guard.  CLOEXEC-only calls
+	 * just mark fds, but doing the truncation unconditionally keeps the
+	 * snapshot the post handler reads consistent with the kernel's view
+	 * regardless of the flags bit.  If the truncation leaves no fds to
+	 * close (lowest protected fd <= rec->a1) we collapse the range to
+	 * a no-op (close_range(N, N - 1) returns -EINVAL) rather than
+	 * issuing a side-effect-free syscall on an unrelated low slot.
+	 */
+	if (rec->a1 <= rec->a2 &&
+	    kcov_range_contains_protected_fd((int) rec->a1, (int) rec->a2)) {
+		struct childdata *c = this_child();
+		unsigned int new_max = (unsigned int) rec->a2;
+
+		if (c != NULL) {
+			if (c->kcov.fd >= 0 &&
+			    (unsigned int) c->kcov.fd <= new_max &&
+			    (unsigned int) c->kcov.fd >= (unsigned int) rec->a1)
+				new_max = (unsigned int) c->kcov.fd - 1U;
+			if (c->kcov.cmp_fd >= 0 &&
+			    (unsigned int) c->kcov.cmp_fd <= new_max &&
+			    (unsigned int) c->kcov.cmp_fd >= (unsigned int) rec->a1)
+				new_max = (unsigned int) c->kcov.cmp_fd - 1U;
+		}
+		if (new_max < (unsigned int) rec->a1) {
+			/* Whole range was at or above the lowest protected fd
+			 * -- nothing left to close.  Invert the bounds so the
+			 * kernel rejects the call instead of issuing a walk. */
+			rec->a2 = rec->a1 > 0 ? rec->a1 - 1UL : 0UL;
+		} else {
+			rec->a2 = new_max;
+		}
+	}
 
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic  = CLOSE_RANGE_POST_STATE_MAGIC;
