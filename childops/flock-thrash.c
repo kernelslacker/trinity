@@ -43,6 +43,7 @@
 #include "child.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -94,7 +95,7 @@ static void shuffle_slots(struct flock_slot *s, unsigned int n)
 	unsigned int i;
 
 	for (i = n; i > 1; i--) {
-		unsigned int j = (unsigned int)rand() % i;
+		unsigned int j = rnd_modulo_u32(i);
 		struct flock_slot tmp = s[i - 1];
 
 		s[i - 1] = s[j];
@@ -137,10 +138,10 @@ bool flock_thrash(struct childdata *child)
 		return true;
 
 	iter_cap = BUDGETED(CHILD_OP_FLOCK_THRASH, JITTER_RANGE(MAX_ITERATIONS));
-	order = (enum thrash_order)((unsigned int)rand() % NR_THRASH_ORDERS);
+	order = (enum thrash_order)rnd_modulo_u32(NR_THRASH_ORDERS);
 	phase_split = iter_cap / 2;
 	for (iter = 0; iter < iter_cap; iter++) {
-		struct flock_slot *s = &slots[(unsigned int)rand() % opened];
+		struct flock_slot *s = &slots[rnd_modulo_u32(opened)];
 		int op;
 		int rc;
 
@@ -154,8 +155,8 @@ bool flock_thrash(struct childdata *child)
 			if (iter < phase_split) {
 				if (s->held)
 					continue;
-				op = (rand() % 4 == 0) ? LOCK_SH : LOCK_EX;
-				if (rand() % 4 == 0)
+				op = (rnd_modulo_u32(4) == 0) ? LOCK_SH : LOCK_EX;
+				if (rnd_modulo_u32(4) == 0)
 					op |= LOCK_NB;
 			} else {
 				if (!s->held)
@@ -170,11 +171,11 @@ bool flock_thrash(struct childdata *child)
 			 * conversion path (flock_lock_inode replacing the
 			 * existing lock without going through the wait
 			 * queue). */
-			if (rand() % 8 == 0) {
+			if (rnd_modulo_u32(8) == 0) {
 				op = LOCK_UN;
 			} else {
-				op = (rand() % 4 == 0) ? LOCK_SH : LOCK_EX;
-				if (rand() % 4 == 0)
+				op = (rnd_modulo_u32(4) == 0) ? LOCK_SH : LOCK_EX;
+				if (rnd_modulo_u32(4) == 0)
 					op |= LOCK_NB;
 			}
 			break;
@@ -187,7 +188,7 @@ bool flock_thrash(struct childdata *child)
 				 * in shared locks exercises the SH<->EX
 				 * upgrade/downgrade waitqueue paths in
 				 * addition to the EX-only fast path. */
-				op = (rand() % 4 == 0) ? LOCK_SH : LOCK_EX;
+				op = (rnd_modulo_u32(4) == 0) ? LOCK_SH : LOCK_EX;
 
 				/* ~25% non-blocking.  Higher than the pure-
 				 * variety mix because under cross-process
@@ -198,7 +199,7 @@ bool flock_thrash(struct childdata *child)
 				 * loop ticking and exercises the
 				 * EWOULDBLOCK reject path the blocking
 				 * variant skips. */
-				if (rand() % 4 == 0)
+				if (rnd_modulo_u32(4) == 0)
 					op |= LOCK_NB;
 			}
 			break;
@@ -229,7 +230,7 @@ bool flock_thrash(struct childdata *child)
 	 * inode list in a different order than the explicit LOCK_UN path,
 	 * and varying that order keeps any latent assumption about close
 	 * sequence honest. */
-	if (rand() % 2 == 0)
+	if (rnd_modulo_u32(2) == 0)
 		shuffle_slots(slots, opened);
 	for (i = 0; i < opened; i++)
 		close(slots[i].fd);
