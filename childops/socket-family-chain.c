@@ -65,6 +65,7 @@
 #include "files.h"
 #include "proto-alg-dict.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "socket-family-grammar.h"
 #include "stats.h"
@@ -196,7 +197,7 @@ static bool run_alg_chain(unsigned int *err_burst)
 			&shm->stats.socket_family_chain_authencesn_attempts, 1,
 			__ATOMIC_RELAXED);
 	} else {
-		type = (enum sfc_type_idx)(rand() % SFC_NR_TYPES);
+		type = (enum sfc_type_idx)rnd_modulo_u32(SFC_NR_TYPES);
 		pick_alg(sfc_to_dict[type], sfc_types[type], &sa);
 	}
 
@@ -207,7 +208,7 @@ static bool run_alg_chain(unsigned int *err_burst)
 		goto out;
 	}
 
-	keylen = (rand() % 3 == 0) ? 16 : ((rand() & 1) ? 32 : 64);
+	keylen = (rnd_modulo_u32(3) == 0) ? 16 : ((rnd_u32() & 1) ? 32 : 64);
 	generate_rand_bytes(key, keylen);
 	/* 1-in-RAND_NEGATIVE_RATIO sub the curated 16/32/64 keylen for a
 	 * curated edge value — exercises __sys_setsockopt's optlen < 0
@@ -221,7 +222,7 @@ static bool run_alg_chain(unsigned int *err_burst)
 	}
 
 	if (type == SFC_TYPE_AEAD) {
-		unsigned int authsize = (rand() & 1) ? 12 : 16;
+		unsigned int authsize = (rnd_u32() & 1) ? 12 : 16;
 
 		(void) setsockopt(parent_fd, SOL_ALG,
 				  ALG_SET_AEAD_AUTHSIZE,
@@ -239,7 +240,7 @@ static bool run_alg_chain(unsigned int *err_burst)
 	 * lives in.  Any per-step failure is interesting but not a kernel-
 	 * absent signal, so don't bump err_burst. */
 
-	sndlen = 16 + (rand() % (256 - 16 + 1));
+	sndlen = 16 + rnd_modulo_u32(256 - 16 + 1);
 
 	/*
 	 * Data leg.  ~SPLICE_SUBST_PCT% of the time, replace the sendmsg
@@ -254,7 +255,7 @@ static bool run_alg_chain(unsigned int *err_burst)
 	 * etc.) we fall through to the sendmsg path so the chain still
 	 * exercises the bug-class data path it was built for.
 	 */
-	if ((rand() % 100) < SPLICE_SUBST_PCT) {
+	if (rnd_modulo_u32(100) < SPLICE_SUBST_PCT) {
 		int tagged_fd = get_rand_pagecache_fd();
 
 		if (tagged_fd >= 0 && pipe2(splice_pfd, O_CLOEXEC) == 0) {
@@ -289,7 +290,7 @@ static bool run_alg_chain(unsigned int *err_burst)
 		(void) sendmsg(child_fd, &msg, MSG_NOSIGNAL);
 	}
 
-	rcvlen = 16 + (rand() % (256 - 16 + 1));
+	rcvlen = 16 + rnd_modulo_u32(256 - 16 + 1);
 	rcvbuf = zmalloc(rcvlen);
 	(void) recv(child_fd, rcvbuf, rcvlen, 0);
 
@@ -322,7 +323,7 @@ out:
  */
 static bool pick_alg_arm(void)
 {
-	return (rand() % 100) < SFG_AF_ALG_BIAS_PCT;
+	return rnd_modulo_u32(100) < SFG_AF_ALG_BIAS_PCT;
 }
 
 bool socket_family_chain(struct childdata *child __unused__)
@@ -364,10 +365,10 @@ bool socket_family_chain(struct childdata *child __unused__)
 			return true;
 		}
 		cycles = INNER_MIN +
-			 (rand() % (INNER_MAX_ALG - INNER_MIN + 1));
+			 rnd_modulo_u32(INNER_MAX_ALG - INNER_MIN + 1);
 	} else {
 		cycles = INNER_MIN +
-			 (rand() % (INNER_MAX_GRAMMAR - INNER_MIN + 1));
+			 rnd_modulo_u32(INNER_MAX_GRAMMAR - INNER_MIN + 1);
 	}
 
 	for (inner = 0; inner < cycles; inner++) {
