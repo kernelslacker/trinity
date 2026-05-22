@@ -107,6 +107,7 @@
 #include "jitter.h"
 #include "netlink-genl-families.h"
 #include "random.h"
+#include "rnd.h"
 #include "utils.h"
 
 extern struct genl_family_grammar fam_mptcp_pm;
@@ -418,7 +419,7 @@ static void churn_send(int fd)
 	ssize_t n;
 
 	generate_rand_bytes(buf, sizeof(buf));
-	n = send(fd, buf, 1U + ((unsigned int)rand() % sizeof(buf)),
+	n = send(fd, buf, 1U + rnd_modulo_u32(sizeof(buf)),
 		 MSG_DONTWAIT | MSG_NOSIGNAL);
 	if (n > 0)
 		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_send_ok,
