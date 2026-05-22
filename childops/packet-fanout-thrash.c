@@ -58,6 +58,7 @@
 #include "child.h"
 #include "compat.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -94,7 +95,7 @@
 
 static unsigned int random_fanout_type(void)
 {
-	switch ((unsigned int)rand() % 8) {
+	switch (rnd_modulo_u32(8)) {
 	case 0:  return PACKET_FANOUT_HASH;
 	case 1:  return PACKET_FANOUT_LB;
 	case 2:  return PACKET_FANOUT_CPU;
@@ -190,7 +191,7 @@ bool packet_fanout_thrash(struct childdata *child)
 	(void)bind(fd, (struct sockaddr *)&sll, sizeof(sll));
 
 	/* Step 6: join a fanout group with random type + flags. */
-	group1 = 1 + ((unsigned int)rand() & 0xff);
+	group1 = 1 + (rnd_u32() & 0xff);
 	type1 = random_fanout_type();
 	flags1 = 0;
 	if (RAND_BOOL())
@@ -220,7 +221,7 @@ bool packet_fanout_thrash(struct childdata *child)
 	 * itself dispatcher coverage. */
 	do {
 		type2 = random_fanout_type();
-		group2 = 1 + ((unsigned int)rand() & 0xff);
+		group2 = 1 + (rnd_u32() & 0xff);
 	} while (type2 == type1 && group2 == group1);
 
 	fanout2 = make_fanout_arg(group2, type2, 0);
