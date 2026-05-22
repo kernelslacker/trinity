@@ -64,6 +64,7 @@
 #include "child.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "uid.h"
@@ -159,7 +160,7 @@ static void init_cpu_state(void)
 
 static int pick_hotpluggable_cpu(void)
 {
-	return hotpluggable_cpus[(unsigned int) rand() % nr_hotpluggable];
+	return hotpluggable_cpus[rnd_modulo_u32(nr_hotpluggable)];
 }
 
 /*
@@ -178,7 +179,7 @@ static void build_random_affinity(cpu_set_t *set)
 
 	/* CPU 0 is almost always present and not always hotpluggable;
 	 * include it with high probability so the mask is rarely empty. */
-	if ((rand() % 4) != 0) {
+	if (rnd_modulo_u32(4) != 0) {
 		CPU_SET(0, set);
 		any = true;
 	}
@@ -191,7 +192,7 @@ static void build_random_affinity(cpu_set_t *set)
 	}
 
 	if (!any)
-		CPU_SET(hotpluggable_cpus[(unsigned int) rand() % nr_hotpluggable],
+		CPU_SET(hotpluggable_cpus[rnd_modulo_u32(nr_hotpluggable)],
 			set);
 }
 
@@ -290,7 +291,7 @@ bool cpu_hotplug_rider(struct childdata *child)
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
 	for (iter = 0; iter < iters; iter++) {
-		unsigned int pick = (unsigned int) rand() % 4;
+		unsigned int pick = rnd_modulo_u32(4);
 
 		switch (pick) {
 		case 0:
@@ -313,7 +314,7 @@ bool cpu_hotplug_rider(struct childdata *child)
 			 * nice clamp / EINVAL path which the curated -20..19
 			 * mix never reaches. */
 			attr.sched_nice =
-				(int)RAND_NEGATIVE_OR((rand() % 40) - 20);
+				(int)RAND_NEGATIVE_OR((int)rnd_modulo_u32(40) - 20);
 			(void) do_sched_setattr(0, &attr);
 			affinity_calls++;
 			break;
@@ -333,7 +334,7 @@ bool cpu_hotplug_rider(struct childdata *child)
 			 * invocation; CPU 0 is excluded inside
 			 * real_offline_cycle. */
 			if (orig_uid == 0 && !did_real_offline &&
-			    val == '0' && (rand() % 8) == 0) {
+			    val == '0' && rnd_modulo_u32(8) == 0) {
 				if (real_offline_cycle(cpu)) {
 					real_offlines++;
 					did_real_offline = true;
