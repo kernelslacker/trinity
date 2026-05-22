@@ -641,22 +641,25 @@ int main(int argc, char* argv[])
 	/*
 	 * HEALER relation-table warm-start.  Independent of the minicorpus
 	 * warm-start gate so an operator can opt out of one without losing
-	 * the other (--no-healer-warm-start covers the load, the load is
-	 * silent on a missing file because cold-start is the legitimate
-	 * first-run state).  Snapshot wiring is gated separately by
-	 * --no-healer-snapshot so a read-only "warm-start but don't write"
-	 * mode is also expressible.  Both are done before fork so children
+	 * the other.  --no-healer is the master off-switch: it implies all
+	 * three of warm-start load, static-seed install, and snapshot
+	 * wiring, so that an off-run shares no state with an on-run.  The
+	 * sub-flags (--no-healer-warm-start, --no-healer-snapshot) remain
+	 * for granular control when the picker itself stays on.  The load
+	 * is silent on a missing file because cold-start is the legitimate
+	 * first-run state.  Snapshot wiring runs before fork so children
 	 * inherit the populated shm region and the snapshot path COW.
 	 */
-	if (!no_healer_warm_start) {
+	if (!no_healer && !no_healer_warm_start) {
 		const char *hpath = healer_default_path();
 
 		if (hpath != NULL && healer_load_file(hpath))
 			output(0, "healer: warm-started relation table from %s\n",
 				hpath);
 	}
-	(void)healer_load_static_seed();
-	if (!no_healer_snapshot) {
+	if (!no_healer)
+		(void)healer_load_static_seed();
+	if (!no_healer && !no_healer_snapshot) {
 		const char *hpath = healer_default_path();
 
 		if (hpath != NULL)
@@ -701,7 +704,7 @@ int main(int argc, char* argv[])
 	 * after a corruption-aborted run could feed garbage into the next
 	 * warm-start, so we skip the save unless the shutdown was clean.
 	 */
-	if (!no_healer_snapshot) {
+	if (!no_healer && !no_healer_snapshot) {
 		enum exit_reasons er =
 			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
 
