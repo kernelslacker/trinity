@@ -1086,7 +1086,6 @@ void strategy_plateau_response(void)
 	 * stays latched on plateau_active for as long as the plateau
 	 * persists. */
 	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL, __ATOMIC_RELAXED);
-	stats_log_write("PLATEAU RESPONSE: forcing STRATEGY_RANDOM until plateau clears\n");
 
 	/* Arm the per-plateau-window snapshot the rule evaluator diffs
 	 * against on every subsequent stats tick.  Called on the rising
