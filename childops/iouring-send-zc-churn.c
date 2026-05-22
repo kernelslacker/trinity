@@ -45,8 +45,8 @@
  *         a. SQE: IORING_OP_SEND_ZC referring buf_index = i % 8.  Sets
  *            IORING_RECVSEND_FIXED_BUF so the kernel resolves the buffer
  *            via the registered table (the rsrc_node ref path) rather
- *            than walking msg_iov.  msg.msg_iov picks 1 + rand() % 4
- *            iovs from the buffer pool.
+ *            than walking msg_iov.  msg.msg_iov picks 1..4 iovs from
+ *            the buffer pool.
  *         b. SQE: IORING_OP_SENDMSG_ZC pointing at a 1..4-iov msghdr
  *            assembled from the same buffer pool (the multi-iov variant
  *            also walks the rsrc_node table per iov).
@@ -121,6 +121,7 @@
 #include "child.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -595,8 +596,8 @@ static void iter_one(const struct timespec *t_outer)
 	 * bounds check on the iovec. */
 	{
 		struct io_uring_sqe sqe;
-		unsigned int idx = (unsigned int)rand() % ZC_BUF_COUNT;
-		size_t send_len = (size_t)(1 + (rand() % (int)ZC_BUF_BYTES));
+		unsigned int idx = rnd_modulo_u32(ZC_BUF_COUNT);
+		size_t send_len = (size_t)(1 + rnd_modulo_u32(ZC_BUF_BYTES));
 
 		fill_send_zc(&sqe, sock_fd, pages[idx], send_len, idx);
 		if (submit_one(&ctx, &sqe) == 1) {
@@ -613,15 +614,15 @@ static void iter_one(const struct timespec *t_outer)
 		struct io_uring_sqe sqe;
 		struct msghdr msg;
 		struct iovec local_iov[4];
-		unsigned int n_iov = 1 + ((unsigned int)rand() % 4U);
+		unsigned int n_iov = 1 + rnd_modulo_u32(4U);
 		unsigned int j;
-		unsigned int buf_index = (unsigned int)rand() % ZC_BUF_COUNT;
+		unsigned int buf_index = rnd_modulo_u32(ZC_BUF_COUNT);
 
 		if (n_iov > 4)
 			n_iov = 4;
 		for (j = 0; j < n_iov; j++) {
 			unsigned int slot = (buf_index + j) % ZC_BUF_COUNT;
-			size_t len = (size_t)(1 + (rand() % (int)ZC_BUF_BYTES));
+			size_t len = (size_t)(1 + rnd_modulo_u32(ZC_BUF_BYTES));
 
 			local_iov[j].iov_base = pages[slot];
 			local_iov[j].iov_len  = len;
