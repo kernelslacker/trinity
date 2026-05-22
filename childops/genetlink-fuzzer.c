@@ -47,6 +47,7 @@
 
 #include "child.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -333,9 +334,9 @@ static void send_fuzzed_msg(int sock, struct genl_family_entry *fam)
 	memset(buf, 0, NLMSG_HDRLEN + GENL_HDRLEN);
 
 	if (fam->op_count > 0 && !ONE_IN(8))
-		cmd = fam->ops[rand() % fam->op_count];
+		cmd = fam->ops[rnd_modulo_u32(fam->op_count)];
 	else
-		cmd = (uint8_t)(rand() & 0xff);
+		cmd = (uint8_t)(rnd_u32() & 0xff);
 
 	nlh->nlmsg_type = fam->id;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
@@ -351,12 +352,12 @@ static void send_fuzzed_msg(int sock, struct genl_family_entry *fam)
 
 	off = NLMSG_HDRLEN + GENL_HDRLEN;
 
-	num_attrs = rand() % 6;
+	num_attrs = rnd_modulo_u32(6);
 	while (num_attrs-- > 0 && off + NLA_HDRLEN + 64 <= sizeof(buf)) {
 		struct nlattr *nla = (struct nlattr *)(buf + off);
 		size_t payload_len = RAND_RANGE(0, 48);
 
-		nla->nla_type = (unsigned short)(rand() & NLA_TYPE_MASK);
+		nla->nla_type = (unsigned short)(rnd_u32() & NLA_TYPE_MASK);
 		if (ONE_IN(4))
 			nla->nla_type |= NLA_F_NESTED;
 		nla->nla_len = NLA_HDRLEN + payload_len;
@@ -421,7 +422,7 @@ bool genetlink_fuzzer(struct childdata *child)
 	/* Pick a non-priv family.  After a few attempts, give up rather
 	 * than spinning in a kernel that has marked everything priv-only. */
 	for (attempts = 0; attempts < 8; attempts++) {
-		idx = (int)(rand() % catalog_count);
+		idx = (int)rnd_modulo_u32(catalog_count);
 		if (!catalog[idx].needs_priv)
 			break;
 	}
