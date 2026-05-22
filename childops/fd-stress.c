@@ -56,6 +56,7 @@
 #include "fd-event.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -79,8 +80,8 @@ static bool pick_two_typed_fds(int *out_fd_a, int *out_fd_b,
 	unsigned int tries;
 
 	for (tries = 0; tries < 8; tries++) {
-		arg_a = typed_args[rand() % ARRAY_SIZE(typed_args)];
-		arg_b = typed_args[rand() % ARRAY_SIZE(typed_args)];
+		arg_a = typed_args[rnd_modulo_u32(ARRAY_SIZE(typed_args))];
+		arg_b = typed_args[rnd_modulo_u32(ARRAY_SIZE(typed_args))];
 		if (arg_a == arg_b)
 			continue;
 
@@ -240,7 +241,7 @@ static bool fd_stress_cloexec_toggle(struct childdata *child __unused__)
 
 bool fd_stress(struct childdata *child)
 {
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0:	return fd_stress_close_reopen(child);
 	case 1:	return fd_stress_dup2_replace(child);
 	case 2:	return fd_stress_type_confusion(child);
