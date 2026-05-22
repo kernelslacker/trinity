@@ -81,6 +81,7 @@
 #include "compat.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -205,18 +206,18 @@ static int open_src_fd(unsigned int idx)
 
 static unsigned int pick_len(void)
 {
-	switch (rand() % 5) {
-	case 0: return SPLICE_PROTO_MIN_LEN + (rand() % 16);
-	case 1: return 256U + (rand() % 769U);
+	switch (rnd_modulo_u32(5)) {
+	case 0: return SPLICE_PROTO_MIN_LEN + rnd_modulo_u32(16);
+	case 1: return 256U + rnd_modulo_u32(769U);
 	case 2: return SPLICE_PROTO_PAGE;
-	case 3: return SPLICE_PROTO_PAGE * 2U + (rand() % SPLICE_PROTO_PAGE);
+	case 3: return SPLICE_PROTO_PAGE * 2U + rnd_modulo_u32(SPLICE_PROTO_PAGE);
 	default: return 1U + (rand32() & 0x3fffU);
 	}
 }
 
 static unsigned int pick_flags(void)
 {
-	switch (rand() % 5) {
+	switch (rnd_modulo_u32(5)) {
 	case 0: return SPLICE_F_MOVE;
 	case 1: return SPLICE_F_MOVE | SPLICE_F_MORE;
 	case 2: return SPLICE_F_MOVE | SPLICE_F_GIFT;
@@ -234,7 +235,7 @@ static unsigned int pick_flags(void)
  */
 static void maybe_vmsplice_header(int pipe_w)
 {
-	unsigned int arm = rand() % 4;
+	unsigned int arm = rnd_modulo_u32(4);
 	struct iovec iov;
 	unsigned char buf8[8];
 	static unsigned char page_buf[SPLICE_PROTO_PAGE];
@@ -368,7 +369,7 @@ static int setup_packet_rx_ring(void)
 		return -1;
 	}
 
-	arm = rand() % 3;
+	arm = rnd_modulo_u32(3);
 	ver = (arm == 0) ? TPACKET_V1 : (arm == 1) ? TPACKET_V2 : TPACKET_V3;
 	(void) setsockopt(fd, SOL_PACKET, PACKET_VERSION, &ver, sizeof(ver));
 
@@ -771,7 +772,7 @@ bool splice_protocols(struct childdata *child __unused__)
 	if (iters > 12)
 		iters = 12;
 
-	start = (unsigned int) rand();
+	start = rnd_u32();
 	for (i = 0; i < iters; i++)
 		run_iter(start + i);
 
