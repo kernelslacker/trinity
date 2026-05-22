@@ -78,6 +78,7 @@
 #include "compat.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -255,7 +256,7 @@ static void rotate_send(int fd)
 	ssize_t n;
 
 	generate_rand_bytes(buf, sizeof(buf));
-	n = send(fd, buf, 1 + ((unsigned int)rand() % sizeof(buf)),
+	n = send(fd, buf, 1 + rnd_modulo_u32(sizeof(buf)),
 		 MSG_DONTWAIT | MSG_NOSIGNAL);
 	if (n > 0)
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_packets_sent,
@@ -320,7 +321,7 @@ bool tcp_ao_rotate(struct childdata *child)
 		goto out;
 	}
 
-	alg = ao_algs[(unsigned int)rand() % NR_AO_ALGS];
+	alg = ao_algs[rnd_modulo_u32(NR_AO_ALGS)];
 
 	/* Install the listener-side key first, peer = client's bound
 	 * address.  This is the call that hits the support gate: if
