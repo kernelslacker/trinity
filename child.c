@@ -32,6 +32,7 @@
 #include "pids.h"
 #include "pre_crash_ring.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "signals.h"
 #include "stats.h"
@@ -545,7 +546,7 @@ static void munge_process(void)
 	 * if they don't exist we skip silently.
 	 */
 	snprintf(cgpath, sizeof(cgpath), "/sys/fs/cgroup/trinity%d/cgroup.procs",
-		 rand() % 8);
+		 rnd_modulo_u32(8));
 	fd = open(cgpath, O_WRONLY);
 	if (fd >= 0) {
 		char pidbuf[16];
@@ -566,12 +567,12 @@ static void munge_process(void)
 		if (lim.rlim_cur == RLIM_INFINITY || lim.rlim_cur < 2)
 			continue;
 		/* Reduce to a random value in [50%, 100%) of current soft limit. */
-		lim.rlim_cur = lim.rlim_cur / 2 + rand() % (lim.rlim_cur / 2);
+		lim.rlim_cur = lim.rlim_cur / 2 + rnd_u64() % (lim.rlim_cur / 2);
 		(void) setrlimit(rlim_resources[i], &lim);
 	}
 
 	/* Random umask. */
-	umask((mode_t)(rand() & 0777));
+	umask((mode_t)(rnd_u32() & 0777));
 }
 
 /*
@@ -1681,12 +1682,12 @@ static enum child_op_type pick_op_type(void)
 			1UL, __ATOMIC_RELAXED);
 	}
 
-	r = rand() % 100;
+	r = rnd_modulo_u32(100);
 
 	if (r < threshold || enabled_altop_count == 0)
 		return CHILD_OP_SYSCALL;
 
-	return enabled_altops[rand() % enabled_altop_count];
+	return enabled_altops[rnd_modulo_u32(enabled_altop_count)];
 }
 
 /*
