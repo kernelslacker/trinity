@@ -78,6 +78,96 @@ static const char * const interesting_paths[] = {
 	"/sys/kernel/vmcoreinfo",
 };
 
+/*
+ * Deep-nested paths (5-8 components) hand-picked from procfs and sysfs.
+ * Their main purpose is to extend the static fallback pool with entries
+ * that drive link_path_walk through many per-component dentry lookups
+ * rather than bottoming out after two or three.
+ */
+static const char * const deep_static_paths[] = {
+	"/proc/sys/kernel/random/uuid",
+	"/proc/sys/kernel/random/boot_id",
+	"/proc/sys/net/ipv4/conf/all/forwarding",
+	"/proc/sys/net/ipv4/neigh/default/gc_thresh1",
+	"/proc/sys/vm/compaction_proactiveness",
+	"/sys/kernel/mm/transparent_hugepage/enabled",
+	"/sys/kernel/mm/transparent_hugepage/khugepaged/defrag",
+	"/sys/devices/system/cpu/cpu0/topology/core_id",
+	"/sys/devices/system/cpu/cpufreq/policy0/scaling_governor",
+	"/sys/fs/cgroup/cgroup.controllers",
+};
+
+/*
+ * A handful of paths built once at startup with random hex component
+ * names.  Anchored under /proc/self so the early walk hits a real dir
+ * before failing in the deeper synthetic components.  Allocated for the
+ * lifetime of the process; never freed.
+ */
+#define NUM_DEEP_RANDOM_PATHS 4
+static const char *deep_random_paths[NUM_DEEP_RANDOM_PATHS];
+static unsigned int num_deep_random_paths;
+
+static char *build_random_hex_path(void)
+{
+	char *p;
+	unsigned int depth, i;
+	int off;
+
+	p = zmalloc(MAX_PATH_LEN);
+
+	off = snprintf(p, MAX_PATH_LEN, "/proc/self");
+	if (off < 0 || off >= MAX_PATH_LEN) {
+		free(p);
+		return NULL;
+	}
+
+	depth = 5 + rnd_modulo_u32(3);	/* 5-7 trailing components */
+	for (i = 0; i < depth; i++) {
+		int n;
+
+		if (off >= MAX_PATH_LEN - 12)
+			break;
+		n = snprintf(p + off, MAX_PATH_LEN - off, "/%08x", rnd_u32());
+		if (n < 0 || n >= MAX_PATH_LEN - off)
+			break;
+		off += n;
+	}
+	return p;
+}
+
+static void init_deep_random_paths(void)
+{
+	unsigned int i;
+
+	if (num_deep_random_paths != 0)
+		return;
+
+	for (i = 0; i < NUM_DEEP_RANDOM_PATHS; i++) {
+		char *p = build_random_hex_path();
+
+		if (p == NULL)
+			continue;
+		deep_random_paths[num_deep_random_paths++] = p;
+	}
+}
+
+static const char *pick_static_pool_entry(void)
+{
+	unsigned int r, base, span;
+
+	base = ARRAY_SIZE(interesting_paths);
+	span = base + ARRAY_SIZE(deep_static_paths) + num_deep_random_paths;
+
+	r = rnd_modulo_u32(span);
+	if (r < ARRAY_SIZE(interesting_paths))
+		return interesting_paths[r];
+	r -= ARRAY_SIZE(interesting_paths);
+	if (r < ARRAY_SIZE(deep_static_paths))
+		return deep_static_paths[r];
+	r -= ARRAY_SIZE(deep_static_paths);
+	return deep_random_paths[r];
+}
+
 static int ignore_files(const char *path)
 {
 	unsigned int i;
@@ -371,6 +461,8 @@ void generate_filelist(void)
 
 	output(1, "Generating file descriptors\n");
 
+	init_deep_random_paths();
+
 	num_pools = 0;
 
 	if (nr_victim_paths > 0) {
@@ -454,7 +546,7 @@ const char * generate_pathname(void)
 	if (files_in_index > 0 && (int)rnd_modulo_u32(100) < WALKED_PATH_RATIO) {
 		pathname = get_filename();
 	} else {
-		pathname = interesting_paths[rnd_modulo_u32(ARRAY_SIZE(interesting_paths))];
+		pathname = pick_static_pool_entry();
 	}
 
 	if (pathname == NULL)
