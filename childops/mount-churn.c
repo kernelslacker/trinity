@@ -56,6 +56,7 @@
 #include "child.h"
 #include "pids.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"	/* ARRAY_SIZE */
@@ -148,10 +149,10 @@ bool mount_churn(struct childdata *child)
 	if (!ensure_private_ns())
 		return true;
 
-	cycles = 1 + ((unsigned int)rand() % MAX_CYCLES);
+	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
-		const char *fstype = fstypes[(unsigned int)rand() % ARRAY_SIZE(fstypes)];
+		const char *fstype = fstypes[rnd_modulo_u32(ARRAY_SIZE(fstypes))];
 		unsigned long flags = pick_flags();
 		unsigned long seq = ++mount_churn_seq;
 		char path[PATH_MAX + 64];
