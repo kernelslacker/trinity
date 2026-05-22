@@ -11,6 +11,7 @@
 #include "deferred-free.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "utils.h"
 
@@ -44,7 +45,7 @@ bool get_map_handle(struct map_handle *h)
 		static const enum objecttype map_pool_types[3] = {
 			OBJ_MMAP_ANON, OBJ_MMAP_FILE, OBJ_MMAP_TESTFILE
 		};
-		type = map_pool_types[rand() % 3];
+		type = map_pool_types[rnd_modulo_u32(3)];
 
 		obj = get_random_object(type, scope);
 		if (obj == NULL)
@@ -403,7 +404,7 @@ struct map * common_set_mmap_ptr_len(void)
 	if (map->size == 0) {
 		rec->a2 = 0;
 	} else {
-		rec->a2 = rand() % map->size;
+		rec->a2 = rnd_modulo_u32(map->size);
 		rec->a2 &= PAGE_MASK;
 	}
 
@@ -543,7 +544,7 @@ retry_mmap:
 		offset = 0;
 		obj->map.size = page_size;
 	} else
-		offset = (obj->map.size > 0 ? rand() % obj->map.size : 0) & PAGE_MASK;
+		offset = (obj->map.size > 0 ? rnd_modulo_u32(obj->map.size) : 0) & PAGE_MASK;
 
 	obj->map.prot = prot;
 	obj->map.fd = fd;
