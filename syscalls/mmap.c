@@ -18,6 +18,7 @@
 #include "objects.h"
 #include "random.h"
 #include "tables.h"
+#include "testfile.h"
 #include "trinity.h"
 
 // need this to actually get MAP_UNINITIALIZED defined
@@ -112,6 +113,54 @@ static void sanitise_mmap(struct syscallrecord *rec)
 			rec->a6 &= PAGE_MASK;
 		}
 	}
+
+	/*
+	 * The producer pool above is dominated by anonymous
+	 * MAP_PRIVATE PROT_READ|PROT_WRITE mappings: get_rand_mmap_flags()
+	 * only ORs in modifier bits half the time, and MAP_HUGETLB is one
+	 * bit of fourteen in the modifier array.  The vma->vm_flags
+	 * variations read by mlock / mlock2 / mprotect / mremap (VM_HUGETLB,
+	 * vma->vm_file != NULL, the !readable VM_LOCKED branches in
+	 * apply_vma_lock_flags()) therefore almost never land in the pool.
+	 * Bias three shapes in at low rates so consumers actually see them.
+	 *
+	 * Hugetlb and file-backed shared are picked exclusively because
+	 * their flag words contradict each other; the PROT_NONE override
+	 * below is independent and stacks with either shape.  When the
+	 * hugepage pool is empty the mmap returns -ENOMEM; that is the
+	 * accepted producer-side cost — the kernel still walks the
+	 * MAP_HUGETLB validation paths regardless of the eventual return.
+	 */
+	if (ONE_IN(8)) {
+		rec->a4 = MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB;
+		if (RAND_BOOL())
+			rec->a4 |= pick_random_huge_size_encoding();
+		rec->a5 = (unsigned long) -1;
+		rec->a6 = 0;
+	} else if (ONE_IN(8)) {
+		int fd = get_rand_testfile_fd();
+
+		if (fd < 0)
+			fd = get_random_fd();
+		if (fd >= 0) {
+			rec->a4 = MAP_SHARED;
+			rec->a5 = (unsigned long) fd;
+			if (current_entry_is_mmap2())
+				rec->a6 /= 4096;
+			else
+				rec->a6 &= PAGE_MASK;
+		}
+	}
+
+	/*
+	 * rec->a3 is filled from mmap_prots[] via ARG_OP and never lands at
+	 * zero, so the !readable VM_LOCKED branches in apply_vma_lock_flags()
+	 * (and the analogous reads in apply_mlockall_flags, mprotect_pkey,
+	 * mremap_to) are otherwise unreachable.  Force PROT_NONE
+	 * occasionally so the pool carries those vma->vm_flags states.
+	 */
+	if (ONE_IN(8))
+		rec->a3 = 0;
 
 	/*
 	 * MAP_FIXED unmaps any existing VMA covering [addr, addr + len)
