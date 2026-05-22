@@ -51,6 +51,7 @@
 #include "object-types.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -102,7 +103,7 @@ static void probe_sync_regs_caps(void)
 
 static void scribble_pre_run(struct kvm_run *kr)
 {
-	kr->request_interrupt_window = (__u8)(rand() & 1);
+	kr->request_interrupt_window = (__u8)(rnd_u32() & 1);
 
 	/* immediate_exit forces an instant return from KVM_RUN.  Bias
 	 * toward setting it 3-of-4 invocations so we exercise the early-
@@ -112,14 +113,14 @@ static void scribble_pre_run(struct kvm_run *kr)
 	 * state KVM_CREATE_VM leaves us with. */
 	kr->immediate_exit = (__u8)(ONE_IN(4) ? 0 : 1);
 
-	kr->cr8 = (__u64)(rand() & 0xff);
+	kr->cr8 = (__u64)(rnd_u32() & 0xff);
 
 	if (RAND_BOOL()) {
 		/* x86 LAPIC base lives at 0xFEE00000.  Walk +/- 0x1000
 		 * around it half the time so the kernel sees a
 		 * lapic-shaped value before exiting. */
 		kr->apic_base = 0xFEE00000ULL +
-				(uint64_t)(rand() & 0x1fff) - 0x1000ULL;
+				(uint64_t)(rnd_u32() & 0x1fff) - 0x1000ULL;
 	} else {
 		kr->apic_base = (uint64_t)rand64();
 	}
@@ -289,7 +290,7 @@ static void run_memslot_race(int vmfd, int vcpufd,
 		return;
 
 	args.vmfd = vmfd;
-	args.slot = (uint32_t)(rand() & 0x7);
+	args.slot = (uint32_t)(rnd_u32() & 0x7);
 	args.use_v2 = memslot_race_user_memory2_supported;
 
 	__atomic_add_fetch(&shm->stats.kvm_gpc_memslot_race_runs, 1,
@@ -348,7 +349,7 @@ bool kvm_run_churn(struct childdata *child __attribute__((unused)))
 		return true;
 	}
 
-	iters = 1 + (rand() % KVM_RUN_CHURN_INNER_MAX);
+	iters = 1 + rnd_modulo_u32(KVM_RUN_CHURN_INNER_MAX);
 	for (i = 0; i < iters; i++)
 		run_one(vcpufd, kr, kvm_run_size);
 
