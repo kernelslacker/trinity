@@ -42,6 +42,7 @@
 #include "effector-map.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -100,7 +101,7 @@ static void shuffle_close(int *fds, unsigned int n)
 	unsigned int i;
 
 	for (i = n; i > 1; i--) {
-		unsigned int j = (unsigned int)(rand() % (int)i);
+		unsigned int j = rnd_modulo_u32(i);
 		int tmp = fds[i - 1];
 
 		fds[i - 1] = fds[j];
@@ -141,7 +142,7 @@ bool pipe_thrash(struct childdata *child)
 	for (iter = 0; iter < iters; iter++) {
 		int pair[2] = { -1, -1 };
 		int rc;
-		unsigned int op = (unsigned int)rand() % 3;
+		unsigned int op = rnd_modulo_u32(3);
 
 		switch (op) {
 		case 0:
