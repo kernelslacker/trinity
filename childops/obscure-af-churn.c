@@ -84,6 +84,7 @@
 #include "net.h"
 #include "params.h"		/* no_domains[] */
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
@@ -135,7 +136,7 @@ static int pick_viable_family(struct socket_triplet *out)
 	unsigned int pf;
 
 	for (attempts = 0; attempts < VIABLE_PICK_ATTEMPTS; attempts++) {
-		pf = (unsigned int)(rand() % TRINITY_PF_MAX);
+		pf = rnd_modulo_u32(TRINITY_PF_MAX);
 		if (no_domains[pf])
 			continue;
 
@@ -145,7 +146,7 @@ static int pick_viable_family(struct socket_triplet *out)
 		if (proto->valid_triplets == NULL || proto->nr_triplets == 0)
 			continue;
 
-		*out = proto->valid_triplets[rand() % proto->nr_triplets];
+		*out = proto->valid_triplets[rnd_modulo_u32(proto->nr_triplets)];
 		return (int)pf;
 	}
 
@@ -305,7 +306,7 @@ static void run_ioctl_rotation(const struct socket_triplet *t)
 	if (fd < 0)
 		return;
 
-	req = generic_ioctls[rand() % ARRAY_SIZE(generic_ioctls)];
+	req = generic_ioctls[rnd_modulo_u32(ARRAY_SIZE(generic_ioctls))];
 	r = ioctl(fd, req, &val);
 	if (r < 0)
 		bump_rejected(AP_IOCTL_ROTATION);
