@@ -62,6 +62,7 @@
 #include "child.h"
 #include "childops-util.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -179,7 +180,7 @@ static void op_unshare_secondary(void)
 		CLONE_NEWCGROUP,
 #endif
 	};
-	int flag = flags[rand() % ARRAY_SIZE(flags)];
+	int flag = flags[rnd_modulo_u32(ARRAY_SIZE(flags))];
 
 	(void)unshare(flag);
 
@@ -297,7 +298,7 @@ static void op_prctl_capbset_drop(void)
 		CAP_SYS_ADMIN,
 		CAP_SYS_RESOURCE,
 	};
-	int cap = caps[rand() % ARRAY_SIZE(caps)];
+	int cap = caps[rnd_modulo_u32(ARRAY_SIZE(caps))];
 
 	/* 1-in-RAND_NEGATIVE_RATIO sub the curated valid cap for an edge
 	 * value — exercises the kernel's cap_valid()/cap > CAP_LAST_CAP
@@ -341,7 +342,7 @@ static const inner_op_fn inner_ops[] = {
 
 static void run_inner_fuzzer(void)
 {
-	inner_ops[rand() % ARRAY_SIZE(inner_ops)]();
+	inner_ops[rnd_modulo_u32(ARRAY_SIZE(inner_ops))]();
 }
 
 /*
