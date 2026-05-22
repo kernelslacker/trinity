@@ -53,6 +53,7 @@
 #include "child.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -144,15 +145,15 @@ bool xattr_thrash(struct childdata *child)
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
 	for (iter = 0; iter < iters; iter++) {
-		struct xattr_slot *s = &slots[(unsigned int)rand() % opened];
-		const char *name = xattr_names[(unsigned int)rand() % NR_XATTR_NAMES];
+		struct xattr_slot *s = &slots[rnd_modulo_u32(opened)];
+		const char *name = xattr_names[rnd_modulo_u32(NR_XATTR_NAMES)];
 		int rc;
 		/* 12 distinct dispatches so the path-based and fd-based
 		 * variants of every op all land regularly.  Set/get
 		 * dominate (8/12) because those are the operations that
 		 * actually populate and walk the per-inode xattr list —
 		 * remove/list are useful but consume what set produced.*/
-		unsigned int op = (unsigned int)rand() % 12;
+		unsigned int op = rnd_modulo_u32(12);
 
 		switch (op) {
 		case 0:
@@ -164,14 +165,14 @@ bool xattr_thrash(struct childdata *child)
 			 * realistic mixed workload instead of pounding a
 			 * single size class. */
 			unsigned char value[32];
-			size_t vlen = 8 + ((unsigned int)rand() % 25);
+			size_t vlen = 8 + rnd_modulo_u32(25);
 			unsigned int j;
-			int flags = (rand() % 8 == 0) ? XATTR_CREATE
-				  : (rand() % 8 == 0) ? XATTR_REPLACE
+			int flags = (rnd_modulo_u32(8) == 0) ? XATTR_CREATE
+				  : (rnd_modulo_u32(8) == 0) ? XATTR_REPLACE
 				  : 0;
 
 			for (j = 0; j < vlen; j++)
-				value[j] = (unsigned char)rand();
+				value[j] = (unsigned char)rnd_u32();
 			rc = fsetxattr(s->fd, name, value, vlen,
 				       (int)RAND_NEGATIVE_OR(flags));
 			if (rc == 0)
@@ -187,11 +188,11 @@ bool xattr_thrash(struct childdata *child)
 			 * vfs_path lookup leg in addition to the xattr
 			 * write itself. */
 			unsigned char value[32];
-			size_t vlen = 8 + ((unsigned int)rand() % 25);
+			size_t vlen = 8 + rnd_modulo_u32(25);
 			unsigned int j;
 
 			for (j = 0; j < vlen; j++)
-				value[j] = (unsigned char)rand();
+				value[j] = (unsigned char)rnd_u32();
 			rc = setxattr(s->path, name, value, vlen, 0);
 			if (rc == 0)
 				__atomic_add_fetch(&shm->stats.xattr_thrash_set,
