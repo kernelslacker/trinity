@@ -29,6 +29,7 @@
 #include "objects.h"
 #include "pathnames.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -109,7 +110,7 @@ static int init_pagecache_fds(void)
 	for (attempts = 0;
 	     attempts < files_in_index * 4 && opened < NR_PAGECACHE_FDS;
 	     attempts++) {
-		const char *filename = fileindex[rand() % files_in_index];
+		const char *filename = fileindex[rnd_modulo_u32(files_in_index)];
 		struct stat sb;
 		struct object *obj;
 		int fd;
@@ -189,8 +190,8 @@ int get_rand_pagecache_fd(void)
 	 * get_random_object_versioned (2c5d84e5d67b),
 	 * __destroy_object/destroy_objects (3058bd1a64ea), the for_each_obj
 	 * iterator (16682afe606b) and __prune_objects (6a389bbc7f6b). */
-	if (nr_setuid > 0 && (int)(rand() % 100) < SETUID_BIAS_PCT) {
-		unsigned int slot = setuid_indices[rand() % nr_setuid];
+	if (nr_setuid > 0 && (int)rnd_modulo_u32(100) < SETUID_BIAS_PCT) {
+		unsigned int slot = setuid_indices[rnd_modulo_u32(nr_setuid)];
 
 		head = get_objhead(OBJ_GLOBAL, OBJ_FD_PAGECACHE);
 		if (head != NULL && slot < head->num_entries &&
