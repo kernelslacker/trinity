@@ -12,6 +12,7 @@
 #include "memfd.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"
@@ -37,9 +38,9 @@ static void arm_memfd(int fd)
 	unsigned int seals = 0;
 	unsigned int i, count;
 
-	count = 1 + (rand() % 3);
+	count = 1 + rnd_modulo_u32(3);
 	for (i = 0; i < count; i++)
-		seals |= seal_flags[rand() % ARRAY_SIZE(seal_flags)];
+		seals |= seal_flags[rnd_modulo_u32(ARRAY_SIZE(seal_flags))];
 
 	fcntl(fd, F_ADD_SEALS, seals);
 }
