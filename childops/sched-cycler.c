@@ -37,6 +37,7 @@
 
 #include "child.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -63,7 +64,7 @@ bool sched_cycler(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.sched_cycler_runs, 1, __ATOMIC_RELAXED);
 
-	cls = classes[rand() % ARRAY_SIZE(classes)];
+	cls = classes[rnd_modulo_u32(ARRAY_SIZE(classes))];
 
 	memset(&attr, 0, sizeof(attr));
 	attr.size = sizeof(attr);
@@ -77,7 +78,7 @@ bool sched_cycler(struct childdata *child)
 		 * range validation against sched_get_priority_min/max for the
 		 * chosen class, which the curated 1..3 mix never reaches. */
 		attr.sched_priority =
-			(unsigned int)RAND_NEGATIVE_OR(1 + rand() % 3);
+			(unsigned int)RAND_NEGATIVE_OR(1 + rnd_modulo_u32(3));
 		break;
 	case SCHED_DEADLINE:
 		attr.sched_runtime  = 1 * NSEC_PER_MSEC;
@@ -98,7 +99,7 @@ bool sched_cycler(struct childdata *child)
 
 	/* Migrate to a random CPU while in the new class. */
 	CPU_ZERO(&set);
-	CPU_SET(rand() % num_online_cpus, &set);
+	CPU_SET(rnd_modulo_u32(num_online_cpus), &set);
 	(void)sched_setaffinity(0, sizeof(set), &set);
 
 	/* Short burst of random syscalls in the new scheduling context. */
