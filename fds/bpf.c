@@ -17,6 +17,7 @@
 #include "fd.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"
@@ -105,7 +106,7 @@ static int open_bpf_fd(void)
 	unsigned int idx;
 	int fd;
 
-	idx = rand() % ARRAY_SIZE(bpf_fds);
+	idx = rnd_modulo_u32(ARRAY_SIZE(bpf_fds));
 	fd = bpf_create_map(bpf_fds[idx].map_type, bpf_fds[idx].key_size,
 			    bpf_fds[idx].value_size, bpf_fds[idx].max_entries,
 			    bpf_fds[idx].flags);
@@ -326,7 +327,7 @@ static int open_bpf_prog_fd(void)
 	unsigned int idx;
 	int fd;
 
-	idx = rand() % ARRAY_SIZE(bpf_prog_templates);
+	idx = rnd_modulo_u32(ARRAY_SIZE(bpf_prog_templates));
 	fd = bpf_load_template_prog(bpf_prog_templates[idx].prog_type);
 	if (fd < 0)
 		return false;
