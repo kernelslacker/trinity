@@ -69,6 +69,7 @@
 #include "child.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -116,7 +117,7 @@ static uint32_t random_events(void)
 	unsigned int i;
 
 	for (i = 0; i < ARRAY_SIZE(event_bits); i++) {
-		if (rand() % 2 == 0)
+		if (rnd_modulo_u32(2) == 0)
 			ev |= event_bits[i];
 	}
 	if ((ev & (EPOLLIN | EPOLLOUT)) == 0)
@@ -146,12 +147,12 @@ static unsigned int pick_fd_idx(const bool registered[NR_EPFDS][NR_TARGET_FDS],
 	unsigned int tries;
 
 	for (tries = 0; tries < NR_TARGET_FDS; tries++) {
-		unsigned int idx = (unsigned int) rand() % NR_TARGET_FDS;
+		unsigned int idx = rnd_modulo_u32(NR_TARGET_FDS);
 
 		if (registered[epfd_idx][idx] == want_registered)
 			return idx;
 	}
-	return (unsigned int) rand() % NR_TARGET_FDS;
+	return rnd_modulo_u32(NR_TARGET_FDS);
 }
 
 bool epoll_volatility(struct childdata *child)
@@ -194,8 +195,8 @@ bool epoll_volatility(struct childdata *child)
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
 	for (iter = 0; iter < iters; iter++) {
-		unsigned int op = (unsigned int) rand() % 16;
-		unsigned int epfd_idx = (unsigned int) rand() % n_epfds;
+		unsigned int op = rnd_modulo_u32(16);
+		unsigned int epfd_idx = rnd_modulo_u32(n_epfds);
 		struct epoll_event ev;
 		unsigned int fd_idx;
 		int rc;
