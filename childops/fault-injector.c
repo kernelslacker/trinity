@@ -32,6 +32,7 @@
 
 #include "child.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "stats_ring.h"
 #include "trinity.h"
@@ -67,7 +68,7 @@ static long do_alloc_syscall(void)
 	long ret;
 	void *p;
 
-	switch (rand() % nr_targets) {
+	switch (rnd_modulo_u32(nr_targets)) {
 	case 0:
 		/* open: dentry + inode allocation */
 		ret = open("/dev/null", O_RDONLY);
@@ -149,7 +150,7 @@ bool fault_injector(struct childdata *child)
 		return true;
 
 	/* N=0 disables fail-nth; pick from [1, 32]. */
-	n = 1 + (unsigned int)(rand() % 32);
+	n = 1 + rnd_modulo_u32(32);
 
 	arm_fail_nth(child->fail_nth_fd, n);
 
