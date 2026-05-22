@@ -53,6 +53,26 @@
 #define KCOV_REMOTE_ENABLE _IOW('c', 102, struct kcov_remote_arg)
 
 /*
+ * Park the per-child kcov fds well above the low-numbered range the
+ * kernel typically hands out.  kcov_init_child runs in the child after
+ * std{in,out,err} have been dup2'd to /dev/null but before the main
+ * syscall loop starts, so the kernel returns lowest-available (3, 4,
+ * ...) which is squarely inside the working set of trinity's argument
+ * generators -- every live-fd-ring slot, every typed-fd reroll.
+ * F_DUPFD_CLOEXEC-relocating the kcov slots up out of that range drops
+ * the incidental hit rate sharply.  The protected-fd registry installed
+ * in the previous commit remains the actual safety net; the relocation
+ * is defence-in-depth.
+ *
+ * 900 keeps headroom under the default 1024 RLIMIT_NOFILE so the dup
+ * itself does not fail with EMFILE on a stock setup, while still
+ * landing far above where any fuzzer-opened fd typically lives.  If
+ * the dup fails for any reason the original low fd is kept and the
+ * registry catches subsequent attempts on it.
+ */
+#define KCOV_FD_HIGH_BASE 900U
+
+/*
  * Userspace copy of struct kcov_remote_arg from linux/kcov.h.
  * We define it here to avoid requiring kernel headers at build time.
  */
@@ -287,6 +307,41 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 			kc->cmp_capable = true;
 			track_shared_region((unsigned long)kc->cmp_trace_buf,
 				KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long));
+		}
+	}
+
+	/*
+	 * Both fds are now stable (remote-probe re-mmap dance done, cmp
+	 * setup done).  Relocate them to KCOV_FD_HIGH_BASE so the low
+	 * slots they were handed (3, 4, ...) are out of the way of the
+	 * fuzzer's pickers.  The mmap regions stay valid across the
+	 * close-of-old because they are anchored to the underlying open
+	 * file description, not the fd number: a subsequent KCOV_ENABLE
+	 * on the new fd reads/writes the same trace buffer.
+	 *
+	 * Done only on the success path -- the err_close_cmp goto below
+	 * skips this block, which just means kc->fd keeps its original
+	 * low number for that child and the registry covers it.
+	 * Per-fd failure (EMFILE etc.) is silently best-effort: keep the
+	 * original fd and let the registry catch any picker that targets
+	 * it.
+	 */
+	if (kc->fd >= 0 && (unsigned int) kc->fd < KCOV_FD_HIGH_BASE) {
+		int new_fd = fcntl(kc->fd, F_DUPFD_CLOEXEC,
+				   (int) KCOV_FD_HIGH_BASE);
+
+		if (new_fd >= 0) {
+			close(kc->fd);
+			kc->fd = new_fd;
+		}
+	}
+	if (kc->cmp_fd >= 0 && (unsigned int) kc->cmp_fd < KCOV_FD_HIGH_BASE) {
+		int new_fd = fcntl(kc->cmp_fd, F_DUPFD_CLOEXEC,
+				   (int) KCOV_FD_HIGH_BASE);
+
+		if (new_fd >= 0) {
+			close(kc->cmp_fd);
+			kc->cmp_fd = new_fd;
 		}
 	}
 
