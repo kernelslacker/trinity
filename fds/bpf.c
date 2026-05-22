@@ -673,4 +673,110 @@ static const struct fd_provider bpf_btf_fd_provider = {
 };
 
 REG_FD_PROV(bpf_btf_fd_provider);
+
+/*
+ * BPF token fd provider.
+ *
+ * Token fds come from BPF_TOKEN_CREATE against a bpffs mount that has
+ * the per-cmd delegate_{cmds,maps,progs,attachs} options set.  Passing
+ * a token fd in attr->{prog,map,btf,fd_by_id}_token_fd alongside
+ * BPF_F_TOKEN_FD in the corresponding flags field flips the kernel-side
+ * cap-gate from capable() to bpf_token_capable(), which consults the
+ * token's allowed_caps mask instead of the caller's credentials --
+ * an entirely separate accept/reject decision tree.
+ *
+ * No init seeding: BPF_TOKEN_CREATE wants a bpffs_fd opened against a
+ * mount provisioned with the right delegate options, and trinity does
+ * not stand one up.  The pool fills lazily as the syscall fuzz path
+ * lands a successful BPF_TOKEN_CREATE -- same lazy-fill pattern as the
+ * link / btf providers.  .open is left NULL for the same reason.
+ */
+static void bpf_token_destructor(struct object *obj)
+{
+	close(obj->bpftokenobj.fd);
+}
+
+/*
+ * Cross-process safe: reads obj->bpftokenobj.fd (now in shm via
+ * alloc_shared_obj) and the scope scalar.  No process-local pointers
+ * are dereferenced.
+ */
+static void bpf_token_dump(struct object *obj, enum obj_scope scope)
+{
+	output(2, "bpf token fd:%d scope:%d\n", obj->bpftokenobj.fd, scope);
+}
+
+static int init_bpf_token_fds(void)
+{
+	struct objhead *head;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_TOKEN);
+	head->destroy = &bpf_token_destructor;
+	head->dump = &bpf_token_dump;
+	/*
+	 * Opt this provider into the shared obj heap.  bpftokenobj is
+	 * {int fd;} with no pointer members -- mechanical conversion
+	 * matching the pidfd template.
+	 */
+
+	return true;
+}
+
+int get_rand_bpf_token_fd(void)
+{
+	struct objhead *local;
+
+	/* See get_rand_bpf_fd() for why we coin-flip OBJ_LOCAL first.
+	 * OBJ_LOCAL is per-child and unaffected by the lockless-reader
+	 * UAF window addressed by a7fdbb97830c, so only the OBJ_GLOBAL
+	 * fallback below gets the slot-version validation wireup. */
+	local = get_objhead(OBJ_LOCAL, OBJ_FD_BPF_TOKEN);
+	if (local != NULL && local->num_entries > 0 && RAND_BOOL()) {
+		struct object *obj = get_random_object(OBJ_FD_BPF_TOKEN,
+						       OBJ_LOCAL);
+		if (objpool_check(obj, OBJ_FD_BPF_TOKEN))
+			return obj->bpftokenobj.fd;
+	}
+
+	if (objects_empty(OBJ_FD_BPF_TOKEN) == true)
+		return -1;
+
+	/*
+	 * Versioned slot pick + objpool_check() before the
+	 * obj->bpftokenobj.fd deref, mirroring the wireup at 15b6257b8206
+	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
+	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
+	 * reader UAF window: between the lockless slot pick and the
+	 * consumer's read of the token fd routed into
+	 * attr->{prog,map,btf}_token_fd, the parent can destroy the obj
+	 * and a concurrent alloc_shared_obj() recycles the chunk.
+	 */
+	for (int i = 0; i < 1000; i++) {
+		struct object *obj;
+		int fd;
+
+		obj = get_random_object(OBJ_FD_BPF_TOKEN, OBJ_GLOBAL);
+		if (!objpool_check(obj, OBJ_FD_BPF_TOKEN))
+			continue;
+
+		fd = obj->bpftokenobj.fd;
+		if (fd < 0)
+			continue;
+
+		return fd;
+	}
+
+	return -1;
+}
+
+static const struct fd_provider bpf_token_fd_provider = {
+	.name = "bpf-token",
+	.objtype = OBJ_FD_BPF_TOKEN,
+	.enabled = true,
+	.init = &init_bpf_token_fds,
+	.get = &get_rand_bpf_token_fd,
+	.open = NULL,
+};
+
+REG_FD_PROV(bpf_token_fd_provider);
 #endif

@@ -119,6 +119,10 @@ struct bpfbtfobj {
 	int fd;
 };
 
+struct bpftokenobj {
+	int fd;
+};
+
 struct pidfdobj {
 	int fd;
 	pid_t pid;
@@ -275,6 +279,8 @@ struct object {
 		struct bpflinkobj bpflinkobj;
 
 		struct bpfbtfobj bpfbtfobj;
+
+		struct bpftokenobj bpftokenobj;
 
 		struct pidfdobj pidfdobj;
 

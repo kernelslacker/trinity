@@ -794,6 +794,28 @@ static void post_bpf(struct syscallrecord *rec)
 		}
 		break;
 
+	case BPF_TOKEN_CREATE:
+		/*
+		 * Live bpf token fd.  Publishing into the per-child token
+		 * pool lets subsequent BPF_MAP_CREATE / BPF_PROG_LOAD /
+		 * BPF_BTF_LOAD / BPF_*_GET_FD_BY_ID dispatches pull it via
+		 * get_rand_bpf_token_fd() and stash it in their respective
+		 * attr->*_token_fd slot alongside BPF_F_TOKEN_FD in the
+		 * matching flags field.  The kernel then resolves the token
+		 * and routes the per-op cap check through
+		 * bpf_token_capable(), exercising a separate accept/reject
+		 * decision tree from the default capable()-only path.
+		 * Without this hook the token fd opened here is immediately
+		 * closed by the tail switch below and the gate stays
+		 * unreachable.
+		 */
+		if (fd >= 0) {
+			struct object *obj = alloc_object();
+			obj->bpftokenobj.fd = fd;
+			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_TOKEN);
+		}
+		break;
+
 	case BPF_PROG_ATTACH:
 		/*
 		 * A successful legacy attach pins the program against the
@@ -829,12 +851,11 @@ static void post_bpf(struct syscallrecord *rec)
 
 	/* Close fds returned by commands not tracked above.  The
 	 * remaining commands that can return an fd are OBJ_GET,
-	 * RAW_TRACEPOINT_OPEN, ENABLE_STATS, ITER_CREATE, and
-	 * TOKEN_CREATE — none of them produce a kind of fd that fits
-	 * one of our pools, so they get closed immediately to avoid
-	 * leaking.  We can't blindly close on all commands because
-	 * non-fd commands return 0 for success, and closing fd 0 would
-	 * destroy stdin. */
+	 * RAW_TRACEPOINT_OPEN, ENABLE_STATS, and ITER_CREATE — none of
+	 * them produce a kind of fd that fits one of our pools, so they
+	 * get closed immediately to avoid leaking.  We can't blindly
+	 * close on all commands because non-fd commands return 0 for
+	 * success, and closing fd 0 would destroy stdin. */
 	if (fd >= 0) {
 		switch (cmd) {
 		case BPF_MAP_CREATE:
@@ -845,13 +866,13 @@ static void post_bpf(struct syscallrecord *rec)
 		case BPF_LINK_GET_FD_BY_ID:
 		case BPF_BTF_LOAD:
 		case BPF_BTF_GET_FD_BY_ID:
+		case BPF_TOKEN_CREATE:
 			/* Already tracked above. */
 			break;
 		case BPF_OBJ_GET:
 		case BPF_RAW_TRACEPOINT_OPEN:
 		case BPF_ENABLE_STATS:
 		case BPF_ITER_CREATE:
-		case BPF_TOKEN_CREATE:
 			close(fd);
 			break;
 		default:
