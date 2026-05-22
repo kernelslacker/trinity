@@ -112,6 +112,7 @@
 #include "child.h"
 #include "compat.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
@@ -508,7 +509,7 @@ static bool variant_socket(struct ring_ctx *ctx)
 	if (sock_fd < 0)
 		return false;
 
-	cmd_op = sock_cmd_ops[(unsigned int)rand() % ARRAY_SIZE(sock_cmd_ops)];
+	cmd_op = sock_cmd_ops[rnd_modulo_u32(ARRAY_SIZE(sock_cmd_ops))];
 
 	sqe_clear(&sqe);
 	sqe.opcode    = IORING_OP_URING_CMD;
@@ -679,7 +680,7 @@ bool iouring_cmd_passthrough(struct childdata *child __unused__)
 		return true;
 	}
 
-	switch (avail[(unsigned int)rand() % (unsigned int)navail]) {
+	switch (avail[rnd_modulo_u32((unsigned int)navail)]) {
 #ifndef TRINITY_COMPAT_BACKFILLED_SOCKET_URING_OP
 	case V_SOCKET:
 		ok = variant_socket(&ctx);
