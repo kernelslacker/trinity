@@ -32,6 +32,7 @@
 #include "child.h"
 #include "jitter.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "text-payloads.h"
 #include "trinity.h"
@@ -195,7 +196,7 @@ bool ipvs_sysctl_writer(struct childdata *child)
 		iters = IPVS_WRITE_CAP;
 
 	for (i = 0; i < iters; i++) {
-		const char *path = ipvs_sysctls[rand() % NR_IPVS_SYSCTLS];
+		const char *path = ipvs_sysctls[rnd_modulo_u32(NR_IPVS_SYSCTLS)];
 		char buf[128];
 		unsigned int len;
 		ssize_t n;
