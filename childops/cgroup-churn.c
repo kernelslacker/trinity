@@ -58,6 +58,7 @@
 
 #include "child.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -152,7 +153,7 @@ static void cgroup_psi_race(const char *cgroup_path)
 	struct psi_writer_arg args[PSI_RACE_FDS];
 	bool spawned[PSI_RACE_FDS] = { false };
 	unsigned int writes = 0;
-	unsigned int file_idx = (unsigned int)rand() % NR_PSI_FILES;
+	unsigned int file_idx = rnd_modulo_u32(NR_PSI_FILES);
 	unsigned int i, n_open = 0;
 
 	if (psi_unsupported)
@@ -222,7 +223,7 @@ bool cgroup_churn(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.cgroup_churn_runs, 1, __ATOMIC_RELAXED);
 
-	cycles = 1 + (rand() % MAX_CYCLES);
+	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
 		char path[64];
