@@ -57,6 +57,7 @@
 #include "child.h"
 #include "compat.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "tls.h"
 #include "trinity.h"
@@ -203,7 +204,7 @@ bool tls_rotate(struct childdata *child)
 	}
 	(void)setsockopt(srv, IPPROTO_TCP, TCP_ULP, "tls", 3);
 
-	c1 = (enum tls_cipher_choice)((unsigned int)rand() % NR_TLS_CHOICES);
+	c1 = (enum tls_cipher_choice)rnd_modulo_u32(NR_TLS_CHOICES);
 	v1 = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
 
 	/* Step 4a: client TX install. */
@@ -222,15 +223,14 @@ bool tls_rotate(struct childdata *child)
 
 	/* Step 5: drive tls_sw_sendmsg through the just-installed TX. */
 	generate_rand_bytes(payload, sizeof(payload));
-	(void)send(cli, payload, 1 + ((unsigned int)rand() % sizeof(payload)),
+	(void)send(cli, payload, 1 + rnd_modulo_u32(sizeof(payload)),
 		   MSG_DONTWAIT);
 
 	/* Step 6: REKEY — install TLS_TX again with a different cipher.
 	 * This is THE bug window (CVE-2024-26583 family).  Pick a cipher
 	 * that's not equal to c1 so cipher_type strictly differs. */
 	do {
-		c2 = (enum tls_cipher_choice)((unsigned int)rand() %
-					      NR_TLS_CHOICES);
+		c2 = (enum tls_cipher_choice)rnd_modulo_u32(NR_TLS_CHOICES);
 	} while (c2 == c1);
 	v2 = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
 
@@ -251,7 +251,7 @@ bool tls_rotate(struct childdata *child)
 	 * still drives the original key's send path; if it was accepted,
 	 * it drives the new key — either way we get coverage. */
 	generate_rand_bytes(payload, sizeof(payload));
-	(void)send(cli, payload, 1 + ((unsigned int)rand() % sizeof(payload)),
+	(void)send(cli, payload, 1 + rnd_modulo_u32(sizeof(payload)),
 		   MSG_DONTWAIT);
 
 	/* Occasionally toggle TLS_TX_ZEROCOPY_RO on the now-armed socket;
