@@ -77,6 +77,7 @@
 
 #include "child.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -563,8 +564,8 @@ bool iouring_net_multishot(struct childdata *child)
 	 * later unregister cycle wrapping the multishot lifecycle. */
 	if (ONE_IN(2)) {
 		memset(&napi_in, 0, sizeof(napi_in));
-		napi_in.busy_poll_to     = (__u32)(rand() % 200);
-		napi_in.prefer_busy_poll = (__u8)(rand() & 1);
+		napi_in.busy_poll_to     = (__u32)rnd_modulo_u32(200);
+		napi_in.prefer_busy_poll = (__u8)(rnd_u32() & 1);
 
 		r = (int)syscall(__NR_io_uring_register, ctx.fd,
 				 IORING_REGISTER_NAPI, &napi_in, 1);
@@ -614,8 +615,7 @@ bool iouring_net_multishot(struct childdata *child)
 		dst.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 		dst.sin_port = port;
 
-		npkts = MIN_PKTS + ((unsigned int)rand() %
-				    (MAX_PKTS - MIN_PKTS + 1));
+		npkts = MIN_PKTS + rnd_modulo_u32(MAX_PKTS - MIN_PKTS + 1);
 		for (i = 0; i < npkts; i++) {
 			ssize_t n = sendto(txfd, payload, sizeof(payload), 0,
 					   (struct sockaddr *)&dst, sizeof(dst));
