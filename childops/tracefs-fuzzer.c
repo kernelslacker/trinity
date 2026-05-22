@@ -48,6 +48,7 @@
 
 #include "child.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "text-payloads.h"
 #include "trinity.h"
@@ -306,14 +307,14 @@ static void do_kprobe_events(void)
 
 	snprintf(path, sizeof(path), "%s/kprobe_events", TRACEFS_ROOT);
 
-	probe_num = rand() % 64;
+	probe_num = rnd_modulo_u32(64);
 	sym = RAND_ARRAY(kprobe_targets);
 
-	switch (rand() % 5) {
+	switch (rnd_modulo_u32(5)) {
 	case 0:
 		/* kprobe create */
 		snprintf(spec, sizeof(spec), "p:trinity_k%u %s+%u",
-			 probe_num, sym, (rand() % 256) & ~3u);
+			 probe_num, sym, rnd_modulo_u32(256) & ~3u);
 		break;
 	case 1:
 		/* kretprobe create */
@@ -368,10 +369,10 @@ static void do_uprobe_events(void)
 
 	snprintf(path, sizeof(path), "%s/uprobe_events", TRACEFS_ROOT);
 
-	probe_num = rand() % 64;
-	offset = (unsigned long)(rand() % 0x100000) & ~0xful;
+	probe_num = rnd_modulo_u32(64);
+	offset = (unsigned long)rnd_modulo_u32(0x100000) & ~0xful;
 
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0:
 		/* uprobe create */
 		snprintf(spec, sizeof(spec),
@@ -435,7 +436,7 @@ static void do_ftrace_filter(void)
 	int fd;
 	ssize_t ret __unused__;
 
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0: {
 		/* Named glob */
 		const char *s = RAND_ARRAY(globs);
@@ -470,9 +471,9 @@ static void do_ftrace_filter(void)
 		 */
 		if (RAND_BOOL()) {
 			snprintf(spec, sizeof(spec), "%c%c%c*",
-				 'a' + (rand() % 26),
-				 'a' + (rand() % 26),
-				 'a' + (rand() % 26));
+				 'a' + rnd_modulo_u32(26),
+				 'a' + rnd_modulo_u32(26),
+				 'a' + rnd_modulo_u32(26));
 			write_str(path, spec);
 		} else {
 			write_text_payload(path);
@@ -495,7 +496,7 @@ static void do_event_enable(void)
 		return;
 
 	val = RAND_BOOL() ? "1" : "0";
-	write_str(event_enable_paths[rand() % nr_event_enables], val);
+	write_str(event_enable_paths[rnd_modulo_u32(nr_event_enables)], val);
 
 	__atomic_add_fetch(&shm->stats.tracefs_event_enable_writes,
 			   1, __ATOMIC_RELAXED);
@@ -533,7 +534,7 @@ static void do_current_tracer(void)
 
 	if (nr_discovered_tracers > 0 && !ONE_IN(8))
 		write_str(path,
-			  discovered_tracers[rand() % nr_discovered_tracers]);
+			  discovered_tracers[rnd_modulo_u32(nr_discovered_tracers)]);
 	else
 		write_str(path, RAND_ARRAY(tracer_names));
 
@@ -606,9 +607,9 @@ static const struct tracefs_op tracefs_ops[] = {
 /*
  * Runtime pick array built once per process from tracefs_ops[], filtered to
  * the entries whose required-subset mask is satisfied by the kernel under
- * test.  Each op is pushed weight-times so rand() % nr_picks gives weighted
- * uniform selection without a separate weight-walk on every dispatch.  Sized
- * to comfortably hold the sum of all weights (currently 11).
+ * test.  Each op is pushed weight-times so rnd_modulo_u32(nr_picks) gives
+ * weighted uniform selection without a separate weight-walk on every
+ * dispatch.  Sized to comfortably hold the sum of all weights (currently 11).
  */
 static const struct tracefs_op *pick_table[16];
 static unsigned int nr_picks;
@@ -674,6 +675,6 @@ bool tracefs_fuzzer(struct childdata *child)
 	if (!check_tracefs())
 		return true;
 
-	pick_table[rand() % nr_picks]->fn();
+	pick_table[rnd_modulo_u32(nr_picks)]->fn();
 	return true;
 }
