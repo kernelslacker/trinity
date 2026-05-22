@@ -53,6 +53,7 @@
 #include "child.h"
 #include "childops-util.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -82,7 +83,7 @@ enum exit_mode {
 
 static enum exit_mode pick_exit_mode(void)
 {
-	unsigned int r = rand() % 8;
+	unsigned int r = rnd_modulo_u32(8);
 
 	/* ~12.5% signal-kill, ~25% non-zero exit code, rest clean exits.
 	 * Keeps WIFEXITED dominant (the common kernel path) while still
@@ -109,7 +110,7 @@ static void __attribute__((noreturn)) do_exit_as(enum exit_mode mode)
 		_exit(0);	/* unreachable */
 	}
 	case EXIT_NONZERO:
-		_exit(1 + (rand() % 254));
+		_exit(1 + rnd_modulo_u32(254));
 	case EXIT_CLEAN:
 	default:
 		_exit(0);
@@ -164,7 +165,7 @@ static unsigned int run_round(void)
 	unsigned int reaped = 0;
 	unsigned int i;
 
-	nforks = 1 + (rand() % MAX_FORKS);
+	nforks = 1 + rnd_modulo_u32(MAX_FORKS);
 
 	for (i = 0; i < nforks; i++) {
 		pid_t pid = fork();
@@ -224,7 +225,7 @@ bool fork_storm(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.fork_storm_runs, 1, __ATOMIC_RELAXED);
 
-	rounds = 1 + (rand() % MAX_ROUNDS);
+	rounds = 1 + rnd_modulo_u32(MAX_ROUNDS);
 	for (i = 0; i < rounds; i++) {
 		if (run_round() == 0) {
 			/* Whole round produced zero reaped grandchildren —
