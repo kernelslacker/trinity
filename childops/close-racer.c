@@ -69,6 +69,7 @@
 
 #include "child.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -232,10 +233,10 @@ bool close_racer(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.close_racer_runs, 1, __ATOMIC_RELAXED);
 
-	cycles = 1 + ((unsigned int)rand() % MAX_CYCLES);
+	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
-		enum cycle_mode mode = (enum cycle_mode)(rand() % CYCLE_MODE_NR);
+		enum cycle_mode mode = (enum cycle_mode)rnd_modulo_u32(CYCLE_MODE_NR);
 		struct racer_arg ra[MULTI_PAIR_MAX];
 		pthread_t tid[MULTI_PAIR_MAX];
 		int sv[MULTI_PAIR_MAX][2];
@@ -245,7 +246,7 @@ bool close_racer(struct childdata *child)
 		unsigned int n_spawned = 0;
 
 		if (mode == CYCLE_MULTI_PAIR)
-			k = 2 + ((unsigned int)rand() % 2);
+			k = 2 + rnd_modulo_u32(2);
 
 		/* Open all K pairs and spawn racers BEFORE any close, so
 		 * multi-pair mode actually has multiple concurrent fdget
@@ -268,7 +269,7 @@ bool close_racer(struct childdata *child)
 			 * it; the other RACER_OPs are bounded-timeout (or
 			 * non-blocking) and join cleanly under SKIP_CLOSE. */
 			do {
-				ra[j].op = (enum racer_op)(rand() % RACER_OP_NR);
+				ra[j].op = (enum racer_op)rnd_modulo_u32(RACER_OP_NR);
 			} while (mode == CYCLE_SKIP_CLOSE && ra[j].op == RACER_RECV);
 			if (pthread_create(&tid[j], NULL,
 					   racer_thread, &ra[j]) != 0) {
@@ -296,8 +297,8 @@ bool close_racer(struct childdata *child)
 
 		/* Variable race window — 0..100us picks a random sub-window
 		 * of the racer's syscall to land the close in. */
-		if ((rand() & 0xff) != 0)
-			usleep((useconds_t)(1 + rand() % 100));
+		if ((rnd_u32() & 0xff) != 0)
+			usleep((useconds_t)(1 + rnd_modulo_u32(100)));
 
 		switch (mode) {
 		case CYCLE_PEER_FIRST:
@@ -333,7 +334,7 @@ bool close_racer(struct childdata *child)
 			 * fdtable churn rather than the rigid pair-at-a-time
 			 * close ordering. */
 			for (j = n; j > 1; j--) {
-				unsigned int r = (unsigned int)rand() % j;
+				unsigned int r = rnd_modulo_u32(j);
 				int tmp = order[j - 1];
 
 				order[j - 1] = order[r];
@@ -357,7 +358,7 @@ bool close_racer(struct childdata *child)
 				 * returned by now, so this widens the window
 				 * where final fput / release may still be
 				 * settling before pthread_join syncs. */
-				usleep((useconds_t)(1 + rand() % 50));
+				usleep((useconds_t)(1 + rnd_modulo_u32(50)));
 			}
 			break;
 		}
