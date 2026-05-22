@@ -10,6 +10,7 @@
 #include "fd.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
@@ -133,7 +134,7 @@ static int open_fs_ctx_fd(void)
 	unsigned int flags;
 	int fd;
 
-	fstype = fsctx_fstypes[rand() % ARRAY_SIZE(fsctx_fstypes)];
+	fstype = fsctx_fstypes[rnd_modulo_u32(ARRAY_SIZE(fsctx_fstypes))];
 	flags = RAND_BOOL() ? FSOPEN_CLOEXEC : 0;
 
 	fd = do_fsopen(fstype, flags);
