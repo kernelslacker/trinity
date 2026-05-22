@@ -74,6 +74,7 @@
 #include "jitter.h"
 #include "maps.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -292,7 +293,7 @@ static unsigned int pick_node(void)
 
 	if (cap > BITS_PER_LONG - 1)
 		cap = BITS_PER_LONG - 1;
-	return (unsigned int) rand() % (cap + 1);
+	return rnd_modulo_u32(cap + 1);
 }
 
 /*
@@ -312,7 +313,7 @@ static int pick_mpol_mode(void)
 	if (have_weighted_interleave)
 		candidates[n++] = MPOL_WEIGHTED_INTERLEAVE;
 
-	return candidates[(unsigned int) rand() % n];
+	return candidates[rnd_modulo_u32(n)];
 }
 
 /*
@@ -377,9 +378,9 @@ static unsigned int do_one_op(enum migration_op op, void *region,
 	case OP_MBIND:
 		build_single_node_mask(mask, pick_node());
 		flags = MPOL_MF_MOVE;
-		if ((rand() % 4) == 0)
+		if (rnd_modulo_u32(4) == 0)
 			flags |= MPOL_MF_MOVE_ALL;
-		if ((rand() % 8) == 0)
+		if (rnd_modulo_u32(8) == 0)
 			flags |= MPOL_MF_STRICT;
 		/* 1-in-RAND_NEGATIVE_RATIO sub the curated MPOL_* mode for an
 		 * edge value — exercises sys_mbind's mode >= MPOL_MAX / mode
@@ -471,7 +472,7 @@ bool numa_migration_churn(struct childdata *child)
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
-	op_idx = (enum migration_op) ((unsigned int) rand() % NR_MIGRATION_OPS);
+	op_idx = (enum migration_op) rnd_modulo_u32(NR_MIGRATION_OPS);
 
 	for (iter = 0; iter < iters; iter++) {
 		calls += do_one_op(op_idx, region, region_len, &failed);
