@@ -10,6 +10,7 @@
 #include "fd.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
@@ -46,22 +47,22 @@ static void arm_timerfd(int fd)
 
 	memset(&its, 0, sizeof(its));
 
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0:
 		/* One-shot, fires soon */
 		its.it_value.tv_sec = 0;
-		its.it_value.tv_nsec = 1 + (rand() % 999999999);
+		its.it_value.tv_nsec = 1 + rnd_modulo_u32(999999999);
 		break;
 	case 1:
 		/* Repeating, short interval */
 		its.it_value.tv_sec = 0;
 		its.it_value.tv_nsec = 1000;
 		its.it_interval.tv_sec = 0;
-		its.it_interval.tv_nsec = 1000 + (rand() % 999999);
+		its.it_interval.tv_nsec = 1000 + rnd_modulo_u32(999999);
 		break;
 	case 2:
 		/* One-shot, fires in 1-5 seconds */
-		its.it_value.tv_sec = 1 + (rand() % 5);
+		its.it_value.tv_sec = 1 + rnd_modulo_u32(5);
 		break;
 	case 3:
 		/* Repeating, 1 second interval */
@@ -177,7 +178,7 @@ static int open_timerfd_fd(void)
 	struct object *obj;
 	int fd, clockid = CLOCK_REALTIME, flags;
 
-	switch (rand() % 5) {
+	switch (rnd_modulo_u32(5)) {
 	case 0: clockid = CLOCK_REALTIME; break;
 	case 1: clockid = CLOCK_MONOTONIC; break;
 	case 2: clockid = CLOCK_BOOTTIME; break;
