@@ -41,6 +41,7 @@
 #include "child.h"
 #include "pids.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -100,16 +101,16 @@ static int pick_signal_in(enum catalog_mode mode)
 	 * rt_sigqueueinfo / dequeue paths are meaningfully different
 	 * from the legacy signal queue. */
 	if (mode == CATALOG_RT_ONLY ||
-	    (mode == CATALOG_ANY && rand() % 4 == 0)) {
+	    (mode == CATALOG_ANY && rnd_modulo_u32(4) == 0)) {
 		int span = SIGRTMAX - SIGRTMIN + 1;
 
 		if (span <= 0)
 			return SIGUSR1;
-		return SIGRTMIN + (rand() % span);
+		return SIGRTMIN + rnd_modulo_u32(span);
 	}
 	if (ONE_IN(SIGTERM_ONE_IN))
 		return SIGTERM;
-	return safe_signals[rand() % ARRAY_SIZE(safe_signals)];
+	return safe_signals[rnd_modulo_u32(ARRAY_SIZE(safe_signals))];
 }
 
 static void emit_signal(pid_t pid, int sig, bool use_kill)
@@ -138,7 +139,7 @@ static void emit_signal(pid_t pid, int sig, bool use_kill)
  */
 static void reorder_targets(pid_t *t, unsigned int n)
 {
-	unsigned int pick = rand() % 3;
+	unsigned int pick = rnd_modulo_u32(3);
 	unsigned int i;
 
 	if (pick == 1) {
@@ -150,7 +151,7 @@ static void reorder_targets(pid_t *t, unsigned int n)
 		}
 	} else if (pick == 2) {
 		for (i = n; i > 1; i--) {
-			unsigned int j = (unsigned int)rand() % i;
+			unsigned int j = rnd_modulo_u32(i);
 			pid_t tmp = t[i - 1];
 
 			t[i - 1] = t[j];
@@ -179,7 +180,7 @@ bool signal_storm(struct childdata *child)
 	 * preferentially hammered every invocation.
 	 */
 	if (max_children > 0) {
-		unsigned int start = rand() % max_children;
+		unsigned int start = rnd_modulo_u32(max_children);
 
 		for (i = 0; i < max_children && ntargets < MAX_TARGETS; i++) {
 			unsigned int slot = (start + i) % max_children;
@@ -201,8 +202,8 @@ bool signal_storm(struct childdata *child)
 		return true;
 	}
 
-	iters = 1 + (rand() % MAX_ITERATIONS);
-	order = (enum storm_order)((unsigned int)rand() % NR_STORM_ORDERS);
+	iters = 1 + rnd_modulo_u32(MAX_ITERATIONS);
+	order = (enum storm_order)rnd_modulo_u32(NR_STORM_ORDERS);
 	reorder_targets(targets, ntargets);
 
 	if (order == ORDER_CATALOG_RESTRICTED)
@@ -217,7 +218,7 @@ bool signal_storm(struct childdata *child)
 		i = 0;
 		while (i < iters) {
 			pid_t pid = targets[t % ntargets];
-			unsigned int burst = 2 + (rand() % 7); /* 2..8 */
+			unsigned int burst = 2 + rnd_modulo_u32(7); /* 2..8 */
 			unsigned int k;
 
 			for (k = 0; k < burst && i < iters; k++, i++) {
@@ -235,8 +236,8 @@ bool signal_storm(struct childdata *child)
 		i = 0;
 		while (i < iters) {
 			pid_t pid = targets[t % ntargets];
-			unsigned int kburst = 1 + (rand() % 4); /* 1..4 */
-			unsigned int qburst = 1 + (rand() % 4);
+			unsigned int kburst = 1 + rnd_modulo_u32(4); /* 1..4 */
+			unsigned int qburst = 1 + rnd_modulo_u32(4);
 			unsigned int k;
 
 			for (k = 0; k < kburst && i < iters; k++, i++)
@@ -253,7 +254,7 @@ bool signal_storm(struct childdata *child)
 	case ORDER_CATALOG_RESTRICTED:
 	default:
 		for (i = 0; i < iters; i++) {
-			pid_t pid = targets[rand() % ntargets];
+			pid_t pid = targets[rnd_modulo_u32(ntargets)];
 			int sig = pick_signal_in(catalog);
 
 			emit_signal(pid, sig, RAND_BOOL());
