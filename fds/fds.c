@@ -15,6 +15,7 @@
 #include "params.h"
 #include "pids.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -167,7 +168,7 @@ int get_new_random_fd(void)
 		return -1;
 
 retry:
-	provider = active_providers[rand() % num_active_providers];
+	provider = active_providers[rnd_modulo_u32(num_active_providers)];
 	fd = provider->get();
 	if (fd >= 0 && fd <= 2) {
 		if (++retries < 10)
@@ -371,7 +372,7 @@ int get_child_live_fd(struct childdata *child)
 	unsigned int i, retries;
 
 	for (retries = 0; retries < CHILD_FD_RING_SIZE; retries++) {
-		i = rand() % CHILD_FD_RING_SIZE;
+		i = rnd_modulo_u32(CHILD_FD_RING_SIZE);
 		int fd = ring->fds[i];
 
 		if (fd <= 2)
