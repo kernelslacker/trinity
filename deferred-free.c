@@ -285,6 +285,119 @@ static bool alloc_track_hash_contains(void *ptr)
 	return false;
 }
 
+/*
+ * In-flight pointer set: mirrors "currently admitted to the deferred
+ * ring" membership.  Separate from alloc_track_hash[] (which tracks
+ * the broader "deferred-free-eligible alloc side-set" populated by
+ * zmalloc_tracked() and drained by alloc_track_consume), so the two
+ * lifecycles don't conflict.
+ *
+ * Populated at the tail of deferred_free_enqueue after the ring slot
+ * write succeeds; cleared at the tail of free_ring_entry on the
+ * successful free() path.  Read by the in-flight-miss gate in
+ * free_ring_entry to reject ring slots whose pointer was scribbled by
+ * a sibling fuzzed value-result syscall between admission and TTL
+ * expiry -- the scribbled value was never admitted, so the lookup
+ * misses and the slot is dropped instead of being fed to free().
+ *
+ * Storage shape mirrors alloc_track_hash[] (1024 slots, Fibonacci
+ * index, open-addressed with shift-back deletion).  Sized for the
+ * 64-slot ring plus headroom for stomp orphans accumulated between
+ * GC sweeps; an idle slot costs 8 bytes of BSS.
+ *
+ * Storage lives in BSS (zero-init, COW-shared at fork, written
+ * single-threaded by the owning child) -- NOT mprotect-armored
+ * against an in-ring stomp targeting the set's own pages.  A stomp
+ * that landed on inflight_hash[] could flip a membership bit and
+ * either let a bad free through (set says "present" when ptr was
+ * never admitted) or reject a clean free (set says "absent" when ptr
+ * is live).  The residual gap motivates a planned follow-up that
+ * moves the membership store into an mprotect-bracketed mmap'd
+ * region, the same shape ring[] already uses.
+ */
+#define INFLIGHT_HASH_SHIFT	10
+#define INFLIGHT_HASH_SIZE	(1U << INFLIGHT_HASH_SHIFT)
+#define INFLIGHT_HASH_MASK	(INFLIGHT_HASH_SIZE - 1U)
+
+static void *inflight_hash[INFLIGHT_HASH_SIZE];
+
+static inline unsigned int inflight_hash_index(void *ptr)
+{
+	uint64_t key = (uint64_t)(uintptr_t)ptr >> 4;
+
+	return (unsigned int)((key * ALLOC_TRACK_FIB_MUL) >>
+			      (64 - INFLIGHT_HASH_SHIFT));
+}
+
+static void inflight_hash_insert(void *ptr)
+{
+	unsigned int idx = inflight_hash_index(ptr);
+	unsigned int probes;
+
+	for (probes = 0; probes < INFLIGHT_HASH_SIZE; probes++) {
+		if (inflight_hash[idx] == NULL) {
+			inflight_hash[idx] = ptr;
+			return;
+		}
+		if (inflight_hash[idx] == ptr)
+			return;
+		idx = (idx + 1) & INFLIGHT_HASH_MASK;
+	}
+}
+
+static void inflight_hash_remove(void *ptr)
+{
+	unsigned int idx = inflight_hash_index(ptr);
+	unsigned int hole;
+	unsigned int probes;
+
+	for (probes = 0; probes < INFLIGHT_HASH_SIZE; probes++) {
+		if (inflight_hash[idx] == NULL)
+			return;
+		if (inflight_hash[idx] == ptr)
+			break;
+		idx = (idx + 1) & INFLIGHT_HASH_MASK;
+	}
+	if (inflight_hash[idx] != ptr)
+		return;
+
+	hole = idx;
+	for (probes = 0; probes < INFLIGHT_HASH_SIZE; probes++) {
+		unsigned int natural;
+		unsigned int dist_to_hole;
+		unsigned int dist_to_natural;
+
+		idx = (idx + 1) & INFLIGHT_HASH_MASK;
+		if (inflight_hash[idx] == NULL) {
+			inflight_hash[hole] = NULL;
+			return;
+		}
+		natural = inflight_hash_index(inflight_hash[idx]);
+		dist_to_hole = (idx - hole) & INFLIGHT_HASH_MASK;
+		dist_to_natural = (idx - natural) & INFLIGHT_HASH_MASK;
+		if (dist_to_natural >= dist_to_hole) {
+			inflight_hash[hole] = inflight_hash[idx];
+			hole = idx;
+		}
+	}
+	inflight_hash[hole] = NULL;
+}
+
+static bool inflight_hash_contains(void *ptr)
+{
+	unsigned int idx = inflight_hash_index(ptr);
+	unsigned int probes;
+
+	for (probes = 0; probes < INFLIGHT_HASH_SIZE; probes++) {
+		if (inflight_hash[idx] == NULL)
+			return false;
+		if (inflight_hash[idx] == ptr)
+			return true;
+		idx = (idx + 1) & INFLIGHT_HASH_MASK;
+	}
+	return false;
+}
+
 void deferred_alloc_track(void *ptr)
 {
 	unsigned int slot;
@@ -658,17 +771,27 @@ void deferred_free_enqueue(void *ptr)
 			 * value-result syscall can scribble ring[oldest].ptr
 			 * between when the slot was last validated and when
 			 * the full-ring eviction here decides to free it.
-			 * Re-run the surviving stateless guards before
-			 * free()ing so a wild pointer becomes a telemetry
-			 * bump instead of a crash.  alloc_track_consume()
-			 * already fired at enqueue and would always miss
-			 * here -- skipped, not re-run.  Counter only (no
-			 * per-rejection log): the eviction case is rarer
-			 * than the enqueue rejection paths, whose 1-in-1000
-			 * caller-PC logs already prove the stomp pattern.
+			 * Re-run the surviving stateless guards plus the in-
+			 * flight set membership check before free()ing so a
+			 * wild pointer becomes a telemetry bump instead of a
+			 * crash.  alloc_track_consume() already fired at
+			 * enqueue and would always miss here -- skipped, not
+			 * re-run.  Counter only (no per-rejection log): the
+			 * eviction case is rarer than the enqueue rejection
+			 * paths, whose 1-in-1000 caller-PC logs already prove
+			 * the stomp pattern.
+			 *
+			 * The inflight_hash_contains() check is the strongest
+			 * signal here: if evict_ptr was admitted by this child,
+			 * it is in the set; if a stomp swapped the slot to some
+			 * other value, the set does not know that value and the
+			 * lookup misses.  Heap/shared-region guards remain as
+			 * belt-and-suspenders for the case where the in-flight
+			 * set itself is scribbled (BSS, no mprotect armor yet).
 			 */
 			if (!is_in_glibc_heap(evict_ptr) ||
-			    range_overlaps_shared((unsigned long)evict_ptr, 1))
+			    range_overlaps_shared((unsigned long)evict_ptr, 1) ||
+			    !inflight_hash_contains(evict_ptr))
 				corrupt = true;
 			if (corrupt) {
 				struct childdata *c = this_child();
@@ -681,6 +804,7 @@ void deferred_free_enqueue(void *ptr)
 					parent_stats.ring_eviction_corrupt++;
 			} else {
 				free(evict_ptr);
+				inflight_hash_remove(evict_ptr);
 			}
 			ring[oldest].ptr = NULL;
 			occupied_mask &= ~(1ULL << oldest);
@@ -698,6 +822,14 @@ void deferred_free_enqueue(void *ptr)
 	ring_count++;
 
 	ring_lock();
+
+	/*
+	 * Record this admission in the in-flight set so the drain-time
+	 * gate can tell an unscrobbed slot from a scribbled one.  Outside
+	 * the ring_unlock bracket because the set is BSS-resident -- no
+	 * mprotect cost on this write.
+	 */
+	inflight_hash_insert(ptr);
 }
 
 void deferred_freeptr(unsigned long *p)
@@ -735,6 +867,17 @@ void deferred_freeptr(unsigned long *p)
  * and alignment; every stomp that landed on something heap-shaped
  * but not actually malloc-returned was being fed straight to free().
  *
+ * In-flight set membership is the fourth (and definitive) gate.  A
+ * stomp value whose shape passes heap-bounds and avoids the shared
+ * regions can still mismatch the originally admitted pointer -- the
+ * inflight_hash records what enqueue admitted, so a scribble flips
+ * the lookup from hit to miss whether the new value looks plausible
+ * or not.  Ordered last so the stateless gates can attach a more
+ * specific reason string when they happen to fire; in-flight-miss
+ * fires when nothing else matches but the value isn't one we ever
+ * admitted, which is the "stomped to a coincidentally heap-shaped
+ * value" case the earlier 3 gates by design cannot catch.
+ *
  * alloc_track_consume already fired at enqueue and would always miss
  * here -- skipped, not re-run.  The remaining gates are stateless and
  * cheap enough to re-evaluate per drain.
@@ -742,6 +885,9 @@ void deferred_freeptr(unsigned long *p)
  * Bumps STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR (or its parent
  * fallback) on any rejection, matching the existing pattern; the
  * specific gate that fired shows up in the outputerr log line.
+ *
+ * On the clean-free path the entry is removed from inflight_hash so
+ * the GC sweep does not later mistake it for an orphan.
  */
 static void free_ring_entry(void *ptr, unsigned int slot)
 {
@@ -754,6 +900,8 @@ static void free_ring_entry(void *ptr, unsigned int slot)
 		reason = "non-heap";
 	else if (range_overlaps_shared((unsigned long)ptr, 1))
 		reason = "shared-region";
+	else if (!inflight_hash_contains(ptr))
+		reason = "in-flight-miss";
 
 	if (reason != NULL) {
 		c = this_child();
@@ -769,11 +917,78 @@ static void free_ring_entry(void *ptr, unsigned int slot)
 	}
 
 	free(ptr);
+	inflight_hash_remove(ptr);
 }
+
+/*
+ * Periodic garbage collection of orphaned in-flight entries.
+ *
+ * In-ring stomps can swap a ring slot's ptr to some other value before
+ * the drain fires.  When the drain reaches that slot, free_ring_entry's
+ * in-flight-miss gate sees the stomped value (not the originally
+ * admitted ptr), rejects it, and leaves the original ptr's entry in
+ * inflight_hash[] -- we have no way to recover the original value to
+ * call inflight_hash_remove on it.  The eviction path leaves the same
+ * residue on a stomp.  Over a long run those orphans accumulate; left
+ * unbounded they would saturate the 1024-slot set and degrade probe
+ * length.  Two stomps per orphan are required (one to displace, one
+ * never restored), so growth is slow -- prior runs observed ~1 stomp/h
+ * -- but the sweep keeps the set bounded regardless.
+ *
+ * Two-pass to avoid iterating across the shift-back rearrangement that
+ * inflight_hash_remove() performs: pass 1 collects ptrs whose presence
+ * in the set does not match a slot in ring[]; pass 2 removes them.  The
+ * stack-local orphans[] array is bounded by INFLIGHT_HASH_SIZE so the
+ * collect pass cannot overflow.
+ *
+ * Caller must hold ring_unlock() because we read ring[i].ptr.  Cost is
+ * O(N_inflight * DEFERRED_RING_SIZE) plus the removal walks -- ~65K
+ * compares worst case, well under a millisecond on contemporary CPUs.
+ */
+static void inflight_gc_sweep(void)
+{
+	void *orphans[INFLIGHT_HASH_SIZE];
+	unsigned int n_orphans = 0;
+	unsigned int idx, i;
+
+	for (idx = 0; idx < INFLIGHT_HASH_SIZE; idx++) {
+		void *ptr = inflight_hash[idx];
+		bool in_ring = false;
+
+		if (ptr == NULL)
+			continue;
+
+		for (i = 0; i < DEFERRED_RING_SIZE; i++) {
+			if (ring[i].ptr == ptr) {
+				in_ring = true;
+				break;
+			}
+		}
+		if (!in_ring)
+			orphans[n_orphans++] = ptr;
+	}
+
+	for (i = 0; i < n_orphans; i++)
+		inflight_hash_remove(orphans[i]);
+
+	if (n_orphans > 0)
+		outputerr("deferred_free: gc swept %u in-flight orphans\n",
+			  n_orphans);
+}
+
+/*
+ * Run the GC sweep every INFLIGHT_GC_INTERVAL batched-tick bodies.
+ * 1024 * DEFERRED_TICK_BATCH = ~16K syscalls between sweeps; with
+ * stomps observed at ~1/h, the 1024-slot set has weeks of headroom,
+ * but the bounded cadence keeps the growth rate independent of how
+ * long a fuzz run actually runs.
+ */
+#define INFLIGHT_GC_INTERVAL	1024
 
 void deferred_free_tick(void)
 {
 	static unsigned int tick_count;
+	static unsigned int gc_count;
 	unsigned int i;
 
 	/* Cheap path: ring_count is read while still locked, but it lives
@@ -822,6 +1037,9 @@ void deferred_free_tick(void)
 
 		free_ring_entry(ptr, i);
 	}
+
+	if ((++gc_count & (INFLIGHT_GC_INTERVAL - 1)) == 0)
+		inflight_gc_sweep();
 
 	ring_lock();
 }
