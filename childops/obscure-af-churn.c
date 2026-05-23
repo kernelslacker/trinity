@@ -266,6 +266,16 @@ static void run_connect_no_listen(const struct socket_triplet *t)
 	int fd;
 	int r;
 
+	/*
+	 * connect() on a SOCK_DGRAM socket merely sets the default peer;
+	 * there is no handshake, so it returns 0 even with no listener.
+	 * Counting that as bump_unexpected_success would drown real
+	 * bug-flag signal in predictable per-iteration noise for every
+	 * UDP/DCCP/SCTP triplet.
+	 */
+	if (t->type == SOCK_DGRAM)
+		return;
+
 	bump_run(AP_CONNECT_NO_LISTEN);
 
 	proto = net_protocols[t->family].proto;
