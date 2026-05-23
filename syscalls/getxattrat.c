@@ -4,7 +4,6 @@
  *		struct xattr_args __user *, uargs, size_t, usize)
  */
 #include "arch.h"
-#include "rnd.h"
 #include "sanitise.h"
 #include "xattr.h"
 #include "compat.h"
@@ -19,7 +18,6 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
 
 #ifdef USE_XATTR_ARGS
 	{
-		static const unsigned int flag_choices[] = { 0, XATTR_CREATE, XATTR_REPLACE };
 		struct xattr_args *args;
 
 		args = (struct xattr_args *) get_writable_struct(sizeof(*args));
@@ -29,7 +27,7 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
 		if (!args->value)
 			return;
 		args->size = 256;
-		args->flags = flag_choices[rnd_modulo_u32(3)];
+		args->flags = 0;
 		rec->a5 = (unsigned long) args;
 		rec->a6 = sizeof(*args);
 	}
