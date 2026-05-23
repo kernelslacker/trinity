@@ -65,6 +65,9 @@ bool fd_event_enqueue(struct fd_event_ring *ring,
  * socktype/protocol caps are looser -- neither is used as an array
  * index downstream, but a 0xFFFFFFFF here is still a clear corruption
  * signal worth dropping rather than recording into the obj triplet.
+ *
+ * The caller passes a parent-local copy of the slot, not the shared
+ * ring slot itself: see apply_slot() below for the TOCTOU rationale.
  */
 static bool fd_event_payload_valid(const struct fd_event *ev)
 {
@@ -83,15 +86,26 @@ static bool fd_event_payload_valid(const struct fd_event *ev)
 
 static void apply_slot(const void *p, void *ctx __unused__)
 {
-	const struct fd_event *ev = p;
+	/*
+	 * spsc_ring_drain() hands us a pointer INTO the shared ring
+	 * slot.  The producing child has unfettered write access to
+	 * its own ring (see header comment above on the threat model),
+	 * so any second read of a field is a TOCTOU window: the child
+	 * can flip e.g. fd2 between fd_event_payload_valid()'s bound
+	 * check and add_socket()'s use of it as an index into
+	 * net_protocols[].  Snapshot the slot once into a parent-local
+	 * struct here and operate exclusively on the local copy below;
+	 * the shared slot is touched exactly once, on this line.
+	 */
+	struct fd_event ev = *(const struct fd_event *)p;
 	bool corrupt = false;
 
-	if (!fd_event_payload_valid(ev)) {
+	if (!fd_event_payload_valid(&ev)) {
 		corrupt = true;
 	} else {
-		switch (ev->type) {
+		switch (ev.type) {
 		case FD_EVENT_CLOSE:
-			remove_object_by_fd(ev->fd1);
+			remove_object_by_fd(ev.fd1);
 			break;
 		case FD_EVENT_NEWSOCK: {
 			struct object *obj;
@@ -103,19 +117,20 @@ static void apply_slot(const void *p, void *ctx __unused__)
 			 * allocation as a successful publish.  Same
 			 * hazard as the open_socket() call site
 			 * fixed in commit 5373a93f1782. */
-			obj = add_socket(ev->fd1,
-					 (unsigned int)ev->fd2,
-					 ev->socktype, ev->protocol);
+			obj = add_socket(ev.fd1,
+					 (unsigned int)ev.fd2,
+					 ev.socktype, ev.protocol);
 			if (obj == NULL)
 				output(1, "fd_event: NEWSOCK add_socket() failed for fd %d (heap exhausted?)\n",
-				       ev->fd1);
+				       ev.fd1);
 			break;
 		}
 		default:
 			/* Defense in depth: payload_valid() already
-			 * screened type, so reaching this arm means
-			 * the field flipped underneath us between
-			 * validate and dispatch. */
+			 * screened type on the local copy, so reaching
+			 * this arm means the enum range expanded
+			 * without payload_valid() being taught about
+			 * it -- not a TOCTOU flip, since ev is local. */
 			corrupt = true;
 			break;
 		}
@@ -124,10 +139,10 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	if (corrupt) {
 		output(0, "fd_event: dropping corrupt event "
 			  "(type=%u objtype=%u fd1=%d fd2=%d sock=%u/%u)\n",
-		       (unsigned int)ev->type,
-		       (unsigned int)ev->objtype,
-		       ev->fd1, ev->fd2,
-		       ev->socktype, ev->protocol);
+		       (unsigned int)ev.type,
+		       (unsigned int)ev.objtype,
+		       ev.fd1, ev.fd2,
+		       ev.socktype, ev.protocol);
 		__atomic_add_fetch(&shm->stats.fd_event_payload_corrupt,
 				   1, __ATOMIC_RELAXED);
 	}
