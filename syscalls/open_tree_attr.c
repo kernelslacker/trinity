@@ -60,6 +60,7 @@ static void sanitise_open_tree_attr(struct syscallrecord *rec)
 	ma->attr_set = attrs;
 
 	rec->a4 = (unsigned long) ma;
+	avoid_shared_buffer_inout(&rec->a4, MOUNT_ATTR_SIZE_VER0);
 	rec->a5 = MOUNT_ATTR_SIZE_VER0;
 }
 
