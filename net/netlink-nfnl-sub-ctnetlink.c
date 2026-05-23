@@ -5,14 +5,12 @@
  * ctnetlink exposes the conntrack table to userspace via two parallel
  * subsystems: NFNL_SUBSYS_CTNETLINK carries IPCTNL_MSG_CT_* (entries
  * + per-cpu/global stats) and NFNL_SUBSYS_CTNETLINK_EXP carries
- * IPCTNL_MSG_EXP_* (expectation table).  Both subsys IDs share the
- * CTA_* attribute namespace at command level — the kernel's
- * nf_conntrack_netlink.c registers a separate nfnl_callback table
- * per subsys but the per-attr nla_policy entries the dispatchers
- * gate on come from the same CTA_* enum.  We register both subsys
- * IDs against the shared cmd + attr tables so the lookup helper
- * returns the same grammar regardless of which side the type picker
- * landed on.
+ * IPCTNL_MSG_EXP_* (expectation table).  The two sides do NOT share an
+ * attribute namespace: nf_conntrack_netlink.c validates CT commands
+ * against ct_nla_policy (CTA_*) and EXP commands against
+ * exp_nla_policy (CTA_EXPECT_*).  Each subsys needs its own attr table
+ * here, otherwise EXP commands get length-rejected on the CTA_* policy
+ * before the expectation-table handler ever runs.
  *
  * Command set: read-side variants (GET / GET_STATS / GET_DYING /
  * GET_UNCONFIRMED on CT, GET / GET_STATS on EXP) plus their write-side
@@ -22,12 +20,12 @@
  * before the perm check — so the attr policy paths get exercised
  * either way.
  *
- * Attribute set: a curated subset of the CTA_* namespace the kernel's
- * ctnetlink_get_conntrack() / ctnetlink_change_conntrack() walk in
- * the common cases.  TUPLE_* and PROTOINFO are NESTED — payload zero
- * and lengths are randomized by the spec-driven generator, exercising
- * the nested parser's bounds checks rather than the inner per-tuple
- * fields (those need a separate nested grammar table to do well).
+ * Attribute set: a curated subset of each namespace the kernel's
+ * dispatchers walk in the common cases.  TUPLE_* / MASTER / MASK and
+ * PROTOINFO are NESTED — payload zero and lengths are randomized by
+ * the spec-driven generator, exercising the nested parser's bounds
+ * checks rather than the inner per-tuple fields (those need a separate
+ * nested grammar table to do well).
  */
 
 #include <linux/netfilter/nfnetlink.h>
@@ -56,11 +54,11 @@ static const struct nfnl_cmd_grammar ctnetlink_exp_cmds[] = {
 };
 
 /*
- * Shared CTA_* attr spec table.  Each subsys's nla_policy slices a
- * different subset out of this namespace; emitting the union is
- * harmless — unknown-attr entries either get NLA_POLICY_UNSPEC'd
- * (accepted, validated by hand) or rejected with -EINVAL.  Either
- * branch exercises real parser code paths.
+ * CTA_* attr spec table for NFNL_SUBSYS_CTNETLINK (conntrack entries).
+ * Mirrors the kernel's ct_nla_policy entries the entry dispatchers gate
+ * on.  Lengths follow the kernel's nla_policy maximums; nested entries
+ * carry max_len 0 so the generator emits a header + randomized inner
+ * payload that the nested parser then walks.
  */
 static const struct nla_attr_spec ctnetlink_attrs[] = {
 	{ CTA_TUPLE_ORIG,     NLA_KIND_NESTED, 0 },
@@ -89,6 +87,27 @@ static const struct nla_attr_spec ctnetlink_attrs[] = {
 	{ CTA_STATUS_MASK,    NLA_KIND_U32,    4 },
 };
 
+/*
+ * CTA_EXPECT_* attr spec table for NFNL_SUBSYS_CTNETLINK_EXP.  Mirrors
+ * exp_nla_policy in nf_conntrack_netlink.c.  CTA_EXPECT_HELP_NAME and
+ * CTA_EXPECT_FN are NUL-terminated strings bounded by the kernel-side
+ * NF_CT_HELPER_NAME_LEN (16) / 32 respectively; the spec records the
+ * non-terminator max.
+ */
+static const struct nla_attr_spec ctnetlink_exp_attrs[] = {
+	{ CTA_EXPECT_MASTER,    NLA_KIND_NESTED, 0  },
+	{ CTA_EXPECT_TUPLE,     NLA_KIND_NESTED, 0  },
+	{ CTA_EXPECT_MASK,      NLA_KIND_NESTED, 0  },
+	{ CTA_EXPECT_TIMEOUT,   NLA_KIND_U32,    4  },
+	{ CTA_EXPECT_ID,        NLA_KIND_U32,    4  },
+	{ CTA_EXPECT_HELP_NAME, NLA_KIND_STRING, 15 },
+	{ CTA_EXPECT_ZONE,      NLA_KIND_U32,    4  },
+	{ CTA_EXPECT_FLAGS,     NLA_KIND_U32,    4  },
+	{ CTA_EXPECT_CLASS,     NLA_KIND_U32,    4  },
+	{ CTA_EXPECT_NAT,       NLA_KIND_NESTED, 0  },
+	{ CTA_EXPECT_FN,        NLA_KIND_STRING, 31 },
+};
+
 struct nfnl_subsys_grammar sub_ctnetlink = {
 	.name = "ctnetlink",
 	.subsys_id = NFNL_SUBSYS_CTNETLINK,
@@ -103,6 +122,6 @@ struct nfnl_subsys_grammar sub_ctnetlink_exp = {
 	.subsys_id = NFNL_SUBSYS_CTNETLINK_EXP,
 	.cmds = ctnetlink_exp_cmds,
 	.n_cmds = ARRAY_SIZE(ctnetlink_exp_cmds),
-	.attrs = ctnetlink_attrs,
-	.n_attrs = ARRAY_SIZE(ctnetlink_attrs),
+	.attrs = ctnetlink_exp_attrs,
+	.n_attrs = ARRAY_SIZE(ctnetlink_exp_attrs),
 };
