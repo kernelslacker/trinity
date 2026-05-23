@@ -24,7 +24,7 @@ static void post_close(struct syscallrecord *rec)
 	if (child != NULL) {
 		if (child->fd_event_ring != NULL)
 			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
-					 (int) rec->a1, -1, 0, 0, 0);
+					 (int) rec->a1);
 
 		/* Drop the just-closed fd from this child's own fd_hash[]
 		 * snapshot so get_random_fd() / get_typed_fd() stop handing

@@ -1520,7 +1520,7 @@ static void post_perf_event_open(struct syscallrecord *rec)
 			 */
 			if (child != NULL && child->fd_event_ring != NULL)
 				fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
-						 fd, -1, 0, 0, 0);
+						 fd);
 
 			remove_object_by_fd(fd);
 

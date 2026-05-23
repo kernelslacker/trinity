@@ -170,7 +170,7 @@ static int get_rand_pidfd(void)
 			if (child != NULL && child->fd_event_ring != NULL)
 				fd_event_enqueue(child->fd_event_ring,
 						 FD_EVENT_CLOSE,
-						 fd, -1, 0, 0, 0);
+						 fd);
 			continue;
 		}
 

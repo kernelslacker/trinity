@@ -1,7 +1,6 @@
 #pragma once
 
 #include <stdint.h>
-#include "object-types.h"
 #include "spsc-ring.h"
 
 /*
@@ -21,21 +20,18 @@
 
 enum fd_event_type {
 	FD_EVENT_CLOSE,		/* fd was closed */
-	FD_EVENT_NEWSOCK,	/* child accept4'd a socket; parent adds it to the pool */
 };
 
 /*
- * For FD_EVENT_CLOSE the closed fd is in fd1.  For FD_EVENT_NEWSOCK
- * fd1 is the accepted fd, fd2 is the socket family, socktype and protocol
- * carry the remaining triplet fields; objtype is unused.
+ * Only CLOSE is a valid event type today; fd1 carries the closed fd.
+ * The struct intentionally has no other payload — see commit history
+ * for the NEWSOCK publish path that was removed (post-fork accepted
+ * fds live only in the child's fd table and cannot be published to
+ * the parent's pool).
  */
 struct fd_event {
 	enum fd_event_type type;
-	int fd1;		/* fd (FD_EVENT_CLOSE, FD_EVENT_NEWSOCK) */
-	int fd2;		/* FD_EVENT_NEWSOCK: socket family */
-	enum objecttype objtype;  /* unused in CLOSE/NEWSOCK; reserved for future event payloads */
-	unsigned int socktype;	  /* FD_EVENT_NEWSOCK: socket type */
-	unsigned int protocol;	  /* FD_EVENT_NEWSOCK: socket protocol */
+	int fd1;		/* closed fd */
 };
 
 struct fd_event_ring {
@@ -51,9 +47,7 @@ void fd_event_ring_init(struct fd_event_ring *ring);
  */
 bool fd_event_enqueue(struct fd_event_ring *ring,
 		      enum fd_event_type type,
-		      int fd1, int fd2,
-		      enum objecttype objtype,
-		      unsigned int socktype, unsigned int protocol);
+		      int fd1);
 
 /*
  * Drain all pending events from a child's ring, calling the
