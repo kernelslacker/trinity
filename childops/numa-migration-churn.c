@@ -177,10 +177,15 @@ static void parse_online_nodes(void)
 	bool seen_any = false;
 
 	f = fopen("/sys/devices/system/node/online", "r");
-	if (f == NULL)
+	if (f == NULL) {
+		outputerr("numa_migration_churn: fopen(/sys/devices/system/node/online) failed: %s\n",
+			  strerror(errno));
 		return;
+	}
 
 	if (fgets(buf, sizeof(buf), f) == NULL) {
+		outputerr("numa_migration_churn: fgets(/sys/devices/system/node/online) failed: %s\n",
+			  strerror(errno));
 		fclose(f);
 		return;
 	}
