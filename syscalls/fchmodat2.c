@@ -7,9 +7,13 @@
 #ifndef AT_SYMLINK_NOFOLLOW
 #define AT_SYMLINK_NOFOLLOW	0x100
 #endif
+#ifndef AT_EMPTY_PATH
+#define AT_EMPTY_PATH		0x1000
+#endif
 
 static unsigned long fchmodat2_flags[] = {
 	AT_SYMLINK_NOFOLLOW,
+	AT_EMPTY_PATH,
 };
 
 struct syscallentry syscall_fchmodat2 = {
