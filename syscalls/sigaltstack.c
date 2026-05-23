@@ -45,50 +45,80 @@ struct sigaltstack_post_state {
 static void sanitise_sigaltstack(struct syscallrecord *rec)
 {
 	stack_t *ss;
+	unsigned int draw;
 #ifdef HAVE_SYS_SIGALTSTACK
 	struct sigaltstack_post_state *snap;
 #endif
+
+	/*
+	 * Shape distribution (approximate):
+	 *   30% enabled  (ss_flags=0, valid sp, size MINSIGSTKSZ*(1..4))
+	 *   20% disabled (SS_DISABLE, NULL sp, size 0)
+	 *   15% too-small (size < MINSIGSTKSZ -- kernel EINVAL gate)
+	 *   10% misaligned sp (kernel behaviour varies, validation stays warm)
+	 *   15% SS_AUTODISARM (explicit bucket so disarm-on-handler-entry
+	 *                      and re-arm-on-handler-exit paths actually fire)
+	 *   10% NULL ss     (getter-only call -- legal, kernel just reports
+	 *                    current; mode-B for the post oracle)
+	 */
+	draw = rnd_modulo_u32(100);
+
+	if (draw < 10) {
+		/* getter-only: leave uss = NULL, post oracle picks this up
+		 * via the snap->uss == 0 mode-B gate. */
+		rec->a1 = 0;
+		goto choose_uoss;
+	}
 
 	ss = (stack_t *) get_writable_address(sizeof(*ss));
 	if (ss == NULL)
 		return;
 
-	switch (rnd_modulo_u32(5)) {
-	case 0: /* disable the signal stack */
+	if (draw < 40) {
+		/* enabled: MINSIGSTKSZ * (1..4) */
+		unsigned int mult = 1 + rnd_modulo_u32(4);
+		size_t sz = (size_t) MINSIGSTKSZ * mult;
+		ss->ss_sp = (void *) get_writable_address(sz);
+		ss->ss_flags = 0;
+		ss->ss_size = sz;
+	} else if (draw < 60) {
+		/* disabled */
 		ss->ss_sp = NULL;
 		ss->ss_flags = SS_DISABLE;
 		ss->ss_size = 0;
-		break;
-	case 1:	/* minimum size */
-		ss->ss_sp = (void *) get_writable_address(MINSIGSTKSZ);
-		ss->ss_flags = 0;
-		ss->ss_size = MINSIGSTKSZ;
-		break;
-	case 2: /* common size (8 pages) */
-		ss->ss_sp = (void *) get_writable_address(page_size * 8);
-		ss->ss_flags = 0;
-		ss->ss_size = page_size * 8;
-		break;
-	case 3: /* autodisarm */
-		ss->ss_sp = (void *) get_writable_address(SIGSTKSZ);
-		ss->ss_flags = SS_AUTODISARM;
-		ss->ss_size = SIGSTKSZ;
-		break;
-	default: /* boundary: too small */
+	} else if (draw < 75) {
+		/* too-small: kernel must reject with EINVAL */
 		ss->ss_sp = (void *) get_writable_address(page_size);
 		ss->ss_flags = RAND_BOOL() ? SS_AUTODISARM : 0;
 		ss->ss_size = rnd_modulo_u32(MINSIGSTKSZ);
-		break;
+	} else if (draw < 85) {
+		/* misaligned ss_sp: nudge a valid allocation by an odd
+		 * byte offset.  The base allocation is sized to absorb the
+		 * nudge so we are still pointing inside writable memory. */
+		unsigned char *base = (unsigned char *) get_writable_address(MINSIGSTKSZ + 16);
+		unsigned int nudge = 1 + rnd_modulo_u32(7);
+		ss->ss_sp = base ? (void *) (base + nudge) : NULL;
+		ss->ss_flags = 0;
+		ss->ss_size = MINSIGSTKSZ;
+	} else {
+		/* SS_AUTODISARM (kernel >= 4.7) */
+		ss->ss_sp = (void *) get_writable_address(SIGSTKSZ);
+		ss->ss_flags = SS_AUTODISARM;
+		ss->ss_size = SIGSTKSZ;
 	}
 
 	rec->a1 = (unsigned long) ss;
 
+choose_uoss:
 	/*
 	 * uoss (a2) is the kernel's writeback target for the previous stack:
 	 * the kernel fills its three fields when uoss is non-NULL.
 	 * ARG_ADDRESS draws from the random pool, so a fuzzed pointer can
-	 * land inside an alloc_shared region.
+	 * land inside an alloc_shared region.  Force ~30% NULL so the
+	 * "don't bother reporting old stack" path is actually exercised.
 	 */
+	if (rnd_modulo_u32(10) < 3)
+		rec->a2 = 0;
 	avoid_shared_buffer_out(&rec->a2, sizeof(stack_t));
 
 #ifdef HAVE_SYS_SIGALTSTACK
