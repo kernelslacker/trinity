@@ -32,7 +32,7 @@ static void sanitise_cachestat(struct syscallrecord *rec)
 		range->len = page_size;
 		break;
 	default: /* random range */
-		range->off = rand32();
+		range->off = rnd_u64();
 		range->len = 1 + (rnd_modulo_u32((page_size * 64)));
 		break;
 	}
