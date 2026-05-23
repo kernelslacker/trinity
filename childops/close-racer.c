@@ -282,13 +282,16 @@ bool close_racer(struct childdata *child)
 						   1, __ATOMIC_RELAXED);
 				close(sv[j][0]);
 				close(sv[j][1]);
-				spawn_fail_streak++;
 				continue;
 			}
 			spawned[j] = true;
 			n_spawned++;
 		}
 		if (n_spawned == 0) {
+			/* Count the cycle as one streak step, not k steps,
+			 * so the latch reflects stuck spawn paths rather
+			 * than wide cycles where every pair tripped EAGAIN. */
+			spawn_fail_streak++;
 			if (spawn_fail_streak >= THREAD_SPAWN_LATCH)
 				return true;
 			continue;
