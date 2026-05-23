@@ -37,3 +37,5 @@ unsigned long mlock_state_pick_length(unsigned long map_size, bool *over_end);
 unsigned long mlock_state_pick_start(struct map *map);
 unsigned long mlock_state_clamp_len(unsigned long requested);
 void mlock_state_record_locked(unsigned long start, unsigned long len);
+bool mlock_state_pick_recent(unsigned long *startp, unsigned long *lenp);
+void mlock_state_record_unlocked(unsigned long len);

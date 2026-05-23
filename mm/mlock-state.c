@@ -116,3 +116,57 @@ void mlock_state_record_locked(unsigned long start, unsigned long len)
 	slot->len = len;
 	mlock_ring_head = (mlock_ring_head + 1) % MLOCK_RING_SIZE;
 }
+
+/*
+ * Reader side of the 8-entry recently-locked ring.  Iterating the
+ * whole ring to find a non-empty slot lets the ring stay sparsely
+ * populated early in a child's life without biasing the subset draw
+ * toward whichever slot the head happens to point at.  Returns false
+ * (and leaves *startp / *lenp untouched) when no slot has ever been
+ * written -- the caller then falls back to the random bucket path so
+ * the unlocked-region EINVAL coverage is preserved.
+ */
+bool mlock_state_pick_recent(unsigned long *startp, unsigned long *lenp)
+{
+	struct mlock_ring_entry *slot;
+	unsigned int i, populated = 0;
+	unsigned int pick;
+
+	for (i = 0; i < MLOCK_RING_SIZE; i++)
+		if (mlock_ring[i].len != 0)
+			populated++;
+	if (populated == 0)
+		return false;
+
+	pick = rnd_modulo_u32(populated);
+	for (i = 0; i < MLOCK_RING_SIZE; i++) {
+		slot = &mlock_ring[i];
+		if (slot->len == 0)
+			continue;
+		if (pick == 0) {
+			*startp = slot->start;
+			*lenp = slot->len;
+			return true;
+		}
+		pick--;
+	}
+	return false;
+}
+
+/*
+ * Counterpart to record_locked.  Subtract len from the running total,
+ * saturating at zero -- the kernel does not refund the cap when an
+ * unlock targets a range that mlock never actually locked, and the
+ * ring may have aged out the matching record by the time munlock
+ * draws it, so a naive subtract could underflow into a giant unsigned
+ * value and starve the rest of the wave of any mlock budget.
+ */
+void mlock_state_record_unlocked(unsigned long len)
+{
+	if (len == 0)
+		return;
+	if (len >= memlock_used)
+		memlock_used = 0;
+	else
+		memlock_used -= len;
+}
