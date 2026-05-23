@@ -106,8 +106,8 @@ static void sanitise_mmap(struct syscallrecord *rec)
 			rec->a5 = 0;
 
 		if (current_entry_is_mmap2()) {
-			/* mmap2 counts in 4K units */
-			rec->a6 /= 4096;
+			/* mmap2 counts pgoff in page-size units */
+			rec->a6 /= page_size;
 		} else {
 			/* page align non-anonymous mappings. */
 			rec->a6 &= PAGE_MASK;
@@ -146,7 +146,7 @@ static void sanitise_mmap(struct syscallrecord *rec)
 			rec->a4 = MAP_SHARED;
 			rec->a5 = (unsigned long) fd;
 			if (current_entry_is_mmap2())
-				rec->a6 /= 4096;
+				rec->a6 /= page_size;
 			else
 				rec->a6 &= PAGE_MASK;
 		}
@@ -265,10 +265,11 @@ static void post_mmap(struct syscallrecord *rec)
 
 					/*
 					 * sanitise_mmap stores mmap2's pgoff in
-					 * 4K-page units, but the clamp below works
-					 * in bytes.  Scale before subtracting from
-					 * st_size, otherwise backed is off by 4096x
-					 * for any mmap2 with non-zero pgoff.
+					 * page-size units, but the clamp below
+					 * works in bytes.  Scale before subtracting
+					 * from st_size, otherwise backed is off by
+					 * a page_size factor for any mmap2 with
+					 * non-zero pgoff.
 					 */
 					if (current_entry_is_mmap2())
 						off_bytes = (off_t) rec->a6 * (off_t) page_size;
