@@ -31,6 +31,7 @@ struct lgetxattr_post_state {
 	unsigned long pathname;
 	unsigned long name;
 	unsigned long value;
+	unsigned long size;
 	size_t buf_alloc_size;
 };
 #endif
@@ -45,11 +46,12 @@ static void sanitise_lgetxattr(struct syscallrecord *rec)
 	rec->post_state = 0;
 #endif
 
-	if (!sanitise_xattr_name_arg(rec, 2))
+	if (!sanitise_xattr_name_arg_pooled(rec, 2))
 		return;
 #if defined(SYS_lgetxattr) || defined(__NR_lgetxattr)
 	pre_a3 = rec->a3;
 #endif
+	xattr_pick_valuebuf_bucket(&rec->a3, &rec->a4);
 	avoid_shared_buffer_out(&rec->a3, rec->a4);
 
 #if defined(SYS_lgetxattr) || defined(__NR_lgetxattr)
@@ -102,6 +104,7 @@ static void sanitise_lgetxattr(struct syscallrecord *rec)
 	snap->pathname = rec->a1;
 	snap->name     = rec->a2;
 	snap->value    = rec->a3;
+	snap->size     = rec->a4;
 	snap->buf_alloc_size = buf_alloc_size;
 	rec->post_state = (unsigned long) snap;
 #endif
@@ -213,9 +216,9 @@ static void post_lgetxattr(struct syscallrecord *rec)
 	 */
 	if ((long) rec->retval < 0)
 		goto out_free;
-	if (rec->retval > rec->a4) {
+	if (snap->size != 0 && rec->retval > snap->size) {
 		outputerr("post_lgetxattr: rejecting retval %lu > size %lu\n",
-			  rec->retval, rec->a4);
+			  rec->retval, snap->size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -224,6 +227,10 @@ static void post_lgetxattr(struct syscallrecord *rec)
 		goto out_free;
 
 	if ((long) rec->retval <= 0)
+		goto out_free;
+
+	/* size=0 / NULL-buffer probe -- see post_getxattr for rationale. */
+	if (snap->size == 0)
 		goto out_free;
 
 	if (snap->value == 0 || snap->pathname == 0 || snap->name == 0)

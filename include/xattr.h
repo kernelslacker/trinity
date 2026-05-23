@@ -33,3 +33,22 @@ extern unsigned long xattrat_flags[2];		/* AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH */
  * avoid_shared_buffer_out().
  */
 void xattr_pick_listbuf_bucket(unsigned long *bufp, unsigned long *sizep);
+
+/*
+ * Namespace-aware name generator and arg sanitiser.  Distribution:
+ * ~70% curated pool, ~20% "user.<random>", ~10% fully random via
+ * gen_xattr_name.  Use this in preference to sanitise_xattr_name_arg /
+ * gen_xattr_name for callers that read or modify existing xattrs --
+ * the unweighted prefix+suffix mix almost never lands on a name the
+ * kernel can resolve, so the inode-level codepaths stay cold.
+ */
+void gen_xattr_name_pooled(char *buf, size_t len);
+bool sanitise_xattr_name_arg_pooled(struct syscallrecord *rec, unsigned int argno);
+
+/*
+ * Same shape as xattr_pick_listbuf_bucket, but with an extra 64-byte
+ * "common real xattr length" bucket -- SELinux contexts, capability
+ * structs, and most user.* values fit there -- so the equality path
+ * gets hit as well as the truncation/probe paths.
+ */
+void xattr_pick_valuebuf_bucket(unsigned long *bufp, unsigned long *sizep);
