@@ -1485,6 +1485,8 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	default:
 		break;
 	}
+
+	avoid_shared_buffer_inout(&rec->a1, page_size);
 }
 
 static void post_perf_event_open(struct syscallrecord *rec)
