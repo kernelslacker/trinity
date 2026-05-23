@@ -18,6 +18,7 @@
 #include <sys/socket.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
+#include <sched.h>
 #include <time.h>
 #include <linux/capability.h>
 #include <linux/futex.h>
@@ -301,6 +302,14 @@ static const struct struct_field msqid_ds_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct sched_param (sched_setparam, sched_setscheduler)              */
+/* ------------------------------------------------------------------ */
+
+static const struct struct_field sched_param_fields[] = {
+	FIELD(struct sched_param, sched_priority),
+};
+
+/* ------------------------------------------------------------------ */
 /* union bpf_attr (bpf)                                                */
 /* ------------------------------------------------------------------ */
 
@@ -458,6 +467,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= msqid_ds_fields,
 		.num_fields	= ARRAY_SIZE(msqid_ds_fields),
 	},
+	{
+		.name		= "sched_param",
+		.struct_size	= sizeof(struct sched_param),
+		.fields		= sched_param_fields,
+		.num_fields	= ARRAY_SIZE(sched_param_fields),
+	},
 #ifdef USE_BPF
 	{
 		.name		= "bpf_attr",
@@ -545,9 +560,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "mq_getsetattr",	3, &struct_catalog[17] },
 	/* msgctl(int msqid, int cmd, struct msqid_ds *buf) — IPC_SET path */
 	{ "msgctl",		3, &struct_catalog[18] },
+	/* sched_setparam(pid_t, struct sched_param *) */
+	{ "sched_setparam",	2, &struct_catalog[19] },
+	/* sched_setscheduler(pid_t, int, struct sched_param *) */
+	{ "sched_setscheduler",	3, &struct_catalog[19] },
 #ifdef USE_BPF
 	/* bpf(int, union bpf_attr *, unsigned int) */
-	{ "bpf",		2, &struct_catalog[19] },
+	{ "bpf",		2, &struct_catalog[20] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
