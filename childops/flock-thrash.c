@@ -208,12 +208,25 @@ bool flock_thrash(struct childdata *child)
 		/* 1-in-RAND_NEGATIVE_RATIO sub the carefully-curated op for
 		 * a garbage value — exercises sys_flock's argument validation
 		 * (LOCK_MAND removal, unknown bit rejection) which the curated
-		 * mix above never reaches. */
-		rc = flock(s->fd, (int)RAND_NEGATIVE_OR(op));
+		 * mix above never reaches.  Capture the substituted value so
+		 * the s->held bookkeeping below reflects what the kernel
+		 * actually applied rather than the original (pre-substitution)
+		 * op — otherwise an accepted garbage value drifts the lock-
+		 * state model and the loop may e.g. issue LOCK_EX believing
+		 * the lock is already held. */
+		int op_used = (int)RAND_NEGATIVE_OR(op);
+		rc = flock(s->fd, op_used);
 		if (rc == 0) {
+			int op_base = op_used & ~LOCK_NB;
+
 			__atomic_add_fetch(&shm->stats.flock_thrash_locks,
 					   1, __ATOMIC_RELAXED);
-			s->held = (op != LOCK_UN);
+			/* Only update s->held when the substituted op is a
+			 * recognised LOCK_* constant; an accepted garbage
+			 * value would otherwise poison the lock-state model. */
+			if (op_base == LOCK_SH || op_base == LOCK_EX ||
+			    op_base == LOCK_UN)
+				s->held = (op_base != LOCK_UN);
 		} else {
 			__atomic_add_fetch(&shm->stats.flock_thrash_failed,
 					   1, __ATOMIC_RELAXED);
