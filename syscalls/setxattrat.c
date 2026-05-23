@@ -4,6 +4,7 @@
  *		const struct xattr_args __user *, uargs, size_t, usize)
  */
 #include <fcntl.h>
+#include "arch.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "xattr.h"
@@ -30,13 +31,32 @@ static void sanitise_setxattrat(struct syscallrecord *rec)
 		static const unsigned int flag_choices[] = { 0, XATTR_CREATE, XATTR_REPLACE };
 		struct xattr_args *args;
 
+		__u32 chosen;
+
 		args = (struct xattr_args *) get_writable_struct(sizeof(*args));
 		if (!args)
 			return;
-		args->value = (unsigned long) get_writable_struct(256);
-		if (!args->value)
-			return;
-		args->size = 256;
+
+		switch (rnd_modulo_u32(9)) {
+		case 0:  chosen = 0;                  break;
+		case 1:  chosen = 1;                  break;
+		case 2:  chosen = 32;                 break;
+		case 3:  chosen = 256;                break;
+		case 4:  chosen = page_size;          break;
+		case 5:  chosen = page_size + 1;      break;
+		case 6:  chosen = 65536;              break;
+		case 7:  chosen = 65537;              break;
+		default: chosen = rnd_u32() % (1u << 20); break;
+		}
+
+		if (chosen == 0) {
+			args->value = 0;
+		} else {
+			args->value = (unsigned long) get_writable_struct(chosen);
+			if (!args->value)
+				return;
+		}
+		args->size = chosen;
 		args->flags = flag_choices[rnd_modulo_u32(3)];
 		rec->a5 = (unsigned long) args;
 		avoid_shared_buffer_inout(&rec->a5, sizeof(struct xattr_args));
