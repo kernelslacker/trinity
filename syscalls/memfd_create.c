@@ -11,11 +11,31 @@
 
 static unsigned long memfd_create_flags[] = {
 	MFD_CLOEXEC, MFD_ALLOW_SEALING, MFD_HUGETLB,
-	MFD_NOEXEC_SEAL, MFD_EXEC,
+};
+
+/*
+ * MFD_EXEC and MFD_NOEXEC_SEAL are mutually exclusive — the kernel
+ * mode-validation in memfd_create() returns -EINVAL if both are set.
+ * Keep them out of the bitmask pool above and pick at most one here,
+ * mirroring the mmap_excl_flags / type-bit pattern in syscalls/mmap.c.
+ * Index 0 is "neither", so a third of memfd_create calls go in with
+ * the kernel's default exec semantics.
+ */
+static unsigned long memfd_create_modes[] = {
+	0, MFD_EXEC, MFD_NOEXEC_SEAL,
 };
 
 static void sanitise_memfd_create(struct syscallrecord *rec)
 {
+	/*
+	 * Defence in depth: even though memfd_create_flags no longer
+	 * contains the exclusive bits, future ARG_LIST tweaks or kernel
+	 * UAPI additions could reintroduce them.  Mask before OR-ing the
+	 * curated mode in.
+	 */
+	rec->a2 &= ~(MFD_EXEC | MFD_NOEXEC_SEAL);
+	rec->a2 |= RAND_ARRAY(memfd_create_modes);
+
 	/*
 	 * MFD_HUGE_* shares the MAP_HUGE_SHIFT (26) encoding.  When the
 	 * ARG_LIST roll happened to set MFD_HUGETLB, sometimes also pack
