@@ -305,7 +305,7 @@ static void alg_socket_setup(int fd)
 	(void) setsockopt(fd, SOL_ALG, ALG_SET_KEY, key, keylen);
 
 	/* accept() gives us a child fd for actual crypto I/O */
-	child_fd = accept(fd, NULL, NULL);
+	child_fd = accept4(fd, NULL, NULL, SOCK_CLOEXEC);
 	if (child_fd == -1)
 		return;
 
