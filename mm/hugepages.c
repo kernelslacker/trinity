@@ -19,6 +19,7 @@
 #include "compat.h"
 #include "hugepages.h"
 #include "random.h"
+#include "rnd.h"
 #include "utils.h"
 
 #ifndef HUGETLB_FLAG_ENCODE_SHIFT
@@ -91,6 +92,6 @@ unsigned long pick_random_huge_size_encoding(void)
 	if (nr_huge_shifts == 0)
 		return 0;
 
-	return ((unsigned long) huge_shifts[rand() % nr_huge_shifts])
+	return ((unsigned long) huge_shifts[rnd_modulo_u32(nr_huge_shifts)])
 		<< HUGETLB_FLAG_ENCODE_SHIFT;
 }
