@@ -125,7 +125,7 @@ static int open_drm_fds(void)
 		snprintf(buf, sizeof(buf), "/dev/dri/%s", entry->d_name);
 		buf[sizeof(buf)-1] = '\0';
 
-		fd = open(buf, O_RDWR);
+		fd = open(buf, O_RDWR | O_CLOEXEC);
 		if (fd < 0)
 			continue;
 
