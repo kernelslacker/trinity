@@ -4,12 +4,70 @@
  *		unsigned int, at_flags)
  */
 #include <fcntl.h>
+#include <linux/fs.h>
+#include "random.h"
 #include "sanitise.h"
 #include "compat.h"
+#include "utils.h"
 
 static unsigned long file_setattr_at_flags[] = {
 	AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH,
 };
+
+/*
+ * Curated FS_XFLAG_* bits accepted by vfs_fileattr_set().  The generator
+ * fills the ARG_NON_NULL_ADDRESS buffer with whatever the writable-pool
+ * slot last held, so fa->fa_xflags arrives as a random u32 — and the
+ * kernel rejects any flag word carrying bits outside FS_XFLAGS_MASK with
+ * -EINVAL before it ever reaches the real fileattr_set arm.  At random
+ * u32 input that EINVAL fires on essentially every call, leaving the
+ * interesting setattr paths unfuzzed.  Seed fa_xflags from a curated
+ * pool of valid FS_XFLAG_* bits instead.
+ */
+static const unsigned long file_setattr_xflag_pool[] = {
+	FS_XFLAG_REALTIME, FS_XFLAG_PREALLOC, FS_XFLAG_IMMUTABLE,
+	FS_XFLAG_APPEND, FS_XFLAG_SYNC, FS_XFLAG_NOATIME, FS_XFLAG_NODUMP,
+	FS_XFLAG_RTINHERIT, FS_XFLAG_PROJINHERIT, FS_XFLAG_NOSYMLINKS,
+	FS_XFLAG_EXTSIZE, FS_XFLAG_EXTSZINHERIT, FS_XFLAG_NODEFRAG,
+	FS_XFLAG_FILESTREAM, FS_XFLAG_DAX, FS_XFLAG_COWEXTSIZE,
+	FS_XFLAG_HASATTR,
+};
+
+#define FILE_SETATTR_XFLAG_POOL_MASK					\
+	(FS_XFLAG_REALTIME | FS_XFLAG_PREALLOC | FS_XFLAG_IMMUTABLE |	\
+	 FS_XFLAG_APPEND | FS_XFLAG_SYNC | FS_XFLAG_NOATIME |		\
+	 FS_XFLAG_NODUMP | FS_XFLAG_RTINHERIT | FS_XFLAG_PROJINHERIT |	\
+	 FS_XFLAG_NOSYMLINKS | FS_XFLAG_EXTSIZE | FS_XFLAG_EXTSZINHERIT |\
+	 FS_XFLAG_NODEFRAG | FS_XFLAG_FILESTREAM | FS_XFLAG_DAX |	\
+	 FS_XFLAG_COWEXTSIZE | FS_XFLAG_HASATTR)
+
+static void sanitise_file_setattr(struct syscallrecord *rec)
+{
+	struct file_attr *fa = (struct file_attr *) rec->a3;
+	unsigned long long xflags = 0;
+	unsigned int n_bits;
+	unsigned int i;
+
+	if (fa == NULL)
+		return;
+
+	/* OR 1..3 bits drawn from the curated pool. */
+	n_bits = 1 + rnd_modulo_u32(3);
+	for (i = 0; i < n_bits; i++)
+		xflags |= file_setattr_xflag_pool[
+			rnd_modulo_u32(ARRAY_SIZE(file_setattr_xflag_pool))];
+
+	/*
+	 * ~5%: also OR in an outside-mask u32 so the vfs_fileattr_set()
+	 * rejection arm gets exercised — the negative path is itself a
+	 * reachable kernel code surface and shouldn't go entirely uncovered.
+	 */
+	if (ONE_IN(20))
+		xflags |= ((unsigned long long) rnd_u32()) &
+			  ~(unsigned long long) FILE_SETATTR_XFLAG_POOL_MASK;
+
+	fa->fa_xflags = xflags;
+}
 
 struct syscallentry syscall_file_setattr = {
 	.name = "file_setattr",
@@ -17,6 +75,7 @@ struct syscallentry syscall_file_setattr = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_NON_NULL_ADDRESS, [3] = ARG_LEN, [4] = ARG_LIST },
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "ufattr", [3] = "usize", [4] = "at_flags" },
 	.arg_params[4].list = ARGLIST(file_setattr_at_flags),
+	.sanitise = sanitise_file_setattr,
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
 };
