@@ -29,6 +29,30 @@ static const unsigned long alignments[] = {
 };
 
 /*
+ * Flag-combo coverage for rec->a4.  ARG_LIST's bitmask draw across
+ * { MAYMOVE, FIXED, DONTUNMAP } leaves the in-place-resize combo (0)
+ * unreachable and routinely produces invalid combos (FIXED without
+ * MAYMOVE, DONTUNMAP without MAYMOVE) that bounce off -EINVAL.
+ * Override with a bias-weighted pick: ~70% valid combos so the
+ * success paths get exercised, ~20% keep the ARG_LIST draw for
+ * long-tail invalids, ~10% explicit invalids so the validation
+ * path stays warm.
+ */
+static const unsigned long mremap_valid_combos[] = {
+	0,
+	MREMAP_MAYMOVE,
+	MREMAP_MAYMOVE | MREMAP_FIXED,
+	MREMAP_MAYMOVE | MREMAP_DONTUNMAP,
+	MREMAP_MAYMOVE | MREMAP_FIXED | MREMAP_DONTUNMAP,
+};
+
+static const unsigned long mremap_invalid_combos[] = {
+	MREMAP_FIXED,
+	MREMAP_DONTUNMAP,
+	MREMAP_FIXED | MREMAP_DONTUNMAP,
+};
+
+/*
  * Snapshot of the two mremap inputs read by the post handler, captured
  * at sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
@@ -97,6 +121,17 @@ static void sanitise_mremap(struct syscallrecord *rec)
 	 */
 	rec->a3 = (rec->a3 + page_size - 1) & PAGE_MASK;
 
+	{
+		unsigned int r = rnd_modulo_u32(10);
+
+		if (r < 7)
+			rec->a4 = RAND_ARRAY(mremap_valid_combos);
+		else if (r < 9)
+			;	/* keep ARG_LIST-picked value for long tail */
+		else
+			rec->a4 = RAND_ARRAY(mremap_invalid_combos);
+	}
+
 	if (rec->a4 & MREMAP_FIXED) {
 		unsigned long align = RAND_ARRAY(alignments);
 		unsigned int shift = (WORD_BIT / 2) - 1;
@@ -116,11 +151,6 @@ static void sanitise_mremap(struct syscallrecord *rec)
 			newaddr = 0;
 		}
 	}
-
-	/* MREMAP_DONTUNMAP requires MREMAP_MAYMOVE; when combined with
-	 * MREMAP_FIXED it remaps to new_addr without unmapping the source. */
-	if (rec->a4 & MREMAP_DONTUNMAP)
-		rec->a4 |= MREMAP_MAYMOVE;
 
 	rec->a5 = newaddr;
 
