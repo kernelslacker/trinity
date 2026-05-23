@@ -256,7 +256,7 @@ static bool create_one_vcpu(struct object *vmobj)
 	if (vmfd < 0)
 		return false;
 
-	vcpu_id = vmobj->kvmvmobj.nr_vcpus;
+	vcpu_id = __atomic_fetch_add(&vmobj->kvmvmobj.nr_vcpus, 1, __ATOMIC_RELAXED);
 	vcpufd = ioctl(vmfd, KVM_CREATE_VCPU, (unsigned long)vcpu_id);
 	if (vcpufd < 0) {
 		outputerr("init_kvm: KVM_CREATE_VCPU(vmfd=%d, id=%d) failed: %s\n",
@@ -292,7 +292,6 @@ static bool create_one_vcpu(struct object *vmobj)
 	obj->kvmvcpuobj.kvm_run_size = kvm_run_sz;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_KVM_VCPU);
 
-	vmobj->kvmvmobj.nr_vcpus++;
 	return true;
 }
 
