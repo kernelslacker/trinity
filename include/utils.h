@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "compiler.h"
+#include "rnd.h"
 
 #define MB(_x) ((_x) * 1024UL * 1024UL)
 #define GB(_x) ((_x) * 1024UL * MB(1))
@@ -351,8 +352,8 @@ void sanitize_inherited_fds(void);
 #define unlikely(x)	__builtin_expect(!!(x), 0)
 
 #define RAND_ELEMENT(_array, _element) \
-	_array[rand() % ARRAY_SIZE(_array)]._element
+	_array[rnd_modulo_u32(ARRAY_SIZE(_array))]._element
 
-#define RAND_ARRAY(_array) _array[rand() % ARRAY_SIZE(_array)]
+#define RAND_ARRAY(_array) _array[rnd_modulo_u32(ARRAY_SIZE(_array))]
 
 #define IS_ALIGNED(x, a)	(((x) & ((typeof(x))(a) - 1)) == 0)
