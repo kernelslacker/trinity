@@ -13,11 +13,39 @@
 
 #include "fd.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+
+/*
+ * Pick one bit-position within [0, nfds) for the pselect6(2) fd_set
+ * with the same 60 / 30 / 10 bias as the sibling select(2) sanitiser:
+ * tracked pollable fd_type, legacy random bit, or deliberately-high
+ * bit to keep the EBADF leg of do_select() warm.  Returns -1 when no
+ * usable candidate is available (caller skips FD_SET for that slot).
+ */
+static int pick_pselect6_bit(unsigned int nfds)
+{
+	unsigned int roll = rnd_modulo_u32(100);
+	int fd;
+
+	if (roll < 60) {
+		fd = get_pollable_random_fd();
+		if (fd < 0 || (unsigned int) fd >= nfds)
+			return -1;
+		return fd;
+	}
+
+	if (roll < 90)
+		return (int) rnd_modulo_u32(nfds);
+
+	if (nfds > 256)
+		return (int)(256 + rnd_modulo_u32(nfds - 256));
+	return (int) rnd_modulo_u32(nfds);
+}
 
 /*
  * Snapshot of the five heap allocations sanitise hands to the kernel,
@@ -58,39 +86,43 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 	FD_ZERO(exfds);
 
 	nset = rand32() % 10;
-	/* set some random fd's. */
+	/*
+	 * Pick the bits to set with the same coverage bias as poll(2) /
+	 * select(2): ~60% tracked pollable fd_type fd numbers (real wait
+	 * queues), ~30% legacy random bit positions, ~10% deliberately
+	 * high invalid bits to keep the EBADF leg of do_select() warm.
+	 * Each candidate still passes through fd_poll_can_block() so a
+	 * collision with a FUSE / uffd / io_uring / vCPU / pidfd handle
+	 * cannot wedge the child in TASK_UNINTERRUPTIBLE.
+	 */
 	for (i = 0; i < nset; i++) {
-		int rfd = rand32() % nfds;
-		int wfd = rand32() % nfds;
-		int efd = rand32() % nfds;
+		int rfd, wfd, efd;
 
-		/*
-		 * The bit positions chosen here can collide with real tracked
-		 * fds (low-numbered handles below the 1023 nfds bound).  If a
-		 * collision lands on an fd whose fd_provider has poll_can_block
-		 * set, do_select → vfs_poll → fops->poll wedges the child in
-		 * TASK_UNINTERRUPTIBLE on the per-fd waitqueue (FUSE / uffd /
-		 * io_uring / vCPU / pidfd).  Skip those bits; an unset bit is
-		 * indistinguishable from "fd not interesting" to do_select().
-		 * Untracked bit positions (the common case) fall through
-		 * unchanged — fd_poll_can_block returns false for any fd not
-		 * present in the global fd_hash.
-		 */
-		if (!fd_poll_can_block(rfd))
-			FD_SET(rfd, rfds);
-		else
-			__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
-					   __ATOMIC_RELAXED);
-		if (!fd_poll_can_block(wfd))
-			FD_SET(wfd, wfds);
-		else
-			__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
-					   __ATOMIC_RELAXED);
-		if (!fd_poll_can_block(efd))
-			FD_SET(efd, exfds);
-		else
-			__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
-					   __ATOMIC_RELAXED);
+		rfd = pick_pselect6_bit(nfds);
+		wfd = pick_pselect6_bit(nfds);
+		efd = pick_pselect6_bit(nfds);
+
+		if (rfd >= 0) {
+			if (!fd_poll_can_block(rfd))
+				FD_SET(rfd, rfds);
+			else
+				__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+						   __ATOMIC_RELAXED);
+		}
+		if (wfd >= 0) {
+			if (!fd_poll_can_block(wfd))
+				FD_SET(wfd, wfds);
+			else
+				__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+						   __ATOMIC_RELAXED);
+		}
+		if (efd >= 0) {
+			if (!fd_poll_can_block(efd))
+				FD_SET(efd, exfds);
+			else
+				__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+						   __ATOMIC_RELAXED);
+		}
 	}
 
 	rec->a2 = (unsigned long) rfds;

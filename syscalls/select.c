@@ -10,11 +10,48 @@
 
 #include "fd.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+
+/*
+ * Pick one bit-position within [0, nfds) for the select(2) / pselect6(2)
+ * fd_set.  Distribution:
+ *   ~60%  the live fd number of a tracked pollable fd_type (so
+ *         do_select walks into a real ->poll handler with a wait
+ *         queue rather than a regular-file shortcut)
+ *   ~30%  legacy random bit position within [0, nfds)
+ *   ~10%  a deliberately-high bit unlikely to map to an open fd,
+ *         exercising the EBADF leg of do_select()
+ *
+ * Returns -1 when the pollable bucket fires but the chosen fd is
+ * outside the fd_set's [0, nfds) range or no candidate is available;
+ * the caller skips FD_SET for that slot.
+ */
+static int pick_select_bit(unsigned int nfds)
+{
+	unsigned int roll = rnd_modulo_u32(100);
+	int fd;
+
+	if (roll < 60) {
+		fd = get_pollable_random_fd();
+		if (fd < 0 || (unsigned int) fd >= nfds)
+			return -1;
+		return fd;
+	}
+
+	if (roll < 90)
+		return (int) rnd_modulo_u32(nfds);
+
+	/* invalid bucket: a bit position in the upper half of the bitmap
+	 * that is unlikely to correspond to a currently-open fd. */
+	if (nfds > 256)
+		return (int)(256 + rnd_modulo_u32(nfds - 256));
+	return (int) rnd_modulo_u32(nfds);
+}
 
 /*
  * Snapshot of the four heap allocations sanitise hands to the kernel,
@@ -53,39 +90,50 @@ static void sanitise_select(struct syscallrecord *rec)
 	FD_ZERO(exfds);
 
 	nset = rand32() % 10;
-	/* set some random fd's. */
+	/*
+	 * Pick the bits to set with the same coverage bias as poll(2):
+	 *   ~60% — use the actual fd number of a tracked pollable fd_type
+	 *          (pipe, eventfd, timerfd, signalfd, inotify, fanotify,
+	 *          socket).  do_select then walks into each fd's ->poll
+	 *          handler and parks on the real wait queue instead of
+	 *          short-circuiting on a regular file.
+	 *   ~30% — legacy random bit position.
+	 *   ~10% — an explicitly high bit unlikely to map to an open fd,
+	 *          so the EBADF rejection path inside do_select() stays
+	 *          exercised.
+	 *
+	 * Each candidate bit still passes through fd_poll_can_block() so
+	 * a collision with a FUSE / uffd / io_uring / vCPU / pidfd handle
+	 * cannot wedge the child in TASK_UNINTERRUPTIBLE.
+	 */
 	for (i = 0; i < nset; i++) {
-		int rfd = rand32() % nfds;
-		int wfd = rand32() % nfds;
-		int efd = rand32() % nfds;
+		int rfd, wfd, efd;
 
-		/*
-		 * The bit positions chosen here can collide with real tracked
-		 * fds (low-numbered handles below the 1023 nfds bound).  If a
-		 * collision lands on an fd whose fd_provider has poll_can_block
-		 * set, do_select → vfs_poll → fops->poll wedges the child in
-		 * TASK_UNINTERRUPTIBLE on the per-fd waitqueue (FUSE / uffd /
-		 * io_uring / vCPU / pidfd).  Skip those bits; an unset bit is
-		 * indistinguishable from "fd not interesting" to do_select().
-		 * Untracked bit positions (the common case) fall through
-		 * unchanged — fd_poll_can_block returns false for any fd not
-		 * present in the global fd_hash.
-		 */
-		if (!fd_poll_can_block(rfd))
-			FD_SET(rfd, rfds);
-		else
-			__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
-					   __ATOMIC_RELAXED);
-		if (!fd_poll_can_block(wfd))
-			FD_SET(wfd, wfds);
-		else
-			__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
-					   __ATOMIC_RELAXED);
-		if (!fd_poll_can_block(efd))
-			FD_SET(efd, exfds);
-		else
-			__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
-					   __ATOMIC_RELAXED);
+		rfd = pick_select_bit(nfds);
+		wfd = pick_select_bit(nfds);
+		efd = pick_select_bit(nfds);
+
+		if (rfd >= 0) {
+			if (!fd_poll_can_block(rfd))
+				FD_SET(rfd, rfds);
+			else
+				__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+						   __ATOMIC_RELAXED);
+		}
+		if (wfd >= 0) {
+			if (!fd_poll_can_block(wfd))
+				FD_SET(wfd, wfds);
+			else
+				__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+						   __ATOMIC_RELAXED);
+		}
+		if (efd >= 0) {
+			if (!fd_poll_can_block(efd))
+				FD_SET(efd, exfds);
+			else
+				__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+						   __ATOMIC_RELAXED);
+		}
 	}
 
 	rec->a2 = (unsigned long) rfds;

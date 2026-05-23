@@ -37,20 +37,50 @@ static struct pollfd *alloc_pollfds(struct syscallrecord *rec)
 	pollfd = zmalloc_tracked(num_fds * sizeof(struct pollfd));
 
 	for (i = 0; i < num_fds; i++) {
-		int fd;
+		int fd = -1;
 		unsigned int tries;
 
 		/*
-		 * Same blocking-poll wedge as arm_epoll(): poll(2) walks each
-		 * pollfd and calls do_pollfd → vfs_poll → fops->poll on it; a
-		 * /dev/fuse handle without a live daemon parks the child in
-		 * TASK_UNINTERRUPTIBLE on the FUSE waitqueue.  Reroll up to a
-		 * bounded number of times; if we still hit a tagged fd, set the
-		 * pollfd entry's fd to -1 so the kernel ignores it (poll/ppoll
-		 * skip negative fds entirely per do_sys_poll's POLLNVAL guard).
+		 * Bias toward fds with a real wait queue — the kernel's
+		 * wake/wait codepath through do_sys_poll → vfs_poll →
+		 * fops->poll only blocks when the polled fd's fd_type has
+		 * a backing waitqueue (pipe, eventfd, timerfd, signalfd,
+		 * inotify, fanotify, socket).  Random fds drawn from
+		 * get_random_fd() are dominated by regular-file fds
+		 * (POLLIN | POLLOUT immediate return) and untracked /
+		 * closed fds (POLLNVAL), neither of which exercises the
+		 * wait-then-wake logic the audit doc references for poll.
+		 *
+		 * Distribution per slot:
+		 *   ~60% pollable fd from a tracked fd_type / fd-event
+		 *        provider via get_pollable_random_fd()
+		 *   ~30% generic random fd (legacy long tail)
+		 *   ~10% deliberately invalid fd to keep the POLLNVAL
+		 *        rejection path warm
+		 *
+		 * Same blocking-poll wedge guard as arm_epoll(): poll(2)
+		 * runs each pollfd's ->poll synchronously; a /dev/fuse
+		 * handle without a live daemon parks the child in
+		 * TASK_UNINTERRUPTIBLE on the FUSE waitqueue.  Reroll up
+		 * to a bounded number of times; if we still hit a tagged
+		 * fd, set the pollfd entry's fd to -1 so the kernel
+		 * ignores it (do_sys_poll skips negative fds per the
+		 * POLLNVAL guard).
 		 */
 		for (tries = 0; tries < 16; tries++) {
-			fd = get_random_fd();
+			unsigned int roll = rnd_modulo_u32(100);
+
+			if (roll < 60) {
+				fd = get_pollable_random_fd();
+			} else if (roll < 90) {
+				fd = get_random_fd();
+			} else {
+				/* invalid-fd bucket: a high fd number
+				 * unlikely to be open, exercising the
+				 * EBADF / POLLNVAL leg of do_sys_poll. */
+				fd = (int) (8000 + rnd_modulo_u32(2000));
+				break;
+			}
 			if (fd < 0)
 				break;
 			if (!fd_poll_can_block(fd))

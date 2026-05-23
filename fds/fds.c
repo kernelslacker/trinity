@@ -361,6 +361,39 @@ retry:
 }
 
 /*
+ * Pick a random fd from the subset of fd_types whose backing kernel
+ * file ops actually park the caller on a real wait queue: pipes,
+ * eventfd, timerfd, signalfd, inotify, fanotify, and sockets.  These
+ * are the fd shapes whose ->poll handlers feed poll(2)/select(2)
+ * properly, as opposed to regular-file fds (which short-circuit to
+ * POLLIN | POLLOUT) or random untracked fds (which are predominantly
+ * non-pollable or closed).
+ *
+ * Each candidate fd_type is filtered through get_typed_fd(), which
+ * already skips empty provider pools and falls back to get_random_fd()
+ * if no object of the requested fd_type is available — so even on a
+ * minimal startup configuration this never wedges.  Providers tagged
+ * poll_can_block are excluded by construction: none of the listed
+ * fd_types opt into that tag (FUSE/uffd/kvm/io_uring/pidfd/seccomp_notif
+ * are kept out so the wait/wake codepath in do_sys_poll / do_select
+ * actually gets to block).
+ */
+int get_pollable_random_fd(void)
+{
+	static const enum argtype pollable[] = {
+		ARG_FD_PIPE,
+		ARG_FD_EVENTFD,
+		ARG_FD_TIMERFD,
+		ARG_FD_SIGNALFD,
+		ARG_FD_INOTIFY,
+		ARG_FD_FANOTIFY,
+		ARG_FD_SOCKET,
+	};
+
+	return get_typed_fd(pollable[rnd_modulo_u32(ARRAY_SIZE(pollable))]);
+}
+
+/*
  * Return a live fd from this child's recent-returns ring, or -1 if none
  * are available.  Validates each candidate with fcntl(F_GETFD) and
  * evicts stale entries (EBADF) inline to keep the ring clean.

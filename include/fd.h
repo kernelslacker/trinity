@@ -60,6 +60,14 @@ bool fd_poll_can_block(int fd);
 int get_random_fd(void);
 int get_new_random_fd(void);
 int get_typed_fd(enum argtype type);
+
+/*
+ * Pick from the fd_types whose ->poll handlers park the caller on a
+ * real wait queue (pipe / eventfd / timerfd / signalfd / inotify /
+ * fanotify / socket).  Used by poll(2)/ppoll(2)/select(2)/pselect6(2)
+ * to bias the watch set toward fds the kernel actually has to wait on.
+ */
+int get_pollable_random_fd(void);
 int get_child_live_fd(struct childdata *child);
 
 /* Defined in fds/epoll.c — child-side lazy arm.  See block comment
