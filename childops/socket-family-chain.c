@@ -200,8 +200,17 @@ static bool run_alg_chain(unsigned int *err_burst)
 	}
 
 	if (bind(parent_fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		if (errno == ENOENT || errno == ESRCH ||
-		    errno == EPERM || errno == ENOPROTOOPT)
+		/*
+		 * Only count errors that suggest the kernel doesn't support
+		 * AF_ALG at all (ENOPROTOOPT) or rejects on privilege
+		 * (EPERM).  ENOENT/ESRCH are expected per-alg churn:
+		 * pick_alg draws from a curated dictionary and not every
+		 * name is built on every kernel (e.g. sig algorithms gated
+		 * behind extra config).  Latching on those disabled the op
+		 * fleet-wide after one unlucky child drew a run of missing
+		 * names in a row.
+		 */
+		if (errno == EPERM || errno == ENOPROTOOPT)
 			(*err_burst)++;
 		goto out;
 	}
