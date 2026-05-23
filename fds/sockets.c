@@ -11,7 +11,6 @@
 #include "debug.h"
 #include "deferred-free.h"
 #include "domains.h"
-#include "fd-event.h"
 #include "net.h"
 #include "objects.h"
 #include "proto-alg-dict.h"
@@ -409,13 +408,14 @@ static void socket_child_ops(void)
 
 	afd = accept4(fd, NULL, NULL, SOCK_NONBLOCK | SOCK_CLOEXEC);
 	if (afd != -1) {
-		struct childdata *child = this_child();
-
-		if (child == NULL || child->fd_event_ring == NULL ||
-		    !fd_event_enqueue(child->fd_event_ring, FD_EVENT_NEWSOCK,
-				      afd, (int)si->triplet.family, 0,
-				      si->triplet.type, si->triplet.protocol))
-			close(afd);
+		/* Accepted fd lives only in this child's fd table; we
+		 * cannot usefully publish it to the parent's pool
+		 * (post-fork descriptors are not visible in the parent,
+		 * and replacement children fork from the parent's table
+		 * which never had this fd).  Close it and let the
+		 * listen()ed-on fd's queue continue to drive new accepts
+		 * as a stress shape only. */
+		close(afd);
 	}
 
 out:
@@ -542,15 +542,6 @@ static int open_sockets(void)
 	 *     family/type/protocol triplet and opens a fresh socket.
 	 *     Runs in the parent post-fork — exactly the case the
 	 *     shared obj heap exists to serve.
-	 *
-	 *   - fd-event.c FD_EVENT_NEWSOCK drain: a child that
-	 *     successfully accept4()s an inbound connection in
-	 *     socket_child_ops() enqueues the new fd plus the parent
-	 *     family/type/protocol scalars; the parent's event drain
-	 *     calls add_socket() with those, transferring the fd into
-	 *     the global pool.  Runs in the parent post-fork on every
-	 *     drained event, so the obj must land somewhere children
-	 *     can see — same structural property as the regen path.
 	 *
 	 * struct socketinfo carries no pointer fields (triplet is three
 	 * ints, fd is an int), so this is an obj-struct-only conversion
