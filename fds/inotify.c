@@ -98,13 +98,12 @@ static int init_inotify_fds(void)
 	if (fd < 0)
 		return false;
 
-	arm_inotify(fd);
-
 	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
 		return false;
 	}
+	arm_inotify(fd);
 	obj->inotifyobj.fd = fd;
 	obj->inotifyobj.flags = 0;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_INOTIFY);
@@ -114,13 +113,12 @@ static int init_inotify_fds(void)
 		if (fd < 0)
 			continue;
 
-		arm_inotify(fd);
-
 		obj = alloc_object();
 		if (obj == NULL) {
 			close(fd);
 			continue;
 		}
+		arm_inotify(fd);
 		obj->inotifyobj.fd = fd;
 		obj->inotifyobj.flags = flags[i];
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_INOTIFY);
@@ -177,13 +175,12 @@ static int open_inotify_fd(void)
 	if (fd < 0)
 		return false;
 
-	arm_inotify(fd);
-
 	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
 		return false;
 	}
+	arm_inotify(fd);
 	obj->inotifyobj.fd = fd;
 	obj->inotifyobj.flags = flags;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_INOTIFY);
