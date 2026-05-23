@@ -4,34 +4,167 @@
 	 size_t, sigsetsize)
  */
 #include <signal.h>
+#include <string.h>
 #include <time.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "utils.h"
+
+/*
+ * "Interesting" signals from the receiver's standpoint -- the ones
+ * userspace actually waits on with sigtimedwait().  We populate the
+ * mask 1-3 bits at a time out of this list so most calls have a
+ * genuinely-restricted wait set, not a fillset-shaped catch-all.
+ */
+static int interesting_signals[] = {
+	SIGUSR1,
+	SIGUSR2,
+	SIGALRM,
+	SIGCHLD,
+	SIGIO,
+};
+
+static void build_sigset(sigset_t *set)
+{
+	unsigned int draw = rnd_modulo_u32(10);
+	int rtbase = SIGRTMIN;
+	int rtcount = SIGRTMAX - SIGRTMIN + 1;
+	unsigned int nbits, i;
+
+	if (draw < 7) {
+		/* 1-3 named bits */
+		sigemptyset(set);
+		nbits = 1 + rnd_modulo_u32(3);
+		for (i = 0; i < nbits; i++) {
+			if (RAND_BOOL()) {
+				int sig = interesting_signals[
+					rnd_modulo_u32(ARRAY_SIZE(interesting_signals))];
+				sigaddset(set, sig);
+			} else if (rtcount > 0) {
+				/* SIGRTMIN..SIGRTMIN+3 weighted -- real
+				 * userspace tends to pick from the low rt
+				 * range for IPC. */
+				int span = rtcount < 4 ? rtcount : 4;
+				sigaddset(set, rtbase + (int) rnd_modulo_u32(span));
+			}
+		}
+	} else if (draw < 8) {
+		/* empty -- legal, blocks for the full timeout unless one
+		 * arrives unrelated and gets requeued through the regular
+		 * pending-set path. */
+		sigemptyset(set);
+	} else if (draw < 9) {
+		/* everything but the unblockable ones -- legal, exercises
+		 * the kernel's "match any pending" fastpath. */
+		sigfillset(set);
+		sigdelset(set, SIGKILL);
+		sigdelset(set, SIGSTOP);
+	} else {
+		/* Pure-random byte fill.  Some bits will be reserved /
+		 * unmappable; the kernel masks them off silently, but the
+		 * copy_from_user / fillset internal path runs either way. */
+		unsigned char *p = (unsigned char *) set;
+		for (i = 0; i < sizeof(*set); i++)
+			p[i] = (unsigned char) rand32();
+	}
+}
+
+static void build_timeout(struct timespec *ts, unsigned long *sigsetsize)
+{
+	unsigned int draw = rnd_modulo_u32(8);
+
+	switch (draw) {
+	case 0:
+		/* zero -- poll, return immediately */
+		ts->tv_sec = 0;
+		ts->tv_nsec = 0;
+		break;
+	case 1:
+		/* tiny -- fast-path: 1 ns */
+		ts->tv_sec = 0;
+		ts->tv_nsec = 1;
+		break;
+	case 2:
+		/* 1 ms */
+		ts->tv_sec = 0;
+		ts->tv_nsec = 1000000;
+		break;
+	case 3:
+		/* 100 ms */
+		ts->tv_sec = 0;
+		ts->tv_nsec = 100000000;
+		break;
+	case 4:
+		/* 1 s -- still bounded; child wall time stays sane */
+		ts->tv_sec = 1;
+		ts->tv_nsec = 0;
+		break;
+	case 5:
+		/* far-future: 10000 s.  The syscall must not overflow
+		 * when converting to internal jiffies/ktime_t.  The
+		 * alarm timer wired up by NEED_ALARM will interrupt
+		 * us long before we ever wait this out. */
+		ts->tv_sec = 10000;
+		ts->tv_nsec = 0;
+		break;
+	case 6:
+		/* intentionally invalid: tv_nsec >= 1e9 -- keeps the
+		 * EINVAL gate warm */
+		ts->tv_sec = 0;
+		ts->tv_nsec = 1000000000 + (long) rand32();
+		break;
+	default:
+		/* 10 ms variant */
+		ts->tv_sec = 0;
+		ts->tv_nsec = 10000000;
+		break;
+	}
+
+	/*
+	 * sigsetsize legality: 90% sizeof(sigset_t) (the only value the
+	 * kernel accepts on this arch), 10% intentionally-malformed so
+	 * the EINVAL gate against signal_size mismatches keeps firing.
+	 */
+	if (rnd_modulo_u32(10) < 9)
+		*sigsetsize = sizeof(sigset_t);
+	else
+		*sigsetsize = (unsigned long) rand32();
+}
 
 static void sanitise_rt_sigtimedwait(struct syscallrecord *rec)
 {
 	sigset_t *set;
 	struct timespec *ts;
+	unsigned long sigsetsize;
 
 	set = (sigset_t *) get_writable_address(sizeof(*set));
 	if (set == NULL)
 		return;
-	sigemptyset(set);
-	sigaddset(set, SIGUSR1);
-	sigaddset(set, SIGUSR2);
-	sigaddset(set, SIGALRM);
+	build_sigset(set);
 
-	/* short timeout: 0-1ms to avoid blocking */
-	ts = (struct timespec *) get_writable_address(sizeof(*ts));
-	if (ts == NULL)
-		return;
-	ts->tv_sec = 0;
-	ts->tv_nsec = rnd_modulo_u32(1000000);
+	/*
+	 * Timeout pointer bucket: most of the time non-NULL (with a
+	 * shaped timespec from build_timeout), small fraction NULL
+	 * (block-forever -- the alarm timer will fire).
+	 */
+	if (rnd_modulo_u32(10) < 8) {
+		ts = (struct timespec *) get_writable_address(sizeof(*ts));
+		if (ts == NULL)
+			return;
+		build_timeout(ts, &sigsetsize);
+		rec->a3 = (unsigned long) ts;
+	} else {
+		rec->a3 = 0;
+		/* Still resolve sigsetsize even when ts is NULL. */
+		if (rnd_modulo_u32(10) < 9)
+			sigsetsize = sizeof(sigset_t);
+		else
+			sigsetsize = (unsigned long) rand32();
+	}
 
 	rec->a1 = (unsigned long) set;
-	rec->a3 = (unsigned long) ts;
-	rec->a4 = sizeof(sigset_t);
+	rec->a4 = sigsetsize;
 
 	/*
 	 * uinfo (a2) is the kernel's writeback target for the siginfo of the
