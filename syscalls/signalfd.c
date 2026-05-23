@@ -4,7 +4,44 @@
 #include <signal.h>
 #include <unistd.h>
 #include "objects.h"
+#include "rnd.h"
 #include "sanitise.h"
+
+/*
+ * Populate the user_mask the four signalfd shapes care about:
+ *   - empty mask: drives the accept-no-signals path
+ *   - single RT signal: hits the per-signal queued-info path
+ *   - mixed standard set: classic SIGUSR1/2 + SIGCHLD/SIGALRM mix
+ *   - sigfillset minus uncatchables: exercises the mask-sanitisation
+ *     path where the kernel silently drops SIGKILL/SIGSTOP
+ */
+static void fill_signalfd_mask(sigset_t *set)
+{
+	int signo;
+
+	switch (rnd_modulo_u32(4)) {
+	case 0:
+		sigemptyset(set);
+		break;
+	case 1:
+		sigemptyset(set);
+		signo = SIGRTMIN + (int) rnd_modulo_u32(SIGRTMAX - SIGRTMIN + 1);
+		sigaddset(set, signo);
+		break;
+	case 2:
+		sigemptyset(set);
+		sigaddset(set, SIGUSR1);
+		sigaddset(set, SIGUSR2);
+		sigaddset(set, SIGCHLD);
+		sigaddset(set, SIGALRM);
+		break;
+	default:
+		sigfillset(set);
+		sigdelset(set, SIGKILL);
+		sigdelset(set, SIGSTOP);
+		break;
+	}
+}
 
 static void sanitise_signalfd(struct syscallrecord *rec)
 {
@@ -13,12 +50,15 @@ static void sanitise_signalfd(struct syscallrecord *rec)
 	set = (sigset_t *) get_writable_struct(sizeof(*set));
 	if (!set)
 		return;
-	sigemptyset(set);
-	sigaddset(set, SIGUSR1);
-	sigaddset(set, SIGUSR2);
+	fill_signalfd_mask(set);
 
 	rec->a2 = (unsigned long) set;
 	rec->a3 = sizeof(sigset_t);
+
+	/* Occasionally pass an undersized sizemask to hit the EINVAL gate
+	 * the kernel uses to reject mismatched sigset_t sizes. */
+	if (rnd_modulo_u32(10) == 0)
+		rec->a3 = sizeof(sigset_t) - 8;
 }
 
 static void post_signalfd(struct syscallrecord *rec)
@@ -68,12 +108,13 @@ static void sanitise_signalfd4(struct syscallrecord *rec)
 	set = (sigset_t *) get_writable_struct(sizeof(*set));
 	if (!set)
 		return;
-	sigemptyset(set);
-	sigaddset(set, SIGUSR1);
-	sigaddset(set, SIGUSR2);
+	fill_signalfd_mask(set);
 
 	rec->a2 = (unsigned long) set;
 	rec->a3 = sizeof(sigset_t);
+
+	if (rnd_modulo_u32(10) == 0)
+		rec->a3 = sizeof(sigset_t) - 8;
 }
 
 struct syscallentry syscall_signalfd4 = {
