@@ -121,7 +121,7 @@ static int init_pagecache_fds(void)
 		if (!S_ISREG(sb.st_mode))
 			continue;
 
-		fd = open(filename, O_RDONLY | O_NONBLOCK);
+		fd = open(filename, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
 		if (fd < 0)
 			continue;
 
