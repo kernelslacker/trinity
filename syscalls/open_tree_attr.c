@@ -24,10 +24,17 @@ static unsigned long open_tree_attr_flags[] = {
 	OPEN_TREE_CLONE, OPEN_TREE_CLOEXEC,
 };
 
+/*
+ * MOUNT_ATTR_IDMAP intentionally excluded: build_mount_idmapped() needs
+ * a paired userns_fd in attr->userns_fd, which we have no source for
+ * yet, so the kernel EINVALs immediately on any random-OR pick that
+ * includes the bit, wasting the iteration before the idmap-build arm
+ * runs.  Re-enable once a userns_fd source is wired in.
+ */
 static unsigned long mount_attr_bits[] = {
 	MOUNT_ATTR_RDONLY, MOUNT_ATTR_NOSUID, MOUNT_ATTR_NODEV,
 	MOUNT_ATTR_NOEXEC, MOUNT_ATTR_NOATIME, MOUNT_ATTR_STRICTATIME,
-	MOUNT_ATTR_NODIRATIME, MOUNT_ATTR_IDMAP, MOUNT_ATTR_NOSYMFOLLOW,
+	MOUNT_ATTR_NODIRATIME, MOUNT_ATTR_NOSYMFOLLOW,
 };
 
 static void sanitise_open_tree_attr(struct syscallrecord *rec)
