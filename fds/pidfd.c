@@ -15,6 +15,7 @@
 #include "params.h"
 #include "pids.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -69,7 +70,7 @@ static int open_pidfd_fd(void)
 	/* Try to get a random child process pid. Fall back to pid 1 if
 	 * no children are running yet or the slot is empty. */
 	if (shm->running_childs > 0) {
-		unsigned int i = rand() % max_children;
+		unsigned int i = rnd_modulo_u32(max_children);
 
 		if (__atomic_load_n(&pids[i], __ATOMIC_RELAXED) != EMPTY_PIDSLOT)
 			pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
