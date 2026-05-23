@@ -169,7 +169,6 @@ skip_si:
 				iov->iov_len = len;
 				msg->msg_iov = iov;
 				msg->msg_iovlen = 1;
-				iov_len_sum = len;
 				rec->a4 = 1;
 				goto set_control;
 			}
@@ -178,14 +177,10 @@ skip_si:
 
 	if (RAND_BOOL()) {
 		unsigned int num_entries;
-		unsigned int i;
 
 		num_entries = RAND_RANGE(1, 3);
 		msg->msg_iov = alloc_iovec(num_entries);
 		msg->msg_iovlen = num_entries;
-
-		for (i = 0; i < num_entries; i++)
-			iov_len_sum += msg->msg_iov[i].iov_len;
 	}
 
 set_control:
@@ -214,6 +209,23 @@ set_control:
 	 * malloc_printerr -> abort).  Mirrors recvmsg.
 	 */
 	scrub_msghdr_for_kernel_write(msg);
+
+	/*
+	 * Recompute iov_len_sum AFTER the scrub pass.  scrub_msghdr_for_
+	 * kernel_write() zeros iov_len on any entry whose iov_base overlapped
+	 * an alloc_shared region or the libc brk arena, so a sum captured
+	 * before the scrub would over-count and let the post handler's
+	 * retval bound reject legitimate kernel returns up to the actual
+	 * post-scrub Σ iov_len.  Covers both the gen_msg single-iov path and
+	 * the alloc_iovec multi-iov path uniformly -- both fall through to
+	 * the scrub above with msg_iov / msg_iovlen populated.
+	 */
+	if (msg->msg_iov != NULL && msg->msg_iovlen != 0) {
+		unsigned int i;
+
+		for (i = 0; i < msg->msg_iovlen; i++)
+			iov_len_sum += msg->msg_iov[i].iov_len;
+	}
 
 	rec->a2 = (unsigned long) msg;
 
