@@ -8,6 +8,7 @@
 #include "arch.h"
 #include "compat.h"
 #include "random.h"
+#include "rnd.h"
 #include "sysv-shm.h"
 #include "objects.h"
 #include "utils.h"
@@ -48,7 +49,7 @@ void create_sysv_shms(void)
 
 		flags = 0660 | IPC_CREAT | IPC_EXCL | shmget_flags[i];
 
-		size = page_size * (1 + rand() % 10);
+		size = page_size * (1 + rnd_modulo_u32(10));
 
 		id = shmget(IPC_PRIVATE, size, flags);
 		if (id == -1) {
