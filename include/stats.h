@@ -613,7 +613,8 @@ struct stats_s {
 
 	/* signal_storm childop counters */
 	unsigned long signal_storm_runs;	/* total signal_storm invocations */
-	unsigned long signal_storm_kill;	/* kill() calls issued */
+	unsigned long signal_storm_kill;	/* kill() calls issued (sig != 0) */
+	unsigned long signal_storm_probe;	/* kill(pid, 0) existence probes */
 	unsigned long signal_storm_sigqueue;	/* sigqueue() calls issued */
 	unsigned long signal_storm_no_targets;	/* no live siblings to signal */
 

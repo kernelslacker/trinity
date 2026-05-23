@@ -116,9 +116,20 @@ static int pick_signal_in(enum catalog_mode mode)
 static void emit_signal(pid_t pid, int sig, bool use_kill)
 {
 	if (use_kill) {
-		(void)kill(pid, (int)RAND_NEGATIVE_OR(sig));
-		__atomic_add_fetch(&shm->stats.signal_storm_kill,
-				   1, __ATOMIC_RELAXED);
+		int sig_used = (int)RAND_NEGATIVE_OR(sig);
+
+		(void)kill(pid, sig_used);
+		/*
+		 * kill(pid, 0) is a process-existence probe and delivers
+		 * no signal; bill it separately so the delivery counter
+		 * reflects actual signal delivery rate.
+		 */
+		if (sig_used == 0)
+			__atomic_add_fetch(&shm->stats.signal_storm_probe,
+					   1, __ATOMIC_RELAXED);
+		else
+			__atomic_add_fetch(&shm->stats.signal_storm_kill,
+					   1, __ATOMIC_RELAXED);
 	} else {
 		union sigval sv;
 

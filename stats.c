@@ -835,7 +835,7 @@ static void dump_stats_json(void)
 			"\"mmap_anomalies\":%lu,\"sock_anomalies\":%lu},"
 		"\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
 			"\"overlay\":%lu,\"unsupported\":%lu},"
-		"\"signal_storm\":{\"runs\":%lu,\"kill\":%lu,\"sigqueue\":%lu,\"no_targets\":%lu},"
+		"\"signal_storm\":{\"runs\":%lu,\"kill\":%lu,\"probe\":%lu,\"sigqueue\":%lu,\"no_targets\":%lu},"
 		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},"
 		"\"pipe_thrash\":{\"runs\":%lu,\"pipes\":%lu,\"socketpairs\":%lu,\"alloc_failed\":%lu},"
 		"\"fork_storm\":{\"runs\":%lu,\"forks\":%lu,\"failed\":%lu,"
@@ -1055,6 +1055,7 @@ static void dump_stats_json(void)
 		shm->stats.fs_lifecycle_rdonly, shm->stats.fs_lifecycle_overlay,
 		shm->stats.fs_lifecycle_unsupported,
 		shm->stats.signal_storm_runs, shm->stats.signal_storm_kill,
+		shm->stats.signal_storm_probe,
 		shm->stats.signal_storm_sigqueue, shm->stats.signal_storm_no_targets,
 		shm->stats.futex_storm_runs, shm->stats.futex_storm_inner_crashed,
 		shm->stats.futex_storm_iters,
@@ -3735,6 +3736,7 @@ void dump_stats(void)
 	if (shm->stats.signal_storm_runs) {
 		stat_row("signal_storm", "runs",       shm->stats.signal_storm_runs);
 		stat_row("signal_storm", "kill",       shm->stats.signal_storm_kill);
+		stat_row("signal_storm", "probe",      shm->stats.signal_storm_probe);
 		stat_row("signal_storm", "sigqueue",   shm->stats.signal_storm_sigqueue);
 		stat_row("signal_storm", "no_targets", shm->stats.signal_storm_no_targets);
 	}
