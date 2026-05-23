@@ -12,6 +12,7 @@
 #include "syscall.h"
 #include "params.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "tables.h"
 
@@ -68,7 +69,7 @@ retry:
 		return;
 	}
 
-	call = rand() % max_nr_syscalls;
+	call = rnd_modulo_u32(max_nr_syscalls);
 	entry = syscalls[call].entry;
 
 	if (validate_specific_syscall_silent(syscalls, call) == false)
