@@ -3,7 +3,15 @@
  */
 
 #include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
+#include <arpa/inet.h>
 #include <linux/filter.h>
+#include <linux/if_packet.h>
+#include <linux/netlink.h>
 #include "arch.h"
 #include "bpf.h"
 #include "deferred-free.h"
@@ -42,6 +50,243 @@ static const unsigned int socket_opts[] = {
 	SCM_TS_OPT_ID,
 #endif
 };
+
+/*
+ * Structured payload builders for the common (level, optname) shapes.
+ *
+ * Each builder writes a sane-ish value of the optname's documented
+ * ABI shape into `buf` (always backed by the page_size allocation
+ * created in do_setsockopt) and returns the byte length the kernel
+ * expects.  Biasing draws toward these entries lets per-protocol
+ * copy_from_user / option-dispatch code run on well-formed inputs
+ * instead of failing at the size check.
+ *
+ * RNG comes from trinity's rnd_* helpers exclusively; libc rand() is
+ * not used.
+ */
+static socklen_t build_int_bool(void *buf)
+{
+	*(int *)buf = (int)(rnd_u32() & 1);
+	return sizeof(int);
+}
+
+static socklen_t build_int_rand(void *buf)
+{
+	*(int *)buf = (int) rnd_u32();
+	return sizeof(int);
+}
+
+static socklen_t build_int_small_positive(void *buf)
+{
+	*(int *)buf = 1 + (int) rnd_modulo_u32(255);
+	return sizeof(int);
+}
+
+static socklen_t build_linger(void *buf)
+{
+	struct linger *l = buf;
+
+	l->l_onoff = (int)(rnd_u32() & 1);
+	l->l_linger = (int) rnd_modulo_u32(60);
+	return sizeof(struct linger);
+}
+
+static socklen_t build_timeval(void *buf)
+{
+	struct timeval *tv = buf;
+
+	tv->tv_sec = (long) rnd_modulo_u32(30);
+	tv->tv_usec = (long) rnd_modulo_u32(1000000);
+	return sizeof(struct timeval);
+}
+
+static socklen_t build_ip_mreqn(void *buf)
+{
+	struct ip_mreqn *m = buf;
+
+	/* 224.0.0.x range — locally-scoped multicast. */
+	m->imr_multiaddr.s_addr = htonl(0xe0000001u + rnd_modulo_u32(0xff));
+	m->imr_address.s_addr = htonl(INADDR_ANY);
+	m->imr_ifindex = 0;
+	return sizeof(struct ip_mreqn);
+}
+
+static socklen_t build_ipv6_mreq(void *buf)
+{
+	struct ipv6_mreq *m = buf;
+	uint8_t *addr = (uint8_t *) &m->ipv6mr_multiaddr;
+
+	memset(addr, 0, 16);
+	addr[0] = 0xff;
+	addr[1] = 0x02;
+	addr[15] = (uint8_t)(1u + rnd_modulo_u32(0xfe));
+	m->ipv6mr_interface = 0;
+	return sizeof(struct ipv6_mreq);
+}
+
+static socklen_t build_packet_mreq(void *buf)
+{
+	struct packet_mreq *m = buf;
+	unsigned int i;
+
+	m->mr_ifindex = 1;
+	m->mr_type = (unsigned short)(1u + rnd_modulo_u32(4));
+	m->mr_alen = 6;
+	for (i = 0; i < sizeof(m->mr_address); i++)
+		m->mr_address[i] = (unsigned char)(rnd_u32() & 0xff);
+	return sizeof(struct packet_mreq);
+}
+
+static socklen_t build_string_ifname(void *buf)
+{
+	static const char *names[] = { "lo", "eth0", "wlan0", "" };
+	const char *n = names[rnd_modulo_u32(ARRAY_SIZE(names))];
+	size_t len = strlen(n);
+
+	memcpy(buf, n, len);
+	((char *)buf)[len] = '\0';
+	return (socklen_t)(len + 1);
+}
+
+struct sockopt_entry {
+	int level;
+	int optname;
+	socklen_t (*build)(void *buf);
+};
+
+static const struct sockopt_entry sockopt_table[] = {
+	/* SOL_SOCKET — int-shaped flags & buffers, struct linger, struct timeval, string ifname */
+	{ SOL_SOCKET, SO_REUSEADDR,     build_int_bool },
+	{ SOL_SOCKET, SO_KEEPALIVE,     build_int_bool },
+	{ SOL_SOCKET, SO_BROADCAST,     build_int_bool },
+	{ SOL_SOCKET, SO_OOBINLINE,     build_int_bool },
+	{ SOL_SOCKET, SO_SNDBUF,        build_int_rand },
+	{ SOL_SOCKET, SO_RCVBUF,        build_int_rand },
+	{ SOL_SOCKET, SO_PRIORITY,      build_int_small_positive },
+	{ SOL_SOCKET, SO_LINGER,        build_linger },
+	{ SOL_SOCKET, SO_RCVTIMEO,      build_timeval },
+	{ SOL_SOCKET, SO_SNDTIMEO,      build_timeval },
+	{ SOL_SOCKET, SO_MARK,          build_int_rand },
+	{ SOL_SOCKET, SO_PASSCRED,      build_int_bool },
+	{ SOL_SOCKET, SO_TIMESTAMP,     build_int_bool },
+	{ SOL_SOCKET, SO_TIMESTAMPNS,   build_int_bool },
+	{ SOL_SOCKET, SO_BINDTODEVICE,  build_string_ifname },
+	{ SOL_SOCKET, SO_REUSEPORT,     build_int_bool },
+	{ SOL_SOCKET, SO_BUSY_POLL,     build_int_small_positive },
+	{ SOL_SOCKET, SO_INCOMING_CPU,  build_int_small_positive },
+
+	/* IPPROTO_IP */
+	{ IPPROTO_IP,   IP_TTL,                build_int_small_positive },
+	{ IPPROTO_IP,   IP_TOS,                build_int_small_positive },
+	{ IPPROTO_IP,   IP_MTU_DISCOVER,       build_int_small_positive },
+	{ IPPROTO_IP,   IP_PKTINFO,            build_int_bool },
+	{ IPPROTO_IP,   IP_RECVERR,            build_int_bool },
+	{ IPPROTO_IP,   IP_HDRINCL,            build_int_bool },
+	{ IPPROTO_IP,   IP_ADD_MEMBERSHIP,     build_ip_mreqn },
+	{ IPPROTO_IP,   IP_DROP_MEMBERSHIP,    build_ip_mreqn },
+	{ IPPROTO_IP,   IP_MULTICAST_IF,       build_ip_mreqn },
+	{ IPPROTO_IP,   IP_MULTICAST_TTL,      build_int_small_positive },
+	{ IPPROTO_IP,   IP_MULTICAST_LOOP,     build_int_bool },
+	{ IPPROTO_IP,   IP_FREEBIND,           build_int_bool },
+	{ IPPROTO_IP,   IP_TRANSPARENT,        build_int_bool },
+
+	/* IPPROTO_IPV6 */
+	{ IPPROTO_IPV6, IPV6_V6ONLY,           build_int_bool },
+	{ IPPROTO_IPV6, IPV6_UNICAST_HOPS,     build_int_small_positive },
+	{ IPPROTO_IPV6, IPV6_MULTICAST_HOPS,   build_int_small_positive },
+	{ IPPROTO_IPV6, IPV6_MULTICAST_LOOP,   build_int_bool },
+	{ IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP,   build_ipv6_mreq },
+	{ IPPROTO_IPV6, IPV6_DROP_MEMBERSHIP,  build_ipv6_mreq },
+	{ IPPROTO_IPV6, IPV6_RECVPKTINFO,      build_int_bool },
+	{ IPPROTO_IPV6, IPV6_TCLASS,           build_int_small_positive },
+
+	/* IPPROTO_TCP */
+	{ IPPROTO_TCP,  TCP_NODELAY,           build_int_bool },
+	{ IPPROTO_TCP,  TCP_MAXSEG,            build_int_small_positive },
+	{ IPPROTO_TCP,  TCP_CORK,              build_int_bool },
+	{ IPPROTO_TCP,  TCP_KEEPIDLE,          build_int_small_positive },
+	{ IPPROTO_TCP,  TCP_KEEPINTVL,         build_int_small_positive },
+	{ IPPROTO_TCP,  TCP_KEEPCNT,           build_int_small_positive },
+	{ IPPROTO_TCP,  TCP_SYNCNT,            build_int_small_positive },
+	{ IPPROTO_TCP,  TCP_LINGER2,           build_int_small_positive },
+	{ IPPROTO_TCP,  TCP_DEFER_ACCEPT,      build_int_small_positive },
+	{ IPPROTO_TCP,  TCP_QUICKACK,          build_int_bool },
+	{ IPPROTO_TCP,  TCP_FASTOPEN,          build_int_small_positive },
+	{ IPPROTO_TCP,  TCP_USER_TIMEOUT,      build_int_small_positive },
+
+	/* IPPROTO_UDP */
+	{ IPPROTO_UDP,  UDP_CORK,              build_int_bool },
+#ifdef UDP_GRO
+	{ IPPROTO_UDP,  UDP_GRO,               build_int_bool },
+#endif
+#ifdef UDP_SEGMENT
+	{ IPPROTO_UDP,  UDP_SEGMENT,           build_int_small_positive },
+#endif
+
+	/* SOL_NETLINK */
+	{ SOL_NETLINK,  NETLINK_ADD_MEMBERSHIP,   build_int_small_positive },
+	{ SOL_NETLINK,  NETLINK_DROP_MEMBERSHIP,  build_int_small_positive },
+	{ SOL_NETLINK,  NETLINK_PKTINFO,          build_int_bool },
+	{ SOL_NETLINK,  NETLINK_BROADCAST_ERROR,  build_int_bool },
+	{ SOL_NETLINK,  NETLINK_NO_ENOBUFS,       build_int_bool },
+	{ SOL_NETLINK,  NETLINK_CAP_ACK,          build_int_bool },
+	{ SOL_NETLINK,  NETLINK_EXT_ACK,          build_int_bool },
+
+	/* SOL_PACKET */
+	{ SOL_PACKET,   PACKET_ADD_MEMBERSHIP,    build_packet_mreq },
+	{ SOL_PACKET,   PACKET_DROP_MEMBERSHIP,   build_packet_mreq },
+	{ SOL_PACKET,   PACKET_VERSION,           build_int_small_positive },
+	{ SOL_PACKET,   PACKET_LOSS,              build_int_bool },
+	{ SOL_PACKET,   PACKET_AUXDATA,           build_int_bool },
+	{ SOL_PACKET,   PACKET_RESERVE,           build_int_small_positive },
+	{ SOL_PACKET,   PACKET_FANOUT,            build_int_rand },
+};
+
+/*
+ * Pick a structured entry, write its payload into so->optval, and (when
+ * `mismatch_len` is true) deliberately scramble so->optlen to land in
+ * the per-option size-validation rejection path.  Returns true on a
+ * successful build.
+ */
+static bool apply_sockopt_entry(struct sockopt *so, bool mismatch_len)
+{
+	const struct sockopt_entry *e;
+	socklen_t exact;
+
+	if (ARRAY_SIZE(sockopt_table) == 0)
+		return false;
+	if (so->optval == 0)
+		return false;
+
+	e = &sockopt_table[rnd_modulo_u32(ARRAY_SIZE(sockopt_table))];
+	exact = e->build((void *) so->optval);
+
+	so->level = e->level;
+	so->optname = e->optname;
+	so->optlen = exact;
+
+	if (mismatch_len) {
+		switch (rnd_modulo_u32(5)) {
+		case 0:
+			so->optlen = 0;
+			break;
+		case 1:
+			so->optlen = (exact >= 1) ? exact - 1 : 0;
+			break;
+		case 2:
+			so->optlen = exact + 1;
+			break;
+		case 3:
+			so->optlen = exact + (socklen_t) rnd_modulo_u32(64);
+			break;
+		case 4:
+			so->optlen = (socklen_t)(1u + rnd_modulo_u32(4096));
+			break;
+		}
+	}
+
+	return true;
+}
 
 static void socket_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
@@ -183,16 +428,10 @@ static void call_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
  */
 void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 {
+	unsigned int roll;
+	bool from_random_path = false;
+
 	so->optname = 0;
-
-	/* Sometimes just do generic options */
-	if (ONE_IN(10)) {
-		socket_setsockopt(so, triplet);
-		return;
-	}
-
-	if (triplet == NULL)
-		return;
 
 	/* get a page for the optval to live in.
 	 * Pushing this into per-proto .setsockopt calls is deferred because
@@ -207,25 +446,56 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	so->optval = (unsigned long) zmalloc_tracked(page_size);
 
 	/* At the minimum, we want len to be a char or int.
-	 * It gets (overridden below in the per-proto sso->func, so this
-	 * is just for the unannotated protocols.
+	 * It gets overridden below in the per-proto sso->func / per-entry
+	 * builder, so this is just a safe default for the unannotated
+	 * fallback paths.
 	 */
 	so->optlen = sockoptlen(0);
 
-	if (ONE_IN(100))
-		do_random_sso(so, triplet);
-	else
-		call_sso_ptr(so, triplet);
+	/* Without per-fd triplet provenance the protocol-specific dispatch
+	 * cannot pick a meaningful (level, optname); fall back to the
+	 * SOL_SOCKET path which is correct on any socket fd. */
+	if (triplet == NULL) {
+		socket_setsockopt(so, triplet);
+		goto disable_maybe;
+	}
 
 	/*
-	 * 10% of the time, mangle the options.
-	 * This should catch new options we don't know about, and also maybe some missing bounds checks.
+	 * Selection bias across the three coverage shapes:
+	 *   [ 0..69]  curated (level, optname, exact-size payload) entry
+	 *   [70..89]  legacy random per-protocol setsockopt path, retaining
+	 *             the 1-in-100 fully-random (level, optname) probe
+	 *   [90..99]  curated entry paired with an intentionally-wrong
+	 *             optlen to keep the per-option size-validation
+	 *             rejection path warm
 	 */
-	if (ONE_IN(10))
+	roll = rnd_modulo_u32(100);
+	if (roll < 70) {
+		if (!apply_sockopt_entry(so, false))
+			call_sso_ptr(so, triplet);
+	} else if (roll < 90) {
+		from_random_path = true;
+		if (ONE_IN(100))
+			do_random_sso(so, triplet);
+		else
+			call_sso_ptr(so, triplet);
+	} else {
+		if (!apply_sockopt_entry(so, true))
+			call_sso_ptr(so, triplet);
+	}
+
+	/*
+	 * 10% of the time mangle the optname bits.  Restrict this to the
+	 * random / legacy path; mangling a curated entry just defeats its
+	 * purpose and pushes the draw straight back into the EOPNOTSUPP
+	 * rejection path the curated table is meant to skip past.
+	 */
+	if (from_random_path && ONE_IN(10))
 		so->optname |= (1UL << (rnd_modulo_u32(32)));
 
-	/* optval should be nonzero to enable a boolean option, or zero if the option is to be disabled.
-	 * Let's disable it half the time.
+disable_maybe:
+	/* optval should be nonzero to enable a boolean option, or zero if
+	 * the option is to be disabled.  Disable it half the time.
 	 */
 	if (RAND_BOOL()) {
 		tracked_free_now((void *) so->optval);
