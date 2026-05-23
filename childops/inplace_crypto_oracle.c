@@ -279,6 +279,8 @@ static void log_corruption(enum oracle_target t, const char *path,
 		  target_names[t], path, off);
 	outputerr("inplace_crypto_oracle:   before[+%zu]: %s\n", off, hex_before);
 	outputerr("inplace_crypto_oracle:   after [+%zu]: %s\n", off, hex_after);
+	__atomic_add_fetch(&shm->stats.inplace_crypto_mutated, 1,
+			   __ATOMIC_RELAXED);
 }
 
 /*

@@ -1833,6 +1833,16 @@ struct stats_s {
 	unsigned long af_alg_recvmsg_empty_cmsg_no_more; /* sendmsg() cmsg-only, empty payload, no MSG_MORE */
 	unsigned long af_alg_recvmsg_unsupported;	/* socket(AF_ALG)/proc-crypto latched off */
 
+	/* inplace_crypto_oracle childop counters.  Bumped when the
+	 * oracle observes a splice -> in-place crypto path mutating the
+	 * source file's contents -- a real kernel bug class (input-handler
+	 * skip_cow on a nonlinear-but-not-cloned skb whose frags are
+	 * page-cache pages).  The op's outputerr() line is silenced by the
+	 * /dev/null dup2 in init_child() unless the operator is running
+	 * with a logfile / strace attached, so this counter is the durable
+	 * headless signal that a mutation was detected. */
+	unsigned long inplace_crypto_mutated;
+
 	/* sock_diag_walker childop counters */
 	unsigned long sock_diag_walker_runs;		/* total invocations */
 	unsigned long sock_diag_walker_setup_failed;	/* socket(NETLINK_SOCK_DIAG) failed */
