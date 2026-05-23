@@ -12,6 +12,7 @@
 #include "files.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscalls/syscalls.h"
@@ -153,7 +154,7 @@ static int open_testfile_fd(void)
 	filename = alloc_shared_str(64);
 	if (filename == NULL)
 		return false;	/* shared str heap exhausted; skip regen */
-	snprintf(filename, 64, "trinity-testfile%d", 1 + (rand() % MAX_TESTFILES));
+	snprintf(filename, 64, "trinity-testfile%d", 1 + rnd_modulo_u32(MAX_TESTFILES));
 
 	obj = alloc_object();
 	if (obj == NULL) {
