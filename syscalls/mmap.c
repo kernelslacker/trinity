@@ -104,14 +104,15 @@ static void sanitise_mmap(struct syscallrecord *rec)
 		rec->a5 = get_random_fd();
 		if (rec->a5 == (unsigned long) -1)
 			rec->a5 = 0;
-
-		if (current_entry_is_mmap2()) {
-			/* mmap2 counts pgoff in page-size units */
-			rec->a6 /= page_size;
-		} else {
-			/* page align non-anonymous mappings. */
-			rec->a6 &= PAGE_MASK;
-		}
+		/*
+		 * Defer the pgoff rescale until after the shape-overrides
+		 * below have settled.  Rescaling here AND in the file-
+		 * backed-shared override fired a second divide/mask on
+		 * the same value, biasing mmap2 file-backed offsets toward
+		 * zero and never exercising the kernel's full-range pgoff
+		 * math (sign-extend on 32-bit, pgoff << PAGE_SHIFT overflow,
+		 * large-file boundary).
+		 */
 	}
 
 	/*
@@ -145,10 +146,6 @@ static void sanitise_mmap(struct syscallrecord *rec)
 		if (fd >= 0) {
 			rec->a4 = MAP_SHARED;
 			rec->a5 = (unsigned long) fd;
-			if (current_entry_is_mmap2())
-				rec->a6 /= page_size;
-			else
-				rec->a6 &= PAGE_MASK;
 		}
 	}
 
@@ -161,6 +158,23 @@ static void sanitise_mmap(struct syscallrecord *rec)
 	 */
 	if (ONE_IN(8))
 		rec->a3 = 0;
+
+	/*
+	 * Single pgoff rescale, gated off the final flag word rather
+	 * than on a per-branch obligation that future shape-overrides
+	 * could forget.  The initial fd-set branch above and the file-
+	 * backed-shared override previously each rescaled independently,
+	 * doubling the divide/mask when both fired and biasing mmap2
+	 * file-backed coverage toward offset 0.  Centralising here makes
+	 * the rescale a property of "this call ended up non-anonymous"
+	 * regardless of how rec->a4 was arrived at.
+	 */
+	if (!(rec->a4 & MAP_ANONYMOUS)) {
+		if (current_entry_is_mmap2())
+			rec->a6 /= page_size;
+		else
+			rec->a6 &= PAGE_MASK;
+	}
 
 	/*
 	 * MAP_FIXED unmaps any existing VMA covering [addr, addr + len)
