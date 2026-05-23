@@ -4,12 +4,14 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <linux/stat.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
 #include "deferred-free.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -67,6 +69,33 @@ static unsigned long statx_flags[] = {
 	AT_SYMLINK_NOFOLLOW, AT_NO_AUTOMOUNT, AT_EMPTY_PATH,
 };
 
+/*
+ * Curated AT_* flag combinations for statx().  The sync-type subfield
+ * is a three-state selector encoded inside the AT_STATX_SYNC_TYPE mask
+ * (AS_STAT == 0, FORCE_SYNC, DONT_SYNC); FORCE | DONT is rejected as
+ * EINVAL.  The other AT_* bits steer lookup behaviour and are freely
+ * combinable.  Random-bit fills rarely line up with a legal sync-type
+ * triplet; the curated table makes the legal sync paths well-trodden
+ * while still allowing the random-bit bucket below to explore the rest.
+ */
+static const unsigned long statx_flag_combos[] = {
+	0,
+	AT_STATX_SYNC_AS_STAT,
+	AT_STATX_FORCE_SYNC,
+	AT_STATX_DONT_SYNC,
+	AT_SYMLINK_NOFOLLOW,
+	AT_NO_AUTOMOUNT,
+	AT_EMPTY_PATH,
+	AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT,
+	AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH,
+	AT_NO_AUTOMOUNT | AT_EMPTY_PATH,
+	AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT | AT_EMPTY_PATH,
+	AT_STATX_FORCE_SYNC | AT_SYMLINK_NOFOLLOW,
+	AT_STATX_DONT_SYNC | AT_NO_AUTOMOUNT,
+	AT_STATX_FORCE_SYNC | AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT,
+	AT_STATX_DONT_SYNC | AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH,
+};
+
 #ifndef STATX_TYPE
 #define STATX_TYPE		0x00000001
 #define STATX_MODE		0x00000002
@@ -108,6 +137,78 @@ static unsigned long statx_mask[] = {
 	STATX_DIO_READ_ALIGN,
 };
 
+#ifndef STATX_BASIC_STATS
+#define STATX_BASIC_STATS	0x000007ffU
+#endif
+#ifndef STATX_ALL
+#define STATX_ALL		0x00000fffU
+#endif
+
+/*
+ * Bit-select for the request mask passed to statx().
+ *
+ * The framework's default set_rand_bitmask over statx_mask gives every
+ * bit equal weight, which means the newer fields (STATX_MNT_ID and
+ * everything past it) ride alongside the basic-stats block on every
+ * draw and rarely get isolated.  Bucket the draw so the kernel sees
+ * meaningful spread:
+ *
+ *   30% bias toward STATX_MNT_ID | STATX_DIOALIGN | STATX_SUBVOL,
+ *       optionally OR'd with STATX_WRITE_ATOMIC | STATX_DIO_READ_ALIGN
+ *       and/or a random subset of the umbrella bits.  This drives
+ *       coverage of the per-filesystem stx_mnt_id and stx_dio_* fill
+ *       paths that the umbrella draw alone barely exercises.
+ *   30% random subset over the full statx_mask[] (the historical
+ *       behaviour, retained for breadth).
+ *   20% STATX_ALL — the standard "give me everything" request.
+ *   10% 0 — the documented "tell me what you can without asking"
+ *       request that still has a defined kernel path.
+ *   10% legal-mask | high garbage bits, to exercise the kernel's
+ *       reserved-bit handling on the mask validator.
+ */
+static unsigned int generate_statx_mask(void)
+{
+	uint32_t pick = rnd_modulo_u32(100);
+	unsigned int mask;
+
+	if (pick < 30) {
+		mask = STATX_MNT_ID | STATX_DIOALIGN | STATX_SUBVOL;
+		if (RAND_BOOL())
+			mask |= STATX_WRITE_ATOMIC | STATX_DIO_READ_ALIGN;
+		if (RAND_BOOL())
+			mask |= (unsigned int) set_rand_bitmask(
+				ARRAY_SIZE(statx_mask), statx_mask);
+	} else if (pick < 60) {
+		mask = (unsigned int) set_rand_bitmask(
+			ARRAY_SIZE(statx_mask), statx_mask);
+	} else if (pick < 80) {
+		mask = STATX_ALL;
+	} else if (pick < 90) {
+		mask = 0;
+	} else {
+		mask = (unsigned int) set_rand_bitmask(
+			ARRAY_SIZE(statx_mask), statx_mask);
+		mask |= rnd_u32() & 0xfff00000U;
+	}
+	return mask;
+}
+
+/*
+ * Flag picker mirroring generate_statx_mask: 85% from the curated
+ * combo table (legal sync-type triplets plus the AT_* lookup bits),
+ * 15% combo | random high garbage bits to exercise the kernel's
+ * flag validator on the rare unknown-bit path.
+ */
+static unsigned int generate_statx_flags(void)
+{
+	unsigned int flags = (unsigned int) RAND_ARRAY(statx_flag_combos);
+
+	if (!ONE_IN(7))
+		return flags;
+
+	return flags | (rnd_u32() & 0xffff0000U);
+}
+
 /*
  * Snapshot of the five statx input args read by the post oracle,
  * captured at sanitise time and consumed by the post handler.  Lives in
@@ -134,6 +235,19 @@ static void sanitise_statx(struct syscallrecord *rec)
 	rec->post_state = 0;
 
 	avoid_shared_buffer_out(&rec->a5, page_size);
+
+	/*
+	 * Overwrite the framework's ARG_LIST draws for flags (a3) and
+	 * mask (a4) with the legality-aware pickers.  The framework
+	 * populates these slots from statx_flags[] / statx_mask[] before
+	 * .sanitise runs; replacing them here keeps the syscallentry
+	 * arg metadata correct for printout / replay while steering the
+	 * actual kernel call through the curated combo and bias paths.
+	 * Order matters: the post_state snapshot below must capture the
+	 * values the kernel actually sees, not the framework's draws.
+	 */
+	rec->a3 = generate_statx_flags();
+	rec->a4 = generate_statx_mask();
 
 	/*
 	 * Snapshot the five input args for the post oracle.  Without this
@@ -277,6 +391,43 @@ static void post_statx(struct syscallrecord *rec)
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
+	}
+
+	/*
+	 * Cheap stx_mask oracle: runs on every successful statx, not
+	 * gated by the ONE_IN(100) sample of the field-divergence
+	 * recheck below.  On success the kernel must report which
+	 * fields it filled via returned->stx_mask; the kernel may
+	 * legally clear newer bits it does not support (STATX_SUBVOL,
+	 * STATX_DIOALIGN, STATX_WRITE_ATOMIC, ...) but STATX_TYPE has
+	 * been mandatory since the syscall landed, so a cleared
+	 * STATX_TYPE on a successful return where it was requested
+	 * fingerprints a torn copy_to_user, a struct-layout drift on
+	 * a kernel/glibc skew, or a sibling scribble of the receive
+	 * buffer between the kernel's fill and our post-hook read.
+	 */
+	if ((long) rec->retval == 0 && snap->statxbuf != 0) {
+		void *buf = (void *)(unsigned long) snap->statxbuf;
+
+		if (!looks_like_corrupted_ptr(rec, buf)) {
+			unsigned int req_mask = (unsigned int) snap->mask;
+			unsigned int got_mask;
+
+			memcpy(&got_mask, (char *)buf + offsetof(struct statx, stx_mask),
+			       sizeof(got_mask));
+
+			if ((req_mask & STATX_TYPE) && !(got_mask & STATX_TYPE)) {
+				output(0,
+				       "statx oracle: STATX_TYPE requested "
+				       "(mask=0x%x) but kernel returned "
+				       "stx_mask=0x%x on success "
+				       "(dfd=%ld flags=0x%lx)\n",
+				       req_mask, got_mask,
+				       (long) snap->dfd, snap->flags);
+				__atomic_add_fetch(&shm->stats.statx_oracle_anomalies,
+						   1, __ATOMIC_RELAXED);
+			}
+		}
 	}
 
 	if (!ONE_IN(100))
