@@ -3,10 +3,13 @@
  *	 char __user *, type, unsigned long, flags, void __user *, data)
  */
 
+#include <errno.h>
 #include <linux/fs.h>
 #include <linux/mount.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -16,6 +19,52 @@
 /* Filesystem types read from /proc/filesystems at startup. */
 const char **filesystem_types;
 unsigned int nr_filesystem_types;
+
+/*
+ * Sacrificial mount targets created in the trinity tree at startup.
+ * sanitise_mount / sanitise_move_mount steer the target argument at
+ * one of these instead of the random pathnames generate_pathname()
+ * would otherwise hand out (/etc, /dev, /proc, ...).  Mounts that
+ * actually succeed land in the per-child mount namespace and are
+ * cleaned up by the child-exit teardown -- they don't pollute the
+ * host namespace.
+ */
+#define NR_SACRIFICIAL_MOUNT_PATHS 8
+static char sacrificial_mount_paths[NR_SACRIFICIAL_MOUNT_PATHS][64];
+static unsigned int nr_sacrificial_mount_paths;
+
+static void __attribute__((constructor)) make_sacrificial_mount_paths(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < NR_SACRIFICIAL_MOUNT_PATHS; i++) {
+		snprintf(sacrificial_mount_paths[i],
+			 sizeof(sacrificial_mount_paths[i]),
+			 "/tmp/trinity-mount-%d-%u", (int) getpid(), i);
+		if (mkdir(sacrificial_mount_paths[i], 0700) == 0 ||
+		    errno == EEXIST)
+			nr_sacrificial_mount_paths = i + 1;
+		else
+			break;
+	}
+}
+
+static char *pick_sacrificial_target(void)
+{
+	char *target;
+	const char *src;
+
+	if (nr_sacrificial_mount_paths == 0)
+		return NULL;
+
+	target = (char *) get_writable_struct(64);
+	if (!target)
+		return NULL;
+	src = sacrificial_mount_paths[rnd_modulo_u32(nr_sacrificial_mount_paths)];
+	strncpy(target, src, 63);
+	target[63] = '\0';
+	return target;
+}
 
 static const char *builtin_fs_types[] = {
 	"ext4", "btrfs", "xfs", "tmpfs", "proc", "sysfs",
@@ -112,19 +161,141 @@ static unsigned long mount_flags[] = {
 	MS_SUBMOUNT, MS_NOREMOTELOCK,
 };
 
+/*
+ * Subset of mount_flags that pass do_new_mount()'s sanity gate on a
+ * fresh sb -- bias toward these so the per-fstype get_tree() callback
+ * actually runs.
+ */
+static unsigned long mount_legal_flags[] = {
+	0,
+	MS_RDONLY,
+	MS_NOSUID,
+	MS_NODEV,
+	MS_NOEXEC,
+	MS_NOATIME,
+	MS_NODIRATIME,
+	MS_RELATIME,
+	MS_BIND,
+	MS_REC | MS_BIND,
+	MS_REMOUNT | MS_RDONLY,
+	MS_REMOUNT,
+	MS_MOVE,
+	MS_RDONLY | MS_NOSUID | MS_NODEV,
+};
+
+static char *write_str(const char *s)
+{
+	size_t len = strlen(s);
+	char *buf = (char *) get_writable_struct(len + 1);
+
+	if (!buf)
+		return NULL;
+	memcpy(buf, s, len + 1);
+	return buf;
+}
+
+static void build_tmpfs_data(struct syscallrecord *rec)
+{
+	static const char *tmpfs_data[] = {
+		"size=1M", "size=4k", "mode=0700", "mode=0755",
+		"uid=0", "gid=0", "nr_inodes=64",
+		"size=1M,mode=0755", "size=4k,uid=0,gid=0",
+	};
+	char *data;
+
+	if (RAND_BOOL()) {
+		rec->a5 = 0;
+		return;
+	}
+	data = write_str(tmpfs_data[rnd_modulo_u32(ARRAY_SIZE(tmpfs_data))]);
+	rec->a5 = (unsigned long) data;
+}
+
 static void sanitise_mount(struct syscallrecord *rec)
 {
 	const char *fstype;
-	char *type;
+	char *type, *target;
+	unsigned int pick, flagpick;
 
-	fstype = filesystem_types[rnd_modulo_u32(nr_filesystem_types)];
-	type = (char *) get_writable_struct(32);
-	if (!type)
+	target = pick_sacrificial_target();
+	if (target)
+		rec->a2 = (unsigned long) target;
+
+	/*
+	 * Fstype + source distribution:
+	 *   50% tmpfs (no source needed, easy to succeed)
+	 *   20% ramfs (no source needed, no data)
+	 *   10% bind (existing dir as source, sacrificial as target)
+	 *   10% loaded type from /proc/filesystems
+	 *   10% intentionally-invalid (random byte string)
+	 */
+	pick = rnd_modulo_u32(10);
+	if (pick < 5) {
+		type = write_str("tmpfs");
+		if (type)
+			rec->a3 = (unsigned long) type;
+		rec->a1 = (unsigned long) write_str("trinity-tmpfs");
+		build_tmpfs_data(rec);
+	} else if (pick < 7) {
+		type = write_str("ramfs");
+		if (type)
+			rec->a3 = (unsigned long) type;
+		rec->a1 = (unsigned long) write_str("trinity-ramfs");
+		rec->a5 = 0;
+	} else if (pick < 8) {
+		/* bind: source must be an existing dir, fstype is ignored. */
+		type = write_str("none");
+		if (type)
+			rec->a3 = (unsigned long) type;
+		rec->a1 = (unsigned long) write_str("/tmp");
+		rec->a5 = 0;
+		rec->a4 = MS_BIND;
 		return;
-	strncpy(type, fstype, 31);
-	type[31] = '\0';
+	} else if (pick < 9 && nr_filesystem_types > 0) {
+		fstype = filesystem_types[rnd_modulo_u32(nr_filesystem_types)];
+		type = (char *) get_writable_struct(32);
+		if (type) {
+			strncpy(type, fstype, 31);
+			type[31] = '\0';
+			rec->a3 = (unsigned long) type;
+		}
+	} else {
+		type = (char *) get_writable_struct(16);
+		if (type) {
+			generate_rand_bytes((unsigned char *) type, 15);
+			type[15] = '\0';
+			rec->a3 = (unsigned long) type;
+		}
+	}
 
-	rec->a3 = (unsigned long) type;
+	/*
+	 * Flag distribution: 70% from the legal subset, 30% random
+	 * OR-of-pool (the generic_sanitise default kept untouched).
+	 */
+	flagpick = rnd_modulo_u32(10);
+	if (flagpick < 7)
+		rec->a4 = mount_legal_flags[rnd_modulo_u32(ARRAY_SIZE(mount_legal_flags))];
+}
+
+/*
+ * Cross-file by design: move_mount.c references this via its own
+ * forward declaration so the syscall table picks it up without a new
+ * header for a single symbol.
+ */
+void sanitise_move_mount(struct syscallrecord *rec);
+
+void sanitise_move_mount(struct syscallrecord *rec)
+{
+	char *target;
+
+	/*
+	 * Steer the to_pathname at a sacrificial directory; from_pathname
+	 * stays whatever ARG_PATHNAME picked and the typed fds at a1/a3
+	 * already pull from open_tree / fsmount returns via ARG_FD_MOUNT.
+	 */
+	target = pick_sacrificial_target();
+	if (target)
+		rec->a4 = (unsigned long) target;
 }
 
 struct syscallentry syscall_mount = {
