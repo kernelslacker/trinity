@@ -71,6 +71,8 @@ static void sanitise_lsm_get_self_attr(struct syscallrecord *rec)
 {
 	u32 *size;
 	void *buf;
+	unsigned int sizepick;
+	unsigned long buf_len = 0;
 #ifdef HAVE_SYS_LSM_GET_SELF_ATTR
 	struct lsm_get_self_attr_post_state *snap;
 #endif
@@ -83,20 +85,68 @@ static void sanitise_lsm_get_self_attr(struct syscallrecord *rec)
 	rec->post_state = 0;
 
 	/*
-	 * The kernel reads *size to find how much space the caller provided.
-	 * A zero value causes an immediate E2BIG before any attribute retrieval
-	 * happens. Provide a page-sized buffer and tell the kernel about it.
+	 * Buffer + size variant:
+	 *   60% normal: page-sized buf, *size = page_size
+	 *   15% undersized: 16-byte buf with *size = 16 (E2BIG path)
+	 *   10% oversized: 2*page-sized buf with *size = 2*page_size
+	 *   10% NULL size pointer (EFAULT before any copy)
+	 *    5% NULL ctx buffer (EFAULT at copy_to_user)
+	 *
+	 * The post oracle bails when snap->ctx or snap->size is 0 and when
+	 * rec->retval != 0, so the EFAULT / E2BIG branches don't trip the
+	 * comparison; the post oracle continues to work on the normal path.
+	 * Whenever the buffer is real we keep *size <= the allocation so
+	 * the kernel can't write past our allocation.
 	 */
-	buf = get_writable_address(page_size);
-	size = (u32 *) get_writable_address(sizeof(*size));
-	if (!buf || !size)
-		return;
-	*size = page_size;
-	rec->a2 = (unsigned long) buf;
-	rec->a3 = (unsigned long) size;
+	sizepick = rnd_modulo_u32(20);
 
-	avoid_shared_buffer_out(&rec->a2, page_size);
-	avoid_shared_buffer_inout(&rec->a3, sizeof(u32));
+	if (sizepick < 12) {
+		buf_len = page_size;
+		buf = get_writable_address(buf_len);
+		size = (u32 *) get_writable_address(sizeof(*size));
+		if (!buf || !size)
+			return;
+		*size = page_size;
+		rec->a2 = (unsigned long) buf;
+		rec->a3 = (unsigned long) size;
+	} else if (sizepick < 15) {
+		buf_len = 16;
+		buf = get_writable_address(buf_len);
+		size = (u32 *) get_writable_address(sizeof(*size));
+		if (!buf || !size)
+			return;
+		*size = 16;
+		rec->a2 = (unsigned long) buf;
+		rec->a3 = (unsigned long) size;
+	} else if (sizepick < 17) {
+		buf_len = 2 * page_size;
+		buf = get_writable_address(buf_len);
+		size = (u32 *) get_writable_address(sizeof(*size));
+		if (!buf || !size)
+			return;
+		*size = buf_len;
+		rec->a2 = (unsigned long) buf;
+		rec->a3 = (unsigned long) size;
+	} else if (sizepick < 19) {
+		buf_len = page_size;
+		buf = get_writable_address(buf_len);
+		if (!buf)
+			return;
+		rec->a2 = (unsigned long) buf;
+		rec->a3 = 0;
+	} else {
+		size = (u32 *) get_writable_address(sizeof(*size));
+		if (!size)
+			return;
+		*size = page_size;
+		rec->a2 = 0;
+		rec->a3 = (unsigned long) size;
+	}
+
+	if (rec->a2 != 0)
+		avoid_shared_buffer_out(&rec->a2, buf_len);
+	if (rec->a3 != 0)
+		avoid_shared_buffer_inout(&rec->a3, sizeof(u32));
 
 #ifdef HAVE_SYS_LSM_GET_SELF_ATTR
 	/*

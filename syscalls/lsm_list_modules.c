@@ -42,26 +42,86 @@ static void sanitise_lsm_list_modules(struct syscallrecord *rec)
 {
 	u32 *size;
 	void *buf;
+	unsigned int sizepick;
+	unsigned long buf_len = 0;
 #ifdef HAVE_SYS_LSM_LIST_MODULES
 	struct lsm_list_modules_post_state *snap;
 #endif
 
 	/*
-	 * The kernel reads *size to find how much space is available for the
-	 * u64 LSM ID array. A zero causes immediate E2BIG. Provide a
-	 * page-sized buffer and initialize the size accordingly.
+	 * Buffer + size variant (value-result helper pattern):
+	 *   55% normal: page-sized buf, *size = page_size
+	 *   15% small buf 16 bytes with matching *size (E2BIG path when
+	 *       the LSM stack has more than 2 modules to report)
+	 *   10% oversized buf with matching *size
+	 *   10% NULL size pointer (EFAULT before any copy)
+	 *    5% NULL ids buffer (EFAULT at copy_to_user)
+	 *    5% page-sized buf but *size = 0 (immediate E2BIG)
+	 *
+	 * The post oracle bails when snap->ids or snap->size is 0 and when
+	 * rec->retval != 0; the comparison only fires on the normal-success
+	 * branch.  Wherever the buffer is real we keep *size <= the
+	 * allocation so the kernel can't write past our allocation.
 	 */
-	buf = get_writable_address(page_size);
-	size = (u32 *) get_writable_address(sizeof(*size));
-	if (!buf || !size)
-		return;
-	*size = page_size;
-	rec->a1 = (unsigned long) buf;
-	rec->a2 = (unsigned long) size;
+	sizepick = rnd_modulo_u32(20);
+
+	if (sizepick < 11) {
+		buf_len = page_size;
+		buf = get_writable_address(buf_len);
+		size = (u32 *) get_writable_address(sizeof(*size));
+		if (!buf || !size)
+			return;
+		*size = page_size;
+		rec->a1 = (unsigned long) buf;
+		rec->a2 = (unsigned long) size;
+	} else if (sizepick < 14) {
+		buf_len = 16;
+		buf = get_writable_address(buf_len);
+		size = (u32 *) get_writable_address(sizeof(*size));
+		if (!buf || !size)
+			return;
+		*size = 16;
+		rec->a1 = (unsigned long) buf;
+		rec->a2 = (unsigned long) size;
+	} else if (sizepick < 16) {
+		buf_len = 2 * page_size;
+		buf = get_writable_address(buf_len);
+		size = (u32 *) get_writable_address(sizeof(*size));
+		if (!buf || !size)
+			return;
+		*size = buf_len;
+		rec->a1 = (unsigned long) buf;
+		rec->a2 = (unsigned long) size;
+	} else if (sizepick < 18) {
+		buf_len = page_size;
+		buf = get_writable_address(buf_len);
+		if (!buf)
+			return;
+		rec->a1 = (unsigned long) buf;
+		rec->a2 = 0;
+	} else if (sizepick < 19) {
+		size = (u32 *) get_writable_address(sizeof(*size));
+		if (!size)
+			return;
+		*size = page_size;
+		rec->a1 = 0;
+		rec->a2 = (unsigned long) size;
+	} else {
+		buf_len = page_size;
+		buf = get_writable_address(buf_len);
+		size = (u32 *) get_writable_address(sizeof(*size));
+		if (!buf || !size)
+			return;
+		*size = 0;
+		rec->a1 = (unsigned long) buf;
+		rec->a2 = (unsigned long) size;
+	}
 	rec->a3 = 0;	/* flags must be zero */
 
-	avoid_shared_buffer_out(&rec->a1, page_size);
-	avoid_shared_buffer_inout(&rec->a2, sizeof(u32));
+	if (rec->a1 != 0)
+		avoid_shared_buffer_out(&rec->a1, buf_len);
+	if (rec->a2 != 0)
+		avoid_shared_buffer_inout(&rec->a2, sizeof(u32));
 
 #ifdef HAVE_SYS_LSM_LIST_MODULES
 	/*
