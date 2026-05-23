@@ -180,6 +180,7 @@ static void sanitise_clone3(struct syscallrecord *rec)
 		args->tls = (unsigned long) get_address();
 
 	rec->a1 = (unsigned long) args;
+	avoid_shared_buffer_inout(&rec->a1, sizeof(struct clone_args));
 	rec->a2 = RAND_ARRAY(clone3_sizes);
 
 	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
