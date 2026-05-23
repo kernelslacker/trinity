@@ -381,19 +381,37 @@ static void send_fuzzed_msg(int sock, struct genl_family_entry *fam)
 	__atomic_add_fetch(&shm->stats.genetlink_msgs_sent, 1, __ATOMIC_RELAXED);
 
 	/*
-	 * Drain any pending NLMSG_ERROR / ACK so the kernel's send queue
-	 * doesn't back up.  A non-blocking recv() returns immediately if
-	 * nothing is queued, and our SO_RCVTIMEO bounds blocking otherwise.
-	 * If we see -EPERM / -EACCES, mark the family priv-only.
+	 * Drain every queued reply so the socket's receive queue doesn't
+	 * accumulate across iterations.  A single recv() only consumes one
+	 * datagram; many genetlink families respond with multiple NLMSG_*
+	 * messages (DUMP responses, ACK plus per-attribute error details),
+	 * and leaving the tail queued degrades coverage over time and means
+	 * the needs_priv latch only ever sees the first reply — families
+	 * that respond with "OK ack + EPERM details" never get latched and
+	 * keep getting hammered.
+	 *
+	 * Loop MSG_DONTWAIT recv() until EAGAIN/EWOULDBLOCK, walk each
+	 * datagram's NLMSG chain, and inspect every NLMSG_ERROR for
+	 * -EPERM/-EACCES to update the priv latch.
 	 */
-	{
-		unsigned char rbuf[1024];
+	for (;;) {
+		unsigned char rbuf[4096];
 		ssize_t r = recv(sock, rbuf, sizeof(rbuf), MSG_DONTWAIT);
+		const struct nlmsghdr *rnlh;
 
-		if (r >= (ssize_t)(NLMSG_HDRLEN + sizeof(struct nlmsgerr))) {
-			const struct nlmsghdr *rnlh = (const struct nlmsghdr *)rbuf;
+		if (r < 0) {
+			/* EAGAIN/EWOULDBLOCK: queue drained.  Anything else
+			 * (EINTR, ENOBUFS, ...): stop draining for this
+			 * iteration; next send() will try again. */
+			break;
+		}
+		if (r == 0)
+			break;
 
-			if (rnlh->nlmsg_type == NLMSG_ERROR) {
+		rnlh = (const struct nlmsghdr *)rbuf;
+		while (NLMSG_OK(rnlh, (size_t)r)) {
+			if (rnlh->nlmsg_type == NLMSG_ERROR &&
+			    NLMSG_PAYLOAD(rnlh, 0) >= sizeof(struct nlmsgerr)) {
 				const struct nlmsgerr *err =
 					(const struct nlmsgerr *)NLMSG_DATA(rnlh);
 
@@ -404,6 +422,9 @@ static void send_fuzzed_msg(int sock, struct genl_family_entry *fam)
 							   1, __ATOMIC_RELAXED);
 				}
 			}
+			if (rnlh->nlmsg_type == NLMSG_DONE)
+				break;
+			rnlh = NLMSG_NEXT(rnlh, r);
 		}
 	}
 }
