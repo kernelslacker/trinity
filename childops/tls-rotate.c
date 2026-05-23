@@ -184,6 +184,7 @@ bool tls_rotate(struct childdata *child)
 	socklen_t clen;
 	int cli = -1, srv = -1;
 	int rc;
+	bool srv_ulp = false;
 
 	(void)child;
 
@@ -202,7 +203,15 @@ bool tls_rotate(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	(void)setsockopt(srv, IPPROTO_TCP, TCP_ULP, "tls", 3);
+	/* Server-side install can fail independently (e.g. kernel attached
+	 * a different ULP first).  Without it, the TLS_RX setsockopt below
+	 * is a guaranteed EINVAL, so skip it — the TX-armed/RX-unarmed bug
+	 * shape we want to test isn't reachable and the counter inflates. */
+	if (setsockopt(srv, IPPROTO_TCP, TCP_ULP, "tls", 3) == 0)
+		srv_ulp = true;
+	else
+		__atomic_add_fetch(&shm->stats.tls_rotate_ulp_asymmetric,
+				   1, __ATOMIC_RELAXED);
 
 	c1 = (enum tls_cipher_choice)rnd_modulo_u32(NR_TLS_CHOICES);
 	v1 = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
@@ -218,8 +227,10 @@ bool tls_rotate(struct childdata *child)
 	 * If the kernel rejects (cipher mismatch with what the client
 	 * actually sent on rekey, version disallowed) it's still a code
 	 * path — we don't gate progress on it. */
-	clen = fill_cinfo(c1, cinfo, v1);
-	(void)setsockopt(srv, SOL_TLS, TLS_RX, cinfo, clen);
+	if (srv_ulp) {
+		clen = fill_cinfo(c1, cinfo, v1);
+		(void)setsockopt(srv, SOL_TLS, TLS_RX, cinfo, clen);
+	}
 
 	/* Step 5: drive tls_sw_sendmsg through the just-installed TX. */
 	generate_rand_bytes(payload, sizeof(payload));
