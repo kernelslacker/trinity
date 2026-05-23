@@ -96,6 +96,7 @@
 #include "params.h"		/* do_32_arch, do_64_arch */
 #include "pids.h"		/* getpid wrapper */
 #include "random.h"		/* ONE_IN */
+#include "rnd.h"
 #include "shm.h"
 #include "stats.h"
 #include "syscall.h"		/* set_syscall_nr_random, EXPENSIVE */
@@ -3047,7 +3048,7 @@ retry:
 	}
 
 	{
-		unsigned long roll = (unsigned long)rand() % total_weight;
+		unsigned long roll = rnd_modulo_u32(total_weight);
 		unsigned int picked = nr_syscalls;
 
 		for (idx = 0; idx < nr_syscalls; idx++) {
