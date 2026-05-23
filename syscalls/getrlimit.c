@@ -8,6 +8,7 @@
 #include <sys/syscall.h>
 #include "deferred-free.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -45,6 +46,12 @@ static unsigned long getrlimit_resources[] = {
 	RLIMIT_RTPRIO, RLIMIT_RTTIME, RLIMIT_SIGPENDING, RLIMIT_STACK,
 };
 
+static unsigned int random_rlimit_resource(void)
+{
+	return getrlimit_resources[rnd_modulo_u32(
+		sizeof(getrlimit_resources) / sizeof(getrlimit_resources[0]))];
+}
+
 static void sanitise_getrlimit(struct syscallrecord *rec)
 {
 #ifdef HAVE_SYS_GETRLIMIT
@@ -59,6 +66,20 @@ static void sanitise_getrlimit(struct syscallrecord *rec)
 #endif
 
 	avoid_shared_buffer_out(&rec->a2, sizeof(struct rlimit));
+
+	/*
+	 * Resource (a1) is a read-only input here -- no payload buffer to
+	 * fill -- so the per-resource dictionary contribution is simply
+	 * "sometimes draw a wholly-random resource value" so the kernel's
+	 * `resource >= RLIM_NLIMITS` EINVAL gate stays exercised alongside
+	 * the framework's curated list.  ~10% pure-random; the remaining
+	 * 90% leave the framework's pick (always a real RLIMIT_*) alone so
+	 * the deeper task->signal->rlim[] read path keeps running.
+	 */
+	if (ONE_IN(10))
+		rec->a1 = rand32();
+	else if (ONE_IN(10))
+		rec->a1 = random_rlimit_resource();
 
 #ifdef HAVE_SYS_GETRLIMIT
 	/*

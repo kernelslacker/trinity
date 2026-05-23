@@ -10,7 +10,9 @@
 #include <unistd.h>
 #include "arch.h"
 #include "deferred-free.h"
+#include "pids.h"
 #include "random.h"
+#include "rlimit-safe.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -49,6 +51,9 @@ static unsigned long rlimit_resources[] = {
 	RLIMIT_CORE, RLIMIT_RSS, RLIMIT_NPROC, RLIMIT_NOFILE,
 	RLIMIT_MEMLOCK, RLIMIT_AS, RLIMIT_LOCKS, RLIMIT_SIGPENDING,
 	RLIMIT_MSGQUEUE, RLIMIT_NICE, RLIMIT_RTPRIO,
+#ifdef RLIMIT_RTTIME
+	RLIMIT_RTTIME,
+#endif
 };
 
 static rlim64_t random_rlim64(void)
@@ -60,6 +65,12 @@ static rlim64_t random_rlim64(void)
 	case 3: return (rlim64_t) page_size * (1 + (rnd_modulo_u32(256)));
 	default: return rand32();
 	}
+}
+
+static unsigned int random_rlimit_resource(void)
+{
+	return rlimit_resources[rnd_modulo_u32(
+		sizeof(rlimit_resources) / sizeof(rlimit_resources[0]))];
 }
 
 /* Fill struct rlimit64 with interesting boundary values. */
@@ -75,14 +86,58 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 	rlim = (struct rlimit64 *) get_writable_address(sizeof(*rlim));
 	if (rlim == NULL)
 		return;
-	rlim->rlim_cur = random_rlim64();
-	rlim->rlim_max = random_rlim64();
 
-	/* Half the time, enforce cur <= max for valid calls. */
-	if (RAND_BOOL() && rlim->rlim_cur > rlim->rlim_max)
-		rlim->rlim_cur = rlim->rlim_max;
+	/*
+	 * Per-resource safe-limit bias.  The framework picks rec->a2 from
+	 * rlimit_resources[] (a real RLIMIT_*); fold in three buckets:
+	 *
+	 *   ~70% safe dictionary draw: pull (cur, max) from the per-resource
+	 *        table so the universal cur<=max gate and the per-resource
+	 *        legality bounds (RLIMIT_NICE 1..40, RLIMIT_RTPRIO 0..99,
+	 *        RLIMIT_NOFILE <= sysctl_nr_open, ...) both pass, letting the
+	 *        deeper resource-specific handlers actually run.
+	 *   ~20% real resource, random values: keep the validation path warm
+	 *        so the cur<=max / privileged-max checks themselves stay
+	 *        exercised.
+	 *   ~10% pure-random resource and values: long-tail coverage for the
+	 *        RLIMIT_* enum boundary and the early `resource >= RLIM_NLIMITS`
+	 *        rejection.
+	 */
+	{
+		unsigned int bucket = rnd_modulo_u32(10);
+		unsigned long long safe_cur, safe_max;
+
+		if (bucket < 7 &&
+		    rlimit_pick_safe_pair((unsigned int) rec->a2,
+					  &safe_cur, &safe_max) == 0) {
+			rlim->rlim_cur = (rlim64_t) safe_cur;
+			rlim->rlim_max = (rlim64_t) safe_max;
+		} else {
+			if (bucket >= 9)
+				rec->a2 = rand32();
+			else if (bucket >= 7)
+				rec->a2 = random_rlimit_resource();
+
+			rlim->rlim_cur = random_rlim64();
+			rlim->rlim_max = random_rlim64();
+
+			/* Half the time, enforce cur <= max for valid calls. */
+			if (RAND_BOOL() && rlim->rlim_cur > rlim->rlim_max)
+				rlim->rlim_cur = rlim->rlim_max;
+		}
+	}
 
 	rec->a3 = (unsigned long) rlim;
+
+	/*
+	 * pid (a1): ARG_PID via get_pid() already biases self/child heavy.
+	 * A small bucket retargets at a "random nearby pid" so the kernel's
+	 * privilege-check path (ptrace_may_access -> __ptrace_may_access)
+	 * stays exercised against PIDs we are unlikely to own.
+	 */
+	if (ONE_IN(20))
+		rec->a1 = (unsigned long)(int)(mypid() +
+			(int) rnd_modulo_u32(128) - 64);
 
 	/*
 	 * old_rlim (a4) is the kernel's writeback target for the previous

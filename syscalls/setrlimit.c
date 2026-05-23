@@ -4,6 +4,7 @@
 #include <sys/resource.h>
 #include "arch.h"
 #include "random.h"
+#include "rlimit-safe.h"
 #include "rnd.h"
 #include "sanitise.h"
 
@@ -12,7 +13,16 @@ static unsigned long rlimit_resources[] = {
 	RLIMIT_CORE, RLIMIT_RSS, RLIMIT_NPROC, RLIMIT_NOFILE,
 	RLIMIT_MEMLOCK, RLIMIT_AS, RLIMIT_LOCKS, RLIMIT_SIGPENDING,
 	RLIMIT_MSGQUEUE, RLIMIT_NICE, RLIMIT_RTPRIO,
+#ifdef RLIMIT_RTTIME
+	RLIMIT_RTTIME,
+#endif
 };
+
+static unsigned int random_rlimit_resource(void)
+{
+	return rlimit_resources[rnd_modulo_u32(
+		sizeof(rlimit_resources) / sizeof(rlimit_resources[0]))];
+}
 
 static rlim_t random_rlim(void)
 {
@@ -33,12 +43,39 @@ static void sanitise_setrlimit(struct syscallrecord *rec)
 	rlim = (struct rlimit *) get_writable_address(sizeof(*rlim));
 	if (rlim == NULL)
 		return;
-	rlim->rlim_cur = random_rlim();
-	rlim->rlim_max = random_rlim();
 
-	/* Half the time, enforce cur <= max for valid calls. */
-	if (RAND_BOOL() && rlim->rlim_cur > rlim->rlim_max)
-		rlim->rlim_cur = rlim->rlim_max;
+	/*
+	 * Per-resource safe-limit bias (see prlimit64.c for the full
+	 * rationale).  Bucket distribution:
+	 *
+	 *   ~70% safe dictionary draw against the framework-picked resource.
+	 *   ~20% real resource + random values to keep the cur<=max /
+	 *        privileged-max validation path warm.
+	 *   ~10% pure-random resource and values for the long tail.
+	 */
+	{
+		unsigned int bucket = rnd_modulo_u32(10);
+		unsigned long long safe_cur, safe_max;
+
+		if (bucket < 7 &&
+		    rlimit_pick_safe_pair((unsigned int) rec->a1,
+					  &safe_cur, &safe_max) == 0) {
+			rlim->rlim_cur = (rlim_t) safe_cur;
+			rlim->rlim_max = (rlim_t) safe_max;
+		} else {
+			if (bucket >= 9)
+				rec->a1 = rand32();
+			else if (bucket >= 7)
+				rec->a1 = random_rlimit_resource();
+
+			rlim->rlim_cur = random_rlim();
+			rlim->rlim_max = random_rlim();
+
+			/* Half the time, enforce cur <= max for valid calls. */
+			if (RAND_BOOL() && rlim->rlim_cur > rlim->rlim_max)
+				rlim->rlim_cur = rlim->rlim_max;
+		}
+	}
 
 	rec->a2 = (unsigned long) rlim;
 }
