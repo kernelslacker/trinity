@@ -84,6 +84,8 @@ static void sanitise_epoll_ctl(struct syscallrecord *rec)
 
 	ep->data.fd = target_fd;
 	ep->events = set_rand_bitmask(ARRAY_SIZE(epoll_flags), epoll_flags);
+
+	avoid_shared_buffer_inout(&rec->a4, sizeof(struct epoll_event));
 }
 
 static unsigned long epoll_ctl_ops[] = {
