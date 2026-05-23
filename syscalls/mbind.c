@@ -50,15 +50,8 @@ static void sanitise_mbind(struct syscallrecord *rec)
 		rec->a2 = 0;
 	}
 
-retry_maxnode:
-	rec->a5 &= ~((page_size * 8) - 1);
-
+	rec->a5 = 2 + rnd_modulo_u32(page_size * 8 - 1);
 	maxnode = rec->a5;
-
-	if (maxnode < 2 || maxnode > (page_size * 8)) {
-		rec->a5 = rand32();
-		goto retry_maxnode;
-	}
 
 	/* Generate a valid nodemask bitmap instead of a random address.
 	 * Size the buffer to the number of longs the kernel will copy
