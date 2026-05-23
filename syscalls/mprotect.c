@@ -16,10 +16,10 @@
  * sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot smear the addr/len/prot the post handler uses
- * to update the trinity-tracked map->prot invariant or to drive the
- * proc-maps oracle.  pkey is captured for the pkey_mprotect entry that
- * shares this sanitise/post pair (key arrives at rec->a4); plain
+ * handler running cannot smear the addr/len/prot/map the post handler
+ * uses to update the trinity-tracked map->prot invariant or to drive
+ * the proc-maps oracle.  pkey is captured for the pkey_mprotect entry
+ * that shares this sanitise/post pair (key arrives at rec->a4); plain
  * mprotect ignores the field.
  *
  * A stomped rec->a3 caches the wrong prot bits into map->prot and a
@@ -30,6 +30,12 @@
  * at an address window the syscall never operated on -- forging either
  * a clean compare against an unrelated /proc/self/maps slice or an
  * "mprotect did not land" anomaly that never happened.
+ *
+ * map is snapshotted for the same heap-shape-spoofing defence the
+ * munmap and mremap post handlers already document:
+ * looks_like_corrupted_ptr() cannot tell a real-but-wrong heap address
+ * from a real map pointer, so a foreign-heap stomp of rec->a5 would
+ * slip the guard and cache prot bits into the wrong tracked map.
  */
 #define MPROTECT_POST_STATE_MAGIC	0x4D505254UL	/* "MPRT" */
 struct mprotect_post_state {
@@ -38,6 +44,7 @@ struct mprotect_post_state {
 	unsigned long len;
 	unsigned long prot;
 	unsigned long pkey;
+	unsigned long map;
 };
 
 static void sanitise_mprotect(struct syscallrecord *rec)
@@ -79,6 +86,7 @@ static void sanitise_mprotect(struct syscallrecord *rec)
 	snap->len  = rec->a2;
 	snap->prot = rec->a3;
 	snap->pkey = rec->a4;
+	snap->map  = (unsigned long) map;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -89,7 +97,7 @@ static void post_mprotect(struct syscallrecord *rec)
 {
 	struct mprotect_post_state *snap =
 		(struct mprotect_post_state *) rec->post_state;
-	struct map *map = (struct map *) rec->a5;
+	struct map *map;
 
 	if (snap == NULL)
 		return;
@@ -124,13 +132,15 @@ static void post_mprotect(struct syscallrecord *rec)
 		return;
 	}
 
+	map = (struct map *) snap->map;
+
 	if (rec->retval != 0 || map == NULL)
 		goto out_free;
 
 	/*
-	 * Defense in depth: even with the post_state snapshot, the rec->a5
-	 * map stash is still raw rec->aN territory.  Reject a pid-scribbled
-	 * map before deref.
+	 * Defense in depth: even with the post_state snapshot, a wholesale
+	 * stomp could rewrite the snapshot's inner map field.  Reject a
+	 * pid-scribbled map before deref.
 	 */
 	if (looks_like_corrupted_ptr(rec, map)) {
 		outputerr("post_mprotect: rejected suspicious map=%p (pid-scribbled?)\n",
