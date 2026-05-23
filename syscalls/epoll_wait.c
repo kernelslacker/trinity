@@ -5,6 +5,7 @@
  * or zero if no file descriptor became ready during the requested timeout milliseconds.
  * When an error occurs, returns -1 and errno is set appropriately.
  */
+#include <limits.h>
 #include <sys/epoll.h>
 #include "random.h"
 #include "rnd.h"
@@ -12,15 +13,66 @@
 #include "trinity.h"
 #include "utils.h"
 
+/*
+ * Bias maxevents toward sizes the kernel actually exercises rather than
+ * the [1,128] range default.  Bucket 8 reflects the libc default many
+ * userspace event loops use; 64/1024 push ep_send_events down the
+ * larger-batch copy_to_user path; 0 / negative keeps the early
+ * EINVAL reject warm.
+ */
+static int pick_maxevents(void)
+{
+	switch (rnd_modulo_u32(10)) {
+	case 0:		return 1;
+	case 1:
+	case 2:
+	case 3:		return 8;
+	case 4:
+	case 5:		return 64;
+	case 6:
+	case 7:		return 1024;
+	case 8:		return 0;
+	default:	return -1;
+	}
+}
+
+/*
+ * Timeout buckets.  Short positive values dominate so the child can't
+ * stall.  INT_MAX and the negative-but-not-(-1) bucket keep the
+ * input-validation path covered.
+ */
+static unsigned long pick_timeout_ms(void)
+{
+	switch (rnd_modulo_u32(10)) {
+	case 0:		return (unsigned long) -1;		/* block forever */
+	case 1:
+	case 2:		return 0;				/* immediate */
+	case 3:
+	case 4:
+	case 5:
+	case 6:		return 1 + rnd_modulo_u32(100);		/* short wait */
+	case 7:		return INT_MAX;				/* huge */
+	case 8:		return (unsigned long)(unsigned int) -2;/* negative non-(-1) */
+	default:	return rnd_u32();
+	}
+}
+
 static void sanitise_epoll_wait(struct syscallrecord *rec)
 {
-	/* timeout: -1 = block, 0 = return immediately, >0 = ms to wait */
-	switch (rnd_modulo_u32(4)) {
-	case 0: rec->a4 = (unsigned long) -1; break;	/* block */
-	case 1: rec->a4 = 0; break;			/* immediate */
-	default: rec->a4 = 1 + (rnd_modulo_u32(100)); break;	/* short wait */
+	rec->a3 = (unsigned long) pick_maxevents();
+	rec->a4 = pick_timeout_ms();
+
+	/*
+	 * Buffer sizing for the events output uses a sane minimum so a
+	 * negative or zero maxevents picked above doesn't underflow the
+	 * allocation hint -- the kernel still sees the chosen rec->a3.
+	 */
+	{
+		long mx = (long) rec->a3;
+		unsigned long bytes = (mx > 0 ? mx : 1) * sizeof(struct epoll_event);
+
+		avoid_shared_buffer_out(&rec->a2, bytes);
 	}
-	avoid_shared_buffer_out(&rec->a2, rec->a3 * sizeof(struct epoll_event));
 }
 
 /*
@@ -37,6 +89,8 @@ static void post_epoll_wait(struct syscallrecord *rec)
 {
 	if ((long) rec->retval == -1L)
 		return;
+	if ((long) rec->a3 <= 0)
+		return;
 	if (rec->retval > rec->a3) {
 		outputerr("post_epoll_wait: rejecting retval %ld > maxevents %ld\n",
 			  (long) rec->retval, (long) rec->a3);
@@ -47,10 +101,8 @@ static void post_epoll_wait(struct syscallrecord *rec)
 struct syscallentry syscall_epoll_wait = {
 	.name = "epoll_wait",
 	.num_args = 4,
-	.argtype = { [0] = ARG_FD_EPOLL, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_RANGE },
+	.argtype = { [0] = ARG_FD_EPOLL, [1] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "epfd", [1] = "events", [2] = "maxevents", [3] = "timeout" },
-	.arg_params[2].range.low = 1,
-	.arg_params[2].range.hi = 128,
 	.sanitise = sanitise_epoll_wait,
 	.post = post_epoll_wait,
 	.rettype = RET_BORING,
