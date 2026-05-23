@@ -15,17 +15,69 @@ static unsigned long sched_setscheduler_policies[] = {
 static void sanitise_sched_setscheduler(struct syscallrecord *rec)
 {
 	struct sched_param *sp;
+	unsigned int roll;
+	int policy;
 
 	sp = (struct sched_param *) get_writable_address(sizeof(*sp));
 	if (sp == NULL)
 		return;
 
-	switch (rnd_modulo_u32(4)) {
-	case 0: sp->sched_priority = 0; break;			/* SCHED_OTHER/BATCH/IDLE */
-	case 1: sp->sched_priority = 1; break;			/* minimum RT */
-	case 2: sp->sched_priority = 99; break;			/* maximum RT */
-	default: sp->sched_priority = rnd_modulo_u32(100); break;	/* random valid */
+	/*
+	 * Policy was already chosen by ARG_OP / ARGLIST into rec->a2 by
+	 * generic_sanitise().  Read it so the priority shape can match the
+	 * policy's legality rules instead of being drawn independently:
+	 * SCHED_OTHER/BATCH/IDLE accept only priority == 0; SCHED_FIFO/RR
+	 * accept 1..99; SCHED_DEADLINE cannot be set via setscheduler at
+	 * all (the kernel returns -EINVAL -- DEADLINE has to go through
+	 * sched_setattr), so priority is irrelevant on that path.
+	 */
+	policy = (int) rec->a2;
+	roll = rnd_modulo_u32(100);
+
+	if (roll < 70) {
+		/* Valid shape: priority matches policy. */
+		switch (policy) {
+		case SCHED_FIFO:
+		case SCHED_RR:
+			sp->sched_priority = (int) (1 + rnd_modulo_u32(99));
+			break;
+		default:
+			sp->sched_priority = 0;
+			break;
+		}
+	} else if (roll < 90) {
+		/*
+		 * Real policy + invalid one-field: keep the kernel's
+		 * validation paths warm.  RT policies with priority == 0
+		 * or > 99, non-RT policies with a non-zero priority --
+		 * both shapes the kernel must reject.
+		 */
+		switch (policy) {
+		case SCHED_FIFO:
+		case SCHED_RR:
+			if (RAND_BOOL())
+				sp->sched_priority = 0;
+			else
+				sp->sched_priority =
+					(int) (100 + rnd_modulo_u32(100));
+			break;
+		default:
+			sp->sched_priority =
+				(int) (1 + rnd_modulo_u32(99));
+			break;
+		}
+	} else {
+		/* 10% fully random for the long tail. */
+		sp->sched_priority = (int) rnd_modulo_u32(256);
 	}
+
+	/* Target self (0) most of the time.  ARG_PID overwhelmingly draws
+	 * pool/random pids the kernel EPERMs without CAP_SYS_NICE, and a
+	 * sched_setscheduler that bounces on permission never reaches the
+	 * policy/priority validator -- bias toward the one pid where the
+	 * set actually lands. */
+	if (rnd_modulo_u32(100) < 70)
+		rec->a1 = 0;
 
 	rec->a3 = (unsigned long) sp;
 }

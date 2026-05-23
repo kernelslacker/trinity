@@ -9,17 +9,32 @@
 static void sanitise_sched_setparam(struct syscallrecord *rec)
 {
 	struct sched_param *sp;
+	unsigned int roll;
 
 	sp = (struct sched_param *) get_writable_struct(sizeof(*sp));
 	if (!sp)
 		return;
 
-	switch (rnd_modulo_u32(4)) {
-	case 0: sp->sched_priority = 0; break;			/* SCHED_OTHER/BATCH/IDLE */
-	case 1: sp->sched_priority = 1; break;			/* minimum RT */
-	case 2: sp->sched_priority = 99; break;			/* maximum RT */
-	default: sp->sched_priority = rnd_modulo_u32(100); break;	/* random valid */
-	}
+	/*
+	 * sched_setparam takes no explicit policy, so the legal priority
+	 * range depends on the target's current policy.  Bias toward 0
+	 * because SCHED_OTHER (the default for fresh child processes)
+	 * mandates priority == 0; keep an RT-priority slice for tasks
+	 * that have already been promoted to SCHED_FIFO/RR, and a small
+	 * invalid slice to keep the validator warm.
+	 */
+	roll = rnd_modulo_u32(100);
+	if (roll < 70)
+		sp->sched_priority = 0;
+	else if (roll < 90)
+		sp->sched_priority = (int) (1 + rnd_modulo_u32(99));
+	else
+		sp->sched_priority = (int) (100 + rnd_modulo_u32(100));
+
+	/* Target self (0) most of the time so the assumed-policy bias
+	 * lines up with the actual current policy of the running child. */
+	if (rnd_modulo_u32(100) < 70)
+		rec->a1 = 0;
 
 	rec->a2 = (unsigned long) sp;
 }
