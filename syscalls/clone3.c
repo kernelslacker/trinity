@@ -39,6 +39,18 @@
 #ifndef CLONE_INTO_CGROUP
 #define CLONE_INTO_CGROUP 0x200000000ULL
 #endif
+/*
+ * CLONE_AUTOREAP / CLONE_NNP / CLONE_PIDFD_AUTOKILL / CLONE_EMPTY_MNTNS
+ * come from an out-of-tree kernel series that has not landed in mainline
+ * linux/sched.h -- none of the four are present in any uapi sched.h we
+ * build against.  Kept here (under an umbrella ifndef on the first
+ * symbol) so the clone3_flags[] pool below can speculatively exercise
+ * these bit positions: a future kernel that picks any of them up gains
+ * immediate fuzz coverage, and if the series lands with the same
+ * encoding the local defines drop out cleanly.  If only some of the
+ * four ever land upstream, this block needs to be split into per-symbol
+ * ifndefs to avoid a redefinition warning on the ones that landed.
+ */
 #ifndef CLONE_AUTOREAP
 #define CLONE_AUTOREAP		(1ULL << 34)
 #define CLONE_NNP		(1ULL << 35)
