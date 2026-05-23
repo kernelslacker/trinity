@@ -1,6 +1,7 @@
 /* epoll related fds */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -171,10 +172,13 @@ static int init_epoll_fds(void)
 
 	while (i < MAX_EPOLL_FDS) {
 		use_create1 = RAND_BOOL();
-		if (use_create1)
+		if (use_create1) {
 			fd = epoll_create1(EPOLL_CLOEXEC);
-		else
+		} else {
 			fd = epoll_create(1);
+			if (fd != -1)
+				fcntl(fd, F_SETFD, FD_CLOEXEC);
+		}
 
 		if (fd == -1) {
 			output(0, "init_epoll_fds fail: %s\n", strerror(errno));
@@ -202,10 +206,13 @@ static int open_epoll_fd(void)
 	int fd, use_create1;
 
 	use_create1 = RAND_BOOL();
-	if (use_create1)
+	if (use_create1) {
 		fd = epoll_create1(EPOLL_CLOEXEC);
-	else
+	} else {
 		fd = epoll_create(1);
+		if (fd != -1)
+			fcntl(fd, F_SETFD, FD_CLOEXEC);
+	}
 
 	if (fd == -1)
 		return false;
