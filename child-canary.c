@@ -45,6 +45,7 @@
 #include <time.h>
 
 #include "child.h"
+#include "kcov.h"
 #include "params.h"
 #include "pids.h"
 #include "shm.h"
@@ -221,6 +222,18 @@ static time_t canary_last_summary = 0;
 static unsigned int window_iters_resolved(void)
 {
 	unsigned int w = canary_window_iters;
+
+	/* Plateau acceleration: when the fleet's KCOV new-edge rate has
+	 * dropped below threshold the plateau flag is raised in shared
+	 * memory.  Halve the effective canary window so each dormant op
+	 * gets fewer iters to prove itself, the FIFO moves faster, and
+	 * we sample more dormants per unit time.  The MIN/MAX clamp
+	 * below still applies, so a halved value cannot fall below
+	 * CANARY_WINDOW_ITERS_MIN. */
+	if (kcov_shm != NULL &&
+	    __atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE))
+		w /= 2;
+
 	if (w < CANARY_WINDOW_ITERS_MIN)
 		w = CANARY_WINDOW_ITERS_MIN;
 	if (w > CANARY_WINDOW_ITERS_MAX)
@@ -587,9 +600,28 @@ void canary_queue_tick(void)
 	unsigned long now_invocations;
 	unsigned long now_edges;
 	unsigned int budget;
+	static bool last_plateau = false;
 
 	if (!canary_queue_live)
 		return;
+
+	/* Edge-triggered visibility for the plateau-driven window shrink.
+	 * Log on both rising and falling edges so the operator can see
+	 * the effective budget change in real time. */
+	{
+		bool now_plateau = (kcov_shm != NULL &&
+			__atomic_load_n(&kcov_shm->plateau_active,
+					__ATOMIC_ACQUIRE));
+		if (now_plateau != last_plateau) {
+			output(0, "canary queue: plateau %s; effective window now %u iters\n",
+				now_plateau
+					? "entered, halving canary window"
+					: "lifted, restoring canary window",
+				window_iters_resolved());
+			last_plateau = now_plateau;
+		}
+	}
+
 	if (!canary_active_op_set)
 		return;
 
