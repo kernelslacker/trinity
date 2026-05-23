@@ -328,17 +328,14 @@ bool kvm_run_churn(struct childdata *child __attribute__((unused)))
 		return true;
 
 	/*
-	 * obj lives in shared memory but the kvm_run mmap is per-process:
-	 * try_regenerate_fd() -> open_kvm_vcpu_fd() -> create_one_vcpu()
-	 * runs in whichever child topped up the pool, mmap()s kvm_run into
-	 * that child's address space, and publishes the address through the
-	 * shared obj.  A peer child that later picks the same obj derefs an
-	 * address that was never mapped here and SIGSEGVs on the first store
-	 * in scribble_pre_run.  shared_regions[] is COW-private after fork,
-	 * so the inherited copy covers parent-time vCPUs plus anything this
-	 * child tracked itself -- exactly the set of kvm_run pages mapped in
-	 * our VA.  Skip the scribble for the rest; the creator child still
-	 * exercises them.
+	 * obj lives in shared memory but the kvm_run mmap is per-process.
+	 * Today all vCPUs are mmapped by init_kvm_vcpus in the parent and
+	 * inherited at the same VA by every child via fork().
+	 * shared_regions[] is COW-private after fork, so the inherited
+	 * copy covers exactly the set of kvm_run pages mapped in our VA.
+	 * Keep the range_in_tracked_shared() guard as a defensive belt
+	 * against any future producer that mmap()s kvm_run in a non-
+	 * parent context.
 	 */
 	if (!range_in_tracked_shared((unsigned long)kr, kvm_run_size))
 		return true;

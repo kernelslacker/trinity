@@ -1418,11 +1418,10 @@ struct stats_s {
 
 	/* Number of times a child won the CAS in arm_epoll_if_needed() and
 	 * actually performed the EPOLL_CTL_ADD population for an unarmed
-	 * epfd.  Should rise once per new epfd (init pool seeds + every
-	 * try_regenerate_fd → open_epoll_fd replacement).  A flat counter
-	 * means children aren't picking unarmed epfds — either the consumer
-	 * wireup regressed or no one is calling get_typed_fd(ARG_FD_EPOLL)
-	 * / get_rand_epoll_fd. */
+	 * epfd.  Should rise once per epfd seeded by init_epoll_fds().
+	 * A flat counter means children aren't picking unarmed epfds —
+	 * either the consumer wireup regressed or no one is calling
+	 * get_typed_fd(ARG_FD_EPOLL) / get_rand_epoll_fd. */
 	unsigned long epoll_lazy_armed;
 
 	/* Number of fd-pickup attempts the watch-set sanitisers (arm_epoll,

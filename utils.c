@@ -500,13 +500,13 @@ static void freelist_push(uint64_t *head, void *p, size_t slot_size)
  */
 /*
  * 1 MiB.  Originally sized at 64 KiB for the simple-init case (memfd
- * + perf eventattr + a few testfiles), but bump-and-leak loses one
- * slot per regen and try_regenerate_fd fires often enough during
- * sustained fuzz runs (testfiles refresh, perf eventattr churn) that
- * 64 KiB exhausts within a few hours and crashes the parent.  The
- * freelist recycler now returns slots to the pool, so long-run
- * exhaustion is no longer expected; the 1 MiB ceiling remains as
- * headroom for above-bucket allocations that still bump-and-leak.
+ * + perf eventattr + a few testfiles), but bump-and-leak loses a
+ * slot for every above-bucket free, and OBJ_LOCAL churn from
+ * post_*_fd callbacks plus per-child fanout exhausts 64 KiB within
+ * a few hours of a sustained fuzz run.  The freelist recycler now
+ * returns slots to the pool, so long-run exhaustion is no longer
+ * expected; the 1 MiB ceiling remains as headroom for above-bucket
+ * allocations that still bump-and-leak.
  */
 #define SHARED_STR_HEAP_SIZE (1U * 1024U * 1024U)
 

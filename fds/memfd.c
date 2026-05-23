@@ -88,13 +88,6 @@ static int init_memfd_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_MEMFD);
 	head->destroy = &memfd_destructor;
 	head->dump = &memfd_dump;
-	/*
-	 * Route obj structs for this provider through the shared obj
-	 * heap so post-fork regen via try_regenerate_fd() → open_memfd_fd
-	 * produces obj structs that already-forked children can see.
-	 * The name field is the second pointer hung off this obj — it
-	 * goes through the shared string heap below.
-	 */
 
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
 		struct object *obj;

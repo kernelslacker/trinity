@@ -429,8 +429,7 @@ static int init_kvm_vms(void)
 	 * If init_kvm_system already ran and cascaded a VM into the pool,
 	 * nothing to do.  If init_kvm_vms ran first and the system pool is
 	 * still empty, return success and let init_kvm_system populate the
-	 * VM pool when it cascades — try_regenerate_fd() will keep the pool
-	 * topped up later.
+	 * VM pool when it cascades.
 	 */
 	if (!objects_empty(OBJ_FD_KVM_VM))
 		return true;
@@ -441,11 +440,9 @@ static int init_kvm_vms(void)
 	/*
 	 * Defensive cascade: if we land here it means the system pool was
 	 * populated by some path other than init_kvm_system's full cascade
-	 * (e.g. system init partially failed after add_object, or a future
-	 * regen path topped up only the system fd).  Mirror init_kvm_system's
-	 * full chain so the vCPU pool gets populated with the per-VM
-	 * KVM_VCPUS_PER_VM count rather than relying on regen to top it up
-	 * later.
+	 * (e.g. system init partially failed after add_object).  Mirror
+	 * init_kvm_system's full chain so the vCPU pool gets populated
+	 * with the per-VM KVM_VCPUS_PER_VM count.
 	 */
 	if (create_one_vm(peek_system_fd()))
 		create_vcpus_for_vm(peek_vm_obj());
@@ -462,8 +459,8 @@ static int init_kvm_vcpus(void)
 	/*
 	 * Mirror init_kvm_vms's defensive shape: if init_kvm_system already
 	 * cascaded vCPUs into the pool, nothing to do.  If we ran before
-	 * the VM pool was populated, return success and let the cascade
-	 * (or try_regenerate_fd) populate the vCPU pool later.
+	 * the VM pool was populated, return success and let init_kvm_system's
+	 * cascade populate the vCPU pool later.
 	 */
 	if (!objects_empty(OBJ_FD_KVM_VCPU))
 		return true;

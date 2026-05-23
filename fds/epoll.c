@@ -109,12 +109,11 @@ void arm_epoll_if_needed(struct epollobj *eo)
 {
 	unsigned int idx = eo->pool_idx;
 
-	/* pool_idx beyond the bitmap can occur if the post-freeze regen
-	 * path (open_epoll_fd via try_regenerate_fd) churns more epfds
-	 * across a session than the initial pool size.  Skip rather
-	 * than over-index — the regen'd epfd then plays as an empty
-	 * epoll set in this consumer, which is benign (epoll_wait
-	 * returns 0 / EAGAIN) and far better than a wild bitmap write. */
+	/* Defensive belt: pool_idx values >= MAX_EPOLL_FDS would over-index
+	 * the per-process bitmap.  init_epoll_fds caps the pool at
+	 * MAX_EPOLL_FDS and no post-fork producer adds more, so this never
+	 * fires today — the check stays as insurance against future growth
+	 * of next_pool_idx. */
 	if (idx >= MAX_EPOLL_FDS)
 		return;
 

@@ -199,16 +199,11 @@ static int open_io_uring_fd_config(unsigned int entries, unsigned int flags,
 
 	/*
 	 * Publish to shm->mapped_ring only for rings created during the
-	 * pre-fork init phase (init_io_uring_fds()).  Post-fork regen via
-	 * try_regenerate_fd() → open_io_uring_fd() still grows OBJ_GLOBAL
-	 * via add_object() above (so get_typed_fd(ARG_FD_IO_URING) keeps
-	 * finding rings — it reads the obj's scalar fd, not the mmap
-	 * pointers), but its sq_ring/sqes are mapped only in the regen-
-	 * caller's VA.  Publishing them would point already-forked siblings
-	 * at parent-private addresses they can't dereference, recreating
-	 * the post-fork visibility hole that sanitise_io_uring_enter
-	 * faults on.  RELEASE store pairs with the child-side ACQUIRE in
-	 * get_io_uring_ring().
+	 * pre-fork init phase.  An init-time ring's sq_ring/sqes mappings
+	 * are inherited at the same VA by every child via fork(), which
+	 * is what get_io_uring_ring() consumers (sanitise_io_uring_enter
+	 * reading sq_off_mask via ring->sq_ring) need.  RELEASE store
+	 * pairs with the child-side ACQUIRE in get_io_uring_ring().
 	 */
 	if (init_phase)
 		__atomic_store_n(&shm->mapped_ring, ring, __ATOMIC_RELEASE);
@@ -229,35 +224,20 @@ static int init_io_uring_fds(void)
 	head->destroy = &io_uring_destructor;
 	head->dump = &io_uring_dump;
 	/*
-	 * Route the io_uringobj struct through the shared obj heap so
-	 * post-fork regen via try_regenerate_fd() → open_io_uring_fd
-	 * produces objs that already-forked children can see when they
-	 * load shm->mapped_ring and walk into the obj's scalar fields
-	 * (fd, off_*, sq_entries, sq_ring_sz, sqes_sz).
+	 * Route the io_uringobj struct through the shared obj heap so the
+	 * cross-process dump path (head->dump from dump_childdata in the
+	 * parent crash diagnostics) can read its scalar fields (fd,
+	 * off_*, sq_entries, sq_ring_sz, sqes_sz) regardless of which
+	 * process triggered the crash.
 	 *
-	 * Scope of this conversion: the obj struct ONLY.  The two mmap'd
-	 * pointers carried inside the obj (sq_ring, sqes) are NOT routed
-	 * through the shared str heap — they are kernel-backed mappings
-	 * obtained via mmap(MAP_SHARED) on the io_uring fd, not heap
-	 * allocations, and re-routing them is meaningless.  Their cross-
-	 * process visibility is governed by the page table of the process
-	 * that called mmap(): for rings created in init_io_uring_fds()
-	 * (pre-fork) every child inherits the mapping at the same VA via
-	 * fork(), so dereferences from child context (e.g. sanitise_io_
-	 * uring_enter() reading sq_off_mask via ring->sq_ring) work; for
-	 * rings created post-fork via try_regenerate_fd() the mapping
-	 * exists only in the parent and a child dereference would fault.
-	 *
-	 * The post-fork mmap-pointer hazard is now structurally closed at
-	 * the publication site: open_io_uring_fd_config() only stores into
-	 * shm->mapped_ring when called with init_phase=true, which is the
-	 * pre-fork loop below.  Post-fork regen via the .open hook still
-	 * grows OBJ_GLOBAL with a freshly mmap'd ring (so the pool count
-	 * stays alive and get_typed_fd(ARG_FD_IO_URING) still hands out
-	 * the regen'd fd to syscalls that just want the scalar), but it
-	 * no longer overwrites the published slot with parent-private
-	 * sq_ring/sqes pointers that already-forked siblings would fault
-	 * on the moment they load shm->mapped_ring.
+	 * Scope: the obj struct ONLY.  The mmap'd pointers (sq_ring,
+	 * sqes) are kernel-backed mappings obtained via mmap(MAP_SHARED)
+	 * on the io_uring fd, not heap allocations.  Pre-fork mappings
+	 * inherited via fork() are visible at the same VA in every child,
+	 * which is what sanitise_io_uring_enter (reading sq_off_mask via
+	 * ring->sq_ring) requires.  Pool is populated once pre-fork and
+	 * not regenerated post-fork; if a ring's fd is destroyed, the
+	 * pool shrinks until the session ends.
 	 */
 
 	for (i = 0; i < ARRAY_SIZE(ring_configs); i++)

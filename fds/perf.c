@@ -127,15 +127,10 @@ static int init_perf_fds(void)
 	head->destroy = &perffd_destructor;
 	head->dump = &perffd_dump;
 	/*
-	 * Route both the perfobj struct and its eventattr buffer through
-	 * the shared heaps so post-fork regen via try_regenerate_fd() →
-	 * open_perf_fd produces objs that already-forked children can see
-	 * without chasing parent-private pointers in the destructor's
-	 * free path or in any future eventattr consumer.  The buffer is
-	 * the persistent obj-attached copy (sizeof(struct perf_event_attr));
-	 * the larger PAGE_SIZE syscall buffer in sanitise_perf_event_open
-	 * is transient — freed in the same call after memcpy — and stays
-	 * on the private heap.
+	 * The perfobj's eventattr buffer is the persistent obj-attached
+	 * copy (sizeof(struct perf_event_attr)); the larger PAGE_SIZE
+	 * syscall buffer in sanitise_perf_event_open is transient — freed
+	 * in the same call after memcpy — and stays on the private heap.
 	 */
 
 	while (i < MAX_PERF_FDS) {

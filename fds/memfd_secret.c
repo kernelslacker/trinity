@@ -116,13 +116,6 @@ static int init_memfd_secret_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_MEMFD_SECRET);
 	head->destroy = &memfd_secret_destructor;
 	head->dump = &memfd_secret_dump;
-	/*
-	 * Opt this provider into the shared obj heap so post-fork regen
-	 * via try_regenerate_fd() → open_memfd_secret_fd produces obj
-	 * structs that already-forked children can see.  memfd_secretobj
-	 * has no pointer members, so this is a mechanical conversion
-	 * matching the pidfd/fanotify template.
-	 */
 
 	for (i = 0; i < NR_MEMFD_SECRET_FDS; i++) {
 		if (open_memfd_secret_fd())
