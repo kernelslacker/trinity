@@ -13,6 +13,7 @@
 #include "userfaultfd.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "compat.h"
@@ -99,7 +100,7 @@ static void arm_userfaultfd(int fd)
 	api.api = UFFD_API;
 	api.features = 0;
 	for (i = 0; i < ARRAY_SIZE(feature_flags); i++) {
-		if (rand() & 1)
+		if (rnd_u32() & 1)
 			api.features |= feature_flags[i];
 	}
 
