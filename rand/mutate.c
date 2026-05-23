@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include "arch.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 /*
@@ -22,7 +23,7 @@
  */
 static unsigned long mutate_truncate(unsigned long val)
 {
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0: return val & 0xff;
 	case 1: return val & 0xffff;
 	case 2: return val & 0xffffffff;
@@ -38,7 +39,7 @@ static unsigned long mutate_truncate(unsigned long val)
  */
 static unsigned long mutate_sign_extend(unsigned long val)
 {
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0: return val | 0x80;
 	case 1: return val | 0x8000;
 	case 2: return val | 0x80000000UL;
@@ -55,7 +56,7 @@ static unsigned long mutate_sign_extend(unsigned long val)
  */
 static unsigned long mutate_alignment(unsigned long val)
 {
-	switch (rand() % 4) {
+	switch (rnd_modulo_u32(4)) {
 	case 0:
 		/* Align down to page boundary */
 		return val & ~(page_size - 1);
@@ -67,7 +68,7 @@ static unsigned long mutate_alignment(unsigned long val)
 		return val & ~63UL;
 	case 3:
 		/* Misalign: set one of the low 3 bits */
-		return val | (1UL << (rand() % 3));
+		return val | (1UL << rnd_modulo_u32(3));
 	}
 	return val;
 }
@@ -82,7 +83,7 @@ static unsigned long mutate_alignment(unsigned long val)
  */
 static unsigned long mutate_cross_width(unsigned long val)
 {
-	switch (rand() % 6) {
+	switch (rnd_modulo_u32(6)) {
 	case 0: return (unsigned long)(unsigned char) val;		/* zero-extend 8→64 */
 	case 1: return (unsigned long)(unsigned short) val;		/* zero-extend 16→64 */
 	case 2: return (unsigned long)(unsigned int) val;		/* zero-extend 32→64 */
@@ -108,7 +109,7 @@ static unsigned long mutate_cross_width(unsigned long val)
  */
 unsigned long mutate_value(unsigned long val)
 {
-	switch (rand() % 8) {
+	switch (rnd_modulo_u32(8)) {
 	case 0:
 		return mutate_truncate(val);
 	case 1:
@@ -128,10 +129,10 @@ unsigned long mutate_value(unsigned long val)
 		return __builtin_bswap64(val);
 	case 5:
 		/* Single-bit flip -- toggles one flag/permission bit */
-		return val ^ (1UL << (rand() % WORD_BIT));
+		return val ^ (1UL << rnd_modulo_u32(WORD_BIT));
 	case 6: {
 		/* Arithmetic delta +/- 1..128 */
-		unsigned long delta = (rand() % 128) + 1;
+		unsigned long delta = rnd_modulo_u32(128) + 1;
 		if (RAND_BOOL())
 			return val + delta;
 		return val - delta;
