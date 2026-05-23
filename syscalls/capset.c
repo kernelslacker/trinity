@@ -8,17 +8,71 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "deferred-free.h"
+#include "pids.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
 
-static const unsigned int cap_versions[] = {
-	_LINUX_CAPABILITY_VERSION_1,
-	_LINUX_CAPABILITY_VERSION_2,
-	_LINUX_CAPABILITY_VERSION_3,
-};
+/*
+ * Pick a header.version with a distribution biased toward the kernel's
+ * current preferred version (_3).  Random version values trip
+ * cap_validate_magic() with -EINVAL immediately, so the per-task cap
+ * install path (security_capset / __capable / ...) is never reached.
+ *   ~80% _LINUX_CAPABILITY_VERSION_3 (current preferred).
+ *   ~10% _LINUX_CAPABILITY_VERSION_2 (legacy 64-bit).
+ *   ~5%  _LINUX_CAPABILITY_VERSION_1 (legacy 32-bit; 1 data datum).
+ *   ~5%  bogus so the EINVAL gate stays exercised.
+ */
+static unsigned int pick_cap_version(void)
+{
+	unsigned int bucket = rnd_modulo_u32(100);
+
+	if (bucket < 80)
+		return _LINUX_CAPABILITY_VERSION_3;
+	if (bucket < 90)
+		return _LINUX_CAPABILITY_VERSION_2;
+	if (bucket < 95)
+		return _LINUX_CAPABILITY_VERSION_1;
+	return rand32();
+}
+
+/*
+ * Fill one cap_user_data_struct with a (effective, permitted, inheritable)
+ * triple.  The kernel's cap_capset() enforces `effective subset of
+ * permitted` and `inheritable subset of (permitted | bset)`; random
+ * 32-bit masks satisfy the former roughly 1/2^32 of the time, so almost
+ * every random sample short-circuits before security_capset() runs.
+ * Distribution:
+ *   ~70% legal: effective subset of permitted (we just mask
+ *        effective &= permitted), inheritable left random (kernel
+ *        already gates inheritable against bset separately).
+ *   ~20% intentional violation: effective carries bits permitted does
+ *        not, exercising the subset-check refusal path.
+ *   ~10% pure-random masks for the long tail.
+ */
+static void fill_cap_datum(struct __user_cap_data_struct *d)
+{
+	unsigned int bucket = rnd_modulo_u32(10);
+	__u32 permitted = rand32();
+	__u32 effective = rand32();
+
+	if (bucket < 7) {
+		effective &= permitted;
+	} else if (bucket < 9) {
+		/* Force at least one effective bit outside permitted. */
+		effective |= (~permitted) & rand32();
+		if ((effective & ~permitted) == 0)
+			effective ^= 1u;
+	}
+	/* else: leave both random. */
+
+	d->effective = effective;
+	d->permitted = permitted;
+	d->inheritable = rand32();
+}
 
 /*
  * Snapshot of the two capset input args read by the post oracle, captured
@@ -52,29 +106,33 @@ static void sanitise_capset(struct syscallrecord *rec)
 	hdr = (struct __user_cap_header_struct *) get_writable_struct(sizeof(*hdr));
 	if (!hdr)
 		return;
-	version = RAND_ARRAY(cap_versions);
+	version = pick_cap_version();
 	hdr->version = version;
-	hdr->pid = get_pid();
+	/*
+	 * Target self / controlled children only.  The kernel's capset
+	 * enforces hdr->pid == 0 or hdr->pid == current->pid -- any other
+	 * pid returns -EPERM immediately, before any cap-mask validation
+	 * runs.  get_pid() is biased toward live children but also returns
+	 * the broader pool; restrict to {0, mypid()} to keep the per-task
+	 * cap install path warm.
+	 */
+	hdr->pid = RAND_BOOL() ? 0 : mypid();
 	rec->a1 = (unsigned long) hdr;
 
-	/* v1 uses 1 data struct, v2/v3 use 2. */
+	/* v1 uses 1 data struct, v2/v3 use 2.  Bogus version sizes the
+	 * buffer at 2 -- the kernel rejects with -EINVAL before reading
+	 * past the header anyway. */
 	if (version == _LINUX_CAPABILITY_VERSION_1) {
 		data = (struct __user_cap_data_struct *) get_writable_struct(sizeof(*data));
 		if (!data)
 			return;
-		data->effective = rand32();
-		data->permitted = rand32();
-		data->inheritable = rand32();
+		fill_cap_datum(&data[0]);
 	} else {
 		data = (struct __user_cap_data_struct *) get_writable_struct(2 * sizeof(*data));
 		if (!data)
 			return;
-		data[0].effective = rand32();
-		data[0].permitted = rand32();
-		data[0].inheritable = rand32();
-		data[1].effective = rand32();
-		data[1].permitted = rand32();
-		data[1].inheritable = rand32();
+		fill_cap_datum(&data[0]);
+		fill_cap_datum(&data[1]);
 	}
 	rec->a2 = (unsigned long) data;
 

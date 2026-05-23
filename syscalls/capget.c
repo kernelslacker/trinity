@@ -10,16 +10,36 @@
 #include <unistd.h>
 #include "deferred-free.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 
-static const unsigned int cap_versions[] = {
-	_LINUX_CAPABILITY_VERSION_1,
-	_LINUX_CAPABILITY_VERSION_2,
-	_LINUX_CAPABILITY_VERSION_3,
-};
+/*
+ * Pick a header.version with a distribution biased toward the kernel's
+ * current preferred version (_3).  Random version values trip the
+ * SYSCALL_GET_ARGS / cap_validate_magic() gate immediately with -EINVAL
+ * (and the kernel writes the preferred version back into header.version
+ * as a hint), so any per-task cap-mask code path is never reached.
+ * Distribution:
+ *   ~80% _LINUX_CAPABILITY_VERSION_3 (current preferred).
+ *   ~10% _LINUX_CAPABILITY_VERSION_2 (legacy 64-bit).
+ *   ~5%  _LINUX_CAPABILITY_VERSION_1 (legacy 32-bit; 1 data datum).
+ *   ~5%  bogus version so the EINVAL gate stays exercised.
+ */
+static unsigned int pick_cap_version(void)
+{
+	unsigned int bucket = rnd_modulo_u32(100);
+
+	if (bucket < 80)
+		return _LINUX_CAPABILITY_VERSION_3;
+	if (bucket < 90)
+		return _LINUX_CAPABILITY_VERSION_2;
+	if (bucket < 95)
+		return _LINUX_CAPABILITY_VERSION_1;
+	return rand32();
+}
 
 /*
  * Snapshot of the two capget input args read by the post oracle, captured
@@ -47,7 +67,7 @@ static void sanitise_capget(struct syscallrecord *rec)
 	hdr = (struct __user_cap_header_struct *) get_writable_address(sizeof(*hdr));
 	if (hdr == NULL)
 		return;
-	hdr->version = RAND_ARRAY(cap_versions);
+	hdr->version = pick_cap_version();
 	hdr->pid = get_pid();
 
 	rec->a1 = (unsigned long) hdr;
