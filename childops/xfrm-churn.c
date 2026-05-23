@@ -1534,13 +1534,6 @@ static bool xfrm_burn_netns(void)
 	__atomic_add_fetch(&shm->stats.xfrm_churn_burn_runs, 1,
 			   __ATOMIC_RELAXED);
 
-	if (__atomic_load_n(&shm->newnet_in_flight, __ATOMIC_RELAXED) >=
-	    MAX_CONCURRENT_NEWNET) {
-		__atomic_add_fetch(&shm->stats.xfrm_churn_burn_throttled, 1,
-				   __ATOMIC_RELAXED);
-		return false;
-	}
-
 	aidx = pick_algo_idx();
 	if (aidx >= NR_XFRM_ALGOS)
 		return false;
@@ -1550,7 +1543,12 @@ static bool xfrm_burn_netns(void)
 	if (anchor < 0)
 		return false;
 
-	__atomic_fetch_add(&shm->newnet_in_flight, 1, __ATOMIC_RELAXED);
+	if (!try_admit_newnet()) {
+		__atomic_add_fetch(&shm->stats.xfrm_churn_burn_throttled, 1,
+				   __ATOMIC_RELAXED);
+		close(anchor);
+		return false;
+	}
 	ticketed = true;
 
 	if (unshare(CLONE_NEWNET) < 0)
