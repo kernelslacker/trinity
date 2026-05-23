@@ -31,6 +31,7 @@
 #include "kcov.h"
 #include "minicorpus.h"
 #include "random.h"
+#include "rnd.h"
 #include "sequence.h"
 #include "shm.h"
 #include "syscall.h"
@@ -206,7 +207,7 @@ bool chain_corpus_pick(struct chain_entry *out)
 	/* Pick uniformly across the live entries.  The newest entry is
 	 * at (head - 1), the oldest at (head - count); both wrap mod
 	 * CHAIN_CORPUS_RING_SIZE. */
-	slot = (head - count + (rand() % count)) % CHAIN_CORPUS_RING_SIZE;
+	slot = (head - count + rnd_modulo_u32(count)) % CHAIN_CORPUS_RING_SIZE;
 	*out = ring->slots[slot];
 	return true;
 }
@@ -215,7 +216,7 @@ bool chain_corpus_pick(struct chain_entry *out)
 
 static unsigned int pick_chain_length(void)
 {
-	unsigned int r = rand() % 10;
+	unsigned int r = rnd_modulo_u32(10);
 
 	if (r < 5)
 		return 2;
