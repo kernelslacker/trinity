@@ -49,6 +49,7 @@ static void sanitise_sched_setattr(struct syscallrecord *rec)
 	}
 
 	rec->a2 = (unsigned long) sa;
+	avoid_shared_buffer_inout(&rec->a2, sizeof(struct sched_attr));
 	rec->a3 = 0;	/* flags must be zero */
 }
 
