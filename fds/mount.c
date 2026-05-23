@@ -138,6 +138,10 @@ void post_mount_fd(struct syscallrecord *rec)
 		return;
 
 	new = alloc_object();
+	if (new == NULL) {
+		close(fd);
+		return;
+	}
 	new->mountfdobj.fd = fd;
 	add_object(new, OBJ_LOCAL, OBJ_FD_MOUNT);
 }
