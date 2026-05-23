@@ -58,6 +58,7 @@ static void sanitise_kexec_load(struct syscallrecord *rec)
 	rec->a1 = 0;	/* entry point (kernel ignores for KEXEC_ON_CRASH) */
 	rec->a2 = nr;
 	rec->a3 = (unsigned long) segs;
+	avoid_shared_buffer_inout(&rec->a3, nr * sizeof(struct kexec_segment));
 
 	/* Combine low flags with arch in upper 16 bits */
 	arch = kexec_arches[rnd_modulo_u32(ARRAY_SIZE(kexec_arches))];
