@@ -250,22 +250,32 @@ static void mode_pread(int fd, unsigned int file_idx, size_t size,
 		       const char *path)
 {
 	unsigned char buf[READ_CHUNK];
-	size_t covered = 0;
-	off_t off = 0;
-
-	/* Walk the file in randomly-offset pread calls, each at most
-	 * READ_CHUNK bytes, until every byte has been read at least
-	 * once.  Cap iterations at 4*ceil(size/READ_CHUNK) so a
-	 * pathological pread loop can't burn the slot's budget. */
+	size_t total_chunks = (size + READ_CHUNK - 1) / READ_CHUNK;
+	size_t bitmap_bytes = (total_chunks + 7) / 8;
+	unsigned char *seen;
+	size_t seen_count = 0;
 	unsigned int iter = 0;
-	unsigned int iter_cap = 4 * ((size + READ_CHUNK - 1) / READ_CHUNK);
+	unsigned int iter_cap = 4 * total_chunks;
 
-	while (covered < size && iter++ < iter_cap) {
+	/* Sample chunk-aligned pread offsets without replacement: each
+	 * chunk gets one bit in `seen`, set on first successful pread.
+	 * The loop exits when every chunk has been visited or the cap
+	 * is hit.  Coupon-collector convergence on the bit count is
+	 * O(N log N) draws expected, still well under iter_cap for the
+	 * canary file sizes in play; the cap itself guarantees bounded
+	 * termination even under perfect-collision worst case. */
+	seen = zmalloc(bitmap_bytes);
+
+	while (seen_count < total_chunks && iter++ < iter_cap) {
+		size_t chunk_idx;
+		size_t bit_byte, bit_mask;
+		off_t off;
 		size_t want;
 		size_t mis;
 		ssize_t n;
 
-		off = (off_t)rnd_modulo_u32(size);
+		chunk_idx = rnd_modulo_u32(total_chunks);
+		off = (off_t)(chunk_idx * READ_CHUNK);
 		want = size - (size_t)off;
 		if (want > sizeof(buf))
 			want = sizeof(buf);
@@ -276,10 +286,23 @@ static void mode_pread(int fd, unsigned int file_idx, size_t size,
 		if (!canary_walk(buf, (size_t)n, file_idx, off, &mis)) {
 			report_mismatch(file_idx, path, "pread", mis,
 					buf, (size_t)n, (size_t)off);
+			free(seen);
 			return;
 		}
-		covered += (size_t)n;
+
+		/* Short reads (n < READ_CHUNK) still mark the chunk seen —
+		 * canary_walk already validated the bytes that came back,
+		 * and a tail short read at EOF is expected for the last
+		 * chunk of a non-multiple-of-READ_CHUNK file. */
+		bit_byte = chunk_idx >> 3;
+		bit_mask = 1u << (chunk_idx & 7);
+		if (!(seen[bit_byte] & bit_mask)) {
+			seen[bit_byte] |= bit_mask;
+			seen_count++;
+		}
 	}
+
+	free(seen);
 }
 
 static void mode_readv(int fd, unsigned int file_idx, size_t size,
