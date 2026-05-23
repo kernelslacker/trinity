@@ -329,6 +329,14 @@ static void enter_canarying(enum child_op_type op)
 	 * canary-slot stamping path) starts including this op. */
 	dormant_op_set(op, false);
 
+	/* Per-window entry announcement.  s->canary_iterations is the
+	 * lifetime count of canary windows opened for this op (just
+	 * bumped above), so #1 is the very first canary, #2 a re-canary
+	 * after a demoted backoff, etc.  The 1/<budget> reflects in-
+	 * window iter progress, which is 1 at entry. */
+	output(0, "canary: %s entering window 1/%u iters (canary iteration #%u)\n",
+		s->name, window_iters_resolved(), s->canary_iterations);
+
 	/* Stage the new op as the pending canary; the next respawn of a
 	 * canary slot commits it as the active op.  Force a respawn now
 	 * by killing any current canary-slot child so the new op picks up
