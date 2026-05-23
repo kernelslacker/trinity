@@ -23,6 +23,7 @@
 #include <linux/sched/types.h>
 #include <linux/io_uring.h>
 #include <linux/landlock.h>
+#include <mqueue.h>
 
 #include "config.h"
 #ifdef USE_BPF
@@ -278,6 +279,17 @@ static const struct struct_field stack_t_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct mq_attr (mq_open, mq_getsetattr)                              */
+/* ------------------------------------------------------------------ */
+
+static const struct struct_field mq_attr_fields[] = {
+	FIELD(struct mq_attr, mq_flags),
+	FIELD(struct mq_attr, mq_maxmsg),
+	FIELD(struct mq_attr, mq_msgsize),
+	FIELD(struct mq_attr, mq_curmsgs),
+};
+
+/* ------------------------------------------------------------------ */
 /* union bpf_attr (bpf)                                                */
 /* ------------------------------------------------------------------ */
 
@@ -423,6 +435,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= stack_t_fields,
 		.num_fields	= ARRAY_SIZE(stack_t_fields),
 	},
+	{
+		.name		= "mq_attr",
+		.struct_size	= sizeof(struct mq_attr),
+		.fields		= mq_attr_fields,
+		.num_fields	= ARRAY_SIZE(mq_attr_fields),
+	},
 #ifdef USE_BPF
 	{
 		.name		= "bpf_attr",
@@ -503,9 +521,14 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "futex_waitv",	1, &struct_catalog[15] },
 	/* sigaltstack(const stack_t *ss, stack_t *old_ss) */
 	{ "sigaltstack",	1, &struct_catalog[16] },
+	/* mq_open(const char *, int, mode_t, struct mq_attr *) */
+	{ "mq_open",		4, &struct_catalog[17] },
+	/* mq_getsetattr(mqd_t, const struct mq_attr *, struct mq_attr *) */
+	{ "mq_getsetattr",	2, &struct_catalog[17] },
+	{ "mq_getsetattr",	3, &struct_catalog[17] },
 #ifdef USE_BPF
 	/* bpf(int, union bpf_attr *, unsigned int) */
-	{ "bpf",		2, &struct_catalog[17] },
+	{ "bpf",		2, &struct_catalog[18] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
