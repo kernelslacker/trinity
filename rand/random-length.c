@@ -3,6 +3,7 @@
 #include "arch.h"	// page_size
 #include "sanitise.h"
 #include "random.h"
+#include "rnd.h"
 
 unsigned long get_len(void)
 {
@@ -17,7 +18,7 @@ unsigned long get_len(void)
 		return get_sizeof_boundary_value();
 
 	if (RAND_BOOL()) {
-		switch (rand() % 6) {
+		switch (rnd_modulo_u32(6)) {
 		case 0:	return sizeof(char);
 		case 1:	return sizeof(short);
 		case 2:	return sizeof(int);
@@ -33,7 +34,7 @@ unsigned long get_len(void)
 	if (i == 0)
 		return 0;
 
-	switch (rand() % 5) {
+	switch (rnd_modulo_u32(5)) {
 	case 0:	i &= 0xff;
 		break;
 	case 1: i &= page_size - 1;
