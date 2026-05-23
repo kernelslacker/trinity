@@ -181,6 +181,9 @@ void edgepair_dump_to_file(const char *path)
 		return;
 	}
 
-	fclose(f);
+	if (fclose(f) != 0) {
+		perror("edgepair: failed to close dump file");
+		return;
+	}
 	output(0, "KCOV: edge-pair data dumped to %s\n", path);
 }
