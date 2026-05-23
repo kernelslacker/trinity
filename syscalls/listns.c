@@ -77,6 +77,18 @@ static void sanitise_listns(struct syscallrecord *rec)
 	req->size = NS_ID_REQ_SIZE_VER0;
 	req->ns_type = ns_types[rnd_modulo_u32(ARRAY_SIZE(ns_types))];
 
+	/*
+	 * Half the time, draw a non-zero ns_id from [1, 2^30) so the
+	 * find_ns_id() lookup arm gets exercised.  Kernel's __do_listns()
+	 * uses ns_id == 0 to mean "list all of the current namespace tree"
+	 * — a single arm — so leaving ns_id always zero (the zmalloc
+	 * default) means find_ns_id()'s separate RCU/refcount-driven
+	 * lookup path is unreachable.  Keep the all-zero path intact for
+	 * the "list whole tree" coverage on the other half.
+	 */
+	if (RAND_BOOL())
+		req->ns_id = 1 + rnd_modulo_u32((1U << 30) - 1);
+
 	rec->a1 = (unsigned long) req;
 	rec->a3 = RAND_RANGE(1, 512);
 
