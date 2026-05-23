@@ -5,7 +5,10 @@
  */
 #include <signal.h>
 #include <stdint.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "objects.h"
 #include "rnd.h"
@@ -73,24 +76,39 @@ int32_t get_random_timerid(void)
 	return obj->timeridobj.tid;
 }
 
+static int pick_signo_avoiding_sigint(void)
+{
+	int signo;
+
+	do {
+		signo = rnd_modulo_u32(_NSIG);
+	} while (signo == SIGINT);
+	return signo;
+}
+
 static void timer_create_sanitise(struct syscallrecord *rec)
 {
 	struct sigevent *sigev;
 
-	if (RAND_BOOL()) {
-		int signo;
+	sigev = (struct sigevent *) get_writable_address(sizeof(struct sigevent));
+	if (sigev != NULL) {
+		uint32_t r = rnd_modulo_u32(100);
 
-		sigev = (struct sigevent *) get_writable_address(sizeof(struct sigevent));
-		if (sigev != NULL) {
-			/* do not let created timer send SIGINT signal */
-			do {
-				signo = rnd_modulo_u32(_NSIG);
-			} while (signo  == SIGINT);
+		sigev->sigev_value.sival_int = (int) rnd_u32();
+		sigev->sigev_signo = pick_signo_avoiding_sigint();
 
-			sigev->sigev_signo = signo;
+		if (r < 25) {
+			sigev->sigev_notify = SIGEV_NONE;
+		} else if (r < 55) {
+			sigev->sigev_notify = SIGEV_SIGNAL;
+		} else if (r < 80) {
+			sigev->sigev_notify = SIGEV_THREAD_ID;
+			sigev->_sigev_un._tid = (pid_t) syscall(SYS_gettid);
+		} else {
+			sigev->sigev_notify = SIGEV_SIGNAL | SIGEV_THREAD_ID;
+			sigev->_sigev_un._tid = (pid_t) syscall(SYS_gettid);
 		}
-	} else
-		sigev = NULL;
+	}
 
 	rec->a2 = (unsigned long)sigev;
 
