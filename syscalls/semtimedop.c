@@ -47,11 +47,13 @@ static void sanitise_semtimedop(struct syscallrecord *rec)
 	fill_sembuf_array(sops, nsops);
 
 	rec->a2 = (unsigned long) sops;
+	avoid_shared_buffer_inout(&rec->a2, nsops * sizeof(struct sembuf));
 	rec->a3 = nsops;
 
 	ts->tv_sec = 0;
 	ts->tv_nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
 	rec->a4 = (unsigned long) ts;
+	avoid_shared_buffer_inout(&rec->a4, sizeof(struct timespec));
 }
 
 struct syscallentry syscall_semtimedop = {
