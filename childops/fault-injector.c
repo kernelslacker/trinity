@@ -157,10 +157,11 @@ bool fault_injector(struct childdata *child)
 	stats_ring_enqueue(child->stats_ring, STATS_FIELD_FAULT_INJECTED, 0, 1);
 
 	ret = do_alloc_syscall();
+	int saved_errno = errno;
 
 	disarm_fail_nth(child->fail_nth_fd);
 
-	if (ret == -1 && errno == ENOMEM)
+	if (ret == -1 && saved_errno == ENOMEM)
 		stats_ring_enqueue(child->stats_ring,
 				   STATS_FIELD_FAULT_CONSUMED, 0, 1);
 
