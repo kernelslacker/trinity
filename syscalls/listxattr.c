@@ -9,6 +9,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+#include "xattr.h"
 /*
  * Snapshot of the two listxattr-family input args read by the post oracle,
  * captured at sanitise time and consumed by the post handler.  Lives in
@@ -18,10 +19,16 @@
  * the re-call the wrong fd / pathname.  The arg1 field is interpreted as
  * an int fd by post_flistxattr and as a const char * pathname by
  * post_listxattr / post_llistxattr.
+ *
+ * The size field captures the advertised size after the sanitise-time
+ * bucket-and-clamp pass; the post oracle uses it (rather than rec->aN
+ * at post time) to gate out the size=0 probe case, where retval is the
+ * required namebuffer size and the user buffer was not populated.
  */
 struct listxattr_post_state {
 	unsigned long arg1;
 	unsigned long list;
+	unsigned long size;
 	size_t buf_alloc_size;
 };
 
@@ -42,6 +49,12 @@ static void sanitise_flistxattr(struct syscallrecord *rec)
 	rec->post_state = 0;
 
 	pre_a2 = rec->a2;
+	/*
+	 * Buffer-size legality buckets: capture pre_a2 first so the
+	 * existing pre/post comparison correctly sees a substituted
+	 * buffer when the bucket helper plants one.
+	 */
+	xattr_pick_listbuf_bucket(&rec->a2, &rec->a3);
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
 
 	/*
@@ -89,6 +102,7 @@ static void sanitise_flistxattr(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->arg1 = rec->a1;
 	snap->list = rec->a2;
+	snap->size = rec->a3;
 	snap->buf_alloc_size = buf_alloc_size;
 	rec->post_state = (unsigned long) snap;
 }
@@ -169,9 +183,9 @@ static void post_flistxattr(struct syscallrecord *rec)
 
 	if ((long) rec->retval < 0)
 		goto out_free;
-	if (rec->retval > rec->a3) {
+	if (snap->size != 0 && rec->retval > snap->size) {
 		outputerr("post_flistxattr: rejecting retval %lu > size %lu\n",
-			  rec->retval, rec->a3);
+			  rec->retval, snap->size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -180,6 +194,15 @@ static void post_flistxattr(struct syscallrecord *rec)
 		goto out_free;
 
 	if ((long) rec->retval <= 0)
+		goto out_free;
+
+	/*
+	 * size=0 / NULL-buffer probe: retval is the required namebuffer
+	 * size and the user buffer was not populated; the equality oracle
+	 * would compare stale pool bytes against a real namebuffer and
+	 * fire on every draw.
+	 */
+	if (snap->size == 0)
 		goto out_free;
 
 	if (snap->list == 0)
@@ -287,6 +310,7 @@ static void sanitise_listxattr(struct syscallrecord *rec)
 	rec->post_state = 0;
 
 	pre_a2 = rec->a2;
+	xattr_pick_listbuf_bucket(&rec->a2, &rec->a3);
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
 
 	/*
@@ -316,6 +340,7 @@ static void sanitise_listxattr(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->arg1 = rec->a1;
 	snap->list = rec->a2;
+	snap->size = rec->a3;
 	snap->buf_alloc_size = buf_alloc_size;
 	rec->post_state = (unsigned long) snap;
 }
@@ -396,9 +421,9 @@ static void post_listxattr(struct syscallrecord *rec)
 
 	if ((long) rec->retval < 0)
 		goto out_free;
-	if (rec->retval > rec->a3) {
+	if (snap->size != 0 && rec->retval > snap->size) {
 		outputerr("post_listxattr: rejecting retval %lu > size %lu\n",
-			  rec->retval, rec->a3);
+			  rec->retval, snap->size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -407,6 +432,15 @@ static void post_listxattr(struct syscallrecord *rec)
 		goto out_free;
 
 	if ((long) rec->retval <= 0)
+		goto out_free;
+
+	/*
+	 * size=0 / NULL-buffer probe: retval is the required namebuffer
+	 * size and the user buffer was not populated; skip the equality
+	 * oracle so it does not compare stale pool bytes against a real
+	 * namebuffer.
+	 */
+	if (snap->size == 0)
 		goto out_free;
 
 	if (snap->arg1 == 0 || snap->list == 0)
@@ -516,6 +550,7 @@ static void sanitise_llistxattr(struct syscallrecord *rec)
 	rec->post_state = 0;
 
 	pre_a2 = rec->a2;
+	xattr_pick_listbuf_bucket(&rec->a2, &rec->a3);
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
 
 	/*
@@ -545,6 +580,7 @@ static void sanitise_llistxattr(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->arg1 = rec->a1;
 	snap->list = rec->a2;
+	snap->size = rec->a3;
 	snap->buf_alloc_size = buf_alloc_size;
 	rec->post_state = (unsigned long) snap;
 }
@@ -623,9 +659,9 @@ static void post_llistxattr(struct syscallrecord *rec)
 
 	if ((long) rec->retval < 0)
 		goto out_free;
-	if (rec->retval > rec->a3) {
+	if (snap->size != 0 && rec->retval > snap->size) {
 		outputerr("post_llistxattr: rejecting retval %lu > size %lu\n",
-			  rec->retval, rec->a3);
+			  rec->retval, snap->size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -634,6 +670,10 @@ static void post_llistxattr(struct syscallrecord *rec)
 		goto out_free;
 
 	if ((long) rec->retval <= 0)
+		goto out_free;
+
+	/* size=0 / NULL-buffer probe -- see post_listxattr for full rationale. */
+	if (snap->size == 0)
 		goto out_free;
 
 	if (snap->arg1 == 0 || snap->list == 0)

@@ -15,6 +15,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+#include "xattr.h"
 
 static unsigned long listxattrat_at_flags[] = {
 	AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH,
@@ -50,6 +51,15 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 
 	pre_a4 = rec->a4;
 #endif
+
+	/*
+	 * Buffer-size legality buckets: substitute (buf, size) with a
+	 * curated boundary pair on ~half of all draws.  See xattr.c for
+	 * the bucket list.  Called before avoid_shared_buffer_out so the
+	 * existing pre/post comparison correctly classifies a substituted
+	 * buffer.
+	 */
+	xattr_pick_listbuf_bucket(&rec->a4, &rec->a5);
 
 	avoid_shared_buffer_out(&rec->a4, rec->a5);
 
@@ -203,7 +213,8 @@ static void post_listxattrat(struct syscallrecord *rec)
 	 * unconditionally, ahead of the ONE_IN(100) sample gate, so every
 	 * offending retval is counted.
 	 */
-	if ((long) rec->retval != -1L && rec->retval > snap->size) {
+	if ((long) rec->retval != -1L && snap->size != 0 &&
+	    rec->retval > snap->size) {
 		outputerr("post_listxattrat: rejected retval=0x%lx > size=%lu\n",
 			  rec->retval, snap->size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
@@ -214,6 +225,14 @@ static void post_listxattrat(struct syscallrecord *rec)
 		goto out_free;
 
 	if ((long) rec->retval <= 0)
+		goto out_free;
+
+	/*
+	 * size=0 probe: retval is the required namebuffer size and the
+	 * user buffer was not populated -- the equality oracle would
+	 * compare stale pool bytes against a real namebuffer.
+	 */
+	if (snap->size == 0)
 		goto out_free;
 
 	if (snap->list == 0)

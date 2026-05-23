@@ -23,3 +23,13 @@ bool sanitise_xattr_name_arg(struct syscallrecord *rec, unsigned int argno);
  */
 extern unsigned long xattr_set_flags[2];	/* XATTR_CREATE, XATTR_REPLACE */
 extern unsigned long xattrat_flags[2];		/* AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH */
+
+/*
+ * On ~50% of draws, replace the (buffer, size) pair at *bufp / *sizep
+ * with a curated boundary-legality bucket (NULL probe, size=0 probe,
+ * 1-byte truncation, page-boundary +/- 1, huge).  The huge bucket
+ * allocates a real backing buffer so the downstream allocation-cap
+ * clamp does not silently shrink it.  Call BEFORE
+ * avoid_shared_buffer_out().
+ */
+void xattr_pick_listbuf_bucket(unsigned long *bufp, unsigned long *sizep);

@@ -1,5 +1,6 @@
 /* Generate valid extended attribute name strings for xattr syscalls. */
 #include <fcntl.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <linux/xattr.h>
@@ -66,3 +67,49 @@ bool sanitise_xattr_name_arg(struct syscallrecord *rec, unsigned int argno)
 
 unsigned long xattr_set_flags[2] = { XATTR_CREATE, XATTR_REPLACE };
 unsigned long xattrat_flags[2]   = { AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH };
+
+/*
+ * Buffer-size legality buckets for the listxattr family.  Random sizes
+ * from ARG_LEN rarely land on the boundaries the kernel cares about
+ * (NULL/0 probe, 1-byte truncation, page-boundary exact / off-by-one,
+ * huge), so on roughly half of all draws replace (*bufp, *sizep) with
+ * a curated bucket.  Must be called BEFORE avoid_shared_buffer_out()
+ * so the post-clamp pre/post comparison correctly classifies the
+ * resulting buffer as "freshly assigned" when we substitute one.
+ *
+ * The huge bucket allocates a real backing buffer via
+ * get_writable_address() so the existing clamp -- which caps a stray
+ * size against the proven allocation -- does not silently cap the
+ * advertised size back to page_size.
+ */
+void xattr_pick_listbuf_bucket(unsigned long *bufp, unsigned long *sizep)
+{
+	void *p;
+
+	if (!ONE_IN(2))
+		return;
+
+	switch (rnd_modulo_u32(7)) {
+	case 0:	/* NULL buffer paired with size=0 -- pure probe */
+		*bufp = 0;
+		*sizep = 0;
+		break;
+	case 1:	/* size=0 with non-NULL buffer -- probe, kernel returns required size */
+		*sizep = 0;
+		break;
+	case 2:	*sizep = 1;	break;	/* 1-byte truncation */
+	case 3:	*sizep = 4095;	break;	/* off-by-one below page */
+	case 4:	*sizep = 4096;	break;	/* page boundary */
+	case 5:	*sizep = 4097;	break;	/* off-by-one above page */
+	case 6:	/* huge bucket: back it with a real allocation so the
+		 * downstream clamp does not silently cap it. */
+		p = get_writable_address(1UL << 16);
+		if (p) {
+			*bufp = (unsigned long) p;
+			*sizep = 1UL << 16;
+		} else {
+			*sizep = 4096;
+		}
+		break;
+	}
+}
