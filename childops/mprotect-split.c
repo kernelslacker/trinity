@@ -146,7 +146,7 @@ bool mprotect_split(struct childdata *child)
 
 	for (iter = 0; iter < PROT_MODE_ITERS; iter++) {
 		unsigned long offset, len;
-		int new_prot;
+		int new_prot, prot_used;
 		void *addr;
 
 		offset = pick_subrange(map, &len);
@@ -154,12 +154,33 @@ bool mprotect_split(struct childdata *child)
 
 		new_prot = prot_for_mode(mode, iter);
 
-		if (mprotect(addr, len, (int)RAND_NEGATIVE_OR(new_prot)) != 0)
+		/*
+		 * RAND_NEGATIVE_OR can substitute a curated edge value
+		 * (0, INT_MAX, page_size, ...) into the prot arg ~1/50 of
+		 * the time.  If the kernel accepts that substituted value
+		 * we must do the bookkeeping based on what was actually
+		 * applied, not the original new_prot — otherwise map->prot
+		 * drifts out of sync with reality and consumers SEGV.
+		 */
+		prot_used = (int)RAND_NEGATIVE_OR(new_prot);
+
+		if (mprotect(addr, len, prot_used) != 0)
+			continue;
+
+		/*
+		 * Only update the tracked prot when the value the kernel
+		 * applied is a clean PROT_R/W/X combination (including
+		 * PROT_NONE).  Edge sentinels like INT_MAX, page_size,
+		 * etc. carry bits outside the lattice that our consumers
+		 * have no way to model, so leave map->prot unchanged in
+		 * that case rather than poisoning the bookkeeping.
+		 */
+		if ((prot_used & ~(PROT_READ | PROT_WRITE | PROT_EXEC)) != 0)
 			continue;
 
 		/*
 		 * Update the tracked prot.  For a whole-range change
-		 * new_prot describes every page exactly.  For a sub-range,
+		 * prot_used describes every page exactly.  For a sub-range,
 		 * intersect: the result is the set of permission bits
 		 * GUARANTEED present in every page of the mapping.
 		 *
@@ -177,9 +198,9 @@ bool mprotect_split(struct childdata *child)
 		 * child.
 		 */
 		if (offset == 0 && len == map->size)
-			map->prot = new_prot;
+			map->prot = prot_used;
 		else
-			map->prot &= new_prot;
+			map->prot &= prot_used;
 	}
 
 	return true;
