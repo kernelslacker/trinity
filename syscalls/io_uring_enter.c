@@ -207,7 +207,7 @@ static void sanitise_io_uring_enter(struct syscallrecord *rec)
 	sqes = (struct trinity_io_uring_sqe *)ring->sqes;
 	sq_array = (unsigned int *)((char *)ring->sq_ring + ring->off_array);
 
-	to_submit = RAND_RANGE(1, ring->sq_entries);
+	to_submit = RAND_RANGE(1U, ring->sq_entries);
 	if (to_submit > 4)
 		to_submit = RAND_RANGE(1, 4);	/* usually small batches */
 

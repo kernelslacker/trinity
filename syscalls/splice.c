@@ -24,8 +24,8 @@ static void sanitise_splice(struct syscallrecord *rec)
 	if (off_in == NULL || off_out == NULL)
 		return;
 
-	*off_in = RAND_RANGE(0, 1ULL << 30);
-	*off_out = RAND_RANGE(0, 1ULL << 30);
+	*off_in = RAND_RANGE(0ULL, 1ULL << 30);
+	*off_out = RAND_RANGE(0ULL, 1ULL << 30);
 	rec->a2 = (unsigned long) off_in;
 	rec->a4 = (unsigned long) off_out;
 

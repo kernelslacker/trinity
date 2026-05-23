@@ -347,7 +347,7 @@ static void recv_rotating(int fd)
 		if (big == NULL)
 			return;
 		iov[0].iov_base = big;
-		iov[0].iov_len = (size_t)RAND_RANGE(1, ARC_BIG_IOV_BYTES);
+		iov[0].iov_len = (size_t)RAND_RANGE(1U, ARC_BIG_IOV_BYTES);
 		mh.msg_iov = iov;
 		mh.msg_iovlen = 1;
 		break;

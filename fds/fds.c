@@ -257,7 +257,7 @@ regen:
 			__atomic_load_n(&e->gen, __ATOMIC_ACQUIRE) : 0;
 
 		if (max_children >= 5)
-			child->fd_lifetime = RAND_RANGE(5, max_children);
+			child->fd_lifetime = RAND_RANGE(5U, max_children);
 		else
 			child->fd_lifetime = RAND_RANGE(1, 5);
 	} else

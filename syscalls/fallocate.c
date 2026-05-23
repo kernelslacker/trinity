@@ -24,8 +24,8 @@ static unsigned long fallocate_modes[] = {
 
 static void sanitise_fallocate(struct syscallrecord *rec)
 {
-	int64_t offset = RAND_RANGE(0, 1ULL << 30);	/* [0, 1 GB] */
-	int64_t len = RAND_RANGE(1, 64ULL << 20);	/* [1, 64 MB] */
+	int64_t offset = RAND_RANGE(0ULL, 1ULL << 30);	/* [0, 1 GB] */
+	int64_t len = RAND_RANGE(1ULL, 64ULL << 20);	/* [1, 64 MB] */
 
 	/* Prevent offset+len from overflowing loff_t */
 	if (len > INT64_MAX - offset)
