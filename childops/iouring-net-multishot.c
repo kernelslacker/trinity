@@ -304,17 +304,13 @@ static int ms_enter(struct ms_ctx *ctx, unsigned int n, unsigned int min_complet
 
 static unsigned int ms_drain(struct ms_ctx *ctx)
 {
-	unsigned int mask = ring_u32(ctx->cq_ring, ctx->cq_off_mask);
 	unsigned int head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
 	unsigned int tail;
 	unsigned int reaped = 0;
-	struct io_uring_cqe *cqes;
 
-	cqes = (struct io_uring_cqe *)((char *)ctx->cq_ring + ctx->cq_off_cqes);
 	tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
 
 	while (head != tail) {
-		(void)cqes[head & mask];
 		head++;
 		reaped++;
 		tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);

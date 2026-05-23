@@ -448,16 +448,12 @@ static int ring_enter(struct ring_ctx *ctx, unsigned int n,
 
 static void ring_drain_cqes(struct ring_ctx *ctx)
 {
-	unsigned int mask = ring_u32(ctx->cq_ring, ctx->cq_off_mask);
 	unsigned int head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
 	unsigned int tail;
-	struct io_uring_cqe *cqes;
 
-	cqes = (struct io_uring_cqe *)((char *)ctx->cq_ring + ctx->cq_off_cqes);
 	tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
 
 	while (head != tail) {
-		(void)cqes[head & mask];
 		head++;
 		tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
 	}

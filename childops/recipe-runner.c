@@ -2348,21 +2348,14 @@ static bool recipe_iouring_fixed_uaf(bool *unsupported)
 	 * unregister vs in-flight ref reconciliation, not whether the
 	 * read returned 0 or -ECANCELED. */
 	{
-		unsigned int cmask, chead, ctail;
-		struct io_uring_cqe *cqes;
+		unsigned int chead, ctail;
 
-		cmask = *(volatile unsigned int *)((char *)cq_ring +
-						   p.cq_off.ring_mask);
 		chead = *(volatile unsigned int *)((char *)cq_ring +
 						   p.cq_off.head);
 		ctail = *(volatile unsigned int *)((char *)cq_ring +
 						   p.cq_off.tail);
-		cqes = (struct io_uring_cqe *)((char *)cq_ring +
-					       p.cq_off.cqes);
-		while (chead != ctail) {
-			(void)cqes[chead & cmask];
+		while (chead != ctail)
 			chead++;
-		}
 		__sync_synchronize();
 		*(volatile unsigned int *)((char *)cq_ring +
 					   p.cq_off.head) = chead;

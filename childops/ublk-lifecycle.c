@@ -265,14 +265,10 @@ static bool ring_submit(struct ublk_lc_ring *r, struct io_uring_sqe *sqe,
 
 static void ring_drain(struct ublk_lc_ring *r)
 {
-	unsigned int mask = rdu32(r->cq_ring, r->cq_off_mask);
 	unsigned int head = rdu32(r->cq_ring, r->cq_off_head);
 	unsigned int tail = rdu32(r->cq_ring, r->cq_off_tail);
-	struct io_uring_cqe *cqes;
 
-	cqes = (struct io_uring_cqe *)((char *)r->cq_ring + r->cq_off_cqes);
 	while (head != tail) {
-		(void)cqes[head & mask];
 		head++;
 		tail = rdu32(r->cq_ring, r->cq_off_tail);
 	}

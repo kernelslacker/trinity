@@ -303,16 +303,12 @@ static int iour_enter(struct iour_ctx *ctx, unsigned int n,
  */
 static void iour_drain_cqes(struct iour_ctx *ctx)
 {
-	unsigned int mask = ring_u32(ctx->cq_ring, ctx->cq_off_mask);
 	unsigned int head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
 	unsigned int tail;
-	struct io_uring_cqe *cqes;
 
-	cqes = (struct io_uring_cqe *)((char *)ctx->cq_ring + ctx->cq_off_cqes);
 	tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
 
 	while (head != tail) {
-		(void)cqes[head & mask];
 		head++;
 		tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
 	}
@@ -2599,8 +2595,7 @@ static bool recipe_eventfd_recursive(struct iour_recipe_state *s,
 	struct io_uring_sqe sqes[8];
 	eventfd_t bufs[8];
 	uint64_t one = 1;
-	struct io_uring_cqe *cqes;
-	unsigned int nreads, reg_op, mask, head, tail, reaped, spins, i;
+	unsigned int nreads, reg_op, head, tail, reaped, spins, i;
 	bool ok = false;
 	bool registered = false;
 	int r;
@@ -2660,8 +2655,6 @@ static bool recipe_eventfd_recursive(struct iour_recipe_state *s,
 	/* Bounded drain.  Non-blocking GETEVENTS lets the kernel post
 	 * completions; cap at 32 spins / 32 CQEs so a wedged kernel can't
 	 * hang us, and break early once every read SQE has completed. */
-	cqes = (struct io_uring_cqe *)((char *)ctx->cq_ring + ctx->cq_off_cqes);
-	mask = ring_u32(ctx->cq_ring, ctx->cq_off_mask);
 	reaped = 0;
 	for (spins = 0; spins < 32 && reaped < 32; spins++) {
 		(void)syscall(__NR_io_uring_enter, ctx->fd, 0, 0,
@@ -2670,7 +2663,6 @@ static bool recipe_eventfd_recursive(struct iour_recipe_state *s,
 		head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
 		tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
 		while (head != tail && reaped < 32) {
-			(void)cqes[head & mask];
 			head++;
 			reaped++;
 		}

@@ -347,17 +347,13 @@ static unsigned int submit_one(struct ring_ctx *ctx,
 
 static unsigned int drain_cqes(struct ring_ctx *ctx)
 {
-	unsigned int mask = ring_u32(ctx->cq_ring, ctx->cq_off_mask);
 	unsigned int head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
 	unsigned int tail;
 	unsigned int reaped = 0;
-	struct io_uring_cqe *cqes;
 
-	cqes = (struct io_uring_cqe *)((char *)ctx->cq_ring + ctx->cq_off_cqes);
 	tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
 
 	while (head != tail) {
-		(void)cqes[head & mask];
 		head++;
 		reaped++;
 		tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
