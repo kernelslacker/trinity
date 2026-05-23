@@ -4,6 +4,8 @@
  */
 #include <linux/quota.h>
 #include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -13,7 +15,66 @@ static int quota_subcmds[] = {
 	Q_GETINFO, Q_SETINFO, Q_GETQUOTA, Q_SETQUOTA, Q_GETNEXTQUOTA,
 };
 
-static int quota_types[] = { USRQUOTA, GRPQUOTA, PRJQUOTA };
+static const char *quotafile_paths[] = {
+	"aquota.user", "aquota.group", "aquota.project",
+	"/aquota.user", "/aquota.group",
+	"/tmp/aquota.user", "/var/lib/aquota.user",
+};
+
+static int quota_formats[] = {
+	QFMT_VFS_OLD, QFMT_VFS_V0, QFMT_VFS_V1,
+#ifdef QFMT_OCFS2
+	QFMT_OCFS2,
+#endif
+#ifdef QFMT_SHMEM
+	QFMT_SHMEM,
+#endif
+};
+
+static int pick_quota_type(void)
+{
+	unsigned int pick = rnd_modulo_u32(100);
+
+	/* 40% USRQUOTA / 40% GRPQUOTA / 15% PRJQUOTA / 5% invalid */
+	if (pick < 40)
+		return USRQUOTA;
+	if (pick < 80)
+		return GRPQUOTA;
+	if (pick < 95)
+		return PRJQUOTA;
+	return 16 + rnd_modulo_u32(240);	/* invalid -- past MAXQUOTAS */
+}
+
+static unsigned int pick_quota_id(int type)
+{
+	switch (rnd_modulo_u32(5)) {
+	case 0:
+		/* current task identity -- most likely to find a row */
+		if (type == GRPQUOTA)
+			return getgid();
+		return getuid();
+	case 1:
+		return 0;
+	case 2:
+		return rnd_modulo_u32(256);
+	case 3:
+		return rnd_modulo_u32(65536);
+	default:
+		return rand32();
+	}
+}
+
+static char *fill_quotafile(void)
+{
+	const char *src = quotafile_paths[rnd_modulo_u32(ARRAY_SIZE(quotafile_paths))];
+	char *buf = (char *) get_writable_struct(48);
+
+	if (!buf)
+		return NULL;
+	strncpy(buf, src, 47);
+	buf[47] = '\0';
+	return buf;
+}
 
 static void sanitise_quotactl(struct syscallrecord *rec)
 {
@@ -21,7 +82,7 @@ static void sanitise_quotactl(struct syscallrecord *rec)
 	char *special;
 
 	subcmd = quota_subcmds[rnd_modulo_u32(ARRAY_SIZE(quota_subcmds))];
-	type = quota_types[rnd_modulo_u32(ARRAY_SIZE(quota_types))];
+	type = pick_quota_type();
 	rec->a1 = QCMD(subcmd, type);
 
 	/* arg2: block device path */
@@ -33,7 +94,7 @@ static void sanitise_quotactl(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) special;
 
 	/* arg3: uid/gid/projid */
-	rec->a3 = rnd_modulo_u32(65536);
+	rec->a3 = pick_quota_id(type);
 
 	/* arg4: depends on subcmd */
 	switch (subcmd) {
@@ -94,8 +155,16 @@ static void sanitise_quotactl(struct syscallrecord *rec)
 		avoid_shared_buffer_out(&rec->a4, sizeof(*fmt));
 		break;
 	}
+	case Q_QUOTAON:
+		/* id slot carries the format id; addr is a path string. */
+		rec->a3 = quota_formats[rnd_modulo_u32(ARRAY_SIZE(quota_formats))];
+		rec->a4 = (unsigned long) fill_quotafile();
+		break;
+	case Q_QUOTAOFF:
+	case Q_SYNC:
+		rec->a4 = 0;
+		break;
 	default:
-		/* Q_SYNC, Q_QUOTAON, Q_QUOTAOFF don't use addr meaningfully */
 		break;
 	}
 }
