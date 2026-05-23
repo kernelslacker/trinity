@@ -216,7 +216,7 @@ static unsigned long mount_setattr_flags[] = {
 struct syscallentry syscall_mount_setattr = {
 	.name = "mount_setattr",
 	.num_args = 5,
-	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_LIST },
+	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_LIST, [3] = ARG_STRUCT_PTR_IN, [4] = ARG_STRUCT_SIZE },
 	.argname = { [0] = "dfd", [1] = "path", [2] = "flags", [3] = "uattr", [4] = "usize" },
 	.arg_params[2].list = ARGLIST(mount_setattr_flags),
 	.rettype = RET_ZERO_SUCCESS,
