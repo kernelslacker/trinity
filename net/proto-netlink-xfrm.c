@@ -666,16 +666,26 @@ static int xfrm_emit_delsa_for(int fd, const struct xfrm_sa_track *t)
 	return xfrm_send_recv(fd, buf, off);
 }
 
-static void sa_ring_push(int fd, const struct xfrm_sa_track *entry)
+static int sa_ring_push(int fd, const struct xfrm_sa_track *entry)
 {
 	struct xfrm_sa_track *slot = &sa_ring[sa_ring_next];
 
-	if (slot->used)
-		(void)xfrm_emit_delsa_for(fd, slot);
+	if (slot->used) {
+		int rc = xfrm_emit_delsa_for(fd, slot);
+
+		/* Eviction failed -- leave the slot intact so we keep
+		 * tracking the prior SA.  The next push attempt will
+		 * retry DELSA on this same slot; do not overwrite or
+		 * advance the cursor here, otherwise the prior SA leaks
+		 * into the kernel SAD with no remaining track entry. */
+		if (rc != 0)
+			return rc;
+	}
 
 	*slot = *entry;
 	slot->used = true;
 	sa_ring_next = (sa_ring_next + 1) % NR_SA_RING_SLOTS;
+	return 0;
 }
 
 static bool sa_ring_pick(struct xfrm_sa_track *out, unsigned int *idx_out)
@@ -1278,7 +1288,12 @@ static int xfrm_emit_newsa(int fd)
 	entry.daddr  = sa->id.daddr;
 	entry.spi    = spi;
 	entry.reqid  = reqid;
-	sa_ring_push(fd, &entry);
+	/* On sa_ring_push failure the slot still tracks the prior SA;
+	 * the new SA reached the kernel but stays untracked here.  Do
+	 * not retry inline -- the next push to this slot retries the
+	 * DELSA naturally. */
+	if (sa_ring_push(fd, &entry) != 0)
+		return 0;
 	return 0;
 }
 
