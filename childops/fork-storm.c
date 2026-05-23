@@ -45,7 +45,6 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -95,20 +94,39 @@ static enum exit_mode pick_exit_mode(void)
 	return EXIT_CLEAN;
 }
 
+/*
+ * Sanitize the grandchild's signal environment before raise(SIGUSR1):
+ *
+ *   1. Reset every catchable handler to SIG_DFL.  The grandchild
+ *      inherited trinity's process-wide handlers (child_fault_handler
+ *      for SIGSEGV/SIGBUS/SIGFPE, SIGCHLD reaper, SIGALRM stall
+ *      detector); if any fire here they corrupt shared shm state or
+ *      write per-pid logs under the wrong pid.
+ *   2. Unblock SIGUSR1.  If the parent had it blocked in sigmask,
+ *      raise() merely queues the signal and the grandchild reaps as
+ *      WIFEXITED rather than WIFSIGNALED, under-counting the reaped-
+ *      by-signal stat.
+ */
+static void sanitize_grandchild_signals(void)
+{
+	sigset_t set;
+	int s;
+
+	for (s = 1; s < NSIG; s++)
+		(void)signal(s, SIG_DFL); /* SIGKILL/SIGSTOP return SIG_ERR; harmless. */
+
+	sigemptyset(&set);
+	sigaddset(&set, SIGUSR1);
+	sigprocmask(SIG_UNBLOCK, &set, NULL);
+}
+
 static void __attribute__((noreturn)) do_exit_as(enum exit_mode mode)
 {
 	switch (mode) {
-	case EXIT_SIGNAL: {
-		struct sigaction sa;
-
-		/* Make sure SIGUSR1 isn't inherited as ignored: we want
-		 * raise() to actually kill us so the reaper sees CLD_KILLED. */
-		memset(&sa, 0, sizeof(sa));
-		sa.sa_handler = SIG_DFL;
-		(void)sigaction(SIGUSR1, &sa, NULL);
+	case EXIT_SIGNAL:
+		sanitize_grandchild_signals();
 		raise(SIGUSR1);
 		_exit(0);	/* unreachable */
-	}
 	case EXIT_NONZERO:
 		_exit(1 + rnd_modulo_u32(254));
 	case EXIT_CLEAN:
