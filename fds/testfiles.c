@@ -53,8 +53,8 @@ static int open_testfile(struct object *obj, char *filename)
 		int flags = 0;
 
 		flags = set_rand_bitmask(ARRAY_SIZE(open_flags), open_flags);
-		obj->testfileobj.flags = O_CREAT | flags;
-		fd = open(filename, O_CREAT | flags, 0666);
+		obj->testfileobj.flags = O_CREAT | O_RDWR | flags;
+		fd = open(filename, O_CREAT | O_RDWR | flags, 0666);
 		obj->testfileobj.fopened = false;
 		obj->testfileobj.fcntl_flags = 0;
 	} else {
