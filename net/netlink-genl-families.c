@@ -407,7 +407,7 @@ void genl_resolve_families(void)
 	if (registry_real_count() == 0)
 		return;	/* no families registered yet — nothing to ask about */
 
-	sock = socket(AF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
+	sock = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_GENERIC);
 	if (sock < 0)
 		return; /* leave every family unavailable; lookups become noops */
 	(void)setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
