@@ -3,6 +3,8 @@
 
 #include <stdlib.h>
 
+#include "rnd.h"
+
 /*
  * One-shot per-invocation ±50% jitter on a per-childop upper bound.
  *
@@ -16,6 +18,6 @@
  * sample different temporal pressure profiles, exposing timing-sensitive
  * bugs that a fixed budget would mask.
  */
-#define JITTER_RANGE(N)		((N) / 2 + (rand() % (N) + 1))
+#define JITTER_RANGE(N)		((N) / 2 + (rnd_modulo_u32(N) + 1))
 
 #endif	/* _TRINITY_JITTER_H */
