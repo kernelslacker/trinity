@@ -26,6 +26,11 @@ static void post_close(struct syscallrecord *rec)
 			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
 					 (int) rec->a1, -1, 0, 0, 0);
 
+		/* Drop the just-closed fd from this child's own fd_hash[]
+		 * snapshot so get_random_fd() / get_typed_fd() stop handing
+		 * it back out before the parent drains the FD_EVENT_CLOSE. */
+		fd_hash_remove_local((int) rec->a1);
+
 		/* Drop the just-closed fd from this child's live-fd ring so
 		 * the next arg-generation pick doesn't burn an fcntl() on it. */
 		child_fd_ring_remove(&child->live_fds, (int) rec->a1);
