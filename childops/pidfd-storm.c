@@ -103,6 +103,27 @@ static const int getfd_targets[] = {
 	0, 1, 2, 3, 4, 5,
 };
 
+/*
+ * Sanitize the pause-child's signal environment before it enters
+ * pause().  The forked child inherited every handler trinity installed
+ * (child_fault_handler for SIGSEGV/SIGBUS/SIGFPE, SIGCHLD reaper,
+ * SIGALRM stall detector); when the storm delivers SIGUSR1 / SIGUSR2 /
+ * SIGCHLD here those handlers run in the wrong process context,
+ * touching shared shm state and writing per-pid logs under the wrong
+ * pid.  Worst case, child_fault_handler dumps a crash log for the
+ * wrong pid on a stray SIGSEGV.  Reset every catchable handler to
+ * SIG_DFL so the storm's signal traffic falls back to default action
+ * (ignore for SIGCHLD/SIGCONT/SIGURG, terminate for SIGUSR1/SIGUSR2)
+ * and any fault here just kills the pause-child cleanly.
+ */
+static void sanitize_pause_child_signals(void)
+{
+	int s;
+
+	for (s = 1; s < NSIG; s++)
+		(void)signal(s, SIG_DFL); /* SIGKILL/SIGSTOP return SIG_ERR; harmless. */
+}
+
 static int sys_pidfd_open(pid_t pid, unsigned int flags)
 {
 #ifdef __NR_pidfd_open
@@ -182,11 +203,15 @@ bool pidfd_storm(struct childdata *child)
 			/* Child: just sit here until the parent SIGKILLs us
 			 * at teardown.  Don't do anything else — we don't
 			 * want sibling fuzz behaviour leaking out of this
-			 * helper.  pause() returns on any signal handler
-			 * delivery, so loop to absorb SIGUSR1/2/CHLD/CONT
-			 * (which have default actions of ignore/term/ignore;
-			 * relying on default to stay alive on USR1/USR2/CHLD
-			 * is fragile, so re-enter pause unconditionally). */
+			 * helper.  Reset the inherited trinity signal
+			 * handlers first so the storm's signal traffic
+			 * doesn't fire them in the wrong process context.
+			 * pause() returns on any signal handler delivery,
+			 * so loop to absorb SIGUSR1/2/CHLD/CONT (which have
+			 * default actions of ignore/term/ignore; relying on
+			 * default to stay alive on USR1/USR2/CHLD is
+			 * fragile, so re-enter pause unconditionally). */
+			sanitize_pause_child_signals();
 			for (;;)
 				pause();
 			_exit(0);	/* unreachable */
