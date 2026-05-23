@@ -44,13 +44,38 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 	if (mask == NULL)
 		return;
 
-	/* len must be at least sizeof(cpumask_t) for success, but exercise
-	 * various sizes including too-small for error paths. */
-	switch (rnd_modulo_u32(4)) {
-	case 0: rec->a2 = sizeof(*mask); break;
-	case 1: rec->a2 = 4; break;		/* too small on most systems */
-	case 2: rec->a2 = 8; break;		/* might work on small systems */
-	default: rec->a2 = sizeof(*mask) * 2; break;	/* oversized */
+	/*
+	 * Length bucket biased toward kernel-acceptable sizes.  70% land
+	 * on a real cpumask-sized buffer (canonical sizeof or the long-
+	 * aligned cpumask_size() round-up of num_online_cpus()); 20% are
+	 * oversized; 10% are deliberately too small for the validation
+	 * path.  Random small lengths otherwise EINVAL the request
+	 * before the kernel can copy any bytes back.
+	 */
+	{
+		unsigned int roll = rnd_modulo_u32(100);
+		unsigned int aligned;
+		long online = sysconf(_SC_NPROCESSORS_ONLN);
+
+		if (online <= 0)
+			online = 1;
+
+		if (roll < 70) {
+			if (RAND_BOOL()) {
+				rec->a2 = sizeof(*mask);
+			} else {
+				aligned = (unsigned int) ((online + 7) / 8);
+				aligned = (aligned + sizeof(long) - 1) &
+					~(sizeof(long) - 1);
+				if (aligned == 0)
+					aligned = sizeof(long);
+				rec->a2 = aligned;
+			}
+		} else if (roll < 90) {
+			rec->a2 = sizeof(*mask) * 2;
+		} else {
+			rec->a2 = 1 + rnd_modulo_u32(sizeof(long));
+		}
 	}
 
 	rec->a3 = (unsigned long) mask;
