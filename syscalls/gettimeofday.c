@@ -4,9 +4,11 @@
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
+#include "arch.h"
 #include "deferred-free.h"
 #include "shm.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
@@ -38,8 +40,34 @@ static void sanitise_gettimeofday(struct syscallrecord *rec)
 	 */
 	rec->post_state = 0;
 
-	avoid_shared_buffer_out(&rec->a1, sizeof(struct timeval));
-	avoid_shared_buffer_out(&rec->a2, sizeof(struct timezone));
+	/*
+	 * tz bucket: half the time NULL (the modern callers all pass NULL
+	 * here), half the time a sanitised non-NULL timezone for the
+	 * legacy copy path.  Without this override ARG_NON_NULL_ADDRESS
+	 * forces tz to a writable pool buffer 100% of the time and the
+	 * NULL branch never gets fuzz coverage.
+	 */
+	if (RAND_BOOL())
+		rec->a2 = 0;
+	else
+		avoid_shared_buffer_out(&rec->a2, sizeof(struct timezone));
+
+	/*
+	 * tv bucket: 10% intentional past-end-of-page fault to keep the
+	 * copy_to_user reject path warm without relying on the random
+	 * pool to land on a faulting pointer; otherwise scrub a real
+	 * pool address as before.
+	 */
+	if (rnd_modulo_u32(10) == 0) {
+		void *base = get_writable_address(sizeof(struct timeval));
+		if (base != NULL)
+			rec->a1 = (unsigned long) base + page_size;
+		else
+			avoid_shared_buffer_out(&rec->a1,
+				sizeof(struct timeval));
+	} else {
+		avoid_shared_buffer_out(&rec->a1, sizeof(struct timeval));
+	}
 
 	/*
 	 * Snapshot the one input arg the post oracle reads.  Without this

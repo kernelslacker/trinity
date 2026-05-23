@@ -2,14 +2,27 @@
  * SYSCALL_DEFINE1(time, time_t __user *, tloc)
  */
 #include <time.h>
-#include "shm.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
+#include "shm.h"
 #include "trinity.h"
 
 static void sanitise_time(struct syscallrecord *rec)
 {
-	avoid_shared_buffer_out(&rec->a1, sizeof(time_t));
+	/*
+	 * tloc bucket: NULL ~30% of the time, non-NULL otherwise.  The
+	 * NULL path returns the time only via retval and does not touch
+	 * userspace; the non-NULL path additionally copies through to
+	 * the user buffer.  Both paths share the same timekeeping read
+	 * but diverge in copy_to_user handling, so cover both
+	 * deliberately rather than relying on the random pool to land
+	 * on NULL.
+	 */
+	if (rnd_modulo_u32(100) < 30)
+		rec->a1 = 0;
+	else
+		avoid_shared_buffer_out(&rec->a1, sizeof(time_t));
 }
 
 /*

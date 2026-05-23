@@ -9,21 +9,28 @@
 static void sanitise_stime(struct syscallrecord *rec)
 {
 	time_t *t;
+	struct timespec snap;
 
 	t = (time_t *) get_writable_address(sizeof(*t));
 	if (t == NULL)
 		return;
 
-	switch (rnd_modulo_u32(3)) {
-	case 0:	/* near current time */
-		*t = time(NULL) + (rnd_modulo_u32(120)) - 60;
-		break;
-	case 1:	/* epoch */
-		*t = 0;
-		break;
-	default:
+	/*
+	 * Bias 70% near-now / 30% random.  Random time_t mostly EPERMs
+	 * (CAP_SYS_TIME) before reaching the wall-clock writer, so the
+	 * remaining draws are spread between near-now (lets the kernel's
+	 * monotonic-step machinery run) and the random tail (keeps the
+	 * far-future / negative validators warm).
+	 */
+	if (rnd_modulo_u32(100) < 70) {
+		if (clock_gettime(CLOCK_REALTIME, &snap) == 0)
+			*t = snap.tv_sec +
+				(time_t) (rnd_modulo_u32(120)) - 60;
+		else
+			*t = time(NULL) +
+				(time_t) (rnd_modulo_u32(120)) - 60;
+	} else {
 		*t = (time_t) rand32();
-		break;
 	}
 
 	rec->a1 = (unsigned long) t;
