@@ -4,6 +4,8 @@
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
+#include <unistd.h>
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
@@ -31,8 +33,38 @@ static void sanitise_msgctl(struct syscallrecord *rec)
 		allocated_size = sizeof(struct msginfo);
 		buf = zmalloc_tracked(allocated_size);
 		break;
+	case IPC_SET: {
+		/*
+		 * IPC_SET copies msg_perm.uid / .gid / .mode out of the
+		 * caller-supplied msqid_ds and applies them to the queue's
+		 * permission record.  A zeroed buffer leaves uid=gid=0 +
+		 * mode=0 which either gets the syscall denied with EPERM
+		 * (non-root child can't reassign ownership to root) or
+		 * locks the queue out from any subsequent fuzzed operation
+		 * with mode 0 -- so the IPC_SET path is effectively a
+		 * no-op for coverage.  Populate the perm triple instead.
+		 *
+		 * Modes come from a tiny dictionary of plausible IPC mode
+		 * bits.  Critical: always OR in 0400 so the calling child
+		 * keeps read access to the queue after the SET -- without
+		 * this guard a later msgrcv / msgctl(IPC_STAT) from the
+		 * same child trips EACCES, defeating the point of fixing
+		 * the coverage gap.
+		 */
+		static const unsigned short mode_dict[] = { 0600, 0644, 0666 };
+		struct msqid_ds *ds;
+
+		allocated_size = sizeof(struct msqid_ds);
+		buf = zmalloc_tracked(allocated_size);
+		ds = buf;
+		ds->msg_perm.uid = getuid();
+		ds->msg_perm.gid = getgid();
+		ds->msg_perm.mode =
+			mode_dict[rnd_modulo_u32(ARRAY_SIZE(mode_dict))] | 0400;
+		break;
+	}
 	default:
-		/* IPC_STAT, IPC_SET, MSG_STAT */
+		/* IPC_STAT, MSG_STAT */
 		allocated_size = sizeof(struct msqid_ds);
 		buf = zmalloc_tracked(allocated_size);
 		break;
