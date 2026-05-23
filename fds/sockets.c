@@ -651,39 +651,12 @@ int fd_from_socketinfo(struct socketinfo *si)
 	return get_random_fd();
 }
 
-static int open_socket_fd(void)
-{
-	struct socket_triplet st;
-	int r, fd;
-
-	r = rnd_modulo_u32(TRINITY_PF_MAX);
-	st.family = r;
-
-	if (st.family >= ARRAY_SIZE(no_domains))
-		return false;
-	if (no_domains[st.family])
-		return false;
-	if (valid_proto(st.family) == false)
-		return false;
-
-	st.protocol = rand_proto_for_family(st.family);
-	if (sanitise_socket_triplet(&st) == -1)
-		rand_proto_type(&st);
-
-	fd = open_socket(st.family, st.type, st.protocol);
-	if (fd < 0)
-		return false;
-
-	return true;
-}
-
 static const struct fd_provider socket_fd_provider = {
 	.name = "sockets",
 	.objtype = OBJ_FD_SOCKET,
 	.enabled = true,
 	.init = &open_sockets,
 	.get = &get_rand_socket_fd,
-	.open = &open_socket_fd,
 	.child_ops = &socket_child_ops,
 };
 

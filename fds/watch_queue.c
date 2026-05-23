@@ -158,33 +158,12 @@ static int get_rand_watch_queue_fd(void)
 	return -1;
 }
 
-static int open_watch_queue_fd(void)
-{
-	struct object *obj;
-	int pipefd[2];
-
-	if (do_watch_queue(pipefd) < 0)
-		return false;
-
-	obj = alloc_object();
-	if (obj == NULL) {
-		close(pipefd[0]);
-		close(pipefd[1]);
-		return false;
-	}
-	obj->watch_queueobj.fd = pipefd[0];
-	obj->watch_queueobj.peer_fd = pipefd[1];
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_WATCH_QUEUE);
-	return true;
-}
-
 static const struct fd_provider watch_queue_fd_provider = {
 	.name = "watch_queue",
 	.objtype = OBJ_FD_WATCH_QUEUE,
 	.enabled = true,
 	.init = &init_watch_queue_fds,
 	.get = &get_rand_watch_queue_fd,
-	.open = &open_watch_queue_fd,
 };
 
 REG_FD_PROV(watch_queue_fd_provider);

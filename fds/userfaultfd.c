@@ -207,7 +207,6 @@ static const struct fd_provider userfaultfd_provider = {
 	.enabled = true,
 	.init = &init_userfaultfds,
 	.get = &get_rand_userfaultfd,
-	.open = &open_userfaultfd,
 	/*
 	 * uffd_poll() blocks until the kernel has a pending page-fault event
 	 * to deliver; with no registered VMA / no fault driver, EPOLL_CTL_ADD

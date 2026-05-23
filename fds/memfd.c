@@ -164,46 +164,12 @@ static int get_rand_memfd_fd(void)
 	return -1;
 }
 
-static int open_memfd_fd(void)
-{
-	struct object *obj;
-	int fd, flags;
-
-	flags = RAND_BOOL() ? MFD_CLOEXEC : 0;
-	if (RAND_BOOL())
-		flags |= MFD_ALLOW_SEALING;
-
-	fd = memfd_create("memfd", flags);
-	if (fd < 0)
-		return false;
-
-	if (flags & MFD_ALLOW_SEALING)
-		arm_memfd(fd);
-
-	obj = alloc_object();
-	if (obj == NULL) {
-		close(fd);
-		return false;
-	}
-	obj->memfdobj.fd = fd;
-	obj->memfdobj.name = alloc_shared_strdup("memfd");
-	if (obj->memfdobj.name == NULL) {
-		close(fd);
-		free(obj);
-		return false;
-	}
-	obj->memfdobj.flags = flags;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_MEMFD);
-	return true;
-}
-
 static const struct fd_provider memfd_fd_provider = {
 	.name = "memfd",
 	.objtype = OBJ_FD_MEMFD,
 	.enabled = true,
 	.init = &init_memfd_fds,
 	.get = &get_rand_memfd_fd,
-	.open = &open_memfd_fd,
 };
 
 REG_FD_PROV(memfd_fd_provider);

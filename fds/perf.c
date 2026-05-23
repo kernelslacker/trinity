@@ -221,7 +221,6 @@ static const struct fd_provider perf_fd_provider = {
 	.enabled = true,
 	.init = &init_perf_fds,
 	.get = &get_rand_perf_fd,
-	.open = &open_perf_fd,
 };
 
 REG_FD_PROV(perf_fd_provider);

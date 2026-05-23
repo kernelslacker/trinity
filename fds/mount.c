@@ -108,25 +108,6 @@ static int get_rand_mount_fd(void)
 	return -1;
 }
 
-static int open_mount_fd(void)
-{
-	struct object *obj;
-	int fd;
-
-	fd = do_open_tree();
-	if (fd < 0)
-		return false;
-
-	obj = alloc_object();
-	if (obj == NULL) {
-		close(fd);
-		return false;
-	}
-	obj->mountfdobj.fd = fd;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_MOUNT);
-	return true;
-}
-
 void post_mount_fd(struct syscallrecord *rec)
 {
 	struct object *new;
@@ -152,7 +133,6 @@ static const struct fd_provider mount_fd_provider = {
 	.enabled = true,
 	.init = &init_mount_fds,
 	.get = &get_rand_mount_fd,
-	.open = &open_mount_fd,
 };
 
 REG_FD_PROV(mount_fd_provider);

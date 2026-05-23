@@ -220,7 +220,6 @@ static const struct fd_provider bpf_map_fd_provider = {
 	.enabled = true,
 	.init = &init_bpf_fds,
 	.get = &get_rand_bpf_fd,
-	.open = &open_bpf_fd,
 };
 
 REG_FD_PROV(bpf_map_fd_provider);
@@ -314,34 +313,6 @@ static void bpf_prog_dump(struct object *obj, enum obj_scope scope)
 		obj->bpfprogobj.fd,
 		bpf_prog_template_name(obj->bpfprogobj.prog_type),
 		scope);
-}
-
-/*
- * Single-shot template load + publish.  Used both to pre-fill the
- * pool from init and for per-syscall regeneration via try_regenerate_fd
- * after a stale-fd teardown.
- */
-static int open_bpf_prog_fd(void)
-{
-	struct object *obj;
-	unsigned int idx;
-	int fd;
-
-	idx = rnd_modulo_u32(ARRAY_SIZE(bpf_prog_templates));
-	fd = bpf_load_template_prog(bpf_prog_templates[idx].prog_type);
-	if (fd < 0)
-		return false;
-
-	obj = alloc_object();
-	if (obj == NULL) {
-		close(fd);
-		return false;
-	}
-	obj->bpfprogobj.fd = fd;
-	obj->bpfprogobj.prog_type = bpf_prog_templates[idx].prog_type;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_PROG);
-	__atomic_add_fetch(&shm->stats.bpf_progs_provided, 1, __ATOMIC_RELAXED);
-	return true;
 }
 
 static int init_bpf_prog_fds(void)
@@ -456,7 +427,6 @@ static const struct fd_provider bpf_prog_fd_provider = {
 	.enabled = true,
 	.init = &init_bpf_prog_fds,
 	.get = &get_rand_bpf_prog_fd,
-	.open = &open_bpf_prog_fd,
 };
 
 REG_FD_PROV(bpf_prog_fd_provider);
@@ -565,7 +535,6 @@ static const struct fd_provider bpf_link_fd_provider = {
 	.enabled = true,
 	.init = &init_bpf_link_fds,
 	.get = &get_rand_bpf_link_fd,
-	.open = NULL,
 };
 
 REG_FD_PROV(bpf_link_fd_provider);
@@ -584,7 +553,7 @@ REG_FD_PROV(bpf_link_fd_provider);
  * generator.  BPF_BTF_GET_FD_BY_ID could in theory probe the
  * kernel's vmlinux BTF (id 1 on most kernels), but that's a
  * speculative cross-platform assumption and the syscall fuzz path
- * gets there anyway via random id probing.  .open is left NULL.
+ * gets there anyway via random id probing.
  */
 static void bpf_btf_destructor(struct object *obj)
 {
@@ -670,7 +639,6 @@ static const struct fd_provider bpf_btf_fd_provider = {
 	.enabled = true,
 	.init = &init_bpf_btf_fds,
 	.get = &get_rand_bpf_btf_fd,
-	.open = NULL,
 };
 
 REG_FD_PROV(bpf_btf_fd_provider);
@@ -690,7 +658,7 @@ REG_FD_PROV(bpf_btf_fd_provider);
  * mount provisioned with the right delegate options, and trinity does
  * not stand one up.  The pool fills lazily as the syscall fuzz path
  * lands a successful BPF_TOKEN_CREATE -- same lazy-fill pattern as the
- * link / btf providers.  .open is left NULL for the same reason.
+ * link / btf providers.
  */
 static void bpf_token_destructor(struct object *obj)
 {
@@ -776,7 +744,6 @@ static const struct fd_provider bpf_token_fd_provider = {
 	.enabled = true,
 	.init = &init_bpf_token_fds,
 	.get = &get_rand_bpf_token_fd,
-	.open = NULL,
 };
 
 REG_FD_PROV(bpf_token_fd_provider);

@@ -220,14 +220,6 @@ static int open_io_uring_fd_config(unsigned int entries, unsigned int flags,
 #endif
 }
 
-static int open_io_uring_fd(void)
-{
-	unsigned int i = rnd_modulo_u32(ARRAY_SIZE(ring_configs));
-
-	return open_io_uring_fd_config(ring_configs[i].entries,
-				       ring_configs[i].flags, false);
-}
-
 static int init_io_uring_fds(void)
 {
 	struct objhead *head;
@@ -316,7 +308,6 @@ static const struct fd_provider io_uring_fd_provider = {
 	.enabled = true,
 	.init = &init_io_uring_fds,
 	.get = &get_rand_io_uring_fd,
-	.open = &open_io_uring_fd,
 	/*
 	 * io_uring_poll() waits for completion-queue activity; an idle ring
 	 * with no submitted SQEs leaves ep_item_poll spinning on the CQ

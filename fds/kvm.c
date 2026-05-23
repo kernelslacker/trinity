@@ -475,63 +475,6 @@ static int init_kvm_vcpus(void)
 	return true;
 }
 
-static int open_kvm_system_fd(void)
-{
-	struct object *obj;
-	int sysfd, api_version;
-
-	if (unsupported_kvm)
-		return false;
-
-	sysfd = open("/dev/kvm", O_RDWR);
-	if (sysfd < 0)
-		return false;
-
-	api_version = ioctl(sysfd, KVM_GET_API_VERSION, 0UL);
-	if (api_version < 0) {
-		close(sysfd);
-		return false;
-	}
-
-	obj = alloc_object();
-	if (obj == NULL) {
-		close(sysfd);
-		return false;
-	}
-	obj->kvmsysobj.fd = sysfd;
-	obj->kvmsysobj.api_version = api_version;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_KVM_SYSTEM);
-	return true;
-}
-
-static int open_kvm_vm_fd(void)
-{
-	int sysfd;
-
-	if (unsupported_kvm)
-		return false;
-
-	sysfd = peek_system_fd();
-	if (sysfd < 0)
-		return false;
-
-	return create_one_vm(sysfd) ? true : false;
-}
-
-static int open_kvm_vcpu_fd(void)
-{
-	struct object *vmobj;
-
-	if (unsupported_kvm)
-		return false;
-
-	vmobj = peek_vm_obj();
-	if (vmobj == NULL)
-		return false;
-
-	return create_one_vcpu(vmobj) ? true : false;
-}
-
 static int get_rand_kvm_system_fd(void)
 {
 	if (unsupported_kvm)
@@ -610,7 +553,6 @@ static const struct fd_provider kvm_system_provider = {
 	.enabled = true,
 	.init = &init_kvm_system,
 	.get = &get_rand_kvm_system_fd,
-	.open = &open_kvm_system_fd,
 };
 
 REG_FD_PROV(kvm_system_provider);
@@ -621,7 +563,6 @@ static const struct fd_provider kvm_vm_provider = {
 	.enabled = true,
 	.init = &init_kvm_vms,
 	.get = &get_rand_kvm_vm_fd,
-	.open = &open_kvm_vm_fd,
 };
 
 REG_FD_PROV(kvm_vm_provider);
@@ -632,7 +573,6 @@ static const struct fd_provider kvm_vcpu_provider = {
 	.enabled = true,
 	.init = &init_kvm_vcpus,
 	.get = &get_rand_kvm_vcpu_fd,
-	.open = &open_kvm_vcpu_fd,
 	/*
 	 * kvm_vcpu_fops->poll runs through the KVM_RUN waitqueue; without
 	 * an actively scheduled vCPU thread, ep_item_poll has nothing to

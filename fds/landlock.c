@@ -229,7 +229,6 @@ static const struct fd_provider landlock_fd_provider = {
 	.enabled = true,
 	.init = &init_landlock_fds,
 	.get = &get_rand_landlock_fd,
-	.open = &open_landlock_fd,
 };
 
 REG_FD_PROV(landlock_fd_provider);

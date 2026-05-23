@@ -57,7 +57,6 @@ void register_fd_provider(const struct fd_provider *prov)
 	newnode->enabled = prov->enabled;
 	newnode->init = prov->init;
 	newnode->get = prov->get;
-	newnode->open = prov->open;
 	newnode->child_ops = prov->child_ops;
 	newnode->poll_can_block = prov->poll_can_block;
 	num_fd_providers++;

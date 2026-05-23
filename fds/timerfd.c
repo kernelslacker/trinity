@@ -170,47 +170,12 @@ static int get_rand_timerfd_fd(void)
 	return -1;
 }
 
-static int open_timerfd_fd(void)
-{
-	struct object *obj;
-	int fd, clockid = CLOCK_REALTIME, flags;
-
-	switch (rnd_modulo_u32(5)) {
-	case 0: clockid = CLOCK_REALTIME; break;
-	case 1: clockid = CLOCK_MONOTONIC; break;
-	case 2: clockid = CLOCK_BOOTTIME; break;
-	case 3: clockid = CLOCK_REALTIME_ALARM; break;
-	case 4: clockid = CLOCK_BOOTTIME_ALARM; break;
-	}
-	flags = RAND_BOOL() ? TFD_NONBLOCK : 0;
-	if (RAND_BOOL())
-		flags |= TFD_CLOEXEC;
-
-	fd = timerfd_create(clockid, flags);
-	if (fd == -1)
-		return false;
-
-	arm_timerfd(fd);
-
-	obj = alloc_object();
-	if (obj == NULL) {
-		close(fd);
-		return false;
-	}
-	obj->timerfdobj.fd = fd;
-	obj->timerfdobj.clockid = clockid;
-	obj->timerfdobj.flags = flags;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_TIMERFD);
-	return true;
-}
-
 static const struct fd_provider timerfd_fd_provider = {
 	.name = "timerfd",
 	.objtype = OBJ_FD_TIMERFD,
 	.enabled = true,
 	.init = &init_timerfd_fds,
 	.get = &get_rand_timerfd_fd,
-	.open = &open_timerfd_fd,
 };
 
 REG_FD_PROV(timerfd_fd_provider);

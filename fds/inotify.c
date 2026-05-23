@@ -162,38 +162,12 @@ static int get_rand_inotify_fd(void)
 	return -1;
 }
 
-static int open_inotify_fd(void)
-{
-	struct object *obj;
-	int fd, flags;
-
-	flags = RAND_BOOL() ? IN_NONBLOCK : 0;
-	if (RAND_BOOL())
-		flags |= IN_CLOEXEC;
-
-	fd = inotify_init1(flags);
-	if (fd < 0)
-		return false;
-
-	obj = alloc_object();
-	if (obj == NULL) {
-		close(fd);
-		return false;
-	}
-	arm_inotify(fd);
-	obj->inotifyobj.fd = fd;
-	obj->inotifyobj.flags = flags;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_INOTIFY);
-	return true;
-}
-
 static const struct fd_provider inotify_fd_provider = {
 	.name = "inotify",
 	.objtype = OBJ_FD_INOTIFY,
 	.enabled = true,
 	.init = &init_inotify_fds,
 	.get = &get_rand_inotify_fd,
-	.open = &open_inotify_fd,
 };
 
 REG_FD_PROV(inotify_fd_provider);

@@ -127,30 +127,6 @@ static int get_rand_fs_ctx_fd(void)
 	return -1;
 }
 
-static int open_fs_ctx_fd(void)
-{
-	struct object *obj;
-	const char *fstype;
-	unsigned int flags;
-	int fd;
-
-	fstype = fsctx_fstypes[rnd_modulo_u32(ARRAY_SIZE(fsctx_fstypes))];
-	flags = RAND_BOOL() ? FSOPEN_CLOEXEC : 0;
-
-	fd = do_fsopen(fstype, flags);
-	if (fd < 0)
-		return false;
-
-	obj = alloc_object();
-	if (obj == NULL) {
-		close(fd);
-		return false;
-	}
-	obj->fsctxobj.fd = fd;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_FS_CTX);
-	return true;
-}
-
 void post_fs_ctx_fd(struct syscallrecord *rec)
 {
 	struct object *new;
@@ -176,7 +152,6 @@ static const struct fd_provider fs_ctx_fd_provider = {
 	.enabled = true,
 	.init = &init_fs_ctx_fds,
 	.get = &get_rand_fs_ctx_fd,
-	.open = &open_fs_ctx_fd,
 };
 
 REG_FD_PROV(fs_ctx_fd_provider);

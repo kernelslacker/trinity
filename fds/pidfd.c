@@ -58,39 +58,6 @@ static int open_pidfd(pid_t pid, unsigned int flags)
 #endif
 }
 
-static int open_pidfd_fd(void)
-{
-	struct object *obj;
-	unsigned int flags;
-	pid_t pid = 1;
-	int fd;
-
-	flags = RAND_BOOL() ? PIDFD_NONBLOCK : 0;
-
-	/* Try to get a random child process pid. Fall back to pid 1 if
-	 * no children are running yet or the slot is empty. */
-	if (shm->running_childs > 0) {
-		unsigned int i = rnd_modulo_u32(max_children);
-
-		if (__atomic_load_n(&pids[i], __ATOMIC_RELAXED) != EMPTY_PIDSLOT)
-			pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
-	}
-
-	fd = open_pidfd(pid, flags);
-	if (fd < 0)
-		return false;
-
-	obj = alloc_object();
-	if (obj == NULL) {
-		close(fd);
-		return false;
-	}
-	obj->pidfdobj.fd = fd;
-	obj->pidfdobj.pid = pid;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIDFD);
-	return true;
-}
-
 static int init_pidfd_fds(void)
 {
 	struct objhead *head;
@@ -186,7 +153,6 @@ static const struct fd_provider pidfd_fd_provider = {
 	.enabled = true,
 	.init = &init_pidfd_fds,
 	.get = &get_rand_pidfd,
-	.open = &open_pidfd_fd,
 	/*
 	 * pidfd_poll() returns ready only when the referenced task exits;
 	 * for a long-running target, ep_item_poll parks on the task's

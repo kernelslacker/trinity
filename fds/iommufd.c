@@ -113,36 +113,12 @@ static int get_rand_iommufd_fd(void)
 	return -1;
 }
 
-static int open_iommufd_fd(void)
-{
-	struct object *obj;
-	int fd;
-
-	fd = open_iommufd();
-	if (fd < 0) {
-		outputerr("open_iommufd_fd: open(/dev/iommu) failed: %s\n",
-			strerror(errno));
-		return false;
-	}
-
-	obj = alloc_object();
-	if (obj == NULL) {
-		outputerr("open_iommufd_fd: alloc_object failed\n");
-		close(fd);
-		return false;
-	}
-	obj->iommufdobj.fd = fd;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_IOMMUFD);
-	return true;
-}
-
 static const struct fd_provider iommufd_fd_provider = {
 	.name = "iommufd",
 	.objtype = OBJ_FD_IOMMUFD,
 	.enabled = true,
 	.init = &init_iommufd_fds,
 	.get = &get_rand_iommufd_fd,
-	.open = &open_iommufd_fd,
 };
 
 REG_FD_PROV(iommufd_fd_provider);

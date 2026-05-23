@@ -88,14 +88,6 @@ static int open_one_mq(int idx)
 	return true;
 }
 
-static int open_mq_fd(void)
-{
-	if (unsupported_mq)
-		return false;
-
-	return open_one_mq(rnd_modulo_u32(10));
-}
-
 static int init_mq_fds(void)
 {
 	struct objhead *head;
@@ -176,7 +168,6 @@ static const struct fd_provider mq_fd_provider = {
 	.enabled = true,
 	.init = &init_mq_fds,
 	.get = &get_rand_mq_fd,
-	.open = &open_mq_fd,
 };
 
 REG_FD_PROV(mq_fd_provider);

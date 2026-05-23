@@ -145,24 +145,12 @@ int get_rand_cgroup_fd(void)
 	return -1;
 }
 
-static int open_cgroup_fd(void)
-{
-	int fd;
-
-	fd = open_cgroup_dir(CGROUP_ROOT);
-	if (fd < 0)
-		return false;
-
-	return register_cgroup_fd(fd) ? true : false;
-}
-
 static const struct fd_provider cgroup_fd_provider = {
 	.name = "cgroup",
 	.objtype = OBJ_FD_CGROUP,
 	.enabled = true,
 	.init = &init_cgroup_fds,
 	.get = &get_rand_cgroup_fd,
-	.open = &open_cgroup_fd,
 };
 
 REG_FD_PROV(cgroup_fd_provider);

@@ -114,41 +114,12 @@ static int get_rand_eventfd_fd(void)
 	return -1;
 }
 
-static int open_eventfd_fd(void)
-{
-	struct object *obj;
-	int fd, count, flags;
-
-	count = rand32();
-	flags = RAND_BOOL() ? EFD_NONBLOCK : 0;
-	if (RAND_BOOL())
-		flags |= EFD_CLOEXEC;
-	if (RAND_BOOL())
-		flags |= EFD_SEMAPHORE;
-
-	fd = eventfd(count, flags);
-	if (fd < 0)
-		return false;
-
-	obj = alloc_object();
-	if (obj == NULL) {
-		close(fd);
-		return false;
-	}
-	obj->eventfdobj.fd = fd;
-	obj->eventfdobj.count = count;
-	obj->eventfdobj.flags = flags;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_EVENTFD);
-	return true;
-}
-
 static const struct fd_provider eventfd_fd_provider = {
 	.name = "eventfd",
 	.objtype = OBJ_FD_EVENTFD,
 	.enabled = true,
 	.init = &init_eventfd_fds,
 	.get = &get_rand_eventfd_fd,
-	.open = &open_eventfd_fd,
 };
 
 REG_FD_PROV(eventfd_fd_provider);

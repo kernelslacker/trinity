@@ -20,7 +20,6 @@ struct fd_provider {
 	enum objecttype objtype;
         int (*init)(void);
         int (*get)(void);
-	int (*open)(void);
 	void (*child_ops)(void);	/* optional: called periodically in child context */
 	bool enabled;
 	bool initialized;

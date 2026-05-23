@@ -145,34 +145,6 @@ static int open_testfile_fds(void)
 	return true;
 }
 
-static int open_testfile_fd(void)
-{
-	struct object *obj;
-	char *filename;
-	int fd;
-
-	filename = alloc_shared_str(64);
-	if (filename == NULL)
-		return false;	/* shared str heap exhausted; skip regen */
-	snprintf(filename, 64, "trinity-testfile%d", 1 + rnd_modulo_u32(MAX_TESTFILES));
-
-	obj = alloc_object();
-	if (obj == NULL) {
-		free_shared_str(filename, 64);
-		return false;
-	}
-	fd = open_testfile(obj, filename);
-	if (fd == -1) {
-		free_shared_str(filename, 64);
-		free(obj);
-		return false;
-	}
-
-	obj->testfileobj.fd = fd;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_TESTFILE);
-	return true;
-}
-
 int get_rand_testfile_fd(void)
 {
 	if (objects_empty(OBJ_FD_TESTFILE) == true)
@@ -214,7 +186,6 @@ static const struct fd_provider testfile_fd_provider = {
 	.enabled = true,
 	.init = &open_testfile_fds,
 	.get = &get_rand_testfile_fd,
-	.open = &open_testfile_fd,
 };
 
 REG_FD_PROV(testfile_fd_provider);

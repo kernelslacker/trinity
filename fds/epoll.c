@@ -200,36 +200,6 @@ static int init_epoll_fds(void)
 	return true;
 }
 
-static int open_epoll_fd(void)
-{
-	struct object *obj;
-	int fd, use_create1;
-
-	use_create1 = RAND_BOOL();
-	if (use_create1) {
-		fd = epoll_create1(EPOLL_CLOEXEC);
-	} else {
-		fd = epoll_create(1);
-		if (fd != -1)
-			fcntl(fd, F_SETFD, FD_CLOEXEC);
-	}
-
-	if (fd == -1)
-		return false;
-
-	obj = alloc_object();
-	if (obj == NULL) {
-		close(fd);
-		return false;
-	}
-	obj->epollobj.fd = fd;
-	obj->epollobj.create1 = use_create1;
-	obj->epollobj.flags = use_create1 ? EPOLL_CLOEXEC : 0;
-	obj->epollobj.pool_idx = next_pool_idx++;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_EPOLL);
-	return true;
-}
-
 static int get_rand_epoll_fd(void)
 {
 	if (objects_empty(OBJ_FD_EPOLL) == true)
@@ -273,7 +243,6 @@ static const struct fd_provider epoll_fd_provider = {
 	.enabled = true,
 	.init = &init_epoll_fds,
 	.get = &get_rand_epoll_fd,
-	.open = &open_epoll_fd,
 };
 
 REG_FD_PROV(epoll_fd_provider);

@@ -176,7 +176,6 @@ static const struct fd_provider memfd_secret_fd_provider = {
 	.enabled = true,
 	.init = &init_memfd_secret_fds,
 	.get = &get_rand_memfd_secret_fd,
-	.open = &open_memfd_secret_fd,
 };
 
 REG_FD_PROV(memfd_secret_fd_provider);

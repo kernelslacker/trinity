@@ -6,7 +6,6 @@
 
 static int init_devfiles(void)		{ return open_pool_files(0, OBJ_FD_DEVFILE); }
 static int get_rand_devfile_fd(void)	{ return get_rand_pool_fd(OBJ_FD_DEVFILE); }
-static int open_devfile_fd(void)	{ return open_pool_fd(0, OBJ_FD_DEVFILE); }
 
 static const struct fd_provider devfile_provider = {
 	.name = "dev",
@@ -14,7 +13,6 @@ static const struct fd_provider devfile_provider = {
 	.enabled = true,
 	.init = &init_devfiles,
 	.get = &get_rand_devfile_fd,
-	.open = &open_devfile_fd,
 	/*
 	 * The /dev pool is the only entry point through which trinity acquires
 	 * /dev/fuse and /dev/userfaultfd handles, both of which back ->poll

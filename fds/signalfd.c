@@ -117,32 +117,12 @@ static int get_rand_signalfd_fd(void)
 	return -1;
 }
 
-static int open_signalfd_fd(void)
-{
-	struct object *obj;
-	int fd;
-
-	fd = do_signalfd4();
-	if (fd < 0)
-		return false;
-
-	obj = alloc_object();
-	if (obj == NULL) {
-		close(fd);
-		return false;
-	}
-	obj->signalfdobj.fd = fd;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_SIGNALFD);
-	return true;
-}
-
 static const struct fd_provider signalfd_fd_provider = {
 	.name = "signalfd",
 	.objtype = OBJ_FD_SIGNALFD,
 	.enabled = true,
 	.init = &init_signalfd_fds,
 	.get = &get_rand_signalfd_fd,
-	.open = &open_signalfd_fd,
 };
 
 REG_FD_PROV(signalfd_fd_provider);

@@ -136,7 +136,6 @@ static const struct fd_provider fanotify_fd_provider = {
 	.enabled = true,
 	.init = &init_fanotify_fds,
 	.get = &get_rand_fanotifyfd,
-	.open = &open_fanotify_fd,
 };
 
 REG_FD_PROV(fanotify_fd_provider);
