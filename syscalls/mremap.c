@@ -67,7 +67,7 @@ static void sanitise_mremap(struct syscallrecord *rec)
 	 */
 	rec->post_state = 0;
 
-	map = common_set_mmap_ptr_len();
+	map = common_set_mmap_ptr_len(NULL);
 	if (map == NULL) {
 		/* No mapping available; stash NULL for post_mremap to skip. */
 		rec->a6 = 0;

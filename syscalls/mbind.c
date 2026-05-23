@@ -41,7 +41,7 @@ static void sanitise_mbind(struct syscallrecord *rec)
 	unsigned long maxnode;
 	unsigned long nwords, nbytes;
 
-	map = common_set_mmap_ptr_len();
+	map = common_set_mmap_ptr_len(NULL);
 	if (map == NULL)
 		return;
 

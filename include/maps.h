@@ -73,7 +73,23 @@ bool validate_map_handle(struct map_handle *h) __must_check;
  */
 bool addr_in_local_runtime_map(unsigned long addr, unsigned long len) __must_check;
 
-struct map * common_set_mmap_ptr_len(void);
+/*
+ * Populate rec->a1 / rec->a2 from a randomly-picked OBJ_MMAP_* entry
+ * and return the underlying map.  When out_type is non-NULL, the
+ * helper additionally walks the three OBJ_LOCAL OBJ_MMAP_* pools to
+ * identify which pool the returned obj belongs to and stores the
+ * matching objecttype there.  Callers that need to destroy the obj
+ * via destroy_object() must pass the resolved type so the destroy
+ * lookup hits the right head; callers that only sample (mincore,
+ * madvise, mlock, mprotect, ...) pass NULL.
+ *
+ * If no pool match is found (looks-like-real map pointer but obj not
+ * currently registered in any local mmap pool -- e.g. a wholesale
+ * stomp into rec->a1 that survived looks_like_corrupted_ptr) the
+ * stored type defaults to OBJ_NONE and the caller is expected to
+ * treat that as a destroy-not-safe signal.
+ */
+struct map * common_set_mmap_ptr_len(enum objecttype *out_type);
 
 void dirty_mapping(struct map *map);
 void dirty_random_mapping(void);

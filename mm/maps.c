@@ -368,11 +368,14 @@ void init_child_mappings(void)
 }
 
 /* used in several sanitise_* functions. */
-struct map * common_set_mmap_ptr_len(void)
+struct map * common_set_mmap_ptr_len(enum objecttype *out_type)
 {
 	struct syscallrecord *rec;
 	struct map *map;
 	struct childdata *child = this_child();
+
+	if (out_type != NULL)
+		*out_type = OBJ_NONE;
 
 	rec = &child->syscall;
 	map = (struct map *) rec->a1;
@@ -406,6 +409,49 @@ struct map * common_set_mmap_ptr_len(void)
 	} else {
 		rec->a2 = rnd_modulo_u32(map->size);
 		rec->a2 &= PAGE_MASK;
+	}
+
+	/*
+	 * Resolve which OBJ_LOCAL OBJ_MMAP_* pool this obj actually lives
+	 * in.  destroy_object() in post_munmap's WHOLE branch needs the
+	 * matching head to satisfy its head->array[idx] == obj invariant
+	 * -- a hard-coded OBJ_MMAP_ANON destroys nothing when the entry
+	 * came from FILE/TESTFILE, leaving an obj that points at unmapped
+	 * memory in the pool for the next consumer to walk into.
+	 *
+	 * obj->obj_type is stamped by add_object() and would be a faster
+	 * read, but a wild rec->a1 that passes looks_like_corrupted_ptr
+	 * could still point at the embedded map field of a non-mmap obj
+	 * whose stamped tag would then mislead us.  Walking the three
+	 * mmap pools and matching the obj pointer is the ground-truth
+	 * check: a no-match leaves *out_type at OBJ_NONE so the caller
+	 * declines to destroy.
+	 */
+	if (out_type != NULL) {
+		struct object *want = container_of(map, struct object, map);
+		static const enum objecttype map_pool_types[3] = {
+			OBJ_MMAP_ANON, OBJ_MMAP_FILE, OBJ_MMAP_TESTFILE,
+		};
+		unsigned int i;
+
+		for (i = 0; i < 3; i++) {
+			struct objhead *head;
+			struct object *obj;
+			unsigned int idx;
+
+			head = get_objhead(OBJ_LOCAL, map_pool_types[i]);
+			if (head == NULL || head->array == NULL)
+				continue;
+
+			for_each_obj(head, obj, idx) {
+				if (obj == want) {
+					*out_type = map_pool_types[i];
+					goto type_resolved;
+				}
+			}
+		}
+type_resolved:
+		;
 	}
 
 	return map;

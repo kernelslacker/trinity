@@ -19,7 +19,7 @@ static void sanitise_remap_file_pages(struct syscallrecord *rec)
 	size_t size, offset;
 	size_t start = 0;
 
-	map = common_set_mmap_ptr_len();
+	map = common_set_mmap_ptr_len(NULL);
 	if (map == NULL || map->size == 0)
 		return;
 

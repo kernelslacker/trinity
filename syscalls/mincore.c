@@ -16,7 +16,7 @@ static void sanitise_mincore(struct syscallrecord *rec)
 	unsigned long len;
 	void *vec;
 
-	map = common_set_mmap_ptr_len();
+	map = common_set_mmap_ptr_len(NULL);
 	if (map == NULL)
 		return;
 

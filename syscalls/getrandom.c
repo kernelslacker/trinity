@@ -21,7 +21,7 @@ static void sanitise_getrandom(struct syscallrecord *rec)
 {
 	struct map *map;
 
-	map = common_set_mmap_ptr_len();
+	map = common_set_mmap_ptr_len(NULL);
 	if (map == NULL)
 		return;
 

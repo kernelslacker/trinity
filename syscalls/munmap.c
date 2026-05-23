@@ -5,6 +5,8 @@
 #include "arch.h"
 #include "deferred-free.h"
 #include "maps.h"
+#include "object-types.h"
+#include "objects.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -38,6 +40,19 @@ struct munmap_post_state {
 	unsigned long len;
 	unsigned long map;
 	unsigned long action;
+	/*
+	 * OBJ_MMAP_* pool the underlying obj lives in, as resolved by
+	 * common_set_mmap_ptr_len() at sanitise time.  Captured here so
+	 * the WHOLE branch in post_munmap routes destroy_object() to the
+	 * head whose array actually contains the obj; a hard-coded
+	 * OBJ_MMAP_ANON destroys nothing when the entry came from
+	 * FILE/TESTFILE and the now-unmapped VMA stays cached in the
+	 * pool for the next consumer to walk into.  OBJ_NONE means
+	 * common_set_mmap_ptr_len() couldn't match the obj against any
+	 * local mmap pool -- the WHOLE branch then declines to destroy
+	 * rather than guess.
+	 */
+	unsigned long type;
 };
 
 #define MUNMAP_POST_STATE_MAGIC	0x4D554E4D41505F5FUL	/* "MUNMAP__" */
@@ -45,7 +60,8 @@ struct munmap_post_state {
 static void sanitise_munmap(struct syscallrecord *rec)
 {
 	struct munmap_post_state *snap;
-	struct map *map = common_set_mmap_ptr_len();
+	enum objecttype map_type = OBJ_NONE;
+	struct map *map = common_set_mmap_ptr_len(&map_type);
 	int action = 0;
 
 	/*
@@ -133,6 +149,7 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	snap->len    = rec->a2;
 	snap->map    = rec->a3;
 	snap->action = rec->a4;
+	snap->type   = (unsigned long) map_type;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -191,8 +208,26 @@ static void post_munmap(struct syscallrecord *rec)
 	}
 
 	if (action == WHOLE) {
-		struct object *obj = container_of(map, struct object, map);
-		destroy_object(obj, OBJ_LOCAL, OBJ_MMAP_ANON);
+		enum objecttype pool_type = (enum objecttype) snap->type;
+
+		/*
+		 * Only destroy when common_set_mmap_ptr_len() positively
+		 * identified the pool this obj lives in.  An OBJ_NONE
+		 * here means the obj didn't match any local mmap pool at
+		 * sanitise time -- the underlying VMA has now been
+		 * unmapped, but routing destroy_object() at a guessed
+		 * head would trip the head->array[idx] == obj invariant
+		 * and leave the slot in place anyway.  The entry will be
+		 * cleaned up later when its pool is torn down; better
+		 * that than chasing the wrong head.
+		 */
+		if (pool_type == OBJ_MMAP_ANON ||
+		    pool_type == OBJ_MMAP_FILE ||
+		    pool_type == OBJ_MMAP_TESTFILE) {
+			struct object *obj =
+				container_of(map, struct object, map);
+			destroy_object(obj, OBJ_LOCAL, pool_type);
+		}
 	} else if (map != NULL) {
 		/*
 		 * Sub-range munmap (19/20 invocations) punches a hole in the
