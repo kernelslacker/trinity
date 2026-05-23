@@ -59,6 +59,7 @@ static void sanitise_lsm_set_self_attr(struct syscallrecord *rec)
 	ctx->len = sizeof(*ctx);
 
 	rec->a2 = (unsigned long) ctx;
+	avoid_shared_buffer_inout(&rec->a2, sizeof(*ctx));
 	rec->a3 = sizeof(*ctx);
 	rec->a4 = 0;	/* flags must be zero */
 }
