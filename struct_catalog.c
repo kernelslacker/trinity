@@ -17,6 +17,7 @@
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <time.h>
+#include <linux/capability.h>
 #include <linux/sched.h>
 #include <linux/sched/types.h>
 #include <linux/io_uring.h>
@@ -237,6 +238,25 @@ static const struct struct_field mnt_id_req_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct __user_cap_header_struct (capset, capget)                    */
+/* ------------------------------------------------------------------ */
+
+static const struct struct_field user_cap_header_fields[] = {
+	FIELD(struct __user_cap_header_struct, version),
+	FIELD(struct __user_cap_header_struct, pid),
+};
+
+/* ------------------------------------------------------------------ */
+/* struct __user_cap_data_struct (capset, capget)                      */
+/* ------------------------------------------------------------------ */
+
+static const struct struct_field user_cap_data_fields[] = {
+	FIELD(struct __user_cap_data_struct, effective),
+	FIELD(struct __user_cap_data_struct, permitted),
+	FIELD(struct __user_cap_data_struct, inheritable),
+};
+
+/* ------------------------------------------------------------------ */
 /* union bpf_attr (bpf)                                                */
 /* ------------------------------------------------------------------ */
 
@@ -358,6 +378,18 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= mnt_id_req_fields,
 		.num_fields	= ARRAY_SIZE(mnt_id_req_fields),
 	},
+	{
+		.name		= "user_cap_header",
+		.struct_size	= sizeof(struct __user_cap_header_struct),
+		.fields		= user_cap_header_fields,
+		.num_fields	= ARRAY_SIZE(user_cap_header_fields),
+	},
+	{
+		.name		= "user_cap_data",
+		.struct_size	= sizeof(struct __user_cap_data_struct),
+		.fields		= user_cap_data_fields,
+		.num_fields	= ARRAY_SIZE(user_cap_data_fields),
+	},
 #ifdef USE_BPF
 	{
 		.name		= "bpf_attr",
@@ -429,9 +461,14 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "statmount",		1, &struct_catalog[12] },
 	/* listmount(const struct mnt_id_req *, u64 *, size_t, u32) */
 	{ "listmount",		1, &struct_catalog[12] },
+	/* capset(cap_user_header_t hdr, const cap_user_data_t data) */
+	{ "capset",		1, &struct_catalog[13] },
+	{ "capset",		2, &struct_catalog[14] },
+	/* capget(cap_user_header_t hdr, cap_user_data_t data) */
+	{ "capget",		1, &struct_catalog[13] },
 #ifdef USE_BPF
 	/* bpf(int, union bpf_attr *, unsigned int) */
-	{ "bpf",		2, &struct_catalog[13] },
+	{ "bpf",		2, &struct_catalog[15] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
