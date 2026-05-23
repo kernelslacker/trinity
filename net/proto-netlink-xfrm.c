@@ -1478,7 +1478,7 @@ static int xfrm_emit_newae(int fd)
 	struct xfrm_aevent_id *ae;
 	struct xfrm_sa_track t;
 	__u8 ignored_flags = 0;
-	size_t off;
+	size_t off, before_replay;
 
 	if (!sa_ring_pick(&t, NULL))
 		return 0;
@@ -1501,14 +1501,20 @@ static int xfrm_emit_newae(int fd)
 		ae->saddr.a6[3] = htonl(1U);
 	}
 	ae->reqid = t.reqid;
-	ae->flags = (XFRM_AE_RVAL | XFRM_AE_LVAL) &
-		    (__u32)((rand32() & 0xff) | XFRM_AE_RVAL);
+	/* RVAL is added after the replay attr append below, but only when
+	 * append_replay_maybe actually emitted XFRMA_REPLAY_VAL or
+	 * XFRMA_REPLAY_ESN_VAL.  Setting RVAL without a matching attr causes
+	 * the kernel xfrm_new_ae() parser to return -EINVAL. */
+	ae->flags = XFRM_AE_LVAL & (__u32)(rand32() & 0xff);
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ae));
 
+	before_replay = off;
 	off = append_replay_maybe(buf, off, sizeof(buf), &ignored_flags);
 	if (!off)
 		return -EIO;
+	if (off > before_replay)
+		ae->flags |= XFRM_AE_RVAL;
 
 	if (ae->flags & XFRM_AE_LVAL) {
 		struct xfrm_lifetime_cur cur;
