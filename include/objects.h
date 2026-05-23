@@ -528,6 +528,15 @@ struct fd_hash_entry {
 void fd_hash_init(void);
 bool fd_hash_insert(int fd, struct object *obj, enum objecttype type);
 void fd_hash_remove(int fd);
+/*
+ * Remove an entry from THIS child's snapshot of fd_hash[].  Safe to
+ * call from child context only; in the parent or before
+ * this_child() is initialised it is a no-op.  Use alongside
+ * fd_event_enqueue(FD_EVENT_CLOSE) so the closing child stops
+ * handing out the just-closed fd from get_random_fd() /
+ * get_typed_fd() before the parent drains the event.
+ */
+void fd_hash_remove_local(int fd);
 struct fd_hash_entry *fd_hash_lookup(int fd);
 
 #define REG_GLOBAL_OBJ(_tag, _init_fn)					\

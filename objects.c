@@ -217,6 +217,49 @@ void fd_hash_remove(int fd)
 	}
 }
 
+void fd_hash_remove_local(int fd)
+{
+	struct childdata *child;
+	struct fd_hash_entry *table;
+	unsigned int slot, next, i;
+
+	if (fd < 0)
+		return;
+
+	if (mypid() == mainpid)
+		return;
+
+	child = this_child();
+	if (child == NULL || child->fd_hash == NULL)
+		return;
+
+	table = child->fd_hash;
+	slot = fd_hash_slot(fd);
+	for (i = 0; i < FD_HASH_SIZE; i++) {
+		if (table[slot].fd == -1)
+			return;
+		if (table[slot].fd == fd) {
+			table[slot].gen++;
+			table[slot].fd = -1;
+			next = (slot + 1) & (FD_HASH_SIZE - 1);
+			while (table[next].fd != -1) {
+				struct fd_hash_entry displaced = table[next];
+				unsigned int rs;
+
+				table[next].fd = -1;
+				rs = fd_hash_slot(displaced.fd);
+				while (table[rs].fd != -1 &&
+				       table[rs].fd != displaced.fd)
+					rs = (rs + 1) & (FD_HASH_SIZE - 1);
+				table[rs] = displaced;
+				next = (next + 1) & (FD_HASH_SIZE - 1);
+			}
+			return;
+		}
+		slot = (slot + 1) & (FD_HASH_SIZE - 1);
+	}
+}
+
 struct fd_hash_entry *fd_hash_lookup(int fd)
 {
 	struct fd_hash_entry *table;
