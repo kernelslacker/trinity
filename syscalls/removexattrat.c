@@ -8,7 +8,7 @@
 
 static void sanitise_removexattrat(struct syscallrecord *rec)
 {
-	sanitise_xattr_name_arg(rec, 4);
+	sanitise_xattr_name_arg_pooled(rec, 4);
 }
 
 struct syscallentry syscall_removexattrat = {

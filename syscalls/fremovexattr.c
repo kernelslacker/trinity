@@ -6,12 +6,7 @@
 
 static void sanitise_fremovexattr(struct syscallrecord *rec)
 {
-	char *name = (char *) get_writable_struct(256);
-
-	if (!name)
-		return;
-	gen_xattr_name(name, 256);
-	rec->a2 = (unsigned long) name;
+	sanitise_xattr_name_arg_pooled(rec, 2);
 }
 
 struct syscallentry syscall_fremovexattr = {
