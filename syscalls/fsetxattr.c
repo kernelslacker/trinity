@@ -8,7 +8,10 @@
 
 static void sanitise_fsetxattr(struct syscallrecord *rec)
 {
-	sanitise_xattr_name_arg(rec, 2);
+	if (!sanitise_xattr_name_arg_pooled(rec, 2))
+		return;
+	xattr_set_value((const char *) rec->a2, &rec->a3, &rec->a4);
+	xattr_pick_set_flags(&rec->a5);
 }
 
 struct syscallentry syscall_fsetxattr = {

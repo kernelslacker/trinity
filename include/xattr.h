@@ -52,3 +52,28 @@ bool sanitise_xattr_name_arg_pooled(struct syscallrecord *rec, unsigned int argn
  * gets hit as well as the truncation/probe paths.
  */
 void xattr_pick_valuebuf_bucket(unsigned long *bufp, unsigned long *sizep);
+
+/*
+ * Per-namespace value-shape generator for the setxattr family.
+ * Writes a "sane enough" value (not necessarily kernel-valid in every
+ * detail) into buf based on the namespace prefix of `name` and returns
+ * the byte count.  user.* and trusted.* get a small random buffer.
+ */
+size_t xattr_fill_value(const char *name, void *buf, size_t bufsz);
+
+/*
+ * Allocate a value buffer, fill it via xattr_fill_value, and rewrite
+ * (*bufp, *sizep) so the kernel sees a namespace-shaped value rather
+ * than the raw random bytes from ARG_ADDRESS.  Call after the name
+ * sanitiser has populated `name`.
+ */
+void xattr_set_value(const char *name, unsigned long *bufp, unsigned long *sizep);
+
+/*
+ * Flag-arg distribution for the setxattr family: 30% 0,
+ * 30% XATTR_CREATE, 30% XATTR_REPLACE, 10% random invalid-bits.
+ * Overrides the ARG_LIST draw at sanitise time so the
+ * create/replace/replace-or-create decision path and the
+ * flag-validation path both stay exercised.
+ */
+void xattr_pick_set_flags(unsigned long *flagsp);

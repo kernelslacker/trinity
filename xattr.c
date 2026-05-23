@@ -1,9 +1,12 @@
 /* Generate valid extended attribute name strings for xattr syscalls. */
 #include <fcntl.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <linux/xattr.h>
+#include "arch.h"
 #include "random.h"
 #include "sanitise.h"
 #include "syscall.h"
@@ -213,4 +216,140 @@ void xattr_pick_listbuf_bucket(unsigned long *bufp, unsigned long *sizep)
 		}
 		break;
 	}
+}
+
+/*
+ * Per-namespace value generator for the setxattr family.  Random byte
+ * buffers for security.selinux / security.capability / system.posix_acl_*
+ * are rejected by the namespace's validator long before vfs_setxattr
+ * touches the inode -- the kernel checks SELinux context syntax,
+ * vfs_cap_data magic_etc, and POSIX-ACL header version up front.  Hand
+ * each well-known namespace a value of roughly the right shape so the
+ * draw makes it past validation and into the real per-fs xattr handler.
+ *
+ * The shapes are "sane enough", not kernel-valid in every detail: the
+ * cap permitted/inheritable bits are random, the POSIX ACL has only
+ * the version header, the SELinux contexts are picked from a tiny
+ * pool of plausible strings.  user.* / trusted.* and anything else
+ * gets a small random byte buffer (1..255 bytes) since those
+ * namespaces accept arbitrary opaque data.
+ *
+ * Returns the number of bytes written into buf, clamped to bufsz.
+ */
+size_t xattr_fill_value(const char *name, void *buf, size_t bufsz)
+{
+	static const char * const selinux_ctx[] = {
+		"system_u:object_r:user_home_t:s0",
+		"system_u:object_r:tmp_t:s0",
+		"unconfined_u:object_r:user_home_t:s0",
+	};
+	size_t n;
+
+	if (strncmp(name, "security.selinux", 16) == 0) {
+		const char *ctx = RAND_ARRAY(selinux_ctx);
+
+		n = strlen(ctx) + 1;
+		if (n > bufsz)
+			n = bufsz;
+		memcpy(buf, ctx, n);
+		return n;
+	}
+
+	if (strncmp(name, "security.capability", 19) == 0) {
+		/*
+		 * struct vfs_cap_data shape:
+		 *   __le32 magic_etc                = revision | flags
+		 *   struct { __le32 permitted; __le32 inheritable; } data[2];
+		 *
+		 * VFS_CAP_REVISION_2 = 0x02000000, VFS_CAP_FLAGS_EFFECTIVE = 0x01.
+		 * Use literal 0x01 for the flags bit -- the kernel headers may
+		 * or may not be available in this tree.
+		 */
+		struct cap_shape {
+			uint32_t magic_etc;
+			struct {
+				uint32_t permitted;
+				uint32_t inheritable;
+			} data[2];
+		} cap;
+
+		cap.magic_etc = 0x02000000UL | 0x01UL;
+		cap.data[0].permitted   = rnd_u32();
+		cap.data[0].inheritable = rnd_u32();
+		cap.data[1].permitted   = rnd_u32();
+		cap.data[1].inheritable = rnd_u32();
+		n = sizeof(cap);
+		if (n > bufsz)
+			n = bufsz;
+		memcpy(buf, &cap, n);
+		return n;
+	}
+
+	if (strncmp(name, "system.posix_acl_", 17) == 0) {
+		/* POSIX_ACL_XATTR_VERSION = 0x0002 (4-byte LE header). */
+		uint32_t hdr = 0x00000002UL;
+
+		n = sizeof(hdr);
+		if (n > bufsz)
+			n = bufsz;
+		memcpy(buf, &hdr, n);
+		return n;
+	}
+
+	/* user.*, trusted.*, fallback: small random opaque buffer. */
+	n = 1 + rnd_modulo_u32(255);
+	if (n > bufsz)
+		n = bufsz;
+	generate_rand_bytes((unsigned char *) buf, n);
+	return n;
+}
+
+/*
+ * Plant a per-namespace value buffer + size for the setxattr family.
+ * Allocates a fresh page-sized buffer, fills it via xattr_fill_value,
+ * and rewrites *bufp / *sizep.  Leaves the slot untouched on
+ * allocation failure -- the existing ARG_ADDRESS / ARG_LEN draw stays
+ * in place as a fallback.
+ *
+ * Call AFTER sanitise_xattr_name_arg_pooled so the name at *namep is
+ * already valid and we can dispatch on its namespace.
+ */
+void xattr_set_value(const char *name, unsigned long *bufp, unsigned long *sizep)
+{
+	void *p;
+	size_t n;
+
+	p = get_writable_address(page_size);
+	if (!p)
+		return;
+	n = xattr_fill_value(name, p, page_size);
+	*bufp = (unsigned long) p;
+	*sizep = (unsigned long) n;
+}
+
+/*
+ * Flag bucket for the setxattr family.  Distribution:
+ *   30% 0 (default -- create-or-replace)
+ *   30% XATTR_CREATE (must-create)
+ *   30% XATTR_REPLACE (must-replace)
+ *   10% random-bit invalid-flag draw
+ *
+ * The pre-existing arg_params[*].list draw picked CREATE / REPLACE
+ * 50/50 with no zero slot and no invalid-bits coverage, so the
+ * flag-validation path saw only the two valid bits and the
+ * create/replace decision path was never exercised with a real "any
+ * existing state is OK" draw.
+ */
+void xattr_pick_set_flags(unsigned long *flagsp)
+{
+	unsigned int r = rnd_modulo_u32(10);
+
+	if (r < 3)
+		*flagsp = 0;
+	else if (r < 6)
+		*flagsp = XATTR_CREATE;
+	else if (r < 9)
+		*flagsp = XATTR_REPLACE;
+	else
+		*flagsp = rnd_u32();	/* invalid bits */
 }
