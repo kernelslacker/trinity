@@ -89,6 +89,14 @@ static void sanitise_mremap(struct syscallrecord *rec)
 	case 3: rec->a3 = page_size * (1 + rnd_modulo_u32(16)); break;	/* random pages */
 	}
 
+	/*
+	 * Page-align new_len.  An odd-page map->size makes the shrink case
+	 * land on 1.5 * page_size and mremap returns -EINVAL before any
+	 * interesting split/merge logic runs.  Round up so we still ask for
+	 * at least the selected size.
+	 */
+	rec->a3 = (rec->a3 + page_size - 1) & PAGE_MASK;
+
 	if (rec->a4 & MREMAP_FIXED) {
 		unsigned long align = RAND_ARRAY(alignments);
 		unsigned int shift = (WORD_BIT / 2) - 1;
