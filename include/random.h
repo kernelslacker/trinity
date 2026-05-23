@@ -2,15 +2,16 @@
 
 #include <stdlib.h>
 #include "child.h"
+#include "rnd.h"
 #include "types.h"
 
-#define ONE_IN(x)		((x) > 0 && (rand() % (x)) == 0)
+#define ONE_IN(x)		((x) > 0 && rnd_modulo_u32(x) == 0)
 
-#define RAND_BOOL()		(rand() & 1)
-#define RAND_BYTE()		(rand() & 0xff)
+#define RAND_BOOL()		(rnd_u32() & 1)
+#define RAND_BYTE()		(rnd_u32() & 0xff)
 #define RAND_RANGE(min, max)	((min) <= (max) \
-	? (min) + rand() / (RAND_MAX / ((max) - (min) + 1) + 1) \
-	: (max) + rand() / (RAND_MAX / ((min) - (max) + 1) + 1))
+	? (min) + (typeof(min))rnd_modulo_u32((max) - (min) + 1) \
+	: (max) + (typeof(max))rnd_modulo_u32((min) - (max) + 1))
 
 /*
  * Edge-value injection.  A childop that picks a numeric arg from random
@@ -30,7 +31,7 @@
 long get_negative_edge_value(void);
 
 #define RAND_NEGATIVE_OR(default_val) \
-	((rand() % RAND_NEGATIVE_RATIO == 0) \
+	(rnd_modulo_u32(RAND_NEGATIVE_RATIO) == 0 \
 	 ? get_negative_edge_value() \
 	 : (long)(default_val))
 
