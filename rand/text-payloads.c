@@ -15,6 +15,7 @@
 #include <string.h>
 
 #include "random.h"
+#include "rnd.h"
 #include "text-payloads.h"
 #include "utils.h"
 
@@ -38,7 +39,7 @@ unsigned int gen_long_string(char *buf, unsigned int buflen)
 	if (buflen == 0)
 		return 0;
 
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0:
 		memset(buf, 'A', buflen);
 		break;
@@ -146,7 +147,7 @@ unsigned int gen_valid_prefix_garbage(char *buf, unsigned int buflen)
 
 	memcpy(buf, pfx, plen);
 	for (i = plen; i < buflen; i++)
-		buf[i] = (char)(rand() & 0xff);
+		buf[i] = (char)(rnd_u32() & 0xff);
 
 	return buflen;
 }
@@ -229,7 +230,7 @@ unsigned int gen_binary_control_chars(char *buf, unsigned int buflen)
 
 	for (i = 0; i < buflen; i++) {
 		if (ONE_IN(4))
-			buf[i] = (char)(1 + (rand() % 0x1f)); /* \x01-\x1f */
+			buf[i] = (char)(1 + rnd_modulo_u32(0x1f)); /* \x01-\x1f */
 		else
 			buf[i] = base[j++ % blen];
 	}
@@ -240,7 +241,7 @@ unsigned int gen_binary_control_chars(char *buf, unsigned int buflen)
 /* Pick one of the above generators at random. */
 unsigned int gen_text_payload(char *buf, unsigned int buflen)
 {
-	switch (rand() % 7) {
+	switch (rnd_modulo_u32(7)) {
 	case 0: return gen_long_string(buf, buflen);
 	case 1: return gen_embedded_nul(buf, buflen);
 	case 2: return gen_format_string_attack(buf, buflen);
