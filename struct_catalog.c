@@ -18,6 +18,7 @@
 #include <sys/socket.h>
 #include <time.h>
 #include <linux/capability.h>
+#include <linux/futex.h>
 #include <linux/sched.h>
 #include <linux/sched/types.h>
 #include <linux/io_uring.h>
@@ -257,6 +258,16 @@ static const struct struct_field user_cap_data_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct futex_waitv (futex_waitv)                                    */
+/* ------------------------------------------------------------------ */
+
+static const struct struct_field futex_waitv_fields[] = {
+	FIELD(struct futex_waitv, val),
+	FIELD(struct futex_waitv, uaddr),
+	FIELD(struct futex_waitv, flags),
+};
+
+/* ------------------------------------------------------------------ */
 /* union bpf_attr (bpf)                                                */
 /* ------------------------------------------------------------------ */
 
@@ -390,6 +401,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= user_cap_data_fields,
 		.num_fields	= ARRAY_SIZE(user_cap_data_fields),
 	},
+	{
+		.name		= "futex_waitv",
+		.struct_size	= sizeof(struct futex_waitv),
+		.fields		= futex_waitv_fields,
+		.num_fields	= ARRAY_SIZE(futex_waitv_fields),
+	},
 #ifdef USE_BPF
 	{
 		.name		= "bpf_attr",
@@ -466,9 +483,11 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "capset",		2, &struct_catalog[14] },
 	/* capget(cap_user_header_t hdr, cap_user_data_t data) */
 	{ "capget",		1, &struct_catalog[13] },
+	/* futex_waitv(struct futex_waitv *waiters, unsigned int nr, unsigned int flags, struct timespec *timo, clockid_t clockid) */
+	{ "futex_waitv",	1, &struct_catalog[15] },
 #ifdef USE_BPF
 	/* bpf(int, union bpf_attr *, unsigned int) */
-	{ "bpf",		2, &struct_catalog[15] },
+	{ "bpf",		2, &struct_catalog[16] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
