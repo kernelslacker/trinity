@@ -73,6 +73,21 @@ struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsig
 	struct object *obj;
 	const struct netproto *proto;
 
+	/* Defence in depth: net_protocols[] is sized TRINITY_PF_MAX and
+	 * we index into it unconditionally below to fetch proto->socket_setup.
+	 * Most call paths bound family before reaching here -- the fd-event
+	 * drain path goes through fd_event_payload_valid() and the in-process
+	 * open_socket() path picks family from a checked table -- but a
+	 * future refactor or a path we missed must not OOB-read net_protocols.
+	 * On rejection we own the fd, same contract as the alloc_object()
+	 * failure branch immediately below. */
+	if (domain >= TRINITY_PF_MAX) {
+		output(1, "add_socket: family %u out of range (max %u)\n",
+		       domain, TRINITY_PF_MAX);
+		close(fd);
+		return NULL;
+	}
+
 	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
