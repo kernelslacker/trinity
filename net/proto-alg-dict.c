@@ -111,7 +111,7 @@ static void rstrip(char *s)
  * skipped; never aborts on parse error. */
 static void parse_proc_crypto(void)
 {
-	FILE *f = fopen("/proc/crypto", "r");
+	FILE *f = fopen("/proc/crypto", "re");
 	char line[512];
 	char cur_name[256] = "";
 	char cur_type[64] = "";
