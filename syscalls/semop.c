@@ -40,6 +40,7 @@ static void sanitise_semop(struct syscallrecord *rec)
 	fill_sembuf_array(sops, nsops);
 
 	rec->a2 = (unsigned long) sops;
+	avoid_shared_buffer_inout(&rec->a2, nsops * sizeof(struct sembuf));
 	rec->a3 = nsops;
 }
 
