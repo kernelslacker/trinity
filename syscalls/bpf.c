@@ -395,7 +395,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		attr->key_size = rnd_modulo_u32(1024);
 		attr->value_size = rnd_modulo_u32((1024 * 64));
 		attr->max_entries = rnd_modulo_u32(1024);
-		attr->flags = RAND_RANGE(0, 4);
+		attr->map_flags = RAND_RANGE(0, 4);
 		rec->a3 = 20;
 		if (ONE_IN(8)) {
 			/* BPF_F_TOKEN_FD in map_flags is the gate the kernel
