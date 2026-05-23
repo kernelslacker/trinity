@@ -97,9 +97,26 @@ struct syscallentry syscall_signalfd = {
 #define SFD_CLOEXEC 02000000
 #define SFD_NONBLOCK 04000
 
-static unsigned long signalfd4_flags[] = {
-	SFD_CLOEXEC, SFD_NONBLOCK,
-};
+/*
+ * Pick an explicit flag combination instead of the single-flag-at-a-
+ * time ARG_LIST shape.  Buckets cover the four legal combinations and
+ * reserve a small slice for an invalid high bit so the kernel's
+ * unknown-flag reject path gets exercised.
+ */
+static unsigned long pick_signalfd4_flags(void)
+{
+	uint32_t r = rnd_modulo_u32(100);
+
+	if (r < 25)
+		return 0;
+	if (r < 50)
+		return SFD_CLOEXEC;
+	if (r < 75)
+		return SFD_NONBLOCK;
+	if (r < 95)
+		return SFD_CLOEXEC | SFD_NONBLOCK;
+	return SFD_CLOEXEC | 0x80000000UL;
+}
 
 static void sanitise_signalfd4(struct syscallrecord *rec)
 {
@@ -115,15 +132,16 @@ static void sanitise_signalfd4(struct syscallrecord *rec)
 
 	if (rnd_modulo_u32(10) == 0)
 		rec->a3 = sizeof(sigset_t) - 8;
+
+	rec->a4 = pick_signalfd4_flags();
 }
 
 struct syscallentry syscall_signalfd4 = {
 	.name = "signalfd4",
 	.group = GROUP_SIGNAL,
 	.num_args = 4,
-	.argtype = { [0] = ARG_FD_SIGNALFD, [1] = ARG_ADDRESS, [2] = ARG_LEN, [3] = ARG_LIST },
+	.argtype = { [0] = ARG_FD_SIGNALFD, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "ufd", [1] = "user_mask", [2] = "sizemask", [3] = "flags" },
-	.arg_params[3].list = ARGLIST(signalfd4_flags),
 	.sanitise = sanitise_signalfd4,
 	.post = post_signalfd,
 	.rettype = RET_FD,
