@@ -11,6 +11,7 @@
 #include "fd.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -91,7 +92,7 @@ static int open_mq_fd(void)
 	if (unsupported_mq)
 		return false;
 
-	return open_one_mq(rand() % 10);
+	return open_one_mq(rnd_modulo_u32(10));
 }
 
 static int init_mq_fds(void)
