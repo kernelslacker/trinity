@@ -157,6 +157,25 @@ static unsigned long mount_attrs[] = {
 	MOUNT_ATTR_NODIRATIME, MOUNT_ATTR_IDMAP, MOUNT_ATTR_NOSYMFOLLOW,
 };
 
+/*
+ * The kernel's MOUNT_ATTR__ATIME mask treats NOATIME, RELATIME (==0) and
+ * STRICTATIME as mutually exclusive — do_mount_setattr() EINVALs when more
+ * than one ATIME-mode bit appears in attr_set.  Random-OR over the pool
+ * makes the NOATIME|STRICTATIME pair common, so trim to a single bit.
+ */
+static __u64 normalise_atime_bits(__u64 attrs)
+{
+	__u64 atime_mask = MOUNT_ATTR_NOATIME | MOUNT_ATTR_STRICTATIME;
+	__u64 picked = attrs & atime_mask;
+
+	if (picked && (picked & (picked - 1))) {
+		__u64 keep = RAND_BOOL() ?
+			MOUNT_ATTR_NOATIME : MOUNT_ATTR_STRICTATIME;
+		attrs = (attrs & ~atime_mask) | keep;
+	}
+	return attrs;
+}
+
 static void sanitise_mount_setattr(struct syscallrecord *rec)
 {
 	struct mount_attr *ma;
@@ -173,14 +192,14 @@ static void sanitise_mount_setattr(struct syscallrecord *rec)
 	nbits = 1 + (rnd_modulo_u32(ARRAY_SIZE(mount_attrs)));
 	for (i = 0; i < nbits; i++)
 		attrs |= mount_attrs[rnd_modulo_u32(ARRAY_SIZE(mount_attrs))];
-	ma->attr_set = attrs;
+	ma->attr_set = normalise_atime_bits(attrs);
 
 	/* Build random attr_clr (things to turn off) — non-overlapping with attr_set. */
 	attrs = 0;
 	nbits = rnd_modulo_u32(ARRAY_SIZE(mount_attrs));
 	for (i = 0; i < nbits; i++)
 		attrs |= mount_attrs[rnd_modulo_u32(ARRAY_SIZE(mount_attrs))];
-	ma->attr_clr = attrs & ~ma->attr_set;
+	ma->attr_clr = normalise_atime_bits(attrs) & ~ma->attr_set;
 
 	rec->a4 = (unsigned long) ma;
 	rec->a5 = MOUNT_ATTR_SIZE_VER0;
