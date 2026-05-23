@@ -2,12 +2,15 @@
  * SYSCALL_DEFINE2(memfd_create, const char __user *, uname, unsigned int, flag
  */
 
+#include <stdio.h>
+
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "memfd.h"
 #include "compat.h"
 #include "hugepages.h"
+#include "utils.h"
 
 static unsigned long memfd_create_flags[] = {
 	MFD_CLOEXEC, MFD_ALLOW_SEALING, MFD_HUGETLB,
@@ -25,8 +28,64 @@ static unsigned long memfd_create_modes[] = {
 	0, MFD_EXEC, MFD_NOEXEC_SEAL,
 };
 
+/*
+ * Generate a curated uname for memfd_create.  ARG_NON_NULL_ADDRESS
+ * hands us a random writable region with no NUL guarantee, so the
+ * kernel-side strndup_user(NAME_MAX) call almost always errors out
+ * before the memfd init paths run.  Bias the call toward valid short
+ * basenames (the common case the kernel actually allocates a memfd
+ * for) while still covering the empty-string, slash-contains,
+ * near-max-length and high-bit-byte edge shapes.
+ */
+static char *memfd_create_pick_uname(void)
+{
+	char *name;
+	size_t name_len;
+	size_t i;
+
+	switch (rnd_modulo_u32(8)) {
+	case 0: /* empty string — kernel rejects with -EINVAL */
+		name = zmalloc_tracked(1);
+		name[0] = '\0';
+		break;
+	case 1: /* slash-containing — kernel rejects with -EINVAL */
+		name = zmalloc_tracked(8);
+		snprintf(name, 8, "a/%c", 'a' + (char)rnd_modulo_u32(26));
+		break;
+	case 2: /* near-max-length basename */
+		name_len = 240 + rnd_modulo_u32(16);
+		name = zmalloc_tracked(name_len + 1);
+		for (i = 0; i < name_len; i++)
+			name[i] = 'a' + (char)rnd_modulo_u32(26);
+		name[name_len] = '\0';
+		break;
+	case 3: /* high-bit bytes — exercises strndup_user UTF-8 paths */
+		name = zmalloc_tracked(8);
+		for (i = 0; i < 7; i++)
+			name[i] = (char)(0x80 | rnd_modulo_u32(0x80));
+		name[7] = '\0';
+		break;
+	default: /* short ASCII basename — most common, kernel accepts */
+		name_len = 1 + rnd_modulo_u32(15);
+		name = zmalloc_tracked(name_len + 1);
+		for (i = 0; i < name_len; i++)
+			name[i] = 'a' + (char)rnd_modulo_u32(26);
+		name[name_len] = '\0';
+		break;
+	}
+	return name;
+}
+
 static void sanitise_memfd_create(struct syscallrecord *rec)
 {
+	/*
+	 * Override the ARG_NON_NULL_ADDRESS uname with a curated buffer
+	 * so the kernel ingest path doesn't reject the call up front on
+	 * a missing NUL within NAME_MAX bytes.  ARG_NON_NULL_ADDRESS
+	 * stays in the argtype as a fallback against a NULL rec->a1.
+	 */
+	rec->a1 = (unsigned long) memfd_create_pick_uname();
+
 	/*
 	 * Defence in depth: even though memfd_create_flags no longer
 	 * contains the exclusive bits, future ARG_LIST tweaks or kernel
