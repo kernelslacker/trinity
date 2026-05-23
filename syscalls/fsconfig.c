@@ -27,35 +27,68 @@ static unsigned long fsconfig_ops[] = {
  FSCONFIG_CMD_CREATE_EXCL,
 };
 
-/* Common mount option keys */
-static const char *config_keys[] = {
-	"source", "ro", "rw", "nosuid", "nodev", "noexec",
-	"sync", "dirsync", "noatime", "nodiratime", "relatime",
-	"lazytime", "errors", "data", "commit", "barrier",
-	"discard", "max_ratio", "nr_inodes", "size", "mode",
+/*
+ * Keys recognised as flag-style options by most filesystems (no value
+ * argument).  SET_FLAG with one of these has a chance of being accepted
+ * by the fs_parser instead of bouncing at fs_lookup_key().
+ */
+static const char *flag_keys[] = {
+	"ro", "rw", "sync", "async", "dirsync",
+	"noatime", "atime", "relatime", "strictatime", "lazytime",
+	"nosuid", "suid", "nodev", "dev", "noexec", "exec",
+	"silent", "barrier", "nobarrier", "discard", "nodiscard",
 };
 
-static void fill_key(char *buf)
+/*
+ * Keys that take a string value: a mix of universal (source, errors,
+ * data) and per-fstype options (size= and mode= are tmpfs/ramfs,
+ * uid=/gid= are tmpfs/fat/iso, commit= is ext*, max_inline_data= is
+ * ext4).  fsconfig is per-mount so even unknown keys exercise the
+ * fs_parser dispatch.
+ */
+static const char *string_keys[] = {
+	"source", "errors", "data", "commit", "max_inline_data",
+	"size", "nr_inodes", "mode", "uid", "gid",
+	"fmask", "dmask", "iocharset", "huge", "mpol",
+};
+
+static const char *string_values[] = {
+	"1", "0", "1M", "4096", "0755", "0700", "0", "65534",
+	"continue", "remount-ro", "panic", "defaults",
+	"/dev/sda1", "/dev/loop0", "tmpfs", "noinherit",
+};
+
+static void fill_flag_key(char *buf, size_t n)
 {
-	const char *key = config_keys[rnd_modulo_u32(ARRAY_SIZE(config_keys))];
-	strncpy(buf, key, 31);
-	buf[31] = '\0';
+	const char *key = flag_keys[rnd_modulo_u32(ARRAY_SIZE(flag_keys))];
+	strncpy(buf, key, n - 1);
+	buf[n - 1] = '\0';
 }
 
-static void sanitise_fsconfig(struct syscallrecord *rec)
+static void fill_string_key(char *buf, size_t n)
 {
-	unsigned long cmd;
-	char *key, *val;
+	const char *key = string_keys[rnd_modulo_u32(ARRAY_SIZE(string_keys))];
+	strncpy(buf, key, n - 1);
+	buf[n - 1] = '\0';
+}
 
-	cmd = rec->a2;
+static void fill_string_value(char *buf, size_t n)
+{
+	const char *val = string_values[rnd_modulo_u32(ARRAY_SIZE(string_values))];
+	strncpy(buf, val, n - 1);
+	buf[n - 1] = '\0';
+}
+
+static void build_valid_payload(struct syscallrecord *rec, unsigned long cmd)
+{
+	char *key, *val;
 
 	switch (cmd) {
 	case FSCONFIG_SET_FLAG:
-		/* key only, no value */
 		key = (char *) get_writable_address(32);
 		if (key == NULL)
 			break;
-		fill_key(key);
+		fill_flag_key(key, 32);
 		rec->a3 = (unsigned long) key;
 		rec->a4 = 0;
 		rec->a5 = 0;
@@ -66,13 +99,8 @@ static void sanitise_fsconfig(struct syscallrecord *rec)
 		val = (char *) get_writable_address(64);
 		if (key == NULL || val == NULL)
 			break;
-		fill_key(key);
-		switch (rnd_modulo_u32(3)) {
-		case 0: strncpy(val, "1", 63); break;
-		case 1: strncpy(val, "/dev/sda1", 63); break;
-		default: strncpy(val, "defaults", 63); break;
-		}
-		val[63] = '\0';
+		fill_string_key(key, 32);
+		fill_string_value(val, 64);
 		rec->a3 = (unsigned long) key;
 		rec->a4 = (unsigned long) val;
 		rec->a5 = 0;
@@ -83,31 +111,43 @@ static void sanitise_fsconfig(struct syscallrecord *rec)
 		val = (char *) get_writable_address(64);
 		if (key == NULL || val == NULL)
 			break;
-		fill_key(key);
+		fill_string_key(key, 32);
+		generate_rand_bytes((unsigned char *) val, 64);
 		rec->a3 = (unsigned long) key;
 		rec->a4 = (unsigned long) val;
 		rec->a5 = 1 + (rnd_modulo_u32(64));	/* aux = length */
 		break;
 
 	case FSCONFIG_SET_PATH:
-	case FSCONFIG_SET_PATH_EMPTY:
 		key = (char *) get_writable_address(32);
 		val = (char *) get_writable_address(32);
 		if (key == NULL || val == NULL)
 			break;
-		fill_key(key);
-		strncpy(val, "/", 31);
+		fill_string_key(key, 32);
+		strncpy(val, RAND_BOOL() ? "/tmp" : "/", 31);
 		val[31] = '\0';
 		rec->a3 = (unsigned long) key;
 		rec->a4 = (unsigned long) val;
 		rec->a5 = AT_FDCWD;
 		break;
 
+	case FSCONFIG_SET_PATH_EMPTY:
+		key = (char *) get_writable_address(32);
+		val = (char *) get_writable_address(8);
+		if (key == NULL || val == NULL)
+			break;
+		fill_string_key(key, 32);
+		val[0] = '\0';
+		rec->a3 = (unsigned long) key;
+		rec->a4 = (unsigned long) val;
+		rec->a5 = get_random_fd();	/* aux = dirfd */
+		break;
+
 	case FSCONFIG_SET_FD:
 		key = (char *) get_writable_address(32);
 		if (key == NULL)
 			break;
-		fill_key(key);
+		fill_string_key(key, 32);
 		rec->a3 = (unsigned long) key;
 		rec->a4 = 0;
 		rec->a5 = get_random_fd();	/* aux = fd */
@@ -116,11 +156,121 @@ static void sanitise_fsconfig(struct syscallrecord *rec)
 	case FSCONFIG_CMD_CREATE:
 	case FSCONFIG_CMD_RECONFIGURE:
 	case FSCONFIG_CMD_CREATE_EXCL:
-		/* No key, value, or aux */
 		rec->a3 = 0;
 		rec->a4 = 0;
 		rec->a5 = 0;
 		break;
+	}
+}
+
+static void build_mismatched_payload(struct syscallrecord *rec, unsigned long cmd)
+{
+	char *key, *val;
+
+	switch (cmd) {
+	case FSCONFIG_SET_FLAG:
+		/* SET_FLAG with a stray value attached -- fs_lookup_key warns. */
+		key = (char *) get_writable_address(32);
+		val = (char *) get_writable_address(32);
+		if (key == NULL || val == NULL)
+			break;
+		fill_string_key(key, 32);
+		fill_string_value(val, 32);
+		rec->a3 = (unsigned long) key;
+		rec->a4 = (unsigned long) val;
+		rec->a5 = rnd_u32();
+		break;
+
+	case FSCONFIG_SET_STRING:
+		/* SET_STRING with NULL value -- vfs_parse_fs_string -EINVAL. */
+		key = (char *) get_writable_address(32);
+		if (key == NULL)
+			break;
+		fill_string_key(key, 32);
+		rec->a3 = (unsigned long) key;
+		rec->a4 = 0;
+		rec->a5 = 0;
+		break;
+
+	case FSCONFIG_SET_BINARY:
+		/* SET_BINARY with aux=0 -- vfs_parse_fs_param length check. */
+		key = (char *) get_writable_address(32);
+		val = (char *) get_writable_address(64);
+		if (key == NULL || val == NULL)
+			break;
+		fill_string_key(key, 32);
+		rec->a3 = (unsigned long) key;
+		rec->a4 = (unsigned long) val;
+		rec->a5 = 0;
+		break;
+
+	case FSCONFIG_SET_PATH:
+	case FSCONFIG_SET_PATH_EMPTY:
+		/* PATH with NULL path -- copy_user_string -EFAULT. */
+		key = (char *) get_writable_address(32);
+		if (key == NULL)
+			break;
+		fill_string_key(key, 32);
+		rec->a3 = (unsigned long) key;
+		rec->a4 = 0;
+		rec->a5 = AT_FDCWD;
+		break;
+
+	case FSCONFIG_SET_FD:
+		/* SET_FD with a likely-invalid fd. */
+		key = (char *) get_writable_address(32);
+		if (key == NULL)
+			break;
+		fill_string_key(key, 32);
+		rec->a3 = (unsigned long) key;
+		rec->a4 = 0;
+		rec->a5 = (int) rnd_u32();
+		break;
+
+	case FSCONFIG_CMD_CREATE:
+	case FSCONFIG_CMD_RECONFIGURE:
+	case FSCONFIG_CMD_CREATE_EXCL:
+		/* finalize commands with stray key/value still attached. */
+		key = (char *) get_writable_address(32);
+		if (key == NULL)
+			break;
+		fill_string_key(key, 32);
+		rec->a3 = (unsigned long) key;
+		rec->a4 = 0;
+		rec->a5 = 0;
+		break;
+	}
+}
+
+static void sanitise_fsconfig(struct syscallrecord *rec)
+{
+	unsigned long cmd;
+	unsigned int pick;
+
+	/*
+	 * Cmd / payload distribution:
+	 *   70%  real cmd + matching payload (drives the per-cmd handlers)
+	 *   20%  real cmd + intentionally-mismatched payload
+	 *   10%  random cmd + random payload (existing rec->a2 from ARG_OP
+	 *        plus whatever fields were left from generic_sanitise)
+	 */
+	pick = rnd_modulo_u32(10);
+
+	if (pick < 7) {
+		cmd = fsconfig_ops[rnd_modulo_u32(ARRAY_SIZE(fsconfig_ops))];
+		rec->a2 = cmd;
+		build_valid_payload(rec, cmd);
+	} else if (pick < 9) {
+		cmd = fsconfig_ops[rnd_modulo_u32(ARRAY_SIZE(fsconfig_ops))];
+		rec->a2 = cmd;
+		build_mismatched_payload(rec, cmd);
+	} else {
+		/*
+		 * Pure random fallthrough: keep rec->a2 from ARG_OP (or
+		 * scribble it) and leave a3/a4/a5 to generic_sanitise.
+		 */
+		if (ONE_IN(2))
+			rec->a2 = rnd_u32();
 	}
 }
 
