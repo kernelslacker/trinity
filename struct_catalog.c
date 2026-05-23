@@ -20,6 +20,7 @@
 #include <linux/sched.h>
 #include <linux/sched/types.h>
 #include <linux/io_uring.h>
+#include <linux/landlock.h>
 
 #include "config.h"
 #ifdef USE_BPF
@@ -216,6 +217,16 @@ static const struct struct_field sockaddr_storage_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct landlock_ruleset_attr (landlock_create_ruleset)              */
+/* ------------------------------------------------------------------ */
+
+static const struct struct_field landlock_ruleset_attr_fields[] = {
+	FIELD(struct landlock_ruleset_attr, handled_access_fs),
+	FIELD(struct landlock_ruleset_attr, handled_access_net),
+	FIELD(struct landlock_ruleset_attr, scoped),
+};
+
+/* ------------------------------------------------------------------ */
 /* union bpf_attr (bpf)                                                */
 /* ------------------------------------------------------------------ */
 
@@ -325,6 +336,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= sockaddr_storage_fields,
 		.num_fields	= ARRAY_SIZE(sockaddr_storage_fields),
 	},
+	{
+		.name		= "landlock_ruleset_attr",
+		.struct_size	= sizeof(struct landlock_ruleset_attr),
+		.fields		= landlock_ruleset_attr_fields,
+		.num_fields	= ARRAY_SIZE(landlock_ruleset_attr_fields),
+	},
 #ifdef USE_BPF
 	{
 		.name		= "bpf_attr",
@@ -390,9 +407,11 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "connect",		2, &struct_catalog[10] },
 	/* sendto(int, const void *, size_t, int, struct sockaddr *, socklen_t) */
 	{ "sendto",		5, &struct_catalog[10] },
+	/* landlock_create_ruleset(const struct landlock_ruleset_attr *, size_t, u32) */
+	{ "landlock_create_ruleset",	1, &struct_catalog[11] },
 #ifdef USE_BPF
 	/* bpf(int, union bpf_attr *, unsigned int) */
-	{ "bpf",		2, &struct_catalog[11] },
+	{ "bpf",		2, &struct_catalog[12] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
