@@ -20,6 +20,7 @@ static void sanitise_futex_requeue(struct syscallrecord *rec)
 {
 	struct futex_waitv *waiters;
 	__u32 *futex_words;
+	unsigned int waitv_flags;
 
 	/* futex_requeue takes exactly 2 waiters: [0]=wake source, [1]=requeue target */
 	futex_words = (__u32 *) get_writable_address(2 * sizeof(*futex_words));
@@ -33,17 +34,21 @@ static void sanitise_futex_requeue(struct syscallrecord *rec)
 		return;
 	memset(waiters, 0, 2 * sizeof(*waiters));
 
+	/* Source and destination waitv must share identical flags; otherwise
+	 * futex_validate_input() rejects with -EINVAL before any of the
+	 * requeue / PI / waiter-walk paths run.
+	 */
+	waitv_flags = FUTEX2_SIZE_U32;
+	if (RAND_BOOL())
+		waitv_flags |= FUTEX2_PRIVATE;
+
 	waiters[0].uaddr = (__u64)(unsigned long) &futex_words[0];
 	waiters[0].val = futex_words[0];
-	waiters[0].flags = FUTEX2_SIZE_U32;
-	if (RAND_BOOL())
-		waiters[0].flags |= FUTEX2_PRIVATE;
+	waiters[0].flags = waitv_flags;
 
 	waiters[1].uaddr = (__u64)(unsigned long) &futex_words[1];
 	waiters[1].val = futex_words[1];
-	waiters[1].flags = FUTEX2_SIZE_U32;
-	if (RAND_BOOL())
-		waiters[1].flags |= FUTEX2_PRIVATE;
+	waiters[1].flags = waitv_flags;
 
 	rec->a1 = (unsigned long) waiters;
 	rec->a2 = 0;	/* no flags defined yet */
