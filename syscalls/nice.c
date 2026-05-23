@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE1(nice, int, increment)
  */
+#include <limits.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -9,6 +10,27 @@
 
 static void sanitise_nice(struct syscallrecord *rec)
 {
+	/*
+	 * sys_nice() clamps the new nice value to [MIN_NICE, MAX_NICE] =
+	 * [-20, 19] inside the kernel before applying it, so feeding only
+	 * the legal range stops exercising the clamp / sign-extension path.
+	 * Add a small out-of-range bucket (~10%) that pushes the increment
+	 * well outside [-20, 19] -- both directions, including INT_MIN /
+	 * INT_MAX adjacent values -- so the clamp arithmetic and the
+	 * compat sign-extension stay covered.
+	 */
+	if (ONE_IN(10)) {
+		switch (rnd_modulo_u32(4)) {
+		case 0: rec->a1 = (unsigned long)(long) INT_MIN; break;
+		case 1: rec->a1 = (unsigned long)(long) INT_MAX; break;
+		case 2: rec->a1 = (unsigned long)(long)(-21 -
+				(int) rnd_modulo_u32(2048)); break;
+		default: rec->a1 = (unsigned long)(long)(20 +
+				(int) rnd_modulo_u32(2048)); break;
+		}
+		return;
+	}
+
 	rec->a1 = (unsigned long)((rnd_modulo_u32(40)) - 20);	/* -20 to 19 */
 }
 

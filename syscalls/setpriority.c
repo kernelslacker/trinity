@@ -19,9 +19,60 @@ static unsigned long setpriority_which[] = {
 	PRIO_PROCESS, PRIO_PGRP, PRIO_USER,
 };
 
+/*
+ * setpriority(which, who, niceval): the kernel rejects an unknown
+ * `which` outright with -EINVAL (set_one_prio_perm() / __pri_*) and an
+ * unresolvable `who` with -ESRCH before reaching the actual nice-value
+ * application path.  Marry the framework's curated `which` pick to a
+ * `who` value that resolves for that class:
+ *
+ *   PRIO_PROCESS -> 0 or our own pid (always live).
+ *   PRIO_PGRP    -> 0 or our own pgrp.
+ *   PRIO_USER    -> 0 or our own uid.
+ *
+ * niceval stays in -20..19 most of the time so the can_nice() /
+ * security_task_setnice() check runs against a clamped value; a small
+ * out-of-range bucket exercises the kernel's MIN_NICE/MAX_NICE clamp
+ * in set_user_nice().
+ */
 static void sanitise_setpriority(struct syscallrecord *rec)
 {
-	rec->a3 = (unsigned long)((rnd_modulo_u32(40)) - 20);	/* -20 to 19 */
+	unsigned int which_bucket = rnd_modulo_u32(10);
+
+	if (which_bucket < 8) {
+		/* 80%: match `who` to the framework's `which` pick. */
+		switch ((int) rec->a1) {
+		case PRIO_PROCESS:
+			if (RAND_BOOL())
+				rec->a2 = 0;
+			else
+				rec->a2 = (unsigned long) mypid();
+			break;
+		case PRIO_PGRP:
+			if (RAND_BOOL())
+				rec->a2 = 0;
+			else
+				rec->a2 = (unsigned long) getpgrp();
+			break;
+		case PRIO_USER:
+			if (RAND_BOOL())
+				rec->a2 = 0;
+			else
+				rec->a2 = (unsigned long) getuid();
+			break;
+		default:
+			/* framework pick fell outside the curated list (rare). */
+			break;
+		}
+	}
+	/* remaining 20%: leave a1/a2 alone for the random tail. */
+
+	if (ONE_IN(10)) {
+		/* out-of-range bucket: exercise set_user_nice() clamp. */
+		rec->a3 = (unsigned long)(long)((int) rnd_modulo_u32(4096) - 2048);
+	} else {
+		rec->a3 = (unsigned long)((rnd_modulo_u32(40)) - 20);	/* -20 to 19 */
+	}
 }
 
 static void post_setpriority(struct syscallrecord *rec)
@@ -57,6 +108,18 @@ static void post_setpriority(struct syscallrecord *rec)
 		return;
 
 	expected = (int) rec->a3;
+
+	/*
+	 * Mirror the kernel's MIN_NICE/MAX_NICE clamp at the syscall entry:
+	 * sys_setpriority clamps niceval into [-20, 19] BEFORE applying it,
+	 * so a fuzzed out-of-range niceval still succeeds and the on-task
+	 * Nice value will be the clamped result, not the raw input.  Without
+	 * this clamp the oracle false-fires for every out-of-range sample.
+	 */
+	if (expected < -20)
+		expected = -20;
+	if (expected > 19)
+		expected = 19;
 
 	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
 	 * thousands of times per second under fuzz, and stdio's per-call malloc
