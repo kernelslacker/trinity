@@ -320,11 +320,43 @@ void init_child_mappings(void)
 	struct object *globalobj;
 	unsigned int idx;
 
+	/*
+	 * init_object_lists(OBJ_LOCAL, child) copies head->destroy from
+	 * the matching OBJ_GLOBAL head into every OBJ_LOCAL head.  The
+	 * OBJ_GLOBAL OBJ_MMAP_* heads are wired to map_destructor_shared
+	 * (setup_initial_mappings for ANON, mmap_fd for FILE/TESTFILE),
+	 * which calls free_shared_str() -- the shared-heap allocator --
+	 * on map->name.  But OBJ_LOCAL entries created by post_mmap and
+	 * by the global-pool clone in this routine allocate map->name
+	 * with libc strdup(), so the inherited destructor would feed a
+	 * libc-malloc'd pointer to free_shared_str() and corrupt the
+	 * shared-heap metadata for every other child.
+	 *
+	 * Override the inherited destructor on ALL three local mmap
+	 * pools to the libc-allocator destructor.  The ANON path was
+	 * the only one already covered; FILE and TESTFILE were latent
+	 * until the post_munmap pool-type fix landed and started
+	 * routing those entries to destroy_object() with their real
+	 * head.  Both must land together: fixing one without the other
+	 * turns a latent bug into a live crash class.
+	 */
 	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_ANON);
 	if (head == NULL)
 		return;
 	head->destroy = &map_destructor;
 	head->dump = &map_dump;
+
+	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_FILE);
+	if (head != NULL) {
+		head->destroy = &map_destructor;
+		head->dump = &map_dump;
+	}
+
+	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_TESTFILE);
+	if (head != NULL) {
+		head->destroy = &map_destructor;
+		head->dump = &map_dump;
+	}
 
 	globalhead = get_objhead(OBJ_GLOBAL, OBJ_MMAP_ANON);
 	if (globalhead == NULL || globalhead->array == NULL)
