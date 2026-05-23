@@ -33,6 +33,16 @@ static void pick_range(struct map *map, void **addrp, unsigned long *lenp)
 	unsigned long nr_pages, start_page, count;
 
 	nr_pages = map->size / page_size;
+	if (nr_pages == 0) {
+		/* Defence-in-depth: callers gate on map->size >= page_size,
+		 * but a zero-page mapping leaking in would trip
+		 * rnd_modulo_u32(0) below.  Hand back a zero-length range;
+		 * mlock()/munlock() handle len==0 cleanly (no-op or EINVAL,
+		 * not an abort). */
+		*addrp = map->ptr;
+		*lenp = 0;
+		return;
+	}
 	if (nr_pages < 2) {
 		*addrp = map->ptr;
 		*lenp = map->size;
