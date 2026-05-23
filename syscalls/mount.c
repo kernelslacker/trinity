@@ -186,15 +186,12 @@ static void sanitise_mount_setattr(struct syscallrecord *rec)
 	rec->a5 = MOUNT_ATTR_SIZE_VER0;
 }
 
-#define AT_STATX_SYNC_TYPE      0x6000
-#define AT_STATX_SYNC_AS_STAT   0x0000
-#define AT_STATX_FORCE_SYNC     0x2000
-#define AT_STATX_DONT_SYNC      0x4000
-#define AT_RECURSIVE_LOCAL       0x8000
+#ifndef AT_RECURSIVE
+#define AT_RECURSIVE            0x8000
+#endif
 
 static unsigned long mount_setattr_flags[] = {
-	AT_EMPTY_PATH, AT_STATX_SYNC_TYPE, AT_STATX_SYNC_AS_STAT,
-	AT_STATX_FORCE_SYNC, AT_STATX_DONT_SYNC, AT_RECURSIVE_LOCAL,
+	AT_EMPTY_PATH, AT_RECURSIVE, AT_SYMLINK_NOFOLLOW, AT_NO_AUTOMOUNT,
 };
 
 struct syscallentry syscall_mount_setattr = {
