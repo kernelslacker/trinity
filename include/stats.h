@@ -695,6 +695,7 @@ struct stats_s {
 	unsigned long numa_migration_calls;	/* total mbind/migrate/move/set_mempolicy calls issued */
 	unsigned long numa_migration_failed;	/* migration syscall returned -1 */
 	unsigned long numa_migration_no_numa;	/* attempted invocations skipped (single-node host) */
+	unsigned long numa_migration_sysfs_unreadable;	/* /sys/devices/system/node/online open/read failed */
 
 	/* cpu_hotplug_rider childop counters */
 	unsigned long cpu_hotplug_runs;			/* total cpu_hotplug_rider invocations */

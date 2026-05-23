@@ -180,12 +180,16 @@ static void parse_online_nodes(void)
 	if (f == NULL) {
 		outputerr("numa_migration_churn: fopen(/sys/devices/system/node/online) failed: %s\n",
 			  strerror(errno));
+		__atomic_add_fetch(&shm->stats.numa_migration_sysfs_unreadable,
+				   1, __ATOMIC_RELAXED);
 		return;
 	}
 
 	if (fgets(buf, sizeof(buf), f) == NULL) {
 		outputerr("numa_migration_churn: fgets(/sys/devices/system/node/online) failed: %s\n",
 			  strerror(errno));
+		__atomic_add_fetch(&shm->stats.numa_migration_sysfs_unreadable,
+				   1, __ATOMIC_RELAXED);
 		fclose(f);
 		return;
 	}
