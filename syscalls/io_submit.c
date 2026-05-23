@@ -46,6 +46,7 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 
 	rec->a2 = nr;
 	rec->a3 = (unsigned long) iocbpp;
+	avoid_shared_buffer_inout(&rec->a3, nr * sizeof(struct iocb *));
 }
 
 static void post_io_submit(struct syscallrecord *rec)
