@@ -18,10 +18,27 @@ static void sanitise_remap_file_pages(struct syscallrecord *rec)
 	struct map *map;
 	size_t size, offset;
 	size_t start = 0;
+	size_t file_pages;
 
 	map = common_set_mmap_ptr_len(NULL);
 	if (map == NULL || map->size == 0)
 		return;
+
+	/*
+	 * remap_file_pages(2) is the legacy nonlinear-mapping syscall;
+	 * the kernel still emulates it, but only on MAP_SHARED file-backed
+	 * VMAs.  Anonymous or MAP_PRIVATE targets short-circuit to -EINVAL
+	 * before reaching the interesting emulation path, so they teach
+	 * the fuzzer nothing about that code.  Skip them by neutralising
+	 * rec->a1/a2 — matching the no-map short-circuit above — so the
+	 * draws that do go through carry the legacy path.
+	 */
+	if (map->type != MMAPED_FILE || map->fd == -1 ||
+	    !(map->flags & MAP_SHARED)) {
+		rec->a1 = 0;
+		rec->a2 = 0;
+		return;
+	}
 
 	if (RAND_BOOL()) {
 		start = rnd_modulo_u32(map->size);
@@ -48,16 +65,42 @@ static void sanitise_remap_file_pages(struct syscallrecord *rec)
 				size = page_size;
 		}
 	}
+	/*
+	 * Page-align size.  rnd_modulo_u32(map->size) returns an unaligned
+	 * value that the kernel rejects with -EINVAL before any nonlinear
+	 * code runs.  Round up so the call still covers at least the
+	 * selected length, and fall back to a single page when the round
+	 * lands on zero.
+	 */
+	size = (size + page_size - 1) & PAGE_MASK;
+	if (size == 0)
+		size = page_size;
 	rec->a2 = size;
 
-	/* "The prot argument must be specified as 0" */
-	rec->a3 = 0;
-
-	/* Pick a random pgoff in [0, size_in_pages). */
-	if (RAND_BOOL() && size >= page_size)
-		offset = rnd_modulo_u32((size / page_size));
+	/*
+	 * "The prot argument must be specified as 0" — any nonzero value
+	 * short-circuits to -EINVAL.  prot=0 hits the success path; a
+	 * small invalid-prot bucket keeps the validation path warm.
+	 */
+	if (ONE_IN(10))
+		rec->a3 = rnd_u32() & 0xff;
 	else
-		offset = 0;
+		rec->a3 = 0;
+
+	/*
+	 * pgoff is in PAGE_SIZE units.  Pick inside [0, file_pages) for
+	 * the success path; an overshoot bucket keeps the past-file-end
+	 * -EINVAL validation path warm.  map->size is clamped to a
+	 * page-aligned in-bounds extent by mmap_fd, so file_pages is the
+	 * number of pages actually backed by the file.
+	 */
+	file_pages = map->size / page_size;
+	if (file_pages == 0)
+		file_pages = 1;
+	if (ONE_IN(10))
+		offset = file_pages + rnd_modulo_u32(8) + 1;
+	else
+		offset = rnd_modulo_u32(file_pages);
 	rec->a4 = offset;
 
 	/*
