@@ -1925,6 +1925,12 @@ struct kvm_get_htab_fd {
 #define NVME_IOCTL_RESET _IO('N', 0x44)
 #endif
 
+/* linux/sem.h */
+#ifndef SEMVMX
+/* Maximum value semval may take; <= 32767 per uapi linux/sem.h. */
+#define SEMVMX			32767
+#endif
+
 /* linux/shm.h */
 #ifndef SHM_HUGE_SHIFT
 #define SHM_HUGE_SHIFT  26
