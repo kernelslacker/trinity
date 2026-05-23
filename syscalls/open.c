@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include "files.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
@@ -198,19 +199,121 @@ static unsigned long openat2_resolve_flags[] = {
 	RESOLVE_BENEATH, RESOLVE_IN_ROOT, RESOLVE_CACHED,
 };
 
+/*
+ * Curated RESOLVE_* combinations.  Random bitmask draws across the
+ * RESOLVE_* set hit any individual combo with low probability, so the
+ * sanitiser leans on a hand-picked table of unions that lookup_one_qstr
+ * and the namei RESOLVE_* path actually branch on.  Includes the bare
+ * single-flag entries, the RESOLVE_BENEATH / RESOLVE_IN_ROOT chroot-like
+ * subsets, and a small set of multi-flag unions exercised by the
+ * RESOLVE_NO_SYMLINKS + RESOLVE_NO_MAGICLINKS magic-link guard.  A 0
+ * entry keeps the "default behaviour" path well-represented.
+ */
+static const unsigned long openat2_resolve_combos[] = {
+	0,
+	RESOLVE_NO_XDEV,
+	RESOLVE_NO_MAGICLINKS,
+	RESOLVE_NO_SYMLINKS,
+	RESOLVE_BENEATH,
+	RESOLVE_IN_ROOT,
+	RESOLVE_CACHED,
+	RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS,
+	RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS,
+	RESOLVE_BENEATH | RESOLVE_NO_XDEV,
+	RESOLVE_IN_ROOT | RESOLVE_NO_MAGICLINKS,
+	RESOLVE_IN_ROOT | RESOLVE_NO_SYMLINKS,
+	RESOLVE_IN_ROOT | RESOLVE_NO_XDEV,
+	RESOLVE_NO_XDEV | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS,
+	RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS,
+};
+
+/*
+ * Legality-aware sanitiser for openat2(2).
+ *
+ * The kernel validates the open_how struct field-by-field via
+ * copy_struct_from_user and build_open_flags:
+ *
+ *   - flags: open(2)-style.  __O_TMPFILE additionally requires
+ *     O_DIRECTORY and one of O_WRONLY/O_RDWR; the O_TMPFILE uapi
+ *     macro bundles the O_DIRECTORY bit already.
+ *   - mode:  must be zero unless flags has O_CREAT or __O_TMPFILE
+ *     (the kernel returns -EINVAL on a non-zero mode otherwise),
+ *     and the supplied value is masked to S_IALLUGO.
+ *   - resolve: bitmask of RESOLVE_* flags; any unknown bit set
+ *     causes the kernel to return -EINVAL out of build_open_flags.
+ *
+ * The usize argument is independently validated against
+ * sizeof(struct open_how) with copy_struct_from_user semantics:
+ *
+ *   - usize == 0: rejected with -EINVAL.
+ *   - usize <  sizeof: rejected (open_how has no smaller version).
+ *   - usize == sizeof: the common path.
+ *   - usize >  sizeof: accepted iff trailing bytes are zero (the
+ *     surrounding zmalloc'd slack satisfies this).
+ *
+ * Filling all three fields with legal-looking bytes and exercising
+ * the four usize buckets gets the syscall past the front-door
+ * validators into the namei RESOLVE_* code paths and the file-open
+ * machinery, which is where the interesting bugs live.
+ */
 static void sanitise_openat2(struct syscallrecord *rec)
 {
 	struct open_how *how;
+	size_t buflen, usize;
+	uint32_t pick;
 
-	how = zmalloc_tracked(sizeof(struct open_how));
+	/*
+	 * Allocate slack past sizeof(struct open_how) so the oversized
+	 * usize bucket has zero-initialised trailing bytes to copy from.
+	 */
+	buflen = sizeof(struct open_how) + 32;
+	how = zmalloc_tracked(buflen);
+
 	how->flags = RAND_ARRAY(open_o_flags_base) | get_o_flags();
+
+	/*
+	 * mode is only legal when the kernel will create or materialise
+	 * an inode (O_CREAT or __O_TMPFILE).  O_TMPFILE bundles
+	 * O_DIRECTORY plus __O_TMPFILE, so a single mask check covers
+	 * both.  Outside those, a non-zero mode trips the kernel's
+	 * "mode set without O_CREAT/__O_TMPFILE" -EINVAL gate before
+	 * any lookup work happens.
+	 */
 	if (how->flags & (O_CREAT | O_TMPFILE))
 		how->mode = 0666;
-	how->resolve = set_rand_bitmask(ARRAY_SIZE(openat2_resolve_flags),
-					openat2_resolve_flags);
+
+	/*
+	 * Resolve: ~25% draw an arbitrary subset of the RESOLVE_* set
+	 * (covers unions the curated table omits); the rest pick from
+	 * the curated combo table so the well-trodden RESOLVE_BENEATH
+	 * and RESOLVE_IN_ROOT chroot-like paths get steady coverage.
+	 */
+	if (ONE_IN(4))
+		how->resolve = set_rand_bitmask(ARRAY_SIZE(openat2_resolve_flags),
+						openat2_resolve_flags);
+	else
+		how->resolve = RAND_ARRAY(openat2_resolve_combos);
+
+	/*
+	 * usize bucket: 70% exact, 10% short, 10% long-with-trailing-
+	 * zeros, 10% zero.  The short and zero buckets exercise the
+	 * kernel's copy_struct_from_user size validators; the long
+	 * bucket exercises the trailing-zero check.
+	 */
+	pick = rnd_modulo_u32(100);
+	if (pick < 70) {
+		usize = sizeof(struct open_how);
+	} else if (pick < 80) {
+		usize = rnd_modulo_u32(sizeof(struct open_how));
+	} else if (pick < 90) {
+		usize = sizeof(struct open_how) + 1 +
+			rnd_modulo_u32(buflen - sizeof(struct open_how) - 1);
+	} else {
+		usize = 0;
+	}
 
 	rec->a3 = (unsigned long) how;
-	rec->a4 = sizeof(struct open_how);
+	rec->a4 = usize;
 
 	/*
 	 * Hand the snap to the deferred-free queue at sanitise time so cleanup
