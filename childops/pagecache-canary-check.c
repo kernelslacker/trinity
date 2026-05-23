@@ -293,6 +293,7 @@ static void mode_readv(int fd, unsigned int file_idx, size_t size,
 	while (off < size) {
 		size_t want_total = 0;
 		ssize_t n;
+		unsigned int n_iov = 0;
 
 		for (i = 0; i < READV_IOV_COUNT; i++) {
 			size_t this_want = size - off - want_total;
@@ -301,11 +302,12 @@ static void mode_readv(int fd, unsigned int file_idx, size_t size,
 			iov[i].iov_base = chunks[i];
 			iov[i].iov_len  = this_want;
 			want_total += this_want;
+			n_iov = i + 1;
 			if (off + want_total >= size)
 				break;
 		}
 
-		n = readv(fd, iov, READV_IOV_COUNT);
+		n = readv(fd, iov, n_iov);
 		if (n <= 0)
 			return;
 
