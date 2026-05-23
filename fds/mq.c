@@ -78,6 +78,7 @@ static int open_one_mq(int idx)
 
 	obj = alloc_object();
 	if (obj == NULL) {
+		mq_unlink(name);
 		close(fd);
 		return false;
 	}
