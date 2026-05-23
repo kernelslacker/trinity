@@ -29,6 +29,7 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
 		args->size = 256;
 		args->flags = 0;
 		rec->a5 = (unsigned long) args;
+		avoid_shared_buffer_inout(&rec->a5, sizeof(struct xattr_args));
 		rec->a6 = sizeof(*args);
 	}
 #else
