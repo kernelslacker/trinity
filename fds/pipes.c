@@ -7,6 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "deferred-free.h"
 #include "fd.h"
 #include "objects.h"
 #include "pipes.h"
@@ -41,7 +42,7 @@ static void pipefd_dump(struct object *obj, enum obj_scope scope)
 
 static void open_pipe_pair(unsigned int flags)
 {
-	struct object *obj;
+	struct object *robj, *wobj;
 	int pipes[2];
 
 	if (pipe2(pipes, flags) < 0) {
@@ -49,26 +50,37 @@ static void open_pipe_pair(unsigned int flags)
 		return;
 	}
 
-	obj = alloc_object();
-	if (obj == NULL) {
+	/*
+	 * Allocate both objs before publishing either to the pool.  If we
+	 * add the read end first and the second alloc_object() then fails,
+	 * pipe[0] is left in the pool with no paired writer — consumers
+	 * that clear O_NONBLOCK will block forever on the orphaned reader.
+	 */
+	robj = alloc_object();
+	if (robj == NULL) {
 		close(pipes[0]);
 		close(pipes[1]);
 		return;
 	}
-	obj->pipeobj.fd = pipes[0];
-	obj->pipeobj.flags = flags;
-	obj->pipeobj.reader = true;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIPE);
 
-	obj = alloc_object();
-	if (obj == NULL) {
+	wobj = alloc_object();
+	if (wobj == NULL) {
+		memset(robj, 0, sizeof(*robj));
+		deferred_free_enqueue(robj);
+		close(pipes[0]);
 		close(pipes[1]);
 		return;
 	}
-	obj->pipeobj.fd = pipes[1];
-	obj->pipeobj.flags = flags;
-	obj->pipeobj.reader = false;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_PIPE);
+
+	robj->pipeobj.fd = pipes[0];
+	robj->pipeobj.flags = flags;
+	robj->pipeobj.reader = true;
+	add_object(robj, OBJ_GLOBAL, OBJ_FD_PIPE);
+
+	wobj->pipeobj.fd = pipes[1];
+	wobj->pipeobj.flags = flags;
+	wobj->pipeobj.reader = false;
+	add_object(wobj, OBJ_GLOBAL, OBJ_FD_PIPE);
 }
 
 
