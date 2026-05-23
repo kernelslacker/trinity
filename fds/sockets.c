@@ -290,11 +290,18 @@ static bool generate_sockets(void)
 			ret |= generate_socket(triplets[j].family, triplets[j].protocol, triplets[j].type);
 	}
 
-	while (nr_sockets < NR_SOCKET_FDS) {
-		r = rnd_modulo_u32(TRINITY_PF_MAX);
-		for (i = 0; i < 10; i++)
-			if (generate_specific_socket(r) == false)
+	{
+		unsigned int attempts = 0;
+		const unsigned int max_attempts = NR_SOCKET_FDS * 64;
+
+		while (nr_sockets < NR_SOCKET_FDS) {
+			r = rnd_modulo_u32(TRINITY_PF_MAX);
+			for (i = 0; i < 10; i++)
+				if (generate_specific_socket(r) == false)
+					break;
+			if (++attempts >= max_attempts)
 				break;
+		}
 	}
 
 	return ret;
