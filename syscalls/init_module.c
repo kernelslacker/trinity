@@ -136,6 +136,7 @@ static void sanitise_init_module(struct syscallrecord *rec)
 	}
 
 	rec->a1 = (unsigned long) buf;
+	avoid_shared_buffer_inout(&rec->a1, total_sz);
 	rec->a2 = total_sz;
 
 	/* arg3: uargs — NUL-terminated module parameter string */
