@@ -1,20 +1,35 @@
 /*
  * SYSCALL_DEFINE2(mlock, unsigned long, start, size_t, len)
  */
+#include <stdbool.h>
 #include <stdlib.h>
+#include "arch.h"
 #include "maps.h"
-#include "shm.h"
+#include "mlock-state.h"
 #include "sanitise.h"
+#include "shm.h"
 #include "trinity.h"
 #include "compat.h"
 
-static void sanitise_mlock(__unused__ struct syscallrecord *rec)
+static void sanitise_mlock(struct syscallrecord *rec)
 {
 	struct map *map;
+	unsigned long len;
+	bool over_end;
 
 	map = common_set_mmap_ptr_len(NULL);
 	if (map == NULL)
 		return;
+	if (map->size < page_size)
+		return;
+
+	rec->a1 = mlock_state_pick_start(map);
+	len = mlock_state_pick_length(map->size, &over_end);
+	if (!over_end) {
+		len = mlock_state_clamp_len(len);
+		mlock_state_record_locked(rec->a1, len);
+	}
+	rec->a2 = len;
 }
 
 struct syscallentry syscall_mlock = {
