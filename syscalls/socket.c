@@ -4,7 +4,14 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <unistd.h>
+#ifdef USE_BLUETOOTH
+#include <bluetooth/bluetooth.h>
+#endif
+#include <linux/can.h>
+#include <linux/if_ether.h>
+#include <linux/netlink.h>
 #include "debug.h"
 #include "net.h"
 #include "objects.h"
@@ -17,6 +24,122 @@
 #include "trinity.h"
 #include "uid.h"
 #include "compat.h"
+
+/* ETH_P_ALL in network byte order, usable in a static initializer. */
+#define ETH_P_ALL_NBO_LOCAL (((ETH_P_ALL & 0xff) << 8) | ((ETH_P_ALL >> 8) & 0xff))
+
+/*
+ * Curated table of well-known socket(2) triplets.  The kernel accepts
+ * each of these on a stock distro build, so biasing draws toward this
+ * table keeps the per-family valid_triplets[] paths exercised even when
+ * the random-family picker would otherwise land on a sparsely populated
+ * AF.  Each entry corresponds to a triplet already attested by one of
+ * the net/proto-*.c valid_triplets[] arrays.
+ */
+static const struct socket_triplet well_known_triplets[] = {
+	/* AF_INET */
+	{ .family = PF_INET,     .type = SOCK_STREAM,    .protocol = 0 },
+	{ .family = PF_INET,     .type = SOCK_DGRAM,     .protocol = 0 },
+	{ .family = PF_INET,     .type = SOCK_STREAM,    .protocol = IPPROTO_TCP },
+	{ .family = PF_INET,     .type = SOCK_DGRAM,     .protocol = IPPROTO_UDP },
+
+	/* AF_INET6 */
+	{ .family = PF_INET6,    .type = SOCK_STREAM,    .protocol = 0 },
+	{ .family = PF_INET6,    .type = SOCK_DGRAM,     .protocol = 0 },
+	{ .family = PF_INET6,    .type = SOCK_STREAM,    .protocol = IPPROTO_TCP },
+	{ .family = PF_INET6,    .type = SOCK_DGRAM,     .protocol = IPPROTO_UDP },
+
+	/* AF_UNIX */
+	{ .family = PF_UNIX,     .type = SOCK_STREAM,    .protocol = 0 },
+	{ .family = PF_UNIX,     .type = SOCK_DGRAM,     .protocol = 0 },
+	{ .family = PF_UNIX,     .type = SOCK_SEQPACKET, .protocol = 0 },
+
+	/* AF_NETLINK */
+	{ .family = PF_NETLINK,  .type = SOCK_RAW,       .protocol = NETLINK_ROUTE },
+	{ .family = PF_NETLINK,  .type = SOCK_DGRAM,     .protocol = NETLINK_USERSOCK },
+	{ .family = PF_NETLINK,  .type = SOCK_RAW,       .protocol = NETLINK_GENERIC },
+	{ .family = PF_NETLINK,  .type = SOCK_RAW,       .protocol = NETLINK_KOBJECT_UEVENT },
+
+	/* AF_PACKET */
+	{ .family = PF_PACKET,   .type = SOCK_RAW,       .protocol = ETH_P_ALL_NBO_LOCAL },
+	{ .family = PF_PACKET,   .type = SOCK_DGRAM,     .protocol = ETH_P_ALL_NBO_LOCAL },
+
+	/* AF_CAN */
+	{ .family = PF_CAN,      .type = SOCK_RAW,       .protocol = CAN_RAW },
+
+	/* AF_VSOCK */
+	{ .family = PF_VSOCK,    .type = SOCK_STREAM,    .protocol = 0 },
+	{ .family = PF_VSOCK,    .type = SOCK_DGRAM,     .protocol = 0 },
+
+	/* AF_ALG */
+	{ .family = PF_ALG,      .type = SOCK_SEQPACKET, .protocol = 0 },
+
+#ifdef USE_BLUETOOTH
+	/* AF_BLUETOOTH */
+	{ .family = PF_BLUETOOTH, .type = SOCK_STREAM,   .protocol = BTPROTO_L2CAP },
+	{ .family = PF_BLUETOOTH, .type = SOCK_STREAM,   .protocol = BTPROTO_RFCOMM },
+	{ .family = PF_BLUETOOTH, .type = SOCK_RAW,      .protocol = BTPROTO_HCI },
+#endif
+};
+
+/*
+ * Try to pick a triplet from the well-known table whose family is not
+ * currently disabled.  Returns true on success.  Bounded retry: if we
+ * cannot find an enabled entry quickly, the caller falls back to the
+ * generic random path.
+ */
+static bool pick_well_known_triplet(struct socket_triplet *st)
+{
+	unsigned int attempts;
+	const unsigned int n = ARRAY_SIZE(well_known_triplets);
+
+	if (n == 0)
+		return false;
+
+	for (attempts = 0; attempts < 16; attempts++) {
+		const struct socket_triplet *p =
+			&well_known_triplets[rnd_modulo_u32(n)];
+
+		if (p->family >= ARRAY_SIZE(no_domains))
+			continue;
+		if (no_domains[p->family])
+			continue;
+
+		st->family = p->family;
+		st->type = p->type;
+		st->protocol = p->protocol;
+		return true;
+	}
+
+	return false;
+}
+
+/*
+ * Pick an arbitrary enabled family and pair it with an obviously
+ * unmapped protocol number.  This deliberately steers a small slice of
+ * draws into the kernel's EPROTONOSUPPORT path so the family-level
+ * dispatch stays warm without starving the success path.
+ */
+static void pick_invalid_protocol(struct socket_triplet *st)
+{
+	int types[] = { SOCK_STREAM, SOCK_DGRAM, SOCK_RAW, SOCK_SEQPACKET };
+	unsigned int family;
+
+	family = rnd_modulo_u32(TRINITY_PF_MAX);
+	BUG_ON(family >= ARRAY_SIZE(no_domains));
+	if (no_domains[family]) {
+		family = find_next_enabled_domain(family);
+		if (family == -1u)
+			family = PF_INET;
+	}
+
+	st->family = family;
+	st->type = RAND_ARRAY(types);
+	/* High enough to be outside the standard protocol-number ranges
+	 * for IPPROTO / NETLINK / BTPROTO etc, but not so wild that we miss
+	 * the per-family dispatch. */
+	st->protocol = 0x100 + rnd_modulo_u32(0xff00);
+}
 
 void rand_proto_type(struct socket_triplet *st)
 {
@@ -71,16 +194,34 @@ do_unpriv:
 /* note: also called from sanitise_socketcall() */
 void gen_socket_args(struct socket_triplet *st)
 {
-	if (do_specific_domain == true)
+	unsigned int roll;
+	bool picked = false;
+
+	if (do_specific_domain == true) {
 		st->family = specific_domain;
+		if (sanitise_socket_triplet(st) < 0)
+			rand_proto_type(st);
+		goto flags;
+	}
 
-	else {
+	/*
+	 * Distribution across the available shapes:
+	 *   [ 0..59]  curated well-known triplet table (~60%)
+	 *   [60..89]  generic random-family + sanitise_socket_triplet (~30%)
+	 *   [90..99]  intentionally invalid protocol on a real family (~10%)
+	 *
+	 * Within the 30% generic bucket we still retain the legacy 1-in-100
+	 * "pure random crap" probe so wholly bogus type/protocol bytes keep
+	 * appearing in the corpus.
+	 */
+	roll = rnd_modulo_u32(100);
+
+	if (roll < 60) {
+		picked = pick_well_known_triplet(st);
+	}
+
+	if (!picked && roll < 90) {
 		st->family = rnd_modulo_u32(TRINITY_PF_MAX);
-
-		/*
-		 * If we get a disabled family, try to find
-		 * first next allowed.
-		 */
 		BUG_ON(st->family >= ARRAY_SIZE(no_domains));
 		if (no_domains[st->family]) {
 			st->family = find_next_enabled_domain(st->family);
@@ -89,24 +230,47 @@ void gen_socket_args(struct socket_triplet *st)
 				exit(EXIT_FAILURE);
 			}
 		}
+
+		if (ONE_IN(100)) {
+			rand_proto_type(st);
+		} else if (sanitise_socket_triplet(st) < 0) {
+			rand_proto_type(st);
+		}
+		picked = true;
 	}
 
-	/* sometimes, still gen rand crap */
-	if (ONE_IN(100)) {
-		rand_proto_type(st);
-		goto done;
+	if (!picked) {
+		pick_invalid_protocol(st);
 	}
 
-	/* otherwise.. sanitise based on the family. */
-	if (sanitise_socket_triplet(st) < 0)
-		rand_proto_type(st);	/* Couldn't find func, fall back to random. */
-
-
-done:
-	if (ONE_IN(4))
+flags:
+	/*
+	 * Explicit type-flag buckets, 25% each, so SOCK_CLOEXEC and
+	 * SOCK_NONBLOCK both reliably appear alone and together.  The
+	 * previous independent ONE_IN(4) calls produced ~6% "both" which
+	 * left the dual-flag accept4/socket path under-exercised.
+	 */
+	switch (rnd_modulo_u32(4)) {
+	case 0:
+		break;
+	case 1:
 		st->type |= SOCK_CLOEXEC;
-	if (ONE_IN(4))
+		break;
+	case 2:
 		st->type |= SOCK_NONBLOCK;
+		break;
+	case 3:
+		st->type |= SOCK_CLOEXEC | SOCK_NONBLOCK;
+		break;
+	}
+
+	/*
+	 * Small bucket of intentionally-invalid type flags so the kernel's
+	 * flag validation rejection path (the SOCK_TYPE_MASK / SOCK_CLOEXEC
+	 * | SOCK_NONBLOCK guard) stays exercised.
+	 */
+	if (ONE_IN(20))
+		st->type |= 1U << (24 + rnd_modulo_u32(8));
 }
 
 
