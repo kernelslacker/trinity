@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "arch.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 
 /*
@@ -57,7 +58,7 @@ static const unsigned long boundary_values[] = {
 
 unsigned long get_boundary_value(void)
 {
-	return boundary_values[rand() % NR_BOUNDARY_VALUES];
+	return boundary_values[rnd_modulo_u32(NR_BOUNDARY_VALUES)];
 }
 
 /*
@@ -80,7 +81,7 @@ long get_negative_edge_value(void)
 	};
 	const unsigned int n = sizeof(values) / sizeof(values[0]);
 
-	return values[rand() % n];
+	return values[rnd_modulo_u32(n)];
 }
 
 /*
@@ -109,12 +110,12 @@ unsigned long get_sizeof_boundary_value(void)
 	};
 	#define NR_OVERFLOW_BASES (sizeof(overflow_bases) / sizeof(overflow_bases[0]))
 
-	unsigned long base = overflow_bases[rand() % NR_OVERFLOW_BASES];
-	unsigned int sz = common_struct_sizes[rand() % NR_STRUCT_SIZES];
+	unsigned long base = overflow_bases[rnd_modulo_u32(NR_OVERFLOW_BASES)];
+	unsigned int sz = common_struct_sizes[rnd_modulo_u32(NR_STRUCT_SIZES)];
 	unsigned long val = base / sz;
 
 	/* Occasionally add +/-1 to probe the exact overflow boundary */
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0: break;
 	case 1: val++; break;
 	case 2: val--; break;
@@ -128,7 +129,7 @@ unsigned long get_sizeof_boundary_value(void)
 static unsigned int plus_minus_arith(unsigned int num)
 {
 	/* Arithmetic delta: +/- 1..ARITH_MAX. */
-	unsigned int delta = (rand() % ARITH_MAX) + 1;
+	unsigned int delta = rnd_modulo_u32(ARITH_MAX) + 1;
 
 	if (RAND_BOOL())
 		num += delta;
@@ -139,10 +140,10 @@ static unsigned int plus_minus_arith(unsigned int num)
 
 static unsigned char get_interesting_8bit_value(void)
 {
-	switch (rand() % 5) {
+	switch (rnd_modulo_u32(5)) {
 	case 0: return 1;					// one
 	case 1: return 0xff;				// max
-	case 2: return 1UL << (rand() & 7);	// 2^n (1 -> 128)
+	case 2: return 1UL << (rnd_u32() & 7);	// 2^n (1 -> 128)
 	case 3: return RAND_BYTE();			// 0 -> 0xff
 	default: return 0;					// zero
 	}
@@ -150,9 +151,9 @@ static unsigned char get_interesting_8bit_value(void)
 
 static unsigned short get_interesting_16bit_value(void)
 {
-	switch (rand() % 4) {
-	case 0: return 0x8000 >> (rand() & 7);		// 2^n (0x100 -> 0x8000)
-	case 1: return rand() & 0xffff;				// 0 -> 0xffff
+	switch (rnd_modulo_u32(4)) {
+	case 0: return 0x8000 >> (rnd_u32() & 7);		// 2^n (0x100 -> 0x8000)
+	case 1: return rnd_u32() & 0xffff;				// 0 -> 0xffff
 	case 2: return 0xff00 | RAND_BYTE();		// 0xff00 -> 0xffff
 	default: return 0xffff;						// max
 	}
@@ -160,16 +161,16 @@ static unsigned short get_interesting_16bit_value(void)
 
 unsigned int get_interesting_32bit_value(void)
 {
-	switch (rand() % 13) {
-	case 0: return 0x80000000 >> (rand() & 0x1f);	// 2^n (1 -> 0x80000000)
+	switch (rnd_modulo_u32(13)) {
+	case 0: return 0x80000000 >> (rnd_u32() & 0x1f);	// 2^n (1 -> 0x80000000)
 	case 1: return rand32();						// 0 -> 0xffffffff
-	case 2: return (unsigned int) 0xff << (4 * (rand() % 7));
+	case 2: return (unsigned int) 0xff << (4 * rnd_modulo_u32(7));
 	case 3: return 0xffff0000;
 	case 4: return 0xffffe000;
 	case 5: return 0xffffff00 | RAND_BYTE();
 	case 6: return 0xffffffff - page_size;
 	case 7: return page_size;
-	case 8: return page_size * ((rand() % (0xffffffff/page_size)) + 1);
+	case 8: return page_size * (rnd_modulo_u32(0xffffffff/page_size) + 1);
 	case 9: return page_size - 1;					// PAGE_SIZE - 1: last byte before boundary
 	case 10: return page_size + 1;					// PAGE_SIZE + 1: one past boundary
 	case 11: return page_size * 2 - 1;				// PAGE_SIZE*2 - 1: straddles two pages
@@ -183,7 +184,7 @@ static unsigned long per_arch_interesting_addr(unsigned long low)
 	int i = 0;
 
 #if defined(__x86_64__)
-	i = rand() % 4;
+	i = rnd_modulo_u32(4);
 
 	switch (i) {
 	case 0: return 0x00007fffffffffffUL;			// x86-64 canonical addr end.
@@ -192,7 +193,7 @@ static unsigned long per_arch_interesting_addr(unsigned long low)
 	case 3: return VDSO_ADDR | (low & 0x0fffff);
 	}
 #elif defined(__aarch64__)
-	i = rand() % 4;
+	i = rnd_modulo_u32(4);
 
 	switch (i) {
 	case 0: return MODULE_ADDR | (low & 0x03ffffff);		// module region
@@ -201,7 +202,7 @@ static unsigned long per_arch_interesting_addr(unsigned long low)
 	case 3: return 0xffffff8000000000UL | (low & 0x3fffffff);	// KASAN shadow region
 	}
 #elif defined(__powerpc64__)
-	i = rand() % 4;
+	i = rnd_modulo_u32(4);
 
 	switch (i) {
 	case 0: return MODULE_ADDR | (low & 0x0fffffff);		// module region
@@ -210,7 +211,7 @@ static unsigned long per_arch_interesting_addr(unsigned long low)
 	case 3: return 0xc00000003fff0000UL | (low & 0xffff);		// SLB/bolted region end
 	}
 #elif defined(__s390x__)
-	i = rand() % 3;
+	i = rnd_modulo_u32(3);
 
 	switch (i) {
 	case 0: return MODULE_ADDR | (low & 0x7fffffff);		// module region
@@ -227,7 +228,7 @@ unsigned long get_interesting_value(void)
 {
 	unsigned long low = 0;
 
-	switch (rand() % 3) {
+	switch (rnd_modulo_u32(3)) {
 	case 0:	low = get_interesting_8bit_value();
 		break;
 	case 1:	low = get_interesting_16bit_value();
@@ -236,11 +237,11 @@ unsigned long get_interesting_value(void)
 		break;
 	}
 
-	low = (rand() & 0xf) ? low : plus_minus_arith(low);	// 1 in 16 call plus_minus_arith
+	low = (rnd_u32() & 0xf) ? low : plus_minus_arith(low);	// 1 in 16 call plus_minus_arith
 #if WORD_BIT != 32
 
 	if (ONE_IN(4)) {
-		switch (rand() % 14) {
+		switch (rnd_modulo_u32(14)) {
 		case 0: return 0x0000000100000000UL | low;
 		case 1: return 0x7fffffff00000000UL | low;
 		case 2: return 0x8000000000000000UL | low;
