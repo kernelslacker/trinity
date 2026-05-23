@@ -171,7 +171,6 @@ static bool run_alg_chain(unsigned int *err_burst)
 	unsigned int keylen;
 	unsigned int sndlen;
 	unsigned int rcvlen;
-	bool forced_authencesn = false;
 	bool used_splice = false;
 	bool ok = false;
 
@@ -192,7 +191,6 @@ static bool run_alg_chain(unsigned int *err_burst)
 		strncpy((char *)sa.salg_name, AUTHENCESN_NAME,
 			sizeof(sa.salg_name) - 1);
 		type = SFC_TYPE_AEAD;
-		forced_authencesn = true;
 		__atomic_add_fetch(
 			&shm->stats.socket_family_chain_authencesn_attempts, 1,
 			__ATOMIC_RELAXED);
@@ -310,7 +308,6 @@ out:
 	if (rcvbuf)
 		free(rcvbuf);
 
-	(void) forced_authencesn;
 	return ok;
 }
 
