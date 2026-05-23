@@ -268,6 +268,16 @@ static const struct struct_field futex_waitv_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* stack_t (sigaltstack)                                                */
+/* ------------------------------------------------------------------ */
+
+static const struct struct_field stack_t_fields[] = {
+	FIELD(stack_t, ss_sp),
+	FIELD(stack_t, ss_flags),
+	FIELD(stack_t, ss_size),
+};
+
+/* ------------------------------------------------------------------ */
 /* union bpf_attr (bpf)                                                */
 /* ------------------------------------------------------------------ */
 
@@ -407,6 +417,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= futex_waitv_fields,
 		.num_fields	= ARRAY_SIZE(futex_waitv_fields),
 	},
+	{
+		.name		= "stack_t",
+		.struct_size	= sizeof(stack_t),
+		.fields		= stack_t_fields,
+		.num_fields	= ARRAY_SIZE(stack_t_fields),
+	},
 #ifdef USE_BPF
 	{
 		.name		= "bpf_attr",
@@ -485,9 +501,11 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "capget",		1, &struct_catalog[13] },
 	/* futex_waitv(struct futex_waitv *waiters, unsigned int nr, unsigned int flags, struct timespec *timo, clockid_t clockid) */
 	{ "futex_waitv",	1, &struct_catalog[15] },
+	/* sigaltstack(const stack_t *ss, stack_t *old_ss) */
+	{ "sigaltstack",	1, &struct_catalog[16] },
 #ifdef USE_BPF
 	/* bpf(int, union bpf_attr *, unsigned int) */
-	{ "bpf",		2, &struct_catalog[16] },
+	{ "bpf",		2, &struct_catalog[17] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
