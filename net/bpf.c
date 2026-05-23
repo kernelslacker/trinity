@@ -850,7 +850,14 @@ static int gen_seccomp_bpf_code(struct sock_filter *curr, int state)
 	default:
 	case STATE_GEN_RANDOM_CRAP:
 		used = 1;
-		curr->code = (uint16_t) rnd_u32();
+		/* Mask to the cBPF instruction-class bits (BPF_CLASS = 0x07).
+		 * Picking an arbitrary uint16 here mostly produces opcodes from
+		 * the eBPF-only space (e.g. BPF_CALL=0x85, BPF_EXIT=0x95), which
+		 * the kernel's bpf_check_classic() rejects up-front before the
+		 * filter ever gets exercised. The ONE_IN(10000) arm below can
+		 * still OR in more random bits when we want to push beyond the
+		 * class set. */
+		curr->code = (uint16_t) rnd_u32() & 0x07;
 		curr->jt = (uint8_t) rnd_u32();
 		curr->jf = (uint8_t) rnd_u32();
 		curr->k = rand32();
