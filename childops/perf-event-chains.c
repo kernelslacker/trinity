@@ -98,7 +98,11 @@ static void probe_sysfs_pmu(const char *devpath, const char *devname)
 
 	buf[n] = '\0';
 	type = strtoul(buf, NULL, 10);
-	if (type == 0 || type > 0xffffffff)
+	/*
+	 * PERF_TYPE_HARDWARE is 0, so don't reject it here; the downstream
+	 * cast still needs the overflow guard.
+	 */
+	if (type > 0xffffffff)
 		return;
 
 	add_pmu((__u32)type, devname);
