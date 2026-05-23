@@ -190,14 +190,33 @@ static void cleanup_futex_wake(struct racer_shared *s)
 static bool setup_dup2_race(struct racer_shared *s)
 {
 	int pipefd[2];
-	int target;
+	int target = -1;
+	int try;
 
 	if (pipe(pipefd) < 0)
 		return false;
 
-	/* Pick a target fd number well above the standard trio. */
-	target = 100 + rnd_modulo_u32(100);
-	close(target);
+	/*
+	 * Pick a target fd number well above the standard trio, but
+	 * verify it isn't already in use.  Trinity holds dozens of fds
+	 * above 10 by the time childops dispatch (kcov, fail_nth, fd-event
+	 * ring, log, stats ring, shm, pool fds); closing one of them
+	 * blindly would silently degrade the rest of this child's life.
+	 */
+	for (try = 0; try < 8; try++) {
+		int candidate = 100 + rnd_modulo_u32(100);
+
+		if (fcntl(candidate, F_GETFD) == -1 && errno == EBADF) {
+			target = candidate;
+			break;
+		}
+	}
+	if (target == -1) {
+		close(pipefd[0]);
+		close(pipefd[1]);
+		return false;
+	}
+
 	s->fd = pipefd[0];
 	s->fd2 = target;
 	close(pipefd[1]);
