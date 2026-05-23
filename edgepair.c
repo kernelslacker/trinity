@@ -101,6 +101,14 @@ bool edgepair_is_cold(unsigned int prev_nr, unsigned int curr_nr)
 			total = __atomic_load_n(&edgepair_published->total_pair_calls,
 						__ATOMIC_ACQUIRE);
 			last = e->last_new_at;
+			/* A publisher racing us can update this slot's
+			 * last_new_at to the NEXT total *after* our acquire-
+			 * load above, so last > total is possible and means
+			 * the pair just produced new edges -- not cold.
+			 * Without this guard, total - last underflows to a
+			 * huge value and falsely trips the cold predicate. */
+			if (last >= total)
+				return false;
 			return (total - last) > EDGEPAIR_COLD_THRESHOLD;
 		}
 		idx = (idx + 1) & EDGEPAIR_TABLE_MASK;
