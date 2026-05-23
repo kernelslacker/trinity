@@ -127,6 +127,7 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	req->param = param;
 
 	rec->a1 = (unsigned long) req;
+	avoid_shared_buffer_inout(&rec->a1, sizeof(struct mnt_id_req));
 	rec->a3 = 4096;	/* reasonable output buffer size */
 	rec->a4 = ONE_IN(4) ? STATMOUNT_BY_FD : 0;
 
