@@ -84,7 +84,7 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 		if (sigev != NULL) {
 			/* do not let created timer send SIGINT signal */
 			do {
-				signo = random() % _NSIG;
+				signo = rnd_modulo_u32(_NSIG);
 			} while (signo  == SIGINT);
 
 			sigev->sigev_signo = signo;
