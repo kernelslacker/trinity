@@ -576,7 +576,7 @@ static size_t gen_rta_link_payload(unsigned char *p, size_t avail,
 
 				if (data_avail > sizeof(sub))
 					data_avail = sizeof(sub);
-				data_len = RAND_RANGE(4, data_avail);
+				data_len = RAND_RANGE((size_t)4, data_avail);
 				generate_rand_bytes(sub, data_len);
 
 				if (start_nlattr(p, nested_len, avail,
@@ -608,7 +608,7 @@ static size_t gen_rta_link_payload(unsigned char *p, size_t avail,
 
 			if (inner_avail > sizeof(inner))
 				inner_avail = sizeof(inner);
-			inner_len = RAND_RANGE(4, inner_avail);
+			inner_len = RAND_RANGE((size_t)4, inner_avail);
 			generate_rand_bytes(inner, inner_len);
 
 			if (start_nlattr(p, nested_len, avail,
@@ -799,6 +799,33 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 }
 
 /*
+ * Returns non-zero iff gen_rta_payload() for (rtnl_group, nla_type)
+ * emits a nested attribute chain (one or more NLA-headered children)
+ * rather than a flat scalar / struct / string payload.  Setting
+ * NLA_F_NESTED on a flat payload flips the kernel into the
+ * nla_validate_nested arm, which then rejects on the first "nested
+ * header" that doesn't fit — so the flag has to track the actual
+ * payload shape.
+ *
+ * Keep this in sync with the structured-payload generators above:
+ *   group 0 (link):  IFLA_LINKINFO, IFLA_AF_SPEC
+ *   group 2 (route): RTA_METRICS, RTA_MULTIPATH
+ * The address (group 1) and neigh (group 3) generators only emit flat
+ * payloads today; add their nested entries here if that changes.
+ */
+static int rta_payload_is_nested(int rtnl_group, unsigned short nla_type)
+{
+	switch (rtnl_group) {
+	case 0:
+		return nla_type == IFLA_LINKINFO || nla_type == IFLA_AF_SPEC;
+	case 2:
+		return nla_type == RTA_METRICS || nla_type == RTA_MULTIPATH;
+	default:
+		return 0;
+	}
+}
+
+/*
  * Append a single nlattr to buf at offset. Returns new offset.
  * nla_type_hint is a protocol-appropriate attr type; 0 means random.
  * family is the address family from the body struct (for address sizing).
@@ -843,9 +870,22 @@ static size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen,
 	nla.nla_len = NLA_HDRLEN + payload_len;
 	nla.nla_type = nla_type;
 
-	/* Sometimes set nested/net-byteorder flags */
-	if (ONE_IN(4))
-		nla.nla_type |= NLA_F_NESTED;
+	/*
+	 * Set NLA_F_NESTED only when the payload actually is a nested
+	 * attribute chain.  For structured-but-flat payloads (RTA_DST,
+	 * RTA_OIF, IFLA_MTU, …) the kernel routes on this flag into
+	 * nla_validate_nested and rejects the attr on the first child
+	 * header that doesn't fit, which was dropping a noticeable
+	 * fraction of structured attrs before reaching the family's
+	 * real handler.  Random-byte payloads (structured_len == 0) keep
+	 * the unconditional 1-in-4 OR — bad-attr is intentional novelty
+	 * on that path.
+	 */
+	if (ONE_IN(4)) {
+		if (structured_len == 0 ||
+		    rta_payload_is_nested(rtnl_group, nla_type))
+			nla.nla_type |= NLA_F_NESTED;
+	}
 	if (ONE_IN(8))
 		nla.nla_type |= NLA_F_NET_BYTEORDER;
 
