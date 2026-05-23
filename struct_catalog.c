@@ -16,6 +16,8 @@
 #include <sys/resource.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
 #include <time.h>
 #include <linux/capability.h>
 #include <linux/futex.h>
@@ -290,6 +292,15 @@ static const struct struct_field mq_attr_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct msqid_ds (msgctl IPC_SET path)                                */
+/* ------------------------------------------------------------------ */
+
+static const struct struct_field msqid_ds_fields[] = {
+	FIELD(struct msqid_ds, msg_perm.mode),
+	FIELD(struct msqid_ds, msg_qbytes),
+};
+
+/* ------------------------------------------------------------------ */
 /* union bpf_attr (bpf)                                                */
 /* ------------------------------------------------------------------ */
 
@@ -441,6 +452,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= mq_attr_fields,
 		.num_fields	= ARRAY_SIZE(mq_attr_fields),
 	},
+	{
+		.name		= "msqid_ds",
+		.struct_size	= sizeof(struct msqid_ds),
+		.fields		= msqid_ds_fields,
+		.num_fields	= ARRAY_SIZE(msqid_ds_fields),
+	},
 #ifdef USE_BPF
 	{
 		.name		= "bpf_attr",
@@ -526,9 +543,11 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	/* mq_getsetattr(mqd_t, const struct mq_attr *, struct mq_attr *) */
 	{ "mq_getsetattr",	2, &struct_catalog[17] },
 	{ "mq_getsetattr",	3, &struct_catalog[17] },
+	/* msgctl(int msqid, int cmd, struct msqid_ds *buf) — IPC_SET path */
+	{ "msgctl",		3, &struct_catalog[18] },
 #ifdef USE_BPF
 	/* bpf(int, union bpf_attr *, unsigned int) */
-	{ "bpf",		2, &struct_catalog[18] },
+	{ "bpf",		2, &struct_catalog[19] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
