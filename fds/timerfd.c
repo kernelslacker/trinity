@@ -124,18 +124,15 @@ static int __init_timerfd_fds(int clockid)
 
 static int init_timerfd_fds(void)
 {
-	int ret;
-	ret = __init_timerfd_fds(CLOCK_REALTIME);
-	if (ret != false)
-		ret = __init_timerfd_fds(CLOCK_MONOTONIC);
-	if (ret != false)
-		ret = __init_timerfd_fds(CLOCK_BOOTTIME);
-	if (ret != false)
-		ret = __init_timerfd_fds(CLOCK_REALTIME_ALARM);
-	if (ret != false)
-		ret = __init_timerfd_fds(CLOCK_BOOTTIME_ALARM);
+	int ok = 0;
 
-	return ret;
+	ok |= __init_timerfd_fds(CLOCK_REALTIME);
+	ok |= __init_timerfd_fds(CLOCK_MONOTONIC);
+	ok |= __init_timerfd_fds(CLOCK_BOOTTIME);
+	ok |= __init_timerfd_fds(CLOCK_REALTIME_ALARM);
+	ok |= __init_timerfd_fds(CLOCK_BOOTTIME_ALARM);
+
+	return ok;
 }
 
 static int get_rand_timerfd_fd(void)
