@@ -68,7 +68,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -94,6 +93,7 @@
 #include <linux/rtnetlink.h>
 #include <linux/veth.h>
 
+#include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
 
@@ -114,113 +114,6 @@ static bool ipv6_pmtu_race_probed;
 #define V6PMTU_PARENT_WALL_NS		(250ULL * 1000ULL * 1000ULL)
 #define V6PMTU_RTNL_BUF			512U
 
-static __u32 g_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
-
-static int rtnl_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = 1;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	return fd;
-}
-
-/*
- * Send a fully formed nlmsghdr and consume one ack.  Returns 0 on
- * positive ack, the negated kernel errno on rejection, or -EIO on
- * local sendmsg/recv failure.  Best-effort across the childop -- a
- * negative return from any single call just leaves the corresponding
- * bump unincremented; the rest of the iteration still runs.
- */
-static int rtnl_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[256];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0)
-		return -EIO;
-	if ((size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	return 0;
-}
-
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static size_t nla_put_u32(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u32 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t nla_put_str(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, const char *s)
-{
-	return nla_put(buf, off, cap, type, s, strlen(s) + 1);
-}
-
 /*
  * RTM_NEWLINK type=veth name=<name> peer=<peer>.  Mirrors the shape
  * used by bridge-fdb-stp.c / bridge-vlan-churn.c: nested IFLA_LINKINFO
@@ -228,12 +121,11 @@ static size_t nla_put_str(unsigned char *buf, size_t off, size_t cap,
  * whose payload starts with an ifinfomsg followed by IFLA_IFNAME for
  * the peer.
  */
-static int build_veth_create(int fd, const char *name, const char *peer)
+static int build_veth_create(struct nl_ctx *ctx, const char *name, const char *peer)
 {
 	unsigned char buf[V6PMTU_RTNL_BUF];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi, *peer_ifi;
-	struct nlattr *linkinfo, *infodata, *peer_attr;
 	size_t off, li_off, id_off, peer_off;
 
 	memset(buf, 0, sizeof(buf));
@@ -241,7 +133,7 @@ static int build_veth_create(int fd, const char *name, const char *peer)
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -251,17 +143,17 @@ static int build_veth_create(int fd, const char *name, const char *peer)
 	if (!off) return -EIO;
 
 	li_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
 	if (!off) return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "veth");
 	if (!off) return -EIO;
 
 	id_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_INFO_DATA, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
 	if (!off) return -EIO;
 
 	peer_off = off;
-	off = nla_put(buf, off, sizeof(buf), VETH_INFO_PEER, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), VETH_INFO_PEER);
 	if (!off) return -EIO;
 
 	if (off + NLMSG_ALIGN(sizeof(*peer_ifi)) > sizeof(buf))
@@ -274,19 +166,16 @@ static int build_veth_create(int fd, const char *name, const char *peer)
 	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, peer);
 	if (!off) return -EIO;
 
-	peer_attr = (struct nlattr *)(buf + peer_off);
-	peer_attr->nla_len = (unsigned short)(off - peer_off);
-	infodata = (struct nlattr *)(buf + id_off);
-	infodata->nla_len = (unsigned short)(off - id_off);
-	linkinfo = (struct nlattr *)(buf + li_off);
-	linkinfo->nla_len = (unsigned short)(off - li_off);
+	nla_nest_end(buf, peer_off, off);
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_addaddr_v6(int fd, int ifindex, const struct in6_addr *addr,
-			    __u8 prefixlen)
+static int build_addaddr_v6(struct nl_ctx *ctx, int ifindex,
+			    const struct in6_addr *addr, __u8 prefixlen)
 {
 	unsigned char buf[V6PMTU_RTNL_BUF];
 	struct nlmsghdr *nlh;
@@ -298,7 +187,7 @@ static int build_addaddr_v6(int fd, int ifindex, const struct in6_addr *addr,
 	nlh->nlmsg_type  = RTM_NEWADDR;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifa = (struct ifaddrmsg *)NLMSG_DATA(nlh);
 	ifa->ifa_family    = AF_INET6;
@@ -314,10 +203,10 @@ static int build_addaddr_v6(int fd, int ifindex, const struct in6_addr *addr,
 	if (!off) return -EIO;
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_setlink_up(int fd, int ifindex)
+static int build_setlink_up(struct nl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
@@ -328,7 +217,7 @@ static int build_setlink_up(int fd, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -338,7 +227,7 @@ static int build_setlink_up(int fd, int ifindex)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -347,8 +236,8 @@ static int build_setlink_up(int fd, int ifindex)
  * lookup; type RTN_UNICAST is required so rt6_update_pmtu treats it as
  * a normal forwarding entry.
  */
-static int build_newroute_v6(int fd, const struct in6_addr *dst, __u8 plen,
-			     const struct in6_addr *gw, int ifindex)
+static int build_newroute_v6(struct nl_ctx *ctx, const struct in6_addr *dst,
+			     __u8 plen, const struct in6_addr *gw, int ifindex)
 {
 	unsigned char buf[V6PMTU_RTNL_BUF];
 	struct nlmsghdr *nlh;
@@ -360,7 +249,7 @@ static int build_newroute_v6(int fd, const struct in6_addr *dst, __u8 plen,
 	nlh->nlmsg_type  = RTM_NEWROUTE;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	rtm = (struct rtmsg *)NLMSG_DATA(nlh);
 	rtm->rtm_family   = AF_INET6;
@@ -379,10 +268,10 @@ static int build_newroute_v6(int fd, const struct in6_addr *dst, __u8 plen,
 	if (!off) return -EIO;
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_dellink_byname(int fd, const char *name)
+static int build_dellink_byname(struct nl_ctx *ctx, const char *name)
 {
 	unsigned char buf[V6PMTU_RTNL_BUF];
 	struct nlmsghdr *nlh;
@@ -393,7 +282,7 @@ static int build_dellink_byname(int fd, const char *name)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_DELLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -403,16 +292,16 @@ static int build_dellink_byname(int fd, const char *name)
 	if (!off) return -EIO;
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static void bring_lo_up(int fd)
+static void bring_lo_up(struct nl_ctx *ctx)
 {
 	unsigned int lo_idx = if_nametoindex("lo");
 
 	if (lo_idx == 0)
 		return;
-	(void)build_setlink_up(fd, (int)lo_idx);
+	(void)build_setlink_up(ctx, (int)lo_idx);
 }
 
 /*
@@ -421,7 +310,7 @@ static void bring_lo_up(int fd)
  * effort: any single rtnl rejection just skips that pair's downstream
  * setup; the worker forks still run against whatever subset succeeded.
  */
-static void setup_pairs(int fd, char names[V6PMTU_NUM_PAIRS][8])
+static void setup_pairs(struct nl_ctx *ctx, char names[V6PMTU_NUM_PAIRS][8])
 {
 	unsigned int n;
 
@@ -432,7 +321,7 @@ static void setup_pairs(int fd, char names[V6PMTU_NUM_PAIRS][8])
 
 		(void)snprintf(names[n], sizeof(names[n]), "tr6r%u", n);
 		(void)snprintf(peer, sizeof(peer), "tr6p%u", n);
-		if (build_veth_create(fd, names[n], peer) != 0)
+		if (build_veth_create(ctx, names[n], peer) != 0)
 			continue;
 
 		rifx = if_nametoindex(names[n]);
@@ -443,8 +332,8 @@ static void setup_pairs(int fd, char names[V6PMTU_NUM_PAIRS][8])
 		addr.s6_addr[0] = 0xfc;
 		addr.s6_addr[1] = 0x01;
 		addr.s6_addr[15] = (uint8_t)n;
-		(void)build_addaddr_v6(fd, (int)rifx, &addr, 64);
-		(void)build_setlink_up(fd, (int)rifx);
+		(void)build_addaddr_v6(ctx, (int)rifx, &addr, 64);
+		(void)build_setlink_up(ctx, (int)rifx);
 
 		memset(&dst, 0, sizeof(dst));
 		dst.s6_addr[0] = 0xfc;
@@ -455,7 +344,7 @@ static void setup_pairs(int fd, char names[V6PMTU_NUM_PAIRS][8])
 		gw.s6_addr[0] = 0xfc;
 		gw.s6_addr[1] = 0x01;
 		gw.s6_addr[15] = (uint8_t)(n + 1);
-		(void)build_newroute_v6(fd, &dst, 48, &gw, (int)rifx);
+		(void)build_newroute_v6(ctx, &dst, 48, &gw, (int)rifx);
 	}
 }
 
@@ -532,12 +421,15 @@ static void worker_ptb(void)
  */
 static void worker_dellink(char names[V6PMTU_NUM_PAIRS][8])
 {
-	int fd;
+	struct nl_ctx ctx = { .fd = -1 };
+	struct nl_open_opts opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
 	struct timespec start, now;
 	unsigned int i = 0;
 
-	fd = rtnl_open();
-	if (fd < 0)
+	if (nl_open(&ctx, &opts) < 0)
 		_exit(0);
 
 	if (clock_gettime(CLOCK_MONOTONIC, &start) != 0)
@@ -548,11 +440,11 @@ static void worker_dellink(char names[V6PMTU_NUM_PAIRS][8])
 		char peer[8];
 
 		(void)snprintf(peer, sizeof(peer), "tr6p%u", n);
-		if (build_dellink_byname(fd, names[n]) == 0)
+		if (build_dellink_byname(&ctx, names[n]) == 0)
 			__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_dellink_ok,
 					   1, __ATOMIC_RELAXED);
 
-		(void)build_veth_create(fd, names[n], peer);
+		(void)build_veth_create(&ctx, names[n], peer);
 
 		if ((i & 0x07U) == 0U &&
 		    clock_gettime(CLOCK_MONOTONIC, &now) == 0) {
@@ -565,7 +457,7 @@ static void worker_dellink(char names[V6PMTU_NUM_PAIRS][8])
 		}
 	}
 
-	(void)close(fd);
+	nl_close(&ctx);
 	_exit(0);
 }
 
@@ -600,7 +492,12 @@ static void reap_with_deadline(pid_t pid, struct timespec *deadline)
 
 static void iter_one(void)
 {
-	int nsfd, rtnl;
+	int nsfd;
+	struct nl_ctx ctx = { .fd = -1 };
+	struct nl_open_opts opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
 	char names[V6PMTU_NUM_PAIRS][8];
 	pid_t a, b;
 	struct timespec deadline;
@@ -619,16 +516,15 @@ static void iter_one(void)
 		return;
 	}
 
-	rtnl = rtnl_open();
-	if (rtnl < 0) {
+	if (nl_open(&ctx, &opts) < 0) {
 		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out_setns;
 	}
 
-	bring_lo_up(rtnl);
-	setup_pairs(rtnl, names);
-	(void)close(rtnl);
+	bring_lo_up(&ctx);
+	setup_pairs(&ctx, names);
+	nl_close(&ctx);
 
 	a = fork();
 	if (a < 0) {
