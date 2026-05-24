@@ -50,7 +50,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -62,6 +61,7 @@
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -88,122 +88,57 @@ static bool ns_unsupported_ipv6_ndisc_proxy;
 static bool ns_setup_done;
 static bool ns_setup_failed_latched;
 static int g_vp1_ifindex;
-static __u32 g_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
-
-static int rtnl_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return -1;
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	return fd;
-}
-
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static int rtnl_send_recv(int fd, void *msg, size_t len)
-{
-	unsigned char rbuf[512];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	if (send(fd, msg, len, 0) < 0)
-		return -EIO;
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < (ssize_t)NLMSG_HDRLEN)
-		return -EIO;
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR)
-		return ((struct nlmsgerr *)NLMSG_DATA(nlh))->error;
-	return 0;
-}
 
 /*
  * RTM_NEWLINK kind=veth with VETH_INFO_PEER carrying the peer name.
  * Mirrors bridge-fdb-stp's veth builder — minimal nesting, distinct
  * peer name so the two ends are addressable.
  */
-static int veth_create(int fd, const char *a, const char *b)
+static int veth_create(struct nl_ctx *ctx, const char *a, const char *b)
 {
 	unsigned char buf[512];
 	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
 	struct ifinfomsg *ifi;
 	struct ifinfomsg *peer_ifi;
-	struct nlattr *li, *id, *peer;
 	size_t off, li_off, id_off, peer_off;
 
 	memset(buf, 0, sizeof(buf));
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 
-	off = nla_put(buf, off, sizeof(buf), IFLA_IFNAME, a, strlen(a) + 1);
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, a);
 	if (!off) return -EIO;
 	li_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
 	if (!off) return -EIO;
 	off = nla_put(buf, off, sizeof(buf), IFLA_INFO_KIND, "veth", 5);
 	if (!off) return -EIO;
 	id_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_INFO_DATA, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
 	if (!off) return -EIO;
 	peer_off = off;
-	off = nla_put(buf, off, sizeof(buf), VETH_INFO_PEER, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), VETH_INFO_PEER);
 	if (!off) return -EIO;
 	if (off + NLMSG_ALIGN(sizeof(*peer_ifi)) > sizeof(buf)) return -EIO;
 	peer_ifi = (struct ifinfomsg *)(buf + off);
 	memset(peer_ifi, 0, sizeof(*peer_ifi));
 	off += NLMSG_ALIGN(sizeof(*peer_ifi));
-	off = nla_put(buf, off, sizeof(buf), IFLA_IFNAME, b, strlen(b) + 1);
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, b);
 	if (!off) return -EIO;
 
-	peer = (struct nlattr *)(buf + peer_off);
-	peer->nla_len = (unsigned short)(off - peer_off);
-	id = (struct nlattr *)(buf + id_off);
-	id->nla_len = (unsigned short)(off - id_off);
-	li = (struct nlattr *)(buf + li_off);
-	li->nla_len = (unsigned short)(off - li_off);
+	nla_nest_end(buf, peer_off, off);
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int link_up(int fd, int idx)
+static int link_up(struct nl_ctx *ctx, int idx)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
@@ -213,7 +148,7 @@ static int link_up(int fd, int idx)
 	memset(buf, 0, sizeof(buf));
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	ifi->ifi_index  = idx;
@@ -221,10 +156,10 @@ static int link_up(int fd, int idx)
 	ifi->ifi_change = IFF_UP;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int addr6_add(int fd, int idx, const struct in6_addr *a)
+static int addr6_add(struct nl_ctx *ctx, int idx, const struct in6_addr *a)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
@@ -234,7 +169,7 @@ static int addr6_add(int fd, int idx, const struct in6_addr *a)
 	memset(buf, 0, sizeof(buf));
 	nlh->nlmsg_type  = RTM_NEWADDR;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 	ifa = (struct ifaddrmsg *)NLMSG_DATA(nlh);
 	ifa->ifa_family    = AF_INET6;
 	ifa->ifa_prefixlen = 64;
@@ -246,14 +181,15 @@ static int addr6_add(int fd, int idx, const struct in6_addr *a)
 	off = nla_put(buf, off, sizeof(buf), IFA_ADDRESS, a, sizeof(*a));
 	if (!off) return -EIO;
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
  * RTM_NEWNEIGH NTF_PROXY for `target` on dev idx — installs the
  * pneigh entry that ip6_forward_proxy_check matches against.
  */
-static int proxy_neigh_add(int fd, int idx, const struct in6_addr *target)
+static int proxy_neigh_add(struct nl_ctx *ctx, int idx,
+			   const struct in6_addr *target)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
@@ -263,7 +199,7 @@ static int proxy_neigh_add(int fd, int idx, const struct in6_addr *target)
 	memset(buf, 0, sizeof(buf));
 	nlh->nlmsg_type  = RTM_NEWNEIGH;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 	ndm = (struct ndmsg *)NLMSG_DATA(nlh);
 	ndm->ndm_family  = AF_INET6;
 	ndm->ndm_ifindex = idx;
@@ -273,7 +209,7 @@ static int proxy_neigh_add(int fd, int idx, const struct in6_addr *target)
 	off = nla_put(buf, off, sizeof(buf), NDA_DST, target, sizeof(*target));
 	if (!off) return -EIO;
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 static bool sysfs_write_one(const char *path, const char *val)
@@ -298,20 +234,24 @@ static bool sysfs_write_one(const char *path, const char *val)
 static bool do_setup(void)
 {
 	struct in6_addr a1, a2, target;
-	int rtnl, lo_idx, vp0_idx, vp1_idx;
+	struct nl_ctx ctx = { .fd = -1 };
+	struct nl_open_opts opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
+	int lo_idx, vp0_idx, vp1_idx;
 	bool ok = false;
 
 	if (unshare(CLONE_NEWNET) < 0)
 		return false;
-	rtnl = rtnl_open();
-	if (rtnl < 0)
+	if (nl_open(&ctx, &opts) < 0)
 		return false;
 
 	lo_idx = (int)if_nametoindex("lo");
 	if (lo_idx > 0)
-		(void)link_up(rtnl, lo_idx);
+		(void)link_up(&ctx, lo_idx);
 
-	if (veth_create(rtnl, "vp0", "vp1") != 0)
+	if (veth_create(&ctx, "vp0", "vp1") != 0)
 		goto out;
 	vp0_idx = (int)if_nametoindex("vp0");
 	vp1_idx = (int)if_nametoindex("vp1");
@@ -325,10 +265,10 @@ static bool do_setup(void)
 	memset(&target, 0, sizeof(target));
 	target.s6_addr[0] = 0xfc; target.s6_addr[15] = 0x03;
 
-	(void)addr6_add(rtnl, vp0_idx, &a1);
-	(void)addr6_add(rtnl, vp1_idx, &a2);
-	(void)link_up(rtnl, vp0_idx);
-	(void)link_up(rtnl, vp1_idx);
+	(void)addr6_add(&ctx, vp0_idx, &a1);
+	(void)addr6_add(&ctx, vp1_idx, &a2);
+	(void)link_up(&ctx, vp0_idx);
+	(void)link_up(&ctx, vp1_idx);
 
 	/* Both arms of the proxy_ndp gate: per-dev knob (vp0) plus the
 	 * /all/ knob — kernels differ on which one ip6_forward consults
@@ -338,12 +278,12 @@ static bool do_setup(void)
 		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_proxy_enable_ok,
 				   1, __ATOMIC_RELAXED);
 
-	(void)proxy_neigh_add(rtnl, vp0_idx, &target);
+	(void)proxy_neigh_add(&ctx, vp0_idx, &target);
 
 	g_vp1_ifindex = vp1_idx;
 	ok = true;
 out:
-	close(rtnl);
+	nl_close(&ctx);
 	return ok;
 }
 
@@ -424,16 +364,6 @@ static bool send_one_ns(int raw, int ifindex, unsigned int rot)
 	n = sendto(raw, frame, icmp_off + sizeof(*ns), MSG_DONTWAIT,
 		   (struct sockaddr *)&sll, sizeof(sll));
 	return n > 0;
-}
-
-static long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (now.tv_sec - t0->tv_sec) * 1000000000L +
-	       (now.tv_nsec - t0->tv_nsec);
 }
 
 bool ipv6_ndisc_proxy(struct childdata *child)
