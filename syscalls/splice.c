@@ -16,6 +16,58 @@ static unsigned long splice_flags[] = {
 	SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT,
 };
 
+/*
+ * splice_flags[] is still wired up to ARG_LIST so the argument
+ * generator has a default to publish; sanitise_splice overrides
+ * rec->a6 below with an explicit bucket draw.  ARG_LIST's single-bit
+ * pick never reaches the zero-flags arm, the 11 multi-bit subsets
+ * of {MOVE,NONBLOCK,MORE,GIFT}, or the invalid-high-bit reject path.
+ * splice_check_flags() in fs/splice.c rejects any bit >= 0x10 with
+ * -EINVAL; all 16 subsets of the valid bits are legal.
+ */
+static unsigned long sanitise_splice_flags(void)
+{
+	unsigned int pick = rnd_modulo_u32(20);
+
+	switch (pick) {
+	case 0 ... 3:
+		/* (a) 20%: zero-flag arm. */
+		return 0;
+	case 4 ... 6:
+		/* (b) 15%: NONBLOCK alone. */
+		return SPLICE_F_NONBLOCK;
+	case 7 ... 8:
+		/* (c) 10%: MORE alone. */
+		return SPLICE_F_MORE;
+	case 9 ... 11:
+		/* (d) 15%: NONBLOCK | MORE canonical pair. */
+		return SPLICE_F_NONBLOCK | SPLICE_F_MORE;
+	case 12:
+		/* (e) 5%: MOVE alone. */
+		return SPLICE_F_MOVE;
+	case 13:
+		/* (f) 5%: GIFT alone. */
+		return SPLICE_F_GIFT;
+	case 14 ... 15:
+		/* (g) 10%: random subset of the four valid bits. */
+		return set_rand_bitmask(ARRAY_SIZE(splice_flags), splice_flags);
+	case 16:
+		/* (h) 5%: all four bits set. */
+		return SPLICE_F_MOVE | SPLICE_F_NONBLOCK |
+		       SPLICE_F_MORE | SPLICE_F_GIFT;
+	case 17 ... 18:
+		/* (i) 10%: preserve ARG_LIST-style single bit pick. */
+		return splice_flags[rnd_modulo_u32(ARRAY_SIZE(splice_flags))];
+	default: {
+		/* (j) 5%: invalid high bit -- kernel reject path. */
+		static const unsigned long invalid[] = {
+			0x10UL, 0x100UL, 0x80000000UL,
+		};
+		return invalid[rnd_modulo_u32(ARRAY_SIZE(invalid))];
+	}
+	}
+}
+
 static void sanitise_splice(struct syscallrecord *rec)
 {
 	loff_t *off_in = (loff_t *) get_writable_address(sizeof(loff_t));
@@ -43,6 +95,8 @@ static void sanitise_splice(struct syscallrecord *rec)
 		if (fd >= 0)
 			rec->a1 = fd;
 	}
+
+	rec->a6 = sanitise_splice_flags();
 }
 
 static void post_splice(struct syscallrecord *rec)
