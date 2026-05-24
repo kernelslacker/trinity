@@ -114,7 +114,6 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
@@ -123,6 +122,7 @@
 #include <linux/sockios.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -351,7 +351,6 @@ static bool ns_unsupported_xfrm6;
 
 static bool ns_unshared;
 static bool lo_brought_up;
-static __u32 g_seq;
 static __u32 g_iter;
 
 /* RFC 3849 documentation prefix: 2001:db8::dead.  Used as both the
@@ -376,11 +375,6 @@ static const __u8 nat_t_v6_addr[16] = {
 
 /* Bounded retry on transient SA-install failure (EAGAIN/EBUSY/ENOMEM). */
 #define NAT_T_XFRM6_RETRY_CAP		8U
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
 
 static void warn_once_unsupported(const char *reason, int err)
 {
@@ -413,93 +407,6 @@ static void bring_lo_up(void)
 		(void)ioctl(s, SIOCSIFFLAGS, &ifr);
 	}
 	close(s);
-}
-
-static int xfrm_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_XFRM);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = NAT_T_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-	return fd;
-}
-
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-/*
- * Send via NETLINK_XFRM and consume one ack.  Returns 0 on a positive
- * ack (nlmsgerr.error == 0), the negated kernel errno on rejection,
- * and -EIO on a local sendmsg / recv failure.
- */
-static int xfrm_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[1024];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0)
-		return -EIO;
-	if ((size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	return -EIO;
 }
 
 static void fill_selector(struct xfrm_selector *sel)
@@ -626,7 +533,7 @@ static __u32 pick_seq_hi(void)
  * caller for the matching DELSA and for the encap port the UDP socket
  * targets.
  */
-static int build_newsa(int fd, __be32 spi, __u8 mode, bool esn,
+static int build_newsa(struct nl_ctx *ctx, __be32 spi, __u8 mode, bool esn,
 		       enum nat_t_encap_choice encap_choice,
 		       __u8 replay_window,
 		       const struct nat_t_alg *auth,
@@ -641,7 +548,7 @@ static int build_newsa(int fd, __be32 spi, __u8 mode, bool esn,
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = XFRM_MSG_NEWSA;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	sa = (struct xfrm_usersa_info *)NLMSG_DATA(nlh);
 	fill_selector(&sa->sel);
@@ -684,10 +591,10 @@ static int build_newsa(int fd, __be32 spi, __u8 mode, bool esn,
 	}
 
 	nlh->nlmsg_len = (__u32)off;
-	return xfrm_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_delsa(int fd, __be32 spi)
+static int build_delsa(struct nl_ctx *ctx, __be32 spi)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -698,7 +605,7 @@ static int build_delsa(int fd, __be32 spi)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = XFRM_MSG_DELSA;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	uid = (struct xfrm_usersa_id *)NLMSG_DATA(nlh);
 	uid->daddr.a4 = NAT_T_DADDR_BE;
@@ -708,7 +615,7 @@ static int build_delsa(int fd, __be32 spi)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*uid));
 	nlh->nlmsg_len = (__u32)off;
-	return xfrm_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -793,7 +700,7 @@ static void maybe_drain_recv(int udp)
  * through esp6_output rather than esp4_output.  Pure-add helper -- the
  * IPv4 build_newsa is left untouched.
  */
-static int build_newsa6(int fd, __be32 spi, __u8 mode, bool esn,
+static int build_newsa6(struct nl_ctx *ctx, __be32 spi, __u8 mode, bool esn,
 			enum nat_t_encap_choice encap_choice,
 			__u8 replay_window,
 			const struct nat_t_alg *auth,
@@ -808,7 +715,7 @@ static int build_newsa6(int fd, __be32 spi, __u8 mode, bool esn,
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = XFRM_MSG_NEWSA;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	sa = (struct xfrm_usersa_info *)NLMSG_DATA(nlh);
 	memset(&sa->sel, 0, sizeof(sa->sel));
@@ -858,10 +765,10 @@ static int build_newsa6(int fd, __be32 spi, __u8 mode, bool esn,
 	}
 
 	nlh->nlmsg_len = (__u32)off;
-	return xfrm_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_delsa6(int fd, __be32 spi)
+static int build_delsa6(struct nl_ctx *ctx, __be32 spi)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -872,7 +779,7 @@ static int build_delsa6(int fd, __be32 spi)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = XFRM_MSG_DELSA;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	uid = (struct xfrm_usersa_id *)NLMSG_DATA(nlh);
 	memcpy(uid->daddr.a6, nat_t_v6_addr, sizeof(uid->daddr.a6));
@@ -882,7 +789,7 @@ static int build_delsa6(int fd, __be32 spi)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*uid));
 	nlh->nlmsg_len = (__u32)off;
-	return xfrm_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -971,7 +878,11 @@ static long nat_t_ns_since(const struct timespec *t0)
  */
 static void nat_t_churn_v6(void)
 {
-	int xfrm = -1;
+	struct nl_ctx ctx = { .fd = -1 };
+	struct nl_open_opts opts = {
+		.proto = NETLINK_XFRM,
+		.recv_timeo_s = NAT_T_RECV_TIMEO_S,
+	};
 	int udp = -1;
 	__be32 spi = 0;
 	__u8 mode;
@@ -986,8 +897,7 @@ static void nat_t_churn_v6(void)
 	bool sa_installed = false;
 	struct timespec t0;
 
-	xfrm = xfrm_open();
-	if (xfrm < 0) {
+	if (nl_open(&ctx, &opts) < 0) {
 		__atomic_add_fetch(&shm->stats.nat_t_xfrm6_setup_fail,
 				   1, __ATOMIC_RELAXED);
 		return;
@@ -1008,7 +918,7 @@ static void nat_t_churn_v6(void)
 
 	for (retries = 0; retries < NAT_T_XFRM6_RETRY_CAP; retries++) {
 		spi = htonl((rand32() % XFRM_SPI_RANGE) + XFRM_SPI_MIN);
-		rc = build_newsa6(xfrm, spi, mode, esn, encap_choice,
+		rc = build_newsa6(&ctx, spi, mode, esn, encap_choice,
 				  replay_window, auth, crypt);
 		if (rc == 0) {
 			sa_installed = true;
@@ -1079,7 +989,7 @@ static void nat_t_churn_v6(void)
 			 * teardown races the in-flight esp6_output /
 			 * error-return path. */
 			if (!delsa_fired && s == sends / 2U) {
-				if (build_delsa6(xfrm, spi) == 0)
+				if (build_delsa6(&ctx, spi) == 0)
 					__atomic_add_fetch(&shm->stats.nat_t_xfrm6_delsa_races,
 							   1, __ATOMIC_RELAXED);
 				delsa_fired = true;
@@ -1089,18 +999,21 @@ static void nat_t_churn_v6(void)
 
 delsa:
 	if (!delsa_fired)
-		(void)build_delsa6(xfrm, spi);
+		(void)build_delsa6(&ctx, spi);
 
 out:
 	if (udp >= 0)
 		close(udp);
-	if (xfrm >= 0)
-		close(xfrm);
+	nl_close(&ctx);
 }
 
 bool nat_t_churn(struct childdata *child)
 {
-	int xfrm = -1;
+	struct nl_ctx ctx = { .fd = -1 };
+	struct nl_open_opts opts = {
+		.proto = NETLINK_XFRM,
+		.recv_timeo_s = NAT_T_RECV_TIMEO_S,
+	};
 	int udp = -1;
 	__be32 spi;
 	__u8 mode;
@@ -1139,8 +1052,7 @@ bool nat_t_churn(struct childdata *child)
 		return true;
 	}
 
-	xfrm = xfrm_open();
-	if (xfrm < 0) {
+	if (nl_open(&ctx, &opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT ||
 		    errno == EPERM)
 			warn_once_unsupported("NETLINK_XFRM open", errno);
@@ -1167,7 +1079,7 @@ bool nat_t_churn(struct childdata *child)
 	else
 		encap_choice = NAT_T_ENCAP_ESPINUDP;
 
-	rc = build_newsa(xfrm, spi, mode, esn, encap_choice,
+	rc = build_newsa(&ctx, spi, mode, esn, encap_choice,
 			 replay_window, auth, crypt);
 	if (rc != 0)
 		goto out;
@@ -1184,15 +1096,14 @@ bool nat_t_churn(struct childdata *child)
 		maybe_drain_recv(udp);
 	}
 
-	if (build_delsa(xfrm, spi) == 0)
+	if (build_delsa(&ctx, spi) == 0)
 		__atomic_add_fetch(&shm->stats.nat_t_churn_sa_deleted,
 				   1, __ATOMIC_RELAXED);
 
 out:
 	if (udp >= 0)
 		close(udp);
-	if (xfrm >= 0)
-		close(xfrm);
+	nl_close(&ctx);
 
 	return true;
 }
