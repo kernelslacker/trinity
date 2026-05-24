@@ -366,6 +366,19 @@ struct io_uring_register_post_state {
 	unsigned long magic;
 	unsigned int opcode;
 	void *original_alloc;
+	/*
+	 * Per-opcode length of the user buffer at rec->a3.  Set in the
+	 * dispatch switch alongside the buffer allocation, then handed to
+	 * avoid_shared_buffer_inout() in place of the old page_size constant.
+	 * For IORING_REGISTER_BUFFERS the relevant size is nr * sizeof(struct
+	 * iovec), which is 16..128 bytes -- the old page_size relocation
+	 * memcpy()'d a full page out of that 16..128 byte allocation, reading
+	 * past the end and (under ASAN) tripping heap-buffer-overread, or
+	 * (without ASAN) leaking adjacent heap bytes into the relocated
+	 * argument.  arg_len = 0 means the opcode takes no arg and the
+	 * relocation call is skipped entirely.
+	 */
+	unsigned long arg_len;
 };
 
 static void sanitise_io_uring_register(struct syscallrecord *rec)
@@ -376,6 +389,15 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	unsigned int nr;
 	void *buf;
 	void *iov_alloc = NULL;
+	/*
+	 * Per-opcode user-buffer length at rec->a3, set in the dispatch
+	 * switch below.  0 means the opcode takes no arg and the trailing
+	 * avoid_shared_buffer_inout() relocation is skipped.  Opcodes whose
+	 * exact size is not modelled fall through to page_size, mirroring
+	 * the previous unconditional behaviour but only for the modeled-
+	 * unknown fallback.
+	 */
+	unsigned long arg_len = 0;
 
 	rec->a2 = pick_io_uring_register_opcode();
 
@@ -419,6 +441,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	case IORING_UNREGISTER_IOWQ_AFF:
 		rec->a3 = 0;
 		rec->a4 = 0;
+		arg_len = 0;
 		break;
 
 	/*
@@ -430,6 +453,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		iov_alloc = alloc_iovec(nr);
 		rec->a3 = (unsigned long) iov_alloc;
 		rec->a4 = nr;
+		arg_len = nr * sizeof(struct iovec);
 		break;
 
 	/*
@@ -443,6 +467,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 			memset(buf, 0xff, nr * sizeof(int));  /* fill with -1 */
 		rec->a3 = (unsigned long) buf;
 		rec->a4 = nr;
+		arg_len = nr * sizeof(int);
 		break;
 
 	/*
@@ -466,6 +491,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) u;
 		rec->a4 = 1;
+		arg_len = sizeof(int);
 		break;
 	}
 
@@ -483,6 +509,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 			memset(probe, 0, sizeof(*probe) + nr * sizeof(probe->ops[0]));
 		rec->a3 = (unsigned long) probe;
 		rec->a4 = nr;
+		arg_len = sizeof(*probe) + nr * sizeof(probe->ops[0]);
 		break;
 	}
 
@@ -494,6 +521,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		buf = get_writable_struct(2 * sizeof(unsigned int));
 		rec->a3 = (unsigned long) buf;
 		rec->a4 = 2;
+		arg_len = 2 * sizeof(unsigned int);
 		break;
 
 	/*
@@ -514,6 +542,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) cs;
 		rec->a4 = sizeof(cpu_set_t);
+		arg_len = sizeof(cpu_set_t);
 		break;
 	}
 
@@ -541,6 +570,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) r;
 		rec->a4 = 0;
+		arg_len = sizeof(*r);
 		break;
 	}
 
@@ -575,6 +605,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) cr;
 		rec->a4 = 0;
+		arg_len = sizeof(*cr);
 		break;
 	}
 
@@ -624,6 +655,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) u;
 		rec->a4 = nr;
+		arg_len = nr * sizeof(*u);
 		break;
 	}
 
@@ -648,6 +680,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) r;
 		rec->a4 = 1;
+		arg_len = sizeof(*r);
 		break;
 	}
 
@@ -673,6 +706,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) s;
 		rec->a4 = 1;
+		arg_len = sizeof(*s);
 		break;
 	}
 
@@ -697,6 +731,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) n;
 		rec->a4 = 0;
+		arg_len = sizeof(*n);
 		break;
 	}
 
@@ -720,6 +755,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) z;
 		rec->a4 = 1;
+		arg_len = sizeof(*z);
 		break;
 	}
 
@@ -744,6 +780,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) p;
 		rec->a4 = 0;
+		arg_len = sizeof(*p);
 		break;
 	}
 
@@ -768,6 +805,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) m;
 		rec->a4 = 1;
+		arg_len = sizeof(*m);
 		break;
 	}
 
@@ -788,6 +826,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) c;
 		rec->a4 = 1;
+		arg_len = sizeof(*c);
 		break;
 	}
 
@@ -811,6 +850,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) s;
 		rec->a4 = 1;
+		arg_len = sizeof(*s);
 		break;
 	}
 
@@ -831,6 +871,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) sqe;
 		rec->a4 = 1;
+		arg_len = sizeof(*sqe);
 		break;
 	}
 
@@ -859,6 +900,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) tr;
 		rec->a4 = 1;
+		arg_len = sz;
 		break;
 	}
 
@@ -885,13 +927,17 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		}
 		rec->a3 = (unsigned long) bp;
 		rec->a4 = 1;
+		arg_len = sizeof(*bp);
 		break;
 	}
 
 	/*
 	 * For opcodes with struct args we don't model in detail, provide a
 	 * zeroed page so the kernel reaches argument parsing rather than
-	 * faulting immediately on a garbage pointer.
+	 * faulting immediately on a garbage pointer.  arg_len falls back to
+	 * page_size for these -- mirrors the pre-bucket behaviour for the
+	 * exact set of opcodes we have not catalogued, leaving the modeled
+	 * opcodes (every case above) on their precise sizes.
 	 */
 	default:
 		buf = get_writable_address(page_size);
@@ -899,8 +945,35 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 			memset(buf, 0, page_size);
 		rec->a3 = (unsigned long) buf;
 		rec->a4 = 1;
+		arg_len = page_size;
 		break;
 	}
+
+	/*
+	 * Snapshot the opcode, the (possibly heap) pointer, and the per-
+	 * opcode user-buffer length for the post handler.  A sibling syscall
+	 * can scribble rec->a3 between the syscall returning and the post
+	 * handler running, leaving a real-but-wrong heap pointer that
+	 * looks_like_corrupted_ptr() cannot distinguish from the original;
+	 * the old post handler then hands the wrong allocation to free,
+	 * leaking ours and corrupting another sanitise routine's live
+	 * buffer.  A scribble of rec->a2 is just as dangerous -- flipping
+	 * the opcode from any non-allocating value to IORING_REGISTER_BUFFERS
+	 * would redirect the old opcode-gated dispatch into a non-heap
+	 * rec->a3 (a get_writable_address / get_writable_struct pool pointer)
+	 * and UAF the OBJ_MMAP pool.  rec->post_state is private to the
+	 * post handler, so the scribblers have nothing to scribble there.
+	 * Snap allocation is hoisted above avoid_shared_buffer_inout so the
+	 * per-opcode arg_len can drive the relocation length below; the
+	 * original iov_alloc is still captured pre-relocation.
+	 */
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = IO_URING_REGISTER_POST_STATE_MAGIC;
+	snap->opcode = opcode;
+	snap->original_alloc = (opcode == IORING_REGISTER_BUFFERS) ?
+		iov_alloc : NULL;
+	snap->arg_len = arg_len;
+	rec->post_state = (unsigned long) snap;
 
 	/*
 	 * Several opcodes above (PROBE, IOWQ_MAX_WORKERS, the default
@@ -913,30 +986,16 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 * init_child_mappings.  Mirror the defensive scrub
 	 * pick_random_ioctl() runs after ioctl_arg_for_request() — same
 	 * reasoning, same shape, same negligible cost.
+	 *
+	 * Use the per-opcode arg_len rather than the old page_size constant.
+	 * For IORING_REGISTER_BUFFERS the source allocation is
+	 * nr * sizeof(struct iovec) (16..128 bytes); a page_size memcpy
+	 * read past the end of that buffer.  arg_len == 0 marks the no-arg
+	 * opcodes (UNREGISTER_*, ENABLE_RINGS, PERSONALITY, etc.); skip
+	 * the relocation entirely on those rather than relocate a NULL.
 	 */
-	avoid_shared_buffer_inout(&rec->a3, page_size);
-
-	/*
-	 * Snapshot the opcode and the (possibly heap) pointer for the
-	 * post handler.  A sibling syscall can scribble rec->a3 between
-	 * the syscall returning and the post handler running, leaving a
-	 * real-but-wrong heap pointer that looks_like_corrupted_ptr()
-	 * cannot distinguish from the original; the old post handler
-	 * then hands the wrong allocation to free, leaking ours and
-	 * corrupting another sanitise routine's live buffer.  A scribble
-	 * of rec->a2 is just as dangerous -- flipping the opcode from
-	 * any non-allocating value to IORING_REGISTER_BUFFERS would
-	 * redirect the old opcode-gated dispatch into a non-heap rec->a3
-	 * (a get_writable_address / get_writable_struct pool pointer)
-	 * and UAF the OBJ_MMAP pool.  rec->post_state is private to the
-	 * post handler, so the scribblers have nothing to scribble there.
-	 */
-	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic = IO_URING_REGISTER_POST_STATE_MAGIC;
-	snap->opcode = opcode;
-	snap->original_alloc = (opcode == IORING_REGISTER_BUFFERS) ?
-		iov_alloc : NULL;
-	rec->post_state = (unsigned long) snap;
+	if (snap->arg_len > 0)
+		avoid_shared_buffer_inout(&rec->a3, snap->arg_len);
 }
 
 /*
