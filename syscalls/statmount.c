@@ -87,11 +87,25 @@ static unsigned long statmount_params[] = {
  * smear the bufsize bound used to seed the re-issue.  bufsize is a
  * scalar but kept in the snap struct for symmetry with the two
  * pointer fields.
+ *
+ * magic guards against a sibling scribble of rec->post_state with any
+ * heap-shaped pointer that survives looks_like_corrupted_ptr() but
+ * belongs to a foreign allocation -- a mismatched cookie rejects the
+ * snap before any inner-field deref.  original_buf is the zmalloc()'d
+ * pointer handed to deferred_free_enqueue() at post-time: rec->a2 is
+ * relocated by avoid_shared_buffer_out() into the writable-address pool
+ * and free()ing the relocated address would trip the allocator's
+ * heap-bounds gate, so the post handler used to leak the 64 KiB tracked
+ * buffer on every call.  Mirrors the PIPE_POST_STATE_MAGIC pattern at
+ * syscalls/pipe.c:57.
  */
+#define STATMOUNT_POST_STATE_MAGIC	0x53544D4E545F4D47UL	/* "STMNT_MG" */
 struct statmount_post_state {
+	unsigned long magic;
 	unsigned long req;
 	unsigned long buffer;
 	unsigned long bufsize;
+	void *original_buf;
 };
 #endif
 
@@ -241,26 +255,41 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	rec->a3 = pick_statmount_bufsize();
 	rec->a4 = pick_statmount_flags();
 
+#ifdef HAVE_SYS_STATMOUNT
+	/*
+	 * Snapshot the three input args for the post oracle, and stash the
+	 * original zmalloc()'d buf BEFORE avoid_shared_buffer_out() relocates
+	 * rec->a2 into the writable-address pool.  Without this snapshot the
+	 * post handler reads rec->aN at post-time, when a sibling syscall may
+	 * have scribbled the slots: looks_like_corrupted_ptr() cannot tell a
+	 * real-but-wrong heap address from the original user buffer pointers,
+	 * so the memcpy / re-issue would touch a foreign allocation.  Without
+	 * original_buf the post handler has no way to free the 64 KiB tracked
+	 * allocation -- the relocated rec->a2 belongs to a different allocator
+	 * and deferred_free_enqueue() would reject it.  post_state is private
+	 * to the post handler.  Gated on HAVE_SYS_STATMOUNT to mirror the
+	 * .post registration -- on systems without SYS_statmount the post
+	 * handler is not registered and a snapshot only the post handler can
+	 * free would leak.
+	 */
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic        = STATMOUNT_POST_STATE_MAGIC;
+	snap->original_buf = buf;
+	snap->bufsize      = rec->a3;
+	rec->post_state    = (unsigned long) snap;
+#endif
+
 	avoid_shared_buffer_inout(&rec->a1, sizeof(struct mnt_id_req));
 	avoid_shared_buffer_out(&rec->a2, STATMOUNT_BUF_BYTES);
 
 #ifdef HAVE_SYS_STATMOUNT
 	/*
-	 * Snapshot the three input args for the post oracle.  Without this
-	 * the post handler reads rec->aN at post-time, when a sibling
-	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original user
-	 * buffer pointers, so the memcpy / re-issue would touch a foreign
-	 * allocation.  post_state is private to the post handler.  Gated on
-	 * HAVE_SYS_STATMOUNT to mirror the .post registration -- on systems
-	 * without SYS_statmount the post handler is not registered and a
-	 * snapshot only the post handler can free would leak.
+	 * Capture req/buffer after relocation -- the post oracle re-reads
+	 * the user buffer from the address the kernel actually wrote into,
+	 * which is the relocated pool pointer, not the libc-heap zmalloc.
 	 */
-	snap = zmalloc_tracked(sizeof(*snap));
-	snap->req       = rec->a1;
-	snap->buffer    = rec->a2;
-	snap->bufsize   = rec->a3;
-	rec->post_state = (unsigned long) snap;
+	snap->req    = rec->a1;
+	snap->buffer = rec->a2;
 #endif
 }
 
@@ -324,6 +353,22 @@ static void post_statmount(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_statmount: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * statmount_post_state -- post_statmount would then chase
+	 * snap->req/buffer pointers into a foreign allocation and free
+	 * snap->original_buf out of someone else's tracked heap.
+	 */
+	if (snap->magic != STATMOUNT_POST_STATE_MAGIC) {
+		outputerr("post_statmount: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
 		rec->post_state = 0;
 		return;
 	}
@@ -408,6 +453,14 @@ static void post_statmount(struct syscallrecord *rec)
 	}
 
 out_free:
+	/*
+	 * Enqueue the original zmalloc()'d buf for deferred free.  rec->a2
+	 * was relocated into the writable-address pool by
+	 * avoid_shared_buffer_out(); free()ing that address would trip the
+	 * tracked-allocator gate.  snap->original_buf is the libc-heap
+	 * pointer the allocator knows about.
+	 */
+	deferred_free_enqueue(snap->original_buf);
 	deferred_freeptr(&rec->post_state);
 #else
 	(void) rec;

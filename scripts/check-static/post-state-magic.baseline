@@ -28,5 +28,4 @@ syscalls/lsm_get_self_attr.c:lsm_get_self_attr
 syscalls/lsm_list_modules.c:lsm_list_modules
 syscalls/sched_getaffinity.c:sched_getaffinity
 syscalls/sched_getattr.c:sched_getattr
-syscalls/statmount.c:statmount
 syscalls/sysfs.c:sysfs
