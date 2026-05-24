@@ -1,0 +1,66 @@
+# alt-op-rotation.denylist
+#
+# Childops listed here are explicitly EXCLUDED from the
+# dedicated alt-op rotation (alt_op_rotation[] in child.c).
+# They remain reachable via the main pick_op_type_table[]
+# and the canary queue when --alt-op-children is set.
+#
+# Two kinds of entries:
+#
+#   1. Permanent denials.  Lifecycle / race / heavyweight
+#      childops where steady rotation would destabilise runs.
+#      Format: `CHILD_OP_FOO  REASON: <one-line reason>`
+#
+#   2. Pending review.  Childops added before the rotation
+#      could absorb them.  Format:
+#         `CHILD_OP_FOO  TODO: review for rotation candidacy`
+#      Pending entries should be migrated INTO the rotation
+#      or promoted to permanent denials over time.
+#
+# A new childop added to pick_op_type_table[] without being
+# either in alt_op_rotation[] OR in this denylist will FAIL
+# `make check-static`.
+#
+# Lines starting with `#` and blank lines are ignored.
+CHILD_OP_BLKDEV_LIFECYCLE_RACE   REASON: lifecycle race; destabilises runs
+CHILD_OP_KVM_RUN_CHURN           REASON: hardware-state heavy; not safe steady
+CHILD_OP_UBLK_LIFECYCLE          REASON: device lifecycle race
+CHILD_OP_NETNS_TEARDOWN_CHURN    REASON: netns teardown race
+CHILD_OP_IPV6_PMTU_TEARDOWN_RACE REASON: PMTU teardown race
+CHILD_OP_TCP_MD5_LISTENER_RACE   REASON: listener-socket race
+CHILD_OP_AFXDP_CHURN                  TODO: review for rotation candidacy
+CHILD_OP_AF_ALG_RECVMSG_CHURN         TODO: review for rotation candidacy
+CHILD_OP_AF_ALG_TEMPLATE_PROBE        TODO: review for rotation candidacy
+CHILD_OP_AF_ALG_WEAK_CIPHER_PROBE     TODO: review for rotation candidacy
+CHILD_OP_AF_UNIX_SCM_RIGHTS_GC        TODO: review for rotation candidacy
+CHILD_OP_ATM_VCC_CHURN                TODO: review for rotation candidacy
+CHILD_OP_BRIDGE_CT_CHURN              TODO: review for rotation candidacy
+CHILD_OP_BRIDGE_VLAN_CHURN            TODO: review for rotation candidacy
+CHILD_OP_DEVLINK_PORT_CHURN           TODO: review for rotation candidacy
+CHILD_OP_FLOWTABLE_ENCAP_VLAN         TODO: review for rotation candidacy
+CHILD_OP_HANDSHAKE_REQ_ABORT          TODO: review for rotation candidacy
+CHILD_OP_IGMP_MLD_SOURCE_CHURN        TODO: review for rotation candidacy
+CHILD_OP_INPLACE_CRYPTO_ORACLE        TODO: review for rotation candidacy
+CHILD_OP_IOURING_CMD_PASSTHROUGH      TODO: review for rotation candidacy
+CHILD_OP_IOURING_SEND_ZC_CHURN        TODO: review for rotation candidacy
+CHILD_OP_IP6ERSPAN_NETNS_MIGRATE      TODO: review for rotation candidacy
+CHILD_OP_IP6GRE_BOND_LAPB_STACK       TODO: review for rotation candidacy
+CHILD_OP_IPFRAG_SOURCE_CHURN          TODO: review for rotation candidacy
+CHILD_OP_IPMR_CACHE_REPORT            TODO: review for rotation candidacy
+CHILD_OP_IPV6_NDISC_PROXY             TODO: review for rotation candidacy
+CHILD_OP_IPVS_SYSCTL_WRITER           TODO: review for rotation candidacy
+CHILD_OP_ISCSI_TARGET_PROBE           TODO: review for rotation candidacy
+CHILD_OP_MPLS_ROUTE_CHURN             TODO: review for rotation candidacy
+CHILD_OP_MSG_ZEROCOPY_CHURN           TODO: review for rotation candidacy
+CHILD_OP_NF_CONNTRACK_HELPER          TODO: review for rotation candidacy
+CHILD_OP_OBSCURE_AF_CHURN             TODO: review for rotation candidacy
+CHILD_OP_PAGECACHE_CANARY_CHECK       TODO: review for rotation candidacy
+CHILD_OP_PSP_KEY_ROTATE               TODO: review for rotation candidacy
+CHILD_OP_RTNL_VF_BROADCAST_GETLINK    TODO: review for rotation candidacy
+CHILD_OP_RXRPC_KEY_INSTALL            TODO: review for rotation candidacy
+CHILD_OP_RXRPC_SENDMSG_CMSG_CHURN     TODO: review for rotation candidacy
+CHILD_OP_SPLICE_PROTOCOLS             TODO: review for rotation candidacy
+CHILD_OP_TCP_ULP_SWAP_CHURN           TODO: review for rotation candidacy
+CHILD_OP_VETH_ASYMMETRIC_XDP          TODO: review for rotation candidacy
+CHILD_OP_VSOCK_TRANSPORT_CHURN        TODO: review for rotation candidacy
+CHILD_OP_WIREGUARD_DECRYPT_FLOOD      TODO: review for rotation candidacy
