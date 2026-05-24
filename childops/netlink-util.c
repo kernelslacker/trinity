@@ -214,6 +214,47 @@ int nl_send_recv_dump(struct nl_ctx *ctx, void *msg, size_t len)
 	}
 }
 
+int nl_send_recv_dump_cb(struct nl_ctx *ctx, void *msg, size_t len,
+			 int (*cb)(const struct nlmsghdr *nlh, void *arg),
+			 void *arg)
+{
+	unsigned char rbuf[8192];
+	ssize_t n;
+
+	if (!cb)
+		return -EIO;
+
+	if (nl_sendmsg(ctx, msg, len) < 0)
+		return -EIO;
+
+	for (;;) {
+		struct nlmsghdr *nlh;
+		size_t remaining;
+
+		n = recv(ctx->fd, rbuf, sizeof(rbuf), 0);
+		if (n <= 0)
+			return -EIO;
+		if ((size_t)n < NLMSG_HDRLEN)
+			return -EIO;
+
+		nlh = (struct nlmsghdr *)rbuf;
+		remaining = (size_t)n;
+		while (NLMSG_OK(nlh, remaining)) {
+			if (nlh->nlmsg_type == NLMSG_DONE)
+				return 0;
+			if (nlh->nlmsg_type == NLMSG_ERROR) {
+				struct nlmsgerr *err =
+					(struct nlmsgerr *)NLMSG_DATA(nlh);
+
+				return err->error;
+			}
+			if (cb(nlh, arg) != 0)
+				return -EIO;
+			nlh = NLMSG_NEXT(nlh, remaining);
+		}
+	}
+}
+
 int nl_send_recv_retry(struct nl_ctx *ctx, void *msg, size_t len)
 {
 	int rc = -EIO;

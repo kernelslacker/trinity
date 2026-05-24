@@ -125,6 +125,17 @@ int nl_send_recv_any(struct nl_ctx *ctx, void *msg, size_t len);
 int nl_send_recv_dump(struct nl_ctx *ctx, void *msg, size_t len);
 
 /*
+ * Send msg/len then drain replies until NLMSG_DONE or NLMSG_ERROR.
+ * For every non-terminator nlmsghdr in the stream, invoke
+ *   cb(nlh, arg)
+ * cb returns 0 to continue, non-zero to abort the dump (returned
+ * as -EIO).  Existing nl_send_recv_dump() is unchanged.
+ */
+int nl_send_recv_dump_cb(struct nl_ctx *ctx, void *msg, size_t len,
+			 int (*cb)(const struct nlmsghdr *nlh, void *arg),
+			 void *arg);
+
+/*
  * As nl_send_recv() but retries the whole send/recv up to NL_RETRY_MAX
  * times when the kernel returns -EAGAIN or -EBUSY (typical for the
  * config plane when a sibling iteration is mid-teardown).  Other
