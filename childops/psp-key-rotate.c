@@ -112,6 +112,7 @@
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-genl.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -207,16 +208,6 @@
 
 static bool ns_unsupported_psp_key_rotate;
 
-static long long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (long long)(now.tv_sec - t0->tv_sec) * 1000000000LL +
-	       (long long)(now.tv_nsec - t0->tv_nsec);
-}
-
 static void apply_timeouts(int s)
 {
 	struct timeval tv;
@@ -234,176 +225,17 @@ static bool errno_is_unsupported(int e)
 	       e == EPROTONOSUPPORT || e == ENODEV;
 }
 
-/* Append a netlink attribute to @buf at offset *off, padding to
- * NLA_ALIGNTO.  Returns false on overflow. */
-static bool nla_put(unsigned char *buf, size_t cap, size_t *off,
-		    uint16_t type, const void *data, uint16_t len)
-{
-	struct nlattr nla;
-	size_t pad_len = NLA_ALIGN(len);
-	size_t need = NLA_HDRLEN + pad_len;
-
-	if (*off + need > cap)
-		return false;
-	nla.nla_type = type;
-	nla.nla_len  = (uint16_t)(NLA_HDRLEN + len);
-	memcpy(buf + *off, &nla, sizeof(nla));
-	if (len)
-		memcpy(buf + *off + NLA_HDRLEN, data, len);
-	if (pad_len > len)
-		memset(buf + *off + NLA_HDRLEN + len, 0, pad_len - len);
-	*off += need;
-	return true;
-}
-
-static bool nla_put_str(unsigned char *buf, size_t cap, size_t *off,
-			uint16_t type, const char *s)
-{
-	return nla_put(buf, cap, off, type, s, (uint16_t)(strlen(s) + 1));
-}
-
-static bool nla_put_u32(unsigned char *buf, size_t cap, size_t *off,
-			uint16_t type, uint32_t v)
-{
-	return nla_put(buf, cap, off, type, &v, sizeof(v));
-}
-
-/* Send a genetlink request and read one response (best-effort).
- * Returns 0 on success, -1 on send/recv failure, or the netlink error
- * code (positive) when an NLMSG_ERROR with non-zero error is returned.
- * On success the response is written to @resp / @resp_len. */
-static int genl_send_recv(int nlfd, uint16_t family, uint8_t cmd,
-			  uint8_t version, const unsigned char *attrs,
-			  size_t attrs_len, unsigned char *resp,
-			  size_t resp_cap, size_t *resp_len)
-{
-	unsigned char buf[1024];
-	struct nlmsghdr *nlh;
-	struct genlmsghdr *gnh;
-	struct sockaddr_nl sa;
-	ssize_t rx;
-	size_t total;
-
-	if (attrs_len > sizeof(buf) - NLMSG_HDRLEN - GENL_HDRLEN)
-		return -1;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	gnh = (struct genlmsghdr *)NLMSG_DATA(nlh);
-
-	total = NLMSG_HDRLEN + GENL_HDRLEN + attrs_len;
-	nlh->nlmsg_len   = (uint32_t)total;
-	nlh->nlmsg_type  = family;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = 1;
-	nlh->nlmsg_pid   = 0;
-	gnh->cmd     = cmd;
-	gnh->version = version;
-	if (attrs_len)
-		memcpy((unsigned char *)gnh + GENL_HDRLEN, attrs, attrs_len);
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (sendto(nlfd, buf, total, 0,
-		   (struct sockaddr *)&sa, sizeof(sa)) < 0)
-		return -1;
-
-	rx = recv(nlfd, resp, resp_cap, 0);
-	if (rx < 0)
-		return -1;
-
-	*resp_len = (size_t)rx;
-	if ((size_t)rx >= NLMSG_HDRLEN) {
-		struct nlmsghdr *r = (struct nlmsghdr *)resp;
-
-		if (r->nlmsg_type == NLMSG_ERROR &&
-		    (size_t)rx >= NLMSG_HDRLEN + sizeof(struct nlmsgerr)) {
-			struct nlmsgerr *e =
-				(struct nlmsgerr *)NLMSG_DATA(r);
-
-			if (e->error != 0)
-				return -e->error;
-		}
-	}
-	return 0;
-}
-
-/* Resolve the dynamic genetlink family id for "psp" via
- * CTRL_CMD_GETFAMILY.  Returns 0 on success and writes the id to @out.
- * Negative return means the controller didn't know the family or the
- * netlink layer rejected the request -- caller should latch the cap-
- * gate. */
-static int resolve_psp_family(int nlfd, uint16_t *out)
-{
-	unsigned char attrs[64];
-	unsigned char resp[PKR_NL_RX_BUF];
-	size_t off = 0;
-	size_t resp_len = 0;
-	int rc;
-	struct nlmsghdr *r;
-	struct genlmsghdr *g;
-	unsigned char *p;
-	size_t remaining;
-
-	if (!nla_put_str(attrs, sizeof(attrs), &off,
-			 CTRL_ATTR_FAMILY_NAME, PSP_FAMILY_NAME))
-		return -1;
-
-	rc = genl_send_recv(nlfd, GENL_ID_CTRL, CTRL_CMD_GETFAMILY, 1,
-			    attrs, off, resp, sizeof(resp), &resp_len);
-	if (rc != 0)
-		return rc < 0 ? rc : -rc;
-
-	if (resp_len < NLMSG_HDRLEN + GENL_HDRLEN)
-		return -1;
-	r = (struct nlmsghdr *)resp;
-	if (r->nlmsg_type == NLMSG_ERROR)
-		return -1;
-
-	g = (struct genlmsghdr *)NLMSG_DATA(r);
-	p = (unsigned char *)g + GENL_HDRLEN;
-	remaining = resp_len - NLMSG_HDRLEN - GENL_HDRLEN;
-
-	while (remaining >= NLA_HDRLEN) {
-		struct nlattr nla;
-		size_t alen;
-
-		memcpy(&nla, p, sizeof(nla));
-		if (nla.nla_len < NLA_HDRLEN || nla.nla_len > remaining)
-			break;
-		alen = NLA_ALIGN(nla.nla_len);
-		if (nla.nla_type == CTRL_ATTR_FAMILY_ID &&
-		    nla.nla_len >= NLA_HDRLEN + sizeof(uint16_t)) {
-			uint16_t id;
-
-			memcpy(&id, p + NLA_HDRLEN, sizeof(id));
-			*out = id;
-			return 0;
-		}
-		if (alen > remaining)
-			break;
-		p += alen;
-		remaining -= alen;
-	}
-	return -1;
-}
-
 /* Best-effort netdevsim spawn via rtnl RTM_NEWLINK with
  * IFLA_LINKINFO/IFLA_INFO_KIND="netdevsim".  Returns 0 on accept,
  * -errno on failure.  Caller does not depend on success: the PSP
  * family probe latches the cap-gate on its own when the device path
  * isn't viable. */
-static int rtnl_make_netdevsim(int rtfd, const char *ifname)
+static int rtnl_make_netdevsim(struct nl_ctx *rtnl, const char *ifname)
 {
 	unsigned char buf[512];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifm;
-	struct nlattr *linkinfo;
-	struct nlattr *kind;
-	struct sockaddr_nl sa;
-	size_t off, link_off, kind_off;
-	ssize_t rx;
-	unsigned char rxbuf[PKR_NL_RX_BUF];
+	size_t off, link_off;
 
 	memset(buf, 0, sizeof(buf));
 	nlh = (struct nlmsghdr *)buf;
@@ -412,95 +244,79 @@ static int rtnl_make_netdevsim(int rtfd, const char *ifname)
 	nlh->nlmsg_len   = NLMSG_LENGTH(sizeof(*ifm));
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = 2;
-	ifm->ifi_family = AF_UNSPEC;
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
+	ifm->ifi_family  = AF_UNSPEC;
 
 	off = NLMSG_ALIGN(nlh->nlmsg_len);
-	if (!nla_put_str(buf, sizeof(buf), &off, IFLA_IFNAME, ifname))
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, ifname);
+	if (!off)
 		return -EMSGSIZE;
 
-	/* Open IFLA_LINKINFO container.  We patch its length once the
-	 * nested IFLA_INFO_KIND payload is appended. */
 	link_off = off;
-	if (off + NLA_HDRLEN > sizeof(buf))
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
+	if (!off)
 		return -EMSGSIZE;
-	linkinfo = (struct nlattr *)(buf + off);
-	linkinfo->nla_type = IFLA_LINKINFO;
-	linkinfo->nla_len  = NLA_HDRLEN;
-	off += NLA_HDRLEN;
-
-	kind_off = off;
-	if (!nla_put_str(buf, sizeof(buf), &off,
-			 IFLA_INFO_KIND, NETDEVSIM_KIND))
+	off = nla_put_str(buf, off, sizeof(buf),
+			  IFLA_INFO_KIND, NETDEVSIM_KIND);
+	if (!off)
 		return -EMSGSIZE;
-	kind = (struct nlattr *)(buf + kind_off);
-	(void)kind;	/* fields validated implicitly via nla_put_str */
-	linkinfo->nla_len = (uint16_t)(off - link_off);
+	nla_nest_end(buf, link_off, off);
 
 	nlh->nlmsg_len = (uint32_t)off;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (sendto(rtfd, buf, off, 0,
-		   (struct sockaddr *)&sa, sizeof(sa)) < 0)
-		return -errno;
-
-	rx = recv(rtfd, rxbuf, sizeof(rxbuf), 0);
-	if (rx < 0)
-		return -errno;
-	if ((size_t)rx >= NLMSG_HDRLEN) {
-		struct nlmsghdr *r = (struct nlmsghdr *)rxbuf;
-
-		if (r->nlmsg_type == NLMSG_ERROR &&
-		    (size_t)rx >= NLMSG_HDRLEN + sizeof(struct nlmsgerr)) {
-			struct nlmsgerr *e =
-				(struct nlmsgerr *)NLMSG_DATA(r);
-
-			return e->error;
-		}
-	}
-	return 0;
+	return nl_send_recv(rtnl, buf, off);
 }
 
 /* Issue PSP_CMD_KEY_ROTATE for @dev_id.  Returns 0 on success, -errno
- * (or -1 on send/recv failure) otherwise. */
-static int psp_key_rotate_cmd(int nlfd, uint16_t family, uint32_t dev_id)
+ * (or -EIO on send/recv failure) otherwise. */
+static int psp_key_rotate_cmd(struct genl_ctx *ctx, uint32_t dev_id)
 {
-	unsigned char attrs[32];
-	unsigned char resp[PKR_NL_RX_BUF];
-	size_t off = 0;
-	size_t resp_len = 0;
+	unsigned char buf[256];
+	struct nlmsghdr *nlh;
+	size_t off;
 
-	if (!nla_put_u32(attrs, sizeof(attrs), &off, PSP_A_DEV_ID, dev_id))
-		return -1;
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
+			   nl_seq_next(&ctx->nl),
+			   PSP_CMD_KEY_ROTATE, 0);
+	if (!off)
+		return -EIO;
+	off = nla_put_u32(buf, off, sizeof(buf), PSP_A_DEV_ID, dev_id);
+	if (!off)
+		return -EIO;
 
-	return genl_send_recv(nlfd, family, PSP_CMD_KEY_ROTATE, 1,
-			      attrs, off, resp, sizeof(resp), &resp_len);
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_len = (uint32_t)off;
+	return genl_send_recv(ctx, buf, off);
 }
 
 /* Issue PSP_CMD_TX_ASSOC binding @sockfd to @dev_id.  Returns 0 on
  * success, -errno on failure.  Mid-flow re-issue is the "spi switch"
  * path under spec naming. */
-static int psp_tx_assoc_cmd(int nlfd, uint16_t family,
+static int psp_tx_assoc_cmd(struct genl_ctx *ctx,
 			    uint32_t dev_id, int sockfd)
 {
-	unsigned char attrs[64];
-	unsigned char resp[PKR_NL_RX_BUF];
-	size_t off = 0;
-	size_t resp_len = 0;
+	unsigned char buf[256];
+	struct nlmsghdr *nlh;
+	size_t off;
 
-	if (!nla_put_u32(attrs, sizeof(attrs), &off,
-			 PSP_A_ASSOC_DEV_ID, dev_id))
-		return -1;
-	if (!nla_put_u32(attrs, sizeof(attrs), &off,
-			 PSP_A_ASSOC_VERSION, 0U))
-		return -1;
-	if (!nla_put_u32(attrs, sizeof(attrs), &off,
-			 PSP_A_ASSOC_SOCK_FD, (uint32_t)sockfd))
-		return -1;
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
+			   nl_seq_next(&ctx->nl),
+			   PSP_CMD_TX_ASSOC, 0);
+	if (!off)
+		return -EIO;
+	off = nla_put_u32(buf, off, sizeof(buf), PSP_A_ASSOC_DEV_ID, dev_id);
+	if (!off)
+		return -EIO;
+	off = nla_put_u32(buf, off, sizeof(buf), PSP_A_ASSOC_VERSION, 0U);
+	if (!off)
+		return -EIO;
+	off = nla_put_u32(buf, off, sizeof(buf),
+			  PSP_A_ASSOC_SOCK_FD, (uint32_t)sockfd);
+	if (!off)
+		return -EIO;
 
-	return genl_send_recv(nlfd, family, PSP_CMD_TX_ASSOC, 1,
-			      attrs, off, resp, sizeof(resp), &resp_len);
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_len = (uint32_t)off;
+	return genl_send_recv(ctx, buf, off);
 }
 
 static void inner_traffic_burst(int sockfd)
@@ -681,117 +497,77 @@ static bool pdpc_setup_once(void)
 	return true;
 }
 
-/* Resolve devlink genl family id; -1 on failure. */
-static int pdpc_resolve_devlink_family(int nlfd, uint16_t *out)
-{
-	unsigned char attrs[64];
-	unsigned char resp[PKR_NL_RX_BUF];
-	size_t off = 0;
-	size_t resp_len = 0;
-	int rc;
-	struct nlmsghdr *r;
-	struct genlmsghdr *g;
-	unsigned char *p;
-	size_t remaining;
-
-	if (!nla_put_str(attrs, sizeof(attrs), &off,
-			 CTRL_ATTR_FAMILY_NAME, DEVLINK_FAMILY_NAME))
-		return -1;
-
-	rc = genl_send_recv(nlfd, GENL_ID_CTRL, CTRL_CMD_GETFAMILY, 1,
-			    attrs, off, resp, sizeof(resp), &resp_len);
-	if (rc != 0)
-		return -1;
-	if (resp_len < NLMSG_HDRLEN + GENL_HDRLEN)
-		return -1;
-	r = (struct nlmsghdr *)resp;
-	if (r->nlmsg_type == NLMSG_ERROR)
-		return -1;
-
-	g = (struct genlmsghdr *)NLMSG_DATA(r);
-	p = (unsigned char *)g + GENL_HDRLEN;
-	remaining = resp_len - NLMSG_HDRLEN - GENL_HDRLEN;
-
-	while (remaining >= NLA_HDRLEN) {
-		struct nlattr nla;
-		size_t alen;
-
-		memcpy(&nla, p, sizeof(nla));
-		if (nla.nla_len < NLA_HDRLEN || nla.nla_len > remaining)
-			break;
-		alen = NLA_ALIGN(nla.nla_len);
-		if (nla.nla_type == CTRL_ATTR_FAMILY_ID &&
-		    nla.nla_len >= NLA_HDRLEN + sizeof(uint16_t)) {
-			uint16_t id;
-
-			memcpy(&id, p + NLA_HDRLEN, sizeof(id));
-			*out = id;
-			return 0;
-		}
-		if (alen > remaining)
-			break;
-		p += alen;
-		remaining -= alen;
-	}
-	return -1;
-}
-
-static int pdpc_devlink_port_new(int nlfd, uint16_t fam,
+static int pdpc_devlink_port_new(struct genl_ctx *ctx,
 				 const char *dev_name, uint32_t port_number)
 {
-	unsigned char attrs[256];
-	unsigned char resp[PKR_NL_RX_BUF];
-	size_t off = 0;
-	size_t resp_len = 0;
+	unsigned char buf[512];
+	struct nlmsghdr *nlh;
+	size_t off;
 	uint8_t flav = (uint8_t)DEVLINK_PORT_FLAVOUR_VIRTUAL;
 
-	if (!nla_put_str(attrs, sizeof(attrs), &off,
-			 DEVLINK_ATTR_BUS_NAME, PDPC_BUS))
-		return -1;
-	if (!nla_put_str(attrs, sizeof(attrs), &off,
-			 DEVLINK_ATTR_DEV_NAME, dev_name))
-		return -1;
-	if (!nla_put(attrs, sizeof(attrs), &off,
-		     DEVLINK_ATTR_PORT_FLAVOUR, &flav, sizeof(flav)))
-		return -1;
-	if (!nla_put_u32(attrs, sizeof(attrs), &off,
-			 DEVLINK_ATTR_PORT_NUMBER, port_number))
-		return -1;
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
+			   nl_seq_next(&ctx->nl),
+			   DEVLINK_CMD_PORT_NEW, 0);
+	if (!off)
+		return -EIO;
+	off = nla_put_str(buf, off, sizeof(buf),
+			  DEVLINK_ATTR_BUS_NAME, PDPC_BUS);
+	if (!off)
+		return -EIO;
+	off = nla_put_str(buf, off, sizeof(buf),
+			  DEVLINK_ATTR_DEV_NAME, dev_name);
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf),
+		      DEVLINK_ATTR_PORT_FLAVOUR, &flav, sizeof(flav));
+	if (!off)
+		return -EIO;
+	off = nla_put_u32(buf, off, sizeof(buf),
+			  DEVLINK_ATTR_PORT_NUMBER, port_number);
+	if (!off)
+		return -EIO;
 
-	return genl_send_recv(nlfd, fam, DEVLINK_CMD_PORT_NEW, 1,
-			      attrs, off, resp, sizeof(resp), &resp_len);
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_len = (uint32_t)off;
+	return genl_send_recv(ctx, buf, off);
 }
 
-static int pdpc_devlink_port_del(int nlfd, uint16_t fam,
+static int pdpc_devlink_port_del(struct genl_ctx *ctx,
 				 const char *dev_name, uint32_t port_index)
 {
-	unsigned char attrs[128];
-	unsigned char resp[PKR_NL_RX_BUF];
-	size_t off = 0;
-	size_t resp_len = 0;
+	unsigned char buf[256];
+	struct nlmsghdr *nlh;
+	size_t off;
 
-	if (!nla_put_str(attrs, sizeof(attrs), &off,
-			 DEVLINK_ATTR_BUS_NAME, PDPC_BUS))
-		return -1;
-	if (!nla_put_str(attrs, sizeof(attrs), &off,
-			 DEVLINK_ATTR_DEV_NAME, dev_name))
-		return -1;
-	if (!nla_put_u32(attrs, sizeof(attrs), &off,
-			 DEVLINK_ATTR_PORT_INDEX, port_index))
-		return -1;
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
+			   nl_seq_next(&ctx->nl),
+			   DEVLINK_CMD_PORT_DEL, 0);
+	if (!off)
+		return -EIO;
+	off = nla_put_str(buf, off, sizeof(buf),
+			  DEVLINK_ATTR_BUS_NAME, PDPC_BUS);
+	if (!off)
+		return -EIO;
+	off = nla_put_str(buf, off, sizeof(buf),
+			  DEVLINK_ATTR_DEV_NAME, dev_name);
+	if (!off)
+		return -EIO;
+	off = nla_put_u32(buf, off, sizeof(buf),
+			  DEVLINK_ATTR_PORT_INDEX, port_index);
+	if (!off)
+		return -EIO;
 
-	return genl_send_recv(nlfd, fam, DEVLINK_CMD_PORT_DEL, 1,
-			      attrs, off, resp, sizeof(resp), &resp_len);
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_len = (uint32_t)off;
+	return genl_send_recv(ctx, buf, off);
 }
 
 /* RTM_DELLINK by ifname.  Best-effort. */
-static void pdpc_rtm_dellink(int rtfd, const char *vname)
+static void pdpc_rtm_dellink(struct nl_ctx *rtnl, const char *vname)
 {
 	unsigned char buf[256];
-	unsigned char rxbuf[PKR_NL_RX_BUF];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifm;
-	struct sockaddr_nl sa;
 	size_t off;
 
 	memset(buf, 0, sizeof(buf));
@@ -800,33 +576,26 @@ static void pdpc_rtm_dellink(int rtfd, const char *vname)
 	nlh->nlmsg_len   = NLMSG_LENGTH(sizeof(*ifm));
 	nlh->nlmsg_type  = RTM_DELLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = 8;
-	ifm->ifi_family = AF_UNSPEC;
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
+	ifm->ifi_family  = AF_UNSPEC;
 
 	off = NLMSG_ALIGN(nlh->nlmsg_len);
-	if (!nla_put_str(buf, sizeof(buf), &off, IFLA_IFNAME, vname))
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, vname);
+	if (!off)
 		return;
 	nlh->nlmsg_len = (uint32_t)off;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (sendto(rtfd, buf, off, 0,
-		   (struct sockaddr *)&sa, sizeof(sa)) < 0)
-		return;
-	(void)recv(rtfd, rxbuf, sizeof(rxbuf), 0);
+	(void)nl_send_recv(rtnl, buf, off);
 }
 
 /* RTM_NEWLINK macvlan with IFLA_LINK pointing at the PF -- this is the
  * VF-representor cross-fire that races the devlink port_new/port_del
  * walkers against an rtnl link create rooted at the PF index. */
-static void pdpc_rtm_newlink_macvlan(int rtfd, int pf_ifidx, const char *vname)
+static void pdpc_rtm_newlink_macvlan(struct nl_ctx *rtnl, int pf_ifidx,
+				     const char *vname)
 {
 	unsigned char buf[512];
-	unsigned char rxbuf[PKR_NL_RX_BUF];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifm;
-	struct nlattr *li;
-	struct sockaddr_nl sa;
 	size_t off, li_off;
 	uint32_t link_idx = (uint32_t)pf_ifidx;
 
@@ -837,41 +606,35 @@ static void pdpc_rtm_newlink_macvlan(int rtfd, int pf_ifidx, const char *vname)
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = 7;
-	ifm->ifi_family = AF_UNSPEC;
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
+	ifm->ifi_family  = AF_UNSPEC;
 
 	off = NLMSG_ALIGN(nlh->nlmsg_len);
-	if (!nla_put(buf, sizeof(buf), &off,
-		     IFLA_LINK, &link_idx, sizeof(link_idx)))
+	off = nla_put(buf, off, sizeof(buf),
+		      IFLA_LINK, &link_idx, sizeof(link_idx));
+	if (!off)
 		return;
-	if (!nla_put_str(buf, sizeof(buf), &off, IFLA_IFNAME, vname))
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, vname);
+	if (!off)
 		return;
 	li_off = off;
-	if (off + NLA_HDRLEN > sizeof(buf))
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
+	if (!off)
 		return;
-	li = (struct nlattr *)(buf + off);
-	li->nla_type = IFLA_LINKINFO;
-	li->nla_len  = NLA_HDRLEN;
-	off += NLA_HDRLEN;
-	if (!nla_put_str(buf, sizeof(buf), &off,
-			 IFLA_INFO_KIND, "macvlan"))
+	off = nla_put_str(buf, off, sizeof(buf),
+			  IFLA_INFO_KIND, "macvlan");
+	if (!off)
 		return;
-	li->nla_len = (uint16_t)(off - li_off);
+	nla_nest_end(buf, li_off, off);
 	nlh->nlmsg_len = (uint32_t)off;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (sendto(rtfd, buf, off, 0,
-		   (struct sockaddr *)&sa, sizeof(sa)) < 0)
-		return;
-	(void)recv(rtfd, rxbuf, sizeof(rxbuf), 0);
+	(void)nl_send_recv(rtnl, buf, off);
 }
 
 /* Spawn 1 VF on @bus_id then cross-fire an RTM_NEWLINK macvlan over
  * the PF, follow with RTM_DELLINK, and tear the VF back down so the
  * next iter can re-spawn.  Latches ns_unsupported_psp_sriov on
  * persistent ENOSYS / EPERM / ENOENT from the sysfs write. */
-static void pdpc_try_sriov_crossfire(__u32 bus_id, int rtfd)
+static void pdpc_try_sriov_crossfire(__u32 bus_id, struct nl_ctx *rtnl)
 {
 	char path[160];
 	char ifname[IFNAMSIZ];
@@ -900,8 +663,8 @@ static void pdpc_try_sriov_crossfire(__u32 bus_id, int rtfd)
 	if (pf_idx > 0) {
 		(void)snprintf(vname, sizeof(vname), "psprep%u",
 			       (unsigned int)(bus_id & 0xfffU));
-		pdpc_rtm_newlink_macvlan(rtfd, pf_idx, vname);
-		pdpc_rtm_dellink(rtfd, vname);
+		pdpc_rtm_newlink_macvlan(rtnl, pf_idx, vname);
+		pdpc_rtm_dellink(rtnl, vname);
 	}
 
 	(void)pdpc_sysfs_write_str(path, "0");
@@ -910,12 +673,14 @@ static void pdpc_try_sriov_crossfire(__u32 bus_id, int rtfd)
 static void iter_devlink_port_churn(unsigned int iter_idx,
 				    const struct timespec *t_outer)
 {
-	int dlfd = -1, rtfd = -1, sockfd = -1, psp_nlfd = -1;
-	struct sockaddr_nl sa;
+	struct nl_ctx rtnl = { .fd = -1 };
+	struct genl_ctx devlink_ctx = { .nl = { .fd = -1 } };
+	struct genl_ctx psp_ctx = { .nl = { .fd = -1 } };
+	struct nl_open_opts nlopts;
+	struct genl_open_opts gopts;
+	int sockfd = -1;
 	struct sockaddr_in peer;
-	struct timeval tv;
-	uint16_t devlink_family = 0;
-	uint16_t psp_family = 0;
+	bool psp_open = false;
 	unsigned int idx_a, idx_b, idx_c;
 	char dev_a[32], dev_b[32], psp_iface[IFNAMSIZ];
 	struct timespec t_inner;
@@ -944,27 +709,17 @@ static void iter_devlink_port_churn(unsigned int iter_idx,
 		return;
 	}
 
-	tv.tv_sec  = 0;
-	tv.tv_usec = PKR_TIMEO_MS * 1000;
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-
-	rtfd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (rtfd < 0)
-		goto out;
-	(void)setsockopt(rtfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	if (bind(rtfd, (struct sockaddr *)&sa, sizeof(sa)) < 0)
+	memset(&nlopts, 0, sizeof(nlopts));
+	nlopts.proto         = NETLINK_ROUTE;
+	nlopts.recv_timeo_s  = 1;
+	if (nl_open(&rtnl, &nlopts) < 0)
 		goto out;
 
-	dlfd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_GENERIC);
-	if (dlfd < 0)
-		goto out;
-	(void)setsockopt(dlfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	if (bind(dlfd, (struct sockaddr *)&sa, sizeof(sa)) < 0)
-		goto out;
-
-	rc = pdpc_resolve_devlink_family(dlfd, &devlink_family);
-	if (rc != 0 || devlink_family == 0) {
+	memset(&gopts, 0, sizeof(gopts));
+	gopts.family_name  = DEVLINK_FAMILY_NAME;
+	gopts.recv_timeo_s = 1;
+	rc = genl_open(&devlink_ctx, &gopts);
+	if (rc != 0) {
 		ns_unsupported_psp_devlink_port = true;
 		__atomic_add_fetch(&shm->stats.psp_devlink_port_churn_unsupported_latched,
 				   1, __ATOMIC_RELAXED);
@@ -985,13 +740,11 @@ static void iter_devlink_port_churn(unsigned int iter_idx,
 	(void)snprintf(psp_iface, sizeof(psp_iface), "eni%unp0",
 		       (unsigned int)pdpc_bus_ids[idx_a]);
 
-	psp_nlfd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_GENERIC);
-	if (psp_nlfd >= 0) {
-		(void)setsockopt(psp_nlfd, SOL_SOCKET, SO_RCVTIMEO,
-				 &tv, sizeof(tv));
-		(void)bind(psp_nlfd, (struct sockaddr *)&sa, sizeof(sa));
-		(void)resolve_psp_family(psp_nlfd, &psp_family);
-	}
+	memset(&gopts, 0, sizeof(gopts));
+	gopts.family_name  = PSP_FAMILY_NAME;
+	gopts.recv_timeo_s = 1;
+	if (genl_open(&psp_ctx, &gopts) == 0)
+		psp_open = true;
 
 	sockfd = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
 	if (sockfd >= 0) {
@@ -1023,7 +776,7 @@ static void iter_devlink_port_churn(unsigned int iter_idx,
 		if ((unsigned long long)ns_since(t_outer) >= PKR_WALL_CAP_NS)
 			break;
 
-		rc = pdpc_devlink_port_new(dlfd, devlink_family, dev_a,
+		rc = pdpc_devlink_port_new(&devlink_ctx, dev_a,
 					   pdpc_next_port[idx_a]);
 		if (rc == 0) {
 			pdpc_last_port[idx_a] = pdpc_next_port[idx_a];
@@ -1032,7 +785,7 @@ static void iter_devlink_port_churn(unsigned int iter_idx,
 					   1, __ATOMIC_RELAXED);
 		}
 
-		rc = pdpc_devlink_port_del(dlfd, devlink_family, dev_b,
+		rc = pdpc_devlink_port_del(&devlink_ctx, dev_b,
 					   pdpc_last_port[idx_b]);
 		if (rc == 0) {
 			__atomic_add_fetch(&shm->stats.psp_devlink_port_churn_port_del_ok,
@@ -1041,33 +794,52 @@ static void iter_devlink_port_churn(unsigned int iter_idx,
 				pdpc_last_port[idx_b]--;
 		}
 
-		pdpc_try_sriov_crossfire(pdpc_bus_ids[idx_c], rtfd);
+		pdpc_try_sriov_crossfire(pdpc_bus_ids[idx_c], &rtnl);
 
-		if (psp_nlfd >= 0 && psp_family != 0 && sockfd >= 0) {
-			(void)psp_key_rotate_cmd(psp_nlfd, psp_family, 1U);
-			(void)psp_tx_assoc_cmd(psp_nlfd, psp_family, 1U,
-					       sockfd);
+		if (psp_open && sockfd >= 0) {
+			(void)psp_key_rotate_cmd(&psp_ctx, 1U);
+			(void)psp_tx_assoc_cmd(&psp_ctx, 1U, sockfd);
 		}
 	}
 
 out:
 	if (sockfd >= 0)
 		close(sockfd);
-	if (psp_nlfd >= 0)
-		close(psp_nlfd);
-	if (dlfd >= 0)
-		close(dlfd);
-	if (rtfd >= 0)
-		close(rtfd);
+	if (psp_open)
+		genl_close(&psp_ctx);
+	if (devlink_ctx.nl.fd >= 0)
+		genl_close(&devlink_ctx);
+	if (rtnl.fd >= 0)
+		nl_close(&rtnl);
+}
+
+/* Issue a single PSP_CMD_DEV_GET on @ctx as a structural probe; the
+ * reply is consumed but not parsed.  Returns the underlying
+ * genl_send_recv() rc. */
+static int psp_dev_get_probe(struct genl_ctx *ctx)
+{
+	unsigned char buf[NLMSG_HDRLEN + GENL_HDRLEN];
+	struct nlmsghdr *nlh;
+	size_t off;
+
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
+			   nl_seq_next(&ctx->nl),
+			   PSP_CMD_DEV_GET, 0);
+	if (!off)
+		return -EIO;
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_len = (uint32_t)off;
+	return genl_send_recv(ctx, buf, off);
 }
 
 static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 {
-	int nlfd = -1, rtfd = -1, sockfd = -1;
-	struct sockaddr_nl sa;
+	struct nl_ctx rtnl = { .fd = -1 };
+	struct genl_ctx psp_ctx = { .nl = { .fd = -1 } };
+	struct nl_open_opts nlopts;
+	struct genl_open_opts gopts;
+	int sockfd = -1;
 	struct sockaddr_in peer;
-	struct timeval tv;
-	uint16_t psp_family = 0;
 	uint32_t dev_id = 0;
 	char ifname[IFNAMSIZ];
 	int rc;
@@ -1083,18 +855,10 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 		return;
 	}
 
-	rtfd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (rtfd < 0) {
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-	tv.tv_sec  = 0;
-	tv.tv_usec = PKR_TIMEO_MS * 1000;
-	(void)setsockopt(rtfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(rtfd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
+	memset(&nlopts, 0, sizeof(nlopts));
+	nlopts.proto         = NETLINK_ROUTE;
+	nlopts.recv_timeo_s  = 1;
+	if (nl_open(&rtnl, &nlopts) < 0) {
 		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -1102,31 +866,21 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 
 	(void)snprintf(ifname, sizeof(ifname), "psp%u",
 		       (unsigned int)(rand32() & 0xffff));
-	rc = rtnl_make_netdevsim(rtfd, ifname);
+	rc = rtnl_make_netdevsim(&rtnl, ifname);
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.psp_key_rotate_netdev_create_ok,
 				   1, __ATOMIC_RELAXED);
 	/* On -ENODEV / -EOPNOTSUPP / -EEXIST the family probe below still
 	 * runs -- the cap-gate latches there if PSP isn't built in. */
 
-	nlfd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_GENERIC);
-	if (nlfd < 0) {
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-	(void)setsockopt(nlfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(nlfd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-
-	/* Structural-support probe: dynamic family resolution. */
-	rc = resolve_psp_family(nlfd, &psp_family);
-	if (rc != 0 || psp_family == 0) {
+	/* Structural-support probe: open the PSP genl family.  genl_open()
+	 * runs CTRL_CMD_GETFAMILY internally; -ENOENT means the kernel
+	 * doesn't know "psp" at all. */
+	memset(&gopts, 0, sizeof(gopts));
+	gopts.family_name  = PSP_FAMILY_NAME;
+	gopts.recv_timeo_s = 1;
+	rc = genl_open(&psp_ctx, &gopts);
+	if (rc != 0) {
 		if (rc < 0 && errno_is_unsupported(-rc))
 			ns_unsupported_psp_key_rotate = true;
 		else
@@ -1142,15 +896,8 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	 * device exposes id starting at 1; on a real PSP-capable host the
 	 * netdevsim spawned above lands here. */
 	{
-		unsigned char attrs[16];
-		unsigned char resp[PKR_NL_RX_BUF];
-		size_t off = 0;
-		size_t resp_len = 0;
-		int rc2;
+		int rc2 = psp_dev_get_probe(&psp_ctx);
 
-		rc2 = genl_send_recv(nlfd, psp_family, PSP_CMD_DEV_GET, 1,
-				     attrs, off, resp, sizeof(resp),
-				     &resp_len);
 		if (rc2 == 0)
 			__atomic_add_fetch(&shm->stats.psp_key_rotate_dev_get_ok,
 					   1, __ATOMIC_RELAXED);
@@ -1173,7 +920,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	(void)connect(sockfd, (struct sockaddr *)&peer, sizeof(peer));
 
 	/* Initial key install. */
-	rc = psp_key_rotate_cmd(nlfd, psp_family, dev_id);
+	rc = psp_key_rotate_cmd(&psp_ctx, dev_id);
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.psp_key_rotate_key_install_ok,
 				   1, __ATOMIC_RELAXED);
@@ -1182,7 +929,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 
 	/* Bind the SA to the socket via the assoc command (spec stat:
 	 * spi_set_ok -- see spec-deviation note in the file header). */
-	rc = psp_tx_assoc_cmd(nlfd, psp_family, dev_id, sockfd);
+	rc = psp_tx_assoc_cmd(&psp_ctx, dev_id, sockfd);
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.psp_key_rotate_spi_set_ok,
 				   1, __ATOMIC_RELAXED);
@@ -1208,15 +955,14 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 			inner_traffic_burst(sockfd);
 
 			/* RACE TARGET: rotate keys mid-flow. */
-			rc = psp_key_rotate_cmd(nlfd, psp_family, dev_id);
+			rc = psp_key_rotate_cmd(&psp_ctx, dev_id);
 			if (rc == 0)
 				__atomic_add_fetch(&shm->stats.psp_key_rotate_rotate_ok,
 						   1, __ATOMIC_RELAXED);
 
 			/* Re-bind the assoc to the rotated generation
 			 * mid-flow -- "spi switch" per spec naming. */
-			rc = psp_tx_assoc_cmd(nlfd, psp_family,
-					      dev_id, sockfd);
+			rc = psp_tx_assoc_cmd(&psp_ctx, dev_id, sockfd);
 			if (rc == 0)
 				__atomic_add_fetch(&shm->stats.psp_key_rotate_spi_switch_ok,
 						   1, __ATOMIC_RELAXED);
@@ -1230,29 +976,30 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 			   1, __ATOMIC_RELAXED);
 
 teardown:
-	/* Randomised socket close order: rotate which fd dies first so
-	 * the rtnl/genl/SOCK_STREAM teardown ordering varies across
-	 * iterations. */
+	/* Randomised teardown order: rotate which fd dies first so the
+	 * rtnl/genl/SOCK_STREAM teardown ordering varies across
+	 * iterations.  nl_close() / genl_close() leave fd at -1 so the
+	 * out: cleanup below is idempotent. */
 	switch (iter_idx & 3U) {
 	case 0:
 		if (sockfd >= 0) { close(sockfd); sockfd = -1; }
-		if (nlfd   >= 0) { close(nlfd);   nlfd   = -1; }
-		if (rtfd   >= 0) { close(rtfd);   rtfd   = -1; }
+		if (psp_ctx.nl.fd >= 0) genl_close(&psp_ctx);
+		if (rtnl.fd >= 0) nl_close(&rtnl);
 		break;
 	case 1:
-		if (nlfd   >= 0) { close(nlfd);   nlfd   = -1; }
+		if (psp_ctx.nl.fd >= 0) genl_close(&psp_ctx);
 		if (sockfd >= 0) { close(sockfd); sockfd = -1; }
-		if (rtfd   >= 0) { close(rtfd);   rtfd   = -1; }
+		if (rtnl.fd >= 0) nl_close(&rtnl);
 		break;
 	case 2:
-		if (rtfd   >= 0) { close(rtfd);   rtfd   = -1; }
+		if (rtnl.fd >= 0) nl_close(&rtnl);
 		if (sockfd >= 0) { close(sockfd); sockfd = -1; }
-		if (nlfd   >= 0) { close(nlfd);   nlfd   = -1; }
+		if (psp_ctx.nl.fd >= 0) genl_close(&psp_ctx);
 		break;
 	default:
 		if (sockfd >= 0) { close(sockfd); sockfd = -1; }
-		if (rtfd   >= 0) { close(rtfd);   rtfd   = -1; }
-		if (nlfd   >= 0) { close(nlfd);   nlfd   = -1; }
+		if (rtnl.fd >= 0) nl_close(&rtnl);
+		if (psp_ctx.nl.fd >= 0) genl_close(&psp_ctx);
 		break;
 	}
 	return;
@@ -1260,10 +1007,10 @@ teardown:
 out:
 	if (sockfd >= 0)
 		close(sockfd);
-	if (nlfd >= 0)
-		close(nlfd);
-	if (rtfd >= 0)
-		close(rtfd);
+	if (psp_ctx.nl.fd >= 0)
+		genl_close(&psp_ctx);
+	if (rtnl.fd >= 0)
+		nl_close(&rtnl);
 }
 
 bool psp_key_rotate(struct childdata *child)
