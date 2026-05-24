@@ -21,5 +21,4 @@
 #
 # Lines starting with `#` and blank lines are ignored.
 syscalls/lookup_dcookie.c:lookup_dcookie
-syscalls/sched_getattr.c:sched_getattr
 syscalls/sysfs.c:sysfs
