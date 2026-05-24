@@ -15,6 +15,16 @@
  *     (NLMSG_ERROR, err->error == 0).  Any other reply (RTM_*,
  *     truncation, short recv, sendmsg/recv failure) returns -EIO.
  *     Dump-style callers want a different helper.
+ *   - nl_send_recv_any() shares the envelope and the NLMSG_ERROR
+ *     decode with nl_send_recv() but accepts any non-NLMSG_ERROR
+ *     reply as success.  Used by callers (altname-thrash) where the
+ *     dump head is the expected reply shape.
+ *   - nl_send_recv_dump() drains an NLM_F_MULTI reply stream until
+ *     NLMSG_DONE or NLMSG_ERROR; intermediate replies are skipped.
+ *     The recv buffer is 8 KiB so a single page of dump replies fits
+ *     in one syscall.
+ *   - The shared sendmsg helper nl_sendmsg() keeps the wire envelope
+ *     in one place across the variants.
  *   - nl_send_recv_retry() retries on -EAGAIN / -EBUSY only.  -EINPROGRESS
  *     is intentionally NOT retried here: the only existing caller that
  *     retries on it (nl80211-churn.c) builds its own genl envelope and
@@ -94,14 +104,16 @@ void nl_close(struct nl_ctx *ctx)
 	ctx->fd = -1;
 }
 
-int nl_send_recv(struct nl_ctx *ctx, void *msg, size_t len)
+/*
+ * Send msg/len to the kernel on ctx->fd.  Returns 0 on success,
+ * -EIO on sendmsg failure.  Shared by nl_send_recv() and the
+ * any/dump variants so the wire envelope stays in one place.
+ */
+static int nl_sendmsg(struct nl_ctx *ctx, void *msg, size_t len)
 {
 	struct sockaddr_nl dst;
 	struct iovec iov;
 	struct msghdr mh;
-	unsigned char rbuf[1024];
-	struct nlmsghdr *nlh;
-	ssize_t n;
 
 	memset(&dst, 0, sizeof(dst));
 	dst.nl_family = AF_NETLINK;
@@ -117,6 +129,17 @@ int nl_send_recv(struct nl_ctx *ctx, void *msg, size_t len)
 
 	if (sendmsg(ctx->fd, &mh, 0) < 0)
 		return -EIO;
+	return 0;
+}
+
+int nl_send_recv(struct nl_ctx *ctx, void *msg, size_t len)
+{
+	unsigned char rbuf[1024];
+	struct nlmsghdr *nlh;
+	ssize_t n;
+
+	if (nl_sendmsg(ctx, msg, len) < 0)
+		return -EIO;
 
 	n = recv(ctx->fd, rbuf, sizeof(rbuf), 0);
 	if (n < 0)
@@ -131,6 +154,64 @@ int nl_send_recv(struct nl_ctx *ctx, void *msg, size_t len)
 		return err->error;
 	}
 	return -EIO;
+}
+
+int nl_send_recv_any(struct nl_ctx *ctx, void *msg, size_t len)
+{
+	unsigned char rbuf[1024];
+	struct nlmsghdr *nlh;
+	ssize_t n;
+
+	if (nl_sendmsg(ctx, msg, len) < 0)
+		return -EIO;
+
+	n = recv(ctx->fd, rbuf, sizeof(rbuf), 0);
+	if (n < 0)
+		return -EIO;
+	if ((size_t)n < NLMSG_HDRLEN)
+		return -EIO;
+
+	nlh = (struct nlmsghdr *)rbuf;
+	if (nlh->nlmsg_type == NLMSG_ERROR) {
+		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
+
+		return err->error;
+	}
+	return 0;
+}
+
+int nl_send_recv_dump(struct nl_ctx *ctx, void *msg, size_t len)
+{
+	unsigned char rbuf[8192];
+	ssize_t n;
+
+	if (nl_sendmsg(ctx, msg, len) < 0)
+		return -EIO;
+
+	for (;;) {
+		struct nlmsghdr *nlh;
+		size_t remaining;
+
+		n = recv(ctx->fd, rbuf, sizeof(rbuf), 0);
+		if (n <= 0)
+			return -EIO;
+		if ((size_t)n < NLMSG_HDRLEN)
+			return -EIO;
+
+		nlh = (struct nlmsghdr *)rbuf;
+		remaining = (size_t)n;
+		while (NLMSG_OK(nlh, remaining)) {
+			if (nlh->nlmsg_type == NLMSG_DONE)
+				return 0;
+			if (nlh->nlmsg_type == NLMSG_ERROR) {
+				struct nlmsgerr *err =
+					(struct nlmsgerr *)NLMSG_DATA(nlh);
+
+				return err->error;
+			}
+			nlh = NLMSG_NEXT(nlh, remaining);
+		}
+	}
 }
 
 int nl_send_recv_retry(struct nl_ctx *ctx, void *msg, size_t len)

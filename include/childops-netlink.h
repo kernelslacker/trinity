@@ -29,9 +29,6 @@
  *     cmd) — wire shape differs enough to deserve its own helper if
  *     and when it lands.
  *   - nfnetlink envelope (subsys + nfgenmsg).  Same.
- *   - Dump / streaming receive.  Single-ack callers are the common
- *     case; dump-style callers live in a couple of files and are
- *     handled per-op for now.
  */
 
 #include <errno.h>
@@ -88,6 +85,44 @@ static inline __u32 nl_seq_next(struct nl_ctx *ctx)
  *                      dump-style replies need a different helper).
  */
 int nl_send_recv(struct nl_ctx *ctx, void *msg, size_t len);
+
+/*
+ * Send msg/len then receive exactly one reply, accepting any reply
+ * shape as a positive outcome.  Differs from nl_send_recv() only in
+ * the non-error reply case: where nl_send_recv() treats RTM_* /
+ * payload replies as -EIO, this variant treats them as success.
+ * Returns:
+ *   0                — any single reply received (NLMSG_ERROR with
+ *                      err == 0, or any non-NLMSG_ERROR reply such
+ *                      as RTM_NEWLINK / attribute payloads).
+ *   negated errno    — NLMSG_ERROR rejection.
+ *   -EIO             — local sendmsg/recv failure, short recv, or
+ *                      timeout.
+ *
+ * Canonical caller: altname-thrash, where RTM_GETLINK with
+ * IFLA_EXT_MASK=RTEXT_FILTER_VF returns the dump head as a non-error
+ * reply and the per-op stat must increment on that case.
+ */
+int nl_send_recv_any(struct nl_ctx *ctx, void *msg, size_t len);
+
+/*
+ * Send msg/len then drain the kernel's reply stream until NLMSG_DONE
+ * or NLMSG_ERROR.  Designed for NLM_F_MULTI walkers (RTM_GETLINK
+ * dumps and friends).  Replies are not surfaced to the caller — the
+ * canonical caller, rtnl-vf-broadcast-getlink, only needs to know
+ * the dump completed so the kernel-side walker actually ran.  Add a
+ * _dump_cb variant later if a future caller needs per-message
+ * inspection.
+ *
+ * Returns:
+ *   0                — dump completed cleanly (NLMSG_DONE seen, or
+ *                      NLMSG_ERROR carrying err == 0).
+ *   negated errno    — NLMSG_ERROR encountered mid-dump.
+ *   -EIO             — local sendmsg/recv failure, short recv,
+ *                      timeout, or malformed nlmsghdr stream with no
+ *                      DONE/ERROR seen.
+ */
+int nl_send_recv_dump(struct nl_ctx *ctx, void *msg, size_t len);
 
 /*
  * As nl_send_recv() but retries the whole send/recv up to NL_RETRY_MAX
