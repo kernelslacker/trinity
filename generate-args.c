@@ -252,17 +252,60 @@ static void publish_paired_length(struct syscallentry *entry,
 	}
 }
 
+/*
+ * UIO_FASTIOV / UIO_MAXIOV are the kernel-side fast-path and absolute
+ * limits on iovec count.  Local fallback to the canonical 8/1024
+ * mirrors the SPLICE_F_* pattern at include/compat.h:120-127, so the
+ * file builds against any uapi header vintage without pulling in
+ * <sys/uio.h> just for the boundary constants.
+ */
+#ifndef UIO_FASTIOV
+# define UIO_FASTIOV 8
+#endif
+#ifndef UIO_MAXIOV
+# define UIO_MAXIOV 1024
+#endif
+
 static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum)
 {
 	unsigned long num_entries;
+	unsigned int bucket = rnd_modulo_u32(100);
 
-	/* Each iovec entry pulls a map under a global lock, so bias toward
-	 * small counts: 90% of the time pick 1-8, only occasionally exercise
-	 * the larger 1-256 range. */
-	if (ONE_IN(10))
-		num_entries = RAND_RANGE(1, 256);
+	/*
+	 * Count buckets.  The old 90/10 split between RAND_RANGE(1, 8) and
+	 * RAND_RANGE(1, 256) under-exercised the iov_iter boundary
+	 * transitions: UIO_FASTIOV (8) is the stack-vs-heap fallback in
+	 * import_iovec(), UIO_MAXIOV (1024) is the kernel's hard cap with
+	 * EINVAL the one-past arm.  0 is a legal empty-iov call shape and
+	 * 1 dominates real workloads.  The remaining picks split mid-range
+	 * counts so neither the small-count common path nor the rare
+	 * large-count slow path falls out of coverage.
+	 *
+	 *   5% 0                            (legal zero-length arm)
+	 *  25% 1                            (dominant in real code)
+	 *  40% RAND_RANGE(2, UIO_FASTIOV)
+	 *  10% UIO_FASTIOV                  (stack/heap boundary)
+	 *  10% RAND_RANGE(9, 64)
+	 *   5% RAND_RANGE(65, UIO_MAXIOV-1)
+	 *   3% UIO_MAXIOV                   (kernel cap)
+	 *   2% UIO_MAXIOV+1                 (EINVAL reject arm)
+	 */
+	if (bucket < 5)
+		num_entries = 0;
+	else if (bucket < 30)
+		num_entries = 1;
+	else if (bucket < 70)
+		num_entries = RAND_RANGE(2, UIO_FASTIOV);
+	else if (bucket < 80)
+		num_entries = UIO_FASTIOV;
+	else if (bucket < 90)
+		num_entries = RAND_RANGE(UIO_FASTIOV + 1, 64);
+	else if (bucket < 95)
+		num_entries = RAND_RANGE(65, UIO_MAXIOV - 1);
+	else if (bucket < 98)
+		num_entries = UIO_MAXIOV;
 	else
-		num_entries = RAND_RANGE(1, 8);
+		num_entries = UIO_MAXIOV + 1;
 
 	publish_paired_length(entry, rec, argnum, num_entries);
 	return (unsigned long) alloc_iovec(num_entries);

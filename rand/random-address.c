@@ -541,17 +541,126 @@ void scrub_msghdr_for_kernel_write(struct msghdr *msg)
 	scrub_iovec_for_kernel_write(msg->msg_iov, msg->msg_iovlen);
 }
 
+/*
+ * Per-entry iovec shape picker.  Returns a bucket index that the
+ * alloc_iovec() loop dispatches on so individual entries get NULL /
+ * tiny / page-crossing / shared-base / pool / invalid shapes instead
+ * of the original blanket "valid-map + variable length".  The
+ * shared-base bucket needs a predecessor entry to mirror, so for the
+ * first entry the picker collapses that band into SHAPE_VALID_MAP.
+ *
+ * Bucket weights (sum 100):
+ *  10  SHAPE_NULL        — NULL base, zero len; iov_iter skip arm
+ *  10  SHAPE_TINY        — valid map base, len=1; page-walk early-exit
+ *  10  SHAPE_PAGECROSS   — len > page_size; iov_iter page advance
+ *  10  SHAPE_SHARED      — iov[i-1].iov_base with a different length
+ *   5  SHAPE_POOL        — get_writable_address() page, half-len
+ *   5  SHAPE_INVALID     — 0xdeadbeef, len=1; EFAULT reject arm
+ *  50  SHAPE_VALID_MAP   — preserves the original behaviour
+ */
+enum iovec_entry_shape {
+	SHAPE_NULL,
+	SHAPE_TINY,
+	SHAPE_PAGECROSS,
+	SHAPE_SHARED,
+	SHAPE_POOL,
+	SHAPE_INVALID,
+	SHAPE_VALID_MAP,
+};
+
+static enum iovec_entry_shape pick_iovec_entry_shape(unsigned int idx)
+{
+	unsigned int r = rnd_modulo_u32(100);
+
+	if (r < 10)
+		return SHAPE_NULL;
+	if (r < 20)
+		return SHAPE_TINY;
+	if (r < 30)
+		return SHAPE_PAGECROSS;
+	if (r < 40)
+		return (idx > 0) ? SHAPE_SHARED : SHAPE_VALID_MAP;
+	if (r < 45)
+		return SHAPE_POOL;
+	if (r < 50)
+		return SHAPE_INVALID;
+	return SHAPE_VALID_MAP;
+}
+
 struct iovec * alloc_iovec(unsigned int num)
 {
 	struct iovec *iov;
 	unsigned int i;
 
+	/*
+	 * num == 0 is a legal bucket from handle_arg_iovec (the iov_iter
+	 * "no segments" arm).  zmalloc_tracked(0) glibc behaviour varies
+	 * by implementation; sidestep by returning NULL.  Both downstream
+	 * walkers -- scrub_iovec_for_kernel_write() and the deferred-free
+	 * path -- are already NULL-safe (see the early returns at
+	 * random-address.c:487 and the io_uring_register post-handler).
+	 */
+	if (num == 0)
+		return NULL;
+
 	iov = zmalloc_tracked(num * sizeof(struct iovec));	/* freed by generic_free_arg */
 
 	for (i = 0; i < num; i++) {
-		struct map *map = get_map();
+		enum iovec_entry_shape shape = pick_iovec_entry_shape(i);
+		struct map *map;
 		unsigned long base;
+		void *pool;
 
+		switch (shape) {
+		case SHAPE_NULL:
+			iov[i].iov_base = NULL;
+			iov[i].iov_len = 0;
+			continue;
+		case SHAPE_SHARED:
+			/*
+			 * i > 0 guaranteed by pick_iovec_entry_shape.
+			 * Overlap with the previous entry so iov_iter walks
+			 * revisit the same userspace bytes -- exercises the
+			 * loop's len bookkeeping under range aliasing.  No
+			 * avoid_shared_buffer_out scrub: iov[i-1].iov_base
+			 * already went through it on the previous iteration.
+			 */
+			iov[i].iov_base = iov[i - 1].iov_base;
+			iov[i].iov_len = 1 + rnd_modulo_u32(page_size);
+			continue;
+		case SHAPE_POOL:
+			pool = get_writable_address(page_size);
+			if (pool != NULL) {
+				iov[i].iov_base = pool;
+				iov[i].iov_len = page_size / 2;
+				continue;
+			}
+			/* Pool exhaustion -- fall through to valid-map. */
+			shape = SHAPE_VALID_MAP;
+			break;
+		case SHAPE_INVALID:
+			/*
+			 * EFAULT reject arm.  scrub_iovec_for_kernel_write()
+			 * leaves this base alone (its overlap checks key off
+			 * heap / shared-region bounds, not arbitrary
+			 * pointers), so read-side callers like readv/recvmsg
+			 * still EFAULT cleanly; write-side callers (vmsplice,
+			 * process_madvise, process_vm_readv) get the EFAULT
+			 * path directly.  Intentionally asymmetric -- new
+			 * coverage, document so a future audit does not mistake
+			 * the kernel reject for a trinity regression.
+			 */
+			iov[i].iov_base = (void *) 0xdeadbeefUL;
+			iov[i].iov_len = 1;
+			continue;
+		case SHAPE_TINY:
+		case SHAPE_PAGECROSS:
+		case SHAPE_VALID_MAP:
+			break;
+		}
+
+		/* Map-backed shapes share the same base lookup + scrub tail. */
+		map = get_map();
 		if (map == NULL) {
 			iov[i].iov_base = NULL;
 			iov[i].iov_len = 0;
@@ -559,7 +668,15 @@ struct iovec * alloc_iovec(unsigned int num)
 		}
 
 		iov[i].iov_base = map->ptr;
-		if (RAND_BOOL()) {
+		if (shape == SHAPE_TINY) {
+			iov[i].iov_len = 1;
+		} else if (shape == SHAPE_PAGECROSS && map->size > page_size) {
+			unsigned long len = page_size + RAND_RANGE(1, 64);
+
+			if (len > map->size)
+				len = map->size;
+			iov[i].iov_len = len;
+		} else if (RAND_BOOL()) {
 			const unsigned int lens[] = {
 				0, 1, page_size - 1, page_size,
 				page_size + 1, page_size * 2,
@@ -579,9 +696,7 @@ struct iovec * alloc_iovec(unsigned int num)
 		 * read/recv/getdents/ioctl paths already apply at the
 		 * syscallrecord layer, lifted into the iovec builder so
 		 * every caller is covered in one place.
-		 */
-		base = (unsigned long) iov[i].iov_base;
-		/*
+		 *
 		 * Output-only scrub. Today's alloc_iovec() callers
 		 * (readv/preadv/preadv2/recvmsg/recvmmsg) only treat the
 		 * iov_base buffer as kernel-write, so the no-copy variant
@@ -590,6 +705,7 @@ struct iovec * alloc_iovec(unsigned int num)
 		 * would need _inout per element to preserve those bytes
 		 * across relocation.
 		 */
+		base = (unsigned long) iov[i].iov_base;
 		avoid_shared_buffer_out(&base, iov[i].iov_len);
 		iov[i].iov_base = (void *) base;
 	}
