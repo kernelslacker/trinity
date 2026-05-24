@@ -5,6 +5,10 @@
  */
 #include <linux/types.h>
 #include <sched.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -39,11 +43,7 @@ struct ns_id_req {
 #define CLONE_NEWTIME		0x00000080
 #endif
 
-static unsigned long listns_flags[] = {
-	LISTNS_CURRENT_USER,
-};
-
-static unsigned long ns_types[] = {
+static const unsigned long ns_types[] = {
 	CLONE_NEWNS,
 	CLONE_NEWUTS,
 	CLONE_NEWIPC,
@@ -53,6 +53,163 @@ static unsigned long ns_types[] = {
 	CLONE_NEWCGROUP,
 	CLONE_NEWTIME,
 };
+
+/*
+ * Output buffer sized for the largest nr_ns_ids bucket.  We always
+ * allocate the maximum; the syscall arg picks a smaller value from
+ * the bucket below.  A kernel-side bound bug cannot then scribble
+ * past the allocation -- the post oracle still catches a retval that
+ * exceeds the snapshotted nr_ns_ids cap.
+ */
+#define LISTNS_BUF_SLOTS	1024
+
+#define LISTNS_NS_ID_POOL_SIZE	8
+
+/*
+ * Per-process cache of real namespace ids harvested from
+ * /proc/self/ns/{cgroup,ipc,mnt,net,pid,time,user,uts}.  Each symlink
+ * target has the form "<type>:[<inum>]" where <inum> is the namespace
+ * id usable by listns.  Random 64-bit values almost never match a
+ * live namespace and the find_ns_id() arm short-circuits before any
+ * iteration runs; pulling real ids from /proc steers the bias into
+ * the lookup-hit arm.  Per-process static survives the fork-per-child
+ * model via inheritance.  Lazy-loaded on first call -- no fileops in
+ * the syscall hot path.
+ */
+static __u64 listns_ns_id_pool[LISTNS_NS_ID_POOL_SIZE];
+static unsigned int listns_ns_id_pool_n;
+static bool listns_ns_id_pool_loaded;
+
+static void load_listns_ns_id_pool(void)
+{
+	static const char *const ns_names[] = {
+		"cgroup", "ipc", "mnt", "net",
+		"pid", "time", "user", "uts",
+	};
+	char path[64];
+	char link[64];
+	const char *p;
+	unsigned long long id;
+	unsigned int i;
+	ssize_t n;
+
+	if (listns_ns_id_pool_loaded)
+		return;
+	listns_ns_id_pool_loaded = true;
+
+	for (i = 0; i < ARRAY_SIZE(ns_names); i++) {
+		if (listns_ns_id_pool_n >= ARRAY_SIZE(listns_ns_id_pool))
+			break;
+
+		snprintf(path, sizeof(path), "/proc/self/ns/%s",
+			 ns_names[i]);
+		n = readlink(path, link, sizeof(link) - 1);
+		if (n <= 0)
+			continue;
+		link[n] = '\0';
+
+		p = strchr(link, '[');
+		if (p == NULL)
+			continue;
+		if (sscanf(p + 1, "%llu", &id) != 1)
+			continue;
+
+		listns_ns_id_pool[listns_ns_id_pool_n++] = (__u64) id;
+	}
+}
+
+/*
+ * ns_type picker.  Real callers pass exactly one CLONE_NEW* bit;
+ * uniform pick across the eight defined types covers each iterator
+ * codepath equally.  A small zero arm exercises the "missing type"
+ * EINVAL gate; a rand32 tail keeps the validator warm against
+ * unmodelled high-bit garbage.
+ */
+static __u32 pick_listns_ns_type(void)
+{
+	unsigned int bucket = rnd_modulo_u32(20);
+
+	if (bucket < 16)
+		return (__u32) ns_types[rnd_modulo_u32(ARRAY_SIZE(ns_types))];
+	if (bucket < 18)
+		return 0;
+	return rnd_u32();
+}
+
+/*
+ * ns_id picker.  Zero means "list the whole tree for ns_type" -- the
+ * dominant real-world shape and the bulk of the iterator work.  Pool
+ * picks hit the find_ns_id() lookup arm with a live id.  Raw u64
+ * keeps the lookup-miss path warm.
+ */
+static __u64 pick_listns_ns_id(void)
+{
+	unsigned int bucket;
+
+	load_listns_ns_id_pool();
+
+	bucket = rnd_modulo_u32(10);
+
+	if (bucket < 5)
+		return 0;
+	if (bucket < 8 && listns_ns_id_pool_n > 0)
+		return listns_ns_id_pool[
+			rnd_modulo_u32(listns_ns_id_pool_n)];
+	return (__u64) rnd_u64();
+}
+
+/*
+ * user_ns_id picker.  Almost always zero (use the caller's user
+ * namespace); occasional pool / random arms exercise the explicit
+ * user-ns resolution path.
+ */
+static __u64 pick_listns_user_ns_id(void)
+{
+	unsigned int bucket;
+
+	load_listns_ns_id_pool();
+
+	bucket = rnd_modulo_u32(10);
+
+	if (bucket < 7)
+		return 0;
+	if (bucket < 9 && listns_ns_id_pool_n > 0)
+		return listns_ns_id_pool[
+			rnd_modulo_u32(listns_ns_id_pool_n)];
+	return (__u64) rnd_u64();
+}
+
+/*
+ * nr_ns_ids bucket.  0 trips the early EINVAL gate; 8 / 64 / 1024
+ * give the iterator a small / typical / large output bound to honor.
+ * The underlying allocation is LISTNS_BUF_SLOTS regardless, so a
+ * kernel-side over-write cannot scribble past our buffer.
+ */
+static unsigned long pick_listns_nr(void)
+{
+	switch (rnd_modulo_u32(4)) {
+	case 0:  return 0;
+	case 1:  return 8;
+	case 2:  return 64;
+	default: return LISTNS_BUF_SLOTS;
+	}
+}
+
+/*
+ * Flags bucket.  Most callers pass zero; LISTNS_CURRENT_USER is the
+ * only defined alt-flag; the rand32 arm keeps the flag validator
+ * warm against unmodelled high-bit garbage.
+ */
+static unsigned long pick_listns_flags(void)
+{
+	unsigned int bucket = rnd_modulo_u32(20);
+
+	if (bucket < 16)
+		return 0;
+	if (bucket < 19)
+		return LISTNS_CURRENT_USER;
+	return rnd_u32();
+}
 
 /*
  * Snapshot of the listns input args read by the post oracle, captured at
@@ -71,34 +228,29 @@ struct listns_post_state {
 static void sanitise_listns(struct syscallrecord *rec)
 {
 	struct ns_id_req *req;
+	__u64 *ns_ids;
 	struct listns_post_state *snap;
+	unsigned long nr;
 
 	req = zmalloc_tracked(sizeof(struct ns_id_req));
 	req->size = NS_ID_REQ_SIZE_VER0;
-	req->ns_type = ns_types[rnd_modulo_u32(ARRAY_SIZE(ns_types))];
+	req->ns_type = pick_listns_ns_type();
+	req->ns_id = pick_listns_ns_id();
+	req->user_ns_id = pick_listns_user_ns_id();
 
-	/*
-	 * Half the time, draw a non-zero ns_id from [1, 2^30) so the
-	 * find_ns_id() lookup arm gets exercised.  Kernel's __do_listns()
-	 * uses ns_id == 0 to mean "list all of the current namespace tree"
-	 * — a single arm — so leaving ns_id always zero (the zmalloc
-	 * default) means find_ns_id()'s separate RCU/refcount-driven
-	 * lookup path is unreachable.  Keep the all-zero path intact for
-	 * the "list whole tree" coverage on the other half.
-	 */
-	if (RAND_BOOL())
-		req->ns_id = 1 + rnd_modulo_u32((1U << 30) - 1);
+	ns_ids = (__u64 *) get_writable_address(
+		LISTNS_BUF_SLOTS * sizeof(*ns_ids));
+	if (ns_ids == NULL)
+		return;
+
+	nr = pick_listns_nr();
 
 	rec->a1 = (unsigned long) req;
-	rec->a3 = RAND_RANGE(1, 512);
+	rec->a2 = (unsigned long) ns_ids;
+	rec->a3 = nr;
+	rec->a4 = pick_listns_flags();
 
-	/*
-	 * ns_ids (a2) is the kernel's writeback target: a u64 array of the
-	 * matching namespace ids, up to a3 entries.  ARG_NON_NULL_ADDRESS
-	 * draws from the random pool, so a fuzzed pointer can land inside
-	 * an alloc_shared region.
-	 */
-	avoid_shared_buffer_out(&rec->a2, rec->a3 * sizeof(__u64));
+	avoid_shared_buffer_out(&rec->a2, nr * sizeof(*ns_ids));
 
 	/* Snapshot for the post handler -- a1 / a3 may be scribbled by a
 	 * sibling syscall before post_listns() runs. */
@@ -170,9 +322,7 @@ out_free:
 struct syscallentry syscall_listns = {
 	.name = "listns",
 	.num_args = 4,
-	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_LEN, [3] = ARG_LIST },
 	.argname = { [0] = "req", [1] = "ns_ids", [2] = "nr_ns_ids", [3] = "flags" },
-	.arg_params[3].list = ARGLIST(listns_flags),
 	.sanitise = sanitise_listns,
 	.post = post_listns,
 	.group = GROUP_PROCESS,
