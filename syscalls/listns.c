@@ -240,8 +240,18 @@ static void sanitise_listns(struct syscallrecord *rec)
 
 	ns_ids = (__u64 *) get_writable_address(
 		LISTNS_BUF_SLOTS * sizeof(*ns_ids));
-	if (ns_ids == NULL)
+	if (ns_ids == NULL) {
+		/*
+		 * get_writable_address() can legally return NULL when the
+		 * per-child mapping pool is exhausted.  req was allocated
+		 * via zmalloc_tracked above; without the enqueue here the
+		 * tracked allocation lingers in the alloc-track ring until
+		 * LRU eviction.  Hand it off so the deferred-free path
+		 * reclaims it on the next flush.
+		 */
+		deferred_free_enqueue(req);
 		return;
+	}
 
 	nr = pick_listns_nr();
 
