@@ -9,12 +9,17 @@
  * from @fd up to and including @max_fd are closed.
  * Currently, errors to close a given file descriptor are ignored.
  */
+#include <errno.h>
+#include <fcntl.h>
+#include <stdbool.h>
+#include <unistd.h>
 #include "child.h"
 #include "deferred-free.h"
 #include "fd-event.h"
 #include "kcov.h"
 #include "objects.h"
 #include "pids.h"
+#include "random.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
@@ -46,9 +51,8 @@ static unsigned long close_range_flags[] = {
  *      and the loop runs across 1025 fds that were never in the
  *      original syscall's range.
  *
- * close_range is AVOID_SYSCALL today so the in-tree exposure is
- * limited, but the scribble-class is the same one many recent post
- * handlers have been hardened against; treat it the same way.
+ * The scribble-class here is the same one many recent post handlers
+ * have been hardened against; treat it the same way.
  */
 #define CLOSE_RANGE_POST_STATE_MAGIC	0x43524E474D41475FUL	/* "CRNGMAG_" */
 struct close_range_post_state {
@@ -58,9 +62,71 @@ struct close_range_post_state {
 	unsigned int flags;
 };
 
+/*
+ * Per-child disposable high-fd sandbox: dup /dev/null into a
+ * contiguous block of fds well above the trinity-tracked pool
+ * (NR_FILE_FDS == 250) so close_range() can run for real against
+ * targets the rest of the fuzzer doesn't care about.  Without this
+ * the syscall sat behind AVOID_SYSCALL because every ARG_FD-derived
+ * range risked closing live trinity-tracked fds.
+ *
+ * State is __thread so each forked child gets its own slots without
+ * coordination.  Slots are populated lazily on the first sanitise
+ * call and never refilled; once a child burns through the range
+ * with non-CLOEXEC closes the sandbox-internal buckets fall through
+ * to the ARG_FD-derived branches and the syscall still gets shaped.
+ */
+#define CLOSE_RANGE_SANDBOX_BASE	2048
+
+static __thread bool sandbox_init;
+static __thread int  sandbox_base;
+static __thread int  sandbox_n;
+
+static void close_range_init_sandbox(void)
+{
+	int devnull, base = CLOSE_RANGE_SANDBOX_BASE;
+	int n = (int) RAND_RANGE(16, 64);
+	int i, dupped = 0;
+
+	sandbox_init = true;
+	sandbox_base = 0;
+	sandbox_n    = 0;
+
+	devnull = open("/dev/null", O_RDWR | O_CLOEXEC);
+	if (devnull < 0)
+		return;
+
+	for (i = 0; i < n; i++) {
+		int slot = base + i;
+
+		/* Skip if the slot is already occupied -- inherited
+		 * fds from the parent or environment must not be
+		 * clobbered.  Stop at the first occupied slot so the
+		 * sandbox range stays contiguous. */
+		if (fcntl(slot, F_GETFD) != -1 || errno != EBADF)
+			break;
+
+		if (dup2(devnull, slot) != slot) {
+			/* EMFILE / ENFILE / EINTR -- accept whatever
+			 * we managed to populate and fall through
+			 * gracefully rather than abort the sanitise. */
+			break;
+		}
+		dupped++;
+	}
+	close(devnull);
+
+	if (dupped > 0) {
+		sandbox_base = base;
+		sandbox_n    = dupped;
+	}
+}
+
 static void sanitise_close_range(struct syscallrecord *rec)
 {
 	struct close_range_post_state *snap;
+	bool sandbox_ok;
+	unsigned int pick;
 
 	/*
 	 * Clear post_state up front so an early return below leaves the
@@ -68,6 +134,88 @@ static void sanitise_close_range(struct syscallrecord *rec)
 	 * pointer carried over from an earlier syscall on this record.
 	 */
 	rec->post_state = 0;
+
+	if (!sandbox_init)
+		close_range_init_sandbox();
+	sandbox_ok = (sandbox_n > 0);
+
+	/*
+	 * Bucketed range picker.  Roughly 50% of calls target the
+	 * disposable sandbox so the kernel sees real close walks on
+	 * fds trinity doesn't care about; the remaining 50% start
+	 * from the ARG_FD-derived range and twist it through inverted,
+	 * CLOEXEC-marking, and unshare-with-harmless-close shapes.
+	 */
+	pick = rnd_modulo_u32(100);
+
+	if (sandbox_ok && pick < 50) {
+		/* Sandbox-internal close, mixed shapes. */
+		unsigned int shape = rnd_modulo_u32(4);
+		int base = sandbox_base;
+		int top  = sandbox_base + sandbox_n - 1;
+		int lo, hi;
+
+		switch (shape) {
+		case 0:	/* single-fd close */
+			lo = base + (int) rnd_modulo_u32((uint32_t) sandbox_n);
+			hi = lo;
+			break;
+		case 1:	/* adjacent pair (hi == lo + 1) */
+			if (sandbox_n >= 2) {
+				lo = base + (int) rnd_modulo_u32(
+					(uint32_t) (sandbox_n - 1));
+				hi = lo + 1;
+			} else {
+				lo = base;
+				hi = base;
+			}
+			break;
+		case 2:	/* full sandbox span */
+			lo = base;
+			hi = top;
+			break;
+		default: { /* sub-range */
+			int a = base + (int) rnd_modulo_u32((uint32_t) sandbox_n);
+			int b = base + (int) rnd_modulo_u32((uint32_t) sandbox_n);
+			if (a <= b) { lo = a; hi = b; }
+			else        { lo = b; hi = a; }
+			break;
+		}
+		}
+		rec->a1 = (unsigned long) lo;
+		rec->a2 = (unsigned long) hi;
+	} else if (pick < 65) {
+		/* Reversed ARG_FD range: hi < lo.  The kernel should
+		 * reject with EINVAL; exercises the post handler's
+		 * `max_fd < fd` snapshot guard against underflow. */
+		unsigned long tmp = rec->a1;
+		rec->a1 = rec->a2;
+		rec->a2 = tmp;
+	} else if (pick < 80) {
+		/* CLOEXEC-only marking on a range sitting just above
+		 * a protected kcov fd.  CLOEXEC doesn't close, so this
+		 * is safe even though the range is adjacent to fds the
+		 * fuzzer must not lose. */
+		struct childdata *c = this_child();
+
+		if (c != NULL && c->kcov.fd >= 0) {
+			rec->a1 = (unsigned long) (c->kcov.fd + 1);
+			rec->a2 = (unsigned long) (c->kcov.fd + 2);
+		}
+		rec->a3 = CLOSE_RANGE_CLOEXEC;
+	} else if (sandbox_ok && pick < 90) {
+		/* CLOSE_RANGE_UNSHARE combined with a sandbox-internal
+		 * range: the unshare side effect on the fd table runs
+		 * but the actual close lands on disposable slots. */
+		int base = sandbox_base;
+		int span = (int) rnd_modulo_u32((uint32_t) sandbox_n);
+
+		rec->a1 = (unsigned long) base;
+		rec->a2 = (unsigned long) (base + span);
+		rec->a3 = CLOSE_RANGE_UNSHARE;
+	}
+	/* else: leave the ARG_FD-derived range and the ARG_LIST flags
+	 * untouched -- the original behaviour. */
 
 	/*
 	 * If the picked range sweeps over one of this child's kcov fds,
@@ -221,7 +369,6 @@ struct syscallentry syscall_close_range = {
 	.arg_params[2].list = ARGLIST(close_range_flags),
 	.sanitise = sanitise_close_range,
 	.post = post_close_range,
-	.flags = AVOID_SYSCALL,
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
 };
