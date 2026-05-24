@@ -107,7 +107,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -125,6 +124,8 @@
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nfnetlink_conntrack.h>
 
+#include "childops-netlink.h"
+#include "childops-nfnl.h"
 #include "jitter.h"
 #include "random.h"
 
@@ -175,11 +176,6 @@ static bool ns_unsupported_nf_conntrack_helper;
  * round-trip.  Kept independent of the unsupported flag so the probe
  * cost is paid exactly once. */
 static bool ctnetlink_probed;
-
-/* Per-process running netlink seq.  Each child has its own socket so
- * cross-process seq overlap is harmless; the kernel doesn't dedupe
- * across sockets. */
-static __u32 g_nfct_seq;
 
 /* Helper names we know about.  Order matches helper_available_mask
  * bit positions.  Each name corresponds to an in-kernel helper module
@@ -240,54 +236,6 @@ static unsigned int helper_unavailable_mask;
  * identifiable in tcpdump during triage. */
 #define NFCT_LOOPBACK_ADDR		0x7f000001U
 
-static __u32 next_seq(void)
-{
-	return ++g_nfct_seq;
-}
-
-static int nfnl_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_NETFILTER);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = NFCT_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	return fd;
-}
-
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
 static size_t nla_put_be16(unsigned char *buf, size_t off, size_t cap,
 			   unsigned short type, __u16 v)
 {
@@ -306,98 +254,6 @@ static size_t nla_put_be32(unsigned char *buf, size_t off, size_t cap,
 		       type | NLA_F_NET_BYTEORDER, &be, sizeof(be));
 }
 
-static size_t nla_put_u8(unsigned char *buf, size_t off, size_t cap,
-			 unsigned short type, __u8 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t nla_put_str(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, const char *s)
-{
-	return nla_put(buf, off, cap, type, s, strlen(s) + 1);
-}
-
-/*
- * nfnetlink message header skeleton: nlmsghdr (with type encoded as
- * (subsys << 8) | msg_id) followed by an nfgenmsg carrying the family
- * and version.  The res_id field carries CTA_ZONE for messages that
- * scope to a zone (CT_NEW / CT_DELETE).  Caller fills attrs after
- * the returned offset.
- */
-struct nfgenmsg_local {
-	__u8  nfgen_family;
-	__u8  version;
-	__u16 res_id;	/* network byte order */
-};
-
-static size_t nfnl_hdr(unsigned char *buf, __u8 subsys, __u16 msg_id,
-		       __u16 flags, __u8 family, __u16 res_id)
-{
-	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
-	struct nfgenmsg_local *nfg;
-
-	nlh->nlmsg_type  = (__u16)((subsys << 8) | (msg_id & 0xff));
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | flags;
-	nlh->nlmsg_seq   = next_seq();
-
-	nfg = (struct nfgenmsg_local *)NLMSG_DATA(nlh);
-	nfg->nfgen_family = family;
-	nfg->version      = NFNETLINK_V0;
-	nfg->res_id       = htons(res_id);
-
-	return NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*nfg));
-}
-
-static void nfnl_finalize(unsigned char *buf, size_t off)
-{
-	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
-
-	nlh->nlmsg_len = (__u32)off;
-}
-
-/*
- * Send and consume one ack.  Returns 0 on positive ack, the negated
- * kernel errno on rejection, or -EIO on local sendmsg/recv failure.
- */
-static int nfnl_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[1024];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, MSG_DONTWAIT) < 0)
-		return -EIO;
-
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0)
-		return -EIO;
-	if ((size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	return 0;
-}
-
 /*
  * Append a CTA_TUPLE_{ORIG,REPLY,MASTER} nested attribute carrying the
  * (saddr, daddr, l4proto, sport, dport) tuple.  All four-tuple fields
@@ -408,17 +264,16 @@ static size_t put_tuple(unsigned char *buf, size_t off, size_t cap,
 			__u32 saddr, __u32 daddr,
 			__u8 l4proto, __u16 sport, __u16 dport)
 {
-	struct nlattr *outer, *ip, *proto;
 	size_t outer_off, ip_off, proto_off;
 
 	outer_off = off;
-	off = nla_put(buf, off, cap, tuple_type | NLA_F_NESTED, NULL, 0);
+	off = nla_nest_start(buf, off, cap, tuple_type | NLA_F_NESTED);
 	if (!off)
 		return 0;
 
 	/* CTA_TUPLE_IP nested */
 	ip_off = off;
-	off = nla_put(buf, off, cap, CTA_TUPLE_IP | NLA_F_NESTED, NULL, 0);
+	off = nla_nest_start(buf, off, cap, CTA_TUPLE_IP | NLA_F_NESTED);
 	if (!off)
 		return 0;
 	off = nla_put_be32(buf, off, cap, CTA_IP_V4_SRC, saddr);
@@ -427,12 +282,11 @@ static size_t put_tuple(unsigned char *buf, size_t off, size_t cap,
 	off = nla_put_be32(buf, off, cap, CTA_IP_V4_DST, daddr);
 	if (!off)
 		return 0;
-	ip = (struct nlattr *)(buf + ip_off);
-	ip->nla_len = (unsigned short)(off - ip_off);
+	nla_nest_end(buf, ip_off, off);
 
 	/* CTA_TUPLE_PROTO nested */
 	proto_off = off;
-	off = nla_put(buf, off, cap, CTA_TUPLE_PROTO | NLA_F_NESTED, NULL, 0);
+	off = nla_nest_start(buf, off, cap, CTA_TUPLE_PROTO | NLA_F_NESTED);
 	if (!off)
 		return 0;
 	off = nla_put_u8(buf, off, cap, CTA_PROTO_NUM, l4proto);
@@ -446,11 +300,8 @@ static size_t put_tuple(unsigned char *buf, size_t off, size_t cap,
 		if (!off)
 			return 0;
 	}
-	proto = (struct nlattr *)(buf + proto_off);
-	proto->nla_len = (unsigned short)(off - proto_off);
-
-	outer = (struct nlattr *)(buf + outer_off);
-	outer->nla_len = (unsigned short)(off - outer_off);
+	nla_nest_end(buf, proto_off, off);
+	nla_nest_end(buf, outer_off, off);
 	return off;
 }
 
@@ -462,18 +313,16 @@ static size_t put_tuple(unsigned char *buf, size_t off, size_t cap,
 static size_t put_help(unsigned char *buf, size_t off, size_t cap,
 		       const char *helper_name)
 {
-	struct nlattr *outer;
 	size_t outer_off;
 
 	outer_off = off;
-	off = nla_put(buf, off, cap, CTA_HELP | NLA_F_NESTED, NULL, 0);
+	off = nla_nest_start(buf, off, cap, CTA_HELP | NLA_F_NESTED);
 	if (!off)
 		return 0;
 	off = nla_put_str(buf, off, cap, CTA_HELP_NAME, helper_name);
 	if (!off)
 		return 0;
-	outer = (struct nlattr *)(buf + outer_off);
-	outer->nla_len = (unsigned short)(off - outer_off);
+	nla_nest_end(buf, outer_off, off);
 	return off;
 }
 
@@ -485,28 +334,24 @@ static size_t put_help(unsigned char *buf, size_t off, size_t cap,
 static size_t put_protoinfo_tcp_established(unsigned char *buf, size_t off,
 					    size_t cap)
 {
-	struct nlattr *outer, *tcp;
 	size_t outer_off, tcp_off;
 
 	outer_off = off;
-	off = nla_put(buf, off, cap, CTA_PROTOINFO | NLA_F_NESTED, NULL, 0);
+	off = nla_nest_start(buf, off, cap, CTA_PROTOINFO | NLA_F_NESTED);
 	if (!off)
 		return 0;
 
 	tcp_off = off;
-	off = nla_put(buf, off, cap,
-		      CTA_PROTOINFO_TCP | NLA_F_NESTED, NULL, 0);
+	off = nla_nest_start(buf, off, cap,
+			     CTA_PROTOINFO_TCP | NLA_F_NESTED);
 	if (!off)
 		return 0;
 	off = nla_put_u8(buf, off, cap,
 			 CTA_PROTOINFO_TCP_STATE, TCP_CONNTRACK_ESTABLISHED);
 	if (!off)
 		return 0;
-	tcp = (struct nlattr *)(buf + tcp_off);
-	tcp->nla_len = (unsigned short)(off - tcp_off);
-
-	outer = (struct nlattr *)(buf + outer_off);
-	outer->nla_len = (unsigned short)(off - outer_off);
+	nla_nest_end(buf, tcp_off, off);
+	nla_nest_end(buf, outer_off, off);
 	return off;
 }
 
@@ -516,7 +361,7 @@ static size_t put_protoinfo_tcp_established(unsigned char *buf, size_t off,
  * (TCP only) CTA_PROTOINFO.  helper_name == NULL omits CTA_HELP --
  * combined with NLM_F_REPLACE this is the helper-detach shape.
  */
-static int build_ct_new(int fd, __u16 zone, __u8 l4proto,
+static int build_ct_new(struct nfnl_ctx *ctx, __u16 zone, __u8 l4proto,
 			__u16 sport, __u16 dport,
 			const char *helper_name, __u16 extra_flags)
 {
@@ -526,8 +371,11 @@ static int build_ct_new(int fd, __u16 zone, __u8 l4proto,
 	size_t off;
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFNL_SUBSYS_CTNETLINK, IPCTNL_MSG_CT_NEW,
-		       NLM_F_CREATE | extra_flags, AF_INET, zone);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_CTNETLINK, IPCTNL_MSG_CT_NEW,
+			   NLM_F_CREATE | extra_flags, AF_INET);
+	if (!off)
+		return -EIO;
 
 	off = put_tuple(buf, off, sizeof(buf), CTA_TUPLE_ORIG,
 			NFCT_LOOPBACK_ADDR, NFCT_LOOPBACK_ADDR,
@@ -570,8 +418,8 @@ static int build_ct_new(int fd, __u16 zone, __u8 l4proto,
 			return -EIO;
 	}
 
-	nfnl_finalize(buf, off);
-	return nfnl_send_recv(fd, buf, off);
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -580,15 +428,18 @@ static int build_ct_new(int fd, __u16 zone, __u8 l4proto,
  * and tears it down; ENOENT is the bulk case when the tuple has
  * already been GC'd.
  */
-static int build_ct_delete(int fd, __u16 zone, __u8 l4proto,
+static int build_ct_delete(struct nfnl_ctx *ctx, __u16 zone, __u8 l4proto,
 			   __u16 sport, __u16 dport)
 {
 	unsigned char buf[NFCT_BUF_BYTES];
 	size_t off;
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFNL_SUBSYS_CTNETLINK, IPCTNL_MSG_CT_DELETE,
-		       0, AF_INET, zone);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_CTNETLINK, IPCTNL_MSG_CT_DELETE,
+			   0, AF_INET);
+	if (!off)
+		return -EIO;
 
 	off = put_tuple(buf, off, sizeof(buf), CTA_TUPLE_ORIG,
 			NFCT_LOOPBACK_ADDR, NFCT_LOOPBACK_ADDR,
@@ -600,8 +451,8 @@ static int build_ct_delete(int fd, __u16 zone, __u8 l4proto,
 	if (!off)
 		return -EIO;
 
-	nfnl_finalize(buf, off);
-	return nfnl_send_recv(fd, buf, off);
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -611,7 +462,7 @@ static int build_ct_delete(int fd, __u16 zone, __u8 l4proto,
  * expectation to the named helper.  Drives nf_ct_expect_insert()
  * under net->expect_lock and the per-helper expectation list.
  */
-static int build_exp_new(int fd, __u16 master_zone, __u16 exp_zone,
+static int build_exp_new(struct nfnl_ctx *ctx, __u16 master_zone, __u16 exp_zone,
 			 __u8 l4proto, __u16 master_sport, __u16 master_dport,
 			 __u16 child_sport, __u16 child_dport,
 			 const char *helper_name)
@@ -622,8 +473,11 @@ static int build_exp_new(int fd, __u16 master_zone, __u16 exp_zone,
 	size_t off;
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFNL_SUBSYS_CTNETLINK_EXP, IPCTNL_MSG_EXP_NEW,
-		       NLM_F_CREATE, AF_INET, exp_zone);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_CTNETLINK_EXP, IPCTNL_MSG_EXP_NEW,
+			   NLM_F_CREATE, AF_INET);
+	if (!off)
+		return -EIO;
 
 	off = put_tuple(buf, off, sizeof(buf), CTA_EXPECT_TUPLE,
 			NFCT_LOOPBACK_ADDR, NFCT_LOOPBACK_ADDR,
@@ -672,8 +526,8 @@ static int build_exp_new(int fd, __u16 master_zone, __u16 exp_zone,
 				 * the existing parent conntrack lookup;
 				 * exp_zone is what scopes the expectation. */
 
-	nfnl_finalize(buf, off);
-	return nfnl_send_recv(fd, buf, off);
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -683,11 +537,11 @@ static int build_exp_new(int fd, __u16 master_zone, __u16 exp_zone,
  * Sets ns_unsupported_nf_conntrack_helper on hard absence so subsequent
  * invocations short-circuit.
  */
-static void probe_ctnetlink(int fd)
+static void probe_ctnetlink(struct nfnl_ctx *ctx)
 {
 	int rc;
 
-	rc = build_ct_new(fd, 0, IPPROTO_UDP,
+	rc = build_ct_new(ctx, 0, IPPROTO_UDP,
 			  (__u16)(40000 + (rand32() & 0x3ff)),
 			  (__u16)(50000 + (rand32() & 0x3ff)),
 			  NULL, 0);
@@ -783,7 +637,7 @@ static void update_helper_mask(int helper_idx, int rc)
  * (delete / zone-swap / detach).  Returns true on every path; the
  * stats counters carry the per-step success signal.
  */
-static void iter_one(int fd)
+static void iter_one(struct nfnl_ctx *ctx)
 {
 	__u16 zone, alt_zone;
 	__u16 sport, dport;
@@ -815,7 +669,7 @@ static void iter_one(int fd)
 
 	/* 2) CT_NEW with CTA_HELP -- the helper-attach path.  EEXIST is
 	 *    benign coverage (lookup + collision-detection ran).  */
-	rc = build_ct_new(fd, zone, l4proto, sport, dport, helper_name, 0);
+	rc = build_ct_new(ctx, zone, l4proto, sport, dport, helper_name, 0);
 	update_helper_mask(helper_idx, rc);
 	if (rc == 0 || rc == -EEXIST) {
 		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_attach_ok,
@@ -831,7 +685,7 @@ static void iter_one(int fd)
 	{
 		__u16 exp_zone = (rand32() & 1U) ? alt_zone : zone;
 
-		rc = build_exp_new(fd, zone, exp_zone, l4proto,
+		rc = build_exp_new(ctx, zone, exp_zone, l4proto,
 				   sport, dport, child_sport, child_dport,
 				   helper_name);
 		if (rc == 0) {
@@ -862,7 +716,7 @@ static void iter_one(int fd)
 	for (r = 0; r < races; r++) {
 		/* a) CT_DELETE in the master's zone -- races the helper's
 		 *    expectation walk. */
-		rc = build_ct_delete(fd, zone, l4proto, sport, dport);
+		rc = build_ct_delete(ctx, zone, l4proto, sport, dport);
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_delete_ok,
 					   1, __ATOMIC_RELAXED);
@@ -882,7 +736,7 @@ static void iter_one(int fd)
 		/* c) Mid-flow helper detach: CT_NEW with NLM_F_REPLACE,
 		 *    no CTA_HELP.  Drives __nf_ct_helper_destroy() while
 		 *    the expectation list may still hold an entry. */
-		rc = build_ct_new(fd, zone, l4proto, sport, dport,
+		rc = build_ct_new(ctx, zone, l4proto, sport, dport,
 				  NULL, NLM_F_REPLACE);
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_detach_ok,
@@ -892,7 +746,10 @@ static void iter_one(int fd)
 
 bool nf_conntrack_helper_churn(struct childdata *child)
 {
-	int nfnl_fd;
+	struct nfnl_ctx nfnl = { .nl = { .fd = -1 } };
+	struct nfnl_open_opts opts = {
+		.recv_timeo_s = NFCT_RECV_TIMEO_S,
+	};
 	unsigned int outer_iters, i;
 
 	(void)child;
@@ -906,19 +763,18 @@ bool nf_conntrack_helper_churn(struct childdata *child)
 		return true;
 	}
 
-	nfnl_fd = nfnl_open();
-	if (nfnl_fd < 0) {
+	if (nfnl_open(&nfnl, &opts) < 0) {
 		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 
 	if (!ctnetlink_probed) {
-		probe_ctnetlink(nfnl_fd);
+		probe_ctnetlink(&nfnl);
 		if (ns_unsupported_nf_conntrack_helper) {
 			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_setup_failed,
 					   1, __ATOMIC_RELAXED);
-			close(nfnl_fd);
+			nfnl_close(&nfnl);
 			return true;
 		}
 	}
@@ -931,9 +787,9 @@ bool nf_conntrack_helper_churn(struct childdata *child)
 		outer_iters = 1U;
 
 	for (i = 0; i < outer_iters; i++)
-		iter_one(nfnl_fd);
+		iter_one(&nfnl);
 
-	close(nfnl_fd);
+	nfnl_close(&nfnl);
 	return true;
 }
 
