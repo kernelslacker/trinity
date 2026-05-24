@@ -95,11 +95,130 @@ struct statmount_post_state {
 };
 #endif
 
+/*
+ * Generous fixed buffer for the kernel's writeback.  struct statmount
+ * fixed prefix is ~256 bytes plus the variable-length tail (mountopts
+ * strings, fs type, mount root path, opt_array entries).  64KB covers
+ * every published mask combination without spilling into -EOVERFLOW
+ * for the non-bad-size buckets.
+ */
+#define STATMOUNT_BUF_BYTES	(64u * 1024u)
+
+/*
+ * Cached pool of real mount ids drawn from /proc/self/mountinfo at
+ * first use.  Random mnt_id values almost never hit the kernel's
+ * find_mnt_by_id() lookup gate; biasing toward real ids steers past
+ * that arm into the per-mask copy_to_user paths where the actual
+ * coverage of statmount() lives.  16 ids is enough to keep the pool
+ * varied without bloating the cache on hosts with hundreds of mounts.
+ *
+ * Per-process static is fine -- the cache survives fork() and the
+ * child inherits the parent's loaded ids; if no child of trinity
+ * triggers a load before fork, each child loads its own copy once.
+ */
+#define STATMOUNT_MNT_ID_POOL_SIZE	16
+static __u64 statmount_mnt_id_pool[STATMOUNT_MNT_ID_POOL_SIZE];
+static unsigned int statmount_mnt_id_pool_n;
+static int statmount_mnt_id_pool_loaded;
+
+static void load_statmount_mnt_id_pool(void)
+{
+	FILE *f;
+	char line[1024];
+
+	statmount_mnt_id_pool_loaded = 1;
+
+	f = fopen("/proc/self/mountinfo", "r");
+	if (f == NULL)
+		return;
+
+	while (statmount_mnt_id_pool_n < STATMOUNT_MNT_ID_POOL_SIZE &&
+	       fgets(line, sizeof(line), f) != NULL) {
+		unsigned long long id;
+
+		if (sscanf(line, "%llu ", &id) == 1)
+			statmount_mnt_id_pool[statmount_mnt_id_pool_n++] =
+				(__u64) id;
+	}
+	fclose(f);
+}
+
+static __u64 pick_statmount_mnt_id(void)
+{
+	/* 60% draw from the real-mount pool, 40% random u64.  The
+	 * random arm keeps the find_mnt_by_id() not-found and the
+	 * sign-extension paths warm; the pool arm gets us past
+	 * find_mnt_by_id() into the per-mask copy_to_user arms. */
+	if (rnd_modulo_u32(10) < 6) {
+		if (!statmount_mnt_id_pool_loaded)
+			load_statmount_mnt_id_pool();
+		if (statmount_mnt_id_pool_n > 0)
+			return statmount_mnt_id_pool[
+				rnd_modulo_u32(statmount_mnt_id_pool_n)];
+	}
+	return rand64();
+}
+
+/*
+ * STATMOUNT_* mask buckets.  Random OR over the full param pool gets
+ * stuck on the dominant multi-bit shape -- every call ends up asking
+ * for several arms at once and the per-arm copy_to_user coverage
+ * blurs together.  Split the dispatch so individual arms get exercised
+ * on their own and unmodelled bit patterns still reach the validator.
+ */
+static __u64 pick_statmount_mask(void)
+{
+	unsigned int bucket = rnd_modulo_u32(10);
+	unsigned int i, n;
+	__u64 mask = 0;
+
+	if (bucket < 7) {
+		/* 70%: non-empty subset of the legal mask bits. */
+		n = 1 + rnd_modulo_u32(ARRAY_SIZE(statmount_params));
+		for (i = 0; i < n; i++)
+			mask |= statmount_params[
+				rnd_modulo_u32(ARRAY_SIZE(statmount_params))];
+		return mask;
+	}
+
+	if (bucket < 9) {
+		/* 20%: a single legal mask bit. */
+		return statmount_params[
+			rnd_modulo_u32(ARRAY_SIZE(statmount_params))];
+	}
+
+	/* 10%: pure random u64 -- exercises the unknown-bit reject path
+	 * and any future-mask bits the kernel rolled out after our
+	 * statmount_params table was last refreshed. */
+	return rand64();
+}
+
+static unsigned long pick_statmount_bufsize(void)
+{
+	/* 90% generous, 10% undersized.  The undersized arm trips the
+	 * < sizeof(struct statmount) early-overflow gate, which has its
+	 * own validator separate from the per-mask copy_to_user paths. */
+	if (rnd_modulo_u32(10) < 9)
+		return STATMOUNT_BUF_BYTES;
+	return rnd_modulo_u32(sizeof(struct statmount));
+}
+
+static unsigned long pick_statmount_flags(void)
+{
+	/* 90% zero, 10% random.  Random rolls may include
+	 * STATMOUNT_BY_FD, which then reinterprets mnt_id as an fd --
+	 * the pool-drawn mnt_id will not be a valid fd and the kernel
+	 * EBADFs out, but that exercise of the fd-lookup arm is exactly
+	 * the coverage the BY_FD bit is there to produce. */
+	if (rnd_modulo_u32(10) < 9)
+		return 0;
+	return rnd_u32();
+}
+
 static void sanitise_statmount(struct syscallrecord *rec)
 {
 	struct mnt_id_req *req;
-	unsigned int i, nbits;
-	__u64 param;
+	void *buf;
 #ifdef HAVE_SYS_STATMOUNT
 	struct statmount_post_state *snap;
 
@@ -112,34 +231,18 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	memset(req, 0, sizeof(*req));
 
 	req->size = MNT_ID_REQ_SIZE_VER0;
+	req->mnt_id = pick_statmount_mnt_id();
+	req->param = pick_statmount_mask();
 
-	switch (rnd_modulo_u32(3)) {
-	case 0: req->mnt_id = LSMT_ROOT; break;
-	case 1: req->mnt_id = 1; break;
-	default: req->mnt_id = rand32(); break;
-	}
-
-	/* Build a random combination of STATMOUNT_* request flags. */
-	param = 0;
-	nbits = 1 + (rnd_modulo_u32(ARRAY_SIZE(statmount_params)));
-	for (i = 0; i < nbits; i++)
-		param |= statmount_params[rnd_modulo_u32(ARRAY_SIZE(statmount_params))];
-	req->param = param;
+	buf = zmalloc_tracked(STATMOUNT_BUF_BYTES);
 
 	rec->a1 = (unsigned long) req;
-	avoid_shared_buffer_inout(&rec->a1, sizeof(struct mnt_id_req));
-	rec->a3 = 4096;	/* reasonable output buffer size */
-	rec->a4 = ONE_IN(4) ? STATMOUNT_BY_FD : 0;
+	rec->a2 = (unsigned long) buf;
+	rec->a3 = pick_statmount_bufsize();
+	rec->a4 = pick_statmount_flags();
 
-	/*
-	 * buf (a2) is the kernel's writeback target for struct statmount
-	 * plus its variable-length tail (mount opts, fs type strings, etc).
-	 * The sanitise above declared a3 = 4096 as the buffer size; mirror
-	 * that as the avoid_shared_buffer length.  ARG_ADDRESS draws from
-	 * the random pool, so a fuzzed pointer can land inside an
-	 * alloc_shared region.
-	 */
-	avoid_shared_buffer_out(&rec->a2, rec->a3);
+	avoid_shared_buffer_inout(&rec->a1, sizeof(struct mnt_id_req));
+	avoid_shared_buffer_out(&rec->a2, STATMOUNT_BUF_BYTES);
 
 #ifdef HAVE_SYS_STATMOUNT
 	/*
