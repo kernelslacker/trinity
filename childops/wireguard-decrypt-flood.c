@@ -19,8 +19,9 @@
  *      latches ns_unsupported_wireguard_decrypt_flood for the rest of
  *      the process — same shape as the EPROTONOSUPPORT-latch in
  *      atm_vcc_churn.
- *   2. (first call only) Resolve the "wireguard" genl family id via
- *      an inline CTRL_GETFAMILY dump.  fam_id == 0 latches.
+ *   2. (first call only) Open a NETLINK_GENERIC socket and resolve
+ *      the "wireguard" genl family id via the shared genl_open()
+ *      helper.  -ENOENT latches ns_unsupported_wireguard_decrypt_flood.
  *   3. (first call only) WG_CMD_SET_DEVICE installs an ephemeral
  *      curve25519 private key (32 random bytes — the kernel side
  *      clamps), picks our listen port, and registers one peer with a
@@ -62,12 +63,12 @@
 
 #include <net/if.h>
 #include <netinet/in.h>
-#include <linux/genetlink.h>
 #include <linux/if_link.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/wireguard.h>
 
+#include "childops-genl.h"
 #include "random.h"
 #include "pids.h"
 
@@ -90,7 +91,6 @@ static int g_wgdf_udp_fd = -1;
 static int g_wgdf_wg_ifindex;
 static __u16 g_wgdf_listen_port;
 static __u16 g_wgdf_peer_port;
-static unsigned short g_wgdf_fam_id;
 static __u32 g_wgdf_seq;
 static __u64 g_wgdf_counter;
 
@@ -272,120 +272,16 @@ static int wgdf_link_up(int rtnl, int ifindex)
 	return wgdf_nl_send_recv(rtnl, buf, off);
 }
 
-/* Inline CTRL_GETFAMILY/NLM_F_DUMP — same shape as
- * resolve_handshake_family() in handshake-req-abort.c.  Returns the
- * resolved id or 0 if the "wireguard" family isn't registered. */
-static unsigned short wgdf_resolve_family(void)
-{
-	struct {
-		struct nlmsghdr nlh;
-		struct genlmsghdr genl;
-	} req;
-	struct timeval tv = { .tv_sec = 0, .tv_usec = 250000 };
-	unsigned char buf[8192];
-	unsigned short id = 0;
-	ssize_t n;
-	int sock;
-
-	sock = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_GENERIC);
-	if (sock < 0)
-		return 0;
-	(void)setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-	memset(&req, 0, sizeof(req));
-	req.nlh.nlmsg_len = NLMSG_LENGTH(GENL_HDRLEN);
-	req.nlh.nlmsg_type = GENL_ID_CTRL;
-	req.nlh.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-	req.nlh.nlmsg_seq = 1;
-	req.genl.cmd = CTRL_CMD_GETFAMILY;
-	req.genl.version = 1;
-
-	if (send(sock, &req, req.nlh.nlmsg_len, 0) < 0) {
-		close(sock);
-		return 0;
-	}
-
-	for (;;) {
-		struct nlmsghdr *nlh;
-		size_t remaining;
-
-		n = recv(sock, buf, sizeof(buf), 0);
-		if (n <= 0)
-			break;
-		nlh = (struct nlmsghdr *)buf;
-		remaining = (size_t)n;
-		while (NLMSG_OK(nlh, remaining)) {
-			const unsigned char *attrs;
-			size_t attrs_off, attrs_len;
-			char name[GENL_NAMSIZ];
-			unsigned short this_id = 0;
-			bool name_match = false;
-
-			if (nlh->nlmsg_type == NLMSG_DONE ||
-			    nlh->nlmsg_type == NLMSG_ERROR)
-				goto done;
-			if (nlh->nlmsg_type != GENL_ID_CTRL ||
-			    nlh->nlmsg_len < NLMSG_HDRLEN + GENL_HDRLEN)
-				goto next;
-
-			attrs = (const unsigned char *)nlh +
-				NLMSG_HDRLEN + GENL_HDRLEN;
-			attrs_len = nlh->nlmsg_len - NLMSG_HDRLEN - GENL_HDRLEN;
-			memset(name, 0, sizeof(name));
-			for (attrs_off = 0; attrs_off + NLA_HDRLEN <= attrs_len; ) {
-				const struct nlattr *nla =
-					(const struct nlattr *)(attrs + attrs_off);
-				size_t nla_len = nla->nla_len;
-				const unsigned char *payload;
-				size_t payload_len;
-
-				if (nla_len < NLA_HDRLEN ||
-				    nla_len > attrs_len - attrs_off)
-					break;
-				payload = (const unsigned char *)nla + NLA_HDRLEN;
-				payload_len = nla_len - NLA_HDRLEN;
-				switch (nla->nla_type & NLA_TYPE_MASK) {
-				case CTRL_ATTR_FAMILY_ID:
-					if (payload_len >= sizeof(this_id))
-						memcpy(&this_id, payload, sizeof(this_id));
-					break;
-				case CTRL_ATTR_FAMILY_NAME: {
-					size_t copy = payload_len;
-
-					if (copy >= sizeof(name))
-						copy = sizeof(name) - 1;
-					memcpy(name, payload, copy);
-					name[copy] = '\0';
-					name_match = (strcmp(name, WG_GENL_NAME) == 0);
-					break;
-				}
-				default:
-					break;
-				}
-				attrs_off += NLA_ALIGN(nla_len);
-			}
-			if (name_match && this_id != 0)
-				id = this_id;
-next:
-			nlh = NLMSG_NEXT(nlh, remaining);
-		}
-	}
-done:
-	close(sock);
-	return id;
-}
-
-/* Build & send WG_CMD_SET_DEVICE on @genl_fd to install our private
+/* Build & send WG_CMD_SET_DEVICE on @ctx to install our private
  * key, listen port, and a single peer with allowed-ips 192.0.2.0/24
  * and endpoint 127.0.0.1:<peer_port>.  The doubly-nested
  * WGDEVICE_A_PEERS / WGPEER_A_ALLOWEDIPS shape is the one
  * net/netlink-genl-fam-wireguard.c documents. */
-static int wgdf_set_device(int genl_fd, int ifindex, __u16 listen_port,
-			   __u16 peer_port)
+static int wgdf_set_device(struct genl_ctx *ctx, int ifindex,
+			   __u16 listen_port, __u16 peer_port)
 {
 	unsigned char buf[WGDF_BUF_BYTES];
 	struct nlmsghdr *nlh;
-	struct genlmsghdr *gnh;
 	struct nlattr *peers, *peer0, *aips, *aip0;
 	struct sockaddr_in endpoint;
 	unsigned char privkey[WG_KEY_LEN];
@@ -397,15 +293,10 @@ static int wgdf_set_device(int genl_fd, int ifindex, __u16 listen_port,
 	wgdf_fill_random(privkey, sizeof(privkey));
 	wgdf_fill_random(pubkey, sizeof(pubkey));
 
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = g_wgdf_fam_id;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = wgdf_next_seq();
-	gnh = (struct genlmsghdr *)NLMSG_DATA(nlh);
-	gnh->cmd     = WG_CMD_SET_DEVICE;
-	gnh->version = WG_GENL_VERSION;
-	off = NLMSG_HDRLEN + GENL_HDRLEN;
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
+			   nl_seq_next(&ctx->nl),
+			   WG_CMD_SET_DEVICE, 0);
+	if (!off) return -EIO;
 
 	off = wgdf_nla(buf, off, sizeof(buf), WGDEVICE_A_IFINDEX,
 		       &ifindex_u32, sizeof(ifindex_u32));
@@ -459,8 +350,9 @@ static int wgdf_set_device(int genl_fd, int ifindex, __u16 listen_port,
 	peers = (struct nlattr *)(buf + peers_off);
 	peers->nla_len = (unsigned short)(off - peers_off);
 
+	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (__u32)off;
-	return wgdf_nl_send_recv(genl_fd, buf, off);
+	return genl_send_recv(ctx, buf, off);
 }
 
 /* Open SOCK_DGRAM and bind to 127.0.0.1:peer_port so wg0 reply
@@ -494,7 +386,9 @@ static int wgdf_open_udp(__u16 peer_port)
 static bool wgdf_setup(void)
 {
 	pid_t pid = mypid();
-	int rtnl, genl_fd, rc;
+	struct genl_ctx ctx;
+	struct genl_open_opts opts;
+	int rtnl, rc;
 
 	g_wgdf_listen_port = (__u16)(WGDF_PORT_BASE + ((unsigned)pid & 0x3fff));
 	g_wgdf_peer_port   = (__u16)(g_wgdf_listen_port ^ 0x100);
@@ -516,21 +410,22 @@ static bool wgdf_setup(void)
 		return false;
 	}
 
-	g_wgdf_fam_id = wgdf_resolve_family();
-	if (g_wgdf_fam_id == 0) {
-		wgdf_latch_unsupported();
+	memset(&opts, 0, sizeof(opts));
+	opts.family_name  = WG_GENL_NAME;
+	opts.version      = WG_GENL_VERSION;
+	opts.recv_timeo_s = 1;
+
+	rc = genl_open(&ctx, &opts);
+	if (rc != 0) {
+		if (rc == -ENOENT || wgdf_err_unsupported(rc))
+			wgdf_latch_unsupported();
 		close(rtnl);
 		return false;
 	}
 
-	genl_fd = wgdf_nl_open(NETLINK_GENERIC);
-	if (genl_fd < 0) {
-		close(rtnl);
-		return false;
-	}
-	rc = wgdf_set_device(genl_fd, g_wgdf_wg_ifindex,
+	rc = wgdf_set_device(&ctx, g_wgdf_wg_ifindex,
 			     g_wgdf_listen_port, g_wgdf_peer_port);
-	close(genl_fd);
+	genl_close(&ctx);
 	if (rc != 0 && rc != -EEXIST) {
 		if (wgdf_err_unsupported(rc))
 			wgdf_latch_unsupported();
