@@ -25,10 +25,10 @@
  *       module already loaded → ok) is silently ignored.  EAFNOSUPPORT
  *       on the subsequent AF_TIPC socket latches ns_unsupported_tipc for
  *       the rest of the child's lifetime.
- *   2.  genl CTRL_CMD_GETFAMILY dump via the registry resolver
- *       (genl_resolve_families); fam_tipc.resolved == 0 latches
- *       ns_unsupported_genetlink_tipc — kernels without
- *       CONFIG_TIPC don't expose the TIPCv2 family.
+ *   2.  genl_open("TIPCv2", ...) — resolves the family id via a per-ctx
+ *       CTRL_CMD_GETFAMILY; -ENOENT latches ns_unsupported_genetlink_tipc
+ *       for the rest of the process.  Kernels without CONFIG_TIPC don't
+ *       expose the TIPCv2 family.
  *   3.  TIPC_NL_BEARER_ENABLE on udp:127.0.0.1:6118 (loopback only,
  *       random source port stays implicit on the TIPC side; the
  *       remote/local sockaddr_storage payload addresses 127.0.0.1
@@ -80,7 +80,6 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -92,15 +91,12 @@
 #if __has_include(<linux/tipc.h>) && __has_include(<linux/tipc_netlink.h>)
 
 #include <netinet/in.h>
-#include <linux/genetlink.h>
 #include <linux/netlink.h>
 #include <linux/tipc.h>
 #include <linux/tipc_netlink.h>
 
-#include "netlink-genl-families.h"
+#include "childops-genl.h"
 #include "random.h"
-
-extern struct genl_family_grammar fam_tipc;
 
 #define TIPC_BEARER_NAME_MAX	32
 
@@ -134,19 +130,11 @@ extern struct genl_family_grammar fam_tipc;
  * overhead. */
 static bool ns_unsupported_tipc;
 
-/* Latched per-child: genl_resolve_families() ran but fam_tipc.resolved
- * stayed 0.  Either the controller dump didn't return TIPCv2 (module
- * not loaded yet — but step 1 attempted modprobe so this is the
- * "module load was rejected" case), or the family was renamed.  Same
- * lifetime semantics as ns_unsupported_tipc. */
+/* Latched per-child: genl_open("TIPCv2", ...) returned -ENOENT, so the
+ * kernel doesn't expose the TIPCv2 genl family at all.  Either the
+ * module isn't loaded (modprobe in step 1 was rejected) or the family
+ * was renamed.  Same lifetime semantics as ns_unsupported_tipc. */
 static bool ns_unsupported_genetlink_tipc;
-
-static __u32 g_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
 
 /*
  * Best-effort modprobe.  Returns true on success, false on any failure;
@@ -181,135 +169,6 @@ static void try_modprobe_tipc(void)
 	(void)waitpid(pid, &status, 0);
 }
 
-static int genl_open(void)
-{
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_GENERIC);
-	if (fd < 0)
-		return -1;
-
-	tv.tv_sec  = TIPC_GENL_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	return fd;
-}
-
-/*
- * Append a flat NLA at *off with the given type and payload.  Returns
- * the new offset, or 0 on overflow (caller treats 0 as fail).  Same
- * shape as the helper in vrf-fib-churn.c — kept duplicated rather than
- * hoisted into a shared header because each childop's NLA construction
- * is tight enough that an inlined version is easier to follow than a
- * cross-file helper, and the duplication has stayed small.
- */
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static size_t nla_put_u32(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u32 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t nla_put_str(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, const char *s)
-{
-	return nla_put(buf, off, cap, type, s, strlen(s) + 1);
-}
-
-/*
- * Send a complete genetlink message and wait for an NLMSG_ERROR ack.
- * Returns the kernel's ack errno (0 on success, negated errno on
- * rejection, or -EIO on local send/recv failure).  Caller fills the
- * full nlmsghdr+genlmsghdr+payload at offset 0 with NLM_F_ACK already
- * set in flags.
- */
-static int genl_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[1024];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, MSG_DONTWAIT) < 0)
-		return -EIO;
-
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0)
-		return -EIO;
-	if ((size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	return -EIO;
-}
-
-/*
- * Build the start of a TIPC genetlink message: nlmsghdr + genlmsghdr,
- * with NLM_F_ACK and the resolved TIPCv2 family_id stamped in.  Returns
- * the offset past the genl header; callers append per-cmd attrs from
- * there.  Bumps the per-family call counter so the genl_family_calls
- * stat row reflects this childop's traffic.
- */
-static size_t tipc_genl_msg_start(unsigned char *buf, size_t cap, __u8 cmd)
-{
-	struct nlmsghdr *nlh;
-	struct genlmsghdr *gnh;
-
-	if (cap < NLMSG_HDRLEN + GENL_HDRLEN)
-		return 0;
-
-	memset(buf, 0, NLMSG_HDRLEN + GENL_HDRLEN);
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = fam_tipc.family_id;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
-
-	gnh = (struct genlmsghdr *)NLMSG_DATA(nlh);
-	gnh->cmd     = cmd;
-	gnh->version = TIPC_GENL_V2_VERSION;
-
-	genl_family_bump_calls(&fam_tipc);
-	return NLMSG_HDRLEN + GENL_HDRLEN;
-}
-
 /*
  * Build a TIPC_NLA_BEARER nest carrying just BEARER_NAME at the given
  * offset.  Used by both ENABLE (with extra UDP_OPTS) and DISABLE (name
@@ -318,22 +177,17 @@ static size_t tipc_genl_msg_start(unsigned char *buf, size_t cap, __u8 cmd)
 static size_t put_bearer_name_nest(unsigned char *buf, size_t off, size_t cap,
 				   const char *name)
 {
-	struct nlattr *outer;
 	size_t outer_off = off;
-	size_t inner_off, inner;
 
-	off = nla_put(buf, off, cap, TIPC_NLA_BEARER, NULL, 0);
+	off = nla_nest_start(buf, off, cap, TIPC_NLA_BEARER);
 	if (!off)
 		return 0;
 
-	inner_off = off;
-	inner = nla_put_str(buf, inner_off, cap, TIPC_NLA_BEARER_NAME, name);
-	if (!inner)
+	off = nla_put_str(buf, off, cap, TIPC_NLA_BEARER_NAME, name);
+	if (!off)
 		return 0;
-	off = inner;
 
-	outer = (struct nlattr *)(buf + outer_off);
-	outer->nla_len = (unsigned short)(off - outer_off);
+	nla_nest_end(buf, outer_off, off);
 	return off;
 }
 
@@ -343,26 +197,24 @@ static size_t put_bearer_name_nest(unsigned char *buf, size_t off, size_t cap,
  * sub-nest carries TIPC_NLA_UDP_LOCAL and TIPC_NLA_UDP_REMOTE as
  * sockaddr_storage payloads.  Returns the kernel's ack errno.
  */
-static int build_bearer_enable(int fd, const char *name)
+static int build_bearer_enable(struct genl_ctx *ctx, const char *name)
 {
 	unsigned char buf[TIPC_GENL_BUF_BYTES];
 	struct sockaddr_storage local;
 	struct sockaddr_storage remote;
 	struct sockaddr_in *sin;
-	struct nlattr *outer;
-	struct nlattr *udp_opts;
 	struct nlmsghdr *nlh;
 	size_t off;
-	size_t outer_off, inner_off;
-	size_t udp_off, udp_inner;
+	size_t outer_off, udp_off;
 
-	off = tipc_genl_msg_start(buf, sizeof(buf), TIPC_NL_BEARER_ENABLE);
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx, nl_seq_next(&ctx->nl),
+			   TIPC_NL_BEARER_ENABLE, 0);
 	if (!off)
 		return -EIO;
 
 	/* Outer TIPC_NLA_BEARER nest. */
 	outer_off = off;
-	off = nla_put(buf, off, sizeof(buf), TIPC_NLA_BEARER, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), TIPC_NLA_BEARER);
 	if (!off)
 		return -EIO;
 
@@ -372,7 +224,7 @@ static int build_bearer_enable(int fd, const char *name)
 
 	/* Inner TIPC_NLA_BEARER_UDP_OPTS nest. */
 	udp_off = off;
-	off = nla_put(buf, off, sizeof(buf), TIPC_NLA_BEARER_UDP_OPTS, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), TIPC_NLA_BEARER_UDP_OPTS);
 	if (!off)
 		return -EIO;
 
@@ -387,39 +239,32 @@ static int build_bearer_enable(int fd, const char *name)
 	sin->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	sin->sin_port = htons(TIPC_UDP_PORT);
 
-	inner_off = off;
-	udp_inner = nla_put(buf, inner_off, sizeof(buf),
-			    TIPC_NLA_UDP_LOCAL,
-			    &local, sizeof(local));
-	if (!udp_inner)
+	off = nla_put(buf, off, sizeof(buf), TIPC_NLA_UDP_LOCAL,
+		      &local, sizeof(local));
+	if (!off)
 		return -EIO;
-	off = udp_inner;
 
-	udp_inner = nla_put(buf, off, sizeof(buf),
-			    TIPC_NLA_UDP_REMOTE,
-			    &remote, sizeof(remote));
-	if (!udp_inner)
+	off = nla_put(buf, off, sizeof(buf), TIPC_NLA_UDP_REMOTE,
+		      &remote, sizeof(remote));
+	if (!off)
 		return -EIO;
-	off = udp_inner;
 
-	udp_opts = (struct nlattr *)(buf + udp_off);
-	udp_opts->nla_len = (unsigned short)(off - udp_off);
-
-	outer = (struct nlattr *)(buf + outer_off);
-	outer->nla_len = (unsigned short)(off - outer_off);
+	nla_nest_end(buf, udp_off, off);
+	nla_nest_end(buf, outer_off, off);
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (__u32)off;
-	return genl_send_recv(fd, buf, off);
+	return genl_send_recv(ctx, buf, off);
 }
 
-static int build_bearer_disable(int fd, const char *name)
+static int build_bearer_disable(struct genl_ctx *ctx, const char *name)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
 	size_t off;
 
-	off = tipc_genl_msg_start(buf, sizeof(buf), TIPC_NL_BEARER_DISABLE);
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx, nl_seq_next(&ctx->nl),
+			   TIPC_NL_BEARER_DISABLE, 0);
 	if (!off)
 		return -EIO;
 
@@ -429,7 +274,7 @@ static int build_bearer_disable(int fd, const char *name)
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (__u32)off;
-	return genl_send_recv(fd, buf, off);
+	return genl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -439,19 +284,19 @@ static int build_bearer_disable(int fd, const char *name)
  * already has a cluster id set, which is fine — the bearer enable
  * step can still succeed against the prior id.
  */
-static int build_net_set(int fd, __u32 cluster)
+static int build_net_set(struct genl_ctx *ctx, __u32 cluster)
 {
 	unsigned char buf[256];
-	struct nlattr *outer;
 	struct nlmsghdr *nlh;
 	size_t off, outer_off;
 
-	off = tipc_genl_msg_start(buf, sizeof(buf), TIPC_NL_NET_SET);
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx, nl_seq_next(&ctx->nl),
+			   TIPC_NL_NET_SET, 0);
 	if (!off)
 		return -EIO;
 
 	outer_off = off;
-	off = nla_put(buf, off, sizeof(buf), TIPC_NLA_NET, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), TIPC_NLA_NET);
 	if (!off)
 		return -EIO;
 
@@ -459,12 +304,11 @@ static int build_net_set(int fd, __u32 cluster)
 	if (!off)
 		return -EIO;
 
-	outer = (struct nlattr *)(buf + outer_off);
-	outer->nla_len = (unsigned short)(off - outer_off);
+	nla_nest_end(buf, outer_off, off);
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (__u32)off;
-	return genl_send_recv(fd, buf, off);
+	return genl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -550,7 +394,9 @@ static bool open_topsrv_and_subscribe(int *out_fd)
 bool tipc_link_churn(struct childdata *child)
 {
 	char bearer_name[TIPC_BEARER_NAME_MAX];
-	int genl_fd = -1;
+	struct genl_ctx ctx;
+	struct genl_open_opts opts;
+	bool ctx_open = false;
 	int rdm = -1;
 	int topsrv = -1;
 	bool bearer_enabled = false;
@@ -591,29 +437,29 @@ bool tipc_link_churn(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.tipc_link_churn_sock_rdm_ok,
 			   1, __ATOMIC_RELAXED);
 
-	genl_resolve_families();
-	if (!fam_tipc.resolved) {
-		ns_unsupported_genetlink_tipc = true;
-		__atomic_add_fetch(&shm->stats.tipc_link_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
+	memset(&opts, 0, sizeof(opts));
+	opts.family_name  = TIPC_GENL_V2_NAME;
+	opts.version      = TIPC_GENL_V2_VERSION;
+	opts.recv_timeo_s = TIPC_GENL_RECV_TIMEO_S;
 
-	genl_fd = genl_open();
-	if (genl_fd < 0) {
+	rc = genl_open(&ctx, &opts);
+	if (rc != 0) {
+		if (rc == -ENOENT)
+			ns_unsupported_genetlink_tipc = true;
 		__atomic_add_fetch(&shm->stats.tipc_link_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
+	ctx_open = true;
 
 	cluster = TIPC_CLUSTER_ID_MIN + (rand32() % TIPC_CLUSTER_ID_RANGE);
-	(void)build_net_set(genl_fd, cluster);
+	(void)build_net_set(&ctx, cluster);
 
 	(void)snprintf(bearer_name, sizeof(bearer_name),
 		       "udp:trinity%u",
 		       (unsigned int)(rand32() & 0xffffu));
 
-	rc = build_bearer_enable(genl_fd, bearer_name);
+	rc = build_bearer_enable(&ctx, bearer_name);
 	if (rc == 0) {
 		bearer_enabled = true;
 		__atomic_add_fetch(&shm->stats.tipc_link_churn_bearer_enable_ok,
@@ -627,8 +473,8 @@ bool tipc_link_churn(struct childdata *child)
 	(void)open_topsrv_and_subscribe(&topsrv);
 
 out:
-	if (bearer_enabled && genl_fd >= 0) {
-		if (build_bearer_disable(genl_fd, bearer_name) == 0)
+	if (bearer_enabled && ctx_open) {
+		if (build_bearer_disable(&ctx, bearer_name) == 0)
 			__atomic_add_fetch(&shm->stats.tipc_link_churn_bearer_disable_ok,
 					   1, __ATOMIC_RELAXED);
 	}
@@ -637,8 +483,8 @@ out:
 		close(topsrv);
 	if (rdm >= 0)
 		close(rdm);
-	if (genl_fd >= 0)
-		close(genl_fd);
+	if (ctx_open)
+		genl_close(&ctx);
 
 	return true;
 }
