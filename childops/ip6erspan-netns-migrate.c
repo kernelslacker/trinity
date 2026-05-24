@@ -70,7 +70,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -80,6 +79,7 @@
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -119,7 +119,6 @@
 #endif
 
 #define INM_BUF				1024
-#define INM_RECV_TIMEO_S		1
 
 enum inm_kind {
 	INM_KIND_GRE,
@@ -177,14 +176,8 @@ static bool ns_unsupported_ip6erspan;
 static bool ns_unsupported_changelink;
 static bool inm_unshared_orig;
 static int  inm_orig_ns_fd = -1;
-static __u32 g_seq;
 static __u32 g_iter;
 static unsigned int g_warned_kinds;	/* bitmask of kinds that latched off */
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
 
 static void warn_once_unsupported(const char *reason, int err)
 {
@@ -193,97 +186,6 @@ static void warn_once_unsupported(const char *reason, int err)
 	ns_unsupported_ip6erspan = true;
 	outputerr("ip6erspan_netns_migrate: %s failed (errno=%d), latching unsupported_ip6erspan\n",
 		  reason, err);
-}
-
-static int inm_rtnl_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = INM_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	return fd;
-}
-
-static int inm_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[512];
-	struct nlmsghdr *r;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0 || (size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-	r = (struct nlmsghdr *)rbuf;
-	if (r->nlmsg_type == NLMSG_ERROR)
-		return ((struct nlmsgerr *)NLMSG_DATA(r))->error;
-	return 0;
-}
-
-static size_t inm_nla(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static size_t inm_nla_u32(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u32 v)
-{
-	return inm_nla(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t inm_nla_u8(unsigned char *buf, size_t off, size_t cap,
-			 unsigned short type, __u8 v)
-{
-	return inm_nla(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t inm_nla_str(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, const char *s)
-{
-	return inm_nla(buf, off, cap, type, s, strlen(s) + 1);
 }
 
 /*
@@ -297,40 +199,40 @@ static size_t append_kind_info_data(unsigned char *buf, size_t off, size_t cap,
 				    enum inm_kind k)
 {
 	if (inm_kind_is_gre_family(k)) {
-		off = inm_nla_u32(buf, off, cap, IFLA_GRE_LINK, 0);
+		off = nla_put_u32(buf, off, cap, IFLA_GRE_LINK, 0);
 		if (!off) return 0;
 		if (inm_kind_is_v6(k)) {
-			off = inm_nla(buf, off, cap, IFLA_GRE_LOCAL,
+			off = nla_put(buf, off, cap, IFLA_GRE_LOCAL,
 				      inm_v6_local, sizeof(inm_v6_local));
 			if (!off) return 0;
-			off = inm_nla(buf, off, cap, IFLA_GRE_REMOTE,
+			off = nla_put(buf, off, cap, IFLA_GRE_REMOTE,
 				      inm_v6_remote, sizeof(inm_v6_remote));
 			if (!off) return 0;
 		} else {
 			__u32 local  = htonl(0x7f000001U);
 			__u32 remote = htonl(0x7f000002U);
-			off = inm_nla(buf, off, cap, IFLA_GRE_LOCAL,
+			off = nla_put(buf, off, cap, IFLA_GRE_LOCAL,
 				      &local, sizeof(local));
 			if (!off) return 0;
-			off = inm_nla(buf, off, cap, IFLA_GRE_REMOTE,
+			off = nla_put(buf, off, cap, IFLA_GRE_REMOTE,
 				      &remote, sizeof(remote));
 			if (!off) return 0;
 		}
 		if (k == INM_KIND_IP6ERSPAN || k == INM_KIND_ERSPAN) {
 			__u8  ver   = (rand32() & 1U) ? 2 : 1;
 			__u32 index = (rand32() & 0xfffU) + 1U;
-			off = inm_nla_u8(buf, off, cap,
+			off = nla_put_u8(buf, off, cap,
 					 IFLA_GRE_ERSPAN_VER, ver);
 			if (!off) return 0;
-			off = inm_nla_u32(buf, off, cap,
+			off = nla_put_u32(buf, off, cap,
 					  IFLA_GRE_ERSPAN_INDEX, index);
 			if (!off) return 0;
 			if (ver == 2) {
 				__u8 hwid = (__u8)(rand32() & 0x3fU);
-				off = inm_nla_u8(buf, off, cap,
+				off = nla_put_u8(buf, off, cap,
 						 IFLA_GRE_ERSPAN_HWID, hwid);
 				if (!off) return 0;
-				off = inm_nla_u8(buf, off, cap,
+				off = nla_put_u8(buf, off, cap,
 						 IFLA_GRE_ERSPAN_DIR, 0);
 				if (!off) return 0;
 			}
@@ -339,13 +241,13 @@ static size_t append_kind_info_data(unsigned char *buf, size_t off, size_t cap,
 	}
 
 	if (k == INM_KIND_VXLAN) {
-		off = inm_nla_u32(buf, off, cap, IFLA_VXLAN_ID,
+		off = nla_put_u32(buf, off, cap, IFLA_VXLAN_ID,
 				  (rand32() & 0xfffffU) + 1U);
 		return off;
 	}
 
 	if (k == INM_KIND_GENEVE) {
-		off = inm_nla_u32(buf, off, cap, IFLA_GENEVE_ID,
+		off = nla_put_u32(buf, off, cap, IFLA_GENEVE_ID,
 				  (rand32() & 0xfffffU) + 1U);
 		return off;
 	}
@@ -359,13 +261,12 @@ static size_t append_kind_info_data(unsigned char *buf, size_t off, size_t cap,
  * changelink invocation; same envelope so we don't fork the message
  * builder per call site.
  */
-static int inm_create_or_replace(int fd, const char *ifname, enum inm_kind k,
-				 bool replace)
+static int inm_create_or_replace(struct nl_ctx *ctx, const char *ifname,
+				 enum inm_kind k, bool replace)
 {
 	unsigned char buf[INM_BUF];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
-	struct nlattr *li, *id;
 	size_t off, li_off, id_off;
 
 	memset(buf, 0, sizeof(buf));
@@ -374,35 +275,33 @@ static int inm_create_or_replace(int fd, const char *ifname, enum inm_kind k,
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   (replace ? NLM_F_REPLACE
 				    : (NLM_F_CREATE | NLM_F_EXCL));
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 
-	off = inm_nla_str(buf, off, sizeof(buf), IFLA_IFNAME, ifname);
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, ifname);
 	if (!off) return -EIO;
 
 	li_off = off;
-	off = inm_nla(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
 	if (!off) return -EIO;
-	off = inm_nla_str(buf, off, sizeof(buf), IFLA_INFO_KIND,
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND,
 			  inm_kind_names[k]);
 	if (!off) return -EIO;
 	id_off = off;
-	off = inm_nla(buf, off, sizeof(buf), IFLA_INFO_DATA, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
 	if (!off) return -EIO;
 
 	off = append_kind_info_data(buf, off, sizeof(buf), k);
 	if (!off) return -EIO;
 
-	id = (struct nlattr *)(buf + id_off);
-	id->nla_len = (unsigned short)(off - id_off);
-	li = (struct nlattr *)(buf + li_off);
-	li->nla_len = (unsigned short)(off - li_off);
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
-	return inm_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -412,7 +311,7 @@ static int inm_create_or_replace(int fd, const char *ifname, enum inm_kind k,
  * messages issued in the target ns must use dev_net(dev) rather than a
  * stale t->net captured at create time.
  */
-static int inm_setlink_netns(int fd, int ifindex, int ns_fd)
+static int inm_setlink_netns(struct nl_ctx *ctx, int ifindex, int ns_fd)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
@@ -424,21 +323,21 @@ static int inm_setlink_netns(int fd, int ifindex, int ns_fd)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_SETLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	ifi->ifi_index  = ifindex;
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-	off = inm_nla(buf, off, sizeof(buf), IFLA_NET_NS_FD,
+	off = nla_put(buf, off, sizeof(buf), IFLA_NET_NS_FD,
 		      &fdval, sizeof(fdval));
 	if (!off) return -EIO;
 	nlh->nlmsg_len = (__u32)off;
-	return inm_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int inm_dellink(int fd, int ifindex)
+static int inm_dellink(struct nl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[64];
 	struct nlmsghdr *nlh;
@@ -449,13 +348,13 @@ static int inm_dellink(int fd, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_DELLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	ifi->ifi_index  = ifindex;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return inm_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -492,7 +391,13 @@ static bool inm_enter_orig_ns(void)
 
 bool ip6erspan_netns_migrate(struct childdata *child)
 {
-	int rtnl = -1, target_rtnl = -1, target_ns_fd = -1;
+	struct nl_ctx ctx = { .fd = -1 };
+	struct nl_ctx target_ctx = { .fd = -1 };
+	struct nl_open_opts opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
+	int target_ns_fd = -1;
 	enum inm_kind k;
 	int ifindex = 0;
 	int rc;
@@ -512,14 +417,13 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 
 	k = (enum inm_kind)(rand32() % (unsigned int)INM_KIND_NR);
 
-	rtnl = inm_rtnl_open();
-	if (rtnl < 0)
+	if (nl_open(&ctx, &opts) < 0)
 		goto out;
 
 	g_iter++;
 	snprintf(ifname, sizeof(ifname), "inm%u", g_iter & 0xffffU);
 
-	rc = inm_create_or_replace(rtnl, ifname, k, false);
+	rc = inm_create_or_replace(&ctx, ifname, k, false);
 	if (rc != 0) {
 		if (rc == -EPERM) {
 			__atomic_add_fetch(&shm->stats.inm_eperm,
@@ -570,7 +474,7 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 	}
 
 	/* Step (e): migrate link into the target ns. */
-	rc = inm_setlink_netns(rtnl, ifindex, target_ns_fd);
+	rc = inm_setlink_netns(&ctx, ifindex, target_ns_fd);
 	if (rc != 0)
 		goto teardown_orig;
 	__atomic_add_fetch(&shm->stats.inm_netns_migrate_ok,
@@ -585,11 +489,10 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 		warn_once_unsupported("setns(target)", errno);
 		goto restore_orig;
 	}
-	target_rtnl = inm_rtnl_open();
-	if (target_rtnl < 0)
+	if (nl_open(&target_ctx, &opts) < 0)
 		goto restore_orig;
 
-	rc = inm_create_or_replace(target_rtnl, ifname, k, true);
+	rc = inm_create_or_replace(&target_ctx, ifname, k, true);
 	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.inm_changelink_ok,
 				   1, __ATOMIC_RELAXED);
@@ -599,14 +502,12 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 			  inm_kind_names[k]);
 	}
 
-	(void)inm_dellink(target_rtnl, ifindex);
+	(void)inm_dellink(&target_ctx, ifindex);
 
 restore_orig:
 	(void)setns(inm_orig_ns_fd, CLONE_NEWNET);
-	if (target_rtnl >= 0) {
-		close(target_rtnl);
-		target_rtnl = -1;
-	}
+	if (target_ctx.fd >= 0)
+		nl_close(&target_ctx);
 	if (target_ns_fd >= 0) {
 		close(target_ns_fd);
 		target_ns_fd = -1;
@@ -617,14 +518,14 @@ restore_orig:
 	goto out;
 
 teardown_orig:
-	if (ifindex > 0 && rtnl >= 0)
-		(void)inm_dellink(rtnl, ifindex);
-	if (target_rtnl >= 0)
-		close(target_rtnl);
+	if (ifindex > 0 && ctx.fd >= 0)
+		(void)inm_dellink(&ctx, ifindex);
+	if (target_ctx.fd >= 0)
+		nl_close(&target_ctx);
 	if (target_ns_fd >= 0)
 		close(target_ns_fd);
 out:
-	if (rtnl >= 0)
-		close(rtnl);
+	if (ctx.fd >= 0)
+		nl_close(&ctx);
 	return true;
 }
