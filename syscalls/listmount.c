@@ -36,9 +36,127 @@
 #define LSMT_ROOT 0xffffffffffffffff
 #endif
 
-static unsigned long listmount_flags[] = {
-	LISTMOUNT_REVERSE,
-};
+/*
+ * The mnt_ids output buffer the kernel writes into.  Always allocated
+ * at the maximum nr we ever pass so a kernel-side bound bug cannot
+ * scribble past a smaller allocation.  The kernel respects the
+ * nr_mnt_ids cap and the post oracle catches a retval that exceeds
+ * the cap, but the underlying allocation has to be safe regardless.
+ */
+#define LISTMOUNT_BUF_SLOTS	1024
+
+#define LISTMOUNT_MNT_ID_POOL_SIZE	16
+
+/*
+ * Per-process cache of real mount IDs read from /proc/self/mountinfo.
+ * Random 64-bit mnt_id values almost never match a live parent and the
+ * call EINVALs before the iterator runs.  Pulling real parent IDs from
+ * mountinfo steers the bias into the iteration arm where the bulk of
+ * the kernel-side work lives.  Per-process static is enough: trinity
+ * forks per child and the cache is inherited through the fork.  No
+ * fileops in the syscall path -- the cache is populated lazily on the
+ * first call.  Duplicated rather than shared with statmount's cache
+ * because two callers do not justify a cross-cutting header.
+ */
+static __u64 listmount_mnt_id_pool[LISTMOUNT_MNT_ID_POOL_SIZE];
+static unsigned int listmount_mnt_id_pool_n;
+static bool listmount_mnt_id_pool_loaded;
+
+static void load_listmount_mnt_id_pool(void)
+{
+	FILE *f;
+	char line[1024];
+
+	if (listmount_mnt_id_pool_loaded)
+		return;
+	listmount_mnt_id_pool_loaded = true;
+
+	f = fopen("/proc/self/mountinfo", "r");
+	if (f == NULL)
+		return;
+
+	while (listmount_mnt_id_pool_n < LISTMOUNT_MNT_ID_POOL_SIZE &&
+	       fgets(line, sizeof(line), f) != NULL) {
+		unsigned long long id;
+
+		if (sscanf(line, "%llu ", &id) == 1)
+			listmount_mnt_id_pool[listmount_mnt_id_pool_n++] =
+				(__u64) id;
+	}
+	fclose(f);
+}
+
+/*
+ * Parent mnt_id picker.  Pool-sourced IDs land us on a real mount
+ * whose children the kernel will iterate; LSMT_ROOT exercises the
+ * list-all path; mnt_id=1 is the historic "root mount" sentinel; the
+ * raw 64-bit random arm keeps the parent-lookup miss path warm.
+ */
+static __u64 pick_listmount_parent_id(void)
+{
+	unsigned int bucket;
+
+	load_listmount_mnt_id_pool();
+
+	bucket = rnd_modulo_u32(20);
+
+	if (bucket < 10 && listmount_mnt_id_pool_n > 0)
+		return listmount_mnt_id_pool[
+			rnd_modulo_u32(listmount_mnt_id_pool_n)];
+
+	if (bucket < 15)
+		return LSMT_ROOT;
+
+	if (bucket < 18)
+		return (__u64) rnd_u64();
+
+	return 1;
+}
+
+/*
+ * nr_mnt_ids bucket.  0 trips the early EINVAL gate; 8 / 64 / 1024
+ * give the iterator a small / typical / large output bound to honor.
+ * The underlying allocation is LISTMOUNT_BUF_SLOTS regardless, so a
+ * kernel-side over-write cannot scribble past our buffer.
+ */
+static unsigned long pick_listmount_nr(void)
+{
+	switch (rnd_modulo_u32(4)) {
+	case 0:  return 0;
+	case 1:  return 8;
+	case 2:  return 64;
+	default: return LISTMOUNT_BUF_SLOTS;
+	}
+}
+
+/*
+ * Flags bucket.  Real callers pass zero; reverse iteration is the only
+ * defined alt-flag; the rand32 arm keeps the flag validator warm
+ * against unmodelled high-bit garbage.
+ */
+static unsigned long pick_listmount_flags(void)
+{
+	unsigned int bucket = rnd_modulo_u32(20);
+
+	if (bucket < 16)
+		return 0;
+	if (bucket < 19)
+		return LISTMOUNT_REVERSE;
+	return rnd_u32();
+}
+
+/*
+ * mnt_id_req.param is the iteration order cookie.  Kernel currently
+ * ignores it, but mismatched-shape requests have caught argument-
+ * validation regressions before.  Keep it overwhelmingly zero with a
+ * random-tail arm for unmodelled bit patterns.
+ */
+static __u64 pick_listmount_order(void)
+{
+	if (rnd_modulo_u32(5) < 4)
+		return 0;
+	return (__u64) rnd_u64();
+}
 
 #ifdef HAVE_SYS_LISTMOUNT
 /*
@@ -60,7 +178,7 @@ static void sanitise_listmount(struct syscallrecord *rec)
 {
 	struct mnt_id_req *req;
 	__u64 *mnt_ids;
-	unsigned int nr;
+	unsigned long nr;
 #ifdef HAVE_SYS_LISTMOUNT
 	struct listmount_post_state *snap;
 #endif
@@ -71,21 +189,20 @@ static void sanitise_listmount(struct syscallrecord *rec)
 	memset(req, 0, sizeof(*req));
 
 	req->size = MNT_ID_REQ_SIZE_VER0;
+	req->mnt_id = pick_listmount_parent_id();
+	req->param = pick_listmount_order();
 
-	switch (rnd_modulo_u32(3)) {
-	case 0: req->mnt_id = LSMT_ROOT; break;	/* list all mounts */
-	case 1: req->mnt_id = 1; break;		/* root mount */
-	default: req->mnt_id = rand32(); break;		/* random mount id */
-	}
-
-	nr = 1 + (rnd_modulo_u32(64));
-	mnt_ids = (__u64 *) get_writable_address(nr * sizeof(*mnt_ids));
+	mnt_ids = (__u64 *) get_writable_address(
+		LISTMOUNT_BUF_SLOTS * sizeof(*mnt_ids));
 	if (mnt_ids == NULL)
 		return;
+
+	nr = pick_listmount_nr();
 
 	rec->a1 = (unsigned long) req;
 	rec->a2 = (unsigned long) mnt_ids;
 	rec->a3 = nr;
+	rec->a4 = pick_listmount_flags();
 
 	avoid_shared_buffer_out(&rec->a2, nr * sizeof(*mnt_ids));
 
@@ -275,9 +392,7 @@ out_free:
 struct syscallentry syscall_listmount = {
 	.name = "listmount",
 	.num_args = 4,
-	.argtype = { [3] = ARG_LIST },
 	.argname = { [0] = "req", [1] = "mnt_ids", [2] = "nr_mnt_ids", [3] = "flags" },
-	.arg_params[3].list = ARGLIST(listmount_flags),
 	.group = GROUP_VFS,
 	.flags = KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_listmount,
