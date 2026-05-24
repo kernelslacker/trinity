@@ -22,8 +22,10 @@
  *
  *   1. unshare CLONE_NEWNET (once per child).  Latches ns_unsupported_
  *      nl80211 on EPERM.
- *   2. open AF_NETLINK socket NETLINK_GENERIC; resolve nl80211 family
- *      via CTRL_CMD_GETFAMILY.  Failure latches the cap-gate.
+ *   2. genl_open("nl80211", ...) -- the shared childops-genl wrapper
+ *      opens NETLINK_GENERIC, applies SO_RCVTIMEO, and resolves the
+ *      nl80211 family id via CTRL_CMD_GETFAMILY.  -ENOENT latches the
+ *      cap-gate (kernel doesn't expose nl80211).
  *   3. capability gate: confirm a mac80211_hwsim radio is reachable.
  *      Probe order: presence of /sys/class/mac80211_hwsim, best-effort
  *      modprobe (latched once per child), NL80211_CMD_GET_WIPHY enumerate
@@ -80,7 +82,18 @@
  *     child's life.
  *   - Bounded retries (<= 8) on EAGAIN / EBUSY / EINPROGRESS so a sibling
  *     iteration mid-teardown doesn't waste this iteration's config-plane
- *     work.
+ *     work.  The shared childops-genl wrapper is single-ack-only by
+ *     design; the retry wrapper sits local to this file (see
+ *     genl_send_recv_retry).
+ *
+ * Migration note: the per-cmd builders all route through the shared
+ * childops-genl helpers (genl_open / genl_close / genl_msg_put /
+ * genl_send_recv) and the shared childops-netlink Type-A nla_put*
+ * family.  Two paths intentionally stay local: genl_dump() (multi-
+ * message reply walking, scoped out of the shared API by design per
+ * include/childops-genl.h) and genl_send_recv_retry() (the
+ * EINPROGRESS/EAGAIN/EBUSY retry loop -- nl80211 needs it, devlink and
+ * tipc don't, so the shared wrapper stays unicast-single-ack).
  *
  * Header gates: __has_include(<linux/genetlink.h>) /
  * <linux/if_link.h> / <linux/rtnetlink.h>.  NL80211 UAPI integers
@@ -105,7 +118,6 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <netinet/in.h>
@@ -125,6 +137,7 @@
 #endif
 
 #include "child.h"
+#include "childops-genl.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -294,7 +307,10 @@
 /* Bounded retry on the netlink config plane: a sibling iteration mid-
  * teardown can briefly bounce an EAGAIN / EBUSY / EINPROGRESS that the
  * very next attempt clears.  Eight retries comfortably rides through
- * the longest such window observed in tc-qdisc-churn / nftables-churn. */
+ * the longest such window observed in tc-qdisc-churn / nftables-churn.
+ * The shared childops-genl genl_send_recv is unicast-single-ack only
+ * by design (devlink and tipc don't need retry); the retry wrapper
+ * stays in this file -- see genl_send_recv_retry below. */
 #define NL80211_RETRY_MAX		8
 
 /* Cap on per-child created-iface ring.  Each outer iter creates one
@@ -312,31 +328,16 @@ static bool ns_unshared;
 static bool ns_setup_failed;
 static bool modprobe_tried_mac80211_hwsim;
 
-/* Per-child scratch state. */
-static uint16_t nl80211_family;		/* dynamic genl family id */
-static uint32_t nl80211_phy0;		/* first wiphy index seen */
-static bool nl80211_family_resolved;	/* family + phy0 cached */
+/* Per-child scratch state.  Family id is resolved per-ctx by genl_open
+ * now (was a cached static); only the first-wiphy lookup result needs
+ * to survive across invocations so we don't pay the GET_WIPHY enumerate
+ * every churn call. */
+static uint32_t nl80211_phy0;
+static bool nl80211_phy0_cached;
 
 /* Created-iface ring for the cleanup sweep. */
 static int created_ifindex[NL80211_IFACE_RING_CAP];
 static unsigned int created_count;
-
-static __u32 g_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
-
-static long long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (long long)(now.tv_sec - t0->tv_sec) * 1000000000LL +
-	       (long long)(now.tv_nsec - t0->tv_nsec);
-}
 
 static bool errno_is_unsupported(int e)
 {
@@ -350,119 +351,45 @@ static bool errno_is_transient(int e)
 	return e == EAGAIN || e == EBUSY || e == EINPROGRESS;
 }
 
-/* Append a netlink attribute to @buf at offset *off, padding to
- * NLA_ALIGNTO.  Returns false on overflow. */
-static bool nla_put(unsigned char *buf, size_t cap, size_t *off,
-		    uint16_t type, const void *data, uint16_t len)
-{
-	struct nlattr nla;
-	size_t pad_len = NLA_ALIGN(len);
-	size_t need = NLA_HDRLEN + pad_len;
-
-	if (*off + need > cap)
-		return false;
-	nla.nla_type = type;
-	nla.nla_len  = (uint16_t)(NLA_HDRLEN + len);
-	memcpy(buf + *off, &nla, sizeof(nla));
-	if (len)
-		memcpy(buf + *off + NLA_HDRLEN, data, len);
-	if (pad_len > len)
-		memset(buf + *off + NLA_HDRLEN + len, 0, pad_len - len);
-	*off += need;
-	return true;
-}
-
-static bool nla_put_str(unsigned char *buf, size_t cap, size_t *off,
-			uint16_t type, const char *s)
-{
-	return nla_put(buf, cap, off, type, s, (uint16_t)(strlen(s) + 1));
-}
-
-static bool nla_put_u32(unsigned char *buf, size_t cap, size_t *off,
-			uint16_t type, uint32_t v)
-{
-	return nla_put(buf, cap, off, type, &v, sizeof(v));
-}
-
 /*
- * Send a genetlink request and read one response (best-effort).
- * Returns 0 on success, the negated kernel errno on a NLMSG_ERROR
- * rejection, or -EIO on local sendto/recv failure.  Response is written
- * to @resp / *@resp_len when a payload comes back.  Bounded retry on
- * transient errors so a sibling iteration mid-teardown doesn't waste
- * this iteration's config-plane work.
+ * Local wrapper around genl_send_recv() that retries up to
+ * NL80211_RETRY_MAX times on EAGAIN/EBUSY/EINPROGRESS.  See the
+ * comment on NL80211_RETRY_MAX -- the shared childops-genl wrapper is
+ * intentionally unicast-single-ack only; the retry pattern is
+ * nl80211-specific (a sibling iteration's mid-teardown briefly bounces
+ * the config plane on EINPROGRESS, the very next attempt clears).
  */
-static int genl_send_recv(int nlfd, uint16_t family, uint8_t cmd,
-			  uint8_t version, const unsigned char *attrs,
-			  size_t attrs_len, unsigned char *resp,
-			  size_t resp_cap, size_t *resp_len)
+static int genl_send_recv_retry(struct genl_ctx *ctx, void *msg, size_t len)
 {
-	unsigned char buf[2048];
-	struct nlmsghdr *nlh;
-	struct genlmsghdr *gnh;
-	struct sockaddr_nl sa;
-	ssize_t rx;
-	size_t total;
 	int retries;
 
-	if (attrs_len > sizeof(buf) - NLMSG_HDRLEN - GENL_HDRLEN)
-		return -EIO;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	gnh = (struct genlmsghdr *)NLMSG_DATA(nlh);
-
-	total = NLMSG_HDRLEN + GENL_HDRLEN + attrs_len;
-	nlh->nlmsg_len   = (uint32_t)total;
-	nlh->nlmsg_type  = family;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
-	nlh->nlmsg_pid   = 0;
-	gnh->cmd     = cmd;
-	gnh->version = version;
-	if (attrs_len)
-		memcpy((unsigned char *)gnh + GENL_HDRLEN, attrs, attrs_len);
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-
 	for (retries = 0; retries < NL80211_RETRY_MAX; retries++) {
-		if (sendto(nlfd, buf, total, 0,
-			   (struct sockaddr *)&sa, sizeof(sa)) < 0)
-			return -EIO;
+		int rc = genl_send_recv(ctx, msg, len);
 
-		rx = recv(nlfd, resp, resp_cap, 0);
-		if (rx < 0)
-			return -EIO;
-
-		*resp_len = (size_t)rx;
-		if ((size_t)rx >= NLMSG_HDRLEN) {
-			struct nlmsghdr *r = (struct nlmsghdr *)resp;
-
-			if (r->nlmsg_type == NLMSG_ERROR &&
-			    (size_t)rx >= NLMSG_HDRLEN + sizeof(struct nlmsgerr)) {
-				struct nlmsgerr *e =
-					(struct nlmsgerr *)NLMSG_DATA(r);
-				int err = e->error;
-
-				if (err == 0)
-					return 0;
-				if (errno_is_transient(-err))
-					continue;
-				return err;
-			}
-		}
-		return 0;
+		if (rc != 0 && errno_is_transient(-rc))
+			continue;
+		return rc;
 	}
 	return -EAGAIN;
 }
 
-/* Send a genetlink request and dump a sequence of responses until a
- * NLMSG_DONE / NLMSG_ERROR terminator (or the recv buffer is exhausted).
- * Drains into @resp; returns the bytes written.  -EIO on local failure. */
-static ssize_t genl_dump(int nlfd, uint16_t family, uint8_t cmd,
-			 uint8_t version, const unsigned char *attrs,
-			 size_t attrs_len, unsigned char *resp, size_t resp_cap)
+/*
+ * Send a genl request and drain a sequence of responses until a
+ * NLMSG_DONE/NLMSG_ERROR terminator (or the recv buffer is exhausted).
+ * Stays local because the shared childops-genl wrapper is intentionally
+ * unicast-single-ack only -- per its docstring, "genl_dump in
+ * nl80211-churn.c stays local".  The one in-file caller is the
+ * NL80211_CMD_GET_WIPHY enumerate during hwsim_present(); no other
+ * nl80211 cmd path needs a dump.
+ *
+ * Hand-rolls the nlmsghdr / genlmsghdr so it can set NLM_F_DUMP without
+ * the wrapper's implicit NLM_F_ACK (the kernel emits a trailing ACK
+ * after the dump completes, which the drain below isn't structured to
+ * absorb -- leaving it queued would corrupt the next send_recv).
+ */
+static ssize_t genl_dump(struct genl_ctx *ctx, uint8_t cmd,
+			 const unsigned char *attrs, size_t attrs_len,
+			 unsigned char *resp, size_t resp_cap)
 {
 	unsigned char buf[2048];
 	struct nlmsghdr *nlh;
@@ -476,24 +403,24 @@ static ssize_t genl_dump(int nlfd, uint16_t family, uint8_t cmd,
 	if (attrs_len > sizeof(buf) - NLMSG_HDRLEN - GENL_HDRLEN)
 		return -EIO;
 
-	memset(buf, 0, sizeof(buf));
+	memset(buf, 0, NLMSG_HDRLEN + GENL_HDRLEN);
 	nlh = (struct nlmsghdr *)buf;
 	gnh = (struct genlmsghdr *)NLMSG_DATA(nlh);
 
 	total = NLMSG_HDRLEN + GENL_HDRLEN + attrs_len;
 	nlh->nlmsg_len   = (uint32_t)total;
-	nlh->nlmsg_type  = family;
+	nlh->nlmsg_type  = ctx->family_id;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(&ctx->nl);
 	nlh->nlmsg_pid   = 0;
 	gnh->cmd     = cmd;
-	gnh->version = version;
+	gnh->version = ctx->version;
 	if (attrs_len)
 		memcpy((unsigned char *)gnh + GENL_HDRLEN, attrs, attrs_len);
 
 	memset(&sa, 0, sizeof(sa));
 	sa.nl_family = AF_NETLINK;
-	if (sendto(nlfd, buf, total, 0,
+	if (sendto(ctx->nl.fd, buf, total, 0,
 		   (struct sockaddr *)&sa, sizeof(sa)) < 0)
 		return -EIO;
 
@@ -505,7 +432,7 @@ static ssize_t genl_dump(int nlfd, uint16_t family, uint8_t cmd,
 
 		if (resp_cap - written < NLMSG_HDRLEN)
 			break;
-		rx = recv(nlfd, resp + written, resp_cap - written, 0);
+		rx = recv(ctx->nl.fd, resp + written, resp_cap - written, 0);
 		if (rx < 0)
 			break;
 		if ((size_t)rx < NLMSG_HDRLEN)
@@ -520,81 +447,20 @@ static ssize_t genl_dump(int nlfd, uint16_t family, uint8_t cmd,
 }
 
 /*
- * Resolve the dynamic genetlink family id for "nl80211" via
- * CTRL_CMD_GETFAMILY.  Returns 0 on success and writes the id to @out.
- * Negative return means the controller didn't know the family or the
- * netlink layer rejected the request -- caller latches the cap-gate.
- */
-static int resolve_nl80211_family(int nlfd, uint16_t *out)
-{
-	unsigned char attrs[64];
-	unsigned char resp[NL80211_NL_RX_BUF];
-	size_t off = 0;
-	size_t resp_len = 0;
-	int rc;
-	struct nlmsghdr *r;
-	struct genlmsghdr *g;
-	unsigned char *p;
-	size_t remaining;
-
-	if (!nla_put_str(attrs, sizeof(attrs), &off,
-			 CTRL_ATTR_FAMILY_NAME, NL80211_GENL_NAME))
-		return -EIO;
-
-	rc = genl_send_recv(nlfd, GENL_ID_CTRL, CTRL_CMD_GETFAMILY, 1,
-			    attrs, off, resp, sizeof(resp), &resp_len);
-	if (rc != 0)
-		return rc;
-
-	if (resp_len < NLMSG_HDRLEN + GENL_HDRLEN)
-		return -EIO;
-	r = (struct nlmsghdr *)resp;
-	if (r->nlmsg_type == NLMSG_ERROR)
-		return -EIO;
-
-	g = (struct genlmsghdr *)NLMSG_DATA(r);
-	p = (unsigned char *)g + GENL_HDRLEN;
-	remaining = resp_len - NLMSG_HDRLEN - GENL_HDRLEN;
-
-	while (remaining >= NLA_HDRLEN) {
-		struct nlattr nla;
-		size_t alen;
-
-		memcpy(&nla, p, sizeof(nla));
-		if (nla.nla_len < NLA_HDRLEN || nla.nla_len > remaining)
-			break;
-		alen = NLA_ALIGN(nla.nla_len);
-		if (nla.nla_type == CTRL_ATTR_FAMILY_ID &&
-		    nla.nla_len >= NLA_HDRLEN + sizeof(uint16_t)) {
-			uint16_t id;
-
-			memcpy(&id, p + NLA_HDRLEN, sizeof(id));
-			*out = id;
-			return 0;
-		}
-		if (alen > remaining)
-			break;
-		p += alen;
-		remaining -= alen;
-	}
-	return -EIO;
-}
-
-/*
  * NL80211_CMD_GET_WIPHY enumerate.  Walks the dump payload and counts
  * wiphys; returns the count and writes the first wiphy index seen to
  * @first_phy on success.  A zero count after a successful dump is the
  * "hwsim absent" signal -- the caller latches ns_unsupported_nl80211.
  */
-static int enumerate_wiphys(int nlfd, uint32_t *first_phy)
+static int enumerate_wiphys(struct genl_ctx *ctx, uint32_t *first_phy)
 {
 	unsigned char resp[NL80211_NL_RX_BUF];
 	ssize_t got;
 	size_t consumed;
 	int count = 0;
 
-	got = genl_dump(nlfd, nl80211_family, NL80211_CMD_GET_WIPHY, 1,
-			NULL, 0, resp, sizeof(resp));
+	got = genl_dump(ctx, NL80211_CMD_GET_WIPHY, NULL, 0,
+			resp, sizeof(resp));
 	if (got < 0)
 		return -EIO;
 
@@ -613,7 +479,7 @@ static int enumerate_wiphys(int nlfd, uint32_t *first_phy)
 		    r->nlmsg_type == NLMSG_ERROR) {
 			break;
 		}
-		if (r->nlmsg_type == nl80211_family &&
+		if (r->nlmsg_type == ctx->family_id &&
 		    r->nlmsg_len >= NLMSG_HDRLEN + GENL_HDRLEN + NLA_HDRLEN) {
 			struct genlmsghdr *g =
 				(struct genlmsghdr *)NLMSG_DATA(r);
@@ -691,7 +557,7 @@ static void try_modprobe(const char *mod)
  * Return true iff a real hwsim radio is reachable; false sets
  * ns_unsupported_nl80211 on the caller side.
  */
-static bool hwsim_present(int nlfd)
+static bool hwsim_present(struct genl_ctx *ctx)
 {
 	struct stat st;
 	uint32_t phy = 0;
@@ -711,7 +577,7 @@ static bool hwsim_present(int nlfd)
 		}
 	}
 
-	wcount = enumerate_wiphys(nlfd, &phy);
+	wcount = enumerate_wiphys(ctx, &phy);
 	if (wcount <= 0)
 		return false;
 
@@ -725,28 +591,33 @@ static bool hwsim_present(int nlfd)
  * the kernel may or may not echo NL80211_ATTR_IFINDEX in the ack); on
  * failure returns the negated kernel errno or -EIO.
  */
-static int new_station_iface(int nlfd, uint32_t phy, const char *ifname)
+static int new_station_iface(struct genl_ctx *ctx, uint32_t phy,
+			     const char *ifname)
 {
-	unsigned char attrs[256];
-	unsigned char resp[NL80211_NL_RX_BUF];
-	size_t off = 0;
-	size_t resp_len = 0;
+	unsigned char buf[512];
+	struct nlmsghdr *nlh;
+	size_t off;
 	int rc;
 	int ifindex;
 
-	if (!nla_put_u32(attrs, sizeof(attrs), &off,
-			 NL80211_ATTR_WIPHY, phy))
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx, nl_seq_next(&ctx->nl),
+			   NL80211_CMD_NEW_INTERFACE, 0);
+	if (!off)
 		return -EIO;
-	if (!nla_put_str(attrs, sizeof(attrs), &off,
-			 NL80211_ATTR_IFNAME, ifname))
+	off = nla_put_u32(buf, off, sizeof(buf), NL80211_ATTR_WIPHY, phy);
+	if (!off)
 		return -EIO;
-	if (!nla_put_u32(attrs, sizeof(attrs), &off,
-			 NL80211_ATTR_IFTYPE, NL80211_IFTYPE_STATION))
+	off = nla_put_str(buf, off, sizeof(buf), NL80211_ATTR_IFNAME, ifname);
+	if (!off)
+		return -EIO;
+	off = nla_put_u32(buf, off, sizeof(buf),
+			  NL80211_ATTR_IFTYPE, NL80211_IFTYPE_STATION);
+	if (!off)
 		return -EIO;
 
-	rc = genl_send_recv(nlfd, nl80211_family,
-			    NL80211_CMD_NEW_INTERFACE, 1,
-			    attrs, off, resp, sizeof(resp), &resp_len);
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_len = (uint32_t)off;
+	rc = genl_send_recv_retry(ctx, buf, off);
 	if (rc != 0)
 		return rc;
 
@@ -757,57 +628,6 @@ static int new_station_iface(int nlfd, uint32_t phy, const char *ifname)
 }
 
 static void random_bssid(unsigned char mac[6]);
-
-/*
- * Open a nested netlink attribute container at the current write
- * cursor.  Reserves NLA_HDRLEN bytes for the header; the actual nla_len
- * is patched in by nla_nest_end() once all child attributes have been
- * appended.  Returns false on overflow.
- */
-struct nla_nest {
-	size_t header_off;
-};
-
-static bool nla_nest_start(unsigned char *buf, size_t cap, size_t *off,
-			   uint16_t type, struct nla_nest *n)
-{
-	struct nlattr nla;
-
-	if (*off + NLA_HDRLEN > cap)
-		return false;
-	n->header_off = *off;
-	nla.nla_type = type;
-	nla.nla_len  = 0;
-	memcpy(buf + *off, &nla, sizeof(nla));
-	*off += NLA_HDRLEN;
-	return true;
-}
-
-/*
- * Close a nested attribute opened by nla_nest_start().  Writes the
- * unpadded nla_len field at the recorded header offset and pads the
- * write cursor up to NLA_ALIGNTO so the next sibling starts on a
- * 4-byte boundary.  Returns false on overflow / 64K oversize.
- */
-static bool nla_nest_end(unsigned char *buf, size_t cap, size_t *off,
-			 const struct nla_nest *n)
-{
-	size_t len = *off - n->header_off;
-	size_t pad;
-	struct nlattr *nla;
-
-	if (len > UINT16_MAX)
-		return false;
-	pad = NLA_ALIGN(len) - len;
-	if (*off + pad > cap)
-		return false;
-	if (pad)
-		memset(buf + *off, 0, pad);
-	*off += pad;
-	nla = (struct nlattr *)(buf + n->header_off);
-	nla->nla_len = (uint16_t)len;
-	return true;
-}
 
 /*
  * NL80211_CMD_PEER_MEASUREMENT_START with an FTM request that emits
@@ -823,129 +643,144 @@ static bool nla_nest_end(unsigned char *buf, size_t cap, size_t *off,
  * (typically -EOPNOTSUPP / -EINVAL / -ENOTCONN); kernel cleans up on
  * socket close.  Tolerates any errno.
  */
-static int build_pmsr_ftm_req(int nlfd, uint32_t ifindex, bool ftms_as_u32)
+static int build_pmsr_ftm_req(struct genl_ctx *ctx, uint32_t ifindex,
+			      bool ftms_as_u32)
 {
-	unsigned char attrs[1024];
-	unsigned char resp[NL80211_NL_RX_BUF];
-	struct nla_nest pmsr, peers, peer1, req, type_ftm;
-	size_t off = 0;
-	size_t resp_len = 0;
+	unsigned char buf[1024];
+	struct nlmsghdr *nlh;
+	size_t off;
+	size_t pmsr_off, peers_off, peer1_off, req_off, type_ftm_off, ftm_off;
 	unsigned char mac[6];
 	uint32_t preamble = (uint32_t)(rand32() % 4U);	/* LEGACY..DMG */
 	uint16_t burst_period = (uint16_t)(rand32() & 0xffffu);
 	uint8_t num_bursts_exp = (uint8_t)(rand32() & 0xfu);
 	uint8_t burst_duration = (uint8_t)(rand32() & 0xfu);
 
-	if (!nla_put_u32(attrs, sizeof(attrs), &off,
-			 NL80211_ATTR_IFINDEX, ifindex))
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx, nl_seq_next(&ctx->nl),
+			   NL80211_CMD_PEER_MEASUREMENT_START, 0);
+	if (!off)
 		return -EIO;
 
-	if (!nla_nest_start(attrs, sizeof(attrs), &off,
-			    NL80211_ATTR_PEER_MEASUREMENTS, &pmsr))
+	off = nla_put_u32(buf, off, sizeof(buf),
+			  NL80211_ATTR_IFINDEX, ifindex);
+	if (!off)
 		return -EIO;
-	if (!nla_nest_start(attrs, sizeof(attrs), &off,
-			    NL80211_PMSR_ATTR_PEERS, &peers))
+
+	pmsr_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf),
+			     NL80211_ATTR_PEER_MEASUREMENTS);
+	if (!off)
+		return -EIO;
+	peers_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), NL80211_PMSR_ATTR_PEERS);
+	if (!off)
 		return -EIO;
 	/* Anonymous peer index 1; the kernel ignores the index itself
 	 * (NL80211_PMSR_ATTR_PEERS is "indexed by" but the index is
 	 * meaningless per the UAPI doc -- it's just a list). */
-	if (!nla_nest_start(attrs, sizeof(attrs), &off, 1, &peer1))
+	peer1_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), 1);
+	if (!off)
 		return -EIO;
 
 	random_bssid(mac);
-	if (!nla_put(attrs, sizeof(attrs), &off,
-		     NL80211_PMSR_PEER_ATTR_ADDR, mac, sizeof(mac)))
+	off = nla_put(buf, off, sizeof(buf), NL80211_PMSR_PEER_ATTR_ADDR,
+		      mac, sizeof(mac));
+	if (!off)
 		return -EIO;
 
-	if (!nla_nest_start(attrs, sizeof(attrs), &off,
-			    NL80211_PMSR_PEER_ATTR_REQ, &req))
+	req_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf),
+			     NL80211_PMSR_PEER_ATTR_REQ);
+	if (!off)
 		return -EIO;
-	if (!nla_nest_start(attrs, sizeof(attrs), &off,
-			    NL80211_PMSR_REQ_ATTR_DATA, &type_ftm))
+	type_ftm_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf),
+			     NL80211_PMSR_REQ_ATTR_DATA);
+	if (!off)
 		return -EIO;
-	{
-		struct nla_nest ftm;
+	ftm_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), NL80211_PMSR_TYPE_FTM);
+	if (!off)
+		return -EIO;
 
-		if (!nla_nest_start(attrs, sizeof(attrs), &off,
-				    NL80211_PMSR_TYPE_FTM, &ftm))
+	off = nla_put_u32(buf, off, sizeof(buf),
+			  NL80211_PMSR_FTM_REQ_ATTR_PREAMBLE, preamble);
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf),
+		      NL80211_PMSR_FTM_REQ_ATTR_BURST_PERIOD,
+		      &burst_period, sizeof(burst_period));
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf),
+		      NL80211_PMSR_FTM_REQ_ATTR_NUM_BURSTS_EXP,
+		      &num_bursts_exp, sizeof(num_bursts_exp));
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf),
+		      NL80211_PMSR_FTM_REQ_ATTR_BURST_DURATION,
+		      &burst_duration, sizeof(burst_duration));
+	if (!off)
+		return -EIO;
+
+	/* The bug-shape attribute.  Two paths:
+	 *   - u32 form: 4-byte payload spanning the full u32 range.
+	 *     Post-fix kernels reject this on the NLA_U8 strict
+	 *     policy (-EINVAL).  Pre-fix kernels read it via
+	 *     nla_get_u32() with no width check.
+	 *   - u8 form: 1-byte payload 0..255.  Always policy-legal;
+	 *     post-fix kernels parse it via nla_get_u8(); pre-fix
+	 *     kernels read four bytes via nla_get_u32() and pick up
+	 *     three garbage upper bytes from the next attribute /
+	 *     padding (the visible symptom on big-endian). */
+	if (ftms_as_u32) {
+		uint32_t v = rand32();
+
+		off = nla_put_u32(buf, off, sizeof(buf),
+				  NL80211_PMSR_FTM_REQ_ATTR_FTMS_PER_BURST, v);
+		if (!off)
 			return -EIO;
+	} else {
+		uint8_t v = (uint8_t)(rand32() & 0xffu);
 
-		if (!nla_put_u32(attrs, sizeof(attrs), &off,
-				 NL80211_PMSR_FTM_REQ_ATTR_PREAMBLE,
-				 preamble))
-			return -EIO;
-		if (!nla_put(attrs, sizeof(attrs), &off,
-			     NL80211_PMSR_FTM_REQ_ATTR_BURST_PERIOD,
-			     &burst_period, sizeof(burst_period)))
-			return -EIO;
-		if (!nla_put(attrs, sizeof(attrs), &off,
-			     NL80211_PMSR_FTM_REQ_ATTR_NUM_BURSTS_EXP,
-			     &num_bursts_exp, sizeof(num_bursts_exp)))
-			return -EIO;
-		if (!nla_put(attrs, sizeof(attrs), &off,
-			     NL80211_PMSR_FTM_REQ_ATTR_BURST_DURATION,
-			     &burst_duration, sizeof(burst_duration)))
-			return -EIO;
-
-		/* The bug-shape attribute.  Two paths:
-		 *   - u32 form: 4-byte payload spanning the full u32 range.
-		 *     Post-fix kernels reject this on the NLA_U8 strict
-		 *     policy (-EINVAL).  Pre-fix kernels read it via
-		 *     nla_get_u32() with no width check.
-		 *   - u8 form: 1-byte payload 0..255.  Always policy-legal;
-		 *     post-fix kernels parse it via nla_get_u8(); pre-fix
-		 *     kernels read four bytes via nla_get_u32() and pick up
-		 *     three garbage upper bytes from the next attribute /
-		 *     padding (the visible symptom on big-endian). */
-		if (ftms_as_u32) {
-			uint32_t v = rand32();
-
-			if (!nla_put_u32(attrs, sizeof(attrs), &off,
-					 NL80211_PMSR_FTM_REQ_ATTR_FTMS_PER_BURST,
-					 v))
-				return -EIO;
-		} else {
-			uint8_t v = (uint8_t)(rand32() & 0xffu);
-
-			if (!nla_put(attrs, sizeof(attrs), &off,
-				     NL80211_PMSR_FTM_REQ_ATTR_FTMS_PER_BURST,
-				     &v, sizeof(v)))
-				return -EIO;
-		}
-
-		if (!nla_nest_end(attrs, sizeof(attrs), &off, &ftm))
+		off = nla_put(buf, off, sizeof(buf),
+			      NL80211_PMSR_FTM_REQ_ATTR_FTMS_PER_BURST,
+			      &v, sizeof(v));
+		if (!off)
 			return -EIO;
 	}
-	if (!nla_nest_end(attrs, sizeof(attrs), &off, &type_ftm))
-		return -EIO;
-	if (!nla_nest_end(attrs, sizeof(attrs), &off, &req))
-		return -EIO;
-	if (!nla_nest_end(attrs, sizeof(attrs), &off, &peer1))
-		return -EIO;
-	if (!nla_nest_end(attrs, sizeof(attrs), &off, &peers))
-		return -EIO;
-	if (!nla_nest_end(attrs, sizeof(attrs), &off, &pmsr))
-		return -EIO;
 
-	return genl_send_recv(nlfd, nl80211_family,
-			      NL80211_CMD_PEER_MEASUREMENT_START, 1,
-			      attrs, off, resp, sizeof(resp), &resp_len);
+	nla_nest_end(buf, ftm_off, off);
+	nla_nest_end(buf, type_ftm_off, off);
+	nla_nest_end(buf, req_off, off);
+	nla_nest_end(buf, peer1_off, off);
+	nla_nest_end(buf, peers_off, off);
+	nla_nest_end(buf, pmsr_off, off);
+
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_len = (uint32_t)off;
+	return genl_send_recv_retry(ctx, buf, off);
 }
 
-static int del_iface_by_index(int nlfd, int ifindex)
+static int del_iface_by_index(struct genl_ctx *ctx, int ifindex)
 {
-	unsigned char attrs[64];
-	unsigned char resp[NL80211_NL_RX_BUF];
-	size_t off = 0;
-	size_t resp_len = 0;
+	unsigned char buf[128];
+	struct nlmsghdr *nlh;
+	size_t off;
 
-	if (!nla_put_u32(attrs, sizeof(attrs), &off,
-			 NL80211_ATTR_IFINDEX, (uint32_t)ifindex))
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx, nl_seq_next(&ctx->nl),
+			   NL80211_CMD_DEL_INTERFACE, 0);
+	if (!off)
+		return -EIO;
+	off = nla_put_u32(buf, off, sizeof(buf),
+			  NL80211_ATTR_IFINDEX, (uint32_t)ifindex);
+	if (!off)
 		return -EIO;
 
-	return genl_send_recv(nlfd, nl80211_family,
-			      NL80211_CMD_DEL_INTERFACE, 1,
-			      attrs, off, resp, sizeof(resp), &resp_len);
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_len = (uint32_t)off;
+	return genl_send_recv_retry(ctx, buf, off);
 }
 
 /*
@@ -964,11 +799,14 @@ static size_t build_scan_ssids(unsigned char *buf, size_t cap)
 
 	for (i = 0; i < n; i++) {
 		unsigned char ssid[32];
+		size_t new_off;
 
 		generate_rand_bytes(ssid, sizeof(ssid));
-		if (!nla_put(buf, cap, &off,
-			     (uint16_t)(i + 1), ssid, sizeof(ssid)))
+		new_off = nla_put(buf, off, cap,
+				  (uint16_t)(i + 1), ssid, sizeof(ssid));
+		if (!new_off)
 			break;
+		off = new_off;
 	}
 	return off;
 }
@@ -979,30 +817,33 @@ static size_t build_scan_ssids(unsigned char *buf, size_t cap)
  * Returns 0 on accept, the negated kernel errno on reject, -EIO on
  * local failure.
  */
-static int trigger_scan(int nlfd, int ifindex)
+static int trigger_scan(struct genl_ctx *ctx, int ifindex)
 {
-	unsigned char attrs[1024];
+	unsigned char buf[1536];
 	unsigned char ssids_buf[512];
-	unsigned char resp[NL80211_NL_RX_BUF];
-	size_t off = 0;
-	size_t resp_len = 0;
-	size_t ssids_len;
+	struct nlmsghdr *nlh;
+	size_t off, ssids_len;
 
-	if (!nla_put_u32(attrs, sizeof(attrs), &off,
-			 NL80211_ATTR_IFINDEX, (uint32_t)ifindex))
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx, nl_seq_next(&ctx->nl),
+			   NL80211_CMD_TRIGGER_SCAN, 0);
+	if (!off)
+		return -EIO;
+	off = nla_put_u32(buf, off, sizeof(buf),
+			  NL80211_ATTR_IFINDEX, (uint32_t)ifindex);
+	if (!off)
 		return -EIO;
 
 	ssids_len = build_scan_ssids(ssids_buf, sizeof(ssids_buf));
 	if (ssids_len > 0) {
-		if (!nla_put(attrs, sizeof(attrs), &off,
-			     NL80211_ATTR_SCAN_SSIDS,
-			     ssids_buf, (uint16_t)ssids_len))
+		off = nla_put(buf, off, sizeof(buf),
+			      NL80211_ATTR_SCAN_SSIDS, ssids_buf, ssids_len);
+		if (!off)
 			return -EIO;
 	}
 
-	return genl_send_recv(nlfd, nl80211_family,
-			      NL80211_CMD_TRIGGER_SCAN, 1,
-			      attrs, off, resp, sizeof(resp), &resp_len);
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_len = (uint32_t)off;
+	return genl_send_recv_retry(ctx, buf, off);
 }
 
 /*
@@ -1012,16 +853,16 @@ static int trigger_scan(int nlfd, int ifindex)
  * without an observed scan completion (the kernel's scan-cache may
  * still have entries from prior iters).
  */
-static bool wait_scan_results(int nlfd)
+static bool wait_scan_results(struct genl_ctx *ctx)
 {
 	struct pollfd pfd;
 
-	pfd.fd     = nlfd;
+	pfd.fd     = ctx->nl.fd;
 	pfd.events = POLLIN;
 	pfd.revents = 0;
 	if (poll(&pfd, 1, NL80211_TIMEO_MS) > 0 && (pfd.revents & POLLIN)) {
 		unsigned char buf[NL80211_NL_RX_BUF];
-		ssize_t r = recv(nlfd, buf, sizeof(buf), MSG_DONTWAIT);
+		ssize_t r = recv(ctx->nl.fd, buf, sizeof(buf), MSG_DONTWAIT);
 
 		(void)r;
 		return true;
@@ -1047,48 +888,58 @@ static void random_bssid(unsigned char mac[6])
  * suites; the bug surface lives in cfg80211_connect_result /
  * cfg80211_disconnect, not in the per-suite key install path.
  */
-static int connect_iface(int nlfd, int ifindex)
+static int connect_iface(struct genl_ctx *ctx, int ifindex)
 {
-	unsigned char attrs[256];
-	unsigned char resp[NL80211_NL_RX_BUF];
+	unsigned char buf[512];
+	struct nlmsghdr *nlh;
 	unsigned char ssid[32];
 	unsigned char mac[6];
-	size_t off = 0;
-	size_t resp_len = 0;
+	size_t off;
 
-	if (!nla_put_u32(attrs, sizeof(attrs), &off,
-			 NL80211_ATTR_IFINDEX, (uint32_t)ifindex))
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx, nl_seq_next(&ctx->nl),
+			   NL80211_CMD_CONNECT, 0);
+	if (!off)
+		return -EIO;
+	off = nla_put_u32(buf, off, sizeof(buf),
+			  NL80211_ATTR_IFINDEX, (uint32_t)ifindex);
+	if (!off)
 		return -EIO;
 
 	random_bssid(mac);
-	if (!nla_put(attrs, sizeof(attrs), &off,
-		     NL80211_ATTR_MAC, mac, sizeof(mac)))
+	off = nla_put(buf, off, sizeof(buf),
+		      NL80211_ATTR_MAC, mac, sizeof(mac));
+	if (!off)
 		return -EIO;
 
 	generate_rand_bytes(ssid, sizeof(ssid));
-	if (!nla_put(attrs, sizeof(attrs), &off,
-		     NL80211_ATTR_SSID, ssid, sizeof(ssid)))
+	off = nla_put(buf, off, sizeof(buf),
+		      NL80211_ATTR_SSID, ssid, sizeof(ssid));
+	if (!off)
 		return -EIO;
 
-	return genl_send_recv(nlfd, nl80211_family,
-			      NL80211_CMD_CONNECT, 1,
-			      attrs, off, resp, sizeof(resp), &resp_len);
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_len = (uint32_t)off;
+	return genl_send_recv_retry(ctx, buf, off);
 }
 
-static int disconnect_iface(int nlfd, int ifindex)
+static int disconnect_iface(struct genl_ctx *ctx, int ifindex)
 {
-	unsigned char attrs[64];
-	unsigned char resp[NL80211_NL_RX_BUF];
-	size_t off = 0;
-	size_t resp_len = 0;
+	unsigned char buf[128];
+	struct nlmsghdr *nlh;
+	size_t off;
 
-	if (!nla_put_u32(attrs, sizeof(attrs), &off,
-			 NL80211_ATTR_IFINDEX, (uint32_t)ifindex))
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx, nl_seq_next(&ctx->nl),
+			   NL80211_CMD_DISCONNECT, 0);
+	if (!off)
+		return -EIO;
+	off = nla_put_u32(buf, off, sizeof(buf),
+			  NL80211_ATTR_IFINDEX, (uint32_t)ifindex);
+	if (!off)
 		return -EIO;
 
-	return genl_send_recv(nlfd, nl80211_family,
-			      NL80211_CMD_DISCONNECT, 1,
-			      attrs, off, resp, sizeof(resp), &resp_len);
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_len = (uint32_t)off;
+	return genl_send_recv_retry(ctx, buf, off);
 }
 
 /*
@@ -1098,20 +949,24 @@ static int disconnect_iface(int nlfd, int ifindex)
  * managed_hint / regulatory_hint_user codepath.  This path is what the
  * CVE-2023-3090 wiphy-index race lives in.
  */
-static int set_reg_zz(int nlfd)
+static int set_reg_zz(struct genl_ctx *ctx)
 {
-	unsigned char attrs[16];
-	unsigned char resp[NL80211_NL_RX_BUF];
-	size_t off = 0;
-	size_t resp_len = 0;
+	unsigned char buf[128];
+	struct nlmsghdr *nlh;
+	size_t off;
 
-	if (!nla_put(attrs, sizeof(attrs), &off,
-		     NL80211_ATTR_REG_ALPHA2, "ZZ", 3))
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx, nl_seq_next(&ctx->nl),
+			   NL80211_CMD_REQ_SET_REG, 0);
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf),
+		      NL80211_ATTR_REG_ALPHA2, "ZZ", 3);
+	if (!off)
 		return -EIO;
 
-	return genl_send_recv(nlfd, nl80211_family,
-			      NL80211_CMD_REQ_SET_REG, 1,
-			      attrs, off, resp, sizeof(resp), &resp_len);
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_len = (uint32_t)off;
+	return genl_send_recv_retry(ctx, buf, off);
 }
 
 /*
@@ -1158,40 +1013,12 @@ static void send_inner_burst(const char *ifname, const struct timespec *t_outer)
 }
 
 /*
- * Open + bind the per-child NETLINK_GENERIC socket with a short
- * SO_RCVTIMEO so a wedged kernel can't push us past SIGALRM(1s).
- * Caller closes when done.
- */
-static int open_genl_socket(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int s;
-
-	s = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_GENERIC);
-	if (s < 0)
-		return -1;
-
-	tv.tv_sec  = 0;
-	tv.tv_usec = NL80211_TIMEO_MS * 1000;
-	(void)setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(s, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(s);
-		return -1;
-	}
-	return s;
-}
-
-/*
  * Walk the per-child created-iface ring and issue a final
  * NL80211_CMD_DEL_INTERFACE for each.  Skips entries already torn down
  * inside the per-iter sequence (the entry has been zeroed).  Ring is
  * cleared on return.
  */
-static void cleanup_ifaces(int nlfd)
+static void cleanup_ifaces(struct genl_ctx *ctx)
 {
 	unsigned int i;
 
@@ -1200,7 +1027,7 @@ static void cleanup_ifaces(int nlfd)
 
 		if (ifx <= 0)
 			continue;
-		if (del_iface_by_index(nlfd, ifx) == 0)
+		if (del_iface_by_index(ctx, ifx) == 0)
 			__atomic_add_fetch(&shm->stats.nl80211_iface_destroyed,
 					   1, __ATOMIC_RELAXED);
 		created_ifindex[i] = 0;
@@ -1211,20 +1038,26 @@ static void cleanup_ifaces(int nlfd)
 /*
  * Admin-gate detector.  Forks; the child enters an unmapped
  * CLONE_NEWUSER (no uid mapping -> all init_user_ns capabilities are
- * dropped instantly), opens a fresh NETLINK_GENERIC socket of its
- * own, and probes a fixed catalogue of NL80211_CMD_* opcodes that
- * must be admin-gated.  netlink_capable(skb, CAP_NET_ADMIN) is the
- * only barrier reachable from this context, so a missing
- * GENL_ADMIN_PERM flag on the genl_ops entry is the regression
- * surface: a unprivileged caller would walk straight into the
- * handler, returning 0 / -EINVAL / etc. instead of the expected
- * -EPERM.  NEW_INTERFACE is included as a positive control: it has
- * been admin-gated since the UAPI was introduced, so an EPERM from
- * it confirms the cap drop took effect for this run.  Any non-EPERM
- * response (including 0 success or a non-EPERM errno) is bumped to
- * the unexpected counter; the caller cannot distinguish "kernel let
- * us through" from "cmd unreachable for unrelated reasons" without
- * cross-checking the positive-control delta over many runs.
+ * dropped instantly), opens a fresh genl ctx of its own via genl_open
+ * (re-resolves the family via CTRL_CMD_GETFAMILY in the cap-dropped
+ * context -- still allowed since CTRL is unprivileged), and probes a
+ * fixed catalogue of NL80211_CMD_* opcodes that must be admin-gated.
+ * netlink_capable(skb, CAP_NET_ADMIN) is the only barrier reachable
+ * from this context, so a missing GENL_ADMIN_PERM flag on the genl_ops
+ * entry is the regression surface: a unprivileged caller would walk
+ * straight into the handler, returning 0 / -EINVAL / etc. instead of
+ * the expected -EPERM.  NEW_INTERFACE is included as a positive
+ * control: it has been admin-gated since the UAPI was introduced, so
+ * an EPERM from it confirms the cap drop took effect for this run.
+ * Any non-EPERM response (including 0 success or a non-EPERM errno) is
+ * bumped to the unexpected counter; the caller cannot distinguish
+ * "kernel let us through" from "cmd unreachable for unrelated reasons"
+ * without cross-checking the positive-control delta over many runs.
+ *
+ * No retry wrapper inside this probe: the admin-gate distinguishes
+ * EPERM (expected) from anything else (regression-or-unrelated), and
+ * the retry wrapper would hide a transient EBUSY behind the EAGAIN
+ * after exhaustion -- which would mislabel as "unexpected".
  */
 struct admin_gate_cmd_desc {
 	uint8_t cmd;
@@ -1251,42 +1084,52 @@ static void nl80211_admin_gate_probe(uint32_t wiphy_idx)
 		return;
 
 	if (pid == 0) {
-		int cnlfd;
+		struct genl_ctx cctx;
+		struct genl_open_opts opts;
 		unsigned int i;
 
 		if (unshare(CLONE_NEWUSER) != 0)
 			_exit(0);
 
-		cnlfd = open_genl_socket();
-		if (cnlfd < 0)
+		memset(&opts, 0, sizeof(opts));
+		opts.family_name  = NL80211_GENL_NAME;
+		opts.version      = 1;
+		opts.recv_timeo_s = 1;
+		if (genl_open(&cctx, &opts) != 0)
 			_exit(0);
 
 		for (i = 0; i < sizeof(admin_gate_catalogue) /
 				sizeof(admin_gate_catalogue[0]); i++) {
 			const struct admin_gate_cmd_desc *d =
 				&admin_gate_catalogue[i];
-			unsigned char attrs[256];
-			unsigned char resp[NL80211_NL_RX_BUF];
+			unsigned char buf[512];
 			unsigned char mac[6];
 			unsigned char pmk[16];
 			int netns_fd = -1;
-			size_t off = 0;
-			size_t resp_len = 0;
+			struct nlmsghdr *nlh;
+			size_t off;
 			int rc;
 
-			if (!nla_put_u32(attrs, sizeof(attrs), &off,
-					 NL80211_ATTR_WIPHY, wiphy_idx))
+			off = genl_msg_put(buf, 0, sizeof(buf), &cctx,
+					   nl_seq_next(&cctx.nl), d->cmd, 0);
+			if (!off)
+				continue;
+			off = nla_put_u32(buf, off, sizeof(buf),
+					  NL80211_ATTR_WIPHY, wiphy_idx);
+			if (!off)
 				continue;
 			if (d->needs_mac_pmk) {
 				random_bssid(mac);
-				if (!nla_put(attrs, sizeof(attrs), &off,
-					     NL80211_ATTR_MAC,
-					     mac, sizeof(mac)))
+				off = nla_put(buf, off, sizeof(buf),
+					      NL80211_ATTR_MAC,
+					      mac, sizeof(mac));
+				if (!off)
 					continue;
 				generate_rand_bytes(pmk, sizeof(pmk));
-				if (!nla_put(attrs, sizeof(attrs), &off,
-					     NL80211_ATTR_PMK,
-					     pmk, sizeof(pmk)))
+				off = nla_put(buf, off, sizeof(buf),
+					      NL80211_ATTR_PMK,
+					      pmk, sizeof(pmk));
+				if (!off)
 					continue;
 			}
 			if (d->needs_netns_fd) {
@@ -1294,17 +1137,18 @@ static void nl80211_admin_gate_probe(uint32_t wiphy_idx)
 						O_RDONLY | O_CLOEXEC);
 				if (netns_fd < 0)
 					continue;
-				if (!nla_put_u32(attrs, sizeof(attrs), &off,
-						 NL80211_ATTR_NETNS_FD,
-						 (uint32_t)netns_fd)) {
+				off = nla_put_u32(buf, off, sizeof(buf),
+						  NL80211_ATTR_NETNS_FD,
+						  (uint32_t)netns_fd);
+				if (!off) {
 					close(netns_fd);
 					continue;
 				}
 			}
 
-			rc = genl_send_recv(cnlfd, nl80211_family, d->cmd, 1,
-					    attrs, off, resp,
-					    sizeof(resp), &resp_len);
+			nlh = (struct nlmsghdr *)buf;
+			nlh->nlmsg_len = (uint32_t)off;
+			rc = genl_send_recv(&cctx, buf, off);
 
 			if (netns_fd >= 0)
 				close(netns_fd);
@@ -1316,7 +1160,7 @@ static void nl80211_admin_gate_probe(uint32_t wiphy_idx)
 				__atomic_add_fetch(&shm->stats.nl80211_admin_gate_unexpected,
 						   1, __ATOMIC_RELAXED);
 		}
-		close(cnlfd);
+		genl_close(&cctx);
 		_exit(0);
 	}
 
@@ -1330,7 +1174,7 @@ static void nl80211_admin_gate_probe(uint32_t wiphy_idx)
  * created-iface ring catches the leak case where a NEW_INTERFACE landed
  * but the per-iter DEL_INTERFACE was skipped (jump-out / wall cap hit).
  */
-static void iter_one(int nlfd, unsigned int iter_idx,
+static void iter_one(struct genl_ctx *ctx, unsigned int iter_idx,
 		     const struct timespec *t_outer)
 {
 	char ifname[IFNAMSIZ];
@@ -1345,7 +1189,7 @@ static void iter_one(int nlfd, unsigned int iter_idx,
 	(void)snprintf(ifname, sizeof(ifname), "twl%u",
 		       (unsigned int)(rand32() & 0xffffu));
 
-	rc = new_station_iface(nlfd, nl80211_phy0, ifname);
+	rc = new_station_iface(ctx, nl80211_phy0, ifname);
 	if (rc < 0) {
 		if (errno_is_unsupported(-rc))
 			ns_unsupported_nl80211 = true;
@@ -1357,16 +1201,16 @@ static void iter_one(int nlfd, unsigned int iter_idx,
 	if (created_count < NL80211_IFACE_RING_CAP)
 		created_ifindex[created_count++] = ifindex;
 
-	rc = trigger_scan(nlfd, ifindex);
+	rc = trigger_scan(ctx, ifindex);
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.nl80211_scan_triggered,
 				   1, __ATOMIC_RELAXED);
 	else if (errno_is_unsupported(-rc))
 		ns_unsupported_nl80211 = true;
 
-	(void)wait_scan_results(nlfd);
+	(void)wait_scan_results(ctx);
 
-	rc = connect_iface(nlfd, ifindex);
+	rc = connect_iface(ctx, ifindex);
 	__atomic_add_fetch(&shm->stats.nl80211_connect_attempted,
 			   1, __ATOMIC_RELAXED);
 	if (rc == 0)
@@ -1379,19 +1223,19 @@ static void iter_one(int nlfd, unsigned int iter_idx,
 
 	/* Scan-while-connected race target.  The cfg80211_scan_done UAF
 	 * window (CVE-2025-21672) lives here. */
-	rc = trigger_scan(nlfd, ifindex);
+	rc = trigger_scan(ctx, ifindex);
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.nl80211_scan_triggered,
 				   1, __ATOMIC_RELAXED);
 
 	/* Regdom change race target.  CVE-2023-3090 wiphy-index race
 	 * lives in the reg_process_self_managed_hint path. */
-	rc = set_reg_zz(nlfd);
+	rc = set_reg_zz(ctx);
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.nl80211_regdom_changed,
 				   1, __ATOMIC_RELAXED);
 
-	rc = disconnect_iface(nlfd, ifindex);
+	rc = disconnect_iface(ctx, ifindex);
 	__atomic_add_fetch(&shm->stats.nl80211_disconnect_attempted,
 			   1, __ATOMIC_RELAXED);
 	(void)rc;
@@ -1408,7 +1252,7 @@ static void iter_one(int nlfd, unsigned int iter_idx,
 		if (target > 0) {
 			__atomic_add_fetch(&shm->stats.nl80211_pmsr_runs,
 					   1, __ATOMIC_RELAXED);
-			if (build_pmsr_ftm_req(nlfd, (uint32_t)target,
+			if (build_pmsr_ftm_req(ctx, (uint32_t)target,
 					       as_u32) == 0)
 				__atomic_add_fetch(&shm->stats.nl80211_pmsr_ok,
 						   1, __ATOMIC_RELAXED);
@@ -1422,7 +1266,7 @@ static void iter_one(int nlfd, unsigned int iter_idx,
 	if (ONE_IN(16))
 		nl80211_admin_gate_probe(nl80211_phy0);
 
-	rc = del_iface_by_index(nlfd, ifindex);
+	rc = del_iface_by_index(ctx, ifindex);
 	if (rc == 0) {
 		unsigned int j;
 
@@ -1443,9 +1287,12 @@ static void iter_one(int nlfd, unsigned int iter_idx,
 
 bool nl80211_churn(struct childdata *child)
 {
+	struct genl_ctx ctx;
+	struct genl_open_opts opts;
+	bool ctx_open = false;
 	struct timespec t_outer;
-	int nlfd = -1;
 	unsigned int outer_iters, i;
+	int rc;
 
 	(void)child;
 
@@ -1472,34 +1319,33 @@ bool nl80211_churn(struct childdata *child)
 		ns_unshared = true;
 	}
 
-	nlfd = open_genl_socket();
-	if (nlfd < 0) {
-		if (errno_is_unsupported(errno))
+	memset(&opts, 0, sizeof(opts));
+	opts.family_name  = NL80211_GENL_NAME;
+	opts.version      = 1;
+	/* SO_RCVTIMEO has 1 s granularity at the kernel API; the
+	 * NL80211_TIMEO_MS (100 ms) brief-yield bound is enforced by the
+	 * per-iter wall cap and the SIGALRM(1s) child cap, not by the
+	 * socket timeout. */
+	opts.recv_timeo_s = 1;
+
+	rc = genl_open(&ctx, &opts);
+	if (rc != 0) {
+		if (rc == -ENOENT || errno_is_unsupported(-rc))
 			ns_unsupported_nl80211 = true;
 		__atomic_add_fetch(&shm->stats.nl80211_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
+	ctx_open = true;
 
-	if (!nl80211_family_resolved) {
-		uint16_t fid = 0;
-		int rc = resolve_nl80211_family(nlfd, &fid);
-
-		if (rc != 0 || fid == 0) {
+	if (!nl80211_phy0_cached) {
+		if (!hwsim_present(&ctx)) {
 			ns_unsupported_nl80211 = true;
 			__atomic_add_fetch(&shm->stats.nl80211_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			goto out;
 		}
-		nl80211_family = fid;
-
-		if (!hwsim_present(nlfd)) {
-			ns_unsupported_nl80211 = true;
-			__atomic_add_fetch(&shm->stats.nl80211_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			goto out;
-		}
-		nl80211_family_resolved = true;
+		nl80211_phy0_cached = true;
 	}
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
@@ -1518,16 +1364,16 @@ bool nl80211_churn(struct childdata *child)
 		if ((unsigned long long)ns_since(&t_outer) >=
 		    NL80211_WALL_CAP_NS)
 			break;
-		iter_one(nlfd, i, &t_outer);
+		iter_one(&ctx, i, &t_outer);
 		if (ns_unsupported_nl80211)
 			break;
 	}
 
-	cleanup_ifaces(nlfd);
+	cleanup_ifaces(&ctx);
 
 out:
-	if (nlfd >= 0)
-		close(nlfd);
+	if (ctx_open)
+		genl_close(&ctx);
 	return true;
 }
 
