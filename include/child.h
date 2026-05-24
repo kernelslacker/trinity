@@ -609,7 +609,8 @@ extern unsigned int max_children;
  * future-proof).
  */
 #define BUDGETED(op, base) ({						\
-	uint16_t _m = shm->stats.childop_budget_mult[(op)];		\
+	uint16_t _m = __atomic_load_n(&shm->stats.childop_budget_mult[(op)], \
+				      __ATOMIC_RELAXED);		\
 	unsigned int _b = (unsigned int)(base);				\
 	_m ? ((_b * (unsigned int)_m) >> 8) : _b;			\
 })
