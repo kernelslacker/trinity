@@ -8,6 +8,7 @@
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
+#include "random.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -154,6 +155,51 @@ static unsigned long pipe2_flags[] = {
 	O_CLOEXEC, O_NONBLOCK, O_DIRECT, O_NOTIFICATION_PIPE,
 };
 
+/*
+ * pipe2_flags[] is still wired up to ARG_LIST so the argument
+ * generator has a default to publish; sanitise_pipe2 overrides
+ * rec->a2 below with an explicit bucket draw.  ARG_LIST's single-bit
+ * pick never reaches the zero-flags arm, the canonical CLOEXEC|
+ * NONBLOCK pair, or the invalid-high-bit reject path.  Buckets are
+ * biased toward success-path shapes so post_pipe keeps registering
+ * fds.
+ */
+static unsigned long sanitise_pipe2_flags(void)
+{
+	unsigned int pick = rnd_modulo_u32(12);
+
+	switch (pick) {
+	case 0:
+	case 1:
+		/* (a) 0 -- behaves like pipe(). */
+		return 0;
+	case 2:
+	case 3:
+		/* (b) O_CLOEXEC. */
+		return O_CLOEXEC;
+	case 4:
+		/* (c) O_NONBLOCK. */
+		return O_NONBLOCK;
+	case 5:
+		/* (d) O_DIRECT -- packet-mode. */
+		return O_DIRECT;
+	case 6:
+		/* (e) O_NOTIFICATION_PIPE. */
+		return O_NOTIFICATION_PIPE;
+	case 7:
+	case 8:
+		/* (f) canonical CLOEXEC|NONBLOCK pair. */
+		return O_CLOEXEC | O_NONBLOCK;
+	case 9:
+	case 10:
+		/* (g) all-on combo. */
+		return O_CLOEXEC | O_DIRECT | O_NONBLOCK;
+	default:
+		/* (h) invalid high bit -- kernel reject path. */
+		return 0x80000000UL;
+	}
+}
+
 static void sanitise_pipe2(struct syscallrecord *rec)
 {
 	int *fildes = zmalloc_tracked(sizeof(int) * 2);
@@ -168,6 +214,8 @@ static void sanitise_pipe2(struct syscallrecord *rec)
 	snap->fildes = (int *) rec->a1;
 	snap->original_alloc = fildes;
 	rec->post_state = (unsigned long) snap;
+
+	rec->a2 = sanitise_pipe2_flags();
 }
 
 struct syscallentry syscall_pipe2 = {
