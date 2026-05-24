@@ -108,7 +108,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -119,6 +118,7 @@
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -393,12 +393,6 @@ struct sadb_msg {
  * in a tcpdump trace during triage. */
 #define XFRM_INNER_PORT		34571
 
-/* Bounded retries on EAGAIN/EBUSY/ENOMEM for the netlink_xfrm
- * config plane.  XFRM commits can briefly return ENOMEM under memory
- * pressure or EBUSY while a sibling iteration is mid-teardown —
- * bounded retry rides through it instead of giving up the iteration. */
-#define XFRM_RETRY_MAX		8
-
 /* SA reqid rotation range.  Kernel uses reqid as a per-policy bundle
  * cache key — rotating across [1, 16] spreads the bundle cache
  * without exhausting the kernel's reqid allocator. */
@@ -485,146 +479,14 @@ static bool ns_unshared;
 static bool ns_setup_failed;
 static bool lo_brought_up;
 
-static __u32 g_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
-
-static long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (now.tv_sec - t0->tv_sec) * 1000000000L +
-	       (now.tv_nsec - t0->tv_nsec);
-}
-
-static int rtnl_route_open(void)
-{
-	struct sockaddr_nl sa;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-	return fd;
-}
-
-static int xfrm_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_XFRM);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = XFRM_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-	return fd;
-}
-
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
 /*
- * Send via NETLINK_XFRM and consume one ack.  Returns 0 on a positive
- * ack (nlmsgerr.error == 0), the negated kernel errno on a rejection,
- * and -EIO on local sendmsg / recv failure.
+ * Sequence counter for the PF_KEYv2 alt path only.  PF_KEY is not
+ * netlink so the shared nl_ctx counter doesn't apply; this monotonic
+ * counter keeps sadb_msg_seq values varying across calls without
+ * pretending the kernel needs them to match request/response pairs
+ * (we never read the reply).
  */
-static int xfrm_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[1024];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0)
-		return -EIO;
-	if ((size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	return -EIO;
-}
-
-/*
- * Wrap xfrm_send_recv with bounded retry on EAGAIN / EBUSY / ENOMEM
- * so a sibling iteration mid-teardown or a transient memory squeeze
- * doesn't waste this iteration's config-plane work.  Other errnos
- * pass through unchanged.
- */
-static int xfrm_send_recv_retry(int fd, void *msg, size_t len)
-{
-	int rc = -EIO;
-	int i;
-
-	for (i = 0; i < XFRM_RETRY_MAX; i++) {
-		rc = xfrm_send_recv(fd, msg, len);
-		if (rc != -EAGAIN && rc != -EBUSY && rc != -ENOMEM)
-			return rc;
-	}
-	return rc;
-}
+static __u32 g_pfkey_seq;
 
 /*
  * Best-effort modprobe.  fork+execvp; child redirects stdio to
@@ -671,7 +533,7 @@ static void modprobe_algo(unsigned int idx)
  * Failures are ignored — the rest of the sequence will fail visibly
  * if rtnl is genuinely broken.
  */
-static void bring_lo_up(int rtnl)
+static void bring_lo_up(struct nl_ctx *rtnl)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -688,7 +550,7 @@ static void bring_lo_up(int rtnl)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -707,12 +569,12 @@ static void bring_lo_up(int rtnl)
 	mh.msg_namelen = sizeof(dst);
 	mh.msg_iov     = &iov;
 	mh.msg_iovlen  = 1;
-	(void)sendmsg(rtnl, &mh, 0);
+	(void)sendmsg(rtnl->fd, &mh, 0);
 
 	/* Drain the ack — best effort. */
 	{
 		unsigned char ack[256];
-		(void)recv(rtnl, ack, sizeof(ack), MSG_DONTWAIT);
+		(void)recv(rtnl->fd, ack, sizeof(ack), MSG_DONTWAIT);
 	}
 }
 
@@ -840,7 +702,7 @@ static size_t append_algo_attrs(unsigned char *buf, size_t off, size_t cap,
  * reqid + spi + proto are captured by the caller for the matching
  * policy template and the later UPDSA / DELSA.
  */
-static int build_newsa(int fd, const struct xfrm_algo_def *def,
+static int build_newsa(struct nl_ctx *ctx, const struct xfrm_algo_def *def,
 		       __u32 reqid, __be32 spi, __u8 mode, __u32 seq)
 {
 	unsigned char buf[XFRM_BUF_BYTES];
@@ -852,7 +714,7 @@ static int build_newsa(int fd, const struct xfrm_algo_def *def,
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = XFRM_MSG_NEWSA;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	sa = (struct xfrm_usersa_info *)NLMSG_DATA(nlh);
 	fill_selector(&sa->sel, IPPROTO_UDP);
@@ -875,7 +737,7 @@ static int build_newsa(int fd, const struct xfrm_algo_def *def,
 		return -EIO;
 
 	nlh->nlmsg_len = (__u32)off;
-	return xfrm_send_recv_retry(fd, buf, off);
+	return nl_send_recv_retry(ctx, buf, off);
 }
 
 /*
@@ -883,7 +745,7 @@ static int build_newsa(int fd, const struct xfrm_algo_def *def,
  * (and same SPI by default).  Drives the UPDSA-vs-encrypt rekey race
  * — the in-flight encrypt may still be holding the old key.
  */
-static int build_updsa(int fd, const struct xfrm_algo_def *def,
+static int build_updsa(struct nl_ctx *ctx, const struct xfrm_algo_def *def,
 		       __u32 reqid, __be32 spi, __u8 mode, __u32 seq)
 {
 	unsigned char buf[XFRM_BUF_BYTES];
@@ -895,7 +757,7 @@ static int build_updsa(int fd, const struct xfrm_algo_def *def,
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = XFRM_MSG_UPDSA;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	sa = (struct xfrm_usersa_info *)NLMSG_DATA(nlh);
 	fill_selector(&sa->sel, IPPROTO_UDP);
@@ -918,7 +780,7 @@ static int build_updsa(int fd, const struct xfrm_algo_def *def,
 		return -EIO;
 
 	nlh->nlmsg_len = (__u32)off;
-	return xfrm_send_recv_retry(fd, buf, off);
+	return nl_send_recv_retry(ctx, buf, off);
 }
 
 /*
@@ -926,7 +788,7 @@ static int build_updsa(int fd, const struct xfrm_algo_def *def,
  * Races the in-flight encrypt still draining from the post-UPDSA
  * sendto burst; the SA refcount UAF window opens here.
  */
-static int build_delsa(int fd, __u8 proto, __be32 spi)
+static int build_delsa(struct nl_ctx *ctx, __u8 proto, __be32 spi)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -937,7 +799,7 @@ static int build_delsa(int fd, __u8 proto, __be32 spi)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = XFRM_MSG_DELSA;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	uid = (struct xfrm_usersa_id *)NLMSG_DATA(nlh);
 	uid->daddr.a4 = XFRM_DADDR_BE;
@@ -947,7 +809,7 @@ static int build_delsa(int fd, __u8 proto, __be32 spi)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*uid));
 	nlh->nlmsg_len = (__u32)off;
-	return xfrm_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -955,7 +817,7 @@ static int build_delsa(int fd, __u8 proto, __be32 spi)
  * SA we just installed.  Selector matches the inner UDP traffic so
  * the SPD lookup at xfrm_output time resolves to our SA bundle.
  */
-static int build_newpolicy(int fd, const struct xfrm_algo_def *def,
+static int build_newpolicy(struct nl_ctx *ctx, const struct xfrm_algo_def *def,
 			   __u32 reqid, __be32 spi, __u8 mode)
 {
 	unsigned char buf[XFRM_BUF_BYTES];
@@ -968,7 +830,7 @@ static int build_newpolicy(int fd, const struct xfrm_algo_def *def,
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = XFRM_MSG_NEWPOLICY;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	pol = (struct xfrm_userpolicy_info *)NLMSG_DATA(nlh);
 	fill_selector(&pol->sel, IPPROTO_UDP);
@@ -1001,14 +863,14 @@ static int build_newpolicy(int fd, const struct xfrm_algo_def *def,
 		return -EIO;
 
 	nlh->nlmsg_len = (__u32)off;
-	return xfrm_send_recv_retry(fd, buf, off);
+	return nl_send_recv_retry(ctx, buf, off);
 }
 
 /*
  * XFRM_MSG_DELPOLICY OUT via xfrm_userpolicy_id.  Races the in-flight
  * skbs still draining from the post-UPDSA sendto burst.
  */
-static int build_delpolicy(int fd)
+static int build_delpolicy(struct nl_ctx *ctx)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -1019,7 +881,7 @@ static int build_delpolicy(int fd)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = XFRM_MSG_DELPOLICY;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	pid = (struct xfrm_userpolicy_id *)NLMSG_DATA(nlh);
 	fill_selector(&pid->sel, IPPROTO_UDP);
@@ -1027,7 +889,7 @@ static int build_delpolicy(int fd)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*pid));
 	nlh->nlmsg_len = (__u32)off;
-	return xfrm_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -1063,7 +925,7 @@ static __u32 pick_sa_seq(void)
  * upstream commit 14acf9652e56 fingerprints.  min/max bracket the
  * same [0x100, 0xffffff] range used elsewhere in this op.
  */
-static int build_allocspi(int fd, const struct xfrm_algo_def *def,
+static int build_allocspi(struct nl_ctx *ctx, const struct xfrm_algo_def *def,
 			  __u32 reqid, __u8 mode, __u32 seq)
 {
 	unsigned char buf[XFRM_BUF_BYTES];
@@ -1075,7 +937,7 @@ static int build_allocspi(int fd, const struct xfrm_algo_def *def,
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = XFRM_MSG_ALLOCSPI;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	spi_info = (struct xfrm_userspi_info *)NLMSG_DATA(nlh);
 	fill_selector(&spi_info->info.sel, IPPROTO_UDP);
@@ -1096,10 +958,10 @@ static int build_allocspi(int fd, const struct xfrm_algo_def *def,
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*spi_info));
 	nlh->nlmsg_len = (__u32)off;
 	/* ALLOCSPI returns a longer reply than send_recv's 1KB rbuf can
-	 * always carry; xfrm_send_recv treats a non-error reply as -EIO.
+	 * always carry; nl_send_recv treats a non-error reply as -EIO.
 	 * That's still acceptable as a counter signal — the kernel-side
 	 * walk has already happened by the time the reply is composed. */
-	return xfrm_send_recv_retry(fd, buf, off);
+	return nl_send_recv_retry(ctx, buf, off);
 }
 
 /*
@@ -1110,7 +972,7 @@ static int build_allocspi(int fd, const struct xfrm_algo_def *def,
  * Reply carries a full xfrm_usersa_info; we don't parse it — the bug
  * window is the kernel-side hash walk, not the userland decode.
  */
-static int build_getsa_byspi(int fd, __u8 proto, __be32 spi)
+static int build_getsa_byspi(struct nl_ctx *ctx, __u8 proto, __be32 spi)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -1121,7 +983,7 @@ static int build_getsa_byspi(int fd, __u8 proto, __be32 spi)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = XFRM_MSG_GETSA;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	uid = (struct xfrm_usersa_id *)NLMSG_DATA(nlh);
 	uid->daddr.a4 = XFRM_DADDR_BE;
@@ -1131,7 +993,7 @@ static int build_getsa_byspi(int fd, __u8 proto, __be32 spi)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*uid));
 	nlh->nlmsg_len = (__u32)off;
-	return xfrm_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -1244,7 +1106,7 @@ static const __be32 v6_loopback_be[4] = {
  * because the existing xfrm_algos[] rotation doesn't combine all three
  * at once.
  */
-static void install_ah_esn_async_sa(int xfrm, int udp)
+static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp)
 {
 	unsigned char buf[XFRM_BUF_BYTES];
 	unsigned char abuf[sizeof(struct xfrm_algo_auth) + 32];
@@ -1279,7 +1141,7 @@ static void install_ah_esn_async_sa(int xfrm, int udp)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = XFRM_MSG_NEWSA;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	sa = (struct xfrm_usersa_info *)NLMSG_DATA(nlh);
 	if (v6) {
@@ -1329,7 +1191,7 @@ static void install_ah_esn_async_sa(int xfrm, int udp)
 		return;
 
 	nlh->nlmsg_len = (__u32)off;
-	rc = xfrm_send_recv_retry(xfrm, buf, off);
+	rc = nl_send_recv_retry(ctx, buf, off);
 	if (rc != 0) {
 		__atomic_add_fetch(&shm->stats.xfrm_ah_esn_setup_fail, 1,
 				   __ATOMIC_RELAXED);
@@ -1361,7 +1223,7 @@ static void install_ah_esn_async_sa(int xfrm, int udp)
 	nlh = (struct nlmsghdr *)dbuf;
 	nlh->nlmsg_type  = XFRM_MSG_DELSA;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	uid = (struct xfrm_usersa_id *)NLMSG_DATA(nlh);
 	if (v6)
@@ -1374,7 +1236,7 @@ static void install_ah_esn_async_sa(int xfrm, int udp)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*uid));
 	nlh->nlmsg_len = (__u32)off;
-	if (xfrm_send_recv(xfrm, dbuf, off) == 0)
+	if (nl_send_recv(ctx, dbuf, off) == 0)
 		__atomic_add_fetch(&shm->stats.xfrm_ah_esn_delsa_races, 1,
 				   __ATOMIC_RELAXED);
 }
@@ -1405,7 +1267,7 @@ static void pfkey_flush_burst(void)
 	msg.sadb_msg_type     = SADB_FLUSH;
 	msg.sadb_msg_satype   = SADB_SATYPE_ESP;
 	msg.sadb_msg_len      = sizeof(msg) / 8;
-	msg.sadb_msg_seq      = next_seq();
+	msg.sadb_msg_seq      = ++g_pfkey_seq;
 	msg.sadb_msg_pid      = (__u32)mypid();
 	if (send(s, &msg, sizeof(msg), MSG_DONTWAIT) > 0)
 		__atomic_add_fetch(&shm->stats.xfrm_churn_pfkey_send_ok,
@@ -1416,7 +1278,7 @@ static void pfkey_flush_burst(void)
 	msg.sadb_msg_type     = SADB_FLUSH;
 	msg.sadb_msg_satype   = SADB_SATYPE_AH;
 	msg.sadb_msg_len      = sizeof(msg) / 8;
-	msg.sadb_msg_seq      = next_seq();
+	msg.sadb_msg_seq      = ++g_pfkey_seq;
 	msg.sadb_msg_pid      = (__u32)mypid();
 	if (send(s, &msg, sizeof(msg), MSG_DONTWAIT) > 0)
 		__atomic_add_fetch(&shm->stats.xfrm_churn_pfkey_send_ok,
@@ -1446,7 +1308,7 @@ static void pfkey_flush_burst(void)
  * rejection.  All I/O is non-blocking so the inner loop can't stall
  * past the SIGALRM(1s) cap.
  */
-static void xfrm_compat_msg_sweep(int fd)
+static void xfrm_compat_msg_sweep(struct nl_ctx *ctx)
 {
 	struct sockaddr_nl dst;
 	unsigned char buf[256];
@@ -1470,11 +1332,11 @@ static void xfrm_compat_msg_sweep(int fd)
 		nlh = (struct nlmsghdr *)buf;
 		nlh->nlmsg_type  = (__u16)t;
 		nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-		nlh->nlmsg_seq   = next_seq();
+		nlh->nlmsg_seq   = nl_seq_next(ctx);
 		off = NLMSG_HDRLEN + NLMSG_ALIGN(64);
 		nlh->nlmsg_len   = (__u32)off;
 
-		if (sendto(fd, buf, off, MSG_DONTWAIT,
+		if (sendto(ctx->fd, buf, off, MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst)) < 0) {
 			__atomic_add_fetch(&shm->stats.xfrm_compat_sends_failed,
 					   1, __ATOMIC_RELAXED);
@@ -1483,7 +1345,7 @@ static void xfrm_compat_msg_sweep(int fd)
 		__atomic_add_fetch(&shm->stats.xfrm_compat_sends_ok,
 				   1, __ATOMIC_RELAXED);
 
-		n = recv(fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
+		n = recv(ctx->fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
 		if (n > 0)
 			__atomic_add_fetch(&shm->stats.xfrm_compat_replies_seen,
 					   1, __ATOMIC_RELAXED);
@@ -1523,8 +1385,12 @@ static void xfrm_compat_msg_sweep(int fd)
 
 static bool xfrm_burn_netns(void)
 {
+	struct nl_ctx burn_ctx = { .fd = -1 };
+	struct nl_open_opts burn_opts = {
+		.proto        = NETLINK_XFRM,
+		.recv_timeo_s = XFRM_RECV_TIMEO_S,
+	};
 	int anchor = -1;
-	int xfd = -1;
 	unsigned int aidx;
 	const struct xfrm_algo_def *def;
 	__u32 reqid, seq;
@@ -1554,8 +1420,7 @@ static bool xfrm_burn_netns(void)
 	if (unshare(CLONE_NEWNET) < 0)
 		goto out;
 
-	xfd = xfrm_open();
-	if (xfd < 0)
+	if (nl_open(&burn_ctx, &burn_opts) < 0)
 		goto out;
 
 	reqid = (rand32() % XFRM_REQID_RANGE) + 1U;
@@ -1565,18 +1430,17 @@ static bool xfrm_burn_netns(void)
 	seq   = (rand32() & 0xffffU) | 1U;
 
 	modprobe_algo(aidx);
-	if (build_newsa(xfd, def, reqid, spi, XFRM_MODE_TRANSPORT, seq) != 0)
+	if (build_newsa(&burn_ctx, def, reqid, spi, XFRM_MODE_TRANSPORT, seq) != 0)
 		goto out;
 
-	(void)build_getsa_byspi(xfd, def->proto, spi);
-	(void)build_allocspi(xfd, def, reqid, XFRM_MODE_TRANSPORT, seq);
+	(void)build_getsa_byspi(&burn_ctx, def->proto, spi);
+	(void)build_allocspi(&burn_ctx, def, reqid, XFRM_MODE_TRANSPORT, seq);
 
 	__atomic_add_fetch(&shm->stats.xfrm_churn_burn_completed, 1,
 			   __ATOMIC_RELAXED);
 
 out:
-	if (xfd >= 0)
-		close(xfd);
+	nl_close(&burn_ctx);
 	if (anchor >= 0) {
 		(void)setns(anchor, CLONE_NEWNET);
 		close(anchor);
@@ -1589,8 +1453,11 @@ out:
 
 bool xfrm_churn(struct childdata *child)
 {
-	int xfrm = -1;
-	int rtnl = -1;
+	struct nl_ctx ctx = { .fd = -1 };
+	struct nl_open_opts opts = {
+		.proto        = NETLINK_XFRM,
+		.recv_timeo_s = XFRM_RECV_TIMEO_S,
+	};
 	int udp = -1;
 	unsigned int aidx;
 	const struct xfrm_algo_def *def;
@@ -1632,16 +1499,17 @@ bool xfrm_churn(struct childdata *child)
 	}
 
 	if (!lo_brought_up) {
-		rtnl = rtnl_route_open();
-		if (rtnl >= 0) {
-			bring_lo_up(rtnl);
-			close(rtnl);
+		struct nl_ctx rtnl = { .fd = -1 };
+		struct nl_open_opts rtnl_opts = { .proto = NETLINK_ROUTE };
+
+		if (nl_open(&rtnl, &rtnl_opts) == 0) {
+			bring_lo_up(&rtnl);
+			nl_close(&rtnl);
 		}
 		lo_brought_up = true;
 	}
 
-	xfrm = xfrm_open();
-	if (xfrm < 0) {
+	if (nl_open(&ctx, &opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
 			ns_unsupported_xfrm = true;
 		__atomic_add_fetch(&shm->stats.xfrm_churn_setup_failed,
@@ -1664,7 +1532,7 @@ bool xfrm_churn(struct childdata *child)
 	 * later without restructuring this caller. */
 
 	modprobe_algo(aidx);
-	rc = build_newsa(xfrm, def, reqid, spi, mode, seq);
+	rc = build_newsa(&ctx, def, reqid, spi, mode, seq);
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_algo[aidx] = true;
@@ -1673,7 +1541,7 @@ bool xfrm_churn(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.xfrm_churn_sa_added,
 			   1, __ATOMIC_RELAXED);
 
-	rc = build_newpolicy(xfrm, def, reqid, spi, mode);
+	rc = build_newpolicy(&ctx, def, reqid, spi, mode);
 	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.xfrm_churn_pol_added,
 				   1, __ATOMIC_RELAXED);
@@ -1723,7 +1591,7 @@ bool xfrm_churn(struct childdata *child)
 	 * read still drives the bug-class window.
 	 */
 	if (ONE_IN(8))
-		(void)build_getsa_byspi(xfrm, def->proto, spi);
+		(void)build_getsa_byspi(&ctx, def->proto, spi);
 
 	/*
 	 * Second writer onto byspi: ALLOCSPI on a half-built SA with the
@@ -1733,9 +1601,9 @@ bool xfrm_churn(struct childdata *child)
 	 * larval-SA accumulator from saturating the per-netns table.
 	 */
 	if (ONE_IN(8))
-		(void)build_allocspi(xfrm, def, reqid, mode, seq);
+		(void)build_allocspi(&ctx, def, reqid, mode, seq);
 
-	rc = build_updsa(xfrm, def, reqid, spi, mode, seq);
+	rc = build_updsa(&ctx, def, reqid, spi, mode, seq);
 	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.xfrm_churn_sa_updated,
 				   1, __ATOMIC_RELAXED);
@@ -1766,11 +1634,11 @@ bool xfrm_churn(struct childdata *child)
 	 * via xfrm_state_delete -> __xfrm_state_destroy — the primary
 	 * teardown-vs-traffic window the op exists to open.
 	 */
-	if (build_delsa(xfrm, def->proto, spi) == 0)
+	if (build_delsa(&ctx, def->proto, spi) == 0)
 		__atomic_add_fetch(&shm->stats.xfrm_churn_sa_deleted,
 				   1, __ATOMIC_RELAXED);
 
-	if (build_delpolicy(xfrm) == 0)
+	if (build_delpolicy(&ctx) == 0)
 		__atomic_add_fetch(&shm->stats.xfrm_churn_pol_deleted,
 				   1, __ATOMIC_RELAXED);
 
@@ -1779,7 +1647,7 @@ bool xfrm_churn(struct childdata *child)
 	 * auth name) trifecta required to reach the codepath upstream
 	 * commit ec54093e6a8f patches. */
 	if ((rand32() & 3U) == 0)
-		install_ah_esn_async_sa(xfrm, udp);
+		install_ah_esn_async_sa(&ctx, udp);
 
 	/* PF_KEYv2 alt path: ~1 in 8 invocations exercises the parallel
 	 * af_key dispatch + flush paths that share the SAD/SPD with
@@ -1793,13 +1661,12 @@ bool xfrm_churn(struct childdata *child)
 	 * upstream 28465227c80f (missing xfrm_msg_min[] entry for
 	 * XFRM_MSG_MAPPING) and any later off-end indices added since. */
 	if (ONE_IN(8))
-		xfrm_compat_msg_sweep(xfrm);
+		xfrm_compat_msg_sweep(&ctx);
 
 out:
 	if (udp >= 0)
 		close(udp);
-	if (xfrm >= 0)
-		close(xfrm);
+	nl_close(&ctx);
 
 	return true;
 }
