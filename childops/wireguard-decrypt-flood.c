@@ -69,6 +69,7 @@
 #include <linux/wireguard.h>
 
 #include "childops-genl.h"
+#include "childops-netlink.h"
 #include "random.h"
 #include "pids.h"
 
@@ -91,13 +92,7 @@ static int g_wgdf_udp_fd = -1;
 static int g_wgdf_wg_ifindex;
 static __u16 g_wgdf_listen_port;
 static __u16 g_wgdf_peer_port;
-static __u32 g_wgdf_seq;
 static __u64 g_wgdf_counter;
-
-static __u32 wgdf_next_seq(void)
-{
-	return ++g_wgdf_seq;
-}
 
 static void wgdf_latch_unsupported(void)
 {
@@ -131,97 +126,15 @@ static void wgdf_fill_random(unsigned char *out, size_t len)
 	}
 }
 
-static int wgdf_nl_open(int proto)
-{
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, proto);
-	if (fd < 0)
-		return -1;
-	tv.tv_sec  = 0;
-	tv.tv_usec = WGDF_RECV_TIMEO_MS * 1000;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	return fd;
-}
-
-static int wgdf_nl_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[1024];
-	struct nlmsghdr *r;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0 || (size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-	r = (struct nlmsghdr *)rbuf;
-	if (r->nlmsg_type == NLMSG_ERROR)
-		return ((struct nlmsgerr *)NLMSG_DATA(r))->error;
-	return 0;
-}
-
-static size_t wgdf_nla(unsigned char *buf, size_t off, size_t cap,
-		       unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static size_t wgdf_nla_u8(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u8 v)
-{
-	return wgdf_nla(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t wgdf_nla_u16(unsigned char *buf, size_t off, size_t cap,
-			   unsigned short type, __u16 v)
-{
-	return wgdf_nla(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t wgdf_nla_str(unsigned char *buf, size_t off, size_t cap,
-			   unsigned short type, const char *s)
-{
-	return wgdf_nla(buf, off, cap, type, s, strlen(s) + 1);
-}
-
 /* RTM_NEWLINK with IFLA_IFNAME=wg0 + IFLA_LINKINFO/IFLA_INFO_KIND=
  * "wireguard".  The wireguard module supplies its own rtnl_link_ops
  * with .kind = "wireguard", so the kernel routes us straight to
  * wg_newlink().  No IFLA_INFO_DATA is required. */
-static int wgdf_create_wg0(int rtnl, const char *ifname)
+static int wgdf_create_wg0(struct nl_ctx *rtnl, const char *ifname)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
-	struct nlattr *li;
 	size_t off, li_off;
 
 	memset(buf, 0, sizeof(buf));
@@ -229,28 +142,27 @@ static int wgdf_create_wg0(int rtnl, const char *ifname)
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = wgdf_next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 
-	off = wgdf_nla_str(buf, off, sizeof(buf), IFLA_IFNAME, ifname);
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, ifname);
 	if (!off) return -EIO;
 
 	li_off = off;
-	off = wgdf_nla(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
 	if (!off) return -EIO;
-	off = wgdf_nla_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "wireguard");
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "wireguard");
 	if (!off) return -EIO;
-	li = (struct nlattr *)(buf + li_off);
-	li->nla_len = (unsigned short)(off - li_off);
+	nla_nest_end(buf, li_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
-	return wgdf_nl_send_recv(rtnl, buf, off);
+	return nl_send_recv(rtnl, buf, off);
 }
 
 /* RTM_SETLINK to flip IFF_UP on @ifindex. */
-static int wgdf_link_up(int rtnl, int ifindex)
+static int wgdf_link_up(struct nl_ctx *rtnl, int ifindex)
 {
 	unsigned char buf[64];
 	struct nlmsghdr *nlh;
@@ -261,7 +173,7 @@ static int wgdf_link_up(int rtnl, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_SETLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = wgdf_next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	ifi->ifi_index  = ifindex;
@@ -269,7 +181,7 @@ static int wgdf_link_up(int rtnl, int ifindex)
 	ifi->ifi_change = IFF_UP;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return wgdf_nl_send_recv(rtnl, buf, off);
+	return nl_send_recv(rtnl, buf, off);
 }
 
 /* Build & send WG_CMD_SET_DEVICE on @ctx to install our private
@@ -282,7 +194,6 @@ static int wgdf_set_device(struct genl_ctx *ctx, int ifindex,
 {
 	unsigned char buf[WGDF_BUF_BYTES];
 	struct nlmsghdr *nlh;
-	struct nlattr *peers, *peer0, *aips, *aip0;
 	struct sockaddr_in endpoint;
 	unsigned char privkey[WG_KEY_LEN];
 	unsigned char pubkey[WG_KEY_LEN];
@@ -298,57 +209,53 @@ static int wgdf_set_device(struct genl_ctx *ctx, int ifindex,
 			   WG_CMD_SET_DEVICE, 0);
 	if (!off) return -EIO;
 
-	off = wgdf_nla(buf, off, sizeof(buf), WGDEVICE_A_IFINDEX,
-		       &ifindex_u32, sizeof(ifindex_u32));
+	off = nla_put(buf, off, sizeof(buf), WGDEVICE_A_IFINDEX,
+		      &ifindex_u32, sizeof(ifindex_u32));
 	if (!off) return -EIO;
-	off = wgdf_nla(buf, off, sizeof(buf), WGDEVICE_A_PRIVATE_KEY,
-		       privkey, sizeof(privkey));
+	off = nla_put(buf, off, sizeof(buf), WGDEVICE_A_PRIVATE_KEY,
+		      privkey, sizeof(privkey));
 	if (!off) return -EIO;
-	off = wgdf_nla_u16(buf, off, sizeof(buf), WGDEVICE_A_LISTEN_PORT,
-			   listen_port);
+	off = nla_put_u16(buf, off, sizeof(buf), WGDEVICE_A_LISTEN_PORT,
+			  listen_port);
 	if (!off) return -EIO;
 
 	peers_off = off;
-	off = wgdf_nla(buf, off, sizeof(buf), WGDEVICE_A_PEERS, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), WGDEVICE_A_PEERS);
 	if (!off) return -EIO;
 
 	peer0_off = off;
-	off = wgdf_nla(buf, off, sizeof(buf), 0, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), 0);
 	if (!off) return -EIO;
-	off = wgdf_nla(buf, off, sizeof(buf), WGPEER_A_PUBLIC_KEY,
-		       pubkey, sizeof(pubkey));
+	off = nla_put(buf, off, sizeof(buf), WGPEER_A_PUBLIC_KEY,
+		      pubkey, sizeof(pubkey));
 	if (!off) return -EIO;
 
 	memset(&endpoint, 0, sizeof(endpoint));
 	endpoint.sin_family = AF_INET;
 	endpoint.sin_port   = htons(peer_port);
 	endpoint.sin_addr.s_addr = WGDF_LO_ADDR;
-	off = wgdf_nla(buf, off, sizeof(buf), WGPEER_A_ENDPOINT,
-		       &endpoint, sizeof(endpoint));
+	off = nla_put(buf, off, sizeof(buf), WGPEER_A_ENDPOINT,
+		      &endpoint, sizeof(endpoint));
 	if (!off) return -EIO;
 
 	aips_off = off;
-	off = wgdf_nla(buf, off, sizeof(buf), WGPEER_A_ALLOWEDIPS, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), WGPEER_A_ALLOWEDIPS);
 	if (!off) return -EIO;
 	aip0_off = off;
-	off = wgdf_nla(buf, off, sizeof(buf), 0, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), 0);
 	if (!off) return -EIO;
-	off = wgdf_nla_u16(buf, off, sizeof(buf), WGALLOWEDIP_A_FAMILY, AF_INET);
+	off = nla_put_u16(buf, off, sizeof(buf), WGALLOWEDIP_A_FAMILY, AF_INET);
 	if (!off) return -EIO;
-	off = wgdf_nla(buf, off, sizeof(buf), WGALLOWEDIP_A_IPADDR,
-		       ipaddr, sizeof(ipaddr));
+	off = nla_put(buf, off, sizeof(buf), WGALLOWEDIP_A_IPADDR,
+		      ipaddr, sizeof(ipaddr));
 	if (!off) return -EIO;
-	off = wgdf_nla_u8(buf, off, sizeof(buf), WGALLOWEDIP_A_CIDR_MASK, 24);
+	off = nla_put_u8(buf, off, sizeof(buf), WGALLOWEDIP_A_CIDR_MASK, 24);
 	if (!off) return -EIO;
 
-	aip0  = (struct nlattr *)(buf + aip0_off);
-	aip0->nla_len = (unsigned short)(off - aip0_off);
-	aips  = (struct nlattr *)(buf + aips_off);
-	aips->nla_len = (unsigned short)(off - aips_off);
-	peer0 = (struct nlattr *)(buf + peer0_off);
-	peer0->nla_len = (unsigned short)(off - peer0_off);
-	peers = (struct nlattr *)(buf + peers_off);
-	peers->nla_len = (unsigned short)(off - peers_off);
+	nla_nest_end(buf, aip0_off, off);
+	nla_nest_end(buf, aips_off, off);
+	nla_nest_end(buf, peer0_off, off);
+	nla_nest_end(buf, peers_off, off);
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (__u32)off;
@@ -388,25 +295,29 @@ static bool wgdf_setup(void)
 	pid_t pid = mypid();
 	struct genl_ctx ctx;
 	struct genl_open_opts opts;
-	int rtnl, rc;
+	struct nl_ctx wgdf_rtnl;
+	struct nl_open_opts rtnl_opts;
+	int rc;
 
 	g_wgdf_listen_port = (__u16)(WGDF_PORT_BASE + ((unsigned)pid & 0x3fff));
 	g_wgdf_peer_port   = (__u16)(g_wgdf_listen_port ^ 0x100);
 
-	rtnl = wgdf_nl_open(NETLINK_ROUTE);
-	if (rtnl < 0)
+	memset(&rtnl_opts, 0, sizeof(rtnl_opts));
+	rtnl_opts.proto         = NETLINK_ROUTE;
+	rtnl_opts.recv_timeo_us = WGDF_RECV_TIMEO_MS * 1000;
+	if (nl_open(&wgdf_rtnl, &rtnl_opts) < 0)
 		return false;
 
-	rc = wgdf_create_wg0(rtnl, "wg0");
+	rc = wgdf_create_wg0(&wgdf_rtnl, "wg0");
 	if (rc != 0) {
 		if (wgdf_err_unsupported(rc))
 			wgdf_latch_unsupported();
-		close(rtnl);
+		nl_close(&wgdf_rtnl);
 		return false;
 	}
 	g_wgdf_wg_ifindex = (int)if_nametoindex("wg0");
 	if (g_wgdf_wg_ifindex <= 0) {
-		close(rtnl);
+		nl_close(&wgdf_rtnl);
 		return false;
 	}
 
@@ -419,7 +330,7 @@ static bool wgdf_setup(void)
 	if (rc != 0) {
 		if (rc == -ENOENT || wgdf_err_unsupported(rc))
 			wgdf_latch_unsupported();
-		close(rtnl);
+		nl_close(&wgdf_rtnl);
 		return false;
 	}
 
@@ -429,12 +340,12 @@ static bool wgdf_setup(void)
 	if (rc != 0 && rc != -EEXIST) {
 		if (wgdf_err_unsupported(rc))
 			wgdf_latch_unsupported();
-		close(rtnl);
+		nl_close(&wgdf_rtnl);
 		return false;
 	}
 
-	(void)wgdf_link_up(rtnl, g_wgdf_wg_ifindex);
-	close(rtnl);
+	(void)wgdf_link_up(&wgdf_rtnl, g_wgdf_wg_ifindex);
+	nl_close(&wgdf_rtnl);
 
 	g_wgdf_udp_fd = wgdf_open_udp(g_wgdf_peer_port);
 	if (g_wgdf_udp_fd < 0)
