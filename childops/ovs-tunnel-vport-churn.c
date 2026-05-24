@@ -31,8 +31,11 @@
  *
  * Sequence (per child, latched after first successful setup):
  *   1. try_modprobe openvswitch / geneve / vxlan / ip_gre.
- *   2. Open NETLINK_GENERIC, dump CTRL_CMD_GETFAMILY/NLM_F_DUMP and
- *      cache the resolved family ids for ovs_datapath / ovs_vport.
+ *   2. genl_open("ovs_datapath", ...) and genl_open("ovs_vport", ...) —
+ *      a per-ctx CTRL_CMD_GETFAMILY for each family.  Two sockets so
+ *      every send/recv stays on the shared genl_send_recv() single-ack
+ *      path; the old dump-based two-family resolver went away with the
+ *      migration to childops-genl.h.
  *   3. OVS_DP_CMD_NEW with OVS_DP_ATTR_NAME = tcdp_<child_id>,
  *      OVS_DP_ATTR_UPCALL_PID = 0.  Datapath name is per-child so
  *      siblings don't fight over the shared name space at startup.
@@ -55,11 +58,11 @@
  *
  * Self-bounding: SO_RCVTIMEO=1s on every netlink socket so an
  * unresponsive OVS family can't wedge us past the SIGALRM(1s) cap
- * inherited from child.c.  All sends use the genl socket bound to the
- * child's pid; the per-iteration rtnl racer socket is opened fresh,
- * fired once with NLM_F_REQUEST (no ack), and closed.  Every kind
- * has its own latch so a kernel without GENEVE / VXLAN / GRE pays the
- * EFAIL once and skips that kind on subsequent invocations.
+ * inherited from child.c.  All sends use the per-family genl ctx bound
+ * to the child's pid; the per-iteration rtnl racer socket is opened
+ * fresh, fired once with NLM_F_REQUEST (no ack), and closed.  Every
+ * kind has its own latch so a kernel without GENEVE / VXLAN / GRE pays
+ * the EFAIL once and skips that kind on subsequent invocations.
  */
 
 #include <errno.h>
@@ -78,12 +81,13 @@
 #include <time.h>
 #include <unistd.h>
 
-#include <linux/genetlink.h>
 #include <linux/if_link.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-genl.h"
+#include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -174,13 +178,13 @@ static bool ovs_kind_unsupported_geneve;
 static bool ovs_kind_unsupported_vxlan;
 static bool ovs_kind_unsupported_gre;
 
-static uint16_t ovs_dp_family;
-static uint16_t ovs_vport_family;
-static uint8_t ovs_dp_version;
-static uint8_t ovs_vport_version;
-
-static int ovs_genl_sock = -1;
-static __u32 ovs_seq;
+/* One genl ctx per family: ovs_datapath carries OVS_DP_CMD_*, ovs_vport
+ * carries OVS_VPORT_CMD_*.  Each ctx owns its own NETLINK_GENERIC
+ * socket + sequence counter.  Sockets stay open for the child's
+ * lifetime so we don't re-modprobe / re-create the datapath every
+ * invocation. */
+static struct genl_ctx ovs_dp_ctx;
+static struct genl_ctx ovs_vport_ctx;
 static __u32 ovs_iter_id;
 
 enum ovs_tun_kind {
@@ -200,11 +204,6 @@ static const unsigned int ovs_kind_weights[OVS_TUN_NR] = {
 	[OVS_TUN_GRE]    = 3,
 };
 #define OVS_KIND_WEIGHT_SUM	12U
-
-static __u32 next_ovs_seq(void)
-{
-	return ++ovs_seq;
-}
 
 static __u32 next_ovs_iter_id(void)
 {
@@ -318,299 +317,41 @@ static void ovs_try_modprobe(const char *mod)
 	(void)waitpid(pid, &status, 0);
 }
 
-static size_t ovs_nla_put(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static size_t ovs_nla_put_u32(unsigned char *buf, size_t off, size_t cap,
-			      unsigned short type, __u32 v)
-{
-	return ovs_nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t ovs_nla_put_u16(unsigned char *buf, size_t off, size_t cap,
-			      unsigned short type, __u16 v)
-{
-	return ovs_nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t ovs_nla_put_str(unsigned char *buf, size_t off, size_t cap,
-			      unsigned short type, const char *s)
-{
-	return ovs_nla_put(buf, off, cap, type, s, strlen(s) + 1);
-}
-
-/*
- * Open the per-child genl socket, set the 1s recv timeout that bounds
- * an OVS family ack-stall, and bind so the kernel can address us.
- * Caller is responsible for closing on teardown.
- */
-static int ovs_genl_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_GENERIC);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = OVS_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	return fd;
-}
-
-/*
- * Send + drain ack on the supplied genl socket.  Returns 0 if the ack
- * carried no error, the negated errno from the ack on rejection, or
- * -EIO on local send/recv failure.  Discards any non-error message
- * (CMD_NEW responses include the assigned port body which we don't
- * need; the racer trigger only cares whether the kernel accepted us).
- */
-static int ovs_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[1024];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0)
-		return -EIO;
-	if ((size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	return 0;
-}
-
-/* Walk the CTRL_ATTR_* attributes from one CTRL_CMD_NEWFAMILY response
- * and pull out the family id + version we need.  Compares the family
- * name against the supplied target; on match, stashes id/version into
- * out_id / out_ver.  Returns true if the entry matched (whether or not
- * the id was present -- caller checks). */
-static bool ovs_parse_family_match(const struct nlmsghdr *nlh,
-				   const char *target_name,
-				   uint16_t *out_id, uint8_t *out_ver)
-{
-	const struct genlmsghdr *genl;
-	const unsigned char *attrs;
-	size_t attrs_len;
-	size_t off;
-	bool name_matched = false;
-	uint16_t found_id = 0;
-	uint8_t found_ver = 0;
-
-	if (nlh->nlmsg_len < NLMSG_HDRLEN + GENL_HDRLEN)
-		return false;
-
-	genl = (const struct genlmsghdr *)NLMSG_DATA(nlh);
-	found_ver = genl->version;
-
-	attrs = (const unsigned char *)nlh + NLMSG_HDRLEN + GENL_HDRLEN;
-	attrs_len = nlh->nlmsg_len - NLMSG_HDRLEN - GENL_HDRLEN;
-
-	for (off = 0; off + NLA_HDRLEN <= attrs_len; ) {
-		const struct nlattr *nla = (const struct nlattr *)(attrs + off);
-		size_t nla_len = nla->nla_len;
-		const unsigned char *payload;
-		size_t payload_len;
-		unsigned short type;
-
-		if (nla_len < NLA_HDRLEN || nla_len > attrs_len - off)
-			break;
-		payload = (const unsigned char *)nla + NLA_HDRLEN;
-		payload_len = nla_len - NLA_HDRLEN;
-		type = nla->nla_type & NLA_TYPE_MASK;
-
-		if (type == CTRL_ATTR_FAMILY_NAME) {
-			size_t cmp = payload_len;
-			if (cmp > 0 && payload[cmp - 1] == '\0')
-				cmp--;
-			if (cmp == strlen(target_name) &&
-			    memcmp(payload, target_name, cmp) == 0)
-				name_matched = true;
-		} else if (type == CTRL_ATTR_FAMILY_ID &&
-			   payload_len >= sizeof(uint16_t)) {
-			memcpy(&found_id, payload, sizeof(uint16_t));
-		} else if (type == CTRL_ATTR_VERSION &&
-			   payload_len >= sizeof(uint32_t)) {
-			uint32_t v;
-
-			memcpy(&v, payload, sizeof(v));
-			found_ver = (uint8_t)v;
-		}
-		off += NLA_ALIGN(nla_len);
-	}
-
-	if (!name_matched)
-		return false;
-	if (out_id)
-		*out_id = found_id;
-	if (out_ver)
-		*out_ver = found_ver;
-	return true;
-}
-
-/*
- * CTRL_CMD_GETFAMILY/NLM_F_DUMP, walk every NEWFAMILY response,
- * latching ovs_dp_family / ovs_vport_family on name match.  Returns
- * false on send failure or if neither name was found in the dump.
- */
-static bool ovs_resolve_families(int fd)
-{
-	struct {
-		struct nlmsghdr nlh;
-		struct genlmsghdr genl;
-	} req;
-	unsigned char buf[16384];
-	bool found_dp = false;
-	bool found_vport = false;
-	ssize_t n;
-
-	memset(&req, 0, sizeof(req));
-	req.nlh.nlmsg_len   = NLMSG_LENGTH(GENL_HDRLEN);
-	req.nlh.nlmsg_type  = GENL_ID_CTRL;
-	req.nlh.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-	req.nlh.nlmsg_seq   = next_ovs_seq();
-	req.nlh.nlmsg_pid   = 0;
-	req.genl.cmd        = CTRL_CMD_GETFAMILY;
-	req.genl.version    = 1;
-
-	if (send(fd, &req, req.nlh.nlmsg_len, 0) < 0)
-		return false;
-
-	for (;;) {
-		struct nlmsghdr *nlh;
-		size_t remaining;
-
-		n = recv(fd, buf, sizeof(buf), 0);
-		if (n <= 0)
-			break;
-
-		nlh = (struct nlmsghdr *)buf;
-		remaining = (size_t)n;
-		while (NLMSG_OK(nlh, remaining)) {
-			if (nlh->nlmsg_type == NLMSG_DONE)
-				goto done;
-			if (nlh->nlmsg_type == NLMSG_ERROR)
-				goto done;
-			if (nlh->nlmsg_type == GENL_ID_CTRL) {
-				uint16_t id = 0;
-				uint8_t ver = 0;
-
-				if (!found_dp &&
-				    ovs_parse_family_match(nlh, "ovs_datapath",
-							   &id, &ver) && id) {
-					ovs_dp_family = id;
-					ovs_dp_version = ver ? ver
-							     : OVS_DATAPATH_VERSION;
-					found_dp = true;
-				}
-				if (!found_vport &&
-				    ovs_parse_family_match(nlh, "ovs_vport",
-							   &id, &ver) && id) {
-					ovs_vport_family = id;
-					ovs_vport_version = ver ? ver
-								: OVS_VPORT_VERSION;
-					found_vport = true;
-				}
-			}
-			nlh = NLMSG_NEXT(nlh, remaining);
-		}
-	}
-
-done:
-	return found_dp && found_vport;
-}
-
 /*
  * Build + send OVS_DP_CMD_NEW for tcdp_<child>.  Required attributes
  * per uapi: OVS_DP_ATTR_NAME (string) and OVS_DP_ATTR_UPCALL_PID (u32).
  * UPCALL_PID = 0 means "drop upcalls"; we don't want the kernel to
  * spray packets at us.
  */
-static int ovs_create_datapath(int fd, const char *name)
+static int ovs_create_datapath(struct genl_ctx *ctx, const char *name)
 {
 	unsigned char buf[OVS_NETLINK_BUF_BYTES];
 	struct nlmsghdr *nlh;
-	struct genlmsghdr *genl;
 	struct ovs_header {
 		int dp_ifindex;
 	} *ovsh;
 	size_t off;
 
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = ovs_dp_family;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
-			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_ovs_seq();
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
+			   nl_seq_next(&ctx->nl),
+			   OVS_DP_CMD_NEW, NLM_F_CREATE | NLM_F_EXCL);
+	if (!off)
+		return -EIO;
 
-	genl = (struct genlmsghdr *)NLMSG_DATA(nlh);
-	genl->cmd     = OVS_DP_CMD_NEW;
-	genl->version = ovs_dp_version;
-	genl->reserved = 0;
-
-	ovsh = (struct ovs_header *)((unsigned char *)genl + GENL_HDRLEN);
+	ovsh = (struct ovs_header *)(buf + off);
 	ovsh->dp_ifindex = 0;
+	off += NLA_ALIGN(sizeof(*ovsh));
 
-	off = NLMSG_HDRLEN + GENL_HDRLEN + NLA_ALIGN(sizeof(*ovsh));
-
-	off = ovs_nla_put_str(buf, off, sizeof(buf), OVS_DP_ATTR_NAME, name);
+	off = nla_put_str(buf, off, sizeof(buf), OVS_DP_ATTR_NAME, name);
 	if (!off)
 		return -EIO;
-	off = ovs_nla_put_u32(buf, off, sizeof(buf), OVS_DP_ATTR_UPCALL_PID, 0);
+	off = nla_put_u32(buf, off, sizeof(buf), OVS_DP_ATTR_UPCALL_PID, 0);
 	if (!off)
 		return -EIO;
 
+	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (__u32)off;
-	return ovs_send_recv(fd, buf, off);
+	return genl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -621,75 +362,66 @@ static int ovs_create_datapath(int fd, const char *name)
  * left empty (and omitted entirely below to avoid emitting a zero-len
  * nested attr the kernel will reject).
  */
-static int ovs_create_vport(int fd, int dp_ifindex, enum ovs_tun_kind kind,
+static int ovs_create_vport(struct genl_ctx *ctx, int dp_ifindex,
+			    enum ovs_tun_kind kind,
 			    const char *vname, __u16 dst_port)
 {
 	unsigned char buf[OVS_NETLINK_BUF_BYTES];
 	struct nlmsghdr *nlh;
-	struct genlmsghdr *genl;
 	struct ovs_header {
 		int dp_ifindex;
 	} *ovsh;
 	__u32 upcall_pid = 0;
 	size_t off;
 
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = ovs_vport_family;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
-			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_ovs_seq();
-
-	genl = (struct genlmsghdr *)NLMSG_DATA(nlh);
-	genl->cmd     = OVS_VPORT_CMD_NEW;
-	genl->version = ovs_vport_version;
-	genl->reserved = 0;
-
-	ovsh = (struct ovs_header *)((unsigned char *)genl + GENL_HDRLEN);
-	ovsh->dp_ifindex = dp_ifindex;
-
-	off = NLMSG_HDRLEN + GENL_HDRLEN + NLA_ALIGN(sizeof(*ovsh));
-
-	off = ovs_nla_put_u32(buf, off, sizeof(buf),
-			      OVS_VPORT_ATTR_TYPE, ovs_kind_type_id(kind));
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
+			   nl_seq_next(&ctx->nl),
+			   OVS_VPORT_CMD_NEW, NLM_F_CREATE | NLM_F_EXCL);
 	if (!off)
 		return -EIO;
 
-	off = ovs_nla_put_str(buf, off, sizeof(buf),
-			      OVS_VPORT_ATTR_NAME, vname);
+	ovsh = (struct ovs_header *)(buf + off);
+	ovsh->dp_ifindex = dp_ifindex;
+	off += NLA_ALIGN(sizeof(*ovsh));
+
+	off = nla_put_u32(buf, off, sizeof(buf),
+			  OVS_VPORT_ATTR_TYPE, ovs_kind_type_id(kind));
+	if (!off)
+		return -EIO;
+
+	off = nla_put_str(buf, off, sizeof(buf),
+			  OVS_VPORT_ATTR_NAME, vname);
 	if (!off)
 		return -EIO;
 
 	/* OVS_VPORT_ATTR_UPCALL_PID is a u32[] (one entry per upcall pid).
 	 * A single zero pid stamps the "discard upcalls" intent. */
-	off = ovs_nla_put(buf, off, sizeof(buf),
-			  OVS_VPORT_ATTR_UPCALL_PID,
-			  &upcall_pid, sizeof(upcall_pid));
+	off = nla_put(buf, off, sizeof(buf),
+		      OVS_VPORT_ATTR_UPCALL_PID,
+		      &upcall_pid, sizeof(upcall_pid));
 	if (!off)
 		return -EIO;
 
 	if (kind == OVS_TUN_GENEVE || kind == OVS_TUN_VXLAN) {
-		struct nlattr *opts;
 		size_t opts_off = off;
 
-		off = ovs_nla_put(buf, off, sizeof(buf),
-				  OVS_VPORT_ATTR_OPTIONS | NLA_F_NESTED,
-				  NULL, 0);
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     OVS_VPORT_ATTR_OPTIONS | NLA_F_NESTED);
 		if (!off)
 			return -EIO;
 
-		off = ovs_nla_put_u16(buf, off, sizeof(buf),
-				      OVS_TUNNEL_ATTR_DST_PORT,
-				      htons(dst_port));
+		off = nla_put_u16(buf, off, sizeof(buf),
+				  OVS_TUNNEL_ATTR_DST_PORT,
+				  htons(dst_port));
 		if (!off)
 			return -EIO;
 
-		opts = (struct nlattr *)(buf + opts_off);
-		opts->nla_len = (unsigned short)(off - opts_off);
+		nla_nest_end(buf, opts_off, off);
 	}
 
+	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (__u32)off;
-	return ovs_send_recv(fd, buf, off);
+	return genl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -699,39 +431,34 @@ static int ovs_create_vport(int fd, int dp_ifindex, enum ovs_tun_kind kind,
  * datapath and tears it down with rtnl held -- exactly the path the
  * upstream self-deadlock fix landed on.
  */
-static int ovs_delete_vport(int fd, int dp_ifindex, const char *vname)
+static int ovs_delete_vport(struct genl_ctx *ctx, int dp_ifindex,
+			    const char *vname)
 {
 	unsigned char buf[OVS_NETLINK_BUF_BYTES];
 	struct nlmsghdr *nlh;
-	struct genlmsghdr *genl;
 	struct ovs_header {
 		int dp_ifindex;
 	} *ovsh;
 	size_t off;
 
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = ovs_vport_family;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_ovs_seq();
-
-	genl = (struct genlmsghdr *)NLMSG_DATA(nlh);
-	genl->cmd     = OVS_VPORT_CMD_DEL;
-	genl->version = ovs_vport_version;
-	genl->reserved = 0;
-
-	ovsh = (struct ovs_header *)((unsigned char *)genl + GENL_HDRLEN);
-	ovsh->dp_ifindex = dp_ifindex;
-
-	off = NLMSG_HDRLEN + GENL_HDRLEN + NLA_ALIGN(sizeof(*ovsh));
-
-	off = ovs_nla_put_str(buf, off, sizeof(buf),
-			      OVS_VPORT_ATTR_NAME, vname);
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
+			   nl_seq_next(&ctx->nl),
+			   OVS_VPORT_CMD_DEL, 0);
 	if (!off)
 		return -EIO;
 
+	ovsh = (struct ovs_header *)(buf + off);
+	ovsh->dp_ifindex = dp_ifindex;
+	off += NLA_ALIGN(sizeof(*ovsh));
+
+	off = nla_put_str(buf, off, sizeof(buf),
+			  OVS_VPORT_ATTR_NAME, vname);
+	if (!off)
+		return -EIO;
+
+	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (__u32)off;
-	return ovs_send_recv(fd, buf, off);
+	return genl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -760,6 +487,11 @@ static void ovs_race_dellink_loop(const char *helper_name,
 {
 	struct timespec start, now;
 	unsigned int iter;
+	/* Local seq counter — the racer runs in a forked child after the
+	 * shared genl ctx has been opened, talks rtnetlink (not genl), and
+	 * never expects an ack so the seq stamp is cosmetic.  A bare local
+	 * counter keeps the racer independent of the parent's ctx seq. */
+	__u32 racer_seq = 0;
 
 	if (clock_gettime(CLOCK_MONOTONIC, &start) != 0)
 		return;
@@ -789,7 +521,7 @@ static void ovs_race_dellink_loop(const char *helper_name,
 					nlh = (struct nlmsghdr *)buf;
 					nlh->nlmsg_type  = RTM_DELLINK;
 					nlh->nlmsg_flags = NLM_F_REQUEST;
-					nlh->nlmsg_seq   = next_ovs_seq();
+					nlh->nlmsg_seq   = ++racer_seq;
 
 					ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 					ifi->ifi_family = AF_UNSPEC;
@@ -829,13 +561,14 @@ static void ovs_race_dellink_loop(const char *helper_name,
 
 /*
  * One-time setup: modprobe the four kernel modules we need, open the
- * cached genl socket, resolve ovs_datapath / ovs_vport family ids, and
- * create the per-child datapath.  Latches ovs_setup_failed on any
- * fatal step so subsequent invocations short-circuit to the runs
- * counter without retrying.
+ * cached per-family genl ctxs (each a unicast CTRL_CMD_GETFAMILY by
+ * name via genl_open()), and create the per-child datapath.  Latches
+ * ovs_setup_failed on any fatal step so subsequent invocations short-
+ * circuit to the runs counter without retrying.
  */
 static bool ovs_one_time_setup(struct childdata *child)
 {
+	struct genl_open_opts opts;
 	char dpname[32];
 	int rc;
 
@@ -849,28 +582,34 @@ static bool ovs_one_time_setup(struct childdata *child)
 	ovs_try_modprobe("vxlan");
 	ovs_try_modprobe("ip_gre");
 
-	ovs_genl_sock = ovs_genl_open();
-	if (ovs_genl_sock < 0) {
+	memset(&opts, 0, sizeof(opts));
+	opts.family_name  = "ovs_datapath";
+	opts.version      = OVS_DATAPATH_VERSION;
+	opts.recv_timeo_s = OVS_RECV_TIMEO_S;
+	if (genl_open(&ovs_dp_ctx, &opts) != 0) {
 		ovs_setup_failed = true;
 		return false;
 	}
 
-	if (!ovs_resolve_families(ovs_genl_sock)) {
+	memset(&opts, 0, sizeof(opts));
+	opts.family_name  = "ovs_vport";
+	opts.version      = OVS_VPORT_VERSION;
+	opts.recv_timeo_s = OVS_RECV_TIMEO_S;
+	if (genl_open(&ovs_vport_ctx, &opts) != 0) {
 		ovs_setup_failed = true;
-		close(ovs_genl_sock);
-		ovs_genl_sock = -1;
+		genl_close(&ovs_dp_ctx);
 		return false;
 	}
 
 	(void)snprintf(dpname, sizeof(dpname), "tcdp_%u",
 		       (unsigned int)(child->num & 0xffffu));
-	rc = ovs_create_datapath(ovs_genl_sock, dpname);
+	rc = ovs_create_datapath(&ovs_dp_ctx, dpname);
 	if (rc != 0 && rc != -EEXIST) {
 		/* EOPNOTSUPP / EPROTONOSUPPORT means the kernel is missing
 		 * CONFIG_OPENVSWITCH outright; nothing more we can do. */
 		ovs_setup_failed = true;
-		close(ovs_genl_sock);
-		ovs_genl_sock = -1;
+		genl_close(&ovs_vport_ctx);
+		genl_close(&ovs_dp_ctx);
 		return false;
 	}
 
@@ -942,7 +681,7 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 		}
 	}
 
-	rc = ovs_create_vport(ovs_genl_sock, 0, kind, vname, dst_port);
+	rc = ovs_create_vport(&ovs_vport_ctx, 0, kind, vname, dst_port);
 	if (rc != 0) {
 		/* Module-not-loaded / type-not-registered errors latch the
 		 * kind off; transient EBUSY / EEXIST / EADDRINUSE leave the
@@ -969,7 +708,7 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 		__asm__ __volatile__("" ::: "memory");
 	}
 
-	if (ovs_delete_vport(ovs_genl_sock, 0, vname) == 0)
+	if (ovs_delete_vport(&ovs_vport_ctx, 0, vname) == 0)
 		__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn_delete_ok,
 				   1, __ATOMIC_RELAXED);
 
