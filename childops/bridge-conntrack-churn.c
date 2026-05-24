@@ -38,6 +38,7 @@
  * SIGALRM(1s) cap.  Loopback only (private netns).
  */
 
+#include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <net/if.h>
@@ -50,7 +51,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
@@ -62,6 +62,8 @@
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-netlink.h"
+#include "childops-nfnl.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -136,73 +138,6 @@ static bool ns_unsupported_bridge;
 static bool ns_unsupported_nf_tables;
 static bool ns_unsupported_ctnetlink;
 
-static __u32 g_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
-
-struct brct_nfgenmsg {
-	__u8	nfgen_family;
-	__u8	version;
-	__u16	res_id;		/* network byte order */
-};
-
-static int nl_open(int proto)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, proto);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = 1;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	return fd;
-}
-
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static size_t nla_put_str(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, const char *s)
-{
-	return nla_put(buf, off, cap, type, s, strlen(s) + 1);
-}
-
-static size_t nla_put_u32(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u32 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
 static size_t nla_put_be32(unsigned char *buf, size_t off, size_t cap,
 			   unsigned short type, __u32 v)
 {
@@ -211,37 +146,7 @@ static size_t nla_put_be32(unsigned char *buf, size_t off, size_t cap,
 	return nla_put(buf, off, cap, type, &be, sizeof(be));
 }
 
-static int nl_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[1024];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < (ssize_t)NLMSG_HDRLEN)
-		return -EIO;
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR)
-		return ((struct nlmsgerr *)NLMSG_DATA(nlh))->error;
-	return -EIO;
-}
-
-static void bring_lo_up(int rtnl)
+static void bring_lo_up(struct nl_ctx *rtnl)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
@@ -254,7 +159,7 @@ static void bring_lo_up(int rtnl)
 	memset(buf, 0, sizeof(buf));
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	ifi->ifi_index  = idx;
@@ -264,7 +169,7 @@ static void bring_lo_up(int rtnl)
 	(void)nl_send_recv(rtnl, buf, nlh->nlmsg_len);
 }
 
-static int rtnl_create_bridge(int fd, const char *name)
+static int rtnl_create_bridge(struct nl_ctx *rtnl, const char *name)
 {
 	unsigned char buf[BRCT_RTNL_BUF_BYTES];
 	struct nlmsghdr *nlh;
@@ -276,7 +181,7 @@ static int rtnl_create_bridge(int fd, const char *name)
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
@@ -285,19 +190,18 @@ static int rtnl_create_bridge(int fd, const char *name)
 	if (!off)
 		return -EIO;
 	li_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
 	if (!off)
 		return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "bridge");
 	if (!off)
 		return -EIO;
-	((struct nlattr *)(buf + li_off))->nla_len =
-		(unsigned short)(off - li_off);
+	nla_nest_end(buf, li_off, off);
 	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(fd, buf, off);
+	return nl_send_recv(rtnl, buf, off);
 }
 
-static int rtnl_create_veth(int fd, const char *a, const char *b)
+static int rtnl_create_veth(struct nl_ctx *rtnl, const char *a, const char *b)
 {
 	unsigned char buf[BRCT_RTNL_BUF_BYTES];
 	struct nlmsghdr *nlh;
@@ -309,7 +213,7 @@ static int rtnl_create_veth(int fd, const char *a, const char *b)
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
@@ -318,18 +222,18 @@ static int rtnl_create_veth(int fd, const char *a, const char *b)
 	if (!off)
 		return -EIO;
 	li_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
 	if (!off)
 		return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "veth");
 	if (!off)
 		return -EIO;
 	id_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_INFO_DATA, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
 	if (!off)
 		return -EIO;
 	peer_off = off;
-	off = nla_put(buf, off, sizeof(buf), VETH_INFO_PEER, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), VETH_INFO_PEER);
 	if (!off)
 		return -EIO;
 	if (off + NLMSG_ALIGN(sizeof(*peer_ifi)) > sizeof(buf))
@@ -341,17 +245,14 @@ static int rtnl_create_veth(int fd, const char *a, const char *b)
 	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, b);
 	if (!off)
 		return -EIO;
-	((struct nlattr *)(buf + peer_off))->nla_len =
-		(unsigned short)(off - peer_off);
-	((struct nlattr *)(buf + id_off))->nla_len =
-		(unsigned short)(off - id_off);
-	((struct nlattr *)(buf + li_off))->nla_len =
-		(unsigned short)(off - li_off);
+	nla_nest_end(buf, peer_off, off);
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
 	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(fd, buf, off);
+	return nl_send_recv(rtnl, buf, off);
 }
 
-static int rtnl_setlink_master(int fd, int idx, int master)
+static int rtnl_setlink_master(struct nl_ctx *rtnl, int idx, int master)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
@@ -361,7 +262,7 @@ static int rtnl_setlink_master(int fd, int idx, int master)
 	memset(buf, 0, sizeof(buf));
 	nlh->nlmsg_type  = RTM_SETLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	ifi->ifi_index  = idx;
@@ -370,10 +271,10 @@ static int rtnl_setlink_master(int fd, int idx, int master)
 	if (!off)
 		return -EIO;
 	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(fd, buf, off);
+	return nl_send_recv(rtnl, buf, off);
 }
 
-static int rtnl_setlink_up(int fd, int idx)
+static int rtnl_setlink_up(struct nl_ctx *rtnl, int idx)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
@@ -383,7 +284,7 @@ static int rtnl_setlink_up(int fd, int idx)
 	memset(buf, 0, sizeof(buf));
 	nlh->nlmsg_type  = RTM_SETLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	ifi->ifi_index  = idx;
@@ -391,10 +292,10 @@ static int rtnl_setlink_up(int fd, int idx)
 	ifi->ifi_change = IFF_UP;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(fd, buf, off);
+	return nl_send_recv(rtnl, buf, off);
 }
 
-static int rtnl_dellink(int fd, int idx)
+static int rtnl_dellink(struct nl_ctx *rtnl, int idx)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
@@ -404,218 +305,162 @@ static int rtnl_dellink(int fd, int idx)
 	memset(buf, 0, sizeof(buf));
 	nlh->nlmsg_type  = RTM_DELLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	ifi->ifi_index  = idx;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(fd, buf, off);
+	return nl_send_recv(rtnl, buf, off);
 }
 
-/* Append one nfnetlink sub-message into a batched buffer; returns new
- * offset.  Caller fills attributes after the returned position. */
-static size_t nft_msg_begin(unsigned char *buf, size_t off, __u16 msg_id,
-			    __u16 extra_flags, __u8 family)
-{
-	struct nlmsghdr *nlh = (struct nlmsghdr *)(buf + off);
-	struct brct_nfgenmsg *nfg;
-
-	nlh->nlmsg_type  = (NFNL_SUBSYS_NFTABLES << 8) | msg_id;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | extra_flags;
-	nlh->nlmsg_seq   = next_seq();
-	nfg = (struct brct_nfgenmsg *)NLMSG_DATA(nlh);
-	nfg->nfgen_family = family;
-	nfg->version      = NFNETLINK_V0;
-	nfg->res_id       = htons(0);
-	return off + NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*nfg));
-}
-
-static void nft_msg_end(unsigned char *buf, size_t msg_off, size_t off)
-{
-	((struct nlmsghdr *)(buf + msg_off))->nlmsg_len =
-		(__u32)(off - msg_off);
-}
-
-/* Build the full NEWTABLE/NEWCHAIN/NEWRULE batch and send it as one
- * sendmsg().  Returns 0 on a clean end-of-batch, -errno on the first
- * rejection. */
-static int nft_install_bridge_ct(int nfnl, const char *table,
+/*
+ * Build the full BATCH_BEGIN / NEWTABLE / NEWCHAIN / NEWRULE / BATCH_END
+ * transaction and ship it as one sendmsg via nfnl_send_recv_batched().
+ * Returns 0 on a clean end-of-batch, -errno on the first rejection.
+ * The shared helper collapses sendmsg failures (EPERM/EOPNOTSUPP) into
+ * -EIO so the caller's structural-latch checks won't fire from a local
+ * send error — bridge / nf_tables availability is probed via the
+ * NEWTABLE / NEWCHAIN rejection codes that come back through the
+ * coalesced ack drain instead.
+ */
+static int nft_install_bridge_ct(struct nfnl_ctx *nf, const char *table,
 				 const char *chain)
 {
 	unsigned char buf[BRCT_NFT_BUF_BYTES];
-	struct nlmsghdr *nlh;
-	struct brct_nfgenmsg *nfg;
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	struct nlattr *hook_attr, *exprs, *elem, *expr_data;
-	size_t off = 0, msg_off, hook_off, exprs_off, elem_off, expr_data_off;
-	unsigned char rbuf[1024];
+	size_t off = 0, hook_off, exprs_off, elem_off, expr_data_off;
 	__u8 family = NFPROTO_BRIDGE;
 	__u32 prio = (__u32)(NF_BR_PRI_CT_PRE - 1);
-	ssize_t s;
-	int rc = 0;
 
 	memset(buf, 0, sizeof(buf));
 
-	/* BATCH_BEGIN */
-	msg_off = off;
-	nlh = (struct nlmsghdr *)(buf + off);
-	nlh->nlmsg_type  = NFNL_MSG_BATCH_BEGIN;
-	nlh->nlmsg_flags = NLM_F_REQUEST;
-	nlh->nlmsg_seq   = next_seq();
-	nfg = (struct brct_nfgenmsg *)NLMSG_DATA(nlh);
-	nfg->nfgen_family = AF_UNSPEC;
-	nfg->version      = NFNETLINK_V0;
-	nfg->res_id       = htons(NFNL_SUBSYS_NFTABLES);
-	off += NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*nfg));
-	nft_msg_end(buf, msg_off, off);
+	off = nfnl_batch_begin(buf, off, sizeof(buf),
+			       nl_seq_next(&nf->nl), NFNL_SUBSYS_NFTABLES);
+	if (!off)
+		return -EIO;
 
 	/* NEWTABLE */
-	msg_off = off;
-	off = nft_msg_begin(buf, off, BRCT_NFT_MSG_NEWTABLE,
-			    NLM_F_CREATE, family);
-	off = nla_put_str(buf, off, sizeof(buf), BRCT_NFTA_TABLE_NAME, table);
-	if (!off)
-		return -EIO;
-	nft_msg_end(buf, msg_off, off);
+	{
+		size_t msg_off = off;
+
+		off = nfnl_msg_put(buf, off, sizeof(buf), nl_seq_next(&nf->nl),
+				   NFNL_SUBSYS_NFTABLES, BRCT_NFT_MSG_NEWTABLE,
+				   NLM_F_CREATE, family);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_TABLE_NAME, table);
+		if (!off)
+			return -EIO;
+		((struct nlmsghdr *)(buf + msg_off))->nlmsg_len =
+			(__u32)(off - msg_off);
+	}
 
 	/* NEWCHAIN base, hook=PRE_ROUTING, priority=NF_BR_PRI_CT_PRE-1 */
-	msg_off = off;
-	off = nft_msg_begin(buf, off, BRCT_NFT_MSG_NEWCHAIN,
-			    NLM_F_CREATE, family);
-	off = nla_put_str(buf, off, sizeof(buf), BRCT_NFTA_CHAIN_TABLE, table);
-	off = nla_put_str(buf, off, sizeof(buf), BRCT_NFTA_CHAIN_NAME, chain);
-	if (!off)
-		return -EIO;
-	hook_off = off;
-	off = nla_put(buf, off, sizeof(buf),
-		      BRCT_NFTA_CHAIN_HOOK | NLA_F_NESTED, NULL, 0);
-	if (!off)
-		return -EIO;
-	off = nla_put_be32(buf, off, sizeof(buf),
-			   BRCT_NFTA_HOOK_HOOKNUM, NF_BR_PRE_ROUTING);
-	off = nla_put_be32(buf, off, sizeof(buf),
-			   BRCT_NFTA_HOOK_PRIORITY, prio);
-	if (!off)
-		return -EIO;
-	hook_attr = (struct nlattr *)(buf + hook_off);
-	hook_attr->nla_len = (unsigned short)(off - hook_off);
-	off = nla_put_str(buf, off, sizeof(buf),
-			  BRCT_NFTA_CHAIN_TYPE, "filter");
-	if (!off)
-		return -EIO;
-	nft_msg_end(buf, msg_off, off);
+	{
+		size_t msg_off = off;
+
+		off = nfnl_msg_put(buf, off, sizeof(buf), nl_seq_next(&nf->nl),
+				   NFNL_SUBSYS_NFTABLES, BRCT_NFT_MSG_NEWCHAIN,
+				   NLM_F_CREATE, family);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_CHAIN_TABLE, table);
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_CHAIN_NAME, chain);
+		if (!off)
+			return -EIO;
+		hook_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_CHAIN_HOOK | NLA_F_NESTED);
+		if (!off)
+			return -EIO;
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_NFTA_HOOK_HOOKNUM, NF_BR_PRE_ROUTING);
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_NFTA_HOOK_PRIORITY, prio);
+		if (!off)
+			return -EIO;
+		nla_nest_end(buf, hook_off, off);
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_CHAIN_TYPE, "filter");
+		if (!off)
+			return -EIO;
+		((struct nlmsghdr *)(buf + msg_off))->nlmsg_len =
+			(__u32)(off - msg_off);
+	}
 
 	/* NEWRULE: one nft_ct expression — drives nf_conntrack registration
 	 * on the bridge family even though the rule's verdict path is unused. */
-	msg_off = off;
-	off = nft_msg_begin(buf, off, BRCT_NFT_MSG_NEWRULE,
-			    NLM_F_CREATE | NLM_F_APPEND, family);
-	off = nla_put_str(buf, off, sizeof(buf), BRCT_NFTA_RULE_TABLE, table);
-	off = nla_put_str(buf, off, sizeof(buf), BRCT_NFTA_RULE_CHAIN, chain);
-	if (!off)
-		return -EIO;
-	exprs_off = off;
-	off = nla_put(buf, off, sizeof(buf),
-		      BRCT_NFTA_RULE_EXPRESSIONS | NLA_F_NESTED, NULL, 0);
-	if (!off)
-		return -EIO;
-	elem_off = off;
-	off = nla_put(buf, off, sizeof(buf),
-		      BRCT_NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
-	off = nla_put_str(buf, off, sizeof(buf), BRCT_NFTA_EXPR_NAME, "ct");
-	expr_data_off = off;
-	off = nla_put(buf, off, sizeof(buf),
-		      BRCT_NFTA_EXPR_DATA | NLA_F_NESTED, NULL, 0);
-	off = nla_put_be32(buf, off, sizeof(buf),
-			   BRCT_NFTA_CT_KEY, BRCT_NFT_CT_STATE);
-	off = nla_put_be32(buf, off, sizeof(buf),
-			   BRCT_NFTA_CT_DREG, BRCT_NFT_REG_1);
-	if (!off)
-		return -EIO;
-	expr_data = (struct nlattr *)(buf + expr_data_off);
-	expr_data->nla_len = (unsigned short)(off - expr_data_off);
-	elem = (struct nlattr *)(buf + elem_off);
-	elem->nla_len = (unsigned short)(off - elem_off);
-	exprs = (struct nlattr *)(buf + exprs_off);
-	exprs->nla_len = (unsigned short)(off - exprs_off);
-	nft_msg_end(buf, msg_off, off);
+	{
+		size_t msg_off = off;
 
-	/* BATCH_END */
-	msg_off = off;
-	nlh = (struct nlmsghdr *)(buf + off);
-	nlh->nlmsg_type  = NFNL_MSG_BATCH_END;
-	nlh->nlmsg_flags = NLM_F_REQUEST;
-	nlh->nlmsg_seq   = next_seq();
-	nfg = (struct brct_nfgenmsg *)NLMSG_DATA(nlh);
-	nfg->nfgen_family = AF_UNSPEC;
-	nfg->version      = NFNETLINK_V0;
-	nfg->res_id       = htons(NFNL_SUBSYS_NFTABLES);
-	off += NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*nfg));
-	nft_msg_end(buf, msg_off, off);
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-	iov.iov_base  = buf;
-	iov.iov_len   = off;
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(nfnl, &mh, 0) < 0)
-		return -errno;
-
-	/* One blocking recv to wait for the batch ack, then non-blocking
-	 * drain of any coalesced replies. */
-	s = recv(nfnl, rbuf, sizeof(rbuf), 0);
-	if (s >= (ssize_t)NLMSG_HDRLEN) {
-		struct nlmsghdr *r = (struct nlmsghdr *)rbuf;
-
-		if (r->nlmsg_type == NLMSG_ERROR)
-			rc = ((struct nlmsgerr *)NLMSG_DATA(r))->error;
+		off = nfnl_msg_put(buf, off, sizeof(buf), nl_seq_next(&nf->nl),
+				   NFNL_SUBSYS_NFTABLES, BRCT_NFT_MSG_NEWRULE,
+				   NLM_F_CREATE | NLM_F_APPEND, family);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_RULE_TABLE, table);
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_RULE_CHAIN, chain);
+		if (!off)
+			return -EIO;
+		exprs_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_RULE_EXPRESSIONS | NLA_F_NESTED);
+		if (!off)
+			return -EIO;
+		elem_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_LIST_ELEM | NLA_F_NESTED);
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_EXPR_NAME, "ct");
+		expr_data_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_EXPR_DATA | NLA_F_NESTED);
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_NFTA_CT_KEY, BRCT_NFT_CT_STATE);
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_NFTA_CT_DREG, BRCT_NFT_REG_1);
+		if (!off)
+			return -EIO;
+		nla_nest_end(buf, expr_data_off, off);
+		nla_nest_end(buf, elem_off, off);
+		nla_nest_end(buf, exprs_off, off);
+		((struct nlmsghdr *)(buf + msg_off))->nlmsg_len =
+			(__u32)(off - msg_off);
 	}
-	while (recv(nfnl, rbuf, sizeof(rbuf), MSG_DONTWAIT) > 0)
-		;
-	return rc;
+
+	off = nfnl_batch_end(buf, off, sizeof(buf),
+			     nl_seq_next(&nf->nl), NFNL_SUBSYS_NFTABLES);
+	if (!off)
+		return -EIO;
+
+	return nfnl_send_recv_batched(nf, buf, off);
 }
 
-static int ctnetlink_flush(int nfnl)
+/*
+ * Best-effort IPCTNL_MSG_CT_FLUSH.  nfnl_send_recv_dump() tolerates the
+ * EAGAIN-on-drain that a kernel without CONFIG_NF_CONNTRACK produces by
+ * collapsing it to -EIO, which the caller treats the same as any other
+ * structural failure.  Successful flushes return 0 once NLMSG_DONE
+ * arrives.
+ */
+static int ctnetlink_flush(struct nfnl_ctx *nf)
 {
 	unsigned char buf[256];
-	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
-	struct brct_nfgenmsg *nfg;
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
+	size_t off;
 
 	memset(buf, 0, sizeof(buf));
-	nlh->nlmsg_type  = (NFNL_SUBSYS_CTNETLINK << 8) | IPCTNL_MSG_CT_FLUSH;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
-	nfg = (struct brct_nfgenmsg *)NLMSG_DATA(nlh);
-	nfg->nfgen_family = AF_INET;
-	nfg->version      = NFNETLINK_V0;
-	nfg->res_id       = htons(0);
-	nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*nfg)));
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-	iov.iov_base  = buf;
-	iov.iov_len   = nlh->nlmsg_len;
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(nfnl, &mh, MSG_DONTWAIT) < 0)
-		return -errno;
-	(void)recv(nfnl, buf, sizeof(buf), MSG_DONTWAIT);
-	return 0;
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&nf->nl),
+			   NFNL_SUBSYS_CTNETLINK, IPCTNL_MSG_CT_FLUSH,
+			   0, AF_INET);
+	if (!off)
+		return -EIO;
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv_dump(nf, buf, off);
 }
 
 struct sender_args {
@@ -694,7 +539,17 @@ bool bridge_conntrack_churn(struct childdata *child)
 	struct sender_args sa;
 	pthread_t tid = 0;
 	bool sender_started = false;
-	int rtnl = -1, nfnl_nft = -1, nfnl_ct = -1, raw = -1;
+	struct nl_ctx rtnl = { .fd = -1 };
+	struct nfnl_ctx nfnl_nft = { .nl = { .fd = -1 } };
+	struct nfnl_ctx nfnl_ct  = { .nl = { .fd = -1 } };
+	struct nl_open_opts rtnl_opts = {
+		.proto         = NETLINK_ROUTE,
+		.recv_timeo_s  = 1,
+	};
+	struct nfnl_open_opts nfnl_opts = {
+		.recv_timeo_s  = 1,
+	};
+	int raw = -1;
 	int br_idx = 0, va_idx = 0, vb_idx = 0;
 	bool bridge_added = false, veth_added = false;
 	unsigned int rng, iters, i;
@@ -719,11 +574,10 @@ bool bridge_conntrack_churn(struct childdata *child)
 		ns_unshared = true;
 	}
 
-	rtnl = nl_open(NETLINK_ROUTE);
-	if (rtnl < 0)
+	if (nl_open(&rtnl, &rtnl_opts) < 0)
 		return true;
 	if (!lo_up_done) {
-		bring_lo_up(rtnl);
+		bring_lo_up(&rtnl);
 		lo_up_done = true;
 	}
 
@@ -732,7 +586,7 @@ bool bridge_conntrack_churn(struct childdata *child)
 	snprintf(veth_a,  sizeof(veth_a),  "trbcv%ua", rng);
 	snprintf(veth_b,  sizeof(veth_b),  "trbcv%ub", rng);
 
-	rc = rtnl_create_bridge(rtnl, br_name);
+	rc = rtnl_create_bridge(&rtnl, br_name);
 	if (rc != 0) {
 		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 		    rc == -ENOTSUP || rc == -EPROTONOSUPPORT)
@@ -744,7 +598,7 @@ bool bridge_conntrack_churn(struct childdata *child)
 	if (br_idx <= 0)
 		goto out;
 
-	if (rtnl_create_veth(rtnl, veth_a, veth_b) != 0)
+	if (rtnl_create_veth(&rtnl, veth_a, veth_b) != 0)
 		goto out;
 	veth_added = true;
 	va_idx = (int)if_nametoindex(veth_a);
@@ -752,15 +606,14 @@ bool bridge_conntrack_churn(struct childdata *child)
 	if (va_idx <= 0 || vb_idx <= 0)
 		goto out;
 
-	(void)rtnl_setlink_master(rtnl, va_idx, br_idx);
-	(void)rtnl_setlink_up(rtnl, br_idx);
-	(void)rtnl_setlink_up(rtnl, va_idx);
-	(void)rtnl_setlink_up(rtnl, vb_idx);
+	(void)rtnl_setlink_master(&rtnl, va_idx, br_idx);
+	(void)rtnl_setlink_up(&rtnl, br_idx);
+	(void)rtnl_setlink_up(&rtnl, va_idx);
+	(void)rtnl_setlink_up(&rtnl, vb_idx);
 
-	nfnl_nft = nl_open(NETLINK_NETFILTER);
-	if (nfnl_nft < 0)
+	if (nfnl_open(&nfnl_nft, &nfnl_opts) < 0)
 		goto out;
-	rc = nft_install_bridge_ct(nfnl_nft, table, chain);
+	rc = nft_install_bridge_ct(&nfnl_nft, table, chain);
 	if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
 	    rc == -EOPNOTSUPP || rc == -ENOTSUP)
 		ns_unsupported_nf_tables = true;
@@ -787,8 +640,7 @@ bool bridge_conntrack_churn(struct childdata *child)
 			sender_started = true;
 	}
 
-	nfnl_ct = nl_open(NETLINK_NETFILTER);
-	if (nfnl_ct >= 0) {
+	if (nfnl_open(&nfnl_ct, &nfnl_opts) == 0) {
 		struct timespec t0;
 
 		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -802,7 +654,7 @@ bool bridge_conntrack_churn(struct childdata *child)
 		for (i = 0; i < iters; i++) {
 			if (brct_ns_since(&t0) >= BRCT_BUDGET_NS)
 				break;
-			rc = ctnetlink_flush(nfnl_ct);
+			rc = ctnetlink_flush(&nfnl_ct);
 			if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
 			    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
 				ns_unsupported_ctnetlink = true;
@@ -824,16 +676,14 @@ out:
 			;
 		close(raw);
 	}
-	if (nfnl_ct >= 0)
-		close(nfnl_ct);
-	if (nfnl_nft >= 0)
-		close(nfnl_nft);
-	if (rtnl >= 0) {
+	nfnl_close(&nfnl_ct);
+	nfnl_close(&nfnl_nft);
+	if (rtnl.fd >= 0) {
 		if (bridge_added && br_idx > 0)
-			(void)rtnl_dellink(rtnl, br_idx);
+			(void)rtnl_dellink(&rtnl, br_idx);
 		if (veth_added && vb_idx > 0)
-			(void)rtnl_dellink(rtnl, vb_idx);
-		close(rtnl);
+			(void)rtnl_dellink(&rtnl, vb_idx);
+		nl_close(&rtnl);
 	}
 	return true;
 }
