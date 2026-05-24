@@ -111,7 +111,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
@@ -121,6 +120,8 @@
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-netlink.h"
+#include "childops-nfnl.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -1568,91 +1569,6 @@ static bool ns_unshared;
 static bool ns_setup_failed;
 static bool lo_brought_up;
 
-static __u32 g_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
-
-static long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (now.tv_sec - t0->tv_sec) * 1000000000L +
-	       (now.tv_nsec - t0->tv_nsec);
-}
-
-static int rtnl_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = NFNL_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-	return fd;
-}
-
-static int nfnl_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_NETFILTER);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = NFNL_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-	return fd;
-}
-
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
 static size_t nla_put_be32(unsigned char *buf, size_t off, size_t cap,
 			   unsigned short type, __u32 v)
 {
@@ -1678,92 +1594,6 @@ static size_t nla_put_be64(unsigned char *buf, size_t off, size_t cap,
 	return nla_put(buf, off, cap, type, &be, sizeof(be));
 }
 
-static size_t nla_put_str(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, const char *s)
-{
-	return nla_put(buf, off, cap, type, s, strlen(s) + 1);
-}
-
-/*
- * Send via NETLINK_NETFILTER and consume one ack.  Returns 0 on a
- * positive ack (nlmsgerr.error == 0), the negated kernel errno on a
- * rejection, and -EIO on local sendmsg / recv failure.
- */
-static int nfnl_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[1024];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0)
-		return -EIO;
-	if ((size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	return -EIO;
-}
-
-/*
- * nfnetlink message header skeleton: nlmsghdr (with type encoded as
- * (subsys << 8) | msg_id) followed by an nfgenmsg carrying the family
- * and version.  Caller fills attributes after the returned offset.
- */
-struct nfgenmsg_local {
-	__u8  nfgen_family;
-	__u8  version;
-	__u16 res_id;	/* network byte order */
-};
-
-static size_t nfnl_hdr(unsigned char *buf, __u16 msg_id, __u16 flags,
-		       __u8 family)
-{
-	struct nlmsghdr *nlh;
-	struct nfgenmsg_local *nfg;
-
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = (NFNL_SUBSYS_NFTABLES << 8) | msg_id;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | flags;
-	nlh->nlmsg_seq   = next_seq();
-
-	nfg = (struct nfgenmsg_local *)NLMSG_DATA(nlh);
-	nfg->nfgen_family = family;
-	nfg->version      = NFNETLINK_V0;
-	nfg->res_id       = htons(0);
-
-	return NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*nfg));
-}
-
-static void nfnl_finalize(unsigned char *buf, size_t off)
-{
-	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
-
-	nlh->nlmsg_len = (__u32)off;
-}
-
 /*
  * Bring lo up inside the private netns.  A freshly-unshared netns
  * has lo present but DOWN; the loopback sendto in step 9 silently
@@ -1772,7 +1602,7 @@ static void nfnl_finalize(unsigned char *buf, size_t off)
  * errors are ignored — a kernel that refuses lo up is also one where
  * the rest of the sequence will fail visibly.
  */
-static void bring_lo_up(int rtnl)
+static void bring_lo_up(struct nl_ctx *rtnl)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -1786,7 +1616,7 @@ static void bring_lo_up(int rtnl)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -1795,7 +1625,7 @@ static void bring_lo_up(int rtnl)
 	ifi->ifi_change = IFF_UP;
 
 	nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi)));
-	(void)nfnl_send_recv(rtnl, buf, nlh->nlmsg_len);
+	(void)nl_send_recv(rtnl, buf, nlh->nlmsg_len);
 }
 
 /*
@@ -1803,13 +1633,18 @@ static void bring_lo_up(int rtnl)
  * NLM_F_CREATE | NLM_F_EXCL fails if the name already exists, which
  * is what we want — the caller rolls a fresh suffix per iteration.
  */
-static int build_newtable(int fd, __u8 family, const char *table_name)
+static int build_newtable(struct nfnl_ctx *ctx, __u8 family,
+			  const char *table_name)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
 	size_t off;
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFT_MSG_NEWTABLE, NLM_F_CREATE | NLM_F_EXCL, family);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE,
+			   NLM_F_CREATE | NLM_F_EXCL, family);
+	if (!off)
+		return -EIO;
 
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_TABLE_NAME, table_name);
 	if (!off)
@@ -1818,24 +1653,28 @@ static int build_newtable(int fd, __u8 family, const char *table_name)
 	if (!off)
 		return -EIO;
 
-	nfnl_finalize(buf, off);
-	return nfnl_send_recv(fd, buf, off);
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv(ctx, buf, off);
 }
 
-static int build_deltable(int fd, __u8 family, const char *table_name)
+static int build_deltable(struct nfnl_ctx *ctx, __u8 family,
+			  const char *table_name)
 {
 	unsigned char buf[256];
 	size_t off;
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFT_MSG_DELTABLE, 0, family);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_DELTABLE, 0, family);
+	if (!off)
+		return -EIO;
 
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_TABLE_NAME, table_name);
 	if (!off)
 		return -EIO;
 
-	nfnl_finalize(buf, off);
-	return nfnl_send_recv(fd, buf, off);
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -1844,14 +1683,19 @@ static int build_deltable(int fd, __u8 family, const char *table_name)
  * commands could reference the set; we don't reference it but the
  * kernel still expects the attr present for newer set-create paths.
  */
-static int build_newset(int fd, __u8 family, const char *table_name,
-			const char *set_name, __u32 set_id)
+static int build_newset(struct nfnl_ctx *ctx, __u8 family,
+			const char *table_name, const char *set_name,
+			__u32 set_id)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
 	size_t off;
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFT_MSG_NEWSET, NLM_F_CREATE | NLM_F_EXCL, family);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWSET,
+			   NLM_F_CREATE | NLM_F_EXCL, family);
+	if (!off)
+		return -EIO;
 
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_SET_TABLE, table_name);
 	if (!off)
@@ -1874,18 +1718,21 @@ static int build_newset(int fd, __u8 family, const char *table_name,
 	if (!off)
 		return -EIO;
 
-	nfnl_finalize(buf, off);
-	return nfnl_send_recv(fd, buf, off);
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv(ctx, buf, off);
 }
 
-static int build_delset(int fd, __u8 family, const char *table_name,
-			const char *set_name)
+static int build_delset(struct nfnl_ctx *ctx, __u8 family,
+			const char *table_name, const char *set_name)
 {
 	unsigned char buf[512];
 	size_t off;
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFT_MSG_DELSET, 0, family);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_DELSET, 0, family);
+	if (!off)
+		return -EIO;
 
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_SET_TABLE, table_name);
 	if (!off)
@@ -1894,8 +1741,8 @@ static int build_delset(int fd, __u8 family, const char *table_name,
 	if (!off)
 		return -EIO;
 
-	nfnl_finalize(buf, off);
-	return nfnl_send_recv(fd, buf, off);
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -1904,15 +1751,20 @@ static int build_delset(int fd, __u8 family, const char *table_name,
  * — that's a base chain attached to the input hook.  Otherwise emits
  * a regular (no-hook) chain usable as a jump target.
  */
-static int build_newchain(int fd, __u8 family, const char *table_name,
-			  const char *chain_name, bool hook_present)
+static int build_newchain(struct nfnl_ctx *ctx, __u8 family,
+			  const char *table_name, const char *chain_name,
+			  bool hook_present)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
 	struct nlattr *hook_attr;
 	size_t off, hook_off;
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFT_MSG_NEWCHAIN, NLM_F_CREATE | NLM_F_EXCL, family);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWCHAIN,
+			   NLM_F_CREATE | NLM_F_EXCL, family);
+	if (!off)
+		return -EIO;
 
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_CHAIN_TABLE, table_name);
 	if (!off)
@@ -1944,8 +1796,8 @@ static int build_newchain(int fd, __u8 family, const char *table_name,
 			return -EIO;
 	}
 
-	nfnl_finalize(buf, off);
-	return nfnl_send_recv(fd, buf, off);
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -5500,10 +5352,10 @@ static void nft_expr_plan_record_stats(const struct nft_expr_plan *plan)
  * verdict are described by *plan, which is walked against
  * nft_expr_table[] in declared order.
  */
-static int build_newrule(int fd, __u8 family, const char *table_name,
-			 const char *chain_name, const char *target_chain,
-			 __u32 verdict_code, __u64 position,
-			 const struct nft_expr_plan *plan,
+static int build_newrule(struct nfnl_ctx *ctx, __u8 family,
+			 const char *table_name, const char *chain_name,
+			 const char *target_chain, __u32 verdict_code,
+			 __u64 position, const struct nft_expr_plan *plan,
 			 const char *set_name, __u32 set_id)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
@@ -5515,7 +5367,10 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 	memset(buf, 0, sizeof(buf));
 	if (position == 0)
 		flags |= NLM_F_APPEND;
-	off = nfnl_hdr(buf, NFT_MSG_NEWRULE, flags, family);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWRULE, flags, family);
+	if (!off)
+		return -EIO;
 
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_RULE_TABLE, table_name);
 	if (!off)
@@ -5607,8 +5462,8 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
 	exprs = (struct nlattr *)(buf + exprs_off);
 	exprs->nla_len = (unsigned short)(off - exprs_off);
 
-	nfnl_finalize(buf, off);
-	return nfnl_send_recv(fd, buf, off);
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -5616,14 +5471,17 @@ static int build_newrule(int fd, __u8 family, const char *table_name,
  * kernel treats this as "delete every rule in chain".  Races any
  * in-flight skb still draining through the input hook.
  */
-static int build_delrule(int fd, __u8 family, const char *table_name,
-			 const char *chain_name)
+static int build_delrule(struct nfnl_ctx *ctx, __u8 family,
+			 const char *table_name, const char *chain_name)
 {
 	unsigned char buf[512];
 	size_t off;
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFT_MSG_DELRULE, 0, family);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_DELRULE, 0, family);
+	if (!off)
+		return -EIO;
 
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_RULE_TABLE, table_name);
 	if (!off)
@@ -5632,8 +5490,8 @@ static int build_delrule(int fd, __u8 family, const char *table_name,
 	if (!off)
 		return -EIO;
 
-	nfnl_finalize(buf, off);
-	return nfnl_send_recv(fd, buf, off);
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -5662,9 +5520,9 @@ static __u8 pick_family(void)
  * 2f768d638d97 ("netfilter: nft_compat: enforce per-hook .validate on
  * xt-compat targets") closes that.  Returns the kernel reply code.
  */
-static int nft_compat_pair_install(int fd, __u8 family, const char *table,
-				   const char *chain_name, __u32 hooknum,
-				   const char *target_name)
+static int nft_compat_pair_install(struct nfnl_ctx *ctx, __u8 family,
+				   const char *table, const char *chain_name,
+				   __u32 hooknum, const char *target_name)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
 	struct nlattr *hook_attr, *exprs, *elem, *expr_data;
@@ -5673,7 +5531,11 @@ static int nft_compat_pair_install(int fd, __u8 family, const char *table,
 	int rc;
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFT_MSG_NEWCHAIN, NLM_F_CREATE | NLM_F_EXCL, family);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWCHAIN,
+			   NLM_F_CREATE | NLM_F_EXCL, family);
+	if (!off)
+		return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_CHAIN_TABLE, table);
 	if (!off)
 		return -EIO;
@@ -5696,14 +5558,17 @@ static int nft_compat_pair_install(int fd, __u8 family, const char *table,
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_CHAIN_TYPE, "filter");
 	if (!off)
 		return -EIO;
-	nfnl_finalize(buf, off);
-	rc = nfnl_send_recv(fd, buf, off);
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	rc = nfnl_send_recv(ctx, buf, off);
 	if (rc != 0)
 		return rc;
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFT_MSG_NEWRULE,
-		       NLM_F_CREATE | NLM_F_APPEND, family);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWRULE,
+			   NLM_F_CREATE | NLM_F_APPEND, family);
+	if (!off)
+		return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_RULE_TABLE, table);
 	if (!off)
 		return -EIO;
@@ -5746,8 +5611,8 @@ static int nft_compat_pair_install(int fd, __u8 family, const char *table,
 	elem->nla_len = (unsigned short)(off - elem_off);
 	exprs = (struct nlattr *)(buf + exprs_off);
 	exprs->nla_len = (unsigned short)(off - exprs_off);
-	nfnl_finalize(buf, off);
-	return nfnl_send_recv(fd, buf, off);
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -5756,7 +5621,7 @@ static int nft_compat_pair_install(int fd, __u8 family, const char *table,
  * EOPNOTSUPP/EPROTONOSUPPORT (compat module absent or family not
  * registered) so sibling probes stop cheaply.
  */
-static void nft_compat_validate_sweep(int fd)
+static void nft_compat_validate_sweep(struct nfnl_ctx *ctx)
 {
 	static const char * const targets[] = {
 		"MASQUERADE", "SNAT", "DNAT", "TPROXY", "LOG", "MARK",
@@ -5772,7 +5637,7 @@ static void nft_compat_validate_sweep(int fd)
 
 	snprintf(table_name, sizeof(table_name), "trcompat%u",
 		 (unsigned int)(rand32() & 0xffffu));
-	rc = build_newtable(fd, NFPROTO_IPV4, table_name);
+	rc = build_newtable(ctx, NFPROTO_IPV4, table_name);
 	if (rc != 0) {
 		if (rc == -EOPNOTSUPP || rc == -EPROTONOSUPPORT ||
 		    rc == -EAFNOSUPPORT)
@@ -5784,7 +5649,7 @@ static void nft_compat_validate_sweep(int fd)
 		for (hi = 0; hi < ARRAY_SIZE(hooks); hi++) {
 			snprintf(chain_name, sizeof(chain_name),
 				 "cc_%zu_%zu", ti, hi);
-			rc = nft_compat_pair_install(fd, NFPROTO_IPV4,
+			rc = nft_compat_pair_install(ctx, NFPROTO_IPV4,
 						     table_name, chain_name,
 						     hooks[hi], targets[ti]);
 			__atomic_add_fetch(&shm->stats.nft_compat_validate_per_hook_pairs,
@@ -5805,7 +5670,7 @@ static void nft_compat_validate_sweep(int fd)
 		}
 	}
 done:
-	(void)build_deltable(fd, NFPROTO_IPV4, table_name);
+	(void)build_deltable(ctx, NFPROTO_IPV4, table_name);
 }
 
 /*
@@ -6242,18 +6107,13 @@ static void nft_xt_ct_usersize_sweep(void)
  *   BATCH_END
  * Cleanup: NFT_MSG_DELTABLE outside the batch.
  */
-static void nft_dormant_abort_sweep(int fd)
+static void nft_dormant_abort_sweep(struct nfnl_ctx *ctx)
 {
 	static const __u32 hooks[] = {
 		NF_INET_LOCAL_OUT, NF_INET_POST_ROUTING,
 		NF_INET_PRE_ROUTING, NF_INET_LOCAL_IN, NF_INET_FORWARD,
 	};
 	unsigned char buf[2048];
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	struct nlmsghdr *nlh;
-	struct nfgenmsg_local *nfg;
 	struct nlattr *hook_attr;
 	char table_name[32];
 	const char *chain_name = "dhkc";
@@ -6262,10 +6122,9 @@ static void nft_dormant_abort_sweep(int fd)
 	__u32 hk_b = hooks[rand32() % ARRAY_SIZE(hooks)];
 	__u64 bogus_handle;
 	size_t off = 0, msg_off, hook_off;
-	__u16 batch_markers[] = { NFNL_MSG_BATCH_BEGIN, NFNL_MSG_BATCH_END };
-	__u16 chain_flags[]   = { NLM_F_CREATE, NLM_F_REPLACE };
-	__u32 chain_hook[]    = { hk_a, hk_b == hk_a ? (hk_a + 1) % 5 : hk_b };
-	int i;
+	__u16 chain_flags[] = { NLM_F_CREATE, NLM_F_REPLACE };
+	__u32 chain_hook[]  = { hk_a, hk_b == hk_a ? (hk_a + 1) % 5 : hk_b };
+	int i, rc;
 
 	__atomic_add_fetch(&shm->stats.nft_dormant_abort_iters,
 			   1, __ATOMIC_RELAXED);
@@ -6275,21 +6134,18 @@ static void nft_dormant_abort_sweep(int fd)
 	memset(buf, 0, sizeof(buf));
 
 	/* BATCH_BEGIN with res_id steering the batch at the nftables subsys */
-	msg_off = off;
-	nlh = (struct nlmsghdr *)(buf + off);
-	nlh->nlmsg_type  = batch_markers[0];
-	nlh->nlmsg_flags = NLM_F_REQUEST;
-	nlh->nlmsg_seq   = next_seq();
-	nfg = (struct nfgenmsg_local *)NLMSG_DATA(nlh);
-	nfg->nfgen_family = AF_UNSPEC;
-	nfg->version      = NFNETLINK_V0;
-	nfg->res_id       = htons(NFNL_SUBSYS_NFTABLES);
-	off += NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*nfg));
-	nlh->nlmsg_len = (__u32)(off - msg_off);
+	off = nfnl_batch_begin(buf, off, sizeof(buf), nl_seq_next(&ctx->nl),
+			       NFNL_SUBSYS_NFTABLES);
+	if (!off)
+		return;
 
 	/* (a) NEWTABLE flags=NFT_TABLE_F_DORMANT */
 	msg_off = off;
-	off += nfnl_hdr(buf + off, NFT_MSG_NEWTABLE, NLM_F_CREATE, family);
+	off = nfnl_msg_put(buf, off, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE,
+			   NLM_F_CREATE, family);
+	if (!off)
+		return;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_TABLE_NAME, table_name);
 	off = nla_put_be32(buf, off, sizeof(buf), NFTA_TABLE_FLAGS,
 			   NFT_TABLE_F_DORMANT);
@@ -6302,8 +6158,12 @@ static void nft_dormant_abort_sweep(int fd)
 	 * detaches the original. */
 	for (i = 0; i < 2; i++) {
 		msg_off = off;
-		off += nfnl_hdr(buf + off, NFT_MSG_NEWCHAIN,
-				chain_flags[i], family);
+		off = nfnl_msg_put(buf, off, sizeof(buf),
+				   nl_seq_next(&ctx->nl),
+				   NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWCHAIN,
+				   chain_flags[i], family);
+		if (!off)
+			return;
 		off = nla_put_str(buf, off, sizeof(buf),
 				  NFTA_CHAIN_TABLE, table_name);
 		off = nla_put_str(buf, off, sizeof(buf),
@@ -6330,7 +6190,11 @@ static void nft_dormant_abort_sweep(int fd)
 	/* (d) NEWCHAIN NLM_F_REPLACE on a bogus NFTA_CHAIN_HANDLE.  Kernel
 	 * walks lookup, fails -ENOENT, batch enters the abort path. */
 	msg_off = off;
-	off += nfnl_hdr(buf + off, NFT_MSG_NEWCHAIN, NLM_F_REPLACE, family);
+	off = nfnl_msg_put(buf, off, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWCHAIN,
+			   NLM_F_REPLACE, family);
+	if (!off)
+		return;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_CHAIN_TABLE, table_name);
 	bogus_handle = ((__u64)htonl(0xdeadbeefU) << 32) |
 		       (__u64)htonl(0xcafebabeU);
@@ -6341,51 +6205,30 @@ static void nft_dormant_abort_sweep(int fd)
 	((struct nlmsghdr *)(buf + msg_off))->nlmsg_len = (__u32)(off - msg_off);
 
 	/* (e) BATCH_END */
-	msg_off = off;
-	nlh = (struct nlmsghdr *)(buf + off);
-	nlh->nlmsg_type  = batch_markers[1];
-	nlh->nlmsg_flags = NLM_F_REQUEST;
-	nlh->nlmsg_seq   = next_seq();
-	nfg = (struct nfgenmsg_local *)NLMSG_DATA(nlh);
-	nfg->nfgen_family = AF_UNSPEC;
-	nfg->version      = NFNETLINK_V0;
-	nfg->res_id       = htons(NFNL_SUBSYS_NFTABLES);
-	off += NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*nfg));
-	nlh->nlmsg_len = (__u32)(off - msg_off);
+	off = nfnl_batch_end(buf, off, sizeof(buf), nl_seq_next(&ctx->nl),
+			     NFNL_SUBSYS_NFTABLES);
+	if (!off)
+		return;
 
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-	iov.iov_base  = buf;
-	iov.iov_len   = off;
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0) {
-		if (errno == EPERM || errno == EOPNOTSUPP) {
-			ns_unsupported_nf_tables = true;
-			__atomic_add_fetch(&shm->stats.nft_dormant_abort_eperm,
-					   1, __ATOMIC_RELAXED);
-		} else {
-			__atomic_add_fetch(&shm->stats.nft_dormant_abort_emsg,
-					   1, __ATOMIC_RELAXED);
-		}
+	/* Coalesced send + drain.  NLMSG_ERROR replies are expected (the
+	 * bogus REPLACE intentionally fails to drive the abort path), so
+	 * only sendmsg / initial-recv failure (rc == -EIO) is counted as
+	 * a hard error.  The previous open-coded path distinguished
+	 * EPERM/EOPNOTSUPP from generic emsg via sendmsg's errno; the
+	 * shared helper collapses both into -EIO, so the EPERM latch is
+	 * deferred to whichever per-op call hits the kernel rejection
+	 * first. */
+	rc = nfnl_send_recv_batched(ctx, buf, off);
+	if (rc == -EIO) {
+		__atomic_add_fetch(&shm->stats.nft_dormant_abort_emsg,
+				   1, __ATOMIC_RELAXED);
 		return;
 	}
-
-	/* Drain the abort error reply (one nlmsgerr from the rejected
-	 * REPLACE).  Block once so we wait for the abort path to complete,
-	 * then non-blockingly drain anything coalesced behind it. */
-	(void)recv(fd, buf, sizeof(buf), 0);
-	while (recv(fd, buf, sizeof(buf), MSG_DONTWAIT) > 0)
-		;
 
 	__atomic_add_fetch(&shm->stats.nft_dormant_abort_ok,
 			   1, __ATOMIC_RELAXED);
 
-	(void)build_deltable(fd, family, table_name);
+	(void)build_deltable(ctx, family, table_name);
 }
 
 /*
@@ -6406,7 +6249,8 @@ static void nft_dormant_abort_sweep(int fd)
 #define FWD_LOOP_VP0_ADDR	0x0a7b0101U	/* 10.123.1.1 */
 #define FWD_LOOP_VP1_ADDR	0x0a7b0102U	/* 10.123.1.2 */
 
-static int build_veth_pair_create(int fd, const char *a, const char *b)
+static int build_veth_pair_create(struct nl_ctx *rtnl, const char *a,
+				  const char *b)
 {
 	unsigned char buf[1024];
 	struct nlmsghdr *nlh;
@@ -6419,7 +6263,7 @@ static int build_veth_pair_create(int fd, const char *a, const char *b)
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
@@ -6457,10 +6301,10 @@ static int build_veth_pair_create(int fd, const char *a, const char *b)
 	li = (struct nlattr *)(buf + li_off);
 	li->nla_len = (unsigned short)(off - li_off);
 	nlh->nlmsg_len = (__u32)off;
-	return nfnl_send_recv(fd, buf, off);
+	return nl_send_recv(rtnl, buf, off);
 }
 
-static int build_addr_assign(int fd, int idx, __u32 addr_be)
+static int build_addr_assign(struct nl_ctx *rtnl, int idx, __u32 addr_be)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -6472,7 +6316,7 @@ static int build_addr_assign(int fd, int idx, __u32 addr_be)
 	nlh->nlmsg_type  = RTM_NEWADDR;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 	ifa = (struct ifaddrmsg *)NLMSG_DATA(nlh);
 	ifa->ifa_family    = AF_INET;
 	ifa->ifa_prefixlen = 24;
@@ -6489,10 +6333,10 @@ static int build_addr_assign(int fd, int idx, __u32 addr_be)
 	if (!off)
 		return -EIO;
 	nlh->nlmsg_len = (__u32)off;
-	return nfnl_send_recv(fd, buf, off);
+	return nl_send_recv(rtnl, buf, off);
 }
 
-static int build_setlink_up_idx(int fd, int idx)
+static int build_setlink_up_idx(struct nl_ctx *rtnl, int idx)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
@@ -6503,7 +6347,7 @@ static int build_setlink_up_idx(int fd, int idx)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_SETLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	ifi->ifi_index  = idx;
@@ -6511,10 +6355,10 @@ static int build_setlink_up_idx(int fd, int idx)
 	ifi->ifi_change = IFF_UP;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return nfnl_send_recv(fd, buf, off);
+	return nl_send_recv(rtnl, buf, off);
 }
 
-static int build_netdev_ingress_chain(int fd, const char *table,
+static int build_netdev_ingress_chain(struct nfnl_ctx *ctx, const char *table,
 				      const char *chain, const char *dev)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
@@ -6522,8 +6366,11 @@ static int build_netdev_ingress_chain(int fd, const char *table,
 	size_t off, hook_off;
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFT_MSG_NEWCHAIN, NLM_F_CREATE | NLM_F_EXCL,
-		       NFPROTO_NETDEV);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWCHAIN,
+			   NLM_F_CREATE | NLM_F_EXCL, NFPROTO_NETDEV);
+	if (!off)
+		return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_CHAIN_TABLE, table);
 	if (!off)
 		return -EIO;
@@ -6550,20 +6397,23 @@ static int build_netdev_ingress_chain(int fd, const char *table,
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_CHAIN_TYPE, "filter");
 	if (!off)
 		return -EIO;
-	nfnl_finalize(buf, off);
-	return nfnl_send_recv(fd, buf, off);
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv(ctx, buf, off);
 }
 
-static int build_fwd_loop_rule(int fd, const char *table, const char *chain,
-			       __u32 oif)
+static int build_fwd_loop_rule(struct nfnl_ctx *ctx, const char *table,
+			       const char *chain, __u32 oif)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
 	struct nlattr *exprs, *elem, *expr_data, *data_attr;
 	size_t off, exprs_off, elem_off, expr_data_off, data_off;
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFT_MSG_NEWRULE, NLM_F_CREATE | NLM_F_APPEND,
-		       NFPROTO_NETDEV);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWRULE,
+			   NLM_F_CREATE | NLM_F_APPEND, NFPROTO_NETDEV);
+	if (!off)
+		return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_RULE_TABLE, table);
 	if (!off)
 		return -EIO;
@@ -6635,11 +6485,12 @@ static int build_fwd_loop_rule(int fd, const char *table, const char *chain,
 
 	exprs = (struct nlattr *)(buf + exprs_off);
 	exprs->nla_len = (unsigned short)(off - exprs_off);
-	nfnl_finalize(buf, off);
-	return nfnl_send_recv(fd, buf, off);
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv(ctx, buf, off);
 }
 
-static void nft_fwd_netdev_loop_sweep(int nfnl, int rtnl)
+static void nft_fwd_netdev_loop_sweep(struct nfnl_ctx *nfnl,
+				      struct nl_ctx *rtnl)
 {
 	char table_name[32];
 	char vp0[IFNAMSIZ], vp1[IFNAMSIZ];
@@ -6758,15 +6609,19 @@ out:
 #define IPPROTO_SCTP		132
 #endif
 
-static int build_l4frag_chain(int fd, const char *table, const char *chain)
+static int build_l4frag_chain(struct nfnl_ctx *ctx, const char *table,
+			      const char *chain)
 {
 	unsigned char buf[NFNL_BUF_BYTES];
 	struct nlattr *hook_attr;
 	size_t off, hook_off;
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFT_MSG_NEWCHAIN, NLM_F_CREATE | NLM_F_EXCL,
-		       NFPROTO_IPV4);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&ctx->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWCHAIN,
+			   NLM_F_CREATE | NLM_F_EXCL, NFPROTO_IPV4);
+	if (!off)
+		return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_CHAIN_TABLE, table);
 	if (!off)
 		return -EIO;
@@ -6791,8 +6646,8 @@ static int build_l4frag_chain(int fd, const char *table, const char *chain)
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_CHAIN_TYPE, "filter");
 	if (!off)
 		return -EIO;
-	nfnl_finalize(buf, off);
-	return nfnl_send_recv(fd, buf, off);
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv(ctx, buf, off);
 }
 
 static void l4frag_send_pair(__u8 protocol)
@@ -6853,7 +6708,7 @@ static void l4frag_send_pair(__u8 protocol)
 	close(s);
 }
 
-static void nft_l4_aware_frag_sweep(int nfnl)
+static void nft_l4_aware_frag_sweep(struct nfnl_ctx *nfnl)
 {
 	char table[32], anon_set[32];
 	const char *base = "l4base";
@@ -6915,8 +6770,15 @@ bool nftables_churn(struct childdata *child)
 	char base_chain[32]  = "chain_in";
 	char aux_chain[32]   = "chain_aux";
 	char anon_set[32];
-	int rtnl = -1;
-	int nfnl = -1;
+	struct nl_ctx rtnl = { .fd = -1 };
+	struct nfnl_ctx nfnl = { .nl = { .fd = -1 } };
+	struct nl_open_opts rtnl_opts = {
+		.proto         = NETLINK_ROUTE,
+		.recv_timeo_s  = NFNL_RECV_TIMEO_S,
+	};
+	struct nfnl_open_opts nfnl_opts = {
+		.recv_timeo_s  = NFNL_RECV_TIMEO_S,
+	};
 	int udp = -1;
 	__u8 family;
 	__u32 set_id;
@@ -6946,8 +6808,7 @@ bool nftables_churn(struct childdata *child)
 		ns_unshared = true;
 	}
 
-	nfnl = nfnl_open();
-	if (nfnl < 0) {
+	if (nfnl_open(&nfnl, &nfnl_opts) < 0) {
 		/* EPROTONOSUPPORT here means CONFIG_NF_NETLINK is off
 		 * — latch and stop trying.  Other errors (ENOMEM,
 		 * EMFILE) are transient; fall through and re-try next
@@ -6959,15 +6820,14 @@ bool nftables_churn(struct childdata *child)
 		return true;
 	}
 
-	rtnl = rtnl_open();
-	if (rtnl < 0) {
+	if (nl_open(&rtnl, &rtnl_opts) < 0) {
 		__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
 
 	if (!lo_brought_up) {
-		bring_lo_up(rtnl);
+		bring_lo_up(&rtnl);
 		lo_brought_up = true;
 	}
 
@@ -6975,7 +6835,7 @@ bool nftables_churn(struct childdata *child)
 	 * so the expression-fuzz path below stays the dominant workload.
 	 * Reuses ns_unsupported_nf_tables as the latch on EPERM/EOPNOTSUPP. */
 	if (ONE_IN(8)) {
-		nft_dormant_abort_sweep(nfnl);
+		nft_dormant_abort_sweep(&nfnl);
 		goto out;
 	}
 
@@ -6991,7 +6851,7 @@ bool nftables_churn(struct childdata *child)
 	/* Per-hook .validate sweep on xt-compat targets, gated separately
 	 * so the legacy expression-fuzz path above is undisturbed. */
 	if (ONE_IN(2) && !ns_unsupported_nft_compat_validate) {
-		nft_compat_validate_sweep(nfnl);
+		nft_compat_validate_sweep(&nfnl);
 		goto out;
 	}
 
@@ -7001,7 +6861,7 @@ bool nftables_churn(struct childdata *child)
 	 * latch (ns_unsupported_nft_fwd_netdev_loop) so a kernel without
 	 * CONFIG_VETH or CONFIG_NFT_FWD_NETDEV pays the EFAIL once. */
 	if (ONE_IN(8) && !ns_unsupported_nft_fwd_netdev_loop) {
-		nft_fwd_netdev_loop_sweep(nfnl, rtnl);
+		nft_fwd_netdev_loop_sweep(&nfnl, &rtnl);
 		goto out;
 	}
 
@@ -7012,7 +6872,7 @@ bool nftables_churn(struct childdata *child)
 	 * upstream; per-expression validators that EOPNOTSUPP just skip the
 	 * rule install and the cleanup still drains. */
 	if (ONE_IN(8)) {
-		nft_l4_aware_frag_sweep(nfnl);
+		nft_l4_aware_frag_sweep(&nfnl);
 		goto out;
 	}
 
@@ -7024,7 +6884,7 @@ bool nftables_churn(struct childdata *child)
 	set_id = rand32();
 	verdict = (rand32() & 1) ? NFT_JUMP : NFT_GOTO;
 
-	rc = build_newtable(nfnl, family, table_name);
+	rc = build_newtable(&nfnl, family, table_name);
 	if (rc != 0) {
 		/* EAFNOSUPPORT / EOPNOTSUPP / EPROTONOSUPPORT all mean
 		 * "this nf_tables family isn't registered" — most
@@ -7040,17 +6900,17 @@ bool nftables_churn(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.nftables_churn_table_create_ok,
 			   1, __ATOMIC_RELAXED);
 
-	if (build_newset(nfnl, family, table_name, anon_set, set_id) == 0)
+	if (build_newset(&nfnl, family, table_name, anon_set, set_id) == 0)
 		__atomic_add_fetch(&shm->stats.nftables_churn_set_create_ok,
 				   1, __ATOMIC_RELAXED);
 
 	/* aux first so the base-chain rule's NFT_JUMP/NFT_GOTO has a
 	 * resolvable target on first commit. */
-	if (build_newchain(nfnl, family, table_name, aux_chain, false) == 0)
+	if (build_newchain(&nfnl, family, table_name, aux_chain, false) == 0)
 		__atomic_add_fetch(&shm->stats.nftables_churn_chain_create_ok,
 				   1, __ATOMIC_RELAXED);
 
-	if (build_newchain(nfnl, family, table_name, base_chain, true) == 0)
+	if (build_newchain(&nfnl, family, table_name, base_chain, true) == 0)
 		__atomic_add_fetch(&shm->stats.nftables_churn_chain_create_ok,
 				   1, __ATOMIC_RELAXED);
 
@@ -7058,7 +6918,7 @@ bool nftables_churn(struct childdata *child)
 		struct nft_expr_plan plan;
 
 		nft_expr_plan_randomize(&plan);
-		if (build_newrule(nfnl, family, table_name, base_chain,
+		if (build_newrule(&nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 0, &plan,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
@@ -7125,7 +6985,7 @@ bool nftables_churn(struct childdata *child)
 		struct nft_expr_plan plan;
 
 		nft_expr_plan_randomize(&plan);
-		if (build_newrule(nfnl, family, table_name, base_chain,
+		if (build_newrule(&nfnl, family, table_name, base_chain,
 				  aux_chain, verdict, 1, &plan,
 				  anon_set, set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
@@ -7140,30 +7000,29 @@ bool nftables_churn(struct childdata *child)
 	 * targeted commit-vs-traffic teardown window — the same one the
 	 * CVE-2024-1086 nft_verdict UAF exploited.
 	 */
-	if (build_delrule(nfnl, family, table_name, base_chain) == 0)
+	if (build_delrule(&nfnl, family, table_name, base_chain) == 0)
 		__atomic_add_fetch(&shm->stats.nftables_churn_rule_del_ok,
 				   1, __ATOMIC_RELAXED);
 
-	(void)build_delset(nfnl, family, table_name, anon_set);
+	(void)build_delset(&nfnl, family, table_name, anon_set);
 
 out:
 	if (udp >= 0)
 		close(udp);
 
-	if (nfnl >= 0) {
+	if (nfnl.nl.fd >= 0) {
 		/* DELTABLE cascades cleanup of any chain/rule/set
 		 * survivors via nf_tables_table_destroy, racing the
 		 * same in-flight skbs as the explicit DELRULE above. */
 		if (table_created) {
-			if (build_deltable(nfnl, family, table_name) == 0)
+			if (build_deltable(&nfnl, family, table_name) == 0)
 				__atomic_add_fetch(&shm->stats.nftables_churn_table_del_ok,
 						   1, __ATOMIC_RELAXED);
 		}
-		close(nfnl);
+		nfnl_close(&nfnl);
 	}
 
-	if (rtnl >= 0)
-		close(rtnl);
+	nl_close(&rtnl);
 
 	return true;
 }
