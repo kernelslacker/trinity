@@ -25,7 +25,9 @@
  * at post time) to gate out the size=0 probe case, where retval is the
  * required namebuffer size and the user buffer was not populated.
  */
+#define LISTXATTR_POST_STATE_MAGIC	0x4C53545841545452UL	/* "LSTXATTR" */
 struct listxattr_post_state {
+	unsigned long magic;
 	unsigned long arg1;
 	unsigned long list;
 	unsigned long size;
@@ -100,6 +102,7 @@ static void sanitise_flistxattr(struct syscallrecord *rec)
 	 * to the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = LISTXATTR_POST_STATE_MAGIC;
 	snap->arg1 = rec->a1;
 	snap->list = rec->a2;
 	snap->size = rec->a3;
@@ -177,6 +180,15 @@ static void post_flistxattr(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_flistxattr: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (snap->magic != LISTXATTR_POST_STATE_MAGIC) {
+		outputerr("post_flistxattr: rejected snap with bad magic "
+			  "0x%lx (post_state-stomped to foreign "
+			  "allocation?)\n", snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
@@ -338,6 +350,7 @@ static void sanitise_listxattr(struct syscallrecord *rec)
 	 * to the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = LISTXATTR_POST_STATE_MAGIC;
 	snap->arg1 = rec->a1;
 	snap->list = rec->a2;
 	snap->size = rec->a3;
@@ -415,6 +428,15 @@ static void post_listxattr(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_listxattr: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (snap->magic != LISTXATTR_POST_STATE_MAGIC) {
+		outputerr("post_listxattr: rejected snap with bad magic "
+			  "0x%lx (post_state-stomped to foreign "
+			  "allocation?)\n", snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
@@ -578,6 +600,7 @@ static void sanitise_llistxattr(struct syscallrecord *rec)
 	 * to the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = LISTXATTR_POST_STATE_MAGIC;
 	snap->arg1 = rec->a1;
 	snap->list = rec->a2;
 	snap->size = rec->a3;
@@ -653,6 +676,15 @@ static void post_llistxattr(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_llistxattr: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (snap->magic != LISTXATTR_POST_STATE_MAGIC) {
+		outputerr("post_llistxattr: rejected snap with bad magic "
+			  "0x%lx (post_state-stomped to foreign "
+			  "allocation?)\n", snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
