@@ -119,6 +119,8 @@
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 
+#include "childops-netlink.h"
+
 #include "bpf.h"
 #include "child.h"
 #include "jitter.h"
@@ -268,16 +270,6 @@ static bool ns_unsupported_bpf_xdp;
 static bool ns_unsupported_xdp_sg;
 static bool ns_unsupported_tx_metadata;
 
-static long long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (long long)(now.tv_sec - t0->tv_sec) * 1000000000LL +
-	       (long long)(now.tv_nsec - t0->tv_nsec);
-}
-
 static int sys_bpf(int cmd, union bpf_attr *attr, unsigned int size)
 {
 	return (int)syscall(__NR_bpf, cmd, attr, size);
@@ -395,7 +387,7 @@ struct xsk_state {
 	int		map_fd;
 	int		prog_fd;
 	int		xdp_link_fd;		/* BPF_LINK_CREATE auto-detach handle */
-	int		rtnl_fd;		/* netlink fallback attach socket */
+	struct nl_ctx	rtnl;			/* netlink fallback attach socket */
 	int		tun_fd;			/* /dev/net/tun fd kept open while xsk bound to tunN */
 	unsigned int	nl_attached_ifindex;	/* non-zero => detach via netlink in teardown */
 	void		*umem;
@@ -411,7 +403,8 @@ struct xsk_state {
 	bool		bound;
 };
 
-static int xdp_netlink_set_fd(int rtnl, unsigned int ifindex, int prog_fd);
+static int xdp_netlink_set_fd(struct nl_ctx *rtnl, unsigned int ifindex,
+			      int prog_fd);
 
 static void xsk_init(struct xsk_state *st)
 {
@@ -420,7 +413,7 @@ static void xsk_init(struct xsk_state *st)
 	st->map_fd      = -1;
 	st->prog_fd     = -1;
 	st->xdp_link_fd = -1;
-	st->rtnl_fd     = -1;
+	st->rtnl.fd     = -1;
 	st->tun_fd      = -1;
 	st->umem    = MAP_FAILED;
 	st->rx_ring = MAP_FAILED;
@@ -436,11 +429,11 @@ static void xsk_teardown(struct xsk_state *st)
 	 * SKB mode), then close prog/map fds. */
 	if (st->xdp_link_fd >= 0)
 		close(st->xdp_link_fd);
-	if (st->nl_attached_ifindex && st->rtnl_fd >= 0)
-		(void)xdp_netlink_set_fd(st->rtnl_fd,
+	if (st->nl_attached_ifindex && st->rtnl.fd >= 0)
+		(void)xdp_netlink_set_fd(&st->rtnl,
 					 st->nl_attached_ifindex, -1);
-	if (st->rtnl_fd >= 0)
-		close(st->rtnl_fd);
+	if (st->rtnl.fd >= 0)
+		nl_close(&st->rtnl);
 	if (st->fr_ring != MAP_FAILED && st->fr_ring_sz)
 		(void)munmap(st->fr_ring, st->fr_ring_sz);
 	if (st->cr_ring != MAP_FAILED && st->cr_ring_sz)
@@ -502,29 +495,16 @@ static int xdp_link_attach(int prog_fd, unsigned int ifindex)
 /*
  * Open a NETLINK_ROUTE socket for the XDP attach fallback.  Bound,
  * RCVTIMEO 1s so a wedged rtnl can't outlive the SIGALRM(1s) cap.
+ * Returns 0 on success and stamps @ctx; -1 on failure.
  */
-static int xdp_netlink_open(void)
+static int xdp_netlink_open(struct nl_ctx *ctx)
 {
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
+	struct nl_open_opts opts;
 
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = 1;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-	return fd;
+	memset(&opts, 0, sizeof(opts));
+	opts.proto         = NETLINK_ROUTE;
+	opts.recv_timeo_s  = 1;
+	return nl_open(ctx, &opts);
 }
 
 /*
@@ -533,27 +513,21 @@ static int xdp_netlink_open(void)
  * detach (prog_fd == -1) the XDP program on @ifindex.  Returns 0 on
  * success, kernel errno (negated) on failure, -EIO on transport error.
  */
-static int xdp_netlink_set_fd(int rtnl, unsigned int ifindex, int prog_fd)
+static int xdp_netlink_set_fd(struct nl_ctx *rtnl, unsigned int ifindex,
+			      int prog_fd)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
-	struct nlattr *nest;
-	struct nlattr *nla;
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[256];
-	size_t off;
+	size_t off, nest_off;
 	__u32 flags = XDP_FLAGS_SKB_MODE;
 	__s32 fdval = prog_fd;
-	ssize_t n;
 
 	memset(buf, 0, sizeof(buf));
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = 1;
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -561,57 +535,22 @@ static int xdp_netlink_set_fd(int rtnl, unsigned int ifindex, int prog_fd)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 
-	/* Open IFLA_XDP nested attribute. */
-	nest = (struct nlattr *)(buf + off);
-	nest->nla_type = IFLA_XDP | NLA_F_NESTED;
-	off += NLA_HDRLEN;
-
-	/* IFLA_XDP_FD */
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = IFLA_XDP_FD;
-	nla->nla_len  = (unsigned short)(NLA_HDRLEN + sizeof(fdval));
-	memcpy(buf + off + NLA_HDRLEN, &fdval, sizeof(fdval));
-	off += NLA_ALIGN(NLA_HDRLEN + sizeof(fdval));
-
-	/* IFLA_XDP_FLAGS */
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = IFLA_XDP_FLAGS;
-	nla->nla_len  = (unsigned short)(NLA_HDRLEN + sizeof(flags));
-	memcpy(buf + off + NLA_HDRLEN, &flags, sizeof(flags));
-	off += NLA_ALIGN(NLA_HDRLEN + sizeof(flags));
-
-	/* Close nest. */
-	nest->nla_len = (unsigned short)((unsigned char *)(buf + off) -
-					 (unsigned char *)nest);
+	nest_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_XDP | NLA_F_NESTED);
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf), IFLA_XDP_FD,
+		      &fdval, sizeof(fdval));
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf), IFLA_XDP_FLAGS,
+		      &flags, sizeof(flags));
+	if (!off)
+		return -EIO;
+	nla_nest_end(buf, nest_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-	iov.iov_base = buf;
-	iov.iov_len  = off;
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(rtnl, &mh, 0) < 0)
-		return -EIO;
-
-	n = recv(rtnl, rbuf, sizeof(rbuf), 0);
-	if (n < 0 || (size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-	{
-		struct nlmsghdr *r = (struct nlmsghdr *)rbuf;
-
-		if (r->nlmsg_type == NLMSG_ERROR) {
-			struct nlmsgerr *e = (struct nlmsgerr *)NLMSG_DATA(r);
-
-			return e->error;	/* 0 on ack */
-		}
-	}
-	return -EIO;
+	return nl_send_recv(rtnl, buf, off);
 }
 
 /* One full setup + race + teardown cycle on a fresh AF_XDP socket. */
@@ -859,9 +798,10 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 			__atomic_add_fetch(&shm->stats.afxdp_churn_link_attach_ok,
 					   1, __ATOMIC_RELAXED);
 		} else {
-			st.rtnl_fd = xdp_netlink_open();
-			if (st.rtnl_fd >= 0 &&
-			    xdp_netlink_set_fd(st.rtnl_fd, target_ifindex,
+			int rc_open = xdp_netlink_open(&st.rtnl);
+
+			if (rc_open == 0 &&
+			    xdp_netlink_set_fd(&st.rtnl, target_ifindex,
 					       st.prog_fd) == 0) {
 				st.nl_attached_ifindex = target_ifindex;
 				__atomic_add_fetch(&shm->stats.afxdp_churn_netlink_attach_ok,
