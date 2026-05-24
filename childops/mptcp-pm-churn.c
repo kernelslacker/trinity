@@ -26,10 +26,9 @@
  *       this child's lifetime — CONFIG_MPTCP=n is fixed for the process.
  *   2.  accept() on the server side, drive a baseline send() over the
  *       primary subflow so the connection is in mptcp_established().
- *   3.  genl_resolve_families(); fam_mptcp_pm.resolved == 0 latches
- *       ns_unsupported_genetlink_mptcp.  The CTRL_GETFAMILY dump runs
- *       once per process and is shared with the genetlink-fuzzer
- *       childop and any other consumer that pulls in the registry.
+ *   3.  genl_open("mptcp_pm", ...) — resolves the family id via a
+ *       per-ctx CTRL_CMD_GETFAMILY; -ENOENT latches
+ *       ns_unsupported_genetlink_mptcp for the rest of the process.
  *   4.  BUDGETED loop:
  *         a) MPTCP_PM_CMD_ADD_ADDR with MPTCP_PM_ATTR_ADDR carrying
  *            FAMILY=AF_INET, ID=loc_id, ADDR4=127.0.0.<rot>.  Drives
@@ -71,8 +70,9 @@
  * Failure modes treated as benign coverage:
  *   - EPROTONOSUPPORT on the first IPPROTO_MPTCP socket(): kernel built
  *     without CONFIG_MPTCP.  Latched ns_unsupported_mptcp.
- *   - fam_mptcp_pm.resolved == 0 after CTRL_GETFAMILY: the running
- *     kernel doesn't expose the mptcp_pm genl family.  Latched.
+ *   - genl_open("mptcp_pm", ...) returns -ENOENT: the running kernel
+ *     doesn't expose the mptcp_pm genl family.  Latched
+ *     ns_unsupported_genetlink_mptcp.
  *   - EPERM on any genl op: trinity wasn't run with CAP_NET_ADMIN in
  *     the current netns.  Counted as a reject; the data-plane sends
  *     still exercise the MPTCP socket layer.
@@ -88,7 +88,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -100,33 +99,24 @@
 
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <linux/genetlink.h>
 #include <linux/mptcp_pm.h>
 #include <linux/netlink.h>
 
+#include "childops-genl.h"
 #include "jitter.h"
-#include "netlink-genl-families.h"
 #include "random.h"
 #include "rnd.h"
 #include "utils.h"
-
-extern struct genl_family_grammar fam_mptcp_pm;
 
 /* Latched per-child: IPPROTO_MPTCP socket() returned EPROTONOSUPPORT
  * once.  CONFIG_MPTCP is fixed for the life of the process so further
  * attempts are pure waste. */
 static bool ns_unsupported_mptcp;
 
-/* Latched per-child: genl_resolve_families() ran but fam_mptcp_pm.resolved
- * stayed 0 — kernel doesn't expose the family.  Same lifetime semantics
- * as ns_unsupported_mptcp. */
+/* Latched per-child: genl_open("mptcp_pm", ...) returned -ENOENT, so
+ * the kernel doesn't expose the mptcp_pm genl family at all.  Same
+ * lifetime semantics as ns_unsupported_mptcp. */
 static bool ns_unsupported_genetlink_mptcp;
-
-/* Per-process running netlink seq.  Shared across calls in the same
- * process — concurrent siblings each have their own netlink socket so
- * the seq overlap is harmless on the wire (the kernel doesn't dedupe
- * across sockets). */
-static __u32 g_mptcp_pm_seq;
 
 #define MPTCP_PM_GENL_BUF_BYTES		1024
 #define MPTCP_PM_GENL_RECV_TIMEO_S	1
@@ -146,146 +136,6 @@ static __u32 g_mptcp_pm_seq;
 
 #define MPTCP_PM_LOOPBACK_BASE	0x7f000001U	/* 127.0.0.1 */
 #define NR_MPTCP_LOOPBACK_ADDRS	5U
-
-static __u32 next_seq(void)
-{
-	return ++g_mptcp_pm_seq;
-}
-
-static int mptcp_pm_genl_open(void)
-{
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_GENERIC);
-	if (fd < 0)
-		return -1;
-
-	tv.tv_sec  = MPTCP_PM_GENL_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	return fd;
-}
-
-/*
- * Append a flat NLA at *off with the given type and payload.  Returns
- * the new offset, or 0 on overflow (caller treats 0 as fail).  Same
- * shape as tipc-link-churn's nla_put — kept duplicated rather than
- * hoisted into a shared header because each childop's NLA construction
- * is tight enough that an inlined version is easier to follow than a
- * cross-file helper, and the duplication has stayed small.
- */
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static size_t nla_put_u8(unsigned char *buf, size_t off, size_t cap,
-			 unsigned short type, __u8 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t nla_put_u16(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u16 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t nla_put_u32(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u32 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-/*
- * Send a complete genetlink message and wait for an NLMSG_ERROR ack.
- * Returns the kernel's ack errno (0 on success, negated errno on
- * rejection, or -EIO on local send/recv failure).  Caller fills the
- * full nlmsghdr+genlmsghdr+payload at offset 0 with NLM_F_ACK already
- * set in flags.
- */
-static int mptcp_pm_genl_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[1024];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, MSG_DONTWAIT) < 0)
-		return -EIO;
-
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0)
-		return -EIO;
-	if ((size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	return -EIO;
-}
-
-/*
- * Build the start of an mptcp_pm genetlink message: nlmsghdr +
- * genlmsghdr, with NLM_F_ACK and the resolved family_id stamped in.
- * Returns the offset past the genl header; callers append per-cmd
- * attrs from there.  Bumps the per-family call counter so the
- * genl_family_calls_mptcp_pm stat row reflects this childop's traffic.
- */
-static size_t mptcp_pm_genl_msg_start(unsigned char *buf, size_t cap, __u8 cmd)
-{
-	struct nlmsghdr *nlh;
-	struct genlmsghdr *gnh;
-
-	if (cap < NLMSG_HDRLEN + GENL_HDRLEN)
-		return 0;
-
-	memset(buf, 0, NLMSG_HDRLEN + GENL_HDRLEN);
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = fam_mptcp_pm.family_id;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
-
-	gnh = (struct genlmsghdr *)NLMSG_DATA(nlh);
-	gnh->cmd     = cmd;
-	gnh->version = MPTCP_PM_VER;
-
-	genl_family_bump_calls(&fam_mptcp_pm);
-	return NLMSG_HDRLEN + GENL_HDRLEN;
-}
 
 /*
  * Build a MPTCP_PM_ATTR_ADDR nested entry carrying FAMILY=AF_INET,
@@ -333,13 +183,15 @@ static size_t put_mptcp_addr_nest(unsigned char *buf, size_t off, size_t cap,
  * nest with the given loc_id + addr.  Used for ADD_ADDR, DEL_ADDR, and
  * GET_ADDR.  Returns the kernel's ack errno.
  */
-static int mptcp_pm_addr_cmd(int fd, __u8 cmd, __u8 loc_id, __u32 addr_h)
+static int mptcp_pm_addr_cmd(struct genl_ctx *ctx, __u8 cmd, __u8 loc_id,
+			     __u32 addr_h)
 {
 	unsigned char buf[MPTCP_PM_GENL_BUF_BYTES];
 	struct nlmsghdr *nlh;
 	size_t off;
 
-	off = mptcp_pm_genl_msg_start(buf, sizeof(buf), cmd);
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
+			   nl_seq_next(&ctx->nl), cmd, 0);
 	if (!off)
 		return -EIO;
 
@@ -349,7 +201,7 @@ static int mptcp_pm_addr_cmd(int fd, __u8 cmd, __u8 loc_id, __u32 addr_h)
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (__u32)off;
-	return mptcp_pm_genl_send_recv(fd, buf, off);
+	return genl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -360,7 +212,7 @@ static int mptcp_pm_addr_cmd(int fd, __u8 cmd, __u8 loc_id, __u32 addr_h)
  * needs, so this is a useful coverage edge even when the values are
  * trivial.  Returns the kernel's ack errno.
  */
-static int mptcp_pm_set_limits(int fd)
+static int mptcp_pm_set_limits(struct genl_ctx *ctx)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -368,7 +220,9 @@ static int mptcp_pm_set_limits(int fd)
 	__u32 rcv = (rand32() & 0x7U) + 1U;
 	__u32 sub = (rand32() & 0x7U) + 1U;
 
-	off = mptcp_pm_genl_msg_start(buf, sizeof(buf), MPTCP_PM_CMD_SET_LIMITS);
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
+			   nl_seq_next(&ctx->nl),
+			   MPTCP_PM_CMD_SET_LIMITS, 0);
 	if (!off)
 		return -EIO;
 
@@ -384,7 +238,7 @@ static int mptcp_pm_set_limits(int fd)
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (__u32)off;
-	return mptcp_pm_genl_send_recv(fd, buf, off);
+	return genl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -393,19 +247,21 @@ static int mptcp_pm_set_limits(int fd)
  * spinlock, racing the data-plane subflow walker.  Returns the
  * kernel's ack errno.
  */
-static int mptcp_pm_flush_addrs(int fd)
+static int mptcp_pm_flush_addrs(struct genl_ctx *ctx)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
 	size_t off;
 
-	off = mptcp_pm_genl_msg_start(buf, sizeof(buf), MPTCP_PM_CMD_FLUSH_ADDRS);
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
+			   nl_seq_next(&ctx->nl),
+			   MPTCP_PM_CMD_FLUSH_ADDRS, 0);
 	if (!off)
 		return -EIO;
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (__u32)off;
-	return mptcp_pm_genl_send_recv(fd, buf, off);
+	return genl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -539,7 +395,7 @@ static unsigned int sweep_get_subflow_count(int sk)
  * the master is the bug-signal counter — collected, not asserted;
  * upstream 70ece9d7021c is the fix shape.
  */
-static void mptcp_sockopt_inheritance_sweep(int cli, int genl_fd)
+static void mptcp_sockopt_inheritance_sweep(int cli, struct genl_ctx *ctx)
 {
 	const struct mptcp_sf_optspec *spec;
 	unsigned int idx = 0, tries;
@@ -587,7 +443,7 @@ static void mptcp_sockopt_inheritance_sweep(int cli, int genl_fd)
 
 	loc_id = 1U + (__u8)(rand32() % MPTCP_PM_LOC_ID_MAX);
 	addr_h = MPTCP_PM_LOOPBACK_BASE + (rand32() % NR_MPTCP_LOOPBACK_ADDRS);
-	(void)mptcp_pm_addr_cmd(genl_fd, MPTCP_PM_CMD_ADD_ADDR,
+	(void)mptcp_pm_addr_cmd(ctx, MPTCP_PM_CMD_ADD_ADDR,
 				loc_id, addr_h);
 
 	n_after = n_before;
@@ -632,7 +488,7 @@ static void mptcp_sockopt_inheritance_sweep(int cli, int genl_fd)
  * getsockopt on the subflow.  Goal here is just to drive the codepath
  * under fuzz so KASAN/UBSAN/lockdep can fire.
  */
-static void mptcp_setsockopt_all_sf_recipe(int genl_fd)
+static void mptcp_setsockopt_all_sf_recipe(struct genl_ctx *ctx)
 {
 	const struct mptcp_sf_optspec *spec;
 	int sk;
@@ -672,7 +528,7 @@ static void mptcp_setsockopt_all_sf_recipe(int genl_fd)
 	 * pernet endpoint validator accepts the request. */
 	loc_id = 1U + (__u8)(rand32() % MPTCP_PM_LOC_ID_MAX);
 	addr_h = MPTCP_PM_LOOPBACK_BASE + (rand32() % NR_MPTCP_LOOPBACK_ADDRS);
-	(void)mptcp_pm_addr_cmd(genl_fd, MPTCP_PM_CMD_ADD_ADDR,
+	(void)mptcp_pm_addr_cmd(ctx, MPTCP_PM_CMD_ADD_ADDR,
 				loc_id, addr_h);
 
 	idle = 1U + (rand32() % 3U);
@@ -696,16 +552,19 @@ static void mptcp_setsockopt_all_sf_recipe(int genl_fd)
 bool mptcp_pm_churn(struct childdata *child)
 {
 	struct sockaddr_in srv_addr, cli_addr;
+	struct genl_ctx ctx;
+	struct genl_open_opts opts;
 	socklen_t slen;
 	int srv = -1;
 	int cli = -1;
 	int srv_acc = -1;
-	int genl_fd = -1;
+	bool ctx_open = false;
 	uint16_t srv_port_n;
 	unsigned int iters;
 	unsigned int i;
 	__u8 loc_id;
 	unsigned int rot_idx;
+	int rc;
 
 	(void)child;
 
@@ -791,18 +650,21 @@ bool mptcp_pm_churn(struct childdata *child)
 	if (srv_acc >= 0)
 		churn_send(srv_acc);
 
-	genl_resolve_families();
-	if (!fam_mptcp_pm.resolved) {
-		ns_unsupported_genetlink_mptcp = true;
-		goto out;
-	}
+	memset(&opts, 0, sizeof(opts));
+	opts.family_name  = MPTCP_PM_NAME;
+	opts.version      = MPTCP_PM_VER;
+	opts.recv_timeo_s = MPTCP_PM_GENL_RECV_TIMEO_S;
 
-	genl_fd = mptcp_pm_genl_open();
-	if (genl_fd < 0) {
-		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	rc = genl_open(&ctx, &opts);
+	if (rc != 0) {
+		if (rc == -ENOENT)
+			ns_unsupported_genetlink_mptcp = true;
+		else
+			__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
+					   1, __ATOMIC_RELAXED);
 		goto out;
 	}
+	ctx_open = true;
 
 	/* Initial loc_id: random in [1, MPTCP_PM_LOC_ID_MAX].  The
 	 * kernel's loc_id 0 is reserved for the primary subflow auto-
@@ -817,13 +679,12 @@ bool mptcp_pm_churn(struct childdata *child)
 	for (i = 0; i < iters; i++) {
 		__u32 addr_h = MPTCP_PM_LOOPBACK_BASE +
 			       (rot_idx % NR_MPTCP_LOOPBACK_ADDRS);
-		int rc;
 
 		/* a) ADD_ADDR with FAMILY+ID+ADDR4 inside the nested
 		 *    MPTCP_PM_ATTR_ADDR.  Kernel installs the endpoint
 		 *    in the pernet table and queues an MP_ADD_ADDR
 		 *    option for transmit on every up MPTCP socket. */
-		rc = mptcp_pm_addr_cmd(genl_fd, MPTCP_PM_CMD_ADD_ADDR,
+		rc = mptcp_pm_addr_cmd(&ctx, MPTCP_PM_CMD_ADD_ADDR,
 				       loc_id, addr_h);
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.mptcp_pm_churn_addr_added_ok,
@@ -833,7 +694,7 @@ bool mptcp_pm_churn(struct childdata *child)
 		 *    the lookup-by-id path under the same pernet lock
 		 *    the ADD just released.  Reply is a NEWADDR-style
 		 *    response we don't parse — recv consumes it. */
-		(void)mptcp_pm_addr_cmd(genl_fd, MPTCP_PM_CMD_GET_ADDR,
+		(void)mptcp_pm_addr_cmd(&ctx, MPTCP_PM_CMD_GET_ADDR,
 					loc_id, addr_h);
 
 		/* c) Send during the ADD_ADDR option emit window. */
@@ -844,7 +705,7 @@ bool mptcp_pm_churn(struct childdata *child)
 		/* d) DEL_ADDR — drives mptcp_pm_remove_anno_addr() and
 		 *    any in-flight subflow cleanup against the address
 		 *    we just installed. */
-		rc = mptcp_pm_addr_cmd(genl_fd, MPTCP_PM_CMD_DEL_ADDR,
+		rc = mptcp_pm_addr_cmd(&ctx, MPTCP_PM_CMD_DEL_ADDR,
 				       loc_id, addr_h);
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.mptcp_pm_churn_addr_removed_ok,
@@ -863,9 +724,9 @@ bool mptcp_pm_churn(struct childdata *child)
 		 *    shape.  Splitting at random gives rough 50/50
 		 *    coverage of each command across runs. */
 		if (RAND_BOOL())
-			(void)mptcp_pm_set_limits(genl_fd);
+			(void)mptcp_pm_set_limits(&ctx);
 		else
-			(void)mptcp_pm_flush_addrs(genl_fd);
+			(void)mptcp_pm_flush_addrs(&ctx);
 
 		/* g) Occasional setsockopt_all_sf seq-window probe:
 		 *    open a fresh master mptcp socket, set a TCP-level
@@ -874,7 +735,7 @@ bool mptcp_pm_churn(struct childdata *child)
 		 *    master got the value.  Same cadence as other
 		 *    sub-modes, drives the path 70ece9d7021c fixed. */
 		if (ONE_IN(8))
-			mptcp_setsockopt_all_sf_recipe(genl_fd);
+			mptcp_setsockopt_all_sf_recipe(&ctx);
 
 		/* h) Sockopt-inheritance sweep on the live master.  Walks
 		 *    a curated TCP_* table, sets one opt, drives ADD_ADDR
@@ -885,7 +746,7 @@ bool mptcp_pm_churn(struct childdata *child)
 		 *    fresh-socket recipe above — reusing the established
 		 *    connection is much cheaper. */
 		if (ONE_IN(4))
-			mptcp_sockopt_inheritance_sweep(cli, genl_fd);
+			mptcp_sockopt_inheritance_sweep(cli, &ctx);
 
 		/* Walk loc_id forward bounded to [1, MPTCP_PM_LOC_ID_MAX].
 		 * The kernel rejects loc_id > 127 with EINVAL so capping
@@ -896,8 +757,8 @@ bool mptcp_pm_churn(struct childdata *child)
 	}
 
 out:
-	if (genl_fd >= 0)
-		close(genl_fd);
+	if (ctx_open)
+		genl_close(&ctx);
 	if (srv_acc >= 0)
 		close(srv_acc);
 	if (cli >= 0)
