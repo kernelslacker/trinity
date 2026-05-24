@@ -167,7 +167,9 @@ static __u64 pick_listmount_order(void)
  * handler running cannot redirect us at a foreign mount-id buffer or
  * smear the size bound used to seed the re-issue.
  */
+#define LISTMOUNT_POST_STATE_MAGIC	0x4C4953544D4E544DUL	/* "LISTMNTM" */
 struct listmount_post_state {
+	unsigned long magic;
 	unsigned long req;
 	unsigned long mnt_ids;
 	unsigned long nr_mnt_ids;
@@ -219,6 +221,7 @@ static void sanitise_listmount(struct syscallrecord *rec)
 	 * snapshot only the post handler can free would leak.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic      = LISTMOUNT_POST_STATE_MAGIC;
 	snap->req        = rec->a1;
 	snap->mnt_ids    = rec->a2;
 	snap->nr_mnt_ids = rec->a3;
@@ -281,6 +284,15 @@ static void post_listmount(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_listmount: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (snap->magic != LISTMOUNT_POST_STATE_MAGIC) {
+		outputerr("post_listmount: rejected snap with bad magic "
+			  "0x%lx (post_state-stomped to foreign "
+			  "allocation?)\n", snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
