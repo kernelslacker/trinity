@@ -174,6 +174,15 @@
  * probing and just bump the runs counter. */
 static bool ovs_setup_failed;
 static bool ovs_setup_done;
+/* Latched when genl_open() for either ovs_datapath or ovs_vport
+ * returns -ENOENT — i.e. the kernel doesn't expose the OVS genl
+ * surface at all (CONFIG_OPENVSWITCH=n or the families haven't been
+ * registered yet).  Distinguished from the generic ovs_setup_failed
+ * so the rest of the process can tell "kernel does not expose this
+ * surface" from "we tried and the socket setup failed for another
+ * reason".  Mirrors ns_unsupported_devlink_genl in
+ * devlink-port-churn.c. */
+static bool ns_unsupported_ovs_genl;
 static bool ovs_kind_unsupported_geneve;
 static bool ovs_kind_unsupported_vxlan;
 static bool ovs_kind_unsupported_gre;
@@ -586,7 +595,10 @@ static bool ovs_one_time_setup(struct childdata *child)
 	opts.family_name  = "ovs_datapath";
 	opts.version      = OVS_DATAPATH_VERSION;
 	opts.recv_timeo_s = OVS_RECV_TIMEO_S;
-	if (genl_open(&ovs_dp_ctx, &opts) != 0) {
+	rc = genl_open(&ovs_dp_ctx, &opts);
+	if (rc != 0) {
+		if (rc == -ENOENT)
+			ns_unsupported_ovs_genl = true;
 		ovs_setup_failed = true;
 		return false;
 	}
@@ -595,7 +607,10 @@ static bool ovs_one_time_setup(struct childdata *child)
 	opts.family_name  = "ovs_vport";
 	opts.version      = OVS_VPORT_VERSION;
 	opts.recv_timeo_s = OVS_RECV_TIMEO_S;
-	if (genl_open(&ovs_vport_ctx, &opts) != 0) {
+	rc = genl_open(&ovs_vport_ctx, &opts);
+	if (rc != 0) {
+		if (rc == -ENOENT)
+			ns_unsupported_ovs_genl = true;
 		ovs_setup_failed = true;
 		genl_close(&ovs_dp_ctx);
 		return false;
