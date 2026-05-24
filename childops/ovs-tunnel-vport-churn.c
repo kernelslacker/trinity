@@ -496,17 +496,23 @@ static void ovs_race_dellink_loop(const char *helper_name,
 {
 	struct timespec start, now;
 	unsigned int iter;
-	/* Local seq counter — the racer runs in a forked child after the
-	 * shared genl ctx has been opened, talks rtnetlink (not genl), and
-	 * never expects an ack so the seq stamp is cosmetic.  A bare local
-	 * counter keeps the racer independent of the parent's ctx seq. */
-	__u32 racer_seq = 0;
+	/* Racer runs in a forked child after the parent's shared genl
+	 * ctx has been opened; talks rtnetlink (not genl) on its own
+	 * nl_ctx so seq numbers via nl_seq_next() stay independent of
+	 * the parent's ovs_dp_ctx / ovs_vport_ctx, and never expects
+	 * an ack — NLM_F_ACK is not set so the kernel won't reply, and
+	 * we sendmsg(MSG_DONTWAIT) on ctx->fd to keep the per-iteration
+	 * fire-and-forget shape that the bounded-deadline loop relies
+	 * on.  The seq stamp via nl_seq_next() is cosmetic but rides
+	 * the shared scaffolding counter so the racer aligns with the
+	 * rest of the childops-netlink tree. */
 
 	if (clock_gettime(CLOCK_MONOTONIC, &start) != 0)
 		return;
 
 	for (iter = 0; iter < OVS_RACE_DELLINK_MAX_ITERS; iter++) {
-		struct sockaddr_nl sa;
+		struct nl_ctx racer_ctx;
+		struct nl_open_opts ropts;
 		struct sockaddr_nl dst;
 		unsigned char buf[256];
 		struct nlmsghdr *nlh;
@@ -515,45 +521,40 @@ static void ovs_race_dellink_loop(const char *helper_name,
 		struct msghdr mh;
 		long elapsed_ms;
 		int ifindex;
-		int fd;
 
 		ifindex = (int)if_nametoindex(helper_name);
 		if (ifindex > 0) {
-			fd = socket(AF_NETLINK,
-				    SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-			if (fd >= 0) {
-				memset(&sa, 0, sizeof(sa));
-				sa.nl_family = AF_NETLINK;
-				if (bind(fd, (struct sockaddr *)&sa,
-					 sizeof(sa)) == 0) {
-					memset(buf, 0, sizeof(buf));
-					nlh = (struct nlmsghdr *)buf;
-					nlh->nlmsg_type  = RTM_DELLINK;
-					nlh->nlmsg_flags = NLM_F_REQUEST;
-					nlh->nlmsg_seq   = ++racer_seq;
+			memset(&ropts, 0, sizeof(ropts));
+			ropts.proto = NETLINK_ROUTE;
+			ropts.recv_timeo_s = OVS_RECV_TIMEO_S;
+			if (nl_open(&racer_ctx, &ropts) == 0) {
+				memset(buf, 0, sizeof(buf));
+				nlh = (struct nlmsghdr *)buf;
+				nlh->nlmsg_type  = RTM_DELLINK;
+				nlh->nlmsg_flags = NLM_F_REQUEST;
+				nlh->nlmsg_seq   = nl_seq_next(&racer_ctx);
 
-					ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-					ifi->ifi_family = AF_UNSPEC;
-					ifi->ifi_index  = ifindex;
+				ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+				ifi->ifi_family = AF_UNSPEC;
+				ifi->ifi_index  = ifindex;
 
-					nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN +
-						NLMSG_ALIGN(sizeof(*ifi)));
+				nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN +
+					NLMSG_ALIGN(sizeof(*ifi)));
 
-					memset(&dst, 0, sizeof(dst));
-					dst.nl_family = AF_NETLINK;
+				memset(&dst, 0, sizeof(dst));
+				dst.nl_family = AF_NETLINK;
 
-					iov.iov_base = buf;
-					iov.iov_len  = nlh->nlmsg_len;
+				iov.iov_base = buf;
+				iov.iov_len  = nlh->nlmsg_len;
 
-					memset(&mh, 0, sizeof(mh));
-					mh.msg_name    = &dst;
-					mh.msg_namelen = sizeof(dst);
-					mh.msg_iov     = &iov;
-					mh.msg_iovlen  = 1;
+				memset(&mh, 0, sizeof(mh));
+				mh.msg_name    = &dst;
+				mh.msg_namelen = sizeof(dst);
+				mh.msg_iov     = &iov;
+				mh.msg_iovlen  = 1;
 
-					(void)sendmsg(fd, &mh, 0);
-				}
-				close(fd);
+				(void)sendmsg(racer_ctx.fd, &mh, MSG_DONTWAIT);
+				nl_close(&racer_ctx);
 			}
 		}
 
