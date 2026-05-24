@@ -91,6 +91,7 @@
     __has_include(<linux/netfilter/nf_tables.h>) && \
     __has_include(<linux/netfilter/nfnetlink.h>)
 
+#include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <net/if.h>
@@ -103,7 +104,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
@@ -117,6 +117,8 @@
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-netlink.h"
+#include "childops-nfnl.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -219,72 +221,6 @@ static bool ns_unsupported_flowtable_vlan;
 static bool fev_unshared;
 static bool fev_ip_forward_set;
 
-static __u32 g_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
-
-static long long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (long long)(now.tv_sec - t0->tv_sec) * 1000000000LL +
-	       (long long)(now.tv_nsec - t0->tv_nsec);
-}
-
-static int nl_open(int proto)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, proto);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = FEV_NL_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	return fd;
-}
-
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static size_t nla_put_u32(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u32 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
 static size_t nla_put_be32(unsigned char *buf, size_t off, size_t cap,
 			   unsigned short type, __u32 v)
 {
@@ -292,72 +228,12 @@ static size_t nla_put_be32(unsigned char *buf, size_t off, size_t cap,
 	return nla_put(buf, off, cap, type, &be, sizeof(be));
 }
 
-static size_t nla_put_str(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, const char *s)
-{
-	return nla_put(buf, off, cap, type, s, strlen(s) + 1);
-}
-
-static int nl_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[1024];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0 || (size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	return -EIO;
-}
-
-struct nfgenmsg_local {
-	__u8  nfgen_family;
-	__u8  version;
-	__u16 res_id;
-};
-
-static size_t nfnl_hdr(unsigned char *buf, __u16 msg_id, __u16 flags,
-		       __u8 family)
-{
-	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
-	struct nfgenmsg_local *nfg;
-
-	nlh->nlmsg_type  = (NFNL_SUBSYS_NFTABLES << 8) | msg_id;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | flags;
-	nlh->nlmsg_seq   = next_seq();
-	nfg = (struct nfgenmsg_local *)NLMSG_DATA(nlh);
-	nfg->nfgen_family = family;
-	nfg->version      = NFNETLINK_V0;
-	nfg->res_id       = htons(0);
-	return NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*nfg));
-}
-
-static int build_veth_pair(int fd, const char *name, const char *peer)
+static int build_veth_pair(struct nl_ctx *rtnl, const char *name,
+			   const char *peer)
 {
 	unsigned char buf[FEV_RTNL_BUF];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi, *peer_ifi;
-	struct nlattr *li, *id, *pa;
 	size_t off, li_off, id_off, peer_off;
 
 	memset(buf, 0, sizeof(buf));
@@ -365,7 +241,7 @@ static int build_veth_pair(int fd, const char *name, const char *peer)
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
@@ -373,15 +249,15 @@ static int build_veth_pair(int fd, const char *name, const char *peer)
 	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, name);
 	if (!off) return -EIO;
 	li_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
 	if (!off) return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "veth");
 	if (!off) return -EIO;
 	id_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_INFO_DATA, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
 	if (!off) return -EIO;
 	peer_off = off;
-	off = nla_put(buf, off, sizeof(buf), VETH_INFO_PEER, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), VETH_INFO_PEER);
 	if (!off) return -EIO;
 	if (off + NLMSG_ALIGN(sizeof(*peer_ifi)) > sizeof(buf))
 		return -EIO;
@@ -392,23 +268,19 @@ static int build_veth_pair(int fd, const char *name, const char *peer)
 	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, peer);
 	if (!off) return -EIO;
 
-	pa = (struct nlattr *)(buf + peer_off);
-	pa->nla_len = (unsigned short)(off - peer_off);
-	id = (struct nlattr *)(buf + id_off);
-	id->nla_len = (unsigned short)(off - id_off);
-	li = (struct nlattr *)(buf + li_off);
-	li->nla_len = (unsigned short)(off - li_off);
+	nla_nest_end(buf, peer_off, off);
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
 	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(fd, buf, off);
+	return nl_send_recv(rtnl, buf, off);
 }
 
-static int build_vlan_child(int fd, const char *name, int link_idx,
-			    __u16 vid)
+static int build_vlan_child(struct nl_ctx *rtnl, const char *name,
+			    int link_idx, __u16 vid)
 {
 	unsigned char buf[FEV_RTNL_BUF];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
-	struct nlattr *li, *id;
 	size_t off, li_off, id_off;
 	__u16 v = vid;
 
@@ -417,7 +289,7 @@ static int build_vlan_child(int fd, const char *name, int link_idx,
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
@@ -427,25 +299,24 @@ static int build_vlan_child(int fd, const char *name, int link_idx,
 	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, name);
 	if (!off) return -EIO;
 	li_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
 	if (!off) return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "vlan");
 	if (!off) return -EIO;
 	id_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_INFO_DATA, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
 	if (!off) return -EIO;
 	off = nla_put(buf, off, sizeof(buf), IFLA_VLAN_ID, &v, sizeof(v));
 	if (!off) return -EIO;
 
-	id = (struct nlattr *)(buf + id_off);
-	id->nla_len = (unsigned short)(off - id_off);
-	li = (struct nlattr *)(buf + li_off);
-	li->nla_len = (unsigned short)(off - li_off);
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
 	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(fd, buf, off);
+	return nl_send_recv(rtnl, buf, off);
 }
 
-static int build_addaddr(int fd, int ifindex, __u32 addr_be, __u8 plen)
+static int build_addaddr(struct nl_ctx *rtnl, int ifindex, __u32 addr_be,
+			 __u8 plen)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -457,7 +328,7 @@ static int build_addaddr(int fd, int ifindex, __u32 addr_be, __u8 plen)
 	nlh->nlmsg_type  = RTM_NEWADDR;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 	ifa = (struct ifaddrmsg *)NLMSG_DATA(nlh);
 	ifa->ifa_family    = AF_INET;
 	ifa->ifa_prefixlen = plen;
@@ -469,10 +340,10 @@ static int build_addaddr(int fd, int ifindex, __u32 addr_be, __u8 plen)
 	off = nla_put(buf, off, sizeof(buf), IFA_ADDRESS, &addr_be, sizeof(addr_be));
 	if (!off) return -EIO;
 	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(fd, buf, off);
+	return nl_send_recv(rtnl, buf, off);
 }
 
-static int build_setlink_up(int fd, int ifindex)
+static int build_setlink_up(struct nl_ctx *rtnl, int ifindex)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
@@ -483,7 +354,7 @@ static int build_setlink_up(int fd, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_SETLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	ifi->ifi_index  = ifindex;
@@ -491,10 +362,10 @@ static int build_setlink_up(int fd, int ifindex)
 	ifi->ifi_change = IFF_UP;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(fd, buf, off);
+	return nl_send_recv(rtnl, buf, off);
 }
 
-static int build_dellink(int fd, int ifindex)
+static int build_dellink(struct nl_ctx *rtnl, int ifindex)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
@@ -505,48 +376,52 @@ static int build_dellink(int fd, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_DELLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	ifi->ifi_index  = ifindex;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(fd, buf, off);
+	return nl_send_recv(rtnl, buf, off);
 }
 
-static int build_nft_table(int nf, const char *table)
+static int build_nft_table(struct nfnl_ctx *nf, const char *table)
 {
 	unsigned char buf[FEV_NFNL_BUF];
 	size_t off;
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFT_MSG_NEWTABLE, NLM_F_CREATE | NLM_F_EXCL,
-		       NFPROTO_IPV4);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&nf->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWTABLE,
+			   NLM_F_CREATE | NLM_F_EXCL, NFPROTO_IPV4);
+	if (!off) return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_TABLE_NAME, table);
 	if (!off) return -EIO;
 	off = nla_put_be32(buf, off, sizeof(buf), NFTA_TABLE_FLAGS, 0);
 	if (!off) return -EIO;
 	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
-	return nl_send_recv(nf, buf, off);
+	return nfnl_send_recv(nf, buf, off);
 }
 
-static int build_nft_chain_fwd(int nf, const char *table, const char *chain)
+static int build_nft_chain_fwd(struct nfnl_ctx *nf, const char *table,
+			       const char *chain)
 {
 	unsigned char buf[FEV_NFNL_BUF];
-	struct nlattr *hk;
 	size_t off, hk_off;
 	__u32 hooknum = htonl(NF_INET_FORWARD);
 	__u32 prio    = htonl(0);
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFT_MSG_NEWCHAIN, NLM_F_CREATE | NLM_F_EXCL,
-		       NFPROTO_IPV4);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&nf->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWCHAIN,
+			   NLM_F_CREATE | NLM_F_EXCL, NFPROTO_IPV4);
+	if (!off) return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_CHAIN_TABLE, table);
 	if (!off) return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_CHAIN_NAME, chain);
 	if (!off) return -EIO;
 	hk_off = off;
-	off = nla_put(buf, off, sizeof(buf), NFTA_CHAIN_HOOK, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), NFTA_CHAIN_HOOK);
 	if (!off) return -EIO;
 	off = nla_put(buf, off, sizeof(buf), NFTA_HOOK_HOOKNUM, &hooknum,
 		      sizeof(hooknum));
@@ -554,32 +429,33 @@ static int build_nft_chain_fwd(int nf, const char *table, const char *chain)
 	off = nla_put(buf, off, sizeof(buf), NFTA_HOOK_PRIORITY, &prio,
 		      sizeof(prio));
 	if (!off) return -EIO;
-	hk = (struct nlattr *)(buf + hk_off);
-	hk->nla_len = (unsigned short)(off - hk_off);
+	nla_nest_end(buf, hk_off, off);
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_CHAIN_TYPE, "filter");
 	if (!off) return -EIO;
 	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
-	return nl_send_recv(nf, buf, off);
+	return nfnl_send_recv(nf, buf, off);
 }
 
-static int build_nft_flowtable(int nf, const char *table, const char *ftname,
+static int build_nft_flowtable(struct nfnl_ctx *nf, const char *table,
+			       const char *ftname,
 			       const char *dev_a, const char *dev_b)
 {
 	unsigned char buf[FEV_NFNL_BUF];
-	struct nlattr *hk, *devs, *e1, *e2;
 	size_t off, hk_off, devs_off, e1_off, e2_off;
 	__u32 hooknum = htonl(NF_NETDEV_INGRESS);
 	__u32 prio    = htonl(0);
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFT_MSG_NEWFLOWTABLE, NLM_F_CREATE | NLM_F_EXCL,
-		       NFPROTO_IPV4);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&nf->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWFLOWTABLE,
+			   NLM_F_CREATE | NLM_F_EXCL, NFPROTO_IPV4);
+	if (!off) return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_FLOWTABLE_TABLE, table);
 	if (!off) return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_FLOWTABLE_NAME, ftname);
 	if (!off) return -EIO;
 	hk_off = off;
-	off = nla_put(buf, off, sizeof(buf), NFTA_FLOWTABLE_HOOK, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), NFTA_FLOWTABLE_HOOK);
 	if (!off) return -EIO;
 	off = nla_put(buf, off, sizeof(buf), NFTA_FLOWTABLE_HOOK_NUM,
 		      &hooknum, sizeof(hooknum));
@@ -588,29 +464,24 @@ static int build_nft_flowtable(int nf, const char *table, const char *ftname,
 		      &prio, sizeof(prio));
 	if (!off) return -EIO;
 	devs_off = off;
-	off = nla_put(buf, off, sizeof(buf), NFTA_FLOWTABLE_HOOK_DEVS,
-		      NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), NFTA_FLOWTABLE_HOOK_DEVS);
 	if (!off) return -EIO;
 	e1_off = off;
-	off = nla_put(buf, off, sizeof(buf), NFTA_LIST_ELEM, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), NFTA_LIST_ELEM);
 	if (!off) return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_DEVICE_NAME, dev_a);
 	if (!off) return -EIO;
-	e1 = (struct nlattr *)(buf + e1_off);
-	e1->nla_len = (unsigned short)(off - e1_off);
+	nla_nest_end(buf, e1_off, off);
 	e2_off = off;
-	off = nla_put(buf, off, sizeof(buf), NFTA_LIST_ELEM, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), NFTA_LIST_ELEM);
 	if (!off) return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_DEVICE_NAME, dev_b);
 	if (!off) return -EIO;
-	e2 = (struct nlattr *)(buf + e2_off);
-	e2->nla_len = (unsigned short)(off - e2_off);
-	devs = (struct nlattr *)(buf + devs_off);
-	devs->nla_len = (unsigned short)(off - devs_off);
-	hk = (struct nlattr *)(buf + hk_off);
-	hk->nla_len = (unsigned short)(off - hk_off);
+	nla_nest_end(buf, e2_off, off);
+	nla_nest_end(buf, devs_off, off);
+	nla_nest_end(buf, hk_off, off);
 	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
-	return nl_send_recv(nf, buf, off);
+	return nfnl_send_recv(nf, buf, off);
 }
 
 /*
@@ -620,44 +491,43 @@ static int build_nft_flowtable(int nf, const char *table, const char *ftname,
  * so a bare flow_offload is accepted on any forward chain with the
  * named flowtable in the same table.
  */
-static int build_nft_rule_flow_offload(int nf, const char *table,
+static int build_nft_rule_flow_offload(struct nfnl_ctx *nf, const char *table,
 				       const char *chain, const char *ftname)
 {
 	unsigned char buf[FEV_NFNL_BUF];
-	struct nlattr *exprs, *elem, *data;
 	size_t off, ex_off, el_off, da_off;
 
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, NFT_MSG_NEWRULE, NLM_F_CREATE | NLM_F_APPEND,
-		       NFPROTO_IPV4);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&nf->nl),
+			   NFNL_SUBSYS_NFTABLES, NFT_MSG_NEWRULE,
+			   NLM_F_CREATE | NLM_F_APPEND, NFPROTO_IPV4);
+	if (!off) return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_RULE_TABLE, table);
 	if (!off) return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_RULE_CHAIN, chain);
 	if (!off) return -EIO;
 	ex_off = off;
-	off = nla_put(buf, off, sizeof(buf), NFTA_RULE_EXPRESSIONS, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), NFTA_RULE_EXPRESSIONS);
 	if (!off) return -EIO;
 	el_off = off;
-	off = nla_put(buf, off, sizeof(buf), NFTA_LIST_ELEM, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), NFTA_LIST_ELEM);
 	if (!off) return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_EXPR_NAME, "flow_offload");
 	if (!off) return -EIO;
 	da_off = off;
-	off = nla_put(buf, off, sizeof(buf), NFTA_EXPR_DATA, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), NFTA_EXPR_DATA);
 	if (!off) return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_FLOW_TABLE_NAME, ftname);
 	if (!off) return -EIO;
-	data = (struct nlattr *)(buf + da_off);
-	data->nla_len = (unsigned short)(off - da_off);
-	elem = (struct nlattr *)(buf + el_off);
-	elem->nla_len = (unsigned short)(off - el_off);
-	exprs = (struct nlattr *)(buf + ex_off);
-	exprs->nla_len = (unsigned short)(off - ex_off);
+	nla_nest_end(buf, da_off, off);
+	nla_nest_end(buf, el_off, off);
+	nla_nest_end(buf, ex_off, off);
 	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
-	return nl_send_recv(nf, buf, off);
+	return nfnl_send_recv(nf, buf, off);
 }
 
-static int build_nft_simple_del(int nf, __u16 msg_id, const char *table,
+static int build_nft_simple_del(struct nfnl_ctx *nf, __u16 msg_id,
+				const char *table,
 				const char *named_attr, unsigned short attr_id,
 				const char *name)
 {
@@ -666,7 +536,9 @@ static int build_nft_simple_del(int nf, __u16 msg_id, const char *table,
 
 	(void)named_attr;
 	memset(buf, 0, sizeof(buf));
-	off = nfnl_hdr(buf, msg_id, 0, NFPROTO_IPV4);
+	off = nfnl_msg_put(buf, 0, sizeof(buf), nl_seq_next(&nf->nl),
+			   NFNL_SUBSYS_NFTABLES, (__u8)msg_id, 0, NFPROTO_IPV4);
+	if (!off) return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_TABLE_NAME, table);
 	if (!off) return -EIO;
 	if (name) {
@@ -674,7 +546,7 @@ static int build_nft_simple_del(int nf, __u16 msg_id, const char *table,
 		if (!off) return -EIO;
 	}
 	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
-	return nl_send_recv(nf, buf, off);
+	return nfnl_send_recv(nf, buf, off);
 }
 
 static void enable_ip_forward(void)
@@ -704,7 +576,15 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	char vla[IFNAMSIZ], vlb[IFNAMSIZ];
 	char tab[64], ft[64];
 	const char *chain = "fwd";
-	int rtnl = -1, nf = -1;
+	struct nl_ctx rtnl = { .fd = -1 };
+	struct nfnl_ctx nf = { .nl = { .fd = -1 } };
+	struct nl_open_opts rtnl_opts = {
+		.proto         = NETLINK_ROUTE,
+		.recv_timeo_s  = FEV_NL_TIMEO_S,
+	};
+	struct nfnl_open_opts nf_opts = {
+		.recv_timeo_s  = FEV_NL_TIMEO_S,
+	};
 	int vp_a_idx = 0, vp_b_idx = 0;
 	int vla_idx = 0, vlb_idx = 0;
 	bool veth_added = false, vla_added = false, vlb_added = false;
@@ -716,9 +596,8 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	if ((unsigned long long)ns_since(t_outer) >= FEV_WALL_CAP_NS)
 		return;
 
-	rtnl = nl_open(NETLINK_ROUTE);
-	nf   = nl_open(NETLINK_NETFILTER);
-	if (rtnl < 0 || nf < 0) {
+	if (nl_open(&rtnl, &rtnl_opts) < 0 ||
+	    nfnl_open(&nf, &nf_opts) < 0) {
 		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -732,7 +611,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	snprintf(tab, sizeof(tab), "ftv%u", rng);
 	snprintf(ft,  sizeof(ft),  "ft%u",  rng);
 
-	if (build_veth_pair(rtnl, vp_a, vp_b) != 0) {
+	if (build_veth_pair(&rtnl, vp_a, vp_b) != 0) {
 		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto teardown;
@@ -743,11 +622,11 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	if (vp_a_idx <= 0 || vp_b_idx <= 0)
 		goto teardown;
 
-	if (build_vlan_child(rtnl, vla, vp_a_idx, 100) == 0) {
+	if (build_vlan_child(&rtnl, vla, vp_a_idx, 100) == 0) {
 		vla_added = true;
 		vla_idx = (int)if_nametoindex(vla);
 	}
-	if (build_vlan_child(rtnl, vlb, vp_b_idx, 100) == 0) {
+	if (build_vlan_child(&rtnl, vlb, vp_b_idx, 100) == 0) {
 		vlb_added = true;
 		vlb_idx = (int)if_nametoindex(vlb);
 	}
@@ -756,24 +635,24 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 
 	a_addr = htonl(0xc0000201u);	/* 192.0.2.1 */
 	b_addr = htonl(0xc0000205u);	/* 192.0.2.5 */
-	(void)build_addaddr(rtnl, vla_idx, a_addr, 30);
-	(void)build_addaddr(rtnl, vlb_idx, b_addr, 30);
+	(void)build_addaddr(&rtnl, vla_idx, a_addr, 30);
+	(void)build_addaddr(&rtnl, vlb_idx, b_addr, 30);
 
-	(void)build_setlink_up(rtnl, vp_a_idx);
-	(void)build_setlink_up(rtnl, vp_b_idx);
-	(void)build_setlink_up(rtnl, vla_idx);
-	(void)build_setlink_up(rtnl, vlb_idx);
+	(void)build_setlink_up(&rtnl, vp_a_idx);
+	(void)build_setlink_up(&rtnl, vp_b_idx);
+	(void)build_setlink_up(&rtnl, vla_idx);
+	(void)build_setlink_up(&rtnl, vlb_idx);
 
 	enable_ip_forward();
 
-	if (build_nft_table(nf, tab) != 0) {
+	if (build_nft_table(&nf, tab) != 0) {
 		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto teardown;
 	}
 	table_added = true;
 
-	rc = build_nft_flowtable(nf, tab, ft, vla, vlb);
+	rc = build_nft_flowtable(&nf, tab, ft, vla, vlb);
 	if (rc != 0) {
 		if (rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT ||
 		    rc == -EPROTONOSUPPORT)
@@ -784,11 +663,11 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	}
 	ft_added = true;
 
-	if (build_nft_chain_fwd(nf, tab, chain) != 0)
+	if (build_nft_chain_fwd(&nf, tab, chain) != 0)
 		goto teardown;
 	chain_added = true;
 
-	if (build_nft_rule_flow_offload(nf, tab, chain, ft) != 0)
+	if (build_nft_rule_flow_offload(&nf, tab, chain, ft) != 0)
 		goto teardown;
 
 	__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_ok, 1,
@@ -901,7 +780,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	 * forward.  Re-creating in the next outer iter rebuilds the
 	 * topology fresh. */
 	if ((iter_idx & 1U) && vla_added && vla_idx > 0) {
-		if (build_dellink(rtnl, vla_idx) == 0) {
+		if (build_dellink(&rtnl, vla_idx) == 0) {
 			__atomic_add_fetch(&shm->stats.flowtable_vlan_vlan_teardown_races,
 					   1, __ATOMIC_RELAXED);
 			vla_added = false;
@@ -911,30 +790,30 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 teardown:
 	if (table_added) {
 		if (chain_added)
-			(void)build_nft_simple_del(nf, NFT_MSG_DELRULE, tab,
+			(void)build_nft_simple_del(&nf, NFT_MSG_DELRULE, tab,
 						   "chain", NFTA_RULE_CHAIN,
 						   chain);
 		if (chain_added)
-			(void)build_nft_simple_del(nf, NFT_MSG_DELCHAIN, tab,
+			(void)build_nft_simple_del(&nf, NFT_MSG_DELCHAIN, tab,
 						   "chain", NFTA_CHAIN_NAME,
 						   chain);
 		if (ft_added)
-			(void)build_nft_simple_del(nf, NFT_MSG_DELFLOWTABLE,
+			(void)build_nft_simple_del(&nf, NFT_MSG_DELFLOWTABLE,
 						   tab, "ft",
 						   NFTA_FLOWTABLE_NAME, ft);
-		(void)build_nft_simple_del(nf, NFT_MSG_DELTABLE, tab,
+		(void)build_nft_simple_del(&nf, NFT_MSG_DELTABLE, tab,
 					   NULL, 0, NULL);
 	}
 	if (vla_added && vla_idx > 0)
-		(void)build_dellink(rtnl, vla_idx);
+		(void)build_dellink(&rtnl, vla_idx);
 	if (vlb_added && vlb_idx > 0)
-		(void)build_dellink(rtnl, vlb_idx);
+		(void)build_dellink(&rtnl, vlb_idx);
 	if (veth_added && vp_a_idx > 0)
-		(void)build_dellink(rtnl, vp_a_idx);
+		(void)build_dellink(&rtnl, vp_a_idx);
 
 out:
-	if (nf >= 0) close(nf);
-	if (rtnl >= 0) close(rtnl);
+	nfnl_close(&nf);
+	nl_close(&rtnl);
 }
 
 bool flowtable_encap_vlan(struct childdata *child)
