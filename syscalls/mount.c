@@ -322,10 +322,17 @@ struct syscallentry syscall_mount = {
 #define MOUNT_ATTR_NOSYMFOLLOW	0x00200000
 #endif
 
+/*
+ * MOUNT_ATTR_IDMAP intentionally excluded: build_mount_idmapped() needs
+ * a paired userns_fd in attr->userns_fd, which we have no source for
+ * yet, so the kernel EINVALs immediately on any random-OR pick that
+ * includes the bit, wasting the iteration before the idmap-build arm
+ * runs.  Re-enable once a userns_fd source is wired in.
+ */
 static unsigned long mount_attrs[] = {
 	MOUNT_ATTR_RDONLY, MOUNT_ATTR_NOSUID, MOUNT_ATTR_NODEV,
 	MOUNT_ATTR_NOEXEC, MOUNT_ATTR_NOATIME, MOUNT_ATTR_STRICTATIME,
-	MOUNT_ATTR_NODIRATIME, MOUNT_ATTR_IDMAP, MOUNT_ATTR_NOSYMFOLLOW,
+	MOUNT_ATTR_NODIRATIME, MOUNT_ATTR_NOSYMFOLLOW,
 };
 
 /*
@@ -350,7 +357,7 @@ static __u64 normalise_atime_bits(__u64 attrs)
 static void sanitise_mount_setattr(struct syscallrecord *rec)
 {
 	struct mount_attr *ma;
-	unsigned int i, nbits;
+	unsigned int i, nbits, usize_pick;
 	__u64 attrs;
 
 	ma = (struct mount_attr *) get_writable_struct(sizeof(*ma));
@@ -373,7 +380,22 @@ static void sanitise_mount_setattr(struct syscallrecord *rec)
 	ma->attr_clr = normalise_atime_bits(attrs) & ~ma->attr_set;
 
 	rec->a4 = (unsigned long) ma;
-	rec->a5 = MOUNT_ATTR_SIZE_VER0;
+
+	/*
+	 * usize bucket: pin to VER0 most of the time so the success path
+	 * stays warm, but also exercise the kernel's usize<VER0 reject,
+	 * future ABI growth (sizeof currently == VER0), and the oversized
+	 * copy_struct_from_user trailing-zero check.
+	 */
+	usize_pick = rnd_modulo_u32(10);
+	if (usize_pick < 1)
+		rec->a5 = MOUNT_ATTR_SIZE_VER0 - 8;
+	else if (usize_pick < 6)
+		rec->a5 = MOUNT_ATTR_SIZE_VER0;
+	else if (usize_pick < 9)
+		rec->a5 = sizeof(struct mount_attr);
+	else
+		rec->a5 = sizeof(struct mount_attr) + 64;
 }
 
 #ifndef AT_RECURSIVE
