@@ -27,7 +27,9 @@
  * the post handler running cannot redirect the oracle at a foreign mask
  * buffer, retarget the pid filter, or smear the cmp_len bound.
  */
+#define SCHED_GETAFFINITY_POST_STATE_MAGIC	0x5343484741464659UL	/* "SCHGAFFY" */
 struct sched_getaffinity_post_state {
+	unsigned long magic;
 	unsigned long pid;
 	unsigned long len;
 	unsigned long mask;
@@ -92,6 +94,7 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 	 * private to the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = SCHED_GETAFFINITY_POST_STATE_MAGIC;
 	snap->pid  = rec->a1;
 	snap->len  = rec->a2;
 	snap->mask = rec->a3;
@@ -135,6 +138,15 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_sched_getaffinity: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (snap->magic != SCHED_GETAFFINITY_POST_STATE_MAGIC) {
+		outputerr("post_sched_getaffinity: rejected snap with bad magic "
+			  "0x%lx (post_state-stomped to foreign "
+			  "allocation?)\n", snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
