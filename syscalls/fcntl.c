@@ -73,6 +73,39 @@ static unsigned long pick_fcntl_cmd(void)
 	return (unsigned long) rand32();
 }
 
+/*
+ * Fill a struct flock with a plausible lock request.  The SET-side
+ * cmds (F_SETLK/W, F_OFD_SETLK/W, F_CANCELLK) all consume this shape;
+ * passing a raw uninitialised pointer EINVAL's before the kernel ever
+ * reaches the per-fs flock code, so the SET paths were going unfuzzed.
+ * l_pid is zeroed because F_OFD_SETLK requires it.
+ */
+static void build_flock(struct flock *fl)
+{
+	static const int lock_types[]  = { F_RDLCK, F_WRLCK, F_UNLCK };
+	static const int whence_vals[] = { SEEK_SET, SEEK_CUR, SEEK_END };
+
+	fl->l_type   = lock_types[rnd_modulo_u32(ARRAY_SIZE(lock_types))];
+	fl->l_whence = whence_vals[rnd_modulo_u32(ARRAY_SIZE(whence_vals))];
+	fl->l_start  = RAND_RANGE(0LL, 1LL << 30);	/* [0, 1 GB] */
+	fl->l_len    = RAND_RANGE(0LL, 64LL << 20);	/* [0, 64 MB] */
+	fl->l_pid    = 0;
+}
+
+#ifdef HAVE_LK64
+static void build_flock64(struct flock64 *fl)
+{
+	static const int lock_types[]  = { F_RDLCK, F_WRLCK, F_UNLCK };
+	static const int whence_vals[] = { SEEK_SET, SEEK_CUR, SEEK_END };
+
+	fl->l_type   = lock_types[rnd_modulo_u32(ARRAY_SIZE(lock_types))];
+	fl->l_whence = whence_vals[rnd_modulo_u32(ARRAY_SIZE(whence_vals))];
+	fl->l_start  = RAND_RANGE(0LL, 1LL << 30);
+	fl->l_len    = RAND_RANGE(0LL, 64LL << 20);
+	fl->l_pid    = 0;
+}
+#endif
+
 static void sanitise_fcntl(struct syscallrecord *rec)
 {
 	rec->a2 = pick_fcntl_cmd();
@@ -115,15 +148,29 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 		break;
 	case F_SETLK:
 	case F_SETLKW:
+	case F_OFD_SETLK:
+	case F_OFD_SETLKW:
+	case F_CANCELLK: {
+		struct flock *fl = get_writable_struct(sizeof(struct flock));
+		if (fl) {
+			build_flock(fl);
+			rec->a3 = (unsigned long) fl;
+		}
 		break;
+	}
 #ifdef HAVE_LK64
 	case F_GETLK64:
 		avoid_shared_buffer_inout(&rec->a3, sizeof(struct flock64));
 		break;
 	case F_SETLK64:
+	case F_SETLKW64: {
+		struct flock64 *fl = get_writable_struct(sizeof(struct flock64));
+		if (fl) {
+			build_flock64(fl);
+			rec->a3 = (unsigned long) fl;
+		}
 		break;
-	case F_SETLKW64:
-		break;
+	}
 #endif
 
 	case F_SETOWN:
@@ -134,14 +181,42 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 	case F_GETOWN_EX:
 		avoid_shared_buffer_out(&rec->a3, sizeof(struct f_owner_ex));
 		break;
-	case F_SETOWN_EX:
+	case F_SETOWN_EX: {
+		struct f_owner_ex *ex = get_writable_struct(sizeof(*ex));
+		static const int owner_types[] = {
+			F_OWNER_TID, F_OWNER_PID, F_OWNER_PGRP,
+		};
+		if (ex) {
+			ex->type = owner_types[rnd_modulo_u32(ARRAY_SIZE(owner_types))];
+			ex->pid  = get_pid();
+			rec->a3 = (unsigned long) ex;
+		}
 		break;
+	}
 
 	/* arg = (uint64_t *) */
 	case F_GET_RW_HINT:
 	case F_GET_FILE_RW_HINT:
 		avoid_shared_buffer_out(&rec->a3, sizeof(uint64_t));
 		break;
+	case F_SET_RW_HINT:
+	case F_SET_FILE_RW_HINT: {
+		uint64_t *hint = get_writable_struct(sizeof(*hint));
+		if (hint) {
+			*hint = rnd_modulo_u32(6);	/* RWH_WRITE_LIFE_* in [0, 5] */
+			rec->a3 = (unsigned long) hint;
+		}
+		break;
+	}
+
+	case F_ADD_SEALS: {
+		static const unsigned long seal_bits[] = {
+			F_SEAL_SEAL, F_SEAL_SHRINK, F_SEAL_GROW,
+			F_SEAL_WRITE, F_SEAL_FUTURE_WRITE,
+		};
+		rec->a3 = set_rand_bitmask(ARRAY_SIZE(seal_bits), seal_bits);
+		break;
+	}
 
 	/* arg = (int *) */
 	case F_DUPFD_QUERY:
