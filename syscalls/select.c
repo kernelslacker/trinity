@@ -54,19 +54,18 @@ static int pick_select_bit(unsigned int nfds)
 }
 
 /*
- * Snapshot of the four heap allocations sanitise hands to the kernel,
- * captured at sanitise time and consumed by the post handler.  Lives in
- * rec->post_state, a slot the syscall ABI does not expose, so the post
- * path is immune to a sibling syscall scribbling rec->a2/a3/a4/a5
- * between the syscall returning and the post handler running.
+ * The post handler needs to know nfds to validate the success-path
+ * retval against the 3 * nfds upper bound.  Stash it in rec->post_state
+ * wrapped in a magic-cookie struct so a sibling scribble of post_state
+ * cannot pass off arbitrary bytes as a count.  All four syscall-visible
+ * buffers (the three fd_sets and the timeval) live in the
+ * get_writable_address() pool, which the kernel can write into directly
+ * and which the pool reclaims on its own -- no heap pointer needs
+ * snapshotting for deferred-free.
  */
 #define SELECT_POST_STATE_MAGIC	0x53454C43UL	/* "SELC" */
 struct select_post_state {
 	unsigned long magic;
-	fd_set *rfds;
-	fd_set *wfds;
-	fd_set *exfds;
-	struct timeval *tv;
 	unsigned int nfds;
 };
 
@@ -81,9 +80,17 @@ static void sanitise_select(struct syscallrecord *rec)
 	nfds = (rand32() % 1023) + 1;
 	rec->a1 = nfds;
 
-	rfds = zmalloc_tracked(sizeof(fd_set));
-	wfds = zmalloc_tracked(sizeof(fd_set));
-	exfds = zmalloc_tracked(sizeof(fd_set));
+	rfds = get_writable_address(sizeof(fd_set));
+	wfds = get_writable_address(sizeof(fd_set));
+	exfds = get_writable_address(sizeof(fd_set));
+
+	if (rfds == NULL || wfds == NULL || exfds == NULL) {
+		rec->a2 = (unsigned long) rfds;
+		rec->a3 = (unsigned long) wfds;
+		rec->a4 = (unsigned long) exfds;
+		rec->a5 = 0;
+		return;
+	}
 
 	FD_ZERO(rfds);
 	FD_ZERO(wfds);
@@ -141,47 +148,23 @@ static void sanitise_select(struct syscallrecord *rec)
 	rec->a4 = (unsigned long) exfds;
 
 	/* Set a really short timeout */
-	tv = zmalloc_tracked(sizeof(struct timeval));
-	tv->tv_sec = 0;
-	tv->tv_usec = 10;
-	rec->a5 = (unsigned long) tv;
+	tv = get_writable_address(sizeof(struct timeval));
+	if (tv == NULL) {
+		rec->a5 = 0;
+	} else {
+		tv->tv_sec = 0;
+		tv->tv_usec = 10;
+		rec->a5 = (unsigned long) tv;
+	}
 
 	/*
-	 * Redirect any buffer that landed inside the SHM region or the
-	 * libc heap to a writable-address pool buffer.  All four args are
-	 * value-result: the three fd_sets carry the requested-bit mask we
-	 * just populated via FD_SET() and are also written back with the
-	 * ready-bit mask, and the timeval carries the requested timeout
-	 * (tv_sec=0, tv_usec=10) that the kernel reads and rewrites with
-	 * the remaining time on signal interrupt.  Use
-	 * avoid_shared_buffer_inout() so the populated bytes survive the
-	 * relocation -- _out would zero the replacement allocation,
-	 * defeating every FD_SET above and turning the 10us probe into
-	 * an indefinite block.  The snapshot below captures the post-
-	 * redirect pointer and the post handler frees what the kernel
-	 * actually wrote to.
-	 */
-	avoid_shared_buffer_inout(&rec->a2, sizeof(fd_set));
-	avoid_shared_buffer_inout(&rec->a3, sizeof(fd_set));
-	avoid_shared_buffer_inout(&rec->a4, sizeof(fd_set));
-	avoid_shared_buffer_inout(&rec->a5, sizeof(struct timeval));
-
-	/*
-	 * Snapshot all four heap pointers for the post handler.  A sibling
-	 * syscall can scribble rec->a2/a3/a4/a5 between the syscall
-	 * returning and the post handler running, leaving real-but-wrong
-	 * heap pointers that looks_like_corrupted_ptr() cannot distinguish
-	 * from the originals; the post handler then hands the wrong
-	 * allocations to free, leaking ours and corrupting another sanitise
-	 * routine's live buffers.  rec->post_state is private to the post
-	 * handler, so the scribblers have nothing to scribble there.
+	 * Stash nfds for the post handler's retval bound check.  The snap
+	 * itself is a small heap allocation (not a syscall-visible buffer),
+	 * carries a magic cookie, and is released via deferred_freeptr()
+	 * after the post handler runs.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = SELECT_POST_STATE_MAGIC;
-	snap->rfds = (fd_set *) rec->a2;
-	snap->wfds = (fd_set *) rec->a3;
-	snap->exfds = (fd_set *) rec->a4;
-	snap->tv = (struct timeval *) rec->a5;
 	snap->nfds = nfds;
 	rec->post_state = (unsigned long) snap;
 }
@@ -237,37 +220,14 @@ static void post_select(struct syscallrecord *rec)
 	 * Anything > 3 * nfds (excluding -1UL) is a structural ABI regression:
 	 * a sign-extension tear, a torn write of the count by a parallel
 	 * signal-restart path, or -errno leaking through the success slot.
-	 * Validate before the inner-pointer guards so the corruption is
-	 * caught even when the inner pointers are scribbled; fall through to
-	 * the existing teardown so the heap allocations are still released.
 	 */
 	if ((long) rec->retval != -1L && rec->retval > 3UL * snap->nfds) {
 		outputerr("post_select: rejected retval=0x%lx > 3*nfds=%u\n",
 			  rec->retval, 3 * snap->nfds);
 		post_handler_corrupt_ptr_bump(rec, NULL);
-		/* fall through to existing teardown to release deferred allocations */
+		/* fall through to release the snap */
 	}
 
-	/*
-	 * Defense in depth: if something corrupted the snapshot itself,
-	 * the inner pointers may no longer reference our heap allocations.
-	 * Leak rather than hand garbage to free().
-	 */
-	if (looks_like_corrupted_ptr(rec, snap->rfds) ||
-	    looks_like_corrupted_ptr(rec, snap->wfds) ||
-	    looks_like_corrupted_ptr(rec, snap->exfds) ||
-	    looks_like_corrupted_ptr(rec, snap->tv)) {
-		outputerr("post_select: rejected suspicious snap rfds=%p wfds=%p "
-			  "exfds=%p tv=%p (post_state-scribbled?)\n",
-			  snap->rfds, snap->wfds, snap->exfds, snap->tv);
-		deferred_freeptr(&rec->post_state);
-		return;
-	}
-
-	deferred_free_enqueue(snap->rfds);
-	deferred_free_enqueue(snap->wfds);
-	deferred_free_enqueue(snap->exfds);
-	deferred_free_enqueue(snap->tv);
 	deferred_freeptr(&rec->post_state);
 }
 
