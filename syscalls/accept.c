@@ -124,23 +124,48 @@ struct syscallentry syscall_accept = {
  *
  */
 
+/*
+ * accept4_flags[] is still wired up to ARG_LIST so the argument
+ * generator has a default to publish; sanitise_accept4_flags()
+ * overrides rec->a4 below with an explicit bucket draw.  ARG_LIST's
+ * bitmask path would never reach the zero-flags or full-combo arms
+ * on its own, and never test the invalid-high-bit reject path.
+ */
 static unsigned long accept4_flags[] = {
 	SOCK_NONBLOCK, SOCK_CLOEXEC,
 };
 
+static unsigned long sanitise_accept4_flags(void)
+{
+	unsigned int pick = rnd_modulo_u32(10);
+
+	switch (pick) {
+	case 0:
+	case 1:
+		return 0;
+	case 2:
+	case 3:
+	case 4:
+		return SOCK_NONBLOCK;
+	case 5:
+	case 6:
+	case 7:
+		return SOCK_CLOEXEC;
+	case 8:
+		return SOCK_NONBLOCK | SOCK_CLOEXEC;
+	default:
+		/* Invalid high bit -- kernel reject path. */
+		return 0x80000000UL;
+	}
+}
+
 static void sanitise_accept4(struct syscallrecord *rec)
 {
-	socklen_t *lenp;
-
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 
-	avoid_shared_buffer_out(&rec->a2, sizeof(struct sockaddr_storage));
+	sanitise_accept_addrlen(rec);
 
-	/* See sanitise_accept above for the value-result socklen_t* rationale. */
-	lenp = zmalloc(sizeof(*lenp));
-	*lenp = sizeof(struct sockaddr_storage);
-	rec->a3 = (unsigned long) lenp;
-	avoid_shared_buffer_inout(&rec->a3, sizeof(socklen_t));
+	rec->a4 = sanitise_accept4_flags();
 }
 
 struct syscallentry syscall_accept4 = {
