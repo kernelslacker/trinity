@@ -70,7 +70,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
@@ -81,6 +80,7 @@
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -110,53 +110,25 @@ static bool ns_setup_failed_ipmr_cache_report;
 static bool ns_unsupported_ipmr_cache_report;
 static bool ns_eperm_ipmr_cache_report;
 
-static __u32 g_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
-
-static long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (now.tv_sec - t0->tv_sec) * 1000000000L +
-	       (now.tv_nsec - t0->tv_nsec);
-}
-
 /*
  * Open NETLINK_ROUTE bound to the IPv4 mroute cache-report multicast
- * group.  Returns -1 on failure; the upcall path itself still fires
- * even if no listener is around, so this is best-effort.
+ * group.  Returns 0 on success; the upcall path itself still fires
+ * even if no listener is around, so this is best-effort.  On older
+ * kernels without RTNLGRP_IPV4_MROUTE_R the bind() will EINVAL, so
+ * retry once with no group subscription.
  */
-static int rtnl_open_mroute_listener(void)
+static int open_mroute_listener(struct nl_ctx *ctx)
 {
-	struct sockaddr_nl sa;
-	int fd;
+	struct nl_open_opts opts = {
+		.proto  = NETLINK_ROUTE,
+		.groups = 1U << (RTNLGRP_IPV4_MROUTE_R - 1),
+	};
 
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return -1;
+	if (nl_open(ctx, &opts) == 0)
+		return 0;
 
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	sa.nl_groups = 1U << (RTNLGRP_IPV4_MROUTE_R - 1);
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		/* Older kernel without RTNLGRP_IPV4_MROUTE_R will EINVAL on
-		 * bind; fall back to an unsubscribed socket so the rest of
-		 * the sequence still runs. */
-		memset(&sa, 0, sizeof(sa));
-		sa.nl_family = AF_NETLINK;
-		if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-			close(fd);
-			return -1;
-		}
-	}
-
-	return fd;
+	opts.groups = 0;
+	return nl_open(ctx, &opts);
 }
 
 /*
@@ -170,24 +142,25 @@ static void bring_lo_up(void)
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	int rtnl;
+	struct nl_ctx ctx = { .fd = -1 };
+	struct nl_open_opts opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
 	int lo_idx = (int)if_nametoindex("lo");
+	size_t off;
 
 	if (lo_idx <= 0)
 		return;
 
-	rtnl = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (rtnl < 0)
+	if (nl_open(&ctx, &opts) < 0)
 		return;
 
 	memset(buf, 0, sizeof(buf));
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(&ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -195,24 +168,10 @@ static void bring_lo_up(void)
 	ifi->ifi_flags  = IFF_UP;
 	ifi->ifi_change = IFF_UP;
 
-	nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi)));
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-	iov.iov_base = buf;
-	iov.iov_len  = nlh->nlmsg_len;
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-	(void)sendmsg(rtnl, &mh, 0);
-
-	{
-		unsigned char ack[256];
-		(void)recv(rtnl, ack, sizeof(ack), MSG_DONTWAIT);
-	}
-	close(rtnl);
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+	nlh->nlmsg_len = (__u32)off;
+	(void)nl_send_recv(&ctx, buf, off);
+	nl_close(&ctx);
 }
 
 /*
@@ -246,9 +205,9 @@ bool ipmr_cache_report(struct childdata *child)
 	struct vifctl vc;
 	struct sockaddr_in dst;
 	struct in_addr lcl;
+	struct nl_ctx nl = { .fd = -1 };
 	int raw = -1;
 	int udp = -1;
-	int nl  = -1;
 	int one = 1;
 	struct timespec t0;
 	unsigned int iters;
@@ -271,7 +230,7 @@ bool ipmr_cache_report(struct childdata *child)
 
 	bring_lo_up();
 
-	nl = rtnl_open_mroute_listener();		/* best-effort */
+	(void)open_mroute_listener(&nl);		/* best-effort */
 
 	raw = socket(AF_INET, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_IGMP);
 	if (raw < 0) {
@@ -339,12 +298,12 @@ bool ipmr_cache_report(struct childdata *child)
 			__atomic_add_fetch(&shm->stats.ipmr_cache_report_emit_ok,
 					   1, __ATOMIC_RELAXED);
 
-		if (nl >= 0) {
+		if (nl.fd >= 0) {
 			unsigned char rbuf[RTNL_BUF_BYTES];
 			unsigned int j;
 
 			for (j = 0; j < IPMR_RECV_BURST; j++) {
-				if (recv(nl, rbuf, sizeof(rbuf),
+				if (recv(nl.fd, rbuf, sizeof(rbuf),
 					 MSG_DONTWAIT) < 0)
 					break;
 			}
@@ -359,8 +318,8 @@ out:
 		close(udp);
 	if (raw >= 0)
 		close(raw);
-	if (nl >= 0)
-		close(nl);
+	if (nl.fd >= 0)
+		nl_close(&nl);
 
 	return true;
 }
