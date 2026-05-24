@@ -79,23 +79,18 @@
 #if __has_include(<linux/tcp.h>)
 # include <linux/tcp.h>
 #endif
-#if __has_include(<linux/genetlink.h>)
-# include <linux/genetlink.h>
-#endif
 #if __has_include(<linux/if_alg.h>)
 # include <linux/if_alg.h>
 #endif
 #if __has_include(<linux/keyctl.h>)
 # include <linux/keyctl.h>
 #endif
-#if __has_include(<linux/netlink.h>)
-# include <linux/netlink.h>
-#endif
 #if __has_include(<linux/rxrpc.h>)
 # include <linux/rxrpc.h>
 #endif
 
 #include "child.h"
+#include "childops-genl.h"
 #include "random.h"
 #include "shm.h"
 #include "tls.h"
@@ -126,14 +121,6 @@
 #endif
 #ifndef TCP_AO_ADD_KEY
 # define TCP_AO_ADD_KEY			38
-#endif
-#ifndef NETLINK_GENERIC
-# define NETLINK_GENERIC		16
-#endif
-#ifndef GENL_ID_CTRL
-# define GENL_ID_CTRL			0x10
-# define CTRL_CMD_GETFAMILY		3
-# define CTRL_ATTR_FAMILY_NAME		2
 #endif
 
 #define ORACLE_RCV_TIMEO_USEC	50000
@@ -544,61 +531,24 @@ static int try_ktls(int file_fd)
 /*
  * Generic netlink CTRL_CMD_GETFAMILY by name.  Returns 0 if
  * registered, -ENOENT if not, negative errno on transport failure.
- * Used by macsec/wireguard gates.
+ * Used by macsec/wireguard gates.  Thin wrapper over genl_open():
+ * a successful open == family registered, and the socket is closed
+ * immediately because the gate doesn't drive any per-family cmds.
  */
 static int probe_genl_family(const char *name)
 {
-	struct {
-		struct nlmsghdr   nh;
-		struct genlmsghdr gh;
-		struct nlattr     attr;
-		char              name[32];
-	} req;
-	unsigned char rbuf[1024];
-	struct sockaddr_nl sa;
-	struct timeval tv = { 0, ORACLE_RCV_TIMEO_USEC };
-	struct nlmsghdr *nh;
-	int fd, e;
-	ssize_t n;
-	size_t namelen;
+	struct genl_ctx ctx;
+	struct genl_open_opts opts;
+	int rc;
 
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_GENERIC);
-	if (fd < 0)
-		return -errno;
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -errno;
-	}
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+	memset(&opts, 0, sizeof(opts));
+	opts.family_name  = name;
+	opts.recv_timeo_s = 1;
 
-	memset(&req, 0, sizeof(req));
-	namelen = strnlen(name, sizeof(req.name) - 1);
-	req.nh.nlmsg_type  = GENL_ID_CTRL;
-	req.nh.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	req.nh.nlmsg_seq   = 1;
-	req.gh.cmd         = CTRL_CMD_GETFAMILY;
-	req.gh.version     = 1;
-	req.attr.nla_type  = CTRL_ATTR_FAMILY_NAME;
-	req.attr.nla_len   = (unsigned short)(NLA_HDRLEN + namelen + 1);
-	memcpy(req.name, name, namelen);
-	req.nh.nlmsg_len = (unsigned int)(NLMSG_HDRLEN +
-					  sizeof(struct genlmsghdr) +
-					  NLA_ALIGN(NLA_HDRLEN + namelen + 1));
-	if (send(fd, &req, req.nh.nlmsg_len, 0) < 0) {
-		e = errno;
-		close(fd);
-		return -e;
-	}
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	close(fd);
-	if (n < (ssize_t)NLMSG_HDRLEN)
-		return -EIO;
-	nh = (struct nlmsghdr *)rbuf;
-	if (nh->nlmsg_type == NLMSG_ERROR)
-		return ((struct nlmsgerr *)NLMSG_DATA(nh))->error;
-	return 0;
+	rc = genl_open(&ctx, &opts);
+	if (rc == 0)
+		genl_close(&ctx);
+	return rc;
 }
 
 /*
