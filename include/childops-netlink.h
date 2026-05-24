@@ -136,6 +136,17 @@ int nl_send_recv_dump_cb(struct nl_ctx *ctx, void *msg, size_t len,
 			 void *arg);
 
 /*
+ * Send msg/len, then drain every queued reply with MSG_DONTWAIT.
+ * For every NLMSG_ERROR in the stream, invoke on_err(err, arg).
+ * Returns 0 once the queue is drained (EAGAIN / EWOULDBLOCK from
+ * recv).  on_err return value is ignored — drain always runs to
+ * completion so the socket queue is clean before the next send.
+ */
+int nl_send_drain_errors(struct nl_ctx *ctx, void *msg, size_t len,
+			 void (*on_err)(int err, void *arg),
+			 void *arg);
+
+/*
  * As nl_send_recv() but retries the whole send/recv up to NL_RETRY_MAX
  * times when the kernel returns -EAGAIN or -EBUSY (typical for the
  * config plane when a sibling iteration is mid-teardown).  Other

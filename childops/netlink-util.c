@@ -255,6 +255,48 @@ int nl_send_recv_dump_cb(struct nl_ctx *ctx, void *msg, size_t len,
 	}
 }
 
+int nl_send_drain_errors(struct nl_ctx *ctx, void *msg, size_t len,
+			 void (*on_err)(int err, void *arg),
+			 void *arg)
+{
+	unsigned char rbuf[8192];
+	ssize_t n;
+
+	if (nl_sendmsg(ctx, msg, len) < 0)
+		return -EIO;
+
+	for (;;) {
+		struct nlmsghdr *nlh;
+		size_t remaining;
+
+		n = recv(ctx->fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
+		if (n < 0) {
+			/*
+			 * EAGAIN == EWOULDBLOCK on Linux; -Wlogical-op
+			 * flags the redundant OR.  Check once.
+			 */
+			if (errno == EAGAIN)
+				return 0;
+			return -EIO;
+		}
+		if ((size_t)n < NLMSG_HDRLEN)
+			return 0;
+
+		nlh = (struct nlmsghdr *)rbuf;
+		remaining = (size_t)n;
+		while (NLMSG_OK(nlh, remaining)) {
+			if (nlh->nlmsg_type == NLMSG_ERROR) {
+				struct nlmsgerr *err =
+					(struct nlmsgerr *)NLMSG_DATA(nlh);
+
+				if (on_err)
+					on_err(err->error, arg);
+			}
+			nlh = NLMSG_NEXT(nlh, remaining);
+		}
+	}
+}
+
 int nl_send_recv_retry(struct nl_ctx *ctx, void *msg, size_t len)
 {
 	int rc = -EIO;
