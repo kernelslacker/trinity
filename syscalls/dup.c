@@ -1,3 +1,5 @@
+#include <limits.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -5,6 +7,8 @@
 #include "fd.h"
 #include "fd-event.h"
 #include "pids.h"
+#include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -63,13 +67,58 @@ struct syscallentry syscall_dup = {
  * Enqueue a CLOSE event for newfd if it was tracked.
  */
 
+/*
+ * Target-fd category buckets for dup2 / dup3 newfd.  ARG_FD only
+ * picks from the trinity-tracked fd pool, which misses the kernel
+ * code paths that key off newfd's relation to the current fd table
+ * and rlimit: expand_files() on a sparse high slot, the
+ * RLIMIT_NOFILE boundary EMFILE arm, the oldfd == newfd short-
+ * circuit in __do_dup2(), and the out-of-range EBADF reject.
+ * Shape rec->a2 across those classes before the stdio safety net
+ * runs; rec->a1 (oldfd) is left to ARG_FD.
+ */
 static void sanitise_dup2(struct syscallrecord *rec)
 {
+	static __thread int rl_initialised;
+	static __thread struct rlimit rl;
+	unsigned int pick;
 	unsigned int tries = 0;
+
+	if (!rl_initialised) {
+		if (getrlimit(RLIMIT_NOFILE, &rl) != 0) {
+			rl.rlim_cur = 1024;
+			rl.rlim_max = 1024;
+		}
+		rl_initialised = 1;
+	}
+
+	pick = rnd_modulo_u32(100);
+	if (pick < 35) {
+		/* occupied: leave the ARG_FD pick. */
+	} else if (pick < 50) {
+		rec->a2 = (unsigned long) RAND_RANGE(256, 4095);
+	} else if (pick < 60) {
+		if (rl.rlim_cur > 0)
+			rec->a2 = (unsigned long) (rl.rlim_cur - 1);
+	} else if (pick < 65) {
+		rec->a2 = (unsigned long) (rl.rlim_cur + 1);
+	} else if (pick < 70) {
+		if (rl.rlim_max > 0)
+			rec->a2 = (unsigned long) (rl.rlim_max - 1);
+	} else if (pick < 80) {
+		rec->a2 = (unsigned long) RAND_RANGE(3, 5);
+	} else if (pick < 90) {
+		rec->a2 = rec->a1;
+	} else if (pick < 95) {
+		rec->a2 = 0x7fffffffUL;
+	}
+	/* pick >= 95: reserved gap; leave the ARG_FD pick untouched. */
 
 	/* Don't let newfd clobber stdin/stdout/stderr. */
 	while (rec->a2 <= 2 && tries++ < 32)
 		rec->a2 = get_random_fd();
+	if (rec->a2 <= 2)
+		rec->a2 = (unsigned long) RAND_RANGE(256, 4095);
 }
 
 static void post_dup2(struct syscallrecord *rec)
