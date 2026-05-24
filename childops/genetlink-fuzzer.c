@@ -40,12 +40,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <unistd.h>
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -78,7 +78,8 @@ struct genl_family_entry {
  */
 static struct genl_family_entry catalog[MAX_FAMILIES];
 static unsigned int catalog_count;
-static int genl_sock = -1;
+static struct nl_ctx genl_ctx;
+static bool genl_ctx_open;
 static bool discovery_done;
 static bool discovery_failed;
 static bool warned_unsupported;
@@ -211,89 +212,88 @@ static void parse_family_response(const struct nlmsghdr *nlh)
 }
 
 /*
- * Send CTRL_CMD_GETFAMILY/NLM_F_DUMP and consume responses until we see
- * NLMSG_DONE, an NLMSG_ERROR, or recv() times out.  Each NEWFAMILY
- * response gets passed to parse_family_response() which appends it to
- * the catalog.  Returns 0 on a clean walk (regardless of how many
- * families we found), -1 on send failure.
+ * Callback for nl_send_recv_dump_cb(): forward every CTRL_CMD_NEWFAMILY
+ * response to parse_family_response().  Returns 0 unconditionally so
+ * the helper walks the whole dump; we want every family the kernel is
+ * willing to emit, and the parser drops malformed entries on its own.
  */
-static int do_discovery(int sock)
+static int parse_family_cb(const struct nlmsghdr *nlh, void *arg)
+{
+	(void)arg;
+	if (nlh->nlmsg_type == GENL_ID_CTRL)
+		parse_family_response(nlh);
+	return 0;
+}
+
+/*
+ * Send CTRL_CMD_GETFAMILY/NLM_F_DUMP and let nl_send_recv_dump_cb()
+ * walk the responses, feeding each NEWFAMILY to parse_family_response()
+ * via parse_family_cb().  The helper returns 0 on NLMSG_DONE, the
+ * negated NLMSG_ERROR errno on a mid-dump error, and -EIO on local I/O
+ * failure (including recv timeout).  We ignore the return value: the
+ * downstream catalog_count > 0 check in ensure_discovery() is the
+ * single source of truth for "do we have a usable catalog", same as
+ * the prior open-coded loop which also treated NLMSG_ERROR and recv
+ * timeout as clean walks.
+ */
+static int do_discovery(struct nl_ctx *ctx)
 {
 	struct {
 		struct nlmsghdr nlh;
 		struct genlmsghdr genl;
 	} req;
-	unsigned char buf[16384];
-	ssize_t n;
 
 	memset(&req, 0, sizeof(req));
 	req.nlh.nlmsg_len = NLMSG_LENGTH(GENL_HDRLEN);
 	req.nlh.nlmsg_type = GENL_ID_CTRL;
 	req.nlh.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-	req.nlh.nlmsg_seq = 1;
+	req.nlh.nlmsg_seq = nl_seq_next(ctx);
 	req.nlh.nlmsg_pid = 0;
 	req.genl.cmd = CTRL_CMD_GETFAMILY;
 	req.genl.version = 1;
 
-	if (send(sock, &req, req.nlh.nlmsg_len, 0) < 0)
-		return -1;
-
-	for (;;) {
-		struct nlmsghdr *nlh;
-		size_t remaining;
-
-		n = recv(sock, buf, sizeof(buf), 0);
-		if (n <= 0)
-			return 0;	/* timeout or EOF — done */
-
-		nlh = (struct nlmsghdr *)buf;
-		remaining = (size_t)n;
-		while (NLMSG_OK(nlh, remaining)) {
-			if (nlh->nlmsg_type == NLMSG_DONE)
-				return 0;
-			if (nlh->nlmsg_type == NLMSG_ERROR)
-				return 0;
-			if (nlh->nlmsg_type == GENL_ID_CTRL)
-				parse_family_response(nlh);
-			nlh = NLMSG_NEXT(nlh, remaining);
-		}
-	}
+	(void)nl_send_recv_dump_cb(ctx, &req, req.nlh.nlmsg_len,
+				   parse_family_cb, NULL);
+	return 0;
 }
 
 /*
- * One-shot setup: open the socket, set a short recv timeout so a
- * misbehaving kernel can't wedge us, run discovery, latch the result.
- * On any failure we set discovery_failed and become a noop forever for
- * this child.  Returns true if the catalog is usable.
+ * One-shot setup: open the socket via the shared scaffolding (which
+ * applies the 250ms recv timeout so a misbehaving kernel can't wedge
+ * us), run discovery, latch the result.  On any failure we set
+ * discovery_failed and become a noop forever for this child.  Returns
+ * true if the catalog is usable.
  */
 static bool ensure_discovery(void)
 {
-	struct timeval tv = { .tv_sec = 0, .tv_usec = 250000 };
+	static const struct nl_open_opts opts = {
+		.proto         = NETLINK_GENERIC,
+		.recv_timeo_us = 250000,
+	};
 
 	if (discovery_failed)
 		return false;
 	if (discovery_done)
 		return true;
 
-	if (genl_sock < 0) {
-		genl_sock = socket(AF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
-		if (genl_sock < 0) {
+	if (!genl_ctx_open) {
+		if (nl_open(&genl_ctx, &opts) < 0) {
 			discovery_failed = true;
 			if (!warned_unsupported) {
 				warned_unsupported = true;
-				output(0, "genetlink_fuzzer: socket(NETLINK_GENERIC) failed (errno=%d), disabling\n",
+				output(0, "genetlink_fuzzer: nl_open(NETLINK_GENERIC) failed (errno=%d), disabling\n",
 				       errno);
 			}
 			return false;
 		}
-		(void)setsockopt(genl_sock, SOL_SOCKET, SO_RCVTIMEO,
-				 &tv, sizeof(tv));
+		genl_ctx_open = true;
 	}
 
-	if (do_discovery(genl_sock) < 0 || catalog_count == 0) {
+	(void)do_discovery(&genl_ctx);
+	if (catalog_count == 0) {
 		discovery_failed = true;
-		close(genl_sock);
-		genl_sock = -1;
+		nl_close(&genl_ctx);
+		genl_ctx_open = false;
 		if (!warned_unsupported) {
 			warned_unsupported = true;
 			output(0, "genetlink_fuzzer: GETFAMILY discovery yielded %u families, disabling\n",
@@ -302,12 +302,28 @@ static bool ensure_discovery(void)
 		return false;
 	}
 
-	/* genl_sock stays open for this child's lifetime; send_fuzzed_msg()
+	/* genl_ctx stays open for this child's lifetime; send_fuzzed_msg()
 	 * uses it on every subsequent call. */
 	discovery_done = true;
 	__atomic_add_fetch(&shm->stats.genetlink_families_discovered,
 			   catalog_count, __ATOMIC_RELAXED);
 	return true;
+}
+
+/*
+ * Per-NLMSG_ERROR callback for nl_send_drain_errors().  Latches
+ * fam->needs_priv when the kernel rejects an op with -EPERM/-EACCES so
+ * the picker in genetlink_fuzzer() stops choosing that family.
+ */
+static void genl_on_err(int err, void *arg)
+{
+	struct genl_family_entry *fam = arg;
+
+	if (err == -EPERM || err == -EACCES) {
+		fam->needs_priv = true;
+		__atomic_add_fetch(&shm->stats.genetlink_eperm, 1,
+				   __ATOMIC_RELAXED);
+	}
 }
 
 /*
@@ -318,10 +334,11 @@ static bool ensure_discovery(void)
  * follow — mostly garbage payloads, but sized correctly so the parser
  * walks them rather than rejecting on the first NLA_HDRLEN check.
  *
- * If the kernel rejects with EPERM/EACCES (either at send-time or via an
- * NLMSG_ERROR ack), latch fam->needs_priv so the caller stops picking it.
+ * The post-send drain (NLMSG_ERROR inspection + receive-queue cleanup)
+ * lives in nl_send_drain_errors(); genl_on_err() latches
+ * fam->needs_priv on -EPERM/-EACCES.
  */
-static void send_fuzzed_msg(int sock, struct genl_family_entry *fam)
+static void send_fuzzed_msg(struct nl_ctx *ctx, struct genl_family_entry *fam)
 {
 	unsigned char buf[2048];
 	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
@@ -329,7 +346,6 @@ static void send_fuzzed_msg(int sock, struct genl_family_entry *fam)
 	size_t off;
 	int num_attrs;
 	uint8_t cmd;
-	ssize_t sent;
 
 	memset(buf, 0, NLMSG_HDRLEN + GENL_HDRLEN);
 
@@ -342,7 +358,7 @@ static void send_fuzzed_msg(int sock, struct genl_family_entry *fam)
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
 	if (RAND_BOOL())
 		nlh->nlmsg_flags |= NLM_F_DUMP;
-	nlh->nlmsg_seq = rand32();
+	nlh->nlmsg_seq = nl_seq_next(ctx);
 	nlh->nlmsg_pid = 0;
 
 	genl = (struct genlmsghdr *)NLMSG_DATA(nlh);
@@ -368,65 +384,10 @@ static void send_fuzzed_msg(int sock, struct genl_family_entry *fam)
 
 	nlh->nlmsg_len = off;
 
-	sent = send(sock, buf, off, 0);
-	if (sent < 0) {
-		if (errno == EPERM || errno == EACCES) {
-			fam->needs_priv = true;
-			__atomic_add_fetch(&shm->stats.genetlink_eperm, 1,
-					   __ATOMIC_RELAXED);
-		}
+	if (nl_send_drain_errors(ctx, buf, off, genl_on_err, fam) < 0)
 		return;
-	}
 
 	__atomic_add_fetch(&shm->stats.genetlink_msgs_sent, 1, __ATOMIC_RELAXED);
-
-	/*
-	 * Drain every queued reply so the socket's receive queue doesn't
-	 * accumulate across iterations.  A single recv() only consumes one
-	 * datagram; many genetlink families respond with multiple NLMSG_*
-	 * messages (DUMP responses, ACK plus per-attribute error details),
-	 * and leaving the tail queued degrades coverage over time and means
-	 * the needs_priv latch only ever sees the first reply — families
-	 * that respond with "OK ack + EPERM details" never get latched and
-	 * keep getting hammered.
-	 *
-	 * Loop MSG_DONTWAIT recv() until EAGAIN/EWOULDBLOCK, walk each
-	 * datagram's NLMSG chain, and inspect every NLMSG_ERROR for
-	 * -EPERM/-EACCES to update the priv latch.
-	 */
-	for (;;) {
-		unsigned char rbuf[4096];
-		ssize_t r = recv(sock, rbuf, sizeof(rbuf), MSG_DONTWAIT);
-		const struct nlmsghdr *rnlh;
-
-		if (r < 0) {
-			/* EAGAIN/EWOULDBLOCK: queue drained.  Anything else
-			 * (EINTR, ENOBUFS, ...): stop draining for this
-			 * iteration; next send() will try again. */
-			break;
-		}
-		if (r == 0)
-			break;
-
-		rnlh = (const struct nlmsghdr *)rbuf;
-		while (NLMSG_OK(rnlh, (size_t)r)) {
-			if (rnlh->nlmsg_type == NLMSG_ERROR &&
-			    NLMSG_PAYLOAD(rnlh, 0) >= sizeof(struct nlmsgerr)) {
-				const struct nlmsgerr *err =
-					(const struct nlmsgerr *)NLMSG_DATA(rnlh);
-
-				if (err->error == -EPERM ||
-				    err->error == -EACCES) {
-					fam->needs_priv = true;
-					__atomic_add_fetch(&shm->stats.genetlink_eperm,
-							   1, __ATOMIC_RELAXED);
-				}
-			}
-			if (rnlh->nlmsg_type == NLMSG_DONE)
-				break;
-			rnlh = NLMSG_NEXT(rnlh, r);
-		}
-	}
 }
 
 bool genetlink_fuzzer(struct childdata *child)
@@ -451,6 +412,6 @@ bool genetlink_fuzzer(struct childdata *child)
 	if (fam->needs_priv)
 		return true;
 
-	send_fuzzed_msg(genl_sock, fam);
+	send_fuzzed_msg(&genl_ctx, fam);
 	return true;
 }
