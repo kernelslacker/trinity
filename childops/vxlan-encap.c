@@ -65,7 +65,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -78,6 +77,7 @@
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -127,7 +127,6 @@
  * create with all attributes set fits in well under 1 KiB; 2 KiB
  * leaves headroom for any future attribute additions. */
 #define RTNL_BUF_BYTES		2048
-#define RTNL_RECV_TIMEO_S	1
 
 /* Per-iteration packet burst base.  BUDGETED+JITTER scales it: a
  * productive run grows to ~iter*4 sends, an unproductive one shrinks
@@ -162,8 +161,6 @@ static bool ns_unshared;
 static bool ns_setup_failed;
 static bool lo_brought_up;
 
-static __u32 g_seq;
-
 enum tun_kind {
 	TUN_VXLAN = 0,
 	TUN_GRE,
@@ -191,111 +188,6 @@ static bool *kind_latch(enum tun_kind k)
 	case TUN_NR:		break;
 	}
 	return NULL;
-}
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
-
-static int rtnl_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = RTNL_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-	return fd;
-}
-
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static size_t nla_put_u32(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u32 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t nla_put_u16(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u16 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t nla_put_str(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, const char *s)
-{
-	return nla_put(buf, off, cap, type, s, strlen(s) + 1);
-}
-
-static int rtnl_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[1024];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0)
-		return -EIO;
-	if ((size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	return -EIO;
 }
 
 /*
@@ -333,7 +225,7 @@ static void try_modprobe(const char *mod)
  * Setlink errors are ignored — a kernel that refuses lo up is also
  * one where the rest of the sequence will fail visibly.
  */
-static void bring_lo_up(int rtnl)
+static void bring_lo_up(struct nl_ctx *ctx)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -347,7 +239,7 @@ static void bring_lo_up(int rtnl)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -356,7 +248,7 @@ static void bring_lo_up(int rtnl)
 	ifi->ifi_change = IFF_UP;
 
 	nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi)));
-	(void)rtnl_send_recv(rtnl, buf, nlh->nlmsg_len);
+	(void)nl_send_recv(ctx, buf, nlh->nlmsg_len);
 }
 
 /*
@@ -366,14 +258,12 @@ static void bring_lo_up(int rtnl)
  * bucket on the kernel side.  Returns 0 on accept, negated errno on
  * rejection, -EIO on local failure.
  */
-static int build_tunnel_link(int fd, enum tun_kind kind, const char *name,
-			     __u32 vni_or_key)
+static int build_tunnel_link(struct nl_ctx *ctx, enum tun_kind kind,
+			     const char *name, __u32 vni_or_key)
 {
 	unsigned char buf[RTNL_BUF_BYTES];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
-	struct nlattr *linkinfo;
-	struct nlattr *infodata;
 	__u32 local_addr;
 	__u32 remote_addr;
 	size_t off;
@@ -384,7 +274,7 @@ static int build_tunnel_link(int fd, enum tun_kind kind, const char *name,
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -395,7 +285,7 @@ static int build_tunnel_link(int fd, enum tun_kind kind, const char *name,
 		return -EIO;
 
 	li_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
 	if (!off)
 		return -EIO;
 
@@ -405,7 +295,7 @@ static int build_tunnel_link(int fd, enum tun_kind kind, const char *name,
 		return -EIO;
 
 	id_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_INFO_DATA, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
 	if (!off)
 		return -EIO;
 
@@ -465,17 +355,14 @@ static int build_tunnel_link(int fd, enum tun_kind kind, const char *name,
 		return -EIO;
 	}
 
-	infodata = (struct nlattr *)(buf + id_off);
-	infodata->nla_len = (unsigned short)(off - id_off);
-
-	linkinfo = (struct nlattr *)(buf + li_off);
-	linkinfo->nla_len = (unsigned short)(off - li_off);
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_setlink_up(int fd, int ifindex)
+static int build_setlink_up(struct nl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -486,7 +373,7 @@ static int build_setlink_up(int fd, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -496,7 +383,7 @@ static int build_setlink_up(int fd, int ifindex)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -505,7 +392,7 @@ static int build_setlink_up(int fd, int ifindex)
  * 127.0.0.2.  Drives vxlan_fdb_add and the static-fdb path that the
  * vxlan_remcsum UAF history hangs off.
  */
-static int build_fdb_add(int fd, int ifindex)
+static int build_fdb_add(struct nl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[256];
 	unsigned char mac[6];
@@ -519,7 +406,7 @@ static int build_fdb_add(int fd, int ifindex)
 	nlh->nlmsg_type  = RTM_NEWNEIGH;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ndm = (struct ndmsg *)NLMSG_DATA(nlh);
 	ndm->ndm_family  = AF_BRIDGE;
@@ -546,10 +433,10 @@ static int build_fdb_add(int fd, int ifindex)
 		return -EIO;
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_dellink(int fd, int ifindex)
+static int build_dellink(struct nl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
@@ -560,7 +447,7 @@ static int build_dellink(int fd, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_DELLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -568,7 +455,7 @@ static int build_dellink(int fd, int ifindex)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -593,7 +480,11 @@ bool vxlan_encap_churn(struct childdata *child)
 {
 	char ifname[IFNAMSIZ];
 	enum tun_kind kind;
-	int rtnl = -1;
+	struct nl_ctx ctx = { .fd = -1 };
+	struct nl_open_opts opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
 	int raw = -1;
 	int ifindex = 0;
 	__u32 vni_or_key;
@@ -629,15 +520,14 @@ bool vxlan_encap_churn(struct childdata *child)
 	if (kind == TUN_NR)
 		return true;
 
-	rtnl = rtnl_open();
-	if (rtnl < 0) {
+	if (nl_open(&ctx, &opts) < 0) {
 		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 
 	if (!lo_brought_up) {
-		bring_lo_up(rtnl);
+		bring_lo_up(&ctx);
 		lo_brought_up = true;
 	}
 
@@ -645,7 +535,7 @@ bool vxlan_encap_churn(struct childdata *child)
 		 (unsigned int)(rand32() & 0xffffu));
 	vni_or_key = rand32();
 
-	rc = build_tunnel_link(rtnl, kind, ifname, vni_or_key);
+	rc = build_tunnel_link(&ctx, kind, ifname, vni_or_key);
 	if (rc != 0) {
 		/* EAFNOSUPPORT / EOPNOTSUPP / ENOTSUPP / ENOENT all mean
 		 * "this rtnl_link_ops is not registered" — the kind's
@@ -667,12 +557,12 @@ bool vxlan_encap_churn(struct childdata *child)
 		goto out;
 
 	if (kind == TUN_VXLAN) {
-		if (build_fdb_add(rtnl, ifindex) == 0)
+		if (build_fdb_add(&ctx, ifindex) == 0)
 			__atomic_add_fetch(&shm->stats.vxlan_encap_churn_fdb_add_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
-	if (build_setlink_up(rtnl, ifindex) == 0)
+	if (build_setlink_up(&ctx, ifindex) == 0)
 		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_link_up_ok,
 				   1, __ATOMIC_RELAXED);
 
@@ -737,13 +627,13 @@ out:
 	if (raw >= 0)
 		close(raw);
 
-	if (rtnl >= 0) {
+	if (ctx.fd >= 0) {
 		if (link_added && ifindex > 0) {
-			if (build_dellink(rtnl, ifindex) == 0)
+			if (build_dellink(&ctx, ifindex) == 0)
 				__atomic_add_fetch(&shm->stats.vxlan_encap_churn_link_del_ok,
 						   1, __ATOMIC_RELAXED);
 		}
-		close(rtnl);
+		nl_close(&ctx);
 	}
 
 	return true;
