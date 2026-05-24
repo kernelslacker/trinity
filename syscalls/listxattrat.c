@@ -30,7 +30,9 @@ static unsigned long listxattrat_at_flags[] = {
  * handler running cannot redirect us at a foreign list buffer or hand
  * the re-call the wrong (dfd, pathname, at_flags) tuple.
  */
+#define LISTXATTRAT_POST_STATE_MAGIC	0x4C53584154544154UL	/* "LSXATTAT" */
 struct listxattrat_post_state {
+	unsigned long magic;
 	unsigned long dfd;
 	unsigned long pathname;
 	unsigned long at_flags;
@@ -109,6 +111,7 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 	 * snapshot only the post handler can free would leak.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic    = LISTXATTRAT_POST_STATE_MAGIC;
 	snap->dfd      = rec->a1;
 	snap->pathname = rec->a2;
 	snap->at_flags = rec->a3;
@@ -195,6 +198,15 @@ static void post_listxattrat(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_listxattrat: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (snap->magic != LISTXATTRAT_POST_STATE_MAGIC) {
+		outputerr("post_listxattrat: rejected snap with bad magic "
+			  "0x%lx (post_state-stomped to foreign "
+			  "allocation?)\n", snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
