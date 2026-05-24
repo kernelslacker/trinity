@@ -440,6 +440,8 @@ struct stats_s {
 	 * an event log. */
 	unsigned long childop_edges_discovered[NR_CHILD_OP_TYPES];
 
+	unsigned long childop_edges_clean[NR_CHILD_OP_TYPES];
+
 	/* Per-op invocation count: incremented once per alt-op iteration
 	 * in child_process()'s post-call block, parallel to
 	 * childop_edges_discovered[].  Indexed by child_op_type.

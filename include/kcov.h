@@ -141,6 +141,14 @@ enum kcov_child_mode {
  * regression. */
 #define KCOV_REMOTE_RATIO_HEAVY 2
 
+#define CHILDOP_KCOV_NR_BASE  0x10000UL
+/*
+ * Childops borrow the kcov_collect() nr parameter to bypass
+ * the per_syscall_*[] arrays (gated on nr < MAX_NR_SYSCALL
+ * in kcov.c).  Reserve the >= 0x10000 range so syscall ids
+ * never collide.
+ */
+
 /* Per-call dedup slot — counts how many times a single trace hit a given
  * edge so the hit count can be classified into a bucket.  A slot is "live"
  * for the current call only when generation == kcov_child::current_generation;
@@ -387,6 +395,10 @@ void kcov_enable_trace(struct kcov_child *kc);
 void kcov_enable_cmp(struct kcov_child *kc);
 void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id);
 void kcov_disable(struct kcov_child *kc);
+
+bool kcov_bracket_begin(struct kcov_child *kc);
+unsigned long kcov_bracket_end(struct kcov_child *kc,
+				unsigned long op_nr);
 
 /* After disabling, collect PCs and update the global bitmap.
  *

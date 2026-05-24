@@ -1202,6 +1202,49 @@ static const enum child_op_type alt_op_rotation[] = {
 };
 #define NR_ALT_OP_ROTATION	ARRAY_SIZE(alt_op_rotation)
 
+/*
+ * KCOV bracketing opt-in.  Read by the childop dispatcher
+ * in a follow-up commit.  Defaults to true for every op.
+ * CHILD_OP_SYSCALL falls through to run_sequence_chain
+ * which brackets per-syscall internally.  CHILD_OP_SCHED_CYCLER
+ * (childops/sched-cycler.c) calls random_syscall(child) in
+ * a tight loop; an outer bracket would double-call
+ * ioctl(KCOV_ENABLE) and the kernel returns -EBUSY which
+ * kcov_enable_trace currently treats as fatal.
+ *
+ * Expressed as an accessor so new enum members default to
+ * eligible without per-table maintenance and without the
+ * [0 ... N-1] = true designated-init override idiom, which
+ * trips -Woverride-init on this codebase's -Wextra build.
+ * Compiler folds the switch into a constant-time check at
+ * the future call site.
+ */
+__attribute__((unused))
+static bool op_uses_outer_bracket(enum child_op_type op)
+{
+	switch (op) {
+	case CHILD_OP_SYSCALL:
+	case CHILD_OP_SCHED_CYCLER:
+		return false;
+	default:
+		return true;
+	}
+}
+
+/*
+ * Per-childop remote-KCOV opt-in.  Returns false for every op
+ * today.  A follow-up commit adds case labels for the
+ * net/io_uring-heavy childops whose kernel work runs in worker
+ * threads outside task scope.  Accessor form chosen for
+ * symmetry with op_uses_outer_bracket above.
+ */
+__attribute__((unused))
+static bool op_uses_remote_kcov(enum child_op_type op)
+{
+	(void)op;
+	return false;
+}
+
 const char *alt_op_name(enum child_op_type op)
 {
 	switch (op) {

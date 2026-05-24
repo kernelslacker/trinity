@@ -563,6 +563,22 @@ void kcov_disable(struct kcov_child *kc)
 	}
 }
 
+bool kcov_bracket_begin(struct kcov_child *kc)
+{
+	(void)kc;
+	/* Stub.  Real body in follow-up commit. */
+	return false;
+}
+
+unsigned long kcov_bracket_end(struct kcov_child *kc,
+				unsigned long op_nr)
+{
+	(void)kc;
+	(void)op_nr;
+	/* Stub.  Real body in follow-up commit. */
+	return 0;
+}
+
 /*
  * Hash a kernel PC value into an edge index.
  *
