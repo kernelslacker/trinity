@@ -31,12 +31,11 @@
  *
  * Per outer iteration (BUDGETED, base 6, cap 32, 200 ms wall cap):
  *   - ONE_IN(8) gate keeps the kernel-side walker cost amortised.
- *   - Build RTM_GETLINK with ifi_index = the netdevsim port and a
- *     single IFLA_EXT_MASK attribute carrying RTEXT_FILTER_VF.
- *   - sendmsg, then drain the multipart response with recv() until
- *     NLMSG_DONE / NLMSG_ERROR / EAGAIN.  We do not parse the payload
- *     - the leak is on the kernel WRITE side; we just need the dump
- *     walker to run.
+ *   - Build RTM_GETLINK with NLM_F_DUMP + a single IFLA_EXT_MASK
+ *     attribute carrying RTEXT_FILTER_VF, then drain the multipart
+ *     response via nl_send_recv_dump() until NLMSG_DONE.  We do not
+ *     parse the payload - the leak is on the kernel WRITE side; we
+ *     just need the dump walker to run.
  *
  * Self-bounding: BUDGETED outer loop with 200 ms CLOCK_MONOTONIC
  * wall cap, recvmsg uses SO_RCVTIMEO=1s, and the netns + sriov_numvfs
@@ -52,10 +51,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -64,6 +60,7 @@
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -82,14 +79,8 @@
 static bool ns_unsupported_rtnl_vf_broadcast;
 static bool ns_setup_done;
 static bool ns_setup_failed_latched;
-static int g_rtnl_fd = -1;
+static struct nl_ctx g_nl = { .fd = -1 };
 static int g_port_ifindex;
-static __u32 g_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
 
 static bool sysfs_write_str(const char *path, const char *val)
 {
@@ -101,43 +92,6 @@ static bool sysfs_write_str(const char *path, const char *val)
 	n = write(fd, val, strlen(val));
 	close(fd);
 	return n > 0;
-}
-
-static int rtnl_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return -1;
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	return fd;
-}
-
-static size_t nla_put_u32(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u32 val)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + sizeof(val);
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	memcpy(buf + off + NLA_HDRLEN, &val, sizeof(val));
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
 }
 
 /*
@@ -192,9 +146,15 @@ static bool do_setup(void)
 	if (g_port_ifindex <= 0)
 		return false;
 
-	g_rtnl_fd = rtnl_open();
-	if (g_rtnl_fd < 0)
-		return false;
+	{
+		struct nl_open_opts opts = {
+			.proto = NETLINK_ROUTE,
+			.recv_timeo_s = 1,
+		};
+
+		if (nl_open(&g_nl, &opts) < 0)
+			return false;
+	}
 
 	__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_setup_ok, 1,
 			   __ATOMIC_RELAXED);
@@ -203,23 +163,20 @@ static bool do_setup(void)
 
 /*
  * Build RTM_GETLINK targeted at g_port_ifindex with IFLA_EXT_MASK =
- * RTEXT_FILTER_VF, then drain the (potentially multipart) response.
- * We only count run/ok; the kernel may send DONE in a separate skb.
+ * RTEXT_FILTER_VF, then drain the multipart response.  We only need
+ * to know the dump walker ran; the leak is on the kernel WRITE side.
  */
-static bool issue_getlink_with_vf_filter(int fd)
+static bool issue_getlink_with_vf_filter(struct nl_ctx *ctx)
 {
 	unsigned char buf[256];
-	unsigned char rbuf[4096];
 	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
 	struct ifinfomsg *ifi;
 	size_t off;
-	ssize_t n;
-	bool drained = false;
 
 	memset(buf, 0, sizeof(buf));
 	nlh->nlmsg_type  = RTM_GETLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	ifi->ifi_index  = g_port_ifindex;
@@ -230,36 +187,7 @@ static bool issue_getlink_with_vf_filter(int fd)
 		return false;
 	nlh->nlmsg_len = (__u32)off;
 
-	if (send(fd, buf, off, 0) < 0)
-		return false;
-
-	for (;;) {
-		n = recv(fd, rbuf, sizeof(rbuf), 0);
-		if (n <= 0)
-			break;
-		drained = true;
-		if (n < (ssize_t)NLMSG_HDRLEN)
-			break;
-		{
-			struct nlmsghdr *r = (struct nlmsghdr *)rbuf;
-
-			if (r->nlmsg_type == NLMSG_DONE ||
-			    r->nlmsg_type == NLMSG_ERROR ||
-			    !(r->nlmsg_flags & NLM_F_MULTI))
-				break;
-		}
-	}
-	return drained;
-}
-
-static long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (now.tv_sec - t0->tv_sec) * 1000000000L +
-	       (now.tv_nsec - t0->tv_nsec);
+	return nl_send_recv_dump(ctx, buf, off) == 0;
 }
 
 bool rtnl_vf_broadcast_getlink(struct childdata *child)
@@ -297,7 +225,7 @@ bool rtnl_vf_broadcast_getlink(struct childdata *child)
 			break;
 		if (!ONE_IN(8))
 			continue;
-		if (issue_getlink_with_vf_filter(g_rtnl_fd))
+		if (issue_getlink_with_vf_filter(&g_nl))
 			__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_getlink_ok,
 					   1, __ATOMIC_RELAXED);
 	}
