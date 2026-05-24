@@ -25,11 +25,13 @@
  *     in one syscall.
  *   - The shared sendmsg helper nl_sendmsg() keeps the wire envelope
  *     in one place across the variants.
- *   - nl_send_recv_retry() retries on -EAGAIN / -EBUSY only.  -EINPROGRESS
- *     is intentionally NOT retried here: the only existing caller that
- *     retries on it (nl80211-churn.c) builds its own genl envelope and
- *     will get its own helper later.  Adding -EINPROGRESS here would
- *     change the behaviour of every current ROUTE-plane retry caller.
+ *   - nl_send_recv_retry() retries on -EAGAIN / -EBUSY only.
+ *     -EINPROGRESS is intentionally NOT retried here: the only
+ *     caller that needs it (nl80211-churn) wraps genl_send_recv
+ *     in its own genl_send_recv_retry (see
+ *     childops/nl80211-churn.c:NL80211_RETRY_MAX).  Adding
+ *     -EINPROGRESS here would change the behaviour of every
+ *     current ROUTE-plane retry caller.
  */
 
 #include <errno.h>
