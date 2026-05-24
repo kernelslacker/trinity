@@ -87,6 +87,9 @@ struct kcov_remote_arg {
 
 struct kcov_shared *kcov_shm = NULL;
 
+enum childop_kcov_attribution_mode childop_kcov_attr_mode =
+	CHILDOP_KCOV_ATTR_OFF;
+
 /*
  * Record a KCOV_TRACE_CMP setup/runtime failure into the parent-visible
  * cmp_diag slots.  Called from child context (post-dup2-to-/dev/null),
@@ -563,20 +566,66 @@ void kcov_disable(struct kcov_child *kc)
 	}
 }
 
+/*
+ * Open a per-call KCOV bracket around a childop invocation.
+ *
+ * Returns true if the bracket took ownership of the trace (caller
+ * must pair with kcov_bracket_end); false if the bracket was
+ * declined and no enable was issued.  Declined cases:
+ *
+ *   - kc inactive, or shared state not yet allocated.  Defensive in
+ *     addition to the call-site have_kcov gate.
+ *   - CMP-mode child.  The kernel rejects holding both KCOV_TRACE_PC
+ *     and KCOV_TRACE_CMP on the same task with -EBUSY, so the
+ *     existing per-syscall CMP enable on this fd is left undisturbed.
+ *   - Nested call.  bracket_owned already set means an outer bracket
+ *     is in flight; the inner call must skip its own enable/disable
+ *     so the outer collect can still observe a full trace.  Refcount-
+ *     style nesting would have the inner kcov_collect drain
+ *     trace_buf, leaving the outer bracket to harvest an empty buffer
+ *     and return zero edges.
+ */
 bool kcov_bracket_begin(struct kcov_child *kc)
 {
-	(void)kc;
-	/* Stub.  Real body in follow-up commit. */
-	return false;
+	if (kc == NULL || !kc->active || kcov_shm == NULL)
+		return false;
+	if (kc->mode == KCOV_MODE_CMP)
+		return false;
+	if (kc->bracket_owned)
+		return false;
+
+	kcov_enable_trace(kc);
+	if (!kc->active) {
+		/* kcov_enable_trace flipped active=false on ioctl failure;
+		 * no enable is live, so don't claim ownership. */
+		return false;
+	}
+	kc->bracket_owned = true;
+	return true;
 }
 
+/*
+ * Close the bracket opened by kcov_bracket_begin and harvest the
+ * per-call new-edge count via kcov_collect().  op_nr is the synthetic
+ * childop identifier (CHILDOP_KCOV_NR_BASE + child_op_type) used to
+ * bypass the per_syscall_*[] arrays inside kcov_collect.
+ *
+ * Returns 0 when this child did not own the bracket (the matching
+ * begin returned false), otherwise the number of bucket bits this
+ * call freshly set in kcov_shm->bucket_seen.
+ */
 unsigned long kcov_bracket_end(struct kcov_child *kc,
 				unsigned long op_nr)
 {
-	(void)kc;
-	(void)op_nr;
-	/* Stub.  Real body in follow-up commit. */
-	return 0;
+	unsigned long edges_this_call = 0;
+
+	if (kc == NULL || !kc->bracket_owned)
+		return 0;
+
+	kcov_disable(kc);
+	kcov_collect(kc, (unsigned int)op_nr, &edges_this_call);
+	kc->bracket_owned = false;
+	return edges_this_call;
 }
 
 /*

@@ -196,7 +196,7 @@ struct kcov_cmp_diag {
 struct kcov_child {
 	/* Field order is constrained by the hot-cacheline budget in struct
 	 * childdata (see static_assert in child.c).  Sized to 48 bytes:
-	 * 3 ints/u32 (12) + 5 bools + 1 uint8_t mode (6) + 6 padding +
+	 * 3 ints/u32 (12) + 6 bools + 1 uint8_t mode (7) + 5 padding +
 	 * 3 pointers (24).  The mode byte slots into the bool block so the
 	 * struct stays at 48 bytes without disturbing pointer alignment.
 	 * That leaves room in the 64-byte hot leading cacheline for the
@@ -213,6 +213,12 @@ struct kcov_child {
 	bool cmp_enabled_this_call;	/* true between kcov_enable_cmp() and kcov_disable() */
 	bool remote_mode;  /* true when using KCOV_REMOTE_ENABLE */
 	bool remote_capable; /* true if kernel supports KCOV_REMOTE_ENABLE */
+	bool bracket_owned;	/* true between kcov_bracket_begin() and
+				 * kcov_bracket_end().  Keeps the bracket
+				 * helpers idempotent under nesting: a childop
+				 * that recurses into random_syscall() must
+				 * not have its inner enable_trace clobbered
+				 * by the outer bracket. */
 	/* Logically enum kcov_child_mode; stored as uint8_t so the field
 	 * lives inside the existing pad bytes after the bool block instead
 	 * of forcing an int-sized hole that would push the pointer triplet
@@ -399,6 +405,29 @@ void kcov_disable(struct kcov_child *kc);
 bool kcov_bracket_begin(struct kcov_child *kc);
 unsigned long kcov_bracket_end(struct kcov_child *kc,
 				unsigned long op_nr);
+
+/*
+ * Per-childop KCOV attribution mode (--childop-kcov-attribution).
+ *
+ *   OFF  - default.  Childop dispatch path is unchanged; nothing
+ *          is bracketed and childop_edges_clean[] stays at zero.
+ *   DUAL - bracket every eligible childop and publish the per-call
+ *          delta to childop_edges_clean[] in parallel with the
+ *          existing global-delta path's writes to
+ *          childop_edges_discovered[].  Consumers (adapt_budget,
+ *          canary queue) keep reading the noisy counter; the clean
+ *          counter is for offline comparison while the bracket
+ *          design soaks.
+ *   ON   - reserved for a follow-up commit that flips consumers
+ *          to the clean counter.  Today identical to DUAL.
+ */
+enum childop_kcov_attribution_mode {
+	CHILDOP_KCOV_ATTR_OFF = 0,
+	CHILDOP_KCOV_ATTR_DUAL,
+	CHILDOP_KCOV_ATTR_ON,
+};
+
+extern enum childop_kcov_attribution_mode childop_kcov_attr_mode;
 
 /* After disabling, collect PCs and update the global bitmap.
  *

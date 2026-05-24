@@ -1219,7 +1219,6 @@ static const enum child_op_type alt_op_rotation[] = {
  * Compiler folds the switch into a constant-time check at
  * the future call site.
  */
-__attribute__((unused))
 static bool op_uses_outer_bracket(enum child_op_type op)
 {
 	switch (op) {
@@ -1235,8 +1234,10 @@ static bool op_uses_outer_bracket(enum child_op_type op)
  * Per-childop remote-KCOV opt-in.  Returns false for every op
  * today.  A follow-up commit adds case labels for the
  * net/io_uring-heavy childops whose kernel work runs in worker
- * threads outside task scope.  Accessor form chosen for
- * symmetry with op_uses_outer_bracket above.
+ * threads outside task scope, and threads it through the bracket
+ * helper so the enable wrapper choice (trace vs. remote) is
+ * per-op.  Accessor form chosen for symmetry with
+ * op_uses_outer_bracket above.
  */
 __attribute__((unused))
 static bool op_uses_remote_kcov(enum child_op_type op)
@@ -2182,7 +2183,35 @@ void child_process(struct childdata *child, int childno)
 		if (watch_taint)
 			tainted_before = read_tainted_mask(child->tainted_fd);
 
+		/* Per-childop KCOV bracket.  Wraps op_fn (and the
+		 * run_sequence_chain fallthrough, which is itself ruled
+		 * out by op_uses_outer_bracket for CHILD_OP_SYSCALL) so
+		 * the post-call collect attributes only this dispatch's
+		 * new edges to childop_edges_clean[].  The is_alt_op
+		 * pre-check is implicit: op_uses_outer_bracket gates out
+		 * CHILD_OP_SYSCALL, and CHILD_OP_SCHED_CYCLER opts out
+		 * because it recurses into per-syscall brackets that
+		 * would drain the trace buffer before the outer collect
+		 * sees it.  Default --childop-kcov-attribution=off short-
+		 * circuits the whole block before kcov_bracket_begin is
+		 * called. */
+		bool bracketed = false;
+		unsigned long edges_this_call = 0;
+
+		if (have_kcov &&
+		    childop_kcov_attr_mode != CHILDOP_KCOV_ATTR_OFF &&
+		    child->op_type < NR_CHILD_OP_TYPES &&
+		    op_uses_outer_bracket(child->op_type)) {
+			bracketed = kcov_bracket_begin(&child->kcov);
+		}
+
 		ret = op_fn ? op_fn(child) : run_sequence_chain(child);
+
+		if (bracketed) {
+			edges_this_call = kcov_bracket_end(
+				&child->kcov,
+				CHILDOP_KCOV_NR_BASE + child->op_type);
+		}
 
 		if (watch_taint) {
 			unsigned long tainted_after =
@@ -2226,6 +2255,20 @@ void child_process(struct childdata *child, int childno)
 				__atomic_fetch_add(
 					&shm->stats.childop_edges_discovered[child->op_type],
 					delta, __ATOMIC_RELAXED);
+			}
+			/* dual / on modes only: publish the bracketed per-
+			 * call delta to childop_edges_clean[] in parallel
+			 * with the noisy global-delta path above.  off mode
+			 * never sets bracketed=true, so this is quiescent
+			 * by default.  Consumers (adapt_budget above, canary
+			 * queue elsewhere) still read the noisy counter;
+			 * switching them is a job for a follow-up commit
+			 * once the dual-counter soak demonstrates the clean
+			 * counter is a strict improvement. */
+			if (bracketed) {
+				__atomic_fetch_add(
+					&shm->stats.childop_edges_clean[child->op_type],
+					edges_this_call, __ATOMIC_RELAXED);
 			}
 		}
 

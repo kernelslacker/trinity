@@ -11,6 +11,7 @@
 #include "bdevs.h"
 #include "child.h"
 #include "fd.h"
+#include "kcov.h"
 #include "net.h"
 #include "params.h"
 #include "domains.h"
@@ -421,6 +422,7 @@ static const struct option_help option_descs[] = {
 	{ "canary-seed",	 0,  "comma-separated list of childop names to override the built-in wave-1 canary seed list. Names match alt_op_name (e.g. 'genetlink_fuzzer,bpf_lifecycle'). Unknown names abort startup." },
 	{ "canary-slots",	 0,  "reserve N slots from the front of --alt-op-children to run the dormant-op canary queue (default: min(alt-op-children, 2) when unset). Clamped to min(N, alt_op_children); N=0 disables the queue identically to --no-canary-queue." },
 	{ "canary-window",	 0,  "invocations of the active canary op per window (default 10000, range 1000..1000000). Counted against the per-op invocation counter, not the fleet-wide op count, so window size is independent of -C and --canary-slots. Lower windows are too noisy to promote on; higher windows let a useless op squat a slot for too long." },
+	{ "childop-kcov-attribution", 0, "per-childop KCOV attribution mode: off (default; no bracketing, childop_edges_clean stays zero), dual (bracket every eligible alt-op and publish the per-call edge delta to childop_edges_clean alongside the existing global-delta path), or on (reserved; identical to dual until consumers switch over)." },
 	{ "children",		'C', "specify number of child processes" },
 	{ "clowntown",		 0,  "enable clowntown mode" },
 	{ "dangerous",		'd', "enable dangerous mode" },
@@ -511,6 +513,7 @@ static const struct option longopts[] = {
 	{ "canary-seed", required_argument, NULL, 0 },
 	{ "canary-slots", required_argument, NULL, 0 },
 	{ "canary-window", required_argument, NULL, 0 },
+	{ "childop-kcov-attribution", required_argument, NULL, 0 },
 	{ "children", required_argument, NULL, 'C' },
 	{ "clowntown", no_argument, NULL, 0 },
 	{ "dangerous", no_argument, NULL, 'd' },
@@ -797,6 +800,24 @@ void parse_args(int argc, char *argv[])
 					exit(EXIT_FAILURE);
 				}
 				alt_op_children = (unsigned int)val;
+			}
+
+			if (strcmp("childop-kcov-attribution",
+				   longopts[opt_index].name) == 0) {
+				if (strcmp(optarg, "off") == 0) {
+					childop_kcov_attr_mode =
+						CHILDOP_KCOV_ATTR_OFF;
+				} else if (strcmp(optarg, "dual") == 0) {
+					childop_kcov_attr_mode =
+						CHILDOP_KCOV_ATTR_DUAL;
+				} else if (strcmp(optarg, "on") == 0) {
+					childop_kcov_attr_mode =
+						CHILDOP_KCOV_ATTR_ON;
+				} else {
+					outputerr("--childop-kcov-attribution: unknown mode '%s' (expected off, dual, or on)\n",
+						optarg);
+					exit(EXIT_FAILURE);
+				}
 			}
 
 			if (strcmp("clowntown", longopts[opt_index].name) == 0)
