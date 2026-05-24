@@ -5,11 +5,32 @@
 #include <sys/socket.h>
 #include "net.h"
 #include "objects.h"
+#include "random.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+
+/*
+ * gen_socket_args() randomises (family, type, protocol) across the
+ * full kernel socket matrix.  On stock kernels only AF_UNIX (plus a
+ * very narrow AF_TIPC slice) reliably produces a connected fd pair
+ * from socketpair(2); the AF_INET / AF_INET6 / PF_NETLINK / PF_VSOCK
+ * draws either fail in socket_setup() before publishing the fd pair
+ * or hit -EOPNOTSUPP, so the post handler's register_socketpair_fd()
+ * publish almost never runs and the consumer pool starves.
+ *
+ * Bias 60% of calls to (AF_UNIX, {SOCK_STREAM|SOCK_DGRAM|SOCK_SEQPACKET}, 0)
+ * so the success-publish path runs reliably, keep 40% on the wide
+ * gen_socket_args() draw so the other-AF reject paths stay exercised.
+ * Going 100% AF_UNIX would crater coverage of those reject paths.
+ */
+static const unsigned long af_unix_types[] = {
+	SOCK_STREAM,
+	SOCK_DGRAM,
+	SOCK_SEQPACKET,
+};
 
 static void register_socketpair_fd(int fd, struct syscallrecord *rec)
 {
@@ -64,7 +85,15 @@ static void sanitise_socketpair(struct syscallrecord *rec)
 	int *usockvec;
 	struct socketpair_post_state *snap;
 
-	gen_socket_args(&st);
+	if (rnd_modulo_u32(5) < 3) {
+		/* 60%: force the AF_UNIX success-publish arm. */
+		st.family = AF_UNIX;
+		st.type = RAND_ARRAY(af_unix_types);
+		st.protocol = 0;
+	} else {
+		/* 40%: retain wide kernel reject coverage. */
+		gen_socket_args(&st);
+	}
 
 	rec->a1 = st.family;
 	rec->a2 = st.type;
