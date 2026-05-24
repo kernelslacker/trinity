@@ -25,9 +25,9 @@
  *   1.  Probe /sys/bus/netdevsim/new_device once per process; if
  *       absent or unwritable, latch ns_unsupported_netdevsim and bump
  *       create_skipped on every further call (no genl traffic).
- *   2.  genl_resolve_families(); fam_devlink.resolved == 0 latches
- *       ns_unsupported_devlink_genl.  CTRL_GETFAMILY runs once per
- *       process and is shared with the genetlink-fuzzer childop.
+ *   2.  genl_open("devlink", ...) — resolves the family id via a
+ *       per-ctx CTRL_CMD_GETFAMILY; -ENOENT latches
+ *       ns_unsupported_devlink_genl for the rest of the process.
  *   3.  BUDGETED loop:
  *         a) Allocate a fresh bus_id from a per-fork monotonic
  *            counter rooted at a randomized base (10000 + pid%1000)
@@ -86,8 +86,8 @@
  * Failure modes treated as benign coverage:
  *   - new_device write returns ENODEV / ENOENT: netdevsim module not
  *     loaded.  Latched ns_unsupported_netdevsim.
- *   - fam_devlink.resolved == 0: kernel doesn't expose devlink genl.
- *     Latched.
+ *   - genl_open("devlink", ...) returns -ENOENT: kernel doesn't expose
+ *     the devlink genl family.  Latched ns_unsupported_devlink_genl.
  *   - EPERM on any genl op or BINDTODEVICE: trinity wasn't run with
  *     the right caps.  Counted via the matching _fail counter; the
  *     data-plane sends still exercise the netdev xmit path.
@@ -105,7 +105,6 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -118,17 +117,14 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <linux/devlink.h>
-#include <linux/genetlink.h>
 #include <linux/netlink.h>
 #include <net/if.h>
 
+#include "childops-genl.h"
 #include "jitter.h"
-#include "netlink-genl-families.h"
 #include "random.h"
 #include "rnd.h"
 #include "pids.h"
-
-extern struct genl_family_grammar fam_devlink;
 
 /* netdevsim bus name — pinned here as a static const so the RELOAD
  * codepath can never name a different bus.  See the brick-risk note in
@@ -140,14 +136,10 @@ static const char DEVLINK_PORT_CHURN_BUS[] = "netdevsim";
  * create_skipped and returns. */
 static bool ns_unsupported_netdevsim;
 
-/* Latched per-process: genl_resolve_families() ran but fam_devlink
- * stayed unresolved.  Same lifetime as ns_unsupported_netdevsim. */
+/* Latched per-process: genl_open("devlink", ...) returned -ENOENT, so
+ * the kernel doesn't expose the devlink genl family at all.  Same
+ * lifetime as ns_unsupported_netdevsim. */
 static bool ns_unsupported_devlink_genl;
-
-/* Per-process running netlink seq.  Concurrent siblings each have
- * their own netlink socket so seq overlap across sockets is harmless
- * (the kernel doesn't dedupe across sockets). */
-static __u32 g_devlink_seq;
 
 /* Per-fork monotonic bus_id counter.  Initial base randomized off pid
  * to dodge collision with concurrent test harnesses on the same host
@@ -168,11 +160,6 @@ static bool g_bus_id_inited;
 #define NETDEVSIM_NEW_DEVICE	"/sys/bus/netdevsim/new_device"
 #define NETDEVSIM_DEL_DEVICE	"/sys/bus/netdevsim/del_device"
 
-static __u32 next_seq(void)
-{
-	return ++g_devlink_seq;
-}
-
 static __u32 alloc_bus_id(void)
 {
 	if (!g_bus_id_inited) {
@@ -182,154 +169,19 @@ static __u32 alloc_bus_id(void)
 	return g_bus_id_next++;
 }
 
-static int devlink_genl_open(void)
-{
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_GENERIC);
-	if (fd < 0)
-		return -1;
-
-	tv.tv_sec  = DEVLINK_GENL_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	return fd;
-}
-
-/*
- * Append a flat NLA at *off.  Returns the new offset or 0 on overflow
- * (caller treats 0 as fail).  Same shape as mptcp-pm-churn's nla_put —
- * kept duplicated rather than hoisted because each childop's NLA
- * construction is tight enough that an inlined helper is easier to
- * follow than a cross-file abstraction.
- */
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static size_t nla_put_u8(unsigned char *buf, size_t off, size_t cap,
-			 unsigned short type, __u8 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t nla_put_u32(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u32 v)
-{
-	return nla_put(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t nla_put_str(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, const char *s)
-{
-	return nla_put(buf, off, cap, type, s, strlen(s) + 1U);
-}
-
-/*
- * Send one genetlink message and wait for an NLMSG_ERROR ack.  Returns
- * 0 on success, the negated errno on rejection, or -EIO on local
- * send/recv failure.  Caller has already filled the nlmsghdr +
- * genlmsghdr + payload at offset 0 with NLM_F_ACK set.  The reply may
- * be a multi-message dump (PORT_GET) — we only inspect the first frame
- * and discard the rest, which is enough to detect ack vs error.
- */
-static int devlink_genl_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[2048];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, MSG_DONTWAIT) < 0)
-		return -EIO;
-
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0)
-		return -EIO;
-	if ((size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	/* Non-error reply (e.g. NEW response from a GET): treat as ack 0. */
-	return 0;
-}
-
-/*
- * Build the start of a devlink message: nlmsghdr + genlmsghdr with
- * NLM_F_ACK set.  Returns the offset past the genl header; callers
- * append per-cmd attrs from there.  Bumps the per-family call counter
- * so the genl_family_calls_devlink stat row reflects this childop's
- * traffic.
- */
-static size_t devlink_genl_msg_start(unsigned char *buf, size_t cap, __u8 cmd)
-{
-	struct nlmsghdr *nlh;
-	struct genlmsghdr *gnh;
-
-	if (cap < NLMSG_HDRLEN + GENL_HDRLEN)
-		return 0;
-
-	memset(buf, 0, NLMSG_HDRLEN + GENL_HDRLEN);
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = fam_devlink.family_id;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
-
-	gnh = (struct genlmsghdr *)NLMSG_DATA(nlh);
-	gnh->cmd     = cmd;
-	gnh->version = fam_devlink.default_version;
-
-	genl_family_bump_calls(&fam_devlink);
-	return NLMSG_HDRLEN + GENL_HDRLEN;
-}
-
 /*
  * Build & send a devlink command carrying just the bus/dev identifier
  * pair (BUS_NAME + DEV_NAME).  Used for the dev-level commands that
  * don't need a per-port selector.  Returns the kernel's ack errno.
  */
-static int devlink_dev_cmd(int fd, __u8 cmd, const char *dev_name)
+static int devlink_dev_cmd(struct genl_ctx *ctx, __u8 cmd, const char *dev_name)
 {
 	unsigned char buf[DEVLINK_GENL_BUF_BYTES];
 	struct nlmsghdr *nlh;
 	size_t off;
 
-	off = devlink_genl_msg_start(buf, sizeof(buf), cmd);
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
+			   nl_seq_next(&ctx->nl), cmd, 0);
 	if (!off)
 		return -EIO;
 
@@ -345,7 +197,7 @@ static int devlink_dev_cmd(int fd, __u8 cmd, const char *dev_name)
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (__u32)off;
-	return devlink_genl_send_recv(fd, buf, off);
+	return genl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -355,14 +207,16 @@ static int devlink_dev_cmd(int fd, __u8 cmd, const char *dev_name)
  * values bounce as EOPNOTSUPP — counted as split_fail but the kernel
  * still walks the validator and the per-port objects.
  */
-static int devlink_port_split(int fd, const char *dev_name,
+static int devlink_port_split(struct genl_ctx *ctx, const char *dev_name,
 			      __u32 port_index, __u32 count)
 {
 	unsigned char buf[DEVLINK_GENL_BUF_BYTES];
 	struct nlmsghdr *nlh;
 	size_t off;
 
-	off = devlink_genl_msg_start(buf, sizeof(buf), DEVLINK_CMD_PORT_SPLIT);
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
+			   nl_seq_next(&ctx->nl),
+			   DEVLINK_CMD_PORT_SPLIT, 0);
 	if (!off)
 		return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf),
@@ -384,20 +238,23 @@ static int devlink_port_split(int fd, const char *dev_name,
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (__u32)off;
-	return devlink_genl_send_recv(fd, buf, off);
+	return genl_send_recv(ctx, buf, off);
 }
 
 /*
  * Build & send DEVLINK_CMD_PORT_UNSPLIT.  Same attr shape as
  * PORT_SPLIT minus the count.
  */
-static int devlink_port_unsplit(int fd, const char *dev_name, __u32 port_index)
+static int devlink_port_unsplit(struct genl_ctx *ctx, const char *dev_name,
+				__u32 port_index)
 {
 	unsigned char buf[DEVLINK_GENL_BUF_BYTES];
 	struct nlmsghdr *nlh;
 	size_t off;
 
-	off = devlink_genl_msg_start(buf, sizeof(buf), DEVLINK_CMD_PORT_UNSPLIT);
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
+			   nl_seq_next(&ctx->nl),
+			   DEVLINK_CMD_PORT_UNSPLIT, 0);
 	if (!off)
 		return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf),
@@ -415,7 +272,7 @@ static int devlink_port_unsplit(int fd, const char *dev_name, __u32 port_index)
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (__u32)off;
-	return devlink_genl_send_recv(fd, buf, off);
+	return genl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -424,13 +281,15 @@ static int devlink_port_unsplit(int fd, const char *dev_name, __u32 port_index)
  * bus name is hardcoded, never sourced from a caller, so this can
  * only ever fire against netdevsim.
  */
-static int devlink_reload_driver_reinit(int fd, const char *dev_name)
+static int devlink_reload_driver_reinit(struct genl_ctx *ctx,
+					const char *dev_name)
 {
 	unsigned char buf[DEVLINK_GENL_BUF_BYTES];
 	struct nlmsghdr *nlh;
 	size_t off;
 
-	off = devlink_genl_msg_start(buf, sizeof(buf), DEVLINK_CMD_RELOAD);
+	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
+			   nl_seq_next(&ctx->nl), DEVLINK_CMD_RELOAD, 0);
 	if (!off)
 		return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf),
@@ -449,7 +308,7 @@ static int devlink_reload_driver_reinit(int fd, const char *dev_name)
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (__u32)off;
-	return devlink_genl_send_recv(fd, buf, off);
+	return genl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -553,7 +412,7 @@ static void churn_sendto_burst(int sock)
  * we couldn't even create the device — the latter is a transient that
  * shouldn't burn the iter counter but isn't worth latching.
  */
-static bool devlink_port_churn_one(int genl_fd, __u32 bus_id)
+static bool devlink_port_churn_one(struct genl_ctx *ctx, __u32 bus_id)
 {
 	char dev_name[32];
 	char create_payload[64];
@@ -583,7 +442,7 @@ static bool devlink_port_churn_one(int genl_fd, __u32 bus_id)
 	/* Best-effort PORT_GET to warm the per-device port table on
 	 * the kernel side — reply parsing is intentionally skipped
 	 * (we use port_index 0, the netdevsim default). */
-	(void)devlink_dev_cmd(genl_fd, DEVLINK_CMD_PORT_GET, dev_name);
+	(void)devlink_dev_cmd(ctx, DEVLINK_CMD_PORT_GET, dev_name);
 
 	sock = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
 	if (sock >= 0) {
@@ -593,7 +452,7 @@ static bool devlink_port_churn_one(int genl_fd, __u32 bus_id)
 	}
 
 	/* g) Bug window 1: PORT_SPLIT mid-flow. */
-	rc = devlink_port_split(genl_fd, dev_name, 0U,
+	rc = devlink_port_split(ctx, dev_name, 0U,
 				DEVLINK_PORT_SPLIT_COUNT);
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.devlink_port_churn_split_ok,
@@ -608,7 +467,7 @@ static bool devlink_port_churn_one(int genl_fd, __u32 bus_id)
 
 	/* h) Bug window 2: DRIVER_REINIT while bound socket alive.
 	 * Bus name is HARDCODED to netdevsim — see file header. */
-	rc = devlink_reload_driver_reinit(genl_fd, dev_name);
+	rc = devlink_reload_driver_reinit(ctx, dev_name);
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.devlink_port_churn_reload_ok,
 				   1, __ATOMIC_RELAXED);
@@ -617,7 +476,7 @@ static bool devlink_port_churn_one(int genl_fd, __u32 bus_id)
 				   1, __ATOMIC_RELAXED);
 
 	/* i) Undo the split so del_device sees a clean port topology. */
-	(void)devlink_port_unsplit(genl_fd, dev_name, 0U);
+	(void)devlink_port_unsplit(ctx, dev_name, 0U);
 
 	if (sock >= 0)
 		close(sock);
@@ -632,10 +491,12 @@ static bool devlink_port_churn_one(int genl_fd, __u32 bus_id)
 
 bool devlink_port_churn(struct childdata *child)
 {
-	int genl_fd = -1;
+	struct genl_ctx ctx;
+	struct genl_open_opts opts;
 	unsigned int iters;
 	unsigned int budget;
 	unsigned int i;
+	int rc;
 
 	(void)child;
 
@@ -648,15 +509,17 @@ bool devlink_port_churn(struct childdata *child)
 	if (ns_unsupported_devlink_genl)
 		return true;
 
-	genl_resolve_families();
-	if (!fam_devlink.resolved) {
-		ns_unsupported_devlink_genl = true;
+	memset(&opts, 0, sizeof(opts));
+	opts.family_name  = DEVLINK_GENL_NAME;
+	opts.version      = DEVLINK_GENL_VERSION;
+	opts.recv_timeo_s = DEVLINK_GENL_RECV_TIMEO_S;
+
+	rc = genl_open(&ctx, &opts);
+	if (rc != 0) {
+		if (rc == -ENOENT)
+			ns_unsupported_devlink_genl = true;
 		return true;
 	}
-
-	genl_fd = devlink_genl_open();
-	if (genl_fd < 0)
-		return true;
 
 	budget = BUDGETED(CHILD_OP_DEVLINK_PORT_CHURN,
 			  JITTER_RANGE(DEVLINK_CHURN_ITERS_BASE));
@@ -667,14 +530,14 @@ bool devlink_port_churn(struct childdata *child)
 	for (i = 0; i < iters; i++) {
 		__u32 bus_id = alloc_bus_id();
 
-		if (devlink_port_churn_one(genl_fd, bus_id))
+		if (devlink_port_churn_one(&ctx, bus_id))
 			__atomic_add_fetch(&shm->stats.devlink_port_churn_iterations,
 					   1, __ATOMIC_RELAXED);
 		else if (ns_unsupported_netdevsim)
 			break;
 	}
 
-	close(genl_fd);
+	genl_close(&ctx);
 	return true;
 }
 
