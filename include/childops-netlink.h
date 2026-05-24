@@ -51,7 +51,8 @@ struct nl_ctx {
 struct nl_open_opts {
 	int	proto;		/* required */
 	__u32	groups;		/* default 0 */
-	int	recv_timeo_s;	/* default 1 */
+	int	recv_timeo_s;	/* whole seconds; takes precedence if > 0 */
+	int	recv_timeo_us;	/* sub-second; used when recv_timeo_s == 0 */
 };
 
 /*

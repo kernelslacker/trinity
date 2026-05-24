@@ -84,6 +84,12 @@ int nl_open(struct nl_ctx *ctx, const struct nl_open_opts *opts)
 		tv.tv_sec = opts->recv_timeo_s;
 		tv.tv_usec = 0;
 		(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+	} else if (opts->recv_timeo_us > 0) {
+		struct timeval tv;
+
+		tv.tv_sec = 0;
+		tv.tv_usec = opts->recv_timeo_us;
+		(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 	}
 
 	memset(ctx, 0, sizeof(*ctx));
