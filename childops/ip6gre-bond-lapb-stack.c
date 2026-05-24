@@ -74,7 +74,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -83,6 +82,7 @@
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -94,7 +94,6 @@
 #endif
 
 #define IBLS_BUF_BYTES		1024
-#define IBLS_RECV_TIMEO_S	1
 #define IBLS_FLAG_CYCLES_BASE	3U
 #define IBLS_FLAG_CYCLES_CAP	8U
 
@@ -109,13 +108,7 @@ static const __u8 ibls_v6_remote[16] = {
 
 static bool g_ns_unshared;
 static bool g_unsupported;
-static __u32 g_seq;
 static __u32 g_iter;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
 
 static void latch_unsupported(const char *reason, int err)
 {
@@ -135,90 +128,6 @@ static bool err_is_unsupported(int rc)
 	       rc == -EPROTONOSUPPORT;
 }
 
-static int ibls_rtnl_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = IBLS_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	return fd;
-}
-
-static int ibls_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[512];
-	struct nlmsghdr *r;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0 || (size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-	r = (struct nlmsghdr *)rbuf;
-	if (r->nlmsg_type == NLMSG_ERROR)
-		return ((struct nlmsgerr *)NLMSG_DATA(r))->error;
-	return 0;
-}
-
-static size_t ibls_nla(unsigned char *buf, size_t off, size_t cap,
-		       unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static size_t ibls_nla_u32(unsigned char *buf, size_t off, size_t cap,
-			   unsigned short type, __u32 v)
-{
-	return ibls_nla(buf, off, cap, type, &v, sizeof(v));
-}
-
-static size_t ibls_nla_str(unsigned char *buf, size_t off, size_t cap,
-			   unsigned short type, const char *s)
-{
-	return ibls_nla(buf, off, cap, type, s, strlen(s) + 1);
-}
-
 /*
  * RTM_NEWLINK with IFLA_LINKINFO carrying IFLA_INFO_KIND=@kind and an
  * optional kind-specific IFLA_INFO_DATA blob built by @append_data
@@ -227,13 +136,12 @@ static size_t ibls_nla_str(unsigned char *buf, size_t off, size_t cap,
  */
 typedef size_t (*ibls_data_fn)(unsigned char *buf, size_t off, size_t cap);
 
-static int ibls_newlink(int fd, const char *ifname, const char *kind,
+static int ibls_newlink(struct nl_ctx *ctx, const char *ifname, const char *kind,
 			ibls_data_fn append_data)
 {
 	unsigned char buf[IBLS_BUF_BYTES];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
-	struct nlattr *li, *id;
 	size_t off, li_off, id_off;
 
 	memset(buf, 0, sizeof(buf));
@@ -241,45 +149,43 @@ static int ibls_newlink(int fd, const char *ifname, const char *kind,
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 
-	off = ibls_nla_str(buf, off, sizeof(buf), IFLA_IFNAME, ifname);
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, ifname);
 	if (!off) return -EIO;
 
 	li_off = off;
-	off = ibls_nla(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
 	if (!off) return -EIO;
-	off = ibls_nla_str(buf, off, sizeof(buf), IFLA_INFO_KIND, kind);
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, kind);
 	if (!off) return -EIO;
 
 	if (append_data) {
 		id_off = off;
-		off = ibls_nla(buf, off, sizeof(buf), IFLA_INFO_DATA, NULL, 0);
+		off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
 		if (!off) return -EIO;
 		off = append_data(buf, off, sizeof(buf));
 		if (!off) return -EIO;
-		id = (struct nlattr *)(buf + id_off);
-		id->nla_len = (unsigned short)(off - id_off);
+		nla_nest_end(buf, id_off, off);
 	}
 
-	li = (struct nlattr *)(buf + li_off);
-	li->nla_len = (unsigned short)(off - li_off);
+	nla_nest_end(buf, li_off, off);
 	nlh->nlmsg_len = (__u32)off;
-	return ibls_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 static size_t append_ip6gre_data(unsigned char *buf, size_t off, size_t cap)
 {
-	off = ibls_nla_u32(buf, off, cap, IFLA_GRE_LINK, 0);
+	off = nla_put_u32(buf, off, cap, IFLA_GRE_LINK, 0);
 	if (!off) return 0;
-	off = ibls_nla(buf, off, cap, IFLA_GRE_LOCAL,
-		       ibls_v6_local, sizeof(ibls_v6_local));
+	off = nla_put(buf, off, cap, IFLA_GRE_LOCAL,
+		      ibls_v6_local, sizeof(ibls_v6_local));
 	if (!off) return 0;
-	off = ibls_nla(buf, off, cap, IFLA_GRE_REMOTE,
-		       ibls_v6_remote, sizeof(ibls_v6_remote));
+	off = nla_put(buf, off, cap, IFLA_GRE_REMOTE,
+		      ibls_v6_remote, sizeof(ibls_v6_remote));
 	return off;
 }
 
@@ -288,7 +194,7 @@ static size_t append_ip6gre_data(unsigned char *buf, size_t off, size_t cap)
  * IFLA_MASTER for the enslave step; @flags / @change drive ifi_flags /
  * ifi_change for the IFF_UP / IFF_DOWN cycles on the lapb dev.
  */
-static int ibls_setlink(int fd, int ifindex, int master_ifindex,
+static int ibls_setlink(struct nl_ctx *ctx, int ifindex, int master_ifindex,
 			__u32 flags, __u32 change)
 {
 	unsigned char buf[256];
@@ -300,7 +206,7 @@ static int ibls_setlink(int fd, int ifindex, int master_ifindex,
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_SETLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	ifi->ifi_index  = ifindex;
@@ -309,15 +215,15 @@ static int ibls_setlink(int fd, int ifindex, int master_ifindex,
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 
 	if (master_ifindex > 0) {
-		off = ibls_nla_u32(buf, off, sizeof(buf), IFLA_MASTER,
-				   (__u32)master_ifindex);
+		off = nla_put_u32(buf, off, sizeof(buf), IFLA_MASTER,
+				  (__u32)master_ifindex);
 		if (!off) return -EIO;
 	}
 	nlh->nlmsg_len = (__u32)off;
-	return ibls_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int ibls_dellink(int fd, int ifindex)
+static int ibls_dellink(struct nl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[64];
 	struct nlmsghdr *nlh;
@@ -328,13 +234,13 @@ static int ibls_dellink(int fd, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_DELLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
 	ifi->ifi_index  = ifindex;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return ibls_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -361,7 +267,11 @@ static int find_lapb_ifindex(void)
 
 bool ip6gre_bond_lapb_stack(struct childdata *child)
 {
-	int rtnl = -1;
+	struct nl_ctx ctx = { .fd = -1 };
+	struct nl_open_opts opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
 	int bond_idx = 0, gre_idx = 0, lapb_idx = 0;
 	char bond_name[IFNAMSIZ], gre_name[IFNAMSIZ];
 	unsigned int cycles, i;
@@ -384,8 +294,7 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 		g_ns_unshared = true;
 	}
 
-	rtnl = ibls_rtnl_open();
-	if (rtnl < 0) {
+	if (nl_open(&ctx, &opts) < 0) {
 		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
@@ -395,7 +304,7 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 	snprintf(bond_name, sizeof(bond_name), "ibls_b%u", g_iter & 0xffffU);
 	snprintf(gre_name,  sizeof(gre_name),  "ibls_g%u", g_iter & 0xffffU);
 
-	rc = ibls_newlink(rtnl, bond_name, "bond", NULL);
+	rc = ibls_newlink(&ctx, bond_name, "bond", NULL);
 	if (rc != 0) {
 		if (err_is_unsupported(rc))
 			latch_unsupported("NEWLINK type=bond", -rc);
@@ -410,7 +319,7 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 		goto out;
 	}
 
-	rc = ibls_newlink(rtnl, gre_name, "ip6gre", append_ip6gre_data);
+	rc = ibls_newlink(&ctx, gre_name, "ip6gre", append_ip6gre_data);
 	if (rc != 0) {
 		if (err_is_unsupported(rc))
 			latch_unsupported("NEWLINK type=ip6gre", -rc);
@@ -425,7 +334,7 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 	/* Enslave ip6gre to the bond.  bond_enslave's first-slave path
 	 * picks up the slave's header_ops, so bond->header_ops->create
 	 * starts dispatching to ip6gre_header from this point on. */
-	rc = ibls_setlink(rtnl, gre_idx, bond_idx, 0, 0);
+	rc = ibls_setlink(&ctx, gre_idx, bond_idx, 0, 0);
 	if (rc != 0) {
 		if (err_is_unsupported(rc))
 			latch_unsupported("SETLINK IFLA_MASTER=bond", -rc);
@@ -450,20 +359,21 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 	cycles = (rand32() % (IBLS_FLAG_CYCLES_CAP - IBLS_FLAG_CYCLES_BASE + 1U))
 	         + IBLS_FLAG_CYCLES_BASE;
 	for (i = 0; i < cycles; i++) {
-		(void)ibls_setlink(rtnl, lapb_idx, 0, IFF_UP, IFF_UP);
+		(void)ibls_setlink(&ctx, lapb_idx, 0, IFF_UP, IFF_UP);
 		__atomic_add_fetch(&shm->stats.ip6gre_lapb_flag_toggles,
 				   1, __ATOMIC_RELAXED);
-		(void)ibls_setlink(rtnl, lapb_idx, 0, 0, IFF_UP);
+		(void)ibls_setlink(&ctx, lapb_idx, 0, 0, IFF_UP);
 		__atomic_add_fetch(&shm->stats.ip6gre_lapb_flag_toggles,
 				   1, __ATOMIC_RELAXED);
 	}
 
 out:
-	if (gre_idx > 0)
-		(void)ibls_dellink(rtnl, gre_idx);
-	if (bond_idx > 0)
-		(void)ibls_dellink(rtnl, bond_idx);
-	if (rtnl >= 0)
-		close(rtnl);
+	if (ctx.fd >= 0) {
+		if (gre_idx > 0)
+			(void)ibls_dellink(&ctx, gre_idx);
+		if (bond_idx > 0)
+			(void)ibls_dellink(&ctx, bond_idx);
+		nl_close(&ctx);
+	}
 	return true;
 }
