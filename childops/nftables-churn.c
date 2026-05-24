@@ -6212,12 +6212,13 @@ static void nft_dormant_abort_sweep(struct nfnl_ctx *ctx)
 
 	/* Coalesced send + drain.  NLMSG_ERROR replies are expected (the
 	 * bogus REPLACE intentionally fails to drive the abort path), so
-	 * only sendmsg / initial-recv failure (rc == -EIO) is counted as
-	 * a hard error.  The previous open-coded path distinguished
-	 * EPERM/EOPNOTSUPP from generic emsg via sendmsg's errno; the
-	 * shared helper collapses both into -EIO, so the EPERM latch is
-	 * deferred to whichever per-op call hits the kernel rejection
-	 * first. */
+	 * any negated-errno return is treated as success — the kernel
+	 * walking the batch and rejecting it is exactly the path we are
+	 * exercising.  Only -EIO (local send/recv failure inside
+	 * nfnl_send_recv_batched) is a hard error; structural latches
+	 * like ns_unsupported_nf_tables are left to per-op callers that
+	 * can disambiguate a real EPERM/EOPNOTSUPP from the deliberate
+	 * abort-path rejection. */
 	rc = nfnl_send_recv_batched(ctx, buf, off);
 	if (rc == -EIO) {
 		__atomic_add_fetch(&shm->stats.nft_dormant_abort_emsg,
