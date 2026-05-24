@@ -78,8 +78,50 @@ unsigned long get_fanotify_init_event_flags(void)
 	return flags;
 }
 
+/*
+ * ARG_LIST on a1 only picks a single bit from fanotify_init_flags[]
+ * at a time, so most kernel cross-checks (FAN_REPORT_NAME requires
+ * FAN_REPORT_DIR_FID; FAN_REPORT_TARGET_FID requires both;
+ * FAN_REPORT_PIDFD requires FAN_CLASS_NOTIF; FAN_REPORT_FD_ERROR
+ * requires FAN_REPORT_FID) are never satisfied and the syscall
+ * rejects in the validation arm before reaching any reporting code.
+ * Override a1 with 10 explicit shape buckets that respect those
+ * cross-checks, keeping one random-OR bucket for invalid-combo
+ * coverage.
+ */
+static unsigned long sanitise_fanotify_init_flags(void)
+{
+	unsigned int pick = rnd_modulo_u32(100);
+
+	if (pick < 25)
+		return FAN_CLOEXEC | FAN_NONBLOCK;
+	if (pick < 40)
+		return FAN_CLOEXEC | FAN_CLASS_CONTENT;
+	if (pick < 50)
+		return FAN_CLOEXEC | FAN_CLASS_PRE_CONTENT;
+	if (pick < 65)
+		return FAN_CLOEXEC | FAN_REPORT_FID | FAN_REPORT_DIR_FID;
+	if (pick < 75)
+		return FAN_CLOEXEC | FAN_REPORT_FID | FAN_REPORT_DIR_FID |
+			FAN_REPORT_NAME;
+	if (pick < 80)
+		return FAN_CLOEXEC | FAN_REPORT_FID | FAN_REPORT_DIR_FID |
+			FAN_REPORT_NAME | FAN_REPORT_TARGET_FID;
+	if (pick < 85)
+		return FAN_CLOEXEC | FAN_CLASS_NOTIF | FAN_REPORT_PIDFD;
+	if (pick < 90)
+		return FAN_CLOEXEC | FAN_REPORT_FID | FAN_REPORT_FD_ERROR;
+	if (pick < 95)
+		return FAN_CLOEXEC | FAN_UNLIMITED_QUEUE |
+			FAN_UNLIMITED_MARKS;
+	/* Random-OR over fanotify_init_flags[] -- invalid-combo reject. */
+	return set_rand_bitmask(ARRAY_SIZE(fanotify_init_flags),
+				fanotify_init_flags);
+}
+
 static void sanitise_fanotify_init(struct syscallrecord *rec)
 {
+	rec->a1 = sanitise_fanotify_init_flags();
 	rec->a2 = get_fanotify_init_event_flags();
 }
 
