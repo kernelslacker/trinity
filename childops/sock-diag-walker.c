@@ -50,7 +50,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -63,6 +62,7 @@
 #include <linux/vm_sockets_diag.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "compat.h"
 #include "random.h"
 #include "shm.h"
@@ -77,7 +77,6 @@
 
 #define SD_BUF_BYTES		2048
 #define SD_RECV_TIMEO_S		1
-#define SD_DRAIN_ITERS		4
 #define SD_BC_MAX_OPS		8
 
 enum sd_variant {
@@ -94,83 +93,20 @@ enum sd_variant {
  * built without CONFIG_SOCK_DIAG).  No point re-trying every call. */
 static bool sd_unsupported;
 
-static __u32 g_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
-
-static int sd_open(void)
-{
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_SOCK_DIAG);
-	if (fd < 0)
-		return -1;
-
-	tv.tv_sec  = SD_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-	return fd;
-}
-
-static size_t nla_put_raw(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
 /*
- * Send `len` bytes on `fd` and drain a small bounded number of reply
- * datagrams.  We don't parse the reply -- the goal is to keep the
- * kernel's nlmsg_unicast / dump path running long enough to exercise
- * the per-family handler, not to interpret the data ourselves.
+ * Send `msg`/`len` on ctx->fd and let nl_send_recv_dump() drain the
+ * NLM_F_DUMP reply stream until NLMSG_DONE / NLMSG_ERROR (or until
+ * the SO_RCVTIMEO=1s recv() returns -EAGAIN, collapsed to -EIO by
+ * the helper).  We don't parse the reply -- the goal is to keep the
+ * kernel's per-family dump path running long enough to exercise the
+ * handler, not to interpret the per-socket entries ourselves.  The
+ * dump helper's return code is discarded for the same reason: any
+ * non-zero ack just means the kernel's audit / parse path rejected
+ * the request, which is itself the bug-class coverage we want.
  */
-static void sd_send_drain(int fd, void *msg, size_t len)
+static void sd_send_drain(struct nl_ctx *ctx, void *msg, size_t len)
 {
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[1024];
-	int i;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return;
-
-	for (i = 0; i < SD_DRAIN_ITERS; i++) {
-		ssize_t n = recv(fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
-		if (n <= 0)
-			break;
-	}
+	(void)nl_send_recv_dump(ctx, msg, len);
 }
 
 /*
@@ -303,7 +239,7 @@ static size_t bc_emit(unsigned char *buf, size_t cap)
 	return off;
 }
 
-static void variant_inet(int fd)
+static void variant_inet(struct nl_ctx *ctx)
 {
 	/* sdiag_protocol is u8; IPPROTO_MPTCP (262) wraps to IPPROTO_TCP (6)
 	 * which is what the MPTCP_DIAG handler is registered under anyway,
@@ -327,7 +263,7 @@ static void variant_inet(int fd)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = SOCK_DIAG_BY_FAMILY;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	req = (struct inet_diag_req_v2 *)NLMSG_DATA(nlh);
 	req->sdiag_family   = (r & 1) ? AF_INET : AF_INET6;
@@ -348,12 +284,12 @@ static void variant_inet(int fd)
 		unsigned char bc[256];
 		size_t bc_len = bc_emit(bc, sizeof(bc));
 		if (bc_len)
-			off = nla_put_raw(buf, off, sizeof(buf),
+			off = nla_put(buf, off, sizeof(buf),
 					  INET_DIAG_REQ_BYTECODE, bc, bc_len);
 	}
 	if (rand32() & 1) {
 		__u8 proto = protos[rand32() % sizeof(protos)];
-		off = nla_put_raw(buf, off, sizeof(buf),
+		off = nla_put(buf, off, sizeof(buf),
 				  INET_DIAG_REQ_PROTOCOL, &proto, sizeof(proto));
 	}
 	if (rand32() & 1) {
@@ -361,23 +297,23 @@ static void variant_inet(int fd)
 		map_fds[0] = (__u32)(rand32() | 0x80000000u); /* invalid fd */
 		map_fds[1] = (__u32)(rand32() & 0xff);
 		map_fds[2] = (__u32)(rand32() & 0xff);
-		off = nla_put_raw(buf, off, sizeof(buf),
+		off = nla_put(buf, off, sizeof(buf),
 				  INET_DIAG_REQ_SK_BPF_STORAGES,
 				  map_fds, sizeof(map_fds));
 	}
 
 	if (!off) {
-		/* nla_put_raw bailed past the buffer cap -- fall back to
+		/* nla_put bailed past the buffer cap -- fall back to
 		 * the bare req without tail attributes. */
 		off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*req));
 	}
 	nlh->nlmsg_len = (__u32)off;
 
-	sd_send_drain(fd, buf, off);
+	sd_send_drain(ctx, buf, off);
 	__atomic_add_fetch(&shm->stats.sock_diag_walker_inet, 1, __ATOMIC_RELAXED);
 }
 
-static void variant_unix(int fd)
+static void variant_unix(struct nl_ctx *ctx)
 {
 	unsigned char buf[SD_BUF_BYTES];
 	struct nlmsghdr *nlh;
@@ -394,7 +330,7 @@ static void variant_unix(int fd)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = SOCK_DIAG_BY_FAMILY;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	req = (struct unix_diag_req *)NLMSG_DATA(nlh);
 	req->sdiag_family = AF_UNIX;
@@ -409,11 +345,11 @@ static void variant_unix(int fd)
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*req));
 	nlh->nlmsg_len = (__u32)off;
 
-	sd_send_drain(fd, buf, off);
+	sd_send_drain(ctx, buf, off);
 	__atomic_add_fetch(&shm->stats.sock_diag_walker_unix, 1, __ATOMIC_RELAXED);
 }
 
-static void variant_netlink(int fd)
+static void variant_netlink(struct nl_ctx *ctx)
 {
 	unsigned char buf[SD_BUF_BYTES];
 	struct nlmsghdr *nlh;
@@ -430,7 +366,7 @@ static void variant_netlink(int fd)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = SOCK_DIAG_BY_FAMILY;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	req = (struct netlink_diag_req *)NLMSG_DATA(nlh);
 	req->sdiag_family = AF_NETLINK;
@@ -449,11 +385,11 @@ static void variant_netlink(int fd)
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*req));
 	nlh->nlmsg_len = (__u32)off;
 
-	sd_send_drain(fd, buf, off);
+	sd_send_drain(ctx, buf, off);
 	__atomic_add_fetch(&shm->stats.sock_diag_walker_netlink, 1, __ATOMIC_RELAXED);
 }
 
-static void variant_packet(int fd)
+static void variant_packet(struct nl_ctx *ctx)
 {
 	unsigned char buf[SD_BUF_BYTES];
 	struct nlmsghdr *nlh;
@@ -470,7 +406,7 @@ static void variant_packet(int fd)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = SOCK_DIAG_BY_FAMILY;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	req = (struct packet_diag_req *)NLMSG_DATA(nlh);
 	req->sdiag_family   = AF_PACKET;
@@ -485,11 +421,11 @@ static void variant_packet(int fd)
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*req));
 	nlh->nlmsg_len = (__u32)off;
 
-	sd_send_drain(fd, buf, off);
+	sd_send_drain(ctx, buf, off);
 	__atomic_add_fetch(&shm->stats.sock_diag_walker_packet, 1, __ATOMIC_RELAXED);
 }
 
-static void variant_vsock(int fd)
+static void variant_vsock(struct nl_ctx *ctx)
 {
 	unsigned char buf[SD_BUF_BYTES];
 	struct nlmsghdr *nlh;
@@ -500,7 +436,7 @@ static void variant_vsock(int fd)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = SOCK_DIAG_BY_FAMILY;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	req = (struct vsock_diag_req *)NLMSG_DATA(nlh);
 	req->sdiag_family   = AF_VSOCK;
@@ -513,14 +449,18 @@ static void variant_vsock(int fd)
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*req));
 	nlh->nlmsg_len = (__u32)off;
 
-	sd_send_drain(fd, buf, off);
+	sd_send_drain(ctx, buf, off);
 	__atomic_add_fetch(&shm->stats.sock_diag_walker_vsock, 1, __ATOMIC_RELAXED);
 }
 
 bool sock_diag_walker(struct childdata *child)
 {
+	struct nl_ctx ctx = { .fd = -1 };
+	struct nl_open_opts opts = {
+		.proto         = NETLINK_SOCK_DIAG,
+		.recv_timeo_s  = SD_RECV_TIMEO_S,
+	};
 	enum sd_variant v;
-	int fd;
 
 	(void)child;
 
@@ -529,8 +469,7 @@ bool sock_diag_walker(struct childdata *child)
 	if (sd_unsupported)
 		return true;
 
-	fd = sd_open();
-	if (fd < 0) {
+	if (nl_open(&ctx, &opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
 			sd_unsupported = true;
 		__atomic_add_fetch(&shm->stats.sock_diag_walker_setup_failed,
@@ -540,14 +479,14 @@ bool sock_diag_walker(struct childdata *child)
 
 	v = (enum sd_variant)(rand32() % NR_SD_VARIANTS);
 	switch (v) {
-	case SD_VARIANT_INET:		variant_inet(fd); break;
-	case SD_VARIANT_UNIX:		variant_unix(fd); break;
-	case SD_VARIANT_NETLINK:	variant_netlink(fd); break;
-	case SD_VARIANT_PACKET:		variant_packet(fd); break;
-	case SD_VARIANT_VSOCK:		variant_vsock(fd); break;
+	case SD_VARIANT_INET:		variant_inet(&ctx); break;
+	case SD_VARIANT_UNIX:		variant_unix(&ctx); break;
+	case SD_VARIANT_NETLINK:	variant_netlink(&ctx); break;
+	case SD_VARIANT_PACKET:		variant_packet(&ctx); break;
+	case SD_VARIANT_VSOCK:		variant_vsock(&ctx); break;
 	case NR_SD_VARIANTS:		break;
 	}
 
-	close(fd);
+	nl_close(&ctx);
 	return true;
 }
