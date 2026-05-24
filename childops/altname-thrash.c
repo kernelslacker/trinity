@@ -54,8 +54,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
@@ -65,6 +63,7 @@
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -130,127 +129,7 @@ static bool ns_unsupported_dummy_altname_thrash;
 static bool ns_unshared_altname_thrash;
 static bool ns_setup_failed_altname_thrash;
 
-static __u32 g_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
-
-static long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (now.tv_sec - t0->tv_sec) * 1000000000L +
-	       (now.tv_nsec - t0->tv_nsec);
-}
-
-static int rtnl_open(void)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = RTNL_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-	return fd;
-}
-
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static size_t nla_put_str(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, const char *s)
-{
-	return nla_put(buf, off, cap, type, s, strlen(s) + 1);
-}
-
-static size_t nla_put_u32(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, __u32 val)
-{
-	return nla_put(buf, off, cap, type, &val, sizeof(val));
-}
-
-/*
- * Send via NETLINK_ROUTE and consume one ack.  Returns 0 on a
- * positive ack, the negated kernel errno on rejection, -EIO on local
- * sendmsg / recv failure.  RTM_GETLINK callers pass a larger receive
- * buffer via the discard path: we only need the ack/error here.
- */
-static int rtnl_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[2048];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0)
-		return -EIO;
-	if ((size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	/* Non-error reply (e.g. RTM_GETLINK dump entry) — drain the
-	 * remaining datagram(s) until DONE or the timeout fires.  The
-	 * single recv above already consumed the head datagram. */
-	return 0;
-}
-
-static int build_dummy_create(int fd, const char *name)
+static int build_dummy_create(struct nl_ctx *ctx, const char *name)
 {
 	unsigned char buf[RTNL_BUF_BYTES];
 	struct nlmsghdr *nlh;
@@ -263,7 +142,7 @@ static int build_dummy_create(int fd, const char *name)
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -286,10 +165,10 @@ static int build_dummy_create(int fd, const char *name)
 	linkinfo->nla_len = (unsigned short)(off - li_off);
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_setlink_up(int fd, int ifindex)
+static int build_setlink_up(struct nl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -300,7 +179,7 @@ static int build_setlink_up(int fd, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_SETLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -310,10 +189,10 @@ static int build_setlink_up(int fd, int ifindex)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_dellink(int fd, int ifindex)
+static int build_dellink(struct nl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
@@ -324,7 +203,7 @@ static int build_dellink(int fd, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_DELLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -332,7 +211,7 @@ static int build_dellink(int fd, int ifindex)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /* Generate one altname under the IFNAMSIZ-1 cap.  Format
@@ -357,7 +236,7 @@ static void ring_push(const char name[ALT_NAME_MAX + 1])
  * IFLA_PROP_LIST with `count` IFLA_ALT_IFNAME entries.  `names` is an
  * array of `count` NUL-terminated strings.
  */
-static int build_linkprop(int fd, __u16 msg_type, int ifindex,
+static int build_linkprop(struct nl_ctx *ctx, __u16 msg_type, int ifindex,
 			  const char (*names)[ALT_NAME_MAX + 1],
 			  unsigned int count)
 {
@@ -372,7 +251,7 @@ static int build_linkprop(int fd, __u16 msg_type, int ifindex,
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = msg_type;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -396,15 +275,18 @@ static int build_linkprop(int fd, __u16 msg_type, int ifindex,
 	plist->nla_len = (unsigned short)(off - plist_off);
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
  * RTM_GETLINK targeted at one ifindex with IFLA_EXT_MASK =
  * RTEXT_FILTER_VF.  This is the read path that walks the prop_list
- * under RCU to compute the dump size (rtnl_prop_list_size).
+ * under RCU to compute the dump size (rtnl_prop_list_size).  Uses
+ * nl_send_recv_any() because the kernel responds with the RTM_NEWLINK
+ * dump head, not an NLMSG_ERROR ack — nl_send_recv() would return
+ * -EIO on that wire shape and silently kill the getlink_done stat.
  */
-static int build_getlink(int fd, int ifindex)
+static int build_getlink(struct nl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -415,7 +297,7 @@ static int build_getlink(int fd, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_GETLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -428,7 +310,7 @@ static int build_getlink(int fd, int ifindex)
 		return -EIO;
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv_any(ctx, buf, off);
 }
 
 static bool is_unsupported_err(int rc)
@@ -442,7 +324,12 @@ bool altname_thrash(struct childdata *child)
 	char dummy_name[IFNAMSIZ];
 	char added[ALT_BURST][ALT_NAME_MAX + 1];
 	char victims[ALT_BURST][ALT_NAME_MAX + 1];
-	int rtnl = -1;
+	struct nl_ctx nl = { .fd = -1 };
+	struct nl_open_opts opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = RTNL_RECV_TIMEO_S,
+	};
+	bool nl_opened = false;
 	int dummy_idx = 0;
 	bool dummy_added = false;
 	struct timespec t0;
@@ -470,17 +357,17 @@ bool altname_thrash(struct childdata *child)
 		ns_unshared_altname_thrash = true;
 	}
 
-	rtnl = rtnl_open();
-	if (rtnl < 0) {
+	if (nl_open(&nl, &opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
 			ns_unsupported_altname_thrash = true;
 		goto out;
 	}
+	nl_opened = true;
 
 	(void)snprintf(dummy_name, sizeof(dummy_name), "tralt%u",
 		       (unsigned int)(rand32() & 0xffffu));
 
-	rc = build_dummy_create(rtnl, dummy_name);
+	rc = build_dummy_create(&nl, dummy_name);
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_dummy_altname_thrash = true;
@@ -492,7 +379,7 @@ bool altname_thrash(struct childdata *child)
 	if (dummy_idx == 0)
 		goto out;
 
-	(void)build_setlink_up(rtnl, dummy_idx);
+	(void)build_setlink_up(&nl, dummy_idx);
 
 	(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 	iters = BUDGETED(CHILD_OP_ALTNAME_THRASH,
@@ -514,14 +401,14 @@ bool altname_thrash(struct childdata *child)
 			ring_push(added[j]);
 		}
 
-		if (build_linkprop(rtnl, RTM_NEWLINKPROP, dummy_idx,
+		if (build_linkprop(&nl, RTM_NEWLINKPROP, dummy_idx,
 				   (const char (*)[ALT_NAME_MAX + 1])added,
 				   batch) == 0) {
 			__atomic_add_fetch(&shm->stats.altname_thrash_addprop_done,
 					   1, __ATOMIC_RELAXED);
 		}
 
-		if (build_getlink(rtnl, dummy_idx) == 0) {
+		if (build_getlink(&nl, dummy_idx) == 0) {
 			__atomic_add_fetch(&shm->stats.altname_thrash_getlink_done,
 					   1, __ATOMIC_RELAXED);
 		}
@@ -542,7 +429,7 @@ bool altname_thrash(struct childdata *child)
 			memcpy(victims[j], alt_ring[idx], ALT_NAME_MAX + 1);
 		}
 
-		if (build_linkprop(rtnl, RTM_DELLINKPROP, dummy_idx,
+		if (build_linkprop(&nl, RTM_DELLINKPROP, dummy_idx,
 				   (const char (*)[ALT_NAME_MAX + 1])victims,
 				   vbatch) == 0) {
 			__atomic_add_fetch(&shm->stats.altname_thrash_delprop_done,
@@ -551,10 +438,10 @@ bool altname_thrash(struct childdata *child)
 	}
 
 out:
-	if (rtnl >= 0) {
+	if (nl_opened) {
 		if (dummy_added && dummy_idx > 0)
-			(void)build_dellink(rtnl, dummy_idx);
-		close(rtnl);
+			(void)build_dellink(&nl, dummy_idx);
+		nl_close(&nl);
 	}
 
 	return true;
