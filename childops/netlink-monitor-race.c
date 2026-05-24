@@ -65,7 +65,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -75,6 +74,7 @@
 #include <linux/rtnetlink.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "compat.h"
 #include "random.h"
 #include "shm.h"
@@ -127,123 +127,15 @@ static bool ns_unsupported;
  * invocations.  Re-unsharing each call would just leak namespaces. */
 static bool ns_unshared;
 
-static __u32 g_seq;
-
-static __u32 next_seq(void)
-{
-	return ++g_seq;
-}
-
-/*
- * Open a NETLINK_ROUTE socket and bind it.  If groups != 0, bind with
- * that nl_groups mask so the kernel attaches us as a broadcast
- * subscriber for those groups in one step.  A zero mask leaves the
- * socket as a plain writer (mut).
- */
-static int rtnl_open_groups(__u32 groups)
-{
-	struct sockaddr_nl sa;
-	struct timeval tv;
-	int fd;
-
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
-	if (fd < 0)
-		return -1;
-
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	sa.nl_groups = groups;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	tv.tv_sec  = RTNL_RECV_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-	return fd;
-}
-
-static size_t nla_put(unsigned char *buf, size_t off, size_t cap,
-		      unsigned short type, const void *data, size_t len)
-{
-	struct nlattr *nla;
-	size_t total = NLA_HDRLEN + len;
-	size_t aligned = NLA_ALIGN(total);
-
-	if (off + aligned > cap)
-		return 0;
-
-	nla = (struct nlattr *)(buf + off);
-	nla->nla_type = type;
-	nla->nla_len  = (unsigned short)total;
-	if (len)
-		memcpy(buf + off + NLA_HDRLEN, data, len);
-	if (aligned > total)
-		memset(buf + off + total, 0, aligned - total);
-	return off + aligned;
-}
-
-static size_t nla_put_str(unsigned char *buf, size_t off, size_t cap,
-			  unsigned short type, const char *s)
-{
-	return nla_put(buf, off, cap, type, s, strlen(s) + 1);
-}
-
-/*
- * Send a complete netlink message and wait for an NLMSG_ERROR (ack).
- * Returns the kernel's ack errno (0 on success, negated errno on
- * rejection, or -EIO on local send/recv failure).
- */
-static int rtnl_send_recv(int fd, void *msg, size_t len)
-{
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char rbuf[1024];
-	struct nlmsghdr *nlh;
-	ssize_t n;
-
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-
-	iov.iov_base = msg;
-	iov.iov_len  = len;
-
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-
-	if (sendmsg(fd, &mh, 0) < 0)
-		return -EIO;
-
-	n = recv(fd, rbuf, sizeof(rbuf), 0);
-	if (n < 0)
-		return -EIO;
-	if ((size_t)n < NLMSG_HDRLEN)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)rbuf;
-	if (nlh->nlmsg_type == NLMSG_ERROR) {
-		struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
-		return err->error;
-	}
-	return -EIO;
-}
-
 /*
  * Build & send RTM_NEWLINK creating a dummy dev named `name`.  Returns
  * 0 on accept, negated errno on rejection, or -EIO on local failure.
  */
-static int build_dummy_link(int fd, const char *name)
+static int build_dummy_link(struct nl_ctx *ctx, const char *name)
 {
 	unsigned char buf[RTNL_BUF_BYTES];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
-	struct nlattr *linkinfo;
 	size_t off;
 	size_t li_off;
 
@@ -252,7 +144,7 @@ static int build_dummy_link(int fd, const char *name)
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
 			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -263,7 +155,7 @@ static int build_dummy_link(int fd, const char *name)
 		return -EIO;
 
 	li_off = off;
-	off = nla_put(buf, off, sizeof(buf), IFLA_LINKINFO, NULL, 0);
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
 	if (!off)
 		return -EIO;
 
@@ -271,11 +163,10 @@ static int build_dummy_link(int fd, const char *name)
 	if (!off)
 		return -EIO;
 
-	linkinfo = (struct nlattr *)(buf + li_off);
-	linkinfo->nla_len = (unsigned short)(off - li_off);
+	nla_nest_end(buf, li_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -284,7 +175,7 @@ static int build_dummy_link(int fd, const char *name)
  * netlink ack errno.  The address bits in `addr` are picked by the
  * caller so add/del symmetry is trivial.
  */
-static int build_addr(int fd, int cmd, int ifindex, __u32 addr)
+static int build_addr(struct nl_ctx *ctx, int cmd, int ifindex, __u32 addr)
 {
 	unsigned char buf[RTNL_BUF_BYTES];
 	struct nlmsghdr *nlh;
@@ -297,7 +188,7 @@ static int build_addr(int fd, int cmd, int ifindex, __u32 addr)
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
 	if (cmd == RTM_NEWADDR)
 		nlh->nlmsg_flags |= NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq = next_seq();
+	nlh->nlmsg_seq = nl_seq_next(ctx);
 
 	ifa = (struct ifaddrmsg *)NLMSG_DATA(nlh);
 	ifa->ifa_family    = AF_INET;
@@ -316,10 +207,10 @@ static int build_addr(int fd, int cmd, int ifindex, __u32 addr)
 		return -EIO;
 
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_dellink(int fd, int ifindex)
+static int build_dellink(struct nl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
@@ -330,7 +221,7 @@ static int build_dellink(int fd, int ifindex)
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = RTM_DELLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = next_seq();
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -338,7 +229,7 @@ static int build_dellink(int fd, int ifindex)
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
-	return rtnl_send_recv(fd, buf, off);
+	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -348,14 +239,14 @@ static int build_dellink(int fd, int ifindex)
  * EWOULDBLOCK / error or after a small fixed number of iterations
  * to bound the work per call.
  */
-static unsigned int drain_monitor(int mon)
+static unsigned int drain_monitor(struct nl_ctx *mon)
 {
 	unsigned char rbuf[MON_DRAIN_BYTES];
 	unsigned int got = 0;
 	int i;
 
 	for (i = 0; i < 8; i++) {
-		ssize_t n = recv(mon, rbuf, sizeof(rbuf), MSG_DONTWAIT);
+		ssize_t n = recv(mon->fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
 		if (n <= 0)
 			break;
 		got++;
@@ -384,11 +275,18 @@ static __u32 random_group_mask(void)
 bool netlink_monitor_race(struct childdata *child)
 {
 	char dev_name[IFNAMSIZ];
-	int mon = -1;
-	int mut = -1;
+	struct nl_ctx mon = { .fd = -1 };
+	struct nl_ctx mut = { .fd = -1 };
+	struct nl_open_opts mon_opts = {
+		.proto         = NETLINK_ROUTE,
+		.recv_timeo_s  = RTNL_RECV_TIMEO_S,
+	};
+	struct nl_open_opts mut_opts = {
+		.proto         = NETLINK_ROUTE,
+		.recv_timeo_s  = RTNL_RECV_TIMEO_S,
+	};
 	int ifindex = 0;
 	__u32 addr;
-	__u32 group_mask;
 	__u32 drop_grp, add_grp;
 	int one = 1;
 	bool link_added = false;
@@ -413,10 +311,15 @@ bool netlink_monitor_race(struct childdata *child)
 		ns_unshared = true;
 	}
 
-	group_mask = random_group_mask();
+	/* The bind-time .groups subscription is the race-timing-critical
+	 * piece this childop hangs on: the monitor must be a live
+	 * broadcast subscriber for the mutator's NEWLINK / NEWADDR events
+	 * before those events fire.  nl_open() bind()s with sa.nl_groups
+	 * = opts->groups in the same syscall the per-file rtnl_open() did,
+	 * preserving the atomic-with-bind subscribe semantics. */
+	mon_opts.groups = random_group_mask();
 
-	mon = rtnl_open_groups(group_mask);
-	if (mon < 0) {
+	if (nl_open(&mon, &mon_opts) < 0) {
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
@@ -426,16 +329,15 @@ bool netlink_monitor_race(struct childdata *child)
 
 	/* Attach the peernet path -- CVE-2024-26688 lineage.  ENOPROTOOPT
 	 * on older kernels is fine; we still hit the broadcast race below. */
-	(void)setsockopt(mon, SOL_NETLINK, NETLINK_LISTEN_ALL_NSID,
+	(void)setsockopt(mon.fd, SOL_NETLINK, NETLINK_LISTEN_ALL_NSID,
 			 &one, sizeof(one));
 
 	/* Promote ENOBUFS into recv error returns so a heavy broadcast
 	 * burst surfaces as an actual error rather than silent drops. */
-	(void)setsockopt(mon, SOL_NETLINK, NETLINK_BROADCAST_ERROR,
+	(void)setsockopt(mon.fd, SOL_NETLINK, NETLINK_BROADCAST_ERROR,
 			 &one, sizeof(one));
 
-	mut = rtnl_open_groups(0);
-	if (mut < 0) {
+	if (nl_open(&mut, &mut_opts) < 0) {
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -446,7 +348,7 @@ bool netlink_monitor_race(struct childdata *child)
 	snprintf(dev_name, sizeof(dev_name), "trnlmon%u",
 		 (unsigned int)(rand32() & 0xffffu));
 
-	if (build_dummy_link(mut, dev_name) != 0)
+	if (build_dummy_link(&mut, dev_name) != 0)
 		goto out;
 	link_added = true;
 	__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
@@ -461,26 +363,26 @@ bool netlink_monitor_race(struct childdata *child)
 	/* Drive a small burst of address add/del cycles so each iteration
 	 * generates a NEWADDR/DELADDR broadcast that mon must process. */
 	for (i = 0; i < NETLINK_MUT_BURST; i++) {
-		if (build_addr(mut, RTM_NEWADDR, ifindex, addr) == 0) {
+		if (build_addr(&mut, RTM_NEWADDR, ifindex, addr) == 0) {
 			addr_added = true;
 			__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
 					   1, __ATOMIC_RELAXED);
 		}
 
-		drained = drain_monitor(mon);
+		drained = drain_monitor(&mon);
 		if (drained)
 			__atomic_add_fetch(&shm->stats.netlink_monitor_race_recv_drained,
 					   drained, __ATOMIC_RELAXED);
 
 		if (addr_added) {
-			if (build_addr(mut, RTM_DELADDR, ifindex, addr) == 0) {
+			if (build_addr(&mut, RTM_DELADDR, ifindex, addr) == 0) {
 				addr_added = false;
 				__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
 						   1, __ATOMIC_RELAXED);
 			}
 		}
 
-		drained = drain_monitor(mon);
+		drained = drain_monitor(&mon);
 		if (drained)
 			__atomic_add_fetch(&shm->stats.netlink_monitor_race_recv_drained,
 					   drained, __ATOMIC_RELAXED);
@@ -495,12 +397,12 @@ bool netlink_monitor_race(struct childdata *child)
 	drop_grp = monitor_group_ids[rand32() % NR_MONITOR_GROUPS];
 	add_grp  = monitor_group_ids[rand32() % NR_MONITOR_GROUPS];
 
-	if (setsockopt(mon, SOL_NETLINK, NETLINK_DROP_MEMBERSHIP,
+	if (setsockopt(mon.fd, SOL_NETLINK, NETLINK_DROP_MEMBERSHIP,
 		       &drop_grp, sizeof(drop_grp)) == 0)
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race_group_drop,
 				   1, __ATOMIC_RELAXED);
 
-	if (setsockopt(mon, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
+	if (setsockopt(mon.fd, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
 		       &add_grp, sizeof(add_grp)) == 0)
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race_group_add,
 				   1, __ATOMIC_RELAXED);
@@ -508,27 +410,26 @@ bool netlink_monitor_race(struct childdata *child)
 	/* Final NEWADDR/DELADDR cycle so an event fires after the
 	 * membership churn -- this is the broadcast path running against
 	 * a freshly-mutated subscriber set. */
-	if (build_addr(mut, RTM_NEWADDR, ifindex, addr) == 0) {
+	if (build_addr(&mut, RTM_NEWADDR, ifindex, addr) == 0) {
 		addr_added = true;
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
 				   1, __ATOMIC_RELAXED);
 	}
 
-	drained = drain_monitor(mon);
+	drained = drain_monitor(&mon);
 	if (drained)
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race_recv_drained,
 				   drained, __ATOMIC_RELAXED);
 
 out:
-	if (mut >= 0) {
+	if (mut.fd >= 0) {
 		if (addr_added)
-			(void)build_addr(mut, RTM_DELADDR, ifindex, addr);
+			(void)build_addr(&mut, RTM_DELADDR, ifindex, addr);
 		if (link_added && ifindex > 0)
-			(void)build_dellink(mut, ifindex);
-		close(mut);
+			(void)build_dellink(&mut, ifindex);
+		nl_close(&mut);
 	}
-	if (mon >= 0)
-		close(mon);
+	nl_close(&mon);
 
 	return true;
 }
