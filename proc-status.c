@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -47,6 +48,15 @@ char *proc_status_slurp(void)
 			size_t newcap = cap ? cap * 2 : 4096;
 			char *nb = realloc(buf, newcap);
 
+			if (nb == NULL) {
+				/*
+				 * Fuzzer may have called mlockall(MCL_FUTURE),
+				 * which pins the heap and can short-circuit
+				 * realloc growth.  Undo the pin and retry once.
+				 */
+				munlockall();
+				nb = realloc(buf, newcap);
+			}
 			if (nb == NULL) {
 				free(buf);
 				close(fd);
