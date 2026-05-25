@@ -9,17 +9,21 @@
 static void sanitise_fw_send_request(struct syscallrecord *rec)
 {
 	struct fw_cdev_send_request *req;
+	void *data;
 	__u32 payload_len;
 
 	req = (struct fw_cdev_send_request *) get_writable_struct(sizeof(*req));
 	if (!req)
 		return;
-	req->tcode = rnd_modulo_u32(16);
 	payload_len = rnd_modulo_u32(512);
+	data = get_writable_struct(payload_len + 4);
+	if (!data)
+		return;
+	req->tcode = rnd_modulo_u32(16);
 	req->length = payload_len;
 	req->offset = rand64() & 0xFFFFFFFFFFFFULL;	/* 48-bit address space */
 	req->closure = rand64();
-	req->data = (unsigned long) get_writable_struct(payload_len + 4);
+	req->data = (unsigned long) data;
 	req->generation = rand32();
 	rec->a3 = (unsigned long) req;
 }
@@ -52,15 +56,19 @@ static void sanitise_fw_deallocate(struct syscallrecord *rec)
 static void sanitise_fw_send_response(struct syscallrecord *rec)
 {
 	struct fw_cdev_send_response *resp;
+	void *data;
 	__u32 payload_len;
 
 	resp = (struct fw_cdev_send_response *) get_writable_struct(sizeof(*resp));
 	if (!resp)
 		return;
-	resp->rcode = rnd_modulo_u32(8);
 	payload_len = rnd_modulo_u32(512);
+	data = get_writable_struct(payload_len + 4);
+	if (!data)
+		return;
+	resp->rcode = rnd_modulo_u32(8);
 	resp->length = payload_len;
-	resp->data = (unsigned long) get_writable_struct(payload_len + 4);
+	resp->data = (unsigned long) data;
 	resp->handle = rand32();
 	rec->a3 = (unsigned long) resp;
 }
@@ -68,16 +76,20 @@ static void sanitise_fw_send_response(struct syscallrecord *rec)
 static void sanitise_fw_add_descriptor(struct syscallrecord *rec)
 {
 	struct fw_cdev_add_descriptor *desc;
+	void *data;
 	__u32 len;
 
 	desc = (struct fw_cdev_add_descriptor *) get_writable_struct(sizeof(*desc));
 	if (!desc)
 		return;
+	len = rnd_modulo_u32(16) + 1;
+	data = get_writable_struct(len * 4);
+	if (!data)
+		return;
 	desc->immediate = RAND_BOOL() ? rand32() : 0;
 	desc->key = 0x81000000;	/* leaf entry type */
-	len = rnd_modulo_u32(16) + 1;
 	desc->length = len;
-	desc->data = (unsigned long) get_writable_struct(len * 4);
+	desc->data = (unsigned long) data;
 	rec->a3 = (unsigned long) desc;
 }
 
@@ -100,6 +112,7 @@ static void sanitise_fw_queue_iso(struct syscallrecord *rec)
 {
 	struct fw_cdev_queue_iso *q;
 	struct fw_cdev_iso_packet *pkt;
+	void *data;
 
 	q = (struct fw_cdev_queue_iso *) get_writable_struct(sizeof(*q));
 	if (!q)
@@ -107,8 +120,11 @@ static void sanitise_fw_queue_iso(struct syscallrecord *rec)
 	pkt = (struct fw_cdev_iso_packet *) get_writable_struct(sizeof(*pkt));
 	if (pkt)
 		pkt->control = rand32();
+	data = get_writable_struct(4096);
+	if (!data)
+		return;
 	q->packets = (unsigned long) pkt;
-	q->data = (unsigned long) get_writable_struct(4096);
+	q->data = (unsigned long) data;
 	q->size = sizeof(*pkt);
 	q->handle = rand32();
 	rec->a3 = (unsigned long) q;
@@ -144,18 +160,22 @@ static void sanitise_fw_alloc_iso_resource(struct syscallrecord *rec)
 static void sanitise_fw_send_stream_packet(struct syscallrecord *rec)
 {
 	struct fw_cdev_send_stream_packet *pkt;
+	void *data;
 	__u32 payload_len;
 
 	pkt = (struct fw_cdev_send_stream_packet *) get_writable_struct(sizeof(*pkt));
 	if (!pkt)
 		return;
 	payload_len = rnd_modulo_u32(512);
+	data = get_writable_struct(payload_len + 4);
+	if (!data)
+		return;
 	pkt->length = payload_len;
 	pkt->tag = rnd_modulo_u32(4);
 	pkt->channel = rnd_modulo_u32(64);
 	pkt->sy = rnd_modulo_u32(16);
 	pkt->closure = rand64();
-	pkt->data = (unsigned long) get_writable_struct(payload_len + 4);
+	pkt->data = (unsigned long) data;
 	pkt->generation = rand32();
 	pkt->speed = rnd_modulo_u32(6);
 	rec->a3 = (unsigned long) pkt;

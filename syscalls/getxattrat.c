@@ -42,13 +42,15 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
 #ifdef USE_XATTR_ARGS
 	{
 		struct xattr_args *args;
+		void *value;
 
 		args = (struct xattr_args *) get_writable_struct(sizeof(*args));
 		if (!args)
 			return;
-		args->value = (unsigned long) get_writable_struct(256);
-		if (!args->value)
+		value = get_writable_struct(256);
+		if (!value)
 			return;
+		args->value = (unsigned long) value;
 		args->size = 256;
 		args->flags = 0;
 		rec->a5 = (unsigned long) args;

@@ -78,13 +78,17 @@ static void sanitise_usbmon_get(struct syscallrecord *rec)
 static void sanitise_usbmon_mfetch(struct syscallrecord *rec)
 {
 	struct mon_bin_mfetch *m;
+	__u32 *offvec;
 	__u32 nfetch;
 
 	m = (struct mon_bin_mfetch *) get_writable_struct(sizeof(*m));
 	if (!m)
 		return;
 	nfetch = rnd_modulo_u32(32) + 1;
-	m->offvec = (__u32 *) get_writable_struct(nfetch * sizeof(__u32));
+	offvec = get_writable_struct(nfetch * sizeof(__u32));
+	if (!offvec)
+		return;
+	m->offvec = offvec;
 	m->nfetch = nfetch;
 	m->nflush = rnd_modulo_u32(32);
 	rec->a3 = (unsigned long) m;

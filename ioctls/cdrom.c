@@ -89,10 +89,19 @@ static void cdrom_send_packet_sanitise(struct syscallrecord *rec)
 		static const unsigned int buflens[] = {
 			0, 1, 4096, 4097, 65535, (unsigned int) INT_MAX,
 		};
+		unsigned char *buffer;
+		struct request_sense *sense;
+
+		buffer = get_writable_struct(65536);
+		if (!buffer)
+			return;
+		sense = get_writable_struct(sizeof(*sense));
+		if (!sense)
+			return;
 		cgc->buflen = buflens[rnd_modulo_u32(ARRAY_SIZE(buflens))];
-		cgc->buffer = (unsigned char *) get_writable_struct(65536);
+		cgc->buffer = buffer;
+		cgc->sense = sense;
 	}
-	cgc->sense = (struct request_sense *) get_writable_struct(sizeof(struct request_sense));
 
 	switch (rnd_modulo_u32(3)) {
 	case 0:	cgc->data_direction = CGC_DATA_READ;	break;
@@ -225,12 +234,16 @@ static void sanitise_cdrom_subchnl(struct syscallrecord *rec)
 static void sanitise_cdrom_read(struct syscallrecord *rec, int bufsz)
 {
 	struct cdrom_read *cr;
+	char *bufaddr;
 
 	cr = (struct cdrom_read *) get_writable_struct(sizeof(*cr));
 	if (!cr)
 		return;
+	bufaddr = get_writable_struct(bufsz);
+	if (!bufaddr)
+		return;
 	cr->cdread_lba     = rnd_u32();
-	cr->cdread_bufaddr = (char *) get_writable_struct(bufsz);
+	cr->cdread_bufaddr = bufaddr;
 	cr->cdread_buflen  = bufsz;
 	rec->a3 = (unsigned long) cr;
 }
@@ -238,9 +251,15 @@ static void sanitise_cdrom_read(struct syscallrecord *rec, int bufsz)
 static void sanitise_cdrom_readaudio(struct syscallrecord *rec)
 {
 	struct cdrom_read_audio *ra;
+	unsigned char *buf;
+	unsigned int nframes;
 
 	ra = (struct cdrom_read_audio *) get_writable_struct(sizeof(*ra));
 	if (!ra)
+		return;
+	nframes = 1 + rnd_modulo_u32(8);
+	buf = get_writable_struct(nframes * 2352);
+	if (!buf)
 		return;
 	memset(ra, 0, sizeof(*ra));
 	ra->addr_format = RAND_BOOL() ? CDROM_MSF : CDROM_LBA;
@@ -251,8 +270,8 @@ static void sanitise_cdrom_readaudio(struct syscallrecord *rec)
 	} else {
 		ra->addr.lba = rnd_u32();
 	}
-	ra->nframes = 1 + rnd_modulo_u32(8);
-	ra->buf = (unsigned char *) get_writable_struct(ra->nframes * 2352);
+	ra->nframes = nframes;
+	ra->buf = buf;
 	rec->a3 = (unsigned long) ra;
 }
 
@@ -413,9 +432,12 @@ static void cdrom_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case CDROM_LAST_WRITTEN:
 		sanitise_cdrom_long_out(rec);
 		break;
-	case CDROMGETSPINDOWN:
-		rec->a3 = (unsigned long) get_writable_struct(4);
+	case CDROMGETSPINDOWN: {
+		void *p = get_writable_struct(4);
+		if (p)
+			rec->a3 = (unsigned long) p;
 		break;
+	}
 	case CDROMSETSPINDOWN:
 		rec->a3 = rnd_modulo_u32(4);
 		break;

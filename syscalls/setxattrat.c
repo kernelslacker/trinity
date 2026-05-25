@@ -52,9 +52,10 @@ static void sanitise_setxattrat(struct syscallrecord *rec)
 		if (chosen == 0) {
 			args->value = 0;
 		} else {
-			args->value = (unsigned long) get_writable_struct(chosen);
-			if (!args->value)
+			void *value = get_writable_struct(chosen);
+			if (!value)
 				return;
+			args->value = (unsigned long) value;
 		}
 		args->size = chosen;
 		args->flags = flag_choices[rnd_modulo_u32(3)];

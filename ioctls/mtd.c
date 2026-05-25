@@ -34,26 +34,38 @@ static void sanitise_erase_info_user64(struct syscallrecord *rec)
 static void sanitise_mtd_oob_buf(struct syscallrecord *rec)
 {
 	struct mtd_oob_buf *oob;
+	unsigned char *ptr;
+	__u32 length;
 
 	oob = (struct mtd_oob_buf *) get_writable_struct(sizeof(*oob));
 	if (!oob)
 		return;
+	length = rnd_modulo_u32(64);
+	ptr = get_writable_struct(length + 1);
+	if (!ptr)
+		return;
 	oob->start = rand32();
-	oob->length = rnd_modulo_u32(64);
-	oob->ptr = (unsigned char *) get_writable_struct(oob->length + 1);
+	oob->length = length;
+	oob->ptr = ptr;
 	rec->a3 = (unsigned long) oob;
 }
 
 static void sanitise_mtd_oob_buf64(struct syscallrecord *rec)
 {
 	struct mtd_oob_buf64 *oob;
+	void *usr_ptr;
+	__u32 length;
 
 	oob = (struct mtd_oob_buf64 *) get_writable_struct(sizeof(*oob));
 	if (!oob)
 		return;
+	length = rnd_modulo_u32(64);
+	usr_ptr = get_writable_struct(length + 1);
+	if (!usr_ptr)
+		return;
 	oob->start = rand64();
-	oob->length = rnd_modulo_u32(64);
-	oob->usr_ptr = (unsigned long) get_writable_struct(oob->length + 1);
+	oob->length = length;
+	oob->usr_ptr = (unsigned long) usr_ptr;
 	rec->a3 = (unsigned long) oob;
 }
 
@@ -84,17 +96,27 @@ static void sanitise_otp_info(struct syscallrecord *rec)
 static void sanitise_mtd_write_req(struct syscallrecord *rec)
 {
 	struct mtd_write_req *req;
+	void *usr_data;
+	__u32 len, ooblen;
 
 	req = (struct mtd_write_req *) get_writable_struct(sizeof(*req));
 	if (!req)
 		return;
+	len = rnd_modulo_u32(4096);
+	ooblen = rnd_modulo_u32(128);
+	usr_data = get_writable_struct(len + 1);
+	if (!usr_data)
+		return;
 	req->start = rand64();
-	req->len = rnd_modulo_u32(4096);
-	req->ooblen = rnd_modulo_u32(128);
+	req->len = len;
+	req->ooblen = ooblen;
 	req->mode = rnd_modulo_u32(3);
-	req->usr_data = (unsigned long) get_writable_struct(req->len + 1);
-	if (RAND_BOOL())
-		req->usr_oob = (unsigned long) get_writable_struct(req->ooblen + 1);
+	req->usr_data = (unsigned long) usr_data;
+	if (RAND_BOOL()) {
+		void *usr_oob = get_writable_struct(ooblen + 1);
+		if (usr_oob)
+			req->usr_oob = (unsigned long) usr_oob;
+	}
 	rec->a3 = (unsigned long) req;
 }
 
@@ -102,17 +124,27 @@ static void sanitise_mtd_write_req(struct syscallrecord *rec)
 static void sanitise_mtd_read_req(struct syscallrecord *rec)
 {
 	struct mtd_read_req *req;
+	void *usr_data;
+	__u32 len, ooblen;
 
 	req = (struct mtd_read_req *) get_writable_struct(sizeof(*req));
 	if (!req)
 		return;
+	len = rnd_modulo_u32(4096);
+	ooblen = rnd_modulo_u32(128);
+	usr_data = get_writable_struct(len + 1);
+	if (!usr_data)
+		return;
 	req->start = rand64();
-	req->len = rnd_modulo_u32(4096);
-	req->ooblen = rnd_modulo_u32(128);
+	req->len = len;
+	req->ooblen = ooblen;
 	req->mode = rnd_modulo_u32(3);
-	req->usr_data = (unsigned long) get_writable_struct(req->len + 1);
-	if (RAND_BOOL())
-		req->usr_oob = (unsigned long) get_writable_struct(req->ooblen + 1);
+	req->usr_data = (unsigned long) usr_data;
+	if (RAND_BOOL()) {
+		void *usr_oob = get_writable_struct(ooblen + 1);
+		if (usr_oob)
+			req->usr_oob = (unsigned long) usr_oob;
+	}
 	rec->a3 = (unsigned long) req;
 }
 #endif

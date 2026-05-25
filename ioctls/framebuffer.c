@@ -45,37 +45,52 @@ static void sanitise_fb_var_screeninfo(struct syscallrecord *rec)
 static void sanitise_fb_cmap(struct syscallrecord *rec)
 {
 	struct fb_cmap *cmap;
+	unsigned short *red, *green, *blue;
 	unsigned int len;
 
 	cmap = (struct fb_cmap *) get_writable_struct(sizeof(*cmap));
 	if (!cmap)
 		return;
-	cmap->start = rnd_modulo_u32(256);
 	len = rnd_modulo_u32(16) + 1;
+	red = get_writable_struct(len * sizeof(__u16));
+	green = get_writable_struct(len * sizeof(__u16));
+	blue = get_writable_struct(len * sizeof(__u16));
+	if (!red || !green || !blue)
+		return;
+	cmap->start = rnd_modulo_u32(256);
 	cmap->len = len;
-	cmap->red = (unsigned short *) get_writable_struct(len * sizeof(__u16));
-	cmap->green = (unsigned short *) get_writable_struct(len * sizeof(__u16));
-	cmap->blue = (unsigned short *) get_writable_struct(len * sizeof(__u16));
-	if (RAND_BOOL())
-		cmap->transp = (unsigned short *) get_writable_struct(len * sizeof(__u16));
+	cmap->red = red;
+	cmap->green = green;
+	cmap->blue = blue;
+	if (RAND_BOOL()) {
+		unsigned short *transp = get_writable_struct(len * sizeof(__u16));
+		if (transp)
+			cmap->transp = transp;
+	}
 	rec->a3 = (unsigned long) cmap;
 }
 
 static void sanitise_fb_cursor(struct syscallrecord *rec)
 {
 	struct fb_cursor *cur;
+	const char *mask, *data;
 	unsigned int w, h, mapsize;
 
 	cur = (struct fb_cursor *) get_writable_struct(sizeof(*cur));
 	if (!cur)
+		return;
+	w = rnd_modulo_u32(32) + 1;
+	h = rnd_modulo_u32(32) + 1;
+	mapsize = (w * h + 7) / 8 + 8;
+	mask = get_writable_struct(mapsize);
+	data = get_writable_struct(mapsize);
+	if (!mask || !data)
 		return;
 	cur->set = rnd_u32() & FB_CUR_SETALL;
 	cur->enable = RAND_BOOL();
 	cur->rop = rnd_u32() & 1;
 	cur->hot.x = rnd_modulo_u32(64);
 	cur->hot.y = rnd_modulo_u32(64);
-	w = rnd_modulo_u32(32) + 1;
-	h = rnd_modulo_u32(32) + 1;
 	cur->image.dx = rnd_modulo_u32(1024);
 	cur->image.dy = rnd_modulo_u32(768);
 	cur->image.width = w;
@@ -83,9 +98,8 @@ static void sanitise_fb_cursor(struct syscallrecord *rec)
 	cur->image.depth = 1;
 	cur->image.fg_color = rand32();
 	cur->image.bg_color = rand32();
-	mapsize = (w * h + 7) / 8 + 8;
-	cur->mask = (const char *) get_writable_struct(mapsize);
-	cur->image.data = (const char *) get_writable_struct(mapsize);
+	cur->mask = mask;
+	cur->image.data = data;
 	rec->a3 = (unsigned long) cur;
 }
 
