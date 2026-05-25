@@ -96,6 +96,60 @@ struct syscallentry syscall_read = {
 
 static void sanitise_readv(struct syscallrecord *rec)
 {
+	struct iovec *iov = (struct iovec *) rec->a2;
+
+	/*
+	 * Mirror the bias step in sanitise_read: ~30% of the time
+	 * override the generic ARG_FD pick with a draw from the
+	 * pollable typed-fd pools so the kernel's readable-state
+	 * path for eventfd / timerfd / signalfd / inotify / fanotify
+	 * gets exercised via readv as well as plain read.  For the
+	 * size-strict fd types the kernel rejects any iovec whose
+	 * total length doesn't match the natural width, so collapse
+	 * the array to a single entry at that width; pipe / socket /
+	 * fanotify accept the generic multi-entry random shape and
+	 * are left alone.  On typed-pool empty (-1) fall through
+	 * without publishing a stale fd.  Skip the override entirely
+	 * if ARG_IOVEC handed us a degenerate (NULL / vlen == 0)
+	 * shape -- the collapse needs a usable iov[0].
+	 */
+	if (iov != NULL && rec->a3 != 0 && rnd_modulo_u32(10) < 3) {
+		static const enum argtype pollable[] = {
+			ARG_FD_PIPE,
+			ARG_FD_EVENTFD,
+			ARG_FD_TIMERFD,
+			ARG_FD_SIGNALFD,
+			ARG_FD_INOTIFY,
+			ARG_FD_FANOTIFY,
+			ARG_FD_SOCKET,
+		};
+		enum argtype t = pollable[rnd_modulo_u32(ARRAY_SIZE(pollable))];
+		int fd = get_typed_fd(t);
+
+		if (fd >= 0) {
+			rec->a1 = fd;
+			switch (t) {
+			case ARG_FD_EVENTFD:
+			case ARG_FD_TIMERFD:
+				rec->a3 = 1;
+				iov[0].iov_len = sizeof(uint64_t);
+				break;
+			case ARG_FD_SIGNALFD:
+				rec->a3 = 1;
+				iov[0].iov_len = sizeof(struct signalfd_siginfo);
+				break;
+			case ARG_FD_INOTIFY:
+				rec->a3 = 1;
+				iov[0].iov_len = 256;
+				break;
+			default:
+				/* pipe / socket / fanotify: leave the
+				 * generic multi-entry shape. */
+				break;
+			}
+		}
+	}
+
 	scrub_iovec_for_kernel_write((struct iovec *)rec->a2, rec->a3);
 }
 
