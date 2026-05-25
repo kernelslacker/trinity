@@ -14,14 +14,3 @@
 # monotonically toward zero.
 #
 # Format: path:line  (relative to repo root)
-
-ioctls/atm.c:52
-ioctls/atm.c:86
-ioctls/snd.c:60
-ioctls/snd.c:117
-ioctls/snd.c:331
-ioctls/snd.c:344
-ioctls/usbmon.c:63
-ioctls/usbmon.c:65
-ioctls/vt.c:49
-ioctls/vt.c:295

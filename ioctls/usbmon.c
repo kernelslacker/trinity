@@ -55,15 +55,23 @@ struct mon_bin_mfetch {
 static void sanitise_usbmon_get(struct syscallrecord *rec)
 {
 	struct mon_bin_get *g;
+	void *hdr, *data;
 	size_t alloc;
 
 	g = (struct mon_bin_get *) get_writable_struct(sizeof(*g));
 	if (!g)
 		return;
-	g->hdr = get_writable_struct(MON_BIN_HDR_SIZE);
+	hdr = get_writable_struct(MON_BIN_HDR_SIZE);
+	g->hdr = hdr;		/* NULL on failure: kernel sees a no-op hdr */
 	alloc = rnd_modulo_u32(4096);
-	g->data = get_writable_struct(alloc + 1);
-	g->alloc = alloc;
+	data = get_writable_struct(alloc + 1);
+	if (data) {
+		g->data = data;
+		g->alloc = alloc;
+	} else {
+		g->data = NULL;
+		g->alloc = 0;
+	}
 	rec->a3 = (unsigned long) g;
 }
 

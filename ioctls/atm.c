@@ -43,13 +43,20 @@ static int atm_fd_test(int fd, const struct stat *st __attribute__((unused)))
 static void sanitise_atmif_sioc(struct syscallrecord *rec)
 {
 	struct atmif_sioc *sioc;
+	void *arg;
 
 	sioc = (struct atmif_sioc *) get_writable_struct(sizeof(*sioc));
 	if (!sioc)
 		return;
 	sioc->number = rnd_modulo_u32(16);
-	sioc->length = 64;
-	sioc->arg = get_writable_struct(64);
+	arg = get_writable_struct(64);
+	if (arg) {
+		sioc->arg = arg;
+		sioc->length = 64;
+	} else {
+		sioc->arg = NULL;
+		sioc->length = 0;
+	}
 	rec->a3 = (unsigned long) sioc;
 }
 
@@ -76,14 +83,21 @@ static void sanitise_atm_cirange(struct syscallrecord *rec)
 static void sanitise_atm_iobuf(struct syscallrecord *rec)
 {
 	struct atm_iobuf *iobuf;
+	void *buf;
 	int len;
 
 	iobuf = (struct atm_iobuf *) get_writable_struct(sizeof(*iobuf));
 	if (!iobuf)
 		return;
 	len = rnd_modulo_u32(256) + 4;
-	iobuf->length = len;
-	iobuf->buffer = get_writable_struct(len);
+	buf = get_writable_struct(len);
+	if (buf) {
+		iobuf->buffer = buf;
+		iobuf->length = len;
+	} else {
+		iobuf->buffer = NULL;
+		iobuf->length = 0;
+	}
 	rec->a3 = (unsigned long) iobuf;
 }
 

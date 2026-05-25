@@ -55,9 +55,16 @@ static void sanitise_snd_hwdep(struct syscallrecord *rec)
 	case SNDRV_HWDEP_IOCTL_DSP_LOAD: {
 		struct snd_hwdep_dsp_image *img = get_writable_struct(sizeof(*img));
 		if (img) {
+			unsigned long length = rnd_modulo_u32(4096) + 1;
+			void *image = get_writable_struct(length);
 			img->index = rnd_modulo_u32(8);
-			img->length = rnd_modulo_u32(4096) + 1;
-			img->image = get_writable_struct(img->length);
+			if (image) {
+				img->image = image;
+				img->length = length;
+			} else {
+				img->image = NULL;
+				img->length = 0;
+			}
 			rec->a3 = (unsigned long) img;
 		}
 		break;
@@ -112,9 +119,15 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 		struct snd_ctl_elem_list *list = get_writable_struct(sizeof(*list));
 		if (list) {
 			unsigned int space = rnd_modulo_u32(16) + 1;
+			void *pids = get_writable_struct(space * sizeof(*list->pids));
 			list->offset = rnd_modulo_u32(64);
-			list->space = space;
-			list->pids = get_writable_struct(space * sizeof(*list->pids));
+			if (pids) {
+				list->pids = pids;
+				list->space = space;
+			} else {
+				list->pids = NULL;
+				list->space = 0;
+			}
 			rec->a3 = (unsigned long) list;
 		}
 		break;
@@ -327,8 +340,14 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 		struct snd_xferi *xfer = get_writable_struct(sizeof(*xfer));
 		if (xfer) {
 			unsigned int frames = rnd_modulo_u32(1024) + 1;
-			xfer->frames = frames;
-			xfer->buf = get_writable_struct(frames * 8);	/* up to 8 bytes/frame */
+			void *buf = get_writable_struct(frames * 8);	/* up to 8 bytes/frame */
+			if (buf) {
+				xfer->buf = buf;
+				xfer->frames = frames;
+			} else {
+				xfer->buf = NULL;
+				xfer->frames = 0;
+			}
 			rec->a3 = (unsigned long) xfer;
 		}
 		break;
@@ -339,11 +358,17 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 		if (xfer) {
 			unsigned int frames = rnd_modulo_u32(1024) + 1;
 			unsigned int channels = rnd_modulo_u32(8) + 1;
+			void **bufs = get_writable_struct(channels * sizeof(void *));
 			unsigned int i;
-			xfer->frames = frames;
-			xfer->bufs = get_writable_struct(channels * sizeof(void *));
-			for (i = 0; xfer->bufs && i < channels; i++)
-				xfer->bufs[i] = get_writable_struct(frames * 4);
+			if (bufs) {
+				xfer->bufs = bufs;
+				xfer->frames = frames;
+				for (i = 0; i < channels; i++)
+					bufs[i] = get_writable_struct(frames * 4);
+			} else {
+				xfer->bufs = NULL;
+				xfer->frames = 0;
+			}
 			rec->a3 = (unsigned long) xfer;
 		}
 		break;

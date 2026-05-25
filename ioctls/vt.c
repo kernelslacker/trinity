@@ -36,6 +36,7 @@ static void sanitise_vt_console_font_op(struct syscallrecord *rec)
 {
 	struct console_font_op *op;
 	unsigned int charcount;
+	void *data;
 
 	op = get_writable_struct(sizeof(*op));
 	if (!op)
@@ -45,8 +46,14 @@ static void sanitise_vt_console_font_op(struct syscallrecord *rec)
 	op->width = rnd_modulo_u32(8) + 8;	/* 8-15 pixels wide */
 	op->height = rnd_modulo_u32(25) + 8;	/* 8-32 pixels tall */
 	charcount = RAND_BOOL() ? 256 : 512;
-	op->charcount = charcount;
-	op->data = get_writable_struct(charcount * 32);
+	data = get_writable_struct(charcount * 32);
+	if (data) {
+		op->data = data;
+		op->charcount = charcount;
+	} else {
+		op->data = NULL;
+		op->charcount = 0;
+	}
 	rec->a3 = (unsigned long) op;
 }
 
@@ -284,15 +291,22 @@ static void sanitise_vt_consolefontdesc(struct syscallrecord *rec)
 {
 	struct consolefontdesc *d;
 	unsigned int charcount, charheight;
+	void *chardata;
 
 	d = get_writable_struct(sizeof(*d));
 	if (!d)
 		return;
 	charcount  = RAND_BOOL() ? 256 : 512;
 	charheight = rnd_modulo_u32(25) + 8;		/* 8-32 scan lines */
-	d->charcount  = charcount;
 	d->charheight = charheight;
-	d->chardata   = get_writable_struct(charcount * 32);
+	chardata = get_writable_struct(charcount * 32);
+	if (chardata) {
+		d->chardata  = chardata;
+		d->charcount = charcount;
+	} else {
+		d->chardata  = NULL;
+		d->charcount = 0;
+	}
 	rec->a3 = (unsigned long) d;
 }
 
