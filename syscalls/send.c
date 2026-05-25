@@ -96,22 +96,27 @@ struct syscallentry syscall_sendto = {
  * crash cluster (__zmalloc -> malloc -> malloc_printerr -> abort).
  * Mirrors RECVMSG_POST_STATE_MAGIC at recv.c.
  *
- * The inner pointer fields (name, iov_base) are also snapshotted
- * here.  sendmsg(2) is mostly a kernel-read of the buffers, but some
- * paths (SCM_RIGHTS cmsg, copy_from_iter_full fault-in) do write
- * back through the msghdr, and a sibling iov_base aliased inside the
+ * The inner pointer field (name) is also snapshotted here.
+ * sendmsg(2) is mostly a kernel-read of the buffers, but some paths
+ * (SCM_RIGHTS cmsg, copy_from_iter_full fault-in) do write back
+ * through the msghdr, and a sibling iov_base aliased inside the
  * msghdr struct can let the kernel scribble msg_name with a
  * heap-shaped within-array offset of an unrelated allocation.  Such
  * a value passes the inner shape-only validator but free() of an
  * interior offset aborts in libasan's PoisonShadow alignment CHECK.
- * Stash the originals at sanitise time so the post handler frees
- * the allocations we made, not the values left in the live msghdr.
- * iov_base is only populated on the gen_msg path (rec->a4 == 1);
- * on the alloc_iovec path nothing is freed because alloc_iovec()
- * buffers are routed through deferred_free_enqueue() with the iov
- * itself.
+ * Stash the original at sanitise time so the post handler frees the
+ * allocation we made, not the value left in the live msghdr.
  *
- * Sized 40 bytes, landing in the 48-byte glibc malloc chunk bucket,
+ * gen_msg payloads (the structured per-protocol buffers built by
+ * proto->gen_msg) are NOT snapshotted here: they are copied into a
+ * writable-pool buffer in sanitise_sendmsg so the iov_base lives in
+ * the mmap-backed pool region, outside the libc brk arena that
+ * scrub_iovec_for_kernel_write() defangs.  Pool buffers recycle via
+ * the pool allocator, so the post handler does not free them; the
+ * alloc_iovec path likewise routes buffers through
+ * deferred_free_enqueue() with the iov itself.
+ *
+ * Sized 32 bytes, landing in the 32-byte glibc malloc chunk bucket,
  * still clear of the 16-byte free-list bucket that holds
  * alloc_iovec(1).
  */
@@ -121,7 +126,6 @@ struct sendmsg_post_state {
 	struct msghdr *msg;
 	unsigned long iov_len_sum;
 	void *name;
-	void *iov_base;
 };
 
 static void sanitise_sendmsg(struct syscallrecord *rec)
@@ -160,13 +164,40 @@ skip_si:
 			proto = net_protocols[family].proto;
 			if (proto != NULL && proto->gen_msg != NULL) {
 				struct iovec *iov;
-				void *buf = NULL;
-				size_t len = 0;
+				void *gen_buf = NULL;
+				size_t gen_len = 0;
+				void *kbuf;
 
-				proto->gen_msg(&si->triplet, &buf, &len);
+				proto->gen_msg(&si->triplet, &gen_buf, &gen_len);
+				if (gen_buf == NULL || gen_len == 0) {
+					free(gen_buf);
+					goto skip_gen_msg;
+				}
+				/*
+				 * gen_msg returns a glibc-heap (zmalloc) buffer.
+				 * Leaving it as iov[0].iov_base means
+				 * scrub_iovec_for_kernel_write() defangs it
+				 * (libc brk overlap), zeroing iov_base and len
+				 * so the kernel sees an empty payload, and the
+				 * post snapshot captures NULL so the heap buffer
+				 * leaks.  Copy the bytes into a writable-pool
+				 * buffer (mmap-backed, no brk overlap), free the
+				 * heap buffer immediately, and hand the pool
+				 * address to the kernel.  Pool buffers recycle
+				 * via the pool allocator, so the post handler
+				 * does not need to free them.
+				 */
+				kbuf = get_writable_struct(gen_len);
+				if (kbuf == NULL) {
+					free(gen_buf);
+					goto skip_gen_msg;
+				}
+				memcpy(kbuf, gen_buf, gen_len);
+				free(gen_buf);
+
 				iov = zmalloc_tracked(sizeof(struct iovec));
-				iov->iov_base = buf;
-				iov->iov_len = len;
+				iov->iov_base = kbuf;
+				iov->iov_len = gen_len;
 				msg->msg_iov = iov;
 				msg->msg_iovlen = 1;
 				rec->a4 = 1;
@@ -174,6 +205,7 @@ skip_si:
 			}
 		}
 	}
+skip_gen_msg:;
 
 	if (RAND_BOOL()) {
 		unsigned int num_entries;
@@ -234,8 +266,6 @@ set_control:
 	snap->msg = msg;
 	snap->iov_len_sum = iov_len_sum;
 	snap->name = msg->msg_name;
-	if (rec->a4 && msg->msg_iov != NULL)
-		snap->iov_base = msg->msg_iov[0].iov_base;
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -316,15 +346,11 @@ skip_bound:
 	 * kernel can write back through msghdr fields on SCM_RIGHTS /
 	 * fault-in paths, and a sibling iov_base aliased inside the
 	 * msghdr can leave a heap-shaped within-array offset in
-	 * msg_name (or in iov_base on the gen_msg path) that passes
-	 * the inner shape-only check but aborts in libasan free().
-	 * The snap fields are wrapped in the magic-cookie struct above
-	 * and hold the sanitise-time allocations.  iov_base is only
-	 * non-NULL on the gen_msg path; gating on it directly is
-	 * stronger than re-reading the scribbleable rec->a4 / msg_iov.
+	 * msg_name that passes the inner shape-only check but aborts
+	 * in libasan free().  The snap fields are wrapped in the
+	 * magic-cookie struct above and hold the sanitise-time
+	 * allocations.
 	 */
-	if (snap->iov_base != NULL)
-		free(snap->iov_base);
 	if (msg->msg_iov != NULL)
 		deferred_free_enqueue(msg->msg_iov);
 	tracked_free_now(snap->name);	// free sockaddr
