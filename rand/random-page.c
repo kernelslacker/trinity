@@ -2,6 +2,7 @@
  * Routines to dirty a range of memory.
  */
 
+#include <string.h>
 #include <unistd.h>
 #include "arch.h"
 #include "random.h"
@@ -38,7 +39,7 @@ static void fabricate_struct(char *p, unsigned int len)
 				break;
 			}
 
-			*(unsigned long *)ptr = val;
+			memcpy(&p[old_i], &val, sizeof(val));
 			break;
 
 		case 1:
@@ -49,7 +50,10 @@ static void fabricate_struct(char *p, unsigned int len)
 			if (i > len)
 				return;
 
-			*(unsigned int *)ptr = rand32();
+			{
+				unsigned int val32 = rand32();
+				memcpy(&p[old_i], &val32, sizeof(val32));
+			}
 			break;
 
 		case 2:
@@ -58,11 +62,14 @@ static void fabricate_struct(char *p, unsigned int len)
 
 			if (RAND_BOOL()) {
 				/* one u16 */
+				unsigned short val16;
+
 				i += sizeof(unsigned short);
 				if (i > len)
 					return;
 
-				*(unsigned short *)ptr = rand16();
+				val16 = rand16();
+				memcpy(&p[old_i], &val16, sizeof(val16));
 			} else {
 				/* two u8's */
 				i += 2;
