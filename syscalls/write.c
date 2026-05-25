@@ -2,6 +2,8 @@
  * SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf, size_t, count)
  */
 #include <stdlib.h>
+#include <string.h>
+#include <sys/uio.h>
 #include "arch.h"	// page_size
 #include "fd.h"
 #include "maps.h"
@@ -224,6 +226,67 @@ struct syscallentry syscall_write = {
 
 static void sanitise_writev(struct syscallrecord *rec)
 {
+	struct iovec *iov = (struct iovec *) rec->a2;
+
+	/*
+	 * Per-fd-type bias: the generic ARG_FD pool rarely picks the
+	 * poll-style fd types, and the random ARG_IOVEC shape almost
+	 * never lines up the ABI-mandated writev widths those types
+	 * require.
+	 *
+	 *   - eventfd:  writev() MUST deliver exactly 8 bytes total
+	 *               carrying a u64 counter add; anything else
+	 *               returns -EINVAL and the consumer-side poll-
+	 *               wakeup path never fires.
+	 *   - timerfd / signalfd: read-only; writev() returns -EINVAL
+	 *               unconditionally.  Targeted small-size probes
+	 *               exercise the per-fd-type write-reject hook,
+	 *               distinct from the write(2) path covered by
+	 *               sanitise_write.
+	 *
+	 * Roll once out of 100; on typed-pool empty (-1) fall through to
+	 * the generic ARG_FD path so we never publish a stale fd.  Skip
+	 * the override entirely if ARG_IOVEC handed us a degenerate
+	 * (NULL / vlen==0) shape -- the collapse needs a usable iov[0].
+	 */
+	if (iov != NULL && rec->a3 != 0) {
+		unsigned int roll = rnd_modulo_u32(100);
+
+		if (roll < 20) {
+			int efd = get_typed_fd(ARG_FD_EVENTFD);
+			if (efd >= 0) {
+				uint64_t val = rnd_u64();
+
+				rec->a1 = (unsigned long) efd;
+				rec->a3 = 1;
+				iov[0].iov_len = sizeof(uint64_t);
+				if (iov[0].iov_base != NULL)
+					memcpy(iov[0].iov_base, &val, sizeof(val));
+			}
+		} else if (roll < 30) {
+			int tfd = get_typed_fd(ARG_FD_TIMERFD);
+			if (tfd >= 0) {
+				static const unsigned int tsizes[] = {
+					0, 1, 7, 8, 9,
+				};
+				rec->a1 = (unsigned long) tfd;
+				rec->a3 = 1;
+				iov[0].iov_len = RAND_ARRAY(tsizes);
+			}
+		} else if (roll < 40) {
+			int sfd = get_typed_fd(ARG_FD_SIGNALFD);
+			if (sfd >= 0) {
+				static const unsigned int ssizes[] = {
+					0, 1, 7, 8, 128,
+				};
+				rec->a1 = (unsigned long) sfd;
+				rec->a3 = 1;
+				iov[0].iov_len = RAND_ARRAY(ssizes);
+			}
+		}
+	}
+
+	/* Last line of defense: don't write to stdin/stdout/stderr. */
 	if (rec->a1 <= 2)
 		rec->a1 = get_random_fd();
 }
