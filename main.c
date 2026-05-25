@@ -1630,17 +1630,17 @@ static void print_stats(void)
 				}
 
 				/*
-				 * Plateau hypothesis ruleset (Phase 1 --
-				 * diagnostics only).  Drive the per-tick check
-				 * here so the hypothesis classification cadence
-				 * matches the cadence the operator reads the
-				 * KCOV/PICKER block at -- a transition log
-				 * line in stats.log will be accompanied by the
-				 * same window's hypothesis line in the periodic
-				 * dump.  Suppress the visibility line entirely
-				 * when plateau is idle so healthy runs do not
-				 * carry a perpetual NONE annotation.  The fire-
-				 * count tail stays visible across plateau
+				 * Plateau hypothesis ruleset.  Drive the per-
+				 * tick check here so the hypothesis
+				 * classification cadence matches the cadence
+				 * the operator reads the KCOV/PICKER block at
+				 * -- a transition log line in stats.log will
+				 * be accompanied by the same window's
+				 * hypothesis line in the periodic dump.
+				 * Suppress the visibility line entirely when
+				 * plateau is idle so healthy runs do not
+				 * carry a perpetual NONE annotation.  The
+				 * fire-count tail stays visible across plateau
 				 * transitions only -- printing it on every
 				 * stats tick during healthy windows would
 				 * obscure that nothing has fired yet on a

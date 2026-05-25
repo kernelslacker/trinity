@@ -371,10 +371,15 @@ struct kcov_shared {
 	 * emitted when the rate climbs back above threshold.  Entry into
 	 * PLATEAU also fires strategy_plateau_response(), which forces an
 	 * immediate strategy rotation into the plateau-intervention layer.
-	 * That layer round-robins among RRC-biased replay, anti-prior accept
-	 * gating, and uniform random, and pins PIM_ANTI_PRIOR when the
-	 * hypothesis classifier has tagged the run as frontier_cold.
-	 * Interventions unwind automatically on the matching CLEARED edge. */
+	 * That layer is a flat round-robin among RRC-biased replay, anti-
+	 * prior accept gating, and uniform random; the rotation does not
+	 * pin a mode based on the hypothesis classifier.  The published
+	 * hypothesis is consumed separately at per-call gates in child.c
+	 * (CHILDOP_DOMINANT raises the alt-op burst threshold) and in
+	 * minicorpus.c (CMP_RISING_PC_FLAT doubles the replay rate and
+	 * narrows the slot picker) -- see the strategy.h header for the
+	 * full consumer contract.  Interventions unwind automatically on
+	 * the matching CLEARED edge. */
 	time_t plateau_window_start;
 	unsigned long plateau_prev_edges;
 	unsigned long plateau_last_window_delta;
@@ -511,8 +516,9 @@ unsigned int kcov_syscall_cold_skip_pct(unsigned int nr);
  * PLATEAU CLEARED line when the rate recovers.  On the PLATEAU rising
  * edge it also fires strategy_plateau_response(), which forces a
  * strategy rotation into the plateau-intervention layer (RRC-biased
- * replay, anti-prior accept gating, or uniform random; frontier_cold
- * hypotheses pin anti-prior).  Interventions unwind on CLEARED. */
+ * replay, anti-prior accept gating, or uniform random in a flat
+ * round-robin -- the rotation does not pin a mode based on the
+ * hypothesis classifier).  Interventions unwind on CLEARED. */
 void kcov_plateau_check(void);
 
 /* Mid-run snapshot cadence for kcov_bitmap_maybe_snapshot().  The bitmap

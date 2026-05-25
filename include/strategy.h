@@ -531,13 +531,38 @@ void plateau_anti_prior_refresh_baseline(void);
 const char *plateau_intervention_mode_name(enum plateau_intervention_mode m);
 
 /*
- * Plateau hypothesis machinery (Phase 1 -- diagnostics only).
+ * Plateau hypothesis machinery.
  *
  * On the rising-edge transition into plateau_active the orchestrator
- * captures a snapshot of every counter the rule evaluator (Phase 2)
- * will need to classify WHY discovery has stalled.  A later periodic
- * tick computes the current snapshot, derives the per-counter delta
- * vs the entry snapshot, and feeds the delta into the rule evaluator.
+ * captures a snapshot of every counter the rule evaluator will need
+ * to classify WHY discovery has stalled.  A later periodic tick
+ * computes the current snapshot, derives the per-counter delta vs
+ * the entry snapshot, and feeds the delta into the rule evaluator.
+ * The evaluator's result is published to shm->plateau_current_
+ * hypothesis so per-call consumer gates can read it.
+ *
+ * Consumer contract (per-call gates -- the strategy-selection
+ * rotation in select_next_strategy is a flat round-robin and does
+ * NOT pin a mode based on the hypothesis):
+ *
+ *   PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT
+ *     minicorpus.c minicorpus_maybe_replay() doubles the corpus
+ *     replay rate (25% -> 50%) and narrows the slot picker to the
+ *     K_RECENT newest entries to favour freshly-admitted CMP-source
+ *     material.
+ *
+ *   PLATEAU_HYPOTHESIS_CHILDOP_DOMINANT
+ *     child.c pick_op_type() raises the non-dedicated-child alt-op
+ *     burst threshold from 5% to 25% so the alt-op channel that's
+ *     out-discovering generic syscalls gets a proportionate share.
+ *
+ *   PLATEAU_HYPOTHESIS_REMOTE_DOMINANT
+ *   PLATEAU_HYPOTHESIS_FRONTIER_COLD
+ *   PLATEAU_HYPOTHESIS_SINGLE_GROUP_DOMINANT
+ *     No consumer today -- diagnostics only.  Their fire counters
+ *     surface in the periodic stats line and the end-of-run dump so
+ *     the operator can see the cumulative distribution; wiring a
+ *     consumer is a design decision, not a follow-on cleanup.
  *
  * struct plateau_window_snapshot lives in shm-free memory -- the
  * entry snapshot is parent-private (only the parent walks the plateau
@@ -614,23 +639,25 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap);
 
 /*
  * Per-field delta out = now - entry, saturating to 0 on inversion.
- * Used by the rule evaluator (Phase 2) to score the deltas against
- * the conservative thresholds in each rule branch.
+ * Used by the rule evaluator to score the deltas against the
+ * conservative thresholds in each rule branch.
  */
 void plateau_snapshot_delta(struct plateau_window_snapshot *out,
 			    const struct plateau_window_snapshot *entry,
 			    const struct plateau_window_snapshot *now);
 
 /*
- * Plateau hypothesis classifier (Phase 1 -- diagnostics only).
+ * Plateau hypothesis classifier.
  *
  * Each value names ONE hypothesis about why discovery has stalled.
- * The orchestrator does NOT yet act on the hypothesis -- when a rule
- * matches we only log which rule fired and bump a per-hypothesis fire
- * counter so the operator can see the cumulative distribution across
- * a long run.  The intervention layer (changing strategy, explorer
- * mix, remote-KCOV rate, cold-skip threshold in response to a fired
- * rule) is Phase 2 territory.
+ * The orchestrator publishes the matched value to shm->plateau_
+ * current_hypothesis on every tick and bumps a per-hypothesis fire
+ * counter on every transition into a non-NONE class.  Per-call
+ * consumer gates in child.c and minicorpus.c read the published
+ * value and apply targeted biases for the two hypotheses that have
+ * consumers today (see the contract in the header block above);
+ * unconsumed hypotheses surface only via the fire-count distribution
+ * and remain diagnostics-only.
  *
  * Conservative thresholds throughout: each rule needs evidence that
  * would not show up in a healthy or short-lived plateau window.  See
@@ -665,8 +692,10 @@ const char *strategy_plateau_hypothesis_name(enum plateau_hypothesis h);
 /*
  * Evaluate the rule tree against the (entry, now) delta.  Pure function
  * over the snapshot deltas -- no side effects, no logging, no counter
- * bumps.  Callers (print_stats below; future Phase 2 intervention
- * dispatcher) handle the bookkeeping and side effects.
+ * bumps.  The per-tick driver (strategy_plateau_hypothesis_tick) wraps
+ * the call with the publish-and-log bookkeeping; consumer gates in
+ * child.c and minicorpus.c read the published value from shm rather
+ * than re-running the rule check.
  *
  * Returns PLATEAU_HYPOTHESIS_NONE when no rule matches the deltas;
  * this is the expected state for a freshly-entered plateau where

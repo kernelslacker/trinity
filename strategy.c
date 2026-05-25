@@ -1193,10 +1193,14 @@ void plateau_snapshot_delta(struct plateau_window_snapshot *out,
 }
 
 /*
- * Plateau hypothesis classifier (Phase 1 -- diagnostics only).
+ * Plateau hypothesis classifier driver.
  *
  * Parent-private state: the tick driver only runs on the parent path
- * (called from print_stats()) so no atomics or locking are needed.
+ * (called from print_stats()) so no atomics or locking are needed
+ * for the file-local arrays below.  The publish path into
+ * shm->plateau_current_hypothesis uses RELAXED atomics so consumer
+ * gates in child.c and minicorpus.c read a consistent value -- see
+ * the strategy.h consumer-contract block for the gates.
  *
  * hypothesis_entry_snap is captured once on the rising edge into
  * plateau_active and held until the matching falling edge.  Per-tick
