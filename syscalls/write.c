@@ -48,12 +48,67 @@ static void sanitise_write(struct syscallrecord *rec)
 	unsigned int size;
 	void *ptr;
 	struct write_post_state *snap;
+	int forced_fd = -1;
+	int forced_size = -1;
+	bool eventfd_payload = false;
+
+	/*
+	 * Per-fd-type bias: the generic ARG_FD pool rarely picks the
+	 * poll-style fd types, and the random RAND_BOOL ? 1 :
+	 * rnd_modulo_u32(page_size) shape almost never lines up the
+	 * ABI-mandated write width those types require.
+	 *
+	 *   - eventfd:  write() MUST be exactly 8 bytes carrying a u64
+	 *               counter add; anything else returns -EINVAL and
+	 *               the consumer-side poll-wakeup path never fires.
+	 *   - timerfd / signalfd: read-only; write() returns -EINVAL
+	 *               unconditionally.  Targeted small-size probes
+	 *               exercise the per-fd-type write-reject hook.
+	 *
+	 * Roll once out of 100; on typed-pool empty (-1) fall through to
+	 * the generic ARG_FD path so we never publish a stale fd.
+	 */
+	{
+		unsigned int roll = rnd_modulo_u32(100);
+
+		if (roll < 20) {
+			int efd = get_typed_fd(ARG_FD_EVENTFD);
+			if (efd >= 0) {
+				forced_fd = efd;
+				forced_size = sizeof(uint64_t);
+				eventfd_payload = true;
+			}
+		} else if (roll < 30) {
+			int tfd = get_typed_fd(ARG_FD_TIMERFD);
+			if (tfd >= 0) {
+				static const unsigned int tsizes[] = {
+					0, 1, 7, 8, 9,
+				};
+				forced_fd = tfd;
+				forced_size = RAND_ARRAY(tsizes);
+			}
+		} else if (roll < 40) {
+			int sfd = get_typed_fd(ARG_FD_SIGNALFD);
+			if (sfd >= 0) {
+				static const unsigned int ssizes[] = {
+					0, 1, 7, 8, 128,
+				};
+				forced_fd = sfd;
+				forced_size = RAND_ARRAY(ssizes);
+			}
+		}
+	}
+
+	if (forced_fd >= 0)
+		rec->a1 = (unsigned long) forced_fd;
 
 	/* Last line of defense: don't write to stdin/stdout/stderr. */
 	if (rec->a1 <= 2)
 		rec->a1 = get_random_fd();
 
-	if (RAND_BOOL())
+	if (forced_size >= 0)
+		size = (unsigned int) forced_size;
+	else if (RAND_BOOL())
 		size = 1;
 	else
 		size = rnd_modulo_u32(page_size);
@@ -62,7 +117,12 @@ static void sanitise_write(struct syscallrecord *rec)
 	if (ptr == NULL)
 		return;
 
-	generate_rand_bytes(ptr, size);
+	if (eventfd_payload) {
+		uint64_t val = rnd_u64();
+		memcpy(ptr, &val, sizeof(val));
+	} else {
+		generate_rand_bytes(ptr, size);
+	}
 
 	rec->a2 = (unsigned long) ptr;
 	rec->a3 = size;
