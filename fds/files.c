@@ -120,6 +120,7 @@ int open_pool_files(unsigned int pool_id, enum objecttype objtype)
 		struct stat sb;
 		const char *filename;
 		struct object *obj;
+		unsigned int attempts = 0;
 		int fd = -1;
 		int flags;
 
@@ -143,7 +144,7 @@ int open_pool_files(unsigned int pool_id, enum objecttype objtype)
 				continue;
 
 			fd = open_file(obj, filename, flags);
-		} while (fd == -1);
+		} while (fd == -1 && ++attempts < 64);
 
 		if (fd == -1) {
 			free(obj);
