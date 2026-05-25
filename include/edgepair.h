@@ -100,6 +100,16 @@ void edgepair_record(struct childdata *child,
 bool edgepair_is_cold(unsigned int prev_nr, unsigned int curr_nr);
 
 /*
+ * Parent-side cold predicate.  Same math as edgepair_is_cold() but
+ * keyed by a parent_edgepair.table[] entry pointer and reading the
+ * canonical aggregate directly (no child-RO mirror).  For stats / dump
+ * walkers that are already iterating parent_edgepair.table[]; using
+ * the mirror-keyed edgepair_is_cold() there can disagree with the
+ * canonical entry the surrounding code is about to print.
+ */
+bool edgepair_entry_is_cold_parent(const struct edgepair_entry *e);
+
+/*
  * Read-only accessor returning the raw (new_edges, total) counters for a
  * given (prev, curr) pair.  Returns {0, 0} on miss or before the table is
  * initialised.  Callers compute their own productivity ratio without

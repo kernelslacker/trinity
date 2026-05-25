@@ -57,7 +57,8 @@ struct edgepair_ring {
  * edgepair_ring; the aggregate is read-only from child context and
  * accessed via the published mirror page (for the one child-read site
  * that exists, edgepair_is_cold) or through parent-canonical lookups
- * for the parent-side consumers (edgepair_get_stats, dump, stats).
+ * for the parent-side consumers (edgepair_get_stats, dump, stats; the
+ * parent-canonical cold predicate is edgepair_entry_is_cold_parent).
  *
  * Same slot layout as the shm table it shadows -- struct edgepair_entry
  * carries the CAS-key union which is harmless as plain memory parent-

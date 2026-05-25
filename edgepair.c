@@ -117,6 +117,33 @@ bool edgepair_is_cold(unsigned int prev_nr, unsigned int curr_nr)
 	return false;
 }
 
+bool edgepair_entry_is_cold_parent(const struct edgepair_entry *e)
+{
+	unsigned long total, last;
+
+	if (!edgepair_enabled || e == NULL)
+		return false;
+
+	/* Never found new edges -- not cold, just unproductive. */
+	if (e->new_edge_count == 0)
+		return false;
+
+	/* Parent-canonical cold predicate: walk the same math as
+	 * edgepair_is_cold() but read parent_edgepair.table[] /
+	 * parent_edgepair.total_pair_calls directly rather than the
+	 * child-RO published mirror.  Parent is the sole writer of both
+	 * (see include/edgepair_ring.h aggregate comment) so plain reads
+	 * are safe; the stats walkers that consult this predicate are
+	 * already iterating parent_edgepair.table[] entries, and the
+	 * mirror can lag or briefly disagree with the canonical entry
+	 * the surrounding stats code is about to print. */
+	total = parent_edgepair.total_pair_calls;
+	last = e->last_new_at;
+	if (last >= total)
+		return false;
+	return (total - last) > EDGEPAIR_COLD_THRESHOLD;
+}
+
 struct edgepair_stats edgepair_get_stats(unsigned int prev_nr,
 					 unsigned int curr_nr)
 {

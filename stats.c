@@ -540,7 +540,7 @@ static void json_emit_edgepair_section(void)
 		edges = e->new_edge_count;
 		if (edges == 0)
 			continue;
-		if (edgepair_is_cold(e->prev_nr, e->curr_nr))
+		if (edgepair_entry_is_cold_parent(e))
 			cold_pairs++;
 
 		for (j = top_count; j > 0 && edges > top[j - 1].new_edges; j--) {
@@ -4898,7 +4898,7 @@ void dump_stats(void)
 			if (edges == 0)
 				continue;
 
-			if (edgepair_is_cold(e->prev_nr, e->curr_nr))
+			if (edgepair_entry_is_cold_parent(e))
 				cold_pairs++;
 
 			for (j = top_count; j > 0 && edges > top[j - 1].new_edges; j--) {
