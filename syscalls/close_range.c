@@ -324,6 +324,20 @@ static void post_close_range(struct syscallrecord *rec)
 		goto out_free;
 
 	/*
+	 * Trinity routinely fuzzes this syscall with negative values.
+	 * snap->fd stores the unsigned bit pattern of the original a1,
+	 * so a well-formed range of negatives (max_fd just above fd as
+	 * signed ints) glides through the 1024-fd clamp below and ends
+	 * up enqueueing FD_EVENT_CLOSE events that cast back to negative
+	 * fds.  The parent ring rejects them via payload_valid(), but
+	 * each rejection is logged, so a single fuzz call can spam ~1k
+	 * corrupt-event messages.  Bail -- the parent has nothing to do
+	 * with negative fds anyway.
+	 */
+	if ((int) fd < 0)
+		goto out_free;
+
+	/*
 	 * Guard the unsigned subtraction below.  A snapshot with
 	 * max_fd < fd is either a kernel that accepted an inverted range
 	 * (it should not) or a snapshot whose inner fields were
