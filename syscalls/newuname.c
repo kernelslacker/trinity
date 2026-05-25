@@ -2,6 +2,7 @@
  *
  * SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
  */
+#include <fcntl.h>
 #include <stdio.h>
 #include <stddef.h>
 #include <string.h>
@@ -59,20 +60,34 @@ static void sanitise_newuname(struct syscallrecord *rec)
 
 static int read_kernel_string(const char *path, char *out, size_t outsz)
 {
-	FILE *fp;
+	ssize_t n;
 	size_t len;
+	int fd;
+	char *nl;
 
-	fp = fopen(path, "r");
-	if (!fp)
+	/* Raw open/read instead of fopen/fgets/fclose: this oracle runs from
+	 * the post handler under fuzz; stdio's per-call malloc of the FILE
+	 * struct + IO buffer is heap traffic we don't need on this hot path,
+	 * and stdio's internal locking is undefined in async-signal contexts
+	 * which the child fuzzer is heavily exposed to. */
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
 		return -1;
-	if (!fgets(out, outsz, fp)) {
-		fclose(fp);
+	n = read(fd, out, outsz - 1);
+	close(fd);
+	if (n <= 0)
 		return -1;
-	}
-	fclose(fp);
+	out[n] = '\0';
+
+	/* fgets() truncated at the first newline; preserve that semantic so
+	 * the downstream strcmp against a single utsname field still matches
+	 * if /proc returns more than one line of data. */
+	nl = strchr(out, '\n');
+	if (nl != NULL)
+		*nl = '\0';
 
 	len = strlen(out);
-	while (len > 0 && (out[len - 1] == '\n' || out[len - 1] == '\r' ||
+	while (len > 0 && (out[len - 1] == '\r' ||
 			   out[len - 1] == ' ' || out[len - 1] == '\t'))
 		out[--len] = '\0';
 	return 0;

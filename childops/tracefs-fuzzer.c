@@ -244,22 +244,51 @@ static void discover_event_enables(void)
 static void discover_tracers(void)
 {
 	char path[TRACEFS_MAX_PATH];
-	FILE *f;
-	char word[32];
+	char buf[1024];
+	char *p, *end;
+	ssize_t n;
+	int fd;
 
 	tracers_discovered = true;
 
 	snprintf(path, sizeof(path), "%s/available_tracers", TRACEFS_ROOT);
-	f = fopen(path, "r");
-	if (f == NULL)
+	/* Raw open/read instead of fopen/fscanf/fclose: avoid stdio's
+	 * per-call malloc of the FILE struct + IO buffer.  available_tracers
+	 * is a single short line of whitespace-separated tracer names; one
+	 * bounded read is enough. */
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
 		return;
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return;
+	buf[n] = '\0';
 
-	while (nr_discovered_tracers < 16 && fscanf(f, "%31s", word) == 1) {
-		snprintf(discovered_tracers[nr_discovered_tracers],
-			 sizeof(discovered_tracers[0]), "%s", word);
+	p = buf;
+	end = buf + n;
+	while (p < end && nr_discovered_tracers < 16) {
+		size_t wlen;
+
+		while (p < end && (*p == ' ' || *p == '\t' || *p == '\n' ||
+				   *p == '\r'))
+			p++;
+		if (p >= end)
+			break;
+
+		wlen = 0;
+		while (p + wlen < end && p[wlen] != ' ' && p[wlen] != '\t' &&
+		       p[wlen] != '\n' && p[wlen] != '\r')
+			wlen++;
+		if (wlen == 0)
+			break;
+		if (wlen > sizeof(discovered_tracers[0]) - 1)
+			wlen = sizeof(discovered_tracers[0]) - 1;
+		memcpy(discovered_tracers[nr_discovered_tracers], p, wlen);
+		discovered_tracers[nr_discovered_tracers][wlen] = '\0';
 		nr_discovered_tracers++;
+		p += wlen;
 	}
-	fclose(f);
 }
 
 static void write_text_payload(const char *path)

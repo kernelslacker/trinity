@@ -4,6 +4,8 @@
 	 pid_t, pid, int, cpu, int, group_fd, unsigned long, flags)
  */
 
+#include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -289,6 +291,32 @@ static int parse_generic(int pmu, const char *value,
 }
 
 
+/*
+ * Raw open/read/close one-shot reader.  Replaces the fopen/fscanf/fclose
+ * sites below: avoids stdio's per-call FILE struct + IO buffer malloc and
+ * its internal locking, matching the project convention for procfs/sysfs
+ * oracle reads.  Returns the number of bytes read into @buf (NUL-terminator
+ * always appended on success), or -1 on open / read failure.  Caller does
+ * its own parsing via sscanf().
+ */
+static ssize_t read_sysfs_value(const char *path, char *buf, size_t bufsz)
+{
+	ssize_t n;
+	int fd;
+
+	if (bufsz == 0)
+		return -1;
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
+		return -1;
+	n = read(fd, buf, bufsz - 1);
+	close(fd);
+	if (n < 0)
+		return -1;
+	buf[n] = '\0';
+	return n;
+}
+
 static int init_pmus(void) {
 
 	DIR *dir,*event_dir,*format_dir;
@@ -299,8 +327,8 @@ static int init_pmus(void) {
 	char temp_name[BUFSIZ*2] = "";
 	char format_name[BUFSIZ+7] = "";
 	char format_value[BUFSIZ] = "";
+	char read_buf[BUFSIZ] = "";
 	int type,pmu_num=0,format_num=0,generic_num=0;
-	FILE *fff;
 	int result = -1;
 
 
@@ -351,13 +379,9 @@ static int init_pmus(void) {
 
 		/* read type */
 		snprintf(temp_name, sizeof(temp_name), "%s/type",dir_name);
-		fff=fopen(temp_name,"r");
-		if (fff==NULL) {
-		}
-		else {
-			result=fscanf(fff,"%d",&type);
+		if (read_sysfs_value(temp_name, read_buf, sizeof(read_buf)) >= 0) {
+			result=sscanf(read_buf,"%d",&type);
 			if (result==1) pmus[pmu_num].type=type;
-			fclose(fff);
 		}
 
 		/***********************/
@@ -407,18 +431,15 @@ static int init_pmus(void) {
 					continue;
 				snprintf(temp_name, sizeof(temp_name), "%s/format/%s",
 					dir_name,format_entry->d_name);
-				fff=fopen(temp_name,"r");
-				if (fff!=NULL) {
-					result=fscanf(fff,"%s",format_value);
+				if (read_sysfs_value(temp_name, read_buf,
+						     sizeof(read_buf)) >= 0) {
+					result=sscanf(read_buf,"%s",format_value);
 					if (result==1) {
 						pmus[pmu_num].formats[format_num].value=
 						strdup(format_value);
-						if (!pmus[pmu_num].formats[format_num].value) {
-							fclose(fff);
+						if (!pmus[pmu_num].formats[format_num].value)
 							continue;
-						}
 					}
-					fclose(fff);
 
 					parse_format(format_value,
 						&pmus[pmu_num].formats[format_num].field,
@@ -477,18 +498,15 @@ static int init_pmus(void) {
 					continue;
 				snprintf(temp_name, sizeof(temp_name), "%s/events/%s",
 					dir_name,event_entry->d_name);
-				fff=fopen(temp_name,"r");
-				if (fff!=NULL) {
-					result=fscanf(fff,"%s",event_value);
+				if (read_sysfs_value(temp_name, read_buf,
+						     sizeof(read_buf)) >= 0) {
+					result=sscanf(read_buf,"%s",event_value);
 					if (result==1) {
 						pmus[pmu_num].generic_events[generic_num].value=
 							strdup(event_value);
-						if (!pmus[pmu_num].generic_events[generic_num].value) {
-							fclose(fff);
+						if (!pmus[pmu_num].generic_events[generic_num].value)
 							continue;
-						}
 					}
-					fclose(fff);
 				}
 				parse_generic(pmu_num,event_value,
 						&pmus[pmu_num].generic_events[generic_num].config,

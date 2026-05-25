@@ -3,6 +3,7 @@
  *		u64 __user *, mnt_ids, size_t, nr_mnt_ids,
  *		unsigned int, flags)
  */
+#include <fcntl.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -64,26 +65,46 @@ static bool listmount_mnt_id_pool_loaded;
 
 static void load_listmount_mnt_id_pool(void)
 {
-	FILE *f;
-	char line[1024];
+	static char buf[32768];
+	ssize_t n;
+	char *p, *end;
+	int fd;
 
 	if (listmount_mnt_id_pool_loaded)
 		return;
 	listmount_mnt_id_pool_loaded = true;
 
-	f = fopen("/proc/self/mountinfo", "r");
-	if (f == NULL)
+	/* Raw open/read instead of fopen/fgets/fclose: avoid stdio's
+	 * per-call malloc of the FILE struct + IO buffer.  One bounded read
+	 * of /proc/self/mountinfo into a fixed buffer is enough to pull the
+	 * first POOL_SIZE mount IDs out -- if mountinfo overflows the
+	 * buffer we simply parse fewer lines, which only affects the
+	 * biasing distribution, not correctness. */
+	fd = open("/proc/self/mountinfo", O_RDONLY);
+	if (fd < 0)
 		return;
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return;
+	buf[n] = '\0';
 
-	while (listmount_mnt_id_pool_n < LISTMOUNT_MNT_ID_POOL_SIZE &&
-	       fgets(line, sizeof(line), f) != NULL) {
+	p = buf;
+	end = buf + n;
+	while (p < end &&
+	       listmount_mnt_id_pool_n < LISTMOUNT_MNT_ID_POOL_SIZE) {
 		unsigned long long id;
+		char *nl = memchr(p, '\n', end - p);
 
-		if (sscanf(line, "%llu ", &id) == 1)
+		if (nl != NULL)
+			*nl = '\0';
+		if (sscanf(p, "%llu ", &id) == 1)
 			listmount_mnt_id_pool[listmount_mnt_id_pool_n++] =
 				(__u64) id;
+		if (nl == NULL)
+			break;
+		p = nl + 1;
 	}
-	fclose(f);
 }
 
 /*
