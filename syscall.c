@@ -74,7 +74,7 @@ static long syscall32(unsigned int call,
 			 * cached validity bit when nr_active hit zero; pin it
 			 * here so the auto-disable point is self-evidently
 			 * coherent even if the loop above ever exits early. */
-			shm->valid_syscall_table_32 = false;
+			__atomic_store_n(&shm->valid_syscall_table_32, false, __ATOMIC_RELAXED);
 already_done:
 			unlock(&shm->syscalltable_lock);
 		}

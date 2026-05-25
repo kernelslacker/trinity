@@ -57,13 +57,13 @@ bool choose_syscall_table(struct childdata *child,
 	 * Read the cached validity bits maintained by validate_syscall_table_*
 	 * and the deactivate_syscall{32,64}() paths instead of re-running the
 	 * walk on every pick. */
-	if (shm->valid_syscall_table_64 == false) {
+	if (__atomic_load_n(&shm->valid_syscall_table_64, __ATOMIC_RELAXED) == false) {
 		use_64bit = false;
 		/* If no 64bit syscalls enabled, force 32bit. */
 		do32 = true;
 	}
 
-	if (shm->valid_syscall_table_32 == false)
+	if (__atomic_load_n(&shm->valid_syscall_table_32, __ATOMIC_RELAXED) == false)
 		use_32bit = false;
 
 	/* If both tables enabled, pick randomly. */
