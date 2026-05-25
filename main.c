@@ -1651,7 +1651,7 @@ static void print_stats(void)
 					const struct plateau_window_snapshot *d =
 						strategy_plateau_hypothesis_delta();
 					output(0,
-						"plateau_hypothesis: %s (cmp_delta=+%lu pc_delta=+%lu childop_delta=+%lu generic_delta=+%lu remote_delta=+%lu/+%lu frontier_picks=%lu) fires: cmp_rising_pc_flat=%lu childop_dominant=%lu remote_dominant=%lu frontier_cold=%lu single_group_dominant=%lu fc_iv=%lu cd_iv=%lu cr_iv=%lu\n",
+						"plateau_hypothesis: %s (cmp_delta=+%lu pc_delta=+%lu childop_delta=+%lu generic_delta=+%lu remote_delta=+%lu/+%lu frontier_picks=%lu) fires: cmp_rising_pc_flat=%lu childop_dominant=%lu remote_dominant=%lu frontier_cold=%lu single_group_dominant=%lu cd_iv=%lu cr_iv=%lu\n",
 						strategy_plateau_hypothesis_name(ph),
 						d->cmp_unique,
 						d->pc_edges,
@@ -1670,9 +1670,6 @@ static void print_stats(void)
 							PLATEAU_HYPOTHESIS_FRONTIER_COLD),
 						strategy_plateau_hypothesis_fires(
 							PLATEAU_HYPOTHESIS_SINGLE_GROUP_DOMINANT),
-						__atomic_load_n(
-							&shm->stats.frontier_cold_intervention_windows,
-							__ATOMIC_RELAXED),
 						__atomic_load_n(
 							&shm->stats.childop_burst_alt_picks_window,
 							__ATOMIC_RELAXED),

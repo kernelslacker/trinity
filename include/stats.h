@@ -1698,16 +1698,6 @@ struct stats_s {
 	 * path already serialises via syscalls_at_last_switch CAS. */
 	unsigned long plateau_forced_windows;
 
-	/* Phase 2 plateau intervention: count of rotations that pinned
-	 * PIM_ANTI_PRIOR because the frontier_cold hypothesis was live
-	 * (shm->plateau_current_hypothesis == PLATEAU_HYPOTHESIS_FRONTIER_
-	 * COLD).  Strict subset of plateau_intervention_mode_windows[PIM_
-	 * ANTI_PRIOR]; the difference between the two is the round-robin-
-	 * selected anti-prior windows from non-frontier_cold plateaus.
-	 * Bumped by the CAS-winning child inside select_next_strategy();
-	 * relaxed for the same reason plateau_forced_windows is. */
-	unsigned long frontier_cold_intervention_windows;
-
 	/* Phase 2 plateau intervention (childop_dominant): count of
 	 * pick_op_type() calls observed by non-dedicated children
 	 * while shm->plateau_current_hypothesis ==
@@ -1717,7 +1707,7 @@ struct stats_s {
 	 * than picks that resolved to an alt-op -- cross-reference
 	 * with the childop_invocations[] delta over plateau windows
 	 * for the realised alt-op yield.  Bumped RELAXED for the same
-	 * reason as frontier_cold_intervention_windows. */
+	 * reason plateau_forced_windows is. */
 	unsigned long childop_burst_alt_picks_window;
 
 	/* Per-vCPU ioctl dispatches into kvm_vcpu_grp.  Bumped from
