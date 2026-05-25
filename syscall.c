@@ -18,6 +18,7 @@
 #include "debug.h"
 #include "deferred-free.h"
 #include "fd-event.h"
+#include "fd.h"
 #include "kcov.h"
 #include "objects.h"
 #include "params.h"
@@ -134,6 +135,14 @@ static bool maybe_inject_fault(struct childdata *child, enum syscallstate state)
 		return false;
 
 	return true;
+}
+
+static void child_watchdog_evict_fd(int fd, void *ctx)
+{
+	struct childdata *child = ctx;
+
+	if (child->fd_event_ring != NULL)
+		fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE, fd);
 }
 
 static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
@@ -262,18 +271,17 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	if (needalarm && sigalrm_pending &&
 	    ret == (unsigned long)-1L && saved_errno == EINTR &&
 	    child != NULL && child->op_type == CHILD_OP_SYSCALL) {
-		uint8_t mask = entry->fd_arg_mask;
-
-		/* check_if_fd() treats ARG_SOCKETINFO in slot 0 as an fd
-		 * (post-sanitise the slot holds the resulting fd, not the
-		 * socketinfo struct).  is_fdarg() does not, so the cached
-		 * fd_arg_mask omits this slot.  Mirror the legacy behaviour
-		 * here so the patch is behaviour-preserving relative to the
-		 * old handle_alarm_timeout() walker. */
+		/* Gate the bookkeeping on "the syscall has fd-bearing arg
+		 * slots", matching the slot-set for_each_fd_arg() will walk
+		 * (fd_arg_mask plus the ARG_SOCKETINFO-in-slot-0 mirror).
+		 * Bump stats and reset fd_lifetime once per stuck-syscall
+		 * event, regardless of how many of those args' raw values
+		 * actually pass the rlimit check inside the walk. */
+		uint8_t gate = entry->fd_arg_mask;
 		if (entry->argtype[0] == ARG_SOCKETINFO)
-			mask |= 0x01;
+			gate |= 0x01;
 
-		if (mask != 0) {
+		if (gate != 0) {
 			unsigned long args[6] = { a1, a2, a3, a4, a5, a6 };
 
 			child->fd_lifetime = 0;
@@ -282,20 +290,8 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 					   STATS_FIELD_WATCHDOG_FD_EVICT,
 					   0, 1);
 
-			while (mask != 0) {
-				unsigned int slot = (unsigned int)__builtin_ctz(mask);
-				unsigned long fd = args[slot];
-
-				mask &= (uint8_t)(mask - 1);
-
-				if (fd > max_files_rlimit.rlim_cur)
-					continue;
-
-				if (child->fd_event_ring != NULL)
-					fd_event_enqueue(child->fd_event_ring,
-							 FD_EVENT_CLOSE,
-							 (int) fd);
-			}
+			for_each_fd_arg(entry, args,
+					child_watchdog_evict_fd, child);
 		}
 
 		/* Eviction handled here; clear the pending flag so the child

@@ -1,9 +1,12 @@
 #pragma once
 
+#include <sys/resource.h>
+
 #include "child.h"
 #include "list.h"
 #include "object-types.h"
 #include "syscall.h"
+#include "trinity.h"
 #include "types.h"
 
 struct epollobj;
@@ -55,7 +58,42 @@ void run_fd_provider_child_ops(void);
  */
 const char *fd_provider_name(enum objecttype type);
 
-bool check_if_fd(struct syscallrecord *rec);
+/*
+ * Walk every fd-bearing arg slot in entry's argtype[].  args[0..5] holds
+ * the per-slot syscall argument values (a1..a6).  cb(fd, ctx) is invoked
+ * once per slot whose argtype is is_fdarg(), plus argtype[0] == ARG_SOCKETINFO
+ * (post-sanitise slot 0 holds the resulting fd, not the socketinfo struct;
+ * is_fdarg() does not cover that case so we mirror it explicitly here).
+ * Values whose raw arg exceeds max_files_rlimit.rlim_cur are skipped.
+ * No locking: caller owns rec->lock or a stable snapshot of args[].
+ */
+typedef void (*fd_arg_cb)(int fd, void *ctx);
+
+static inline void for_each_fd_arg(const struct syscallentry *entry,
+				   const unsigned long args[6],
+				   fd_arg_cb cb, void *ctx)
+{
+	uint8_t mask;
+
+	if (entry == NULL)
+		return;
+
+	mask = entry->fd_arg_mask;
+	if (entry->argtype[0] == ARG_SOCKETINFO)
+		mask |= 0x01;
+
+	while (mask != 0) {
+		unsigned int slot = (unsigned int)__builtin_ctz(mask);
+		unsigned long fd = args[slot];
+
+		mask &= (uint8_t)(mask - 1);
+
+		if (fd > max_files_rlimit.rlim_cur)
+			continue;
+
+		cb((int) fd, ctx);
+	}
+}
 
 /*
  * Return true if fd belongs to a registered fd_provider whose

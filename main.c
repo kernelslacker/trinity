@@ -16,6 +16,7 @@
 #include "cmp_hints.h"
 #include "debug.h"
 #include "edgepair_ring.h"
+#include "fd.h"
 #include "fd-event.h"
 #include "kcov.h"
 #include "minicorpus.h"
@@ -359,39 +360,6 @@ static void kill_all_kids(void)
 }
 
 
-/* if the first arg was an fd, find out which one it was.
- * Call with syscallrecord lock held. */
-bool check_if_fd(struct syscallrecord *rec)
-{
-	struct syscallentry *entry;
-	unsigned int fd;
-
-	entry = get_syscall_entry(rec->nr, rec->do32bit);
-	if (entry == NULL)
-		return false;
-
-	if (!is_typed_fdarg(entry->argtype[0])) {
-		switch (entry->argtype[0]) {
-		case ARG_FD:
-		case ARG_SOCKETINFO:
-			break;
-		default:
-			return false;
-		}
-	}
-
-	/* in the SOCKETINFO case, post syscall, a1 is actually the fd,
-	 * not the socketinfo.  In ARG_FD a1=fd.
-	 */
-	fd = rec->a1;
-
-	/* if it's out of range, it's not going to be valid. */
-	if (fd > max_files_rlimit.rlim_cur)
-		return false;
-
-	return true;
-}
-
 /*
  * This is only ever used by the main process, so we cache the FILE ptr
  * for each child there, to save having to constantly reopen it.
@@ -483,11 +451,31 @@ static void dump_pid_syscall(int pid)
 	fclose(fp);
 }
 
+struct stuck_evict_ctx {
+	int fds[6];
+	unsigned int n;
+};
+
+static void stuck_evict_fd(int fd, void *ctx)
+{
+	struct stuck_evict_ctx *c = ctx;
+
+	if (c->n < ARRAY_SIZE(c->fds))
+		c->fds[c->n++] = fd;
+
+	/* Remove the bad fd from the object pool so it won't be handed
+	 * out again. */
+	remove_object_by_fd(fd);
+}
+
 static void stuck_syscall_info(struct childdata *child, int childno)
 {
 	struct syscallrecord *rec;
+	struct syscallentry *entry = NULL;
+	struct stuck_evict_ctx ctx = { .n = 0 };
+	unsigned long args[6] = { 0 };
 	unsigned int callno;
-	char fdstr[20];
+	char fdstr[80];
 	pid_t pid;
 	bool do32;
 	char state;
@@ -504,23 +492,61 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 
 	do32 = rec->do32bit;
 	callno = rec->nr;
-
-	memset(fdstr, 0, sizeof(fdstr));
-
 	state = rec->state;
 
-	/* we can only be 'stuck' if we're still doing the syscall. */
+	/* we can only be 'stuck' if we're still doing the syscall.
+	 * Snapshot the args under the lock -- rec lives in shm and a
+	 * sibling could scribble it the moment we unlock. */
 	if (state == BEFORE) {
-		if (check_if_fd(rec) == true) {
-			snprintf(fdstr, sizeof(fdstr), "(fd = %u)", (unsigned int) rec->a1);
-			child->fd_lifetime = 0;
-			/* Remove the bad fd from the object pool so it
-			 * won't be handed out again. */
-			remove_object_by_fd((int) rec->a1);
-		}
+		entry = get_syscall_entry(rec->nr, rec->do32bit);
+		args[0] = rec->a1;
+		args[1] = rec->a2;
+		args[2] = rec->a3;
+		args[3] = rec->a4;
+		args[4] = rec->a5;
+		args[5] = rec->a6;
 	}
 
 	unlock(&rec->lock);
+
+	fdstr[0] = '\0';
+
+	if (state == BEFORE && entry != NULL) {
+		/* Same gate as the child-side watchdog in __do_syscall():
+		 * fd_arg_mask plus the ARG_SOCKETINFO-in-slot-0 mirror.
+		 * Outside that gate the syscall has no fd-bearing args at
+		 * all, so leave fdstr empty rather than print "(no fds)"
+		 * for every stuck non-fd syscall. */
+		uint8_t gate = entry->fd_arg_mask;
+		if (entry->argtype[0] == ARG_SOCKETINFO)
+			gate |= 0x01;
+
+		if (gate != 0) {
+			for_each_fd_arg(entry, args, stuck_evict_fd, &ctx);
+
+			if (ctx.n == 0) {
+				snprintf(fdstr, sizeof(fdstr), "(no fds)");
+			} else if (ctx.n == 1) {
+				snprintf(fdstr, sizeof(fdstr), "(fd = %d)",
+					 ctx.fds[0]);
+				child->fd_lifetime = 0;
+			} else {
+				int off = snprintf(fdstr, sizeof(fdstr),
+						   "(fds = ");
+				unsigned int i;
+
+				for (i = 0; i < ctx.n && off < (int)sizeof(fdstr); i++)
+					off += snprintf(fdstr + off,
+							sizeof(fdstr) - off,
+							"%s%d", i ? "," : "",
+							ctx.fds[i]);
+				if (off < (int)sizeof(fdstr))
+					snprintf(fdstr + off,
+						 sizeof(fdstr) - off, ")");
+				child->fd_lifetime = 0;
+			}
+		}
+	}
 
 	output(0, "child %d (pid %u. state:%d) Stuck in syscall %d:%s%s%s.\n",
 		childno, pid, state, callno,
