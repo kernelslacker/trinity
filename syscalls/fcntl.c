@@ -475,7 +475,7 @@ static void post_fcntl(struct syscallrecord *rec)
 struct syscallentry syscall_fcntl = {
 	.name = "fcntl",
 	.num_args = 3,
-	.argtype = { [0] = ARG_FD, [1] = ARG_OP },
+	.argtype = { [0] = ARG_FD, [1] = ARG_OP, [2] = ARG_STRUCT_PTR_INOUT },
 	.argname = { [0] = "fd", [1] = "cmd", [2] = "arg" },
 	.arg_params[1].list = ARGLIST(fcntl_flags),
 	.flags = NEED_ALARM,

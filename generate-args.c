@@ -840,7 +840,8 @@ static const struct struct_desc *paired_struct_desc(struct syscallentry *entry,
 	for (i = 0; i < entry->num_args; i++) {
 		enum argtype t = entry->argtype[i];
 
-		if (t == ARG_STRUCT_PTR_IN || t == ARG_STRUCT_PTR_OUT)
+		if (t == ARG_STRUCT_PTR_IN || t == ARG_STRUCT_PTR_OUT ||
+		    t == ARG_STRUCT_PTR_INOUT)
 			return struct_arg_lookup(rec->nr, i + 1, rec->do32bit);
 	}
 	return NULL;
@@ -1079,6 +1080,11 @@ const struct argtype_ops argtype_table[] = {
 	},
 	[ARG_STRUCT_PTR_OUT] = {
 		.name = "ARG_STRUCT_PTR_OUT",
+		.generate = gen_arg_struct_ptr_out,
+		.paired_length = ARG_STRUCT_SIZE,
+	},
+	[ARG_STRUCT_PTR_INOUT] = {
+		.name = "ARG_STRUCT_PTR_INOUT",
 		.generate = gen_arg_struct_ptr_out,
 		.paired_length = ARG_STRUCT_SIZE,
 	},
