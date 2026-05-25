@@ -4,6 +4,7 @@
  */
 
 #include <stdlib.h>
+#include <signal.h>
 #include <linux/capability.h>
 #include <linux/filter.h>
 #ifdef USE_SECCOMP
@@ -176,6 +177,88 @@ static void sanitise_prctl(struct syscallrecord *rec)
 		rec->a2 = PR_CFI_BRANCH_LANDING_PADS;
 		rec->a3 = RAND_ARRAY(cfi_ops);
 		break;
+
+	case PR_SET_TIMERSLACK:
+		/* 0 means "use task default 50us"; values >0 set slack ns. */
+		rec->a2 = RAND_RANGE(0, 1000000);
+		break;
+
+	case PR_SET_PDEATHSIG:
+		rec->a2 = RAND_RANGE(0, _NSIG);
+		rec->a3 = rec->a4 = rec->a5 = 0;
+		break;
+
+	case PR_SET_NAME:
+		/*
+		 * Kernel reads up to 16 bytes from userspace and truncates.
+		 * Leave content random; the kernel only validates the pointer.
+		 */
+		rec->a2 = (unsigned long) get_writable_address(16);
+		break;
+
+#ifdef PR_MDWE_REFUSE_EXEC_GAIN
+	case PR_SET_MDWE: {
+		static const unsigned long mdwe_flags[] = {
+			0,
+			PR_MDWE_REFUSE_EXEC_GAIN,
+			PR_MDWE_NO_INHERIT,
+			PR_MDWE_REFUSE_EXEC_GAIN | PR_MDWE_NO_INHERIT,
+		};
+		rec->a2 = mdwe_flags[rnd_modulo_u32(ARRAY_SIZE(mdwe_flags))];
+		rec->a3 = rec->a4 = rec->a5 = 0;
+		break;
+	}
+#endif
+
+#ifdef PR_TAGGED_ADDR_ENABLE
+	case PR_SET_TAGGED_ADDR_CTRL: {
+		static const unsigned long tagged_addr_flags[] = {
+			0,
+			PR_TAGGED_ADDR_ENABLE,
+			PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_SYNC,
+			PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_ASYNC,
+			PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_SYNC  | PR_MTE_TAG_MASK,
+			PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_ASYNC | PR_MTE_TAG_MASK,
+		};
+		rec->a2 = tagged_addr_flags[rnd_modulo_u32(ARRAY_SIZE(tagged_addr_flags))];
+		break;
+	}
+#endif
+
+#ifdef PR_PAC_APIAKEY
+	case PR_PAC_SET_ENABLED_KEYS: {
+		static const unsigned long pac_keys[] = {
+			PR_PAC_APIAKEY, PR_PAC_APIBKEY, PR_PAC_APDAKEY,
+			PR_PAC_APDBKEY, PR_PAC_APGAKEY,
+		};
+		unsigned long mask = 0;
+		size_t i;
+
+		for (i = 0; i < ARRAY_SIZE(pac_keys); i++)
+			if (RAND_BOOL())
+				mask |= pac_keys[i];
+		rec->a2 = mask;
+		rec->a3 = mask & rnd_u64();
+		break;
+	}
+#endif
+
+#ifdef PR_SVE_VL_INHERIT
+	case PR_SVE_SET_VL:
+		/* legal vl: 16..8192 in steps of 16; with optional flags. */
+		rec->a2 = (RAND_RANGE(1, 512) * 16) |
+			  (RAND_BOOL() ? PR_SVE_VL_INHERIT : 0) |
+			  (RAND_BOOL() ? PR_SVE_SET_VL_ONEXEC : 0);
+		break;
+#endif
+
+#ifdef PR_SME_VL_INHERIT
+	case PR_SME_SET_VL:
+		rec->a2 = (RAND_RANGE(1, 512) * 16) |
+			  (RAND_BOOL() ? PR_SME_VL_INHERIT : 0) |
+			  (RAND_BOOL() ? PR_SME_SET_VL_ONEXEC : 0);
+		break;
+#endif
 
 	case PR_GET_PDEATHSIG:
 	case PR_GET_UNALIGN:
