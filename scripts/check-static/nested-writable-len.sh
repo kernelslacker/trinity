@@ -19,8 +19,10 @@
 #
 # This check is a regex tripwire, not a full analyser: it grep-matches
 # the assignment shape
-#     (->|[)<field> = get_writable_(struct|long_string)(
-# and compares the resulting path:line list against a baseline of
+#     (->|[)<field> = [optional cast] get_writable_(struct|long_string)(
+# (i.e. both bare assignments and casted assignments such as
+#     req->data = (unsigned long) get_writable_struct(len + 4);
+# ) and compares the resulting path:line list against a baseline of
 # currently-known violators.  New violators not in the baseline fail
 # the check.  As fixes land, the corresponding baseline lines must be
 # removed in the same commit -- a stale baseline entry also fails.
@@ -32,7 +34,7 @@ NAME="nested-writable-len"
 ROOT="${REPO_ROOT:-$(pwd)}"
 BASELINE="$ROOT/scripts/check-static/nested-writable-len.baseline"
 
-PATTERN='(->|\[)[a-zA-Z0-9_]*[[:space:]]*=[[:space:]]*get_writable_(struct|long_string)[[:space:]]*\('
+PATTERN='(->|\[)[a-zA-Z0-9_]*[[:space:]]*=[[:space:]]*(\([^)]*\)[[:space:]]*)?get_writable_(struct|long_string)[[:space:]]*\('
 
 # Collect current matches as "path:line" relative to repo root,
 # skipping obvious comment / string-literal lines.
