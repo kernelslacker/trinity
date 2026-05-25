@@ -23,6 +23,7 @@
 #include "stats_ring.h"
 #include "syscall.h"
 #include "tables.h"
+#include "taint.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -5142,5 +5143,44 @@ void dump_stats(void)
 			stat_row("edgepair_coverage", "cold_pairs", cold_pairs);
 
 		edgepair_dump_to_file("edgepair.dump");
+	}
+
+	/*
+	 * Periodic snapshot of /proc/sys/kernel/tainted so successive
+	 * stats dumps record when the kernel became tainted and which
+	 * flags were set, without waiting for is_tainted()'s mask-gated
+	 * "became tainted" trip.  Skipped on a clean kernel to match
+	 * the "suppress when zero" convention of the surrounding blocks.
+	 * mask row carries the raw bitmask; one row per recognised flag
+	 * makes the decoded set greppable.
+	 */
+	{
+		static const struct {
+			const char *name;
+			int bit;
+		} taint_flags[] = {
+			{ "PROPRIETARY_MODULE",    TAINT_PROPRIETARY_MODULE },
+			{ "FORCED_MODULE",         TAINT_FORCED_MODULE },
+			{ "UNSAFE_SMP",            TAINT_UNSAFE_SMP },
+			{ "FORCED_RMMOD",          TAINT_FORCED_RMMOD },
+			{ "MACHINE_CHECK",         TAINT_MACHINE_CHECK },
+			{ "BAD_PAGE",              TAINT_BAD_PAGE },
+			{ "USER",                  TAINT_USER },
+			{ "DIE",                   TAINT_DIE },
+			{ "OVERRIDDEN_ACPI_TABLE", TAINT_OVERRIDDEN_ACPI_TABLE },
+			{ "WARN",                  TAINT_WARN },
+			{ "CRAP",                  TAINT_CRAP },
+			{ "FIRMWARE_WORKAROUND",   TAINT_FIRMWARE_WORKAROUND },
+			{ "OOT_MODULE",            TAINT_OOT_MODULE },
+		};
+		int current_taint = get_taint();
+		unsigned int t;
+
+		if (current_taint != 0) {
+			stat_row("taint", "mask", (unsigned long)current_taint);
+			for (t = 0; t < ARRAY_SIZE(taint_flags); t++)
+				if (current_taint & (1U << taint_flags[t].bit))
+					stat_row("taint", taint_flags[t].name, 1);
+		}
 	}
 }
