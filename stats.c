@@ -3266,6 +3266,9 @@ void dump_stats(void)
 	if (shm->stats.newfstat_oracle_anomalies)
 		stat_row("oracle", "newfstat_anomalies",
 			 shm->stats.newfstat_oracle_anomalies);
+	if (shm->stats.post_handler_untouched_out_buf)
+		stat_row("oracle", "untouched_out_buf",
+			 shm->stats.post_handler_untouched_out_buf);
 	if (shm->stats.newfstatat_oracle_anomalies)
 		stat_row("oracle", "newfstatat_anomalies",
 			 shm->stats.newfstatat_oracle_anomalies);

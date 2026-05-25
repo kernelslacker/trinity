@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include "arch.h"
 #include "deferred-free.h"
+#include "output-poison.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -26,6 +27,15 @@ struct newfstat_post_state {
 	unsigned long magic;
 	unsigned long fd;
 	unsigned long statbuf;
+	/*
+	 * Seed for the poison pattern stamped into statbuf at sanitise
+	 * time.  Returned by poison_output_struct() and fed back into
+	 * check_output_struct() in the post handler so a stomp of
+	 * rec->aN cannot redirect the check against an unrelated heap
+	 * page that happens to still carry the original (or any) byte
+	 * pattern.
+	 */
+	uint64_t poison_seed;
 };
 
 static void sanitise_newfstat(struct syscallrecord *rec)
@@ -50,6 +60,17 @@ static void sanitise_newfstat(struct syscallrecord *rec)
 	snap->magic   = NEWFSTAT_POST_STATE_MAGIC;
 	snap->fd      = rec->a1;
 	snap->statbuf = rec->a2;
+	/*
+	 * Stamp a per-call poison pattern into the user buffer the kernel
+	 * is about to fill.  The post handler asks check_output_struct()
+	 * whether the pattern survived intact; if it did on a success
+	 * return, the kernel wrote zero bytes despite reporting success.
+	 * Done after avoid_shared_buffer_out() so the poison lands on the
+	 * final buffer the kernel will see (the relocation may have
+	 * swapped rec->a2 for a fresh page).
+	 */
+	snap->poison_seed = poison_output_struct((void *)(unsigned long) rec->a2,
+						 sizeof(struct stat), 0);
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -153,6 +174,20 @@ static void post_newfstat(struct syscallrecord *rec)
 				  buf);
 			goto out_free;
 		}
+
+		/*
+		 * Untouched-buffer check: newfstat returned 0 (success) but
+		 * the user buffer still byte-for-byte matches the poison
+		 * pattern we stamped at sanitise time -- the kernel never
+		 * called copy_to_user() at all.  Bump the headline counter
+		 * and let the field-level oracle below run as before; that
+		 * will also fire (every field "differs" because first is all
+		 * poison and recheck is real) but the dedicated counter is
+		 * the cheaper, no-re-issue signal.
+		 */
+		if (check_output_struct(buf, sizeof(struct stat), snap->poison_seed))
+			__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+					   1, __ATOMIC_RELAXED);
 	}
 
 	memcpy(&first, (void *)(unsigned long) snap->statbuf, sizeof(first));

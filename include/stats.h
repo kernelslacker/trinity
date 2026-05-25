@@ -216,6 +216,18 @@ struct stats_s {
 	unsigned long readlinkat_oracle_anomalies;
 	unsigned long sysfs_oracle_anomalies;
 
+	/* check_output_struct() in a post handler saw the ARG_STRUCT_PTR_OUT
+	 * buffer still byte-for-byte equal to the poison pattern that
+	 * poison_output_struct() stamped at sanitise time, on a syscall that
+	 * returned success.  Means the kernel claimed the call worked without
+	 * copying any output into the user buffer.  Distinct from the
+	 * per-syscall oracle anomaly counters: those re-issue the syscall
+	 * and compare field by field, this catches the strict "zero bytes
+	 * written" subset cheaply without a re-entry into the kernel.
+	 * Wired into newfstat for now; treewide rollout to the other
+	 * ARG_STRUCT_PTR_OUT consumers is a follow-up. */
+	unsigned long post_handler_untouched_out_buf;
+
 	/* post_handler_corrupt_ptr / deferred_free_reject live in
 	 * struct stats_aggregate (parent-private) and are bumped via the
 	 * per-child stats_ring.  Their per-handler / per-callsite shards
