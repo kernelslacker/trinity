@@ -2244,6 +2244,16 @@ void child_process(struct childdata *child, int childno)
 				__atomic_fetch_add(
 					&shm->stats.childop_edges_discovered[child->op_type],
 					delta, __ATOMIC_RELAXED);
+				/* Parallel call-count bump for any invocation
+				 * that surfaced at least one new edge.  Mirrors
+				 * the syscall-path bandit/explorer call counters
+				 * so the plateau classifier's Rule 2 can compare
+				 * apples-to-apples instead of edge-count vs
+				 * call-count. */
+				if (delta > 0)
+					__atomic_fetch_add(
+						&shm->stats.childop_calls_with_edges[child->op_type],
+						1, __ATOMIC_RELAXED);
 			}
 			/* dual / on modes only: publish the bracketed per-
 			 * call delta to childop_edges_clean[] in parallel

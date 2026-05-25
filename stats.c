@@ -1692,7 +1692,8 @@ static void dump_stats_json(void)
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
 	 * (taint_transitions[], pool_race_aborted[],
-	 * childop_edges_discovered[]) are intentionally not emitted here.
+	 * childop_edges_discovered[], childop_calls_with_edges[]) are
+	 * intentionally not emitted here.
 	 * The JSON schema in this function is a flat per-key mapping;
 	 * expanding any of these arrays as a nested object or array would
 	 * change the schema shape and inflate the JSON for consumers that
@@ -3629,6 +3630,48 @@ void dump_stats(void)
 				snprintf(metric, sizeof(metric),
 					 "op_type_%u", ranked[ri].op);
 				stat_row("childop_edges_discovered",
+					 metric, ranked[ri].count);
+			}
+		}
+
+		/* Per-childop NEW-EDGE-CALL count: parallel ranked dump
+		 * to childop_edges_discovered above so the operator can
+		 * see both the edge total (above) and the productive-call
+		 * count (here) side-by-side.  Same edge/call mismatch
+		 * matters for the plateau classifier's Rule 2 ratio --
+		 * the call counter here is the apples-to-apples
+		 * comparator against the syscall-path bandit/explorer
+		 * call counters. */
+		{
+			struct { unsigned int op; unsigned long count; }
+				ranked[NR_CHILD_OP_TYPES];
+			unsigned int nranked = 0, ri, rj;
+
+			for (op = CHILD_OP_SYSCALL + 1;
+			     op < NR_CHILD_OP_TYPES; op++) {
+				unsigned long v =
+					shm->stats.childop_calls_with_edges[op];
+				if (v == 0)
+					continue;
+				ranked[nranked].op = op;
+				ranked[nranked].count = v;
+				nranked++;
+			}
+			for (ri = 1; ri < nranked; ri++) {
+				for (rj = ri; rj > 0 &&
+				     ranked[rj].count > ranked[rj - 1].count;
+				     rj--) {
+					unsigned int to = ranked[rj].op;
+					unsigned long tc = ranked[rj].count;
+					ranked[rj] = ranked[rj - 1];
+					ranked[rj - 1].op = to;
+					ranked[rj - 1].count = tc;
+				}
+			}
+			for (ri = 0; ri < nranked; ri++) {
+				snprintf(metric, sizeof(metric),
+					 "op_type_%u", ranked[ri].op);
+				stat_row("childop_calls_with_edges",
 					 metric, ranked[ri].count);
 			}
 		}

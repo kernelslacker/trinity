@@ -571,22 +571,37 @@ const char *plateau_intervention_mode_name(enum plateau_intervention_mode m);
  *
  * Field origins (all sourced from existing counters; no new wiring):
  *
- *   pc_edges     -- kcov_shm->edges_found.  Headline coverage signal,
- *                   the same counter the plateau detector itself
- *                   watches the rate of.
- *   cmp_unique   -- kcov_shm->cmp_hints_unique_inserts.  Counts CMP
- *                   records that survived bloom + pool dedup and
- *                   changed pool state -- the right denominator for
- *                   "how much unique CMP signal is the kernel still
- *                   emitting" while pc_edges has flattened.
- *   bandit_edges, explorer_edges -- shm->stats.{bandit,explorer}_pool_
- *                   edges_discovered.  Per-pool new-edge calls
- *                   attributed to the syscall path (excludes alt-op
- *                   childops).
- *   childop_edges_total -- sum of shm->stats.childop_edges_discovered[]
- *                   across enum child_op_type.  Per-alt-op edge
- *                   attribution -- bumped per alt-op invocation in the
- *                   post-call have_kcov block.
+ *   pc_edges (edges)     -- kcov_shm->edges_found.  Headline coverage
+ *                   signal, the same counter the plateau detector
+ *                   itself watches the rate of.
+ *   cmp_unique (records) -- kcov_shm->cmp_hints_unique_inserts.
+ *                   Counts CMP records that survived bloom + pool
+ *                   dedup and changed pool state -- the right
+ *                   denominator for "how much unique CMP signal is
+ *                   the kernel still emitting" while pc_edges has
+ *                   flattened.
+ *   bandit_edges, explorer_edges (calls) --
+ *                   shm->stats.{bandit,explorer}_pool_edges_discovered.
+ *                   Despite the _edges_ name these are CALL counts:
+ *                   bumped by 1 per syscall pick that surfaced one
+ *                   or more new edges (random-syscall.c), not by the
+ *                   number of edges that call surfaced.  Excludes
+ *                   alt-op childops.
+ *   childop_edges_total (edges) --
+ *                   sum of shm->stats.childop_edges_discovered[]
+ *                   across enum child_op_type.  EDGE count -- bumped
+ *                   by (edges_after - edges_before) per alt-op
+ *                   invocation in the post-call have_kcov block.
+ *                   Kept for the stats panels; do NOT compare
+ *                   directly against bandit/explorer_edges, those
+ *                   are call counts (see childop_calls_total below).
+ *   childop_calls_total (calls) --
+ *                   sum of shm->stats.childop_calls_with_edges[]
+ *                   across enum child_op_type.  CALL count -- bumped
+ *                   by 1 per alt-op invocation that surfaced at
+ *                   least one new edge.  This is the apples-to-apples
+ *                   comparator for bandit_edges / explorer_edges in
+ *                   the plateau classifier's Rule 2 ratio.
  *   remote_calls, total_calls -- kcov_shm->{remote,total}_calls.
  *                   KCOV_REMOTE_ENABLE share of the dispatch mix;
  *                   inline = total - remote.
@@ -621,6 +636,7 @@ struct plateau_window_snapshot {
 	unsigned long bandit_edges;
 	unsigned long explorer_edges;
 	unsigned long childop_edges_total;
+	unsigned long childop_calls_total;
 	unsigned long remote_calls;
 	unsigned long total_calls;
 	unsigned long frontier_picks;

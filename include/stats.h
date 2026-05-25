@@ -440,6 +440,28 @@ struct stats_s {
 	 * an event log. */
 	unsigned long childop_edges_discovered[NR_CHILD_OP_TYPES];
 
+	/* Per-childop NEW-EDGE-CALL count, indexed by enum child_op_type.
+	 * Bumped by 1 (NOT by delta) in child_process()'s post-call
+	 * have_kcov block whenever an alt-op invocation observed
+	 * edges_after > edges_before, i.e. "this call found at least one
+	 * new edge".  Parallel to bandit_pool_edges_discovered and
+	 * explorer_pool_edges_discovered on the syscall path, which are
+	 * also call-count counters (one bump per productive call,
+	 * regardless of how many edges that call surfaced).
+	 *
+	 * Kept separate from childop_edges_discovered[] above so the
+	 * stats panels keep showing the true edge total per alt-op while
+	 * the plateau classifier's Rule 2 has an apples-to-apples
+	 * comparator against the syscall-path call counters.  Without
+	 * this split a single alt-op invocation that surfaces 10 edges
+	 * moves the edge counter by 10 while the syscall path moves its
+	 * counter by 1, and Rule 2's 2:1 ratio over-fires
+	 * CHILDOP_DOMINANT on any plateau with a chatty alt-op.
+	 * CHILD_OP_SYSCALL is skipped for the same reason as the edges
+	 * counter.  RELAXED add-fetch: a cumulative diagnostic, not an
+	 * event log. */
+	unsigned long childop_calls_with_edges[NR_CHILD_OP_TYPES];
+
 	unsigned long childop_edges_clean[NR_CHILD_OP_TYPES];
 
 	/* Per-op invocation count: incremented once per alt-op iteration

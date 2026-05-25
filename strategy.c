@@ -1154,6 +1154,9 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 		snap->childop_edges_total += __atomic_load_n(
 			&shm->stats.childop_edges_discovered[op],
 			__ATOMIC_RELAXED);
+		snap->childop_calls_total += __atomic_load_n(
+			&shm->stats.childop_calls_with_edges[op],
+			__ATOMIC_RELAXED);
 	}
 }
 
@@ -1181,6 +1184,8 @@ void plateau_snapshot_delta(struct plateau_window_snapshot *out,
 				      entry->explorer_edges);
 	out->childop_edges_total = sat_sub(now->childop_edges_total,
 					   entry->childop_edges_total);
+	out->childop_calls_total = sat_sub(now->childop_calls_total,
+					   entry->childop_calls_total);
 	out->remote_calls = sat_sub(now->remote_calls, entry->remote_calls);
 	out->total_calls = sat_sub(now->total_calls, entry->total_calls);
 	out->frontier_picks = sat_sub(now->frontier_picks,
@@ -1255,9 +1260,14 @@ const char *strategy_plateau_hypothesis_name(enum plateau_hypothesis h)
 
 /* Rule 2: childop alt-op invocations are out-discovering generic
  * syscall picks by 2:1 on the per-pool new-edge attribution.
- * generic_edges is (bandit_edges + explorer_edges) -- both pools dispatch
- * through CHILD_OP_SYSCALL exclusively, so the sum is the
- * non-alt-op denominator the rule needs. */
+ * generic_edges is (bandit_edges + explorer_edges) -- both pools
+ * dispatch through CHILD_OP_SYSCALL exclusively, so the sum is the
+ * non-alt-op denominator the rule needs.  Compared against the
+ * childop_calls_total CALL count (not childop_edges_total): the
+ * syscall-path counters on the RHS are bumped by 1 per productive
+ * call, so the LHS must use the parallel call-count counter or a
+ * single alt-op invocation that surfaces 10 edges biases the ratio
+ * 10:1 against syscall picks and the rule over-fires. */
 #define PHC_CHILDOP_DOMINANT_RATIO	2UL
 
 /* Rule 3: KCOV_REMOTE_ENABLE share has outgrown inline KCOV by 2:1
@@ -1295,11 +1305,12 @@ enum plateau_hypothesis strategy_plateau_hypothesis_check(
 	    delta.pc_edges == 0)
 		return PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT;
 
-	/* Rule 2: childop alt-ops dominate. */
+	/* Rule 2: childop alt-ops dominate.  Call-count vs call-count;
+	 * see PHC_CHILDOP_DOMINANT_RATIO comment for the unit rationale. */
 	generic_edges = delta.bandit_edges + delta.explorer_edges;
-	if (delta.childop_edges_total >
+	if (delta.childop_calls_total >
 	    PHC_CHILDOP_DOMINANT_RATIO * generic_edges &&
-	    delta.childop_edges_total > 0)
+	    delta.childop_calls_total > 0)
 		return PLATEAU_HYPOTHESIS_CHILDOP_DOMINANT;
 
 	/* Rule 3: remote KCOV dominates inline KCOV.  inline_calls is
@@ -1390,10 +1401,11 @@ void strategy_plateau_hypothesis_tick(void)
 		if (fired != PLATEAU_HYPOTHESIS_NONE) {
 			hypothesis_fires[fired]++;
 			stats_log_write(
-				"plateau hypothesis: %s fired (cmp_delta=+%lu/window pc_delta=+%lu/window childop_delta=+%lu generic_delta=+%lu remote_delta=+%lu/+%lu frontier_pulls=%lu frontier_picks=%lu)\n",
+				"plateau hypothesis: %s fired (cmp_delta=+%lu/window pc_delta=+%lu/window childop_calls_delta=+%lu childop_edges_delta=+%lu generic_delta=+%lu remote_delta=+%lu/+%lu frontier_pulls=%lu frontier_picks=%lu)\n",
 				strategy_plateau_hypothesis_name(fired),
 				hypothesis_last_delta.cmp_unique,
 				hypothesis_last_delta.pc_edges,
+				hypothesis_last_delta.childop_calls_total,
 				hypothesis_last_delta.childop_edges_total,
 				hypothesis_last_delta.bandit_edges +
 				hypothesis_last_delta.explorer_edges,
