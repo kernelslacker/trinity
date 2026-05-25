@@ -19,6 +19,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
+#include "stats_ring.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -709,6 +710,15 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 
 	head->array[n] = obj;
 	obj->array_idx = n;
+	/*
+	 * Stamp the publish-time fleet op tick from the child-readable
+	 * mirror page.  parent_stats.op_count is MAP_PRIVATE heap so
+	 * a child COW-copy goes stale immediately after fork; the
+	 * shm_published mirror is the republished, child-visible copy
+	 * of the same counter.  No current reader -- pre-stage field
+	 * for the upcoming diag-drain consumer.
+	 */
+	obj->publish_call_nr = shm_published ? shm_published->fleet_op_count : 0;
 	head->num_entries = n + 1;
 
 	/* Mirror the parent-side global fd hash for OBJ_LOCAL fd-typed

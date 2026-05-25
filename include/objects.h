@@ -260,6 +260,14 @@ struct object {
 	 */
 	enum objecttype obj_type;
 	unsigned int array_idx;		/* index in objhead->array */
+	/*
+	 * Provenance clock: snapshot of shm_published->fleet_op_count
+	 * taken at the successful add_object() return path, i.e. the
+	 * coarse fleet-wide op tick at which this obj first became
+	 * visible in its pool.  Cold pre-stage field for an upcoming
+	 * diag-drain consumer; no current reader.
+	 */
+	unsigned long publish_call_nr;
 	union {
 		struct map map;
 
