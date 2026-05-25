@@ -149,10 +149,6 @@ extern bool max_runtime_set;
 extern bool no_warm_start;
 extern char *warm_start_path;
 
-extern bool no_healer_warm_start;
-extern bool no_healer_snapshot;
-extern bool no_healer;
-
 extern bool no_kcov_warm_start;
 extern bool no_cmp_hints_warm_start;
 

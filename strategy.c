@@ -1836,30 +1836,6 @@ void dump_strategy_stats(void)
 
 	output(0, "strategy picker: %s\n", picker_mode_name(mode));
 
-	/* HEALER readiness state.  Three-way classification so the
-	 * operator can tell whether the strict gate has fired (dynamic
-	 * evidence has crossed the threshold), only the static prior is
-	 * carrying the signal (eligible under plateau bypass but not the
-	 * strict gate), or the table has nothing useful yet.  Suppressed
-	 * entirely under --no-healer where the eligibility verdict is
-	 * fixed and reporting it would be noise. */
-	if (!no_healer) {
-		enum healer_readiness r;
-
-		(void)healer_strategy_ready_explicit(&r);
-		switch (r) {
-		case HEALER_READY_DYNAMIC:
-			output(0, "  HEALER eligible (dynamic)\n");
-			break;
-		case HEALER_READY_SEED_ONLY:
-			output(0, "  HEALER eligible (seed only -- plateau bypass eligible, strict gate not yet met)\n");
-			break;
-		case HEALER_NOT_READY:
-			output(0, "  HEALER not ready (pair table carries no usable signal)\n");
-			break;
-		}
-	}
-
 	/* Forced-intervention cohort.  These windows ran STRATEGY_RANDOM
 	 * over the picker's head because the kcov plateau detector
 	 * reported the fleet was stalled; their pulls/reward are

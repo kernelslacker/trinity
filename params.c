@@ -360,10 +360,6 @@ void clamp_default_max_children(void)
 bool no_warm_start = false;
 char *warm_start_path = NULL;
 
-bool no_healer_warm_start = false;
-bool no_healer_snapshot = false;
-bool no_healer = false;
-
 bool no_kcov_warm_start = false;
 bool no_cmp_hints_warm_start = false;
 
@@ -457,15 +453,12 @@ static const struct option_help option_descs[] = {
 	{ "stats",		 0,  "show errno distribution per syscall before exiting" },
 	{ "stats-json",		 0,  "emit dump_stats output as a single JSON object on stdout (machine-readable)" },
 	{ "stats-log-file",	 0,  "path to append periodic stats dumps to (in addition to stdout)" },
-	{ "strategy",		 0,  "arm-selection POLICY for the multi-strategy rotation (NOT a specific arm): bandit/ucb1 (default) or round-robin/rr. The set of arms is fixed (heuristic, random, coverage-frontier, HEALER); this flag picks how the rotation chooses between them." },
+	{ "strategy",		 0,  "arm-selection POLICY for the multi-strategy rotation (NOT a specific arm): bandit/ucb1 (default) or round-robin/rr. The set of arms is fixed (heuristic, random, coverage-frontier); this flag picks how the rotation chooses between them." },
 	{ "syslog",		'S', "log important info to syslog (useful if syslog is remote)" },
 	{ "verbose",		'v', "increase output verbosity. Repeat for more detail (-vv)" },
 	{ "victims",		'V', "path to victim files (may be repeated)" },
 	{ "no-warm-start",	 0,  "skip loading and saving the persisted minicorpus" },
 	{ "warm-start-path",	 0,  "override the on-disk minicorpus path (default: $XDG_CACHE_HOME/trinity/corpus/<arch>)" },
-	{ "no-healer-warm-start", 0, "skip loading the persisted HEALER relation table on startup" },
-	{ "no-healer-snapshot",	 0,  "skip periodic and end-of-run HEALER relation-table snapshots" },
-	{ "no-healer",		 0,  "fully disable HEALER: skip the observer hooks and gate the bandit picker arm out" },
 	{ "no-kcov-warm-start",	 0,  "skip loading and saving the persisted kcov edge bitmap" },
 	{ "no-cmp-hints-warm-start", 0, "skip loading and saving the persisted kcov CMP-hint pool" },
 	{ NULL,			 0,  NULL },
@@ -554,9 +547,6 @@ static const struct option longopts[] = {
 	{ "victims", required_argument, NULL, 'V' },
 	{ "no-warm-start", no_argument, NULL, 0 },
 	{ "warm-start-path", required_argument, NULL, 0 },
-	{ "no-healer-warm-start", no_argument, NULL, 0 },
-	{ "no-healer-snapshot", no_argument, NULL, 0 },
-	{ "no-healer", no_argument, NULL, 0 },
 	{ "no-kcov-warm-start", no_argument, NULL, 0 },
 	{ "no-cmp-hints-warm-start", no_argument, NULL, 0 },
 	{ NULL, 0, NULL, 0 } };
@@ -1029,18 +1019,6 @@ void parse_args(int argc, char *argv[])
 					exit(EXIT_FAILURE);
 				}
 			}
-
-			if (strcmp("no-healer-warm-start",
-				   longopts[opt_index].name) == 0)
-				no_healer_warm_start = true;
-
-			if (strcmp("no-healer-snapshot",
-				   longopts[opt_index].name) == 0)
-				no_healer_snapshot = true;
-
-			if (strcmp("no-healer",
-				   longopts[opt_index].name) == 0)
-				no_healer = true;
 
 			if (strcmp("no-kcov-warm-start",
 				   longopts[opt_index].name) == 0)
