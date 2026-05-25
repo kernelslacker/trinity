@@ -1032,36 +1032,10 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 
 	/* PC-edge-only bookkeeping below.  Deliberately separate from the
 	 * found_something save block above so CMP-source saves can't
-	 * trigger HEALER observe, snapshot cadence, per-strategy edge
-	 * attribution, or pool edge counters -- see comment above on why
-	 * those must stay PC-only. */
+	 * trigger snapshot cadence, per-strategy edge attribution, or
+	 * pool edge counters -- see comment above on why those must
+	 * stay PC-only. */
 	if (unlikely(new_edges)) {
-		/* HEALER observer -- credit BOTH the pair-table
-		 * (pred_last -> rec->nr) and the triple-table
-		 * (sort(pred_prev, pred_last) -> rec->nr) relations for
-		 * this new-edge event.  One unified slot drives both
-		 * applies on the parent side; partial-loss-on-overflow
-		 * (where one of the two enqueues drops while the other
-		 * succeeds) is no longer possible.  Predecessors come
-		 * from the per-child sequence buffer, which is updated
-		 * below (alongside last_syscall_nr) so the read here sees
-		 * the two completed syscalls before the current one --
-		 * exactly the chain the new edge should be credited to.
-		 * new_edge_count from kcov_collect feeds the per-event
-		 * weight amplification (capped at HEALER_EDGE_AMPLIFY_CAP
-		 * inside the apply path). */
-		if (!no_healer) {
-			unsigned int flags = child->is_explorer
-				? HEALER_OBS_FLAG_EXPLORER : 0;
-			healer_observe(child, rec->nr, rec->do32bit, flags,
-				       new_edge_count, /* result_class */ 0);
-		}
-
-		/* HEALER snapshot trigger runs in parent context from
-		 * healer_ring_drain_all() now; the child-side observer
-		 * just enqueues the relation/pair events and lets the
-		 * drain decide when to persist. */
-
 		/* Coverage-delta-triggered persistence: snapshot the
 		 * minicorpus to disk every MINICORPUS_SNAPSHOT_EDGES
 		 * fleet-wide edges so a crash mid-run only loses the
@@ -1192,15 +1166,10 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	if (group_bias)
 		child->last_group = entry->group;
 
-	/* Mirror the just-completed syscall into the per-child predecessor
-	 * windows the next call's attribution reads from:
-	 *
-	 *   - child->last_syscall_nr: read by dispatch_step's
-	 *     edgepair_record() as the prev_nr of the next (prev, curr)
-	 *     pair-bump, and by set_syscall_nr_random's edgepair_is_cold
-	 *     check on the syscall-selection biasing path.
-	 *   - child->healer_seq[]: HEALER's pair- and triple-table
-	 *     predecessor windows.
+	/* Mirror the just-completed syscall into child->last_syscall_nr,
+	 * read by dispatch_step's edgepair_record() as the prev_nr of the
+	 * next (prev, curr) pair-bump, and by set_syscall_nr_random's
+	 * edgepair_is_cold check on the syscall-selection biasing path.
 	 *
 	 * Skip syscalls that returned -ENOSYS or -EOPNOTSUPP: the kernel
 	 * dispatcher rejected the call before its body executed, so kernel
@@ -1208,15 +1177,12 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * state-setting predecessors of a subsequent new-edge event would
 	 * dilute attribution toward calls that did nothing — at top-N dump
 	 * time these noise pairs crowd out genuinely interesting
-	 * predecessor relationships.  The gate was originally added for
-	 * healer_seq_push alone; last_syscall_nr shares the same shape and
-	 * needs the same protection. */
+	 * predecessor relationships. */
 	if (rec->retval == -1UL &&
 	    (rec->errno_post == ENOSYS || rec->errno_post == EOPNOTSUPP)) {
-		/* nothing — keep the previous predecessors in place */
+		/* nothing — keep the previous predecessor in place */
 	} else {
 		child->last_syscall_nr = rec->nr;
-		healer_seq_push(child, rec->nr);
 	}
 
 	/* Per-arm completion exposure: bump the arm this call was attributed
