@@ -36,6 +36,7 @@
 #include <unistd.h>
 
 #include "kmsg-monitor.h"
+#include "pre_crash_ring.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -262,6 +263,9 @@ static void *kmsg_monitor_thread(void *arg)
 
 			output(0, "KMSG: {event:%d, banner:\"%s\"}\n",
 				(int)kind, body);
+			/* dump pre-crash context for the event-detection postmortem */
+			if (kind != KMSG_EVENT_UNKNOWN && kind != KMSG_RCU)
+				pre_crash_ring_dump_all();
 			follow_remaining = KMSG_FOLLOW_MAX_RECORDS;
 		} else if (follow_remaining > 0) {
 			output(0, "KMSG: %s\n", body);
