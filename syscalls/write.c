@@ -255,13 +255,29 @@ static void sanitise_writev(struct syscallrecord *rec)
 		if (roll < 20) {
 			int efd = get_typed_fd(ARG_FD_EVENTFD);
 			if (efd >= 0) {
-				uint64_t val = rnd_u64();
+				/*
+				 * alloc_iovec() intentionally emits iov_base
+				 * values that are not writable from Trinity:
+				 * SHAPE_NULL, SHAPE_INVALID (0xdeadbeef), and
+				 * map-backed shapes whose protections include
+				 * PROT_NONE.  memcpy'ing into iov[0].iov_base
+				 * faulted in the child before the kernel ever
+				 * saw writev().  Drop the eventfd arm onto a
+				 * known-writable buffer; on pool exhaustion
+				 * skip the override and let the generic shape
+				 * stand so a stale eventfd never gets paired
+				 * with a sentinel base.
+				 */
+				void *buf = get_writable_struct(sizeof(uint64_t));
+				if (buf != NULL) {
+					uint64_t val = rnd_u64();
 
-				rec->a1 = (unsigned long) efd;
-				rec->a3 = 1;
-				iov[0].iov_len = sizeof(uint64_t);
-				if (iov[0].iov_base != NULL)
-					memcpy(iov[0].iov_base, &val, sizeof(val));
+					rec->a1 = (unsigned long) efd;
+					rec->a3 = 1;
+					iov[0].iov_base = buf;
+					iov[0].iov_len = sizeof(uint64_t);
+					memcpy(buf, &val, sizeof(val));
+				}
 			}
 		} else if (roll < 30) {
 			int tfd = get_typed_fd(ARG_FD_TIMERFD);
