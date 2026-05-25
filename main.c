@@ -1778,6 +1778,14 @@ static void taint_check(void)
 	}
 }
 
+/* Catches ring entries published between the last in-loop drain and process exit. */
+static void final_ring_drain(void)
+{
+	fd_event_drain_all();
+	stats_ring_drain_all();
+	edgepair_ring_drain_all();
+}
+
 void main_loop(void)
 {
 	struct timespec epoch_start;
@@ -1978,6 +1986,8 @@ dont_wait:
 			break;
 		}
 	}
+
+	final_ring_drain();
 }
 
 
