@@ -20,8 +20,30 @@
  * the buffer on success.  Returns bytes read (>0) on success, -1 on any
  * failure (open error, read error, empty read).  bufsz must be >= 2 to leave
  * room for the terminator; calling with bufsz < 2 returns -1.
+ *
+ * Only safe for fields whose value width is statically bounded (Uid:, Gid:,
+ * Tgid:, Umask:, signal masks, etc.) — the fixed buffer cannot detect
+ * truncation, so any field whose size the kernel can grow without warning
+ * will silently produce a truncated prefix.  Use proc_status_slurp() for
+ * unbounded-width fields such as Groups:.
  */
 ssize_t proc_status_read(char *buf, size_t bufsz);
+
+/*
+ * Read /proc/self/status into a freshly malloc'd, NUL-terminated heap
+ * buffer that grows until the whole file fits.  Returns the buffer on
+ * success (caller frees with free()), NULL on open/read/allocation
+ * failure.
+ *
+ * For fields whose value width has no useful static bound: most
+ * importantly Groups:, which can carry up to NGROUPS_MAX (65536)
+ * supplementary gids as decimal-plus-space tokens — several hundred KB
+ * at the limit, well past any reasonable stack buffer.  The fixed-buffer
+ * proc_status_read() would silently truncate and hand the parser a
+ * prefix; this variant loops with realloc() (doubling from 4 KB) until
+ * read(2) returns 0, so the parser always sees the entire file.
+ */
+char *proc_status_slurp(void);
 
 /*
  * Find a named field inside a status buffer previously filled by

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(setgroups, int, gidsetsize, gid_t __user *, grouplist)
  */
-#include <fcntl.h>
 #include <grp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +8,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "deferred-free.h"
+#include "proc-status.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -79,35 +79,32 @@ static int gid_cmp(const void *a, const void *b)
  * Parse the "Groups:" line from /proc/self/status into a freshly
  * malloc'd gid_t array.  Returns 0 on success and stores the array
  * pointer in *out and the entry count in *n_out (caller frees).
- * Returns -1 on any error (file missing, no Groups line, OOM).
+ * Returns -1 on any error (file missing, no Groups line, OOM,
+ * /proc/self/status read failure).
+ *
+ * Uses proc_status_slurp() so the Groups: line is never truncated:
+ * NGROUPS_MAX (65536) supplementary gids serialise to several hundred
+ * KB of decimal-plus-space tokens, well past any fixed buffer.  A
+ * truncated readback would drop tail entries silently and trip a
+ * spurious count-mismatch oracle hit on every large setgroups() call.
  */
 static int read_proc_groups(gid_t **out, int *n_out)
 {
-	char buf[2048];
-	char *p, *end;
+	char *buf, *p, *end;
 	gid_t *vec = NULL;
 	int count = 0, alloc = 0;
-	ssize_t n;
-	int fd;
 
-	/* Raw open/read instead of fopen/getline/fclose: this oracle runs
-	 * thousands of times per second under fuzz, and stdio's per-call
-	 * malloc of FILE struct + IO buffer plus getline's line-buffer
-	 * malloc/realloc is heap traffic we don't need. */
-	fd = open("/proc/self/status", O_RDONLY);
-	if (fd < 0)
+	buf = proc_status_slurp();
+	if (buf == NULL)
 		return -1;
-	n = read(fd, buf, sizeof(buf) - 1);
-	close(fd);
-	if (n <= 0)
-		return -1;
-	buf[n] = '\0';
 
 	/* Anchor on a newline so a "Groups:" substring inside an earlier
 	 * field (e.g. a process name) cannot mis-target the parse. */
 	p = strstr(buf, "\nGroups:");
-	if (p == NULL)
+	if (p == NULL) {
+		free(buf);
 		return -1;
+	}
 	p += 8;
 	while (*p == ' ' || *p == '\t')
 		p++;
@@ -123,6 +120,7 @@ static int read_proc_groups(gid_t **out, int *n_out)
 					    sizeof(gid_t));
 			if (!nv) {
 				free(vec);
+				free(buf);
 				return -1;
 			}
 			vec = nv;
@@ -134,6 +132,7 @@ static int read_proc_groups(gid_t **out, int *n_out)
 			p++;
 	}
 
+	free(buf);
 	*out = vec;
 	*n_out = count;
 	return 0;

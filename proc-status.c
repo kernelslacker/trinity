@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -26,6 +27,49 @@ ssize_t proc_status_read(char *buf, size_t bufsz)
 		return -1;
 	buf[n] = '\0';
 	return n;
+}
+
+char *proc_status_slurp(void)
+{
+	char *buf = NULL;
+	size_t cap = 0, off = 0;
+	int fd;
+
+	fd = open("/proc/self/status", O_RDONLY);
+	if (fd < 0)
+		return NULL;
+
+	for (;;) {
+		ssize_t n;
+
+		/* Grow on demand, leaving room for the trailing NUL. */
+		if (off + 2 > cap) {
+			size_t newcap = cap ? cap * 2 : 4096;
+			char *nb = realloc(buf, newcap);
+
+			if (nb == NULL) {
+				free(buf);
+				close(fd);
+				return NULL;
+			}
+			buf = nb;
+			cap = newcap;
+		}
+
+		n = read(fd, buf + off, cap - off - 1);
+		if (n < 0) {
+			free(buf);
+			close(fd);
+			return NULL;
+		}
+		if (n == 0)
+			break;
+		off += (size_t) n;
+	}
+
+	close(fd);
+	buf[off] = '\0';
+	return buf;
 }
 
 const char *proc_status_find_field(const char *buf, const char *name)

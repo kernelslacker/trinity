@@ -1,11 +1,12 @@
 /*
  * SYSCALL_DEFINE2(getgroups, int, gidsetsize, gid_t __user *, grouplist)
  */
-#include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "proc-status.h"
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
@@ -34,10 +35,7 @@ static void sanitise_getgroups(struct syscallrecord *rec)
  */
 static void post_getgroups(struct syscallrecord *rec)
 {
-	char buf[16384];
-	char *line, *eol;
-	ssize_t n;
-	int fd;
+	char *buf, *line, *eol;
 
 	/*
 	 * Kernel ABI: success retval is the supplementary group count for
@@ -63,24 +61,14 @@ static void post_getgroups(struct syscallrecord *rec)
 	if ((long) rec->retval < 0)
 		return;
 
-	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
-	 * thousands of times per second under fuzz, and stdio's per-call malloc
-	 * of FILE struct + IO buffer is heap traffic we don't need.  16 KB is
-	 * a generous bound on /proc/self/status — Groups: holds up to
-	 * NGROUPS_MAX gids as decimal-plus-space tokens, which fits in 8-9 KB
-	 * even at the limit. */
-	fd = open("/proc/self/status", O_RDONLY);
-	if (fd < 0)
+	/* Dynamically-sized slurp: Groups: at NGROUPS_MAX is several hundred
+	 * KB of decimal-plus-space tokens, well past any sensible stack
+	 * buffer.  Skip the oracle on read failure rather than risk a false
+	 * positive on a partial capture. */
+	buf = proc_status_slurp();
+	if (buf == NULL)
 		return;
-	n = read(fd, buf, sizeof(buf) - 1);
-	close(fd);
-	if (n <= 0)
-		return;
-	/* Truncated read — bail rather than risk a false positive on a
-	 * partially-captured Groups: line. */
-	if ((size_t)n == sizeof(buf) - 1)
-		return;
-	buf[n] = '\0';
+
 	/* Anchor on a newline so a "Groups:" substring inside an earlier
 	 * field cannot mis-target the parse. */
 	line = strstr(buf, "\nGroups:");
@@ -107,6 +95,8 @@ static void post_getgroups(struct syscallrecord *rec)
 					   __ATOMIC_RELAXED);
 		}
 	}
+
+	free(buf);
 }
 
 struct syscallentry syscall_getgroups = {
