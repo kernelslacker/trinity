@@ -805,6 +805,42 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		handle_success(rec);	// Believe me folks, you'll never get bored with winning
 		__atomic_add_fetch(&entry->successes, 1, __ATOMIC_RELAXED);
 	}
+
+	/* Per-syscall errno-bucket histogram bump.  Sibling to the
+	 * per_syscall_edges/calls counters in kcov_shm — those track
+	 * coverage-side activity per syscall; this tracks return shape
+	 * (success vs the six most-watched errno classes vs other).
+	 * Surfaced via dump_stats() as a sibling block to the top-edges
+	 * table so the operator can spot EFAULT-heavy vs EINVAL-heavy
+	 * syscalls at a glance.  Gated on state == AFTER for the same
+	 * reason the entry->failures/entry->errnos[] tallies above are:
+	 * an EXTRA_FORK grandchild that was SIGKILL'd before AFTER
+	 * leaves rec->retval / rec->errno_post holding whatever shm
+	 * noise the previous syscall stamped, and we don't want to
+	 * attribute that to either the surviving syscall slot or to
+	 * bucket 0 (success).  kcov_shm itself is always allocated by
+	 * kcov_init_global() regardless of per-child KCOV capability,
+	 * but guard for NULL anyway to match the dump-side gate. */
+	if (rec->state == AFTER && kcov_shm != NULL && call < MAX_NR_SYSCALL) {
+		unsigned int bucket;
+
+		if (rec->retval != -1UL) {
+			bucket = ERRNO_BUCKET_SUCCESS;
+		} else {
+			switch (rec->errno_post) {
+			case EFAULT: bucket = ERRNO_BUCKET_EFAULT; break;
+			case EINVAL: bucket = ERRNO_BUCKET_EINVAL; break;
+			case ENOSYS: bucket = ERRNO_BUCKET_ENOSYS; break;
+			case EPERM:  bucket = ERRNO_BUCKET_EPERM;  break;
+			case EBADF:  bucket = ERRNO_BUCKET_EBADF;  break;
+			case EAGAIN: bucket = ERRNO_BUCKET_EAGAIN; break;
+			default:     bucket = ERRNO_BUCKET_OTHER;  break;
+			}
+		}
+		__atomic_add_fetch(&kcov_shm->per_syscall_errno[call][bucket],
+				   1, __ATOMIC_RELAXED);
+	}
+
 	/* attempted stays ungated: an attempted invocation IS still an
 	 * attempt even if the grandchild never reached AFTER, and
 	 * (attempted - successes - failures) gives operators visibility

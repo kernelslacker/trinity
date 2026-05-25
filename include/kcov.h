@@ -5,6 +5,21 @@
 #include "types.h"
 #include "syscall.h"	/* MAX_NR_SYSCALL */
 
+/* 8-bucket errno classification used by per_syscall_errno[] below.
+ * Bucket layout is part of the dump_stats() output contract; keep
+ * the order stable so the column headers in stats.c match. */
+enum errno_bucket {
+	ERRNO_BUCKET_SUCCESS = 0,	/* rec->retval != -1UL */
+	ERRNO_BUCKET_EFAULT  = 1,
+	ERRNO_BUCKET_EINVAL  = 2,
+	ERRNO_BUCKET_ENOSYS  = 3,
+	ERRNO_BUCKET_EPERM   = 4,
+	ERRNO_BUCKET_EBADF   = 5,
+	ERRNO_BUCKET_EAGAIN  = 6,
+	ERRNO_BUCKET_OTHER   = 7,
+	ERRNO_BUCKET_NR      = 8,
+};
+
 /*
  * KCOV coverage collection support.
  *
@@ -347,6 +362,20 @@ struct kcov_shared {
 	 * Used to compute per-interval growth rate of the call-count signal
 	 * above. */
 	unsigned long per_syscall_edges_previous[MAX_NR_SYSCALL];
+	/* Per-syscall 8-bucket errno histogram.  Sibling to the
+	 * per_syscall_edges/calls counters above: those track coverage-side
+	 * activity per syscall; this tracks the shape of what the kernel
+	 * returned.  Bumped from handle_syscall_ret() once per completed
+	 * syscall (state == AFTER), bucket index selected by the
+	 * ERRNO_BUCKET_* enum below.  Surfaced via dump_stats() as a
+	 * sibling block to the top-edges / cold-syscalls tables so the
+	 * operator can tell at a glance which syscalls are EFAULT-heavy
+	 * vs EINVAL-heavy.  Per-syscall entry->errnos[] already exists but
+	 * is sized NR_ERRNOS (133) per syscall and is the per-syscallentry
+	 * tally consumed by dump_entry(); this is the kcov_shm-resident
+	 * compact view that pairs with the coverage tables above and lives
+	 * in the same dump section. */
+	unsigned long per_syscall_errno[MAX_NR_SYSCALL][ERRNO_BUCKET_NR];
 	/* Per-syscall counterpart of cmp_hints_unique_inserts: every fresh
 	 * insert or evict-replace in pools[nr] bumps slot nr.  Dedup-refresh
 	 * hits are NOT counted, matching the global counter's semantics.

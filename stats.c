@@ -4814,6 +4814,88 @@ void dump_stats(void)
 					kcov_shm->last_edge_at[i]);
 			}
 		}
+
+		/* Per-syscall errno histogram.  Sibling to the top edge-
+		 * producing / cold-syscalls tables above: same MAX_NR_SYSCALL-
+		 * indexed walk, same all-zero-row skip, same column-width
+		 * convention as the "Top edge-producing syscalls" block.  Eight
+		 * buckets in dump order: success, EFAULT, EINVAL, ENOSYS,
+		 * EPERM, EBADF, EAGAIN, other.  Bumped from handle_syscall_ret()
+		 * next to where the existing entry->failures / entry->errnos[]
+		 * tallies are updated.  Sort order matches the top-edges block:
+		 * descending by total syscall activity (sum of all eight
+		 * buckets) so the syscalls doing the most work appear first. */
+		{
+			unsigned int errno_top_nr[10];
+			unsigned long errno_top_total[10];
+			unsigned long errno_top_buckets[10][ERRNO_BUCKET_NR];
+			unsigned int errno_top_count = 0;
+
+			memset(errno_top_total, 0, sizeof(errno_top_total));
+			memset(errno_top_buckets, 0, sizeof(errno_top_buckets));
+
+			for (i = 0; i < nr_syscalls_to_scan; i++) {
+				unsigned long buckets[ERRNO_BUCKET_NR];
+				unsigned long total = 0;
+				unsigned int b;
+
+				for (b = 0; b < ERRNO_BUCKET_NR; b++) {
+					buckets[b] = __atomic_load_n(&kcov_shm->per_syscall_errno[i][b],
+								     __ATOMIC_RELAXED);
+					total += buckets[b];
+				}
+
+				/* Skip rows where all eight buckets are zero --
+				 * mirrors the top-edges block's `edges == 0`
+				 * skip.  A syscall that was never attempted (or
+				 * was attempted but never reached AFTER) contributes
+				 * nothing and would just be table noise. */
+				if (total == 0)
+					continue;
+
+				/* Insertion sort, same shape as the top-edges block. */
+				for (j = errno_top_count;
+				     j > 0 && total > errno_top_total[j - 1]; j--) {
+					if (j < 10) {
+						errno_top_total[j] = errno_top_total[j - 1];
+						errno_top_nr[j] = errno_top_nr[j - 1];
+						memcpy(errno_top_buckets[j],
+						       errno_top_buckets[j - 1],
+						       sizeof(errno_top_buckets[j]));
+					}
+				}
+				if (j < 10) {
+					errno_top_total[j] = total;
+					errno_top_nr[j] = i;
+					memcpy(errno_top_buckets[j], buckets,
+					       sizeof(errno_top_buckets[j]));
+					if (errno_top_count < 10)
+						errno_top_count++;
+				}
+			}
+
+			if (errno_top_count > 0) {
+				output(0, "Top syscalls by errno-histogram activity:\n");
+				output(0, "  %-24s %10s %8s %8s %8s %8s %8s %8s %8s\n",
+				       "syscall", "ok", "EFAULT", "EINVAL",
+				       "ENOSYS", "EPERM", "EBADF", "EAGAIN", "other");
+				for (j = 0; j < errno_top_count; j++) {
+					struct syscallentry *entry = table[errno_top_nr[j]].entry;
+					const char *name = entry ? entry->name : "???";
+
+					output(0, "  %-24s %10lu %8lu %8lu %8lu %8lu %8lu %8lu %8lu\n",
+					       name,
+					       errno_top_buckets[j][ERRNO_BUCKET_SUCCESS],
+					       errno_top_buckets[j][ERRNO_BUCKET_EFAULT],
+					       errno_top_buckets[j][ERRNO_BUCKET_EINVAL],
+					       errno_top_buckets[j][ERRNO_BUCKET_ENOSYS],
+					       errno_top_buckets[j][ERRNO_BUCKET_EPERM],
+					       errno_top_buckets[j][ERRNO_BUCKET_EBADF],
+					       errno_top_buckets[j][ERRNO_BUCKET_EAGAIN],
+					       errno_top_buckets[j][ERRNO_BUCKET_OTHER]);
+				}
+			}
+		}
 	}
 
 	if (minicorpus_shm != NULL) {
