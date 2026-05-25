@@ -1862,6 +1862,30 @@ struct kvm_get_htab_fd {
 #define RWF_NOSIGNAL 0x00000100 /* do not raise SIGPIPE on pipe write */
 #endif
 
+/*
+ * file_getattr()/file_setattr() (Linux 6.13+) uAPI.  Older system
+ * headers ship neither the struct nor the trailing FS_XFLAG bit; the
+ * syscall itself may still be present on the running kernel and the
+ * sanitiser/oracle code wants the layout regardless.  Guard on the
+ * size constant that lands in the same uapi block so we don't redefine
+ * when the headers are recent enough.
+ */
+#ifndef FILE_ATTR_SIZE_VER0
+struct file_attr {
+	__u64 fa_xflags;	/* xflags field value (get/set) */
+	__u32 fa_extsize;	/* extsize field value (get/set) */
+	__u32 fa_nextents;	/* nextents field value (get) */
+	__u32 fa_projid;	/* project identifier (get/set) */
+	__u32 fa_cowextsize;	/* CoW extsize field value (get/set) */
+};
+#define FILE_ATTR_SIZE_VER0	24
+#define FILE_ATTR_SIZE_LATEST	FILE_ATTR_SIZE_VER0
+#endif
+
+#ifndef FS_XFLAG_HASATTR
+#define FS_XFLAG_HASATTR	0x80000000
+#endif
+
 /* linux/wait.h -- GNU-extension wait options, used by wait4/waitpid/waitid */
 #ifndef __WNOTHREAD
 #define __WNOTHREAD 0x20000000
