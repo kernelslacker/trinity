@@ -30,6 +30,29 @@ ssize_t proc_status_read(char *buf, size_t bufsz)
 	return n;
 }
 
+/*
+ * realloc() that retries once after munlockall() on failure.  Wrapped
+ * because GCC -Wuse-after-free cannot see that on realloc() failure the
+ * source buffer is untouched per C11 7.22.3.5, and would flag the
+ * failure-path free(buf) at the call site.  The function-call boundary
+ * launders the pointer's SSA value.
+ */
+static char *slurp_grow(char *buf, size_t newcap)
+{
+	char *nb = realloc(buf, newcap);
+
+	if (nb == NULL) {
+		/*
+		 * Fuzzer may have called mlockall(MCL_FUTURE), which pins
+		 * the heap and can short-circuit realloc growth.  Undo the
+		 * pin and retry once.
+		 */
+		munlockall();
+		nb = realloc(buf, newcap);
+	}
+	return nb;
+}
+
 char *proc_status_slurp(void)
 {
 	char *buf = NULL;
@@ -46,17 +69,8 @@ char *proc_status_slurp(void)
 		/* Grow on demand, leaving room for the trailing NUL. */
 		if (off + 2 > cap) {
 			size_t newcap = cap ? cap * 2 : 4096;
-			char *nb = realloc(buf, newcap);
+			char *nb = slurp_grow(buf, newcap);
 
-			if (nb == NULL) {
-				/*
-				 * Fuzzer may have called mlockall(MCL_FUTURE),
-				 * which pins the heap and can short-circuit
-				 * realloc growth.  Undo the pin and retry once.
-				 */
-				munlockall();
-				nb = realloc(buf, newcap);
-			}
 			if (nb == NULL) {
 				free(buf);
 				close(fd);
