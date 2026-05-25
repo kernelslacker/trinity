@@ -83,17 +83,13 @@ retry:	tries++;
 			goto retry;
 
 		/*
-		 * Re-validate the slot just before we copy out map->ptr and
-		 * fall through to the mprotect() below.  Between
-		 * get_map_handle() and here we have read map->prot and
-		 * map->size; a concurrent __destroy_object() would have
-		 * routed the obj through free_shared_obj()'s freelist where
-		 * a sibling alloc_shared_obj() can recycle it underneath
-		 * us, leaving a believable map->prot/size from the recycled
-		 * use but a map->ptr that no longer maps anything.  The
-		 * subsequent mprotect would then either ENOENT or land on
-		 * a different mapping entirely.  Drop the slot and retry
-		 * rather than mprotect()ing a stale ptr.
+		 * Cheap defense-in-depth NULL re-check before we copy out
+		 * map->ptr and fall through to the mprotect() below.  The
+		 * OBJ_MMAP_* pools are per-child private heap, so there is
+		 * no concurrent destroyer that could recycle the slot under
+		 * us; this just catches the handle being clobbered across
+		 * the prot/size reads above.  It is a plain NULL check --
+		 * no counters are bumped here.
 		 */
 		if (!validate_map_handle(&h))
 			goto retry;
@@ -135,12 +131,11 @@ retry:	tries++;
 		addr = obj->sysv_shm.ptr;
 		/*
 		 * The OBJ_SYSV_SHM branch lacks the OBJ_MMAP branch's
-		 * range_overlaps_shared(map, sizeof(*map)) and
-		 * validate_map_handle() defenses, so a scribble that
-		 * replaced obj->sysv_shm.ptr with a heap-shaped value
-		 * sails past the IPC_STAT check above (the shm
-		 * segment id is fine; only the cached attached-ptr is
-		 * stale).  Reject early before the mprotect below
+		 * range_overlaps_shared(map, sizeof(*map)) scribble check,
+		 * so a scribble that replaced obj->sysv_shm.ptr with a
+		 * heap-shaped value sails past the IPC_STAT check above
+		 * (the shm segment id is fine; only the cached attached-
+		 * ptr is stale).  Reject early before the mprotect below
 		 * touches a region that doesn't belong to any tracked
 		 * mapping.
 		 */

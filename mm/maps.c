@@ -528,15 +528,13 @@ void dirty_random_mapping(void)
 		return;
 
 	/*
-	 * Re-validate right before the deref-heavy dirty_mapping path
-	 * (it reads map->prot to dispatch and then map->ptr / map->size
-	 * inside random_map_writefn / random_map_readfn).  Even the few-
-	 * cycle window between get_map_handle()'s internal validation
-	 * and the call below is a window the parent's __destroy_object
-	 * can race in; this re-narrow drops the slot rather than touching
-	 * a recycled obj when it does.  validate_map_handle() bumps
-	 * shm->stats.maps_uaf_caught on a detected mismatch so periodic
-	 * defense-counter dumps surface live race rates.
+	 * Cheap defense-in-depth NULL re-check right before the deref-
+	 * heavy dirty_mapping path (it reads map->prot to dispatch and
+	 * then map->ptr / map->size inside random_map_writefn /
+	 * random_map_readfn).  Pools are per-child private heap, so there
+	 * is no concurrent destroyer to race with; this only guards
+	 * against the handle being clobbered across the call gap above.
+	 * It is a plain NULL check -- no counters are bumped here.
 	 */
 	if (!validate_map_handle(&h))
 		return;
