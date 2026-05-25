@@ -31,8 +31,11 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 	iocbpp = (struct iocb **) get_writable_address(nr * sizeof(*iocbpp));
 
 	buf = (char *) get_writable_address(4096);
-	if (iocbpp == NULL || buf == NULL)
+	if (iocbpp == NULL || buf == NULL) {
+		rec->a2 = 0;
+		rec->a3 = 0;
 		return;
+	}
 
 	for (i = 0; i < nr; i++) {
 		iocbs[i].aio_lio_opcode = iocb_cmds[rnd_modulo_u32(ARRAY_SIZE(iocb_cmds))];
