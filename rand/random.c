@@ -62,6 +62,38 @@ static unsigned long randbits(int limit)
 }
 
 /*
+ * u64-strict sibling of rand_single_bit().  Shifts a 1ULL so the
+ * result distributes across all 64 bits regardless of host word
+ * size; rand_single_bit() clamps to WORD_BIT and on a 32-bit host
+ * can never set a bit above position 31.
+ */
+static u64 rand_single_bit64(unsigned char size)
+{
+	if (size > 64)
+		size = 64;
+
+	return (1ULL << rnd_modulo_u32(size));
+}
+
+/*
+ * u64-strict sibling of randbits().  Uses a 64-bit accumulator and
+ * 1ULL shifts so that `limit` values up to 64 are well-defined on
+ * 32-bit hosts; randbits(64) would shift an unsigned long by 32..63,
+ * which is undefined behaviour when unsigned long is 32 bits wide.
+ */
+static u64 randbits64(int limit)
+{
+	unsigned int num = rnd_modulo_u32(limit / 2 + 1);
+	unsigned int i;
+	u64 r = 0;
+
+	for (i = 0; i < num; i++)
+		r |= (1ULL << rnd_modulo_u32(limit));
+
+	return r;
+}
+
+/*
  * Pick 1 random byte, and repeat it through a long.
  */
 static unsigned long rept_byte(void)
@@ -201,9 +233,9 @@ u64 rand64(void)
 		break;
 
 	/* 33:64-bit ranges. */
-	case 3:	r = rand_single_bit(64);
+	case 3:	r = rand_single_bit64(64);
 		break;
-	case 4:	r = randbits(64);
+	case 4:	r = randbits64(64);
 		break;
 	case 5:	/* Combine three draws with shifts and XOR to cover
 		 * all 64 bits.  Originally compensated for libc rand()
@@ -245,7 +277,7 @@ u64 rand64(void)
 
 		rounds = rnd_modulo_u32(4);
 		for (i = 0; i < rounds; i++)
-			r |= (1UL << ((WORD_BIT - 1) - rnd_modulo_u32(8)));
+			r |= (1ULL << (63 - rnd_modulo_u32(8)));
 	}
 
 	/* Sometimes flip sign */
