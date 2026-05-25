@@ -27,22 +27,20 @@
  * Per-child shared allocations tracked in shared_regions[]:
  *   1. childdata                     (alloc_shared in init_shm)
  *   2. fd_event_ring                 (alloc_shared in init_shm)
- *   3. OBJ_LOCAL objhead region      (carved from childdata so it can be
- *                                     page-isolated and mprotect'd RO
- *                                     post-init; see local_objects_alloc()
- *                                     in objects.c)
- *   4. KCOV PC trace buffer          (track_shared_region in kcov.c, only
+ *   3. stats_ring                    (alloc_shared in init_shm)
+ *   4. edgepair_ring                 (alloc_shared in init_shm)
+ *   5. KCOV PC trace buffer          (track_shared_region in kcov.c, only
  *                                     on KCOV-capable kernels)
- *   5. KCOV CMP trace buffer         (track_shared_region in kcov.c, only
+ *   6. KCOV CMP trace buffer         (track_shared_region in kcov.c, only
  *                                     when KCOV_TRACE_CMP is supported)
  *
  * The cap formula in derive_max_children_cap() divides the remaining
- * shared_regions[] budget by this number.  We size for the worst case (5)
+ * shared_regions[] budget by this number.  We size for the worst case (6)
  * so that on KCOV-capable kernels the per-child KCOV buffers still fit
  * inside shared_regions[] and remain visible to range_overlaps_shared(),
  * which protects them from fuzzed munmap/mremap/madvise/mprotect.
  */
-#define SHARED_REGIONS_PER_CHILD 5
+#define SHARED_REGIONS_PER_CHILD 6
 
 extern unsigned int nr_shared_regions;
 
