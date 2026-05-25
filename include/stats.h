@@ -481,6 +481,27 @@ struct stats_s {
 	 * not an event log. */
 	unsigned long childop_invocations[NR_CHILD_OP_TYPES];
 
+	/* Per-childop "last successful dispatch" logical timestamp, indexed
+	 * by enum child_op_type.  Stored as shm_published->fleet_op_count
+	 * sampled at the moment the alt-op dispatch returned success (ret
+	 * != FAIL), i.e. the same fleet-clock source the syscalls_todo
+	 * termination check already reads inside child_process().  Set to
+	 * 0 by the create_shm() memset; 0 is the "never succeeded" sentinel
+	 * that dump_stats() interprets as a never-fired op (and so omits
+	 * from the ranked table -- never-zero rows are skipped, matching
+	 * the surrounding childop_edges_discovered[] / childop_calls_with_
+	 * edges[] dumps).
+	 *
+	 * Read-only signal for dormancy detection: the operator (or a
+	 * downstream reader) computes (current_fleet_op_count - ts) to see
+	 * how long an op has been quiet.  No threshold / TTL / picker
+	 * gating is wired in here -- this commit only records the
+	 * timestamp; consumers decide what "dormant" means.  Multiple
+	 * siblings dispatching the same op race on this slot; the last
+	 * RELAXED store wins, which is exactly the "most recent observed
+	 * success across the fleet" semantics dump_stats wants. */
+	unsigned long childop_last_success_ts[NR_CHILD_OP_TYPES];
+
 	/* ---- Group C: per-childop ---- */
 
 	/* procfs_writer childop: per-tree write counts */

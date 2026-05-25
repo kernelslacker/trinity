@@ -3700,6 +3700,54 @@ void dump_stats(void)
 					 metric, ranked[ri].count);
 			}
 		}
+
+		/* Per-childop "last successful dispatch" fleet-clock
+		 * timestamp, rendered alongside the per-op edge / call
+		 * tables above so the operator sees calls, productive
+		 * calls, and last-success-ts side-by-side per op.  Sorted
+		 * by timestamp descending -- the most recently active op
+		 * lands first, the oldest survivors trail it, and ops
+		 * whose stamp is far behind shm_published->fleet_op_count
+		 * are the dormancy candidates.  0 means "never
+		 * succeeded" and is skipped (rendered as absent), matching
+		 * the skip-zero convention in the two ranked dumps above.
+		 * CHILD_OP_SYSCALL is skipped for the same reason as the
+		 * sibling tables: the syscall path attributes its own
+		 * activity via parent_stats.op_count / strategy counters
+		 * and never bumps the per-childop arrays. */
+		{
+			struct { unsigned int op; unsigned long count; }
+				ranked[NR_CHILD_OP_TYPES];
+			unsigned int nranked = 0, ri, rj;
+
+			for (op = CHILD_OP_SYSCALL + 1;
+			     op < NR_CHILD_OP_TYPES; op++) {
+				unsigned long v =
+					shm->stats.childop_last_success_ts[op];
+				if (v == 0)
+					continue;
+				ranked[nranked].op = op;
+				ranked[nranked].count = v;
+				nranked++;
+			}
+			for (ri = 1; ri < nranked; ri++) {
+				for (rj = ri; rj > 0 &&
+				     ranked[rj].count > ranked[rj - 1].count;
+				     rj--) {
+					unsigned int to = ranked[rj].op;
+					unsigned long tc = ranked[rj].count;
+					ranked[rj] = ranked[rj - 1];
+					ranked[rj - 1].op = to;
+					ranked[rj - 1].count = tc;
+				}
+			}
+			for (ri = 0; ri < nranked; ri++) {
+				snprintf(metric, sizeof(metric),
+					 "op_type_%u", ranked[ri].op);
+				stat_row("childop_last_success_ts",
+					 metric, ranked[ri].count);
+			}
+		}
 	}
 
 	if (parent_stats.shared_buffer_redirected)

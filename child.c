@@ -2256,6 +2256,28 @@ void child_process(struct childdata *child, int childno)
 			__atomic_fetch_add(
 				&shm->stats.childop_invocations[child->op_type],
 				1UL, __ATOMIC_RELAXED);
+
+			/* Per-op "last successful dispatch" timestamp, sampled
+			 * from the same fleet-clock source the syscalls_todo
+			 * termination check below reads.  Only stamped when the
+			 * op returned SUCCESS -- a FAIL return covers throttled
+			 * / setup-failed / skipped paths and must not refresh
+			 * the timestamp, otherwise the dormancy signal collapses
+			 * to "this op was attempted recently" (which the
+			 * invocation counter above already encodes) instead of
+			 * "this op did useful work recently".  RELAXED store: a
+			 * single dispatch is a single writer to its op's slot;
+			 * cross-op sibling races are tolerated -- last writer
+			 * wins, which is the "most recent observed success"
+			 * semantics dump_stats consumes for dormancy detection.
+			 * 0 stays "never succeeded" because we only store here
+			 * (the create_shm() memset already zeroed the array). */
+			if (ret != FAIL && shm_published != NULL) {
+				__atomic_store_n(
+					&shm->stats.childop_last_success_ts[child->op_type],
+					shm_published->fleet_op_count,
+					__ATOMIC_RELAXED);
+			}
 		}
 
 		enable_coredumps();
