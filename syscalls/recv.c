@@ -325,7 +325,7 @@ skip_bound:
 	 */
 	free(snap->control);
 	deferred_free_enqueue(msg->msg_iov);
-	free(snap->name);
+	tracked_free_now(snap->name);
 	rec->a2 = 0;
 	deferred_free_enqueue(msg);
 
@@ -549,7 +549,7 @@ static void post_recvmmsg(struct syscallrecord *rec)
 	for (i = 0; i < vlen; i++) {
 		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov);
 		free(snap->control[i]);
-		free(snap->name[i]);
+		tracked_free_now(snap->name[i]);
 	}
 	rec->a2 = 0;
 	deferred_free_enqueue(msgs);

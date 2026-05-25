@@ -327,7 +327,7 @@ skip_bound:
 		free(snap->iov_base);
 	if (msg->msg_iov != NULL)
 		deferred_free_enqueue(msg->msg_iov);
-	free(snap->name);	// free sockaddr
+	tracked_free_now(snap->name);	// free sockaddr
 	rec->a2 = 0;
 	deferred_free_enqueue(msg);
 
@@ -547,7 +547,7 @@ static void post_sendmmsg(struct syscallrecord *rec)
 	 */
 	for (i = 0; i < vlen; i++) {
 		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov);
-		free(snap->name[i]);
+		tracked_free_now(snap->name[i]);
 	}
 	rec->a2 = 0;
 	deferred_free_enqueue(msgs);
