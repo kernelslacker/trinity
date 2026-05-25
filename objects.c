@@ -737,6 +737,14 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			release_obj(obj, scope, type);
 			return;
 		}
+
+		/* Per-provider outstanding-fd gauge: bump on successful
+		 * registration into the parent's global fd_hash.  Paired
+		 * with the decrement in fd_event_drain()'s CLOSE arm,
+		 * which looks the type back up via fd_hash_lookup() on
+		 * the consumer side. */
+		__atomic_fetch_add(&shm->stats.fd_provider_outstanding[type],
+				   1, __ATOMIC_RELAXED);
 	}
 
 	/* Per-object dumps are debug noise at startup (NFUTEXES = 5 * cpus

@@ -65,6 +65,29 @@ void register_fd_provider(const struct fd_provider *prov)
 }
 
 /*
+ * Return the registered fd_provider name whose objtype matches @type,
+ * or NULL if no provider was registered with that objtype.  Surfaces
+ * the provider→name mapping to dump_stats() so the per-provider
+ * outstanding-fd gauge in shm->stats can be labelled without
+ * exposing the provider list itself.
+ */
+const char *fd_provider_name(enum objecttype type)
+{
+	struct list_head *node;
+
+	if (fd_providers == NULL)
+		return NULL;
+
+	list_for_each(node, &fd_providers->list) {
+		struct fd_provider *provider = (struct fd_provider *) node;
+
+		if (provider->objtype == type)
+			return provider->name;
+	}
+	return NULL;
+}
+
+/*
  * Print the names of all registered fd providers as a comma-separated
  * list, for use in --enable-fds/--disable-fds help output.
  */

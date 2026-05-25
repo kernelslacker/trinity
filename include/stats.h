@@ -1945,6 +1945,23 @@ struct stats_s {
 	unsigned long rxrpc_sendmsg_cmsg_sent[8];		/* per-cmsg-slot histogram (USER_CALL_ID..CHARGE_ACCEPT) */
 	unsigned long rxrpc_sendmsg_cmsg_sendmsg_ok;		/* sendmsg() returned >=0 */
 	unsigned long rxrpc_sendmsg_cmsg_sendmsg_fail;		/* sendmsg() returned -1 (kernel rejected the cmsg shape) */
+
+	/*
+	 * Per-provider outstanding-fd gauge, indexed by enum objecttype.
+	 * Bumped from add_object() after a successful fd_hash_insert() for
+	 * an OBJ_GLOBAL fd-typed pool; dropped from fd_event_drain()'s
+	 * apply_slot() CLOSE arm using the type recorded in the parent's
+	 * fd_hash entry.  Per-index value is the number of fds currently
+	 * tracked by the parent for that provider -- a gauge, not a
+	 * cumulative counter.  dump_stats() walks the array and prints
+	 * only providers whose outstanding > 0, so a non-empty block at
+	 * shutdown surfaces per-provider leaks (CLOSE events lost, fds
+	 * orphaned in the global hash) without a flood of all-zero rows.
+	 * Indexed by the enum so the slot ids stay stable across runs and
+	 * MAX_OBJECT_TYPES sizing makes the access bounds-safe by
+	 * construction.
+	 */
+	unsigned long fd_provider_outstanding[MAX_OBJECT_TYPES];
 };
 
 unsigned int stats_syscall_category(const char *name);

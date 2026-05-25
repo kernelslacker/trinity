@@ -11,6 +11,7 @@
 #include "cmp_hints.h"
 #include "edgepair.h"
 #include "edgepair_ring.h"
+#include "fd.h"
 #include "kcov.h"
 #include "minicorpus.h"
 #include "params.h"
@@ -3153,6 +3154,37 @@ void dump_stats(void)
 		stat_row("fd_lifecycle", "epoll_blocking_poll_skipped",
 			 shm->stats.epoll_blocking_poll_skipped);
 		stat_row("fd_lifecycle", "random_exhausted",    shm->stats.fd_random_exhausted);
+	}
+
+	/*
+	 * Per-provider outstanding-fd gauge.  Only providers whose live
+	 * count is non-zero get a row -- a clean run with no leaks emits
+	 * nothing; a non-empty block at shutdown surfaces a per-provider
+	 * fd leak (CLOSE events lost in the fd_event ring, an OBJ_GLOBAL
+	 * registration whose subsequent close() bypassed remove_object_by_fd,
+	 * etc.).  The label comes from the registered fd_provider name so
+	 * the row matches --enable-fds/--disable-fds syntax; an entry whose
+	 * objtype has no matching provider is skipped (defensive: should
+	 * not happen, since the bump site fires only on a successful
+	 * fd_hash_insert for an is_fd_type() objtype).
+	 */
+	{
+		unsigned int t;
+
+		for (t = 0; t < MAX_OBJECT_TYPES; t++) {
+			unsigned long outstanding =
+				shm->stats.fd_provider_outstanding[t];
+			const char *name;
+
+			if (outstanding == 0)
+				continue;
+
+			name = fd_provider_name((enum objecttype) t);
+			if (name == NULL)
+				continue;
+
+			stat_row("fd_provider_outstanding", name, outstanding);
+		}
 	}
 
 	if (shm->stats.fd_oracle_anomalies)

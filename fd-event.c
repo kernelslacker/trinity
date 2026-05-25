@@ -88,9 +88,25 @@ static void apply_slot(const void *p, void *ctx __unused__)
 		corrupt = true;
 	} else {
 		switch (ev.type) {
-		case FD_EVENT_CLOSE:
+		case FD_EVENT_CLOSE: {
+			/*
+			 * Per-provider outstanding-fd gauge: look up the
+			 * closing fd's objtype on the consumer side
+			 * (parent owns parent_fd_hash exclusively, so no
+			 * TOCTOU) and decrement before remove_object_by_fd
+			 * destroys the entry.  add_object()'s fd_hash_insert
+			 * success path bumped the same slot; a NULL lookup
+			 * means the fd was never registered globally and
+			 * has nothing to decrement.
+			 */
+			struct fd_hash_entry *fe = fd_hash_lookup(ev.fd1);
+
+			if (fe != NULL && fe->type < MAX_OBJECT_TYPES)
+				__atomic_fetch_sub(&shm->stats.fd_provider_outstanding[fe->type],
+						   1, __ATOMIC_RELAXED);
 			remove_object_by_fd(ev.fd1);
 			break;
+		}
 		default:
 			/* Defense in depth: payload_valid() already
 			 * screened type on the local copy, so reaching

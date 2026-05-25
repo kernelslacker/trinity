@@ -46,6 +46,15 @@ void register_fd_provider(const struct fd_provider *prov);
 void dump_fd_provider_names(void);
 void run_fd_provider_child_ops(void);
 
+/*
+ * Return the name of the registered fd_provider whose objtype matches
+ * the supplied enum value, or NULL when no provider claims that type.
+ * Used by dump_stats() to label the per-provider outstanding-fd gauge
+ * (shm->stats.fd_provider_outstanding[]) without exposing the provider
+ * list itself.
+ */
+const char *fd_provider_name(enum objecttype type);
+
 bool check_if_fd(struct syscallrecord *rec);
 
 /*
