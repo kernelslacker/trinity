@@ -539,9 +539,6 @@ static void bring_lo_up(struct nl_ctx *rtnl)
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
-	struct sockaddr_nl dst;
-	struct iovec iov;
-	struct msghdr mh;
 	int lo_idx = (int)if_nametoindex("lo");
 
 	if (lo_idx <= 0)
@@ -561,22 +558,7 @@ static void bring_lo_up(struct nl_ctx *rtnl)
 
 	nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi)));
 
-	memset(&dst, 0, sizeof(dst));
-	dst.nl_family = AF_NETLINK;
-	iov.iov_base = buf;
-	iov.iov_len  = nlh->nlmsg_len;
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_name    = &dst;
-	mh.msg_namelen = sizeof(dst);
-	mh.msg_iov     = &iov;
-	mh.msg_iovlen  = 1;
-	(void)sendmsg(rtnl->fd, &mh, 0);
-
-	/* Drain the ack — best effort. */
-	{
-		unsigned char ack[256];
-		(void)recv(rtnl->fd, ack, sizeof(ack), MSG_DONTWAIT);
-	}
+	(void)nl_send_recv(rtnl, buf, nlh->nlmsg_len);
 }
 
 /* Build the SA selector matching 127.0.0.1 -> 127.0.0.2 UDP, both

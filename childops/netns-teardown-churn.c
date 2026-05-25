@@ -249,7 +249,8 @@ static int bring_up_loopback(void)
 static void open_extras(int *raw_fd, int *xfrm_fd)
 {
 	int fd;
-	struct sockaddr_nl sa;
+	struct nl_ctx ctx;
+	struct nl_open_opts opts = { .proto = NETLINK_XFRM };
 
 	*raw_fd = -1;
 	*xfrm_fd = -1;
@@ -258,16 +259,8 @@ static void open_extras(int *raw_fd, int *xfrm_fd)
 	if (fd >= 0)
 		*raw_fd = fd;
 
-	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_XFRM);
-	if (fd < 0)
-		return;
-	memset(&sa, 0, sizeof(sa));
-	sa.nl_family = AF_NETLINK;
-	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(fd);
-		return;
-	}
-	*xfrm_fd = fd;
+	if (nl_open(&ctx, &opts) == 0)
+		*xfrm_fd = ctx.fd;
 }
 
 /*
