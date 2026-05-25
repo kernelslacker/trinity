@@ -718,6 +718,78 @@ void shared_bitmap_self_check(void)
  * Lower = noisier, higher = blunter. */
 #define RANGE_OVERLAPS_SHARED_REJECT_REPORT_INTERVAL 10000
 
+/*
+ * Exact byte-range overlap confirmation after a bitmap hit.  The
+ * bitmap rounds tracked regions up to 2 MiB chunks, so a hit means
+ * "some tracked region lives in a chunk that touches the query" --
+ * not that the query and the region share a byte.  Walking the two
+ * region arrays here resolves the false positives in which a valid,
+ * disjoint mm-syscall range shares a 2 MiB chunk with a tracked
+ * allocation; the bitmap previously rejected those unconditionally,
+ * losing real munmap / mremap / madvise / mprotect / mseal / mbind
+ * coverage on hosts where allocations cluster.
+ *
+ * Semantics match the pre-bitmap byte-precise test:
+ *   - a non-empty range [addr, end) overlaps [rstart, rend) iff
+ *     addr < rend && rstart < end (standard interval overlap);
+ *   - an empty (len == 0) range matches iff @addr is strictly inside
+ *     a region (rstart <= addr < rend), which is the only empty-range
+ *     case the original test accepted.
+ *
+ * Zero-size tracked regions never overlap anything, matching the
+ * alloc_shared() / track_shared_region() callers that treat size==0
+ * as "no region" (and matching shared_bitmap_mark()'s no-op on size 0).
+ *
+ * Returning false here only removes false-positive rejects; it never
+ * accepts a query that truly overlaps a tracked region, so the safety
+ * invariant the callers rely on (no fuzzed mm-syscall clobbers a
+ * trinity-owned shared mapping) is preserved.
+ */
+static bool shared_regions_exact_overlap(unsigned long addr,
+					 unsigned long len,
+					 unsigned long end)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr_shared_regions; i++) {
+		unsigned long rstart = shared_regions[i].addr;
+		unsigned long rsize = shared_regions[i].size;
+		unsigned long rend;
+
+		if (rsize == 0)
+			continue;
+		rend = rstart + rsize;
+
+		if (len == 0) {
+			if (addr >= rstart && addr < rend)
+				return true;
+		} else {
+			if (addr < rend && rstart < end)
+				return true;
+		}
+	}
+
+	for (i = 0; i < nr_shared_regions_overflow; i++) {
+		unsigned long rstart = shared_regions_overflow[i].addr;
+		unsigned long rsize = shared_regions_overflow[i].size;
+		unsigned long rend;
+
+		if (rsize == 0)
+			continue;
+		rend = rstart + rsize;
+
+		if (len == 0) {
+			if (addr >= rstart && addr < rend)
+				return true;
+		} else {
+			if (addr < rend && rstart < end)
+				return true;
+		}
+	}
+
+	return false;
+}
+
 /* Last syscall to trip a range_overlaps_shared() reject.  Last-write-wins;
  * a coarse hint for which sanitiser is doing the most work, not a precise
  * audit trail.  Process-local statics: each child has its own copy, the
@@ -741,15 +813,19 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len)
 
 	end = addr + len;
 
-	/* Bitmap accelerator: O(ceil(len/2MB)+1) bit reads instead of an
-	 * O(N) walk over shared_regions[].  A range entirely above the
-	 * bitmap span has no tracked overlap -- shared_bitmap_mark()
-	 * BUG()s on out-of-span registrations, so a miss here cannot hide
-	 * a real region.  A zero-length probe collapses to a single bit
-	 * read on the chunk containing addr; this is over-rejection
-	 * relative to the original byte-precise test (which only matched
-	 * an empty range strictly inside a region) but lands on the
-	 * SAFETY side that callers depend on. */
+	/* Bitmap accelerator used as a fast NEGATIVE prefilter:
+	 * O(ceil(len/2MB)+1) bit reads to rule out the common case where
+	 * no tracked region lives in any 2 MiB chunk the query touches.
+	 * A range entirely above the bitmap span has no tracked overlap
+	 * -- shared_bitmap_mark() BUG()s on out-of-span registrations,
+	 * so a miss here cannot hide a real region.  A zero-length probe
+	 * collapses to a single bit read on the chunk containing addr.
+	 *
+	 * A bitmap HIT is only a candidate: it means at least one
+	 * tracked region lives in a chunk that touches the query, but
+	 * chunk rounding turns disjoint ranges in the same chunk into
+	 * false positives.  The exact byte-range walk below confirms the
+	 * hit (or clears it) before we reject. */
 	if (addr < SHARED_BITMAP_VA_SPAN) {
 		check_end = end;
 		if (check_end > SHARED_BITMAP_VA_SPAN)
@@ -770,6 +846,14 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len)
 	}
 
 	if (!overlap)
+		return false;
+
+	/* Bitmap hit: confirm there is real byte-range overlap before
+	 * rejecting.  This is the rarer path (bitmap-clear cases already
+	 * returned above), so paying an O(N) walk here is cheap on the
+	 * common fast path and only fires when the query genuinely
+	 * shares a 2 MiB chunk with a tracked region. */
+	if (!shared_regions_exact_overlap(addr, len, end))
 		return false;
 
 	child = this_child();
