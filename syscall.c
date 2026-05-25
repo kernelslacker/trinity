@@ -679,8 +679,29 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 
 			handle_failure(rec);
 			__atomic_add_fetch(&entry->failures, 1, __ATOMIC_RELAXED);
-			if (err < NR_ERRNOS) {
+			if (err >= 0 && err < NR_ERRNOS) {
 				__atomic_add_fetch(&entry->errnos[err], 1, __ATOMIC_RELAXED);
+			} else if (err < 0) {
+				/* A real kernel return can never produce a
+				 * negative errno_post: __do_syscall stores
+				 * errno (always >= 0) into rec->errno_post
+				 * before publishing state = AFTER.  The only
+				 * way err lands here is a sibling child
+				 * stomping on this rec in shared memory after
+				 * AFTER was published -- leaving retval = -1UL
+				 * and state = AFTER intact but trampling
+				 * errno_post with garbage.  Without a lower
+				 * bound the original guard (err < NR_ERRNOS,
+				 * signed) admits negative values and indexes
+				 * entry->errnos[] before the array, silently
+				 * corrupting whatever struct field precedes
+				 * the errnos[] member in the per-syscall
+				 * entry.  Log with a distinct message so this
+				 * corruption shape can be told apart in
+				 * post-mortem logs from the err >= NR_ERRNOS
+				 * shape handled below. */
+				outputerr("negative errno_post after doing %s: %d (sibling stomp on shared syscallrecord?)\n",
+					entry->name, err);
 			} else {
 				// "These should never be seen by user programs."
 				// But trinity isn't a 'normal' user program, we're doing
