@@ -33,14 +33,21 @@
  *                                     on KCOV-capable kernels)
  *   6. KCOV CMP trace buffer         (track_shared_region in kcov.c, only
  *                                     when KCOV_TRACE_CMP is supported)
+ *   7. diag_ring                     (alloc_shared in init_shm, lands with
+ *                                     the Wave-1 diag-ring series)
  *
  * The cap formula in derive_max_children_cap() divides the remaining
- * shared_regions[] budget by this number.  We size for the worst case (6)
- * so that on KCOV-capable kernels the per-child KCOV buffers still fit
- * inside shared_regions[] and remain visible to range_overlaps_shared(),
- * which protects them from fuzzed munmap/mremap/madvise/mprotect.
+ * shared_regions[] budget by this number.  We size for the worst case (7)
+ * so that on KCOV-capable kernels the per-child KCOV buffers plus the
+ * diag ring still fit inside shared_regions[] and remain visible to
+ * range_overlaps_shared(), which protects them from fuzzed
+ * munmap/mremap/madvise/mprotect.
+ *
+ * Capacity cost: with MAX_SHARED_ALLOCS=4096 and
+ * SHARED_REGIONS_GLOBAL_RESERVE=256 the shared_regions[]-bound cap on
+ * max_children drops from (3840 / 6)=640 to (3840 / 7)=548.
  */
-#define SHARED_REGIONS_PER_CHILD 6
+#define SHARED_REGIONS_PER_CHILD 7
 
 extern unsigned int nr_shared_regions;
 
