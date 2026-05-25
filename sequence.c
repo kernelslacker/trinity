@@ -113,6 +113,7 @@ static bool chain_is_replay_safe(const struct chain_step *steps,
 		for (j = 0; j < entry->num_args && j < 6; j++) {
 			switch (entry->argtype[j]) {
 			case ARG_IOVEC:
+			case ARG_IOVEC_IN:
 			case ARG_PATHNAME:
 			case ARG_SOCKADDR:
 			case ARG_MMAP:

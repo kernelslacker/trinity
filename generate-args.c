@@ -266,7 +266,10 @@ static void publish_paired_length(struct syscallentry *entry,
 # define UIO_MAXIOV 1024
 #endif
 
-static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum)
+static unsigned long handle_arg_iovec_dir(struct syscallentry *entry,
+					  struct syscallrecord *rec,
+					  unsigned int argnum,
+					  enum iov_direction dir)
 {
 	unsigned long num_entries;
 	unsigned int bucket = rnd_modulo_u32(100);
@@ -308,7 +311,21 @@ static unsigned long handle_arg_iovec(struct syscallentry *entry, struct syscall
 		num_entries = UIO_MAXIOV + 1;
 
 	publish_paired_length(entry, rec, argnum, num_entries);
-	return (unsigned long) alloc_iovec(num_entries);
+	return (unsigned long) alloc_iovec(num_entries, dir);
+}
+
+static unsigned long handle_arg_iovec(struct syscallentry *entry,
+				      struct syscallrecord *rec,
+				      unsigned int argnum)
+{
+	return handle_arg_iovec_dir(entry, rec, argnum, IOV_KERNEL_WRITE);
+}
+
+static unsigned long handle_arg_iovec_in(struct syscallentry *entry,
+					 struct syscallrecord *rec,
+					 unsigned int argnum)
+{
+	return handle_arg_iovec_dir(entry, rec, argnum, IOV_KERNEL_READ);
 }
 
 static unsigned long handle_arg_sockaddr(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum)
@@ -1024,6 +1041,12 @@ const struct argtype_ops argtype_table[] = {
 	[ARG_IOVEC] = {
 		.name = "ARG_IOVEC",
 		.generate = handle_arg_iovec,
+		.cleanup = cleanup_deferred_free,
+		.paired_length = ARG_IOVECLEN,
+	},
+	[ARG_IOVEC_IN] = {
+		.name = "ARG_IOVEC_IN",
+		.generate = handle_arg_iovec_in,
 		.cleanup = cleanup_deferred_free,
 		.paired_length = ARG_IOVECLEN,
 	},

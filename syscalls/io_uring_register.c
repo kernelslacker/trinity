@@ -450,7 +450,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 */
 	case IORING_REGISTER_BUFFERS:
 		nr = 1 + (rnd_modulo_u32(8));
-		iov_alloc = alloc_iovec(nr);
+		iov_alloc = alloc_iovec(nr, IOV_KERNEL_WRITE);
 		rec->a3 = (unsigned long) iov_alloc;
 		rec->a4 = nr;
 		arg_len = nr * sizeof(struct iovec);

@@ -38,7 +38,24 @@ void avoid_shared_buffer_inout(unsigned long *addr, unsigned long len);
 void scrub_iovec_for_kernel_write(struct iovec *iov, unsigned long count);
 void scrub_msghdr_for_kernel_write(struct msghdr *msg);
 unsigned long find_previous_arg_address(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum);
-struct iovec * alloc_iovec(unsigned int num) __must_check;
+
+/*
+ * Direction the iovec is presented to the kernel:
+ *   IOV_KERNEL_READ  - kernel reads bytes from iov_base (writev, sendmsg,
+ *                      vmsplice, process_vm_writev). The picker drops
+ *                      shapes that would EFAULT a read (SHAPE_NULL,
+ *                      SHAPE_INVALID) and the trailing relocation
+ *                      preserves the original bytes.
+ *   IOV_KERNEL_WRITE - kernel writes bytes into iov_base (readv, recvmsg,
+ *                      process_vm_readv, process_madvise). The full shape
+ *                      table is in play and the trailing relocation
+ *                      discards original bytes.
+ */
+enum iov_direction {
+	IOV_KERNEL_READ,
+	IOV_KERNEL_WRITE,
+};
+struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir) __must_check;
 unsigned long get_len(void);
 unsigned int get_pid(void);
 pid_t get_random_pid_from_pool(void);

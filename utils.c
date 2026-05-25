@@ -1386,6 +1386,7 @@ void deferred_free_reject_bump(void *caller_pc)
 		shard = STATS_FIELD_DEFERRED_FREE_REJECT_PATHNAME;
 		break;
 	case ARG_IOVEC:
+	case ARG_IOVEC_IN:
 		shard = STATS_FIELD_DEFERRED_FREE_REJECT_IOVEC;
 		break;
 	case ARG_SOCKADDR:

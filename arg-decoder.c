@@ -62,6 +62,7 @@ static char * decode_argtype(char *sptr, char *end, unsigned long reg, enum argt
 	case ARG_ADDRESS:
 	case ARG_NON_NULL_ADDRESS:
 	case ARG_IOVEC:
+	case ARG_IOVEC_IN:
 	case ARG_SOCKADDR:
 		sptr = bprintf(sptr, end, "0x%lx", reg);
 		break;

@@ -211,7 +211,7 @@ skip_gen_msg:;
 		unsigned int num_entries;
 
 		num_entries = RAND_RANGE(1, 3);
-		msg->msg_iov = alloc_iovec(num_entries);
+		msg->msg_iov = alloc_iovec(num_entries, IOV_KERNEL_READ);
 		msg->msg_iovlen = num_entries;
 	}
 
@@ -446,7 +446,7 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 		struct sockaddr *sa = NULL;
 		socklen_t salen = 0;
 
-		msg->msg_iov = alloc_iovec(num_entries);
+		msg->msg_iov = alloc_iovec(num_entries, IOV_KERNEL_READ);
 		msg->msg_iovlen = num_entries;
 
 		if (si != NULL)

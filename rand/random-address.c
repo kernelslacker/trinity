@@ -549,7 +549,7 @@ void scrub_msghdr_for_kernel_write(struct msghdr *msg)
  * shared-base bucket needs a predecessor entry to mirror, so for the
  * first entry the picker collapses that band into SHAPE_VALID_MAP.
  *
- * Bucket weights (sum 100):
+ * Bucket weights for IOV_KERNEL_WRITE callers (sum 100):
  *  10  SHAPE_NULL        — NULL base, zero len; iov_iter skip arm
  *  10  SHAPE_TINY        — valid map base, len=1; page-walk early-exit
  *  10  SHAPE_PAGECROSS   — len > page_size; iov_iter page advance
@@ -557,6 +557,17 @@ void scrub_msghdr_for_kernel_write(struct msghdr *msg)
  *   5  SHAPE_POOL        — get_writable_address() page, half-len
  *   5  SHAPE_INVALID     — 0xdeadbeef, len=1; EFAULT reject arm
  *  50  SHAPE_VALID_MAP   — preserves the original behaviour
+ *
+ * For IOV_KERNEL_READ callers (writev / sendmsg / vmsplice /
+ * process_vm_writev) SHAPE_NULL and SHAPE_INVALID would EFAULT the
+ * kernel's copy_from_iter() before any fuzz coverage is reached, so
+ * the picker drops both buckets and renormalises the remaining 85
+ * units back to 100:
+ *  12  SHAPE_TINY
+ *  12  SHAPE_PAGECROSS
+ *  12  SHAPE_SHARED      — collapses to SHAPE_VALID_MAP for idx == 0
+ *   6  SHAPE_POOL
+ *  58  SHAPE_VALID_MAP
  */
 enum iovec_entry_shape {
 	SHAPE_NULL,
@@ -568,9 +579,22 @@ enum iovec_entry_shape {
 	SHAPE_VALID_MAP,
 };
 
-static enum iovec_entry_shape pick_iovec_entry_shape(unsigned int idx)
+static enum iovec_entry_shape pick_iovec_entry_shape(unsigned int idx,
+						     enum iov_direction dir)
 {
 	unsigned int r = rnd_modulo_u32(100);
+
+	if (dir == IOV_KERNEL_READ) {
+		if (r < 12)
+			return SHAPE_TINY;
+		if (r < 24)
+			return SHAPE_PAGECROSS;
+		if (r < 36)
+			return (idx > 0) ? SHAPE_SHARED : SHAPE_VALID_MAP;
+		if (r < 42)
+			return SHAPE_POOL;
+		return SHAPE_VALID_MAP;
+	}
 
 	if (r < 10)
 		return SHAPE_NULL;
@@ -587,7 +611,7 @@ static enum iovec_entry_shape pick_iovec_entry_shape(unsigned int idx)
 	return SHAPE_VALID_MAP;
 }
 
-struct iovec * alloc_iovec(unsigned int num)
+struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir)
 {
 	struct iovec *iov;
 	unsigned int i;
@@ -606,7 +630,7 @@ struct iovec * alloc_iovec(unsigned int num)
 	iov = zmalloc_tracked(num * sizeof(struct iovec));	/* freed by generic_free_arg */
 
 	for (i = 0; i < num; i++) {
-		enum iovec_entry_shape shape = pick_iovec_entry_shape(i);
+		enum iovec_entry_shape shape = pick_iovec_entry_shape(i, dir);
 		struct map *map;
 		unsigned long base;
 		void *pool;
@@ -687,26 +711,31 @@ struct iovec * alloc_iovec(unsigned int num)
 		}
 
 		/*
-		 * readv/preadv/preadv2/recvmsg/recvmmsg all hand each
-		 * iov_base to the kernel as an output buffer.  A get_map()
-		 * pointer can in principle alias one of trinity's
-		 * alloc_shared() regions (children blob, fd_event_ring,
-		 * shared obj/string heaps), in which case the kernel write
-		 * silently scribbles bookkeeping.  Same defence the
-		 * read/recv/getdents/ioctl paths already apply at the
-		 * syscallrecord layer, lifted into the iovec builder so
-		 * every caller is covered in one place.
+		 * Per-entry relocation away from alloc_shared() regions and
+		 * the libc brk arena.  A get_map() pointer can in principle
+		 * alias one of trinity's alloc_shared() regions (children
+		 * blob, fd_event_ring, shared obj/string heaps) or land in
+		 * libc brk, both of which would let the kernel scribble
+		 * bookkeeping.
 		 *
-		 * Output-only scrub. Today's alloc_iovec() callers
-		 * (readv/preadv/preadv2/recvmsg/recvmmsg) only treat the
-		 * iov_base buffer as kernel-write, so the no-copy variant
-		 * matches the contract. A future writev/sendmsg-class
-		 * caller that hands kernel-read bytes via this helper
-		 * would need _inout per element to preserve those bytes
-		 * across relocation.
+		 * IOV_KERNEL_WRITE callers (readv, preadv, preadv2, recvmsg,
+		 * recvmmsg, process_vm_readv, process_madvise) use the
+		 * no-copy variant -- the kernel will overwrite the buffer
+		 * anyway, so preserving the original bytes across relocation
+		 * is wasted work.
+		 *
+		 * IOV_KERNEL_READ callers (writev, pwritev, pwritev2,
+		 * sendmsg, sendmmsg, vmsplice, process_vm_writev) use the
+		 * inout variant so the map-backed bytes the kernel reads
+		 * after relocation match the bytes that were on the original
+		 * page, keeping content-sensitive paths reproducible across
+		 * the relocation step.
 		 */
 		base = (unsigned long) iov[i].iov_base;
-		avoid_shared_buffer_out(&base, iov[i].iov_len);
+		if (dir == IOV_KERNEL_READ)
+			avoid_shared_buffer_inout(&base, iov[i].iov_len);
+		else
+			avoid_shared_buffer_out(&base, iov[i].iov_len);
 		iov[i].iov_base = (void *) base;
 	}
 

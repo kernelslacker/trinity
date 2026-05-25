@@ -608,6 +608,7 @@ static bool argtype_accepts_numeric_substitute(enum argtype t)
 	case ARG_NON_NULL_ADDRESS:
 	case ARG_PATHNAME:
 	case ARG_IOVEC:
+	case ARG_IOVEC_IN:
 	case ARG_SOCKADDR:
 	case ARG_MMAP:
 	case ARG_SOCKETINFO:

@@ -110,6 +110,7 @@ static bool corpus_args_replayable(const struct syscallentry *entry)
 	for (i = 0; i < entry->num_args && i < 6; i++) {
 		switch (entry->argtype[i]) {
 		case ARG_IOVEC:
+		case ARG_IOVEC_IN:
 		case ARG_PATHNAME:
 		case ARG_SOCKADDR:
 		case ARG_MMAP:

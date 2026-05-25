@@ -28,7 +28,7 @@ static void post_vmsplice(struct syscallrecord *rec)
 struct syscallentry syscall_vmsplice = {
 	.name = "vmsplice",
 	.num_args = 4,
-	.argtype = { [0] = ARG_FD_PIPE, [1] = ARG_IOVEC, [2] = ARG_IOVECLEN, [3] = ARG_LIST },
+	.argtype = { [0] = ARG_FD_PIPE, [1] = ARG_IOVEC_IN, [2] = ARG_IOVECLEN, [3] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "iov", [2] = "nr_segs", [3] = "flags" },
 	.arg_params[3].list = ARGLIST(vmsplice_flags),
 	.post = post_vmsplice,
