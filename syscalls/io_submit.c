@@ -17,6 +17,75 @@ static int iocb_cmds[] = {
 	IOCB_CMD_FDSYNC, IOCB_CMD_POLL, IOCB_CMD_NOOP,
 };
 
+/*
+ * Bias the iocb opcode against the underlying fd type so a meaningful
+ * fraction of submissions reach the kernel's filesystem path instead
+ * of bouncing off -ESPIPE / -EINVAL at io_submit_one().  PREAD/PWRITE
+ * on a socket always -ESPIPEs; FSYNC on a pipe always -EINVALs; etc.
+ *
+ * A 15% slice keeps the original uncorrelated random pick so the
+ * EINVAL/ESPIPE error paths still get coverage.  When the fd is not
+ * tracked in the global fd hash (child-private, just-accepted socket,
+ * untracked kernel-opened fd) fall back to the random pick — we have
+ * no information to bias on.
+ */
+static int pick_iocb_opcode_for_fd(int fd)
+{
+	struct fd_hash_entry *e;
+
+	if (rnd_modulo_u32(100) < 15)
+		return iocb_cmds[rnd_modulo_u32(ARRAY_SIZE(iocb_cmds))];
+
+	if (fd < 0)
+		return iocb_cmds[rnd_modulo_u32(ARRAY_SIZE(iocb_cmds))];
+
+	e = fd_hash_lookup(fd);
+	if (e == NULL)
+		return iocb_cmds[rnd_modulo_u32(ARRAY_SIZE(iocb_cmds))];
+
+	switch (e->type) {
+	case OBJ_FD_TESTFILE:
+	case OBJ_FD_PAGECACHE:
+	case OBJ_FD_MEMFD:
+	case OBJ_FD_MEMFD_SECRET:
+	case OBJ_FD_DEVFILE: {
+		static const int file_cmds[] = {
+			IOCB_CMD_PREAD, IOCB_CMD_PWRITE,
+			IOCB_CMD_FSYNC, IOCB_CMD_FDSYNC,
+			IOCB_CMD_NOOP,
+		};
+		return file_cmds[rnd_modulo_u32(ARRAY_SIZE(file_cmds))];
+	}
+	case OBJ_FD_PIPE:
+		/*
+		 * FSYNC/FDSYNC on a pipe -EINVAL.  PREAD on the writer
+		 * end (and PWRITE on the reader end) -EBADF.  Route each
+		 * side to the operation that actually exercises the
+		 * pipe ->read_iter / ->write_iter path, mixing in POLL
+		 * since pipes feed ->poll correctly.
+		 */
+		if (objpool_check(e->obj, OBJ_FD_PIPE) &&
+		    e->obj->pipeobj.reader)
+			return (rnd_modulo_u32(2) == 0) ?
+				IOCB_CMD_PREAD : IOCB_CMD_POLL;
+		return (rnd_modulo_u32(2) == 0) ?
+			IOCB_CMD_PWRITE : IOCB_CMD_POLL;
+	case OBJ_FD_SOCKET:
+	case OBJ_FD_EVENTFD:
+	case OBJ_FD_TIMERFD:
+	case OBJ_FD_SIGNALFD:
+	case OBJ_FD_INOTIFY:
+	case OBJ_FD_FANOTIFY: {
+		static const int pollable_cmds[] = {
+			IOCB_CMD_POLL, IOCB_CMD_NOOP,
+		};
+		return pollable_cmds[rnd_modulo_u32(ARRAY_SIZE(pollable_cmds))];
+	}
+	default:
+		return iocb_cmds[rnd_modulo_u32(ARRAY_SIZE(iocb_cmds))];
+	}
+}
+
 static void sanitise_io_submit(struct syscallrecord *rec)
 {
 	struct iocb **iocbpp;
@@ -39,8 +108,8 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 	}
 
 	for (i = 0; i < nr; i++) {
-		iocbs[i].aio_lio_opcode = iocb_cmds[rnd_modulo_u32(ARRAY_SIZE(iocb_cmds))];
 		iocbs[i].aio_fildes = get_random_fd();
+		iocbs[i].aio_lio_opcode = pick_iocb_opcode_for_fd(iocbs[i].aio_fildes);
 		iocbs[i].aio_buf = (__u64)(unsigned long) buf;
 		iocbs[i].aio_nbytes = 4096;
 		iocbs[i].aio_offset = rnd_modulo_u32(65536);
