@@ -30,6 +30,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -89,7 +90,7 @@ static void try_modprobe(const char *mod)
 		execlp("modprobe", "modprobe", "-q", mod, (char *)NULL);
 		_exit(127);
 	}
-	(void)waitpid(pid, &status, 0);
+	(void)waitpid_eintr(pid, &status, 0);
 }
 
 static void try_ipvsadm(const char *const argv[])
@@ -110,7 +111,7 @@ static void try_ipvsadm(const char *const argv[])
 		execvp("ipvsadm", (char *const *)argv);
 		_exit(127);
 	}
-	(void)waitpid(pid, &status, 0);
+	(void)waitpid_eintr(pid, &status, 0);
 }
 
 static void ipvs_conn_burn(void)

@@ -74,6 +74,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -483,7 +484,7 @@ static void reap_with_deadline(pid_t pid, struct timespec *deadline)
 		     (now.tv_sec == deadline->tv_sec &&
 		      now.tv_nsec >= deadline->tv_nsec))) {
 			(void)kill(pid, SIGKILL);
-			(void)waitpid(pid, &status, 0);
+			(void)waitpid_eintr(pid, &status, 0);
 			return;
 		}
 		(void)usleep(2000);
@@ -538,7 +539,7 @@ static void iter_one(void)
 	b = fork();
 	if (b < 0) {
 		(void)kill(a, SIGKILL);
-		(void)waitpid(a, NULL, 0);
+		(void)waitpid_eintr(a, NULL, 0);
 		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out_setns;

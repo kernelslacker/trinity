@@ -91,6 +91,7 @@
 
 #include "child.h"
 #include "childops-genl.h"
+#include "childops-util.h"
 #include "random.h"
 #include "shm.h"
 #include "tls.h"
@@ -488,7 +489,7 @@ static void reap_acceptor(pid_t pid)
 	if (pid <= 0)
 		return;
 	(void)kill(pid, SIGTERM);
-	(void)waitpid(pid, &status, 0);
+	(void)waitpid_eintr(pid, &status, 0);
 }
 
 static int try_ktls(int file_fd)

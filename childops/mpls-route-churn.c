@@ -124,6 +124,7 @@
 
 #include "child.h"
 #include "childops-netlink.h"
+#include "childops-util.h"
 #include "jitter.h"
 #include "params.h"
 #include "random.h"
@@ -219,7 +220,7 @@ static void try_modprobe(const char *mod)
 		execlp("modprobe", "modprobe", "-q", mod, (char *)NULL);
 		_exit(127);
 	}
-	(void)waitpid(pid, &status, 0);
+	(void)waitpid_eintr(pid, &status, 0);
 }
 
 static void maybe_modprobe_once(void)

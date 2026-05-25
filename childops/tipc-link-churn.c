@@ -85,6 +85,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -166,7 +167,7 @@ static void try_modprobe_tipc(void)
 		execl("/usr/sbin/modprobe", "modprobe", "-q", "tipc", (char *)NULL);
 		_exit(127);
 	}
-	(void)waitpid(pid, &status, 0);
+	(void)waitpid_eintr(pid, &status, 0);
 }
 
 /*

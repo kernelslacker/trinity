@@ -113,6 +113,7 @@
 
 #include "child.h"
 #include "childops-genl.h"
+#include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -406,7 +407,7 @@ static void pdpc_modprobe_netdevsim_once(void)
 		       (char *)NULL);
 		_exit(127);
 	}
-	(void)waitpid(pid, &status, 0);
+	(void)waitpid_eintr(pid, &status, 0);
 }
 
 /* atexit cleanup: switch back into the latched netns and del each

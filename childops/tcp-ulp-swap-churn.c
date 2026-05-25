@@ -98,6 +98,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "compat.h"
 #include "jitter.h"
 #include "random.h"
@@ -282,7 +283,7 @@ reap:
 	{
 		int status;
 		(void)kill(pid, SIGTERM);
-		(void)waitpid(pid, &status, 0);
+		(void)waitpid_eintr(pid, &status, 0);
 	}
 	return -1;
 
@@ -309,7 +310,7 @@ static void reap_acceptor(pid_t pid)
 		}
 	}
 	(void)kill(pid, SIGTERM);
-	(void)waitpid(pid, &status, 0);
+	(void)waitpid_eintr(pid, &status, 0);
 }
 
 /* SIOCGIFNAME(ifindex=1) -> SIOCSIFNAME with the same name back.  The

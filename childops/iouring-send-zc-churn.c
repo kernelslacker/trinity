@@ -119,6 +119,7 @@
 #include <linux/io_uring.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -448,7 +449,7 @@ reap:
 	{
 		int status;
 		(void)kill(pid, SIGTERM);
-		(void)waitpid(pid, &status, 0);
+		(void)waitpid_eintr(pid, &status, 0);
 	}
 	return -1;
 
@@ -475,7 +476,7 @@ static void reap_acceptor(pid_t pid)
 		}
 	}
 	(void)kill(pid, SIGTERM);
-	(void)waitpid(pid, &status, 0);
+	(void)waitpid_eintr(pid, &status, 0);
 }
 
 /* Fill an SEND_ZC SQE referencing a registered buffer slot.  The kernel

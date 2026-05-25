@@ -88,6 +88,7 @@
 #include "child.h"
 #include "childops-genl.h"
 #include "childops-netlink.h"
+#include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -323,7 +324,7 @@ static void ovs_try_modprobe(const char *mod)
 		execlp("modprobe", "modprobe", "-q", mod, (char *)NULL);
 		_exit(127);
 	}
-	(void)waitpid(pid, &status, 0);
+	(void)waitpid_eintr(pid, &status, 0);
 }
 
 /*
@@ -709,7 +710,7 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 		if (racer_pid > 0) {
 			int wstatus;
 
-			(void)waitpid(racer_pid, &wstatus, 0);
+			(void)waitpid_eintr(racer_pid, &wstatus, 0);
 		}
 		return true;
 	}
@@ -733,7 +734,7 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 
 		/* Helper has a bounded ~5ms deadline + 50-iter cap, so this
 		 * is fast.  Reap to avoid leaking a zombie back to child.c. */
-		(void)waitpid(racer_pid, &wstatus, 0);
+		(void)waitpid_eintr(racer_pid, &wstatus, 0);
 	}
 
 	return true;

@@ -100,6 +100,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -320,24 +321,16 @@ static void child_pump(int s_conn, int s_accept)
 }
 
 /*
- * Reap one fork-child via waitpid, retrying through EINTR.  The
- * caller has already SIGKILL'd so the wait should land essentially
- * immediately; the loop is purely to handle SIGALRM landing on the
- * trinity child mid-wait.
+ * Reap one fork-child via waitpid_eintr().  The caller has already
+ * SIGKILL'd so the wait should land essentially immediately; the
+ * EINTR-restart in the helper covers SIGALRM landing on the trinity
+ * child mid-wait.
  */
 static void reap_inflight_child(pid_t pid)
 {
 	int status;
 
-	for (;;) {
-		pid_t r = waitpid(pid, &status, 0);
-
-		if (r == pid)
-			return;
-		if (r < 0 && errno == EINTR)
-			continue;
-		return;
-	}
+	(void)waitpid_eintr(pid, &status, 0);
 }
 
 /*
