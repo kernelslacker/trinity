@@ -380,7 +380,7 @@ struct childdata {
 	unsigned long fd_created_by_group[NR_GROUPS];
 
 	/* Per-child storm-containment counters.  Bumped in lock-step with
-	 * the existing global stats.{post_handler_corrupt_ptr,maps_uaf_caught,
+	 * the existing global stats.{post_handler_corrupt_ptr,
 	 * get_writable_address_scribbled_*} from the same call
 	 * sites; the global counters lose attribution across the fleet, so
 	 * these per-child shadows are what the storm-rate check below scores
@@ -389,7 +389,6 @@ struct childdata {
 	 * the slot starts from zero.  See storm_check_last_* below for the
 	 * sliding-window accounting. */
 	unsigned long local_post_handler_corrupt_ptr;
-	unsigned long local_maps_uaf_caught;
 	unsigned long local_scribbled_slots_caught;
 
 	/* Sliding-window state for the per-child storm-rate check.
@@ -408,7 +407,6 @@ struct childdata {
 	 * roll instead of recycling the child. */
 	struct timespec storm_check_last_time;
 	unsigned long storm_check_last_post_handler;
-	unsigned long storm_check_last_maps_uaf;
 	unsigned long storm_check_last_scribbled;
 
 	/* Ring buffer for reporting fd events to the parent.
@@ -558,7 +556,7 @@ extern unsigned int max_children;
 
 /*
  * Per-child corruption-rate storm-containment thresholds.  When any of
- * post_handler_corrupt_ptr / maps_uaf_caught / scribbled_slots_caught
+ * post_handler_corrupt_ptr / scribbled_slots_caught
  * sustains LOCAL_STORM_RATE_THRESHOLD events/sec or more over a window
  * of at least LOCAL_STORM_WINDOW_SEC seconds, the child voluntarily
  * exits its main loop so the parent can fork a replacement.  Rationale:

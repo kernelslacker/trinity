@@ -845,7 +845,7 @@ static void dump_stats_json(void)
 			"\"sibling_mprotect_failed\":%lu,"
 			"\"destroy_object_idx\":%lu,"
 			"\"global_obj_uaf_caught\":%lu,"
-			"\"maps_uaf_caught\":%lu,"
+			"\"maps_pool_draw_exhausted\":%lu,"
 			"\"pagecache_canary_corrupt_caught\":%lu,"
 			"\"lock_word_scribbled\":%lu,"
 			"\"chain_replay_len_corrupt\":%lu},"
@@ -1063,7 +1063,7 @@ static void dump_stats_json(void)
 		shm->stats.sibling_mprotect_failed,
 		shm->stats.destroy_object_idx_corrupt,
 		shm->stats.global_obj_uaf_caught,
-		shm->stats.maps_uaf_caught,
+		shm->stats.maps_pool_draw_exhausted,
 		shm->stats.pagecache_canary_corrupt_caught,
 		parent_stats.lock_word_scribbled,
 		shm->stats.chain_replay_len_corrupt,
@@ -1958,8 +1958,8 @@ static const struct {
 	  offsetof(struct stats_s, destroy_object_idx_corrupt) },
 	{ "global_obj_uaf_caught",
 	  offsetof(struct stats_s, global_obj_uaf_caught) },
-	{ "maps_uaf_caught",
-	  offsetof(struct stats_s, maps_uaf_caught) },
+	{ "maps_pool_draw_exhausted",
+	  offsetof(struct stats_s, maps_pool_draw_exhausted) },
 	{ "pagecache_canary_corrupt_caught",
 	  offsetof(struct stats_s, pagecache_canary_corrupt_caught) },
 	/* genetlink registry per-family dispatch counters; rate-of-change
@@ -3627,8 +3627,8 @@ void dump_stats(void)
 		stat_row("corruption", "destroy_object_idx",     shm->stats.destroy_object_idx_corrupt);
 	if (shm->stats.global_obj_uaf_caught)
 		stat_row("corruption", "global_obj_uaf_caught",  shm->stats.global_obj_uaf_caught);
-	if (shm->stats.maps_uaf_caught)
-		stat_row("corruption", "maps_uaf_caught",        shm->stats.maps_uaf_caught);
+	if (shm->stats.maps_pool_draw_exhausted)
+		stat_row("pool", "maps_pool_draw_exhausted",   shm->stats.maps_pool_draw_exhausted);
 	if (shm->stats.chain_replay_len_corrupt)
 		stat_row("corruption", "chain_replay_len_corrupt", shm->stats.chain_replay_len_corrupt);
 	if (shm->stats.pagecache_canary_corrupt_caught)

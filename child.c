@@ -407,11 +407,9 @@ void clean_childdata(struct childdata *child)
 	 * check after fork has a clean baseline rather than measuring a
 	 * rate against the previous occupant of this slot. */
 	child->local_post_handler_corrupt_ptr = 0;
-	child->local_maps_uaf_caught = 0;
 	child->local_scribbled_slots_caught = 0;
 	child->storm_check_last_time = child->tp;
 	child->storm_check_last_post_handler = 0;
-	child->storm_check_last_maps_uaf = 0;
 	child->storm_check_last_scribbled = 0;
 
 	/* Reset per-child corruption-attribution shards so a fresh
@@ -1931,7 +1929,7 @@ static bool storm_rate_recycle(struct childdata *child)
 {
 	struct timespec now;
 	long window_sec;
-	unsigned long delta_post, delta_maps, delta_scribbled;
+	unsigned long delta_post, delta_scribbled;
 
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	window_sec = (long)(now.tv_sec - child->storm_check_last_time.tv_sec);
@@ -1940,13 +1938,10 @@ static bool storm_rate_recycle(struct childdata *child)
 
 	delta_post = child->local_post_handler_corrupt_ptr -
 		     child->storm_check_last_post_handler;
-	delta_maps = child->local_maps_uaf_caught -
-		     child->storm_check_last_maps_uaf;
 	delta_scribbled = child->local_scribbled_slots_caught -
 			  child->storm_check_last_scribbled;
 
 	if ((delta_post / (unsigned long)window_sec) >= LOCAL_STORM_RATE_THRESHOLD ||
-	    (delta_maps / (unsigned long)window_sec) >= LOCAL_STORM_RATE_THRESHOLD ||
 	    (delta_scribbled / (unsigned long)window_sec) >= LOCAL_STORM_RATE_THRESHOLD)
 		return true;
 
@@ -1955,7 +1950,6 @@ static bool storm_rate_recycle(struct childdata *child)
 	 * cumulative count against a fresh interval. */
 	child->storm_check_last_time = now;
 	child->storm_check_last_post_handler = child->local_post_handler_corrupt_ptr;
-	child->storm_check_last_maps_uaf = child->local_maps_uaf_caught;
 	child->storm_check_last_scribbled = child->local_scribbled_slots_caught;
 	return false;
 }

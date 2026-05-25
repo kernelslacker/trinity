@@ -1602,17 +1602,14 @@ struct stats_s {
 	 * same corrupted file each contribute one bump). */
 	unsigned long pagecache_canary_corrupt_caught;
 
-	/* Sibling of global_obj_uaf_caught for the maps-pool layer.  Bumped
-	 * by get_map_handle() when its 1000-iter retry budget is exhausted
-	 * by repeated concurrent destroys, and by validate_map_handle()
-	 * when a previously-handed-out map handle fails its just-before-
-	 * deref re-validation.  global_obj_uaf_caught counts every
-	 * object-pool-layer catch (across all OBJ_GLOBAL types); this
-	 * counter narrows visibility to the maps consumer chain so an
-	 * operator can tell whether a non-zero defense-counter delta was
-	 * driven by maps churn vs the other versioned consumers
-	 * (sockets, fd providers, keyctl, futex). */
-	unsigned long maps_uaf_caught;
+	/* Bumped by get_map_handle() in mm/maps.c when the 1000-iteration
+	 * random-pool draw loop exhausts its retry budget without finding a
+	 * usable map handle.  Most commonly fires because OBJ_LOCAL OBJ_MMAP_*
+	 * pools are sparse or empty (TESTFILE in particular has no producer in
+	 * tree).  Not a corruption signal -- post-Stage-5 the OBJ_LOCAL pools
+	 * live in private heap with no concurrent destroyer, so there is no
+	 * UAF window for the retry loop to defend against. */
+	unsigned long maps_pool_draw_exhausted;
 
 	/* Bumped by run_sequence_chain() when chain_corpus_pick() returns
 	 * a chain_entry whose len is zero or greater than MAX_SEQ_LEN.

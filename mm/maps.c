@@ -131,12 +131,7 @@ bool get_map_handle(struct map_handle *h)
 		return true;
 	}
 
-	__atomic_add_fetch(&shm->stats.maps_uaf_caught, 1, __ATOMIC_RELAXED);
-	{
-		struct childdata *c = this_child();
-		if (c != NULL)
-			c->local_maps_uaf_caught++;
-	}
+	__atomic_add_fetch(&shm->stats.maps_pool_draw_exhausted, 1, __ATOMIC_RELAXED);
 	return false;
 }
 
