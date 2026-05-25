@@ -45,6 +45,8 @@ pid_t get_random_pid_from_pool(void);
 void register_returned_pid(pid_t pid);
 int32_t get_random_key_serial(void);
 void register_key_serial(int32_t serial);
+int get_random_pkey_id(void);
+void register_pkey_obj(int id);
 int32_t get_random_timerid(void);
 void register_timerid(int32_t tid);
 unsigned long get_random_aio_ctx(void);

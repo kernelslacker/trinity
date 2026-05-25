@@ -210,6 +210,10 @@ struct keyserialobj {
 	int32_t serial;
 };
 
+struct pkey_obj {
+	int id;
+};
+
 struct timeridobj {
 	int32_t tid;
 };
@@ -313,6 +317,8 @@ struct object {
 		struct aioobj aioobj;
 
 		struct keyserialobj keyserialobj;
+
+		struct pkey_obj pkey_obj;
 
 		struct timeridobj timeridobj;
 

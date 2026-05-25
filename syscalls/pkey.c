@@ -2,6 +2,12 @@
  * SYSCALL_DEFINE2(pkey_alloc, unsigned long, flags, unsigned long, init_val)
  */
 
+#include <sys/syscall.h>
+#include <unistd.h>
+
+#include "objects.h"
+#include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
@@ -19,9 +25,73 @@ static unsigned long pkey_alloc_initvals[] = {
 	PKEY_DISABLE_WRITE,
 };
 
+/*
+ * OBJ_PKEY pool: producer-side cache of live pkey ids returned by
+ * pkey_alloc().  Consumed by sanitise_mprotect()'s pkey_mprotect branch
+ * via get_random_pkey_id() so the fourth argument lands on a key the
+ * kernel actually has allocated for this mm instead of a random 4-bit
+ * integer that the kernel's unknown-key reject path EINVALs ~94% of
+ * the time.  Mirrors the OBJ_KEY_SERIAL pool shape (syscalls/keyctl.c)
+ * — the destructor calls pkey_free() on teardown so produced keys
+ * don't leak past child lifetime.
+ */
+static void pkey_destructor(struct object *obj)
+{
+	syscall(SYS_pkey_free, obj->pkey_obj.id);
+}
+
+static void init_pkey_pool(void)
+{
+	struct objhead *head;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_PKEY);
+	if (head == NULL)
+		return;
+
+	/* Wire the destructor on the OBJ_GLOBAL head; child OBJ_LOCAL
+	 * pools inherit it from here at child fork time
+	 * (init_object_lists() copies destroy/dump from the GLOBAL head). */
+	head->destroy = &pkey_destructor;
+}
+
+REG_GLOBAL_OBJ(pkey, init_pkey_pool);
+
+void register_pkey_obj(int id)
+{
+	struct object *obj;
+
+	if (id < 0 || id > 15)
+		return;
+
+	obj = alloc_object();
+	obj->pkey_obj.id = id;
+	add_object(obj, OBJ_LOCAL, OBJ_PKEY);
+}
+
+int get_random_pkey_id(void)
+{
+	struct object *obj;
+
+	if (objects_pool_empty(OBJ_LOCAL, OBJ_PKEY) == true)
+		return -1;
+
+	obj = get_random_object(OBJ_PKEY, OBJ_LOCAL);
+	if (obj == NULL)
+		return -1;
+	return obj->pkey_obj.id;
+}
+
 static void sanitise_pkey_alloc(struct syscallrecord *rec)
 {
-	// no flags defined right now.
+	/*
+	 * pkey_alloc accepts a flags argument whose only currently-legal
+	 * value is 0 (PKEY_UNRESTRICTED).  The PKEY_DISABLE_ACCESS /
+	 * PKEY_DISABLE_WRITE bits are init_val (rec->a2) selectors, not
+	 * flags — they live in a separate namespace despite the shared
+	 * name prefix.  Force rec->a1 = 0 so the call exercises the
+	 * success path; the ARG_LIST on init_val keeps a2 fuzzed across
+	 * the unrestricted/disable-access/disable-write triplet.
+	 */
 	rec->a1 = 0;
 }
 
@@ -37,6 +107,10 @@ static void sanitise_pkey_alloc(struct syscallrecord *rec)
  * ABI violation: a sign-extension at the syscall boundary, a
  * 32-on-64 compat tear, or a sibling thread scribbling the return
  * slot between syscall return and post-hook entry.
+ *
+ * On a successful return publish the id into the OBJ_PKEY pool so
+ * sanitise_mprotect()'s pkey_mprotect branch can consume it.  The
+ * pool destructor calls pkey_free() on teardown.
  */
 static void post_pkey_alloc(struct syscallrecord *rec)
 {
@@ -48,7 +122,10 @@ static void post_pkey_alloc(struct syscallrecord *rec)
 		outputerr("post_pkey_alloc: rejected retval 0x%lx outside [0, 15] (and not -1)\n",
 		          (unsigned long) rec->retval);
 		post_handler_corrupt_ptr_bump(rec, NULL);
+		return;
 	}
+
+	register_pkey_obj((int) ret);
 }
 
 struct syscallentry syscall_pkey_alloc = {
