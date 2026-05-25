@@ -683,9 +683,41 @@ struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir)
 			break;
 		}
 
-		/* Map-backed shapes share the same base lookup + scrub tail. */
-		map = get_map();
+		/*
+		 * Map-backed shapes share the same base lookup + scrub tail.
+		 *
+		 * For IOV_KERNEL_READ callers the avoid_shared_buffer_inout()
+		 * scrub below memcpy()s the original bytes into the replacement
+		 * buffer, which requires the source map to actually be readable.
+		 * The initial map pool (mm/maps-initial.c) includes PROT_WRITE-
+		 * only, PROT_EXEC-only and PROT_NONE entries, and reading from
+		 * any of those SEGVs trinity inside the sanitiser before the
+		 * syscall ever fires.  Filter to entries that include PROT_READ
+		 * for the read direction; the write direction is content-blind
+		 * (kernel overwrites the buffer) so protection diversity remains
+		 * the point and plain get_map() is correct there.
+		 *
+		 * If no readable map is available, fall back to a scratch buffer
+		 * from get_writable_address() (PROT_READ|PROT_WRITE backed) so
+		 * the entry still produces coverage rather than being silently
+		 * dropped.
+		 */
+		if (dir == IOV_KERNEL_READ)
+			map = get_map_with_prot(PROT_READ);
+		else
+			map = get_map();
 		if (map == NULL) {
+			if (dir == IOV_KERNEL_READ) {
+				void *scratch = get_writable_address(page_size);
+
+				if (scratch != NULL) {
+					iov[i].iov_base = scratch;
+					iov[i].iov_len = (shape == SHAPE_TINY)
+						? 1
+						: page_size / 2;
+					continue;
+				}
+			}
 			iov[i].iov_base = NULL;
 			iov[i].iov_len = 0;
 			continue;
