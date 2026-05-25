@@ -487,8 +487,8 @@ void scrub_iovec_for_kernel_write(struct iovec *iov, unsigned long count)
 	if (iov == NULL || count == 0)
 		return;
 
-	if (count > 256)
-		count = 256;
+	if (count > UIO_MAXIOV)
+		count = UIO_MAXIOV;
 
 	for (i = 0; i < count; i++) {
 		unsigned long base = (unsigned long) iov[i].iov_base;
