@@ -2859,11 +2859,8 @@ bool set_syscall_nr_healer(struct syscallrecord *rec, struct childdata *child)
 	int val;
 	bool used_triple = false;
 
-	if (child == NULL || child->healer_seq_count == 0) {
-		__atomic_fetch_add(&shm->stats.healer_picker_cold_start, 1UL,
-				   __ATOMIC_RELAXED);
+	if (child == NULL || child->healer_seq_count == 0)
 		return set_syscall_nr_random(rec, child);
-	}
 
 	/* Pick the syscall table once per call: in uniarch the result is
 	 * a constant; in biarch the do32 dice picks one table and the
@@ -2879,19 +2876,13 @@ bool set_syscall_nr_healer(struct syscallrecord *rec, struct childdata *child)
 	}
 	arch = healer_arch_id(do32);
 
-	if (child->active_syscalls == NULL) {
-		__atomic_fetch_add(&shm->stats.healer_picker_cold_start, 1UL,
-				   __ATOMIC_RELAXED);
+	if (child->active_syscalls == NULL)
 		return set_syscall_nr_random(rec, child);
-	}
 
 	pred = (child->healer_seq_count >= 2) ? child->healer_seq[1]
 					      : child->healer_seq[0];
-	if (pred == EDGEPAIR_NO_PREV || pred >= MAX_NR_SYSCALL) {
-		__atomic_fetch_add(&shm->stats.healer_picker_cold_start, 1UL,
-				   __ATOMIC_RELAXED);
+	if (pred == EDGEPAIR_NO_PREV || pred >= MAX_NR_SYSCALL)
 		return set_syscall_nr_random(rec, child);
-	}
 
 	if (nr_syscalls > MAX_NR_SYSCALL)
 		nr_syscalls = MAX_NR_SYSCALL;
@@ -3017,11 +3008,8 @@ skip_triple:
 		}
 	}
 
-	if (total_weight == 0) {
-		__atomic_fetch_add(&shm->stats.healer_picker_zero_weight_fallback,
-				   1UL, __ATOMIC_RELAXED);
+	if (total_weight == 0)
 		return set_syscall_nr_random(rec, child);
-	}
 
 retry:
 	if (no_syscalls_enabled() == true) {
@@ -3042,8 +3030,6 @@ retry:
 		 * deactivation during the retry loop -- there is nothing left
 		 * to weight, so collapse to the canonical fallback rather than
 		 * spinning. */
-		__atomic_fetch_add(&shm->stats.healer_picker_zero_weight_fallback,
-				   1UL, __ATOMIC_RELAXED);
 		return set_syscall_nr_random(rec, child);
 	}
 
@@ -3064,9 +3050,6 @@ retry:
 			/* Defensive: total_weight desynced from weights[].  Drop
 			 * to fallback rather than dereferencing an out-of-range
 			 * index. */
-			__atomic_fetch_add(
-				&shm->stats.healer_picker_zero_weight_fallback,
-				1UL, __ATOMIC_RELAXED);
 			return set_syscall_nr_random(rec, child);
 		}
 		idx = picked;
@@ -3106,12 +3089,6 @@ retry:
 	rec->nr = syscallnr;
 	unlock(&rec->lock);
 
-	if (used_triple)
-		__atomic_fetch_add(&shm->stats.healer_picker_triple_path, 1UL,
-				   __ATOMIC_RELAXED);
-	else
-		__atomic_fetch_add(&shm->stats.healer_picker_pair_path, 1UL,
-				   __ATOMIC_RELAXED);
-
+	(void)used_triple;
 	return true;
 }
