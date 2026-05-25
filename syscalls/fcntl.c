@@ -19,6 +19,7 @@
 
 #include <fcntl.h>
 #include <signal.h>
+#include <stdbool.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -30,6 +31,44 @@
 #if F_GETLK64 != F_GETLK
 #define HAVE_LK64
 #endif
+
+/*
+ * Per-child ring of fds we've successfully F_SETLEASE'd on, so that the
+ * sibling F_GETLEASE picker can aim at a fd with a known prior lease
+ * instead of rolling a random fd that returns F_UNLCK ~always.  Cross-
+ * child kernel state means the recorded lease type is a hint for the
+ * picker, not authoritative — another child can have replaced or
+ * cleared the lease since.  __thread keeps the slot per-child without
+ * adding a shm field for a single feature.
+ */
+#define FCNTL_LEASE_RING_SIZE	16
+struct fcntl_lease_slot {
+	int fd;
+	int lease_type;
+};
+static __thread struct fcntl_lease_slot lease_ring[FCNTL_LEASE_RING_SIZE];
+static __thread unsigned int lease_ring_head;
+static __thread unsigned int lease_ring_count;
+
+static void lease_ring_record(int fd, int lease_type)
+{
+	lease_ring[lease_ring_head].fd = fd;
+	lease_ring[lease_ring_head].lease_type = lease_type;
+	lease_ring_head = (lease_ring_head + 1) % FCNTL_LEASE_RING_SIZE;
+	if (lease_ring_count < FCNTL_LEASE_RING_SIZE)
+		lease_ring_count++;
+}
+
+static bool lease_ring_pick(int *fd)
+{
+	unsigned int idx;
+
+	if (lease_ring_count == 0)
+		return false;
+	idx = rnd_modulo_u32(lease_ring_count);
+	*fd = lease_ring[idx].fd;
+	return true;
+}
 
 static const unsigned long fcntl_o_flags[] = {
 	O_APPEND, O_ASYNC, O_DIRECT, O_NOATIME, O_NONBLOCK,
@@ -128,10 +167,23 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 	case F_GETFL:
 	case F_GETOWN:
 	case F_GETSIG:
-	case F_GETLEASE:
 	case F_GETPIPE_SZ:
 	case F_GETOWNER_UIDS:
 		break;
+
+	case F_GETLEASE: {
+		int fd;
+
+		/*
+		 * Half the time, target a fd we've previously F_SETLEASE'd on
+		 * so the kernel actually has lease state to return.  Cross-
+		 * child kernel state is real, so this is a hint to the picker
+		 * — F_UNLCK is still a valid outcome if a sibling cleared it.
+		 */
+		if (rnd_modulo_u32(2) == 0 && lease_ring_pick(&fd))
+			rec->a1 = (unsigned long) fd;
+		break;
+	}
 
 	case F_SETFD:	/* arg = flags */
 		rec->a3 = (unsigned int) rand32();
@@ -336,6 +388,11 @@ static void post_fcntl(struct syscallrecord *rec)
 			post_handler_corrupt_ptr_bump(rec, NULL);
 			return;
 		}
+		break;
+
+	case F_SETLEASE:
+		/* Record so a sibling F_GETLEASE can target this fd. */
+		lease_ring_record((int) rec->a1, (int) rec->a3);
 		break;
 
 	case F_GETSIG:
