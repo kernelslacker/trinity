@@ -293,8 +293,12 @@ struct stats_s {
 	 * RET_ZERO_SUCCESS .post handlers.  Non-zero means a torn or
 	 * wholesale-stomped retval slipped past the canary check (different
 	 * stomp class — the canary catches whole-rec rewrites, this catches
-	 * an isolated rec->retval scribble).  Sub-attribution by caller PC
-	 * routes through post_handler_corrupt_ptr_bump's per-handler ring. */
+	 * an isolated rec->retval scribble).  Distinct bug class from
+	 * post_handler_corrupt_ptr (which counts .post handlers rejecting a
+	 * pid-shaped pointer in rec->aN): this is a dispatcher-level
+	 * rettype-contract violation, no .post pointer is examined.  The
+	 * two counters used to share storage, which inflated the
+	 * post_handler_corrupt_ptr headline ~9x at ~2/s steady-state. */
 	unsigned long rzs_blanket_reject;
 
 	/* handle_syscall_ret() saw reject_corrupt_retfd() flag a structurally

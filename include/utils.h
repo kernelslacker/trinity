@@ -263,16 +263,14 @@ void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
 void deferred_free_reject_bump(void *caller_pc);
 
 /*
- * Per-validator wrappers for the dispatcher-level blanket validators
- * (the RZS gate in handle_syscall_ret() and the RET_FD gate in
- * reject_corrupt_retfd()).  Each wrapper is a separate non-inline
- * function so __builtin_return_address(0) resolves to a distinct PC
- * in the caller -- without that, every dispatcher-level rejection of
+ * Per-validator wrapper for the RET_FD blanket validator in
+ * reject_corrupt_retfd().  Kept as a separate non-inline function so
+ * __builtin_return_address(0) resolves to a distinct PC in the caller
+ * -- without that, every dispatcher-level RET_FD rejection of
  * (nr, do32bit) collapses onto the same row as that syscall's own
  * .post handler rejections and the dump can no longer tell whether a
- * hot row is the .post handler or a blanket validator firing.
+ * hot row is the .post handler or the blanket validator firing.
  */
-void post_handler_corrupt_ptr_bump_rzs(struct syscallrecord *rec);
 void post_handler_corrupt_ptr_bump_retfd(struct syscallrecord *rec);
 
 /*

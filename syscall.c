@@ -702,18 +702,17 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 	 * Use rec->rettype, not entry->rettype, so per-cmd overrides apply
 	 * to the correct subset of calls.  Informational like the canary
 	 * check above; downstream success/failure tally and entry->post
-	 * still run since the sub-attribution ring needs the .post PC.
-	 * Sub-attribution lands in post_handler_corrupt_ptr's per-handler
-	 * ring under the (nr, do32bit) of the offending syscall; the
-	 * _dispatch wrapper additionally feeds this site's caller PC into
-	 * the per-PC ring so the dump distinguishes RZS blanket rejections
-	 * from the same syscall's own .post handler rejections. */
+	 * still run.  rzs_blanket_reject is the only counter touched here:
+	 * this is a dispatcher-level rettype-contract violation (a sibling
+	 * scribbled rec->retval after the syscall returned), distinct from
+	 * a .post handler rejecting a pid-shaped pointer in rec->aN.  The
+	 * two bug classes used to share post_handler_corrupt_ptr, which
+	 * inflated the headline counter and smeared the per-handler
+	 * attribution; they are accounted separately now. */
 	if (unlikely(rec->rettype == RET_ZERO_SUCCESS &&
-		     rec->retval != 0 && rec->retval != -1UL)) {
+		     rec->retval != 0 && rec->retval != -1UL))
 		__atomic_add_fetch(&shm->stats.rzs_blanket_reject, 1,
 				   __ATOMIC_RELAXED);
-		post_handler_corrupt_ptr_bump_rzs(rec);
-	}
 
 	/* Validate RET_FD shape before success/failure dispatch.  A
 	 * structurally corrupt fd return (e.g. upper bits set, or below the
