@@ -139,18 +139,6 @@ enum strategy_selection_reason {
  * RRC_COLD_SKIP:           rec->nr would have been skipped under
  *                          STRATEGY_HEURISTIC's kcov cold-skip gate
  *                          (kcov_syscall_cold_skip_pct >= 50).
- * RRC_MISSING_PAIR:        the (immediate-pred -> rec->nr) cell in the
- *                          HEALER pair table has zero static prior AND
- *                          zero dynamic_hits -- a relation the
- *                          structured pickers cannot see at all.
- * RRC_UNSEEN_SUCCESSOR:    immediate-pred has hot outgoing pairs to
- *                          OTHER successors but this (pred, rec->nr) is
- *                          empty -- HEALER is investing in a different
- *                          branch from this predecessor.
- * RRC_STALE_PAIR:          (pred, rec->nr) has a non-zero static prior
- *                          but dynamic_hits has decayed to zero -- the
- *                          seed bootstrap saw the edge but the runtime
- *                          weight has rotted past HEALER's gate.
  * RRC_UNUSUAL_FD_PRODUCER: placeholder for per-call fd-source tracking;
  *                          today never selected by the classifier.
  * RRC_WRONG_TYPE_FD:       placeholder; typed-fd substitution gave a
@@ -169,9 +157,6 @@ enum strategy_selection_reason {
  */
 enum random_rescue_class {
 	RRC_COLD_SKIP = 0,
-	RRC_MISSING_PAIR,
-	RRC_UNSEEN_SUCCESSOR,
-	RRC_STALE_PAIR,
 	RRC_UNUSUAL_FD_PRODUCER,
 	RRC_WRONG_TYPE_FD,
 	RRC_CMP_DERIVED,

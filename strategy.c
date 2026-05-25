@@ -918,10 +918,6 @@ static enum random_rescue_class dominant_rescue_class(void)
 static int amplified_intervention_arm(enum random_rescue_class c)
 {
 	switch (c) {
-	case RRC_MISSING_PAIR:
-	case RRC_UNSEEN_SUCCESSOR:
-	case RRC_STALE_PAIR:
-		return STRATEGY_RANDOM;
 	case RRC_COLD_SKIP:
 		/* Heuristic with cold-skip suppressed -- the set_syscall_nr_
 		 * heuristic read of plateau_rescue_amplified_class will
@@ -1457,28 +1453,6 @@ unsigned long strategy_plateau_hypothesis_fires(enum plateau_hypothesis h)
  */
 #define RRC_COLD_SKIP_PCT 50U
 
-/*
- * RRC_UNSEEN_SUCCESSOR scan budget.  The classifier walks (pred -> *)
- * looking for at least one hot OUTGOING pair from the same predecessor;
- * the existence proof is enough, no need to count.  Capped so a
- * pathological pred with no hot successors does not turn the rescue
- * path into an O(MAX_NR_SYSCALL) walk under high rescue rate.  The
- * scan starts at (pred + 1) and wraps so the same nr is not inspected
- * twice in a single call.
- */
-#define RRC_UNSEEN_SUCCESSOR_SCAN_CAP 256U
-
-/*
- * Minimum HEALER pair weight required for a (pred -> X) cell to count
- * as a "hot outgoing pair" during the RRC_UNSEEN_SUCCESSOR existence
- * scan.  Set above the bare HEALER_STATIC_SEED_WEIGHT=3 floor so the
- * existence proof requires either runtime evidence or a seed-plus-
- * dynamic hit, matching the spirit of the eligibility gate's
- * dynamic_hits-only test (a freshly-seeded pair is not yet evidence
- * the structured picker is actually investing in that branch).
- */
-#define RRC_HOT_PAIR_THRESHOLD 4U
-
 bool plateau_rescue_bias_active_for(enum random_rescue_class c)
 {
 	if (c < 0 || c >= RRC_NR_CLASSES)
@@ -1691,9 +1665,6 @@ const char *random_rescue_class_name(enum random_rescue_class c)
 {
 	switch (c) {
 	case RRC_COLD_SKIP:		return "COLD_SKIP";
-	case RRC_MISSING_PAIR:		return "MISSING_PAIR";
-	case RRC_UNSEEN_SUCCESSOR:	return "UNSEEN_SUCCESSOR";
-	case RRC_STALE_PAIR:		return "STALE_PAIR";
 	case RRC_UNUSUAL_FD_PRODUCER:	return "UNUSUAL_FD_PRODUCER";
 	case RRC_WRONG_TYPE_FD:		return "WRONG_TYPE_FD";
 	case RRC_CMP_DERIVED:		return "CMP_DERIVED";
@@ -1707,10 +1678,7 @@ const char *random_rescue_class_name(enum random_rescue_class c)
 enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 						struct childdata *child)
 {
-	unsigned int prev, curr;
-	unsigned int pair_weight, dyn_hits;
-	unsigned int static_prior;
-	unsigned int arch;
+	unsigned int curr;
 
 	if (rec == NULL || child == NULL)
 		return RRC_UNKNOWN;
@@ -1718,12 +1686,6 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 		return RRC_UNKNOWN;
 
 	curr = (unsigned int)rec->nr;
-	prev = child->last_syscall_nr;
-	/* HEALER's pair table is indexed by the successor call's arch
-	 * dimension; classify_random_rescue is reasoning about the rescue
-	 * call (rec), so the arch read off rec->do32bit is the right
-	 * lookup key for the (prev, curr) cell. */
-	arch = healer_arch_id(rec->do32bit);
 
 	/* RRC_COLD_SKIP.  Heuristic picker would have rejected this nr at
 	 * least half the time on the cold-skip retry path, so a RANDOM
@@ -1734,62 +1696,6 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 	 * means. */
 	if (kcov_syscall_cold_skip_pct(curr) >= RRC_COLD_SKIP_PCT)
 		return RRC_COLD_SKIP;
-
-	/* HEALER-pair classes need a real predecessor.  EDGEPAIR_NO_PREV is
-	 * the first-call-in-a-child sentinel; without it there is no (pred
-	 * -> succ) edge to reason about, so the structured-picker
-	 * attribution buckets do not apply and the rescue falls through to
-	 * the unattributable bucket (or matches CMP_DERIVED below). */
-	if (prev != EDGEPAIR_NO_PREV && prev < MAX_NR_SYSCALL) {
-		pair_weight = healer_pair_get(arch, prev, curr);
-		dyn_hits = healer_pair_dynamic_hits(arch, prev, curr);
-		/* healer_pair_get sums static_prior + dynamic_hits; backing
-		 * the dynamic component out reconstructs the static prior
-		 * without adding a third accessor.  pair_weight >= dyn_hits
-		 * by construction (static_prior is unsigned, the sum cannot
-		 * underflow). */
-		static_prior = pair_weight >= dyn_hits ?
-			pair_weight - dyn_hits : 0;
-
-		if (pair_weight == 0) {
-			unsigned int scanned;
-			unsigned int succ;
-
-			/* RRC_MISSING_PAIR vs RRC_UNSEEN_SUCCESSOR.  No cell
-			 * for (prev, curr) at all.  If prev has at least one
-			 * hot outgoing pair to some OTHER successor, HEALER
-			 * has evidence about this predecessor but is investing
-			 * elsewhere; classify as UNSEEN_SUCCESSOR so the
-			 * orchestrator's HEALER-boost bias is the right
-			 * answer.  Otherwise prev is entirely unattested and
-			 * MISSING_PAIR is the narrower truth. */
-			succ = (curr + 1) % MAX_NR_SYSCALL;
-			for (scanned = 0;
-			     scanned < RRC_UNSEEN_SUCCESSOR_SCAN_CAP;
-			     scanned++) {
-				if (succ != curr &&
-				    healer_pair_get(arch, prev, succ) >=
-					    RRC_HOT_PAIR_THRESHOLD)
-					return RRC_UNSEEN_SUCCESSOR;
-				succ = (succ + 1) % MAX_NR_SYSCALL;
-				if (succ == ((curr + 1) % MAX_NR_SYSCALL))
-					break;
-			}
-			return RRC_MISSING_PAIR;
-		}
-
-		if (dyn_hits == 0 && static_prior > 0) {
-			/* Seed bootstrap saw this edge but the runtime
-			 * observer never confirmed it (or confirmed it and
-			 * decayed back to zero).  HEALER's eligibility gate
-			 * counts dynamic_hits only, so this cell looks dead
-			 * to the picker even though the static prior is
-			 * still on it.  Boosting HEALER eligibility past the
-			 * gate during the next intervention is the
-			 * structured replay. */
-			return RRC_STALE_PAIR;
-		}
-	}
 
 	/* RRC_CMP_DERIVED.  generate-args.c's ARG_OP / ARG_LIST /
 	 * gen_undefined_arg paths roll a 1-in-16 cmp_hints_try_get on every
