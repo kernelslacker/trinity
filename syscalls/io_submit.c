@@ -113,7 +113,7 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 		iocbs[i].aio_buf = (__u64)(unsigned long) buf;
 		iocbs[i].aio_nbytes = 4096;
 		iocbs[i].aio_offset = rnd_modulo_u32(65536);
-		iocbs[i].aio_data = i;
+		iocbs[i].aio_data = rnd_u64();
 		if (rnd_modulo_u32(100) < 30) {
 			int eventfd_fd = get_typed_fd(ARG_FD_EVENTFD);
 			if (eventfd_fd >= 0) {
@@ -127,11 +127,21 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 	rec->a2 = nr;
 	rec->a3 = (unsigned long) iocbpp;
 	avoid_shared_buffer_inout(&rec->a3, nr * sizeof(struct iocb *));
+
+	/*
+	 * Snapshot the post-relocation iocbpp address so the post handler
+	 * can walk the iocbs even if a sibling-syscall scribble lands on
+	 * rec->a3 between syscall return and post execution.  Matches the
+	 * io_setup pattern around its ctxp out-pointer.
+	 */
+	rec->post_state = rec->a3;
 }
 
 static void post_io_submit(struct syscallrecord *rec)
 {
+	struct iocb **iocbpp;
 	long ret = (long) rec->retval;
+	long i;
 
 	if (ret == -1L)
 		return;
@@ -139,9 +149,36 @@ static void post_io_submit(struct syscallrecord *rec)
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		return;
 	}
-	if (ret > 0)
-		__atomic_add_fetch(&shm->stats.aio_submitted, (unsigned long) ret,
-				   __ATOMIC_RELAXED);
+	if (ret == 0)
+		return;
+
+	__atomic_add_fetch(&shm->stats.aio_submitted, (unsigned long) ret,
+			   __ATOMIC_RELAXED);
+
+	iocbpp = (struct iocb **) rec->post_state;
+	if (iocbpp == NULL)
+		return;
+
+	/*
+	 * Publish the (ctx, aio_data) cookie for every iocb the kernel
+	 * accepted, so sanitise_io_cancel can pick one and build a
+	 * cancel request the kernel will actually find.  Iocbs the
+	 * kernel rejected (indices >= ret) are skipped — io_submit
+	 * guarantees the first `ret` iocbs were the ones queued, and
+	 * those beyond it never reached io_submit_one().
+	 */
+	for (i = 0; i < ret; i++) {
+		struct iocb *iocb = iocbpp[i];
+		struct object *obj;
+
+		if (iocb == NULL)
+			continue;
+
+		obj = alloc_object();
+		obj->aio_iocb_obj.ctx = rec->a1;
+		obj->aio_iocb_obj.aio_data = iocb->aio_data;
+		add_object(obj, OBJ_LOCAL, OBJ_AIO_IOCB);
+	}
 }
 
 struct syscallentry syscall_io_submit = {

@@ -206,6 +206,19 @@ struct aioobj {
 	unsigned long ctx;
 };
 
+/*
+ * Per-outstanding-iocb cookie published by post_io_submit on every
+ * successful submission so io_cancel.c can pick a real (ctx, aio_data)
+ * pair to cancel against, instead of always building a fresh local
+ * iocb the kernel has no record of and EINVAL-ing on every call.
+ * Lives in the per-child OBJ_LOCAL pool; the iocb itself is not
+ * tracked (the kernel owns its lifetime once io_submit accepted it).
+ */
+struct aio_iocb_obj {
+	unsigned long ctx;
+	uint64_t aio_data;
+};
+
 struct keyserialobj {
 	int32_t serial;
 };
@@ -315,6 +328,8 @@ struct object {
 		struct kvmvcpuobj kvmvcpuobj;
 
 		struct aioobj aioobj;
+
+		struct aio_iocb_obj aio_iocb_obj;
 
 		struct keyserialobj keyserialobj;
 
