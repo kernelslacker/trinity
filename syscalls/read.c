@@ -3,23 +3,77 @@
  */
 #include <stdlib.h>
 #include <string.h>
+#include <sys/signalfd.h>
 #include <sys/uio.h>
 #include "arch.h"
+#include "fd.h"
 #include "maps.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 #include "compat.h"
 
 static void sanitise_read(struct syscallrecord *rec)
 {
+	bool typed_size = false;
+
+	/*
+	 * ~30% of the time, override the generic ARG_FD pick with a
+	 * draw from the pollable typed-fd pools so the kernel's
+	 * readable-state path for eventfd / timerfd / signalfd /
+	 * inotify / fanotify actually gets exercised, and size the
+	 * read at that fd type's natural width so it returns data
+	 * instead of EINVAL'ing on a bogus count.  If the typed pool
+	 * is empty get_typed_fd() falls back to a generic random fd;
+	 * either way we keep going.
+	 */
+	if (rnd_modulo_u32(10) < 3) {
+		static const enum argtype pollable[] = {
+			ARG_FD_PIPE,
+			ARG_FD_EVENTFD,
+			ARG_FD_TIMERFD,
+			ARG_FD_SIGNALFD,
+			ARG_FD_INOTIFY,
+			ARG_FD_FANOTIFY,
+			ARG_FD_SOCKET,
+		};
+		enum argtype t = pollable[rnd_modulo_u32(ARRAY_SIZE(pollable))];
+		int fd = get_typed_fd(t);
+
+		if (fd >= 0) {
+			rec->a1 = fd;
+			switch (t) {
+			case ARG_FD_EVENTFD:
+			case ARG_FD_TIMERFD:
+				rec->a3 = sizeof(uint64_t);
+				typed_size = true;
+				break;
+			case ARG_FD_SIGNALFD:
+				rec->a3 = sizeof(struct signalfd_siginfo);
+				typed_size = true;
+				break;
+			case ARG_FD_INOTIFY:
+				rec->a3 = 256;
+				typed_size = true;
+				break;
+			default:
+				/* pipe / socket / fanotify: leave the
+				 * generic page-sized shape below. */
+				break;
+			}
+		}
+	}
+
 	rec->a2 = (unsigned long) get_non_null_address();
-	if (RAND_BOOL())
-		rec->a3 = rnd_modulo_u32(page_size);
-	else
-		rec->a3 = page_size;
+	if (!typed_size) {
+		if (RAND_BOOL())
+			rec->a3 = rnd_modulo_u32(page_size);
+		else
+			rec->a3 = page_size;
+	}
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
 }
 
