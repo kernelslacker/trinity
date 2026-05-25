@@ -480,9 +480,6 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 	bool do32;
 	char state;
 
-	if (shm->debug == false)
-		return;
-
 	pid = __atomic_load_n(&pids[childno], __ATOMIC_RELAXED);
 
 	rec = &child->syscall;
@@ -508,6 +505,16 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 	}
 
 	unlock(&rec->lock);
+
+	/* Always-on kill diag: the caller is about to SIGKILL this child,
+	 * and without this line non-debug runs just see a child vanish.
+	 * The expensive fd walk and /proc stack dump below stay gated. */
+	outputerr("watchdog: kill pid:%d childno:%d nr:%u cmd:%s state:%d rec:%p\n",
+		  pid, childno, callno,
+		  entry ? entry->name : "?", state, rec);
+
+	if (shm->debug == false)
+		return;
 
 	fdstr[0] = '\0';
 
