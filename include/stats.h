@@ -600,6 +600,13 @@ struct stats_s {
 	unsigned long iouring_eventfd_recursive_runs;	/* recipe ran past register */
 	unsigned long iouring_eventfd_recursive_cqes;	/* CQEs reaped within the recipe */
 
+	/* post_io_submit positive-attribution: iocbs the kernel accepted on
+	 * the success branch (retval > 0 and within the [0, nr] bound).
+	 * Distinguishes "io_submit doing useful work" from "io_submit mostly
+	 * returning -EINVAL"; without it canary work cannot tell a quiet
+	 * success window from a quiet rejection window. */
+	unsigned long aio_submitted;
+
 	/* refcount_auditor childop counters */
 	unsigned long refcount_audit_runs;
 	unsigned long refcount_audit_fd_anomalies;

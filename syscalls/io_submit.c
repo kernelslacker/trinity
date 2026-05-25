@@ -9,6 +9,7 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "fd.h"
+#include "shm.h"
 #include "utils.h"
 
 static int iocb_cmds[] = {
@@ -65,8 +66,13 @@ static void post_io_submit(struct syscallrecord *rec)
 
 	if (ret == -1L)
 		return;
-	if (ret < 0 || ret > (long) rec->a2)
+	if (ret < 0 || ret > (long) rec->a2) {
 		post_handler_corrupt_ptr_bump(rec, NULL);
+		return;
+	}
+	if (ret > 0)
+		__atomic_add_fetch(&shm->stats.aio_submitted, (unsigned long) ret,
+				   __ATOMIC_RELAXED);
 }
 
 struct syscallentry syscall_io_submit = {
