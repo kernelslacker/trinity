@@ -11,6 +11,7 @@
 #include <asm/ldt.h>
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "random.h"
 #include "shm.h"
 #include "syscall.h"
 #include "trinity.h"
@@ -37,7 +38,6 @@ struct modify_ldt_post_state {
 
 static void sanitise_modify_ldt(struct syscallrecord *rec)
 {
-	//struct user_desc *desc;
 	struct modify_ldt_post_state *snap;
 	void *ldt;
 
@@ -64,23 +64,31 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 		break;
 
 	case 1:
-		rec->a2 = 0L;
+	{
 		/* modify one ldt entry.
 		 * ptr points to a user_desc structure
 		 * bytecount must equal the size of this structure. */
+		struct user_desc *desc = zmalloc_tracked(sizeof(*desc));
 
-	/*
-	       unsigned int  entry_number;
-	       unsigned long base_addr;
-	       unsigned int  limit;
-	       unsigned int  seg_32bit:1;
-	       unsigned int  contents:2;
-	       unsigned int  read_exec_only:1;
-	       unsigned int  limit_in_pages:1;
-	       unsigned int  seg_not_present:1;
-	       unsigned int  useable:1;
-	*/
+		if (desc == NULL) {
+			rec->a2 = 0L;
+			break;
+		}
+
+		desc->entry_number    = rnd_modulo_u32(LDT_ENTRIES);
+		desc->base_addr       = rnd_u64();
+		desc->limit           = rnd_u32();
+		desc->seg_32bit       = RAND_BOOL();
+		desc->contents        = rnd_modulo_u32(4);	/* 2 bits */
+		desc->read_exec_only  = RAND_BOOL();
+		desc->limit_in_pages  = RAND_BOOL();
+		desc->seg_not_present = RAND_BOOL();
+		desc->useable         = RAND_BOOL();
+
+		rec->a2 = (unsigned long) desc;
+		rec->a3 = sizeof(*desc);
 		break;
+	}
 	default:
 		rec->a2 = 0L;
 		break;
