@@ -99,16 +99,6 @@ static void sanitise_splice(struct syscallrecord *rec)
 	rec->a6 = sanitise_splice_flags();
 }
 
-static void post_splice(struct syscallrecord *rec)
-{
-	long ret = (long) rec->retval;
-
-	if (ret == -1L)
-		return;
-	if (ret < 0 || (size_t) ret > (size_t) rec->a5)
-		post_handler_corrupt_ptr_bump(rec, NULL);
-}
-
 struct syscallentry syscall_splice = {
 	.name = "splice",
 	.num_args = 6,
@@ -116,8 +106,8 @@ struct syscallentry syscall_splice = {
 	.argname = { [0] = "fd_in", [1] = "off_in", [2] = "fd_out", [3] = "off_out", [4] = "len", [5] = "flags" },
 	.arg_params[5].list = ARGLIST(splice_flags),
 	.sanitise = sanitise_splice,
-	.post = post_splice,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.rettype = RET_NUM_BYTES,
+	.bound_arg = 5,
 };

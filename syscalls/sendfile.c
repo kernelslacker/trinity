@@ -26,26 +26,16 @@ static void sanitise_sendfile64(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) offset;
 }
 
-static void post_sendfile_common(struct syscallrecord *rec)
-{
-	long ret = (long) rec->retval;
-
-	if (ret == -1L)
-		return;
-	if (ret < 0 || (size_t) ret > (size_t) rec->a4)
-		post_handler_corrupt_ptr_bump(rec, NULL);
-}
-
 struct syscallentry syscall_sendfile = {
 	.name = "sendfile",
 	.num_args = 4,
 	.argtype = { [0] = ARG_FD, [1] = ARG_FD, [2] = ARG_ADDRESS, [3] = ARG_LEN },
 	.argname = { [0] = "out_fd", [1] = "in_fd", [2] = "offset", [3] = "count" },
 	.sanitise = sanitise_sendfile,
-	.post = post_sendfile_common,
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
 	.group = GROUP_VFS,
 	.rettype = RET_NUM_BYTES,
+	.bound_arg = 4,
 };
 
 /*
@@ -58,8 +48,8 @@ struct syscallentry syscall_sendfile64 = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_FD, [2] = ARG_ADDRESS, [3] = ARG_LEN },
 	.argname = { [0] = "out_fd", [1] = "in_fd", [2] = "offset", [3] = "count" },
 	.sanitise = sanitise_sendfile64,
-	.post = post_sendfile_common,
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
 	.group = GROUP_VFS,
 	.rettype = RET_NUM_BYTES,
+	.bound_arg = 4,
 };

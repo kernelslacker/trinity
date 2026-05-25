@@ -39,16 +39,6 @@ static void sanitise_mq_timedreceive(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a4, sizeof(unsigned int));
 }
 
-static void post_mq_timedreceive(struct syscallrecord *rec)
-{
-	long ret = (long) rec->retval;
-
-	if (ret == -1L)
-		return;
-	if (ret < 0 || (size_t) ret > (size_t) rec->a3)
-		post_handler_corrupt_ptr_bump(rec, NULL);
-}
-
 struct syscallentry syscall_mq_timedreceive = {
 	.name = "mq_timedreceive",
 	.group = GROUP_IPC,
@@ -57,7 +47,6 @@ struct syscallentry syscall_mq_timedreceive = {
 	.argname = { [0] = "mqdes", [1] = "u_msg_ptr", [2] = "msg_len", [3] = "u_msg_prio", [4] = "u_abs_timeout" },
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_mq_timedreceive,
-	.post = post_mq_timedreceive,
 	.bound_arg = 3,
 	.rettype = RET_NUM_BYTES,
 };

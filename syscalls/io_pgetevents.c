@@ -43,16 +43,6 @@ static void sanitise_io_pgetevents(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a4, rec->a3 * sizeof(struct io_event));
 }
 
-static void post_io_pgetevents(struct syscallrecord *rec)
-{
-	long ret = (long) rec->retval;
-
-	if (ret == -1L)
-		return;
-	if (ret < 0 || ret > (long) rec->a3)
-		post_handler_corrupt_ptr_bump(rec, NULL);
-}
-
 struct syscallentry syscall_io_pgetevents = {
 	.name = "io_pgetevents",
 	.num_args = 6,
@@ -60,5 +50,5 @@ struct syscallentry syscall_io_pgetevents = {
 	.argname = { [0] = "ctx_id", [1] = "min_nr", [2] = "nr", [3] = "events", [4] = "timeout", [5] = "usig" },
 	.group = GROUP_VFS,
 	.sanitise = sanitise_io_pgetevents,
-	.post = post_io_pgetevents,
+	.bound_arg = 3,
 };
