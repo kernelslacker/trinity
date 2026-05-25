@@ -35,7 +35,6 @@
 #include "cmp_hints.h"		/* cmp_hints_shm */
 #include "debug.h"
 #include "edgepair.h"		/* EDGEPAIR_NO_PREV */
-#include "healer.h"		/* healer_strategy_ready */
 #include "kcov.h"		/* KCOV_CMP_RECORDS_MAX, kcov_shm */
 #include "params.h"
 #include "rnd.h"
@@ -1004,10 +1003,10 @@ int select_next_strategy(int prev,
 			/* Random-rescue classifier dispatch path.  Reuses
 			 * the existing dominant_rescue_class +
 			 * amplified_intervention_arm pair so the classifier-
-			 * driven HEALER / HEURISTIC replay shape stays
-			 * exactly what landed when amplification was the only
-			 * intervention mode -- this commit changes the
-			 * SCHEDULING of when it runs, not its internals. */
+			 * driven HEURISTIC replay shape stays exactly what
+			 * landed when amplification was the only intervention
+			 * mode -- this commit changes the SCHEDULING of when
+			 * it runs, not its internals. */
 			amplified = dominant_rescue_class();
 			arm = amplified_intervention_arm(amplified);
 			break;

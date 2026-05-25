@@ -336,18 +336,6 @@ struct childdata {
 	unsigned int stall_count;
 	unsigned int stall_last;
 
-	/* HEALER per-child sequence buffer.  Holds the last two completed
-	 * syscall numbers, written from the per-call bookkeeping path right
-	 * after last_syscall_nr is updated.  Read at observer-hook fire to
-	 * recover the (pred_a, pred_b) tuple the new-edge event is credited
-	 * to.  seq_count is a saturating counter used to gate the observer
-	 * until both slots are populated -- the very first two syscalls of a
-	 * child's life produce no predset, since there is no "two completed
-	 * syscalls before this one" to point at.  Owner-only state, no shm
-	 * coherence needed. */
-	unsigned int healer_seq[2];
-	unsigned int healer_seq_count;
-
 	unsigned char xcpu_count;
 
 	unsigned char kill_count;
@@ -432,13 +420,6 @@ struct childdata {
 	 * child, write-only-by-this-child / read-only-by-parent.  See
 	 * include/stats_ring.h for the field set and overflow policy. */
 	struct stats_ring *stats_ring;
-
-	/* Ring buffer for child-produced HEALER observation events drained
-	 * by the parent into struct healer_aggregate.  Allocated in shared
-	 * memory, one per child, write-only-by-this-child / read-only-by-
-	 * parent.  See include/healer_ring.h for the slot layout and
-	 * overflow policy. */
-	struct healer_ring *healer_ring;
 
 	/* Ring buffer for child-produced edgepair observation events
 	 * drained by the parent into struct edgepair_aggregate.  Allocated

@@ -119,8 +119,8 @@ enum strategy_selection_reason {
  * edges, those edges are evidence that some structured bias the normal
  * picker imposes was filtering out a productive path.  The classifier
  * inspects the (predecessor, syscall) pair against the existing
- * heuristic / HEALER / cmp-hint state and assigns the rescue to the
- * narrowest category that explains why the structured path missed it.
+ * heuristic / cmp-hint state and assigns the rescue to the narrowest
+ * category that explains why the structured path missed it.
  *
  * Counts accumulate in shm->random_rescue_class_count[] across all
  * intervention windows and the dominant class feeds back into the
@@ -204,10 +204,9 @@ enum random_rescue_class {
  * PIM_ANTI_PRIOR:     STRATEGY_RANDOM with the inverted-weight accept
  *                     gate active (see plateau_anti_prior_accept()).
  * PIM_RRC_BIASED:     dispatch via dominant_rescue_class() +
- *                     amplified_intervention_arm() -- HEALER / HEURISTIC
- *                     replay biased by the random-rescue classifier's
- *                     dominant class, or plain RANDOM when no class
- *                     dominates.
+ *                     amplified_intervention_arm() -- HEURISTIC replay
+ *                     biased by the random-rescue classifier's dominant
+ *                     class, or plain RANDOM when no class dominates.
  */
 enum plateau_intervention_mode {
 	PIM_UNIFORM_RANDOM = 0,
@@ -338,8 +337,7 @@ const char *strategy_selection_reason_name(enum strategy_selection_reason r);
  * maybe_rotate_strategy still serialises the rotation work to one
  * child even though every child observes the trigger.
  *
- * This used to live alongside HEALER (the original consumer) but the
- * intervention is now picker-agnostic: select_next_strategy() above
+ * The intervention is picker-agnostic: select_next_strategy() above
  * the picker decides what to force based on plateau state.  Future
  * dispatches will replace the current "force STRATEGY_RANDOM" policy
  * with smarter interventions inside the orchestrator without touching

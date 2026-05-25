@@ -25,7 +25,6 @@
 #include "shm.h"
 #include "strategy.h"
 #include "edgepair_ring.h"
-#include "healer_ring.h"
 #include "stats_ring.h"
 #include "trinity.h"
 #include "utils.h"

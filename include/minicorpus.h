@@ -288,8 +288,7 @@ const char *minicorpus_default_path(void);
  * fires the cheap edge-trigger fast path several times per 5min window
  * during early-run discovery, while a saturated steady-state run that
  * finds no new edges for an hour still snapshots once every 5min instead
- * of going arbitrarily long without persistence.  Hardcoded -- mirrors
- * HEALER_SNAPSHOT_INTERVAL_SEC's rationale. */
+ * of going arbitrarily long without persistence. */
 #define MINICORPUS_SNAPSHOT_INTERVAL_SEC 300UL
 
 /* Configure the path that minicorpus_maybe_snapshot() will save to.

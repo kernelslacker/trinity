@@ -286,10 +286,10 @@ void stats_published_init(void)
  * Best-effort on failure: log via the canonical helper and continue.
  * mprotect can ENOMEM if the kernel runs out of VMA slots splitting
  * the mapping that backs the mirror (same failure mode as the
- * healer/edgepair freeze helpers and the freeze_sibling_childdata
- * sweep) and turning a transient kernel limit into a fleet-wide
- * crash would be worse than leaving the mirror RW for the lifetime
- * of the affected child.
+ * edgepair freeze helper and the freeze_sibling_childdata sweep) and
+ * turning a transient kernel limit into a fleet-wide crash would be
+ * worse than leaving the mirror RW for the lifetime of the affected
+ * child.
  */
 void stats_published_freeze(void)
 {

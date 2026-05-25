@@ -102,8 +102,8 @@ bool edgepair_is_cold(unsigned int prev_nr, unsigned int curr_nr);
 /*
  * Read-only accessor returning the raw (new_edges, total) counters for a
  * given (prev, curr) pair.  Returns {0, 0} on miss or before the table is
- * initialised.  Callers compute their own productivity ratio (e.g. HEALER's
- * Beta-smoothed coverage multiplier) without exposing the entry pointer.
+ * initialised.  Callers compute their own productivity ratio without
+ * exposing the entry pointer.
  */
 struct edgepair_stats {
 	unsigned long new_edges;

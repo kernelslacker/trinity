@@ -35,7 +35,6 @@
 #include "child.h"
 #include "cmp_hints.h"
 #include "edgepair.h"
-#include "healer.h"
 #include "kcov.h"
 #include "params.h"
 #include "pids.h"
@@ -1032,7 +1031,7 @@ void kcov_plateau_check(void)
  * Warm-start persistence for kcov_shm->bucket_seen[] + edges_found.
  *
  * Layout: a fixed header followed by KCOV_NUM_EDGES bytes of bucket_seen
- * payload.  Atomic .tmp + rename on save mirrors effector-map / healer /
+ * payload.  Atomic .tmp + rename on save mirrors effector-map /
  * minicorpus.  No __attribute__((packed)) -- the field sequence below is
  * already naturally aligned on the LP64 ABIs trinity targets.
  *
@@ -1069,9 +1068,9 @@ struct kcov_bitmap_file_header {
 };
 
 /* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Same algorithm
- * effector-map / minicorpus / healer use; kept local so a future
- * divergence in any one persistence format's checksum doesn't ripple
- * across the others. */
+ * effector-map / minicorpus use; kept local so a future divergence in
+ * any one persistence format's checksum doesn't ripple across the
+ * others. */
 static uint32_t kcov_bitmap_crc32(const void *buf, size_t len)
 {
 	static uint32_t table[256];

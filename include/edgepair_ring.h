@@ -18,9 +18,9 @@
  * wild-write attack surface for the ~1 MiB region that has been quietly
  * trusting the kernel not to scribble it.
  *
- * Same shape and topology as struct stats_ring (stats-ring.c) and struct
- * healer_ring (healer-ring.c) -- the proven SPSC pattern already
- * validated against hostile fuzzed workload.  Single fixed-size slot
+ * Same shape and topology as struct stats_ring (stats-ring.c) -- the
+ * proven SPSC pattern already validated against hostile fuzzed
+ * workload.  Single fixed-size slot
  * carries (prev_nr, curr_nr, new_edges); the parent applies events
  * serially under single-writer discipline so the CAS-claim machinery
  * find_or_insert needed today collapses to a plain hash probe + store.
@@ -151,8 +151,7 @@ unsigned int edgepair_ring_drain(struct edgepair_ring *ring);
 
 /*
  * Drain every child's ring and republish the mirror page.  Called from
- * the parent main loop alongside stats_ring_drain_all() and
- * healer_ring_drain_all().
+ * the parent main loop alongside stats_ring_drain_all().
  */
 void edgepair_ring_drain_all(void);
 

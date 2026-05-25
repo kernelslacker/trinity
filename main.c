@@ -17,8 +17,6 @@
 #include "debug.h"
 #include "edgepair_ring.h"
 #include "fd-event.h"
-#include "healer.h"
-#include "healer_ring.h"
 #include "kcov.h"
 #include "minicorpus.h"
 #include "objects.h"
@@ -2019,9 +2017,9 @@ void reset_epoch_state(void)
 	 *
 	 * Bandit arm state (bandit_pulls, bandit_reward_calls, ...) is
 	 * intentionally NOT reset -- warm-start across epochs is the desired
-	 * UCB1 semantics.  cmp_hints pool, HEALER tables, edgepair tables,
-	 * the kcov bitmap, and the alloc_track ring are also intentionally
-	 * preserved across epochs for the same reason.
+	 * UCB1 semantics.  cmp_hints pool, edgepair tables, the kcov bitmap,
+	 * and the alloc_track ring are also intentionally preserved across
+	 * epochs for the same reason.
 	 */
 	/* fleet_op_count anchor for the next STRATEGY_WINDOW interval */
 	shm->syscalls_at_last_switch = 0;

@@ -11,7 +11,6 @@
 #include "cmp_hints.h"
 #include "edgepair.h"
 #include "edgepair_ring.h"
-#include "healer.h"
 #include "kcov.h"
 #include "minicorpus.h"
 #include "params.h"

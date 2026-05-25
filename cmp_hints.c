@@ -620,9 +620,9 @@ struct cmp_hints_file_header {
 unsigned long cmp_hints_load_rejected_entries;
 
 /* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Same algorithm
- * kcov-bitmap / minicorpus / healer use; kept local so a future
- * divergence in any one persistence format's checksum doesn't ripple
- * across the others. */
+ * kcov-bitmap / minicorpus use; kept local so a future divergence in
+ * any one persistence format's checksum doesn't ripple across the
+ * others. */
 static uint32_t cmp_hints_crc32(const void *buf, size_t len)
 {
 	static uint32_t table[256];

@@ -39,8 +39,8 @@
  * The split exists so children's OOM doesn't take the parent.  When the
  * children/ cap fires, oom.group=1 kills the entire worker pool atomically
  * and the parent re-spawns from a clean state.  Parent has no memory.max
- * and a generous memory.high so its bandit/HEALER bookkeeping is never
- * the OOM target.
+ * and a generous memory.high so its bandit bookkeeping is never the OOM
+ * target.
  *
  * Cleanup is best-effort: the kernel reclaims empty cgroups when the last
  * process exits, so rmdir failures during teardown are benign.
@@ -225,8 +225,8 @@ static void events_cleanup(void);
 
 /*
  * Compute the parent's memory.high reservation.  Parent does little work
- * per-iter (waitpid/reap/fork loop, periodic_work bookkeeping, HEALER
- * snapshots), so a small soft limit is plenty.
+ * per-iter (waitpid/reap/fork loop, periodic_work bookkeeping), so a small
+ * soft limit is plenty.
  *
  *   parent_high = min(200M, total_max / 16)
  *
@@ -654,9 +654,9 @@ pid_t self_cgroup_fork_into_workload(void)
  * Phase 2: memory.events back-pressure.
  *
  * The Phase 1 cap is reactive: when memory.max is hit the kernel evicts
- * trinity processes, dropping bandit/HEALER convergence state every
- * cycle.  Phase 2 listens to the kernel's memory.events file (rewritten
- * each time low/high/max/oom counters bump) and applies back-pressure
+ * trinity processes, dropping bandit convergence state every cycle.
+ * Phase 2 listens to the kernel's memory.events file (rewritten each
+ * time low/high/max/oom counters bump) and applies back-pressure
  * before the cap is reached: a doubling fork-rate throttle on
  * memory.high crossings.
  *

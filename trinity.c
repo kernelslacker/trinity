@@ -17,8 +17,6 @@
 #include "effector-map.h"
 #include "fd.h"
 #include "files.h"
-#include "healer.h"
-#include "healer_ring.h"
 #include "ioctls.h"
 #include "kcov.h"
 #include "kmsg-monitor.h"

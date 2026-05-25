@@ -419,19 +419,17 @@ void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		struct kcov_child *kc, struct childdata *child);
 
 /*
- * Uniform-random syscall picker.  Public so STRATEGY_HEALER (and any
- * future strategy with a "no usable signal here" branch) can delegate
- * to the canonical uniform-pick + correctness-gate implementation
- * rather than re-implementing it.
+ * Uniform-random syscall picker.  Public so any future strategy with a
+ * "no usable signal here" branch can delegate to the canonical
+ * uniform-pick + correctness-gate implementation rather than
+ * re-implementing it.
  */
 bool set_syscall_nr_random(struct syscallrecord *rec, struct childdata *child);
 
 /*
  * Per-call arch picker for biarch builds.  Returns do32 and stamps the
  * child's active_syscalls pointer / nr_syscalls slot so the caller's
- * subsequent loop indexes the correct table.  Exposed for
- * STRATEGY_HEALER which needs the same per-call arch decision the
- * other set_syscall_nr_* variants already use.  Uniarch callers should
+ * subsequent loop indexes the correct table.  Uniarch callers should
  * not call this.
  */
 bool choose_syscall_table(struct childdata *child, unsigned int *nr_syscalls_out);

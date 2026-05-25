@@ -16,7 +16,6 @@
 #include "cmp_hints.h"
 #include "debug.h"
 #include "edgepair.h"
-#include "healer.h"
 #include "kcov.h"
 #include "locks.h"
 #include "minicorpus.h"
@@ -48,11 +47,6 @@
  * caller's per-child active_syscalls pointer, and return do32.  Uniarch
  * builds bypass this entirely — child->active_syscalls is set once at
  * init time to shm->active_syscalls and never re-evaluated.
- *
- * Non-static so STRATEGY_HEALER's picker can share the same per-call
- * arch-pick decision the other set_syscall_nr_* variants already
- * route through here, rather than re-implementing it (which would
- * desync the picker's arch dim from the rest of the call dispatch).
  */
 bool choose_syscall_table(struct childdata *child,
 			  unsigned int *nr_syscalls_out)
@@ -941,10 +935,9 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * CMP-mode children contribute zero PC edges (their PC fd is never
 	 * enabled), so new_edge_count stays 0 and the per-strategy edge
 	 * attribution block below naturally skips on its `new_edge_count > 0`
-	 * gate.  HEALER observation, frontier ring updates, and bandit
-	 * reward attribution also skip cleanly via `if (new_edges)`
-	 * further down -- CMP-mode children deliberately don't contribute
-	 * to those PC-edge concepts.
+	 * gate.  Frontier ring updates and bandit reward attribution also
+	 * skip cleanly via `if (new_edges)` further down -- CMP-mode
+	 * children deliberately don't contribute to those PC-edge concepts.
 	 *
 	 * CMP-source corpus saves are the exception: kcov_collect_cmp
 	 * returns the per-call count of bloom-novel KCOV_CMP_CONST
@@ -996,12 +989,12 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * PC-only gate fires for ~0% of calls; the OR-with-CMP gate keeps
 	 * the corpus growing on arg neighbourhoods that exercise new
 	 * compile-time-constant comparisons (the cmp_rising_pc_flat
-	 * frontier).  PC-edge-specific bookkeeping below (HEALER, frontier
-	 * ring, snapshot cadence, per-strategy edge attribution,
-	 * explorer/bandit pool edge counters) STAYS gated on new_edges --
-	 * those are PC-edge concepts by definition and contaminating them
-	 * with CMP-source events would silently bias the bandit reward
-	 * and corrupt the plateau diagnostics. */
+	 * frontier).  PC-edge-specific bookkeeping below (frontier ring,
+	 * snapshot cadence, per-strategy edge attribution, explorer/bandit
+	 * pool edge counters) STAYS gated on new_edges -- those are
+	 * PC-edge concepts by definition and contaminating them with
+	 * CMP-source events would silently bias the bandit reward and
+	 * corrupt the plateau diagnostics. */
 	bool found_something = new_edges || (new_cmp > 0);
 
 	/* If the win signal came from CMP novelty rather than PC novelty,

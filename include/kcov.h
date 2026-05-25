@@ -106,8 +106,8 @@ enum kcov_child_mode {
  * Reciprocal probability that a child runs in CMP-only mode.  CMP records
  * feed the constant-comparison hint pool, which helps the fuzzer break
  * plateaus by unblocking comparison-gated kernel branches; PC coverage is
- * the load-bearing signal for everything else (HEALER observation, bandit
- * reward attribution, edge-discovery rate, cold-syscall skipping).
+ * the load-bearing signal for everything else (bandit reward attribution,
+ * edge-discovery rate, cold-syscall skipping).
  * Biased toward PC mode so the high-frequency signal isn't starved; retune
  * after A/B if cmp_records throughput is the bottleneck.
  */
@@ -517,9 +517,9 @@ void kcov_plateau_check(void);
 
 /* Mid-run snapshot cadence for kcov_bitmap_maybe_snapshot().  The bitmap
  * is 8 MB and writing it is bursty I/O, so the triggers are coarser than
- * the minicorpus or healer snapshot intervals: 1000 new edges OR 300s
- * since the last save, whichever fires first.  Hardcoded -- no operator
- * knob, fleet boxes shouldn't need to retune. */
+ * the minicorpus snapshot interval: 1000 new edges OR 300s since the
+ * last save, whichever fires first.  Hardcoded -- no operator knob,
+ * fleet boxes shouldn't need to retune. */
 #define KCOV_BITMAP_SNAPSHOT_EDGES		1000UL
 #define KCOV_BITMAP_SNAPSHOT_INTERVAL_SEC	300UL
 

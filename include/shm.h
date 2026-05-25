@@ -9,7 +9,6 @@
 #include "efault_cache.h"
 #include "exit.h"
 #include "files.h"
-#include "healer.h"
 #include "locks.h"
 #include "net.h"
 #include "object-types.h"
@@ -462,7 +461,7 @@ struct shm_s {
 	 * cumulative distribution is what the next plateau intervention
 	 * reads to decide whether plain RANDOM is still the right rescue
 	 * arm or whether the classifier has accumulated enough evidence to
-	 * point at a more targeted intervention (cold-skip disable, HEALER,
+	 * point at a more targeted intervention (cold-skip disable,
 	 * cmp-hint boost, etc.).
 	 *
 	 * Multi-producer (every child that completes a rescue increments
@@ -501,12 +500,7 @@ struct shm_s {
 	 * Gated on (shm->plateau_active && current_selection_reason ==
 	 * SR_PLATEAU_FORCE) at every read site so the relaxation applies
 	 * only inside the intervention window, never as a permanent
-	 * change to the structured pickers.  Bias choices for the other
-	 * classes (MISSING_PAIR / STALE_PAIR / UNSEEN_SUCCESSOR) are
-	 * encoded in the intervention arm itself -- the orchestrator
-	 * forces STRATEGY_HEALER instead of RANDOM when one of those
-	 * classes dominates, and HEALER's eligibility gate is already
-	 * bypassed under plateau_active.
+	 * change to the structured pickers.
 	 */
 	int plateau_rescue_amplified_class;
 
@@ -779,17 +773,6 @@ struct shm_s {
 	 * 0 is the empty-slot sentinel.
 	 */
 	uint64_t ioctl_efault_cache[IOCTL_EFAULT_CACHE_SIZE];
-
-	/*
-	 * The HEALER relation + pair tables that used to live here moved
-	 * to a parent-private canonical (struct healer_aggregate) fed by
-	 * per-child SPSC observation rings, with two child-RO mirror
-	 * pages serving the picker's reads.  See include/healer_ring.h
-	 * for the topology and healer-ring.c for the apply / publish
-	 * machinery.  The migration removed 5.13 MiB from shm and
-	 * eliminated the wild-write attack surface for the largest
-	 * region in the shared mapping.
-	 */
 };
 extern struct shm_s *shm;
 extern unsigned int shm_size;

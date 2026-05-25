@@ -23,7 +23,6 @@
 #include "futex.h"
 #include "edgepair_ring.h"
 #include "fd-event.h"
-#include "healer_ring.h"
 #include "kcov.h"
 #include "list.h"
 #include "maps.h"

@@ -2,9 +2,9 @@
  * Generic single-producer single-consumer ring primitive.
  *
  * Carries the head/tail/overflow accounting that several payload-specific
- * rings in this tree (fd-event, stats-ring, healer-ring, edgepair-ring)
- * had been reimplementing in lock-step copies.  See include/spsc-ring.h
- * for the contract.
+ * rings in this tree (fd-event, stats-ring, edgepair-ring) had been
+ * reimplementing in lock-step copies.  See include/spsc-ring.h for the
+ * contract.
  */
 
 #include <stdatomic.h>
