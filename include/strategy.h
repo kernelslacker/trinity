@@ -567,6 +567,17 @@ const char *plateau_intervention_mode_name(enum plateau_intervention_mode m);
  *                   inline = total - remote.
  *   frontier_picks -- shm->stats.frontier_strategy_picks.  Calls that
  *                   went through the coverage-frontier roulette wheel.
+ *   frontier_pulls -- shm->bandit_pulls[STRATEGY_COVERAGE_FRONTIER].
+ *                   Windows in which the bandit (or the cold-start /
+ *                   round-robin path) actually selected the CFV arm.
+ *                   Paired with frontier_picks: when the bandit pulled
+ *                   CFV but the weighted-accept gate inside the picker
+ *                   rejected every candidate, pulls advances while
+ *                   picks stays at 0.  The frontier-cold rule uses the
+ *                   delta against this pair to distinguish "bandit
+ *                   never tried CFV" (uninformative) from "bandit
+ *                   tried CFV and every candidate was rejected"
+ *                   (frontier really is cold).
  *   group_edges[NR_GROUPS] -- per-syscall-group sum of
  *                   kcov_shm->per_syscall_edges[], grouped by
  *                   syscalls[nr].entry->group.  Maps the call-count
@@ -588,6 +599,7 @@ struct plateau_window_snapshot {
 	unsigned long remote_calls;
 	unsigned long total_calls;
 	unsigned long frontier_picks;
+	unsigned long frontier_pulls;
 	unsigned long group_edges[NR_GROUPS];
 };
 

@@ -1138,6 +1138,9 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 		&shm->stats.explorer_pool_edges_discovered, __ATOMIC_RELAXED);
 	snap->frontier_picks = __atomic_load_n(
 		&shm->stats.frontier_strategy_picks, __ATOMIC_RELAXED);
+	snap->frontier_pulls = __atomic_load_n(
+		&shm->bandit_pulls[STRATEGY_COVERAGE_FRONTIER],
+		__ATOMIC_RELAXED);
 
 	for (op = 0; op < NR_CHILD_OP_TYPES; op++) {
 		snap->childop_edges_total += __atomic_load_n(
@@ -1174,6 +1177,8 @@ void plateau_snapshot_delta(struct plateau_window_snapshot *out,
 	out->total_calls = sat_sub(now->total_calls, entry->total_calls);
 	out->frontier_picks = sat_sub(now->frontier_picks,
 				      entry->frontier_picks);
+	out->frontier_pulls = sat_sub(now->frontier_pulls,
+				      entry->frontier_pulls);
 	for (grp = 0; grp < NR_GROUPS; grp++)
 		out->group_edges[grp] = sat_sub(now->group_edges[grp],
 						entry->group_edges[grp]);
@@ -1292,16 +1297,17 @@ enum plateau_hypothesis strategy_plateau_hypothesis_check(
 	    delta.remote_calls > PHC_REMOTE_DOMINANT_RATIO * inline_calls)
 		return PLATEAU_HYPOTHESIS_REMOTE_DOMINANT;
 
-	/* Rule 4: frontier cold.  Phase 1 proxy: the coverage-frontier
-	 * picker has accepted ZERO picks since plateau entry.  The
-	 * stricter "there exists a cold-pool syscall with 0 picks since
-	 * entry" formulation needs a per-syscall snapshot the snapshot
-	 * struct does not yet carry; the proxy fires under the same
-	 * underlying condition (no frontier-weighted progress) without
-	 * the per-syscall walk.  The full per-syscall variant ships when
-	 * Phase 2's intervention layer needs the picked-vs-skipped
-	 * partition to drive a concrete response. */
-	if (delta.frontier_picks == 0)
+	/* Rule 4: frontier cold.  The bandit selected the coverage-
+	 * frontier arm at least once during the plateau window but the
+	 * weighted-accept gate inside the picker rejected every
+	 * candidate, so no frontier-weighted call ran.  The pulls > 0
+	 * predicate is what makes this a real signal: without it the
+	 * rule would also fire on plateaus where the bandit simply
+	 * never pulled CFV (uninformative -- could be a policy
+	 * accident, could be a starved arm), and the rule classifier
+	 * would attribute "frontier cold" to windows that say nothing
+	 * about the frontier picker's behaviour. */
+	if (delta.frontier_pulls > 0 && delta.frontier_picks == 0)
 		return PLATEAU_HYPOTHESIS_FRONTIER_COLD;
 
 	/* Rule 5: single group dominates. */
@@ -1372,7 +1378,7 @@ void strategy_plateau_hypothesis_tick(void)
 		if (fired != PLATEAU_HYPOTHESIS_NONE) {
 			hypothesis_fires[fired]++;
 			stats_log_write(
-				"plateau hypothesis: %s fired (cmp_delta=+%lu/window pc_delta=+%lu/window childop_delta=+%lu generic_delta=+%lu remote_delta=+%lu/+%lu frontier_picks=%lu)\n",
+				"plateau hypothesis: %s fired (cmp_delta=+%lu/window pc_delta=+%lu/window childop_delta=+%lu generic_delta=+%lu remote_delta=+%lu/+%lu frontier_pulls=%lu frontier_picks=%lu)\n",
 				strategy_plateau_hypothesis_name(fired),
 				hypothesis_last_delta.cmp_unique,
 				hypothesis_last_delta.pc_edges,
@@ -1381,6 +1387,7 @@ void strategy_plateau_hypothesis_tick(void)
 				hypothesis_last_delta.explorer_edges,
 				hypothesis_last_delta.remote_calls,
 				hypothesis_last_delta.total_calls,
+				hypothesis_last_delta.frontier_pulls,
 				hypothesis_last_delta.frontier_picks);
 		} else {
 			stats_log_write(
