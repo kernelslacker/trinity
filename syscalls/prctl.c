@@ -4,6 +4,7 @@
  */
 
 #include <stdlib.h>
+#include <string.h>
 #include <signal.h>
 #include <linux/capability.h>
 #include <linux/filter.h>
@@ -125,6 +126,17 @@ struct prctl_post_state {
 	unsigned long magic;
 	int option;
 	struct sock_fprog *bpf;
+	/*
+	 * Snapshot of the SET-side argument captured at sanitise time so
+	 * the 1-in-20 SET/GET roundtrip oracles can compare the GET
+	 * readback against what we asked the kernel to store -- immune
+	 * to sibling-thread scribbles of rec->a2 or the writable buffer
+	 * it pointed at.  set_arg is the literal arg2 for the scalar
+	 * SET options; set_name is a content snapshot for PR_SET_NAME,
+	 * truncated and NUL-terminated like the kernel will do.
+	 */
+	unsigned long set_arg;
+	unsigned char set_name[16];
 };
 
 #ifdef USE_SECCOMP
@@ -310,6 +322,10 @@ static void sanitise_prctl(struct syscallrecord *rec)
 	switch (option) {
 	case PR_SET_SECCOMP:
 	case PR_SET_NO_NEW_PRIVS:
+	case PR_SET_NAME:
+	case PR_SET_DUMPABLE:
+	case PR_SET_KEEPCAPS:
+	case PR_SET_PDEATHSIG:
 	case PR_GET_PDEATHSIG:
 	case PR_GET_KEEPCAPS:
 	case PR_GET_DUMPABLE:
@@ -328,6 +344,24 @@ static void sanitise_prctl(struct syscallrecord *rec)
 		snap->magic = PRCTL_POST_STATE_MAGIC;
 		snap->option = option;
 		snap->bpf = bpf;
+		snap->set_arg = rec->a2;
+		if (option == PR_SET_NAME && rec->a2 != 0) {
+			const unsigned char *src =
+				(const unsigned char *) rec->a2;
+			size_t i;
+
+			/*
+			 * Mirror what the kernel stores in task->comm:
+			 * copy bytes until first NUL or 15 chars, then
+			 * NUL-terminate.  zmalloc_tracked already zeroed
+			 * the trailing bytes.
+			 */
+			for (i = 0; i < 15; i++) {
+				snap->set_name[i] = src[i];
+				if (src[i] == '\0')
+					break;
+			}
+		}
 		rec->post_state = (unsigned long) snap;
 		break;
 	}
@@ -423,6 +457,95 @@ static void post_prctl(struct syscallrecord *rec)
 					   __ATOMIC_RELAXED);
 		}
 		break;
+
+	case PR_SET_NAME: {
+		/*
+		 * Oracle: PR_SET_NAME stores into task->comm; PR_GET_NAME
+		 * reads it back.  Compare against the byte snapshot we took
+		 * at sanitise time -- not the userspace buffer at rec->a2,
+		 * which a sibling thread may have scribbled between the SET
+		 * and the readback.
+		 */
+		char readback[16] = { 0 };
+
+		if ((long) rec->retval != 0)
+			break;
+		if (!ONE_IN(20))
+			break;
+		if (prctl(PR_GET_NAME, (unsigned long) readback, 0, 0, 0) != 0)
+			break;
+		if (strncmp(readback, (const char *) snap->set_name, 16) != 0) {
+			output(0, "cred oracle: prctl(PR_SET_NAME) succeeded "
+			       "but PR_GET_NAME readback differs from snapshot\n");
+			__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+					   __ATOMIC_RELAXED);
+		}
+		break;
+	}
+
+	case PR_SET_DUMPABLE:
+		/*
+		 * Oracle: PR_SET_DUMPABLE only accepts SUID_DUMP_DISABLE (0)
+		 * or SUID_DUMP_USER (1); a successful SET means the kernel
+		 * stored that value.  PR_GET_DUMPABLE must read it back.
+		 */
+		if ((long) rec->retval != 0)
+			break;
+		if (!ONE_IN(20))
+			break;
+		got = prctl(PR_GET_DUMPABLE, 0, 0, 0, 0);
+		if ((unsigned long) got != snap->set_arg) {
+			output(0, "cred oracle: prctl(PR_SET_DUMPABLE %lu) "
+			       "succeeded but PR_GET_DUMPABLE=%ld\n",
+			       snap->set_arg, got);
+			__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+					   __ATOMIC_RELAXED);
+		}
+		break;
+
+	case PR_SET_KEEPCAPS:
+		/*
+		 * Oracle: PR_SET_KEEPCAPS only accepts 0 or 1.  A successful
+		 * SET means the kernel stored that single bit;
+		 * PR_GET_KEEPCAPS must read it back.
+		 */
+		if ((long) rec->retval != 0)
+			break;
+		if (!ONE_IN(20))
+			break;
+		got = prctl(PR_GET_KEEPCAPS, 0, 0, 0, 0);
+		if ((unsigned long) got != snap->set_arg) {
+			output(0, "cred oracle: prctl(PR_SET_KEEPCAPS %lu) "
+			       "succeeded but PR_GET_KEEPCAPS=%ld\n",
+			       snap->set_arg, got);
+			__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+					   __ATOMIC_RELAXED);
+		}
+		break;
+
+	case PR_SET_PDEATHSIG: {
+		/*
+		 * Oracle: PR_SET_PDEATHSIG accepts 0 or a valid signal
+		 * number.  PR_GET_PDEATHSIG writes the stored value to the
+		 * int* at arg2; compare against the snapshot.
+		 */
+		int sig = -1;
+
+		if ((long) rec->retval != 0)
+			break;
+		if (!ONE_IN(20))
+			break;
+		if (prctl(PR_GET_PDEATHSIG, (unsigned long) &sig, 0, 0, 0) != 0)
+			break;
+		if ((unsigned long) sig != snap->set_arg) {
+			output(0, "cred oracle: prctl(PR_SET_PDEATHSIG %lu) "
+			       "succeeded but PR_GET_PDEATHSIG=%d\n",
+			       snap->set_arg, sig);
+			__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+					   __ATOMIC_RELAXED);
+		}
+		break;
+	}
 
 	case PR_GET_PDEATHSIG:
 		/*
