@@ -38,7 +38,9 @@
  * memcpy at a foreign user buffer, or zero the len gate that screens
  * empty receive buffers.
  */
+#define LOOKUP_DCOOKIE_POST_STATE_MAGIC	0x4C4B5044435354UL	/* "LKPDCST" */
 struct lookup_dcookie_post_state {
+	unsigned long magic;
 	uint64_t cookie;
 	unsigned long buf;
 	unsigned long len;
@@ -84,6 +86,7 @@ static void sanitise_lookup_dcookie(struct syscallrecord *rec)
 	 * handler can free would leak.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic     = LOOKUP_DCOOKIE_POST_STATE_MAGIC;
 	snap->cookie    = (uint64_t) rec->a1;
 	snap->buf       = rec->a2;
 	snap->len       = rec->a3;
@@ -147,6 +150,23 @@ static void post_lookup_dcookie(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_lookup_dcookie: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * lookup_dcookie_post_state.  A cookie mismatch means snap does
+	 * not point at our struct -- abandon cleanup rather than feed
+	 * wild bytes into the inner-field deref.  Cannot deferred_freeptr
+	 * the snap because we cannot prove it is one of our allocations.
+	 */
+	if (snap->magic != LOOKUP_DCOOKIE_POST_STATE_MAGIC) {
+		outputerr("post_lookup_dcookie: rejected snap with bad magic 0x%lx (post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}

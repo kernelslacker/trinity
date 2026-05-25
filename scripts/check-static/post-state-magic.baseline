@@ -20,5 +20,3 @@
 # to this list.
 #
 # Lines starting with `#` and blank lines are ignored.
-syscalls/lookup_dcookie.c:lookup_dcookie
-syscalls/sysfs.c:sysfs

@@ -33,7 +33,9 @@ static unsigned long sysfs_options[] = {
  * buffer and cannot smear the option discriminator or the index used
  * to seed the re-issue.
  */
+#define SYSFS_POST_STATE_MAGIC	0x53595346535354UL	/* "SYSFSST" */
 struct sysfs_post_state {
+	unsigned long magic;
 	unsigned long option;
 	unsigned long idx;
 	unsigned long buf;
@@ -80,6 +82,7 @@ static void sanitise_sysfs(struct syscallrecord *rec)
 	 * only the post handler can free would leak.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic  = SYSFS_POST_STATE_MAGIC;
 	snap->option = rec->a1;
 	snap->idx    = rec->a2;
 	snap->buf    = rec->a3;
@@ -149,6 +152,23 @@ static void post_sysfs(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_sysfs: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * sysfs_post_state.  A cookie mismatch means snap does not point
+	 * at our struct -- abandon cleanup rather than feed wild bytes
+	 * into the inner-field deref.  Cannot deferred_freeptr the snap
+	 * because we cannot prove it is one of our allocations.
+	 */
+	if (snap->magic != SYSFS_POST_STATE_MAGIC) {
+		outputerr("post_sysfs: rejected snap with bad magic 0x%lx (post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
