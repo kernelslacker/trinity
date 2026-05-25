@@ -306,9 +306,9 @@ int main(int argc, char* argv[])
 	 * Without this, the banner would land on stdout before the flag is
 	 * known and corrupt the JSON stream consumers expect to parse. */
 	if (should_route_to_stdout())
-		outputstd("Trinity " VERSION "  Dave Jones <davej@codemonkey.org.uk>\n");
+		outputstd("Trinity " VERSION " (git " GIT_HASH ")  Dave Jones <davej@codemonkey.org.uk>\n");
 	else
-		outputerr("Trinity " VERSION "  Dave Jones <davej@codemonkey.org.uk>\n");
+		outputerr("Trinity " VERSION " (git " GIT_HASH ")  Dave Jones <davej@codemonkey.org.uk>\n");
 
 	/* Place ourselves into a dedicated cgroup v2 sub-cgroup with a
 	 * memory cap so a runaway allocation triggers a scoped OOM kill of
