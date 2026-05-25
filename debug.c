@@ -13,11 +13,14 @@
 #include <unistd.h>
 #include "child.h"
 #include "debug.h"
+#include "edgepair_ring.h"
+#include "fd-event.h"
 #include "list.h"
 #include "params.h"
 #include "pids.h"
 #include "pre_crash_ring.h"
 #include "shm.h"
+#include "stats_ring.h"
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
@@ -86,10 +89,27 @@ void __attribute__((noreturn)) __BUG(const char *bugtxt, const char *filename, c
 	 * child's recent wild write, so the offending syscall is sitting
 	 * in some child's ring even though the parent has no obvious
 	 * pointer to which one. */
-	if (child != NULL)
+	if (child != NULL) {
 		pre_crash_ring_dump(child);
-	else
+	} else {
 		pre_crash_ring_dump_all();
+		/* Parent-side BUG: main_loop has stopped ticking by the
+		 * time we reach this branch, so any slots still pending in
+		 * a child's fd_event / stats / edgepair ring would never
+		 * be consumed.  Flush them now so the post-mortem sees the
+		 * same per-child fd/stats/edgepair context the running
+		 * loop would have aggregated.  Drain order matches the
+		 * per-tick order in main_loop (fd_event -> stats ->
+		 * edgepair).  These helpers are single-consumer parent-
+		 * only; calling them from a child-side BUG would race the
+		 * still-running parent, which is why this lives only in
+		 * the parent branch.  Mirrors the kmsg-monitor pre-crash
+		 * drain wired up for WARN/OOPS banners; this is the
+		 * __BUG() counterpart for the other rings. */
+		fd_event_drain_all();
+		stats_ring_drain_all();
+		edgepair_ring_drain_all();
+	}
 
 	/*
 	 * Stamp the bug into the per-child shm record so the parent's
