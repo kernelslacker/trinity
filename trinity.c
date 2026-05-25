@@ -638,41 +638,6 @@ int main(int argc, char* argv[])
 		}
 	}
 
-	/*
-	 * HEALER relation-table warm-start.  Independent of the minicorpus
-	 * warm-start gate so an operator can opt out of one without losing
-	 * the other.  --no-healer is the master off-switch: it implies all
-	 * three of warm-start load, static-seed install, and snapshot
-	 * wiring, so that an off-run shares no state with an on-run.  The
-	 * sub-flags (--no-healer-warm-start, --no-healer-snapshot) remain
-	 * for granular control when the picker itself stays on.  The load
-	 * is silent on a missing file because cold-start is the legitimate
-	 * first-run state.  Snapshot wiring runs before fork so children
-	 * inherit the populated shm region and the snapshot path COW.
-	 */
-	if (!no_healer && !no_healer_warm_start) {
-		const char *hpath = healer_default_path();
-
-		if (hpath != NULL && healer_load_file(hpath))
-			output(0, "healer: warm-started relation table from %s\n",
-				hpath);
-	}
-	if (!no_healer)
-		(void)healer_load_static_seed();
-	if (!no_healer && !no_healer_snapshot) {
-		const char *hpath = healer_default_path();
-
-		if (hpath != NULL)
-			healer_enable_snapshots(hpath);
-	}
-
-	/* Propagate the warm-started canonical to the mirror pages before
-	 * forking so the first child to enter set_syscall_nr_healer sees
-	 * the loaded weights instead of an empty mirror.  Drain-all with
-	 * no children allocated yet is a no-op for the ring loop and runs
-	 * the publish step only. */
-	healer_ring_drain_all();
-
 	if (epoch_iterations || epoch_timeout)
 		epoch_loop();
 	else
@@ -697,31 +662,9 @@ int main(int argc, char* argv[])
 	}
 
 	/*
-	 * Best-effort end-of-run HEALER snapshot on a clean shutdown.  The
-	 * periodic snapshot trigger covers crashes; this captures the trailing
-	 * window of observations the trigger window had not yet flushed.
-	 * Same exit-reason gate the minicorpus save uses -- a poisoned shm
-	 * after a corruption-aborted run could feed garbage into the next
-	 * warm-start, so we skip the save unless the shutdown was clean.
-	 */
-	if (!no_healer && !no_healer_snapshot) {
-		enum exit_reasons er =
-			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
-
-		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
-		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
-			const char *hpath = healer_default_path();
-
-			if (hpath != NULL && healer_save_file(hpath))
-				output(0, "healer: persisted relation table to %s\n",
-					hpath);
-		}
-	}
-
-	/*
 	 * End-of-run kcov bitmap persistence.  Same clean-exit gate as the
-	 * minicorpus and healer saves -- a poisoned shm after a corruption-
-	 * aborted run could feed garbage back into the next warm-start, so
+	 * minicorpus save -- a poisoned shm after a corruption-aborted run
+	 * could feed garbage back into the next warm-start, so
 	 * we skip the save unless the shutdown was clean.  The periodic
 	 * snapshot trigger covers crashes; this captures the trailing
 	 * window of edges that the periodic cadence had not yet flushed.

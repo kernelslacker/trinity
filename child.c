@@ -467,7 +467,6 @@ void clean_childdata(struct childdata *child)
 	if (child->stats_ring)
 		stats_ring_init(child->stats_ring);
 
-	healer_child_reset(child);
 	edgepair_child_reset(child);
 }
 
@@ -683,15 +682,6 @@ static void init_child(struct childdata *child, int childno)
 		__atomic_add_fetch(&shm->stats.sibling_mprotect_failed, 1,
 				   __ATOMIC_RELAXED);
 	}
-
-	/* Freeze the HEALER published mirror pages PROT_READ in this child.
-	 * The mirrors are parent-write / child-read (the picker reads
-	 * relation + pair weights through them; the parent's drain is the
-	 * sole writer), but the mprotect call enforcing that contract was
-	 * missing -- only the comment-side claim existed.  Per-process
-	 * mprotect leaves the parent's mapping RW so the publish keeps
-	 * working; only children get the read-only view. */
-	healer_published_freeze();
 
 	/* Same shape for the edgepair published mirror: edgepair_is_cold
 	 * is the lone child-side reader, the parent's drain is the lone

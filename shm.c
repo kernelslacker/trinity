@@ -263,15 +263,6 @@ void init_shm(void)
 		child->stats_ring = alloc_shared(sizeof(struct stats_ring));
 		stats_ring_init(child->stats_ring);
 
-		/* Per-child HEALER observation ring.  The child IS the
-		 * producer (every observer-hook fire on the new-edge path
-		 * enqueues both a TRIPLE and a PAIR slot), so the ring
-		 * contents stay child-writable.  Dark-launched in this commit
-		 * -- no call site enqueues yet -- so the drain runs empty and
-		 * the canonical aggregate stays at zero. */
-		child->healer_ring = alloc_shared(sizeof(struct healer_ring));
-		healer_ring_init(child->healer_ring);
-
 		/* Per-child edgepair observation ring.  The child IS the
 		 * producer (every non-cmp dispatched syscall enqueues one
 		 * slot once the per-child sentinel is past), so the ring
@@ -287,11 +278,6 @@ void init_shm(void)
 	 * (rotation clock, syscalls_todo termination); the parent re-publishes
 	 * inside stats_ring_drain_all(). */
 	stats_published_init();
-
-	/* HEALER mirror pages: parent-write / child-read.  Picker reads
-	 * the relation table and pair table through these pages, refreshed
-	 * once per drain. */
-	healer_published_init();
 
 	/* Edgepair mirror page: parent-write / child-read.  edgepair_is_cold
 	 * reads its three fields off this page on the syscall-selection
