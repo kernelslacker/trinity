@@ -543,7 +543,7 @@ static void munge_process(void)
 	 * cgroups (/sys/fs/cgroup/trinity0..7) as writable directories;
 	 * if they don't exist we skip silently.
 	 */
-	snprintf(cgpath, sizeof(cgpath), "/sys/fs/cgroup/trinity%d/cgroup.procs",
+	snprintf(cgpath, sizeof(cgpath), "/sys/fs/cgroup/trinity%u/cgroup.procs",
 		 rnd_modulo_u32(8));
 	fd = open(cgpath, O_WRONLY);
 	if (fd >= 0) {
