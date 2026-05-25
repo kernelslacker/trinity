@@ -19,7 +19,7 @@
  * math itself, and writes the outcome back to shm->current_strategy.
  *
  * UCB1 is tractable here because the arm count is tiny (NR_STRATEGIES
- * is a handful -- four today, see enum strategy_t) and the picker only
+ * is a handful -- three today, see enum strategy_t) and the picker only
  * runs once per STRATEGY_WINDOW (~100 sec at 10K iter/sec).
  * Floating-point sqrt and log inside the picker are noise relative to
  * the work done in the window itself.
@@ -1064,8 +1064,8 @@ void strategy_plateau_response(void)
 	 * so the intervention layer in select_next_strategy (returns
 	 * STRATEGY_RANDOM with SR_PLATEAU_FORCE while plateau_active is set)
 	 * takes effect within seconds rather than waiting up to
-	 * STRATEGY_WINDOW (~1M ops, ~9 minutes at 2K iter/sec) for the
-	 * natural rotation cadence.  Setting syscalls_at_last_switch to 0
+	 * STRATEGY_WINDOW (1UL << 17 = ~131K ops, ~65 sec at 2K iter/sec)
+	 * for the natural rotation cadence.  Setting syscalls_at_last_switch to 0
 	 * makes maybe_rotate_strategy trip on the next call from any child;
 	 * the CAS guard there ensures only one child does the rotation work
 	 * even though every child sees the trigger.  After this fires once,

@@ -446,7 +446,7 @@ struct shm_s {
 	 *
 	 * Same single-writer protocol as bandit_pulls[] (CAS-serialised
 	 * rotation path).  dump_strategy_stats() uses RELAXED loads.
-	 * 4 strategies * 4 reasons * 3 series * 8 bytes = 384 bytes,
+	 * 3 strategies * 4 reasons * 3 series * 8 bytes = 288 bytes,
 	 * trivial against existing shm consumers.
 	 */
 	unsigned long bandit_pulls_by_reason[NR_STRATEGIES][NR_SELECTION_REASONS];

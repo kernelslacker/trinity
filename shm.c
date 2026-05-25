@@ -265,9 +265,9 @@ void init_shm(void)
 		/* Per-child edgepair observation ring.  The child IS the
 		 * producer (every non-cmp dispatched syscall enqueues one
 		 * slot once the per-child sentinel is past), so the ring
-		 * contents stay child-writable.  Dark-launched in this commit
-		 * -- no call site enqueues yet -- so the drain runs empty and
-		 * the canonical aggregate stays at zero. */
+		 * contents stay child-writable.  Enqueue site is the new-edge
+		 * path in random-syscall.c (edgepair_record after a successful
+		 * dispatch); the parent drains via the usual stats path. */
 		child->edgepair_ring = alloc_shared(sizeof(struct edgepair_ring));
 		edgepair_ring_init(child->edgepair_ring);
 	}
