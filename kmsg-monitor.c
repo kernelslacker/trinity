@@ -102,6 +102,44 @@ static bool line_matches_trigger(const char *body)
 }
 
 /*
+ * Coarse classification of a trigger-matched body.  Mirrors the
+ * substrings in kmsg_triggers[] above; kept as a parallel ladder
+ * rather than fused into the trigger table so this stays a pure
+ * addition to the existing matcher.  More specific lockdep WARNs are
+ * checked before the generic "WARNING:" arm so they don't get
+ * swallowed by it.
+ *
+ * Returns KMSG_EVENT_UNKNOWN if a trigger matched but none of the
+ * structured arms below recognise it — callers should still emit the
+ * raw banner in that case.
+ */
+static enum kmsg_event_kind classify_kmsg_event(const char *body)
+{
+	if (strstr(body, "WARNING: possible recursive locking") != NULL)
+		return KMSG_WARN_RECLOCK;
+	if (strstr(body, "WARNING: possible circular locking") != NULL)
+		return KMSG_WARN_CIRCULAR;
+	if (strstr(body, "WARNING:") != NULL)
+		return KMSG_WARN;
+	if (strstr(body, "INFO: rcu_sched self-detected stall") != NULL ||
+	    strstr(body, "INFO: rcu_preempt self-detected stall") != NULL)
+		return KMSG_RCU;
+	if (strstr(body, "Oops:") != NULL ||
+	    strstr(body, "general protection fault") != NULL ||
+	    strstr(body, "Unable to handle kernel paging request") != NULL)
+		return KMSG_OOPS;
+	if (strstr(body, "BUG:") != NULL ||
+	    strstr(body, "Kernel BUG") != NULL ||
+	    strstr(body, "kernel BUG") != NULL ||
+	    strstr(body, "UBSAN:") != NULL ||
+	    strstr(body, "refcount_t:") != NULL)
+		return KMSG_BUG;
+	if (strstr(body, "INFO: task ") != NULL)
+		return KMSG_WARN;
+	return KMSG_EVENT_UNKNOWN;
+}
+
+/*
  * /dev/kmsg record format is documented in the kernel's
  * Documentation/ABI/testing/dev-kmsg:
  *
@@ -220,7 +258,10 @@ static void *kmsg_monitor_thread(void *arg)
 		match = line_matches_trigger(body);
 
 		if (match) {
-			output(0, "KMSG: %s\n", body);
+			enum kmsg_event_kind kind = classify_kmsg_event(body);
+
+			output(0, "KMSG: {event:%d, banner:\"%s\"}\n",
+				(int)kind, body);
 			follow_remaining = KMSG_FOLLOW_MAX_RECORDS;
 		} else if (follow_remaining > 0) {
 			output(0, "KMSG: %s\n", body);
