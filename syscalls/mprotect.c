@@ -37,6 +37,11 @@
  * from a real map pointer, so a foreign-heap stomp of rec->a5 would
  * slip the guard and cache prot bits into the wrong tracked map.
  */
+/* Forward declaration so sanitise_mprotect() can disambiguate the
+ * shared sanitise hook by entry-pointer comparison (the pkey_mprotect
+ * entry takes a fourth pkey argument that plain mprotect ignores). */
+extern struct syscallentry syscall_pkey_mprotect;
+
 #define MPROTECT_POST_STATE_MAGIC	0x4D505254UL	/* "MPRT" */
 struct mprotect_post_state {
 	unsigned long magic;
@@ -71,6 +76,26 @@ static void sanitise_mprotect(struct syscallrecord *rec)
 	/* Stash map pointer in unused arg slot for post callback.
 	 * NULL is fine — post_mprotect checks before dereferencing. */
 	rec->a5 = (unsigned long) map;
+
+	/*
+	 * pkey_mprotect's fourth argument is a pkey id allocated by
+	 * pkey_alloc().  Generic argument generation feeds rec->a4 a
+	 * fully random ulong, which almost never hits a live key — the
+	 * kernel's per-mm pkey bitmap has 16 slots and the unknown-key
+	 * reject path collapses the call to EINVAL on miss.  Pull from
+	 * the OBJ_PKEY pool (populated by post_pkey_alloc()) 60% of the
+	 * time when the pool is non-empty so the call lands on a live
+	 * key.  The remaining 40% (and the empty-pool fallback) stay
+	 * random so the unknown-key reject path keeps getting coverage.
+	 */
+	if (rec->entry == &syscall_pkey_mprotect) {
+		if (rnd_modulo_u32(100) < 60) {
+			int id = get_random_pkey_id();
+
+			if (id >= 0)
+				rec->a4 = (unsigned long) id;
+		}
+	}
 
 	/*
 	 * Snapshot the inputs the post handler reads.  Without this the
