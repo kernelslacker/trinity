@@ -8,6 +8,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -16,6 +17,7 @@
 #include "child.h"
 #include "debug.h"
 #include "deferred-free.h"
+#include "fd-event.h"
 #include "kcov.h"
 #include "objects.h"
 #include "params.h"
@@ -139,6 +141,7 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 			 struct kcov_child *kc, struct childdata *child)
 {
 	unsigned long ret = 0;
+	unsigned long a1, a2, a3, a4, a5, a6;
 	bool fault_armed = false;
 	int saved_errno = 0;
 	int call;
@@ -158,6 +161,20 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * read inside the post handler. */
 	rec->_canary = REC_CANARY_MAGIC;
 	unlock(&rec->lock);
+
+	/* Snapshot the argument slots before dispatch.  rec lives in
+	 * shared memory and a sibling child can stomp rec->aN mid-flight
+	 * (the per-arg snapshot pattern in .post handlers exists for
+	 * exactly this reason).  We send the snapshots to the kernel
+	 * and re-read them from the locals in the watchdog eviction
+	 * block below so a sibling stomp between syscall return and the
+	 * eviction read cannot redirect us to a fabricated fd value. */
+	a1 = rec->a1;
+	a2 = rec->a2;
+	a3 = rec->a3;
+	a4 = rec->a4;
+	a5 = rec->a5;
+	a6 = rec->a6;
 
 	/* Arm the alarm after releasing rec->lock.  Previously
 	 * alarm(1) was above the lock region, creating a window
@@ -182,7 +199,7 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 			kcov_enable_trace(kc);
 		}
 		fault_armed = maybe_inject_fault(child, state);
-		ret = syscall(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
+		ret = syscall(call, a1, a2, a3, a4, a5, a6);
 		saved_errno = errno;
 		kcov_disable(kc);
 	} else {
@@ -194,7 +211,7 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 			kcov_enable_trace(kc);
 		}
 		fault_armed = maybe_inject_fault(child, state);
-		ret = syscall32(call, rec->a1, rec->a2, rec->a3, rec->a4, rec->a5, rec->a6);
+		ret = syscall32(call, a1, a2, a3, a4, a5, a6);
 		saved_errno = errno;
 		kcov_disable(kc);
 	}
@@ -225,6 +242,69 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 
 	if (needalarm)
 		(void)alarm(0);
+
+	/* In-child watchdog eviction window.  The 1s alarm above bounds
+	 * how long the kernel can hold us inside a single syscall; on
+	 * fire it interrupts the syscall with EINTR and the handler in
+	 * signals.c sets sigalrm_pending.  We do the fd-eviction work
+	 * HERE -- after the syscall has returned and alarm(0) has
+	 * disarmed, but BEFORE the lock region below publishes state =
+	 * AFTER -- rather than from the signal handler (async-signal-
+	 * unsafe to walk fd_event_ring there) or from the child main
+	 * loop's sigalrm_pending branch (which the BEFORE -> AFTER
+	 * transition would otherwise race past, leaving the eviction
+	 * unreachable).  The conjunction below is the conservative
+	 * "our watchdog actually fired on a blocking syscall" predicate:
+	 * sigalrm_pending alone can be set by any fuzzed SIGALRM source,
+	 * but the combination of our own alarm being armed, the syscall
+	 * returning EINTR, and the child running a normal syscall op is
+	 * specific to the watchdog path. */
+	if (needalarm && sigalrm_pending &&
+	    ret == (unsigned long)-1L && saved_errno == EINTR &&
+	    child != NULL && child->op_type == CHILD_OP_SYSCALL) {
+		uint8_t mask = entry->fd_arg_mask;
+
+		/* check_if_fd() treats ARG_SOCKETINFO in slot 0 as an fd
+		 * (post-sanitise the slot holds the resulting fd, not the
+		 * socketinfo struct).  is_fdarg() does not, so the cached
+		 * fd_arg_mask omits this slot.  Mirror the legacy behaviour
+		 * here so the patch is behaviour-preserving relative to the
+		 * old handle_alarm_timeout() walker. */
+		if (entry->argtype[0] == ARG_SOCKETINFO)
+			mask |= 0x01;
+
+		if (mask != 0) {
+			unsigned long args[6] = { a1, a2, a3, a4, a5, a6 };
+
+			child->fd_lifetime = 0;
+
+			stats_ring_enqueue(child->stats_ring,
+					   STATS_FIELD_WATCHDOG_FD_EVICT,
+					   0, 1);
+
+			while (mask != 0) {
+				unsigned int slot = (unsigned int)__builtin_ctz(mask);
+				unsigned long fd = args[slot];
+
+				mask &= (uint8_t)(mask - 1);
+
+				if (fd > max_files_rlimit.rlim_cur)
+					continue;
+
+				if (child->fd_event_ring != NULL)
+					fd_event_enqueue(child->fd_event_ring,
+							 FD_EVENT_CLOSE,
+							 (int) fd);
+			}
+		}
+
+		/* Eviction handled here; clear the pending flag so the child
+		 * main loop's sigalrm_pending branch sees a no-op for this
+		 * SIGALRM.  The housekeeping there (alarm(0) and the same
+		 * pending clear) still covers other op_type paths and races
+		 * where the flag is set outside this dispatch window. */
+		sigalrm_pending = 0;
+	}
 
 	lock(&rec->lock);
 	rec->errno_post = saved_errno;

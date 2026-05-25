@@ -48,6 +48,10 @@ enum stats_field {
 	STATS_FIELD_GET_WRITABLE_SCRIBBLED_POSTMP_SHM,
 	STATS_FIELD_GET_WRITABLE_ENOMEM_EXHAUSTED,
 	STATS_FIELD_CHILDREN_RECYCLED_ON_STORM,
+	STATS_FIELD_WATCHDOG_FD_EVICT,	/* in-child 1s SIGALRM watchdog evicted
+						 * a stuck-on-fd syscall.  Bumped
+						 * once per fired-eviction event,
+						 * not once per fd. */
 	STATS_FIELD_UNSHARE_NEWNET_THROTTLED,
 	STATS_FIELD_RANGE_REJECTS_PER_SYSCALL_64,	/* aux = syscall nr */
 	STATS_FIELD_RANGE_REJECTS_PER_SYSCALL_32,	/* aux = syscall nr */
@@ -134,6 +138,7 @@ struct stats_aggregate {
 	unsigned long get_writable_address_scribbled_postmp_shm;
 	unsigned long get_writable_address_enomem_exhausted;
 	unsigned long children_recycled_on_storm;
+	unsigned long watchdog_fd_evict;
 	unsigned long unshare_newnet_throttled;
 	unsigned long range_overlaps_shared_rejects_per_syscall_64[MAX_NR_SYSCALL];
 	unsigned long range_overlaps_shared_rejects_per_syscall_32[MAX_NR_SYSCALL];

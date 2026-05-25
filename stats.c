@@ -3739,6 +3739,9 @@ void dump_stats(void)
 	if (parent_stats.children_recycled_on_storm)
 		stat_row("corruption", "children_recycled_on_storm",
 			 parent_stats.children_recycled_on_storm);
+	if (parent_stats.watchdog_fd_evict)
+		stat_row("watchdog", "watchdog_fd_evict",
+			 parent_stats.watchdog_fd_evict);
 
 	if (verbosity > 1)
 		dump_syscall_category_histogram();

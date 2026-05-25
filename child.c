@@ -993,31 +993,6 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 }
 
 /*
- * Check if a SIGALRM timeout indicates a stuck-on-fd situation.
- * If so, evict the fd and notify the parent.
- * Only meaningful for CHILD_OP_SYSCALL — other op types don't use the
- * syscall record, so skip the fd-eviction logic for them.
- */
-static void handle_alarm_timeout(struct childdata *child)
-{
-	struct syscallrecord *rec = &child->syscall;
-
-	if (child->op_type != CHILD_OP_SYSCALL)
-		return;
-
-	if (rec->state != BEFORE)
-		return;
-
-	if (check_if_fd(rec) == true) {
-		child->fd_lifetime = 0;
-
-		if (child->fd_event_ring != NULL)
-			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
-					 (int) rec->a1);
-	}
-}
-
-/*
  * Stall detection: count consecutive alarm timeouts without the child
  * making forward progress (op_nr advancing).  If the child is stuck,
  * exit it so the parent can respawn a fresh one.
@@ -2048,7 +2023,6 @@ void child_process(struct childdata *child, int childno)
 		if (sigalrm_pending) {
 			sigalrm_pending = 0;
 			alarm(0);
-			handle_alarm_timeout(child);
 			if (check_stall(child))
 				goto out;
 			if (child->kill_count > 0) {

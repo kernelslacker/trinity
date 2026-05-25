@@ -130,6 +130,9 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	case STATS_FIELD_CHILDREN_RECYCLED_ON_STORM:
 		parent_stats.children_recycled_on_storm += delta;
 		break;
+	case STATS_FIELD_WATCHDOG_FD_EVICT:
+		parent_stats.watchdog_fd_evict += delta;
+		break;
 	case STATS_FIELD_UNSHARE_NEWNET_THROTTLED:
 		parent_stats.unshare_newnet_throttled += delta;
 		break;
