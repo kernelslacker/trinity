@@ -27,12 +27,11 @@
  * so the alternative reward shape is visible without changing the
  * learner's behaviour.
  *
- * Today's arms are heuristic, uniform random, coverage-frontier, and
- * HEALER pair-bias (see enum strategy_t below); each becomes an arm
- * the bandit picker scores against the others.  Future arms under
- * consideration (group-saturation, newly-discovered, genetic) slot
- * into the same dispatch -- adding one is an enum entry plus a
- * pick_syscall hook.
+ * Today's arms are heuristic, uniform random, and coverage-frontier
+ * (see enum strategy_t below); each becomes an arm the bandit picker
+ * scores against the others.  Future arms under consideration
+ * (group-saturation, newly-discovered, genetic) slot into the same
+ * dispatch -- adding one is an enum entry plus a pick_syscall hook.
  */
 
 enum strategy_t {
@@ -41,12 +40,6 @@ enum strategy_t {
 	STRATEGY_COVERAGE_FRONTIER, /* roulette-wheel weighted by per-syscall
 				     * frontier-edge count (see frontier_*
 				     * APIs below) */
-	STRATEGY_HEALER,	/* HEALER (SOSP'21): bias picks toward
-				 * known-productive (predecessor -> succ)
-				 * relations recorded by the Phase A
-				 * observer.  Eligibility gated on either
-				 * a meaningfully-populated pair table or
-				 * a coverage-plateau signal. */
 	NR_STRATEGIES,
 };
 
@@ -371,12 +364,8 @@ void strategy_plateau_response(void);
 
 /*
  * Per-arm eligibility check used by pick_next_strategy() to skip arms
- * whose preconditions are not yet met.  Arms without preconditions
- * return true unconditionally.  STRATEGY_HEALER is the first arm with
- * a real precondition; the readiness decision itself lives next to the
- * encoding it inspects -- see healer_strategy_ready() in healer.h --
- * and this function delegates after checking the operator-facing
- * no_healer kill switch.
+ * whose preconditions are not yet met.  No arm has a precondition
+ * today; the hook stays in case a future arm needs one.
  */
 bool is_strategy_eligible(int arm);
 

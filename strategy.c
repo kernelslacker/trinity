@@ -150,23 +150,13 @@ const char *strategy_name(int arm)
 	case STRATEGY_HEURISTIC:		return "HEURISTIC";
 	case STRATEGY_RANDOM:			return "RANDOM";
 	case STRATEGY_COVERAGE_FRONTIER:	return "COVERAGE_FRONTIER";
-	case STRATEGY_HEALER:			return "HEALER";
 	default:				return "?";
 	}
 }
 
 bool is_strategy_eligible(int arm)
 {
-	if (arm < 0 || arm >= NR_STRATEGIES)
-		return false;
-
-	if (arm == STRATEGY_HEALER) {
-		if (no_healer)
-			return false;
-		return healer_strategy_ready();
-	}
-
-	return true;
+	return arm >= 0 && arm < NR_STRATEGIES;
 }
 
 /*
@@ -742,10 +732,9 @@ int pick_next_strategy(int prev, enum strategy_selection_reason *reason_out)
 
 	mode = __atomic_load_n(&shm->picker_mode, __ATOMIC_RELAXED);
 
-	/* Cache per-arm eligibility once: the check can scan O(MAX_NR_SYSCALL^2)
-	 * cells for STRATEGY_HEALER and we consult it twice (cold-start scan
-	 * and UCB1 score loop).  Round-robin still needs the cache so it can
-	 * skip past an ineligible arm without falling off NR_STRATEGIES. */
+	/* Cache per-arm eligibility once.  No arm has an expensive precondition
+	 * today, but the hook stays so a future arm with one slots in here
+	 * without changing the picker dispatch. */
 	for (i = 0; i < NR_STRATEGIES; i++)
 		eligible[i] = is_strategy_eligible(i);
 
@@ -925,13 +914,6 @@ static enum random_rescue_class dominant_rescue_class(void)
  * available -- placeholder classes whose underlying infrastructure
  * does not exist yet, the unknown bucket, and the "no class
  * dominant" sentinel.
- *
- * HEALER targeted arms fall back to RANDOM when HEALER is ineligible
- * (compiled out, --no-healer, or the eligibility scan still says no)
- * so the intervention does not stall on an arm that cannot run.  The
- * plateau_active path inside is_strategy_eligible already bypasses
- * the pair-cell threshold, so the eligibility check here is
- * primarily a guard against the no_healer case.
  */
 static int amplified_intervention_arm(enum random_rescue_class c)
 {
@@ -939,8 +921,6 @@ static int amplified_intervention_arm(enum random_rescue_class c)
 	case RRC_MISSING_PAIR:
 	case RRC_UNSEEN_SUCCESSOR:
 	case RRC_STALE_PAIR:
-		if (is_strategy_eligible(STRATEGY_HEALER))
-			return STRATEGY_HEALER;
 		return STRATEGY_RANDOM;
 	case RRC_COLD_SKIP:
 		/* Heuristic with cold-skip suppressed -- the set_syscall_nr_

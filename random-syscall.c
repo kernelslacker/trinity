@@ -544,8 +544,6 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 		return set_syscall_nr_random(rec, child);
 	case STRATEGY_COVERAGE_FRONTIER:
 		return set_syscall_nr_coverage_frontier(rec, child);
-	case STRATEGY_HEALER:
-		return set_syscall_nr_healer(rec, child);
 	default:
 		__builtin_unreachable();
 	}
