@@ -512,25 +512,30 @@ static void json_emit_cmp_hints_section(void)
 		total_hints, syscalls_with_hints);
 }
 
-static void json_emit_edgepair_section(void)
+#define EDGEPAIR_TOP_N 10
+
+struct edgepair_top_entry {
+	unsigned int prev_nr;
+	unsigned int curr_nr;
+	unsigned long new_edges;
+};
+
+/*
+ * Walk parent_edgepair.table[] and gather the top-N entries by new_edge_count
+ * along with the count of cold-parent pairs. Shared by the JSON and text
+ * emission paths; each caller formats top[]/top_count/cold_pairs in its own
+ * way.
+ */
+static unsigned int
+edgepair_collect_summary(struct edgepair_top_entry top[EDGEPAIR_TOP_N],
+			 unsigned int *out_cold_pairs)
 {
 	unsigned int i, j;
 	unsigned int top_count = 0;
 	unsigned int cold_pairs = 0;
-	struct {
-		unsigned int prev_nr;
-		unsigned int curr_nr;
-		unsigned long new_edges;
-	} top[10];
-	const struct syscalltable *table;
-	unsigned int nr_max;
 
-	if (!edgepair_is_enabled()) {
-		fputs(",\"edgepair\":null", stdout);
-		return;
-	}
+	memset(top, 0, sizeof(struct edgepair_top_entry) * EDGEPAIR_TOP_N);
 
-	memset(top, 0, sizeof(top));
 	for (i = 0; i < EDGEPAIR_TABLE_SIZE; i++) {
 		struct edgepair_entry *e = &parent_edgepair.table[i];
 		unsigned long edges;
@@ -544,17 +549,37 @@ static void json_emit_edgepair_section(void)
 			cold_pairs++;
 
 		for (j = top_count; j > 0 && edges > top[j - 1].new_edges; j--) {
-			if (j < 10)
+			if (j < EDGEPAIR_TOP_N)
 				top[j] = top[j - 1];
 		}
-		if (j < 10) {
+		if (j < EDGEPAIR_TOP_N) {
 			top[j].prev_nr = e->prev_nr;
 			top[j].curr_nr = e->curr_nr;
 			top[j].new_edges = edges;
-			if (top_count < 10)
+			if (top_count < EDGEPAIR_TOP_N)
 				top_count++;
 		}
 	}
+
+	*out_cold_pairs = cold_pairs;
+	return top_count;
+}
+
+static void json_emit_edgepair_section(void)
+{
+	unsigned int j;
+	unsigned int top_count;
+	unsigned int cold_pairs;
+	struct edgepair_top_entry top[EDGEPAIR_TOP_N];
+	const struct syscalltable *table;
+	unsigned int nr_max;
+
+	if (!edgepair_is_enabled()) {
+		fputs(",\"edgepair\":null", stdout);
+		return;
+	}
+
+	top_count = edgepair_collect_summary(top, &cold_pairs);
 
 	printf(",\"edgepair\":{\"unique_pairs\":%lu,\"total_pair_calls\":%lu,"
 		"\"inserts_dropped\":%lu,\"cold_pairs\":%u,\"top_pairs\":[",
@@ -4913,16 +4938,10 @@ void dump_stats(void)
 	}
 
 	if (edgepair_is_enabled()) {
-		unsigned int top_count = 0;
-		unsigned int cold_pairs = 0;
-		struct {
-			unsigned int prev_nr;
-			unsigned int curr_nr;
-			unsigned long new_edges;
-		} top[10];
+		unsigned int top_count;
+		unsigned int cold_pairs;
+		struct edgepair_top_entry top[EDGEPAIR_TOP_N];
 		unsigned int j;
-
-		memset(top, 0, sizeof(top));
 
 		stat_row("edgepair_coverage", "unique_pairs",     parent_edgepair.pairs_tracked);
 		stat_row("edgepair_coverage", "total_pair_calls", parent_edgepair.total_pair_calls);
@@ -4930,32 +4949,7 @@ void dump_stats(void)
 		if (parent_edgepair.pairs_dropped > 0)
 			stat_row("edgepair_coverage", "inserts_dropped", parent_edgepair.pairs_dropped);
 
-		for (i = 0; i < EDGEPAIR_TABLE_SIZE; i++) {
-			struct edgepair_entry *e = &parent_edgepair.table[i];
-			unsigned long edges;
-
-			if (e->prev_nr == EDGEPAIR_EMPTY)
-				continue;
-
-			edges = e->new_edge_count;
-			if (edges == 0)
-				continue;
-
-			if (edgepair_entry_is_cold_parent(e))
-				cold_pairs++;
-
-			for (j = top_count; j > 0 && edges > top[j - 1].new_edges; j--) {
-				if (j < 10)
-					top[j] = top[j - 1];
-			}
-			if (j < 10) {
-				top[j].prev_nr = e->prev_nr;
-				top[j].curr_nr = e->curr_nr;
-				top[j].new_edges = edges;
-				if (top_count < 10)
-					top_count++;
-			}
-		}
+		top_count = edgepair_collect_summary(top, &cold_pairs);
 
 		if (top_count > 0) {
 			const struct syscalltable *table = biarch ? syscalls_64bit : syscalls;
