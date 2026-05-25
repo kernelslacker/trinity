@@ -32,6 +32,16 @@
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot retarget the re-issue at a different fd or
  * redirect the source memcpy at a foreign user buffer.
+ *
+ * Even with the magic-cookie gate on snap, a heap-shaped redirect to a
+ * foreign chunk could in principle carry the matching cookie by
+ * coincidence -- the snap holds inner pointers (usockaddr, usockaddr_len)
+ * that the post handler dereferences for the equality oracle, so a
+ * cookie-collision foreign chunk would feed garbage inner pointers into
+ * the source memcpy.  Register the snap address in the post-state
+ * ownership table at sanitise time so the post handler can confirm the
+ * snap it is about to dereference is one we actually allocated, not a
+ * coincidental match on a foreign chunk.
  */
 #define GETSOCKNAME_POST_STATE_MAGIC	0x47534E4DUL	/* "GSNM" */
 struct getsockname_post_state {
@@ -91,6 +101,7 @@ static void sanitise_getsockname(struct syscallrecord *rec)
 	snap->usockaddr     = rec->a2;
 	snap->usockaddr_len = rec->a3;
 	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
 #endif
 }
 
@@ -184,6 +195,24 @@ static void post_getsockname(struct syscallrecord *rec)
 			  "(post_state-stomped to foreign allocation?)\n",
 			  snap->magic);
 		post_handler_corrupt_ptr_bump(rec, NULL);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Shape + magic passed, but a foreign chunk could in principle
+	 * carry the matching cookie by coincidence (e.g. another in-flight
+	 * getsockname child's snap, or a stale snap a sibling stomp
+	 * resurrected by redirecting rec->post_state at it).  The
+	 * subsequent oracle path dereferences snap->usockaddr and
+	 * snap->usockaddr_len, so a coincidental match would feed garbage
+	 * inner pointers into the source memcpy.  Verify against the
+	 * ownership table -- a value not registered cannot be one we
+	 * produced.
+	 */
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_getsockname: rejected post_state=%p not in ownership table "
+			  "(post_state-redirected?)\n", snap);
 		rec->post_state = 0;
 		return;
 	}
@@ -306,6 +335,7 @@ static void post_getsockname(struct syscallrecord *rec)
 	}
 
 out_free:
+	post_state_unregister(snap);
 	deferred_freeptr(&rec->post_state);
 }
 #endif
