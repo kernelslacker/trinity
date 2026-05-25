@@ -44,6 +44,13 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 		iocbs[i].aio_nbytes = 4096;
 		iocbs[i].aio_offset = rnd_modulo_u32(65536);
 		iocbs[i].aio_data = i;
+		if (rnd_modulo_u32(100) < 30) {
+			int eventfd_fd = get_typed_fd(ARG_FD_EVENTFD);
+			if (eventfd_fd >= 0) {
+				iocbs[i].aio_flags |= IOCB_FLAG_RESFD;
+				iocbs[i].aio_resfd = eventfd_fd;
+			}
+		}
 		iocbpp[i] = &iocbs[i];
 	}
 
