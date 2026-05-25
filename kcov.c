@@ -966,11 +966,16 @@ void kcov_plateau_check(void)
 		return;
 	}
 
-	if ((now - kcov_shm->plateau_window_start) < KCOV_PLATEAU_WINDOW_SEC)
+	if ((now - __atomic_load_n(&kcov_shm->plateau_window_start,
+				   __ATOMIC_RELAXED)) < KCOV_PLATEAU_WINDOW_SEC)
 		return;
 
-	delta = (edges_now >= kcov_shm->plateau_prev_edges)
-		? edges_now - kcov_shm->plateau_prev_edges : 0;
+	{
+		unsigned long prev_edges =
+			__atomic_load_n(&kcov_shm->plateau_prev_edges,
+					__ATOMIC_RELAXED);
+		delta = (edges_now >= prev_edges) ? edges_now - prev_edges : 0;
+	}
 	__atomic_store_n(&kcov_shm->plateau_last_window_delta, delta,
 			 __ATOMIC_RELAXED);
 	__atomic_store_n(&kcov_shm->plateau_prev_edges, edges_now,
@@ -984,7 +989,8 @@ void kcov_plateau_check(void)
 		 * from healthy into PLATEAU.  Subsequent ticks while still in
 		 * plateau stay silent so the operator's stats.log gets one
 		 * line per episode rather than one per 600s window. */
-		if (!kcov_shm->plateau_active) {
+		if (!__atomic_load_n(&kcov_shm->plateau_active,
+				     __ATOMIC_ACQUIRE)) {
 			/* Set entered_at BEFORE the RELEASE-store of
 			 * plateau_active so a child reader pairing an
 			 * ACQUIRE-load of plateau_active with a subsequent
@@ -1009,8 +1015,11 @@ void kcov_plateau_check(void)
 			 * yet; bypass the gate via a one-shot. */
 			kcov_bitmap_maybe_snapshot();
 		}
-	} else if (kcov_shm->plateau_active) {
-		long minutes = (now - kcov_shm->plateau_entered_at) / 60;
+	} else if (__atomic_load_n(&kcov_shm->plateau_active,
+				   __ATOMIC_ACQUIRE)) {
+		long minutes = (now - __atomic_load_n(
+				&kcov_shm->plateau_entered_at,
+				__ATOMIC_RELAXED)) / 60;
 
 		/* Clear entered_at before publishing plateau_active=false;
 		 * mirrors the entry-path ordering so a child reader sees

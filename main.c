@@ -1578,7 +1578,9 @@ static void print_stats(void)
 				 */
 				enum picker_mode_t pmode = (enum picker_mode_t)__atomic_load_n(
 					&shm->picker_mode, __ATOMIC_RELAXED);
-				bool plateau = kcov_shm->plateau_active;
+				bool plateau = __atomic_load_n(
+					&kcov_shm->plateau_active,
+					__ATOMIC_ACQUIRE);
 				/*
 				 * Coalesce identical PICKER lines.  In steady-state runs
 				 * the tuple (pmode, explorers, plateau) is unchanged
@@ -2022,11 +2024,14 @@ void reset_epoch_state(void)
 	/* fleet_op_count anchor for the next STRATEGY_WINDOW interval */
 	shm->syscalls_at_last_switch = 0;
 	/* pc_edge_calls_by_strategy[prev] snapshot for next call-count delta */
-	shm->pc_edge_calls_at_window_start = 0;
+	__atomic_store_n(&shm->pc_edge_calls_at_window_start, 0UL,
+			 __ATOMIC_RELAXED);
 	/* pc_edge_count_by_strategy[prev] snapshot for next bucket-count delta */
-	shm->pc_edge_count_at_window_start = 0;
+	__atomic_store_n(&shm->pc_edge_count_at_window_start, 0UL,
+			 __ATOMIC_RELAXED);
 	/* bandit_cmp_new_constants[prev] snapshot for next cmp-novelty delta */
-	shm->bandit_cmp_at_window_start = 0;
+	__atomic_store_n(&shm->bandit_cmp_at_window_start, 0UL,
+			 __ATOMIC_RELAXED);
 	for_each_child(i) {
 		__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);
 		clean_childdata(children[i]);

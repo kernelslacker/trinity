@@ -785,10 +785,14 @@ static void maybe_rotate_strategy(void)
 
 	calls_now = __atomic_load_n(&shm->pc_edge_calls_by_strategy[prev],
 				    __ATOMIC_RELAXED);
-	calls_in_window = calls_now - shm->pc_edge_calls_at_window_start;
+	calls_in_window = calls_now -
+		__atomic_load_n(&shm->pc_edge_calls_at_window_start,
+				__ATOMIC_RELAXED);
 	edges_now = __atomic_load_n(&shm->pc_edge_count_by_strategy[prev],
 				    __ATOMIC_RELAXED);
-	edges_in_window = edges_now - shm->pc_edge_count_at_window_start;
+	edges_in_window = edges_now -
+		__atomic_load_n(&shm->pc_edge_count_at_window_start,
+				__ATOMIC_RELAXED);
 	syscalls_in_window = now - last;
 
 	/* CMP-novelty delta: number of comparison constants the active arm
@@ -799,7 +803,9 @@ static void maybe_rotate_strategy(void)
 	 * lose to a noisier arm on PC delta alone. */
 	cmp_now = __atomic_load_n(&shm->bandit_cmp_new_constants[prev],
 				  __ATOMIC_RELAXED);
-	cmp_in_window = cmp_now - shm->bandit_cmp_at_window_start;
+	cmp_in_window = cmp_now -
+		__atomic_load_n(&shm->bandit_cmp_at_window_start,
+				__ATOMIC_RELAXED);
 
 	/* Feed the just-finished window into the bandit before asking
 	 * the picker to choose the next arm, so UCB1 sees up-to-date
@@ -843,15 +849,18 @@ static void maybe_rotate_strategy(void)
 		next_reason = SR_ROUND_ROBIN;
 	}
 
-	shm->pc_edge_calls_at_window_start =
-		__atomic_load_n(&shm->pc_edge_calls_by_strategy[next],
-				__ATOMIC_RELAXED);
-	shm->pc_edge_count_at_window_start =
-		__atomic_load_n(&shm->pc_edge_count_by_strategy[next],
-				__ATOMIC_RELAXED);
-	shm->bandit_cmp_at_window_start =
-		__atomic_load_n(&shm->bandit_cmp_new_constants[next],
-				__ATOMIC_RELAXED);
+	__atomic_store_n(&shm->pc_edge_calls_at_window_start,
+			 __atomic_load_n(&shm->pc_edge_calls_by_strategy[next],
+					 __ATOMIC_RELAXED),
+			 __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->pc_edge_count_at_window_start,
+			 __atomic_load_n(&shm->pc_edge_count_by_strategy[next],
+					 __ATOMIC_RELAXED),
+			 __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->bandit_cmp_at_window_start,
+			 __atomic_load_n(&shm->bandit_cmp_new_constants[next],
+					 __ATOMIC_RELAXED),
+			 __ATOMIC_RELAXED);
 	/* Publish the selection reason BEFORE current_strategy: the RELEASE
 	 * store on current_strategy below pairs with the picker's and the
 	 * plateau gates' ACQUIRE loads of current_strategy, making the

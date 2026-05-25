@@ -267,8 +267,11 @@ struct shm_s {
 	 *   Let the next switch compute the per-window deltas as
 	 *   pc_edge_calls_by_strategy[prev] - pc_edge_calls_at_window_start
 	 *   (call-count delta), and similarly for the bucket-count series.
-	 *   Written only by the CAS-winning child during a switch —
-	 *   sequential w.r.t. the CAS, so no atomic needed.
+	 *   Written only by the CAS-winning child during a switch and read
+	 *   back by the next CAS-winning child; accesses are RELAXED-atomic
+	 *   so the cross-arch shared-memory discipline stays uniform with
+	 *   the surrounding per-strategy counter fields rather than relying
+	 *   on the CAS for ordering.
 	 *
 	 * pc_edge_calls_by_strategy[]: cumulative count of SYSCALL CALLS
 	 *   attributed to each strategy whose post-call kcov_collect()
@@ -696,7 +699,10 @@ struct shm_s {
 	 * this snapshot to compute the cmp-novelty delta the just-finished
 	 * window produced, then reseeds the snapshot from the next arm's
 	 * counter.  Single field rather than per-arm because only one arm
-	 * is active per window.  Written only by the CAS-winning child.
+	 * is active per window.  Written only by the CAS-winning child and
+	 * read back by the next; accesses are RELAXED-atomic to keep the
+	 * shared-memory discipline uniform with the companion *_at_window_start
+	 * fields rather than relying on the CAS for cross-arch ordering.
 	 */
 	unsigned long bandit_cmp_at_window_start;
 

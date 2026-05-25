@@ -262,8 +262,10 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 	now_window = __atomic_load_n(&shm->bandit_window_count,
 				     __ATOMIC_RELAXED);
 	for (i = 0; i < NR_STRATEGIES; i++) {
-		unsigned long p = shm->recent_pulls_x1000[i];
-		unsigned long r = shm->recent_reward_x1000[i];
+		unsigned long p = __atomic_load_n(&shm->recent_pulls_x1000[i],
+						  __ATOMIC_RELAXED);
+		unsigned long r = __atomic_load_n(&shm->recent_reward_x1000[i],
+						  __ATOMIC_RELAXED);
 
 		__atomic_store_n(&shm->recent_pulls_x1000[i],
 				 bandit_ema_decay(p), __ATOMIC_RELAXED);
@@ -647,8 +649,10 @@ void frontier_window_advance(void)
  */
 static double ucb1_score(int arm, double total_n, double norm)
 {
-	unsigned long pulls_x1000 = shm->recent_pulls_x1000[arm];
-	unsigned long reward_x1000 = shm->recent_reward_x1000[arm];
+	unsigned long pulls_x1000 = __atomic_load_n(&shm->recent_pulls_x1000[arm],
+						    __ATOMIC_RELAXED);
+	unsigned long reward_x1000 = __atomic_load_n(&shm->recent_reward_x1000[arm],
+						     __ATOMIC_RELAXED);
 	double n_i, mean, exploit, explore;
 
 	if (pulls_x1000 == 0)
@@ -680,7 +684,8 @@ static unsigned long bandit_total_picks(int arm)
 	int r;
 
 	for (r = 0; r < NR_SELECTION_REASONS; r++)
-		total += shm->bandit_pulls_by_reason[arm][r];
+		total += __atomic_load_n(&shm->bandit_pulls_by_reason[arm][r],
+					 __ATOMIC_RELAXED);
 	return total;
 }
 
@@ -788,7 +793,8 @@ int pick_next_strategy(int prev, enum strategy_selection_reason *reason_out)
 	for (i = 0; i < NR_STRATEGIES; i++) {
 		if (!eligible[i])
 			continue;
-		total_n += (double)shm->recent_pulls_x1000[i] /
+		total_n += (double)__atomic_load_n(&shm->recent_pulls_x1000[i],
+						   __ATOMIC_RELAXED) /
 			   (double)BANDIT_EMA_SCALE;
 	}
 	if (total_n < 1.0)
@@ -808,8 +814,10 @@ int pick_next_strategy(int prev, enum strategy_selection_reason *reason_out)
 
 		if (!eligible[i])
 			continue;
-		p = shm->recent_pulls_x1000[i];
-		r = shm->recent_reward_x1000[i];
+		p = __atomic_load_n(&shm->recent_pulls_x1000[i],
+				    __ATOMIC_RELAXED);
+		r = __atomic_load_n(&shm->recent_reward_x1000[i],
+				    __ATOMIC_RELAXED);
 		if (p == 0)
 			continue;
 		mean = (double)r / (double)p;

@@ -127,8 +127,10 @@ void init_shm(void)
 	__atomic_store_n(&shm->current_selection_reason,
 			 (int)SR_COLD_START, __ATOMIC_RELAXED);
 	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL, __ATOMIC_RELAXED);
-	shm->pc_edge_calls_at_window_start = 0;
-	shm->pc_edge_count_at_window_start = 0;
+	__atomic_store_n(&shm->pc_edge_calls_at_window_start, 0UL,
+			 __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->pc_edge_count_at_window_start, 0UL,
+			 __ATOMIC_RELAXED);
 
 	/* Optimistic seed for the biarch picker's per-table validity cache.
 	 * The authoritative pass through validate_syscall_table_{32,64}() at
