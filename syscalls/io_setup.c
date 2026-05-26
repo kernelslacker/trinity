@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include "objects.h"
 #include "pids.h"
+#include "publish_resource.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -45,14 +46,10 @@ REG_GLOBAL_OBJ(aio_ctx, init_aio_ctx_pool);
 
 void register_aio_ctx(unsigned long ctx)
 {
-	struct object *obj;
-
 	if (ctx == 0)
 		return;
 
-	obj = alloc_object();
-	obj->aioobj.ctx = ctx;
-	add_object(obj, OBJ_LOCAL, OBJ_AIO_CTX);
+	publish_resource(OBJ_AIO_CTX, ctx, NULL);
 }
 
 unsigned long get_random_aio_ctx(void)
