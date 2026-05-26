@@ -4,7 +4,7 @@
 
 #include <stdio.h>
 
-#include "objects.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "sanitise.h"
 #include "memfd.h"
@@ -108,17 +108,16 @@ static void sanitise_memfd_create(struct syscallrecord *rec)
 
 static void post_memfd_create(struct syscallrecord *rec)
 {
-	struct object *new;
 	int fd = rec->retval;
 
 	if ((long)rec->retval < 0)
 		return;
 
-	new = alloc_object();
-	new->memfdobj.fd = fd;
-	new->memfdobj.name = NULL;
-	new->memfdobj.flags = rec->a2;
-	add_object(new, OBJ_LOCAL, OBJ_FD_MEMFD);
+	struct resource_meta meta = {
+		.flags = rec->a2,
+		.name = NULL,
+	};
+	publish_resource(OBJ_FD_MEMFD, fd, &meta);
 }
 
 struct syscallentry syscall_memfd_create = {
