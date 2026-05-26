@@ -74,6 +74,8 @@ static void kvm_vm_dump(struct object *obj, enum obj_scope scope)
 static void kvm_vcpu_destructor(struct object *obj)
 {
 	if (obj->kvmvcpuobj.kvm_run != NULL) {
+		untrack_shared_region((unsigned long)obj->kvmvcpuobj.kvm_run,
+				      obj->kvmvcpuobj.kvm_run_size);
 		munmap(obj->kvmvcpuobj.kvm_run, obj->kvmvcpuobj.kvm_run_size);
 		obj->kvmvcpuobj.kvm_run = NULL;
 	}
@@ -120,6 +122,9 @@ static void kvm_system_destructor(struct object *obj)
 
 		for_each_obj(vcpuhead, peer, idx) {
 			if (peer->kvmvcpuobj.kvm_run != NULL) {
+				untrack_shared_region(
+					(unsigned long)peer->kvmvcpuobj.kvm_run,
+					peer->kvmvcpuobj.kvm_run_size);
 				munmap(peer->kvmvcpuobj.kvm_run,
 				       peer->kvmvcpuobj.kvm_run_size);
 				peer->kvmvcpuobj.kvm_run = NULL;

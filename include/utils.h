@@ -78,6 +78,18 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len);
  */
 bool range_in_tracked_shared(unsigned long addr, unsigned long len);
 void track_shared_region(unsigned long addr, unsigned long size);
+/*
+ * Inverse of track_shared_region() / alloc_shared().  Removes the
+ * matching shared_regions[] entry (exact addr+size) and undoes the
+ * bitmap refcount/bit it contributed.  Call from destructors that
+ * munmap a previously-tracked region BEFORE the munmap, so a
+ * concurrent range_overlaps_shared() check that fires between untrack
+ * and munmap sees the now-permissive gate against a still-valid
+ * mapping rather than the still-rejecting gate against a freed one
+ * (the unsafe direction).  A miss returns silently -- intentional, see
+ * the rationale in utils.c.
+ */
+void untrack_shared_region(unsigned long addr, unsigned long size);
 void register_loaded_image_segments(void);
 
 /*

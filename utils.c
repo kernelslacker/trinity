@@ -108,6 +108,25 @@ static unsigned int nr_shared_regions_overflow;
 
 static unsigned long shared_region_bitmap[SHARED_BITMAP_NWORDS];
 
+/*
+ * Per-chunk refcount paired with shared_region_bitmap above.  Multiple
+ * tracked regions may live in the same 2 MiB chunk (every alloc_shared
+ * call rounds up to a chunk for bitmap purposes; nothing forbids two
+ * adjacent mmaps landing in the same chunk).  The bit must stay set
+ * until the LAST tracked region in the chunk is removed -- clearing it
+ * on the first untrack would flip the safety invariant from
+ * "over-reject" to "under-reject" for the surviving region in the
+ * chunk, exactly the failure mode this whole guard exists to prevent.
+ *
+ * uint16_t covers the worst-case occupancy by a comfortable margin
+ * (MAX_SHARED_ALLOCS + overflow tail = 4352 << 65535) and bumps BSS
+ * from 8 MiB (the bitmap alone) to 8 MiB + 128 MiB.  Same lazy-faulting
+ * argument as the bitmap: only chunks touched by registrations ever
+ * fault their backing page in, so true resident growth stays in the
+ * tens of KiB for the typical clustered fleet-host layout.
+ */
+static uint16_t shared_region_refcount[SHARED_BITMAP_NBITS];
+
 static inline bool shared_bitmap_test(unsigned long bit)
 {
 	return (shared_region_bitmap[bit / SHARED_BITMAP_BITS_PER_WORD] >>
@@ -118,6 +137,12 @@ static inline void shared_bitmap_set(unsigned long bit)
 {
 	shared_region_bitmap[bit / SHARED_BITMAP_BITS_PER_WORD] |=
 		1UL << (bit % SHARED_BITMAP_BITS_PER_WORD);
+}
+
+static inline void shared_bitmap_clear(unsigned long bit)
+{
+	shared_region_bitmap[bit / SHARED_BITMAP_BITS_PER_WORD] &=
+		~(1UL << (bit % SHARED_BITMAP_BITS_PER_WORD));
 }
 
 /*
@@ -150,8 +175,60 @@ static void shared_bitmap_mark(unsigned long addr, unsigned long size)
 	first = addr >> SHARED_BITMAP_GRANULARITY_LOG2;
 	last = end >> SHARED_BITMAP_GRANULARITY_LOG2;
 
-	for (bit = first; bit <= last; bit++)
+	for (bit = first; bit <= last; bit++) {
+		if (shared_region_refcount[bit] == UINT16_MAX) {
+			outputerr("shared_bitmap_mark: refcount overflow at "
+				  "chunk %lu for region 0x%lx+0x%lx\n",
+				  bit, addr, size);
+			BUG("shared region refcount overflow");
+		}
+		shared_region_refcount[bit]++;
 		shared_bitmap_set(bit);
+	}
+}
+
+/*
+ * Inverse of shared_bitmap_mark().  Decrements the per-chunk refcount
+ * for every 2 MiB chunk the range spans and clears the bitmap bit only
+ * once the chunk's last tracked region is gone.  Called from
+ * untrack_shared_region() after a matching shared_regions[] slot has
+ * been located, so an inconsistency (refcount==0 on a chunk the caller
+ * believes it tracked) is a tree-state bug worth BUG()ing on rather
+ * than silently masking -- a stuck bit with refcount==0 would falsely
+ * reject every fuzzed mm syscall touching the chunk forever.  An
+ * out-of-span unmark cannot occur in practice because shared_bitmap_
+ * mark() BUG()s on out-of-span marks, so the symmetric guard here is
+ * defence-in-depth, not a reachable path.
+ */
+static void shared_bitmap_unmark(unsigned long addr, unsigned long size)
+{
+	unsigned long end, first, last, bit;
+
+	if (size == 0)
+		return;
+
+	if (addr >= SHARED_BITMAP_VA_SPAN ||
+	    size > SHARED_BITMAP_VA_SPAN - addr) {
+		outputerr("shared_bitmap_unmark: region 0x%lx+0x%lx outside "
+			  "1<<%lu user VA span\n",
+			  addr, size, SHARED_BITMAP_VA_LOG2);
+		BUG("shared region outside bitmap span");
+	}
+
+	end = addr + size - 1;
+	first = addr >> SHARED_BITMAP_GRANULARITY_LOG2;
+	last = end >> SHARED_BITMAP_GRANULARITY_LOG2;
+
+	for (bit = first; bit <= last; bit++) {
+		if (shared_region_refcount[bit] == 0) {
+			outputerr("shared_bitmap_unmark: refcount underflow at "
+				  "chunk %lu for region 0x%lx+0x%lx\n",
+				  bit, addr, size);
+			BUG("shared region refcount underflow");
+		}
+		if (--shared_region_refcount[bit] == 0)
+			shared_bitmap_clear(bit);
+	}
 }
 
 /*
@@ -276,6 +353,60 @@ void track_shared_region(unsigned long addr, unsigned long size)
 	} else {
 		register_shared_overflow("track_shared_region", addr, size,
 					 __builtin_return_address(0));
+	}
+}
+
+/*
+ * Inverse of track_shared_region() / alloc_shared() registration.
+ * Removes the matching shared_regions[] entry (exact addr+size match)
+ * and undoes the bitmap refcount/bit it contributed, so providers that
+ * munmap their region on destructor (io_uring rings, kvm vCPU run
+ * pages) stop accumulating stale slots and stop holding the bitmap bit
+ * set after their VA has been recycled to something unrelated.
+ *
+ * Slot reuse uses swap-with-last compaction: the freed slot inherits
+ * the array tail, nr_shared_regions decrements.  Nothing depends on
+ * shared_regions[] order beyond shared_bitmap_self_check() peeking at
+ * slot 0, and that runs once at init -- well before any destructor can
+ * fire -- so the order disturbance is invisible to live code paths
+ * (range_overlaps_shared and range_in_tracked_shared both walk the
+ * whole array).
+ *
+ * Walks the overflow tail too: a provider whose registration was
+ * parked there is no less tracked from the caller's perspective and
+ * must be unregistered the same way; otherwise the tail would only
+ * ever grow.
+ *
+ * A miss returns silently rather than BUG()ing: a caller may
+ * legitimately untrack a region whose original track call was a no-op
+ * (e.g. size==0), or whose addr+size pair doesn't exactly match a
+ * registration (the slot allocator is exact-match only).  Silent miss
+ * is the same shape as Linux's __ClearPageReserved on a non-Reserved
+ * page -- the inverse of a "best effort" registration is best effort.
+ */
+void untrack_shared_region(unsigned long addr, unsigned long size)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr_shared_regions; i++) {
+		if (shared_regions[i].addr != addr ||
+		    shared_regions[i].size != size)
+			continue;
+		shared_bitmap_unmark(addr, size);
+		shared_regions[i] = shared_regions[nr_shared_regions - 1];
+		nr_shared_regions--;
+		return;
+	}
+
+	for (i = 0; i < nr_shared_regions_overflow; i++) {
+		if (shared_regions_overflow[i].addr != addr ||
+		    shared_regions_overflow[i].size != size)
+			continue;
+		shared_bitmap_unmark(addr, size);
+		shared_regions_overflow[i] =
+			shared_regions_overflow[nr_shared_regions_overflow - 1];
+		nr_shared_regions_overflow--;
+		return;
 	}
 }
 

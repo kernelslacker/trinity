@@ -96,10 +96,15 @@ static void io_uring_destructor(struct object *obj)
 	struct io_uringobj *ring = &obj->io_uringobj;
 	struct io_uringobj *expected = ring;
 
-	if (ring->sqes)
+	if (ring->sqes) {
+		untrack_shared_region((unsigned long)ring->sqes, ring->sqes_sz);
 		munmap(ring->sqes, ring->sqes_sz);
-	if (ring->sq_ring)
+	}
+	if (ring->sq_ring) {
+		untrack_shared_region((unsigned long)ring->sq_ring,
+				      ring->sq_ring_sz);
 		munmap(ring->sq_ring, ring->sq_ring_sz);
+	}
 
 	/* Lockless clear: pairs with the ACQUIRE load in get_io_uring_ring()
 	 * and the RELEASE store in open_io_uring_fd_config().  The destructor
