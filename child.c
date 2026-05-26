@@ -700,10 +700,15 @@ static void init_child(struct childdata *child, int childno)
 	/* Wait for parent to set our childno */
 	while (__atomic_load_n(&pids[childno], __ATOMIC_ACQUIRE) != pid) {
 		sched_yield();
-		/* Make sure parent is actually alive to wait for us. */
+		/* Make sure parent is actually alive to wait for us.
+		 * stderr was redirected to /dev/null at the top of this
+		 * function, so an outputerr here would be lost -- bump a
+		 * survivor counter in shm instead so a post-mortem reader
+		 * can tell this path actually fired. */
 		if (pid_alive(mainpid) == false) {
+			__atomic_add_fetch(&shm->stats.child_dead_parent_observed,
+					   1, __ATOMIC_RELAXED);
 			panic(EXIT_SHM_CORRUPTION);
-			outputerr("BUG!: parent (%d) went away!\n", mainpid);
 			_exit(EXIT_SHM_CORRUPTION);
 		}
 	}

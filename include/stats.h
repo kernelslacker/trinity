@@ -2035,6 +2035,21 @@ struct stats_s {
 	 * construction.
 	 */
 	unsigned long fd_provider_outstanding[MAX_OBJECT_TYPES];
+
+	/*
+	 * init_child()'s pid-handshake loop observed pid_alive(mainpid)
+	 * == false -- the parent died (or otherwise lost its pid slot)
+	 * before publishing this child's slot in pids[].  The original
+	 * shape called outputerr("BUG!: parent went away!") right after
+	 * the dup2 redirect to /dev/null, so the diagnostic was lost.
+	 * Bumping a shm counter survives the operator-side teardown:
+	 * any reader that attaches to the still-mapped shm post-mortem
+	 * sees a non-zero value here and knows the parent-loss path
+	 * actually fired, distinct from a child that exited for any
+	 * other reason.  Cumulative across the run; expected zero on a
+	 * healthy fleet.
+	 */
+	unsigned long child_dead_parent_observed;
 };
 
 unsigned int stats_syscall_category(const char *name);
