@@ -69,12 +69,11 @@
 /*
  * Latched once per trinity-child process: if the kernel refuses
  * unshare(CLONE_NEWUSER) we don't try again from this child.  Each
- * trinity child gets its own copy of this static, which is fine — the
+ * trinity child gets its own copy of this static, which is fine -- the
  * state is per-process and unshare() is cheap to retry across the fleet
  * if the system policy changes mid-run.
  */
 static bool userns_disabled;
-static bool warned_unsupported;
 
 /*
  * Write the single-line idmap that maps uid/gid 0 inside the new
@@ -141,8 +140,12 @@ static bool establish_root_in_userns(void)
 static bool make_root_private(void)
 {
 	if (mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0) {
-		output(0, "userns_fuzzer: MS_PRIVATE remount failed (errno=%d), aborting tmpfs mount\n",
-		       errno);
+		/* init_child redirected stderr to /dev/null, so an
+		 * output() here would be lost.  Bump a shm counter so
+		 * a post-mortem reader can tell the tmpfs mount path
+		 * was running unprotected. */
+		__atomic_add_fetch(&shm->stats.userns_root_private_failed,
+				   1, __ATOMIC_RELAXED);
 		return false;
 	}
 	return true;
@@ -389,18 +392,16 @@ bool userns_fuzzer(struct childdata *child)
 
 	if (WIFEXITED(status) && WEXITSTATUS(status) == 1) {
 		/*
-		 * unshare(CLONE_NEWUSER) failed — almost certainly EPERM
-		 * from a hardened policy.  Latch a flag and warn once so
-		 * subsequent calls noop instead of forking a child only to
-		 * have it die immediately.
+		 * unshare(CLONE_NEWUSER) failed -- almost certainly EPERM
+		 * from a hardened policy.  Latch a flag so subsequent
+		 * calls noop instead of forking a child only to have it
+		 * die immediately.  init_child redirected stderr to
+		 * /dev/null, so the previous one-shot outputerr here was
+		 * lost; userns_unsupported is the survivor signal.
 		 */
 		userns_disabled = true;
 		__atomic_add_fetch(&shm->stats.userns_unsupported,
 				   1, __ATOMIC_RELAXED);
-		if (!warned_unsupported) {
-			warned_unsupported = true;
-			outputerr("userns_fuzzer: CLONE_NEWUSER refused, disabling for this child\n");
-		}
 		return true;
 	}
 

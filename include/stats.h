@@ -2135,6 +2135,22 @@ struct stats_s {
 	 * kind.
 	 */
 	unsigned long inm_changelink_unsupported_observed;
+
+	/*
+	 * userns_fuzzer's make_root_private() observed a failing
+	 * mount("none", "/", MS_REC|MS_PRIVATE) before the per-op
+	 * tmpfs mount.  The original shape called output(0, ...) so
+	 * an operator watching the run could see that the inner mount
+	 * ns wasn't isolated from the host's mount tree before the
+	 * tmpfs attempt -- but make_root_private() runs from child
+	 * context, where init_child has redirected stderr to /dev/null,
+	 * so the diagnostic was lost.  Bump a shm counter on every
+	 * failure (no one-shot: this fires per-iteration and the
+	 * accumulating count is the survivor signal that mount-ns
+	 * isolation is broken on the host).  A non-zero value across a
+	 * run says the tmpfs mount path was being run unprotected.
+	 */
+	unsigned long userns_root_private_failed;
 };
 
 unsigned int stats_syscall_category(const char *name);
