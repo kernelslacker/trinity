@@ -221,6 +221,12 @@ void sfg_default_walk_setsockopts(int fd, struct socket_triplet *triplet,
 		so.optval = (unsigned long) zmalloc(page_size);
 		so.optlen = sockoptlen(0);
 		proto->setsockopt(&so, triplet);
+		/* Defensive clamp: the per-proto callback is contracted to
+		 * keep optlen within the optval allocation (page_size), but
+		 * a regressed callback could pass a larger value to the
+		 * kernel and leak heap bytes past the buffer.  Refuse it. */
+		if (so.optlen > page_size)
+			so.optlen = page_size;
 		(void) setsockopt(fd, so.level, so.optname,
 				  (const void *) so.optval, so.optlen);
 		free((void *) so.optval);
