@@ -209,6 +209,23 @@ static int open_io_uring_fd_config(unsigned int entries, unsigned int flags,
 	 * is what get_io_uring_ring() consumers (sanitise_io_uring_enter
 	 * reading sq_off_mask via ring->sq_ring) need.  RELEASE store
 	 * pairs with the child-side ACQUIRE in get_io_uring_ring().
+	 *
+	 * Last-init-wins is deliberate: init_io_uring_fds() iterates
+	 * ring_configs[] and each successful open_io_uring_fd_config()
+	 * overwrites shm->mapped_ring with its own ring.  Downstream
+	 * consumers (io_uring_enter / io_uring_register sanitisers,
+	 * sanitise_io_uring_register cross-ring checks) only need ONE
+	 * valid set of inherited mappings; every ring populated in this
+	 * loop has equally usable sq_ring/sqes pointers because they
+	 * were all mapped pre-fork in the same parent VA space.  The
+	 * final iteration's ring is the one whose pointers survive
+	 * publication, but the choice is arbitrary by design.
+	 *
+	 * If a future caller needs a per-config ring (e.g. one whose
+	 * IORING_SETUP_* flags it can read off the obj), the right move
+	 * is a mapped_ring[] array indexed by config idx rather than
+	 * dropping the gate -- post-fork callers must not republish
+	 * because their mappings are not visible in other children.
 	 */
 	if (init_phase)
 		__atomic_store_n(&shm->mapped_ring, ring, __ATOMIC_RELEASE);
