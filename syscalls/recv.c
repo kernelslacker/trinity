@@ -13,6 +13,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+#include "valresult.h"
 #include "compat.h"
 
 static void sanitise_recv(struct syscallrecord *rec)
@@ -32,17 +33,33 @@ static void sanitise_recv(struct syscallrecord *rec)
  * the peer's sockaddr into a5 and its length into a6.  ARG_SOCKADDRLEN
  * published a scalar into the a6 slot, which the kernel reads as a
  * __user pointer and EFAULTs the call every time -- recvfrom never
- * actually surfaced a peer address.  Replace a6 with a real heap-
- * resident socklen_t* initialised to the addr buffer's full
- * sockaddr_storage capacity (the kernel reads *lenp as max_addrlen
- * before writing back), and allocate a fresh sockaddr_storage-sized
- * addr buffer at a5 so the kernel has room for any family it surfaces.
- * Mirrors getsockopt.c:73-101.
+ * actually surfaced a peer address.  Allocate a fresh sockaddr_storage-
+ * sized addr buffer at a5 so the kernel has room for any family it
+ * surfaces, and route a6 (the value-result addrlen slot) through
+ * valresult_alloc() so the shape catalogue (EXACT / UNDER /
+ * EXACT_PLUS_ONE / HUGE / ZERO) mutates *lenp around the natural
+ * sockaddr_storage capacity.  The kernel reads *lenp as max_addrlen
+ * before writing back the actual count.
+ *
+ * The lenp slot was previously a leaky zmalloc(sizeof(*lenp)) with no
+ * post handler -- valresult_free() in post_recvfrom now closes that
+ * leak.  The valresult_alloc() also returns a buf the caller does not
+ * use here (a5 has its own get_writable_address() backing); buf and
+ * len_io are both released via the snap-owned vrb in the post handler.
+ *
+ * Mirrors getsockopt.c (38e1b000092d).
  */
+#define RECVFROM_POST_STATE_MAGIC	0x5243564652533230UL	/* "RCVFRS20" */
+struct recvfrom_post_state {
+	unsigned long magic;
+	struct valresult_buf vrb;
+};
+
 static void sanitise_recvfrom(struct syscallrecord *rec)
 {
 	struct sockaddr_storage *addr;
-	socklen_t *lenp;
+	struct recvfrom_post_state *snap;
+	struct valresult_buf vrb;
 
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 
@@ -52,10 +69,66 @@ static void sanitise_recvfrom(struct syscallrecord *rec)
 	if (addr != NULL)
 		rec->a5 = (unsigned long) addr;
 
-	lenp = zmalloc(sizeof(*lenp));
-	*lenp = sizeof(struct sockaddr_storage);
-	rec->a6 = (unsigned long) lenp;
-	avoid_shared_buffer_inout(&rec->a6, sizeof(socklen_t));
+	/*
+	 * Allocate the value-result addrlen slot through the shared shape
+	 * catalogue.  The natural capacity is sizeof(struct sockaddr_storage)
+	 * -- the addr buffer above is sized to match -- and the helper
+	 * mutates that into the picked shape (EXACT / UNDER / +1 / HUGE /
+	 * ZERO).  The vrb.buf slot is not consumed here; valresult_free()
+	 * in the post handler still releases it through the snap.
+	 */
+	vrb = valresult_alloc(sizeof(struct sockaddr_storage),
+			      valresult_pick_shape());
+	rec->a6 = (unsigned long) vrb.len_io;
+
+	/*
+	 * Snapshot the vrb BEFORE avoid_shared_buffer() runs.  a6 is
+	 * about to be relocated off the libc heap; the post handler must
+	 * free the zmalloc result, not the relocated pointer (which the
+	 * deferred-free heap-bounds gate rejects).  The snap doubles as a
+	 * sibling-scribble shield: a foreign heap-shaped pointer parked
+	 * in rec->post_state survives looks_like_corrupted_ptr() but
+	 * fails the magic check.
+	 */
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = RECVFROM_POST_STATE_MAGIC;
+	snap->vrb = vrb;
+	rec->post_state = (unsigned long) snap;
+
+	avoid_shared_buffer_inout(&rec->a6, sizeof(*vrb.len_io));
+}
+
+static void post_recvfrom(struct syscallrecord *rec)
+{
+	struct recvfrom_post_state *snap =
+		(struct recvfrom_post_state *) rec->post_state;
+
+	if (snap == NULL) {
+		rec->a6 = 0;
+		return;
+	}
+
+	if (looks_like_corrupted_ptr(rec, snap)) {
+		outputerr("post_recvfrom: rejected suspicious post_state=%p "
+			  "(pid-scribbled?)\n", snap);
+		rec->a6 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	if (snap->magic != RECVFROM_POST_STATE_MAGIC) {
+		outputerr("post_recvfrom: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		rec->a6 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	rec->a6 = 0;
+	valresult_free(&snap->vrb);
+	deferred_freeptr(&rec->post_state);
 }
 
 #ifndef MSG_SOCK_DEVMEM
@@ -99,6 +172,7 @@ struct syscallentry syscall_recvfrom = {
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
 	.sanitise = sanitise_recvfrom,
+	.post = post_recvfrom,
 	.bound_arg = 3,
 	.rettype = RET_NUM_BYTES,
 };
