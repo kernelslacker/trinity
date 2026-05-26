@@ -172,7 +172,7 @@ enum kcov_child_mode {
 struct kcov_dedup_slot {
 	uint32_t edge_idx;
 	uint32_t count;
-	uint32_t generation;
+	uint64_t generation;
 };
 
 /* On-the-wire layout of a single KCOV_TRACE_CMP record, as the kernel
@@ -227,7 +227,7 @@ int kcov_cmp_diag_format(char *buf, size_t bufsz, enum kcov_cmp_diag_part part);
 struct kcov_child {
 	/* Field order is constrained by the hot-cacheline budget in struct
 	 * childdata (see static_assert in child.c).  Sized to 48 bytes:
-	 * 3 ints/u32 (12) + 6 bools + 1 uint8_t mode (7) + 5 padding +
+	 * 2 ints (8) + 1 u64 (8) + 6 bools + 1 uint8_t mode (7) + 1 padding +
 	 * 3 pointers (24).  The mode byte slots into the bool block so the
 	 * struct stays at 48 bytes without disturbing pointer alignment.
 	 * That leaves room in the 64-byte hot leading cacheline for the
@@ -238,7 +238,7 @@ struct kcov_child {
 	 * overflowing the cacheline. */
 	int fd;
 	int cmp_fd;                     /* second fd for KCOV_TRACE_CMP, -1 if unavailable */
-	uint32_t current_generation;	/* bumped per kcov_collect() to invalidate dedup */
+	uint64_t current_generation;	/* bumped per kcov_collect() to invalidate dedup */
 	bool active;       /* true if this child successfully opened kcov */
 	bool cmp_capable;  /* true if cmp_fd was probed and KCOV_TRACE_CMP works */
 	bool cmp_enabled_this_call;	/* true between kcov_enable_cmp() and kcov_disable() */

@@ -270,6 +270,8 @@ unsigned int edgepair_ring_drain(struct edgepair_ring *ring)
  */
 static void edgepair_publish_locked(void)
 {
+	static unsigned int sample_idx;
+	unsigned int sample_slot;
 	unsigned int i;
 
 	if (edgepair_published == NULL)
@@ -317,7 +319,7 @@ static void edgepair_publish_locked(void)
 			 __ATOMIC_RELEASE);
 
 	/* Mirror-integrity sample.  After the publish completes the
-	 * mirror's first slot and total_pair_calls header should match
+	 * mirror's sampled slot and total_pair_calls header should match
 	 * the canonical's; the only thing that could write to the mirror
 	 * between publishes is a wild kernel store, and the PROT_READ
 	 * mprotect should SEGV that in the offending child instead.  A
@@ -326,16 +328,19 @@ static void edgepair_publish_locked(void)
 	 * the read-only mapping -- log + count, same shape as Stage 1's
 	 * shm_published_corrupt mirror integrity check.
 	 *
-	 * Slot 0 may not be in this round's dirty set; the sample still
-	 * works because between publishes the mirror's slot 0 is only
-	 * written by this function, and a previously-published slot 0
-	 * either matches the canonical (clean) or was scribbled by a
-	 * wild store (caught). */
+	 * sample_slot rotates across the table on each publish so a
+	 * wild store landing anywhere in the mirror is eventually caught,
+	 * not just one landing in slot 0.  The sampled slot may not be in
+	 * this round's dirty set; the check still works because between
+	 * publishes the mirror is only written by this function, and a
+	 * previously-published slot either matches the canonical (clean)
+	 * or was scribbled by a wild store (caught). */
+	sample_slot = sample_idx++ & EDGEPAIR_TABLE_MASK;
 	if (edgepair_published->total_pair_calls !=
 	    parent_edgepair.total_pair_calls)
 		parent_edgepair.published_corrupt++;
-	if (edgepair_published->slots[0].prev_nr !=
-	    parent_edgepair.table[0].prev_nr)
+	if (edgepair_published->slots[sample_slot].prev_nr !=
+	    parent_edgepair.table[sample_slot].prev_nr)
 		parent_edgepair.published_corrupt++;
 }
 

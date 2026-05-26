@@ -775,7 +775,7 @@ static unsigned int bucket_for_count(unsigned int n)
  * entire table by bumping a single counter instead of zeroing it per call.
  */
 static unsigned int dedup_inc(struct kcov_dedup_slot *dedup, unsigned int edge,
-	uint32_t generation)
+	uint64_t generation)
 {
 	unsigned int slot = (edge * 0x9E3779B1U) & KCOV_DEDUP_MASK;
 	unsigned int probe;
@@ -833,10 +833,10 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr,
 
 	/*
 	 * Invalidate the dedup table by bumping the generation counter — every
-	 * slot whose generation doesn't match is implicitly empty.  On
-	 * wraparound (every 2^32 calls, ~70 days at 700 calls/sec) we'd
-	 * collide with stale slots carrying the now-recycled generation, so
-	 * fall back to a one-shot wipe and restart at generation 1.
+	 * slot whose generation doesn't match is implicitly empty.  Counter is
+	 * uint64_t so wraparound is unreachable in any plausible run; the
+	 * defensive wipe-and-restart-at-1 below stays as a backstop for any
+	 * future logic that resets the counter through zero.
 	 */
 	kc->current_generation++;
 	if (kc->current_generation == 0) {
@@ -854,7 +854,8 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr,
 	unsigned int prev_bucket = 0;
 
 	for (idx = 0; idx < count; idx++) {
-		unsigned long pc_val = kc->trace_buf[idx + 1];
+		unsigned long pc_val = __atomic_load_n(&kc->trace_buf[idx + 1],
+			__ATOMIC_RELAXED);
 		unsigned int edge = pc_to_edge(pc_val);
 		unsigned int local_count = dedup_inc(kc->dedup, edge,
 			kc->current_generation);
