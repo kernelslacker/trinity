@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include "deferred-free.h"
 #include "fd.h"
 #include "files.h"
 #include "objects.h"
@@ -140,7 +141,7 @@ static int open_testfile_fds(void)
 	}
 
 	if (obj != NULL)
-		free(obj);
+		tracked_free_now(obj);
 
 	return true;
 }

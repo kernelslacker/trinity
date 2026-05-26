@@ -15,6 +15,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "deferred-free.h"
 #include "effector-map.h"
 #include "maps.h"
 #include "objects.h"
@@ -75,7 +76,7 @@ static bool do_create(void)
 	obj->map.name = strdup("lifecycle");
 	if (!obj->map.name) {
 		munmap(p, size);
-		free(obj);
+		tracked_free_now(obj);
 		return true;	/* non-fatal */
 	}
 	obj->map.size = size;

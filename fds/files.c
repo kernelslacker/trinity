@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include "deferred-free.h"
 #include "exit.h"
 #include "fd.h"
 #include "files.h"
@@ -147,7 +148,7 @@ int open_pool_files(unsigned int pool_id, enum objecttype objtype)
 		} while (fd == -1 && ++attempts < 64);
 
 		if (fd == -1) {
-			free(obj);
+			tracked_free_now(obj);
 			break;
 		}
 
@@ -227,7 +228,7 @@ int open_pool_fd(unsigned int pool_id, enum objecttype objtype)
 			return false;
 		fd = open_file(obj, filename, flags);
 		if (fd == -1) {
-			free(obj);
+			tracked_free_now(obj);
 			continue;
 		}
 

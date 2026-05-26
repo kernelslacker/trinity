@@ -379,7 +379,7 @@ void init_child_mappings(void)
 		newobj->map.ptr = m->ptr;
 		newobj->map.name = strdup(m->name);
 		if (!newobj->map.name) {
-			free(newobj);
+			tracked_free_now(newobj);
 			continue;
 		}
 		newobj->map.size = m->size;

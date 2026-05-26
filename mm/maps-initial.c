@@ -13,6 +13,7 @@
 #include <sys/mman.h>
 #include "arch.h"
 #include "compat.h"
+#include "deferred-free.h"
 #include "maps.h"
 #include "random.h"
 #include "trinity.h"
@@ -73,7 +74,7 @@ static bool try_alloc_zero_map(unsigned long size, int prot, int flags, const ch
 	new->map.type = INITIAL_ANON;
 	new->map.ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | flags, -1, 0);
 	if (new->map.ptr == MAP_FAILED) {
-		free(new);
+		tracked_free_now(new);
 		return false;
 	}
 	track_shared_region((unsigned long)new->map.ptr, size);
@@ -81,7 +82,7 @@ static bool try_alloc_zero_map(unsigned long size, int prot, int flags, const ch
 	new->map.name = alloc_shared_str(80);
 	if (new->map.name == NULL) {
 		munmap(new->map.ptr, new->map.size);
-		free(new);
+		tracked_free_now(new);
 		return false;
 	}
 	snprintf(new->map.name, 80, "anon(%s)", name);

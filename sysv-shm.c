@@ -7,6 +7,7 @@
 
 #include "arch.h"
 #include "compat.h"
+#include "deferred-free.h"
 #include "random.h"
 #include "rnd.h"
 #include "sysv-shm.h"
@@ -53,7 +54,7 @@ void create_sysv_shms(void)
 
 		id = shmget(IPC_PRIVATE, size, flags);
 		if (id == -1) {
-			free(obj);
+			tracked_free_now(obj);
 			continue;
 		}
 		obj->sysv_shm.id = id;
@@ -67,7 +68,7 @@ void create_sysv_shms(void)
 			p = shmat(id, NULL, SHM_EXEC);
 		if (p == (void *) -1) {
 			shmctl(id, IPC_RMID, NULL);
-			free(obj);
+			tracked_free_now(obj);
 			continue;
 		}
 		obj->sysv_shm.ptr = p;

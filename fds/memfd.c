@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 
+#include "deferred-free.h"
 #include "fd.h"
 #include "memfd.h"
 #include "objects.h"
@@ -112,7 +113,7 @@ static int init_memfd_fds(void)
 		obj->memfdobj.name = alloc_shared_strdup(namestr);
 		if (obj->memfdobj.name == NULL) {
 			close(fd);
-			free(obj);
+			tracked_free_now(obj);
 			continue;
 		}
 		obj->memfdobj.flags = flags[i];

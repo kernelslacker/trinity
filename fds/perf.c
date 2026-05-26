@@ -9,6 +9,7 @@
 #include <sys/ioctl.h>
 #include <asm/unistd.h>
 
+#include "deferred-free.h"
 #include "fd.h"
 #include "objects.h"
 #include "perf.h"
@@ -103,7 +104,7 @@ static int open_perf_fd(void)
 	obj->perfobj.eventattr = alloc_shared_str(sizeof(struct perf_event_attr));
 	if (obj->perfobj.eventattr == NULL) {
 		outputerr("open_perf_fd: alloc_shared_str(perf_event_attr) failed\n");
-		free(obj);
+		tracked_free_now(obj);
 		close(fd);
 		return false;
 	}
