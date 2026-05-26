@@ -299,7 +299,7 @@ struct fd_hash_entry *fd_hash_lookup(int fd)
 
 static bool is_fd_type(enum objecttype type)
 {
-	return type >= OBJ_FD_PIPE && type <= OBJ_FD_KVM_VCPU;
+	return type >= OBJ_FD_PIPE && type <= OBJ_FD_WATCH_QUEUE;
 }
 
 /*
@@ -1016,6 +1016,12 @@ static void invalidate_object_fd(struct object *obj, enum objecttype type)
 	case OBJ_FD_KVM_SYSTEM:	obj->kvmsysobj.fd = -1; break;
 	case OBJ_FD_KVM_VM:	obj->kvmvmobj.fd = -1; break;
 	case OBJ_FD_KVM_VCPU:	obj->kvmvcpuobj.fd = -1; break;
+	case OBJ_FD_PAGECACHE:	obj->fileobj.fd = -1; break;
+	case OBJ_FD_CANARY:	obj->fileobj.fd = -1; break;
+	case OBJ_FD_SIGNALFD:	obj->signalfdobj.fd = -1; break;
+	case OBJ_FD_MOUNT:	obj->mountfdobj.fd = -1; break;
+	case OBJ_FD_CGROUP:	obj->cgroupfdobj.fd = -1; break;
+	case OBJ_FD_WATCH_QUEUE: obj->watch_queueobj.fd = -1; break;
 	default:		break;
 	}
 }
@@ -1222,7 +1228,9 @@ int fd_from_object(struct object *obj, enum objecttype type)
 	case OBJ_FD_DEVFILE:
 	case OBJ_FD_DEV_TEMPLATE:
 	case OBJ_FD_PROCFILE:
-	case OBJ_FD_SYSFILE:	return obj->fileobj.fd;
+	case OBJ_FD_SYSFILE:
+	case OBJ_FD_PAGECACHE:
+	case OBJ_FD_CANARY:	return obj->fileobj.fd;
 	case OBJ_FD_PERF:	return obj->perfobj.fd;
 	case OBJ_FD_EPOLL:	return obj->epollobj.fd;
 	case OBJ_FD_EVENTFD:	return obj->eventfdobj.fd;
@@ -1250,6 +1258,10 @@ int fd_from_object(struct object *obj, enum objecttype type)
 	case OBJ_FD_KVM_SYSTEM:	return obj->kvmsysobj.fd;
 	case OBJ_FD_KVM_VM:	return obj->kvmvmobj.fd;
 	case OBJ_FD_KVM_VCPU:	return obj->kvmvcpuobj.fd;
+	case OBJ_FD_SIGNALFD:	return obj->signalfdobj.fd;
+	case OBJ_FD_MOUNT:	return obj->mountfdobj.fd;
+	case OBJ_FD_CGROUP:	return obj->cgroupfdobj.fd;
+	case OBJ_FD_WATCH_QUEUE: return obj->watch_queueobj.fd;
 	default:		return -1;
 	}
 }
