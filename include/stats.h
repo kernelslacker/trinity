@@ -284,6 +284,21 @@ struct stats_s {
 	 * the matching context capture. */
 	unsigned long rec_canary_stomped;
 
+	/* unlock() sampled the lock word pre-release and saw
+	 * LOCK_RESERVED_DIRTY(state) non-zero -- the reserved bits 1..31
+	 * carry a stray write from somewhere in the held window.
+	 * Companion to parent_stats.lock_word_scribbled, which only fires
+	 * from check_lock()'s periodic walk in main context.  The walker
+	 * cannot see scribbles that land + clear inside a single held
+	 * window, so without this counter a transient stomp during the
+	 * held interval is invisible.  Multi-producer (any child
+	 * releasing any lock) so it lives in shm->stats with an atomic
+	 * RELAXED add-fetch, not in parent_stats.  unlock() does NOT
+	 * refuse the release on a dirty word -- refusing would leave the
+	 * lock permanently held and deadlock every waiter; the headline
+	 * counter is enough to surface the event. */
+	unsigned long lock_held_scribble;
+
 	/* handle_syscall_ret() observed rec->retval outside the {0, -1UL}
 	 * contract on a syscall whose per-call rettype was RET_ZERO_SUCCESS.
 	 * The dispatcher gate fires once per call and covers every handler

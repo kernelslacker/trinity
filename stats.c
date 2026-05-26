@@ -848,6 +848,7 @@ static void dump_stats_json(void)
 			"\"maps_pool_draw_exhausted\":%lu,"
 			"\"pagecache_canary_corrupt_caught\":%lu,"
 			"\"lock_word_scribbled\":%lu,"
+			"\"lock_held_scribble\":%lu,"
 			"\"chain_replay_len_corrupt\":%lu},"
 		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu,"
 			"\"libc_heap_redirected\":%lu,\"libc_heap_embedded_redirected\":%lu,"
@@ -1067,6 +1068,7 @@ static void dump_stats_json(void)
 		shm->stats.maps_pool_draw_exhausted,
 		shm->stats.pagecache_canary_corrupt_caught,
 		parent_stats.lock_word_scribbled,
+		shm->stats.lock_held_scribble,
 		shm->stats.chain_replay_len_corrupt,
 		parent_stats.shared_buffer_redirected, parent_stats.range_overlaps_shared_rejects,
 		parent_stats.libc_heap_redirected, parent_stats.libc_heap_embedded_redirected,
@@ -1924,6 +1926,8 @@ static const struct {
 	  offsetof(struct stats_aggregate, deferred_free_corrupt_ptr), true },
 	{ "lock_word_scribbled",
 	  offsetof(struct stats_aggregate, lock_word_scribbled), true },
+	{ "lock_held_scribble",
+	  offsetof(struct stats_s, lock_held_scribble) },
 	{ "rec_canary_stomped",
 	  offsetof(struct stats_s, rec_canary_stomped) },
 	{ "rzs_blanket_reject",
@@ -3575,6 +3579,8 @@ void dump_stats(void)
 		stat_row("corruption", "snapshot_non_heap_reject", parent_stats.snapshot_non_heap_reject);
 	if (parent_stats.lock_word_scribbled)
 		stat_row("corruption", "lock_word_scribbled",   parent_stats.lock_word_scribbled);
+	if (shm->stats.lock_held_scribble)
+		stat_row("corruption", "lock_held_scribble",    shm->stats.lock_held_scribble);
 	if (shm->stats.rec_canary_stomped)
 		stat_row("corruption", "rec_canary_stomped",     shm->stats.rec_canary_stomped);
 	if (shm->stats.rzs_blanket_reject)

@@ -120,6 +120,7 @@ bool trylock(lock_t *lk)
 {
 	unsigned long current = __atomic_load_n(&lk->state, __ATOMIC_RELAXED);
 	unsigned long desired = MAKE_LOCK(cached_pid, LOCKED);
+	bool won;
 
 	/* Scribbled reserved bits on the live word.  One-shot diagnostic
 	 * per lock instance: the exchange returns the previous value of
@@ -151,9 +152,23 @@ bool trylock(lock_t *lk)
 	if (LOCK_STATE(current) != UNLOCKED)
 		return false;
 
-	return __atomic_compare_exchange_n(&lk->state, &current, desired,
-					   0, __ATOMIC_ACQUIRE,
-					   __ATOMIC_RELAXED);
+	/* Pre-stamp our start_time so a force_bust_lock() running
+	 * immediately after our CAS sees a value that matches the new
+	 * owner pid in the state word.  Two-store protocol: a racing
+	 * loser writes here too and may stomp us, so we re-stamp after
+	 * winning the CAS below to clobber any racing loser's value.
+	 * See the comment on owner_start_time in include/locks.h for the
+	 * residual race window. */
+	__atomic_store_n(&lk->owner_start_time, cached_start_time,
+			 __ATOMIC_RELAXED);
+
+	won = __atomic_compare_exchange_n(&lk->state, &current, desired,
+					  0, __ATOMIC_ACQUIRE,
+					  __ATOMIC_RELAXED);
+	if (won)
+		__atomic_store_n(&lk->owner_start_time, cached_start_time,
+				 __ATOMIC_RELEASE);
+	return won;
 }
 
 /*
@@ -161,8 +176,12 @@ bool trylock(lock_t *lk)
  * the lock is permanently held by a dead pid. Detect that case and
  * release. We need ABA protection: between sampling owner=A and
  * checking liveness, the lock could have been released and re-acquired
- * by a recycled pid. Compare the entire state word — if it's unchanged,
- * nothing happened in between, so it's safe to CAS the lock to 0.
+ * by a recycled pid that reuses A's numeric pid value -- the state
+ * word looks identical to ours but is a different acquisition.  The
+ * (pid, start_time) fingerprint catches that: a recycled pid will have
+ * a different /proc/<pid>/stat field 22 even if the numeric pid
+ * matches.  We compare against the stored owner_start_time and treat
+ * mismatch as "the original holder is gone".
  *
  * Use pid_alive() rather than a raw kill(pid, 0): a zombie holder still
  * has a task struct (kill returns 0) but cannot release the lock, so a
@@ -172,15 +191,23 @@ bool trylock(lock_t *lk)
 static void try_release_dead_holder(lock_t *lk)
 {
 	unsigned long sampled = __atomic_load_n(&lk->state, __ATOMIC_ACQUIRE);
+	unsigned long stored_start;
+	unsigned long long current_start;
 	pid_t owner = LOCK_OWNER(sampled);
 
 	if (LOCK_STATE(sampled) != LOCKED || owner == 0)
 		return;
-	if (pid_alive(owner))
+
+	stored_start = __atomic_load_n(&lk->owner_start_time, __ATOMIC_ACQUIRE);
+	current_start = pid_start_time(owner);
+	if (current_start != 0 && current_start == stored_start)
 		return;
 
-	/* Owner is dead. Try to release ONLY if nothing changed since
-	 * we sampled — a CAS to 0 with the sampled state as expected. */
+	/* Either the pid is gone (current_start == 0) or it was recycled
+	 * (mismatch).  Try to release ONLY if the state word hasn't
+	 * changed since we sampled -- a CAS to 0 with the sampled state
+	 * as expected, so a fresh acquirer who CAS'd in between (and
+	 * therefore wrote a new owner_start_time) doesn't get clobbered. */
 	__atomic_compare_exchange_n(&lk->state, &sampled, 0,
 				    0, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
 }
@@ -234,6 +261,19 @@ void lock(lock_t *lk)
 
 void unlock(lock_t *lk)
 {
+	/* Re-check reserved-bit scribble at release.  trylock() catches a
+	 * scribble that landed before acquire; this catches scribbles that
+	 * landed DURING the hold-time window (a fuzzed syscall scribbling
+	 * through aliased shared memory while we held the lock).  Bump a
+	 * shm-wide counter that surfaces in dump_stats -- one increment is
+	 * enough evidence; we still release rather than refuse, because
+	 * refusing on the release path would deadlock every subsequent
+	 * waiter on a lock that legitimately needs to be freed. */
+	unsigned long s = __atomic_load_n(&lk->state, __ATOMIC_RELAXED);
+	if (LOCK_RESERVED_DIRTY(s))
+		__atomic_fetch_add(&shm->stats.lock_held_scribble, 1,
+				   __ATOMIC_RELAXED);
+
 	/* Single store clears both lock state and owner atomically.
 	 * No torn unlock state possible. */
 	__atomic_store_n(&lk->state, 0, __ATOMIC_RELEASE);
@@ -266,16 +306,26 @@ void bust_lock(lock_t *lk)
  * post-cap fallback inert and the orphan sitting until check_lock()'s
  * pid_alive scan eventually self-heals it on the next pass.
  *
- * Confirm the holder is truly dead before clearing.  Releasing a lock owned
- * by a live process would let two waiters enter the critical section and is
- * a UAF source, so on a live owner we log once and bail — that's a real
- * lock-acquisition bug, not something to paper over here.  ABA-CAS on the
- * sampled state mirrors try_release_dead_holder() so a sibling child
- * grabbing shm->syscalltable_lock during the bust window isn't clobbered.
+ * Confirm the holder is truly dead before clearing.  Releasing a lock
+ * owned by a live process would let two waiters enter the critical
+ * section and is a UAF source, so on a live owner we log once and
+ * bail -- that's a real lock-acquisition bug, not something to paper
+ * over here.  pid_alive() alone is insufficient: a long fuzz run
+ * recycles PIDs, and a recycled pid matching the dead lock-owner's
+ * numeric value would keep the bust refused forever.  Compare the
+ * stored owner_start_time against the live /proc/<pid>/stat field 22
+ * -- mismatch means the original owner is gone (process exited and a
+ * different process now holds that pid).  Match means the original
+ * lock-acquiring process is still alive; log once and bail.  ABA-CAS
+ * on the sampled state mirrors try_release_dead_holder() so a sibling
+ * child grabbing shm->syscalltable_lock during the bust window isn't
+ * clobbered.
  */
 void force_bust_lock(lock_t *lk)
 {
 	unsigned long s = __atomic_load_n(&lk->state, __ATOMIC_ACQUIRE);
+	unsigned long stored_start;
+	unsigned long long current_start;
 	pid_t owner;
 
 	/* Scribbled reserved bits: the encoded state and owner are both
@@ -293,7 +343,9 @@ void force_bust_lock(lock_t *lk)
 		return;
 
 	owner = LOCK_OWNER(s);
-	if (pid_alive(owner)) {
+	stored_start = __atomic_load_n(&lk->owner_start_time, __ATOMIC_ACQUIRE);
+	current_start = pid_start_time(owner);
+	if (current_start != 0 && current_start == stored_start) {
 		static bool warned;
 		if (!warned) {
 			warned = true;

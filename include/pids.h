@@ -7,6 +7,14 @@
 extern pid_t *pids;
 extern pid_t mainpid;
 extern pid_t cached_pid;
+/*
+ * Own start_time from /proc/<self>/stat field 22, cached at process
+ * start (parent in main, child in set_child_cache).  The lock acquire
+ * path stamps this into lk->owner_start_time so force_bust_lock can
+ * detect pid recycles: a recycled pid will have a different start_time
+ * even if its numeric pid matches the dead lock-owner's.
+ */
+extern unsigned long long cached_start_time;
 
 /*
  * Cached self pid.  glibc 2.25 (2017) dropped its libc-side getpid()
@@ -34,6 +42,7 @@ static inline pid_t mypid(void)
 #define EMPTY_PIDSLOT -1
 
 bool pid_alive(pid_t pid);
+unsigned long long pid_start_time(pid_t pid);
 int find_childno(pid_t pid);
 void set_child_cache(int childno, pid_t pid, struct childdata *child);
 bool pidmap_empty(void);

@@ -24,12 +24,14 @@ pid_t *pids;
 /* Per-child cache: set once in init_child(), avoids O(n) scans. */
 static int cached_childno = CHILD_NOT_FOUND;
 pid_t cached_pid = EMPTY_PIDSLOT;
+unsigned long long cached_start_time = 0;
 static struct childdata *cached_child = NULL;
 
 void set_child_cache(int childno, pid_t pid, struct childdata *child)
 {
 	cached_childno = childno;
 	cached_pid = pid;
+	cached_start_time = pid_start_time(pid);
 	cached_child = child;
 }
 
@@ -110,6 +112,59 @@ bool pid_alive(pid_t pid)
 	}
 
 	return true;
+}
+
+/*
+ * Return /proc/<pid>/stat field 22 (start_time, jiffies since boot) for
+ * pid, or 0 if the pid doesn't exist or the file can't be parsed.  Used
+ * by the lock primitives to fingerprint a process across pid recycles:
+ * pid_alive() alone cannot tell a still-running original holder from a
+ * recycled pid that happens to reuse the dead holder's numeric value,
+ * but start_time is monotonic across the system boot and uniquely tags
+ * the (pid, fork-instance) pair.
+ *
+ * Parsing mirrors pid_alive() (raw open/read into a stack buffer) so
+ * the lock acquire path doesn't pull in stdio.  The comm field at the
+ * start of the line may contain ')', so anchor on the LAST ')' and
+ * skip 21 whitespace-separated fields after it to land on field 22.
+ */
+unsigned long long pid_start_time(pid_t pid)
+{
+	char path[64];
+	char buf[512];
+	char *p, *rparen;
+	ssize_t n;
+	int fd;
+	unsigned int field;
+
+	if (pid <= 0)
+		return 0;
+
+	snprintf(path, sizeof(path), "/proc/%d/stat", pid);
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
+		return 0;
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return 0;
+	buf[n] = '\0';
+
+	rparen = strrchr(buf, ')');
+	if (rparen == NULL || rparen[1] != ' ')
+		return 0;
+
+	/* After the closing ')' field 3 (state) starts.  Field 22
+	 * (start_time) is the 20th whitespace-separated token after. */
+	p = rparen + 2;
+	for (field = 3; field < 22; field++) {
+		while (*p != '\0' && *p != ' ')
+			p++;
+		if (*p != ' ')
+			return 0;
+		p++;
+	}
+	return strtoull(p, NULL, 10);
 }
 
 struct childdata * this_child(void)

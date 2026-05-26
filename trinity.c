@@ -260,6 +260,7 @@ int main(int argc, char* argv[])
 
 	mainpid = getpid();
 	cached_pid = mainpid;
+	cached_start_time = pid_start_time(mainpid);
 
     if (getrlimit(RLIMIT_NOFILE, &max_files_rlimit) != 0) {
 		max_files_rlimit.rlim_cur = 1024;
