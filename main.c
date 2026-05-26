@@ -1369,6 +1369,7 @@ static void check_children_progressing(void)
 
 	for_each_child(i) {
 		struct childdata *child;
+		unsigned long op_nr;
 
 		child = __atomic_load_n(&children[i], __ATOMIC_ACQUIRE);
 		if (child == NULL)
@@ -1377,8 +1378,9 @@ static void check_children_progressing(void)
 		if (is_child_making_progress(child, i) == false)
 			stall_count++;
 
-		if (child->op_nr > hiscore)
-			hiscore = child->op_nr;
+		op_nr = __atomic_load_n(&child->op_nr, __ATOMIC_RELAXED);
+		if (op_nr > hiscore)
+			hiscore = op_nr;
 	}
 
 	if (stall_count == __atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED))

@@ -230,7 +230,8 @@ static void stats_publish_locked(void)
 	if (shm_published == NULL)
 		return;
 
-	shm_published->fleet_op_count = parent_stats.op_count;
+	__atomic_store_n(&shm_published->fleet_op_count, parent_stats.op_count,
+			 __ATOMIC_RELAXED);
 }
 
 void stats_ring_drain_all(void)

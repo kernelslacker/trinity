@@ -2281,7 +2281,7 @@ void child_process(struct childdata *child, int childno)
 
 		enable_coredumps();
 
-		child->op_nr++;
+		__atomic_add_fetch(&child->op_nr, 1, __ATOMIC_RELAXED);
 
 		if (ret == FAIL)
 			goto out;
