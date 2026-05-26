@@ -53,6 +53,16 @@ static void netlink_setsockopt(struct sockopt *so, __unused__ struct socket_trip
 {
 	so->level = SOL_NETLINK;
 	so->optname = RAND_ARRAY(netlink_opts);
+
+	so->optlen = sizeof(unsigned int);
+	switch (so->optname) {
+	case NETLINK_RX_RING:
+	case NETLINK_TX_RING:
+		so->optlen = sizeof(struct nl_mmap_req);
+		break;
+	default:
+		break;
+	}
 }
 
 static struct socket_triplet netlink_triplets[] = {
