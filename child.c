@@ -467,11 +467,11 @@ void clean_childdata(struct childdata *child)
 	edgepair_child_reset(child);
 }
 
-static void bind_child_to_cpu(struct childdata *child)
+static void bind_child_to_cpu(struct childdata *child, int childno)
 {
 	cpu_set_t set;
 	unsigned int cpudest;
-	pid_t pid = __atomic_load_n(&pids[child->num], __ATOMIC_RELAXED);
+	pid_t pid = __atomic_load_n(&pids[childno], __ATOMIC_RELAXED);
 
 	if (no_bind_to_cpu == true)
 		return;
@@ -733,7 +733,7 @@ static void init_child(struct childdata *child, int childno)
 	dirty_random_mapping();
 
 	if (RAND_BOOL())
-		bind_child_to_cpu(child);
+		bind_child_to_cpu(child, childno);
 
 	/* Wait for all the children to start up. */
 	while (!__atomic_load_n(&shm->ready, __ATOMIC_ACQUIRE))
@@ -2005,7 +2005,7 @@ void child_process(struct childdata *child, int childno)
 		unsigned int gen = __atomic_load_n(&shm->sibling_freeze_gen,
 						   __ATOMIC_ACQUIRE);
 		if (gen != child->last_seen_freeze_gen) {
-			freeze_sibling_childdata(child->num);
+			freeze_sibling_childdata(childno);
 			child->last_seen_freeze_gen = gen;
 			__atomic_add_fetch(&shm->stats.sibling_refreeze_count, 1,
 					   __ATOMIC_RELAXED);
@@ -2035,7 +2035,7 @@ void child_process(struct childdata *child, int childno)
 			xcpu_pending = 0;
 			if (child->xcpu_count == 100) {
 				debugf("Child %d [%d] got 100 XCPUs. Exiting child.\n",
-					child->num, __atomic_load_n(&pids[child->num], __ATOMIC_RELAXED));
+					childno, __atomic_load_n(&pids[childno], __ATOMIC_RELAXED));
 				goto out;
 			}
 		}
