@@ -9,6 +9,7 @@
 
 #include "fd.h"
 #include "objects.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -129,7 +130,6 @@ static int get_rand_fs_ctx_fd(void)
 
 void post_fs_ctx_fd(struct syscallrecord *rec)
 {
-	struct object *new;
 	int fd = rec->retval;
 
 	if ((long)rec->retval < 0)
@@ -137,13 +137,8 @@ void post_fs_ctx_fd(struct syscallrecord *rec)
 	if (fd < 0 || fd >= (1 << 20))
 		return;
 
-	new = alloc_object();
-	if (new == NULL) {
+	if (publish_resource(OBJ_FD_FS_CTX, fd, NULL) == NULL)
 		close(fd);
-		return;
-	}
-	new->fsctxobj.fd = fd;
-	add_object(new, OBJ_LOCAL, OBJ_FD_FS_CTX);
 }
 
 static const struct fd_provider fs_ctx_fd_provider = {
