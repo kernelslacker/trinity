@@ -259,6 +259,10 @@ static void add_to_namelist(const char *name)
 	struct namelist *newnode;
 
 	newnode = zmalloc(sizeof(struct namelist));
+	if (newnode == NULL) {
+		outputerr("add_to_namelist: zmalloc failed for %s\n", name);
+		return;
+	}
 	newnode->name = strdup(name);
 	if (!newnode->name) {
 		free(newnode);
@@ -415,8 +419,16 @@ static const char ** list_to_index(struct namelist *namelist)
 			exit(EXIT_FAILURE);
 		}
 		findex = alloc_shared(findex_bytes);
+		if (findex == NULL) {
+			outputerr("list_to_index: alloc_shared(findex) failed; skipping\n");
+			return NULL;
+		}
 	}
 	slab = alloc_shared(total_str_bytes ? total_str_bytes : 1);
+	if (slab == NULL) {
+		outputerr("list_to_index: alloc_shared(slab) failed; skipping\n");
+		return NULL;
+	}
 
 	/* Second pass: copy strings into the slab and build the index. */
 	list_for_each_safe(node, tmp, &namelist->list) {

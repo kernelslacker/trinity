@@ -43,6 +43,10 @@ static void add_to_bdevlist(const char *name)
 	}
 
 	newnode = zmalloc(sizeof(struct bdevlist));
+	if (newnode == NULL) {
+		outputerr("add_to_bdevlist: zmalloc failed for %s\n", path);
+		return;
+	}
 	newnode->name = strdup(path);
 	if (!newnode->name) {
 		free(newnode);
@@ -60,13 +64,13 @@ static void stat_dev(char *name)
 	ret = lstat(name, &sb);
 
 	if (ret == -1) {
-		outputerr("Couldn't stat %s\n", name);
-		exit(EXIT_FAILURE);
+		outputerr("Couldn't stat %s; skipping\n", name);
+		return;
 	}
 
 	if (!(S_ISBLK(sb.st_mode))) {
-		outputerr("Sorry, %s doesn't look like a block device.\n", name);
-		exit(EXIT_FAILURE);
+		outputerr("%s doesn't look like a block device; skipping\n", name);
+		return;
 	}
 
 	add_to_bdevlist(name);
