@@ -106,6 +106,22 @@ static struct reap_record reap_ring[FAST_DIE_RING_SIZE];
 static unsigned int reap_ring_head;
 static unsigned int reap_ring_count;
 
+/*
+ * Running count of fast-die entries currently in the ring -- an
+ * entry is fast-die when lifetime < FAST_DIE_LIFETIME_THRESHOLD_S
+ * AND exit_status > 0.  Updated incrementally in record_reap()
+ * (add on insert, subtract on overwrite of an old fast-die slot)
+ * so the per-reap bail check is a single comparison instead of a
+ * full ring walk on every reap.
+ */
+static unsigned int reap_ring_fast_die_count;
+
+static bool reap_entry_is_fast_die(const struct reap_record *r)
+{
+	return r->lifetime < FAST_DIE_LIFETIME_THRESHOLD_S &&
+	       r->exit_status > 0;
+}
+
 static unsigned long hiscore = 0;
 
 /*
@@ -1233,7 +1249,6 @@ static void record_reap(int childno, int childstatus)
 	time_t now = time(NULL);
 	time_t lifetime;
 	int exit_status;
-	unsigned int i;
 
 	if (spawn_times == NULL)
 		return;
@@ -1251,10 +1266,21 @@ static void record_reap(int childno, int childstatus)
 		return;
 
 	r = &reap_ring[reap_ring_head];
+
+	/* When the ring is full, the slot we are about to overwrite
+	 * carries a previous reap; if it was fast-die, drop it from the
+	 * running count before we stamp the new entry on top. */
+	if (reap_ring_count == FAST_DIE_RING_SIZE &&
+	    reap_entry_is_fast_die(r))
+		reap_ring_fast_die_count--;
+
 	r->reaped_at = now;
 	r->lifetime = lifetime;
 	r->exit_status = exit_status;
 	r->childno = childno;
+
+	if (reap_entry_is_fast_die(r))
+		reap_ring_fast_die_count++;
 
 	reap_ring_head = (reap_ring_head + 1) % FAST_DIE_RING_SIZE;
 	if (reap_ring_count < FAST_DIE_RING_SIZE)
@@ -1263,17 +1289,12 @@ static void record_reap(int childno, int childstatus)
 	if (reap_ring_count < FAST_DIE_RING_SIZE)
 		return;
 
-	/* Bail only when EVERY entry is a fast WIFEXITED with non-SUCCESS
-	 * status.  Signal-deaths are negative, EXIT_SUCCESS is 0 — both
-	 * fail the > 0 gate so a single benign reap clears the bail. */
-	for (i = 0; i < FAST_DIE_RING_SIZE; i++) {
-		if (reap_ring[i].lifetime >= FAST_DIE_LIFETIME_THRESHOLD_S)
-			return;
-		if (reap_ring[i].exit_status <= 0)
-			return;
-	}
-
-	bail_fast_die_loop();
+	/* Bail only when EVERY entry is fast-die.  Signal-deaths are
+	 * negative, EXIT_SUCCESS is 0 -- both fail reap_entry_is_fast_die,
+	 * so a single benign reap drops the running count below the
+	 * threshold and clears the bail. */
+	if (reap_ring_fast_die_count == FAST_DIE_RING_SIZE)
+		bail_fast_die_loop();
 }
 
 static void handle_child(int childno, pid_t childpid, int childstatus)
