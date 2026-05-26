@@ -3,7 +3,7 @@
  */
 #include <time.h>
 #include "deferred-free.h"
-#include "objects.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "sanitise.h"
 #include "compat.h"
@@ -94,7 +94,6 @@ static void post_timerfd_create(struct syscallrecord *rec)
 {
 	struct timerfd_post_state *snap =
 		(struct timerfd_post_state *) rec->post_state;
-	struct object *new;
 	int fd = rec->retval;
 
 	if (snap == NULL)
@@ -120,11 +119,13 @@ static void post_timerfd_create(struct syscallrecord *rec)
 	if ((long)rec->retval < 0)
 		goto out_free;
 
-	new = alloc_object();
-	new->timerfdobj.fd = fd;
-	new->timerfdobj.clockid = snap->clockid;
-	new->timerfdobj.flags = snap->flags;
-	add_object(new, OBJ_LOCAL, OBJ_FD_TIMERFD);
+	{
+		struct resource_meta meta = {
+			.flags = snap->flags,
+			.aux = snap->clockid,
+		};
+		publish_resource(OBJ_FD_TIMERFD, fd, &meta);
+	}
 
 out_free:
 	deferred_freeptr(&rec->post_state);
