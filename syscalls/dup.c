@@ -137,15 +137,16 @@ static void post_dup2(struct syscallrecord *rec)
 	 * above already keeps that case out of the post path.
 	 */
 	if (rec->a1 != rec->a2) {
+		/* Publish the implicit close of newfd to the parent and
+		 * drop this child's local snapshots.  Without the
+		 * live_fds ring eviction the next arg-generation pick
+		 * could still surface newfd from the 16-slot live-fd
+		 * cache and burn an fcntl() validating a slot whose old
+		 * file description the kernel may have already replaced
+		 * under dup2()'s atomic swap. */
 		child = this_child();
-		if (child != NULL && child->fd_event_ring != NULL)
-			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
-					 (int) rec->a2);
-
-		/* Drop the displaced newfd from this child's own fd_hash[]
-		 * snapshot so get_random_fd() / get_typed_fd() stop handing
-		 * it back out before the parent drains the FD_EVENT_CLOSE. */
-		fd_hash_remove_local((int) rec->a2);
+		if (child != NULL)
+			notify_child_fd_closed(child, (int) rec->a2);
 	}
 
 	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
