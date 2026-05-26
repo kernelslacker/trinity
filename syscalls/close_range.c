@@ -355,22 +355,15 @@ static void post_close_range(struct syscallrecord *rec)
 
 	child = this_child();
 
-	/* One-pass purge of the live-fd ring for the whole range so we don't
-	 * walk the 16-slot ring fd-by-fd inside the loop below. */
+	/* Publish per-fd close events and drop this child's local
+	 * snapshots for the whole range in one shot.  Single pass over
+	 * fd_hash[] and the 16-slot live-fd ring instead of per-fd
+	 * walks inside the loop below. */
 	if (child != NULL)
-		child_fd_ring_remove_range(&child->live_fds,
-					   (int) fd, (int) max_fd);
+		notify_child_fd_closed_range(child,
+					     (int) fd, (int) max_fd);
 
 	for (; fd <= max_fd; fd++) {
-		if (child != NULL && child->fd_event_ring != NULL)
-			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
-					 (int) fd);
-
-		/* Drop the just-closed fd from this child's own fd_hash[]
-		 * snapshot so get_random_fd() / get_typed_fd() stop handing
-		 * it back out before the parent drains the FD_EVENT_CLOSE. */
-		fd_hash_remove_local((int) fd);
-
 		/* Parent-side path (no-op in children). */
 		remove_object_by_fd((int) fd);
 	}
