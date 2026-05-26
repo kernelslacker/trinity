@@ -11,11 +11,15 @@
  * are generated with structural awareness of which calls produce and
  * consume which kinds of resource.
  *
- * Chain length is drawn from a geometric distribution biased toward 2:
- * P(2)=50%, P(3)=30%, P(4)=20%.  The bias toward 2 is deliberate —
- * most setup-then-use kernel paths fit in two calls (open then ioctl,
- * socket then sendmsg), and shorter chains preserve fuzzer throughput
- * while still exercising the longer-tail patterns at lower frequency.
+ * Chain length is drawn from pick_chain_length()'s discrete
+ * distribution centred on 3: P(2)=30%, P(3)=40%, P(4)=30%.  Two-call
+ * chains remain a common setup-then-use shape (open then ioctl,
+ * socket then sendmsg) but the rebalanced weights -- moved here
+ * from an earlier 50/30/20 bias toward 2 -- give length-3
+ * setup-then-use-then-tear sequences the largest share, which is
+ * where the chain corpus saw most of its productive replays.  Four
+ * remains a backstop for the longer-tail patterns at the same 30%
+ * rate; lengths beyond 4 are out of scope for this phase.
  *
  * Substitution-vs-failure: if a step's retval is negative (errno-style
  * failure) the next step is dispatched without a substitute, since

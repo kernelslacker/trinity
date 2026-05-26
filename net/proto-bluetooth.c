@@ -137,7 +137,7 @@ static void bluetooth_setsockopt(struct sockopt *so, __unused__ struct socket_tr
 	case 2: so->level = SOL_SCO; break;
 	case 3: so->level = SOL_RFCOMM; break;
 	case 4: /* leave level unchanged */
-		;;
+		break;
 	default:
 		break;
 	}
