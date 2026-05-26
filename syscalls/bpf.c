@@ -17,6 +17,7 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
+#include "publish_resource.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -757,21 +758,15 @@ static void post_bpf(struct syscallrecord *rec)
 
 	switch (cmd) {
 	case BPF_MAP_CREATE:
-		if (fd >= 0) {
-			struct object *obj = alloc_object();
-			obj->bpfobj.map_fd = fd;
-			obj->bpfobj.map_type = attr->map_type;
-			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_MAP);
-		}
+		if (fd >= 0)
+			publish_resource(OBJ_FD_BPF_MAP, fd,
+					 &(struct resource_meta){.subtype = attr->map_type});
 		break;
 
 	case BPF_PROG_LOAD:
-		if (fd >= 0) {
-			struct object *obj = alloc_object();
-			obj->bpfprogobj.fd = fd;
-			obj->bpfprogobj.prog_type = attr->prog_type;
-			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_PROG);
-		}
+		if (fd >= 0)
+			publish_resource(OBJ_FD_BPF_PROG, fd,
+					 &(struct resource_meta){.subtype = attr->prog_type});
 
 		/* Two instruction-buffer allocators feed BPF_PROG_LOAD: the
 		 * classic-BPF branch returns a tracked sock_fprog wrapper that
@@ -801,22 +796,14 @@ static void post_bpf(struct syscallrecord *rec)
 		 * dump output read "unknown" — no behavioural impact since
 		 * map_type is metadata only.
 		 */
-		if (fd >= 0) {
-			struct object *obj = alloc_object();
-			obj->bpfobj.map_fd = fd;
-			obj->bpfobj.map_type = BPF_MAP_TYPE_UNSPEC;
-			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_MAP);
-		}
+		if (fd >= 0)
+			publish_resource(OBJ_FD_BPF_MAP, fd, NULL);
 		break;
 
 	case BPF_PROG_GET_FD_BY_ID:
 		/* Same logic as BPF_MAP_GET_FD_BY_ID for prog fds. */
-		if (fd >= 0) {
-			struct object *obj = alloc_object();
-			obj->bpfprogobj.fd = fd;
-			obj->bpfprogobj.prog_type = BPF_PROG_TYPE_UNSPEC;
-			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_PROG);
-		}
+		if (fd >= 0)
+			publish_resource(OBJ_FD_BPF_PROG, fd, NULL);
 		break;
 
 	case BPF_LINK_CREATE:
@@ -827,12 +814,9 @@ static void post_bpf(struct syscallrecord *rec)
 		 * dispatch paths instead of bouncing on EINVAL from a
 		 * type-confused map fd.
 		 */
-		if (fd >= 0) {
-			struct object *obj = alloc_object();
-			obj->bpflinkobj.fd = fd;
-			obj->bpflinkobj.attach_type = attr->link_create.attach_type;
-			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_LINK);
-		}
+		if (fd >= 0)
+			publish_resource(OBJ_FD_BPF_LINK, fd,
+					 &(struct resource_meta){.subtype = attr->link_create.attach_type});
 		break;
 
 	case BPF_LINK_GET_FD_BY_ID:
@@ -841,12 +825,8 @@ static void post_bpf(struct syscallrecord *rec)
 		 * Attach type unknown at lookup time — leave it 0; it's
 		 * metadata only.
 		 */
-		if (fd >= 0) {
-			struct object *obj = alloc_object();
-			obj->bpflinkobj.fd = fd;
-			obj->bpflinkobj.attach_type = 0;
-			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_LINK);
-		}
+		if (fd >= 0)
+			publish_resource(OBJ_FD_BPF_LINK, fd, NULL);
 		break;
 
 	case BPF_BTF_LOAD:
@@ -857,11 +837,8 @@ static void post_bpf(struct syscallrecord *rec)
 		 * id table.  Feed the per-child BTF pool so the BTF-specific
 		 * dispatch in BPF_OBJ_GET_INFO_BY_FD has fds to operate on.
 		 */
-		if (fd >= 0) {
-			struct object *obj = alloc_object();
-			obj->bpfbtfobj.fd = fd;
-			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_BTF);
-		}
+		if (fd >= 0)
+			publish_resource(OBJ_FD_BPF_BTF, fd, NULL);
 		break;
 
 	case BPF_TOKEN_CREATE:
@@ -879,11 +856,8 @@ static void post_bpf(struct syscallrecord *rec)
 		 * closed by the tail switch below and the gate stays
 		 * unreachable.
 		 */
-		if (fd >= 0) {
-			struct object *obj = alloc_object();
-			obj->bpftokenobj.fd = fd;
-			add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_TOKEN);
-		}
+		if (fd >= 0)
+			publish_resource(OBJ_FD_BPF_TOKEN, fd, NULL);
 		break;
 
 	case BPF_PROG_ATTACH:

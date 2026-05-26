@@ -83,6 +83,7 @@
 #include "bpf.h"
 #include "child.h"
 #include "objects.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -238,24 +239,14 @@ static bool cgroup_disabled;
  */
 static struct object *publish_map_fd(int fd, uint32_t map_type)
 {
-	struct object *obj;
-
-	obj = alloc_object();
-	obj->bpfobj.map_fd = fd;
-	obj->bpfobj.map_type = map_type;
-	add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_MAP);
-	return obj;
+	return publish_resource(OBJ_FD_BPF_MAP, fd,
+				&(struct resource_meta){.subtype = map_type});
 }
 
 static struct object *publish_prog_fd(int fd, uint32_t prog_type)
 {
-	struct object *obj;
-
-	obj = alloc_object();
-	obj->bpfprogobj.fd = fd;
-	obj->bpfprogobj.prog_type = prog_type;
-	add_object(obj, OBJ_LOCAL, OBJ_FD_BPF_PROG);
-	return obj;
+	return publish_resource(OBJ_FD_BPF_PROG, fd,
+				&(struct resource_meta){.subtype = prog_type});
 }
 
 /*
