@@ -2063,6 +2063,24 @@ struct stats_s {
 	 * or a kernel build with the perf subsystem absent.
 	 */
 	unsigned long perf_event_chains_pmu_unsupported;
+
+	/*
+	 * heap_bounds_init() encountered an [anon:NAME] allocator region
+	 * after extra_heap_regions[] already held MAX_EXTRA_HEAP_REGIONS
+	 * entries, so the region was silently dropped instead of being
+	 * captured.  is_in_glibc_heap() and range_overlaps_libc_heap()
+	 * will not consider that allocator region, which can let a fuzzed
+	 * pointer land inside it and let the kernel scribble allocator
+	 * metadata (the bad-free / asan-self-kill cluster the captured
+	 * regions exist to prevent).  The existing one-shot warned-bool
+	 * outputerr fires for the first overflow only; this counter
+	 * advances for every subsequent dropped region so the deficit
+	 * size, not just the existence of a deficit, is observable post-
+	 * mortem.  A non-zero value across runs is the actionable signal
+	 * to raise MAX_EXTRA_HEAP_REGIONS or replace the static array
+	 * with a growable registry.
+	 */
+	unsigned long heap_extra_regions_overflow;
 };
 
 unsigned int stats_syscall_category(const char *name);

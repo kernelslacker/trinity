@@ -1951,6 +1951,17 @@ void heap_bounds_init(void)
 		if (new_nr >= MAX_EXTRA_HEAP_REGIONS) {
 			static bool warned;
 
+			/*
+			 * The outputerr fires once per process so the log
+			 * doesn't blow up when many regions overflow; the
+			 * counter advances on every dropped region so the
+			 * post-mortem reader sees the deficit size rather
+			 * than just "deficit existed".
+			 */
+			__atomic_add_fetch(
+				&shm->stats.heap_extra_regions_overflow, 1,
+				__ATOMIC_RELAXED);
+
 			if (!warned) {
 				warned = true;
 				outputerr("heap_bounds_init: "
