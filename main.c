@@ -593,6 +593,20 @@ static void register_zombie_slot(int childno, pid_t pid)
 	struct timespec now;
 	pid_t wpid;
 
+	/*
+	 * Catch the silent-leak shape directly: re-registering an
+	 * already-zombie slot would overwrite zombie_pids[childno] and
+	 * leave the prior pid waiting on a waitpid() nobody runs any
+	 * more, while zombie_slots_pending double-counts.  The slot
+	 * stays parked in zombie-pending state forever and the kernel's
+	 * task struct is never released.  pids[childno] is cleared by
+	 * reap_child() before we get here, so no fresh signal/death
+	 * event can target the slot until process_zombie_pending()
+	 * clears zombie_pids[childno] -- a non-empty value at entry is
+	 * a state-machine violation, not a legitimate race.
+	 */
+	BUG_ON(zombie_pids[childno] != EMPTY_PIDSLOT);
+
 	/* Fast path: it's not uncommon for the kernel to release a
 	 * transient D-state task between our kill loop giving up and
 	 * us reaching this function.  A non-blocking waitpid here
