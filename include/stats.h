@@ -1725,6 +1725,30 @@ struct stats_s {
 	 * CALL-COUNT semantics, see explorer_pool_edges_discovered above. */
 	unsigned long bandit_pool_edges_discovered;
 
+	/* Explorer picker edge-pair gating counters.  Both bumped from
+	 * set_syscall_nr_random's retry loop and meaningful only on the
+	 * explorer path (the heuristic picker's matching cold-pair gate
+	 * runs against the heuristic's own pre-rotation flow and does not
+	 * touch these counters).
+	 *
+	 * explorer_cold_pair_rejects: incremented on each rejection of a
+	 * (prev, curr) pair the edgepair tracker has classified cold --
+	 * the pair WAS productive but has not surfaced a new edge in over
+	 * EDGEPAIR_COLD_THRESHOLD pair-calls.  Sustained growth confirms
+	 * the explorer side is now avoiding saturated pairs the way the
+	 * heuristic side already does; flat-while-cold means the gate is
+	 * not firing (mis-wired RAND_BOOL or stale edgepair view).
+	 *
+	 * explorer_unseen_pair_accepts: incremented on the never-seen
+	 * short-circuit -- edgepair_get_stats returned the {0, 0} sentinel
+	 * indicating no record for the pair, so the explorer takes it
+	 * immediately without re-rolling against anti-prior.  Tracks the
+	 * pace at which the explorer is driving onto unexplored (prev,
+	 * curr) sequences; should dominate the cold-reject counter early
+	 * in a run and bleed toward zero as the pair table fills. */
+	unsigned long explorer_cold_pair_rejects;
+	unsigned long explorer_unseen_pair_accepts;
+
 	/* Per-syscall new-edge attribution, split by strategy pool.  Bumped
 	 * from dispatch_step's new-edge branch with the real bucket-edge
 	 * count returned by kcov_collect()'s new_edge_count out-param, so

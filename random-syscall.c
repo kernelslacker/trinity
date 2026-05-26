@@ -286,6 +286,7 @@ bool set_syscall_nr_random(struct syscallrecord *rec,
 	unsigned int outer_attempts = 0;
 	unsigned int nr_syscalls;
 	unsigned int anti_prior_attempts = 0;
+	unsigned int edgepair_attempts = 0;
 	bool anti_prior_on;
 
 	/* See the matching comment in set_syscall_nr_heuristic — the table
@@ -335,6 +336,48 @@ retry:
 			goto retry;
 	}
 
+	/* Edge-pair gates, guarded on a valid previous syscall.  Mirrors the
+	 * heuristic picker's cold-pair filter (saturated (prev, curr) pairs
+	 * whose reachable PCs have already been exhausted waste explorer
+	 * iterations on territory the heuristic side is also actively
+	 * avoiding) and adds an immediate-accept short-circuit for
+	 * never-seen pairs so the explorer drives toward unexplored
+	 * territory rather than re-treading stale ground.
+	 *
+	 * Never-seen detection uses edgepair_get_stats() returning {0, 0}
+	 * -- no record exists in the hash table, distinct from a recorded
+	 * pair that simply happens to have produced no new edges yet.
+	 * Accept short-circuits past the anti-prior gate so an unexplored
+	 * pair is taken on its first sighting regardless of the bandit's
+	 * per-syscall pick-rate distribution.
+	 *
+	 * Cold-pair rejection uses the same RAND_BOOL gate and 20-retry
+	 * cap as the heuristic picker.  Sits before anti-prior so the cold
+	 * filter runs on the unbiased candidate stream; a rejected cold
+	 * pair retries from the top of the loop where the next pick is a
+	 * fresh uniform draw. */
+	if (child->last_syscall_nr != EDGEPAIR_NO_PREV) {
+		struct edgepair_stats ps =
+			edgepair_get_stats(child->last_syscall_nr, syscallnr);
+
+		if (ps.new_edges == 0 && ps.total == 0) {
+			__atomic_fetch_add(
+				&shm->stats.explorer_unseen_pair_accepts,
+				1UL, __ATOMIC_RELAXED);
+			goto commit;
+		}
+
+		if (edgepair_is_cold(child->last_syscall_nr, syscallnr) &&
+		    RAND_BOOL()) {
+			__atomic_fetch_add(
+				&shm->stats.explorer_cold_pair_rejects,
+				1UL, __ATOMIC_RELAXED);
+			edgepair_attempts++;
+			if (edgepair_attempts < 20)
+				goto retry;
+		}
+	}
+
 	/* Anti-prior accept gate.  Applied AFTER the active/validate/
 	 * EXPENSIVE correctness gates so a rejected anti-prior candidate
 	 * goes back through the uniform pick rather than burning the gate
@@ -351,6 +394,7 @@ retry:
 		 * picks fall through. */
 	}
 
+commit:
 	lock(&rec->lock);
 	rec->do32bit = do32;
 	rec->nr = syscallnr;

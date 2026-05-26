@@ -2071,6 +2071,14 @@ static const struct {
 	  offsetof(struct stats_s, explorer_pool_edges_discovered) },
 	{ "bandit_pool_edges_discovered",
 	  offsetof(struct stats_s, bandit_pool_edges_discovered) },
+	/* Explorer picker edge-pair gating: cold-pair rejections cap at 20
+	 * retries per pick; never-seen accepts short-circuit past anti-prior.
+	 * See the matching field comments in struct stats_s for what flat or
+	 * runaway growth on each counter implies. */
+	{ "explorer_cold_pair_rejects",
+	  offsetof(struct stats_s, explorer_cold_pair_rejects) },
+	{ "explorer_unseen_pair_accepts",
+	  offsetof(struct stats_s, explorer_unseen_pair_accepts) },
 	/* Epoll lazy-arm wins: rate-of-change tracks fresh epfds reaching
 	 * children after the deferred-arm refactor.  A flat counter while
 	 * fd_regenerated keeps climbing means children aren't picking up
