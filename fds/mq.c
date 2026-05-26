@@ -48,25 +48,23 @@ static void mq_dump(struct object *obj, enum obj_scope scope)
 		obj->mqobj.fd, obj->mqobj.name, scope);
 }
 
-static void make_mq_name(char *buf, int idx)
+static void make_mq_name(char *buf, size_t buflen, int idx)
 {
-	buf[0] = '/';
-	buf[1] = 't';
-	buf[2] = 'r';
-	buf[3] = 'i';
-	buf[4] = 'n';
-	buf[5] = '0' + (idx % 10);
-	buf[6] = '\0';
+	/* Include the pid so two trinity instances on the same host do
+	 * not collide in the per-user POSIX mq namespace.  No modulo on
+	 * idx: if the pool ever grows past 10 the names must still be
+	 * unique. */
+	snprintf(buf, buflen, "/trin%d_%d", (int)getpid(), idx);
 }
 
 static int open_one_mq(int idx)
 {
 	struct mq_attr attr;
 	struct object *obj;
-	char name[8];
+	char name[24];
 	int fd;
 
-	make_mq_name(name, idx);
+	make_mq_name(name, sizeof(name), idx);
 
 	memset(&attr, 0, sizeof(attr));
 	attr.mq_maxmsg = 10;
@@ -102,7 +100,7 @@ static int init_mq_fds(void)
 	 * Opt this provider into the shared obj heap.  __destroy_object()
 	 * checks this flag to route the obj struct release through
 	 * free_shared_obj() instead of free().  mqobj is {int fd; char
-	 * name[8];} — the name is an inline char array that lives in the
+	 * name[N];} — the name is an inline char array that lives in the
 	 * obj struct itself, so it migrates to shm automatically with the
 	 * rest of the struct.  No alloc_shared_str needed.
 	 */

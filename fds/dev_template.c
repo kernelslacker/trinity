@@ -26,7 +26,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "child.h"
 #include "dev_template.h"
+#include "fd-event.h"
 #include "fd.h"
 #include "objects.h"
 #include "random.h"
@@ -176,9 +178,40 @@ int dev_template_pick_fd(void)
 	start = rnd_modulo_u32(DEV_TEMPLATE_MAX);
 	for (i = 0; i < DEV_TEMPLATE_MAX; i++) {
 		unsigned int idx = (start + i) % DEV_TEMPLATE_MAX;
+		int fd;
 
-		if (dev_template_state[idx].live)
-			return dev_template_state[idx].fd;
+		if (!dev_template_state[idx].live)
+			continue;
+
+		fd = dev_template_state[idx].fd;
+		if (fd < 0)
+			continue;
+
+		/* fcntl(F_GETFD) probe before returning the slot, mirroring
+		 * the pidfd provider.  These fds were opened in the parent
+		 * at init and added to fd_hash[] / the live-fd pool; any
+		 * child close() invalidates them but leaves the side-table
+		 * marked live, opening a type-confusion window if an
+		 * unrelated open(2) reuses the fd number.  Drop the stale
+		 * slot and re-probe instead of returning -1 after a single
+		 * try. */
+		if (fcntl(fd, F_GETFD) < 0) {
+			struct childdata *child = this_child();
+
+			if (child != NULL && child->fd_event_ring != NULL)
+				fd_event_enqueue(child->fd_event_ring,
+						 FD_EVENT_CLOSE,
+						 fd);
+
+			fd_hash_remove_local(fd);
+			dev_template_state[idx].live = false;
+			dev_template_state[idx].fd = -1;
+			if (nr_live_templates > 0)
+				nr_live_templates--;
+			continue;
+		}
+
+		return fd;
 	}
 	return -1;
 }

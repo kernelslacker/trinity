@@ -71,7 +71,7 @@ static void arm_landlock(int ruleset_fd)
 
 		memset(&attr, 0, sizeof(attr));
 		attr.parent_fd = path_fd;
-		attr.allowed_access = 1 + rnd_modulo_u32(0xffff);
+		attr.allowed_access = rnd_u32();
 
 		syscall(__NR_landlock_add_rule, ruleset_fd,
 			LANDLOCK_RULE_PATH_BENEATH, &attr, 0);

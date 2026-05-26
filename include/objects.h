@@ -130,7 +130,7 @@ struct pidfdobj {
 
 struct mqobj {
 	int fd;
-	char name[8];	/* "/trinN\0" */
+	char name[24];	/* "/trin<pid>_<idx>\0" */
 };
 
 struct seccomp_notifobj {

@@ -389,6 +389,8 @@ static void socket_child_ops(void)
 	sso_socket(&si->triplet, &so, fd);
 
 	generate_sockaddr((struct sockaddr **) &sa, &salen, si->triplet.family);
+	if (sa == NULL)
+		goto out;
 
 	ret = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 	if (ret == -1)

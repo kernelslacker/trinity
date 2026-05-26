@@ -72,7 +72,7 @@ static int init_cgroup_fds(void)
 
 	dir = opendir(CGROUP_ROOT);
 	if (dir == NULL)
-		return true;
+		return added > 0;
 
 	while (added < CGROUP_INIT_POOL) {
 		char path[PATH_MAX];
@@ -108,7 +108,7 @@ static int init_cgroup_fds(void)
 	}
 
 	closedir(dir);
-	return true;
+	return added > 0;
 }
 
 int get_rand_cgroup_fd(void)
