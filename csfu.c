@@ -56,6 +56,8 @@ static enum csfu_bucket csfu_pick_bucket(void)
  */
 static size_t csfu_pick_tail_extension(size_t slack)
 {
+	if (slack == 0)
+		return 0;
 	return 1 + rnd_modulo_u32((uint32_t) slack);
 }
 

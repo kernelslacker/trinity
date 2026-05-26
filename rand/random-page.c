@@ -221,7 +221,7 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 						'O',	/* device tree node */
 						'A',	/* Rust fmt::Arguments */
 					};
-					ptr[i + 2] = exts[rnd_modulo_u32(sizeof(exts))];
+					ptr[i + 2] = exts[rnd_modulo_u32(ARRAY_SIZE(exts))];
 					i++;
 				}
 				break;

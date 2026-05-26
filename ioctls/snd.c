@@ -596,7 +596,7 @@ static void sanitise_snd_seq(struct syscallrecord *rec)
 		if (pi) {
 			fill_snd_seq_addr(&pi->addr);
 			if (rec->a2 == SNDRV_SEQ_IOCTL_QUERY_NEXT_PORT)
-				pi->addr.port = (unsigned char)(rnd_modulo_u32(256)) - 1;
+				pi->addr.port = (unsigned char)(rnd_modulo_u32(256) - 1);
 			pi->capability = rnd_u32();
 			pi->type = rnd_u32();
 			pi->midi_channels = rnd_modulo_u32(16) + 1;
