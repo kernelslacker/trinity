@@ -198,6 +198,17 @@ static int nfnl_send_only(struct nfnl_ctx *ctx, void *msg, size_t len)
 	return 0;
 }
 
+/*
+ * Upper bound on the MSG_DONTWAIT drain loop in
+ * nfnl_send_recv_batched().  A pathological misbehaving peer (or a
+ * peer that just keeps producing replies) could otherwise keep the
+ * loop running until the kernel's queue empties for unrelated reasons.
+ * 64 iterations is far above the batch sizes any current childops
+ * caller submits (the largest is the bridge-conntrack churn batch at
+ * ~20 ops) and small enough that the worst-case wallclock cost stays
+ * well under a millisecond. */
+#define MAX_NFNL_DRAIN_ITERS 64
+
 int nfnl_send_recv_batched(struct nfnl_ctx *ctx, void *msg, size_t len)
 {
 	unsigned char rbuf[2048];
@@ -205,6 +216,7 @@ int nfnl_send_recv_batched(struct nfnl_ctx *ctx, void *msg, size_t len)
 	ssize_t n;
 	int first_err = 0;
 	int rc;
+	unsigned int iters = 0;
 
 	rc = nfnl_send_only(ctx, msg, len);
 	if (rc != 0)
@@ -212,7 +224,9 @@ int nfnl_send_recv_batched(struct nfnl_ctx *ctx, void *msg, size_t len)
 
 	/* Blocking recv to wait for the batch result; then non-blocking
 	 * drain of every coalesced reply so the kernel's queue empties
-	 * before the caller's next send. */
+	 * before the caller's next send.  Bounded at
+	 * MAX_NFNL_DRAIN_ITERS so a misbehaving peer can't pin us in
+	 * the drain. */
 	n = recv(ctx->nl.fd, rbuf, sizeof(rbuf), 0);
 	if (n < (ssize_t)NLMSG_HDRLEN)
 		return -EIO;
@@ -225,7 +239,8 @@ int nfnl_send_recv_batched(struct nfnl_ctx *ctx, void *msg, size_t len)
 			first_err = err;
 	}
 
-	while ((n = recv(ctx->nl.fd, rbuf, sizeof(rbuf), MSG_DONTWAIT)) > 0) {
+	while (iters++ < MAX_NFNL_DRAIN_ITERS &&
+	       (n = recv(ctx->nl.fd, rbuf, sizeof(rbuf), MSG_DONTWAIT)) > 0) {
 		if (n < (ssize_t)NLMSG_HDRLEN)
 			continue;
 		nlh = (struct nlmsghdr *)rbuf;

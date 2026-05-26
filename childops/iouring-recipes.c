@@ -355,15 +355,32 @@ static void iour_recipe_state_cleanup(struct iour_recipe_state *s)
 {
 	if (s->provided_buf_active) {
 		struct io_uring_sqe sqe;
+		unsigned int sq_head = ring_u32(s->ctx->sq_ring,
+						s->ctx->sq_off_head);
+		unsigned int sq_tail = ring_u32(s->ctx->sq_ring,
+						s->ctx->sq_off_tail);
+		unsigned int sq_avail = s->ctx->sq_entries -
+					(sq_tail - sq_head);
 
-		sqe_clear(&sqe);
-		sqe.opcode    = IORING_OP_REMOVE_BUFFERS;
-		sqe.fd        = s->provided_buf_count;
-		sqe.buf_group = s->provided_buf_group_id;
-		sqe.user_data = 999;
-		if (iour_submit_sqes(s->ctx, &sqe, 1))
-			(void)iour_enter(s->ctx, 1, 0);
-		iour_drain_cqes(s->ctx);
+		/* SQ-full at teardown time is expected when a recipe
+		 * has already crammed the ring on its way to the
+		 * landing path.  Skip the REMOVE_BUFFERS submission
+		 * rather than spinning on a retry loop -- the kernel
+		 * reclaims the provided-buffer pool when the ring
+		 * itself is closed in iour_teardown(), so the only
+		 * thing we lose by skipping is the ability to reuse
+		 * the group id within this same ring before the close,
+		 * which no recipe path does. */
+		if (sq_avail > 0) {
+			sqe_clear(&sqe);
+			sqe.opcode    = IORING_OP_REMOVE_BUFFERS;
+			sqe.fd        = s->provided_buf_count;
+			sqe.buf_group = s->provided_buf_group_id;
+			sqe.user_data = 999;
+			if (iour_submit_sqes(s->ctx, &sqe, 1))
+				(void)iour_enter(s->ctx, 1, 0);
+			iour_drain_cqes(s->ctx);
+		}
 		s->provided_buf_active = false;
 	}
 	if (s->registered_buf) {
