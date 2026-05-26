@@ -134,16 +134,16 @@ static int get_rand_pidfd(void)
 		if (fcntl(fd, F_GETFD) < 0) {
 			struct childdata *child = this_child();
 
-			if (child != NULL && child->fd_event_ring != NULL)
-				fd_event_enqueue(child->fd_event_ring,
-						 FD_EVENT_CLOSE,
-						 fd);
-
-			/* Drop the stale fd from this child's own fd_hash[]
-			 * snapshot so a subsequent get_typed_fd() /
-			 * get_random_fd() can't re-pick it before the parent
-			 * drains the FD_EVENT_CLOSE. */
-			fd_hash_remove_local(fd);
+			/* Publish the stale fd to the parent and drop the
+			 * local snapshots.  get_rand_pidfd() runs in child
+			 * context (called from arg-generation), so
+			 * this_child() resolves the producing child here.
+			 * The live_fds ring eviction inside the helper
+			 * keeps the same fd from being re-picked through
+			 * the live-fd cache on the next syscall before the
+			 * parent drains the FD_EVENT_CLOSE. */
+			if (child != NULL)
+				notify_child_fd_closed(child, fd);
 			continue;
 		}
 
