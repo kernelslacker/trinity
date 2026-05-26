@@ -538,7 +538,7 @@ struct shm_s {
 	 *   pre-computed acceptance numerator in [1, ANTI_PRIOR_THRESHOLD_
 	 *   SCALE] (= 64 today), populated alongside the baseline at every
 	 *   PIM_ANTI_PRIOR rotation.  The picker's rejection roll reduces
-	 *   to (rand() % SCALE) < weight[nr], which lets the per-retry
+	 *   to rnd_modulo_u32(SCALE) < weight[nr], which lets the per-retry
 	 *   inner loop in set_syscall_nr_random skip the clamp / divide /
 	 *   cap math the accept gate used to redo on every candidate.
 	 *   uint8_t suffices because SCALE = ANTI_PRIOR_MAX_BOOST^2 = 64

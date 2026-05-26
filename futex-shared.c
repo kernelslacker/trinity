@@ -22,9 +22,9 @@
  * to concentrate contention across many children onto the same
  * handful of keys.  Larger would dilute the cross-child collisions;
  * smaller would make the picker biased toward whichever entry the
- * rand() landed on first.  All entries are populated by the parent
- * in create_shared_futex_pool() and never destroyed.  Children only
- * ever read the obj pointers via the lockless reader in
+ * random picker landed on first.  All entries are populated by the
+ * parent in create_shared_futex_pool() and never destroyed.  Children
+ * only ever read the obj pointers via the lockless reader in
  * get_random_object().
  */
 

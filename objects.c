@@ -1281,9 +1281,10 @@ static void __prune_objects(struct childdata *child, enum objecttype type, enum 
 		return;
 
 	/* Direct random-victim sampling.  The old form walked all N slots
-	 * and rolled ONE_IN(10) per slot -- ~N rand() calls and N branches
-	 * to perform ~N/10 destroys.  Pick expected_kills victims directly:
-	 * ~N/10 rand() calls and N/10 branches for the same eviction rate.
+	 * and rolled ONE_IN(10) per slot -- ~N rnd_modulo_u32 calls and N
+	 * branches to perform ~N/10 destroys.  Pick expected_kills victims
+	 * directly: ~N/10 rnd_modulo_u32 calls and N/10 branches for the
+	 * same eviction rate.
 	 *
 	 * Take n once: destroy_object() decrements num_entries via swap-
 	 * with-last, but we sample over the original index space.  Slots

@@ -439,9 +439,8 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	 * cmp_capable so a kernel without KCOV_TRACE_CMP (or any failure
 	 * in the probe above) degrades cleanly to PC-only across the
 	 * fleet — KCOV_MODE_CMP is only reachable when the cmp fd is
-	 * actually usable.  rand() % N has bias O(1/RAND_MAX) for the
-	 * small N (4) used here; the population mix doesn't need
-	 * cryptographic uniformity.
+	 * actually usable.  The population mix doesn't need cryptographic
+	 * uniformity.
 	 */
 select_mode:
 	if (kc->cmp_capable && rnd_modulo_u32(KCOV_CMP_CHILD_RECIPROCAL) == 0)

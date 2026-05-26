@@ -354,7 +354,7 @@ static void post_execve(struct syscallrecord *rec)
 		return;
 	}
 	/*
-	 * sanitise_execve() bounds both counts by rand() % 32; anything
+	 * sanitise_execve() bounds both counts by rnd_modulo_u32(32); anything
 	 * over 32 means the snapshot was scribbled.  Walking the array
 	 * with a bogus count reads far past the end of the allocation,
 	 * so leak instead — the child process is dying anyway.

@@ -496,7 +496,7 @@ bool plateau_anti_prior_active(void);
  * syscalls bottom out at 1/MAX_BOOST^2.  The clamp / divide / cap
  * math is pre-computed per syscall by plateau_anti_prior_refresh_
  * baseline at every PIM_ANTI_PRIOR rotation; the hot path here reduces
- * to one relaxed load plus a single (rand() % SCALE) < weight roll.
+ * to one relaxed load plus a single rnd_modulo_u32(SCALE) < weight roll.
  *
  * Returns true (pass) when baseline is zero, so the gate degenerates
  * gracefully to uniform pick before any window has refreshed the

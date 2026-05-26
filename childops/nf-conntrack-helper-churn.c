@@ -32,7 +32,7 @@
  * tolerate.
  *
  * Sequence (per BUDGETED inner-loop iteration):
- *   1.  Choose a zone Z = rand() % NF_ZONE_SPREAD and an L4 protocol
+ *   1.  Choose a zone Z in [0, NF_ZONE_SPREAD) and an L4 protocol
  *       (TCP / UDP) and a helper name from the runtime-available mask.
  *   2.  IPCTNL_MSG_CT_NEW: insert a synthetic tuple in zone Z over
  *       loopback (src/dst ports randomised), CTA_PROTOINFO_TCP_STATE

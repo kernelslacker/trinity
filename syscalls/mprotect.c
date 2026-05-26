@@ -175,7 +175,7 @@ static void post_mprotect(struct syscallrecord *rec)
 
 	/*
 	 * common_set_mmap_ptr_len() forces rec->a1 = map->ptr but sets
-	 * rec->a2 = rand() % map->size & PAGE_MASK, so this path is
+	 * rec->a2 = rnd_modulo_u32(map->size) & PAGE_MASK, so this path is
 	 * effectively always a sub-range mprotect (a2 < map->size).
 	 * Blindly overwriting map->prot with the new prot leaks it into
 	 * the cached invariant — e.g. a sub-range upgrade from PROT_NONE
