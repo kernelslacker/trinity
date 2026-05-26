@@ -153,7 +153,15 @@ static bool ensure_discovery(void)
 	if (pmu_count == 0) {
 		if (!pmu_warned_unsupported) {
 			pmu_warned_unsupported = true;
-			outputerr("perf_event_chains: no PMUs found, disabling\n");
+			/* stderr was redirected to /dev/null in init_child,
+			 * so an outputerr here would be lost.  Bump a shm
+			 * counter under the same one-shot gate -- one tick
+			 * per child first-observation, so the counter
+			 * reports how many children disabled this childop
+			 * for lack of PMUs. */
+			__atomic_add_fetch(
+				&shm->stats.perf_event_chains_pmu_unsupported,
+				1, __ATOMIC_RELAXED);
 		}
 		return false;
 	}
