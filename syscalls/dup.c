@@ -33,18 +33,14 @@ static void post_dup(struct syscallrecord *rec)
 	/*
 	 * Oracle: dup(oldfd) must produce a new fd pointing at the same inode.
 	 * A dev/ino mismatch means the fd-table was corrupted by the kernel.
+	 * post hooks run in child context where init_child has redirected
+	 * stderr to /dev/null, so the previous output() here was lost.  The
+	 * fd_oracle_anomalies counter is the survivor signal.
 	 */
 	if (fstat((int) rec->a1, &st_old) == 0 &&
 	    fstat((int) rec->retval, &st_new) == 0) {
 		if (st_old.st_dev != st_new.st_dev ||
 		    st_old.st_ino != st_new.st_ino) {
-			output(0, "fd oracle: dup(%lu->%lu) inode mismatch "
-			       "dev=%lu:%lu ino=%lu:%lu\n",
-			       rec->a1, rec->retval,
-			       (unsigned long) st_old.st_dev,
-			       (unsigned long) st_new.st_dev,
-			       (unsigned long) st_old.st_ino,
-			       (unsigned long) st_new.st_ino);
 			__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}
@@ -157,19 +153,15 @@ static void post_dup2(struct syscallrecord *rec)
 	/*
 	 * Oracle: dup2(oldfd, newfd) must produce two fds pointing at the same
 	 * inode.  A dev/ino mismatch means the fd-table was corrupted by the
-	 * kernel — silent data-corruption, not a crash.
+	 * kernel -- silent data-corruption, not a crash.  post hooks run in
+	 * child context where init_child has redirected stderr to /dev/null,
+	 * so the previous output() here was lost.  The fd_oracle_anomalies
+	 * counter is the survivor signal.
 	 */
 	if (fstat((int) rec->a1, &st_old) == 0 &&
 	    fstat((int) rec->retval, &st_new) == 0) {
 		if (st_old.st_dev != st_new.st_dev ||
 		    st_old.st_ino != st_new.st_ino) {
-			output(0, "fd oracle: dup2(%lu->%lu) inode mismatch "
-			       "dev=%lu:%lu ino=%lu:%lu\n",
-			       rec->a1, rec->retval,
-			       (unsigned long) st_old.st_dev,
-			       (unsigned long) st_new.st_dev,
-			       (unsigned long) st_old.st_ino,
-			       (unsigned long) st_new.st_ino);
 			__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}
