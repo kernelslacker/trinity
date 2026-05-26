@@ -302,8 +302,11 @@ bool inner_ptr_ok_to_free(struct syscallrecord *rec, const void *p,
  * Cache the [heap] extent plus every non-brk allocator region tagged
  * via prctl(PR_SET_VMA_ANON_NAME) ("[anon:NAME]" lines in
  * /proc/self/maps -- glibc mmap arenas, libasan primary / secondary /
- * shadow, etc.).  Call once before fork; every child inherits the
- * cached bounds via COW BSS.
+ * shadow, etc.).  Called once before fork by the parent and once per
+ * child from init_child(); the per-child refresh atomically rewrites
+ * the COW-inherited snapshot in the child's now-private pages so
+ * glibc arenas spawned post-fork are captured before the syscall
+ * fuzz loop starts.
  */
 void heap_bounds_init(void);
 

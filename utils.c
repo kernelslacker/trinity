@@ -1644,10 +1644,11 @@ static unsigned long heap_end;
  * layout adds more regions.
  */
 #define MAX_EXTRA_HEAP_REGIONS	16
-static struct {
+struct heap_region {
 	unsigned long start;
 	unsigned long end;
-} extra_heap_regions[MAX_EXTRA_HEAP_REGIONS];
+};
+static struct heap_region extra_heap_regions[MAX_EXTRA_HEAP_REGIONS];
 static unsigned int nr_extra_heap_regions;
 
 /*
@@ -1697,9 +1698,23 @@ static bool parse_maps_line(char *line, unsigned long *start_out,
 }
 
 /*
- * Parse /proc/self/maps once and stash the brk arena plus every
- * labeled non-brk allocator region.  Must be called before fork; the
- * results are read by every child via the inherited COW BSS.
+ * Parse /proc/self/maps and stash the brk arena plus every labeled
+ * non-brk allocator region.  Called once pre-fork by the parent and
+ * once per child from init_child() (after all the post-fork startup
+ * mmap traffic has settled) so glibc mmap arenas that the child's
+ * own allocator storm spawned after fork are captured -- without the
+ * per-child re-parse, those arenas live outside the inherited
+ * snapshot and a wild pointer landing in one slips past the overlap
+ * gate, letting the kernel scribble glibc chunk metadata and
+ * surfacing later as an arena-corruption abort with no proximate
+ * reproducer.
+ *
+ * The parse is committed atomically into module state on success.
+ * A failed open (vanishingly rare for /proc/self/maps on our own
+ * pid) preserves whatever snapshot was previously in place: the
+ * child's COW-inherited parent snapshot stays valid as a fallback
+ * rather than collapsing to an empty validator that lets every
+ * address through.
  *
  * If the [heap] line is missing (rare: glibc tuned to
  * MALLOC_MMAP_THRESHOLD_=0 or the binary somehow hasn't grown brk
@@ -1711,6 +1726,9 @@ void heap_bounds_init(void)
 {
 	FILE *f;
 	char line[512];
+	unsigned long new_heap_start = 0, new_heap_end = 0;
+	struct heap_region new_regions[MAX_EXTRA_HEAP_REGIONS];
+	unsigned int new_nr = 0;
 
 	f = fopen("/proc/self/maps", "r");
 	if (f == NULL) {
@@ -1740,8 +1758,8 @@ void heap_bounds_init(void)
 
 		if (strncmp(label, "[heap]", 6) == 0 &&
 		    (label[6] == '\0' || label[6] == ' ')) {
-			heap_start = start;
-			heap_end = end;
+			new_heap_start = start;
+			new_heap_end = end;
 			continue;
 		}
 
@@ -1760,7 +1778,7 @@ void heap_bounds_init(void)
 		if (strncmp(label, "[anon:", 6) != 0)
 			continue;
 
-		if (nr_extra_heap_regions >= MAX_EXTRA_HEAP_REGIONS) {
+		if (new_nr >= MAX_EXTRA_HEAP_REGIONS) {
 			static bool warned;
 
 			if (!warned) {
@@ -1775,12 +1793,24 @@ void heap_bounds_init(void)
 			continue;
 		}
 
-		extra_heap_regions[nr_extra_heap_regions].start = start;
-		extra_heap_regions[nr_extra_heap_regions].end = end;
-		nr_extra_heap_regions++;
+		new_regions[new_nr].start = start;
+		new_regions[new_nr].end = end;
+		new_nr++;
 	}
 
 	fclose(f);
+
+	/*
+	 * Commit the freshly-parsed snapshot in one shot.  On the
+	 * child-side refresh path this rewrites the COW-inherited
+	 * parent snapshot in the child's now-private BSS pages; the
+	 * parent's copy and any sibling's copy are unaffected.
+	 */
+	heap_start = new_heap_start;
+	heap_end = new_heap_end;
+	memcpy(extra_heap_regions, new_regions,
+	       new_nr * sizeof(new_regions[0]));
+	nr_extra_heap_regions = new_nr;
 }
 
 /*
@@ -1897,17 +1927,17 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 
 	/*
 	 * Walk the captured non-brk allocator regions.  Each entry is
-	 * a fixed [start, end) snapshot from heap_bounds_init() -- the
-	 * underlying VMAs are large pre-reservations (libasan's primary
-	 * allocator at 0x511000000000+ is one ~16 TiB reservation, glibc
-	 * mmap arenas are a few MiB each) whose bounds don't move at
-	 * runtime, so a one-shot snapshot is sufficient.  Post-fork
-	 * secondary mmaps (large mallocs that bypass the primary
-	 * allocator into one-VMA-per-alloc) can land outside the
-	 * snapshot, but the dominant failure mode this guards against
-	 * is sibling stomp on a co-located primary-allocator chunk that
-	 * holds inner pointers (the recvmmsg msg_control bad-free), and
-	 * that lives in the captured primary-allocator VMA.
+	 * a fixed [start, end) snapshot from heap_bounds_init(), which
+	 * the parent runs once pre-fork and each child re-runs at the
+	 * end of init_child() so glibc arenas that the child's own
+	 * post-fork allocator storm spawned (per-thread mmap arenas,
+	 * libasan shadow growth, secondary allocator regions tagged
+	 * via PR_SET_VMA_ANON_NAME) make it into the snapshot before
+	 * the syscall fuzz loop starts hammering pointers through this
+	 * gate.  The captured VMAs are large reservations whose bounds
+	 * don't shrink and rarely grow once the child is settled, so a
+	 * single refresh per child closes the post-fork window without
+	 * touching the hot path.
 	 */
 	for (i = 0; i < nr_extra_heap_regions; i++) {
 		if (addr < extra_heap_regions[i].end &&

@@ -589,11 +589,15 @@ void deferred_free_init(void)
 	ring_lock();
 
 	/*
-	 * Cache the brk-arena extent now, before any child forks.  Every
-	 * child inherits the bounds via COW BSS so is_in_glibc_heap()
-	 * needs no further /proc/self/maps reads at runtime.  Read here
-	 * rather than at use-site: a syscall fuzzer parsing /proc on
-	 * every deferred_free_enqueue would dwarf the work it's gating.
+	 * Cache the brk-arena extent and labeled non-brk allocator
+	 * regions now, before any child forks.  Every child inherits
+	 * the bounds via COW BSS as a baseline, then re-parses
+	 * /proc/self/maps once at end-of-init_child() to capture the
+	 * mmap arenas glibc spawned post-fork.  Caching at init time
+	 * (here and at child startup, not per call) keeps the hot
+	 * is_in_glibc_heap / range_overlaps_libc_heap path a small
+	 * array walk -- a syscall fuzzer parsing /proc on every
+	 * deferred_free_enqueue would dwarf the work it's gating.
 	 */
 	heap_bounds_init();
 }

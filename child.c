@@ -822,6 +822,23 @@ static void init_child(struct childdata *child, int childno)
 			      (unsigned int)childno < alt_op_children + explorer_children);
 
 	/*
+	 * Re-snapshot /proc/self/maps now that init_child's allocator-
+	 * heavy setup has settled.  Glibc spawns secondary mmap arenas
+	 * on demand (per-thread, under contention, large mallocs that
+	 * bypass MMAP_THRESHOLD), and the init_child_mappings / futex
+	 * setup / clone_global_objects_to_child / kcov_init_child path
+	 * generates enough allocator traffic to materialise arenas that
+	 * the parent's pre-fork snapshot doesn't know about.  Without
+	 * this refresh, a fuzzed pointer landing in a post-fork arena
+	 * passes range_overlaps_libc_heap() and the kernel scribbles
+	 * glibc chunk metadata -- the corruption surfaces later as an
+	 * arena abort with no obvious proximate cause.  Runs before the
+	 * RLIMIT_AS pin so the fopen()'s small allocation completes
+	 * under the inherited RLIM_INFINITY ceiling.
+	 */
+	heap_bounds_init();
+
+	/*
 	 * Pin RLIMIT_AS as the LAST thing init_child does, just before the
 	 * child_process() main loop takes over.  Applied here — not back at
 	 * setsid() time — so the inherited ~2 GB virtual-memory baseline,
