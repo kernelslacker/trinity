@@ -16,6 +16,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+#include "valresult.h"
 
 #if defined(SYS_getpeername) || defined(__NR_getpeername)
 #ifndef SYS_getpeername
@@ -39,6 +40,7 @@ struct getpeername_post_state {
 	unsigned long fd;
 	unsigned long usockaddr;
 	unsigned long usockaddr_len;
+	struct valresult_buf vrb;
 };
 #endif
 
@@ -49,26 +51,28 @@ static void sanitise_getpeername(struct syscallrecord *rec)
 
 	rec->post_state = 0;
 #endif
-	socklen_t *lenp;
+	struct valresult_buf vrb;
 
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 
 	avoid_shared_buffer_out(&rec->a2, sizeof(struct sockaddr_storage));
 
 	/*
-	 * usockaddr_len is a value-result socklen_t pointer.  ARG_SOCKADDRLEN
-	 * published a scalar (the addr buffer's generated length) into the
-	 * slot, but the kernel reads it as a __user pointer and EFAULTs every
-	 * call -- the post oracle below was effectively never reachable.
-	 * Replace with a real heap-resident socklen_t* initialised to the
-	 * addr buffer's full sockaddr_storage capacity, then _inout (not
-	 * _out) so the init value survives any heap-overlap relocation: the
-	 * kernel reads *lenp as max_addrlen BEFORE writing the actual length
-	 * back.  Mirrors getsockopt.c:73-101.
+	 * usockaddr_len is a value-result socklen_t pointer. ARG_SOCKADDRLEN
+	 * published a scalar into the slot, which the kernel reads as a
+	 * __user pointer and EFAULTs every call -- the post oracle below
+	 * was effectively never reachable. Route the addrlen slot through
+	 * valresult_alloc() so the shape catalogue (EXACT / UNDER /
+	 * EXACT_PLUS_ONE / HUGE / ZERO) mutates *lenp around the natural
+	 * sockaddr_storage capacity. Mirrors recv.c (81a1271bc2a1) and
+	 * getsockopt.c (38e1b000092d). EXACT (~88%) preserves the
+	 * stable-equality oracle for the happy path; the other shapes are
+	 * new fuzz coverage that the oracle will mostly short-circuit via
+	 * the retval and recheck_len != first_len gates.
 	 */
-	lenp = zmalloc(sizeof(*lenp));
-	*lenp = sizeof(struct sockaddr_storage);
-	rec->a3 = (unsigned long) lenp;
+	vrb = valresult_alloc(sizeof(struct sockaddr_storage),
+			      valresult_pick_shape());
+	rec->a3 = (unsigned long) vrb.len_io;
 	avoid_shared_buffer_inout(&rec->a3, sizeof(socklen_t));
 
 #ifdef HAVE_SYS_GETPEERNAME
@@ -90,6 +94,7 @@ static void sanitise_getpeername(struct syscallrecord *rec)
 	snap->fd            = rec->a1;
 	snap->usockaddr     = rec->a2;
 	snap->usockaddr_len = rec->a3;
+	snap->vrb           = vrb;
 	rec->post_state = (unsigned long) snap;
 #endif
 }
@@ -324,6 +329,7 @@ static void post_getpeername(struct syscallrecord *rec)
 	}
 
 out_free:
+	valresult_free(&snap->vrb);
 	deferred_freeptr(&rec->post_state);
 }
 #endif
