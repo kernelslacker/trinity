@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #include "objects.h"
+#include "publish_resource.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "random.h"
@@ -53,14 +54,10 @@ REG_GLOBAL_OBJ(timerid, init_timerid_pool);
 
 void register_timerid(int32_t tid)
 {
-	struct object *obj;
-
 	if (tid < 0)
 		return;
 
-	obj = alloc_object();
-	obj->timeridobj.tid = tid;
-	add_object(obj, OBJ_LOCAL, OBJ_TIMERID);
+	publish_resource(OBJ_TIMERID, (unsigned long)tid, NULL);
 }
 
 int32_t get_random_timerid(void)
