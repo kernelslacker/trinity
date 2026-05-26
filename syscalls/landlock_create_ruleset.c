@@ -5,7 +5,7 @@
  */
 #include <linux/landlock.h>
 #include <string.h>
-#include "objects.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -175,9 +175,7 @@ static void post_landlock_create_ruleset(struct syscallrecord *rec)
 	if ((long)rec->retval < 0)
 		return;
 
-	struct object *new = alloc_object();
-	new->landlockobj.fd = fd;
-	add_object(new, OBJ_LOCAL, OBJ_FD_LANDLOCK);
+	publish_resource(OBJ_FD_LANDLOCK, fd, NULL);
 }
 
 struct syscallentry syscall_landlock_create_ruleset = {
