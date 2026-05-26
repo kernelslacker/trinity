@@ -18,10 +18,21 @@ enum nla_kind {
 	NLA_KIND_STRING,
 	NLA_KIND_NESTED,
 	NLA_KIND_FLAG,
+	/* Binary blob whose length the kernel constrains to exactly one
+	 * of two values (typically AES-128 vs AES-256 key bytes).  Picks
+	 * uniformly between min_len and max_len per emission rather than
+	 * sweeping the [4, max_len] range NLA_KIND_BINARY uses: any
+	 * intermediate length is a guaranteed kernel reject, so spending
+	 * fuzz budget there is wasted work that only flips -EINVAL on
+	 * the validate side. */
+	NLA_KIND_BINARY_FIXED2,
 };
 
 struct nla_attr_spec {
 	unsigned short type;
 	unsigned short kind;
 	unsigned short max_len;	/* upper bound on payload; 0 for fixed kinds */
+	unsigned short min_len;	/* lower bound; for NLA_KIND_BINARY_FIXED2 the
+				 * payload is exactly one of {min_len,
+				 * max_len}.  Zero on other kinds. */
 };

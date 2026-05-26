@@ -1871,6 +1871,8 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 		if (spec->max_len > 4)
 			return RAND_RANGE(4, spec->max_len);
 		return spec->max_len;
+	case NLA_KIND_BINARY_FIXED2:
+		return ONE_IN(2) ? spec->min_len : spec->max_len;
 	case NLA_KIND_NESTED:
 		/* Caller decides — nested kinds get a recursive emission */
 		return 0;

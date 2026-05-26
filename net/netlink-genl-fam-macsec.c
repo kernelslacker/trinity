@@ -141,7 +141,14 @@ static const struct nla_attr_spec macsec_attrs[] = {
 	{ MACSEC_SA_ATTR_AN,				NLA_KIND_U8,     1 },
 	{ MACSEC_SA_ATTR_ACTIVE,			NLA_KIND_U8,     1 },
 	{ MACSEC_SA_ATTR_PN,				NLA_KIND_U64,    8 },
-	{ MACSEC_SA_ATTR_KEY,				NLA_KIND_BINARY, MACSEC_MAX_KEY_LEN },
+	/* AES-GCM key: the macsec_genl_sa_policy rejects every length
+	 * other than 16 (AES-128) or 32 (AES-256), so emitting any
+	 * intermediate length burns budget on guaranteed -EINVAL
+	 * returns from validate_*.  Pick uniformly between the two
+	 * accepted sizes via NLA_KIND_BINARY_FIXED2 so each emission
+	 * actually reaches the post-policy install handlers. */
+	{ MACSEC_SA_ATTR_KEY,				NLA_KIND_BINARY_FIXED2,
+							32, 16 },
 	{ MACSEC_SA_ATTR_KEYID,				NLA_KIND_BINARY, MACSEC_KEYID_LEN },
 	{ MACSEC_SA_ATTR_STATS,				NLA_KIND_NESTED, 0 },
 	{ MACSEC_SA_ATTR_SSCI,				NLA_KIND_U32,    4 },
