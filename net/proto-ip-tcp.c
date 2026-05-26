@@ -152,6 +152,7 @@ void tcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triple
 	}
 
 	default:
+		so->optlen = sizeof(int);
 		break;
 	}
 }
