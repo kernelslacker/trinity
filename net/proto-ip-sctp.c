@@ -335,6 +335,7 @@ void sctp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *tripl
 	}
 
 	default:
+		so->optlen = sizeof(int);
 		break;
 	}
 }
