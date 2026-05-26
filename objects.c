@@ -986,6 +986,7 @@ static void invalidate_object_fd(struct object *obj, enum objecttype type)
 	switch (type) {
 	case OBJ_FD_PIPE:	obj->pipeobj.fd = -1; break;
 	case OBJ_FD_DEVFILE:	obj->fileobj.fd = -1; break;
+	case OBJ_FD_DEV_TEMPLATE: obj->fileobj.fd = -1; break;
 	case OBJ_FD_PROCFILE:	obj->fileobj.fd = -1; break;
 	case OBJ_FD_SYSFILE:	obj->fileobj.fd = -1; break;
 	case OBJ_FD_PERF:	obj->perfobj.fd = -1; break;
@@ -1149,6 +1150,7 @@ void set_object_fd(struct object *obj, enum objecttype type, int fd)
 	switch (type) {
 	case OBJ_FD_PIPE:	obj->pipeobj.fd = fd; break;
 	case OBJ_FD_DEVFILE:
+	case OBJ_FD_DEV_TEMPLATE:
 	case OBJ_FD_PROCFILE:
 	case OBJ_FD_SYSFILE:	obj->fileobj.fd = fd; break;
 	case OBJ_FD_PERF:	obj->perfobj.fd = fd; break;
@@ -1218,6 +1220,7 @@ int fd_from_object(struct object *obj, enum objecttype type)
 	switch (type) {
 	case OBJ_FD_PIPE:	return obj->pipeobj.fd;
 	case OBJ_FD_DEVFILE:
+	case OBJ_FD_DEV_TEMPLATE:
 	case OBJ_FD_PROCFILE:
 	case OBJ_FD_SYSFILE:	return obj->fileobj.fd;
 	case OBJ_FD_PERF:	return obj->perfobj.fd;
