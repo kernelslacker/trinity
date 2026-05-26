@@ -15,7 +15,7 @@
 #include "socket-family-grammar.h"
 #include "rnd.h"
 
-static void netlink_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void netlink_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_nl *nl;
 	const unsigned long nl_groups[] = {

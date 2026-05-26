@@ -165,7 +165,7 @@ static void pppox_PX_PROTO_OL2TP(struct sockaddr **addr, socklen_t *addrlen)
 	pppox_px_protos[rnd_modulo_u32(ARRAY_SIZE(pppox_px_protos))].func(addr, addrlen);
 }
 
-static void pppox_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void pppox_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	const struct ppp_funcptr pppox_protos[] = {
 		{ .func = pppox_PX_PROTO_OE },

@@ -11,7 +11,7 @@
 #ifdef USE_CAIF
 #include <linux/caif/caif_socket.h>
 
-static void caif_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void caif_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_caif *caif;
 	unsigned int i;

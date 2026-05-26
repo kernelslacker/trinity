@@ -9,7 +9,7 @@
 #include "random.h"
 #include "rnd.h"
 
-static void nfc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void nfc_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	if (RAND_BOOL()) {
 		struct sockaddr_nfc_llcp *nfc_llcp;

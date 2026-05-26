@@ -35,7 +35,7 @@
 #define SCM_CREDENTIALS	0x02
 #endif
 
-static void unix_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void unix_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_un *unixsock;
 	unsigned int len;

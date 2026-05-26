@@ -10,7 +10,7 @@
 #include "compat.h"
 #include "rnd.h"
 
-static void atmpvc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void atmpvc_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_atmpvc *atmpvc;
 
@@ -24,7 +24,7 @@ static void atmpvc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_atmpvc);
 }
 
-static void atmsvc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void atmsvc_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_atmsvc *atmsvc;
 	unsigned int i;

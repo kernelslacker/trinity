@@ -12,9 +12,18 @@
 #define SOL_SMC         286
 #define SMC_LIMIT_HS    1
 
-static void smc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void smc_gen_sockaddr(struct socket_triplet *triplet,
+			     struct sockaddr **addr, socklen_t *addrlen)
 {
-	if (RAND_BOOL()) {
+	if (triplet->protocol == SMCPROTO_SMC6) {
+		struct sockaddr_in6 *sin6;
+
+		sin6 = zmalloc_tracked(sizeof(struct sockaddr_in6));
+		sin6->sin6_family = AF_INET6;
+		sin6->sin6_port = htons(rnd_modulo_u32(65536));
+		*addr = (struct sockaddr *) sin6;
+		*addrlen = sizeof(struct sockaddr_in6);
+	} else {
 		struct sockaddr_in *sin;
 
 		sin = zmalloc_tracked(sizeof(struct sockaddr_in));
@@ -23,14 +32,6 @@ static void smc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
 		sin->sin_port = htons(rnd_modulo_u32(65536));
 		*addr = (struct sockaddr *) sin;
 		*addrlen = sizeof(struct sockaddr_in);
-	} else {
-		struct sockaddr_in6 *sin6;
-
-		sin6 = zmalloc_tracked(sizeof(struct sockaddr_in6));
-		sin6->sin6_family = AF_INET6;
-		sin6->sin6_port = htons(rnd_modulo_u32(65536));
-		*addr = (struct sockaddr *) sin6;
-		*addrlen = sizeof(struct sockaddr_in6);
 	}
 }
 

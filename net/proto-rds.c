@@ -20,7 +20,7 @@
 #define SO_RDS_TRANSPORT	8
 #endif
 
-static void rds_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void rds_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	if (RAND_BOOL()) {
 		struct sockaddr_in *rds;

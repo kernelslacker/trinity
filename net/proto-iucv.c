@@ -42,7 +42,7 @@ static void iucv_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 	so->optlen = sizeof(int);
 }
 
-static void iucv_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void iucv_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_iucv *sa;
 	unsigned int i;

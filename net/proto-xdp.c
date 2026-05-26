@@ -140,7 +140,7 @@ out_unmap_umem:
 	munmap(umem_area, XDP_UMEM_SIZE);
 }
 
-static void xdp_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void xdp_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_xdp *xdp;
 

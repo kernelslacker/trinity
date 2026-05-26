@@ -36,7 +36,8 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 	proto = net_protocols[pf].proto;
 	if (proto != NULL) {
 		if (proto->gen_sockaddr != NULL) {
-			proto->gen_sockaddr(addr, addrlen);
+			struct socket_triplet stub = { .family = pf };
+			proto->gen_sockaddr(&stub, addr, addrlen);
 			return;
 		}
 	}

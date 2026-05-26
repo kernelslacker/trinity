@@ -35,7 +35,7 @@ static const unsigned int tipc_addrtype[] = {
 	TIPC_ADDR_NAMESEQ, TIPC_ADDR_NAME, TIPC_ADDR_ID, TIPC_SERVICE_RANGE,
 };
 
-static void tipc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void tipc_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_tipc *tipc;
 

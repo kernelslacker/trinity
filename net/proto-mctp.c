@@ -41,7 +41,7 @@ struct mctp_ioc_tag_ctl {
 };
 #endif
 
-static void mctp_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void mctp_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_mctp *mctp;
 

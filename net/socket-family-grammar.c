@@ -185,7 +185,7 @@ int sfg_default_bind(int fd, struct socket_triplet *triplet)
 	if (proto == NULL || proto->gen_sockaddr == NULL)
 		return -1;
 
-	proto->gen_sockaddr(&addr, &addrlen);
+	proto->gen_sockaddr(triplet, &addr, &addrlen);
 	if (addr == NULL)
 		return -1;
 

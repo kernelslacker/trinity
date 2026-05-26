@@ -88,7 +88,7 @@ static void gen_random_ipv6_address(struct in6_addr *v6)
 	}
 }
 
-static void ipv6_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void ipv6_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_in6 *ipv6;
 

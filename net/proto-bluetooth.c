@@ -21,7 +21,7 @@ struct sockaddr_iso {
 };
 #endif
 
-static void bluetooth_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void bluetooth_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	switch (rnd_modulo_u32(5)) {
 	case 0: {

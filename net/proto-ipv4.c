@@ -126,7 +126,7 @@ in_addr_t random_ipv4_address(void)
 	return addr;
 }
 
-static void ipv4_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void ipv4_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_in *ipv4;
 

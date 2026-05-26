@@ -26,7 +26,7 @@ static const unsigned int rxrpc_opts[] = {
 	RXRPC_MANAGE_RESPONSE,
 };
 
-static void rxrpc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void rxrpc_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_rxrpc *rxrpc;
 

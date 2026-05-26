@@ -229,7 +229,7 @@ static void run_bind_then_sendmsg(const struct socket_triplet *t)
 	if (fd < 0)
 		return;
 
-	proto->gen_sockaddr(&sa, &salen);
+	proto->gen_sockaddr((struct socket_triplet *) t, &sa, &salen);
 	if (sa != NULL) {
 		if (bind(fd, sa, salen) < 0) {
 			/* Bind failures are expected for many type/proto
@@ -286,7 +286,7 @@ static void run_connect_no_listen(const struct socket_triplet *t)
 	if (fd < 0)
 		return;
 
-	proto->gen_sockaddr(&sa, &salen);
+	proto->gen_sockaddr((struct socket_triplet *) t, &sa, &salen);
 	if (sa == NULL) {
 		close(fd);
 		return;

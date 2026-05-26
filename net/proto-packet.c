@@ -36,7 +36,7 @@
  * the constant can appear in a static initializer. */
 #define ETH_P_ALL_NBO (((ETH_P_ALL & 0xff) << 8) | ((ETH_P_ALL >> 8) & 0xff))
 
-static void packet_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void packet_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_ll *ll;
 

@@ -19,7 +19,7 @@
 #include "compat.h"
 #include "rnd.h"
 
-static void llc_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void llc_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_llc *llc;
 	unsigned int i;
@@ -78,7 +78,7 @@ const struct netproto proto_llc = {
 	.nr_triplets = ARRAY_SIZE(llc_triplets),
 };
 
-static void netbeui_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void netbeui_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_llc *llc;
 	unsigned int i;

@@ -25,7 +25,7 @@ struct sockaddr_ib {
 	uint64_t	sib_scope_id;
 };
 
-static void ib_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void ib_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_ib *sa;
 	unsigned int i;

@@ -33,7 +33,7 @@
 #define SO_VM_SOCKETS_NONBLOCK_TXRX	7
 #endif
 
-static void vsock_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void vsock_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_vm *vm;
 	static const unsigned int cids[] = {

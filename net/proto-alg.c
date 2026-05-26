@@ -211,7 +211,7 @@ void alg_static_fallback_get(enum alg_dict_type type,
 	}
 }
 
-static void alg_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void alg_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	static const struct {
 		enum alg_dict_type type;

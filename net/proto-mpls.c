@@ -28,7 +28,7 @@ struct sockaddr_mpls {
 	uint32_t       smpls_addr; /* label stack entry in network byte order */
 };
 
-static void mpls_gen_sockaddr(struct sockaddr **addr, socklen_t *addrlen)
+static void mpls_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_mpls *sa;
 
