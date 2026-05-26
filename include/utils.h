@@ -341,6 +341,16 @@ bool is_in_glibc_heap(const void *p);
  */
 bool range_overlaps_libc_heap(unsigned long addr, unsigned long len);
 
+/*
+ * Coarse-grained refresh hook for the cached sbrk(0) snapshot consumed
+ * by is_in_glibc_heap() / range_overlaps_libc_heap().  Called from
+ * alloc_object() so the cache moves forward roughly in step with the
+ * allocations that could grow brk, without paying a syscall on every
+ * heap-overlap check.  Only one sbrk(0) every BRK_REFRESH_INTERVAL
+ * calls; cheap enough to drop in on the alloc path unconditionally.
+ */
+void heap_brk_maybe_refresh(void);
+
 int get_num_fds(void);
 
 /*

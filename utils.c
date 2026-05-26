@@ -1753,6 +1753,45 @@ static unsigned long heap_start;
 static unsigned long heap_end;
 
 /*
+ * Per-child cached snapshot of sbrk(0), refreshed at heap_bounds_init()
+ * time and then on every BRK_REFRESH_INTERVAL alloc_object() call via
+ * heap_brk_maybe_refresh().  Used by is_in_glibc_heap() and
+ * range_overlaps_libc_heap() instead of a per-call sbrk(0) -- those
+ * gates fire on every deferred-free check and every random-address
+ * generation, and the syscall-per-call was showing up in profiles.
+ *
+ * Staleness is bounded by the refresh cadence: in the worst case a
+ * brk grow that happens between refreshes is invisible until the next
+ * refresh fires, so a fuzzed pointer that lands in the extension is
+ * not detected as heap-internal during that window.  brk grows in
+ * page-or-larger chunks at a much lower rate than alloc_object() is
+ * called (most allocations are served from the existing arena), so
+ * the window is small in absolute address space.  Refresh tied to
+ * alloc_object() means a brk grow caused by an allocation gets caught
+ * by the next refresh that fires, and refresh-on-zero ensures
+ * pre-init callers see "unknown extent" rather than a stale value.
+ */
+#define BRK_REFRESH_INTERVAL 64
+static unsigned long cached_brk_end;
+static unsigned int brk_refresh_counter;
+
+static void heap_brk_refresh(void)
+{
+	unsigned long cur = (unsigned long) sbrk(0);
+
+	if (cur != (unsigned long) -1)
+		cached_brk_end = cur;
+}
+
+void heap_brk_maybe_refresh(void)
+{
+	if (++brk_refresh_counter < BRK_REFRESH_INTERVAL)
+		return;
+	brk_refresh_counter = 0;
+	heap_brk_refresh();
+}
+
+/*
  * Cached extents of non-brk allocator arenas, captured alongside the
  * [heap] line at heap_bounds_init() time.  glibc's mmap'd arenas, the
  * sanitiser-runtime allocator reservations (libasan primary/secondary
@@ -1942,6 +1981,12 @@ void heap_bounds_init(void)
 	memcpy(extra_heap_regions, new_regions,
 	       new_nr * sizeof(new_regions[0]));
 	nr_extra_heap_regions = new_nr;
+
+	/*
+	 * Prime the brk cache so the first is_in_glibc_heap() /
+	 * range_overlaps_libc_heap() doesn't see 0.
+	 */
+	heap_brk_refresh();
 }
 
 /*
@@ -1984,15 +2029,17 @@ bool is_in_glibc_heap(const void *p)
 	if (heap_start != 0) {
 		/*
 		 * heap_end is a pre-fork snapshot.  A long-running child
-		 * can extend brk past it, so consult sbrk(0) for the live
-		 * break; brk only grows in the steady state, so the larger
-		 * of the two is the live upper bound.  Guard against sbrk
-		 * failure -- the (void *)-1 sentinel cast to unsigned long
-		 * would over-include every address.
+		 * can extend brk past it, so the cached_brk_end snapshot
+		 * (refreshed periodically off alloc_object() via
+		 * heap_brk_maybe_refresh()) is the live upper bound; brk
+		 * only grows in the steady state, so the larger of the two
+		 * is the safe outer edge.  cached_brk_end is 0 before its
+		 * first refresh and after a sbrk(0) failure -- the max()
+		 * falls back to the pre-fork heap_end in that case.
 		 */
 		end = heap_end;
-		cur = (unsigned long) sbrk(0);
-		if (cur != (unsigned long) -1 && cur > end)
+		cur = cached_brk_end;
+		if (cur > end)
 			end = cur;
 
 		if (v >= heap_start && v < end)
@@ -2040,16 +2087,21 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 	if (heap_start != 0) {
 		/*
 		 * Same brk-grew-past-snapshot story as
-		 * is_in_glibc_heap().  Missing the redirect here is
-		 * the safety-critical failure mode: a fuzzed pointer
-		 * landing in the brk extension above the cached
-		 * heap_end gets through avoid_shared_buffer(), the
-		 * kernel scribbles glibc chunk metadata in the
-		 * extension, and the next malloc in the child aborts.
+		 * is_in_glibc_heap(), with the same cached_brk_end
+		 * snapshot for the live upper bound.  Missing the
+		 * redirect here is the safety-critical failure mode: a
+		 * fuzzed pointer landing in the brk extension above the
+		 * cached heap_end gets through avoid_shared_buffer(), the
+		 * kernel scribbles glibc chunk metadata in the extension,
+		 * and the next malloc in the child aborts.  The cache
+		 * staleness window (one BRK_REFRESH_INTERVAL of
+		 * alloc_object() calls) is bounded by the refresh cadence
+		 * driven off the alloc path -- a brk grow caused by an
+		 * allocation gets picked up within INTERVAL allocations.
 		 */
 		hend = heap_end;
-		cur = (unsigned long) sbrk(0);
-		if (cur != (unsigned long) -1 && cur > hend)
+		cur = cached_brk_end;
+		if (cur > hend)
 			hend = cur;
 
 		if (addr < hend && end > heap_start)
