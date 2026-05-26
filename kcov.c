@@ -109,6 +109,16 @@ static void kcov_cmp_diag_record(int *errno_slot, unsigned int *count_slot,
 	__atomic_fetch_add(count_slot, 1, __ATOMIC_RELAXED);
 }
 
+/* strerrorname_np() returns the errno macro name ("EBADF", "ENOMEM",
+ * …) for a known value or NULL otherwise.  Wrap it so the format
+ * string can always splice in a non-NULL pointer even for the
+ * unexpected-value path. */
+static const char *errno_name_or(const char *fallback, int err)
+{
+	const char *n = strerrorname_np(err);
+	return n ? n : fallback;
+}
+
 /* Shared formatter for the per-site KCOV CMP DIAG segments.  Both the
  * dump_stats periodic dump (stats.c) and the print_kcov_cmp_diag main
  * loop summary (main.c) walked the same six fields with copy-pasted
@@ -116,8 +126,13 @@ static void kcov_cmp_diag_record(int *errno_slot, unsigned int *count_slot,
  * callsites in lockstep and is the natural home alongside the
  * cmp_diag struct definition.  Fields are read once via __atomic
  * loads so the snapshot is consistent across the format pass.  Each
- * non-zero counter contributes a single space-prefixed " name=N/M"
- * token; absent counters contribute nothing. */
+ * non-zero counter contributes a single space-prefixed
+ * " name=ERRNO_MACRO(errno_val)/count" token; absent counters
+ * contribute nothing.  The errno integer is preserved inside the
+ * parentheses so existing log-grep tooling that keys on the digit
+ * keeps matching, while the macro name surfaces the class of failure
+ * at a glance (e.g. EBADF vs the expected ENOTTY documented in
+ * kcov_enable_cmp()). */
 int kcov_cmp_diag_format(char *buf, size_t bufsz, enum kcov_cmp_diag_part part)
 {
 	struct kcov_cmp_diag *d;
@@ -144,26 +159,38 @@ int kcov_cmp_diag_format(char *buf, size_t bufsz, enum kcov_cmp_diag_part part)
 	rt_enable_c  = __atomic_load_n(&d->runtime_enable_count,  __ATOMIC_RELAXED);
 
 	if (want_init) {
-		if (open_c)
-			n += snprintf(buf + n, bufsz - n, " init_open=%d/%u",
-				__atomic_load_n(&d->init_open_errno, __ATOMIC_RELAXED), open_c);
-		if (init_trace_c)
-			n += snprintf(buf + n, bufsz - n, " init_init_trace=%d/%u",
-				__atomic_load_n(&d->init_init_trace_errno, __ATOMIC_RELAXED), init_trace_c);
-		if (mmap_c)
-			n += snprintf(buf + n, bufsz - n, " init_mmap=%d/%u",
-				__atomic_load_n(&d->init_mmap_errno, __ATOMIC_RELAXED), mmap_c);
+		if (open_c) {
+			int e = __atomic_load_n(&d->init_open_errno, __ATOMIC_RELAXED);
+			n += snprintf(buf + n, bufsz - n, " init_open=%s(%d)/%u",
+				errno_name_or("?", e), e, open_c);
+		}
+		if (init_trace_c) {
+			int e = __atomic_load_n(&d->init_init_trace_errno, __ATOMIC_RELAXED);
+			n += snprintf(buf + n, bufsz - n, " init_init_trace=%s(%d)/%u",
+				errno_name_or("?", e), e, init_trace_c);
+		}
+		if (mmap_c) {
+			int e = __atomic_load_n(&d->init_mmap_errno, __ATOMIC_RELAXED);
+			n += snprintf(buf + n, bufsz - n, " init_mmap=%s(%d)/%u",
+				errno_name_or("?", e), e, mmap_c);
+		}
 	}
 	if (want_rt) {
-		if (enable_c)
-			n += snprintf(buf + n, bufsz - n, " init_enable=%d/%u",
-				__atomic_load_n(&d->init_enable_errno, __ATOMIC_RELAXED), enable_c);
-		if (disable_c)
-			n += snprintf(buf + n, bufsz - n, " init_disable=%d/%u",
-				__atomic_load_n(&d->init_disable_errno, __ATOMIC_RELAXED), disable_c);
-		if (rt_enable_c)
-			n += snprintf(buf + n, bufsz - n, " runtime_enable=%d/%u",
-				__atomic_load_n(&d->runtime_enable_errno, __ATOMIC_RELAXED), rt_enable_c);
+		if (enable_c) {
+			int e = __atomic_load_n(&d->init_enable_errno, __ATOMIC_RELAXED);
+			n += snprintf(buf + n, bufsz - n, " init_enable=%s(%d)/%u",
+				errno_name_or("?", e), e, enable_c);
+		}
+		if (disable_c) {
+			int e = __atomic_load_n(&d->init_disable_errno, __ATOMIC_RELAXED);
+			n += snprintf(buf + n, bufsz - n, " init_disable=%s(%d)/%u",
+				errno_name_or("?", e), e, disable_c);
+		}
+		if (rt_enable_c) {
+			int e = __atomic_load_n(&d->runtime_enable_errno, __ATOMIC_RELAXED);
+			n += snprintf(buf + n, bufsz - n, " runtime_enable=%s(%d)/%u",
+				errno_name_or("?", e), e, rt_enable_c);
+		}
 	}
 
 	return n;
