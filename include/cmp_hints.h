@@ -66,7 +66,8 @@ struct cmp_hint_entry {
 	unsigned long value;
 	unsigned long cmp_ip;
 	uint32_t size;		/* operand width in bytes: 1, 2, 4, or 8 */
-	uint32_t last_used;	/* pool->generation snapshot at insertion */
+	uint32_t pad;
+	uint64_t last_used;	/* pool->last_used_stamp at insertion */
 };
 
 struct cmp_hint_pool {
@@ -91,8 +92,12 @@ struct cmp_hint_pool {
 	 * snapshot-dirty-bit (cmp_hints_total_generation): dedup-refresh
 	 * advances this clock to keep an actively-observed tuple from
 	 * being evicted, but does not change which tuples live in the
-	 * pool, so it should not force a snapshot save. */
-	unsigned int last_used_stamp;
+	 * pool, so it should not force a snapshot save.
+	 *
+	 * Widened to uint64_t after audit (2026-05-26) so a multi-day
+	 * fuzz run can't wrap the 32-bit counter and invert the LRU
+	 * eviction order once the stamp space rolls past UINT_MAX. */
+	uint64_t last_used_stamp;
 	struct cmp_hint_entry entries[CMP_HINTS_PER_SYSCALL];
 };
 
@@ -107,7 +112,7 @@ void cmp_hints_init(void);
 
 /* Extract comparison operands from a CMP-mode trace buffer and
  * add interesting constants to the hint pool for syscall nr. */
-void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr);
+void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32);
 
 /* Try to extract a random hint value for the given syscall.
  * Returns true with the hint written to *out, or false if none available. */

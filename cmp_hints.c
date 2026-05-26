@@ -59,10 +59,14 @@
 struct cmp_hints_shared *cmp_hints_shm = NULL;
 
 /*
- * Per-syscall CMP-collection strip flags.  When cmp_hints_strip[nr] is
- * true, cmp_hints_collect() returns immediately after the nr range
+ * Per-syscall CMP-collection strip flags.  When cmp_hints_strip[do32][nr]
+ * is true, cmp_hints_collect() returns immediately after the nr range
  * check, bypassing the bloom + pool_add_locked path entirely for that
- * syscall number.  Targets are syscalls whose KCOV_TRACE_CMP records
+ * syscall number.  Indexed by [do32bit ? 1 : 0][nr] under biarch: a
+ * 32-bit syscall and a 64-bit syscall can share the same numeric nr
+ * but mean unrelated things, so a single-dimensional table would
+ * collaterally strip whichever sibling happens to live at the same
+ * slot.  Uniarch builds only ever touch the [0] row.  Targets are syscalls whose KCOV_TRACE_CMP records
  * fire on task_struct / cred / ucounts / aio-table internal state set
  * by prior syscalls or kernel init, not on values driven by the
  * current syscall's argument surface -- the resulting pool entries
@@ -75,7 +79,7 @@ struct cmp_hints_shared *cmp_hints_shm = NULL;
  * served by cmp_hints_try_get() from anything they accumulated before
  * the strip flag was set, so there is no consumer-side hole.
  */
-static bool cmp_hints_strip[MAX_NR_SYSCALL];
+static bool cmp_hints_strip[2][MAX_NR_SYSCALL];
 
 /*
  * Mark each named syscall as cmp-collection-stripped.  Names are
@@ -107,7 +111,7 @@ static void cmp_hints_strip_install(const char * const names[], unsigned int n)
 						  max_nr_64bit_syscalls,
 						  name);
 			if (nr >= 0 && (unsigned int)nr < MAX_NR_SYSCALL) {
-				cmp_hints_strip[nr] = true;
+				cmp_hints_strip[0][nr] = true;
 				found = true;
 			}
 
@@ -115,14 +119,14 @@ static void cmp_hints_strip_install(const char * const names[], unsigned int n)
 						  max_nr_32bit_syscalls,
 						  name);
 			if (nr >= 0 && (unsigned int)nr < MAX_NR_SYSCALL) {
-				cmp_hints_strip[nr] = true;
+				cmp_hints_strip[1][nr] = true;
 				found = true;
 			}
 		} else {
 			nr = search_syscall_table(syscalls,
 						  max_nr_syscalls, name);
 			if (nr >= 0 && (unsigned int)nr < MAX_NR_SYSCALL) {
-				cmp_hints_strip[nr] = true;
+				cmp_hints_strip[0][nr] = true;
 				found = true;
 			}
 		}
@@ -232,7 +236,7 @@ static bool pool_add_locked(struct cmp_hint_pool *pool,
 			    unsigned int size)
 {
 	unsigned int i, count = pool->count;
-	unsigned int stamp = ++pool->last_used_stamp;
+	uint64_t stamp = ++pool->last_used_stamp;
 	unsigned int victim;
 	unsigned int oldest;
 
@@ -378,7 +382,7 @@ static unsigned int cmp_hints_flush_pending(struct cmp_hint_pool *pool,
 	return inserted;
 }
 
-void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
+void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 {
 	unsigned long count;
 	unsigned long i;
@@ -404,7 +408,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr)
 	 * the same per-record granularity used by cmp_hints_bloom_skipped
 	 * so the two skip-paths are directly comparable in stats output.
 	 */
-	if (cmp_hints_strip[nr]) {
+	if (cmp_hints_strip[do32 ? 1 : 0][nr]) {
 		if (kcov_shm != NULL) {
 			unsigned long n = __atomic_load_n(&trace_buf[0],
 							  __ATOMIC_RELAXED);
@@ -572,7 +576,7 @@ bool cmp_hints_try_get(unsigned int nr, unsigned long *out)
  * On-disk layout mirrors the in-memory shape: a fixed-size header
  * followed by MAX_NR_SYSCALL pool records, each a count + generation
  * + a fixed CMP_HINTS_PER_SYSCALL slice of explicitly-sized entries
- * (uint64 value, uint64 cmp_ip, uint32 size, uint32 last_used).
+ * (uint64 value, uint64 cmp_ip, uint32 size, uint32 pad, uint64 last_used).
  * Fixed layout keeps the load path a single contiguous read and the
  * CRC computation a single contiguous range, at the cost of some
  * zero-padded slots in syscalls whose pools are not full.
@@ -591,13 +595,20 @@ bool cmp_hints_try_get(unsigned int nr, unsigned long *out)
  * version-level guard makes the cold-start reason explicit in the log
  * and leaves a hook for any future schema changes that don't ride on
  * top of a constant change. */
-#define CMP_HINTS_FILE_VERSION	2U
+/* Bumped to 3 (2026-05-26): the per-entry last_used field widened
+ * from uint32_t to uint64_t to match the in-memory pool clock that
+ * no longer wraps on long-running fuzz sessions.  The on-disk struct
+ * grew by 4 bytes, so the payload layout is not backward-compatible;
+ * older snapshots are rejected via this version gate and trigger a
+ * cold start (which the warm-start path treats as benign). */
+#define CMP_HINTS_FILE_VERSION	3U
 
 struct cmp_hints_entry_ondisk {
 	uint64_t value;
 	uint64_t cmp_ip;
 	uint32_t size;
-	uint32_t last_used;
+	uint32_t pad;
+	uint64_t last_used;
 };
 
 struct cmp_hints_pool_ondisk {
@@ -1009,7 +1020,7 @@ bool cmp_hints_load_file(const char *path)
 		struct cmp_hints_pool_ondisk *src = &payload[i];
 		unsigned int src_count = src->count;
 		unsigned int dst_count = 0;
-		unsigned int max_stamp = 0;
+		uint64_t max_stamp = 0;
 
 		if (src_count > CMP_HINTS_PER_SYSCALL) {
 			rejected += src_count;

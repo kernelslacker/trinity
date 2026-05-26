@@ -525,7 +525,8 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr,
  * CMP-source corpus save".  Returns 0 when cmp_capable is false, the
  * buffer is empty, or the kernel only produced non-CONST records. */
 unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
-			       bool is_explorer, int strategy_at_pick);
+			       bool do32, bool is_explorer,
+			       int strategy_at_pick);
 
 /* Accessor for the raw CMP record stream after kcov_disable().
  * On return, *out points at the first record (NULL when cmp_capable

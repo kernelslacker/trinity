@@ -919,7 +919,8 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr,
 }
 
 unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
-			       bool is_explorer, int strategy_at_pick)
+			       bool do32, bool is_explorer,
+			       int strategy_at_pick)
 {
 	unsigned long count;
 	unsigned long novel;
@@ -940,7 +941,7 @@ unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
 	if (count == 0)
 		return 0;
 
-	cmp_hints_collect(kc->cmp_trace_buf, nr);
+	cmp_hints_collect(kc->cmp_trace_buf, nr, do32);
 	novel = bandit_cmp_observe(kc->cmp_trace_buf, nr,
 				   is_explorer, strategy_at_pick);
 
