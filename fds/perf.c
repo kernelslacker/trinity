@@ -108,6 +108,23 @@ static int open_perf_fd(void)
 		close(fd);
 		return false;
 	}
+	/* rec.a1 carries the PAGE_SIZE attr buffer sanitise_perf_event_open
+	 * allocated; on startup, if the underlying zmalloc_tracked ever
+	 * comes back NULL (page-size alloc pressure during init, or a
+	 * future softer-failure variant of the allocator) rec.a1 stays
+	 * unset and copying from it would deref NULL.  Bail with the
+	 * already-opened fd and the obj's freshly-allocated eventattr
+	 * dropped through the same path the alloc-shared-str failure
+	 * arm above uses. */
+	if (rec.a1 == 0) {
+		outputerr("open_perf_fd: sanitise produced NULL attr buf; skipping\n");
+		free_shared_str(obj->perfobj.eventattr,
+				sizeof(struct perf_event_attr));
+		obj->perfobj.eventattr = NULL;
+		tracked_free_now(obj);
+		close(fd);
+		return false;
+	}
 	memcpy(obj->perfobj.eventattr, (void *) rec.a1, sizeof(struct perf_event_attr));
 	obj->perfobj.pid = rec.a2;
 	obj->perfobj.cpu = rec.a3;
