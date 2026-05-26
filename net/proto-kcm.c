@@ -52,18 +52,18 @@ static const unsigned int kcm_opts[] = {
 
 static void kcm_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
-	char *optval;
+	int *optval;
 
 	so->level = SOL_KCM;
 
-	optval = (char *) so->optval;
+	optval = (int *) so->optval;
 
 	so->optname = RAND_ARRAY(kcm_opts);
 	so->optlen = sizeof(int);
 
 	switch (so->optname) {
 	case KCM_RECV_DISABLE:
-		optval[0] = RAND_BOOL();
+		*optval = RAND_BOOL();
 		break;
 	default:
 		break;
@@ -303,8 +303,7 @@ out_ls:
 
 /*
  * data_leg: attach a parser, clone the channel, send/recv on both fds,
- * then close them in randomised order to race the kcm_mux teardown
- * against the per-channel kcm_sock release path.
+ * then close the clone and let the framework close parent_fd on return.
  */
 static void kcm_data_leg(int parent_fd, __unused__ int child_fd,
 			 __unused__ struct socket_triplet *triplet)
@@ -313,7 +312,6 @@ static void kcm_data_leg(int parent_fd, __unused__ int child_fd,
 	struct kcm_clone clone = { 0 };
 	int tcp_cli = -1, tcp_srv = -1;
 	int prog_fd, clone_fd = -1;
-	bool close_parent_first;
 	unsigned char buf[64];
 
 	prog_fd = kcm_get_parser_prog_fd();
@@ -360,27 +358,12 @@ static void kcm_data_leg(int parent_fd, __unused__ int child_fd,
 	}
 
 race_close:
-	/* Close-ordering race.  run_grammar_chain unconditionally closes
-	 * parent_fd after data_leg returns, so:
-	 *   close_parent_first=true  -> we close(parent) inside data_leg,
-	 *                               framework's later close is a
-	 *                               harmless EBADF on a freshly closed
-	 *                               fd number.  Then close(clone).
-	 *   close_parent_first=false -> we close(clone) inside data_leg,
-	 *                               framework closes(parent) shortly
-	 *                               after on return.
-	 * Both orderings drive different last-ref kcm_sock release paths
-	 * through kcm_done / kcm_release. */
-	close_parent_first = RAND_BOOL();
-	if (close_parent_first) {
-		(void) close(parent_fd);
-		if (clone_fd >= 0)
-			(void) close(clone_fd);
-	} else {
-		if (clone_fd >= 0)
-			(void) close(clone_fd);
-		/* parent_fd left for the framework cleanup. */
-	}
+	/* run_grammar_chain owns parent_fd and closes it on return.  Closing
+	 * it here too would open an fd-recycling window in which the second
+	 * close() inside the framework lands on whatever fd the kernel just
+	 * handed out under the same number.  Close only the clone. */
+	if (clone_fd >= 0)
+		(void) close(clone_fd);
 
 	if (tcp_srv >= 0)
 		close(tcp_srv);

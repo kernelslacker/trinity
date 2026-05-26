@@ -224,8 +224,11 @@ static void unix_grammar_gen_cmsg(int fd, struct socket_triplet *t,
 
 		for (i = 0; i < nr_fds; i++) {
 			fds[i] = get_random_fd();
+			/* No usable fd from the pool — skip the cmsg
+			 * entirely.  Attaching fd 0 (stdin = /dev/null in
+			 * children) via SCM_RIGHTS adds zero coverage. */
 			if (fds[i] < 0)
-				fds[i] = 0;	/* stdin fallback */
+				return;
 		}
 
 		msg->msg_control = cmsgbuf;

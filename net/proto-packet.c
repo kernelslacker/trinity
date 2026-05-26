@@ -110,9 +110,9 @@ static void packet_socket_setup(int fd)
 
 static void set_tpacket_version3(struct sockopt *so)
 {
-	char *optval = (char *) so->optval;
+	int *optval = (int *) so->optval;
 
-	optval[0] = TPACKET_V3;
+	*optval = TPACKET_V3;
 	so->optlen = sizeof(int);
 }
 
