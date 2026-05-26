@@ -734,6 +734,26 @@ int pick_next_strategy(int prev, enum strategy_selection_reason *reason_out)
 	int best_arm = -1;
 	int i;
 
+	/* Empty active-syscall pool guard.  If every syscall has been
+	 * deactivated (either nr_active_syscalls on uniarch, or both 32/64
+	 * counters on biarch), the per-arm weighting below has nothing
+	 * meaningful to score and can silently land on a non-RANDOM arm
+	 * whose strategy routine has no useful work to do.  Short-circuit
+	 * to STRATEGY_RANDOM -- the random picker copes with an empty pool
+	 * via its own fallbacks -- and emit a one-shot log so the
+	 * degenerate condition is visible without spamming. */
+	if (shm->nr_active_syscalls == 0 &&
+	    shm->nr_active_32bit_syscalls == 0 &&
+	    shm->nr_active_64bit_syscalls == 0) {
+		static bool warned;
+		if (!warned) {
+			warned = true;
+			outputerr("pick_next_strategy: active-syscall pool empty -- forcing STRATEGY_RANDOM\n");
+		}
+		*reason_out = SR_NORMAL_UCB;
+		return STRATEGY_RANDOM;
+	}
+
 	mode = __atomic_load_n(&shm->picker_mode, __ATOMIC_RELAXED);
 
 	/* Cache per-arm eligibility once.  No arm has an expensive precondition
