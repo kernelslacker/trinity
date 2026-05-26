@@ -80,3 +80,34 @@ static inline uint32_t rnd_modulo_u32(uint32_t n)
 	}
 	return (uint32_t) (m >> 32);
 }
+
+/*
+ * 64-bit sibling of rnd_modulo_u32: uniform value in [0, n) via the
+ * same Lemire debiased shape, but with a 128-bit product so the high
+ * half is the bounded result.  __uint128_t is supported by both gcc
+ * and clang on the 64-bit targets trinity is built for; if/when a
+ * 32-bit-only build comes back this needs an alternative.
+ *
+ * As with the u32 variant, n==0 returns 0 rather than trapping -- no
+ * existing caller passes 0 but the guard keeps a future caller from
+ * tripping `-n % n` UB.
+ */
+static inline uint64_t rnd_modulo_u64(uint64_t n)
+{
+	__uint128_t m;
+	uint64_t l, t;
+
+	if (n == 0)
+		return 0;
+
+	m = (__uint128_t) rnd_u64() * (__uint128_t) n;
+	l = (uint64_t) m;
+	if (l < n) {
+		t = ((uint64_t) -n) % n;
+		while (l < t) {
+			m = (__uint128_t) rnd_u64() * (__uint128_t) n;
+			l = (uint64_t) m;
+		}
+	}
+	return (uint64_t) (m >> 64);
+}

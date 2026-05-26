@@ -490,7 +490,7 @@ retry:
 	if (max_weight > 0) {
 		unsigned long w = frontier_recent_count(syscallnr);
 		unsigned long denom = max_weight + 1UL;
-		unsigned long roll = (unsigned long)rnd_u64() % denom;
+		unsigned long roll = (unsigned long)rnd_modulo_u64(denom);
 
 		if (roll >= w + 1UL)
 			goto retry;

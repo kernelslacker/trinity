@@ -563,7 +563,7 @@ static void munge_process(void)
 		if (lim.rlim_cur == RLIM_INFINITY || lim.rlim_cur < 2)
 			continue;
 		/* Reduce to a random value in [50%, 100%) of current soft limit. */
-		lim.rlim_cur = lim.rlim_cur / 2 + rnd_u64() % (lim.rlim_cur / 2);
+		lim.rlim_cur = lim.rlim_cur / 2 + rnd_modulo_u64(lim.rlim_cur / 2);
 		(void) setrlimit(rlim_resources[i], &lim);
 	}
 

@@ -643,7 +643,7 @@ int struct_field_for_cmp(const struct struct_desc *desc, unsigned long val)
 			count++;
 	}
 	if (count) {
-		pick = rand32() % count;
+		pick = rnd_modulo_u32(count);
 		for (i = 0; i < desc->num_fields; i++) {
 			if (desc->fields[i].size == want && pick-- == 0)
 				return (int) i;
@@ -656,7 +656,7 @@ int struct_field_for_cmp(const struct struct_desc *desc, unsigned long val)
 			count++;
 	}
 	if (count) {
-		pick = rand32() % count;
+		pick = rnd_modulo_u32(count);
 		for (i = 0; i < desc->num_fields; i++) {
 			if (desc->fields[i].size >= want && pick-- == 0)
 				return (int) i;

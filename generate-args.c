@@ -134,7 +134,7 @@ static unsigned long handle_arg_range(struct syscallentry *entry,
 	if (high - low == ULONG_MAX)
 		i = low + (unsigned long) rand64();
 	else
-		i = low + (unsigned long) rand64() % (high - low + 1);
+		i = low + (unsigned long) rnd_modulo_u64(high - low + 1);
 	return i;
 }
 

@@ -315,7 +315,7 @@ void * alloc_shared(size_t size)
 		size_t i;
 
 		for (i = 0; i + sizeof(unsigned int) <= size; i += sizeof(unsigned int)) {
-			unsigned int r = rand32();
+			unsigned int r = rnd_u32();
 			memcpy(p + i, &r, sizeof(r));
 		}
 		for (; i < size; i++)
