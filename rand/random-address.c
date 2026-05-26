@@ -347,6 +347,37 @@ void * get_writable_struct(size_t size)
  *                                 address instead of the sanitiser's
  *                                 curated input.
  */
+
+/*
+ * Walk [addr, addr+len) one page at a time with mincore(2) and return
+ * true only if every page in the range is backed by a VMA.  The
+ * range_overlaps_* gates above prove intersection with a protected
+ * region but not that the full source range is readable -- wrapped
+ * pointers, pointers near the end of a VMA, and ASAN-redzone pointers
+ * can pass intersection yet fault when the memcpy walks past the last
+ * readable byte.  Treat wraparound and any mincore error (ENOMEM on
+ * unmapped pages; EAGAIN/EINVAL conservatively) as unreadable so the
+ * caller skips the copy rather than taking the child down inside the
+ * sanitiser.
+ */
+static bool range_is_mincore_resident(unsigned long addr, unsigned long len)
+{
+	unsigned long page, end;
+	unsigned char vec;
+
+	if (len == 0)
+		return true;
+	if (addr > ULONG_MAX - len)
+		return false;
+
+	end = addr + len;
+	for (page = addr & PAGE_MASK; page < end; page += page_size) {
+		if (mincore((void *) page, 1, &vec) != 0)
+			return false;
+	}
+	return true;
+}
+
 static void asb_relocate(unsigned long *addr, unsigned long len,
 			 bool copy_original)
 {
@@ -369,7 +400,15 @@ static void asb_relocate(unsigned long *addr, unsigned long len,
 		return;
 
 	original = (void *) *addr;
-	if (copy_original && len != 0)
+	/*
+	 * Skip the copy if the source range isn't fully readable; the
+	 * redirection below still rewrites *addr to the safe scratch buffer,
+	 * which is the actual safety invariant -- the kernel reading pool
+	 * scratch bytes is strictly better than the kernel reading from a
+	 * pointer that aliases the libc heap or a tracked shared region.
+	 */
+	if (copy_original && len != 0 &&
+	    range_is_mincore_resident(*addr, len))
 		memcpy(replacement, original, len);
 
 	*addr = (unsigned long) replacement;
