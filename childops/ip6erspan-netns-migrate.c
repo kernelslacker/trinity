@@ -45,13 +45,16 @@
  * Latches:
  *   ns_unsupported_ip6erspan -- master gate; set on first ENOENT/
  *                               EAFNOSUPPORT/EPROTONOSUPPORT/EOPNOTSUPP
- *                               from create or from setns/unshare; one
- *                               warn_once_unsupported line then skip.
+ *                               from create or from setns/unshare; bumps
+ *                               inm_ip6erspan_unsupported_observed once
+ *                               per child then skip.
  *   ns_unsupported_changelink -- secondary gate; set when NLM_F_REPLACE
  *                                returns -EOPNOTSUPP for any kind so a
  *                                missing changelink op doesn't kill the
  *                                whole childop -- create + migrate +
- *                                teardown still walk.
+ *                                teardown still walk.  Bumps
+ *                                inm_changelink_unsupported_observed
+ *                                once per child first-observation.
  *
  * Self-bounding: one create + migrate + changelink + teardown cycle per
  * invocation; no inner loops over kinds (one kind per outer iter, rolled
@@ -177,15 +180,17 @@ static bool ns_unsupported_changelink;
 static bool inm_unshared_orig;
 static int  inm_orig_ns_fd = -1;
 static __u32 g_iter;
-static unsigned int g_warned_kinds;	/* bitmask of kinds that latched off */
 
-static void warn_once_unsupported(const char *reason, int err)
+static void warn_once_unsupported(void)
 {
 	if (ns_unsupported_ip6erspan)
 		return;
 	ns_unsupported_ip6erspan = true;
-	outputerr("ip6erspan_netns_migrate: %s failed (errno=%d), latching unsupported_ip6erspan\n",
-		  reason, err);
+	/* init_child redirected stderr to /dev/null, so an outputerr
+	 * here would be lost.  Bump a shm counter under the same
+	 * one-shot gate so the unsupported-observation survives. */
+	__atomic_add_fetch(&shm->stats.inm_ip6erspan_unsupported_observed,
+			   1, __ATOMIC_RELAXED);
 }
 
 /*
@@ -377,12 +382,12 @@ static bool inm_enter_orig_ns(void)
 	if (inm_unshared_orig)
 		return true;
 	if (unshare(CLONE_NEWNET) < 0) {
-		warn_once_unsupported("unshare(CLONE_NEWNET)", errno);
+		warn_once_unsupported();
 		return false;
 	}
 	inm_orig_ns_fd = inm_open_self_netns();
 	if (inm_orig_ns_fd < 0) {
-		warn_once_unsupported("open(/proc/self/ns/net)", errno);
+		warn_once_unsupported();
 		return false;
 	}
 	inm_unshared_orig = true;
@@ -429,21 +434,10 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 			__atomic_add_fetch(&shm->stats.inm_eperm,
 					   1, __ATOMIC_RELAXED);
 			ns_unsupported_ip6erspan = true;
-			outputerr("ip6erspan_netns_migrate: NEWLINK %s -EPERM, latching unsupported_ip6erspan\n",
-				  inm_kind_names[k]);
 		} else if (rc == -ENOENT || rc == -EAFNOSUPPORT ||
 			   rc == -EPROTONOSUPPORT || rc == -EOPNOTSUPP) {
-			unsigned int bit = 1U << k;
 			__atomic_add_fetch(&shm->stats.inm_unsupported,
 					   1, __ATOMIC_RELAXED);
-			/* Per-kind one-shot warn so a kernel missing
-			 * just (e.g.) ip6erspan doesn't suppress the
-			 * other kinds. */
-			if (!(g_warned_kinds & bit)) {
-				g_warned_kinds |= bit;
-				outputerr("ip6erspan_netns_migrate: NEWLINK kind=%s rejected (rc=%d), skipping kind\n",
-					  inm_kind_names[k], rc);
-			}
 		}
 		goto out;
 	}
@@ -457,17 +451,17 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 	 * back to the original ns so the rtnetlink socket above (which
 	 * lives in the original ns) still talks to the link. */
 	if (unshare(CLONE_NEWNET) < 0) {
-		warn_once_unsupported("unshare(target)", errno);
+		warn_once_unsupported();
 		goto teardown_orig;
 	}
 	target_ns_fd = inm_open_self_netns();
 	if (target_ns_fd < 0) {
-		warn_once_unsupported("open(target ns)", errno);
+		warn_once_unsupported();
 		(void)setns(inm_orig_ns_fd, CLONE_NEWNET);
 		goto teardown_orig;
 	}
 	if (setns(inm_orig_ns_fd, CLONE_NEWNET) < 0) {
-		warn_once_unsupported("setns(orig)", errno);
+		warn_once_unsupported();
 		close(target_ns_fd);
 		target_ns_fd = -1;
 		goto teardown_orig;
@@ -486,7 +480,7 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 	 * is the call that walks the kind's ->changelink op against the
 	 * post-migration dev_net(dev). */
 	if (setns(target_ns_fd, CLONE_NEWNET) < 0) {
-		warn_once_unsupported("setns(target)", errno);
+		warn_once_unsupported();
 		goto restore_orig;
 	}
 	if (nl_open(&target_ctx, &opts) < 0)
@@ -498,8 +492,12 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	} else if (rc == -EOPNOTSUPP && !ns_unsupported_changelink) {
 		ns_unsupported_changelink = true;
-		outputerr("ip6erspan_netns_migrate: NLM_F_REPLACE kind=%s -EOPNOTSUPP, latching unsupported_changelink\n",
-			  inm_kind_names[k]);
+		/* init_child redirected stderr to /dev/null, so an
+		 * outputerr here would be lost.  Bump a shm counter
+		 * under the same one-shot gate so the unsupported-
+		 * changelink observation survives. */
+		__atomic_add_fetch(&shm->stats.inm_changelink_unsupported_observed,
+				   1, __ATOMIC_RELAXED);
 	}
 
 	(void)inm_dellink(&target_ctx, ifindex);
