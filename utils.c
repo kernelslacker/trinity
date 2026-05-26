@@ -1822,6 +1822,32 @@ static struct heap_region extra_heap_regions[MAX_EXTRA_HEAP_REGIONS];
 static unsigned int nr_extra_heap_regions;
 
 /*
+ * Bounding box (min start, max end) over extra_heap_regions[],
+ * recomputed atomically in heap_bounds_init() alongside the slot
+ * snapshot.  Used by range_overlaps_libc_heap() as a coarse
+ * "looks heap-shaped" signal: a query that falls inside the bbox
+ * but matches no specific slot is the canonical staleness shape --
+ * a post-init secondary mmap (large malloc one-VMA-per-alloc) that
+ * landed between the captured slots and is therefore not in the
+ * snapshot.  Bbox is empty (end <= start) when no extras have been
+ * captured, in which case the predicate degenerates to "never".
+ */
+static unsigned long extra_heap_regions_bbox_start;
+static unsigned long extra_heap_regions_bbox_end;
+
+/*
+ * Threshold of "looks heap-shaped but missed all slots" observations
+ * before range_overlaps_libc_heap() pays for one /proc/self/maps
+ * re-parse and rebuilds extra_heap_regions[].  Set high enough that
+ * the common cache-hit path stays at its existing cost (a few
+ * compares), low enough that a real post-init secondary mmap is
+ * picked up within a small bounded number of misses.  Per-child
+ * static -- a child whose own allocator just spawned a new arena
+ * refreshes once and then stops missing.
+ */
+#define HEAP_OUTSIDE_CACHE_REFRESH_THRESHOLD 64
+
+/*
  * Parse a /proc/self/maps line just enough to extract the
  * [start, end), the perms field, and the trailing path/label.  Returns
  * true on success.  The label pointer (which may be NULL or point at
@@ -1994,6 +2020,30 @@ void heap_bounds_init(void)
 	nr_extra_heap_regions = new_nr;
 
 	/*
+	 * Recompute the extras bbox alongside the slot snapshot.  An
+	 * empty snapshot leaves the bbox closed (start=end=0) so the
+	 * "looks heap-shaped" predicate in range_overlaps_libc_heap()
+	 * cannot fire spuriously when extras are not yet populated.
+	 */
+	if (new_nr > 0) {
+		unsigned long bbox_lo = new_regions[0].start;
+		unsigned long bbox_hi = new_regions[0].end;
+		unsigned int i;
+
+		for (i = 1; i < new_nr; i++) {
+			if (new_regions[i].start < bbox_lo)
+				bbox_lo = new_regions[i].start;
+			if (new_regions[i].end > bbox_hi)
+				bbox_hi = new_regions[i].end;
+		}
+		extra_heap_regions_bbox_start = bbox_lo;
+		extra_heap_regions_bbox_end = bbox_hi;
+	} else {
+		extra_heap_regions_bbox_start = 0;
+		extra_heap_regions_bbox_end = 0;
+	}
+
+	/*
 	 * Prime the brk cache so the first is_in_glibc_heap() /
 	 * range_overlaps_libc_heap() doesn't see 0.
 	 */
@@ -2137,6 +2187,64 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 		if (addr < extra_heap_regions[i].end &&
 		    end > extra_heap_regions[i].start)
 			return true;
+	}
+
+	/*
+	 * Post-init secondary-mmap miss detector.  Falling through to
+	 * here means brk and every captured slot rejected the range,
+	 * but the query still falls inside the bounding box that spans
+	 * the captured slots -- the canonical shape of a libc large-
+	 * malloc that bypassed the primary allocator into a fresh
+	 * one-VMA-per-alloc landing between two captured arenas after
+	 * the heap_bounds_init() snapshot was taken.  Bump an
+	 * observability counter so the rate is visible in dump_stats(),
+	 * and after every HEAP_OUTSIDE_CACHE_REFRESH_THRESHOLD misses
+	 * pay for one /proc/self/maps re-parse and rescan the (now
+	 * fresh) extras for this same query.  A genuine post-init mmap
+	 * promotes to a real overlap on the rescan and the redirect
+	 * fires for the very call that triggered the refresh; a query
+	 * inside the bbox that doesn't correspond to any allocator VMA
+	 * (sparse extras layout) leaves the snapshot unchanged and the
+	 * counter resets, capping the refresh cost at one
+	 * /proc/self/maps walk per THRESHOLD misses.
+	 */
+	if (extra_heap_regions_bbox_end > extra_heap_regions_bbox_start &&
+	    addr < extra_heap_regions_bbox_end &&
+	    end > extra_heap_regions_bbox_start) {
+		static unsigned int outside_cache_since_refresh;
+		struct childdata *c;
+
+		c = this_child();
+		if (c != NULL && c->stats_ring != NULL)
+			stats_ring_enqueue(c->stats_ring,
+					   STATS_FIELD_HEAP_POINTER_OUTSIDE_CACHE,
+					   0, 1);
+		else
+			parent_stats.heap_pointer_outside_cache++;
+
+		if (++outside_cache_since_refresh >=
+		    HEAP_OUTSIDE_CACHE_REFRESH_THRESHOLD) {
+			outside_cache_since_refresh = 0;
+			heap_bounds_init();
+
+			for (i = 0; i < nr_extra_heap_regions; i++) {
+				if (addr < extra_heap_regions[i].end &&
+				    end > extra_heap_regions[i].start)
+					return true;
+			}
+			/* Re-check the brk arena too: heap_bounds_init()
+			 * refreshes the brk cache as well, so a query that
+			 * tripped because cached_brk_end was stale now
+			 * resolves cleanly. */
+			if (heap_start != 0) {
+				unsigned long hend2 = heap_end;
+
+				if (cached_brk_end > hend2)
+					hend2 = cached_brk_end;
+				if (addr < hend2 && end > heap_start)
+					return true;
+			}
+		}
 	}
 
 	return false;

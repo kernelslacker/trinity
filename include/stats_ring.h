@@ -44,6 +44,11 @@ enum stats_field {
 	 * fully readable -- redirection still happened, but the memcpy
 	 * was skipped to avoid faulting inside the sanitiser. */
 	STATS_FIELD_ASB_RELOCATE_READABLE_SKIP,
+	/* range_overlaps_libc_heap() saw a query that falls inside the
+	 * bounding box of captured allocator regions but matched no
+	 * specific slot -- the canonical staleness shape of a post-init
+	 * secondary mmap landing between captured arenas. */
+	STATS_FIELD_HEAP_POINTER_OUTSIDE_CACHE,
 	STATS_FIELD_RANGE_OVERLAPS_SHARED_REJECTS,
 	STATS_FIELD_GET_WRITABLE_SCRIBBLED_SHM_RANGE,
 	STATS_FIELD_GET_WRITABLE_SCRIBBLED_MPROTECT_MMAP,
@@ -135,6 +140,7 @@ struct stats_aggregate {
 	unsigned long libc_heap_redirected;
 	unsigned long libc_heap_embedded_redirected;
 	unsigned long asb_relocate_readable_skip;
+	unsigned long heap_pointer_outside_cache;
 	unsigned long range_overlaps_shared_rejects;
 	unsigned long get_writable_address_scribbled_shm_range;
 	unsigned long get_writable_address_scribbled_mprotect_mmap;

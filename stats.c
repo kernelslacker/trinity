@@ -1900,6 +1900,8 @@ static const struct {
 	  offsetof(struct stats_aggregate, libc_heap_embedded_redirected), true },
 	{ "asb_relocate_readable_skip",
 	  offsetof(struct stats_aggregate, asb_relocate_readable_skip), true },
+	{ "heap_pointer_outside_cache",
+	  offsetof(struct stats_aggregate, heap_pointer_outside_cache), true },
 	{ "get_writable_address_scribbled_shm_range",
 	  offsetof(struct stats_aggregate, get_writable_address_scribbled_shm_range), true },
 	{ "get_writable_address_scribbled_mprotect_mmap",
@@ -3799,6 +3801,9 @@ void dump_stats(void)
 	if (parent_stats.asb_relocate_readable_skip)
 		stat_row("shared_buffer", "asb_relocate_readable_skip",
 			 parent_stats.asb_relocate_readable_skip);
+	if (parent_stats.heap_pointer_outside_cache)
+		stat_row("shared_buffer", "heap_pointer_outside_cache",
+			 parent_stats.heap_pointer_outside_cache);
 	if (parent_stats.range_overlaps_shared_rejects) {
 		stat_row("shared_buffer", "range_overlaps_shared_rejects",
 			 parent_stats.range_overlaps_shared_rejects);
