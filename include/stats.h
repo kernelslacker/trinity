@@ -1749,6 +1749,26 @@ struct stats_s {
 	unsigned long explorer_cold_pair_rejects;
 	unsigned long explorer_unseen_pair_accepts;
 
+	/* Bandit novelty-dampener visibility counters.  Bumped from the
+	 * per-syscall new-edge bump site in random-syscall.c whenever the
+	 * (prev, curr) edgepair lookup returned a known pair and the
+	 * historical productivity ratio scaled the dampen multiplier below
+	 * the full 1.0 (256) credit.  Together they let the operator see
+	 * both how OFTEN the dampener is firing (count) and the AGGREGATE
+	 * magnitude of the discount it's applying (shortfall_sum):
+	 *
+	 *   mean shortfall per dampened bump = shortfall_sum / count
+	 *   total reward shaved (Q8 units)   = shortfall_sum
+	 *
+	 * Bumps from the never-seen-pair short-circuit (no historical
+	 * record, full 1.0 credit) and the all-history-new-edges case
+	 * (ratio == 1.0, full 1.0 credit) are NOT counted -- the dampener
+	 * didn't actually fire.  Saturating reads via the existing
+	 * dump_stats / stats_log paths; RELAXED add-fetch is fine,
+	 * cumulative diagnostic with no ordering requirement. */
+	unsigned long bandit_dampened_bumps_count;
+	unsigned long bandit_dampened_q8_shortfall_sum;
+
 	/* Per-syscall new-edge attribution, split by strategy pool.  Bumped
 	 * from dispatch_step's new-edge branch with the real bucket-edge
 	 * count returned by kcov_collect()'s new_edge_count out-param, so

@@ -784,6 +784,7 @@ static void maybe_rotate_strategy(void)
 	enum strategy_selection_reason prev_reason;
 	enum strategy_selection_reason next_reason = SR_NORMAL_UCB;
 	unsigned long calls_now, calls_in_window;
+	unsigned long calls_dampened_q8_now, calls_dampened_q8_in_window;
 	unsigned long edges_now, edges_in_window;
 	unsigned long syscalls_in_window;
 	unsigned long cmp_now, cmp_in_window;
@@ -834,6 +835,12 @@ static void maybe_rotate_strategy(void)
 	calls_in_window = calls_now -
 		__atomic_load_n(&shm->pc_edge_calls_at_window_start,
 				__ATOMIC_RELAXED);
+	calls_dampened_q8_now = __atomic_load_n(
+		&shm->pc_edge_calls_dampened_q8_by_strategy[prev],
+		__ATOMIC_RELAXED);
+	calls_dampened_q8_in_window = calls_dampened_q8_now -
+		__atomic_load_n(&shm->pc_edge_calls_dampened_q8_at_window_start,
+				__ATOMIC_RELAXED);
 	edges_now = __atomic_load_n(&shm->pc_edge_count_by_strategy[prev],
 				    __ATOMIC_RELAXED);
 	edges_in_window = edges_now -
@@ -874,6 +881,7 @@ static void maybe_rotate_strategy(void)
 	 * snapshot reseed) runs unconditionally -- those are coverage-side
 	 * structures and must stay aligned with the rotation cadence. */
 	bandit_record_pull(prev, prev_reason, calls_in_window,
+			   calls_dampened_q8_in_window,
 			   edges_in_window, cmp_in_window);
 
 	/* Tick the rotation counter so bandit_cmp_observe()'s per-syscall
@@ -898,6 +906,11 @@ static void maybe_rotate_strategy(void)
 	__atomic_store_n(&shm->pc_edge_calls_at_window_start,
 			 __atomic_load_n(&shm->pc_edge_calls_by_strategy[next],
 					 __ATOMIC_RELAXED),
+			 __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->pc_edge_calls_dampened_q8_at_window_start,
+			 __atomic_load_n(
+				 &shm->pc_edge_calls_dampened_q8_by_strategy[next],
+				 __ATOMIC_RELAXED),
 			 __ATOMIC_RELAXED);
 	__atomic_store_n(&shm->pc_edge_count_at_window_start,
 			 __atomic_load_n(&shm->pc_edge_count_by_strategy[next],
@@ -1130,6 +1143,50 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 				__atomic_fetch_add(&shm->pc_edge_count_by_strategy[strat],
 						   new_edge_count,
 						   __ATOMIC_RELAXED);
+
+				/* Novelty-dampened call count.  Look up the
+				 * historical (prev, curr) edgepair stats and
+				 * scale the bump by the productivity ratio
+				 * ratio = new_edges / (total + 1):
+				 *   dampen     = 0.5 + 0.5 * ratio
+				 *   dampen_q8  = 128 + (128 * new_edges) / (total + 1)
+				 * Clamped to [128, 256] so a never-seen pair
+				 * (no prev, or no edgepair record) gets the
+				 * full 1.0 (256) credit and a fully-stale pair
+				 * floors at 0.5x rather than zeroing -- the
+				 * floor preserves a learning signal for rare
+				 * novelty bursts from otherwise-saturated
+				 * pairs while still discounting the bulk of
+				 * the reward the bandit would otherwise bank
+				 * from those pairs. */
+				unsigned int dampen_q8 = 256U;
+				if (child->last_syscall_nr != EDGEPAIR_NO_PREV) {
+					struct edgepair_stats ps =
+						edgepair_get_stats(
+							child->last_syscall_nr,
+							rec->nr);
+					if (ps.total > 0) {
+						unsigned long denom = ps.total + 1UL;
+						dampen_q8 = 128U + (unsigned int)
+							((128UL * ps.new_edges) / denom);
+						if (dampen_q8 < 128U)
+							dampen_q8 = 128U;
+						if (dampen_q8 > 256U)
+							dampen_q8 = 256U;
+					}
+				}
+				__atomic_fetch_add(
+					&shm->pc_edge_calls_dampened_q8_by_strategy[strat],
+					dampen_q8, __ATOMIC_RELAXED);
+				if (dampen_q8 < 256U) {
+					__atomic_fetch_add(
+						&shm->stats.bandit_dampened_bumps_count,
+						1UL, __ATOMIC_RELAXED);
+					__atomic_fetch_add(
+						&shm->stats.bandit_dampened_q8_shortfall_sum,
+						256UL - dampen_q8,
+						__ATOMIC_RELAXED);
+				}
 			}
 			__atomic_fetch_add(&shm->stats.bandit_pool_edges_discovered,
 					   1, __ATOMIC_RELAXED);

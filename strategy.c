@@ -179,23 +179,39 @@ bool is_strategy_eligible(int arm)
  * same reason.
  *
  * pc_edge_calls is the per-window pc_edge_calls_by_strategy delta
- * (calls with >=1 new edge).  pc_edge_count is the parallel
- * pc_edge_count_by_strategy delta (real bucket-edge bits flipped).
- * cmp_new_constants is the per-window bandit_cmp_new_constants delta.
- * The learner-facing combined reward is pc_edge_calls +
- * cmp_new_constants / CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL (integer
- * division — sub-weight residues round to zero, deliberately so a
- * window with a handful of novel constants doesn't perturb the
- * headline PC signal).  The pc_edge_count delta accumulates into the
- * parallel diagnostic reward (no cmp term folded in) so the operator
- * can compare what the real-count reward would have looked like.
+ * (calls with >=1 new edge).  pc_edge_calls_dampened_q8 is the
+ * matching per-window delta of the parallel Q8 fixed-point counter
+ * pc_edge_calls_dampened_q8_by_strategy: each per-syscall bump
+ * scales by the (prev, curr) edgepair's historical productivity
+ * ratio (see the bump site in random-syscall.c) so the learner
+ * discounts call-with-new-edges credit from saturated pairs.
+ * pc_edge_count is the parallel pc_edge_count_by_strategy delta
+ * (real bucket-edge bits flipped).  cmp_new_constants is the
+ * per-window bandit_cmp_new_constants delta.
+ *
+ * The learner-facing combined reward is
+ *   (pc_edge_calls_dampened_q8 >> 8) +
+ *   cmp_new_constants / CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL
+ * (both integer divisions — sub-weight CMP residues round to zero so
+ * a window with a handful of novel constants doesn't perturb the
+ * headline PC signal; the Q8 shift recovers the dampened call-count
+ * from the Q8 sum).  The by-reason diagnostic update bucketed below
+ * uses the raw (undampened) pc_edge_calls + cmp_term so the
+ * per-reason readout stays comparable across runs taken before and
+ * after the dampener was wired in.  The pc_edge_count delta
+ * accumulates into the parallel diagnostic reward (no cmp term
+ * folded in) so the operator can compare what the real-count reward
+ * would have looked like.
  */
 void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 			unsigned long pc_edge_calls,
+			unsigned long pc_edge_calls_dampened_q8,
 			unsigned long pc_edge_count,
 			unsigned long cmp_new_constants)
 {
 	unsigned long cmp_term;
+	unsigned long pc_edge_calls_dampened;
+	unsigned long total_raw;
 	unsigned long total;
 	unsigned long now_window;
 	int i;
@@ -206,7 +222,18 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 		return;
 
 	cmp_term = cmp_new_constants / CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL;
-	total = pc_edge_calls + cmp_term;
+	/* By-reason diagnostic uses the raw (undampened) call-count so an
+	 * operator can compare the dampened learner reward against the
+	 * unmodified shape pre-dampening readouts assumed.  The learner
+	 * (bandit_reward_calls[] / recent_reward_x1000[]) instead consumes
+	 * the dampened series, recovered from the Q8 delta by dividing by
+	 * 256: per-syscall bumps credit dampen_q8 in [128, 256], so the
+	 * sum is up to 256x the equivalent undampened call count and the
+	 * shift recovers the dampened call-count integer the bandit
+	 * actually wants to score against. */
+	total_raw = pc_edge_calls + cmp_term;
+	pc_edge_calls_dampened = pc_edge_calls_dampened_q8 >> 8;
+	total = pc_edge_calls_dampened + cmp_term;
 
 	/* Always bucket the just-finished window by (arm, reason) before
 	 * any cohort-gated learner update.  These matrices are diagnostic
@@ -218,7 +245,7 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 	__atomic_fetch_add(&shm->bandit_pulls_by_reason[arm][reason], 1UL,
 			   __ATOMIC_RELAXED);
 	__atomic_fetch_add(&shm->bandit_reward_calls_by_reason[arm][reason],
-			   total, __ATOMIC_RELAXED);
+			   total_raw, __ATOMIC_RELAXED);
 	__atomic_fetch_add(
 		&shm->bandit_reward_pc_edge_count_by_reason[arm][reason],
 		pc_edge_count, __ATOMIC_RELAXED);

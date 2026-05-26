@@ -2042,6 +2042,11 @@ void reset_epoch_state(void)
 	/* pc_edge_calls_by_strategy[prev] snapshot for next call-count delta */
 	__atomic_store_n(&shm->pc_edge_calls_at_window_start, 0UL,
 			 __ATOMIC_RELAXED);
+	/* pc_edge_calls_dampened_q8_by_strategy[prev] snapshot for next
+	 * dampened-call-count delta; mirrors the at_window_start reset of
+	 * the raw call-count series above. */
+	__atomic_store_n(&shm->pc_edge_calls_dampened_q8_at_window_start, 0UL,
+			 __ATOMIC_RELAXED);
 	/* pc_edge_count_by_strategy[prev] snapshot for next bucket-count delta */
 	__atomic_store_n(&shm->pc_edge_count_at_window_start, 0UL,
 			 __ATOMIC_RELAXED);

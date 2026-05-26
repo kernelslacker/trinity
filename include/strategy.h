@@ -261,18 +261,30 @@ const char *picker_mode_name(enum picker_mode_t mode);
  * regardless of cohort -- the forced-cohort reward is exactly the
  * signal a future intervention classifier wants to see.
  *
- * For non-forced reasons, this bumps bandit_pulls[arm], adds
- * (pc_edge_calls + cmp_term) to bandit_reward_calls[arm], adds
- * pc_edge_count to bandit_reward_pc_edge_count[arm], and folds in
+ * For non-forced reasons, this bumps bandit_pulls[arm], adds the
+ * learner reward (pc_edge_calls_dampened_q8 >> 8) + cmp_term to
+ * bandit_reward_calls[arm], adds pc_edge_count to
+ * bandit_reward_pc_edge_count[arm], and folds in
  * (cmp_new_constants / CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL) as a
- * secondary CMP-novelty term on the call-count reward only.
+ * secondary CMP-novelty term on the call-count reward only.  The
+ * by-reason diagnostic update above uses the RAW (undampened)
+ * pc_edge_calls + cmp_term so the per-reason readout stays a faithful
+ * baseline that an operator can A/B against the learner's dampened
+ * shape without rerunning the fleet.
  *
  * pc_edge_calls is the per-window delta of pc_edge_calls_by_strategy
  * for the just-finished arm — calls that produced >=1 new edge.
+ * pc_edge_calls_dampened_q8 is the matching delta of the parallel
+ * Q8 fixed-point counter pc_edge_calls_dampened_q8_by_strategy[]:
+ * each per-syscall bump scales by the (prev, curr) edgepair's
+ * historical productivity ratio so the learner discounts
+ * call-with-new-edges credit from saturated pairs.  See the bump
+ * site and the dampening formula in random-syscall.c.
  * pc_edge_count is the parallel per-window delta of
- * pc_edge_count_by_strategy — real bucket-edge bits flipped.  Both
- * series are recorded so the operator can see how the two reward
- * shapes would score the same windows without flipping the learner.
+ * pc_edge_count_by_strategy — real bucket-edge bits flipped.  All
+ * three series are recorded so the operator can compare the dampened
+ * learner reward, the raw call-count reward, and the bucket-count
+ * reward shapes across the same windows.
  *
  * Called from the CAS-winning child during maybe_rotate_strategy()
  * on every window close including SR_PLATEAU_FORCE windows; a
@@ -280,6 +292,7 @@ const char *picker_mode_name(enum picker_mode_t mode);
  */
 void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 			unsigned long pc_edge_calls,
+			unsigned long pc_edge_calls_dampened_q8,
 			unsigned long pc_edge_count,
 			unsigned long cmp_new_constants);
 
