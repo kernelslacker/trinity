@@ -317,6 +317,45 @@ static ssize_t read_sysfs_value(const char *path, char *buf, size_t bufsz)
 	return n;
 }
 
+/*
+ * Tear down a partially-built pmus[] array.  Called from the
+ * mid-loop early-return paths in init_pmus (when a formats[] or
+ * generic_events[] calloc fails after one or more prior PMU slots
+ * have already been populated) and from the final failure-exit too.
+ * Frees in the inverse order of construction; each member is
+ * NULL-safe so partial-loop states (name set but formats not yet
+ * allocated) are handled.  *p is reset to NULL on return so the
+ * caller's stored handle doesn't dangle.
+ */
+static void free_pmus(struct pmu_type **p, int n)
+{
+	struct pmu_type *arr = *p;
+	int i, j;
+
+	if (arr == NULL)
+		return;
+
+	for (i = 0; i < n; i++) {
+		if (arr[i].formats != NULL) {
+			for (j = 0; j < arr[i].num_formats; j++) {
+				free((char *) arr[i].formats[j].name);
+				free((char *) arr[i].formats[j].value);
+			}
+			free(arr[i].formats);
+		}
+		if (arr[i].generic_events != NULL) {
+			for (j = 0; j < arr[i].num_generic_events; j++) {
+				free((char *) arr[i].generic_events[j].name);
+				free((char *) arr[i].generic_events[j].value);
+			}
+			free(arr[i].generic_events);
+		}
+		free((char *) arr[i].name);
+	}
+	free(arr);
+	*p = NULL;
+}
+
 static int init_pmus(void) {
 
 	DIR *dir,*event_dir,*format_dir;
@@ -407,8 +446,10 @@ static int init_pmus(void) {
 							sizeof(struct format_type));
 			if (pmus[pmu_num].formats==NULL) {
 				pmus[pmu_num].num_formats=0;
-				closedir(dir);
 				closedir(format_dir);
+				closedir(dir);
+				free_pmus(&pmus, pmu_num);
+				num_pmus = 0;
 				return -1;
 			}
 
@@ -475,8 +516,10 @@ static int init_pmus(void) {
 				sizeof(struct generic_event_type));
 			if (pmus[pmu_num].generic_events==NULL) {
 				pmus[pmu_num].num_generic_events=0;
-				closedir(dir);
 				closedir(event_dir);
+				closedir(dir);
+				free_pmus(&pmus, pmu_num);
+				num_pmus = 0;
 				return -1;
 			}
 
@@ -522,7 +565,12 @@ static int init_pmus(void) {
 	result = 0;
 
 out:
-	closedir(dir);
+	if (dir != NULL)
+		closedir(dir);
+	if (result != 0) {
+		free_pmus(&pmus, pmu_num);
+		num_pmus = 0;
+	}
 
 	return result;
 }
