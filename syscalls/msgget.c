@@ -5,6 +5,7 @@
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include "objects.h"
+#include "publish_resource.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
@@ -43,14 +44,10 @@ REG_GLOBAL_OBJ(sysv_msg, init_sysv_msg_pool);
 
 void register_sysv_msg(int msqid)
 {
-	struct object *obj;
-
 	if (msqid < 0)
 		return;
 
-	obj = alloc_object();
-	obj->sysvmsgobj.msqid = msqid;
-	add_object(obj, OBJ_LOCAL, OBJ_SYSV_MSG);
+	publish_resource(OBJ_SYSV_MSG, (unsigned long)msqid, NULL);
 }
 
 int get_random_sysv_msg(void)
