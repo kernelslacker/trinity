@@ -460,12 +460,13 @@ bool iscsi_target_probe(struct childdata *child)
 			if (errno == ECONNREFUSED) {
 				/* No LIO target on this host.  Latch and
 				 * be quiet for the rest of this child's
-				 * life — siblings will independently latch
-				 * the first time they try. */
-				if (!ns_unsupported) {
-					ns_unsupported = true;
-					outputerr("iscsi_target_probe: 127.0.0.1:3260 connection refused, disabling for this child\n");
-				}
+				 * life -- siblings will independently latch
+				 * the first time they try.  init_child
+				 * redirected stderr to /dev/null so the
+				 * previous outputerr here was lost; the
+				 * iscsi_target_probe_no_target counter is
+				 * the survivor signal. */
+				ns_unsupported = true;
 				__atomic_add_fetch(&shm->stats.iscsi_target_probe_no_target,
 						   1, __ATOMIC_RELAXED);
 				return true;
