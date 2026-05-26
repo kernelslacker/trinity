@@ -41,7 +41,7 @@
 
 #include <fcntl.h>
 #include "fanotify.h"
-#include "objects.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "sanitise.h"
 
@@ -127,17 +127,16 @@ static void sanitise_fanotify_init(struct syscallrecord *rec)
 
 static void post_fanotify_init(struct syscallrecord *rec)
 {
-	struct object *new;
 	int fd = rec->retval;
 
 	if ((long)rec->retval < 0)
 		return;
 
-	new = alloc_object();
-	new->fanotifyobj.fd = fd;
-	new->fanotifyobj.flags = rec->a1;
-	new->fanotifyobj.eventflags = rec->a2;
-	add_object(new, OBJ_LOCAL, OBJ_FD_FANOTIFY);
+	struct resource_meta meta = {
+		.flags = rec->a1,
+		.aux = rec->a2,		/* event_f_flags */
+	};
+	publish_resource(OBJ_FD_FANOTIFY, fd, &meta);
 }
 
 struct syscallentry syscall_fanotify_init = {
