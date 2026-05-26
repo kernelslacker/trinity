@@ -86,6 +86,48 @@ bool choose_syscall_table(struct childdata *child,
 }
 
 /*
+ * Validation-failure resilience: a syscallnr drawn by the picker is
+ * deactivated only after VALIDATE_FAIL_THRESHOLD consecutive picks of
+ * that syscall fail validate_specific_syscall_silent().  A transient
+ * flap (e.g. a probe that EAGAIN'd once or briefly tripped a kernel
+ * gate) used to permanently kill the entry on the first failure with
+ * no log; now the counter has to build up and the deactivation is
+ * announced.  The counter (shm->syscall_validation_failures[]) is
+ * shared across children so observation accumulates fleet-wide, and
+ * resets to 0 on the first successful validation for that slot.
+ */
+#define VALIDATE_FAIL_THRESHOLD 3
+
+static void note_validation_success(unsigned int syscallnr)
+{
+	if (__atomic_load_n(&shm->syscall_validation_failures[syscallnr],
+			    __ATOMIC_RELAXED) != 0)
+		__atomic_store_n(&shm->syscall_validation_failures[syscallnr],
+				 0, __ATOMIC_RELAXED);
+}
+
+static void note_validation_failure(unsigned int syscallnr, bool do32)
+{
+	unsigned int count;
+	struct syscallentry *entry;
+	const char *name;
+
+	count = (unsigned int)__atomic_add_fetch(
+		&shm->syscall_validation_failures[syscallnr], 1,
+		__ATOMIC_RELAXED);
+	if (count < VALIDATE_FAIL_THRESHOLD)
+		return;
+
+	entry = get_syscall_entry(syscallnr, do32);
+	name = (entry != NULL) ? entry->name : "<unknown>";
+	output(0, "deactivating syscall %s (nr=%u) after %u validation failures\n",
+	       name, syscallnr, count);
+	__atomic_store_n(&shm->syscall_validation_failures[syscallnr], 0,
+			 __ATOMIC_RELAXED);
+	deactivate_syscall_locked(syscallnr, do32);
+}
+
+/*
  * Check if a syscall entry belongs to the target group.
  * Used by group biasing to filter candidates.
  */
@@ -157,9 +199,10 @@ retry:
 	syscallnr = val - 1;
 
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
-		deactivate_syscall_locked(syscallnr, do32);
+		note_validation_failure(syscallnr, do32);
 		goto retry;
 	}
+	note_validation_success(syscallnr);
 
 	entry = get_syscall_entry(syscallnr, do32);
 	if (entry == NULL)
@@ -328,9 +371,10 @@ retry:
 	syscallnr = val - 1;
 
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
-		deactivate_syscall_locked(syscallnr, do32);
+		note_validation_failure(syscallnr, do32);
 		goto retry;
 	}
+	note_validation_success(syscallnr);
 
 	entry = get_syscall_entry(syscallnr, do32);
 	if (entry->flags & EXPENSIVE) {
@@ -471,9 +515,10 @@ retry:
 	syscallnr = val - 1;
 
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
-		deactivate_syscall_locked(syscallnr, do32);
+		note_validation_failure(syscallnr, do32);
 		goto retry;
 	}
+	note_validation_success(syscallnr);
 
 	entry = get_syscall_entry(syscallnr, do32);
 	if (entry->flags & EXPENSIVE) {

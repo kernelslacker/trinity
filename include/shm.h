@@ -128,6 +128,19 @@ struct shm_s {
 	bool valid_syscall_table_32;
 	bool valid_syscall_table_64;
 
+	/*
+	 * Per-syscall consecutive validation-failure counter.  Bumped by
+	 * the pickers when validate_specific_syscall_silent() returns
+	 * false; reset to 0 when validation passes.  Deactivation only
+	 * triggers once the count hits VALIDATE_FAIL_THRESHOLD, so a
+	 * transient flap (e.g. a probe that EAGAIN'd once) no longer
+	 * permanently kills the entry on the first failure.  u8 is plenty:
+	 * we only compare against the small threshold and reset on
+	 * success.  All accesses are relaxed atomic so concurrent pickers
+	 * across children can race the same slot without a lock.
+	 */
+	unsigned char syscall_validation_failures[MAX_NR_SYSCALL];
+
 #ifdef ARCH_IS_BIARCH
 	/* Check that 32bit emulation is available. */
 	unsigned int syscalls32_succeeded;
