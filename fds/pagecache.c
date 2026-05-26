@@ -195,8 +195,27 @@ int get_rand_pagecache_fd(void)
 
 		head = get_objhead(OBJ_GLOBAL, OBJ_FD_PAGECACHE);
 		if (head != NULL && slot < head->num_entries &&
-		    head->array != NULL && head->array[slot] != NULL)
-			return head->array[slot]->fileobj.fd;
+		    head->array != NULL && head->array[slot] != NULL) {
+			struct object *obj = head->array[slot];
+			int fd;
+
+			/* Same shape as the random-pick loop below: drop
+			 * any candidate that fails objpool_check (wild VA,
+			 * recycled chunk reading OBJ_NONE, cross-pool
+			 * pointer through a sibling stomp).  Closes the
+			 * direct-deref hole the older bias path left open,
+			 * which the comment block above this branch flagged
+			 * as deferred; with the check in place there is no
+			 * longer a UAF window specific to the bias path. */
+			if (objpool_check(obj, OBJ_FD_PAGECACHE)) {
+				fd = obj->fileobj.fd;
+				if (fd >= 0)
+					return fd;
+			}
+			/* fall through to the unbiased random-pick loop
+			 * rather than returning -1 on a bias miss so the
+			 * caller still gets a fd for this iteration. */
+		}
 	}
 
 	/*
