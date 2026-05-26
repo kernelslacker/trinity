@@ -8,6 +8,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "objects.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -83,14 +84,10 @@ REG_GLOBAL_OBJ(key_serial, init_key_serial_pool);
 
 void register_key_serial(int32_t serial)
 {
-	struct object *obj;
-
 	if (serial <= 0)
 		return;
 
-	obj = alloc_object();
-	obj->keyserialobj.serial = serial;
-	add_object(obj, OBJ_LOCAL, OBJ_KEY_SERIAL);
+	publish_resource(OBJ_KEY_SERIAL, (unsigned long)serial, NULL);
 }
 
 int32_t get_random_key_serial(void)
