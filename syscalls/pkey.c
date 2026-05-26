@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include "objects.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -58,14 +59,10 @@ REG_GLOBAL_OBJ(pkey, init_pkey_pool);
 
 void register_pkey_obj(int id)
 {
-	struct object *obj;
-
 	if (id < 0 || id > 15)
 		return;
 
-	obj = alloc_object();
-	obj->pkey_obj.id = id;
-	add_object(obj, OBJ_LOCAL, OBJ_PKEY);
+	publish_resource(OBJ_PKEY, (unsigned long)id, NULL);
 }
 
 int get_random_pkey_id(void)
