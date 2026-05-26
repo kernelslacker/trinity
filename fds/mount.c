@@ -9,6 +9,7 @@
 
 #include "fd.h"
 #include "objects.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -110,7 +111,6 @@ static int get_rand_mount_fd(void)
 
 void post_mount_fd(struct syscallrecord *rec)
 {
-	struct object *new;
 	int fd = rec->retval;
 
 	if ((long)rec->retval < 0)
@@ -118,13 +118,8 @@ void post_mount_fd(struct syscallrecord *rec)
 	if (fd < 0 || fd >= (1 << 20))
 		return;
 
-	new = alloc_object();
-	if (new == NULL) {
+	if (publish_resource(OBJ_FD_MOUNT, fd, NULL) == NULL)
 		close(fd);
-		return;
-	}
-	new->mountfdobj.fd = fd;
-	add_object(new, OBJ_LOCAL, OBJ_FD_MOUNT);
 }
 
 static const struct fd_provider mount_fd_provider = {
