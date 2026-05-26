@@ -5,9 +5,18 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_set_robust_list(struct syscallrecord *rec)
 {
+	struct robust_list_head *head;
+
+	head = zmalloc_tracked(sizeof(struct robust_list_head));
+	head->list.next = &head->list;
+	head->futex_offset = 0;
+	head->list_op_pending = NULL;
+
+	rec->a1 = (unsigned long) head;
 	rec->a2 = sizeof(struct robust_list_head);
 }
 
