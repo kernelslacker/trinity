@@ -106,6 +106,9 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	case STATS_FIELD_LIBC_HEAP_EMBEDDED_REDIRECTED:
 		parent_stats.libc_heap_embedded_redirected += delta;
 		break;
+	case STATS_FIELD_ASB_RELOCATE_READABLE_SKIP:
+		parent_stats.asb_relocate_readable_skip += delta;
+		break;
 	case STATS_FIELD_RANGE_OVERLAPS_SHARED_REJECTS:
 		parent_stats.range_overlaps_shared_rejects += delta;
 		break;

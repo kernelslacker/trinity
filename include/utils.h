@@ -342,6 +342,36 @@ bool is_in_glibc_heap(const void *p);
 bool range_overlaps_libc_heap(unsigned long addr, unsigned long len);
 
 /*
+ * Conservative source-readability check for the asb_relocate() memcpy
+ * path.  Returns true iff [addr, addr+len) is fully covered by a
+ * readable mapping that the kernel will not fault on when the copy
+ * walks it.
+ *
+ *   - len == 0, addr == NULL and ranges that wrap user VA return
+ *     false.  The caller treats false as "skip the copy", and a
+ *     zero-byte memcpy is uninteresting anyway.
+ *   - Fast path: a range fully inside a tracked shared region
+ *     (range_in_tracked_shared) or fully inside the cached libc
+ *     brk arena / any captured non-brk allocator region returns true
+ *     without touching /proc.  These are mappings trinity or libc
+ *     itself manage, so VMA presence implies user-readable pages.
+ *   - Slow path: one /proc/self/maps walk per call.  Returns true
+ *     only if every byte of [addr, addr+len) is covered by a
+ *     contiguous run of VMAs whose perms include 'r'.  A maps-open
+ *     failure (vanishingly rare on our own pid) returns false so the
+ *     caller falls through to the safe "don't copy" branch.
+ *
+ * The intent is to gate the source-side read in avoid_shared_buffer_
+ * inout(): the range_overlaps_* predicates only prove intersection
+ * with a protected region, not that the source is fully mapped.  A
+ * wrapped pointer or a range that walks off the end of a VMA (ASAN
+ * redzone, allocator-guard page) can pass the overlap gate and then
+ * fault inside the memcpy, masking the kernel behaviour we are
+ * trying to fuzz with a userspace SIGSEGV.
+ */
+bool range_readable_user(const void *addr, size_t len);
+
+/*
  * Coarse-grained refresh hook for the cached sbrk(0) snapshot consumed
  * by is_in_glibc_heap() / range_overlaps_libc_heap().  Called from
  * alloc_object() so the cache moves forward roughly in step with the

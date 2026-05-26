@@ -348,42 +348,13 @@ void * get_writable_struct(size_t size)
  *                                 curated input.
  */
 
-/*
- * Walk [addr, addr+len) one page at a time with mincore(2) and return
- * true only if every page in the range is backed by a VMA.  The
- * range_overlaps_* gates above prove intersection with a protected
- * region but not that the full source range is readable -- wrapped
- * pointers, pointers near the end of a VMA, and ASAN-redzone pointers
- * can pass intersection yet fault when the memcpy walks past the last
- * readable byte.  Treat wraparound and any mincore error (ENOMEM on
- * unmapped pages; EAGAIN/EINVAL conservatively) as unreadable so the
- * caller skips the copy rather than taking the child down inside the
- * sanitiser.
- */
-static bool range_is_mincore_resident(unsigned long addr, unsigned long len)
-{
-	unsigned long page, end;
-	unsigned char vec;
-
-	if (len == 0)
-		return true;
-	if (addr > ULONG_MAX - len)
-		return false;
-
-	end = addr + len;
-	for (page = addr & PAGE_MASK; page < end; page += page_size) {
-		if (mincore((void *) page, 1, &vec) != 0)
-			return false;
-	}
-	return true;
-}
-
 static void asb_relocate(unsigned long *addr, unsigned long len,
 			 bool copy_original)
 {
 	void *replacement;
 	void *original;
 	bool overlap_shared, overlap_heap;
+	bool readable_skip = false;
 
 	if (addr == NULL)
 		return;
@@ -401,15 +372,27 @@ static void asb_relocate(unsigned long *addr, unsigned long len,
 
 	original = (void *) *addr;
 	/*
-	 * Skip the copy if the source range isn't fully readable; the
-	 * redirection below still rewrites *addr to the safe scratch buffer,
-	 * which is the actual safety invariant -- the kernel reading pool
-	 * scratch bytes is strictly better than the kernel reading from a
-	 * pointer that aliases the libc heap or a tracked shared region.
+	 * Gate the source-side read.  The overlap predicates above only
+	 * prove the range intersects a protected region; they do not
+	 * prove the source is fully mapped.  range_readable_user()
+	 * confirms full readable VMA coverage (fast path via the cached
+	 * shared/heap snapshots, slow path via a single /proc/self/maps
+	 * walk) so a wrapped pointer or a range that walks off the end
+	 * of a VMA does not fault inside the memcpy and mask the kernel
+	 * behaviour we are trying to fuzz with a userspace SIGSEGV.
+	 *
+	 * The no-copy fall-through is safe: get_writable_address()
+	 * already filled @replacement with fuzz data, and the *addr
+	 * rewrite below still redirects the kernel away from the
+	 * protected region.  Kernel reading pool scratch bytes is
+	 * strictly better than the kernel chasing an unreadable source.
 	 */
-	if (copy_original && len != 0 &&
-	    range_is_mincore_resident(*addr, len))
-		memcpy(replacement, original, len);
+	if (copy_original && len != 0) {
+		if (range_readable_user(original, len))
+			memcpy(replacement, original, len);
+		else
+			readable_skip = true;
+	}
 
 	*addr = (unsigned long) replacement;
 	if (shm != NULL) {
@@ -424,11 +407,17 @@ static void asb_relocate(unsigned long *addr, unsigned long len,
 				stats_ring_enqueue(c->stats_ring,
 						   STATS_FIELD_LIBC_HEAP_REDIRECTED,
 						   0, 1);
+			if (readable_skip)
+				stats_ring_enqueue(c->stats_ring,
+						   STATS_FIELD_ASB_RELOCATE_READABLE_SKIP,
+						   0, 1);
 		} else {
 			if (overlap_shared)
 				parent_stats.shared_buffer_redirected++;
 			if (overlap_heap)
 				parent_stats.libc_heap_redirected++;
+			if (readable_skip)
+				parent_stats.asb_relocate_readable_skip++;
 		}
 	}
 }

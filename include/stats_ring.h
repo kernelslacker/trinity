@@ -40,6 +40,10 @@ enum stats_field {
 	STATS_FIELD_SHARED_BUFFER_REDIRECTED,
 	STATS_FIELD_LIBC_HEAP_REDIRECTED,
 	STATS_FIELD_LIBC_HEAP_EMBEDDED_REDIRECTED,
+	/* asb_relocate() saw an overlapping range whose source was not
+	 * fully readable -- redirection still happened, but the memcpy
+	 * was skipped to avoid faulting inside the sanitiser. */
+	STATS_FIELD_ASB_RELOCATE_READABLE_SKIP,
 	STATS_FIELD_RANGE_OVERLAPS_SHARED_REJECTS,
 	STATS_FIELD_GET_WRITABLE_SCRIBBLED_SHM_RANGE,
 	STATS_FIELD_GET_WRITABLE_SCRIBBLED_MPROTECT_MMAP,
@@ -130,6 +134,7 @@ struct stats_aggregate {
 	unsigned long shared_buffer_redirected;
 	unsigned long libc_heap_redirected;
 	unsigned long libc_heap_embedded_redirected;
+	unsigned long asb_relocate_readable_skip;
 	unsigned long range_overlaps_shared_rejects;
 	unsigned long get_writable_address_scribbled_shm_range;
 	unsigned long get_writable_address_scribbled_mprotect_mmap;
