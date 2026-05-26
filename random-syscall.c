@@ -704,7 +704,7 @@ static void apply_chain_substitution(struct syscallrecord *rec,
 				     bool have_substitute,
 				     unsigned long substitute_retval)
 {
-	unsigned int draw, slot;
+	unsigned int nsafe, pick, slot, i;
 	uint8_t mask;
 
 	if (!have_substitute)
@@ -718,8 +718,6 @@ static void apply_chain_substitution(struct syscallrecord *rec,
 	if (mask == 0)
 		return;
 	if (substitute_retval == (unsigned long)mainpid) {
-		unsigned int i;
-
 		for (i = 0; i < entry->num_args && i < 6; i++) {
 			if (entry->argtype[i] == ARG_PID)
 				mask &= (uint8_t)~(1u << i);
@@ -729,18 +727,26 @@ static void apply_chain_substitution(struct syscallrecord *rec,
 	}
 
 	/*
-	 * Pick a slot via __builtin_ctz of a masked random draw against
-	 * the precomputed mask.  When the masked draw lands on zero (no
-	 * eligible slot bit overlapped this iteration's random bits) fall
-	 * back to the mask itself so __builtin_ctz still picks the
-	 * lowest-numbered eligible slot.  Same slots remain eligible as
-	 * the old per-call safe_slots[] walk — only the dispatch
-	 * mechanism changes.
+	 * Pick uniformly from the eligible-slot set: count the active
+	 * bits in mask, draw a uniform index in [0, nsafe), then walk
+	 * mask to find the index-th set bit.  Restores the uniformity of
+	 * the original safe_slots[rand() % nsafe] dispatch (4ad1cc3f0628
+	 * cached the mask but silently swapped the draw for a
+	 * __builtin_ctz pick, which biases hard toward low-numbered slots
+	 * -- bit 0 wins with p=0.5, bit 1 with p=0.25, and so on).
 	 */
-	draw = rnd_u32() & mask;
-	if (draw == 0)
-		draw = mask;
-	slot = (unsigned int)__builtin_ctz(draw) + 1;
+	nsafe = (unsigned int)__builtin_popcount(mask);
+	pick = rnd_modulo_u32(nsafe);
+	slot = 0;
+	for (i = 0; i < 6; i++) {
+		if ((mask & (1u << i)) == 0)
+			continue;
+		if (pick == 0) {
+			slot = i + 1;
+			break;
+		}
+		pick--;
+	}
 
 	switch (slot) {
 	case 1: rec->a1 = substitute_retval; break;
