@@ -81,6 +81,14 @@ static bool try_alloc_zero_map(unsigned long size, int prot, int flags, const ch
 
 	new->map.name = alloc_shared_str(80);
 	if (new->map.name == NULL) {
+		/* Reverse the track_shared_region() registration above so
+		 * the shared_regions[] slot and the bitmap bit it claimed
+		 * do not outlive the munmap that releases the VA back to
+		 * the kernel.  Without this, a later mmap that recycles the
+		 * VA inherits a stale shared-region claim and the
+		 * range_overlaps_shared() guards reject legitimate fuzzed
+		 * mm-syscalls against it. */
+		untrack_shared_region((unsigned long)new->map.ptr, size);
 		munmap(new->map.ptr, new->map.size);
 		tracked_free_now(new);
 		return false;
