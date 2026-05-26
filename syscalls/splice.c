@@ -96,6 +96,18 @@ static void sanitise_splice(struct syscallrecord *rec)
 			rec->a1 = fd;
 	}
 
+	/* ~20%: regular-file fd_out routes through iter_file_splice_write. */
+	if ((rnd_modulo_u32(100)) < 20) {
+		int fd = get_rand_pagecache_fd();
+
+		if (fd >= 0)
+			rec->a3 = fd;
+	}
+
+	/* ~5%: same-fd terminal override -- kernel rejects overlap EINVAL. */
+	if ((rnd_modulo_u32(100)) < 5)
+		rec->a3 = rec->a1;
+
 	rec->a6 = sanitise_splice_flags();
 }
 
