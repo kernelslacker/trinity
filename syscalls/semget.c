@@ -5,6 +5,7 @@
 #include <sys/ipc.h>
 #include <sys/sem.h>
 #include "objects.h"
+#include "publish_resource.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
@@ -47,14 +48,10 @@ REG_GLOBAL_OBJ(sysv_sem, init_sysv_sem_pool);
 
 void register_sysv_sem(int semid)
 {
-	struct object *obj;
-
 	if (semid < 0)
 		return;
 
-	obj = alloc_object();
-	obj->sysvsemobj.semid = semid;
-	add_object(obj, OBJ_LOCAL, OBJ_SYSV_SEM);
+	publish_resource(OBJ_SYSV_SEM, (unsigned long)semid, NULL);
 }
 
 int get_random_sysv_sem(void)
