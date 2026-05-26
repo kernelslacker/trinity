@@ -884,6 +884,7 @@ static void dump_stats_json(void)
 		"\"socket_family_grammar\":{\"runs\":%lu,\"completed\":%lu},"
 		"\"tls_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_failed\":%lu,\"ulp_asymmetric\":%lu,\"installs\":%lu,\"rekeys_ok\":%lu,\"rekeys_rejected\":%lu},"
 		"\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu},"
+		"\"eth_emitter\":{\"runs\":%lu,\"setup_failed\":%lu,\"short\":%lu,\"sends_ok\":%lu,\"sends_failed\":%lu,\"tmpl_arp\":%lu,\"tmpl_ipv4_frag_zero\":%lu,\"tmpl_ipv6_na\":%lu,\"tmpl_vlan_qinq\":%lu,\"tmpl_bad_ethertype\":%lu},"
 		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu,\"napi_register_ok\":%lu,\"napi_register_fail\":%lu,\"napi_unregister_ok\":%lu,\"napi_unregister_fail\":%lu},"
 		"\"tcp_ao_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"addkey_rejected\":%lu,\"keys_added\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"packets_sent\":%lu,\"key_rotations\":%lu,\"info_rejected\":%lu,\"key_dels\":%lu,\"delkey_rejected\":%lu,\"cycles\":%lu},"
 		"\"tcp_md5_listener_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"md5_set_ok\":%lu,\"md5_set_failed\":%lu,\"connect_ok\":%lu,\"rst_sent_ok\":%lu,\"completed_ok\":%lu},"
@@ -1141,6 +1142,16 @@ static void dump_stats_json(void)
 		shm->stats.packet_fanout_joins,
 		shm->stats.packet_fanout_rejoins_ok,
 		shm->stats.packet_fanout_rejoins_rejected,
+		shm->stats.eth_emitter_runs,
+		shm->stats.eth_emitter_setup_failed,
+		shm->stats.eth_emitter_short,
+		shm->stats.eth_emitter_sends_ok,
+		shm->stats.eth_emitter_sends_failed,
+		shm->stats.eth_emitter_per_tmpl[0],
+		shm->stats.eth_emitter_per_tmpl[1],
+		shm->stats.eth_emitter_per_tmpl[2],
+		shm->stats.eth_emitter_per_tmpl[3],
+		shm->stats.eth_emitter_per_tmpl[4],
 		shm->stats.iouring_multishot_runs,
 		shm->stats.iouring_multishot_setup_failed,
 		shm->stats.iouring_multishot_pbuf_ring_ok,
@@ -3985,6 +3996,19 @@ void dump_stats(void)
 		stat_row("packet_fanout_thrash", "joins",            shm->stats.packet_fanout_joins);
 		stat_row("packet_fanout_thrash", "rejoins_ok",       shm->stats.packet_fanout_rejoins_ok);
 		stat_row("packet_fanout_thrash", "rejoins_rejected", shm->stats.packet_fanout_rejoins_rejected);
+	}
+
+	if (shm->stats.eth_emitter_runs) {
+		stat_row("eth_emitter", "runs",               shm->stats.eth_emitter_runs);
+		stat_row("eth_emitter", "setup_failed",       shm->stats.eth_emitter_setup_failed);
+		stat_row("eth_emitter", "short",              shm->stats.eth_emitter_short);
+		stat_row("eth_emitter", "sends_ok",           shm->stats.eth_emitter_sends_ok);
+		stat_row("eth_emitter", "sends_failed",       shm->stats.eth_emitter_sends_failed);
+		stat_row("eth_emitter", "tmpl_arp",           shm->stats.eth_emitter_per_tmpl[0]);
+		stat_row("eth_emitter", "tmpl_ipv4_frag_zero", shm->stats.eth_emitter_per_tmpl[1]);
+		stat_row("eth_emitter", "tmpl_ipv6_na",       shm->stats.eth_emitter_per_tmpl[2]);
+		stat_row("eth_emitter", "tmpl_vlan_qinq",     shm->stats.eth_emitter_per_tmpl[3]);
+		stat_row("eth_emitter", "tmpl_bad_ethertype", shm->stats.eth_emitter_per_tmpl[4]);
 	}
 
 	if (shm->stats.iouring_multishot_runs) {

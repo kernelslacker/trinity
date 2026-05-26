@@ -849,6 +849,19 @@ struct stats_s {
 	unsigned long packet_fanout_rejoins_ok;		/* second PACKET_FANOUT setsockopt accepted */
 	unsigned long packet_fanout_rejoins_rejected;	/* second PACKET_FANOUT rejected (EALREADY etc) */
 
+	/* eth_emitter childop counters: AF_PACKET/SOCK_RAW L2 emitter that
+	 * crafts one frame per call from one of NR_TEMPLATES template
+	 * families (ARP, IPv4 frag-zero, IPv6 NA, VLAN Q-in-Q, malformed
+	 * EtherType) and sendto()s it to loopback.  per_tmpl[] indexes
+	 * template successes so the operator can confirm coverage stays
+	 * spread across all five families rather than collapsing on one. */
+	unsigned long eth_emitter_runs;			/* total eth_emitter invocations */
+	unsigned long eth_emitter_setup_failed;		/* socket(AF_PACKET) or bind() failed (EPERM/CAP_NET_RAW absent) */
+	unsigned long eth_emitter_short;		/* template returned a length out of range; frame skipped */
+	unsigned long eth_emitter_sends_ok;		/* sendto returned >0 */
+	unsigned long eth_emitter_sends_failed;		/* sendto returned <=0 (queue full / EPERM / etc.) */
+	unsigned long eth_emitter_per_tmpl[5];		/* per-template successful sends (NR_TEMPLATES in childops/eth-emitter.c) */
+
 	/* iouring_net_multishot childop counters */
 	unsigned long iouring_multishot_runs;		/* total iouring_net_multishot invocations */
 	unsigned long iouring_multishot_setup_failed;	/* ring/socket/buffer-pool setup failed */

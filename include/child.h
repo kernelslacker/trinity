@@ -198,6 +198,7 @@ enum child_op_type {
 	CHILD_OP_WIREGUARD_DECRYPT_FLOOD,
 	CHILD_OP_BLKDEV_LIFECYCLE_RACE,
 	CHILD_OP_ISCSI_TARGET_PROBE,
+	CHILD_OP_ETH_EMITTER,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -850,3 +851,4 @@ bool tty_ldisc_churn(struct childdata *child);
 bool wireguard_decrypt_flood(struct childdata *child);
 bool blkdev_lifecycle_race(struct childdata *child);
 bool iscsi_target_probe(struct childdata *child);
+bool eth_emitter(struct childdata *child);

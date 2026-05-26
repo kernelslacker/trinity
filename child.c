@@ -1060,7 +1060,7 @@ static void check_fd_leaks(struct childdata *child)
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[103] = {
+static int dormant_op_disabled[104] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -1081,6 +1081,7 @@ static int dormant_op_disabled[103] = {
 	1, 1, 1, 1, 1, 1, 1, 1, 1,
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 	1,
+	0,	/* eth_emitter is lightweight (one socket per child, fixed-size sendto) — promote at startup. */
 };
 
 /*
@@ -1126,6 +1127,7 @@ static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_SLAB_CACHE_THRASH,
 	CHILD_OP_TLS_ROTATE,
 	CHILD_OP_PACKET_FANOUT_THRASH,
+	CHILD_OP_ETH_EMITTER,
 	CHILD_OP_USERNS_FUZZER,
 	CHILD_OP_SCHED_CYCLER,
 	CHILD_OP_BARRIER_RACER,
@@ -1315,6 +1317,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_WIREGUARD_DECRYPT_FLOOD:	return "wireguard_decrypt_flood";
 	case CHILD_OP_BLKDEV_LIFECYCLE_RACE:	return "blkdev_lifecycle_race";
 	case CHILD_OP_ISCSI_TARGET_PROBE:	return "iscsi_target_probe";
+	case CHILD_OP_ETH_EMITTER:	return "eth_emitter";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1412,7 +1415,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[103] = {
+static const enum child_op_type pick_op_type_table[104] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -1516,6 +1519,7 @@ static const enum child_op_type pick_op_type_table[103] = {
 	[100] = CHILD_OP_WIREGUARD_DECRYPT_FLOOD,
 	[101] = CHILD_OP_BLKDEV_LIFECYCLE_RACE,
 	[102] = CHILD_OP_ISCSI_TARGET_PROBE,
+	[103] = CHILD_OP_ETH_EMITTER,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1897,6 +1901,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_WIREGUARD_DECRYPT_FLOOD]	= wireguard_decrypt_flood,
 	[CHILD_OP_BLKDEV_LIFECYCLE_RACE]	= blkdev_lifecycle_race,
 	[CHILD_OP_ISCSI_TARGET_PROBE]	= iscsi_target_probe,
+	[CHILD_OP_ETH_EMITTER]		= eth_emitter,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
