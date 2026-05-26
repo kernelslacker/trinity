@@ -219,9 +219,9 @@ static unsigned int pick_chain_length(void)
 {
 	unsigned int r = rnd_modulo_u32(10);
 
-	if (r < 5)
+	if (r < 3)
 		return 2;
-	if (r < 8)
+	if (r < 7)
 		return 3;
 	return 4;
 }
