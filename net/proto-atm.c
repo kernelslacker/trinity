@@ -54,6 +54,7 @@ static void atm_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 {
 	so->level = SOL_ATM;
 	so->optname = RAND_ARRAY(atm_opts);
+	so->optlen = sizeof(unsigned int);
 }
 
 static struct socket_triplet atmpvc_triplet[] = {
