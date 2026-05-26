@@ -911,7 +911,7 @@ void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen)
 	if (bpf->len == 0)
 		bpf->len = avail = 50;
 
-	bpf->filter = zmalloc(bpf->len * sizeof(struct sock_filter));
+	bpf->filter = zmalloc_tracked(bpf->len * sizeof(struct sock_filter));
 
 	state = seccomp_choose(seccomp_markov_init);
 
