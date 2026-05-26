@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include "csfu.h"
 #include "files.h"
 #include "random.h"
 #include "rnd.h"
@@ -227,6 +228,11 @@ static const unsigned long openat2_resolve_combos[] = {
 	RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS,
 };
 
+static const struct csfu_desc desc_openat2 = {
+	.name = "open_how",
+	.ksize = sizeof(struct open_how),
+};
+
 /*
  * Legality-aware sanitiser for openat2(2).
  *
@@ -243,31 +249,20 @@ static const unsigned long openat2_resolve_combos[] = {
  *     causes the kernel to return -EINVAL out of build_open_flags.
  *
  * The usize argument is independently validated against
- * sizeof(struct open_how) with copy_struct_from_user semantics:
+ * sizeof(struct open_how) with copy_struct_from_user semantics;
+ * the usize-vs-ksize bucket distribution lives in build_csfu_struct()
+ * (see include/csfu.h) so every CSFU-shaped ABI gets uniform
+ * coverage of the five buckets.
  *
- *   - usize == 0: rejected with -EINVAL.
- *   - usize <  sizeof: rejected (open_how has no smaller version).
- *   - usize == sizeof: the common path.
- *   - usize >  sizeof: accepted iff trailing bytes are zero (the
- *     surrounding zmalloc'd slack satisfies this).
- *
- * Filling all three fields with legal-looking bytes and exercising
- * the four usize buckets gets the syscall past the front-door
- * validators into the namei RESOLVE_* code paths and the file-open
- * machinery, which is where the interesting bugs live.
+ * Filling all three fields with legal-looking bytes and rolling
+ * through the bucket distribution gets the syscall past the front-
+ * door validators into the namei RESOLVE_* code paths and the
+ * file-open machinery, which is where the interesting bugs live.
  */
 static void sanitise_openat2(struct syscallrecord *rec)
 {
-	struct open_how *how;
-	size_t buflen, usize;
-	uint32_t pick;
-
-	/*
-	 * Allocate slack past sizeof(struct open_how) so the oversized
-	 * usize bucket has zero-initialised trailing bytes to copy from.
-	 */
-	buflen = sizeof(struct open_how) + 32;
-	how = zmalloc_tracked(buflen);
+	struct csfu_buf buf = build_csfu_struct(&desc_openat2);
+	struct open_how *how = buf.ptr;
 
 	how->flags = RAND_ARRAY(open_o_flags_base) | get_o_flags();
 
@@ -294,26 +289,8 @@ static void sanitise_openat2(struct syscallrecord *rec)
 	else
 		how->resolve = RAND_ARRAY(openat2_resolve_combos);
 
-	/*
-	 * usize bucket: 70% exact, 10% short, 10% long-with-trailing-
-	 * zeros, 10% zero.  The short and zero buckets exercise the
-	 * kernel's copy_struct_from_user size validators; the long
-	 * bucket exercises the trailing-zero check.
-	 */
-	pick = rnd_modulo_u32(100);
-	if (pick < 70) {
-		usize = sizeof(struct open_how);
-	} else if (pick < 80) {
-		usize = rnd_modulo_u32(sizeof(struct open_how));
-	} else if (pick < 90) {
-		usize = sizeof(struct open_how) + 1 +
-			rnd_modulo_u32(buflen - sizeof(struct open_how) - 1);
-	} else {
-		usize = 0;
-	}
-
 	rec->a3 = (unsigned long) how;
-	rec->a4 = usize;
+	rec->a4 = buf.usize;
 
 	/*
 	 * Hand the snap to the deferred-free queue at sanitise time so cleanup
