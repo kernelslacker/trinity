@@ -3,7 +3,7 @@
  */
 #include <signal.h>
 #include <unistd.h>
-#include "objects.h"
+#include "publish_resource.h"
 #include "rnd.h"
 #include "sanitise.h"
 
@@ -63,7 +63,6 @@ static void sanitise_signalfd(struct syscallrecord *rec)
 
 static void post_signalfd(struct syscallrecord *rec)
 {
-	struct object *new;
 	int fd = rec->retval;
 
 	if ((long)rec->retval < 0)
@@ -71,9 +70,7 @@ static void post_signalfd(struct syscallrecord *rec)
 	if (fd < 0 || fd >= (1 << 20))
 		return;
 
-	new = alloc_object();
-	new->signalfdobj.fd = fd;
-	add_object(new, OBJ_LOCAL, OBJ_FD_SIGNALFD);
+	publish_resource(OBJ_FD_SIGNALFD, fd, NULL);
 }
 
 struct syscallentry syscall_signalfd = {
