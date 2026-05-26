@@ -865,6 +865,19 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		}
 		__atomic_add_fetch(&kcov_shm->per_syscall_errno[call][bucket],
 				   1, __ATOMIC_RELAXED);
+
+		/* Stamp last_efault_at[] with the current total_calls so a
+		 * future picker pass can bias away from syscalls stuck in
+		 * pure-EFAULT regimes.  total_calls is the same counter
+		 * last_edge_at[] uses, so the two fields stay directly
+		 * comparable. */
+		if (bucket == ERRNO_BUCKET_EFAULT) {
+			unsigned long now_call =
+				__atomic_load_n(&kcov_shm->total_calls,
+						__ATOMIC_RELAXED);
+			__atomic_store_n(&kcov_shm->last_efault_at[call],
+					 now_call, __ATOMIC_RELAXED);
+		}
 	}
 
 	/* attempted stays ungated: an attempted invocation IS still an

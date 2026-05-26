@@ -392,6 +392,15 @@ struct kcov_shared {
 	 * compact view that pairs with the coverage tables above and lives
 	 * in the same dump section. */
 	unsigned long per_syscall_errno[MAX_NR_SYSCALL][ERRNO_BUCKET_NR];
+	/* Sibling of last_edge_at: stamps total_calls at the moment the
+	 * most recent EFAULT return was observed for this syscall slot.
+	 * Lets a future picker pass bias selection away from syscalls
+	 * stuck in pure-EFAULT regimes (no recent edges + a recent EFAULT
+	 * stamp is the diagnostic signature).  Stored as the same
+	 * total_calls counter last_edge_at uses so the two fields are
+	 * directly comparable (delta = last_edge_at[nr] - last_efault_at[nr]
+	 * is a signed "has progress outrun the fault?" signal). */
+	unsigned long last_efault_at[MAX_NR_SYSCALL];
 	/* Per-syscall counterpart of cmp_hints_unique_inserts: every fresh
 	 * insert or evict-replace in pools[nr] bumps slot nr.  Dedup-refresh
 	 * hits are NOT counted, matching the global counter's semantics.
