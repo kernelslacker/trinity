@@ -617,9 +617,20 @@ void fd_hash_remove(int fd);
  * this_child() is initialised it is a no-op.  Use alongside
  * fd_event_enqueue(FD_EVENT_CLOSE) so the closing child stops
  * handing out the just-closed fd from get_random_fd() /
- * get_typed_fd() before the parent drains the event.
+ * get_typed_fd() before the parent drains the event.  Most
+ * child-side close paths should call notify_child_fd_closed()
+ * instead, which bundles this with the matching event-enqueue and
+ * live-fd-ring eviction so all three steps stay in lockstep.
  */
 void fd_hash_remove_local(int fd);
+/*
+ * Range variant of fd_hash_remove_local: evict every fd in [lo, hi]
+ * from THIS child's fd_hash[] snapshot.  Same context rules as
+ * fd_hash_remove_local -- child only, parent and pre-init are
+ * no-ops.  Backs notify_child_fd_closed_range() for close_range()-
+ * style bulk closes.
+ */
+void fd_hash_remove_local_range(int lo, int hi);
 struct fd_hash_entry *fd_hash_lookup(int fd);
 
 #define REG_GLOBAL_OBJ(_tag, _init_fn)					\

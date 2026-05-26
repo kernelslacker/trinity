@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include "child.h"
 #include "fd.h"
 #include "fd-event.h"
 #include "locks.h"
@@ -47,6 +48,40 @@ bool fd_event_enqueue(struct fd_event_ring *ring,
 	return spsc_ring_try_enqueue(&ring->base, ring->events,
 				     FD_EVENT_RING_SIZE, sizeof(ring->events[0]),
 				     &ev);
+}
+
+/*
+ * Bundle the three steps every child-side close path must perform
+ * into a single call site so the order and the set stay enforced:
+ * publish the close to the parent, evict the local fd_hash[]
+ * snapshot, and sentinel-out the live_fds ring slot.  Mirrors the
+ * sequence post_close has always run inline; future child-side
+ * close paths should route through here rather than re-spelling
+ * the three steps and risk drifting out of sync.
+ *
+ * fd_event_enqueue() already tolerates a NULL ring, so the only
+ * precondition the helper imposes on the caller is a non-NULL
+ * child -- the surrounding paths already gate on this_child().
+ */
+void notify_child_fd_closed(struct childdata *child, int fd)
+{
+	fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE, fd);
+	fd_hash_remove_local(fd);
+	child_fd_ring_remove(&child->live_fds, fd);
+}
+
+void notify_child_fd_closed_range(struct childdata *child, int lo, int hi)
+{
+	int fd;
+
+	if (lo > hi)
+		return;
+
+	for (fd = lo; fd <= hi; fd++)
+		fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE, fd);
+
+	fd_hash_remove_local_range(lo, hi);
+	child_fd_ring_remove_range(&child->live_fds, lo, hi);
 }
 
 /*

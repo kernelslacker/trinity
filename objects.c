@@ -261,6 +261,17 @@ void fd_hash_remove_local(int fd)
 	}
 }
 
+void fd_hash_remove_local_range(int lo, int hi)
+{
+	int fd;
+
+	if (lo > hi)
+		return;
+
+	for (fd = lo; fd <= hi; fd++)
+		fd_hash_remove_local(fd);
+}
+
 struct fd_hash_entry *fd_hash_lookup(int fd)
 {
 	struct fd_hash_entry *table;
