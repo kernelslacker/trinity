@@ -284,8 +284,19 @@ u64 rand64(void)
 		break;
 	}
 
+	/*
+	 * Two independent post-mix 1/25 gates folded onto a single
+	 * rnd_u32() draw, tested against disjoint 8-bit slices.  Each
+	 * slice gives 11/256 (~4.30%) outcomes vs the exact 1/25 = 4%
+	 * the bounded helper would produce -- ~0.3pp absolute bias,
+	 * acceptable for a fuzz-flavour gate.  The ONE_IN(10)
+	 * MSB-distribution gate between the two stays on its own draw
+	 * (different probability, different intent).
+	 */
+	unsigned int munge_roll = rnd_u32();
+
 	/* Sometimes invert the generated number. */
-	if (ONE_IN(25))
+	if ((munge_roll & 0xff) % 25 == 0)
 		r = ~r;
 
 	/* increase distribution in MSB */
@@ -299,7 +310,7 @@ u64 rand64(void)
 	}
 
 	/* Sometimes flip sign */
-	if (ONE_IN(25))
+	if (((munge_roll >> 8) & 0xff) % 25 == 0)
 		r = ~r + 1;
 
 	return r;
