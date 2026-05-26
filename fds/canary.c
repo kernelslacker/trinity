@@ -85,6 +85,8 @@ static struct canary_pool *canary_pool;
 
 static void canary_destructor(struct object *obj)
 {
+	free_shared_str((char *)obj->fileobj.filename,
+			strlen(obj->fileobj.filename) + 1);
 	close(obj->fileobj.fd);
 }
 

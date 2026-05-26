@@ -62,6 +62,10 @@ static int create_dumb(__unused__ int fd)
 		return -1;
 	}
 
+	memset(&destroy, 0, sizeof(destroy));
+	destroy.handle = create.handle;
+	ioctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy);
+
 	return handle_to_fd.fd;
 #else
 	return -1;
