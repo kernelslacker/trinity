@@ -261,6 +261,20 @@ struct object {
 	enum objecttype obj_type;
 	unsigned int array_idx;		/* index in objhead->array */
 	/*
+	 * Per-obj identity tag drawn from a strictly monotonic per-pool
+	 * counter (objhead->next_slot_version) at the successful
+	 * add_object() return path.  First issued value is 1; the zero
+	 * left behind by release_obj()'s memset is therefore a natural
+	 * "this slot is dead" sentinel that never collides with a live
+	 * stamp.  Consumers that race "stash a slot index, sleep, look
+	 * the slot up again" against the pool's destroy+add cycle can
+	 * snapshot this alongside the index and re-check via
+	 * object_slot_alive() before dereferencing the obj they pulled
+	 * back out of head->array.  No current consumers — this lands
+	 * the field, bump and helper; migrations are separate commits.
+	 */
+	unsigned int slot_version;
+	/*
 	 * Provenance clock: snapshot of shm_published->fleet_op_count
 	 * taken at the successful add_object() return path, i.e. the
 	 * coarse fleet-wide op tick at which this obj first became
@@ -396,6 +410,20 @@ struct objhead {
 	unsigned int num_entries;
 	unsigned int array_capacity;
 	unsigned int max_entries;
+	/*
+	 * Strictly-monotonic counter used to stamp obj->slot_version on
+	 * every successful add_object() into this pool.  Pre-increment so
+	 * the first issued value is 1 and zero (left by release_obj()'s
+	 * memset on a freed obj) is reserved as a "never live" sentinel.
+	 * Pool-private — single-writer is the owning process (the parent
+	 * for OBJ_GLOBAL pre-fork, the owning child for OBJ_LOCAL).  At
+	 * 32 bits this wraps after ~4 billion adds, which is well above
+	 * anything an in-process fuzz run reaches; wrap to 0 would be
+	 * benign in any case because consumers always compare a
+	 * captured stamp against the current obj->slot_version literal,
+	 * never against the counter itself.
+	 */
+	unsigned int next_slot_version;
 	void (*destroy)(struct object *obj);
 	void (*dump)(struct object *obj, enum obj_scope scope);
 };
@@ -514,6 +542,32 @@ static inline bool objpool_check(const struct object *obj,
 	if (obj->obj_type != expected)
 		return false;
 	return true;
+}
+
+/*
+ * Identity check for obj pointers cached across a window in which the
+ * owning pool may have destroyed and re-added entries.  Capture
+ * obj->slot_version at the moment a consumer first resolves the obj
+ * (typically alongside obj->array_idx); pass the captured value back
+ * at use time.  Returns true iff the obj at this address still carries
+ * the same identity stamp it had when captured.
+ *
+ * Layered with objpool_check(): that gate filters out obviously-wild
+ * pointers and cross-pool reads via the VA-range + obj_type checks,
+ * but cannot tell a stale "same address, same type, recycled identity"
+ * obj from a fresh one.  This check closes that remaining window.
+ *
+ * The zero left in obj->slot_version by release_obj()'s memset is a
+ * reserved sentinel: add_object() never issues 0, so a captured
+ * version > 0 compared against 0 always fails and a stale read off a
+ * freed chunk returns false without further work.
+ */
+static inline bool object_slot_alive(const struct object *obj,
+				     unsigned int captured_version)
+{
+	if (obj == NULL)
+		return false;
+	return obj->slot_version == captured_version;
 }
 
 bool objects_empty(enum objecttype type);

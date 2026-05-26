@@ -711,6 +711,15 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	head->array[n] = obj;
 	obj->array_idx = n;
 	/*
+	 * Stamp the per-pool monotonic identity tag.  Pre-increment so
+	 * the first issued value is 1; the zero left by release_obj()'s
+	 * memset on a freed obj is reserved as a never-issued sentinel.
+	 * Stamped after the slot-array insert and the array_idx assign
+	 * so any consumer that re-reads obj fields off head->array sees
+	 * a fully populated obj as soon as num_entries below admits it.
+	 */
+	obj->slot_version = ++head->next_slot_version;
+	/*
 	 * Stamp the publish-time fleet op tick from the child-readable
 	 * mirror page.  parent_stats.op_count is MAP_PRIVATE heap so
 	 * a child COW-copy goes stale immediately after fork; the
@@ -818,6 +827,7 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
 		head->array = NULL;
 		head->array_capacity = 0;
 		head->fd_hash = NULL;
+		head->next_slot_version = 0;
 
 		/*
 		 * child lists can inherit properties from global lists.
@@ -886,6 +896,17 @@ void clone_global_objects_to_child(struct childdata *child)
 		dst->array_capacity = n;
 		dst->fd_hash = NULL;
 		dst->array = NULL;
+		/*
+		 * Carry the parent's next_slot_version into the child snapshot
+		 * so any captured (obj, version) pair stashed by a consumer
+		 * pre-fork continues to compare correctly against entries the
+		 * child sees post-fork.  The child never adds to OBJ_GLOBAL
+		 * (the mypid()!=mainpid early-return in add_object()) so the
+		 * snapshot value is read-only on the child side; copying it
+		 * just keeps the field self-consistent rather than starting
+		 * the child's mirror at zero.
+		 */
+		dst->next_slot_version = src->next_slot_version;
 
 		if (n == 0 || src->array == NULL)
 			continue;
