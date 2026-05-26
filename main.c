@@ -1404,22 +1404,12 @@ static void check_children_progressing(void)
  */
 static void print_kcov_cmp_diag(void)
 {
-	struct kcov_cmp_diag *d;
 	char buf[512];
-	int n = 0;
-	unsigned int open_c, init_trace_c, mmap_c, enable_c, disable_c, rt_enable_c;
+	int n;
 	unsigned int pc_kids, cmp_kids;
 
 	if (kcov_shm == NULL)
 		return;
-	d = &kcov_shm->cmp_diag;
-
-	open_c       = __atomic_load_n(&d->init_open_count,       __ATOMIC_RELAXED);
-	init_trace_c = __atomic_load_n(&d->init_init_trace_count, __ATOMIC_RELAXED);
-	mmap_c       = __atomic_load_n(&d->init_mmap_count,       __ATOMIC_RELAXED);
-	enable_c     = __atomic_load_n(&d->init_enable_count,     __ATOMIC_RELAXED);
-	disable_c    = __atomic_load_n(&d->init_disable_count,    __ATOMIC_RELAXED);
-	rt_enable_c  = __atomic_load_n(&d->runtime_enable_count,  __ATOMIC_RELAXED);
 
 	pc_kids  = __atomic_load_n(&kcov_shm->pc_mode_children,  __ATOMIC_RELAXED);
 	cmp_kids = __atomic_load_n(&kcov_shm->cmp_mode_children, __ATOMIC_RELAXED);
@@ -1429,27 +1419,9 @@ static void print_kcov_cmp_diag(void)
 	(void)pc_kids;
 	(void)cmp_kids;
 
-	if ((open_c | init_trace_c | mmap_c | enable_c | disable_c | rt_enable_c) == 0)
+	n = kcov_cmp_diag_format(buf, sizeof(buf), KCOV_CMP_DIAG_ALL);
+	if (n == 0)
 		return;
-
-	if (open_c)
-		n += snprintf(buf + n, sizeof(buf) - n, " init_open=%d/%u",
-			__atomic_load_n(&d->init_open_errno, __ATOMIC_RELAXED), open_c);
-	if (init_trace_c)
-		n += snprintf(buf + n, sizeof(buf) - n, " init_init_trace=%d/%u",
-			__atomic_load_n(&d->init_init_trace_errno, __ATOMIC_RELAXED), init_trace_c);
-	if (mmap_c)
-		n += snprintf(buf + n, sizeof(buf) - n, " init_mmap=%d/%u",
-			__atomic_load_n(&d->init_mmap_errno, __ATOMIC_RELAXED), mmap_c);
-	if (enable_c)
-		n += snprintf(buf + n, sizeof(buf) - n, " init_enable=%d/%u",
-			__atomic_load_n(&d->init_enable_errno, __ATOMIC_RELAXED), enable_c);
-	if (disable_c)
-		n += snprintf(buf + n, sizeof(buf) - n, " init_disable=%d/%u",
-			__atomic_load_n(&d->init_disable_errno, __ATOMIC_RELAXED), disable_c);
-	if (rt_enable_c)
-		n += snprintf(buf + n, sizeof(buf) - n, " runtime_enable=%d/%u",
-			__atomic_load_n(&d->runtime_enable_errno, __ATOMIC_RELAXED), rt_enable_c);
 
 	(void)n;
 	/* Only emit if the DIAG payload changed since last dump — a

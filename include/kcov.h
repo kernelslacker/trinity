@@ -208,6 +208,22 @@ struct kcov_cmp_diag {
 	unsigned int runtime_enable_count;
 };
 
+/* Selector for kcov_cmp_diag_format() — keeps stats.c's two-line split
+ * (init vs runtime sites) while still allowing main.c to fold all six
+ * sites into a single one-line summary. */
+enum kcov_cmp_diag_part {
+	KCOV_CMP_DIAG_INIT,	/* init_open, init_init_trace, init_mmap */
+	KCOV_CMP_DIAG_RUNTIME,	/* init_enable, init_disable, runtime_enable */
+	KCOV_CMP_DIAG_ALL,
+};
+
+/* Build a " name=<errno>/<count>" segment per non-zero cmp_diag site
+ * into buf.  Each segment starts with a single space so the caller
+ * concatenates straight into a log line.  Returns the number of bytes
+ * written (excluding the trailing NUL); zero if no site has any
+ * recorded failures, or if kcov_shm is NULL. */
+int kcov_cmp_diag_format(char *buf, size_t bufsz, enum kcov_cmp_diag_part part);
+
 struct kcov_child {
 	/* Field order is constrained by the hot-cacheline budget in struct
 	 * childdata (see static_assert in child.c).  Sized to 48 bytes:

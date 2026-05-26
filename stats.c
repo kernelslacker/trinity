@@ -2923,8 +2923,6 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned long delta_strip_skipped;
 	unsigned long delta_try_get_attempts, delta_try_get_returned, delta_injected;
 	unsigned int pc_kids, cmp_kids;
-	struct kcov_cmp_diag *d;
-	unsigned int open_c, init_trace_c, mmap_c, enable_c, disable_c, rt_enable_c;
 
 	if (kcov_shm == NULL)
 		return;
@@ -3033,44 +3031,15 @@ void kcov_cmp_stats_periodic_dump(void)
 				pc_kids, cmp_kids);
 	}
 
-	d = &kcov_shm->cmp_diag;
-	open_c       = __atomic_load_n(&d->init_open_count,       __ATOMIC_RELAXED);
-	init_trace_c = __atomic_load_n(&d->init_init_trace_count, __ATOMIC_RELAXED);
-	mmap_c       = __atomic_load_n(&d->init_mmap_count,       __ATOMIC_RELAXED);
-	enable_c     = __atomic_load_n(&d->init_enable_count,     __ATOMIC_RELAXED);
-	disable_c    = __atomic_load_n(&d->init_disable_count,    __ATOMIC_RELAXED);
-	rt_enable_c  = __atomic_load_n(&d->runtime_enable_count,  __ATOMIC_RELAXED);
-
-	if ((open_c | init_trace_c | mmap_c | enable_c | disable_c | rt_enable_c) != 0) {
+	{
 		char init_buf[256];
 		char rt_buf[256];
-		int ni = 0;
-		int nr = 0;
+		int ni, nr;
 
-		if (open_c)
-			ni += snprintf(init_buf + ni, sizeof(init_buf) - ni,
-				" init_open=%d/%u",
-				__atomic_load_n(&d->init_open_errno, __ATOMIC_RELAXED), open_c);
-		if (init_trace_c)
-			ni += snprintf(init_buf + ni, sizeof(init_buf) - ni,
-				" init_init_trace=%d/%u",
-				__atomic_load_n(&d->init_init_trace_errno, __ATOMIC_RELAXED), init_trace_c);
-		if (mmap_c)
-			ni += snprintf(init_buf + ni, sizeof(init_buf) - ni,
-				" init_mmap=%d/%u",
-				__atomic_load_n(&d->init_mmap_errno, __ATOMIC_RELAXED), mmap_c);
-		if (enable_c)
-			nr += snprintf(rt_buf + nr, sizeof(rt_buf) - nr,
-				" init_enable=%d/%u",
-				__atomic_load_n(&d->init_enable_errno, __ATOMIC_RELAXED), enable_c);
-		if (disable_c)
-			nr += snprintf(rt_buf + nr, sizeof(rt_buf) - nr,
-				" init_disable=%d/%u",
-				__atomic_load_n(&d->init_disable_errno, __ATOMIC_RELAXED), disable_c);
-		if (rt_enable_c)
-			nr += snprintf(rt_buf + nr, sizeof(rt_buf) - nr,
-				" runtime_enable=%d/%u",
-				__atomic_load_n(&d->runtime_enable_errno, __ATOMIC_RELAXED), rt_enable_c);
+		ni = kcov_cmp_diag_format(init_buf, sizeof(init_buf),
+					  KCOV_CMP_DIAG_INIT);
+		nr = kcov_cmp_diag_format(rt_buf, sizeof(rt_buf),
+					  KCOV_CMP_DIAG_RUNTIME);
 
 		if (ni > 0 || nr > 0) {
 			stats_log_write("KCOV CMP DIAG errnos (first-failure-wins, cumulative count):\n");

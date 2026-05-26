@@ -109,6 +109,66 @@ static void kcov_cmp_diag_record(int *errno_slot, unsigned int *count_slot,
 	__atomic_fetch_add(count_slot, 1, __ATOMIC_RELAXED);
 }
 
+/* Shared formatter for the per-site KCOV CMP DIAG segments.  Both the
+ * dump_stats periodic dump (stats.c) and the print_kcov_cmp_diag main
+ * loop summary (main.c) walked the same six fields with copy-pasted
+ * snprintf chains; centralising the format here keeps the two
+ * callsites in lockstep and is the natural home alongside the
+ * cmp_diag struct definition.  Fields are read once via __atomic
+ * loads so the snapshot is consistent across the format pass.  Each
+ * non-zero counter contributes a single space-prefixed " name=N/M"
+ * token; absent counters contribute nothing. */
+int kcov_cmp_diag_format(char *buf, size_t bufsz, enum kcov_cmp_diag_part part)
+{
+	struct kcov_cmp_diag *d;
+	unsigned int open_c, init_trace_c, mmap_c;
+	unsigned int enable_c, disable_c, rt_enable_c;
+	bool want_init, want_rt;
+	int n = 0;
+
+	if (buf == NULL || bufsz == 0)
+		return 0;
+	buf[0] = '\0';
+	if (kcov_shm == NULL)
+		return 0;
+
+	want_init = (part == KCOV_CMP_DIAG_INIT    || part == KCOV_CMP_DIAG_ALL);
+	want_rt   = (part == KCOV_CMP_DIAG_RUNTIME || part == KCOV_CMP_DIAG_ALL);
+
+	d = &kcov_shm->cmp_diag;
+	open_c       = __atomic_load_n(&d->init_open_count,       __ATOMIC_RELAXED);
+	init_trace_c = __atomic_load_n(&d->init_init_trace_count, __ATOMIC_RELAXED);
+	mmap_c       = __atomic_load_n(&d->init_mmap_count,       __ATOMIC_RELAXED);
+	enable_c     = __atomic_load_n(&d->init_enable_count,     __ATOMIC_RELAXED);
+	disable_c    = __atomic_load_n(&d->init_disable_count,    __ATOMIC_RELAXED);
+	rt_enable_c  = __atomic_load_n(&d->runtime_enable_count,  __ATOMIC_RELAXED);
+
+	if (want_init) {
+		if (open_c)
+			n += snprintf(buf + n, bufsz - n, " init_open=%d/%u",
+				__atomic_load_n(&d->init_open_errno, __ATOMIC_RELAXED), open_c);
+		if (init_trace_c)
+			n += snprintf(buf + n, bufsz - n, " init_init_trace=%d/%u",
+				__atomic_load_n(&d->init_init_trace_errno, __ATOMIC_RELAXED), init_trace_c);
+		if (mmap_c)
+			n += snprintf(buf + n, bufsz - n, " init_mmap=%d/%u",
+				__atomic_load_n(&d->init_mmap_errno, __ATOMIC_RELAXED), mmap_c);
+	}
+	if (want_rt) {
+		if (enable_c)
+			n += snprintf(buf + n, bufsz - n, " init_enable=%d/%u",
+				__atomic_load_n(&d->init_enable_errno, __ATOMIC_RELAXED), enable_c);
+		if (disable_c)
+			n += snprintf(buf + n, bufsz - n, " init_disable=%d/%u",
+				__atomic_load_n(&d->init_disable_errno, __ATOMIC_RELAXED), disable_c);
+		if (rt_enable_c)
+			n += snprintf(buf + n, bufsz - n, " runtime_enable=%d/%u",
+				__atomic_load_n(&d->runtime_enable_errno, __ATOMIC_RELAXED), rt_enable_c);
+	}
+
+	return n;
+}
+
 void kcov_init_global(void)
 {
 	int fd;
