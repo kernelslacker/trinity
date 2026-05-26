@@ -108,6 +108,7 @@ SRCS		:= $(wildcard *.c) \
 		   $(wildcard childops/*.c) \
 		   $(wildcard fds/*.c) \
 		   $(wildcard ioctls/*.c) \
+		   $(wildcard lib/*.c) \
 		   $(wildcard mm/*.c) \
 		   $(wildcard net/*.c) \
 		   $(wildcard rand/*.c) \
@@ -118,6 +119,7 @@ OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard childops/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard fds/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard ioctls/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard lib/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard mm/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard net/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard rand/*.c))) \
@@ -149,7 +151,7 @@ df = $(DEPDIR)/$(*D)/$(*F)
 
 clean:
 	@rm -f $(OBJS)
-	@rm -f *.o net/*.o
+	@rm -f *.o lib/*.o net/*.o
 	@rm -f core.*
 	@rm -f trinity
 	@rm -f tags
