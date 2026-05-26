@@ -10,6 +10,7 @@
 #include "objects.h"
 #include "params.h"	// dangerous
 #include "pids.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -418,14 +419,10 @@ pid_t get_random_pid_from_pool(void)
 
 void register_returned_pid(pid_t pid)
 {
-	struct object *obj;
-
 	if (pid <= 0)
 		return;
 	if (pid == mainpid)
 		return;
 
-	obj = alloc_object();
-	obj->pidobj.pid = pid;
-	add_object(obj, OBJ_LOCAL, OBJ_PID);
+	publish_resource(OBJ_PID, (unsigned long)pid, NULL);
 }
