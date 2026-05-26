@@ -265,6 +265,7 @@ static void alg_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 {
 	so->level = SOL_ALG;
 	so->optname = RAND_ARRAY(alg_opts);
+	so->optlen = sizeof(unsigned int);
 }
 
 /*
