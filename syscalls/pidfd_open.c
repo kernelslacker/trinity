@@ -2,21 +2,18 @@
  * SYSCALL_DEFINE2(pidfd_open, pid_t, pid, unsigned int, flags)
  */
 #include <linux/pidfd.h>
-#include "objects.h"
+#include "publish_resource.h"
 #include "sanitise.h"
 
 static void post_pidfd_open(struct syscallrecord *rec)
 {
-	struct object *new;
 	int fd = rec->retval;
+	struct resource_meta meta = { .extra_int = rec->a1 };
 
 	if ((long)rec->retval < 0)
 		return;
 
-	new = alloc_object();
-	new->pidfdobj.fd = fd;
-	new->pidfdobj.pid = rec->a1;
-	add_object(new, OBJ_LOCAL, OBJ_FD_PIDFD);
+	publish_resource(OBJ_FD_PIDFD, fd, &meta);
 }
 
 static unsigned long pidfd_open_flags[] = {
