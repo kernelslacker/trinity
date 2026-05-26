@@ -60,7 +60,27 @@ static void rds_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 {
 	so->level = SOL_RDS;
 	so->optname = RAND_ARRAY(rds_opts);
-	so->optlen = sizeof(unsigned int);
+
+	switch (so->optname) {
+	case RDS_CONG_MONITOR:
+		so->optlen = sizeof(uint64_t);
+		break;
+	case RDS_CANCEL_SENT_TO:
+		so->optlen = sizeof(struct sockaddr_in);
+		break;
+	case RDS_GET_MR:
+		so->optlen = sizeof(struct rds_get_mr_args);
+		break;
+	case RDS_FREE_MR:
+		so->optlen = sizeof(struct rds_free_mr_args);
+		break;
+	case RDS_GET_MR_FOR_DEST:
+		so->optlen = sizeof(struct rds_get_mr_for_dest_args);
+		break;
+	default:
+		so->optlen = sizeof(unsigned int);
+		break;
+	}
 }
 
 static struct socket_triplet rds_triplet[] = {
