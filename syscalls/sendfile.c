@@ -3,10 +3,23 @@
  */
 #include <stdint.h>
 #include <sys/types.h>
+#include "files.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
+
+/* ~25% bias toward a page-cache-backed in_fd; mirrors splice's fd_in swap. */
+static void bias_sendfile_in_fd(struct syscallrecord *rec)
+{
+	if (rnd_modulo_u32(100) < 25) {
+		int fd = get_rand_pagecache_fd();
+
+		if (fd >= 0)
+			rec->a2 = fd;
+	}
+}
 
 static void sanitise_sendfile(struct syscallrecord *rec)
 {
@@ -15,6 +28,7 @@ static void sanitise_sendfile(struct syscallrecord *rec)
 		return;
 	*offset = RAND_RANGE(0ULL, 1ULL << 30);
 	rec->a3 = (unsigned long) offset;
+	bias_sendfile_in_fd(rec);
 }
 
 static void sanitise_sendfile64(struct syscallrecord *rec)
@@ -24,6 +38,7 @@ static void sanitise_sendfile64(struct syscallrecord *rec)
 		return;
 	*offset = RAND_RANGE(0ULL, 1ULL << 30);
 	rec->a3 = (unsigned long) offset;
+	bias_sendfile_in_fd(rec);
 }
 
 struct syscallentry syscall_sendfile = {
