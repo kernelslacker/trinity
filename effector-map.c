@@ -38,6 +38,7 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/utsname.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "arch.h"
@@ -286,6 +287,32 @@ static int issue_probe(struct kcov_child *kc, unsigned int call,
 	(void)syscall(call, args[0], args[1], args[2], args[3], args[4], args[5]);
 
 	(void)alarm(0);
+
+	/*
+	 * Drain a pending-but-not-yet-delivered SIGALRM that the kernel
+	 * generated just before alarm(0) ran.  alarm(0) cancels future
+	 * generations; an already-fired SIGALRM remains queued and would
+	 * otherwise run probe_alarm_handler at some arbitrary later
+	 * moment -- during fp_capture / kcov_disable below (setting
+	 * probe_timed_out for this probe's already-returned syscall), or,
+	 * worse, during the next probe's syscall window before its
+	 * probe_timed_out=0 reset takes effect, falsely marking the next
+	 * call as timed out.  Block SIGALRM, consume any pending one via
+	 * sigtimedwait with a zero timeout, then restore the old mask.
+	 */
+	{
+		sigset_t alrm_set, old_set;
+		struct timespec zero_ts = { 0, 0 };
+
+		sigemptyset(&alrm_set);
+		sigaddset(&alrm_set, SIGALRM);
+		(void)sigprocmask(SIG_BLOCK, &alrm_set, &old_set);
+		while (sigtimedwait(&alrm_set, NULL, &zero_ts) < 0 &&
+				errno == EINTR)
+			continue;
+		(void)sigprocmask(SIG_SETMASK, &old_set, NULL);
+	}
+
 	kcov_disable(kc);
 
 	fp_capture(fp, kc);

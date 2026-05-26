@@ -25,8 +25,11 @@
  */
 
 #include <dlfcn.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <link.h>
+#include <poll.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -35,6 +38,17 @@
 #include <unistd.h>
 
 #include "pc_format.h"
+
+/*
+ * Cap a single addr2line invocation.  GNU binutils addr2line on a
+ * binary with damaged DWARF has been observed to stall indefinitely
+ * mid-section; without a cap the symbolization path becomes a
+ * unkillable hang and a periodic stats dump never returns.  Five
+ * seconds is comfortable for a healthy resolve (sub-100ms in
+ * practice) and short enough that a wedged invocation is reaped
+ * before the next periodic dump fires.
+ */
+#define ADDR2LINE_TIMEOUT_MS	5000
 
 /*
  * Resolve a PC to its containing object and that object's load bias.
@@ -173,6 +187,34 @@ const char *pc_to_source_line(void *pc, char *buf, size_t buflen)
 	}
 
 	close(pipefd[1]);
+
+	/*
+	 * Wait for output (or timeout) on the read end before issuing the
+	 * blocking read().  poll() keeps the cap local to this code path
+	 * rather than reusing alarm(), which is already wired up to the
+	 * effector-map watchdog and would race against it.  On timeout we
+	 * SIGKILL the child and reap; the caller treats NULL as a miss
+	 * and falls back to the bare "binary+0xOFFSET" rendering.
+	 */
+	{
+		struct pollfd pfd;
+		int pr;
+
+		pfd.fd = pipefd[0];
+		pfd.events = POLLIN;
+		pfd.revents = 0;
+		do {
+			pr = poll(&pfd, 1, ADDR2LINE_TIMEOUT_MS);
+		} while (pr < 0 && errno == EINTR);
+
+		if (pr <= 0) {
+			close(pipefd[0]);
+			(void)kill(pid, SIGKILL);
+			(void)waitpid(pid, &status, 0);
+			return NULL;
+		}
+	}
+
 	n = read(pipefd[0], buf, buflen - 1);
 	close(pipefd[0]);
 	if (waitpid(pid, &status, 0) > 0 && WIFSIGNALED(status)) {

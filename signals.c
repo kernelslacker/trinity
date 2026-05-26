@@ -67,6 +67,83 @@ static void sighandler(int sig)
 }
 
 /*
+ * Async-signal-safe formatting primitives for the siginfo dump below.
+ * snprintf() is NOT in POSIX 2024 §2.4.3's signal-safe set: glibc's
+ * conversion path can touch locale state under an internal lock, and
+ * %p/%d are not exempted -- the lock is on the format machinery, not
+ * on the conversion specifier.  A fault handler that fires while the
+ * thread already holds that lock from a non-handler call would
+ * deadlock.  These helpers use only byte stores into a caller-owned
+ * stack buffer; no allocation, no globals, no FILE state.
+ */
+struct sigsafe_buf {
+	char *p;
+	size_t left;
+};
+
+static void sigsafe_putc(struct sigsafe_buf *b, char c)
+{
+	if (b->left > 0) {
+		*b->p++ = c;
+		b->left--;
+	}
+}
+
+static void sigsafe_puts(struct sigsafe_buf *b, const char *s)
+{
+	while (*s != '\0')
+		sigsafe_putc(b, *s++);
+}
+
+static void sigsafe_putu(struct sigsafe_buf *b, unsigned long v)
+{
+	char tmp[24];	/* 20 digits for u64 + slack */
+	int i = 0;
+
+	do {
+		tmp[i++] = (char)('0' + (v % 10U));
+		v /= 10U;
+	} while (v != 0);
+	while (i-- > 0)
+		sigsafe_putc(b, tmp[i]);
+}
+
+static void sigsafe_puti(struct sigsafe_buf *b, long v)
+{
+	unsigned long u;
+
+	if (v < 0) {
+		sigsafe_putc(b, '-');
+		/* Two-step negate so LONG_MIN does not overflow. */
+		u = (unsigned long)(-(v + 1)) + 1UL;
+	} else {
+		u = (unsigned long)v;
+	}
+	sigsafe_putu(b, u);
+}
+
+static void sigsafe_putp(struct sigsafe_buf *b, const void *p)
+{
+	static const char hex[] = "0123456789abcdef";
+	uintptr_t v = (uintptr_t)p;
+	char tmp[2 * sizeof(uintptr_t)];
+	int i = 0;
+
+	sigsafe_putc(b, '0');
+	sigsafe_putc(b, 'x');
+	if (v == 0) {
+		sigsafe_putc(b, '0');
+		return;
+	}
+	while (v != 0) {
+		tmp[i++] = hex[v & 0xfU];
+		v >>= 4;
+	}
+	while (i-- > 0)
+		sigsafe_putc(b, tmp[i]);
+}
+
+/*
  * Signal-safe siginfo dump shared by child_fault_handler and
  * main_fault_handler.
  *
@@ -76,9 +153,9 @@ static void sighandler(int sig)
  * libgcc_s/backtrace deadlock fixed in 81143aaeaba6, just one frame up.
  *
  * Hand-roll a signal-safe equivalent: a lookup table covering every
- * signal either fault handler is installed for, snprintf to a stack
- * buffer, single write().  No allocator involvement, no stdio, no
- * syslog.
+ * signal either fault handler is installed for, formatting via the
+ * sigsafe_* helpers above (byte stores into a stack buffer), and a
+ * single write().  No allocator involvement, no stdio, no syslog.
  *
  * Used by both the child fault handler (SIGSEGV/SIGABRT/SIGBUS/SIGILL)
  * and the parent's main_fault_handler (which adds SIGFPE/SIGQUIT/
@@ -106,7 +183,9 @@ static void write_siginfo_safely(int sig, const siginfo_t *info, const char *who
 	};
 	const char *signame = "UNKNOWN";
 	char buf[256];
-	int len;
+	struct sigsafe_buf b = { buf, sizeof(buf) };
+	size_t written;
+	ssize_t w;
 	size_t i;
 
 	for (i = 0; i < sizeof(sigtab) / sizeof(sigtab[0]); i++) {
@@ -115,16 +194,21 @@ static void write_siginfo_safely(int sig, const siginfo_t *info, const char *who
 			break;
 		}
 	}
-	len = snprintf(buf, sizeof(buf),
-		"%s: fatal signal: %s (si_code=%d, si_addr=%p, si_pid=%d)\n",
-		who, signame, info->si_code, info->si_addr, (int)info->si_pid);
-	if (len > 0) {
-		ssize_t w;
-		if ((size_t)len > sizeof(buf))
-			len = sizeof(buf);
-		w = write(STDERR_FILENO, buf, (size_t)len);
-		(void)w;	/* dying anyway; can't act on a short write */
-	}
+
+	sigsafe_puts(&b, who);
+	sigsafe_puts(&b, ": fatal signal: ");
+	sigsafe_puts(&b, signame);
+	sigsafe_puts(&b, " (si_code=");
+	sigsafe_puti(&b, (long)info->si_code);
+	sigsafe_puts(&b, ", si_addr=");
+	sigsafe_putp(&b, info->si_addr);
+	sigsafe_puts(&b, ", si_pid=");
+	sigsafe_puti(&b, (long)info->si_pid);
+	sigsafe_puts(&b, ")\n");
+
+	written = sizeof(buf) - b.left;
+	w = write(STDERR_FILENO, buf, written);
+	(void)w;	/* dying anyway; can't act on a short write */
 }
 
 /*
