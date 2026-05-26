@@ -6,23 +6,22 @@
  *
  * eventfd() calls eventfd2() with a zero'd flags arg.
  */
-#include "objects.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "sanitise.h"
 
 static void post_eventfd_create(struct syscallrecord *rec)
 {
-	struct object *new;
 	int fd = rec->retval;
 
 	if ((long)rec->retval < 0)
 		return;
 
-	new = alloc_object();
-	new->eventfdobj.fd = fd;
-	new->eventfdobj.count = rec->a1;
-	new->eventfdobj.flags = rec->a2;
-	add_object(new, OBJ_LOCAL, OBJ_FD_EVENTFD);
+	struct resource_meta meta = {
+		.extra_int = rec->a1,	/* count */
+		.flags = rec->a2,
+	};
+	publish_resource(OBJ_FD_EVENTFD, fd, &meta);
 }
 
 struct syscallentry syscall_eventfd = {
