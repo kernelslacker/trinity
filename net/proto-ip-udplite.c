@@ -53,6 +53,7 @@ void udplite_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *tr
 	case UDP_NO_CHECK6_TX:
 	case UDP_NO_CHECK6_RX:
 	case UDP_GRO:
+		so->optlen = sizeof(unsigned int);
 		break;
 
 	case UDP_ENCAP: {
