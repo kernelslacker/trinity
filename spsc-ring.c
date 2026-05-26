@@ -7,6 +7,7 @@
  * contract.
  */
 
+#include <assert.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -30,6 +31,8 @@ bool spsc_ring_try_enqueue(struct spsc_ring *r,
 	uint32_t head, tail, next;
 	uint32_t mask = nslots - 1;
 	unsigned char *base = slots;
+
+	assert(nslots != 0 && (nslots & (nslots - 1)) == 0);
 
 	if (r == NULL || slots == NULL)
 		return false;
@@ -58,12 +61,15 @@ bool spsc_ring_try_enqueue(struct spsc_ring *r,
 uint32_t spsc_ring_drain(struct spsc_ring *r,
 			 const void *slots, uint32_t nslots, size_t slot_size,
 			 spsc_apply_fn apply, void *ctx,
-			 uint32_t *overflow_out)
+			 uint64_t *overflow_out)
 {
-	uint32_t head, tail, overflow;
+	uint32_t head, tail;
+	uint64_t overflow;
 	uint32_t mask = nslots - 1;
 	uint32_t processed = 0;
 	const unsigned char *base = slots;
+
+	assert(nslots != 0 && (nslots & (nslots - 1)) == 0);
 
 	if (r == NULL || slots == NULL || apply == NULL) {
 		if (overflow_out != NULL)
@@ -106,6 +112,8 @@ void spsc_ring_overwrite_enqueue(struct spsc_ring *r,
 	uint32_t head;
 	uint32_t mask = nslots - 1;
 	unsigned char *base = slots;
+
+	assert(nslots != 0 && (nslots & (nslots - 1)) == 0);
 
 	if (r == NULL || slots == NULL)
 		return;

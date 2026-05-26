@@ -55,10 +55,10 @@
 struct spsc_ring {
 	/* Producer writes head + overflow. */
 	uint32_t head;
-	uint32_t overflow;
+	uint64_t overflow;
 
 	/* Padding to put producer and consumer fields on separate cache lines. */
-	char __pad[56];
+	char __pad[48];
 
 	/* Consumer writes tail. */
 	uint32_t tail;
@@ -93,7 +93,7 @@ bool spsc_ring_try_enqueue(struct spsc_ring *r,
 uint32_t spsc_ring_drain(struct spsc_ring *r,
 			 const void *slots, uint32_t nslots, size_t slot_size,
 			 spsc_apply_fn apply, void *ctx,
-			 uint32_t *overflow_out);
+			 uint64_t *overflow_out);
 
 /*
  * Rolling-history enqueue from producer context.  Copies slot_size bytes

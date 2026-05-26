@@ -224,7 +224,7 @@ static void apply_slot(const void *p, void *ctx __unused__)
 
 unsigned int edgepair_ring_drain(struct edgepair_ring *ring)
 {
-	uint32_t overflow = 0;
+	uint64_t overflow = 0;
 	uint32_t processed;
 
 	if (ring == NULL)

@@ -6,6 +6,7 @@
  * The parent drains events and updates the global object pool.
  */
 
+#include <inttypes.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -132,7 +133,7 @@ static void apply_slot(const void *p, void *ctx __unused__)
  */
 unsigned int fd_event_drain(struct fd_event_ring *ring)
 {
-	uint32_t overflow = 0;
+	uint64_t overflow = 0;
 	uint32_t processed;
 
 	if (ring == NULL)
@@ -142,7 +143,7 @@ unsigned int fd_event_drain(struct fd_event_ring *ring)
 				    FD_EVENT_RING_SIZE, sizeof(ring->events[0]),
 				    apply_slot, NULL, &overflow);
 	if (overflow > 0) {
-		output(1, "fd_event: ring overflow, %u events dropped\n",
+		output(1, "fd_event: ring overflow, %" PRIu64 " events dropped\n",
 		       overflow);
 		__atomic_add_fetch(&shm->stats.fd_events_dropped, overflow,
 				   __ATOMIC_RELAXED);
