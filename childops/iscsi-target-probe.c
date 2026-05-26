@@ -464,7 +464,7 @@ bool iscsi_target_probe(struct childdata *child)
 				 * the first time they try. */
 				if (!ns_unsupported) {
 					ns_unsupported = true;
-					output(2, "iscsi_target_probe: 127.0.0.1:3260 connection refused, disabling for this child\n");
+					outputerr("iscsi_target_probe: 127.0.0.1:3260 connection refused, disabling for this child\n");
 				}
 				__atomic_add_fetch(&shm->stats.iscsi_target_probe_no_target,
 						   1, __ATOMIC_RELAXED);

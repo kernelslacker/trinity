@@ -153,7 +153,7 @@ static bool ensure_discovery(void)
 	if (pmu_count == 0) {
 		if (!pmu_warned_unsupported) {
 			pmu_warned_unsupported = true;
-			output(0, "perf_event_chains: no PMUs found, disabling\n");
+			outputerr("perf_event_chains: no PMUs found, disabling\n");
 		}
 		return false;
 	}

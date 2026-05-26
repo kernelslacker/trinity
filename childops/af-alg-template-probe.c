@@ -193,8 +193,8 @@ bool af_alg_template_probe(struct childdata *child)
 	if (sk < 0) {
 		__atomic_add_fetch(&shm->stats.af_alg_probe_unsupported,
 				   1, __ATOMIC_RELAXED);
-		output(0, "[af_alg_probe] AF_ALG unavailable (errno=%d), "
-		       "skipping template enumeration\n", errno);
+		outputerr("[af_alg_probe] AF_ALG unavailable (errno=%d), "
+		          "skipping template enumeration\n", errno);
 		af_alg_probe_local_done = true;
 		return true;
 	}
@@ -206,8 +206,8 @@ bool af_alg_template_probe(struct childdata *child)
 	(void)i;
 	__atomic_add_fetch(&shm->stats.af_alg_probe_unsupported,
 			   1, __ATOMIC_RELAXED);
-	output(0, "[af_alg_probe] built without linux/if_alg.h, "
-	       "template enumeration disabled\n");
+	outputerr("[af_alg_probe] built without linux/if_alg.h, "
+	          "template enumeration disabled\n");
 #endif
 
 	af_alg_probe_local_done = true;

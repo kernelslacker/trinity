@@ -154,8 +154,8 @@ static bool ensure_private_ns(void)
 		ns_unsupported = true;
 		__atomic_add_fetch(&shm->stats.fs_lifecycle_unsupported,
 				   1, __ATOMIC_RELAXED);
-		output(0, "fs_lifecycle: MS_PRIVATE remount failed (errno=%d), disabling\n",
-		       errno);
+		outputerr("fs_lifecycle: MS_PRIVATE remount failed (errno=%d), disabling\n",
+		          errno);
 		return false;
 	}
 

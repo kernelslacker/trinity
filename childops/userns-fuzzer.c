@@ -399,7 +399,7 @@ bool userns_fuzzer(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		if (!warned_unsupported) {
 			warned_unsupported = true;
-			output(0, "userns_fuzzer: CLONE_NEWUSER refused, disabling for this child\n");
+			outputerr("userns_fuzzer: CLONE_NEWUSER refused, disabling for this child\n");
 		}
 		return true;
 	}

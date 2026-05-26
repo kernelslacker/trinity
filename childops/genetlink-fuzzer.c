@@ -281,8 +281,8 @@ static bool ensure_discovery(void)
 			discovery_failed = true;
 			if (!warned_unsupported) {
 				warned_unsupported = true;
-				output(0, "genetlink_fuzzer: nl_open(NETLINK_GENERIC) failed (errno=%d), disabling\n",
-				       errno);
+				outputerr("genetlink_fuzzer: nl_open(NETLINK_GENERIC) failed (errno=%d), disabling\n",
+				          errno);
 			}
 			return false;
 		}
@@ -296,8 +296,8 @@ static bool ensure_discovery(void)
 		genl_ctx_open = false;
 		if (!warned_unsupported) {
 			warned_unsupported = true;
-			output(0, "genetlink_fuzzer: GETFAMILY discovery yielded %u families, disabling\n",
-			       catalog_count);
+			outputerr("genetlink_fuzzer: GETFAMILY discovery yielded %u families, disabling\n",
+			          catalog_count);
 		}
 		return false;
 	}

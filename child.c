@@ -766,10 +766,10 @@ static void init_child(struct childdata *child, int childno)
 			if (unshare(CLONE_NEWNS) == 0) {
 				if (mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0) {
 					if (!__atomic_exchange_n(&shm->no_private_ns, true, __ATOMIC_RELAXED))
-						output(0, "child %d: MS_PRIVATE remount failed (errno=%d) "
-						       "after unshare(CLONE_NEWNS); mounts in this child "
-						       "may propagate to host mount table\n",
-						       childno, errno);
+						outputerr("child %d: MS_PRIVATE remount failed (errno=%d) "
+						          "after unshare(CLONE_NEWNS); mounts in this child "
+						          "may propagate to host mount table\n",
+						          childno, errno);
 				}
 			}
 		}
