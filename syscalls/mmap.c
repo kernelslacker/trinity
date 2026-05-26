@@ -275,7 +275,8 @@ static void post_mmap(struct syscallrecord *rec)
 		if (rec->a5 != (unsigned long) -1) {
 			if (fstat((int) rec->a5, &st) == 0) {
 				if (st.st_size > 0) {
-					off_t off_bytes;
+					off_t off_bytes = 0;
+					bool pgoff_overflows = false;
 
 					/*
 					 * sanitise_mmap stores mmap2's pgoff in
@@ -284,22 +285,45 @@ static void post_mmap(struct syscallrecord *rec)
 					 * from st_size, otherwise backed is off by
 					 * a page_size factor for any mmap2 with
 					 * non-zero pgoff.
+					 *
+					 * rec->a6 is fuzz-controlled and the
+					 * multiply can overflow signed off_t.
+					 * Reject scales that exceed OFF_T_MAX /
+					 * page_size and treat them the same as the
+					 * fstat-fails / !S_ISREG && size == 0 arms
+					 * below -- zero map.size and bump the
+					 * existing clamp stat.
 					 */
-					if (current_entry_is_mmap2())
-						off_bytes = (off_t) rec->a6 * (off_t) page_size;
-					else
+					if (current_entry_is_mmap2()) {
+						unsigned long long off_max =
+							(1ULL << (sizeof(off_t) * 8 - 1)) - 1;
+						unsigned long max_pgoff =
+							(unsigned long) off_max / page_size;
+
+						if (rec->a6 > max_pgoff)
+							pgoff_overflows = true;
+						else
+							off_bytes = (off_t) rec->a6 * (off_t) page_size;
+					} else {
 						off_bytes = (off_t) rec->a6;
+					}
 
-					off_t backed = (off_t) st.st_size - off_bytes;
-
-					if (backed <= 0)
+					if (pgoff_overflows) {
 						new->map.size = 0;
-					else if ((unsigned long) backed < new->map.size)
-						new->map.size = (unsigned long) backed & PAGE_MASK;
-
-					if (new->map.size != rec->a2)
 						__atomic_add_fetch(&shm->stats.mmap_size_clamped,
 								   1, __ATOMIC_RELAXED);
+					} else {
+						off_t backed = (off_t) st.st_size - off_bytes;
+
+						if (backed <= 0)
+							new->map.size = 0;
+						else if ((unsigned long) backed < new->map.size)
+							new->map.size = (unsigned long) backed & PAGE_MASK;
+
+						if (new->map.size != rec->a2)
+							__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+									   1, __ATOMIC_RELAXED);
+					}
 				} else if (S_ISREG(st.st_mode)) {
 					new->map.size = 0;
 					__atomic_add_fetch(&shm->stats.mmap_size_clamped,
