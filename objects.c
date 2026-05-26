@@ -546,6 +546,15 @@ void __for_each_obj_init(struct objhead *head,
  * Exposed in objects.h so other code (e.g. mm/maps.c) can use the
  * same upper bound when defending against a corrupt num_entries.
  */
+/*
+ * Marked noinline so __builtin_return_address(0) — used both in the
+ * verbose-mode caller trace above and in the bad-fd / cap-overflow
+ * outputerr paths below — names the actual add_object() callsite
+ * rather than whatever frame the inliner chose to fold us into.
+ * Caller attribution is the only reason those PCs are captured;
+ * losing it to inlining defeats the diagnostic.
+ */
+__attribute__((noinline))
 void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
 	struct objhead *head;
