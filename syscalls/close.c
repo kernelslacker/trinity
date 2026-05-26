@@ -17,24 +17,13 @@ static void post_close(struct syscallrecord *rec)
 	if (rec->retval != 0)
 		return;
 
-	/* Enqueue a CLOSE event so the parent can update the object pool.
-	 * remove_object_by_fd() below bails in children (pid != mainpid),
-	 * so the event queue is the actual path for child-initiated closes. */
+	/* Publish the close to the parent and drop this child's local
+	 * snapshots in one shot.  remove_object_by_fd() below bails in
+	 * children (pid != mainpid), so the event queue is the actual
+	 * path for child-initiated closes. */
 	child = this_child();
-	if (child != NULL) {
-		if (child->fd_event_ring != NULL)
-			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
-					 (int) rec->a1);
-
-		/* Drop the just-closed fd from this child's own fd_hash[]
-		 * snapshot so get_random_fd() / get_typed_fd() stop handing
-		 * it back out before the parent drains the FD_EVENT_CLOSE. */
-		fd_hash_remove_local((int) rec->a1);
-
-		/* Drop the just-closed fd from this child's live-fd ring so
-		 * the next arg-generation pick doesn't burn an fcntl() on it. */
-		child_fd_ring_remove(&child->live_fds, (int) rec->a1);
-	}
+	if (child != NULL)
+		notify_child_fd_closed(child, (int) rec->a1);
 
 	/* Parent-side path (no-op in children). */
 	remove_object_by_fd((int) rec->a1);
