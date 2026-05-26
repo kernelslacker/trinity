@@ -1,26 +1,22 @@
 /*
  * SYSCALL_DEFINE0(inotify_init)
  */
-#include "objects.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "sanitise.h"
 #include "tables.h"
 
 static void post_inotify_init(struct syscallrecord *rec)
 {
-	struct object *new;
 	int fd = rec->retval;
 
 	if ((long)rec->retval < 0)
 		return;
 
-	new = alloc_object();
-	new->inotifyobj.fd = fd;
-	if (current_entry_is_inotify_init1())
-		new->inotifyobj.flags = rec->a1;
-	else
-		new->inotifyobj.flags = 0;
-	add_object(new, OBJ_LOCAL, OBJ_FD_INOTIFY);
+	struct resource_meta meta = {
+		.flags = current_entry_is_inotify_init1() ? rec->a1 : 0,
+	};
+	publish_resource(OBJ_FD_INOTIFY, fd, &meta);
 }
 
 struct syscallentry syscall_inotify_init = {
