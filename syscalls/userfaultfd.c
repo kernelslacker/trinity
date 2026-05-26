@@ -3,7 +3,7 @@
  */
 
 #include <fcntl.h>
-#include "objects.h"
+#include "publish_resource.h"
 #include "sanitise.h"
 #include "compat.h"
 
@@ -17,16 +17,13 @@ static unsigned long userfaultfd_flags[] = {
 
 static void post_userfaultfd(struct syscallrecord *rec)
 {
-	struct object *new;
 	int fd = rec->retval;
 
 	if ((long)rec->retval < 0)
 		return;
 
-	new = alloc_object();
-	new->userfaultobj.fd = fd;
-	new->userfaultobj.flags = rec->a1;
-	add_object(new, OBJ_LOCAL, OBJ_FD_USERFAULTFD);
+	struct resource_meta meta = { .flags = rec->a1 };
+	publish_resource(OBJ_FD_USERFAULTFD, fd, &meta);
 }
 
 struct syscallentry syscall_userfaultfd = {
