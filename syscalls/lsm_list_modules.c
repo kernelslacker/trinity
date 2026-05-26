@@ -15,6 +15,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+#include "valresult.h"
 
 #if defined(SYS_lsm_list_modules) || defined(__NR_lsm_list_modules)
 #ifndef SYS_lsm_list_modules
@@ -37,93 +38,73 @@ struct lsm_list_modules_post_state {
 	unsigned long magic;
 	unsigned long ids;
 	unsigned long size;
+	struct valresult_buf vrb;
 };
 #endif
 
 static void sanitise_lsm_list_modules(struct syscallrecord *rec)
 {
-	u32 *size;
-	void *buf;
-	unsigned int sizepick;
+	struct valresult_buf vrb = { 0 };
 	unsigned long buf_len = 0;
 #ifdef HAVE_SYS_LSM_LIST_MODULES
 	struct lsm_list_modules_post_state *snap;
 #endif
 
 	/*
-	 * Buffer + size variant (value-result helper pattern):
-	 *   55% normal: page-sized buf, *size = page_size
-	 *   15% small buf 16 bytes with matching *size (E2BIG path when
-	 *       the LSM stack has more than 2 modules to report)
-	 *   10% oversized buf with matching *size
-	 *   10% NULL size pointer (EFAULT before any copy)
-	 *    5% NULL ids buffer (EFAULT at copy_to_user)
-	 *    5% page-sized buf but *size = 0 (immediate E2BIG)
+	 * Two-axis mutation.
 	 *
-	 * The post oracle bails when snap->ids or snap->size is 0 and when
-	 * rec->retval != 0; the comparison only fires on the normal-success
-	 * branch.  Wherever the buffer is real we keep *size <= the
-	 * allocation so the kernel can't write past our allocation.
+	 * AXIS A (fault shapes, open-coded, picked first): NULL-size and
+	 * NULL-ids each fire on ~1/10 of calls.  These exercise the
+	 * EFAULT paths the kernel takes before any copy and stay outside
+	 * the value-result shape catalogue because valresult's ZERO shape
+	 * already covers "valid pointer, zero length" -- the user-pointer
+	 * being NULL is a distinct fault condition.
+	 *
+	 * AXIS B (size shape, ~80% of calls): the value-result (ids,
+	 * *size) pair is routed through valresult_alloc() with a
+	 * page_size natural capacity.  The shape catalogue (EXACT /
+	 * UNDER / EXACT_PLUS_ONE / HUGE / ZERO) mutates both the ids
+	 * buffer capacity and the matching *size word in lockstep so the
+	 * kernel can never write past the allocation.  EXACT (~88% of the
+	 * AXIS B fraction) keeps the post oracle's stable-equality
+	 * comparison firing on the happy path; the other four shapes are
+	 * new fuzz coverage for the addrlen-style bounds and short-write
+	 * paths and the oracle short-circuits cleanly on them via the
+	 * rec->retval != 0 gate.
 	 */
-	sizepick = rnd_modulo_u32(20);
+	rec->a3 = 0;	/* flags must be zero */
 
-	if (sizepick < 11) {
-		buf_len = page_size;
-		buf = get_writable_address(buf_len);
-		size = (u32 *) get_writable_address(sizeof(*size));
-		if (!buf || !size)
-			return;
-		*size = page_size;
-		rec->a1 = (unsigned long) buf;
-		rec->a2 = (unsigned long) size;
-	} else if (sizepick < 14) {
-		buf_len = 16;
-		buf = get_writable_address(buf_len);
-		size = (u32 *) get_writable_address(sizeof(*size));
-		if (!buf || !size)
-			return;
-		*size = 16;
-		rec->a1 = (unsigned long) buf;
-		rec->a2 = (unsigned long) size;
-	} else if (sizepick < 16) {
-		buf_len = 2 * page_size;
-		buf = get_writable_address(buf_len);
-		size = (u32 *) get_writable_address(sizeof(*size));
-		if (!buf || !size)
-			return;
-		*size = buf_len;
-		rec->a1 = (unsigned long) buf;
-		rec->a2 = (unsigned long) size;
-	} else if (sizepick < 18) {
-		buf_len = page_size;
-		buf = get_writable_address(buf_len);
+	if (ONE_IN(10)) {
+		/* AXIS A: NULL size pointer (EFAULT before any copy) */
+		void *buf = get_writable_address(page_size);
+
 		if (!buf)
 			return;
+		buf_len = page_size;
 		rec->a1 = (unsigned long) buf;
 		rec->a2 = 0;
-	} else if (sizepick < 19) {
-		size = (u32 *) get_writable_address(sizeof(*size));
+		avoid_shared_buffer_out(&rec->a1, buf_len);
+	} else if (ONE_IN(9)) {
+		/* AXIS A: NULL ids buffer (EFAULT at copy_to_user) */
+		u32 *size = (u32 *) get_writable_address(sizeof(*size));
+
 		if (!size)
 			return;
 		*size = page_size;
 		rec->a1 = 0;
 		rec->a2 = (unsigned long) size;
-	} else {
-		buf_len = page_size;
-		buf = get_writable_address(buf_len);
-		size = (u32 *) get_writable_address(sizeof(*size));
-		if (!buf || !size)
-			return;
-		*size = 0;
-		rec->a1 = (unsigned long) buf;
-		rec->a2 = (unsigned long) size;
-	}
-	rec->a3 = 0;	/* flags must be zero */
-
-	if (rec->a1 != 0)
-		avoid_shared_buffer_out(&rec->a1, buf_len);
-	if (rec->a2 != 0)
 		avoid_shared_buffer_inout(&rec->a2, sizeof(u32));
+	} else {
+		/* AXIS B: size shape via valresult catalogue */
+		vrb = valresult_alloc(page_size, valresult_pick_shape());
+		buf_len = vrb.cap;
+		rec->a1 = (unsigned long) vrb.buf;
+		rec->a2 = (unsigned long) vrb.len_io;
+		if (rec->a1 != 0)
+			avoid_shared_buffer_out(&rec->a1, buf_len);
+		if (rec->a2 != 0)
+			avoid_shared_buffer_inout(&rec->a2, sizeof(u32));
+	}
 
 #ifdef HAVE_SYS_LSM_LIST_MODULES
 	/*
@@ -138,11 +119,18 @@ static void sanitise_lsm_list_modules(struct syscallrecord *rec)
 	 * .post body -- on systems without SYS_lsm_list_modules the post
 	 * handler is a no-op stub and a snapshot only the post handler can
 	 * free would leak.
+	 *
+	 * snap->vrb is by-value: the AXIS A paths leave it zero-initialised
+	 * (NULL buf, NULL len_io) and valresult_free() is NULL-safe.  The
+	 * AXIS B path stores the helper-returned vrb so post can release
+	 * both slots via deferred_free_enqueue() -- closes the prior leak
+	 * from the hand-rolled zmalloc(sizeof(*size)) path.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = LSM_LIST_MODULES_POST_STATE_MAGIC;
 	snap->ids  = rec->a1;
 	snap->size = rec->a2;
+	snap->vrb  = vrb;
 	rec->post_state = (unsigned long) snap;
 #endif
 }
@@ -312,6 +300,7 @@ static void post_lsm_list_modules(struct syscallrecord *rec)
 	}
 
 out_free:
+	valresult_free(&snap->vrb);
 	deferred_freeptr(&rec->post_state);
 #else
 	(void) rec;
