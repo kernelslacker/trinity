@@ -16,8 +16,10 @@
  * canonical aggregate directly.
  */
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "edgepair.h"
@@ -207,6 +209,20 @@ void edgepair_dump_to_file(const char *path)
 		fclose(f);
 		return;
 	}
+
+	/* Flush libc's userspace buffer into the kernel and ask the
+	 * kernel to push everything to durable storage before the
+	 * fclose() releases the fd.  Without this, the dump is just a
+	 * pagecache write -- a crash between fclose() return and the
+	 * next writeback truncates the file to whatever happened to be
+	 * page-aligned at the time, and edge_analyzer rejects the
+	 * partial result on magic / size mismatch.  fflush failures
+	 * still drop into the close path so the fd is always
+	 * released. */
+	if (fflush(f) != 0)
+		perror("edgepair: fflush before close failed");
+	else if (fsync(fileno(f)) != 0 && errno != EINVAL)
+		perror("edgepair: fsync before close failed");
 
 	if (fclose(f) != 0) {
 		perror("edgepair: failed to close dump file");
