@@ -9,27 +9,28 @@
 #include "deferred-free.h"
 #include "shm.h"
 #include "utils.h"
+#include "valresult.h"
 
 /*
  * Snapshot for the post handler.  Both the optval buffer (a4) and the
- * lenp pointer (a5) are zmalloc()'d and then handed to
- * avoid_shared_buffer(), which relocates them off the libc heap into a
- * parent-private writable region.  deferred_free_enqueue() rejects the
- * relocated address (heap-bounds and alloc-track gates both fail) so
- * freeing rec->a4 / rec->a5 in the post handler leaks the originals.
+ * lenp pointer (a5) are zmalloc()'d (via valresult_alloc) and then
+ * handed to avoid_shared_buffer(), which relocates them off the libc
+ * heap into a parent-private writable region.  deferred_free_enqueue()
+ * rejects the relocated address (heap-bounds and alloc-track gates
+ * both fail) so freeing rec->a4 / rec->a5 in the post handler leaks
+ * the originals.
  *
- * Wrap both originals in a magic-cookie struct: ->optval_original and
- * ->lenp_original are the zmalloc results we hand back to
- * deferred_free_enqueue(), and the cookie hardens the post handler
- * against a sibling scribbling rec->post_state with a heap-shaped
- * pointer to a foreign allocation -- the cookie mismatch rejects the
- * forgery before any inner-field deref.
+ * Snapshot the whole valresult_buf BEFORE avoid_shared_buffer() runs:
+ * vrb.buf and vrb.len_io are the zmalloc results we hand back to
+ * deferred_free_enqueue() through valresult_free().  The cookie
+ * hardens the post handler against a sibling scribbling rec->post_state
+ * with a heap-shaped pointer to a foreign allocation -- the cookie
+ * mismatch rejects the forgery before any inner-field deref.
  */
 #define GETSOCKOPT_POST_STATE_MAGIC	0x474554534F50545FUL	/* "GETSOPT_" */
 struct getsockopt_post_state {
 	unsigned long magic;
-	void *optval_original;
-	void *lenp_original;
+	struct valresult_buf vrb;
 };
 
 static void sanitise_getsockopt(struct syscallrecord *rec)
@@ -38,8 +39,7 @@ static void sanitise_getsockopt(struct syscallrecord *rec)
 	struct socketinfo *si;
 	struct socket_triplet *triplet = NULL;
 	struct getsockopt_post_state *snap;
-	void *optval;
-	socklen_t *lenp;
+	struct valresult_buf vrb;
 	int fd;
 
 	si = (struct socketinfo *) rec->a1;
@@ -65,22 +65,26 @@ static void sanitise_getsockopt(struct syscallrecord *rec)
 	/* do_setsockopt allocates optval — we only needed level/optname. */
 	free((void *) so.optval);
 
-	/* Allocate an output buffer for the kernel to write into.
-	 * Released via deferred_free_enqueue(snap->optval_original) in the
-	 * post handler -- opt in to alloc tracking. */
-	optval = zmalloc_tracked(page_size);
-	rec->a4 = (unsigned long) optval;
-
-	/* Provide a valid socklen_t pointer initialized to the buffer size.
-	 * Released via deferred_free_enqueue(snap->lenp_original). */
-	lenp = zmalloc_tracked(sizeof(*lenp));
-	*lenp = page_size;
-	rec->a5 = (unsigned long) lenp;
+	/*
+	 * Allocate the output buffer + value-result length slot through
+	 * the shared shape catalogue.  The natural capacity for getsockopt
+	 * is page_size (most options fit comfortably); the helper mutates
+	 * that into the picked shape (EXACT / UNDER / +1 / HUGE / ZERO).
+	 *
+	 * Both slots come from zmalloc_tracked() and are released via
+	 * valresult_free() in the post handler.  rec->a4 / rec->a5 take
+	 * the original (pre-relocation) pointers; avoid_shared_buffer()
+	 * then rewrites them in place, but the snapshot below preserves
+	 * the zmalloc results for the free path.
+	 */
+	vrb = valresult_alloc(page_size, valresult_pick_shape());
+	rec->a4 = (unsigned long) vrb.buf;
+	rec->a5 = (unsigned long) vrb.len_io;
 
 	/*
-	 * Snapshot both originals BEFORE avoid_shared_buffer() runs.  a4
-	 * and a5 are both about to be relocated off the libc heap; the
-	 * post handler must free the zmalloc results, not the relocated
+	 * Snapshot the vrb BEFORE avoid_shared_buffer() runs.  a4 and
+	 * a5 are both about to be relocated off the libc heap; the post
+	 * handler must free the zmalloc results, not the relocated
 	 * pointers (which the deferred-free heap-bounds gate rejects).
 	 * The snap also doubles as a sibling-scribble shield: a foreign
 	 * heap-shaped pointer parked in rec->post_state survives
@@ -88,8 +92,7 @@ static void sanitise_getsockopt(struct syscallrecord *rec)
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = GETSOCKOPT_POST_STATE_MAGIC;
-	snap->optval_original = optval;
-	snap->lenp_original = lenp;
+	snap->vrb = vrb;
 	rec->post_state = (unsigned long) snap;
 
 	/*
@@ -98,10 +101,14 @@ static void sanitise_getsockopt(struct syscallrecord *rec)
 	 * a4 is purely output -- use _out so the relocated buffer is left
 	 * untouched.  a5 is value-result -- the kernel reads the initial
 	 * size before writing back the actual count, so it must be _inout
-	 * to preserve the *lenp = page_size we just stored.
+	 * to preserve the *len_io = cap valresult_alloc() just stored.
+	 *
+	 * When the shape picked cap == 0 the buf is NULL (rec->a4 == 0)
+	 * and avoid_shared_buffer_out() short-circuits on that.  The
+	 * lenp slot is always allocated so a5 always has a valid target.
 	 */
-	avoid_shared_buffer_out(&rec->a4, page_size);
-	avoid_shared_buffer_inout(&rec->a5, sizeof(socklen_t));
+	avoid_shared_buffer_out(&rec->a4, vrb.cap);
+	avoid_shared_buffer_inout(&rec->a5, sizeof(*vrb.len_io));
 }
 
 static void post_getsockopt(struct syscallrecord *rec)
@@ -137,8 +144,7 @@ static void post_getsockopt(struct syscallrecord *rec)
 
 	rec->a4 = 0;
 	rec->a5 = 0;
-	deferred_free_enqueue(snap->optval_original);
-	deferred_free_enqueue(snap->lenp_original);
+	valresult_free(&snap->vrb);
 	deferred_freeptr(&rec->post_state);
 }
 
