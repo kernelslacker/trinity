@@ -654,13 +654,49 @@ static unsigned long gen_arg_socketinfo(struct syscallentry *entry __unused__,
 #define STRUCT_PTR_IN_FALLBACK_SIZE	256U
 
 /*
+ * Field-fill loop shared by the IN and INOUT generators: walks the
+ * struct catalog and splats a fresh random value into every
+ * addressable field of natural width <= 4 bytes.  Wider fields
+ * (typically pointers and u64 flags) are left at the buffer's
+ * initial fill -- a random 8-byte value in a pointer slot just
+ * bounces at copy_from_user with -EFAULT and would starve every
+ * other field of fuzz coverage.
+ */
+static void struct_field_fill(unsigned char *buf, unsigned int size,
+			      const struct struct_desc *desc)
+{
+	unsigned int i;
+
+	for (i = 0; i < desc->num_fields; i++) {
+		const struct struct_field *f = &desc->fields[i];
+
+		if (f->offset + f->size > size)
+			continue;
+		switch (f->size) {
+		case 1:
+			buf[f->offset] = (unsigned char) rand32();
+			break;
+		case 2: {
+			uint16_t v = (uint16_t) rand32();
+			memcpy(buf + f->offset, &v, sizeof(v));
+			break;
+		}
+		case 4: {
+			uint32_t v = rand32();
+			memcpy(buf + f->offset, &v, sizeof(v));
+			break;
+		}
+		default:
+			/* leave wider fields at the buffer's initial fill */
+			break;
+		}
+	}
+}
+
+/*
  * ARG_STRUCT_PTR_IN: hand the kernel a heap-allocated buffer sized for
- * the cataloged struct at this (syscall, arg).  Walks struct_catalog for
- * the layout; for each addressable field of natural width <= 4 bytes,
- * splats a fresh random value of that width.  Wider fields (typically
- * pointers and u64 flags) are left as the zmalloc zero -- a random
- * 8-byte value in a pointer slot just bounces at copy_from_user with
- * -EFAULT and would starve every other field of fuzz coverage.
+ * the cataloged struct at this (syscall, arg), then per-field random-
+ * splat via struct_field_fill().
  *
  * Catalog miss: fall back to STRUCT_PTR_IN_FALLBACK_SIZE bytes of zeros.
  * The slot stays a valid kernel-readable buffer, so the kernel still
@@ -686,34 +722,8 @@ static unsigned long gen_arg_struct_ptr_in(struct syscallentry *entry __unused__
 
 	buf = zmalloc_tracked(size);
 
-	if (desc != NULL) {
-		unsigned int i;
-
-		for (i = 0; i < desc->num_fields; i++) {
-			const struct struct_field *f = &desc->fields[i];
-
-			if (f->offset + f->size > size)
-				continue;
-			switch (f->size) {
-			case 1:
-				buf[f->offset] = (unsigned char) rand32();
-				break;
-			case 2: {
-				uint16_t v = (uint16_t) rand32();
-				memcpy(buf + f->offset, &v, sizeof(v));
-				break;
-			}
-			case 4: {
-				uint32_t v = rand32();
-				memcpy(buf + f->offset, &v, sizeof(v));
-				break;
-			}
-			default:
-				/* leave wider fields zeroed -- see above */
-				break;
-			}
-		}
-	}
+	if (desc != NULL)
+		struct_field_fill(buf, size, desc);
 
 	deferred_free_enqueue(buf);
 	return (unsigned long) buf;
@@ -784,6 +794,50 @@ static unsigned long gen_arg_struct_ptr_out(struct syscallentry *entry __unused_
 
 	buf = zmalloc_tracked(size);
 	memset(buf, STRUCT_PTR_OUT_POISON_BYTE, size);
+
+	deferred_free_enqueue(buf);
+	return (unsigned long) buf;
+}
+
+/*
+ * ARG_STRUCT_PTR_INOUT: ioctl-shaped slots where the kernel reads input
+ * fields off the buffer and then writes output bytes back to it.  The
+ * input half needs the same per-field random splat as ARG_STRUCT_PTR_IN
+ * -- a poison-filled buffer makes every input field look like 0xAAAA...
+ * and the kernel rejects the call before it ever exercises the output
+ * path.  Field-fill via struct_field_fill(), then hand the buffer over;
+ * the kernel's writes land on whatever fields it chooses to overwrite.
+ *
+ * Catalog miss: fall back to STRUCT_PTR_IN_FALLBACK_SIZE bytes of zeros,
+ * same as the IN path -- zeros are a valid input shape for most
+ * extensible structs (size-word-first ABIs treat zero as "minimum
+ * version") and keep the kernel past its first copy_from_user() bounds
+ * check.
+ *
+ * Output-side validation (canary on the written-back bytes, so a post
+ * handler can tell touched-bytes from untouched-bytes) is deliberately
+ * out of scope here -- it needs the catalog to learn the input shape
+ * first, and conflating the two changes makes the per-field splat
+ * unreviewable.  This commit's only job is to stop sending all-0xAA as
+ * INOUT input.
+ *
+ * Deferred-free / sanitise-overwrite handling matches the IN path.
+ */
+static unsigned long gen_arg_struct_ptr_inout(struct syscallentry *entry __unused__,
+					      struct syscallrecord *rec,
+					      unsigned int argnum)
+{
+	const struct struct_desc *desc;
+	unsigned int size;
+	unsigned char *buf;
+
+	desc = struct_arg_lookup(rec->nr, argnum, rec->do32bit);
+	size = desc ? desc->struct_size : STRUCT_PTR_IN_FALLBACK_SIZE;
+
+	buf = zmalloc_tracked(size);
+
+	if (desc != NULL)
+		struct_field_fill(buf, size, desc);
 
 	deferred_free_enqueue(buf);
 	return (unsigned long) buf;
@@ -1085,7 +1139,7 @@ const struct argtype_ops argtype_table[] = {
 	},
 	[ARG_STRUCT_PTR_INOUT] = {
 		.name = "ARG_STRUCT_PTR_INOUT",
-		.generate = gen_arg_struct_ptr_out,
+		.generate = gen_arg_struct_ptr_inout,
 		.paired_length = ARG_STRUCT_SIZE,
 	},
 	[ARG_STRUCT_SIZE] = {
