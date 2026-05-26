@@ -1149,11 +1149,7 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 
 	case SIGALRM:
 		debugf("got a alarm signal from child %d (pid %d)\n", childno, pid);
-		reap_child(children[childno], childno);
-		if (pidstatfiles[childno])
-			fclose(pidstatfiles[childno]);
-		pidstatfiles[childno] = NULL;
-		replace_child(childno);
+		register_zombie_slot(childno, pid);
 		return;
 	case SIGFPE:
 	case SIGSEGV:
@@ -1169,12 +1165,7 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 			debugf("got a signal from child %d (pid %d) (%s)\n",
 					childno, pid, strsignal(WTERMSIG(childstatus)));
 		}
-		reap_child(children[childno], childno);
-		if (pidstatfiles[childno])
-			fclose(pidstatfiles[childno]);
-		pidstatfiles[childno] = NULL;
-
-		replace_child(childno);
+		register_zombie_slot(childno, pid);
 		return;
 
 	default:
@@ -1186,12 +1177,12 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 			debugf("** Child got an unhandled signal (%d)\n", WTERMSIG(childstatus));
 		}
 
-		if (pidstatfiles[childno])
-			fclose(pidstatfiles[childno]);
-		pidstatfiles[childno] = NULL;
 		if (stop == false) {
-			reap_child(children[childno], childno);
-			replace_child(childno);
+			register_zombie_slot(childno, pid);
+		} else {
+			if (pidstatfiles[childno])
+				fclose(pidstatfiles[childno]);
+			pidstatfiles[childno] = NULL;
 		}
 		return;
 	}
