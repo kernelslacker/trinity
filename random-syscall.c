@@ -198,6 +198,14 @@ retry:
 
 	syscallnr = val - 1;
 
+	/*
+	 * EXPENSIVE early-out: bitmap test before validate + entry fetch,
+	 * so the 999/1000 reject path skips the cache miss on the
+	 * syscallentry that the EXPENSIVE block below used to require.
+	 */
+	if (syscall_is_expensive(syscallnr, do32) && !ONE_IN(1000))
+		goto retry;
+
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
 		note_validation_failure(syscallnr, do32);
 		goto retry;
@@ -207,10 +215,6 @@ retry:
 	entry = get_syscall_entry(syscallnr, do32);
 	if (entry == NULL)
 		goto retry;
-	if (entry->flags & EXPENSIVE) {
-		if (!ONE_IN(1000))
-			goto retry;
-	}
 
 	/*
 	 * Group biasing: when enabled and we have a previous group context,
@@ -324,7 +328,6 @@ retry:
 bool set_syscall_nr_random(struct syscallrecord *rec,
 			    struct childdata *child)
 {
-	struct syscallentry *entry;
 	unsigned int syscallnr;
 	int val;
 	bool do32;
@@ -370,17 +373,17 @@ retry:
 
 	syscallnr = val - 1;
 
+	/* EXPENSIVE early-out: bitmap test before validate + entry fetch,
+	 * so the 999/1000 reject path skips the cache miss on the
+	 * syscallentry that the EXPENSIVE block below used to require. */
+	if (syscall_is_expensive(syscallnr, do32) && !ONE_IN(1000))
+		goto retry;
+
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
 		note_validation_failure(syscallnr, do32);
 		goto retry;
 	}
 	note_validation_success(syscallnr);
-
-	entry = get_syscall_entry(syscallnr, do32);
-	if (entry->flags & EXPENSIVE) {
-		if (!ONE_IN(1000))
-			goto retry;
-	}
 
 	/* Edge-pair gates, guarded on a valid previous syscall.  Mirrors the
 	 * heuristic picker's cold-pair filter (saturated (prev, curr) pairs
@@ -476,7 +479,6 @@ commit:
 static bool set_syscall_nr_coverage_frontier(struct syscallrecord *rec,
 					     struct childdata *child)
 {
-	struct syscallentry *entry;
 	unsigned int syscallnr;
 	unsigned int val;
 	bool do32;
@@ -514,17 +516,17 @@ retry:
 
 	syscallnr = val - 1;
 
+	/* EXPENSIVE early-out: bitmap test before validate + entry fetch,
+	 * so the 999/1000 reject path skips the cache miss on the
+	 * syscallentry that the EXPENSIVE block below used to require. */
+	if (syscall_is_expensive(syscallnr, do32) && !ONE_IN(1000))
+		goto retry;
+
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
 		note_validation_failure(syscallnr, do32);
 		goto retry;
 	}
 	note_validation_success(syscallnr);
-
-	entry = get_syscall_entry(syscallnr, do32);
-	if (entry->flags & EXPENSIVE) {
-		if (!ONE_IN(1000))
-			goto retry;
-	}
 
 	/* Frontier-weighted acceptance.  When max_weight is 0 (no syscall
 	 * has registered a frontier edge in the last FRONTIER_DECAY_WINDOWS

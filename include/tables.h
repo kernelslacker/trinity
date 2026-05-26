@@ -91,6 +91,16 @@ int munge_tables(void);
 
 struct syscallentry * get_syscall_entry(unsigned int calln, bool do32) __must_check;
 
+/*
+ * Fast early-out for the EXPENSIVE-syscall 1-in-1000 reject in the
+ * pickers.  Reads a static bitmap built once at init from the table's
+ * EXPENSIVE flags -- a single shift + and, no syscallentry lookup.
+ * Lets the pickers skip validate + entry fetch on the common reject
+ * path (999/1000 of EXPENSIVE picks).  EXPENSIVE is never modified at
+ * runtime, so the bitmap stays correct without locking.
+ */
+bool syscall_is_expensive(unsigned int nr, bool do32);
+
 bool this_syscallname(const char *thisname);
 
 /*

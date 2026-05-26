@@ -22,6 +22,52 @@ unsigned long syscalls_todo = 0;
 
 bool biarch = false;
 
+/*
+ * EXPENSIVE-syscall bitmaps, one bit per table index, populated by
+ * select_syscall_tables() after copy_syscall_table() has stamped the
+ * caches.  EXPENSIVE is a static, compile-time flag never modified at
+ * runtime, so the bitmap is built once at init and read-only after.
+ * Lets the three pickers reject the 999/1000 of EXPENSIVE picks
+ * before validate_specific_syscall_silent() and get_syscall_entry(),
+ * skipping the cache miss on the syscallentry on the common reject
+ * path.  Indexed by from-table index (== entry->number), the same
+ * value the pickers hold in syscallnr after the active_syscalls[]
+ * reduction.
+ */
+#define EXPENSIVE_BITMAP_WORDS ((MAX_NR_SYSCALL + 63) / 64)
+static uint64_t expensive_bits_uniarch[EXPENSIVE_BITMAP_WORDS];
+static uint64_t expensive_bits_32[EXPENSIVE_BITMAP_WORDS];
+static uint64_t expensive_bits_64[EXPENSIVE_BITMAP_WORDS];
+
+static void build_expensive_bitmap(const struct syscalltable *table,
+				   unsigned int nr, uint64_t *bitmap)
+{
+	unsigned int i;
+	unsigned int cap = (nr < MAX_NR_SYSCALL) ? nr : MAX_NR_SYSCALL;
+
+	for (i = 0; i < cap; i++) {
+		if (table[i].entry == NULL)
+			continue;
+		if (table[i].entry->flags & EXPENSIVE)
+			bitmap[i / 64] |= ((uint64_t) 1) << (i % 64);
+	}
+}
+
+bool syscall_is_expensive(unsigned int nr, bool do32)
+{
+	const uint64_t *bm;
+
+	if (nr >= MAX_NR_SYSCALL)
+		return false;
+
+	if (biarch == false)
+		bm = expensive_bits_uniarch;
+	else
+		bm = do32 ? expensive_bits_32 : expensive_bits_64;
+
+	return (bm[nr / 64] >> (nr % 64)) & 1;
+}
+
 int search_syscall_table(const struct syscalltable *table, unsigned int nr_syscalls, const char *arg)
 {
 	unsigned int i;
@@ -583,9 +629,17 @@ void select_syscall_tables(void)
 	max_nr_64bit_syscalls = ARRAY_SIZE(SYSCALLS64);
 	max_nr_32bit_syscalls = ARRAY_SIZE(SYSCALLS32);
 	biarch = true;
+
+	build_expensive_bitmap(syscalls_64bit, max_nr_64bit_syscalls,
+			       expensive_bits_64);
+	build_expensive_bitmap(syscalls_32bit, max_nr_32bit_syscalls,
+			       expensive_bits_32);
 #else
 	syscalls = copy_syscall_table(SYSCALLS, ARRAY_SIZE(SYSCALLS));
 	max_nr_syscalls = ARRAY_SIZE(SYSCALLS);
+
+	build_expensive_bitmap(syscalls, max_nr_syscalls,
+			       expensive_bits_uniarch);
 #endif
 }
 
