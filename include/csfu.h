@@ -49,6 +49,15 @@ enum csfu_bucket {
 struct csfu_desc {
 	const char *name;
 	size_t ksize;
+	/*
+	 * Curated UNDERSIZE pool.  If non-NULL, the UNDERSIZE bucket
+	 * draws from this set instead of [0, ksize).  Used by
+	 * ABI-versioned consumers (clone3, landlock, mount_setattr)
+	 * that have meaningful pre-ksize sizes (e.g.
+	 * CLONE_ARGS_SIZE_VER0 / VER1 / VER2).
+	 */
+	const size_t *known_sizes;
+	size_t n_known_sizes;
 };
 
 /*

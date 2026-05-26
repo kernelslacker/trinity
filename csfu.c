@@ -75,11 +75,18 @@ struct csfu_buf build_csfu_struct(const struct csfu_desc *desc)
 	switch (out.bucket) {
 	case CSFU_BUCKET_UNDERSIZE:
 		/*
-		 * usize in [0, ksize).  Includes the usize == 0 corner,
-		 * which most CSFU consumers reject with -EINVAL but is
-		 * worth exercising for the validator coverage.
+		 * If the consumer supplied a curated pool of meaningful
+		 * pre-ksize sizes (e.g. ABI-floor sizes like
+		 * CLONE_ARGS_SIZE_VER0), draw uniformly from it.
+		 * Otherwise pick a uniformly-random size in [0, ksize) --
+		 * includes the usize == 0 corner, which most CSFU
+		 * consumers reject with -EINVAL but is worth exercising
+		 * for the validator coverage.
 		 */
-		out.usize = rnd_modulo_u32((uint32_t) desc->ksize);
+		if (desc->known_sizes != NULL && desc->n_known_sizes > 0)
+			out.usize = desc->known_sizes[rnd_modulo_u32((uint32_t) desc->n_known_sizes)];
+		else
+			out.usize = rnd_modulo_u32((uint32_t) desc->ksize);
 		break;
 
 	case CSFU_BUCKET_EXACT:
