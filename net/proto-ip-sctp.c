@@ -1,5 +1,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -322,6 +324,66 @@ void sctp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *tripl
 		for (i = 0; i < n; i++)
 			rstr->srs_stream_list[i] = rnd_modulo_u32(16);
 		so->optlen = sizeof(struct sctp_reset_streams) + n * sizeof(uint16_t);
+		break;
+	}
+
+	case SCTP_SOCKOPT_BINDX_ADD:
+	case SCTP_SOCKOPT_BINDX_REM:
+	case SCTP_SOCKOPT_CONNECTX:
+	case SCTP_SOCKOPT_CONNECTX_OLD: {
+		/* Kernel reads an inline array of sockaddr entries; optlen is
+		 * the total byte count of that array. See net/sctp/socket.c
+		 * sctp_setsockopt_bindx / __sctp_setsockopt_connectx.
+		 */
+		struct sockaddr_in *sa = (struct sockaddr_in *) so->optval;
+		unsigned int n = 1 + rnd_modulo_u32(4);
+		unsigned int i;
+		memset(sa, 0, n * sizeof(*sa));
+		for (i = 0; i < n; i++) {
+			sa[i].sin_family = AF_INET;
+			sa[i].sin_port = htons(rnd_modulo_u32(65535) + 1);
+			sa[i].sin_addr.s_addr = htonl(0x7f000000 | rnd_modulo_u32(256));
+		}
+		so->optlen = n * sizeof(struct sockaddr_in);
+		break;
+	}
+
+	case SCTP_SOCKOPT_CONNECTX3: {
+		/* See net/sctp/socket.c sctp_setsockopt_connectx3: kernel
+		 * expects optlen >= sizeof(struct sctp_getaddrs_old) and reads
+		 * the addrs array from the user pointer inside the struct.
+		 */
+		struct sctp_getaddrs_old *gao = (struct sctp_getaddrs_old *) so->optval;
+		struct sockaddr_in *sa = (struct sockaddr_in *) (gao + 1);
+		unsigned int n = 1 + rnd_modulo_u32(4);
+		unsigned int i;
+		memset(sa, 0, n * sizeof(*sa));
+		for (i = 0; i < n; i++) {
+			sa[i].sin_family = AF_INET;
+			sa[i].sin_port = htons(rnd_modulo_u32(65535) + 1);
+			sa[i].sin_addr.s_addr = htonl(0x7f000000 | rnd_modulo_u32(256));
+		}
+		gao->assoc_id = rnd_u32();
+		gao->addr_num = n;
+		gao->addrs = (struct sockaddr *) sa;
+		so->optlen = sizeof(struct sctp_getaddrs_old);
+		break;
+	}
+
+	case SCTP_SOCKOPT_PEELOFF: {
+		sctp_peeloff_arg_t *arg = (sctp_peeloff_arg_t *) so->optval;
+		arg->associd = rnd_u32();
+		arg->sd = rnd_u32();
+		so->optlen = sizeof(sctp_peeloff_arg_t);
+		break;
+	}
+
+	case SCTP_SOCKOPT_PEELOFF_FLAGS: {
+		sctp_peeloff_flags_arg_t *arg = (sctp_peeloff_flags_arg_t *) so->optval;
+		arg->p_arg.associd = rnd_u32();
+		arg->p_arg.sd = rnd_u32();
+		arg->flags = rnd_u32();
+		so->optlen = sizeof(sctp_peeloff_flags_arg_t);
 		break;
 	}
 
