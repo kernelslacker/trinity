@@ -366,6 +366,11 @@ static void post_close_range(struct syscallrecord *rec)
 			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
 					 (int) fd);
 
+		/* Drop the just-closed fd from this child's own fd_hash[]
+		 * snapshot so get_random_fd() / get_typed_fd() stop handing
+		 * it back out before the parent drains the FD_EVENT_CLOSE. */
+		fd_hash_remove_local((int) fd);
+
 		/* Parent-side path (no-op in children). */
 		remove_object_by_fd((int) fd);
 	}

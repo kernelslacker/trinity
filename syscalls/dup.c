@@ -145,6 +145,11 @@ static void post_dup2(struct syscallrecord *rec)
 		if (child != NULL && child->fd_event_ring != NULL)
 			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
 					 (int) rec->a2);
+
+		/* Drop the displaced newfd from this child's own fd_hash[]
+		 * snapshot so get_random_fd() / get_typed_fd() stop handing
+		 * it back out before the parent drains the FD_EVENT_CLOSE. */
+		fd_hash_remove_local((int) rec->a2);
 	}
 
 	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);

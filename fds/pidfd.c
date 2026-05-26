@@ -138,6 +138,12 @@ static int get_rand_pidfd(void)
 				fd_event_enqueue(child->fd_event_ring,
 						 FD_EVENT_CLOSE,
 						 fd);
+
+			/* Drop the stale fd from this child's own fd_hash[]
+			 * snapshot so a subsequent get_typed_fd() /
+			 * get_random_fd() can't re-pick it before the parent
+			 * drains the FD_EVENT_CLOSE. */
+			fd_hash_remove_local(fd);
 			continue;
 		}
 
