@@ -8,7 +8,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include "arch.h"
+#include "files.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "tables.h"
@@ -31,6 +33,21 @@ static void sanitise_copy_file_range(struct syscallrecord *rec)
 	rec->a4 = (unsigned long) off_out;
 	avoid_shared_buffer_inout(&rec->a2, sizeof(loff_t));
 	avoid_shared_buffer_inout(&rec->a4, sizeof(loff_t));
+
+	/* Independent ~25% page-cache bias on each fd; cfr only works
+	 * on regular files so ARG_FD's broader pool often misses. */
+	if (rnd_modulo_u32(100) < 25) {
+		int fd = get_rand_pagecache_fd();
+
+		if (fd >= 0)
+			rec->a1 = fd;
+	}
+	if (rnd_modulo_u32(100) < 25) {
+		int fd = get_rand_pagecache_fd();
+
+		if (fd >= 0)
+			rec->a3 = fd;
+	}
 }
 
 struct syscallentry syscall_copy_file_range = {
