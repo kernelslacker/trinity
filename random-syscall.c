@@ -162,6 +162,8 @@ retry:
 	}
 
 	entry = get_syscall_entry(syscallnr, do32);
+	if (entry == NULL)
+		goto retry;
 	if (entry->flags & EXPENSIVE) {
 		if (!ONE_IN(1000))
 			goto retry;

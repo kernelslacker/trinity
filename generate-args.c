@@ -1505,6 +1505,10 @@ void generate_syscall_args(struct syscallrecord *rec)
 	lock(&rec->lock);
 
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
+	if (entry == NULL) {
+		unlock(&rec->lock);
+		return;
+	}
 	rec->state = PREP;
 
 	/* Reset post_state on every syscall step, before any branch.
