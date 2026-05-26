@@ -129,10 +129,23 @@ static void post_dup2(struct syscallrecord *rec)
 	if ((long)rec->retval < 0 || (long)rec->retval >= (1 << 20))
 		return;
 
-	child = this_child();
-	if (child != NULL && child->fd_event_ring != NULL)
-		fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
-				 (int) rec->a2);
+	/*
+	 * dup2(oldfd, oldfd) is a documented kernel no-op success: it
+	 * returns oldfd without closing anything.  sanitise_dup2() picks
+	 * rec->a2 == rec->a1 about 10% of the time to exercise the
+	 * oldfd == newfd short-circuit in __do_dup2(); emitting a CLOSE
+	 * event for rec->a2 in that case makes the parent destroy a
+	 * still-live tracked object and close its copy of the fd, which
+	 * degrades fd provider coverage over long runs.  dup3(oldfd,
+	 * oldfd, flags) returns EINVAL, so the negative-retval guard
+	 * above already keeps that case out of the post path.
+	 */
+	if (rec->a1 != rec->a2) {
+		child = this_child();
+		if (child != NULL && child->fd_event_ring != NULL)
+			fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
+					 (int) rec->a2);
+	}
 
 	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
 
