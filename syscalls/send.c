@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include "cmsg_build.h"
 #include "maps.h"
 #include "net.h"
 #include "random.h"
@@ -216,7 +217,17 @@ skip_gen_msg:;
 	}
 
 set_control:
-	if (RAND_BOOL()) {
+	/*
+	 * Three branches: properly-shaped cmsg via cmsg_build()
+	 * (exercises the kernel's per-cmsg attach logic), the
+	 * historical random-bytes pattern (exercises the cmsg-walk
+	 * early-reject path), and the empty-control control (exercises
+	 * the no-cmsg fast path).  Builder is a third of the time so
+	 * the existing random-bytes coverage is preserved.
+	 */
+	if (ONE_IN(3) && cmsg_build(msg, pick_cmsg_kind()) == 0) {
+		/* msg_control / msg_controllen populated by cmsg_build */
+	} else if (RAND_BOOL()) {
 		msg->msg_controllen = rand32() % 20480;	// /proc/sys/net/core/optmem_max
 		msg->msg_control = get_address();
 	} else {
@@ -455,7 +466,17 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 		msg->msg_namelen = salen;
 		snap->name[i] = sa;
 
-		if (RAND_BOOL()) {
+		/*
+		 * Per-slot cmsg builder coin-flip; see sanitise_sendmsg
+		 * for the three-branch rationale.  sendmmsg cleanup never
+		 * frees msg_control (the existing random-bytes path uses
+		 * get_address() which is a non-owning pointer, and the
+		 * builder path uses a writable-pool buffer that the pool
+		 * allocator recycles), so the branches stay symmetric.
+		 */
+		if (ONE_IN(3) && cmsg_build(msg, pick_cmsg_kind()) == 0) {
+			/* msg_control / msg_controllen populated by cmsg_build */
+		} else if (RAND_BOOL()) {
 			msg->msg_controllen = rand32() % 20480;
 			msg->msg_control = get_address();
 		}
