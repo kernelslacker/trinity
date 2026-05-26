@@ -284,6 +284,14 @@ struct syscallentry {
 	bool is_execve;
 
 	/*
+	 * Cached membership flag for the epoll_wait family
+	 * (epoll_wait / epoll_pwait / epoll_pwait2), set at table init
+	 * so validate_arg_coupling() can short-circuit non-members with
+	 * a single byte load instead of three strcmps per dispatch.
+	 */
+	bool is_epoll_wait_family;
+
+	/*
 	 * Cached bitmap of arg slots (1..6) whose argtype legitimately
 	 * accepts a numeric substitute -- bit k set means slot (k+1) is a
 	 * legal target for the sequence-chain executor's retval-substitute

@@ -20,8 +20,6 @@
  * msghdr fields, recvmmsg vlen, etc.) belong in follow-up commits so
  * each rule can be reasoned about and reverted independently.
  */
-#include <string.h>
-
 #include "arg_coupling.h"
 #include "syscall.h"
 #include "trinity.h"
@@ -46,10 +44,13 @@ int validate_arg_coupling(struct syscallrecord *rec)
 	 * without exercising any interesting eventpoll path.  Skip the
 	 * dispatch.  maxevents <= 0 is a legitimate sanitise bucket that
 	 * exercises the early EINVAL reject; leave those alone.
+	 *
+	 * The family-membership test reads the cached is_epoll_wait_family
+	 * byte stamped at table init; the original three strcmps fired on
+	 * every dispatch even though only a tiny fraction of calls are in
+	 * the family.
 	 */
-	if (strcmp(entry->name, "epoll_wait") == 0 ||
-	    strcmp(entry->name, "epoll_pwait") == 0 ||
-	    strcmp(entry->name, "epoll_pwait2") == 0) {
+	if (entry->is_epoll_wait_family) {
 		if ((long) rec->a3 > 0 && rec->a2 == 0) {
 			outputerr("arg-coupling: %s rejected: maxevents=%ld but events=NULL\n",
 				  entry->name, (long) rec->a3);
