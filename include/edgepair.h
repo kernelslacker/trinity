@@ -53,6 +53,62 @@
 /* Sentinel for "no previous syscall yet". */
 #define EDGEPAIR_NO_PREV	0xFFFFU
 
+/*
+ * Shared (prev, curr) -> bucket hash.  static inline so edgepair.c,
+ * edgepair-ring.c, and tools/edge_analyzer.c can share one definition
+ * without the duplicated-with-comments-saying-keep-in-sync dance the
+ * three per-file copies used to require.
+ */
+static inline unsigned int edgepair_pair_hash(unsigned int prev,
+					      unsigned int curr)
+{
+	unsigned int h = prev * 31 + curr;
+
+	h ^= h >> 16;
+	h *= 0x45d9f3bU;
+	h ^= h >> 16;
+	return h & EDGEPAIR_TABLE_MASK;
+}
+
+/*
+ * Pair classification used by syscall-sequence chooser, the strategy
+ * arms, and the rescue / cold-pair heuristics.  Derived from the raw
+ * (new_edge_count, total_count, last_new_at) counters in one place so
+ * consumers stop re-deriving "is this pair productive and fresh?"
+ * inline against the published mirror.
+ */
+enum edgepair_pair_state {
+	EDGEPAIR_STATE_UNSEEN,		/* pair never inserted */
+	EDGEPAIR_STATE_SEEN_UNPRODUCTIVE,/* executed, never found a new edge */
+	EDGEPAIR_STATE_PRODUCTIVE_FRESH,/* produced a new edge within cooldown */
+	EDGEPAIR_STATE_PRODUCTIVE_COLD,	/* produced new edges before, now stale */
+};
+
+/*
+ * Richer per-pair snapshot.  Superset of edgepair_stats: carries the
+ * raw counters plus the classified state and a present bit so a caller
+ * can distinguish "miss" from "hit with zeroed counters".
+ */
+struct edgepair_snapshot {
+	unsigned long new_edges;
+	unsigned long total;
+	unsigned long last_new_at;
+	enum edgepair_pair_state state;
+	bool present;
+};
+
+/*
+ * Hint for edgepair_score(): which axis the consumer is optimising
+ * along.  EXPLORATION favours unseen pairs, EXPLOITATION favours fresh
+ * producers, COLD_PENALTY just downweights stale productive pairs
+ * without otherwise reshuffling the ordering.
+ */
+enum edgepair_score_mode {
+	EDGEPAIR_SCORE_EXPLORATION,
+	EDGEPAIR_SCORE_EXPLOITATION,
+	EDGEPAIR_SCORE_COLD_PENALTY,
+};
+
 /* Magic number for edgepair binary dump files.  Bumped when the on-disk
  * layout changes so edge_analyzer rejects stale dumps cleanly instead of
  * misinterpreting them.  0xEDDA7A03U: EDGEPAIR_TABLE_SIZE grew from
@@ -146,6 +202,35 @@ struct edgepair_stats {
 
 struct edgepair_stats edgepair_get_stats(unsigned int prev_nr,
 					 unsigned int curr_nr);
+
+/*
+ * Classify a pair into one of enum edgepair_pair_state.  Child-side
+ * safe: reads the published mirror with the same acquire ordering as
+ * edgepair_is_cold().  Returns UNSEEN when edgepair is disabled, the
+ * mirror is not yet populated, or the pair is absent.
+ */
+enum edgepair_pair_state edgepair_state(unsigned int prev_nr,
+					unsigned int curr_nr);
+
+/*
+ * Parent-side richer lookup.  Fills *out with the canonical counters
+ * and the mirror-derived state for a (prev, curr) pair.  Returns true
+ * on hit, false on miss (out->present is set either way).  Reads
+ * parent_edgepair.table[] directly, so it is only safe to call from
+ * the parent.
+ */
+bool edgepair_lookup(unsigned int prev_nr, unsigned int curr_nr,
+		     struct edgepair_snapshot *out);
+
+/*
+ * Map (prev, curr) -> a relative weight in [0, 1024], using MODE to
+ * pick which state buckets dominate.  First-cut placeholder weights:
+ * the API surface is the goal here, not the numbers -- once the
+ * sequence-chain picker and the frontier strategy arm land they'll
+ * tune these against real productivity data.
+ */
+unsigned int edgepair_score(unsigned int prev_nr, unsigned int curr_nr,
+			    enum edgepair_score_mode mode);
 
 /*
  * Dump the edge-pair hash table to a binary file for offline analysis

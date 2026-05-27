@@ -79,19 +79,6 @@ static uint32_t edgepair_dirty_queue[EDGEPAIR_DIRTY_QUEUE_SIZE];
 static unsigned int edgepair_dirty_queue_head;
 static bool edgepair_need_full_publish = true;
 
-/* Same hash as edgepair.c's pair_hash -- duplicated rather than hoisted
- * into a shared header to keep the dark-launch commit self-contained.
- * The in-shm copy remains authoritative until the in-shm path is gone. */
-static unsigned int aggregate_pair_hash(unsigned int prev, unsigned int curr)
-{
-	unsigned int h = prev * 31 + curr;
-
-	h ^= h >> 16;
-	h *= 0x45d9f3b;
-	h ^= h >> 16;
-	return h & EDGEPAIR_TABLE_MASK;
-}
-
 void edgepair_ring_init(struct edgepair_ring *ring)
 {
 	memset(ring->slots, 0, sizeof(ring->slots));
@@ -149,7 +136,7 @@ bool edgepair_ring_enqueue(struct edgepair_ring *ring,
 static struct edgepair_entry *aggregate_find_or_insert(unsigned int prev_nr,
 						       unsigned int curr_nr)
 {
-	unsigned int idx = aggregate_pair_hash(prev_nr, curr_nr);
+	unsigned int idx = edgepair_pair_hash(prev_nr, curr_nr);
 	unsigned int probe;
 
 	for (probe = 0; probe < EDGEPAIR_MAX_PROBE; probe++) {

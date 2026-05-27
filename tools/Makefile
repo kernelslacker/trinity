@@ -5,7 +5,7 @@ CC := $(CROSS_COMPILE)$(CC)
 LD := $(CROSS_COMPILE)$(LD)
 
 CFLAGS ?= -g -O2 -D_FORTIFY_SOURCE=2
-CFLAGS += -Wall -W -I. -Iinclude/ -Wimplicit -D_GNU_SOURCE -D__linux__
+CFLAGS += -Wall -W -I. -Iinclude/ -I../include/ -Wimplicit -D_GNU_SOURCE -D__linux__
 ifneq ($(SYSROOT),)
 CFLAGS += --sysroot=$(SYSROOT)
 endif

@@ -47,16 +47,6 @@ void edgepair_init_global(void)
 		EDGEPAIR_TABLE_SIZE);
 }
 
-static unsigned int pair_hash(unsigned int prev, unsigned int curr)
-{
-	/* Simple but effective: mix both syscall numbers. */
-	unsigned int h = prev * 31 + curr;
-	h ^= h >> 16;
-	h *= 0x45d9f3b;
-	h ^= h >> 16;
-	return h & EDGEPAIR_TABLE_MASK;
-}
-
 void edgepair_record(struct childdata *child,
 		     unsigned int prev_nr, unsigned int curr_nr,
 		     bool found_new)
@@ -79,49 +69,59 @@ void edgepair_record(struct childdata *child,
 				    prev_nr, curr_nr, found_new);
 }
 
-bool edgepair_is_cold(unsigned int prev_nr, unsigned int curr_nr)
+enum edgepair_pair_state edgepair_state(unsigned int prev_nr,
+					unsigned int curr_nr)
 {
 	unsigned int idx;
 	unsigned int probe;
 
-	if (edgepair_published == NULL)
-		return false;
+	if (!edgepair_enabled || edgepair_published == NULL)
+		return EDGEPAIR_STATE_UNSEEN;
 
-	idx = pair_hash(prev_nr, curr_nr);
+	idx = edgepair_pair_hash(prev_nr, curr_nr);
 	for (probe = 0; probe < EDGEPAIR_MAX_PROBE; probe++) {
 		const struct edgepair_published_slot *e =
 			&edgepair_published->slots[idx];
+		unsigned long total, last;
 
 		if (e->prev_nr == EDGEPAIR_EMPTY)
-			return false;
-		if (e->prev_nr == prev_nr && e->curr_nr == curr_nr) {
-			unsigned long total, last;
-
-			/* Never found new edges -- not cold, just unproductive. */
-			if (e->new_edge_count == 0)
-				return false;
-
-			/* Acquire-load pairs with the release-store in
-			 * edgepair_publish_locked() so the subsequent
-			 * last_new_at read sees the matching slot update
-			 * for this publish window.  Plain MOV on x86-64. */
-			total = __atomic_load_n(&edgepair_published->total_pair_calls,
-						__ATOMIC_ACQUIRE);
-			last = e->last_new_at;
-			/* A publisher racing us can update this slot's
-			 * last_new_at to the NEXT total *after* our acquire-
-			 * load above, so last > total is possible and means
-			 * the pair just produced new edges -- not cold.
-			 * Without this guard, total - last underflows to a
-			 * huge value and falsely trips the cold predicate. */
-			if (last >= total)
-				return false;
-			return (total - last) > EDGEPAIR_COLD_THRESHOLD;
+			return EDGEPAIR_STATE_UNSEEN;
+		if (e->prev_nr != prev_nr || e->curr_nr != curr_nr) {
+			idx = (idx + 1) & EDGEPAIR_TABLE_MASK;
+			continue;
 		}
-		idx = (idx + 1) & EDGEPAIR_TABLE_MASK;
+
+		/* Present in the mirror -- pair was inserted, so it has
+		 * been executed at least once.  Branch on whether it ever
+		 * produced a new edge and, if so, how long ago. */
+		if (e->new_edge_count == 0)
+			return EDGEPAIR_STATE_SEEN_UNPRODUCTIVE;
+
+		/* Acquire-load pairs with the release-store in
+		 * edgepair_publish_locked() so the subsequent last_new_at
+		 * read sees the matching slot update for this publish
+		 * window.  Plain MOV on x86-64. */
+		total = __atomic_load_n(&edgepair_published->total_pair_calls,
+					__ATOMIC_ACQUIRE);
+		last = e->last_new_at;
+		/* A publisher racing us can update this slot's last_new_at
+		 * to the NEXT total *after* our acquire-load above, so
+		 * last > total is possible and means the pair just
+		 * produced new edges -- treat as fresh.  Without this
+		 * guard, total - last underflows and falsely trips cold. */
+		if (last >= total)
+			return EDGEPAIR_STATE_PRODUCTIVE_FRESH;
+		if ((total - last) > EDGEPAIR_COLD_THRESHOLD)
+			return EDGEPAIR_STATE_PRODUCTIVE_COLD;
+		return EDGEPAIR_STATE_PRODUCTIVE_FRESH;
 	}
 
-	return false;
+	return EDGEPAIR_STATE_UNSEEN;
+}
+
+bool edgepair_is_cold(unsigned int prev_nr, unsigned int curr_nr)
+{
+	return edgepair_state(prev_nr, curr_nr) == EDGEPAIR_STATE_PRODUCTIVE_COLD;
 }
 
 bool edgepair_entry_is_cold_parent(const struct edgepair_entry *e)
@@ -164,7 +164,7 @@ struct edgepair_stats edgepair_get_stats(unsigned int prev_nr,
 	if (prev_nr >= MAX_NR_SYSCALL || curr_nr >= MAX_NR_SYSCALL)
 		return s;
 
-	idx = pair_hash(prev_nr, curr_nr);
+	idx = edgepair_pair_hash(prev_nr, curr_nr);
 	for (probe = 0; probe < EDGEPAIR_MAX_PROBE; probe++) {
 		const struct edgepair_entry *e = &parent_edgepair.table[idx];
 
@@ -179,6 +179,93 @@ struct edgepair_stats edgepair_get_stats(unsigned int prev_nr,
 	}
 
 	return s;
+}
+
+bool edgepair_lookup(unsigned int prev_nr, unsigned int curr_nr,
+		     struct edgepair_snapshot *out)
+{
+	unsigned int idx;
+	unsigned int probe;
+
+	if (out == NULL)
+		return false;
+
+	out->new_edges	= 0;
+	out->total	= 0;
+	out->last_new_at = 0;
+	out->state	= EDGEPAIR_STATE_UNSEEN;
+	out->present	= false;
+
+	if (!edgepair_enabled)
+		return false;
+	if (prev_nr >= MAX_NR_SYSCALL || curr_nr >= MAX_NR_SYSCALL)
+		return false;
+
+	/* Counters come from the parent-canonical aggregate (total_count
+	 * is not carried in the child-RO mirror).  State is then derived
+	 * via edgepair_state() which consults the mirror; the two views
+	 * can disagree across a publish window but the lag is bounded by
+	 * one drain iteration and is acceptable for the consumers this
+	 * snapshot feeds. */
+	idx = edgepair_pair_hash(prev_nr, curr_nr);
+	for (probe = 0; probe < EDGEPAIR_MAX_PROBE; probe++) {
+		const struct edgepair_entry *e = &parent_edgepair.table[idx];
+
+		if (e->prev_nr == EDGEPAIR_EMPTY)
+			return false;
+		if (e->prev_nr == prev_nr && e->curr_nr == curr_nr) {
+			out->new_edges	 = e->new_edge_count;
+			out->total	 = e->total_count;
+			out->last_new_at = e->last_new_at;
+			out->present	 = true;
+			out->state	 = edgepair_state(prev_nr, curr_nr);
+			return true;
+		}
+		idx = (idx + 1) & EDGEPAIR_TABLE_MASK;
+	}
+
+	return false;
+}
+
+/*
+ * First-cut score weights.  Picked for shape (rank order across
+ * states), not for any measured-productivity tuning.  Once the
+ * sequence-chain picker and frontier strategy arm land they will tune
+ * these against real run data; treating the numbers as a stable API
+ * surface would be a mistake.
+ */
+unsigned int edgepair_score(unsigned int prev_nr, unsigned int curr_nr,
+			    enum edgepair_score_mode mode)
+{
+	enum edgepair_pair_state state = edgepair_state(prev_nr, curr_nr);
+
+	switch (mode) {
+	case EDGEPAIR_SCORE_EXPLORATION:
+		switch (state) {
+		case EDGEPAIR_STATE_UNSEEN:		return 1024;
+		case EDGEPAIR_STATE_PRODUCTIVE_FRESH:	return 256;
+		case EDGEPAIR_STATE_PRODUCTIVE_COLD:	return 128;
+		case EDGEPAIR_STATE_SEEN_UNPRODUCTIVE:	return 32;
+		}
+		break;
+	case EDGEPAIR_SCORE_EXPLOITATION:
+		switch (state) {
+		case EDGEPAIR_STATE_PRODUCTIVE_FRESH:	return 1024;
+		case EDGEPAIR_STATE_PRODUCTIVE_COLD:	return 256;
+		case EDGEPAIR_STATE_UNSEEN:		return 128;
+		case EDGEPAIR_STATE_SEEN_UNPRODUCTIVE:	return 16;
+		}
+		break;
+	case EDGEPAIR_SCORE_COLD_PENALTY:
+		switch (state) {
+		case EDGEPAIR_STATE_PRODUCTIVE_FRESH:	return 1024;
+		case EDGEPAIR_STATE_UNSEEN:		return 1024;
+		case EDGEPAIR_STATE_PRODUCTIVE_COLD:	return 256;
+		case EDGEPAIR_STATE_SEEN_UNPRODUCTIVE:	return 64;
+		}
+		break;
+	}
+	return 0;
 }
 
 void edgepair_dump_to_file(const char *path)

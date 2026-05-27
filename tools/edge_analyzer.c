@@ -19,57 +19,18 @@
 #include <string.h>
 #include <unistd.h>
 
-/*
- * These must match include/edgepair.h and edgepair.c exactly.
- * If edgepair.h changes its struct layout or hash function, update here
- * and bump EDGEPAIR_DUMP_MAGIC so old dumps fail loudly.
- */
-#define EDGEPAIR_TABLE_SIZE	262144
-#define EDGEPAIR_TABLE_MASK	(EDGEPAIR_TABLE_SIZE - 1)
-#define EDGEPAIR_EMPTY		0xFFFFFFFFU
-#define EDGEPAIR_MAX_PROBE	32
-#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A04U
-#define EDGEPAIR_DUMP_VERSION	1U
+#include "edgepair.h"		/* table sizing, struct edgepair_entry,
+				 * edgepair_pair_hash, dump header */
 
-struct edgepair_entry {
-	unsigned int  prev_nr;
-	unsigned int  curr_nr;
-	unsigned long new_edge_count;
-	unsigned long total_count;
-	unsigned long last_new_at;
-};
-
-/* Mirrors struct edgepair_dump_header in include/edgepair.h.  The CRC
- * over the table payload is present on disk but not validated here --
- * the analyzer is read-only diagnostics, and a bad CRC isn't worth
- * silently rejecting an otherwise readable dump for. */
-struct edgepair_dump_header {
-	uint32_t magic;
-	uint32_t version;
-	uint32_t table_size;
-	uint32_t payload_crc32;
-	uint64_t total_pair_calls;
-	uint64_t pairs_tracked;
-	uint64_t pairs_dropped;
-};
-
+/* Tool-local view of the on-disk dump payload: the canonical table
+ * followed by the three top-level counters.  Header rides in front of
+ * this struct in the file and is consumed separately. */
 struct edgepair_shared {
 	struct edgepair_entry table[EDGEPAIR_TABLE_SIZE];
 	unsigned long total_pair_calls;
 	unsigned long pairs_tracked;
 	unsigned long pairs_dropped;
 };
-
-/* Must match pair_hash() in edgepair.c. */
-static unsigned int pair_hash(unsigned int prev, unsigned int curr)
-{
-	unsigned int h = prev * 31 + curr;
-
-	h ^= h >> 16;
-	h *= 0x45d9f3bU;
-	h ^= h >> 16;
-	return h & EDGEPAIR_TABLE_MASK;
-}
 
 static void print_bar(unsigned long value, unsigned long max, int width)
 {
@@ -145,7 +106,7 @@ static void analyze_collisions(const struct edgepair_shared *shm)
 			continue;
 
 		occupied++;
-		ideal = pair_hash(e->prev_nr, e->curr_nr);
+		ideal = edgepair_pair_hash(e->prev_nr, e->curr_nr);
 		disp = (i + EDGEPAIR_TABLE_SIZE - ideal) & EDGEPAIR_TABLE_MASK;
 
 		if (disp > EDGEPAIR_MAX_PROBE)
