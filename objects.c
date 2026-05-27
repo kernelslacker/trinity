@@ -1273,6 +1273,7 @@ int fd_from_object(struct object *obj, enum objecttype type)
 	case OBJ_FD_LANDLOCK:	return obj->landlockobj.fd;
 	case OBJ_FD_PIDFD:	return obj->pidfdobj.fd;
 	case OBJ_FD_MQ:		return obj->mqobj.fd;
+	case OBJ_FD_SPARSE_FILE: return obj->sparsefileobj.fd;
 	case OBJ_FD_SECCOMP_NOTIF: return obj->seccomp_notifobj.fd;
 	case OBJ_FD_IOMMUFD:	return obj->iommufdobj.fd;
 	case OBJ_FD_FS_CTX:	return obj->fsctxobj.fd;
