@@ -333,15 +333,21 @@ static unsigned long fcntl_flags[] = {
 
 static void post_fcntl(struct syscallrecord *rec)
 {
+	unsigned long retval, a2, a1, a3;
 	long got;
 
 	if ((long) rec->retval < 0)
 		return;
 
-	switch (rec->a2) {
+	retval = rec->retval;
+	a2 = rec->a2;
+	a1 = rec->a1;
+	a3 = rec->a3;
+
+	switch (a2) {
 	case F_DUPFD:
 	case F_DUPFD_CLOEXEC:
-		if ((long) rec->retval < 0 || (long) rec->retval >= (1 << 20))
+		if ((long) retval < 0 || (long) retval >= (1 << 20))
 			break;
 		__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
 		break;
@@ -352,9 +358,9 @@ static void post_fcntl(struct syscallrecord *rec)
 		 * Anything else is a torn read of fdtable->close_on_exec or a
 		 * sign-extension shape leaking upper bits into the success path.
 		 */
-		if (rec->retval > 1UL) {
+		if (retval > 1UL) {
 			output(0, "post_fcntl: F_GETFD rejected retval 0x%lx outside [0, 1]\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 			return;
 		}
@@ -367,9 +373,9 @@ static void post_fcntl(struct syscallrecord *rec)
 		 * Anything above 0xFFFFFFFF is a -errno leak through the return
 		 * path or a wider read of the file_struct field.
 		 */
-		if (rec->retval > 0xFFFFFFFFUL) {
+		if (retval > 0xFFFFFFFFUL) {
 			output(0, "post_fcntl: F_GETFL rejected retval 0x%lx with bits above 32\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 			return;
 		}
@@ -382,9 +388,9 @@ static void post_fcntl(struct syscallrecord *rec)
 		 * A larger value means a torn read, dispatch into the wrong
 		 * getter, or a clobbered fl_type.
 		 */
-		if (rec->retval > 2UL) {
+		if (retval > 2UL) {
 			output(0, "post_fcntl: F_GETLEASE rejected retval 0x%lx outside {F_RDLCK, F_WRLCK, F_UNLCK}\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 			return;
 		}
@@ -392,7 +398,7 @@ static void post_fcntl(struct syscallrecord *rec)
 
 	case F_SETLEASE:
 		/* Record so a sibling F_GETLEASE can target this fd. */
-		lease_ring_record((int) rec->a1, (int) rec->a3);
+		lease_ring_record((int) a1, (int) a3);
 		break;
 
 	case F_GETSIG:
@@ -401,9 +407,9 @@ static void post_fcntl(struct syscallrecord *rec)
 		 * number bounded by _NSIG (64 on Linux). A larger value means
 		 * fown->signum was clobbered or the wrong fasync field was read.
 		 */
-		if (rec->retval > 64UL) {
+		if (retval > 64UL) {
 			output(0, "post_fcntl: F_GETSIG rejected retval 0x%lx outside [0, _NSIG=64]\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 			return;
 		}
@@ -416,9 +422,9 @@ static void post_fcntl(struct syscallrecord *rec)
 		 * fit in a signed int. The failure path is filtered above by
 		 * the (long)<0 guard, so success retvals must fit in INT_MAX.
 		 */
-		if (rec->retval > 0x7FFFFFFFUL) {
+		if (retval > 0x7FFFFFFFUL) {
 			output(0, "post_fcntl: F_GETPIPE_SZ rejected retval 0x%lx outside [0, INT_MAX]\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 			return;
 		}
@@ -431,9 +437,9 @@ static void post_fcntl(struct syscallrecord *rec)
 		 * field stays well under a byte; anything above 0xFF is a torn
 		 * read or a dispatch into the wrong getter.
 		 */
-		if (rec->retval > 0xFFUL) {
+		if (retval > 0xFFUL) {
 			output(0, "post_fcntl: F_GET_SEALS rejected retval 0x%lx outside seal bitmask\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 			return;
 		}
@@ -445,9 +451,9 @@ static void post_fcntl(struct syscallrecord *rec)
 		 * into the caller's struct flock. Any non-zero non-error retval
 		 * is a dispatch / sign-extension shape, not a real ABI value.
 		 */
-		if (rec->retval != 0UL) {
+		if (retval != 0UL) {
 			output(0, "post_fcntl: F_OFD_GETLK rejected retval 0x%lx (must be 0 on success)\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 			return;
 		}
@@ -459,12 +465,12 @@ static void post_fcntl(struct syscallrecord *rec)
 		 * F_GETFL.  A missing bit means the kernel silently dropped a
 		 * status flag — a sign of fd-table or file-struct corruption.
 		 */
-		got = fcntl((int) rec->a1, F_GETFL);
-		if (got >= 0 && (got & rec->a3) != rec->a3) {
+		got = fcntl((int) a1, F_GETFL);
+		if (got >= 0 && (got & a3) != a3) {
 			output(0, "fd oracle: fcntl(%lu, F_SETFL, 0x%lx) "
 			       "but F_GETFL=0x%lx (missing bits: 0x%lx)\n",
-			       rec->a1, rec->a3, (unsigned long) got,
-			       rec->a3 & ~(unsigned long) got);
+			       a1, a3, (unsigned long) got,
+			       a3 & ~(unsigned long) got);
 			__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}
