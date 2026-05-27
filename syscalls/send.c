@@ -285,6 +285,7 @@ static void post_sendmsg(struct syscallrecord *rec)
 	struct sendmsg_post_state *snap =
 		(struct sendmsg_post_state *) rec->post_state;
 	struct msghdr *msg;
+	unsigned long retval = rec->retval;
 
 	if (snap == NULL)
 		return;
@@ -341,11 +342,11 @@ static void post_sendmsg(struct syscallrecord *rec)
 	 * the post_state-private slot rather than re-walked from the
 	 * sibling-stomp-vulnerable msghdr.  Mirrors recvmsg 9f1fda362a96.
 	 */
-	if ((long) rec->retval == -1L)
+	if ((long) retval == -1L)
 		goto skip_bound;
-	if (rec->retval > snap->iov_len_sum) {
+	if (retval > snap->iov_len_sum) {
 		outputerr("post_sendmsg: rejecting retval %lu > iov_len_sum %lu\n",
-			  rec->retval, snap->iov_len_sum);
+			  retval, snap->iov_len_sum);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->a2 = 0;
 		goto out_free;
@@ -504,6 +505,7 @@ static void post_sendmmsg(struct syscallrecord *rec)
 	struct mmsghdr *msgs;
 	unsigned int vlen;
 	unsigned int i;
+	unsigned long retval = rec->retval;
 
 	if (snap == NULL)
 		return;
@@ -576,9 +578,9 @@ static void post_sendmmsg(struct syscallrecord *rec)
 	 * oversized retval past this bound.  Mirrors epoll_wait
 	 * 4c7a84058afd / epoll_pwait 1ae902d4b01d.
 	 */
-	if ((long) rec->retval != -1L && rec->retval > vlen) {
+	if ((long) retval != -1L && retval > vlen) {
 		outputerr("post_sendmmsg: rejected retval=0x%lx > vlen=%u\n",
-			  rec->retval, vlen);
+			  retval, vlen);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
