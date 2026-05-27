@@ -179,6 +179,7 @@ static void post_listxattrat(struct syscallrecord *rec)
 {
 	struct listxattrat_post_state *snap =
 		(struct listxattrat_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
 	int snap_dfd;
 	char snap_path[PATH_MAX];
 	unsigned int snap_at_flags;
@@ -225,10 +226,10 @@ static void post_listxattrat(struct syscallrecord *rec)
 	 * unconditionally, ahead of the ONE_IN(100) sample gate, so every
 	 * offending retval is counted.
 	 */
-	if ((long) rec->retval != -1L && snap->size != 0 &&
-	    rec->retval > snap->size) {
+	if ((long) retval != -1L && snap->size != 0 &&
+	    retval > snap->size) {
 		outputerr("post_listxattrat: rejected retval=0x%lx > size=%lu\n",
-			  rec->retval, snap->size);
+			  retval, snap->size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -236,7 +237,7 @@ static void post_listxattrat(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if ((long) rec->retval <= 0)
+	if ((long) retval <= 0)
 		goto out_free;
 
 	/*
@@ -277,7 +278,7 @@ static void post_listxattrat(struct syscallrecord *rec)
 		sizeof(snap_path) - 1);
 	snap_path[sizeof(snap_path) - 1] = '\0';
 
-	snap_len = (size_t) rec->retval;
+	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first_buf))
 		snap_len = sizeof(first_buf);
 	/*
