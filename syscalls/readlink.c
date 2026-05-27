@@ -131,6 +131,8 @@ static void post_readlink(struct syscallrecord *rec)
 {
 	struct readlink_post_state *snap =
 		(struct readlink_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
+	long ret = (long) retval;
 	char snap_path[4096];
 	unsigned char first_buf[4096];
 	unsigned char recheck_buf[4096];
@@ -184,10 +186,9 @@ static void post_readlink(struct syscallrecord *rec)
 	 * counted, not one-in-a-hundred.  Falls through to out_free so the
 	 * snapshot heap is released via deferred_freeptr.
 	 */
-	if ((long) rec->retval > 0 &&
-	    (unsigned long) rec->retval > snap->bufsiz) {
+	if (ret > 0 && retval > snap->bufsiz) {
 		outputerr("post_readlink: rejected retval=0x%lx > bufsiz=%lu\n",
-			  rec->retval, snap->bufsiz);
+			  retval, snap->bufsiz);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -195,7 +196,7 @@ static void post_readlink(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if ((long) rec->retval <= 0)
+	if (ret <= 0)
 		goto out_free;
 
 	if (snap->path == 0)
@@ -225,7 +226,7 @@ static void post_readlink(struct syscallrecord *rec)
 		sizeof(snap_path) - 1);
 	snap_path[sizeof(snap_path) - 1] = '\0';
 
-	snap_len = (size_t) rec->retval;
+	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first_buf))
 		snap_len = sizeof(first_buf);
 
