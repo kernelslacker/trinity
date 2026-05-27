@@ -349,7 +349,8 @@ static void sanitise_ipc(struct syscallrecord *rec)
 static void post_ipc(struct syscallrecord *rec)
 {
 	unsigned long call = rec->a1;
-	long ret = (long) rec->retval;
+	unsigned long retval = rec->retval;
+	long ret = (long) retval;
 	int id;
 
 	/* Ordinary error return: -1 with errno set. */
@@ -375,7 +376,7 @@ static void post_ipc(struct syscallrecord *rec)
 	if (ret > INT_MAX) {
 		output(0, "ipc oracle: returned IPC id 0x%lx out of "
 			  "range (must be 0..INT_MAX)\n",
-			  (unsigned long) rec->retval);
+			  retval);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		return;
 	}
