@@ -5,6 +5,8 @@
  */
 #include <fcntl.h>
 #include "arch.h"
+#include "csfu.h"
+#include "deferred-free.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "xattr.h"
@@ -16,6 +18,26 @@
 static unsigned long setxattrat_at_flags[] = {
 	AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH,
 };
+
+#ifdef USE_XATTR_ARGS
+/*
+ * Single-version ABI today: struct xattr_args has only one published
+ * layout, so there is no pre-ksize ABI floor to seed the UNDERSIZE
+ * bucket from.  The current ksize is kept in known_sizes[] so the
+ * table stays self-documenting and remains correct if the kernel
+ * ever grows a VER1.
+ */
+static const size_t setxattrat_known_sizes[] = {
+	sizeof(struct xattr_args),
+};
+
+static const struct csfu_desc desc_setxattrat = {
+	.name = "xattr_args",
+	.ksize = sizeof(struct xattr_args),
+	.known_sizes = setxattrat_known_sizes,
+	.n_known_sizes = ARRAY_SIZE(setxattrat_known_sizes),
+};
+#endif
 
 static void sanitise_setxattrat(struct syscallrecord *rec)
 {
@@ -29,39 +51,57 @@ static void sanitise_setxattrat(struct syscallrecord *rec)
 #ifdef USE_XATTR_ARGS
 	{
 		static const unsigned int flag_choices[] = { 0, XATTR_CREATE, XATTR_REPLACE };
-		struct xattr_args *args;
+		struct csfu_buf buf = build_csfu_struct(&desc_setxattrat);
+		struct xattr_args *args = buf.ptr;
 
-		__u32 chosen;
-
-		args = (struct xattr_args *) get_writable_struct(sizeof(*args));
 		if (!args)
 			return;
 
-		switch (rnd_modulo_u32(9)) {
-		case 0:  chosen = 0;                  break;
-		case 1:  chosen = 1;                  break;
-		case 2:  chosen = 32;                 break;
-		case 3:  chosen = 256;                break;
-		case 4:  chosen = page_size;          break;
-		case 5:  chosen = page_size + 1;      break;
-		case 6:  chosen = 65536;              break;
-		case 7:  chosen = 65537;              break;
-		default: chosen = rnd_u32() % (1u << 20); break;
+		/*
+		 * Hand the csfu buffer to the deferred-free queue up
+		 * front so the value-buffer allocation failure path
+		 * below cannot leak it.
+		 */
+		deferred_free_enqueue(args);
+
+		/*
+		 * Non-EXACT buckets get rejected on size by the validator
+		 * before the kernel reads any body field, so populating
+		 * args->value / size / flags (and allocating the value
+		 * sub-buffer they reference) is wasted work.  The
+		 * zmalloc_tracked() buffer is already zeroed where the
+		 * kernel cares to look.
+		 */
+		if (buf.bucket == CSFU_BUCKET_EXACT) {
+			__u32 chosen;
+
+			switch (rnd_modulo_u32(9)) {
+			case 0:  chosen = 0;                  break;
+			case 1:  chosen = 1;                  break;
+			case 2:  chosen = 32;                 break;
+			case 3:  chosen = 256;                break;
+			case 4:  chosen = page_size;          break;
+			case 5:  chosen = page_size + 1;      break;
+			case 6:  chosen = 65536;              break;
+			case 7:  chosen = 65537;              break;
+			default: chosen = rnd_u32() % (1u << 20); break;
+			}
+
+			if (chosen == 0) {
+				args->value = 0;
+			} else {
+				void *value = get_writable_struct(chosen);
+				if (!value)
+					return;
+				args->value = (unsigned long) value;
+			}
+			args->size = chosen;
+			args->flags = flag_choices[rnd_modulo_u32(3)];
 		}
 
-		if (chosen == 0) {
-			args->value = 0;
-		} else {
-			void *value = get_writable_struct(chosen);
-			if (!value)
-				return;
-			args->value = (unsigned long) value;
-		}
-		args->size = chosen;
-		args->flags = flag_choices[rnd_modulo_u32(3)];
 		rec->a5 = (unsigned long) args;
 		avoid_shared_buffer_inout(&rec->a5, sizeof(struct xattr_args));
-		rec->a6 = sizeof(*args);
+		rec->a6 = buf.usize;
 	}
 #endif
 }
