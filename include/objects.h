@@ -131,6 +131,17 @@ struct pidfdobj {
 struct mqobj {
 	int fd;
 	char name[24];	/* "/trin<pid>_<idx>\0" */
+	/*
+	 * Snapshot of the input fields of the create-time struct mq_attr
+	 * (mq_curmsgs is runtime-only and not tracked).  Stored as plain
+	 * longs instead of a struct mq_attr so objects.h does not have to
+	 * pull <mqueue.h> -- that drags in <fcntl.h> and collides with the
+	 * <linux/fcntl.h> already included by the pidfd syscall TUs.
+	 * Downstream callers rehydrate a struct mq_attr by copying back.
+	 */
+	long attr_flags;
+	long attr_maxmsg;
+	long attr_msgsize;
 };
 
 struct seccomp_notifobj {

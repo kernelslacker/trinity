@@ -82,6 +82,9 @@ static int open_one_mq(int idx)
 	}
 	obj->mqobj.fd = fd;
 	memcpy(obj->mqobj.name, name, sizeof(name));
+	obj->mqobj.attr_flags = attr.mq_flags;
+	obj->mqobj.attr_maxmsg = attr.mq_maxmsg;
+	obj->mqobj.attr_msgsize = attr.mq_msgsize;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_MQ);
 	return true;
 }
