@@ -28,7 +28,8 @@ static void post_getpid(struct syscallrecord *rec)
 	const char *value;
 	pid_t got, proc_tgid;
 	unsigned long tgid;
-	long ret = (long) rec->retval;
+	unsigned long retval = rec->retval;
+	long ret = (long) retval;
 
 	/* Kernel ABI: getpid() cannot fail; retval must be in [1, PID_MAX_LIMIT=4194304]. */
 	if (ret < 1 || ret > 4194304) {
@@ -41,7 +42,7 @@ static void post_getpid(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		return;
 
-	got = (pid_t) rec->retval;
+	got = (pid_t) retval;
 
 	if (proc_status_read(buf, sizeof(buf)) < 0)
 		return;
