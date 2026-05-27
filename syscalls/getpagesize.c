@@ -28,22 +28,23 @@
  */
 static void post_getpagesize(struct syscallrecord *rec)
 {
+	long retval = (long) rec->retval;
 	long expected;
 
 	if (!ONE_IN(100))
 		return;
 
-	if ((long) rec->retval <= 0)
+	if (retval <= 0)
 		return;
 
 	expected = sysconf(_SC_PAGESIZE);
 	if (expected <= 0)
 		return;
 
-	if ((long) rec->retval != expected ||
+	if (retval != expected ||
 	    (expected & (expected - 1))) {
 		output(0, "getpagesize oracle: returned %ld but sysconf(_SC_PAGESIZE)=%ld (must match and be a power of two)\n",
-		       (long) rec->retval, expected);
+		       retval, expected);
 		__atomic_add_fetch(&shm->stats.getpagesize_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
