@@ -16,7 +16,7 @@ static void register_pipe_fd(int fd, bool reader)
 {
 	struct object *new;
 
-	if (fd <= 2)
+	if (fd <= 2 || fd >= (1 << 20))
 		return;
 	if (find_local_object_by_fd(OBJ_FD_PIPE, fd) != NULL)
 		return;
