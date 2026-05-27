@@ -87,7 +87,8 @@ static uintptr_t memory_pressure_pool_race_addr_high;
 static struct sigaction memory_pressure_pool_race_old_segv;
 static struct sigaction memory_pressure_pool_race_old_bus;
 
-static void memory_pressure_pool_race_handler(int sig, siginfo_t *info,
+static __attribute__((no_sanitize("address")))
+void memory_pressure_pool_race_handler(int sig, siginfo_t *info,
 					      void *ctx)
 {
 	uintptr_t fault_addr, range_low, range_high;
