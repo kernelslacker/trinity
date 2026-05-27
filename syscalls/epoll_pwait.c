@@ -197,13 +197,16 @@ static void sanitise_epoll_pwait2(struct syscallrecord *rec)
 
 static void post_epoll_pwait(struct syscallrecord *rec)
 {
-	if ((long) rec->retval == -1L)
+	long retval    = (long) rec->retval;
+	long maxevents = (long) rec->a3;
+
+	if (retval == -1L)
 		return;
-	if ((long) rec->a3 <= 0)
+	if (maxevents <= 0)
 		return;
-	if (rec->retval > rec->a3) {
+	if (retval > maxevents) {
 		outputerr("post_epoll_pwait: rejecting retval %ld > maxevents %ld\n",
-			 (long) rec->retval, (long) rec->a3);
+			 retval, maxevents);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 }
