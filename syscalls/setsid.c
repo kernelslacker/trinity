@@ -28,6 +28,7 @@
 static void post_setsid(struct syscallrecord *rec)
 {
 	pid_t got, recheck;
+	unsigned long retval = rec->retval;
 
 	/*
 	 * Kernel ABI: setsid on success returns pid_vnr(task_session(current))
@@ -41,10 +42,10 @@ static void post_setsid(struct syscallrecord *rec)
 	 * ONE_IN(100) re-read oracle below, since that gate would only catch
 	 * such corruption ~1% of the time.
 	 */
-	if (rec->retval != (unsigned long)-1L &&
-	    (rec->retval == 0 || rec->retval > 4194304UL)) {
+	if (retval != (unsigned long)-1L &&
+	    (retval == 0 || retval > 4194304UL)) {
 		output(0, "post_setsid: rejected returned sid 0x%lx outside [1, PID_MAX_LIMIT=4194304] (and not -1)\n",
-		       rec->retval);
+		       retval);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		return;
 	}
@@ -52,7 +53,7 @@ static void post_setsid(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		return;
 
-	got = (pid_t) rec->retval;
+	got = (pid_t) retval;
 	if (got == (pid_t)-1)
 		return;
 
