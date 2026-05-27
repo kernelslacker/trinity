@@ -100,10 +100,27 @@ static void post_times(struct syscallrecord *rec)
 	struct times_post_state *snap =
 		(struct times_post_state *) rec->post_state;
 	struct tms first, recall;
+	unsigned long retval;
+	clock_t syscall_r;
 	clock_t r;
 
 	if (snap == NULL)
 		return;
+
+	/*
+	 * Snapshot rec->retval once.  rec lives in the child's shm
+	 * region; the original post handler read rec->retval three
+	 * times (the (clock_t)-1 guard, the r < retval comparison, and
+	 * the divergence log line) so a sibling-child stomp via a
+	 * fuzzed pointer or a signal-handler reschedule rewriting the
+	 * slot between any two reads can pass the -1 guard with the
+	 * original value, then drive the monotonicity check against a
+	 * stomped value and log mismatched values that were never
+	 * actually returned by the syscall.  Same multi-read race the
+	 * epoll post handlers had (commit 48279ed126bb).
+	 */
+	retval = rec->retval;
+	syscall_r = (clock_t) retval;
 
 	/*
 	 * post_state is private to the post handler, but the whole
@@ -137,7 +154,7 @@ static void post_times(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if ((clock_t) rec->retval == (clock_t) -1)
+	if (syscall_r == (clock_t) -1)
 		goto out_free;
 
 	if (snap->tbuf == 0)
@@ -164,14 +181,14 @@ static void post_times(struct syscallrecord *rec)
 	if (r == (clock_t) -1)
 		goto out_free;
 
-	if (r < (clock_t) rec->retval ||
+	if (r < syscall_r ||
 	    recall.tms_utime  < first.tms_utime  ||
 	    recall.tms_stime  < first.tms_stime  ||
 	    recall.tms_cutime < first.tms_cutime ||
 	    recall.tms_cstime < first.tms_cstime) {
 		output(0,
 		       "[oracle:times] retval %ld vs %ld utime %ld vs %ld stime %ld vs %ld cutime %ld vs %ld cstime %ld vs %ld\n",
-		       (long) (clock_t) rec->retval, (long) r,
+		       (long) syscall_r, (long) r,
 		       (long) first.tms_utime,  (long) recall.tms_utime,
 		       (long) first.tms_stime,  (long) recall.tms_stime,
 		       (long) first.tms_cutime, (long) recall.tms_cutime,
