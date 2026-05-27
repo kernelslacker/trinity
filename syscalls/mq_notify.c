@@ -47,6 +47,8 @@ static void sanitise_mq_notify(struct syscallrecord *rec)
 
 static void post_mq_notify(struct syscallrecord *rec)
 {
+	unsigned long a1 = rec->a1;
+
 	/*
 	 * A successful mq_notify with a non-NULL sevp installs a
 	 * notification subscription on the message queue underlying mqdes.
@@ -79,11 +81,11 @@ static void post_mq_notify(struct syscallrecord *rec)
 	 * scribbles into the small-int fd range are not detectable here,
 	 * but the kernel bounces those with EBADF.
 	 */
-	if ((long) rec->a1 < 0 || (unsigned long) rec->a1 >= 0x10000UL) {
+	if ((long) a1 < 0 || a1 >= 0x10000UL) {
 		struct childdata *c = this_child();
 
 		outputerr("post_mq_notify: rejected suspicious mqdes=%lu (pid-scribbled?)\n",
-			  rec->a1);
+			  a1);
 		if (c != NULL && c->stats_ring != NULL)
 			stats_ring_enqueue(c->stats_ring,
 					   STATS_FIELD_POST_HANDLER_CORRUPT_PTR,
@@ -93,7 +95,7 @@ static void post_mq_notify(struct syscallrecord *rec)
 		return;
 	}
 
-	mq_notify((int) rec->a1, NULL);
+	mq_notify((int) a1, NULL);
 }
 
 struct syscallentry syscall_mq_notify = {
