@@ -285,8 +285,11 @@ static bool create_one_vcpu(struct object *vmobj)
 	obj = alloc_object();
 	if (obj == NULL) {
 		outputerr("init_kvm: alloc_object(vcpu) failed\n");
-		if (kvm_run != NULL)
+		if (kvm_run != NULL) {
+			untrack_shared_region((unsigned long)kvm_run,
+					      kvm_run_sz);
 			munmap(kvm_run, kvm_run_sz);
+		}
 		close(vcpufd);
 		return false;
 	}
