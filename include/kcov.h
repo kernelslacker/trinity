@@ -246,6 +246,17 @@ enum kcov_cmp_diag_part {
  * recorded failures, or if kcov_shm is NULL. */
 int kcov_cmp_diag_format(char *buf, size_t bufsz, enum kcov_cmp_diag_part part);
 
+/* Build a one-line summary of the PC/remote enable/disable
+ * diagnostic counters defined in struct kcov_pc_diag.  Each
+ * non-zero error site contributes a `" name=ERRNO_MACRO(errno)/count"`
+ * token; each non-zero retry/success counter contributes a
+ * `" name=count"` token; absent counters contribute nothing.
+ * Same shape as kcov_cmp_diag_format so the two callsites in
+ * stats.c periodic dump and main.c summary stay in lockstep.
+ * Returns the number of bytes written (excluding the trailing
+ * NUL); zero if every counter is zero or kcov_shm is NULL. */
+int kcov_pc_diag_format(char *buf, size_t bufsz);
+
 struct kcov_child {
 	/* Field order is constrained by the hot-cacheline budget in struct
 	 * childdata (see static_assert in child.c).  Sized to 48 bytes:

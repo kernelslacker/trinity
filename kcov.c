@@ -217,6 +217,62 @@ int kcov_cmp_diag_format(char *buf, size_t bufsz, enum kcov_cmp_diag_part part)
 	return n;
 }
 
+/* PC/remote sibling of kcov_cmp_diag_format.  Walks the slots in
+ * struct kcov_pc_diag the same way: snapshot all counters via
+ * __atomic loads, then emit one space-prefixed token per non-zero
+ * site so callers can splice the buffer straight into a log line.
+ * The three errno+count sites use the same "name=ERRNO(errno)/count"
+ * shape; the success and EINTR-retry tallies are plain
+ * "name=count" tokens. */
+int kcov_pc_diag_format(char *buf, size_t bufsz)
+{
+	struct kcov_pc_diag *d;
+	unsigned int pc_en_c, pc_dis_c, rem_en_c;
+	unsigned int fb_to_pc, pc_eintr, rem_eintr, fb_pc_eintr;
+	int n = 0;
+
+	if (buf == NULL || bufsz == 0)
+		return 0;
+	buf[0] = '\0';
+	if (kcov_shm == NULL)
+		return 0;
+
+	d = &kcov_shm->pc_diag;
+	pc_en_c     = __atomic_load_n(&d->pc_enable_count,                    __ATOMIC_RELAXED);
+	pc_dis_c    = __atomic_load_n(&d->pc_disable_count,                   __ATOMIC_RELAXED);
+	rem_en_c    = __atomic_load_n(&d->remote_enable_count,                __ATOMIC_RELAXED);
+	fb_to_pc    = __atomic_load_n(&d->remote_fallback_to_pc,              __ATOMIC_RELAXED);
+	pc_eintr    = __atomic_load_n(&d->pc_enable_eintr_retries,            __ATOMIC_RELAXED);
+	rem_eintr   = __atomic_load_n(&d->remote_enable_eintr_retries,        __ATOMIC_RELAXED);
+	fb_pc_eintr = __atomic_load_n(&d->remote_fallback_pc_enable_eintr_retries, __ATOMIC_RELAXED);
+
+	if (pc_en_c) {
+		int e = __atomic_load_n(&d->pc_enable_errno, __ATOMIC_RELAXED);
+		n += snprintf(buf + n, bufsz - n, " pc_enable=%s(%d)/%u",
+			errno_name_or("?", e), e, pc_en_c);
+	}
+	if (pc_dis_c) {
+		int e = __atomic_load_n(&d->pc_disable_errno, __ATOMIC_RELAXED);
+		n += snprintf(buf + n, bufsz - n, " pc_disable=%s(%d)/%u",
+			errno_name_or("?", e), e, pc_dis_c);
+	}
+	if (rem_en_c) {
+		int e = __atomic_load_n(&d->remote_enable_errno, __ATOMIC_RELAXED);
+		n += snprintf(buf + n, bufsz - n, " remote_enable=%s(%d)/%u",
+			errno_name_or("?", e), e, rem_en_c);
+	}
+	if (fb_to_pc)
+		n += snprintf(buf + n, bufsz - n, " remote_fallback_to_pc=%u", fb_to_pc);
+	if (pc_eintr)
+		n += snprintf(buf + n, bufsz - n, " pc_enable_eintr=%u", pc_eintr);
+	if (rem_eintr)
+		n += snprintf(buf + n, bufsz - n, " remote_enable_eintr=%u", rem_eintr);
+	if (fb_pc_eintr)
+		n += snprintf(buf + n, bufsz - n, " remote_fallback_pc_enable_eintr=%u", fb_pc_eintr);
+
+	return n;
+}
+
 void kcov_init_global(void)
 {
 	int fd;

@@ -1470,6 +1470,34 @@ static void print_kcov_cmp_diag(void)
 	}
 }
 
+/*
+ * Drain the parent-visible KCOV PC/remote enable/disable failure
+ * and retry slots.  Same suppression logic as the CMP version:
+ * silent when everything is zero, only re-emits when the payload
+ * changes since the last cycle.
+ */
+static void print_kcov_pc_diag(void)
+{
+	char buf[512];
+	int n;
+
+	if (kcov_shm == NULL)
+		return;
+
+	n = kcov_pc_diag_format(buf, sizeof(buf));
+	if (n == 0)
+		return;
+
+	(void)n;
+	{
+		static char last_buf[512];
+		if (strcmp(buf, last_buf) != 0) {
+			output(0, "KCOV PC DIAG:%s\n", buf);
+			snprintf(last_buf, sizeof(last_buf), "%s", buf);
+		}
+	}
+}
+
 static void print_stats(void)
 {
 	unsigned long op_count = parent_stats.op_count;
@@ -1618,6 +1646,7 @@ static void print_stats(void)
 				last_cmp_trunc = cmp_trunc;
 				last_cmp_unique = cmp_unique;
 				print_kcov_cmp_diag();
+				print_kcov_pc_diag();
 
 				/*
 				 * Operator-facing picker state.  The plateau-

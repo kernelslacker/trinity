@@ -3112,6 +3112,17 @@ void kcov_cmp_stats_periodic_dump(void)
 		}
 	}
 
+	{
+		char pc_buf[256];
+		int np;
+
+		np = kcov_pc_diag_format(pc_buf, sizeof(pc_buf));
+		if (np > 0) {
+			stats_log_write("KCOV PC DIAG (first-failure-wins errnos + retry counters, cumulative):\n");
+			stats_log_write(" %s\n", pc_buf);
+		}
+	}
+
 	prev_records       = cur_records;
 	prev_truncated     = cur_truncated;
 	prev_bloom_skipped = cur_bloom_skipped;
@@ -4800,6 +4811,13 @@ void dump_stats(void)
 			stat_row("kcov_coverage", "cmp_hints_strip_skipped", kc_cmp_strip_skipped);
 		if (kc_cmp_unique > 0)
 			stat_row("kcov_coverage", "cmp_hints_unique_inserts", kc_cmp_unique);
+
+		{
+			unsigned long warm_known = __atomic_load_n(
+				&kcov_shm->total_warm_known_hits, __ATOMIC_RELAXED);
+			if (warm_known > 0)
+				stat_row("kcov_coverage", "warm_known_hits", warm_known);
+		}
 
 		/* Find top 10 edge-producing syscalls via insertion sort. */
 		unsigned int nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
