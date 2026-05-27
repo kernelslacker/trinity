@@ -84,7 +84,8 @@ int get_random_sysv_shm(void)
 
 static void post_shmget(struct syscallrecord *rec)
 {
-	long ret = (long) rec->retval;
+	unsigned long retval = rec->retval;
+	long ret = (long) retval;
 
 	/* Ordinary error return: -1 with errno set. */
 	if (ret < 0)
@@ -104,7 +105,7 @@ static void post_shmget(struct syscallrecord *rec)
 	if (ret > INT_MAX) {
 		output(0, "shmget oracle: returned IPC id 0x%lx out of "
 			  "range (must be 0..INT_MAX)\n",
-			  (unsigned long) rec->retval);
+			  retval);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		return;
 	}
