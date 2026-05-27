@@ -8,8 +8,7 @@
  * A growing family of Linux syscalls takes a (struct __user *, size_t
  * usize) pair and marshals it through copy_struct_from_user(dst,
  * ksize, src, usize).  Members of that family include openat2,
- * clone3, mount_setattr, the landlock_* set, sched_setattr,
- * and statmount.
+ * clone3, mount_setattr, the landlock_* set, and sched_setattr.
  *
  * The kernel-side contract has five distinct usize-vs-ksize buckets,
  * each exercising a different validator path:
