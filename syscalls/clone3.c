@@ -7,6 +7,7 @@
 #include <linux/sched.h>
 #include "arch.h"
 #include "clone.h"
+#include "csfu.h"
 #include "fd.h"
 #include "maps.h"
 #include "random.h"
@@ -70,11 +71,26 @@ static unsigned long clone3_flags[] = {
 	CLONE_AUTOREAP, CLONE_NNP, CLONE_PIDFD_AUTOKILL, CLONE_EMPTY_MNTNS,
 };
 
-static unsigned long clone3_sizes[] = {
+/*
+ * Pre-ksize ABI floors for the csfu UNDERSIZE bucket.  The kernel
+ * accepts a clone3 call whose usize matches any prior ABI version and
+ * zero-pads the remainder; older-ABI paths take EINVAL when the tail
+ * carries fields they don't know about.  build_csfu_struct() draws
+ * uniformly from this pool for UNDERSIZE; the EXACT bucket already
+ * covers sizeof(struct clone_args), so the current ksize is not
+ * repeated here.
+ */
+static const size_t clone3_known_sizes[] = {
 	CLONE_ARGS_SIZE_VER0,
 	CLONE_ARGS_SIZE_VER1,
 	CLONE_ARGS_SIZE_VER2,
-	sizeof(struct clone_args),
+};
+
+static const struct csfu_desc desc_clone3 = {
+	.name = "clone_args",
+	.ksize = sizeof(struct clone_args),
+	.known_sizes = clone3_known_sizes,
+	.n_known_sizes = ARRAY_SIZE(clone3_known_sizes),
 };
 
 /*
@@ -89,10 +105,9 @@ static unsigned long clone3_sizes[] = {
 
 static void sanitise_clone3(struct syscallrecord *rec)
 {
-	struct clone_args *args;
+	struct csfu_buf buf = build_csfu_struct(&desc_clone3);
+	struct clone_args *args = buf.ptr;
 	bool newnet_admitted = false;
-
-	args = zmalloc_tracked(sizeof(struct clone_args));
 
 	args->flags = set_rand_bitmask(ARRAY_SIZE(clone3_flags), clone3_flags);
 	{
@@ -193,7 +208,7 @@ static void sanitise_clone3(struct syscallrecord *rec)
 
 	rec->a1 = (unsigned long) args;
 	avoid_shared_buffer_inout(&rec->a1, sizeof(struct clone_args));
-	rec->a2 = RAND_ARRAY(clone3_sizes);
+	rec->a2 = buf.usize;
 
 	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
 	 * syscall before post_clone3() runs.  Bit 0 doubles as the throttle
