@@ -10,9 +10,9 @@
 
 static void post_vfork(struct syscallrecord *rec)
 {
-	pid_t pid;
+	unsigned long retval = rec->retval;
+	pid_t pid = (pid_t) retval;
 
-	pid = rec->retval;
 	if (pid == 0) {
 		/*
 		 * vfork suspends the parent until the child exits or execs,
@@ -29,9 +29,9 @@ static void post_vfork(struct syscallrecord *rec)
 		 * tear or pid_ns translation bug) — reject before pid_alive()/waitpid()
 		 * steers wait-loop bookkeeping off real children.
 		 */
-		if (rec->retval > 4194304UL && rec->retval != (unsigned long)-1L) {
+		if (retval > 4194304UL && retval != (unsigned long)-1L) {
 			output(0, "post_vfork: rejected returned pid 0x%lx outside [1, PID_MAX_LIMIT=4194304] (and not -1)\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 			return;
 		}
