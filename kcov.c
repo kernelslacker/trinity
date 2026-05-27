@@ -938,6 +938,32 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr,
 			 * selection toward syscalls currently producing fresh
 			 * coverage. */
 			frontier_record_new_edge(nr);
+		} else if (count > 0) {
+			/* Kernel executed code for this syscall but every PC
+			 * was already in bucket_seen[] (warm-loaded or
+			 * earlier-this-run).  Track separately from
+			 * per_syscall_edges so cold-skip / anti-prior / picker
+			 * consumers can tell a quietly-exercised syscall from
+			 * one that has never fired this run. */
+			__atomic_fetch_add(
+				&kcov_shm->per_syscall_warm_known_hits[nr], 1,
+				__ATOMIC_RELAXED);
+			__atomic_fetch_add(&kcov_shm->total_warm_known_hits, 1,
+				__ATOMIC_RELAXED);
+			/* Lazy-seed last_edge_at[nr] from the warm-known hit
+			 * stream.  Without this seed, a syscall whose entire
+			 * surface is warm-loaded looks indistinguishable from
+			 * one that has never executed -- both have
+			 * last_edge_at[nr] == 0 -- and the cold-skip /
+			 * frontier consumers throttle accordingly.  Use a
+			 * compare-exchange-loop-free pattern: read once, set
+			 * if zero.  Races between concurrent first-warm-hits
+			 * resolve harmlessly to whichever store wins -- both
+			 * carry the same semantic "this syscall is alive". */
+			if (__atomic_load_n(&kcov_shm->last_edge_at[nr],
+					    __ATOMIC_RELAXED) == 0)
+				__atomic_store_n(&kcov_shm->last_edge_at[nr],
+						 call_nr, __ATOMIC_RELAXED);
 		}
 	}
 
@@ -1192,8 +1218,17 @@ void kcov_plateau_check(void)
  * result of a single first-bit transition or of multiple bucket
  * transitions on the same edge across prior sessions), so a
  * legacy-format file is treated as "no warm start available" and
- * the run begins cold. */
-#define KCOV_BITMAP_FILE_VERSION	2U
+ * the run begins cold.
+ *
+ * Version 3 appends per-syscall priors (per_syscall_edges and
+ * per_syscall_calls of the writing session) after the bucket_seen
+ * payload, with a separate priors_crc32 over the concatenated
+ * arrays.  Version 2 files reject cleanly on the existing
+ * version-mismatch path and the run begins cold; that is fine --
+ * the priors are a soft signal and a single cold restart on the
+ * format bump costs nothing the bitmap warm-start was already
+ * providing. */
+#define KCOV_BITMAP_FILE_VERSION	3U
 
 struct kcov_bitmap_file_header {
 	uint32_t magic;
@@ -1205,6 +1240,8 @@ struct kcov_bitmap_file_header {
 	uint32_t payload_crc32;
 	uint32_t pad;
 	uint8_t  kallsyms_sha256[32];
+	uint32_t max_nr_syscall;   /* MAX_NR_SYSCALL at save time */
+	uint32_t priors_crc32;     /* CRC over both prior arrays */
 };
 
 /* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Same algorithm
@@ -1534,6 +1571,9 @@ bool kcov_bitmap_save_file(const char *path)
 {
 	struct kcov_bitmap_file_header hdr;
 	unsigned long edges_now;
+	unsigned char *priors_blob;
+	size_t priors_blob_size;
+	size_t one_array_size;
 	char tmppath[PATH_MAX];
 	int fd;
 	int ret;
@@ -1547,9 +1587,23 @@ bool kcov_bitmap_save_file(const char *path)
 		return true;
 	}
 
-	memset(&hdr, 0, sizeof(hdr));
-	if (!kcov_get_kernel_fp(hdr.kallsyms_sha256))
+	one_array_size = (size_t)MAX_NR_SYSCALL * sizeof(unsigned long);
+	priors_blob_size = 2 * one_array_size;
+	priors_blob = malloc(priors_blob_size);
+	if (priors_blob == NULL) {
+		output(0, "kcov-bitmap: priors scratch alloc fail (%zu bytes) -- save aborted\n",
+		       priors_blob_size);
 		return false;
+	}
+	memcpy(priors_blob, kcov_shm->per_syscall_edges, one_array_size);
+	memcpy(priors_blob + one_array_size, kcov_shm->per_syscall_calls,
+	       one_array_size);
+
+	memset(&hdr, 0, sizeof(hdr));
+	if (!kcov_get_kernel_fp(hdr.kallsyms_sha256)) {
+		free(priors_blob);
+		return false;
+	}
 
 	hdr.magic = KCOV_BITMAP_FILE_MAGIC;
 	hdr.version = KCOV_BITMAP_FILE_VERSION;
@@ -1560,20 +1614,27 @@ bool kcov_bitmap_save_file(const char *path)
 					     __ATOMIC_RELAXED);
 	hdr.payload_crc32 = kcov_bitmap_crc32(kcov_shm->bucket_seen,
 					      KCOV_NUM_EDGES);
+	hdr.max_nr_syscall = MAX_NR_SYSCALL;
+	hdr.priors_crc32 = kcov_bitmap_crc32(priors_blob, priors_blob_size);
 
 	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d",
 		       path, (int)mypid());
-	if (ret < 0 || (size_t)ret >= sizeof(tmppath))
+	if (ret < 0 || (size_t)ret >= sizeof(tmppath)) {
+		free(priors_blob);
 		return false;
+	}
 
 	fd = open(tmppath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	if (fd < 0)
+	if (fd < 0) {
+		free(priors_blob);
 		return false;
+	}
 
 	/* Neutralise any fuzzer-installed umask so the save mode is 0644. */
 	if (fchmod(fd, 0644) != 0) {
 		(void)close(fd);
 		(void)unlink(tmppath);
+		free(priors_blob);
 		return false;
 	}
 
@@ -1582,22 +1643,28 @@ bool kcov_bitmap_save_file(const char *path)
 	if (kcov_bitmap_write_all(fd, kcov_shm->bucket_seen,
 				  KCOV_NUM_EDGES) < 0)
 		goto fail;
+	if (kcov_bitmap_write_all(fd, priors_blob, priors_blob_size) < 0)
+		goto fail;
 	if (fsync(fd) != 0)
 		goto fail;
 	if (close(fd) != 0) {
 		(void)unlink(tmppath);
+		free(priors_blob);
 		return false;
 	}
 	if (rename(tmppath, path) != 0) {
 		(void)unlink(tmppath);
+		free(priors_blob);
 		return false;
 	}
+	free(priors_blob);
 	kcov_bitmap_edges_at_last_save = edges_now;
 	return true;
 
 fail:
 	(void)close(fd);
 	(void)unlink(tmppath);
+	free(priors_blob);
 	return false;
 }
 
@@ -1685,18 +1752,60 @@ bool kcov_bitmap_load_file(const char *path)
 		(void)close(fd);
 		return false;
 	}
-	(void)close(fd);
 
 	want_crc = kcov_bitmap_crc32(scratch, KCOV_NUM_EDGES);
 	if (want_crc != hdr.payload_crc32) {
 		output(0, "kcov-bitmap: skipping warm-start of %s -- CRC mismatch\n",
 		       path);
 		free(scratch);
+		(void)close(fd);
 		return false;
 	}
 
 	memcpy(kcov_shm->bucket_seen, scratch, KCOV_NUM_EDGES);
 	free(scratch);
+
+	/* Bitmap warm-start has succeeded by this point.  The priors blob
+	 * is a soft signal -- any failure mode below logs and falls through
+	 * with priors zeroed, but must not invalidate the bitmap load. */
+	if (hdr.max_nr_syscall != MAX_NR_SYSCALL) {
+		output(0, "kcov-bitmap: priors disabled, max_nr_syscall %u != %u\n",
+		       hdr.max_nr_syscall, (unsigned int)MAX_NR_SYSCALL);
+	} else {
+		size_t one_array_size = (size_t)MAX_NR_SYSCALL *
+					sizeof(unsigned long);
+		size_t priors_blob_size = 2 * one_array_size;
+		unsigned char *priors_blob = malloc(priors_blob_size);
+
+		if (priors_blob == NULL) {
+			output(0, "kcov-bitmap: priors scratch alloc fail (%zu bytes) -- priors skipped\n",
+			       priors_blob_size);
+		} else {
+			n = kcov_bitmap_read_all(fd, priors_blob,
+						 priors_blob_size);
+			if (n != (ssize_t)priors_blob_size) {
+				output(0, "kcov-bitmap: priors truncated at %s (got %zd, want %zu) -- priors skipped\n",
+				       path, n, priors_blob_size);
+			} else {
+				uint32_t got_crc;
+
+				got_crc = kcov_bitmap_crc32(priors_blob,
+							    priors_blob_size);
+				if (got_crc != hdr.priors_crc32) {
+					output(0, "kcov-bitmap: priors CRC mismatch at %s -- priors skipped\n",
+					       path);
+				} else {
+					memcpy(kcov_shm->per_syscall_edges_prior,
+					       priors_blob, one_array_size);
+					memcpy(kcov_shm->per_syscall_calls_prior,
+					       priors_blob + one_array_size,
+					       one_array_size);
+				}
+			}
+			free(priors_blob);
+		}
+	}
+	(void)close(fd);
 	__atomic_store_n(&kcov_shm->edges_found, hdr.edges_found,
 			 __ATOMIC_RELAXED);
 	__atomic_store_n(&kcov_shm->distinct_edges, hdr.distinct_edges,

@@ -401,6 +401,29 @@ struct kcov_shared {
 	 * Used to compute per-interval growth rate of the call-count signal
 	 * above. */
 	unsigned long per_syscall_edges_previous[MAX_NR_SYSCALL];
+	/* Warm-loaded priors from the previous session's bitmap save.
+	 * Never bumped during this run -- frozen at warm-start.  Empty
+	 * (all-zero) on cold-start or when the priors blob in the bitmap
+	 * file failed its CRC check.  Consumers treat these as soft
+	 * priors -- current-run evidence in per_syscall_edges[] /
+	 * per_syscall_calls[] overrides them as soon as it accumulates. */
+	unsigned long per_syscall_edges_prior[MAX_NR_SYSCALL];
+	unsigned long per_syscall_calls_prior[MAX_NR_SYSCALL];
+	/* Per-syscall warm-known hit counter.  Bumped from kcov_collect()
+	 * when the kernel emitted PCs into the trace buffer for this
+	 * call (count > 0) but no new bucket bit flipped (found_new ==
+	 * false) -- i.e. the syscall is exercising kernel code that's
+	 * already in bucket_seen[].  Useful both as a liveness signal
+	 * (the syscall is doing real work even if no new coverage) and
+	 * as a divisor for productivity ratios.  Conflates "warm from
+	 * prior session" with "already-seen this run"; the loss matters
+	 * less than the cold-skip gate's need to distinguish dead
+	 * syscalls from quietly-exercised ones. */
+	unsigned long per_syscall_warm_known_hits[MAX_NR_SYSCALL];
+	/* Sum of per_syscall_warm_known_hits[] across all nr.  Run-wide
+	 * counter for the periodic stats dump so the warm-known signal
+	 * is visible without iterating MAX_NR_SYSCALL slots. */
+	unsigned long total_warm_known_hits;
 	/* Per-syscall 8-bucket errno histogram.  Sibling to the
 	 * per_syscall_edges/calls counters above: those track coverage-side
 	 * activity per syscall; this tracks the shape of what the kernel
