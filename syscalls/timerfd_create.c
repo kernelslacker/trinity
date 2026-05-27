@@ -94,10 +94,27 @@ static void post_timerfd_create(struct syscallrecord *rec)
 {
 	struct timerfd_post_state *snap =
 		(struct timerfd_post_state *) rec->post_state;
-	int fd = rec->retval;
+	unsigned long retval;
+	int fd;
 
 	if (snap == NULL)
 		return;
+
+	/*
+	 * Snapshot rec->retval once.  rec lives in the child's shm
+	 * region; the original handler read rec->retval at the int fd
+	 * cast used for publish_resource() and again at the (long) <
+	 * 0 success-vs-error guard, so a sibling-child stomp or a
+	 * signal-handler reschedule rewriting the slot between the
+	 * two reads can let the guard see a non-negative value while
+	 * publish_resource() consumes a stomped fd -- tagging
+	 * OBJ_FD_TIMERFD with an fd the kernel never gave us -- or
+	 * conversely let the guard see a negative stomp while a real
+	 * fd is silently dropped.  Same multi-read race the epoll
+	 * post handlers had (commit 48279ed126bb).
+	 */
+	retval = rec->retval;
+	fd = (int) retval;
 
 	/*
 	 * Magic-cookie check: a sibling scribble of rec->post_state with
@@ -116,7 +133,7 @@ static void post_timerfd_create(struct syscallrecord *rec)
 		return;
 	}
 
-	if ((long)rec->retval < 0)
+	if ((long) retval < 0)
 		goto out_free;
 
 	{
