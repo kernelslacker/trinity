@@ -274,6 +274,7 @@ static inline int random_futex_wake_op(void)
  */
 static void sanitise_futex(struct syscallrecord *rec)
 {
+	static __thread struct timespec utime_clamp;
 	struct __lock *lock1, *lock2;
 
 	if (RAND_BOOL() && futex_pi_cmd(rec->a2))
@@ -349,6 +350,32 @@ static void sanitise_futex(struct syscallrecord *rec)
 		 * normally be 1, but be naughty.
 		 */
 		rec->a3 = INT_MAX;
+		break;
+	default:
+		break;
+	}
+
+	/*
+	 * utime (a4) is declared ARG_ADDRESS, so the generic generator
+	 * points it at an arbitrary VA.  For WAIT-family ops the kernel
+	 * reads those bytes as struct timespec; tv_sec is treated as a
+	 * time_t and is >2^31 about half the time, parking the child in
+	 * FUTEX_WAIT past the in-child alarm(1) dodges (alarm-syscall
+	 * race, rt-mutex PI paths, transient D-state) until the parent's
+	 * 30s SIGKILL.  Clamp to a <=5 ms relative timespec instead.
+	 */
+	switch (rec->a2) {
+	case FUTEX_WAIT:
+	case FUTEX_WAIT_PRIVATE:
+	case FUTEX_WAIT_BITSET:
+	case FUTEX_WAIT_BITSET_PRIVATE:
+	case FUTEX_WAIT_REQUEUE_PI:
+	case FUTEX_WAIT_REQUEUE_PI_PRIVATE:
+	case FUTEX_LOCK_PI:
+	case FUTEX_LOCK_PI_PRIVATE:
+		utime_clamp.tv_sec = rnd_modulo_u32(2);
+		utime_clamp.tv_nsec = rnd_modulo_u32(5 * 1000 * 1000);
+		rec->a4 = (unsigned long) &utime_clamp;
 		break;
 	default:
 		break;
