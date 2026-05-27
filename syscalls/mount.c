@@ -10,6 +10,8 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "csfu.h"
+#include "deferred-free.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -354,48 +356,72 @@ static __u64 normalise_atime_bits(__u64 attrs)
 	return attrs;
 }
 
+#ifndef MOUNT_ATTR_SIZE_VER0
+#define MOUNT_ATTR_SIZE_VER0	32
+#endif
+
+/*
+ * Pre-ksize ABI floors for the csfu UNDERSIZE bucket.  Today
+ * sizeof(struct mount_attr) == MOUNT_ATTR_SIZE_VER0, so the EXACT
+ * bucket already covers VER0; the entry is kept in the pool so the
+ * UNDERSIZE bucket still has a meaningful named ABI floor to draw
+ * from once the kernel grows a VER1 and ksize moves past VER0.
+ */
+static const size_t mount_setattr_known_sizes[] = {
+	MOUNT_ATTR_SIZE_VER0,
+};
+
+static const struct csfu_desc desc_mount_setattr = {
+	.name = "mount_attr",
+	.ksize = sizeof(struct mount_attr),
+	.known_sizes = mount_setattr_known_sizes,
+	.n_known_sizes = ARRAY_SIZE(mount_setattr_known_sizes),
+};
+
 static void sanitise_mount_setattr(struct syscallrecord *rec)
 {
-	struct mount_attr *ma;
-	unsigned int i, nbits, usize_pick;
+	struct csfu_buf buf = build_csfu_struct(&desc_mount_setattr);
+	struct mount_attr *ma = buf.ptr;
+	unsigned int i, nbits;
 	__u64 attrs;
 
-	ma = (struct mount_attr *) get_writable_struct(sizeof(*ma));
 	if (!ma)
 		return;
-	memset(ma, 0, sizeof(*ma));
-
-	/* Build random attr_set (things to turn on). */
-	attrs = 0;
-	nbits = 1 + (rnd_modulo_u32(ARRAY_SIZE(mount_attrs)));
-	for (i = 0; i < nbits; i++)
-		attrs |= mount_attrs[rnd_modulo_u32(ARRAY_SIZE(mount_attrs))];
-	ma->attr_set = normalise_atime_bits(attrs);
-
-	/* Build random attr_clr (things to turn off) — non-overlapping with attr_set. */
-	attrs = 0;
-	nbits = rnd_modulo_u32(ARRAY_SIZE(mount_attrs));
-	for (i = 0; i < nbits; i++)
-		attrs |= mount_attrs[rnd_modulo_u32(ARRAY_SIZE(mount_attrs))];
-	ma->attr_clr = normalise_atime_bits(attrs) & ~ma->attr_set;
-
-	rec->a4 = (unsigned long) ma;
 
 	/*
-	 * usize bucket: pin to VER0 most of the time so the success path
-	 * stays warm, but also exercise the kernel's usize<VER0 reject,
-	 * future ABI growth (sizeof currently == VER0), and the oversized
-	 * copy_struct_from_user trailing-zero check.
+	 * mount_setattr has a separate usize syscall arg (a5); the
+	 * csfu-picked usize is planted there.  Per-field attr_set /
+	 * attr_clr population is gated on CSFU_BUCKET_EXACT -- the
+	 * kernel rejects on usize before reading any body field for the
+	 * non-exact buckets, and OVERSIZE_NONZERO / TAIL_MISMATCH need
+	 * their tail garbage preserved.  zmalloc_tracked() already
+	 * zeroed the buffer where the kernel cares to look.
 	 */
-	usize_pick = rnd_modulo_u32(10);
-	if (usize_pick < 1)
-		rec->a5 = MOUNT_ATTR_SIZE_VER0 - 8;
-	else if (usize_pick < 6)
-		rec->a5 = MOUNT_ATTR_SIZE_VER0;
-	else if (usize_pick < 9)
-		rec->a5 = sizeof(struct mount_attr);
-	else
-		rec->a5 = sizeof(struct mount_attr) + 64;
+	if (buf.bucket == CSFU_BUCKET_EXACT) {
+		/* Build random attr_set (things to turn on). */
+		attrs = 0;
+		nbits = 1 + (rnd_modulo_u32(ARRAY_SIZE(mount_attrs)));
+		for (i = 0; i < nbits; i++)
+			attrs |= mount_attrs[rnd_modulo_u32(ARRAY_SIZE(mount_attrs))];
+		ma->attr_set = normalise_atime_bits(attrs);
+
+		/* Build random attr_clr (things to turn off) — non-overlapping with attr_set. */
+		attrs = 0;
+		nbits = rnd_modulo_u32(ARRAY_SIZE(mount_attrs));
+		for (i = 0; i < nbits; i++)
+			attrs |= mount_attrs[rnd_modulo_u32(ARRAY_SIZE(mount_attrs))];
+		ma->attr_clr = normalise_atime_bits(attrs) & ~ma->attr_set;
+	}
+
+	rec->a4 = (unsigned long) ma;
+	rec->a5 = buf.usize;
+
+	/*
+	 * Hand the csfu buffer to the deferred-free queue at sanitise
+	 * time -- mount_setattr has no post handler, so this is the only
+	 * place the zmalloc_tracked() allocation gets released.
+	 */
+	deferred_free_enqueue(ma);
 }
 
 #ifndef AT_RECURSIVE
