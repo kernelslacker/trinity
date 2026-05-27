@@ -35,6 +35,8 @@ static void sanitise_getgroups(struct syscallrecord *rec)
  */
 static void post_getgroups(struct syscallrecord *rec)
 {
+	unsigned long retval = rec->retval;
+	long ret = (long) retval;
 	char *buf, *line, *eol;
 
 	/*
@@ -48,9 +50,9 @@ static void post_getgroups(struct syscallrecord *rec)
 	 * Reject before the ONE_IN(100) re-read oracle, which would
 	 * otherwise miss it 99% of the time.
 	 */
-	if (rec->retval != (unsigned long)-1L && rec->retval > 65536UL) {
+	if (retval != (unsigned long)-1L && retval > 65536UL) {
 		outputerr("post_getgroups: retval %ld outside [0, NGROUPS_MAX] and != -1UL\n",
-			  (long) rec->retval);
+			  ret);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		return;
 	}
@@ -58,7 +60,7 @@ static void post_getgroups(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		return;
 
-	if ((long) rec->retval < 0)
+	if (ret < 0)
 		return;
 
 	/* Dynamically-sized slurp: Groups: at NGROUPS_MAX is several hundred
@@ -88,9 +90,9 @@ static void post_getgroups(struct syscallrecord *rec)
 		     tok = strtok_r(NULL, " \t", &saveptr))
 			seen++;
 
-		if (seen != (int) rec->retval) {
+		if (seen != (int) ret) {
 			output(0, "groups oracle: /proc/self/status Groups: count %d but rec->retval was %ld\n",
-			       seen, (long) rec->retval);
+			       seen, ret);
 			__atomic_add_fetch(&shm->stats.getgroups_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}
