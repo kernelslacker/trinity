@@ -37,11 +37,13 @@ static unsigned long sched_policies[] = {
  */
 static void post_sched_get_priority_min(struct syscallrecord *rec)
 {
+	unsigned long retval = rec->retval;
+	long ret = (long) retval;
 	int got, expected;
 
 	if (!ONE_IN(100))
 		return;
-	if ((int) rec->retval == -1)
+	if ((int) ret == -1)
 		return;
 
 	switch ((int) rec->a1) {
@@ -67,7 +69,7 @@ static void post_sched_get_priority_min(struct syscallrecord *rec)
 		return;
 	}
 
-	got = (int) rec->retval;
+	got = (int) ret;
 	if (got != expected) {
 		output(0, "sched_get_priority_min oracle: policy=%d returned %d but expected %d\n",
 		       (int) rec->a1, got, expected);
