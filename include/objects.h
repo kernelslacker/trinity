@@ -128,6 +128,21 @@ struct pidfdobj {
 	pid_t pid;
 };
 
+/*
+ * Sparse file: ftruncate-extended to `size`, with a single page of data
+ * written at `data_offset` so the kernel sees exactly one data extent
+ * bracketed by holes.  Consumers that exercise SEEK_DATA / SEEK_HOLE
+ * read both fields to bias the syscall offset into the file so the
+ * per-fs sparse-walk code actually runs instead of bailing on
+ * pos >= i_size.
+ */
+struct sparsefileobj {
+	const char *filename;
+	int fd;
+	off_t size;
+	off_t data_offset;
+};
+
 struct mqobj {
 	int fd;
 	char name[24];	/* "/trin<pid>_<idx>\0" */
@@ -335,6 +350,8 @@ struct object {
 		struct pidfdobj pidfdobj;
 
 		struct mqobj mqobj;
+
+		struct sparsefileobj sparsefileobj;
 
 		struct seccomp_notifobj seccomp_notifobj;
 
