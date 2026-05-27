@@ -23,6 +23,7 @@
  *   dump_file defaults to "edgepair.dump"
  */
 
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -93,6 +94,24 @@ static void print_bar(unsigned long value, unsigned long max, int width)
 
 	for (i = 0; i < width; i++)
 		putchar(i < filled ? '#' : ' ');
+}
+
+static void analyze_identity(const struct edgepair_dump_header *hdr)
+{
+	printf("identity:\n");
+	printf("  magic           : 0x%08x\n", hdr->magic);
+	printf("  version         : %u\n", hdr->version);
+	printf("  table_size      : %u\n", hdr->table_size);
+	printf("  payload_crc32   : 0x%08x\n", hdr->payload_crc32);
+	printf("  total_pair_calls: %" PRIu64 "\n", hdr->total_pair_calls);
+	printf("  pairs_tracked   : %" PRIu64 "\n", hdr->pairs_tracked);
+	printf("  pairs_dropped   : %" PRIu64 "\n", hdr->pairs_dropped);
+	printf("  max_nr_syscall  : %u\n", hdr->max_nr_syscall);
+	printf("  biarch_mode     : %u\n", hdr->biarch_mode);
+	printf("  kallsyms_sha256 : ");
+	for (size_t i = 0; i < sizeof(hdr->kallsyms_sha256); i++)
+		printf("%02x", hdr->kallsyms_sha256[i]);
+	printf("\n\n");
 }
 
 static void analyze_utilization(const struct edgepair_shared *shm)
@@ -987,6 +1006,7 @@ int main(int argc, char *argv[])
 	fclose(f);
 
 	printf("edge_analyzer: %s\n\n", dump_file);
+	analyze_identity(&hdr);
 	analyze_utilization(shm);
 	analyze_collisions(shm);
 	analyze_top_pairs(shm, top_n);
