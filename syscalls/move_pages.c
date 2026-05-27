@@ -138,6 +138,7 @@ static const char *snap_field_label(unsigned long v)
 static void post_move_pages(struct syscallrecord *rec)
 {
 	struct move_pages_post_state *snap = (struct move_pages_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
 
 	rec->a3 = 0;
 	rec->a4 = 0;
@@ -204,7 +205,7 @@ static void post_move_pages(struct syscallrecord *rec)
 				  snap->status,
 				  snap_field_label((unsigned long) snap->status),
 				  snap->count,
-				  (unsigned long) rec->retval, n);
+				  retval, n);
 		}
 		deferred_freeptr(&rec->post_state);
 		return;
@@ -221,10 +222,9 @@ static void post_move_pages(struct syscallrecord *rec)
 	 * guards above, so fall through and still release the
 	 * page/node/status arrays via the unified release path below.
 	 */
-	if ((long) rec->retval != -1L &&
-	    (unsigned long) rec->retval > snap->count) {
+	if ((long) retval != -1L && retval > snap->count) {
 		outputerr("post_move_pages: retval %lu exceeds requested nr_pages %lu\n",
-			  (unsigned long) rec->retval, snap->count);
+			  retval, snap->count);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		/* fall through to release allocations */
 	}
