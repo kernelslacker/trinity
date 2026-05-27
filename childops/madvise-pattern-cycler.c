@@ -209,7 +209,8 @@ static sigjmp_buf madvise_cycler_pool_race_jmp;
 static volatile uintptr_t madvise_cycler_pool_race_addr_low;
 static volatile uintptr_t madvise_cycler_pool_race_addr_high;
 
-static void madvise_cycler_pool_race_handler(int sig, siginfo_t *info,
+static __attribute__((no_sanitize("address")))
+void madvise_cycler_pool_race_handler(int sig, siginfo_t *info,
 					     void *ctx)
 {
 	uintptr_t fault_addr;
