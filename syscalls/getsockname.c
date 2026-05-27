@@ -161,6 +161,7 @@ static void sanitise_getsockname(struct syscallrecord *rec)
 #ifdef HAVE_SYS_GETSOCKNAME
 static void post_getsockname(struct syscallrecord *rec)
 {
+	unsigned long retval = rec->retval;
 	struct getsockname_post_state *snap =
 		(struct getsockname_post_state *) rec->post_state;
 	struct sockaddr_storage first_addr;
@@ -234,9 +235,9 @@ static void post_getsockname(struct syscallrecord *rec)
 	 * would silently swallow a wild value 100% of the time, leaving the
 	 * corruption invisible.
 	 */
-	if (rec->retval != 0 && rec->retval != (unsigned long)-1L) {
+	if (retval != 0 && retval != (unsigned long)-1L) {
 		outputerr("post_getsockname: rejected returned status 0x%lx outside {0, -1UL} (kernel ABI violation)\n",
-			  rec->retval);
+			  retval);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -244,7 +245,7 @@ static void post_getsockname(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if ((long) rec->retval != 0)
+	if ((long) retval != 0)
 		goto out_free;
 
 	if (snap->usockaddr == 0 || snap->usockaddr_len == 0)
