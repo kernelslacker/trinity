@@ -15,6 +15,7 @@
 #include <errno.h>
 #include "cgroup.h"
 #include "child.h"
+#include "csfu.h"
 #include "fd-event.h"
 #include "maps.h"
 #include "objects.h"
@@ -1032,44 +1033,6 @@ static long long random_read_format(void)
 	return read_format;
 }
 
-static int random_attr_size(void) {
-
-	int size=0;
-
-	switch(rnd_modulo_u32(13)) {
-	case 0:	size = PERF_ATTR_SIZE_VER0;
-		break;
-	case 1: size = PERF_ATTR_SIZE_VER1;
-		break;
-	case 2: size = PERF_ATTR_SIZE_VER2;
-		break;
-	case 3: size = PERF_ATTR_SIZE_VER3;
-		break;
-	case 4: size = PERF_ATTR_SIZE_VER4;
-		break;
-	case 5: size = PERF_ATTR_SIZE_VER5;
-		break;
-	case 6: size = PERF_ATTR_SIZE_VER6;
-		break;
-	case 7: size = PERF_ATTR_SIZE_VER7;
-		break;
-	case 8: size = PERF_ATTR_SIZE_VER8;
-		break;
-	case 9: size = sizeof(struct perf_event_attr);
-		break;
-	case 10: size = rand32();
-		break;
-	case 11: size = get_len();
-		break;
-	case 12: size = 0;
-		break;
-	default:
-		break;
-	}
-
-	return size;
-}
-
 static long long random_branch_sample_type(void)
 {
 
@@ -1134,7 +1097,6 @@ static void create_mostly_valid_counting_event(struct perf_event_attr *attr,
 {
 
 	attr->type = random_event_type();
-	attr->size = random_attr_size();
 	attr->config = random_event_config(&attr->type,
 					&attr->config1,
 					&attr->config2);
@@ -1211,7 +1173,6 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 {
 
 	attr->type = random_event_type();
-	attr->size = random_attr_size();
 	attr->config = random_event_config(&attr->type,
 					&attr->config1,
 					&attr->config2);
@@ -1329,7 +1290,6 @@ static void create_mostly_valid_global_event(struct perf_event_attr *attr,
 {
 
 	attr->type = random_event_type();
-	attr->size = random_attr_size();
 	attr->config = random_event_config(&attr->type,
 					&attr->config1,
 					&attr->config2);
@@ -1352,8 +1312,6 @@ static void create_random_event(struct perf_event_attr *attr)
 {
 
 	attr->type = random_event_type();
-
-	attr->size = random_attr_size();
 
 	attr->config = random_event_config(&attr->type,
 					&attr->config1,
@@ -1419,28 +1377,84 @@ static void create_random_event(struct perf_event_attr *attr)
 
 }
 
+#ifndef PERF_ATTR_SIZE_VER0
+#define PERF_ATTR_SIZE_VER0	64
+#endif
+#ifndef PERF_ATTR_SIZE_VER1
+#define PERF_ATTR_SIZE_VER1	72
+#endif
+#ifndef PERF_ATTR_SIZE_VER2
+#define PERF_ATTR_SIZE_VER2	80
+#endif
+#ifndef PERF_ATTR_SIZE_VER3
+#define PERF_ATTR_SIZE_VER3	96
+#endif
+#ifndef PERF_ATTR_SIZE_VER4
+#define PERF_ATTR_SIZE_VER4	104
+#endif
+#ifndef PERF_ATTR_SIZE_VER5
+#define PERF_ATTR_SIZE_VER5	112
+#endif
+#ifndef PERF_ATTR_SIZE_VER6
+#define PERF_ATTR_SIZE_VER6	120
+#endif
+#ifndef PERF_ATTR_SIZE_VER7
+#define PERF_ATTR_SIZE_VER7	128
+#endif
+#ifndef PERF_ATTR_SIZE_VER8
+#define PERF_ATTR_SIZE_VER8	136
+#endif
+
+/*
+ * Pre-ksize ABI floors for the csfu UNDERSIZE bucket.  The kernel
+ * accepts a perf_event_open call whose attr->size matches any prior
+ * ABI version and zero-pads the remainder.  build_csfu_struct()
+ * draws uniformly from this pool for UNDERSIZE; PERF_ATTR_SIZE_VER8
+ * equals sizeof(struct perf_event_attr) on a current kernel and is
+ * kept in the pool so the table stays self-documenting and remains
+ * correct once the kernel grows a VER9.
+ */
+static const size_t perf_event_attr_known_sizes[] = {
+	PERF_ATTR_SIZE_VER0,
+	PERF_ATTR_SIZE_VER1,
+	PERF_ATTR_SIZE_VER2,
+	PERF_ATTR_SIZE_VER3,
+	PERF_ATTR_SIZE_VER4,
+	PERF_ATTR_SIZE_VER5,
+	PERF_ATTR_SIZE_VER6,
+	PERF_ATTR_SIZE_VER7,
+	PERF_ATTR_SIZE_VER8,
+};
+
+static const struct csfu_desc desc_perf_event_attr = {
+	.name = "perf_event_attr",
+	.ksize = sizeof(struct perf_event_attr),
+	.known_sizes = perf_event_attr_known_sizes,
+	.n_known_sizes = ARRAY_SIZE(perf_event_attr_known_sizes),
+};
+
 void sanitise_perf_event_open(struct syscallrecord *rec)
 {
-	struct perf_event_attr *attr;
+	struct csfu_buf buf = build_csfu_struct(&desc_perf_event_attr);
+	struct perf_event_attr *attr = buf.ptr;
 	unsigned long flags;
 	pid_t pid;
-	int group_leader=0;
-	void *addr;
+	int group_leader = 0;
+
+	if (!attr)
+		return;
 
 	/*
-	 * Allocate PAGE_SIZE: random_attr_size() can set attr->size to any
-	 * PERF_ATTR_SIZE_VER constant, sizeof(struct perf_event_attr),
-	 * rand32(), or get_len().  The kernel's perf_copy_attr() rejects
-	 * size > PAGE_SIZE with -E2BIG, but happily copies any value up to
-	 * and including PAGE_SIZE bytes from this pointer.  Smaller
-	 * allocations under-feed copy_struct_from_user() and surface as
-	 * unaddressable reads in valgrind / heap corruption in production.
-	 * PAGE_SIZE matches the kernel's own upper bound, so any size the
-	 * kernel will actually try to copy stays within our buffer.
+	 * perf_event_open has no separate usize syscall arg; the kernel
+	 * pulls attr->size out of the user buffer itself and drives
+	 * copy_struct_from_user against that.  Plant the csfu-picked
+	 * usize here so the validator gets exercised across all five
+	 * bucket shapes instead of the open-coded VER0..VER8 + raw
+	 * garbage roll that used to live in random_attr_size().
 	 */
-	addr = zmalloc_tracked(page_size);
-	rec->a1 = (unsigned long) addr;
-	attr = (struct perf_event_attr *) addr;
+	attr->size = buf.usize;
+
+	rec->a1 = (unsigned long) attr;
 
 	/*
 	 * Hand the snap to the deferred-free queue at sanitise time so cleanup
@@ -1448,7 +1462,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	 * reject_corrupt_retfd() flags retfd, handle_syscall_ret() skips .post
 	 * entirely, and a post-side free would leak the snap.
 	 */
-	deferred_free_enqueue(addr);
+	deferred_free_enqueue(attr);
 
 	/* cpu */
 	/* requires ROOT to select specific CPU if pid==-1 (all processes) */
@@ -1534,25 +1548,34 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	}
 	rec->a2 = pid;
 
-	/* set up attr structure */
-	switch (rnd_modulo_u32(4)) {
-	case 0:
-		create_mostly_valid_counting_event(attr,group_leader);
-		break;
-	case 1:
-		create_mostly_valid_sampling_event(attr,group_leader);
-		break;
-	case 2:
-		create_mostly_valid_global_event(attr,group_leader);
-		break;
-	case 3:
-		create_random_event(attr);
-		break;
-	default:
-		break;
+	/*
+	 * Non-EXACT buckets exercise the size validator only -- the
+	 * kernel rejects on attr->size before reading any body field,
+	 * and OVERSIZE_NONZERO / TAIL_MISMATCH need their tail garbage
+	 * preserved.  Skip the structured fill on those paths; the
+	 * zmalloc_tracked() buffer is already zeroed where the kernel
+	 * cares to look.
+	 */
+	if (buf.bucket == CSFU_BUCKET_EXACT) {
+		switch (rnd_modulo_u32(4)) {
+		case 0:
+			create_mostly_valid_counting_event(attr, group_leader);
+			break;
+		case 1:
+			create_mostly_valid_sampling_event(attr, group_leader);
+			break;
+		case 2:
+			create_mostly_valid_global_event(attr, group_leader);
+			break;
+		case 3:
+			create_random_event(attr);
+			break;
+		default:
+			break;
+		}
 	}
 
-	avoid_shared_buffer_inout(&rec->a1, page_size);
+	avoid_shared_buffer_inout(&rec->a1, sizeof(struct perf_event_attr));
 }
 
 static void post_perf_event_open(struct syscallrecord *rec)
