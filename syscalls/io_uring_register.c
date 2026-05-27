@@ -1011,6 +1011,7 @@ static void post_io_uring_register(struct syscallrecord *rec)
 	struct io_uring_register_post_state *snap =
 		(struct io_uring_register_post_state *) rec->post_state;
 	unsigned long ret = rec->retval;
+	unsigned long a4 = rec->a4;
 
 	rec->a3 = 0;
 
@@ -1087,9 +1088,9 @@ static void post_io_uring_register(struct syscallrecord *rec)
 		switch (snap->opcode) {
 		case IORING_REGISTER_RING_FDS:
 		case IORING_UNREGISTER_RING_FDS:
-			if (ret > rec->a4) {
+			if (ret > a4) {
 				outputerr("post_io_uring_register: opcode=%u rejected count retval=0x%lx > nr_args=%lu\n",
-					  snap->opcode, ret, rec->a4);
+					  snap->opcode, ret, a4);
 				post_handler_corrupt_ptr_bump(rec, NULL);
 			}
 			break;
