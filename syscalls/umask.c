@@ -37,6 +37,7 @@
 static void post_umask(struct syscallrecord *rec)
 {
 	unsigned long retval = rec->retval;
+	unsigned long a1 = rec->a1;
 	char buf[2048];
 	char *line;
 	ssize_t n;
@@ -62,7 +63,7 @@ static void post_umask(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		return;
 
-	expected = (unsigned int) rec->a1 & 0777;
+	expected = (unsigned int) a1 & 0777;
 
 	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
 	 * thousands of times per second under fuzz, and stdio's per-call malloc
@@ -88,7 +89,7 @@ static void post_umask(struct syscallrecord *rec)
 		output(0, "umask oracle: syscall installed "
 		       "mask=%04o (from a1=%#lx) but "
 		       "/proc/self/status Umask: %04o\n",
-		       expected, (unsigned long) rec->a1, kumask);
+		       expected, a1, kumask);
 		__atomic_add_fetch(&shm->stats.umask_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
