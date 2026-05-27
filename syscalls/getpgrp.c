@@ -49,7 +49,7 @@ static void post_getpgrp(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		return;
 
-	got = (pid_t) rec->retval;
+	got = (pid_t) ret;
 
 	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
 	 * thousands of times per second under fuzz, and stdio's per-call malloc
