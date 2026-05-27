@@ -216,9 +216,10 @@ void kcov_init_global(void)
 	 */
 	kcov_shm = alloc_shared(sizeof(struct kcov_shared));
 	memset(kcov_shm, 0, sizeof(struct kcov_shared));
-	output(0, "KCOV: coverage collection enabled (%lu MB bucket-seen table, %u edges, %u buckets)\n",
+	output(0, "KCOV: coverage collection enabled (%lu MB bucket-seen table, %u edges, %u buckets; counters: distinct_edges=%lu, edges_found=%lu bucket-transitions)\n",
 		(unsigned long)KCOV_NUM_EDGES / (1024 * 1024),
-		KCOV_NUM_EDGES, KCOV_NUM_BUCKETS);
+		KCOV_NUM_EDGES, KCOV_NUM_BUCKETS,
+		kcov_shm->distinct_edges, kcov_shm->edges_found);
 
 	edgepair_init_global();
 }
@@ -885,6 +886,16 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr,
 				1, __ATOMIC_RELAXED);
 			edges_this_call++;
 			found_new = true;
+			/* old == 0 means no bucket bit was previously set
+			 * for this edge -- a true first sighting.  Bumping a
+			 * separate distinct_edges counter only on this
+			 * transition keeps the cardinality signal clean of
+			 * the bucket-bit churn that drives edges_found, so
+			 * the plateau detector can sample a delta that
+			 * actually falls to zero on flat runs. */
+			if (old == 0)
+				__atomic_fetch_add(&kcov_shm->distinct_edges,
+					1, __ATOMIC_RELAXED);
 		}
 
 		prev_edge = edge;
@@ -1034,7 +1045,14 @@ void kcov_plateau_check(void)
 		return;
 
 	now = time(NULL);
-	edges_now = __atomic_load_n(&kcov_shm->edges_found, __ATOMIC_RELAXED);
+	/* Sample distinct_edges, not edges_found.  edges_found increments on
+	 * every (edge, bucket) bit-flip including bucket churn on already-
+	 * known edges, so its per-window delta stays above threshold on flat
+	 * runs and the plateau detector never fires.  distinct_edges
+	 * increments once per edge (on bucket_seen[edge] == 0 -> first-bit)
+	 * so its delta reflects true new-code discovery and falls to zero
+	 * when the fuzzer is wedged. */
+	edges_now = __atomic_load_n(&kcov_shm->distinct_edges, __ATOMIC_RELAXED);
 
 	/* Arm the window on the first call so any pre-existing edge count
 	 * (e.g. from the warm-up phase before main_loop entry) is not
@@ -1151,7 +1169,14 @@ void kcov_plateau_check(void)
  *      build.
  */
 #define KCOV_BITMAP_FILE_MAGIC		0x4B434256U	/* "KCBV" */
-#define KCOV_BITMAP_FILE_VERSION	1U
+/* Version 2 adds distinct_edges to the header.  Files written by
+ * version 1 are rejected on load: distinct_edges cannot be reliably
+ * reconstructed from bucket_seen[] (a non-zero byte could be the
+ * result of a single first-bit transition or of multiple bucket
+ * transitions on the same edge across prior sessions), so a
+ * legacy-format file is treated as "no warm start available" and
+ * the run begins cold. */
+#define KCOV_BITMAP_FILE_VERSION	2U
 
 struct kcov_bitmap_file_header {
 	uint32_t magic;
@@ -1159,6 +1184,7 @@ struct kcov_bitmap_file_header {
 	uint32_t num_edges;
 	uint32_t num_buckets;
 	uint64_t edges_found;
+	uint64_t distinct_edges;
 	uint32_t payload_crc32;
 	uint32_t pad;
 	uint8_t  kallsyms_sha256[32];
@@ -1511,6 +1537,8 @@ bool kcov_bitmap_save_file(const char *path)
 	hdr.num_edges = KCOV_NUM_EDGES;
 	hdr.num_buckets = KCOV_NUM_BUCKETS;
 	hdr.edges_found = edges_now;
+	hdr.distinct_edges = __atomic_load_n(&kcov_shm->distinct_edges,
+					     __ATOMIC_RELAXED);
 	hdr.payload_crc32 = kcov_bitmap_crc32(kcov_shm->bucket_seen,
 					      KCOV_NUM_EDGES);
 
@@ -1652,6 +1680,8 @@ bool kcov_bitmap_load_file(const char *path)
 	free(scratch);
 	__atomic_store_n(&kcov_shm->edges_found, hdr.edges_found,
 			 __ATOMIC_RELAXED);
+	__atomic_store_n(&kcov_shm->distinct_edges, hdr.distinct_edges,
+			 __ATOMIC_RELAXED);
 	/* Snapshot the warm-loaded count so print_stats() can split
 	 * displayed coverage into the warm-vs-cold contribution.  Set
 	 * exactly here — after the bitmap + edges_found are in place and
@@ -1660,11 +1690,14 @@ bool kcov_bitmap_load_file(const char *path)
 	 * count of edges this run actually discovered itself. */
 	__atomic_store_n(&kcov_shm->edges_warm_loaded, hdr.edges_found,
 			 __ATOMIC_RELAXED);
+	__atomic_store_n(&kcov_shm->distinct_edges_warm_loaded,
+			 hdr.distinct_edges, __ATOMIC_RELAXED);
 	/* Seed the dirty-bit baseline so a load-then-immediate-exit cycle
 	 * skips the redundant end-of-run save. */
 	kcov_bitmap_edges_at_last_save = hdr.edges_found;
-	output(0, "kcov-bitmap: loaded %lu edges from %s\n",
-	       (unsigned long)hdr.edges_found, path);
+	output(0, "kcov-bitmap: loaded %lu edges (%lu distinct) from %s\n",
+	       (unsigned long)hdr.edges_found,
+	       (unsigned long)hdr.distinct_edges, path);
 	return true;
 }
 

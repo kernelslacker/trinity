@@ -267,7 +267,24 @@ struct kcov_shared {
 	 * never-seen bucket bit is the "new coverage" signal that drives the
 	 * minicorpus, edgepair, and mutator-attribution feedback loops. */
 	unsigned char bucket_seen[KCOV_NUM_EDGES];
+	/* Count of (edge, bucket) bit-flips ever observed.  Since the
+	 * bucket-seen table was introduced this is NOT the count of distinct
+	 * edges -- a re-hit of a known edge that lands in a previously-unseen
+	 * hit-count bucket bumps this counter, so it conflates "new code
+	 * reached" with "known code reached at a new iteration depth".  Kept
+	 * as the fine-grained feedback signal for the minicorpus / mutator-
+	 * attribution / edgepair consumers that want every novel bucket
+	 * transition to register.  For the cardinality of edges ever reached
+	 * -- the signal the coverage-plateau detector needs -- read
+	 * distinct_edges below instead. */
 	unsigned long edges_found;
+	/* Count of distinct edges ever seen in any bucket: incremented exactly
+	 * once per edge, on the bucket_seen[edge] == 0 -> first-bit transition
+	 * in kcov_collect().  This is the true "new code reached" signal and
+	 * the one the plateau detector samples; edges_found above grows with
+	 * bucket churn on already-known edges and so its delta never falls to
+	 * zero even when no new code is being reached. */
+	unsigned long distinct_edges;
 	/* Count of edges seeded into bucket_seen[] / edges_found by the
 	 * warm-start cache loader at startup.  Zero on a cold-start run
 	 * (no cache file, version/fingerprint mismatch, CRC failure, etc.).
@@ -278,6 +295,12 @@ struct kcov_shared {
 	 * corpus ceiling" from "plateau after genuinely exhausting easy
 	 * edges this run". */
 	unsigned long edges_warm_loaded;
+	/* Mirror of edges_warm_loaded for the distinct_edges counter.
+	 * Snapshotted to distinct_edges at warm-start load so a later
+	 * (distinct_edges - distinct_edges_warm_loaded) subtraction is the
+	 * count of truly new edges this process has discovered itself.
+	 * Zero on a cold-start run. */
+	unsigned long distinct_edges_warm_loaded;
 	unsigned long total_pcs;
 	unsigned long total_calls;
 	unsigned long remote_calls;	/* calls using KCOV_REMOTE_ENABLE */
