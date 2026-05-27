@@ -399,6 +399,16 @@ struct childdata {
 	unsigned long local_post_handler_corrupt_ptr;
 	unsigned long local_scribbled_slots_caught;
 
+	/* Rate limiter for the OBJ_LOCAL ANON pool lazy top-up in
+	 * get_map_handle().  Bumped on every draw exhaustion; once it
+	 * reaches MAPS_LOCAL_REFILL_PERIOD we re-clone the OBJ_GLOBAL
+	 * ANON snapshot into the child's OBJ_LOCAL pool and zero the
+	 * counter again.  Per-child so the cost is bounded regardless
+	 * of fleet width.  Reset in clean_childdata so a slot's fresh
+	 * occupant does not inherit the previous child's near-trigger
+	 * state. */
+	unsigned int maps_local_refill_credit;
+
 	/* Sliding-window state for the per-child storm-rate check.
 	 * storm_check_last_time is the monotonic timestamp at which the
 	 * three local_* counters above last passed the rate gate (or the

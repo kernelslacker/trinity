@@ -16,6 +16,17 @@
 #include "utils.h"
 
 /*
+ * Trigger threshold for the OBJ_LOCAL ANON lazy refill in
+ * get_map_handle().  Post fork-time seed (init_child_mappings) the
+ * pool starts populated, so steady-state exhaustion should be rare;
+ * 64 leaves headroom for short bursts without re-walking the global
+ * snapshot on every drained pick.
+ */
+#define MAPS_LOCAL_REFILL_PERIOD	64u
+
+static void clone_global_mmap_pool(enum objecttype type);
+
+/*
  * Populate a handle for a randomly-picked entry in the
  * OBJ_MMAP_ANON / OBJ_MMAP_FILE / OBJ_MMAP_TESTFILE pools.  Same
  * pick-and-deref flow as get_map() (heap-range guard, size guard);
@@ -129,6 +140,30 @@ bool get_map_handle(struct map_handle *h)
 		h->type = type;
 		h->scope = scope;
 		return true;
+	}
+
+	/*
+	 * Lazy top-up.  Under sustained ARG_ADDRESS pressure the per-
+	 * child OBJ_LOCAL ANON pool can drain entries faster than
+	 * post_mmap refills it (entries leave on every munmap that hits
+	 * an INITIAL_ANON or CHILD_ANON slot).  Re-cloning the
+	 * OBJ_GLOBAL ANON snapshot here gives the next draw live
+	 * entries to pick from instead of the consumer falling through
+	 * to its NULL/EFAULT path on every ARG_ADDRESS slot.
+	 *
+	 * Rate-limited to once per MAPS_LOCAL_REFILL_PERIOD exhaustion
+	 * events per child so the (re-walk-the-global-pool, strdup
+	 * every name) cost stays bounded.  FILE/TESTFILE are
+	 * deliberately not topped up here: their OBJ_GLOBAL sources
+	 * can also drain (mmap_fd is the only producer for FILE; the
+	 * testfiles seed runs once at startup for TESTFILE), so the
+	 * fork-time seed is the right warm-up for those pools.
+	 */
+	if (scope == OBJ_LOCAL && child != NULL) {
+		if (++child->maps_local_refill_credit >= MAPS_LOCAL_REFILL_PERIOD) {
+			child->maps_local_refill_credit = 0;
+			clone_global_mmap_pool(OBJ_MMAP_ANON);
+		}
 	}
 
 	__atomic_add_fetch(&shm->stats.maps_pool_draw_exhausted, 1, __ATOMIC_RELAXED);

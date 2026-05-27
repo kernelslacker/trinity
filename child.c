@@ -409,6 +409,7 @@ void clean_childdata(struct childdata *child)
 	 * rate against the previous occupant of this slot. */
 	child->local_post_handler_corrupt_ptr = 0;
 	child->local_scribbled_slots_caught = 0;
+	child->maps_local_refill_credit = 0;
 	child->storm_check_last_time = child->tp;
 	child->storm_check_last_post_handler = 0;
 	child->storm_check_last_scribbled = 0;
