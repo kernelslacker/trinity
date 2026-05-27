@@ -426,6 +426,8 @@ static void post_prctl(struct syscallrecord *rec)
 		return;
 	}
 
+	unsigned long retval = rec->retval;
+
 	switch (snap->option) {
 	case PR_SET_SECCOMP:
 		bpf = snap->bpf;
@@ -445,7 +447,7 @@ static void post_prctl(struct syscallrecord *rec)
 		 * security-critical task flag — this is the bit that gates
 		 * suid-binary execve and seccomp filter installation.
 		 */
-		if ((long) rec->retval != 0)
+		if ((long) retval != 0)
 			break;
 		if (!ONE_IN(20))
 			break;
@@ -468,7 +470,7 @@ static void post_prctl(struct syscallrecord *rec)
 		 */
 		char readback[16] = { 0 };
 
-		if ((long) rec->retval != 0)
+		if ((long) retval != 0)
 			break;
 		if (!ONE_IN(20))
 			break;
@@ -489,7 +491,7 @@ static void post_prctl(struct syscallrecord *rec)
 		 * or SUID_DUMP_USER (1); a successful SET means the kernel
 		 * stored that value.  PR_GET_DUMPABLE must read it back.
 		 */
-		if ((long) rec->retval != 0)
+		if ((long) retval != 0)
 			break;
 		if (!ONE_IN(20))
 			break;
@@ -509,7 +511,7 @@ static void post_prctl(struct syscallrecord *rec)
 		 * SET means the kernel stored that single bit;
 		 * PR_GET_KEEPCAPS must read it back.
 		 */
-		if ((long) rec->retval != 0)
+		if ((long) retval != 0)
 			break;
 		if (!ONE_IN(20))
 			break;
@@ -531,7 +533,7 @@ static void post_prctl(struct syscallrecord *rec)
 		 */
 		int sig = -1;
 
-		if ((long) rec->retval != 0)
+		if ((long) retval != 0)
 			break;
 		if (!ONE_IN(20))
 			break;
@@ -554,9 +556,9 @@ static void post_prctl(struct syscallrecord *rec)
 		 * 0/-1.  Anything else on the return path is a -errno leak
 		 * or a copy_to_user retval tear bleeding into the slot.
 		 */
-		if (rec->retval != 0 && rec->retval != (unsigned long)-1L) {
+		if (retval != 0 && retval != (unsigned long)-1L) {
 			output(0, "post_prctl: rejected PR_GET_PDEATHSIG retval 0x%lx outside {0, -1}\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 		}
 		break;
@@ -567,9 +569,9 @@ static void post_prctl(struct syscallrecord *rec)
 		 * value 0 or 1.  A larger value is a torn read of the cred
 		 * flags word or a dispatch into the wrong getter.
 		 */
-		if (rec->retval > 1UL && rec->retval != (unsigned long)-1L) {
+		if (retval > 1UL && retval != (unsigned long)-1L) {
 			output(0, "post_prctl: rejected PR_GET_KEEPCAPS retval 0x%lx outside {0, 1, -1}\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 		}
 		break;
@@ -581,9 +583,9 @@ static void post_prctl(struct syscallrecord *rec)
 		 * A larger value is a torn read of mm_struct->flags or a leak
 		 * of the upper MMF_* bits past the dumpable mask.
 		 */
-		if (rec->retval > 2UL && rec->retval != (unsigned long)-1L) {
+		if (retval > 2UL && retval != (unsigned long)-1L) {
 			output(0, "post_prctl: rejected PR_GET_DUMPABLE retval 0x%lx outside {0, 1, 2, -1}\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 		}
 		break;
@@ -595,9 +597,9 @@ static void post_prctl(struct syscallrecord *rec)
 		 * is a -errno leak or a bytes-copied count bleeding into the
 		 * slot from a wrong copy_to_user dispatch.
 		 */
-		if (rec->retval != 0 && rec->retval != (unsigned long)-1L) {
+		if (retval != 0 && retval != (unsigned long)-1L) {
 			output(0, "post_prctl: rejected PR_GET_NAME retval 0x%lx outside {0, -1}\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 		}
 		break;
@@ -608,9 +610,9 @@ static void post_prctl(struct syscallrecord *rec)
 		 * value 0 or 1.  A larger value is silent corruption of a
 		 * security-critical task flag (suid-binary execve gating).
 		 */
-		if (rec->retval > 1UL && rec->retval != (unsigned long)-1L) {
+		if (retval > 1UL && retval != (unsigned long)-1L) {
 			output(0, "post_prctl: rejected PR_GET_NO_NEW_PRIVS retval 0x%lx outside {0, 1, -1}\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 		}
 		break;
@@ -622,9 +624,9 @@ static void post_prctl(struct syscallrecord *rec)
 		 * torn read of the kernel_cap_t bitmask or a leak of the
 		 * underlying word past the queried bit.
 		 */
-		if (rec->retval > 1UL && rec->retval != (unsigned long)-1L) {
+		if (retval > 1UL && retval != (unsigned long)-1L) {
 			output(0, "post_prctl: rejected PR_CAPBSET_READ retval 0x%lx outside {0, 1, -1}\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 		}
 		break;
@@ -635,9 +637,9 @@ static void post_prctl(struct syscallrecord *rec)
 		 * PR_TIMING_TIMESTAMP (1).  Anything else is a torn read of
 		 * the timing mode or a dispatch into the wrong getter.
 		 */
-		if (rec->retval > 1UL && rec->retval != (unsigned long)-1L) {
+		if (retval > 1UL && retval != (unsigned long)-1L) {
 			output(0, "post_prctl: rejected PR_GET_TIMING retval 0x%lx outside {STATISTICAL, TIMESTAMP, -1}\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 		}
 		break;
@@ -650,9 +652,9 @@ static void post_prctl(struct syscallrecord *rec)
 		 * Anything above 0xff is a sign-extension tear or a leak of
 		 * upper bits from the source field.
 		 */
-		if (rec->retval > 0xffUL && rec->retval != (unsigned long)-1L) {
+		if (retval > 0xffUL && retval != (unsigned long)-1L) {
 			output(0, "post_prctl: rejected PR_GET_FP{EXC,EMU} retval 0x%lx above byte-wide bitmask\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 		}
 		break;
@@ -665,10 +667,10 @@ static void post_prctl(struct syscallrecord *rec)
 		 * value is a torn read of thread->flags or a dispatch into
 		 * the wrong getter.
 		 */
-		if (rec->retval != 1UL && rec->retval != 2UL &&
-		    rec->retval != (unsigned long)-1L) {
+		if (retval != 1UL && retval != 2UL &&
+		    retval != (unsigned long)-1L) {
 			output(0, "post_prctl: rejected PR_GET_TSC retval 0x%lx outside {ENABLE, SIGSEGV, -1}\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 		}
 		break;
@@ -680,9 +682,9 @@ static void post_prctl(struct syscallrecord *rec)
 		 * read of mm_struct->flags or a leak of adjacent MMF_* bits
 		 * past the THP-disable mask.
 		 */
-		if (rec->retval > 1UL && rec->retval != (unsigned long)-1L) {
+		if (retval > 1UL && retval != (unsigned long)-1L) {
 			output(0, "post_prctl: rejected PR_GET_THP_DISABLE retval 0x%lx outside {0, 1, -1}\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 		}
 		break;
@@ -693,9 +695,9 @@ static void post_prctl(struct syscallrecord *rec)
 		 * single bit, value 0 or 1.  A larger value is a torn read
 		 * of signal_struct or a dispatch into the wrong getter.
 		 */
-		if (rec->retval > 1UL && rec->retval != (unsigned long)-1L) {
+		if (retval > 1UL && retval != (unsigned long)-1L) {
 			output(0, "post_prctl: rejected PR_GET_CHILD_SUBREAPER retval 0x%lx outside {0, 1, -1}\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 		}
 		break;
@@ -708,9 +710,9 @@ static void post_prctl(struct syscallrecord *rec)
 		 * corruption of a security-critical task field that gates
 		 * filter installation and syscall dispatch.
 		 */
-		if (rec->retval > 2UL && rec->retval != (unsigned long)-1L) {
+		if (retval > 2UL && retval != (unsigned long)-1L) {
 			output(0, "post_prctl: rejected PR_GET_SECCOMP retval 0x%lx outside {DISABLED, STRICT, FILTER, -1}\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 		}
 		break;
