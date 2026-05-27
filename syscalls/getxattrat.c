@@ -4,6 +4,7 @@
  *		struct xattr_args __user *, uargs, size_t, usize)
  */
 #include "arch.h"
+#include "csfu.h"
 #include "deferred-free.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -13,6 +14,24 @@
 #include "compat.h"
 #ifdef USE_XATTR_ARGS
 #include <linux/xattr.h>
+
+/*
+ * Single-version ABI today: struct xattr_args has only one
+ * published layout, so there is no pre-ksize ABI floor to seed the
+ * UNDERSIZE bucket from.  The current ksize is kept in
+ * known_sizes[] so the table stays self-documenting and remains
+ * correct if the kernel ever grows a VER1.
+ */
+static const size_t getxattrat_known_sizes[] = {
+	sizeof(struct xattr_args),
+};
+
+static const struct csfu_desc desc_getxattrat = {
+	.name = "xattr_args",
+	.ksize = sizeof(struct xattr_args),
+	.known_sizes = getxattrat_known_sizes,
+	.n_known_sizes = ARRAY_SIZE(getxattrat_known_sizes),
+};
 #endif
 
 /*
@@ -41,26 +60,46 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
 
 #ifdef USE_XATTR_ARGS
 	{
-		struct xattr_args *args;
-		void *value;
+		struct csfu_buf buf = build_csfu_struct(&desc_getxattrat);
+		struct xattr_args *args = buf.ptr;
 
-		args = (struct xattr_args *) get_writable_struct(sizeof(*args));
 		if (!args)
 			return;
-		value = get_writable_struct(256);
-		if (!value)
-			return;
-		args->value = (unsigned long) value;
-		args->size = 256;
-		args->flags = 0;
+
+		/*
+		 * Hand the csfu buffer to the deferred-free queue up front
+		 * so the value-buffer allocation failure path below cannot
+		 * leak it.
+		 */
+		deferred_free_enqueue(args);
+
+		/*
+		 * Non-EXACT buckets get rejected on size by the validator
+		 * before the kernel reads any body field, so populating
+		 * args->value / size / flags (and allocating the value
+		 * sub-buffer they reference) is wasted work.  The
+		 * zmalloc_tracked() buffer is already zeroed where the
+		 * kernel cares to look.  The post-handler snap is only
+		 * meaningful when the kernel actually wrote into the
+		 * value buffer, which only happens on EXACT.
+		 */
+		if (buf.bucket == CSFU_BUCKET_EXACT) {
+			void *value = get_writable_struct(256);
+			if (!value)
+				return;
+			args->value = (unsigned long) value;
+			args->size = 256;
+			args->flags = 0;
+
+			snap = zmalloc_tracked(sizeof(*snap));
+			snap->magic = GETXATTRAT_POST_STATE_MAGIC;
+			snap->size = args->size;
+			rec->post_state = (unsigned long) snap;
+		}
+
 		rec->a5 = (unsigned long) args;
 		avoid_shared_buffer_inout(&rec->a5, sizeof(struct xattr_args));
-		rec->a6 = sizeof(*args);
-
-		snap = zmalloc_tracked(sizeof(*snap));
-		snap->magic = GETXATTRAT_POST_STATE_MAGIC;
-		snap->size = args->size;
-		rec->post_state = (unsigned long) snap;
+		rec->a6 = buf.usize;
 	}
 #else
 	avoid_shared_buffer_out(&rec->a5, page_size);
