@@ -128,6 +128,7 @@ static void post_poll(struct syscallrecord *rec)
 {
 	void *ufds = (void *) rec->post_state;
 	unsigned long nfds = rec->a2;
+	unsigned long retval = rec->retval;
 
 	/*
 	 * Kernel ABI: poll(2) on success returns the count of fds with
@@ -141,9 +142,9 @@ static void post_poll(struct syscallrecord *rec)
 	 * pointer is NULL or scribbled; fall through to the existing free
 	 * path so the heap allocation is still released.
 	 */
-	if (rec->retval != (unsigned long)-1L && rec->retval > nfds) {
+	if (retval != (unsigned long)-1L && retval > nfds) {
 		outputerr("post_poll: retval %ld outside [0, %lu] and != -1UL\n",
-			  (long) rec->retval, nfds);
+			  (long) retval, nfds);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 
@@ -264,6 +265,7 @@ static void post_ppoll(struct syscallrecord *rec)
 {
 	struct ppoll_post_state *snap = (struct ppoll_post_state *) rec->post_state;
 	unsigned long nfds = rec->a2;
+	unsigned long retval = rec->retval;
 
 	/*
 	 * Kernel ABI: ppoll(2) on success returns the count of fds with
@@ -278,9 +280,9 @@ static void post_ppoll(struct syscallrecord *rec)
 	 * still runs against any retval shape so the heap allocations are
 	 * freed either way.
 	 */
-	if (rec->retval != (unsigned long)-1L && rec->retval > nfds) {
+	if (retval != (unsigned long)-1L && retval > nfds) {
 		outputerr("post_ppoll: retval %ld outside [0, %lu] and != -1UL\n",
-			  (long) rec->retval, nfds);
+			  (long) retval, nfds);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 
