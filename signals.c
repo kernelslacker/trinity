@@ -58,7 +58,8 @@ static void sigint_handler(__unused__ int sig, siginfo_t *info, __unused__ void 
 	}
 }
 
-static void sighandler(int sig)
+static __attribute__((no_sanitize("address")))
+void sighandler(int sig)
 {
 	/* Every signal except SIGALRM, SIGXCPU, and those handled
 	 * separately (SIGINT, SIGCHLD, etc.) exits the child. */
