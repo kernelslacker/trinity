@@ -226,6 +226,7 @@ void reap_child(struct childdata *child, int childno)
 	if (pid == EMPTY_PIDSLOT)
 		return;
 	child->tp = (struct timespec){ .tv_sec = 0, .tv_nsec = 0 };
+	child->kill_in_flight = false;
 	force_bust_lock(&child->syscall.lock);
 
 	unsigned int cur;
@@ -525,9 +526,9 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 	/* Always-on kill diag: the caller is about to SIGKILL this child,
 	 * and without this line non-debug runs just see a child vanish.
 	 * The expensive fd walk and /proc stack dump below stay gated. */
-	outputerr("watchdog: kill pid:%d childno:%d nr:%u cmd:%s state:%d rec:%p\n",
+	outputerr("watchdog: kill pid:%d childno:%d nr:%u cmd:%s state:%d\n",
 		  pid, childno, callno,
-		  entry ? entry->name : "?", state, rec);
+		  entry ? entry->name : "?", state);
 
 	if (shm->debug == false)
 		return;
@@ -857,15 +858,18 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	if (state == 'D') {
 		kill_pid(pid);
 		child->kill_count++;
+		child->kill_in_flight = true;
 		return false;
 	}
 
 	/* After 30 seconds of no progress, send a kill signal. */
 	if (diff >= 30) {
-		stuck_syscall_info(child, childno);
+		if (!child->kill_in_flight)
+			stuck_syscall_info(child, childno);
 		debugf("child %d (pid %u) hasn't made progress in 30 seconds! Sending SIGKILL\n",
 				childno, pid);
 		child->kill_count++;
+		child->kill_in_flight = true;
 		kill_pid(pid);
 	}
 

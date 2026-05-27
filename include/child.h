@@ -341,6 +341,13 @@ struct childdata {
 
 	unsigned char kill_count;
 
+	/* Set when the watchdog sends a SIGKILL to a stuck child; cleared
+	 * on reap.  Suppresses the per-cycle re-print of the kill banner
+	 * (and the stuck-syscall dump that produces it) while the kill is
+	 * in flight — without this, is_child_making_progress's ~25 ms poll
+	 * re-fires the banner every cycle until kill_count saturates. */
+	bool kill_in_flight;
+
 	bool dontkillme;	/* provide temporary protection from the reaper. */
 
 	bool dropped_privs;

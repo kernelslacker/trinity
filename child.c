@@ -376,6 +376,7 @@ void clean_childdata(struct childdata *child)
 	memset(&child->syscall, 0, sizeof(struct syscallrecord));
 	child->seed = 0;
 	child->kill_count = 0;
+	child->kill_in_flight = false;
 	child->dontkillme = false;
 	child->xcpu_count = 0;
 	child->op_nr = 0;
