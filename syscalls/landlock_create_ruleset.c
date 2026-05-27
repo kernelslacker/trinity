@@ -4,7 +4,8 @@
  *                const size_t, size, const __u32, flags)
  */
 #include <linux/landlock.h>
-#include <string.h>
+#include "csfu.h"
+#include "deferred-free.h"
 #include "publish_resource.h"
 #include "random.h"
 #include "rnd.h"
@@ -96,29 +97,33 @@ static __u64 random_mask(const __u64 *bits, unsigned int n)
 }
 
 /*
- * Sized large enough to comfortably hold any plausible future
- * ABI-version growth of struct landlock_ruleset_attr (currently 24
- * bytes at ABI v6).  Anything past the kernel-known prefix must be
- * zero or the kernel returns -E2BIG.
+ * Pre-ksize ABI floors for the csfu UNDERSIZE bucket.  Each value is
+ * the size of a published struct landlock_ruleset_attr layout:
+ *   8  -- ABI v1, handled_access_fs only
+ *   16 -- ABI v4, + handled_access_net
+ *   24 -- ABI v6, + scoped
+ * build_csfu_struct() draws uniformly from this pool for UNDERSIZE;
+ * the EXACT bucket already covers sizeof(struct landlock_ruleset_attr),
+ * so the current ksize is not repeated here.
  */
-#define LANDLOCK_ATTR_BUF_SIZE 64
-
-/* Recognised attr sizes across published Landlock ABI versions. */
 static const size_t landlock_known_sizes[] = {
-	8,	/* ABI v1: handled_access_fs only */
-	16,	/* ABI v4: + handled_access_net */
-	24,	/* ABI v6: + scoped */
+	8,
+	16,
+	24,
+};
+
+static const struct csfu_desc desc_landlock_create_ruleset = {
+	.name = "landlock_ruleset_attr",
+	.ksize = sizeof(struct landlock_ruleset_attr),
+	.known_sizes = landlock_known_sizes,
+	.n_known_sizes = ARRAY_SIZE(landlock_known_sizes),
 };
 
 static void sanitise_landlock_create_ruleset(struct syscallrecord *rec)
 {
-	struct landlock_ruleset_attr *attr;
-	unsigned int sizepick, flagpick;
-
-	attr = (struct landlock_ruleset_attr *) get_writable_address(LANDLOCK_ATTR_BUF_SIZE);
-	if (attr == NULL)
-		return;
-	memset(attr, 0, LANDLOCK_ATTR_BUF_SIZE);
+	struct csfu_buf buf = build_csfu_struct(&desc_landlock_create_ruleset);
+	struct landlock_ruleset_attr *attr = buf.ptr;
+	unsigned int flagpick;
 
 	attr->handled_access_fs = random_mask(landlock_access_fs_bits,
 					      ARRAY_SIZE(landlock_access_fs_bits));
@@ -130,29 +135,7 @@ static void sanitise_landlock_create_ruleset(struct syscallrecord *rec)
 					   ARRAY_SIZE(landlock_scope_bits));
 
 	rec->a1 = (unsigned long) attr;
-
-	/*
-	 * Size distribution:
-	 *   70% exact sizeof(*attr) -- the current ABI version
-	 *   20% a smaller known ABI-version size (8 or 16 -- the trailing
-	 *       fields are ignored on those kernels)
-	 *    5% oversized (kernel checks trailing bytes are zero;
-	 *       memset above guarantees they are, so this exercises the
-	 *       size walk past sizeof(*attr) up to E2BIG)
-	 *    5% zero (immediate EINVAL gate)
-	 */
-	sizepick = rnd_modulo_u32(20);
-	if (sizepick < 14) {
-		rec->a2 = sizeof(*attr);
-	} else if (sizepick < 18) {
-		rec->a2 = landlock_known_sizes[rnd_modulo_u32(ARRAY_SIZE(landlock_known_sizes))];
-	} else if (sizepick < 19) {
-		rec->a2 = sizeof(*attr) + 8 * (1 + rnd_modulo_u32(4));
-		if (rec->a2 > LANDLOCK_ATTR_BUF_SIZE)
-			rec->a2 = LANDLOCK_ATTR_BUF_SIZE;
-	} else {
-		rec->a2 = RAND_BOOL() ? 0 : (rnd_u32() % LANDLOCK_ATTR_BUF_SIZE);
-	}
+	rec->a2 = buf.usize;
 
 	/*
 	 * Flags: 80% zero (normal create path), 15%
@@ -166,6 +149,14 @@ static void sanitise_landlock_create_ruleset(struct syscallrecord *rec)
 		rec->a3 = LANDLOCK_CREATE_RULESET_VERSION;
 	else
 		rec->a3 = rnd_u32();
+
+	/*
+	 * Hand the csfu buffer to the deferred-free queue at sanitise
+	 * time -- matches the io_uring_setup convention and keeps
+	 * cleanup independent of whether post_landlock_create_ruleset
+	 * ever runs (it's skipped when the retfd reject hook fires).
+	 */
+	deferred_free_enqueue(attr);
 }
 
 static void post_landlock_create_ruleset(struct syscallrecord *rec)
