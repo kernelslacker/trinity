@@ -65,8 +65,6 @@ static void post_signalfd(struct syscallrecord *rec)
 {
 	int fd = rec->retval;
 
-	if ((long)rec->retval < 0)
-		return;
 	if (fd < 0 || fd >= (1 << 20))
 		return;
 
