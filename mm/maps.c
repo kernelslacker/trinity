@@ -305,6 +305,51 @@ void map_dump(struct object *obj, enum obj_scope scope)
 }
 
 /*
+ * Seed an OBJ_LOCAL OBJ_MMAP_* pool from the matching OBJ_GLOBAL
+ * snapshot.  Used for the FILE / TESTFILE pools at fork; ANON has
+ * its own open-coded loop because it hardcodes INITIAL_ANON on the
+ * cloned entry (every ANON source is INITIAL_ANON anyway, but the
+ * explicit assignment documents the post-fork lifecycle expected
+ * by mprotect/mremap/munmap).  This helper instead propagates the
+ * source map type so MMAPED_FILE entries stay tagged as such.
+ */
+static void clone_global_mmap_pool(enum objecttype type)
+{
+	struct objhead *globalhead;
+	struct object *globalobj;
+	unsigned int idx;
+
+	globalhead = get_objhead(OBJ_GLOBAL, type);
+	if (globalhead == NULL || globalhead->array == NULL)
+		return;
+
+	for_each_obj(globalhead, globalobj, idx) {
+		struct map *m = &globalobj->map;
+		struct object *newobj;
+
+		if (m->name == NULL) {
+			outputerr("clone_global_mmap_pool: skipping global map with NULL name (type %u)\n",
+				  type);
+			continue;
+		}
+
+		newobj = alloc_object();
+		newobj->map.ptr = m->ptr;
+		newobj->map.name = strdup(m->name);
+		if (!newobj->map.name) {
+			tracked_free_now(newobj);
+			continue;
+		}
+		newobj->map.size = m->size;
+		newobj->map.prot = m->prot;
+		newobj->map.flags = m->flags;
+		newobj->map.fd = m->fd;
+		newobj->map.type = m->type;
+		add_object(newobj, OBJ_LOCAL, type);
+	}
+}
+
+/*
  * Set up a childs local mapping list.
  * A child inherits the initial mappings, and will add to them
  * when it successfully completes mmap() calls.
@@ -392,6 +437,19 @@ void init_child_mappings(void)
 		newobj->map.type = INITIAL_ANON;
 		add_object(newobj, OBJ_LOCAL, OBJ_MMAP_ANON);
 	}
+
+	/*
+	 * Seed the OBJ_LOCAL FILE and TESTFILE pools from their
+	 * OBJ_GLOBAL snapshots too.  get_map_handle() picks the sub-pool
+	 * uniformly from {ANON, FILE, TESTFILE}; without these clones
+	 * two thirds of OBJ_LOCAL draws return NULL until lazy mmap
+	 * shapes happen to add entries, which only the 1/8 file-fd path
+	 * does for FILE and nothing does for TESTFILE.  Propagate the
+	 * source m->type (MMAPED_FILE for both pools today) rather than
+	 * forcing INITIAL_ANON so consumers can tell file mappings apart.
+	 */
+	clone_global_mmap_pool(OBJ_MMAP_FILE);
+	clone_global_mmap_pool(OBJ_MMAP_TESTFILE);
 }
 
 /* used in several sanitise_* functions. */
