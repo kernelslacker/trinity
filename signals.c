@@ -415,7 +415,8 @@ static void sigxcpu_handler(__unused__ int sig)
  *   - from ourselves (abort(), raise()): fatal — it's a real crash
  *   - from a child process: ignore — it's fuzzer noise
  */
-static void main_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
+static __attribute__((no_sanitize("address")))
+void main_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 {
 	if (info->si_code > 0 || info->si_pid == mypid()) {
 		/* Real fault or self-sent (e.g. glibc abort) — dump a
