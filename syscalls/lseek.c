@@ -3,8 +3,11 @@
  */
 #include <sys/types.h>
 #include <unistd.h>
+#include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
+#include "sparse-files.h"
 #include "compat.h"
 #include "utils.h"
 
@@ -15,6 +18,41 @@ static unsigned long lseek_whences[] = {
 
 static void sanitise_lseek(struct syscallrecord *rec)
 {
+	unsigned int whence = (unsigned int) rec->a3;
+
+	/*
+	 * SEEK_DATA / SEEK_HOLE return -ENXIO when the offset is past
+	 * EOF and reach the per-fs sparse-walk code only when the
+	 * underlying inode actually has holes.  generic_sanitise has
+	 * already filled rec->a1 from the generic fd pool, which is
+	 * dominated by dense / non-regular fds; redirect to the sparse
+	 * file pool when the picked whence is one of the sparse-walk
+	 * forms so the call has a real chance of reaching the
+	 * iomap_seek_data / iomap_seek_hole and ext4 / btrfs / xfs /
+	 * f2fs custom implementations.
+	 */
+	if (whence == SEEK_DATA || whence == SEEK_HOLE) {
+		struct object *obj = get_rand_sparse_file_obj();
+
+		if (obj != NULL) {
+			off_t size = obj->sparsefileobj.size;
+
+			rec->a1 = (unsigned long) obj->sparsefileobj.fd;
+			/*
+			 * Bias most picks into [0, size) so the kernel
+			 * reaches the sparse-walk code, but keep an
+			 * occasional out-of-range poke to exercise the
+			 * -ENXIO / -EINVAL boundary paths.
+			 */
+			if (ONE_IN(4))
+				rec->a2 = rand64() & 0x7fffffff;
+			else
+				rec->a2 = (unsigned long) rnd_modulo_u64((uint64_t) size);
+			return;
+		}
+		/* Empty sparse pool — fall through to dense fuzz. */
+	}
+
 	/* Negative offsets produce EINVAL on most filesystems. */
 	rec->a2 = rand64() & 0x7fffffff;
 }

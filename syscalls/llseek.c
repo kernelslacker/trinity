@@ -3,8 +3,11 @@
                 unsigned long, offset_low, loff_t __user *, result,
                 unsigned int, origin)
  */
+#include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
+#include "sparse-files.h"
 #include "compat.h"
 #include "trinity.h"
 #include "utils.h"
@@ -16,7 +19,31 @@ static unsigned long llseek_origins[] = {
 
 static void sanitise_llseek(struct syscallrecord *rec)
 {
+	unsigned int origin = (unsigned int) rec->a5;
+
 	rec->a2 = 0;	/* offset_high: keep offset < 4GB */
+
+	/*
+	 * Mirror the lseek wireup: SEEK_DATA / SEEK_HOLE need a sparse
+	 * fd to reach the per-fs sparse-walk code, otherwise the
+	 * kernel rejects on pos >= i_size before getting there.
+	 */
+	if (origin == SEEK_DATA || origin == SEEK_HOLE) {
+		struct object *obj = get_rand_sparse_file_obj();
+
+		if (obj != NULL) {
+			off_t size = obj->sparsefileobj.size;
+
+			rec->a1 = (unsigned long) obj->sparsefileobj.fd;
+			if (ONE_IN(4))
+				rec->a3 = rand64() & 0x7fffffff;
+			else
+				rec->a3 = (unsigned long) rnd_modulo_u64((uint64_t) size);
+			avoid_shared_buffer_out(&rec->a4, sizeof(loff_t));
+			return;
+		}
+	}
+
 	rec->a3 = rand64() & 0x7fffffff;	/* offset_low: non-negative */
 	avoid_shared_buffer_out(&rec->a4, sizeof(loff_t));
 }
