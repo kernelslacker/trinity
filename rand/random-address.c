@@ -827,24 +827,25 @@ struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir)
 		 * libc brk, both of which would let the kernel scribble
 		 * bookkeeping.
 		 *
-		 * IOV_KERNEL_WRITE callers (readv, preadv, preadv2, recvmsg,
-		 * recvmmsg, process_vm_readv, process_madvise) use the
-		 * no-copy variant -- the kernel will overwrite the buffer
-		 * anyway, so preserving the original bytes across relocation
-		 * is wasted work.
-		 *
-		 * IOV_KERNEL_READ callers (writev, pwritev, pwritev2,
-		 * sendmsg, sendmmsg, vmsplice, process_vm_writev) use the
-		 * inout variant so the map-backed bytes the kernel reads
-		 * after relocation match the bytes that were on the original
-		 * page, keeping content-sensitive paths reproducible across
-		 * the relocation step.
+		 * Both directions use avoid_shared_buffer_out().  For
+		 * IOV_KERNEL_WRITE callers (readv, preadv, preadv2,
+		 * recvmsg, recvmmsg, process_vm_readv, process_madvise)
+		 * the kernel overwrites the buffer, so preserving input
+		 * bytes is wasted work.  For IOV_KERNEL_READ callers
+		 * (writev, pwritev, pwritev2, sendmsg, sendmmsg, vmsplice,
+		 * process_vm_writev) the source pages are anon shmem from
+		 * MAP_SHARED|MAP_ANONYMOUS initial maps; their demand-
+		 * fault can SIGBUS when the shmem allocator cannot back
+		 * the page.  range_readable_user() verifies VMA permission
+		 * but cannot predict per-page allocability, so a copy-in
+		 * variant would SIGBUS the sanitiser before the syscall
+		 * ever fires.  None of the seven IOV_KERNEL_READ post-
+		 * handlers deref iov_base after the syscall (only retval
+		 * and scalars are consumed), so preserving source bytes
+		 * across relocation buys nothing.
 		 */
 		base = (unsigned long) iov[i].iov_base;
-		if (dir == IOV_KERNEL_READ)
-			avoid_shared_buffer_inout(&base, iov[i].iov_len);
-		else
-			avoid_shared_buffer_out(&base, iov[i].iov_len);
+		avoid_shared_buffer_out(&base, iov[i].iov_len);
 		iov[i].iov_base = (void *) base;
 	}
 
