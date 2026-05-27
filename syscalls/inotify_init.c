@@ -10,7 +10,7 @@ static void post_inotify_init(struct syscallrecord *rec)
 {
 	int fd = rec->retval;
 
-	if ((long)rec->retval < 0)
+	if (fd < 0)
 		return;
 
 	struct resource_meta meta = {
