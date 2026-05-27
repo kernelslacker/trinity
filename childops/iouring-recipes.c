@@ -483,7 +483,8 @@ static sigjmp_buf iouring_recipes_pool_race_jmp;
 static volatile uintptr_t iouring_recipes_pool_race_addr_low;
 static volatile uintptr_t iouring_recipes_pool_race_addr_high;
 
-static void iouring_recipes_pool_race_handler(int sig, siginfo_t *info,
+static __attribute__((no_sanitize("address")))
+void iouring_recipes_pool_race_handler(int sig, siginfo_t *info,
 					      void *ctx)
 {
 	uintptr_t fault_addr;
