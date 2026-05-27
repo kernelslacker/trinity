@@ -31,13 +31,14 @@ static void post_getgid(struct syscallrecord *rec)
 	int fd;
 	gid_t got, proc_rgid = (gid_t)-1;
 	unsigned int rgid, egid, sgid, fsgid;
+	unsigned long retval = rec->retval;
 
 	/* Kernel ABI: getgid() is infallible — from_kgid_munged(current_user_ns(),
 	 * current_gid()) cannot fail and the syscall return path has no error case.
 	 * A retval of -1UL is a structural ABI violation (e.g. -errno leaking
 	 * through the syscall return path), not a gid mismatch the procfs Gid:
 	 * oracle would catch. */
-	if (rec->retval == -1UL) {
+	if (retval == -1UL) {
 		output(0, "getgid oracle: returned gid -1UL is structurally invalid (infallible syscall)\n");
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		return;
@@ -46,7 +47,7 @@ static void post_getgid(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		return;
 
-	got = (gid_t) rec->retval;
+	got = (gid_t) retval;
 
 	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
 	 * thousands of times per second under fuzz, and stdio's per-call malloc
