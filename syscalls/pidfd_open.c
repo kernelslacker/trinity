@@ -10,7 +10,7 @@ static void post_pidfd_open(struct syscallrecord *rec)
 	int fd = rec->retval;
 	struct resource_meta meta = { .extra_int = rec->a1 };
 
-	if ((long)rec->retval < 0)
+	if (fd < 0)
 		return;
 
 	publish_resource(OBJ_FD_PIDFD, fd, &meta);
