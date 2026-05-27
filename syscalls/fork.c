@@ -33,9 +33,9 @@ static void sanitise_fork(struct syscallrecord *rec)
 
 static void post_fork(struct syscallrecord *rec)
 {
-	pid_t pid;
+	unsigned long retval = rec->retval;
+	pid_t pid = (pid_t) retval;
 
-	pid = rec->retval;
 	if (pid == 0) {
 		/* Flagged at capacity by sanitise, or over limit now — bail. */
 		if (rec->a1 || __atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) >= max_children)
@@ -56,9 +56,9 @@ static void post_fork(struct syscallrecord *rec)
 		 * tear or pid_ns translation bug) — reject before pid_alive()/waitpid()
 		 * steers wait-loop bookkeeping off real children.
 		 */
-		if (rec->retval > 4194304UL && rec->retval != (unsigned long)-1L) {
+		if (retval > 4194304UL && retval != (unsigned long)-1L) {
 			output(0, "post_fork: rejected returned pid 0x%lx outside [1, PID_MAX_LIMIT=4194304] (and not -1)\n",
-			       rec->retval);
+			       retval);
 			post_handler_corrupt_ptr_bump(rec, NULL);
 			return;
 		}
