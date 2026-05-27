@@ -188,7 +188,19 @@ enum random_rescue_class {
  * calls=0 (genuinely broken in this kernel, or simply never picked
  * before the plateau started) cannot 100x dominate the intervention.
  *
- * The orchestrator round-robins among the three modes at each rotation
+ * PIM_COVERAGE_FRONTIER unconditionally selects STRATEGY_COVERAGE_
+ * FRONTIER for the window so the frontier-weighted picker runs
+ * regardless of what the bandit would have selected.  The bandit
+ * cannot pull the frontier arm during a plateau (the intervention
+ * layer short-circuits the bandit entirely while plateau_active is
+ * set), so without this mode the frontier picker is structurally
+ * unreachable for the duration of every plateau -- exactly the
+ * windows where chasing near-coverage edges is most likely to break
+ * the stall.  Layered alongside the other intervention modes so the
+ * per-mode A/B comparison includes the frontier picker on the same
+ * rotation cadence as anti-prior and RRC-biased.
+ *
+ * The orchestrator round-robins among the four modes at each rotation
  * boundary while the plateau is active, so the per-mode rescue yield is
  * directly comparable: each mode runs the same number of windows over
  * the lifetime of any plateau long enough for the rotation to cycle.
@@ -197,21 +209,27 @@ enum random_rescue_class {
  * biases TOWARD a specific failure class -- and both layer over the
  * UNIFORM_RANDOM baseline that makes the A/B shape interpretable.
  *
- * PIM_UNIFORM_RANDOM: STRATEGY_RANDOM with no per-call bias.  The
- *                     historical pre-classifier intervention shape;
- *                     kept as the third rotation slot to anchor the
- *                     comparison.
- * PIM_ANTI_PRIOR:     STRATEGY_RANDOM with the inverted-weight accept
- *                     gate active (see plateau_anti_prior_accept()).
- * PIM_RRC_BIASED:     dispatch via dominant_rescue_class() +
- *                     amplified_intervention_arm() -- HEURISTIC replay
- *                     biased by the random-rescue classifier's dominant
- *                     class, or plain RANDOM when no class dominates.
+ * PIM_UNIFORM_RANDOM:    STRATEGY_RANDOM with no per-call bias.  The
+ *                        historical pre-classifier intervention shape;
+ *                        kept as a rotation slot to anchor the
+ *                        comparison.
+ * PIM_ANTI_PRIOR:        STRATEGY_RANDOM with the inverted-weight accept
+ *                        gate active (see plateau_anti_prior_accept()).
+ * PIM_RRC_BIASED:        dispatch via dominant_rescue_class() +
+ *                        amplified_intervention_arm() -- HEURISTIC or
+ *                        COVERAGE_FRONTIER replay biased by the random-
+ *                        rescue classifier's dominant class, or plain
+ *                        RANDOM when no class dominates.
+ * PIM_COVERAGE_FRONTIER: STRATEGY_COVERAGE_FRONTIER unconditionally,
+ *                        so the frontier-weighted picker is reachable
+ *                        during plateaus the bandit would otherwise
+ *                        keep off the arm.
  */
 enum plateau_intervention_mode {
 	PIM_UNIFORM_RANDOM = 0,
 	PIM_ANTI_PRIOR,
 	PIM_RRC_BIASED,
+	PIM_COVERAGE_FRONTIER,
 	NR_PIM_MODES,		/* sentinel, must stay last */
 };
 

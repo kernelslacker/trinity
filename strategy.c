@@ -977,6 +977,17 @@ static int amplified_intervention_arm(enum random_rescue_class c)
 		 * the intervention runs. */
 		return STRATEGY_HEURISTIC;
 	case RRC_CMP_DERIVED:
+		/* Frontier-weighted picker.  RRC_CMP_DERIVED rescues fired
+		 * on syscalls whose cmp_hints pool carried at least one
+		 * learned constant, so the kernel is emitting comparison
+		 * records the args generator could land but the per-syscall
+		 * pick distribution is not steering to.  The frontier picker
+		 * roulette-weights by per-syscall near-coverage signal,
+		 * which is the closest structured proxy available for "this
+		 * syscall is one new constant away from a fresh edge" --
+		 * exactly the shape the cmp_rising_pc_flat hypothesis
+		 * describes at the fleet level. */
+		return STRATEGY_COVERAGE_FRONTIER;
 	case RRC_UNUSUAL_FD_PRODUCER:
 	case RRC_WRONG_TYPE_FD:
 	case RRC_PERSONA_GATED:
@@ -1002,14 +1013,14 @@ int select_next_strategy(int prev,
 		unsigned long rot;
 		int arm;
 
-		/* Round-robin among the three intervention modes.  The
-		 * fetch_add returns the PREVIOUS counter value, so each
-		 * rotation picks a mode cleanly without coordination
-		 * between concurrent rotations -- the CAS in
-		 * maybe_rotate_strategy already serialises which child
-		 * runs select_next_strategy in the first place, but the
-		 * fetch_add semantics keep the rotation correct even if a
-		 * future refactor lets multiple writers in.
+		/* Round-robin among the intervention modes.  The fetch_add
+		 * returns the PREVIOUS counter value, so each rotation
+		 * picks a mode cleanly without coordination between
+		 * concurrent rotations -- the CAS in maybe_rotate_strategy
+		 * already serialises which child runs select_next_strategy
+		 * in the first place, but the fetch_add semantics keep the
+		 * rotation correct even if a future refactor lets multiple
+		 * writers in.
 		 *
 		 * The counter only ticks during plateau windows, so a
 		 * fresh plateau picks up wherever the previous one left
@@ -1028,7 +1039,7 @@ int select_next_strategy(int prev,
 			/* Random-rescue classifier dispatch path.  Reuses
 			 * the existing dominant_rescue_class +
 			 * amplified_intervention_arm pair so the classifier-
-			 * driven HEURISTIC replay shape stays exactly what
+			 * driven structured replay shape stays exactly what
 			 * landed when amplification was the only intervention
 			 * mode -- this commit changes the SCHEDULING of when
 			 * it runs, not its internals. */
@@ -1049,10 +1060,22 @@ int select_next_strategy(int prev,
 			plateau_anti_prior_refresh_baseline();
 			arm = STRATEGY_RANDOM;
 			break;
+		case PIM_COVERAGE_FRONTIER:
+			/* Frontier-weighted picker, unconditional.  The
+			 * bandit is short-circuited for the duration of the
+			 * plateau, so without this rotation slot the
+			 * coverage-frontier arm cannot be selected at all
+			 * during a plateau window -- the exact windows where
+			 * chasing near-coverage edges is most likely to
+			 * unstick discovery.  No baseline refresh needed:
+			 * the frontier picker reads its own per-syscall
+			 * near-coverage ring on every pick. */
+			arm = STRATEGY_COVERAGE_FRONTIER;
+			break;
 		case PIM_UNIFORM_RANDOM:
 		default:
 			/* Baseline mode: STRATEGY_RANDOM with no per-call
-			 * bias.  Kept as the third rotation slot so the A/B
+			 * bias.  Kept as a rotation slot so the A/B
 			 * comparison has an anchor -- without it,
 			 * "anti-prior helped" and "RRC-bias helped" both
 			 * reduce to comparisons against each other rather
@@ -1703,6 +1726,7 @@ const char *plateau_intervention_mode_name(enum plateau_intervention_mode m)
 	case PIM_UNIFORM_RANDOM:	return "UNIFORM_RANDOM";
 	case PIM_ANTI_PRIOR:		return "ANTI_PRIOR";
 	case PIM_RRC_BIASED:		return "RRC_BIASED";
+	case PIM_COVERAGE_FRONTIER:	return "COVERAGE_FRONTIER";
 	case NR_PIM_MODES:		break;	/* sentinel */
 	}
 	return "?";

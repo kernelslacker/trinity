@@ -550,9 +550,10 @@ struct shm_s {
 	 * Plateau intervention mode rotation state.  When the kcov plateau
 	 * detector has the fleet in an intervention window
 	 * (SR_PLATEAU_FORCE), the orchestrator round-robins among
-	 * PIM_UNIFORM_RANDOM / PIM_ANTI_PRIOR / PIM_RRC_BIASED at each
-	 * rotation so the three rescue shapes get equal exposure and per-
-	 * mode A/B comparison stays defensible.
+	 * PIM_UNIFORM_RANDOM / PIM_ANTI_PRIOR / PIM_RRC_BIASED /
+	 * PIM_COVERAGE_FRONTIER at each rotation so the four rescue
+	 * shapes get equal exposure and per-mode A/B comparison stays
+	 * defensible.
 	 *
 	 * plateau_intervention_mode_current: latched mode for the current
 	 *   intervention window, published by select_next_strategy at every
