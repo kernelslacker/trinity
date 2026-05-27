@@ -23,7 +23,7 @@
 void * get_writable_address(unsigned long size)
 {
 	struct map_handle h;
-	struct map *map;
+	struct map *map = NULL;
 	struct object *obj;
 	void *addr = NULL;
 	int tries = 0;
@@ -31,6 +31,16 @@ void * get_writable_address(unsigned long size)
 	bool from_mmap = false;
 
 retry:	tries++;
+	/*
+	 * Reset per-iteration state.  The retry: label can be reached
+	 * from anywhere below after from_mmap/map have been set on a
+	 * prior iteration; without this reset the line-309
+	 * short-circuit and the later from_mmap branches see stale
+	 * values from that earlier iteration.  The RAND_BOOL() == true
+	 * arm below sets both fields afresh when taken.
+	 */
+	from_mmap = false;
+	map = NULL;
 	if (tries == 100)
 		return NULL;
 
