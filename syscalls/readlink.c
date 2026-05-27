@@ -409,6 +409,8 @@ static void post_readlinkat(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
+	unsigned long retval = rec->retval;
+
 	/*
 	 * post_state is private to the post handler, but the whole
 	 * syscallrecord can still be wholesale-stomped, so guard the
@@ -442,7 +444,7 @@ static void post_readlinkat(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if ((long) rec->retval <= 0)
+	if ((long) retval <= 0)
 		goto out_free;
 
 	if (snap->pathname == 0)
@@ -454,10 +456,10 @@ static void post_readlinkat(struct syscallrecord *rec)
 	if (snap->bufsiz == 0)
 		goto out_free;
 
-	if ((long) rec->retval > (long) snap->bufsiz) {
+	if ((long) retval > (long) snap->bufsiz) {
 		output(0,
 		       "[oracle:readlinkat] retval=%ld exceeds bufsiz=%ld\n",
-		       (long) rec->retval, (long) snap->bufsiz);
+		       (long) retval, (long) snap->bufsiz);
 		__atomic_add_fetch(&shm->stats.readlinkat_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 		goto out_free;
@@ -486,7 +488,7 @@ static void post_readlinkat(struct syscallrecord *rec)
 		sizeof(snap_path) - 1);
 	snap_path[sizeof(snap_path) - 1] = '\0';
 
-	snap_len = (size_t) rec->retval;
+	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first_buf))
 		snap_len = sizeof(first_buf);
 
