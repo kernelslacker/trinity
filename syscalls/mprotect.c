@@ -196,6 +196,19 @@ static void post_mprotect(struct syscallrecord *rec)
 		map->prot &= snap->prot;
 
 	/*
+	 * Invalidate the get_writable_address() known_rw skip-cache.  The
+	 * cache assumes nobody has touched the slot's prot since the last
+	 * whole-mapping RW upgrade; we just stomped that assumption.  A
+	 * sub-range downgrade leaves the cached bit lying about pages that
+	 * are no longer writable, and even a whole-mapping mprotect to
+	 * something that still contains PROT_WRITE is safer cleared --
+	 * get_writable_address() will re-upgrade and reset the bit on its
+	 * next miss.  Clearing here is the simpler half of the contract
+	 * documented on struct map::known_rw.
+	 */
+	map->known_rw = false;
+
+	/*
 	 * Oracle: 1-in-100 chance — verify /proc/self/maps reflects the prot
 	 * change we just applied.  A stale or wrong entry signals that the
 	 * kernel's VMA prot state diverged from what mprotect reported back.

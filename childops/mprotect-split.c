@@ -201,6 +201,16 @@ bool mprotect_split(struct childdata *child)
 			map->prot = prot_used;
 		else
 			map->prot &= prot_used;
+
+		/*
+		 * This childop runs raw mprotect(2)s that bypass the
+		 * sanitise/post pair, so post_mprotect's known_rw clear
+		 * never fires for them.  Drop the cache here on every
+		 * accepted iteration -- a downgrade voids the cache and
+		 * even an upgrade to RW is safer cleared so the next
+		 * get_writable_address() call re-vouches the slot.
+		 */
+		map->known_rw = false;
 	}
 
 	return true;

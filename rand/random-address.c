@@ -96,16 +96,21 @@ retry:	tries++;
 
 		addr = map->ptr;
 		/*
-		 * Don't update map->prot here.  The mprotect below is a
-		 * sub-range upgrade (size <= map->size) so cacheing
-		 * PROT_READ|PROT_WRITE for the whole mapping would lie
-		 * to future get_map_with_prot() consumers about pages
-		 * outside [addr, addr+size).  Worse, it would silently
-		 * undo any concurrent post_munmap / post_mprotect
-		 * invalidation that landed between the read of map->prot
-		 * above and this write.  Leave the cached invariant
-		 * owned by the post-syscall hooks.
+		 * Map-pool fast path.  If the slot's known_rw bit is set
+		 * the entire mapping was upgraded to PROT_READ|PROT_WRITE
+		 * on a previous call AND no munmap/mprotect notifier (or
+		 * the mprotect-split childop) has fired against the slot
+		 * since.  That makes the mprotect upgrade syscall below a
+		 * pure no-op and the mincore() VMA-presence probe at the
+		 * tail redundant -- the slot is intact and writable, so
+		 * skip both.  Note the cache must already have been set
+		 * by a prior call's whole-mapping mprotect: setting it on
+		 * a sub-range upgrade would let a later get_writable_
+		 * address(size > previous size) hit the cache and return
+		 * a buffer whose tail pages aren't actually RW.
 		 */
+		if (map->known_rw && size <= map->size)
+			return addr;
 	} else {
 		from_mmap = false;
 		obj = get_random_object(OBJ_SYSV_SHM, OBJ_GLOBAL);
@@ -155,8 +160,23 @@ retry:	tries++;
 		}
 	}
 
-	if (mprotect(addr, size, PROT_READ | PROT_WRITE) != 0) {
-		log_mprotect_failure(addr, (size_t) size,
+	/*
+	 * On the mmap pool branch upgrade the WHOLE mapping (rather than
+	 * just [addr, addr+size)) so the known_rw cache below can vouch
+	 * for any size <= map->size on later calls.  Upgrading the slot
+	 * to RW only adds permissions; the slot is trinity-owned and
+	 * get_writable_address consumers want RW anyway.  The SysV-shm
+	 * branch has no struct map and no slot-local cache, so it stays
+	 * on the sub-range upgrade.
+	 */
+	{
+		void *mp_addr = from_mmap ? map->ptr : addr;
+		size_t mp_len = from_mmap ? (size_t) map->size : (size_t) size;
+
+	if (mprotect(mp_addr, mp_len, PROT_READ | PROT_WRITE) != 0) {
+		if (from_mmap)
+			map->known_rw = false;
+		log_mprotect_failure(mp_addr, mp_len,
 				     PROT_READ | PROT_WRITE,
 				     __builtin_return_address(0), errno);
 		/*
@@ -188,6 +208,20 @@ retry:	tries++;
 			}
 		}
 		goto retry;
+	}
+	}
+
+	/*
+	 * mprotect succeeded.  On the mmap branch the upgrade covered the
+	 * full mapping, so record the cache hit for future calls and bring
+	 * the tracked prot in line with what the kernel just applied.  We
+	 * only OR in the bits we know we added -- the cached invariant for
+	 * any other bits (PROT_EXEC, PROT_NONE clearance) is owned by the
+	 * post-syscall hooks.
+	 */
+	if (from_mmap) {
+		map->prot |= PROT_READ | PROT_WRITE;
+		map->known_rw = true;
 	}
 
 	/*
@@ -264,7 +298,17 @@ retry:	tries++;
 	 * first store.  Bump a dedicated stat so spikes in exhausted-
 	 * retry returns are visible.
 	 */
-	{
+	/*
+	 * Skip the residency probe on a freshly-cached mmap slot.  We just
+	 * mprotect()-upgraded the whole mapping above; the kernel only
+	 * returns success there when the VMA spans every page being
+	 * touched, so the head-page mincore() lookup can only succeed.
+	 * The check matters for SysV-shm (no map, no cache) and for any
+	 * future mmap-branch path that bypasses the upgrade.
+	 */
+	if (from_mmap && map != NULL && map->known_rw) {
+		/* skip */
+	} else {
 		unsigned char vec;
 		void *probe_addr = (void *)((uintptr_t) addr & PAGE_MASK);
 
