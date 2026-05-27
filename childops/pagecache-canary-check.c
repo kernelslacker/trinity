@@ -93,7 +93,8 @@ static volatile uintptr_t canary_sigbus_lo;
 static volatile uintptr_t canary_sigbus_hi;
 static volatile sig_atomic_t canary_sigbus_armed;
 
-static void canary_sigbus_handler(int sig, siginfo_t *info, void *ctx)
+static __attribute__((no_sanitize("address")))
+void canary_sigbus_handler(int sig, siginfo_t *info, void *ctx)
 {
 	uintptr_t fault_addr;
 
