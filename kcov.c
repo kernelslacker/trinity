@@ -109,6 +109,27 @@ static void kcov_cmp_diag_record(int *errno_slot, unsigned int *count_slot,
 	__atomic_fetch_add(count_slot, 1, __ATOMIC_RELAXED);
 }
 
+/*
+ * Record a KCOV PC or remote enable/disable failure into the parent-
+ * visible pc_diag slots.  Called from child context (post-dup2-to-
+ * /dev/null), where output() to stdout is silently dropped — the shm
+ * fields are the only diagnostic channel that survives back to the
+ * parent.
+ *
+ * First failure wins for the errno slot: CAS-from-zero so subsequent
+ * failures at the same site don't overwrite the original errno.  The
+ * count slot atomically tallies every failure so the parent can see
+ * how many children hit each site even when they all hit the same one.
+ */
+static void kcov_pc_diag_record(int *errno_slot, unsigned int *count_slot,
+				int err)
+{
+	int expected = 0;
+	__atomic_compare_exchange_n(errno_slot, &expected, err, false,
+		__ATOMIC_RELAXED, __ATOMIC_RELAXED);
+	__atomic_fetch_add(count_slot, 1, __ATOMIC_RELAXED);
+}
+
 /* strerrorname_np() returns the errno macro name ("EBADF", "ENOMEM",
  * …) for a known value or NULL otherwise.  Wrap it so the format
  * string can always splice in a non-NULL pointer even for the
@@ -582,12 +603,27 @@ bool kcov_range_contains_protected_fd(int lo, int hi)
 
 void kcov_enable_trace(struct kcov_child *kc)
 {
+	unsigned int retries = 0;
+
 	if (kc == NULL || !kc->active)
 		return;
 
 	__atomic_store_n(&kc->trace_buf[0], 0, __ATOMIC_RELAXED);
-	if (ioctl(kc->fd, KCOV_ENABLE, KCOV_TRACE_PC) < 0)
+
+	while (ioctl(kc->fd, KCOV_ENABLE, KCOV_TRACE_PC) < 0) {
+		if (errno == EINTR && retries < KCOV_ENABLE_EINTR_MAX) {
+			retries++;
+			__atomic_fetch_add(
+				&kcov_shm->pc_diag.pc_enable_eintr_retries,
+				1, __ATOMIC_RELAXED);
+			continue;
+		}
+		kcov_pc_diag_record(
+			&kcov_shm->pc_diag.pc_enable_errno,
+			&kcov_shm->pc_diag.pc_enable_count, errno);
 		kc->active = false;
+		break;
+	}
 }
 
 void kcov_enable_cmp(struct kcov_child *kc)
@@ -614,6 +650,8 @@ void kcov_enable_cmp(struct kcov_child *kc)
 void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id)
 {
 	struct kcov_remote_arg arg = {0};
+	unsigned int retries = 0;
+	bool remote_failed = false;
 
 	if (kc == NULL || !kc->active || !kc->remote_capable)
 		return;
@@ -625,12 +663,43 @@ void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id)
 	arg.num_handles = 0;
 	arg.common_handle = KCOV_SUBSYSTEM_COMMON | (child_id + 1);
 
-	if (ioctl(kc->fd, KCOV_REMOTE_ENABLE, &arg) < 0) {
-		/* Fall back to per-thread mode if remote fails at runtime. */
+	while (ioctl(kc->fd, KCOV_REMOTE_ENABLE, &arg) < 0) {
+		if (errno == EINTR && retries < KCOV_ENABLE_EINTR_MAX) {
+			retries++;
+			__atomic_fetch_add(
+				&kcov_shm->pc_diag.remote_enable_eintr_retries,
+				1, __ATOMIC_RELAXED);
+			continue;
+		}
+		kcov_pc_diag_record(
+			&kcov_shm->pc_diag.remote_enable_errno,
+			&kcov_shm->pc_diag.remote_enable_count, errno);
 		kc->remote_capable = false;
-		if (ioctl(kc->fd, KCOV_ENABLE, KCOV_TRACE_PC) < 0)
-			kc->active = false;
+		remote_failed = true;
+		break;
 	}
+
+	if (!remote_failed)
+		return;
+
+	/* Fall back to per-thread mode if remote failed at runtime. */
+	retries = 0;
+	while (ioctl(kc->fd, KCOV_ENABLE, KCOV_TRACE_PC) < 0) {
+		if (errno == EINTR && retries < KCOV_ENABLE_EINTR_MAX) {
+			retries++;
+			__atomic_fetch_add(
+				&kcov_shm->pc_diag.remote_fallback_pc_enable_eintr_retries,
+				1, __ATOMIC_RELAXED);
+			continue;
+		}
+		kcov_pc_diag_record(
+			&kcov_shm->pc_diag.pc_enable_errno,
+			&kcov_shm->pc_diag.pc_enable_count, errno);
+		kc->active = false;
+		return;
+	}
+	__atomic_fetch_add(&kcov_shm->pc_diag.remote_fallback_to_pc,
+			   1, __ATOMIC_RELAXED);
 }
 
 void kcov_disable(struct kcov_child *kc)
@@ -646,15 +715,24 @@ void kcov_disable(struct kcov_child *kc)
 	 * exclusive: simultaneously enabling both fds returns -EBUSY on
 	 * the second enable, so a child only ever has one fd active. */
 	if (kc->mode == KCOV_MODE_PC) {
-		if (kc->fd >= 0 && kc->trace_buf != NULL)
-			ioctl(kc->fd, KCOV_DISABLE, 0);
+		if (kc->fd >= 0 && kc->trace_buf != NULL) {
+			if (ioctl(kc->fd, KCOV_DISABLE, 0) < 0)
+				kcov_pc_diag_record(
+					&kcov_shm->pc_diag.pc_disable_errno,
+					&kcov_shm->pc_diag.pc_disable_count,
+					errno);
+		}
 	} else if (kc->cmp_fd >= 0 && kc->cmp_trace_buf != NULL &&
 		   kc->cmp_enabled_this_call) {
 		/* cmp_enabled_this_call gate preserves the pre-existing
 		 * defence against a runtime KCOV_TRACE_CMP enable failure
 		 * mid-run flipping cmp_capable=false — the disable then
 		 * knows not to fire on an fd the kernel never enabled. */
-		ioctl(kc->cmp_fd, KCOV_DISABLE, 0);
+		if (ioctl(kc->cmp_fd, KCOV_DISABLE, 0) < 0)
+			kcov_pc_diag_record(
+				&kcov_shm->pc_diag.pc_disable_errno,
+				&kcov_shm->pc_diag.pc_disable_count,
+				errno);
 		kc->cmp_enabled_this_call = false;
 	}
 }

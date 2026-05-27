@@ -208,6 +208,28 @@ struct kcov_cmp_diag {
 	unsigned int runtime_enable_count;
 };
 
+/* EINTR retry budget for KCOV_ENABLE / KCOV_REMOTE_ENABLE.  Eight is
+ * generous enough to ride out a signal storm without turning a real
+ * driver issue into a stall. */
+#define KCOV_ENABLE_EINTR_MAX 8
+
+/* Per-failure-site diagnostic slots for the PC and remote KCOV enable/
+ * disable paths.  Same shape as struct kcov_cmp_diag: first failure
+ * wins for *_errno (CAS-from-zero), *_count tallies every failure at
+ * that site across all children. */
+struct kcov_pc_diag {
+	int pc_enable_errno;
+	int pc_disable_errno;
+	int remote_enable_errno;
+	unsigned int pc_enable_count;
+	unsigned int pc_disable_count;
+	unsigned int remote_enable_count;
+	unsigned int remote_fallback_to_pc;
+	unsigned int pc_enable_eintr_retries;
+	unsigned int remote_enable_eintr_retries;
+	unsigned int remote_fallback_pc_enable_eintr_retries;
+};
+
 /* Selector for kcov_cmp_diag_format() — keeps stats.c's two-line split
  * (init vs runtime sites) while still allowing main.c to fold all six
  * sites into a single one-line summary. */
@@ -379,6 +401,7 @@ struct kcov_shared {
 	 * because the child's stdout has already been dup2'd to /dev/null
 	 * by the time KCOV_TRACE_CMP setup runs. */
 	struct kcov_cmp_diag cmp_diag;
+	struct kcov_pc_diag pc_diag;
 	/* Per-mode child population counters, bumped once per child in
 	 * kcov_init_child after the cmp_capable probe.  Surfaced through
 	 * print_kcov_cmp_diag so the operator can confirm the realised
