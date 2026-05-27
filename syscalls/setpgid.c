@@ -34,6 +34,7 @@
  */
 static void post_setpgid(struct syscallrecord *rec)
 {
+	unsigned long a2 = rec->a2;
 	pid_t expected, got;
 
 	if ((long) rec->retval == -1L)
@@ -43,16 +44,16 @@ static void post_setpgid(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		return;
 
-	if ((pid_t) rec->a2 == 0)
+	if ((pid_t) a2 == 0)
 		expected = (pid_t) syscall(__NR_getpid);
 	else
-		expected = (pid_t) rec->a2;
+		expected = (pid_t) a2;
 
 	got = getpgrp();
 	if (got != expected) {
 		output(0, "setpgid oracle: setpgid(0,%d) succeeded but "
 		       "subsequent getpgrp()=%d (expected %d)\n",
-		       (pid_t) rec->a2, got, expected);
+		       (pid_t) a2, got, expected);
 		__atomic_add_fetch(&shm->stats.setpgid_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
