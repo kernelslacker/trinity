@@ -133,6 +133,8 @@ static void post_lookup_dcookie(struct syscallrecord *rec)
 {
 	struct lookup_dcookie_post_state *snap =
 		(struct lookup_dcookie_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
+	long ret = (long) retval;
 	uint64_t snap_cookie;
 	char first[256];
 	char recheck[256];
@@ -186,9 +188,9 @@ static void post_lookup_dcookie(struct syscallrecord *rec)
 	 * stays in place; this bound only screens positive-but-oversize
 	 * returns.  Mirrors the getxattr-family snap-extension pattern.
 	 */
-	if ((long) rec->retval > 0 && (unsigned long) rec->retval > snap->len) {
+	if (ret > 0 && retval > snap->len) {
 		outputerr("post_lookup_dcookie: rejecting retval %lu > len %lu\n",
-			  rec->retval, snap->len);
+			  retval, snap->len);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -196,7 +198,7 @@ static void post_lookup_dcookie(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if ((long) rec->retval <= 0)
+	if (ret <= 0)
 		goto out_free;
 
 	if (snap->buf == 0)
@@ -220,7 +222,7 @@ static void post_lookup_dcookie(struct syscallrecord *rec)
 		}
 	}
 
-	snap_len = (size_t) rec->retval;
+	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first))
 		snap_len = sizeof(first);
 
@@ -230,7 +232,7 @@ static void post_lookup_dcookie(struct syscallrecord *rec)
 	memset(recheck, 0, sizeof(recheck));
 	rc = syscall(SYS_lookup_dcookie, snap_cookie, recheck, sizeof(recheck));
 
-	if (rc != (long) rec->retval)
+	if (rc != ret)
 		goto out_free;
 
 	if (memcmp(first, recheck, snap_len) == 0)
