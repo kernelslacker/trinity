@@ -163,6 +163,7 @@ static void post_flistxattr(struct syscallrecord *rec)
 {
 	struct listxattr_post_state *snap =
 		(struct listxattr_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
 	int snap_fd;
 	unsigned char first_buf[4096];
 	unsigned char recheck_buf[4096];
@@ -193,11 +194,11 @@ static void post_flistxattr(struct syscallrecord *rec)
 		return;
 	}
 
-	if ((long) rec->retval < 0)
+	if ((long) retval < 0)
 		goto out_free;
-	if (snap->size != 0 && rec->retval > snap->size) {
+	if (snap->size != 0 && retval > snap->size) {
 		outputerr("post_flistxattr: rejecting retval %lu > size %lu\n",
-			  rec->retval, snap->size);
+			  retval, snap->size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -205,7 +206,7 @@ static void post_flistxattr(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if ((long) rec->retval <= 0)
+	if ((long) retval <= 0)
 		goto out_free;
 
 	/*
@@ -239,7 +240,7 @@ static void post_flistxattr(struct syscallrecord *rec)
 		}
 	}
 
-	snap_len = (size_t) rec->retval;
+	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first_buf))
 		snap_len = sizeof(first_buf);
 	/*
@@ -411,6 +412,7 @@ static void post_listxattr(struct syscallrecord *rec)
 {
 	struct listxattr_post_state *snap =
 		(struct listxattr_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
 	char snap_path[4096];
 	unsigned char first_buf[4096];
 	unsigned char recheck_buf[4096];
@@ -441,11 +443,11 @@ static void post_listxattr(struct syscallrecord *rec)
 		return;
 	}
 
-	if ((long) rec->retval < 0)
+	if ((long) retval < 0)
 		goto out_free;
-	if (snap->size != 0 && rec->retval > snap->size) {
+	if (snap->size != 0 && retval > snap->size) {
 		outputerr("post_listxattr: rejecting retval %lu > size %lu\n",
-			  rec->retval, snap->size);
+			  retval, snap->size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -453,7 +455,7 @@ static void post_listxattr(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if ((long) rec->retval <= 0)
+	if ((long) retval <= 0)
 		goto out_free;
 
 	/*
@@ -489,7 +491,7 @@ static void post_listxattr(struct syscallrecord *rec)
 		sizeof(snap_path) - 1);
 	snap_path[sizeof(snap_path) - 1] = '\0';
 
-	snap_len = (size_t) rec->retval;
+	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first_buf))
 		snap_len = sizeof(first_buf);
 	/*
@@ -659,6 +661,7 @@ static void post_llistxattr(struct syscallrecord *rec)
 {
 	struct listxattr_post_state *snap =
 		(struct listxattr_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
 	char snap_path[4096];
 	unsigned char first_buf[4096];
 	unsigned char recheck_buf[4096];
@@ -689,11 +692,11 @@ static void post_llistxattr(struct syscallrecord *rec)
 		return;
 	}
 
-	if ((long) rec->retval < 0)
+	if ((long) retval < 0)
 		goto out_free;
-	if (snap->size != 0 && rec->retval > snap->size) {
+	if (snap->size != 0 && retval > snap->size) {
 		outputerr("post_llistxattr: rejecting retval %lu > size %lu\n",
-			  rec->retval, snap->size);
+			  retval, snap->size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -701,7 +704,7 @@ static void post_llistxattr(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if ((long) rec->retval <= 0)
+	if ((long) retval <= 0)
 		goto out_free;
 
 	/* size=0 / NULL-buffer probe -- see post_listxattr for full rationale. */
@@ -732,7 +735,7 @@ static void post_llistxattr(struct syscallrecord *rec)
 		sizeof(snap_path) - 1);
 	snap_path[sizeof(snap_path) - 1] = '\0';
 
-	snap_len = (size_t) rec->retval;
+	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first_buf))
 		snap_len = sizeof(first_buf);
 	/*
