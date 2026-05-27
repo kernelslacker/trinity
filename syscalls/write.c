@@ -145,6 +145,7 @@ static void post_write(struct syscallrecord *rec)
 {
 	struct write_post_state *snap =
 		(struct write_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
 
 	if (snap == NULL)
 		return;
@@ -188,11 +189,11 @@ static void post_write(struct syscallrecord *rec)
 	 * return and post entry.  Mirrors the lgetxattr / fgetxattr / getxattr
 	 * size-bound shape with snap->count instead of snap->size.
 	 */
-	if ((long) rec->retval == -1L)
+	if ((long) retval == -1L)
 		goto skip_bound;
-	if (rec->retval > snap->count) {
+	if (retval > snap->count) {
 		outputerr("corrupt write retval %lu > count %lu\n",
-			  rec->retval, snap->count);
+			  retval, snap->count);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
