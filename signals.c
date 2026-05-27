@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <sys/stat.h>	// umask
 #include <unistd.h>
-#ifdef USE_BACKTRACE
+#if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
 #include <execinfo.h>
 #endif
 
@@ -291,7 +291,7 @@ void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 			close(fd);
 		}
 	}
-#ifdef USE_BACKTRACE
+#if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
 	{
 		void *frames[64];
 		int nframes = backtrace(frames, 64);
@@ -421,7 +421,7 @@ static void main_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 		 * backtrace and siginfo to stderr first so we have a handle
 		 * on the crash even when no coredump lands (ulimit -c 0 or a
 		 * restrictive core_pattern), then die properly. */
-#ifdef USE_BACKTRACE
+#if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
 		void *frames[64];
 		int nframes = backtrace(frames, 64);
 		backtrace_symbols_fd(frames, nframes, STDERR_FILENO);
@@ -601,7 +601,7 @@ void setup_main_signals(void)
 	 * neither child_fault_handler nor main_fault_handler can hit the
 	 * dlopen path at signal time.
 	 */
-#ifdef USE_BACKTRACE
+#if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
 	{
 		void *stub[1];
 		(void)backtrace(stub, 1);
