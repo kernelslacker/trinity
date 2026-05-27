@@ -36,7 +36,7 @@ static void register_socketpair_fd(int fd, struct syscallrecord *rec)
 {
 	struct object *new;
 
-	if (fd <= 2)
+	if (fd <= 2 || fd >= (1 << 20))
 		return;
 	if (find_local_object_by_fd(OBJ_FD_SOCKET, fd) != NULL)
 		return;
