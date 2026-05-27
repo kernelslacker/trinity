@@ -231,7 +231,8 @@ static void write_siginfo_safely(int sig, const siginfo_t *info, const char *who
  *   - Sibling-spoofed (process-sent, kill/tkill/tgkill/rt_sigqueueinfo
  *     fuzzing aimed at us): ignore — fuzzer noise.
  */
-static void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
+static __attribute__((no_sanitize("address")))
+void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 {
 	if (info->si_code <= 0 && info->si_pid != mypid()) {
 		/* Sibling spoof — ignore. */
