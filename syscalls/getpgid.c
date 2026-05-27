@@ -38,6 +38,7 @@ static void post_getpgid(struct syscallrecord *rec)
 	ssize_t n;
 	int fd;
 	pid_t got, proc_pgid = (pid_t)-1;
+	unsigned long retval = rec->retval;
 
 	/*
 	 * Kernel ABI: sys_getpgid returns task_pgrp_vnr(p) — a positive pid in
@@ -49,10 +50,10 @@ static void post_getpgid(struct syscallrecord *rec)
 	 * gates the procfs NSpgid: cross-check, so corruption fires on every
 	 * call rather than the 1-in-100 sample.
 	 */
-	if ((rec->retval < 1UL || rec->retval > 4194304UL) &&
-	    rec->retval != (unsigned long)-1L) {
+	if ((retval < 1UL || retval > 4194304UL) &&
+	    retval != (unsigned long)-1L) {
 		output(0, "post_getpgid: rejected returned pgid 0x%lx outside [1, PID_MAX_LIMIT=4194304] (and not -1)\n",
-		       rec->retval);
+		       retval);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		return;
 	}
@@ -63,7 +64,7 @@ static void post_getpgid(struct syscallrecord *rec)
 	if (rec->a1 != 0)
 		return;
 
-	got = (pid_t) rec->retval;
+	got = (pid_t) retval;
 	if (got == (pid_t)-1)
 		return;
 
