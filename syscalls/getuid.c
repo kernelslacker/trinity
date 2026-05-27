@@ -27,13 +27,14 @@ static void post_getuid(struct syscallrecord *rec)
 	const char *value;
 	unsigned long uids[4];
 	uid_t got, proc_ruid;
+	unsigned long retval = rec->retval;
 
 	/* Kernel ABI: getuid() is infallible — from_kuid_munged(current_user_ns(),
 	 * current_uid()) cannot fail and the syscall return path has no error case.
 	 * A retval of -1UL is a structural ABI violation (e.g. -errno leaking
 	 * through the syscall return path), not a uid mismatch the procfs Uid:
 	 * oracle would catch. */
-	if (rec->retval == -1UL) {
+	if (retval == -1UL) {
 		output(0, "getuid oracle: returned uid -1UL is structurally invalid (infallible syscall)\n");
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		return;
@@ -42,7 +43,7 @@ static void post_getuid(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		return;
 
-	got = (uid_t) rec->retval;
+	got = (uid_t) retval;
 
 	if (proc_status_read(buf, sizeof(buf)) < 0)
 		return;
