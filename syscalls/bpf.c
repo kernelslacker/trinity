@@ -877,7 +877,7 @@ static void post_bpf(struct syscallrecord *rec)
 		 * the program ref drops at syscall return rather than at
 		 * child exit.
 		 */
-		if (rec->retval == 0) {
+		if (ret == 0) {
 			union bpf_attr detach;
 
 			memset(&detach, 0, sizeof(detach));
