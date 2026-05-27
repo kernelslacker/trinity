@@ -3,30 +3,68 @@
  *		   unsigned int, flags)
  */
 #include <linux/sched/types.h>
-#include <string.h>
+#include "csfu.h"
+#include "deferred-free.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "compat.h"
 
+#ifndef SCHED_ATTR_SIZE_VER0
+#define SCHED_ATTR_SIZE_VER0 48
+#endif
+#ifndef SCHED_ATTR_SIZE_VER1
+#define SCHED_ATTR_SIZE_VER1 56
+#endif
+
+/*
+ * Pre-ksize ABI floors for the csfu UNDERSIZE bucket.  The kernel
+ * accepts a sched_setattr call whose sa->size matches any prior ABI
+ * version and zero-pads the remainder.  build_csfu_struct() draws
+ * uniformly from this pool for UNDERSIZE; the EXACT bucket already
+ * covers sizeof(struct sched_attr), so the current ksize is not
+ * repeated here.
+ */
+static const size_t sched_setattr_known_sizes[] = {
+	SCHED_ATTR_SIZE_VER0,
+	SCHED_ATTR_SIZE_VER1,
+};
+
+static const struct csfu_desc desc_sched_setattr = {
+	.name = "sched_attr",
+	.ksize = sizeof(struct sched_attr),
+	.known_sizes = sched_setattr_known_sizes,
+	.n_known_sizes = ARRAY_SIZE(sched_setattr_known_sizes),
+};
+
 static void sanitise_sched_setattr(struct syscallrecord *rec)
 {
-	struct sched_attr *sa;
+	struct csfu_buf buf = build_csfu_struct(&desc_sched_setattr);
+	struct sched_attr *sa = buf.ptr;
 	unsigned int roll;
 
-	sa = (struct sched_attr *) get_writable_struct(sizeof(*sa));
 	if (!sa)
 		return;
-	memset(sa, 0, sizeof(*sa));
 
 	/*
-	 * sa->size is the kernel's ABI version tag for struct sched_attr;
-	 * a wrong size short-circuits the validator before any policy /
-	 * priority / deadline param gets inspected.  Keep it correct so
-	 * the enriched value distribution below actually reaches the
-	 * per-policy legality logic instead of bouncing on -E2BIG.
+	 * sa->size is the kernel's ABI version tag; sched_setattr has no
+	 * separate usize syscall arg, so the csfu-picked usize is written
+	 * here.  That is the whole point of the migration: drive the
+	 * kernel's copy_struct_from_user validator across all five bucket
+	 * shapes instead of always sending the current-kernel exact size.
 	 */
-	sa->size = sizeof(*sa);
+	sa->size = buf.usize;
+
+	/*
+	 * Non-EXACT buckets only care about size -- OVERSIZE_NONZERO and
+	 * TAIL_MISMATCH get rejected by the validator before any body
+	 * field is inspected, and UNDERSIZE / OVERSIZE_ZERO get a
+	 * zero-filled body that the per-policy logic below would just
+	 * overwrite with throwaway values.  Skip the structured fill on
+	 * those paths; the zmalloc_tracked() buffer is already zeroed.
+	 */
+	if (buf.bucket != CSFU_BUCKET_EXACT)
+		goto submit;
 
 	roll = rnd_modulo_u32(100);
 
@@ -97,9 +135,8 @@ static void sanitise_sched_setattr(struct syscallrecord *rec)
 		}
 	} else {
 		/*
-		 * 10%: fully random payload (size still correct so the
-		 * validator engages).  Hits the long-tail combinations the
-		 * structured buckets above never produce.
+		 * 10%: fully random payload.  Hits the long-tail combinations
+		 * the structured buckets above never produce.
 		 */
 		sa->sched_policy = rnd_u32() & 0xff;
 		sa->sched_priority = rnd_u32() & 0xff;
@@ -110,6 +147,7 @@ static void sanitise_sched_setattr(struct syscallrecord *rec)
 		sa->sched_flags    = rnd_u64();
 	}
 
+submit:
 	rec->a2 = (unsigned long) sa;
 	avoid_shared_buffer_inout(&rec->a2, sizeof(struct sched_attr));
 	rec->a3 = 0;	/* flags must be zero */
@@ -120,6 +158,13 @@ static void sanitise_sched_setattr(struct syscallrecord *rec)
 	 * pid where the set actually lands. */
 	if (rnd_modulo_u32(100) < 70)
 		rec->a1 = 0;
+
+	/*
+	 * Hand the csfu buffer to the deferred-free queue at sanitise
+	 * time -- sched_setattr has no post handler, so this is the only
+	 * place the zmalloc_tracked() allocation gets released.
+	 */
+	deferred_free_enqueue(sa);
 }
 
 struct syscallentry syscall_sched_setattr = {
