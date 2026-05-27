@@ -120,6 +120,8 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 static void post_sched_getaffinity(struct syscallrecord *rec)
 {
 	struct sched_getaffinity_post_state *snap = (struct sched_getaffinity_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
+	long ret = (long) retval;
 	char buf[2048];
 	cpu_set_t syscall_buf, proc_buf;
 	size_t copied, cmp_len;
@@ -158,9 +160,9 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 	 * kernel buffer-overrun — reject before the ONE_IN(100) sample gate,
 	 * which would otherwise miss 99% of corrupted retvals.
 	 */
-	if (rec->retval != (unsigned long)-1L && rec->retval > snap->len) {
+	if (retval != (unsigned long)-1L && retval > snap->len) {
 		outputerr("post_sched_getaffinity: retval %ld outside [0, %zu]\n",
-			  (long)rec->retval, (size_t)snap->len);
+			  ret, (size_t)snap->len);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -168,7 +170,7 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if ((long)rec->retval <= 0)
+	if (ret <= 0)
 		goto out_free;
 
 	/* pid argument; sanitise leaves it caller-init.  Treat 0 as "self"
@@ -193,7 +195,7 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 		}
 	}
 
-	copied = (size_t)rec->retval;
+	copied = (size_t)retval;
 	if (copied > sizeof(cpu_set_t))
 		copied = sizeof(cpu_set_t);
 
