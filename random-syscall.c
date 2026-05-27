@@ -597,6 +597,99 @@ retry:
 }
 
 /*
+ * Pick the syscall to run under STRATEGY_EDGEPAIR_FRONTIER: uniform draw
+ * from active_syscalls, then biased acceptance via
+ * edgepair_score(child->last_syscall_nr, candidate, mode).  mode flips
+ * 50/50 between EXPLORATION (favours never-seen outgoing pairs) and
+ * EXPLOITATION (favours productive-fresh outgoing pairs) per call, so
+ * both axes get airtime without a tuning knob.
+ *
+ * When the child has no predecessor (last_syscall_nr == EDGEPAIR_NO_PREV)
+ * the score is undefined; fall back to a uniform validate-and-accept loop
+ * without the score gate so the first syscall of each child still gets
+ * normal cover.
+ *
+ * The validate / EXPENSIVE / AVOID_SYSCALL retry budget mirrors
+ * set_syscall_nr_coverage_frontier(): correctness gates apply regardless
+ * of strategy.
+ */
+static bool set_syscall_nr_edgepair_frontier(struct syscallrecord *rec,
+					     struct childdata *child)
+{
+	unsigned int syscallnr;
+	unsigned int val;
+	bool do32;
+	unsigned int outer_attempts = 0;
+	unsigned int nr_syscalls;
+	enum edgepair_score_mode mode;
+	bool have_prev;
+
+	if (biarch) {
+		do32 = choose_syscall_table(child, &nr_syscalls);
+	} else {
+		do32 = false;
+		nr_syscalls = max_nr_syscalls;
+	}
+
+	have_prev = (child->last_syscall_nr != EDGEPAIR_NO_PREV);
+	mode = RAND_BOOL() ? EDGEPAIR_SCORE_EXPLORATION
+			   : EDGEPAIR_SCORE_EXPLOITATION;
+
+retry:
+	if (no_syscalls_enabled() == true) {
+		output(0, "[%d] No more syscalls enabled. Exiting\n", mypid());
+		__atomic_store_n(&shm->exit_reason, EXIT_NO_SYSCALLS_ENABLED, __ATOMIC_RELAXED);
+		return FAIL;
+	}
+
+	if (outer_attempts++ > 10000) {
+		output(0, "[%d] set_syscall_nr_edgepair_frontier exceeded retry budget\n", mypid());
+		return FAIL;
+	}
+
+	syscallnr = rnd_modulo_u32(nr_syscalls);
+
+	val = child->active_syscalls[syscallnr];
+	if (val == 0)
+		goto retry;
+
+	syscallnr = val - 1;
+
+	if (syscall_is_expensive(syscallnr, do32) && !ONE_IN(1000))
+		goto retry;
+
+	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
+		note_validation_failure(syscallnr, do32);
+		goto retry;
+	}
+	note_validation_success(syscallnr);
+
+	/* Edgepair-weighted acceptance.  edgepair_score returns a weight in
+	 * [0, 1024]; treat it as a rejection-sampling probability against the
+	 * max weight 1024.  A weight of 0 still accepts on a 1024-sided roll
+	 * of 0, keeping a non-starving floor for cold pairs in this arm so it
+	 * does not livelock when every pair score is currently low. */
+	if (have_prev) {
+		unsigned int w = edgepair_score(child->last_syscall_nr,
+						syscallnr, mode);
+		unsigned int roll = (unsigned int)rnd_modulo_u32(1024U + 1U);
+
+		if (roll > w)
+			goto retry;
+	}
+
+	lock(&rec->lock);
+	rec->do32bit = do32;
+	rec->nr = syscallnr;
+	unlock(&rec->lock);
+
+	__atomic_fetch_add(&shm->stats.edgepair_frontier_strategy_picks, 1UL,
+			   __ATOMIC_RELAXED);
+
+	return true;
+}
+
+/*
  * Mid-chain edgepair-guided pick.  Sample up to EDGEPAIR_CHAIN_SAMPLE_K
  * syscall numbers from the active table, drop any that can't be called
  * right now (active_syscalls slot empty, validate_specific_syscall_silent
@@ -794,6 +887,8 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 		return set_syscall_nr_random(rec, child);
 	case STRATEGY_COVERAGE_FRONTIER:
 		return set_syscall_nr_coverage_frontier(rec, child);
+	case STRATEGY_EDGEPAIR_FRONTIER:
+		return set_syscall_nr_edgepair_frontier(rec, child);
 	default:
 		__builtin_unreachable();
 	}

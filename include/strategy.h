@@ -40,6 +40,17 @@ enum strategy_t {
 	STRATEGY_COVERAGE_FRONTIER, /* roulette-wheel weighted by per-syscall
 				     * frontier-edge count (see frontier_*
 				     * APIs below) */
+	STRATEGY_EDGEPAIR_FRONTIER, /* roulette-wheel weighted by edgepair_
+				     * score(prev, candidate) -- same
+				     * rejection-sampling shape as
+				     * STRATEGY_COVERAGE_FRONTIER but the
+				     * weight comes from (prev, candidate)
+				     * pair productivity instead of
+				     * per-syscall frontier-edge counts.
+				     * Ineligible when edgepair is disabled
+				     * or when child has no last_syscall_nr;
+				     * falls back to uniform pick in the
+				     * latter case.  */
 	NR_STRATEGIES,
 };
 

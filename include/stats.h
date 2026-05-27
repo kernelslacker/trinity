@@ -1749,6 +1749,15 @@ struct stats_s {
 	 * the average accepted picks per window the arm ran. */
 	unsigned long frontier_strategy_picks;
 
+	/* Bump from set_syscall_nr_edgepair_frontier each time a candidate
+	 * clears the edgepair-weighted acceptance gate and commits.  Sibling
+	 * of frontier_strategy_picks; use the ratio
+	 * (edgepair_frontier_strategy_picks /
+	 *  bandit_pulls[STRATEGY_EDGEPAIR_FRONTIER]) to see how often a pull
+	 * translated to an actual committed pick vs how often the picker hit
+	 * its 10000-iteration retry budget. */
+	unsigned long edgepair_frontier_strategy_picks;
+
 	/* Number of times the ring rotation's per-nr subtract against
 	 * frontier_recent_count_cached would have produced a negative value
 	 * (i.e. the value being aged out was larger than the cached running

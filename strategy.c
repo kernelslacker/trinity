@@ -150,13 +150,18 @@ const char *strategy_name(int arm)
 	case STRATEGY_HEURISTIC:		return "HEURISTIC";
 	case STRATEGY_RANDOM:			return "RANDOM";
 	case STRATEGY_COVERAGE_FRONTIER:	return "COVERAGE_FRONTIER";
+	case STRATEGY_EDGEPAIR_FRONTIER:	return "EDGEPAIR_FRONTIER";
 	default:				return "?";
 	}
 }
 
 bool is_strategy_eligible(int arm)
 {
-	return arm >= 0 && arm < NR_STRATEGIES;
+	if (arm < 0 || arm >= NR_STRATEGIES)
+		return false;
+	if (arm == STRATEGY_EDGEPAIR_FRONTIER && !edgepair_is_enabled())
+		return false;
+	return true;
 }
 
 /*

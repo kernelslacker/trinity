@@ -2068,6 +2068,8 @@ static const struct {
 	 * the fleet's syscall throughput when the bandit picker selects it. */
 	{ "frontier_strategy_picks",
 	  offsetof(struct stats_s, frontier_strategy_picks) },
+	{ "edgepair_frontier_strategy_picks",
+	  offsetof(struct stats_s, edgepair_frontier_strategy_picks) },
 	/* Saturating-subtract clamps fired during frontier ring rotation --
 	 * see comment on struct field.  Non-zero is a correctness flag, not
 	 * tuning data. */
