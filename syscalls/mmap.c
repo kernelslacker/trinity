@@ -14,6 +14,7 @@
 #include "shm.h"
 #include "arch.h"
 #include "compat.h"
+#include "deferred-free.h"
 #include "hugepages.h"
 #include "objects.h"
 #include "random.h"
@@ -224,7 +225,7 @@ static void post_mmap(struct syscallrecord *rec)
 	new = alloc_object();
 	new->map.name = strdup("misc");
 	if (!new->map.name) {
-		free(new);
+		tracked_free_now(new);
 		return;
 	}
 	new->map.size = rec->a2;
