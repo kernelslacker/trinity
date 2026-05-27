@@ -23,9 +23,10 @@
 
 static void post_dup(struct syscallrecord *rec)
 {
+	unsigned long retval = rec->retval;
 	struct stat st_old, st_new;
 
-	if ((long) rec->retval < 0 || (long) rec->retval >= (1 << 20))
+	if ((long) retval < 0 || (long) retval >= (1 << 20))
 		return;
 
 	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
@@ -38,7 +39,7 @@ static void post_dup(struct syscallrecord *rec)
 	 * fd_oracle_anomalies counter is the survivor signal.
 	 */
 	if (fstat((int) rec->a1, &st_old) == 0 &&
-	    fstat((int) rec->retval, &st_new) == 0) {
+	    fstat((int) retval, &st_new) == 0) {
 		if (st_old.st_dev != st_new.st_dev ||
 		    st_old.st_ino != st_new.st_ino) {
 			__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
@@ -119,10 +120,11 @@ static void sanitise_dup2(struct syscallrecord *rec)
 
 static void post_dup2(struct syscallrecord *rec)
 {
+	unsigned long retval = rec->retval;
 	struct childdata *child;
 	struct stat st_old, st_new;
 
-	if ((long)rec->retval < 0 || (long)rec->retval >= (1 << 20))
+	if ((long) retval < 0 || (long) retval >= (1 << 20))
 		return;
 
 	/*
@@ -160,7 +162,7 @@ static void post_dup2(struct syscallrecord *rec)
 	 * counter is the survivor signal.
 	 */
 	if (fstat((int) rec->a1, &st_old) == 0 &&
-	    fstat((int) rec->retval, &st_new) == 0) {
+	    fstat((int) retval, &st_new) == 0) {
 		if (st_old.st_dev != st_new.st_dev ||
 		    st_old.st_ino != st_new.st_ino) {
 			__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
