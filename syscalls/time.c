@@ -49,16 +49,30 @@ static void sanitise_time(struct syscallrecord *rec)
 static void post_time(struct syscallrecord *rec)
 {
 	struct timespec ts;
+	unsigned long retval;
 	long syscall_t, real_t, diff;
 
 	if (!ONE_IN(100))
 		return;
 
-	syscall_t = (long) rec->retval;
+	/*
+	 * Snapshot rec->retval once.  rec lives in the child's shm region;
+	 * reading it at the IS_ERR_VALUE guard and again at the cast to
+	 * signed wall-clock leaves a window in which a sibling-child stomp
+	 * or a signal-handler reschedule can rewrite the slot between the
+	 * two reads, so the errno-range guard could pass on the original
+	 * negative-but-errno value while the second read sees a stomped
+	 * non-errno value that survives the syscall_t <= 0 check, producing
+	 * a false oracle fire on a memory-corruption shape rather than a
+	 * real kernel ABI break.  Same multi-read shape the epoll
+	 * post-handlers had (commit 48279ed126bb).
+	 */
+	retval = rec->retval;
+	syscall_t = (long) retval;
 
 	/* Errno-style return (-1..-MAX_ERRNO): silent skip.  Sanitised
 	 * tloc producing -EFAULT is normal and not an oracle violation. */
-	if (IS_ERR_VALUE(rec->retval))
+	if (IS_ERR_VALUE(retval))
 		return;
 
 	/* A successful sys_time() must be a positive wall-clock time.
