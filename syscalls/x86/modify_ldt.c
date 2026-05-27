@@ -98,6 +98,8 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 static void post_modify_ldt(struct syscallrecord *rec)
 {
 	struct modify_ldt_post_state *snap = (struct modify_ldt_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
+	long ret = (long) retval;
 
 	if (snap == NULL)
 		return;
@@ -143,10 +145,10 @@ static void post_modify_ldt(struct syscallrecord *rec)
 	 * still released.
 	 */
 	if (snap->func == 0 &&
-	    (long) rec->retval != -1L &&
-	    rec->retval > snap->bytecount) {
+	    ret != -1L &&
+	    retval > snap->bytecount) {
 		outputerr("post_modify_ldt: retval %lu exceeds bytecount %lu\n",
-			  rec->retval, snap->bytecount);
+			  retval, snap->bytecount);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 
