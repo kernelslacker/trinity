@@ -77,6 +77,8 @@ static void sanitise_clone(struct syscallrecord *rec)
 
 static void post_clone(struct syscallrecord *rec)
 {
+	unsigned long retval = rec->retval;
+
 	/*
 	 * Release the ticket up front, atomically.  clone() returns in
 	 * BOTH the parent and the newly created task; the syscallrecord
@@ -91,11 +93,11 @@ static void post_clone(struct syscallrecord *rec)
 	release_newnet_ticket(rec);
 
 	/* Child branch: caller-side differentiation, nothing to validate here. */
-	if (rec->retval == 0)
+	if (retval == 0)
 		return;
 
 	/* Error branch: -1UL with errno set, valid failure shape. */
-	if (rec->retval == (unsigned long)-1L)
+	if (retval == (unsigned long)-1L)
 		return;
 
 	/*
@@ -104,9 +106,9 @@ static void post_clone(struct syscallrecord *rec)
 	 * tear or pid_ns translation bug) — reject before any caller routes it
 	 * back into pid_alive()/waitpid() bookkeeping.
 	 */
-	if (rec->retval > 4194304UL) {
+	if (retval > 4194304UL) {
 		output(0, "post_clone: rejected returned pid 0x%lx outside [1, PID_MAX_LIMIT=4194304] (and not -1)\n",
-		       rec->retval);
+		       retval);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		return;
 	}
