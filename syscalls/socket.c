@@ -292,7 +292,7 @@ static void post_socket(struct syscallrecord *rec)
 	unsigned long family = rec->a1;
 	int fd = rec->retval;
 
-	if ((long)rec->retval < 0)
+	if (fd < 0)
 		return;
 
 	if (family >= TRINITY_PF_MAX) {
