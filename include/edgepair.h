@@ -191,9 +191,14 @@ bool edgepair_entry_is_cold_parent(const struct edgepair_entry *e);
 
 /*
  * Read-only accessor returning the raw (new_edges, total) counters for a
- * given (prev, curr) pair.  Returns {0, 0} on miss or before the table is
- * initialised.  Callers compute their own productivity ratio without
+ * given (prev, curr) pair.  Returns {0, 0} on miss or before the mirror
+ * is populated.  Callers compute their own productivity ratio without
  * exposing the entry pointer.
+ *
+ * Child-safe: reads the published mirror, refreshed at every drain, so
+ * children see the parent's current aggregate instead of the fork-time
+ * / warm-start snapshot the COW canonical leaves frozen in child
+ * address space.  Lags the canonical by at most one publish interval.
  */
 struct edgepair_stats {
 	unsigned long new_edges;

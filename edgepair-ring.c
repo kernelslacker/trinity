@@ -229,17 +229,17 @@ unsigned int edgepair_ring_drain(struct edgepair_ring *ring)
  * publish: apply_slot() is the sole writer to parent_edgepair.table
  * and marks each touched slot in a parent-private dirty bitmap +
  * queue (see the declarations above this function); this function
- * walks the queue and copies only those slots (~24 B per dirty index)
- * instead of the unconditional 6 MiB memcpy the prior version did.
+ * walks the queue and copies only those slots (~32 B per dirty index)
+ * instead of the unconditional 8 MiB memcpy the prior version did.
  *
  * Background: a full walk had ~100% of edgepair_ring_drain_all's CPU
  * sitting on a single load instruction at 76% DRAM stall once the
- * 8 MiB canonical table and the 6 MiB mirror outgrew L3 under fuzz
+ * 8 MiB canonical table and the mirror outgrew L3 under fuzz
  * pressure.  Every published-row that didn't actually change still
  * cost a cache-line read + write, and the working set evicted itself
  * between drains.  In a healthy run the per-drain dirty count is much
  * smaller than EDGEPAIR_TABLE_SIZE, so the memcpy collapses to
- * dirty_count * 24 B and the DRAM stall vanishes.
+ * dirty_count * 32 B and the DRAM stall vanishes.
  *
  * Fallback to the full walk on:
  *   - First publish (need_full_publish set at startup and re-asserted
@@ -250,10 +250,12 @@ unsigned int edgepair_ring_drain(struct edgepair_ring *ring)
  *     publishes).  Republishing everything is cheaper than tracking
  *     the spillover and the next publish resets the state cleanly.
  *
- * Trims total_count out of the mirror (parent-only consumer) and the
- * CAS-key union (parent doesn't need atomic claim).  Carries
- * total_pair_calls in the header so edgepair_is_cold has its "now"
- * anchor for the staleness comparison.
+ * Trims the CAS-key union out of the mirror (parent doesn't need
+ * atomic claim).  Carries total_pair_calls in the header so
+ * edgepair_is_cold has its "now" anchor for the staleness comparison,
+ * and carries the per-slot total_count so child-side edgepair_get_stats
+ * sees the parent's current aggregate instead of the fork-time COW
+ * snapshot.
  */
 static void edgepair_publish_locked(void)
 {
@@ -272,6 +274,7 @@ static void edgepair_publish_locked(void)
 			ps->prev_nr = e->prev_nr;
 			ps->curr_nr = e->curr_nr;
 			ps->new_edge_count = e->new_edge_count;
+			ps->total_count = e->total_count;
 			ps->last_new_at = e->last_new_at;
 		}
 		edgepair_need_full_publish = false;
@@ -284,6 +287,7 @@ static void edgepair_publish_locked(void)
 			ps->prev_nr = e->prev_nr;
 			ps->curr_nr = e->curr_nr;
 			ps->new_edge_count = e->new_edge_count;
+			ps->total_count = e->total_count;
 			ps->last_new_at = e->last_new_at;
 		}
 	}

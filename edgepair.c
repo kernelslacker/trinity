@@ -9,10 +9,11 @@
  * applies them serially under single-writer discipline, no CAS, no
  * packed-key layout pin.
  *
- * The one child-side reader (edgepair_is_cold on the syscall-selection
- * biasing path) consults the parent-published mirror page
- * (edgepair_published), refreshed in full at every drain.  Parent-side
- * consumers (edgepair_get_stats, dump, stats display) read the
+ * Child-side readers (edgepair_state / edgepair_is_cold on the
+ * syscall-selection biasing path, edgepair_get_stats on the
+ * never-seen-pair accept and bandit reward dampening paths) consult
+ * the parent-published mirror page (edgepair_published), refreshed at
+ * every drain.  Parent-side consumers (dump, stats display) read the
  * canonical aggregate directly.
  */
 
@@ -151,6 +152,26 @@ bool edgepair_entry_is_cold_parent(const struct edgepair_entry *e)
 	return (total - last) > EDGEPAIR_COLD_THRESHOLD;
 }
 
+/*
+ * Read the (new_edges, total) counters for a (prev, curr) pair from
+ * the child-RO published mirror.  Safe to call from child context: the
+ * mirror is the parent's published snapshot, refreshed by
+ * edgepair_publish_locked() at every drain, so children see the
+ * parent's current aggregate instead of the fork-time / warm-start
+ * COW copy of parent_edgepair.table[] that lives frozen in their
+ * address space.
+ *
+ * Staleness: the returned counters lag the parent's canonical
+ * aggregate by at most one publish interval (publish-driven, not
+ * per-call) -- a strict improvement over the fork-time / warm-start
+ * staleness the canonical-read path leaves in child address space.
+ *
+ * Returns the {0, 0} sentinel on disabled, out-of-range, mirror not
+ * yet populated, or pair absent.  No parent-side caller exists today;
+ * a future parent-side reader that needs the canonical (non-published)
+ * counters can walk parent_edgepair.table[] directly the way
+ * edgepair_lookup() does.
+ */
 struct edgepair_stats edgepair_get_stats(unsigned int prev_nr,
 					 unsigned int curr_nr)
 {
@@ -158,7 +179,7 @@ struct edgepair_stats edgepair_get_stats(unsigned int prev_nr,
 	unsigned int idx;
 	unsigned int probe;
 
-	if (!edgepair_enabled)
+	if (!edgepair_enabled || edgepair_published == NULL)
 		return s;
 
 	if (prev_nr >= MAX_NR_SYSCALL || curr_nr >= MAX_NR_SYSCALL)
@@ -166,7 +187,8 @@ struct edgepair_stats edgepair_get_stats(unsigned int prev_nr,
 
 	idx = edgepair_pair_hash(prev_nr, curr_nr);
 	for (probe = 0; probe < EDGEPAIR_MAX_PROBE; probe++) {
-		const struct edgepair_entry *e = &parent_edgepair.table[idx];
+		const struct edgepair_published_slot *e =
+			&edgepair_published->slots[idx];
 
 		if (e->prev_nr == EDGEPAIR_EMPTY)
 			return s;

@@ -55,10 +55,10 @@ struct edgepair_ring {
  * the table or the counters.  Children inherit a COW copy at fork time
  * but the convention is that children only ever enqueue into their
  * edgepair_ring; the aggregate is read-only from child context and
- * accessed via the published mirror page (for the one child-read site
- * that exists, edgepair_is_cold) or through parent-canonical lookups
- * for the parent-side consumers (edgepair_get_stats, dump, stats; the
- * parent-canonical cold predicate is edgepair_entry_is_cold_parent).
+ * accessed via the published mirror page (for the child-read sites
+ * edgepair_is_cold and edgepair_get_stats) or through parent-canonical
+ * lookups for the parent-side consumers (dump, stats; the parent-
+ * canonical cold predicate is edgepair_entry_is_cold_parent).
  *
  * Same slot layout as the shm table it shadows -- struct edgepair_entry
  * carries the CAS-key union which is harmless as plain memory parent-
@@ -88,21 +88,26 @@ extern struct edgepair_aggregate parent_edgepair;
 
 /*
  * Mirror page: parent-write / child-read.  Carries the published view
- * of the canonical table so the child-side cold-pair check
- * (edgepair_is_cold at random-syscall.c) can read its three fields
+ * of the canonical table so the child-side readers (edgepair_is_cold
+ * and edgepair_get_stats at random-syscall.c) can read its fields
  * without a ring round-trip.
  *
  * Carries the trimmed slot view (prev_nr, curr_nr, new_edge_count,
- * last_new_at) plus the total_pair_calls "now" anchor in a header
- * word.  total_count is parent-only-consumed and stays out of the
- * mirror; pairs_tracked / pairs_dropped are parent-read-only for
- * stats display and served by parent-canonical lookup.
+ * total_count, last_new_at) plus the total_pair_calls "now" anchor in
+ * a header word.  pairs_tracked / pairs_dropped are parent-read-only
+ * for stats display and served by parent-canonical lookup.
+ *
+ * EDGEPAIR_TABLE_SIZE * 32 == 8 MiB shared for the slots[] array (the
+ * slot grew from 24 to 32 bytes to carry total_count so the child-side
+ * edgepair_get_stats() reader sees the parent's current aggregate
+ * instead of the fork-time / warm-start snapshot the COW canonical
+ * leaves frozen in child address space).
  *
  * Republish is dirty-slot driven: apply_slot() is the sole writer to
  * parent_edgepair.table and marks each touched slot in a parent-
  * private bitmap + queue; edgepair_publish_locked() walks that queue
- * and copies only those slots (~24 B per dirty index) instead of the
- * full 24 B * EDGEPAIR_TABLE_SIZE memcpy.  First publish and dirty-
+ * and copies only those slots (~32 B per dirty index) instead of the
+ * full 32 B * EDGEPAIR_TABLE_SIZE memcpy.  First publish and dirty-
  * queue overflow fall back to a full walk so the mirror is never
  * stale relative to a slot that was actually touched.  See
  * edgepair-ring.c for the bitmap / queue declarations and the
@@ -112,12 +117,13 @@ struct edgepair_published_slot {
 	unsigned int  prev_nr;		/* matches edgepair_entry.prev_nr */
 	unsigned int  curr_nr;
 	unsigned long new_edge_count;
+	unsigned long total_count;
 	unsigned long last_new_at;
-};					/* 24 bytes per slot */
+};					/* 32 bytes per slot */
 
 struct edgepair_published {
 	unsigned long total_pair_calls;	/* the "now" anchor for cold staleness */
-	unsigned long _pad[2];		/* align slots[] to 24 B */
+	unsigned long _pad[3];		/* align slots[] to 32 B */
 	struct edgepair_published_slot slots[EDGEPAIR_TABLE_SIZE];
 };
 
