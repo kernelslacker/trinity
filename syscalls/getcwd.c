@@ -82,10 +82,11 @@ static void post_getcwd(struct syscallrecord *rec)
 {
 	struct getcwd_post_state *snap =
 		(struct getcwd_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
+	long ret = (long) retval;
 	char proc_cwd[PATH_MAX];
 	char user_cwd[PATH_MAX];
 	ssize_t n;
-	long ret;
 	size_t copy_len;
 
 	if (snap == NULL)
@@ -133,9 +134,9 @@ static void post_getcwd(struct syscallrecord *rec)
 	 * retval past this gate.  Fires unconditionally, ahead of the
 	 * ONE_IN(100) sample gate, so every offending retval is counted.
 	 */
-	if ((long)rec->retval > 0 && (unsigned long)rec->retval > snap->size) {
+	if (ret > 0 && retval > snap->size) {
 		outputerr("post_getcwd: rejected retval=0x%lx > size=%lu\n",
-			  rec->retval, snap->size);
+			  retval, snap->size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -143,7 +144,6 @@ static void post_getcwd(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	ret = (long)rec->retval;
 	if (ret <= 0)
 		goto out_free;			/* syscall failed/empty */
 	if (snap->buf == 0)
