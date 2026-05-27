@@ -176,6 +176,7 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 static void post_pselect6(struct syscallrecord *rec)
 {
 	struct pselect6_post_state *snap = (struct pselect6_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
 
 	rec->a2 = 0;
 	rec->a3 = 0;
@@ -227,9 +228,9 @@ static void post_pselect6(struct syscallrecord *rec)
 	 * write of the count by a parallel signal-restart path, or -errno
 	 * leaking through the success slot.
 	 */
-	if ((long) rec->retval != -1L && rec->retval > 3UL * snap->nfds) {
+	if ((long) retval != -1L && retval > 3UL * snap->nfds) {
 		outputerr("post_pselect6: rejected retval=0x%lx > 3*nfds=%u\n",
-			  rec->retval, 3 * snap->nfds);
+			  retval, 3 * snap->nfds);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		/* fall through to release the snap */
 	}
