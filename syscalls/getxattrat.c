@@ -85,6 +85,7 @@ static void post_getxattrat(struct syscallrecord *rec)
 {
 	struct getxattrat_post_state *snap =
 		(struct getxattrat_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
 
 	if (snap == NULL)
 		return;
@@ -105,10 +106,10 @@ static void post_getxattrat(struct syscallrecord *rec)
 		return;
 	}
 
-	if ((long) rec->retval >= 0 && snap->size != 0 &&
-	    rec->retval > snap->size) {
+	if ((long) retval >= 0 && snap->size != 0 &&
+	    retval > snap->size) {
 		outputerr("post_getxattrat: rejecting retval %lu > size %lu\n",
-			  rec->retval, snap->size);
+			  retval, snap->size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 
