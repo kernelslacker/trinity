@@ -1104,6 +1104,20 @@ int select_next_strategy(int prev,
 			__ATOMIC_RELAXED);
 		__atomic_fetch_add(&shm->stats.plateau_forced_windows, 1UL,
 				   __ATOMIC_RELAXED);
+		/* Side-channel count of intervention-forced frontier picks.
+		 * Bumped here so both the unconditional PIM_COVERAGE_FRONTIER
+		 * slot AND the PIM_RRC_BIASED dispatch that maps RRC_CMP_
+		 * DERIVED to the frontier arm get attributed.  Deliberately
+		 * NOT a bandit_pulls[STRATEGY_COVERAGE_FRONTIER] bump: D-UCB's
+		 * exploration bonus assumes pulls reflect policy choice, not
+		 * an intervention rescue, and folding the forced window into
+		 * the learner's reward series would shift the arm's apparent
+		 * yield toward the intervention cohort for the rest of the
+		 * run. */
+		if (arm == STRATEGY_COVERAGE_FRONTIER)
+			__atomic_fetch_add(
+				&shm->stats.frontier_intervention_pulls,
+				1UL, __ATOMIC_RELAXED);
 		*reason_out = SR_PLATEAU_FORCE;
 		return arm;
 	}

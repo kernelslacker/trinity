@@ -2062,6 +2062,12 @@ static const struct {
 	 * tuning data. */
 	{ "frontier_underflow_prevented",
 	  offsetof(struct stats_s, frontier_underflow_prevented) },
+	/* Plateau-intervention rotations that selected the frontier arm.
+	 * Held side-channel so the learner-facing bandit_pulls[] stays
+	 * clean; the snapshot path folds this back in for the plateau
+	 * classifier's frontier_cold rule. */
+	{ "frontier_intervention_pulls",
+	  offsetof(struct stats_s, frontier_intervention_pulls) },
 	/* Picks the explorer pool forced to STRATEGY_RANDOM.  Rate-of-change
 	 * over the run divided by explorer_children gives the per-explorer
 	 * picker throughput; deviation from the bandit-pool throughput
@@ -3850,6 +3856,9 @@ void dump_stats(void)
 	if (shm->stats.frontier_underflow_prevented)
 		stat_row("strategy", "frontier_underflow_prevented",
 			 shm->stats.frontier_underflow_prevented);
+	if (shm->stats.frontier_intervention_pulls)
+		stat_row("strategy", "frontier_intervention_pulls",
+			 shm->stats.frontier_intervention_pulls);
 	if (shm->stats.strategy_explorer_picks)
 		stat_row("strategy", "strategy_explorer_picks",
 			 shm->stats.strategy_explorer_picks);

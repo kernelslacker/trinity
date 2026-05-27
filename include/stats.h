@@ -1734,6 +1734,24 @@ struct stats_s {
 	 * a sane weight signal. */
 	unsigned long frontier_underflow_prevented;
 
+	/* Number of plateau-intervention rotations that selected the
+	 * STRATEGY_COVERAGE_FRONTIER arm -- via either the unconditional
+	 * PIM_COVERAGE_FRONTIER slot or the PIM_RRC_BIASED dispatch when
+	 * amplified_intervention_arm() routes the dominant rescue class
+	 * to the frontier picker.  Deliberately separate from the
+	 * learner-facing bandit_pulls[STRATEGY_COVERAGE_FRONTIER]:
+	 * intervention picks are forced over the top of the bandit while
+	 * plateau_active is set and must NOT enter the discounted reward
+	 * series, because D-UCB's exploration bonus assumes pulls reflect
+	 * the picker's policy choice rather than a rescue.  Folding
+	 * intervention picks into the learner's series would shift the
+	 * frontier arm's apparent yield toward the intervention cohort
+	 * for the rest of the run.  Bumped RELAXED from the rotation
+	 * site in select_next_strategy(); paired with the snapshot-side
+	 * fold-in so the plateau classifier sees all frontier activity
+	 * regardless of selection path. */
+	unsigned long frontier_intervention_pulls;
+
 	/* Number of syscall picks the explorer pool forced to STRATEGY_RANDOM
 	 * regardless of the bandit's current arm.  Bumped from set_syscall_nr
 	 * when child->is_explorer is true.  Rate-of-change should track
