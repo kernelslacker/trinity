@@ -160,6 +160,7 @@ static void sanitise_getpeername(struct syscallrecord *rec)
 #ifdef HAVE_SYS_GETPEERNAME
 static void post_getpeername(struct syscallrecord *rec)
 {
+	unsigned long retval = rec->retval;
 	struct getpeername_post_state *snap =
 		(struct getpeername_post_state *) rec->post_state;
 	struct sockaddr_storage first_addr;
@@ -214,9 +215,9 @@ static void post_getpeername(struct syscallrecord *rec)
 	 * the != 0 early-return that today silently absorbs both -1 and any
 	 * wild value into the same "give up quietly" branch.
 	 */
-	if (rec->retval != 0 && rec->retval != (unsigned long)-1L) {
+	if (retval != 0 && retval != (unsigned long)-1L) {
 		outputerr("post_getpeername: rejected retval 0x%lx outside {0, -1} (kernel ABI: status code only)\n",
-			  rec->retval);
+			  retval);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -224,7 +225,7 @@ static void post_getpeername(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if ((long) rec->retval != 0)
+	if ((long) retval != 0)
 		goto out_free;
 
 	if (snap->usockaddr == 0 || snap->usockaddr_len == 0)
