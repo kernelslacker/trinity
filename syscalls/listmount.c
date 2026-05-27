@@ -287,6 +287,8 @@ static void post_listmount(struct syscallrecord *rec)
 {
 #ifdef HAVE_SYS_LISTMOUNT
 	struct listmount_post_state *snap = (struct listmount_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
+	long ret = (long) retval;
 	struct mnt_id_req first_req;
 	u64 first_ids[64];
 	u64 recheck_ids[64];
@@ -330,10 +332,9 @@ static void post_listmount(struct syscallrecord *rec)
 	 * otherwise miss 99% of corrupted retvals.  Fall through to
 	 * out_free so the deferred post_state buffer is still released.
 	 */
-	if ((long) rec->retval != -1L &&
-	    (unsigned long) rec->retval > snap->nr_mnt_ids) {
+	if (ret != -1L && retval > snap->nr_mnt_ids) {
 		outputerr("post_listmount: retval %lu exceeds requested nr_mnt_ids %lu\n",
-			  (unsigned long) rec->retval, snap->nr_mnt_ids);
+			  retval, snap->nr_mnt_ids);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -341,7 +342,7 @@ static void post_listmount(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if ((long) rec->retval <= 0)
+	if (ret <= 0)
 		goto out_free;
 
 	if (snap->req == 0 || snap->mnt_ids == 0 || snap->nr_mnt_ids == 0)
@@ -366,8 +367,7 @@ static void post_listmount(struct syscallrecord *rec)
 
 	memcpy(&first_req, (void *) snap->req, sizeof(first_req));
 
-	n = ((unsigned long) rec->retval < 64ul)
-		? (unsigned long) rec->retval : 64ul;
+	n = (retval < 64ul) ? retval : 64ul;
 	memcpy(first_ids, (void *) snap->mnt_ids, n * sizeof(u64));
 
 	{
@@ -382,7 +382,7 @@ static void post_listmount(struct syscallrecord *rec)
 	if (rc < 0)
 		goto out_free;
 
-	if (rc != (long) rec->retval)
+	if (rc != ret)
 		goto out_free;
 
 	if (memcmp(first_ids, recheck_ids, (size_t) rc * sizeof(u64)) != 0) {
@@ -410,7 +410,7 @@ static void post_listmount(struct syscallrecord *rec)
 		output(0,
 		       "[oracle:listmount] mnt_id=%llx retval=%ld ids [%s] vs [%s]\n",
 		       (unsigned long long) first_req.mnt_id,
-		       (long) rec->retval, first_hex, recheck_hex);
+		       ret, first_hex, recheck_hex);
 		__atomic_add_fetch(&shm->stats.listmount_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
