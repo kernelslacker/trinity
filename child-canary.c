@@ -581,7 +581,15 @@ void canary_queue_init(void)
 	canary_queue_live = (!canary_queue_disabled) && (canary_slots > 0);
 
 	if (!canary_queue_live) {
-		output(0, "canary queue: disabled (--no-canary-queue); dormant_op_disabled[] used as static gate\n");
+		if (canary_queue_disabled) {
+			output(0, "canary queue: disabled (--no-canary-queue); dormant_op_disabled[] used as static gate\n");
+		} else {
+			/* canary_slots == 0 -- either explicit
+			 * --canary-slots=0 or alt_op_children=0 collapsed
+			 * the auto-derived value to zero.  The boot log
+			 * above this line shows which. */
+			output(0, "canary queue: disabled (canary_slots=0); dormant_op_disabled[] used as static gate\n");
+		}
 		return;
 	}
 
