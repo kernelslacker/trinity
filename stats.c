@@ -2104,6 +2104,20 @@ static const struct {
 	  offsetof(struct stats_s, explorer_cold_pair_rejects) },
 	{ "explorer_unseen_pair_accepts",
 	  offsetof(struct stats_s, explorer_unseen_pair_accepts) },
+	/* Mid-chain sequence picks routed through edgepair scoring.
+	 * picks vs pick_fails is the success rate of the per-step pair-aware
+	 * picker; explore/exploit split sums to picks and surfaces how often
+	 * the picker drew from each scoring mode.  Rate-of-change against
+	 * chain_iter_count (json sequence_chains.iter_count) shows the picker
+	 * keeping pace with chain execution. */
+	{ "edgepair_chain_picks",
+	  offsetof(struct stats_s, edgepair_chain_picks) },
+	{ "edgepair_chain_pick_fails",
+	  offsetof(struct stats_s, edgepair_chain_pick_fails) },
+	{ "edgepair_chain_pick_explore",
+	  offsetof(struct stats_s, edgepair_chain_pick_explore) },
+	{ "edgepair_chain_pick_exploit",
+	  offsetof(struct stats_s, edgepair_chain_pick_exploit) },
 	/* Epoll lazy-arm wins: rate-of-change tracks fresh epfds reaching
 	 * children after the deferred-arm refactor.  A flat counter while
 	 * fd_regenerated keeps climbing means children aren't picking up
