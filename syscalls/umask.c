@@ -36,6 +36,7 @@
  */
 static void post_umask(struct syscallrecord *rec)
 {
+	unsigned long retval = rec->retval;
 	char buf[2048];
 	char *line;
 	ssize_t n;
@@ -48,10 +49,12 @@ static void post_umask(struct syscallrecord *rec)
 	 * previous mask is always within [0, 0777].  Anything above that
 	 * is a torn return, sign-extension, or sibling-stomp on rec->retval
 	 * -- not a procfs-divergence the oracle below could catch.  Reject
-	 * before the ONE_IN(100) gate so every call is checked. */
-	if (rec->retval > 0777UL) {
+	 * before the ONE_IN(100) gate so every call is checked.  The
+	 * snapshot above pins the value so the bound check and the
+	 * diagnostic both report the same retval. */
+	if (retval > 0777UL) {
 		outputerr("post_umask: rejected retval 0x%lx outside [0, 0777]\n",
-			  rec->retval);
+			  retval);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		return;
 	}
