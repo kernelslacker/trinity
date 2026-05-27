@@ -123,16 +123,27 @@ enum edgepair_score_mode {
  * top-level counters, so a warm-start loader can reject torn / stale
  * files without walking past the end of a partial table.  Old dumps
  * (0xEDDA7A03) get rejected on magic mismatch and the session starts
- * cold. */
-#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A04U
+ * cold.
+ *
+ * 0xEDDA7A05U: the header now also carries the kernel fingerprint
+ * (kallsyms_sha256) plus the syscall-ABI identity fields
+ * (max_nr_syscall, biarch_mode) so the loader can fence the warm-
+ * start against kernel rebuilds, syscall-table shape changes, and
+ * biarch flips.  Old dumps (0xEDDA7A04) get rejected on magic
+ * mismatch and the session starts cold. */
+#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A05U
 #define EDGEPAIR_DUMP_VERSION	1U
 
-/* On-disk dump header.  Fixed 40 bytes -- four u32 followed by three
- * u64, naturally aligned without internal padding so the loader can
- * read it as a single blob.  Followed immediately by
- * parent_edgepair.table[EDGEPAIR_TABLE_SIZE]; the CRC covers that
+/* On-disk dump header.  Fixed 80 bytes -- four u32 followed by three
+ * u64, followed by a 32-byte kallsyms fingerprint and two more u32 of
+ * syscall-ABI identity.  Naturally aligned without internal padding
+ * so the loader can read it as a single blob.  Followed immediately
+ * by parent_edgepair.table[EDGEPAIR_TABLE_SIZE]; the CRC covers that
  * table payload only -- the counters live inside the header so they
- * ride the header read and aren't re-checksummed separately. */
+ * ride the header read and aren't re-checksummed separately.  The
+ * first 40 bytes are bit-identical to the 0xEDDA7A04 layout so an
+ * offline analyzer / recovery tool can still parse the legacy prefix
+ * out of a rejected file. */
 struct edgepair_dump_header {
 	uint32_t magic;			/* EDGEPAIR_DUMP_MAGIC */
 	uint32_t version;		/* EDGEPAIR_DUMP_VERSION */
@@ -141,6 +152,15 @@ struct edgepair_dump_header {
 	uint64_t total_pair_calls;
 	uint64_t pairs_tracked;
 	uint64_t pairs_dropped;
+	/* Identity fields added in EDGEPAIR_DUMP_MAGIC
+	 * 0xEDDA7A05U.  Together they fence the warm-start
+	 * against kernel rebuilds, syscall-table shape changes,
+	 * and biarch flips -- any of which can rename or remove
+	 * entries in the (prev, curr) pair space the saved table
+	 * indexes into. */
+	uint8_t  kallsyms_sha256[32];	/* kcov_get_kernel_fp() */
+	uint32_t max_nr_syscall;	/* MAX_NR_SYSCALL at save */
+	uint32_t biarch_mode;		/* biarch ? 1 : 0 at save */
 };
 
 struct edgepair_entry {

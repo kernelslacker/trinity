@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "arch.h"
 #include "child.h"
 #include "edgepair.h"
 #include "edgepair_ring.h"
@@ -308,6 +309,15 @@ void edgepair_dump_to_file(const char *path)
 	hdr.pairs_tracked	= parent_edgepair.pairs_tracked;
 	hdr.pairs_dropped	= parent_edgepair.pairs_dropped;
 
+	if (!kcov_get_kernel_fp(hdr.kallsyms_sha256)) {
+		output(0,
+			"edgepair: cannot fingerprint kernel (/proc/kallsyms unavailable) -- skipping dump to %s\n",
+			path);
+		return;
+	}
+	hdr.max_nr_syscall = MAX_NR_SYSCALL;
+	hdr.biarch_mode    = biarch ? 1U : 0U;
+
 	f = fopen(path, "wb");
 	if (f == NULL) {
 		perror("edgepair: failed to open dump file");
@@ -415,6 +425,44 @@ bool edgepair_load_from_file(const char *path)
 		       hdr.table_size, EDGEPAIR_TABLE_SIZE, path);
 		(void)close(fd);
 		return false;
+	}
+
+	{
+		uint8_t cur_fp[32];
+
+		if (!kcov_get_kernel_fp(cur_fp)) {
+			output(0,
+				"edgepair: cannot fingerprint kernel (/proc/kallsyms unavailable) -- cold start, ignoring %s\n",
+				path);
+			(void)close(fd);
+			return false;
+		}
+		if (memcmp(hdr.kallsyms_sha256, cur_fp,
+			   sizeof(cur_fp)) != 0) {
+			output(0,
+				"edgepair: kernel fingerprint mismatch at %s (kallsyms content differs from when the file was written) -- cold start\n",
+				path);
+			(void)close(fd);
+			return false;
+		}
+	}
+	if (hdr.max_nr_syscall != MAX_NR_SYSCALL) {
+		output(0,
+			"edgepair: max_nr_syscall %u != expected %u at %s (file built with a different syscall table shape) -- cold start\n",
+			hdr.max_nr_syscall, MAX_NR_SYSCALL, path);
+		(void)close(fd);
+		return false;
+	}
+	{
+		uint32_t want_biarch = biarch ? 1U : 0U;
+
+		if (hdr.biarch_mode != want_biarch) {
+			output(0,
+				"edgepair: biarch_mode %u != expected %u at %s (biarch flag differs from when the file was written) -- cold start\n",
+				hdr.biarch_mode, want_biarch, path);
+			(void)close(fd);
+			return false;
+		}
 	}
 
 	/* Stage into a scratch buffer so a CRC failure doesn't leave the
