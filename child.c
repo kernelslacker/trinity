@@ -385,6 +385,7 @@ void clean_childdata(struct childdata *child)
 	child->cached_fd_generation = 0;
 	child->last_group = GROUP_NONE;
 	child->last_syscall_nr = EDGEPAIR_NO_PREV;
+	child->in_chain_mid_step = false;
 	child->dropped_privs = false;
 	child->op_type = CHILD_OP_SYSCALL;
 	child->stall_count = 0;

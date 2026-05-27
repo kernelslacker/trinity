@@ -37,6 +37,15 @@
 #include "utils.h"
 
 /*
+ * Number of candidate syscall numbers sampled per mid-chain edgepair pick.
+ * Small enough that the K edgepair_score() lookups (each one mirror-page
+ * load + a hash probe) stay cheap relative to a syscall dispatch, large
+ * enough that the picker has a real shot at landing on a productive
+ * outgoing pair when one exists.  See set_syscall_nr_edgepair_chain().
+ */
+#define EDGEPAIR_CHAIN_SAMPLE_K 16
+
+/*
  * This function decides if we're going to be doing a 32bit or 64bit syscall.
  * There are various factors involved here, from whether we're on a 32-bit only arch
  * to 'we asked to do a 32bit only syscall' and more.. Hairy.
@@ -555,6 +564,103 @@ retry:
 }
 
 /*
+ * Mid-chain edgepair-guided pick.  Sample up to EDGEPAIR_CHAIN_SAMPLE_K
+ * syscall numbers from the active table, drop any that can't be called
+ * right now (active_syscalls slot empty, validate_specific_syscall_silent
+ * rejects), score the survivors by edgepair_score(prev, candidate, mode)
+ * against child->last_syscall_nr, and commit the highest-scoring one.
+ *
+ * Mode flips per call between EDGEPAIR_SCORE_EXPLORATION (favours
+ * never-seen outgoing pairs) and EDGEPAIR_SCORE_EXPLOITATION (favours
+ * productive-fresh outgoing pairs) on a 50/50 coin, so both axes get
+ * airtime without a tuning knob.
+ *
+ * On a successful pick the function writes rec->nr / rec->do32bit and
+ * returns true; the caller (set_syscall_nr) short-circuits and skips
+ * the bandit's strategy_picks[] / strategy_at_pick stamp so chain mid-
+ * step dispatches inherit step 0's attribution.  On failure (no candidate
+ * survived K tries) returns false and the caller falls through to the
+ * normal bandit dispatch, where strategy_at_pick / strategy_picks[] get
+ * stamped exactly once for this call.
+ *
+ * Does not gate on syscall_is_expensive: K is small and the rare
+ * EXPENSIVE candidate that slips through gets dispatched at the same
+ * rate the bandit pickers would land on it after their 1000:1 reject
+ * gate -- chain mid-step is the wrong place to re-roll for a different
+ * cost class.
+ */
+static bool set_syscall_nr_edgepair_chain(struct syscallrecord *rec,
+					  struct childdata *child)
+{
+	enum edgepair_score_mode mode;
+	unsigned int nr_syscalls;
+	unsigned int best_nr = 0;
+	unsigned int best_score = 0;
+	unsigned int sample;
+	bool best_valid = false;
+	bool do32;
+
+	if (biarch) {
+		do32 = choose_syscall_table(child, &nr_syscalls);
+	} else {
+		do32 = false;
+		nr_syscalls = max_nr_syscalls;
+	}
+
+	if (no_syscalls_enabled() == true)
+		return false;
+
+	mode = RAND_BOOL() ? EDGEPAIR_SCORE_EXPLORATION
+			   : EDGEPAIR_SCORE_EXPLOITATION;
+
+	for (sample = 0; sample < EDGEPAIR_CHAIN_SAMPLE_K; sample++) {
+		unsigned int idx = rnd_modulo_u32(nr_syscalls);
+		int val = child->active_syscalls[idx];
+		unsigned int candidate;
+		unsigned int score;
+
+		if (val == 0)
+			continue;
+
+		candidate = (unsigned int)(val - 1);
+
+		if (validate_specific_syscall_silent(syscalls, (int)candidate) == false)
+			continue;
+
+		score = edgepair_score(child->last_syscall_nr, candidate, mode);
+
+		/* > rather than >= so the first survivor wins ties.  Without
+		 * the strict inequality the picker would silently prefer
+		 * later samples on ties, which biases nothing useful and
+		 * costs an extra store per equal-scoring candidate. */
+		if (!best_valid || score > best_score) {
+			best_nr = candidate;
+			best_score = score;
+			best_valid = true;
+		}
+	}
+
+	if (!best_valid)
+		return false;
+
+	lock(&rec->lock);
+	rec->do32bit = do32;
+	rec->nr = best_nr;
+	unlock(&rec->lock);
+
+	__atomic_fetch_add(&shm->stats.edgepair_chain_picks, 1UL,
+			   __ATOMIC_RELAXED);
+	if (mode == EDGEPAIR_SCORE_EXPLORATION)
+		__atomic_fetch_add(&shm->stats.edgepair_chain_pick_explore,
+				   1UL, __ATOMIC_RELAXED);
+	else
+		__atomic_fetch_add(&shm->stats.edgepair_chain_pick_exploit,
+				   1UL, __ATOMIC_RELAXED);
+
+	return true;
+}
+
+/*
  * Dispatch syscall selection through the active strategy's picker.
  * Reads shm->current_strategy with relaxed atomic, then snapshots the
  * chosen arm into child->strategy_at_pick so the post-syscall reward
@@ -592,6 +698,30 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 		__atomic_fetch_add(&shm->strategy_picks[STRATEGY_RANDOM], 1UL,
 				   __ATOMIC_RELAXED);
 		return set_syscall_nr_random(rec, child);
+	}
+
+	/* Mid-chain edgepair-guided pick: when run_sequence_chain is mid-way
+	 * through a fresh-generation chain (step i >= 1, not replaying) and
+	 * the previous syscall is known, try to pick the next syscall by
+	 * scoring outgoing edgepairs from child->last_syscall_nr.  On
+	 * success the function commits rec and returns true here, skipping
+	 * the strategy_picks[] / strategy_at_pick stamp below so the chain
+	 * mid-step dispatch inherits step 0's bandit attribution -- the
+	 * spec is deliberate about not double-counting picks that the
+	 * bandit didn't actually drive.
+	 *
+	 * On failure (no candidate survived the K-sample budget) we bump
+	 * the per-call fails counter and fall through to the normal bandit
+	 * dispatch path, which stamps strategy_picks[] exactly once for
+	 * this call. */
+	if (child->in_chain_mid_step &&
+	    child->last_syscall_nr != EDGEPAIR_NO_PREV &&
+	    edgepair_is_enabled()) {
+		if (set_syscall_nr_edgepair_chain(rec, child))
+			return true;
+		__atomic_fetch_add(&shm->stats.edgepair_chain_pick_fails, 1UL,
+				   __ATOMIC_RELAXED);
+		/* Fall through to bandit dispatch. */
 	}
 
 	/* ACQUIRE pairs with the RELEASE store on current_strategy in

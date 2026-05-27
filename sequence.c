@@ -278,6 +278,17 @@ bool run_sequence_chain(struct childdata *child)
 		bool step_found_new = false;
 		unsigned long rv;
 
+		/* Tell set_syscall_nr() that we're mid-chain on steps i >= 1
+		 * of a fresh-generation chain, so it can route the pick
+		 * through the edgepair-guided sampler that scores outgoing
+		 * pairs from child->last_syscall_nr.  Step 0 stays on the
+		 * normal bandit dispatch — there is no prev syscall to score
+		 * against yet.  Replay steps stay on the bandit too: the
+		 * picker is overridden by the saved nr inside
+		 * replay_syscall_step, so a mid-chain flag would just add an
+		 * unused gate. */
+		child->in_chain_mid_step = (i > 0) && !replaying;
+
 		if (replaying) {
 			step_ret = replay_syscall_step(child,
 						       &replay_template[i],
@@ -289,8 +300,13 @@ bool run_sequence_chain(struct childdata *child)
 				 * has been deactivated or otherwise become
 				 * unreplayable since save).  Drop into fresh
 				 * generation for the rest of the chain so the
-				 * iteration still does useful work. */
+				 * iteration still does useful work.  The
+				 * fallthrough fresh call is still step i, so
+				 * the edgepair-mid-step gate is meaningful
+				 * iff i >= 1 — re-evaluate after clearing
+				 * replaying. */
 				replaying = false;
+				child->in_chain_mid_step = (i > 0);
 				step_ret = random_syscall_step(child,
 							       have_substitute,
 							       substitute_retval,
@@ -302,6 +318,12 @@ bool run_sequence_chain(struct childdata *child)
 						       substitute_retval,
 						       &step_found_new);
 		}
+
+		/* Clear the flag immediately after dispatch so any non-chain
+		 * picker invocation (e.g. random_syscall called from outside
+		 * the chain executor on the next iteration of the main loop)
+		 * cannot see a stale true value. */
+		child->in_chain_mid_step = false;
 
 		if (step_ret == FAIL)
 			return FAIL;
@@ -359,6 +381,13 @@ bool run_sequence_chain(struct childdata *child)
 	 * the per-syscall minicorpus); the chain length floor of 2 from
 	 * pick_chain_length() makes that condition redundant in practice
 	 * but the explicit check keeps the contract obvious. */
+	/* Defensive: per-iteration clear inside the loop should have left
+	 * the flag false on every exit, but a future early-return path
+	 * could miss it.  Clearing once here at the end of the chain is
+	 * cheap insurance against the next caller (post_run/syscall path
+	 * outside the chain executor) observing a stale true. */
+	child->in_chain_mid_step = false;
+
 	if (chain_found_new && steps_recorded >= 2)
 		chain_corpus_save(steps, steps_recorded);
 

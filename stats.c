@@ -488,9 +488,20 @@ static void json_emit_minicorpus_section(void)
 	c_subst  = __atomic_load_n(&minicorpus_shm->chain_substitution_count, __ATOMIC_RELAXED);
 	c_save   = chain_corpus_shm ? __atomic_load_n(&chain_corpus_shm->save_count,   __ATOMIC_RELAXED) : 0UL;
 	c_replay = chain_corpus_shm ? __atomic_load_n(&chain_corpus_shm->replay_count, __ATOMIC_RELAXED) : 0UL;
-	printf(",\"sequence_chains\":{\"iter_count\":%lu,\"substitutions\":%lu,"
-		"\"corpus_saves\":%lu,\"corpus_replays\":%lu}",
-		c_iter, c_subst, c_save, c_replay);
+	{
+		unsigned long ep_picks, ep_fails, ep_explore, ep_exploit;
+
+		ep_picks   = __atomic_load_n(&shm->stats.edgepair_chain_picks,         __ATOMIC_RELAXED);
+		ep_fails   = __atomic_load_n(&shm->stats.edgepair_chain_pick_fails,    __ATOMIC_RELAXED);
+		ep_explore = __atomic_load_n(&shm->stats.edgepair_chain_pick_explore,  __ATOMIC_RELAXED);
+		ep_exploit = __atomic_load_n(&shm->stats.edgepair_chain_pick_exploit,  __ATOMIC_RELAXED);
+		printf(",\"sequence_chains\":{\"iter_count\":%lu,\"substitutions\":%lu,"
+			"\"corpus_saves\":%lu,\"corpus_replays\":%lu,"
+			"\"edgepair_picks\":%lu,\"edgepair_pick_fails\":%lu,"
+			"\"edgepair_pick_explore\":%lu,\"edgepair_pick_exploit\":%lu}",
+			c_iter, c_subst, c_save, c_replay,
+			ep_picks, ep_fails, ep_explore, ep_exploit);
+	}
 
 	putchar('}');
 }
@@ -5123,6 +5134,26 @@ void dump_stats(void)
 			if (c_iter > 0)
 				output(0, "Sequence chains: %lu iters  %lu substitutions  %lu corpus saves  %lu replays\n",
 				       c_iter, c_subst, c_save, c_replay);
+
+			{
+				unsigned long ep_picks = __atomic_load_n(
+					&shm->stats.edgepair_chain_picks,
+					__ATOMIC_RELAXED);
+				unsigned long ep_fails = __atomic_load_n(
+					&shm->stats.edgepair_chain_pick_fails,
+					__ATOMIC_RELAXED);
+				unsigned long ep_explore = __atomic_load_n(
+					&shm->stats.edgepair_chain_pick_explore,
+					__ATOMIC_RELAXED);
+				unsigned long ep_exploit = __atomic_load_n(
+					&shm->stats.edgepair_chain_pick_exploit,
+					__ATOMIC_RELAXED);
+
+				if (ep_picks > 0 || ep_fails > 0)
+					output(0, "Sequence chains edgepair picker: %lu picks (%lu explore / %lu exploit)  %lu fails\n",
+					       ep_picks, ep_explore, ep_exploit,
+					       ep_fails);
+			}
 		}
 	}
 

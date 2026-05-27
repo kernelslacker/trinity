@@ -365,6 +365,15 @@ struct childdata {
 	 * explorer_children is 0. */
 	bool is_explorer;
 
+	/* Mid-chain step (i >= 1) of a sequence-chain iteration.  Set by
+	 * run_sequence_chain around steps that have a meaningful predecessor
+	 * (last_syscall_nr).  Read by set_syscall_nr to gate the edgepair-
+	 * guided mid-chain picker.  Lives outside the leading hot cacheline
+	 * because the static_assert in child.c pins op_nr at the end of that
+	 * line -- adding a field anywhere ahead of op_nr would push it past
+	 * 64 bytes and break the hot-path budget. */
+	bool in_chain_mid_step;
+
 	/* Strategy enum (enum strategy_t) snapshotted in set_syscall_nr()
 	 * at the moment this child's current syscall was picked.  Read by
 	 * the post-syscall reward attribution sites (PC edges in

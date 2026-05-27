@@ -1676,6 +1676,32 @@ struct stats_s {
 	 * fresh chain) but worth tracking so spikes are visible. */
 	unsigned long chain_replay_len_corrupt;
 
+	/* Sequence-chain mid-step edgepair-guided picker counters.  Bumped
+	 * from set_syscall_nr_edgepair_chain in random-syscall.c when a
+	 * chain step i >= 1 short-circuits the bandit dispatch and picks
+	 * the next syscall by edgepair_score() against the predecessor.
+	 *
+	 *   edgepair_chain_picks         -- successful mid-chain picks
+	 *                                   (chain-step short-circuit taken)
+	 *   edgepair_chain_pick_fails    -- mid-chain picks that found no
+	 *                                   usable candidate and fell
+	 *                                   through to the normal bandit
+	 *                                   dispatch
+	 *   edgepair_chain_pick_explore  -- successful picks scored under
+	 *                                   EDGEPAIR_SCORE_EXPLORATION
+	 *   edgepair_chain_pick_exploit  -- successful picks scored under
+	 *                                   EDGEPAIR_SCORE_EXPLOITATION
+	 *
+	 * The explore/exploit split sums to edgepair_chain_picks -- the
+	 * mode is chosen per-pick by a 50/50 coin.  No strategy_picks[]
+	 * bump is paired with these (mid-chain picks inherit the strategy
+	 * stamp from step 0); the bandit accounting stays attributed to
+	 * whichever arm started the chain. */
+	unsigned long edgepair_chain_picks;
+	unsigned long edgepair_chain_pick_fails;
+	unsigned long edgepair_chain_pick_explore;
+	unsigned long edgepair_chain_pick_exploit;
+
 	/* Per-call abort counter for random_map_readfn().  Bumped each time
 	 * the per-page memcpy in one of the read walks (read_one_page,
 	 * read_whole_mapping, read_every_other_page, read_mapping_reverse,
