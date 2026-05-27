@@ -1228,9 +1228,25 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 		&shm->stats.explorer_pool_edges_discovered, __ATOMIC_RELAXED);
 	snap->frontier_picks = __atomic_load_n(
 		&shm->stats.frontier_strategy_picks, __ATOMIC_RELAXED);
+	/* Bandit-side pulls + intervention-forced picks.  The bandit
+	 * counter advances only on policy-chosen windows; the
+	 * intervention counter advances only on SR_PLATEAU_FORCE
+	 * windows that resolved to STRATEGY_COVERAGE_FRONTIER.  Their
+	 * sum is "all rotations that selected the frontier arm",
+	 * regardless of selection path.  Without the intervention
+	 * term the plateau classifier's frontier_cold rule was
+	 * structurally blind to intervention-driven frontier work --
+	 * the bandit cannot pull the frontier arm during a plateau,
+	 * so frontier_pulls stayed at 0 for the entire window and
+	 * the rule's "pulls > 0 && picks == 0" predicate could never
+	 * fire even when the intervention layer was already
+	 * exercising the frontier picker. */
 	snap->frontier_pulls = __atomic_load_n(
 		&shm->bandit_pulls[STRATEGY_COVERAGE_FRONTIER],
-		__ATOMIC_RELAXED);
+		__ATOMIC_RELAXED) +
+		__atomic_load_n(
+			&shm->stats.frontier_intervention_pulls,
+			__ATOMIC_RELAXED);
 
 	for (op = 0; op < NR_CHILD_OP_TYPES; op++) {
 		snap->childop_edges_total += __atomic_load_n(

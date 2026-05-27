@@ -638,17 +638,28 @@ const char *plateau_intervention_mode_name(enum plateau_intervention_mode m);
  *                   inline = total - remote.
  *   frontier_picks -- shm->stats.frontier_strategy_picks.  Calls that
  *                   went through the coverage-frontier roulette wheel.
- *   frontier_pulls -- shm->bandit_pulls[STRATEGY_COVERAGE_FRONTIER].
- *                   Windows in which the bandit (or the cold-start /
- *                   round-robin path) actually selected the CFV arm.
- *                   Paired with frontier_picks: when the bandit pulled
- *                   CFV but the weighted-accept gate inside the picker
- *                   rejected every candidate, pulls advances while
- *                   picks stays at 0.  The frontier-cold rule uses the
- *                   delta against this pair to distinguish "bandit
- *                   never tried CFV" (uninformative) from "bandit
- *                   tried CFV and every candidate was rejected"
- *                   (frontier really is cold).
+ *   frontier_pulls -- shm->bandit_pulls[STRATEGY_COVERAGE_FRONTIER] +
+ *                   shm->stats.frontier_intervention_pulls.  Windows
+ *                   in which the bandit (or the cold-start / round-
+ *                   robin path) selected the CFV arm, PLUS plateau-
+ *                   intervention rotations that resolved to the CFV
+ *                   arm via PIM_COVERAGE_FRONTIER or the RRC_CMP_
+ *                   DERIVED dispatch through amplified_intervention_
+ *                   arm().  The fold-in keeps the frontier-cold rule
+ *                   honest while plateau_active is set: the bandit
+ *                   counter is structurally frozen during plateaus
+ *                   (the intervention layer short-circuits the
+ *                   bandit), so without the intervention term the
+ *                   rule could never fire on a plateau the
+ *                   intervention layer was already addressing.
+ *                   Paired with frontier_picks: when the picker
+ *                   pulled CFV but the weighted-accept gate inside
+ *                   it rejected every candidate, pulls advances
+ *                   while picks stays at 0.  The frontier-cold rule
+ *                   uses the delta against this pair to distinguish
+ *                   "picker never tried CFV" (uninformative) from
+ *                   "picker tried CFV and every candidate was
+ *                   rejected" (frontier really is cold).
  *   group_edges[NR_GROUPS] -- per-syscall-group sum of
  *                   kcov_shm->per_syscall_edges[], grouped by
  *                   syscalls[nr].entry->group.  Maps the call-count
