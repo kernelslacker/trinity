@@ -30,11 +30,13 @@
  */
 static void post_sched_getscheduler(struct syscallrecord *rec)
 {
+	unsigned long retval = rec->retval;
+	long ret = (long) retval;
 	int current_policy;
 
 	if (rec->a1 != 0)
 		return;
-	if ((long) rec->retval < 0)
+	if (ret < 0)
 		return;
 
 	/*
@@ -49,9 +51,9 @@ static void post_sched_getscheduler(struct syscallrecord *rec)
 	 * ->policy.  Reject before the ONE_IN(100) re-call oracle, which
 	 * would otherwise miss 99 out of 100 corruptions.
 	 */
-	if ((long) rec->retval > SCHED_EXT) {
+	if (ret > SCHED_EXT) {
 		outputerr("post_sched_getscheduler: retval %ld outside [0, SCHED_EXT]\n",
-			  (long) rec->retval);
+			  ret);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		return;
 	}
@@ -60,9 +62,9 @@ static void post_sched_getscheduler(struct syscallrecord *rec)
 		return;
 
 	current_policy = sched_getscheduler(0);
-	if (current_policy != (int) rec->retval) {
+	if (current_policy != (int) ret) {
 		output(0, "sched oracle: sched_getscheduler(0) returned %d but rec->retval was %ld\n",
-		       current_policy, (long) rec->retval);
+		       current_policy, ret);
 		__atomic_add_fetch(&shm->stats.sched_getscheduler_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
