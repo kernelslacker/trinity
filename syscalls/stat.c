@@ -358,11 +358,29 @@ static void post_statx(struct syscallrecord *rec)
 	struct statx first, recheck;
 	char local_path[PATH_MAX];
 	unsigned int flags, mask, valid_mask;
+	unsigned long retval;
 	int dfd;
 	int diverged = 0;
 
 	if (snap == NULL)
 		return;
+
+	/*
+	 * Snapshot rec->retval once.  rec lives in the child's shm
+	 * region; the original handler read rec->retval twice -- the
+	 * STATX_TYPE cheap-oracle gate ((long) rec->retval == 0) and
+	 * the field-divergence recheck gate ((long) rec->retval != 0)
+	 * -- so a sibling-child stomp or a signal-handler reschedule
+	 * rewriting the slot between the two reads can let the
+	 * cheap-oracle path run on what it thinks is a success while
+	 * the recheck path simultaneously sees a non-zero return, or
+	 * vice versa.  The cheap oracle would then read the user
+	 * buffer for an mxsk check on a call that actually failed,
+	 * driving statx_oracle_anomalies on a memory-corruption shape
+	 * rather than a real ABI break.  Same multi-read race the
+	 * epoll post handlers had (commit 48279ed126bb).
+	 */
+	retval = rec->retval;
 
 	/*
 	 * post_state is private to the post handler, but the whole
@@ -406,7 +424,7 @@ static void post_statx(struct syscallrecord *rec)
 	 * a kernel/glibc skew, or a sibling scribble of the receive
 	 * buffer between the kernel's fill and our post-hook read.
 	 */
-	if ((long) rec->retval == 0 && snap->statxbuf != 0) {
+	if ((long) retval == 0 && snap->statxbuf != 0) {
 		void *buf = (void *)(unsigned long) snap->statxbuf;
 
 		if (!looks_like_corrupted_ptr(rec, buf)) {
@@ -433,7 +451,7 @@ static void post_statx(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if ((long) rec->retval != 0)
+	if ((long) retval != 0)
 		goto out_free;
 
 	if (snap->pathname == 0 || snap->statxbuf == 0)
