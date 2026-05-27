@@ -548,7 +548,6 @@ void frontier_window_advance(void)
 	uint32_t cur, next;
 	unsigned int nr;
 	unsigned long max_weight = 0;
-	bool underflow_seen = false;
 
 	/* Clear-then-publish, the opposite of the previous order.  The old
 	 * code bumped frontier_slot first and then aged out the slot it had
@@ -611,7 +610,9 @@ void frontier_window_advance(void)
 				break;
 		}
 		if (old_cached < old_slot)
-			underflow_seen = true;
+			__atomic_add_fetch(
+				&shm->stats.frontier_underflow_prevented,
+				1UL, __ATOMIC_RELAXED);
 		if (new_sum > max_weight)
 			max_weight = new_sum;
 	}
@@ -624,10 +625,6 @@ void frontier_window_advance(void)
 		max_weight = UINT_MAX;
 	__atomic_store_n(&shm->frontier_max_weight_cached,
 			 (unsigned int)max_weight, __ATOMIC_RELAXED);
-
-	if (underflow_seen)
-		__atomic_add_fetch(&shm->stats.frontier_underflow_prevented,
-				   1UL, __ATOMIC_RELAXED);
 }
 
 /*
