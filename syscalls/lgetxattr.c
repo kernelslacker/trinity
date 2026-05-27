@@ -163,6 +163,7 @@ static void post_lgetxattr(struct syscallrecord *rec)
 {
 	struct lgetxattr_post_state *snap =
 		(struct lgetxattr_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
 	char snap_path[PATH_MAX];
 	char snap_name[256];
 	unsigned char first_buf[4096];
@@ -214,11 +215,11 @@ static void post_lgetxattr(struct syscallrecord *rec)
 	 * oracle, so every offending retval is counted, not one-in-a-hundred.
 	 * The pre-existing retval <= 0 gate after the sample stays in place.
 	 */
-	if ((long) rec->retval < 0)
+	if ((long) retval < 0)
 		goto out_free;
-	if (snap->size != 0 && rec->retval > snap->size) {
+	if (snap->size != 0 && retval > snap->size) {
 		outputerr("post_lgetxattr: rejecting retval %lu > size %lu\n",
-			  rec->retval, snap->size);
+			  retval, snap->size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -226,7 +227,7 @@ static void post_lgetxattr(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if ((long) rec->retval <= 0)
+	if ((long) retval <= 0)
 		goto out_free;
 
 	/* size=0 / NULL-buffer probe -- see post_getxattr for rationale. */
@@ -262,7 +263,7 @@ static void post_lgetxattr(struct syscallrecord *rec)
 	strncpy(snap_name, (char *)(unsigned long) snap->name, sizeof(snap_name) - 1);
 	snap_name[sizeof(snap_name) - 1] = '\0';
 
-	snap_len = (size_t) rec->retval;
+	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first_buf))
 		snap_len = sizeof(first_buf);
 	/*
