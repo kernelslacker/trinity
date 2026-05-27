@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <linux/const.h>
 #include <linux/capability.h>
 #include <linux/filter.h>
 #ifdef USE_SECCOMP
