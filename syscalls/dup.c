@@ -121,6 +121,8 @@ static void sanitise_dup2(struct syscallrecord *rec)
 static void post_dup2(struct syscallrecord *rec)
 {
 	unsigned long retval = rec->retval;
+	unsigned long a1 = rec->a1;
+	unsigned long a2 = rec->a2;
 	struct childdata *child;
 	struct stat st_old, st_new;
 
@@ -138,7 +140,7 @@ static void post_dup2(struct syscallrecord *rec)
 	 * oldfd, flags) returns EINVAL, so the negative-retval guard
 	 * above already keeps that case out of the post path.
 	 */
-	if (rec->a1 != rec->a2) {
+	if (a1 != a2) {
 		/* Publish the implicit close of newfd to the parent and
 		 * drop this child's local snapshots.  Without the
 		 * live_fds ring eviction the next arg-generation pick
@@ -148,7 +150,7 @@ static void post_dup2(struct syscallrecord *rec)
 		 * under dup2()'s atomic swap. */
 		child = this_child();
 		if (child != NULL)
-			notify_child_fd_closed(child, (int) rec->a2);
+			notify_child_fd_closed(child, (int) a2);
 	}
 
 	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
@@ -161,7 +163,7 @@ static void post_dup2(struct syscallrecord *rec)
 	 * so the previous output() here was lost.  The fd_oracle_anomalies
 	 * counter is the survivor signal.
 	 */
-	if (fstat((int) rec->a1, &st_old) == 0 &&
+	if (fstat((int) a1, &st_old) == 0 &&
 	    fstat((int) retval, &st_new) == 0) {
 		if (st_old.st_dev != st_new.st_dev ||
 		    st_old.st_ino != st_new.st_ino) {
