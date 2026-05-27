@@ -40,9 +40,10 @@
 static void handle_child(int childno, pid_t childpid, int childstatus);
 static void replace_child(int childno);
 
-/* Parent-local array of /proc/<pid>/stat file handles, indexed by childno.
- * Kept out of shared memory so children's stray writes can't corrupt them. */
-static FILE **pidstatfiles;
+/* Parent-local array of /proc/<pid>/stat file descriptors, indexed by
+ * childno.  Kept out of shared memory so children's stray writes can't
+ * corrupt them.  -1 means no open fd for that slot. */
+static int *pidstatfiles;
 
 /*
  * Parent-local tracking of slots whose former occupant is in the kernel
@@ -378,44 +379,45 @@ static void kill_all_kids(void)
 
 
 /*
- * This is only ever used by the main process, so we cache the FILE ptr
- * for each child there, to save having to constantly reopen it.
+ * This is only ever used by the main process, so we cache the fd for
+ * each child there, to save having to constantly reopen it.
  */
-static FILE * open_child_pidstat(pid_t target)
+static int open_child_pidstat(pid_t target)
 {
-	FILE *fp;
 	char filename[80];
 
 	snprintf(filename, sizeof(filename), "/proc/%d/stat", target);
 
-	fp = fopen(filename, "r");
-
-	return fp;
+	return open(filename, O_RDONLY | O_CLOEXEC);
 }
 
 static char get_pid_state(int childno)
 {
-	size_t n = 0;
-	char *line = NULL;
+	char buf[256];
 	pid_t pid;
 	char state = '?';
 	char procname[100];
-	FILE *fp;
+	int fd;
+	ssize_t n;
 
 	if (mypid() != mainpid)
 		BUG("get_pid_state can only be called from main!\n");
 
-	fp = pidstatfiles[childno];
-	if (fp == NULL)
+	fd = pidstatfiles[childno];
+	if (fd < 0)
 		return '?';
 
-	fseek(fp, 0L, SEEK_SET);
-	fflush(fp);
+	/* The first line of /proc/<pid>/stat fits comfortably in 256
+	 * bytes (typical is well under 200), and sscanf with %99s caps
+	 * the procname read either way.  pread keeps this allocation-
+	 * free: getline(&line=NULL,...) would malloc every poll, and
+	 * the parent reap loop hits this once per child per cycle. */
+	n = pread(fd, buf, sizeof(buf) - 1, 0);
+	if (n <= 0)
+		return '?';
+	buf[n] = '\0';
 
-	if (getline(&line, &n, fp) != -1)
-		sscanf(line, "%d %99s %c", &pid, procname, &state);
-
-	free(line);
+	sscanf(buf, "%d %99s %c", &pid, procname, &state);
 	return state;
 }
 
@@ -618,9 +620,9 @@ static void register_zombie_slot(int childno, pid_t pid)
 	 * unwind on the very next process_zombie_pending() pass. */
 	wpid = waitpid(pid, NULL, WNOHANG);
 	if (wpid == pid || (wpid == -1 && errno == ECHILD)) {
-		if (pidstatfiles[childno]) {
-			fclose(pidstatfiles[childno]);
-			pidstatfiles[childno] = NULL;
+		if (pidstatfiles[childno] >= 0) {
+			close(pidstatfiles[childno]);
+			pidstatfiles[childno] = -1;
 		}
 		reap_child(children[childno], childno);
 		replace_child(childno);
@@ -644,9 +646,9 @@ static void register_zombie_slot(int childno, pid_t pid)
 		dump_pid_syscall(pid);
 	}
 
-	if (pidstatfiles[childno]) {
-		fclose(pidstatfiles[childno]);
-		pidstatfiles[childno] = NULL;
+	if (pidstatfiles[childno] >= 0) {
+		close(pidstatfiles[childno]);
+		pidstatfiles[childno] = -1;
 	}
 
 	reap_child(children[childno], childno);
@@ -989,9 +991,9 @@ static bool spawn_child(int childno)
 	__atomic_store_n(&pids[childno], pid, __ATOMIC_RELEASE);
 	if (spawn_times != NULL)
 		spawn_times[childno] = time(NULL);
-	if (pidstatfiles[childno]) {
-		fclose(pidstatfiles[childno]);
-		pidstatfiles[childno] = NULL;
+	if (pidstatfiles[childno] >= 0) {
+		close(pidstatfiles[childno]);
+		pidstatfiles[childno] = -1;
 	}
 	pidstatfiles[childno] = open_child_pidstat(pid);
 	unsigned int running = __atomic_add_fetch(&shm->running_childs, 1, __ATOMIC_RELAXED);
@@ -1214,9 +1216,9 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 		if (stop == false) {
 			register_zombie_slot(childno, pid);
 		} else {
-			if (pidstatfiles[childno])
-				fclose(pidstatfiles[childno]);
-			pidstatfiles[childno] = NULL;
+			if (pidstatfiles[childno] >= 0)
+				close(pidstatfiles[childno]);
+			pidstatfiles[childno] = -1;
 		}
 		return;
 	}
@@ -1335,9 +1337,9 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 				childno, childpid, child->op_nr);
 			record_reap(childno, childstatus);
 			reap_child(children[childno], childno);
-			if (pidstatfiles[childno] != NULL)
-				fclose(pidstatfiles[childno]);
-			pidstatfiles[childno] = NULL;
+			if (pidstatfiles[childno] >= 0)
+				close(pidstatfiles[childno]);
+			pidstatfiles[childno] = -1;
 
 			replace_child(childno);
 			break;
@@ -1836,12 +1838,14 @@ void main_loop(void)
 	 * each epoch leaks a fresh set of arrays into the long-lived
 	 * parent. */
 	if (pidstatfiles == NULL) {
-		pidstatfiles = zmalloc(max_children * sizeof(FILE *));
+		pidstatfiles = zmalloc(max_children * sizeof(int));
 		zombie_pids = zmalloc(max_children * sizeof(pid_t));
 		zombie_since = zmalloc(max_children * sizeof(time_t));
 		spawn_times = zmalloc(max_children * sizeof(time_t));
-		for_each_child(i)
+		for_each_child(i) {
+			pidstatfiles[i] = -1;
 			zombie_pids[i] = EMPTY_PIDSLOT;
+		}
 	}
 
 	if (epoch_timeout)
@@ -2093,9 +2097,9 @@ void reset_epoch_state(void)
 		/* Parent-local per-slot arrays are persistent across epochs
 		 * (allocated once in main_loop) -- clear the stale entries
 		 * the previous epoch left behind. */
-		if (pidstatfiles[i] != NULL) {
-			fclose(pidstatfiles[i]);
-			pidstatfiles[i] = NULL;
+		if (pidstatfiles[i] >= 0) {
+			close(pidstatfiles[i]);
+			pidstatfiles[i] = -1;
 		}
 		zombie_pids[i] = EMPTY_PIDSLOT;
 		zombie_since[i] = 0;
