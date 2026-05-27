@@ -274,6 +274,8 @@ static void sanitise_listns(struct syscallrecord *rec)
 static void post_listns(struct syscallrecord *rec)
 {
 	struct listns_post_state *snap = (struct listns_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
+	long ret = (long) retval;
 
 	if (snap == NULL)
 		return;
@@ -315,10 +317,9 @@ static void post_listns(struct syscallrecord *rec)
 	 * out_free so the deferred req / post_state buffers are still
 	 * released.
 	 */
-	if ((long) rec->retval != -1L &&
-	    (unsigned long) rec->retval > snap->nr_ns_ids) {
+	if (ret != -1L && retval > snap->nr_ns_ids) {
 		outputerr("post_listns: retval %lu exceeds requested nr_ns_ids %lu\n",
-			  (unsigned long) rec->retval, snap->nr_ns_ids);
+			  retval, snap->nr_ns_ids);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
