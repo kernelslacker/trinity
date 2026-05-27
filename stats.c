@@ -2104,6 +2104,8 @@ static const struct {
 	  offsetof(struct stats_s, explorer_cold_pair_rejects) },
 	{ "explorer_unseen_pair_accepts",
 	  offsetof(struct stats_s, explorer_unseen_pair_accepts) },
+	{ "explorer_unseen_pair_seek_retries",
+	  offsetof(struct stats_s, explorer_unseen_pair_seek_retries) },
 	/* Mid-chain sequence picks routed through edgepair scoring.
 	 * picks vs pick_fails is the success rate of the per-step pair-aware
 	 * picker; explore/exploit split sums to picks and surfaces how often

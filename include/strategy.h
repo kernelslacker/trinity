@@ -136,6 +136,10 @@ enum strategy_selection_reason {
  * placeholder buckets the future infrastructure can fill in without an
  * enum reorder.
  *
+ * Currently dispatched classes (those the classifier actively
+ * attributes today): RRC_COLD_SKIP, RRC_CMP_DERIVED, RRC_PAIR_COLD,
+ * RRC_PAIR_UNSEEN, and the RRC_UNKNOWN catch-all.
+ *
  * RRC_COLD_SKIP:           rec->nr would have been skipped under
  *                          STRATEGY_HEURISTIC's kcov cold-skip gate
  *                          (kcov_syscall_cold_skip_pct >= 50).
@@ -153,6 +157,25 @@ enum strategy_selection_reason {
  * RRC_PERSONA_GATED:       placeholder for namespace/cgroup/childop
  *                          persona attribution; persona infrastructure
  *                          does not exist yet, never selected today.
+ * RRC_PAIR_COLD:           the rescue completed on a (last_syscall_
+ *                          nr, curr_nr) pair that edgepair_is_cold()
+ *                          flags as cold -- the pair WAS productive
+ *                          but has not surfaced a new edge in over
+ *                          EDGEPAIR_COLD_THRESHOLD pair-calls.  The
+ *                          orchestrator can amplify this class to
+ *                          suppress the cold-pair RAND_BOOL gate
+ *                          inside set_syscall_nr_random() so the
+ *                          intervention reaches the same pairs the
+ *                          random picker is currently throttling.
+ *
+ * RRC_PAIR_UNSEEN:          the rescue completed on a (last_syscall_
+ *                          nr, curr_nr) pair edgepair_get_stats()
+ *                          had no record of (the {0, 0} sentinel).
+ *                          Amplifying this class enables a bounded
+ *                          retry budget inside set_syscall_nr_
+ *                          random() that re-rolls when ps.total != 0
+ *                          to seek an unseen successor instead of
+ *                          accepting the first seen one.
  * RRC_UNKNOWN:             rescue did not match any structured class.
  */
 enum random_rescue_class {
@@ -161,6 +184,8 @@ enum random_rescue_class {
 	RRC_WRONG_TYPE_FD,
 	RRC_CMP_DERIVED,
 	RRC_PERSONA_GATED,
+	RRC_PAIR_COLD,
+	RRC_PAIR_UNSEEN,
 	RRC_UNKNOWN,
 	RRC_NR_CLASSES,		/* sentinel, must stay last */
 };

@@ -991,6 +991,8 @@ static int amplified_intervention_arm(enum random_rescue_class c)
 	case RRC_UNUSUAL_FD_PRODUCER:
 	case RRC_WRONG_TYPE_FD:
 	case RRC_PERSONA_GATED:
+	case RRC_PAIR_COLD:
+	case RRC_PAIR_UNSEEN:
 	case RRC_UNKNOWN:
 	case RRC_NR_CLASSES:
 		break;
@@ -1770,6 +1772,8 @@ const char *random_rescue_class_name(enum random_rescue_class c)
 	case RRC_WRONG_TYPE_FD:		return "WRONG_TYPE_FD";
 	case RRC_CMP_DERIVED:		return "CMP_DERIVED";
 	case RRC_PERSONA_GATED:		return "PERSONA_GATED";
+	case RRC_PAIR_COLD:		return "PAIR_COLD";
+	case RRC_PAIR_UNSEEN:		return "PAIR_UNSEEN";
 	case RRC_UNKNOWN:		return "UNKNOWN";
 	case RRC_NR_CLASSES:		break;	/* sentinel */
 	}
@@ -1817,6 +1821,26 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 	 * land here fall through to UNKNOWN; the orchestrator's bias
 	 * dispatch handles those classes for the future infrastructure to
 	 * wire in without an enum reorder. */
+
+	if (child->last_syscall_nr != EDGEPAIR_NO_PREV) {
+		struct edgepair_stats ps =
+			edgepair_get_stats(child->last_syscall_nr, curr);
+
+		/* {0, 0} sentinel means edgepair has no record for the
+		 * pair -- the rescue carried the child onto an unseen
+		 * (prev, curr) successor.  Distinct from RRC_COLD_SKIP
+		 * because the cold-skip predicate is per-nr while this
+		 * is per-pair. */
+		if (ps.new_edges == 0 && ps.total == 0)
+			return RRC_PAIR_UNSEEN;
+
+		/* edgepair_is_cold uses the published mirror with the
+		 * same EDGEPAIR_COLD_THRESHOLD math as the explorer's
+		 * cold-pair gate, so the classifier and the picker can
+		 * never disagree on which pair counts as cold. */
+		if (edgepair_is_cold(child->last_syscall_nr, curr))
+			return RRC_PAIR_COLD;
+	}
 
 	return RRC_UNKNOWN;
 }

@@ -316,6 +316,16 @@ retry:
 #define ANTI_PRIOR_RETRY_CAP 64U
 
 /*
+ * Bound for the PAIR_UNSEEN intervention's bounded re-roll.  When the
+ * orchestrator amplifies RRC_PAIR_UNSEEN, the picker re-rolls a bounded
+ * number of times trying to land on an unseen (prev, curr) successor
+ * instead of accepting a seen one.  High enough to meaningfully steer
+ * toward unseen successors, low enough that an already-saturated pair
+ * table cannot livelock the picker.
+ */
+#define UNSEEN_SEEK_RETRY_CAP 8U
+
+/*
  * Pick the syscall to run under STRATEGY_RANDOM: uniform draw from
  * active_syscalls with no further biasing.  The "shake the dust off"
  * pass — useless on its own, but exposes paths the heuristic biases
@@ -344,6 +354,7 @@ bool set_syscall_nr_random(struct syscallrecord *rec,
 	unsigned int nr_syscalls;
 	unsigned int anti_prior_attempts = 0;
 	unsigned int edgepair_attempts = 0;
+	unsigned int unseen_seek_attempts = 0;
 	bool anti_prior_on;
 
 	/* See the matching comment in set_syscall_nr_heuristic — the table
@@ -425,7 +436,29 @@ retry:
 			goto commit;
 		}
 
+		/* RRC_PAIR_UNSEEN intervention: when the orchestrator has
+		 * amplified PAIR_UNSEEN, re-roll a bounded number of times
+		 * trying to land on an unseen (prev, curr) successor
+		 * instead of accepting a seen one.  Bounded by
+		 * UNSEEN_SEEK_RETRY_CAP so an extreme distribution falls
+		 * back to the normal accept path instead of livelocking the
+		 * picker. */
+		if (plateau_rescue_bias_active_for(RRC_PAIR_UNSEEN) &&
+		    unseen_seek_attempts < UNSEEN_SEEK_RETRY_CAP) {
+			unseen_seek_attempts++;
+			__atomic_fetch_add(
+				&shm->stats.explorer_unseen_pair_seek_retries,
+				1UL, __ATOMIC_RELAXED);
+			goto retry;
+		}
+
+		/* RRC_PAIR_COLD intervention: when the orchestrator has
+		 * amplified PAIR_COLD, suppress the cold-pair RAND_BOOL
+		 * rejection so the intervention actually reaches the cold
+		 * pairs the picker is otherwise throttling.  Outside the
+		 * intervention the gate stays exactly as before. */
 		if (edgepair_is_cold(child->last_syscall_nr, syscallnr) &&
+		    !plateau_rescue_bias_active_for(RRC_PAIR_COLD) &&
 		    RAND_BOOL()) {
 			__atomic_fetch_add(
 				&shm->stats.explorer_cold_pair_rejects,

@@ -1826,9 +1826,18 @@ struct stats_s {
 	 * immediately without re-rolling against anti-prior.  Tracks the
 	 * pace at which the explorer is driving onto unexplored (prev,
 	 * curr) sequences; should dominate the cold-reject counter early
-	 * in a run and bleed toward zero as the pair table fills. */
+	 * in a run and bleed toward zero as the pair table fills.
+	 *
+	 * explorer_unseen_pair_seek_retries: incremented each time the
+	 * PAIR_UNSEEN intervention's bounded re-roll consumed one retry
+	 * before accepting.  Saturates at UNSEEN_SEEK_RETRY_CAP per
+	 * outer pick; sustained growth during plateau windows confirms
+	 * the intervention is actively redirecting the picker, flat
+	 * means the unseen pool is already large enough that the first
+	 * roll lands on an unseen pair without retrying. */
 	unsigned long explorer_cold_pair_rejects;
 	unsigned long explorer_unseen_pair_accepts;
+	unsigned long explorer_unseen_pair_seek_retries;
 
 	/* Bandit novelty-dampener visibility counters.  Bumped from the
 	 * per-syscall new-edge bump site in random-syscall.c whenever the
