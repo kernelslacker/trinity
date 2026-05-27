@@ -33,6 +33,7 @@ bool do_64_arch = true;
 unsigned int specific_domain = 0;
 unsigned int user_specified_children = 0;
 unsigned int alt_op_children = 0;
+bool user_specified_alt_op_children = false;
 unsigned int explorer_children = 0;
 bool user_specified_explorer_children = false;
 
@@ -307,6 +308,26 @@ void clamp_default_canary_slots(void)
 	canary_slots = (alt_op_children < 2) ? alt_op_children : 2;
 }
 
+/* Default-fill alt_op_children when the operator did not pass
+ * --alt-op-children.  Without a non-zero default, canary_slots
+ * auto-couples to zero, the canary queue stays dark, and the static
+ * dormant_op_disabled[] vector hides the majority of alt ops from
+ * ever being promoted.  Default to max(2, max_children/8): the floor
+ * of 2 keeps the downstream canary_slots = min(alt_op_children, 2)
+ * derivation at its historical cap, and the /8 scaling keeps the
+ * alt-op reservation modest as the fleet grows.  An explicit
+ * --alt-op-children=N (including =0) is recorded in
+ * user_specified_alt_op_children and bypasses the auto-derive --
+ * range enforcement against max_children still applies in
+ * trinity.c. */
+void clamp_default_alt_op_children(void)
+{
+	if (user_specified_alt_op_children)
+		return;
+
+	alt_op_children = (max_children / 8 < 2) ? 2 : max_children / 8;
+}
+
 void clamp_default_explorer_children(void)
 {
 	/* Explorer slots are reserved AFTER the dedicated alt-op slots
@@ -412,7 +433,7 @@ struct option_help {
 };
 
 static const struct option_help option_descs[] = {
-	{ "alt-op-children",	 0,  "reserve N children to run dedicated alt ops (mmap_lifecycle, mprotect_split, ...) round-robin instead of mixing them at 1% in every child" },
+	{ "alt-op-children",	 0,  "reserve N children to run dedicated alt ops (mmap_lifecycle, mprotect_split, ...) round-robin instead of mixing them at 1% in every child (default: max(2, --children/8))" },
 	{ "arch",		'a', "selects syscalls for the specified architecture (32 or 64). Both by default." },
 	{ "bdev",		'b', "Add /dev node to list of block devices to use for destructive tests." },
 	{ "canary-seed",	 0,  "comma-separated list of childop names to override the built-in wave-1 canary seed list. Names match alt_op_name (e.g. 'genetlink_fuzzer,bpf_lifecycle'). Unknown names abort startup." },
@@ -790,6 +811,7 @@ void parse_args(int argc, char *argv[])
 					exit(EXIT_FAILURE);
 				}
 				alt_op_children = (unsigned int)val;
+				user_specified_alt_op_children = true;
 			}
 
 			if (strcmp("childop-kcov-attribution",

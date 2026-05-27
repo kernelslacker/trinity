@@ -333,6 +333,13 @@ int main(int argc, char* argv[])
 	 * parse_args, so this is a no-op there. */
 	clamp_default_max_children();
 
+	/* Default-fill alt_op_children when --alt-op-children was not
+	 * passed.  Runs after clamp_default_max_children() so the derived
+	 * value tracks the final fleet size, and before the canary/
+	 * explorer derivations below, which both depend on the final
+	 * alt_op_children. */
+	clamp_default_alt_op_children();
+
 	/* --alt-op-children clamp.  Reserving more slots than the total
 	 * fleet would leave zero default syscall children, which defeats
 	 * the throughput-preservation rationale.  Cap at max_children-1

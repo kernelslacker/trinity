@@ -67,6 +67,8 @@ extern bool kernel_taint_param_occured;
 
 extern unsigned int user_specified_children;
 extern unsigned int alt_op_children;
+extern bool user_specified_alt_op_children;
+void clamp_default_alt_op_children(void);
 
 /* Canary queue (child-canary.c).  canary_slots is carved from the
  * front of the alt_op_children pool: the first canary_slots dedicated
