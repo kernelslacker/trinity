@@ -221,6 +221,7 @@ static void sanitise_clone3(struct syscallrecord *rec)
 
 static void post_clone3(struct syscallrecord *rec)
 {
+	unsigned long retval = rec->retval;
 	struct clone_args *args;
 
 	/*
@@ -251,9 +252,9 @@ static void post_clone3(struct syscallrecord *rec)
 	 * (sign-extension tear or pid_ns translation bug) — reject before touching
 	 * the args snapshot or running the post-cleanup path.
 	 */
-	if (rec->retval > 4194304UL && rec->retval != (unsigned long)-1L) {
+	if (retval > 4194304UL && retval != (unsigned long)-1L) {
 		output(0, "post_clone3: rejected returned pid 0x%lx outside [1, PID_MAX_LIMIT=4194304] (and not -1)\n",
-		       rec->retval);
+		       retval);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		/* still need to release post_state deferred buf if non-zero */
 		if (rec->post_state) {
