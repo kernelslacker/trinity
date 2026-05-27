@@ -6,6 +6,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <linux/mount.h>
+#include "csfu.h"
+#include "deferred-free.h"
 #include "object-types.h"
 #include "random.h"
 #include "rnd.h"
@@ -121,30 +123,6 @@ static void build_mount_attr(struct mount_attr *ma)
 	generate_rand_bytes((unsigned char *) ma, sizeof(*ma));
 }
 
-/*
- * Size buckets.  sizeof(struct mount_attr) and MOUNT_ATTR_SIZE_VER0
- * are the same value today; both literals are kept so a future v1
- * extension (sizeof grows past VER0) keeps the "current sizeof" and
- * "ABI floor" intents visible at the call site.
- */
-static unsigned long pick_mount_attr_size(void)
-{
-	unsigned int bucket = rnd_modulo_u32(10);
-
-	if (bucket < 7)
-		return sizeof(struct mount_attr);
-
-	if (bucket < 9)
-		return MOUNT_ATTR_SIZE_VER0;
-
-	/* 10%: intentionally bad -- exercise the < VER0 EINVAL gate and
-	 * the oversized-then-zero-extend path in copy_struct_from_user. */
-	if (RAND_BOOL())
-		return rnd_modulo_u32(MOUNT_ATTR_SIZE_VER0);
-	return (unsigned long) MOUNT_ATTR_SIZE_VER0 + 8u +
-		8u * rnd_modulo_u32(32);
-}
-
 static unsigned long pick_open_tree_attr_flags(void)
 {
 	unsigned int bucket = rnd_modulo_u32(10);
@@ -185,20 +163,55 @@ static unsigned long pick_open_tree_attr_dfd(unsigned long generic)
 	return (unsigned long) rnd_u32();
 }
 
+/*
+ * Pre-ksize ABI floor for the csfu UNDERSIZE bucket.  Today
+ * sizeof(struct mount_attr) == MOUNT_ATTR_SIZE_VER0, so the EXACT
+ * bucket already covers VER0; the entry is kept in the pool so the
+ * UNDERSIZE bucket still has a meaningful named ABI floor to draw
+ * from once the kernel grows a VER1 and ksize moves past VER0.
+ */
+static const size_t open_tree_attr_known_sizes[] = {
+	MOUNT_ATTR_SIZE_VER0,
+};
+
+static const struct csfu_desc desc_open_tree_attr = {
+	.name = "mount_attr",
+	.ksize = sizeof(struct mount_attr),
+	.known_sizes = open_tree_attr_known_sizes,
+	.n_known_sizes = ARRAY_SIZE(open_tree_attr_known_sizes),
+};
+
 static void sanitise_open_tree_attr(struct syscallrecord *rec)
 {
-	struct mount_attr *ma;
+	struct csfu_buf buf = build_csfu_struct(&desc_open_tree_attr);
+	struct mount_attr *ma = buf.ptr;
 
-	ma = (struct mount_attr *) get_writable_struct(sizeof(*ma));
 	if (!ma)
 		return;
-	build_mount_attr(ma);
 
 	rec->a1 = pick_open_tree_attr_dfd(rec->a1);
 	rec->a3 = pick_open_tree_attr_flags();
+
+	/*
+	 * Body population is gated on CSFU_BUCKET_EXACT — the kernel
+	 * rejects on usize before reading any body field for the
+	 * non-exact buckets, and OVERSIZE_NONZERO / TAIL_MISMATCH need
+	 * their tail garbage preserved.  zmalloc_tracked() already
+	 * zeroed the buffer where the kernel cares to look.
+	 */
+	if (buf.bucket == CSFU_BUCKET_EXACT)
+		build_mount_attr(ma);
+
 	rec->a4 = (unsigned long) ma;
 	avoid_shared_buffer_inout(&rec->a4, sizeof(*ma));
-	rec->a5 = pick_mount_attr_size();
+	rec->a5 = buf.usize;
+
+	/*
+	 * Hand the csfu buffer to the deferred-free queue at sanitise
+	 * time — open_tree_attr has no post handler, so this is the
+	 * only place the zmalloc_tracked() allocation gets released.
+	 */
+	deferred_free_enqueue(ma);
 }
 
 struct syscallentry syscall_open_tree_attr = {
