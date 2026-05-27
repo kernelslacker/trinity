@@ -129,6 +129,8 @@ static void post_mq_open(struct syscallrecord *rec)
 {
 	struct mq_open_post_state *snap =
 		(struct mq_open_post_state *) rec->post_state;
+	unsigned long retval = rec->retval;
+	long ret = (long) retval;
 
 	if (snap == NULL)
 		return;
@@ -165,11 +167,11 @@ static void post_mq_open(struct syscallrecord *rec)
 		return;
 	}
 
-	if ((long)rec->retval < 0)
+	if (ret < 0)
 		return;
 
-	if ((unsigned long)rec->retval >= (1UL << 20)) {
-		outputerr("post_mq_open: rejecting out-of-bound fd=%ld\n", (long)rec->retval);
+	if (retval >= (1UL << 20)) {
+		outputerr("post_mq_open: rejecting out-of-bound fd=%ld\n", ret);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		return;
 	}
