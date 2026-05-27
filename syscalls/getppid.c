@@ -31,8 +31,8 @@ static void post_getppid(struct syscallrecord *rec)
 	int fd;
 	pid_t got, proc_ppid = (pid_t)-1;
 	unsigned int ppid;
-
-	long ret = (long) rec->retval;
+	unsigned long retval = rec->retval;
+	long ret = (long) retval;
 
 	/*
 	 * Kernel ABI: getppid() cannot fail; retval must be in
@@ -48,7 +48,7 @@ static void post_getppid(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		return;
 
-	got = (pid_t) rec->retval;
+	got = (pid_t) retval;
 
 	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
 	 * thousands of times per second under fuzz, and stdio's per-call malloc
