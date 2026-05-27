@@ -885,6 +885,16 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr,
 		}
 
 		mask = (unsigned char)(1U << bucket);
+
+		/* Relaxed-load short-circuit: in saturated runs the bit is
+		 * already set the vast majority of the time, so the locked RMW
+		 * below is wasted.  A racing peer that also sees clear hits the
+		 * fetch_or path and the (!(old & mask)) gate still elects a
+		 * single bucket-bit winner. */
+		if (__atomic_load_n(&kcov_shm->bucket_seen[edge],
+				    __ATOMIC_RELAXED) & mask)
+			continue;
+
 		old = __atomic_fetch_or(&kcov_shm->bucket_seen[edge],
 			mask, __ATOMIC_RELAXED);
 
