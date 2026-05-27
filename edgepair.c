@@ -17,13 +17,18 @@
  */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include "child.h"
 #include "edgepair.h"
 #include "edgepair_ring.h"
+#include "kcov.h"
 #include "trinity.h"
 
 static bool edgepair_enabled;
@@ -178,11 +183,21 @@ struct edgepair_stats edgepair_get_stats(unsigned int prev_nr,
 
 void edgepair_dump_to_file(const char *path)
 {
+	struct edgepair_dump_header hdr;
 	FILE *f;
-	uint32_t magic = EDGEPAIR_DUMP_MAGIC;
 
 	if (!edgepair_enabled)
 		return;
+
+	memset(&hdr, 0, sizeof(hdr));
+	hdr.magic		= EDGEPAIR_DUMP_MAGIC;
+	hdr.version		= EDGEPAIR_DUMP_VERSION;
+	hdr.table_size		= EDGEPAIR_TABLE_SIZE;
+	hdr.payload_crc32	= kcov_bitmap_crc32(parent_edgepair.table,
+						    sizeof(parent_edgepair.table));
+	hdr.total_pair_calls	= parent_edgepair.total_pair_calls;
+	hdr.pairs_tracked	= parent_edgepair.pairs_tracked;
+	hdr.pairs_dropped	= parent_edgepair.pairs_dropped;
 
 	f = fopen(path, "wb");
 	if (f == NULL) {
@@ -190,21 +205,13 @@ void edgepair_dump_to_file(const char *path)
 		return;
 	}
 
-	/* On-disk layout: 4-byte magic, then the canonical table followed
-	 * by the three top-level counters.  The magic bump from
-	 * 0xEDDA7A01U to 0xEDDA7A02U lets edge_analyzer reject pre-retrofit
-	 * dumps cleanly; the byte layout below the magic matches the
-	 * pre-retrofit prefix so the analyzer's table walk needs only the
-	 * magic constant updated. */
-	if (fwrite(&magic, sizeof(magic), 1, f) != 1 ||
+	/* On-disk layout: fixed-size header (magic, version, table_size,
+	 * payload_crc32, counters), then the canonical table.  The CRC
+	 * covers the table bytes only -- the counters ride inside the
+	 * header so a header read alone is enough to spot truncation. */
+	if (fwrite(&hdr, sizeof(hdr), 1, f) != 1 ||
 	    fwrite(parent_edgepair.table,
-		   sizeof(parent_edgepair.table), 1, f) != 1 ||
-	    fwrite(&parent_edgepair.total_pair_calls,
-		   sizeof(parent_edgepair.total_pair_calls), 1, f) != 1 ||
-	    fwrite(&parent_edgepair.pairs_tracked,
-		   sizeof(parent_edgepair.pairs_tracked), 1, f) != 1 ||
-	    fwrite(&parent_edgepair.pairs_dropped,
-		   sizeof(parent_edgepair.pairs_dropped), 1, f) != 1) {
+		   sizeof(parent_edgepair.table), 1, f) != 1) {
 		perror("edgepair: failed to write dump file");
 		fclose(f);
 		return;
@@ -215,10 +222,10 @@ void edgepair_dump_to_file(const char *path)
 	 * fclose() releases the fd.  Without this, the dump is just a
 	 * pagecache write -- a crash between fclose() return and the
 	 * next writeback truncates the file to whatever happened to be
-	 * page-aligned at the time, and edge_analyzer rejects the
-	 * partial result on magic / size mismatch.  fflush failures
-	 * still drop into the close path so the fd is always
-	 * released. */
+	 * page-aligned at the time, and edge_analyzer / the warm-start
+	 * loader reject the partial result on magic / size / CRC
+	 * mismatch.  fflush failures still drop into the close path so
+	 * the fd is always released. */
 	if (fflush(f) != 0)
 		perror("edgepair: fflush before close failed");
 	else if (fsync(fileno(f)) != 0 && errno != EINVAL)
@@ -229,4 +236,113 @@ void edgepair_dump_to_file(const char *path)
 		return;
 	}
 	output(0, "KCOV: edge-pair data dumped to %s\n", path);
+}
+
+static ssize_t edgepair_read_all(int fd, void *buf, size_t len)
+{
+	uint8_t *p = buf;
+	size_t left = len;
+
+	while (left > 0) {
+		ssize_t n = read(fd, p, left);
+
+		if (n < 0) {
+			if (errno == EINTR)
+				continue;
+			return -1;
+		}
+		if (n == 0)
+			break;
+		p += n;
+		left -= n;
+	}
+	return (ssize_t)(len - left);
+}
+
+bool edgepair_load_from_file(const char *path)
+{
+	struct edgepair_dump_header hdr;
+	unsigned char *scratch;
+	uint32_t want_crc;
+	ssize_t n;
+	int fd;
+
+	if (path == NULL || !edgepair_enabled)
+		return false;
+
+	fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		if (errno == ENOENT)
+			output(0, "edgepair: no persisted state at %s -- cold start\n",
+			       path);
+		else
+			output(0, "edgepair: open(%s) failed: %s -- cold start\n",
+			       path, strerror(errno));
+		return false;
+	}
+
+	n = edgepair_read_all(fd, &hdr, sizeof(hdr));
+	if (n != (ssize_t)sizeof(hdr)) {
+		output(0, "edgepair: header truncated at %s (got %zd, want %zu) -- cold start\n",
+		       path, n, sizeof(hdr));
+		(void)close(fd);
+		return false;
+	}
+
+	if (hdr.magic != EDGEPAIR_DUMP_MAGIC) {
+		output(0, "edgepair: file magic 0x%08x != expected 0x%08x at %s -- cold start\n",
+		       hdr.magic, EDGEPAIR_DUMP_MAGIC, path);
+		(void)close(fd);
+		return false;
+	}
+	if (hdr.version != EDGEPAIR_DUMP_VERSION) {
+		output(0, "edgepair: file version %u != expected %u at %s -- cold start\n",
+		       hdr.version, EDGEPAIR_DUMP_VERSION, path);
+		(void)close(fd);
+		return false;
+	}
+	if (hdr.table_size != EDGEPAIR_TABLE_SIZE) {
+		output(0, "edgepair: table_size %u != expected %u at %s (file built with a different EDGEPAIR_TABLE_SIZE) -- cold start\n",
+		       hdr.table_size, EDGEPAIR_TABLE_SIZE, path);
+		(void)close(fd);
+		return false;
+	}
+
+	/* Stage into a scratch buffer so a CRC failure doesn't leave the
+	 * canonical table half-overwritten with garbage. */
+	scratch = malloc(sizeof(parent_edgepair.table));
+	if (scratch == NULL) {
+		output(0, "edgepair: scratch alloc fail (%zu bytes) -- cold start\n",
+		       sizeof(parent_edgepair.table));
+		(void)close(fd);
+		return false;
+	}
+	n = edgepair_read_all(fd, scratch, sizeof(parent_edgepair.table));
+	if (n != (ssize_t)sizeof(parent_edgepair.table)) {
+		output(0, "edgepair: payload truncated at %s (got %zd, want %zu) -- cold start\n",
+		       path, n, sizeof(parent_edgepair.table));
+		free(scratch);
+		(void)close(fd);
+		return false;
+	}
+	(void)close(fd);
+
+	want_crc = kcov_bitmap_crc32(scratch, sizeof(parent_edgepair.table));
+	if (want_crc != hdr.payload_crc32) {
+		output(0, "edgepair: skipping warm-start of %s -- CRC mismatch\n",
+		       path);
+		free(scratch);
+		return false;
+	}
+
+	memcpy(parent_edgepair.table, scratch, sizeof(parent_edgepair.table));
+	free(scratch);
+	parent_edgepair.total_pair_calls	= hdr.total_pair_calls;
+	parent_edgepair.pairs_tracked		= hdr.pairs_tracked;
+	parent_edgepair.pairs_dropped		= hdr.pairs_dropped;
+
+	output(0, "edgepair: loaded %lu pairs (%lu pair-calls) from %s\n",
+	       (unsigned long)hdr.pairs_tracked,
+	       (unsigned long)hdr.total_pair_calls, path);
+	return true;
 }

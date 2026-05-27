@@ -222,6 +222,13 @@ void kcov_init_global(void)
 		kcov_shm->distinct_edges, kcov_shm->edges_found);
 
 	edgepair_init_global();
+
+	/* Warm-start the edgepair table from the prior session's dump if
+	 * one exists in cwd, before any child has been forked.  A miss
+	 * (no file / stale magic / bad CRC / etc.) is the legitimate
+	 * cold-start state and the loader logs it itself; we just ignore
+	 * the return. */
+	(void)edgepair_load_from_file("edgepair.dump");
 }
 
 void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
@@ -1191,10 +1198,12 @@ struct kcov_bitmap_file_header {
 };
 
 /* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Same algorithm
- * effector-map / minicorpus use; kept local so a future divergence in
+ * effector-map / minicorpus use; kept here so a future divergence in
  * any one persistence format's checksum doesn't ripple across the
- * others. */
-static uint32_t kcov_bitmap_crc32(const void *buf, size_t len)
+ * others.  Now also reused by the edgepair warm-start save / load
+ * path (see edgepair.c) so the bitmap and pair-coverage dumps share a
+ * single checksum implementation; declared in include/kcov.h. */
+uint32_t kcov_bitmap_crc32(const void *buf, size_t len)
 {
 	static uint32_t table[256];
 	static bool table_built;

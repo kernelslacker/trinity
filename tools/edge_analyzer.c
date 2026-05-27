@@ -28,7 +28,8 @@
 #define EDGEPAIR_TABLE_MASK	(EDGEPAIR_TABLE_SIZE - 1)
 #define EDGEPAIR_EMPTY		0xFFFFFFFFU
 #define EDGEPAIR_MAX_PROBE	32
-#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A03U
+#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A04U
+#define EDGEPAIR_DUMP_VERSION	1U
 
 struct edgepair_entry {
 	unsigned int  prev_nr;
@@ -36,6 +37,20 @@ struct edgepair_entry {
 	unsigned long new_edge_count;
 	unsigned long total_count;
 	unsigned long last_new_at;
+};
+
+/* Mirrors struct edgepair_dump_header in include/edgepair.h.  The CRC
+ * over the table payload is present on disk but not validated here --
+ * the analyzer is read-only diagnostics, and a bad CRC isn't worth
+ * silently rejecting an otherwise readable dump for. */
+struct edgepair_dump_header {
+	uint32_t magic;
+	uint32_t version;
+	uint32_t table_size;
+	uint32_t payload_crc32;
+	uint64_t total_pair_calls;
+	uint64_t pairs_tracked;
+	uint64_t pairs_dropped;
 };
 
 struct edgepair_shared {
@@ -352,8 +367,8 @@ out:
 int main(int argc, char *argv[])
 {
 	const char *dump_file = "edgepair.dump";
+	struct edgepair_dump_header hdr;
 	struct edgepair_shared *shm;
-	uint32_t magic;
 	FILE *f;
 	int top_n = 20;
 	int buckets = 20;
@@ -389,15 +404,27 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	if (fread(&magic, sizeof(magic), 1, f) != 1) {
-		fprintf(stderr, "error: cannot read magic from '%s'\n", dump_file);
+	if (fread(&hdr, sizeof(hdr), 1, f) != 1) {
+		fprintf(stderr, "error: cannot read header from '%s'\n", dump_file);
 		fclose(f);
 		return EXIT_FAILURE;
 	}
 
-	if (magic != EDGEPAIR_DUMP_MAGIC) {
+	if (hdr.magic != EDGEPAIR_DUMP_MAGIC) {
 		fprintf(stderr, "error: bad magic 0x%08x (expected 0x%08x)\n",
-			magic, EDGEPAIR_DUMP_MAGIC);
+			hdr.magic, EDGEPAIR_DUMP_MAGIC);
+		fclose(f);
+		return EXIT_FAILURE;
+	}
+	if (hdr.version != EDGEPAIR_DUMP_VERSION) {
+		fprintf(stderr, "error: unsupported version %u (expected %u)\n",
+			hdr.version, EDGEPAIR_DUMP_VERSION);
+		fclose(f);
+		return EXIT_FAILURE;
+	}
+	if (hdr.table_size != EDGEPAIR_TABLE_SIZE) {
+		fprintf(stderr, "error: table_size %u (expected %u)\n",
+			hdr.table_size, EDGEPAIR_TABLE_SIZE);
 		fclose(f);
 		return EXIT_FAILURE;
 	}
@@ -409,12 +436,15 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	if (fread(shm, sizeof(*shm), 1, f) != 1) {
+	if (fread(shm->table, sizeof(shm->table), 1, f) != 1) {
 		fprintf(stderr, "error: truncated dump file '%s'\n", dump_file);
 		free(shm);
 		fclose(f);
 		return EXIT_FAILURE;
 	}
+	shm->total_pair_calls = (unsigned long)hdr.total_pair_calls;
+	shm->pairs_tracked    = (unsigned long)hdr.pairs_tracked;
+	shm->pairs_dropped    = (unsigned long)hdr.pairs_dropped;
 
 	fclose(f);
 

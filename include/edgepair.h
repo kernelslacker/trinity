@@ -60,8 +60,32 @@
  * dump quadrupled; old analyzers must reject these dumps cleanly
  * rather than walk past the end of their fixed 65K-slot view.  The
  * previous bump (0xEDDA7A01 -> 0xEDDA7A02) marked the retrofit to a
- * parent-private canonical producer; this one marks the table grow. */
-#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A03U
+ * parent-private canonical producer; this one marks the table grow.
+ *
+ * 0xEDDA7A04U: the dump now leads with a fixed-size header carrying
+ * version + table_size + CRC32 over the table payload plus the three
+ * top-level counters, so a warm-start loader can reject torn / stale
+ * files without walking past the end of a partial table.  Old dumps
+ * (0xEDDA7A03) get rejected on magic mismatch and the session starts
+ * cold. */
+#define EDGEPAIR_DUMP_MAGIC	0xEDDA7A04U
+#define EDGEPAIR_DUMP_VERSION	1U
+
+/* On-disk dump header.  Fixed 40 bytes -- four u32 followed by three
+ * u64, naturally aligned without internal padding so the loader can
+ * read it as a single blob.  Followed immediately by
+ * parent_edgepair.table[EDGEPAIR_TABLE_SIZE]; the CRC covers that
+ * table payload only -- the counters live inside the header so they
+ * ride the header read and aren't re-checksummed separately. */
+struct edgepair_dump_header {
+	uint32_t magic;			/* EDGEPAIR_DUMP_MAGIC */
+	uint32_t version;		/* EDGEPAIR_DUMP_VERSION */
+	uint32_t table_size;		/* EDGEPAIR_TABLE_SIZE */
+	uint32_t payload_crc32;		/* CRC32 over table[] payload */
+	uint64_t total_pair_calls;
+	uint64_t pairs_tracked;
+	uint64_t pairs_dropped;
+};
 
 struct edgepair_entry {
 	unsigned int prev_nr;		/* previous syscall number */
@@ -124,13 +148,22 @@ struct edgepair_stats edgepair_get_stats(unsigned int prev_nr,
 					 unsigned int curr_nr);
 
 /*
- * Dump the edge-pair hash table to a binary file for offline analysis.
- * File format: 4-byte EDGEPAIR_DUMP_MAGIC, then
+ * Dump the edge-pair hash table to a binary file for offline analysis
+ * and warm-start of a follow-on process.  File format:
+ *   - struct edgepair_dump_header (magic, version, table_size,
+ *     payload_crc32, total_pair_calls, pairs_tracked, pairs_dropped)
  *   - struct edgepair_entry table[EDGEPAIR_TABLE_SIZE]
- *   - unsigned long total_pair_calls
- *   - unsigned long pairs_tracked
- *   - unsigned long pairs_dropped
- * Byte layout below the magic matches the pre-retrofit dump prefix; the
- * magic bump from 0xEDDA7A01U to 0xEDDA7A02U marks the producer change.
+ * The payload_crc32 covers the table[] bytes only; the counters ride
+ * inside the header.
  */
 void edgepair_dump_to_file(const char *path);
+
+/*
+ * Warm-start loader counterpart to edgepair_dump_to_file().  Reads PATH,
+ * validates header + payload CRC, and installs the table and the three
+ * top-level counters into parent_edgepair before any child has been
+ * forked.  Returns true on a clean load, false on missing / truncated /
+ * stale / corrupt file (caller treats false as legitimate cold-start).
+ * No-op when edgepair is disabled.
+ */
+bool edgepair_load_from_file(const char *path);
