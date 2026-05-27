@@ -105,7 +105,8 @@ enum picker_mode_t picker_mode_arg = PICKER_BANDIT_UCB1;
  */
 static inline unsigned long bandit_ema_decay(unsigned long x_x1000)
 {
-	return (x_x1000 * (BANDIT_EMA_SCALE - BANDIT_EMA_ALPHA_X1000)) /
+	return (x_x1000 * (BANDIT_EMA_SCALE - BANDIT_EMA_ALPHA_X1000)
+		+ BANDIT_EMA_SCALE / 2) /
 	       BANDIT_EMA_SCALE;
 }
 
