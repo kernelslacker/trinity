@@ -250,6 +250,27 @@ bool edgepair_lookup(unsigned int prev_nr, unsigned int curr_nr,
 	return false;
 }
 
+unsigned int edgepair_for_each_parent_entry(edgepair_iter_fn cb,
+					    void *ctx)
+{
+	unsigned int i;
+	unsigned int visited = 0;
+
+	if (!edgepair_enabled || cb == NULL)
+		return 0;
+
+	for (i = 0; i < EDGEPAIR_TABLE_SIZE; i++) {
+		const struct edgepair_entry *e = &parent_edgepair.table[i];
+
+		if (e->prev_nr == EDGEPAIR_EMPTY)
+			continue;
+		visited++;
+		if (!cb(e, ctx))
+			break;
+	}
+	return visited;
+}
+
 /*
  * First-cut score weights.  Picked for shape (rank order across
  * states), not for any measured-productivity tuning.  Once the

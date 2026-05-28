@@ -277,3 +277,24 @@ void edgepair_dump_to_file(const char *path);
  * No-op when edgepair is disabled.
  */
 bool edgepair_load_from_file(const char *path);
+
+/*
+ * Callback signature for edgepair_for_each_parent_entry().  Returns
+ * true to keep iterating, false to stop early.  The entry pointer
+ * aliases parent_edgepair.table[]; callbacks must not mutate it and
+ * must not call into edgepair APIs that take the same internal
+ * locking the iterator already holds (just read).  CTX is opaque to
+ * the iterator and passed through verbatim.
+ */
+typedef bool (*edgepair_iter_fn)(const struct edgepair_entry *e,
+				 void *ctx);
+
+/*
+ * Parent-side walk of the canonical pair table.  Invokes CB on every
+ * non-empty entry (skips EDGEPAIR_EMPTY slots).  Returns the number
+ * of entries visited.  Reads parent_edgepair.table[] directly so it
+ * is only safe to call from the parent, matching edgepair_lookup().
+ * No-op when edgepair is disabled.
+ */
+unsigned int edgepair_for_each_parent_entry(edgepair_iter_fn cb,
+					    void *ctx);
