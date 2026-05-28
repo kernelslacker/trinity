@@ -1048,7 +1048,7 @@ static unsigned char rand_family(void)
  * room (at least sizeof(struct tcmsg) = 20 bytes).
  */
 static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
-			    unsigned char *out_family)
+			    size_t buflen, unsigned char *out_family)
 {
 	/* Map RTM type to its base: RTM_*LINK=16-19, RTM_*ADDR=20-23, etc.
 	 * Each group of 4 shares the same body struct. */
@@ -1057,6 +1057,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	switch (group) {
 	case 0: { /* RTM_*LINK: struct ifinfomsg */
 		struct ifinfomsg ifi;
+
+		if (sizeof(ifi) > buflen)
+			return 0;
 		ifi.ifi_family = rand_family();
 		ifi.__ifi_pad = 0;
 		ifi.ifi_type = rand16();     /* ARPHRD_* */
@@ -1069,6 +1072,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	case 1: { /* RTM_*ADDR: struct ifaddrmsg */
 		struct ifaddrmsg ifa;
+
+		if (sizeof(ifa) > buflen)
+			return 0;
 		ifa.ifa_family = rand_family();
 		ifa.ifa_prefixlen = rnd_modulo_u32(129);
 		ifa.ifa_flags = rnd_modulo_u32(256);
@@ -1080,6 +1086,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	case 2: { /* RTM_*ROUTE: struct rtmsg */
 		struct rtmsg rtm;
+
+		if (sizeof(rtm) > buflen)
+			return 0;
 		rtm.rtm_family = rand_family();
 		rtm.rtm_dst_len = rnd_modulo_u32(129);
 		rtm.rtm_src_len = rnd_modulo_u32(129);
@@ -1095,6 +1104,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	case 3: { /* RTM_*NEIGH: struct ndmsg */
 		struct ndmsg ndm;
+
+		if (sizeof(ndm) > buflen)
+			return 0;
 		ndm.ndm_family = rand_family();
 		ndm.ndm_pad1 = 0;
 		ndm.ndm_pad2 = 0;
@@ -1108,6 +1120,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	case 4: { /* RTM_*RULE: struct fib_rule_hdr */
 		struct fib_rule_hdr frh;
+
+		if (sizeof(frh) > buflen)
+			return 0;
 		frh.family = rand_family();
 		frh.dst_len = rnd_modulo_u32(129);
 		frh.src_len = rnd_modulo_u32(129);
@@ -1123,6 +1138,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	case 8: { /* RTM_*ACTION: struct tcamsg */
 		struct tcamsg tca;
+
+		if (sizeof(tca) > buflen)
+			return 0;
 		memset(&tca, 0, sizeof(tca));
 		tca.tca_family = rand_family();
 		*out_family = tca.tca_family;
@@ -1131,6 +1149,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	case 9: { /* RTM_*PREFIX: struct prefixmsg */
 		struct prefixmsg pmsg;
+
+		if (sizeof(pmsg) > buflen)
+			return 0;
 		memset(&pmsg, 0, sizeof(pmsg));
 		pmsg.prefix_family = rand_family();
 		pmsg.prefix_ifindex = rand32() % 64;
@@ -1143,6 +1164,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	case 12: { /* RTM_*NEIGHTBL: struct ndtmsg */
 		struct ndtmsg ndt;
+
+		if (sizeof(ndt) > buflen)
+			return 0;
 		memset(&ndt, 0, sizeof(ndt));
 		ndt.ndtm_family = rand_family();
 		*out_family = ndt.ndtm_family;
@@ -1151,6 +1175,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	case 13: { /* RTM_*NDUSEROPT: struct nduseroptmsg */
 		struct nduseroptmsg ndu;
+
+		if (sizeof(ndu) > buflen)
+			return 0;
 		memset(&ndu, 0, sizeof(ndu));
 		ndu.nduseropt_family = rand_family();
 		ndu.nduseropt_opts_len = htons(rnd_modulo_u32(256));
@@ -1163,6 +1190,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	case 14: { /* RTM_*ADDRLABEL: struct ifaddrlblmsg */
 		struct ifaddrlblmsg ifal;
+
+		if (sizeof(ifal) > buflen)
+			return 0;
 		memset(&ifal, 0, sizeof(ifal));
 		ifal.ifal_family = rand_family();
 		ifal.ifal_prefixlen = rnd_modulo_u32(129);
@@ -1175,6 +1205,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	case 15: { /* RTM_{GET,SET}DCB: struct dcbmsg */
 		struct dcbmsg dcb;
+
+		if (sizeof(dcb) > buflen)
+			return 0;
 		memset(&dcb, 0, sizeof(dcb));
 		dcb.dcb_family = rand_family();
 		dcb.cmd = rnd_modulo_u32(256);
@@ -1185,6 +1218,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	case 16: { /* RTM_*NETCONF: struct netconfmsg */
 		struct netconfmsg ncm;
+
+		if (sizeof(ncm) > buflen)
+			return 0;
 		ncm.ncm_family = rand_family();
 		*out_family = ncm.ncm_family;
 		memcpy(body, &ncm, sizeof(ncm));
@@ -1192,6 +1228,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	case 17: { /* RTM_*MDB: struct br_port_msg */
 		struct br_port_msg bpm;
+
+		if (sizeof(bpm) > buflen)
+			return 0;
 		bpm.family = rand_family();
 		bpm.ifindex = rand32() % 64;
 		*out_family = bpm.family;
@@ -1200,6 +1239,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	case 18: { /* RTM_*VLAN: struct br_vlan_msg */
 		struct br_vlan_msg bvm;
+
+		if (sizeof(bvm) > buflen)
+			return 0;
 		bvm.family = rand_family();
 		bvm.reserved1 = 0;
 		bvm.reserved2 = 0;
@@ -1210,6 +1252,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	case 19: { /* RTM_*STATS: struct if_stats_msg */
 		struct if_stats_msg smsg;
+
+		if (sizeof(smsg) > buflen)
+			return 0;
 		memset(&smsg, 0, sizeof(smsg));
 		smsg.family = rand_family();
 		smsg.ifindex = rand32() % 64;
@@ -1221,6 +1266,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	case 22: /* RTM_*NEXTHOP */
 	case 25: { /* RTM_*NEXTHOPBUCKET: struct nhmsg */
 		struct nhmsg nh;
+
+		if (sizeof(nh) > buflen)
+			return 0;
 		memset(&nh, 0, sizeof(nh));
 		nh.nh_family = rand_family();
 		nh.nh_scope = rand32() & 0xff;
@@ -1232,6 +1280,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	case 26: { /* RTM_*TUNNEL: struct tunnel_msg */
 		struct tunnel_msg tm;
+
+		if (sizeof(tm) > buflen)
+			return 0;
 		tm.family = rand_family();
 		tm.flags = rand32() & 0xff;
 		tm.reserved2 = 0;
@@ -1245,6 +1296,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	case 7: /* RTM_*TFILTER */
 	case 21: { /* RTM_*CHAIN: struct tcmsg */
 		struct tcmsg tc;
+
+		if (sizeof(tc) > buflen)
+			return 0;
 		tc.tcm_family = rand_family();
 		tc.tcm__pad1 = 0;
 		tc.tcm__pad2 = 0;
@@ -1258,6 +1312,9 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	}
 	default: { /* Everything else: struct rtgenmsg (1 byte) */
 		struct rtgenmsg gen;
+
+		if (sizeof(gen) > buflen)
+			return 0;
 		gen.rtgen_family = rand_family();
 		*out_family = gen.rtgen_family;
 		memcpy(body, &gen, sizeof(gen));
@@ -1277,11 +1334,15 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
  * For other families, we use random cmd values since we don't know
  * which families are loaded at runtime.
  */
-static size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type)
+static size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type,
+			    size_t buflen)
 {
 	const struct genl_family_grammar *fam = NULL;
 	struct genlmsghdr genl;
 	size_t len;
+
+	if (sizeof(genl) > buflen)
+		return 0;
 
 	if (nlmsg_type == GENL_ID_CTRL) {
 		/* Controller commands: GETFAMILY is the most useful */
@@ -1310,9 +1371,13 @@ static size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type)
 	memcpy(body, &genl, sizeof(genl));
 	len = sizeof(genl);
 
-	if (fam && fam->hdrsize)
+	if (fam && fam->hdrsize) {
+		if (len + fam->hdrsize > buflen)
+			return len;
 		generate_rand_bytes(body + len, fam->hdrsize);
-	return len + (fam ? fam->hdrsize : 0);
+		return len + fam->hdrsize;
+	}
+	return len;
 }
 
 /* Pick an nlattr type for genl controller messages.  Reads through the
@@ -1335,12 +1400,16 @@ static unsigned short pick_genl_attr_type(unsigned short nlmsg_type)
  * summary; bump degrades to a no-op when nlmsg_type's high byte
  * doesn't match any registered subsys.
  */
-static size_t gen_nfnl_body(unsigned char *body, unsigned short nlmsg_type)
+static size_t gen_nfnl_body(unsigned char *body, unsigned short nlmsg_type,
+			    size_t buflen)
 {
 	struct nfgenmsg nfg;
 	static const unsigned char nf_families[] = {
 		AF_INET, AF_INET6, AF_BRIDGE, AF_UNSPEC,
 	};
+
+	if (sizeof(nfg) > buflen)
+		return 0;
 
 	if (ONE_IN(8))
 		nfg.nfgen_family = rnd_modulo_u32(256);
@@ -1530,7 +1599,8 @@ static void xfrm_pin_family(unsigned char *body, size_t body_len,
  * matters — it gets us past the initial copy_from_user length check
  * into the deeper validation code where the interesting bugs live.
  */
-static size_t gen_xfrm_body(unsigned char *body, unsigned short nlmsg_type)
+static size_t gen_xfrm_body(unsigned char *body, unsigned short nlmsg_type,
+			    size_t buflen)
 {
 	size_t body_len;
 
@@ -1598,6 +1668,8 @@ static size_t gen_xfrm_body(unsigned char *body, unsigned short nlmsg_type)
 		break;
 	}
 
+	if (body_len > buflen)
+		return 0;
 	if (body_len > 0) {
 		generate_rand_bytes(body, body_len);
 		xfrm_pin_family(body, body_len, nlmsg_type);
@@ -1693,11 +1765,14 @@ static const struct nla_attr_spec inet_diag_specs[] = {
  * - Legacy types (< 20): inet_diag_req_v2.
  */
 static size_t gen_sockdiag_body(unsigned char *body,
-				unsigned short nlmsg_type)
+				unsigned short nlmsg_type, size_t buflen)
 {
 	switch (nlmsg_type) {
 	case SOCK_DIAG_BY_FAMILY: {
 		struct sock_diag_req req;
+
+		if (sizeof(req) > buflen)
+			return 0;
 		req.sdiag_family = rand_family();
 		req.sdiag_protocol = rnd_modulo_u32(256);
 		memcpy(body, &req, sizeof(req));
@@ -1710,6 +1785,9 @@ static size_t gen_sockdiag_body(unsigned char *body,
 		 * but set sdiag_family to something useful.
 		 */
 		struct inet_diag_req_v2 req;
+
+		if (sizeof(req) > buflen)
+			return 0;
 		generate_rand_bytes((unsigned char *)&req, sizeof(req));
 		req.sdiag_family = rand_family();
 		req.sdiag_protocol = rnd_modulo_u32(256);
@@ -2132,19 +2210,24 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	/* Generate protocol-appropriate body struct */
 	if (triplet->protocol == NETLINK_ROUTE &&
 	    nlmsg_type >= RTM_BASE && nlmsg_type < RTM_MAX) {
-		body_len = gen_rtnl_body(msg + offset, nlmsg_type, &body_family);
+		body_len = gen_rtnl_body(msg + offset, nlmsg_type,
+					 buflen - offset, &body_family);
 		rtnl_group = (nlmsg_type - RTM_BASE) / 4;
 	} else if (triplet->protocol == NETLINK_GENERIC) {
-		body_len = gen_genl_body(msg + offset, nlmsg_type);
+		body_len = gen_genl_body(msg + offset, nlmsg_type,
+					 buflen - offset);
 	} else if (triplet->protocol == NETLINK_NETFILTER) {
-		body_len = gen_nfnl_body(msg + offset, nlmsg_type);
+		body_len = gen_nfnl_body(msg + offset, nlmsg_type,
+					 buflen - offset);
 	} else if (triplet->protocol == NETLINK_XFRM) {
-		body_len = gen_xfrm_body(msg + offset, nlmsg_type);
+		body_len = gen_xfrm_body(msg + offset, nlmsg_type,
+					 buflen - offset);
 	} else if (triplet->protocol == NETLINK_AUDIT) {
 		body_len = gen_audit_body(msg + offset, nlmsg_type,
 					  buflen - offset);
 	} else if (triplet->protocol == NETLINK_SOCK_DIAG) {
-		body_len = gen_sockdiag_body(msg + offset, nlmsg_type);
+		body_len = gen_sockdiag_body(msg + offset, nlmsg_type,
+					     buflen - offset);
 	} else {
 		body_len = RAND_RANGE(4, 64);
 		if (offset + body_len > buflen)
