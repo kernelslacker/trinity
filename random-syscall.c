@@ -1420,8 +1420,17 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			edgepair_is_cold(child->last_syscall_nr, rec->nr);
 	}
 
-	/* Record the (prev, curr) syscall pair for sequence coverage. */
-	if (child->last_syscall_nr != EDGEPAIR_NO_PREV)
+	/* Record the (prev, curr) syscall pair for sequence coverage.
+	 * CMP-mode children collect comparison records, not PC edges,
+	 * so new_edges is structurally false above; recording the pair
+	 * would inflate total_pair_calls / total_count without ever
+	 * being able to bump new_edge_count, polluting the productivity
+	 * signal that edgepair_is_cold, the bandit reward dampener, and
+	 * the frontier/chain pickers all consume.  Skip the write
+	 * entirely on CMP children; the pre-snapshot reads above stay
+	 * valid because they don't mutate state. */
+	if (child->last_syscall_nr != EDGEPAIR_NO_PREV &&
+	    child->kcov.mode != KCOV_MODE_CMP)
 		edgepair_record(child, child->last_syscall_nr, rec->nr, new_edges);
 
 	/* CMP-bloom novelty is an equivalent corpus-save / mutator-win
