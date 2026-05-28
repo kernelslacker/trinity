@@ -178,6 +178,70 @@ static const char * const cmp_hints_strip_targets[] = {
 	"io_setup",
 };
 
+/*
+ * Auto-strip CMP collection for any syscall whose num_args == 0.  With
+ * no syscall arguments at all, every KCOV_CMP record such a syscall
+ * emits is by construction unreachable from cmp_hints_try_get() -- the
+ * argument surface is empty, so no constant the kernel compares
+ * against can ever be steered by a subsequent generated arg.  Pool
+ * entries from these syscalls only displace constants from
+ * arg-bearing syscalls in the LRU eviction order and waste
+ * bloom-reset cycles.
+ *
+ * Run after cmp_hints_strip_install() so the explicit per-rationale
+ * list above is in place first; the explicit set is independent (it
+ * strips arg-bearing syscalls whose comparisons fire on
+ * kernel-internal state) and is not a subset of this one.  Emits a
+ * single count line rather than per-syscall output -- ~20+ matches
+ * would be log spam at fleet scale.
+ */
+static void cmp_hints_strip_no_arg_syscalls(void)
+{
+	struct syscallentry *entry;
+	unsigned int i;
+	unsigned int count = 0;
+
+	if (biarch == true) {
+		for_each_64bit_syscall(i) {
+			if (i >= MAX_NR_SYSCALL)
+				break;
+			entry = syscalls_64bit[i].entry;
+			if (entry == NULL)
+				continue;
+			if (entry->num_args == 0 && !cmp_hints_strip[0][i]) {
+				cmp_hints_strip[0][i] = true;
+				count++;
+			}
+		}
+		for_each_32bit_syscall(i) {
+			if (i >= MAX_NR_SYSCALL)
+				break;
+			entry = syscalls_32bit[i].entry;
+			if (entry == NULL)
+				continue;
+			if (entry->num_args == 0 && !cmp_hints_strip[1][i]) {
+				cmp_hints_strip[1][i] = true;
+				count++;
+			}
+		}
+	} else {
+		for_each_syscall(i) {
+			if (i >= MAX_NR_SYSCALL)
+				break;
+			entry = syscalls[i].entry;
+			if (entry == NULL)
+				continue;
+			if (entry->num_args == 0 && !cmp_hints_strip[0][i]) {
+				cmp_hints_strip[0][i] = true;
+				count++;
+			}
+		}
+	}
+
+	output(0, "KCOV: CMP collection auto-stripped for %u zero-arg syscalls\n",
+	       count);
+}
+
 void cmp_hints_init(void)
 {
 	if (kcov_shm == NULL)
@@ -199,6 +263,7 @@ void cmp_hints_init(void)
 
 	cmp_hints_strip_install(cmp_hints_strip_targets,
 				ARRAY_SIZE(cmp_hints_strip_targets));
+	cmp_hints_strip_no_arg_syscalls();
 }
 
 static void pool_lock(struct cmp_hint_pool *pool)
