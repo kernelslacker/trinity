@@ -117,11 +117,12 @@ static unsigned int seed_combine(unsigned int seedval, unsigned int childno)
  */
 void set_seed(struct childdata *child)
 {
-	unsigned int mixed = seed_combine(__atomic_load_n(&shm->seed, __ATOMIC_RELAXED), child->num);
+	unsigned int seedval = __atomic_load_n(&shm->seed, __ATOMIC_RELAXED);
+	unsigned int mixed = seed_combine(seedval, child->num);
 
 	srand(mixed);
 	rnd_seed(mixed);
-	child->seed = __atomic_load_n(&shm->seed, __ATOMIC_RELAXED);
+	child->seed = seedval;
 }
 
 /*
