@@ -2103,15 +2103,21 @@ void reset_epoch_state(void)
 	 * in random-syscall.c computes the window interval as
 	 *   (shm_published->fleet_op_count - shm->syscalls_at_last_switch)
 	 * with unsigned subtraction.  fleet_op_count is reset above; if we
-	 * leave the four window-start fields holding the previous epoch's
-	 * final values, the next maybe_rotate_strategy() call sees
-	 * (0 - large), underflows to a huge unsigned, and trips the
-	 * STRATEGY_WINDOW threshold immediately -- a bogus forced rotation
-	 * on the first syscall of the new epoch.  The per-strategy delta
-	 * series (pc_edge_calls/_count, bandit_cmp_new_constants) are
-	 * cumulative and intentionally NOT reset; only their window-start
-	 * snapshots need to drop to 0 so the first window of the new epoch
-	 * sees a valid 'now - last' interval.
+	 * leave syscalls_at_last_switch holding the previous epoch's final
+	 * value, the next maybe_rotate_strategy() call sees (0 - large),
+	 * underflows to a huge unsigned, and trips the STRATEGY_WINDOW
+	 * threshold immediately -- a bogus forced rotation on the first
+	 * syscall of the new epoch.  The per-strategy delta series
+	 * (pc_edge_calls/_count, bandit_cmp_new_constants) are cumulative
+	 * and intentionally NOT reset.
+	 *
+	 * The *_at_window_start fields are reseeded from the matching
+	 * *_by_strategy[current_strategy] cumulative counters, mirroring the
+	 * reseed performed at the end of maybe_rotate_strategy() when an arm
+	 * rotates.  Zeroing them instead would make the first window after
+	 * the epoch reset compute its delta as (cumulative - 0), absorbing
+	 * every reward earned in prior epochs and biasing UCB / EMA state for
+	 * the first arm to close a window in the new epoch.
 	 *
 	 * Bandit arm state (bandit_pulls, bandit_reward_calls, ...) is
 	 * intentionally NOT reset -- warm-start across epochs is the desired
@@ -2122,20 +2128,40 @@ void reset_epoch_state(void)
 	/* fleet_op_count anchor for the next STRATEGY_WINDOW interval */
 	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL,
 			 __ATOMIC_RELEASE);
-	/* pc_edge_calls_by_strategy[prev] snapshot for next call-count delta */
-	__atomic_store_n(&shm->pc_edge_calls_at_window_start, 0UL,
-			 __ATOMIC_RELAXED);
-	/* pc_edge_calls_dampened_q8_by_strategy[prev] snapshot for next
-	 * dampened-call-count delta; mirrors the at_window_start reset of
-	 * the raw call-count series above. */
-	__atomic_store_n(&shm->pc_edge_calls_dampened_q8_at_window_start, 0UL,
-			 __ATOMIC_RELAXED);
-	/* pc_edge_count_by_strategy[prev] snapshot for next bucket-count delta */
-	__atomic_store_n(&shm->pc_edge_count_at_window_start, 0UL,
-			 __ATOMIC_RELAXED);
-	/* bandit_cmp_new_constants[prev] snapshot for next cmp-novelty delta */
-	__atomic_store_n(&shm->bandit_cmp_at_window_start, 0UL,
-			 __ATOMIC_RELAXED);
+	{
+		int cur = __atomic_load_n(&shm->current_strategy,
+					  __ATOMIC_RELAXED);
+
+		/* pc_edge_calls_by_strategy[cur] snapshot for next
+		 * call-count delta */
+		__atomic_store_n(&shm->pc_edge_calls_at_window_start,
+				 __atomic_load_n(
+					 &shm->pc_edge_calls_by_strategy[cur],
+					 __ATOMIC_RELAXED),
+				 __ATOMIC_RELAXED);
+		/* pc_edge_calls_dampened_q8_by_strategy[cur] snapshot for
+		 * next dampened-call-count delta; mirrors the reseed of the
+		 * raw call-count series above. */
+		__atomic_store_n(&shm->pc_edge_calls_dampened_q8_at_window_start,
+				 __atomic_load_n(
+					 &shm->pc_edge_calls_dampened_q8_by_strategy[cur],
+					 __ATOMIC_RELAXED),
+				 __ATOMIC_RELAXED);
+		/* pc_edge_count_by_strategy[cur] snapshot for next
+		 * bucket-count delta */
+		__atomic_store_n(&shm->pc_edge_count_at_window_start,
+				 __atomic_load_n(
+					 &shm->pc_edge_count_by_strategy[cur],
+					 __ATOMIC_RELAXED),
+				 __ATOMIC_RELAXED);
+		/* bandit_cmp_new_constants[cur] snapshot for next
+		 * cmp-novelty delta */
+		__atomic_store_n(&shm->bandit_cmp_at_window_start,
+				 __atomic_load_n(
+					 &shm->bandit_cmp_new_constants[cur],
+					 __ATOMIC_RELAXED),
+				 __ATOMIC_RELAXED);
+	}
 	for_each_child(i) {
 		__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);
 		clean_childdata(children[i]);
