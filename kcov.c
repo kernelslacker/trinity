@@ -1718,6 +1718,8 @@ static bool kcov_get_boot_id(char out[37])
 		if (fd < 0) {
 			output(0, "kcov-bitmap: open(/proc/sys/kernel/random/boot_id) failed: %s -- boot_id identity check disabled this run\n",
 			       strerror(errno));
+			kcov_boot_id[0] = '\0';
+			kcov_boot_id_valid = true;
 			out[0] = '\0';
 			return false;
 		}
@@ -1727,6 +1729,7 @@ static bool kcov_get_boot_id(char out[37])
 			output(0, "kcov-bitmap: short read on /proc/sys/kernel/random/boot_id (got %zd, want 36) -- boot_id identity check disabled this run\n",
 			       n);
 			kcov_boot_id[0] = '\0';
+			kcov_boot_id_valid = true;
 			out[0] = '\0';
 			return false;
 		}
