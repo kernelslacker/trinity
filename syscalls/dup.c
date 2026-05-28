@@ -6,6 +6,7 @@
 #include "child.h"
 #include "fd.h"
 #include "fd-event.h"
+#include "kcov.h"
 #include "pids.h"
 #include "random.h"
 #include "rnd.h"
@@ -79,7 +80,8 @@ static void sanitise_dup2(struct syscallrecord *rec)
 	static __thread int rl_initialised;
 	static __thread struct rlimit rl;
 	unsigned int pick;
-	unsigned int tries = 0;
+	unsigned int tries;
+	unsigned int kcov_tries;
 
 	if (!rl_initialised) {
 		if (getrlimit(RLIMIT_NOFILE, &rl) != 0) {
@@ -89,33 +91,53 @@ static void sanitise_dup2(struct syscallrecord *rec)
 		rl_initialised = 1;
 	}
 
-	pick = rnd_modulo_u32(100);
-	if (pick < 35) {
-		/* occupied: leave the ARG_FD pick. */
-	} else if (pick < 50) {
-		rec->a2 = (unsigned long) RAND_RANGE(256, 4095);
-	} else if (pick < 60) {
-		if (rl.rlim_cur > 0)
-			rec->a2 = (unsigned long) (rl.rlim_cur - 1);
-	} else if (pick < 65) {
-		rec->a2 = (unsigned long) (rl.rlim_cur + 1);
-	} else if (pick < 70) {
-		if (rl.rlim_max > 0)
-			rec->a2 = (unsigned long) (rl.rlim_max - 1);
-	} else if (pick < 80) {
-		rec->a2 = (unsigned long) RAND_RANGE(3, 5);
-	} else if (pick < 90) {
-		rec->a2 = rec->a1;
-	} else if (pick < 95) {
-		rec->a2 = 0x7fffffffUL;
-	}
-	/* pick >= 95: reserved gap; leave the ARG_FD pick untouched. */
+	/*
+	 * gen_arg_fd() filters this child's kcov fds out of ARG_FD picks,
+	 * but the rlimit / RAND_RANGE buckets below pick fresh integers
+	 * that can land on a relocated kcov slot.  A successful
+	 * dup2(oldfd, kcov_fd) atomically replaces the slot; the next
+	 * ioctl(KCOV_*, ...) returns -ENOTTY and that child loses
+	 * coverage for the rest of its life.  Reroll on collision (match
+	 * the bounded-retry pattern in gen_arg_fd), and on the unlikely
+	 * case where every attempt collides, fall back to rec->a1: it
+	 * was picked by ARG_FD so it is already filtered, and dup2(oldfd,
+	 * oldfd) is the documented kernel no-op short-circuit the bucket
+	 * already exercises with pick < 90.
+	 */
+	for (kcov_tries = 0; kcov_tries < 4; kcov_tries++) {
+		pick = rnd_modulo_u32(100);
+		if (pick < 35) {
+			/* occupied: leave the ARG_FD pick. */
+		} else if (pick < 50) {
+			rec->a2 = (unsigned long) RAND_RANGE(256, 4095);
+		} else if (pick < 60) {
+			if (rl.rlim_cur > 0)
+				rec->a2 = (unsigned long) (rl.rlim_cur - 1);
+		} else if (pick < 65) {
+			rec->a2 = (unsigned long) (rl.rlim_cur + 1);
+		} else if (pick < 70) {
+			if (rl.rlim_max > 0)
+				rec->a2 = (unsigned long) (rl.rlim_max - 1);
+		} else if (pick < 80) {
+			rec->a2 = (unsigned long) RAND_RANGE(3, 5);
+		} else if (pick < 90) {
+			rec->a2 = rec->a1;
+		} else if (pick < 95) {
+			rec->a2 = 0x7fffffffUL;
+		}
+		/* pick >= 95: reserved gap; leave the ARG_FD pick untouched. */
 
-	/* Don't let newfd clobber stdin/stdout/stderr. */
-	while (rec->a2 <= 2 && tries++ < 32)
-		rec->a2 = get_random_fd();
-	if (rec->a2 <= 2)
-		rec->a2 = (unsigned long) RAND_RANGE(256, 4095);
+		tries = 0;
+		/* Don't let newfd clobber stdin/stdout/stderr. */
+		while (rec->a2 <= 2 && tries++ < 32)
+			rec->a2 = get_random_fd();
+		if (rec->a2 <= 2)
+			rec->a2 = (unsigned long) RAND_RANGE(256, 4095);
+
+		if (!kcov_fd_is_protected((int) rec->a2))
+			return;
+	}
+	rec->a2 = rec->a1;
 }
 
 static void post_dup2(struct syscallrecord *rec)
