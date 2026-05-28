@@ -983,6 +983,8 @@ bool minicorpus_save_file(const char *path)
 		 * is microseconds even under heavy contention. */
 		ring_lock(ring);
 		snap_count = ring->count;
+		if (snap_count > CORPUS_RING_SIZE)
+			snap_count = CORPUS_RING_SIZE;
 		if (snap_count == 0) {
 			ring_unlock(ring);
 			continue;
