@@ -2137,6 +2137,8 @@ void reset_epoch_state(void)
 	{
 		int cur = __atomic_load_n(&shm->current_strategy,
 					  __ATOMIC_RELAXED);
+		if (cur < 0 || cur >= NR_STRATEGIES)
+			cur = STRATEGY_HEURISTIC;
 
 		/* pc_edge_calls_by_strategy[cur] snapshot for next
 		 * call-count delta */
