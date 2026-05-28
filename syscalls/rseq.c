@@ -28,11 +28,11 @@ static void sanitise_rseq(struct syscallrecord *rec)
 	 * struct rseq must be aligned to 32 bytes.
 	 * Allocate extra to ensure alignment.
 	 */
-	rs = (struct rseq *) get_writable_address(sizeof(*rs) + 32);
+	rs = (struct rseq *) get_writable_address(sizeof(*rs) + 64);
 	if (rs == NULL)
 		return;
 	rs = (struct rseq *)(((unsigned long)rs + 31) & ~31UL);
-	memset(rs, 0, sizeof(*rs));
+	memset(rs, 0, sizeof(*rs) + 32);
 
 	rec->a1 = (unsigned long) rs;
 
