@@ -89,7 +89,7 @@ bool max_runtime_set = false;
  *   d = days
  * On success, writes the value (in seconds) to *out and returns true.
  * Returns false for empty input, garbage, multi-char suffix, unknown
- * suffix, negative values, or anything that overflows unsigned int.
+ * suffix, negative values, zero, or anything that overflows unsigned int.
  */
 static bool parse_duration(const char *s, unsigned int *out)
 {
@@ -103,6 +103,9 @@ static bool parse_duration(const char *s, unsigned int *out)
 	errno = 0;
 	val = strtoul(s, &end, 10);
 	if (end == s || errno == ERANGE)
+		return false;
+
+	if (val == 0)
 		return false;
 
 	if (*end != '\0') {
