@@ -107,22 +107,25 @@ bool choose_syscall_table(struct childdata *child,
  */
 #define VALIDATE_FAIL_THRESHOLD 3
 
-static void note_validation_success(unsigned int syscallnr)
+static void note_validation_success(unsigned int syscallnr, bool do32)
 {
-	if (__atomic_load_n(&shm->syscall_validation_failures[syscallnr],
+	unsigned int arch = do32 ? 1 : 0;
+
+	if (__atomic_load_n(&shm->syscall_validation_failures[arch][syscallnr],
 			    __ATOMIC_RELAXED) != 0)
-		__atomic_store_n(&shm->syscall_validation_failures[syscallnr],
+		__atomic_store_n(&shm->syscall_validation_failures[arch][syscallnr],
 				 0, __ATOMIC_RELAXED);
 }
 
 static void note_validation_failure(unsigned int syscallnr, bool do32)
 {
+	unsigned int arch = do32 ? 1 : 0;
 	unsigned int count;
 	struct syscallentry *entry;
 	const char *name;
 
 	count = (unsigned int)__atomic_add_fetch(
-		&shm->syscall_validation_failures[syscallnr], 1,
+		&shm->syscall_validation_failures[arch][syscallnr], 1,
 		__ATOMIC_RELAXED);
 	if (count < VALIDATE_FAIL_THRESHOLD)
 		return;
@@ -131,7 +134,7 @@ static void note_validation_failure(unsigned int syscallnr, bool do32)
 	name = (entry != NULL) ? entry->name : "<unknown>";
 	output(0, "deactivating syscall %s (nr=%u) after %u validation failures\n",
 	       name, syscallnr, count);
-	__atomic_store_n(&shm->syscall_validation_failures[syscallnr], 0,
+	__atomic_store_n(&shm->syscall_validation_failures[arch][syscallnr], 0,
 			 __ATOMIC_RELAXED);
 	deactivate_syscall_locked(syscallnr, do32);
 }
@@ -219,7 +222,7 @@ retry:
 		note_validation_failure(syscallnr, do32);
 		goto retry;
 	}
-	note_validation_success(syscallnr);
+	note_validation_success(syscallnr, do32);
 
 	entry = get_syscall_entry(syscallnr, do32);
 	if (entry == NULL)
@@ -403,7 +406,7 @@ retry:
 		note_validation_failure(syscallnr, do32);
 		goto retry;
 	}
-	note_validation_success(syscallnr);
+	note_validation_success(syscallnr, do32);
 
 	/* Edge-pair gates, guarded on a valid previous syscall.  Mirrors the
 	 * heuristic picker's cold-pair filter (saturated (prev, curr) pairs
@@ -568,7 +571,7 @@ retry:
 		note_validation_failure(syscallnr, do32);
 		goto retry;
 	}
-	note_validation_success(syscallnr);
+	note_validation_success(syscallnr, do32);
 
 	/* Frontier-weighted acceptance.  When max_weight is 0 (no syscall
 	 * has registered a frontier edge in the last FRONTIER_DECAY_WINDOWS
@@ -662,7 +665,7 @@ retry:
 		note_validation_failure(syscallnr, do32);
 		goto retry;
 	}
-	note_validation_success(syscallnr);
+	note_validation_success(syscallnr, do32);
 
 	/* Edgepair-weighted acceptance.  edgepair_score returns a weight in
 	 * [0, 1024]; treat it as a rejection-sampling probability against the

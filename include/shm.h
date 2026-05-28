@@ -138,8 +138,17 @@ struct shm_s {
 	 * we only compare against the small threshold and reset on
 	 * success.  All accesses are relaxed atomic so concurrent pickers
 	 * across children can race the same slot without a lock.
+	 *
+	 * Dimensioned [2][MAX_NR_SYSCALL] so biarch builds keep the 32-bit
+	 * and 64-bit tables' failure counters separate -- slot N in one
+	 * table is usually a different syscall than slot N in the other,
+	 * and a single-dimension array let resets and threshold trips on
+	 * one arch silently overwrite or be driven by observations from
+	 * the sibling.  Uniarch builds only ever touch index [0], matching
+	 * the existing do32 ? 1 : 0 convention used elsewhere (see
+	 * cmp_hints_strip).
 	 */
-	unsigned char syscall_validation_failures[MAX_NR_SYSCALL];
+	unsigned char syscall_validation_failures[2][MAX_NR_SYSCALL];
 
 #ifdef ARCH_IS_BIARCH
 	/* Check that 32bit emulation is available. */
