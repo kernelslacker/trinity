@@ -691,18 +691,11 @@ void parse_args(int argc, char *argv[])
 
 		/* Set number of syscalls to do */
 		case 'N': {
-			char *end;
+			unsigned long val;
 
-			if (optarg[0] == '-') {
-				outputerr("-N: negative value '%s' not allowed\n", optarg);
+			if (!parse_unsigned(optarg, "N", false, &val))
 				exit(EXIT_FAILURE);
-			}
-			errno = 0;
-			syscalls_todo = strtoul(optarg, &end, 10);
-			if (end == optarg || *end != '\0' || errno == ERANGE) {
-				outputerr("can't parse '%s' as a number\n", optarg);
-				exit(EXIT_FAILURE);
-			}
+			syscalls_todo = val;
 			break;
 		}
 
