@@ -11,6 +11,9 @@
 /* Mirror of post_setresuid for the gid side. */
 static void post_setresgid(struct syscallrecord *rec)
 {
+	gid_t r_in = (gid_t) rec->a1;
+	gid_t e_in = (gid_t) rec->a2;
+	gid_t s_in = (gid_t) rec->a3;
 	gid_t want_r, want_e, want_s, r, e, s;
 
 	if ((long) rec->retval != 0)
@@ -21,9 +24,9 @@ static void post_setresgid(struct syscallrecord *rec)
 	if (getresgid(&r, &e, &s) != 0)
 		return;
 
-	want_r = (gid_t) rec->a1;
-	want_e = (gid_t) rec->a2;
-	want_s = (gid_t) rec->a3;
+	want_r = r_in;
+	want_e = e_in;
+	want_s = s_in;
 	if (r != want_r || e != want_e || s != want_s) {
 		output(0, "cred oracle: setresgid(%u, %u, %u) succeeded but "
 		       "getresgid()={r=%u, e=%u, s=%u}\n",
