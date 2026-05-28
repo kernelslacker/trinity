@@ -77,6 +77,9 @@ static void sanitise_setpriority(struct syscallrecord *rec)
 
 static void post_setpriority(struct syscallrecord *rec)
 {
+	int which_in = (int) rec->a1;
+	pid_t who_in = (pid_t)(int) rec->a2;
+	int nice_in = (int) rec->a3;
 	char buf[2048];
 	char *line;
 	ssize_t n;
@@ -99,15 +102,15 @@ static void post_setpriority(struct syscallrecord *rec)
 	 */
 	if ((long) rec->retval != 0)
 		return;
-	if ((int) rec->a1 != PRIO_PROCESS)
+	if (which_in != PRIO_PROCESS)
 		return;
-	who = (pid_t)(int) rec->a2;
+	who = who_in;
 	if (who != 0 && who != mypid())
 		return;
 	if (!ONE_IN(100))
 		return;
 
-	expected = (int) rec->a3;
+	expected = nice_in;
 
 	/*
 	 * Mirror the kernel's MIN_NICE/MAX_NICE clamp at the syscall entry:
