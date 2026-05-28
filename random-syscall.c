@@ -1468,7 +1468,8 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * branches in that case. */
 	bool rescue_pair_was_unseen = false;
 	bool rescue_pair_was_cold = false;
-	if (child->last_syscall_nr != EDGEPAIR_NO_PREV) {
+	if (child->last_syscall_nr != EDGEPAIR_NO_PREV &&
+	    !rec->validator_rejected) {
 		struct edgepair_stats ps_before =
 			edgepair_get_stats(child->last_syscall_nr, rec->nr);
 		rescue_pair_was_unseen =
@@ -1485,8 +1486,13 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * signal that edgepair_is_cold, the bandit reward dampener, and
 	 * the frontier/chain pickers all consume.  Skip the write
 	 * entirely on CMP children; the pre-snapshot reads above stay
-	 * valid because they don't mutate state. */
+	 * valid because they don't mutate state.  Validator-rejected
+	 * calls are the same shape: do_syscall() returned a synthetic
+	 * EINVAL from userspace before the kernel was entered, so
+	 * new_edges is structurally false and recording the pair would
+	 * emit a zero-edge event with identical poisoning effects. */
 	if (child->last_syscall_nr != EDGEPAIR_NO_PREV &&
+	    !rec->validator_rejected &&
 	    child->kcov.mode != KCOV_MODE_CMP)
 		edgepair_record(child, child->last_syscall_nr, rec->nr, new_edges);
 
@@ -1723,9 +1729,13 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * state-setting predecessors of a subsequent new-edge event would
 	 * dilute attribution toward calls that did nothing — at top-N dump
 	 * time these noise pairs crowd out genuinely interesting
-	 * predecessor relationships. */
-	if (rec->retval == -1UL &&
-	    (rec->errno_post == ENOSYS || rec->errno_post == EOPNOTSUPP)) {
+	 * predecessor relationships.  Validator-rejected calls share the
+	 * same rationale: do_syscall() returned a synthetic EINVAL from
+	 * userspace pre-validation without ever entering the kernel, so
+	 * kernel state is likewise unchanged. */
+	if (rec->validator_rejected ||
+	    (rec->retval == -1UL &&
+	     (rec->errno_post == ENOSYS || rec->errno_post == EOPNOTSUPP))) {
 		/* nothing — keep the previous predecessor in place */
 	} else {
 		child->last_syscall_nr = rec->nr;
