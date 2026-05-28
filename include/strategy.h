@@ -511,6 +511,12 @@ void frontier_window_advance(void);
  * caller bumps shm->random_rescue_class_count[class] so dump and
  * orchestrator amplification can read the cumulative distribution.
  *
+ * cold_skip_pct_before is the value of kcov_syscall_cold_skip_pct(rec->nr)
+ * sampled by the caller BEFORE kcov_collect ran -- a new-edge call warms
+ * last_edge_at[nr] inside kcov_collect, so by the time the classifier
+ * runs the live reading is zero and RRC_COLD_SKIP would never trip for
+ * exactly the cold-syscall rescues this classifier exists to surface.
+ *
  * Only meaningful when shm->current_selection_reason == SR_PLATEAU_FORCE
  * AND the call produced new edges -- the caller is responsible for both
  * gates.  Returns RRC_UNKNOWN if no class matched (a falling-through
@@ -519,7 +525,8 @@ void frontier_window_advance(void);
 struct childdata;
 struct syscallrecord;
 enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
-						struct childdata *child);
+						struct childdata *child,
+						unsigned int cold_skip_pct_before);
 
 /*
  * Human-readable rescue-class name for the dump and the rotation log.

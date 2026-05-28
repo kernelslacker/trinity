@@ -1337,7 +1337,20 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * analysis. */
 	unsigned long new_cmp = 0;
 
+	/* Snapshot the rescue classifier's cold-skip-pct input BEFORE
+	 * kcov_collect runs.  On a new edge kcov_collect bumps
+	 * last_edge_at[rec->nr] to the current total_calls, after which
+	 * kcov_syscall_cold_skip_pct(rec->nr) returns 0 -- the exact case
+	 * classify_random_rescue exists to recognise as RRC_COLD_SKIP.
+	 * Reading it here, at draw time, keeps the classifier's "would the
+	 * picker have skipped this?" question pinned to the picker's actual
+	 * pre-call state.  Only meaningful in PC mode; the CMP path never
+	 * reaches the classifier (new_edges stays false there). */
+	unsigned int rescue_cold_skip_pct_before = 0;
+
 	if (child->kcov.mode == KCOV_MODE_PC) {
+		rescue_cold_skip_pct_before =
+			kcov_syscall_cold_skip_pct(rec->nr);
 		new_edges = kcov_collect(&child->kcov, rec->nr, &new_edge_count);
 	} else {
 		new_cmp = kcov_collect_cmp(&child->kcov, rec->nr,
@@ -1527,7 +1540,8 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 					    __ATOMIC_RELAXED) ==
 			    SR_PLATEAU_FORCE) {
 				enum random_rescue_class rrc =
-					classify_random_rescue(rec, child);
+					classify_random_rescue(rec, child,
+						rescue_cold_skip_pct_before);
 				if (rrc >= 0 && rrc < RRC_NR_CLASSES)
 					__atomic_fetch_add(
 						&shm->random_rescue_class_count[rrc],

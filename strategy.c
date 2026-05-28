@@ -1786,7 +1786,8 @@ const char *random_rescue_class_name(enum random_rescue_class c)
 }
 
 enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
-						struct childdata *child)
+						struct childdata *child,
+						unsigned int cold_skip_pct_before)
 {
 	unsigned int curr;
 
@@ -1801,10 +1802,13 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 	 * least half the time on the cold-skip retry path, so a RANDOM
 	 * rescue that lands new edges on it is most plausibly recovering
 	 * coverage the heuristic was filtering out.  The check runs against
-	 * the same kcov_syscall_cold_skip_pct() the heuristic consults, so
-	 * the classifier and the picker can never disagree on what "cold"
-	 * means. */
-	if (kcov_syscall_cold_skip_pct(curr) >= RRC_COLD_SKIP_PCT)
+	 * the same kcov_syscall_cold_skip_pct() the heuristic consults --
+	 * but uses the caller's pre-kcov_collect snapshot, not a fresh
+	 * read.  kcov_collect bumps last_edge_at[nr] on a new edge, which
+	 * is exactly the case the rescue classifier fires on; a live read
+	 * here would always see gap=0 and never return RRC_COLD_SKIP for
+	 * the cold-syscall rescues this class exists to surface. */
+	if (cold_skip_pct_before >= RRC_COLD_SKIP_PCT)
 		return RRC_COLD_SKIP;
 
 	/* RRC_CMP_DERIVED.  generate-args.c's ARG_OP / ARG_LIST /
