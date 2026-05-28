@@ -23,6 +23,7 @@
 #include <unistd.h>
 
 #include "arch.h"		/* page_size */
+#include "deferred-free.h"
 #include "net.h"
 #include "random.h"
 #include "shm.h"
@@ -192,7 +193,7 @@ int sfg_default_bind(int fd, struct socket_triplet *triplet)
 	if (bind(fd, addr, addrlen) == 0)
 		rv = 0;
 
-	free(addr);
+	tracked_free_now(addr);
 	return rv;
 }
 
