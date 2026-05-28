@@ -35,7 +35,22 @@ static void sanitise_rseq(struct syscallrecord *rec)
 	memset(rs, 0, sizeof(*rs));
 
 	rec->a1 = (unsigned long) rs;
-	rec->a2 = sizeof(*rs);
+
+	/*
+	 * Exercise the kernel's rseq_len validation buckets: zero (reject),
+	 * undersized (reject as below the minimum ABI size), current ABI
+	 * (success path), and oversized (future-compat path that requires
+	 * the trailing bytes to be zero).  Bias heavily toward the current
+	 * size so most iterations still reach the registration logic.
+	 */
+	if (ONE_IN(16))
+		rec->a2 = 0;
+	else if (ONE_IN(16))
+		rec->a2 = sizeof(*rs) / 2;
+	else if (ONE_IN(16))
+		rec->a2 = sizeof(*rs) + 32;
+	else
+		rec->a2 = sizeof(*rs);
 
 	/* Use a fixed signature value. The kernel checks this at CS abort. */
 	rec->a4 = 0x53053053;
