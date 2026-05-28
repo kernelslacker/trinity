@@ -883,6 +883,16 @@ static void init_child(struct childdata *child, int childno)
 	}
 #endif
 
+	/*
+	 * Disable core dumps once for the child's lifetime.  Previously
+	 * bracketed every loop iteration, but in non-debug builds that's
+	 * four syscalls per iter (~90K/sec fleet-wide) all restoring the
+	 * same steady-state values.  Debug mode still brackets per-iter
+	 * via the shm->debug gate at the loop call sites; disable_coredumps()
+	 * here takes the debug path too (DUMPABLE=1, RLIM_INFINITY) which
+	 * matches the per-iter behaviour.
+	 */
+	disable_coredumps();
 }
 
 /*
@@ -2130,7 +2140,12 @@ void child_process(struct childdata *child, int childno)
 		if (tick16)
 			clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
-		disable_coredumps();
+		/* Non-debug: hoisted to init_child().  Kept gated under
+		 * shm->debug for parity with the existing debug semantics
+		 * (even though enable_coredumps() is a no-op there) -- preserves
+		 * the surface in case the debug branch grows mid-loop work. */
+		if (shm->debug == true)
+			disable_coredumps();
 
 		/*
 		 * Non-syscall ops don't arm their own alarm; set one here so
@@ -2304,7 +2319,8 @@ void child_process(struct childdata *child, int childno)
 			}
 		}
 
-		enable_coredumps();
+		if (shm->debug == true)
+			enable_coredumps();
 
 		__atomic_add_fetch(&child->op_nr, 1, __ATOMIC_RELAXED);
 
