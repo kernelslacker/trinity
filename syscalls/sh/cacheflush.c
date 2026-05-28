@@ -8,7 +8,7 @@
 
 #include <asm/cachectl.h>
 
-struct syscall syscall_sh_cacheflush = {
+struct syscallentry syscall_sh_cacheflush = {
 	.name = "sh_cacheflush",
 	.num_args = 3,
 	.argname = { [0] = "addr", [1] = "len", [2] = "op" },
