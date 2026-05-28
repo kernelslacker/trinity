@@ -243,7 +243,7 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 	case IP_MULTICAST_IF:
 	case IP_ADD_MEMBERSHIP:
 	case IP_DROP_MEMBERSHIP:
-		mcaddr = 0xe0000000 | rnd_modulo_u32(0xff);
+		mcaddr = 0xe0000000 | rnd_modulo_u32(0x0fffffff);
 		if (RAND_BOOL()) {
 			struct ip_mreqn *mrn;
 
@@ -271,7 +271,7 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 	case IP_UNBLOCK_SOURCE:
 	case IP_ADD_SOURCE_MEMBERSHIP:
 	case IP_DROP_SOURCE_MEMBERSHIP:
-		mcaddr = 0xe0000000 | rnd_modulo_u32(0xff);
+		mcaddr = 0xe0000000 | rnd_modulo_u32(0x0fffffff);
 
 		ms = (struct ip_mreq_source *) so->optval;
 		ms->imr_multiaddr.s_addr = htonl(mcaddr);
@@ -286,7 +286,7 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 
 		gr->gr_interface = rnd_modulo_u32(10);
 		sin->sin_family = AF_INET;
-		sin->sin_addr.s_addr = htonl(0xe0000000 | rnd_modulo_u32(0xff));
+		sin->sin_addr.s_addr = htonl(0xe0000000 | rnd_modulo_u32(0x0fffffff));
 		so->optlen = sizeof(struct group_req);
 		break;
 	}
@@ -301,7 +301,7 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 		gsr->gsr_interface = rnd_modulo_u32(10);
 		sin = (struct sockaddr_in *) &gsr->gsr_group;
 		sin->sin_family = AF_INET;
-		sin->sin_addr.s_addr = htonl(0xe0000000 | rnd_modulo_u32(0xff));
+		sin->sin_addr.s_addr = htonl(0xe0000000 | rnd_modulo_u32(0x0fffffff));
 		sin = (struct sockaddr_in *) &gsr->gsr_source;
 		sin->sin_family = AF_INET;
 		sin->sin_addr.s_addr = random_ipv4_address();
