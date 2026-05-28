@@ -15,6 +15,8 @@
  */
 static void post_setreuid(struct syscallrecord *rec)
 {
+	uid_t r_in = (uid_t) rec->a1;
+	uid_t e_in = (uid_t) rec->a2;
 	uid_t want_r, want_e, r, e, s;
 
 	if ((long) rec->retval != 0)
@@ -25,8 +27,8 @@ static void post_setreuid(struct syscallrecord *rec)
 	if (getresuid(&r, &e, &s) != 0)
 		return;
 
-	want_r = (uid_t) rec->a1;
-	want_e = (uid_t) rec->a2;
+	want_r = r_in;
+	want_e = e_in;
 	if (r != want_r || e != want_e) {
 		output(0, "cred oracle: setreuid(%u, %u) succeeded but "
 		       "getresuid()={r=%u, e=%u, s=%u}\n",
