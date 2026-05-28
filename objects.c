@@ -151,7 +151,8 @@ static void fd_hash_reinsert(int fd, struct object *obj, enum objecttype type,
 		slot = (slot + 1) & (FD_HASH_SIZE - 1);
 	}
 	if (probe == FD_HASH_SIZE) {
-		shm->stats.fd_hash_reinsert_dropped++;
+		__atomic_add_fetch(&shm->stats.fd_hash_reinsert_dropped, 1,
+				   __ATOMIC_RELAXED);
 		outputerr("fd_hash_reinsert: table full, dropping fd %d\n", fd);
 		return;
 	}
