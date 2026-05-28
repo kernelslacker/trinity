@@ -5,7 +5,7 @@
 
 struct syscallentry syscall_vm86old = {
 	.name = "vm86old",
-	.num_args = 2,
+	.num_args = 1,
 	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS },
 	.argname = { [0] = "v86", [1] = "regs" },
 };
