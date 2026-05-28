@@ -977,6 +977,44 @@ static bool argtype_accepts_numeric_substitute(enum argtype t)
 }
 
 /*
+ * Subset of argtype_accepts_numeric_substitute() that matches only the
+ * fd-typed slots.  Used to mask out fd args when the chain's offered
+ * substitute_retval names a kcov-protected fd: planting that fd in an
+ * ARG_FD slot routes it to close()/close_range()/dup2(newfd=...) etc,
+ * which closes the kcov fd and turns the next kcov_enable_* ioctl into
+ * EBADF.
+ */
+static bool is_fd_argtype(enum argtype t)
+{
+	switch (t) {
+	case ARG_FD:
+	case ARG_FD_BPF_BTF:
+	case ARG_FD_BPF_LINK:
+	case ARG_FD_BPF_MAP:
+	case ARG_FD_BPF_PROG:
+	case ARG_FD_EPOLL:
+	case ARG_FD_EVENTFD:
+	case ARG_FD_FANOTIFY:
+	case ARG_FD_FS_CTX:
+	case ARG_FD_INOTIFY:
+	case ARG_FD_IO_URING:
+	case ARG_FD_LANDLOCK:
+	case ARG_FD_MEMFD:
+	case ARG_FD_MOUNT:
+	case ARG_FD_MQ:
+	case ARG_FD_PERF:
+	case ARG_FD_PIDFD:
+	case ARG_FD_PIPE:
+	case ARG_FD_SIGNALFD:
+	case ARG_FD_SOCKET:
+	case ARG_FD_TIMERFD:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/*
  * Build the numeric-substitute slot bitmap for entry's argtype[] table.
  * Called once per syscallentry at table-init time from
  * copy_syscall_table() in tables.c; the cached mask in
@@ -1030,6 +1068,25 @@ static void apply_chain_substitution(struct syscallrecord *rec,
 	if (substitute_retval == (unsigned long)mainpid) {
 		for (i = 0; i < entry->num_args && i < 6; i++) {
 			if (entry->argtype[i] == ARG_PID)
+				mask &= (uint8_t)~(1u << i);
+		}
+		if (mask == 0)
+			return;
+	}
+
+	/*
+	 * Same defence for kcov-protected fds.  sanitise_dup2 picks newfd
+	 * from [256, 4095), which overlaps the kcov fd slot range; a
+	 * successful dup2() to one of those slots silently closes the
+	 * kcov fd, and propagating that fd number into a downstream
+	 * close()/close_range()/dup2() arg via the chain substitute
+	 * finishes the job.  Mask the fd slots when substitute_retval
+	 * names a protected fd so the chain steers the substitute to a
+	 * non-fd slot (or skips this step entirely).
+	 */
+	if (kcov_fd_is_protected((int)substitute_retval)) {
+		for (i = 0; i < entry->num_args && i < 6; i++) {
+			if (is_fd_argtype(entry->argtype[i]))
 				mask &= (uint8_t)~(1u << i);
 		}
 		if (mask == 0)
