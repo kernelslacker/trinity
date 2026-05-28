@@ -621,11 +621,12 @@ pid_t self_cgroup_fork_into_workload(void)
 
 		if (ret >= 0)
 			return (pid_t)ret;
-		if (errno != ENOSYS)
+		if (errno != ENOSYS && errno != EINVAL)
 			return -1;
 		clone3_unavailable = true;
-		output(0, "self-cgroup: clone3 ENOSYS; "
-		       "falling back to fork()+post-migrate\n");
+		output(0, "self-cgroup: clone3 %s; "
+		       "falling back to fork()+post-migrate\n",
+		       errno == ENOSYS ? "ENOSYS" : "EINVAL");
 	}
 
 	pid = fork();
