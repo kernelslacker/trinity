@@ -2120,7 +2120,8 @@ void reset_epoch_state(void)
 	 * epochs for the same reason.
 	 */
 	/* fleet_op_count anchor for the next STRATEGY_WINDOW interval */
-	shm->syscalls_at_last_switch = 0;
+	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL,
+			 __ATOMIC_RELEASE);
 	/* pc_edge_calls_by_strategy[prev] snapshot for next call-count delta */
 	__atomic_store_n(&shm->pc_edge_calls_at_window_start, 0UL,
 			 __ATOMIC_RELAXED);
