@@ -756,6 +756,7 @@ void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id)
 	}
 	__atomic_fetch_add(&kcov_shm->pc_diag.remote_fallback_to_pc,
 			   1, __ATOMIC_RELAXED);
+	kc->remote_mode = false;
 }
 
 void kcov_disable(struct kcov_child *kc)
