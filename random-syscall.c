@@ -709,11 +709,10 @@ retry:
  * normal bandit dispatch, where strategy_at_pick / strategy_picks[] get
  * stamped exactly once for this call.
  *
- * Does not gate on syscall_is_expensive: K is small and the rare
- * EXPENSIVE candidate that slips through gets dispatched at the same
- * rate the bandit pickers would land on it after their 1000:1 reject
- * gate -- chain mid-step is the wrong place to re-roll for a different
- * cost class.
+ * Applies the same EXPENSIVE 1/1000 reject gate the bandit pickers
+ * use before validation/scoring, so chain mid-step dispatches do not
+ * win the K-candidate competition with an expensive syscall at a rate
+ * the top-level pickers would never produce.
  */
 static bool set_syscall_nr_edgepair_chain(struct syscallrecord *rec,
 					  struct childdata *child)
@@ -749,6 +748,9 @@ static bool set_syscall_nr_edgepair_chain(struct syscallrecord *rec,
 			continue;
 
 		candidate = (unsigned int)(val - 1);
+
+		if (syscall_is_expensive(candidate, do32) && !ONE_IN(1000))
+			continue;
 
 		if (validate_specific_syscall_silent(syscalls, (int)candidate) == false)
 			continue;
