@@ -238,7 +238,7 @@ static bool pool_add_locked(struct cmp_hint_pool *pool,
 	unsigned int i, count = pool->count;
 	uint64_t stamp = ++pool->last_used_stamp;
 	unsigned int victim;
-	unsigned int oldest;
+	uint64_t oldest;
 
 	for (i = 0; i < count; i++) {
 		struct cmp_hint_entry *e = &pool->entries[i];
