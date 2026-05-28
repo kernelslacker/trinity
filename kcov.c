@@ -764,7 +764,7 @@ void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id)
 
 void kcov_disable(struct kcov_child *kc)
 {
-	if (kc == NULL)
+	if (kc == NULL || !kc->active)
 		return;
 
 	/* Mode is fixed per child at init (see kcov_init_child), so only
