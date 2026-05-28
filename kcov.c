@@ -1386,8 +1386,24 @@ void kcov_plateau_check(void)
  * version-mismatch path and the run begins cold; that is fine --
  * the priors are a soft signal and a single cold restart on the
  * format bump costs nothing the bitmap warm-start was already
- * providing. */
-#define KCOV_BITMAP_FILE_VERSION	3U
+ * providing.
+ *
+ * Version 4 adds boot_id from /proc/sys/kernel/random/boot_id to
+ * the header.  The kallsyms fingerprint is deliberately KASLR-
+ * invariant (see the address-stripping rationale above) -- which
+ * is right for IDENTITY (same kernel image -> same fingerprint
+ * regardless of KASLR or kptr_restrict) but wrong for the bitmap,
+ * whose buckets are hashed from raw runtime PCs.  If the text
+ * base shifts between runs (KASLR rerolled across a reboot, same
+ * source rebuilt with a different linker layout, etc.) the
+ * fingerprint still matches yet every cached bucket aliases to a
+ * different instruction.  boot_id rejects the cross-boot reload
+ * without needing PC canonicalisation.  The bitmap warm-start is
+ * a soft signal in aggregate but load-bearing for downstream
+ * novelty: lazy-seeding last_edge_at[] from warm-known hits
+ * inherits any poisoning, so the conservative reject is worth a
+ * format bump. */
+#define KCOV_BITMAP_FILE_VERSION	4U
 
 struct kcov_bitmap_file_header {
 	uint32_t magic;
@@ -1401,6 +1417,13 @@ struct kcov_bitmap_file_header {
 	uint8_t  kallsyms_sha256[32];
 	uint32_t max_nr_syscall;   /* MAX_NR_SYSCALL at save time */
 	uint32_t priors_crc32;     /* CRC over both prior arrays */
+	char     boot_id[37];      /* /proc/sys/kernel/random/boot_id,
+				    * NUL-terminated UUID string; empty
+				    * if the read failed at save time
+				    * (then the load path skips this
+				    * check and the kallsyms fingerprint
+				    * is the only identity gate). */
+	uint8_t  hdr_pad2[3];      /* keep total header size 8-aligned */
 };
 
 /* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Same algorithm
@@ -1670,6 +1693,47 @@ bool kcov_get_kernel_fp(uint8_t out[32])
 	return true;
 }
 
+/*
+ * Cached boot_id for this run.  /proc/sys/kernel/random/boot_id is a
+ * 36-character UUID followed by a newline; we keep the 36 hex/dash
+ * chars and NUL-terminate.  Cached on first call so save and load
+ * don't re-open the file.  An empty cache entry (boot_id[0] == '\0')
+ * means the read failed -- callers leave the header field zeroed and
+ * the load path treats either-side empty as "boot_id check
+ * unavailable", falling back to the kallsyms fingerprint alone.
+ */
+static char kcov_boot_id[37];
+static bool kcov_boot_id_valid;
+
+static bool kcov_get_boot_id(char out[37])
+{
+	int fd;
+	ssize_t n;
+
+	if (!kcov_boot_id_valid) {
+		fd = open("/proc/sys/kernel/random/boot_id", O_RDONLY);
+		if (fd < 0) {
+			output(0, "kcov-bitmap: open(/proc/sys/kernel/random/boot_id) failed: %s -- boot_id identity check disabled this run\n",
+			       strerror(errno));
+			out[0] = '\0';
+			return false;
+		}
+		n = read(fd, kcov_boot_id, 36);
+		(void)close(fd);
+		if (n != 36) {
+			output(0, "kcov-bitmap: short read on /proc/sys/kernel/random/boot_id (got %zd, want 36) -- boot_id identity check disabled this run\n",
+			       n);
+			kcov_boot_id[0] = '\0';
+			out[0] = '\0';
+			return false;
+		}
+		kcov_boot_id[36] = '\0';
+		kcov_boot_id_valid = true;
+	}
+	memcpy(out, kcov_boot_id, 37);
+	return true;
+}
+
 static ssize_t kcov_bitmap_write_all(int fd, const void *buf, size_t len)
 {
 	const uint8_t *p = buf;
@@ -1763,6 +1827,11 @@ bool kcov_bitmap_save_file(const char *path)
 		free(priors_blob);
 		return false;
 	}
+	/* Fail open: kcov_get_boot_id() logs once on failure, hdr.boot_id
+	 * stays zero from the memset above, and the load path treats an
+	 * empty boot_id as "check unavailable" and falls back to the
+	 * kallsyms fingerprint alone. */
+	(void)kcov_get_boot_id(hdr.boot_id);
 
 	hdr.magic = KCOV_BITMAP_FILE_MAGIC;
 	hdr.version = KCOV_BITMAP_FILE_VERSION;
@@ -1892,6 +1961,29 @@ bool kcov_bitmap_load_file(const char *path)
 		       path);
 		(void)close(fd);
 		return false;
+	}
+	/* boot_id rejects cross-boot reloads that the kallsyms
+	 * fingerprint cannot catch: the fingerprint is deliberately
+	 * KASLR-invariant, but bucket_seen[] is hashed from raw runtime
+	 * PCs, so a fresh KASLR reroll lands the same instruction in a
+	 * different bucket.  Skip silently when either side is empty --
+	 * that is the fail-open path documented on kcov_get_boot_id().
+	 */
+	if (hdr.boot_id[0] != '\0') {
+		char cur_boot_id[37];
+
+		/* Force NUL-termination on the on-disk field before
+		 * logging it: a stale or corrupted dump may not have
+		 * had byte 36 zeroed. */
+		hdr.boot_id[36] = '\0';
+		if (kcov_get_boot_id(cur_boot_id) &&
+		    cur_boot_id[0] != '\0' &&
+		    memcmp(hdr.boot_id, cur_boot_id, 37) != 0) {
+			output(0, "kcov-bitmap: boot_id mismatch at %s (was %s, now %s) -- refusing stale bitmap, cold start\n",
+			       path, hdr.boot_id, cur_boot_id);
+			(void)close(fd);
+			return false;
+		}
 	}
 
 	/* Stage into a scratch buffer so a CRC failure doesn't leave the
