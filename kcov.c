@@ -926,17 +926,41 @@ static unsigned int dedup_inc(struct kcov_dedup_slot *dedup, unsigned int edge,
 		struct kcov_dedup_slot *s = &dedup[slot];
 
 		if (s->generation != generation) {
+			unsigned long observed = probe;
+			unsigned long cur = __atomic_load_n(&kcov_shm->dedup_max_probe_seen,
+				__ATOMIC_RELAXED);
+			while (observed > cur) {
+				if (__atomic_compare_exchange_n(&kcov_shm->dedup_max_probe_seen,
+						&cur, observed,
+						false,
+						__ATOMIC_RELAXED,
+						__ATOMIC_RELAXED))
+					break;
+			}
 			s->generation = generation;
 			s->edge_idx = edge;
 			s->count = 1;
 			return 1;
 		}
 		if (s->edge_idx == edge) {
+			unsigned long observed = probe;
+			unsigned long cur = __atomic_load_n(&kcov_shm->dedup_max_probe_seen,
+				__ATOMIC_RELAXED);
+			while (observed > cur) {
+				if (__atomic_compare_exchange_n(&kcov_shm->dedup_max_probe_seen,
+						&cur, observed,
+						false,
+						__ATOMIC_RELAXED,
+						__ATOMIC_RELAXED))
+					break;
+			}
 			s->count++;
 			return s->count;
 		}
 		slot = (slot + 1) & KCOV_DEDUP_MASK;
 	}
+	__atomic_fetch_add(&kcov_shm->dedup_probe_overflow,
+		1, __ATOMIC_RELAXED);
 	return 1;
 }
 

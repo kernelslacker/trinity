@@ -4794,6 +4794,8 @@ void dump_stats(void)
 		unsigned long kc_remote      = __atomic_load_n(&kcov_shm->remote_calls,           __ATOMIC_RELAXED);
 		unsigned long kc_cmp_records = __atomic_load_n(&kcov_shm->cmp_records_collected,  __ATOMIC_RELAXED);
 		unsigned long kc_cmp_trunc   = __atomic_load_n(&kcov_shm->cmp_trace_truncated,    __ATOMIC_RELAXED);
+		unsigned long kc_dedup_overflow    = __atomic_load_n(&kcov_shm->dedup_probe_overflow,   __ATOMIC_RELAXED);
+		unsigned long kc_dedup_max_probe   = __atomic_load_n(&kcov_shm->dedup_max_probe_seen,   __ATOMIC_RELAXED);
 		unsigned long kc_cmp_bloom_skipped = __atomic_load_n(&kcov_shm->cmp_hints_bloom_skipped, __ATOMIC_RELAXED);
 		unsigned long kc_cmp_strip_skipped = __atomic_load_n(&kcov_shm->cmp_hints_strip_skipped, __ATOMIC_RELAXED);
 		unsigned long kc_cmp_unique  = __atomic_load_n(&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);
@@ -4805,6 +4807,10 @@ void dump_stats(void)
 		stat_row("kcov_coverage", "cmp_records_collected", kc_cmp_records);
 		if (kc_cmp_trunc > 0)
 			stat_row("kcov_coverage", "cmp_trace_truncated", kc_cmp_trunc);
+		if (kc_dedup_overflow > 0)
+			stat_row("kcov_coverage", "dedup_probe_overflow", kc_dedup_overflow);
+		if (kc_dedup_max_probe > 0)
+			stat_row("kcov_coverage", "dedup_max_probe_seen", kc_dedup_max_probe);
 		if (kc_cmp_bloom_skipped > 0)
 			stat_row("kcov_coverage", "cmp_hints_bloom_skipped", kc_cmp_bloom_skipped);
 		if (kc_cmp_strip_skipped > 0)
