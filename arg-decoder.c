@@ -48,7 +48,8 @@ static char * decode_argtype(char *sptr, char *end, unsigned long reg, enum argt
 
 	switch (type) {
 	case ARG_PATHNAME:
-		sptr = bprintf(sptr, end, "\"%s\"", (char *) reg);
+		sptr = bprintf(sptr, end, "\"%s\"",
+		               reg ? (char *) reg : "(null)");
 		break;
 	case ARG_PID:
 	case ARG_FD:
