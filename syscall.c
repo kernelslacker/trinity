@@ -69,6 +69,9 @@ static long syscall32(unsigned int call,
 			for (i = 0; i < max_nr_32bit_syscalls; i++) {
 				struct syscallentry *entry = syscalls_32bit[i].entry;
 
+				if (entry == NULL)
+					continue;
+
 				if (entry->active_number != 0)
 					deactivate_syscall_nolock(i, true);
 			}
