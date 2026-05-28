@@ -44,5 +44,5 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 
 	/* Make something up for unknown protocols. */
 	*addr = (struct sockaddr *) zmalloc_tracked(page_size);
-	*addrlen = rnd_modulo_u32(page_size);
+	*addrlen = rnd_modulo_u32(page_size - 1) + 1;
 }
