@@ -1,4 +1,4 @@
-ifeq ($(CC),"")
+ifeq ($(CC),)
 CC := gcc
 endif
 CC := $(CROSS_COMPILE)$(CC)
