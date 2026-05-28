@@ -191,15 +191,16 @@ static void sanitise_rt_sigaction(struct syscallrecord *rec)
 static void post_rt_sigaction(struct syscallrecord *rec)
 {
 	const struct sigaction *oact;
+	unsigned long oact_ptr = rec->a3;
 
 	if ((long) rec->retval != 0)
 		return;
-	if (rec->a3 == 0)
+	if (oact_ptr == 0)
 		return;
 	if (!ONE_IN(64))
 		return;
 
-	oact = (const struct sigaction *)(unsigned long) rec->a3;
+	oact = (const struct sigaction *) oact_ptr;
 	/* SIG_DFL is (void *)0; SIG_IGN is (void *)1.  Anything else
 	 * must look like a code pointer.  We cannot probe mapping
 	 * legitimacy from here, but we can flag obvious garbage like
