@@ -510,11 +510,17 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 	callno = rec->nr;
 	state = rec->state;
 
+	/* The name lookup is a pure table index and is meaningful in
+	 * any state -- without it AFTER-state kills print cmd:? and we
+	 * lose all visibility into which syscall's post-handler path
+	 * stuck the child. */
+	entry = get_syscall_entry(callno, do32);
+
 	/* we can only be 'stuck' if we're still doing the syscall.
 	 * Snapshot the args under the lock -- rec lives in shm and a
-	 * sibling could scribble it the moment we unlock. */
+	 * sibling could scribble it the moment we unlock. The args are
+	 * only meaningful pre-syscall, so leave them zeroed otherwise. */
 	if (state == BEFORE) {
-		entry = get_syscall_entry(rec->nr, rec->do32bit);
 		args[0] = rec->a1;
 		args[1] = rec->a2;
 		args[2] = rec->a3;
