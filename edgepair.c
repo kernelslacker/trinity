@@ -338,6 +338,7 @@ void edgepair_dump_to_file(const char *path)
 	}
 	hdr.max_nr_syscall = MAX_NR_SYSCALL;
 	hdr.biarch_mode    = biarch ? 1U : 0U;
+	(void)kcov_get_syscall_table_digest(hdr.syscall_table_digest);
 
 	f = fopen(path, "wb");
 	if (f == NULL) {
@@ -481,6 +482,19 @@ bool edgepair_load_from_file(const char *path)
 			output(0,
 				"edgepair: biarch_mode %u != expected %u at %s (biarch flag differs from when the file was written) -- cold start\n",
 				hdr.biarch_mode, want_biarch, path);
+			(void)close(fd);
+			return false;
+		}
+	}
+	{
+		uint8_t cur_digest[32];
+
+		(void)kcov_get_syscall_table_digest(cur_digest);
+		if (memcmp(hdr.syscall_table_digest, cur_digest,
+			   sizeof(cur_digest)) != 0) {
+			output(0,
+				"edgepair.dump: syscall-table digest mismatch, ignoring stale dump (%s)\n",
+				path);
 			(void)close(fd);
 			return false;
 		}

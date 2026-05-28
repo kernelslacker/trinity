@@ -32,6 +32,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "arch.h"
 #include "child.h"
 #include "cmp_hints.h"
 #include "edgepair.h"
@@ -42,6 +43,8 @@
 #include "shm.h"
 #include "stats.h"
 #include "strategy.h"
+#include "syscall.h"
+#include "tables.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -1731,6 +1734,85 @@ static bool kcov_get_boot_id(char out[37])
 		kcov_boot_id_valid = true;
 	}
 	memcpy(out, kcov_boot_id, 37);
+	return true;
+}
+
+/*
+ * Fold one syscall table into the running SHA-256 context.  Each entry
+ * contributes a 1-byte arch tag (so the 32-bit and 64-bit tables in a
+ * biarch build cannot alias one another at overlapping nrs), the
+ * syscall number as a 4-byte big-endian word (stable across host
+ * endianness), a NUL separator, the entry name, and a trailing NUL.
+ * NULL or empty-name slots fold in an empty string -- the trailing
+ * separator alone is enough to keep them distinguishable from their
+ * neighbours.
+ */
+static void kcov_hash_syscall_table(struct sha256_ctx *ctx,
+				    const struct syscalltable *table,
+				    unsigned int max, uint8_t arch_tag)
+{
+	const uint8_t nul = 0;
+	unsigned int i;
+
+	for (i = 0; i < max; i++) {
+		const struct syscallentry *e = table[i].entry;
+		const char *name = (e != NULL && e->name != NULL) ? e->name : "";
+		uint8_t nr_be[4];
+
+		nr_be[0] = (uint8_t)(i >> 24);
+		nr_be[1] = (uint8_t)(i >> 16);
+		nr_be[2] = (uint8_t)(i >> 8);
+		nr_be[3] = (uint8_t)i;
+
+		sha256_update(ctx, &arch_tag, 1);
+		sha256_update(ctx, nr_be, sizeof(nr_be));
+		sha256_update(ctx, &nul, 1);
+		sha256_update(ctx, name, strlen(name));
+		sha256_update(ctx, &nul, 1);
+	}
+}
+
+/*
+ * Cached SHA-256 digest of the active syscall table(s).  Computed lazily
+ * on first request and stashed so the dump-save and dump-load paths
+ * share one digest computation.  Cheap (~thousands of short updates) but
+ * not free -- worth caching alongside kcov_kernel_fp.
+ */
+static uint8_t kcov_syscall_table_digest[32];
+static bool    kcov_syscall_table_digest_valid;
+
+/*
+ * Fill OUT[32] with a SHA-256 digest over the active syscall table
+ * shape: (arch_tag, nr, name) tuples for every slot in the table(s)
+ * that are live this run.  In biarch mode both the 32-bit and 64-bit
+ * tables fold in, tagged distinctly; in uniarch mode just the single
+ * active table folds in.  Two kernels that share MAX_NR_SYSCALL but
+ * reorder, rename, or gap any syscall produce different digests, so
+ * the edgepair warm-start can reject dumps that would otherwise pass
+ * the existing kallsyms / max_nr / biarch checks while indexing into
+ * a (prev_nr, curr_nr) space whose semantics have shifted.  Always
+ * succeeds -- the syscall tables are statically compiled in and
+ * iterated in-process, no I/O involved.
+ */
+bool kcov_get_syscall_table_digest(uint8_t out[32])
+{
+	if (!kcov_syscall_table_digest_valid) {
+		struct sha256_ctx ctx;
+
+		sha256_init(&ctx);
+		if (biarch) {
+			kcov_hash_syscall_table(&ctx, syscalls_32bit,
+						max_nr_32bit_syscalls, 1);
+			kcov_hash_syscall_table(&ctx, syscalls_64bit,
+						max_nr_64bit_syscalls, 2);
+		} else {
+			kcov_hash_syscall_table(&ctx, syscalls,
+						max_nr_syscalls, 0);
+		}
+		sha256_final(&ctx, kcov_syscall_table_digest);
+		kcov_syscall_table_digest_valid = true;
+	}
+	memcpy(out, kcov_syscall_table_digest, 32);
 	return true;
 }
 

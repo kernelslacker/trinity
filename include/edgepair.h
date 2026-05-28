@@ -132,13 +132,26 @@ enum edgepair_score_mode {
  * biarch flips.  Old dumps (0xEDDA7A04) get rejected on magic
  * mismatch and the session starts cold. */
 #define EDGEPAIR_DUMP_MAGIC	0xEDDA7A05U
-#define EDGEPAIR_DUMP_VERSION	1U
+/* EDGEPAIR_DUMP_VERSION
+ *   1: initial 80-byte header (magic + version + table_size + CRC +
+ *      three u64 counters + kallsyms_sha256 + max_nr_syscall +
+ *      biarch_mode).
+ *   2: 112-byte header -- appends syscall_table_digest[32], a SHA-256
+ *      over the active syscall table's (arch_tag, nr, name) tuples.
+ *      Catches the case the v1 identity checks miss: two kernels
+ *      sharing MAX_NR_SYSCALL but reordering some syscall numbers
+ *      pass kallsyms / max_nr / biarch but render every persisted
+ *      (prev_nr, curr_nr) entry semantically wrong.  v1 dumps are
+ *      rejected on version mismatch -- they have no per-table-shape
+ *      identity to warm-start safely against the new loader. */
+#define EDGEPAIR_DUMP_VERSION	2U
 
-/* On-disk dump header.  Fixed 80 bytes -- four u32 followed by three
- * u64, followed by a 32-byte kallsyms fingerprint and two more u32 of
- * syscall-ABI identity.  Naturally aligned without internal padding
- * so the loader can read it as a single blob.  Followed immediately
- * by parent_edgepair.table[EDGEPAIR_TABLE_SIZE]; the CRC covers that
+/* On-disk dump header.  Fixed 112 bytes -- four u32 followed by three
+ * u64, followed by a 32-byte kallsyms fingerprint, two more u32 of
+ * syscall-ABI identity, and a 32-byte syscall-table digest.  Naturally
+ * aligned without internal padding so the loader can read it as a
+ * single blob.  Followed immediately by
+ * parent_edgepair.table[EDGEPAIR_TABLE_SIZE]; the CRC covers that
  * table payload only -- the counters live inside the header so they
  * ride the header read and aren't re-checksummed separately.  The
  * first 40 bytes are bit-identical to the 0xEDDA7A04 layout so an
@@ -161,6 +174,13 @@ struct edgepair_dump_header {
 	uint8_t  kallsyms_sha256[32];	/* kcov_get_kernel_fp() */
 	uint32_t max_nr_syscall;	/* MAX_NR_SYSCALL at save */
 	uint32_t biarch_mode;		/* biarch ? 1 : 0 at save */
+	/* Added in EDGEPAIR_DUMP_VERSION 2: SHA-256 over the
+	 * active syscall table(s).  Closes the gap where two
+	 * kernels with identical max_nr_syscall but reordered
+	 * syscall numbers pass every other identity check and
+	 * silently corrupt the (prev_nr, curr_nr)-keyed table on
+	 * warm-start.  kcov_get_syscall_table_digest(). */
+	uint8_t  syscall_table_digest[32];
 };
 
 struct edgepair_entry {

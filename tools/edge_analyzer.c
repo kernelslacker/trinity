@@ -111,6 +111,10 @@ static void analyze_identity(const struct edgepair_dump_header *hdr)
 	printf("  kallsyms_sha256 : ");
 	for (size_t i = 0; i < sizeof(hdr->kallsyms_sha256); i++)
 		printf("%02x", hdr->kallsyms_sha256[i]);
+	printf("\n");
+	printf("  syscall_digest  : ");
+	for (size_t i = 0; i < sizeof(hdr->syscall_table_digest); i++)
+		printf("%02x", hdr->syscall_table_digest[i]);
 	printf("\n\n");
 }
 

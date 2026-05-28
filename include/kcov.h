@@ -707,6 +707,17 @@ uint32_t kcov_bitmap_crc32(const void *buf, size_t len);
  * and stay in lock-step with the kcov-bitmap warm-start invariants. */
 bool kcov_get_kernel_fp(uint8_t out[32]);
 
+/* Fill OUT[32] with the cached SHA-256 digest of the active syscall
+ * table shape -- (arch_tag, nr, name) tuples for every slot in the
+ * uniarch or biarch tables that are live this run.  Catches the case
+ * the existing max_nr_syscall / biarch / kallsyms identity checks
+ * miss: two kernels that share MAX_NR_SYSCALL but reorder or rename
+ * any syscall produce different digests, so persisted (prev_nr,
+ * curr_nr)-keyed state can refuse to load against a table whose
+ * semantics have shifted.  Always succeeds; the syscall tables are
+ * statically compiled in. */
+bool kcov_get_syscall_table_digest(uint8_t out[32]);
+
 /* Wire periodic mid-run snapshots of the bucket_seen bitmap to PATH.
  * Subsequent kcov_bitmap_maybe_snapshot() calls become live; a no-op
  * before this is called.  Path is copied. */
