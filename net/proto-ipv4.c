@@ -40,7 +40,7 @@
 #define IP_PROTOCOL 52
 #endif
 
-static int previous_ip;
+static in_addr_t previous_ip;
 static unsigned int ip_lifetime = 0;
 static unsigned int optmem_max;
 
