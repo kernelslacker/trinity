@@ -211,6 +211,7 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		lock(&rec->lock);
 		rec->errno_post = EINVAL;
 		rec->retval = (unsigned long) -1L;
+		rec->validator_rejected = true;
 		rec->state = AFTER;
 		unlock(&rec->lock);
 		return;

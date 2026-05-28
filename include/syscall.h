@@ -58,6 +58,16 @@ struct syscallrecord {
 	int rettype;	/* per-call return type (copied from entry, may be overridden by sanitise) */
 
 	bool do32bit;
+	/*
+	 * Set true by do_syscall() when validate_arg_coupling() rejects the
+	 * call before the kernel is entered.  Read by dispatch_step() to skip
+	 * kcov_collect() -- a userspace pre-validation reject did not exercise
+	 * any kernel code, so bumping total_calls / per_syscall_calls[nr] for
+	 * it would poison kcov_syscall_cold_skip_pct() on syscalls whose
+	 * validators are strict.  Cleared per-call at the top of
+	 * dispatch_step() alongside rec->entry.
+	 */
+	bool validator_rejected;
 	lock_t lock;
 	enum syscallstate state;
 	char prebuffer[PREBUFFER_LEN];

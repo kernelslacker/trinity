@@ -1283,6 +1283,13 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * re-running get_syscall_entry(nr, do32bit) on every probe. */
 	rec->entry = entry;
 
+	/* Clear the per-call validator-reject flag.  do_syscall() sets this
+	 * when validate_arg_coupling() rejects the call before the kernel is
+	 * entered; the kcov_collect() gate below reads it to skip the
+	 * total_calls / per_syscall_calls[nr] bumps that would otherwise
+	 * poison kcov_syscall_cold_skip_pct() for strict-validator syscalls. */
+	rec->validator_rejected = false;
+
 	output_syscall_prefix(rec, entry);
 
 	/* PC mode: per-child kcov fd collects edge coverage, optionally
@@ -1351,7 +1358,17 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	if (child->kcov.mode == KCOV_MODE_PC) {
 		rescue_cold_skip_pct_before =
 			kcov_syscall_cold_skip_pct(rec->nr);
-		new_edges = kcov_collect(&child->kcov, rec->nr, &new_edge_count);
+		/* Pre-validation reject in do_syscall() -- the kernel was never
+		 * entered, so there is no coverage to collect and bumping
+		 * total_calls / per_syscall_calls[nr] inside kcov_collect()
+		 * would poison kcov_syscall_cold_skip_pct() on syscalls whose
+		 * validators are strict.  last_edge_at[] only moves on the
+		 * found_new branch and stays correctly frozen here. */
+		if (rec->validator_rejected)
+			new_edges = false;
+		else
+			new_edges = kcov_collect(&child->kcov, rec->nr,
+						 &new_edge_count);
 	} else {
 		new_cmp = kcov_collect_cmp(&child->kcov, rec->nr,
 					   rec->do32bit,
