@@ -845,19 +845,24 @@ const char *effector_map_default_path(void)
 
 	{
 		char *p;
+		mode_t saved_umask = umask(0);
 
 		for (p = dir + 1; *p; p++) {
 			if (*p == '/') {
 				*p = '\0';
 				if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
 					*p = '/';
+					(void)umask(saved_umask);
 					return NULL;
 				}
 				*p = '/';
 			}
 		}
-		if (mkdir(dir, 0755) != 0 && errno != EEXIST)
+		if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
+			(void)umask(saved_umask);
 			return NULL;
+		}
+		(void)umask(saved_umask);
 	}
 
 	ret = snprintf(pathbuf, sizeof(pathbuf), "%s/%s-%s", dir, arch, u.release);
