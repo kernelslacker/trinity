@@ -298,7 +298,7 @@ static unsigned long handle_arg_iovec_dir(struct syscallentry *entry,
 	else if (bucket < 30)
 		num_entries = 1;
 	else if (bucket < 70)
-		num_entries = RAND_RANGE(2, UIO_FASTIOV);
+		num_entries = RAND_RANGE(2, UIO_FASTIOV - 1);
 	else if (bucket < 80)
 		num_entries = UIO_FASTIOV;
 	else if (bucket < 90)
