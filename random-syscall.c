@@ -1380,6 +1380,29 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	if (found_new != NULL)
 		*found_new = new_edges;
 
+	/* Snapshot the rescue classifier's pair-state inputs BEFORE
+	 * edgepair_record() runs.  edgepair_record() queues a pair event
+	 * on a per-child SPSC ring that the parent has not necessarily
+	 * drained before classify_random_rescue() asks
+	 * edgepair_get_stats() / edgepair_is_cold(); a live read in the
+	 * classifier can therefore see either pre-call or post-call pair
+	 * state depending on drain latency.  Pinning both answers at draw
+	 * time keeps RRC_PAIR_UNSEEN / RRC_PAIR_COLD classification
+	 * aligned with the state the picker actually saw, the same shape
+	 * as rescue_cold_skip_pct_before above.  Both stay false when the
+	 * child has no predecessor -- the classifier ignores the pair
+	 * branches in that case. */
+	bool rescue_pair_was_unseen = false;
+	bool rescue_pair_was_cold = false;
+	if (child->last_syscall_nr != EDGEPAIR_NO_PREV) {
+		struct edgepair_stats ps_before =
+			edgepair_get_stats(child->last_syscall_nr, rec->nr);
+		rescue_pair_was_unseen =
+			(ps_before.new_edges == 0 && ps_before.total == 0);
+		rescue_pair_was_cold =
+			edgepair_is_cold(child->last_syscall_nr, rec->nr);
+	}
+
 	/* Record the (prev, curr) syscall pair for sequence coverage. */
 	if (child->last_syscall_nr != EDGEPAIR_NO_PREV)
 		edgepair_record(child, child->last_syscall_nr, rec->nr, new_edges);
@@ -1541,7 +1564,9 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			    SR_PLATEAU_FORCE) {
 				enum random_rescue_class rrc =
 					classify_random_rescue(rec, child,
-						rescue_cold_skip_pct_before);
+						rescue_cold_skip_pct_before,
+						rescue_pair_was_unseen,
+						rescue_pair_was_cold);
 				if (rrc >= 0 && rrc < RRC_NR_CLASSES)
 					__atomic_fetch_add(
 						&shm->random_rescue_class_count[rrc],

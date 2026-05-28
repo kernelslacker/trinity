@@ -1787,7 +1787,9 @@ const char *random_rescue_class_name(enum random_rescue_class c)
 
 enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 						struct childdata *child,
-						unsigned int cold_skip_pct_before)
+						unsigned int cold_skip_pct_before,
+						bool pair_was_unseen,
+						bool pair_was_cold)
 {
 	unsigned int curr;
 
@@ -1832,22 +1834,24 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 	 * wire in without an enum reorder. */
 
 	if (child->last_syscall_nr != EDGEPAIR_NO_PREV) {
-		struct edgepair_stats ps =
-			edgepair_get_stats(child->last_syscall_nr, curr);
-
 		/* {0, 0} sentinel means edgepair has no record for the
 		 * pair -- the rescue carried the child onto an unseen
 		 * (prev, curr) successor.  Distinct from RRC_COLD_SKIP
 		 * because the cold-skip predicate is per-nr while this
-		 * is per-pair. */
-		if (ps.new_edges == 0 && ps.total == 0)
+		 * is per-pair.  Uses the caller's pre-edgepair_record()
+		 * snapshot, not a fresh edgepair_get_stats() read --
+		 * edgepair_record queues a pair event on the per-child
+		 * SPSC ring and the parent has not necessarily drained
+		 * it by the time the classifier runs. */
+		if (pair_was_unseen)
 			return RRC_PAIR_UNSEEN;
 
 		/* edgepair_is_cold uses the published mirror with the
 		 * same EDGEPAIR_COLD_THRESHOLD math as the explorer's
 		 * cold-pair gate, so the classifier and the picker can
-		 * never disagree on which pair counts as cold. */
-		if (edgepair_is_cold(child->last_syscall_nr, curr))
+		 * never disagree on which pair counts as cold.  Same
+		 * pre-record snapshot reason as RRC_PAIR_UNSEEN above. */
+		if (pair_was_cold)
 			return RRC_PAIR_COLD;
 	}
 

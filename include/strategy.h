@@ -517,6 +517,19 @@ void frontier_window_advance(void);
  * runs the live reading is zero and RRC_COLD_SKIP would never trip for
  * exactly the cold-syscall rescues this classifier exists to surface.
  *
+ * pair_was_unseen and pair_was_cold are the (prev, curr) edgepair-state
+ * answers sampled by the caller BEFORE edgepair_record() ran.  The
+ * record path queues a pair event on the per-child SPSC ring, and the
+ * parent has not necessarily drained it before the classifier asks
+ * edgepair_get_stats() / edgepair_is_cold() -- so a live read here can
+ * see either pre-call or post-call state depending on drain latency.
+ * Pinning both at draw time keeps RRC_PAIR_UNSEEN / RRC_PAIR_COLD
+ * classification aligned with what the picker actually saw, mirroring
+ * the cold_skip_pct_before contract above.  Pass false for both when
+ * the child has no predecessor (child->last_syscall_nr ==
+ * EDGEPAIR_NO_PREV) -- the classifier ignores the pair branches in
+ * that case.
+ *
  * Only meaningful when shm->current_selection_reason == SR_PLATEAU_FORCE
  * AND the call produced new edges -- the caller is responsible for both
  * gates.  Returns RRC_UNKNOWN if no class matched (a falling-through
@@ -526,7 +539,9 @@ struct childdata;
 struct syscallrecord;
 enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 						struct childdata *child,
-						unsigned int cold_skip_pct_before);
+						unsigned int cold_skip_pct_before,
+						bool pair_was_unseen,
+						bool pair_was_cold);
 
 /*
  * Human-readable rescue-class name for the dump and the rotation log.
