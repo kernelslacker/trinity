@@ -91,8 +91,19 @@ static void sanitise_setxattrat(struct syscallrecord *rec)
 				args->value = 0;
 			} else {
 				void *value = get_writable_struct(chosen);
-				if (!value)
+				if (!value) {
+					/*
+					 * Publish safe defaults so the syscall
+					 * doesn't run with stale rec->a5/rec->a6
+					 * from a prior iteration.  args/buf both
+					 * stack-resident — zeroing the published
+					 * slots is enough; the kernel will see
+					 * NULL uargs and reject cleanly.
+					 */
+					rec->a5 = 0;
+					rec->a6 = 0;
 					return;
+				}
 				args->value = (unsigned long) value;
 			}
 			args->size = chosen;
