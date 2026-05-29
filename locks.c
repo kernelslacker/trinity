@@ -56,7 +56,11 @@ static bool check_lock(lock_t *lk)
 			return true;
 
 		debugf("Found a lock held by dead pid %d. Freeing.\n", pid);
-		unlock(lk);
+		/* CAS only if the state word hasn't changed since we sampled --
+		 * matches try_release_dead_holder()'s pattern at locks.c:211 so
+		 * a fresh acquirer who CAS'd in between doesn't get clobbered. */
+		__atomic_compare_exchange_n(&lk->state, &s, 0, 0,
+					    __ATOMIC_RELEASE, __ATOMIC_RELAXED);
 		return true;
 	}
 	return false;
