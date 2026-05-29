@@ -74,8 +74,9 @@ if [[ -z "${TRINITY_NO_CGROUP:-}" ]]; then
             mem_high=${TRINITY_MEM_HIGH:-$((mem_total_kb * 50 / 100))K}
             mem_swap_max=${TRINITY_MEM_SWAP_MAX:-$((mem_total_kb * 20 / 100))K}
 
-            echo "trinity: wrapping in systemd scope (MemoryMax=${mem_max}, MemoryHigh=${mem_high}, MemorySwapMax=${mem_swap_max})"
+	    echo "trinity: wrapping in systemd scope (MemoryMax=${mem_max}, MemoryHigh=${mem_high}, MemorySwapMax=${mem_swap_max}, LimitNOFILE=65536)"
             cmd=(systemd-run --user --scope --quiet
+		-p LimitNOFILE=65536
                 -p MemoryMax="${mem_max}"
                 -p MemoryHigh="${mem_high}"
                 -p MemorySwapMax="${mem_swap_max}"
