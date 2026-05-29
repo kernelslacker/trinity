@@ -51,7 +51,7 @@ static void read_one_page(struct map *map)
 	if (map->size == 0)
 		return;
 
-	offset = rnd_modulo_u32(map->size) & PAGE_MASK;
+	offset = rnd_modulo_u64(map->size) & PAGE_MASK;
 
 	p += offset;
 	read_mprotect((void *) p, page_size, PROT_READ);

@@ -63,7 +63,7 @@ static void dirty_one_page(struct map *map)
 	if (map->size == 0)
 		return;
 
-	offset = rnd_modulo_u32(map->size) & PAGE_MASK;
+	offset = rnd_modulo_u64(map->size) & PAGE_MASK;
 
 	if (mark_page_rw(p + offset) == true)
 		p[offset] = rnd_u32();

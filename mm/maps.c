@@ -527,7 +527,7 @@ struct map * common_set_mmap_ptr_len(enum objecttype *out_type)
 	if (map->size == 0) {
 		rec->a2 = 0;
 	} else {
-		rec->a2 = rnd_modulo_u32(map->size);
+		rec->a2 = rnd_modulo_u64(map->size);
 		rec->a2 &= PAGE_MASK;
 	}
 
@@ -708,7 +708,7 @@ retry_mmap:
 		offset = 0;
 		obj->map.size = page_size;
 	} else
-		offset = (obj->map.size > 0 ? rnd_modulo_u32(obj->map.size) : 0) & PAGE_MASK;
+		offset = (obj->map.size > 0 ? rnd_modulo_u64(obj->map.size) : 0) & PAGE_MASK;
 
 	obj->map.prot = prot;
 	obj->map.fd = fd;
