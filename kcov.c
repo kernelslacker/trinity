@@ -991,7 +991,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr,
 			1, __ATOMIC_RELAXED);
 
 	count = __atomic_load_n(&kc->trace_buf[0], __ATOMIC_RELAXED);
-	if (count > KCOV_TRACE_SIZE - 1) {
+	if (count >= KCOV_TRACE_SIZE - 1) {
 		/* Kernel wanted to record more PCs than the buffer holds; the
 		 * tail of this call's coverage was dropped.  Bump a counter so
 		 * the post-mortem can show whether KCOV_TRACE_SIZE needs to
@@ -1146,7 +1146,7 @@ unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
 		return 0;
 
 	count = __atomic_load_n(&kc->cmp_trace_buf[0], __ATOMIC_RELAXED);
-	if (count > KCOV_CMP_RECORDS_MAX) {
+	if (count >= KCOV_CMP_RECORDS_MAX) {
 		/* Kernel wanted to record more comparisons than the cmp
 		 * buffer holds; the tail was dropped.  Mirrors the PC-side
 		 * trace_truncated counter. */
