@@ -1466,12 +1466,20 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * as rescue_cold_skip_pct_before above.  Both stay false when the
 	 * child has no predecessor -- the classifier ignores the pair
 	 * branches in that case. */
+	/* Hoisted to function scope so both the rescue classifier (which
+	 * additionally requires !rec->validator_rejected) and the dampen_q8
+	 * adjustment downstream can read the same edgepair stats without a
+	 * second lookup. */
+	struct edgepair_stats ps_before = { 0 };
+	bool ps_before_valid = false;
+	if (child->last_syscall_nr != EDGEPAIR_NO_PREV) {
+		ps_before = edgepair_get_stats(child->last_syscall_nr, rec->nr);
+		ps_before_valid = true;
+	}
+
 	bool rescue_pair_was_unseen = false;
 	bool rescue_pair_was_cold = false;
-	if (child->last_syscall_nr != EDGEPAIR_NO_PREV &&
-	    !rec->validator_rejected) {
-		struct edgepair_stats ps_before =
-			edgepair_get_stats(child->last_syscall_nr, rec->nr);
+	if (ps_before_valid && !rec->validator_rejected) {
 		rescue_pair_was_unseen =
 			(ps_before.new_edges == 0 && ps_before.total == 0);
 		rescue_pair_was_cold =
@@ -1604,20 +1612,14 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 				 * the reward the bandit would otherwise bank
 				 * from those pairs. */
 				unsigned int dampen_q8 = 256U;
-				if (child->last_syscall_nr != EDGEPAIR_NO_PREV) {
-					struct edgepair_stats ps =
-						edgepair_get_stats(
-							child->last_syscall_nr,
-							rec->nr);
-					if (ps.total > 0) {
-						unsigned long denom = ps.total + 1UL;
-						dampen_q8 = 128U + (unsigned int)
-							((128UL * ps.new_edges) / denom);
-						if (dampen_q8 < 128U)
-							dampen_q8 = 128U;
-						if (dampen_q8 > 256U)
-							dampen_q8 = 256U;
-					}
+				if (ps_before_valid && ps_before.total > 0) {
+					unsigned long denom = ps_before.total + 1UL;
+					dampen_q8 = 128U + (unsigned int)
+						((128UL * ps_before.new_edges) / denom);
+					if (dampen_q8 < 128U)
+						dampen_q8 = 128U;
+					if (dampen_q8 > 256U)
+						dampen_q8 = 256U;
 				}
 				__atomic_fetch_add(
 					&shm->pc_edge_calls_dampened_q8_by_strategy[strat],
