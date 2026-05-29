@@ -71,8 +71,10 @@ static void sanitise_sigaltstack(struct syscallrecord *rec)
 	}
 
 	ss = (stack_t *) get_writable_address(sizeof(*ss));
-	if (ss == NULL)
+	if (ss == NULL) {
+		rec->post_state = 0;
 		return;
+	}
 
 	if (draw < 40) {
 		/* enabled: MINSIGSTKSZ * (1..4) */
