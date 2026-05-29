@@ -728,8 +728,7 @@ bool effector_map_load_file(const char *path)
 {
 	struct effector_file_header hdr;
 	struct utsname u;
-	unsigned char tmpmap[MAX_NR_SYSCALL]
-		[EFFECTOR_NR_ARGS][EFFECTOR_BITS_PER_ARG];
+	unsigned char (*tmpmap)[EFFECTOR_NR_ARGS][EFFECTOR_BITS_PER_ARG];
 	uint32_t want_crc;
 	int fd;
 
@@ -769,18 +768,28 @@ bool effector_map_load_file(const char *path)
 		return false;
 	}
 
+	tmpmap = calloc(MAX_NR_SYSCALL, sizeof(*tmpmap));
+	if (tmpmap == NULL) {
+		(void)close(fd);
+		return false;
+	}
+
 	if (read_all(fd, tmpmap, EFFECTOR_PAYLOAD_BYTES)
 			!= (ssize_t)EFFECTOR_PAYLOAD_BYTES) {
 		(void)close(fd);
+		free(tmpmap);
 		return false;
 	}
 	(void)close(fd);
 
 	want_crc = effector_crc32(tmpmap, EFFECTOR_PAYLOAD_BYTES);
-	if (want_crc != hdr.payload_crc32)
+	if (want_crc != hdr.payload_crc32) {
+		free(tmpmap);
 		return false;
+	}
 
 	memcpy(effector_map, tmpmap, EFFECTOR_PAYLOAD_BYTES);
+	free(tmpmap);
 	return true;
 }
 
