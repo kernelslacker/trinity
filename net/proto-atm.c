@@ -42,18 +42,27 @@ static void atmsvc_gen_sockaddr(__unused__ struct socket_triplet *triplet, struc
 	*addrlen = sizeof(struct sockaddr_atmsvc);
 }
 
-// TODO: If anyone gives a crap about ATM, we could do better
-// here and separate the pvc and svc ops.
-// Personally, I couldn't care less, so throw everything in the same array
-// just to make this simpler.
-static const unsigned int atm_opts[] = {
-	SO_SETCLP, SO_CIRANGE, SO_ATMQOS, SO_ATMSAP, SO_ATMPVC, SO_MULTIPOINT,
+/* Options valid on PVC sockets. */
+static const unsigned int atmpvc_opts[] = {
+	SO_SETCLP, SO_ATMQOS, SO_ATMSAP, SO_ATMPVC, SO_MULTIPOINT,
 };
 
-static void atm_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
+/* Options valid on SVC sockets. */
+static const unsigned int atmsvc_opts[] = {
+	SO_SETCLP, SO_CIRANGE, SO_ATMQOS, SO_ATMSAP, SO_MULTIPOINT,
+};
+
+static void atmpvc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_ATM;
-	so->optname = RAND_ARRAY(atm_opts);
+	so->optname = RAND_ARRAY(atmpvc_opts);
+	so->optlen = sizeof(unsigned int);
+}
+
+static void atmsvc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
+{
+	so->level = SOL_ATM;
+	so->optname = RAND_ARRAY(atmsvc_opts);
 	so->optlen = sizeof(unsigned int);
 }
 
@@ -68,14 +77,14 @@ static struct socket_triplet atmsvc_triplet[] = {
 
 const struct netproto proto_atmpvc = {
 	.name = "atmpvc",
-	.setsockopt = atm_setsockopt,
+	.setsockopt = atmpvc_setsockopt,
 	.gen_sockaddr = atmpvc_gen_sockaddr,
 	.valid_triplets = atmpvc_triplet,
 	.nr_triplets = ARRAY_SIZE(atmpvc_triplet),
 };
 const struct netproto proto_atmsvc = {
 	.name = "atmsvc",
-	.setsockopt = atm_setsockopt,
+	.setsockopt = atmsvc_setsockopt,
 	.gen_sockaddr = atmsvc_gen_sockaddr,
 	.valid_triplets = atmsvc_triplet,
 	.nr_triplets = ARRAY_SIZE(atmsvc_triplet),
