@@ -105,7 +105,7 @@ static socklen_t build_ip_mreqn(void *buf)
 	struct ip_mreqn *m = buf;
 
 	/* 224.0.0.x range — locally-scoped multicast. */
-	m->imr_multiaddr.s_addr = htonl(0xe0000001u + rnd_modulo_u32(0xff));
+	m->imr_multiaddr.s_addr = htonl(0xe0000000 | rnd_modulo_u32(0x0fffffff));
 	m->imr_address.s_addr = htonl(INADDR_ANY);
 	m->imr_ifindex = 0;
 	return sizeof(struct ip_mreqn);
