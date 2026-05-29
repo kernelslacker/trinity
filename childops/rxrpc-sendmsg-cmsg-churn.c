@@ -365,7 +365,7 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_sent[slot],
 			   1, __ATOMIC_RELAXED);
 
-	rc = send_one_cmsg(fd, &peer, true, slot);
+	rc = send_one_cmsg(fd, &peer, have_peer, slot);
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_sendmsg_ok,
 				   1, __ATOMIC_RELAXED);
