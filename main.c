@@ -2204,6 +2204,13 @@ void reset_epoch_state(void)
 		spawn_times[i] = 0;
 	}
 
+	/* zombie_pids[] is now EMPTY_PIDSLOT across the board; reset the
+	 * aggregate gauge in lockstep so process_zombie_pending's gauge != 0
+	 * fast-path actually sees zero and short-circuits.  Sibling counters
+	 * zombies_reaped / zombies_timed_out are cumulative-by-design and
+	 * correctly persist; only the live gauge needs the re-zero. */
+	__atomic_store_n(&shm->stats.zombie_slots_pending, 0, __ATOMIC_RELAXED);
+
 	reseed();
 }
 
