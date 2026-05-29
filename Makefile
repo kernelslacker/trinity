@@ -1,6 +1,7 @@
 VERSION="2026.05"
 
-INSTALL_PREFIX ?= $(DESTDIR)
+DESTDIR ?=
+PREFIX ?= /usr/local
 NR_CPUS := $(shell grep -c ^processor /proc/cpuinfo)
 
 ifeq ($(CC),)
@@ -167,8 +168,8 @@ tarball:
 	@xz -9 trinity-$(VERSION).tar
 
 install: trinity
-	install -d -m 755 $(INSTALL_PREFIX)/bin
-	install trinity $(INSTALL_PREFIX)/bin
+	install -d -m 755 $(DESTDIR)$(PREFIX)/bin
+	install trinity $(DESTDIR)$(PREFIX)/bin
 
 tags:	$(SRCS)
 	@ctags -R --exclude=tmp
