@@ -1391,7 +1391,7 @@ static void handle_children(void)
 		return;
 
 	for_each_child(i) {
-		int childstatus;
+		int childstatus = 0;
 		pid_t pid;
 
 		pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
