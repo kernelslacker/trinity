@@ -252,7 +252,7 @@ static int open_loopback_pair(pid_t *out_pid)
 reap:
 	{
 		int status;
-		(void)waitpid(pid, &status, WNOHANG);
+		(void)waitpid_eintr(pid, &status, WNOHANG);
 	}
 	return -1;
 
@@ -274,7 +274,7 @@ static void reap_acceptor(pid_t pid)
 	 * separated by short sleeps; if it still hasn't gone, send a
 	 * SIGTERM and reap blocking. */
 	while (waited++ < 8) {
-		pid_t r = waitpid(pid, &status, WNOHANG);
+		pid_t r = waitpid_eintr(pid, &status, WNOHANG);
 		if (r == pid || r < 0)
 			return;
 		{
