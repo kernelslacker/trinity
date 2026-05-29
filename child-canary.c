@@ -215,6 +215,14 @@ static unsigned int canary_promotion_ring_head = 0;
 /* Cached time of last summary emit; the summary self-rate-limits. */
 static time_t canary_last_summary = 0;
 
+/* Last observed plateau_active value, used for edge-triggered logging in
+ * canary_queue_tick().  File-static (not a function-local static) so
+ * canary_queue_init() can reset it per-epoch -- otherwise stale state from
+ * the previous epoch would suppress the first plateau-change log of the
+ * new epoch (or emit a spurious one if the flag flipped while the queue
+ * was reinitialising). */
+static bool canary_last_plateau = false;
+
 /* --------------------------------------------------------------------
  * Helpers.
  * -------------------------------------------------------------------- */
@@ -584,6 +592,7 @@ void canary_queue_init(void)
 	canary_promotion_ring_count = 0;
 	canary_promotion_ring_head = 0;
 	canary_last_summary = monotonic_seconds();
+	canary_last_plateau = false;
 
 	/* Gate the live state on the operator flags AND on having at
 	 * least one slot to canary on.  Both kill switches map to the
@@ -626,7 +635,6 @@ void canary_queue_tick(void)
 	unsigned long now_invocations;
 	unsigned long now_edges;
 	unsigned int budget;
-	static bool last_plateau = false;
 
 	if (!canary_queue_live)
 		return;
@@ -638,13 +646,13 @@ void canary_queue_tick(void)
 		bool now_plateau = (kcov_shm != NULL &&
 			__atomic_load_n(&kcov_shm->plateau_active,
 					__ATOMIC_ACQUIRE));
-		if (now_plateau != last_plateau) {
+		if (now_plateau != canary_last_plateau) {
 			output(0, "canary queue: plateau %s; effective window now %u iters\n",
 				now_plateau
 					? "entered, halving canary window"
 					: "lifted, restoring canary window",
 				window_iters_resolved());
-			last_plateau = now_plateau;
+			canary_last_plateau = now_plateau;
 		}
 	}
 
