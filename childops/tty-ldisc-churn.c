@@ -168,7 +168,7 @@ static unsigned int tty_set_random_ldisc(int slave)
 	unsigned int ldisc;
 	int ldisc_int;
 
-	ldisc = tty_ldisc_table[rand32() % NR_TTY_LDISCS];
+	ldisc = tty_ldisc_table[rnd_modulo_u32(NR_TTY_LDISCS)];
 	ldisc_int = (int)ldisc;
 
 	if (ioctl(slave, TIOCSETD, &ldisc_int) < 0) {
@@ -207,7 +207,7 @@ static void tty_churn_cycle(void)
 
 	(void)tty_set_random_ldisc(slave);
 
-	io_len = 1U + (rand32() % CHURN_IO_BUF_MAX);
+	io_len = 1U + rnd_modulo_u32(CHURN_IO_BUF_MAX);
 	generate_rand_bytes(buf, io_len);
 
 	/* Push at the master: drives the slave's ldisc receive_buf path
