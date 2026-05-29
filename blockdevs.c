@@ -104,6 +104,8 @@ void process_bdev_param(char *optarg)
 void init_bdev_list(void)
 {
 	bdevs = zmalloc(sizeof(struct bdevlist));
+	if (bdevs == NULL)
+		return;
 	INIT_LIST_HEAD(&bdevs->list);
 }
 
