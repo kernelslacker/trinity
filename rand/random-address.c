@@ -126,6 +126,18 @@ retry:	tries++;
 		obj = get_random_object(OBJ_SYSV_SHM, OBJ_GLOBAL);
 		if (obj == NULL)
 			goto retry;
+		/*
+		 * Skip hugetlb-backed slots.  get_writable_address callers
+		 * ask for sub-hugepage sizes (struct sizes, single
+		 * integers); the kernel's hugetlb_change_protection rejects
+		 * mprotect ranges whose end is not a multiple of the VMA's
+		 * hugepage size, so PAGE_ALIGN(size) EINVALs for any
+		 * reasonable size.  The slot stays in the pool for the
+		 * shmctl/shmat/shmdt sanitisers that legitimately want a
+		 * hugetlb segment to fuzz.
+		 */
+		if (obj->sysv_shm.flags & SHM_HUGETLB)
+			goto retry;
 		if (obj->sysv_shm.size < size)
 			goto retry;
 		/*
