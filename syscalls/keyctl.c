@@ -243,6 +243,8 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 		/* arg2=key, arg3=buffer, arg4=buflen */
 		rec->a2 = (unsigned long) random_key_id();
 		buf = (char *) get_writable_address(256);
+		if (buf == NULL)
+			break;
 		rec->a3 = (unsigned long) buf;
 		rec->a4 = 256;
 		avoid_shared_buffer_out(&rec->a3, rec->a4);
