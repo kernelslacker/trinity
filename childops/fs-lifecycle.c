@@ -523,7 +523,7 @@ cleanup:
 out_rmdir:
 	(void)rmdir(base);
 
-	__atomic_add_fetch(&shm->stats.fs_lifecycle_tmpfs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.fs_lifecycle_quota, 1, __ATOMIC_RELAXED);
 }
 
 /*
@@ -585,7 +585,7 @@ out_rmdir:
 	(void)rmdir(dst);
 	(void)rmdir(src);
 
-	__atomic_add_fetch(&shm->stats.fs_lifecycle_tmpfs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.fs_lifecycle_bind, 1, __ATOMIC_RELAXED);
 }
 
 /* ------------------------------------------------------------------ */

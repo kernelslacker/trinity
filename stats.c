@@ -872,7 +872,7 @@ static void dump_stats_json(void)
 		"\"refcount_audit\":{\"runs\":%lu,\"fd_anomalies\":%lu,"
 			"\"mmap_anomalies\":%lu,\"sock_anomalies\":%lu},"
 		"\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
-			"\"overlay\":%lu,\"unsupported\":%lu},"
+			"\"overlay\":%lu,\"quota\":%lu,\"bind\":%lu,\"unsupported\":%lu},"
 		"\"signal_storm\":{\"runs\":%lu,\"kill\":%lu,\"probe\":%lu,\"sigqueue\":%lu,\"no_targets\":%lu},"
 		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},"
 		"\"pipe_thrash\":{\"runs\":%lu,\"pipes\":%lu,\"socketpairs\":%lu,\"alloc_failed\":%lu},"
@@ -1093,6 +1093,7 @@ static void dump_stats_json(void)
 		shm->stats.refcount_audit_mmap_anomalies, shm->stats.refcount_audit_sock_anomalies,
 		shm->stats.fs_lifecycle_tmpfs, shm->stats.fs_lifecycle_ramfs,
 		shm->stats.fs_lifecycle_rdonly, shm->stats.fs_lifecycle_overlay,
+		shm->stats.fs_lifecycle_quota, shm->stats.fs_lifecycle_bind,
 		shm->stats.fs_lifecycle_unsupported,
 		shm->stats.signal_storm_runs, shm->stats.signal_storm_kill,
 		shm->stats.signal_storm_probe,
@@ -3912,12 +3913,16 @@ void dump_stats(void)
 		stat_row("refcount_audit", "sock_anomalies", shm->stats.refcount_audit_sock_anomalies);
 	}
 
-	if (shm->stats.fs_lifecycle_tmpfs || shm->stats.fs_lifecycle_ramfs ||
-	    shm->stats.fs_lifecycle_overlay || shm->stats.fs_lifecycle_unsupported) {
+	if (shm->stats.fs_lifecycle_tmpfs   || shm->stats.fs_lifecycle_ramfs   ||
+	    shm->stats.fs_lifecycle_rdonly  || shm->stats.fs_lifecycle_overlay ||
+	    shm->stats.fs_lifecycle_quota   || shm->stats.fs_lifecycle_bind    ||
+	    shm->stats.fs_lifecycle_unsupported) {
 		stat_row("fs_lifecycle", "tmpfs",       shm->stats.fs_lifecycle_tmpfs);
 		stat_row("fs_lifecycle", "ramfs",       shm->stats.fs_lifecycle_ramfs);
 		stat_row("fs_lifecycle", "rdonly",      shm->stats.fs_lifecycle_rdonly);
 		stat_row("fs_lifecycle", "overlay",     shm->stats.fs_lifecycle_overlay);
+		stat_row("fs_lifecycle", "quota",       shm->stats.fs_lifecycle_quota);
+		stat_row("fs_lifecycle", "bind",        shm->stats.fs_lifecycle_bind);
 		stat_row("fs_lifecycle", "unsupported", shm->stats.fs_lifecycle_unsupported);
 	}
 
