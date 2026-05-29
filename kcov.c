@@ -182,35 +182,45 @@ int kcov_cmp_diag_format(char *buf, size_t bufsz, enum kcov_cmp_diag_part part)
 	disable_c    = __atomic_load_n(&d->init_disable_count,    __ATOMIC_RELAXED);
 	rt_enable_c  = __atomic_load_n(&d->runtime_enable_count,  __ATOMIC_RELAXED);
 
+	/* Each token is gated on (size_t)n < bufsz so once snprintf has
+	 * filled (or its would-have-written return drove n past) the
+	 * caller's buffer, the chain stops appending.  Without the gate,
+	 * bufsz - n is computed in size_t arithmetic and wraps to a huge
+	 * positive length once n >= bufsz; snprintf cheerfully honours it
+	 * and writes past the end.  stats.c passes 256-byte buffers, well
+	 * within reach of a handful of ~30-40-char errno tokens.  The
+	 * (size_t) cast also catches a stray snprintf -1 driving n
+	 * negative -- it folds to SIZE_MAX and the comparison still
+	 * bails. */
 	if (want_init) {
-		if (open_c) {
+		if (open_c && (size_t)n < bufsz) {
 			int e = __atomic_load_n(&d->init_open_errno, __ATOMIC_RELAXED);
 			n += snprintf(buf + n, bufsz - n, " init_open=%s(%d)/%u",
 				errno_name_or("?", e), e, open_c);
 		}
-		if (init_trace_c) {
+		if (init_trace_c && (size_t)n < bufsz) {
 			int e = __atomic_load_n(&d->init_init_trace_errno, __ATOMIC_RELAXED);
 			n += snprintf(buf + n, bufsz - n, " init_init_trace=%s(%d)/%u",
 				errno_name_or("?", e), e, init_trace_c);
 		}
-		if (mmap_c) {
+		if (mmap_c && (size_t)n < bufsz) {
 			int e = __atomic_load_n(&d->init_mmap_errno, __ATOMIC_RELAXED);
 			n += snprintf(buf + n, bufsz - n, " init_mmap=%s(%d)/%u",
 				errno_name_or("?", e), e, mmap_c);
 		}
 	}
 	if (want_rt) {
-		if (enable_c) {
+		if (enable_c && (size_t)n < bufsz) {
 			int e = __atomic_load_n(&d->init_enable_errno, __ATOMIC_RELAXED);
 			n += snprintf(buf + n, bufsz - n, " init_enable=%s(%d)/%u",
 				errno_name_or("?", e), e, enable_c);
 		}
-		if (disable_c) {
+		if (disable_c && (size_t)n < bufsz) {
 			int e = __atomic_load_n(&d->init_disable_errno, __ATOMIC_RELAXED);
 			n += snprintf(buf + n, bufsz - n, " init_disable=%s(%d)/%u",
 				errno_name_or("?", e), e, disable_c);
 		}
-		if (rt_enable_c) {
+		if (rt_enable_c && (size_t)n < bufsz) {
 			int e = __atomic_load_n(&d->runtime_enable_errno, __ATOMIC_RELAXED);
 			n += snprintf(buf + n, bufsz - n, " runtime_enable=%s(%d)/%u",
 				errno_name_or("?", e), e, rt_enable_c);
@@ -249,28 +259,33 @@ int kcov_pc_diag_format(char *buf, size_t bufsz)
 	rem_eintr   = __atomic_load_n(&d->remote_enable_eintr_retries,        __ATOMIC_RELAXED);
 	fb_pc_eintr = __atomic_load_n(&d->remote_fallback_pc_enable_eintr_retries, __ATOMIC_RELAXED);
 
-	if (pc_en_c) {
+	/* See kcov_cmp_diag_format() for why each emission is gated on
+	 * (size_t)n < bufsz: once n catches up to bufsz, the next
+	 * bufsz - n underflows in size_t arithmetic and snprintf walks
+	 * off the end of the caller's buffer.  Same 256-byte stats.c
+	 * buffer is in play here too. */
+	if (pc_en_c && (size_t)n < bufsz) {
 		int e = __atomic_load_n(&d->pc_enable_errno, __ATOMIC_RELAXED);
 		n += snprintf(buf + n, bufsz - n, " pc_enable=%s(%d)/%u",
 			errno_name_or("?", e), e, pc_en_c);
 	}
-	if (pc_dis_c) {
+	if (pc_dis_c && (size_t)n < bufsz) {
 		int e = __atomic_load_n(&d->pc_disable_errno, __ATOMIC_RELAXED);
 		n += snprintf(buf + n, bufsz - n, " pc_disable=%s(%d)/%u",
 			errno_name_or("?", e), e, pc_dis_c);
 	}
-	if (rem_en_c) {
+	if (rem_en_c && (size_t)n < bufsz) {
 		int e = __atomic_load_n(&d->remote_enable_errno, __ATOMIC_RELAXED);
 		n += snprintf(buf + n, bufsz - n, " remote_enable=%s(%d)/%u",
 			errno_name_or("?", e), e, rem_en_c);
 	}
-	if (fb_to_pc)
+	if (fb_to_pc && (size_t)n < bufsz)
 		n += snprintf(buf + n, bufsz - n, " remote_fallback_to_pc=%u", fb_to_pc);
-	if (pc_eintr)
+	if (pc_eintr && (size_t)n < bufsz)
 		n += snprintf(buf + n, bufsz - n, " pc_enable_eintr=%u", pc_eintr);
-	if (rem_eintr)
+	if (rem_eintr && (size_t)n < bufsz)
 		n += snprintf(buf + n, bufsz - n, " remote_enable_eintr=%u", rem_eintr);
-	if (fb_pc_eintr)
+	if (fb_pc_eintr && (size_t)n < bufsz)
 		n += snprintf(buf + n, bufsz - n, " remote_fallback_pc_enable_eintr=%u", fb_pc_eintr);
 
 	return n;
