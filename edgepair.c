@@ -189,6 +189,15 @@ struct edgepair_stats edgepair_get_stats(unsigned int prev_nr,
 	if (prev_nr >= MAX_NR_SYSCALL || curr_nr >= MAX_NR_SYSCALL)
 		return s;
 
+	/* Acquire-load pairs with the release-store in
+	 * edgepair_publish_locked() so the subsequent slot field
+	 * reads see the matching slot update for this publish
+	 * window.  Plain MOV on x86-64.  Value is discarded -- we
+	 * only need the fence; the per-pair counters we return
+	 * live in the slot itself. */
+	(void)__atomic_load_n(&edgepair_published->total_pair_calls,
+			      __ATOMIC_ACQUIRE);
+
 	idx = edgepair_pair_hash(prev_nr, curr_nr);
 	for (probe = 0; probe < EDGEPAIR_MAX_PROBE; probe++) {
 		const struct edgepair_published_slot *e =
