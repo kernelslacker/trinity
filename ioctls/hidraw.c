@@ -80,19 +80,19 @@ static void hidraw_sanitise(const struct ioctl_group *grp,
 	switch (rec->a2) {
 #ifdef HIDIOCGRAWNAME
 	case HIDIOCGRAWNAME(0):
-		u = rnd_u32();
+		u = rnd_modulo_u32(page_size + 1);
 		rec->a2 = HIDIOCGRAWNAME(u);
 		break;
 #endif
 #ifdef HIDIOCGRAWPHYS
 	case HIDIOCGRAWPHYS(0):
-		u = rnd_u32();
+		u = rnd_modulo_u32(page_size + 1);
 		rec->a2 = HIDIOCGRAWPHYS(u);
 		break;
 #endif
 #ifdef HIDIOCGRAWUNIQ
 	case HIDIOCGRAWUNIQ(0):
-		u = rnd_u32();
+		u = rnd_modulo_u32(page_size + 1);
 		rec->a2 = HIDIOCGRAWUNIQ(u);
 		break;
 #endif
