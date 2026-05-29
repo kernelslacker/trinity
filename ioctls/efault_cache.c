@@ -67,7 +67,7 @@
 /*
  * Slot encoding (LSB to MSB):
  *   bits  0..31 — request          (32 bits — the ioctl request number)
- *   bits 32..47 — group_idx        (16 bits — IOCTL_GROUPS_MAX is 48)
+ *   bits 32..47 — group_idx        (16 bits — IOCTL_GROUPS_MAX is 64)
  *   bits 48..55 — state            (8 bits, zero = empty slot)
  *
  * IOCTL_ARG_UNKNOWN (state == 0) is never stored, so packed == 0 is an
