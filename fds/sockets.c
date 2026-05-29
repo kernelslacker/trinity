@@ -306,10 +306,17 @@ static bool generate_sockets(void)
 
 	{
 		unsigned int attempts = 0;
+		unsigned int no_domain_skips = 0;
 		const unsigned int max_attempts = NR_SOCKET_FDS * 64;
+		const unsigned int max_no_domain_skips = max_attempts * 2;
 
 		while (nr_sockets < NR_SOCKET_FDS) {
 			r = rnd_modulo_u32(TRINITY_PF_MAX);
+			if (no_domains[r]) {
+				if (++no_domain_skips >= max_no_domain_skips)
+					break;
+				continue;
+			}
 			for (i = 0; i < 10; i++)
 				if (generate_specific_socket(r) == false)
 					break;
