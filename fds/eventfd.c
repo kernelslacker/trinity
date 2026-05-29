@@ -59,7 +59,7 @@ static int init_eventfd_fds(void)
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
 		struct object *obj;
 		int fd;
-		int count = rand32();
+		int count = rnd_u32();
 
 		fd = eventfd(count, flags[i]);
 		if (fd < 0)
