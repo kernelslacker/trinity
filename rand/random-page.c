@@ -170,6 +170,8 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 			*p = separator;
 			p++;
 		}
+		if (p < (char *)(ptr + len - 1))
+			memset(p, 0, (size_t)((char *)(ptr + len - 1) - p));
 		ptr[len-1] = 0;
 		break;
 
