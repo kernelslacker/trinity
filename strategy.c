@@ -1664,6 +1664,7 @@ bool plateau_anti_prior_accept(unsigned int nr)
 
 void plateau_anti_prior_refresh_baseline(void)
 {
+	unsigned long calls_snapshot[MAX_NR_SYSCALL];
 	unsigned long sum = 0;
 	unsigned int i;
 	unsigned long baseline;
@@ -1680,10 +1681,15 @@ void plateau_anti_prior_refresh_baseline(void)
 	 * dimension and keeps the baseline stable across biarch builds
 	 * where the per_syscall_calls slot is shared by both arches.
 	 * O(MAX_NR_SYSCALL) walk on the rotation path, never on the hot
-	 * pick path. */
-	for (i = 0; i < MAX_NR_SYSCALL; i++)
-		sum += __atomic_load_n(&kcov_shm->per_syscall_calls[i],
-				       __ATOMIC_RELAXED);
+	 * pick path.  Snapshot each slot into calls_snapshot[] so the
+	 * per-slot weight pass below reuses the same observation the
+	 * baseline was computed from. */
+	for (i = 0; i < MAX_NR_SYSCALL; i++) {
+		calls_snapshot[i] = __atomic_load_n(
+			&kcov_shm->per_syscall_calls[i],
+			__ATOMIC_RELAXED);
+		sum += calls_snapshot[i];
+	}
 	baseline = sum / MAX_NR_SYSCALL;
 
 	/* Publish at least 1 when the mean truncates to zero so the accept
@@ -1714,7 +1720,12 @@ void plateau_anti_prior_refresh_baseline(void)
 	 * candidate; an intervention window is short relative to the rate
 	 * any single syscall's lifetime count can shift, and the
 	 * statistical bias the gate imposes is keyed off the baseline-
-	 * relative ratio, not the absolute call count.
+	 * relative ratio, not the absolute call count.  The per-slot
+	 * reads themselves are also taken from calls_snapshot[] (filled
+	 * in pass 1 above), so each slot's published weight is derived
+	 * from the exact same observation that fed into the baseline -
+	 * a concurrent mid-rotation increment can no longer skew one
+	 * pass relative to the other.
 	 *
 	 * weight is bounded by ANTI_PRIOR_THRESHOLD_SCALE (= 64 today, =
 	 * MAX_BOOST^2) and never zero, so the uint8_t slot is sufficient.
@@ -1734,9 +1745,7 @@ void plateau_anti_prior_refresh_baseline(void)
 		for (i = 0; i < MAX_NR_SYSCALL; i++) {
 			unsigned long calls, clamped, weight;
 
-			calls = __atomic_load_n(
-				&kcov_shm->per_syscall_calls[i],
-				__ATOMIC_RELAXED);
+			calls = calls_snapshot[i];
 			clamped = calls;
 			if (clamped < floor_calls)
 				clamped = floor_calls;
