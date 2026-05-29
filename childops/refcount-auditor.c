@@ -138,7 +138,7 @@ static void audit_fd_bucket(void)
 		if (newfd < 0)
 			continue;
 
-		snprintf(path, sizeof(path), "/proc/self/fdinfo/%d", fd);
+		snprintf(path, sizeof(path), "/proc/self/fdinfo/%d", newfd);
 		if (stat(path, &st) != 0 && errno == ENOENT) {
 			output(0, "refcount audit: fd %d tracked in pool but /proc/self/fdinfo/%d missing\n",
 			       fd, newfd);
