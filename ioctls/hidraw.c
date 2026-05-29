@@ -98,37 +98,37 @@ static void hidraw_sanitise(const struct ioctl_group *grp,
 #endif
 #ifdef HIDIOCSFEATURE
 	case HIDIOCSFEATURE(0):
-		u = rnd_u32();
+		u = rnd_modulo_u32(page_size + 1);
 		rec->a2 = HIDIOCSFEATURE(u);
 		break;
 #endif
 #ifdef HIDIOCGFEATURE
 	case HIDIOCGFEATURE(0):
-		u = rnd_u32();
+		u = rnd_modulo_u32(page_size + 1);
 		rec->a2 = HIDIOCGFEATURE(u);
 		break;
 #endif
 #ifdef HIDIOCSINPUT
 	case HIDIOCSINPUT(0):
-		u = rnd_u32();
+		u = rnd_modulo_u32(page_size + 1);
 		rec->a2 = HIDIOCSINPUT(u);
 		break;
 #endif
 #ifdef HIDIOCGINPUT
 	case HIDIOCGINPUT(0):
-		u = rnd_u32();
+		u = rnd_modulo_u32(page_size + 1);
 		rec->a2 = HIDIOCGINPUT(u);
 		break;
 #endif
 #ifdef HIDIOCSOUTPUT
 	case HIDIOCSOUTPUT(0):
-		u = rnd_u32();
+		u = rnd_modulo_u32(page_size + 1);
 		rec->a2 = HIDIOCSOUTPUT(u);
 		break;
 #endif
 #ifdef HIDIOCGOUTPUT
 	case HIDIOCGOUTPUT(0):
-		u = rnd_u32();
+		u = rnd_modulo_u32(page_size + 1);
 		rec->a2 = HIDIOCGOUTPUT(u);
 		break;
 #endif
