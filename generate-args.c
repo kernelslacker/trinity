@@ -948,7 +948,7 @@ static unsigned long gen_arg_struct_size(struct syscallentry *entry,
 
 	desc = paired_struct_desc(entry, rec);
 	if (desc == NULL)
-		return (unsigned long) (rand32() % ARG_STRUCT_SIZE_FALLBACK_CAP);
+		return (unsigned long) rnd_modulo_u32(ARG_STRUCT_SIZE_FALLBACK_CAP);
 
 	roll = rnd_modulo_u32(10);
 
