@@ -91,6 +91,7 @@ static int init_pagecache_fds(void)
 {
 	struct objhead *head;
 	unsigned int attempts;
+	unsigned int max_attempts;
 	unsigned int opened = 0;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PAGECACHE);
@@ -106,9 +107,15 @@ static int init_pagecache_fds(void)
 
 	nr_setuid = 0;
 
-	/* Bounded sample to keep init time predictable on huge fileindexes. */
+	/* Bounded sample to keep init time predictable on huge fileindexes.
+	 * Cap at NR_PAGECACHE_FDS * 32 candidates regardless of fileindex
+	 * size — without the ceiling, a million-file index turns init into
+	 * a 4M-attempt stall when no regular files match. */
+	max_attempts = files_in_index * 4;
+	if (max_attempts > NR_PAGECACHE_FDS * 32)
+		max_attempts = NR_PAGECACHE_FDS * 32;
 	for (attempts = 0;
-	     attempts < files_in_index * 4 && opened < NR_PAGECACHE_FDS;
+	     attempts < max_attempts && opened < NR_PAGECACHE_FDS;
 	     attempts++) {
 		const char *filename = fileindex[rnd_modulo_u32(files_in_index)];
 		struct stat sb;
