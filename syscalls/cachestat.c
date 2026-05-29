@@ -100,7 +100,7 @@ static void pick_range(int fd, struct cachestat_range *range)
 		return;
 	default:
 		/* unaligned offset and length, mid-file */
-		range->off = rnd_u64() % (size + 1);
+		range->off = rnd_modulo_u64(size + 1);
 		range->len = 1 + rnd_modulo_u32((unsigned int) (pg * 64));
 		return;
 	}
