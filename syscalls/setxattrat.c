@@ -84,7 +84,7 @@ static void sanitise_setxattrat(struct syscallrecord *rec)
 			case 5:  chosen = page_size + 1;      break;
 			case 6:  chosen = 65536;              break;
 			case 7:  chosen = 65537;              break;
-			default: chosen = rnd_u32() % (1u << 20); break;
+			default: chosen = rnd_modulo_u32(1u << 20); break;
 			}
 
 			if (chosen == 0) {
