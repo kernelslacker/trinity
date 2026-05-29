@@ -142,17 +142,21 @@ static bool budget_elapsed(const struct timespec *start)
  * random index (the resulting op will return -EEXIST or -ENOENT, which
  * is benign and exercises the error-return paths). */
 static unsigned int pick_fd_idx(const bool registered[NR_EPFDS][NR_TARGET_FDS],
-				unsigned int epfd_idx, bool want_registered)
+				unsigned int epfd_idx, unsigned int n_target_fds,
+				bool want_registered)
 {
 	unsigned int tries;
 
-	for (tries = 0; tries < NR_TARGET_FDS; tries++) {
-		unsigned int idx = rnd_modulo_u32(NR_TARGET_FDS);
+	if (n_target_fds == 0)
+		return 0;
+
+	for (tries = 0; tries < n_target_fds; tries++) {
+		unsigned int idx = rnd_modulo_u32(n_target_fds);
 
 		if (registered[epfd_idx][idx] == want_registered)
 			return idx;
 	}
-	return rnd_modulo_u32(NR_TARGET_FDS);
+	return rnd_modulo_u32(n_target_fds);
 }
 
 bool epoll_volatility(struct childdata *child)
@@ -204,7 +208,7 @@ bool epoll_volatility(struct childdata *child)
 		if (op < 5) {
 			/* EPOLL_CTL_ADD: prefer an unregistered slot so the
 			 * op succeeds and grows the per-fd epitem list. */
-			fd_idx = pick_fd_idx(registered, epfd_idx, false);
+			fd_idx = pick_fd_idx(registered, epfd_idx, n_target_fds, false);
 			memset(&ev, 0, sizeof(ev));
 			ev.events  = (uint32_t)RAND_NEGATIVE_OR(random_events());
 			ev.data.fd = target_fds[fd_idx];
@@ -224,7 +228,7 @@ bool epoll_volatility(struct childdata *child)
 			 * events_update path inside ep_modify is exercised
 			 * with a real mask transition.  Random new mask
 			 * each time. */
-			fd_idx = pick_fd_idx(registered, epfd_idx, true);
+			fd_idx = pick_fd_idx(registered, epfd_idx, n_target_fds, true);
 			memset(&ev, 0, sizeof(ev));
 			ev.events  = random_events();
 			ev.data.fd = target_fds[fd_idx];
@@ -239,7 +243,7 @@ bool epoll_volatility(struct childdata *child)
 			/* EPOLL_CTL_DEL: prefer a registered slot so the
 			 * per-fd epitem unlink + waitqueue removal path
 			 * inside ep_remove is exercised. */
-			fd_idx = pick_fd_idx(registered, epfd_idx, true);
+			fd_idx = pick_fd_idx(registered, epfd_idx, n_target_fds, true);
 			rc = epoll_ctl(epfds[epfd_idx], EPOLL_CTL_DEL,
 				       target_fds[fd_idx], NULL);
 			__atomic_add_fetch(&shm->stats.epoll_volatility_ctl_calls,
