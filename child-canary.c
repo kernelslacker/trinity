@@ -648,6 +648,26 @@ void canary_queue_tick(void)
 		}
 	}
 
+	/* Parked-slot retry.  When the previous tick exhausted the picker
+	 * we cleared canary_active_op_set and raised canary_slots_parked.
+	 * The early-return below would otherwise mean every subsequent
+	 * tick bails before pick_next_canary() ever runs again, so the
+	 * dormant-op promotion path would silently die the moment the
+	 * first parking happened.  Re-run the picker here; if a DEMOTED
+	 * op's backoff has elapsed (or any other newly-eligible candidate
+	 * has appeared) enter_canarying() stages it and clears the parked
+	 * flag.  canary_active_op_set stays false until the killed slot
+	 * child is re-forked and canary_queue_on_child_respawn() commits
+	 * the staged op, so we still fall through the early-return on
+	 * this tick. */
+	if (canary_slots_parked) {
+		enum child_op_type next;
+		if (pick_next_canary(&next))
+			enter_canarying(next);
+		else
+			return;
+	}
+
 	if (!canary_active_op_set)
 		return;
 
@@ -698,9 +718,10 @@ void canary_queue_tick(void)
 			 * canary_active_op() returns CHILD_OP_SYSCALL while
 			 * parked, which drops the slot back into the default
 			 * syscall picker -- no demoted alt-op runs in the
-			 * meantime.  The next tick re-tries the FIFO walk
-			 * and enter_canarying() will pick up the slot again
-			 * as soon as a DEMOTED op's backoff elapses. */
+			 * meantime.  The next tick re-enters the picker via
+			 * the parked-retry branch at the top of
+			 * canary_queue_tick(); if pick_next_canary() still
+			 * fails the slot stays parked until then. */
 			canary_pending_op_set = false;
 			canary_active_op_set = false;
 			canary_active_op_cell = CHILD_OP_SYSCALL;
