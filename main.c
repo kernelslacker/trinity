@@ -317,10 +317,17 @@ static void reap_dead_kids(void)
 		if (pid_is_valid(pid) == false)
 			continue;
 
-		if (kill(pid, 0) != 0 && errno == ESRCH) {
-			output(0, "pid %u has disappeared. Reaping.\n", pid);
-			reap_child(children[i], i);
-			reaped++;
+		if (kill(pid, 0) != 0) {
+			if (errno == ESRCH) {
+				output(0, "pid %u has disappeared. Reaping.\n", pid);
+				reap_child(children[i], i);
+				reaped++;
+			} else if (errno == EPERM) {
+				/* Child dropped privileges (setresuid/capset/etc.)
+				 * and we can no longer signal it.  It is still alive;
+				 * just log so the privilege-drop is visible. */
+				output(1, "pid %u dropped privileges (kill probe EPERM).\n", pid);
+			}
 		}
 	}
 
