@@ -436,6 +436,13 @@ void clean_childdata(struct childdata *child)
 	memset(child->syscall_ring.recent, 0, sizeof(child->syscall_ring.recent));
 	__atomic_store_n(&child->syscall_ring.head, 0, __ATOMIC_RELAXED);
 
+	/* Reset pre-crash rolling-history ring; the post-mortem dumper
+	 * walks back at most head slots, so zeroing the struct means the
+	 * fresh occupant contributes no entries from the previous slot's
+	 * child until it publishes its first event. */
+	memset(&child->pre_crash, 0, sizeof(child->pre_crash));
+	__atomic_store_n(&child->pre_crash.base.head, 0, __ATOMIC_RELAXED);
+
 	child->fail_nth_fd = -1;
 	child->tainted_fd = -1;
 	child->last_tainted = 0;
