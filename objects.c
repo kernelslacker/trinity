@@ -264,13 +264,40 @@ void fd_hash_remove_local(int fd)
 
 void fd_hash_remove_local_range(int lo, int hi)
 {
-	int fd;
+	struct childdata *child;
+	struct fd_hash_entry *table;
+	unsigned int i;
 
 	if (lo > hi)
 		return;
 
-	for (fd = lo; fd <= hi; fd++)
-		fd_hash_remove_local(fd);
+	child = this_child();
+	if (child == NULL || child->fd_hash == NULL)
+		return;
+	table = child->fd_hash;
+
+	/*
+	 * One walk over the local hash table, evicting every slot whose
+	 * fd is in [lo, hi].  Replaces the prior fd-by-fd loop that paid
+	 * an FD_HASH_SIZE-bounded linear probe per fd in the range --
+	 * O(N*M) for close_range(lo=3, hi=1024) collapses to O(M).
+	 *
+	 * fd_hash_remove_local() walks the displacement chain after the
+	 * evicted slot and re-hashes any entries it finds; a re-hashed
+	 * entry can land back into the slot we just cleared (its natural
+	 * slot may map there) but never into a slot earlier than the one
+	 * we removed from -- the probe-from-natural walk always finds the
+	 * just-emptied slot before any wrap-around landing site.  i--
+	 * therefore re-examines this slot (which may now hold a different
+	 * fd, possibly itself in [lo, hi]) without revisiting anything
+	 * we've already cleared.
+	 */
+	for (i = 0; i < FD_HASH_SIZE; i++) {
+		if (table[i].fd >= lo && table[i].fd <= hi) {
+			fd_hash_remove_local(table[i].fd);
+			i--;
+		}
+	}
 }
 
 struct fd_hash_entry *fd_hash_lookup(int fd)
