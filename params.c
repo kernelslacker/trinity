@@ -620,21 +620,12 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'C': {
-			char *end;
 			unsigned long val;
 			enum max_children_binding b;
 			unsigned long cap;
 
-			errno = 0;
-			val = strtoul(optarg, &end, 10);
-			if (end == optarg || *end != '\0' || errno == ERANGE) {
-				outputerr("can't parse '%s' as a number\n", optarg);
+			if (!parse_unsigned(optarg, "children", false, &val))
 				exit(EXIT_FAILURE);
-			}
-			if (val == 0) {
-				outputerr("zero children ? WAT?\n");
-				exit(EXIT_FAILURE);
-			}
 			cap = derive_max_children_cap(&b);
 			if (val > cap) {
 				outputerr("--children=%lu exceeds %s cap of %lu\n",
@@ -793,15 +784,10 @@ void parse_args(int argc, char *argv[])
 
 		case 0:
 			if (strcmp("alt-op-children", longopts[opt_index].name) == 0) {
-				char *end;
 				unsigned long val;
 
-				errno = 0;
-				val = strtoul(optarg, &end, 10);
-				if (end == optarg || *end != '\0' || errno == ERANGE) {
-					outputerr("can't parse '%s' as a number\n", optarg);
+				if (!parse_unsigned(optarg, "alt-op-children", true, &val))
 					exit(EXIT_FAILURE);
-				}
 				if (val > UINT_MAX) {
 					outputerr("--alt-op-children value %lu exceeds UINT_MAX\n", val);
 					exit(EXIT_FAILURE);
@@ -900,15 +886,10 @@ void parse_args(int argc, char *argv[])
 			}
 
 			if (strcmp("explorer-children", longopts[opt_index].name) == 0) {
-				char *end;
 				unsigned long val;
 
-				errno = 0;
-				val = strtoul(optarg, &end, 10);
-				if (end == optarg || *end != '\0' || errno == ERANGE) {
-					outputerr("can't parse '%s' as a number\n", optarg);
+				if (!parse_unsigned(optarg, "explorer-children", true, &val))
 					exit(EXIT_FAILURE);
-				}
 				if (val > UINT_MAX) {
 					outputerr("--explorer-children value %lu exceeds UINT_MAX\n", val);
 					exit(EXIT_FAILURE);
