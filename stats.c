@@ -862,6 +862,11 @@ static void dump_stats_json(void)
 			"\"destroy_object_idx\":%lu,"
 			"\"global_obj_uaf_caught\":%lu,"
 			"\"maps_pool_draw_exhausted\":%lu,"
+			"\"maps_reject_pool_empty\":%lu,"
+			"\"maps_reject_bogus_obj_ptr\":%lu,"
+			"\"maps_reject_alloc_track_miss\":%lu,"
+			"\"maps_reject_size_zero\":%lu,"
+			"\"maps_reject_size_too_large\":%lu,"
 			"\"pagecache_canary_corrupt_caught\":%lu,"
 			"\"lock_word_scribbled\":%lu,"
 			"\"lock_held_scribble\":%lu,"
@@ -1082,6 +1087,11 @@ static void dump_stats_json(void)
 		shm->stats.destroy_object_idx_corrupt,
 		shm->stats.global_obj_uaf_caught,
 		shm->stats.maps_pool_draw_exhausted,
+		shm->stats.maps_reject_pool_empty,
+		shm->stats.maps_reject_bogus_obj_ptr,
+		shm->stats.maps_reject_alloc_track_miss,
+		shm->stats.maps_reject_size_zero,
+		shm->stats.maps_reject_size_too_large,
 		shm->stats.pagecache_canary_corrupt_caught,
 		parent_stats.lock_word_scribbled,
 		shm->stats.lock_held_scribble,
@@ -2003,6 +2013,16 @@ static const struct {
 	  offsetof(struct stats_s, global_obj_uaf_caught) },
 	{ "maps_pool_draw_exhausted",
 	  offsetof(struct stats_s, maps_pool_draw_exhausted) },
+	{ "maps_reject_pool_empty",
+	  offsetof(struct stats_s, maps_reject_pool_empty) },
+	{ "maps_reject_bogus_obj_ptr",
+	  offsetof(struct stats_s, maps_reject_bogus_obj_ptr) },
+	{ "maps_reject_alloc_track_miss",
+	  offsetof(struct stats_s, maps_reject_alloc_track_miss) },
+	{ "maps_reject_size_zero",
+	  offsetof(struct stats_s, maps_reject_size_zero) },
+	{ "maps_reject_size_too_large",
+	  offsetof(struct stats_s, maps_reject_size_too_large) },
 	{ "pagecache_canary_corrupt_caught",
 	  offsetof(struct stats_s, pagecache_canary_corrupt_caught) },
 	/* genetlink registry per-family dispatch counters; rate-of-change
@@ -3686,6 +3706,16 @@ void dump_stats(void)
 		stat_row("corruption", "global_obj_uaf_caught",  shm->stats.global_obj_uaf_caught);
 	if (shm->stats.maps_pool_draw_exhausted)
 		stat_row("pool", "maps_pool_draw_exhausted",   shm->stats.maps_pool_draw_exhausted);
+	if (shm->stats.maps_reject_pool_empty)
+		stat_row("pool", "maps_reject_pool_empty",     shm->stats.maps_reject_pool_empty);
+	if (shm->stats.maps_reject_bogus_obj_ptr)
+		stat_row("pool", "maps_reject_bogus_obj_ptr",  shm->stats.maps_reject_bogus_obj_ptr);
+	if (shm->stats.maps_reject_alloc_track_miss)
+		stat_row("pool", "maps_reject_alloc_track_miss", shm->stats.maps_reject_alloc_track_miss);
+	if (shm->stats.maps_reject_size_zero)
+		stat_row("pool", "maps_reject_size_zero",      shm->stats.maps_reject_size_zero);
+	if (shm->stats.maps_reject_size_too_large)
+		stat_row("pool", "maps_reject_size_too_large", shm->stats.maps_reject_size_too_large);
 	if (shm->stats.chain_replay_len_corrupt)
 		stat_row("corruption", "chain_replay_len_corrupt", shm->stats.chain_replay_len_corrupt);
 	if (shm->stats.pagecache_canary_corrupt_caught)

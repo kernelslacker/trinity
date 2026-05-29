@@ -59,8 +59,10 @@ bool get_map_handle(struct map_handle *h)
 		type = map_pool_types[rnd_modulo_u32(3)];
 
 		obj = get_random_object(type, scope);
-		if (obj == NULL)
+		if (obj == NULL) {
+			__atomic_add_fetch(&shm->stats.maps_reject_pool_empty, 1, __ATOMIC_RELAXED);
 			continue;
+		}
 
 		/*
 		 * Defend against stale or corrupted slot pointers leaking
@@ -75,6 +77,7 @@ bool get_map_handle(struct map_handle *h)
 		 */
 		if ((uintptr_t)obj < 0x10000UL ||
 		    (uintptr_t)obj >= 0x800000000000UL) {
+			__atomic_add_fetch(&shm->stats.maps_reject_bogus_obj_ptr, 1, __ATOMIC_RELAXED);
 			outputerr("get_map_handle: bogus obj %p in OBJ_MMAP "
 				  "pool (type %u, scope %d)\n",
 				  obj, type, scope);
@@ -98,6 +101,7 @@ bool get_map_handle(struct map_handle *h)
 		 * shared-heap objs.
 		 */
 		if (scope == OBJ_LOCAL && !alloc_track_lookup(obj)) {
+			__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss, 1, __ATOMIC_RELAXED);
 			outputerr("get_map_handle: obj %p not in alloc_track "
 				  "(stomped slot, type %u, scope %d)\n",
 				  obj, type, scope);
@@ -127,9 +131,11 @@ bool get_map_handle(struct map_handle *h)
 			 * pre-clamp pool entry from an earlier startup
 			 * may still surface here.  Skip silently.
 			 */
+			__atomic_add_fetch(&shm->stats.maps_reject_size_zero, 1, __ATOMIC_RELAXED);
 			continue;
 		}
 		if (obj->map.size > GB(4UL)) {
+			__atomic_add_fetch(&shm->stats.maps_reject_size_too_large, 1, __ATOMIC_RELAXED);
 			outputerr("get_map_handle: bogus map->size %lu for "
 				  "obj %p (type %u, scope %d)\n",
 				  obj->map.size, obj, type, scope);

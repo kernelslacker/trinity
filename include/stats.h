@@ -1667,6 +1667,42 @@ struct stats_s {
 	 * UAF window for the retry loop to defend against. */
 	unsigned long maps_pool_draw_exhausted;
 
+	/* Per-rejection-reason sub-attributions of maps_pool_draw_exhausted.
+	 * The 1000-iteration draw loop in get_map_handle() has five distinct
+	 * `continue;` paths; each of the five counters below is bumped once
+	 * per iteration that exits via the corresponding clause.  Summed,
+	 * they bound 1000 * maps_pool_draw_exhausted + 999 * successful
+	 * get_map_handle() calls.  Pure attribution -- no behaviour change. */
+
+	/* get_random_object() returned NULL.  Predicted dominant reason
+	 * because type is picked uniformly from {ANON, FILE, TESTFILE} but
+	 * only ANON has a well-populated OBJ_LOCAL pool post-fork, so ~2/3
+	 * of draws hit a guaranteed-empty or near-empty pool. */
+	unsigned long maps_reject_pool_empty;
+
+	/* obj pointer fell outside the heap band [0x10000, 0x800000000000).
+	 * A non-zero rate-of-change here is a real corruption signal
+	 * (stale or stomped slot pointer leaking out of the OBJ_MMAP pool). */
+	unsigned long maps_reject_bogus_obj_ptr;
+
+	/* scope == OBJ_LOCAL and alloc_track_lookup(obj) miss.  Bumped on
+	 * the validator-LRU false-positive class: alloc_track[] is a 256-
+	 * slot LRU; OBJ_MMAP_ANON pool entries can rotate out under fd-
+	 * pressure cascades, causing legitimate live entries to be
+	 * false-rejected.  See [[stomped-slot-regression-bisect-20260529]]. */
+	unsigned long maps_reject_alloc_track_miss;
+
+	/* obj->map.size == 0.  Benign noise from pre-clamp mmap_fd pool
+	 * entries left over from earlier startups; expected low and
+	 * monotonic. */
+	unsigned long maps_reject_size_zero;
+
+	/* obj->map.size > GB(4UL).  Like maps_reject_bogus_obj_ptr, a
+	 * non-zero rate-of-change is a real corruption signal (the map
+	 * struct itself was stomped after the obj pointer survived the
+	 * heap-band guard). */
+	unsigned long maps_reject_size_too_large;
+
 	/* Bumped by run_sequence_chain() when chain_corpus_pick() returns
 	 * a chain_entry whose len is zero or greater than MAX_SEQ_LEN.
 	 * The chain corpus is shared memory and tolerates lockless reads
