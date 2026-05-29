@@ -279,7 +279,7 @@ int nfnl_send_recv_dump(struct nfnl_ctx *ctx, void *msg, size_t len)
 		while (left >= NLMSG_HDRLEN) {
 			nlh = (struct nlmsghdr *)cur;
 			if (nlh->nlmsg_len < NLMSG_HDRLEN ||
-			    (size_t)nlh->nlmsg_len > left)
+			    (size_t)NLMSG_ALIGN(nlh->nlmsg_len) > left)
 				return -EIO;
 
 			if (nlh->nlmsg_type == NLMSG_DONE)
