@@ -132,6 +132,7 @@ static int open_testfile_fds(void)
 
 		} else {
 			free_shared_str(filename, 64);
+			obj->testfileobj.filename = NULL;
 			fails++;
 			if (fails == 100) {
 				output(2, "testfile creation is failing a lot. last error:%s\n", strerror(errno));
