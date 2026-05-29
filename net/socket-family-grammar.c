@@ -179,7 +179,7 @@ int sfg_default_bind(int fd, struct socket_triplet *triplet)
 	socklen_t addrlen = 0;
 	int rv = -1;
 
-	if (triplet->family >= TRINITY_PF_MAX)
+	if (triplet->family == 0 || triplet->family >= TRINITY_PF_MAX)
 		return -1;
 
 	proto = net_protocols[triplet->family].proto;
@@ -209,7 +209,7 @@ void sfg_default_walk_setsockopts(int fd, struct socket_triplet *triplet,
 	const struct netproto *proto;
 	unsigned int i;
 
-	if (triplet->family >= TRINITY_PF_MAX)
+	if (triplet->family == 0 || triplet->family >= TRINITY_PF_MAX)
 		return;
 
 	proto = net_protocols[triplet->family].proto;
@@ -246,7 +246,7 @@ void sfg_default_data_leg(int data_fd,
 	unsigned char rcvbuf[256];
 	unsigned char cmsgbuf[CMSG_SPACE(256)];
 
-	if (triplet->family >= TRINITY_PF_MAX)
+	if (triplet->family == 0 || triplet->family >= TRINITY_PF_MAX)
 		return;
 
 	proto = net_protocols[triplet->family].proto;
