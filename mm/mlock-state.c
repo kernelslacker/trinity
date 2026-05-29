@@ -73,6 +73,8 @@ unsigned long mlock_state_pick_length(unsigned long map_size, bool *over_end)
 		return map_size & PAGE_MASK;
 	default:
 		*over_end = true;
+		if (map_size > ULONG_MAX - page_size)
+			return ULONG_MAX & PAGE_MASK;
 		return (map_size + page_size) & PAGE_MASK;
 	}
 }
