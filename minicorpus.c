@@ -29,6 +29,7 @@
 #include "fd.h"
 #include "kcov.h"
 #include "minicorpus.h"
+#include "persist-util.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -1052,6 +1053,8 @@ bool minicorpus_load_file(const char *path,
 
 	if (minicorpus_shm == NULL || path == NULL)
 		return false;
+
+	persist_sweep_stale_tmp(path);
 
 	fd = open(path, O_RDONLY);
 	if (fd < 0) {

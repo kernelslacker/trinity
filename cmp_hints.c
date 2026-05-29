@@ -38,6 +38,7 @@
 #include "child.h"
 #include "cmp_hints.h"
 #include "kcov.h"
+#include "persist-util.h"
 #include "random.h"
 #include "rnd.h"
 #include "syscall.h"
@@ -979,6 +980,8 @@ bool cmp_hints_load_file(const char *path)
 
 	if (path == NULL || cmp_hints_shm == NULL)
 		return false;
+
+	persist_sweep_stale_tmp(path);
 
 	if (!kcov_get_kernel_fp(cur_fp)) {
 		output(0, "cmp-hints: cannot fingerprint kernel (/proc/kallsyms unavailable) -- warm-start disabled this run\n");

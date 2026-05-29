@@ -45,6 +45,7 @@
 #include "effector-map.h"
 #include "kcov.h"
 #include "params.h"
+#include "persist-util.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -734,6 +735,8 @@ bool effector_map_load_file(const char *path)
 
 	if (path == NULL)
 		return false;
+
+	persist_sweep_stale_tmp(path);
 
 	fd = open(path, O_RDONLY);
 	if (fd < 0)

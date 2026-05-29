@@ -38,6 +38,7 @@
 #include "edgepair.h"
 #include "kcov.h"
 #include "params.h"
+#include "persist-util.h"
 #include "pids.h"
 #include "rnd.h"
 #include "shm.h"
@@ -2007,6 +2008,8 @@ bool kcov_bitmap_load_file(const char *path)
 
 	if (path == NULL || kcov_shm == NULL)
 		return false;
+
+	persist_sweep_stale_tmp(path);
 
 	if (!kcov_get_kernel_fp(cur_fp)) {
 		output(0, "kcov-bitmap: cannot fingerprint kernel (/proc/kallsyms unavailable) -- warm-start disabled this run\n");
