@@ -70,11 +70,6 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 		 * bytecount must equal the size of this structure. */
 		struct user_desc *desc = zmalloc_tracked(sizeof(*desc));
 
-		if (desc == NULL) {
-			rec->a2 = 0L;
-			break;
-		}
-
 		desc->entry_number    = rnd_modulo_u32(LDT_ENTRIES);
 		desc->base_addr       = rnd_u64();
 		desc->limit           = rnd_u32();
