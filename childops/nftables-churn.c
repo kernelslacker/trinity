@@ -6500,6 +6500,7 @@ static void nft_fwd_netdev_loop_sweep(struct nfnl_ctx *nfnl,
 	bool table_created = false;
 	struct timespec t0;
 	unsigned int rng = (unsigned int)(rand32() & 0xffffu);
+	int rc = 0;
 
 	__atomic_add_fetch(&shm->stats.nft_fwd_loop_runs, 1,
 			   __ATOMIC_RELAXED);
@@ -6508,23 +6509,35 @@ static void nft_fwd_netdev_loop_sweep(struct nfnl_ctx *nfnl,
 	snprintf(vp0, sizeof(vp0), "vp0_%u", rng);
 	snprintf(vp1, sizeof(vp1), "vp1_%u", rng);
 
-	if (build_veth_pair_create(rtnl, vp0, vp1) != 0)
+	rc = build_veth_pair_create(rtnl, vp0, vp1);
+	if (rc != 0)
 		goto fail;
 	vp0_idx = (int)if_nametoindex(vp0);
+	if (vp0_idx <= 0) {
+		rc = -errno;
+		goto fail;
+	}
 	vp1_idx = (int)if_nametoindex(vp1);
-	if (vp0_idx <= 0 || vp1_idx <= 0)
+	if (vp1_idx <= 0) {
+		rc = -errno;
 		goto fail;
-	if (build_addr_assign(rtnl, vp0_idx,
-			      htonl(FWD_LOOP_VP0_ADDR)) != 0 ||
-	    build_addr_assign(rtnl, vp1_idx,
-			      htonl(FWD_LOOP_VP1_ADDR)) != 0)
+	}
+	rc = build_addr_assign(rtnl, vp0_idx, htonl(FWD_LOOP_VP0_ADDR));
+	if (rc != 0)
 		goto fail;
-	if (build_setlink_up_idx(rtnl, vp0_idx) != 0 ||
-	    build_setlink_up_idx(rtnl, vp1_idx) != 0)
+	rc = build_addr_assign(rtnl, vp1_idx, htonl(FWD_LOOP_VP1_ADDR));
+	if (rc != 0)
+		goto fail;
+	rc = build_setlink_up_idx(rtnl, vp0_idx);
+	if (rc != 0)
+		goto fail;
+	rc = build_setlink_up_idx(rtnl, vp1_idx);
+	if (rc != 0)
 		goto fail;
 
 	snprintf(table_name, sizeof(table_name), "trfwdl%u", rng);
-	if (build_newtable(nfnl, NFPROTO_NETDEV, table_name) != 0)
+	rc = build_newtable(nfnl, NFPROTO_NETDEV, table_name);
+	if (rc != 0)
 		goto fail;
 	table_created = true;
 
@@ -6561,7 +6574,15 @@ static void nft_fwd_netdev_loop_sweep(struct nfnl_ctx *nfnl,
 	goto out;
 
 fail:
-	ns_unsupported_nft_fwd_netdev_loop = true;
+	/* Only latch on errnos that mean the kernel will never support
+	 * this sub-mode for the child's lifetime (CONFIG_VETH absent,
+	 * CONFIG_NFT_FWD_NETDEV absent, NFPROTO_NETDEV family not
+	 * registered).  EBUSY / EAGAIN / ENODEV here are transient
+	 * (lock contention, slab pressure, veth racing teardown) and
+	 * must not permanently disable the path. */
+	if (rc == -EOPNOTSUPP || rc == -EPROTONOSUPPORT ||
+	    rc == -EAFNOSUPPORT)
+		ns_unsupported_nft_fwd_netdev_loop = true;
 	__atomic_add_fetch(&shm->stats.nft_fwd_loop_ns_setup_failed, 1,
 			   __ATOMIC_RELAXED);
 out:
