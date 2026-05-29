@@ -14,6 +14,7 @@
 #include "objects.h"
 #include "pathnames.h"
 #include "random.h"
+#include "shm.h"
 #include "syscalls/syscalls.h"
 #include "utils.h"
 
@@ -75,6 +76,8 @@ retry_flags:
 			output(2, "Couldn't open %s : %s\n", filename, strerror(errno));
 			return fd;
 		}
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
+			return -1;
 		goto retry_flags;
 	}
 
