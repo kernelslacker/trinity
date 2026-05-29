@@ -684,7 +684,7 @@ static void init_child(struct childdata *child, int childno)
 	 * because pids[] is a single allocation that doesn't grow — one
 	 * mprotect at init time is enough; the per-loop refreeze path only
 	 * needs to chase newly-spawned childdata regions. */
-	if (mprotect(pids, max_children * sizeof(int), PROT_READ) != 0) {
+	if (mprotect(pids, max_children * sizeof(*pids), PROT_READ) != 0) {
 		outputerr("init_child: mprotect(pids[]) failed: %s\n", strerror(errno));
 		__atomic_add_fetch(&shm->stats.sibling_mprotect_failed, 1,
 				   __ATOMIC_RELAXED);
