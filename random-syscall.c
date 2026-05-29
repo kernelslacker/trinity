@@ -462,7 +462,7 @@ retry:
 		 * intervention the gate stays exactly as before. */
 		if (edgepair_is_cold(child->last_syscall_nr, syscallnr) &&
 		    !plateau_rescue_bias_active_for(RRC_PAIR_COLD) &&
-		    RAND_BOOL()) {
+		    (rnd_u32() & 1U)) {
 			__atomic_fetch_add(
 				&shm->stats.explorer_cold_pair_rejects,
 				1UL, __ATOMIC_RELAXED);
