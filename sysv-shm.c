@@ -21,6 +21,19 @@ static void dump_sysv_shm(struct object *obj, enum obj_scope scope)
 		obj->sysv_shm.flags, obj->sysv_shm.ptr, scope);
 }
 
+static void sysv_shm_destructor(struct object *obj)
+{
+	/* Detach the mapping, mark the segment for removal once the last
+	 * attach is gone, and drop the shared-region bookkeeping that
+	 * track_shared_region() created at create time. */
+	if (obj->sysv_shm.ptr != NULL && obj->sysv_shm.ptr != (void *)-1) {
+		untrack_shared_region((unsigned long)obj->sysv_shm.ptr,
+				      obj->sysv_shm.size);
+		(void)shmdt(obj->sysv_shm.ptr);
+	}
+	(void)shmctl(obj->sysv_shm.id, IPC_RMID, NULL);
+}
+
 void create_sysv_shms(void)
 {
 	struct objhead *head;
@@ -36,6 +49,7 @@ void create_sysv_shms(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_SYSV_SHM);
 	head->dump = dump_sysv_shm;
+	head->destroy = &sysv_shm_destructor;
 
 	for (i = 0; i < ARRAY_SIZE(shmget_flags); i++) {
 		void *p;
