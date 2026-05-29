@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <linux/sched.h>
@@ -633,7 +634,8 @@ pid_t self_cgroup_fork_into_workload(void)
 	if (pid > 0) {
 		char buf[32];
 		int n = snprintf(buf, sizeof(buf), "%d\n", (int)pid);
-		int fd;
+		int fd = -1;
+		bool migrated = false;
 
 		if (n > 0 && (size_t)n < sizeof(buf)) {
 			fd = openat(cg_workload_fd, "cgroup.procs",
@@ -641,11 +643,27 @@ pid_t self_cgroup_fork_into_workload(void)
 			if (fd >= 0) {
 				ssize_t wn = write(fd, buf, (size_t)n);
 
-				if (wn != n)
-					output(1, "self-cgroup: post-fork migrate of pid %d failed: %s\n",
+				if (wn == n)
+					migrated = true;
+				else
+					output(0, "self-cgroup: post-fork migrate of pid %d failed: %s\n",
 					       (int)pid, strerror(errno));
 				close(fd);
+			} else {
+				output(0, "self-cgroup: openat(cgroup.procs) failed for pid %d: %s\n",
+				       (int)pid, strerror(errno));
 			}
+		} else {
+			output(0, "self-cgroup: snprintf failed encoding pid %d\n", (int)pid);
+		}
+
+		if (!migrated) {
+			/* Kill the child we just forked so it doesn't run outside the
+			 * worker memory cap; the caller's spawn-retry path handles the
+			 * -1 return. */
+			kill(pid, SIGKILL);
+			(void)waitpid(pid, NULL, 0);
+			return -1;
 		}
 	}
 	return pid;
