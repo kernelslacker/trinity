@@ -287,7 +287,7 @@ retry:
 	 * immediately when we'd otherwise retry. */
 	if (child->last_syscall_nr != EDGEPAIR_NO_PREV) {
 		if (edgepair_is_cold(child->last_syscall_nr, syscallnr) &&
-		    RAND_BOOL()) {
+		    (rnd_u32() & 1U)) {
 			edgepair_attempts++;
 			if (edgepair_attempts < 20)
 				goto retry;
