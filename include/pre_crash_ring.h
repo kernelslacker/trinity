@@ -102,3 +102,12 @@ void pre_crash_ring_record_canary(struct childdata *child,
 void pre_crash_ring_dump(struct childdata *child);
 
 void pre_crash_ring_dump_all(void);
+
+/*
+ * Slot-recycle reset: drop the rolling-history entries pages back to
+ * the kernel (MADV_DONTNEED on the page-aligned interior) and reset
+ * head to 0 so the post-mortem dumper sees an empty ring until the
+ * next producer publishes.  Call from the per-slot reap path AFTER the
+ * child is fully gone and any forensic dump has already run.
+ */
+void pre_crash_ring_reset(struct pre_crash_ring *ring);

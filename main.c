@@ -24,6 +24,7 @@
 #include "params.h"
 #include "pids.h"
 #include "post-mortem.h"
+#include "pre_crash_ring.h"
 #include "random.h"
 #include "self_cgroup.h"
 #include "shm.h"
@@ -239,6 +240,14 @@ void reap_child(struct childdata *child, int childno)
 					       0, __ATOMIC_RELAXED, __ATOMIC_RELAXED));
 
 	__atomic_store_n(&pids[childno], EMPTY_PIDSLOT, __ATOMIC_RELEASE);
+
+	/* Drop the per-child pre-crash ring's backing pages now that the
+	 * child is fully gone and any forensic dump has already run via
+	 * dump_childdata / pre_crash_ring_dump.  Forensic semantics are
+	 * preserved: reap runs strictly after the child has been waited on,
+	 * and head is reset to 0 so the dumper sees an empty ring until
+	 * the slot's next occupant publishes its first entry. */
+	pre_crash_ring_reset(&child->pre_crash);
 
 	/* Catch the SIGKILL'd-child case where inode_spewer_cleanup()
 	 * never ran in the child.  No-op when the dir doesn't exist. */
