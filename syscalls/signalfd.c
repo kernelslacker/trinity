@@ -68,7 +68,8 @@ static void post_signalfd(struct syscallrecord *rec)
 	if (fd < 0 || fd >= (1 << 20))
 		return;
 
-	publish_resource(OBJ_FD_SIGNALFD, fd, NULL);
+	if (publish_resource(OBJ_FD_SIGNALFD, fd, NULL) == NULL)
+		close(fd);
 }
 
 struct syscallentry syscall_signalfd = {
