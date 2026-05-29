@@ -73,37 +73,56 @@ _Static_assert((int)SF_SYSINFO_MEM_UNIT < (int)SF__MAX,
 #define SENTINEL_MARKER 0xD1AE5EA1D1AE5EA1UL
 
 /*
- * Capture the curated readings into `out`.  Returns true on full
- * success; false if any single probe failed (in which case `out` is
- * left in a partially-filled state and the caller should treat the
- * sample as unusable to avoid comparing torn data).
+ * Capture-family selectors for sentinel_capture().  uname and sysinfo
+ * each take a kernel-global rwsem on entry, so the tick path stays at
+ * one syscall per call by alternating families across ticks (see
+ * divergence_sentinel_tick()).  The first tick after clean_childdata
+ * still passes SENT_CAP_ALL to seed both halves of sentinel_prev.
+ */
+#define SENT_CAP_UNAME		(1U << 0)
+#define SENT_CAP_SYSINFO	(1U << 1)
+#define SENT_CAP_ALL		(SENT_CAP_UNAME | SENT_CAP_SYSINFO)
+
+/*
+ * Capture the curated readings selected by `flags` into `out`.  Returns
+ * true on full success; false if any requested probe failed (in which
+ * case `out` is left in a partially-filled state and the caller should
+ * treat the sample as unusable to avoid comparing torn data).  Fields
+ * outside the requested families are left untouched so a caller that
+ * merges the result into a longer-lived stash keeps the previously
+ * captured values for the deferred family.
  *
  * Direct syscall() throughout so a libc wrapper that caches its result
  * (uname, prlimit) cannot mask a kernel-side regression -- the existing
  * uname.c oracle uses the same approach for the same reason.
  */
-static bool sentinel_capture(struct sentinel_reading *out)
+static bool sentinel_capture(struct sentinel_reading *out, unsigned int flags)
 {
-	struct new_utsname uts;
-	struct sysinfo si;
+	if (flags & SENT_CAP_UNAME) {
+		struct new_utsname uts;
 
-	memset(&uts, 0, sizeof(uts));
-	memset(&si, 0, sizeof(si));
+		memset(&uts, 0, sizeof(uts));
+		if (syscall(SYS_uname, &uts) != 0)
+			return false;
 
-	if (syscall(SYS_uname, &uts) != 0)
-		return false;
-	if (syscall(SYS_sysinfo, &si) != 0)
-		return false;
+		memcpy(out->sysname,  uts.sysname,  sizeof(out->sysname));
+		memcpy(out->release,  uts.release,  sizeof(out->release));
+		memcpy(out->version,  uts.version,  sizeof(out->version));
+		memcpy(out->machine,  uts.machine,  sizeof(out->machine));
+	}
 
-	memcpy(out->sysname,  uts.sysname,  sizeof(out->sysname));
-	memcpy(out->release,  uts.release,  sizeof(out->release));
-	memcpy(out->version,  uts.version,  sizeof(out->version));
-	memcpy(out->machine,  uts.machine,  sizeof(out->machine));
+	if (flags & SENT_CAP_SYSINFO) {
+		struct sysinfo si;
 
-	out->sysinfo_totalram	= si.totalram;
-	out->sysinfo_totalswap	= si.totalswap;
-	out->sysinfo_totalhigh	= si.totalhigh;
-	out->sysinfo_mem_unit	= si.mem_unit;
+		memset(&si, 0, sizeof(si));
+		if (syscall(SYS_sysinfo, &si) != 0)
+			return false;
+
+		out->sysinfo_totalram	= si.totalram;
+		out->sysinfo_totalswap	= si.totalswap;
+		out->sysinfo_totalhigh	= si.totalhigh;
+		out->sysinfo_mem_unit	= si.mem_unit;
+	}
 
 	out->valid = true;
 	return true;
@@ -213,45 +232,77 @@ static void compare_scalar(struct childdata *child,
 void divergence_sentinel_tick(struct childdata *child)
 {
 	struct sentinel_reading cur;
+	unsigned int cap_flags;
 
 	if (child == NULL)
 		return;
 
-	if (!sentinel_capture(&cur))
-		return;
-
 	if (!child->sentinel_prev.valid) {
-		/* First tick (or first after clean_childdata): nothing to
-		 * compare against.  Stash and return. */
+		/* First tick (or first after clean_childdata): seed both
+		 * halves of the stash so the staggered ticks that follow
+		 * always have a baseline for the family they don't refresh. */
+		memset(&cur, 0, sizeof(cur));
+		if (!sentinel_capture(&cur, SENT_CAP_ALL))
+			return;
 		child->sentinel_prev = cur;
 		return;
 	}
 
-	compare_uname_field(child, SF_UNAME_SYSNAME,
-			    child->sentinel_prev.sysname, cur.sysname,
-			    sizeof(cur.sysname));
-	compare_uname_field(child, SF_UNAME_RELEASE,
-			    child->sentinel_prev.release, cur.release,
-			    sizeof(cur.release));
-	compare_uname_field(child, SF_UNAME_VERSION,
-			    child->sentinel_prev.version, cur.version,
-			    sizeof(cur.version));
-	compare_uname_field(child, SF_UNAME_MACHINE,
-			    child->sentinel_prev.machine, cur.machine,
-			    sizeof(cur.machine));
+	/* Stagger uname vs sysinfo across two ticks: each syscall takes a
+	 * kernel-global rwsem, so paying one per tick instead of two halves
+	 * the sentinel's per-tick cost.  Detection latency for a divergence
+	 * in the deferred family slips by one tick -- acceptable because
+	 * the divergences this oracle catches (wild writes into the cached
+	 * reading or the kernel-managed datum behind it) persist. */
+	cap_flags = (child->sentinel_tick_ix++ & 1U)
+			? SENT_CAP_SYSINFO
+			: SENT_CAP_UNAME;
 
-	compare_scalar(child, (unsigned int) SYS_sysinfo, SF_SYSINFO_TOTALRAM,
-		       child->sentinel_prev.sysinfo_totalram,
-		       cur.sysinfo_totalram);
-	compare_scalar(child, (unsigned int) SYS_sysinfo, SF_SYSINFO_TOTALSWAP,
-		       child->sentinel_prev.sysinfo_totalswap,
-		       cur.sysinfo_totalswap);
-	compare_scalar(child, (unsigned int) SYS_sysinfo, SF_SYSINFO_TOTALHIGH,
-		       child->sentinel_prev.sysinfo_totalhigh,
-		       cur.sysinfo_totalhigh);
-	compare_scalar(child, (unsigned int) SYS_sysinfo, SF_SYSINFO_MEM_UNIT,
-		       (unsigned long) child->sentinel_prev.sysinfo_mem_unit,
-		       (unsigned long) cur.sysinfo_mem_unit);
+	memset(&cur, 0, sizeof(cur));
+	if (!sentinel_capture(&cur, cap_flags))
+		return;
 
-	child->sentinel_prev = cur;
+	if (cap_flags & SENT_CAP_UNAME) {
+		compare_uname_field(child, SF_UNAME_SYSNAME,
+				    child->sentinel_prev.sysname, cur.sysname,
+				    sizeof(cur.sysname));
+		compare_uname_field(child, SF_UNAME_RELEASE,
+				    child->sentinel_prev.release, cur.release,
+				    sizeof(cur.release));
+		compare_uname_field(child, SF_UNAME_VERSION,
+				    child->sentinel_prev.version, cur.version,
+				    sizeof(cur.version));
+		compare_uname_field(child, SF_UNAME_MACHINE,
+				    child->sentinel_prev.machine, cur.machine,
+				    sizeof(cur.machine));
+
+		memcpy(child->sentinel_prev.sysname, cur.sysname,
+		       sizeof(cur.sysname));
+		memcpy(child->sentinel_prev.release, cur.release,
+		       sizeof(cur.release));
+		memcpy(child->sentinel_prev.version, cur.version,
+		       sizeof(cur.version));
+		memcpy(child->sentinel_prev.machine, cur.machine,
+		       sizeof(cur.machine));
+	}
+
+	if (cap_flags & SENT_CAP_SYSINFO) {
+		compare_scalar(child, (unsigned int) SYS_sysinfo, SF_SYSINFO_TOTALRAM,
+			       child->sentinel_prev.sysinfo_totalram,
+			       cur.sysinfo_totalram);
+		compare_scalar(child, (unsigned int) SYS_sysinfo, SF_SYSINFO_TOTALSWAP,
+			       child->sentinel_prev.sysinfo_totalswap,
+			       cur.sysinfo_totalswap);
+		compare_scalar(child, (unsigned int) SYS_sysinfo, SF_SYSINFO_TOTALHIGH,
+			       child->sentinel_prev.sysinfo_totalhigh,
+			       cur.sysinfo_totalhigh);
+		compare_scalar(child, (unsigned int) SYS_sysinfo, SF_SYSINFO_MEM_UNIT,
+			       (unsigned long) child->sentinel_prev.sysinfo_mem_unit,
+			       (unsigned long) cur.sysinfo_mem_unit);
+
+		child->sentinel_prev.sysinfo_totalram  = cur.sysinfo_totalram;
+		child->sentinel_prev.sysinfo_totalswap = cur.sysinfo_totalswap;
+		child->sentinel_prev.sysinfo_totalhigh = cur.sysinfo_totalhigh;
+		child->sentinel_prev.sysinfo_mem_unit  = cur.sysinfo_mem_unit;
+	}
 }

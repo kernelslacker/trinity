@@ -450,8 +450,11 @@ void clean_childdata(struct childdata *child)
 
 	/* Drop any sentinel reading from the previous occupant of this slot
 	 * so the first periodic_work tick re-populates without comparing
-	 * against state captured under a different child's environment. */
+	 * against state captured under a different child's environment.
+	 * Reset the staggered-capture tick index too so the first post-
+	 * populate tick starts at parity 0 (uname) deterministically. */
 	child->sentinel_prev.valid = false;
+	child->sentinel_tick_ix = 0;
 
 	/* Reset the per-child cmp_hints seen-bloom so a fresh occupant of
 	 * the slot does not inherit dedup-refresh skips that belong to the

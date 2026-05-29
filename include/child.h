@@ -563,6 +563,14 @@ struct childdata {
 	 * first sample populates without a (meaningless) compare. */
 	struct sentinel_reading sentinel_prev;
 
+	/* Per-child tick counter for the divergence sentinel.  Bumped on
+	 * each tick after the initial full-populate; parity selects which
+	 * syscall family is refreshed this tick (even=uname, odd=sysinfo)
+	 * so a tick pays one of the two kernel-rwsem syscalls instead of
+	 * both.  Reset in clean_childdata so a fresh slot occupant starts
+	 * the staggered cycle from a known phase. */
+	unsigned int sentinel_tick_ix;
+
 	/* Per-child seen-bloom over (cmp_ip, value, size) tuples consulted
 	 * by cmp_hints_collect() to short-circuit pool_add_locked's per-call
 	 * linear-scan dedup when this child has already pushed the tuple into
