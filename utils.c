@@ -933,7 +933,7 @@ static unsigned char last_reject_have_syscall;
 
 bool range_overlaps_shared(unsigned long addr, unsigned long len)
 {
-	unsigned long end, check_end, first, last, bit;
+	unsigned long end, check_end, first, last;
 	bool overlap = false;
 	unsigned long n;
 	struct childdata *child;
@@ -968,10 +968,49 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len)
 		else
 			last = first;
 
-		for (bit = first; bit <= last; bit++) {
-			if (shared_bitmap_test(bit)) {
-				overlap = true;
-				break;
+		/* Word-at-a-time scan over shared_region_bitmap[]:
+		 * mask the partial first/last words, then sweep any
+		 * middle words and skip the zero-word common case in a
+		 * single load.  A mostly-empty bitmap with a multi-MiB
+		 * query length now costs one load per 64 chunks (128 MiB
+		 * of VA), not one per chunk. */
+		{
+			unsigned long first_word = first / SHARED_BITMAP_BITS_PER_WORD;
+			unsigned long last_word  = last  / SHARED_BITMAP_BITS_PER_WORD;
+			unsigned long first_off  = first % SHARED_BITMAP_BITS_PER_WORD;
+			unsigned long last_off   = last  % SHARED_BITMAP_BITS_PER_WORD;
+			unsigned long w;
+
+			if (first_word == last_word) {
+				unsigned long width = last_off - first_off + 1;
+				unsigned long mask  = (width == SHARED_BITMAP_BITS_PER_WORD)
+					? ~0UL
+					: (((1UL << width) - 1UL) << first_off);
+
+				if (shared_region_bitmap[first_word] & mask)
+					overlap = true;
+			} else {
+				unsigned long head_mask = ~0UL << first_off;
+
+				if (shared_region_bitmap[first_word] & head_mask) {
+					overlap = true;
+				} else {
+					for (w = first_word + 1; w < last_word; w++) {
+						if (shared_region_bitmap[w]) {
+							overlap = true;
+							break;
+						}
+					}
+					if (!overlap) {
+						unsigned long tail_width = last_off + 1;
+						unsigned long tail_mask  = (tail_width == SHARED_BITMAP_BITS_PER_WORD)
+							? ~0UL
+							: ((1UL << tail_width) - 1UL);
+
+						if (shared_region_bitmap[last_word] & tail_mask)
+							overlap = true;
+					}
+				}
 			}
 		}
 	}
