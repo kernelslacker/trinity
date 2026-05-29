@@ -1208,6 +1208,9 @@ void set_object_fd(struct object *obj, enum objecttype type, int fd)
 	case OBJ_FD_KVM_SYSTEM:	obj->kvmsysobj.fd = fd; break;
 	case OBJ_FD_KVM_VM:	obj->kvmvmobj.fd = fd; break;
 	case OBJ_FD_KVM_VCPU:	obj->kvmvcpuobj.fd = fd; break;
+	case OBJ_FD_SIGNALFD:	obj->signalfdobj.fd = fd; break;
+	case OBJ_FD_MOUNT:	obj->mountfdobj.fd = fd; break;
+	case OBJ_FD_CGROUP:	obj->cgroupfdobj.fd = fd; break;
 	default:		break;
 	}
 }
