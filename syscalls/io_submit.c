@@ -158,6 +158,10 @@ static void post_io_submit(struct syscallrecord *rec)
 	iocbpp = (struct iocb **) rec->post_state;
 	if (iocbpp == NULL)
 		return;
+	if (looks_like_corrupted_ptr(rec, iocbpp)) {
+		rec->post_state = 0;
+		return;
+	}
 
 	/*
 	 * Publish the (ctx, aio_data) cookie for every iocb the kernel
@@ -172,6 +176,8 @@ static void post_io_submit(struct syscallrecord *rec)
 		struct object *obj;
 
 		if (iocb == NULL)
+			continue;
+		if (looks_like_corrupted_ptr(rec, iocb))
 			continue;
 
 		obj = alloc_object();
