@@ -82,6 +82,8 @@ static void scsi_sg_io_sanitise(struct syscallrecord *rec)
 	struct sgio *sgio;
 
 	sgio = (struct sgio *) get_address();
+	if (sgio == NULL)
+		return;
 
 	sgio->cmd[0] = 0x12;
 	sgio->cmd[3] = 0x2;

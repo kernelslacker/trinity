@@ -139,6 +139,8 @@ static void sg_io_sanitise(struct syscallrecord *rec)
 	struct sg_io_buf *sgio;
 
 	sgio = (struct sg_io_buf *) get_address();
+	if (sgio == NULL)
+		return;
 
 	/* INQUIRY (0x12) with a small allocation length keeps the cmd
 	 * structurally valid without depending on target state. */
