@@ -124,7 +124,14 @@ struct deferred_entry {
  * Process-local: zero-initialised BSS, COW-shared at fork, written
  * single-threaded by the owning child.  No locking needed.
  */
-#define ALLOC_TRACK_SIZE	256
+/* Bumped 256 -> 4096 on 2026-05-29 after observing
+ * maps_reject_alloc_track_miss at 354K/s (1.90x pool_empty) in fuzz.
+ * Long-lived MMAP_ANON pool entries were rotating out from under
+ * mm/maps.c:103's alloc_track_lookup gate before child cycles
+ * completed, making get_map_handle false-reject legitimate slots and
+ * burn retry budget.  4096 leaves headroom for pool entries plus
+ * recent zmalloc_tracked churn without rotating live entries out. */
+#define ALLOC_TRACK_SIZE	4096
 
 static void *alloc_track[ALLOC_TRACK_SIZE];
 static unsigned int alloc_track_head;
@@ -148,7 +155,7 @@ static unsigned int alloc_track_head;
  * it would be a correctness bug in the deferred-free gate, the very
  * thing the opt-in zmalloc_tracked() set was built around.
  *
- * 1024 slots vs ALLOC_TRACK_SIZE=256 -> 0.25 max load factor, keeping
+ * 16384 slots vs ALLOC_TRACK_SIZE=4096 -> 0.25 max load factor, keeping
  * the average probe length ~1.3 even at full occupancy.  Power of two
  * so the modulo collapses to a bitmask.  BSS-resident (no mprotect
  * bracket, not inside the mmap'd ring): the ring is mmap'd-shared
@@ -176,7 +183,7 @@ static unsigned int alloc_track_head;
  * implicit-track design rationale further up, the safer direction
  * to err.
  */
-#define ALLOC_TRACK_HASH_SHIFT	10
+#define ALLOC_TRACK_HASH_SHIFT	14
 #define ALLOC_TRACK_HASH_SIZE	(1U << ALLOC_TRACK_HASH_SHIFT)
 #define ALLOC_TRACK_HASH_MASK	(ALLOC_TRACK_HASH_SIZE - 1U)
 
@@ -198,7 +205,7 @@ static inline unsigned int alloc_track_hash_index(void *ptr)
  * no-op.  Matches the "ptr appears in array iff present in hash"
  * mirror semantics when an alloc_track[] write happens to land the
  * same pointer in the same slot it already occupied.  Bounded loop:
- * occupancy is capped at ALLOC_TRACK_SIZE (256) << table size, so a
+ * occupancy is capped at ALLOC_TRACK_SIZE (4096) << table size, so a
  * full table is impossible from the mirror path; the bound is a
  * paranoia rail to keep a corruption-induced runaway from hanging.
  */
