@@ -249,12 +249,28 @@ int get_random_fd(void)
 
 	/* return the same fd as last time if we haven't over-used it yet. */
 regen:
-	if (outer_retries++ >= GET_RANDOM_FD_BUDGET) {
-		__atomic_add_fetch(&shm->stats.fd_random_exhausted, 1,
-				   __ATOMIC_RELAXED);
-		outputerr("get_random_fd: outer retry budget (%u) exhausted, "
-			  "returning -1\n", GET_RANDOM_FD_BUDGET);
-		return -1;
+	{
+		/*
+		 * Once the outer has already churned through several passes
+		 * without producing a usable fd, additional iterations at the
+		 * full budget are unlikely to find new candidates — decay the
+		 * effective bound so we bail out of the exhaustion cascade
+		 * sooner instead of burning the full 64 sweeps.
+		 */
+		unsigned int effective_budget = GET_RANDOM_FD_BUDGET;
+
+		if (outer_retries >= 4)
+			effective_budget = GET_RANDOM_FD_BUDGET / 2;
+		if (outer_retries >= 5)
+			effective_budget = GET_RANDOM_FD_BUDGET / 4;
+
+		if (outer_retries++ >= effective_budget) {
+			__atomic_add_fetch(&shm->stats.fd_random_exhausted, 1,
+					   __ATOMIC_RELAXED);
+			outputerr("get_random_fd: outer retry budget (%u) exhausted, "
+				  "returning -1\n", GET_RANDOM_FD_BUDGET);
+			return -1;
+		}
 	}
 
 	if (child->fd_lifetime == 0) {
