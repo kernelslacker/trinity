@@ -630,39 +630,36 @@ static unsigned int natural_width(unsigned long val)
 int struct_field_for_cmp(const struct struct_desc *desc, unsigned long val)
 {
 	unsigned int want = natural_width(val);
-	unsigned int i, count, pick;
+	unsigned int i;
+	unsigned int exact_seen = 0, fit_seen = 0;
+	int exact_pick = -1, fit_pick = -1;
 
 	/*
-	 * Two passes: prefer exact size matches, fall back to fields large
-	 * enough to hold the value.  Within each pass pick uniformly at random
-	 * so every qualifying field gets exercised.
+	 * Single-pass reservoir sample with two reservoirs:
+	 *   exact_pick — uniform random among fields where size == want
+	 *   fit_pick   — uniform random among fields where size >= want
+	 * Exact match preferred; fit fallback only used when no exact exists.
+	 * One scan of desc->fields[] instead of up to four.
 	 */
-	count = 0;
 	for (i = 0; i < desc->num_fields; i++) {
-		if (desc->fields[i].size == want)
-			count++;
-	}
-	if (count) {
-		pick = rnd_modulo_u32(count);
-		for (i = 0; i < desc->num_fields; i++) {
-			if (desc->fields[i].size == want && pick-- == 0)
-				return (int) i;
+		unsigned int fsize = desc->fields[i].size;
+
+		if (fsize == want) {
+			exact_seen++;
+			if (rnd_modulo_u32(exact_seen) == 0)
+				exact_pick = (int)i;
+		}
+		if (fsize >= want) {
+			fit_seen++;
+			if (rnd_modulo_u32(fit_seen) == 0)
+				fit_pick = (int)i;
 		}
 	}
 
-	count = 0;
-	for (i = 0; i < desc->num_fields; i++) {
-		if (desc->fields[i].size >= want)
-			count++;
-	}
-	if (count) {
-		pick = rnd_modulo_u32(count);
-		for (i = 0; i < desc->num_fields; i++) {
-			if (desc->fields[i].size >= want && pick-- == 0)
-				return (int) i;
-		}
-	}
-
+	if (exact_pick >= 0)
+		return exact_pick;
+	if (fit_pick >= 0)
+		return fit_pick;
 	return -1;
 }
 
