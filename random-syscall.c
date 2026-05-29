@@ -738,8 +738,8 @@ static bool set_syscall_nr_edgepair_chain(struct syscallrecord *rec,
 	if (no_syscalls_enabled() == true)
 		return false;
 
-	mode = RAND_BOOL() ? EDGEPAIR_SCORE_EXPLORATION
-			   : EDGEPAIR_SCORE_EXPLOITATION;
+	mode = (rnd_u32() & 1U) ? EDGEPAIR_SCORE_EXPLORATION
+				: EDGEPAIR_SCORE_EXPLOITATION;
 
 	for (sample = 0; sample < EDGEPAIR_CHAIN_SAMPLE_K; sample++) {
 		unsigned int idx = rnd_modulo_u32(nr_syscalls);
