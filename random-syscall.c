@@ -635,8 +635,8 @@ static bool set_syscall_nr_edgepair_frontier(struct syscallrecord *rec,
 	}
 
 	have_prev = (child->last_syscall_nr != EDGEPAIR_NO_PREV);
-	mode = RAND_BOOL() ? EDGEPAIR_SCORE_EXPLORATION
-			   : EDGEPAIR_SCORE_EXPLOITATION;
+	mode = (rnd_u32() & 1U) ? EDGEPAIR_SCORE_EXPLORATION
+				: EDGEPAIR_SCORE_EXPLOITATION;
 
 retry:
 	if (no_syscalls_enabled() == true) {
