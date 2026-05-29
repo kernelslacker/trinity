@@ -751,7 +751,7 @@ static void iter_devlink_port_churn(unsigned int iter_idx,
 	if (sockfd >= 0) {
 		apply_timeouts(sockfd);
 		(void)setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE,
-				 psp_iface, (socklen_t)strlen(psp_iface));
+				 psp_iface, (socklen_t)(strlen(psp_iface) + 1));
 		memset(&peer, 0, sizeof(peer));
 		peer.sin_family      = AF_INET;
 		peer.sin_port        = htons(0xCAFE);
@@ -882,10 +882,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	gopts.recv_timeo_s = 1;
 	rc = genl_open(&psp_ctx, &gopts);
 	if (rc != 0) {
-		if (rc < 0 && errno_is_unsupported(-rc))
-			ns_unsupported_psp_key_rotate = true;
-		else
-			ns_unsupported_psp_key_rotate = true;
+		ns_unsupported_psp_key_rotate = true;
 		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
