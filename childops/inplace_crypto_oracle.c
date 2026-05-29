@@ -223,7 +223,8 @@ static int open_oracle_file(char *out_path, size_t path_cap,
 static bool oracle_check_unchanged(const char *path,
 				   const unsigned char *baseline,
 				   size_t baseline_len, size_t *out_off,
-				   unsigned char *out_after)
+				   unsigned char *out_after,
+				   size_t *out_after_valid)
 {
 	unsigned char after[ORACLE_FILE_CAP];
 	int fd = open(path, O_RDONLY | O_CLOEXEC);
@@ -246,6 +247,7 @@ static bool oracle_check_unchanged(const char *path,
 			copy = avail;
 		memcpy(out_after, after + i, copy);
 		*out_off = i;
+		*out_after_valid = copy;
 		return false;
 	}
 	return true;
@@ -253,13 +255,15 @@ static bool oracle_check_unchanged(const char *path,
 
 static void log_corruption(enum oracle_target t, const char *path,
 			   size_t off, const unsigned char *before,
-			   const unsigned char *after)
+			   const unsigned char *after, size_t valid)
 {
 	char hex_before[ORACLE_DIFF_WINDOW * 3 + 1];
 	char hex_after[ORACLE_DIFF_WINDOW * 3 + 1];
 	size_t i;
 
-	for (i = 0; i < ORACLE_DIFF_WINDOW; i++) {
+	hex_before[0] = '\0';
+	hex_after[0]  = '\0';
+	for (i = 0; i < valid; i++) {
 		snprintf(hex_before + i * 3, 4, "%02x ", before[i]);
 		snprintf(hex_after  + i * 3, 4, "%02x ", after[i]);
 	}
@@ -649,7 +653,7 @@ bool inplace_crypto_oracle(struct childdata *child)
 	unsigned char baseline[ORACLE_FILE_CAP];
 	unsigned char after_window[ORACLE_DIFF_WINDOW];
 	char path[64];
-	size_t baseline_len = 0, diff_off = 0;
+	size_t baseline_len = 0, diff_off = 0, after_valid = 0, dump_len;
 	enum oracle_target chosen = TGT_NR;
 	unsigned int i;
 	int file_fd;
@@ -683,8 +687,14 @@ bool inplace_crypto_oracle(struct childdata *child)
 	close(file_fd);
 
 	if (!oracle_check_unchanged(path, baseline, baseline_len,
-				    &diff_off, after_window))
+				    &diff_off, after_window,
+				    &after_valid)) {
+		dump_len = baseline_len - diff_off;
+		if (dump_len > after_valid)
+			dump_len = after_valid;
 		log_corruption(chosen, path, diff_off,
-			       baseline + diff_off, after_window);
+			       baseline + diff_off, after_window,
+			       dump_len);
+	}
 	return true;
 }
