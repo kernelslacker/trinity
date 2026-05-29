@@ -2190,7 +2190,7 @@ void child_process(struct childdata *child, int childno)
 		const bool watch_taint = (is_alt_op && child->tainted_fd >= 0);
 		unsigned long tainted_before = 0;
 		if (watch_taint)
-			tainted_before = read_tainted_mask(child->tainted_fd);
+			tainted_before = child->last_tainted;
 
 		/* Per-childop KCOV bracket.  Wraps op_fn (and the
 		 * run_sequence_chain fallthrough, which is itself ruled
@@ -2234,8 +2234,8 @@ void child_process(struct childdata *child, int childno)
 				__atomic_add_fetch(
 					&shm->stats.taint_transitions[child->op_type],
 					1, __ATOMIC_RELAXED);
-				child->last_tainted = tainted_after;
 			}
+			child->last_tainted = tainted_after;
 		}
 
 		if (is_alt_op) {
