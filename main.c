@@ -923,7 +923,7 @@ static void stall_genocide(void)
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
-		if (RAND_BOOL()) {
+		if ((rnd_u32() & 1U)) {
 			if (pid_alive(pid) == true) {
 				kill_pid(pid);
 				killed++;
