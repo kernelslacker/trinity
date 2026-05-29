@@ -61,10 +61,12 @@ static void sigint_handler(__unused__ int sig, siginfo_t *info, __unused__ void 
 static __attribute__((no_sanitize("address")))
 void sighandler(int sig)
 {
-	/* Every signal except SIGALRM, SIGXCPU, and those handled
-	 * separately (SIGINT, SIGCHLD, etc.) exits the child. */
-	(void)sig;
-	_exit(EXIT_SUCCESS);
+	/* Restore default disposition and re-raise so the kernel emits
+	 * the usual crash artefacts (signal exit, dmesg log, core if
+	 * enabled).  Silent _exit(SUCCESS) hid real fuzzer finds because
+	 * the parent saw WIFEXITED(0) instead of WIFSIGNALED(sig). */
+	(void)signal(sig, SIG_DFL);
+	raise(sig);
 }
 
 /*
