@@ -59,7 +59,6 @@ void create_sysv_shms(void)
 		}
 		obj->sysv_shm.id = id;
 		obj->sysv_shm.flags = flags;
-		obj->sysv_shm.size = size;
 
 		p = shmat(id, NULL, 0);
 		if (p == (void *) -1)
@@ -72,7 +71,27 @@ void create_sysv_shms(void)
 			continue;
 		}
 		obj->sysv_shm.ptr = p;
-		track_shared_region((unsigned long)p, size);
+
+		/*
+		 * The kernel rounds hugetlb segments up to a multiple of
+		 * the VMA's hugepage size; the size we requested may be
+		 * smaller than the actual VMA extent.  Query the post-
+		 * allocation size via IPC_STAT so the recorded size and
+		 * the tracked shared region match the kernel's view.
+		 * Anything walking shared_regions[] with tight-extent
+		 * assumptions (range_overlaps_shared, range_in_tracked_shared)
+		 * needs the real extent or it will miss addresses inside
+		 * the VMA but past the requested size.
+		 */
+		{
+			struct shmid_ds buf;
+			size_t real_size = size;
+
+			if (shmctl(id, IPC_STAT, &buf) == 0 && buf.shm_segsz > 0)
+				real_size = (size_t) buf.shm_segsz;
+			obj->sysv_shm.size = real_size;
+			track_shared_region((unsigned long)p, real_size);
+		}
 
 		add_object(obj, OBJ_GLOBAL, OBJ_SYSV_SHM);
 	}
