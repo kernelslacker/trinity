@@ -81,6 +81,7 @@
 
 #include "child.h"
 #include "compat.h"
+#include "deferred-free.h"
 #include "net.h"
 #include "params.h"		/* no_domains[] */
 #include "random.h"
@@ -236,11 +237,11 @@ static void run_bind_then_sendmsg(const struct socket_triplet *t)
 			 * combinations even with a coherent sockaddr;
 			 * treat as kernel-rejected for symmetry. */
 			bump_rejected(AP_BIND_THEN_SENDMSG);
-			free(sa);
+			tracked_free_now(sa);
 			close(fd);
 			return;
 		}
-		free(sa);
+		tracked_free_now(sa);
 	}
 
 	generate_rand_bytes(buf, sizeof(buf));
@@ -299,7 +300,7 @@ static void run_connect_no_listen(const struct socket_triplet *t)
 	else
 		bump_unexpected_success(AP_CONNECT_NO_LISTEN);
 
-	free(sa);
+	tracked_free_now(sa);
 	close(fd);
 }
 
