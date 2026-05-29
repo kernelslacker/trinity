@@ -51,6 +51,16 @@ fi
 # TRINITY_MEM_MAX / TRINITY_MEM_HIGH / TRINITY_MEM_SWAP_MAX (any unit
 # systemd accepts, e.g. "8G", "512M").  Set TRINITY_NO_CGROUP=1 to skip
 # the outer scope entirely; trinity's self_cgroup is unaffected.
+
+# Lift RLIMIT_NOFILE before exec.  Trinity's 16-child fan-out plus per-child
+# netlink/kcov/fileindex/iommufd/landlock pressure exhausts the default 1024
+# soft limit at startup (observed: genetlink nl_open EMFILE during init,
+# get_random_fd outer retry budget exhausted).  Done here rather than via
+# systemd-run -p because scope units reject LimitNOFILE — it's a service-
+# unit-only property.  Best-effort: silently no-op if the hard limit is
+# already below 65536, leaving the previous soft limit in place.
+ulimit -n 65536 2>/dev/null || true
+
 cmd=(./trinity "$@")
 
 if [[ -z "${TRINITY_NO_CGROUP:-}" ]]; then
@@ -74,9 +84,8 @@ if [[ -z "${TRINITY_NO_CGROUP:-}" ]]; then
             mem_high=${TRINITY_MEM_HIGH:-$((mem_total_kb * 50 / 100))K}
             mem_swap_max=${TRINITY_MEM_SWAP_MAX:-$((mem_total_kb * 20 / 100))K}
 
-	    echo "trinity: wrapping in systemd scope (MemoryMax=${mem_max}, MemoryHigh=${mem_high}, MemorySwapMax=${mem_swap_max}, LimitNOFILE=65536)"
+            echo "trinity: wrapping in systemd scope (MemoryMax=${mem_max}, MemoryHigh=${mem_high}, MemorySwapMax=${mem_swap_max})"
             cmd=(systemd-run --user --scope --quiet
-		-p LimitNOFILE=65536
                 -p MemoryMax="${mem_max}"
                 -p MemoryHigh="${mem_high}"
                 -p MemorySwapMax="${mem_swap_max}"
