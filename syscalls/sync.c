@@ -8,5 +8,5 @@ struct syscallentry syscall_sync = {
 	.num_args = 0,
 	.group = GROUP_VFS,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = EXPENSIVE,
+	.flags = AVOID_SYSCALL,	/* whole-system flush, blocks long enough to trip the watchdog regularly */
 };
