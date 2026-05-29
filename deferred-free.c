@@ -816,6 +816,20 @@ void deferred_free_enqueue(void *ptr)
 		}
 	}
 
+	/*
+	 * Ring is logically full but the full-ring eviction above found
+	 * nothing evictable (every slot's ptr was scribbled to NULL by a
+	 * fuzzed value-result syscall).  The tick-loop reconciliation
+	 * will catch up; for this call, re-lock the ring and fall back to
+	 * a plain free so we don't ctzll(0) into UB territory and write
+	 * one element past the ring.
+	 */
+	if (occupied_mask == ~0ULL) {
+		ring_lock();
+		free(ptr);
+		return;
+	}
+
 	/* Find an empty slot.  After the full-ring eviction above, at
 	 * least one bit in occupied_mask is clear, so ~occupied_mask is
 	 * non-zero and __builtin_ctzll's UB-on-zero case can't fire. */
@@ -1023,8 +1037,22 @@ void deferred_free_tick(void)
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
 		void *ptr;
 
-		if (ring[i].ptr == NULL)
+		if (ring[i].ptr == NULL) {
+			/*
+			 * Stomped corpse: a fuzzed value-result syscall
+			 * scribbled this slot's ptr to NULL while it was
+			 * still marked occupied.  Reconcile the bookkeeping
+			 * so occupied_mask and ring_count track reality;
+			 * otherwise accumulated stomps drive occupied_mask
+			 * to ~0ULL and the enqueue path's __builtin_ctzll
+			 * lands on UB.
+			 */
+			if (occupied_mask & (1ULL << i)) {
+				occupied_mask &= ~(1ULL << i);
+				ring_count--;
+			}
 			continue;
+		}
 
 		if (ring[i].ttl > 0) {
 			ring[i].ttl--;
