@@ -219,6 +219,16 @@ static time_t canary_last_summary = 0;
  * Helpers.
  * -------------------------------------------------------------------- */
 
+/* Wall-clock-skew-immune second counter for state-transition stamps and
+ * the summary throttle.  CLOCK_MONOTONIC cannot fail on a supported
+ * kernel, so the return is taken unconditionally. */
+static time_t monotonic_seconds(void)
+{
+	struct timespec ts;
+	(void)clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ts.tv_sec;
+}
+
 static unsigned int window_iters_resolved(void)
 {
 	unsigned int w = canary_window_iters;
@@ -311,7 +321,7 @@ static void kill_canary_slot_children(void)
 static void enter_canarying(enum child_op_type op)
 {
 	struct canary_op_state *s;
-	time_t now = time(NULL);
+	time_t now = monotonic_seconds();
 
 	if (op == CHILD_OP_SYSCALL || op >= NR_CHILD_OP_TYPES)
 		return;
@@ -355,7 +365,7 @@ static void leave_canarying_promote(enum child_op_type op,
 	struct canary_op_state *s = &canary_ops[op];
 
 	s->state = CANARY_STATE_PROMOTED;
-	s->last_state_transition = time(NULL);
+	s->last_state_transition = monotonic_seconds();
 	s->total_promotions++;
 	push_promotion(op);
 
@@ -374,7 +384,7 @@ static void leave_canarying_demote(enum child_op_type op,
 	struct canary_op_state *s = &canary_ops[op];
 
 	s->state = CANARY_STATE_DEMOTED;
-	s->last_state_transition = time(NULL);
+	s->last_state_transition = monotonic_seconds();
 	s->total_demotions++;
 
 	/* Flip the gate back to dormant so the random picker stops
@@ -417,7 +427,7 @@ static bool pick_next_canary(enum child_op_type *out)
 	 * or skipped above), PROMOTED, and DEMOTED entries still inside
 	 * their backoff window.  A DEMOTED whose backoff has elapsed
 	 * transitions back to DORMANT here and is then eligible. */
-	now = time(NULL);
+	now = monotonic_seconds();
 	for (safety = 0; safety < NR_CHILD_OP_TYPES; safety++) {
 		canary_fifo_cursor =
 			(enum child_op_type)((canary_fifo_cursor + 1) %
@@ -573,7 +583,7 @@ void canary_queue_init(void)
 	canary_slots_parked = false;
 	canary_promotion_ring_count = 0;
 	canary_promotion_ring_head = 0;
-	canary_last_summary = time(NULL);
+	canary_last_summary = monotonic_seconds();
 
 	/* Gate the live state on the operator flags AND on having at
 	 * least one slot to canary on.  Both kill switches map to the
@@ -713,7 +723,7 @@ void canary_queue_summary(void)
 	if (!canary_queue_live)
 		return;
 
-	now = time(NULL);
+	now = monotonic_seconds();
 	if (now - canary_last_summary < CANARY_SUMMARY_INTERVAL_SEC)
 		return;
 	canary_last_summary = now;
