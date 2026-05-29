@@ -105,7 +105,7 @@ enum edgepair_pair_state edgepair_state(unsigned int prev_nr,
 		 * window.  Plain MOV on x86-64. */
 		total = __atomic_load_n(&edgepair_published->total_pair_calls,
 					__ATOMIC_ACQUIRE);
-		last = e->last_new_at;
+		last = __atomic_load_n(&e->last_new_at, __ATOMIC_RELAXED);
 		/* A publisher racing us can update this slot's last_new_at
 		 * to the NEXT total *after* our acquire-load above, so
 		 * last > total is possible and means the pair just
