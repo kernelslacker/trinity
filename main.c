@@ -13,6 +13,7 @@
 #include <time.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "cmp_hints.h"
 #include "debug.h"
 #include "edgepair_ring.h"
@@ -267,7 +268,7 @@ static void reap_dead_kids(void)
 	if (children == NULL)
 		return;
 
-	/* First pass: drain every reapable child via wait4(-1).
+	/* First pass: drain every reapable child via waitpid(-1).
 	 *
 	 * SIGCHLD is edge-triggered: when N children die between handler
 	 * invocations the kernel still queues only one signal, so a reap
@@ -284,7 +285,7 @@ static void reap_dead_kids(void)
 	 * only one slot was actually fuzzing — net throughput ~1/16th of
 	 * nominal, KCOV edge growth flatlined.
 	 *
-	 * wait4(-1) reaps whatever the kernel has, regardless of our
+	 * waitpid(-1) reaps whatever the kernel has, regardless of our
 	 * bookkeeping.  Loop with WNOHANG until it returns 0 (nothing more
 	 * pending) or -1 (ECHILD, no children at all — defensive; should
 	 * not happen while main is fuzzing).  Bound to a sanity cap so a
@@ -294,7 +295,7 @@ static void reap_dead_kids(void)
 		int childstatus;
 		int childno;
 
-		wpid = wait4(-1, &childstatus, WNOHANG | WUNTRACED | WCONTINUED, NULL);
+		wpid = waitpid_eintr(-1, &childstatus, WNOHANG | WUNTRACED | WCONTINUED);
 		if (wpid <= 0)
 			break;
 
@@ -313,7 +314,7 @@ static void reap_dead_kids(void)
 	}
 
 	/* Second pass: catch slots whose pid is gone but our bookkeeping
-	 * never noticed — e.g. the wait4 drain above reaped a slotted pid
+	 * never noticed — e.g. the waitpid drain above reaped a slotted pid
 	 * via the untracked path, or the child died without routing
 	 * through our normal exit accounting.  Without this the slot
 	 * stays occupied forever and the spawn path can't refill it. */
@@ -640,7 +641,7 @@ static void register_zombie_slot(int childno, pid_t pid)
 	 * silently.  Saves the unkillable-log + stack/syscall dump +
 	 * zombie_pids[] bookkeeping that would otherwise fire and then
 	 * unwind on the very next process_zombie_pending() pass. */
-	wpid = waitpid(pid, NULL, WNOHANG);
+	wpid = waitpid_eintr(pid, NULL, WNOHANG);
 	if (wpid == pid || (wpid == -1 && errno == ECHILD)) {
 		if (pidstatfiles[childno] >= 0) {
 			close(pidstatfiles[childno]);
@@ -712,7 +713,7 @@ static void process_zombie_pending(void)
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
-		wpid = waitpid(pid, NULL, WNOHANG);
+		wpid = waitpid_eintr(pid, NULL, WNOHANG);
 		if (wpid == pid) {
 			retire = true;
 		} else if (wpid == -1 && errno == ECHILD) {
@@ -1408,7 +1409,7 @@ static void handle_children(void)
 		if (pid == EMPTY_PIDSLOT)
 			continue;
 
-		pid = waitpid(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
+		pid = waitpid_eintr(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
 		if (pid > 0)
 			collected++;
 		handle_child(i, pid, childstatus);
