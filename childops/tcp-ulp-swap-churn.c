@@ -301,7 +301,7 @@ static void reap_acceptor(pid_t pid)
 		return;
 
 	while (waited++ < 8) {
-		pid_t r = waitpid(pid, &status, WNOHANG);
+		pid_t r = waitpid_eintr(pid, &status, WNOHANG);
 		if (r == pid || r < 0)
 			return;
 		{
