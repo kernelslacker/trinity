@@ -19,11 +19,14 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 
 #include "arch.h"
@@ -537,4 +540,99 @@ bool edgepair_load_from_file(const char *path)
 	       (unsigned long)hdr.pairs_tracked,
 	       (unsigned long)hdr.total_pair_calls, path);
 	return true;
+}
+
+/*
+ * Build a default per-arch+per-kernel edgepair-dump path under
+ * $XDG_CACHE_HOME/trinity/edgepair (or $HOME/.cache/trinity/edgepair).
+ * Creates the parent directory tree on demand.  The returned pointer
+ * is owned by a static buffer.  Returns NULL on failure.
+ *
+ * Without this, callers fell back to a bare "edgepair.dump" relative
+ * path which resolved under trinity's CWD -- the same directory a fuzz
+ * child can stomp via a randomly-selected chmod/chown/unlink on the
+ * inherited cwd, producing a mid-run "Permission denied" the next time
+ * the parent tries to refresh the dump.
+ */
+const char *edgepair_default_path(void)
+{
+	static char pathbuf[PATH_MAX];
+	const char *xdg = getenv("XDG_CACHE_HOME");
+	const char *home = getenv("HOME");
+	char dir[PATH_MAX];
+	const char *arch;
+	struct utsname u;
+	char *r;
+	int ret;
+
+#if defined(__x86_64__)
+	arch = "x86_64";
+#elif defined(__i386__)
+	arch = "i386";
+#elif defined(__aarch64__)
+	arch = "aarch64";
+#elif defined(__arm__)
+	arch = "arm";
+#elif defined(__powerpc64__)
+	arch = "ppc64";
+#elif defined(__powerpc__)
+	arch = "ppc";
+#elif defined(__s390x__)
+	arch = "s390x";
+#elif defined(__mips__)
+	arch = "mips";
+#elif defined(__sparc__)
+	arch = "sparc";
+#elif defined(__riscv) || defined(__riscv__)
+	arch = "riscv64";
+#else
+	arch = "unknown";
+#endif
+
+	if (uname(&u) != 0)
+		return NULL;
+	for (r = u.release; *r; r++) {
+		if (*r == '/')
+			*r = '_';
+	}
+
+	if (xdg && xdg[0] == '/') {
+		ret = snprintf(dir, sizeof(dir), "%s/trinity/edgepair", xdg);
+	} else if (home && home[0] == '/') {
+		ret = snprintf(dir, sizeof(dir),
+			"%s/.cache/trinity/edgepair", home);
+	} else {
+		return NULL;
+	}
+	if (ret < 0 || (size_t)ret >= sizeof(dir))
+		return NULL;
+
+	/* mkdir -p the leaf directory.  We don't care about race losses
+	 * (EEXIST is fine), only about the final dir actually existing. */
+	{
+		char *p;
+		mode_t saved_umask = umask(0);
+
+		for (p = dir + 1; *p; p++) {
+			if (*p == '/') {
+				*p = '\0';
+				if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
+					*p = '/';
+					(void)umask(saved_umask);
+					return NULL;
+				}
+				*p = '/';
+			}
+		}
+		if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
+			(void)umask(saved_umask);
+			return NULL;
+		}
+		(void)umask(saved_umask);
+	}
+
+	ret = snprintf(pathbuf, sizeof(pathbuf), "%s/%s-%s", dir, arch, u.release);
+	if (ret < 0 || (size_t)ret >= sizeof(pathbuf))
+		return NULL;
+	return pathbuf;
 }

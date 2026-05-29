@@ -621,7 +621,12 @@ static void json_emit_edgepair_section(void)
 	fputs("]}", stdout);
 
 	/* Match text path: still dump the full table to its on-disk file. */
-	edgepair_dump_to_file("edgepair.dump");
+	{
+		const char *path = edgepair_default_path();
+
+		if (path != NULL)
+			edgepair_dump_to_file(path);
+	}
 }
 
 /*
@@ -5253,7 +5258,12 @@ void dump_stats(void)
 		if (cold_pairs > 0)
 			stat_row("edgepair_coverage", "cold_pairs", cold_pairs);
 
-		edgepair_dump_to_file("edgepair.dump");
+		{
+			const char *path = edgepair_default_path();
+
+			if (path != NULL)
+				edgepair_dump_to_file(path);
+		}
 	}
 
 	/*

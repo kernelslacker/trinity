@@ -320,11 +320,17 @@ void kcov_init_global(void)
 	edgepair_init_global();
 
 	/* Warm-start the edgepair table from the prior session's dump if
-	 * one exists in cwd, before any child has been forked.  A miss
-	 * (no file / stale magic / bad CRC / etc.) is the legitimate
-	 * cold-start state and the loader logs it itself; we just ignore
-	 * the return. */
-	(void)edgepair_load_from_file("edgepair.dump");
+	 * one exists, before any child has been forked.  A miss (no file
+	 * / stale magic / bad CRC / etc.) is the legitimate cold-start
+	 * state and the loader logs it itself; we just ignore the return.
+	 * Path is built under $XDG_CACHE_HOME/trinity/edgepair/ so a fuzz
+	 * child can't stomp it via a randomly-targeted cwd operation. */
+	{
+		const char *path = edgepair_default_path();
+
+		if (path != NULL)
+			(void)edgepair_load_from_file(path);
+	}
 }
 
 void kcov_init_child(struct kcov_child *kc, unsigned int child_id)

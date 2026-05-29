@@ -299,6 +299,16 @@ void edgepair_dump_to_file(const char *path);
 bool edgepair_load_from_file(const char *path);
 
 /*
+ * Build a default per-arch+per-kernel edgepair-dump path under
+ * $XDG_CACHE_HOME/trinity/edgepair/ (or $HOME/.cache/...).  Parallel
+ * to minicorpus_default_path()/effector_map_default_path()/
+ * kcov_bitmap_default_path()/cmp_hints_default_path() -- keeps the
+ * dump out of trinity's CWD where fuzz children may stomp it.
+ * Returns a pointer to a static buffer, or NULL on failure.
+ */
+const char *edgepair_default_path(void);
+
+/*
  * Callback signature for edgepair_for_each_parent_entry().  Returns
  * true to keep iterating, false to stop early.  The entry pointer
  * aliases parent_edgepair.table[]; callbacks must not mutate it and
