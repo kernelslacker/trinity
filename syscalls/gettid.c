@@ -1,11 +1,9 @@
 /*
  * SYSCALL_DEFINE0(gettid)
  */
-#include <fcntl.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "proc-status.h"
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
@@ -25,12 +23,8 @@
  */
 static void post_gettid(struct syscallrecord *rec)
 {
-	char buf[2048];
-	char *line;
-	ssize_t n;
-	int fd;
-	pid_t got, proc_pid = (pid_t)-1;
-	unsigned int pid_int;
+	pid_t got, proc_pid;
+	unsigned long pid_val;
 	unsigned long retval = rec->retval;
 	long ret = (long) retval;
 
@@ -46,27 +40,9 @@ static void post_gettid(struct syscallrecord *rec)
 
 	got = (pid_t) retval;
 
-	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
-	 * thousands of times per second under fuzz, and stdio's per-call malloc
-	 * of FILE struct + IO buffer is heap traffic we don't need. */
-	fd = open("/proc/self/status", O_RDONLY);
-	if (fd < 0)
+	if (!proc_status_read_uint_field("Pid", &pid_val))
 		return;
-	n = read(fd, buf, sizeof(buf) - 1);
-	close(fd);
-	if (n <= 0)
-		return;
-	buf[n] = '\0';
-	/* Anchor on a newline so a "Pid:" substring inside an earlier field
-	 * (e.g. a process name) cannot mis-target the parse. */
-	line = strstr(buf, "\nPid:");
-	if (line != NULL) {
-		if (sscanf(line + 5, "%u", &pid_int) == 1)
-			proc_pid = (pid_t)pid_int;
-	}
-
-	if (proc_pid == (pid_t)-1)
-		return;
+	proc_pid = (pid_t)pid_val;
 
 	if (proc_pid != got) {
 		output(0, "gettid oracle: gettid()=%d but "
