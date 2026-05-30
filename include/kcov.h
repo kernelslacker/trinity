@@ -239,6 +239,17 @@ struct kcov_cmp_diag {
  * driver issue into a stall. */
 #define KCOV_ENABLE_EINTR_MAX 8
 
+/* Per-slot cap on how many times kcov_recover_fd() may rebuild a
+ * vanished kcov fd before kcov_enable_trace gives up and _exit(0)s
+ * the child so the parent's reaper respawns it with a fresh slot.
+ * The closer driving these EBADFs is not transient — fleet evidence
+ * shows the first hit on a child usually arrives within seconds and
+ * recovery cost is essentially init cost (open + INIT_TRACE + mmap +
+ * F_DUPFD_CLOEXEC), so a low cap keeps blast radius bounded without
+ * leaving recoverable slots silently degraded.  Counters are uint8_t
+ * 4-bit bitfields and KCOV_RECOVERY_MAX must stay <= 15. */
+#define KCOV_RECOVERY_MAX 3
+
 /* Per-failure-site diagnostic slots for the PC and remote KCOV enable/
  * disable paths.  Same shape as struct kcov_cmp_diag: first failure
  * wins for *_errno (CAS-from-zero), *_count tallies every failure at
@@ -300,12 +311,13 @@ int kcov_pc_diag_format(char *buf, size_t bufsz);
 struct kcov_child {
 	/* Field order is constrained by the hot-cacheline budget in struct
 	 * childdata (see static_assert in child.c).  Sized to 48 bytes:
-	 * 2 ints (8) + 1 u64 (8) + 6 bools + 1 uint8_t mode (7) + 1 padding +
-	 * 3 pointers (24).  The mode byte slots into the bool block so the
-	 * struct stays at 48 bytes without disturbing pointer alignment.
-	 * That leaves room in the 64-byte hot leading cacheline for the
-	 * three childdata fields that follow (last_syscall_nr, last_group,
-	 * op_nr).  child_id is intentionally not stored here —
+	 * 2 ints (8) + 1 u64 (8) + 6 bools + 1 uint8_t mode (7) + 1 byte
+	 * holding the two 4-bit recovery counters + 3 pointers (24).  The
+	 * mode byte and the packed recovery counters slot into the bool
+	 * block so the struct stays at 48 bytes without disturbing pointer
+	 * alignment.  That leaves room in the 64-byte hot leading cacheline
+	 * for the three childdata fields that follow (last_syscall_nr,
+	 * last_group, op_nr).  child_id is intentionally not stored here —
 	 * kcov_enable_remote() takes it as a parameter (sourced from
 	 * childdata->num) so the second fd's metadata fits without
 	 * overflowing the cacheline. */
@@ -328,6 +340,16 @@ struct kcov_child {
 	 * of forcing an int-sized hole that would push the pointer triplet
 	 * out past 48 bytes and break the hot-cacheline budget. */
 	uint8_t mode;
+	/* Per-slot recovery attempt counters for kcov_recover_fd().  Two
+	 * 4-bit fields share the single byte of padding that used to sit
+	 * after `mode`, keeping the struct at 48 bytes (a third uint8_t
+	 * would force pointer-alignment padding and push the struct to
+	 * 56, blowing the hot-cacheline budget).  Each counter caps at
+	 * KCOV_RECOVERY_MAX (3) before kcov_enable_trace _exit(0)s the
+	 * child; the counter is owner-write-only so the bitfield RMW is
+	 * always sequential within a single child context. */
+	uint8_t recovery_attempts     : 4;
+	uint8_t cmp_recovery_attempts : 4;
 	unsigned long *trace_buf;
 	unsigned long *cmp_trace_buf;	/* mmap of cmp_fd, NULL if unavailable */
 	struct kcov_dedup_slot *dedup;	/* KCOV_DEDUP_SIZE entries, child-private */

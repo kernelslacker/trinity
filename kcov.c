@@ -370,6 +370,8 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	kc->remote_mode = false;
 	kc->remote_capable = false;
 	kc->mode = KCOV_MODE_PC;
+	kc->recovery_attempts = 0;
+	kc->cmp_recovery_attempts = 0;
 	kc->dedup = NULL;
 	kc->current_generation = 0;
 
@@ -658,6 +660,95 @@ void kcov_cleanup_child(struct kcov_child *kc)
 }
 
 /*
+ * Rebuild a per-child kcov fd that the fuzzer's close-race chain has
+ * silently replaced under us.  Called from the enable paths' EBADF
+ * branches: we have already paid the diag-record / first-EBADF-capture
+ * cost in the caller and are now committing to either recover the slot
+ * or hand the child off to the parent reaper.  is_cmp selects which fd
+ * pair to rebuild (kc->fd / kc->trace_buf for the PC fd, kc->cmp_fd /
+ * kc->cmp_trace_buf for the cmp fd).
+ *
+ * The sequence mirrors kcov_init_child's per-fd setup -- open, KCOV_-
+ * INIT_TRACE, mmap, F_DUPFD_CLOEXEC up to KCOV_FD_HIGH_BASE -- with two
+ * deliberate orderings the bare init path does not need:
+ *
+ *   1. Open the new fd BEFORE closing the old one.  kcov_fd_is_protected
+ *      reads kc->fd / kc->cmp_fd; if we left either at -1 for the open()
+ *      round-trip, a concurrent arg-gen path could substitute the slot
+ *      number the kernel is about to hand back to us, reintroducing the
+ *      very race we are recovering from.  Open-then-swap keeps the field
+ *      pointing at a real fd at every observable instant.
+ *
+ *   2. Call untrack_shared_region BEFORE munmap on the old buffer.  The
+ *      mm-syscall sanitisers gate fuzzed addresses against the shared-
+ *      region tracker; tearing the tracker entry down after munmap lets
+ *      a concurrent range_overlaps_shared() check see "still rejecting"
+ *      for a now-freed mapping, the unsafe direction (see the contract
+ *      in include/utils.h).  After the new mmap we re-register so the
+ *      sanitisers protect the fresh address too.
+ *
+ * Returns true on success with kc->fd / kc->trace_buf (or the cmp pair)
+ * now pointing at the rebuilt slot.  Returns false on any underlying
+ * failure (open / INIT_TRACE / mmap), leaving the old fd and buffer
+ * untouched so the caller can decide whether to retry or _exit -- the
+ * helper itself never modifies recovery_attempts and never _exit()s.
+ */
+static bool kcov_recover_fd(struct kcov_child *kc, bool is_cmp)
+{
+	unsigned long buf_entries = is_cmp
+		? (unsigned long)KCOV_CMP_BUFFER_SIZE
+		: (unsigned long)KCOV_TRACE_SIZE;
+	unsigned long buf_bytes = buf_entries * sizeof(unsigned long);
+	int *fd_slot = is_cmp ? &kc->cmp_fd : &kc->fd;
+	unsigned long **buf_slot = is_cmp ? &kc->cmp_trace_buf : &kc->trace_buf;
+	unsigned long *new_buf;
+	int new_fd;
+
+	new_fd = open("/sys/kernel/debug/kcov", O_RDWR);
+	if (new_fd < 0)
+		return false;
+
+	if (ioctl(new_fd, KCOV_INIT_TRACE, buf_entries) < 0) {
+		close(new_fd);
+		return false;
+	}
+
+	new_buf = mmap(NULL, buf_bytes, PROT_READ | PROT_WRITE, MAP_SHARED,
+		new_fd, 0);
+	if (new_buf == MAP_FAILED) {
+		close(new_fd);
+		return false;
+	}
+
+	/* Park the rebuilt fd above the picker range, same best-effort
+	 * relocation kcov_init_child does.  A failed dup just leaves the
+	 * fresh fd at its low slot; the protected-fd registry still covers
+	 * it via kcov_fd_is_protected once we install it below. */
+	if ((unsigned int)new_fd < KCOV_FD_HIGH_BASE) {
+		int hi_fd = fcntl(new_fd, F_DUPFD_CLOEXEC,
+				  (int)KCOV_FD_HIGH_BASE);
+
+		if (hi_fd >= 0) {
+			close(new_fd);
+			new_fd = hi_fd;
+		}
+	}
+
+	if (*buf_slot != NULL) {
+		untrack_shared_region((unsigned long)*buf_slot, buf_bytes);
+		munmap(*buf_slot, buf_bytes);
+	}
+	if (*fd_slot >= 0)
+		close(*fd_slot);
+
+	*fd_slot = new_fd;
+	*buf_slot = new_buf;
+	track_shared_region((unsigned long)new_buf, buf_bytes);
+
+	return true;
+}
+
+/*
  * The kcov fds opened in kcov_init_child are not registered with any fd
  * provider, so trinity's argument generators never deliberately pick them
  * -- but a fuzzed close()/dup2()/dup3()/close_range() can still target
@@ -756,6 +847,28 @@ void kcov_enable_trace(struct kcov_child *kc)
 					&kcov_shm->pc_diag.first_ebadf_fd_value,
 					kc->fd, __ATOMIC_RELAXED);
 			}
+
+			/* Try to rebuild the vanished fd up to KCOV_-
+			 * RECOVERY_MAX times across this slot's lifetime.
+			 * The counter resets in kcov_collect() only after a
+			 * syscall actually harvests coverage, so a "recover
+			 * then immediately re-EBADF" loop consumes the
+			 * budget instead of papering it over.  On successful
+			 * recovery, re-zero trace_buf[0] (the new mapping
+			 * starts uninitialised) and retry the ioctl on the
+			 * fresh fd.  On cap exhaustion or failed recovery,
+			 * mark the slot dead and _exit(0) so the parent's
+			 * reaper hands us a clean init_child slot rather
+			 * than leaving this child silently degraded. */
+			kc->recovery_attempts++;
+			if (kc->recovery_attempts <= KCOV_RECOVERY_MAX &&
+			    kcov_recover_fd(kc, false)) {
+				__atomic_store_n(&kc->trace_buf[0], 0,
+					__ATOMIC_RELAXED);
+				continue;
+			}
+			kc->active = false;
+			_exit(0);
 		}
 		kc->active = false;
 		break;
@@ -831,6 +944,25 @@ void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id)
 		kcov_pc_diag_record(
 			&kcov_shm->pc_diag.pc_enable_errno,
 			&kcov_shm->pc_diag.pc_enable_count, errno);
+		/* Same recover-or-die logic as kcov_enable_trace: an EBADF
+		 * on this branch means the close-race chain killed the PC
+		 * fd between the initial remote enable and this fallback.
+		 * The remote-enable arm above does not trigger recovery --
+		 * its failure flips remote_capable=false and demotes the
+		 * child to PC-only, and the PC-only retries (which land
+		 * here when EBADF strikes them too) own the fd-rebuild
+		 * budget. */
+		if (errno == EBADF) {
+			kc->recovery_attempts++;
+			if (kc->recovery_attempts <= KCOV_RECOVERY_MAX &&
+			    kcov_recover_fd(kc, false)) {
+				__atomic_store_n(&kc->trace_buf[0], 0,
+					__ATOMIC_RELAXED);
+				continue;
+			}
+			kc->active = false;
+			_exit(0);
+		}
 		kc->active = false;
 		return;
 	}
@@ -1107,6 +1239,15 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 				break;
 		}
 	}
+
+	/* Reset the recover-on-EBADF attempt counter only when this call
+	 * actually harvested PCs.  A successful KCOV_ENABLE that lands on
+	 * a syscall hitting zero kernel code (count == 0) is a no-op
+	 * recovery -- forgiving the attempt would let the close-race
+	 * chain re-burn the budget every iteration without ever making
+	 * progress.  See edge case 3 in the recovery design doc. */
+	if (count > 0 && kc->recovery_attempts != 0)
+		kc->recovery_attempts = 0;
 
 	/*
 	 * Invalidate the dedup table by bumping the generation counter — every
