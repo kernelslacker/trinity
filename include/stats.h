@@ -1489,6 +1489,12 @@ struct stats_s {
 	unsigned long fd_duped;
 	unsigned long fd_events_processed;
 	unsigned long fd_events_dropped;
+	/* Per-event-type counters bumped from apply_slot().  CLOSE means a
+	 * child genuinely closed the fd; EVICT means the parent watchdog
+	 * is expiring a stale pool slot whose fd may still be valid in a
+	 * sibling.  Split so the two paths stay observable. */
+	unsigned long fd_event_close_count;
+	unsigned long fd_event_evict_count;
 
 	/* get_random_fd() hit GET_RANDOM_FD_BUDGET outer iterations and
 	 * returned -1 to its caller.  Non-zero means a child was about

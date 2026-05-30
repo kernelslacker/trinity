@@ -88,8 +88,10 @@ void notify_child_fd_closed_range(struct childdata *child, int lo, int hi)
  * Validate a child-supplied event before acting on it.  Children run
  * hostile fuzzed workloads and have unfettered write access to their
  * own ring, so any field -- including the type tag -- can be arbitrary
- * garbage.  Only CLOSE is a valid type today; any other value is
- * either an out-of-range enum or a TOCTOU flip and is dropped.
+ * garbage.  CLOSE (child closed the fd) and EVICT (parent watchdog
+ * expiring a stale pool slot) are the only valid types today; any
+ * other value is either an out-of-range enum or a TOCTOU flip and is
+ * dropped.
  *
  * The caller passes a parent-local copy of the slot, not the shared
  * ring slot itself: see apply_slot() below for the TOCTOU rationale.
@@ -98,6 +100,7 @@ static bool fd_event_payload_valid(const struct fd_event *ev)
 {
 	switch (ev->type) {
 	case FD_EVENT_CLOSE:
+	case FD_EVENT_EVICT:
 		return ev->fd1 >= 0;
 	default:
 		return false;
@@ -125,17 +128,31 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	} else {
 		switch (ev.type) {
 		case FD_EVENT_CLOSE:
+		case FD_EVENT_EVICT:
 			/*
+			 * CLOSE and EVICT both retire the pooled object: a
+			 * child either genuinely closed the fd (CLOSE) or the
+			 * parent watchdog is expiring a stale slot whose fd
+			 * may still be live in a sibling (EVICT).  Either
+			 * way the parent wants the slot gone.  Bump separate
+			 * counters so the two paths stay observable.
+			 *
 			 * Per-provider outstanding-fd gauge decrement lives
 			 * in __destroy_object() (objects.c) so it covers
 			 * every fd-provider destruction path -- parent-side
 			 * stuck-fd eviction, close/close_range post-handlers,
 			 * and perf/kvm peer pre-closes all flow through that
 			 * common point.  remove_object_by_fd() ultimately
-			 * calls __destroy_object(), so the CLOSE drain still
+			 * calls __destroy_object(), so each drain still
 			 * pays the decrement exactly once.
 			 */
 			remove_object_by_fd(ev.fd1);
+			if (ev.type == FD_EVENT_EVICT)
+				__atomic_add_fetch(&shm->stats.fd_event_evict_count,
+						   1, __ATOMIC_RELAXED);
+			else
+				__atomic_add_fetch(&shm->stats.fd_event_close_count,
+						   1, __ATOMIC_RELAXED);
 			break;
 		default:
 			/* Defense in depth: payload_valid() already

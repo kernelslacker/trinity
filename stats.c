@@ -743,6 +743,7 @@ static void dump_stats_json(void)
 		"\"fd_lifecycle\":{\"stale_detected\":%lu,\"stale_by_generation\":%lu,"
 			"\"closed_tracked\":%lu,\"regenerated\":%lu,\"duped\":%lu,"
 			"\"events_processed\":%lu,\"events_dropped\":%lu,"
+			"\"event_close_count\":%lu,\"event_evict_count\":%lu,"
 			"\"hash_reinsert_dropped\":%lu,"
 			"\"local_hash_insert_dropped\":%lu,"
 			"\"runtime_registered\":%lu,\"epoll_lazy_armed\":%lu,"
@@ -941,7 +942,9 @@ static void dump_stats_json(void)
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
 		shm->stats.fd_closed_tracked, shm->stats.fd_regenerated,
 		shm->stats.fd_duped, shm->stats.fd_events_processed,
-		shm->stats.fd_events_dropped, shm->stats.fd_hash_reinsert_dropped,
+		shm->stats.fd_events_dropped,
+		shm->stats.fd_event_close_count, shm->stats.fd_event_evict_count,
+		shm->stats.fd_hash_reinsert_dropped,
 		shm->stats.local_fd_hash_insert_dropped,
 		shm->stats.fd_runtime_registered,
 		shm->stats.epoll_lazy_armed,
@@ -3236,6 +3239,8 @@ void dump_stats(void)
 		stat_row("fd_lifecycle", "duped",               shm->stats.fd_duped);
 		stat_row("fd_lifecycle", "events_processed",    shm->stats.fd_events_processed);
 		stat_row("fd_lifecycle", "events_dropped",      shm->stats.fd_events_dropped);
+		stat_row("fd_lifecycle", "event_close_count",   shm->stats.fd_event_close_count);
+		stat_row("fd_lifecycle", "event_evict_count",   shm->stats.fd_event_evict_count);
 		stat_row("fd_lifecycle", "hash_reinsert_dropped", shm->stats.fd_hash_reinsert_dropped);
 		stat_row("fd_lifecycle", "local_hash_insert_dropped",
 			 shm->stats.local_fd_hash_insert_dropped);

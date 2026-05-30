@@ -21,11 +21,19 @@ struct childdata;
 #define FD_EVENT_RING_SIZE 1024	/* must be power of 2 */
 
 enum fd_event_type {
-	FD_EVENT_CLOSE,		/* fd was closed */
+	FD_EVENT_CLOSE,		/* child closed this fd */
+	FD_EVENT_EVICT,		/* parent is evicting a stale slot whose fd
+				 * may still be valid in a sibling child */
 };
 
 /*
- * Only CLOSE is a valid event type today; fd1 carries the closed fd.
+ * CLOSE and EVICT both carry a single fd in fd1, but their semantics
+ * differ: CLOSE means a child genuinely closed the fd, EVICT means the
+ * parent watchdog is expiring a stale pool slot whose fd may still be
+ * live in a sibling.  The drain handler treats them identically for
+ * pool bookkeeping but bumps separate counters so we can measure how
+ * often each path fires.
+ *
  * The struct intentionally has no other payload — see commit history
  * for the NEWSOCK publish path that was removed (post-fork accepted
  * fds live only in the child's fd table and cannot be published to

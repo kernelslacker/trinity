@@ -146,7 +146,7 @@ static void child_watchdog_evict_fd(int fd, void *ctx)
 	struct childdata *child = ctx;
 
 	if (child->fd_event_ring != NULL)
-		fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE, fd);
+		fd_event_enqueue(child->fd_event_ring, FD_EVENT_EVICT, fd);
 }
 
 static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
