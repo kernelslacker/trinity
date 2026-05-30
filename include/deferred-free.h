@@ -47,6 +47,15 @@ void deferred_alloc_track(void *ptr);
 bool alloc_track_lookup(void *ptr) __must_check;
 
 /*
+ * Refresh an existing tracked allocation's LRU position.  Use this
+ * when an already-tracked pointer is re-referenced and you want it
+ * to survive subsequent LRU rotation.  Safe if @ptr was already
+ * rotated out (acts as a fresh insert).  See alloc_track_refresh()
+ * in deferred-free.c for the design rationale.
+ */
+void alloc_track_refresh(void *ptr);
+
+/*
  * tracked_free_now() removes ptr from alloc_track[] LRU and
  * alloc_track_hash[], then calls free().  Use this when a caller
  * wants to synchronously dispose of a zmalloc_tracked() allocation

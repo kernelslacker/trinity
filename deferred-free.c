@@ -469,6 +469,27 @@ static bool alloc_track_consume(void *ptr)
 }
 
 /*
+ * Refresh an existing tracked entry's LRU position without freeing it.
+ * If @ptr is in the ring, null its current slot + remove from hash, then
+ * re-insert at head.  If @ptr is not present (already rotated out), just
+ * insert at head.  Either way the post-call state has @ptr exactly once
+ * in the ring (at head) and exactly once in the hash.
+ *
+ * Pair with the OBJ_LOCAL anon-pool dedup-skip in clone_global_mmap_pool:
+ * dedup'd pool entries don't trigger a fresh __zmalloc_tracked, so without
+ * this refresh their alloc_track slots rotate out under churn from
+ * unrelated tracked allocations.  Wave-F's 256->4096 widen was outpaced
+ * 100x at full throughput (bisect 2026-05-30 localized to f531bb72cd9e).
+ */
+void alloc_track_refresh(void *ptr)
+{
+	if (ptr == NULL)
+		return;
+	(void)alloc_track_consume(ptr);
+	deferred_alloc_track(ptr);
+}
+
+/*
  * Non-consuming peer of alloc_track_consume: returns true if @ptr is
  * present in the side-set without removing it.  Used by readers that
  * want to validate a stored pointer (e.g. an object-pool slot) before

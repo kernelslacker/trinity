@@ -399,6 +399,13 @@ static void clone_global_mmap_pool(enum objecttype type)
 			for_each_obj(localhead, localobj, lidx) {
 				if (localobj->map.ptr == m->ptr) {
 					dup = true;
+					/* Refresh the local obj in alloc_track[] so the validator
+					 * LRU lookup at get_map_handle (mm/maps.c:103) stays warm
+					 * even when dedup skips a fresh __zmalloc_tracked.  Without
+					 * this, dedup starves alloc_track and pool entries rotate
+					 * out under churn (Wave-F 256->4096 widen was outpaced 100x
+					 * at full throughput per bisect 2026-05-30). */
+					alloc_track_refresh(localobj);
 					break;
 				}
 			}
