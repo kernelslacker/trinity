@@ -289,16 +289,16 @@ int main(int argc, char* argv[])
 
 	parse_args(argc, argv);
 
-	/* --dry-run: validate the argument set and exit before any cgroup,
-	 * fork, shm, or init work runs.  Previously the flag only gated the
-	 * actual syscall() inside __do_syscall(), so a dry run still spun up
-	 * children and burned the full init path before doing nothing — which
-	 * defeated the point (cheap parse-validation in CI, reproducer triage)
-	 * and silently masked real failures inside open_fds
-	 * behind an exit code that looked like a successful no-op.  Honour the
-	 * flag at parse-and-exit instead. */
+	/* --dry-run: parse-validate the argument set and exit before cgroup
+	 * setup, child fork, or any fuzzing work runs.  Note that some early
+	 * init must complete before parse can succeed — init_numa_nodes(),
+	 * select_syscall_tables(), create_shm(), sanitize_inherited_fds()
+	 * all run above this point.  So --dry-run is NOT a no-side-effect
+	 * parse-only mode; it's a 'parse + early-init validation' gate.
+	 * Moving parse_args earlier to give a true parse-only mode is a
+	 * separate restructure (the early helpers consume some parsed args). */
 	if (dry_run) {
-		output(0, "--dry-run: parse complete, exiting without fuzzing\n");
+		output(0, "--dry-run: parse + early-init complete, exiting before fork/fuzz\n");
 		exit(EXIT_SUCCESS);
 	}
 
