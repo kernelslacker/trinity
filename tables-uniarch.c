@@ -92,8 +92,10 @@ int setup_syscall_group_uniarch(unsigned int group)
 		if (entry == NULL)
 			continue;
 
-		if (entry->group == group)
+		if (entry->group == group) {
+			entry->flags |= ACTIVE;
 			activate_syscall(i);
+		}
 	}
 
 	if (shm->nr_active_syscalls == 0) {
