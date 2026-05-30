@@ -1,0 +1,44 @@
+# sanitiser-slow-path baseline.
+#
+# Grandfathered slow-syscall call sites in the sanitiser /
+# argument-generation source set.  Each entry is `path:line:pattern`
+# where pattern is one of: open(/proc, fopen, getline, mincore,
+# mprotect.
+#
+# These call sites violate the "cached state only" shape the rest of
+# the sanitiser surface assumes.  They are baselined here so the
+# check passes clean and any NEW slow-path call introduced into a
+# scoped file fails immediately.
+#
+# Lifecycle: each entry below corresponds to a real follow-up.  When
+# a call site is hoisted to a one-shot init path (cf. heap_bounds_init
+# in utils.c) or otherwise removed, drop its line from this file in
+# the same commit.  A stale entry also fails the check, so the
+# baseline shrinks monotonically toward zero.
+#
+# Lines starting with `#` and blank lines are ignored.
+
+# random-address.c: get_writable_address() upgrades a slot to RW and
+# probes residency on the head page before returning.  The mprotect
+# upgrade and the mincore probe both fire on the hot arg-gen path
+# every time a writable address is requested; both want to migrate to
+# a cached-permissions / cached-residency map maintained on the slow
+# side of the allocator.
+rand/random-address.c:198:mprotect
+rand/random-address.c:337:mincore
+
+# utils.c: range_readable_user() slow path falls back to a fresh
+# /proc/self/maps walk when the cached heap / extra-region tables
+# cannot prove the range readable.  The fallback exists precisely
+# because we have not yet finished migrating the readability check
+# off the maps file -- track all read-mostly VMAs in a cached table
+# and the fopen + getline pair can disappear from the hot path.
+utils.c:2357:fopen
+
+# utils.c: heap_bounds_init() is genuinely one-shot (called from the
+# parent during setup) and would normally be slow-ok.  It lives in a
+# scoped file because utils.c also hosts range_readable_user, and
+# splitting the file is the follow-up that retires this entry; until
+# then the call is baselined rather than marker-suppressed so the two
+# slow paths get fixed together.
+utils.c:1976:fopen
