@@ -286,8 +286,15 @@ void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 		char path[PATH_MAX + 64];
 		int fd;
 
-		snprintf(path, sizeof(path), "%s/trinity-bug-%d.log",
-			 trinity_tmpdir_abs(), (int)mypid());
+		{
+			struct sigsafe_buf b = { path, sizeof(path) };
+
+			sigsafe_puts(&b, trinity_tmpdir_abs());
+			sigsafe_puts(&b, "/trinity-bug-");
+			sigsafe_puti(&b, (long)mypid());
+			sigsafe_puts(&b, ".log");
+			sigsafe_putc(&b, '\0');
+		}
 		fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
 		if (fd >= 0) {
 			dup2(fd, STDERR_FILENO);
@@ -345,7 +352,6 @@ void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 		unsigned long opnr;
 		int last_syscall_nr;
 		char buf[160];
-		int len;
 
 		if (me != NULL) {
 			enum syscallstate st = me->syscall.state;
@@ -363,14 +369,21 @@ void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 			opnr = 0;
 			last_syscall_nr = -1;
 		}
-		len = snprintf(buf, sizeof(buf),
-			"childop=%s op_nr=%lu last_syscall_nr=%d\n",
-			opname, opnr, last_syscall_nr);
-		if (len > 0) {
+		{
+			struct sigsafe_buf b = { buf, sizeof(buf) };
+			size_t used;
 			ssize_t w;
-			if ((size_t)len > sizeof(buf))
-				len = sizeof(buf);
-			w = write(STDERR_FILENO, buf, (size_t)len);
+
+			sigsafe_puts(&b, "childop=");
+			sigsafe_puts(&b, opname);
+			sigsafe_puts(&b, " op_nr=");
+			sigsafe_putu(&b, opnr);
+			sigsafe_puts(&b, " last_syscall_nr=");
+			sigsafe_puti(&b, (long)last_syscall_nr);
+			sigsafe_putc(&b, '\n');
+
+			used = sizeof(buf) - b.left;
+			w = write(STDERR_FILENO, buf, used);
 			(void)w;	/* dying anyway; nothing to do on short write */
 		}
 	}
