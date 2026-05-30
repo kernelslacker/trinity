@@ -67,13 +67,21 @@
  * in the previous commit remains the actual safety net; the relocation
  * is defence-in-depth.
  *
- * 900 keeps headroom under the default 1024 RLIMIT_NOFILE so the dup
- * itself does not fail with EMFILE on a stock setup, while still
- * landing far above where any fuzzer-opened fd typically lives.  If
- * the dup fails for any reason the original low fd is kept and the
- * registry catches subsequent attempts on it.
+ * 60000 sits inside the RLIMIT_NOFILE=65536 lifted by
+ * scripts/run-trinity.sh, leaving ~5500 fds of headroom above for
+ * the rest of trinity's working set (well above current usage).
+ * The wider gap matters: at the old 900, a fuzzer-picker that
+ * happens to allocate fds densely (epoll/eventfd churn,
+ * slab-cache-thrash op, etc.) could land siblings in the same
+ * numeric range as KCOV's relocated slots, reintroducing the
+ * collision the relocation was meant to prevent.  Parking KCOV
+ * at 60000 keeps it clear of any plausible picker fd range and
+ * is defence-in-depth against a stale-close race producing the
+ * EBADF cascade.  If the dup fails for any reason the original
+ * low fd is kept and the registry catches subsequent attempts
+ * on it.
  */
-#define KCOV_FD_HIGH_BASE 900U
+#define KCOV_FD_HIGH_BASE 60000U
 
 /*
  * Userspace copy of struct kcov_remote_arg from linux/kcov.h.
