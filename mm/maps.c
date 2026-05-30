@@ -358,23 +358,53 @@ void map_dump(struct object *obj, enum obj_scope scope)
  */
 static void clone_global_mmap_pool(enum objecttype type)
 {
-	struct objhead *globalhead;
-	struct object *globalobj;
-	unsigned int idx;
+	struct objhead *globalhead, *localhead;
+	struct object *globalobj, *localobj;
+	unsigned int idx, lidx;
 
 	globalhead = get_objhead(OBJ_GLOBAL, type);
 	if (globalhead == NULL || globalhead->array == NULL)
 		return;
 
+	/*
+	 * localhead may be NULL on the very first call before
+	 * init_child_mappings() ran; treat that as "nothing to dedup
+	 * against" and append every entry.
+	 */
+	localhead = get_objhead(OBJ_LOCAL, type);
+
 	for_each_obj(globalhead, globalobj, idx) {
 		struct map *m = &globalobj->map;
 		struct object *newobj;
+		bool dup = false;
 
 		if (m->name == NULL) {
 			outputerr("clone_global_mmap_pool: skipping global map with NULL name (type %u)\n",
 				  type);
 			continue;
 		}
+
+		/*
+		 * Dedup by ptr against the local head.  Global ANON ptrs
+		 * are stable (set once at setup_initial_mappings, never
+		 * replaced) and child-added post_mmap entries return
+		 * unique mmap'd ptrs that cannot collide with a global
+		 * slot, so a ptr match means we have already cloned this
+		 * global entry on a prior refill.  Without this guard
+		 * each refill appends N copies of every global entry,
+		 * bloating per-child memory (leaked strdup'd names) and
+		 * skewing future uniform draws.
+		 */
+		if (localhead != NULL && localhead->array != NULL) {
+			for_each_obj(localhead, localobj, lidx) {
+				if (localobj->map.ptr == m->ptr) {
+					dup = true;
+					break;
+				}
+			}
+		}
+		if (dup)
+			continue;
 
 		newobj = alloc_object();
 		newobj->map.ptr = m->ptr;
