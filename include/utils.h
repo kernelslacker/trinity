@@ -343,23 +343,22 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len);
 
 /*
  * Conservative source-readability check for the asb_relocate() memcpy
- * path.  Returns true iff [addr, addr+len) is fully covered by a
- * readable mapping that the kernel will not fault on when the copy
- * walks it.
+ * path.  Cached-state only -- returns true iff [addr, addr+len) is
+ * fully covered by a mapping trinity itself already tracks.
  *
  *   - len == 0, addr == NULL and ranges that wrap user VA return
  *     false.  The caller treats false as "skip the copy", and a
  *     zero-byte memcpy is uninteresting anyway.
- *   - Fast path: a range fully inside a tracked shared region
- *     (range_in_tracked_shared) or fully inside the cached libc
- *     brk arena / any captured non-brk allocator region returns true
- *     without touching /proc.  These are mappings trinity or libc
- *     itself manage, so VMA presence implies user-readable pages.
- *   - Slow path: one /proc/self/maps walk per call.  Returns true
- *     only if every byte of [addr, addr+len) is covered by a
- *     contiguous run of VMAs whose perms include 'r'.  A maps-open
- *     failure (vanishingly rare on our own pid) returns false so the
- *     caller falls through to the safe "don't copy" branch.
+ *   - Returns true when the range is fully inside a tracked shared
+ *     region (range_in_tracked_shared) or fully inside the cached
+ *     libc brk arena / any captured non-brk allocator region.  Those
+ *     are mappings trinity or libc itself manage, so VMA presence
+ *     implies user-readable pages.
+ *   - Returns false for any other layout (a fuzz-introduced VMA
+ *     outside every cached snapshot).  False means "unproven", not
+ *     "known unreadable"; the caller treats either as skip-copy and
+ *     falls through to asb_relocate()'s no-copy fallback, which is
+ *     strictly safer than chasing an unproven source.
  *
  * The intent is to gate the source-side read in avoid_shared_buffer_
  * inout(): the range_overlaps_* predicates only prove intersection

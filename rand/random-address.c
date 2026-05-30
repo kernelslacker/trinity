@@ -440,12 +440,12 @@ static void asb_relocate(unsigned long *addr, unsigned long len,
 	/*
 	 * Gate the source-side read.  The overlap predicates above only
 	 * prove the range intersects a protected region; they do not
-	 * prove the source is fully mapped.  range_readable_user()
-	 * confirms full readable VMA coverage (fast path via the cached
-	 * shared/heap snapshots, slow path via a single /proc/self/maps
-	 * walk) so a wrapped pointer or a range that walks off the end
-	 * of a VMA does not fault inside the memcpy and mask the kernel
-	 * behaviour we are trying to fuzz with a userspace SIGSEGV.
+	 * prove the source is fully mapped.  range_readable_user() proves
+	 * coverage from cached state (tracked shared regions + heap
+	 * snapshots) so a wrapped pointer or a range that walks off the
+	 * end of a VMA does not fault inside the memcpy and mask the
+	 * kernel behaviour we are trying to fuzz with a userspace
+	 * SIGSEGV.
 	 *
 	 * The no-copy fall-through is safe: get_writable_address()
 	 * already filled @replacement with fuzz data, and the *addr

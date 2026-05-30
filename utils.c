@@ -2331,8 +2331,8 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
  * allocator region?  Mirrors range_in_tracked_shared() for the heap
  * snapshot maintained by heap_bounds_init().  Used only by
  * range_readable_user() below -- not a sanitiser gate, so unknown
- * layout returns false (no cached extent implies no fast-path proof
- * of readability; defer to the slow path).
+ * layout returns false (no cached extent implies no proof of
+ * readability; the caller treats that as skip-copy).
  */
 static bool range_inside_libc_heap(unsigned long addr, unsigned long len)
 {
@@ -2363,71 +2363,9 @@ static bool range_inside_libc_heap(unsigned long addr, unsigned long len)
 	return false;
 }
 
-/*
- * Slow-path /proc/self/maps walk for range_readable_user().  Returns
- * true iff [addr, end) is fully covered by a contiguous run of VMAs
- * whose permissions include 'r'.  Maps lines are sorted by start, so
- * one linear pass suffices: advance a cursor across the range and
- * bail the moment a non-readable VMA or a gap is encountered.
- *
- * Open failure (vanishingly rare for /proc/self/maps on our own pid)
- * returns false so the caller falls through to the safe "don't copy"
- * branch -- mirroring the polarity used by the rest of the
- * readability path.
- */
-static bool proc_maps_range_readable(unsigned long addr, unsigned long end)
-{
-	FILE *f;
-	char line[512];
-	unsigned long cursor = addr;
-	bool covered = false;
-
-	f = fopen("/proc/self/maps", "r");
-	if (f == NULL)
-		return false;
-
-	while (fgets(line, sizeof(line), f) != NULL) {
-		unsigned long start, vend;
-		char perms[5];
-		const char *label;
-
-		if (!parse_maps_line(line, &start, &vend, perms, &label))
-			continue;
-
-		/* VMA entirely below the remaining range -- keep walking. */
-		if (vend <= cursor)
-			continue;
-
-		/*
-		 * First VMA at or past cursor.  Either it covers cursor
-		 * (good, may extend coverage), or there is a gap below
-		 * its start (bad, range walks off an unmapped hole).
-		 */
-		if (start > cursor)
-			break;
-
-		if (perms[0] != 'r')
-			break;
-
-		if (vend >= end) {
-			covered = true;
-			break;
-		}
-
-		/* Partial cover -- need the next VMA to start exactly at
-		 * vend (i.e. no gap) and also be readable.  Advance the
-		 * cursor and let the loop fetch the next line. */
-		cursor = vend;
-	}
-
-	fclose(f);
-	return covered;
-}
-
 bool range_readable_user(const void *addr, size_t len)
 {
 	unsigned long a = (unsigned long) addr;
-	unsigned long end;
 
 	if (len == 0)
 		return false;
@@ -2435,8 +2373,6 @@ bool range_readable_user(const void *addr, size_t len)
 		return false;
 	if (a > ULONG_MAX - len)
 		return false;
-
-	end = a + len;
 
 	/*
 	 * Fast path 1: range is fully inside a tracked shared region.
@@ -2456,8 +2392,14 @@ bool range_readable_user(const void *addr, size_t len)
 	if (range_inside_libc_heap(a, len))
 		return true;
 
-	/* Slow path: walk /proc/self/maps once. */
-	return proc_maps_range_readable(a, end);
+	/*
+	 * Unknown layout: a fuzz-introduced VMA outside every cached
+	 * snapshot.  Treat as unproven and let the caller route to
+	 * asb_relocate()'s no-copy fallback -- chasing the source via a
+	 * /proc/self/maps walk on every hot-path call is what this code
+	 * was retired to avoid.
+	 */
+	return false;
 }
 
 void sanitize_inherited_fds(void)

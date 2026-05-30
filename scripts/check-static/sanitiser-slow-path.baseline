@@ -27,18 +27,10 @@
 rand/random-address.c:198:mprotect
 rand/random-address.c:337:mincore
 
-# utils.c: range_readable_user() slow path falls back to a fresh
-# /proc/self/maps walk when the cached heap / extra-region tables
-# cannot prove the range readable.  The fallback exists precisely
-# because we have not yet finished migrating the readability check
-# off the maps file -- track all read-mostly VMAs in a cached table
-# and the fopen + getline pair can disappear from the hot path.
-utils.c:2357:fopen
-
 # utils.c: heap_bounds_init() is genuinely one-shot (called from the
 # parent during setup) and would normally be slow-ok.  It lives in a
 # scoped file because utils.c also hosts range_readable_user, and
 # splitting the file is the follow-up that retires this entry; until
 # then the call is baselined rather than marker-suppressed so the two
 # slow paths get fixed together.
-utils.c:1976:fopen
+utils.c:2004:fopen
