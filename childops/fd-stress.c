@@ -128,9 +128,15 @@ static bool pick_two_typed_fds(int *out_fd_a, int *out_fd_b,
 }
 
 /*
- * Notify the parent that the child closed an fd it formerly tracked.
- * The parent's drain loop will issue remove_object_by_fd() and a
- * try_regenerate_fd() against the corresponding object type.
+ * Guarded wrapper around notify_child_fd_closed().  The canonical
+ * helper publishes a FD_EVENT_CLOSE to the parent, evicts the local
+ * fd_hash[] snapshot, and sentinels-out the per-child live_fds ring
+ * slot -- the three close-side bookkeeping steps that must stay in
+ * sync.  The wrapper exists only to absorb the NULL child / NULL
+ * ring / fd < 0 inputs the callers in this file can legitimately
+ * hand it (get_random_fd() can return a negative fd, and the
+ * childop short-circuit hands a NULL child); every other concern
+ * lives in the canonical helper.
  */
 static void notify_close(struct childdata *child, int fd)
 {
@@ -138,8 +144,7 @@ static void notify_close(struct childdata *child, int fd)
 		return;
 	if (fd < 0)
 		return;
-	fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE, fd);
-	fd_hash_remove_local(fd);
+	notify_child_fd_closed(child, fd);
 }
 
 static bool fd_stress_close_reopen(struct childdata *child)
