@@ -423,8 +423,6 @@ unsigned long bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr,
 	unsigned long novel = 0;
 	uint32_t now;
 
-	(void)do32;	/* indexing wired up in the arch-dim follow-up commit */
-
 	if (trace_buf == NULL || nr >= MAX_NR_SYSCALL)
 		return 0;
 
@@ -434,7 +432,7 @@ unsigned long bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr,
 	if (count > KCOV_CMP_RECORDS_MAX)
 		count = KCOV_CMP_RECORDS_MAX;
 
-	e = &shm->cmp_novelty[nr];
+	e = &shm->cmp_novelty[nr][do32 ? 1 : 0];
 	now = (uint32_t)__atomic_load_n(&shm->bandit_window_count,
 					__ATOMIC_RELAXED);
 	cmp_bloom_maybe_decay(e, now);
@@ -1834,7 +1832,7 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 	 * we have no per-call attribution), but a non-empty pool is the
 	 * narrowest evidence available without adding per-call tracking. */
 	if (cmp_hints_shm != NULL && curr < 1024 &&
-	    __atomic_load_n(&cmp_hints_shm->pools[curr].count,
+	    __atomic_load_n(&cmp_hints_shm->pools[curr][rec->do32bit ? 1 : 0].count,
 			    __ATOMIC_RELAXED) > 0)
 		return RRC_CMP_DERIVED;
 

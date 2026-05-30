@@ -458,10 +458,19 @@ void clean_childdata(struct childdata *child)
 
 	/* Reset the per-child cmp_hints seen-bloom so a fresh occupant of
 	 * the slot does not inherit dedup-refresh skips that belong to the
-	 * previous child's tuple-emission history. */
-	memset(child->cmp_hints_seen.bits, 0,
-	       sizeof(child->cmp_hints_seen.bits));
-	child->cmp_hints_seen.records = 0;
+	 * previous child's tuple-emission history.  Both arch slots reset
+	 * in lockstep -- a single iteration of the [2] array keeps the
+	 * uniarch case branch-free and matches the per-arch indexing used
+	 * by cmp_hints_collect(). */
+	{
+		unsigned int a;
+
+		for (a = 0; a < 2; a++) {
+			memset(child->cmp_hints_seen[a].bits, 0,
+			       sizeof(child->cmp_hints_seen[a].bits));
+			child->cmp_hints_seen[a].records = 0;
+		}
+	}
 
 	/* Clear any __BUG() stamp left by the prior occupant of this slot
 	 * so the parent's zombie-pending warning doesn't mis-attribute the

@@ -604,8 +604,15 @@ struct childdata {
 	 * the pool within the last CMP_HINTS_BLOOM_RESET CMP records.
 	 * See include/cmp_hints.h for the size / FPR tradeoff and the
 	 * "false positives are benign" argument.  Owner-only writes from
-	 * inside the child, no cross-process coherence needed. */
-	struct cmp_hints_bloom cmp_hints_seen;
+	 * inside the child, no cross-process coherence needed.
+	 *
+	 * Indexed by [do32 ? 1 : 0] for the same reason the shm pools and
+	 * cmp_novelty arrays are 2D: under biarch, the same numeric (ip,
+	 * value, size) tuple may legitimately be a fresh observation in
+	 * one arch's pool even if it was just inserted by the other arch's,
+	 * and a single shared bloom would falsely suppress the second
+	 * insert. */
+	struct cmp_hints_bloom cmp_hints_seen[2];
 
 	/* The actual syscall records each child uses.  Dominated by a 4 KiB
 	 * prebuffer + 128 B postbuffer used by -v rendering — only nr / a1..a6

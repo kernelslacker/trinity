@@ -104,8 +104,18 @@ struct cmp_hint_pool {
 	struct cmp_hint_entry entries[CMP_HINTS_PER_SYSCALL];
 };
 
+/*
+ * Pool grid indexed by [syscall_nr][do32 ? 1 : 0].  Mirrors the arch
+ * dimension already carried by cmp_hints_strip[2][MAX_NR_SYSCALL]:
+ * under biarch, syscall nr=N under the 32-bit table and syscall nr=N
+ * under the 64-bit table are unrelated calls, so a single per-nr slot
+ * would have them contend for the 16-entry dedup table and bloom and
+ * silently evict each other's constants.  Uniarch builds only ever
+ * touch the [*][0] column; the unused [*][1] half is a few hundred
+ * KiB of shm that mirrors the strip-table's identical waste.
+ */
 struct cmp_hints_shared {
-	struct cmp_hint_pool pools[MAX_NR_SYSCALL]; /* indexed by syscall number */
+	struct cmp_hint_pool pools[MAX_NR_SYSCALL][2];
 };
 _Static_assert(MAX_NR_SYSCALL == 1024,
 	"cmp_hints_shared layout assumes MAX_NR_SYSCALL == 1024");

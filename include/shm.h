@@ -734,10 +734,16 @@ struct shm_s {
 	 *   rotation hook turns the per-window delta into a secondary reward
 	 *   term inside bandit_record_pull().
 	 */
+	/*
+	 * Indexed by [syscall_nr][do32 ? 1 : 0].  Biarch builds split the
+	 * novelty bloom per arch so 32-bit nr=N and 64-bit nr=N (which
+	 * may be unrelated calls) do not poison each other's per-syscall
+	 * constant-novelty signal.  Uniarch builds only touch [*][0].
+	 */
 	struct cmp_novelty_entry {
 		uint32_t window_tag;
 		uint8_t bloom[128];
-	} cmp_novelty[MAX_NR_SYSCALL];
+	} cmp_novelty[MAX_NR_SYSCALL][2];
 	unsigned long bandit_cmp_new_constants[NR_STRATEGIES];
 
 	/*

@@ -107,8 +107,11 @@ bool check_all_locks(void)
 	 * no reaper at all — child-side try_release_dead_holder is the only
 	 * fallback, and it only fires after a million-spin starvation. */
 	if (cmp_hints_shm != NULL) {
+		unsigned int a;
+
 		for (i = 0; i < ARRAY_SIZE(cmp_hints_shm->pools); i++)
-			ret |= check_lock(&cmp_hints_shm->pools[i].lock);
+			for (a = 0; a < 2; a++)
+				ret |= check_lock(&cmp_hints_shm->pools[i][a].lock);
 	}
 
 	/* Per-syscall minicorpus rings.  Writers are children on the hot

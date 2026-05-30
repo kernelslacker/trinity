@@ -488,7 +488,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		return;
 	}
 
-	pool = &cmp_hints_shm->pools[nr];
+	pool = &cmp_hints_shm->pools[nr][do32 ? 1 : 0];
 
 	count = __atomic_load_n(&trace_buf[0], __ATOMIC_RELAXED);
 
@@ -508,7 +508,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 	 * fallback is just belt-and-braces. */
 	child = this_child();
 	if (child != NULL) {
-		bloom = &child->cmp_hints_seen;
+		bloom = &child->cmp_hints_seen[do32 ? 1 : 0];
 		bloom->records += count;
 		if (bloom->records >= CMP_HINTS_BLOOM_RESET) {
 			memset(bloom->bits, 0, sizeof(bloom->bits));
@@ -591,8 +591,6 @@ bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 	struct cmp_hint_pool *pool;
 	unsigned int count;
 
-	(void)do32;	/* indexing wired up in the arch-dim follow-up commit */
-
 	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return false;
 
@@ -600,7 +598,7 @@ bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 		__atomic_fetch_add(&kcov_shm->cmp_hints_try_get_attempts, 1UL,
 				   __ATOMIC_RELAXED);
 
-	pool = &cmp_hints_shm->pools[nr];
+	pool = &cmp_hints_shm->pools[nr][do32 ? 1 : 0];
 
 	/*
 	 * Lockless read.  Multiple children fuzzing the same syscall would
@@ -670,7 +668,13 @@ bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
  * grew by 4 bytes, so the payload layout is not backward-compatible;
  * older snapshots are rejected via this version gate and trigger a
  * cold start (which the warm-start path treats as benign). */
-#define CMP_HINTS_FILE_VERSION	3U
+/* Bumped to 4 (2026-05-30): the pool array gained an arch dimension
+ * (pools[MAX_NR_SYSCALL][2]), so the payload now carries 2 * MAX_NR_SYSCALL
+ * pool slots laid out as the natural interleaving of the 2D array
+ * (pools[i][0] followed by pools[i][1] for each i).  Existing v3
+ * snapshots are uniarch-shaped and are rejected via this version
+ * gate; cold start is treated as benign by the warm-start path. */
+#define CMP_HINTS_FILE_VERSION	4U
 
 struct cmp_hints_entry_ondisk {
 	uint64_t value;
@@ -796,30 +800,35 @@ static struct cmp_hint_pool cmp_hints_pool_scratch;
 static struct cmp_hints_pool_ondisk *cmp_hints_serialise(void)
 {
 	struct cmp_hints_pool_ondisk *out;
-	unsigned int i, j;
+	unsigned int i, a, j;
 
-	out = calloc(MAX_NR_SYSCALL, sizeof(*out));
+	/* Flat array of 2 * MAX_NR_SYSCALL slots indexed [i * 2 + a],
+	 * matching the natural memory layout of pools[i][a]. */
+	out = calloc((size_t)MAX_NR_SYSCALL * 2, sizeof(*out));
 	if (out == NULL)
 		return NULL;
 
 	for (i = 0; i < MAX_NR_SYSCALL; i++) {
-		struct cmp_hint_pool *pool = &cmp_hints_shm->pools[i];
-		unsigned int count;
+		for (a = 0; a < 2; a++) {
+			struct cmp_hint_pool *pool = &cmp_hints_shm->pools[i][a];
+			struct cmp_hints_pool_ondisk *slot = &out[i * 2 + a];
+			unsigned int count;
 
-		pool_lock(pool);
-		memcpy(&cmp_hints_pool_scratch, pool, sizeof(*pool));
-		pool_unlock(pool);
+			pool_lock(pool);
+			memcpy(&cmp_hints_pool_scratch, pool, sizeof(*pool));
+			pool_unlock(pool);
 
-		count = cmp_hints_pool_scratch.count;
-		if (count > CMP_HINTS_PER_SYSCALL)
-			count = CMP_HINTS_PER_SYSCALL;
-		out[i].count = count;
-		out[i].generation = cmp_hints_pool_scratch.generation;
-		for (j = 0; j < count; j++) {
-			out[i].entries[j].value     = cmp_hints_pool_scratch.entries[j].value;
-			out[i].entries[j].cmp_ip    = cmp_hints_pool_scratch.entries[j].cmp_ip;
-			out[i].entries[j].size      = cmp_hints_pool_scratch.entries[j].size;
-			out[i].entries[j].last_used = cmp_hints_pool_scratch.entries[j].last_used;
+			count = cmp_hints_pool_scratch.count;
+			if (count > CMP_HINTS_PER_SYSCALL)
+				count = CMP_HINTS_PER_SYSCALL;
+			slot->count = count;
+			slot->generation = cmp_hints_pool_scratch.generation;
+			for (j = 0; j < count; j++) {
+				slot->entries[j].value     = cmp_hints_pool_scratch.entries[j].value;
+				slot->entries[j].cmp_ip    = cmp_hints_pool_scratch.entries[j].cmp_ip;
+				slot->entries[j].size      = cmp_hints_pool_scratch.entries[j].size;
+				slot->entries[j].last_used = cmp_hints_pool_scratch.entries[j].last_used;
+			}
 		}
 	}
 	return out;
@@ -880,17 +889,19 @@ bool cmp_hints_save_file(const char *path)
 
 	/* Counted off the on-disk image so the success log mirrors what
 	 * the warm-start loader will print on the next run.  Cheap relative
-	 * to the fsync that follows. */
+	 * to the fsync that follows.  Walk the full 2 * MAX_NR_SYSCALL slot
+	 * count so the per-arch populated slots are surfaced individually
+	 * rather than collapsed back to per-nr. */
 	saved_entries = 0;
 	populated_pools = 0;
-	for (i = 0; i < MAX_NR_SYSCALL; i++) {
+	for (i = 0; i < MAX_NR_SYSCALL * 2; i++) {
 		if (payload[i].count > 0) {
 			saved_entries += payload[i].count;
 			populated_pools++;
 		}
 	}
 
-	payload_bytes = (size_t)MAX_NR_SYSCALL * sizeof(*payload);
+	payload_bytes = (size_t)MAX_NR_SYSCALL * 2 * sizeof(*payload);
 
 	hdr.magic = CMP_HINTS_FILE_MAGIC;
 	hdr.version = CMP_HINTS_FILE_VERSION;
@@ -1041,7 +1052,7 @@ bool cmp_hints_load_file(const char *path)
 		(void)close(fd);
 		return false;
 	}
-	payload_bytes = (size_t)MAX_NR_SYSCALL * sizeof(*payload);
+	payload_bytes = (size_t)MAX_NR_SYSCALL * 2 * sizeof(*payload);
 	if (hdr.payload_bytes != payload_bytes) {
 		output(0, "cmp-hints: payload_bytes %llu != expected %zu at %s -- cold start\n",
 		       (unsigned long long)hdr.payload_bytes, payload_bytes,
@@ -1085,9 +1096,15 @@ bool cmp_hints_load_file(const char *path)
 	 * considered authoritative against the running kernel; copy into
 	 * the shm pools, skipping any individual slot that fails the
 	 * per-entry bounds check so a single bit-rotted record doesn't
-	 * sink the whole warm-start. */
-	for (i = 0; i < MAX_NR_SYSCALL; i++) {
-		struct cmp_hint_pool *pool = &cmp_hints_shm->pools[i];
+	 * sink the whole warm-start.  The payload is a flat array of
+	 * 2 * MAX_NR_SYSCALL slots laid out as [i * 2 + a] matching the
+	 * memory layout of pools[i][a]; the inner do32 dimension is
+	 * folded into a flat walk here for symmetry with the serialise
+	 * path. */
+	for (i = 0; i < MAX_NR_SYSCALL * 2; i++) {
+		unsigned int nr = i / 2;
+		unsigned int a = i & 1;
+		struct cmp_hint_pool *pool = &cmp_hints_shm->pools[nr][a];
 		struct cmp_hints_pool_ondisk *src = &payload[i];
 		unsigned int src_count = src->count;
 		unsigned int dst_count = 0;
@@ -1257,13 +1274,14 @@ static time_t cmp_hints_last_snapshot_time;
 static unsigned long cmp_hints_total_generation(void)
 {
 	unsigned long sum = 0;
-	unsigned int i;
+	unsigned int i, a;
 
 	if (cmp_hints_shm == NULL)
 		return 0;
 	for (i = 0; i < MAX_NR_SYSCALL; i++)
-		sum += __atomic_load_n(&cmp_hints_shm->pools[i].generation,
-				       __ATOMIC_RELAXED);
+		for (a = 0; a < 2; a++)
+			sum += __atomic_load_n(&cmp_hints_shm->pools[i][a].generation,
+					       __ATOMIC_RELAXED);
 	return sum;
 }
 

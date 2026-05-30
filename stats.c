@@ -508,17 +508,22 @@ static void json_emit_minicorpus_section(void)
 
 static void json_emit_cmp_hints_section(void)
 {
-	unsigned int i, total_hints = 0, syscalls_with_hints = 0;
+	unsigned int i, a, total_hints = 0, syscalls_with_hints = 0;
 
 	if (cmp_hints_shm == NULL) {
 		fputs(",\"cmp_hints\":null", stdout);
 		return;
 	}
 
+	/* Per-arch slots count individually so the histogram reflects the
+	 * post-arch-split storage shape; under biarch the 32-bit and
+	 * 64-bit halves of the same nr are unrelated syscalls. */
 	for (i = 0; i < MAX_NR_SYSCALL; i++) {
-		if (cmp_hints_shm->pools[i].count > 0) {
-			total_hints += cmp_hints_shm->pools[i].count;
-			syscalls_with_hints++;
+		for (a = 0; a < 2; a++) {
+			if (cmp_hints_shm->pools[i][a].count > 0) {
+				total_hints += cmp_hints_shm->pools[i][a].count;
+				syscalls_with_hints++;
+			}
 		}
 	}
 	printf(",\"cmp_hints\":{\"values_total\":%u,\"syscalls_with_hints\":%u}",
@@ -5281,11 +5286,16 @@ void dump_stats(void)
 
 	if (cmp_hints_shm != NULL) {
 		unsigned int total_hints = 0, syscalls_with_hints = 0;
+		unsigned int a;
 
+		/* Per-arch slots count individually -- same rationale as the
+		 * JSON emitter above. */
 		for (i = 0; i < MAX_NR_SYSCALL; i++) {
-			if (cmp_hints_shm->pools[i].count > 0) {
-				total_hints += cmp_hints_shm->pools[i].count;
-				syscalls_with_hints++;
+			for (a = 0; a < 2; a++) {
+				if (cmp_hints_shm->pools[i][a].count > 0) {
+					total_hints += cmp_hints_shm->pools[i][a].count;
+					syscalls_with_hints++;
+				}
 			}
 		}
 		stat_row("cmp_hints", "values_total",        total_hints);
