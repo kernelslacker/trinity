@@ -40,11 +40,14 @@
  * sock_diag_walker.
  */
 #include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "kcov.h"
 #include "params.h"
 #include "pids.h"
@@ -315,12 +318,59 @@ static void push_promotion(enum child_op_type op)
  * State transitions.
  * -------------------------------------------------------------------- */
 
+/*
+ * Two-phase teardown: request graceful exit via SIGTERM, give slots a
+ * brief grace window to drop locks / finish cleanup, then SIGKILL any
+ * that ignored the request.  kill_pid() itself is SIGKILL-only by
+ * contract, so phase 1 uses kill(pid, SIGTERM) directly; phase 3
+ * routes through kill_pid() to inherit its mainpid / pid_is_valid
+ * safety guards.  Slot pids are re-read on every pass because the
+ * main reaper races us.
+ */
+#define CANARY_SIGTERM_GRACE_ITERS	20
+#define CANARY_SIGTERM_GRACE_USLEEP	1000
+
 static void kill_canary_slot_children(void)
 {
-	unsigned int i;
+	unsigned int i, iter;
+	unsigned int n = canary_slots;
 
-	for (i = 0; i < canary_slots && i < max_children; i++) {
+	if (n > max_children)
+		n = max_children;
+
+	/* Phase 1: request graceful exit. */
+	for (i = 0; i < n; i++) {
 		pid_t pid = __atomic_load_n(&pids[i], __ATOMIC_ACQUIRE);
+
+		if (pid == EMPTY_PIDSLOT || pid <= 0)
+			continue;
+		if (pid == mainpid)
+			continue;
+		kill(pid, SIGTERM);
+	}
+
+	/* Phase 2: ~20 ms grace window, opportunistically reap. */
+	for (iter = 0; iter < CANARY_SIGTERM_GRACE_ITERS; iter++) {
+		bool any_alive = false;
+
+		for (i = 0; i < n; i++) {
+			pid_t pid = __atomic_load_n(&pids[i], __ATOMIC_ACQUIRE);
+
+			if (pid == EMPTY_PIDSLOT || pid <= 0)
+				continue;
+			if (waitpid_eintr(pid, NULL, WNOHANG) != 0)
+				continue;
+			any_alive = true;
+		}
+		if (!any_alive)
+			return;
+		usleep(CANARY_SIGTERM_GRACE_USLEEP);
+	}
+
+	/* Phase 3: SIGKILL anything still alive. */
+	for (i = 0; i < n; i++) {
+		pid_t pid = __atomic_load_n(&pids[i], __ATOMIC_ACQUIRE);
+
 		if (pid != EMPTY_PIDSLOT && pid > 0)
 			kill_pid(pid);
 	}
