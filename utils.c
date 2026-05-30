@@ -649,7 +649,15 @@ static void shared_str_heap_init(void)
 	/* Same pre-fork-mapping requirement as the obj heap: the first
 	 * caller must run in the parent before any child forks, which
 	 * holds for all current callers (init_*_fds via open_fds()
-	 * before fork_children()). */
+	 * before fork_children()).  Assert it so a future child-context
+	 * caller cannot silently map a private heap behind the shared
+	 * cursor, which would dangle string pointers across processes. */
+	if (getpid() != mainpid) {
+		outputerr("alloc_shared_str: heap init from child context "
+			  "(pid %d, parent %d) -- would dangle shm pointers\n",
+			  getpid(), mainpid);
+		abort();
+	}
 	shared_str_heap_capacity = SHARED_STR_HEAP_SIZE;
 	shared_str_heap = alloc_shared(shared_str_heap_capacity);
 }
