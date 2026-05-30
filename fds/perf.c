@@ -50,6 +50,20 @@ static void perffd_destructor(struct object *obj)
 				if (peer->perfobj.group_fd != leader_fd)
 					continue;
 				ioctl(peer->perfobj.fd, PERF_EVENT_IOC_DISABLE, 0);
+				/*
+				 * Drop the parent_fd_hash entry for this peer
+				 * before close() so a concurrent fd_hash_lookup
+				 * never returns the just-closed fd.
+				 * __destroy_object only removes the destroyed
+				 * object's own fd; this inline pre-close path
+				 * has to remove its own.  Without this, the
+				 * peer's later kvm/perffd_destructor call sees
+				 * fd == -1 and fd_hash_remove(-1) no-ops, so
+				 * the stale entry would survive until the
+				 * kernel recycled the fd number and a fresh
+				 * add_object overwrote the slot.
+				 */
+				fd_hash_remove(peer->perfobj.fd);
 				close(peer->perfobj.fd);
 				peer->perfobj.fd = -1;
 			}

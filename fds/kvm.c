@@ -131,6 +131,17 @@ static void kvm_system_destructor(struct object *obj)
 			}
 			if (peer->kvmvcpuobj.fd < 0)
 				continue;
+			/*
+			 * Drop the parent_fd_hash entry for this peer fd
+			 * before close().  __destroy_object only removes the
+			 * leader's own fd; this inline pre-close has to clear
+			 * its own hash entry, otherwise the peer's later
+			 * destructor call sees fd == -1 and fd_hash_remove(-1)
+			 * no-ops, leaving a stale entry pointing at the now-
+			 * closed fd until the kernel recycles the fd number.
+			 * Same rationale for the VM peer loop below.
+			 */
+			fd_hash_remove(peer->kvmvcpuobj.fd);
 			close(peer->kvmvcpuobj.fd);
 			peer->kvmvcpuobj.fd = -1;
 		}
@@ -143,6 +154,7 @@ static void kvm_system_destructor(struct object *obj)
 		for_each_obj(vmhead, peer, idx) {
 			if (peer->kvmvmobj.fd < 0)
 				continue;
+			fd_hash_remove(peer->kvmvmobj.fd);
 			close(peer->kvmvmobj.fd);
 			peer->kvmvmobj.fd = -1;
 		}
