@@ -304,10 +304,21 @@ struct map * get_map_with_prot(int required_prot)
 void map_destructor(struct object *obj)
 {
 	struct map *map;
+	size_t extent;
 
 	map = &obj->map;
-	untrack_shared_region((unsigned long)map->ptr, map->size);
-	munmap(map->ptr, map->size);
+	/*
+	 * clone_global_mmap_pool() propagates tracked_size onto OBJ_LOCAL
+	 * FILE/TESTFILE entries cloned from a clamped mmap_fd() source, so
+	 * the local-pool destructor sees the same map->size < VMA extent
+	 * asymmetry as map_destructor_shared().  Release both the
+	 * shared_regions[] slot and the VMA against the pre-clamp extent
+	 * so the two halves stay in lock step; legacy callers that never
+	 * clamped leave tracked_size == 0 and fall back to map->size.
+	 */
+	extent = map->tracked_size ? map->tracked_size : map->size;
+	untrack_shared_region((unsigned long)map->ptr, extent);
+	munmap(map->ptr, extent);
 	free(map->name);
 	map->name = NULL;
 }
