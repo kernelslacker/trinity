@@ -256,9 +256,12 @@ static void sanitise_vt_unimapdesc(struct syscallrecord *rec)
 			pairs[i].unicode = rnd_u32() & 0xffff;
 			pairs[i].fontpos = rnd_modulo_u32(512);
 		}
+		d->entry_ct = cnt;
+		d->entries  = pairs;
+	} else {
+		d->entry_ct = 0;
+		d->entries  = NULL;
 	}
-	d->entry_ct = cnt;
-	d->entries  = pairs;
 	rec->a3 = (unsigned long) d;
 }
 
