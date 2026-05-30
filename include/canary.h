@@ -56,17 +56,21 @@
  * across the (file_idx, offset) product up to billions of bytes;
  * not cryptographic and not intended to be.
  */
-static inline uint8_t canary_expected_byte(unsigned int file_idx,
-					   off_t offset)
+static inline uint8_t canary_finalize_byte(uint64_t k)
 {
-	uint64_t k = ((uint64_t)file_idx << 40) ^ (uint64_t)offset;
-
 	k ^= k >> 33;
 	k *= 0xff51afd7ed558ccdULL;
 	k ^= k >> 33;
 	k *= 0xc4ceb9fe1a85ec53ULL;
 	k ^= k >> 33;
 	return (uint8_t)k;
+}
+
+static inline uint8_t canary_expected_byte(unsigned int file_idx,
+					   off_t offset)
+{
+	return canary_finalize_byte(((uint64_t)file_idx << 40) ^
+				    (uint64_t)offset);
 }
 
 struct canary_file_info {

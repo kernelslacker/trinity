@@ -108,6 +108,7 @@ static void canary_dump(struct object *obj, enum obj_scope scope)
 static bool canary_fill_file(int fd, unsigned int file_idx, size_t size)
 {
 	unsigned char buf[CANARY_FILL_BUF_SIZE];
+	uint64_t file_key = (uint64_t)file_idx << 40;
 	size_t written = 0;
 
 	while (written < size) {
@@ -118,8 +119,8 @@ static bool canary_fill_file(int fd, unsigned int file_idx, size_t size)
 		if (chunk > sizeof(buf))
 			chunk = sizeof(buf);
 		for (i = 0; i < chunk; i++)
-			buf[i] = canary_expected_byte(file_idx,
-						      (off_t)(written + i));
+			buf[i] = canary_finalize_byte(file_key ^
+						      (uint64_t)(written + i));
 		n = write(fd, buf, chunk);
 		if (n <= 0)
 			return false;
