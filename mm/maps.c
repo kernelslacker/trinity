@@ -306,6 +306,7 @@ void map_destructor(struct object *obj)
 	struct map *map;
 
 	map = &obj->map;
+	untrack_shared_region((unsigned long)map->ptr, map->size);
 	munmap(map->ptr, map->size);
 	free(map->name);
 	map->name = NULL;
@@ -323,6 +324,7 @@ void map_destructor_shared(struct object *obj)
 	struct map *map;
 
 	map = &obj->map;
+	untrack_shared_region((unsigned long)map->ptr, map->size);
 	munmap(map->ptr, map->size);
 	if (map->name != NULL) {
 		free_shared_str(map->name, strlen(map->name) + 1);
