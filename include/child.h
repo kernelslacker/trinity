@@ -727,7 +727,6 @@ struct canary_op_state {
 						 * canary op itself, not fleet-wide ops */
 	unsigned long window_start_edges;	/* childop_edges_discovered[op] snapshot */
 	unsigned int  window_crashes;		/* incremented by parent reap path */
-	unsigned int  consecutive_zero_edge_windows;
 
 	/* cumulative diagnostics */
 	unsigned int  canary_iterations;	/* lifetime windows entered */

@@ -81,11 +81,6 @@
  * a 10k-iter window is a real correlation. */
 #define CANARY_CRASH_THRESHOLD		2U
 
-/* Consecutive zero-edge windows before a soft-fail demote.  Catches
- * ops that complete cleanly but never reach productive code (missing
- * NL family, absent FUSE arms, etc.). */
-#define CANARY_ZERO_WINDOW_THRESHOLD	3U
-
 /* Seconds a DEMOTED op must wait before re-entering the picker.  Long
  * enough that a backed-off op does not churn-cycle, short enough that
  * a single multi-hour fuzz run gets to re-test misjudged ops. */
@@ -510,7 +505,6 @@ static bool pick_next_canary(enum child_op_type *out)
 			 * transition for operator visibility. */
 			canary_ops[op].state = CANARY_STATE_DORMANT;
 			canary_ops[op].last_state_transition = now;
-			canary_ops[op].consecutive_zero_edge_windows = 0;
 			output(0, "canary: %s backoff complete, re-queued for canary\n",
 				canary_ops[op].name);
 		}
@@ -548,16 +542,10 @@ static void close_window_and_decide(enum child_op_type op)
 	}
 
 	if (edges >= CANARY_EDGE_THRESHOLD) {
-		s->consecutive_zero_edge_windows = 0;
 		leave_canarying_promote(op, iters, edges);
 		return;
 	}
 
-	s->consecutive_zero_edge_windows++;
-	if (s->consecutive_zero_edge_windows >= CANARY_ZERO_WINDOW_THRESHOLD) {
-		leave_canarying_demote(op, "zero_edges_streak", iters, edges);
-		return;
-	}
 	leave_canarying_demote(op, "zero_edges", iters, edges);
 }
 
