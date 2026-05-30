@@ -1703,6 +1703,73 @@ struct stats_s {
 	 * heap-band guard). */
 	unsigned long maps_reject_size_too_large;
 
+	/* Per-rejection-reason sub-attributions of deferred_free_enqueue()
+	 * in deferred-free.c.  The function has five distinct early-return
+	 * rejection clauses; each of the five counters below is bumped once
+	 * per call that exits via the corresponding clause.  Complementary
+	 * to (does not replace):
+	 *   - parent_stats.deferred_free_reject{,_pathname,_iovec,...}, which
+	 *     attribute the corrupt-shape branch by post-handler argtype.
+	 *   - parent_stats.snapshot_non_heap_reject, the parent/child shard
+	 *     mechanism for the non-heap branch.
+	 *   - the per-PC ring fed by deferred_free_reject_bump(), which
+	 *     attributes the corrupt-shape and untracked branches by caller.
+	 * What this block adds: a single shm->stats five-way split that
+	 * makes the per-branch firing rate trivially comparable.  Lets
+	 * residual-cores triage attribute observed reject windows (e.g. the
+	 * 14/8/8-per-window seen at objects.c:757 add_object oldarray
+	 * enqueue in run 1828) to a specific clause, and validates the
+	 * alloc_track LRU widen post-rebuild by tracking the untracked
+	 * branch's rate-of-change on the next live run.  Pure
+	 * instrumentation -- no behaviour change. */
+
+	/* ptr low bits set: ((unsigned long)ptr & 0x7) != 0.  glibc malloc
+	 * always returns 8-byte aligned chunks on x86_64, so a low-bits-set
+	 * candidate cannot be a real allocation start.  libasan CHECK-fails
+	 * on misaligned addresses in its poisoning path before its bad-free
+	 * reporter ever runs, so dropping these at the enqueue boundary
+	 * preserves the symptom triage path.  See deferred-free.c clause 1. */
+	unsigned long deferred_free_reject_misaligned;
+
+	/* is_corrupt_ptr_shape(ptr) hit: pid-scribbled / canonical-out-of-
+	 * range / heuristically-bad value reaching the enqueue.  Cluster
+	 * 1/2/3 root cause (residual-cores triage 2026-05-02): sibling
+	 * value-result syscall scribbles a tid/pid into rec->aN, post
+	 * handler arrives here, N syscalls later deferred_free_tick() frees
+	 * the pid -> SIGSEGV with si_addr==si_pid.  Complementary to the
+	 * per-argtype parent_stats.deferred_free_reject_{pathname,iovec,
+	 * sockaddr,other} attribution.  See deferred-free.c clause 2. */
+	unsigned long deferred_free_reject_corrupt_shape;
+
+	/* !is_in_glibc_heap(ptr): pointer passed shape heuristic but landed
+	 * outside the brk arena cached at init (stack, library mapping,
+	 * executable mapping, trinity's own MAP_PRIVATE region).  Cannot be
+	 * a real malloc result, so the free() is undefined.  Complementary
+	 * to parent_stats.snapshot_non_heap_reject (the parent/child shard
+	 * mechanism for this same branch); this counter is the headline
+	 * shm->stats sum the per-shard mechanism feeds into.  See
+	 * deferred-free.c clause 3. */
+	unsigned long deferred_free_reject_non_heap;
+
+	/* !alloc_track_consume(ptr): ground-truth check refused a pointer
+	 * that __zmalloc() never produced.  Same alloc_track LRU pressure
+	 * class as [[maps_reject_alloc_track_miss]]: shared 256-slot LRU
+	 * can rotate out legitimate live entries under fd-pressure
+	 * cascades, false-rejecting them here.  Tracking this branch in
+	 * isolation is the validation gate for Wave-F's alloc_track widen:
+	 * a successful widen should drive this counter's rate-of-change
+	 * down on the next live run.  See deferred-free.c clause 4. */
+	unsigned long deferred_free_reject_untracked;
+
+	/* range_overlaps_shared(ptr, 1): pointer fell inside one of
+	 * trinity's own mmap'd shared regions.  ASAN catches these as
+	 * bad-free ("attempting free on address which was not malloc()-ed");
+	 * non-ASAN runs silently corrupt the glibc allocator.  Root cause
+	 * is always an arg generator handing back a tracked-mmap pointer
+	 * for an arg slot whose argtype (PATHNAME, IOVEC, SOCKADDR) expects
+	 * heap.  See deferred-free.c clause 5. */
+	unsigned long deferred_free_reject_shared_region;
+
 	/* Bumped by run_sequence_chain() when chain_corpus_pick() returns
 	 * a chain_entry whose len is zero or greater than MAX_SEQ_LEN.
 	 * The chain corpus is shared memory and tolerates lockless reads

@@ -867,6 +867,11 @@ static void dump_stats_json(void)
 			"\"maps_reject_alloc_track_miss\":%lu,"
 			"\"maps_reject_size_zero\":%lu,"
 			"\"maps_reject_size_too_large\":%lu,"
+			"\"deferred_free_reject_misaligned\":%lu,"
+			"\"deferred_free_reject_corrupt_shape\":%lu,"
+			"\"deferred_free_reject_non_heap\":%lu,"
+			"\"deferred_free_reject_untracked\":%lu,"
+			"\"deferred_free_reject_shared_region\":%lu,"
 			"\"pagecache_canary_corrupt_caught\":%lu,"
 			"\"lock_word_scribbled\":%lu,"
 			"\"lock_held_scribble\":%lu,"
@@ -1092,6 +1097,11 @@ static void dump_stats_json(void)
 		shm->stats.maps_reject_alloc_track_miss,
 		shm->stats.maps_reject_size_zero,
 		shm->stats.maps_reject_size_too_large,
+		shm->stats.deferred_free_reject_misaligned,
+		shm->stats.deferred_free_reject_corrupt_shape,
+		shm->stats.deferred_free_reject_non_heap,
+		shm->stats.deferred_free_reject_untracked,
+		shm->stats.deferred_free_reject_shared_region,
 		shm->stats.pagecache_canary_corrupt_caught,
 		parent_stats.lock_word_scribbled,
 		shm->stats.lock_held_scribble,
@@ -2023,6 +2033,16 @@ static const struct {
 	  offsetof(struct stats_s, maps_reject_size_zero) },
 	{ "maps_reject_size_too_large",
 	  offsetof(struct stats_s, maps_reject_size_too_large) },
+	{ "deferred_free_reject_misaligned",
+	  offsetof(struct stats_s, deferred_free_reject_misaligned) },
+	{ "deferred_free_reject_corrupt_shape",
+	  offsetof(struct stats_s, deferred_free_reject_corrupt_shape) },
+	{ "deferred_free_reject_non_heap",
+	  offsetof(struct stats_s, deferred_free_reject_non_heap) },
+	{ "deferred_free_reject_untracked",
+	  offsetof(struct stats_s, deferred_free_reject_untracked) },
+	{ "deferred_free_reject_shared_region",
+	  offsetof(struct stats_s, deferred_free_reject_shared_region) },
 	{ "pagecache_canary_corrupt_caught",
 	  offsetof(struct stats_s, pagecache_canary_corrupt_caught) },
 	/* genetlink registry per-family dispatch counters; rate-of-change
@@ -3644,6 +3664,16 @@ void dump_stats(void)
 		stat_row("corruption", "deferred_free_reject_sockaddr", parent_stats.deferred_free_reject_sockaddr);
 	if (parent_stats.deferred_free_reject_other)
 		stat_row("corruption", "deferred_free_reject_other", parent_stats.deferred_free_reject_other);
+	if (shm->stats.deferred_free_reject_misaligned)
+		stat_row("corruption", "deferred_free_reject_misaligned",     shm->stats.deferred_free_reject_misaligned);
+	if (shm->stats.deferred_free_reject_corrupt_shape)
+		stat_row("corruption", "deferred_free_reject_corrupt_shape",  shm->stats.deferred_free_reject_corrupt_shape);
+	if (shm->stats.deferred_free_reject_non_heap)
+		stat_row("corruption", "deferred_free_reject_non_heap",       shm->stats.deferred_free_reject_non_heap);
+	if (shm->stats.deferred_free_reject_untracked)
+		stat_row("corruption", "deferred_free_reject_untracked",      shm->stats.deferred_free_reject_untracked);
+	if (shm->stats.deferred_free_reject_shared_region)
+		stat_row("corruption", "deferred_free_reject_shared_region",  shm->stats.deferred_free_reject_shared_region);
 	if (parent_stats.snapshot_non_heap_reject)
 		stat_row("corruption", "snapshot_non_heap_reject", parent_stats.snapshot_non_heap_reject);
 	if (parent_stats.lock_word_scribbled)

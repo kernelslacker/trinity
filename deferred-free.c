@@ -636,6 +636,7 @@ void deferred_free_enqueue(void *ptr)
 				  pc_to_string(__builtin_return_address(0),
 					       pcbuf, sizeof(pcbuf)), n);
 		}
+		__atomic_add_fetch(&shm->stats.deferred_free_reject_misaligned, 1, __ATOMIC_RELAXED);
 		return;
 	}
 
@@ -654,6 +655,7 @@ void deferred_free_enqueue(void *ptr)
 		outputerr("deferred_free_enqueue: rejected suspicious ptr=%p "
 			  "(pid-scribbled?)\n", ptr);
 		deferred_free_reject_bump(__builtin_return_address(0));
+		__atomic_add_fetch(&shm->stats.deferred_free_reject_corrupt_shape, 1, __ATOMIC_RELAXED);
 		return;
 	}
 
@@ -690,6 +692,7 @@ void deferred_free_enqueue(void *ptr)
 			else
 				parent_stats.snapshot_non_heap_reject++;
 		}
+		__atomic_add_fetch(&shm->stats.deferred_free_reject_non_heap, 1, __ATOMIC_RELAXED);
 		return;
 	}
 
@@ -714,6 +717,7 @@ void deferred_free_enqueue(void *ptr)
 					       pcbuf, sizeof(pcbuf)), n);
 		}
 		deferred_free_reject_bump(__builtin_return_address(0));
+		__atomic_add_fetch(&shm->stats.deferred_free_reject_untracked, 1, __ATOMIC_RELAXED);
 		return;
 	}
 
@@ -745,6 +749,7 @@ void deferred_free_enqueue(void *ptr)
 				  pc_to_string(__builtin_return_address(0),
 					       pcbuf, sizeof(pcbuf)), n);
 		}
+		__atomic_add_fetch(&shm->stats.deferred_free_reject_shared_region, 1, __ATOMIC_RELAXED);
 		return;
 	}
 
