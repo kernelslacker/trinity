@@ -2308,8 +2308,11 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 		nlh->nlmsg_len = offset - msg_start;
 	}
 
-	/* NLMSG_ALIGN for chaining */
-	return NLMSG_ALIGN(offset);
+	/* NLMSG_ALIGN for chaining; clamp at buflen so a downstream
+	 * memcpy(gen_buf, gen_len) can never over-read the allocation when
+	 * total_len is not a multiple of NLMSG_ALIGNTO. */
+	size_t aligned = NLMSG_ALIGN(offset);
+	return aligned > buflen ? buflen : aligned;
 }
 
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
