@@ -16,9 +16,3 @@
 # Runs in parent context (no this_child()); the child's local
 # fd_hash[] / live_fds bookkeeping cannot be touched from here.
 syscall.c:child_watchdog_evict_fd
-
-# Provider stale-slot eviction: an fd opened in the parent and
-# published to the side-table was closed under us (a sibling child
-# closed it, or an open(2) reused the fd number for an unrelated
-# object).  This is a stale-pointer evict, not a child-side close.
-fds/dev_template.c:dev_template_pick_fd

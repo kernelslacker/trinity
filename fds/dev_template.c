@@ -18,7 +18,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,13 +25,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "child.h"
 #include "dev_template.h"
-#include "fd-event.h"
 #include "fd.h"
 #include "objects.h"
 #include "random.h"
-#include "rnd.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -53,20 +49,6 @@ static const struct dev_template dev_templates[DEV_TEMPLATE_MAX] = {
 	[DEV_TEMPLATE_BINDER]        = { "/dev/binder",         O_RDWR,   "CONFIG_ANDROID_BINDER_IPC" },
 };
 
-/*
- * Side-table indexed by enum dev_template_id, tracking which entries
- * opened successfully.  Lives in shared memory so children see the
- * parent's init result without relying on the fork CoW snapshot —
- * mirrors the canary pool's storage choice in fds/canary.c.
- */
-struct dev_template_state {
-	int fd;
-	bool live;
-};
-
-static struct dev_template_state *dev_template_state;
-static unsigned int nr_live_templates;
-
 static void dev_template_destructor(struct object *obj)
 {
 	close(obj->fileobj.fd);
@@ -84,21 +66,11 @@ static int init_dev_templates(void)
 {
 	struct objhead *head;
 	unsigned int i;
+	unsigned int opened = 0;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_DEV_TEMPLATE);
 	head->destroy = &dev_template_destructor;
 	head->dump = &dev_template_dump;
-
-	dev_template_state = alloc_shared(sizeof(*dev_template_state) *
-					  DEV_TEMPLATE_MAX);
-	if (dev_template_state == NULL) {
-		outputerr("dev_template: alloc_shared(state) failed\n");
-		return false;
-	}
-	for (i = 0; i < DEV_TEMPLATE_MAX; i++) {
-		dev_template_state[i].fd = -1;
-		dev_template_state[i].live = false;
-	}
 
 	for (i = 0; i < DEV_TEMPLATE_MAX; i++) {
 		const struct dev_template *t = &dev_templates[i];
@@ -128,15 +100,13 @@ static int init_dev_templates(void)
 
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_DEV_TEMPLATE);
 
-		dev_template_state[i].fd = fd;
-		dev_template_state[i].live = true;
-		nr_live_templates++;
+		opened++;
 	}
 
 	output(0, "dev_template: opened %u/%u entries\n",
-		nr_live_templates, (unsigned int)DEV_TEMPLATE_MAX);
+		opened, (unsigned int)DEV_TEMPLATE_MAX);
 
-	return nr_live_templates > 0;
+	return opened > 0;
 }
 
 static int get_rand_dev_template_fd(void)
@@ -162,57 +132,6 @@ static int get_rand_dev_template_fd(void)
 		return fd;
 	}
 
-	return -1;
-}
-
-int dev_template_pick_fd(void)
-{
-	unsigned int start, i;
-
-	if (nr_live_templates == 0 || dev_template_state == NULL)
-		return -1;
-
-	/* Random start + linear probe over the side-table.  Worst case
-	 * is DEV_TEMPLATE_MAX iterations when only one slot is live;
-	 * the table is tiny so even that is a handful of cycles. */
-	start = rnd_modulo_u32(DEV_TEMPLATE_MAX);
-	for (i = 0; i < DEV_TEMPLATE_MAX; i++) {
-		unsigned int idx = (start + i) % DEV_TEMPLATE_MAX;
-		int fd;
-
-		if (!dev_template_state[idx].live)
-			continue;
-
-		fd = dev_template_state[idx].fd;
-		if (fd < 0)
-			continue;
-
-		/* fcntl(F_GETFD) probe before returning the slot, mirroring
-		 * the pidfd provider.  These fds were opened in the parent
-		 * at init and added to fd_hash[] / the live-fd pool; any
-		 * child close() invalidates them but leaves the side-table
-		 * marked live, opening a type-confusion window if an
-		 * unrelated open(2) reuses the fd number.  Drop the stale
-		 * slot and re-probe instead of returning -1 after a single
-		 * try. */
-		if (fcntl(fd, F_GETFD) < 0) {
-			struct childdata *child = this_child();
-
-			if (child != NULL && child->fd_event_ring != NULL)
-				fd_event_enqueue(child->fd_event_ring,
-						 FD_EVENT_CLOSE,
-						 fd);
-
-			fd_hash_remove_local(fd);
-			dev_template_state[idx].live = false;
-			dev_template_state[idx].fd = -1;
-			if (nr_live_templates > 0)
-				nr_live_templates--;
-			continue;
-		}
-
-		return fd;
-	}
 	return -1;
 }
 

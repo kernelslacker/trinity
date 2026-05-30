@@ -26,9 +26,8 @@ struct dev_template {
 };
 
 /*
- * Stable identifier for each table slot so dev_template_pick_fd() can
- * return a specific entry by id, and so the live-state side-table
- * stays in sync with the static table by index.
+ * Stable identifier for each table slot, used as the designated
+ * initializer index for the static dev_templates[] table.
  */
 enum dev_template_id {
 	DEV_TEMPLATE_NULL,
@@ -47,15 +46,3 @@ enum dev_template_id {
 	DEV_TEMPLATE_BINDER,
 	DEV_TEMPLATE_MAX
 };
-
-/*
- * Return a random live template fd, or -1 if no template entries
- * opened successfully.  Consumers that want to bias toward template
- * devices specifically (rather than the generic random-fd path,
- * which picks across all enabled providers) can call this.  All
- * returned fds are also reachable via get_random_fd() /
- * get_new_random_fd() through the dev_template provider's .get
- * callback, so the standard ioctl / read / write fuzzers already
- * exercise them without any caller change.
- */
-int dev_template_pick_fd(void);
