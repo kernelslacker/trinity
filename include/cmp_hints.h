@@ -49,8 +49,10 @@
  * Sized 8192 bits (1 KiB) per child with k=2 hashes -- the textbook
  * efficient point for FPR well under 10% at the few-hundred-unique-
  * tuples-per-window load the dedup-refresh path sees in practice.
- * Reset every CMP_HINTS_BLOOM_RESET cmp_hints_collect() calls (a fixed
- * cadence per child; trades stale-skip risk against contention savings).
+ * Reset every CMP_HINTS_BLOOM_RESET CMP records consumed (a
+ * record-driven cadence per child; this tracks the actual rate
+ * bits land in the bloom and stops single high-record calls
+ * from saturating the filter early).
  * Per-child storage so the check needs no cross-process atomic.
  */
 #define CMP_HINTS_BLOOM_BITS	8192
@@ -60,7 +62,7 @@
 
 struct cmp_hints_bloom {
 	uint8_t bits[CMP_HINTS_BLOOM_BYTES];
-	unsigned int calls;	/* cmp_hints_collect() calls since last reset */
+	unsigned int records;	/* CMP records consumed since last reset */
 };
 
 struct cmp_hint_entry {

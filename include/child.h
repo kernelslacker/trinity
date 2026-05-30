@@ -574,8 +574,8 @@ struct childdata {
 	/* Per-child seen-bloom over (cmp_ip, value, size) tuples consulted
 	 * by cmp_hints_collect() to short-circuit pool_add_locked's per-call
 	 * linear-scan dedup when this child has already pushed the tuple into
-	 * the pool within the last CMP_HINTS_BLOOM_RESET cmp_hints_collect()
-	 * calls.  See include/cmp_hints.h for the size / FPR tradeoff and the
+	 * the pool within the last CMP_HINTS_BLOOM_RESET CMP records.
+	 * See include/cmp_hints.h for the size / FPR tradeoff and the
 	 * "false positives are benign" argument.  Owner-only writes from
 	 * inside the child, no cross-process coherence needed. */
 	struct cmp_hints_bloom cmp_hints_seen;

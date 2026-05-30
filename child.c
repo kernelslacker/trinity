@@ -461,7 +461,7 @@ void clean_childdata(struct childdata *child)
 	 * previous child's tuple-emission history. */
 	memset(child->cmp_hints_seen.bits, 0,
 	       sizeof(child->cmp_hints_seen.bits));
-	child->cmp_hints_seen.calls = 0;
+	child->cmp_hints_seen.records = 0;
 
 	/* Clear any __BUG() stamp left by the prior occupant of this slot
 	 * so the parent's zombie-pending warning doesn't mis-attribute the

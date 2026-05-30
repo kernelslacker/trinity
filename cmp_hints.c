@@ -509,9 +509,10 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 	child = this_child();
 	if (child != NULL) {
 		bloom = &child->cmp_hints_seen;
-		if (++bloom->calls >= CMP_HINTS_BLOOM_RESET) {
+		bloom->records += count;
+		if (bloom->records >= CMP_HINTS_BLOOM_RESET) {
 			memset(bloom->bits, 0, sizeof(bloom->bits));
-			bloom->calls = 0;
+			bloom->records = 0;
 		}
 	}
 
