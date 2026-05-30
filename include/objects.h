@@ -488,13 +488,25 @@ struct __for_each_obj_state {
 void __for_each_obj_init(struct objhead *head,
 			 struct __for_each_obj_state *s);
 
+/*
+ * The state var is named __feo_<line> rather than __feo so two
+ * for_each_obj invocations on adjacent lines (e.g. a nested walk
+ * where the outer loop already has its own state) don't shadow
+ * each other under -Wshadow.  __LINE__ is unique per top-level
+ * macro expansion; the indirection through _FEO_CAT/_FEO_NAME
+ * forces __LINE__ to expand before the token paste.
+ */
+#define _FEO_CAT(a, b)		a##b
+#define _FEO_NAME(line)		_FEO_CAT(__feo_, line)
+#define _FEO_STATE		_FEO_NAME(__LINE__)
+
 #define for_each_obj(head, obj, idx)					\
-	for (struct __for_each_obj_state __feo = { .do_iter = 1 };	\
-	     __feo.do_iter &&						\
-		     (__for_each_obj_init((head), &__feo), 1);		\
-	     __feo.do_iter = 0)						\
-		for ((idx) = 0; (idx) < __feo.n_snap; (idx)++)		\
-			if (((obj) = __feo.array_snap[(idx)]) != NULL)
+	for (struct __for_each_obj_state _FEO_STATE = { .do_iter = 1 };	\
+	     _FEO_STATE.do_iter &&					\
+		     (__for_each_obj_init((head), &_FEO_STATE), 1);	\
+	     _FEO_STATE.do_iter = 0)					\
+		for ((idx) = 0; (idx) < _FEO_STATE.n_snap; (idx)++)	\
+			if (((obj) = _FEO_STATE.array_snap[(idx)]) != NULL)
 
 struct object * alloc_object(void) __must_check;
 void add_object(struct object *obj, enum obj_scope scope, enum objecttype type);
