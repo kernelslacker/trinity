@@ -25,11 +25,16 @@ static void sanitise_mlock(struct syscallrecord *rec)
 
 	rec->a1 = mlock_state_pick_start(map);
 	len = mlock_state_pick_length(map->size, &over_end);
-	if (!over_end) {
+	if (!over_end)
 		len = mlock_state_clamp_len(len);
-		mlock_state_record_locked(rec->a1, len);
-	}
 	rec->a2 = len;
+}
+
+static void post_mlock(struct syscallrecord *rec)
+{
+	if (rec->retval != 0)
+		return;
+	mlock_state_record_locked(rec->a1, rec->a2);
 }
 
 struct syscallentry syscall_mlock = {
@@ -39,6 +44,7 @@ struct syscallentry syscall_mlock = {
 	.argname = { [0] = "addr", [1] = "len" },
 	.group = GROUP_VM,
 	.sanitise = sanitise_mlock,
+	.post = post_mlock,
 	.rettype = RET_ZERO_SUCCESS,
 };
 
@@ -56,5 +62,6 @@ struct syscallentry syscall_mlock2 = {
 	.arg_params[2].list = ARGLIST(mlock2_flags),
 	.group = GROUP_VM,
 	.sanitise = sanitise_mlock,
+	.post = post_mlock,
 	.rettype = RET_ZERO_SUCCESS,
 };

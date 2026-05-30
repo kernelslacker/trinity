@@ -58,9 +58,15 @@ static void sanitise_munlock(struct syscallrecord *rec)
 		len = mlock_state_pick_length(map->size, &over_end);
 	}
 
-	mlock_state_record_unlocked(len);
 	rec->a1 = start;
 	rec->a2 = len;
+}
+
+static void post_munlock(struct syscallrecord *rec)
+{
+	if (rec->retval != 0)
+		return;
+	mlock_state_record_unlocked(rec->a2);
 }
 
 struct syscallentry syscall_munlock = {
@@ -71,4 +77,5 @@ struct syscallentry syscall_munlock = {
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VM,
 	.sanitise = sanitise_munlock,
+	.post = post_munlock,
 };
