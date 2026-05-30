@@ -1,0 +1,24 @@
+# Grandfathered direct FD_EVENT_CLOSE producers outside fd-event.c.
+# Each entry is a `relative/path/to/file.c:funcname` site that emits
+# FD_EVENT_CLOSE without going through notify_child_fd_closed[_range]().
+#
+# Both entries here are semantically NOT a close: they signal eviction
+# of an fd that is no longer the same fd we thought it was.  The
+# parent-side CLOSE drain runs remove_object_by_fd() which assumes a
+# true close has happened.  Both shapes want a distinct event type
+# (FD_EVENT_EVICT or similar) once the event vocabulary grows; until
+# then they remain baselined here so the check passes clean and any
+# NEW direct producer is trapped immediately.
+#
+# This list should shrink over time, never grow.
+
+# Parent watchdog evicting a child fd whose owning child is gone.
+# Runs in parent context (no this_child()); the child's local
+# fd_hash[] / live_fds bookkeeping cannot be touched from here.
+syscall.c:child_watchdog_evict_fd
+
+# Provider stale-slot eviction: an fd opened in the parent and
+# published to the side-table was closed under us (a sibling child
+# closed it, or an open(2) reused the fd number for an unrelated
+# object).  This is a stale-pointer evict, not a child-side close.
+fds/dev_template.c:dev_template_pick_fd
