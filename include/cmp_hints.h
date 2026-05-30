@@ -3,6 +3,7 @@
 #include <sys/types.h>
 
 #include "locks.h"
+#include "syscall.h"
 #include "types.h"
 
 /*
@@ -102,8 +103,10 @@ struct cmp_hint_pool {
 };
 
 struct cmp_hints_shared {
-	struct cmp_hint_pool pools[1024]; /* indexed by syscall number */
+	struct cmp_hint_pool pools[MAX_NR_SYSCALL]; /* indexed by syscall number */
 };
+_Static_assert(MAX_NR_SYSCALL == 1024,
+	"cmp_hints_shared layout assumes MAX_NR_SYSCALL == 1024");
 
 extern struct cmp_hints_shared *cmp_hints_shm;
 
