@@ -503,7 +503,7 @@ static unsigned long gen_arg_typed_fd(struct syscallentry *entry,
 			__atomic_fetch_add(&shm->stats.wrong_fd_type_subst_generic,
 					   1UL, __ATOMIC_RELAXED);
 		} else {
-			unsigned int range = ARG_FD_TIMERFD - ARG_FD_BPF_BTF + 1;
+			unsigned int range = ARG_FD_TIMERFD - ARG_FD_BPF_BTF;
 			unsigned int pick = rnd_modulo_u32(range);
 
 			effective_argtype = ARG_FD_BPF_BTF + pick;
