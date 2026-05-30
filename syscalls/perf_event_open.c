@@ -1607,9 +1607,8 @@ static void post_perf_event_open(struct syscallrecord *rec)
 			 * already ran above this layer, so the success tally
 			 * is preserved.
 			 */
-			if (child != NULL && child->fd_event_ring != NULL)
-				fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE,
-						 fd);
+			if (child != NULL)
+				notify_child_fd_closed(child, fd);
 
 			remove_object_by_fd(fd);
 
