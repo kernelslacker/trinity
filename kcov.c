@@ -931,7 +931,11 @@ unsigned long kcov_bracket_end(struct kcov_child *kc,
 		return 0;
 
 	kcov_disable(kc);
-	kcov_collect(kc, (unsigned int)op_nr, &edges_this_call);
+	/* Childops are PC-mode only (kcov_bracket_begin rejects KCOV_MODE_CMP)
+	 * and op_nr >= CHILDOP_KCOV_NR_BASE bypasses the per-syscall arrays
+	 * inside kcov_collect, so the do32 dimension is unused on this path;
+	 * pass false as the conservative default. */
+	kcov_collect(kc, (unsigned int)op_nr, false, &edges_this_call);
 	kc->bracket_owned = false;
 	return edges_this_call;
 }
@@ -998,10 +1002,12 @@ static unsigned int bucket_for_count(unsigned int n)
  * entire table by bumping a single counter instead of zeroing it per call.
  */
 static unsigned int dedup_inc(struct kcov_dedup_slot *dedup, unsigned int edge,
-	uint64_t generation)
+	uint64_t generation, bool do32)
 {
 	unsigned int slot = (edge * 0x9E3779B1U) & KCOV_DEDUP_MASK;
 	unsigned int probe;
+
+	(void)do32;	/* reserved for per-syscall diag indexing in a follow-up */
 
 	for (probe = 0; probe < KCOV_DEDUP_MAX_PROBE; probe++) {
 		struct kcov_dedup_slot *s = &dedup[slot];
@@ -1045,7 +1051,7 @@ static unsigned int dedup_inc(struct kcov_dedup_slot *dedup, unsigned int edge,
 	return 1;
 }
 
-bool kcov_collect(struct kcov_child *kc, unsigned int nr,
+bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		  unsigned long *new_edge_count)
 {
 	unsigned long count;
@@ -1053,6 +1059,8 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr,
 	unsigned long call_nr;
 	unsigned long edges_this_call = 0;
 	bool found_new = false;
+
+	(void)do32;	/* reserved for per-syscall diag indexing in a follow-up */
 
 	if (new_edge_count != NULL)
 		*new_edge_count = 0;
@@ -1105,7 +1113,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr,
 			__ATOMIC_RELAXED);
 		unsigned int edge = pc_to_edge(pc_val);
 		unsigned int local_count = dedup_inc(kc->dedup, edge,
-			kc->current_generation);
+			kc->current_generation, do32);
 		unsigned int bucket = bucket_for_count(local_count);
 		unsigned char mask, old;
 
