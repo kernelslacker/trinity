@@ -177,6 +177,9 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	case STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR:
 		parent_stats.deferred_free_corrupt_ptr += delta;
 		break;
+	case STATS_FIELD_ARG_SHADOW_STOMP:
+		parent_stats.arg_shadow_stomp += delta;
+		break;
 	case STATS_FIELD_CALL_COMPLETE: {
 		/* One slot, three logical bumps.  op_count is unconditional
 		 * (the SPSC slot wouldn't have made it past spsc_ring_drain

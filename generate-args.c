@@ -1408,6 +1408,37 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
  * avoid_shared_buffer_out() or miss specific slots. Length default is
  * page_size (conservative; bare ARG_ADDRESS carries no length info
  * and walking adjacent slots per dispatch is too expensive). */
+/* Snapshot the opted-in integer arg slots into rec->arg_shadow[] so the
+ * post handler can read a sibling-stomp-resistant copy via
+ * get_arg_snapshot().  Runs after blanket_address_scrub() so the value
+ * captured matches what do_syscall() will actually pass to the kernel.
+ * Most syscalls have entry->arg_snapshot_mask == 0 and short-circuit on
+ * the cached zero -- the opted-in set is the small handful of post
+ * handlers that compare an integer slot to rec->retval (see commit body
+ * for the MVP list). */
+static void snapshot_args(struct syscallentry *entry, struct syscallrecord *rec)
+{
+	uint8_t mask = entry->arg_snapshot_mask;
+
+	rec->arg_snapshot_mask = mask;
+	while (mask != 0) {
+		unsigned int i = (unsigned int)__builtin_ctz(mask);
+		unsigned long val;
+
+		switch (i + 1) {
+		case 1: val = rec->a1; break;
+		case 2: val = rec->a2; break;
+		case 3: val = rec->a3; break;
+		case 4: val = rec->a4; break;
+		case 5: val = rec->a5; break;
+		case 6: val = rec->a6; break;
+		default: val = 0; break;
+		}
+		rec->arg_shadow[i] = val;
+		mask &= (uint8_t)(mask - 1);
+	}
+}
+
 static void blanket_address_scrub(struct syscallentry *entry, struct syscallrecord *rec)
 {
 	uint8_t mask = entry->address_scrub_mask;
@@ -1518,6 +1549,11 @@ void generate_syscall_args(struct syscallrecord *rec)
 	 * deferred_freeptr would leave a stale pointer in post_state for
 	 * the next syscall's post handler to dereference. */
 	rec->post_state = 0;
+	/* Same hoist for arg_snapshot_mask: defaults to "nothing shadowed"
+	 * so get_arg_snapshot() in any unrelated handler that somehow gets
+	 * called against this rec sees the live slot instead of a stale
+	 * shadow from a previous dispatch. */
+	rec->arg_snapshot_mask = 0;
 
 	/* For syscalls without sanitise callbacks, try replaying a
 	 * saved arg set from the mini-corpus. If replay succeeds,
@@ -1525,6 +1561,7 @@ void generate_syscall_args(struct syscallrecord *rec)
 	if (entry->sanitise == NULL && minicorpus_replay(rec)) {
 		rec->rettype = entry->rettype;
 		blanket_address_scrub(entry, rec);
+		snapshot_args(entry, rec);
 		unlock(&rec->lock);
 		return;
 	}
@@ -1534,6 +1571,7 @@ void generate_syscall_args(struct syscallrecord *rec)
 	if (entry->sanitise)
 		entry->sanitise(rec);
 	blanket_address_scrub(entry, rec);
+	snapshot_args(entry, rec);
 
 	unlock(&rec->lock);
 }

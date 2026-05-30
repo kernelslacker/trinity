@@ -198,7 +198,7 @@ static void sanitise_epoll_pwait2(struct syscallrecord *rec)
 static void post_epoll_pwait(struct syscallrecord *rec)
 {
 	long retval    = (long) rec->retval;
-	long maxevents = (long) rec->a3;
+	long maxevents = (long) get_arg_snapshot(rec, 3);
 
 	if (retval == -1L)
 		return;
@@ -221,6 +221,9 @@ struct syscallentry syscall_epoll_pwait = {
 	.rettype = RET_BORING,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	/* a3 (maxevents) read in post -- shared with epoll_pwait2 via
+	 * post_epoll_pwait().  See syscall_epoll_wait for rationale. */
+	.arg_snapshot_mask = (1u << 2),
 };
 
 struct syscallentry syscall_epoll_pwait2 = {
@@ -233,4 +236,5 @@ struct syscallentry syscall_epoll_pwait2 = {
 	.rettype = RET_BORING,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	.arg_snapshot_mask = (1u << 2),
 };

@@ -1691,6 +1691,34 @@ void post_handler_corrupt_ptr_bump_retfd(struct syscallrecord *rec)
 }
 
 /*
+ * Out-of-line tripwire for get_arg_snapshot() mismatches.  Called only
+ * when an opted-in slot's shadow disagrees with the live rec->aN at the
+ * post handler's read site, i.e. a sibling scribbled the slot between
+ * the snapshot taken at the tail of generate_syscall_args() and now.
+ * Routes through the per-child stats_ring on the child path (parent
+ * drain accumulates into parent_stats.arg_shadow_stomp) and through
+ * parent_stats directly on the rare no-child path.  No per-syscall
+ * shard for now -- the MVP opted-in set is small enough that aggregate
+ * tells us "is this signal real" without sub-attribution; when the
+ * opt-in set grows past a handful of handlers we can teach this helper
+ * the corrupt_ptr_attr_record per-(nr,do32bit) routing.
+ */
+void arg_shadow_stomp_bump(struct syscallrecord *rec, unsigned int argnum,
+			   unsigned long shadow, unsigned long current)
+{
+	struct childdata *child = this_child();
+
+	if (child != NULL && child->stats_ring != NULL)
+		stats_ring_enqueue(child->stats_ring,
+				   STATS_FIELD_ARG_SHADOW_STOMP, 0, 1);
+	else
+		parent_stats.arg_shadow_stomp++;
+
+	output(0, "arg_shadow_stomp: syscall nr %u arg %u shadow 0x%lx live 0x%lx\n",
+	       rec != NULL ? rec->nr : 0, argnum, shadow, current);
+}
+
+/*
  * Categorise a rejected pointer value into one of four heuristic bands
  * so the sample log line tells us at a glance whether the rejection is
  * obvious noise (NULL-ish, pid-shaped, kernel-VA leak) or whether the

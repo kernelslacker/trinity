@@ -90,6 +90,26 @@ struct syscallrecord {
 	 * region while staying off every hot cacheline.
 	 */
 	uint64_t _canary;
+
+	/*
+	 * Per-arg shadow of integer slots the post handler will read to
+	 * validate rec->retval.  Populated by snapshot_args() at the tail of
+	 * generate_syscall_args(), gated on entry->arg_snapshot_mask.
+	 * Opted-in post handlers read via get_arg_snapshot(rec, N) instead
+	 * of rec->aN directly; the accessor verifies shadow vs. live and
+	 * bumps arg_shadow_stomp on mismatch.  Defends the small set of
+	 * handlers that compare an integer arg against retval (epoll_wait
+	 * family's maxevents, getsid's pid gate) from sibling-stomp
+	 * scribbles of rec->aN between BEFORE and AFTER -- a stomp that
+	 * leaves the canary intact is invisible to the wholesale detector
+	 * above.  arg_snapshot_mask mirrors entry->arg_snapshot_mask at
+	 * snapshot time so the accessor can confirm "this slot was actually
+	 * shadowed" without re-resolving the entry per read.  Placed after
+	 * _canary (cold tail) so a single stomp pattern aliased onto the
+	 * aN slots will not also hit the shadow at the matching offset.
+	 */
+	unsigned long arg_shadow[6];
+	uint8_t arg_snapshot_mask;
 };
 
 #define REC_CANARY_MAGIC	0xdeadbeefcafebabeULL
@@ -356,6 +376,22 @@ struct syscallentry {
 	 * exception; iov-sum and zero-as-query syscalls stay per-syscall.
 	 */
 	int bound_arg;
+
+	/*
+	 * Per-syscall opt-in bitmap of arg slots (1..6) whose value the
+	 * post handler reads to validate rec->retval.  Bit k (k=0..5) set
+	 * means slot (k+1) gets snapshotted into rec->arg_shadow[k] at the
+	 * tail of generate_syscall_args() and must be consumed via
+	 * get_arg_snapshot(rec, k+1) from the post handler.  Tripwire-armed:
+	 * a mismatch between shadow and live rec->aN at read time bumps
+	 * parent_stats.arg_shadow_stomp via the per-child stats_ring,
+	 * surfacing sibling stomps that the canary check misses because
+	 * they only scribble a single integer slot.  Default 0 -- the
+	 * snapshot hook short-circuits on a zero mask; the accessor falls
+	 * back to the live rec->aN read for non-opted-in slots.  Mirror of
+	 * the address_scrub_mask convention: bit i corresponds to slot (i+1).
+	 */
+	uint8_t arg_snapshot_mask;
 };
 
 #define RET_BORING		-1
@@ -462,6 +498,51 @@ uint8_t compute_address_scrub_mask(const struct syscallentry *entry);
 uint8_t compute_cleanup_arg_mask(const struct syscallentry *entry);
 uint8_t compute_fd_arg_mask(const struct syscallentry *entry);
 uint8_t compute_len_arg_mask(const struct syscallentry *entry);
+
+/*
+ * Tripwire bump for get_arg_snapshot() mismatches.  Out-of-line so the
+ * accessor stays a small inline on the common path (mask cleared or
+ * shadow == live).  Defined in utils.c.
+ */
+void arg_shadow_stomp_bump(struct syscallrecord *rec, unsigned int argnum,
+			   unsigned long shadow, unsigned long current);
+
+/*
+ * Verify-and-read accessor for arg-shadow snapshotted slots.  Opted-in
+ * post handlers call this in place of reading rec->aN directly.  If the
+ * slot is not in this rec's snapshot mask (defensive -- a non-opted call
+ * site should not be reaching for the accessor), returns the live slot
+ * value unchanged so the handler still sees something usable.  When the
+ * slot IS shadowed, compares shadow vs live, bumps the tripwire on
+ * mismatch (sibling stomp between BEFORE and AFTER), and returns the
+ * stable shadow value so the handler's retval-vs-bound check operates
+ * on the pre-syscall input rather than the post-stomp value.
+ */
+static inline unsigned long get_arg_snapshot(struct syscallrecord *rec,
+					     unsigned int argnum)
+{
+	unsigned long *slot;
+	unsigned long shadow, current;
+
+	switch (argnum) {
+	case 1: slot = &rec->a1; break;
+	case 2: slot = &rec->a2; break;
+	case 3: slot = &rec->a3; break;
+	case 4: slot = &rec->a4; break;
+	case 5: slot = &rec->a5; break;
+	case 6: slot = &rec->a6; break;
+	default: return 0;
+	}
+
+	current = *slot;
+	if ((rec->arg_snapshot_mask & (uint8_t)(1u << (argnum - 1))) == 0)
+		return current;
+
+	shadow = rec->arg_shadow[argnum - 1];
+	if (shadow != current)
+		arg_shadow_stomp_bump(rec, argnum, shadow, current);
+	return shadow;
+}
 
 #define for_each_arg(_e, _i) \
 	for (_i = 1; _i <= (_e)->num_args; _i++)

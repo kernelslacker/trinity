@@ -74,6 +74,18 @@ enum stats_field {
 	STATS_FIELD_RING_EVICTION_CORRUPT,
 	STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR,
 	/*
+	 * get_arg_snapshot() observed shadow != live for an opted-in slot
+	 * between the snapshot taken at the tail of generate_syscall_args()
+	 * and the post handler's read.  The handler still gets the stable
+	 * shadow value back; this counter surfaces "how often is a sibling
+	 * actually scribbling the slot" so we can tell whether the
+	 * arg-shadow pattern is silently saving us or doing nothing useful.
+	 * Aggregate-only for now; per-syscall attribution comes via the
+	 * existing post_handler_corrupt_ptr_bump rings when an opted-in
+	 * handler later still chooses to bump corrupt_ptr.
+	 */
+	STATS_FIELD_ARG_SHADOW_STOMP,
+	/*
 	 * Combined "call complete" slot.  A single enqueue carries the
 	 * three bumps every completed dispatched syscall used to emit
 	 * separately (op_count, success/failure, syscall_category_count):
@@ -168,6 +180,7 @@ struct stats_aggregate {
 	unsigned long snapshot_non_heap_reject;
 	unsigned long ring_eviction_corrupt;
 	unsigned long deferred_free_corrupt_ptr;
+	unsigned long arg_shadow_stomp;
 
 	/* Visibility / health counters surfaced via dump_stats. */
 	unsigned long ring_overflow_total;	/* sum of dropped enqueues across all rings */

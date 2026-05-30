@@ -88,7 +88,7 @@ static void sanitise_epoll_wait(struct syscallrecord *rec)
 static void post_epoll_wait(struct syscallrecord *rec)
 {
 	long retval    = (long) rec->retval;
-	long maxevents = (long) rec->a3;
+	long maxevents = (long) get_arg_snapshot(rec, 3);
 
 	if (retval == -1L)
 		return;
@@ -111,4 +111,8 @@ struct syscallentry syscall_epoll_wait = {
 	.rettype = RET_BORING,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	/* a3 (maxevents) is read in post to bound retval -- snapshot it so
+	 * a sibling stomp between BEFORE and AFTER cannot fabricate a
+	 * post_handler_corrupt_ptr by overwriting the bound. */
+	.arg_snapshot_mask = (1u << 2),
 };

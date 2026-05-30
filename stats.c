@@ -1968,6 +1968,8 @@ static const struct {
 	  offsetof(struct stats_aggregate, snapshot_non_heap_reject), true },
 	{ "deferred_free_corrupt_ptr",
 	  offsetof(struct stats_aggregate, deferred_free_corrupt_ptr), true },
+	{ "arg_shadow_stomp",
+	  offsetof(struct stats_aggregate, arg_shadow_stomp), true },
 	{ "lock_word_scribbled",
 	  offsetof(struct stats_aggregate, lock_word_scribbled), true },
 	{ "lock_held_scribble",
@@ -3659,6 +3661,8 @@ void dump_stats(void)
 		stat_row("corruption", "deferred_free_corrupt_ptr", parent_stats.deferred_free_corrupt_ptr);
 	if (parent_stats.post_handler_corrupt_ptr)
 		stat_row("corruption", "post_handler_corrupt_ptr", parent_stats.post_handler_corrupt_ptr);
+	if (parent_stats.arg_shadow_stomp)
+		stat_row("corruption", "arg_shadow_stomp", parent_stats.arg_shadow_stomp);
 	if (parent_stats.deferred_free_reject)
 		stat_row("corruption", "deferred_free_reject",   parent_stats.deferred_free_reject);
 	if (parent_stats.deferred_free_reject_pathname)

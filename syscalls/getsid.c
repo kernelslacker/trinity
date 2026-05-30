@@ -51,7 +51,7 @@ static void post_getsid(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		return;
 
-	if (rec->a1 != 0)
+	if (get_arg_snapshot(rec, 1) != 0)
 		return;
 
 	got = (pid_t) retval;
@@ -78,4 +78,8 @@ struct syscallentry syscall_getsid = {
 	.argname = { [0] = "pid" },
 	.rettype = RET_PID_T,
 	.post = post_getsid,
+	/* a1 (pid) gates the procfs/re-call oracle -- snapshot so a sibling
+	 * stomp between BEFORE and AFTER cannot flip the gate from "skip
+	 * (queried other task)" to "run (self-session)" or vice versa. */
+	.arg_snapshot_mask = (1u << 0),
 };
