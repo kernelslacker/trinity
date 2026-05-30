@@ -471,7 +471,8 @@ const char *strategy_name(int arm);
  * compile-time-constant record exercised a never-before-seen value.
  */
 unsigned long bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr,
-				bool is_explorer, int strategy_at_pick);
+				bool do32, bool is_explorer,
+				int strategy_at_pick);
 
 /*
  * Bump the per-syscall frontier-edge ring slot when kcov_collect

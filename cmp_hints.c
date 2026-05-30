@@ -586,10 +586,12 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 				   inserted, __ATOMIC_RELAXED);
 }
 
-bool cmp_hints_try_get(unsigned int nr, unsigned long *out)
+bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 {
 	struct cmp_hint_pool *pool;
 	unsigned int count;
+
+	(void)do32;	/* indexing wired up in the arch-dim follow-up commit */
 
 	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return false;

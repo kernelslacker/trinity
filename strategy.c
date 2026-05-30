@@ -415,12 +415,15 @@ static bool cmp_bloom_set(uint8_t *bloom, uint32_t bit)
 }
 
 unsigned long bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr,
-				bool is_explorer, int strategy_at_pick)
+				bool do32, bool is_explorer,
+				int strategy_at_pick)
 {
 	struct cmp_novelty_entry *e;
 	unsigned long count, i;
 	unsigned long novel = 0;
 	uint32_t now;
+
+	(void)do32;	/* indexing wired up in the arch-dim follow-up commit */
 
 	if (trace_buf == NULL || nr >= MAX_NR_SYSCALL)
 		return 0;

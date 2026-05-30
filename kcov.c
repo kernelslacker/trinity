@@ -1236,7 +1236,7 @@ unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
 		return 0;
 
 	cmp_hints_collect(kc->cmp_trace_buf, nr, do32);
-	novel = bandit_cmp_observe(kc->cmp_trace_buf, nr,
+	novel = bandit_cmp_observe(kc->cmp_trace_buf, nr, do32,
 				   is_explorer, strategy_at_pick);
 
 	__atomic_fetch_add(&kcov_shm->cmp_records_collected, count,

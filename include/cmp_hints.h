@@ -120,8 +120,10 @@ void cmp_hints_init(void);
 void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32);
 
 /* Try to extract a random hint value for the given syscall.
- * Returns true with the hint written to *out, or false if none available. */
-bool cmp_hints_try_get(unsigned int nr, unsigned long *out);
+ * Returns true with the hint written to *out, or false if none available.
+ * do32 selects between the 64-bit and 32-bit syscall-table pools so
+ * biarch builds do not contend for the same per-nr dedup slots. */
+bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out);
 
 /* Mid-run snapshot cadence for cmp_hints_maybe_snapshot().  CMP records
  * are expensive to collect -- each one requires a kernel-side comparison
