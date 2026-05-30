@@ -325,20 +325,28 @@ void map_destructor_shared(struct object *obj)
 
 	map = &obj->map;
 	/*
+	 * Both untrack_shared_region() and munmap() need the full VMA extent,
+	 * not the consumer-walkable extent in map->size.
+	 *
 	 * untrack_shared_region() matches the (addr, len) pair recorded at
 	 * track_shared_region() time exactly; a shorter len would leave the
 	 * shared_regions[] slot in place and the bitmap bits past `len' would
 	 * outlive the munmap below, blocking any subsequent VA recycle into
-	 * legitimate fuzzed mm-syscalls.  mmap_fd() may clamp map->size down
-	 * to the fstat-backed extent after the kernel mapped a wider VMA; the
-	 * pre-clamp length lives in map->tracked_size for exactly this call.
-	 * Legacy callsites that pre-date the field leave tracked_size == 0;
-	 * fall back to map->size for those (they set size to the real VMA
-	 * extent because they never clamped).
+	 * legitimate fuzzed mm-syscalls.  munmap() with a shorter len under-
+	 * unmaps the VMA: the past-clamp tail pages stay mapped until process
+	 * exit, leaking address space and keeping the file's page-cache pin
+	 * alive for entries the destructor is supposed to be releasing.
+	 *
+	 * mmap_fd() may clamp map->size down to the fstat-backed extent after
+	 * the kernel mapped a wider VMA; the pre-clamp length lives in
+	 * map->tracked_size for exactly these two calls.  Legacy callsites
+	 * that pre-date the field leave tracked_size == 0; fall back to
+	 * map->size for those (they set size to the real VMA extent because
+	 * they never clamped).
 	 */
 	untrack_shared_region((unsigned long)map->ptr,
 			      map->tracked_size ? map->tracked_size : map->size);
-	munmap(map->ptr, map->size);
+	munmap(map->ptr, map->tracked_size ? map->tracked_size : map->size);
 	if (map->name != NULL) {
 		free_shared_str(map->name, strlen(map->name) + 1);
 		map->name = NULL;
