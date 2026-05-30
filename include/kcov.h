@@ -187,6 +187,32 @@ struct kcov_cmp_record {
 	uint64_t ip;
 };
 
+/* Per-syscall diagnostic counters indexed by [nr][do32].  Mirrors the
+ * existing globals (trace_truncated, cmp_trace_truncated,
+ * dedup_probe_overflow, dedup_max_probe_seen) but partitions each by
+ * syscall slot and arch dimension so post-mortems can pin which (nr,
+ * arch) tuple is dominating the global counter.  bucket_bits_real and
+ * distinct_pcs are new per-call totals: bucket_bits_real is the count
+ * of bucket bits this syscall has ever flipped (kcov_collect()'s
+ * edges_this_call summed over all calls); distinct_pcs is the count of
+ * distinct edges this syscall has ever touched in a single call summed
+ * over all calls (dedup_inc() first-sight events).  All counters are
+ * relaxed atomics; max_trace_size uses a CAS-loop-up against the
+ * existing dedup_max_probe_seen high-water-mark pattern.  Layout is
+ * pinned at 48 bytes per slot — see the _Static_assert below — so the
+ * shm cost is predictable: 48 * MAX_NR_SYSCALL * 2 arch dims ≈ 96 KiB. */
+struct kcov_per_syscall_diag {
+	uint64_t trace_truncated;
+	uint64_t cmp_trace_truncated;
+	uint64_t dedup_probe_overflow;
+	uint64_t bucket_bits_real;
+	uint64_t distinct_pcs;
+	uint32_t max_trace_size;
+	uint32_t pad;
+};
+_Static_assert(sizeof(struct kcov_per_syscall_diag) == 48,
+	"kcov_per_syscall_diag must be 48 bytes; shm budget assumes it");
+
 /* Per-failure-site diagnostic slots for the KCOV_TRACE_CMP setup and
  * runtime paths.  Written from child context (post-dup2-to-/dev/null,
  * so output() to stdout is silently swallowed) but read by the parent
@@ -519,6 +545,10 @@ struct kcov_shared {
 	 * call, matching the per_syscall_edges_previous pattern above so the
 	 * sibling top-N block can compute the same kind of delta. */
 	unsigned long per_syscall_cmp_inserts_previous[MAX_NR_SYSCALL];
+	/* See struct kcov_per_syscall_diag.  Indexed by [nr][do32 ? 1 : 0]
+	 * so the 32-bit-record vs 64-bit-record arch dimension is preserved
+	 * alongside the syscall slot.  ~96 KiB of shm. */
+	struct kcov_per_syscall_diag per_syscall_diag[MAX_NR_SYSCALL][2];
 	/* Sliding-window edge-rate plateau detector state.  Sampled at the
 	 * 600s parent stats tick: each tick, delta = edges_found -
 	 * plateau_prev_edges is the count of new edges discovered in the

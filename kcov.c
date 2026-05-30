@@ -1002,12 +1002,10 @@ static unsigned int bucket_for_count(unsigned int n)
  * entire table by bumping a single counter instead of zeroing it per call.
  */
 static unsigned int dedup_inc(struct kcov_dedup_slot *dedup, unsigned int edge,
-	uint64_t generation, bool do32)
+	uint64_t generation, unsigned int nr, bool do32)
 {
 	unsigned int slot = (edge * 0x9E3779B1U) & KCOV_DEDUP_MASK;
 	unsigned int probe;
-
-	(void)do32;	/* reserved for per-syscall diag indexing in a follow-up */
 
 	for (probe = 0; probe < KCOV_DEDUP_MAX_PROBE; probe++) {
 		struct kcov_dedup_slot *s = &dedup[slot];
@@ -1048,6 +1046,9 @@ static unsigned int dedup_inc(struct kcov_dedup_slot *dedup, unsigned int edge,
 	}
 	__atomic_fetch_add(&kcov_shm->dedup_probe_overflow,
 		1, __ATOMIC_RELAXED);
+	if (nr < MAX_NR_SYSCALL)
+		__atomic_fetch_add(&kcov_shm->per_syscall_diag[nr][do32].dedup_probe_overflow,
+			1, __ATOMIC_RELAXED);
 	return 1;
 }
 
@@ -1058,9 +1059,8 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	unsigned long idx;
 	unsigned long call_nr;
 	unsigned long edges_this_call = 0;
+	unsigned long local_distinct_pcs = 0;
 	bool found_new = false;
-
-	(void)do32;	/* reserved for per-syscall diag indexing in a follow-up */
 
 	if (new_edge_count != NULL)
 		*new_edge_count = 0;
@@ -1083,7 +1083,29 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		 * grow again. */
 		__atomic_fetch_add(&kcov_shm->trace_truncated, 1,
 			__ATOMIC_RELAXED);
+		if (nr < MAX_NR_SYSCALL)
+			__atomic_fetch_add(&kcov_shm->per_syscall_diag[nr][do32].trace_truncated,
+				1, __ATOMIC_RELAXED);
 		count = KCOV_TRACE_SIZE - 1;
+	}
+
+	/* CAS-loop-up the per-syscall trace-size high-water mark using the
+	 * post-cap count.  Same shape as the dedup_max_probe_seen update
+	 * inside dedup_inc(): read, attempt cmpxchg, retry on lost race. */
+	if (nr < MAX_NR_SYSCALL) {
+		uint32_t observed = (uint32_t)count;
+		uint32_t cur = __atomic_load_n(
+			&kcov_shm->per_syscall_diag[nr][do32].max_trace_size,
+			__ATOMIC_RELAXED);
+		while (observed > cur) {
+			if (__atomic_compare_exchange_n(
+					&kcov_shm->per_syscall_diag[nr][do32].max_trace_size,
+					&cur, observed,
+					false,
+					__ATOMIC_RELAXED,
+					__ATOMIC_RELAXED))
+				break;
+		}
 	}
 
 	/*
@@ -1113,9 +1135,12 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			__ATOMIC_RELAXED);
 		unsigned int edge = pc_to_edge(pc_val);
 		unsigned int local_count = dedup_inc(kc->dedup, edge,
-			kc->current_generation, do32);
+			kc->current_generation, nr, do32);
 		unsigned int bucket = bucket_for_count(local_count);
 		unsigned char mask, old;
+
+		if (local_count == 1)
+			local_distinct_pcs++;
 
 		/* Skip the atomic OR when this hit kept us inside the same
 		 * bucket as the previous hit on this edge — there is no
@@ -1212,6 +1237,20 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 				__atomic_store_n(&kcov_shm->last_edge_at[nr],
 						 call_nr, __ATOMIC_RELAXED);
 		}
+		/* Per-call totals into the (nr, do32)-indexed diag slot:
+		 * bucket_bits_real mirrors edges_this_call, distinct_pcs is the
+		 * count of dedup_inc() first-sight events.  Both are single
+		 * relaxed atomics per call (zero-add suppressed) regardless of
+		 * found_new — a warm-known call still has a distinct_pcs > 0
+		 * contribution that the post-mortem wants visible. */
+		if (edges_this_call > 0)
+			__atomic_fetch_add(
+				&kcov_shm->per_syscall_diag[nr][do32].bucket_bits_real,
+				edges_this_call, __ATOMIC_RELAXED);
+		if (local_distinct_pcs > 0)
+			__atomic_fetch_add(
+				&kcov_shm->per_syscall_diag[nr][do32].distinct_pcs,
+				local_distinct_pcs, __ATOMIC_RELAXED);
 	}
 
 	if (new_edge_count != NULL)
@@ -1237,6 +1276,9 @@ unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
 		 * trace_truncated counter. */
 		__atomic_fetch_add(&kcov_shm->cmp_trace_truncated, 1,
 			__ATOMIC_RELAXED);
+		if (nr < MAX_NR_SYSCALL)
+			__atomic_fetch_add(&kcov_shm->per_syscall_diag[nr][do32].cmp_trace_truncated,
+				1, __ATOMIC_RELAXED);
 		count = KCOV_CMP_RECORDS_MAX;
 	}
 
