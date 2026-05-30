@@ -228,6 +228,20 @@ struct kcov_pc_diag {
 	unsigned int pc_enable_eintr_retries;
 	unsigned int remote_enable_eintr_retries;
 	unsigned int remote_fallback_pc_enable_eintr_retries;
+	/* First-failure-wins capture of which fuzzed syscall was in
+	 * flight (or had just retired) when kcov_enable_trace observed
+	 * its first EBADF in this run.  CAS-from-zero on
+	 * first_ebadf_op_nr selects the winner so the four fields below
+	 * are consistent w.r.t. each other.  Used to pin down the
+	 * close-race source: the syscall_nr field should resolve via
+	 * the syscall table to close / close_range if the chain-
+	 * substitution hypothesis holds; anything else points at an
+	 * unaudited closer.  fd_value preserves the slot number at
+	 * failure for cross-reference with KCOV_FD_HIGH_BASE. */
+	unsigned long first_ebadf_op_nr;	/* CAS gate, 0 == empty */
+	unsigned long first_ebadf_pid;
+	unsigned int  first_ebadf_syscall_nr;
+	int           first_ebadf_fd_value;
 };
 
 /* Selector for kcov_cmp_diag_format() — keeps stats.c's two-line split

@@ -243,6 +243,7 @@ int kcov_pc_diag_format(char *buf, size_t bufsz)
 	struct kcov_pc_diag *d;
 	unsigned int pc_en_c, pc_dis_c, rem_en_c;
 	unsigned int fb_to_pc, pc_eintr, rem_eintr, fb_pc_eintr;
+	unsigned long first_op_nr;
 	int n = 0;
 
 	if (buf == NULL || bufsz == 0)
@@ -259,6 +260,7 @@ int kcov_pc_diag_format(char *buf, size_t bufsz)
 	pc_eintr    = __atomic_load_n(&d->pc_enable_eintr_retries,            __ATOMIC_RELAXED);
 	rem_eintr   = __atomic_load_n(&d->remote_enable_eintr_retries,        __ATOMIC_RELAXED);
 	fb_pc_eintr = __atomic_load_n(&d->remote_fallback_pc_enable_eintr_retries, __ATOMIC_RELAXED);
+	first_op_nr = __atomic_load_n(&d->first_ebadf_op_nr,                  __ATOMIC_RELAXED);
 
 	/* See kcov_cmp_diag_format() for why each emission is gated on
 	 * (size_t)n < bufsz: once n catches up to bufsz, the next
@@ -288,6 +290,21 @@ int kcov_pc_diag_format(char *buf, size_t bufsz)
 		n += snprintf(buf + n, bufsz - n, " remote_enable_eintr=%u", rem_eintr);
 	if (fb_pc_eintr && (size_t)n < bufsz)
 		n += snprintf(buf + n, bufsz - n, " remote_fallback_pc_enable_eintr=%u", fb_pc_eintr);
+	if (first_op_nr && (size_t)n < bufsz) {
+		unsigned long pid = __atomic_load_n(&d->first_ebadf_pid,
+			__ATOMIC_RELAXED);
+		unsigned int syscall_nr = __atomic_load_n(
+			&d->first_ebadf_syscall_nr, __ATOMIC_RELAXED);
+		int fd_value = __atomic_load_n(&d->first_ebadf_fd_value,
+			__ATOMIC_RELAXED);
+
+		/* op_nr was stored as child->op_nr + 1 so the empty-slot
+		 * sentinel (0) is distinguishable from a legitimate first-
+		 * syscall capture; undo that here for the operator. */
+		n += snprintf(buf + n, bufsz - n,
+			" first_ebadf=op%lu:pid%lu:nr%u:fd%d",
+			first_op_nr - 1, pid, syscall_nr, fd_value);
+	}
 
 	return n;
 }
@@ -702,6 +719,36 @@ void kcov_enable_trace(struct kcov_child *kc)
 		kcov_pc_diag_record(
 			&kcov_shm->pc_diag.pc_enable_errno,
 			&kcov_shm->pc_diag.pc_enable_count, errno);
+		/* On the very first EBADF observed by any child, snapshot
+		 * which fuzzed syscall was in flight (or had just retired)
+		 * and what kc->fd held.  CAS-from-zero on first_ebadf_op_nr
+		 * is the gate -- subsequent failures see a non-zero slot
+		 * and skip the four stores below, so the four fields stay
+		 * consistent w.r.t. each other.  op_nr + 1 offsets the
+		 * empty-slot sentinel (0) from the legitimate "EBADF on the
+		 * very first syscall" reading. */
+		if (errno == EBADF) {
+			struct childdata *c = this_child();
+			unsigned long op_nr = (c != NULL) ? c->op_nr + 1 : 1;
+			unsigned long expected = 0;
+
+			if (__atomic_compare_exchange_n(
+					&kcov_shm->pc_diag.first_ebadf_op_nr,
+					&expected, op_nr, false,
+					__ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+				__atomic_store_n(
+					&kcov_shm->pc_diag.first_ebadf_pid,
+					(unsigned long) mypid(),
+					__ATOMIC_RELAXED);
+				__atomic_store_n(
+					&kcov_shm->pc_diag.first_ebadf_syscall_nr,
+					(c != NULL) ? c->last_syscall_nr : 0,
+					__ATOMIC_RELAXED);
+				__atomic_store_n(
+					&kcov_shm->pc_diag.first_ebadf_fd_value,
+					kc->fd, __ATOMIC_RELAXED);
+			}
+		}
 		kc->active = false;
 		break;
 	}
