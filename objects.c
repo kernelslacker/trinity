@@ -1127,9 +1127,20 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 	head->num_entries = last;
 
 	/* Remove from fd hash table */
-	if (scope == OBJ_GLOBAL && is_fd_type(type))
+	if (scope == OBJ_GLOBAL && is_fd_type(type)) {
 		fd_hash_remove(fd_from_object(obj, type));
-	else if (scope == OBJ_LOCAL && is_fd_type(type))
+		/*
+		 * Balance the add_object() increment at the GLOBAL+fd_type
+		 * registration site.  Done here -- the common destruction
+		 * path -- so every fd-provider destruction pays the
+		 * decrement exactly once: child FD_EVENT_CLOSE drain,
+		 * parent-side stuck-fd eviction, close/close_range post-
+		 * handlers, perf/kvm peer pre-closes, and bulk shutdown
+		 * drain all flow through __destroy_object().
+		 */
+		__atomic_fetch_sub(&shm->stats.fd_provider_outstanding[type],
+				   1, __ATOMIC_RELAXED);
+	} else if (scope == OBJ_LOCAL && is_fd_type(type))
 		local_fd_hash_remove(head, fd_from_object(obj, type));
 
 	if (already_closed && is_fd_type(type))
