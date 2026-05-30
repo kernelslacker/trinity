@@ -137,6 +137,7 @@ static void xdp_socket_setup(int fd)
 	return;
 
 out_unmap_umem:
+	untrack_shared_region((unsigned long)umem_area, XDP_UMEM_SIZE);
 	munmap(umem_area, XDP_UMEM_SIZE);
 }
 
