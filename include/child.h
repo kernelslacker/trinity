@@ -481,6 +481,21 @@ struct childdata {
 	 * stderr->/dev/null redirect.  See include/bug_backtrace.h. */
 	struct bug_backtrace bug_backtrace;
 
+	/* Signal-time fault context stamped by child_fault_handler before
+	 * any libc-touching call, so the parent can surface the death
+	 * class even when the in-handler backtrace_symbols_fd / open /
+	 * dup2 chain re-faults walking a corrupted ld.so writable segment.
+	 * Re-symbolised in parent context by dump_child_fault_beacon().
+	 * See include/bug_backtrace.h. */
+	struct child_fault_beacon fault_beacon;
+	/* Latched once the parent's dump_child_fault_beacon() has surfaced
+	 * this beacon to the real stderr.  Mirrors bug_dumped above:
+	 * idempotent gate so the per-tick poll and any future caller print
+	 * the forensic exactly once; fault_beacon.written stays set so
+	 * post-reap diagnostics can still see the child died with a
+	 * stamped beacon. */
+	bool fault_beacon_dumped;
+
 	/* Per-child taint watcher.  tainted_fd is opened once at child init
 	 * against /proc/sys/kernel/tainted and cached for the child's
 	 * lifetime; -1 means the open failed and the watcher is disabled.

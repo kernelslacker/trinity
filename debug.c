@@ -6,6 +6,7 @@
 #ifdef USE_BACKTRACE
 #include <execinfo.h>
 #endif
+#include <signal.h>		// SIGSEGV / SIGABRT / SIGBUS / SIGILL for fault_beacon dump
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -247,6 +248,61 @@ void dump_child_bug(struct childdata *child)
 
 	outputerr("BUG!: fleet halted — fuzzing stopped, attach gdb to pid %d (or any other live process) to inspect\n",
 		  pids[child->num]);
+}
+
+void dump_child_fault_beacon(struct childdata *child)
+{
+	struct child_fault_beacon *beacon;
+	uint32_t written;
+	const char *signame;
+	int sig;
+
+	if (child == NULL)
+		return;
+
+	beacon = &child->fault_beacon;
+
+	/* Acquire-load on .written pairs with the child's release-store
+	 * in child_fault_handler so the other beacon fields read here are
+	 * the post-stamp values, not a torn snapshot the writer was
+	 * mid-way through. */
+	written = __atomic_load_n(&beacon->written, __ATOMIC_ACQUIRE);
+	if (written == 0U)
+		return;
+
+	/* Idempotent once-only: fault_beacon_dumped cmpxchg gates the
+	 * print so the per-tick poll and any future caller (zombie
+	 * watchdog, reap path) surface the forensic exactly once.
+	 * beacon->written stays set so post-reap diagnostics can still
+	 * see this child died with a stamped beacon. */
+	bool expected = false;
+	if (!__atomic_compare_exchange_n(&child->fault_beacon_dumped,
+					  &expected, true, 0,
+					  __ATOMIC_ACQ_REL,
+					  __ATOMIC_RELAXED))
+		return;
+
+	sig = (int)beacon->signo;
+	switch (sig) {
+	case SIGSEGV: signame = "SIGSEGV"; break;
+	case SIGABRT: signame = "SIGABRT"; break;
+	case SIGBUS:  signame = "SIGBUS";  break;
+	case SIGILL:  signame = "SIGILL";  break;
+	default:      signame = "?";       break;
+	}
+
+	outputerr("FAULT!: (child %u pid %d) %s (si_code=%d, si_addr=%p)\n",
+		  child->num, pids[child->num], signame,
+		  (int)beacon->sig_code, beacon->fault_addr);
+	if (beacon->fault_ip != NULL || beacon->fault_sp != NULL) {
+		outputerr("FAULT!:  ip=%p sp=%p\n",
+			  beacon->fault_ip, beacon->fault_sp);
+	} else {
+		outputerr("FAULT!:  ip=? sp=? (no ucontext extractor on this arch)\n");
+	}
+	outputerr("FAULT!:  op_nr=%lu last_syscall_nr=%d\n",
+		  beacon->op_nr, (int)beacon->last_syscall_nr);
+	outputerr("FAULT!:  (signal-time beacon -- pre-libc capture; the in-handler backtrace may have re-faulted)\n");
 }
 
 void dump_syscallrec(struct syscallrecord *rec)

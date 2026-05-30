@@ -257,6 +257,15 @@ void reap_child(struct childdata *child, int childno)
 	 * clean_childdata alongside hit_bug for the fresh occupant. */
 	__atomic_store_n(&child->bug_backtrace.count, 0, __ATOMIC_RELAXED);
 
+	/* Same treatment for the signal-time fault beacon: zero the
+	 * .written edge-trigger so a fresh occupant of this slot doesn't
+	 * inherit the previous occupant's signal-death context and
+	 * fault_beacon_dumped is cleared in clean_childdata for the new
+	 * child.  Any si_addr / fault_ip / fault_sp left in the beacon
+	 * are unreachable once .written=0. */
+	__atomic_store_n(&child->fault_beacon.written, 0U,
+			 __ATOMIC_RELAXED);
+
 	/* Catch the SIGKILL'd-child case where inode_spewer_cleanup()
 	 * never ran in the child.  No-op when the dir doesn't exist. */
 	inode_spewer_reap(pid);
@@ -1984,6 +1993,36 @@ void main_loop(void)
 						    __ATOMIC_ACQUIRE))
 					continue;
 				dump_child_bug(bc);
+			}
+		}
+
+		/* Surface any signal-time fault beacon stamped by
+		 * child_fault_handler.  Sibling poll to the hit_bug block
+		 * above with identical shape; cheap acquire-load per child
+		 * per tick and dump_child_fault_beacon is idempotent via
+		 * its fault_beacon_dumped cmpxchg gate.  The beacon path
+		 * exists because the in-handler backtrace_symbols_fd chain
+		 * can re-fault on a corrupted ld.so writable segment
+		 * before any forensic line lands on disk; without this
+		 * poll the SIGSEGV-in-ld.so death class is silent in the
+		 * bug corpus. */
+		{
+			unsigned int fi;
+
+			for_each_child(fi) {
+				struct childdata *fc =
+					__atomic_load_n(&children[fi],
+							__ATOMIC_ACQUIRE);
+
+				if (fc == NULL)
+					continue;
+				if (__atomic_load_n(&fc->fault_beacon.written,
+						    __ATOMIC_ACQUIRE) == 0U)
+					continue;
+				if (__atomic_load_n(&fc->fault_beacon_dumped,
+						    __ATOMIC_ACQUIRE))
+					continue;
+				dump_child_fault_beacon(fc);
 			}
 		}
 

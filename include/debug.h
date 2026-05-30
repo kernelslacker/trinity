@@ -29,4 +29,15 @@ void dump_syscallrec(struct syscallrecord *rec);
  */
 void dump_child_bug(struct childdata *child);
 
+/*
+ * Surface a signal-time fault beacon stamped by child_fault_handler
+ * (SIGSEGV / SIGBUS / SIGILL / SIGABRT) to the real (parent) stderr.
+ * Idempotent via the child->fault_beacon_dumped cmpxchg gate.  The
+ * beacon is the only forensic that survives when the in-handler
+ * backtrace_symbols_fd path re-faults walking a corrupted ld.so
+ * writable segment.  Called from the main_loop per-tick poll, same
+ * shape as dump_child_bug().
+ */
+void dump_child_fault_beacon(struct childdata *child);
+
 void syslogf(const char *fmt, ...);

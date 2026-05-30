@@ -478,6 +478,15 @@ void clean_childdata(struct childdata *child)
 	child->bug_func = NULL;
 	child->bug_lineno = 0;
 
+	/* Same teardown for the signal-time fault beacon: clear the
+	 * .written edge-trigger and the parent-side fault_beacon_dumped
+	 * latch in lock-step so the fresh occupant's first fault
+	 * re-triggers dump_child_fault_beacon instead of being suppressed
+	 * by the previous occupant's idempotency flag, and so the dumper
+	 * doesn't observe stale ip/sp/addr fields. */
+	__atomic_store_n(&child->fault_beacon.written, 0U, __ATOMIC_RELAXED);
+	child->fault_beacon_dumped = false;
+
 	if (child->fd_event_ring)
 		fd_event_ring_init(child->fd_event_ring);
 

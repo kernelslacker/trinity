@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>	// umask
+#include <ucontext.h>	// ucontext_t / REG_RIP &c for fault_beacon IP/SP capture
 #include <unistd.h>
 #if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
 #include <execinfo.h>
@@ -215,11 +216,62 @@ static void write_siginfo_safely(int sig, const siginfo_t *info, const char *who
 }
 
 /*
+ * Async-signal-safe extraction of the faulting PC / SP from the
+ * ucontext_t the kernel hands to a SA_SIGINFO handler.  Pure inline
+ * reads from caller-owned memory -- no libc, no allocator, no lock.
+ *
+ * Arches without an inline extractor fall through to NULL, which the
+ * beacon consumer treats as "not captured on this build" and prints
+ * an explicit placeholder; the rest of the beacon (sig / si_code /
+ * si_addr / op_nr / last_syscall_nr) still surfaces.
+ */
+static void *fault_beacon_extract_ip(const void *ctx)
+{
+	const ucontext_t *uc = ctx;
+
+	if (uc == NULL)
+		return NULL;
+#if defined(__x86_64__)
+	return (void *)uc->uc_mcontext.gregs[REG_RIP];
+#elif defined(__i386__)
+	return (void *)uc->uc_mcontext.gregs[REG_EIP];
+#elif defined(__aarch64__)
+	return (void *)uc->uc_mcontext.pc;
+#else
+	(void)uc;
+	return NULL;
+#endif
+}
+
+static void *fault_beacon_extract_sp(const void *ctx)
+{
+	const ucontext_t *uc = ctx;
+
+	if (uc == NULL)
+		return NULL;
+#if defined(__x86_64__)
+	return (void *)uc->uc_mcontext.gregs[REG_RSP];
+#elif defined(__i386__)
+	return (void *)uc->uc_mcontext.gregs[REG_ESP];
+#elif defined(__aarch64__)
+	return (void *)uc->uc_mcontext.sp;
+#else
+	(void)uc;
+	return NULL;
+#endif
+}
+
+/*
  * Child-side fault handler.  Mirrors main_fault_handler in spirit but
  * preserves the existing non-debug clean-exit behaviour:
  *
  *   - Real fault (kernel-generated, si_code > 0) or self-sent (abort,
  *     stack-smash from libc):
+ *       * stamp child->fault_beacon BEFORE any libc-touching call so
+ *         the parent can surface the death class even when the
+ *         backtrace_symbols_fd / open / dup2 chain below re-faults
+ *         walking a corrupted ld.so writable segment (see
+ *         include/bug_backtrace.h::child_fault_beacon)
  *       * dump backtrace + signal info to stderr so we have ANY signal
  *         in the log even when the core is unwindable (fault from
  *         stack-corruption disturbs the unwind chain — gdb on the
@@ -235,7 +287,7 @@ static void write_siginfo_safely(int sig, const siginfo_t *info, const char *who
  *     fuzzing aimed at us): ignore — fuzzer noise.
  */
 static __attribute__((no_sanitize("address")))
-void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
+void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 {
 	if (info->si_code <= 0 && info->si_pid != mypid()) {
 		/* Sibling spoof — ignore. */
@@ -262,6 +314,48 @@ void child_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 	 */
 	if (info->si_code <= 0 && info->si_pid == mypid() && in_do_syscall) {
 		_exit(EXIT_SUCCESS);
+	}
+	/*
+	 * Stamp the fault beacon FIRST -- before umask, open, dup2,
+	 * backtrace_symbols_fd, write_siginfo_safely, or anything else
+	 * libc-touchy.  When the underlying root cause is a corrupted
+	 * ld.so writable segment (NULL'd link_map slot, stomped GOT), the
+	 * very next backtrace_symbols_fd call re-faults inside dladdr's
+	 * link_map walk and the process dies before any forensic line
+	 * lands on disk.  The beacon captures the death class into shared
+	 * memory using only kernel-supplied siginfo + ucontext fields and
+	 * plain word stores -- no allocator, no stdio, no lock -- so the
+	 * parent's dump_child_fault_beacon() can surface the silenced
+	 * class even in the re-fault case.  See
+	 * include/bug_backtrace.h::child_fault_beacon for the field
+	 * contract and the release-store / acquire-load handoff that
+	 * orders these plain stores into the parent's view.
+	 */
+	{
+		struct childdata *me = this_child();
+
+		if (me != NULL) {
+			struct child_fault_beacon *beacon = &me->fault_beacon;
+			enum syscallstate st = me->syscall.state;
+			int32_t snr;
+
+			if (st == PREP || st == BEFORE || st == GOING_AWAY)
+				snr = (int32_t)me->syscall.nr;
+			else
+				snr = -1;
+			beacon->signo = (int32_t)sig;
+			beacon->sig_code = (int32_t)info->si_code;
+			beacon->fault_addr = info->si_addr;
+			beacon->fault_ip = fault_beacon_extract_ip(ctx);
+			beacon->fault_sp = fault_beacon_extract_sp(ctx);
+			beacon->op_nr = me->op_nr;
+			beacon->last_syscall_nr = snr;
+			/* Release-store seals every preceding plain store
+			 * into view of any parent that acquire-loads
+			 * .written and sees 1. */
+			__atomic_store_n(&beacon->written, 1U,
+					 __ATOMIC_RELEASE);
+		}
 	}
 	/*
 	 * Reset the umask before creating any files.  The umask syscall is
