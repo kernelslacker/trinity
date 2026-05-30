@@ -86,9 +86,11 @@ The intelligence features include:
 Trinity outputs only essential messages by default (errors, taint detection,
 syscall counts). Use -v for more detail, -vv for full debug output.
 
-There are several test harnesses provided (test-*.sh), which run trinity in
-various modes and takes care of things like cpu affinity, and makes sure it runs from the
-tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp afterwards)
+There are several test harnesses provided under scripts/ (test-multi.sh,
+test-vm.sh, test-all-syscalls-parallel.sh, test-all-syscalls-sequentially.sh),
+which run trinity in various modes and takes care of things like cpu affinity,
+and makes sure it runs from the tmp directory. (Handy for cleaning up any
+garbage named files; just rm -rf tmp afterwards)
 
 ######### options ###############################################
 
@@ -110,7 +112,7 @@ tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp a
 
  --list/-L: list known syscalls and their offsets
 
- --proto/-P: For network sockets, only use a specific packet family.
+ --domain/-P: specify specific network domain for sockets
 
  --victims/-V: Victim file/dirs.  By default, on startup trinity tree-walks /dev, /sys and /proc.
      Using this option you can specify a different path.
@@ -128,12 +130,86 @@ tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp a
      Good for concentrating on a certain syscall, if for eg, you just added one.
      Can be specified multiple times.
 
- --group/-g
-   Used to specify enabling a group of syscalls. Current groups defined are 'vm' and 'vfs'.
+ --group/-g: only run syscalls from a certain group
+   (vfs, vm, net, ipc, process, signal, io_uring, bpf, sched, time).
 
  --ioctls/-I will dump all available ioctls.
 
  --arch/-a Explicit selection of 32 or 64 bit variant of system calls.
+
+ --dry-run: parse args and exit without fuzzing
+
+ --max-runtime: maximum runtime before exit, with optional suffix s/m/h/d
+   (e.g., 30s, 10m, 2h, 1d). Overrides --epoch-timeout.
+
+ --memory-max: total trinity memory budget. Split into
+   children/memory.max=<this>-parent_high and a small parent reservation
+   parent_high=min(200M,this/16) so worker OOM doesn't take the parent.
+   Accepts "max", N% of MemTotal, or N[KMG] bytes. Default: 60%.
+
+ --memory-high: children/memory.high back-pressure threshold (workers cgroup).
+   Accepts "max", N% of MemTotal, or N[KMG] bytes. Default: 50%.
+
+ --memory-swap-max: children/memory.swap.max cap (workers cgroup).
+   Accepts "max", N% of MemTotal, or N[KMG] bytes. Default: 20%.
+
+ --no-cgroup: skip self-cgroup creation entirely (no in-binary memory
+   containment)
+
+ --strategy: arm-selection POLICY for the multi-strategy rotation (NOT a
+   specific arm): bandit/ucb1 (default) or round-robin/rr. The set of arms
+   is fixed (heuristic, random, coverage-frontier); this flag picks how
+   the rotation chooses between them.
+
+ --explorer-children: reserve N children to always run STRATEGY_RANDOM as a
+   strategy-independent explorer pool (default: max_children/4 under
+   --strategy=bandit, 0 otherwise; max: max_children/2). Works in any
+   picker mode; non-bandit modes get no explorer pool unless this is set.
+
+ --alt-op-children: reserve N children to run dedicated alt ops
+   (mmap_lifecycle, mprotect_split, ...) round-robin instead of mixing
+   them at 1% in every child (default: max(2, --children/8))
+
+ --canary-slots: reserve N slots from the front of --alt-op-children to run
+   the dormant-op canary queue (default: min(alt-op-children, 2) when
+   unset). Clamped to min(N, alt_op_children); N=0 disables the queue
+   identically to --no-canary-queue.
+
+ --canary-window: invocations of the active canary op per window (default
+   10000, range 1000..1000000). Counted against the per-op invocation
+   counter, not the fleet-wide op count, so window size is independent of
+   -C and --canary-slots. Lower windows are too noisy to promote on;
+   higher windows let a useless op squat a slot for too long.
+
+ --canary-seed: comma-separated list of childop names to override the
+   built-in wave-1 canary seed list. Names match alt_op_name (e.g.
+   'genetlink_fuzzer,bpf_lifecycle'). Unknown names abort startup.
+
+ --no-canary-queue: disable the dormant-childop canary queue entirely; the
+   dormant gate is consulted as a static compile-time vector and no canary
+   slots are reserved.
+
+ --no-warm-start: skip loading and saving the persisted minicorpus
+
+ --warm-start-path: override the on-disk minicorpus path
+   (default: $XDG_CACHE_HOME/trinity/corpus/<arch>)
+
+ --no-kcov-warm-start: skip loading and saving the persisted kcov edge
+   bitmap
+
+ --no-cmp-hints-warm-start: skip loading and saving the persisted kcov
+   CMP-hint pool
+
+ --stats: show errno distribution per syscall before exiting
+
+ --stats-json: emit dump_stats output as a single JSON object on stdout
+   (machine-readable)
+
+ --stats-log-file: path to append periodic stats dumps to (in addition to
+   stdout)
+
+ --effector-map: calibrate per-bit input significance under KCOV and exit
+   (one-shot)
 
 #######################################################################
 

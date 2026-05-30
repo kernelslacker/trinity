@@ -48,9 +48,11 @@ The intelligence features include:
 Trinity outputs only essential messages by default (errors, taint detection,
 syscall counts). Use -v for more detail, -vv for full debug output.
 
-There are several test harnesses provided (test-*.sh), which run trinity in
-various modes and takes care of things like cpu affinity, and makes sure it runs from the
-tmp directory. (Handy for cleaning up any garbage named files; just rm -rf tmp afterwards)
+There are several test harnesses provided under scripts/ (test-multi.sh,
+test-vm.sh, test-all-syscalls-parallel.sh, test-all-syscalls-sequentially.sh),
+which run trinity in various modes and takes care of things like cpu
+affinity, and makes sure it runs from the tmp directory. (Handy for
+cleaning up any garbage named files; just rm -rf tmp afterwards)
 
 
 .SH OPTIONS
@@ -85,8 +87,9 @@ Options are: sockets, pipes, perf, epoll, eventfd, pseudo, timerfd,
 testfile, memfd and drm
 
 .TP
-\fI\-\-group \-g = {vfs,vm}\fP
-Only run syscalls from a certain group.
+\fI\-\-group \-g\fP
+only run syscalls from a certain group
+(vfs, vm, net, ipc, process, signal, io_uring, bpf, sched, time)
 
 .TP
 \fI\-\-ioctls \-I\fP
@@ -141,6 +144,115 @@ Pause after syscall.
 .TP
 \fB\-s#\fP
 use # as random seed.
+
+.TP
+\fI\-\-dry-run\fP
+parse args and exit without fuzzing
+
+.TP
+\fI\-\-max-runtime\fP
+maximum runtime before exit, with optional suffix s/m/h/d (e.g., 30s, 10m,
+2h, 1d). Overrides --epoch-timeout.
+
+.TP
+\fI\-\-memory-max\fP
+total trinity memory budget. Split into children/memory.max=<this>-parent_high
+and a small parent reservation parent_high=min(200M,this/16) so worker OOM
+doesn't take the parent. Accepts "max", N% of MemTotal, or N[KMG] bytes.
+Default: 60%.
+
+.TP
+\fI\-\-memory-high\fP
+children/memory.high back-pressure threshold (workers cgroup). Accepts
+"max", N% of MemTotal, or N[KMG] bytes. Default: 50%.
+
+.TP
+\fI\-\-memory-swap-max\fP
+children/memory.swap.max cap (workers cgroup). Accepts "max", N% of
+MemTotal, or N[KMG] bytes. Default: 20%.
+
+.TP
+\fI\-\-no-cgroup\fP
+skip self-cgroup creation entirely (no in-binary memory containment)
+
+.TP
+\fI\-\-strategy\fP
+arm-selection POLICY for the multi-strategy rotation (NOT a specific arm):
+bandit/ucb1 (default) or round-robin/rr. The set of arms is fixed
+(heuristic, random, coverage-frontier); this flag picks how the rotation
+chooses between them.
+
+.TP
+\fI\-\-explorer-children\fP
+reserve N children to always run STRATEGY_RANDOM as a strategy-independent
+explorer pool (default: max_children/4 under --strategy=bandit, 0
+otherwise; max: max_children/2). Works in any picker mode; non-bandit
+modes get no explorer pool unless this is set.
+
+.TP
+\fI\-\-alt-op-children\fP
+reserve N children to run dedicated alt ops (mmap_lifecycle, mprotect_split,
+...) round-robin instead of mixing them at 1% in every child (default:
+max(2, --children/8))
+
+.TP
+\fI\-\-canary-slots\fP
+reserve N slots from the front of --alt-op-children to run the dormant-op
+canary queue (default: min(alt-op-children, 2) when unset). Clamped to
+min(N, alt_op_children); N=0 disables the queue identically to
+--no-canary-queue.
+
+.TP
+\fI\-\-canary-window\fP
+invocations of the active canary op per window (default 10000, range
+1000..1000000). Counted against the per-op invocation counter, not the
+fleet-wide op count, so window size is independent of -C and
+--canary-slots. Lower windows are too noisy to promote on; higher windows
+let a useless op squat a slot for too long.
+
+.TP
+\fI\-\-canary-seed\fP
+comma-separated list of childop names to override the built-in wave-1
+canary seed list. Names match alt_op_name (e.g.
+'genetlink_fuzzer,bpf_lifecycle'). Unknown names abort startup.
+
+.TP
+\fI\-\-no-canary-queue\fP
+disable the dormant-childop canary queue entirely; the dormant gate is
+consulted as a static compile-time vector and no canary slots are reserved.
+
+.TP
+\fI\-\-no-warm-start\fP
+skip loading and saving the persisted minicorpus
+
+.TP
+\fI\-\-warm-start-path\fP
+override the on-disk minicorpus path (default:
+$XDG_CACHE_HOME/trinity/corpus/<arch>)
+
+.TP
+\fI\-\-no-kcov-warm-start\fP
+skip loading and saving the persisted kcov edge bitmap
+
+.TP
+\fI\-\-no-cmp-hints-warm-start\fP
+skip loading and saving the persisted kcov CMP-hint pool
+
+.TP
+\fI\-\-stats\fP
+show errno distribution per syscall before exiting
+
+.TP
+\fI\-\-stats-json\fP
+emit dump_stats output as a single JSON object on stdout (machine-readable)
+
+.TP
+\fI\-\-stats-log-file\fP
+path to append periodic stats dumps to (in addition to stdout)
+
+.TP
+\fI\-\-effector-map\fP
+calibrate per-bit input significance under KCOV and exit (one-shot)
 
 
 .SH EXAMPLES
