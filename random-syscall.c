@@ -46,6 +46,17 @@
 #define EDGEPAIR_CHAIN_SAMPLE_K 16
 
 /*
+ * Compression factor for the frontier-weighted acceptance denominator.
+ * See the gate in set_syscall_nr_frontier() for the rationale.
+ */
+#define FRONTIER_SOFT_SCALE 16
+
+static inline unsigned ilog2_ul(unsigned long x)
+{
+	return x ? (unsigned)(63 - __builtin_clzl(x)) : 0;
+}
+
+/*
  * This function decides if we're going to be doing a 32bit or 64bit syscall.
  * There are various factors involved here, from whether we're on a 32-bit only arch
  * to 'we asked to do a 32bit only syscall' and more.. Hairy.
@@ -578,10 +589,22 @@ retry:
 	 * rotations -- typical at run start or in a heavily-explored
 	 * codebase where everything has plateaued), the (w+1)/(max+1) ratio
 	 * is 1 for every candidate and the acceptance gate is bypassed,
-	 * degenerating gracefully to uniform pick. */
-	if (max_weight > 0) {
+	 * degenerating gracefully to uniform pick.
+	 *
+	 * Soften the denominator via ilog2 so that a single very hot
+	 * syscall (max_weight in the 10k+ range) doesn't compress every
+	 * cold-but-real candidate to a near-zero acceptance probability
+	 * and burn the retry budget.  soft_max = ilog2(max) * SCALE keeps
+	 * the leader winning the majority of rolls while lifting a w=1
+	 * candidate from ~1/max to ~1/soft_max.  The +1 smoothing on w
+	 * is preserved as the uniform floor.  Only kick the transform in
+	 * once there's actual signal (max_weight > 2); below that the
+	 * existing degenerate-to-uniform behaviour is what we want. */
+	if (max_weight > 2) {
 		unsigned long w = frontier_recent_count(syscallnr);
-		unsigned long denom = max_weight + 1UL;
+		unsigned long soft_max = (unsigned long)ilog2_ul(max_weight) *
+					 FRONTIER_SOFT_SCALE;
+		unsigned long denom = soft_max + 1UL;
 		unsigned long roll = (unsigned long)rnd_modulo_u64(denom);
 
 		if (roll >= w + 1UL)
