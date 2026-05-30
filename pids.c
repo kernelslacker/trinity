@@ -421,7 +421,7 @@ retry:		i = rnd_modulo_u32(max_children);
 		pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
 		if (pid == EMPTY_PIDSLOT || pid == ppid) {
 			if (++retries >= 100)
-				return cached_pid;
+				return 0;
 			goto retry;
 		}
 		return pid;
