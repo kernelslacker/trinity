@@ -163,8 +163,8 @@ syscalls/getpgid.c:111:post_getpgid
 syscalls/getpgid.c:55:post_getpgid
 syscalls/getpgrp.c:44:post_getpgrp
 syscalls/getpgrp.c:94:post_getpgrp
-syscalls/getpid.c:36:post_getpid
-syscalls/getpid.c:57:post_getpid
+syscalls/getpid.c:34:post_getpid
+syscalls/getpid.c:50:post_getpid
 syscalls/getppid.c:37:post_getppid
 syscalls/getppid.c:52:post_getppid
 syscalls/getpriority.c:22:post_getpriority

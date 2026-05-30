@@ -24,8 +24,6 @@
  */
 static void post_getpid(struct syscallrecord *rec)
 {
-	char buf[2048];
-	const char *value;
 	pid_t got, proc_tgid;
 	unsigned long tgid;
 	unsigned long retval = rec->retval;
@@ -44,12 +42,7 @@ static void post_getpid(struct syscallrecord *rec)
 
 	got = (pid_t) retval;
 
-	if (proc_status_read(buf, sizeof(buf)) < 0)
-		return;
-	value = proc_status_find_field(buf, "Tgid");
-	if (value == NULL)
-		return;
-	if (!proc_status_parse_u(value, &tgid))
+	if (!proc_status_read_uint_field("Tgid", &tgid))
 		return;
 	proc_tgid = (pid_t)tgid;
 
