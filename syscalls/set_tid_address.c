@@ -5,6 +5,11 @@
 #include "trinity.h"
 #include "utils.h"
 
+static void sanitise_set_tid_address(struct syscallrecord *rec)
+{
+	avoid_shared_buffer_out(&rec->a1, sizeof(int));
+}
+
 static void post_set_tid_address(struct syscallrecord *rec)
 {
 	long ret = (long) rec->retval;
@@ -29,6 +34,7 @@ struct syscallentry syscall_set_tid_address = {
 	.argname = { [0] = "tidptr" },
 	.flags = AVOID_SYSCALL,
 	.group = GROUP_PROCESS,
+	.sanitise = sanitise_set_tid_address,
 	.post = post_set_tid_address,
 	.rettype = RET_PID_T,
 };
