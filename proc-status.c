@@ -137,3 +137,60 @@ bool proc_status_parse_hex_mask(const char *value, uint64_t *out)
 	*out = (uint64_t)v;
 	return true;
 }
+
+/*
+ * Coarse-grained field readers below.  Each one collapses the
+ * read-then-find-then-parse triplet that every oracle currently open-codes
+ * into a single call, so the buffer-size choice and the slurp-vs-fixed
+ * decision live in one place.  Stack buffer sized 8 KB (4x the historical
+ * 2 KB) for the bounded fields; sigmask reader uses the growing slurp so
+ * the codex-#3 truncation bug cannot recur on SigPnd/ShdPnd which land
+ * late in /proc/self/status.
+ */
+
+bool proc_status_read_uint_field(const char *name, unsigned long *out)
+{
+	char buf[8192];
+	const char *value;
+
+	if (name == NULL || out == NULL)
+		return false;
+	if (proc_status_read(buf, sizeof(buf)) < 0)
+		return false;
+	value = proc_status_find_field(buf, name);
+	if (value == NULL)
+		return false;
+	return proc_status_parse_u(value, out);
+}
+
+bool proc_status_read_id_quad(const char *name, unsigned long out[4])
+{
+	char buf[8192];
+	const char *value;
+
+	if (name == NULL || out == NULL)
+		return false;
+	if (proc_status_read(buf, sizeof(buf)) < 0)
+		return false;
+	value = proc_status_find_field(buf, name);
+	if (value == NULL)
+		return false;
+	return proc_status_parse_uid_gid_quad(value, out);
+}
+
+bool proc_status_read_sigmask(const char *name, uint64_t *out)
+{
+	char *buf;
+	const char *value;
+	bool ok;
+
+	if (name == NULL || out == NULL)
+		return false;
+	buf = proc_status_slurp();
+	if (buf == NULL)
+		return false;
+	value = proc_status_find_field(buf, name);
+	ok = value != NULL && proc_status_parse_hex_mask(value, out);
+	free(buf);
+	return ok;
+}

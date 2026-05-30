@@ -84,3 +84,33 @@ bool proc_status_parse_uid_gid_quad(const char *value, unsigned long out[4]);
  * success, false if no hex digits were consumed.
  */
 bool proc_status_parse_hex_mask(const char *value, uint64_t *out);
+
+/*
+ * Coarse-grained one-call readers built on the primitives above.  Each
+ * does open/read/close + newline-anchored field lookup + value parse for
+ * a specific field shape so the per-oracle triplet collapses to one call
+ * and the buffer-size / slurp-vs-fixed choice lives in one place.
+ *
+ * proc_status_read_uint_field — single decimal unsigned long (e.g. Pid:,
+ *   PPid:).  Uses an 8 KB stack buffer via proc_status_read(); only safe
+ *   for fields whose value width is statically bounded.
+ *
+ * proc_status_read_id_quad — the four-column "real eff saved fs" row
+ *   used by Uid: and Gid:.  Same 8 KB stack buffer.  Callers that only
+ *   want a subset (e.g. getresuid wants ruid/euid/suid) pick the columns
+ *   they need; the unused slot is still parsed.
+ *
+ * proc_status_read_sigmask — the %016lx signal-mask rows (SigPnd:,
+ *   ShdPnd:, SigBlk:, SigIgn:, SigCgt:).  Uses proc_status_slurp()
+ *   rather than a fixed buffer because these fields land late enough in
+ *   /proc/self/status that a process with a large supplementary group
+ *   list or verbose VmFlags can push them past any reasonable stack
+ *   buffer — the codex-#3 truncation bug.  Slurp grows on demand so the
+ *   bug cannot recur on the migrated callers.
+ *
+ * All three return false on any failure (open, read, missing field,
+ * parse) and leave *out untouched.
+ */
+bool proc_status_read_uint_field(const char *name, unsigned long *out);
+bool proc_status_read_id_quad(const char *name, unsigned long out[4]);
+bool proc_status_read_sigmask(const char *name, uint64_t *out);
