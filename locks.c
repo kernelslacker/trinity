@@ -52,13 +52,26 @@ static bool check_lock(lock_t *lk)
 	pid = LOCK_OWNER(s);
 
 	if (pid_alive(pid) == false) {
+		unsigned long stored_start;
+		unsigned long long current_start;
+
 		if (errno != ESRCH)
 			return true;
 
+		/* Recycle race: between pid_alive returning ESRCH and our CAS
+		 * below, the pid could be reissued to a new process that re-
+		 * acquires this lock.  The state word might still match `s` if
+		 * the new owner happens to encode identically, so gate the CAS
+		 * on the owner_start_time fingerprint: only release if the live
+		 * owner's start_time differs from the sampled one (or is 0 =
+		 * truly dead).  Mirrors try_release_dead_holder at locks.c:201-204
+		 * and force_bust_lock's same check. */
+		stored_start = __atomic_load_n(&lk->owner_start_time, __ATOMIC_ACQUIRE);
+		current_start = pid_start_time(pid);
+		if (current_start != 0 && current_start == stored_start)
+			return true;
+
 		debugf("Found a lock held by dead pid %d. Freeing.\n", pid);
-		/* CAS only if the state word hasn't changed since we sampled --
-		 * matches try_release_dead_holder()'s pattern at locks.c:211 so
-		 * a fresh acquirer who CAS'd in between doesn't get clobbered. */
 		__atomic_compare_exchange_n(&lk->state, &s, 0, 0,
 					    __ATOMIC_RELEASE, __ATOMIC_RELAXED);
 		return true;
