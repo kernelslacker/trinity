@@ -1264,6 +1264,10 @@ struct stats_s {
 	unsigned long af_unix_scm_rights_gc_recv_ok;		/* recvmsg drained queued SCM_RIGHTS msg (race vs unix_gc walk) */
 	unsigned long af_unix_scm_rights_gc_peek_ok;		/* recvmsg(MSG_PEEK) walked unix_peek_fpl on queued SCM_RIGHTS */
 	unsigned long af_unix_scm_rights_gc_iouring_variant_ok;	/* io_uring fd inserted into the unix-scm reference graph */
+	unsigned long af_unix_scm_rights_gc_sibling_spawn_ok;	/* clone(CLONE_FILES|SIGCHLD) sibling race-producer spawned */
+	unsigned long af_unix_scm_rights_gc_sibling_spawn_failed;/* clone()/clone3() failed; fell back to single-task race burst */
+	unsigned long af_unix_scm_rights_gc_sibling_reaped_ok;	/* sibling exited normally and was reaped by parent */
+	unsigned long af_unix_scm_rights_gc_sibling_crashed;	/* sibling killed by signal (SEGV/BUS/KILL) -- forensic hint */
 
 	/* netns_teardown_churn childop counters */
 	unsigned long netns_teardown_runs;			/* total netns_teardown_churn invocations */

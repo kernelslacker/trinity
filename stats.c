@@ -935,7 +935,7 @@ static void dump_stats_json(void)
 		"\"devlink_port_churn\":{\"iterations\":%lu,\"split_ok\":%lu,\"split_fail\":%lu,\"reload_ok\":%lu,\"reload_fail\":%lu,\"create_skipped\":%lu},"
 		"\"handshake_req_abort\":{\"runs\":%lu,\"setup_failed\":%lu,\"accept_ok\":%lu,\"done_ok\":%lu,\"abort_ok\":%lu,\"orphan_close\":%lu},"
 		"\"nf_conntrack_helper_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_helper\":%lu,\"attach_ok\":%lu,\"attach_fail\":%lu,\"exp_ok\":%lu,\"packet_sent\":%lu,\"delete_ok\":%lu,\"zone_swap\":%lu,\"detach_ok\":%lu},"
-		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"peek_ok\":%lu,\"iouring_variant_ok\":%lu},"
+		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"peek_ok\":%lu,\"iouring_variant_ok\":%lu,\"sibling_spawn_ok\":%lu,\"sibling_spawn_failed\":%lu,\"sibling_reaped_ok\":%lu,\"sibling_crashed\":%lu},"
 		"\"netns_teardown\":{\"runs\":%lu,\"setup_failed\":%lu,\"unshare_ok\":%lu,\"socket_pair_ok\":%lu,\"fork_ok\":%lu,\"setns_ok\":%lu,\"kill_ok\":%lu,\"completed_ok\":%lu},"
 		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},",
 		parent_stats.fault_injected, parent_stats.fault_consumed,
@@ -1429,6 +1429,10 @@ static void dump_stats_json(void)
 		shm->stats.af_unix_scm_rights_gc_recv_ok,
 		shm->stats.af_unix_scm_rights_gc_peek_ok,
 		shm->stats.af_unix_scm_rights_gc_iouring_variant_ok,
+		shm->stats.af_unix_scm_rights_gc_sibling_spawn_ok,
+		shm->stats.af_unix_scm_rights_gc_sibling_spawn_failed,
+		shm->stats.af_unix_scm_rights_gc_sibling_reaped_ok,
+		shm->stats.af_unix_scm_rights_gc_sibling_crashed,
 		shm->stats.netns_teardown_runs,
 		shm->stats.netns_teardown_setup_failed,
 		shm->stats.netns_teardown_unshare_ok,
@@ -4469,6 +4473,10 @@ void dump_stats(void)
 		stat_row("af_unix_scm_rights_gc", "recv_ok",             shm->stats.af_unix_scm_rights_gc_recv_ok);
 		stat_row("af_unix_scm_rights_gc", "peek_ok",             shm->stats.af_unix_scm_rights_gc_peek_ok);
 		stat_row("af_unix_scm_rights_gc", "iouring_variant_ok",  shm->stats.af_unix_scm_rights_gc_iouring_variant_ok);
+		stat_row("af_unix_scm_rights_gc", "sibling_spawn_ok",    shm->stats.af_unix_scm_rights_gc_sibling_spawn_ok);
+		stat_row("af_unix_scm_rights_gc", "sibling_spawn_failed", shm->stats.af_unix_scm_rights_gc_sibling_spawn_failed);
+		stat_row("af_unix_scm_rights_gc", "sibling_reaped_ok",   shm->stats.af_unix_scm_rights_gc_sibling_reaped_ok);
+		stat_row("af_unix_scm_rights_gc", "sibling_crashed",     shm->stats.af_unix_scm_rights_gc_sibling_crashed);
 	}
 
 	if (shm->stats.netns_teardown_runs) {
