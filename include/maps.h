@@ -16,7 +16,31 @@
 struct map {
 	void *ptr;
 	char *name;
+	/*
+	 * size:         consumer-walkable extent (post-clamp).  Fuzzed picks
+	 *               bound by this -- dirty_mapping(), get_writable_address()
+	 *               and other walkers stay inside [ptr, ptr+size) to avoid
+	 *               SIGBUS on file-backed maps whose VMA covers past-EOF
+	 *               pages.  For an empty / unbacked file this is 0.
+	 *
+	 * tracked_size: VMA extent passed to track_shared_region() at create
+	 *               time.  Equals the length the kernel actually mapped and
+	 *               is what untrack_shared_region() must be called with at
+	 *               teardown -- the shared_regions[] tracker matches the
+	 *               (addr, len) pair exactly; an under-sized untrack drops
+	 *               the registration silently and the bitmap bits the
+	 *               oversize tail claimed survive past the munmap that
+	 *               released their VA.  Equals size for non-clamped
+	 *               mappings (alloc_zero_map() ANON, try_alloc_zero_map()
+	 *               HUGETLB).  A zero value is treated as "not set" by
+	 *               map_destructor_shared() which falls back to size --
+	 *               that keeps legacy callsites that pre-date this field
+	 *               working unchanged, but is a fragile fallback: any new
+	 *               code path that registers a tracked region must set
+	 *               tracked_size explicitly.
+	 */
 	unsigned long size;
+	unsigned long tracked_size;
 	int prot;
 	int flags;
 	int fd;

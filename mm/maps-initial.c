@@ -32,6 +32,15 @@ static void alloc_zero_map(unsigned long size, int prot, int flags, const char *
 		exit(EXIT_FAILURE);
 	}
 	new->map.size = size;
+	/*
+	 * Anonymous initial mappings are never clamped: the kernel-backed VMA
+	 * extent equals size.  Set tracked_size explicitly so the destructor's
+	 * tracked_size ? tracked_size : size fallback doesn't have to special-
+	 * case zero-initialised entries -- the ternary survives, but losing
+	 * the fallback dependency makes any future field-typed audit (e.g. an
+	 * untrack length not pulled from tracked_size) immediately wrong.
+	 */
+	new->map.tracked_size = size;
 	new->map.prot = prot;
 	new->map.flags = flags;
 	new->map.fd = -1;
@@ -68,6 +77,9 @@ static bool try_alloc_zero_map(unsigned long size, int prot, int flags, const ch
 	if (new == NULL)
 		return false;
 	new->map.size = size;
+	/* See alloc_zero_map() above for why tracked_size is set
+	 * explicitly rather than relying on the destructor's fallback. */
+	new->map.tracked_size = size;
 	new->map.prot = prot;
 	new->map.flags = flags;
 	new->map.fd = -1;
