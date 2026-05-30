@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include "types.h"
+#include "bug_backtrace.h"
 #include "cmp_hints.h"
 #include "edgepair.h"
 #include "kcov.h"
@@ -465,9 +466,20 @@ struct childdata {
 	 * passed to __BUG, which is always a literal at the call site).
 	 * bug_lineno + bug_func let the parent print the call site too. */
 	bool hit_bug;
+	/* Latched once the parent's dump_child_bug() has surfaced this
+	 * child's BUG to the real stderr.  Idempotent gate so the per-tick
+	 * poll and the zombie watchdog (and any future caller) print the
+	 * forensic exactly once; hit_bug stays set so the zombie watchdog
+	 * can still attribute "child gone" to the assertion. */
+	bool bug_dumped;
 	const char *bug_text;
 	const char *bug_func;
 	unsigned int bug_lineno;
+	/* Raw backtrace frame pointers captured inside __BUG() before the
+	 * child starts spinning; symbolised in parent context by
+	 * dump_child_bug() so the backtrace survives init_child's
+	 * stderr->/dev/null redirect.  See include/bug_backtrace.h. */
+	struct bug_backtrace bug_backtrace;
 
 	/* Per-child taint watcher.  tainted_fd is opened once at child init
 	 * against /proc/sys/kernel/tainted and cached for the child's

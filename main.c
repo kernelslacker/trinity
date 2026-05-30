@@ -250,6 +250,13 @@ void reap_child(struct childdata *child, int childno)
 	 * the slot's next occupant publishes its first entry. */
 	pre_crash_ring_reset(&child->pre_crash);
 
+	/* Drop the slot's bug-backtrace snapshot too.  The ~520 B struct
+	 * fits inside one page, so no MADV_DONTNEED is needed; zeroing
+	 * .count is sufficient -- any frame addresses left in frames[]
+	 * are unreachable once count=0.  bug_dumped is cleared in
+	 * clean_childdata alongside hit_bug for the fresh occupant. */
+	__atomic_store_n(&child->bug_backtrace.count, 0, __ATOMIC_RELAXED);
+
 	/* Catch the SIGKILL'd-child case where inode_spewer_cleanup()
 	 * never ran in the child.  No-op when the dir doesn't exist. */
 	inode_spewer_reap(pid);
@@ -1952,6 +1959,33 @@ void main_loop(void)
 		 * into the parent-private edgepair_aggregate.  Republishes
 		 * the mirror page inside its own thaw/refreeze bracket. */
 		edgepair_ring_drain_all();
+
+		/* Surface any child-side __BUG() event the BUG'd child
+		 * stamped into shared memory but couldn't print itself
+		 * (stderr was redirected to /dev/null in init_child).  Cost
+		 * is one acquire-load per child per tick; dump_child_bug is
+		 * idempotent via its bug_dumped cmpxchg gate, so the
+		 * zombie watchdog calling it later (or this loop firing
+		 * twice between BUG and reap) doesn't double-print. */
+		{
+			unsigned int bi;
+
+			for_each_child(bi) {
+				struct childdata *bc =
+					__atomic_load_n(&children[bi],
+							__ATOMIC_ACQUIRE);
+
+				if (bc == NULL)
+					continue;
+				if (!__atomic_load_n(&bc->hit_bug,
+						     __ATOMIC_ACQUIRE))
+					continue;
+				if (__atomic_load_n(&bc->bug_dumped,
+						    __ATOMIC_ACQUIRE))
+					continue;
+				dump_child_bug(bc);
+			}
+		}
 
 		taint_check();
 

@@ -465,8 +465,15 @@ void clean_childdata(struct childdata *child)
 
 	/* Clear any __BUG() stamp left by the prior occupant of this slot
 	 * so the parent's zombie-pending warning doesn't mis-attribute the
-	 * fresh child's eventual exit to the previous one's assertion. */
+	 * fresh child's eventual exit to the previous one's assertion.
+	 * bug_dumped + bug_backtrace.count must clear in lock-step so the
+	 * fresh occupant's first BUG re-triggers the parent's dump path
+	 * instead of being suppressed by the previous occupant's latched
+	 * flag, and so dump_child_bug doesn't see stale frames if the
+	 * fresh occupant BUGs before its own backtrace stamp lands. */
 	child->hit_bug = false;
+	child->bug_dumped = false;
+	__atomic_store_n(&child->bug_backtrace.count, 0, __ATOMIC_RELAXED);
 	child->bug_text = NULL;
 	child->bug_func = NULL;
 	child->bug_lineno = 0;

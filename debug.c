@@ -76,22 +76,46 @@ void __attribute__((noreturn)) __BUG(const char *bugtxt, const char *filename, c
 {
 	struct childdata *child = this_child();
 
+#ifdef USE_BACKTRACE
+	/* Stamp raw backtrace frames into shared memory BEFORE the
+	 * hit_bug flip below.  init_child redirects child stderr to
+	 * /dev/null, so the backtrace_symbols output show_backtrace()
+	 * emits from this context is lost.  The parent re-symbolises
+	 * these frames from its own real-stderr context via
+	 * dump_child_bug().  The release-store on .count happens in
+	 * program order before the release-store on hit_bug, so the
+	 * parent's acquire-load on hit_bug also makes the populated
+	 * frame array visible. */
+	if (child != NULL) {
+		int n = backtrace(child->bug_backtrace.frames,
+				  BUG_BACKTRACE_MAX_FRAMES);
+		__atomic_store_n(&child->bug_backtrace.count,
+				 (uint32_t) (n > 0 ? n : 0),
+				 __ATOMIC_RELEASE);
+	}
+#endif
+
 	outputerr("BUG!: %s\n", bugtxt);
 	outputerr("BUG!: %s\n", VERSION);
 	outputerr("BUG!: [%d] %s:%s:%u\n", mypid(), filename, funcname, lineno);
 
 	show_backtrace();
 
-	/* Drain the pre-crash syscall ring(s).  For a child-side BUG, dump
-	 * just this child's ring — that is by far the most relevant trace.
-	 * For a parent-side BUG (this_child() returns NULL), iterate every
-	 * child: parent crashes are typically downstream fallout from a
+	/* Drain the pre-crash syscall ring(s).
+	 *
+	 * Child-side BUG: skip the ring dump from this context entirely.
+	 * The child's stderr is /dev/null, so dump_one_ring()'s output
+	 * would be lost; the parent's main_loop per-tick poll picks the
+	 * event up via hit_bug and dump_child_bug() re-runs
+	 * pre_crash_ring_dump() against the same shared ring from real
+	 * parent stderr.
+	 *
+	 * Parent-side BUG (this_child() returns NULL): iterate every
+	 * child.  Parent crashes are typically downstream fallout from a
 	 * child's recent wild write, so the offending syscall is sitting
 	 * in some child's ring even though the parent has no obvious
 	 * pointer to which one. */
-	if (child != NULL) {
-		pre_crash_ring_dump(child);
-	} else {
+	if (child == NULL) {
 		pre_crash_ring_dump_all();
 		/* Parent-side BUG: main_loop has stopped ticking by the
 		 * time we reach this branch, so any slots still pending in
@@ -161,6 +185,68 @@ void __attribute__((noreturn)) __BUG(const char *bugtxt, const char *filename, c
 		}
 		sleep(1);
 	}
+}
+
+void dump_child_bug(struct childdata *child)
+{
+	if (child == NULL)
+		return;
+
+	/* Idempotent once-only: bug_dumped cmpxchg gates the print so the
+	 * per-tick poll and the zombie watchdog (or any future caller)
+	 * surface the forensic exactly once.  hit_bug stays set so the
+	 * zombie watchdog's "kernel finishing teardown" attribution still
+	 * sees this child was a BUG, not a kernel SIGKILL. */
+	bool expected = false;
+	if (!__atomic_compare_exchange_n(&child->bug_dumped, &expected,
+					  true, 0,
+					  __ATOMIC_ACQ_REL,
+					  __ATOMIC_RELAXED))
+		return;
+
+	outputerr("BUG!: (child %u pid %d) %s\n",
+		  child->num, pids[child->num],
+		  child->bug_text ? child->bug_text : "?");
+	outputerr("BUG!: %s\n", VERSION);
+	outputerr("BUG!: %s:%u\n",
+		  child->bug_func ? child->bug_func : "?",
+		  child->bug_lineno);
+
+#ifdef USE_BACKTRACE
+	/* Acquire-load on .count pairs with the child's release-store in
+	 * __BUG so the frames[] reads observe the populated array.
+	 * backtrace_symbols allocates internally; this is parent context
+	 * (the caller is main_loop's per-tick poll), so the libc/malloc-
+	 * touchy call is safe. */
+	uint32_t n = __atomic_load_n(&child->bug_backtrace.count,
+				     __ATOMIC_ACQUIRE);
+	if (n > 0 && n <= BUG_BACKTRACE_MAX_FRAMES) {
+		char **strs = backtrace_symbols(child->bug_backtrace.frames,
+						(int) n);
+		if (strs != NULL) {
+			uint32_t i;
+
+			for (i = 0; i < n; i++)
+				outputerr("  %s\n", strs[i]);
+			free(strs);
+		} else {
+			outputerr("  (backtrace_symbols failed; %u raw frames in shared mem)\n",
+				  n);
+		}
+	} else {
+		outputerr("  (no backtrace captured — child died before stamping)\n");
+	}
+#else
+	outputerr("  (backtrace unavailable: built without USE_BACKTRACE)\n");
+#endif
+
+	/* pre_crash_ring entries live in shared childdata; dump_one_ring
+	 * needs only the childdata pointer and an anchor timestamp, both
+	 * available here. */
+	pre_crash_ring_dump(child);
+
+	outputerr("BUG!: fleet halted — fuzzing stopped, attach gdb to pid %d (or any other live process) to inspect\n",
+		  pids[child->num]);
 }
 
 void dump_syscallrec(struct syscallrecord *rec)
