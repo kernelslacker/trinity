@@ -45,10 +45,7 @@ static void sso_socket(struct socket_triplet *triplet, struct sockopt *so, int f
 	so->optval = 0;
 
 retry:
-	if (so->optval != 0) {
-		tracked_free_now((void *) so->optval);
-		so->optval = 0;
-	}
+	release_sockopt_optval(so);
 
 	do_setsockopt(so, triplet);
 
@@ -63,8 +60,7 @@ retry:
 			goto retry;
 	}
 
-	if (so->optval != 0)
-		tracked_free_now((void *) so->optval);
+	release_sockopt_optval(so);
 }
 
 struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsigned int protocol)
