@@ -194,3 +194,42 @@ bool proc_status_read_sigmask(const char *name, uint64_t *out)
 	free(buf);
 	return ok;
 }
+
+bool proc_status_read_ns_last_uint(const char *name, unsigned int *out)
+{
+	char buf[8192];
+	const char *value;
+	char *line, *eol, *tok, *saveptr = NULL;
+	unsigned int last = 0;
+	bool found = false;
+
+	if (name == NULL || out == NULL)
+		return false;
+	if (proc_status_read(buf, sizeof(buf)) < 0)
+		return false;
+	value = proc_status_find_field(buf, name);
+	if (value == NULL)
+		return false;
+
+	/*
+	 * Bound strtok_r to this one line.  value points into buf which is
+	 * a writable stack array, so casting away const is safe.
+	 */
+	line = (char *) value;
+	eol = strchr(line, '\n');
+	if (eol != NULL)
+		*eol = '\0';
+
+	for (tok = strtok_r(line, " \t", &saveptr); tok != NULL;
+	     tok = strtok_r(NULL, " \t", &saveptr)) {
+		unsigned int v;
+
+		if (sscanf(tok, "%u", &v) == 1) {
+			last = v;
+			found = true;
+		}
+	}
+	if (found)
+		*out = last;
+	return found;
+}

@@ -108,9 +108,18 @@ bool proc_status_parse_hex_mask(const char *value, uint64_t *out);
  *   buffer — the codex-#3 truncation bug.  Slurp grows on demand so the
  *   bug cannot recur on the migrated callers.
  *
- * All three return false on any failure (open, read, missing field,
- * parse) and leave *out untouched.
+ * proc_status_read_ns_last_uint — the per-pid-ns rows whose value is a
+ *   space/tab separated list of decimal ids, outermost namespace first
+ *   (NSpgid today; NStgid/NSpid/NSsid are forward-compatible).  Reads
+ *   via the same 8 KB stack buffer as proc_status_read_uint_field,
+ *   tokenises the value, and returns the last token that parses as %u —
+ *   i.e. the innermost namespace's view, which is what the oracle
+ *   wants.
+ *
+ * All four return false on any failure (open, read, missing field,
+ * parse, or no token parsed) and leave *out untouched.
  */
 bool proc_status_read_uint_field(const char *name, unsigned long *out);
 bool proc_status_read_id_quad(const char *name, unsigned long out[4]);
 bool proc_status_read_sigmask(const char *name, uint64_t *out);
+bool proc_status_read_ns_last_uint(const char *name, unsigned int *out);
