@@ -40,6 +40,8 @@ static const char *xattr_suffixes[] = {
 /* Generate a valid xattr name like "user.test" or "security.selinux". */
 void gen_xattr_name(char *buf, size_t len)
 {
+	if (len > XATTR_NAME_BUFSZ)
+		len = XATTR_NAME_BUFSZ;
 	snprintf(buf, len, "%s%s",
 		 RAND_ARRAY(xattr_prefixes),
 		 RAND_ARRAY(xattr_suffixes));
@@ -73,6 +75,9 @@ static const char *xattr_pooled_names[] = {
 void gen_xattr_name_pooled(char *buf, size_t len)
 {
 	unsigned int r = rnd_modulo_u32(10);
+
+	if (len > XATTR_NAME_BUFSZ)
+		len = XATTR_NAME_BUFSZ;
 
 	if (r < 7) {
 		snprintf(buf, len, "%s", RAND_ARRAY(xattr_pooled_names));
