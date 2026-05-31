@@ -1,11 +1,9 @@
 /*
  * SYSCALL_DEFINE0(getgid)
  */
-#include <fcntl.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "proc-status.h"
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
@@ -25,12 +23,8 @@
  */
 static void post_getgid(struct syscallrecord *rec)
 {
-	char buf[2048];
-	char *line;
-	ssize_t n;
-	int fd;
-	gid_t got, proc_rgid = (gid_t)-1;
-	unsigned int rgid, egid, sgid, fsgid;
+	unsigned long ids[4];
+	gid_t got, proc_rgid;
 	unsigned long retval = rec->retval;
 
 	/* Kernel ABI: getgid() is infallible — from_kgid_munged(current_user_ns(),
@@ -49,30 +43,11 @@ static void post_getgid(struct syscallrecord *rec)
 
 	got = (gid_t) retval;
 
-	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
-	 * thousands of times per second under fuzz, and stdio's per-call malloc
-	 * of FILE struct + IO buffer is heap traffic we don't need. */
-	fd = open("/proc/self/status", O_RDONLY);
-	if (fd < 0)
+	if (!proc_status_read_id_quad("Gid", ids))
 		return;
-	n = read(fd, buf, sizeof(buf) - 1);
-	close(fd);
-	if (n <= 0)
-		return;
-	buf[n] = '\0';
-	/* Anchor on a newline so a "Gid:" substring inside an earlier field
-	 * (e.g. a process name) cannot mis-target the parse. */
-	line = strstr(buf, "\nGid:");
-	if (line != NULL) {
-		/* Gid: rgid egid sgid fsgid — getgid() returns rgid
-		 * (real gid, first field), so compare against that. */
-		if (sscanf(line + 5, "%u %u %u %u",
-			   &rgid, &egid, &sgid, &fsgid) == 4)
-			proc_rgid = rgid;
-	}
-
-	if (proc_rgid == (gid_t)-1)
-		return;
+	/* Gid: rgid egid sgid fsgid — getgid() returns rgid
+	 * (real gid, first field), so compare against that. */
+	proc_rgid = (gid_t) ids[0];
 
 	if (proc_rgid != got) {
 		output(0, "getgid oracle: getgid()=%u but "
