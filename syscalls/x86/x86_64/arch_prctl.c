@@ -81,6 +81,24 @@ static unsigned long arch_prctl_codes[] = {
 
 static void sanitise_arch_prctl(struct syscallrecord *rec)
 {
+	unsigned int i;
+	bool safe = false;
+
+	/* The 1-in-16 CMP-hint bypass in handle_arg_op() (generate-args.c)
+	 * can return a raw value that skips the curated arch_prctl_codes[]
+	 * whitelist; ARCH_SET_FS / ARCH_SET_GS / ARCH_SET_CPUID would then
+	 * scribble the child's own FS-base / GS-base / cpuid-fault state and
+	 * the next libc call into TLS (%fs:...) would segfault.  Re-roll any
+	 * out-of-whitelist code from the safe list. */
+	for (i = 0; i < ARRAY_SIZE(arch_prctl_codes); i++) {
+		if (arch_prctl_codes[i] == rec->a1) {
+			safe = true;
+			break;
+		}
+	}
+	if (!safe)
+		rec->a1 = arch_prctl_codes[rnd_modulo_u32(ARRAY_SIZE(arch_prctl_codes))];
+
 	switch (rec->a1) {
 	case ARCH_GET_FS:
 	case ARCH_GET_GS:
