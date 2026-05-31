@@ -77,6 +77,25 @@ static bool path_blocklisted(const char *path)
 		"/proc/sys/kernel/sysrq",
 		"/proc/sys/kernel/panic",
 		"/proc/sys/kernel/panic_on_oops",
+		/*
+		 * Lockup detectors and hung-task watchdog.  A random write
+		 * (often a zero byte, or a bitmap whose low bit is clear) to
+		 * any of these silently disables the kernel's own crash-on-
+		 * wedge logic, so when trinity later trips a real bug the box
+		 * hangs with no panic/kdump/netconsole output.
+		 */
+		"/proc/sys/kernel/watchdog",
+		"/proc/sys/kernel/nmi_watchdog",
+		"/proc/sys/kernel/soft_watchdog",
+		"/proc/sys/kernel/watchdog_thresh",
+		"/proc/sys/kernel/watchdog_cpumask",
+		"/proc/sys/kernel/softlockup_panic",
+		"/proc/sys/kernel/hardlockup_panic",
+		"/proc/sys/kernel/hung_task_panic",
+		"/proc/sys/kernel/hung_task_timeout_secs",
+		"/proc/sys/kernel/hung_task_warnings",
+		"/proc/sys/kernel/oops_all_cpu_backtrace",
+		"/proc/sys/kernel/print-fatal-signals",
 		"/sys/kernel/debug/dynamic_debug/control",
 	};
 	size_t len = strlen(path);

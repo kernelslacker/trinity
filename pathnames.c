@@ -179,6 +179,26 @@ static int ignore_files(const char *path)
 		/* dangerous/noisy/annoying stuff in /proc */
 		"/proc/sysrq-trigger", "/proc/kmem", "/proc/kcore",
 
+		/*
+		 * Lockup detectors and hung-task watchdog sysctls.  A write
+		 * of '0' (or random bitmap garbage) silently shuts off the
+		 * kernel's own crash-on-wedge logic, so a subsequent real
+		 * trinity-triggered bug produces no panic/kdump/netconsole
+		 * output and the box just hangs.
+		 */
+		"/proc/sys/kernel/watchdog",
+		"/proc/sys/kernel/nmi_watchdog",
+		"/proc/sys/kernel/soft_watchdog",
+		"/proc/sys/kernel/watchdog_thresh",
+		"/proc/sys/kernel/watchdog_cpumask",
+		"/proc/sys/kernel/softlockup_panic",
+		"/proc/sys/kernel/hardlockup_panic",
+		"/proc/sys/kernel/hung_task_panic",
+		"/proc/sys/kernel/hung_task_timeout_secs",
+		"/proc/sys/kernel/hung_task_warnings",
+		"/proc/sys/kernel/oops_all_cpu_backtrace",
+		"/proc/sys/kernel/print-fatal-signals",
+
 		/* dangerous/noisy/annoying stuff in /dev */
 		"/dev/log", "/dev/mem", "/dev/kmsg", "/dev/kmem",
 		NULL
