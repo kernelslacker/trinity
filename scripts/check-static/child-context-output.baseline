@@ -172,10 +172,10 @@ syscalls/getresgid.c:111:post_getresgid
 syscalls/getresgid.c:126:post_getresgid
 syscalls/getresgid.c:153:post_getresgid
 syscalls/getresgid.c:187:post_getresgid
-syscalls/getresuid.c:111:post_getresuid
-syscalls/getresuid.c:126:post_getresuid
-syscalls/getresuid.c:153:post_getresuid
-syscalls/getresuid.c:187:post_getresuid
+syscalls/getresuid.c:105:post_getresuid
+syscalls/getresuid.c:120:post_getresuid
+syscalls/getresuid.c:147:post_getresuid
+syscalls/getresuid.c:163:post_getresuid
 syscalls/getrlimit.c:149:post_getrlimit
 syscalls/getrlimit.c:164:post_getrlimit
 syscalls/getrlimit.c:187:post_getrlimit
