@@ -467,8 +467,8 @@ syscalls/setsid.c:65:post_setsid
 syscalls/setsockopt.c:590:post_setsockopt
 syscalls/setsockopt.c:605:post_setsockopt
 syscalls/setsockopt.c:620:post_setsockopt
-syscalls/setuid.c:45:post_setuid
-syscalls/setuid.c:79:post_setuid
+syscalls/setuid.c:39:post_setuid
+syscalls/setuid.c:54:post_setuid
 syscalls/shmctl.c:110:post_shmctl
 syscalls/shmctl.c:125:post_shmctl
 syscalls/shmctl.c:144:post_shmctl

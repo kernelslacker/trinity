@@ -1,11 +1,9 @@
 /*
  * SYSCALL_DEFINE1(setuid, uid_t, uid)
  */
-#include <fcntl.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "proc-status.h"
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
@@ -26,13 +24,9 @@
  */
 static void post_setuid(struct syscallrecord *rec)
 {
-	char buf[2048];
-	char *line;
-	ssize_t n;
-	int fd;
+	unsigned long ids[4];
 	uid_t want, got;
-	uid_t proc_euid = (uid_t)-1;
-	unsigned int ruid, euid, suid, fsuid;
+	uid_t proc_euid;
 
 	if ((long) rec->retval != 0)
 		return;
@@ -52,28 +46,9 @@ static void post_setuid(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		return;
 
-	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
-	 * thousands of times per second under fuzz, and stdio's per-call malloc
-	 * of FILE struct + IO buffer is heap traffic we don't need. */
-	fd = open("/proc/self/status", O_RDONLY);
-	if (fd < 0)
+	if (!proc_status_read_id_quad("Uid", ids))
 		return;
-	n = read(fd, buf, sizeof(buf) - 1);
-	close(fd);
-	if (n <= 0)
-		return;
-	buf[n] = '\0';
-	/* Anchor on a newline so a "Uid:" substring inside an earlier field
-	 * (e.g. a process name) cannot mis-target the parse. */
-	line = strstr(buf, "\nUid:");
-	if (line != NULL) {
-		if (sscanf(line + 5, "%u %u %u %u",
-			   &ruid, &euid, &suid, &fsuid) == 4)
-			proc_euid = euid;
-	}
-
-	if (proc_euid == (uid_t)-1)
-		return;
+	proc_euid = (uid_t) ids[1];
 
 	if (proc_euid != want) {
 		output(0, "uid oracle: setuid(%u) succeeded but "
