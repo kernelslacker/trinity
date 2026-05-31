@@ -129,5 +129,27 @@ struct csfu_buf build_csfu_struct(const struct csfu_desc *desc)
 		break;
 	}
 
+	/*
+	 * In-band size-field fix-up.  CSFU-shaped syscalls whose usize
+	 * lives inside the struct (statmount/listmount/listns/...) need
+	 * that slot to match the bucket-chosen usize or the kernel rejects
+	 * the call before the validator path we want to exercise.  Width
+	 * is per-desc so we can target __u32-typed slots (mnt_id_req.size)
+	 * without smearing into the adjacent member.
+	 */
+	if (desc->size_field_width > 0) {
+		uint64_t v = (uint64_t) out.usize;
+
+		switch (desc->size_field_width) {
+		case 4:
+			*(uint32_t *)(bytes + desc->size_field_off) =
+				(uint32_t) v;
+			break;
+		case 8:
+			*(uint64_t *)(bytes + desc->size_field_off) = v;
+			break;
+		}
+	}
+
 	return out;
 }

@@ -5,6 +5,7 @@
  */
 #include <fcntl.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <linux/mount.h>
@@ -13,6 +14,7 @@
 #include <unistd.h>
 #include <asm/unistd.h>
 #include "arch.h"
+#include "csfu.h"
 #include "deferred-free.h"
 #include "random.h"
 #include "rnd.h"
@@ -197,8 +199,29 @@ struct listmount_post_state {
 };
 #endif
 
+/*
+ * Pre-ksize ABI floors for the csfu UNDERSIZE bucket.  The kernel
+ * accepts a request whose req->size matches any prior published
+ * mnt_id_req version and zero-pads the rest.  The EXACT bucket
+ * already covers sizeof(struct mnt_id_req) (== VER1 on current
+ * headers), so only VER0 is listed here.
+ */
+static const size_t listmount_known_sizes[] = {
+	MNT_ID_REQ_SIZE_VER0,
+};
+
+static const struct csfu_desc desc_listmount = {
+	.name = "mnt_id_req",
+	.ksize = sizeof(struct mnt_id_req),
+	.known_sizes = listmount_known_sizes,
+	.n_known_sizes = ARRAY_SIZE(listmount_known_sizes),
+	.size_field_off = offsetof(struct mnt_id_req, size),
+	.size_field_width = sizeof(((struct mnt_id_req *) 0)->size),
+};
+
 static void sanitise_listmount(struct syscallrecord *rec)
 {
+	struct csfu_buf csfu;
 	struct mnt_id_req *req;
 	__u64 *mnt_ids;
 	unsigned long nr;
@@ -206,12 +229,11 @@ static void sanitise_listmount(struct syscallrecord *rec)
 	struct listmount_post_state *snap;
 #endif
 
-	req = (struct mnt_id_req *) get_writable_address(sizeof(*req));
+	csfu = build_csfu_struct(&desc_listmount);
+	req = csfu.ptr;
 	if (req == NULL)
 		return;
-	memset(req, 0, sizeof(*req));
 
-	req->size = MNT_ID_REQ_SIZE_VER0;
 	req->mnt_id = pick_listmount_parent_id();
 	req->param = pick_listmount_order();
 
@@ -248,6 +270,15 @@ static void sanitise_listmount(struct syscallrecord *rec)
 	snap->nr_mnt_ids = rec->a3;
 	rec->post_state  = (unsigned long) snap;
 #endif
+
+	/*
+	 * The csfu allocation (`req`) is a tracked libc-heap pointer rather
+	 * than the get_writable_address() pool slot it replaced; without an
+	 * explicit enqueue here it would dangle until LRU eviction.  The
+	 * deferred-free TTL outlives the post handler, which still reads
+	 * via snap->req in the same iteration.
+	 */
+	deferred_free_enqueue(req);
 }
 
 /*

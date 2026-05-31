@@ -5,6 +5,7 @@
  */
 #include <fcntl.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <linux/mount.h>
@@ -12,6 +13,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <asm/unistd.h>
+#include "csfu.h"
 #include "deferred-free.h"
 #include "random.h"
 #include "rnd.h"
@@ -250,8 +252,29 @@ static unsigned long pick_statmount_flags(void)
 	return rnd_u32();
 }
 
+/*
+ * Pre-ksize ABI floors for the csfu UNDERSIZE bucket.  The kernel
+ * accepts a request whose req->size matches any prior published
+ * mnt_id_req version and zero-pads the rest.  The EXACT bucket
+ * already covers sizeof(struct mnt_id_req) (== VER1 on current
+ * headers), so only VER0 is listed here.
+ */
+static const size_t statmount_known_sizes[] = {
+	MNT_ID_REQ_SIZE_VER0,
+};
+
+static const struct csfu_desc desc_statmount = {
+	.name = "mnt_id_req",
+	.ksize = sizeof(struct mnt_id_req),
+	.known_sizes = statmount_known_sizes,
+	.n_known_sizes = ARRAY_SIZE(statmount_known_sizes),
+	.size_field_off = offsetof(struct mnt_id_req, size),
+	.size_field_width = sizeof(((struct mnt_id_req *) 0)->size),
+};
+
 static void sanitise_statmount(struct syscallrecord *rec)
 {
+	struct csfu_buf csfu;
 	struct mnt_id_req *req;
 	void *buf;
 #ifdef HAVE_SYS_STATMOUNT
@@ -260,12 +283,11 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	rec->post_state = 0;
 #endif
 
-	req = (struct mnt_id_req *) get_writable_struct(sizeof(*req));
-	if (!req)
+	csfu = build_csfu_struct(&desc_statmount);
+	req = csfu.ptr;
+	if (req == NULL)
 		return;
-	memset(req, 0, sizeof(*req));
 
-	req->size = MNT_ID_REQ_SIZE_VER0;
 	req->mnt_id = pick_statmount_mnt_id();
 	req->param = pick_statmount_mask();
 
@@ -312,6 +334,17 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	snap->req    = rec->a1;
 	snap->buffer = rec->a2;
 #endif
+
+	/*
+	 * The csfu allocation (`req`) is the libc-heap pointer the kernel
+	 * read from; once avoid_shared_buffer_inout has either left rec->a1
+	 * pointing at it or relocated it, the local handle is the only path
+	 * back to that buffer.  Enqueue it for deferred release so its TTL
+	 * outlives the post handler without leaking on the no-relocation
+	 * path.  Matches the deferred_free_enqueue() lifetime sched_setattr
+	 * and the rest of the csfu consumer set already use.
+	 */
+	deferred_free_enqueue(req);
 }
 
 /*

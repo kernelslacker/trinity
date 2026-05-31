@@ -6,9 +6,11 @@
 #include <linux/types.h>
 #include <sched.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include "csfu.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -225,15 +227,26 @@ struct listns_post_state {
 	unsigned long nr_ns_ids;
 };
 
+static const struct csfu_desc desc_listns = {
+	.name = "ns_id_req",
+	.ksize = sizeof(struct ns_id_req),
+	.size_field_off = offsetof(struct ns_id_req, size),
+	.size_field_width = sizeof(((struct ns_id_req *) 0)->size),
+};
+
 static void sanitise_listns(struct syscallrecord *rec)
 {
+	struct csfu_buf csfu;
 	struct ns_id_req *req;
 	__u64 *ns_ids;
 	struct listns_post_state *snap;
 	unsigned long nr;
 
-	req = zmalloc_tracked(sizeof(struct ns_id_req));
-	req->size = NS_ID_REQ_SIZE_VER0;
+	csfu = build_csfu_struct(&desc_listns);
+	req = csfu.ptr;
+	if (req == NULL)
+		return;
+
 	req->ns_type = pick_listns_ns_type();
 	req->ns_id = pick_listns_ns_id();
 	req->user_ns_id = pick_listns_user_ns_id();

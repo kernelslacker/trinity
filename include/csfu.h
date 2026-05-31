@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdint.h>
 
 /*
  * copy_struct_from_user() bucket-aware userspace struct builder.
@@ -57,6 +58,25 @@ struct csfu_desc {
 	 */
 	const size_t *known_sizes;
 	size_t n_known_sizes;
+	/*
+	 * Optional in-band size field.  A growing family of CSFU-shaped
+	 * syscalls (statmount, listmount, listns, ...) encodes the chosen
+	 * usize as the first field of the userspace struct rather than as
+	 * a separate syscall arg, and the kernel rejects the call out of
+	 * hand if that field disagrees with the body's effective size.
+	 * When size_field_width > 0, build_csfu_struct() writes the chosen
+	 * usize as a size_field_width-byte little-endian word at
+	 * buf + size_field_off before returning, so each consumer skips
+	 * the boilerplate.  Default 0 leaves the body untouched -- existing
+	 * consumers that fill the size field themselves (or have no such
+	 * field) keep working without any per-desc churn.
+	 *
+	 * Width is parameterised because the kernel uapi structs vary
+	 * (mnt_id_req.size is __u32, future consumers may use __u64).
+	 * Supported widths: 4 (u32) and 8 (u64).
+	 */
+	ptrdiff_t size_field_off;
+	uint8_t size_field_width;
 };
 
 /*
