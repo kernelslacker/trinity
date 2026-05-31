@@ -117,13 +117,25 @@ static void post_timerfd_create(struct syscallrecord *rec)
 	fd = (int) retval;
 
 	/*
-	 * Magic-cookie check: a sibling scribble of rec->post_state with
-	 * a heap-shaped pointer to a foreign allocation would let the
-	 * wrong bytes pose as a timerfd_post_state.  A cookie mismatch
-	 * means snap does not point at our struct -- abandon without
-	 * publishing an object or freeing rather than tag a new
-	 * OBJ_FD_TIMERFD with wild bytes (and don't deferred_freeptr() a
-	 * pointer we don't own).
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 */
+	if (looks_like_corrupted_ptr(rec, snap)) {
+		outputerr("post_timerfd_create: rejected suspicious post_state=%p (pid-scribbled?)\n",
+			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * timerfd_post_state.  A cookie mismatch means snap does not
+	 * point at our struct -- abandon without publishing an object or
+	 * freeing rather than tag a new OBJ_FD_TIMERFD with wild bytes
+	 * (and don't deferred_freeptr() a pointer we don't own).
 	 */
 	if (snap->magic != TIMERFD_POST_STATE_MAGIC) {
 		outputerr("post_timerfd_create: rejected snap with bad magic 0x%lx "
