@@ -113,16 +113,30 @@ static const int getfd_targets[] = {
  * touching shared shm state and writing per-pid logs under the wrong
  * pid.  Worst case, child_fault_handler dumps a crash log for the
  * wrong pid on a stray SIGSEGV.  Reset every catchable handler to
- * SIG_DFL so the storm's signal traffic falls back to default action
- * (ignore for SIGCHLD/SIGCONT/SIGURG, terminate for SIGUSR1/SIGUSR2)
- * and any fault here just kills the pause-child cleanly.
+ * SIG_DFL so any unexpected fault here just kills the pause-child
+ * cleanly.
+ *
+ * Then re-arm every signal in storm_signals[] to SIG_IGN.  The default
+ * action for SIGUSR1/SIGUSR2 is terminate, so leaving them as SIG_DFL
+ * would evict the target on the very first storm hit — the pause-child
+ * would die, the pidfd pool would shrink, and the storm would lose the
+ * repeat-pressure it is meant to apply.  SIG_IGN keeps the helper
+ * looping in pause() across arbitrarily many deliveries.  SIGCHLD's
+ * default is already ignore (no-op).  SIGSTOP/SIGCONT drive job
+ * control regardless of disposition, so SIG_IGN does not disturb that
+ * path.  Teardown still works because trinity reaps these helpers
+ * with SIGKILL, which is uncatchable.
  */
 static void sanitize_pause_child_signals(void)
 {
+	unsigned int i;
 	int s;
 
 	for (s = 1; s < NSIG; s++)
 		(void)signal(s, SIG_DFL); /* SIGKILL/SIGSTOP return SIG_ERR; harmless. */
+
+	for (i = 0; i < ARRAY_SIZE(storm_signals); i++)
+		(void)signal(storm_signals[i], SIG_IGN);
 }
 
 static int sys_pidfd_open(pid_t pid, unsigned int flags)
