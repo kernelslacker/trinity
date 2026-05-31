@@ -857,9 +857,14 @@ void kcov_enable_trace(struct kcov_child *kc)
 			 * recovery, re-zero trace_buf[0] (the new mapping
 			 * starts uninitialised) and retry the ioctl on the
 			 * fresh fd.  On cap exhaustion or failed recovery,
-			 * mark the slot dead and _exit(0) so the parent's
+			 * mark the slot dead and _exit() with
+			 * KCOV_RECOVERY_EXHAUSTED_EXIT_CODE so the parent's
 			 * reaper hands us a clean init_child slot rather
-			 * than leaving this child silently degraded. */
+			 * than leaving this child silently degraded.  The
+			 * non-zero status is what makes the reap visible to
+			 * reap_entry_is_fast_die(); a bare _exit(0) here
+			 * would leave the fork-storm circuit breaker inert
+			 * for kcov-recovery loops. */
 			kc->recovery_attempts++;
 			if (kc->recovery_attempts <= KCOV_RECOVERY_MAX &&
 			    kcov_recover_fd(kc, false)) {
@@ -868,7 +873,7 @@ void kcov_enable_trace(struct kcov_child *kc)
 				continue;
 			}
 			kc->active = false;
-			_exit(0);
+			_exit(KCOV_RECOVERY_EXHAUSTED_EXIT_CODE);
 		}
 		kc->active = false;
 		break;
@@ -961,7 +966,7 @@ void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id)
 				continue;
 			}
 			kc->active = false;
-			_exit(0);
+			_exit(KCOV_RECOVERY_EXHAUSTED_EXIT_CODE);
 		}
 		kc->active = false;
 		return;

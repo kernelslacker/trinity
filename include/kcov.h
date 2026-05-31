@@ -2,6 +2,7 @@
 
 #include <time.h>
 
+#include "exit.h"	/* NUM_EXIT_REASONS */
 #include "types.h"
 #include "syscall.h"	/* MAX_NR_SYSCALL */
 
@@ -240,7 +241,7 @@ struct kcov_cmp_diag {
 #define KCOV_ENABLE_EINTR_MAX 8
 
 /* Per-slot cap on how many times kcov_recover_fd() may rebuild a
- * vanished kcov fd before kcov_enable_trace gives up and _exit(0)s
+ * vanished kcov fd before kcov_enable_trace gives up and _exit()s
  * the child so the parent's reaper respawns it with a fresh slot.
  * The closer driving these EBADFs is not transient — fleet evidence
  * shows the first hit on a child usually arrives within seconds and
@@ -249,6 +250,20 @@ struct kcov_cmp_diag {
  * leaving recoverable slots silently degraded.  Counters are uint8_t
  * 4-bit bitfields and KCOV_RECOVERY_MAX must stay <= 15. */
 #define KCOV_RECOVERY_MAX 3
+
+/* Exit status used by kcov_enable_trace / kcov_enable_remote when the
+ * per-slot recovery budget is exhausted (or kcov_recover_fd() itself
+ * fails) and the child has to bail so the reaper can hand it a fresh
+ * init_child slot.  Must be non-zero so reap_entry_is_fast_die() in
+ * main.c treats the reap as a fast-die candidate — a fork→exit(0)→
+ * respawn loop would otherwise slip past the circuit breaker, because
+ * the breaker only counts exit_status > 0.  Must also be >=
+ * NUM_EXIT_REASONS so decode_exit() in bail_fast_die_loop() does not
+ * mislabel the ring-dump line as one of the named fleet-terminator
+ * reasons (the [1, NUM_EXIT_REASONS) range belongs to enum
+ * exit_reasons).  NUM_EXIT_REASONS + 1 satisfies both and stays
+ * distinct even if enum exit_reasons grows. */
+#define KCOV_RECOVERY_EXHAUSTED_EXIT_CODE (NUM_EXIT_REASONS + 1)
 
 /* Per-failure-site diagnostic slots for the PC and remote KCOV enable/
  * disable paths.  Same shape as struct kcov_cmp_diag: first failure
@@ -345,9 +360,10 @@ struct kcov_child {
 	 * after `mode`, keeping the struct at 48 bytes (a third uint8_t
 	 * would force pointer-alignment padding and push the struct to
 	 * 56, blowing the hot-cacheline budget).  Each counter caps at
-	 * KCOV_RECOVERY_MAX (3) before kcov_enable_trace _exit(0)s the
-	 * child; the counter is owner-write-only so the bitfield RMW is
-	 * always sequential within a single child context. */
+	 * KCOV_RECOVERY_MAX (3) before kcov_enable_trace _exit()s the
+	 * child with KCOV_RECOVERY_EXHAUSTED_EXIT_CODE; the counter is
+	 * owner-write-only so the bitfield RMW is always sequential
+	 * within a single child context. */
 	uint8_t recovery_attempts     : 4;
 	uint8_t cmp_recovery_attempts : 4;
 	unsigned long *trace_buf;
