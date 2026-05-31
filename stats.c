@@ -733,6 +733,15 @@ static const struct stat_category msg_zerocopy_churn_category =
 	              msg_zerocopy_churn_runs,
 	              msg_zerocopy_churn_fields);
 
+static const struct stat_field setsockopt_pairing_fields[] = {
+	STAT_FIELD(setsockopt_pairing, paired_emitted),
+};
+
+static const struct stat_category setsockopt_pairing_category =
+	STAT_CATEGORY("setsockopt_pairing",
+	              setsockopt_pairing_paired_emitted,
+	              setsockopt_pairing_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -1459,6 +1468,9 @@ static void dump_stats_json(void)
 		shm->stats.tcp_ulp_swap_churn_install_failed);
 
 	stat_category_emit_json(&msg_zerocopy_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&setsockopt_pairing_category);
 
 	printf(",\"iouring_send_zc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"register_bufs_ok\":%lu,\"send_zc_ok\":%lu,\"sendmsg_zc_ok\":%lu,\"unregister_race_ok\":%lu,\"update_race_ok\":%lu,\"cqe_drained\":%lu},"
 		"\"vsock_transport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bind_ok\":%lu,\"connect_ok\":%lu,\"send_ok\":%lu,\"buffer_size_ok\":%lu,\"timeout_ok\":%lu,\"get_cid_ok\":%lu,\"seq_eom_runs\":%lu,\"seq_eom_sends_ok\":%lu,\"seq_eom_sends_failed\":%lu,\"seq_eom_skipped\":%lu},"
@@ -4628,6 +4640,8 @@ void dump_stats(void)
 	}
 
 	stat_category_emit_text(&msg_zerocopy_churn_category);
+
+	stat_category_emit_text(&setsockopt_pairing_category);
 
 	if (shm->stats.iouring_send_zc_churn_runs) {
 		stat_row("iouring_send_zc_churn", "runs",               shm->stats.iouring_send_zc_churn_runs);

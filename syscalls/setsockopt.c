@@ -243,6 +243,177 @@ static const struct sockopt_entry sockopt_table[] = {
 };
 
 /*
+ * Per-fd history of the most recent setsockopt (level, optname) picked
+ * by sanitise_setsockopt().  Open-addressing hash keyed on fd number;
+ * each slot stores a single prior pick (no chaining).  Process-local --
+ * trinity children fork their own copy, which is the intended granularity
+ * because each child drives its own fd churn.  A pre-existing entry for
+ * a different fd at the same slot is simply overwritten; the table is
+ * a lossy MRU, not an exact log.
+ *
+ * The history exists so the picker below can spot "this fd just received
+ * SO_KEEPALIVE -- now follow it with TCP_KEEPIDLE on the same fd" without
+ * having to plumb per-fd obj `data` blobs through the fd subsystem.
+ */
+#define SSO_HIST_SIZE	256u	/* power of two; cheap modulo via & mask */
+
+struct sso_history_entry {
+	int fd;		/* -1 sentinel = empty slot */
+	int level;
+	int optname;
+};
+
+static struct sso_history_entry sso_history[SSO_HIST_SIZE] = {
+	[0 ... SSO_HIST_SIZE - 1] = { .fd = -1 },
+};
+
+static inline unsigned int sso_history_slot(int fd)
+{
+	return ((unsigned int) fd) & (SSO_HIST_SIZE - 1u);
+}
+
+static void sso_history_record(int fd, int level, int optname)
+{
+	struct sso_history_entry *e;
+
+	if (fd < 0)
+		return;
+
+	e = &sso_history[sso_history_slot(fd)];
+	e->fd = fd;
+	e->level = level;
+	e->optname = optname;
+}
+
+static bool sso_history_lookup(int fd, int *level, int *optname)
+{
+	const struct sso_history_entry *e;
+
+	if (fd < 0)
+		return false;
+
+	e = &sso_history[sso_history_slot(fd)];
+	if (e->fd != fd)
+		return false;
+
+	*level = e->level;
+	*optname = e->optname;
+	return true;
+}
+
+/*
+ * Pair table.  Each row encodes "if the prior setsockopt on this fd was
+ * (prev_level, prev_optname), then a reasonable follow-up is
+ * (level, optname, build)".  The builders are the same exact-size
+ * payload helpers used by sockopt_table[], so the kernel sees
+ * well-formed inputs and the per-protocol option-dispatch code gets
+ * the dependent-state coverage that single-shot fuzzing misses.
+ *
+ * Multiple rows may share a prev key; the picker draws uniformly
+ * among matches so the TCP keepalive triplet exercises all three
+ * follow-ups over time.
+ */
+struct sockopt_pair {
+	int prev_level;
+	int prev_optname;
+	int level;
+	int optname;
+	socklen_t (*build)(void *buf);
+};
+
+static const struct sockopt_pair sockopt_pairs[] = {
+	/* SO_KEEPALIVE -> TCP keepalive triplet on the same fd. */
+	{ SOL_SOCKET,   SO_KEEPALIVE,         IPPROTO_TCP,  TCP_KEEPIDLE,         build_int_small_positive },
+	{ SOL_SOCKET,   SO_KEEPALIVE,         IPPROTO_TCP,  TCP_KEEPINTVL,        build_int_small_positive },
+	{ SOL_SOCKET,   SO_KEEPALIVE,         IPPROTO_TCP,  TCP_KEEPCNT,          build_int_small_positive },
+
+	/* Receive/send timeout pairing. */
+	{ SOL_SOCKET,   SO_RCVTIMEO,          SOL_SOCKET,   SO_SNDTIMEO,          build_timeval },
+	{ SOL_SOCKET,   SO_SNDTIMEO,          SOL_SOCKET,   SO_RCVTIMEO,          build_timeval },
+
+	/* Privileged-force buffer set followed by the unprivileged sibling
+	 * exercises the per-buffer ceiling/floor recalculation path. */
+	{ SOL_SOCKET,   SO_RCVBUFFORCE,       SOL_SOCKET,   SO_RCVBUF,            build_int_rand },
+	{ SOL_SOCKET,   SO_SNDBUFFORCE,       SOL_SOCKET,   SO_SNDBUF,            build_int_rand },
+
+	/* IPv4 multicast: set interface / loop, then join / drop a group. */
+	{ IPPROTO_IP,   IP_MULTICAST_IF,      IPPROTO_IP,   IP_ADD_MEMBERSHIP,    build_ip_mreqn },
+	{ IPPROTO_IP,   IP_MULTICAST_LOOP,    IPPROTO_IP,   IP_MULTICAST_IF,      build_ip_mreqn },
+	{ IPPROTO_IP,   IP_ADD_MEMBERSHIP,    IPPROTO_IP,   IP_DROP_MEMBERSHIP,   build_ip_mreqn },
+
+	/* IPv6 multicast mirror. */
+	{ IPPROTO_IPV6, IPV6_MULTICAST_LOOP,  IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP,  build_ipv6_mreq },
+	{ IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP,  IPPROTO_IPV6, IPV6_DROP_MEMBERSHIP, build_ipv6_mreq },
+
+	/* TCP_CORK vs TCP_NODELAY: mutually exclusive in the kernel; pairing
+	 * exercises the conflict-resolution path. */
+	{ IPPROTO_TCP,  TCP_CORK,             IPPROTO_TCP,  TCP_NODELAY,          build_int_bool },
+	{ IPPROTO_TCP,  TCP_NODELAY,          IPPROTO_TCP,  TCP_CORK,             build_int_bool },
+
+	/* TCP Fast Open server queue -> client-side connect opt-in. */
+	{ IPPROTO_TCP,  TCP_FASTOPEN,         IPPROTO_TCP,  TCP_FASTOPEN_CONNECT, build_int_bool },
+};
+
+/*
+ * Count matches for (prev_level, prev_optname) and pick one uniformly.
+ * Two-pass: count, then sample.  Linear scan is fine for ~12-20 entries.
+ */
+static const struct sockopt_pair *lookup_sockopt_pair(int prev_level, int prev_optname)
+{
+	unsigned int i, matches = 0, pick;
+
+	for (i = 0; i < ARRAY_SIZE(sockopt_pairs); i++) {
+		if (sockopt_pairs[i].prev_level == prev_level &&
+		    sockopt_pairs[i].prev_optname == prev_optname)
+			matches++;
+	}
+	if (matches == 0)
+		return NULL;
+
+	pick = rnd_modulo_u32(matches);
+	for (i = 0; i < ARRAY_SIZE(sockopt_pairs); i++) {
+		if (sockopt_pairs[i].prev_level == prev_level &&
+		    sockopt_pairs[i].prev_optname == prev_optname) {
+			if (pick == 0)
+				return &sockopt_pairs[i];
+			pick--;
+		}
+	}
+	return NULL;	/* unreachable */
+}
+
+/*
+ * Apply a paired follow-up: write the secondary option's payload into
+ * so->optval (already a zmalloc page) and fill out level / optname /
+ * optlen.  Bumps the telemetry counter on success so -v runs can confirm
+ * the picker is firing.  Returns true if the pair was emitted.
+ */
+static bool try_paired_setsockopt(struct sockopt *so, int fd)
+{
+	const struct sockopt_pair *pair;
+	int prev_level, prev_optname;
+	socklen_t exact;
+
+	if (so->optval == 0)
+		return false;
+	if (!sso_history_lookup(fd, &prev_level, &prev_optname))
+		return false;
+
+	pair = lookup_sockopt_pair(prev_level, prev_optname);
+	if (pair == NULL)
+		return false;
+
+	exact = pair->build((void *) so->optval);
+	so->level = pair->level;
+	so->optname = pair->optname;
+	so->optlen = exact;
+
+	__atomic_add_fetch(&shm->stats.setsockopt_pairing_paired_emitted, 1,
+			   __ATOMIC_RELAXED);
+	return true;
+}
+
+/*
  * Pick a structured entry, write its payload into so->optval, and (when
  * `mismatch_len` is true) deliberately scramble so->optlen to land in
  * the per-option size-validation rejection path.  Returns true on a
@@ -580,11 +751,34 @@ static void sanitise_setsockopt(struct syscallrecord *rec)
 
 	do_setsockopt(&so, triplet);
 
+	/*
+	 * Dependent-option pairing: 1-in-4, override the just-picked
+	 * (level, optname, optval, optlen) with a follow-up that targets
+	 * the SAME fd's last-seen option.  do_setsockopt() already did the
+	 * zmalloc'd optval allocation we need; try_paired_setsockopt()
+	 * reuses that buffer for the secondary payload, so the post-handler
+	 * snapshot machinery below sees a normal heap optval to free.
+	 *
+	 * The RAND_BOOL "disable" branch in do_setsockopt() may have freed
+	 * optval and zeroed it; try_paired_setsockopt() bails on that case
+	 * so the disable semantics survive.  Skip pairing entirely when fd
+	 * was the random-fd fallback above (no triplet) -- pairing on a
+	 * non-socket fd is just noise.
+	 */
+	if (triplet != NULL && rnd_modulo_u32(4) == 0)
+		try_paired_setsockopt(&so, fd);
+
 	/* copy the generated values to the shm. */
 	rec->a2 = so.level;
 	rec->a3 = so.optname;
 	rec->a4 = so.optval;
 	rec->a5 = so.optlen;
+
+	/* Record what we picked so a later sanitise_setsockopt() on the
+	 * same fd can chain a dependent follow-up.  Bypass paths that
+	 * scribbled a random optname / level into so are still recorded;
+	 * lookup_sockopt_pair() simply finds no match on garbage keys. */
+	sso_history_record(fd, so.level, so.optname);
 
 	/* Snap only when there is a heap optval to free.  The RAND_BOOL
 	 * disable path in do_setsockopt() already freed and zeroed optval,
