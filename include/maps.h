@@ -153,3 +153,32 @@ void mmap_fd(int fd, const char *name, size_t len, int prot, enum obj_scope scop
 
 bool proc_maps_check(unsigned long addr, unsigned long len,
 		     int expected_prot, bool expect_present);
+
+/*
+ * Soft-invalidate every OBJ_LOCAL OBJ_MMAP_* entry whose mapped extent
+ * overlaps [addr, addr+len).  Mirrors the conservative map->prot=0
+ * invalidate post_munmap's sub-range branch and post_mprotect already
+ * apply: get_map_with_prot() then skips the entry so the next consumer
+ * (memory_pressure / iouring_* / madvise_pattern_cycler) cannot be
+ * handed a tracked map pointer whose pages have been zeroed or
+ * hole-punched by an unrelated syscall.  Returns the number of entries
+ * the invalidate covered.  The VMA itself is left in place -- the
+ * caller's syscall (madvise / fallocate / ftruncate) did not unmap it,
+ * only modified its content, so we have no licence to munmap behind
+ * the caller's back.
+ */
+unsigned int invalidate_obj_mmap_in_range(unsigned long addr,
+					  unsigned long len);
+
+/*
+ * Same soft invalidate but matched by backing fd rather than virtual
+ * address.  Walks the OBJ_LOCAL OBJ_MMAP_FILE and OBJ_MMAP_TESTFILE
+ * pools and clears map->prot on every entry whose map->fd == fd; the
+ * ANON pool is skipped (its map->fd is -1).  Used by post handlers
+ * for syscalls that mutate file content at an offset (fallocate
+ * hole-punch / range-zero, ftruncate shrink) where the affected file
+ * range cannot be matched against the tracked virtual extent because
+ * struct map carries no file-offset bookkeeping.  Returns the number
+ * of entries the invalidate covered.
+ */
+unsigned int invalidate_obj_mmap_by_fd(int fd);
