@@ -137,11 +137,13 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 	memcpy(&sset, (const void *) snap->set, sizeof(sset));
 	memcpy(&syscall_pending, &sset, sizeof(syscall_pending));
 
-	/* Both halves must be located independently before the comparison
-	 * runs -- a missing field on either side aborts the check. */
-	if (!proc_status_read_sigmask("SigPnd", &sigpnd))
-		goto out_free;
-	if (!proc_status_read_sigmask("ShdPnd", &shdpnd))
+	/*
+	 * Pair-read both halves from a single /proc/self/status snapshot.
+	 * Two back-to-back single-mask reads can straddle a signal moving
+	 * shared->thread-pending and yield a union that no single
+	 * proc_pid_status() render ever produced -- a spurious anomaly.
+	 */
+	if (!proc_status_read_sigmask_pair(&sigpnd, &shdpnd))
 		goto out_free;
 
 	proc_pending = sigpnd | shdpnd;

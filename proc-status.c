@@ -195,6 +195,36 @@ bool proc_status_read_sigmask(const char *name, uint64_t *out)
 	return ok;
 }
 
+/*
+ * Pair-read SigPnd: and ShdPnd: from a single /proc/self/status snapshot
+ * so the rt_sigpending oracle compares the syscall's union against two
+ * masks captured at one kernel instant.  Two back-to-back single-mask
+ * reads can straddle a signal moving shared->thread-pending and yield a
+ * (SigPnd | ShdPnd) union that no single proc_pid_status() render ever
+ * produced, which the oracle would then flag as a spurious anomaly.
+ * Shares proc_status_slurp + proc_status_find_field + parse_hex_mask
+ * with the single-mask helper -- no scanner duplication.
+ */
+bool proc_status_read_sigmask_pair(uint64_t *sigpnd_out, uint64_t *shdpnd_out)
+{
+	char *buf;
+	const char *v_sig, *v_shd;
+	bool ok;
+
+	if (sigpnd_out == NULL || shdpnd_out == NULL)
+		return false;
+	buf = proc_status_slurp();
+	if (buf == NULL)
+		return false;
+	v_sig = proc_status_find_field(buf, "SigPnd");
+	v_shd = proc_status_find_field(buf, "ShdPnd");
+	ok = v_sig != NULL && v_shd != NULL &&
+	     proc_status_parse_hex_mask(v_sig, sigpnd_out) &&
+	     proc_status_parse_hex_mask(v_shd, shdpnd_out);
+	free(buf);
+	return ok;
+}
+
 bool proc_status_read_ns_last_uint(const char *name, unsigned int *out)
 {
 	char buf[8192];

@@ -108,6 +108,16 @@ bool proc_status_parse_hex_mask(const char *value, uint64_t *out);
  *   buffer — the codex-#3 truncation bug.  Slurp grows on demand so the
  *   bug cannot recur on the migrated callers.
  *
+ * proc_status_read_sigmask_pair — same %016lx rows, but reads SigPnd:
+ *   and ShdPnd: out of a single /proc/self/status snapshot so the two
+ *   values reflect one kernel instant.  Two back-to-back single-mask
+ *   reads can straddle a signal moving shared->thread-pending and yield
+ *   a (SigPnd | ShdPnd) union that no single proc_pid_status() render
+ *   ever produced, which the rt_sigpending oracle would then flag as a
+ *   spurious anomaly.  Used by the rt_sigpending oracle; the legacy
+ *   sigpending oracle reads only SigPnd and keeps the single-mask
+ *   helper.
+ *
  * proc_status_read_ns_last_uint — the per-pid-ns rows whose value is a
  *   space/tab separated list of decimal ids, outermost namespace first
  *   (NSpgid today; NStgid/NSpid/NSsid are forward-compatible).  Reads
@@ -122,4 +132,5 @@ bool proc_status_parse_hex_mask(const char *value, uint64_t *out);
 bool proc_status_read_uint_field(const char *name, unsigned long *out);
 bool proc_status_read_id_quad(const char *name, unsigned long out[4]);
 bool proc_status_read_sigmask(const char *name, uint64_t *out);
+bool proc_status_read_sigmask_pair(uint64_t *sigpnd_out, uint64_t *shdpnd_out);
 bool proc_status_read_ns_last_uint(const char *name, unsigned int *out);
