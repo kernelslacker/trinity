@@ -35,6 +35,7 @@ static void sanitise_rseq(struct syscallrecord *rec)
 	memset(rs, 0, sizeof(*rs) + 32);
 
 	rec->a1 = (unsigned long) rs;
+	avoid_shared_buffer_inout(&rec->a1, sizeof(struct rseq));
 
 	/*
 	 * Exercise the kernel's rseq_len validation buckets: zero (reject),
