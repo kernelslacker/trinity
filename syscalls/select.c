@@ -147,6 +147,10 @@ static void sanitise_select(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) wfds;
 	rec->a4 = (unsigned long) exfds;
 
+	avoid_shared_buffer_inout(&rec->a2, sizeof(fd_set));
+	avoid_shared_buffer_inout(&rec->a3, sizeof(fd_set));
+	avoid_shared_buffer_inout(&rec->a4, sizeof(fd_set));
+
 	/* Set a really short timeout */
 	tv = get_writable_address(sizeof(struct timeval));
 	if (tv == NULL) {

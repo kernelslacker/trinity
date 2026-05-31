@@ -432,9 +432,9 @@ syscalls/seccomp.c:219:post_seccomp
 syscalls/seccomp.c:234:post_seccomp
 syscalls/seccomp.c:250:post_seccomp
 syscalls/seccomp.c:267:post_seccomp
-syscalls/select.c:191:post_select
-syscalls/select.c:206:post_select
-syscalls/select.c:226:post_select
+syscalls/select.c:195:post_select
+syscalls/select.c:210:post_select
+syscalls/select.c:230:post_select
 syscalls/semget.c:91:post_semget
 syscalls/send.c:299:post_sendmsg
 syscalls/send.c:317:post_sendmsg
