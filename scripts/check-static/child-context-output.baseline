@@ -447,8 +447,8 @@ syscalls/send.c:566:post_sendmmsg
 syscalls/send.c:582:post_sendmmsg
 syscalls/setfsgid.c:24:post_setfsgid
 syscalls/setfsuid.c:36:post_setfsuid
-syscalls/setgid.c:43:post_setgid
-syscalls/setgid.c:77:post_setgid
+syscalls/setgid.c:37:post_setgid
+syscalls/setgid.c:52:post_setgid
 syscalls/setgroups.c:192:post_setgroups
 syscalls/setgroups.c:208:post_setgroups
 syscalls/setgroups.c:232:post_setgroups
