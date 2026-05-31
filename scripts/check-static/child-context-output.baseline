@@ -44,8 +44,8 @@ childops/nat-t-churn.c:931:nat_t_churn_v6
 childops/numa-migration-churn.c:181:parse_online_nodes
 childops/numa-migration-churn.c:189:parse_online_nodes
 childops/pagecache-canary-check.c:179:log_corruption
-childops/recipe-runner.c:4090:recipe_runner
-childops/recipe-runner.c:4136:recipe_runner_dump_stats
+childops/recipe-runner.c:4111:recipe_runner
+childops/recipe-runner.c:4157:recipe_runner_dump_stats
 childops/refcount-auditor.c:143:audit_fd_bucket
 childops/refcount-auditor.c:191:audit_mmap_bucket
 childops/refcount-auditor.c:388:audit_socket_bucket

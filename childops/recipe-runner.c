@@ -3128,7 +3128,18 @@ static bool recipe_ptrace_seize_exitkill(bool *unsupported)
 			 * Any SIGKILL from the parent reaps us cleanly.
 			 * _exit() skips atexit handlers that could touch
 			 * trinity shared state from a stopped-and-resumed
-			 * tracee context. */
+			 * tracee context.
+			 *
+			 * PR_SET_PDEATHSIG SIGKILL guards against the
+			 * parent crashing before it can SEIZE us; without
+			 * it the orphaned tracee sticks in pause()
+			 * forever under PID 1.  Re-check getppid() in case
+			 * the parent already died in the prctl race
+			 * window. */
+			(void)syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
+				      0UL, 0UL, 0UL);
+			if (getppid() == 1)
+				_exit(0);
 			(void)pause();
 			_exit(0);
 		}
@@ -3741,6 +3752,16 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w)
 	 * doesn't care about the value, only the wakeup. */
 	w = write(pipe_w, &ack, 1);
 	close(pipe_w);
+
+	/* PR_SET_PDEATHSIG SIGKILL: if the supervisor crashes before it
+	 * can write(kill_fd, "1\n", 2) into cgroup.kill, the inner would
+	 * orphan to PID 1 and pause() forever.  Re-check getppid() to
+	 * cover the prctl race window where the supervisor died between
+	 * fork and this point. */
+	(void)syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
+		      0UL, 0UL, 0UL);
+	if (getppid() == 1)
+		_exit(0);
 
 	(void)pause();
 	_exit(0);
