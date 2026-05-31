@@ -453,6 +453,17 @@ static void af_unix_sibling_main(struct af_unix_race_shared *rs)
 	(void)syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
 	(void)alarm(2);
 
+	/*
+	 * Re-check getppid() after arming PDEATHSIG.  If the parent
+	 * died in the window between clone3 returning here and the
+	 * prctl above, PDEATHSIG was set too late to fire and
+	 * getppid()==1 is the only signal we get.  Without this we'd
+	 * block forever in raw_futex_wait below on a 'go' flag no
+	 * one will ever set, permanently leaking the sibling.
+	 */
+	if (syscall(__NR_getppid) == 1)
+		(void)syscall(__NR_exit, 0);
+
 	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U)
 		(void)raw_futex_wait(&rs->go, 0U);
 
