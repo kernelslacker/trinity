@@ -196,8 +196,8 @@ syscalls/getsockname.c:220:post_getsockname
 syscalls/getsockname.c:239:post_getsockname
 syscalls/getsockname.c:268:post_getsockname
 syscalls/getsockname.c:335:post_getsockname
-syscalls/getsockopt.c:126:post_getsockopt
-syscalls/getsockopt.c:135:post_getsockopt
+syscalls/getsockopt.c:128:post_getsockopt
+syscalls/getsockopt.c:137:post_getsockopt
 syscalls/gettid.c:33:post_gettid
 syscalls/gettid.c:48:post_gettid
 syscalls/gettimeofday.c:135:post_gettimeofday
@@ -464,9 +464,9 @@ syscalls/setresuid.c:35:post_setresuid
 syscalls/setreuid.c:33:post_setreuid
 syscalls/setsid.c:47:post_setsid
 syscalls/setsid.c:65:post_setsid
-syscalls/setsockopt.c:590:post_setsockopt
-syscalls/setsockopt.c:605:post_setsockopt
-syscalls/setsockopt.c:620:post_setsockopt
+syscalls/setsockopt.c:617:post_setsockopt
+syscalls/setsockopt.c:632:post_setsockopt
+syscalls/setsockopt.c:647:post_setsockopt
 syscalls/setuid.c:39:post_setuid
 syscalls/setuid.c:54:post_setuid
 syscalls/shmctl.c:110:post_shmctl

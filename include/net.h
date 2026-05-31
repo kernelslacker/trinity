@@ -56,6 +56,7 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf);
 
 unsigned int sockoptlen(unsigned int len);
 void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
+void release_sockopt_optval(struct sockopt *so);
 
 void rand_proto_type(struct socket_triplet *st);
 int sanitise_socket_triplet(struct socket_triplet *st);

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE5(getsockopt, int, fd, int, level, int, optname, char __user *, optval, int __user *, optlen)
  */
-#include <stdlib.h>
 #include "arch.h"
 #include "net.h"
 #include "random.h"
@@ -62,8 +61,11 @@ static void sanitise_getsockopt(struct syscallrecord *rec)
 	rec->a2 = so.level;
 	rec->a3 = so.optname;
 
-	/* do_setsockopt allocates optval — we only needed level/optname. */
-	free((void *) so.optval);
+	/* do_setsockopt allocates optval — we only needed level/optname.
+	 * Dispatch via the helper so SO_ATTACH_FILTER's sock_fprog wrapper
+	 * releases both the outer + inner filter buffer instead of leaking
+	 * the inner (and double-freeing once the alloc-tracker evicts it). */
+	release_sockopt_optval(&so);
 
 	/*
 	 * Allocate the output buffer + value-result length slot through

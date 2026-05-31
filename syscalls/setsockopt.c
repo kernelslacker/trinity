@@ -504,6 +504,33 @@ disable_maybe:
 }
 
 /*
+ * Synchronous release of so->optval allocated by do_setsockopt().  Mirrors
+ * the optname dispatch in post_setsockopt(): the SO_ATTACH_FILTER branch
+ * in socket_setsockopt() replaces the page_size buffer with a sock_fprog
+ * wrapper whose inner filter is a separate zmalloc_tracked() allocation
+ * (bpf_gen_filter), so a plain tracked_free_now() on the outer wrapper
+ * would leak the inner buffer.  Every other optname holds a single
+ * tracked allocation (the page_size buffer, or the int-sized buf used by
+ * the SO_ATTACH_BPF / SO_ATTACH_REUSEPORT_EBPF / SO_DETACH_REUSEPORT_BPF
+ * cases) which tracked_free_now() handles directly.  Zeros so->optval so
+ * retry callers do not double-free.
+ */
+void release_sockopt_optval(struct sockopt *so)
+{
+	if (so->optval == 0)
+		return;
+#ifdef USE_BPF
+	if (so->optname == SO_ATTACH_FILTER) {
+		bpf_free_filter((struct sock_fprog *) so->optval);
+	} else
+#endif
+	{
+		tracked_free_now((void *) so->optval);
+	}
+	so->optval = 0;
+}
+
+/*
  * Snapshot of the optname alongside the heap optval the post handler
  * frees.  rec->a3 (optname) and rec->a4 (optval) are both ABI-exposed
  * and a sibling syscall can scribble either between syscall return and
