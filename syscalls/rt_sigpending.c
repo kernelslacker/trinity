@@ -1,14 +1,12 @@
 /*
  * SYSCALL_DEFINE2(rt_sigpending, sigset_t __user *, set, size_t, sigsetsize)
  */
-#include <fcntl.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 #include "deferred-free.h"
+#include "proc-status.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -79,13 +77,8 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 {
 	struct rt_sigpending_post_state *snap =
 		(struct rt_sigpending_post_state *) rec->post_state;
-	char buf[2048];
-	char *line;
-	ssize_t n;
-	int fd;
-	uint64_t syscall_pending, proc_pending = 0;
-	unsigned long sigpnd = 0, shdpnd = 0;
-	bool have_sigpnd = false, have_shdpnd = false;
+	uint64_t syscall_pending, proc_pending;
+	uint64_t sigpnd = 0, shdpnd = 0;
 	sigset_t sset;
 
 	if (snap == NULL)
@@ -144,35 +137,14 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 	memcpy(&sset, (const void *) snap->set, sizeof(sset));
 	memcpy(&syscall_pending, &sset, sizeof(syscall_pending));
 
-	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
-	 * thousands of times per second under fuzz, and stdio's per-call malloc
-	 * of FILE struct + IO buffer is heap traffic we don't need. */
-	fd = open("/proc/self/status", O_RDONLY);
-	if (fd < 0)
+	/* Both halves must be located independently before the comparison
+	 * runs -- a missing field on either side aborts the check. */
+	if (!proc_status_read_sigmask("SigPnd", &sigpnd))
 		goto out_free;
-	n = read(fd, buf, sizeof(buf) - 1);
-	close(fd);
-	if (n <= 0)
-		goto out_free;
-	buf[n] = '\0';
-	/* Anchor on a newline so a "SigPnd:"/"ShdPnd:" substring inside an
-	 * earlier field cannot mis-target the parse.  Both halves must be
-	 * located independently before the comparison runs. */
-	line = strstr(buf, "\nSigPnd:");
-	if (line != NULL) {
-		if (sscanf(line + 8, "%lx", &sigpnd) == 1)
-			have_sigpnd = true;
-	}
-	line = strstr(buf, "\nShdPnd:");
-	if (line != NULL) {
-		if (sscanf(line + 8, "%lx", &shdpnd) == 1)
-			have_shdpnd = true;
-	}
-
-	if (!have_sigpnd || !have_shdpnd)
+	if (!proc_status_read_sigmask("ShdPnd", &shdpnd))
 		goto out_free;
 
-	proc_pending = (uint64_t)sigpnd | (uint64_t)shdpnd;
+	proc_pending = sigpnd | shdpnd;
 
 	if (syscall_pending != proc_pending) {
 		output(0, "rt_sigpending oracle: syscall=0x%016lx but "
@@ -180,7 +152,7 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 		       "(SigPnd=0x%016lx ShdPnd=0x%016lx)\n",
 		       (unsigned long)syscall_pending,
 		       (unsigned long)proc_pending,
-		       sigpnd, shdpnd);
+		       (unsigned long)sigpnd, (unsigned long)shdpnd);
 		__atomic_add_fetch(&shm->stats.rt_sigpending_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}

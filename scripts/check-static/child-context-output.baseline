@@ -398,10 +398,10 @@ syscalls/recv.c:564:post_recvmmsg
 syscalls/recv.c:582:post_recvmmsg
 syscalls/recv.c:594:post_recvmmsg
 syscalls/recv.c:609:post_recvmmsg
-syscalls/rt_sigpending.c:100:post_rt_sigpending
-syscalls/rt_sigpending.c:115:post_rt_sigpending
-syscalls/rt_sigpending.c:139:post_rt_sigpending
-syscalls/rt_sigpending.c:178:post_rt_sigpending
+syscalls/rt_sigpending.c:93:post_rt_sigpending
+syscalls/rt_sigpending.c:108:post_rt_sigpending
+syscalls/rt_sigpending.c:132:post_rt_sigpending
+syscalls/rt_sigpending.c:150:post_rt_sigpending
 syscalls/rt_sigprocmask.c:117:post_rt_sigprocmask
 syscalls/rt_sigprocmask.c:132:post_rt_sigprocmask
 syscalls/rt_sigprocmask.c:158:post_rt_sigprocmask
