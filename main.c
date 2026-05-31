@@ -257,6 +257,17 @@ void reap_child(struct childdata *child, int childno)
 	 * clean_childdata alongside hit_bug for the fresh occupant. */
 	__atomic_store_n(&child->bug_backtrace.count, 0, __ATOMIC_RELAXED);
 
+	/* Surface any stamped beacon BEFORE the .written edge-trigger is
+	 * zeroed below.  The bottom-of-main-loop poll runs after
+	 * handle_children() has already reaped fast-dying children, so a
+	 * child that re-faults inside the in-handler symboliser (the exact
+	 * silent-death class the beacon was added for) loses the race and
+	 * its forensic is dropped.  Dumping here closes that window; the
+	 * fault_beacon_dumped cmpxchg gate in dump_child_fault_beacon makes
+	 * the call idempotent against the bottom poll and any other future
+	 * caller, so this is safe even if both paths see the beacon. */
+	dump_child_fault_beacon(child);
+
 	/* Same treatment for the signal-time fault beacon: zero the
 	 * .written edge-trigger so a fresh occupant of this slot doesn't
 	 * inherit the previous occupant's signal-death context and
