@@ -91,6 +91,7 @@ void track_shared_region(unsigned long addr, unsigned long size);
  */
 void untrack_shared_region(unsigned long addr, unsigned long size);
 void register_loaded_image_segments(void);
+void log_load_bases(void);
 
 /*
  * Log an mprotect() failure as:

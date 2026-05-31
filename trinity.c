@@ -289,6 +289,14 @@ int main(int argc, char* argv[])
 
 	parse_args(argc, argv);
 
+	/* Capture PIE/DSO load bases now, before any fork, so post-mortem
+	 * symbolize of a raw IP from a bug log or FAULT! line is a
+	 * grep-the-outerr-log operation instead of needing the live
+	 * process's /proc/<pid>/maps.  Children inherit the same bases
+	 * via fork.  Placed before the dry-run gate so --dry-run also
+	 * exercises the logging path. */
+	log_load_bases();
+
 	/* --dry-run: parse-validate the argument set and exit before cgroup
 	 * setup, child fork, or any fuzzing work runs.  Note that some early
 	 * init must complete before parse can succeed — init_numa_nodes(),
