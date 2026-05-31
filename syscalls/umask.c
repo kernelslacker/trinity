@@ -1,11 +1,8 @@
 /*
  * SYSCALL_DEFINE1(umask, int, mask)
  */
-#include <fcntl.h>
 #include <stdio.h>
-#include <string.h>
-#include <sys/types.h>
-#include <unistd.h>
+#include "proc-status.h"
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
@@ -38,11 +35,9 @@ static void post_umask(struct syscallrecord *rec)
 {
 	unsigned long retval = rec->retval;
 	unsigned long a1 = rec->a1;
-	char buf[2048];
-	char *line;
-	ssize_t n;
-	int fd;
-	unsigned int kumask = (unsigned int)-1;
+	char buf[8192];
+	const char *value;
+	unsigned int kumask;
 	unsigned int expected;
 
 	/* Kernel ABI: sys_umask cannot fail and the kernel masks the
@@ -65,24 +60,10 @@ static void post_umask(struct syscallrecord *rec)
 
 	expected = (unsigned int) a1 & 0777;
 
-	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
-	 * thousands of times per second under fuzz, and stdio's per-call malloc
-	 * of FILE struct + IO buffer is heap traffic we don't need. */
-	fd = open("/proc/self/status", O_RDONLY);
-	if (fd < 0)
+	if (proc_status_read(buf, sizeof(buf)) < 0)
 		return;
-	n = read(fd, buf, sizeof(buf) - 1);
-	close(fd);
-	if (n <= 0)
-		return;
-	buf[n] = '\0';
-	/* Anchor on a newline so a "Umask:" substring inside an earlier field
-	 * (e.g. a process name) cannot mis-target the parse. */
-	line = strstr(buf, "\nUmask:");
-	if (line != NULL)
-		(void) sscanf(line + 7, "%o", &kumask);
-
-	if (kumask == (unsigned int)-1)
+	value = proc_status_find_field(buf, "Umask");
+	if (value == NULL || sscanf(value, "%o", &kumask) != 1)
 		return;
 
 	if (kumask != expected) {

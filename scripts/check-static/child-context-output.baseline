@@ -533,8 +533,8 @@ syscalls/times.c:131:post_times
 syscalls/times.c:146:post_times
 syscalls/times.c:172:post_times
 syscalls/times.c:189:post_times
-syscalls/umask.c:57:post_umask
-syscalls/umask.c:89:post_umask
+syscalls/umask.c:52:post_umask
+syscalls/umask.c:70:post_umask
 syscalls/uname.c:125:post_uname
 syscalls/uname.c:140:post_uname
 syscalls/uname.c:166:post_uname
