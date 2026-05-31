@@ -85,6 +85,19 @@ static bool do_create(void)
 	obj->map.type = CHILD_ANON;
 	add_object(obj, OBJ_LOCAL, OBJ_MMAP_ANON);
 
+	/*
+	 * Register the new mapping with shared_regions[] so that
+	 * range_overlaps_shared() recognises it.  Without this the
+	 * deferred-free gate in deferred_free_enqueue() lets a sanitise
+	 * callback that handed back a get_writable_address() pointer --
+	 * drawn from one of these OBJ_LOCAL OBJ_MMAP_ANON entries via
+	 * get_map() -- slip through into libc free(), which then aborts
+	 * inside _int_malloc on the bogus chunk metadata at ptr-16.
+	 * The matching untrack lives in map_destructor (mm/maps.c), so
+	 * destroy_object() on this entry releases the slot as well.
+	 */
+	track_shared_region((unsigned long)p, size);
+
 	return true;
 }
 
@@ -92,7 +105,7 @@ static bool do_mremap(void)
 {
 	struct object *obj;
 	struct map *map;
-	unsigned long new_size;
+	unsigned long old_ptr, old_size, new_size;
 	void *p;
 
 	obj = get_random_object(OBJ_MMAP_ANON, OBJ_LOCAL);
@@ -105,24 +118,41 @@ static bool do_mremap(void)
 	if (map->type == INITIAL_ANON)
 		return true;
 
-	if (range_overlaps_shared((unsigned long)map->ptr, map->size))
+	old_ptr = (unsigned long)map->ptr;
+	old_size = map->size;
+
+	/*
+	 * Drop our own shared_regions[] registration before the
+	 * range_overlaps_shared() check; otherwise the entry we just
+	 * added in do_create() would match and skip every mremap.
+	 * Re-track on both the success and the failure paths so the
+	 * OBJ_LOCAL slot always has a matching shared_regions[] entry.
+	 */
+	untrack_shared_region(old_ptr, old_size);
+
+	if (range_overlaps_shared(old_ptr, old_size)) {
+		track_shared_region(old_ptr, old_size);
 		return true;
+	}
 
 	/* Grow or shrink. */
 	if (RAND_BOOL())
-		new_size = map->size + page_size * (1 + rnd_modulo_u32(16));
+		new_size = old_size + page_size * (1 + rnd_modulo_u32(16));
 	else
-		new_size = max((unsigned long)page_size, map->size / 2) & PAGE_MASK;
+		new_size = max((unsigned long)page_size, old_size / 2) & PAGE_MASK;
 
 	if (new_size == 0)
 		new_size = page_size;
 
-	p = mremap(map->ptr, map->size, new_size, MREMAP_MAYMOVE);
-	if (p == MAP_FAILED)
+	p = mremap(map->ptr, old_size, new_size, MREMAP_MAYMOVE);
+	if (p == MAP_FAILED) {
+		track_shared_region(old_ptr, old_size);
 		return true;
+	}
 
 	map->ptr = p;
 	map->size = new_size;
+	track_shared_region((unsigned long)p, new_size);
 	return true;
 }
 
@@ -140,6 +170,15 @@ static bool do_teardown(void)
 	/* Never unmap initial mappings — other children share them. */
 	if (map->type == INITIAL_ANON)
 		return true;
+
+	/*
+	 * Drop our shared_regions[] registration before the
+	 * range_overlaps_shared() check; the entry tracked by do_create()
+	 * would otherwise match and block every teardown, saturating the
+	 * pool at MAX_LIFECYCLE_MAPS.  map_destructor() also untracks --
+	 * harmless second call, untrack misses are silent by design.
+	 */
+	untrack_shared_region((unsigned long)map->ptr, map->size);
 
 	if (range_overlaps_shared((unsigned long)map->ptr, map->size))
 		return true;
