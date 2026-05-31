@@ -1,0 +1,27 @@
+# pdeathsig-getppid-recheck.baseline
+#
+# Grandfathered list of child-side PR_SET_PDEATHSIG callsites that
+# trip the heuristic in
+# scripts/check-static/pdeathsig-getppid-recheck.sh but which are in
+# fact legitimate -- the prctl is followed by some other guarantee
+# the heuristic doesn't recognise, or the surrounding code shape
+# makes the race window unreachable.
+#
+# Format: `path/to/file.c:lineno  reason text...`
+# Lines starting with `#` and blank lines are ignored.  Whitespace
+# between the key and the reason is collapsed.
+#
+# This baseline file should SHRINK over time, never grow.  When a
+# callsite is hardened (getppid()==1 recheck added immediately after
+# the prctl) remove its line from this file.  A new PR_SET_PDEATHSIG
+# arming site missing the recheck must FAIL `make check-static`,
+# never be silently added to this list.
+#
+# The bug class this file pins against: a child that arms PDEATHSIG
+# and then blocks on pause()/raw_futex_wait()/read() can race the
+# parent's death.  If the parent died between clone3 returning in
+# the child and the prctl call landing, PDEATHSIG fires never; the
+# child sticks under PID 1 forever, leaking siblings across the
+# whole fuzz run.  See commit 53a4b05beea8
+# ("childops/af-unix-scm-rights-gc: re-check getppid after PDEATHSIG")
+# for the canonical fix shape.

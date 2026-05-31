@@ -87,6 +87,18 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `no-libc-rand`: reject libc PRNG callsites (`rand`, `random`,
   `srand`, `*rand48`) outside the `rand/` wrapper layer and
   `include/rnd.h`.
+- `pdeathsig-getppid-recheck`: every `prctl(PR_SET_PDEATHSIG, ...)`
+  arming callsite in child code (`childops/*.c`, `syscalls/*.c`
+  excluding `syscalls/prctl.c`, `child.c`) must be followed within
+  the same function body by a `getppid()` (or raw
+  `syscall(__NR_getppid)`) re-check before the next blocking call.
+  Without it, a parent that dies in the window between `clone3()`
+  returning in the child and the prctl landing leaves the child
+  reparented under PID 1, blocked forever in `pause()` /
+  `raw_futex_wait()`.  Grandfathered callsites the heuristic
+  over-fires on are pinned in
+  `scripts/check-static/pdeathsig-getppid-recheck.baseline`; that
+  list should shrink over time, never grow.
 - `post-double-publish`: a `.post` handler must not call both a
   `register_*` and a `publish_*` helper on the same object -- the
   syscall return path already registers, so a post-side publish
