@@ -29,6 +29,7 @@ static void sanitise_sendfile(struct syscallrecord *rec)
 	*offset = RAND_RANGE(0ULL, 1ULL << 30);
 	rec->a3 = (unsigned long) offset;
 	bias_sendfile_in_fd(rec);
+	avoid_shared_buffer_inout(&rec->a3, sizeof(off_t));
 }
 
 static void sanitise_sendfile64(struct syscallrecord *rec)
@@ -39,6 +40,7 @@ static void sanitise_sendfile64(struct syscallrecord *rec)
 	*offset = RAND_RANGE(0ULL, 1ULL << 30);
 	rec->a3 = (unsigned long) offset;
 	bias_sendfile_in_fd(rec);
+	avoid_shared_buffer_inout(&rec->a3, sizeof(off_t));
 }
 
 struct syscallentry syscall_sendfile = {
