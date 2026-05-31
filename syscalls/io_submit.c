@@ -13,8 +13,10 @@
 #include "utils.h"
 
 static int iocb_cmds[] = {
-	IOCB_CMD_PREAD, IOCB_CMD_PWRITE, IOCB_CMD_FSYNC,
-	IOCB_CMD_FDSYNC, IOCB_CMD_POLL, IOCB_CMD_NOOP,
+	IOCB_CMD_PREAD, IOCB_CMD_PWRITE,
+	IOCB_CMD_PREADV, IOCB_CMD_PWRITEV,
+	IOCB_CMD_FSYNC, IOCB_CMD_FDSYNC,
+	IOCB_CMD_POLL, IOCB_CMD_NOOP,
 };
 
 /*
@@ -51,6 +53,7 @@ static int pick_iocb_opcode_for_fd(int fd)
 	case OBJ_FD_DEVFILE: {
 		static const int file_cmds[] = {
 			IOCB_CMD_PREAD, IOCB_CMD_PWRITE,
+			IOCB_CMD_PREADV, IOCB_CMD_PWRITEV,
 			IOCB_CMD_FSYNC, IOCB_CMD_FDSYNC,
 			IOCB_CMD_NOOP,
 		};
