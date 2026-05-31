@@ -129,6 +129,9 @@ static int get_rand_dev_template_fd(void)
 		fd = obj->fileobj.fd;
 		if (fd < 0)
 			continue;
+		/* skip stale dev fds: F_GETFD bounces EBADF when the underlying file got closed */
+		if (fcntl(fd, F_GETFD) == -1)
+			continue;
 		return fd;
 	}
 
