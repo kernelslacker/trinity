@@ -324,18 +324,19 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	 * link_map walk and the process dies before any forensic line
 	 * lands on disk.  The beacon captures the death class into shared
 	 * memory using only kernel-supplied siginfo + ucontext fields and
-	 * plain word stores -- no allocator, no stdio, no lock -- so the
-	 * parent's dump_child_fault_beacon() can surface the silenced
-	 * class even in the re-fault case.  See
+	 * a local-then-publish struct copy -- no allocator, no stdio, no
+	 * lock -- so the parent's dump_child_fault_beacon() can surface
+	 * the silenced class even in the re-fault case.  See
 	 * include/bug_backtrace.h::child_fault_beacon for the field
 	 * contract and the release-store / acquire-load handoff that
-	 * orders these plain stores into the parent's view.
+	 * orders the stamp into the parent's view.
 	 */
 	{
 		struct childdata *me = this_child();
 
 		if (me != NULL) {
 			struct child_fault_beacon *beacon = &me->fault_beacon;
+			struct child_fault_beacon local;
 			enum syscallstate st = me->syscall.state;
 			int32_t snr;
 
@@ -343,13 +344,45 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 				snr = (int32_t)me->syscall.nr;
 			else
 				snr = -1;
-			beacon->signo = (int32_t)sig;
-			beacon->sig_code = (int32_t)info->si_code;
-			beacon->fault_addr = info->si_addr;
-			beacon->fault_ip = fault_beacon_extract_ip(ctx);
-			beacon->fault_sp = fault_beacon_extract_sp(ctx);
-			beacon->op_nr = me->op_nr;
-			beacon->last_syscall_nr = snr;
+			/*
+			 * Build the stamp on the stack first, then publish
+			 * the whole record via a single struct assignment.
+			 *
+			 * fault_sa in mask_signals_child() installs this
+			 * handler with sa_mask = empty and no SA_NODEFER on
+			 * SIGABRT/SIGBUS/SIGILL, so a different fatal signal
+			 * delivered mid-stamp can run an inner copy of this
+			 * handler to completion.  If we stamped field-by-
+			 * field directly into the shared slot, the inner
+			 * handler would publish a full record (its own
+			 * release-store of .written = 1) and the outer
+			 * handler's resumed plain stores would then overwrite
+			 * the shared fields piecemeal, leaving a torn
+			 * forensic line (signo from one fault, ip/sp from
+			 * another) for the parent's acquire-load to read.
+			 *
+			 * With local-then-publish: an inner handler that
+			 * runs to completion publishes its own self-
+			 * consistent record; when the outer handler resumes,
+			 * the single struct assignment from this stack
+			 * snapshot rewrites the shared slot with a self-
+			 * consistent outer record before the trailing
+			 * release-store of .written = 1 seals it.  Either
+			 * way the parent never observes a mixed record.
+			 *
+			 * .written is left zero in the local so the struct
+			 * assignment transiently clears the published bit;
+			 * the release-store below is the real publish edge.
+			 */
+			local.written = 0;
+			local.signo = (int32_t)sig;
+			local.sig_code = (int32_t)info->si_code;
+			local.fault_addr = info->si_addr;
+			local.fault_ip = fault_beacon_extract_ip(ctx);
+			local.fault_sp = fault_beacon_extract_sp(ctx);
+			local.op_nr = me->op_nr;
+			local.last_syscall_nr = snr;
+			*beacon = local;
 			/* Release-store seals every preceding plain store
 			 * into view of any parent that acquire-loads
 			 * .written and sees 1. */
