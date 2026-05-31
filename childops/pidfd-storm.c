@@ -50,6 +50,7 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -210,8 +211,20 @@ bool pidfd_storm(struct childdata *child)
 			 * so loop to absorb SIGUSR1/2/CHLD/CONT (which have
 			 * default actions of ignore/term/ignore; relying on
 			 * default to stay alive on USR1/USR2/CHLD is
-			 * fragile, so re-enter pause unconditionally). */
+			 * fragile, so re-enter pause unconditionally).
+			 *
+			 * PR_SET_PDEATHSIG SIGKILL: if the parent crashes
+			 * before sending the teardown SIGKILL, the kernel
+			 * reaps us instead of orphaning us to PID 1 where
+			 * we'd pause() forever.  Re-check getppid() after
+			 * arming the death signal — the parent may already
+			 * be gone by the time the inner gets scheduled, in
+			 * which case PDEATHSIG was set too late to fire. */
 			sanitize_pause_child_signals();
+			(void)syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
+				      0UL, 0UL, 0UL);
+			if (getppid() == 1)
+				_exit(0);
 			for (;;)
 				pause();
 			_exit(0);	/* unreachable */
