@@ -1,12 +1,10 @@
 /*
  * SYSCALL_DEFINE3(getresgid, gid_t __user *, rgid, gid_t __user *, egid, gid_t __user *, sgid)
  */
-#include <fcntl.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include "deferred-free.h"
+#include "proc-status.h"
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
@@ -92,12 +90,8 @@ static void post_getresgid(struct syscallrecord *rec)
 {
 	struct getresgid_post_state *snap =
 		(struct getresgid_post_state *) rec->post_state;
-	char buf[2048];
-	char *line;
-	ssize_t n;
-	int fd;
+	unsigned long ids[4];
 	gid_t krgid, kegid, ksgid;
-	unsigned long pgid_real, pgid_eff, pgid_saved;
 
 	if (snap == NULL)
 		return;
@@ -160,37 +154,19 @@ static void post_getresgid(struct syscallrecord *rec)
 	kegid = *(gid_t *) snap->egid;
 	ksgid = *(gid_t *) snap->sgid;
 
-	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
-	 * many times per second under fuzz, and stdio's per-call malloc of
-	 * FILE struct + IO buffer is heap traffic we don't need. */
-	fd = open("/proc/self/status", O_RDONLY);
-	if (fd < 0)
-		goto out_free;
-	n = read(fd, buf, sizeof(buf) - 1);
-	close(fd);
-	if (n <= 0)
-		goto out_free;
-	buf[n] = '\0';
-	/* Anchor on a newline so a "Gid:" substring inside an earlier field
-	 * (e.g. a sibling fuzzer's prctl(PR_SET_NAME) value in Name:) cannot
-	 * mis-target the parse. */
-	line = strstr(buf, "\nGid:");
-	if (line == NULL)
-		goto out_free;
-	if (sscanf(line + 5, "%lu %lu %lu",
-		   &pgid_real, &pgid_eff, &pgid_saved) != 3)
+	if (!proc_status_read_id_quad("Gid", ids))
 		goto out_free;
 
-	if ((unsigned long) krgid != pgid_real ||
-	    (unsigned long) kegid != pgid_eff ||
-	    (unsigned long) ksgid != pgid_saved) {
+	if ((unsigned long) krgid != ids[0] ||
+	    (unsigned long) kegid != ids[1] ||
+	    (unsigned long) ksgid != ids[2]) {
 		output(0, "getresgid oracle: syscall returned "
 		       "r=%lu e=%lu s=%lu but /proc/self/status "
 		       "Gid: %lu %lu %lu\n",
 		       (unsigned long) krgid,
 		       (unsigned long) kegid,
 		       (unsigned long) ksgid,
-		       pgid_real, pgid_eff, pgid_saved);
+		       ids[0], ids[1], ids[2]);
 		__atomic_add_fetch(&shm->stats.getresgid_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}

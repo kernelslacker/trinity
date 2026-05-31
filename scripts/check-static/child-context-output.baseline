@@ -168,10 +168,10 @@ syscalls/getpid.c:50:post_getpid
 syscalls/getppid.c:37:post_getppid
 syscalls/getppid.c:52:post_getppid
 syscalls/getpriority.c:22:post_getpriority
-syscalls/getresgid.c:111:post_getresgid
-syscalls/getresgid.c:126:post_getresgid
-syscalls/getresgid.c:153:post_getresgid
-syscalls/getresgid.c:187:post_getresgid
+syscalls/getresgid.c:105:post_getresgid
+syscalls/getresgid.c:120:post_getresgid
+syscalls/getresgid.c:147:post_getresgid
+syscalls/getresgid.c:163:post_getresgid
 syscalls/getresuid.c:105:post_getresuid
 syscalls/getresuid.c:120:post_getresuid
 syscalls/getresuid.c:147:post_getresuid
