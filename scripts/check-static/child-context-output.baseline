@@ -138,8 +138,8 @@ syscalls/getcwd.c:181:post_getcwd
 syscalls/getdents.c:45:post_getdents
 syscalls/getegid.c:33:post_getegid
 syscalls/getegid.c:48:post_getegid
-syscalls/geteuid.c:43:post_geteuid
-syscalls/geteuid.c:79:post_geteuid
+syscalls/geteuid.c:37:post_geteuid
+syscalls/geteuid.c:54:post_geteuid
 syscalls/getgid.c:36:post_getgid
 syscalls/getgid.c:53:post_getgid
 syscalls/getgroups.c:54:post_getgroups
