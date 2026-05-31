@@ -70,6 +70,43 @@ static bool lease_ring_pick(int *fd)
 	return true;
 }
 
+/*
+ * Per-child ring of fds where a prior SET-side fcntl (F_SETLK,
+ * F_SETLKW, F_OFD_SETLK, F_OFD_SETLKW, or the 64-bit variants)
+ * returned 0 with a non-F_UNLCK lock type, so a sibling SET on the
+ * same fd actually hits posix_lock_inode()'s overlap walk instead of
+ * short-circuiting on an empty fl_list.  Without this the SETLK fd
+ * was uniform-random across the whole fd pool and the range-compare
+ * paths (start/end/whence) almost never fired.  Same pattern as the
+ * F_GETLEASE selection bias above — cross-child kernel state means a
+ * recorded fd is a hint, not a guarantee.  No lock_type field: the
+ * active kernel state at the next SET is what matters, not what we
+ * asked for here.
+ */
+#define FCNTL_SETLK_RING_SIZE	16
+static __thread int setlk_ring[FCNTL_SETLK_RING_SIZE];
+static __thread unsigned int setlk_ring_head;
+static __thread unsigned int setlk_ring_count;
+
+static void setlk_ring_record(int fd)
+{
+	setlk_ring[setlk_ring_head] = fd;
+	setlk_ring_head = (setlk_ring_head + 1) % FCNTL_SETLK_RING_SIZE;
+	if (setlk_ring_count < FCNTL_SETLK_RING_SIZE)
+		setlk_ring_count++;
+}
+
+static bool setlk_ring_pick(int *fd)
+{
+	unsigned int idx;
+
+	if (setlk_ring_count == 0)
+		return false;
+	idx = rnd_modulo_u32(setlk_ring_count);
+	*fd = setlk_ring[idx];
+	return true;
+}
+
 static const unsigned long fcntl_o_flags[] = {
 	O_APPEND, O_ASYNC, O_DIRECT, O_NOATIME, O_NONBLOCK,
 };
@@ -204,10 +241,18 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 	case F_OFD_SETLKW:
 	case F_CANCELLK: {
 		struct flock *fl = get_writable_struct(sizeof(struct flock));
+		int fd;
 		if (fl) {
 			build_flock(fl);
 			rec->a3 = (unsigned long) fl;
 		}
+		/*
+		 * Half the time, target a fd a prior SETLK has run on so
+		 * posix_lock_inode() actually has lock state to walk and
+		 * range-compare against instead of an empty fl_list.
+		 */
+		if (rnd_modulo_u32(2) == 0 && setlk_ring_pick(&fd))
+			rec->a1 = (unsigned long) fd;
 		break;
 	}
 #ifdef HAVE_LK64
@@ -217,10 +262,13 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 	case F_SETLK64:
 	case F_SETLKW64: {
 		struct flock64 *fl = get_writable_struct(sizeof(struct flock64));
+		int fd;
 		if (fl) {
 			build_flock64(fl);
 			rec->a3 = (unsigned long) fl;
 		}
+		if (rnd_modulo_u32(2) == 0 && setlk_ring_pick(&fd))
+			rec->a1 = (unsigned long) fd;
 		break;
 	}
 #endif
@@ -400,6 +448,31 @@ static void post_fcntl(struct syscallrecord *rec)
 		/* Record so a sibling F_GETLEASE can target this fd. */
 		lease_ring_record((int) a1, (int) a3);
 		break;
+
+	case F_SETLK:
+	case F_SETLKW:
+	case F_OFD_SETLK:
+	case F_OFD_SETLKW: {
+		/*
+		 * Record so a sibling SETLK can target this fd's fl_list.
+		 * Skip F_UNLCK — that just released the lock, so the fd no
+		 * longer has interesting state to walk.  Skip F_CANCELLK
+		 * entirely (handled by falling through) for the same reason.
+		 */
+		struct flock *fl = (struct flock *) a3;
+		if (fl && fl->l_type != F_UNLCK)
+			setlk_ring_record((int) a1);
+		break;
+	}
+#ifdef HAVE_LK64
+	case F_SETLK64:
+	case F_SETLKW64: {
+		struct flock64 *fl = (struct flock64 *) a3;
+		if (fl && fl->l_type != F_UNLCK)
+			setlk_ring_record((int) a1);
+		break;
+	}
+#endif
 
 	case F_GETSIG:
 		/*
