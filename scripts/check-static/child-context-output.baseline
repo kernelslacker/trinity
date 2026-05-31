@@ -457,7 +457,7 @@ syscalls/setgroups.c:268:post_setgroups
 syscalls/setgroups.c:289:post_setgroups
 syscalls/setgroups.c:313:post_setgroups
 syscalls/setpgid.c:54:post_setpgid
-syscalls/setpriority.c:148:post_setpriority
+syscalls/setpriority.c:130:post_setpriority
 syscalls/setregid.c:29:post_setregid
 syscalls/setresgid.c:31:post_setresgid
 syscalls/setresuid.c:35:post_setresuid
