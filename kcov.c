@@ -886,15 +886,35 @@ void kcov_enable_cmp(struct kcov_child *kc)
 		return;
 
 	__atomic_store_n(&kc->cmp_trace_buf[0], 0, __ATOMIC_RELAXED);
-	if (ioctl(kc->cmp_fd, KCOV_ENABLE, KCOV_TRACE_CMP) < 0) {
-		/* Runtime failure on a previously-probed-good fd.  Leave
-		 * kc->active alone — PC tracing on the other fd is
-		 * independent and still valid; just stop attempting CMP.
-		 * The early-return at the top of this function fires once
-		 * cmp_capable flips to false, so the shm record gets one
-		 * bump per child instead of spamming per-syscall. */
+	while (ioctl(kc->cmp_fd, KCOV_ENABLE, KCOV_TRACE_CMP) < 0) {
+		/* Runtime failure on a previously-probed-good fd.  Record
+		 * the symptom into cmp_diag for every observation -- with
+		 * the recovery loop below the count is no longer one-per-
+		 * child, it tracks the true rate of close-race incidents
+		 * hitting cmp_fd.  An EBADF means the slot was aliased by
+		 * a fuzzed close/dup/close_range; try to rebuild the cmp
+		 * fd up to KCOV_RECOVERY_MAX times before giving up.
+		 * Mirrors the PC-side recovery in kcov_enable_trace() --
+		 * same _exit(KCOV_RECOVERY_EXHAUSTED_EXIT_CODE) bail so
+		 * the reaper's fast-die circuit breaker treats CMP-side
+		 * exhaustion identically to PC-side.  Non-EBADF errors
+		 * retain the pre-existing demote-and-continue semantics:
+		 * the cmp-not-supported / cmp-broken-by-the-kernel case
+		 * is not a slot-replacement symptom, PC tracing on the
+		 * other fd remains valid, so just stop attempting CMP. */
 		kcov_cmp_diag_record(&kcov_shm->cmp_diag.runtime_enable_errno,
 			&kcov_shm->cmp_diag.runtime_enable_count, errno);
+		if (errno == EBADF) {
+			kc->cmp_recovery_attempts++;
+			if (kc->cmp_recovery_attempts <= KCOV_RECOVERY_MAX &&
+			    kcov_recover_fd(kc, true)) {
+				__atomic_store_n(&kc->cmp_trace_buf[0], 0,
+					__ATOMIC_RELAXED);
+				continue;
+			}
+			kc->active = false;
+			_exit(KCOV_RECOVERY_EXHAUSTED_EXIT_CODE);
+		}
 		kc->cmp_capable = false;
 		return;
 	}
@@ -1427,6 +1447,15 @@ unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
 				1, __ATOMIC_RELAXED);
 		count = KCOV_CMP_RECORDS_MAX;
 	}
+
+	/* Reset the recover-on-EBADF attempt counter only when this call
+	 * actually harvested cmp records.  Mirrors the PC-side reset in
+	 * kcov_collect() -- a successful KCOV_ENABLE on cmp_fd that lands
+	 * on a syscall harvesting zero records is a no-op recovery, and
+	 * forgiving the attempt would let a close-race chain re-burn the
+	 * budget every iteration without ever making progress. */
+	if (count > 0 && kc->cmp_recovery_attempts != 0)
+		kc->cmp_recovery_attempts = 0;
 
 	if (count == 0)
 		return 0;
