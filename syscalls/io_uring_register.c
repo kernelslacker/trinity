@@ -58,6 +58,24 @@
 #ifndef IORING_OP_MSG_RING
 #define IORING_OP_MSG_RING			40
 #endif
+#ifndef IORING_RSRC_REGISTER_SPARSE
+#define IORING_RSRC_REGISTER_SPARSE		(1U << 0)
+#endif
+
+/*
+ * IO_URING_QUERY_* selectors inside struct io_uring_query_hdr's query_op
+ * field, and ZCRX_CTRL_* selectors inside struct zcrx_ctrl's op field.
+ * No per-value sentinel #define exists in <linux/io_uring/query.h> or
+ * <linux/io_uring/zcrx.h> (both are enums) -- mirror the values here.
+ */
+#define TRINITY_IO_URING_QUERY_OPCODES		0
+#define TRINITY_IO_URING_QUERY_ZCRX		1
+#define TRINITY_IO_URING_QUERY_SCQ		2
+#define TRINITY_IO_URING_QUERY_LAST		3
+
+#define TRINITY_ZCRX_CTRL_FLUSH_RQ		0
+#define TRINITY_ZCRX_CTRL_EXPORT		1
+#define TRINITY_ZCRX_CTRL_LAST			2
 
 /*
  * IO_URING_BPF_CMD_FILTER: cmd_type selector inside struct io_uring_bpf.
@@ -207,6 +225,48 @@ struct trinity_io_uring_sync_cancel_reg {
 	__u8	opcode;
 	__u8	pad[7];
 	__u64	pad2[3];
+};
+
+/*
+ * Trinity-private mirror for struct io_uring_query_hdr, defined in
+ * <linux/io_uring/query.h> (shipped 6.16).  Same rationale as the other
+ * mirrors here: that header isn't pulled in by <linux/io_uring.h> and no
+ * per-struct sentinel #define exists to test via #ifndef.  The kernel
+ * copies sizeof(its-own-struct) bytes from the user pointer, so layout
+ * is the only thing that matters at the syscall boundary.
+ */
+struct trinity_io_uring_query_hdr {
+	__u64	next_entry;
+	__u64	query_data;
+	__u32	query_op;
+	__u32	size;
+	__s32	result;
+	__u32	__resv[3];
+};
+
+/*
+ * Trinity-private mirror for struct zcrx_ctrl from
+ * <linux/io_uring/zcrx.h> (shipped post-6.16).  Anonymous union body sized
+ * to 48 bytes -- both arms (zc_export = 4 + 11*4 = 48; zc_flush = 6*8 = 48)
+ * are the same length and the kernel decodes the body off ->op.
+ */
+struct trinity_io_uring_zcrx_ctrl_export {
+	__u32	zcrx_fd;
+	__u32	__resv1[11];
+};
+
+struct trinity_io_uring_zcrx_ctrl_flush {
+	__u64	__resv[6];
+};
+
+struct trinity_io_uring_zcrx_ctrl {
+	__u32	zcrx_id;
+	__u32	op;
+	__u64	__resv[2];
+	union {
+		struct trinity_io_uring_zcrx_ctrl_export	zc_export;
+		struct trinity_io_uring_zcrx_ctrl_flush		zc_flush;
+	} body;
 };
 
 static unsigned long io_uring_register_opcodes[] = {
@@ -806,6 +866,172 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		rec->a3 = (unsigned long) m;
 		rec->a4 = 1;
 		arg_len = sizeof(*m);
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_FILES2 / IORING_REGISTER_BUFFERS2: arg = struct
+	 * io_uring_rsrc_register, nr_args = sizeof(struct).  data points to
+	 * the underlying fd[] (FILES2) or iovec[] (BUFFERS2); tags points to
+	 * a per-resource u64 tag table.  flags occasionally carries
+	 * IORING_RSRC_REGISTER_SPARSE to exercise the sparse-table path that
+	 * skips the data copy entirely.  resv2 must be zero or
+	 * io_register_rsrc bails at -EINVAL before any allocation.
+	 */
+	case IORING_REGISTER_FILES2:
+	case IORING_REGISTER_BUFFERS2: {
+		struct io_uring_rsrc_register *r;
+		void *data_buf = NULL;
+		void *tags_buf;
+		size_t data_sz;
+		nr = 1 + (rnd_modulo_u32(8));
+		r = (struct io_uring_rsrc_register *)
+			get_writable_struct(sizeof(*r));
+		if (opcode == IORING_REGISTER_FILES2) {
+			data_sz = nr * sizeof(int);
+			data_buf = get_writable_struct(data_sz);
+			if (data_buf)
+				memset(data_buf, 0xff, data_sz);  /* -1 fill */
+		} else {
+			data_buf = alloc_iovec(nr, IOV_KERNEL_WRITE);
+			data_sz = nr * sizeof(struct iovec);
+		}
+		tags_buf = get_writable_struct(nr * sizeof(__u64));
+		if (tags_buf)
+			memset(tags_buf, 0, nr * sizeof(__u64));
+		if (r) {
+			memset(r, 0, sizeof(*r));
+			r->nr = nr;
+			if ((rnd_modulo_u32(4)) == 0) {
+				r->flags = IORING_RSRC_REGISTER_SPARSE;
+				r->data = 0;
+			} else {
+				r->data = (__u64)(uintptr_t) data_buf;
+			}
+			r->tags = (__u64)(uintptr_t) tags_buf;
+		}
+		rec->a3 = (unsigned long) r;
+		rec->a4 = sizeof(*r);
+		arg_len = sizeof(*r);
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_FILES_UPDATE2 / IORING_REGISTER_BUFFERS_UPDATE:
+	 * arg = struct io_uring_rsrc_update2, nr_args = sizeof(struct).  Same
+	 * data/tags split as the *2 register pair; offset selects the slot to
+	 * start updating at, nr is the count.  resv / resv2 must be zero.
+	 */
+	case IORING_REGISTER_FILES_UPDATE2:
+	case IORING_REGISTER_BUFFERS_UPDATE: {
+		struct io_uring_rsrc_update2 *u;
+		void *data_buf;
+		void *tags_buf;
+		size_t data_sz;
+		nr = 1 + (rnd_modulo_u32(8));
+		u = (struct io_uring_rsrc_update2 *)
+			get_writable_struct(sizeof(*u));
+		if (opcode == IORING_REGISTER_FILES_UPDATE2) {
+			data_sz = nr * sizeof(int);
+			data_buf = get_writable_struct(data_sz);
+			if (data_buf)
+				memset(data_buf, 0xff, data_sz);
+		} else {
+			data_buf = alloc_iovec(nr, IOV_KERNEL_WRITE);
+			data_sz = nr * sizeof(struct iovec);
+		}
+		tags_buf = get_writable_struct(nr * sizeof(__u64));
+		if (tags_buf)
+			memset(tags_buf, 0, nr * sizeof(__u64));
+		if (u) {
+			memset(u, 0, sizeof(*u));
+			u->offset = rnd_u32() & 0xf;
+			u->nr = nr;
+			u->data = (__u64)(uintptr_t) data_buf;
+			u->tags = (__u64)(uintptr_t) tags_buf;
+		}
+		rec->a3 = (unsigned long) u;
+		rec->a4 = sizeof(*u);
+		arg_len = sizeof(*u);
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_QUERY: arg = chain of struct io_uring_query_hdr,
+	 * nr_args = chain length.  io_query walks a user-pointer linked list:
+	 * each hdr has next_entry (next user ptr or 0), query_data (per-op
+	 * union payload ptr), query_op (selector 0..2), size (payload bytes),
+	 * result (kernel write-back).  Allocate 1-3 hdrs contiguously and
+	 * chain via next_entry pointers to neighboring slots; per-hdr
+	 * query_data points to a separate small writable buffer sized
+	 * generously to satisfy any IO_URING_QUERY_* variant's copy.  Bias
+	 * query_op 75% to a valid value to reach the per-op handler; 25%
+	 * garbage to walk the selector validator.  __resv must be zero or
+	 * the mem_is_zero(__resv) reject path trips -- mostly leave it zero,
+	 * 1-in-16 fuzz a slot to exercise that gate.
+	 */
+	case IORING_REGISTER_QUERY: {
+		struct trinity_io_uring_query_hdr *chain;
+		unsigned int i;
+		nr = 1 + (rnd_modulo_u32(3));  /* 1..3 hdrs */
+		chain = (struct trinity_io_uring_query_hdr *)
+			get_writable_struct(nr * sizeof(*chain));
+		if (chain) {
+			memset(chain, 0, nr * sizeof(*chain));
+			for (i = 0; i < nr; i++) {
+				void *qd = get_writable_struct(64);
+				if (qd)
+					memset(qd, 0, 64);
+				chain[i].query_data = (__u64)(uintptr_t) qd;
+				chain[i].size = 48;
+				if ((rnd_modulo_u32(4)) == 0)
+					chain[i].query_op = rnd_u32();
+				else
+					chain[i].query_op =
+						rnd_modulo_u32(TRINITY_IO_URING_QUERY_LAST);
+				chain[i].next_entry = (i + 1 < nr) ?
+					(__u64)(uintptr_t) &chain[i + 1] : 0;
+				if ((rnd_modulo_u32(16)) == 0)
+					chain[i].__resv[rnd_modulo_u32(3)] = rnd_u32();
+			}
+		}
+		rec->a3 = (unsigned long) chain;
+		rec->a4 = nr;
+		arg_len = nr * sizeof(*chain);
+		break;
+	}
+
+	/*
+	 * IORING_REGISTER_ZCRX_CTRL: arg = struct zcrx_ctrl, nr_args = 1.
+	 * op selects the union arm (FLUSH_RQ = 0 / EXPORT = 1); 75% pick a
+	 * valid op to reach the per-op handler, 25% garbage.  For
+	 * ZCRX_CTRL_EXPORT occasionally seed zc_export.zcrx_fd from the fd
+	 * pool so io_zcrx_ctrl_export reaches its real-fd validators rather
+	 * than -EBADF'ing on a garbage fd.  __resv must be zero or the
+	 * reservedness check fires.  zcrx_id picks a small value; the kernel
+	 * looks it up against the io_ring_ctx's zcrx xarray.
+	 */
+	case IORING_REGISTER_ZCRX_CTRL: {
+		struct trinity_io_uring_zcrx_ctrl *z;
+		z = (struct trinity_io_uring_zcrx_ctrl *)
+			get_writable_struct(sizeof(*z));
+		if (z) {
+			memset(z, 0, sizeof(*z));
+			z->zcrx_id = rnd_u32() & 0xf;
+			if ((rnd_modulo_u32(4)) == 0)
+				z->op = rnd_u32();
+			else
+				z->op = rnd_modulo_u32(TRINITY_ZCRX_CTRL_LAST);
+			if (z->op == TRINITY_ZCRX_CTRL_EXPORT &&
+			    (rnd_modulo_u32(2)) == 0) {
+				int xfd = get_random_fd();
+				z->body.zc_export.zcrx_fd =
+					(xfd >= 0) ? (__u32) xfd : (__u32) rnd_u32();
+			}
+		}
+		rec->a3 = (unsigned long) z;
+		rec->a4 = 1;
+		arg_len = sizeof(*z);
 		break;
 	}
 
