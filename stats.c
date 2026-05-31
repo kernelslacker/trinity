@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <inttypes.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -3187,6 +3188,124 @@ void kcov_cmp_stats_periodic_dump(void)
 	last_dump = now;
 }
 
+/* Per-syscall KCOV diagnostic blocks.  One block per counter in
+ * struct kcov_per_syscall_diag, emitted as a top-20-non-zero list
+ * sorted descending by counter value.  The block is skipped entirely
+ * when no (nr, arch) slot has a non-zero value -- silence is the
+ * diagnostic signal for the truncation/overflow counters in a
+ * well-sized run, and an empty top-20 stanza would only be noise.
+ *
+ * Counter ordering across the dump is alphabetical by counter name.
+ * Keep it that way: future additions to kcov_per_syscall_diag slot
+ * in deterministically and log-grep over historical dumps stays
+ * stable.
+ */
+
+enum kcov_diag_counter {
+	KCOV_DIAG_BUCKET_BITS_REAL,
+	KCOV_DIAG_CMP_TRACE_TRUNCATED,
+	KCOV_DIAG_DEDUP_PROBE_OVERFLOW,
+	KCOV_DIAG_DISTINCT_PCS,
+	KCOV_DIAG_MAX_TRACE_SIZE,
+	KCOV_DIAG_TRACE_TRUNCATED,
+};
+
+#define KCOV_DIAG_TOPN	20
+
+struct kcov_diag_entry {
+	unsigned int nr;
+	bool do32;
+	uint64_t value;
+};
+
+static uint64_t kcov_diag_load(const struct kcov_per_syscall_diag *d,
+			       enum kcov_diag_counter c)
+{
+	switch (c) {
+	case KCOV_DIAG_BUCKET_BITS_REAL:
+		return __atomic_load_n(&d->bucket_bits_real, __ATOMIC_RELAXED);
+	case KCOV_DIAG_CMP_TRACE_TRUNCATED:
+		return __atomic_load_n(&d->cmp_trace_truncated, __ATOMIC_RELAXED);
+	case KCOV_DIAG_DEDUP_PROBE_OVERFLOW:
+		return __atomic_load_n(&d->dedup_probe_overflow, __ATOMIC_RELAXED);
+	case KCOV_DIAG_DISTINCT_PCS:
+		return __atomic_load_n(&d->distinct_pcs, __ATOMIC_RELAXED);
+	case KCOV_DIAG_MAX_TRACE_SIZE:
+		return __atomic_load_n(&d->max_trace_size, __ATOMIC_RELAXED);
+	case KCOV_DIAG_TRACE_TRUNCATED:
+		return __atomic_load_n(&d->trace_truncated, __ATOMIC_RELAXED);
+	}
+	return 0;
+}
+
+static void kcov_diag_emit_block(const char *counter_name,
+				 enum kcov_diag_counter counter)
+{
+	struct kcov_diag_entry top[KCOV_DIAG_TOPN];
+	unsigned int top_count = 0;
+	unsigned int nr_per_arch[2];
+	unsigned int arch, i;
+	int j;
+
+	/* Mirror the arch-dim scan bounds used by the existing per-syscall
+	 * top-N blocks: under biarch iterate both tables, under uniarch
+	 * only the single active table.  do32=true rows are always zero in
+	 * uniarch builds and the (skipped) arch=1 column drops out
+	 * naturally. */
+	if (biarch) {
+		nr_per_arch[0] = max_nr_64bit_syscalls;
+		nr_per_arch[1] = max_nr_32bit_syscalls;
+	} else {
+		nr_per_arch[0] = max_nr_syscalls;
+		nr_per_arch[1] = 0;
+	}
+	for (arch = 0; arch < 2; arch++)
+		if (nr_per_arch[arch] > MAX_NR_SYSCALL)
+			nr_per_arch[arch] = MAX_NR_SYSCALL;
+
+	for (arch = 0; arch < 2; arch++) {
+		bool do32 = (arch == 1);
+
+		for (i = 0; i < nr_per_arch[arch]; i++) {
+			uint64_t value = kcov_diag_load(
+				&kcov_shm->per_syscall_diag[i][do32 ? 1 : 0],
+				counter);
+
+			if (value == 0)
+				continue;
+
+			/* Insertion sort, descending by value, capped at
+			 * KCOV_DIAG_TOPN -- same shape as the sibling
+			 * top-edges block above. */
+			for (j = (int)top_count;
+			     j > 0 && value > top[j - 1].value; j--) {
+				if (j < KCOV_DIAG_TOPN)
+					top[j] = top[j - 1];
+			}
+			if (j < KCOV_DIAG_TOPN) {
+				top[j].nr = i;
+				top[j].do32 = do32;
+				top[j].value = value;
+				if (top_count < KCOV_DIAG_TOPN)
+					top_count++;
+			}
+		}
+	}
+
+	if (top_count == 0)
+		return;
+
+	output(0, "Top syscalls by %s:\n", counter_name);
+	for (j = 0; j < (int)top_count; j++) {
+		const char *name = print_syscall_name(top[j].nr, top[j].do32);
+
+		output(0, "  nr=%u (%s) [arch=%s] %" PRIu64 "\n",
+		       top[j].nr, name,
+		       top[j].do32 ? "32" : "64",
+		       top[j].value);
+	}
+}
+
 void dump_stats(void)
 {
 	unsigned int i;
@@ -5151,6 +5270,23 @@ void dump_stats(void)
 				}
 			}
 		}
+
+		/* Per-syscall KCOV diagnostic blocks.  See kcov_diag_emit_block:
+		 * one top-20-non-zero block per counter, alphabetical by
+		 * counter name, silent when no syscall has a non-zero
+		 * value. */
+		kcov_diag_emit_block("bucket_bits_real",
+				     KCOV_DIAG_BUCKET_BITS_REAL);
+		kcov_diag_emit_block("cmp_trace_truncated",
+				     KCOV_DIAG_CMP_TRACE_TRUNCATED);
+		kcov_diag_emit_block("dedup_probe_overflow",
+				     KCOV_DIAG_DEDUP_PROBE_OVERFLOW);
+		kcov_diag_emit_block("distinct_pcs",
+				     KCOV_DIAG_DISTINCT_PCS);
+		kcov_diag_emit_block("max_trace_size",
+				     KCOV_DIAG_MAX_TRACE_SIZE);
+		kcov_diag_emit_block("trace_truncated",
+				     KCOV_DIAG_TRACE_TRUNCATED);
 	}
 
 	if (minicorpus_shm != NULL) {
