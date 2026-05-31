@@ -45,11 +45,45 @@ orchestrator) to locate sources.  Conventions:
 
 ## What today's checks enforce
 
-(See each script for the precise rule.)
+(See each script for the precise rule.  This list is hand-maintained;
+when scripts are added to or removed from `scripts/check-static/`,
+update this section to match `ls scripts/check-static/*.sh`.)
 
+- `activate-syscall-active-flag`: every direct `activate_syscall*()`
+  callsite must first set the entry's ACTIVE flag, so the flag-driven
+  init / dump / picker consumers see the activated entry.
+- `check-alt-op-rotation`: every `CHILD_OP_*` referenced from
+  `pick_op_type_table[]` must be reachable via `alt_op_rotation[]` or
+  explicitly listed in `alt-op-rotation.denylist` with a reason.
+- `child-context-output`: flag `output()` / `outputerr()` /
+  `outputstd()` calls reachable from child-context code (`.post`
+  handlers and `childops/*.c`), where they vanish into the child's
+  /dev/null'd stdio.
 - `childop-arrays`: arrays and dispatch tables indexed by
   `NR_CHILD_OP_TYPES` must have one entry per `enum child_op_type`
   value.
+- `fd-event-close-direct`: every producer of `FD_EVENT_CLOSE` outside
+  `fd-event.c` must go through the canonical
+  `notify_child_fd_closed[_range]()` helper to preserve the close
+  contract.
+- `fd-from-object-coverage`: `fd_from_object()` in `objects.c` must
+  switch on every `OBJ_FD_*` enum value, and every case label must
+  still refer to a live enum member.
+- `nested-writable-len`: flag nested `get_writable_struct` /
+  `get_writable_long_string` allocations stored straight into an outer
+  struct field without a NULL check -- the NULL-pointer-with-nonzero-
+  length ioctl bug class.
+- `no-libc-rand`: reject libc PRNG callsites (`rand`, `random`,
+  `srand`, `*rand48`) outside the `rand/` wrapper layer and
+  `include/rnd.h`.
+- `post-double-publish`: a `.post` handler must not call both a
+  `register_*` and a `publish_*` helper on the same object -- the
+  syscall return path already registers, so a post-side publish
+  enrolls the object twice.
+- `post-state-deref`: every `.post` handler that dereferences a
+  pointer read from `rec->post_state` must first gate it with
+  `looks_like_corrupted_ptr()` or a `*_POST_STATE_MAGIC` cookie
+  compare.
 - `post-state-magic`: every `struct *_post_state` in `syscalls/` must
   begin with `unsigned long magic` and ship a matching
   `*_POST_STATE_MAGIC` constant -- the convention that prevented the
@@ -57,8 +91,22 @@ orchestrator) to locate sources.  Conventions:
   the convention are listed in
   `scripts/check-static/post-state-magic.baseline`; that list should
   shrink over time, never grow.
-- `syscall-metadata`: best-effort sanity on `struct syscallentry` --
-  ARG_RANGE arguments must declare low/high bounds.
+- `sanitiser-slow-path`: forbid hot-path slow-syscall callsites
+  (`/proc/self/maps`, `fopen`/`getline`, `mincore`/`mprotect` probes)
+  in the per-syscall sanitiser / argument-generation file set.
 - `shared-region-budget`: tripwire that warns when the number of
   shared-region producer call sites approaches `MAX_SHARED_ALLOCS`.
   Silent under-protection is the bug class, not loud over-protection.
+- `shm-latch-direct`: latch fields of `struct shm_s` (`exit_reason`,
+  `current_strategy`, `current_selection_reason`,
+  `plateau_current_hypothesis`) must only be read or written through
+  `__atomic_*` intrinsics; a plain `shm->field` access is a torn write
+  that breaks the publish ordering.
+- `signal-handler-async-unsafe`: forbid async-signal-UNSAFE libc calls
+  (`snprintf`, `malloc`, `fopen`, `syslog`, ...) inside known signal
+  handlers discovered in `signals.c`.
+- `syscall-metadata`: best-effort sanity on `struct syscallentry` --
+  ARG_RANGE arguments must declare low/high bounds.
+- `track-shared-region-pairing`: every `track_shared_region()` must
+  have a matching `untrack_shared_region()` on every cleanup-goto exit
+  path that can free or recycle the backing mapping.
