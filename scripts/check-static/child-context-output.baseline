@@ -480,10 +480,10 @@ syscalls/sigaltstack.c:262:post_sigaltstack
 syscalls/sigaltstack.c:277:post_sigaltstack
 syscalls/sigaltstack.c:286:post_sigaltstack
 syscalls/sigaltstack.c:295:post_sigaltstack
-syscalls/sigpending.c:134:post_sigpending
-syscalls/sigpending.c:149:post_sigpending
-syscalls/sigpending.c:171:post_sigpending
-syscalls/sigpending.c:216:post_sigpending
+syscalls/sigpending.c:125:post_sigpending
+syscalls/sigpending.c:140:post_sigpending
+syscalls/sigpending.c:162:post_sigpending
+syscalls/sigpending.c:179:post_sigpending
 syscalls/socketcall.c:249:post_socketcall
 syscalls/socketpair.c:126:post_socketpair
 syscalls/socketpair.c:142:post_socketpair
