@@ -3,6 +3,7 @@
  */
 #include <stdlib.h>
 #include <sys/mman.h>
+#include "deferred-free.h"
 #include "maps.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -60,9 +61,37 @@ static const unsigned long madvise_bucket_destructive[] = {
 	MADV_WIPEONFORK, MADV_KEEPONFORK,
 };
 
+/*
+ * Snapshot of the madvise inputs read by the post handler, captured at
+ * sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot retarget invalidate_obj_mmap_in_range() at an
+ * address window the madvise call never operated on (which would soft-
+ * invalidate live mappings unrelated to the hole-punch and starve the
+ * consumer pools) or flip the advice gate to bypass invalidation when
+ * the call actually was a hole-punch.  post_state is private to the
+ * post handler.
+ */
+#define MADVISE_POST_STATE_MAGIC	0x4D414456UL	/* "MADV" */
+struct madvise_post_state {
+	unsigned long magic;
+	unsigned long addr;
+	unsigned long len;
+	unsigned long advice;
+};
+
 static void sanitise_madvise(struct syscallrecord *rec)
 {
+	struct madvise_post_state *snap;
 	struct map *map;
+
+	/*
+	 * Clear post_state up front so an early return below leaves the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record.
+	 */
+	rec->post_state = 0;
 
 	map = common_set_mmap_ptr_len(NULL);
 	if (map == NULL)
@@ -99,6 +128,97 @@ static void sanitise_madvise(struct syscallrecord *rec)
 		rec->a1 = 0;
 		rec->a2 = 0;
 	}
+
+	/*
+	 * Snapshot AFTER every rewrite above (range_overlaps_shared zero,
+	 * bucket advice override, GUARD_INSTALL zero) so the post handler
+	 * sees the final addr/len/advice the syscall actually ran with.
+	 */
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic  = MADVISE_POST_STATE_MAGIC;
+	snap->addr   = rec->a1;
+	snap->len    = rec->a2;
+	snap->advice = rec->a3;
+	rec->post_state = (unsigned long) snap;
+}
+
+/*
+ * The hole-punch / range-zero / lazy-free family of advices that
+ * destroy backing pages out from under a still-mapped VMA.  After any
+ * of these succeed, the OBJ_MMAP pool entry overlapping the affected
+ * range can still be picked by get_map_with_prot() and handed to a
+ * consumer (memory_pressure / iouring_* / madvise_pattern_cycler) that
+ * writes through it -- which then SIGBUS / SEGV on the punched-out
+ * pages.  Soft-invalidate the overlap via map->prot=0 (mirrors
+ * post_munmap's sub-range branch and post_mprotect).
+ *
+ * The non-destructive advices (NORMAL / RANDOM / SEQUENTIAL /
+ * WILLNEED / COLD / PAGEOUT / COLLAPSE / HUGEPAGE / NOHUGEPAGE /
+ * MERGEABLE / UNMERGEABLE / DODUMP / DONTDUMP / POPULATE_READ /
+ * POPULATE_WRITE / DOFORK / DONTFORK / WIPEONFORK / KEEPONFORK /
+ * GUARD_INSTALL / GUARD_REMOVE / HWPOISON / SOFT_OFFLINE) either
+ * preserve content or are hint-only; no invalidation needed.
+ */
+static bool madvise_advice_hole_punches(unsigned long advice)
+{
+	switch (advice) {
+	case MADV_DONTNEED:
+	case MADV_DONTNEED_LOCKED:
+	case MADV_REMOVE:
+	case MADV_FREE:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static void post_madvise(struct syscallrecord *rec)
+{
+	struct madvise_post_state *snap =
+		(struct madvise_post_state *) rec->post_state;
+
+	if (snap == NULL)
+		return;
+
+	/*
+	 * post_state is private to the post handler, but the whole
+	 * syscallrecord can still be wholesale-stomped, so guard the
+	 * snapshot pointer before dereferencing it.
+	 * looks_like_corrupted_ptr bumps the corrupt-ptr counter
+	 * internally on a positive result; no outputerr here because
+	 * child-context output() silently dup2'd /dev/null.
+	 */
+	if (looks_like_corrupted_ptr(rec, snap)) {
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: a sibling scribble of rec->post_state with a
+	 * heap-shaped pointer to a foreign allocation would let the wrong
+	 * bytes pose as a madvise_post_state.  A mismatch means snap does
+	 * not point at our struct -- abandon without freeing rather than
+	 * feed wild bytes into invalidate_obj_mmap_in_range().
+	 */
+	if (snap->magic != MADVISE_POST_STATE_MAGIC) {
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (rec->retval != 0)
+		goto out_free;
+
+	if (snap->len == 0)
+		goto out_free;
+
+	if (!madvise_advice_hole_punches(snap->advice))
+		goto out_free;
+
+	invalidate_obj_mmap_in_range(snap->addr, snap->len);
+
+out_free:
+	deferred_freeptr(&rec->post_state);
 }
 
 static unsigned long madvise_advices[] = {
@@ -121,5 +241,6 @@ struct syscallentry syscall_madvise = {
 	.arg_params[2].list = ARGLIST(madvise_advices),
 	.group = GROUP_VM,
 	.sanitise = sanitise_madvise,
+	.post = post_madvise,
 	.rettype = RET_ZERO_SUCCESS,
 };
