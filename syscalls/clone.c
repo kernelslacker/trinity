@@ -73,6 +73,9 @@ static void sanitise_clone(struct syscallrecord *rec)
 		else
 			parent_stats.unshare_newnet_throttled++;
 	}
+
+	avoid_shared_buffer_out(&rec->a3, sizeof(pid_t));
+	avoid_shared_buffer_out(&rec->a5, sizeof(pid_t));
 }
 
 static void post_clone(struct syscallrecord *rec)

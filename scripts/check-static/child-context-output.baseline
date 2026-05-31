@@ -83,7 +83,7 @@ syscalls/clock_gettime.c:268:post_clock_gettime
 syscalls/clock_nanosleep.c:158:post_clock_nanosleep
 syscalls/clone3.c:256:post_clone3
 syscalls/clone3.c:272:post_clone3
-syscalls/clone.c:110:post_clone
+syscalls/clone.c:113:post_clone
 syscalls/close_range.c:295:post_close_range
 syscalls/close_range.c:310:post_close_range
 syscalls/epoll_pwait.c:208:post_epoll_pwait
