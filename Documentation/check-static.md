@@ -55,6 +55,17 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `check-alt-op-rotation`: every `CHILD_OP_*` referenced from
   `pick_op_type_table[]` must be reachable via `alt_op_rotation[]` or
   explicitly listed in `alt-op-rotation.denylist` with a reason.
+- `child-exit-zero-error-path`: flag `_exit(0)` callsites in
+  child-context source (`childops/*.c`, `syscalls/*.c`, `child.c`,
+  `kcov.c`) whose preceding ~10 lines contain failure-branch tokens
+  (`perror`, `output_err`, `warn`, `fatal`, `abort`, `goto err*`,
+  `goto fail*`, or a `case` label naming `err`/`fail`/`abort`/
+  `recovery_exhausted`).  Such an exit is invisible to
+  `reap_entry_is_fast_die()` and silently neutralises the fork-storm
+  fast-die breaker; the fix is `_exit(<sentinel>)` with a non-zero
+  code.  Genuine happy-path callsites that over-fire the heuristic
+  are pinned in `scripts/check-static/child-exit-zero-error-path.baseline`;
+  that list should shrink over time, never grow.
 - `child-context-output`: flag `output()` / `outputerr()` /
   `outputstd()` calls reachable from child-context code (`.post`
   handlers and `childops/*.c`), where they vanish into the child's

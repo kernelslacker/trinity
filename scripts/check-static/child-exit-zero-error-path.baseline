@@ -1,0 +1,22 @@
+# child-exit-zero-error-path.baseline
+#
+# Grandfathered list of child-side `_exit(0)` callsites whose
+# surrounding context trips the heuristic in
+# scripts/check-static/child-exit-zero-error-path.sh but which are in
+# fact legitimate happy-path exits.
+#
+# Format: `path/to/file.c:lineno  reason text...`
+# Lines starting with `#` and blank lines are ignored.  Whitespace
+# between the key and the reason is collapsed.
+#
+# This baseline file should SHRINK over time, never grow.  When a
+# callsite is hardened (changed to _exit(<sentinel>) or rewritten so
+# the heuristic no longer fires), remove its line from this file.  A
+# new `_exit(0)` reachable from a failure branch will FAIL `make
+# check-static` rather than be silently added to this list.
+#
+# The bug class this file pins against: a child that bails on an
+# error path with _exit(0) is invisible to reap_entry_is_fast_die()
+# and contributes nothing to the fork-storm fast-die circuit breaker.
+# See commit e9a9ae95a4b1 ("kcov: recovery exits with nonzero status
+# so fast-die breaker fires") for the canonical fix shape.
