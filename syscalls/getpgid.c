@@ -1,11 +1,8 @@
 /*
  * SYSCALL_DEFINE1(getpgid, pid_t, pid)
  */
-#include <fcntl.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/types.h>
-#include <unistd.h>
+#include "proc-status.h"
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
@@ -33,12 +30,9 @@
  */
 static void post_getpgid(struct syscallrecord *rec)
 {
-	char buf[2048];
-	char *line, *eol;
-	ssize_t n;
-	int fd;
 	pid_t got, proc_pgid = (pid_t)-1;
 	unsigned long retval = rec->retval;
+	unsigned int last;
 
 	/*
 	 * Kernel ABI: sys_getpgid returns task_pgrp_vnr(p) — a positive pid in
@@ -68,41 +62,8 @@ static void post_getpgid(struct syscallrecord *rec)
 	if (got == (pid_t)-1)
 		return;
 
-	/* Raw open/read instead of fopen/fgets/fclose: this post handler runs
-	 * thousands of times per second under fuzz, and stdio's per-call malloc
-	 * of FILE struct + IO buffer is heap traffic we don't need. */
-	fd = open("/proc/self/status", O_RDONLY);
-	if (fd < 0)
-		return;
-	n = read(fd, buf, sizeof(buf) - 1);
-	close(fd);
-	if (n <= 0)
-		return;
-	buf[n] = '\0';
-	/* Anchor on a newline so an "NSpgid:" substring inside an earlier
-	 * field cannot mis-target the parse. */
-	line = strstr(buf, "\nNSpgid:");
-	if (line != NULL) {
-		char *p = line + 8;
-		char *tok, *saveptr = NULL;
-		unsigned int last = 0;
-		int found = 0;
-
-		/* Bound strtok_r to this single line by NUL-terminating at the
-		 * next newline; the original fgets-based code only saw one line
-		 * at a time. */
-		eol = strchr(p, '\n');
-		if (eol != NULL)
-			*eol = '\0';
-
-		for (tok = strtok_r(p, " \t", &saveptr); tok;
-		     tok = strtok_r(NULL, " \t", &saveptr)) {
-			if (sscanf(tok, "%u", &last) == 1)
-				found = 1;
-		}
-		if (found)
-			proc_pgid = (pid_t)last;
-	}
+	if (proc_status_read_ns_last_uint("NSpgid", &last))
+		proc_pgid = (pid_t)last;
 
 	if (proc_pgid == (pid_t)-1)
 		return;

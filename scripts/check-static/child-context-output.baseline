@@ -159,8 +159,8 @@ syscalls/getpeername.c:199:post_getpeername
 syscalls/getpeername.c:219:post_getpeername
 syscalls/getpeername.c:248:post_getpeername
 syscalls/getpeername.c:324:post_getpeername
-syscalls/getpgid.c:111:post_getpgid
-syscalls/getpgid.c:55:post_getpgid
+syscalls/getpgid.c:72:post_getpgid
+syscalls/getpgid.c:49:post_getpgid
 syscalls/getpgrp.c:44:post_getpgrp
 syscalls/getpgrp.c:94:post_getpgrp
 syscalls/getpid.c:34:post_getpid
