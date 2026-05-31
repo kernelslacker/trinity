@@ -80,6 +80,8 @@ static void sanitise_splice(struct syscallrecord *rec)
 	*off_out = RAND_RANGE(0ULL, 1ULL << 30);
 	rec->a2 = (unsigned long) off_in;
 	rec->a4 = (unsigned long) off_out;
+	avoid_shared_buffer_inout(&rec->a2, sizeof(loff_t));
+	avoid_shared_buffer_inout(&rec->a4, sizeof(loff_t));
 
 	/*
 	 * ~25% of the time, replace fd_in with a page-cache-backed fd so
