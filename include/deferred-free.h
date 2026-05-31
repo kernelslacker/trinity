@@ -48,7 +48,8 @@ bool alloc_track_lookup(void *ptr) __must_check;
 
 /*
  * Refresh an existing tracked allocation's LRU position.  Use this
- * when an already-tracked pointer is re-referenced and you want it
+ * when an already-tracked pointer is re-referenced (mm/maps.c dedup-skip,
+ * objects.c add_object OBJ_LOCAL pool touch) and you want it
  * to survive subsequent LRU rotation.  Safe if @ptr was already
  * rotated out (acts as a fresh insert).  See alloc_track_refresh()
  * in deferred-free.c for the design rationale.

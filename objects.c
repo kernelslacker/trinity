@@ -666,6 +666,20 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	n = head->num_entries;
 	cap = head->array_capacity;
 
+	/*
+	 * Refresh head->array's alloc_track LRU slot before the OBJ_LOCAL
+	 * grow-test below.  Inter-grow windows on cap>=1024 pools span
+	 * thousands of intervening zmalloc_tracked calls -- without this
+	 * refresh the live container ages out of the 4096-slot ring and
+	 * the next grow's deferred_free_enqueue(oldarray) rejects on
+	 * alloc_track miss.  Same pattern as the clone_global_mmap_pool
+	 * dedup-skip refresh (mm/maps.c:430, commit 2329c1e854d8).
+	 * OBJ_GLOBAL arrays use plain zmalloc and were never tracked, so
+	 * gate on scope to avoid spuriously inserting an untracked ptr.
+	 */
+	if (scope == OBJ_LOCAL && head->array != NULL)
+		alloc_track_refresh(head->array);
+
 	if (scope == OBJ_GLOBAL) {
 		if (n >= cap) {
 			/*
