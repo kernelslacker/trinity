@@ -474,6 +474,53 @@ static int ip6erspan_migrate_iter_create_link(struct ip6erspan_migrate_iter_ctx 
 	return 0;
 }
 
+/*
+ * Phase 3: unshare into a sibling ns, snapshot its FD, setns()
+ * back into the original ns (so the rtnetlink socket from setup is
+ * still talking to the link's current ns), then RTM_SETLINK
+ * IFLA_NET_NS_FD to migrate the link across.  Any failure on the
+ * setup of the sibling ns or on the migration setlink latches via
+ * warn_once_unsupported and tells the orchestrator to bail to the
+ * teardown_orig cleanup path: at that point the link still lives in
+ * the original ns and must be RTM_DELLINK'd against ctx->nl.  On
+ * the open-self-netns failure path the caller has just re-unshared
+ * into the sibling -- mirror the original code's setns()-back so
+ * cleanup runs in the original ns even though we don't yet hold the
+ * target FD.  On success ctx->migrated flips true; the orchestrator
+ * now owes the target ns a setns-back and an FD drop instead of a
+ * dellink.  Returns 0 on success or -1 if the iteration should bail
+ * to teardown_orig.
+ */
+static int ip6erspan_migrate_iter_migrate(struct ip6erspan_migrate_iter_ctx *ctx)
+{
+	int rc;
+
+	if (unshare(CLONE_NEWNET) < 0) {
+		warn_once_unsupported();
+		return -1;
+	}
+	ctx->target_ns_fd = inm_open_self_netns();
+	if (ctx->target_ns_fd < 0) {
+		warn_once_unsupported();
+		(void)setns(inm_orig_ns_fd, CLONE_NEWNET);
+		return -1;
+	}
+	if (setns(inm_orig_ns_fd, CLONE_NEWNET) < 0) {
+		warn_once_unsupported();
+		close(ctx->target_ns_fd);
+		ctx->target_ns_fd = -1;
+		return -1;
+	}
+
+	rc = inm_setlink_netns(&ctx->nl, ctx->ifindex, ctx->target_ns_fd);
+	if (rc != 0)
+		return -1;
+	__atomic_add_fetch(&shm->stats.inm_netns_migrate_ok,
+			   1, __ATOMIC_RELAXED);
+	ctx->migrated = true;
+	return 0;
+}
+
 bool ip6erspan_netns_migrate(struct childdata *child)
 {
 	struct ip6erspan_migrate_iter_ctx ictx = {
@@ -505,33 +552,8 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 	if (ip6erspan_migrate_iter_create_link(&ictx) != 0)
 		goto out;
 
-	/* Step (d): unshare into a sibling ns; capture its FD; setns()
-	 * back to the original ns so the rtnetlink socket above (which
-	 * lives in the original ns) still talks to the link. */
-	if (unshare(CLONE_NEWNET) < 0) {
-		warn_once_unsupported();
+	if (ip6erspan_migrate_iter_migrate(&ictx) != 0)
 		goto teardown_orig;
-	}
-	ictx.target_ns_fd = inm_open_self_netns();
-	if (ictx.target_ns_fd < 0) {
-		warn_once_unsupported();
-		(void)setns(inm_orig_ns_fd, CLONE_NEWNET);
-		goto teardown_orig;
-	}
-	if (setns(inm_orig_ns_fd, CLONE_NEWNET) < 0) {
-		warn_once_unsupported();
-		close(ictx.target_ns_fd);
-		ictx.target_ns_fd = -1;
-		goto teardown_orig;
-	}
-
-	/* Step (e): migrate link into the target ns. */
-	rc = inm_setlink_netns(&ictx.nl, ictx.ifindex, ictx.target_ns_fd);
-	if (rc != 0)
-		goto teardown_orig;
-	__atomic_add_fetch(&shm->stats.inm_netns_migrate_ok,
-			   1, __ATOMIC_RELAXED);
-	ictx.migrated = true;
 
 	/* The link no longer lives in the original ns -- the rtnl socket
 	 * above is now useless for it.  Hop into the target ns, open a
