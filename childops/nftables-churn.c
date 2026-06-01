@@ -6786,26 +6786,82 @@ out:
 		(void)build_deltable(nfnl, NFPROTO_IPV4, table);
 }
 
+/* Per-invocation state shared across the extracted phase helpers.  Fd
+ * fields default to -1 via the orchestrator's designated initialiser
+ * so the teardown helper can close them unconditionally regardless of
+ * which earlier phase bailed.  base_chain / aux_chain carry the
+ * compile-time defaults the rule-build phases reference every
+ * iteration; table_name / anon_set / family / set_id / verdict are
+ * filled in by build_table; table_created flips true once NEWTABLE
+ * commits so the teardown helper knows to DELTABLE on the way out. */
+struct nftables_churn_iter_ctx {
+	struct nl_ctx		rtnl;
+	struct nfnl_ctx		nfnl;
+	int			udp;
+	char			table_name[32];
+	char			base_chain[32];
+	char			aux_chain[32];
+	char			anon_set[32];
+	__u8			family;
+	__u32			set_id;
+	__u32			verdict;
+	bool			table_created;
+};
+
+/*
+ * Phase: per-child netns unshare + NETLINK_NETFILTER socket open.
+ * Unshares CLONE_NEWNET the first time through (latched off via
+ * ns_setup_failed on EPERM/failure) and opens the nfnetlink fd every
+ * later phase batches commits over (latched off via
+ * ns_unsupported_nfnetlink on the EPROTONOSUPPORT / EAFNOSUPPORT
+ * CONFIG_NF_NETLINK-absent shape).  Returns 0 on success; -1 means
+ * caller should return true immediately -- no other fd was opened so
+ * the out: cleanup path has nothing useful to run.
+ */
+static int nftables_churn_iter_setup_netns(struct nftables_churn_iter_ctx *ctx)
+{
+	struct nfnl_open_opts nfnl_opts = {
+		.recv_timeo_s  = NFNL_RECV_TIMEO_S,
+	};
+
+	if (!ns_unshared) {
+		if (unshare(CLONE_NEWNET) < 0) {
+			ns_setup_failed = true;
+			__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
+					   1, __ATOMIC_RELAXED);
+			return -1;
+		}
+		ns_unshared = true;
+	}
+
+	if (nfnl_open(&ctx->nfnl, &nfnl_opts) < 0) {
+		/* EPROTONOSUPPORT here means CONFIG_NF_NETLINK is off
+		 * — latch and stop trying.  Other errors (ENOMEM,
+		 * EMFILE) are transient; fall through and re-try next
+		 * invocation. */
+		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
+			ns_unsupported_nfnetlink = true;
+		__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	return 0;
+}
+
 bool nftables_churn(struct childdata *child)
 {
-	char table_name[32];
-	char base_chain[32]  = "chain_in";
-	char aux_chain[32]   = "chain_aux";
-	char anon_set[32];
-	struct nl_ctx rtnl = { .fd = -1 };
-	struct nfnl_ctx nfnl = { .nl = { .fd = -1 } };
+	struct nftables_churn_iter_ctx ctx = {
+		.rtnl       = { .fd = -1 },
+		.nfnl       = { .nl = { .fd = -1 } },
+		.udp        = -1,
+		.base_chain = "chain_in",
+		.aux_chain  = "chain_aux",
+	};
 	struct nl_open_opts rtnl_opts = {
 		.proto         = NETLINK_ROUTE,
 		.recv_timeo_s  = NFNL_RECV_TIMEO_S,
 	};
-	struct nfnl_open_opts nfnl_opts = {
-		.recv_timeo_s  = NFNL_RECV_TIMEO_S,
-	};
-	int udp = -1;
-	__u8 family;
-	__u32 set_id;
-	__u32 verdict;
-	bool table_created = false;
 	struct timespec t0;
 	unsigned int iters;
 	unsigned int i;
@@ -6820,36 +6876,17 @@ bool nftables_churn(struct childdata *child)
 	    ns_unsupported_nf_tables)
 		return true;
 
-	if (!ns_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			ns_setup_failed = true;
-			__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-		ns_unshared = true;
-	}
-
-	if (nfnl_open(&nfnl, &nfnl_opts) < 0) {
-		/* EPROTONOSUPPORT here means CONFIG_NF_NETLINK is off
-		 * — latch and stop trying.  Other errors (ENOMEM,
-		 * EMFILE) are transient; fall through and re-try next
-		 * invocation. */
-		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
-			ns_unsupported_nfnetlink = true;
-		__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (nftables_churn_iter_setup_netns(&ctx) != 0)
 		return true;
-	}
 
-	if (nl_open(&rtnl, &rtnl_opts) < 0) {
+	if (nl_open(&ctx.rtnl, &rtnl_opts) < 0) {
 		__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
 
 	if (!lo_brought_up) {
-		bring_lo_up(&rtnl);
+		bring_lo_up(&ctx.rtnl);
 		lo_brought_up = true;
 	}
 
@@ -6857,7 +6894,7 @@ bool nftables_churn(struct childdata *child)
 	 * so the expression-fuzz path below stays the dominant workload.
 	 * Reuses ns_unsupported_nf_tables as the latch on EPERM/EOPNOTSUPP. */
 	if (ONE_IN(8)) {
-		nft_dormant_abort_sweep(&nfnl);
+		nft_dormant_abort_sweep(&ctx.nfnl);
 		goto out;
 	}
 
@@ -6873,7 +6910,7 @@ bool nftables_churn(struct childdata *child)
 	/* Per-hook .validate sweep on xt-compat targets, gated separately
 	 * so the legacy expression-fuzz path above is undisturbed. */
 	if (ONE_IN(2) && !ns_unsupported_nft_compat_validate) {
-		nft_compat_validate_sweep(&nfnl);
+		nft_compat_validate_sweep(&ctx.nfnl);
 		goto out;
 	}
 
@@ -6883,7 +6920,7 @@ bool nftables_churn(struct childdata *child)
 	 * latch (ns_unsupported_nft_fwd_netdev_loop) so a kernel without
 	 * CONFIG_VETH or CONFIG_NFT_FWD_NETDEV pays the EFAIL once. */
 	if (ONE_IN(8) && !ns_unsupported_nft_fwd_netdev_loop) {
-		nft_fwd_netdev_loop_sweep(&nfnl, &rtnl);
+		nft_fwd_netdev_loop_sweep(&ctx.nfnl, &ctx.rtnl);
 		goto out;
 	}
 
@@ -6894,19 +6931,19 @@ bool nftables_churn(struct childdata *child)
 	 * upstream; per-expression validators that EOPNOTSUPP just skip the
 	 * rule install and the cleanup still drains. */
 	if (ONE_IN(8)) {
-		nft_l4_aware_frag_sweep(&nfnl);
+		nft_l4_aware_frag_sweep(&ctx.nfnl);
 		goto out;
 	}
 
-	family = pick_family();
-	snprintf(table_name, sizeof(table_name), "trnft%u",
+	ctx.family = pick_family();
+	snprintf(ctx.table_name, sizeof(ctx.table_name), "trnft%u",
 		 (unsigned int)(rand32() & 0xffffu));
-	snprintf(anon_set, sizeof(anon_set), "__set%u",
+	snprintf(ctx.anon_set, sizeof(ctx.anon_set), "__set%u",
 		 (unsigned int)(rand32() & 0xffffu));
-	set_id = rand32();
-	verdict = (rand32() & 1) ? NFT_JUMP : NFT_GOTO;
+	ctx.set_id = rand32();
+	ctx.verdict = (rand32() & 1) ? NFT_JUMP : NFT_GOTO;
 
-	rc = build_newtable(&nfnl, family, table_name);
+	rc = build_newtable(&ctx.nfnl, ctx.family, ctx.table_name);
 	if (rc != 0) {
 		/* EAFNOSUPPORT / EOPNOTSUPP / EPROTONOSUPPORT all mean
 		 * "this nf_tables family isn't registered" — most
@@ -6918,21 +6955,24 @@ bool nftables_churn(struct childdata *child)
 			ns_unsupported_nf_tables = true;
 		goto out;
 	}
-	table_created = true;
+	ctx.table_created = true;
 	__atomic_add_fetch(&shm->stats.nftables_churn_table_create_ok,
 			   1, __ATOMIC_RELAXED);
 
-	if (build_newset(&nfnl, family, table_name, anon_set, set_id) == 0)
+	if (build_newset(&ctx.nfnl, ctx.family, ctx.table_name,
+			 ctx.anon_set, ctx.set_id) == 0)
 		__atomic_add_fetch(&shm->stats.nftables_churn_set_create_ok,
 				   1, __ATOMIC_RELAXED);
 
 	/* aux first so the base-chain rule's NFT_JUMP/NFT_GOTO has a
 	 * resolvable target on first commit. */
-	if (build_newchain(&nfnl, family, table_name, aux_chain, false) == 0)
+	if (build_newchain(&ctx.nfnl, ctx.family, ctx.table_name,
+			   ctx.aux_chain, false) == 0)
 		__atomic_add_fetch(&shm->stats.nftables_churn_chain_create_ok,
 				   1, __ATOMIC_RELAXED);
 
-	if (build_newchain(&nfnl, family, table_name, base_chain, true) == 0)
+	if (build_newchain(&ctx.nfnl, ctx.family, ctx.table_name,
+			   ctx.base_chain, true) == 0)
 		__atomic_add_fetch(&shm->stats.nftables_churn_chain_create_ok,
 				   1, __ATOMIC_RELAXED);
 
@@ -6940,9 +6980,9 @@ bool nftables_churn(struct childdata *child)
 		struct nft_expr_plan plan;
 
 		nft_expr_plan_randomize(&plan);
-		if (build_newrule(&nfnl, family, table_name, base_chain,
-				  aux_chain, verdict, 0, &plan,
-				  anon_set, set_id) == 0) {
+		if (build_newrule(&ctx.nfnl, ctx.family, ctx.table_name,
+				  ctx.base_chain, ctx.aux_chain, ctx.verdict,
+				  0, &plan, ctx.anon_set, ctx.set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
 					   1, __ATOMIC_RELAXED);
 			nft_expr_plan_record_stats(&plan);
@@ -6956,14 +6996,14 @@ bool nftables_churn(struct childdata *child)
 	 * path that the CVE-2024-1086 lineage hangs off.
 	 */
 	if (!ns_unsupported_inet) {
-		udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-		if (udp < 0) {
+		ctx.udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+		if (ctx.udp < 0) {
 			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
 				ns_unsupported_inet = true;
 		}
 	}
 
-	if (udp >= 0) {
+	if (ctx.udp >= 0) {
 		struct sockaddr_in dst;
 
 		memset(&dst, 0, sizeof(dst));
@@ -6987,7 +7027,7 @@ bool nftables_churn(struct childdata *child)
 				break;
 
 			generate_rand_bytes(payload, sizeof(payload));
-			n = sendto(udp, payload, sizeof(payload),
+			n = sendto(ctx.udp, payload, sizeof(payload),
 				   MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst));
 			if (n > 0)
@@ -7007,9 +7047,9 @@ bool nftables_churn(struct childdata *child)
 		struct nft_expr_plan plan;
 
 		nft_expr_plan_randomize(&plan);
-		if (build_newrule(&nfnl, family, table_name, base_chain,
-				  aux_chain, verdict, 1, &plan,
-				  anon_set, set_id) == 0) {
+		if (build_newrule(&ctx.nfnl, ctx.family, ctx.table_name,
+				  ctx.base_chain, ctx.aux_chain, ctx.verdict,
+				  1, &plan, ctx.anon_set, ctx.set_id) == 0) {
 			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
 					   1, __ATOMIC_RELAXED);
 			nft_expr_plan_record_stats(&plan);
@@ -7022,29 +7062,32 @@ bool nftables_churn(struct childdata *child)
 	 * targeted commit-vs-traffic teardown window — the same one the
 	 * CVE-2024-1086 nft_verdict UAF exploited.
 	 */
-	if (build_delrule(&nfnl, family, table_name, base_chain) == 0)
+	if (build_delrule(&ctx.nfnl, ctx.family, ctx.table_name,
+			  ctx.base_chain) == 0)
 		__atomic_add_fetch(&shm->stats.nftables_churn_rule_del_ok,
 				   1, __ATOMIC_RELAXED);
 
-	(void)build_delset(&nfnl, family, table_name, anon_set);
+	(void)build_delset(&ctx.nfnl, ctx.family, ctx.table_name,
+			   ctx.anon_set);
 
 out:
-	if (udp >= 0)
-		close(udp);
+	if (ctx.udp >= 0)
+		close(ctx.udp);
 
-	if (nfnl.nl.fd >= 0) {
+	if (ctx.nfnl.nl.fd >= 0) {
 		/* DELTABLE cascades cleanup of any chain/rule/set
 		 * survivors via nf_tables_table_destroy, racing the
 		 * same in-flight skbs as the explicit DELRULE above. */
-		if (table_created) {
-			if (build_deltable(&nfnl, family, table_name) == 0)
+		if (ctx.table_created) {
+			if (build_deltable(&ctx.nfnl, ctx.family,
+					   ctx.table_name) == 0)
 				__atomic_add_fetch(&shm->stats.nftables_churn_table_del_ok,
 						   1, __ATOMIC_RELAXED);
 		}
-		nfnl_close(&nfnl);
+		nfnl_close(&ctx.nfnl);
 	}
 
-	nl_close(&rtnl);
+	nl_close(&ctx.rtnl);
 
 	return true;
 }
