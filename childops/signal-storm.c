@@ -218,13 +218,31 @@ static void signal_storm_iter_collect_targets(struct signal_storm_iter_ctx *ictx
 	}
 }
 
+/*
+ * Phase: roll iteration count, burst ordering, and signal catalog, then
+ * reorder the snapshotted targets.  CATALOG_RESTRICTED locks the burst
+ * onto a single sub-catalog (RT-only or std-only) so the catalog
+ * selection has to happen here rather than per-emit -- the whole point
+ * of that ordering is per-burst homogeneity.
+ */
+static void signal_storm_iter_pick_mode(struct signal_storm_iter_ctx *ictx)
+{
+	ictx->iters = 1 + rnd_modulo_u32(MAX_ITERATIONS);
+	ictx->order = (enum storm_order)rnd_modulo_u32(NR_STORM_ORDERS);
+	reorder_targets(ictx->targets, ictx->ntargets);
+
+	if (ictx->order == ORDER_CATALOG_RESTRICTED)
+		ictx->catalog = RAND_BOOL() ? CATALOG_RT_ONLY : CATALOG_STD_ONLY;
+	else
+		ictx->catalog = CATALOG_ANY;
+}
+
 bool signal_storm(struct childdata *child)
 {
 	struct signal_storm_iter_ctx ictx = { 0 };
 	pid_t *targets;
 	unsigned int ntargets;
 	unsigned int i, iters;
-	enum storm_order order;
 	enum catalog_mode catalog;
 
 	(void)child;
@@ -232,25 +250,21 @@ bool signal_storm(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.signal_storm_runs, 1, __ATOMIC_RELAXED);
 
 	signal_storm_iter_collect_targets(&ictx);
-	targets = ictx.targets;
-	ntargets = ictx.ntargets;
 
-	if (ntargets == 0) {
+	if (ictx.ntargets == 0) {
 		__atomic_add_fetch(&shm->stats.signal_storm_no_targets,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 
-	iters = 1 + rnd_modulo_u32(MAX_ITERATIONS);
-	order = (enum storm_order)rnd_modulo_u32(NR_STORM_ORDERS);
-	reorder_targets(targets, ntargets);
+	signal_storm_iter_pick_mode(&ictx);
 
-	if (order == ORDER_CATALOG_RESTRICTED)
-		catalog = RAND_BOOL() ? CATALOG_RT_ONLY : CATALOG_STD_ONLY;
-	else
-		catalog = CATALOG_ANY;
+	targets = ictx.targets;
+	ntargets = ictx.ntargets;
+	iters = ictx.iters;
+	catalog = ictx.catalog;
 
-	switch (order) {
+	switch (ictx.order) {
 	case ORDER_SAME_TARGET_BURST: {
 		unsigned int t = 0;
 
