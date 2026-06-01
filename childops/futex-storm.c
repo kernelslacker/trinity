@@ -398,11 +398,54 @@ static void futex_storm_iter_drive_burst(struct futex_storm_iter_ctx *ctx)
 	broadcast_wake(ctx->s);
 }
 
+/*
+ * Phase 4: reap the worker burst.  Workers should exit promptly now:
+ * the done flag is set and any in-flight FUTEX_WAIT either timed out
+ * (sub-ms) or just got woken by the broadcast.  Give each a brief
+ * grace window, then SIGKILL the stragglers so a hung worker doesn't
+ * gate the whole storm.  Drain the per-invocation iters counter into
+ * shm->stats so the storm's actual progress is visible in dump_stats.
+ *
+ * Workers that exited via signal (WIFSIGNALED) bump futex_storm_inner_crashed
+ * -- the inner_worker path has no legitimate fatal-signal exit, so any
+ * crash here is a real kernel-vs-worker fault worth surfacing.
+ */
+static void futex_storm_iter_reap(struct futex_storm_iter_ctx *ctx)
+{
+	struct timespec grace;
+	int i, status;
+
+	for (i = 0; i < ctx->alive; i++) {
+		pid_t r = 0;
+		int spin;
+
+		for (spin = 0; spin < 50; spin++) {
+			r = waitpid_eintr(ctx->worker_pids[i], &status, WNOHANG);
+			if (r == ctx->worker_pids[i] || r < 0)
+				break;
+			grace.tv_sec  = 0;
+			grace.tv_nsec = 1000000;	/* 1 ms */
+			nanosleep(&grace, NULL);
+		}
+		if (r == 0) {
+			kill(ctx->worker_pids[i], SIGKILL);
+			waitpid_eintr(ctx->worker_pids[i], &status, 0);
+			continue;
+		}
+		if (r == ctx->worker_pids[i] && WIFSIGNALED(status))
+			__atomic_add_fetch(&shm->stats.futex_storm_inner_crashed,
+					   1, __ATOMIC_RELAXED);
+	}
+	ctx->alive = 0;
+
+	__atomic_add_fetch(&shm->stats.futex_storm_iters,
+			   __atomic_load_n(&ctx->s->iters, __ATOMIC_RELAXED),
+			   __ATOMIC_RELAXED);
+}
+
 bool futex_storm(struct childdata *child)
 {
 	struct futex_storm_iter_ctx ctx = { .s = NULL };
-	struct timespec budget;
-	int i, status;
 
 	(void)child;
 
@@ -415,38 +458,7 @@ bool futex_storm(struct childdata *child)
 		goto out_barrier;
 
 	futex_storm_iter_drive_burst(&ctx);
-
-	/*
-	 * Workers should exit promptly now: the done flag is set and any
-	 * in-flight FUTEX_WAIT either timed out (sub-ms) or just got woken
-	 * by the broadcast.  Give a brief grace window, then SIGKILL the
-	 * stragglers so a hung worker doesn't gate the whole storm.
-	 */
-	for (i = 0; i < ctx.alive; i++) {
-		pid_t r = 0;
-		int spin;
-
-		for (spin = 0; spin < 50; spin++) {
-			r = waitpid_eintr(ctx.worker_pids[i], &status, WNOHANG);
-			if (r == ctx.worker_pids[i] || r < 0)
-				break;
-			budget.tv_sec  = 0;
-			budget.tv_nsec = 1000000;	/* 1 ms */
-			nanosleep(&budget, NULL);
-		}
-		if (r == 0) {
-			kill(ctx.worker_pids[i], SIGKILL);
-			waitpid_eintr(ctx.worker_pids[i], &status, 0);
-			continue;
-		}
-		if (r == ctx.worker_pids[i] && WIFSIGNALED(status))
-			__atomic_add_fetch(&shm->stats.futex_storm_inner_crashed,
-					   1, __ATOMIC_RELAXED);
-	}
-
-	__atomic_add_fetch(&shm->stats.futex_storm_iters,
-			   __atomic_load_n(&ctx.s->iters, __ATOMIC_RELAXED),
-			   __ATOMIC_RELAXED);
+	futex_storm_iter_reap(&ctx);
 
 out_barrier:
 	pthread_barrier_destroy(&ctx.s->barrier);
