@@ -660,6 +660,38 @@ static int mld_source_iter_v6_setup_recv(struct mld_source_iter_v6_ctx *it)
 }
 
 /*
+ * Phase 3 (v6): structural-support probe via MCAST_JOIN_SOURCE_GROUP on
+ * src_a (latches ns_unsupported_igmp_mld_source_churn on the
+ * unsupported-syscall / unsupported-family errno families), then extend
+ * the include filter with src_b.  Both gsr_a and gsr_b stay live in
+ * the ctx so the race phase hands them to MCAST_LEAVE_SOURCE_GROUP /
+ * MCAST_BLOCK_SOURCE without re-deriving the sockaddrs.
+ */
+static int mld_source_iter_v6_join(struct mld_source_iter_v6_ctx *it)
+{
+	fill_gsr_v6(&it->gsr_a, 0U, &it->grp_v6, &it->src_a_v6);
+	if (setsockopt(it->recv_s, IPPROTO_IPV6, MCAST_JOIN_SOURCE_GROUP,
+		       &it->gsr_a, sizeof(it->gsr_a)) < 0) {
+		int e = errno;
+
+		if (is_syscall_unsupported(e) || is_proto_family_unsupported(e))
+			ns_unsupported_igmp_mld_source_churn = true;
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_join_ok,
+			   1, __ATOMIC_RELAXED);
+
+	fill_gsr_v6(&it->gsr_b, 0U, &it->grp_v6, &it->src_b_v6);
+	if (setsockopt(it->recv_s, IPPROTO_IPV6, MCAST_JOIN_SOURCE_GROUP,
+		       &it->gsr_b, sizeof(it->gsr_b)) == 0)
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_join_ok,
+				   1, __ATOMIC_RELAXED);
+	return 0;
+}
+
+/*
  * IPv6 mirror of iter_one_v4.  Hits ip6_mc_source / ip6_mc_msfilter
  * (net/ipv6/mcast.c) instead of the v4 paths.  SSM group ff3e::42:salt.
  */
@@ -702,26 +734,8 @@ static void iter_one_v6(unsigned int iter_idx, const struct timespec *t_outer)
 		goto out;
 	if (mld_source_iter_v6_setup_recv(&it) != 0)
 		goto out;
-
-	fill_gsr_v6(&it.gsr_a, 0U, &it.grp_v6, &it.src_a_v6);
-	if (setsockopt(it.recv_s, IPPROTO_IPV6, MCAST_JOIN_SOURCE_GROUP,
-		       &it.gsr_a, sizeof(it.gsr_a)) < 0) {
-		int e = errno;
-
-		if (is_syscall_unsupported(e) || is_proto_family_unsupported(e))
-			ns_unsupported_igmp_mld_source_churn = true;
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (mld_source_iter_v6_join(&it) != 0)
 		goto out;
-	}
-	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_join_ok,
-			   1, __ATOMIC_RELAXED);
-
-	fill_gsr_v6(&it.gsr_b, 0U, &it.grp_v6, &it.src_b_v6);
-	if (setsockopt(it.recv_s, IPPROTO_IPV6, MCAST_JOIN_SOURCE_GROUP,
-		       &it.gsr_b, sizeof(it.gsr_b)) == 0)
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_join_ok,
-				   1, __ATOMIC_RELAXED);
 
 	send_burst(it.send_s, 2);
 
