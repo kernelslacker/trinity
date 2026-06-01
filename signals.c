@@ -22,18 +22,34 @@ volatile sig_atomic_t ctrlc_pending;
 
 /*
  * Cached pointer to glibc's __abort_msg.  Resolved once at child init
- * via dlsym(RTLD_DEFAULT, ...) so there is no link-time GLIBC_PRIVATE
- * dependency: a glibc upgrade that drops the symbol leaves this NULL
- * and the SIGABRT handler silently skips the capture.  This mirrors
- * gdb's pattern for reading the same symbol.  dlsym() itself is not
- * async-signal-safe and is never called from the handler -- only
- * from init_abort_msg_capture() below.
+ * so there is no link-time GLIBC_PRIVATE dependency: a glibc upgrade
+ * that drops the symbol leaves this NULL and the SIGABRT handler
+ * silently skips the capture.  This mirrors gdb's pattern for reading
+ * the same symbol.  Neither dlvsym() nor dlsym() is async-signal-safe;
+ * both are called only from init_abort_msg_capture() below.
+ *
+ * __abort_msg points at a glibc-internal struct whose layout has been
+ * stable since 2.34: a 4-byte size field followed by a NUL-terminated
+ * message in a flexible array.  The struct is mirrored locally rather
+ * than pulled from a private glibc header.
  */
-static char **glibc_abort_msg_p;
+static struct abort_msg_s {
+	unsigned int size;
+	char msg[];
+} **glibc_abort_msg_p;
 
 void init_abort_msg_capture(void)
 {
-	glibc_abort_msg_p = (char **)dlsym(RTLD_DEFAULT, "__abort_msg");
+	/*
+	 * Most distros export __abort_msg only under @GLIBC_PRIVATE
+	 * with no default-version alias, so a bare dlsym() returns
+	 * NULL.  Bind the private version explicitly via dlvsym(), and
+	 * fall back to dlsym() for libcs that do expose an unversioned
+	 * alias.
+	 */
+	glibc_abort_msg_p = dlvsym(RTLD_DEFAULT, "__abort_msg", "GLIBC_PRIVATE");
+	if (glibc_abort_msg_p == NULL)
+		glibc_abort_msg_p = dlsym(RTLD_DEFAULT, "__abort_msg");
 }
 
 /*
@@ -466,28 +482,33 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	 * at the top of the bug log.
 	 *
 	 * glibc_abort_msg_p was resolved once at child init via
-	 * dlsym(RTLD_DEFAULT, "__abort_msg") -- see
-	 * init_abort_msg_capture() above.  No link-time GLIBC_PRIVATE
-	 * version dependency; a future glibc that drops the symbol
-	 * leaves the cached pointer NULL and the capture silently skips.
-	 * The handler does one plain load through the cached pointer
-	 * (signal-safe), a NULL check on the contents, and a write().
+	 * dlvsym(RTLD_DEFAULT, "__abort_msg", "GLIBC_PRIVATE") with a
+	 * dlsym() fallback -- see init_abort_msg_capture() above.  No
+	 * link-time GLIBC_PRIVATE version dependency; a future glibc
+	 * that drops the symbol leaves the cached pointer NULL and the
+	 * capture silently skips.  The handler does one plain load
+	 * through the cached pointer (signal-safe), a NULL check on
+	 * the contents, and a write().
 	 *
 	 * The inner pointer is NULL when abort() was reached from user
 	 * code rather than a libc self-check, so guard on both the
-	 * cached lookup pointer (glibc_abort_msg_p != NULL) and the
-	 * contents (*glibc_abort_msg_p != NULL).
+	 * cached lookup pointer and the contents.  The message text
+	 * lives at offset +4 inside the struct (past the size field).
 	 */
-	if (sig == SIGABRT && glibc_abort_msg_p != NULL && *glibc_abort_msg_p != NULL) {
-		char buf[512];
-		struct sigsafe_buf b = { buf, sizeof(buf) };
-		ssize_t w;
+	if (sig == SIGABRT && glibc_abort_msg_p != NULL) {
+		struct abort_msg_s *m = *glibc_abort_msg_p;
 
-		sigsafe_puts(&b, "abort_msg: ");
-		sigsafe_puts(&b, *glibc_abort_msg_p);
-		sigsafe_putc(&b, '\n');
-		w = write(STDERR_FILENO, buf, sizeof(buf) - b.left);
-		(void)w;	/* dying anyway; can't act on a short write */
+		if (m != NULL) {
+			char buf[512];
+			struct sigsafe_buf b = { buf, sizeof(buf) };
+			ssize_t w;
+
+			sigsafe_puts(&b, "abort_msg: ");
+			sigsafe_puts(&b, m->msg);
+			sigsafe_putc(&b, '\n');
+			w = write(STDERR_FILENO, buf, sizeof(buf) - b.left);
+			(void)w;	/* dying anyway; can't act on a short write */
+		}
 	}
 
 	/*
