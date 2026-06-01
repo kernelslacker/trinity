@@ -666,12 +666,72 @@ static void iouring_multishot_iter_traffic(struct iouring_multishot_iter_ctx *it
 	}
 }
 
-bool iouring_net_multishot(struct childdata *child)
+/*
+ * Post-burst race probes.  First issues IORING_OP_ASYNC_CANCEL with
+ * USERDATA match — drives the cancel walker through io_uring/cancel.c
+ * and tears down the request while io_uring/net.c may still be in the
+ * middle of posting the next completion (the targeted overlap).  If
+ * NAPI was armed, also runs the stale-NAPI probe (upstream b8c2e9e27636):
+ * IORING_UNREGISTER_NAPI followed by one more multishot RECV + drain
+ * exercises any post-unregister stale state in io_uring/net.c and
+ * io_uring/napi.c.  Kernel writes the previous napi config back into
+ * the passed struct, so it must be writable.
+ */
+static void iouring_multishot_iter_cancel(struct iouring_multishot_iter_ctx *it)
 {
-	struct iouring_multishot_iter_ctx it;
 	struct io_uring_sqe sqe;
 	struct io_uring_napi napi_out;
 	int r;
+
+	memset(&sqe, 0, sizeof(sqe));
+	sqe.opcode       = IORING_OP_ASYNC_CANCEL;
+	sqe.fd           = -1;
+	sqe.addr         = MULTISHOT_USER_DATA;
+	sqe.cancel_flags = IORING_ASYNC_CANCEL_USERDATA;
+	sqe.user_data    = CANCEL_USER_DATA;
+
+	if (ms_submit(&it->ms, &sqe, 1)) {
+		r = ms_enter(&it->ms, 1, 0);
+		if (r >= 0) {
+			__atomic_add_fetch(&shm->stats.iouring_multishot_cancel_submitted,
+					   1, __ATOMIC_RELAXED);
+			(void)ms_drain(&it->ms);
+		}
+	}
+
+	if (!it->napi_armed)
+		return;
+
+	memset(&napi_out, 0, sizeof(napi_out));
+	r = (int)syscall(__NR_io_uring_register, it->ms.fd,
+			 IORING_UNREGISTER_NAPI, &napi_out, 1);
+	if (r == 0)
+		__atomic_add_fetch(&shm->stats.iouring_napi_unregister_ok,
+				   1, __ATOMIC_RELAXED);
+	else
+		__atomic_add_fetch(&shm->stats.iouring_napi_unregister_fail,
+				   1, __ATOMIC_RELAXED);
+
+	memset(&sqe, 0, sizeof(sqe));
+	sqe.opcode    = IORING_OP_RECV;
+	sqe.fd        = it->rxfd;
+	sqe.addr      = 0;
+	sqe.len       = 0;
+	sqe.ioprio    = IORING_RECV_MULTISHOT;
+	sqe.flags     = IOSQE_BUFFER_SELECT;
+	sqe.buf_group = PBUF_GROUP_ID;
+	sqe.user_data = MULTISHOT_USER_DATA;
+
+	if (ms_submit(&it->ms, &sqe, 1)) {
+		r = ms_enter(&it->ms, 1, 0);
+		if (r >= 0)
+			(void)ms_drain(&it->ms);
+	}
+}
+
+bool iouring_net_multishot(struct childdata *child)
+{
+	struct iouring_multishot_iter_ctx it;
 
 	(void)child;
 
@@ -704,61 +764,7 @@ bool iouring_net_multishot(struct childdata *child)
 		goto out;
 
 	iouring_multishot_iter_traffic(&it);
-
-	/* Cancel the multishot.  USERDATA match drives the cancel walker
-	 * through io_uring/cancel.c and tears down the request while
-	 * io_uring/net.c may still be in the middle of posting the next
-	 * completion — that overlap is the targeted race window. */
-	memset(&sqe, 0, sizeof(sqe));
-	sqe.opcode       = IORING_OP_ASYNC_CANCEL;
-	sqe.fd           = -1;
-	sqe.addr         = MULTISHOT_USER_DATA;
-	sqe.cancel_flags = IORING_ASYNC_CANCEL_USERDATA;
-	sqe.user_data    = CANCEL_USER_DATA;
-
-	if (ms_submit(&it.ms, &sqe, 1)) {
-		r = ms_enter(&it.ms, 1, 0);
-		if (r >= 0) {
-			__atomic_add_fetch(&shm->stats.iouring_multishot_cancel_submitted,
-					   1, __ATOMIC_RELAXED);
-			(void)ms_drain(&it.ms);
-		}
-	}
-
-	/* Stale-NAPI probe (upstream b8c2e9e27636): after
-	 * IORING_UNREGISTER_NAPI, prior ring state could retain pointers /
-	 * handles tied to the NAPI registration.  Drive the path by
-	 * unregistering, then submitting one more multishot RECV + drain
-	 * pass — exercises any post-unregister stale state in io_uring/net.c
-	 * and io_uring/napi.c.  Kernel writes the previous napi config back
-	 * into the passed struct, so it must be writable. */
-	if (it.napi_armed) {
-		memset(&napi_out, 0, sizeof(napi_out));
-		r = (int)syscall(__NR_io_uring_register, it.ms.fd,
-				 IORING_UNREGISTER_NAPI, &napi_out, 1);
-		if (r == 0)
-			__atomic_add_fetch(&shm->stats.iouring_napi_unregister_ok,
-					   1, __ATOMIC_RELAXED);
-		else
-			__atomic_add_fetch(&shm->stats.iouring_napi_unregister_fail,
-					   1, __ATOMIC_RELAXED);
-
-		memset(&sqe, 0, sizeof(sqe));
-		sqe.opcode    = IORING_OP_RECV;
-		sqe.fd        = it.rxfd;
-		sqe.addr      = 0;
-		sqe.len       = 0;
-		sqe.ioprio    = IORING_RECV_MULTISHOT;
-		sqe.flags     = IOSQE_BUFFER_SELECT;
-		sqe.buf_group = PBUF_GROUP_ID;
-		sqe.user_data = MULTISHOT_USER_DATA;
-
-		if (ms_submit(&it.ms, &sqe, 1)) {
-			r = ms_enter(&it.ms, 1, 0);
-			if (r >= 0)
-				(void)ms_drain(&it.ms);
-		}
-	}
+	iouring_multishot_iter_cancel(&it);
 
 out:
 	if (it.txfd >= 0)
