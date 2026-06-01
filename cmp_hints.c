@@ -1219,6 +1219,35 @@ static void cmp_hints_load_file_restore_pools(const struct cmp_hints_pool_ondisk
 	*rejected_out = rejected;
 }
 
+/*
+ * Phase 4 of cmp_hints_load_file(): post-restore bookkeeping and
+ * the operator-facing summary lines.  Stamps the global
+ * rejected-entries counter with whatever the restore loop
+ * accumulated, seeds the dirty-bit baseline so a
+ * load-then-immediate-exit cycle skips the redundant end-of-run
+ * save (the restore loop already populated each
+ * pool->generation from disk, so the live sum exactly reflects
+ * the just-loaded state), and emits the one-line summary plus
+ * the optional second line that fires only when at least one
+ * record was rejected.  The payload buffer is freed by the
+ * orchestrator before this helper runs so the success path
+ * holds no transient allocations during the output() calls.
+ */
+static void cmp_hints_load_file_finalize(const char *path,
+					 unsigned long loaded_entries,
+					 unsigned int populated_pools,
+					 unsigned long rejected)
+{
+	cmp_hints_load_rejected_entries = rejected;
+	cmp_hints_generation_at_last_save = cmp_hints_total_generation();
+	output(0, "cmp-hints: loaded %lu entries across %u syscalls from %s%s\n",
+	       loaded_entries, populated_pools, path,
+	       rejected ? " (rejected entries on warm-start: see counter)" : "");
+	if (rejected != 0)
+		output(0, "cmp-hints: %lu on-disk entries rejected by per-slot validation\n",
+		       rejected);
+}
+
 bool cmp_hints_load_file(const char *path)
 {
 	struct cmp_hints_file_header hdr;
@@ -1238,18 +1267,8 @@ bool cmp_hints_load_file(const char *path)
 					  &populated_pools, &rejected);
 
 	free(payload);
-	cmp_hints_load_rejected_entries = rejected;
-	/* Seed the dirty-bit baseline so a load-then-immediate-exit cycle
-	 * skips the redundant end-of-run save.  The load loop already restored
-	 * each pool->generation from disk, so the current sum exactly reflects
-	 * the just-loaded state. */
-	cmp_hints_generation_at_last_save = cmp_hints_total_generation();
-	output(0, "cmp-hints: loaded %lu entries across %u syscalls from %s%s\n",
-	       loaded_entries, populated_pools, path,
-	       rejected ? " (rejected entries on warm-start: see counter)" : "");
-	if (rejected != 0)
-		output(0, "cmp-hints: %lu on-disk entries rejected by per-slot validation\n",
-		       rejected);
+	cmp_hints_load_file_finalize(path, loaded_entries, populated_pools,
+				     rejected);
 	return true;
 }
 
