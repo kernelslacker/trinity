@@ -292,6 +292,40 @@ struct ublk_lifecycle_iter_ctx {
 	bool			fetch_in_flight;
 };
 
+/* Open /dev/ublk-control and stand up both io_urings.  Splits the two
+ * rings so teardown order is independent and the cancellation walker
+ * sees in-flight cmds parked on a sibling ring.  Two failure modes
+ * latch ns_unsupported_ublk for the rest of this child: ctrl-fd
+ * EPERM/ENOENT/ENXIO/EACCES (no CONFIG_BLK_DEV_UBLK, no
+ * CAP_SYS_ADMIN, or --dropprivs in effect) and ring_setup ENOSYS
+ * (io_uring absent).  Returns false on any setup failure -- caller
+ * jumps to teardown which honours the partial-up flags. */
+static bool ublk_lifecycle_iter_setup(struct ublk_lifecycle_iter_ctx *ctx)
+{
+	ctx->ctrl_fd = open("/dev/ublk-control", O_RDWR | O_CLOEXEC);
+	if (ctx->ctrl_fd < 0) {
+		if (errno == EPERM || errno == ENOENT || errno == ENXIO ||
+		    errno == EACCES) {
+			ns_unsupported_ublk = true;
+			__atomic_add_fetch(&shm->stats.ublk_lifecycle_eperm,
+					   1, __ATOMIC_RELAXED);
+		}
+		return false;
+	}
+
+	if (!ring_setup(&ctx->ctrl_ring, UBLK_LC_RING_DEPTH)) {
+		if (errno == ENOSYS)
+			ns_unsupported_ublk = true;
+		return false;
+	}
+	ctx->ctrl_ring_up = true;
+
+	if (!ring_setup(&ctx->io_ring, UBLK_LC_RING_DEPTH))
+		return false;
+	ctx->io_ring_up = true;
+	return true;
+}
+
 /* Reverse-order release of everything ublk_lifecycle stood up: close the
  * queue chrdev first so the IO-ring teardown's force-cancel sees no fresh
  * submissions, then both rings (io before ctrl so the ctrl ring outlives
@@ -332,27 +366,8 @@ bool ublk_lifecycle(struct childdata *child)
 	if (ns_unsupported_ublk)
 		return true;
 
-	ctx.ctrl_fd = open("/dev/ublk-control", O_RDWR | O_CLOEXEC);
-	if (ctx.ctrl_fd < 0) {
-		if (errno == EPERM || errno == ENOENT || errno == ENXIO ||
-		    errno == EACCES) {
-			ns_unsupported_ublk = true;
-			__atomic_add_fetch(&shm->stats.ublk_lifecycle_eperm,
-					   1, __ATOMIC_RELAXED);
-		}
+	if (!ublk_lifecycle_iter_setup(&ctx))
 		goto out;
-	}
-
-	if (!ring_setup(&ctx.ctrl_ring, UBLK_LC_RING_DEPTH)) {
-		if (errno == ENOSYS)
-			ns_unsupported_ublk = true;
-		goto out;
-	}
-	ctx.ctrl_ring_up = true;
-
-	if (!ring_setup(&ctx.io_ring, UBLK_LC_RING_DEPTH))
-		goto out;
-	ctx.io_ring_up = true;
 
 	/* ADD_DEV: kernel allocates dev_id, writes it back into info. */
 	memset(&info, 0, sizeof(info));
