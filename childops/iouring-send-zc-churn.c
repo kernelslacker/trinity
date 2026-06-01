@@ -666,6 +666,39 @@ static void iouring_send_zc_iter_submit(struct iouring_send_zc_iter_ctx *it)
 	}
 }
 
+/*
+ * RACE B: IORING_REGISTER_BUFFERS_UPDATE replacing slot 0 with a
+ * freshly-mmap'd page.  Issued before the io_uring_enter so any
+ * in-flight SQE has already latched onto the original io_mapped_ubuf;
+ * the update should refcount-protect the in-flight reference rather
+ * than redirect it.  The replacement mmap is stashed in the ctx so
+ * the shared teardown path can munmap it.
+ */
+static void iouring_send_zc_iter_race(struct iouring_send_zc_iter_ctx *it)
+{
+	struct io_uring_rsrc_update2 upd;
+
+	it->replacement = mmap(NULL, ZC_BUF_BYTES, PROT_READ | PROT_WRITE,
+			       MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE,
+			       -1, 0);
+	if (it->replacement == MAP_FAILED)
+		return;
+
+	memset(it->replacement, 0x5a, ZC_BUF_BYTES);
+	it->replacement_iov.iov_base = it->replacement;
+	it->replacement_iov.iov_len  = ZC_BUF_BYTES;
+
+	memset(&upd, 0, sizeof(upd));
+	upd.offset = 0;
+	upd.data   = (uint64_t)(uintptr_t)&it->replacement_iov;
+	upd.nr     = 1;
+
+	if (do_register(it->ring.fd, IORING_REGISTER_BUFFERS_UPDATE,
+			&upd, sizeof(upd)) >= 0)
+		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_update_race_ok,
+				   1, __ATOMIC_RELAXED);
+}
+
 /* One full sequence on a freshly-created ring + loopback TCP socket. */
 static void iter_one(const struct timespec *t_outer)
 {
@@ -696,30 +729,7 @@ static void iter_one(const struct timespec *t_outer)
 	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
 		goto out;
 
-	/* RACE B: BUFFERS_UPDATE replacing slot 0 with a freshly-mmap'd
-	 * page.  Issued before the io_uring_enter so the in-flight SQEs
-	 * have already latched onto the original io_mapped_ubuf -- the
-	 * update should refcount-protect the in-flight reference, not
-	 * redirect it. */
-	it.replacement = mmap(NULL, ZC_BUF_BYTES, PROT_READ | PROT_WRITE,
-			      MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
-	if (it.replacement != MAP_FAILED) {
-		struct io_uring_rsrc_update2 upd;
-
-		memset(it.replacement, 0x5a, ZC_BUF_BYTES);
-		it.replacement_iov.iov_base = it.replacement;
-		it.replacement_iov.iov_len  = ZC_BUF_BYTES;
-
-		memset(&upd, 0, sizeof(upd));
-		upd.offset = 0;
-		upd.data   = (uint64_t)(uintptr_t)&it.replacement_iov;
-		upd.nr     = 1;
-
-		if (do_register(it.ring.fd, IORING_REGISTER_BUFFERS_UPDATE,
-				&upd, sizeof(upd)) >= 0)
-			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_update_race_ok,
-					   1, __ATOMIC_RELAXED);
-	}
+	iouring_send_zc_iter_race(&it);
 
 	/* Drive the ring through submission + completion.  min_complete is
 	 * bounded by what we actually queued so a stuck completion can't
