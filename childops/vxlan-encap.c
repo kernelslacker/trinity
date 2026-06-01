@@ -460,6 +460,35 @@ static int build_dellink(struct nl_ctx *ctx, int ifindex)
 }
 
 /*
+ * Phase: per-child netns setup.  Unshares CLONE_NEWNET the first time
+ * through and best-effort modprobes the three tunnel modules so the
+ * subsequent RTM_NEWLINK has a chance of finding a registered
+ * rtnl_link_ops.  Latches ns_setup_failed if the unshare fails so the
+ * rest of the child's lifetime pays the EFAIL once.  Returns 0 on
+ * success; -1 means caller should return true without entering the
+ * goto-out cleanup.
+ */
+static int vxlan_encap_iter_setup_netns(void)
+{
+	if (ns_unshared)
+		return 0;
+
+	if (unshare(CLONE_NEWNET) < 0) {
+		ns_setup_failed = true;
+		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	ns_unshared = true;
+	/* Best-effort module loads; failures latch via the subsequent
+	 * NEWLINK probe rather than here. */
+	try_modprobe("vxlan");
+	try_modprobe("ip_gre");
+	try_modprobe("geneve");
+	return 0;
+}
+
+/*
  * Pick a starting kind that isn't latched off.  Returns TUN_NR if
  * every kind's latch is tripped — caller treats that as "all kinds
  * structurally unsupported, return cheaply".
@@ -502,20 +531,8 @@ bool vxlan_encap_churn(struct childdata *child)
 	if (ns_setup_failed)
 		return true;
 
-	if (!ns_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			ns_setup_failed = true;
-			__atomic_add_fetch(&shm->stats.vxlan_encap_churn_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-		ns_unshared = true;
-		/* Best-effort module loads; failures latch via the
-		 * subsequent NEWLINK probe rather than here. */
-		try_modprobe("vxlan");
-		try_modprobe("ip_gre");
-		try_modprobe("geneve");
-	}
+	if (vxlan_encap_iter_setup_netns() != 0)
+		return true;
 
 	kind = pick_kind();
 	if (kind == TUN_NR)
