@@ -807,6 +807,39 @@ static void flowtable_vlan_iter_race(unsigned int iter_idx,
 }
 
 /*
+ * Phase 5: per-iter teardown.  Reverses install() then setup() within
+ * the partial-state limits indicated by ctx flags, so any goto teardown
+ * along the way cleans up exactly what was created.
+ */
+static void
+flowtable_vlan_iter_teardown(struct nfnl_ctx *nf, struct nl_ctx *rtnl,
+			     const struct flowtable_vlan_iter_ctx *c)
+{
+	if (c->table_added) {
+		if (c->chain_added)
+			(void)build_nft_simple_del(nf, NFT_MSG_DELRULE, c->tab,
+						   "chain", NFTA_RULE_CHAIN,
+						   c->chain);
+		if (c->chain_added)
+			(void)build_nft_simple_del(nf, NFT_MSG_DELCHAIN, c->tab,
+						   "chain", NFTA_CHAIN_NAME,
+						   c->chain);
+		if (c->ft_added)
+			(void)build_nft_simple_del(nf, NFT_MSG_DELFLOWTABLE,
+						   c->tab, "ft",
+						   NFTA_FLOWTABLE_NAME, c->ft);
+		(void)build_nft_simple_del(nf, NFT_MSG_DELTABLE, c->tab,
+					   NULL, 0, NULL);
+	}
+	if (c->vla_added && c->vla_idx > 0)
+		(void)build_dellink(rtnl, c->vla_idx);
+	if (c->vlb_added && c->vlb_idx > 0)
+		(void)build_dellink(rtnl, c->vlb_idx);
+	if (c->veth_added && c->vp_a_idx > 0)
+		(void)build_dellink(rtnl, c->vp_a_idx);
+}
+
+/*
  * One full create / drive / race / teardown cycle.  Wall cap inherited
  * from the caller — every step short-circuits if FEV_WALL_CAP_NS has
  * been exceeded.
@@ -848,28 +881,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	flowtable_vlan_iter_race(iter_idx, &rtnl, &c);
 
 teardown:
-	if (c.table_added) {
-		if (c.chain_added)
-			(void)build_nft_simple_del(&nf, NFT_MSG_DELRULE, c.tab,
-						   "chain", NFTA_RULE_CHAIN,
-						   c.chain);
-		if (c.chain_added)
-			(void)build_nft_simple_del(&nf, NFT_MSG_DELCHAIN, c.tab,
-						   "chain", NFTA_CHAIN_NAME,
-						   c.chain);
-		if (c.ft_added)
-			(void)build_nft_simple_del(&nf, NFT_MSG_DELFLOWTABLE,
-						   c.tab, "ft",
-						   NFTA_FLOWTABLE_NAME, c.ft);
-		(void)build_nft_simple_del(&nf, NFT_MSG_DELTABLE, c.tab,
-					   NULL, 0, NULL);
-	}
-	if (c.vla_added && c.vla_idx > 0)
-		(void)build_dellink(&rtnl, c.vla_idx);
-	if (c.vlb_added && c.vlb_idx > 0)
-		(void)build_dellink(&rtnl, c.vlb_idx);
-	if (c.veth_added && c.vp_a_idx > 0)
-		(void)build_dellink(&rtnl, c.vp_a_idx);
+	flowtable_vlan_iter_teardown(&nf, &rtnl, &c);
 
 out:
 	nfnl_close(&nf);
