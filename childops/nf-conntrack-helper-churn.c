@@ -744,28 +744,20 @@ static void nfct_helper_iter_drive(struct nfct_helper_iter_ctx *ictx)
 }
 
 /*
- * One outer iteration: pick zone + helper, insert master conntrack +
- * expectation, drive a packet through, then run a small race burst
- * (delete / zone-swap / detach).  Returns true on every path; the
- * stats counters carry the per-step success signal.
+ * Phase: race burst.  BUDGETED inner loop alternating CT_DELETE in the
+ * master's zone, a zone-swap drive into alt_zone via SO_MARK, and a
+ * mid-flow helper detach (CT_NEW NLM_F_REPLACE without CTA_HELP).  Each
+ * step targets a distinct helper-lifecycle race window -- expectation
+ * walk vs delete, zone re-resolve under an in-flight RCU grace period,
+ * and __nf_ct_helper_destroy() while the expectation list may still
+ * hold an entry pointing at the helper extension.
  */
-static void iter_one(struct nfnl_ctx *ctx)
+static void nfct_helper_iter_race(struct nfct_helper_iter_ctx *ictx)
 {
-	struct nfct_helper_iter_ctx ictx = { .ctx = ctx };
-	int rc;
-	int drive_fd;
 	unsigned int races, r;
+	int drive_fd;
+	int rc;
 
-	if (nfct_helper_iter_pick(&ictx) < 0)
-		return;
-
-	nfct_helper_iter_attach(&ictx);
-	nfct_helper_iter_expect(&ictx);
-	nfct_helper_iter_drive(&ictx);
-
-	/* 5) Race burst: BUDGETED inner loop alternating delete /
-	 *    zone-swap / mid-flow detach.  Each step targets a distinct
-	 *    helper-lifecycle race window. */
 	races = BUDGETED(CHILD_OP_NF_CONNTRACK_HELPER, NFCT_RACE_ITERS_BASE);
 	if (races > NFCT_RACE_BUDGET)
 		races = NFCT_RACE_BUDGET;
@@ -775,8 +767,8 @@ static void iter_one(struct nfnl_ctx *ctx)
 	for (r = 0; r < races; r++) {
 		/* a) CT_DELETE in the master's zone -- races the helper's
 		 *    expectation walk. */
-		rc = build_ct_delete(ictx.ctx, ictx.zone, ictx.l4proto,
-				     ictx.sport, ictx.dport);
+		rc = build_ct_delete(ictx->ctx, ictx->zone, ictx->l4proto,
+				     ictx->sport, ictx->dport);
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_delete_ok,
 					   1, __ATOMIC_RELAXED);
@@ -785,8 +777,8 @@ static void iter_one(struct nfnl_ctx *ctx)
 		 *    SO_MARK.  Forces a re-resolve in alt_zone's hash slot
 		 *    while the prior delete may still be in-flight on the
 		 *    RCU grace period. */
-		drive_fd = loopback_drive(ictx.l4proto, ictx.dport,
-					  0xc0de0000U | (__u32)ictx.alt_zone);
+		drive_fd = loopback_drive(ictx->l4proto, ictx->dport,
+					  0xc0de0000U | (__u32)ictx->alt_zone);
 		if (drive_fd >= 0) {
 			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_zone_swap,
 					   1, __ATOMIC_RELAXED);
@@ -796,13 +788,32 @@ static void iter_one(struct nfnl_ctx *ctx)
 		/* c) Mid-flow helper detach: CT_NEW with NLM_F_REPLACE,
 		 *    no CTA_HELP.  Drives __nf_ct_helper_destroy() while
 		 *    the expectation list may still hold an entry. */
-		rc = build_ct_new(ictx.ctx, ictx.zone, ictx.l4proto,
-				  ictx.sport, ictx.dport,
+		rc = build_ct_new(ictx->ctx, ictx->zone, ictx->l4proto,
+				  ictx->sport, ictx->dport,
 				  NULL, NLM_F_REPLACE);
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_detach_ok,
 					   1, __ATOMIC_RELAXED);
 	}
+}
+
+/*
+ * One outer iteration: pick zone + helper, insert master conntrack +
+ * expectation, drive a packet through, then run a small race burst
+ * (delete / zone-swap / detach).  Returns true on every path; the
+ * stats counters carry the per-step success signal.
+ */
+static void iter_one(struct nfnl_ctx *ctx)
+{
+	struct nfct_helper_iter_ctx ictx = { .ctx = ctx };
+
+	if (nfct_helper_iter_pick(&ictx) < 0)
+		return;
+
+	nfct_helper_iter_attach(&ictx);
+	nfct_helper_iter_expect(&ictx);
+	nfct_helper_iter_drive(&ictx);
+	nfct_helper_iter_race(&ictx);
 }
 
 bool nf_conntrack_helper_churn(struct childdata *child)
