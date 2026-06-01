@@ -406,6 +406,33 @@ static int alg_recvmsg_iter_setup(struct alg_recvmsg_iter_ctx *ictx)
 }
 
 /*
+ * Phase 2: bind the parent socket to sa, accept the child fd, and arm
+ * SO_RCVTIMEO so a blocking recvmsg in the drive phase trips the
+ * 1-second wall instead of stalling the whole inner loop.  bind() /
+ * accept() failures bail to the orchestrator's out: which still closes
+ * parent_fd via teardown; on success child_fd is owned by the context
+ * and teardown closes both.  Returns 0 on success, -1 to bail.
+ */
+static int alg_recvmsg_iter_arm(struct alg_recvmsg_iter_ctx *ictx)
+{
+	struct timeval tv;
+
+	if (bind(ictx->parent_fd, (struct sockaddr *)&ictx->sa,
+		 sizeof(ictx->sa)) < 0)
+		return -1;
+
+	ictx->child_fd = accept(ictx->parent_fd, NULL, NULL);
+	if (ictx->child_fd < 0)
+		return -1;
+
+	tv.tv_sec = ARC_RECVMSG_TIMEO_S;
+	tv.tv_usec = 0;
+	(void)setsockopt(ictx->child_fd, SOL_SOCKET, SO_RCVTIMEO,
+			 &tv, sizeof(tv));
+	return 0;
+}
+
+/*
  * Close whichever fds the iteration actually opened.  Runs on every
  * exit path -- success and any early bail from setup or arm.  Both
  * fds default to -1 via the orchestrator's designated initialiser
@@ -427,25 +454,14 @@ static void iter_one(void)
 		.parent_fd = -1,
 		.child_fd = -1,
 	};
-	struct timeval tv;
 	unsigned char keybuf[ARC_KEY_MAX];
 	unsigned char ivbuf[ARC_IV_MAX];
 
 	if (alg_recvmsg_iter_setup(&ictx) != 0)
 		goto out;
 
-	if (bind(ictx.parent_fd, (struct sockaddr *)&ictx.sa,
-		 sizeof(ictx.sa)) < 0)
+	if (alg_recvmsg_iter_arm(&ictx) != 0)
 		goto out;
-
-	ictx.child_fd = accept(ictx.parent_fd, NULL, NULL);
-	if (ictx.child_fd < 0)
-		goto out;
-
-	tv.tv_sec = ARC_RECVMSG_TIMEO_S;
-	tv.tv_usec = 0;
-	(void)setsockopt(ictx.child_fd, SOL_SOCKET, SO_RCVTIMEO,
-			 &tv, sizeof(tv));
 
 	if (ONE_IN(2)) {
 		size_t klen = ONE_IN(8) ? 0 :
