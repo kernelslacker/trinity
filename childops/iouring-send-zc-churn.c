@@ -699,6 +699,42 @@ static void iouring_send_zc_iter_race(struct iouring_send_zc_iter_ctx *it)
 				   1, __ATOMIC_RELAXED);
 }
 
+/*
+ * Drive the ring through submit + completion, then run RACE A
+ * (IORING_UNREGISTER_BUFFERS while a SEND_ZC notif may still hold an
+ * rsrc_node ref against an imu_index) and harvest any deferred notif
+ * CQEs.  min_complete is bounded by what was actually queued so a
+ * stuck completion can't hang the loop.  Clears bufs_registered on
+ * successful unregister so the shared teardown doesn't repeat it.
+ */
+static void iouring_send_zc_iter_drive(struct iouring_send_zc_iter_ctx *it,
+				       const struct timespec *t_outer)
+{
+	int r;
+	unsigned int reaped;
+
+	r = do_enter(it->ring.fd, it->submitted, it->submitted,
+		     IORING_ENTER_GETEVENTS);
+	if (r >= 0) {
+		reaped = drain_cqes(&it->ring);
+		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_cqe_drained,
+				   (unsigned long)reaped, __ATOMIC_RELAXED);
+	}
+
+	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
+		return;
+
+	if (do_register(it->ring.fd, IORING_UNREGISTER_BUFFERS, NULL, 0) >= 0) {
+		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_unregister_race_ok,
+				   1, __ATOMIC_RELAXED);
+		it->bufs_registered = false;
+	}
+
+	reaped = drain_cqes(&it->ring);
+	__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_cqe_drained,
+			   (unsigned long)reaped, __ATOMIC_RELAXED);
+}
+
 /* One full sequence on a freshly-created ring + loopback TCP socket. */
 static void iter_one(const struct timespec *t_outer)
 {
@@ -730,48 +766,7 @@ static void iter_one(const struct timespec *t_outer)
 		goto out;
 
 	iouring_send_zc_iter_race(&it);
-
-	/* Drive the ring through submission + completion.  min_complete is
-	 * bounded by what we actually queued so a stuck completion can't
-	 * hang the loop; the deferred ZC notifs will land on a subsequent
-	 * drain pass after IORING_UNREGISTER_BUFFERS releases the rsrc_node
-	 * (or, on a buggy kernel, before -- which is the surface we want). */
-	{
-		int r;
-		unsigned int reaped;
-
-		r = do_enter(it.ring.fd, it.submitted, it.submitted,
-			     IORING_ENTER_GETEVENTS);
-		if (r >= 0) {
-			reaped = drain_cqes(&it.ring);
-			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_cqe_drained,
-					   (unsigned long)reaped,
-					   __ATOMIC_RELAXED);
-		}
-	}
-
-	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
-		goto out;
-
-	/* RACE A: UNREGISTER_BUFFERS while a SEND_ZC notif may still
-	 * reference an imu_index.  On a fixed kernel the notif's rsrc_node
-	 * ref keeps the table alive past the unregister; the bug surface
-	 * is the ordering window between the rsrc_node refcount drop and
-	 * the notif's deferred lookup. */
-	if (do_register(it.ring.fd, IORING_UNREGISTER_BUFFERS, NULL, 0) >= 0) {
-		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_unregister_race_ok,
-				   1, __ATOMIC_RELAXED);
-		it.bufs_registered = false;
-	}
-
-	/* Final drain to harvest any deferred notif CQEs that landed
-	 * after the unregister. */
-	{
-		unsigned int reaped = drain_cqes(&it.ring);
-
-		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_cqe_drained,
-				   (unsigned long)reaped, __ATOMIC_RELAXED);
-	}
+	iouring_send_zc_iter_drive(&it, t_outer);
 
 out:
 	if (it.bufs_registered)
