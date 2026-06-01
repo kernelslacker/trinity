@@ -491,6 +491,31 @@ static void reap_with_deadline(pid_t pid, struct timespec *deadline)
 	}
 }
 
+/*
+ * Anchor the caller's netns via /proc/self/ns/net then unshare into a
+ * fresh CLONE_NEWNET.  Returns the anchor fd on success, -1 on failure
+ * (with setup_failed bumped and the anchor fd closed if it was opened).
+ */
+static int v6pmtu_iter_enter_netns(void)
+{
+	int nsfd;
+
+	nsfd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
+	if (nsfd < 0) {
+		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	if (unshare(CLONE_NEWNET) < 0) {
+		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		(void)close(nsfd);
+		return -1;
+	}
+	return nsfd;
+}
+
 static void iter_one(void)
 {
 	int nsfd;
@@ -503,19 +528,9 @@ static void iter_one(void)
 	pid_t a, b;
 	struct timespec deadline;
 
-	nsfd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
-	if (nsfd < 0) {
-		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	nsfd = v6pmtu_iter_enter_netns();
+	if (nsfd < 0)
 		return;
-	}
-
-	if (unshare(CLONE_NEWNET) < 0) {
-		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		(void)close(nsfd);
-		return;
-	}
 
 	if (nl_open(&ctx, &opts) < 0) {
 		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
