@@ -433,6 +433,80 @@ static void warm_start_all(void)
 	}
 }
 
+/*
+ * Persist every cross-run coverage carrier (minicorpus, kcov bitmap,
+ * cmp-hints pool) on a graceful exit so the next run starts warm.
+ * Each carrier is independently gated by its own --no-*-warm-start
+ * flag, and each save is further conditioned on a clean shutdown
+ * reason -- saving from a poisoned shm could feed garbage back in on
+ * the next warm-start.  Periodic snapshot triggers cover the crash
+ * case; these end-of-run saves capture the trailing window of state
+ * that the periodic cadence had not yet flushed.
+ */
+static void persist_state_on_clean_exit(void)
+{
+	/*
+	 * Persist the minicorpus on graceful exit so the next run starts
+	 * warm.  Skip after a corruption or crash — saving from a poisoned
+	 * shm could feed garbage back in on restart.
+	 */
+	if (!no_warm_start) {
+		enum exit_reasons er =
+			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+
+		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
+		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
+			const char *path = warm_start_path ? warm_start_path
+							   : minicorpus_default_path();
+			if (path != NULL && minicorpus_save_file(path))
+				output(0, "minicorpus: persisted to %s\n", path);
+		}
+	}
+
+	/*
+	 * End-of-run kcov bitmap persistence.  Same clean-exit gate as the
+	 * minicorpus save -- a poisoned shm after a corruption-aborted run
+	 * could feed garbage back into the next warm-start, so
+	 * we skip the save unless the shutdown was clean.  The periodic
+	 * snapshot trigger covers crashes; this captures the trailing
+	 * window of edges that the periodic cadence had not yet flushed.
+	 */
+	if (!no_kcov_warm_start && kcov_shm != NULL) {
+		enum exit_reasons er =
+			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+
+		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
+		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
+			const char *kpath = kcov_bitmap_default_path();
+
+			if (kpath != NULL && kcov_bitmap_save_file(kpath))
+				output(0, "kcov-bitmap: persisted to %s\n", kpath);
+		}
+	}
+
+	/*
+	 * End-of-run cmp-hints pool persistence.  Same clean-exit gate
+	 * the kcov-bitmap save uses -- a poisoned shm after a corruption-
+	 * aborted run could feed garbage back into the next warm-start,
+	 * so we skip the save unless the shutdown was clean.  The
+	 * periodic snapshot trigger covers crashes; this captures the
+	 * trailing window of entries the periodic cadence had not yet
+	 * flushed.
+	 */
+	if (!no_cmp_hints_warm_start && cmp_hints_shm != NULL) {
+		enum exit_reasons er =
+			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+
+		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
+		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
+			const char *cpath = cmp_hints_default_path();
+
+			if (cpath != NULL && cmp_hints_save_file(cpath))
+				output(0, "cmp-hints: persisted to %s\n", cpath);
+		}
+	}
+}
+
 int main(int argc, char* argv[])
 {
 	int ret = EXIT_SUCCESS;
@@ -686,66 +760,7 @@ int main(int argc, char* argv[])
 	else
 		main_loop();
 
-	/*
-	 * Persist the minicorpus on graceful exit so the next run starts
-	 * warm.  Skip after a corruption or crash — saving from a poisoned
-	 * shm could feed garbage back in on restart.
-	 */
-	if (!no_warm_start) {
-		enum exit_reasons er =
-			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
-
-		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
-		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
-			const char *path = warm_start_path ? warm_start_path
-							   : minicorpus_default_path();
-			if (path != NULL && minicorpus_save_file(path))
-				output(0, "minicorpus: persisted to %s\n", path);
-		}
-	}
-
-	/*
-	 * End-of-run kcov bitmap persistence.  Same clean-exit gate as the
-	 * minicorpus save -- a poisoned shm after a corruption-aborted run
-	 * could feed garbage back into the next warm-start, so
-	 * we skip the save unless the shutdown was clean.  The periodic
-	 * snapshot trigger covers crashes; this captures the trailing
-	 * window of edges that the periodic cadence had not yet flushed.
-	 */
-	if (!no_kcov_warm_start && kcov_shm != NULL) {
-		enum exit_reasons er =
-			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
-
-		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
-		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
-			const char *kpath = kcov_bitmap_default_path();
-
-			if (kpath != NULL && kcov_bitmap_save_file(kpath))
-				output(0, "kcov-bitmap: persisted to %s\n", kpath);
-		}
-	}
-
-	/*
-	 * End-of-run cmp-hints pool persistence.  Same clean-exit gate
-	 * the kcov-bitmap save uses -- a poisoned shm after a corruption-
-	 * aborted run could feed garbage back into the next warm-start,
-	 * so we skip the save unless the shutdown was clean.  The
-	 * periodic snapshot trigger covers crashes; this captures the
-	 * trailing window of entries the periodic cadence had not yet
-	 * flushed.
-	 */
-	if (!no_cmp_hints_warm_start && cmp_hints_shm != NULL) {
-		enum exit_reasons er =
-			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
-
-		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
-		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
-			const char *cpath = cmp_hints_default_path();
-
-			if (cpath != NULL && cmp_hints_save_file(cpath))
-				output(0, "cmp-hints: persisted to %s\n", cpath);
-		}
-	}
+	persist_state_on_clean_exit();
 
 	destroy_global_objects();
 
