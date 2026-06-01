@@ -9,6 +9,7 @@
 
 void generic_sanitise(struct syscallentry *entry, struct syscallrecord *rec);
 void generic_free_arg(struct syscallentry *entry, struct syscallrecord *rec);
+void blanket_address_scrub(struct syscallentry *entry, struct syscallrecord *rec);
 
 unsigned long get_interesting_value(void);
 unsigned int get_interesting_32bit_value(void);

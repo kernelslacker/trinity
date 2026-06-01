@@ -1439,7 +1439,7 @@ static void snapshot_args(struct syscallentry *entry, struct syscallrecord *rec)
 	}
 }
 
-static void blanket_address_scrub(struct syscallentry *entry, struct syscallrecord *rec)
+void blanket_address_scrub(struct syscallentry *entry, struct syscallrecord *rec)
 {
 	uint8_t mask = entry->address_scrub_mask;
 
