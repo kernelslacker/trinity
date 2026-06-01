@@ -747,6 +747,26 @@ static void mld_source_iter_v6_race(struct mld_source_iter_v6_ctx *it)
 }
 
 /*
+ * Phase 5 (v6): free any bulk-filter buffer the race phase allocated,
+ * then close send_s + recv_s in iter_idx-randomised order so teardown
+ * isn't always recv-first.  Sentinel-aware on both fds and gf so the
+ * helper backs the teardown: success path; the out: short-circuit path
+ * keeps its own fixed-order cleanup inline (byte-exact with original).
+ */
+static void mld_source_iter_v6_teardown(struct mld_source_iter_v6_ctx *it)
+{
+	free(it->gf);
+	it->gf = NULL;
+	if ((it->iter_idx & 1U) == 0U) {
+		if (it->recv_s >= 0) { close(it->recv_s); it->recv_s = -1; }
+		if (it->send_s >= 0) { close(it->send_s); it->send_s = -1; }
+	} else {
+		if (it->send_s >= 0) { close(it->send_s); it->send_s = -1; }
+		if (it->recv_s >= 0) { close(it->recv_s); it->recv_s = -1; }
+	}
+}
+
+/*
  * IPv6 mirror of iter_one_v4.  Hits ip6_mc_source / ip6_mc_msfilter
  * (net/ipv6/mcast.c) instead of the v4 paths.  SSM group ff3e::42:salt.
  */
@@ -799,15 +819,7 @@ static void iter_one_v6(unsigned int iter_idx, const struct timespec *t_outer)
 	send_burst(it.send_s, 2);
 
 teardown:
-	free(it.gf);
-	it.gf = NULL;
-	if ((it.iter_idx & 1U) == 0U) {
-		if (it.recv_s >= 0) { close(it.recv_s); it.recv_s = -1; }
-		if (it.send_s >= 0) { close(it.send_s); it.send_s = -1; }
-	} else {
-		if (it.send_s >= 0) { close(it.send_s); it.send_s = -1; }
-		if (it.recv_s >= 0) { close(it.recv_s); it.recv_s = -1; }
-	}
+	mld_source_iter_v6_teardown(&it);
 	return;
 
 out:
