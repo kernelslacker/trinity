@@ -603,59 +603,38 @@ static int vxlan_encap_iter_build_link(struct vxlan_encap_iter_ctx *ctx)
 	return 0;
 }
 
-bool vxlan_encap_churn(struct childdata *child)
+/*
+ * Burst phase: open an AF_PACKET SOCK_RAW socket, bind it to the
+ * tunnel device's ifindex, then push BUDGETED+JITTER frames at it.
+ * Each send drives one trip through the encap-tx path
+ * (vxlan_xmit_one / geneve_xmit / ipgre_xmit, depending on kind);
+ * the DELLINK in teardown races against in-flight sends from the
+ * tail of this loop, which is the targeted teardown-vs-tx window.
+ * All sends are MSG_DONTWAIT so the inherited SIGALRM(1s) cap is
+ * never gated on socket-buffer backpressure.  The sockaddr_ll and
+ * packet buffer stay on the helper's stack — they are not read
+ * across helper boundaries, so they stay out of the iter ctx.
+ */
+static void vxlan_encap_iter_send_burst(struct vxlan_encap_iter_ctx *ctx)
 {
-	struct vxlan_encap_iter_ctx ctx = {
-		.nl = { .fd = -1 },
-		.raw = -1,
-	};
+	struct sockaddr_ll sll;
 	unsigned int iters;
 	unsigned int i;
 
-	(void)child;
+	ctx->raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC,
+			  htons(ETH_P_IP));
+	if (ctx->raw < 0)
+		return;
 
-	__atomic_add_fetch(&shm->stats.vxlan_encap_churn_runs, 1,
-			   __ATOMIC_RELAXED);
+	memset(&sll, 0, sizeof(sll));
+	sll.sll_family   = AF_PACKET;
+	sll.sll_protocol = htons(ETH_P_IP);
+	sll.sll_ifindex  = ctx->ifindex;
+	(void)bind(ctx->raw, (struct sockaddr *)&sll, sizeof(sll));
 
-	if (ns_setup_failed)
-		return true;
-
-	if (vxlan_encap_iter_setup_netns() != 0)
-		return true;
-
-	ctx.kind = pick_kind();
-	if (ctx.kind == TUN_NR)
-		return true;
-
-	if (vxlan_encap_iter_open_ctx(&ctx) != 0)
-		return true;
-
-	if (vxlan_encap_iter_build_link(&ctx) != 0)
-		goto out;
-
-	ctx.raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_IP));
-	if (ctx.raw < 0)
-		goto out;
-
-	{
-		struct sockaddr_ll sll;
-
-		memset(&sll, 0, sizeof(sll));
-		sll.sll_family   = AF_PACKET;
-		sll.sll_protocol = htons(ETH_P_IP);
-		sll.sll_ifindex  = ctx.ifindex;
-		(void)bind(ctx.raw, (struct sockaddr *)&sll, sizeof(sll));
-	}
-
-	/* Per-iteration packet burst.  Each send drives one trip
-	 * through the encap-tx path (vxlan_xmit_one / geneve_xmit /
-	 * ipgre_xmit, depending on kind).  The DELLINK below races
-	 * against in-flight sends from the tail of this loop — that's
-	 * the targeted teardown-vs-tx window. */
 	iters = BUDGETED(CHILD_OP_VXLAN_ENCAP_CHURN,
 			 JITTER_RANGE(VXLAN_PACKET_BASE));
 	for (i = 0; i < iters; i++) {
-		struct sockaddr_ll sll;
 		unsigned char pkt[128];
 		struct iphdr *iph;
 		ssize_t n;
@@ -680,15 +659,46 @@ bool vxlan_encap_churn(struct childdata *child)
 		memset(&sll, 0, sizeof(sll));
 		sll.sll_family   = AF_PACKET;
 		sll.sll_protocol = htons(ETH_P_IP);
-		sll.sll_ifindex  = ctx.ifindex;
+		sll.sll_ifindex  = ctx->ifindex;
 		sll.sll_halen    = 6;
 
-		n = sendto(ctx.raw, pkt, pkt_len, MSG_DONTWAIT,
+		n = sendto(ctx->raw, pkt, pkt_len, MSG_DONTWAIT,
 			   (struct sockaddr *)&sll, sizeof(sll));
 		if (n > 0)
 			__atomic_add_fetch(&shm->stats.vxlan_encap_churn_packet_sent_ok,
 					   1, __ATOMIC_RELAXED);
 	}
+}
+
+bool vxlan_encap_churn(struct childdata *child)
+{
+	struct vxlan_encap_iter_ctx ctx = {
+		.nl = { .fd = -1 },
+		.raw = -1,
+	};
+
+	(void)child;
+
+	__atomic_add_fetch(&shm->stats.vxlan_encap_churn_runs, 1,
+			   __ATOMIC_RELAXED);
+
+	if (ns_setup_failed)
+		return true;
+
+	if (vxlan_encap_iter_setup_netns() != 0)
+		return true;
+
+	ctx.kind = pick_kind();
+	if (ctx.kind == TUN_NR)
+		return true;
+
+	if (vxlan_encap_iter_open_ctx(&ctx) != 0)
+		return true;
+
+	if (vxlan_encap_iter_build_link(&ctx) != 0)
+		goto out;
+
+	vxlan_encap_iter_send_burst(&ctx);
 
 out:
 	if (ctx.raw >= 0)
