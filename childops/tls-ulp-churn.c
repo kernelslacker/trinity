@@ -387,59 +387,28 @@ static void tls_ulp_churn_iter_initial_traffic(int s)
 	}
 }
 
-bool tls_ulp_churn(struct childdata *child)
+/* Step 7: rekey burst.  Each iteration installs TLS_TX with a fresh
+ * urandom-keyed cinfo and pushes a small send through the just-rotated
+ * cipher state; 1-in-8 iterations also shrink SNDBUF and replay the
+ * splice path against the rotated key to drive the strparser-on-rekey +
+ * tls_sw_splice_eof back-pressure edge.  Iter count is JITTER+BUDGETED
+ * around ULP_CHURN_ITERS_BASE; the wall-clock cap fires inline against
+ * @t0 whenever the loop spins past STORM_BUDGET_NS regardless of iter
+ * count.  Returns void: failed rekey is itself an exercised reject edge
+ * (kTLS historically returned EBUSY for in-place TX re-init) so neither
+ * outcome triggers a caller-side branch. */
+static void tls_ulp_churn_iter_rekey_burst(int s, unsigned short version,
+					   const struct timespec *t0)
 {
 	struct tls12_crypto_info_aes_gcm_128 cinfo;
 	unsigned char payload[64];
-	unsigned char rxbuf[256];
-	struct timespec t0;
-	pid_t acceptor = -1;
-	int s = -1;
-	unsigned short version;
-	unsigned int iters;
-	unsigned int i;
+	unsigned int iters, i;
 	int rc;
 
-	(void)child;
-
-	__atomic_add_fetch(&shm->stats.tls_ulp_churn_runs, 1, __ATOMIC_RELAXED);
-
-	if (ns_unsupported_tls_ulp || ns_unsupported_tls_tx ||
-	    ns_unsupported_aes_gcm_128) {
-		__atomic_add_fetch(&shm->stats.tls_ulp_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return true;
-	}
-
-	if (clock_gettime(CLOCK_MONOTONIC, &t0) < 0) {
-		t0.tv_sec = 0;
-		t0.tv_nsec = 0;
-	}
-
-	s = open_loopback_pair(&acceptor);
-	if (s < 0) {
-		__atomic_add_fetch(&shm->stats.tls_ulp_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return true;
-	}
-
-	if (tls_ulp_churn_iter_install_tls_ulp(s) != 0)
-		goto out;
-
-	if (tls_ulp_churn_iter_install_keys(s, &version) != 0)
-		goto out;
-
-	tls_ulp_churn_iter_initial_traffic(s);
-
-	/* Step 7: rekey burst.  Each iteration installs TLS_TX with a
-	 * fresh urandom key and pushes a small send through the just-
-	 * rotated cipher state.  Iter count is jittered + budgeted; the
-	 * wall-clock cap fires if the loop spins past STORM_BUDGET_NS
-	 * regardless of iter count. */
 	iters = BUDGETED(CHILD_OP_TLS_ULP_CHURN,
 			 JITTER_RANGE(ULP_CHURN_ITERS_BASE));
 	for (i = 0; i < iters; i++) {
-		if (ns_since(&t0) >= STORM_BUDGET_NS)
+		if (ns_since(t0) >= STORM_BUDGET_NS)
 			break;
 
 		fill_cinfo_aes_gcm_128(&cinfo, version);
@@ -494,6 +463,48 @@ bool tls_ulp_churn(struct childdata *child)
 			}
 		}
 	}
+}
+
+bool tls_ulp_churn(struct childdata *child)
+{
+	unsigned char rxbuf[256];
+	struct timespec t0;
+	pid_t acceptor = -1;
+	int s = -1;
+	unsigned short version;
+
+	(void)child;
+
+	__atomic_add_fetch(&shm->stats.tls_ulp_churn_runs, 1, __ATOMIC_RELAXED);
+
+	if (ns_unsupported_tls_ulp || ns_unsupported_tls_tx ||
+	    ns_unsupported_aes_gcm_128) {
+		__atomic_add_fetch(&shm->stats.tls_ulp_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+
+	if (clock_gettime(CLOCK_MONOTONIC, &t0) < 0) {
+		t0.tv_sec = 0;
+		t0.tv_nsec = 0;
+	}
+
+	s = open_loopback_pair(&acceptor);
+	if (s < 0) {
+		__atomic_add_fetch(&shm->stats.tls_ulp_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+
+	if (tls_ulp_churn_iter_install_tls_ulp(s) != 0)
+		goto out;
+
+	if (tls_ulp_churn_iter_install_keys(s, &version) != 0)
+		goto out;
+
+	tls_ulp_churn_iter_initial_traffic(s);
+
+	tls_ulp_churn_iter_rekey_burst(s, version, &t0);
 
 	/* Step 8: recv whatever the acceptor managed to send back (it
 	 * doesn't, but recv()ing on the TLS-armed RX path drives
