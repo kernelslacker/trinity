@@ -774,6 +774,37 @@ static void init_pre_fork(void)
 	shared_bitmap_self_check();
 }
 
+/*
+ * One-shot discovery passes that walk large directory trees or
+ * probe per-bit input significance.  Both run in the parent before
+ * fork so children inherit the results via COW.  procfs_writer_init
+ * unconditionally populates the writable-procfs path pool;
+ * --effector-map is a calibration-only mode that probes per-bit
+ * significance under KCOV and then exits via the out: cleanup path,
+ * which is why this helper returns a "should main() continue?"
+ * boolean rather than threading further phase state.
+ */
+static bool run_oneshot_passes(void)
+{
+	procfs_writer_init();
+
+	/*
+	 * --effector-map: one-shot calibration pass that probes per-bit
+	 * input significance under KCOV and exits.  Runs after open_fds
+	 * so fill_arg() has the full fd, address, and pid pools available,
+	 * but before warm-start so the calibration
+	 * baseline isn't biased by a replayed corpus snapshot (the
+	 * calibration path itself bypasses minicorpus_replay; skipping
+	 * warm-start here also avoids loading a corpus we will not use).
+	 */
+	if (do_effector_map) {
+		(void)effector_map_calibrate();
+		return false;
+	}
+
+	return true;
+}
+
 int main(int argc, char* argv[])
 {
 	int ret = EXIT_SUCCESS;
@@ -840,26 +871,8 @@ int main(int argc, char* argv[])
 
 	init_pre_fork();
 
-	/*
-	 * One-shot childop discovery passes that walk large directory trees.
-	 * Doing them in the parent before fork lets all children inherit the
-	 * results via COW instead of repeating the walk per child.
-	 */
-	procfs_writer_init();
-
-	/*
-	 * --effector-map: one-shot calibration pass that probes per-bit
-	 * input significance under KCOV and exits.  Runs after open_fds
-	 * so fill_arg() has the full fd, address, and pid pools available,
-	 * but before warm-start so the calibration
-	 * baseline isn't biased by a replayed corpus snapshot (the
-	 * calibration path itself bypasses minicorpus_replay; skipping
-	 * warm-start here also avoids loading a corpus we will not use).
-	 */
-	if (do_effector_map) {
-		(void)effector_map_calibrate();
+	if (!run_oneshot_passes())
 		goto out;
-	}
 
 	warm_start_all();
 
