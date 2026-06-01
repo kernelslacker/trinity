@@ -515,12 +515,35 @@ static void msg_zerocopy_iter_unmap_resend(int s, void **pages_inout,
 	}
 }
 
+/*
+ * Phase 4: soft teardown of the per-iter zerocopy state -- toggle
+ * SO_ZEROCOPY back off mid-flight (Step 8: disable-with-pending-notifs
+ * is the historically fragile sk_zckey reset edge), drain anything
+ * still queued so the close() doesn't have to walk a deep error queue
+ * (and so the post-shutdown sk_error_queue purge path runs against a
+ * clean queue at least sometimes), then shutdown(SHUT_RDWR) (Step 9:
+ * forces tcp_close through tcp_disconnect, historically buggy against
+ * pending zerocopy completions).  Best-effort throughout; the attempt
+ * is the coverage.
+ */
+static void msg_zerocopy_iter_teardown(int s)
+{
+	int zero = 0;
+
+	if (setsockopt(s, SOL_SOCKET, SO_ZEROCOPY, &zero, sizeof(zero)) == 0)
+		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_sndzc_disable_ok,
+				   1, __ATOMIC_RELAXED);
+
+	drain_errqueue(s);
+
+	(void)shutdown(s, SHUT_RDWR);
+}
+
 /* One full sequence on a freshly-created loopback TCP socket. */
 static void iter_one(const struct timespec *t_outer)
 {
 	pid_t acceptor = -1;
 	int s = -1;
-	int zero = 0;
 	void *pages = MAP_FAILED;
 	unsigned int sent_count = 0;
 
@@ -553,26 +576,7 @@ static void iter_one(const struct timespec *t_outer)
 
 	msg_zerocopy_iter_unmap_resend(s, &pages, sent_count);
 
-	/* Step 8: setsockopt(SO_ZEROCOPY, 0) mid-flight -- toggle off
-	 * while completion notifications may still be pending on the
-	 * error queue.  The disable-with-pending-notifs edge has been
-	 * historically buggy in sk_zckey reset paths.  Best-effort:
-	 * the kernel may reject the toggle on some versions, but the
-	 * attempt itself is the coverage. */
-	if (setsockopt(s, SOL_SOCKET, SO_ZEROCOPY, &zero, sizeof(zero)) == 0)
-		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_sndzc_disable_ok,
-				   1, __ATOMIC_RELAXED);
-
-	/* Drain any remaining notifications post-toggle so the close()
-	 * doesn't have to walk a deep error queue (and so the post-
-	 * shutdown sk_error_queue purge path -- another historically
-	 * fragile edge -- runs against a clean queue at least sometimes). */
-	drain_errqueue(s);
-
-	/* Step 9: shutdown(SHUT_RDWR); close().  Shutdown forces the
-	 * tcp_close path through tcp_disconnect which historically had
-	 * an interaction bug with pending zerocopy completions. */
-	(void)shutdown(s, SHUT_RDWR);
+	msg_zerocopy_iter_teardown(s);
 
 out:
 	if (pages != MAP_FAILED)
