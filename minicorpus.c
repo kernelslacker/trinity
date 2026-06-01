@@ -880,30 +880,63 @@ bool minicorpus_replay(struct syscallrecord *rec)
 			return false;
 	}
 
-	ring_lock(ring);
+	if (cmp_burst_active) {
+		/* Burst path stays locked for this commit.  The K_RECENT
+		 * slot math depends on a joint (head, count) snapshot,
+		 * which is delicate against the writer's two-step publish;
+		 * step 4 of the lockless conversion handles it. */
+		ring_lock(ring);
 
-	if (ring->count == 0) {
+		if (ring->count == 0) {
+			ring_unlock(ring);
+			return false;
+		}
+
+		/* Slot pick inside the burst.  With at least K_RECENT
+		 * entries: uniform over the K_RECENT newest slots,
+		 * addressing (head - K_RECENT, head).  Below the K_RECENT
+		 * threshold, fall back to uniform over ring->count. */
+		if (ring->count >= K_RECENT) {
+			slot = rnd_modulo_u32(K_RECENT);
+			slot = (ring->head - K_RECENT + slot) % CORPUS_RING_SIZE;
+			__atomic_fetch_add(&minicorpus_shm->cmp_rising_replay_picks,
+					   1UL, __ATOMIC_RELAXED);
+		} else {
+			slot = rnd_modulo_u32(ring->count);
+			/* The ring is written at head and wraps, so the
+			 * oldest valid entry starts at (head - count) mod
+			 * CORPUS_RING_SIZE. */
+			slot = (ring->head - ring->count + slot) % CORPUS_RING_SIZE;
+		}
+		snapshot = ring->entries[slot];
+
 		ring_unlock(ring);
-		return false;
-	}
-
-	/* Slot pick.  Default: uniform over ring->count.  Inside the
-	 * burst with at least K_RECENT entries: uniform over the K_RECENT
-	 * newest slots, addressing (head - K_RECENT, head). */
-	if (cmp_burst_active && ring->count >= K_RECENT) {
-		slot = rnd_modulo_u32(K_RECENT);
-		slot = (ring->head - K_RECENT + slot) % CORPUS_RING_SIZE;
-		__atomic_fetch_add(&minicorpus_shm->cmp_rising_replay_picks,
-				   1UL, __ATOMIC_RELAXED);
 	} else {
-		slot = rnd_modulo_u32(ring->count);
-		/* The ring is written at head and wraps, so the oldest valid
-		 * entry starts at (head - count) mod CORPUS_RING_SIZE. */
-		slot = (ring->head - ring->count + slot) % CORPUS_RING_SIZE;
-	}
-	snapshot = ring->entries[slot];
+		/* Common path: uniform over count, lockless.  The writer
+		 * publishes count BEFORE head with release semantics, so
+		 * an acquire-load on count pairs with the entry stores
+		 * that preceded the writer's count bump.  The uniform-
+		 * over-count slot pick doesn't reference head, so count
+		 * is the only synchronisation edge we need.
+		 *
+		 * The struct-copy below is the atomic-from-fuzzer-
+		 * perspective snapshot.  A torn read during a writer's
+		 * slot-publish gives a 50-50 mix of two entries; the
+		 * num_args validator post-copy catches the only
+		 * consequential damage shape -- downstream args[i] reads
+		 * going off-array.  Per the design doc this is no worse
+		 * than the mutation noise the fuzzer applies to its other
+		 * ~75%+ of iterations, so skip with no retry. */
+		unsigned int count = __atomic_load_n(&ring->count,
+						     __ATOMIC_ACQUIRE);
 
-	ring_unlock(ring);
+		if (count == 0)
+			return false;
+		slot = rnd_modulo_u32(count);
+		snapshot = ring->entries[slot];
+		if (snapshot.num_args < 1 || snapshot.num_args > 6)
+			return false;
+	}
 
 	entry = get_syscall_entry(nr, rec->do32bit);
 	if (entry == NULL)
