@@ -3804,25 +3804,8 @@ static void dump_stats_fuzzer_subsystems(void)
 	}
 }
 
-void dump_stats(void)
+static void dump_stats_corruption_and_pool(void)
 {
-	unsigned int i;
-
-	if (stats_json) {
-		dump_stats_json();
-		return;
-	}
-
-	dump_stats_runtime_header();
-
-	dump_stats_per_syscall_tables();
-
-	dump_stats_fd_tracking();
-
-	dump_stats_oracle_anomalies();
-
-	dump_stats_fuzzer_subsystems();
-
 	if (shm->stats.fd_event_ring_corrupted)
 		stat_row("corruption", "fd_event_ring_noncanon", shm->stats.fd_event_ring_corrupted);
 	if (shm->stats.fd_event_ring_overwritten)
@@ -3925,6 +3908,28 @@ void dump_stats(void)
 	if (shm->stats.pagecache_canary_corrupt_caught)
 		stat_row("oracle", "pagecache_canary_corrupt_caught",
 			 shm->stats.pagecache_canary_corrupt_caught);
+}
+
+void dump_stats(void)
+{
+	unsigned int i;
+
+	if (stats_json) {
+		dump_stats_json();
+		return;
+	}
+
+	dump_stats_runtime_header();
+
+	dump_stats_per_syscall_tables();
+
+	dump_stats_fd_tracking();
+
+	dump_stats_oracle_anomalies();
+
+	dump_stats_fuzzer_subsystems();
+
+	dump_stats_corruption_and_pool();
 
 	{
 		unsigned int op;
