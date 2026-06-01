@@ -727,6 +727,38 @@ static int bridge_vlan_iter_setup(struct bridge_vlan_iter_ctx *it,
 }
 
 /*
+ * Stand up the VLAN configuration on v0a: range add covering
+ * vid_base..range_end (drives the br_vlan_add range path), then a
+ * single PVID add at pvid (the vid the AF_PACKET sender will tag
+ * frames with).  Finishes by bringing the bridge and every veth end
+ * IFF_UP so ingress can flow through the freshly-populated per-port
+ * vlan group.  Best-effort: every netlink is fire-and-forget with
+ * its own stats bump on accept, no early-out.
+ */
+static void bridge_vlan_iter_add_vlan(struct bridge_vlan_iter_ctx *it)
+{
+	/* Range add of vid_base..range_end on v0a. */
+	if (it->v0a_idx > 0) {
+		if (build_vlan_info(&it->nl, RTM_SETLINK, it->v0a_idx,
+				    it->vid_base, it->range_end,
+				    true, false) == 0)
+			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_add_ok,
+					   1, __ATOMIC_RELAXED);
+		/* Single PVID add at pvid. */
+		if (build_vlan_info(&it->nl, RTM_SETLINK, it->v0a_idx,
+				    it->pvid, 0, false, true) == 0)
+			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_add_ok,
+					   1, __ATOMIC_RELAXED);
+	}
+
+	(void)build_setlink_up(&it->nl, it->br_idx);
+	if (it->v0a_idx > 0) (void)build_setlink_up(&it->nl, it->v0a_idx);
+	if (it->v0b_idx > 0) (void)build_setlink_up(&it->nl, it->v0b_idx);
+	if (it->v1a_idx > 0) (void)build_setlink_up(&it->nl, it->v1a_idx);
+	if (it->v1b_idx > 0) (void)build_setlink_up(&it->nl, it->v1b_idx);
+}
+
+/*
  * One full create / load / race / teardown cycle on a freshly-named
  * bridge + 2 veth pairs.  Wall-clock cap inherited from the caller.
  */
@@ -746,24 +778,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	if (bridge_vlan_iter_setup(&it, iter_idx) != 0)
 		goto out;
 
-	/* Range add of vid_base..range_end on v0a. */
-	if (it.v0a_idx > 0) {
-		if (build_vlan_info(&it.nl, RTM_SETLINK, it.v0a_idx,
-				    it.vid_base, it.range_end, true, false) == 0)
-			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_add_ok,
-					   1, __ATOMIC_RELAXED);
-		/* Single PVID add at pvid. */
-		if (build_vlan_info(&it.nl, RTM_SETLINK, it.v0a_idx,
-				    it.pvid, 0, false, true) == 0)
-			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_add_ok,
-					   1, __ATOMIC_RELAXED);
-	}
-
-	(void)build_setlink_up(&it.nl, it.br_idx);
-	if (it.v0a_idx > 0) (void)build_setlink_up(&it.nl, it.v0a_idx);
-	if (it.v0b_idx > 0) (void)build_setlink_up(&it.nl, it.v0b_idx);
-	if (it.v1a_idx > 0) (void)build_setlink_up(&it.nl, it.v1a_idx);
-	if (it.v1b_idx > 0) (void)build_setlink_up(&it.nl, it.v1b_idx);
+	bridge_vlan_iter_add_vlan(&it);
 
 	if (it.v0b_idx > 0) {
 		it.raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC,
