@@ -577,86 +577,122 @@ out:
 }
 
 /*
+ * Per-iteration scratch carried across the mld_source_iter_v6_<phase>
+ * helpers.  v6 mirror of struct igmp_source_iter_v4_ctx -- kept as a
+ * distinct type with a distinct prefix so a future reader cannot mis-
+ * route a v4 helper into a v6 caller (and vice versa) at the call
+ * site.  Sentinel values (-1 / NULL) on the fds and gf.
+ */
+struct mld_source_iter_v6_ctx {
+	int			send_s;
+	int			recv_s;
+	struct in6_addr		grp_v6;
+	struct in6_addr		src_a_v6;
+	struct in6_addr		src_b_v6;
+	struct group_source_req	gsr_a;
+	struct group_source_req	gsr_b;
+	struct group_filter    *gf;
+	unsigned int		iter_idx;
+	unsigned int		salt;
+};
+
+/*
+ * Phase 1 (v6): open the connected SOCK_DGRAM sender on AF_INET6,
+ * apply 100 ms SO_{RCV,SND}TIMEO, and connect() to the MLDv2 group:port
+ * (ff3e::42:salt).  Returns -1 on socket/connect failure; caller routes
+ * to out: so the (possibly opened) send_s lands in the shared cleanup.
+ */
+static int mld_source_iter_v6_setup_send(struct mld_source_iter_v6_ctx *it)
+{
+	struct sockaddr_in6 addr;
+
+	it->send_s = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+	if (it->send_s < 0) {
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	apply_timeouts(it->send_s);
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sin6_family = AF_INET6;
+	addr.sin6_port   = htons(IMC_PORT);
+	memcpy(&addr.sin6_addr, &it->grp_v6, sizeof(it->grp_v6));
+	if (connect(it->send_s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	return 0;
+}
+
+/*
  * IPv6 mirror of iter_one_v4.  Hits ip6_mc_source / ip6_mc_msfilter
  * (net/ipv6/mcast.c) instead of the v4 paths.  SSM group ff3e::42:salt.
  */
 static void iter_one_v6(unsigned int iter_idx, const struct timespec *t_outer)
 {
-	int send_s = -1, recv_s = -1;
+	struct mld_source_iter_v6_ctx it = {
+		.send_s   = -1,
+		.recv_s   = -1,
+		.gf       = NULL,
+		.iter_idx = iter_idx,
+		.salt     = (unsigned int)(rand32() & 0xffu),
+	};
 	struct sockaddr_in6 addr;
-	struct in6_addr grp_v6;
-	struct in6_addr src_a_v6, src_b_v6;
-	struct group_source_req gsr_a, gsr_b;
-	struct group_filter *gf = NULL;
-	int yes = 1;
 	unsigned int race_letter = (iter_idx >> 1) & 3U;
-	unsigned int salt = (unsigned int)(rand32() & 0xffu);
+	int yes = 1;
 	unsigned int nsrc;
 	int rc;
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
 		return;
 
-	memset(&grp_v6, 0, sizeof(grp_v6));
-	grp_v6.s6_addr[0]  = 0xff;
-	grp_v6.s6_addr[1]  = 0x3e;
-	grp_v6.s6_addr[12] = 0x00;
-	grp_v6.s6_addr[13] = 0x42;
-	grp_v6.s6_addr[14] = (unsigned char)((salt >> 8) & 0xff);
-	grp_v6.s6_addr[15] = (unsigned char)(salt & 0xff);
+	memset(&it.grp_v6, 0, sizeof(it.grp_v6));
+	it.grp_v6.s6_addr[0]  = 0xff;
+	it.grp_v6.s6_addr[1]  = 0x3e;
+	it.grp_v6.s6_addr[12] = 0x00;
+	it.grp_v6.s6_addr[13] = 0x42;
+	it.grp_v6.s6_addr[14] = (unsigned char)((it.salt >> 8) & 0xff);
+	it.grp_v6.s6_addr[15] = (unsigned char)(it.salt & 0xff);
 
-	memset(&src_a_v6, 0, sizeof(src_a_v6));
-	src_a_v6.s6_addr[0]  = 0x20;
-	src_a_v6.s6_addr[1]  = 0x01;
-	src_a_v6.s6_addr[2]  = 0x0d;
-	src_a_v6.s6_addr[3]  = 0xb8;
-	src_a_v6.s6_addr[12] = (unsigned char)(salt & 0xff);
-	src_a_v6.s6_addr[15] = 0x02;
+	memset(&it.src_a_v6, 0, sizeof(it.src_a_v6));
+	it.src_a_v6.s6_addr[0]  = 0x20;
+	it.src_a_v6.s6_addr[1]  = 0x01;
+	it.src_a_v6.s6_addr[2]  = 0x0d;
+	it.src_a_v6.s6_addr[3]  = 0xb8;
+	it.src_a_v6.s6_addr[12] = (unsigned char)(it.salt & 0xff);
+	it.src_a_v6.s6_addr[15] = 0x02;
 
-	memcpy(&src_b_v6, &src_a_v6, sizeof(src_b_v6));
-	src_b_v6.s6_addr[15] = 0x03;
+	memcpy(&it.src_b_v6, &it.src_a_v6, sizeof(it.src_b_v6));
+	it.src_b_v6.s6_addr[15] = 0x03;
 
-	send_s = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
-	if (send_s < 0) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return;
-	}
-	apply_timeouts(send_s);
+	if (mld_source_iter_v6_setup_send(&it) != 0)
+		goto out;
 
-	memset(&addr, 0, sizeof(addr));
-	addr.sin6_family = AF_INET6;
-	addr.sin6_port   = htons(IMC_PORT);
-	memcpy(&addr.sin6_addr, &grp_v6, sizeof(grp_v6));
-	if (connect(send_s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+	it.recv_s = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+	if (it.recv_s < 0) {
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-
-	recv_s = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
-	if (recv_s < 0) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-	apply_timeouts(recv_s);
-	(void)setsockopt(recv_s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
-	(void)setsockopt(recv_s, IPPROTO_IPV6, IPV6_MULTICAST_LOOP,
+	apply_timeouts(it.recv_s);
+	(void)setsockopt(it.recv_s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+	(void)setsockopt(it.recv_s, IPPROTO_IPV6, IPV6_MULTICAST_LOOP,
 			 &yes, sizeof(yes));
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sin6_family = AF_INET6;
 	addr.sin6_port   = htons(IMC_PORT);
-	if (bind(recv_s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+	if (bind(it.recv_s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
 
-	fill_gsr_v6(&gsr_a, 0U, &grp_v6, &src_a_v6);
-	if (setsockopt(recv_s, IPPROTO_IPV6, MCAST_JOIN_SOURCE_GROUP,
-		       &gsr_a, sizeof(gsr_a)) < 0) {
+	fill_gsr_v6(&it.gsr_a, 0U, &it.grp_v6, &it.src_a_v6);
+	if (setsockopt(it.recv_s, IPPROTO_IPV6, MCAST_JOIN_SOURCE_GROUP,
+		       &it.gsr_a, sizeof(it.gsr_a)) < 0) {
 		int e = errno;
 
 		if (is_syscall_unsupported(e) || is_proto_family_unsupported(e))
@@ -668,36 +704,36 @@ static void iter_one_v6(unsigned int iter_idx, const struct timespec *t_outer)
 	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_join_ok,
 			   1, __ATOMIC_RELAXED);
 
-	fill_gsr_v6(&gsr_b, 0U, &grp_v6, &src_b_v6);
-	if (setsockopt(recv_s, IPPROTO_IPV6, MCAST_JOIN_SOURCE_GROUP,
-		       &gsr_b, sizeof(gsr_b)) == 0)
+	fill_gsr_v6(&it.gsr_b, 0U, &it.grp_v6, &it.src_b_v6);
+	if (setsockopt(it.recv_s, IPPROTO_IPV6, MCAST_JOIN_SOURCE_GROUP,
+		       &it.gsr_b, sizeof(it.gsr_b)) == 0)
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_join_ok,
 				   1, __ATOMIC_RELAXED);
 
-	send_burst(send_s, 2);
+	send_burst(it.send_s, 2);
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
 		goto teardown;
 
 	switch (race_letter) {
 	case 0:
-		if (setsockopt(recv_s, IPPROTO_IPV6, MCAST_LEAVE_SOURCE_GROUP,
-			       &gsr_a, sizeof(gsr_a)) == 0)
+		if (setsockopt(it.recv_s, IPPROTO_IPV6, MCAST_LEAVE_SOURCE_GROUP,
+			       &it.gsr_a, sizeof(it.gsr_a)) == 0)
 			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_leave_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 1:
-		if (setsockopt(recv_s, IPPROTO_IPV6, MCAST_BLOCK_SOURCE,
-			       &gsr_b, sizeof(gsr_b)) == 0)
+		if (setsockopt(it.recv_s, IPPROTO_IPV6, MCAST_BLOCK_SOURCE,
+			       &it.gsr_b, sizeof(it.gsr_b)) == 0)
 			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_block_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 2:
-		nsrc = rotate_filter_size(iter_idx);
-		gf = build_filter_v6(0U, &grp_v6, nsrc, salt);
-		if (gf) {
-			rc = setsockopt(recv_s, IPPROTO_IPV6, MCAST_MSFILTER,
-					gf, GROUP_FILTER_SIZE(nsrc));
+		nsrc = rotate_filter_size(it.iter_idx);
+		it.gf = build_filter_v6(0U, &it.grp_v6, nsrc, it.salt);
+		if (it.gf) {
+			rc = setsockopt(it.recv_s, IPPROTO_IPV6, MCAST_MSFILTER,
+					it.gf, GROUP_FILTER_SIZE(nsrc));
 			if (rc == 0)
 				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_msfilter_ok,
 						   1, __ATOMIC_RELAXED);
@@ -708,8 +744,8 @@ static void iter_one_v6(unsigned int iter_idx, const struct timespec *t_outer)
 			struct ipv6_mreq mreq;
 
 			memset(&mreq, 0, sizeof(mreq));
-			memcpy(&mreq.ipv6mr_multiaddr, &grp_v6, sizeof(grp_v6));
-			if (setsockopt(recv_s, IPPROTO_IPV6,
+			memcpy(&mreq.ipv6mr_multiaddr, &it.grp_v6, sizeof(it.grp_v6));
+			if (setsockopt(it.recv_s, IPPROTO_IPV6,
 				       IPV6_DROP_MEMBERSHIP,
 				       &mreq, sizeof(mreq)) == 0)
 				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_drop_ok,
@@ -718,26 +754,26 @@ static void iter_one_v6(unsigned int iter_idx, const struct timespec *t_outer)
 		break;
 	}
 
-	send_burst(send_s, 2);
+	send_burst(it.send_s, 2);
 
 teardown:
-	free(gf);
-	gf = NULL;
-	if ((iter_idx & 1U) == 0U) {
-		if (recv_s >= 0) { close(recv_s); recv_s = -1; }
-		if (send_s >= 0) { close(send_s); send_s = -1; }
+	free(it.gf);
+	it.gf = NULL;
+	if ((it.iter_idx & 1U) == 0U) {
+		if (it.recv_s >= 0) { close(it.recv_s); it.recv_s = -1; }
+		if (it.send_s >= 0) { close(it.send_s); it.send_s = -1; }
 	} else {
-		if (send_s >= 0) { close(send_s); send_s = -1; }
-		if (recv_s >= 0) { close(recv_s); recv_s = -1; }
+		if (it.send_s >= 0) { close(it.send_s); it.send_s = -1; }
+		if (it.recv_s >= 0) { close(it.recv_s); it.recv_s = -1; }
 	}
 	return;
 
 out:
-	free(gf);
-	if (send_s >= 0)
-		close(send_s);
-	if (recv_s >= 0)
-		close(recv_s);
+	free(it.gf);
+	if (it.send_s >= 0)
+		close(it.send_s);
+	if (it.recv_s >= 0)
+		close(it.recv_s);
 }
 
 bool igmp_mld_source_churn(struct childdata *child)
