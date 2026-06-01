@@ -355,6 +355,59 @@ static void vsock_transport_iter_send_burst(int cli, int srv,
 	(void)sent_count;
 }
 
+/*
+ * Steps 4/5/6 mid-flow races on the client socket.  Three back-to-back
+ * setsockopt / ioctl rotations against the in-flight loopback
+ * ringbuffer:
+ *
+ *   RACE A: SO_VM_SOCKETS_BUFFER_SIZE with a value picked uniformly in
+ *           [VS_BUFFER_SIZE_LO, VS_BUFFER_SIZE_HI] so each iteration
+ *           rotates the per-sock buffer size through both shrink and
+ *           grow paths.
+ *   RACE B: SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW (struct __kernel_timespec
+ *           assembled inline to avoid a header dependency) -- exercises
+ *           the timer-rearm path while the connection is established.
+ *   RACE C: IOCTL_VM_SOCKETS_GET_LOCAL_CID -- read-only on the kernel
+ *           side but takes the vsock transport rwlock, racing with the
+ *           in-flight setsockopt paths above.
+ *
+ * Best-effort: each op is fire-and-forget with its own stats bump on
+ * success; failures are silently dropped.
+ */
+static void vsock_transport_iter_race(int cli)
+{
+	uint64_t sz;
+	struct {
+		int64_t tv_sec;
+		int64_t tv_nsec;
+	} ts;
+	unsigned int cid = 0;
+
+	/* RACE A. */
+	sz = VS_BUFFER_SIZE_LO +
+	     rnd_modulo_u32(VS_BUFFER_SIZE_HI - VS_BUFFER_SIZE_LO + 1U);
+	if (setsockopt(cli, AF_VSOCK, SO_VM_SOCKETS_BUFFER_SIZE,
+		       &sz, sizeof(sz)) == 0)
+		__atomic_add_fetch(
+			&shm->stats.vsock_transport_churn_buffer_size_ok,
+			1, __ATOMIC_RELAXED);
+
+	/* RACE B. */
+	ts.tv_sec = 0;
+	ts.tv_nsec = (int64_t)(VS_CONNECT_TIMEO_US * 1000ULL);
+	if (setsockopt(cli, AF_VSOCK, SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW,
+		       &ts, sizeof(ts)) == 0)
+		__atomic_add_fetch(
+			&shm->stats.vsock_transport_churn_timeout_ok,
+			1, __ATOMIC_RELAXED);
+
+	/* RACE C. */
+	if (ioctl(cli, IOCTL_VM_SOCKETS_GET_LOCAL_CID, &cid) == 0)
+		__atomic_add_fetch(
+			&shm->stats.vsock_transport_churn_get_cid_ok,
+			1, __ATOMIC_RELAXED);
+}
+
 /* One full sequence on a freshly-created loopback vsock pair. */
 static void iter_one(const struct timespec *t_outer)
 {
@@ -373,50 +426,7 @@ static void iter_one(const struct timespec *t_outer)
 	if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
 		goto out;
 
-	/* Step 4: RACE A.  Rotate buffer size mid-flow.  Pick a value in
-	 * [VS_BUFFER_SIZE_LO, VS_BUFFER_SIZE_HI] so we exercise both
-	 * shrink and grow paths across iterations. */
-	{
-		uint64_t sz = VS_BUFFER_SIZE_LO +
-			      rnd_modulo_u32(VS_BUFFER_SIZE_HI - VS_BUFFER_SIZE_LO + 1U);
-
-		if (setsockopt(cli, AF_VSOCK, SO_VM_SOCKETS_BUFFER_SIZE,
-			       &sz, sizeof(sz)) == 0)
-			__atomic_add_fetch(
-				&shm->stats.vsock_transport_churn_buffer_size_ok,
-				1, __ATOMIC_RELAXED);
-	}
-
-	/* Step 5: RACE B.  Rotate connect timeout mid-flow.  The
-	 * NEW variant takes a struct __kernel_timespec (8+8 bytes); we
-	 * assemble it inline so we don't pull in a header dependency. */
-	{
-		struct {
-			int64_t tv_sec;
-			int64_t tv_nsec;
-		} ts;
-
-		ts.tv_sec = 0;
-		ts.tv_nsec = (int64_t)(VS_CONNECT_TIMEO_US * 1000ULL);
-		if (setsockopt(cli, AF_VSOCK,
-			       SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW,
-			       &ts, sizeof(ts)) == 0)
-			__atomic_add_fetch(
-				&shm->stats.vsock_transport_churn_timeout_ok,
-				1, __ATOMIC_RELAXED);
-	}
-
-	/* Step 6: RACE C.  Mid-flight local-cid query.  Read-only on the
-	 * kernel side but takes the vsock transport rwlock, racing with
-	 * the in-flight setsockopt paths. */
-	{
-		unsigned int cid = 0;
-
-		if (ioctl(cli, IOCTL_VM_SOCKETS_GET_LOCAL_CID, &cid) == 0)
-			__atomic_add_fetch(
-				&shm->stats.vsock_transport_churn_get_cid_ok,
-				1, __ATOMIC_RELAXED);
-	}
+	vsock_transport_iter_race(cli);
 
 	(void)shutdown(cli, SHUT_RDWR);
 	if (srv >= 0)
