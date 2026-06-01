@@ -387,13 +387,54 @@ static ssize_t zc_send_retry(int s, const void *pages, size_t len)
 	return r;
 }
 
+/*
+ * Phase 1: enable SO_ZEROCOPY on the freshly-created client socket and
+ * mmap the backing pages.  The setsockopt is the latch site -- on
+ * EOPNOTSUPP / ENOPROTOOPT / EPERM the platform can't reach the
+ * MSG_ZEROCOPY path at all and ns_unsupported_msg_zerocopy is set so
+ * subsequent invocations short-circuit.  MAP_POPULATE + the memset
+ * ensure the pages are physically present before the kernel tries to
+ * pin them, otherwise the first send merely demand-faults and the
+ * race window we want never opens.  Returns 0 on success with
+ * *pages_out set; -1 on failure (counters bumped here).
+ */
+static int msg_zerocopy_iter_setup(int s, void **pages_out)
+{
+	int one = 1;
+	void *pages;
+
+	if (setsockopt(s, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one)) < 0) {
+		if (errno == EOPNOTSUPP || errno == ENOPROTOOPT ||
+		    errno == EPERM)
+			ns_unsupported_msg_zerocopy = true;
+		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	pages = mmap(NULL, ZC_PAGE_BYTES, PROT_READ | PROT_WRITE,
+		     MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
+	if (pages == MAP_FAILED) {
+		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	/* Touch the pages so MAP_POPULATE didn't silently no-op on a
+	 * kernel that ignores the flag.  The write also makes the COW
+	 * fault settle before the kernel pins. */
+	memset(pages, 0xa5, ZC_PAGE_BYTES);
+
+	*pages_out = pages;
+	return 0;
+}
+
 /* One full sequence on a freshly-created loopback TCP socket. */
 static void iter_one(const struct timespec *t_outer)
 {
 	pid_t acceptor = -1;
 	int s = -1;
 	int rc;
-	int one = 1;
 	int zero = 0;
 	void *pages = MAP_FAILED;
 	void *saved_pages = NULL;
@@ -410,35 +451,8 @@ static void iter_one(const struct timespec *t_outer)
 		return;
 	}
 
-	/* Step 1 (continued): SO_ZEROCOPY=1.  This is the latch site --
-	 * EOPNOTSUPP / ENOPROTOOPT / EPERM here mean the platform can't
-	 * reach the MSG_ZEROCOPY path at all; latch off so subsequent
-	 * invocations short-circuit to setup_failed. */
-	if (setsockopt(s, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one)) < 0) {
-		if (errno == EOPNOTSUPP || errno == ENOPROTOOPT ||
-		    errno == EPERM)
-			ns_unsupported_msg_zerocopy = true;
-		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (msg_zerocopy_iter_setup(s, &pages) != 0)
 		goto out;
-	}
-
-	/* Step 3: backing pages.  MAP_POPULATE so they're present before
-	 * the kernel tries to pin them in tcp_sendmsg_locked's
-	 * MSG_ZEROCOPY init -- without it, the first send just
-	 * demand-faults and never reaches the page-pin race window. */
-	pages = mmap(NULL, ZC_PAGE_BYTES, PROT_READ | PROT_WRITE,
-		     MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
-	if (pages == MAP_FAILED) {
-		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-
-	/* Touch the pages so MAP_POPULATE didn't silently no-op on a
-	 * kernel that ignores the flag.  The write also makes the COW
-	 * fault settle before the kernel pins. */
-	memset(pages, 0xa5, ZC_PAGE_BYTES);
 
 	/* Step 4: inner ZC-send loop.  Each successful send queues a
 	 * SO_EE_ORIGIN_ZEROCOPY notification on sk_error_queue once
