@@ -324,6 +324,49 @@ static int tcp_ao_rotate_iter_setup_sockets(struct tcp_ao_rotate_iter_ctx *ctx)
 	return 0;
 }
 
+/*
+ * Phase 2: pick the AO algorithm for this invocation and install the
+ * initial sndid/rcvid=1 key on each side.  The listener-side call is
+ * the support gate: ENOPROTOOPT (no CONFIG_TCP_AO) or EPERM (no
+ * CAP_NET_ADMIN) latch ns_unsupported so siblings stop probing.  The
+ * client-side install reuses the same id pair with fresh random key
+ * bytes (the kernel verifies HMACs at handshake, not key equality at
+ * install).  Returns 0 on success or -1 if the iteration should bail
+ * to the out: cleanup path.
+ */
+static int tcp_ao_rotate_iter_install_keys(struct tcp_ao_rotate_iter_ctx *ctx)
+{
+	struct tcp_ao_add ao_add;
+	int rc;
+
+	ctx->alg = ao_algs[rnd_modulo_u32(NR_AO_ALGS)];
+
+	fill_ao_add(&ao_add, &ctx->cli_addr, 1, 1, true, ctx->alg);
+	rc = setsockopt(ctx->listener, IPPROTO_TCP, TCP_AO_ADD_KEY,
+			&ao_add, sizeof(ao_add));
+	if (rc < 0) {
+		if (errno == ENOPROTOOPT || errno == EPERM)
+			ns_unsupported = true;
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_addkey_rejected,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_keys_added,
+			   1, __ATOMIC_RELAXED);
+
+	fill_ao_add(&ao_add, &ctx->srv_addr, 1, 1, true, ctx->alg);
+	rc = setsockopt(ctx->cli, IPPROTO_TCP, TCP_AO_ADD_KEY,
+			&ao_add, sizeof(ao_add));
+	if (rc < 0) {
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_addkey_rejected,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_keys_added,
+			   1, __ATOMIC_RELAXED);
+	return 0;
+}
+
 bool tcp_ao_rotate(struct childdata *child)
 {
 	struct tcp_ao_rotate_iter_ctx ctx = {
@@ -349,42 +392,8 @@ bool tcp_ao_rotate(struct childdata *child)
 	if (tcp_ao_rotate_iter_setup_sockets(&ctx) != 0)
 		goto out;
 
-	ctx.alg = ao_algs[rnd_modulo_u32(NR_AO_ALGS)];
-
-	/* Install the listener-side key first, peer = client's bound
-	 * address.  This is the call that hits the support gate: if
-	 * TCP-AO isn't compiled in, we get ENOPROTOOPT here and latch
-	 * for the rest of the process.  EPERM means no CAP_NET_ADMIN —
-	 * also latched, since trinity children don't gain caps mid-life. */
-	fill_ao_add(&ao_add, &ctx.cli_addr, 1, 1, true, ctx.alg);
-	rc = setsockopt(ctx.listener, IPPROTO_TCP, TCP_AO_ADD_KEY,
-			&ao_add, sizeof(ao_add));
-	if (rc < 0) {
-		if (errno == ENOPROTOOPT || errno == EPERM)
-			ns_unsupported = true;
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_addkey_rejected,
-				   1, __ATOMIC_RELAXED);
+	if (tcp_ao_rotate_iter_install_keys(&ctx) != 0)
 		goto out;
-	}
-	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_keys_added,
-			   1, __ATOMIC_RELAXED);
-
-	/* Install the matching key on the client, peer = listener.
-	 * Same alg, same id pair, fresh random key bytes (no need for
-	 * the keys to actually match here — the kernel doesn't verify
-	 * cross-host key equality at install time, only at handshake
-	 * time when the HMAC mismatches.  That mismatch is itself an
-	 * exercised verify-reject edge). */
-	fill_ao_add(&ao_add, &ctx.srv_addr, 1, 1, true, ctx.alg);
-	rc = setsockopt(ctx.cli, IPPROTO_TCP, TCP_AO_ADD_KEY,
-			&ao_add, sizeof(ao_add));
-	if (rc < 0) {
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_addkey_rejected,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_keys_added,
-			   1, __ATOMIC_RELAXED);
 
 	/* Non-blocking connect so a wedged loopback can't pin us past
 	 * SIGALRM(1s).  Loopback usually completes synchronously even
