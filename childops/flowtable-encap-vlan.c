@@ -637,6 +637,49 @@ static int flowtable_vlan_iter_setup(struct nl_ctx *rtnl,
 }
 
 /*
+ * Phase 2: install the nft objects — table, flowtable, forward chain,
+ * flow_offload rule.  Latches ns_unsupported_flowtable_vlan when the
+ * NEWFLOWTABLE step returns EOPNOTSUPP / EAFNOSUPPORT / EPROTONOSUPPORT
+ * (CONFIG_NF_FLOW_TABLE absent at runtime).  Bumps setup_ok on full
+ * success.  Returns 0 on success, -1 on any failure; ctx *_added flags
+ * reflect partial state for orchestrator teardown.
+ */
+static int flowtable_vlan_iter_install(struct nfnl_ctx *nf,
+				       struct flowtable_vlan_iter_ctx *c)
+{
+	int rc;
+
+	if (build_nft_table(nf, c->tab) != 0) {
+		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	c->table_added = true;
+
+	rc = build_nft_flowtable(nf, c->tab, c->ft, c->vla, c->vlb);
+	if (rc != 0) {
+		if (rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT ||
+		    rc == -EPROTONOSUPPORT)
+			ns_unsupported_flowtable_vlan = true;
+		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	c->ft_added = true;
+
+	if (build_nft_chain_fwd(nf, c->tab, c->chain) != 0)
+		return -1;
+	c->chain_added = true;
+
+	if (build_nft_rule_flow_offload(nf, c->tab, c->chain, c->ft) != 0)
+		return -1;
+
+	__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_ok, 1,
+			   __ATOMIC_RELAXED);
+	return 0;
+}
+
+/*
  * One full create / drive / race / teardown cycle.  Wall cap inherited
  * from the caller — every step short-circuits if FEV_WALL_CAP_NS has
  * been exceeded.
@@ -653,7 +696,6 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	struct nfnl_open_opts nf_opts = {
 		.recv_timeo_s  = FEV_NL_TIMEO_S,
 	};
-	int rc;
 
 	if ((unsigned long long)ns_since(t_outer) >= FEV_WALL_CAP_NS)
 		return;
@@ -668,33 +710,8 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	if (flowtable_vlan_iter_setup(&rtnl, &c) != 0)
 		goto teardown;
 
-	if (build_nft_table(&nf, c.tab) != 0) {
-		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (flowtable_vlan_iter_install(&nf, &c) != 0)
 		goto teardown;
-	}
-	c.table_added = true;
-
-	rc = build_nft_flowtable(&nf, c.tab, c.ft, c.vla, c.vlb);
-	if (rc != 0) {
-		if (rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT ||
-		    rc == -EPROTONOSUPPORT)
-			ns_unsupported_flowtable_vlan = true;
-		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto teardown;
-	}
-	c.ft_added = true;
-
-	if (build_nft_chain_fwd(&nf, c.tab, c.chain) != 0)
-		goto teardown;
-	c.chain_added = true;
-
-	if (build_nft_rule_flow_offload(&nf, c.tab, c.chain, c.ft) != 0)
-		goto teardown;
-
-	__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_ok, 1,
-			   __ATOMIC_RELAXED);
 
 	if ((unsigned long long)ns_since(t_outer) >= FEV_WALL_CAP_NS)
 		goto teardown;
