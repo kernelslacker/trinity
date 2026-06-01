@@ -1434,20 +1434,76 @@ out:
 	return true;
 }
 
-bool xfrm_churn(struct childdata *child)
-{
-	struct nl_ctx ctx = { .fd = -1 };
-	struct nl_open_opts opts = {
-		.proto        = NETLINK_XFRM,
-		.recv_timeo_s = XFRM_RECV_TIMEO_S,
-	};
-	int udp = -1;
+/*
+ * Per-invocation state for xfrm_churn.  Lifted out so the phase
+ * helpers can reach the netlink_xfrm fd, the UDP fd, and the SA
+ * descriptor (algo + reqid + spi + mode + seq) without a wide
+ * parameter list.
+ */
+struct xfrm_churn_iter_ctx {
+	struct nl_ctx nl;
+	int udp;
 	unsigned int aidx;
 	const struct xfrm_algo_def *def;
 	__u32 reqid;
 	__be32 spi;
 	__u8 mode;
 	__u32 seq;
+};
+
+/*
+ * Phase: per-child netns + netlink_xfrm setup.  Unshares CLONE_NEWNET
+ * the first time through, brings lo up once inside the netns, and
+ * opens NETLINK_XFRM.  Latches ns_setup_failed / ns_unsupported_xfrm
+ * on the respective failure modes so the rest of the child's lifetime
+ * pays the EFAIL once.  Returns 0 on success; -1 means caller should
+ * return true without entering the goto-out cleanup.
+ */
+static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
+{
+	struct nl_open_opts opts = {
+		.proto        = NETLINK_XFRM,
+		.recv_timeo_s = XFRM_RECV_TIMEO_S,
+	};
+
+	if (!ns_unshared) {
+		if (unshare(CLONE_NEWNET) < 0) {
+			ns_setup_failed = true;
+			__atomic_add_fetch(&shm->stats.xfrm_churn_setup_failed,
+					   1, __ATOMIC_RELAXED);
+			return -1;
+		}
+		ns_unshared = true;
+	}
+
+	if (!lo_brought_up) {
+		struct nl_ctx rtnl = { .fd = -1 };
+		struct nl_open_opts rtnl_opts = { .proto = NETLINK_ROUTE };
+
+		if (nl_open(&rtnl, &rtnl_opts) == 0) {
+			bring_lo_up(&rtnl);
+			nl_close(&rtnl);
+		}
+		lo_brought_up = true;
+	}
+
+	if (nl_open(&ctx->nl, &opts) < 0) {
+		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
+			ns_unsupported_xfrm = true;
+		__atomic_add_fetch(&shm->stats.xfrm_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	return 0;
+}
+
+bool xfrm_churn(struct childdata *child)
+{
+	struct xfrm_churn_iter_ctx ctx = {
+		.nl  = { .fd = -1 },
+		.udp = -1,
+	};
 	struct timespec t0;
 	unsigned int iters, sent;
 	int rc;
@@ -1471,60 +1527,34 @@ bool xfrm_churn(struct childdata *child)
 	if (ONE_IN(XFRM_BURN_GATE_DENOM) && xfrm_burn_netns())
 		return true;
 
-	if (!ns_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			ns_setup_failed = true;
-			__atomic_add_fetch(&shm->stats.xfrm_churn_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-		ns_unshared = true;
-	}
-
-	if (!lo_brought_up) {
-		struct nl_ctx rtnl = { .fd = -1 };
-		struct nl_open_opts rtnl_opts = { .proto = NETLINK_ROUTE };
-
-		if (nl_open(&rtnl, &rtnl_opts) == 0) {
-			bring_lo_up(&rtnl);
-			nl_close(&rtnl);
-		}
-		lo_brought_up = true;
-	}
-
-	if (nl_open(&ctx, &opts) < 0) {
-		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
-			ns_unsupported_xfrm = true;
-		__atomic_add_fetch(&shm->stats.xfrm_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (xfrm_churn_iter_setup_netns(&ctx) != 0)
 		return true;
-	}
 
-	aidx = pick_algo_idx();
-	if (aidx >= NR_XFRM_ALGOS)
+	ctx.aidx = pick_algo_idx();
+	if (ctx.aidx >= NR_XFRM_ALGOS)
 		goto out;
 
-	def   = &xfrm_algos[aidx];
-	reqid = (rand32() % XFRM_REQID_RANGE) + 1U;
-	spi   = htonl((rand32() % XFRM_SPI_RANGE) + XFRM_SPI_MIN);
-	seq   = pick_sa_seq();
-	mode  = (rand32() & 1U) ? XFRM_MODE_TRANSPORT : XFRM_MODE_TRANSPORT;
+	ctx.def   = &xfrm_algos[ctx.aidx];
+	ctx.reqid = (rand32() % XFRM_REQID_RANGE) + 1U;
+	ctx.spi   = htonl((rand32() % XFRM_SPI_RANGE) + XFRM_SPI_MIN);
+	ctx.seq   = pick_sa_seq();
+	ctx.mode  = (rand32() & 1U) ? XFRM_MODE_TRANSPORT : XFRM_MODE_TRANSPORT;
 	/* TUNNEL mode requires routes to the inner addresses; staying
 	 * in TRANSPORT keeps the data plane self-contained on lo.
 	 * Knob preserved as a no-op so the rotation can be widened
 	 * later without restructuring this caller. */
 
-	modprobe_algo(aidx);
-	rc = build_newsa(&ctx, def, reqid, spi, mode, seq);
+	modprobe_algo(ctx.aidx);
+	rc = build_newsa(&ctx.nl, ctx.def, ctx.reqid, ctx.spi, ctx.mode, ctx.seq);
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
-			ns_unsupported_algo[aidx] = true;
+			ns_unsupported_algo[ctx.aidx] = true;
 		goto out;
 	}
 	__atomic_add_fetch(&shm->stats.xfrm_churn_sa_added,
 			   1, __ATOMIC_RELAXED);
 
-	rc = build_newpolicy(&ctx, def, reqid, spi, mode);
+	rc = build_newpolicy(&ctx.nl, ctx.def, ctx.reqid, ctx.spi, ctx.mode);
 	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.xfrm_churn_pol_added,
 				   1, __ATOMIC_RELAXED);
@@ -1533,19 +1563,19 @@ bool xfrm_churn(struct childdata *child)
 	if (!ns_unsupported_inet) {
 		struct sockaddr_in src;
 
-		udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-		if (udp < 0) {
+		ctx.udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+		if (ctx.udp < 0) {
 			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
 				ns_unsupported_inet = true;
 		} else {
 			memset(&src, 0, sizeof(src));
 			src.sin_family      = AF_INET;
 			src.sin_addr.s_addr = XFRM_SADDR_BE;
-			(void)bind(udp, (struct sockaddr *)&src, sizeof(src));
+			(void)bind(ctx.udp, (struct sockaddr *)&src, sizeof(src));
 		}
 	}
 
-	if (udp >= 0) {
+	if (ctx.udp >= 0) {
 		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 		iters = BUDGETED(CHILD_OP_XFRM_CHURN,
 				 JITTER_RANGE(XFRM_PACKET_BASE));
@@ -1554,7 +1584,7 @@ bool xfrm_churn(struct childdata *child)
 		if (iters > XFRM_PACKET_CAP)
 			iters = XFRM_PACKET_CAP;
 
-		sent = drive_inner_traffic(udp, iters, &t0);
+		sent = drive_inner_traffic(ctx.udp, iters, &t0);
 		if (sent)
 			__atomic_add_fetch(&shm->stats.xfrm_churn_esp_sent,
 					   sent, __ATOMIC_RELAXED);
@@ -1574,7 +1604,7 @@ bool xfrm_churn(struct childdata *child)
 	 * read still drives the bug-class window.
 	 */
 	if (ONE_IN(8))
-		(void)build_getsa_byspi(&ctx, def->proto, spi);
+		(void)build_getsa_byspi(&ctx.nl, ctx.def->proto, ctx.spi);
 
 	/*
 	 * Second writer onto byspi: ALLOCSPI on a half-built SA with the
@@ -1584,9 +1614,9 @@ bool xfrm_churn(struct childdata *child)
 	 * larval-SA accumulator from saturating the per-netns table.
 	 */
 	if (ONE_IN(8))
-		(void)build_allocspi(&ctx, def, reqid, mode, seq);
+		(void)build_allocspi(&ctx.nl, ctx.def, ctx.reqid, ctx.mode, ctx.seq);
 
-	rc = build_updsa(&ctx, def, reqid, spi, mode, seq);
+	rc = build_updsa(&ctx.nl, ctx.def, ctx.reqid, ctx.spi, ctx.mode, ctx.seq);
 	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.xfrm_churn_sa_updated,
 				   1, __ATOMIC_RELAXED);
@@ -1596,7 +1626,7 @@ bool xfrm_churn(struct childdata *child)
 	 * Second send burst — encrypt path may walk the freshly-rotated
 	 * key, or hit the stale-key window mid-rotation.
 	 */
-	if (udp >= 0) {
+	if (ctx.udp >= 0) {
 		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 		iters = BUDGETED(CHILD_OP_XFRM_CHURN,
 				 JITTER_RANGE(XFRM_PACKET_BASE));
@@ -1605,7 +1635,7 @@ bool xfrm_churn(struct childdata *child)
 		if (iters > XFRM_PACKET_CAP)
 			iters = XFRM_PACKET_CAP;
 
-		sent = drive_inner_traffic(udp, iters, &t0);
+		sent = drive_inner_traffic(ctx.udp, iters, &t0);
 		if (sent)
 			__atomic_add_fetch(&shm->stats.xfrm_churn_esp_sent,
 					   sent, __ATOMIC_RELAXED);
@@ -1617,11 +1647,11 @@ bool xfrm_churn(struct childdata *child)
 	 * via xfrm_state_delete -> __xfrm_state_destroy — the primary
 	 * teardown-vs-traffic window the op exists to open.
 	 */
-	if (build_delsa(&ctx, def->proto, spi) == 0)
+	if (build_delsa(&ctx.nl, ctx.def->proto, ctx.spi) == 0)
 		__atomic_add_fetch(&shm->stats.xfrm_churn_sa_deleted,
 				   1, __ATOMIC_RELAXED);
 
-	if (build_delpolicy(&ctx) == 0)
+	if (build_delpolicy(&ctx.nl) == 0)
 		__atomic_add_fetch(&shm->stats.xfrm_churn_pol_deleted,
 				   1, __ATOMIC_RELAXED);
 
@@ -1630,7 +1660,7 @@ bool xfrm_churn(struct childdata *child)
 	 * auth name) trifecta required to reach the codepath upstream
 	 * commit ec54093e6a8f patches. */
 	if ((rand32() & 3U) == 0)
-		install_ah_esn_async_sa(&ctx, udp);
+		install_ah_esn_async_sa(&ctx.nl, ctx.udp);
 
 	/* PF_KEYv2 alt path: ~1 in 8 invocations exercises the parallel
 	 * af_key dispatch + flush paths that share the SAD/SPD with
@@ -1644,12 +1674,12 @@ bool xfrm_churn(struct childdata *child)
 	 * upstream 28465227c80f (missing xfrm_msg_min[] entry for
 	 * XFRM_MSG_MAPPING) and any later off-end indices added since. */
 	if (ONE_IN(8))
-		xfrm_compat_msg_sweep(&ctx);
+		xfrm_compat_msg_sweep(&ctx.nl);
 
 out:
-	if (udp >= 0)
-		close(udp);
-	nl_close(&ctx);
+	if (ctx.udp >= 0)
+		close(ctx.udp);
+	nl_close(&ctx.nl);
 
 	return true;
 }
