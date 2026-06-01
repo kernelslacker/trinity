@@ -2,10 +2,10 @@
  * SYSCALL_DEFINE3(shmget, key_t, key, size_t, size, int, shmflg)
  */
 
-#include <limits.h>
 #include <stdlib.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include "ipc-common.h"
 #include "objects.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -84,33 +84,7 @@ int get_random_sysv_shm(void)
 
 static void post_shmget(struct syscallrecord *rec)
 {
-	unsigned long retval = rec->retval;
-	long ret = (long) retval;
-
-	/* Ordinary error return: -1 with errno set. */
-	if (ret < 0)
-		return;
-
-	/*
-	 * shmget() returns either -1 or a non-negative int in
-	 * 0..INT_MAX. A retval that decodes outside that range is the
-	 * footprint of a wild write into the syscallrecord retval slot
-	 * (or a torn read of a concurrent update). The (int) cast below
-	 * would silently truncate the garbage to a plausible 31-bit id
-	 * and hand it to register_sysv_shm(), seeding the pool with a
-	 * fabricated id that shmctl(IPC_RMID) at child teardown would
-	 * then issue against whatever real sysv-shm segment on the host
-	 * happens to share that id.
-	 */
-	if (ret > INT_MAX) {
-		output(0, "shmget oracle: returned IPC id 0x%lx out of "
-			  "range (must be 0..INT_MAX)\n",
-			  retval);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		return;
-	}
-
-	register_sysv_shm((int) ret);
+	post_ipc_get(rec, register_sysv_shm, "shmget");
 }
 
 struct syscallentry syscall_shmget = {

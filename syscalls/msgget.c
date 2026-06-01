@@ -1,9 +1,9 @@
 /*
  * SYSCALL_DEFINE2(msgget, key_t, key, int, msgflg)
  */
-#include <limits.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
+#include "ipc-common.h"
 #include "objects.h"
 #include "publish_resource.h"
 #include "sanitise.h"
@@ -65,35 +65,7 @@ int get_random_sysv_msg(void)
 
 static void post_msgget(struct syscallrecord *rec)
 {
-	unsigned long retval = rec->retval;
-	long ret = (long) retval;
-
-	/* Ordinary error return: -1 with errno set. */
-	if (ret < 0)
-		return;
-
-	/*
-	 * The kernel ABI guarantees msgget() returns either -1 or a
-	 * non-negative int IPC id (i.e. 0..INT_MAX). A retval outside
-	 * that range cannot have come from the kernel: either a
-	 * sibling op has scribbled the syscallrecord retval slot with
-	 * pointer-shaped junk, or the slot has been torn under us. In
-	 * either case forwarding the bogus value into register_sysv_msg()
-	 * would seed the pool with a fabricated id that msgctl(IPC_RMID)
-	 * at child teardown would then issue against whatever real IPC
-	 * id happens to collide with the low 31 bits of the garbage --
-	 * typically destroying an unrelated object owned by another
-	 * process on the host.
-	 */
-	if (ret > INT_MAX) {
-		output(0, "msgget oracle: returned IPC id 0x%lx out of "
-			  "range (must be 0..INT_MAX)\n",
-			  retval);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		return;
-	}
-
-	register_sysv_msg((int) ret);
+	post_ipc_get(rec, register_sysv_msg, "msgget");
 }
 
 static unsigned long ipc_flags[] = {
