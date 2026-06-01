@@ -232,6 +232,26 @@ static void inner_worker(struct futex_storm_shared *s)
 /* Parent: fork workers, time-box the storm, broadcast-wake, reap     */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Per-invocation state shared across the futex_storm_iter_* helpers.
+ * Lives on the orchestrator's stack and is fresh per invocation.  Lifted
+ * only the fields read across helper boundaries; per-phase scratch
+ * (barrier attr, timespec budgets, fork-loop status) stays local to its
+ * phase.
+ *
+ * Worker fork inheritance: s is the parent-side pointer to the
+ * MAP_SHARED region.  The spawn phase passes it into inner_worker() so
+ * each forked child sees the same mapping the setup phase created --
+ * do not relocate the mmap inside the fork loop.
+ */
+struct futex_storm_iter_ctx {
+	struct futex_storm_shared	*s;		/* mapped region, NULL until setup */
+	pid_t				worker_pids[MAX_WORKERS];
+	unsigned int			nworkers;	/* target worker count */
+	int				alive;		/* # successfully forked */
+	bool				barrier_up;	/* pthread_barrier was initialised */
+};
+
 static void broadcast_wake(struct futex_storm_shared *s)
 {
 	int i;
@@ -248,27 +268,27 @@ static void broadcast_wake(struct futex_storm_shared *s)
 
 bool futex_storm(struct childdata *child)
 {
-	struct futex_storm_shared *s;
+	struct futex_storm_iter_ctx ctx = { .s = NULL };
 	pthread_barrierattr_t attr;
 	struct timespec budget;
-	unsigned int nworkers;
-	pid_t worker_pids[MAX_WORKERS];
-	int i, alive, status;
+	int i, status;
 
 	(void)child;
 
 	__atomic_add_fetch(&shm->stats.futex_storm_runs, 1, __ATOMIC_RELAXED);
 
-	nworkers = 3 + rnd_modulo_u32(MAX_WORKERS - 2);	/* 3..MAX_WORKERS */
+	ctx.nworkers = 3 + rnd_modulo_u32(MAX_WORKERS - 2);	/* 3..MAX_WORKERS */
 
-	s = mmap(NULL, sizeof(*s), PROT_READ | PROT_WRITE,
-		 MAP_ANONYMOUS | MAP_SHARED, -1, 0);
-	if (s == MAP_FAILED)
+	ctx.s = mmap(NULL, sizeof(*ctx.s), PROT_READ | PROT_WRITE,
+		     MAP_ANONYMOUS | MAP_SHARED, -1, 0);
+	if (ctx.s == MAP_FAILED) {
+		ctx.s = NULL;
 		return true;
+	}
 
-	memset(s->futexes, 0, sizeof(s->futexes));
-	s->done  = 0;
-	s->iters = 0;
+	memset(ctx.s->futexes, 0, sizeof(ctx.s->futexes));
+	ctx.s->done  = 0;
+	ctx.s->iters = 0;
 
 	/*
 	 * Pick the per-invocation op-selection mode and the two pinned
@@ -276,11 +296,11 @@ bool futex_storm(struct childdata *child)
 	 * indices must differ so REQUEUE_HEAVY actually drives traffic
 	 * across two buckets rather than degenerating into a self-requeue.
 	 */
-	s->mode    = rnd_modulo_u32(STORM_MODE_MAX);
-	s->pinned1 = (int)rnd_modulo_u32(NR_FUTEX_WORDS);
-	s->pinned2 = (int)rnd_modulo_u32(NR_FUTEX_WORDS);
-	if (s->pinned2 == s->pinned1)
-		s->pinned2 = (s->pinned1 + 1) % NR_FUTEX_WORDS;
+	ctx.s->mode    = rnd_modulo_u32(STORM_MODE_MAX);
+	ctx.s->pinned1 = (int)rnd_modulo_u32(NR_FUTEX_WORDS);
+	ctx.s->pinned2 = (int)rnd_modulo_u32(NR_FUTEX_WORDS);
+	if (ctx.s->pinned2 == ctx.s->pinned1)
+		ctx.s->pinned2 = (ctx.s->pinned1 + 1) % NR_FUTEX_WORDS;
 
 	if (pthread_barrierattr_init(&attr) != 0)
 		goto out_unmap;
@@ -290,23 +310,23 @@ bool futex_storm(struct childdata *child)
 		goto out_unmap;
 	}
 
-	if (pthread_barrier_init(&s->barrier, &attr, nworkers) != 0) {
+	if (pthread_barrier_init(&ctx.s->barrier, &attr, ctx.nworkers) != 0) {
 		pthread_barrierattr_destroy(&attr);
 		goto out_unmap;
 	}
 	pthread_barrierattr_destroy(&attr);
+	ctx.barrier_up = true;
 
-	alive = 0;
-	for (i = 0; i < (int)nworkers; i++) {
+	for (i = 0; i < (int)ctx.nworkers; i++) {
 		pid_t pid = fork();
 
 		if (pid < 0)
 			break;
 		if (pid == 0) {
-			inner_worker(s);
+			inner_worker(ctx.s);
 			_exit(0);	/* unreachable */
 		}
-		worker_pids[alive++] = pid;
+		ctx.worker_pids[ctx.alive++] = pid;
 	}
 
 	/*
@@ -314,11 +334,11 @@ bool futex_storm(struct childdata *child)
 	 * fill the barrier slots, surviving workers will park forever on
 	 * pthread_barrier_wait().  SIGKILL them and skip the storm.
 	 */
-	if (alive < (int)nworkers) {
-		for (i = 0; i < alive; i++)
-			kill(worker_pids[i], SIGKILL);
-		for (i = 0; i < alive; i++)
-			waitpid_eintr(worker_pids[i], &status, 0);
+	if (ctx.alive < (int)ctx.nworkers) {
+		for (i = 0; i < ctx.alive; i++)
+			kill(ctx.worker_pids[i], SIGKILL);
+		for (i = 0; i < ctx.alive; i++)
+			waitpid_eintr(ctx.worker_pids[i], &status, 0);
 		goto out_barrier;
 	}
 
@@ -326,8 +346,8 @@ bool futex_storm(struct childdata *child)
 	budget.tv_nsec = STORM_BUDGET_NS;
 	nanosleep(&budget, NULL);
 
-	__atomic_store_n(&s->done, 1, __ATOMIC_RELAXED);
-	broadcast_wake(s);
+	__atomic_store_n(&ctx.s->done, 1, __ATOMIC_RELAXED);
+	broadcast_wake(ctx.s);
 
 	/*
 	 * Workers should exit promptly now: the done flag is set and any
@@ -335,35 +355,35 @@ bool futex_storm(struct childdata *child)
 	 * by the broadcast.  Give a brief grace window, then SIGKILL the
 	 * stragglers so a hung worker doesn't gate the whole storm.
 	 */
-	for (i = 0; i < alive; i++) {
+	for (i = 0; i < ctx.alive; i++) {
 		pid_t r = 0;
 		int spin;
 
 		for (spin = 0; spin < 50; spin++) {
-			r = waitpid_eintr(worker_pids[i], &status, WNOHANG);
-			if (r == worker_pids[i] || r < 0)
+			r = waitpid_eintr(ctx.worker_pids[i], &status, WNOHANG);
+			if (r == ctx.worker_pids[i] || r < 0)
 				break;
 			budget.tv_sec  = 0;
 			budget.tv_nsec = 1000000;	/* 1 ms */
 			nanosleep(&budget, NULL);
 		}
 		if (r == 0) {
-			kill(worker_pids[i], SIGKILL);
-			waitpid_eintr(worker_pids[i], &status, 0);
+			kill(ctx.worker_pids[i], SIGKILL);
+			waitpid_eintr(ctx.worker_pids[i], &status, 0);
 			continue;
 		}
-		if (r == worker_pids[i] && WIFSIGNALED(status))
+		if (r == ctx.worker_pids[i] && WIFSIGNALED(status))
 			__atomic_add_fetch(&shm->stats.futex_storm_inner_crashed,
 					   1, __ATOMIC_RELAXED);
 	}
 
 	__atomic_add_fetch(&shm->stats.futex_storm_iters,
-			   __atomic_load_n(&s->iters, __ATOMIC_RELAXED),
+			   __atomic_load_n(&ctx.s->iters, __ATOMIC_RELAXED),
 			   __ATOMIC_RELAXED);
 
 out_barrier:
-	pthread_barrier_destroy(&s->barrier);
+	pthread_barrier_destroy(&ctx.s->barrier);
 out_unmap:
-	munmap(s, sizeof(*s));
+	munmap(ctx.s, sizeof(*ctx.s));
 	return true;
 }
