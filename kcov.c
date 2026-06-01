@@ -557,6 +557,29 @@ err_close_cmp:
 	return true;
 }
 
+/*
+ * Pick this child's collection mode for its lifetime.  Gated on
+ * cmp_capable so a kernel without KCOV_TRACE_CMP (or any failure
+ * in the probe above) degrades cleanly to PC-only across the
+ * fleet -- KCOV_MODE_CMP is only reachable when the cmp fd is
+ * actually usable.  The population mix doesn't need cryptographic
+ * uniformity.
+ */
+static void kcov_init_child_select_mode(struct kcov_child *kc)
+{
+	if (kc->cmp_capable && rnd_modulo_u32(KCOV_CMP_CHILD_RECIPROCAL) == 0)
+		kc->mode = KCOV_MODE_CMP;
+	else
+		kc->mode = KCOV_MODE_PC;
+
+	if (kc->mode == KCOV_MODE_CMP)
+		__atomic_fetch_add(&kcov_shm->cmp_mode_children, 1,
+			__ATOMIC_RELAXED);
+	else
+		__atomic_fetch_add(&kcov_shm->pc_mode_children, 1,
+			__ATOMIC_RELAXED);
+}
+
 void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 {
 	kc->fd = -1;
@@ -597,9 +620,6 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 		track_shared_region((unsigned long)kc->trace_buf,
 				    KCOV_TRACE_SIZE * sizeof(unsigned long));
 
-	if (kcov_init_child_cmp_fd(kc))
-		goto select_mode;
-
 	/*
 	 * Both fds are now stable (remote-probe re-mmap dance done, cmp
 	 * setup done).  Relocate them to KCOV_FD_HIGH_BASE so the low
@@ -609,52 +629,35 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	 * file description, not the fd number: a subsequent KCOV_ENABLE
 	 * on the new fd reads/writes the same trace buffer.
 	 *
-	 * Done only on the cmp-setup success path -- the goto select_mode
-	 * above on cmp deeper-failure skips this block, which just means
+	 * Done only on the cmp-setup success path -- the cmp-helper
+	 * deeper-failure return skips this block, which just means
 	 * kc->fd keeps its original low number for that child and the
 	 * registry covers it.  Per-fd failure (EMFILE etc.) is silently
 	 * best-effort: keep the original fd and let the registry catch
 	 * any picker that targets it.
 	 */
-	if (kc->fd >= 0 && (unsigned int) kc->fd < KCOV_FD_HIGH_BASE) {
-		int new_fd = fcntl(kc->fd, F_DUPFD_CLOEXEC,
-				   (int) KCOV_FD_HIGH_BASE);
+	if (!kcov_init_child_cmp_fd(kc)) {
+		if (kc->fd >= 0 && (unsigned int) kc->fd < KCOV_FD_HIGH_BASE) {
+			int new_fd = fcntl(kc->fd, F_DUPFD_CLOEXEC,
+					   (int) KCOV_FD_HIGH_BASE);
 
-		if (new_fd >= 0) {
-			close(kc->fd);
-			kc->fd = new_fd;
+			if (new_fd >= 0) {
+				close(kc->fd);
+				kc->fd = new_fd;
+			}
+		}
+		if (kc->cmp_fd >= 0 && (unsigned int) kc->cmp_fd < KCOV_FD_HIGH_BASE) {
+			int new_fd = fcntl(kc->cmp_fd, F_DUPFD_CLOEXEC,
+					   (int) KCOV_FD_HIGH_BASE);
+
+			if (new_fd >= 0) {
+				close(kc->cmp_fd);
+				kc->cmp_fd = new_fd;
+			}
 		}
 	}
-	if (kc->cmp_fd >= 0 && (unsigned int) kc->cmp_fd < KCOV_FD_HIGH_BASE) {
-		int new_fd = fcntl(kc->cmp_fd, F_DUPFD_CLOEXEC,
-				   (int) KCOV_FD_HIGH_BASE);
 
-		if (new_fd >= 0) {
-			close(kc->cmp_fd);
-			kc->cmp_fd = new_fd;
-		}
-	}
-
-	/*
-	 * Pick this child's collection mode for its lifetime.  Gated on
-	 * cmp_capable so a kernel without KCOV_TRACE_CMP (or any failure
-	 * in the probe above) degrades cleanly to PC-only across the
-	 * fleet — KCOV_MODE_CMP is only reachable when the cmp fd is
-	 * actually usable.  The population mix doesn't need cryptographic
-	 * uniformity.
-	 */
-select_mode:
-	if (kc->cmp_capable && rnd_modulo_u32(KCOV_CMP_CHILD_RECIPROCAL) == 0)
-		kc->mode = KCOV_MODE_CMP;
-	else
-		kc->mode = KCOV_MODE_PC;
-
-	if (kc->mode == KCOV_MODE_CMP)
-		__atomic_fetch_add(&kcov_shm->cmp_mode_children, 1,
-			__ATOMIC_RELAXED);
-	else
-		__atomic_fetch_add(&kcov_shm->pc_mode_children, 1,
-			__ATOMIC_RELAXED);
+	kcov_init_child_select_mode(kc);
 }
 
 void kcov_cleanup_child(struct kcov_child *kc)
