@@ -767,6 +767,29 @@ static void af_unix_scm_rights_gc_build_cycle(struct af_unix_scm_rights_gc_iter_
 }
 
 /*
+ * Phase 3: drop userspace refs to the cycle members.  After this the
+ * cycle is reachable only via the queued SCM_RIGHTS messages on the
+ * peer ends -- exactly the gc fodder shape.  Each closed fd is
+ * immediately written back to -1 so the shared teardown path does not
+ * double-close.  No-op if build_cycle did not set cycle_ok.
+ */
+static void af_unix_scm_rights_gc_drop_refs(struct af_unix_scm_rights_gc_iter_ctx *it)
+{
+	if (!it->cycle_ok)
+		return;
+
+	(void)close(it->sv1[0]); it->sv1[0] = -1;
+	(void)close(it->sv2[0]); it->sv2[0] = -1;
+	(void)close(it->sv3[0]); it->sv3[0] = -1;
+	if (it->use_iouring) {
+		(void)close(it->iouring_fd);
+		it->iouring_fd = -1;
+	}
+	__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_close_ok,
+			   1, __ATOMIC_RELAXED);
+}
+
+/*
  * One outer iteration: build a 3-pair SCM_RIGHTS cycle, drop userspace
  * refs to make it gc-only-reachable, run a small race burst.  All
  * counters are best-effort -- iter_one returns void; the per-step bumps
@@ -790,21 +813,7 @@ static void iter_one(void)
 		goto out;
 
 	af_unix_scm_rights_gc_build_cycle(&it);
-
-	/* 3) Drop userspace refs to the cycle members.  After this the
-	 *    cycle is reachable only via the queued SCM_RIGHTS messages
-	 *    on the peer ends -- exactly the gc fodder shape. */
-	if (it.cycle_ok) {
-		(void)close(it.sv1[0]); it.sv1[0] = -1;
-		(void)close(it.sv2[0]); it.sv2[0] = -1;
-		(void)close(it.sv3[0]); it.sv3[0] = -1;
-		if (it.use_iouring) {
-			(void)close(it.iouring_fd);
-			it.iouring_fd = -1;
-		}
-		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_close_ok,
-				   1, __ATOMIC_RELAXED);
-	}
+	af_unix_scm_rights_gc_drop_refs(&it);
 
 	/* 4) Trigger gc.  Half the time fire a fresh SCM_RIGHTS attach
 	 *    over the spare sv4 pair (drives unix_inflight() and the gc
