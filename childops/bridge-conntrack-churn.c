@@ -740,6 +740,38 @@ static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx
 		(void)pthread_join(ctx->tid, NULL);
 }
 
+/*
+ * Phase 6: close whichever resources we managed to open.  Runs on
+ * every exit path — both the success path after traffic_burst returns
+ * and any early-bail goto out from an earlier phase.  Order matches
+ * the original out: cleanup: drain + close the raw fd first (any
+ * received packets buffered there get discarded), then both nfnl
+ * contexts, then the rtnl-side dellinks before closing rtnl itself.
+ * The bridge dellink cascades v0; v1 (the survivor) is removed
+ * explicitly.  All fields default to -1 / false via the orchestrator's
+ * designated initialiser so the guards skip work that was never set
+ * up.
+ */
+static void bridge_conntrack_iter_teardown(struct bridge_conntrack_iter_ctx *ctx)
+{
+	if (ctx->raw >= 0) {
+		unsigned char drain[256];
+
+		while (recv(ctx->raw, drain, sizeof(drain), MSG_DONTWAIT) > 0)
+			;
+		close(ctx->raw);
+	}
+	nfnl_close(&ctx->nfnl_ct);
+	nfnl_close(&ctx->nfnl_nft);
+	if (ctx->rtnl.fd >= 0) {
+		if (ctx->bridge_added && ctx->br_idx > 0)
+			(void)rtnl_dellink(&ctx->rtnl, ctx->br_idx);
+		if (ctx->veth_added && ctx->vb_idx > 0)
+			(void)rtnl_dellink(&ctx->rtnl, ctx->vb_idx);
+		nl_close(&ctx->rtnl);
+	}
+}
+
 bool bridge_conntrack_churn(struct childdata *child)
 {
 	struct bridge_conntrack_iter_ctx ctx = {
@@ -788,21 +820,6 @@ bool bridge_conntrack_churn(struct childdata *child)
 	bridge_conntrack_iter_traffic_burst(&ctx, &nfnl_opts);
 
 out:
-	if (ctx.raw >= 0) {
-		unsigned char drain[256];
-
-		while (recv(ctx.raw, drain, sizeof(drain), MSG_DONTWAIT) > 0)
-			;
-		close(ctx.raw);
-	}
-	nfnl_close(&ctx.nfnl_ct);
-	nfnl_close(&ctx.nfnl_nft);
-	if (ctx.rtnl.fd >= 0) {
-		if (ctx.bridge_added && ctx.br_idx > 0)
-			(void)rtnl_dellink(&ctx.rtnl, ctx.br_idx);
-		if (ctx.veth_added && ctx.vb_idx > 0)
-			(void)rtnl_dellink(&ctx.rtnl, ctx.vb_idx);
-		nl_close(&ctx.rtnl);
-	}
+	bridge_conntrack_iter_teardown(&ctx);
 	return true;
 }
