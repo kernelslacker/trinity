@@ -521,6 +521,52 @@ static int ip6erspan_migrate_iter_migrate(struct ip6erspan_migrate_iter_ctx *ctx
 	return 0;
 }
 
+/*
+ * Phase 4: hop into the target ns, open a fresh rtnetlink socket
+ * pinned there, and issue NLM_F_REPLACE -- this is the call that
+ * walks the kind's ->changelink op against the post-migration
+ * dev_net(dev) (the upstream-CVE shape the whole childop exists
+ * to drive).  setns failure latches via warn_once_unsupported and
+ * returns early so the orchestrator runs its in-target restore
+ * sequence (setns-back-to-orig + drop target_nl/target_ns_fd) --
+ * the link has already migrated so this is the right cleanup
+ * regardless of whether we ever opened target_nl.
+ * EOPNOTSUPP from the replace latches ns_unsupported_changelink
+ * once per child (so a kernel without a ->changelink op for any
+ * kind still walks create + migrate + teardown).  Best-effort
+ * RTM_DELLINK in the target ns at the tail trims the link before
+ * the orchestrator drops the target-ns FD so the cleanup_net path
+ * doesn't have to do it.
+ */
+static void ip6erspan_migrate_iter_changelink(struct ip6erspan_migrate_iter_ctx *ctx,
+					      const struct nl_open_opts *opts)
+{
+	int rc;
+
+	if (setns(ctx->target_ns_fd, CLONE_NEWNET) < 0) {
+		warn_once_unsupported();
+		return;
+	}
+	if (nl_open(&ctx->target_nl, opts) < 0)
+		return;
+
+	rc = inm_create_or_replace(&ctx->target_nl, ctx->ifname, ctx->k, true);
+	if (rc == 0) {
+		__atomic_add_fetch(&shm->stats.inm_changelink_ok,
+				   1, __ATOMIC_RELAXED);
+	} else if (rc == -EOPNOTSUPP && !ns_unsupported_changelink) {
+		ns_unsupported_changelink = true;
+		/* init_child redirected stderr to /dev/null, so an
+		 * outputerr here would be lost.  Bump a shm counter
+		 * under the same one-shot gate so the unsupported-
+		 * changelink observation survives. */
+		__atomic_add_fetch(&shm->stats.inm_changelink_unsupported_observed,
+				   1, __ATOMIC_RELAXED);
+	}
+
+	(void)inm_dellink(&ctx->target_nl, ctx->ifindex);
+}
+
 bool ip6erspan_netns_migrate(struct childdata *child)
 {
 	struct ip6erspan_migrate_iter_ctx ictx = {
@@ -532,7 +578,6 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 	};
-	int rc;
 
 	(void)child;
 
@@ -555,35 +600,8 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 	if (ip6erspan_migrate_iter_migrate(&ictx) != 0)
 		goto teardown_orig;
 
-	/* The link no longer lives in the original ns -- the rtnl socket
-	 * above is now useless for it.  Hop into the target ns, open a
-	 * fresh rtnetlink socket there, and issue NLM_F_REPLACE.  This
-	 * is the call that walks the kind's ->changelink op against the
-	 * post-migration dev_net(dev). */
-	if (setns(ictx.target_ns_fd, CLONE_NEWNET) < 0) {
-		warn_once_unsupported();
-		goto restore_orig;
-	}
-	if (nl_open(&ictx.target_nl, &opts) < 0)
-		goto restore_orig;
+	ip6erspan_migrate_iter_changelink(&ictx, &opts);
 
-	rc = inm_create_or_replace(&ictx.target_nl, ictx.ifname, ictx.k, true);
-	if (rc == 0) {
-		__atomic_add_fetch(&shm->stats.inm_changelink_ok,
-				   1, __ATOMIC_RELAXED);
-	} else if (rc == -EOPNOTSUPP && !ns_unsupported_changelink) {
-		ns_unsupported_changelink = true;
-		/* init_child redirected stderr to /dev/null, so an
-		 * outputerr here would be lost.  Bump a shm counter
-		 * under the same one-shot gate so the unsupported-
-		 * changelink observation survives. */
-		__atomic_add_fetch(&shm->stats.inm_changelink_unsupported_observed,
-				   1, __ATOMIC_RELAXED);
-	}
-
-	(void)inm_dellink(&ictx.target_nl, ictx.ifindex);
-
-restore_orig:
 	(void)setns(inm_orig_ns_fd, CLONE_NEWNET);
 	if (ictx.target_nl.fd >= 0)
 		nl_close(&ictx.target_nl);
