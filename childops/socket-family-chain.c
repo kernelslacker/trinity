@@ -353,6 +353,31 @@ static void alg_chain_iter_verify(struct alg_chain_iter_ctx *ictx)
 }
 
 /*
+ * Phase 5: close whichever fds we managed to open and free whichever
+ * buffers we managed to allocate.  Runs on every exit path — both the
+ * success path after verify and any early-bail goto out from setup or
+ * arm.  All fd fields default to -1 and buffer fields to NULL via the
+ * orchestrator's designated initialiser so the guards skip work that
+ * was never set up.  Order mirrors the pre-extraction layout: splice
+ * pipe ends first, then child_fd / parent_fd, then sndbuf / rcvbuf.
+ */
+static void alg_chain_iter_teardown(struct alg_chain_iter_ctx *ictx)
+{
+	if (ictx->splice_pfd[0] >= 0)
+		close(ictx->splice_pfd[0]);
+	if (ictx->splice_pfd[1] >= 0)
+		close(ictx->splice_pfd[1]);
+	if (ictx->child_fd >= 0)
+		close(ictx->child_fd);
+	if (ictx->parent_fd >= 0)
+		close(ictx->parent_fd);
+	if (ictx->sndbuf)
+		free(ictx->sndbuf);
+	if (ictx->rcvbuf)
+		free(ictx->rcvbuf);
+}
+
+/*
  * One coherent AF_ALG chain.  Returns false on a clean kernel-not-supported
  * path so the outer cycle can latch the unsupported flag; returns true on
  * everything else (including chain steps that legitimately fail late).
@@ -378,19 +403,7 @@ static bool run_alg_chain(unsigned int *err_burst)
 	*err_burst = 0;
 	ok = true;
 out:
-	if (ictx.splice_pfd[0] >= 0)
-		close(ictx.splice_pfd[0]);
-	if (ictx.splice_pfd[1] >= 0)
-		close(ictx.splice_pfd[1]);
-	if (ictx.child_fd >= 0)
-		close(ictx.child_fd);
-	if (ictx.parent_fd >= 0)
-		close(ictx.parent_fd);
-	if (ictx.sndbuf)
-		free(ictx.sndbuf);
-	if (ictx.rcvbuf)
-		free(ictx.rcvbuf);
-
+	alg_chain_iter_teardown(&ictx);
 	return ok;
 }
 
