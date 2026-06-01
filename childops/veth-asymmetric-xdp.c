@@ -677,6 +677,40 @@ static void veth_xdp_iter_drive_burst(struct veth_xdp_iter_ctx *ictx)
 	}
 }
 
+/*
+ * Phase 5: close whichever resources we managed to open.  Runs on
+ * every exit path -- both the success path after drive_burst and any
+ * early-bail goto out from nl_open or create_pair.  Order: raw
+ * AF_PACKET fd first (any frames still buffered get discarded), then
+ * the XDP detach + prog_fd close (detach is best-effort and only
+ * issued if the a-side ifindex + rtnl ctx are both live), then the
+ * link teardown via the rtnl ctx.  For veth/vxcan, dellink(a)
+ * cascades the peer through the kernel's pair-teardown path; for
+ * ipvlan/macvlan the slave (a) and parent dummy (b) are independent
+ * net_devices and must be deleted explicitly so the netns doesn't
+ * accumulate stale devices across many iterations in the same child.
+ * All fields default to -1 / 0 via the orchestrator's designated
+ * initialiser so the guards skip work that was never set up.
+ */
+static void veth_xdp_iter_teardown(struct veth_xdp_iter_ctx *ictx)
+{
+	if (ictx->raw >= 0)
+		close(ictx->raw);
+	if (ictx->prog_fd >= 0) {
+		if (ictx->a_idx > 0 && ictx->ctx.fd >= 0)
+			(void)vax_xdp_attach(&ictx->ctx, ictx->a_idx, -1);
+		close(ictx->prog_fd);
+	}
+	if (ictx->ctx.fd >= 0) {
+		if (ictx->a_idx > 0)
+			(void)vax_dellink(&ictx->ctx, ictx->a_idx);
+		if (ictx->b_idx > 0 &&
+		    (ictx->pk == PK_IPVLAN || ictx->pk == PK_MACVLAN))
+			(void)vax_dellink(&ictx->ctx, ictx->b_idx);
+		nl_close(&ictx->ctx);
+	}
+}
+
 bool veth_asymmetric_xdp(struct childdata *child)
 {
 	struct veth_xdp_iter_ctx ictx = {
@@ -727,25 +761,7 @@ bool veth_asymmetric_xdp(struct childdata *child)
 	veth_xdp_iter_drive_burst(&ictx);
 
 out:
-	if (ictx.raw >= 0)
-		close(ictx.raw);
-	if (ictx.prog_fd >= 0) {
-		if (ictx.a_idx > 0 && ictx.ctx.fd >= 0)
-			(void)vax_xdp_attach(&ictx.ctx, ictx.a_idx, -1);
-		close(ictx.prog_fd);
-	}
-	if (ictx.ctx.fd >= 0) {
-		/* veth/vxcan: dellink(a) cascades the peer.  ipvlan/macvlan:
-		 * slave (a) and parent dummy (b) are independent -- delete
-		 * both so the netns doesn't accumulate stale devices across
-		 * many iterations in the same child. */
-		if (ictx.a_idx > 0)
-			(void)vax_dellink(&ictx.ctx, ictx.a_idx);
-		if (ictx.b_idx > 0 &&
-		    (ictx.pk == PK_IPVLAN || ictx.pk == PK_MACVLAN))
-			(void)vax_dellink(&ictx.ctx, ictx.b_idx);
-		nl_close(&ictx.ctx);
-	}
+	veth_xdp_iter_teardown(&ictx);
 	return true;
 }
 
