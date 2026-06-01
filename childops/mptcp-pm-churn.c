@@ -100,6 +100,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <linux/mptcp_pm.h>
+#include <linux/net_tstamp.h>
 #include <linux/netlink.h>
 
 #include "childops-genl.h"
@@ -280,6 +281,27 @@ static void churn_send(int fd)
 	if (n > 0)
 		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_send_ok,
 				   1, __ATOMIC_RELAXED);
+}
+
+/*
+ * Best-effort TFO + SO_TIMESTAMPING enable on a TCP/MPTCP fd.  Both
+ * options ignore errors — older kernels / missing HW return
+ * EOPNOTSUPP and we don't care.  Goal is to drive the TFO +
+ * timestamping combo path (upstream commit 6254a16d6f0c) on both
+ * listener and connector before the pm churn loop starts pushing
+ * subflow add/remove against the live socket.
+ */
+static void mptcp_enable_tfo_ts(int fd)
+{
+	int qlen = 5;
+	int ts_flags = SOF_TIMESTAMPING_RX_HARDWARE |
+		       SOF_TIMESTAMPING_SOFTWARE |
+		       SOF_TIMESTAMPING_RAW_HARDWARE;
+
+	(void)setsockopt(fd, IPPROTO_TCP, TCP_FASTOPEN,
+			 &qlen, sizeof(qlen));
+	(void)setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING,
+			 &ts_flags, sizeof(ts_flags));
 }
 
 /*
@@ -585,6 +607,8 @@ bool mptcp_pm_churn(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.mptcp_pm_churn_sock_mptcp_ok,
 			   1, __ATOMIC_RELAXED);
 
+	mptcp_enable_tfo_ts(srv);
+
 	memset(&srv_addr, 0, sizeof(srv_addr));
 	srv_addr.sin_family = AF_INET;
 	srv_addr.sin_addr.s_addr = htonl(MPTCP_PM_LOOPBACK_BASE);
@@ -614,6 +638,8 @@ bool mptcp_pm_churn(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
+
+	mptcp_enable_tfo_ts(cli);
 
 	/* Non-blocking from here so a wedged peer can't pin us past
 	 * SIGALRM(1s).  TCP-style connect on loopback completes
