@@ -416,6 +416,38 @@ static int igmp_source_iter_v4_setup_recv(struct igmp_source_iter_v4_ctx *it)
 }
 
 /*
+ * Phase 3 (v4): structural-support probe via MCAST_JOIN_SOURCE_GROUP on
+ * src_a (latches ns_unsupported_igmp_mld_source_churn on EPERM /
+ * ENOSYS / EOPNOTSUPP / ENOPROTOOPT / EAFNOSUPPORT), then extend the
+ * filter with src_b.  Both gsr_a and gsr_b are filled into the ctx so
+ * the race phase can hand them to MCAST_LEAVE_SOURCE_GROUP /
+ * MCAST_BLOCK_SOURCE without re-deriving them.
+ */
+static int igmp_source_iter_v4_join(struct igmp_source_iter_v4_ctx *it)
+{
+	fill_gsr_v4(&it->gsr_a, 0U, it->grp_be, it->src_a_be);
+	if (setsockopt(it->recv_s, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP,
+		       &it->gsr_a, sizeof(it->gsr_a)) < 0) {
+		int e = errno;
+
+		if (is_syscall_unsupported(e) || is_proto_family_unsupported(e))
+			ns_unsupported_igmp_mld_source_churn = true;
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_join_ok,
+			   1, __ATOMIC_RELAXED);
+
+	fill_gsr_v4(&it->gsr_b, 0U, it->grp_be, it->src_b_be);
+	if (setsockopt(it->recv_s, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP,
+		       &it->gsr_b, sizeof(it->gsr_b)) == 0)
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_join_ok,
+				   1, __ATOMIC_RELAXED);
+	return 0;
+}
+
+/*
  * One IPv4 join+race+teardown cycle.  Returns immediately if the cap-
  * gate has latched.  Updates ns_unsupported_igmp_mld_source_churn on
  * structural failures from the first MCAST_JOIN_SOURCE_GROUP probe.
@@ -445,26 +477,8 @@ static void iter_one_v4(unsigned int iter_idx, const struct timespec *t_outer)
 		goto out;
 	if (igmp_source_iter_v4_setup_recv(&it) != 0)
 		goto out;
-
-	fill_gsr_v4(&it.gsr_a, 0U, it.grp_be, it.src_a_be);
-	if (setsockopt(it.recv_s, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP,
-		       &it.gsr_a, sizeof(it.gsr_a)) < 0) {
-		int e = errno;
-
-		if (is_syscall_unsupported(e) || is_proto_family_unsupported(e))
-			ns_unsupported_igmp_mld_source_churn = true;
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (igmp_source_iter_v4_join(&it) != 0)
 		goto out;
-	}
-	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_join_ok,
-			   1, __ATOMIC_RELAXED);
-
-	fill_gsr_v4(&it.gsr_b, 0U, it.grp_be, it.src_b_be);
-	if (setsockopt(it.recv_s, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP,
-		       &it.gsr_b, sizeof(it.gsr_b)) == 0)
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_join_ok,
-				   1, __ATOMIC_RELAXED);
 
 	send_burst(it.send_s, 2);
 
