@@ -646,6 +646,73 @@ static int afxdp_iter_setup_umem(struct xsk_state *st,
 	return 0;
 }
 
+/*
+ * Phase 2: setsockopt all four rings (RX / TX / FILL / COMPLETION), then
+ * harvest XDP_MMAP_OFFSETS and mmap each ring at its documented pgoff.
+ * Each ring's size + base is stamped into @st so the TX-inject and
+ * munmap-race phases can poke them directly.
+ */
+static int afxdp_iter_setup_rings(struct xsk_state *st)
+{
+	uint32_t ring_entries = AFXDP_RING_ENTRIES;
+	socklen_t off_len = sizeof(st->off);
+
+	/* All four rings, same size.  CVE-2022-3625 is in this exact
+	 * setsockopt path -- the fix landed in xsk_setsockopt() to refuse
+	 * a duplicate XDP_*_RING setsockopt that previously freed the old
+	 * queue out from under the bound socket. */
+	if (setsockopt_retry(st->xsk_fd, SOL_XDP, XDP_RX_RING,
+			     &ring_entries, sizeof(ring_entries)) < 0 ||
+	    setsockopt_retry(st->xsk_fd, SOL_XDP, XDP_TX_RING,
+			     &ring_entries, sizeof(ring_entries)) < 0 ||
+	    setsockopt_retry(st->xsk_fd, SOL_XDP, XDP_UMEM_FILL_RING,
+			     &ring_entries, sizeof(ring_entries)) < 0 ||
+	    setsockopt_retry(st->xsk_fd, SOL_XDP, XDP_UMEM_COMPLETION_RING,
+			     &ring_entries, sizeof(ring_entries)) < 0) {
+		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.afxdp_churn_rings_setup_ok,
+			   1, __ATOMIC_RELAXED);
+
+	if (getsockopt(st->xsk_fd, SOL_XDP, XDP_MMAP_OFFSETS,
+		       &st->off, &off_len) < 0) {
+		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	st->rx_ring_sz = (size_t)st->off.rx.desc +
+			 (size_t)AFXDP_RING_ENTRIES * sizeof(struct xdp_desc);
+	st->tx_ring_sz = (size_t)st->off.tx.desc +
+			 (size_t)AFXDP_RING_ENTRIES * sizeof(struct xdp_desc);
+	st->fr_ring_sz = (size_t)st->off.fr.desc +
+			 (size_t)AFXDP_RING_ENTRIES * sizeof(uint64_t);
+	st->cr_ring_sz = (size_t)st->off.cr.desc +
+			 (size_t)AFXDP_RING_ENTRIES * sizeof(uint64_t);
+
+	st->rx_ring = mmap(NULL, st->rx_ring_sz, PROT_READ | PROT_WRITE,
+			   MAP_SHARED | MAP_POPULATE, st->xsk_fd,
+			   XDP_PGOFF_RX_RING);
+	st->tx_ring = mmap(NULL, st->tx_ring_sz, PROT_READ | PROT_WRITE,
+			   MAP_SHARED | MAP_POPULATE, st->xsk_fd,
+			   XDP_PGOFF_TX_RING);
+	st->fr_ring = mmap(NULL, st->fr_ring_sz, PROT_READ | PROT_WRITE,
+			   MAP_SHARED | MAP_POPULATE, st->xsk_fd,
+			   XDP_UMEM_PGOFF_FILL_RING);
+	st->cr_ring = mmap(NULL, st->cr_ring_sz, PROT_READ | PROT_WRITE,
+			   MAP_SHARED | MAP_POPULATE, st->xsk_fd,
+			   XDP_UMEM_PGOFF_COMPLETION_RING);
+	if (st->rx_ring == MAP_FAILED || st->tx_ring == MAP_FAILED ||
+	    st->fr_ring == MAP_FAILED || st->cr_ring == MAP_FAILED) {
+		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	return 0;
+}
+
 /* One full setup + race + teardown cycle on a fresh AF_XDP socket. */
 static void iter_one(unsigned int idx, const struct timespec *t_outer)
 {
@@ -653,9 +720,7 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 	struct xdp_statistics xstats;
 	struct sockaddr_xdp sxdp;
 	char tun_name[IFNAMSIZ];
-	socklen_t off_len = sizeof(st.off);
 	socklen_t xstats_len = sizeof(xstats);
-	uint32_t ring_entries = AFXDP_RING_ENTRIES;
 	unsigned int target_ifindex;
 	unsigned int retry;
 	bool want_sg, want_tx_md, want_tun;
@@ -671,59 +736,8 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 	if (afxdp_iter_setup_umem(&st, &want_sg, &want_tx_md, &want_tun) < 0)
 		goto out;
 
-	/* All four rings, same size.  CVE-2022-3625 is in this exact
-	 * setsockopt path -- the fix landed in xsk_setsockopt() to refuse
-	 * a duplicate XDP_*_RING setsockopt that previously freed the old
-	 * queue out from under the bound socket. */
-	if (setsockopt_retry(st.xsk_fd, SOL_XDP, XDP_RX_RING,
-			     &ring_entries, sizeof(ring_entries)) < 0 ||
-	    setsockopt_retry(st.xsk_fd, SOL_XDP, XDP_TX_RING,
-			     &ring_entries, sizeof(ring_entries)) < 0 ||
-	    setsockopt_retry(st.xsk_fd, SOL_XDP, XDP_UMEM_FILL_RING,
-			     &ring_entries, sizeof(ring_entries)) < 0 ||
-	    setsockopt_retry(st.xsk_fd, SOL_XDP, XDP_UMEM_COMPLETION_RING,
-			     &ring_entries, sizeof(ring_entries)) < 0) {
-		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (afxdp_iter_setup_rings(&st) < 0)
 		goto out;
-	}
-	__atomic_add_fetch(&shm->stats.afxdp_churn_rings_setup_ok,
-			   1, __ATOMIC_RELAXED);
-
-	if (getsockopt(st.xsk_fd, SOL_XDP, XDP_MMAP_OFFSETS,
-		       &st.off, &off_len) < 0) {
-		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-
-	st.rx_ring_sz = (size_t)st.off.rx.desc +
-			(size_t)AFXDP_RING_ENTRIES * sizeof(struct xdp_desc);
-	st.tx_ring_sz = (size_t)st.off.tx.desc +
-			(size_t)AFXDP_RING_ENTRIES * sizeof(struct xdp_desc);
-	st.fr_ring_sz = (size_t)st.off.fr.desc +
-			(size_t)AFXDP_RING_ENTRIES * sizeof(uint64_t);
-	st.cr_ring_sz = (size_t)st.off.cr.desc +
-			(size_t)AFXDP_RING_ENTRIES * sizeof(uint64_t);
-
-	st.rx_ring = mmap(NULL, st.rx_ring_sz, PROT_READ | PROT_WRITE,
-			  MAP_SHARED | MAP_POPULATE, st.xsk_fd,
-			  XDP_PGOFF_RX_RING);
-	st.tx_ring = mmap(NULL, st.tx_ring_sz, PROT_READ | PROT_WRITE,
-			  MAP_SHARED | MAP_POPULATE, st.xsk_fd,
-			  XDP_PGOFF_TX_RING);
-	st.fr_ring = mmap(NULL, st.fr_ring_sz, PROT_READ | PROT_WRITE,
-			  MAP_SHARED | MAP_POPULATE, st.xsk_fd,
-			  XDP_UMEM_PGOFF_FILL_RING);
-	st.cr_ring = mmap(NULL, st.cr_ring_sz, PROT_READ | PROT_WRITE,
-			  MAP_SHARED | MAP_POPULATE, st.xsk_fd,
-			  XDP_UMEM_PGOFF_COMPLETION_RING);
-	if (st.rx_ring == MAP_FAILED || st.tx_ring == MAP_FAILED ||
-	    st.fr_ring == MAP_FAILED || st.cr_ring == MAP_FAILED) {
-		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
 
 	st.map_fd = xskmap_create();
 	if (st.map_fd < 0) {
