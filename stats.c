@@ -446,6 +446,13 @@ static void json_emit_minicorpus_section(void)
 	s_wins = __atomic_load_n(&minicorpus_shm->splice_wins, __ATOMIC_RELAXED);
 	printf(",\"splice\":{\"hits\":%lu,\"wins\":%lu}", s_hits, s_wins);
 
+	{
+		unsigned long xp_hits = __atomic_load_n(
+			&minicorpus_shm->xprop_hits, __ATOMIC_RELAXED);
+
+		printf(",\"xprop\":{\"hits\":%lu}", xp_hits);
+	}
+
 	fputs(",\"stack_depth_histogram\":{", stdout);
 	for (i = 1; i <= STACK_MAX; i++) {
 		unsigned long d = __atomic_load_n(
@@ -5337,6 +5344,14 @@ void dump_stats(void)
 			pct10 = s_wins * 1000UL / s_hits;
 			output(0, "Splice: %lu hits  %lu wins (%lu.%lu%%)\n",
 			       s_hits, s_wins, pct10 / 10, pct10 % 10);
+		}
+
+		{
+			unsigned long xp_hits = __atomic_load_n(
+				&minicorpus_shm->xprop_hits, __ATOMIC_RELAXED);
+
+			if (xp_hits > 0)
+				output(0, "Xprop: %lu hits\n", xp_hits);
 		}
 
 		histo_total = 0;

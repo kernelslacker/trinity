@@ -105,6 +105,12 @@ struct minicorpus_shared {
 	unsigned long replay_wins;		/* replays that found new coverage */
 	unsigned long splice_hits;		/* per-arg splice firings */
 	unsigned long splice_wins;		/* replays with splice that found new coverage */
+	/* Cross-syscall value propagation (xprop): bumped once per per-arg
+	 * draw that pulled a value from another syscall's corpus pool (see
+	 * minicorpus_pick_from_other_syscall).  Sibling to splice_hits --
+	 * splice shuffles values within one snapshot, xprop shuffles them
+	 * across syscalls.  RELAXED atomic. */
+	unsigned long xprop_hits;
 	/* Distribution of stacking depths chosen by pick_stack_depth().
 	 * Index is the depth value (1..STACK_MAX); index 0 is unused. */
 	unsigned long stack_depth_histogram[STACK_MAX + 1];

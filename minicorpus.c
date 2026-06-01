@@ -43,6 +43,34 @@
 
 struct minicorpus_shared *minicorpus_shm = NULL;
 
+/*
+ * Cross-syscall value propagation (xprop) source whitelist.
+ *
+ * Within-syscall splice shuffles values between arg slots of one
+ * snapshot.  xprop extends the same idea across syscalls: with low
+ * probability an arg of the target syscall is overridden with a value
+ * pulled from a *different* syscall's corpus pool.  Most arg slots see
+ * no benefit from foreign values -- the kernel cheaply rejects
+ * type-incoherent garbage with -EINVAL and we burn iterations -- so the
+ * initial whitelist is narrow: fd-consuming slots of the target draw
+ * from fd-returning syscalls' pools.  That pairing has the highest
+ * a-priori chance of producing a value that lands in a region of input
+ * space the kernel will follow rather than reject outright.
+ *
+ * Built once from minicorpus_init() by walking the syscall table
+ * (which select_syscall_tables() has already populated by the time
+ * init_shm runs) and recording the nr of every syscall with
+ * rettype == RET_FD whose argtype set is corpus-replayable.  Inherited
+ * COW by every child fork.
+ */
+#define XPROP_RATIO 64
+#define XPROP_FD_SRC_MAX 64
+
+static unsigned int xprop_fd_src_nrs[XPROP_FD_SRC_MAX];
+static unsigned int xprop_n_fd_src;
+
+static void xprop_build_whitelist(void);
+
 void minicorpus_init(void)
 {
 	if (kcov_shm == NULL)
@@ -62,6 +90,10 @@ void minicorpus_init(void)
 	output(0, "KCOV: mini-corpus allocated (%lu KB, %d entries/syscall)\n",
 		(unsigned long) sizeof(struct minicorpus_shared) / 1024,
 		CORPUS_RING_SIZE);
+
+	xprop_build_whitelist();
+	output(0, "KCOV: mini-corpus xprop whitelist: %u fd-returning sources\n",
+		xprop_n_fd_src);
 }
 
 static void ring_lock(struct corpus_ring *ring)
@@ -121,6 +153,79 @@ static bool corpus_args_replayable(const struct syscallentry *entry)
 			break;
 		}
 	}
+	return true;
+}
+
+static void xprop_consider_nr(unsigned int nr)
+{
+	struct syscallentry *e;
+
+	if (xprop_n_fd_src >= XPROP_FD_SRC_MAX)
+		return;
+	e = get_syscall_entry(nr, false);
+	if (e == NULL || e->rettype != RET_FD)
+		return;
+	if (!corpus_args_replayable(e))
+		return;
+	xprop_fd_src_nrs[xprop_n_fd_src++] = nr;
+}
+
+static void xprop_build_whitelist(void)
+{
+	unsigned int nr;
+
+	for (nr = 0; nr < MAX_NR_SYSCALL; nr++)
+		xprop_consider_nr(nr);
+}
+
+/*
+ * Pull a value from a different syscall's seen-arg pool for use as arg
+ * @arg_atype of the target syscall @nr.  Returns true and writes the
+ * picked value to *val on a hit; false leaves *val untouched.  Only
+ * fd-typed target slots are eligible -- the whitelist source pool is
+ * the fd-returning-syscall set built at init.  Self-pairs are filtered
+ * (within-syscall shuffling is the splice op's job).
+ */
+static bool minicorpus_pick_from_other_syscall(unsigned int nr,
+					       enum argtype arg_atype,
+					       unsigned long *val)
+{
+	struct corpus_ring *ring;
+	unsigned int src_nr, slot, src_arg, num_args;
+	unsigned long picked;
+
+	if (xprop_n_fd_src == 0)
+		return false;
+	if (!is_fdarg(arg_atype))
+		return false;
+
+	src_nr = xprop_fd_src_nrs[rnd_modulo_u32(xprop_n_fd_src)];
+	if (src_nr == nr)
+		return false;
+
+	ring = &minicorpus_shm->rings[src_nr];
+
+	ring_lock(ring);
+	if (ring->count == 0) {
+		ring_unlock(ring);
+		return false;
+	}
+	/* Newest entry: head points one past the last write.  Adding
+	 * CORPUS_RING_SIZE before the subtract keeps the unsigned modulo
+	 * well-defined when head is 0 on a wrapped ring. */
+	slot = (ring->head + CORPUS_RING_SIZE - 1) % CORPUS_RING_SIZE;
+	num_args = ring->entries[slot].num_args;
+	if (num_args == 0 || num_args > 6) {
+		ring_unlock(ring);
+		return false;
+	}
+	src_arg = rnd_modulo_u32(num_args);
+	picked = ring->entries[slot].args[src_arg];
+	ring_unlock(ring);
+
+	*val = picked;
+	__atomic_fetch_add(&minicorpus_shm->xprop_hits, 1UL,
+			   __ATOMIC_RELAXED);
 	return true;
 }
 
@@ -635,6 +740,24 @@ void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry,
 			__atomic_fetch_add(&minicorpus_shm->splice_hits,
 					   1UL, __ATOMIC_RELAXED);
 			this_replay_spliced = true;
+		}
+
+		/* Cross-syscall value propagation: with probability
+		 * 1/XPROP_RATIO, override this arg with a value pulled from
+		 * a *different* syscall's corpus pool.  Only fd-typed slots
+		 * are eligible; the source set is the fd-returning-syscall
+		 * whitelist built at init.  Runs after splice so an xprop
+		 * hit displaces a spliced value rather than the other way
+		 * round (xprop is the rarer event and its picked value is
+		 * less likely to have been seen by the mutator before).  The
+		 * downstream mutator chain still applies on top, matching
+		 * splice's "starting value for the chain" semantics. */
+		if (ONE_IN(XPROP_RATIO)) {
+			unsigned long xval;
+
+			if (minicorpus_pick_from_other_syscall(nr,
+					entry->argtype[i], &xval))
+				val = xval;
 		}
 
 		/* ~25% chance to mutate each arg.  When we do mutate, apply
