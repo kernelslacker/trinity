@@ -363,6 +363,45 @@ static long long ns_since(const struct timespec *t0)
 	       (long long)(now.tv_nsec - t0->tv_nsec);
 }
 
+/* Install kTLS on @s, then push TLS_TX / TLS_RX cinfo with urandom-
+ * derived key material.  The TCP_ULP "tls" install is the one swap that
+ * SHOULD succeed on a connected v4 TCP socket; EAFNOSUPPORT /
+ * ENOPROTOOPT / EPERM here mean the platform can't reach any of the
+ * codepaths this childop targets, so the cap-gate latches.  TX install
+ * bumps tx_install_ok on success; RX is fire-and-forget (some kernels
+ * reject RX install on a client-side fd when no peer ChangeCipherSpec
+ * has fired yet, itself a coverage edge).  Returns 0 on success, -1
+ * when iter_one should bail to its out: cleanup. */
+static int tcp_ulp_swap_iter_install_tls(int s)
+{
+	struct tls12_crypto_info_aes_gcm_128 cinfo;
+	unsigned short version;
+
+	if (install_tls_ulp(s) < 0) {
+		if (errno == EAFNOSUPPORT || errno == ENOPROTOOPT ||
+		    errno == EPERM)
+			ns_unsupported_tcp_ulp_swap = true;
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_install_failed,
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_install_tls_ok,
+			   1, __ATOMIC_RELAXED);
+
+	version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
+	fill_cinfo_aes_gcm_128(&cinfo, version);
+	if (setsockopt(s, SOL_TLS, TLS_TX, &cinfo, sizeof(cinfo)) == 0)
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_tx_install_ok,
+				   1, __ATOMIC_RELAXED);
+
+	fill_cinfo_aes_gcm_128(&cinfo, version);
+	(void)setsockopt(s, SOL_TLS, TLS_RX, &cinfo, sizeof(cinfo));
+
+	return 0;
+}
+
 /* One full sequence on a freshly-created loopback TCP socket. */
 static void iter_one(const struct timespec *t_outer)
 {
@@ -382,42 +421,9 @@ static void iter_one(const struct timespec *t_outer)
 		return;
 	}
 
-	/* Step 3: install kTLS.  This is the one TCP_ULP call that
-	 * SHOULD succeed on a connected v4 TCP socket.  EAFNOSUPPORT /
-	 * ENOPROTOOPT / EPERM here mean the platform can't reach any
-	 * of the codepaths this childop targets -- latch off. */
-	if (install_tls_ulp(s) < 0) {
-		if (errno == EAFNOSUPPORT || errno == ENOPROTOOPT ||
-		    errno == EPERM)
-			ns_unsupported_tcp_ulp_swap = true;
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_install_failed,
-				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	/* Steps 3+4: install kTLS, then TLS_TX / TLS_RX cinfo. */
+	if (tcp_ulp_swap_iter_install_tls(s) != 0)
 		goto out;
-	}
-	__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_install_tls_ok,
-			   1, __ATOMIC_RELAXED);
-
-	/* Step 4: install TLS_TX / TLS_RX with urandom-derived cinfo.
-	 * Best-effort: TX install bumps the tx counter on success; RX
-	 * is fire-and-forget (some kernels reject RX install on a
-	 * client-side fd when no peer ChangeCipherSpec has fired yet,
-	 * which is a coverage edge in itself). */
-	{
-		struct tls12_crypto_info_aes_gcm_128 cinfo;
-		unsigned short version;
-
-		version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
-		fill_cinfo_aes_gcm_128(&cinfo, version);
-		rc = setsockopt(s, SOL_TLS, TLS_TX, &cinfo, sizeof(cinfo));
-		if (rc == 0)
-			__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_tx_install_ok,
-					   1, __ATOMIC_RELAXED);
-
-		fill_cinfo_aes_gcm_128(&cinfo, version);
-		(void)setsockopt(s, SOL_TLS, TLS_RX, &cinfo, sizeof(cinfo));
-	}
 
 	if ((unsigned long long)ns_since(t_outer) >= ULP_SWAP_WALL_CAP_NS)
 		goto out;
