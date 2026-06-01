@@ -1327,21 +1327,8 @@ static void dump_stats_json_socket_family_and_tls(void)
 		shm->stats.bridge_ct_pkts_sent);
 }
 
-static void dump_stats_json(void)
+static void dump_stats_json_netfilter_and_xfrm(void)
 {
-	putchar('{');
-
-	json_emit_syscalls_array();
-
-	fputs(",\"stats\":{", stdout);
-	dump_stats_json_fault_and_fd_lifecycle();
-	dump_stats_json_oracle();
-	dump_stats_json_basic_subsystems();
-	dump_stats_json_iouring_and_zombies();
-	dump_stats_json_corruption_and_audit();
-	dump_stats_json_lifecycle_and_storms();
-	dump_stats_json_socket_family_and_tls();
-
 	printf("\"nftables_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"table_create_ok\":%lu,\"set_create_ok\":%lu,\"chain_create_ok\":%lu,\"rule_create_ok\":%lu,\"packet_sent_ok\":%lu,\"rule_insert_ok\":%lu,\"rule_del_ok\":%lu,\"table_del_ok\":%lu,\"payload_expr_emit\":%lu,\"objref_expr_emit\":%lu,\"compat_validate_install_ok\":%lu,\"compat_validate_install_fail\":%lu,\"compat_validate_unsupported\":%lu,\"compat_validate_per_hook_pairs\":%lu,\"dormant_abort_iters\":%lu,\"dormant_abort_eperm\":%lu,\"dormant_abort_emsg\":%lu,\"dormant_abort_ok\":%lu,\"xt_ct_iters\":%lu,\"xt_ct_eperm\":%lu,\"xt_ct_unsupported\":%lu,\"xt_ct_set_ok\":%lu,\"xt_ct_get_ok\":%lu,\"xt_ct_v2_seen\":%lu,\"fwd_loop_runs\":%lu,\"fwd_loop_ns_setup_failed\":%lu,\"fwd_loop_probe_sent_ok\":%lu,\"fwd_loop_completed_ok\":%lu,\"l4frag_iters\":%lu,\"l4frag_install_ok\":%lu,\"l4frag_rule_ok\":%lu,\"l4frag_send_ok\":%lu,\"l4frag_send_failed\":%lu},"
 		"\"tc_qdisc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"qdisc_create_ok\":%lu,\"tclass_create_ok\":%lu,\"tfilter_create_ok\":%lu,\"packet_sent_ok\":%lu,\"qdisc_replace_ok\":%lu,\"tfilter_del_ok\":%lu,\"qdisc_del_ok\":%lu,\"link_del_ok\":%lu,\"peek_stack_runs\":%lu,\"peek_stack_install_ok\":%lu,\"peek_stack_install_fail\":%lu,\"peek_stack_burst_ok\":%lu,\"bridge_parent_runs\":%lu,\"bridge_dellink_race_ok\":%lu},"
 		"\"xfrm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_updated\":%lu,\"sa_deleted\":%lu,\"pol_added\":%lu,\"pol_deleted\":%lu,\"esp_sent\":%lu,\"pfkey_send_ok\":%lu,\"ah_esn_setup_ok\":%lu,\"ah_esn_setup_fail\":%lu,\"ah_esn_async_runs\":%lu,\"ah_esn_delsa_races\":%lu},"
@@ -1509,6 +1496,23 @@ static void dump_stats_json(void)
 		shm->stats.tcp_ulp_swap_churn_uninstall_ok,
 		shm->stats.tcp_ulp_swap_churn_reinstall_ok,
 		shm->stats.tcp_ulp_swap_churn_install_failed);
+}
+
+static void dump_stats_json(void)
+{
+	putchar('{');
+
+	json_emit_syscalls_array();
+
+	fputs(",\"stats\":{", stdout);
+	dump_stats_json_fault_and_fd_lifecycle();
+	dump_stats_json_oracle();
+	dump_stats_json_basic_subsystems();
+	dump_stats_json_iouring_and_zombies();
+	dump_stats_json_corruption_and_audit();
+	dump_stats_json_lifecycle_and_storms();
+	dump_stats_json_socket_family_and_tls();
+	dump_stats_json_netfilter_and_xfrm();
 
 	stat_category_emit_json(&msg_zerocopy_churn_category);
 
