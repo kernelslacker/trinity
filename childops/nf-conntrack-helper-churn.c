@@ -632,6 +632,56 @@ static void update_helper_mask(int helper_idx, int rc)
 }
 
 /*
+ * Per-iteration context shared across the iter_one phase helpers.
+ * `ctx` is the caller-owned nfnetlink socket; the remaining fields are
+ * rolled fresh each outer iteration by nfct_helper_iter_pick and read by
+ * the attach/expect/drive/race phases.
+ */
+struct nfct_helper_iter_ctx {
+	struct nfnl_ctx	*ctx;
+	int		helper_idx;
+	const char	*helper_name;
+	__u8		l4proto;
+	__u16		zone;
+	__u16		alt_zone;
+	__u16		sport;
+	__u16		dport;
+	__u16		child_sport;
+	__u16		child_dport;
+};
+
+/*
+ * Phase: roll per-iteration identifiers -- pick an available helper, the
+ * zone pair, and the master/child port quads.  Returns 0 on success;
+ * -1 means no helper is currently available (caller bumps the no_helper
+ * stat and bails -- the attach/expect/drive/race phases have nothing to
+ * anchor on).
+ */
+static int nfct_helper_iter_pick(struct nfct_helper_iter_ctx *ictx)
+{
+	ictx->helper_idx = pick_helper();
+	if (ictx->helper_idx < 0) {
+		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_no_helper,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	ictx->helper_name = helper_names[ictx->helper_idx];
+	ictx->l4proto = helper_l4proto[ictx->helper_idx];
+
+	ictx->zone     = (__u16)(rand32() % NF_ZONE_SPREAD);
+	ictx->alt_zone = (__u16)((ictx->zone + 1U +
+				  (rand32() % (NF_ZONE_SPREAD - 1U)))
+				 % NF_ZONE_SPREAD);
+
+	ictx->sport       = (__u16)(20000 + (rand32() & 0x1fff));
+	ictx->dport       = (__u16)(40000 + (rand32() & 0x1fff));
+	ictx->child_sport = (__u16)(30000 + (rand32() & 0x1fff));
+	ictx->child_dport = (__u16)(50000 + (rand32() & 0x1fff));
+
+	return 0;
+}
+
+/*
  * One outer iteration: pick zone + helper, insert master conntrack +
  * expectation, drive a packet through, then run a small race burst
  * (delete / zone-swap / detach).  Returns true on every path; the
@@ -639,38 +689,19 @@ static void update_helper_mask(int helper_idx, int rc)
  */
 static void iter_one(struct nfnl_ctx *ctx)
 {
-	__u16 zone, alt_zone;
-	__u16 sport, dport;
-	__u16 child_sport, child_dport;
-	int helper_idx;
-	const char *helper_name;
-	__u8 l4proto;
+	struct nfct_helper_iter_ctx ictx = { .ctx = ctx };
 	int rc;
 	int drive_fd;
 	unsigned int races, r;
 
-	helper_idx = pick_helper();
-	if (helper_idx < 0) {
-		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_no_helper,
-				   1, __ATOMIC_RELAXED);
+	if (nfct_helper_iter_pick(&ictx) < 0)
 		return;
-	}
-	helper_name = helper_names[helper_idx];
-	l4proto = helper_l4proto[helper_idx];
-
-	zone     = (__u16)(rand32() % NF_ZONE_SPREAD);
-	alt_zone = (__u16)((zone + 1U + (rand32() % (NF_ZONE_SPREAD - 1U)))
-			   % NF_ZONE_SPREAD);
-
-	sport = (__u16)(20000 + (rand32() & 0x1fff));
-	dport = (__u16)(40000 + (rand32() & 0x1fff));
-	child_sport = (__u16)(30000 + (rand32() & 0x1fff));
-	child_dport = (__u16)(50000 + (rand32() & 0x1fff));
 
 	/* 2) CT_NEW with CTA_HELP -- the helper-attach path.  EEXIST is
 	 *    benign coverage (lookup + collision-detection ran).  */
-	rc = build_ct_new(ctx, zone, l4proto, sport, dport, helper_name, 0);
-	update_helper_mask(helper_idx, rc);
+	rc = build_ct_new(ictx.ctx, ictx.zone, ictx.l4proto,
+			  ictx.sport, ictx.dport, ictx.helper_name, 0);
+	update_helper_mask(ictx.helper_idx, rc);
 	if (rc == 0 || rc == -EEXIST) {
 		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_attach_ok,
 				   1, __ATOMIC_RELAXED);
@@ -683,11 +714,12 @@ static void iter_one(struct nfnl_ctx *ctx)
 	 *    child in a different zone than the master to exercise the
 	 *    cross-zone expectation-vs-conntrack split. */
 	{
-		__u16 exp_zone = (rand32() & 1U) ? alt_zone : zone;
+		__u16 exp_zone = (rand32() & 1U) ? ictx.alt_zone : ictx.zone;
 
-		rc = build_exp_new(ctx, zone, exp_zone, l4proto,
-				   sport, dport, child_sport, child_dport,
-				   helper_name);
+		rc = build_exp_new(ictx.ctx, ictx.zone, exp_zone, ictx.l4proto,
+				   ictx.sport, ictx.dport,
+				   ictx.child_sport, ictx.child_dport,
+				   ictx.helper_name);
 		if (rc == 0) {
 			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_exp_ok,
 					   1, __ATOMIC_RELAXED);
@@ -696,8 +728,8 @@ static void iter_one(struct nfnl_ctx *ctx)
 
 	/* 4) Drive a packet through loopback to fire nf_conntrack_in()
 	 *    and the helper's ->help() callback. */
-	drive_fd = loopback_drive(l4proto, dport,
-				  0xc0de0000U | (__u32)zone);
+	drive_fd = loopback_drive(ictx.l4proto, ictx.dport,
+				  0xc0de0000U | (__u32)ictx.zone);
 	if (drive_fd >= 0) {
 		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_packet_sent,
 				   1, __ATOMIC_RELAXED);
@@ -716,7 +748,8 @@ static void iter_one(struct nfnl_ctx *ctx)
 	for (r = 0; r < races; r++) {
 		/* a) CT_DELETE in the master's zone -- races the helper's
 		 *    expectation walk. */
-		rc = build_ct_delete(ctx, zone, l4proto, sport, dport);
+		rc = build_ct_delete(ictx.ctx, ictx.zone, ictx.l4proto,
+				     ictx.sport, ictx.dport);
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_delete_ok,
 					   1, __ATOMIC_RELAXED);
@@ -725,8 +758,8 @@ static void iter_one(struct nfnl_ctx *ctx)
 		 *    SO_MARK.  Forces a re-resolve in alt_zone's hash slot
 		 *    while the prior delete may still be in-flight on the
 		 *    RCU grace period. */
-		drive_fd = loopback_drive(l4proto, dport,
-					  0xc0de0000U | (__u32)alt_zone);
+		drive_fd = loopback_drive(ictx.l4proto, ictx.dport,
+					  0xc0de0000U | (__u32)ictx.alt_zone);
 		if (drive_fd >= 0) {
 			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_zone_swap,
 					   1, __ATOMIC_RELAXED);
@@ -736,7 +769,8 @@ static void iter_one(struct nfnl_ctx *ctx)
 		/* c) Mid-flow helper detach: CT_NEW with NLM_F_REPLACE,
 		 *    no CTA_HELP.  Drives __nf_ct_helper_destroy() while
 		 *    the expectation list may still hold an entry. */
-		rc = build_ct_new(ctx, zone, l4proto, sport, dport,
+		rc = build_ct_new(ictx.ctx, ictx.zone, ictx.l4proto,
+				  ictx.sport, ictx.dport,
 				  NULL, NLM_F_REPLACE);
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_detach_ok,
