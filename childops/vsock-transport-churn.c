@@ -301,15 +301,66 @@ static int vsock_transport_iter_setup(int *listener_out, int *cli_out,
 	return 0;
 }
 
+/*
+ * Step 3 inner burst: fire up to VS_INNER_SENDS small payloads at the
+ * client and drain the server side with MSG_DONTWAIT after each send.
+ * Respects the outer wall-clock cap on every iteration and bails on
+ * any non-EAGAIN errno (the original code's "terminal errno (ENOTCONN
+ * / EPIPE etc.)" bail-out).  All accounting is via shm stat bumps so
+ * the burst returns nothing to the caller.
+ */
+static void vsock_transport_iter_send_burst(int cli, int srv,
+					    const struct timespec *t_outer)
+{
+	unsigned char payload[VS_PAYLOAD_BYTES];
+	unsigned char drain[VS_PAYLOAD_BYTES * 2];
+	unsigned int sent_count = 0;
+	unsigned int i;
+
+	memset(payload, 0xa5, sizeof(payload));
+
+	for (i = 0; i < VS_INNER_SENDS; i++) {
+		ssize_t r;
+
+		if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
+			break;
+
+		r = send(cli, payload, sizeof(payload),
+			 MSG_DONTWAIT | MSG_NOSIGNAL);
+		if (r >= 0) {
+			sent_count++;
+			__atomic_add_fetch(
+				&shm->stats.vsock_transport_churn_send_ok,
+				1, __ATOMIC_RELAXED);
+		} else if (errno == EAGAIN) {
+			break;
+		} else {
+			/* Terminal errno (ENOTCONN / EPIPE etc.) -- bail. */
+			break;
+		}
+
+		if (srv >= 0) {
+			unsigned int d;
+
+			for (d = 0; d < VS_DRAIN_CAP; d++) {
+				ssize_t n = recv(srv, drain, sizeof(drain),
+						 MSG_DONTWAIT);
+				if (n <= 0)
+					break;
+			}
+		}
+	}
+
+	/* Suppress "set but never read" on sent_count without warning. */
+	(void)sent_count;
+}
+
 /* One full sequence on a freshly-created loopback vsock pair. */
 static void iter_one(const struct timespec *t_outer)
 {
 	int listener = -1;
 	int cli = -1;
 	int srv = -1;
-	unsigned int sent_count = 0;
-	unsigned char payload[VS_PAYLOAD_BYTES];
-	unsigned char drain[VS_PAYLOAD_BYTES * 2];
 
 	if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
 		return;
@@ -317,45 +368,7 @@ static void iter_one(const struct timespec *t_outer)
 	if (vsock_transport_iter_setup(&listener, &cli, &srv) != 0)
 		goto out;
 
-	/* Step 3: inner send/recv burst. */
-	memset(payload, 0xa5, sizeof(payload));
-	{
-		unsigned int i;
-
-		for (i = 0; i < VS_INNER_SENDS; i++) {
-			ssize_t r;
-
-			if ((unsigned long long)ns_since(t_outer) >=
-			    VS_WALL_CAP_NS)
-				break;
-
-			r = send(cli, payload, sizeof(payload),
-				 MSG_DONTWAIT | MSG_NOSIGNAL);
-			if (r >= 0) {
-				sent_count++;
-				__atomic_add_fetch(
-					&shm->stats.vsock_transport_churn_send_ok,
-					1, __ATOMIC_RELAXED);
-			} else if (errno == EAGAIN) {
-				break;
-			} else {
-				/* Terminal errno (ENOTCONN / EPIPE etc.) -- bail. */
-				break;
-			}
-
-			if (srv >= 0) {
-				unsigned int d;
-
-				for (d = 0; d < VS_DRAIN_CAP; d++) {
-					ssize_t n = recv(srv, drain,
-							 sizeof(drain),
-							 MSG_DONTWAIT);
-					if (n <= 0)
-						break;
-				}
-			}
-		}
-	}
+	vsock_transport_iter_send_burst(cli, srv, t_outer);
 
 	if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
 		goto out;
@@ -404,9 +417,6 @@ static void iter_one(const struct timespec *t_outer)
 				&shm->stats.vsock_transport_churn_get_cid_ok,
 				1, __ATOMIC_RELAXED);
 	}
-
-	/* Suppress "set but never read" on sent_count without warning. */
-	(void)sent_count;
 
 	(void)shutdown(cli, SHUT_RDWR);
 	if (srv >= 0)
