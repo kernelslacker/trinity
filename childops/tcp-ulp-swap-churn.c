@@ -420,6 +420,30 @@ static void tcp_ulp_swap_iter_traffic_burst(int s)
 	(void)recv(s, rxbuf, sizeof(rxbuf), MSG_DONTWAIT);
 }
 
+/* Illegal-swap attempts on the now-armed kTLS socket.  Both "espintcp"
+ * and "smc" must be rejected by the kernel tcp_set_ulp() validate-then-
+ * reject path on a connected, already-ULP'd socket -- the rejection IS
+ * the test (CVE-2025-21683 lived in exactly the espintcp-after-partial-
+ * setup edge).  Counter bumps on any non-zero return except ENOPROTOOPT
+ * (the module isn't built; benign coverage).  Closes with the ifname
+ * SIOCGIFNAME / SIOCSIFNAME round-trip gravy probe. */
+static void tcp_ulp_swap_iter_swap_attempts(int s)
+{
+	int rc;
+
+	rc = setsockopt(s, IPPROTO_TCP, TCP_ULP, "espintcp", 8);
+	if (rc < 0 && errno != ENOPROTOOPT)
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_swap_rejected_ok,
+				   1, __ATOMIC_RELAXED);
+
+	rc = setsockopt(s, IPPROTO_TCP, TCP_ULP, "smc", 3);
+	if (rc < 0 && errno != ENOPROTOOPT)
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_swap_rejected_ok,
+				   1, __ATOMIC_RELAXED);
+
+	ifname_probe(s);
+}
+
 /* One full sequence on a freshly-created loopback TCP socket. */
 static void iter_one(const struct timespec *t_outer)
 {
@@ -447,29 +471,8 @@ static void iter_one(const struct timespec *t_outer)
 	/* Step 5: drive live tls_sw send + recv on the ULP. */
 	tcp_ulp_swap_iter_traffic_burst(s);
 
-	/* Step 6: setsockopt(TCP_ULP, "espintcp") -- post-connect, the
-	 * kernel tcp_set_ulp() validate-then-reject path bumps EBUSY/
-	 * EINVAL/EOPNOTSUPP.  THIS IS THE TEST.  The rejection IS the
-	 * bug surface (CVE-2025-21683 espintcp refcount imbalance lived
-	 * exactly here -- the encap module ref leaked when the swap was
-	 * rejected after partial setup).  Counter bump on any non-zero
-	 * return from setsockopt; only ENOPROTOOPT (espintcp not built)
-	 * is treated as benign coverage. */
-	rc = setsockopt(s, IPPROTO_TCP, TCP_ULP, "espintcp", 8);
-	if (rc < 0 && errno != ENOPROTOOPT)
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_swap_rejected_ok,
-				   1, __ATOMIC_RELAXED);
-
-	/* Step 7: same swap attempt against "smc" -- net/smc/smc_inet.c
-	 * registers an ULP that refuses install on an already-ULP'd or
-	 * post-connect socket.  Same rejection edge as espintcp. */
-	rc = setsockopt(s, IPPROTO_TCP, TCP_ULP, "smc", 3);
-	if (rc < 0 && errno != ENOPROTOOPT)
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_swap_rejected_ok,
-				   1, __ATOMIC_RELAXED);
-
-	/* Step 8: ifname round-trip.  No-op on the device. */
-	ifname_probe(s);
+	/* Steps 6-8: illegal swap attempts + ifname round-trip. */
+	tcp_ulp_swap_iter_swap_attempts(s);
 
 	if ((unsigned long long)ns_since(t_outer) >= ULP_SWAP_WALL_CAP_NS)
 		goto out;
