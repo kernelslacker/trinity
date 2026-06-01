@@ -437,6 +437,43 @@ static int ip6erspan_migrate_iter_setup(struct ip6erspan_migrate_iter_ctx *ctx,
 	return 0;
 }
 
+/*
+ * Phase 2: RTM_NEWLINK the per-kind link into the original ns and
+ * resolve its ifindex.  EPERM latches ns_unsupported_ip6erspan
+ * (caps-deficient child / locked-down kernel); ENOENT /
+ * EAFNOSUPPORT / EPROTONOSUPPORT / EOPNOTSUPP are the modular-
+ * tunnel-missing shapes the upstream rtnetlink layer returns when
+ * the kind module isn't loaded -- counted but not fatally latched
+ * so the kind roll keeps trying other kinds for this child.  A
+ * zero ifindex from if_nametoindex makes every later phase a no-op
+ * so we bail to the unified teardown.  Returns 0 on success or -1
+ * if the iteration should bail.
+ */
+static int ip6erspan_migrate_iter_create_link(struct ip6erspan_migrate_iter_ctx *ctx)
+{
+	int rc;
+
+	rc = inm_create_or_replace(&ctx->nl, ctx->ifname, ctx->k, false);
+	if (rc != 0) {
+		if (rc == -EPERM) {
+			__atomic_add_fetch(&shm->stats.inm_eperm,
+					   1, __ATOMIC_RELAXED);
+			ns_unsupported_ip6erspan = true;
+		} else if (rc == -ENOENT || rc == -EAFNOSUPPORT ||
+			   rc == -EPROTONOSUPPORT || rc == -EOPNOTSUPP) {
+			__atomic_add_fetch(&shm->stats.inm_unsupported,
+					   1, __ATOMIC_RELAXED);
+		}
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.inm_link_create_ok, 1, __ATOMIC_RELAXED);
+
+	ctx->ifindex = (int)if_nametoindex(ctx->ifname);
+	if (ctx->ifindex <= 0)
+		return -1;
+	return 0;
+}
+
 bool ip6erspan_netns_migrate(struct childdata *child)
 {
 	struct ip6erspan_migrate_iter_ctx ictx = {
@@ -465,23 +502,7 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 	if (ip6erspan_migrate_iter_setup(&ictx, &opts) != 0)
 		goto out;
 
-	rc = inm_create_or_replace(&ictx.nl, ictx.ifname, ictx.k, false);
-	if (rc != 0) {
-		if (rc == -EPERM) {
-			__atomic_add_fetch(&shm->stats.inm_eperm,
-					   1, __ATOMIC_RELAXED);
-			ns_unsupported_ip6erspan = true;
-		} else if (rc == -ENOENT || rc == -EAFNOSUPPORT ||
-			   rc == -EPROTONOSUPPORT || rc == -EOPNOTSUPP) {
-			__atomic_add_fetch(&shm->stats.inm_unsupported,
-					   1, __ATOMIC_RELAXED);
-		}
-		goto out;
-	}
-	__atomic_add_fetch(&shm->stats.inm_link_create_ok, 1, __ATOMIC_RELAXED);
-
-	ictx.ifindex = (int)if_nametoindex(ictx.ifname);
-	if (ictx.ifindex <= 0)
+	if (ip6erspan_migrate_iter_create_link(&ictx) != 0)
 		goto out;
 
 	/* Step (d): unshare into a sibling ns; capture its FD; setns()
