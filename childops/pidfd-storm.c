@@ -195,23 +195,25 @@ struct pidfd_slot {
 	int pidfd;
 };
 
-bool pidfd_storm(struct childdata *child)
+/*
+ * Setup phase: fork up to nr pause-children and open a pidfd for each,
+ * filling the caller-owned slots[] and returning the count of live
+ * slots.  Runs outside the timed storm budget — the storm itself only
+ * counts iterations of the inner loop.
+ *
+ * The child branch of fork() lives inside this helper on purpose: the
+ * inherited-handler reset (sanitize_pause_child_signals) must run in
+ * the forked child before pause(), so it stays welded to the fork
+ * site.  A slot whose pidfd_open failed keeps pidfd=-1 so teardown can
+ * still reap the pid via kill(2).
+ */
+static unsigned int pidfd_storm_iter_spawn(struct pidfd_slot *slots,
+					   unsigned int nr)
 {
-	struct pidfd_slot slots[NR_CHILDREN];
-	struct timespec start;
 	unsigned int active = 0;
-	unsigned int iter;
-	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
 	unsigned int i;
 
-	(void) child;
-
-	__atomic_add_fetch(&shm->stats.pidfd_storm_runs, 1, __ATOMIC_RELAXED);
-
-	/* Setup: fork the children and open a pidfd for each.  Outside
-	 * the timed budget — the storm itself only counts iterations of
-	 * the inner loop. */
-	for (i = 0; i < NR_CHILDREN; i++) {
+	for (i = 0; i < nr; i++) {
 		pid_t pid = fork();
 
 		if (pid == 0) {
@@ -260,6 +262,23 @@ bool pidfd_storm(struct childdata *child)
 		active++;
 	}
 
+	return active;
+}
+
+bool pidfd_storm(struct childdata *child)
+{
+	struct pidfd_slot slots[NR_CHILDREN];
+	struct timespec start;
+	unsigned int active;
+	unsigned int iter;
+	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
+	unsigned int i;
+
+	(void) child;
+
+	__atomic_add_fetch(&shm->stats.pidfd_storm_runs, 1, __ATOMIC_RELAXED);
+
+	active = pidfd_storm_iter_spawn(slots, NR_CHILDREN);
 	if (active == 0)
 		return true;
 
