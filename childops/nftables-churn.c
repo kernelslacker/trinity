@@ -7012,6 +7012,65 @@ static int nftables_churn_iter_build_table(struct nftables_churn_iter_ctx *ctx)
 	return 0;
 }
 
+/*
+ * Phase: open the loopback UDP socket and drive a bounded sendto
+ * burst at 127.0.0.1:NFT_INNER_PORT.  Each send ingresses on lo,
+ * walks the freshly-installed chain_in -> chain_aux jump via
+ * nf_hook_slow, and exercises the verdict path the CVE-2024-1086
+ * lineage hangs off.  The local STORM_BUDGET_NS wall-cap kept the
+ * loop inline in the original; it stays self-contained here so the
+ * caller doesn't have to thread a timespec into the helper.  Latches
+ * ns_unsupported_inet on EAFNOSUPPORT / EPROTONOSUPPORT so the rest
+ * of the child's lifetime skips the socket() syscall.
+ */
+static void nftables_churn_iter_drive_traffic(struct nftables_churn_iter_ctx *ctx)
+{
+	struct sockaddr_in dst;
+	struct timespec t0;
+	unsigned int iters;
+	unsigned int i;
+
+	if (!ns_unsupported_inet) {
+		ctx->udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+		if (ctx->udp < 0) {
+			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
+				ns_unsupported_inet = true;
+		}
+	}
+
+	if (ctx->udp < 0)
+		return;
+
+	memset(&dst, 0, sizeof(dst));
+	dst.sin_family      = AF_INET;
+	dst.sin_port        = htons(NFT_INNER_PORT);
+	dst.sin_addr.s_addr = htonl(0x7f000001U);	/* 127.0.0.1 */
+
+	(void)clock_gettime(CLOCK_MONOTONIC, &t0);
+	iters = BUDGETED(CHILD_OP_NFTABLES_CHURN,
+			 JITTER_RANGE(NFT_PACKET_BASE));
+	if (iters < NFT_PACKET_FLOOR)
+		iters = NFT_PACKET_FLOOR;
+	if (iters > NFT_PACKET_CAP)
+		iters = NFT_PACKET_CAP;
+
+	for (i = 0; i < iters; i++) {
+		unsigned char payload[64];
+		ssize_t n;
+
+		if (ns_since(&t0) >= STORM_BUDGET_NS)
+			break;
+
+		generate_rand_bytes(payload, sizeof(payload));
+		n = sendto(ctx->udp, payload, sizeof(payload),
+			   MSG_DONTWAIT,
+			   (struct sockaddr *)&dst, sizeof(dst));
+		if (n > 0)
+			__atomic_add_fetch(&shm->stats.nftables_churn_packet_sent_ok,
+					   1, __ATOMIC_RELAXED);
+	}
+}
+
 bool nftables_churn(struct childdata *child)
 {
 	struct nftables_churn_iter_ctx ctx = {
@@ -7021,9 +7080,6 @@ bool nftables_churn(struct childdata *child)
 		.base_chain = "chain_in",
 		.aux_chain  = "chain_aux",
 	};
-	struct timespec t0;
-	unsigned int iters;
-	unsigned int i;
 
 	(void)child;
 
@@ -7046,52 +7102,7 @@ bool nftables_churn(struct childdata *child)
 	if (nftables_churn_iter_build_table(&ctx) != 0)
 		goto out;
 
-	/*
-	 * Drive the input hook with loopback UDP traffic.  Each send
-	 * ingresses on lo, walks the freshly-installed chain_in ->
-	 * chain_aux jump via nf_hook_slow, and exercises the verdict
-	 * path that the CVE-2024-1086 lineage hangs off.
-	 */
-	if (!ns_unsupported_inet) {
-		ctx.udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-		if (ctx.udp < 0) {
-			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
-				ns_unsupported_inet = true;
-		}
-	}
-
-	if (ctx.udp >= 0) {
-		struct sockaddr_in dst;
-
-		memset(&dst, 0, sizeof(dst));
-		dst.sin_family      = AF_INET;
-		dst.sin_port        = htons(NFT_INNER_PORT);
-		dst.sin_addr.s_addr = htonl(0x7f000001U);	/* 127.0.0.1 */
-
-		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
-		iters = BUDGETED(CHILD_OP_NFTABLES_CHURN,
-				 JITTER_RANGE(NFT_PACKET_BASE));
-		if (iters < NFT_PACKET_FLOOR)
-			iters = NFT_PACKET_FLOOR;
-		if (iters > NFT_PACKET_CAP)
-			iters = NFT_PACKET_CAP;
-
-		for (i = 0; i < iters; i++) {
-			unsigned char payload[64];
-			ssize_t n;
-
-			if (ns_since(&t0) >= STORM_BUDGET_NS)
-				break;
-
-			generate_rand_bytes(payload, sizeof(payload));
-			n = sendto(ctx.udp, payload, sizeof(payload),
-				   MSG_DONTWAIT,
-				   (struct sockaddr *)&dst, sizeof(dst));
-			if (n > 0)
-				__atomic_add_fetch(&shm->stats.nftables_churn_packet_sent_ok,
-						   1, __ATOMIC_RELAXED);
-		}
-	}
+	nftables_churn_iter_drive_traffic(&ctx);
 
 	/*
 	 * Mid-traffic insert: NEWRULE at NFTA_RULE_POSITION = 1.  The
