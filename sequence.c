@@ -140,7 +140,7 @@ static bool chain_is_replay_safe(const struct chain_step *steps,
 void chain_corpus_save(const struct chain_step *steps, unsigned int len)
 {
 	struct chain_corpus_ring *ring = chain_corpus_shm;
-	struct chain_entry *ent;
+	struct chain_entry tmp;
 	unsigned int slot, head, count;
 
 	if (ring == NULL || len == 0 || len > MAX_SEQ_LEN)
@@ -149,13 +149,15 @@ void chain_corpus_save(const struct chain_step *steps, unsigned int len)
 	if (!chain_is_replay_safe(steps, len))
 		return;
 
+	memset(&tmp, 0, sizeof(tmp));
+	tmp.len = len;
+	memcpy(tmp.steps, steps, len * sizeof(struct chain_step));
+
 	lock(&ring->lock);
 
 	head = ring->head;
 	slot = head % CHAIN_CORPUS_RING_SIZE;
-	ent = &ring->slots[slot];
-	ent->len = len;
-	memcpy(ent->steps, steps, len * sizeof(struct chain_step));
+	ring->slots[slot] = tmp;
 
 	/* Publish head/count with release semantics so the lockless
 	 * chain_corpus_pick reader, which loads them with acquire, sees the
