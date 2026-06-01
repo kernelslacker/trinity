@@ -295,9 +295,6 @@ syscalls/mremap.c:200:post_mremap
 syscalls/mremap.c:216:post_mremap
 syscalls/mremap.c:235:post_mremap
 syscalls/mremap.c:249:post_mremap
-syscalls/msgctl.c:124:post_msgctl
-syscalls/msgctl.c:138:post_msgctl
-syscalls/msgctl.c:154:post_msgctl
 syscalls/msgsnd.c:67:post_msgsnd
 syscalls/munmap.c:172:post_munmap
 syscalls/munmap.c:205:post_munmap
@@ -467,9 +464,6 @@ syscalls/setsockopt.c:826:post_setsockopt
 syscalls/setsockopt.c:841:post_setsockopt
 syscalls/setuid.c:39:post_setuid
 syscalls/setuid.c:54:post_setuid
-syscalls/shmctl.c:110:post_shmctl
-syscalls/shmctl.c:125:post_shmctl
-syscalls/shmctl.c:144:post_shmctl
 syscalls/sigaction.c:217:post_rt_sigaction
 syscalls/sigaltstack.c:218:post_sigaltstack
 syscalls/sigaltstack.c:233:post_sigaltstack
