@@ -693,6 +693,40 @@ static int mptcp_pm_churn_iter_connect_pair(struct mptcp_pm_churn_iter_ctx *ctx)
 	return 0;
 }
 
+/*
+ * Phase 3: open a genetlink ctx against the mptcp_pm family.  The family
+ * resolve is the support gate for the genl side: -ENOENT latches
+ * ns_unsupported_genetlink_mptcp so siblings stop probing for the rest
+ * of the process; any other failure is a transient setup error and just
+ * bumps setup_failed.  ctx_open flips to true on success so the
+ * teardown helper knows to genl_close — leaving it false means an
+ * earlier-phase bail won't try to close an uninitialised ctx.  Returns
+ * 0 on success or -1 if the iteration should bail to the out: cleanup
+ * path.
+ */
+static int mptcp_pm_churn_iter_genl_attach(struct mptcp_pm_churn_iter_ctx *ctx)
+{
+	struct genl_open_opts opts;
+	int rc;
+
+	memset(&opts, 0, sizeof(opts));
+	opts.family_name  = MPTCP_PM_NAME;
+	opts.version      = MPTCP_PM_VER;
+	opts.recv_timeo_s = MPTCP_PM_GENL_RECV_TIMEO_S;
+
+	rc = genl_open(&ctx->ctx, &opts);
+	if (rc != 0) {
+		if (rc == -ENOENT)
+			ns_unsupported_genetlink_mptcp = true;
+		else
+			__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
+					   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	ctx->ctx_open = true;
+	return 0;
+}
+
 bool mptcp_pm_churn(struct childdata *child)
 {
 	struct mptcp_pm_churn_iter_ctx ctx = {
@@ -700,7 +734,6 @@ bool mptcp_pm_churn(struct childdata *child)
 		.cli     = -1,
 		.srv_acc = -1,
 	};
-	struct genl_open_opts opts;
 	unsigned int iters;
 	unsigned int i;
 	__u8 loc_id;
@@ -721,21 +754,8 @@ bool mptcp_pm_churn(struct childdata *child)
 	if (mptcp_pm_churn_iter_connect_pair(&ctx) != 0)
 		goto out;
 
-	memset(&opts, 0, sizeof(opts));
-	opts.family_name  = MPTCP_PM_NAME;
-	opts.version      = MPTCP_PM_VER;
-	opts.recv_timeo_s = MPTCP_PM_GENL_RECV_TIMEO_S;
-
-	rc = genl_open(&ctx.ctx, &opts);
-	if (rc != 0) {
-		if (rc == -ENOENT)
-			ns_unsupported_genetlink_mptcp = true;
-		else
-			__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
-					   1, __ATOMIC_RELAXED);
+	if (mptcp_pm_churn_iter_genl_attach(&ctx) != 0)
 		goto out;
-	}
-	ctx.ctx_open = true;
 
 	/* Initial loc_id: random in [1, MPTCP_PM_LOC_ID_MAX].  The
 	 * kernel's loc_id 0 is reserved for the primary subflow auto-
