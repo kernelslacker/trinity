@@ -939,13 +939,53 @@ static void afxdp_iter_tx_burst(struct xsk_state *st,
 				   1, __ATOMIC_RELAXED);
 }
 
+/*
+ * Phase 7: the live-socket race window.  XDP_STATISTICS read while RX
+ * is bound (stats walker concurrently reads ring counters the bound
+ * rings are producing into), RACE A = XSKMAP delete on the bound key
+ * (CVE-2024-50115: xdp_do_redirect's RCU-protected map pointer freed
+ * under the walker), RACE B = munmap the FILL ring while still bound
+ * (CVE-2023-39197: xsk_buff_pool refcount must outlive the user's
+ * munmap of its own ring view).  All three are no-ops without bind.
+ */
+static void afxdp_iter_run_races(struct xsk_state *st)
+{
+	struct xdp_statistics xstats;
+	socklen_t xstats_len = sizeof(xstats);
+
+	/* XDP_STATISTICS read while RX is bound -- the stats walker reads
+	 * the per-ring ring_full / fill_ring_empty_descs counters which
+	 * the bound rings are concurrently producing into. */
+	if (getsockopt(st->xsk_fd, SOL_XDP, XDP_STATISTICS,
+		       &xstats, &xstats_len) == 0)
+		__atomic_add_fetch(&shm->stats.afxdp_churn_recv_ok,
+				   1, __ATOMIC_RELAXED);
+
+	/* RACE A: delete the bound XSKMAP entry.  CVE-2024-50115 surface --
+	 * xdp_do_redirect()'s map walker holds an RCU-protected pointer
+	 * that this delete frees from under it. */
+	if (st->bound && xskmap_delete(st->map_fd, 0) == 0)
+		__atomic_add_fetch(&shm->stats.afxdp_churn_map_delete_ok,
+				   1, __ATOMIC_RELAXED);
+
+	/* RACE B: munmap the FILL ring while still bound.  CVE-2023-39197
+	 * surface -- the xsk_buff_pool refcount on the umem region must
+	 * keep the kernel's mapping alive past the user's munmap of its
+	 * own ring view. */
+	if (st->bound && st->fr_ring != MAP_FAILED && st->fr_ring_sz) {
+		if (munmap(st->fr_ring, st->fr_ring_sz) == 0)
+			__atomic_add_fetch(&shm->stats.afxdp_churn_munmap_race_ok,
+					   1, __ATOMIC_RELAXED);
+		st->fr_ring = MAP_FAILED;
+		st->fr_ring_sz = 0;
+	}
+}
+
 /* One full setup + race + teardown cycle on a fresh AF_XDP socket. */
 static void iter_one(unsigned int idx, const struct timespec *t_outer)
 {
 	struct xsk_state st;
-	struct xdp_statistics xstats;
 	char tun_name[IFNAMSIZ];
-	socklen_t xstats_len = sizeof(xstats);
 	unsigned int target_ifindex;
 	bool want_sg, want_tx_md, want_tun;
 
@@ -973,32 +1013,7 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 
 	afxdp_iter_tx_burst(&st, want_sg, want_tx_md);
 
-	/* XDP_STATISTICS read while RX is bound -- the stats walker reads
-	 * the per-ring ring_full / fill_ring_empty_descs counters which
-	 * the bound rings are concurrently producing into. */
-	if (getsockopt(st.xsk_fd, SOL_XDP, XDP_STATISTICS,
-		       &xstats, &xstats_len) == 0)
-		__atomic_add_fetch(&shm->stats.afxdp_churn_recv_ok,
-				   1, __ATOMIC_RELAXED);
-
-	/* RACE A: delete the bound XSKMAP entry.  CVE-2024-50115 surface --
-	 * xdp_do_redirect()'s map walker holds an RCU-protected pointer
-	 * that this delete frees from under it. */
-	if (st.bound && xskmap_delete(st.map_fd, 0) == 0)
-		__atomic_add_fetch(&shm->stats.afxdp_churn_map_delete_ok,
-				   1, __ATOMIC_RELAXED);
-
-	/* RACE B: munmap the FILL ring while still bound.  CVE-2023-39197
-	 * surface -- the xsk_buff_pool refcount on the umem region must
-	 * keep the kernel's mapping alive past the user's munmap of its
-	 * own ring view. */
-	if (st.bound && st.fr_ring != MAP_FAILED && st.fr_ring_sz) {
-		if (munmap(st.fr_ring, st.fr_ring_sz) == 0)
-			__atomic_add_fetch(&shm->stats.afxdp_churn_munmap_race_ok,
-					   1, __ATOMIC_RELAXED);
-		st.fr_ring = MAP_FAILED;
-		st.fr_ring_sz = 0;
-	}
+	afxdp_iter_run_races(&st);
 
 out:
 	xsk_teardown(&st);
