@@ -1498,6 +1498,54 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 	return 0;
 }
 
+/*
+ * Phase: pick an algo + install the SA + matching policy.  Rotates
+ * reqid / spi / seq / mode per call, modprobes the named algorithm on
+ * first touch, and latches ns_unsupported_algo[aidx] when the kernel
+ * doesn't carry the crypto module.  Returns 0 when the SA is live;
+ * non-zero means caller should goto out (no SA was installed so the
+ * teardown side has nothing useful to do, but the netlink fd still
+ * needs closing).
+ */
+static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
+{
+	int rc;
+
+	ctx->aidx = pick_algo_idx();
+	if (ctx->aidx >= NR_XFRM_ALGOS)
+		return -1;
+
+	ctx->def   = &xfrm_algos[ctx->aidx];
+	ctx->reqid = (rand32() % XFRM_REQID_RANGE) + 1U;
+	ctx->spi   = htonl((rand32() % XFRM_SPI_RANGE) + XFRM_SPI_MIN);
+	ctx->seq   = pick_sa_seq();
+	ctx->mode  = (rand32() & 1U) ? XFRM_MODE_TRANSPORT : XFRM_MODE_TRANSPORT;
+	/* TUNNEL mode requires routes to the inner addresses; staying
+	 * in TRANSPORT keeps the data plane self-contained on lo.
+	 * Knob preserved as a no-op so the rotation can be widened
+	 * later without restructuring this caller. */
+
+	modprobe_algo(ctx->aidx);
+	rc = build_newsa(&ctx->nl, ctx->def, ctx->reqid, ctx->spi,
+			 ctx->mode, ctx->seq);
+	if (rc != 0) {
+		if (is_unsupported_err(rc))
+			ns_unsupported_algo[ctx->aidx] = true;
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.xfrm_churn_sa_added,
+			   1, __ATOMIC_RELAXED);
+
+	rc = build_newpolicy(&ctx->nl, ctx->def, ctx->reqid, ctx->spi,
+			     ctx->mode);
+	if (rc == 0) {
+		__atomic_add_fetch(&shm->stats.xfrm_churn_pol_added,
+				   1, __ATOMIC_RELAXED);
+	}
+
+	return 0;
+}
+
 bool xfrm_churn(struct childdata *child)
 {
 	struct xfrm_churn_iter_ctx ctx = {
@@ -1530,35 +1578,8 @@ bool xfrm_churn(struct childdata *child)
 	if (xfrm_churn_iter_setup_netns(&ctx) != 0)
 		return true;
 
-	ctx.aidx = pick_algo_idx();
-	if (ctx.aidx >= NR_XFRM_ALGOS)
+	if (xfrm_churn_iter_install_sa(&ctx) != 0)
 		goto out;
-
-	ctx.def   = &xfrm_algos[ctx.aidx];
-	ctx.reqid = (rand32() % XFRM_REQID_RANGE) + 1U;
-	ctx.spi   = htonl((rand32() % XFRM_SPI_RANGE) + XFRM_SPI_MIN);
-	ctx.seq   = pick_sa_seq();
-	ctx.mode  = (rand32() & 1U) ? XFRM_MODE_TRANSPORT : XFRM_MODE_TRANSPORT;
-	/* TUNNEL mode requires routes to the inner addresses; staying
-	 * in TRANSPORT keeps the data plane self-contained on lo.
-	 * Knob preserved as a no-op so the rotation can be widened
-	 * later without restructuring this caller. */
-
-	modprobe_algo(ctx.aidx);
-	rc = build_newsa(&ctx.nl, ctx.def, ctx.reqid, ctx.spi, ctx.mode, ctx.seq);
-	if (rc != 0) {
-		if (is_unsupported_err(rc))
-			ns_unsupported_algo[ctx.aidx] = true;
-		goto out;
-	}
-	__atomic_add_fetch(&shm->stats.xfrm_churn_sa_added,
-			   1, __ATOMIC_RELAXED);
-
-	rc = build_newpolicy(&ctx.nl, ctx.def, ctx.reqid, ctx.spi, ctx.mode);
-	if (rc == 0) {
-		__atomic_add_fetch(&shm->stats.xfrm_churn_pol_added,
-				   1, __ATOMIC_RELAXED);
-	}
 
 	if (!ns_unsupported_inet) {
 		struct sockaddr_in src;
