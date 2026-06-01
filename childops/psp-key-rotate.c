@@ -1001,6 +1001,40 @@ static void psp_key_rotate_iter_traffic(int sockfd,
 			   1, __ATOMIC_RELAXED);
 }
 
+/* Randomised teardown order: rotate which fd dies first so the
+ * rtnl/genl/SOCK_STREAM teardown ordering varies across iterations.
+ * nl_close() / genl_close() leave fd at -1, but iter_one's out:
+ * cleanup runs only on the early-bail paths -- by the time this
+ * helper is called the standard path is done and there is no
+ * subsequent observer of sockfd, so the cases need not reset it. */
+static void psp_key_rotate_iter_teardown(unsigned int iter_idx, int sockfd,
+					 struct genl_ctx *psp_ctx,
+					 struct nl_ctx *rtnl)
+{
+	switch (iter_idx & 3U) {
+	case 0:
+		if (sockfd >= 0) close(sockfd);
+		if (psp_ctx->nl.fd >= 0) genl_close(psp_ctx);
+		if (rtnl->fd >= 0) nl_close(rtnl);
+		break;
+	case 1:
+		if (psp_ctx->nl.fd >= 0) genl_close(psp_ctx);
+		if (sockfd >= 0) close(sockfd);
+		if (rtnl->fd >= 0) nl_close(rtnl);
+		break;
+	case 2:
+		if (rtnl->fd >= 0) nl_close(rtnl);
+		if (sockfd >= 0) close(sockfd);
+		if (psp_ctx->nl.fd >= 0) genl_close(psp_ctx);
+		break;
+	default:
+		if (sockfd >= 0) close(sockfd);
+		if (rtnl->fd >= 0) nl_close(rtnl);
+		if (psp_ctx->nl.fd >= 0) genl_close(psp_ctx);
+		break;
+	}
+}
+
 static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 {
 	struct nl_ctx rtnl = { .fd = -1 };
@@ -1021,38 +1055,10 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	if (sockfd < 0)
 		goto out;
 
-	if (ns_unsupported_psp_key_rotate)
-		goto teardown;
+	if (!ns_unsupported_psp_key_rotate)
+		psp_key_rotate_iter_traffic(sockfd, &psp_ctx, dev_id, t_outer);
 
-	psp_key_rotate_iter_traffic(sockfd, &psp_ctx, dev_id, t_outer);
-
-teardown:
-	/* Randomised teardown order: rotate which fd dies first so the
-	 * rtnl/genl/SOCK_STREAM teardown ordering varies across
-	 * iterations.  nl_close() / genl_close() leave fd at -1 so the
-	 * out: cleanup below is idempotent. */
-	switch (iter_idx & 3U) {
-	case 0:
-		if (sockfd >= 0) { close(sockfd); sockfd = -1; }
-		if (psp_ctx.nl.fd >= 0) genl_close(&psp_ctx);
-		if (rtnl.fd >= 0) nl_close(&rtnl);
-		break;
-	case 1:
-		if (psp_ctx.nl.fd >= 0) genl_close(&psp_ctx);
-		if (sockfd >= 0) { close(sockfd); sockfd = -1; }
-		if (rtnl.fd >= 0) nl_close(&rtnl);
-		break;
-	case 2:
-		if (rtnl.fd >= 0) nl_close(&rtnl);
-		if (sockfd >= 0) { close(sockfd); sockfd = -1; }
-		if (psp_ctx.nl.fd >= 0) genl_close(&psp_ctx);
-		break;
-	default:
-		if (sockfd >= 0) { close(sockfd); sockfd = -1; }
-		if (rtnl.fd >= 0) nl_close(&rtnl);
-		if (psp_ctx.nl.fd >= 0) genl_close(&psp_ctx);
-		break;
-	}
+	psp_key_rotate_iter_teardown(iter_idx, sockfd, &psp_ctx, &rtnl);
 	return;
 
 out:
