@@ -871,11 +871,48 @@ static int psp_key_rotate_iter_setup(struct nl_ctx *rtnl)
 	return 0;
 }
 
+/* Open the PSP genl family (CTRL_CMD_GETFAMILY under the hood; -ENOENT
+ * means the kernel doesn't know "psp" at all -- cap-gate latches) then
+ * issue a best-effort PSP_CMD_DEV_GET probe.  Writes the chosen dev_id
+ * into *dev_id_out on success.  Returns 0 on success or -1 if the
+ * iteration should bail to iter_one's out: cleanup. */
+static int psp_key_rotate_iter_family_resolve(struct genl_ctx *psp_ctx,
+					      uint32_t *dev_id_out)
+{
+	struct genl_open_opts gopts;
+	int rc, rc2;
+
+	memset(&gopts, 0, sizeof(gopts));
+	gopts.family_name  = PSP_FAMILY_NAME;
+	gopts.recv_timeo_s = 1;
+	rc = genl_open(psp_ctx, &gopts);
+	if (rc != 0) {
+		ns_unsupported_psp_key_rotate = true;
+		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.psp_key_rotate_family_resolve_ok,
+			   1, __ATOMIC_RELAXED);
+
+	/* PSP_CMD_DEV_GET dump.  Best-effort dev_id pick: a valid PSP
+	 * device exposes id starting at 1; on a real PSP-capable host the
+	 * netdevsim spawned above lands here. */
+	rc2 = psp_dev_get_probe(psp_ctx);
+	if (rc2 == 0)
+		__atomic_add_fetch(&shm->stats.psp_key_rotate_dev_get_ok,
+				   1, __ATOMIC_RELAXED);
+	else if (rc2 < 0 && errno_is_unsupported(-rc2))
+		ns_unsupported_psp_key_rotate = true;
+
+	*dev_id_out = 1U;
+	return 0;
+}
+
 static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 {
 	struct nl_ctx rtnl = { .fd = -1 };
 	struct genl_ctx psp_ctx = { .nl = { .fd = -1 } };
-	struct genl_open_opts gopts;
 	int sockfd = -1;
 	struct sockaddr_in peer;
 	uint32_t dev_id = 0;
@@ -887,35 +924,8 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	if (psp_key_rotate_iter_setup(&rtnl) != 0)
 		goto out;
 
-	/* Structural-support probe: open the PSP genl family.  genl_open()
-	 * runs CTRL_CMD_GETFAMILY internally; -ENOENT means the kernel
-	 * doesn't know "psp" at all. */
-	memset(&gopts, 0, sizeof(gopts));
-	gopts.family_name  = PSP_FAMILY_NAME;
-	gopts.recv_timeo_s = 1;
-	rc = genl_open(&psp_ctx, &gopts);
-	if (rc != 0) {
-		ns_unsupported_psp_key_rotate = true;
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (psp_key_rotate_iter_family_resolve(&psp_ctx, &dev_id) != 0)
 		goto out;
-	}
-	__atomic_add_fetch(&shm->stats.psp_key_rotate_family_resolve_ok,
-			   1, __ATOMIC_RELAXED);
-
-	/* PSP_CMD_DEV_GET dump.  Best-effort dev_id pick: a valid PSP
-	 * device exposes id starting at 1; on a real PSP-capable host the
-	 * netdevsim spawned above lands here. */
-	{
-		int rc2 = psp_dev_get_probe(&psp_ctx);
-
-		if (rc2 == 0)
-			__atomic_add_fetch(&shm->stats.psp_key_rotate_dev_get_ok,
-					   1, __ATOMIC_RELAXED);
-		else if (rc2 < 0 && errno_is_unsupported(-rc2))
-			ns_unsupported_psp_key_rotate = true;
-	}
-	dev_id = 1U;
 
 	sockfd = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
 	if (sockfd < 0) {
