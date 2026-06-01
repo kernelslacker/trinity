@@ -105,7 +105,18 @@ bool check_all_locks(void)
 	 * argument generation, so a SIGSEGV/SIGABRT mid-pool-update leaves
 	 * the lock held by a dead child.  Without this scan, that lock has
 	 * no reaper at all — child-side try_release_dead_holder is the only
-	 * fallback, and it only fires after a million-spin starvation. */
+	 * fallback, and it only fires after a million-spin starvation.
+	 *
+	 * Fast-path gate: when held_count == 0, no child is currently
+	 * inside any pool lock, so every check_lock() below would return
+	 * false anyway.  Skipping the ~2048-entry walk avoids the acquire-
+	 * load cacheline traffic on the parent tick. */
+	if (cmp_hints_shm != NULL &&
+	    __atomic_load_n(&cmp_hints_shm->held_count, __ATOMIC_RELAXED) == 0) {
+		if (shm->debug)
+			outputerr("check_all_locks: skipping cmp_hints (held_count==0)\n");
+		goto skip_cmp_hints;
+	}
 	if (cmp_hints_shm != NULL) {
 		unsigned int a;
 
@@ -113,16 +124,25 @@ bool check_all_locks(void)
 			for (a = 0; a < 2; a++)
 				ret |= check_lock(&cmp_hints_shm->pools[i][a].lock);
 	}
+skip_cmp_hints:;
 
 	/* Per-syscall minicorpus rings.  Writers are children on the hot
 	 * save/replay path; the parent also takes every ring lock at
 	 * shutdown via minicorpus_save_file, so a leaked ring lock wedges
 	 * the shutdown save and burns the accumulated corpus.  Same
-	 * per-array idiom as the cmp_hints walk above. */
+	 * per-array idiom as the cmp_hints walk above.  Same held_count
+	 * fast-path gate as cmp_hints. */
+	if (minicorpus_shm != NULL &&
+	    __atomic_load_n(&minicorpus_shm->held_count, __ATOMIC_RELAXED) == 0) {
+		if (shm->debug)
+			outputerr("check_all_locks: skipping minicorpus (held_count==0)\n");
+		goto skip_minicorpus;
+	}
 	if (minicorpus_shm != NULL) {
 		for (i = 0; i < ARRAY_SIZE(minicorpus_shm->rings); i++)
 			ret |= check_lock(&minicorpus_shm->rings[i].lock);
 	}
+skip_minicorpus:;
 
 	/* Global chain-corpus ring lock.  Written by children only
 	 * (chain_corpus_save); readers are lockless.  No parent-side
