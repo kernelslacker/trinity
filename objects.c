@@ -26,6 +26,25 @@
 static struct list_head global_obj_list = { &global_obj_list, &global_obj_list };
 
 /*
+ * Per-type hard cap on parent_global_objects[].  High-volume providers
+ * (sockets, bpf objs, ...) populated by REG_GLOBAL_OBJ init can balloon
+ * an OBJ_GLOBAL pool to tens of thousands of entries pre-fork, which
+ * (a) inflates every child's fork-time snapshot heap and (b) flattens
+ * get_random_object()'s probability of revisiting any specific obj.
+ * 4096 is comfortably above any pool we observe in steady state but low
+ * enough to clamp pathological providers.
+ */
+#define OBJ_GLOBAL_MAX 4096
+
+/*
+ * Running count of OBJ_GLOBAL entries evicted by the hard-cap prune in
+ * add_object().  Parent-private (the prune path runs only pre-fork, gated
+ * by the mainpid guard above the OBJ_GLOBAL branch), so no atomic needed.
+ * Surfaced under -v via the verbose output emitted on each prune event.
+ */
+static unsigned long obj_global_pruned;
+
+/*
  * Parent-private OBJ_GLOBAL pool.  Populated pre-fork by every
  * REG_GLOBAL_OBJ provider via add_object(OBJ_GLOBAL); the per-child
  * snapshot in clone_global_objects_to_child() reads this array.
@@ -838,6 +857,40 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	 * to see if we need to do some pruning. */
 	if (scope == OBJ_LOCAL)
 		prune_objects();
+
+	/*
+	 * Hard-cap prune for OBJ_GLOBAL: if this insert pushed the per-type
+	 * pool past OBJ_GLOBAL_MAX, evict one random-index entry to keep
+	 * the steady-state size at the cap.  Eviction is random-index
+	 * rather than LRU because OBJ_GLOBAL pools have no per-entry
+	 * timestamp -- they're populated pre-fork in one burst and read
+	 * (never aged) thereafter.  Picks may land on the just-inserted
+	 * obj at idx num_entries-1 with probability 1/(cap+1); that
+	 * degenerates to a no-op insert which is harmless.  destroy_object()
+	 * routes through __destroy_object() and so handles destructor +
+	 * fd_hash unhook + slot swap-with-last for the evicted entry.
+	 *
+	 * Pre-fork only: the mainpid guard above (line ~655) sends every
+	 * post-fork child's OBJ_GLOBAL add to release_obj() before we get
+	 * here, so this branch only runs in the parent's pre-fork init.
+	 * That makes obj_global_pruned safe to bump without atomics and
+	 * lets us use the cheap (non-locked) destroy path.
+	 */
+	if (scope == OBJ_GLOBAL && head->num_entries > OBJ_GLOBAL_MAX) {
+		unsigned int victim_idx = rnd_modulo_u32(head->num_entries);
+		struct object *victim = head->array[victim_idx];
+
+		if (victim != NULL) {
+			obj_global_pruned++;
+			if (unlikely(verbosity > 1)) {
+				output(2, "OBJ_GLOBAL prune type=%d count=%u "
+					  "victim_idx=%u pruned_total=%lu\n",
+					type, head->num_entries, victim_idx,
+					obj_global_pruned);
+			}
+			destroy_object(victim, OBJ_GLOBAL, type);
+		}
+	}
 }
 
 /*
