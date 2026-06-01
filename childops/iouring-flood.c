@@ -277,7 +277,23 @@ out_fail:
 	return -1;
 }
 
-static void flood_teardown(struct iouring_flood_iter_ctx *ctx)
+/*
+ * Phase 4: release every mapping setup_ring brought up and close the
+ * ring fd.  Gated on per-field non-NULL / fd >= 0 so the partial-
+ * setup teardown (sq_ring mapped but cq_ring mmap failed, etc.) and
+ * the n_subs == 0 cycle-abort teardown both release exactly what's
+ * up without double-frees.  Order is sqes -> cq_ring -> sq_ring ->
+ * close(fd): the SQE and CQ mappings are released before the fd they
+ * belong to, and the cq_ring munmap is gated on !single_mmap so the
+ * aliased-onto-sq_ring case doesn't munmap the same region twice.
+ *
+ * Safe to call on a ctx that setup_ring failed to populate -- setup
+ * leaves ctx fully zeroed (with ctx->fd = -1) on failure, so every
+ * gate is false.  The orchestrator nevertheless still skips the
+ * teardown call on a failed setup; only the submit-burst-empty path
+ * and the normal success path route through here.
+ */
+static void iouring_flood_iter_teardown(struct iouring_flood_iter_ctx *ctx)
 {
 	if (ctx->sqes)
 		munmap(ctx->sqes, ctx->sqes_sz);
@@ -516,13 +532,13 @@ bool iouring_flood(struct childdata *child)
 		n_subs = iouring_flood_iter_submit_burst(&ctx, dev_null_rd,
 							 dev_null_wr, burst);
 		if (n_subs == 0) {
-			flood_teardown(&ctx);
+			iouring_flood_iter_teardown(&ctx);
 			continue;
 		}
 
 		iouring_flood_iter_reap_cqes(&ctx, n_subs);
 
-		flood_teardown(&ctx);
+		iouring_flood_iter_teardown(&ctx);
 	}
 
 	close(dev_null_rd);
