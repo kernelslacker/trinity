@@ -231,6 +231,28 @@ static bool ns_unshared;
 static bool ns_setup_failed;
 static bool lo_brought_up;
 
+/* Per-invocation state shared across the extracted phase helpers.  Fd
+ * fields default to -1 via the orchestrator's designated initialiser
+ * so the teardown helper can close them unconditionally regardless of
+ * which earlier phase bailed.  Name buffers are filled in by
+ * setup_names; br_idx/bridge_added by bridge_create;
+ * port_idx[]/veth0_added/veth1_added by veth_attach; raw by
+ * traffic_burst. */
+struct bridge_fdb_stp_iter_ctx {
+	char		br_name[IFNAMSIZ];
+	char		veth0a[IFNAMSIZ];
+	char		veth0b[IFNAMSIZ];
+	char		veth1a[IFNAMSIZ];
+	char		veth1b[IFNAMSIZ];
+	struct nl_ctx	ctx;
+	int		port_idx[4];
+	int		raw;
+	int		br_idx;
+	bool		bridge_added;
+	bool		veth0_added;
+	bool		veth1_added;
+};
+
 /*
  * Bring lo up inside the private netns.  A freshly-unshared netns has
  * lo present but DOWN; some bridge / fdb code paths short-circuit on
@@ -750,29 +772,39 @@ out:
 		(void)build_dellink(ctx, va_idx);
 }
 
+/*
+ * Phase 1: pick the per-invocation interface names.  All five names
+ * (one bridge + two veth pairs) share a single 16-bit random suffix so
+ * a long-lived child's traces correlate by suffix inside its private
+ * netns.  Cheap and infallible — no return value.
+ */
+static void bridge_fdb_stp_iter_setup_names(struct bridge_fdb_stp_iter_ctx *ctx)
+{
+	unsigned int rng = (unsigned int)(rand32() & 0xffffu);
+
+	snprintf(ctx->br_name, sizeof(ctx->br_name), "trbr%u", rng);
+	snprintf(ctx->veth0a, sizeof(ctx->veth0a), "trbv%ua0", rng);
+	snprintf(ctx->veth0b, sizeof(ctx->veth0b), "trbv%ub0", rng);
+	snprintf(ctx->veth1a, sizeof(ctx->veth1a), "trbv%ua1", rng);
+	snprintf(ctx->veth1b, sizeof(ctx->veth1b), "trbv%ub1", rng);
+}
+
 bool bridge_fdb_stp(struct childdata *child)
 {
-	char br_name[IFNAMSIZ];
-	char veth0a[IFNAMSIZ], veth0b[IFNAMSIZ];
-	char veth1a[IFNAMSIZ], veth1b[IFNAMSIZ];
-	const char *port_names[4];
-	int port_idx[4] = { 0, 0, 0, 0 };
-	struct nl_ctx ctx = { .fd = -1 };
+	struct bridge_fdb_stp_iter_ctx ictx = {
+		.ctx = { .fd = -1 },
+		.raw = -1,
+	};
 	struct nl_open_opts nl_opts = {
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 	};
-	int raw = -1;
-	int br_idx = 0;
-	bool bridge_added = false;
-	bool veth0_added = false;
-	bool veth1_added = false;
+	const char *port_names[4];
 	unsigned char last_src_mac[6] = { 0 };
 	bool have_last_mac = false;
 	struct timespec t0;
 	unsigned int iters;
 	unsigned int i;
-	unsigned int rng;
 	int rc;
 
 	(void)child;
@@ -793,31 +825,26 @@ bool bridge_fdb_stp(struct childdata *child)
 		ns_unshared = true;
 	}
 
-	if (nl_open(&ctx, &nl_opts) < 0) {
+	if (nl_open(&ictx.ctx, &nl_opts) < 0) {
 		__atomic_add_fetch(&shm->stats.bridge_fdb_stp_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 
 	if (!lo_brought_up) {
-		bring_lo_up(&ctx);
+		bring_lo_up(&ictx.ctx);
 		lo_brought_up = true;
 	}
 
 	if (ONE_IN(8)) {
-		bridge_vlan_mass_add(&ctx);
-		nl_close(&ctx);
+		bridge_vlan_mass_add(&ictx.ctx);
+		nl_close(&ictx.ctx);
 		return true;
 	}
 
-	rng = (unsigned int)(rand32() & 0xffffu);
-	snprintf(br_name, sizeof(br_name), "trbr%u", rng);
-	snprintf(veth0a, sizeof(veth0a), "trbv%ua0", rng);
-	snprintf(veth0b, sizeof(veth0b), "trbv%ub0", rng);
-	snprintf(veth1a, sizeof(veth1a), "trbv%ua1", rng);
-	snprintf(veth1b, sizeof(veth1b), "trbv%ub1", rng);
+	bridge_fdb_stp_iter_setup_names(&ictx);
 
-	rc = build_bridge_create(&ctx, br_name);
+	rc = build_bridge_create(&ictx.ctx, ictx.br_name);
 	if (rc != 0) {
 		/* Latch only on the structural-unsupported errnos —
 		 * EBUSY / EEXIST from a stale name leave the latch
@@ -827,23 +854,23 @@ bool bridge_fdb_stp(struct childdata *child)
 			ns_unsupported_bridge = true;
 		goto out;
 	}
-	bridge_added = true;
+	ictx.bridge_added = true;
 	__atomic_add_fetch(&shm->stats.bridge_fdb_stp_bridge_create_ok,
 			   1, __ATOMIC_RELAXED);
 
-	br_idx = (int)if_nametoindex(br_name);
-	if (br_idx == 0)
+	ictx.br_idx = (int)if_nametoindex(ictx.br_name);
+	if (ictx.br_idx == 0)
 		goto out;
 
 	/* veth pair 0 */
 	if (!ns_unsupported_veth) {
-		rc = build_veth_create(&ctx, veth0a, veth0b);
+		rc = build_veth_create(&ictx.ctx, ictx.veth0a, ictx.veth0b);
 		if (rc != 0) {
 			if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 			    rc == -ENOTSUP || rc == -ENOENT)
 				ns_unsupported_veth = true;
 		} else {
-			veth0_added = true;
+			ictx.veth0_added = true;
 			__atomic_add_fetch(&shm->stats.bridge_fdb_stp_veth_create_ok,
 					   1, __ATOMIC_RELAXED);
 		}
@@ -851,36 +878,38 @@ bool bridge_fdb_stp(struct childdata *child)
 
 	/* veth pair 1 */
 	if (!ns_unsupported_veth) {
-		rc = build_veth_create(&ctx, veth1a, veth1b);
+		rc = build_veth_create(&ictx.ctx, ictx.veth1a, ictx.veth1b);
 		if (rc == 0) {
-			veth1_added = true;
+			ictx.veth1_added = true;
 			__atomic_add_fetch(&shm->stats.bridge_fdb_stp_veth_create_ok,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
 
-	port_names[0] = veth0_added ? veth0a : NULL;
-	port_names[1] = veth0_added ? veth0b : NULL;
-	port_names[2] = veth1_added ? veth1a : NULL;
-	port_names[3] = veth1_added ? veth1b : NULL;
+	port_names[0] = ictx.veth0_added ? ictx.veth0a : NULL;
+	port_names[1] = ictx.veth0_added ? ictx.veth0b : NULL;
+	port_names[2] = ictx.veth1_added ? ictx.veth1a : NULL;
+	port_names[3] = ictx.veth1_added ? ictx.veth1b : NULL;
 
 	for (i = 0; i < 4; i++) {
 		if (!port_names[i])
 			continue;
-		port_idx[i] = (int)if_nametoindex(port_names[i]);
-		if (port_idx[i] > 0)
-			(void)build_setlink_master(&ctx, port_idx[i], br_idx);
+		ictx.port_idx[i] = (int)if_nametoindex(port_names[i]);
+		if (ictx.port_idx[i] > 0)
+			(void)build_setlink_master(&ictx.ctx, ictx.port_idx[i],
+						   ictx.br_idx);
 	}
 
-	(void)build_setlink_up(&ctx, br_idx);
+	(void)build_setlink_up(&ictx.ctx, ictx.br_idx);
 	for (i = 0; i < 4; i++) {
-		if (port_idx[i] > 0)
-			(void)build_setlink_up(&ctx, port_idx[i]);
+		if (ictx.port_idx[i] > 0)
+			(void)build_setlink_up(&ictx.ctx, ictx.port_idx[i]);
 	}
 
 	for (i = 0; i < 4; i++) {
-		if (port_idx[i] > 0)
-			(void)build_setlink_brport_learning(&ctx, port_idx[i]);
+		if (ictx.port_idx[i] > 0)
+			(void)build_setlink_brport_learning(&ictx.ctx,
+							    ictx.port_idx[i]);
 	}
 
 	/* AF_PACKET sender bound to one of the ports — drives the
@@ -892,27 +921,27 @@ bool bridge_fdb_stp(struct childdata *child)
 		unsigned int j;
 
 		for (j = 0; j < 4; j++) {
-			if (port_idx[j] > 0) {
-				tx_port_idx = port_idx[j];
+			if (ictx.port_idx[j] > 0) {
+				tx_port_idx = ictx.port_idx[j];
 				break;
 			}
 		}
 
 		if (tx_port_idx > 0) {
-			raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC,
-				     htons(ETH_P_ALL));
-			if (raw >= 0) {
+			ictx.raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC,
+					  htons(ETH_P_ALL));
+			if (ictx.raw >= 0) {
 				struct sockaddr_ll sll;
 
 				memset(&sll, 0, sizeof(sll));
 				sll.sll_family   = AF_PACKET;
 				sll.sll_protocol = htons(ETH_P_ALL);
 				sll.sll_ifindex  = tx_port_idx;
-				(void)bind(raw, (struct sockaddr *)&sll,
+				(void)bind(ictx.raw, (struct sockaddr *)&sll,
 					   sizeof(sll));
 			}
 
-			if (raw >= 0) {
+			if (ictx.raw >= 0) {
 				(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 				iters = BUDGETED(CHILD_OP_BRIDGE_FDB_STP,
 						 JITTER_RANGE(BRIDGE_PACKET_BASE));
@@ -955,7 +984,7 @@ bool bridge_fdb_stp(struct childdata *child)
 					sll.sll_halen    = 6;
 					memcpy(sll.sll_addr, dst_mac, 6);
 
-					n = sendto(raw, frame, sizeof(frame),
+					n = sendto(ictx.raw, frame, sizeof(frame),
 						   MSG_DONTWAIT,
 						   (struct sockaddr *)&sll,
 						   sizeof(sll));
@@ -973,7 +1002,7 @@ bool bridge_fdb_stp(struct childdata *child)
 			 * races the rx-driven learning that may be
 			 * re-installing it.  Use the same port we sent on. */
 			if (have_last_mac) {
-				if (build_fdb_del(&ctx, tx_port_idx,
+				if (build_fdb_del(&ictx.ctx, tx_port_idx,
 						  last_src_mac) == 0)
 					__atomic_add_fetch(&shm->stats.bridge_fdb_stp_fdb_del_ok,
 							   1, __ATOMIC_RELAXED);
@@ -982,35 +1011,35 @@ bool bridge_fdb_stp(struct childdata *child)
 	}
 
 	if (!ns_unsupported_sysfs_stp) {
-		if (sysfs_stp_write(br_name, '1'))
+		if (sysfs_stp_write(ictx.br_name, '1'))
 			__atomic_add_fetch(&shm->stats.bridge_fdb_stp_stp_toggle_ok,
 					   1, __ATOMIC_RELAXED);
-		if (sysfs_stp_write(br_name, '0'))
+		if (sysfs_stp_write(ictx.br_name, '0'))
 			__atomic_add_fetch(&shm->stats.bridge_fdb_stp_stp_toggle_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
 out:
-	if (raw >= 0)
-		close(raw);
+	if (ictx.raw >= 0)
+		close(ictx.raw);
 
-	if (ctx.fd >= 0) {
+	if (ictx.ctx.fd >= 0) {
 		/* Deleting the bridge cascades to the enslaved veths via
 		 * br_dev_delete — that's the targeted teardown-vs-rx
 		 * window.  Don't pre-DELLINK the veths individually. */
-		if (bridge_added && br_idx > 0) {
-			if (build_dellink(&ctx, br_idx) == 0)
+		if (ictx.bridge_added && ictx.br_idx > 0) {
+			if (build_dellink(&ictx.ctx, ictx.br_idx) == 0)
 				__atomic_add_fetch(&shm->stats.bridge_fdb_stp_link_del_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 		/* Veths whose bridge enslave failed are still around;
 		 * mop them up so a long-lived child doesn't accumulate
 		 * orphan veths in its private netns. */
-		if (veth0_added && port_idx[0] > 0)
-			(void)build_dellink(&ctx, port_idx[0]);
-		if (veth1_added && port_idx[2] > 0)
-			(void)build_dellink(&ctx, port_idx[2]);
-		nl_close(&ctx);
+		if (ictx.veth0_added && ictx.port_idx[0] > 0)
+			(void)build_dellink(&ictx.ctx, ictx.port_idx[0]);
+		if (ictx.veth1_added && ictx.port_idx[2] > 0)
+			(void)build_dellink(&ictx.ctx, ictx.port_idx[2]);
+		nl_close(&ictx.ctx);
 	}
 
 	return true;
