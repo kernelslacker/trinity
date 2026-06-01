@@ -1538,7 +1538,7 @@ void generate_syscall_args(struct syscallrecord *rec)
 		unlock(&rec->lock);
 		return;
 	}
-	rec->state = PREP;
+	__atomic_store_n(&rec->state, PREP, __ATOMIC_RELAXED);
 
 	/* Reset post_state on every syscall step, before any branch.
 	 * generic_sanitise() also clears it, but the minicorpus-replay

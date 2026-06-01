@@ -857,14 +857,8 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	// bail if we've not done a syscall yet, we probably just haven't
 	// been scheduled due to other pids hogging the cpu
 	rec = &child->syscall;
-	if (trylock(&rec->lock) == false)
+	if (__atomic_load_n(&rec->state, __ATOMIC_RELAXED) < BEFORE)
 		return true;
-
-	if (rec->state < BEFORE) {
-		unlock(&rec->lock);
-		return true;
-	}
-	unlock(&rec->lock);
 
 	old = child->tp.tv_sec;
 

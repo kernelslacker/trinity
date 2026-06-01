@@ -1675,7 +1675,7 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	{
 		enum stats_result_class result;
 
-		if (rec->state != AFTER)
+		if (__atomic_load_n(&rec->state, __ATOMIC_ACQUIRE) != AFTER)
 			result = STATS_RESULT_INCOMPLETE;
 		else if (rec->retval == (unsigned long)-1L)
 			result = STATS_RESULT_FAILURE;

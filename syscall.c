@@ -167,7 +167,7 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	needalarm = entry->flags & NEED_ALARM;
 
 	lock(&rec->lock);
-	rec->state = state;
+	__atomic_store_n(&rec->state, state, __ATOMIC_RELAXED);
 	/* Stamp the wholesale-stomp canary just before dispatch so
 	 * handle_syscall_ret() can tell whether anything overwrote
 	 * the rec while the kernel had control.  One store on the hot
@@ -223,7 +223,7 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		rec->errno_post = EINVAL;
 		rec->retval = (unsigned long) -1L;
 		rec->validator_rejected = true;
-		rec->state = AFTER;
+		__atomic_store_n(&rec->state, AFTER, __ATOMIC_RELEASE);
 		unlock(&rec->lock);
 		return;
 	}
@@ -348,7 +348,7 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	lock(&rec->lock);
 	rec->errno_post = saved_errno;
 	rec->retval = ret;
-	rec->state = AFTER;
+	__atomic_store_n(&rec->state, AFTER, __ATOMIC_RELEASE);
 	unlock(&rec->lock);
 }
 
@@ -425,7 +425,8 @@ static void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 	 * itself.
 	 *
 	 * No lock: grandchild was SIGKILL'd and reaped, no contender. */
-	if (rec->state != AFTER && entry->post != NULL)
+	if (__atomic_load_n(&rec->state, __ATOMIC_RELAXED) != AFTER &&
+	    entry->post != NULL)
 		entry->post(rec);
 }
 
@@ -852,7 +853,7 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		 * with state GOING_AWAY and may die or get killed before
 		 * setting state to AFTER.  Only process the result if the
 		 * syscall actually completed. */
-		if (rec->state == AFTER) {
+		if (__atomic_load_n(&rec->state, __ATOMIC_ACQUIRE) == AFTER) {
 			if (err == ENOSYS)
 				deactivate_enosys(rec, entry, call);
 
@@ -891,7 +892,7 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 						err, strerror(err));
 			}
 		}
-	} else if (rec->state == AFTER) {
+	} else if (__atomic_load_n(&rec->state, __ATOMIC_ACQUIRE) == AFTER) {
 		/* Symmetric guard to the failure branch above: an
 		 * EXTRA_FORK grandchild that was SIGKILL'd by
 		 * do_extrafork's 1-second timeout (or died in execve)
@@ -920,7 +921,8 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 	 * bucket 0 (success).  kcov_shm itself is always allocated by
 	 * kcov_init_global() regardless of per-child KCOV capability,
 	 * but guard for NULL anyway to match the dump-side gate. */
-	if (rec->state == AFTER && kcov_shm != NULL && call < MAX_NR_SYSCALL) {
+	if (__atomic_load_n(&rec->state, __ATOMIC_ACQUIRE) == AFTER &&
+	    kcov_shm != NULL && call < MAX_NR_SYSCALL) {
 		unsigned int bucket;
 
 		if (rec->retval != -1UL) {
@@ -966,7 +968,7 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 	 * killed grandchild can't trigger a spurious count-bound warning,
 	 * a .post handler acting on stale args, or a stale fd getting
 	 * inserted into the OBJ_LOCAL pool. */
-	if (rec->state == AFTER) {
+	if (__atomic_load_n(&rec->state, __ATOMIC_ACQUIRE) == AFTER) {
 		enforce_count_bound(entry, rec);
 		validate_ret_bound(entry, rec);
 
