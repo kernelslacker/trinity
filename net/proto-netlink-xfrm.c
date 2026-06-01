@@ -270,6 +270,19 @@ struct xfrm_userpolicy_default {
 #define IPSEC_PROTO_ANY			255
 #endif
 
+#ifndef NETLINK_ADD_MEMBERSHIP
+#define NETLINK_ADD_MEMBERSHIP		1
+#endif
+
+/* XFRMNLGRP_* IDs per include/uapi/linux/xfrm.h.  Multicast groups the
+ * kernel publishes on NETLINK_XFRM for asynchronous events. */
+#ifndef XFRMNLGRP_ACQUIRE
+#define XFRMNLGRP_ACQUIRE		1
+#define XFRMNLGRP_EXPIRE		2
+#define XFRMNLGRP_SA			3
+#define XFRMNLGRP_POLICY		4
+#endif
+
 /*
  * Compile-time fallbacks for the xfrm UAPI structure layouts we need.
  * Layouts match linux/xfrm.h as of kernel 6.18 (the structures have
@@ -510,6 +523,19 @@ static unsigned int sa_ring_next;	/* next-write cursor */
  * grammar invocation. */
 static bool unsupported_xfrm;
 
+/*
+ * Ancillary multicast-subscribed NETLINK_XFRM fd.  Opened lazily on the
+ * first data_leg invocation, lives for the lifetime of the trinity child
+ * and is implicitly closed on exit.  Subscribes to XFRMNLGRP_ACQUIRE /
+ * EXPIRE / SA / POLICY so the kernel-side multicast publish paths
+ * (km_event() -> nlmsg_multicast -> netlink_broadcast) fire on every
+ * NEWSA / DELSA / NEWPOLICY / DELPOLICY / soft-expire we emit through
+ * the unicast parent_fd, exercising the multicast-deliver arms and the
+ * acquire/expire serialiser on a non-empty subscriber list.  Drained
+ * on every data_leg so the receive buffer doesn't fill.  -1 sentinel
+ * once we've tried and failed (typically EPERM without CAP_NET_ADMIN). */
+static int mcast_fd = -2;	/* -2 = not yet tried, -1 = tried + failed */
+
 static __u32 g_xfrm_seq;
 
 static __u32 xfrm_next_seq(void)
@@ -539,6 +565,73 @@ static size_t xfrm_nla_put(unsigned char *buf, size_t off, size_t cap,
 	if (aligned > total)
 		memset(buf + off + total, 0, aligned - total);
 	return off + aligned;
+}
+
+/*
+ * Lazily open + bind the ancillary multicast fd and subscribe to the
+ * four XFRMNLGRP_* groups the kernel publishes async events on.  Set
+ * O_NONBLOCK so xfrm_drain_async never blocks.  On any failure (no
+ * CAP_NET_ADMIN, kernel rejects the bind, setsockopt EPERM) latch -1
+ * so we don't retry every data_leg.
+ */
+static void mcast_fd_open(void)
+{
+	struct sockaddr_nl nl;
+	int fd, flags;
+	int grp;
+
+	if (mcast_fd != -2)
+		return;
+
+	fd = socket(PF_NETLINK, SOCK_RAW, NETLINK_XFRM);
+	if (fd < 0) {
+		mcast_fd = -1;
+		return;
+	}
+
+	flags = fcntl(fd, F_GETFL, 0);
+	if (flags >= 0)
+		(void) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+	memset(&nl, 0, sizeof(nl));
+	nl.nl_family = AF_NETLINK;
+	nl.nl_pid    = 0;
+	nl.nl_groups = 0;
+
+	if (bind(fd, (struct sockaddr *) &nl, sizeof(nl)) < 0) {
+		close(fd);
+		mcast_fd = -1;
+		return;
+	}
+
+	for (grp = XFRMNLGRP_ACQUIRE; grp <= XFRMNLGRP_POLICY; grp++)
+		(void) setsockopt(fd, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
+				  &grp, sizeof(grp));
+
+	mcast_fd = fd;
+}
+
+/*
+ * Drain inbound traffic on the ancillary multicast fd.  ACQUIRE /
+ * EXPIRE / async SA + POLICY events end up here; without drainage the
+ * receive buffer fills and the kernel-side multicast deliver stops
+ * picking us as a subscriber (NETLINK_NO_ENOBUFS is off so an ENOBUFS
+ * burst would also break later reads).
+ */
+static void xfrm_drain_mcast(void)
+{
+	unsigned char buf[2048];
+	int n;
+
+	if (mcast_fd < 0)
+		return;
+
+	for (n = 0; n < 32; n++) {
+		ssize_t r = recv(mcast_fd, buf, sizeof(buf), MSG_DONTWAIT);
+
+		if (r <= 0)
+			break;
+	}
 }
 
 /*
@@ -1663,12 +1756,26 @@ static int xfrm_emit_newpolicy(int fd)
 	pol = (struct xfrm_userpolicy_info *)NLMSG_DATA(nlh);
 	family = pick_family();
 	fill_selector(&pol->sel, family);
+
+	/* P2.10 family desync: 1-in-8 flip pol->sel.family so it disagrees
+	 * with the outer family used by the XFRMA_TMPL we append below.
+	 * Drives the xfrm_policy_construct family-mismatch arm
+	 * (verify_newpolicy_info / copy_templates) which the coherent
+	 * always-matched path would never reach. */
+	if (rnd_modulo_u32(8) == 0)
+		pol->sel.family = (family == AF_INET) ? AF_INET6 : AF_INET;
+
 	fill_lifetime(&pol->lft);
 	pol->priority = (__u32)(rand32() & 0xffff);
 	pol->index    = 0;
 	pol->dir      = XFRM_POLICY_OUT;
 	pol->action   = XFRM_POLICY_ALLOW;
 	pol->flags    = (__u8)(rand32() & 0x7);
+	/* P3.13 reserved-bit OR: high bits 3-7 of pol->flags are reserved
+	 * in the current UAPI.  OR in a random 3-bit pattern shifted into
+	 * the reserved range so verify_policy_info's
+	 * XFRM_POLICY_LOCALOK-and-friends mask check sees out-of-set bits. */
+	pol->flags   |= (__u8)(rnd_modulo_u32(8) << 3);
 	pol->share    = XFRM_SHARE_ANY;
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*pol));
@@ -1829,6 +1936,15 @@ static int xfrm_emit_migrate(int fd)
 
 	id = (struct xfrm_userpolicy_id *)NLMSG_DATA(nlh);
 	fill_selector(&id->sel, family);
+
+	/* P2.11 family desync: 1-in-8 flip id->sel.family so the body
+	 * selector disagrees with the per-template old_family / new_family
+	 * we emit in the XFRMA_MIGRATE attribute below.  Drives the
+	 * xfrm_migrate_check / copy_to_user_migrate family-mismatch arms
+	 * the coherent always-matched path would never reach. */
+	if (rnd_modulo_u32(8) == 0)
+		id->sel.family = (family == AF_INET) ? AF_INET6 : AF_INET;
+
 	id->index = 0;
 	id->dir   = dir;
 
@@ -1843,7 +1959,11 @@ static int xfrm_emit_migrate(int fd)
 		generate_rand_bytes((unsigned char *)&mig[i].new_saddr, addr_bytes);
 		mig[i].proto      = pick_sa_proto();
 		mig[i].mode       = pick_mode();
-		mig[i].reserved   = 0;
+		/* P3.13 reserved-bit OR: xfrm_user_migrate.reserved is a
+		 * must-be-zero pad in the UAPI.  Plant a low 3-bit random
+		 * value so the validator-side zero check (if any) actually
+		 * fires; old kernels ignored it, newer ones may reject. */
+		mig[i].reserved   = (__u8)rnd_modulo_u32(8);
 		mig[i].reqid      = (rand32() & 0xff) + 1U;
 		mig[i].old_family = family;
 		mig[i].new_family = family;
@@ -2333,10 +2453,19 @@ static void xfrm_grammar_data_leg(int parent_fd, int child_fd,
 	if (unsupported_xfrm)
 		return;
 
+	/* P3.14 multicast bind: lazily open an ancillary fd subscribed to
+	 * XFRMNLGRP_ACQUIRE / EXPIRE / SA / POLICY.  The unicast parent_fd
+	 * still carries every emit + ack; the mcast fd just gives the
+	 * kernel a non-empty subscriber list so the multicast publish
+	 * paths fire and the async events end up drained here. */
+	mcast_fd_open();
+
 	xfrm_drain_async(parent_fd);
+	xfrm_drain_mcast();
 	k = pick_msg_kind();
 	dispatch_msg_kind(parent_fd, k);
 	xfrm_drain_async(parent_fd);
+	xfrm_drain_mcast();
 }
 
 const struct socket_family_grammar grammar_xfrm = {
