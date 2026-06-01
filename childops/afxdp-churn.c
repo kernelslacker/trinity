@@ -553,45 +553,38 @@ static int xdp_netlink_set_fd(struct nl_ctx *rtnl, unsigned int ifindex,
 	return nl_send_recv(rtnl, buf, off);
 }
 
-/* One full setup + race + teardown cycle on a fresh AF_XDP socket. */
-static void iter_one(unsigned int idx, const struct timespec *t_outer)
+/*
+ * Phase 1: open the AF_XDP socket, mmap the UMEM region, pick the per-
+ * iteration feature knobs, and run XDP_UMEM_REG.  On EINVAL with a new
+ * feature bit set, latch that feature off and retry once with the
+ * baseline layout — the rest of the iteration is still useful coverage.
+ * Outputs want_sg / want_tx_md / want_tun for the downstream phases.
+ */
+static int afxdp_iter_setup_umem(struct xsk_state *st,
+				 bool *want_sg_out,
+				 bool *want_tx_md_out,
+				 bool *want_tun_out)
 {
-	struct xsk_state st;
 	struct afxdp_umem_reg_compat umem_reg;
-	struct xdp_statistics xstats;
-	struct sockaddr_xdp sxdp;
-	char tun_name[IFNAMSIZ];
-	socklen_t off_len = sizeof(st.off);
-	socklen_t xstats_len = sizeof(xstats);
-	uint32_t ring_entries = AFXDP_RING_ENTRIES;
-	unsigned int target_ifindex;
-	unsigned int retry;
 	bool want_sg, want_tx_md, want_tun;
 	int rc;
 
-	(void)idx;
-
-	if ((unsigned long long)ns_since(t_outer) >= AFXDP_WALL_CAP_NS)
-		return;
-
-	xsk_init(&st);
-
-	st.xsk_fd = socket(AF_XDP, SOCK_RAW | SOCK_CLOEXEC, 0);
-	if (st.xsk_fd < 0) {
+	st->xsk_fd = socket(AF_XDP, SOCK_RAW | SOCK_CLOEXEC, 0);
+	if (st->xsk_fd < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT ||
 		    errno == EPERM || errno == EACCES)
 			ns_unsupported_afxdp = true;
 		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		goto out;
+		return -1;
 	}
 
-	st.umem = mmap(NULL, AFXDP_UMEM_BYTES, PROT_READ | PROT_WRITE,
-		       MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
-	if (st.umem == MAP_FAILED) {
+	st->umem = mmap(NULL, AFXDP_UMEM_BYTES, PROT_READ | PROT_WRITE,
+			MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
+	if (st->umem == MAP_FAILED) {
 		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		goto out;
+		return -1;
 	}
 
 	/* Per-iteration knobs.  Two latches gate the new feature flags off
@@ -603,13 +596,13 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 	want_tun   = (rnd_u32() & 3) == 0;
 
 	memset(&umem_reg, 0, sizeof(umem_reg));
-	umem_reg.addr            = (uint64_t)(uintptr_t)st.umem;
+	umem_reg.addr            = (uint64_t)(uintptr_t)st->umem;
 	umem_reg.len             = AFXDP_UMEM_BYTES;
 	umem_reg.chunk_size      = want_sg ? AFXDP_SG_CHUNK_SIZE : AFXDP_CHUNK_SIZE;
 	umem_reg.headroom        = want_tx_md ? AFXDP_TX_META_BYTES : 0;
 	umem_reg.flags           = want_sg ? XDP_UMEM_FLAGS_USE_SG : 0;
 	umem_reg.tx_metadata_len = want_tx_md ? AFXDP_TX_META_BYTES : 0;
-	rc = setsockopt_retry(st.xsk_fd, SOL_XDP, XDP_UMEM_REG,
+	rc = setsockopt_retry(st->xsk_fd, SOL_XDP, XDP_UMEM_REG,
 			      &umem_reg, sizeof(umem_reg));
 	if (rc < 0 && errno == EINVAL && (want_sg || want_tx_md)) {
 		/* Latch unsupported features off and retry once with the
@@ -630,13 +623,13 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 		umem_reg.headroom        = 0;
 		umem_reg.flags           = 0;
 		umem_reg.tx_metadata_len = 0;
-		rc = setsockopt_retry(st.xsk_fd, SOL_XDP, XDP_UMEM_REG,
+		rc = setsockopt_retry(st->xsk_fd, SOL_XDP, XDP_UMEM_REG,
 				      &umem_reg, sizeof(umem_reg));
 	}
 	if (rc < 0) {
 		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		goto out;
+		return -1;
 	}
 	__atomic_add_fetch(&shm->stats.afxdp_churn_umem_reg_ok,
 			   1, __ATOMIC_RELAXED);
@@ -646,6 +639,37 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 	if (want_tx_md)
 		__atomic_add_fetch(&shm->stats.afxdp_tx_metadata_iters,
 				   1, __ATOMIC_RELAXED);
+
+	*want_sg_out    = want_sg;
+	*want_tx_md_out = want_tx_md;
+	*want_tun_out   = want_tun;
+	return 0;
+}
+
+/* One full setup + race + teardown cycle on a fresh AF_XDP socket. */
+static void iter_one(unsigned int idx, const struct timespec *t_outer)
+{
+	struct xsk_state st;
+	struct xdp_statistics xstats;
+	struct sockaddr_xdp sxdp;
+	char tun_name[IFNAMSIZ];
+	socklen_t off_len = sizeof(st.off);
+	socklen_t xstats_len = sizeof(xstats);
+	uint32_t ring_entries = AFXDP_RING_ENTRIES;
+	unsigned int target_ifindex;
+	unsigned int retry;
+	bool want_sg, want_tx_md, want_tun;
+	int rc;
+
+	(void)idx;
+
+	if ((unsigned long long)ns_since(t_outer) >= AFXDP_WALL_CAP_NS)
+		return;
+
+	xsk_init(&st);
+
+	if (afxdp_iter_setup_umem(&st, &want_sg, &want_tx_md, &want_tun) < 0)
+		goto out;
 
 	/* All four rings, same size.  CVE-2022-3625 is in this exact
 	 * setsockopt path -- the fix landed in xsk_setsockopt() to refuse
