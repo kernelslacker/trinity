@@ -627,6 +627,39 @@ static int mld_source_iter_v6_setup_send(struct mld_source_iter_v6_ctx *it)
 }
 
 /*
+ * Phase 2 (v6): open the AF_INET6 SOCK_DGRAM receiver, apply timeouts,
+ * set SO_REUSEADDR + IPV6_MULTICAST_LOOP so loopback delivery fires,
+ * then bind to the MLDv2 group:port.  -1 return on socket/bind failure
+ * routes through the caller's out: cleanup.
+ */
+static int mld_source_iter_v6_setup_recv(struct mld_source_iter_v6_ctx *it)
+{
+	struct sockaddr_in6 addr;
+	int yes = 1;
+
+	it->recv_s = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+	if (it->recv_s < 0) {
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	apply_timeouts(it->recv_s);
+	(void)setsockopt(it->recv_s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+	(void)setsockopt(it->recv_s, IPPROTO_IPV6, IPV6_MULTICAST_LOOP,
+			 &yes, sizeof(yes));
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sin6_family = AF_INET6;
+	addr.sin6_port   = htons(IMC_PORT);
+	if (bind(it->recv_s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	return 0;
+}
+
+/*
  * IPv6 mirror of iter_one_v4.  Hits ip6_mc_source / ip6_mc_msfilter
  * (net/ipv6/mcast.c) instead of the v4 paths.  SSM group ff3e::42:salt.
  */
@@ -639,9 +672,7 @@ static void iter_one_v6(unsigned int iter_idx, const struct timespec *t_outer)
 		.iter_idx = iter_idx,
 		.salt     = (unsigned int)(rand32() & 0xffu),
 	};
-	struct sockaddr_in6 addr;
 	unsigned int race_letter = (iter_idx >> 1) & 3U;
-	int yes = 1;
 	unsigned int nsrc;
 	int rc;
 
@@ -669,26 +700,8 @@ static void iter_one_v6(unsigned int iter_idx, const struct timespec *t_outer)
 
 	if (mld_source_iter_v6_setup_send(&it) != 0)
 		goto out;
-
-	it.recv_s = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
-	if (it.recv_s < 0) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (mld_source_iter_v6_setup_recv(&it) != 0)
 		goto out;
-	}
-	apply_timeouts(it.recv_s);
-	(void)setsockopt(it.recv_s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
-	(void)setsockopt(it.recv_s, IPPROTO_IPV6, IPV6_MULTICAST_LOOP,
-			 &yes, sizeof(yes));
-
-	memset(&addr, 0, sizeof(addr));
-	addr.sin6_family = AF_INET6;
-	addr.sin6_port   = htons(IMC_PORT);
-	if (bind(it.recv_s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
 
 	fill_gsr_v6(&it.gsr_a, 0U, &it.grp_v6, &it.src_a_v6);
 	if (setsockopt(it.recv_s, IPPROTO_IPV6, MCAST_JOIN_SOURCE_GROUP,
