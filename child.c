@@ -647,12 +647,19 @@ static void freeze_sibling_childdata(int my_childno)
 }
 
 /*
- * Called from the fork_children loop in the main process.
+ * Isolate this child's stdio + controlling terminal before any
+ * syscall fuzzing starts.  Three steps, all about keeping fuzzed
+ * I/O off the operator's terminal: redirect fd 0/1/2 to /dev/null
+ * so splice/sendfile/vmsplice/write can't spew to the tty, drop the
+ * inherited --stats-log-file fd so a fuzzed fchmod/ftruncate/write
+ * can't smash the operator's log, and setsid() to sever the
+ * controlling terminal so a later open("/dev/tty") can't re-acquire
+ * it.  Bundled here so the I/O-isolation contract is self-contained
+ * -- subsequent init phases assume stderr is /dev/null and rely on
+ * the no-controlling-tty invariant.
  */
-static void init_child(struct childdata *child, int childno)
+static void init_child_isolate_io(void)
 {
-	pid_t pid = getpid();
-	unsigned int new_gen;
 	int devnull;
 
 	/* Redirect stdin/stdout/stderr to /dev/null so no syscall
@@ -685,6 +692,17 @@ static void init_child(struct childdata *child, int childno)
 	 * own session leader without a controlling terminal — subsequent
 	 * /dev/tty opens fail with ENXIO. */
 	(void) setsid();
+}
+
+/*
+ * Called from the fork_children loop in the main process.
+ */
+static void init_child(struct childdata *child, int childno)
+{
+	pid_t pid = getpid();
+	unsigned int new_gen;
+
+	init_child_isolate_io();
 
 	/* Re-set num from the stack-based childno in case shared memory
 	 * was corrupted by a sibling's stray write. */
