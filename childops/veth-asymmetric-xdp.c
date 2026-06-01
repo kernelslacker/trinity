@@ -598,6 +598,42 @@ static int veth_xdp_iter_create_pair(struct veth_xdp_iter_ctx *ictx)
 	return 0;
 }
 
+/*
+ * Phase 3: BPF_PROG_LOAD an opaque "r0 = XDP_REDIRECT; exit" program
+ * and attach it to the a-side via RTM_NEWLINK + IFLA_XDP nest in
+ * SKB_MODE.  Latches ns_unsupported_xdp on the EPERM / EACCES /
+ * EINVAL / EOPNOTSUPP set BPF_PROG_LOAD returns when XDP load is
+ * unavailable (unprivileged-bpf disabled, CONFIG_BPF_SYSCALL absent,
+ * BPF_PROG_TYPE_XDP not enabled).  Kept separate from the per-kind
+ * latches so a missing kind doesn't disable XDP for the others and a
+ * missing XDP doesn't disable the asymmetric-queue exercise.  Attach
+ * failure leaves prog_fd alive so the teardown helper still closes
+ * it; ictx->prog_fd starts at -1 from the orchestrator's initialiser
+ * so that guard fires correctly whether load skipped, failed, or
+ * succeeded.  No return value -- later phases gate on prog_fd / a_idx
+ * independently.
+ */
+static void veth_xdp_iter_load_xdp(struct veth_xdp_iter_ctx *ictx)
+{
+	if (ns_unsupported_xdp)
+		return;
+
+	ictx->prog_fd = vax_load_xdp_prog();
+	if (ictx->prog_fd < 0) {
+		if (errno == EPERM || errno == EACCES ||
+		    errno == EINVAL || errno == EOPNOTSUPP) {
+			ns_unsupported_xdp = true;
+			__atomic_add_fetch(&shm->stats.veth_asym_unsupported,
+					   1, __ATOMIC_RELAXED);
+		}
+		return;
+	}
+
+	if (vax_xdp_attach(&ictx->ctx, ictx->a_idx, ictx->prog_fd) == 0)
+		__atomic_add_fetch(&shm->stats.veth_asym_xdp_attach_ok,
+				   1, __ATOMIC_RELAXED);
+}
+
 bool veth_asymmetric_xdp(struct childdata *child)
 {
 	struct veth_xdp_iter_ctx ictx = {
@@ -644,21 +680,7 @@ bool veth_asymmetric_xdp(struct childdata *child)
 	if (veth_xdp_iter_create_pair(&ictx) != 0)
 		goto out;
 
-	if (!ns_unsupported_xdp) {
-		ictx.prog_fd = vax_load_xdp_prog();
-		if (ictx.prog_fd < 0) {
-			if (errno == EPERM || errno == EACCES ||
-			    errno == EINVAL || errno == EOPNOTSUPP) {
-				ns_unsupported_xdp = true;
-				__atomic_add_fetch(&shm->stats.veth_asym_unsupported,
-						   1, __ATOMIC_RELAXED);
-			}
-		} else if (vax_xdp_attach(&ictx.ctx, ictx.a_idx,
-					  ictx.prog_fd) == 0) {
-			__atomic_add_fetch(&shm->stats.veth_asym_xdp_attach_ok,
-					   1, __ATOMIC_RELAXED);
-		}
-	}
+	veth_xdp_iter_load_xdp(&ictx);
 
 	/* Raw send into veth_b.  Frames are eth+IPv4+UDP-shaped garbage --
 	 * sufficient to drive the kernel's hash-modulo txq selection on the
