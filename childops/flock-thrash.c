@@ -259,12 +259,31 @@ static void flock_thrash_iter_apply(struct flock_slot *s, int op_used)
 	}
 }
 
+/*
+ * Phase: release the slot pool.  Half the time close in open order
+ * (FIFO), the other half shuffled -- close-driven release walks the
+ * per-inode flc_flock list in a different order than the explicit
+ * LOCK_UN path, and varying it keeps any latent assumption about
+ * close sequence honest.  flock locks tied to the open file
+ * description drop automatically on the last close(), so we don't
+ * need to issue LOCK_UN for slots that are still held.
+ */
+static void flock_thrash_iter_teardown(struct flock_slot *slots,
+				       unsigned int opened)
+{
+	unsigned int i;
+
+	if (rnd_modulo_u32(2) == 0)
+		shuffle_slots(slots, opened);
+	for (i = 0; i < opened; i++)
+		close(slots[i].fd);
+}
+
 bool flock_thrash(struct childdata *child)
 {
 	struct flock_slot slots[NR_FLOCK_FDS];
 	unsigned int opened;
 	unsigned int iter, iter_cap, phase_split;
-	unsigned int i;
 	enum thrash_order order;
 
 	(void)child;
@@ -290,15 +309,6 @@ bool flock_thrash(struct childdata *child)
 		flock_thrash_iter_apply(s, op_used);
 	}
 
-	/* Vary teardown order: half the time close in open order (FIFO),
-	 * the other half shuffled.  Close-driven release walks the per-
-	 * inode list in a different order than the explicit LOCK_UN path,
-	 * and varying that order keeps any latent assumption about close
-	 * sequence honest. */
-	if (rnd_modulo_u32(2) == 0)
-		shuffle_slots(slots, opened);
-	for (i = 0; i < opened; i++)
-		close(slots[i].fd);
-
+	flock_thrash_iter_teardown(slots, opened);
 	return true;
 }
