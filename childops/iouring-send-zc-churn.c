@@ -576,11 +576,42 @@ static int iouring_send_zc_iter_setup(struct iouring_send_zc_iter_ctx *it)
 	return 0;
 }
 
+/*
+ * Open the loopback TCP socket pair, set the cap-gate latch on
+ * SO_ZEROCOPY refusal, and stash the fd/acceptor pid in the ctx.
+ * Returns 0 on success; nonzero means the caller should bail to the
+ * shared teardown path.
+ */
+static int iouring_send_zc_iter_socket(struct iouring_send_zc_iter_ctx *it)
+{
+	int one = 1;
+
+	it->sock_fd = open_loopback_pair(&it->acceptor);
+	if (it->sock_fd < 0) {
+		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	/* SO_ZEROCOPY enables the kernel-side ZC path the SEND_ZC SQE
+	 * targets.  EOPNOTSUPP / EPERM here latches the cap-gate -- the
+	 * platform can't reach the path at all. */
+	if (setsockopt(it->sock_fd, SOL_SOCKET, SO_ZEROCOPY,
+		       &one, sizeof(one)) < 0) {
+		if (errno == EOPNOTSUPP || errno == ENOPROTOOPT ||
+		    errno == EPERM)
+			ns_unsupported_iouring_send_zc_churn = true;
+		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	return 0;
+}
+
 /* One full sequence on a freshly-created ring + loopback TCP socket. */
 static void iter_one(const struct timespec *t_outer)
 {
 	struct iouring_send_zc_iter_ctx it;
-	int one = 1;
 	unsigned int i;
 
 	memset(&it, 0, sizeof(it));
@@ -599,24 +630,8 @@ static void iter_one(const struct timespec *t_outer)
 	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
 		goto out;
 
-	it.sock_fd = open_loopback_pair(&it.acceptor);
-	if (it.sock_fd < 0) {
-		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (iouring_send_zc_iter_socket(&it) != 0)
 		goto out;
-	}
-
-	/* SO_ZEROCOPY enables the kernel-side ZC path the SEND_ZC SQE
-	 * targets.  EOPNOTSUPP / EPERM here latches the cap-gate -- the
-	 * platform can't reach the path at all. */
-	if (setsockopt(it.sock_fd, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one)) < 0) {
-		if (errno == EOPNOTSUPP || errno == ENOPROTOOPT ||
-		    errno == EPERM)
-			ns_unsupported_iouring_send_zc_churn = true;
-		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
 
 	/* SEND_ZC SQE referring buf_index 0..7 (rotating).  Send length is
 	 * clamped to ZC_BUF_BYTES so we never trip the kernel's per-buffer
