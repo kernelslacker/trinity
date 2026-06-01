@@ -788,6 +788,25 @@ static void flowtable_vlan_iter_churn(const struct flowtable_vlan_iter_ctx *c)
 }
 
 /*
+ * Phase 4: coin-flip teardown race — on odd iters, drop one vlan child
+ * mid-burst so the offload-entry expiry path runs concurrently with
+ * the in-flight forward.  The next outer iter rebuilds the topology
+ * fresh.
+ */
+static void flowtable_vlan_iter_race(unsigned int iter_idx,
+				     struct nl_ctx *rtnl,
+				     struct flowtable_vlan_iter_ctx *c)
+{
+	if ((iter_idx & 1U) && c->vla_added && c->vla_idx > 0) {
+		if (build_dellink(rtnl, c->vla_idx) == 0) {
+			__atomic_add_fetch(&shm->stats.flowtable_vlan_vlan_teardown_races,
+					   1, __ATOMIC_RELAXED);
+			c->vla_added = false;
+		}
+	}
+}
+
+/*
  * One full create / drive / race / teardown cycle.  Wall cap inherited
  * from the caller — every step short-circuits if FEV_WALL_CAP_NS has
  * been exceeded.
@@ -826,17 +845,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 
 	flowtable_vlan_iter_churn(&c);
 
-	/* Coin-flip teardown race: drop one vlan child mid-burst so the
-	 * offload-entry expiry path runs concurrently with the in-flight
-	 * forward.  Re-creating in the next outer iter rebuilds the
-	 * topology fresh. */
-	if ((iter_idx & 1U) && c.vla_added && c.vla_idx > 0) {
-		if (build_dellink(&rtnl, c.vla_idx) == 0) {
-			__atomic_add_fetch(&shm->stats.flowtable_vlan_vlan_teardown_races,
-					   1, __ATOMIC_RELAXED);
-			c.vla_added = false;
-		}
-	}
+	flowtable_vlan_iter_race(iter_idx, &rtnl, &c);
 
 teardown:
 	if (c.table_added) {
