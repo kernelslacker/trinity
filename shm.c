@@ -356,20 +356,30 @@ static void init_shm_per_child_rings(void)
 	}
 }
 
-void init_shm(void)
+/*
+ * Final init_shm phase: publish the parent-write / child-read
+ * mirror pages (stats_published_init + edgepair_published_init),
+ * lock down the children[] pointer array PROT_READ via mprotect
+ * using the length stashed by init_shm_alloc_children(), then
+ * stand up the cross-subsystem singletons that need shared
+ * memory in place before any child forks -- kcov_init_global,
+ * minicorpus_init, chain_corpus_init, cmp_hints_init,
+ * struct_catalog_init, deferred_free_init.
+ *
+ * Ordering is load-bearing: the mprotect MUST run after both
+ * published_init helpers (those publish initial values that the
+ * children read off the mirror pages as soon as they start) and
+ * BEFORE the kcov / corpus / catalog / deferred-free init bundle
+ * (those allocate further shared regions and must not be
+ * gratuitously interleaved with the read-only flip on children
+ * []).  Bundled last because every prior phase assumes a
+ * still-writable children[] and the subsystem singletons depend
+ * on the per-child rings already being in place.  No shared
+ * state with the orchestrator, signature collapses to (void) --
+ * the mprotect length comes from init_shm_childptrslen.
+ */
+static void init_shm_publish_and_subsystems(void)
 {
-	output(2, "shm is at %p\n", shm);
-
-	init_shm_debug_start();
-
-	init_shm_self_exe_snapshot();
-
-	init_shm_strategy_state();
-
-	init_shm_alloc_children();
-
-	init_shm_per_child_rings();
-
 	/* Allocate the parent-write / child-read mirror page.
 	 * Children read shm_published->fleet_op_count off the cold path
 	 * (rotation clock, syscalls_todo termination); the parent re-publishes
@@ -397,4 +407,21 @@ void init_shm(void)
 	 * See deferred-free.c for the rationale on MAP_PRIVATE vs MAP_SHARED.
 	 */
 	deferred_free_init();
+}
+
+void init_shm(void)
+{
+	output(2, "shm is at %p\n", shm);
+
+	init_shm_debug_start();
+
+	init_shm_self_exe_snapshot();
+
+	init_shm_strategy_state();
+
+	init_shm_alloc_children();
+
+	init_shm_per_child_rings();
+
+	init_shm_publish_and_subsystems();
 }
