@@ -862,6 +862,83 @@ static void afxdp_iter_attach_prog(struct xsk_state *st,
 	}
 }
 
+/*
+ * Phase 6: enqueue 1 (or 2 chained, for want_sg) TX descriptors into
+ * the TX ring then sendto(MSG_DONTWAIT) to kick xsk_sendmsg.  This
+ * drives descriptors through xsk_buff_pool — the live-pool path we
+ * want to race against the deletes/munmaps below.  No-op when bind()
+ * didn't take.  Touches the want_tx_md / want_sg per-iter knobs to
+ * stamp xsk_tx_metadata in headroom and set XDP_PKT_CONTD/XDP_TX_METADATA
+ * in desc->options where appropriate.
+ */
+static void afxdp_iter_tx_burst(struct xsk_state *st,
+				bool want_sg, bool want_tx_md)
+{
+	uint32_t *prod;
+	struct xdp_desc *desc;
+	uint32_t p, chunk_sz, enq = 1U;
+	uint64_t head_addr;
+	uint16_t head_opts;
+
+	if (!st->bound)
+		return;
+
+	/* Inject TX descriptor(s) into the TX ring, then sendto-kick.
+	 * xsk_sendmsg walks the TX ring and pulls the descriptors
+	 * through xsk_buff_pool — the live-pool path we want to race
+	 * against the deletes/munmaps below.
+	 *
+	 * Multibuf path (want_sg): enqueue two chained descriptors,
+	 * head with XDP_PKT_CONTD set in options.  Hits the chained-
+	 * frag walker that 0f3776583d28 fixes (per-desc UAF when the
+	 * chain crosses UMEM frag boundaries).
+	 *
+	 * TX-metadata path (want_tx_md): stamp xsk_tx_metadata into
+	 * the headroom region just before the head desc->addr and set
+	 * XDP_TX_METADATA in head->options.  The kernel reads csum
+	 * fields from there; d73a9a63f9f7 mishandled this when the
+	 * bound netdev advertises IFF_TX_SKB_NO_LINEAR. */
+	prod = (uint32_t *)((char *)st->tx_ring + st->off.tx.producer);
+	desc = (struct xdp_desc *)((char *)st->tx_ring + st->off.tx.desc);
+	p         = __atomic_load_n(prod, __ATOMIC_RELAXED);
+	chunk_sz  = want_sg ? AFXDP_SG_CHUNK_SIZE : AFXDP_CHUNK_SIZE;
+	head_addr = want_tx_md ? AFXDP_TX_META_BYTES : 0;
+	head_opts = (want_sg ? XDP_PKT_CONTD : 0) |
+		    (want_tx_md ? XDP_TX_METADATA : 0);
+
+	if (want_tx_md && (char *)st->umem != MAP_FAILED) {
+		/* metadata header is 16 bytes immediately preceding
+		 * head_addr in the UMEM region — relies on headroom
+		 * being set to AFXDP_TX_META_BYTES at UMEM_REG. */
+		unsigned char *meta = (unsigned char *)st->umem +
+				      head_addr - AFXDP_TX_META_BYTES;
+		__u64 mflags = XDP_TXMD_FLAGS_CHECKSUM |
+			       ((rnd_u32() & 1) ? XDP_TXMD_FLAGS_TIMESTAMP : 0);
+
+		memset(meta, 0, AFXDP_TX_META_BYTES);
+		memcpy(meta, &mflags, sizeof(mflags));
+		/* csum_start=0, csum_offset=0 — bytes 8..11 already zero. */
+	}
+
+	desc[p % AFXDP_RING_ENTRIES].addr    = head_addr;
+	desc[p % AFXDP_RING_ENTRIES].len     = 1;
+	desc[p % AFXDP_RING_ENTRIES].options = head_opts;
+	if (want_sg) {
+		uint32_t q = (p + 1) % AFXDP_RING_ENTRIES;
+
+		desc[q].addr    = (uint64_t)chunk_sz + head_addr;
+		desc[q].len     = 1;
+		desc[q].options = 0;	/* tail of chain */
+		enq = 2U;
+	}
+	__atomic_store_n(prod, p + enq, __ATOMIC_RELEASE);
+
+	if (sendto(st->xsk_fd, NULL, 0, MSG_DONTWAIT, NULL, 0) >= 0 ||
+	    errno == EAGAIN || errno == ENOBUFS || errno == EBUSY)
+		__atomic_add_fetch(&shm->stats.afxdp_churn_send_ok,
+				   1, __ATOMIC_RELAXED);
+}
+
 /* One full setup + race + teardown cycle on a fresh AF_XDP socket. */
 static void iter_one(unsigned int idx, const struct timespec *t_outer)
 {
@@ -894,66 +971,7 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 
 	afxdp_iter_attach_prog(&st, target_ifindex);
 
-	if (st.bound) {
-		/* Inject TX descriptor(s) into the TX ring, then sendto-kick.
-		 * xsk_sendmsg walks the TX ring and pulls the descriptors
-		 * through xsk_buff_pool — the live-pool path we want to race
-		 * against the deletes/munmaps below.
-		 *
-		 * Multibuf path (want_sg): enqueue two chained descriptors,
-		 * head with XDP_PKT_CONTD set in options.  Hits the chained-
-		 * frag walker that 0f3776583d28 fixes (per-desc UAF when the
-		 * chain crosses UMEM frag boundaries).
-		 *
-		 * TX-metadata path (want_tx_md): stamp xsk_tx_metadata into
-		 * the headroom region just before the head desc->addr and set
-		 * XDP_TX_METADATA in head->options.  The kernel reads csum
-		 * fields from there; d73a9a63f9f7 mishandled this when the
-		 * bound netdev advertises IFF_TX_SKB_NO_LINEAR. */
-		uint32_t *prod = (uint32_t *)((char *)st.tx_ring +
-					      st.off.tx.producer);
-		struct xdp_desc *desc = (struct xdp_desc *)((char *)st.tx_ring +
-							    st.off.tx.desc);
-		uint32_t p = __atomic_load_n(prod, __ATOMIC_RELAXED);
-		uint32_t chunk_sz = want_sg ? AFXDP_SG_CHUNK_SIZE
-					    : AFXDP_CHUNK_SIZE;
-		uint64_t head_addr = want_tx_md ? AFXDP_TX_META_BYTES : 0;
-		uint16_t head_opts = (want_sg ? XDP_PKT_CONTD : 0) |
-				     (want_tx_md ? XDP_TX_METADATA : 0);
-		uint32_t enq = 1U;
-
-		if (want_tx_md && (char *)st.umem != MAP_FAILED) {
-			/* metadata header is 16 bytes immediately preceding
-			 * head_addr in the UMEM region — relies on headroom
-			 * being set to AFXDP_TX_META_BYTES at UMEM_REG. */
-			unsigned char *meta = (unsigned char *)st.umem +
-					      head_addr - AFXDP_TX_META_BYTES;
-			__u64 mflags = XDP_TXMD_FLAGS_CHECKSUM |
-				       ((rnd_u32() & 1) ? XDP_TXMD_FLAGS_TIMESTAMP : 0);
-
-			memset(meta, 0, AFXDP_TX_META_BYTES);
-			memcpy(meta, &mflags, sizeof(mflags));
-			/* csum_start=0, csum_offset=0 — bytes 8..11 already zero. */
-		}
-
-		desc[p % AFXDP_RING_ENTRIES].addr    = head_addr;
-		desc[p % AFXDP_RING_ENTRIES].len     = 1;
-		desc[p % AFXDP_RING_ENTRIES].options = head_opts;
-		if (want_sg) {
-			uint32_t q = (p + 1) % AFXDP_RING_ENTRIES;
-
-			desc[q].addr    = (uint64_t)chunk_sz + head_addr;
-			desc[q].len     = 1;
-			desc[q].options = 0;	/* tail of chain */
-			enq = 2U;
-		}
-		__atomic_store_n(prod, p + enq, __ATOMIC_RELEASE);
-
-		if (sendto(st.xsk_fd, NULL, 0, MSG_DONTWAIT, NULL, 0) >= 0 ||
-		    errno == EAGAIN || errno == ENOBUFS || errno == EBUSY)
-			__atomic_add_fetch(&shm->stats.afxdp_churn_send_ok,
-					   1, __ATOMIC_RELAXED);
-	}
+	afxdp_iter_tx_burst(&st, want_sg, want_tx_md);
 
 	/* XDP_STATISTICS read while RX is bound -- the stats walker reads
 	 * the per-ring ring_full / fill_ring_empty_descs counters which
