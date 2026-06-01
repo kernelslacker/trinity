@@ -277,6 +277,29 @@ static void keyring_spam_iter_revoke(int32_t *live)
 				   1, __ATOMIC_RELAXED);
 }
 
+/* OP_INVALIDATE: schedule the key for GC.  Unlike revoke, an
+ * invalidated serial becomes unusable immediately, so on success we
+ * drop it from the ring -- otherwise subsequent iterations would burn
+ * budget on guaranteed -ENOKEY follow-ups. */
+static void keyring_spam_iter_invalidate(int32_t *live)
+{
+	int32_t serial;
+	long rc;
+
+	serial = ring_pick(live);
+	if (serial == 0)
+		return;
+	rc = syscall(__NR_keyctl,
+		     (unsigned long) KEYCTL_INVALIDATE,
+		     (unsigned long) serial, 0UL, 0UL, 0UL);
+	if (rc < 0) {
+		__atomic_add_fetch(&shm->stats.keyring_spam_failed,
+				   1, __ATOMIC_RELAXED);
+	} else {
+		ring_drop(live, serial);
+	}
+}
+
 bool keyring_spam(struct childdata *child)
 {
 	int32_t live[LIVE_KEYS_RING];
@@ -324,22 +347,7 @@ bool keyring_spam(struct childdata *child)
 			break;
 
 		case OP_INVALIDATE:
-			serial = ring_pick(live);
-			if (serial == 0)
-				break;
-			rc = syscall(__NR_keyctl,
-				     (unsigned long) KEYCTL_INVALIDATE,
-				     (unsigned long) serial, 0UL, 0UL, 0UL);
-			if (rc < 0) {
-				__atomic_add_fetch(&shm->stats.keyring_spam_failed,
-						   1, __ATOMIC_RELAXED);
-			} else {
-				/* Invalidated keys are scheduled for GC and
-				 * the serial becomes unusable; drop it so we
-				 * don't waste budget on guaranteed-ENOKEY
-				 * follow-ups. */
-				ring_drop(live, serial);
-			}
+			keyring_spam_iter_invalidate(live);
 			break;
 
 		case OP_UNLINK:
