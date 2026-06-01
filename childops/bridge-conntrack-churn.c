@@ -643,6 +643,33 @@ static int bridge_conntrack_iter_veth_attach(struct bridge_conntrack_iter_ctx *c
 	return 0;
 }
 
+/*
+ * Phase 4: open the nf_tables nfnl socket and install the bridge-family
+ * ct table/chain/rule transaction.  The NEWTABLE/NEWCHAIN/NEWRULE
+ * batch drives nf_conntrack registration on NFPROTO_BRIDGE — the
+ * required precondition for the ctnetlink flush in the next phase to
+ * actually race against bridge ct state.  Latches
+ * ns_unsupported_nf_tables on family/proto rejection codes so siblings
+ * stop probing.  Returns -1 if the nfnl_open itself fails (iteration
+ * bails) or 0 otherwise — a nft_install rejection is not a hard
+ * failure: the packet/flush burst still runs because the kernel may
+ * accept ctnetlink even when nf_tables is gated.
+ */
+static int bridge_conntrack_iter_nft_setup(struct bridge_conntrack_iter_ctx *ctx,
+					   const struct nfnl_open_opts *nfnl_opts,
+					   const char *table, const char *chain)
+{
+	int rc;
+
+	if (nfnl_open(&ctx->nfnl_nft, nfnl_opts) < 0)
+		return -1;
+	rc = nft_install_bridge_ct(&ctx->nfnl_nft, table, chain);
+	if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
+	    rc == -EOPNOTSUPP || rc == -ENOTSUP)
+		ns_unsupported_nf_tables = true;
+	return 0;
+}
+
 bool bridge_conntrack_churn(struct childdata *child)
 {
 	struct bridge_conntrack_iter_ctx ctx = {
@@ -687,12 +714,8 @@ bool bridge_conntrack_churn(struct childdata *child)
 	if (bridge_conntrack_iter_veth_attach(&ctx) != 0)
 		goto out;
 
-	if (nfnl_open(&ctx.nfnl_nft, &nfnl_opts) < 0)
+	if (bridge_conntrack_iter_nft_setup(&ctx, &nfnl_opts, table, chain) != 0)
 		goto out;
-	rc = nft_install_bridge_ct(&ctx.nfnl_nft, table, chain);
-	if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
-	    rc == -EOPNOTSUPP || rc == -ENOTSUP)
-		ns_unsupported_nf_tables = true;
 
 	ctx.raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_ALL));
 	if (ctx.raw >= 0) {
