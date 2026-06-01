@@ -96,11 +96,13 @@ static void *iobuf;
 static size_t iobuf_sz;
 
 /*
- * Per-cycle ring context.  All mmap'd regions live here so cleanup is a
+ * Per-cycle iter context.  All mmap'd regions live here so cleanup is a
  * single teardown call; ctx is fully zeroed on setup failure so callers
- * can short-circuit without inspecting individual fields.
+ * can short-circuit without inspecting individual fields.  Only state
+ * that crosses helper-phase boundaries lives here -- burst-local
+ * scratch arrays stay on the orchestrator's stack.
  */
-struct flood_ctx {
+struct iouring_flood_iter_ctx {
 	int		fd;
 	void		*sq_ring;
 	void		*cq_ring;	/* aliases sq_ring when SINGLE_MMAP */
@@ -138,8 +140,9 @@ static inline void ring_store_u32(void *ring, unsigned int off, unsigned int v)
  * not change the userspace contract (no NO_MMAP — we still need the
  * SQE / CQ regions in our address space; no SQPOLL / IOPOLL — those need
  * privilege or a pollable target).  An unsupported flag combo gets
- * rejected by the kernel with EINVAL, which flood_setup retries with no
- * flags so we still exercise the submission path on older kernels.
+ * rejected by the kernel with EINVAL, which iouring_flood_iter_setup_ring
+ * retries with no flags so we still exercise the submission path on
+ * older kernels.
  */
 static unsigned int pick_setup_flags(void)
 {
@@ -169,7 +172,24 @@ static int do_setup(struct io_uring_params *p, unsigned int entries)
 	return (int)syscall(__NR_io_uring_setup, entries, p);
 }
 
-static bool flood_setup(struct flood_ctx *ctx)
+/*
+ * Phase 1: stand up a fresh io_uring instance for this cycle.  Drives
+ * the io_uring_setup syscall (retrying with cleared flags on EINVAL/
+ * EOPNOTSUPP so an unsupported flag combo doesn't waste the cycle),
+ * mmaps the SQ ring, the CQ ring (or aliases it when SINGLE_MMAP),
+ * and the SQE array, then snapshots the ring metadata into ctx.
+ *
+ * Failure categorisation is done here so the orchestrator stays a
+ * thin sequencer: ENOSYS / EPERM latch the file-local ns_unsupported
+ * flag (CONFIG_IO_URING off, or io_uring disabled by sysctl --
+ * neither flips for the life of the process so future invocations
+ * no-op), any other failure bumps iouring_failed.  Returns 0 on
+ * success, -1 on any failure.  On -1 ctx is left fully zeroed (with
+ * ctx->fd = -1) so an accidental teardown call would no-op.  The
+ * orchestrator inspects ns_unsupported after a -1 return to decide
+ * break-vs-continue.
+ */
+static int iouring_flood_iter_setup_ring(struct iouring_flood_iter_ctx *ctx)
 {
 	struct io_uring_params p;
 	size_t sq_sz, cq_sz, sqes_sz;
@@ -190,7 +210,7 @@ static bool flood_setup(struct flood_ctx *ctx)
 		fd = do_setup(&p, RING_ENTRIES);
 	}
 	if (fd < 0)
-		return false;
+		goto out_fail;
 
 	sq_sz   = (size_t)p.sq_off.array + (size_t)p.sq_entries * sizeof(unsigned int);
 	cq_sz   = (size_t)p.cq_off.cqes  + (size_t)p.cq_entries * sizeof(struct io_uring_cqe);
@@ -200,7 +220,7 @@ static bool flood_setup(struct flood_ctx *ctx)
 		       MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQ_RING);
 	if (sq_ring == MAP_FAILED) {
 		close(fd);
-		return false;
+		goto out_fail;
 	}
 
 	if (p.features & IORING_FEAT_SINGLE_MMAP) {
@@ -213,7 +233,7 @@ static bool flood_setup(struct flood_ctx *ctx)
 		if (cq_ring == MAP_FAILED) {
 			munmap(sq_ring, sq_sz);
 			close(fd);
-			return false;
+			goto out_fail;
 		}
 	}
 
@@ -224,7 +244,7 @@ static bool flood_setup(struct flood_ctx *ctx)
 			munmap(cq_ring, cq_sz);
 		munmap(sq_ring, sq_sz);
 		close(fd);
-		return false;
+		goto out_fail;
 	}
 
 	ctx->fd          = fd;
@@ -246,10 +266,18 @@ static bool flood_setup(struct flood_ctx *ctx)
 	ctx->cq_off_mask  = p.cq_off.ring_mask;
 	ctx->cq_off_cqes  = p.cq_off.cqes;
 
-	return true;
+	return 0;
+
+out_fail:
+	if (errno == ENOSYS || errno == EPERM)
+		ns_unsupported = true;
+	else
+		__atomic_add_fetch(&shm->stats.iouring_failed, 1,
+				   __ATOMIC_RELAXED);
+	return -1;
 }
 
-static void flood_teardown(struct flood_ctx *ctx)
+static void flood_teardown(struct iouring_flood_iter_ctx *ctx)
 {
 	if (ctx->sqes)
 		munmap(ctx->sqes, ctx->sqes_sz);
@@ -303,7 +331,7 @@ static void fill_sqe(struct io_uring_sqe *s,
  * tail.  Returns the number actually queued (clamped to available ring
  * space), or 0 if the ring was already full.
  */
-static unsigned int submit_burst(struct flood_ctx *ctx,
+static unsigned int submit_burst(struct iouring_flood_iter_ctx *ctx,
 				 struct io_uring_sqe *sqe, unsigned int n)
 {
 	unsigned int mask  = ring_u32(ctx->sq_ring, ctx->sq_off_mask);
@@ -334,7 +362,7 @@ static unsigned int submit_burst(struct flood_ctx *ctx,
 }
 
 /* Drain all available CQEs and return how many were reaped. */
-static unsigned int drain_cqes(struct flood_ctx *ctx)
+static unsigned int drain_cqes(struct iouring_flood_iter_ctx *ctx)
 {
 	unsigned int head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
 	unsigned int tail;
@@ -413,23 +441,23 @@ bool iouring_flood(struct childdata *child)
 	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
-		struct flood_ctx ctx;
+		struct iouring_flood_iter_ctx ctx;
 		unsigned int n_pick;
 		unsigned int n_subs;
 		unsigned int j;
 		int r;
 
-		if (!flood_setup(&ctx)) {
-			/* ENOSYS: kernel built without CONFIG_IO_URING.
-			 * EPERM:  io_uring disabled by sysctl.  Neither
-			 * changes for the life of this process — latch
-			 * and bail so subsequent invocations no-op. */
-			if (errno == ENOSYS || errno == EPERM) {
-				ns_unsupported = true;
+		if (iouring_flood_iter_setup_ring(&ctx) != 0) {
+			/* setup_ring already categorised the failure --
+			 * ENOSYS / EPERM latched ns_unsupported (kernel
+			 * built without CONFIG_IO_URING, or io_uring
+			 * disabled by sysctl: neither flips for the
+			 * life of this process, so subsequent
+			 * invocations should no-op).  Any other failure
+			 * was charged to iouring_failed and we just
+			 * skip this cycle. */
+			if (ns_unsupported)
 				break;
-			}
-			__atomic_add_fetch(&shm->stats.iouring_failed,
-					   1, __ATOMIC_RELAXED);
 			continue;
 		}
 
