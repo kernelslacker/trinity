@@ -1138,6 +1138,28 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name)
 }
 
 /*
+ * Per-iteration scratchpad shared across the tc_qdisc_<phase> helpers.
+ * Lifetime is exactly one tc_qdisc_churn() invocation; avoids
+ * threading half a dozen out-parameters through the phase helpers.
+ */
+struct tc_qdisc_iter_ctx {
+	struct nl_ctx	nl;
+	char		dummy_name[IFNAMSIZ];
+	char		bridge_name[IFNAMSIZ];
+	char		peer_name[IFNAMSIZ];
+	int		udp;
+	int		dummy_idx;
+	int		bridge_idx;
+	bool		dummy_added;
+	bool		bridge_mode;
+	bool		slave_dellinked;
+	unsigned int	qidx;
+	__u32		handle;
+	__u32		class1;
+	__u32		class2;
+};
+
+/*
  * Per-child one-time setup: unshare a fresh netnamespace, open the
  * rtnl socket, and bring lo up inside the ns.  Latched failures shut
  * the whole op off via the ns_* gates checked in the orchestrator on
@@ -1178,18 +1200,12 @@ static int tc_qdisc_setup_netns(struct nl_ctx *ctx)
 
 bool tc_qdisc_churn(struct childdata *child)
 {
-	char dummy_name[IFNAMSIZ];
-	char bridge_name[IFNAMSIZ];
-	char peer_name[IFNAMSIZ];
-	struct nl_ctx ctx = { .fd = -1 };
-	int udp = -1;
-	int dummy_idx = 0;
-	int bridge_idx = 0;
-	bool dummy_added = false;
-	bool bridge_mode = false;
-	bool slave_dellinked = false;
-	unsigned int qidx, qidx2, cidx;
-	__u32 major, handle, class1, class2;
+	struct tc_qdisc_iter_ctx it = {
+		.nl  = { .fd = -1 },
+		.udp = -1,
+	};
+	unsigned int qidx2, cidx;
+	__u32 major;
 	struct timespec t0;
 	unsigned int iters;
 	unsigned int i;
@@ -1203,7 +1219,7 @@ bool tc_qdisc_churn(struct childdata *child)
 	if (ns_setup_failed || ns_unsupported_rtnl || ns_unsupported_dummy)
 		return true;
 
-	if (tc_qdisc_setup_netns(&ctx) != 0)
+	if (tc_qdisc_setup_netns(&it.nl) != 0)
 		return true;
 
 	/*
@@ -1213,38 +1229,38 @@ bool tc_qdisc_churn(struct childdata *child)
 	 * a flush burst at cleanup — shape of the dequeue-after-
 	 * parent-free UAF in qdisc_pkt_len_segs_init.
 	 */
-	bridge_mode = !ns_unsupported_bridge && ONE_IN(3);
-	if (bridge_mode) {
-		snprintf(bridge_name, sizeof(bridge_name), "trbr%u",
+	it.bridge_mode = !ns_unsupported_bridge && ONE_IN(3);
+	if (it.bridge_mode) {
+		snprintf(it.bridge_name, sizeof(it.bridge_name), "trbr%u",
 			 (unsigned int)(rand32() & 0xffffu));
-		snprintf(dummy_name, sizeof(dummy_name), "trv%u",
+		snprintf(it.dummy_name, sizeof(it.dummy_name), "trv%u",
 			 (unsigned int)(rand32() & 0xffffu));
-		snprintf(peer_name, sizeof(peer_name), "trvp%u",
+		snprintf(it.peer_name, sizeof(it.peer_name), "trvp%u",
 			 (unsigned int)(rand32() & 0xffffu));
 
-		rc = build_bridge_create(&ctx, bridge_name);
+		rc = build_bridge_create(&it.nl, it.bridge_name);
 		if (rc != 0) {
 			if (is_unsupported_err(rc))
 				ns_unsupported_bridge = true;
-			bridge_mode = false;
+			it.bridge_mode = false;
 		} else {
-			bridge_idx = (int)if_nametoindex(bridge_name);
-			rc = build_veth_pair(&ctx, dummy_name, peer_name);
+			it.bridge_idx = (int)if_nametoindex(it.bridge_name);
+			rc = build_veth_pair(&it.nl, it.dummy_name, it.peer_name);
 			if (rc != 0) {
-				if (bridge_idx > 0)
-					(void)build_dellink(&ctx, bridge_idx);
-				bridge_idx = 0;
-				bridge_mode = false;
+				if (it.bridge_idx > 0)
+					(void)build_dellink(&it.nl, it.bridge_idx);
+				it.bridge_idx = 0;
+				it.bridge_mode = false;
 			} else {
-				dummy_idx = (int)if_nametoindex(dummy_name);
-				if (dummy_idx > 0 && bridge_idx > 0)
-					(void)build_setlink_master(&ctx, dummy_idx,
-								   bridge_idx);
-				if (bridge_idx > 0)
-					(void)build_setlink_up(&ctx, bridge_idx);
-				if (dummy_idx > 0)
-					(void)build_setlink_up(&ctx, dummy_idx);
-				dummy_added = true;
+				it.dummy_idx = (int)if_nametoindex(it.dummy_name);
+				if (it.dummy_idx > 0 && it.bridge_idx > 0)
+					(void)build_setlink_master(&it.nl, it.dummy_idx,
+								   it.bridge_idx);
+				if (it.bridge_idx > 0)
+					(void)build_setlink_up(&it.nl, it.bridge_idx);
+				if (it.dummy_idx > 0)
+					(void)build_setlink_up(&it.nl, it.dummy_idx);
+				it.dummy_added = true;
 				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_create_ok,
 						   1, __ATOMIC_RELAXED);
 				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_bridge_parent_runs,
@@ -1253,28 +1269,28 @@ bool tc_qdisc_churn(struct childdata *child)
 		}
 	}
 
-	if (!bridge_mode) {
-		snprintf(dummy_name, sizeof(dummy_name), "trtcd%u",
+	if (!it.bridge_mode) {
+		snprintf(it.dummy_name, sizeof(it.dummy_name), "trtcd%u",
 			 (unsigned int)(rand32() & 0xffffu));
 
-		rc = build_dummy_create(&ctx, dummy_name);
+		rc = build_dummy_create(&it.nl, it.dummy_name);
 		if (rc != 0) {
 			if (is_unsupported_err(rc))
 				ns_unsupported_dummy = true;
 			goto out;
 		}
-		dummy_added = true;
+		it.dummy_added = true;
 		__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_create_ok,
 				   1, __ATOMIC_RELAXED);
 
-		dummy_idx = (int)if_nametoindex(dummy_name);
-		if (dummy_idx == 0)
+		it.dummy_idx = (int)if_nametoindex(it.dummy_name);
+		if (it.dummy_idx == 0)
 			goto out;
 
-		(void)build_setlink_up(&ctx, dummy_idx);
+		(void)build_setlink_up(&it.nl, it.dummy_idx);
 	}
 
-	if (dummy_idx <= 0)
+	if (it.dummy_idx <= 0)
 		goto out;
 
 	/*
@@ -1285,40 +1301,40 @@ bool tc_qdisc_churn(struct childdata *child)
 	 * cascaded down via dev_qdisc_destroy when the link goes.
 	 */
 	if (ONE_IN(4)) {
-		do_peek_stack(&ctx, dummy_idx, dummy_name);
+		do_peek_stack(&it.nl, it.dummy_idx, it.dummy_name);
 		goto out;
 	}
 
-	qidx = pick_qdisc_idx();
-	if (qidx >= NR_QDISC_KINDS)
+	it.qidx = pick_qdisc_idx();
+	if (it.qidx >= NR_QDISC_KINDS)
 		goto out;
 
 	/* random major in [0x10, 0xfff0] keeps us clear of TC_H_MAJ
 	 * values reserved for the kernel's own ingress / clsact / root
 	 * qdiscs (0xffff* is the well-known reserved range). */
 	major = (__u32)((rand32() % 0xfee0U) + 0x10U);
-	handle = major << 16;
-	class1 = handle | 1U;
-	class2 = handle | 2U;
+	it.handle = major << 16;
+	it.class1 = it.handle | 1U;
+	it.class2 = it.handle | 2U;
 
-	modprobe_qdisc(qidx);
-	rc = build_newqdisc(&ctx, dummy_idx, handle, TC_H_ROOT,
-			    qdisc_kinds[qidx].name, NLM_F_CREATE | NLM_F_EXCL);
+	modprobe_qdisc(it.qidx);
+	rc = build_newqdisc(&it.nl, it.dummy_idx, it.handle, TC_H_ROOT,
+			    qdisc_kinds[it.qidx].name, NLM_F_CREATE | NLM_F_EXCL);
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
-			ns_unsupported_qdisc_kind[qidx] = true;
+			ns_unsupported_qdisc_kind[it.qidx] = true;
 		goto out;
 	}
 	__atomic_add_fetch(&shm->stats.tc_qdisc_churn_qdisc_create_ok,
 			   1, __ATOMIC_RELAXED);
 
-	if (qdisc_kinds[qidx].classful) {
-		if (build_newtclass(&ctx, dummy_idx, class1, TC_H_ROOT,
-				    qdisc_kinds[qidx].name) == 0)
+	if (qdisc_kinds[it.qidx].classful) {
+		if (build_newtclass(&it.nl, it.dummy_idx, it.class1, TC_H_ROOT,
+				    qdisc_kinds[it.qidx].name) == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tclass_create_ok,
 					   1, __ATOMIC_RELAXED);
-		if (build_newtclass(&ctx, dummy_idx, class2, TC_H_ROOT,
-				    qdisc_kinds[qidx].name) == 0)
+		if (build_newtclass(&it.nl, it.dummy_idx, it.class2, TC_H_ROOT,
+				    qdisc_kinds[it.qidx].name) == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tclass_create_ok,
 					   1, __ATOMIC_RELAXED);
 	}
@@ -1326,7 +1342,7 @@ bool tc_qdisc_churn(struct childdata *child)
 	cidx = pick_cls_idx();
 	if (cidx < NR_CLS_KINDS) {
 		modprobe_cls(cidx);
-		rc = build_newtfilter(&ctx, dummy_idx, handle,
+		rc = build_newtfilter(&it.nl, it.dummy_idx, it.handle,
 				      cls_kinds[cidx]);
 		if (rc == 0) {
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tfilter_create_ok,
@@ -1345,17 +1361,17 @@ bool tc_qdisc_churn(struct childdata *child)
 	 * CVE class lives in.
 	 */
 	if (!ns_unsupported_inet) {
-		udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-		if (udp < 0) {
+		it.udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+		if (it.udp < 0) {
 			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
 				ns_unsupported_inet = true;
 		} else {
-			(void)setsockopt(udp, SOL_SOCKET, SO_BINDTODEVICE,
-					 dummy_name, strlen(dummy_name) + 1);
+			(void)setsockopt(it.udp, SOL_SOCKET, SO_BINDTODEVICE,
+					 it.dummy_name, strlen(it.dummy_name) + 1);
 		}
 	}
 
-	if (udp >= 0) {
+	if (it.udp >= 0) {
 		struct sockaddr_in dst;
 
 		memset(&dst, 0, sizeof(dst));
@@ -1379,7 +1395,7 @@ bool tc_qdisc_churn(struct childdata *child)
 				break;
 
 			generate_rand_bytes(payload, sizeof(payload));
-			n = sendto(udp, payload, sizeof(payload),
+			n = sendto(it.udp, payload, sizeof(payload),
 				   MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst));
 			if (n > 0)
@@ -1394,10 +1410,10 @@ bool tc_qdisc_churn(struct childdata *child)
 	 * draining.  This is the targeted qdisc_replace race window —
 	 * the same shape as the CVE-2023-4623 sch_qfq UAF.
 	 */
-	qidx2 = pick_qdisc_idx_other(qidx);
+	qidx2 = pick_qdisc_idx_other(it.qidx);
 	if (qidx2 < NR_QDISC_KINDS) {
 		modprobe_qdisc(qidx2);
-		rc = build_newqdisc(&ctx, dummy_idx, handle, TC_H_ROOT,
+		rc = build_newqdisc(&it.nl, it.dummy_idx, it.handle, TC_H_ROOT,
 				    qdisc_kinds[qidx2].name,
 				    NLM_F_CREATE | NLM_F_REPLACE);
 		if (rc == 0) {
@@ -1408,14 +1424,14 @@ bool tc_qdisc_churn(struct childdata *child)
 		}
 	}
 
-	if (!bridge_mode) {
+	if (!it.bridge_mode) {
 		/*
 		 * Bulk-delete every filter on root, racing in-flight skb
 		 * classification still draining from the send loop.  The
 		 * cls_*_destroy commit-time codepaths (CVE-2023-3776 cls_fw
 		 * lineage) live here.
 		 */
-		if (build_deltfilter(&ctx, dummy_idx, handle) == 0)
+		if (build_deltfilter(&it.nl, it.dummy_idx, it.handle) == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tfilter_del_ok,
 					   1, __ATOMIC_RELAXED);
 
@@ -1425,10 +1441,10 @@ bool tc_qdisc_churn(struct childdata *child)
 		 * qdisc_destroy.  This is the primary teardown-vs-traffic
 		 * window the op exists to open.
 		 */
-		if (build_delqdisc(&ctx, dummy_idx, handle, TC_H_ROOT) == 0)
+		if (build_delqdisc(&it.nl, it.dummy_idx, it.handle, TC_H_ROOT) == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_qdisc_del_ok,
 					   1, __ATOMIC_RELAXED);
-	} else if (udp >= 0 && dummy_idx > 0) {
+	} else if (it.udp >= 0 && it.dummy_idx > 0) {
 		/*
 		 * Bridge-slave-port DELLINK race.  In place of the
 		 * explicit delqdisc, tear the qdisc down by removing the
@@ -1451,38 +1467,38 @@ bool tc_qdisc_churn(struct childdata *child)
 
 		for (j = 0; j < 8; j++) {
 			generate_rand_bytes(payload, sizeof(payload));
-			(void)sendto(udp, payload, sizeof(payload),
+			(void)sendto(it.udp, payload, sizeof(payload),
 				     MSG_DONTWAIT,
 				     (struct sockaddr *)&dst, sizeof(dst));
 		}
-		if (build_dellink(&ctx, dummy_idx) == 0) {
+		if (build_dellink(&it.nl, it.dummy_idx) == 0) {
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_del_ok,
 					   1, __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_bridge_dellink_race_ok,
 					   1, __ATOMIC_RELAXED);
-			slave_dellinked = true;
+			it.slave_dellinked = true;
 		}
 		for (j = 0; j < 8; j++) {
 			generate_rand_bytes(payload, sizeof(payload));
-			(void)sendto(udp, payload, sizeof(payload),
+			(void)sendto(it.udp, payload, sizeof(payload),
 				     MSG_DONTWAIT,
 				     (struct sockaddr *)&dst, sizeof(dst));
 		}
 	}
 
 out:
-	if (udp >= 0)
-		close(udp);
+	if (it.udp >= 0)
+		close(it.udp);
 
-	if (ctx.fd >= 0) {
-		if (dummy_added && dummy_idx > 0 && !slave_dellinked) {
-			if (build_dellink(&ctx, dummy_idx) == 0)
+	if (it.nl.fd >= 0) {
+		if (it.dummy_added && it.dummy_idx > 0 && !it.slave_dellinked) {
+			if (build_dellink(&it.nl, it.dummy_idx) == 0)
 				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_del_ok,
 						   1, __ATOMIC_RELAXED);
 		}
-		if (bridge_idx > 0)
-			(void)build_dellink(&ctx, bridge_idx);
-		nl_close(&ctx);
+		if (it.bridge_idx > 0)
+			(void)build_dellink(&it.nl, it.bridge_idx);
+		nl_close(&it.nl);
 	}
 
 	return true;
