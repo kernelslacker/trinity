@@ -1565,6 +1565,138 @@ static unsigned long print_stats_compute_op_rate(unsigned long ops_delta)
 	return rate;
 }
 
+static void print_stats_iteration_line(unsigned long op_count, unsigned long rate, const char *stalltxt)
+{
+	if (kcov_shm != NULL) {
+		static unsigned long last_edges = 0;
+		static unsigned long last_distinct = 0;
+		static unsigned long last_cmp_trunc = 0;
+		static unsigned long last_cmp_unique = 0;
+		unsigned long edges = __atomic_load_n(
+			&kcov_shm->edges_found,
+			__ATOMIC_RELAXED);
+		unsigned long distinct = __atomic_load_n(
+			&kcov_shm->distinct_edges,
+			__ATOMIC_RELAXED);
+		unsigned long cmp_trunc = __atomic_load_n(
+			&kcov_shm->cmp_trace_truncated,
+			__ATOMIC_RELAXED);
+		unsigned long cmp_unique = __atomic_load_n(
+			&kcov_shm->cmp_hints_unique_inserts,
+			__ATOMIC_RELAXED);
+		unsigned int pc_kids = __atomic_load_n(
+			&kcov_shm->pc_mode_children, __ATOMIC_RELAXED);
+		unsigned int cmp_kids = __atomic_load_n(
+			&kcov_shm->cmp_mode_children, __ATOMIC_RELAXED);
+		long delta = edges - last_edges;
+		long distinct_delta = distinct - last_distinct;
+		long cmp_trunc_delta = cmp_trunc - last_cmp_trunc;
+		long cmp_unique_delta = cmp_unique - last_cmp_unique;
+
+		/* Compact KCOV bracket: edges + CMP unique + MODES.
+		 * Raw cmp_records is dropped -- it's massively inflated by
+		 * dedup-refresh on hot syscalls and tells us nothing about
+		 * novel CMP signal.  unique is the per-record subset that
+		 * actually changed pool state (insert or evict-replace),
+		 * i.e. the records that survived bloom + pool dedup.
+		 * MODES is folded inline so the periodic dump is one line
+		 * instead of two/three.
+		 *
+		 * Suppress zero-deltas; suppress unique and MODES sections
+		 * when their counters are zero so plateau / no-CMP windows
+		 * read cleanly.  trunc still gets its own trailing bracket
+		 * when non-zero (rare; per-syscall KCOV_CMP_RECORDS_MAX
+		 * overflow signal). */
+		char edges_delta_str[64] = "";
+		char warm_cold_str[48] = "";
+		char unique_str[80] = "";
+		char modes_str[48] = "";
+		char trunc_str[48] = "";
+		/* Print both deltas per window: distinct +N is
+		 * the true new-code signal (matches what the
+		 * plateau detector samples); bucket +M is the
+		 * fine-grained edges_found delta that includes
+		 * bucket churn on already-known edges.  Suppress
+		 * the whole bracket on the first window and on
+		 * pure-zero windows so the line shape stays
+		 * uncluttered. */
+		if (last_edges > 0 &&
+		    (delta != 0 || distinct_delta != 0))
+			snprintf(edges_delta_str,
+				sizeof(edges_delta_str),
+				" (distinct %+ld, bucket %+ld)",
+				distinct_delta, delta);
+		/* Warm vs cold split: edges_warm_loaded is the count
+		 * the warm-start cache loader seeded at startup; the
+		 * remainder of edges_found is what this process has
+		 * discovered on its own.  Suppress the parens entirely
+		 * on cold-start runs (no cache loaded -> warm == 0) so
+		 * the line shape matches the pre-instrumentation form
+		 * and doesn't add noise to the common case.  Defensive
+		 * clamp: if warm somehow exceeds the current total
+		 * (shouldn't happen — warm is set once at load time and
+		 * edges_found only grows), report cold as 0 rather than
+		 * printing a negative cold count. */
+		{
+			unsigned long warm = __atomic_load_n(
+				&kcov_shm->edges_warm_loaded,
+				__ATOMIC_RELAXED);
+			if (warm > 0) {
+				unsigned long cold = edges > warm ?
+					edges - warm : 0UL;
+				snprintf(warm_cold_str,
+					sizeof(warm_cold_str),
+					" (warm=%lu cold=%lu)",
+					warm, cold);
+			}
+		}
+		if (cmp_unique > 0) {
+			if (last_cmp_unique > 0 && cmp_unique_delta != 0)
+				snprintf(unique_str, sizeof(unique_str),
+					" CMP: %lu unique, %+ld",
+					cmp_unique, cmp_unique_delta);
+			else
+				snprintf(unique_str, sizeof(unique_str),
+					" CMP: %lu unique", cmp_unique);
+		}
+		if (cmp_kids > 0)
+			snprintf(modes_str, sizeof(modes_str),
+				"  CMP MODES: pc=%u cmp=%u",
+				pc_kids, cmp_kids);
+		if (cmp_trunc > 0) {
+			if (last_cmp_trunc > 0 && cmp_trunc_delta != 0)
+				snprintf(trunc_str, sizeof(trunc_str),
+					" [%lu trunc, %+ld]",
+					cmp_trunc, cmp_trunc_delta);
+			else
+				snprintf(trunc_str, sizeof(trunc_str),
+					" [%lu trunc]", cmp_trunc);
+		}
+		output(0, "%ld iterations. [HI:%ld%s] %lu/sec  KCOV: [%lu distinct, %lu bucket%s%s%s%s]%s\n",
+			op_count,
+			hiscore,
+			stall_count ? stalltxt : "",
+			rate,
+			distinct, edges, edges_delta_str,
+			warm_cold_str,
+			unique_str,
+			modes_str,
+			trunc_str);
+		last_edges = edges;
+		last_distinct = distinct;
+		last_cmp_trunc = cmp_trunc;
+		last_cmp_unique = cmp_unique;
+		print_kcov_cmp_diag();
+		print_kcov_pc_diag();
+	} else {
+		output(0, "%ld iterations. [HI:%ld%s] %lu/sec\n",
+			op_count,
+			hiscore,
+			stall_count ? stalltxt : "",
+			rate);
+	}
+}
+
 static void print_stats(void)
 {
 	unsigned long op_count = parent_stats.op_count;
@@ -1584,128 +1716,9 @@ static void print_stats(void)
 			if (stall_count > 0 && stall_count < 10000)
 				snprintf(stalltxt, sizeof(stalltxt), " STALLED:%u", stall_count);
 
+			print_stats_iteration_line(op_count, rate, stalltxt);
+
 			if (kcov_shm != NULL) {
-				static unsigned long last_edges = 0;
-				static unsigned long last_distinct = 0;
-				static unsigned long last_cmp_trunc = 0;
-				static unsigned long last_cmp_unique = 0;
-				unsigned long edges = __atomic_load_n(
-					&kcov_shm->edges_found,
-					__ATOMIC_RELAXED);
-				unsigned long distinct = __atomic_load_n(
-					&kcov_shm->distinct_edges,
-					__ATOMIC_RELAXED);
-				unsigned long cmp_trunc = __atomic_load_n(
-					&kcov_shm->cmp_trace_truncated,
-					__ATOMIC_RELAXED);
-				unsigned long cmp_unique = __atomic_load_n(
-					&kcov_shm->cmp_hints_unique_inserts,
-					__ATOMIC_RELAXED);
-				unsigned int pc_kids = __atomic_load_n(
-					&kcov_shm->pc_mode_children, __ATOMIC_RELAXED);
-				unsigned int cmp_kids = __atomic_load_n(
-					&kcov_shm->cmp_mode_children, __ATOMIC_RELAXED);
-				long delta = edges - last_edges;
-				long distinct_delta = distinct - last_distinct;
-				long cmp_trunc_delta = cmp_trunc - last_cmp_trunc;
-				long cmp_unique_delta = cmp_unique - last_cmp_unique;
-
-				/* Compact KCOV bracket: edges + CMP unique + MODES.
-				 * Raw cmp_records is dropped -- it's massively inflated by
-				 * dedup-refresh on hot syscalls and tells us nothing about
-				 * novel CMP signal.  unique is the per-record subset that
-				 * actually changed pool state (insert or evict-replace),
-				 * i.e. the records that survived bloom + pool dedup.
-				 * MODES is folded inline so the periodic dump is one line
-				 * instead of two/three.
-				 *
-				 * Suppress zero-deltas; suppress unique and MODES sections
-				 * when their counters are zero so plateau / no-CMP windows
-				 * read cleanly.  trunc still gets its own trailing bracket
-				 * when non-zero (rare; per-syscall KCOV_CMP_RECORDS_MAX
-				 * overflow signal). */
-				char edges_delta_str[64] = "";
-				char warm_cold_str[48] = "";
-				char unique_str[80] = "";
-				char modes_str[48] = "";
-				char trunc_str[48] = "";
-				/* Print both deltas per window: distinct +N is
-				 * the true new-code signal (matches what the
-				 * plateau detector samples); bucket +M is the
-				 * fine-grained edges_found delta that includes
-				 * bucket churn on already-known edges.  Suppress
-				 * the whole bracket on the first window and on
-				 * pure-zero windows so the line shape stays
-				 * uncluttered. */
-				if (last_edges > 0 &&
-				    (delta != 0 || distinct_delta != 0))
-					snprintf(edges_delta_str,
-						sizeof(edges_delta_str),
-						" (distinct %+ld, bucket %+ld)",
-						distinct_delta, delta);
-				/* Warm vs cold split: edges_warm_loaded is the count
-				 * the warm-start cache loader seeded at startup; the
-				 * remainder of edges_found is what this process has
-				 * discovered on its own.  Suppress the parens entirely
-				 * on cold-start runs (no cache loaded -> warm == 0) so
-				 * the line shape matches the pre-instrumentation form
-				 * and doesn't add noise to the common case.  Defensive
-				 * clamp: if warm somehow exceeds the current total
-				 * (shouldn't happen — warm is set once at load time and
-				 * edges_found only grows), report cold as 0 rather than
-				 * printing a negative cold count. */
-				{
-					unsigned long warm = __atomic_load_n(
-						&kcov_shm->edges_warm_loaded,
-						__ATOMIC_RELAXED);
-					if (warm > 0) {
-						unsigned long cold = edges > warm ?
-							edges - warm : 0UL;
-						snprintf(warm_cold_str,
-							sizeof(warm_cold_str),
-							" (warm=%lu cold=%lu)",
-							warm, cold);
-					}
-				}
-				if (cmp_unique > 0) {
-					if (last_cmp_unique > 0 && cmp_unique_delta != 0)
-						snprintf(unique_str, sizeof(unique_str),
-							" CMP: %lu unique, %+ld",
-							cmp_unique, cmp_unique_delta);
-					else
-						snprintf(unique_str, sizeof(unique_str),
-							" CMP: %lu unique", cmp_unique);
-				}
-				if (cmp_kids > 0)
-					snprintf(modes_str, sizeof(modes_str),
-						"  CMP MODES: pc=%u cmp=%u",
-						pc_kids, cmp_kids);
-				if (cmp_trunc > 0) {
-					if (last_cmp_trunc > 0 && cmp_trunc_delta != 0)
-						snprintf(trunc_str, sizeof(trunc_str),
-							" [%lu trunc, %+ld]",
-							cmp_trunc, cmp_trunc_delta);
-					else
-						snprintf(trunc_str, sizeof(trunc_str),
-							" [%lu trunc]", cmp_trunc);
-				}
-				output(0, "%ld iterations. [HI:%ld%s] %lu/sec  KCOV: [%lu distinct, %lu bucket%s%s%s%s]%s\n",
-					op_count,
-					hiscore,
-					stall_count ? stalltxt : "",
-					rate,
-					distinct, edges, edges_delta_str,
-					warm_cold_str,
-					unique_str,
-					modes_str,
-					trunc_str);
-				last_edges = edges;
-				last_distinct = distinct;
-				last_cmp_trunc = cmp_trunc;
-				last_cmp_unique = cmp_unique;
-				print_kcov_cmp_diag();
-				print_kcov_pc_diag();
-
 				/*
 				 * Operator-facing picker state.  The plateau-
 				 * intervention path in select_next_strategy() and
@@ -1824,12 +1837,6 @@ static void print_stats(void)
 							&minicorpus_shm->cmp_rising_replay_picks,
 							__ATOMIC_RELAXED));
 				}
-			} else {
-				output(0, "%ld iterations. [HI:%ld%s] %lu/sec\n",
-					op_count,
-					hiscore,
-					stall_count ? stalltxt : "",
-					rate);
 			}
 
 			/* Per-pool live ratio.  When the explorer pool is empty
