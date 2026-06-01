@@ -272,11 +272,51 @@ static __u32 random_group_mask(void)
 	return mask;
 }
 
+/*
+ * Per-invocation state shared across the phase helpers below.  Holds
+ * the two netlink fds (monitor + mutator), the freshly-created dummy
+ * interface's ifindex + address, and the teardown latches so the out:
+ * label can issue the correct DELADDR / DELLINK on the way out without
+ * threading six args through each helper.
+ */
+struct netlink_monitor_race_iter_ctx {
+	struct nl_ctx	mon;
+	struct nl_ctx	mut;
+	int		ifindex;
+	__u32		addr;
+	bool		link_added;
+	bool		addr_added;
+};
+
+/*
+ * Phase: per-child netns setup.  Unshares CLONE_NEWNET the first time
+ * through and latches ns_unsupported on EPERM / failure so the rest of
+ * the child's lifetime pays the EFAIL once.  Returns 0 on success; -1
+ * means caller should return true immediately (no fds were opened, so
+ * no cleanup is needed).
+ */
+static int netlink_monitor_race_iter_setup_netns(void)
+{
+	if (ns_unshared)
+		return 0;
+
+	if (unshare(CLONE_NEWNET) < 0) {
+		ns_unsupported = true;
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	ns_unshared = true;
+	return 0;
+}
+
 bool netlink_monitor_race(struct childdata *child)
 {
 	char dev_name[IFNAMSIZ];
-	struct nl_ctx mon = { .fd = -1 };
-	struct nl_ctx mut = { .fd = -1 };
+	struct netlink_monitor_race_iter_ctx ctx = {
+		.mon = { .fd = -1 },
+		.mut = { .fd = -1 },
+	};
 	struct nl_open_opts mon_opts = {
 		.proto         = NETLINK_ROUTE,
 		.recv_timeo_s  = RTNL_RECV_TIMEO_S,
@@ -285,12 +325,8 @@ bool netlink_monitor_race(struct childdata *child)
 		.proto         = NETLINK_ROUTE,
 		.recv_timeo_s  = RTNL_RECV_TIMEO_S,
 	};
-	int ifindex = 0;
-	__u32 addr;
 	__u32 drop_grp, add_grp;
 	int one = 1;
-	bool link_added = false;
-	bool addr_added = false;
 	unsigned int drained;
 	unsigned int i;
 
@@ -301,15 +337,8 @@ bool netlink_monitor_race(struct childdata *child)
 	if (ns_unsupported)
 		return true;
 
-	if (!ns_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			ns_unsupported = true;
-			__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-		ns_unshared = true;
-	}
+	if (netlink_monitor_race_iter_setup_netns() != 0)
+		return true;
 
 	/* The bind-time .groups subscription is the race-timing-critical
 	 * piece this childop hangs on: the monitor must be a live
@@ -319,7 +348,7 @@ bool netlink_monitor_race(struct childdata *child)
 	 * preserving the atomic-with-bind subscribe semantics. */
 	mon_opts.groups = random_group_mask();
 
-	if (nl_open(&mon, &mon_opts) < 0) {
+	if (nl_open(&ctx.mon, &mon_opts) < 0) {
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
@@ -329,15 +358,15 @@ bool netlink_monitor_race(struct childdata *child)
 
 	/* Attach the peernet path -- CVE-2024-26688 lineage.  ENOPROTOOPT
 	 * on older kernels is fine; we still hit the broadcast race below. */
-	(void)setsockopt(mon.fd, SOL_NETLINK, NETLINK_LISTEN_ALL_NSID,
+	(void)setsockopt(ctx.mon.fd, SOL_NETLINK, NETLINK_LISTEN_ALL_NSID,
 			 &one, sizeof(one));
 
 	/* Promote ENOBUFS into recv error returns so a heavy broadcast
 	 * burst surfaces as an actual error rather than silent drops. */
-	(void)setsockopt(mon.fd, SOL_NETLINK, NETLINK_BROADCAST_ERROR,
+	(void)setsockopt(ctx.mon.fd, SOL_NETLINK, NETLINK_BROADCAST_ERROR,
 			 &one, sizeof(one));
 
-	if (nl_open(&mut, &mut_opts) < 0) {
+	if (nl_open(&ctx.mut, &mut_opts) < 0) {
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -348,41 +377,41 @@ bool netlink_monitor_race(struct childdata *child)
 	snprintf(dev_name, sizeof(dev_name), "trnlmon%u",
 		 (unsigned int)(rand32() & 0xffffu));
 
-	if (build_dummy_link(&mut, dev_name) != 0)
+	if (build_dummy_link(&ctx.mut, dev_name) != 0)
 		goto out;
-	link_added = true;
+	ctx.link_added = true;
 	__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
 			   1, __ATOMIC_RELAXED);
 
-	ifindex = (int)if_nametoindex(dev_name);
-	if (ifindex == 0)
+	ctx.ifindex = (int)if_nametoindex(dev_name);
+	if (ctx.ifindex == 0)
 		goto out;
 
-	addr = htonl(0xa9fe0000u | (rand32() & 0x0000fffeu) | 1u);
+	ctx.addr = htonl(0xa9fe0000u | (rand32() & 0x0000fffeu) | 1u);
 
 	/* Drive a small burst of address add/del cycles so each iteration
 	 * generates a NEWADDR/DELADDR broadcast that mon must process. */
 	for (i = 0; i < NETLINK_MUT_BURST; i++) {
-		if (build_addr(&mut, RTM_NEWADDR, ifindex, addr) == 0) {
-			addr_added = true;
+		if (build_addr(&ctx.mut, RTM_NEWADDR, ctx.ifindex, ctx.addr) == 0) {
+			ctx.addr_added = true;
 			__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
 					   1, __ATOMIC_RELAXED);
 		}
 
-		drained = drain_monitor(&mon);
+		drained = drain_monitor(&ctx.mon);
 		if (drained)
 			__atomic_add_fetch(&shm->stats.netlink_monitor_race_recv_drained,
 					   drained, __ATOMIC_RELAXED);
 
-		if (addr_added) {
-			if (build_addr(&mut, RTM_DELADDR, ifindex, addr) == 0) {
-				addr_added = false;
+		if (ctx.addr_added) {
+			if (build_addr(&ctx.mut, RTM_DELADDR, ctx.ifindex, ctx.addr) == 0) {
+				ctx.addr_added = false;
 				__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
 						   1, __ATOMIC_RELAXED);
 			}
 		}
 
-		drained = drain_monitor(&mon);
+		drained = drain_monitor(&ctx.mon);
 		if (drained)
 			__atomic_add_fetch(&shm->stats.netlink_monitor_race_recv_drained,
 					   drained, __ATOMIC_RELAXED);
@@ -397,12 +426,12 @@ bool netlink_monitor_race(struct childdata *child)
 	drop_grp = monitor_group_ids[rand32() % NR_MONITOR_GROUPS];
 	add_grp  = monitor_group_ids[rand32() % NR_MONITOR_GROUPS];
 
-	if (setsockopt(mon.fd, SOL_NETLINK, NETLINK_DROP_MEMBERSHIP,
+	if (setsockopt(ctx.mon.fd, SOL_NETLINK, NETLINK_DROP_MEMBERSHIP,
 		       &drop_grp, sizeof(drop_grp)) == 0)
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race_group_drop,
 				   1, __ATOMIC_RELAXED);
 
-	if (setsockopt(mon.fd, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
+	if (setsockopt(ctx.mon.fd, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
 		       &add_grp, sizeof(add_grp)) == 0)
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race_group_add,
 				   1, __ATOMIC_RELAXED);
@@ -410,26 +439,26 @@ bool netlink_monitor_race(struct childdata *child)
 	/* Final NEWADDR/DELADDR cycle so an event fires after the
 	 * membership churn -- this is the broadcast path running against
 	 * a freshly-mutated subscriber set. */
-	if (build_addr(&mut, RTM_NEWADDR, ifindex, addr) == 0) {
-		addr_added = true;
+	if (build_addr(&ctx.mut, RTM_NEWADDR, ctx.ifindex, ctx.addr) == 0) {
+		ctx.addr_added = true;
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
 				   1, __ATOMIC_RELAXED);
 	}
 
-	drained = drain_monitor(&mon);
+	drained = drain_monitor(&ctx.mon);
 	if (drained)
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race_recv_drained,
 				   drained, __ATOMIC_RELAXED);
 
 out:
-	if (mut.fd >= 0) {
-		if (addr_added)
-			(void)build_addr(&mut, RTM_DELADDR, ifindex, addr);
-		if (link_added && ifindex > 0)
-			(void)build_dellink(&mut, ifindex);
-		nl_close(&mut);
+	if (ctx.mut.fd >= 0) {
+		if (ctx.addr_added)
+			(void)build_addr(&ctx.mut, RTM_DELADDR, ctx.ifindex, ctx.addr);
+		if (ctx.link_added && ctx.ifindex > 0)
+			(void)build_dellink(&ctx.mut, ctx.ifindex);
+		nl_close(&ctx.mut);
 	}
-	nl_close(&mon);
+	nl_close(&ctx.mon);
 
 	return true;
 }
