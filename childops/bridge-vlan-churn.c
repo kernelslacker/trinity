@@ -759,6 +759,51 @@ static void bridge_vlan_iter_add_vlan(struct bridge_vlan_iter_ctx *it)
 }
 
 /*
+ * Open an AF_PACKET / SOCK_RAW socket on v0b (the free end of the
+ * first veth pair), bind it to v0b's ifindex with ETH_P_8021Q, and
+ * push one 802.1Q-tagged frame at the configured PVID.  The first
+ * send drives br_handle_vlan against the still-fresh per-port vlan
+ * group, primed for the race in the next phase.  Socket open / bind
+ * failures are swallowed -- the rest of the iteration runs (the
+ * second-send half of the race helper just skips on raw < 0).
+ */
+static void bridge_vlan_iter_open_raw(struct bridge_vlan_iter_ctx *it)
+{
+	struct sockaddr_ll sll;
+	unsigned char frame[64];
+	ssize_t n;
+
+	if (it->v0b_idx <= 0)
+		return;
+
+	it->raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC,
+			 htons(ETH_P_8021Q));
+	if (it->raw < 0)
+		return;
+
+	apply_raw_timeouts(it->raw);
+	memset(&sll, 0, sizeof(sll));
+	sll.sll_family   = AF_PACKET;
+	sll.sll_protocol = htons(ETH_P_8021Q);
+	sll.sll_ifindex  = it->v0b_idx;
+	(void)bind(it->raw, (struct sockaddr *)&sll, sizeof(sll));
+
+	build_tagged_frame(frame, it->pvid);
+	memset(&sll, 0, sizeof(sll));
+	sll.sll_family   = AF_PACKET;
+	sll.sll_protocol = htons(ETH_P_8021Q);
+	sll.sll_ifindex  = it->v0b_idx;
+	sll.sll_halen    = 6;
+	memset(sll.sll_addr, 0xff, 6);
+
+	n = sendto(it->raw, frame, sizeof(frame), MSG_DONTWAIT,
+		   (struct sockaddr *)&sll, sizeof(sll));
+	if (n > 0)
+		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_raw_send_ok,
+				   1, __ATOMIC_RELAXED);
+}
+
+/*
  * One full create / load / race / teardown cycle on a freshly-named
  * bridge + 2 veth pairs.  Wall-clock cap inherited from the caller.
  */
@@ -779,37 +824,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 		goto out;
 
 	bridge_vlan_iter_add_vlan(&it);
-
-	if (it.v0b_idx > 0) {
-		it.raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC,
-				htons(ETH_P_8021Q));
-		if (it.raw >= 0) {
-			apply_raw_timeouts(it.raw);
-			memset(&sll, 0, sizeof(sll));
-			sll.sll_family   = AF_PACKET;
-			sll.sll_protocol = htons(ETH_P_8021Q);
-			sll.sll_ifindex  = it.v0b_idx;
-			(void)bind(it.raw, (struct sockaddr *)&sll, sizeof(sll));
-		}
-	}
-
-	if (it.raw >= 0) {
-		ssize_t n;
-
-		build_tagged_frame(frame, it.pvid);
-		memset(&sll, 0, sizeof(sll));
-		sll.sll_family   = AF_PACKET;
-		sll.sll_protocol = htons(ETH_P_8021Q);
-		sll.sll_ifindex  = it.v0b_idx;
-		sll.sll_halen    = 6;
-		memset(sll.sll_addr, 0xff, 6);
-
-		n = sendto(it.raw, frame, sizeof(frame), MSG_DONTWAIT,
-			   (struct sockaddr *)&sll, sizeof(sll));
-		if (n > 0)
-			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_raw_send_ok,
-					   1, __ATOMIC_RELAXED);
-	}
+	bridge_vlan_iter_open_raw(&it);
 
 	if ((unsigned long long)ns_since(t_outer) >= BVC_WALL_CAP_NS)
 		goto teardown;
