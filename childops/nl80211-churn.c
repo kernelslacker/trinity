@@ -1202,23 +1202,16 @@ static int nl80211_iter_setup(struct genl_ctx *ctx, char *ifname,
 }
 
 /*
- * Single outer iteration of the churn loop.  Each iter creates one
- * STATION iface, runs the full scan/connect/burst/scan-again/regdom/
- * disconnect/del-iface chain on it, and tears it down at the end.  The
- * created-iface ring catches the leak case where a NEW_INTERFACE landed
- * but the per-iter DEL_INTERFACE was skipped (jump-out / wall cap hit).
+ * Phase: trigger the initial scan, drain its results, drive CONNECT, then
+ * send the inner traffic burst that gives the scan/connect/assoc paths
+ * something to chew on.  Pure side-effects via shm stats and the
+ * ns_unsupported_nl80211 latch -- callers don't branch on the outcome.
  */
-static void iter_one(struct genl_ctx *ctx, unsigned int iter_idx,
-		     const struct timespec *t_outer)
+static void nl80211_iter_scan_connect(struct genl_ctx *ctx, int ifindex,
+				      const char *ifname,
+				      const struct timespec *t_outer)
 {
-	char ifname[IFNAMSIZ];
-	int ifindex;
 	int rc;
-
-	(void)iter_idx;
-
-	if (nl80211_iter_setup(ctx, ifname, &ifindex, t_outer) < 0)
-		return;
 
 	rc = trigger_scan(ctx, ifindex);
 	if (rc == 0)
@@ -1239,6 +1232,28 @@ static void iter_one(struct genl_ctx *ctx, unsigned int iter_idx,
 		ns_unsupported_nl80211 = true;
 
 	send_inner_burst(ifname, t_outer);
+}
+
+/*
+ * Single outer iteration of the churn loop.  Each iter creates one
+ * STATION iface, runs the full scan/connect/burst/scan-again/regdom/
+ * disconnect/del-iface chain on it, and tears it down at the end.  The
+ * created-iface ring catches the leak case where a NEW_INTERFACE landed
+ * but the per-iter DEL_INTERFACE was skipped (jump-out / wall cap hit).
+ */
+static void iter_one(struct genl_ctx *ctx, unsigned int iter_idx,
+		     const struct timespec *t_outer)
+{
+	char ifname[IFNAMSIZ];
+	int ifindex;
+	int rc;
+
+	(void)iter_idx;
+
+	if (nl80211_iter_setup(ctx, ifname, &ifindex, t_outer) < 0)
+		return;
+
+	nl80211_iter_scan_connect(ctx, ifindex, ifname, t_outer);
 
 	/* Scan-while-connected race target.  The cfg80211_scan_done UAF
 	 * window (CVE-2025-21672) lives here. */
