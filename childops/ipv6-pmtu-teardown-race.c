@@ -542,6 +542,39 @@ static int v6pmtu_iter_setup_network(char names[V6PMTU_NUM_PAIRS][8])
 	return 0;
 }
 
+/*
+ * Fork both race workers.  Child A runs worker_ptb (never returns);
+ * child B runs worker_dellink (never returns).  On a successful B
+ * fork the parent returns 0 with the two pids written through.  If
+ * fork B fails after A was spawned, A is SIGKILLed and reaped here
+ * so iter_one's failure bail doesn't leak a stray child.
+ */
+static int v6pmtu_iter_spawn_workers(char names[V6PMTU_NUM_PAIRS][8],
+				     pid_t *a, pid_t *b)
+{
+	*a = fork();
+	if (*a < 0) {
+		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	if (*a == 0)
+		worker_ptb();
+
+	*b = fork();
+	if (*b < 0) {
+		(void)kill(*a, SIGKILL);
+		(void)waitpid_eintr(*a, NULL, 0);
+		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	if (*b == 0)
+		worker_dellink(names);
+
+	return 0;
+}
+
 static void iter_one(void)
 {
 	int nsfd;
@@ -556,25 +589,8 @@ static void iter_one(void)
 	if (v6pmtu_iter_setup_network(names) != 0)
 		goto out_setns;
 
-	a = fork();
-	if (a < 0) {
-		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (v6pmtu_iter_spawn_workers(names, &a, &b) != 0)
 		goto out_setns;
-	}
-	if (a == 0)
-		worker_ptb();
-
-	b = fork();
-	if (b < 0) {
-		(void)kill(a, SIGKILL);
-		(void)waitpid_eintr(a, NULL, 0);
-		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out_setns;
-	}
-	if (b == 0)
-		worker_dellink(names);
 
 	if (clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) {
 		deadline.tv_sec = 0;
