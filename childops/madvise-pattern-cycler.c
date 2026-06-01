@@ -291,10 +291,28 @@ static int madvise_cycler_iter_pick_region(struct madvise_cycler_iter_ctx *ctx)
 	return 0;
 }
 
+/*
+ * Phase 2: stamp the wall-clock start (read by budget_elapsed inside
+ * the cycle loop) and pick the starting offset into the curated advice
+ * list.  Biasing the start through the effector map weights advice
+ * values whose bit pattern overlaps the kernel's hot branches on
+ * madvise's advice arg so their reclaim / populate / collapse paths
+ * see pressure first while the wall-clock budget is still fresh; this
+ * also keeps concurrent madvise_cycler invocations from all hammering
+ * MADV_FREE first.  Nothing here touches the pool mapping, so a fault
+ * during setup is not a pool race and the default handler still wins.
+ */
+static void madvise_cycler_iter_setup_budget(struct madvise_cycler_iter_ctx *ctx)
+{
+	clock_gettime(CLOCK_MONOTONIC, &ctx->start);
+	ctx->advice_idx = effector_pick_array_index(
+		EFFECTOR_NR(__NR_madvise), 2,
+		advice_cycle, ARRAY_SIZE(advice_cycle));
+}
+
 bool madvise_cycler(struct childdata *child)
 {
 	struct madvise_cycler_iter_ctx ictx = { 0 };
-	struct timespec start;
 	unsigned int iter;
 	/* volatile: iter_cap is computed before sigsetjmp via the BUDGETED
 	 * macro (which contains a statement-expression temp _b) and read
@@ -303,7 +321,6 @@ bool madvise_cycler(struct childdata *child)
 	 * guarantees post-longjmp values for objects with volatile-
 	 * qualified type. */
 	volatile unsigned int iter_cap;
-	unsigned int advice_idx;
 	int rc;
 
 	(void) child;
@@ -316,22 +333,7 @@ bool madvise_cycler(struct childdata *child)
 	if (rc > 0)
 		return true;
 
-	/* Setup is outside the wrap.  None of clock_gettime, the effector
-	 * pick, or the budget-cap calculation touches the pool mapping, so
-	 * a fault inside this setup region is not a pool race and should
-	 * reach child_fault_handler via the default handler. */
-	clock_gettime(CLOCK_MONOTONIC, &start);
-
-	/* Start the cycle at an offset into the advice list so concurrent
-	 * madvise_cycler invocations don't all hammer MADV_FREE first.
-	 * Bias the start through the effector map: advice values whose
-	 * bit pattern overlaps the kernel's hot branches on madvise's
-	 * advice arg get more starting weight, putting their reclaim /
-	 * populate / collapse paths under pressure first while the wall-
-	 * clock budget is still fresh. */
-	advice_idx = effector_pick_array_index(
-		EFFECTOR_NR(__NR_madvise), 2,
-		advice_cycle, ARRAY_SIZE(advice_cycle));
+	madvise_cycler_iter_setup_budget(&ictx);
 
 	iter_cap = BUDGETED(CHILD_OP_MADVISE_CYCLER,
 			    JITTER_RANGE(MAX_ITERATIONS));
@@ -356,8 +358,8 @@ bool madvise_cycler(struct childdata *child)
 				int advice, mrc;
 
 				offset = pick_subrange(ictx.nr_pages, &len);
-				advice = (int)advice_cycle[advice_idx];
-				advice_idx = (advice_idx + 1) %
+				advice = (int)advice_cycle[ictx.advice_idx];
+				ictx.advice_idx = (ictx.advice_idx + 1) %
 					(unsigned int)ARRAY_SIZE(advice_cycle);
 
 				/* 1-in-RAND_NEGATIVE_RATIO sub the page-aligned
@@ -389,7 +391,7 @@ bool madvise_cycler(struct childdata *child)
 							ictx.region + offset,
 						len);
 
-				if (budget_elapsed(&start))
+				if (budget_elapsed(&ictx.start))
 					break;
 			}
 		} else {
