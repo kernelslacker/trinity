@@ -1546,6 +1546,33 @@ static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 	return 0;
 }
 
+/*
+ * Phase: open the inner-traffic UDP socket on 127.0.0.1.  Latches
+ * ns_unsupported_inet on EAFNOSUPPORT / EPROTONOSUPPORT so the rest
+ * of the child's lifetime skips the socket() syscall.  Best-effort:
+ * a failed bind leaves ctx->udp open with an ephemeral source so the
+ * caller can still drive sendto bursts through the SA.
+ */
+static void xfrm_churn_iter_setup_udp(struct xfrm_churn_iter_ctx *ctx)
+{
+	struct sockaddr_in src;
+
+	if (ns_unsupported_inet)
+		return;
+
+	ctx->udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	if (ctx->udp < 0) {
+		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
+			ns_unsupported_inet = true;
+		return;
+	}
+
+	memset(&src, 0, sizeof(src));
+	src.sin_family      = AF_INET;
+	src.sin_addr.s_addr = XFRM_SADDR_BE;
+	(void)bind(ctx->udp, (struct sockaddr *)&src, sizeof(src));
+}
+
 bool xfrm_churn(struct childdata *child)
 {
 	struct xfrm_churn_iter_ctx ctx = {
@@ -1581,20 +1608,7 @@ bool xfrm_churn(struct childdata *child)
 	if (xfrm_churn_iter_install_sa(&ctx) != 0)
 		goto out;
 
-	if (!ns_unsupported_inet) {
-		struct sockaddr_in src;
-
-		ctx.udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-		if (ctx.udp < 0) {
-			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
-				ns_unsupported_inet = true;
-		} else {
-			memset(&src, 0, sizeof(src));
-			src.sin_family      = AF_INET;
-			src.sin_addr.s_addr = XFRM_SADDR_BE;
-			(void)bind(ctx.udp, (struct sockaddr *)&src, sizeof(src));
-		}
-	}
+	xfrm_churn_iter_setup_udp(&ctx);
 
 	if (ctx.udp >= 0) {
 		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
