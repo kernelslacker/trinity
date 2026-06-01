@@ -467,6 +467,96 @@ static void kcov_init_child_remote_probe(struct kcov_child *kc,
 	free(arg);
 }
 
+/*
+ * Second KCOV fd dedicated to KCOV_TRACE_CMP.  Trinity used to
+ * mode-toggle the single PC fd into CMP for 1-in-CMP_MODE_RATIO
+ * syscalls, which traded a sliver of every-syscall PC coverage for
+ * occasional comparison-operand hints.  We now open a dedicated cmp
+ * fd here but each child still runs in a single mode for its
+ * lifetime -- KCOV_MODE_PC or KCOV_MODE_CMP, picked once below from
+ * the cmp_capable + random-draw block -- so the cmp fd is only
+ * actually enabled for CMP-mode children.  This per-child split (vs
+ * per-syscall toggling) keeps each child's collection loop simple
+ * and avoids interleaving PC and CMP reads on the same fd.  Probe
+ * enable/disable here so a kernel without KCOV_TRACE_CMP support
+ * degrades cleanly to PC-only without disabling the rest of KCOV.
+ * Per-CMP-child cost: one extra fd plus KCOV_CMP_BUFFER_SIZE *
+ * sizeof(unsigned long) (~2MB) of mmap.
+ *
+ * Returns true when the cmp setup failed deep enough that the
+ * cmp_fd teardown ran -- the caller then skips the F_DUPFD relocate
+ * block and goes straight to mode selection (matches the original
+ * err_close_cmp -> goto select_mode shortcut).  Returns false on cmp
+ * setup success and on cmp-open failure -- both paths originally
+ * fell through to the F_DUPFD relocate block.
+ */
+static bool kcov_init_child_cmp_fd(struct kcov_child *kc)
+{
+	if (!kc->active)
+		return false;
+
+	kc->cmp_fd = open("/sys/kernel/debug/kcov", O_RDWR);
+	if (kc->cmp_fd < 0) {
+		kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_open_errno,
+			&kcov_shm->cmp_diag.init_open_count, errno);
+		return false;
+	}
+
+	if (ioctl(kc->cmp_fd, KCOV_INIT_TRACE,
+			(unsigned long)KCOV_CMP_BUFFER_SIZE) < 0) {
+		kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_init_trace_errno,
+			&kcov_shm->cmp_diag.init_init_trace_count, errno);
+		goto err_close_cmp;
+	}
+
+	kc->cmp_trace_buf = mmap(NULL,
+		KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long),
+		PROT_READ | PROT_WRITE, MAP_SHARED,
+		kc->cmp_fd, 0);
+	if (kc->cmp_trace_buf == MAP_FAILED) {
+		kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_mmap_errno,
+			&kcov_shm->cmp_diag.init_mmap_count, errno);
+		kc->cmp_trace_buf = NULL;
+		goto err_close_cmp;
+	}
+
+	/* Probe KCOV_TRACE_CMP support.  An older kernel
+	 * without CMP returns -ENOTSUPP from ENABLE; tear
+	 * down the cmp fd and leave cmp_capable = false. */
+	if (ioctl(kc->cmp_fd, KCOV_ENABLE, KCOV_TRACE_CMP) < 0) {
+		kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_enable_errno,
+			&kcov_shm->cmp_diag.init_enable_count, errno);
+		goto err_unmap_cmp;
+	}
+	if (ioctl(kc->cmp_fd, KCOV_DISABLE, 0) < 0) {
+		kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_disable_errno,
+			&kcov_shm->cmp_diag.init_disable_count, errno);
+		goto err_unmap_cmp;
+	}
+
+	kc->cmp_capable = true;
+	track_shared_region((unsigned long)kc->cmp_trace_buf,
+		KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long));
+	return false;
+
+err_unmap_cmp:
+	munmap(kc->cmp_trace_buf,
+		KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long));
+	kc->cmp_trace_buf = NULL;
+err_close_cmp:
+	close(kc->cmp_fd);
+	kc->cmp_fd = -1;
+	/*
+	 * CMP probe failed but the PC fd is still active.  The caller
+	 * still runs mode selection so this child is counted in
+	 * pc_mode_children -- without this, the KCOV CMP MODES diagnostic
+	 * silently undercounts PC-mode children on kernels where CMP
+	 * support is broken.  cmp_capable is false here, so the
+	 * random-pick branch will deterministically choose KCOV_MODE_PC.
+	 */
+	return true;
+}
+
 void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 {
 	kc->fd = -1;
@@ -507,65 +597,8 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 		track_shared_region((unsigned long)kc->trace_buf,
 				    KCOV_TRACE_SIZE * sizeof(unsigned long));
 
-	/*
-	 * Second KCOV fd dedicated to KCOV_TRACE_CMP.  Trinity used to
-	 * mode-toggle the single PC fd into CMP for 1-in-CMP_MODE_RATIO
-	 * syscalls, which traded a sliver of every-syscall PC coverage for
-	 * occasional comparison-operand hints.  We now open a dedicated cmp
-	 * fd here but each child still runs in a single mode for its
-	 * lifetime -- KCOV_MODE_PC or KCOV_MODE_CMP, picked once below from
-	 * the cmp_capable + random-draw block -- so the cmp fd is only
-	 * actually enabled for CMP-mode children.  This per-child split (vs
-	 * per-syscall toggling) keeps each child's collection loop simple
-	 * and avoids interleaving PC and CMP reads on the same fd.  Probe
-	 * enable/disable here so a kernel without KCOV_TRACE_CMP support
-	 * degrades cleanly to PC-only without disabling the rest of KCOV.
-	 * Per-CMP-child cost: one extra fd plus KCOV_CMP_BUFFER_SIZE *
-	 * sizeof(unsigned long) (~2MB) of mmap.
-	 */
-	if (kc->active) {
-		kc->cmp_fd = open("/sys/kernel/debug/kcov", O_RDWR);
-		if (kc->cmp_fd < 0) {
-			kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_open_errno,
-				&kcov_shm->cmp_diag.init_open_count, errno);
-		} else {
-			if (ioctl(kc->cmp_fd, KCOV_INIT_TRACE,
-					(unsigned long)KCOV_CMP_BUFFER_SIZE) < 0) {
-				kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_init_trace_errno,
-					&kcov_shm->cmp_diag.init_init_trace_count, errno);
-				goto err_close_cmp;
-			}
-
-			kc->cmp_trace_buf = mmap(NULL,
-				KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long),
-				PROT_READ | PROT_WRITE, MAP_SHARED,
-				kc->cmp_fd, 0);
-			if (kc->cmp_trace_buf == MAP_FAILED) {
-				kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_mmap_errno,
-					&kcov_shm->cmp_diag.init_mmap_count, errno);
-				kc->cmp_trace_buf = NULL;
-				goto err_close_cmp;
-			}
-
-			/* Probe KCOV_TRACE_CMP support.  An older kernel
-			 * without CMP returns -ENOTSUPP from ENABLE; tear
-			 * down the cmp fd and leave cmp_capable = false. */
-			if (ioctl(kc->cmp_fd, KCOV_ENABLE, KCOV_TRACE_CMP) < 0) {
-				kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_enable_errno,
-					&kcov_shm->cmp_diag.init_enable_count, errno);
-				goto err_unmap_cmp;
-			}
-			if (ioctl(kc->cmp_fd, KCOV_DISABLE, 0) < 0) {
-				kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_disable_errno,
-					&kcov_shm->cmp_diag.init_disable_count, errno);
-				goto err_unmap_cmp;
-			}
-
-			kc->cmp_capable = true;
-			track_shared_region((unsigned long)kc->cmp_trace_buf,
-				KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long));
-		}
-	}
+	if (kcov_init_child_cmp_fd(kc))
+		goto select_mode;
 
 	/*
 	 * Both fds are now stable (remote-probe re-mmap dance done, cmp
@@ -576,12 +609,12 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	 * file description, not the fd number: a subsequent KCOV_ENABLE
 	 * on the new fd reads/writes the same trace buffer.
 	 *
-	 * Done only on the success path -- the err_close_cmp goto below
-	 * skips this block, which just means kc->fd keeps its original
-	 * low number for that child and the registry covers it.
-	 * Per-fd failure (EMFILE etc.) is silently best-effort: keep the
-	 * original fd and let the registry catch any picker that targets
-	 * it.
+	 * Done only on the cmp-setup success path -- the goto select_mode
+	 * above on cmp deeper-failure skips this block, which just means
+	 * kc->fd keeps its original low number for that child and the
+	 * registry covers it.  Per-fd failure (EMFILE etc.) is silently
+	 * best-effort: keep the original fd and let the registry catch
+	 * any picker that targets it.
 	 */
 	if (kc->fd >= 0 && (unsigned int) kc->fd < KCOV_FD_HIGH_BASE) {
 		int new_fd = fcntl(kc->fd, F_DUPFD_CLOEXEC,
@@ -622,25 +655,6 @@ select_mode:
 	else
 		__atomic_fetch_add(&kcov_shm->pc_mode_children, 1,
 			__ATOMIC_RELAXED);
-	return;
-
-err_unmap_cmp:
-	munmap(kc->cmp_trace_buf,
-		KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long));
-	kc->cmp_trace_buf = NULL;
-err_close_cmp:
-	close(kc->cmp_fd);
-	kc->cmp_fd = -1;
-	/*
-	 * CMP probe failed but the PC fd is still active.  Fall through
-	 * to the mode-selection block so this child is counted in
-	 * pc_mode_children — without this, the KCOV CMP MODES diagnostic
-	 * silently undercounts PC-mode children on kernels where CMP
-	 * support is broken.  cmp_capable is false here, so the
-	 * random-pick branch above will deterministically choose
-	 * KCOV_MODE_PC.
-	 */
-	goto select_mode;
 }
 
 void kcov_cleanup_child(struct kcov_child *kc)
