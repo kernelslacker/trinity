@@ -517,6 +517,29 @@ static void netns_teardown_iter_drive_teardown(struct netns_teardown_iter_ctx *i
 }
 
 /*
+ * Phase R (recover label): reached when sock_pair / fork_child fails
+ * with sockets potentially open and the parent still parked in the
+ * doomed ns.  Bump setup_failed, close any open socket fds, and try
+ * to setns back to the anchor so the trinity child isn't stuck in
+ * the doomed ns for the rest of its life.  A setns-back failure here
+ * latches ns_unsupported so subsequent invocations short-circuit
+ * (preserving the byte-exact latch path the original carried).
+ */
+static void netns_teardown_iter_recover(struct netns_teardown_iter_ctx *it)
+{
+	__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
+			   1, __ATOMIC_RELAXED);
+	if (it->s_accept >= 0) (void)close(it->s_accept);
+	if (it->s_conn   >= 0) (void)close(it->s_conn);
+	if (it->s_listen >= 0) (void)close(it->s_listen);
+	if (it->nsfd >= 0) {
+		if (setns(it->nsfd, CLONE_NEWNET) < 0)
+			ns_unsupported_netns_teardown = true;
+		(void)close(it->nsfd);
+	}
+}
+
+/*
  * One outer iteration: anchor open, unshare, lo bring-up, sockets,
  * fork, race, kill, waitpid.  Best-effort; per-step counter bumps
  * carry the success signal.  Latches ns_unsupported on a probe-style
@@ -545,21 +568,7 @@ static void iter_one(void)
 	return;
 
 recover:
-	/* Setup failed before fork: drop everything and try to setns
-	 * back to the anchor so the trinity child isn't stuck in the
-	 * doomed ns for the rest of its life.  Counter bump happens
-	 * unconditionally; a setns-back failure here means we land in
-	 * the latched-off state (subsequent invocations short-circuit). */
-	__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
-			   1, __ATOMIC_RELAXED);
-	if (it.s_accept >= 0) (void)close(it.s_accept);
-	if (it.s_conn   >= 0) (void)close(it.s_conn);
-	if (it.s_listen >= 0) (void)close(it.s_listen);
-	if (it.nsfd >= 0) {
-		if (setns(it.nsfd, CLONE_NEWNET) < 0)
-			ns_unsupported_netns_teardown = true;
-		(void)close(it.nsfd);
-	}
+	netns_teardown_iter_recover(&it);
 }
 
 /*
