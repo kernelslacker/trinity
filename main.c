@@ -1548,6 +1548,23 @@ static void print_kcov_pc_diag(void)
 	}
 }
 
+static unsigned long print_stats_compute_op_rate(unsigned long ops_delta)
+{
+	static struct timespec last_tp = { 0 };
+	struct timespec now;
+	unsigned long rate = 0;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	if (last_tp.tv_sec > 0) {
+		double elapsed = (now.tv_sec - last_tp.tv_sec) +
+			(now.tv_nsec - last_tp.tv_nsec) / 1e9;
+		if (elapsed > 0.01)
+			rate = (unsigned long)(ops_delta / elapsed);
+	}
+	last_tp = now;
+	return rate;
+}
+
 static void print_stats(void)
 {
 	unsigned long op_count = parent_stats.op_count;
@@ -1557,21 +1574,12 @@ static void print_stats(void)
 
 	if (op_count > 1) {
 		static unsigned long lastcount = 0;
-		static struct timespec last_tp = { 0 };
 
 		if (op_count - lastcount > 10000) {
-			struct timespec now;
-			unsigned long rate = 0;
+			unsigned long rate;
 			char stalltxt[32] = "";
 
-			clock_gettime(CLOCK_MONOTONIC, &now);
-			if (last_tp.tv_sec > 0) {
-				double elapsed = (now.tv_sec - last_tp.tv_sec) +
-					(now.tv_nsec - last_tp.tv_nsec) / 1e9;
-				if (elapsed > 0.01)
-					rate = (unsigned long)((op_count - lastcount) / elapsed);
-			}
-			last_tp = now;
+			rate = print_stats_compute_op_rate(op_count - lastcount);
 
 			if (stall_count > 0 && stall_count < 10000)
 				snprintf(stalltxt, sizeof(stalltxt), " STALLED:%u", stall_count);
