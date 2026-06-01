@@ -371,6 +371,45 @@ static bool ublk_lifecycle_iter_add_dev(struct ublk_lifecycle_iter_ctx *ctx)
 	return true;
 }
 
+/* Open /dev/ublkc<dev_id> (the per-queue chrdev hosting the
+ * io_uring_cmd handler FETCH_REQ targets) and submit one FETCH_REQ
+ * on the IO ring as submit-only (min_complete=0).  The cmd parks
+ * waiting for an I/O that never arrives -- exactly the in-flight
+ * state ublk_cancel_cmd() walks during DEL_DEV teardown.  Block side
+ * ublkb<N> is deliberately not opened; START_DEV is skipped so we
+ * stay in the post-ADD pre-START state.  Best-effort: queue-open
+ * failure skips arming and the orchestrator still issues DEL_DEV. */
+static void ublk_lifecycle_iter_arm_fetch(struct ublk_lifecycle_iter_ctx *ctx)
+{
+	struct ublk_lc_io_cmd ic;
+	struct io_uring_sqe sqe;
+	char qpath[64];
+
+	(void)snprintf(qpath, sizeof(qpath), "/dev/ublkc%d", ctx->dev_id);
+	ctx->q_fd = open(qpath, O_RDWR | O_CLOEXEC);
+	if (ctx->q_fd < 0)
+		return;
+
+	memset(&ic, 0, sizeof(ic));
+	ic.q_id = 0;
+	ic.tag = 0;
+	ic.result = -1;
+
+	memset(&sqe, 0, sizeof(sqe));
+	sqe.opcode = IORING_OP_URING_CMD;
+	sqe.fd = ctx->q_fd;
+	sqe.cmd_op = UBLK_U_IO_FETCH_REQ;
+	sqe.addr = (__u64)(uintptr_t)&ic;
+	sqe.len = (__u32)sizeof(ic);
+	sqe.user_data = 0xfe70;
+
+	if (ring_submit(&ctx->io_ring, &sqe, 0)) {
+		ctx->fetch_in_flight = true;
+		__atomic_add_fetch(&shm->stats.ublk_lifecycle_fetch_ok, 1,
+				   __ATOMIC_RELAXED);
+	}
+}
+
 /* Reverse-order release of everything ublk_lifecycle stood up: close the
  * queue chrdev first so the IO-ring teardown's force-cancel sees no fresh
  * submissions, then both rings (io before ctrl so the ctrl ring outlives
@@ -398,9 +437,7 @@ bool ublk_lifecycle(struct childdata *child)
 		.dev_id  = -1,
 	};
 	struct ublk_lc_ctrl_cmd cc;
-	struct ublk_lc_io_cmd ic;
 	struct io_uring_sqe sqe;
-	char qpath[64];
 
 	(void)child;
 
@@ -416,34 +453,8 @@ bool ublk_lifecycle(struct childdata *child)
 	if (!ublk_lifecycle_iter_add_dev(&ctx))
 		goto out;
 
-	(void)snprintf(qpath, sizeof(qpath), "/dev/ublkc%d", ctx.dev_id);
-	ctx.q_fd = open(qpath, O_RDWR | O_CLOEXEC);
-	if (ctx.q_fd < 0)
-		goto del_only;
+	ublk_lifecycle_iter_arm_fetch(&ctx);
 
-	/* FETCH_REQ on the IO ring — submit-only.  Parks waiting for an
-	 * I/O that never arrives, exactly the in-flight state
-	 * ublk_cancel_cmd() walks during DEL_DEV teardown. */
-	memset(&ic, 0, sizeof(ic));
-	ic.q_id = 0;
-	ic.tag = 0;
-	ic.result = -1;
-
-	memset(&sqe, 0, sizeof(sqe));
-	sqe.opcode = IORING_OP_URING_CMD;
-	sqe.fd = ctx.q_fd;
-	sqe.cmd_op = UBLK_U_IO_FETCH_REQ;
-	sqe.addr = (__u64)(uintptr_t)&ic;
-	sqe.len = (__u32)sizeof(ic);
-	sqe.user_data = 0xfe70;
-
-	if (ring_submit(&ctx.io_ring, &sqe, 0)) {
-		ctx.fetch_in_flight = true;
-		__atomic_add_fetch(&shm->stats.ublk_lifecycle_fetch_ok, 1,
-				   __ATOMIC_RELAXED);
-	}
-
-del_only:
 	/* DEL_DEV on the control ring while FETCH_REQ is parked on the
 	 * IO ring — the f7700a4415af UAF window. */
 	memset(&cc, 0, sizeof(cc));
