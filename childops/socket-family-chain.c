@@ -211,31 +211,25 @@ static int alg_chain_iter_setup(struct alg_chain_iter_ctx *ictx,
 }
 
 /*
- * One coherent AF_ALG chain.  Returns false on a clean kernel-not-supported
- * path so the outer cycle can latch the unsupported flag; returns true on
- * everything else (including chain steps that legitimately fail late).
+ * Phase 2: bind sa onto parent_fd, push a random key via ALG_SET_KEY
+ * (with the curated 1-in-RAND_NEGATIVE_RATIO negative-optlen spike),
+ * issue the AEAD-only ALG_SET_AEAD_AUTHSIZE side trip, and accept the
+ * child_fd that the data leg will run against.  bind() / accept()
+ * failures with EPERM / ENOPROTOOPT bump err_burst — see the bind
+ * comment for why ENOENT/ESRCH are NOT counted.  ALG_SET_KEY failures
+ * for algos that reject it (rng, akcipher) are tolerated and the chain
+ * walks on; the post-AUTHSIZE accept() may still succeed.  Returns 0
+ * on success or -1 if the iteration should bail to the orchestrator's
+ * out: teardown path.
  */
-static bool run_alg_chain(unsigned int *err_burst)
+static int alg_chain_iter_arm(struct alg_chain_iter_ctx *ictx,
+			      unsigned int *err_burst)
 {
-	struct alg_chain_iter_ctx ictx = {
-		.parent_fd = -1,
-		.child_fd = -1,
-		.splice_pfd = { -1, -1 },
-	};
 	unsigned char key[64];
-	struct iovec iov;
-	struct msghdr msg;
 	unsigned int keylen;
-	unsigned int sndlen;
-	unsigned int rcvlen;
-	bool used_splice = false;
-	bool ok = false;
 
-	if (alg_chain_iter_setup(&ictx, err_burst) != 0)
-		goto out;
-
-	if (bind(ictx.parent_fd, (struct sockaddr *)&ictx.sa,
-		 sizeof(ictx.sa)) < 0) {
+	if (bind(ictx->parent_fd, (struct sockaddr *)&ictx->sa,
+		 sizeof(ictx->sa)) < 0) {
 		/*
 		 * Only count errors that suggest the kernel doesn't support
 		 * AF_ALG at all (ENOPROTOOPT) or rejects on privilege
@@ -248,7 +242,7 @@ static bool run_alg_chain(unsigned int *err_burst)
 		 */
 		if (errno == EPERM || errno == ENOPROTOOPT)
 			(*err_burst)++;
-		goto out;
+		return -1;
 	}
 
 	keylen = (rnd_modulo_u32(3) == 0) ? 16 : ((rnd_u32() & 1) ? 32 : 64);
@@ -256,7 +250,7 @@ static bool run_alg_chain(unsigned int *err_burst)
 	/* 1-in-RAND_NEGATIVE_RATIO sub the curated 16/32/64 keylen for a
 	 * curated edge value — exercises __sys_setsockopt's optlen < 0
 	 * rejection (cast to int) which the curated mix never reaches. */
-	if (setsockopt(ictx.parent_fd, SOL_ALG, ALG_SET_KEY,
+	if (setsockopt(ictx->parent_fd, SOL_ALG, ALG_SET_KEY,
 		       key, (socklen_t)RAND_NEGATIVE_OR(keylen)) < 0) {
 		if (errno == EPERM || errno == ENOPROTOOPT)
 			(*err_burst)++;
@@ -264,20 +258,47 @@ static bool run_alg_chain(unsigned int *err_burst)
 		 * walking the chain anyway; accept() may still succeed. */
 	}
 
-	if (ictx.type == SFC_TYPE_AEAD) {
+	if (ictx->type == SFC_TYPE_AEAD) {
 		unsigned int authsize = (rnd_u32() & 1) ? 12 : 16;
 
-		(void) setsockopt(ictx.parent_fd, SOL_ALG,
+		(void) setsockopt(ictx->parent_fd, SOL_ALG,
 				  ALG_SET_AEAD_AUTHSIZE,
 				  &authsize, sizeof(authsize));
 	}
 
-	ictx.child_fd = accept(ictx.parent_fd, NULL, NULL);
-	if (ictx.child_fd < 0) {
+	ictx->child_fd = accept(ictx->parent_fd, NULL, NULL);
+	if (ictx->child_fd < 0) {
 		if (errno == EPERM || errno == ENOPROTOOPT)
 			(*err_burst)++;
-		goto out;
+		return -1;
 	}
+	return 0;
+}
+
+/*
+ * One coherent AF_ALG chain.  Returns false on a clean kernel-not-supported
+ * path so the outer cycle can latch the unsupported flag; returns true on
+ * everything else (including chain steps that legitimately fail late).
+ */
+static bool run_alg_chain(unsigned int *err_burst)
+{
+	struct alg_chain_iter_ctx ictx = {
+		.parent_fd = -1,
+		.child_fd = -1,
+		.splice_pfd = { -1, -1 },
+	};
+	struct iovec iov;
+	struct msghdr msg;
+	unsigned int sndlen;
+	unsigned int rcvlen;
+	bool used_splice = false;
+	bool ok = false;
+
+	if (alg_chain_iter_setup(&ictx, err_burst) != 0)
+		goto out;
+
+	if (alg_chain_iter_arm(&ictx, err_burst) != 0)
+		goto out;
 
 	/* From here on we've reached the actual data path the bug class
 	 * lives in.  Any per-step failure is interesting but not a kernel-
