@@ -249,6 +249,98 @@ static void epoch_loop(void)
 	}
 }
 
+/*
+ * Resolve the final slot partition (alt-op / canary / explorer / bandit)
+ * from the parsed CLI args and the discovered fleet size.  All inputs
+ * and outputs live in globals; the helper runs after parse_args and
+ * before any consumer reads the derived values.  The closing print line
+ * surfaces the resolved layout (disjoint front-reserved alt-op, then
+ * explorer, then whatever remains for the bandit pool) so the operator
+ * can confirm what the run will actually do.
+ */
+static void derive_and_clamp_slot_partition(void)
+{
+	/* Apply the shared_regions[] / RLIMIT_NPROC / RLIMIT_NOFILE cap
+	 * to the default num_online_cpus*4 value when the operator did
+	 * not pass -C.  -C path validates against the same cap inside
+	 * parse_args, so this is a no-op there. */
+	clamp_default_max_children();
+
+	/* Default-fill alt_op_children when --alt-op-children was not
+	 * passed.  Runs after clamp_default_max_children() so the derived
+	 * value tracks the final fleet size, and before the canary/
+	 * explorer derivations below, which both depend on the final
+	 * alt_op_children. */
+	clamp_default_alt_op_children();
+
+	/* --alt-op-children clamp.  Reserving more slots than the total
+	 * fleet would leave zero default syscall children, which defeats
+	 * the throughput-preservation rationale.  Cap at max_children-1
+	 * so at least one slot still runs the default 95/5 mix. */
+	if (alt_op_children >= max_children) {
+		unsigned int clamped = max_children > 0 ? max_children - 1 : 0;
+
+		outputerr("warning: --alt-op-children=%u >= --children=%u; clamping to %u so at least one syscall child remains\n",
+			alt_op_children, max_children, clamped);
+		alt_op_children = clamped;
+	}
+
+	/* Auto-couple canary_slots to alt_op_children when the operator
+	 * did not pass --canary-slots.  Runs before the clamps below so
+	 * the derived value is range-checked alongside an explicit
+	 * override. */
+	clamp_default_canary_slots();
+
+	/* --canary-slots clamp.  The canary queue carves from the front
+	 * of the alt-op pool, so it cannot reserve more slots than the
+	 * pool has.  A bigger N here than alt_op_children would be a
+	 * silent loss: the queue would think it had N canary slots, but
+	 * assign_dedicated_alt_op() walks slots 0..alt_op_children-1.
+	 * Clamp loudly.  With the auto-couple above, this warning can
+	 * only fire when the operator explicitly set --canary-slots --
+	 * the default-derive path zeros canary_slots when alt_op_children
+	 * is zero, so it never reaches this state on a default run. */
+	if (alt_op_children == 0 && canary_slots > 0 && !canary_queue_disabled && user_specified_canary_slots) {
+		outputerr("warning: --canary-slots=%u requested but --alt-op-children=0; canary queue has no slot to canary on, disabling\n",
+			canary_slots);
+		canary_slots = 0;
+	}
+	if (canary_slots > alt_op_children) {
+		outputerr("warning: --canary-slots=%u > --alt-op-children=%u; clamping to %u\n",
+			canary_slots, alt_op_children, alt_op_children);
+		canary_slots = alt_op_children;
+	}
+
+	/* Compute the default explorer-pool size when the operator did not
+	 * pass --explorer-children (max_children/4 under PICKER_BANDIT_UCB1,
+	 * zero otherwise), and clamp an explicit value to max_children/2.
+	 * Runs after the alt-op clamp so both partitions see the final
+	 * max_children. */
+	clamp_default_explorer_children();
+
+	/* Surface the resolved slot partition unconditionally so the operator
+	 * can confirm what the run will actually do -- the explorer default
+	 * is mode-aware, the alt-op range is reserved from the front, and
+	 * the bandit pool is whatever remains.  Printing the resolved counts
+	 * (not the requested ones) makes the disjoint layout legible without
+	 * having to read the source. */
+	{
+		unsigned int bandit_children = max_children;
+		if (bandit_children >= alt_op_children)
+			bandit_children -= alt_op_children;
+		else
+			bandit_children = 0;
+		if (bandit_children >= explorer_children)
+			bandit_children -= explorer_children;
+		else
+			bandit_children = 0;
+		output(0, "picker_mode=%s slot partition: alt_op=%u explorer=%u bandit=%u (of %u)\n",
+		       picker_mode_name(picker_mode_arg),
+		       alt_op_children, explorer_children,
+		       bandit_children, max_children);
+	}
+}
+
 int main(int argc, char* argv[])
 {
 	int ret = EXIT_SUCCESS;
@@ -335,85 +427,7 @@ int main(int argc, char* argv[])
 	 * not passed; failure logs a warning and continues without a log. */
 	stats_log_open(stats_log_path);
 
-	/* Apply the shared_regions[] / RLIMIT_NPROC / RLIMIT_NOFILE cap
-	 * to the default num_online_cpus*4 value when the operator did
-	 * not pass -C.  -C path validates against the same cap inside
-	 * parse_args, so this is a no-op there. */
-	clamp_default_max_children();
-
-	/* Default-fill alt_op_children when --alt-op-children was not
-	 * passed.  Runs after clamp_default_max_children() so the derived
-	 * value tracks the final fleet size, and before the canary/
-	 * explorer derivations below, which both depend on the final
-	 * alt_op_children. */
-	clamp_default_alt_op_children();
-
-	/* --alt-op-children clamp.  Reserving more slots than the total
-	 * fleet would leave zero default syscall children, which defeats
-	 * the throughput-preservation rationale.  Cap at max_children-1
-	 * so at least one slot still runs the default 95/5 mix. */
-	if (alt_op_children >= max_children) {
-		unsigned int clamped = max_children > 0 ? max_children - 1 : 0;
-
-		outputerr("warning: --alt-op-children=%u >= --children=%u; clamping to %u so at least one syscall child remains\n",
-			alt_op_children, max_children, clamped);
-		alt_op_children = clamped;
-	}
-
-	/* Auto-couple canary_slots to alt_op_children when the operator
-	 * did not pass --canary-slots.  Runs before the clamps below so
-	 * the derived value is range-checked alongside an explicit
-	 * override. */
-	clamp_default_canary_slots();
-
-	/* --canary-slots clamp.  The canary queue carves from the front
-	 * of the alt-op pool, so it cannot reserve more slots than the
-	 * pool has.  A bigger N here than alt_op_children would be a
-	 * silent loss: the queue would think it had N canary slots, but
-	 * assign_dedicated_alt_op() walks slots 0..alt_op_children-1.
-	 * Clamp loudly.  With the auto-couple above, this warning can
-	 * only fire when the operator explicitly set --canary-slots --
-	 * the default-derive path zeros canary_slots when alt_op_children
-	 * is zero, so it never reaches this state on a default run. */
-	if (alt_op_children == 0 && canary_slots > 0 && !canary_queue_disabled && user_specified_canary_slots) {
-		outputerr("warning: --canary-slots=%u requested but --alt-op-children=0; canary queue has no slot to canary on, disabling\n",
-			canary_slots);
-		canary_slots = 0;
-	}
-	if (canary_slots > alt_op_children) {
-		outputerr("warning: --canary-slots=%u > --alt-op-children=%u; clamping to %u\n",
-			canary_slots, alt_op_children, alt_op_children);
-		canary_slots = alt_op_children;
-	}
-
-	/* Compute the default explorer-pool size when the operator did not
-	 * pass --explorer-children (max_children/4 under PICKER_BANDIT_UCB1,
-	 * zero otherwise), and clamp an explicit value to max_children/2.
-	 * Runs after the alt-op clamp so both partitions see the final
-	 * max_children. */
-	clamp_default_explorer_children();
-
-	/* Surface the resolved slot partition unconditionally so the operator
-	 * can confirm what the run will actually do -- the explorer default
-	 * is mode-aware, the alt-op range is reserved from the front, and
-	 * the bandit pool is whatever remains.  Printing the resolved counts
-	 * (not the requested ones) makes the disjoint layout legible without
-	 * having to read the source. */
-	{
-		unsigned int bandit_children = max_children;
-		if (bandit_children >= alt_op_children)
-			bandit_children -= alt_op_children;
-		else
-			bandit_children = 0;
-		if (bandit_children >= explorer_children)
-			bandit_children -= explorer_children;
-		else
-			bandit_children = 0;
-		output(0, "picker_mode=%s slot partition: alt_op=%u explorer=%u bandit=%u (of %u)\n",
-		       picker_mode_name(picker_mode_arg),
-		       alt_op_children, explorer_children,
-		       bandit_children, max_children);
-	}
+	derive_and_clamp_slot_partition();
 
 	/* Register trinity's own .data/.bss + every loaded DSO's writable
 	 * PT_LOAD segments with shared_regions[] BEFORE fork_children() so
