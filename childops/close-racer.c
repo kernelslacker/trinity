@@ -384,6 +384,19 @@ static void close_racer_iter_join_racers(struct close_racer_iter_ctx *ctx)
 			   ctx->n_spawned, __ATOMIC_RELAXED);
 }
 
+/* Drain deferred closes from CYCLE_SKIP_CLOSE iterations.  Runs once
+ * after the cycle loop, not per cycle -- by now all racer threads have
+ * been joined, so these closes hit the post-syscall teardown path
+ * rather than the mid-fdget race that the in-cycle modes target. */
+static void close_racer_iter_cleanup_deferred(int *deferred_fds,
+					      unsigned int deferred_n)
+{
+	unsigned int i;
+
+	for (i = 0; i < deferred_n; i++)
+		(void)close(deferred_fds[i]);
+}
+
 bool close_racer(struct childdata *child)
 {
 	unsigned int cycles;
@@ -424,11 +437,6 @@ bool close_racer(struct childdata *child)
 		close_racer_iter_join_racers(&ctx);
 	}
 
-	/* Drain deferred closes from CYCLE_SKIP_CLOSE iterations.  All
-	 * racer threads have been joined by now, so these closes hit the
-	 * post-syscall teardown path rather than the mid-fdget race. */
-	for (i = 0; i < deferred_n; i++)
-		(void)close(deferred_fds[i]);
-
+	close_racer_iter_cleanup_deferred(deferred_fds, deferred_n);
 	return true;
 }
