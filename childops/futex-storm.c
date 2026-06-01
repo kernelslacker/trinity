@@ -443,6 +443,22 @@ static void futex_storm_iter_reap(struct futex_storm_iter_ctx *ctx)
 			   __ATOMIC_RELAXED);
 }
 
+/*
+ * Phase 5: release everything the prior phases stood up.  Gated on the
+ * per-resource _up / non-NULL flags so a partial setup (mmap ok but
+ * barrier_init failed, etc.) tears down only what actually came up.
+ * Called unconditionally on the success path and on the spawn-shortfall
+ * path; setup_region rolls back its own mmap on failure so the early
+ * return there does not need to route through here.
+ */
+static void futex_storm_iter_teardown(struct futex_storm_iter_ctx *ctx)
+{
+	if (ctx->barrier_up)
+		pthread_barrier_destroy(&ctx->s->barrier);
+	if (ctx->s)
+		munmap(ctx->s, sizeof(*ctx->s));
+}
+
 bool futex_storm(struct childdata *child)
 {
 	struct futex_storm_iter_ctx ctx = { .s = NULL };
@@ -455,13 +471,12 @@ bool futex_storm(struct childdata *child)
 		return true;
 
 	if (futex_storm_iter_spawn_workers(&ctx) != 0)
-		goto out_barrier;
+		goto out;
 
 	futex_storm_iter_drive_burst(&ctx);
 	futex_storm_iter_reap(&ctx);
 
-out_barrier:
-	pthread_barrier_destroy(&ctx.s->barrier);
-	munmap(ctx.s, sizeof(*ctx.s));
+out:
+	futex_storm_iter_teardown(&ctx);
 	return true;
 }
