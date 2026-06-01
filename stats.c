@@ -754,14 +754,9 @@ static const struct stat_category setsockopt_pairing_category =
  * All scalar counters are emitted unconditionally so consumers see a stable
  * schema regardless of which subsystems happened to fire on this run.
  */
-static void dump_stats_json(void)
+static void dump_stats_json_fault_and_fd_lifecycle(void)
 {
-	putchar('{');
-
-	json_emit_syscalls_array();
-
-	printf(",\"stats\":{"
-		"\"fault_injection\":{\"armed_fail_nth\":%lu,\"returned_enomem\":%lu},"
+	printf("\"fault_injection\":{\"armed_fail_nth\":%lu,\"returned_enomem\":%lu},"
 		"\"fd_lifecycle\":{\"stale_detected\":%lu,\"stale_by_generation\":%lu,"
 			"\"closed_tracked\":%lu,\"regenerated\":%lu,\"duped\":%lu,"
 			"\"events_processed\":%lu,\"events_dropped\":%lu,"
@@ -770,8 +765,31 @@ static void dump_stats_json(void)
 			"\"local_hash_insert_dropped\":%lu,"
 			"\"runtime_registered\":%lu,\"epoll_lazy_armed\":%lu,"
 			"\"epoll_blocking_poll_skipped\":%lu,"
-			"\"random_exhausted\":%lu},"
-		"\"oracle\":{\"fd_anomalies\":%lu,\"mmap_anomalies\":%lu,"
+			"\"random_exhausted\":%lu},",
+		parent_stats.fault_injected, parent_stats.fault_consumed,
+		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
+		shm->stats.fd_closed_tracked, shm->stats.fd_regenerated,
+		shm->stats.fd_duped, shm->stats.fd_events_processed,
+		shm->stats.fd_events_dropped,
+		shm->stats.fd_event_close_count, shm->stats.fd_event_evict_count,
+		shm->stats.fd_hash_reinsert_dropped,
+		shm->stats.local_fd_hash_insert_dropped,
+		shm->stats.fd_runtime_registered,
+		shm->stats.epoll_lazy_armed,
+		shm->stats.epoll_blocking_poll_skipped,
+		shm->stats.fd_random_exhausted);
+}
+
+static void dump_stats_json(void)
+{
+	putchar('{');
+
+	json_emit_syscalls_array();
+
+	fputs(",\"stats\":{", stdout);
+	dump_stats_json_fault_and_fd_lifecycle();
+
+	printf("\"oracle\":{\"fd_anomalies\":%lu,\"mmap_anomalies\":%lu,"
 			"\"cred_anomalies\":%lu,\"sched_anomalies\":%lu,"
 			"\"uid_anomalies\":%lu,\"gid_anomalies\":%lu,"
 			"\"setgroups_anomalies\":%lu,\"getegid_anomalies\":%lu,"
@@ -960,18 +978,6 @@ static void dump_stats_json(void)
 		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"peek_ok\":%lu,\"iouring_variant_ok\":%lu,\"sibling_spawn_ok\":%lu,\"sibling_spawn_failed\":%lu,\"sibling_reaped_ok\":%lu,\"sibling_crashed\":%lu},"
 		"\"netns_teardown\":{\"runs\":%lu,\"setup_failed\":%lu,\"unshare_ok\":%lu,\"socket_pair_ok\":%lu,\"fork_ok\":%lu,\"setns_ok\":%lu,\"kill_ok\":%lu,\"completed_ok\":%lu},"
 		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},",
-		parent_stats.fault_injected, parent_stats.fault_consumed,
-		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
-		shm->stats.fd_closed_tracked, shm->stats.fd_regenerated,
-		shm->stats.fd_duped, shm->stats.fd_events_processed,
-		shm->stats.fd_events_dropped,
-		shm->stats.fd_event_close_count, shm->stats.fd_event_evict_count,
-		shm->stats.fd_hash_reinsert_dropped,
-		shm->stats.local_fd_hash_insert_dropped,
-		shm->stats.fd_runtime_registered,
-		shm->stats.epoll_lazy_armed,
-		shm->stats.epoll_blocking_poll_skipped,
-		shm->stats.fd_random_exhausted,
 		shm->stats.fd_oracle_anomalies, shm->stats.mmap_oracle_anomalies,
 		shm->stats.cred_oracle_anomalies, shm->stats.sched_oracle_anomalies,
 		shm->stats.uid_oracle_anomalies, shm->stats.gid_oracle_anomalies,
