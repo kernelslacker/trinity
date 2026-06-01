@@ -1198,6 +1198,86 @@ static int tc_qdisc_setup_netns(struct nl_ctx *ctx)
 	return 0;
 }
 
+/*
+ * Build the per-iteration parent netdev.  Default path: RTM_NEWLINK
+ * type=dummy with a random name.  One iteration in three (when
+ * supported) instead creates a fresh bridge + veth pair and enslaves
+ * one end of the pair to the bridge — the slave port becomes the
+ * DELLINK target raced against the flush burst at teardown, the
+ * shape of the dequeue-after-parent-free UAF in
+ * qdisc_pkt_len_segs_init.  Returns 0 with it->dummy_idx > 0 on
+ * success; nonzero means the caller should goto out to clean up.
+ */
+static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
+{
+	int rc;
+
+	it->bridge_mode = !ns_unsupported_bridge && ONE_IN(3);
+	if (it->bridge_mode) {
+		snprintf(it->bridge_name, sizeof(it->bridge_name), "trbr%u",
+			 (unsigned int)(rand32() & 0xffffu));
+		snprintf(it->dummy_name, sizeof(it->dummy_name), "trv%u",
+			 (unsigned int)(rand32() & 0xffffu));
+		snprintf(it->peer_name, sizeof(it->peer_name), "trvp%u",
+			 (unsigned int)(rand32() & 0xffffu));
+
+		rc = build_bridge_create(&it->nl, it->bridge_name);
+		if (rc != 0) {
+			if (is_unsupported_err(rc))
+				ns_unsupported_bridge = true;
+			it->bridge_mode = false;
+		} else {
+			it->bridge_idx = (int)if_nametoindex(it->bridge_name);
+			rc = build_veth_pair(&it->nl, it->dummy_name, it->peer_name);
+			if (rc != 0) {
+				if (it->bridge_idx > 0)
+					(void)build_dellink(&it->nl, it->bridge_idx);
+				it->bridge_idx = 0;
+				it->bridge_mode = false;
+			} else {
+				it->dummy_idx = (int)if_nametoindex(it->dummy_name);
+				if (it->dummy_idx > 0 && it->bridge_idx > 0)
+					(void)build_setlink_master(&it->nl, it->dummy_idx,
+								   it->bridge_idx);
+				if (it->bridge_idx > 0)
+					(void)build_setlink_up(&it->nl, it->bridge_idx);
+				if (it->dummy_idx > 0)
+					(void)build_setlink_up(&it->nl, it->dummy_idx);
+				it->dummy_added = true;
+				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_create_ok,
+						   1, __ATOMIC_RELAXED);
+				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_bridge_parent_runs,
+						   1, __ATOMIC_RELAXED);
+			}
+		}
+	}
+
+	if (!it->bridge_mode) {
+		snprintf(it->dummy_name, sizeof(it->dummy_name), "trtcd%u",
+			 (unsigned int)(rand32() & 0xffffu));
+
+		rc = build_dummy_create(&it->nl, it->dummy_name);
+		if (rc != 0) {
+			if (is_unsupported_err(rc))
+				ns_unsupported_dummy = true;
+			return -1;
+		}
+		it->dummy_added = true;
+		__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_create_ok,
+				   1, __ATOMIC_RELAXED);
+
+		it->dummy_idx = (int)if_nametoindex(it->dummy_name);
+		if (it->dummy_idx == 0)
+			return -1;
+
+		(void)build_setlink_up(&it->nl, it->dummy_idx);
+	}
+
+	if (it->dummy_idx <= 0)
+		return -1;
+	return 0;
+}
+
 bool tc_qdisc_churn(struct childdata *child)
 {
 	struct tc_qdisc_iter_ctx it = {
@@ -1222,75 +1302,7 @@ bool tc_qdisc_churn(struct childdata *child)
 	if (tc_qdisc_setup_netns(&it.nl) != 0)
 		return true;
 
-	/*
-	 * One iteration in three (when supported) builds a bridge
-	 * slave veth port to use as the qdisc parent instead of a
-	 * dummy.  The slave port is the DELLINK target raced against
-	 * a flush burst at cleanup — shape of the dequeue-after-
-	 * parent-free UAF in qdisc_pkt_len_segs_init.
-	 */
-	it.bridge_mode = !ns_unsupported_bridge && ONE_IN(3);
-	if (it.bridge_mode) {
-		snprintf(it.bridge_name, sizeof(it.bridge_name), "trbr%u",
-			 (unsigned int)(rand32() & 0xffffu));
-		snprintf(it.dummy_name, sizeof(it.dummy_name), "trv%u",
-			 (unsigned int)(rand32() & 0xffffu));
-		snprintf(it.peer_name, sizeof(it.peer_name), "trvp%u",
-			 (unsigned int)(rand32() & 0xffffu));
-
-		rc = build_bridge_create(&it.nl, it.bridge_name);
-		if (rc != 0) {
-			if (is_unsupported_err(rc))
-				ns_unsupported_bridge = true;
-			it.bridge_mode = false;
-		} else {
-			it.bridge_idx = (int)if_nametoindex(it.bridge_name);
-			rc = build_veth_pair(&it.nl, it.dummy_name, it.peer_name);
-			if (rc != 0) {
-				if (it.bridge_idx > 0)
-					(void)build_dellink(&it.nl, it.bridge_idx);
-				it.bridge_idx = 0;
-				it.bridge_mode = false;
-			} else {
-				it.dummy_idx = (int)if_nametoindex(it.dummy_name);
-				if (it.dummy_idx > 0 && it.bridge_idx > 0)
-					(void)build_setlink_master(&it.nl, it.dummy_idx,
-								   it.bridge_idx);
-				if (it.bridge_idx > 0)
-					(void)build_setlink_up(&it.nl, it.bridge_idx);
-				if (it.dummy_idx > 0)
-					(void)build_setlink_up(&it.nl, it.dummy_idx);
-				it.dummy_added = true;
-				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_create_ok,
-						   1, __ATOMIC_RELAXED);
-				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_bridge_parent_runs,
-						   1, __ATOMIC_RELAXED);
-			}
-		}
-	}
-
-	if (!it.bridge_mode) {
-		snprintf(it.dummy_name, sizeof(it.dummy_name), "trtcd%u",
-			 (unsigned int)(rand32() & 0xffffu));
-
-		rc = build_dummy_create(&it.nl, it.dummy_name);
-		if (rc != 0) {
-			if (is_unsupported_err(rc))
-				ns_unsupported_dummy = true;
-			goto out;
-		}
-		it.dummy_added = true;
-		__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_create_ok,
-				   1, __ATOMIC_RELAXED);
-
-		it.dummy_idx = (int)if_nametoindex(it.dummy_name);
-		if (it.dummy_idx == 0)
-			goto out;
-
-		(void)build_setlink_up(&it.nl, it.dummy_idx);
-	}
-
-	if (it.dummy_idx <= 0)
+	if (tc_qdisc_add_link(&it) != 0)
 		goto out;
 
 	/*
