@@ -7104,6 +7104,38 @@ static void nftables_churn_iter_mid_churn(struct nftables_churn_iter_ctx *ctx)
 			   ctx->anon_set);
 }
 
+/*
+ * Phase: close whichever resources we managed to open.  Runs on
+ * every exit path -- both the success path after mid_churn returns
+ * and any early-bail goto out from an earlier phase.  Order matches
+ * the original out: cleanup: close udp first, then DELTABLE (gated
+ * on table_created so an aborted build_table doesn't issue a NEWTABLE
+ * we never sent), then nfnl close so the DELTABLE batch has somewhere
+ * to land, then rtnl.  All fd fields default to -1 via the
+ * orchestrator's designated initialiser so the guards skip work that
+ * was never set up.
+ */
+static void nftables_churn_iter_teardown(struct nftables_churn_iter_ctx *ctx)
+{
+	if (ctx->udp >= 0)
+		close(ctx->udp);
+
+	if (ctx->nfnl.nl.fd >= 0) {
+		/* DELTABLE cascades cleanup of any chain/rule/set
+		 * survivors via nf_tables_table_destroy, racing the
+		 * same in-flight skbs as the explicit DELRULE above. */
+		if (ctx->table_created) {
+			if (build_deltable(&ctx->nfnl, ctx->family,
+					   ctx->table_name) == 0)
+				__atomic_add_fetch(&shm->stats.nftables_churn_table_del_ok,
+						   1, __ATOMIC_RELAXED);
+		}
+		nfnl_close(&ctx->nfnl);
+	}
+
+	nl_close(&ctx->rtnl);
+}
+
 bool nftables_churn(struct childdata *child)
 {
 	struct nftables_churn_iter_ctx ctx = {
@@ -7139,23 +7171,6 @@ bool nftables_churn(struct childdata *child)
 	nftables_churn_iter_mid_churn(&ctx);
 
 out:
-	if (ctx.udp >= 0)
-		close(ctx.udp);
-
-	if (ctx.nfnl.nl.fd >= 0) {
-		/* DELTABLE cascades cleanup of any chain/rule/set
-		 * survivors via nf_tables_table_destroy, racing the
-		 * same in-flight skbs as the explicit DELRULE above. */
-		if (ctx.table_created) {
-			if (build_deltable(&ctx.nfnl, ctx.family,
-					   ctx.table_name) == 0)
-				__atomic_add_fetch(&shm->stats.nftables_churn_table_del_ok,
-						   1, __ATOMIC_RELAXED);
-		}
-		nfnl_close(&ctx.nfnl);
-	}
-
-	nl_close(&ctx.rtnl);
-
+	nftables_churn_iter_teardown(&ctx);
 	return true;
 }
