@@ -123,6 +123,16 @@ static void init_shm_self_exe_snapshot(void)
 }
 
 /*
+ * Stashed by init_shm_alloc_children() so the post-publish
+ * mprotect(children, ..., PROT_READ) at the tail of init_shm() can
+ * pass the exact byte length the children[] allocation rounded up
+ * to.  File-scope static (init-only, parent-only) instead of a
+ * threaded out-param to keep the orchestrator at one bare call
+ * per phase.
+ */
+static size_t init_shm_childptrslen;
+
+/*
  * Strategy-rotation / picker-mode / plateau intervention state
  * init.  All __atomic_store_n stamps so the values the
  * picker/orchestrator/plateau code reads (often from a child that
@@ -209,19 +219,25 @@ static void init_shm_strategy_state(void)
 	__atomic_store_n(&shm->seed, init_seed(seed), __ATOMIC_RELAXED);
 }
 
-void init_shm(void)
+/*
+ * Allocate the parent's two child-indexed pointer arrays:
+ * children[] (the per-slot childdata pointer array) and
+ * expected_fd_event_rings[] (the fd_event_ring canary).  Both are
+ * sized max_children * sizeof(pointer), checked with
+ * shared_size_mul -- overflow at this scale is structurally
+ * unrecoverable so the helper exits on overflow rather than
+ * threading a failure back to the caller.  childptrslen is rounded
+ * up to page_size before the children[] alloc (the parent-only
+ * mprotect(PROT_READ) at the tail of init_shm runs on this exact
+ * length) and stashed in init_shm_childptrslen so that mprotect
+ * can find it without a third pass through shared_size_mul.  The
+ * for_each_child population pass that fills both arrays is the
+ * next phase; this helper only carves the address space.
+ */
+static void init_shm_alloc_children(void)
 {
-	unsigned int i;
 	size_t childptrslen;
 	size_t fd_event_ring_arr_bytes;
-
-	output(2, "shm is at %p\n", shm);
-
-	init_shm_debug_start();
-
-	init_shm_self_exe_snapshot();
-
-	init_shm_strategy_state();
 
 	if (!shared_size_mul(max_children, sizeof(struct childdata *),
 			     &childptrslen)) {
@@ -232,6 +248,7 @@ void init_shm(void)
 	/* round up to page size */
 	childptrslen += page_size - 1;
 	childptrslen &= PAGE_MASK;
+	init_shm_childptrslen = childptrslen;
 
 	/*
 	 * children[] (the array of childdata pointers) is protected by the
@@ -252,6 +269,21 @@ void init_shm(void)
 		exit(EXIT_FAILURE);
 	}
 	expected_fd_event_rings = alloc_shared(fd_event_ring_arr_bytes);
+}
+
+void init_shm(void)
+{
+	unsigned int i;
+
+	output(2, "shm is at %p\n", shm);
+
+	init_shm_debug_start();
+
+	init_shm_self_exe_snapshot();
+
+	init_shm_strategy_state();
+
+	init_shm_alloc_children();
 
 	/* We allocate the childdata structs as shared mappings, because
 	 * the forking process needs to peek into each childs syscall records
@@ -325,8 +357,8 @@ void init_shm(void)
 	 * reads its three fields off this page on the syscall-selection
 	 * biasing path, refreshed once per drain. */
 	edgepair_published_init();
-	if (mprotect(children, childptrslen, PROT_READ) != 0)
-		log_mprotect_failure(children, (size_t) childptrslen, PROT_READ,
+	if (mprotect(children, init_shm_childptrslen, PROT_READ) != 0)
+		log_mprotect_failure(children, init_shm_childptrslen, PROT_READ,
 				     __builtin_return_address(0), errno);
 
 	kcov_init_global();
