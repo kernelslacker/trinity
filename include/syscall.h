@@ -197,12 +197,11 @@ struct arglist {
 #define SUCCESS_FD_SCOREBOARD_BITS	256
 #define SUCCESS_FD_SCOREBOARD_BYTES	(SUCCESS_FD_SCOREBOARD_BITS / 8)
 
-/* Packed views of the ARG_LEN scoreboard (seen/min/max) and the failed-fd
- * run-length tracker (fail_run_fd, fail_run_count).  Defined alongside the
- * existing fields so subsequent commits can swap the locked multi-field
- * RMW paths in store_successful_len() / store_failed_fd() /
- * store_successful_fd() for CAS loops on these single words and retire
- * the per-results lock.  Not yet read or written by any path. */
+/* Packed views of the ARG_LEN scoreboard (min, max) and the failed-fd
+ * run-length tracker (fail_run_fd, fail_run_count).  len_score is updated
+ * lock-free by store_successful_len() via a CAS loop on the raw u64;
+ * fail_run still goes through the per-results lock until a follow-up
+ * commit converts store_failed_fd / store_successful_fd to CAS as well. */
 union len_score_u {
 	uint64_t raw;
 	struct {
@@ -220,16 +219,13 @@ union fail_run_u {
 };
 
 struct results {
-	/* Serialises the multi-field RMW paths in store_successful_len()
-	 * (seen/min/max init + range update) and the fail_run_fd /
-	 * fail_run_count pair in store_failed_fd / store_successful_fd.
-	 * The success_fds / failed_fds bitmaps are mutated lock-free via
-	 * __atomic_fetch_or / __atomic_fetch_and on the touched byte.
-	 * Zero-init from alloc_shared() leaves the lock UNLOCKED. */
+	/* Serialises the fail_run_fd / fail_run_count pair updated by
+	 * store_failed_fd / store_successful_fd.  The success_fds /
+	 * failed_fds bitmaps are mutated lock-free via __atomic_fetch_or /
+	 * __atomic_fetch_and on the touched byte; len_score is mutated
+	 * lock-free via a CAS loop on its raw u64.  Zero-init from
+	 * alloc_shared() leaves the lock UNLOCKED. */
 	lock_t lock;
-	/* ARG_LEN: range of successful length values. */
-	bool seen;
-	unsigned int min, max;
 	/* ARG_FD / typed-fd: bit `fd` set if get_random_fd / get_typed_fd
 	 * returned that low fd for this slot and the call succeeded. */
 	unsigned char success_fds[SUCCESS_FD_SCOREBOARD_BYTES];
@@ -246,14 +242,14 @@ struct results {
 	 * means no run in flight (so static-zero init "just works"). */
 	unsigned char fail_run_fd;
 	unsigned char fail_run_count;	/* saturating; 0 = no run in flight */
-	/* Packed CAS-targeted replacements for the fields above.  len_score
-	 * folds (min, max) into one 64-bit word with min==UINT32_MAX as the
-	 * not-seen sentinel (so the existing `seen` boolean disappears);
-	 * fail_run folds (fail_run_fd, fail_run_count) into 32 bits.  Stamped
-	 * by results_init_one() in results.h; readers and writers still go
-	 * through the locked fields above until follow-up commits convert
-	 * each update path to a CAS loop on these words. */
+	/* ARG_LEN: range of successful length values, folded into one
+	 * 64-bit word so store_successful_len() can RMW it with a single
+	 * CAS.  min == UINT32_MAX && max == 0 is the not-seen sentinel
+	 * (stamped by results_init_one() in results.h); readers should
+	 * check len_score_is_seen() before consuming min/max. */
 	union len_score_u len_score;
+	/* fail_run_fd / fail_run_count packed for future CAS conversion;
+	 * not yet read or written by any path. */
 	union fail_run_u fail_run;
 };
 

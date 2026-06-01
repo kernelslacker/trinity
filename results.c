@@ -35,25 +35,33 @@ static struct results * get_results_ptr(struct syscallentry *entry, unsigned int
 
 static void store_successful_len(struct results *results, unsigned long value)
 {
-	/* All three fields (seen, min, max) move together; without the
-	 * lock two children racing past the !seen test can leave the slot
-	 * with min > max (each child seeds min and max to its own value
-	 * independently), and the update branch can drop concurrent
-	 * extrema entirely.  The hot path is the comparison-only update
-	 * once seen flips true, which is single-store-per-child under the
-	 * lock and not on any latency-sensitive call. */
-	lock(&results->lock);
-	if (!results->seen) {
-		results->seen = true;
-		results->min = value;
-		results->max = value;
-	} else {
-		if (value < results->min)
-			results->min = value;
-		if (value > results->max)
-			results->max = value;
-	}
-	unlock(&results->lock);
+	uint32_t len = (uint32_t) value;
+	union len_score_u cur, new;
+
+	/* Lock-free range update on the packed (min, max) word.  Decode the
+	 * sentinel (min==UINT32_MAX, max==0) as not-seen and seed both bounds
+	 * with the first observation; otherwise extend the existing range.
+	 * The early-out when nothing changes keeps the hot path (a duplicate
+	 * length on a settled slot) off the CAS bus entirely. */
+	do {
+		cur.raw = __atomic_load_n(&results->len_score.raw,
+					  __ATOMIC_RELAXED);
+		new = cur;
+		if (cur.u.min == UINT32_MAX && cur.u.max == 0) {
+			new.u.min = len;
+			new.u.max = len;
+		} else {
+			if (len < cur.u.min)
+				new.u.min = len;
+			if (len > cur.u.max)
+				new.u.max = len;
+		}
+		if (new.raw == cur.raw)
+			return;
+	} while (!__atomic_compare_exchange_n(&results->len_score.raw,
+					      &cur.raw, new.raw, false,
+					      __ATOMIC_RELEASE,
+					      __ATOMIC_RELAXED));
 }
 
 static void store_successful_fd(struct results *results, unsigned long value)
