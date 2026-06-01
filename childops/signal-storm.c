@@ -237,6 +237,31 @@ static void signal_storm_iter_pick_mode(struct signal_storm_iter_ctx *ictx)
 		ictx->catalog = CATALOG_ANY;
 }
 
+/*
+ * Phase: SAME_TARGET_BURST -- K (2..8) signals at one target, then move
+ * to the next.  Grows __sigqueue / shared_pending depth on a single task
+ * before rotating, which the uniform-draw default never sustains long
+ * enough to exercise.
+ */
+static void signal_storm_iter_burst_same_target(struct signal_storm_iter_ctx *ictx)
+{
+	unsigned int t = 0;
+	unsigned int i = 0;
+
+	while (i < ictx->iters) {
+		pid_t pid = ictx->targets[t % ictx->ntargets];
+		unsigned int burst = 2 + rnd_modulo_u32(7); /* 2..8 */
+		unsigned int k;
+
+		for (k = 0; k < burst && i < ictx->iters; k++, i++) {
+			int sig = pick_signal_in(ictx->catalog);
+
+			emit_signal(pid, sig, RAND_BOOL());
+		}
+		t++;
+	}
+}
+
 bool signal_storm(struct childdata *child)
 {
 	struct signal_storm_iter_ctx ictx = { 0 };
@@ -265,24 +290,9 @@ bool signal_storm(struct childdata *child)
 	catalog = ictx.catalog;
 
 	switch (ictx.order) {
-	case ORDER_SAME_TARGET_BURST: {
-		unsigned int t = 0;
-
-		i = 0;
-		while (i < iters) {
-			pid_t pid = targets[t % ntargets];
-			unsigned int burst = 2 + rnd_modulo_u32(7); /* 2..8 */
-			unsigned int k;
-
-			for (k = 0; k < burst && i < iters; k++, i++) {
-				int sig = pick_signal_in(catalog);
-
-				emit_signal(pid, sig, RAND_BOOL());
-			}
-			t++;
-		}
+	case ORDER_SAME_TARGET_BURST:
+		signal_storm_iter_burst_same_target(&ictx);
 		break;
-	}
 	case ORDER_MODE_GROUPED: {
 		unsigned int t = 0;
 
