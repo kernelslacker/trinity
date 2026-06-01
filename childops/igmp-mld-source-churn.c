@@ -330,21 +330,74 @@ static void send_burst(int s, unsigned int n)
 }
 
 /*
+ * Per-iteration scratch carried across the igmp_source_iter_v4_<phase>
+ * helpers.  Lifetime is one iter_one_v4() invocation; avoids threading
+ * the two fds, three preshaped addresses, the two group_source_req
+ * structures, and the bulk-filter pointer through every helper
+ * signature.  Sentinel values (-1 / NULL) on the fds and gf so the
+ * out: cleanup path can act selectively.
+ */
+struct igmp_source_iter_v4_ctx {
+	int			send_s;
+	int			recv_s;
+	__u32			grp_be;
+	__u32			src_a_be;
+	__u32			src_b_be;
+	struct group_source_req	gsr_a;
+	struct group_source_req	gsr_b;
+	struct group_filter    *gf;
+	unsigned int		iter_idx;
+	unsigned int		salt;
+};
+
+/*
+ * Phase 1 (v4): open the connected SOCK_DGRAM sender, apply the 100 ms
+ * SO_{RCV,SND}TIMEO, and connect() to the SSM group:port.  On any
+ * socket/connect failure bumps setup_failed and returns -1; caller does
+ * `goto out` so the (possibly opened) send_s gets closed by the shared
+ * cleanup path.
+ */
+static int igmp_source_iter_v4_setup_send(struct igmp_source_iter_v4_ctx *it)
+{
+	struct sockaddr_in addr;
+
+	it->send_s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+	if (it->send_s < 0) {
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	apply_timeouts(it->send_s);
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family      = AF_INET;
+	addr.sin_port        = htons(IMC_PORT);
+	addr.sin_addr.s_addr = it->grp_be;
+	if (connect(it->send_s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	return 0;
+}
+
+/*
  * One IPv4 join+race+teardown cycle.  Returns immediately if the cap-
  * gate has latched.  Updates ns_unsupported_igmp_mld_source_churn on
  * structural failures from the first MCAST_JOIN_SOURCE_GROUP probe.
  */
 static void iter_one_v4(unsigned int iter_idx, const struct timespec *t_outer)
 {
-	int send_s = -1, recv_s = -1;
+	struct igmp_source_iter_v4_ctx it = {
+		.send_s   = -1,
+		.recv_s   = -1,
+		.gf       = NULL,
+		.iter_idx = iter_idx,
+		.salt     = (unsigned int)(rand32() & 0xffu),
+	};
 	struct sockaddr_in addr;
-	struct group_source_req gsr_a, gsr_b;
-	struct group_filter *gf = NULL;
-	__u32 grp_be;
-	__u32 src_a_be, src_b_be;
-	int yes = 1;
 	unsigned int race_letter = (iter_idx >> 1) & 3U;
-	unsigned int salt = (unsigned int)(rand32() & 0xffu);
+	int yes = 1;
 	unsigned int nsrc;
 	int rc;
 
@@ -352,52 +405,37 @@ static void iter_one_v4(unsigned int iter_idx, const struct timespec *t_outer)
 		return;
 
 	/* SSM group 232.42.salt.1; sources 10.0.salt.{2,3}. */
-	grp_be   = htonl(0xe82a0000U | ((salt & 0xff) << 8) | 0x01U);
-	src_a_be = htonl(0x0a000000U | ((salt & 0xff) << 8) | 0x02U);
-	src_b_be = htonl(0x0a000000U | ((salt & 0xff) << 8) | 0x03U);
+	it.grp_be   = htonl(0xe82a0000U | ((it.salt & 0xff) << 8) | 0x01U);
+	it.src_a_be = htonl(0x0a000000U | ((it.salt & 0xff) << 8) | 0x02U);
+	it.src_b_be = htonl(0x0a000000U | ((it.salt & 0xff) << 8) | 0x03U);
 
-	send_s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
-	if (send_s < 0) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return;
-	}
-	apply_timeouts(send_s);
+	if (igmp_source_iter_v4_setup_send(&it) != 0)
+		goto out;
 
-	memset(&addr, 0, sizeof(addr));
-	addr.sin_family      = AF_INET;
-	addr.sin_port        = htons(IMC_PORT);
-	addr.sin_addr.s_addr = grp_be;
-	if (connect(send_s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+	it.recv_s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+	if (it.recv_s < 0) {
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-
-	recv_s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
-	if (recv_s < 0) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-	apply_timeouts(recv_s);
-	(void)setsockopt(recv_s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
-	(void)setsockopt(recv_s, IPPROTO_IP, IP_MULTICAST_LOOP,
+	apply_timeouts(it.recv_s);
+	(void)setsockopt(it.recv_s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+	(void)setsockopt(it.recv_s, IPPROTO_IP, IP_MULTICAST_LOOP,
 			 &yes, sizeof(yes));
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family      = AF_INET;
 	addr.sin_port        = htons(IMC_PORT);
-	addr.sin_addr.s_addr = grp_be;
-	if (bind(recv_s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+	addr.sin_addr.s_addr = it.grp_be;
+	if (bind(it.recv_s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
 
-	fill_gsr_v4(&gsr_a, 0U, grp_be, src_a_be);
-	if (setsockopt(recv_s, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP,
-		       &gsr_a, sizeof(gsr_a)) < 0) {
+	fill_gsr_v4(&it.gsr_a, 0U, it.grp_be, it.src_a_be);
+	if (setsockopt(it.recv_s, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP,
+		       &it.gsr_a, sizeof(it.gsr_a)) < 0) {
 		int e = errno;
 
 		if (is_syscall_unsupported(e) || is_proto_family_unsupported(e))
@@ -409,13 +447,13 @@ static void iter_one_v4(unsigned int iter_idx, const struct timespec *t_outer)
 	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_join_ok,
 			   1, __ATOMIC_RELAXED);
 
-	fill_gsr_v4(&gsr_b, 0U, grp_be, src_b_be);
-	if (setsockopt(recv_s, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP,
-		       &gsr_b, sizeof(gsr_b)) == 0)
+	fill_gsr_v4(&it.gsr_b, 0U, it.grp_be, it.src_b_be);
+	if (setsockopt(it.recv_s, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP,
+		       &it.gsr_b, sizeof(it.gsr_b)) == 0)
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_join_ok,
 				   1, __ATOMIC_RELAXED);
 
-	send_burst(send_s, 2);
+	send_burst(it.send_s, 2);
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
 		goto teardown;
@@ -423,26 +461,26 @@ static void iter_one_v4(unsigned int iter_idx, const struct timespec *t_outer)
 	switch (race_letter) {
 	case 0:
 		/* RACE A: filter shrink mid-stream. */
-		if (setsockopt(recv_s, IPPROTO_IP, MCAST_LEAVE_SOURCE_GROUP,
-			       &gsr_a, sizeof(gsr_a)) == 0)
+		if (setsockopt(it.recv_s, IPPROTO_IP, MCAST_LEAVE_SOURCE_GROUP,
+			       &it.gsr_a, sizeof(it.gsr_a)) == 0)
 			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_leave_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 1:
 		/* RACE B: INCLUDE -> EXCLUDE flip via BLOCK_SOURCE. */
-		if (setsockopt(recv_s, IPPROTO_IP, MCAST_BLOCK_SOURCE,
-			       &gsr_b, sizeof(gsr_b)) == 0)
+		if (setsockopt(it.recv_s, IPPROTO_IP, MCAST_BLOCK_SOURCE,
+			       &it.gsr_b, sizeof(it.gsr_b)) == 0)
 			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_block_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 2:
 		/* RACE C: bulk replace via MCAST_MSFILTER -- exercises the
 		 * ip_mc_msfilter realloc + rcu publish path. */
-		nsrc = rotate_filter_size(iter_idx);
-		gf = build_filter_v4(0U, grp_be, nsrc, salt);
-		if (gf) {
-			rc = setsockopt(recv_s, IPPROTO_IP, MCAST_MSFILTER,
-					gf, GROUP_FILTER_SIZE(nsrc));
+		nsrc = rotate_filter_size(it.iter_idx);
+		it.gf = build_filter_v4(0U, it.grp_be, nsrc, it.salt);
+		if (it.gf) {
+			rc = setsockopt(it.recv_s, IPPROTO_IP, MCAST_MSFILTER,
+					it.gf, GROUP_FILTER_SIZE(nsrc));
 			if (rc == 0)
 				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_msfilter_ok,
 						   1, __ATOMIC_RELAXED);
@@ -454,8 +492,8 @@ static void iter_one_v4(unsigned int iter_idx, const struct timespec *t_outer)
 			struct ip_mreqn mreq;
 
 			memset(&mreq, 0, sizeof(mreq));
-			mreq.imr_multiaddr.s_addr = grp_be;
-			if (setsockopt(recv_s, IPPROTO_IP, IP_DROP_MEMBERSHIP,
+			mreq.imr_multiaddr.s_addr = it.grp_be;
+			if (setsockopt(it.recv_s, IPPROTO_IP, IP_DROP_MEMBERSHIP,
 				       &mreq, sizeof(mreq)) == 0)
 				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_drop_ok,
 						   1, __ATOMIC_RELAXED);
@@ -463,27 +501,27 @@ static void iter_one_v4(unsigned int iter_idx, const struct timespec *t_outer)
 		break;
 	}
 
-	send_burst(send_s, 2);
+	send_burst(it.send_s, 2);
 
 teardown:
-	free(gf);
-	gf = NULL;
+	free(it.gf);
+	it.gf = NULL;
 	/* Random close order so teardown isn't always recv-first. */
-	if ((iter_idx & 1U) == 0U) {
-		if (recv_s >= 0) { close(recv_s); recv_s = -1; }
-		if (send_s >= 0) { close(send_s); send_s = -1; }
+	if ((it.iter_idx & 1U) == 0U) {
+		if (it.recv_s >= 0) { close(it.recv_s); it.recv_s = -1; }
+		if (it.send_s >= 0) { close(it.send_s); it.send_s = -1; }
 	} else {
-		if (send_s >= 0) { close(send_s); send_s = -1; }
-		if (recv_s >= 0) { close(recv_s); recv_s = -1; }
+		if (it.send_s >= 0) { close(it.send_s); it.send_s = -1; }
+		if (it.recv_s >= 0) { close(it.recv_s); it.recv_s = -1; }
 	}
 	return;
 
 out:
-	free(gf);
-	if (send_s >= 0)
-		close(send_s);
-	if (recv_s >= 0)
-		close(recv_s);
+	free(it.gf);
+	if (it.send_s >= 0)
+		close(it.send_s);
+	if (it.recv_s >= 0)
+		close(it.recv_s);
 }
 
 /*
