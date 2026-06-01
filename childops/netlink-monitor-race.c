@@ -355,16 +355,52 @@ static int netlink_monitor_race_iter_open_monitor(struct netlink_monitor_race_it
 	return 0;
 }
 
+/*
+ * Phase: open the mutator netlink socket, create the fresh dummy
+ * interface that all subsequent RTM_NEWADDR / RTM_DELADDR / RTM_DELLINK
+ * traffic targets, resolve its ifindex, and seed the link-local IPv4
+ * address that the burst phases recycle.  Returns 0 on success; -1
+ * means the caller should goto out -- mut may already be open and the
+ * dummy link may already exist, so the teardown side has work to do.
+ */
+static int netlink_monitor_race_iter_open_mutator(struct netlink_monitor_race_iter_ctx *ctx)
+{
+	struct nl_open_opts mut_opts = {
+		.proto        = NETLINK_ROUTE,
+		.recv_timeo_s = RTNL_RECV_TIMEO_S,
+	};
+	char dev_name[IFNAMSIZ];
+
+	if (nl_open(&ctx->mut, &mut_opts) < 0) {
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_open,
+			   1, __ATOMIC_RELAXED);
+
+	snprintf(dev_name, sizeof(dev_name), "trnlmon%u",
+		 (unsigned int)(rand32() & 0xffffu));
+
+	if (build_dummy_link(&ctx->mut, dev_name) != 0)
+		return -1;
+	ctx->link_added = true;
+	__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
+			   1, __ATOMIC_RELAXED);
+
+	ctx->ifindex = (int)if_nametoindex(dev_name);
+	if (ctx->ifindex == 0)
+		return -1;
+
+	ctx->addr = htonl(0xa9fe0000u | (rand32() & 0x0000fffeu) | 1u);
+	return 0;
+}
+
 bool netlink_monitor_race(struct childdata *child)
 {
-	char dev_name[IFNAMSIZ];
 	struct netlink_monitor_race_iter_ctx ctx = {
 		.mon = { .fd = -1 },
 		.mut = { .fd = -1 },
-	};
-	struct nl_open_opts mut_opts = {
-		.proto         = NETLINK_ROUTE,
-		.recv_timeo_s  = RTNL_RECV_TIMEO_S,
 	};
 	__u32 drop_grp, add_grp;
 	unsigned int drained;
@@ -383,28 +419,8 @@ bool netlink_monitor_race(struct childdata *child)
 	if (netlink_monitor_race_iter_open_monitor(&ctx) != 0)
 		return true;
 
-	if (nl_open(&ctx.mut, &mut_opts) < 0) {
-		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (netlink_monitor_race_iter_open_mutator(&ctx) != 0)
 		goto out;
-	}
-	__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_open,
-			   1, __ATOMIC_RELAXED);
-
-	snprintf(dev_name, sizeof(dev_name), "trnlmon%u",
-		 (unsigned int)(rand32() & 0xffffu));
-
-	if (build_dummy_link(&ctx.mut, dev_name) != 0)
-		goto out;
-	ctx.link_added = true;
-	__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
-			   1, __ATOMIC_RELAXED);
-
-	ctx.ifindex = (int)if_nametoindex(dev_name);
-	if (ctx.ifindex == 0)
-		goto out;
-
-	ctx.addr = htonl(0xa9fe0000u | (rand32() & 0x0000fffeu) | 1u);
 
 	/* Drive a small burst of address add/del cycles so each iteration
 	 * generates a NEWADDR/DELADDR broadcast that mon must process. */
