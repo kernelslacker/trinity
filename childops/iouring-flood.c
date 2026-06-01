@@ -76,9 +76,9 @@
 #define RING_ENTRIES	32
 
 /* Bounds on the per-cycle SQE burst submitted in one io_uring_enter.
- * MAX_BURST exceeds RING_ENTRIES on purpose — submit_burst clamps to
- * available ring space, so partial bursts naturally exercise the
- * "ring full" rejection path as well as the "fits cleanly" path. */
+ * MAX_BURST exceeds RING_ENTRIES on purpose — iouring_flood_iter_submit_burst
+ * clamps to available ring space, so partial bursts naturally exercise
+ * the "ring full" rejection path as well as the "fits cleanly" path. */
 #define MIN_BURST	8
 #define MAX_BURST	64
 
@@ -327,38 +327,61 @@ static void fill_sqe(struct io_uring_sqe *s,
 }
 
 /*
- * Place the prepared SQEs into the submission ring and publish the new
- * tail.  Returns the number actually queued (clamped to available ring
- * space), or 0 if the ring was already full.
+ * Phase 2: prepare a burst of MIN_BURST..MAX_BURST SQEs against the
+ * /dev/null read + write fds, place them in the submission ring, and
+ * publish the new tail.  The per-SQE op mix (NOP / READ / WRITE, the
+ * random length, the 1-in-RAND_NEGATIVE_RATIO negative-len injection)
+ * is delegated to fill_sqe.  The published count is clamped to the
+ * SQ ring's available slots so a partial burst exercises io_uring's
+ * "ring full" rejection path naturally; a fully-rejected burst (0
+ * published) bumps iouring_failed here and returns 0 so the
+ * orchestrator can short-circuit straight to teardown without an
+ * io_uring_enter on an empty SQ.
+ *
+ * Returns the number of SQEs actually published (>=1) on success,
+ * 0 on complete rejection.
  */
-static unsigned int submit_burst(struct iouring_flood_iter_ctx *ctx,
-				 struct io_uring_sqe *sqe, unsigned int n)
+static unsigned int iouring_flood_iter_submit_burst(
+		struct iouring_flood_iter_ctx *ctx,
+		int dev_null_rd, int dev_null_wr,
+		struct io_uring_sqe *burst)
 {
-	unsigned int mask  = ring_u32(ctx->sq_ring, ctx->sq_off_mask);
-	unsigned int head  = ring_u32(ctx->sq_ring, ctx->sq_off_head);
-	unsigned int tail  = ring_u32(ctx->sq_ring, ctx->sq_off_tail);
-	unsigned int avail = ctx->sq_entries - (tail - head);
+	unsigned int mask, head, tail, avail;
 	unsigned int *sq_array;
 	struct io_uring_sqe *sqes = ctx->sqes;
-	unsigned int i;
+	unsigned int n_pick, n_subs, i;
 
-	if (n > avail)
-		n = avail;
-	if (n == 0)
+	n_pick = MIN_BURST + rnd_modulo_u32(MAX_BURST - MIN_BURST + 1);
+
+	for (i = 0; i < n_pick; i++)
+		fill_sqe(&burst[i], dev_null_rd, dev_null_wr, i + 1);
+
+	mask  = ring_u32(ctx->sq_ring, ctx->sq_off_mask);
+	head  = ring_u32(ctx->sq_ring, ctx->sq_off_head);
+	tail  = ring_u32(ctx->sq_ring, ctx->sq_off_tail);
+	avail = ctx->sq_entries - (tail - head);
+
+	n_subs = n_pick;
+	if (n_subs > avail)
+		n_subs = avail;
+	if (n_subs == 0) {
+		__atomic_add_fetch(&shm->stats.iouring_failed, 1,
+				   __ATOMIC_RELAXED);
 		return 0;
+	}
 
 	sq_array = (unsigned int *)((char *)ctx->sq_ring + ctx->sq_off_array);
 
-	for (i = 0; i < n; i++) {
+	for (i = 0; i < n_subs; i++) {
 		unsigned int slot = (tail + i) & mask;
 
-		sqes[slot] = sqe[i];
+		sqes[slot] = burst[i];
 		sq_array[slot] = slot;
 	}
 
 	__sync_synchronize();
-	ring_store_u32(ctx->sq_ring, ctx->sq_off_tail, tail + n);
-	return n;
+	ring_store_u32(ctx->sq_ring, ctx->sq_off_tail, tail + n_subs);
+	return n_subs;
 }
 
 /* Drain all available CQEs and return how many were reaped. */
@@ -442,9 +465,7 @@ bool iouring_flood(struct childdata *child)
 
 	for (i = 0; i < cycles; i++) {
 		struct iouring_flood_iter_ctx ctx;
-		unsigned int n_pick;
 		unsigned int n_subs;
-		unsigned int j;
 		int r;
 
 		if (iouring_flood_iter_setup_ring(&ctx) != 0) {
@@ -461,15 +482,9 @@ bool iouring_flood(struct childdata *child)
 			continue;
 		}
 
-		n_pick = MIN_BURST + rnd_modulo_u32(MAX_BURST - MIN_BURST + 1);
-
-		for (j = 0; j < n_pick; j++)
-			fill_sqe(&burst[j], dev_null_rd, dev_null_wr, j + 1);
-
-		n_subs = submit_burst(&ctx, burst, n_pick);
+		n_subs = iouring_flood_iter_submit_burst(&ctx, dev_null_rd,
+							 dev_null_wr, burst);
 		if (n_subs == 0) {
-			__atomic_add_fetch(&shm->stats.iouring_failed,
-					   1, __ATOMIC_RELAXED);
 			flood_teardown(&ctx);
 			continue;
 		}
