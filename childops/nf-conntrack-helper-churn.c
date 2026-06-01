@@ -704,6 +704,27 @@ static void nfct_helper_iter_attach(struct nfct_helper_iter_ctx *ictx)
 }
 
 /*
+ * Phase: EXP_NEW -- expectation injection.  Half the time the child
+ * lands in alt_zone instead of the master's zone, exercising the
+ * cross-zone expectation-vs-conntrack split under the same net->
+ * expect_lock the per-helper expectation list takes.
+ */
+static void nfct_helper_iter_expect(struct nfct_helper_iter_ctx *ictx)
+{
+	__u16 exp_zone = (rand32() & 1U) ? ictx->alt_zone : ictx->zone;
+	int rc;
+
+	rc = build_exp_new(ictx->ctx, ictx->zone, exp_zone, ictx->l4proto,
+			   ictx->sport, ictx->dport,
+			   ictx->child_sport, ictx->child_dport,
+			   ictx->helper_name);
+	if (rc == 0) {
+		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_exp_ok,
+				   1, __ATOMIC_RELAXED);
+	}
+}
+
+/*
  * One outer iteration: pick zone + helper, insert master conntrack +
  * expectation, drive a packet through, then run a small race burst
  * (delete / zone-swap / detach).  Returns true on every path; the
@@ -720,22 +741,7 @@ static void iter_one(struct nfnl_ctx *ctx)
 		return;
 
 	nfct_helper_iter_attach(&ictx);
-
-	/* 3) EXP_NEW -- expectation injection.  Half the time put the
-	 *    child in a different zone than the master to exercise the
-	 *    cross-zone expectation-vs-conntrack split. */
-	{
-		__u16 exp_zone = (rand32() & 1U) ? ictx.alt_zone : ictx.zone;
-
-		rc = build_exp_new(ictx.ctx, ictx.zone, exp_zone, ictx.l4proto,
-				   ictx.sport, ictx.dport,
-				   ictx.child_sport, ictx.child_dport,
-				   ictx.helper_name);
-		if (rc == 0) {
-			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_exp_ok,
-					   1, __ATOMIC_RELAXED);
-		}
-	}
+	nfct_helper_iter_expect(&ictx);
 
 	/* 4) Drive a packet through loopback to fire nf_conntrack_in()
 	 *    and the helper's ->help() callback. */
