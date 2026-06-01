@@ -713,6 +713,47 @@ static int afxdp_iter_setup_rings(struct xsk_state *st)
 	return 0;
 }
 
+/*
+ * Phase 3: stand up the BPF side -- create the single-entry XSKMAP, load
+ * the minimal redirect XDP program (best-effort: prog-load failures latch
+ * but do not fail the iter; AF_XDP UMEM/ring/bind alone is still useful
+ * coverage), and install the xsk fd at xskmap key 0.  Map-create failure
+ * is the only fatal step.
+ */
+static int afxdp_iter_setup_bpf(struct xsk_state *st)
+{
+	st->map_fd = xskmap_create();
+	if (st->map_fd < 0) {
+		if (errno == EPERM || errno == EACCES)
+			ns_unsupported_bpf_xdp = true;
+		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.afxdp_churn_map_create_ok,
+			   1, __ATOMIC_RELAXED);
+
+	if (!ns_unsupported_bpf_xdp) {
+		st->prog_fd = xdp_prog_load(st->map_fd);
+		if (st->prog_fd < 0) {
+			if (errno == EPERM || errno == EACCES ||
+			    errno == EINVAL || errno == EOPNOTSUPP)
+				ns_unsupported_bpf_xdp = true;
+			/* AF_XDP setup still useful without the prog -- the
+			 * UMEM/ring/bind path exercises xsk_buff_pool by
+			 * itself.  Don't fail the iteration. */
+		} else {
+			__atomic_add_fetch(&shm->stats.afxdp_churn_prog_load_ok,
+					   1, __ATOMIC_RELAXED);
+		}
+	}
+
+	if (xskmap_install(st->map_fd, 0, st->xsk_fd) == 0)
+		__atomic_add_fetch(&shm->stats.afxdp_churn_map_update_ok,
+				   1, __ATOMIC_RELAXED);
+	return 0;
+}
+
 /* One full setup + race + teardown cycle on a fresh AF_XDP socket. */
 static void iter_one(unsigned int idx, const struct timespec *t_outer)
 {
@@ -739,35 +780,8 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 	if (afxdp_iter_setup_rings(&st) < 0)
 		goto out;
 
-	st.map_fd = xskmap_create();
-	if (st.map_fd < 0) {
-		if (errno == EPERM || errno == EACCES)
-			ns_unsupported_bpf_xdp = true;
-		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (afxdp_iter_setup_bpf(&st) < 0)
 		goto out;
-	}
-	__atomic_add_fetch(&shm->stats.afxdp_churn_map_create_ok,
-			   1, __ATOMIC_RELAXED);
-
-	if (!ns_unsupported_bpf_xdp) {
-		st.prog_fd = xdp_prog_load(st.map_fd);
-		if (st.prog_fd < 0) {
-			if (errno == EPERM || errno == EACCES ||
-			    errno == EINVAL || errno == EOPNOTSUPP)
-				ns_unsupported_bpf_xdp = true;
-			/* AF_XDP setup still useful without the prog -- the
-			 * UMEM/ring/bind path exercises xsk_buff_pool by
-			 * itself.  Don't fail the iteration. */
-		} else {
-			__atomic_add_fetch(&shm->stats.afxdp_churn_prog_load_ok,
-					   1, __ATOMIC_RELAXED);
-		}
-	}
-
-	if (xskmap_install(st.map_fd, 0, st.xsk_fd) == 0)
-		__atomic_add_fetch(&shm->stats.afxdp_churn_map_update_ok,
-				   1, __ATOMIC_RELAXED);
 
 	/* Pick bind target: tun-with-NAPI_FRAGS when the per-iter knob fired
 	 * (and tun is reachable), else lo.  d73a9a63f9f7's bug surface is
