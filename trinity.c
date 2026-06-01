@@ -713,10 +713,70 @@ static enum init_action init_monitors_and_handle_dump_modes(void)
 	return INIT_CONTINUE;
 }
 
+/*
+ * Pre-fork init that has to complete before fork_children() starts
+ * carving up the fleet: syscall table compilation, the uid-0 guard,
+ * optional specific-domain restriction, pid + fd + object pool init,
+ * the initial address-space mappings, device discovery, the global
+ * objects table, main-process signal handlers, the no-bind-to-cpu
+ * coin flip, parent prctl name + OOM-immunity, the fd-provider open
+ * pass (with its panic path on failure), and the shared-bitmap self-
+ * check.  Order matters here -- every later step depends on globals
+ * set up by an earlier one -- so the helper is a flat sequence with
+ * no internal branches beyond the existing open_fds() failure path.
+ */
+static void init_pre_fork(void)
+{
+	const char taskname[13]="trinity-main";
+
+	init_syscalls();
+
+	do_uid0_check();
+
+	if (do_specific_domain == true)
+		find_specific_domain(specific_domain_optarg);
+
+	pids_init();
+
+	fd_hash_init();
+	output(1, "phase: init_object_lists\n");
+	init_object_lists(OBJ_GLOBAL, NULL);
+
+	output(1, "phase: setup_initial_mappings\n");
+	setup_initial_mappings();
+
+	parse_devices();
+
+	output(1, "phase: init_global_objects\n");
+	init_global_objects();
+
+	setup_main_signals();
+
+	no_bind_to_cpu = RAND_BOOL();
+
+	prctl(PR_SET_NAME, (unsigned long) &taskname);
+
+	/* Opt the parent out of OOM-killing.  Children carry adj=500 so they
+	 * are the kernel's preferred victims under memory pressure; if the
+	 * parent dies the whole fuzz session dies (unrecoverable: shared
+	 * state, watchdog, reaper, all vanish).  -1000 makes the kernel's
+	 * preference structural rather than statistical. */
+	oom_score_adj(-1000);
+
+	output(1, "phase: open_fds\n");
+	if (open_fds() == false) {
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING)
+			panic(EXIT_FD_INIT_FAILURE);
+
+		_exit(EXIT_FD_INIT_FAILURE);
+	}
+
+	shared_bitmap_self_check();
+}
+
 int main(int argc, char* argv[])
 {
 	int ret = EXIT_SUCCESS;
-	const char taskname[13]="trinity-main";
 
 	init_main_process(argv);
 
@@ -778,49 +838,7 @@ int main(int argc, char* argv[])
 		goto out;
 	}
 
-	init_syscalls();
-
-	do_uid0_check();
-
-	if (do_specific_domain == true)
-		find_specific_domain(specific_domain_optarg);
-
-	pids_init();
-
-	fd_hash_init();
-	output(1, "phase: init_object_lists\n");
-	init_object_lists(OBJ_GLOBAL, NULL);
-
-	output(1, "phase: setup_initial_mappings\n");
-	setup_initial_mappings();
-
-	parse_devices();
-
-	output(1, "phase: init_global_objects\n");
-	init_global_objects();
-
-	setup_main_signals();
-
-	no_bind_to_cpu = RAND_BOOL();
-
-	prctl(PR_SET_NAME, (unsigned long) &taskname);
-
-	/* Opt the parent out of OOM-killing.  Children carry adj=500 so they
-	 * are the kernel's preferred victims under memory pressure; if the
-	 * parent dies the whole fuzz session dies (unrecoverable: shared
-	 * state, watchdog, reaper, all vanish).  -1000 makes the kernel's
-	 * preference structural rather than statistical. */
-	oom_score_adj(-1000);
-
-	output(1, "phase: open_fds\n");
-	if (open_fds() == false) {
-		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING)
-			panic(EXIT_FD_INIT_FAILURE);
-
-		_exit(EXIT_FD_INIT_FAILURE);
-	}
-
-	shared_bitmap_self_check();
+	init_pre_fork();
 
 	/*
 	 * One-shot childop discovery passes that walk large directory trees.
