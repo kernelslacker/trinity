@@ -159,14 +159,69 @@ static unsigned int pick_fd_idx(const bool registered[NR_EPFDS][NR_TARGET_FDS],
 	return rnd_modulo_u32(n_target_fds);
 }
 
+/*
+ * Per-invocation state shared across the epoll_volatility phase
+ * helpers.  Only fields read or written across helper boundaries are
+ * lifted here -- per-iter scratch (op selector, event mask, evs[]
+ * buffer, the start/budget timespec) stays local to the drive phase.
+ *
+ * n_epfds / n_target_fds double as both the high-water mark for the
+ * setup phase and the bound the teardown phase walks when closing,
+ * so a setup that fails partway through still leaves the teardown
+ * helper able to close exactly the fds that were successfully
+ * created.  Counts start at 0 via the orchestrator's initializer.
+ */
+struct epoll_volatility_iter_ctx {
+	int		epfds[NR_EPFDS];
+	int		target_fds[NR_TARGET_FDS];
+	bool		registered[NR_EPFDS][NR_TARGET_FDS];
+	unsigned int	n_epfds;
+	unsigned int	n_target_fds;
+};
+
+/*
+ * Setup phase: create up to NR_EPFDS epoll instances and
+ * NR_TARGET_FDS eventfds, recording how many of each were
+ * successfully created in ctx->n_epfds / ctx->n_target_fds.
+ * Returns 0 if the drive phase has something to work with (at
+ * least one epfd AND at least one target fd) and -1 otherwise.
+ * On -1 the teardown helper is still safe to call: it closes
+ * exactly ctx->n_epfds + ctx->n_target_fds descriptors.
+ */
+static int epoll_volatility_iter_setup(struct epoll_volatility_iter_ctx *ctx)
+{
+	unsigned int i;
+
+	for (i = 0; i < NR_EPFDS; i++) {
+		int fd = epoll_create1(EPOLL_CLOEXEC);
+
+		if (fd < 0)
+			break;
+		ctx->epfds[ctx->n_epfds++] = fd;
+	}
+
+	for (i = 0; i < NR_TARGET_FDS; i++) {
+		int fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+
+		if (fd < 0)
+			break;
+		ctx->target_fds[ctx->n_target_fds++] = fd;
+	}
+
+	if (ctx->n_epfds == 0 || ctx->n_target_fds == 0)
+		return -1;
+
+	memset(ctx->registered, 0, sizeof(ctx->registered));
+	return 0;
+}
+
 bool epoll_volatility(struct childdata *child)
 {
-	int epfds[NR_EPFDS];
-	int target_fds[NR_TARGET_FDS];
-	bool registered[NR_EPFDS][NR_TARGET_FDS];
+	struct epoll_volatility_iter_ctx ctx = {
+		.n_epfds = 0,
+		.n_target_fds = 0,
+	};
 	struct timespec start;
-	unsigned int n_epfds = 0;
-	unsigned int n_target_fds = 0;
 	unsigned int iter;
 	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
 	unsigned int i, j;
@@ -175,32 +230,14 @@ bool epoll_volatility(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.epoll_volatility_runs, 1, __ATOMIC_RELAXED);
 
-	for (i = 0; i < NR_EPFDS; i++) {
-		int fd = epoll_create1(EPOLL_CLOEXEC);
-
-		if (fd < 0)
-			break;
-		epfds[n_epfds++] = fd;
-	}
-
-	for (i = 0; i < NR_TARGET_FDS; i++) {
-		int fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-
-		if (fd < 0)
-			break;
-		target_fds[n_target_fds++] = fd;
-	}
-
-	if (n_epfds == 0 || n_target_fds == 0)
+	if (epoll_volatility_iter_setup(&ctx) != 0)
 		goto out;
-
-	memset(registered, 0, sizeof(registered));
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
 	for (iter = 0; iter < iters; iter++) {
 		unsigned int op = rnd_modulo_u32(16);
-		unsigned int epfd_idx = rnd_modulo_u32(n_epfds);
+		unsigned int epfd_idx = rnd_modulo_u32(ctx.n_epfds);
 		struct epoll_event ev;
 		unsigned int fd_idx;
 		int rc;
@@ -208,17 +245,17 @@ bool epoll_volatility(struct childdata *child)
 		if (op < 5) {
 			/* EPOLL_CTL_ADD: prefer an unregistered slot so the
 			 * op succeeds and grows the per-fd epitem list. */
-			fd_idx = pick_fd_idx(registered, epfd_idx, n_target_fds, false);
+			fd_idx = pick_fd_idx(ctx.registered, epfd_idx, ctx.n_target_fds, false);
 			memset(&ev, 0, sizeof(ev));
 			ev.events  = (uint32_t)RAND_NEGATIVE_OR(random_events());
-			ev.data.fd = target_fds[fd_idx];
-			rc = epoll_ctl(epfds[epfd_idx], EPOLL_CTL_ADD,
-				       target_fds[fd_idx], &ev);
+			ev.data.fd = ctx.target_fds[fd_idx];
+			rc = epoll_ctl(ctx.epfds[epfd_idx], EPOLL_CTL_ADD,
+				       ctx.target_fds[fd_idx], &ev);
 			__atomic_add_fetch(&shm->stats.epoll_volatility_ctl_calls,
 					   1, __ATOMIC_RELAXED);
 			if (rc == 0) {
 				if (fd_idx < NR_TARGET_FDS)
-					registered[epfd_idx][fd_idx] = true;
+					ctx.registered[epfd_idx][fd_idx] = true;
 			} else {
 				__atomic_add_fetch(&shm->stats.epoll_volatility_failed,
 						   1, __ATOMIC_RELAXED);
@@ -228,12 +265,12 @@ bool epoll_volatility(struct childdata *child)
 			 * events_update path inside ep_modify is exercised
 			 * with a real mask transition.  Random new mask
 			 * each time. */
-			fd_idx = pick_fd_idx(registered, epfd_idx, n_target_fds, true);
+			fd_idx = pick_fd_idx(ctx.registered, epfd_idx, ctx.n_target_fds, true);
 			memset(&ev, 0, sizeof(ev));
 			ev.events  = random_events();
-			ev.data.fd = target_fds[fd_idx];
-			rc = epoll_ctl(epfds[epfd_idx], EPOLL_CTL_MOD,
-				       target_fds[fd_idx], &ev);
+			ev.data.fd = ctx.target_fds[fd_idx];
+			rc = epoll_ctl(ctx.epfds[epfd_idx], EPOLL_CTL_MOD,
+				       ctx.target_fds[fd_idx], &ev);
 			__atomic_add_fetch(&shm->stats.epoll_volatility_ctl_calls,
 					   1, __ATOMIC_RELAXED);
 			if (rc != 0)
@@ -243,14 +280,14 @@ bool epoll_volatility(struct childdata *child)
 			/* EPOLL_CTL_DEL: prefer a registered slot so the
 			 * per-fd epitem unlink + waitqueue removal path
 			 * inside ep_remove is exercised. */
-			fd_idx = pick_fd_idx(registered, epfd_idx, n_target_fds, true);
-			rc = epoll_ctl(epfds[epfd_idx], EPOLL_CTL_DEL,
-				       target_fds[fd_idx], NULL);
+			fd_idx = pick_fd_idx(ctx.registered, epfd_idx, ctx.n_target_fds, true);
+			rc = epoll_ctl(ctx.epfds[epfd_idx], EPOLL_CTL_DEL,
+				       ctx.target_fds[fd_idx], NULL);
 			__atomic_add_fetch(&shm->stats.epoll_volatility_ctl_calls,
 					   1, __ATOMIC_RELAXED);
 			if (rc == 0) {
 				if (fd_idx < NR_TARGET_FDS)
-					registered[epfd_idx][fd_idx] = false;
+					ctx.registered[epfd_idx][fd_idx] = false;
 			} else {
 				__atomic_add_fetch(&shm->stats.epoll_volatility_failed,
 						   1, __ATOMIC_RELAXED);
@@ -263,7 +300,7 @@ bool epoll_volatility(struct childdata *child)
 			 * walk and timeout path, not to harvest events. */
 			struct epoll_event evs[4];
 
-			(void) epoll_wait(epfds[epfd_idx], evs,
+			(void) epoll_wait(ctx.epfds[epfd_idx], evs,
 					  (int) ARRAY_SIZE(evs), 1);
 		}
 
@@ -272,10 +309,10 @@ bool epoll_volatility(struct childdata *child)
 	}
 
 out:
-	for (i = 0; i < n_epfds; i++)
-		close(epfds[i]);
-	for (j = 0; j < n_target_fds; j++)
-		close(target_fds[j]);
+	for (i = 0; i < ctx.n_epfds; i++)
+		close(ctx.epfds[i]);
+	for (j = 0; j < ctx.n_target_fds; j++)
+		close(ctx.target_fds[j]);
 
 	return true;
 }
