@@ -3650,23 +3650,8 @@ static void dump_stats_oracle_anomalies(void)
 			 shm->stats.sysfs_oracle_anomalies);
 }
 
-void dump_stats(void)
+static void dump_stats_fuzzer_subsystems(void)
 {
-	unsigned int i;
-
-	if (stats_json) {
-		dump_stats_json();
-		return;
-	}
-
-	dump_stats_runtime_header();
-
-	dump_stats_per_syscall_tables();
-
-	dump_stats_fd_tracking();
-
-	dump_stats_oracle_anomalies();
-
 	if (shm->stats.procfs_writes || shm->stats.sysfs_writes ||
 	    shm->stats.debugfs_writes) {
 		stat_row("vfs_writes", "procfs",  shm->stats.procfs_writes);
@@ -3817,6 +3802,26 @@ void dump_stats(void)
 		stat_row("zombie_slots", "reaped",    shm->stats.zombies_reaped);
 		stat_row("zombie_slots", "timed_out", shm->stats.zombies_timed_out);
 	}
+}
+
+void dump_stats(void)
+{
+	unsigned int i;
+
+	if (stats_json) {
+		dump_stats_json();
+		return;
+	}
+
+	dump_stats_runtime_header();
+
+	dump_stats_per_syscall_tables();
+
+	dump_stats_fd_tracking();
+
+	dump_stats_oracle_anomalies();
+
+	dump_stats_fuzzer_subsystems();
 
 	if (shm->stats.fd_event_ring_corrupted)
 		stat_row("corruption", "fd_event_ring_noncanon", shm->stats.fd_event_ring_corrupted);
