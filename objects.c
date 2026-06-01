@@ -605,23 +605,46 @@ void __for_each_obj_init(struct objhead *head,
  * same upper bound when defending against a corrupt num_entries.
  */
 /*
- * Marked noinline so __builtin_return_address(0) — used both in the
- * verbose-mode caller trace above and in the bad-fd / cap-overflow
- * outputerr paths below — names the actual add_object() callsite
- * rather than whatever frame the inliner chose to fold us into.
- * Caller attribution is the only reason those PCs are captured;
- * losing it to inlining defeats the diagnostic.
+ * Up-front input validation for add_object().  Three rejections,
+ * all cheaper than the slot-resolution / grow / publish work that
+ * follows -- if any of them fires we release the obj back to the
+ * deferred-free ring and tell the caller to bail without ever
+ * touching the per-type pool:
+ *
+ *   - the verbose-mode caller trace (gated on -vv, used when
+ *     attributing churn back to a specific .post handler),
+ *   - the fd-bound rejection check for fd-typed objects (any
+ *     value past NR_OPEN is upper-bit corruption that the loose
+ *     "(long)retval >= 0" gate in register_returned_fd / the
+ *     per-syscall .post handlers let through),
+ *   - the OBJ_GLOBAL post-fork guard (OBJ_GLOBAL is pre-fork-only
+ *     by construction; a child that reached add_object(OBJ_GLOBAL)
+ *     would mutate only its private copy with no benefit).
+ *
+ * obj->obj_type is stamped between the fd-bound gate and the
+ * post-fork guard so the tag is set exactly once on the success
+ * path; release_obj()'s memset zeroes it back to OBJ_NONE on the
+ * failure paths.
+ *
+ * The caller_pc parameter is the captured __builtin_return_address(0)
+ * from add_object()'s entry, threaded in so the verbose trace and
+ * the bad-fd outputerr / post_handler_corrupt_ptr_bump_site PC
+ * captures still name the real caller of add_object() rather than
+ * this helper's frame.
+ *
+ * Returns true if the obj was rejected (release_obj already
+ * called -- add_object() must return immediately); false if
+ * validation passed and the slot-resolution / grow / publish
+ * phases should run.
  */
-__attribute__((noinline))
-void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
+static bool add_object_validate(struct object *obj, enum obj_scope scope,
+				enum objecttype type, void *caller_pc)
 {
-	struct objhead *head;
-	unsigned int n, cap;
 	char pcbuf[128];
 
 	if (unlikely(verbosity > 1)) {
 		output(2, "ADD-OBJ slot=%p type=%d caller=%s\n", obj, type,
-			pc_to_string(__builtin_return_address(0), pcbuf, sizeof(pcbuf)));
+			pc_to_string(caller_pc, pcbuf, sizeof(pcbuf)));
 	}
 
 	/*
@@ -641,13 +664,13 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		if (fd < 0 || fd >= (1 << 20)) {
 			outputerr("add_object: rejecting out-of-bound fd=%d "
 				  "type=%u caller=%s\n", fd, type,
-				  pc_to_string(__builtin_return_address(0),
+				  pc_to_string(caller_pc,
 					       pcbuf, sizeof(pcbuf)));
 			post_handler_corrupt_ptr_bump_site(NULL,
-							   __builtin_return_address(0),
+							   caller_pc,
 							   "add_object:fd");
 			release_obj(obj, scope, type);
-			return;
+			return true;
 		}
 	}
 
@@ -673,8 +696,29 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	 */
 	if (scope == OBJ_GLOBAL && mypid() != mainpid) {
 		release_obj(obj, scope, type);
-		return;
+		return true;
 	}
+
+	return false;
+}
+
+/*
+ * Marked noinline so __builtin_return_address(0) captured at entry
+ * -- and threaded into add_object_validate() as caller_pc, where
+ * the verbose trace and the bad-fd outputerr / post-handler
+ * bump-site PC captures use it -- names the actual add_object()
+ * callsite rather than whatever frame the inliner chose to fold
+ * us into.  Caller attribution is the only reason that PC is
+ * captured; losing it to inlining defeats the diagnostic.
+ */
+__attribute__((noinline))
+void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
+{
+	struct objhead *head;
+	unsigned int n, cap;
+
+	if (add_object_validate(obj, scope, type, __builtin_return_address(0)))
+		return;
 
 	head = get_objhead(scope, type);
 	if (head == NULL) {
