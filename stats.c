@@ -3343,16 +3343,9 @@ static void dump_stats_runtime_header(void)
 	}
 }
 
-void dump_stats(void)
+static void dump_stats_per_syscall_tables(void)
 {
 	unsigned int i;
-
-	if (stats_json) {
-		dump_stats_json();
-		return;
-	}
-
-	dump_stats_runtime_header();
 
 	if (biarch == true) {
 		output(0, "32bit:\n");
@@ -3370,6 +3363,20 @@ void dump_stats(void)
 	}
 
 	stats_emit_header();
+}
+
+void dump_stats(void)
+{
+	unsigned int i;
+
+	if (stats_json) {
+		dump_stats_json();
+		return;
+	}
+
+	dump_stats_runtime_header();
+
+	dump_stats_per_syscall_tables();
 
 	if (parent_stats.fault_injected) {
 		stat_row("fault_injection", "armed_fail_nth",  parent_stats.fault_injected);
