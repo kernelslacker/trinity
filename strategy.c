@@ -1905,30 +1905,24 @@ static void dump_strategy_stats_plateau_forced_cohort(void)
 		       plateau_forced);
 }
 
-void dump_strategy_stats(void)
+/* Plateau intervention mode rotation distribution.  Suppressed when
+ * no plateau-forced window has run yet (plateau_forced == 0); when
+ * it has, the per-mode window counts let the operator divide each
+ * mode's contribution to rescue yield by the windows it actually
+ * ran without reconstructing the rotation history from bandit_
+ * pulls_by_reason.  The current mode line names what the next pick
+ * during a live intervention would run; PIM_UNIFORM_RANDOM is the
+ * resting value outside an intervention so a "current mode:
+ * UNIFORM_RANDOM" reading at end-of-run is correct (the
+ * orchestrator cleared the mode on the last non-intervention
+ * rotation), not the most recent intervention mode. */
+static void dump_strategy_stats_intervention_modes(void)
 {
-	unsigned long total_pulls = 0;
-	unsigned long explorer_edges, bandit_edges;
 	unsigned long plateau_forced;
-	int i;
-
-	dump_strategy_stats_header();
-	dump_strategy_stats_plateau_forced_cohort();
 
 	plateau_forced = __atomic_load_n(&shm->stats.plateau_forced_windows,
 					 __ATOMIC_RELAXED);
 
-	/* Plateau intervention mode rotation distribution.  Suppressed when
-	 * no plateau-forced window has run yet (plateau_forced == 0); when
-	 * it has, the per-mode window counts let the operator divide each
-	 * mode's contribution to rescue yield by the windows it actually
-	 * ran without reconstructing the rotation history from bandit_
-	 * pulls_by_reason.  The current mode line names what the next pick
-	 * during a live intervention would run; PIM_UNIFORM_RANDOM is the
-	 * resting value outside an intervention so a "current mode:
-	 * UNIFORM_RANDOM" reading at end-of-run is correct (the
-	 * orchestrator cleared the mode on the last non-intervention
-	 * rotation), not the most recent intervention mode. */
 	if (plateau_forced > 0) {
 		unsigned long mode_windows[NR_PIM_MODES];
 		int pim;
@@ -1970,6 +1964,17 @@ void dump_strategy_stats(void)
 		}
 
 	}
+}
+
+void dump_strategy_stats(void)
+{
+	unsigned long total_pulls = 0;
+	unsigned long explorer_edges, bandit_edges;
+	int i;
+
+	dump_strategy_stats_header();
+	dump_strategy_stats_plateau_forced_cohort();
+	dump_strategy_stats_intervention_modes();
 
 	/* Random-rescue classifier distribution.  Per-class counts only
 	 * accumulate during SR_PLATEAU_FORCE intervention windows, so a
