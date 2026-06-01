@@ -822,6 +822,74 @@ static int bridge_fdb_stp_iter_bridge_create(struct bridge_fdb_stp_iter_ctx *ctx
 	return 0;
 }
 
+/*
+ * Phase 3: create both veth pairs, resolve their port ifindices,
+ * enslave each end to the bridge, bring all five interfaces (bridge
+ * + four veth ends) UP, and arm BR_LEARNING on every surviving port.
+ * ns_unsupported_veth latches on pair 0's structural-errno failure
+ * (CONFIG_VETH absent) so pair 1 short-circuits in the same call.
+ * The setlink_master / setlink_up / brport_learning calls are
+ * best-effort by design (they were (void)-casts in the original) — a
+ * missing slave or DOWN port still leaves the receive-path learning
+ * window partially open; the failure shape just shrinks the surface
+ * area rather than aborting the iteration.  No return value: later
+ * phases gate independently on ctx->port_idx[i] > 0.
+ */
+static void bridge_fdb_stp_iter_veth_attach(struct bridge_fdb_stp_iter_ctx *ctx)
+{
+	const char *port_names[4];
+	unsigned int i;
+	int rc;
+
+	if (!ns_unsupported_veth) {
+		rc = build_veth_create(&ctx->ctx, ctx->veth0a, ctx->veth0b);
+		if (rc != 0) {
+			if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
+			    rc == -ENOTSUP || rc == -ENOENT)
+				ns_unsupported_veth = true;
+		} else {
+			ctx->veth0_added = true;
+			__atomic_add_fetch(&shm->stats.bridge_fdb_stp_veth_create_ok,
+					   1, __ATOMIC_RELAXED);
+		}
+	}
+
+	if (!ns_unsupported_veth) {
+		rc = build_veth_create(&ctx->ctx, ctx->veth1a, ctx->veth1b);
+		if (rc == 0) {
+			ctx->veth1_added = true;
+			__atomic_add_fetch(&shm->stats.bridge_fdb_stp_veth_create_ok,
+					   1, __ATOMIC_RELAXED);
+		}
+	}
+
+	port_names[0] = ctx->veth0_added ? ctx->veth0a : NULL;
+	port_names[1] = ctx->veth0_added ? ctx->veth0b : NULL;
+	port_names[2] = ctx->veth1_added ? ctx->veth1a : NULL;
+	port_names[3] = ctx->veth1_added ? ctx->veth1b : NULL;
+
+	for (i = 0; i < 4; i++) {
+		if (!port_names[i])
+			continue;
+		ctx->port_idx[i] = (int)if_nametoindex(port_names[i]);
+		if (ctx->port_idx[i] > 0)
+			(void)build_setlink_master(&ctx->ctx, ctx->port_idx[i],
+						   ctx->br_idx);
+	}
+
+	(void)build_setlink_up(&ctx->ctx, ctx->br_idx);
+	for (i = 0; i < 4; i++) {
+		if (ctx->port_idx[i] > 0)
+			(void)build_setlink_up(&ctx->ctx, ctx->port_idx[i]);
+	}
+
+	for (i = 0; i < 4; i++) {
+		if (ctx->port_idx[i] > 0)
+			(void)build_setlink_brport_learning(&ctx->ctx,
+							    ctx->port_idx[i]);
+	}
+}
+
 bool bridge_fdb_stp(struct childdata *child)
 {
 	struct bridge_fdb_stp_iter_ctx ictx = {
@@ -832,13 +900,11 @@ bool bridge_fdb_stp(struct childdata *child)
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 	};
-	const char *port_names[4];
 	unsigned char last_src_mac[6] = { 0 };
 	bool have_last_mac = false;
 	struct timespec t0;
 	unsigned int iters;
 	unsigned int i;
-	int rc;
 
 	(void)child;
 
@@ -880,55 +946,7 @@ bool bridge_fdb_stp(struct childdata *child)
 	if (bridge_fdb_stp_iter_bridge_create(&ictx) != 0)
 		goto out;
 
-	/* veth pair 0 */
-	if (!ns_unsupported_veth) {
-		rc = build_veth_create(&ictx.ctx, ictx.veth0a, ictx.veth0b);
-		if (rc != 0) {
-			if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
-			    rc == -ENOTSUP || rc == -ENOENT)
-				ns_unsupported_veth = true;
-		} else {
-			ictx.veth0_added = true;
-			__atomic_add_fetch(&shm->stats.bridge_fdb_stp_veth_create_ok,
-					   1, __ATOMIC_RELAXED);
-		}
-	}
-
-	/* veth pair 1 */
-	if (!ns_unsupported_veth) {
-		rc = build_veth_create(&ictx.ctx, ictx.veth1a, ictx.veth1b);
-		if (rc == 0) {
-			ictx.veth1_added = true;
-			__atomic_add_fetch(&shm->stats.bridge_fdb_stp_veth_create_ok,
-					   1, __ATOMIC_RELAXED);
-		}
-	}
-
-	port_names[0] = ictx.veth0_added ? ictx.veth0a : NULL;
-	port_names[1] = ictx.veth0_added ? ictx.veth0b : NULL;
-	port_names[2] = ictx.veth1_added ? ictx.veth1a : NULL;
-	port_names[3] = ictx.veth1_added ? ictx.veth1b : NULL;
-
-	for (i = 0; i < 4; i++) {
-		if (!port_names[i])
-			continue;
-		ictx.port_idx[i] = (int)if_nametoindex(port_names[i]);
-		if (ictx.port_idx[i] > 0)
-			(void)build_setlink_master(&ictx.ctx, ictx.port_idx[i],
-						   ictx.br_idx);
-	}
-
-	(void)build_setlink_up(&ictx.ctx, ictx.br_idx);
-	for (i = 0; i < 4; i++) {
-		if (ictx.port_idx[i] > 0)
-			(void)build_setlink_up(&ictx.ctx, ictx.port_idx[i]);
-	}
-
-	for (i = 0; i < 4; i++) {
-		if (ictx.port_idx[i] > 0)
-			(void)build_setlink_brport_learning(&ictx.ctx,
-							    ictx.port_idx[i]);
-	}
+	bridge_fdb_stp_iter_veth_attach(&ictx);
 
 	/* AF_PACKET sender bound to one of the ports — drives the
 	 * receive-path learning at the bridge ingress.  Pick port 0
