@@ -703,27 +703,52 @@ static bool add_object_validate(struct object *obj, enum obj_scope scope,
 }
 
 /*
- * Marked noinline so __builtin_return_address(0) captured at entry
- * -- and threaded into add_object_validate() as caller_pc, where
- * the verbose trace and the bad-fd outputerr / post-handler
- * bump-site PC captures use it -- names the actual add_object()
- * callsite rather than whatever frame the inliner chose to fold
- * us into.  Caller attribution is the only reason that PC is
- * captured; losing it to inlining defeats the diagnostic.
+ * Resolve the per-pool objhead for this (scope, type) and grow
+ * head->array if the next slot is past current capacity.
+ *
+ * On the OBJ_LOCAL path, the alloc-track LRU slot for the live
+ * head->array container is refreshed before the grow check so the
+ * upcoming deferred_free_enqueue(oldarray) doesn't reject on an
+ * alloc_track miss after thousands of intervening zmalloc_tracked
+ * calls in cap>=1024 pools.  OBJ_GLOBAL arrays use plain zmalloc
+ * and were never tracked, so the refresh is gated on scope.
+ *
+ * Same allocate-copy-then-old-array disposal shape for both
+ * scopes, distinct only in the allocator and the old-array path:
+ *
+ *   - OBJ_GLOBAL grows on the parent's private heap (zmalloc +
+ *     plain free), safe because there is no concurrent reader to
+ *     coordinate with: children see a snapshot pinned at fork
+ *     time, a post-fork grow in the parent is invisible to them,
+ *     and a pre-fork grow has no readers yet.
+ *
+ *   - OBJ_LOCAL grows on the owning child's private heap
+ *     (zmalloc_tracked + deferred_free_enqueue), which gives the
+ *     old chunk a 5-50 syscall (effective 80-800 with
+ *     DEFERRED_TICK_BATCH) TTL -- far longer than any in-flight
+ *     reader's window through cached head->array reads in the
+ *     arg-gen path.  Same hazard shape as the obj-struct fix
+ *     (3a8d344f0f73, 546f576fae24).
+ *
+ * Both branches cap-overflow-guard at UINT_MAX / 2.  On either the
+ * overflow or the malloc-failure path: close any leaked fd,
+ * release_obj() the inbound obj, and tell the caller to bail.
+ *
+ * Returns true if either the head lookup or the grow failed
+ * (release_obj already called -- add_object() must return
+ * immediately); false if either no grow was needed or the grow
+ * succeeded and the publish phase should run.
  */
-__attribute__((noinline))
-void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
+static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
+				     enum objecttype type)
 {
 	struct objhead *head;
 	unsigned int n, cap;
 
-	if (add_object_validate(obj, scope, type, __builtin_return_address(0)))
-		return;
-
 	head = get_objhead(scope, type);
 	if (head == NULL) {
 		release_obj(obj, scope, type);
-		return;
+		return true;
 	}
 
 	n = head->num_entries;
@@ -764,7 +789,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 						close(fd);
 				}
 				release_obj(obj, scope, type);
-				return;
+				return true;
 			}
 			newarray = zmalloc(newcap * sizeof(struct object *));
 			if (newarray == NULL) {
@@ -776,7 +801,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 						close(fd);
 				}
 				release_obj(obj, scope, type);
-				return;
+				return true;
 			}
 			if (head->array != NULL && cap > 0)
 				memcpy(newarray, head->array,
@@ -810,7 +835,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 					close(fd);
 			}
 			release_obj(obj, scope, type);
-			return;
+			return true;
 		}
 		newarray = zmalloc_tracked(newcap * sizeof(struct object *));
 		if (newarray == NULL) {
@@ -822,7 +847,7 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 					close(fd);
 			}
 			release_obj(obj, scope, type);
-			return;
+			return true;
 		}
 		oldarray = head->array;
 		if (oldarray != NULL && cap > 0)
@@ -833,6 +858,33 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 		if (oldarray != NULL)
 			deferred_free_enqueue(oldarray);
 	}
+
+	return false;
+}
+
+/*
+ * Marked noinline so __builtin_return_address(0) captured at entry
+ * -- and threaded into add_object_validate() as caller_pc, where
+ * the verbose trace and the bad-fd outputerr / post-handler
+ * bump-site PC captures use it -- names the actual add_object()
+ * callsite rather than whatever frame the inliner chose to fold
+ * us into.  Caller attribution is the only reason that PC is
+ * captured; losing it to inlining defeats the diagnostic.
+ */
+__attribute__((noinline))
+void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
+{
+	struct objhead *head;
+	unsigned int n;
+
+	if (add_object_validate(obj, scope, type, __builtin_return_address(0)))
+		return;
+
+	if (add_object_grow_capacity(obj, scope, type))
+		return;
+
+	head = get_objhead(scope, type);
+	n = head->num_entries;
 
 	head->array[n] = obj;
 	obj->array_idx = n;
