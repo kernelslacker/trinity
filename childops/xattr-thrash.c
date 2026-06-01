@@ -203,6 +203,30 @@ static void xattr_thrash_iter_op_get(struct xattr_slot *s, const char *name,
 }
 
 /*
+ * Phase: REMOVE dispatch.  use_path=false routes to fremovexattr;
+ * use_path=true routes to removexattr and adds the vfs_path lookup leg.
+ * -ENODATA on a name that isn't currently set is part of the test
+ * surface and counted as a benign fail.
+ */
+static void xattr_thrash_iter_op_remove(struct xattr_slot *s, const char *name,
+					bool use_path)
+{
+	int rc;
+
+	if (use_path)
+		rc = removexattr(s->path, name);
+	else
+		rc = fremovexattr(s->fd, name);
+
+	if (rc == 0)
+		__atomic_add_fetch(&shm->stats.xattr_thrash_remove,
+				   1, __ATOMIC_RELAXED);
+	else
+		__atomic_add_fetch(&shm->stats.xattr_thrash_failed,
+				   1, __ATOMIC_RELAXED);
+}
+
+/*
  * Phase: close every fd opened by setup_fds.  All xattrs left behind by
  * the iteration loop persist on the testfile inodes by design, so the
  * next xattr_thrash invocation starts against an inode that already has
@@ -265,22 +289,10 @@ bool xattr_thrash(struct childdata *child)
 			xattr_thrash_iter_op_get(s, name, true);
 			break;
 		case 8:
-			rc = fremovexattr(s->fd, name);
-			if (rc == 0)
-				__atomic_add_fetch(&shm->stats.xattr_thrash_remove,
-						   1, __ATOMIC_RELAXED);
-			else
-				__atomic_add_fetch(&shm->stats.xattr_thrash_failed,
-						   1, __ATOMIC_RELAXED);
+			xattr_thrash_iter_op_remove(s, name, false);
 			break;
 		case 9:
-			rc = removexattr(s->path, name);
-			if (rc == 0)
-				__atomic_add_fetch(&shm->stats.xattr_thrash_remove,
-						   1, __ATOMIC_RELAXED);
-			else
-				__atomic_add_fetch(&shm->stats.xattr_thrash_failed,
-						   1, __ATOMIC_RELAXED);
+			xattr_thrash_iter_op_remove(s, name, true);
 			break;
 		case 10: {
 			/* Deliberately small list buffer so we sometimes
