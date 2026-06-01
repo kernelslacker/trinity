@@ -1139,36 +1139,39 @@ static bool cmp_hints_load_file_payload(const char *path, int fd,
 	return true;
 }
 
-bool cmp_hints_load_file(const char *path)
+/*
+ * Phase 3 of cmp_hints_load_file(): copy the validated payload
+ * into the in-memory shm pools.  Past the header / fingerprint /
+ * CRC gates the payload is considered authoritative against the
+ * running kernel; this loop still skips any individual slot that
+ * fails the per-entry bounds check so a single bit-rotted record
+ * doesn't sink the whole warm-start.  The payload is a flat
+ * array of 2 * MAX_NR_SYSCALL slots laid out as [i * 2 + a]
+ * matching the memory layout of pools[i][a]; the inner do32
+ * dimension is folded into a flat walk here for symmetry with
+ * the serialise path.
+ *
+ * Counters are returned via out-params: loaded_entries is the
+ * sum of successfully copied slots, populated_pools is the
+ * number of pools that received at least one entry, and rejected
+ * accumulates both whole-pool drops (src_count past the cap) and
+ * per-slot validation failures.
+ */
+static void cmp_hints_load_file_restore_pools(const struct cmp_hints_pool_ondisk *payload,
+					      unsigned long *loaded_entries_out,
+					      unsigned int *populated_pools_out,
+					      unsigned long *rejected_out)
 {
-	struct cmp_hints_file_header hdr;
-	struct cmp_hints_pool_ondisk *payload = NULL;
-	unsigned long rejected = 0;
 	unsigned long loaded_entries = 0;
+	unsigned long rejected = 0;
 	unsigned int populated_pools = 0;
 	unsigned int i, j;
-	int fd;
 
-	if (!cmp_hints_load_file_header(path, &hdr, &fd))
-		return false;
-
-	if (!cmp_hints_load_file_payload(path, fd, &hdr, &payload))
-		return false;
-
-	/* Past the header / fingerprint / CRC gates the payload is
-	 * considered authoritative against the running kernel; copy into
-	 * the shm pools, skipping any individual slot that fails the
-	 * per-entry bounds check so a single bit-rotted record doesn't
-	 * sink the whole warm-start.  The payload is a flat array of
-	 * 2 * MAX_NR_SYSCALL slots laid out as [i * 2 + a] matching the
-	 * memory layout of pools[i][a]; the inner do32 dimension is
-	 * folded into a flat walk here for symmetry with the serialise
-	 * path. */
 	for (i = 0; i < MAX_NR_SYSCALL * 2; i++) {
 		unsigned int nr = i / 2;
 		unsigned int a = i & 1;
 		struct cmp_hint_pool *pool = &cmp_hints_shm->pools[nr][a];
-		struct cmp_hints_pool_ondisk *src = &payload[i];
+		const struct cmp_hints_pool_ondisk *src = &payload[i];
 		unsigned int src_count = src->count;
 		unsigned int dst_count = 0;
 		uint64_t max_stamp = 0;
@@ -1210,6 +1213,29 @@ bool cmp_hints_load_file(const char *path)
 			populated_pools++;
 		}
 	}
+
+	*loaded_entries_out = loaded_entries;
+	*populated_pools_out = populated_pools;
+	*rejected_out = rejected;
+}
+
+bool cmp_hints_load_file(const char *path)
+{
+	struct cmp_hints_file_header hdr;
+	struct cmp_hints_pool_ondisk *payload = NULL;
+	unsigned long rejected = 0;
+	unsigned long loaded_entries = 0;
+	unsigned int populated_pools = 0;
+	int fd;
+
+	if (!cmp_hints_load_file_header(path, &hdr, &fd))
+		return false;
+
+	if (!cmp_hints_load_file_payload(path, fd, &hdr, &payload))
+		return false;
+
+	cmp_hints_load_file_restore_pools(payload, &loaded_entries,
+					  &populated_pools, &rejected);
 
 	free(payload);
 	cmp_hints_load_rejected_entries = rejected;
