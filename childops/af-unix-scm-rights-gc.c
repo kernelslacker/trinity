@@ -723,6 +723,50 @@ static int af_unix_scm_rights_gc_setup(struct af_unix_scm_rights_gc_iter_ctx *it
 }
 
 /*
+ * Phase 2: build the closed SCM_RIGHTS cycle.  Optionally (~1-in-8)
+ * swap sv1[0] for an io_uring fd in the first send so the cycle threads
+ * an io_uring rsrc node -- the multi-hop graph extension shape that
+ * surfaced the CVE-2025-21712 family.  io_uring open failure silently
+ * falls back to the plain three-AF_UNIX-fd cycle.
+ *
+ *   sv2[1] receives sv1[0] (or the io_uring fd in the variant)
+ *   sv3[1] receives sv2[0]
+ *   sv1[1] receives sv3[0]
+ *
+ * Each send transfers a kernel ref on the embedded fd into the receiving
+ * sock's queue.  Order matters only insofar as each send transfers a ref;
+ * the cycle closure happens at the third send.  Sets it->cycle_ok and
+ * bumps cycle_built_ok (+iouring_variant_ok) on full success.
+ */
+static void af_unix_scm_rights_gc_build_cycle(struct af_unix_scm_rights_gc_iter_ctx *it)
+{
+	int first_fd;
+	ssize_t s1, s2, s3;
+
+	it->use_iouring = HAVE_IOURING_VARIANT && ONE_IN(8);
+	if (it->use_iouring) {
+		it->iouring_fd = iouring_open();
+		if (it->iouring_fd < 0)
+			it->use_iouring = false;
+	}
+
+	first_fd = it->use_iouring ? it->iouring_fd : it->sv1[0];
+
+	s1 = send_scm_fd(it->sv2[1], first_fd);
+	s2 = send_scm_fd(it->sv3[1], it->sv2[0]);
+	s3 = send_scm_fd(it->sv1[1], it->sv3[0]);
+	if (s1 >= 0 && s2 >= 0 && s3 >= 0) {
+		it->cycle_ok = true;
+		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_cycle_built_ok,
+				   1, __ATOMIC_RELAXED);
+		if (it->use_iouring) {
+			__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_iouring_variant_ok,
+					   1, __ATOMIC_RELAXED);
+		}
+	}
+}
+
+/*
  * One outer iteration: build a 3-pair SCM_RIGHTS cycle, drop userspace
  * refs to make it gc-only-reachable, run a small race burst.  All
  * counters are best-effort -- iter_one returns void; the per-step bumps
@@ -745,43 +789,7 @@ static void iter_one(void)
 	if (af_unix_scm_rights_gc_setup(&it) != 0)
 		goto out;
 
-	/* Optional io_uring variant: ~1-in-8 iterations swap sv1[0] for an
-	 * io_uring fd in the cycle.  Drives the multi-hop graph extension
-	 * shape that surfaced the CVE-2025-21712 family.  Falls through
-	 * silently if io_uring is unavailable. */
-	it.use_iouring = HAVE_IOURING_VARIANT && ONE_IN(8);
-	if (it.use_iouring) {
-		it.iouring_fd = iouring_open();
-		if (it.iouring_fd < 0)
-			it.use_iouring = false;
-	}
-
-	/* 2) Build the cycle: each send transfers a kernel ref on the
-	 *    embedded fd into the receiving sock's queue.
-	 *
-	 *    sv2[1] receives sv1[0] (or the io_uring fd in the variant)
-	 *    sv3[1] receives sv2[0]
-	 *    sv1[1] receives sv3[0]
-	 *
-	 *    Order matters only insofar as each send transfers a ref --
-	 *    the cycle closure happens at the third send. */
-	{
-		int first_fd = it.use_iouring ? it.iouring_fd : it.sv1[0];
-		ssize_t s1, s2, s3;
-
-		s1 = send_scm_fd(it.sv2[1], first_fd);
-		s2 = send_scm_fd(it.sv3[1], it.sv2[0]);
-		s3 = send_scm_fd(it.sv1[1], it.sv3[0]);
-		if (s1 >= 0 && s2 >= 0 && s3 >= 0) {
-			it.cycle_ok = true;
-			__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_cycle_built_ok,
-					   1, __ATOMIC_RELAXED);
-			if (it.use_iouring) {
-				__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_iouring_variant_ok,
-						   1, __ATOMIC_RELAXED);
-			}
-		}
-	}
+	af_unix_scm_rights_gc_build_cycle(&it);
 
 	/* 3) Drop userspace refs to the cycle members.  After this the
 	 *    cycle is reachable only via the queued SCM_RIGHTS messages
