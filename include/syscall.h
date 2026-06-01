@@ -429,6 +429,10 @@ struct syscallentry {
 #define RET_GID_T		7
 #define RET_UID_T		8
 #define RET_ADDRESS		9
+/* Highest defined RET_* tag.  Used to size the ret_bounds[] table in
+ * syscall.c that drives the table-driven generic return-bound validator;
+ * keep in sync when adding a new RET_* above. */
+#define RET_LAST		RET_ADDRESS
 
 #define GROUP_NONE	0
 #define GROUP_VM	1

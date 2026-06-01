@@ -3,6 +3,7 @@
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <stdint.h>
 #include <string.h>
 #include <signal.h>
@@ -603,6 +604,60 @@ static void enforce_count_bound(const struct syscallentry *entry,
 }
 
 /*
+ * Table-driven generic return-bound validator.  Complementary to the
+ * bespoke rettype gates above (rzs_blanket_reject, reject_corrupt_retfd,
+ * enforce_count_bound), this catches the residual RET_* classes whose
+ * value range is well-defined by kernel ABI but had no dispatcher-level
+ * check.  Entries left .active = false (RET_FD, RET_ADDRESS, the
+ * unlisted indices) are skipped: RET_FD is already coerced to -1UL by
+ * reject_corrupt_retfd before this runs, so an entry here would be dead;
+ * RET_ADDRESS spans the full address space and has no useful generic
+ * bound.  RET_ZERO_SUCCESS IS included even though rzs_blanket_reject
+ * already bumps a stat counter for it -- the counter is silent, and
+ * adding the entry surfaces the per-syscall offender at -v.
+ *
+ * Informational only -- does not coerce rec->retval.  Skips the universal
+ * -1UL error path and any rettype outside [RET_ZERO_SUCCESS, RET_LAST].
+ * Logged via output(1, ...) so it stays quiet at the default verbosity
+ * and only fires for an operator running with -v.
+ */
+struct ret_bound {
+	long min, max;
+	bool active;
+};
+
+static const struct ret_bound ret_bounds[RET_LAST + 1] = {
+	[RET_ZERO_SUCCESS] = { 0,         0,         true },
+	[RET_KEY_SERIAL_T] = { 1,         INT32_MAX, true },
+	[RET_PID_T]        = { 0,         4194304,   true },  /* PID_MAX_LIMIT */
+	[RET_PATH]         = { 0,         PATH_MAX,  true },
+	[RET_NUM_BYTES]    = { 0,         LONG_MAX,  true },  /* ssize_t domain */
+	[RET_GID_T]        = { 0,         INT32_MAX, true },
+	[RET_UID_T]        = { 0,         INT32_MAX, true },
+};
+
+static void validate_ret_bound(const struct syscallentry *entry,
+			       struct syscallrecord *rec)
+{
+	const struct ret_bound *b;
+	int rt = rec->rettype;
+	long s;
+
+	if (rt <= RET_NONE || rt > RET_LAST)
+		return;
+	b = &ret_bounds[rt];
+	if (!b->active)
+		return;
+	if (rec->retval == -1UL)
+		return;
+
+	s = (long) rec->retval;
+	if (s < b->min || s > b->max)
+		output(1, "ret-bound: %s rettype=%d retval=%ld outside [%ld, %ld]\n",
+		       entry->name, rt, s, b->min, b->max);
+}
+
+/*
  * Generic post-hook: register the fd returned by an annotated syscall
  * into its typed OBJ_LOCAL pool.  Runs after entry->post so a
  * syscall-specific handler that already registered the fd (and possibly
@@ -955,6 +1010,7 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 	 * inserted into the OBJ_LOCAL pool. */
 	if (rec->state == AFTER) {
 		enforce_count_bound(entry, rec);
+		validate_ret_bound(entry, rec);
 
 		/* Post-derived secondary-object registrar runs ahead of
 		 * entry->post: per-syscall .post handlers (pipe,
