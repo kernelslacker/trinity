@@ -882,6 +882,31 @@ static void bridge_vlan_iter_race(struct bridge_vlan_iter_ctx *it,
 }
 
 /*
+ * Shutdown + close the raw AF_PACKET socket, then dellink the bridge
+ * first so br_dev_delete cascades through every enslaved port -- that
+ * cascade is the racing teardown half of the iteration: any rx still
+ * draining is freed underneath the bridge's port-walk.  Surviving
+ * unenslaved veth ends get a follow-up dellink so the netns doesn't
+ * accumulate orphans across iterations.  Only acts on handles the
+ * setup helper actually established (added flags + ifindex > 0).
+ */
+static void bridge_vlan_iter_teardown(struct bridge_vlan_iter_ctx *it)
+{
+	if (it->raw >= 0) {
+		(void)shutdown(it->raw, SHUT_RDWR);
+		close(it->raw);
+		it->raw = -1;
+	}
+
+	if (it->bridge_added && it->br_idx > 0)
+		(void)build_dellink(&it->nl, it->br_idx);
+	if (it->veth0_added && it->v0a_idx > 0)
+		(void)build_dellink(&it->nl, it->v0a_idx);
+	if (it->veth1_added && it->v1a_idx > 0)
+		(void)build_dellink(&it->nl, it->v1a_idx);
+}
+
+/*
  * One full create / load / race / teardown cycle on a freshly-named
  * bridge + 2 veth pairs.  Wall-clock cap inherited from the caller.
  */
@@ -907,21 +932,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	bridge_vlan_iter_race(&it, iter_idx);
 
 teardown:
-	if (it.raw >= 0) {
-		(void)shutdown(it.raw, SHUT_RDWR);
-		close(it.raw);
-		it.raw = -1;
-	}
-
-	/* DELLINK the bridge first; cascades to enslaved veths via
-	 * br_dev_delete and races any in-flight rx still draining. */
-	if (it.bridge_added && it.br_idx > 0)
-		(void)build_dellink(&it.nl, it.br_idx);
-	if (it.veth0_added && it.v0a_idx > 0)
-		(void)build_dellink(&it.nl, it.v0a_idx);
-	if (it.veth1_added && it.v1a_idx > 0)
-		(void)build_dellink(&it.nl, it.v1a_idx);
-
+	bridge_vlan_iter_teardown(&it);
 out:
 	if (it.raw >= 0)
 		close(it.raw);
