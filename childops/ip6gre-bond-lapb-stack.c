@@ -445,6 +445,27 @@ static void ip6gre_lapb_iter_flag_cycles(struct ip6gre_lapb_iter_ctx *ctx)
 	}
 }
 
+/*
+ * Phase: close whichever resources we managed to open.  Runs on every
+ * exit path -- both the success path after flag_cycles returns and any
+ * early-bail goto out from an earlier phase.  Order matches the
+ * original out: cleanup: RTM_DELLINK the gre tunnel first (so its
+ * enslave-to-bond is torn down before the bond itself disappears),
+ * then the bond, then close the rtnetlink fd.  All fields default to
+ * -1 / 0 via the orchestrator's designated initialiser so the guards
+ * skip work that was never set up.
+ */
+static void ip6gre_lapb_iter_teardown(struct ip6gre_lapb_iter_ctx *ctx)
+{
+	if (ctx->ctx.fd >= 0) {
+		if (ctx->gre_idx > 0)
+			(void)ibls_dellink(&ctx->ctx, ctx->gre_idx);
+		if (ctx->bond_idx > 0)
+			(void)ibls_dellink(&ctx->ctx, ctx->bond_idx);
+		nl_close(&ctx->ctx);
+	}
+}
+
 bool ip6gre_bond_lapb_stack(struct childdata *child)
 {
 	struct ip6gre_lapb_iter_ctx ictx = {
@@ -473,12 +494,6 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 	ip6gre_lapb_iter_flag_cycles(&ictx);
 
 out:
-	if (ictx.ctx.fd >= 0) {
-		if (ictx.gre_idx > 0)
-			(void)ibls_dellink(&ictx.ctx, ictx.gre_idx);
-		if (ictx.bond_idx > 0)
-			(void)ibls_dellink(&ictx.ctx, ictx.bond_idx);
-		nl_close(&ictx.ctx);
-	}
+	ip6gre_lapb_iter_teardown(&ictx);
 	return true;
 }
