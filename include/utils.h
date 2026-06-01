@@ -66,6 +66,15 @@ bool shared_size_mul(size_t a, size_t b, size_t *out);
 void * alloc_shared_str(size_t size) __must_check;
 char * alloc_shared_strdup(const char *src) __must_check;
 void free_shared_str(void *p, size_t size);
+/*
+ * Self-check the address-keyed shared_region_bitmap AND the size-keyed
+ * tracked_size_bm: a refactor that wires alloc_shared() / track_shared_
+ * region() to update one bitmap but forgets the parallel call to the
+ * other would silently flip the affected accelerator's safety
+ * invariant.  Single positive assert per process: both bitmaps only
+ * grow with new registrations until an untrack drops a slot, so a
+ * positive at init proves the wiring is in place.
+ */
 void shared_bitmap_self_check(void);
 bool range_overlaps_shared(unsigned long addr, unsigned long len);
 /*

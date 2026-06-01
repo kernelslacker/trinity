@@ -232,6 +232,99 @@ static void shared_bitmap_unmark(unsigned long addr, unsigned long size)
 }
 
 /*
+ * Size-bucket bitmap accelerator for range_overlaps_shared(): companion
+ * to the address-keyed shared_region_bitmap above.  Bit i is set
+ * whenever at least one tracked shared region currently falls into
+ * size bucket i, where bucket i = floor(log2(len)) and covers regions
+ * of len in [2^i, 2^(i+1)).  An empty bitmap (no tracked region of any
+ * size) is the useful negative the address bitmap has to discover one
+ * word at a time: one load here short-circuits the SHARED_BITMAP_NWORDS
+ * word-scan over a multi-MiB query, plus the downstream byte-precise
+ * walk that confirms a bitmap hit.
+ *
+ * Distinct concern from shared_region_bitmap above.  That bitmap
+ * encodes WHERE tracked regions live (one bit per 2 MiB chunk of user
+ * VA); this one encodes only WHETHER any tracked region exists in each
+ * size class.  The two are wired in pairs: every register
+ * (alloc_shared, track_shared_region, register_shared_overflow) calls
+ * shared_bitmap_mark() AND tracked_size_mark(); every untrack (the
+ * regular slot AND the overflow tail path in untrack_shared_region)
+ * calls shared_bitmap_unmark() AND tracked_size_unmark().  Forgetting
+ * the parallel call in a future refactor flips the size bitmap's
+ * safety invariant from "empty ⇒ provably no regions" to "empty ⇒
+ * silently under-reject"; shared_bitmap_self_check() asserts the
+ * positive-path wiring at startup so that class of bug fails loudly.
+ *
+ * 64 buckets is the natural cap: a single unsigned long stores the
+ * whole bitmap, and SHARED_BITMAP_VA_SPAN = 1<<47 bounds the largest
+ * possible region at bucket 47 anyway -- buckets 48..63 stay zero on
+ * any legitimate registration.  Per-bucket uint16_t refcount keeps the
+ * bit set until the LAST region in that size class drops, mirroring
+ * the shared_region_refcount discipline on the address bitmap; the
+ * 4352-region worst case (MAX_SHARED_ALLOCS + SHARED_REGIONS_OVERFLOW_
+ * TAIL) sits comfortably under UINT16_MAX, so a pathological run that
+ * crowds every region into one bucket cannot overflow the counter.
+ *
+ * size==0 is a no-op for the same reason shared_bitmap_mark() no-ops
+ * on size==0: the registering caller treats a zero-byte region as "no
+ * region" and floor(log2(0)) is undefined, so suppressing the bump
+ * here keeps the bitmaps in lockstep and avoids a spurious bucket-0
+ * entry that no matching untrack would ever clear.
+ */
+#define TRACKED_SIZE_NBUCKETS	64
+static unsigned long tracked_size_bm;
+static uint16_t tracked_size_bucket_count[TRACKED_SIZE_NBUCKETS];
+
+static inline unsigned int tracked_size_bucket(unsigned long len)
+{
+	return 63u - (unsigned int)__builtin_clzl(len);
+}
+
+static void tracked_size_mark(unsigned long len)
+{
+	unsigned int b;
+
+	if (len == 0)
+		return;
+
+	b = tracked_size_bucket(len);
+	if (b >= TRACKED_SIZE_NBUCKETS) {
+		outputerr("tracked_size_mark: bucket %u out of range for len 0x%lx\n",
+			  b, len);
+		BUG("tracked_size bucket out of range");
+	}
+	if (tracked_size_bucket_count[b] == UINT16_MAX) {
+		outputerr("tracked_size_mark: bucket %u refcount overflow for len 0x%lx\n",
+			  b, len);
+		BUG("tracked_size bucket refcount overflow");
+	}
+	if (tracked_size_bucket_count[b]++ == 0)
+		tracked_size_bm |= 1UL << b;
+}
+
+static void tracked_size_unmark(unsigned long len)
+{
+	unsigned int b;
+
+	if (len == 0)
+		return;
+
+	b = tracked_size_bucket(len);
+	if (b >= TRACKED_SIZE_NBUCKETS) {
+		outputerr("tracked_size_unmark: bucket %u out of range for len 0x%lx\n",
+			  b, len);
+		BUG("tracked_size bucket out of range");
+	}
+	if (tracked_size_bucket_count[b] == 0) {
+		outputerr("tracked_size_unmark: bucket %u refcount underflow for len 0x%lx\n",
+			  b, len);
+		BUG("tracked_size bucket refcount underflow");
+	}
+	if (--tracked_size_bucket_count[b] == 0)
+		tracked_size_bm &= ~(1UL << b);
+}
+
+/*
  * Handle a registration that arrived once shared_regions[] is full.
  *
  * The previous "warn once, then silently drop the region" policy turned
@@ -292,6 +385,7 @@ static void register_shared_overflow(const char *who, unsigned long addr,
 	shared_regions_overflow[nr_shared_regions_overflow].addr = addr;
 	shared_regions_overflow[nr_shared_regions_overflow].size = size;
 	shared_bitmap_mark(addr, size);
+	tracked_size_mark(size);
 	nr_shared_regions_overflow++;
 
 	if (shm != NULL)
@@ -326,6 +420,7 @@ void * alloc_shared(size_t size)
 		shared_regions[nr_shared_regions].addr = (unsigned long) ret;
 		shared_regions[nr_shared_regions].size = size;
 		shared_bitmap_mark((unsigned long) ret, size);
+		tracked_size_mark(size);
 		nr_shared_regions++;
 	} else {
 		register_shared_overflow("alloc_shared", (unsigned long) ret,
@@ -349,6 +444,7 @@ void track_shared_region(unsigned long addr, unsigned long size)
 		shared_regions[nr_shared_regions].addr = addr;
 		shared_regions[nr_shared_regions].size = size;
 		shared_bitmap_mark(addr, size);
+		tracked_size_mark(size);
 		nr_shared_regions++;
 	} else {
 		register_shared_overflow("track_shared_region", addr, size,
@@ -393,6 +489,7 @@ void untrack_shared_region(unsigned long addr, unsigned long size)
 		    shared_regions[i].size != size)
 			continue;
 		shared_bitmap_unmark(addr, size);
+		tracked_size_unmark(size);
 		shared_regions[i] = shared_regions[nr_shared_regions - 1];
 		nr_shared_regions--;
 		return;
@@ -403,6 +500,7 @@ void untrack_shared_region(unsigned long addr, unsigned long size)
 		    shared_regions_overflow[i].size != size)
 			continue;
 		shared_bitmap_unmark(addr, size);
+		tracked_size_unmark(size);
 		shared_regions_overflow[i] =
 			shared_regions_overflow[nr_shared_regions_overflow - 1];
 		nr_shared_regions_overflow--;
@@ -851,11 +949,31 @@ void shared_bitmap_self_check(void)
 			  "@ 0x%lx (bit %lu)\n", base, bit);
 		BUG("shared region bitmap inconsistent");
 	}
+
+	/*
+	 * Companion size-bucket bitmap should also reflect the first
+	 * registered region: any region with non-zero size lands in some
+	 * bucket, so tracked_size_bm cannot be empty here.  Catches a
+	 * future refactor that wires shared_bitmap_mark() but forgets the
+	 * parallel tracked_size_mark() call -- silent under-protection of
+	 * the size short-circuit (always-true skip on an empty bitmap)
+	 * would defeat the bypass counter on every call.
+	 */
+	if (shared_regions[0].size != 0 && tracked_size_bm == 0) {
+		outputerr("tracked_size_bm empty despite first region size 0x%lx\n",
+			  shared_regions[0].size);
+		BUG("tracked_size bitmap inconsistent");
+	}
 }
 
 /* Tunable: how often range_overlaps_shared() emits a -v summary line.
  * Lower = noisier, higher = blunter. */
 #define RANGE_OVERLAPS_SHARED_REJECT_REPORT_INTERVAL 10000
+
+/* Sibling tunable for the size-bucket bitmap short-circuit path.
+ * Same cadence as the rejects line above so the two -v summaries
+ * stay in lockstep when both fire on the same child. */
+#define RANGE_OVERLAPS_SHARED_BM_SKIP_REPORT_INTERVAL 10000
 
 /*
  * Exact byte-range overlap confirmation after a bitmap hit.  The
@@ -951,6 +1069,32 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len)
 		return true;
 
 	end = addr + len;
+
+	/*
+	 * Size-bucket bitmap short-circuit: when no tracked region of any
+	 * size class exists, the address-keyed shared_region_bitmap is
+	 * also empty by construction, and the word-scan below would walk
+	 * SHARED_BITMAP_NWORDS words to confirm.  One load on
+	 * tracked_size_bm proves the same negative in O(1).  This is the
+	 * useful empty-fleet / pre-registration / fully-untracked state;
+	 * it also covers the bypass condition from the spec ("len exceeds
+	 * every set bit's bucket bound") vacuously when no bits are set.
+	 *
+	 * Per-process rate-limited counter feeds the -v summary below.
+	 * Each child has its own static via fork CoW, mirroring the
+	 * cadence of the rejects line at the tail of this function.
+	 */
+	if (tracked_size_bm == 0) {
+		static unsigned long local_skip;
+		unsigned long s;
+
+		s = ++local_skip;
+		if (verbosity > 1 &&
+		    (s % RANGE_OVERLAPS_SHARED_BM_SKIP_REPORT_INTERVAL) == 0)
+			output(1, "range_overlaps_shared_bm_skip: %lu cumulative bitmap-empty short-circuits\n",
+				s);
+		return false;
+	}
 
 	/* Bitmap accelerator used as a fast NEGATIVE prefilter:
 	 * O(ceil(len/2MB)+1) bit reads to rule out the common case where
