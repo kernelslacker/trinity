@@ -57,32 +57,37 @@ static long syscall32(unsigned int call,
 	if (__atomic_load_n(&shm->syscalls32_succeeded, __ATOMIC_RELAXED) == false) {
 		if (__atomic_load_n(&shm->syscalls32_attempted, __ATOMIC_RELAXED) >= (max_children * 2)) {
 			unsigned int i;
+			bool did_disable = false;
+			unsigned int snap_attempted = 0;
 
 			lock(&shm->syscalltable_lock);
 
 			/* check another thread didn't already do this. */
-			if (shm->nr_active_32bit_syscalls == 0)
-				goto already_done;
+			if (shm->nr_active_32bit_syscalls != 0) {
+				snap_attempted = __atomic_load_n(&shm->syscalls32_attempted, __ATOMIC_RELAXED);
 
-			output(0, "Tried %d 32-bit syscalls unsuccessfully. Disabling all 32-bit syscalls.\n",
-					__atomic_load_n(&shm->syscalls32_attempted, __ATOMIC_RELAXED));
+				for (i = 0; i < max_nr_32bit_syscalls; i++) {
+					struct syscallentry *entry = syscalls_32bit[i].entry;
 
-			for (i = 0; i < max_nr_32bit_syscalls; i++) {
-				struct syscallentry *entry = syscalls_32bit[i].entry;
+					if (entry == NULL)
+						continue;
 
-				if (entry == NULL)
-					continue;
-
-				if (entry->active_number != 0)
-					deactivate_syscall_nolock(i, true);
+					if (entry->active_number != 0)
+						deactivate_syscall_nolock(i, true);
+				}
+				/* The per-call deactivate path has already cleared the
+				 * cached validity bit when nr_active hit zero; pin it
+				 * here so the auto-disable point is self-evidently
+				 * coherent even if the loop above ever exits early. */
+				__atomic_store_n(&shm->valid_syscall_table_32, false, __ATOMIC_RELAXED);
+				did_disable = true;
 			}
-			/* The per-call deactivate path has already cleared the
-			 * cached validity bit when nr_active hit zero; pin it
-			 * here so the auto-disable point is self-evidently
-			 * coherent even if the loop above ever exits early. */
-			__atomic_store_n(&shm->valid_syscall_table_32, false, __ATOMIC_RELAXED);
-already_done:
+
 			unlock(&shm->syscalltable_lock);
+
+			if (did_disable)
+				output(0, "Tried %d 32-bit syscalls unsuccessfully. Disabling all 32-bit syscalls.\n",
+						snap_attempted);
 		}
 
 		__atomic_add_fetch(&shm->syscalls32_attempted, 1, __ATOMIC_RELAXED);
@@ -721,6 +726,8 @@ void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
  */
 static void deactivate_enosys(struct syscallrecord *rec, struct syscallentry *entry, unsigned int call)
 {
+	bool did_deactivate = false;
+
 	/* some syscalls return ENOSYS instead of EINVAL etc (futex for eg) */
 	if (entry->flags & IGNORE_ENOSYS)
 		return;
@@ -728,17 +735,18 @@ static void deactivate_enosys(struct syscallrecord *rec, struct syscallentry *en
 	lock(&shm->syscalltable_lock);
 
 	/* check another thread didn't already do this. */
-	if (entry->active_number == 0)
-		goto already_done;
+	if (entry->active_number != 0) {
+		deactivate_syscall_nolock(call, rec->do32bit);
+		did_deactivate = true;
+	}
 
-	output(0, "%s (%d%s) returned ENOSYS, marking as inactive.\n",
-		entry->name,
-		call + SYSCALL_OFFSET,
-		rec->do32bit == true ? ":[32BIT]" : "");
-
-	deactivate_syscall_nolock(call, rec->do32bit);
-already_done:
 	unlock(&shm->syscalltable_lock);
+
+	if (did_deactivate)
+		output(0, "%s (%d%s) returned ENOSYS, marking as inactive.\n",
+			entry->name,
+			call + SYSCALL_OFFSET,
+			rec->do32bit == true ? ":[32BIT]" : "");
 }
 
 /*
