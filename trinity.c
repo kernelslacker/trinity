@@ -642,6 +642,25 @@ static void init_post_parse_io(void)
 	stats_log_open(stats_log_path);
 }
 
+/*
+ * Early init that runs after image-segment registration but before
+ * the seed publish and the monitor / show-mode dispatch.  Brings up
+ * the uid pool used by fault-injection paths, chdir's into trinity's
+ * tmp/ working directory (so subsequent ./last-run-seed and ./tmp/
+ * paths are relative to a known location), and carves out the
+ * per-subsystem shm regions on top of the base shm reserved during
+ * process bootstrap.
+ */
+static void init_main_early(void)
+{
+	init_uids();
+
+	change_tmp_dir();
+
+	output(1, "phase: init_shm\n");
+	init_shm();
+}
+
 int main(int argc, char* argv[])
 {
 	int ret = EXIT_SUCCESS;
@@ -693,12 +712,7 @@ int main(int argc, char* argv[])
 	 * honoured for the per-DSO summary lines. */
 	register_loaded_image_segments();
 
-	init_uids();
-
-	change_tmp_dir();
-
-	output(1, "phase: init_shm\n");
-	init_shm();
+	init_main_early();
 
 	publish_and_persist_seed();
 
