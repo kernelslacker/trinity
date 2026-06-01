@@ -615,6 +615,34 @@ static int bridge_conntrack_iter_bridge_create(struct bridge_conntrack_iter_ctx 
 	return 0;
 }
 
+/*
+ * Phase 3: create the veth pair, enslave the bridge-side end, and
+ * bring all three interfaces up.  The setlink_master / setlink_up
+ * calls are best-effort by design (they were (void)-casts in the
+ * original) — a missing slave-master link still leaves the ct hook
+ * reachable on the bridge ingress; the failure shape just changes the
+ * traffic-burst coverage rather than aborting the iteration.  Returns
+ * 0 on success or -1 if the iteration should bail to the out: cleanup
+ * path; on success ctx->veth_added is set so the teardown helper
+ * knows to RTM_DELLINK the survivor.
+ */
+static int bridge_conntrack_iter_veth_attach(struct bridge_conntrack_iter_ctx *ctx)
+{
+	if (rtnl_create_veth(&ctx->rtnl, ctx->veth_a, ctx->veth_b) != 0)
+		return -1;
+	ctx->veth_added = true;
+	ctx->va_idx = (int)if_nametoindex(ctx->veth_a);
+	ctx->vb_idx = (int)if_nametoindex(ctx->veth_b);
+	if (ctx->va_idx <= 0 || ctx->vb_idx <= 0)
+		return -1;
+
+	(void)rtnl_setlink_master(&ctx->rtnl, ctx->va_idx, ctx->br_idx);
+	(void)rtnl_setlink_up(&ctx->rtnl, ctx->br_idx);
+	(void)rtnl_setlink_up(&ctx->rtnl, ctx->va_idx);
+	(void)rtnl_setlink_up(&ctx->rtnl, ctx->vb_idx);
+	return 0;
+}
+
 bool bridge_conntrack_churn(struct childdata *child)
 {
 	struct bridge_conntrack_iter_ctx ctx = {
@@ -656,18 +684,8 @@ bool bridge_conntrack_churn(struct childdata *child)
 	if (bridge_conntrack_iter_bridge_create(&ctx) != 0)
 		goto out;
 
-	if (rtnl_create_veth(&ctx.rtnl, ctx.veth_a, ctx.veth_b) != 0)
+	if (bridge_conntrack_iter_veth_attach(&ctx) != 0)
 		goto out;
-	ctx.veth_added = true;
-	ctx.va_idx = (int)if_nametoindex(ctx.veth_a);
-	ctx.vb_idx = (int)if_nametoindex(ctx.veth_b);
-	if (ctx.va_idx <= 0 || ctx.vb_idx <= 0)
-		goto out;
-
-	(void)rtnl_setlink_master(&ctx.rtnl, ctx.va_idx, ctx.br_idx);
-	(void)rtnl_setlink_up(&ctx.rtnl, ctx.br_idx);
-	(void)rtnl_setlink_up(&ctx.rtnl, ctx.va_idx);
-	(void)rtnl_setlink_up(&ctx.rtnl, ctx.vb_idx);
 
 	if (nfnl_open(&ctx.nfnl_nft, &nfnl_opts) < 0)
 		goto out;
