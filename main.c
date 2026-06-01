@@ -1697,6 +1697,36 @@ static void print_stats_iteration_line(unsigned long op_count, unsigned long rat
 	}
 }
 
+static void print_stats_picker_state(enum picker_mode_t pmode, bool plateau)
+{
+	/*
+	 * Coalesce identical PICKER lines.  In steady-state runs
+	 * the tuple (pmode, explorers, plateau) is unchanged
+	 * window after window and the line just repeats.  Skip
+	 * the repeats but force a print every 30 windows so the
+	 * log still carries a periodic state anchor.
+	 */
+	static enum picker_mode_t last_pmode;
+	static unsigned int last_picker_explorers;
+	static bool last_plateau;
+	static unsigned int picker_suppress = 30; /* force first print */
+	if (picker_suppress >= 30 ||
+	    pmode != last_pmode ||
+	    explorer_children != last_picker_explorers ||
+	    plateau != last_plateau) {
+		output(0, "PICKER: [picker=%s explorers=%u plateau=%s]\n",
+			picker_mode_name(pmode),
+			explorer_children,
+			plateau ? "active" : "idle");
+		last_pmode = pmode;
+		last_picker_explorers = explorer_children;
+		last_plateau = plateau;
+		picker_suppress = 0;
+	} else {
+		picker_suppress++;
+	}
+}
+
 static void print_stats(void)
 {
 	unsigned long op_count = parent_stats.op_count;
@@ -1737,32 +1767,8 @@ static void print_stats(void)
 				bool plateau = __atomic_load_n(
 					&kcov_shm->plateau_active,
 					__ATOMIC_ACQUIRE);
-				/*
-				 * Coalesce identical PICKER lines.  In steady-state runs
-				 * the tuple (pmode, explorers, plateau) is unchanged
-				 * window after window and the line just repeats.  Skip
-				 * the repeats but force a print every 30 windows so the
-				 * log still carries a periodic state anchor.
-				 */
-				static enum picker_mode_t last_pmode;
-				static unsigned int last_picker_explorers;
-				static bool last_plateau;
-				static unsigned int picker_suppress = 30; /* force first print */
-				if (picker_suppress >= 30 ||
-				    pmode != last_pmode ||
-				    explorer_children != last_picker_explorers ||
-				    plateau != last_plateau) {
-					output(0, "PICKER: [picker=%s explorers=%u plateau=%s]\n",
-						picker_mode_name(pmode),
-						explorer_children,
-						plateau ? "active" : "idle");
-					last_pmode = pmode;
-					last_picker_explorers = explorer_children;
-					last_plateau = plateau;
-					picker_suppress = 0;
-				} else {
-					picker_suppress++;
-				}
+
+				print_stats_picker_state(pmode, plateau);
 
 				/*
 				 * One-shot warning when the plateau detector fires
