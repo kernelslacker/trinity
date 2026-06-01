@@ -2331,6 +2331,15 @@ struct stats_s {
 	 * run says the tmpfs mount path was being run unprotected.
 	 */
 	unsigned long userns_root_private_failed;
+
+	/* sysfs_string_race childop counters */
+	unsigned long sysfs_string_race_runs;		/* total sysfs_string_race invocations */
+	unsigned long sysfs_string_race_setup_failed;	/* no curated target was writable on this host (probe latched unsupported) */
+	unsigned long sysfs_string_race_target_missing;	/* per-iteration open of a previously-writable target failed (raced removal / perms) */
+	unsigned long sysfs_string_race_target_used;	/* both writer children spawned against a target */
+	unsigned long sysfs_string_race_fork_failed;	/* fork() of a writer child failed (EAGAIN / RLIMIT) */
+	unsigned long sysfs_string_race_writes_ok;	/* child pwrite() returned >0 (.store() accepted) */
+	unsigned long sysfs_string_race_writes_failed;	/* child pwrite() returned <=0 (EINVAL / EBUSY / etc.) */
 };
 
 unsigned int stats_syscall_category(const char *name);

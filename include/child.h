@@ -201,6 +201,7 @@ enum child_op_type {
 	CHILD_OP_ISCSI_TARGET_PROBE,
 	CHILD_OP_ETH_EMITTER,
 	CHILD_OP_VMA_SPLIT_STORM,
+	CHILD_OP_SYSFS_STRING_RACE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -921,3 +922,4 @@ bool blkdev_lifecycle_race(struct childdata *child);
 bool iscsi_target_probe(struct childdata *child);
 bool eth_emitter(struct childdata *child);
 bool vma_split_storm(struct childdata *child);
+bool sysfs_string_race(struct childdata *child);

@@ -60,6 +60,7 @@ CHILD_OP_RTNL_VF_BROADCAST_GETLINK    TODO: review for rotation candidacy
 CHILD_OP_RXRPC_KEY_INSTALL            TODO: review for rotation candidacy
 CHILD_OP_RXRPC_SENDMSG_CMSG_CHURN     TODO: review for rotation candidacy
 CHILD_OP_SPLICE_PROTOCOLS             TODO: review for rotation candidacy
+CHILD_OP_SYSFS_STRING_RACE            TODO: review for rotation candidacy
 CHILD_OP_TCP_ULP_SWAP_CHURN           TODO: review for rotation candidacy
 CHILD_OP_VETH_ASYMMETRIC_XDP          TODO: review for rotation candidacy
 CHILD_OP_VSOCK_TRANSPORT_CHURN        TODO: review for rotation candidacy
