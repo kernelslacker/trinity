@@ -373,6 +373,53 @@ static int netns_teardown_iter_setup_ns(struct netns_teardown_iter_ctx *it)
 }
 
 /*
+ * Phase 2: build the AF_INET / SOCK_STREAM loopback socket pair the
+ * in-ns child will pump on.  s_listen binds 127.0.0.1:0, listens, then
+ * s_conn connects to the kernel-assigned port and s_accept pulls the
+ * completed connection off the listen queue.  Bumps socket_pair_ok on
+ * full success.  Any failure leaves the partially-opened fds parked in
+ * the ctx for the recover path to close and returns -1; the caller
+ * does `goto recover` on -1.
+ */
+static int netns_teardown_iter_sock_pair(struct netns_teardown_iter_ctx *it)
+{
+	struct sockaddr_in addr;
+	socklen_t addrlen;
+
+	it->s_listen = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (it->s_listen < 0)
+		return -1;
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = htonl(0x7f000001U);
+	addr.sin_port = 0;
+	if (bind(it->s_listen, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+		return -1;
+	if (listen(it->s_listen, 4) < 0)
+		return -1;
+
+	addrlen = sizeof(addr);
+	if (getsockname(it->s_listen, (struct sockaddr *)&addr, &addrlen) < 0)
+		return -1;
+
+	it->s_conn = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (it->s_conn < 0)
+		return -1;
+	if (connect(it->s_conn, (struct sockaddr *)&addr, sizeof(addr)) < 0 &&
+	    errno != EINPROGRESS)
+		return -1;
+
+	it->s_accept = accept(it->s_listen, NULL, NULL);
+	if (it->s_accept < 0)
+		return -1;
+
+	__atomic_add_fetch(&shm->stats.netns_teardown_socket_pair_ok,
+			   1, __ATOMIC_RELAXED);
+	return 0;
+}
+
+/*
  * One outer iteration: anchor open, unshare, lo bring-up, sockets,
  * fork, race, kill, waitpid.  Best-effort; per-step counter bumps
  * carry the success signal.  Latches ns_unsupported on a probe-style
@@ -384,42 +431,12 @@ static void iter_one(void)
 		.nsfd = -1, .s_listen = -1, .s_conn = -1, .s_accept = -1,
 		.pid = -1,
 	};
-	struct sockaddr_in addr;
-	socklen_t addrlen;
 
 	if (netns_teardown_iter_setup_ns(&it) != 0)
 		return;
 
-	it.s_listen = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-	if (it.s_listen < 0)
+	if (netns_teardown_iter_sock_pair(&it) != 0)
 		goto recover;
-
-	memset(&addr, 0, sizeof(addr));
-	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = htonl(0x7f000001U);
-	addr.sin_port = 0;
-	if (bind(it.s_listen, (struct sockaddr *)&addr, sizeof(addr)) < 0)
-		goto recover;
-	if (listen(it.s_listen, 4) < 0)
-		goto recover;
-
-	addrlen = sizeof(addr);
-	if (getsockname(it.s_listen, (struct sockaddr *)&addr, &addrlen) < 0)
-		goto recover;
-
-	it.s_conn = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-	if (it.s_conn < 0)
-		goto recover;
-	if (connect(it.s_conn, (struct sockaddr *)&addr, sizeof(addr)) < 0 &&
-	    errno != EINPROGRESS)
-		goto recover;
-
-	it.s_accept = accept(it.s_listen, NULL, NULL);
-	if (it.s_accept < 0)
-		goto recover;
-
-	__atomic_add_fetch(&shm->stats.netns_teardown_socket_pair_ok,
-			   1, __ATOMIC_RELAXED);
 
 	it.pid = fork();
 	if (it.pid < 0)
