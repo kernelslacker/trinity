@@ -569,11 +569,17 @@ static void publish_and_persist_seed(void)
 	}
 }
 
-int main(int argc, char* argv[])
+/*
+ * Process bootstrap: stdio buffering, progname/mainpid capture,
+ * RLIMIT_NOFILE probe with a 1024 fallback, NUMA enumeration, syscall
+ * table selection, and the initial shm carve-out.  Runs as the very
+ * first work after entry, before parse_args, because every later
+ * helper (parser included) depends on at least one of these globals.
+ * Sets the default max_children = num_online_cpus * 4; parse_args may
+ * override it, and clamp_default_max_children() applies any caps.
+ */
+static void init_main_process(char *argv[])
 {
-	int ret = EXIT_SUCCESS;
-	const char taskname[13]="trinity-main";
-
 	setlinebuf(stdout);
 
 	progname = argv[0];
@@ -597,6 +603,14 @@ int main(int argc, char* argv[])
 	select_syscall_tables();
 
 	create_shm();
+}
+
+int main(int argc, char* argv[])
+{
+	int ret = EXIT_SUCCESS;
+	const char taskname[13]="trinity-main";
+
+	init_main_process(argv);
 
 	/* Close any fd the launcher (or its parent) handed us before we
 	 * open anything of our own.  Keep set is exactly {0,1,2} at this
