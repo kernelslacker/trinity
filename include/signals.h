@@ -9,3 +9,4 @@ extern volatile sig_atomic_t in_do_syscall;
 
 void mask_signals_child(void);
 void setup_main_signals(void);
+void init_abort_msg_capture(void);

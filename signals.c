@@ -1,3 +1,4 @@
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
@@ -18,6 +19,22 @@
 volatile sig_atomic_t sigalrm_pending;
 volatile sig_atomic_t xcpu_pending;
 volatile sig_atomic_t ctrlc_pending;
+
+/*
+ * Cached pointer to glibc's __abort_msg.  Resolved once at child init
+ * via dlsym(RTLD_DEFAULT, ...) so there is no link-time GLIBC_PRIVATE
+ * dependency: a glibc upgrade that drops the symbol leaves this NULL
+ * and the SIGABRT handler silently skips the capture.  This mirrors
+ * gdb's pattern for reading the same symbol.  dlsym() itself is not
+ * async-signal-safe and is never called from the handler -- only
+ * from init_abort_msg_capture() below.
+ */
+static char **glibc_abort_msg_p;
+
+void init_abort_msg_capture(void)
+{
+	glibc_abort_msg_p = (char **)dlsym(RTLD_DEFAULT, "__abort_msg");
+}
 
 /*
  * Set while a child is inside do_syscall().  Lets the child fault
@@ -437,6 +454,41 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	}
 #endif
 	write_siginfo_safely(sig, info, "trinity child");
+
+	/*
+	 * Capture glibc's last-gasp explanation before SIGABRT.  Glibc's
+	 * malloc_printerr / __libc_message / __stack_chk_fail /
+	 * __fortify_fail family stash a NUL-terminated formatted
+	 * complaint into a process-global __abort_msg pointer and then
+	 * raise(SIGABRT).  Reading it here turns 200+ undifferentiated
+	 * "abort at malloc+0x150" bugs into bucketed corruption-mode
+	 * lines like "free(): double free detected in tcache 2" right
+	 * at the top of the bug log.
+	 *
+	 * glibc_abort_msg_p was resolved once at child init via
+	 * dlsym(RTLD_DEFAULT, "__abort_msg") -- see
+	 * init_abort_msg_capture() above.  No link-time GLIBC_PRIVATE
+	 * version dependency; a future glibc that drops the symbol
+	 * leaves the cached pointer NULL and the capture silently skips.
+	 * The handler does one plain load through the cached pointer
+	 * (signal-safe), a NULL check on the contents, and a write().
+	 *
+	 * The inner pointer is NULL when abort() was reached from user
+	 * code rather than a libc self-check, so guard on both the
+	 * cached lookup pointer (glibc_abort_msg_p != NULL) and the
+	 * contents (*glibc_abort_msg_p != NULL).
+	 */
+	if (sig == SIGABRT && glibc_abort_msg_p != NULL && *glibc_abort_msg_p != NULL) {
+		char buf[512];
+		struct sigsafe_buf b = { buf, sizeof(buf) };
+		ssize_t w;
+
+		sigsafe_puts(&b, "abort_msg: ");
+		sigsafe_puts(&b, *glibc_abort_msg_p);
+		sigsafe_putc(&b, '\n');
+		w = write(STDERR_FILENO, buf, sizeof(buf) - b.left);
+		(void)w;	/* dying anyway; can't act on a short write */
+	}
 
 	/*
 	 * Stamp the currently-running childop's identity into the per-pid
