@@ -598,6 +598,19 @@ static void v6pmtu_iter_reap_workers(pid_t a, pid_t b)
 	reap_with_deadline(b, &deadline);
 }
 
+/*
+ * Restore the caller's netns from the anchor fd and close the anchor.
+ * setns failure latches ns_unsupported_ipv6_pmtu_race so the op skips
+ * subsequent invocations rather than risk leaking us into the doomed
+ * netns.  Always runs, even on the failure-bail paths from iter_one.
+ */
+static void v6pmtu_iter_exit_netns(int nsfd)
+{
+	if (setns(nsfd, CLONE_NEWNET) < 0)
+		ns_unsupported_ipv6_pmtu_race = true;
+	(void)close(nsfd);
+}
+
 static void iter_one(void)
 {
 	int nsfd;
@@ -620,9 +633,7 @@ static void iter_one(void)
 			   1, __ATOMIC_RELAXED);
 
 out_setns:
-	if (setns(nsfd, CLONE_NEWNET) < 0)
-		ns_unsupported_ipv6_pmtu_race = true;
-	(void)close(nsfd);
+	v6pmtu_iter_exit_netns(nsfd);
 }
 
 static void probe_v6_pmtu(void)
