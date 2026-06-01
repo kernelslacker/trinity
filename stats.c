@@ -999,6 +999,25 @@ static void dump_stats_json_basic_subsystems(void)
 		shm->stats.bpf_maps_provided, shm->stats.bpf_progs_provided);
 }
 
+static void dump_stats_json_iouring_and_zombies(void)
+{
+	printf("\"recipe_runner\":{\"runs\":%lu,\"completed\":%lu,\"partial\":%lu,\"unsupported\":%lu},"
+		"\"iouring_recipes\":{\"runs\":%lu,\"completed\":%lu,\"partial\":%lu,\"enosys\":%lu},"
+		"\"iouring_eventfd\":{\"register_ok\":%lu,\"register_fail\":%lu,"
+			"\"recursive_runs\":%lu,\"recursive_cqes\":%lu},"
+		"\"zombie_slots\":{\"pending\":%lu,\"reaped\":%lu,\"timed_out\":%lu},",
+		shm->stats.recipe_runs, shm->stats.recipe_completed,
+		shm->stats.recipe_partial, shm->stats.recipe_unsupported,
+		shm->stats.iouring_recipes_runs, shm->stats.iouring_recipes_completed,
+		shm->stats.iouring_recipes_partial, shm->stats.iouring_recipes_enosys,
+		shm->stats.iouring_eventfd_register_ok,
+		shm->stats.iouring_eventfd_register_fail,
+		shm->stats.iouring_eventfd_recursive_runs,
+		shm->stats.iouring_eventfd_recursive_cqes,
+		shm->stats.zombie_slots_pending, shm->stats.zombies_reaped,
+		shm->stats.zombies_timed_out);
+}
+
 static void dump_stats_json(void)
 {
 	putchar('{');
@@ -1009,13 +1028,9 @@ static void dump_stats_json(void)
 	dump_stats_json_fault_and_fd_lifecycle();
 	dump_stats_json_oracle();
 	dump_stats_json_basic_subsystems();
+	dump_stats_json_iouring_and_zombies();
 
-	printf("\"recipe_runner\":{\"runs\":%lu,\"completed\":%lu,\"partial\":%lu,\"unsupported\":%lu},"
-		"\"iouring_recipes\":{\"runs\":%lu,\"completed\":%lu,\"partial\":%lu,\"enosys\":%lu},"
-		"\"iouring_eventfd\":{\"register_ok\":%lu,\"register_fail\":%lu,"
-			"\"recursive_runs\":%lu,\"recursive_cqes\":%lu},"
-		"\"zombie_slots\":{\"pending\":%lu,\"reaped\":%lu,\"timed_out\":%lu},"
-		"\"corruption\":{\"fd_event_ring_noncanon\":%lu,"
+	printf("\"corruption\":{\"fd_event_ring_noncanon\":%lu,"
 			"\"fd_event_ring_canary\":%lu,\"fd_event_payload\":%lu,"
 			"\"deferred_free_corrupt_ptr\":%lu,"
 			"\"post_handler_corrupt_ptr\":%lu,\"deferred_free_reject\":%lu,"
@@ -1105,16 +1120,6 @@ static void dump_stats_json(void)
 		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"peek_ok\":%lu,\"iouring_variant_ok\":%lu,\"sibling_spawn_ok\":%lu,\"sibling_spawn_failed\":%lu,\"sibling_reaped_ok\":%lu,\"sibling_crashed\":%lu},"
 		"\"netns_teardown\":{\"runs\":%lu,\"setup_failed\":%lu,\"unshare_ok\":%lu,\"socket_pair_ok\":%lu,\"fork_ok\":%lu,\"setns_ok\":%lu,\"kill_ok\":%lu,\"completed_ok\":%lu},"
 		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},",
-		shm->stats.recipe_runs, shm->stats.recipe_completed,
-		shm->stats.recipe_partial, shm->stats.recipe_unsupported,
-		shm->stats.iouring_recipes_runs, shm->stats.iouring_recipes_completed,
-		shm->stats.iouring_recipes_partial, shm->stats.iouring_recipes_enosys,
-		shm->stats.iouring_eventfd_register_ok,
-		shm->stats.iouring_eventfd_register_fail,
-		shm->stats.iouring_eventfd_recursive_runs,
-		shm->stats.iouring_eventfd_recursive_cqes,
-		shm->stats.zombie_slots_pending, shm->stats.zombies_reaped,
-		shm->stats.zombies_timed_out,
 		shm->stats.fd_event_ring_corrupted,
 		shm->stats.fd_event_ring_overwritten,
 		shm->stats.fd_event_payload_corrupt,
