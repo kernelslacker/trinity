@@ -433,6 +433,57 @@ static int alg_recvmsg_iter_arm(struct alg_recvmsg_iter_ctx *ictx)
 }
 
 /*
+ * Phase 3: drive the send leg.  Optional ALG_SET_KEY cmsg (1-in-2,
+ * with a 1-in-8 zero-length edge), optional ALG_SET_IV cmsg (same
+ * mix), the rotating payload sendmsg() (counter bump on the 8-iov
+ * scatter slab-OOB shape), and the dedicated cmsg-only empty-payload
+ * trigger that fires unconditionally per iter so the af_alg_pull_tsgl
+ * shape lands on every successful arm, not just statistically.  Past
+ * the arm() these calls live on the data path the bug class lives in,
+ * so per-step failure isn't a kernel-absent signal -- results are
+ * ignored.  keybuf/ivbuf are stack-local: only the drive phase reads
+ * them, so they don't belong in the cross-phase ictx.
+ */
+static void alg_recvmsg_iter_drive(struct alg_recvmsg_iter_ctx *ictx)
+{
+	unsigned char keybuf[ARC_KEY_MAX];
+	unsigned char ivbuf[ARC_IV_MAX];
+
+	if (ONE_IN(2)) {
+		size_t klen = ONE_IN(8) ? 0 :
+			(size_t)RAND_RANGE(ARC_KEY_MIN, ARC_KEY_MAX);
+
+		if (klen > 0)
+			generate_rand_bytes(keybuf, klen);
+		send_cmsg_only(ictx->child_fd, ALG_SET_KEY, keybuf, klen);
+		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_setkey_sent,
+				   1, __ATOMIC_RELAXED);
+	}
+
+	if (ONE_IN(2)) {
+		size_t ilen = ONE_IN(8) ? 0 :
+			(size_t)RAND_RANGE(ARC_IV_MIN, ARC_IV_MAX);
+
+		if (ilen > 0)
+			generate_rand_bytes(ivbuf, ilen);
+		send_cmsg_only(ictx->child_fd, ALG_SET_IV, ivbuf, ilen);
+		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_iv_sent,
+				   1, __ATOMIC_RELAXED);
+	}
+
+	if (send_rotating_payload(ictx->child_fd))
+		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_oob_iov,
+				   1, __ATOMIC_RELAXED);
+
+	/* Always emit the af_alg_pull_tsgl trigger shape (cmsg-only,
+	 * empty payload, no MSG_MORE) before recvmsg() so the slab-OOB
+	 * window is exercised on every iter, not just statistically. */
+	send_empty_cmsg_no_more(ictx->child_fd);
+	__atomic_add_fetch(&shm->stats.af_alg_recvmsg_empty_cmsg_no_more,
+			   1, __ATOMIC_RELAXED);
+}
+
+/*
  * Close whichever fds the iteration actually opened.  Runs on every
  * exit path -- success and any early bail from setup or arm.  Both
  * fds default to -1 via the orchestrator's designated initialiser
@@ -454,8 +505,6 @@ static void iter_one(void)
 		.parent_fd = -1,
 		.child_fd = -1,
 	};
-	unsigned char keybuf[ARC_KEY_MAX];
-	unsigned char ivbuf[ARC_IV_MAX];
 
 	if (alg_recvmsg_iter_setup(&ictx) != 0)
 		goto out;
@@ -463,39 +512,7 @@ static void iter_one(void)
 	if (alg_recvmsg_iter_arm(&ictx) != 0)
 		goto out;
 
-	if (ONE_IN(2)) {
-		size_t klen = ONE_IN(8) ? 0 :
-			(size_t)RAND_RANGE(ARC_KEY_MIN, ARC_KEY_MAX);
-
-		if (klen > 0)
-			generate_rand_bytes(keybuf, klen);
-		send_cmsg_only(ictx.child_fd, ALG_SET_KEY, keybuf, klen);
-		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_setkey_sent,
-				   1, __ATOMIC_RELAXED);
-	}
-
-	if (ONE_IN(2)) {
-		size_t ilen = ONE_IN(8) ? 0 :
-			(size_t)RAND_RANGE(ARC_IV_MIN, ARC_IV_MAX);
-
-		if (ilen > 0)
-			generate_rand_bytes(ivbuf, ilen);
-		send_cmsg_only(ictx.child_fd, ALG_SET_IV, ivbuf, ilen);
-		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_iv_sent,
-				   1, __ATOMIC_RELAXED);
-	}
-
-	if (send_rotating_payload(ictx.child_fd))
-		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_oob_iov,
-				   1, __ATOMIC_RELAXED);
-
-	/* Always emit the af_alg_pull_tsgl trigger shape (cmsg-only,
-	 * empty payload, no MSG_MORE) before recvmsg() so the slab-OOB
-	 * window is exercised on every iter, not just statistically. */
-	send_empty_cmsg_no_more(ictx.child_fd);
-	__atomic_add_fetch(&shm->stats.af_alg_recvmsg_empty_cmsg_no_more,
-			   1, __ATOMIC_RELAXED);
-
+	alg_recvmsg_iter_drive(&ictx);
 	recv_rotating(ictx.child_fd);
 
 out:
