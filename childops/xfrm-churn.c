@@ -1603,13 +1603,52 @@ static void xfrm_churn_iter_drive_burst(struct xfrm_churn_iter_ctx *ctx)
 				   sent, __ATOMIC_RELAXED);
 }
 
+/*
+ * Phase: mid-flow rekey -- rotate the SA's key + SPI on the same
+ * (reqid, spi, proto) shell racing the in-flight encrypt from the
+ * preceding burst.  ONE_IN(8) GETSA-by-SPI + ONE_IN(8) ALLOCSPI prep
+ * the byseq / byspi reader windows; UPDSA is the actual rotation
+ * (CVE-2023-1611 family target).
+ */
+static void xfrm_churn_iter_rekey(struct xfrm_churn_iter_ctx *ctx)
+{
+	int rc;
+
+	/*
+	 * Lookup-side reader: GETSA-by-SPI walks
+	 * __xfrm_state_lookup -> byspi while the SA is live.  ONE_IN(8)
+	 * keeps the netlink chatter bounded; the kernel-side hash walk
+	 * happens before the reply is composed so even a recv() short-
+	 * read still drives the bug-class window.
+	 */
+	if (ONE_IN(8))
+		(void)build_getsa_byspi(&ctx->nl, ctx->def->proto, ctx->spi);
+
+	/*
+	 * Second writer onto byspi: ALLOCSPI on a half-built SA with the
+	 * same rotated reqid + seq.  Walks __xfrm_find_acq_byseq +
+	 * xfrm_state_lookup_byspi during the SPI scan, then inserts a
+	 * larval SA onto byspi.  ONE_IN(8) bounds cost and keeps the
+	 * larval-SA accumulator from saturating the per-netns table.
+	 */
+	if (ONE_IN(8))
+		(void)build_allocspi(&ctx->nl, ctx->def, ctx->reqid,
+				     ctx->mode, ctx->seq);
+
+	rc = build_updsa(&ctx->nl, ctx->def, ctx->reqid, ctx->spi,
+			 ctx->mode, ctx->seq);
+	if (rc == 0) {
+		__atomic_add_fetch(&shm->stats.xfrm_churn_sa_updated,
+				   1, __ATOMIC_RELAXED);
+	}
+}
+
 bool xfrm_churn(struct childdata *child)
 {
 	struct xfrm_churn_iter_ctx ctx = {
 		.nl  = { .fd = -1 },
 		.udp = -1,
 	};
-	int rc;
 
 	(void)child;
 
@@ -1646,31 +1685,7 @@ bool xfrm_churn(struct childdata *child)
 	 * from the burst above may still be holding the old key —
 	 * CVE-2023-1611 family lives in this window.
 	 */
-	/*
-	 * Lookup-side reader: GETSA-by-SPI walks
-	 * __xfrm_state_lookup -> byspi while the SA is live.  ONE_IN(8)
-	 * keeps the netlink chatter bounded; the kernel-side hash walk
-	 * happens before the reply is composed so even a recv() short-
-	 * read still drives the bug-class window.
-	 */
-	if (ONE_IN(8))
-		(void)build_getsa_byspi(&ctx.nl, ctx.def->proto, ctx.spi);
-
-	/*
-	 * Second writer onto byspi: ALLOCSPI on a half-built SA with the
-	 * same rotated reqid + seq.  Walks __xfrm_find_acq_byseq +
-	 * xfrm_state_lookup_byspi during the SPI scan, then inserts a
-	 * larval SA onto byspi.  ONE_IN(8) bounds cost and keeps the
-	 * larval-SA accumulator from saturating the per-netns table.
-	 */
-	if (ONE_IN(8))
-		(void)build_allocspi(&ctx.nl, ctx.def, ctx.reqid, ctx.mode, ctx.seq);
-
-	rc = build_updsa(&ctx.nl, ctx.def, ctx.reqid, ctx.spi, ctx.mode, ctx.seq);
-	if (rc == 0) {
-		__atomic_add_fetch(&shm->stats.xfrm_churn_sa_updated,
-				   1, __ATOMIC_RELAXED);
-	}
+	xfrm_churn_iter_rekey(&ctx);
 
 	/*
 	 * Second send burst — encrypt path may walk the freshly-rotated
