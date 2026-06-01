@@ -369,13 +369,79 @@ static int sctp_assoc_churn_iter_connect(struct sctp_assoc_churn_iter_ctx *ctx)
 	return 0;
 }
 
+/*
+ * Phase 4: BUDGETED bindx ADD/REM churn against the live assoc.
+ * Each iteration ADDs a fresh address on the client (kernel runs
+ * sctp_send_asconf_add_ip synchronously and the ASCONF chunk is on
+ * the wire before setsockopt returns), sends through the rotation
+ * window to race DATA against ASCONF parameter parsing on the
+ * server, then REMs the address (sctp_send_asconf_del_ip — if the
+ * prior send hasn't been ACKed yet, this races a path deletion
+ * against in-flight DATA on that path).  rot_idx walks the
+ * loopback_pool starting at index 4 (127.0.0.5 — addrs 0..3 are
+ * already in use as the bound primaries / multi-home set) and wraps
+ * inside the pool so we never touch addresses outside 127.0.0.0/8.
+ * Void return: every per-step bindx is best-effort and the
+ * orchestrator has nothing to branch on.
+ */
+static void sctp_assoc_churn_iter_churn_loop(struct sctp_assoc_churn_iter_ctx *ctx)
+{
+	struct sockaddr_in addrs[NR_LOOPBACK_ADDRS];
+	unsigned int iters, i, rot_idx;
+	int addr_len;
+	int rc;
+
+	iters = BUDGETED(CHILD_OP_SCTP_ASSOC_CHURN,
+			 JITTER_RANGE(CHURN_ITERS_BASE));
+	rot_idx = 4;
+	for (i = 0; i < iters; i++) {
+		/* a) ADD a fresh address mid-flow.  After this returns,
+		 *    the ASCONF chunk is already on the wire (kernel
+		 *    side runs sctp_send_asconf_add_ip synchronously
+		 *    before the setsockopt returns to userspace). */
+		addr_len = pack_addrs(addrs, NR_LOOPBACK_ADDRS,
+				      rot_idx, 1, ctx->cli_port_n);
+		rc = setsockopt(ctx->cli, IPPROTO_SCTP, SCTP_SOCKOPT_BINDX_ADD,
+				addrs, (socklen_t)addr_len);
+		if (rc == 0)
+			__atomic_add_fetch(
+				&shm->stats.sctp_assoc_churn_bindx_added,
+				1, __ATOMIC_RELAXED);
+		else
+			__atomic_add_fetch(
+				&shm->stats.sctp_assoc_churn_bindx_rejected,
+				1, __ATOMIC_RELAXED);
+
+		/* b) Send during the ASCONF reply window — race window
+		 *    against ASCONF parameter parsing on the server. */
+		churn_send(ctx->cli);
+		if (ctx->srv_acc >= 0)
+			churn_send(ctx->srv_acc);
+
+		/* c) REM the address we just added.  Hits the
+		 *    sctp_send_asconf_del_ip path; if the data send
+		 *    above hasn't been ACKed yet, this races a path
+		 *    deletion against in-flight DATA on that path. */
+		rc = setsockopt(ctx->cli, IPPROTO_SCTP, SCTP_SOCKOPT_BINDX_REM,
+				addrs, (socklen_t)addr_len);
+		if (rc == 0)
+			__atomic_add_fetch(
+				&shm->stats.sctp_assoc_churn_bindx_removed,
+				1, __ATOMIC_RELAXED);
+		else
+			__atomic_add_fetch(
+				&shm->stats.sctp_assoc_churn_bindx_rejected,
+				1, __ATOMIC_RELAXED);
+
+		/* d) Walk the rotation forward — wraps inside the
+		 *    pool so we never touch addresses outside
+		 *    127.0.0.0/8. */
+		rot_idx = (rot_idx + 1U) % NR_LOOPBACK_ADDRS;
+	}
+}
+
 bool sctp_assoc_churn(struct childdata *child)
 {
-	/* sockaddr buffer space — sized for the whole pool plus a little
-	 * head room.  Kept on the stack: each entry is 16 bytes so the
-	 * whole pack-buffer fits in well under a kilobyte and there's
-	 * nothing to free on the failure paths. */
-	struct sockaddr_in addrs[NR_LOOPBACK_ADDRS];
 	struct sctp_assoc_churn_iter_ctx ctx = {
 		.srv = -1,
 		.cli = -1,
@@ -383,10 +449,6 @@ bool sctp_assoc_churn(struct childdata *child)
 	};
 	int peeled = -1;
 	int rc;
-	int addr_len;
-	unsigned int iters;
-	unsigned int i;
-	unsigned int rot_idx;
 
 	(void)child;
 
@@ -405,61 +467,7 @@ bool sctp_assoc_churn(struct childdata *child)
 	if (sctp_assoc_churn_iter_connect(&ctx) != 0)
 		goto out;
 
-	/* Churn loop: alternate ADD and REM of an extra address on the
-	 * client.  Each ADD triggers sctp_send_asconf_add_ip(), each
-	 * REM triggers sctp_send_asconf_del_ip(); both walk the assoc
-	 * list under the bh-locked sk and emit ASCONF chunks on every
-	 * up association.  The send() between each pair is the
-	 * data-plane race window — DATA chunks may share the same
-	 * sndbuf path as the ASCONF reply being processed. */
-	iters = BUDGETED(CHILD_OP_SCTP_ASSOC_CHURN,
-			 JITTER_RANGE(CHURN_ITERS_BASE));
-	rot_idx = 4;	/* start with 127.0.0.5 — addrs 0..3 are already
-			 * in use as the bound primaries / multi-home set. */
-	for (i = 0; i < iters; i++) {
-		/* a) ADD a fresh address mid-flow.  After this returns,
-		 *    the ASCONF chunk is already on the wire (kernel
-		 *    side runs sctp_send_asconf_add_ip synchronously
-		 *    before the setsockopt returns to userspace). */
-		addr_len = pack_addrs(addrs, NR_LOOPBACK_ADDRS,
-				      rot_idx, 1, ctx.cli_port_n);
-		rc = setsockopt(ctx.cli, IPPROTO_SCTP, SCTP_SOCKOPT_BINDX_ADD,
-				addrs, (socklen_t)addr_len);
-		if (rc == 0)
-			__atomic_add_fetch(
-				&shm->stats.sctp_assoc_churn_bindx_added,
-				1, __ATOMIC_RELAXED);
-		else
-			__atomic_add_fetch(
-				&shm->stats.sctp_assoc_churn_bindx_rejected,
-				1, __ATOMIC_RELAXED);
-
-		/* b) Send during the ASCONF reply window — race window
-		 *    against ASCONF parameter parsing on the server. */
-		churn_send(ctx.cli);
-		if (ctx.srv_acc >= 0)
-			churn_send(ctx.srv_acc);
-
-		/* c) REM the address we just added.  Hits the
-		 *    sctp_send_asconf_del_ip path; if the data send
-		 *    above hasn't been ACKed yet, this races a path
-		 *    deletion against in-flight DATA on that path. */
-		rc = setsockopt(ctx.cli, IPPROTO_SCTP, SCTP_SOCKOPT_BINDX_REM,
-				addrs, (socklen_t)addr_len);
-		if (rc == 0)
-			__atomic_add_fetch(
-				&shm->stats.sctp_assoc_churn_bindx_removed,
-				1, __ATOMIC_RELAXED);
-		else
-			__atomic_add_fetch(
-				&shm->stats.sctp_assoc_churn_bindx_rejected,
-				1, __ATOMIC_RELAXED);
-
-		/* d) Walk the rotation forward — wraps inside the
-		 *    pool so we never touch addresses outside
-		 *    127.0.0.0/8. */
-		rot_idx = (rot_idx + 1U) % NR_LOOPBACK_ADDRS;
-	}
+	sctp_assoc_churn_iter_churn_loop(&ctx);
 
 	/* Optional peel-off: split the assoc onto its own fd.  Only
 	 * meaningful for SOCK_SEQPACKET (one-to-many style) — the
