@@ -1317,13 +1317,50 @@ static int tc_qdisc_add_qdisc(struct tc_qdisc_iter_ctx *it)
 	return 0;
 }
 
+/*
+ * Stand up the rest of the tc tree on the freshly-installed root
+ * qdisc: two classes at major:1 / major:2 if the kind is classful,
+ * then one filter at root with a randomly-picked cls kind.  All
+ * best-effort — install failures are latched per-kind but the rest
+ * of the iteration still runs.
+ */
+static void tc_qdisc_add_filter_class(struct tc_qdisc_iter_ctx *it)
+{
+	unsigned int cidx;
+	int rc;
+
+	if (qdisc_kinds[it->qidx].classful) {
+		if (build_newtclass(&it->nl, it->dummy_idx, it->class1, TC_H_ROOT,
+				    qdisc_kinds[it->qidx].name) == 0)
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tclass_create_ok,
+					   1, __ATOMIC_RELAXED);
+		if (build_newtclass(&it->nl, it->dummy_idx, it->class2, TC_H_ROOT,
+				    qdisc_kinds[it->qidx].name) == 0)
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tclass_create_ok,
+					   1, __ATOMIC_RELAXED);
+	}
+
+	cidx = pick_cls_idx();
+	if (cidx < NR_CLS_KINDS) {
+		modprobe_cls(cidx);
+		rc = build_newtfilter(&it->nl, it->dummy_idx, it->handle,
+				      cls_kinds[cidx]);
+		if (rc == 0) {
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tfilter_create_ok,
+					   1, __ATOMIC_RELAXED);
+		} else if (is_unsupported_err(rc)) {
+			ns_unsupported_cls_kind[cidx] = true;
+		}
+	}
+}
+
 bool tc_qdisc_churn(struct childdata *child)
 {
 	struct tc_qdisc_iter_ctx it = {
 		.nl  = { .fd = -1 },
 		.udp = -1,
 	};
-	unsigned int qidx2, cidx;
+	unsigned int qidx2;
 	struct timespec t0;
 	unsigned int iters;
 	unsigned int i;
@@ -1358,29 +1395,7 @@ bool tc_qdisc_churn(struct childdata *child)
 	if (tc_qdisc_add_qdisc(&it) != 0)
 		goto out;
 
-	if (qdisc_kinds[it.qidx].classful) {
-		if (build_newtclass(&it.nl, it.dummy_idx, it.class1, TC_H_ROOT,
-				    qdisc_kinds[it.qidx].name) == 0)
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tclass_create_ok,
-					   1, __ATOMIC_RELAXED);
-		if (build_newtclass(&it.nl, it.dummy_idx, it.class2, TC_H_ROOT,
-				    qdisc_kinds[it.qidx].name) == 0)
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tclass_create_ok,
-					   1, __ATOMIC_RELAXED);
-	}
-
-	cidx = pick_cls_idx();
-	if (cidx < NR_CLS_KINDS) {
-		modprobe_cls(cidx);
-		rc = build_newtfilter(&it.nl, it.dummy_idx, it.handle,
-				      cls_kinds[cidx]);
-		if (rc == 0) {
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tfilter_create_ok,
-					   1, __ATOMIC_RELAXED);
-		} else if (is_unsupported_err(rc)) {
-			ns_unsupported_cls_kind[cidx] = true;
-		}
-	}
+	tc_qdisc_add_filter_class(&it);
 
 	/*
 	 * Drive the dummy's xmit path with loopback UDP.  Each send
