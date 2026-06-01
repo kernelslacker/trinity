@@ -258,6 +258,25 @@ static void keyring_spam_iter_describe(int32_t *live)
 				   1, __ATOMIC_RELAXED);
 }
 
+/* OP_REVOKE: mark a serial revoked.  Deliberately kept in the ring
+ * afterwards -- revoked keys are still queryable as -EKEYREVOKED, so
+ * subsequent READ/DESCRIBE iterations exercise the revoked-key validate
+ * path. */
+static void keyring_spam_iter_revoke(int32_t *live)
+{
+	int32_t serial;
+	long rc;
+
+	serial = ring_pick(live);
+	if (serial == 0)
+		return;
+	rc = syscall(__NR_keyctl, (unsigned long) KEYCTL_REVOKE,
+		     (unsigned long) serial, 0UL, 0UL, 0UL);
+	if (rc < 0)
+		__atomic_add_fetch(&shm->stats.keyring_spam_failed,
+				   1, __ATOMIC_RELAXED);
+}
+
 bool keyring_spam(struct childdata *child)
 {
 	int32_t live[LIVE_KEYS_RING];
@@ -301,17 +320,7 @@ bool keyring_spam(struct childdata *child)
 			break;
 
 		case OP_REVOKE:
-			serial = ring_pick(live);
-			if (serial == 0)
-				break;
-			rc = syscall(__NR_keyctl, (unsigned long) KEYCTL_REVOKE,
-				     (unsigned long) serial, 0UL, 0UL, 0UL);
-			if (rc < 0)
-				__atomic_add_fetch(&shm->stats.keyring_spam_failed,
-						   1, __ATOMIC_RELAXED);
-			/* Revoked keys are still readable as -EKEYREVOKED;
-			 * keep them in the ring so subsequent READ/DESCRIBE
-			 * exercise the revoked-key validate path. */
+			keyring_spam_iter_revoke(live);
 			break;
 
 		case OP_INVALIDATE:
