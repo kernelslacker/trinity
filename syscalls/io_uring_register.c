@@ -384,59 +384,37 @@ static unsigned long pick_io_uring_register_opcode(void)
 }
 
 /*
- * Snapshot of the opcode-gated heap allocation sanitise hands to the
- * kernel via rec->a3, captured at sanitise time and consumed by the
- * post handler.  Lives in rec->post_state, a slot the syscall ABI does
- * not expose, so the post path is immune to a sibling syscall scribbling
- * rec->a2 or rec->a3 between the syscall returning and the post handler
- * running.
+ * Snapshot of the per-opcode state sanitise needs the post handler to
+ * see.  Lives in rec->post_state, a slot the syscall ABI does not
+ * expose, so the post path is immune to a sibling syscall scribbling
+ * rec->a2 or rec->a3 between the syscall returning and the post
+ * handler running.
  *
- * Per-op allocation matrix.  Of the ~38 IORING_REGISTER_* opcodes this
- * generator emits, only one allocates a heap buffer that the post
- * handler has to free:
- *
- *   IORING_REGISTER_BUFFERS -> struct iovec * (alloc_iovec)
- *
- * The other opcodes feed rec->a3 with non-heap values -- get_writable_
- * struct() / get_writable_address() pool pointers, or zero -- and leave
- * original_alloc NULL.  The post handler dispatches off the snapshot's
- * opcode, not rec->a2, so a sibling scribble of the opcode also cannot
- * redirect the free into a non-heap rec->a3 (which would UAF the
- * OBJ_MMAP pool).
- *
- * original_alloc captures the alloc_iovec() return value BEFORE the
- * trailing avoid_shared_buffer() call -- ASB rewrites rec->a3 in place
- * to a writable-address pool buffer (no byte copy) whenever the
- * original buffer overlaps a shared region OR the libc heap, so by the
- * time the post handler runs rec->a3 may no longer point at the
- * zmalloc()'d iovec at all.
- * deferred_free_enqueue()'s heap-bounds and alloc-track gates reject the
- * redirected pointer (writable-address pool, mmap'd, alloc-track-unknown),
- * so the original allocation would leak every IORING_REGISTER_BUFFERS
- * invocation if the post handler routed the free through rec->a3.
+ * Every IORING_REGISTER_* opcode this generator emits now feeds rec->a3
+ * with a non-heap value -- get_writable_struct() / get_writable_address()
+ * pool pointers, or zero.  IORING_REGISTER_BUFFERS / BUFFERS2 /
+ * BUFFERS_UPDATE used to hand back a libc-heap alloc_iovec result that
+ * the post handler had to release; alloc_iovec now returns a writable-
+ * pool slot (see rand/random-address.c), so trinity never owns the
+ * memory backing rec->a3 and the post handler has no free to perform.
+ * The post handler still dispatches off the snapshot's opcode (not
+ * rec->a2) for the per-op STRONG-VAL retval check below, so a sibling
+ * scribble of rec->a2 cannot misroute that validation either.
  *
  * The magic cookie hardens the post handler against rec->post_state
- * being scribbled with a heap-shaped pointer to a foreign allocation
- * (a sibling syscall's post_state, a stale alloc_iovec(1) in the same
- * free-list bucket, ...) -- a cookie mismatch rejects the forgery
- * before any inner-field deref.
+ * being scribbled with a heap-shaped pointer to a foreign allocation --
+ * a cookie mismatch rejects the forgery before any inner-field deref.
  */
 #define IO_URING_REGISTER_POST_STATE_MAGIC	0x494F5F55524D4147UL	/* "IO_URMAG" */
 struct io_uring_register_post_state {
 	unsigned long magic;
 	unsigned int opcode;
-	void *original_alloc;
 	/*
 	 * Per-opcode length of the user buffer at rec->a3.  Set in the
 	 * dispatch switch alongside the buffer allocation, then handed to
 	 * avoid_shared_buffer_inout() in place of the old page_size constant.
-	 * For IORING_REGISTER_BUFFERS the relevant size is nr * sizeof(struct
-	 * iovec), which is 16..128 bytes -- the old page_size relocation
-	 * memcpy()'d a full page out of that 16..128 byte allocation, reading
-	 * past the end and (under ASAN) tripping heap-buffer-overread, or
-	 * (without ASAN) leaking adjacent heap bytes into the relocated
-	 * argument.  arg_len = 0 means the opcode takes no arg and the
-	 * relocation call is skipped entirely.
+	 * arg_len = 0 means the opcode takes no arg and the relocation call
+	 * is skipped entirely.
 	 */
 	unsigned long arg_len;
 };
@@ -448,7 +426,6 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	unsigned int opcode;
 	unsigned int nr;
 	void *buf;
-	void *iov_alloc = NULL;
 	/*
 	 * Per-opcode user-buffer length at rec->a3, set in the dispatch
 	 * switch below.  0 means the opcode takes no arg and the trailing
@@ -510,8 +487,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 */
 	case IORING_REGISTER_BUFFERS:
 		nr = 1 + (rnd_modulo_u32(8));
-		iov_alloc = alloc_iovec(nr, IOV_KERNEL_WRITE);
-		rec->a3 = (unsigned long) iov_alloc;
+		rec->a3 = (unsigned long) alloc_iovec(nr, IOV_KERNEL_WRITE);
 		rec->a4 = nr;
 		arg_len = nr * sizeof(struct iovec);
 		break;
@@ -1176,28 +1152,21 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	}
 
 	/*
-	 * Snapshot the opcode, the (possibly heap) pointer, and the per-
-	 * opcode user-buffer length for the post handler.  A sibling syscall
-	 * can scribble rec->a3 between the syscall returning and the post
-	 * handler running, leaving a real-but-wrong heap pointer that
-	 * looks_like_corrupted_ptr() cannot distinguish from the original;
-	 * the old post handler then hands the wrong allocation to free,
-	 * leaking ours and corrupting another sanitise routine's live
-	 * buffer.  A scribble of rec->a2 is just as dangerous -- flipping
-	 * the opcode from any non-allocating value to IORING_REGISTER_BUFFERS
-	 * would redirect the old opcode-gated dispatch into a non-heap
-	 * rec->a3 (a get_writable_address / get_writable_struct pool pointer)
-	 * and UAF the OBJ_MMAP pool.  rec->post_state is private to the
-	 * post handler, so the scribblers have nothing to scribble there.
-	 * Snap allocation is hoisted above avoid_shared_buffer_inout so the
-	 * per-opcode arg_len can drive the relocation length below; the
-	 * original iov_alloc is still captured pre-relocation.
+	 * Snapshot the opcode and the per-opcode user-buffer length for
+	 * the post handler.  rec->post_state is private to the post path,
+	 * so a sibling scribble of rec->a2 / rec->a3 between the syscall
+	 * returning and the post handler running cannot misroute the
+	 * snapshot's opcode-gated STRONG-VAL dispatch below.  Snap
+	 * allocation is hoisted above avoid_shared_buffer_inout so the
+	 * per-opcode arg_len can drive the relocation length.  No
+	 * original_alloc capture: every opcode now feeds rec->a3 a
+	 * pool-managed pointer (alloc_iovec migrated to writable-pool in
+	 * the preceding commit), so there is nothing for the post handler
+	 * to free.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = IO_URING_REGISTER_POST_STATE_MAGIC;
 	snap->opcode = opcode;
-	snap->original_alloc = (opcode == IORING_REGISTER_BUFFERS) ?
-		iov_alloc : NULL;
 	snap->arg_len = arg_len;
 	rec->post_state = (unsigned long) snap;
 
@@ -1225,12 +1194,12 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 }
 
 /*
- * IORING_REGISTER_BUFFERS is the only opcode whose sanitise path
- * allocates memory (via alloc_iovec()) into rec->a3.  Other opcodes
- * use pool-managed pointers (get_writable_address / get_writable_struct)
- * that must not be free()d.  Gate the deferred free on the snapshot's
- * opcode -- not rec->a2 -- so a sibling scribble of either rec->a2 or
- * rec->a3 cannot redirect or misdirect the free.
+ * Every IORING_REGISTER_* opcode this generator emits feeds rec->a3
+ * with a pool-managed pointer (get_writable_address /
+ * get_writable_struct, or the writable-pool result alloc_iovec now
+ * returns).  Pool slots are never free()d by trinity, so the post
+ * handler has no buffer cleanup to perform; it owns only the
+ * post_state snapshot and the per-opcode STRONG-VAL retval check.
  */
 static void post_io_uring_register(struct syscallrecord *rec)
 {
@@ -1336,32 +1305,6 @@ static void post_io_uring_register(struct syscallrecord *rec)
 			break;
 		}
 	}
-
-	/*
-	 * Defense in depth: if something corrupted the snapshot itself,
-	 * the inner pointer may no longer reference our heap allocation.
-	 * NULL is a legitimate value here (most opcodes do not allocate),
-	 * so only flag a non-NULL value that fails the heuristic.  Leak
-	 * rather than hand garbage to free().
-	 */
-	if (snap->original_alloc != NULL &&
-	    looks_like_corrupted_ptr(rec, snap->original_alloc)) {
-		outputerr("post_io_uring_register: rejected suspicious snap "
-			  "original_alloc=%p (post_state-scribbled?)\n",
-			  snap->original_alloc);
-		deferred_freeptr(&rec->post_state);
-		return;
-	}
-
-	/*
-	 * Belt-and-suspenders: only release if both the snapshot's
-	 * opcode says we allocated and we actually have a non-NULL heap
-	 * pointer to release.  deferred_free_enqueue() (not
-	 * deferred_freeptr) so concurrent observers that grabbed the
-	 * address from rec->a3 before a scribble do not UAF.
-	 */
-	if (snap->original_alloc != NULL && snap->opcode == IORING_REGISTER_BUFFERS)
-		deferred_free_enqueue(snap->original_alloc);
 
 	deferred_freeptr(&rec->post_state);
 }

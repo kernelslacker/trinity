@@ -261,42 +261,19 @@ skip_si:
 
 	if (RAND_BOOL()) {
 		unsigned int num_entries = RAND_RANGE(1, 3);
-		struct iovec *iov_src;
 		struct iovec *iov;
 
 		/*
-		 * Back the iovec array with a writable-pool slot rather than
-		 * a libc-heap zmalloc().  scrub_msghdr_for_kernel_write() in
-		 * rand/random-address.c scrubs per-entry iov_base / iov_len
-		 * but intentionally does not touch msg_iovlen (the count
-		 * itself), so the size_t the kernel reads at syscall entry
-		 * is sibling-writable.  Even with the preceding oversize-
-		 * to-UIO_MAXIOV commit a scribble above UIO_MAXIOV would
-		 * resume the heap-buffer-overflow that surfaces as the
-		 * dominant __zmalloc -> malloc -> malloc_printerr -> abort
-		 * cluster.  Migrating to get_writable_address() takes the
-		 * kernel's OOB iov walk's overflow target out of the libc
-		 * arena entirely: the pool's neighbours are other pool
-		 * slots and trinity never free()s a pool address, so even
-		 * an arbitrary-size kernel walk past num_entries cannot
-		 * read libc free-list chunk metadata as (iov_base, iov_len)
-		 * pairs and the phantom-pointer write target falls out of
-		 * the arena that glibc's corruption detector watches.
-		 *
-		 * alloc_iovec() still picks the per-entry shape and runs
-		 * the avoid_shared_buffer scrub.  The small zmalloc()'d
-		 * result is copied into the pool slot and tracked_free_now()
-		 * released so we do not leak.  Drop msg_iov to NULL (and
-		 * msg_iovlen to 0) when the pool cannot surface a slot --
-		 * mirrors the get_writable_address() failure mode in the
-		 * msg_control branch below.
+		 * alloc_iovec() now returns a UIO_MAXIOV-sized writable-pool
+		 * slot directly (see rand/random-address.c).  Pool slots are
+		 * never freed by trinity, so a sibling scribble of
+		 * msg_iovlen above num_entries walks zeroed pool bytes the
+		 * kernel iov_iter advances over as no-ops, and the kernel's
+		 * OOB iov walk's overflow target stays out of the libc
+		 * arena.  Drop msg_iov / msg_iovlen to NULL / 0 on pool
+		 * exhaustion -- mirrors the msg_control branch below.
 		 */
-		iov_src = alloc_iovec(num_entries, IOV_KERNEL_WRITE);
-		iov = get_writable_address(UIO_MAXIOV * sizeof(struct iovec));
-		if (iov != NULL && iov_src != NULL)
-			memcpy(iov, iov_src, num_entries * sizeof(struct iovec));
-		if (iov_src != NULL)
-			tracked_free_now(iov_src);
+		iov = alloc_iovec(num_entries, IOV_KERNEL_WRITE);
 		if (iov != NULL) {
 			msg->msg_iov = iov;
 			msg->msg_iovlen = num_entries;
@@ -564,22 +541,14 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 		unsigned int num_entries = RAND_RANGE(1, 3);
 		struct sockaddr *sa = NULL;
 		socklen_t salen = 0;
-		struct iovec *iov_src;
 		struct iovec *iov;
 
 		/*
-		 * Migrate msg_iov to the writable-pool; see sanitise_recvmsg
-		 * above for the structural rationale (sibling-scribbled
-		 * msg_iovlen cannot land a kernel OOB walk on glibc arena
-		 * metadata when the backing buffer is not on the libc heap).
+		 * alloc_iovec() returns a writable-pool slot; see
+		 * sanitise_recvmsg above for the structural rationale.
 		 * Drop to NULL / 0 when the pool cannot surface a slot.
 		 */
-		iov_src = alloc_iovec(num_entries, IOV_KERNEL_WRITE);
-		iov = get_writable_address(UIO_MAXIOV * sizeof(struct iovec));
-		if (iov != NULL && iov_src != NULL)
-			memcpy(iov, iov_src, num_entries * sizeof(struct iovec));
-		if (iov_src != NULL)
-			tracked_free_now(iov_src);
+		iov = alloc_iovec(num_entries, IOV_KERNEL_WRITE);
 		if (iov != NULL) {
 			msg->msg_iov = iov;
 			msg->msg_iovlen = num_entries;

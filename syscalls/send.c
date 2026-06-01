@@ -238,27 +238,21 @@ skip_gen_msg:;
 
 	if (RAND_BOOL()) {
 		unsigned int num_entries;
-		struct iovec *iov_src;
 		struct iovec *iov;
 
 		num_entries = RAND_RANGE(1, 3);
 		/*
-		 * Migrate msg_iov to the writable-pool; see
+		 * alloc_iovec() returns a writable-pool slot; see
 		 * recv.c::sanitise_recvmsg for the structural rationale.
 		 * Read direction means the kernel doesn't write back
 		 * through iov_base, but the OOB iov-array walk past a
-		 * sibling-scribbled msg_iovlen still treats the next libc
-		 * chunk's bytes as (iov_base, iov_len) pairs and reads
-		 * arbitrary heap into outgoing network traffic.  Pool
-		 * migration removes the libc-arena read target.  Drop to
-		 * NULL / 0 when the pool cannot surface a slot.
+		 * sibling-scribbled msg_iovlen still treats the next
+		 * pool slot's bytes as (iov_base, iov_len) pairs -- the
+		 * pool migration keeps that read target out of the libc
+		 * arena.  Drop to NULL / 0 when the pool cannot surface
+		 * a slot.
 		 */
-		iov_src = alloc_iovec(num_entries, IOV_KERNEL_READ);
-		iov = get_writable_address(UIO_MAXIOV * sizeof(struct iovec));
-		if (iov != NULL && iov_src != NULL)
-			memcpy(iov, iov_src, num_entries * sizeof(struct iovec));
-		if (iov_src != NULL)
-			tracked_free_now(iov_src);
+		iov = alloc_iovec(num_entries, IOV_KERNEL_READ);
 		if (iov != NULL) {
 			msg->msg_iov = iov;
 			msg->msg_iovlen = num_entries;
@@ -511,20 +505,14 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 		unsigned int num_entries = RAND_RANGE(1, 3);
 		struct sockaddr *sa = NULL;
 		socklen_t salen = 0;
-		struct iovec *iov_src;
 		struct iovec *iov;
 
 		/*
-		 * Migrate msg_iov to the writable-pool; see
+		 * alloc_iovec() returns a writable-pool slot; see
 		 * recv.c::sanitise_recvmsg for the structural rationale.
 		 * Drop to NULL / 0 when the pool cannot surface a slot.
 		 */
-		iov_src = alloc_iovec(num_entries, IOV_KERNEL_READ);
-		iov = get_writable_address(UIO_MAXIOV * sizeof(struct iovec));
-		if (iov != NULL && iov_src != NULL)
-			memcpy(iov, iov_src, num_entries * sizeof(struct iovec));
-		if (iov_src != NULL)
-			tracked_free_now(iov_src);
+		iov = alloc_iovec(num_entries, IOV_KERNEL_READ);
 		if (iov != NULL) {
 			msg->msg_iov = iov;
 			msg->msg_iovlen = num_entries;
