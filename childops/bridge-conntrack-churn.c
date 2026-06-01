@@ -470,6 +470,30 @@ struct sender_args {
 	struct timespec	t0;
 };
 
+/* Per-invocation state shared across the extracted phase helpers.  Fd
+ * fields default to -1 via the orchestrator's designated initialiser
+ * so the teardown helper can close them unconditionally regardless of
+ * which earlier phase bailed.  Name buffers are filled in by
+ * setup_names; ifindex/bridge_added/veth_added by bridge_create and
+ * veth_attach; raw/sa/tid/sender_started by traffic_burst. */
+struct bridge_conntrack_iter_ctx {
+	char			br_name[IFNAMSIZ];
+	char			veth_a[IFNAMSIZ];
+	char			veth_b[IFNAMSIZ];
+	struct nl_ctx		rtnl;
+	struct nfnl_ctx		nfnl_nft;
+	struct nfnl_ctx		nfnl_ct;
+	struct sender_args	sa;
+	pthread_t		tid;
+	int			raw;
+	int			br_idx;
+	int			va_idx;
+	int			vb_idx;
+	bool			bridge_added;
+	bool			veth_added;
+	bool			sender_started;
+};
+
 static long brct_ns_since(const struct timespec *t0)
 {
 	struct timespec now;
@@ -530,29 +554,53 @@ static void *brct_packet_sender(void *arg)
 	return NULL;
 }
 
-bool bridge_conntrack_churn(struct childdata *child)
+/*
+ * Phase 1: pick the per-invocation interface names and bring the
+ * iteration's rtnl context online.  Names are derived from a single
+ * 16-bit random suffix so the three interfaces share a stable
+ * correlator inside the netns.  The rtnl socket is opened here because
+ * every subsequent phase needs it (bridge_create, veth_attach,
+ * teardown).  lo is brought up exactly once per process via the
+ * lo_up_done latch — first call only, subsequent invocations skip the
+ * RTM_NEWLINK round trip.  Returns 0 on success or -1 if the iteration
+ * should bail to the out: cleanup path.
+ */
+static int bridge_conntrack_iter_setup_names(struct bridge_conntrack_iter_ctx *ctx)
 {
-	char br_name[IFNAMSIZ];
-	char veth_a[IFNAMSIZ], veth_b[IFNAMSIZ];
-	const char *table = "br_ct";
-	const char *chain = "in";
-	struct sender_args sa;
-	pthread_t tid = 0;
-	bool sender_started = false;
-	struct nl_ctx rtnl = { .fd = -1 };
-	struct nfnl_ctx nfnl_nft = { .nl = { .fd = -1 } };
-	struct nfnl_ctx nfnl_ct  = { .nl = { .fd = -1 } };
 	struct nl_open_opts rtnl_opts = {
 		.proto         = NETLINK_ROUTE,
 		.recv_timeo_s  = 1,
 	};
+	unsigned int rng;
+
+	if (nl_open(&ctx->rtnl, &rtnl_opts) < 0)
+		return -1;
+	if (!lo_up_done) {
+		bring_lo_up(&ctx->rtnl);
+		lo_up_done = true;
+	}
+
+	rng = (unsigned int)(rand32() & 0xffffu);
+	snprintf(ctx->br_name, sizeof(ctx->br_name), "trbc%u", rng);
+	snprintf(ctx->veth_a,  sizeof(ctx->veth_a),  "trbcv%ua", rng);
+	snprintf(ctx->veth_b,  sizeof(ctx->veth_b),  "trbcv%ub", rng);
+	return 0;
+}
+
+bool bridge_conntrack_churn(struct childdata *child)
+{
+	struct bridge_conntrack_iter_ctx ctx = {
+		.rtnl     = { .fd = -1 },
+		.nfnl_nft = { .nl = { .fd = -1 } },
+		.nfnl_ct  = { .nl = { .fd = -1 } },
+		.raw      = -1,
+	};
+	const char *table = "br_ct";
+	const char *chain = "in";
 	struct nfnl_open_opts nfnl_opts = {
 		.recv_timeo_s  = 1,
 	};
-	int raw = -1;
-	int br_idx = 0, va_idx = 0, vb_idx = 0;
-	bool bridge_added = false, veth_added = false;
-	unsigned int rng, iters, i;
+	unsigned int iters, i;
 	int rc;
 
 	(void)child;
@@ -574,73 +622,66 @@ bool bridge_conntrack_churn(struct childdata *child)
 		ns_unshared = true;
 	}
 
-	if (nl_open(&rtnl, &rtnl_opts) < 0)
-		return true;
-	if (!lo_up_done) {
-		bring_lo_up(&rtnl);
-		lo_up_done = true;
-	}
+	if (bridge_conntrack_iter_setup_names(&ctx) != 0)
+		goto out;
 
-	rng = (unsigned int)(rand32() & 0xffffu);
-	snprintf(br_name, sizeof(br_name), "trbc%u", rng);
-	snprintf(veth_a,  sizeof(veth_a),  "trbcv%ua", rng);
-	snprintf(veth_b,  sizeof(veth_b),  "trbcv%ub", rng);
-
-	rc = rtnl_create_bridge(&rtnl, br_name);
+	rc = rtnl_create_bridge(&ctx.rtnl, ctx.br_name);
 	if (rc != 0) {
 		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 		    rc == -ENOTSUP || rc == -EPROTONOSUPPORT)
 			ns_unsupported_bridge = true;
 		goto out;
 	}
-	bridge_added = true;
-	br_idx = (int)if_nametoindex(br_name);
-	if (br_idx <= 0)
+	ctx.bridge_added = true;
+	ctx.br_idx = (int)if_nametoindex(ctx.br_name);
+	if (ctx.br_idx <= 0)
 		goto out;
 
-	if (rtnl_create_veth(&rtnl, veth_a, veth_b) != 0)
+	if (rtnl_create_veth(&ctx.rtnl, ctx.veth_a, ctx.veth_b) != 0)
 		goto out;
-	veth_added = true;
-	va_idx = (int)if_nametoindex(veth_a);
-	vb_idx = (int)if_nametoindex(veth_b);
-	if (va_idx <= 0 || vb_idx <= 0)
+	ctx.veth_added = true;
+	ctx.va_idx = (int)if_nametoindex(ctx.veth_a);
+	ctx.vb_idx = (int)if_nametoindex(ctx.veth_b);
+	if (ctx.va_idx <= 0 || ctx.vb_idx <= 0)
 		goto out;
 
-	(void)rtnl_setlink_master(&rtnl, va_idx, br_idx);
-	(void)rtnl_setlink_up(&rtnl, br_idx);
-	(void)rtnl_setlink_up(&rtnl, va_idx);
-	(void)rtnl_setlink_up(&rtnl, vb_idx);
+	(void)rtnl_setlink_master(&ctx.rtnl, ctx.va_idx, ctx.br_idx);
+	(void)rtnl_setlink_up(&ctx.rtnl, ctx.br_idx);
+	(void)rtnl_setlink_up(&ctx.rtnl, ctx.va_idx);
+	(void)rtnl_setlink_up(&ctx.rtnl, ctx.vb_idx);
 
-	if (nfnl_open(&nfnl_nft, &nfnl_opts) < 0)
+	if (nfnl_open(&ctx.nfnl_nft, &nfnl_opts) < 0)
 		goto out;
-	rc = nft_install_bridge_ct(&nfnl_nft, table, chain);
+	rc = nft_install_bridge_ct(&ctx.nfnl_nft, table, chain);
 	if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
 	    rc == -EOPNOTSUPP || rc == -ENOTSUP)
 		ns_unsupported_nf_tables = true;
 
-	raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_ALL));
-	if (raw >= 0) {
+	ctx.raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_ALL));
+	if (ctx.raw >= 0) {
 		struct sockaddr_ll bind_sll;
 
 		memset(&bind_sll, 0, sizeof(bind_sll));
 		bind_sll.sll_family   = AF_PACKET;
 		bind_sll.sll_protocol = htons(ETH_P_ALL);
-		bind_sll.sll_ifindex  = vb_idx;
-		(void)bind(raw, (struct sockaddr *)&bind_sll, sizeof(bind_sll));
+		bind_sll.sll_ifindex  = ctx.vb_idx;
+		(void)bind(ctx.raw, (struct sockaddr *)&bind_sll,
+			   sizeof(bind_sll));
 
-		memset(&sa, 0, sizeof(sa));
-		sa.raw_fd  = raw;
-		sa.ifindex = vb_idx;
+		memset(&ctx.sa, 0, sizeof(ctx.sa));
+		ctx.sa.raw_fd  = ctx.raw;
+		ctx.sa.ifindex = ctx.vb_idx;
 		/* Send to v0's MAC; we don't know it cheaply, so use the
 		 * broadcast — bridge floods on unknown unicast / broadcast
 		 * and the ct hook sees the frame either way. */
-		memset(sa.dst_mac, 0xff, sizeof(sa.dst_mac));
-		(void)clock_gettime(CLOCK_MONOTONIC, &sa.t0);
-		if (pthread_create(&tid, NULL, brct_packet_sender, &sa) == 0)
-			sender_started = true;
+		memset(ctx.sa.dst_mac, 0xff, sizeof(ctx.sa.dst_mac));
+		(void)clock_gettime(CLOCK_MONOTONIC, &ctx.sa.t0);
+		if (pthread_create(&ctx.tid, NULL, brct_packet_sender,
+				   &ctx.sa) == 0)
+			ctx.sender_started = true;
 	}
 
-	if (nfnl_open(&nfnl_ct, &nfnl_opts) == 0) {
+	if (nfnl_open(&ctx.nfnl_ct, &nfnl_opts) == 0) {
 		struct timespec t0;
 
 		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -654,7 +695,7 @@ bool bridge_conntrack_churn(struct childdata *child)
 		for (i = 0; i < iters; i++) {
 			if (brct_ns_since(&t0) >= BRCT_BUDGET_NS)
 				break;
-			rc = ctnetlink_flush(&nfnl_ct);
+			rc = ctnetlink_flush(&ctx.nfnl_ct);
 			if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
 			    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
 				ns_unsupported_ctnetlink = true;
@@ -665,25 +706,25 @@ bool bridge_conntrack_churn(struct childdata *child)
 		}
 	}
 
-	if (sender_started)
-		(void)pthread_join(tid, NULL);
+	if (ctx.sender_started)
+		(void)pthread_join(ctx.tid, NULL);
 
 out:
-	if (raw >= 0) {
+	if (ctx.raw >= 0) {
 		unsigned char drain[256];
 
-		while (recv(raw, drain, sizeof(drain), MSG_DONTWAIT) > 0)
+		while (recv(ctx.raw, drain, sizeof(drain), MSG_DONTWAIT) > 0)
 			;
-		close(raw);
+		close(ctx.raw);
 	}
-	nfnl_close(&nfnl_ct);
-	nfnl_close(&nfnl_nft);
-	if (rtnl.fd >= 0) {
-		if (bridge_added && br_idx > 0)
-			(void)rtnl_dellink(&rtnl, br_idx);
-		if (veth_added && vb_idx > 0)
-			(void)rtnl_dellink(&rtnl, vb_idx);
-		nl_close(&rtnl);
+	nfnl_close(&ctx.nfnl_ct);
+	nfnl_close(&ctx.nfnl_nft);
+	if (ctx.rtnl.fd >= 0) {
+		if (ctx.bridge_added && ctx.br_idx > 0)
+			(void)rtnl_dellink(&ctx.rtnl, ctx.br_idx);
+		if (ctx.veth_added && ctx.vb_idx > 0)
+			(void)rtnl_dellink(&ctx.rtnl, ctx.vb_idx);
+		nl_close(&ctx.rtnl);
 	}
 	return true;
 }
