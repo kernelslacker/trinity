@@ -276,6 +276,95 @@ static void close_racer_iter_open_pairs(struct close_racer_iter_ctx *ctx)
 	}
 }
 
+/* Variable race window then per-mode close.  The jitter usleep
+ * (0..100us, suppressed ~1/256 cycles via the rnd_u32 mask so the
+ * close occasionally lands with no delay) picks a random sub-window
+ * of the racer's syscall to land the close in.  Modes:
+ *   CYCLE_PEER_FIRST closes sv[1] first so RACER_RECV unblocks on
+ *     peer-close before sv[0] hits file_close_fd_locked, exercising
+ *     the opposite half of the teardown ordering.
+ *   CYCLE_SKIP_CLOSE records both fds in the orchestrator's deferred-
+ *     fds array so the close runs after pthread_join (last-ref drop on
+ *     a synchronous fput path); falls back to an immediate close once
+ *     the DEFERRED_FD_MAX backlog is full.
+ *   CYCLE_MULTI_PAIR shuffles all 2*K spawned fds Fisher-Yates and
+ *     closes them in interleaved order for sustained fdtable churn.
+ *   CYCLE_NORMAL / CYCLE_POST_SLEEP close in [0]-then-[1] order;
+ *     POST_SLEEP follows with another short usleep to widen the
+ *     post-close fput-vs-join settling window. */
+static void close_racer_iter_close_phase(struct close_racer_iter_ctx *ctx,
+					 int *deferred_fds,
+					 unsigned int *deferred_n)
+{
+	unsigned int j;
+
+	if ((rnd_u32() & 0xff) != 0)
+		usleep((useconds_t)(1 + rnd_modulo_u32(100)));
+
+	switch (ctx->mode) {
+	case CYCLE_PEER_FIRST:
+		(void)close(ctx->sv[0][1]);
+		(void)close(ctx->sv[0][0]);
+		break;
+
+	case CYCLE_SKIP_CLOSE:
+		/* Defer to function exit so the racer is fully
+		 * joined first; the deferred close then drops the
+		 * last ref synchronously rather than racing fdget. */
+		if (*deferred_n + 2 <= DEFERRED_FD_MAX) {
+			deferred_fds[(*deferred_n)++] = ctx->sv[0][0];
+			deferred_fds[(*deferred_n)++] = ctx->sv[0][1];
+		} else {
+			(void)close(ctx->sv[0][0]);
+			(void)close(ctx->sv[0][1]);
+		}
+		break;
+
+	case CYCLE_MULTI_PAIR: {
+		int order[MULTI_PAIR_MAX * 2];
+		unsigned int n = 0;
+
+		for (j = 0; j < ctx->k; j++) {
+			if (!ctx->spawned[j])
+				continue;
+			order[n++] = (int)(j * 2);
+			order[n++] = (int)(j * 2 + 1);
+		}
+		/* Fisher-Yates shuffle — interleaved close across
+		 * multiple struct files in one cycle drives sustained
+		 * fdtable churn rather than the rigid pair-at-a-time
+		 * close ordering. */
+		for (j = n; j > 1; j--) {
+			unsigned int r = rnd_modulo_u32(j);
+			int tmp = order[j - 1];
+
+			order[j - 1] = order[r];
+			order[r] = tmp;
+		}
+		for (j = 0; j < n; j++) {
+			int idx = order[j];
+
+			(void)close(ctx->sv[idx >> 1][idx & 1]);
+		}
+		break;
+	}
+
+	case CYCLE_NORMAL:
+	case CYCLE_POST_SLEEP:
+	default:
+		(void)close(ctx->sv[0][0]);
+		(void)close(ctx->sv[0][1]);
+		if (ctx->mode == CYCLE_POST_SLEEP) {
+			/* Short post-close sleep: racer's syscall has
+			 * returned by now, so this widens the window
+			 * where final fput / release may still be
+			 * settling before pthread_join syncs. */
+			usleep((useconds_t)(1 + rnd_modulo_u32(50)));
+		}
+		break;
+	}
+}
+
 bool close_racer(struct childdata *child)
 {
 	unsigned int cycles;
@@ -313,73 +402,7 @@ bool close_racer(struct childdata *child)
 		}
 		spawn_fail_streak = 0;
 
-		/* Variable race window — 0..100us picks a random sub-window
-		 * of the racer's syscall to land the close in. */
-		if ((rnd_u32() & 0xff) != 0)
-			usleep((useconds_t)(1 + rnd_modulo_u32(100)));
-
-		switch (ctx.mode) {
-		case CYCLE_PEER_FIRST:
-			(void)close(ctx.sv[0][1]);
-			(void)close(ctx.sv[0][0]);
-			break;
-
-		case CYCLE_SKIP_CLOSE:
-			/* Defer to function exit so the racer is fully
-			 * joined first; the deferred close then drops the
-			 * last ref synchronously rather than racing fdget. */
-			if (deferred_n + 2 <= DEFERRED_FD_MAX) {
-				deferred_fds[deferred_n++] = ctx.sv[0][0];
-				deferred_fds[deferred_n++] = ctx.sv[0][1];
-			} else {
-				(void)close(ctx.sv[0][0]);
-				(void)close(ctx.sv[0][1]);
-			}
-			break;
-
-		case CYCLE_MULTI_PAIR: {
-			int order[MULTI_PAIR_MAX * 2];
-			unsigned int n = 0;
-
-			for (j = 0; j < ctx.k; j++) {
-				if (!ctx.spawned[j])
-					continue;
-				order[n++] = (int)(j * 2);
-				order[n++] = (int)(j * 2 + 1);
-			}
-			/* Fisher-Yates shuffle — interleaved close across
-			 * multiple struct files in one cycle drives sustained
-			 * fdtable churn rather than the rigid pair-at-a-time
-			 * close ordering. */
-			for (j = n; j > 1; j--) {
-				unsigned int r = rnd_modulo_u32(j);
-				int tmp = order[j - 1];
-
-				order[j - 1] = order[r];
-				order[r] = tmp;
-			}
-			for (j = 0; j < n; j++) {
-				int idx = order[j];
-
-				(void)close(ctx.sv[idx >> 1][idx & 1]);
-			}
-			break;
-		}
-
-		case CYCLE_NORMAL:
-		case CYCLE_POST_SLEEP:
-		default:
-			(void)close(ctx.sv[0][0]);
-			(void)close(ctx.sv[0][1]);
-			if (ctx.mode == CYCLE_POST_SLEEP) {
-				/* Short post-close sleep: racer's syscall has
-				 * returned by now, so this widens the window
-				 * where final fput / release may still be
-				 * settling before pthread_join syncs. */
-				usleep((useconds_t)(1 + rnd_modulo_u32(50)));
-			}
-			break;
-		}
+		close_racer_iter_close_phase(&ctx, deferred_fds, &deferred_n);
 
 		for (j = 0; j < ctx.k; j++) {
 			if (ctx.spawned[j])
