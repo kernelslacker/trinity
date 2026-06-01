@@ -377,6 +377,27 @@ static int futex_storm_iter_spawn_workers(struct futex_storm_iter_ctx *ctx)
 	return 0;
 }
 
+/*
+ * Phase 3: drive the storm.  Sleep for the wall-clock budget while
+ * workers churn, then flip the done flag and broadcast a wake on
+ * every futex word so any worker that re-entered FUTEX_WAIT just
+ * before the flag flip gets dislodged before its sub-ms timeout
+ * would have expired.  This is the only phase that can take
+ * STORM_BUDGET_NS of wall-clock; setup and teardown stay outside
+ * the timed window.
+ */
+static void futex_storm_iter_drive_burst(struct futex_storm_iter_ctx *ctx)
+{
+	struct timespec budget;
+
+	budget.tv_sec  = 0;
+	budget.tv_nsec = STORM_BUDGET_NS;
+	nanosleep(&budget, NULL);
+
+	__atomic_store_n(&ctx->s->done, 1, __ATOMIC_RELAXED);
+	broadcast_wake(ctx->s);
+}
+
 bool futex_storm(struct childdata *child)
 {
 	struct futex_storm_iter_ctx ctx = { .s = NULL };
@@ -393,12 +414,7 @@ bool futex_storm(struct childdata *child)
 	if (futex_storm_iter_spawn_workers(&ctx) != 0)
 		goto out_barrier;
 
-	budget.tv_sec  = 0;
-	budget.tv_nsec = STORM_BUDGET_NS;
-	nanosleep(&budget, NULL);
-
-	__atomic_store_n(&ctx.s->done, 1, __ATOMIC_RELAXED);
-	broadcast_wake(ctx.s);
+	futex_storm_iter_drive_burst(&ctx);
 
 	/*
 	 * Workers should exit promptly now: the done flag is set and any
