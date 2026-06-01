@@ -85,13 +85,27 @@ static void store_successful_fd(struct results *results, unsigned long value)
 	 * consecutive failure run and clear the failed-fds bit. */
 	__atomic_fetch_and(&results->failed_fds[fd >> 3],
 			   (unsigned char)~mask, __ATOMIC_RELAXED);
-	/* fail_run_fd and fail_run_count must be observed together to be
-	 * meaningful (count is the run length for the fd in fail_run_fd),
-	 * so the pair shares the per-results lock with store_failed_fd. */
-	lock(&results->lock);
-	if (results->fail_run_count > 0 && results->fail_run_fd == (unsigned char) fd)
-		results->fail_run_count = 0;
-	unlock(&results->lock);
+	/* Pair (fd, count) lives in the packed fail_run word; clear it
+	 * lock-free with a CAS so concurrent store_failed_fd bumps either
+	 * win the race (the bump's CAS lands first, the load below sees
+	 * fresh state and either re-clears or no-ops) or lose to the
+	 * cleared state.  Early-out when the load shows our entry is
+	 * already gone -- common in the hot path. */
+	{
+		union fail_run_u cur, new;
+		do {
+			cur.raw = __atomic_load_n(&results->fail_run.raw,
+						  __ATOMIC_RELAXED);
+			if (cur.u.fd != (unsigned char) fd || cur.u.count == 0)
+				break;
+			new = cur;
+			new.u.fd = 0;
+			new.u.count = 0;
+		} while (!__atomic_compare_exchange_n(&results->fail_run.raw,
+						      &cur.raw, new.raw, false,
+						      __ATOMIC_RELEASE,
+						      __ATOMIC_RELAXED));
+	}
 }
 
 static void store_failed_fd(struct results *results, unsigned long value)
@@ -102,24 +116,35 @@ static void store_failed_fd(struct results *results, unsigned long value)
 	if (fd < 3 || fd >= SUCCESS_FD_SCOREBOARD_BITS)
 		return;
 
-	/* fail_run_fd and fail_run_count are a paired (fd, count) tuple
-	 * — without the lock, two children can race the !run-in-flight
-	 * branch and end up with one child's fd alongside the other
-	 * child's count, blowing past FAIL_RUN_THRESHOLD against the
-	 * wrong fd.  Capture the threshold-crossing test under the lock
-	 * so the conditional bitmap update reflects the just-committed
-	 * count, not a stale racy read. */
-	lock(&results->lock);
-	if (results->fail_run_count > 0 &&
-	    results->fail_run_fd == (unsigned char) fd) {
-		if (results->fail_run_count < 0xFF)
-			results->fail_run_count++;
-	} else {
-		results->fail_run_fd = (unsigned char) fd;
-		results->fail_run_count = 1;
+	/* The packed (fd, count) tuple in fail_run is the canonical state
+	 * now (legacy fail_run_fd / fail_run_count are no longer read or
+	 * written).  Reads and the bump still run under results->lock so
+	 * two children can't race the !run-in-flight branch and end up
+	 * with one child's fd alongside the other child's count, blowing
+	 * past FAIL_RUN_THRESHOLD against the wrong fd.  The committed
+	 * pair is published with a single atomic store so concurrent
+	 * lock-free clears in store_successful_fd observe a coherent
+	 * (fd, count) word.  Step 4 converts this bump to a CAS loop and
+	 * drops the lock. */
+	{
+		union fail_run_u cur, new;
+		lock(&results->lock);
+		cur.raw = __atomic_load_n(&results->fail_run.raw,
+					  __ATOMIC_RELAXED);
+		new = cur;
+		if (cur.u.count > 0 && cur.u.fd == (unsigned char) fd) {
+			if (cur.u.count < 0xFF)
+				new.u.count = cur.u.count + 1;
+		} else {
+			new.u.fd = (unsigned char) fd;
+			new.u.count = 1;
+			new.u.pad = 0;
+		}
+		__atomic_store_n(&results->fail_run.raw, new.raw,
+				 __ATOMIC_RELEASE);
+		set_failed_bit = (new.u.count >= FAIL_RUN_THRESHOLD);
+		unlock(&results->lock);
 	}
-	set_failed_bit = (results->fail_run_count >= FAIL_RUN_THRESHOLD);
-	unlock(&results->lock);
 
 	if (set_failed_bit)
 		__atomic_fetch_or(&results->failed_fds[fd >> 3],
