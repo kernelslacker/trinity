@@ -10,6 +10,7 @@
 #include "arch.h"
 #include "arch-syscalls.h"
 #include "params.h"
+#include "results.h"
 #include "stats.h"
 #include "syscall.h"
 #include "shm.h"
@@ -617,6 +618,16 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		copy[m].cleanup_arg_mask = compute_cleanup_arg_mask(&copy[m]);
 		copy[m].fd_arg_mask = compute_fd_arg_mask(&copy[m]);
 		copy[m].len_arg_mask = compute_len_arg_mask(&copy[m]);
+
+		/* memcpy + alloc_shared zero-init leaves results[].len_score
+		 * decoding as (min=0, max=0) -- a valid range, not the
+		 * not-seen sentinel.  Stamp every per-arg slot so a reader
+		 * sees min > max on a fresh slot. */
+		{
+			unsigned int i;
+			for (i = 0; i < 6; i++)
+				results_init_one(&copy[m].results[i]);
+		}
 
 		from[n].entry = &copy[m];
 		m++;

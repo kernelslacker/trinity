@@ -197,6 +197,28 @@ struct arglist {
 #define SUCCESS_FD_SCOREBOARD_BITS	256
 #define SUCCESS_FD_SCOREBOARD_BYTES	(SUCCESS_FD_SCOREBOARD_BITS / 8)
 
+/* Packed views of the ARG_LEN scoreboard (seen/min/max) and the failed-fd
+ * run-length tracker (fail_run_fd, fail_run_count).  Defined alongside the
+ * existing fields so subsequent commits can swap the locked multi-field
+ * RMW paths in store_successful_len() / store_failed_fd() /
+ * store_successful_fd() for CAS loops on these single words and retire
+ * the per-results lock.  Not yet read or written by any path. */
+union len_score_u {
+	uint64_t raw;
+	struct {
+		uint32_t min;
+		uint32_t max;
+	} u;
+};
+union fail_run_u {
+	uint32_t raw;
+	struct {
+		uint8_t fd;
+		uint8_t count;
+		uint16_t pad;
+	} u;
+};
+
 struct results {
 	/* Serialises the multi-field RMW paths in store_successful_len()
 	 * (seen/min/max init + range update) and the fail_run_fd /
@@ -224,6 +246,15 @@ struct results {
 	 * means no run in flight (so static-zero init "just works"). */
 	unsigned char fail_run_fd;
 	unsigned char fail_run_count;	/* saturating; 0 = no run in flight */
+	/* Packed CAS-targeted replacements for the fields above.  len_score
+	 * folds (min, max) into one 64-bit word with min==UINT32_MAX as the
+	 * not-seen sentinel (so the existing `seen` boolean disappears);
+	 * fail_run folds (fail_run_fd, fail_run_count) into 32 bits.  Stamped
+	 * by results_init_one() in results.h; readers and writers still go
+	 * through the locked fields above until follow-up commits convert
+	 * each update path to a CAS loop on these words. */
+	union len_score_u len_score;
+	union fail_run_u fail_run;
 };
 
 #define FAIL_RUN_THRESHOLD	3
