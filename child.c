@@ -4,6 +4,7 @@
 
 #include <fcntl.h>
 #include <errno.h>
+#include <malloc.h>
 #include <signal.h>
 #include <stdatomic.h>
 #include <stdlib.h>
@@ -1048,6 +1049,37 @@ static void init_child(struct childdata *child, int childno)
 	init_child_setup_sandbox(child, childno);
 
 	init_child_runtime_config(child, childno);
+
+	/*
+	 * Turn on glibc's verbose heap-corruption abort path.  Without
+	 * this, malloc_printerr emits a short "<assertion>" string on a
+	 * silent abort(); with M_CHECK_ACTION=3 it formats a fuller
+	 * message ("free(): double free detected in tcache 2",
+	 * "malloc(): unsorted double linked list corrupted", &c) into
+	 * __abort_msg before raising SIGABRT.  The fault handler in
+	 * signals.c reads that pointer (cached at init_abort_msg_capture
+	 * time below) and writes it into the per-pid bug log, which is
+	 * what lets the post-mortem bucket aborts by corruption mode
+	 * rather than landing them all under malloc+0x150.
+	 *
+	 * Use mallopt() rather than MALLOC_CHECK_=3 in the environment:
+	 * trinity fuzzes execve, and any leaked MALLOC_CHECK_ in the
+	 * inherited envp would perturb the child-of-child's malloc
+	 * behaviour.  mallopt() is in-process only and inherited across
+	 * fork, so this single call covers the child and any further
+	 * children it forks for fuzzing.
+	 *
+	 * Cost is a 5-15%% malloc-path overhead -- acceptable for the
+	 * bucketing payoff, and the syscall fuzzer is not malloc-bound.
+	 *
+	 * Paired with init_abort_msg_capture(), which resolves glibc's
+	 * __abort_msg via dlsym(RTLD_DEFAULT, ...) and caches the
+	 * pointer for the signal-safe read in the SIGABRT handler.
+	 * Placed at the bottom of init_child so RTLD_DEFAULT's symbol
+	 * table is fully populated by the time dlsym runs.
+	 */
+	(void)mallopt(M_CHECK_ACTION, 3);
+	init_abort_msg_capture();
 }
 
 /*
