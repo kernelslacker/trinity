@@ -403,44 +403,27 @@ static int tcp_ao_rotate_iter_connect(struct tcp_ao_rotate_iter_ctx *ctx)
 	return 0;
 }
 
-bool tcp_ao_rotate(struct childdata *child)
+/*
+ * Phase 4: BUDGETED rotation dance.  cur_id starts at 1 (the
+ * just-installed key) and rolls forward each iteration: ADD_KEY
+ * next_id (set_current=0) on both ends, INFO rotate current_key
+ * cur_id -> next_id mid-flow, send through the rotated key, then
+ * DEL_KEY old cur_id while the peer may still be retransmitting with
+ * it.  The DEL after rotate is the targeted race — RCU walkers in
+ * tcp_ao_lookup_key on the verify path may still hold a pointer to
+ * the freed key node.  The trailing shutdown(SHUT_RDWR) on both fds
+ * lives here so the orchestrator just owns control flow; on any
+ * earlier-phase bail the teardown helper still closes the fds.
+ */
+static void tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
 {
-	struct tcp_ao_rotate_iter_ctx ctx = {
-		.listener = -1,
-		.cli      = -1,
-		.srv_acc  = -1,
-	};
-	struct tcp_ao_add  ao_add;
-	struct tcp_ao_del  ao_del;
+	struct tcp_ao_add ao_add;
+	struct tcp_ao_del ao_del;
 	struct tcp_ao_info_opt ao_info;
-	int rc;
-	unsigned int iters;
-	unsigned int i;
+	unsigned int iters, i;
 	uint8_t cur_id;
+	int rc;
 
-	(void)child;
-
-	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_runs, 1, __ATOMIC_RELAXED);
-
-	if (ns_unsupported)
-		return true;
-
-	if (tcp_ao_rotate_iter_setup_sockets(&ctx) != 0)
-		goto out;
-
-	if (tcp_ao_rotate_iter_install_keys(&ctx) != 0)
-		goto out;
-
-	if (tcp_ao_rotate_iter_connect(&ctx) != 0)
-		goto out;
-
-	/* Rotation loop.  cur_id starts at 1 (the just-installed key)
-	 * and rolls forward each iteration: we add cur_id+1, rotate
-	 * current to cur_id+1 via TCP_AO_INFO, send during the window,
-	 * then DEL the old cur_id while the peer may still be in the
-	 * middle of retransmit/ack with it.  The DEL after rotate is
-	 * the targeted race — RCU walkers in tcp_ao_lookup_key on the
-	 * verify path may still hold a pointer to the freed key node. */
 	iters = BUDGETED(CHILD_OP_TCP_AO_ROTATE,
 			 JITTER_RANGE(ROTATE_ITERS_BASE));
 	cur_id = 1;
@@ -459,8 +442,8 @@ bool tcp_ao_rotate(struct childdata *child)
 		 *    we want INFO to be the call that flips current_key,
 		 *    so the rotate path is exercised separately from the
 		 *    install path. */
-		fill_ao_add(&ao_add, &ctx.cli_addr, next_id, next_id, false, ctx.alg);
-		rc = setsockopt(ctx.srv_acc, IPPROTO_TCP, TCP_AO_ADD_KEY,
+		fill_ao_add(&ao_add, &ctx->cli_addr, next_id, next_id, false, ctx->alg);
+		rc = setsockopt(ctx->srv_acc, IPPROTO_TCP, TCP_AO_ADD_KEY,
 				&ao_add, sizeof(ao_add));
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_keys_added,
@@ -469,8 +452,8 @@ bool tcp_ao_rotate(struct childdata *child)
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_addkey_rejected,
 					   1, __ATOMIC_RELAXED);
 
-		fill_ao_add(&ao_add, &ctx.srv_addr, next_id, next_id, false, ctx.alg);
-		rc = setsockopt(ctx.cli, IPPROTO_TCP, TCP_AO_ADD_KEY,
+		fill_ao_add(&ao_add, &ctx->srv_addr, next_id, next_id, false, ctx->alg);
+		rc = setsockopt(ctx->cli, IPPROTO_TCP, TCP_AO_ADD_KEY,
 				&ao_add, sizeof(ao_add));
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_keys_added,
@@ -483,7 +466,7 @@ bool tcp_ao_rotate(struct childdata *child)
 		memset(&ao_info, 0, sizeof(ao_info));
 		ao_info.set_current = 1;
 		ao_info.current_key = next_id;
-		rc = setsockopt(ctx.cli, IPPROTO_TCP, TCP_AO_INFO,
+		rc = setsockopt(ctx->cli, IPPROTO_TCP, TCP_AO_INFO,
 				&ao_info, sizeof(ao_info));
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_key_rotations,
@@ -491,21 +474,21 @@ bool tcp_ao_rotate(struct childdata *child)
 		else
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_info_rejected,
 					   1, __ATOMIC_RELAXED);
-		(void)setsockopt(ctx.srv_acc, IPPROTO_TCP, TCP_AO_INFO,
+		(void)setsockopt(ctx->srv_acc, IPPROTO_TCP, TCP_AO_INFO,
 				 &ao_info, sizeof(ao_info));
 
 		/* c) Send through the rotated key.  This is the "verify
 		 *    against the new key on the peer" edge.  Drive both
 		 *    directions so retransmit / dup-ack races land on
 		 *    both endpoints' AO state machines. */
-		rotate_send(ctx.cli);
-		rotate_send(ctx.srv_acc);
+		rotate_send(ctx->cli);
+		rotate_send(ctx->srv_acc);
 
 		/* d) DEL_KEY old cur_id — race against in-flight retx
 		 *    that's still using sndid=cur_id on the wire.  This
 		 *    is the rcu-walk-vs-free race window. */
-		fill_ao_del(&ao_del, &ctx.srv_addr, cur_id, cur_id);
-		rc = setsockopt(ctx.cli, IPPROTO_TCP, TCP_AO_DEL_KEY,
+		fill_ao_del(&ao_del, &ctx->srv_addr, cur_id, cur_id);
+		rc = setsockopt(ctx->cli, IPPROTO_TCP, TCP_AO_DEL_KEY,
 				&ao_del, sizeof(ao_del));
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_key_dels,
@@ -514,8 +497,8 @@ bool tcp_ao_rotate(struct childdata *child)
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_delkey_rejected,
 					   1, __ATOMIC_RELAXED);
 
-		fill_ao_del(&ao_del, &ctx.cli_addr, cur_id, cur_id);
-		rc = setsockopt(ctx.srv_acc, IPPROTO_TCP, TCP_AO_DEL_KEY,
+		fill_ao_del(&ao_del, &ctx->cli_addr, cur_id, cur_id);
+		rc = setsockopt(ctx->srv_acc, IPPROTO_TCP, TCP_AO_DEL_KEY,
 				&ao_del, sizeof(ao_del));
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_key_dels,
@@ -527,8 +510,35 @@ bool tcp_ao_rotate(struct childdata *child)
 		cur_id = next_id;
 	}
 
-	(void)shutdown(ctx.cli, SHUT_RDWR);
-	(void)shutdown(ctx.srv_acc, SHUT_RDWR);
+	(void)shutdown(ctx->cli, SHUT_RDWR);
+	(void)shutdown(ctx->srv_acc, SHUT_RDWR);
+}
+
+bool tcp_ao_rotate(struct childdata *child)
+{
+	struct tcp_ao_rotate_iter_ctx ctx = {
+		.listener = -1,
+		.cli      = -1,
+		.srv_acc  = -1,
+	};
+
+	(void)child;
+
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_runs, 1, __ATOMIC_RELAXED);
+
+	if (ns_unsupported)
+		return true;
+
+	if (tcp_ao_rotate_iter_setup_sockets(&ctx) != 0)
+		goto out;
+
+	if (tcp_ao_rotate_iter_install_keys(&ctx) != 0)
+		goto out;
+
+	if (tcp_ao_rotate_iter_connect(&ctx) != 0)
+		goto out;
+
+	tcp_ao_rotate_iter_rotate_loop(&ctx);
 
 out:
 	if (ctx.srv_acc >= 0)
