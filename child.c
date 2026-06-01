@@ -925,18 +925,29 @@ static void init_child_setup_sandbox(struct childdata *child, int childno)
 }
 
 /*
- * Called from the fork_children loop in the main process.
+ * Final phase of init_child: wire up runtime config that the
+ * child_process() main loop relies on, then pin the per-lifetime
+ * limits / dumpable state.  Six steps:
+ *
+ *   - kcov_init_child sets up the per-child coverage buffers,
+ *   - the active-syscalls pointer is pinned for the uniarch case
+ *     (biarch refreshes it lazily on the first picker call),
+ *   - the explorer-pool slot flag is stamped from the child's
+ *     slot index within the partition layout,
+ *   - heap_bounds_init re-snapshots /proc/self/maps after the
+ *     allocator-heavy setup above has settled,
+ *   - RLIMIT_AS is pinned (skipped under ASAN whose shadow memory
+ *     reservation would otherwise blow the cap),
+ *   - disable_coredumps takes the debug-equivalent path once for
+ *     the child's lifetime.
+ *
+ * Order matters: heap_bounds_init must run after the prior setup
+ * has materialised its arenas, and the RLIMIT_AS pin must run
+ * after heap_bounds_init's fopen() so that fopen() completes
+ * under the inherited RLIM_INFINITY ceiling.
  */
-static void init_child(struct childdata *child, int childno)
+static void init_child_runtime_config(struct childdata *child, int childno)
 {
-	init_child_isolate_io();
-
-	init_child_freeze_shared(child, childno);
-
-	init_child_rendezvous_parent(child, childno);
-
-	init_child_setup_sandbox(child, childno);
-
 	kcov_init_child(&child->kcov, child->num);
 
 	/* Uniarch: pin the active-syscalls pointer once.  Biarch leaves
@@ -1021,6 +1032,22 @@ static void init_child(struct childdata *child, int childno)
 	 * matches the per-iter behaviour.
 	 */
 	disable_coredumps();
+}
+
+/*
+ * Called from the fork_children loop in the main process.
+ */
+static void init_child(struct childdata *child, int childno)
+{
+	init_child_isolate_io();
+
+	init_child_freeze_shared(child, childno);
+
+	init_child_rendezvous_parent(child, childno);
+
+	init_child_setup_sandbox(child, childno);
+
+	init_child_runtime_config(child, childno);
 }
 
 /*
