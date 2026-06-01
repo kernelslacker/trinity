@@ -389,6 +389,23 @@ static const struct mptcp_sf_optspec mptcp_sf_sweep_opts[] = {
  * gating won't change mid-run.  Sized for ARRAY_SIZE(...) ≤ 32. */
 static unsigned int sweep_unsupported_mask;
 
+/* Per-invocation state shared across the extracted phase helpers.  Fd
+ * fields default to -1 so the teardown helper can close them
+ * unconditionally regardless of which earlier phase bailed.  srv_addr +
+ * srv_port_n are populated by setup_sockets and consumed by connect_pair
+ * for the client connect.  ctx + ctx_open are populated by genl_attach
+ * and used by pm_ops_burst / teardown — ctx_open gates genl_close so a
+ * bail before attach doesn't try to close an uninitialised ctx. */
+struct mptcp_pm_churn_iter_ctx {
+	int srv;
+	int cli;
+	int srv_acc;
+	bool ctx_open;
+	struct genl_ctx ctx;
+	struct sockaddr_in srv_addr;
+	uint16_t srv_port_n;
+};
+
 /*
  * Read MPTCP_INFO and return num_subflows (mptcpi_subflows is the
  * first byte of struct mptcp_info, stable since the option was
@@ -571,17 +588,79 @@ static void mptcp_setsockopt_all_sf_recipe(struct genl_ctx *ctx)
 	close(sk);
 }
 
+/*
+ * Phase 1: open the loopback MPTCP server (socket + bind + getsockname
+ * to capture the ephemeral port + listen), then open the matching client
+ * MPTCP socket.  Both sides get the TFO + SO_TIMESTAMPING combo enabled
+ * before any connect so the kernel commit 6254a16d6f0c path is exercised
+ * on every iteration.  The server-side socket() is the support gate:
+ * EPROTONOSUPPORT / ESOCKTNOSUPPORT latch ns_unsupported_mptcp so
+ * siblings stop probing.  Returns 0 on success, -1 if the iteration
+ * should bail to the out: cleanup path; on failure the appropriate
+ * setup_failed counter is bumped and the caller's teardown helper closes
+ * whichever fds we did manage to open.
+ */
+static int mptcp_pm_churn_iter_setup_sockets(struct mptcp_pm_churn_iter_ctx *ctx)
+{
+	socklen_t slen;
+
+	ctx->srv = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_MPTCP);
+	if (ctx->srv < 0) {
+		if (errno == EPROTONOSUPPORT || errno == ESOCKTNOSUPPORT)
+			ns_unsupported_mptcp = true;
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.mptcp_pm_churn_sock_mptcp_ok,
+			   1, __ATOMIC_RELAXED);
+
+	mptcp_enable_tfo_ts(ctx->srv);
+
+	memset(&ctx->srv_addr, 0, sizeof(ctx->srv_addr));
+	ctx->srv_addr.sin_family = AF_INET;
+	ctx->srv_addr.sin_addr.s_addr = htonl(MPTCP_PM_LOOPBACK_BASE);
+	ctx->srv_addr.sin_port = 0;
+	if (bind(ctx->srv, (struct sockaddr *)&ctx->srv_addr,
+		 sizeof(ctx->srv_addr)) < 0) {
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	slen = sizeof(ctx->srv_addr);
+	if (getsockname(ctx->srv, (struct sockaddr *)&ctx->srv_addr, &slen) < 0) {
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	ctx->srv_port_n = ctx->srv_addr.sin_port;
+
+	if (listen(ctx->srv, 4) < 0) {
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	ctx->cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_MPTCP);
+	if (ctx->cli < 0) {
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	mptcp_enable_tfo_ts(ctx->cli);
+	return 0;
+}
+
 bool mptcp_pm_churn(struct childdata *child)
 {
-	struct sockaddr_in srv_addr, cli_addr;
-	struct genl_ctx ctx;
+	struct mptcp_pm_churn_iter_ctx ctx = {
+		.srv     = -1,
+		.cli     = -1,
+		.srv_acc = -1,
+	};
+	struct sockaddr_in cli_addr;
 	struct genl_open_opts opts;
-	socklen_t slen;
-	int srv = -1;
-	int cli = -1;
-	int srv_acc = -1;
-	bool ctx_open = false;
-	uint16_t srv_port_n;
 	unsigned int iters;
 	unsigned int i;
 	__u8 loc_id;
@@ -596,73 +675,31 @@ bool mptcp_pm_churn(struct childdata *child)
 	if (ns_unsupported_mptcp || ns_unsupported_genetlink_mptcp)
 		return true;
 
-	srv = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_MPTCP);
-	if (srv < 0) {
-		if (errno == EPROTONOSUPPORT || errno == ESOCKTNOSUPPORT)
-			ns_unsupported_mptcp = true;
-		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return true;
-	}
-	__atomic_add_fetch(&shm->stats.mptcp_pm_churn_sock_mptcp_ok,
-			   1, __ATOMIC_RELAXED);
-
-	mptcp_enable_tfo_ts(srv);
-
-	memset(&srv_addr, 0, sizeof(srv_addr));
-	srv_addr.sin_family = AF_INET;
-	srv_addr.sin_addr.s_addr = htonl(MPTCP_PM_LOOPBACK_BASE);
-	srv_addr.sin_port = 0;
-	if (bind(srv, (struct sockaddr *)&srv_addr, sizeof(srv_addr)) < 0) {
-		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (mptcp_pm_churn_iter_setup_sockets(&ctx) != 0)
 		goto out;
-	}
-	slen = sizeof(srv_addr);
-	if (getsockname(srv, (struct sockaddr *)&srv_addr, &slen) < 0) {
-		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-	srv_port_n = srv_addr.sin_port;
-
-	if (listen(srv, 4) < 0) {
-		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-
-	cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_MPTCP);
-	if (cli < 0) {
-		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-
-	mptcp_enable_tfo_ts(cli);
 
 	/* Non-blocking from here so a wedged peer can't pin us past
 	 * SIGALRM(1s).  TCP-style connect on loopback completes
 	 * synchronously almost always, but on rare overload the kernel
 	 * may return EINPROGRESS — fine, the assoc completes and the
 	 * later send() either piggybacks or queues. */
-	(void)fcntl(cli, F_SETFL, O_NONBLOCK);
-	(void)fcntl(srv, F_SETFL, O_NONBLOCK);
+	(void)fcntl(ctx.cli, F_SETFL, O_NONBLOCK);
+	(void)fcntl(ctx.srv, F_SETFL, O_NONBLOCK);
 
 	memset(&cli_addr, 0, sizeof(cli_addr));
 	cli_addr.sin_family = AF_INET;
 	cli_addr.sin_addr.s_addr = htonl(MPTCP_PM_LOOPBACK_BASE);
-	cli_addr.sin_port = srv_port_n;
-	if (connect(cli, (struct sockaddr *)&cli_addr,
+	cli_addr.sin_port = ctx.srv_port_n;
+	if (connect(ctx.cli, (struct sockaddr *)&cli_addr,
 		    sizeof(cli_addr)) < 0 && errno != EINPROGRESS) {
 		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
 
-	srv_acc = accept(srv, NULL, NULL);
-	if (srv_acc >= 0)
-		(void)fcntl(srv_acc, F_SETFL, O_NONBLOCK);
+	ctx.srv_acc = accept(ctx.srv, NULL, NULL);
+	if (ctx.srv_acc >= 0)
+		(void)fcntl(ctx.srv_acc, F_SETFL, O_NONBLOCK);
 	/* accept failure here is fine — the SYN/cookie may not have
 	 * landed yet, and the genl ADD/DEL churn still exercises the
 	 * pernet endpoint table and the client-side option emit path
@@ -672,16 +709,16 @@ bool mptcp_pm_churn(struct childdata *child)
 	 * connection has actually transitioned to ESTABLISHED on both
 	 * ends.  Otherwise the post-handshake genl ops race against
 	 * the cookie itself, which isn't the bug class we're targeting. */
-	churn_send(cli);
-	if (srv_acc >= 0)
-		churn_send(srv_acc);
+	churn_send(ctx.cli);
+	if (ctx.srv_acc >= 0)
+		churn_send(ctx.srv_acc);
 
 	memset(&opts, 0, sizeof(opts));
 	opts.family_name  = MPTCP_PM_NAME;
 	opts.version      = MPTCP_PM_VER;
 	opts.recv_timeo_s = MPTCP_PM_GENL_RECV_TIMEO_S;
 
-	rc = genl_open(&ctx, &opts);
+	rc = genl_open(&ctx.ctx, &opts);
 	if (rc != 0) {
 		if (rc == -ENOENT)
 			ns_unsupported_genetlink_mptcp = true;
@@ -690,7 +727,7 @@ bool mptcp_pm_churn(struct childdata *child)
 					   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	ctx_open = true;
+	ctx.ctx_open = true;
 
 	/* Initial loc_id: random in [1, MPTCP_PM_LOC_ID_MAX].  The
 	 * kernel's loc_id 0 is reserved for the primary subflow auto-
@@ -710,7 +747,7 @@ bool mptcp_pm_churn(struct childdata *child)
 		 *    MPTCP_PM_ATTR_ADDR.  Kernel installs the endpoint
 		 *    in the pernet table and queues an MP_ADD_ADDR
 		 *    option for transmit on every up MPTCP socket. */
-		rc = mptcp_pm_addr_cmd(&ctx, MPTCP_PM_CMD_ADD_ADDR,
+		rc = mptcp_pm_addr_cmd(&ctx.ctx, MPTCP_PM_CMD_ADD_ADDR,
 				       loc_id, addr_h);
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.mptcp_pm_churn_addr_added_ok,
@@ -720,18 +757,18 @@ bool mptcp_pm_churn(struct childdata *child)
 		 *    the lookup-by-id path under the same pernet lock
 		 *    the ADD just released.  Reply is a NEWADDR-style
 		 *    response we don't parse — recv consumes it. */
-		(void)mptcp_pm_addr_cmd(&ctx, MPTCP_PM_CMD_GET_ADDR,
+		(void)mptcp_pm_addr_cmd(&ctx.ctx, MPTCP_PM_CMD_GET_ADDR,
 					loc_id, addr_h);
 
 		/* c) Send during the ADD_ADDR option emit window. */
-		churn_send(cli);
-		if (srv_acc >= 0)
-			churn_send(srv_acc);
+		churn_send(ctx.cli);
+		if (ctx.srv_acc >= 0)
+			churn_send(ctx.srv_acc);
 
 		/* d) DEL_ADDR — drives mptcp_pm_remove_anno_addr() and
 		 *    any in-flight subflow cleanup against the address
 		 *    we just installed. */
-		rc = mptcp_pm_addr_cmd(&ctx, MPTCP_PM_CMD_DEL_ADDR,
+		rc = mptcp_pm_addr_cmd(&ctx.ctx, MPTCP_PM_CMD_DEL_ADDR,
 				       loc_id, addr_h);
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.mptcp_pm_churn_addr_removed_ok,
@@ -740,9 +777,9 @@ bool mptcp_pm_churn(struct childdata *child)
 		/* e) Targeted race window: data path running
 		 *    concurrently with subflow teardown for the just-
 		 *    removed loc_id. */
-		churn_send(cli);
-		if (srv_acc >= 0)
-			churn_send(srv_acc);
+		churn_send(ctx.cli);
+		if (ctx.srv_acc >= 0)
+			churn_send(ctx.srv_acc);
 
 		/* f) Coin-flip between SET_LIMITS and FLUSH_ADDRS —
 		 *    both reach pernet pm_nl state under the spinlock
@@ -750,9 +787,9 @@ bool mptcp_pm_churn(struct childdata *child)
 		 *    shape.  Splitting at random gives rough 50/50
 		 *    coverage of each command across runs. */
 		if (RAND_BOOL())
-			(void)mptcp_pm_set_limits(&ctx);
+			(void)mptcp_pm_set_limits(&ctx.ctx);
 		else
-			(void)mptcp_pm_flush_addrs(&ctx);
+			(void)mptcp_pm_flush_addrs(&ctx.ctx);
 
 		/* g) Occasional setsockopt_all_sf seq-window probe:
 		 *    open a fresh master mptcp socket, set a TCP-level
@@ -761,7 +798,7 @@ bool mptcp_pm_churn(struct childdata *child)
 		 *    master got the value.  Same cadence as other
 		 *    sub-modes, drives the path 70ece9d7021c fixed. */
 		if (ONE_IN(8))
-			mptcp_setsockopt_all_sf_recipe(&ctx);
+			mptcp_setsockopt_all_sf_recipe(&ctx.ctx);
 
 		/* h) Sockopt-inheritance sweep on the live master.  Walks
 		 *    a curated TCP_* table, sets one opt, drives ADD_ADDR
@@ -772,7 +809,7 @@ bool mptcp_pm_churn(struct childdata *child)
 		 *    fresh-socket recipe above — reusing the established
 		 *    connection is much cheaper. */
 		if (ONE_IN(4))
-			mptcp_sockopt_inheritance_sweep(cli, &ctx);
+			mptcp_sockopt_inheritance_sweep(ctx.cli, &ctx.ctx);
 
 		/* Walk loc_id forward bounded to [1, MPTCP_PM_LOC_ID_MAX].
 		 * The kernel rejects loc_id > 127 with EINVAL so capping
@@ -783,14 +820,14 @@ bool mptcp_pm_churn(struct childdata *child)
 	}
 
 out:
-	if (ctx_open)
-		genl_close(&ctx);
-	if (srv_acc >= 0)
-		close(srv_acc);
-	if (cli >= 0)
-		close(cli);
-	if (srv >= 0)
-		close(srv);
+	if (ctx.ctx_open)
+		genl_close(&ctx.ctx);
+	if (ctx.srv_acc >= 0)
+		close(ctx.srv_acc);
+	if (ctx.cli >= 0)
+		close(ctx.cli);
+	if (ctx.srv >= 0)
+		close(ctx.srv);
 	return true;
 }
 
