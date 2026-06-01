@@ -2025,36 +2025,29 @@ static void dump_strategy_stats_rescue_classes(void)
 	}
 }
 
-void dump_strategy_stats(void)
+/* Hybrid bandit/explorer split summary.  Suppressed when the run had
+ * no explorers reserved (explorer_children == 0) -- the bandit-pool
+ * counter still ran but there is nothing to compare it against.
+ *
+ * Framed as a head-to-head competition: both pools feed the same
+ * global KCOV edge bitmap and CMP bloom, so each first-discovery
+ * edge is credited to whichever pool reached it first.  The lead
+ * line shows the direct edge-share split so the operator can see
+ * at a glance whether the always-on STRATEGY_RANDOM baseline is
+ * stealing a disproportionate share of easy coverage from the
+ * learned strategy.  Beyond the head-to-head line this block
+ * derives:
+ *   - per-child rate for each pool (edges / pool size), so the
+ *     larger pool isn't credited just for having more workers
+ *   - explorer fleet share for context against the edge share
+ *   - one-line verdict (over-performing / at parity / under-)
+ *     against the 2x-fleet-share threshold from the design doc.
+ *     Hitting >=2x sustained across multiple runs is the trigger
+ *     for considering per-child bandit (Option C). */
+static void dump_strategy_stats_edge_race(void)
 {
-	unsigned long total_pulls = 0;
 	unsigned long explorer_edges, bandit_edges;
-	int i;
 
-	dump_strategy_stats_header();
-	dump_strategy_stats_plateau_forced_cohort();
-	dump_strategy_stats_intervention_modes();
-	dump_strategy_stats_rescue_classes();
-
-	/* Hybrid bandit/explorer split summary.  Suppressed when the run had
-	 * no explorers reserved (explorer_children == 0) -- the bandit-pool
-	 * counter still ran but there is nothing to compare it against.
-	 *
-	 * Framed as a head-to-head competition: both pools feed the same
-	 * global KCOV edge bitmap and CMP bloom, so each first-discovery
-	 * edge is credited to whichever pool reached it first.  The lead
-	 * line shows the direct edge-share split so the operator can see
-	 * at a glance whether the always-on STRATEGY_RANDOM baseline is
-	 * stealing a disproportionate share of easy coverage from the
-	 * learned strategy.  Beyond the head-to-head line this block
-	 * derives:
-	 *   - per-child rate for each pool (edges / pool size), so the
-	 *     larger pool isn't credited just for having more workers
-	 *   - explorer fleet share for context against the edge share
-	 *   - one-line verdict (over-performing / at parity / under-)
-	 *     against the 2x-fleet-share threshold from the design doc.
-	 *     Hitting >=2x sustained across multiple runs is the trigger
-	 *     for considering per-child bandit (Option C). */
 	if (explorer_children > 0) {
 		unsigned int bandit_children;
 		unsigned long total_edges;
@@ -2139,6 +2132,18 @@ void dump_strategy_stats(void)
 			       ratio_x100 / 100, ratio_x100 % 100);
 		}
 	}
+}
+
+void dump_strategy_stats(void)
+{
+	unsigned long total_pulls = 0;
+	int i;
+
+	dump_strategy_stats_header();
+	dump_strategy_stats_plateau_forced_cohort();
+	dump_strategy_stats_intervention_modes();
+	dump_strategy_stats_rescue_classes();
+	dump_strategy_stats_edge_race();
 
 	for (i = 0; i < NR_STRATEGIES; i++)
 		total_pulls += __atomic_load_n(&shm->bandit_pulls[i],
