@@ -996,6 +996,28 @@ static void bridge_fdb_stp_iter_traffic_burst(struct bridge_fdb_stp_iter_ctx *ct
 	}
 }
 
+/*
+ * Phase 5: drive the STP state machine via sysfs.  Writing "1" then
+ * "0" arms then disarms br_stp_start / br_stp_stop and the
+ * topology-change timer, giving the rx-driven fdb learning in
+ * traffic_burst a live STP state machine to race against.  The
+ * ns_unsupported_sysfs_stp latch (set by sysfs_stp_write on
+ * EROFS / EACCES / ENOENT) gates the whole helper so a sysfs-locked
+ * kernel pays the EFAIL once per child rather than per iteration.
+ */
+static void bridge_fdb_stp_iter_stp_toggle(struct bridge_fdb_stp_iter_ctx *ctx)
+{
+	if (ns_unsupported_sysfs_stp)
+		return;
+
+	if (sysfs_stp_write(ctx->br_name, '1'))
+		__atomic_add_fetch(&shm->stats.bridge_fdb_stp_stp_toggle_ok,
+				   1, __ATOMIC_RELAXED);
+	if (sysfs_stp_write(ctx->br_name, '0'))
+		__atomic_add_fetch(&shm->stats.bridge_fdb_stp_stp_toggle_ok,
+				   1, __ATOMIC_RELAXED);
+}
+
 bool bridge_fdb_stp(struct childdata *child)
 {
 	struct bridge_fdb_stp_iter_ctx ictx = {
@@ -1051,14 +1073,7 @@ bool bridge_fdb_stp(struct childdata *child)
 
 	bridge_fdb_stp_iter_traffic_burst(&ictx);
 
-	if (!ns_unsupported_sysfs_stp) {
-		if (sysfs_stp_write(ictx.br_name, '1'))
-			__atomic_add_fetch(&shm->stats.bridge_fdb_stp_stp_toggle_ok,
-					   1, __ATOMIC_RELAXED);
-		if (sysfs_stp_write(ictx.br_name, '0'))
-			__atomic_add_fetch(&shm->stats.bridge_fdb_stp_stp_toggle_ok,
-					   1, __ATOMIC_RELAXED);
-	}
+	bridge_fdb_stp_iter_stp_toggle(&ictx);
 
 out:
 	if (ictx.raw >= 0)
