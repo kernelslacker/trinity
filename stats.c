@@ -1498,27 +1498,8 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 		shm->stats.tcp_ulp_swap_churn_install_failed);
 }
 
-static void dump_stats_json(void)
+static void dump_stats_json_iouring_zc_and_kvm(void)
 {
-	putchar('{');
-
-	json_emit_syscalls_array();
-
-	fputs(",\"stats\":{", stdout);
-	dump_stats_json_fault_and_fd_lifecycle();
-	dump_stats_json_oracle();
-	dump_stats_json_basic_subsystems();
-	dump_stats_json_iouring_and_zombies();
-	dump_stats_json_corruption_and_audit();
-	dump_stats_json_lifecycle_and_storms();
-	dump_stats_json_socket_family_and_tls();
-	dump_stats_json_netfilter_and_xfrm();
-
-	stat_category_emit_json(&msg_zerocopy_churn_category);
-
-	printf(",");
-	stat_category_emit_json(&setsockopt_pairing_category);
-
 	printf(",\"iouring_send_zc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"register_bufs_ok\":%lu,\"send_zc_ok\":%lu,\"sendmsg_zc_ok\":%lu,\"unregister_race_ok\":%lu,\"update_race_ok\":%lu,\"cqe_drained\":%lu},"
 		"\"vsock_transport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bind_ok\":%lu,\"connect_ok\":%lu,\"send_ok\":%lu,\"buffer_size_ok\":%lu,\"timeout_ok\":%lu,\"get_cid_ok\":%lu,\"seq_eom_runs\":%lu,\"seq_eom_sends_ok\":%lu,\"seq_eom_sends_failed\":%lu,\"seq_eom_skipped\":%lu},"
 		"\"bridge_vlan_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"vlan_add_ok\":%lu,\"vlan_del_ok\":%lu,\"tunnel_add_ok\":%lu,\"mst_set_ok\":%lu,\"raw_send_ok\":%lu},"
@@ -1529,37 +1510,7 @@ static void dump_stats_json(void)
 		"\"kvm_run_churn\":{\"invocations\":%lu,\"exit_io\":%lu,\"exit_mmio\":%lu,\"exit_hlt\":%lu,\"exit_shutdown\":%lu,\"exit_fail_entry\":%lu,\"exit_internal_error\":%lu,\"exit_intr\":%lu,\"exit_other\":%lu,\"errors\":%lu,\"gpc_memslot_race_runs\":%lu,\"gpc_memslot_race_deletes\":%lu,\"gpc_memslot_race_unsupported\":%lu},"
 		"\"nl80211\":{\"runs\":%lu,\"setup_failed\":%lu,\"scan_triggered\":%lu,\"connect_attempted\":%lu,\"connect_succeeded\":%lu,\"disconnect_attempted\":%lu,\"regdom_changed\":%lu,\"iface_created\":%lu,\"iface_destroyed\":%lu,\"bursts_sent\":%lu,\"pmsr_runs\":%lu,\"pmsr_ok\":%lu,\"admin_gate_runs\":%lu,\"admin_gate_eperm_ok\":%lu,\"admin_gate_unexpected\":%lu},"
 		"\"nat_t_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_deleted\":%lu,\"frames_sent\":%lu,\"xfrm6_setup_ok\":%lu,\"xfrm6_setup_fail\":%lu,\"xfrm6_sendto_runs\":%lu,\"xfrm6_delsa_races\":%lu},"
-		"\"splice_protocols\":{\"runs\":%lu,\"setup_failed\":%lu,\"chain_ok\":%lu,\"in_bytes\":%lu,\"out_bytes\":%lu,\"udp_encap_attempted\":%lu,\"tcp_repair_attempted\":%lu,\"packet_ring_attempted\":%lu,\"alg_attempted\":%lu,\"rxrpc_attempted\":%lu,\"msg_splice_pages_attempted\":%lu,\"msg_splice_pages_path_taken_inferred\":%lu},"
-		"\"rxrpc_key_install\":{\"runs\":%lu,\"calls\":%lu,\"revokes\":%lu,\"quota_hits\":%lu,\"unsupported\":%lu},"
-		"\"af_alg_weak_cipher_probe\":{\"runs\":%lu,\"socket_failed\":%lu,\"total_bind_attempts\":%lu,\"total_bind_accepted\":%lu,\"weak_accepted_total\":%lu,\"setkey_accepted_total\":%lu,\"skcipher_weak_accepted\":%lu,\"aead_weak_accepted\":%lu,\"hash_weak_accepted\":%lu,\"strong_rejected\":%lu},"
-		"\"af_alg_probe\":{\"runs\":%lu,\"unsupported\":%lu,\"accept_total\":%lu,\"reject_total\":%lu},"
-		"\"af_alg_recvmsg\":{\"runs\":%lu,\"setkey_sent\":%lu,\"iv_sent\":%lu,\"oob_iov\":%lu,\"zerolen\":%lu,\"oversize\":%lu,\"empty_cmsg_no_more\":%lu,\"unsupported\":%lu},"
-		"\"ublk_lifecycle\":{\"iters\":%lu,\"eperm\":%lu,\"add_ok\":%lu,\"fetch_ok\":%lu,\"del_ok\":%lu,\"race_observed\":%lu},"
-		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
-		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
-		"\"ip6gre_bond_lapb_stack\":{\"runs\":%lu,\"setup_failed\":%lu,\"flag_toggles\":%lu},"
-		"\"wireguard_decrypt_flood\":{\"runs\":%lu,\"setup_failed\":%lu,\"packets_sent\":%lu,\"unsupported_latched\":%lu},"
-		"\"blkdev_lifecycle_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"set_fd_ok\":%lu,\"clr_fd\":%lu,\"ebusy\":%lu,\"rescans\":%lu},"
-		"\"iscsi_target_probe\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_target\":%lu,\"connected\":%lu,\"login_sent\":%lu,\"login_replies\":%lu,\"scsi_cmd_sent\":%lu,\"bytes_out\":%lu,\"bytes_in\":%lu},"
-		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu,\"burn_iters\":%lu},"
-		"\"ipv6_ndisc_proxy\":{\"runs\":%lu,\"ns_sent_ok\":%lu,\"setup_failed\":%lu,\"proxy_enable_ok\":%lu},"
-		"\"ipfrag_source_churn\":{\"runs\":%lu,\"packets_sent_ok\":%lu,\"send_failed\":%lu,\"unique_srcs\":%lu},"
-		"\"rtnl_vf_broadcast_getlink\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"getlink_ok\":%lu},"
-		"\"obscure_af_churn\":{\"runs\":%lu,\"no_viable_pf\":%lu,"
-			"\"sendmsg_no_bind\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
-			"\"bind_then_sendmsg\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
-			"\"connect_no_listen\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
-			"\"ioctl_rotation\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
-			"\"setsockopt_zero_len\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
-			"\"close_via_dup\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu}},"
-		"\"flowtable_encap_vlan\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"offloaded_pkts\":%lu,\"gso_sends\":%lu,\"vlan_teardown_races\":%lu,\"unsupported_latched\":%lu},"
-		"\"rxrpc_sendmsg_cmsg_churn\":{\"runs\":%lu,\"socket_failed\":%lu,\"sendmsg_ok\":%lu,\"sendmsg_fail\":%lu,"
-			"\"user_call_id\":%lu,\"abort\":%lu,\"accept\":%lu,\"exclusive_call\":%lu,"
-			"\"upgrade_service\":%lu,\"tx_length\":%lu,\"set_call_timeout\":%lu,\"charge_accept\":%lu},"
-		"\"tty_ldisc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"ldisc_set_ok\":%lu,\"ldisc_set_failed\":%lu,"
-			"\"write_ok\":%lu,\"read_ok\":%lu,"
-			"\"per_disc\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu]}"
-		"}",
+		"\"splice_protocols\":{\"runs\":%lu,\"setup_failed\":%lu,\"chain_ok\":%lu,\"in_bytes\":%lu,\"out_bytes\":%lu,\"udp_encap_attempted\":%lu,\"tcp_repair_attempted\":%lu,\"packet_ring_attempted\":%lu,\"alg_attempted\":%lu,\"rxrpc_attempted\":%lu,\"msg_splice_pages_attempted\":%lu,\"msg_splice_pages_path_taken_inferred\":%lu},",
 		shm->stats.iouring_send_zc_churn_runs,
 		shm->stats.iouring_send_zc_churn_setup_failed,
 		shm->stats.iouring_send_zc_churn_register_bufs_ok,
@@ -1682,7 +1633,62 @@ static void dump_stats_json(void)
 		shm->stats.splice_protocols_alg_attempted,
 		shm->stats.splice_protocols_rxrpc_attempted,
 		shm->stats.splice_protocols_msg_splice_pages_attempted,
-		shm->stats.splice_protocols_msg_splice_pages_path_taken_inferred,
+		shm->stats.splice_protocols_msg_splice_pages_path_taken_inferred);
+}
+
+static void dump_stats_json(void)
+{
+	putchar('{');
+
+	json_emit_syscalls_array();
+
+	fputs(",\"stats\":{", stdout);
+	dump_stats_json_fault_and_fd_lifecycle();
+	dump_stats_json_oracle();
+	dump_stats_json_basic_subsystems();
+	dump_stats_json_iouring_and_zombies();
+	dump_stats_json_corruption_and_audit();
+	dump_stats_json_lifecycle_and_storms();
+	dump_stats_json_socket_family_and_tls();
+	dump_stats_json_netfilter_and_xfrm();
+
+	stat_category_emit_json(&msg_zerocopy_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&setsockopt_pairing_category);
+
+	dump_stats_json_iouring_zc_and_kvm();
+
+	printf("\"rxrpc_key_install\":{\"runs\":%lu,\"calls\":%lu,\"revokes\":%lu,\"quota_hits\":%lu,\"unsupported\":%lu},"
+		"\"af_alg_weak_cipher_probe\":{\"runs\":%lu,\"socket_failed\":%lu,\"total_bind_attempts\":%lu,\"total_bind_accepted\":%lu,\"weak_accepted_total\":%lu,\"setkey_accepted_total\":%lu,\"skcipher_weak_accepted\":%lu,\"aead_weak_accepted\":%lu,\"hash_weak_accepted\":%lu,\"strong_rejected\":%lu},"
+		"\"af_alg_probe\":{\"runs\":%lu,\"unsupported\":%lu,\"accept_total\":%lu,\"reject_total\":%lu},"
+		"\"af_alg_recvmsg\":{\"runs\":%lu,\"setkey_sent\":%lu,\"iv_sent\":%lu,\"oob_iov\":%lu,\"zerolen\":%lu,\"oversize\":%lu,\"empty_cmsg_no_more\":%lu,\"unsupported\":%lu},"
+		"\"ublk_lifecycle\":{\"iters\":%lu,\"eperm\":%lu,\"add_ok\":%lu,\"fetch_ok\":%lu,\"del_ok\":%lu,\"race_observed\":%lu},"
+		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
+		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
+		"\"ip6gre_bond_lapb_stack\":{\"runs\":%lu,\"setup_failed\":%lu,\"flag_toggles\":%lu},"
+		"\"wireguard_decrypt_flood\":{\"runs\":%lu,\"setup_failed\":%lu,\"packets_sent\":%lu,\"unsupported_latched\":%lu},"
+		"\"blkdev_lifecycle_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"set_fd_ok\":%lu,\"clr_fd\":%lu,\"ebusy\":%lu,\"rescans\":%lu},"
+		"\"iscsi_target_probe\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_target\":%lu,\"connected\":%lu,\"login_sent\":%lu,\"login_replies\":%lu,\"scsi_cmd_sent\":%lu,\"bytes_out\":%lu,\"bytes_in\":%lu},"
+		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu,\"burn_iters\":%lu},"
+		"\"ipv6_ndisc_proxy\":{\"runs\":%lu,\"ns_sent_ok\":%lu,\"setup_failed\":%lu,\"proxy_enable_ok\":%lu},"
+		"\"ipfrag_source_churn\":{\"runs\":%lu,\"packets_sent_ok\":%lu,\"send_failed\":%lu,\"unique_srcs\":%lu},"
+		"\"rtnl_vf_broadcast_getlink\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"getlink_ok\":%lu},"
+		"\"obscure_af_churn\":{\"runs\":%lu,\"no_viable_pf\":%lu,"
+			"\"sendmsg_no_bind\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
+			"\"bind_then_sendmsg\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
+			"\"connect_no_listen\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
+			"\"ioctl_rotation\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
+			"\"setsockopt_zero_len\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
+			"\"close_via_dup\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu}},"
+		"\"flowtable_encap_vlan\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"offloaded_pkts\":%lu,\"gso_sends\":%lu,\"vlan_teardown_races\":%lu,\"unsupported_latched\":%lu},"
+		"\"rxrpc_sendmsg_cmsg_churn\":{\"runs\":%lu,\"socket_failed\":%lu,\"sendmsg_ok\":%lu,\"sendmsg_fail\":%lu,"
+			"\"user_call_id\":%lu,\"abort\":%lu,\"accept\":%lu,\"exclusive_call\":%lu,"
+			"\"upgrade_service\":%lu,\"tx_length\":%lu,\"set_call_timeout\":%lu,\"charge_accept\":%lu},"
+		"\"tty_ldisc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"ldisc_set_ok\":%lu,\"ldisc_set_failed\":%lu,"
+			"\"write_ok\":%lu,\"read_ok\":%lu,"
+			"\"per_disc\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu]}"
+		"}",
 		shm->stats.rxrpc_key_install_runs,
 		shm->stats.rxrpc_key_install_calls,
 		shm->stats.rxrpc_key_install_revokes,
