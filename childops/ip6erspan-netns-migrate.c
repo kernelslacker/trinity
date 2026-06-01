@@ -181,6 +181,24 @@ static bool inm_unshared_orig;
 static int  inm_orig_ns_fd = -1;
 static __u32 g_iter;
 
+/* Per-invocation state shared across the extracted phase helpers.
+ * nl.fd / target_nl.fd / target_ns_fd default to -1 via the
+ * orchestrator's designated initialiser so the teardown helper can
+ * close them unconditionally regardless of which earlier phase
+ * bailed.  k + ifname are filled in by setup; ifindex by create_link;
+ * target_ns_fd by migrate; migrated flips true once the link has
+ * crossed into the target ns, switching teardown from in-orig
+ * dellink to setns-back-then-drop-target-ns. */
+struct ip6erspan_migrate_iter_ctx {
+	struct nl_ctx	nl;
+	struct nl_ctx	target_nl;
+	enum inm_kind	k;
+	int		target_ns_fd;
+	int		ifindex;
+	bool		migrated;
+	char		ifname[IFNAMSIZ];
+};
+
 static void warn_once_unsupported(void)
 {
 	if (ns_unsupported_ip6erspan)
@@ -394,19 +412,43 @@ static bool inm_enter_orig_ns(void)
 	return true;
 }
 
+/*
+ * Phase 1: pick the per-iteration kind, open the rtnetlink socket
+ * pinned to the original ns, and roll the per-link interface name.
+ * The kind roll runs ahead of the socket open so a failed nl_open()
+ * still consumes the rand32 -- avoids correlated kind selection
+ * across siblings that all bail at nl_open().  ifname uses the same
+ * 16-bit g_iter suffix the original carried so a long-lived child's
+ * traces correlate by suffix.  Returns 0 on success or -1 if the
+ * rtnetlink socket could not be opened; the orchestrator goes
+ * straight to the unified teardown on -1.
+ */
+static int ip6erspan_migrate_iter_setup(struct ip6erspan_migrate_iter_ctx *ctx,
+					const struct nl_open_opts *opts)
+{
+	ctx->k = (enum inm_kind)(rand32() % (unsigned int)INM_KIND_NR);
+
+	if (nl_open(&ctx->nl, opts) < 0)
+		return -1;
+
+	g_iter++;
+	snprintf(ctx->ifname, sizeof(ctx->ifname), "inm%u",
+		 g_iter & 0xffffU);
+	return 0;
+}
+
 bool ip6erspan_netns_migrate(struct childdata *child)
 {
-	struct nl_ctx ctx = { .fd = -1 };
-	struct nl_ctx target_ctx = { .fd = -1 };
+	struct ip6erspan_migrate_iter_ctx ictx = {
+		.nl = { .fd = -1 },
+		.target_nl = { .fd = -1 },
+		.target_ns_fd = -1,
+	};
 	struct nl_open_opts opts = {
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 	};
-	int target_ns_fd = -1;
-	enum inm_kind k;
-	int ifindex = 0;
 	int rc;
-	char ifname[IFNAMSIZ];
 
 	(void)child;
 
@@ -420,15 +462,10 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 		return true;
 	}
 
-	k = (enum inm_kind)(rand32() % (unsigned int)INM_KIND_NR);
-
-	if (nl_open(&ctx, &opts) < 0)
+	if (ip6erspan_migrate_iter_setup(&ictx, &opts) != 0)
 		goto out;
 
-	g_iter++;
-	snprintf(ifname, sizeof(ifname), "inm%u", g_iter & 0xffffU);
-
-	rc = inm_create_or_replace(&ctx, ifname, k, false);
+	rc = inm_create_or_replace(&ictx.nl, ictx.ifname, ictx.k, false);
 	if (rc != 0) {
 		if (rc == -EPERM) {
 			__atomic_add_fetch(&shm->stats.inm_eperm,
@@ -443,8 +480,8 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 	}
 	__atomic_add_fetch(&shm->stats.inm_link_create_ok, 1, __ATOMIC_RELAXED);
 
-	ifindex = (int)if_nametoindex(ifname);
-	if (ifindex <= 0)
+	ictx.ifindex = (int)if_nametoindex(ictx.ifname);
+	if (ictx.ifindex <= 0)
 		goto out;
 
 	/* Step (d): unshare into a sibling ns; capture its FD; setns()
@@ -454,39 +491,40 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 		warn_once_unsupported();
 		goto teardown_orig;
 	}
-	target_ns_fd = inm_open_self_netns();
-	if (target_ns_fd < 0) {
+	ictx.target_ns_fd = inm_open_self_netns();
+	if (ictx.target_ns_fd < 0) {
 		warn_once_unsupported();
 		(void)setns(inm_orig_ns_fd, CLONE_NEWNET);
 		goto teardown_orig;
 	}
 	if (setns(inm_orig_ns_fd, CLONE_NEWNET) < 0) {
 		warn_once_unsupported();
-		close(target_ns_fd);
-		target_ns_fd = -1;
+		close(ictx.target_ns_fd);
+		ictx.target_ns_fd = -1;
 		goto teardown_orig;
 	}
 
 	/* Step (e): migrate link into the target ns. */
-	rc = inm_setlink_netns(&ctx, ifindex, target_ns_fd);
+	rc = inm_setlink_netns(&ictx.nl, ictx.ifindex, ictx.target_ns_fd);
 	if (rc != 0)
 		goto teardown_orig;
 	__atomic_add_fetch(&shm->stats.inm_netns_migrate_ok,
 			   1, __ATOMIC_RELAXED);
+	ictx.migrated = true;
 
 	/* The link no longer lives in the original ns -- the rtnl socket
 	 * above is now useless for it.  Hop into the target ns, open a
 	 * fresh rtnetlink socket there, and issue NLM_F_REPLACE.  This
 	 * is the call that walks the kind's ->changelink op against the
 	 * post-migration dev_net(dev). */
-	if (setns(target_ns_fd, CLONE_NEWNET) < 0) {
+	if (setns(ictx.target_ns_fd, CLONE_NEWNET) < 0) {
 		warn_once_unsupported();
 		goto restore_orig;
 	}
-	if (nl_open(&target_ctx, &opts) < 0)
+	if (nl_open(&ictx.target_nl, &opts) < 0)
 		goto restore_orig;
 
-	rc = inm_create_or_replace(&target_ctx, ifname, k, true);
+	rc = inm_create_or_replace(&ictx.target_nl, ictx.ifname, ictx.k, true);
 	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.inm_changelink_ok,
 				   1, __ATOMIC_RELAXED);
@@ -500,15 +538,15 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	}
 
-	(void)inm_dellink(&target_ctx, ifindex);
+	(void)inm_dellink(&ictx.target_nl, ictx.ifindex);
 
 restore_orig:
 	(void)setns(inm_orig_ns_fd, CLONE_NEWNET);
-	if (target_ctx.fd >= 0)
-		nl_close(&target_ctx);
-	if (target_ns_fd >= 0) {
-		close(target_ns_fd);
-		target_ns_fd = -1;
+	if (ictx.target_nl.fd >= 0)
+		nl_close(&ictx.target_nl);
+	if (ictx.target_ns_fd >= 0) {
+		close(ictx.target_ns_fd);
+		ictx.target_ns_fd = -1;
 	}
 	/* Link lives in the now-orphaned target ns; closing the last FD
 	 * on that ns triggers cleanup_net which drops the link.  Nothing
@@ -516,14 +554,14 @@ restore_orig:
 	goto out;
 
 teardown_orig:
-	if (ifindex > 0 && ctx.fd >= 0)
-		(void)inm_dellink(&ctx, ifindex);
-	if (target_ctx.fd >= 0)
-		nl_close(&target_ctx);
-	if (target_ns_fd >= 0)
-		close(target_ns_fd);
+	if (ictx.ifindex > 0 && ictx.nl.fd >= 0)
+		(void)inm_dellink(&ictx.nl, ictx.ifindex);
+	if (ictx.target_nl.fd >= 0)
+		nl_close(&ictx.target_nl);
+	if (ictx.target_ns_fd >= 0)
+		close(ictx.target_ns_fd);
 out:
-	if (ctx.fd >= 0)
-		nl_close(&ctx);
+	if (ictx.nl.fd >= 0)
+		nl_close(&ictx.nl);
 	return true;
 }
