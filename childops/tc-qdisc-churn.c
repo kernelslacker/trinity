@@ -1354,17 +1354,141 @@ static void tc_qdisc_add_filter_class(struct tc_qdisc_iter_ctx *it)
 	}
 }
 
+/*
+ * Drive the freshly-installed qdisc/class/filter tree with a UDP
+ * burst, then race the in-flight traffic against teardown.
+ *
+ * Burst: loopback UDP via dummy with SO_BINDTODEVICE; each send
+ * walks __dev_xmit_skb / qdisc_enqueue / sch_direct_xmit through
+ * the new tree.  BUDGETED+JITTER iters, STORM_BUDGET_NS wall-clock
+ * cap.  dummy's xmit drops on the floor after dequeue, but the
+ * classification / enqueue / dequeue cycle is what the CVE class
+ * lives in.
+ *
+ * Mid-flow REPLACE: swap the root qdisc kind to a different
+ * rotation entry while skbs are still draining — the targeted
+ * qdisc_replace race window (CVE-2023-4623 sch_qfq UAF shape).
+ *
+ * Teardown:
+ *   - normal path: RTM_DELTFILTER then RTM_DELQDISC, racing in-
+ *     flight skbs against cls_*_destroy / qdisc_destroy.
+ *   - bridge-slave path: prime a flush burst, RTM_DELLINK the
+ *     slave veth, push a final flush burst.  netdev unregister
+ *     hands off to a workqueue so subsequent sends can hit dequeue
+ *     while cleanup is in flight — the dequeue-after-parent-free
+ *     window for qdisc_pkt_len_segs_init.  Marks it->slave_dellinked
+ *     so the shared cleanup at out: doesn't try to dellink twice.
+ */
+static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
+{
+	struct timespec t0;
+	unsigned int qidx2, iters, i;
+	int rc;
+
+	if (!ns_unsupported_inet) {
+		it->udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+		if (it->udp < 0) {
+			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
+				ns_unsupported_inet = true;
+		} else {
+			(void)setsockopt(it->udp, SOL_SOCKET, SO_BINDTODEVICE,
+					 it->dummy_name, strlen(it->dummy_name) + 1);
+		}
+	}
+
+	if (it->udp >= 0) {
+		struct sockaddr_in dst;
+
+		memset(&dst, 0, sizeof(dst));
+		dst.sin_family      = AF_INET;
+		dst.sin_port        = htons(TC_INNER_PORT);
+		dst.sin_addr.s_addr = htonl(0x7f000001U);	/* 127.0.0.1 */
+
+		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
+		iters = BUDGETED(CHILD_OP_TC_QDISC_CHURN,
+				 JITTER_RANGE(TC_PACKET_BASE));
+		if (iters < TC_PACKET_FLOOR)
+			iters = TC_PACKET_FLOOR;
+		if (iters > TC_PACKET_CAP)
+			iters = TC_PACKET_CAP;
+
+		for (i = 0; i < iters; i++) {
+			unsigned char payload[64];
+			ssize_t n;
+
+			if (ns_since(&t0) >= STORM_BUDGET_NS)
+				break;
+
+			generate_rand_bytes(payload, sizeof(payload));
+			n = sendto(it->udp, payload, sizeof(payload),
+				   MSG_DONTWAIT,
+				   (struct sockaddr *)&dst, sizeof(dst));
+			if (n > 0)
+				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_packet_sent_ok,
+						   1, __ATOMIC_RELAXED);
+		}
+	}
+
+	qidx2 = pick_qdisc_idx_other(it->qidx);
+	if (qidx2 < NR_QDISC_KINDS) {
+		modprobe_qdisc(qidx2);
+		rc = build_newqdisc(&it->nl, it->dummy_idx, it->handle, TC_H_ROOT,
+				    qdisc_kinds[qidx2].name,
+				    NLM_F_CREATE | NLM_F_REPLACE);
+		if (rc == 0) {
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_qdisc_replace_ok,
+					   1, __ATOMIC_RELAXED);
+		} else if (is_unsupported_err(rc)) {
+			ns_unsupported_qdisc_kind[qidx2] = true;
+		}
+	}
+
+	if (!it->bridge_mode) {
+		if (build_deltfilter(&it->nl, it->dummy_idx, it->handle) == 0)
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tfilter_del_ok,
+					   1, __ATOMIC_RELAXED);
+
+		if (build_delqdisc(&it->nl, it->dummy_idx, it->handle, TC_H_ROOT) == 0)
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_qdisc_del_ok,
+					   1, __ATOMIC_RELAXED);
+	} else if (it->udp >= 0 && it->dummy_idx > 0) {
+		struct sockaddr_in dst;
+		unsigned char payload[64];
+		unsigned int j;
+
+		memset(&dst, 0, sizeof(dst));
+		dst.sin_family      = AF_INET;
+		dst.sin_port        = htons(TC_INNER_PORT);
+		dst.sin_addr.s_addr = htonl(0x7f000001U);
+
+		for (j = 0; j < 8; j++) {
+			generate_rand_bytes(payload, sizeof(payload));
+			(void)sendto(it->udp, payload, sizeof(payload),
+				     MSG_DONTWAIT,
+				     (struct sockaddr *)&dst, sizeof(dst));
+		}
+		if (build_dellink(&it->nl, it->dummy_idx) == 0) {
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_del_ok,
+					   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_bridge_dellink_race_ok,
+					   1, __ATOMIC_RELAXED);
+			it->slave_dellinked = true;
+		}
+		for (j = 0; j < 8; j++) {
+			generate_rand_bytes(payload, sizeof(payload));
+			(void)sendto(it->udp, payload, sizeof(payload),
+				     MSG_DONTWAIT,
+				     (struct sockaddr *)&dst, sizeof(dst));
+		}
+	}
+}
+
 bool tc_qdisc_churn(struct childdata *child)
 {
 	struct tc_qdisc_iter_ctx it = {
 		.nl  = { .fd = -1 },
 		.udp = -1,
 	};
-	unsigned int qidx2;
-	struct timespec t0;
-	unsigned int iters;
-	unsigned int i;
-	int rc;
 
 	(void)child;
 
@@ -1396,140 +1520,7 @@ bool tc_qdisc_churn(struct childdata *child)
 		goto out;
 
 	tc_qdisc_add_filter_class(&it);
-
-	/*
-	 * Drive the dummy's xmit path with loopback UDP.  Each send
-	 * walks __dev_xmit_skb / qdisc_enqueue / sch_direct_xmit
-	 * through the freshly-installed qdisc -> class -> filter
-	 * tree.  dummy's xmit drops on the floor after dequeue but
-	 * the classification / enqueue / dequeue cycle is what the
-	 * CVE class lives in.
-	 */
-	if (!ns_unsupported_inet) {
-		it.udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-		if (it.udp < 0) {
-			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
-				ns_unsupported_inet = true;
-		} else {
-			(void)setsockopt(it.udp, SOL_SOCKET, SO_BINDTODEVICE,
-					 it.dummy_name, strlen(it.dummy_name) + 1);
-		}
-	}
-
-	if (it.udp >= 0) {
-		struct sockaddr_in dst;
-
-		memset(&dst, 0, sizeof(dst));
-		dst.sin_family      = AF_INET;
-		dst.sin_port        = htons(TC_INNER_PORT);
-		dst.sin_addr.s_addr = htonl(0x7f000001U);	/* 127.0.0.1 */
-
-		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
-		iters = BUDGETED(CHILD_OP_TC_QDISC_CHURN,
-				 JITTER_RANGE(TC_PACKET_BASE));
-		if (iters < TC_PACKET_FLOOR)
-			iters = TC_PACKET_FLOOR;
-		if (iters > TC_PACKET_CAP)
-			iters = TC_PACKET_CAP;
-
-		for (i = 0; i < iters; i++) {
-			unsigned char payload[64];
-			ssize_t n;
-
-			if (ns_since(&t0) >= STORM_BUDGET_NS)
-				break;
-
-			generate_rand_bytes(payload, sizeof(payload));
-			n = sendto(it.udp, payload, sizeof(payload),
-				   MSG_DONTWAIT,
-				   (struct sockaddr *)&dst, sizeof(dst));
-			if (n > 0)
-				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_packet_sent_ok,
-						   1, __ATOMIC_RELAXED);
-		}
-	}
-
-	/*
-	 * Mid-flow REPLACE: swap the root qdisc kind to a different
-	 * rotation entry while skbs from the send loop above are still
-	 * draining.  This is the targeted qdisc_replace race window —
-	 * the same shape as the CVE-2023-4623 sch_qfq UAF.
-	 */
-	qidx2 = pick_qdisc_idx_other(it.qidx);
-	if (qidx2 < NR_QDISC_KINDS) {
-		modprobe_qdisc(qidx2);
-		rc = build_newqdisc(&it.nl, it.dummy_idx, it.handle, TC_H_ROOT,
-				    qdisc_kinds[qidx2].name,
-				    NLM_F_CREATE | NLM_F_REPLACE);
-		if (rc == 0) {
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_qdisc_replace_ok,
-					   1, __ATOMIC_RELAXED);
-		} else if (is_unsupported_err(rc)) {
-			ns_unsupported_qdisc_kind[qidx2] = true;
-		}
-	}
-
-	if (!it.bridge_mode) {
-		/*
-		 * Bulk-delete every filter on root, racing in-flight skb
-		 * classification still draining from the send loop.  The
-		 * cls_*_destroy commit-time codepaths (CVE-2023-3776 cls_fw
-		 * lineage) live here.
-		 */
-		if (build_deltfilter(&it.nl, it.dummy_idx, it.handle) == 0)
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tfilter_del_ok,
-					   1, __ATOMIC_RELAXED);
-
-		/*
-		 * Drop the root qdisc, racing the same in-flight skbs.
-		 * Cascades cleanup of class / filter survivors via
-		 * qdisc_destroy.  This is the primary teardown-vs-traffic
-		 * window the op exists to open.
-		 */
-		if (build_delqdisc(&it.nl, it.dummy_idx, it.handle, TC_H_ROOT) == 0)
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_qdisc_del_ok,
-					   1, __ATOMIC_RELAXED);
-	} else if (it.udp >= 0 && it.dummy_idx > 0) {
-		/*
-		 * Bridge-slave-port DELLINK race.  In place of the
-		 * explicit delqdisc, tear the qdisc down by removing the
-		 * underlying netdev: prime a small flush burst to seed
-		 * the qdisc, then RTM_DELLINK the slave veth, then push
-		 * a final flush burst.  netdev unregister hands off to a
-		 * workqueue, so subsequent sends can hit the dequeue path
-		 * while qdisc cleanup is still in flight — the
-		 * dequeue-after-parent-free window for
-		 * qdisc_pkt_len_segs_init.
-		 */
-		struct sockaddr_in dst;
-		unsigned char payload[64];
-		unsigned int j;
-
-		memset(&dst, 0, sizeof(dst));
-		dst.sin_family      = AF_INET;
-		dst.sin_port        = htons(TC_INNER_PORT);
-		dst.sin_addr.s_addr = htonl(0x7f000001U);
-
-		for (j = 0; j < 8; j++) {
-			generate_rand_bytes(payload, sizeof(payload));
-			(void)sendto(it.udp, payload, sizeof(payload),
-				     MSG_DONTWAIT,
-				     (struct sockaddr *)&dst, sizeof(dst));
-		}
-		if (build_dellink(&it.nl, it.dummy_idx) == 0) {
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_del_ok,
-					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_bridge_dellink_race_ok,
-					   1, __ATOMIC_RELAXED);
-			it.slave_dellinked = true;
-		}
-		for (j = 0; j < 8; j++) {
-			generate_rand_bytes(payload, sizeof(payload));
-			(void)sendto(it.udp, payload, sizeof(payload),
-				     MSG_DONTWAIT,
-				     (struct sockaddr *)&dst, sizeof(dst));
-		}
-	}
+	tc_qdisc_churn_loop(&it);
 
 out:
 	if (it.udp >= 0)
