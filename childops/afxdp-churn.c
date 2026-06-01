@@ -828,6 +828,40 @@ static int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
 	return 0;
 }
 
+/*
+ * Phase 5: attach the loaded XDP redirect program to the bound ifindex
+ * so xdp_do_redirect() walks the XSKMAP -- without an attached prog,
+ * the RACE A map-delete below has no concurrent reader and never opens
+ * the CVE-2024-50115 window.  BPF_LINK_CREATE first (auto-detach on
+ * link fd close), then RTM_NEWLINK + IFLA_XDP_FD in SKB mode on older
+ * kernels or when another iter_one already won the slot.
+ */
+static void afxdp_iter_attach_prog(struct xsk_state *st,
+				   unsigned int target_ifindex)
+{
+	if (!st->bound || st->prog_fd < 0)
+		return;
+
+	st->xdp_link_fd = xdp_link_attach(st->prog_fd, target_ifindex);
+	if (st->xdp_link_fd >= 0) {
+		__atomic_add_fetch(&shm->stats.afxdp_churn_link_attach_ok,
+				   1, __ATOMIC_RELAXED);
+	} else {
+		int rc_open = xdp_netlink_open(&st->rtnl);
+
+		if (rc_open == 0 &&
+		    xdp_netlink_set_fd(&st->rtnl, target_ifindex,
+				       st->prog_fd) == 0) {
+			st->nl_attached_ifindex = target_ifindex;
+			__atomic_add_fetch(&shm->stats.afxdp_churn_netlink_attach_ok,
+					   1, __ATOMIC_RELAXED);
+		} else {
+			__atomic_add_fetch(&shm->stats.afxdp_churn_attach_failed,
+					   1, __ATOMIC_RELAXED);
+		}
+	}
+}
+
 /* One full setup + race + teardown cycle on a fresh AF_XDP socket. */
 static void iter_one(unsigned int idx, const struct timespec *t_outer)
 {
@@ -858,33 +892,7 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 			    &target_ifindex) < 0)
 		goto out;
 
-	/* Attach the loaded XDP program to lo so xdp_do_redirect() actually
-	 * walks the XSKMAP -- without an attached program, the RACE A
-	 * map-delete below has no concurrent reader and never opens the
-	 * CVE-2024-50115 window.  Try BPF_LINK_CREATE first (auto-detach
-	 * on link fd close), fall back to RTM_NEWLINK + IFLA_XDP_FD in
-	 * SKB mode on older kernels (returns -EINVAL from BPF_LINK_CREATE)
-	 * or when another iter_one already won the lo slot. */
-	if (st.bound && st.prog_fd >= 0) {
-		st.xdp_link_fd = xdp_link_attach(st.prog_fd, target_ifindex);
-		if (st.xdp_link_fd >= 0) {
-			__atomic_add_fetch(&shm->stats.afxdp_churn_link_attach_ok,
-					   1, __ATOMIC_RELAXED);
-		} else {
-			int rc_open = xdp_netlink_open(&st.rtnl);
-
-			if (rc_open == 0 &&
-			    xdp_netlink_set_fd(&st.rtnl, target_ifindex,
-					       st.prog_fd) == 0) {
-				st.nl_attached_ifindex = target_ifindex;
-				__atomic_add_fetch(&shm->stats.afxdp_churn_netlink_attach_ok,
-						   1, __ATOMIC_RELAXED);
-			} else {
-				__atomic_add_fetch(&shm->stats.afxdp_churn_attach_failed,
-						   1, __ATOMIC_RELAXED);
-			}
-		}
-	}
+	afxdp_iter_attach_prog(&st, target_ifindex);
 
 	if (st.bound) {
 		/* Inject TX descriptor(s) into the TX ring, then sendto-kick.
