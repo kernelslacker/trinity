@@ -402,11 +402,27 @@ static int tcp_ulp_swap_iter_install_tls(int s)
 	return 0;
 }
 
-/* One full sequence on a freshly-created loopback TCP socket. */
-static void iter_one(const struct timespec *t_outer)
+/* Drive tls_sw_sendmsg + tls_sw_recvmsg so the ULP carries live per-
+ * sock state (ctx, strparser, sw paths armed) by the time the illegal-
+ * swap attempts hit it.  send_ok bumps on a successful send; the recv
+ * is fire-and-forget (the loopback acceptor drains best-effort and the
+ * SO_RCVTIMEO of 100 ms bounds the wait). */
+static void tcp_ulp_swap_iter_traffic_burst(int s)
 {
 	unsigned char payload[ULP_SWAP_PAYLOAD_BYTES];
 	unsigned char rxbuf[ULP_SWAP_PAYLOAD_BYTES];
+
+	generate_rand_bytes(payload, sizeof(payload));
+	if (send(s, payload, sizeof(payload),
+		 MSG_DONTWAIT | MSG_NOSIGNAL) > 0)
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_send_ok,
+				   1, __ATOMIC_RELAXED);
+	(void)recv(s, rxbuf, sizeof(rxbuf), MSG_DONTWAIT);
+}
+
+/* One full sequence on a freshly-created loopback TCP socket. */
+static void iter_one(const struct timespec *t_outer)
+{
 	pid_t acceptor = -1;
 	int s;
 	int rc;
@@ -428,15 +444,8 @@ static void iter_one(const struct timespec *t_outer)
 	if ((unsigned long long)ns_since(t_outer) >= ULP_SWAP_WALL_CAP_NS)
 		goto out;
 
-	/* Step 5: drive tls_sw_sendmsg + tls_sw_recvmsg so the ULP
-	 * carries live per-sock state (ctx, strparser, sw paths armed)
-	 * by the time the illegal-swap attempts hit it. */
-	generate_rand_bytes(payload, sizeof(payload));
-	if (send(s, payload, sizeof(payload),
-		 MSG_DONTWAIT | MSG_NOSIGNAL) > 0)
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_send_ok,
-				   1, __ATOMIC_RELAXED);
-	(void)recv(s, rxbuf, sizeof(rxbuf), MSG_DONTWAIT);
+	/* Step 5: drive live tls_sw send + recv on the ULP. */
+	tcp_ulp_swap_iter_traffic_burst(s);
 
 	/* Step 6: setsockopt(TCP_ULP, "espintcp") -- post-connect, the
 	 * kernel tcp_set_ulp() validate-then-reject path bumps EBUSY/
