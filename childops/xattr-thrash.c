@@ -253,6 +253,48 @@ static void xattr_thrash_iter_op_list(struct xattr_slot *s, bool use_path)
 }
 
 /*
+ * Phase: 12-way per-iteration dispatch.  Routes the rolled op to one of
+ * the four op-family helpers, splitting fd-based vs path-based variants
+ * via use_path.  Set/get dominate (8/12) because those are the ops that
+ * actually populate and walk the per-inode xattr list -- remove/list
+ * are useful but consume what set produced.
+ */
+static void xattr_thrash_iter_dispatch(struct xattr_slot *s, const char *name,
+				       unsigned int op)
+{
+	switch (op) {
+	case 0:
+	case 1:
+	case 2:
+		xattr_thrash_iter_op_set(s, name, false);
+		break;
+	case 3:
+		xattr_thrash_iter_op_set(s, name, true);
+		break;
+	case 4:
+	case 5:
+	case 6:
+		xattr_thrash_iter_op_get(s, name, false);
+		break;
+	case 7:
+		xattr_thrash_iter_op_get(s, name, true);
+		break;
+	case 8:
+		xattr_thrash_iter_op_remove(s, name, false);
+		break;
+	case 9:
+		xattr_thrash_iter_op_remove(s, name, true);
+		break;
+	case 10:
+		xattr_thrash_iter_op_list(s, false);
+		break;
+	case 11:
+		xattr_thrash_iter_op_list(s, true);
+		break;
+	}
+}
+
+/*
  * Phase: close every fd opened by setup_fds.  All xattrs left behind by
  * the iteration loop persist on the testfile inodes by design, so the
  * next xattr_thrash invocation starts against an inode that already has
@@ -289,43 +331,8 @@ bool xattr_thrash(struct childdata *child)
 	for (iter = 0; iter < iters; iter++) {
 		struct xattr_slot *s = &slots[rnd_modulo_u32(opened)];
 		const char *name = xattr_names[rnd_modulo_u32(NR_XATTR_NAMES)];
-		/* 12 distinct dispatches so the path-based and fd-based
-		 * variants of every op all land regularly.  Set/get
-		 * dominate (8/12) because those are the operations that
-		 * actually populate and walk the per-inode xattr list —
-		 * remove/list are useful but consume what set produced.*/
-		unsigned int op = rnd_modulo_u32(12);
 
-		switch (op) {
-		case 0:
-		case 1:
-		case 2:
-			xattr_thrash_iter_op_set(s, name, false);
-			break;
-		case 3:
-			xattr_thrash_iter_op_set(s, name, true);
-			break;
-		case 4:
-		case 5:
-		case 6:
-			xattr_thrash_iter_op_get(s, name, false);
-			break;
-		case 7:
-			xattr_thrash_iter_op_get(s, name, true);
-			break;
-		case 8:
-			xattr_thrash_iter_op_remove(s, name, false);
-			break;
-		case 9:
-			xattr_thrash_iter_op_remove(s, name, true);
-			break;
-		case 10:
-			xattr_thrash_iter_op_list(s, false);
-			break;
-		case 11:
-			xattr_thrash_iter_op_list(s, true);
-			break;
-		}
+		xattr_thrash_iter_dispatch(s, name, rnd_modulo_u32(12));
 
 		if (budget_elapsed(&start))
 			break;
