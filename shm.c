@@ -66,13 +66,20 @@ void create_shm(void)
 	output(1, "shm:%p-%p (%u pages)\n", shm, (char *)shm + shm_size - 1, nr_shm_pages);
 }
 
-void init_shm(void)
+/*
+ * Wall-clock + adaptive-budget seed phase.  Three steps, all about
+ * stamping the initial values the rest of init_shm and the live
+ * fuzz loop reads as starting state: the debug flag mirror so
+ * children observe --debug, the per-childop adaptive-budget
+ * multipliers at unity so adapt_budget() has a sane baseline to
+ * ratchet from, and the run's start_time tick that downstream
+ * elapsed-time accounting (rate-limited logs, plateau windows)
+ * subtracts from.  Bundled first because every subsequent phase
+ * assumes these scalars are populated.
+ */
+static void init_shm_debug_start(void)
 {
 	unsigned int i;
-	size_t childptrslen;
-	size_t fd_event_ring_arr_bytes;
-
-	output(2, "shm is at %p\n", shm);
 
 	if (set_debug == true)
 		shm->debug = true;
@@ -87,6 +94,17 @@ void init_shm(void)
 		shm->stats.childop_budget_mult[i] = ADAPT_BUDGET_UNITY;
 
 	shm->start_time = time(NULL);
+}
+
+void init_shm(void)
+{
+	unsigned int i;
+	size_t childptrslen;
+	size_t fd_event_ring_arr_bytes;
+
+	output(2, "shm is at %p\n", shm);
+
+	init_shm_debug_start();
 
 	/*
 	 * Snapshot trinity's own (dev, ino) so the execve sanitiser can
