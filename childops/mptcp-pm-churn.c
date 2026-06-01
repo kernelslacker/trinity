@@ -727,35 +727,25 @@ static int mptcp_pm_churn_iter_genl_attach(struct mptcp_pm_churn_iter_ctx *ctx)
 	return 0;
 }
 
-bool mptcp_pm_churn(struct childdata *child)
+/*
+ * Phase 4: the BUDGETED pm-churn loop.  Each iteration walks the same
+ * ADD_ADDR -> GET_ADDR -> send -> DEL_ADDR -> send -> coin-flip
+ * (SET_LIMITS or FLUSH_ADDRS) sequence, with occasional
+ * setsockopt_all_sf_recipe (1/8) and sockopt_inheritance_sweep (1/4)
+ * sub-modes for the 70ece9d7021c propagation-seq window.  loc_id walks
+ * [1, MPTCP_PM_LOC_ID_MAX] bounded — the kernel rejects loc_id > 127
+ * with EINVAL so capping avoids an EINVAL plateau that burns budget
+ * without coverage.  rot_idx starts at 1 (127.0.0.2) because the
+ * connect already pinned 127.0.0.1.  No return value: every per-iter
+ * failure mode is already accounted to its own counter; the orchestrator
+ * just falls through to teardown when the loop ends.
+ */
+static void mptcp_pm_churn_iter_pm_ops_burst(struct mptcp_pm_churn_iter_ctx *ctx)
 {
-	struct mptcp_pm_churn_iter_ctx ctx = {
-		.srv     = -1,
-		.cli     = -1,
-		.srv_acc = -1,
-	};
-	unsigned int iters;
-	unsigned int i;
+	unsigned int iters, i;
 	__u8 loc_id;
 	unsigned int rot_idx;
 	int rc;
-
-	(void)child;
-
-	__atomic_add_fetch(&shm->stats.mptcp_pm_churn_runs,
-			   1, __ATOMIC_RELAXED);
-
-	if (ns_unsupported_mptcp || ns_unsupported_genetlink_mptcp)
-		return true;
-
-	if (mptcp_pm_churn_iter_setup_sockets(&ctx) != 0)
-		goto out;
-
-	if (mptcp_pm_churn_iter_connect_pair(&ctx) != 0)
-		goto out;
-
-	if (mptcp_pm_churn_iter_genl_attach(&ctx) != 0)
-		goto out;
 
 	/* Initial loc_id: random in [1, MPTCP_PM_LOC_ID_MAX].  The
 	 * kernel's loc_id 0 is reserved for the primary subflow auto-
@@ -775,7 +765,7 @@ bool mptcp_pm_churn(struct childdata *child)
 		 *    MPTCP_PM_ATTR_ADDR.  Kernel installs the endpoint
 		 *    in the pernet table and queues an MP_ADD_ADDR
 		 *    option for transmit on every up MPTCP socket. */
-		rc = mptcp_pm_addr_cmd(&ctx.ctx, MPTCP_PM_CMD_ADD_ADDR,
+		rc = mptcp_pm_addr_cmd(&ctx->ctx, MPTCP_PM_CMD_ADD_ADDR,
 				       loc_id, addr_h);
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.mptcp_pm_churn_addr_added_ok,
@@ -785,18 +775,18 @@ bool mptcp_pm_churn(struct childdata *child)
 		 *    the lookup-by-id path under the same pernet lock
 		 *    the ADD just released.  Reply is a NEWADDR-style
 		 *    response we don't parse — recv consumes it. */
-		(void)mptcp_pm_addr_cmd(&ctx.ctx, MPTCP_PM_CMD_GET_ADDR,
+		(void)mptcp_pm_addr_cmd(&ctx->ctx, MPTCP_PM_CMD_GET_ADDR,
 					loc_id, addr_h);
 
 		/* c) Send during the ADD_ADDR option emit window. */
-		churn_send(ctx.cli);
-		if (ctx.srv_acc >= 0)
-			churn_send(ctx.srv_acc);
+		churn_send(ctx->cli);
+		if (ctx->srv_acc >= 0)
+			churn_send(ctx->srv_acc);
 
 		/* d) DEL_ADDR — drives mptcp_pm_remove_anno_addr() and
 		 *    any in-flight subflow cleanup against the address
 		 *    we just installed. */
-		rc = mptcp_pm_addr_cmd(&ctx.ctx, MPTCP_PM_CMD_DEL_ADDR,
+		rc = mptcp_pm_addr_cmd(&ctx->ctx, MPTCP_PM_CMD_DEL_ADDR,
 				       loc_id, addr_h);
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.mptcp_pm_churn_addr_removed_ok,
@@ -805,9 +795,9 @@ bool mptcp_pm_churn(struct childdata *child)
 		/* e) Targeted race window: data path running
 		 *    concurrently with subflow teardown for the just-
 		 *    removed loc_id. */
-		churn_send(ctx.cli);
-		if (ctx.srv_acc >= 0)
-			churn_send(ctx.srv_acc);
+		churn_send(ctx->cli);
+		if (ctx->srv_acc >= 0)
+			churn_send(ctx->srv_acc);
 
 		/* f) Coin-flip between SET_LIMITS and FLUSH_ADDRS —
 		 *    both reach pernet pm_nl state under the spinlock
@@ -815,9 +805,9 @@ bool mptcp_pm_churn(struct childdata *child)
 		 *    shape.  Splitting at random gives rough 50/50
 		 *    coverage of each command across runs. */
 		if (RAND_BOOL())
-			(void)mptcp_pm_set_limits(&ctx.ctx);
+			(void)mptcp_pm_set_limits(&ctx->ctx);
 		else
-			(void)mptcp_pm_flush_addrs(&ctx.ctx);
+			(void)mptcp_pm_flush_addrs(&ctx->ctx);
 
 		/* g) Occasional setsockopt_all_sf seq-window probe:
 		 *    open a fresh master mptcp socket, set a TCP-level
@@ -826,7 +816,7 @@ bool mptcp_pm_churn(struct childdata *child)
 		 *    master got the value.  Same cadence as other
 		 *    sub-modes, drives the path 70ece9d7021c fixed. */
 		if (ONE_IN(8))
-			mptcp_setsockopt_all_sf_recipe(&ctx.ctx);
+			mptcp_setsockopt_all_sf_recipe(&ctx->ctx);
 
 		/* h) Sockopt-inheritance sweep on the live master.  Walks
 		 *    a curated TCP_* table, sets one opt, drives ADD_ADDR
@@ -837,7 +827,7 @@ bool mptcp_pm_churn(struct childdata *child)
 		 *    fresh-socket recipe above — reusing the established
 		 *    connection is much cheaper. */
 		if (ONE_IN(4))
-			mptcp_sockopt_inheritance_sweep(ctx.cli, &ctx.ctx);
+			mptcp_sockopt_inheritance_sweep(ctx->cli, &ctx->ctx);
 
 		/* Walk loc_id forward bounded to [1, MPTCP_PM_LOC_ID_MAX].
 		 * The kernel rejects loc_id > 127 with EINVAL so capping
@@ -846,6 +836,34 @@ bool mptcp_pm_churn(struct childdata *child)
 		loc_id = (loc_id % MPTCP_PM_LOC_ID_MAX) + 1U;
 		rot_idx = (rot_idx + 1U) % NR_MPTCP_LOOPBACK_ADDRS;
 	}
+}
+
+bool mptcp_pm_churn(struct childdata *child)
+{
+	struct mptcp_pm_churn_iter_ctx ctx = {
+		.srv     = -1,
+		.cli     = -1,
+		.srv_acc = -1,
+	};
+
+	(void)child;
+
+	__atomic_add_fetch(&shm->stats.mptcp_pm_churn_runs,
+			   1, __ATOMIC_RELAXED);
+
+	if (ns_unsupported_mptcp || ns_unsupported_genetlink_mptcp)
+		return true;
+
+	if (mptcp_pm_churn_iter_setup_sockets(&ctx) != 0)
+		goto out;
+
+	if (mptcp_pm_churn_iter_connect_pair(&ctx) != 0)
+		goto out;
+
+	if (mptcp_pm_churn_iter_genl_attach(&ctx) != 0)
+		goto out;
+
+	mptcp_pm_churn_iter_pm_ops_burst(&ctx);
 
 out:
 	if (ctx.ctx_open)
