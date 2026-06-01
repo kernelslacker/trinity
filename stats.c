@@ -5339,38 +5339,9 @@ static void dump_stats_kcov_block(void)
 	}
 }
 
-void dump_stats(void)
+static void dump_stats_corpus_and_taint_tail(void)
 {
 	unsigned int i;
-
-	if (stats_json) {
-		dump_stats_json();
-		return;
-	}
-
-	dump_stats_runtime_header();
-
-	dump_stats_per_syscall_tables();
-
-	dump_stats_fd_tracking();
-
-	dump_stats_oracle_anomalies();
-
-	dump_stats_fuzzer_subsystems();
-
-	dump_stats_corruption_and_pool();
-
-	dump_stats_childop_ranked_tables();
-
-	dump_stats_shared_buffer_misc();
-
-	dump_stats_strategy_summary();
-
-	dump_stats_childop_runs_local();
-
-	dump_stats_childop_runs_network();
-
-	dump_stats_kcov_block();
 
 	if (minicorpus_shm != NULL) {
 		static const char * const op_names[MUT_NUM_OPS] = {
@@ -5611,4 +5582,38 @@ void dump_stats(void)
 					stat_row("taint", taint_flags[t].name, 1);
 		}
 	}
+}
+
+void dump_stats(void)
+{
+	if (stats_json) {
+		dump_stats_json();
+		return;
+	}
+
+	dump_stats_runtime_header();
+
+	dump_stats_per_syscall_tables();
+
+	dump_stats_fd_tracking();
+
+	dump_stats_oracle_anomalies();
+
+	dump_stats_fuzzer_subsystems();
+
+	dump_stats_corruption_and_pool();
+
+	dump_stats_childop_ranked_tables();
+
+	dump_stats_shared_buffer_misc();
+
+	dump_stats_strategy_summary();
+
+	dump_stats_childop_runs_local();
+
+	dump_stats_childop_runs_network();
+
+	dump_stats_kcov_block();
+
+	dump_stats_corpus_and_taint_tail();
 }
