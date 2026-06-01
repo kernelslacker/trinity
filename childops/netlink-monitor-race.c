@@ -435,13 +435,37 @@ static void netlink_monitor_race_iter_address_burst(struct netlink_monitor_race_
 	}
 }
 
+/*
+ * Phase: mid-stream NETLINK_DROP_MEMBERSHIP + NETLINK_ADD_MEMBERSHIP
+ * against an active subscriber list.  The drop must be a group we
+ * actually bound to (so the kernel takes the membership-remove path);
+ * the add can be any of the supported groups (re-adding an already-held
+ * one still exercises the membership-grow path).  The drop/add pair
+ * against an active broadcast walker is the targeted
+ * netlink_broadcast_filtered race window.
+ */
+static void netlink_monitor_race_iter_membership_churn(struct netlink_monitor_race_iter_ctx *ctx)
+{
+	__u32 drop_grp = monitor_group_ids[rand32() % NR_MONITOR_GROUPS];
+	__u32 add_grp  = monitor_group_ids[rand32() % NR_MONITOR_GROUPS];
+
+	if (setsockopt(ctx->mon.fd, SOL_NETLINK, NETLINK_DROP_MEMBERSHIP,
+		       &drop_grp, sizeof(drop_grp)) == 0)
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race_group_drop,
+				   1, __ATOMIC_RELAXED);
+
+	if (setsockopt(ctx->mon.fd, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
+		       &add_grp, sizeof(add_grp)) == 0)
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race_group_add,
+				   1, __ATOMIC_RELAXED);
+}
+
 bool netlink_monitor_race(struct childdata *child)
 {
 	struct netlink_monitor_race_iter_ctx ctx = {
 		.mon = { .fd = -1 },
 		.mut = { .fd = -1 },
 	};
-	__u32 drop_grp, add_grp;
 	unsigned int drained;
 
 	(void)child;
@@ -462,24 +486,7 @@ bool netlink_monitor_race(struct childdata *child)
 
 	netlink_monitor_race_iter_address_burst(&ctx);
 
-	/* Mid-stream membership churn against an active subscriber list.
-	 * Pick two distinct groups from the supported set: one to drop,
-	 * one to add.  The drop must be a group we actually bound to (so
-	 * the kernel takes the membership-remove path); the add can be
-	 * any of the supported groups (re-adding an already-held one
-	 * still exercises the membership-grow path). */
-	drop_grp = monitor_group_ids[rand32() % NR_MONITOR_GROUPS];
-	add_grp  = monitor_group_ids[rand32() % NR_MONITOR_GROUPS];
-
-	if (setsockopt(ctx.mon.fd, SOL_NETLINK, NETLINK_DROP_MEMBERSHIP,
-		       &drop_grp, sizeof(drop_grp)) == 0)
-		__atomic_add_fetch(&shm->stats.netlink_monitor_race_group_drop,
-				   1, __ATOMIC_RELAXED);
-
-	if (setsockopt(ctx.mon.fd, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
-		       &add_grp, sizeof(add_grp)) == 0)
-		__atomic_add_fetch(&shm->stats.netlink_monitor_race_group_add,
-				   1, __ATOMIC_RELAXED);
+	netlink_monitor_race_iter_membership_churn(&ctx);
 
 	/* Final NEWADDR/DELADDR cycle so an event fires after the
 	 * membership churn -- this is the broadcast path running against
