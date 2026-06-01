@@ -145,9 +145,11 @@ static const uint32_t loopback_pool[NR_LOOPBACK_ADDRS] = {
 struct sctp_assoc_churn_iter_ctx {
 	int srv;
 	int cli;
+	int srv_acc;
 	int sock_type;
 	uint16_t srv_port_n;
 	uint16_t cli_port_n;
+	sctp_assoc_t_compat assoc_id;
 };
 
 static void fill_sin(struct sockaddr_in *sa, uint32_t addr_h, uint16_t port_n)
@@ -314,6 +316,59 @@ static int sctp_assoc_churn_iter_setup_client(struct sctp_assoc_churn_iter_ctx *
 	return 0;
 }
 
+/*
+ * Phase 3: drive the association up.  CONNECTX with the server's
+ * full multi-address set (3 addrs) on the client — the kernel
+ * returns the new assoc_id as the setsockopt return value (positive)
+ * on success, which we park in ctx for the optional peeloff step
+ * later.  For SOCK_STREAM, accept() the inbound assoc on the
+ * server's accept queue so server-side ESTABLISHED actually exists
+ * when bindx ADD fires.  SOCK_SEQPACKET delivers all assocs through
+ * the parent socket so accept() doesn't apply — the assoc
+ * materialises lazily on first ingress.  Accept failure is fine: the
+ * cookie may not have been ACKed yet, and SCTP doesn't queue on
+ * EINPROGRESS the same way TCP does.  Finally drive the data path
+ * before the first ASCONF so the assoc has actually transitioned to
+ * ESTABLISHED on both ends — otherwise the post-handshake bindx ADD
+ * races against the cookie itself, which isn't the bug class we're
+ * targeting.  Returns 0 on success or -1 if the iteration should
+ * bail to the out: cleanup path.
+ */
+static int sctp_assoc_churn_iter_connect(struct sctp_assoc_churn_iter_ctx *ctx)
+{
+	struct sockaddr_in addrs[NR_LOOPBACK_ADDRS];
+	int addr_len;
+	int rc;
+
+	addr_len = pack_addrs(addrs, NR_LOOPBACK_ADDRS, 0, 3, ctx->srv_port_n);
+	rc = setsockopt(ctx->cli, IPPROTO_SCTP, SCTP_SOCKOPT_CONNECTX,
+			addrs, (socklen_t)addr_len);
+	if (rc < 0 && errno != EINPROGRESS) {
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_connect_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	if (rc > 0)
+		ctx->assoc_id = (sctp_assoc_t_compat)rc;
+	__atomic_add_fetch(&shm->stats.sctp_assoc_churn_connected,
+			   1, __ATOMIC_RELAXED);
+
+	if (ctx->sock_type == SOCK_STREAM) {
+		ctx->srv_acc = accept(ctx->srv, NULL, NULL);
+		if (ctx->srv_acc >= 0) {
+			(void)fcntl(ctx->srv_acc, F_SETFL, O_NONBLOCK);
+			__atomic_add_fetch(
+				&shm->stats.sctp_assoc_churn_accepted,
+				1, __ATOMIC_RELAXED);
+		}
+	}
+
+	churn_send(ctx->cli);
+	if (ctx->srv_acc >= 0)
+		churn_send(ctx->srv_acc);
+	return 0;
+}
+
 bool sctp_assoc_churn(struct childdata *child)
 {
 	/* sockaddr buffer space — sized for the whole pool plus a little
@@ -324,12 +379,11 @@ bool sctp_assoc_churn(struct childdata *child)
 	struct sctp_assoc_churn_iter_ctx ctx = {
 		.srv = -1,
 		.cli = -1,
+		.srv_acc = -1,
 	};
-	int srv_acc = -1;
 	int peeled = -1;
 	int rc;
 	int addr_len;
-	sctp_assoc_t_compat assoc_id = 0;
 	unsigned int iters;
 	unsigned int i;
 	unsigned int rot_idx;
@@ -348,52 +402,8 @@ bool sctp_assoc_churn(struct childdata *child)
 	if (sctp_assoc_churn_iter_setup_client(&ctx) != 0)
 		goto out;
 
-	/* SCTP_SOCKOPT_CONNECTX with the server's full multi-address
-	 * set (3 addrs).  Kernel returns the new assoc_id as the
-	 * setsockopt return value (positive) on success — that's
-	 * non-standard but it's how the SCTP API was wired.  We grab it
-	 * for the optional peeloff step later. */
-	addr_len = pack_addrs(addrs, NR_LOOPBACK_ADDRS, 0, 3, ctx.srv_port_n);
-	rc = setsockopt(ctx.cli, IPPROTO_SCTP, SCTP_SOCKOPT_CONNECTX,
-			addrs, (socklen_t)addr_len);
-	if (rc < 0 && errno != EINPROGRESS) {
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_connect_failed,
-				   1, __ATOMIC_RELAXED);
+	if (sctp_assoc_churn_iter_connect(&ctx) != 0)
 		goto out;
-	}
-	if (rc > 0)
-		assoc_id = (sctp_assoc_t_compat)rc;
-	__atomic_add_fetch(&shm->stats.sctp_assoc_churn_connected,
-			   1, __ATOMIC_RELAXED);
-
-	/* For SOCK_STREAM, accept() the inbound assoc on the server's
-	 * accept queue so the server-side ESTABLISHED state actually
-	 * exists when bindx ADD fires.  SOCK_SEQPACKET delivers all
-	 * assocs through the parent socket, so accept() doesn't apply
-	 * — the assoc materialises lazily on first ingress. */
-	if (ctx.sock_type == SOCK_STREAM) {
-		srv_acc = accept(ctx.srv, NULL, NULL);
-		if (srv_acc >= 0) {
-			(void)fcntl(srv_acc, F_SETFL, O_NONBLOCK);
-			__atomic_add_fetch(
-				&shm->stats.sctp_assoc_churn_accepted,
-				1, __ATOMIC_RELAXED);
-		}
-		/* accept failure here is fine — the cookie may not have
-		 * been ACKed yet, and SCTP doesn't queue on
-		 * EINPROGRESS the same way TCP does.  Falling through to
-		 * the bindx churn still exercises the client-side ASCONF
-		 * emit path even if the server-side state machine
-		 * hasn't caught up. */
-	}
-
-	/* Drive the data path before the first ASCONF so the assoc has
-	 * actually transitioned to ESTABLISHED on both ends.  Otherwise
-	 * the post-handshake bindx ADD races against the cookie itself,
-	 * which isn't the bug class we're targeting. */
-	churn_send(ctx.cli);
-	if (srv_acc >= 0)
-		churn_send(srv_acc);
 
 	/* Churn loop: alternate ADD and REM of an extra address on the
 	 * client.  Each ADD triggers sctp_send_asconf_add_ip(), each
@@ -427,8 +437,8 @@ bool sctp_assoc_churn(struct childdata *child)
 		/* b) Send during the ASCONF reply window — race window
 		 *    against ASCONF parameter parsing on the server. */
 		churn_send(ctx.cli);
-		if (srv_acc >= 0)
-			churn_send(srv_acc);
+		if (ctx.srv_acc >= 0)
+			churn_send(ctx.srv_acc);
 
 		/* c) REM the address we just added.  Hits the
 		 *    sctp_send_asconf_del_ip path; if the data send
@@ -457,12 +467,12 @@ bool sctp_assoc_churn(struct childdata *child)
 	 * which is itself an exercised reject edge so we still attempt
 	 * it.  Requires a non-zero assoc_id from connectx; if we never
 	 * got one (rare, EINPROGRESS path), skip. */
-	if (assoc_id != 0) {
+	if (ctx.assoc_id != 0) {
 		struct sctp_peeloff_arg_compat parg;
 		socklen_t plen = sizeof(parg);
 
 		memset(&parg, 0, sizeof(parg));
-		parg.associd = assoc_id;
+		parg.associd = ctx.assoc_id;
 		parg.sd = -1;
 		rc = getsockopt(ctx.cli, IPPROTO_SCTP, SCTP_SOCKOPT_PEELOFF,
 				&parg, &plen);
@@ -479,16 +489,16 @@ bool sctp_assoc_churn(struct childdata *child)
 	}
 
 	(void)shutdown(ctx.cli, SHUT_RDWR);
-	if (srv_acc >= 0)
-		(void)shutdown(srv_acc, SHUT_RDWR);
+	if (ctx.srv_acc >= 0)
+		(void)shutdown(ctx.srv_acc, SHUT_RDWR);
 	if (peeled >= 0)
 		(void)shutdown(peeled, SHUT_RDWR);
 
 out:
 	if (peeled >= 0)
 		close(peeled);
-	if (srv_acc >= 0)
-		close(srv_acc);
+	if (ctx.srv_acc >= 0)
+		close(ctx.srv_acc);
 	if (ctx.cli >= 0)
 		close(ctx.cli);
 	if (ctx.srv >= 0)
