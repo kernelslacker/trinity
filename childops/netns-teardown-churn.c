@@ -452,6 +452,48 @@ static int netns_teardown_iter_fork_child(struct netns_teardown_iter_ctx *it)
 }
 
 /*
+ * Phase 4 (parent only): setns back to the anchor net ns so the parent
+ * isn't stuck in the doomed ns, then drop the parent's copies of the
+ * three socket fds so only the in-ns child keeps the doomed net
+ * alive.  On setns success: bumps setns_ok, closes the three sockets,
+ * returns 0.  On setns failure: latches ns_unsupported, kills + reaps
+ * the in-ns child to release one ref, bumps setup_failed, closes
+ * every fd in the ctx, and returns -1; the caller just returns from
+ * iter_one (no recover-path setns retry — we already failed it here).
+ */
+static int netns_teardown_iter_parent_setns_back(struct netns_teardown_iter_ctx *it)
+{
+	if (setns(it->nsfd, CLONE_NEWNET) < 0) {
+		/* setns failure leaves us stuck in the doomed ns.  Best
+		 * effort: kill the child to release one ref so the
+		 * cleanup_net workqueue can fire when this trinity child
+		 * itself eventually exits.  Then bail out — every
+		 * subsequent invocation will re-enter the same broken
+		 * state, so latch off. */
+		ns_unsupported_netns_teardown = true;
+		(void)kill(it->pid, SIGKILL);
+		reap_inflight_child(it->pid);
+		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		(void)close(it->s_listen); it->s_listen = -1;
+		(void)close(it->s_conn);   it->s_conn = -1;
+		(void)close(it->s_accept); it->s_accept = -1;
+		(void)close(it->nsfd);     it->nsfd = -1;
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.netns_teardown_setns_ok,
+			   1, __ATOMIC_RELAXED);
+
+	/* Drop parent's doomed-ns socket refs so only the in-ns child
+	 * keeps the net alive.  Without this the ns can't die when the
+	 * child does — defeats the whole race. */
+	(void)close(it->s_listen); it->s_listen = -1;
+	(void)close(it->s_conn);   it->s_conn = -1;
+	(void)close(it->s_accept); it->s_accept = -1;
+	return 0;
+}
+
+/*
  * One outer iteration: anchor open, unshare, lo bring-up, sockets,
  * fork, race, kill, waitpid.  Best-effort; per-step counter bumps
  * carry the success signal.  Latches ns_unsupported on a probe-style
@@ -473,33 +515,8 @@ static void iter_one(void)
 	if (netns_teardown_iter_fork_child(&it) != 0)
 		goto recover;
 
-	if (setns(it.nsfd, CLONE_NEWNET) < 0) {
-		/* setns failure leaves us stuck in the doomed ns.  Best
-		 * effort: kill the child to release one ref so the
-		 * cleanup_net workqueue can fire when this trinity child
-		 * itself eventually exits.  Then bail out — every
-		 * subsequent invocation will re-enter the same broken
-		 * state, so latch off. */
-		ns_unsupported_netns_teardown = true;
-		(void)kill(it.pid, SIGKILL);
-		reap_inflight_child(it.pid);
-		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		(void)close(it.s_listen); it.s_listen = -1;
-		(void)close(it.s_conn);   it.s_conn = -1;
-		(void)close(it.s_accept); it.s_accept = -1;
-		(void)close(it.nsfd);     it.nsfd = -1;
+	if (netns_teardown_iter_parent_setns_back(&it) != 0)
 		return;
-	}
-	__atomic_add_fetch(&shm->stats.netns_teardown_setns_ok,
-			   1, __ATOMIC_RELAXED);
-
-	/* Drop parent's doomed-ns socket refs so only the in-ns child
-	 * keeps the net alive.  Without this the ns can't die when the
-	 * child does — defeats the whole race. */
-	(void)close(it.s_listen); it.s_listen = -1;
-	(void)close(it.s_conn);   it.s_conn = -1;
-	(void)close(it.s_accept); it.s_accept = -1;
 
 	(void)usleep(rand32() % NETNS_TD_PARENT_USLEEP_MAX);
 
