@@ -4277,35 +4277,8 @@ static void dump_stats_childop_runs_local(void)
 	}
 }
 
-void dump_stats(void)
+static void dump_stats_childop_runs_network(void)
 {
-	unsigned int i;
-
-	if (stats_json) {
-		dump_stats_json();
-		return;
-	}
-
-	dump_stats_runtime_header();
-
-	dump_stats_per_syscall_tables();
-
-	dump_stats_fd_tracking();
-
-	dump_stats_oracle_anomalies();
-
-	dump_stats_fuzzer_subsystems();
-
-	dump_stats_corruption_and_pool();
-
-	dump_stats_childop_ranked_tables();
-
-	dump_stats_shared_buffer_misc();
-
-	dump_stats_strategy_summary();
-
-	dump_stats_childop_runs_local();
-
 	if (shm->stats.socket_family_chain_runs) {
 		stat_row("socket_family_chain", "runs",                shm->stats.socket_family_chain_runs);
 		stat_row("socket_family_chain", "completed",           shm->stats.socket_family_chain_completed);
@@ -5055,6 +5028,38 @@ void dump_stats(void)
 		stat_row("af_alg_recvmsg_churn", "empty_cmsg_no_more", shm->stats.af_alg_recvmsg_empty_cmsg_no_more);
 		stat_row("af_alg_recvmsg_churn", "unsupported",        shm->stats.af_alg_recvmsg_unsupported);
 	}
+}
+
+void dump_stats(void)
+{
+	unsigned int i;
+
+	if (stats_json) {
+		dump_stats_json();
+		return;
+	}
+
+	dump_stats_runtime_header();
+
+	dump_stats_per_syscall_tables();
+
+	dump_stats_fd_tracking();
+
+	dump_stats_oracle_anomalies();
+
+	dump_stats_fuzzer_subsystems();
+
+	dump_stats_corruption_and_pool();
+
+	dump_stats_childop_ranked_tables();
+
+	dump_stats_shared_buffer_misc();
+
+	dump_stats_strategy_summary();
+
+	dump_stats_childop_runs_local();
+
+	dump_stats_childop_runs_network();
 
 	if (kcov_shm != NULL) {
 		unsigned int top_nr[10];
