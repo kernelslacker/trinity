@@ -594,6 +594,40 @@ static void iouring_multishot_iter_arm_napi(struct iouring_multishot_iter_ctx *i
 	}
 }
 
+/*
+ * Submit the multishot RECV SQE that arms the request on the socket
+ * wait queue.  ioprio carries IORING_RECV_MULTISHOT; flags carries
+ * IOSQE_BUFFER_SELECT; buf_group selects the pool registered by
+ * iouring_multishot_iter_setup_pbufs.  addr=0 / len=0 — kernel picks
+ * the buffer for us at completion time.  Returns 0 once the request
+ * has been published via ms_enter; nonzero means the caller should
+ * bail to the shared teardown path.
+ */
+static int iouring_multishot_iter_arm_recv(struct iouring_multishot_iter_ctx *it)
+{
+	struct io_uring_sqe sqe;
+	int r;
+
+	memset(&sqe, 0, sizeof(sqe));
+	sqe.opcode    = IORING_OP_RECV;
+	sqe.fd        = it->rxfd;
+	sqe.addr      = 0;
+	sqe.len       = 0;
+	sqe.ioprio    = IORING_RECV_MULTISHOT;
+	sqe.flags     = IOSQE_BUFFER_SELECT;
+	sqe.buf_group = PBUF_GROUP_ID;
+	sqe.user_data = MULTISHOT_USER_DATA;
+
+	if (!ms_submit(&it->ms, &sqe, 1))
+		return -1;
+	r = ms_enter(&it->ms, 1, 0);
+	if (r < 0)
+		return -1;
+	__atomic_add_fetch(&shm->stats.iouring_multishot_armed,
+			   1, __ATOMIC_RELAXED);
+	return 0;
+}
+
 bool iouring_net_multishot(struct childdata *child)
 {
 	struct iouring_multishot_iter_ctx it;
@@ -630,27 +664,8 @@ bool iouring_net_multishot(struct childdata *child)
 
 	iouring_multishot_iter_arm_napi(&it);
 
-	/* Multishot RECV with buffer selection.  ioprio carries
-	 * IORING_RECV_MULTISHOT; flags carries IOSQE_BUFFER_SELECT;
-	 * buf_group selects our pool.  addr=0 / len=0 — kernel picks the
-	 * buffer for us at completion time. */
-	memset(&sqe, 0, sizeof(sqe));
-	sqe.opcode    = IORING_OP_RECV;
-	sqe.fd        = it.rxfd;
-	sqe.addr      = 0;
-	sqe.len       = 0;
-	sqe.ioprio    = IORING_RECV_MULTISHOT;
-	sqe.flags     = IOSQE_BUFFER_SELECT;
-	sqe.buf_group = PBUF_GROUP_ID;
-	sqe.user_data = MULTISHOT_USER_DATA;
-
-	if (!ms_submit(&it.ms, &sqe, 1))
+	if (iouring_multishot_iter_arm_recv(&it) != 0)
 		goto out;
-	r = ms_enter(&it.ms, 1, 0);
-	if (r < 0)
-		goto out;
-	__atomic_add_fetch(&shm->stats.iouring_multishot_armed,
-			   1, __ATOMIC_RELAXED);
 
 	/* Drive multishot completions: short burst of UDP packets.  Each
 	 * accepted packet posts one CQE on the multishot SQE.  Loopback
