@@ -587,6 +587,34 @@ static int bridge_conntrack_iter_setup_names(struct bridge_conntrack_iter_ctx *c
 	return 0;
 }
 
+/*
+ * Phase 2: create the bridge link and capture its ifindex.  Latches
+ * ns_unsupported_bridge on the family/proto rejection codes the
+ * rtnetlink layer returns when the bridge module isn't present, so
+ * siblings stop probing.  The if_nametoindex call is treated as part
+ * of the same phase because losing the index makes every later step a
+ * no-op.  Returns 0 on success or -1 if the iteration should bail to
+ * the out: cleanup path; on success ctx->bridge_added is set so the
+ * teardown helper knows to RTM_DELLINK it.
+ */
+static int bridge_conntrack_iter_bridge_create(struct bridge_conntrack_iter_ctx *ctx)
+{
+	int rc;
+
+	rc = rtnl_create_bridge(&ctx->rtnl, ctx->br_name);
+	if (rc != 0) {
+		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
+		    rc == -ENOTSUP || rc == -EPROTONOSUPPORT)
+			ns_unsupported_bridge = true;
+		return -1;
+	}
+	ctx->bridge_added = true;
+	ctx->br_idx = (int)if_nametoindex(ctx->br_name);
+	if (ctx->br_idx <= 0)
+		return -1;
+	return 0;
+}
+
 bool bridge_conntrack_churn(struct childdata *child)
 {
 	struct bridge_conntrack_iter_ctx ctx = {
@@ -625,16 +653,7 @@ bool bridge_conntrack_churn(struct childdata *child)
 	if (bridge_conntrack_iter_setup_names(&ctx) != 0)
 		goto out;
 
-	rc = rtnl_create_bridge(&ctx.rtnl, ctx.br_name);
-	if (rc != 0) {
-		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
-		    rc == -ENOTSUP || rc == -EPROTONOSUPPORT)
-			ns_unsupported_bridge = true;
-		goto out;
-	}
-	ctx.bridge_added = true;
-	ctx.br_idx = (int)if_nametoindex(ctx.br_name);
-	if (ctx.br_idx <= 0)
+	if (bridge_conntrack_iter_bridge_create(&ctx) != 0)
 		goto out;
 
 	if (rtnl_create_veth(&ctx.rtnl, ctx.veth_a, ctx.veth_b) != 0)
