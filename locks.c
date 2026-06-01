@@ -82,8 +82,11 @@ static bool check_lock(lock_t *lk)
 /* returns true if something is awry */
 bool check_all_locks(void)
 {
+	static unsigned long last_seen_reaps;
 	unsigned int i;
 	bool ret = false;
+	unsigned long reaps;
+	bool recalibrate;
 
 	ret |= check_lock(&shm->syscalltable_lock);
 
@@ -96,6 +99,21 @@ bool check_all_locks(void)
 
 	if (children == NULL)
 		return false;
+
+	/* Reap-driven recalibration.  The held_count fast-path gate below
+	 * stays accurate only as long as every lock acquire is paired with
+	 * a release.  A child that dies holding a pool/ring lock leaks
+	 * held_count by one (the acquire's increment was never paired), and
+	 * the family-skip gate then never fires for that family for the
+	 * rest of the run.  Track the shm-wide zombies_reaped counter as a
+	 * coarse "could a dead-holder leak have happened since last tick"
+	 * indicator: whenever it advances, force a full family scan and
+	 * rebuild held_count from the observed LOCK_STATE of every lock.
+	 * After the recalibrate tick, held_count matches ground truth and
+	 * the gate resumes firing normally. */
+	reaps = __atomic_load_n(&shm->stats.zombies_reaped, __ATOMIC_RELAXED);
+	recalibrate = (reaps != last_seen_reaps);
+	last_seen_reaps = reaps;
 
 	for_each_child(i)
 		ret |= check_lock(&children[i]->syscall.lock);
@@ -110,8 +128,10 @@ bool check_all_locks(void)
 	 * Fast-path gate: when held_count == 0, no child is currently
 	 * inside any pool lock, so every check_lock() below would return
 	 * false anyway.  Skipping the ~2048-entry walk avoids the acquire-
-	 * load cacheline traffic on the parent tick. */
-	if (cmp_hints_shm != NULL &&
+	 * load cacheline traffic on the parent tick.  Suppressed on a
+	 * recalibrate tick so the rebuild below can re-anchor held_count
+	 * even if a prior leak left it spuriously non-zero. */
+	if (cmp_hints_shm != NULL && !recalibrate &&
 	    __atomic_load_n(&cmp_hints_shm->held_count, __ATOMIC_RELAXED) == 0) {
 		if (shm->debug)
 			outputerr("check_all_locks: skipping cmp_hints (held_count==0)\n");
@@ -120,9 +140,24 @@ bool check_all_locks(void)
 	if (cmp_hints_shm != NULL) {
 		unsigned int a;
 
-		for (i = 0; i < ARRAY_SIZE(cmp_hints_shm->pools); i++)
-			for (a = 0; a < 2; a++)
-				ret |= check_lock(&cmp_hints_shm->pools[i][a].lock);
+		if (recalibrate) {
+			unsigned long rebuilt = 0;
+
+			for (i = 0; i < ARRAY_SIZE(cmp_hints_shm->pools); i++) {
+				for (a = 0; a < 2; a++) {
+					lock_t *lk = &cmp_hints_shm->pools[i][a].lock;
+
+					ret |= check_lock(lk);
+					if (LOCK_STATE(__atomic_load_n(&lk->state, __ATOMIC_RELAXED)) == LOCKED)
+						rebuilt++;
+				}
+			}
+			__atomic_store_n(&cmp_hints_shm->held_count, rebuilt, __ATOMIC_RELAXED);
+		} else {
+			for (i = 0; i < ARRAY_SIZE(cmp_hints_shm->pools); i++)
+				for (a = 0; a < 2; a++)
+					ret |= check_lock(&cmp_hints_shm->pools[i][a].lock);
+		}
 	}
 skip_cmp_hints:;
 
@@ -131,16 +166,29 @@ skip_cmp_hints:;
 	 * shutdown via minicorpus_save_file, so a leaked ring lock wedges
 	 * the shutdown save and burns the accumulated corpus.  Same
 	 * per-array idiom as the cmp_hints walk above.  Same held_count
-	 * fast-path gate as cmp_hints. */
-	if (minicorpus_shm != NULL &&
+	 * fast-path gate (and same recalibrate suppression) as cmp_hints. */
+	if (minicorpus_shm != NULL && !recalibrate &&
 	    __atomic_load_n(&minicorpus_shm->held_count, __ATOMIC_RELAXED) == 0) {
 		if (shm->debug)
 			outputerr("check_all_locks: skipping minicorpus (held_count==0)\n");
 		goto skip_minicorpus;
 	}
 	if (minicorpus_shm != NULL) {
-		for (i = 0; i < ARRAY_SIZE(minicorpus_shm->rings); i++)
-			ret |= check_lock(&minicorpus_shm->rings[i].lock);
+		if (recalibrate) {
+			unsigned long rebuilt = 0;
+
+			for (i = 0; i < ARRAY_SIZE(minicorpus_shm->rings); i++) {
+				lock_t *lk = &minicorpus_shm->rings[i].lock;
+
+				ret |= check_lock(lk);
+				if (LOCK_STATE(__atomic_load_n(&lk->state, __ATOMIC_RELAXED)) == LOCKED)
+					rebuilt++;
+			}
+			__atomic_store_n(&minicorpus_shm->held_count, rebuilt, __ATOMIC_RELAXED);
+		} else {
+			for (i = 0; i < ARRAY_SIZE(minicorpus_shm->rings); i++)
+				ret |= check_lock(&minicorpus_shm->rings[i].lock);
+		}
 	}
 skip_minicorpus:;
 
