@@ -833,46 +833,59 @@ static int psp_dev_get_probe(struct genl_ctx *ctx)
 	return genl_send_recv(ctx, buf, off);
 }
 
-static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
+/* unshare CLONE_NEWNET, open the rtnl socket, then issue a best-effort
+ * RTM_NEWLINK to spawn a netdevsim instance.  Returns 0 on success or
+ * -1 if the iteration should bail to iter_one's out: cleanup path.
+ * The netdev create is best-effort: even on -ENODEV / -EOPNOTSUPP /
+ * -EEXIST the subsequent PSP family probe still runs and the cap-gate
+ * latches there if PSP isn't built in. */
+static int psp_key_rotate_iter_setup(struct nl_ctx *rtnl)
 {
-	struct nl_ctx rtnl = { .fd = -1 };
-	struct genl_ctx psp_ctx = { .nl = { .fd = -1 } };
 	struct nl_open_opts nlopts;
-	struct genl_open_opts gopts;
-	int sockfd = -1;
-	struct sockaddr_in peer;
-	uint32_t dev_id = 0;
 	char ifname[IFNAMSIZ];
 	int rc;
-
-	if ((unsigned long long)ns_since(t_outer) >= PKR_WALL_CAP_NS)
-		return;
 
 	if (unshare(CLONE_NEWNET) < 0) {
 		if (errno == EPERM)
 			ns_unsupported_psp_key_rotate = true;
 		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return;
+		return -1;
 	}
 
 	memset(&nlopts, 0, sizeof(nlopts));
 	nlopts.proto         = NETLINK_ROUTE;
 	nlopts.recv_timeo_s  = 1;
-	if (nl_open(&rtnl, &nlopts) < 0) {
+	if (nl_open(rtnl, &nlopts) < 0) {
 		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		goto out;
+		return -1;
 	}
 
 	(void)snprintf(ifname, sizeof(ifname), "psp%u",
 		       (unsigned int)(rand32() & 0xffff));
-	rc = rtnl_make_netdevsim(&rtnl, ifname);
+	rc = rtnl_make_netdevsim(rtnl, ifname);
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.psp_key_rotate_netdev_create_ok,
 				   1, __ATOMIC_RELAXED);
-	/* On -ENODEV / -EOPNOTSUPP / -EEXIST the family probe below still
-	 * runs -- the cap-gate latches there if PSP isn't built in. */
+	return 0;
+}
+
+static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
+{
+	struct nl_ctx rtnl = { .fd = -1 };
+	struct genl_ctx psp_ctx = { .nl = { .fd = -1 } };
+	struct genl_open_opts gopts;
+	int sockfd = -1;
+	struct sockaddr_in peer;
+	uint32_t dev_id = 0;
+	int rc;
+
+	if ((unsigned long long)ns_since(t_outer) >= PKR_WALL_CAP_NS)
+		return;
+
+	if (psp_key_rotate_iter_setup(&rtnl) != 0)
+		goto out;
 
 	/* Structural-support probe: open the PSP genl family.  genl_open()
 	 * runs CTRL_CMD_GETFAMILY internally; -ENOENT means the kernel
