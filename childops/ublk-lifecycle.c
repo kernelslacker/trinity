@@ -276,16 +276,53 @@ static void ring_drain(struct ublk_lc_ring *r)
 	wru32(r->cq_ring, r->cq_off_head, head);
 }
 
+/* Per-invocation state shared across the ublk_lifecycle_iter_* helpers.
+ * Lives on the orchestrator's stack and is fresh per invocation.  Lifted
+ * only the fields read across helper boundaries -- per-phase scratch
+ * (ublksrv_ctrl_cmd payload, io_cmd payload, SQE, qpath, ublk_lc_ctrl_dev_info)
+ * stays local to its phase. */
+struct ublk_lifecycle_iter_ctx {
+	struct ublk_lc_ring	ctrl_ring;
+	struct ublk_lc_ring	io_ring;
+	int			ctrl_fd;
+	int			q_fd;
+	int			dev_id;
+	bool			ctrl_ring_up;
+	bool			io_ring_up;
+	bool			fetch_in_flight;
+};
+
+/* Reverse-order release of everything ublk_lifecycle stood up: close the
+ * queue chrdev first so the IO-ring teardown's force-cancel sees no fresh
+ * submissions, then both rings (io before ctrl so the ctrl ring outlives
+ * any sibling cmd it spawned), then the ctrl fd last.  Each step is
+ * gated on the matching _up / >= 0 flag so a partial setup (e.g. ctrl_fd
+ * open succeeded but ring_setup failed) tears down only what actually
+ * came up. */
+static void ublk_lifecycle_iter_teardown(struct ublk_lifecycle_iter_ctx *ctx)
+{
+	if (ctx->q_fd >= 0)
+		close(ctx->q_fd);
+	if (ctx->io_ring_up)
+		ring_teardown(&ctx->io_ring);
+	if (ctx->ctrl_ring_up)
+		ring_teardown(&ctx->ctrl_ring);
+	if (ctx->ctrl_fd >= 0)
+		close(ctx->ctrl_fd);
+}
+
 bool ublk_lifecycle(struct childdata *child)
 {
-	struct ublk_lc_ring ctrl_ring, io_ring;
+	struct ublk_lifecycle_iter_ctx ctx = {
+		.ctrl_fd = -1,
+		.q_fd    = -1,
+		.dev_id  = -1,
+	};
 	struct ublk_lc_ctrl_cmd cc;
 	struct ublk_lc_ctrl_dev_info info;
 	struct ublk_lc_io_cmd ic;
 	struct io_uring_sqe sqe;
 	char qpath[64];
-	int ctrl_fd = -1, q_fd = -1, dev_id = -1;
-	bool ctrl_ring_up = false, io_ring_up = false, fetch_in_flight = false;
 
 	(void)child;
 
@@ -295,8 +332,8 @@ bool ublk_lifecycle(struct childdata *child)
 	if (ns_unsupported_ublk)
 		return true;
 
-	ctrl_fd = open("/dev/ublk-control", O_RDWR | O_CLOEXEC);
-	if (ctrl_fd < 0) {
+	ctx.ctrl_fd = open("/dev/ublk-control", O_RDWR | O_CLOEXEC);
+	if (ctx.ctrl_fd < 0) {
 		if (errno == EPERM || errno == ENOENT || errno == ENXIO ||
 		    errno == EACCES) {
 			ns_unsupported_ublk = true;
@@ -306,16 +343,16 @@ bool ublk_lifecycle(struct childdata *child)
 		goto out;
 	}
 
-	if (!ring_setup(&ctrl_ring, UBLK_LC_RING_DEPTH)) {
+	if (!ring_setup(&ctx.ctrl_ring, UBLK_LC_RING_DEPTH)) {
 		if (errno == ENOSYS)
 			ns_unsupported_ublk = true;
 		goto out;
 	}
-	ctrl_ring_up = true;
+	ctx.ctrl_ring_up = true;
 
-	if (!ring_setup(&io_ring, UBLK_LC_RING_DEPTH))
+	if (!ring_setup(&ctx.io_ring, UBLK_LC_RING_DEPTH))
 		goto out;
-	io_ring_up = true;
+	ctx.io_ring_up = true;
 
 	/* ADD_DEV: kernel allocates dev_id, writes it back into info. */
 	memset(&info, 0, sizeof(info));
@@ -332,24 +369,24 @@ bool ublk_lifecycle(struct childdata *child)
 
 	memset(&sqe, 0, sizeof(sqe));
 	sqe.opcode = IORING_OP_URING_CMD;
-	sqe.fd = ctrl_fd;
+	sqe.fd = ctx.ctrl_fd;
 	sqe.cmd_op = UBLK_U_CMD_ADD_DEV;
 	sqe.addr = (__u64)(uintptr_t)&cc;
 	sqe.len = (__u32)sizeof(cc);
 	sqe.user_data = 0xadd0;
 
-	if (!ring_submit(&ctrl_ring, &sqe, 1))
+	if (!ring_submit(&ctx.ctrl_ring, &sqe, 1))
 		goto out;
-	ring_drain(&ctrl_ring);
-	dev_id = (int)info.dev_id;
-	if (dev_id < 0)
+	ring_drain(&ctx.ctrl_ring);
+	ctx.dev_id = (int)info.dev_id;
+	if (ctx.dev_id < 0)
 		goto out;
 	__atomic_add_fetch(&shm->stats.ublk_lifecycle_add_ok, 1,
 			   __ATOMIC_RELAXED);
 
-	(void)snprintf(qpath, sizeof(qpath), "/dev/ublkc%d", dev_id);
-	q_fd = open(qpath, O_RDWR | O_CLOEXEC);
-	if (q_fd < 0)
+	(void)snprintf(qpath, sizeof(qpath), "/dev/ublkc%d", ctx.dev_id);
+	ctx.q_fd = open(qpath, O_RDWR | O_CLOEXEC);
+	if (ctx.q_fd < 0)
 		goto del_only;
 
 	/* FETCH_REQ on the IO ring — submit-only.  Parks waiting for an
@@ -362,14 +399,14 @@ bool ublk_lifecycle(struct childdata *child)
 
 	memset(&sqe, 0, sizeof(sqe));
 	sqe.opcode = IORING_OP_URING_CMD;
-	sqe.fd = q_fd;
+	sqe.fd = ctx.q_fd;
 	sqe.cmd_op = UBLK_U_IO_FETCH_REQ;
 	sqe.addr = (__u64)(uintptr_t)&ic;
 	sqe.len = (__u32)sizeof(ic);
 	sqe.user_data = 0xfe70;
 
-	if (ring_submit(&io_ring, &sqe, 0)) {
-		fetch_in_flight = true;
+	if (ring_submit(&ctx.io_ring, &sqe, 0)) {
+		ctx.fetch_in_flight = true;
 		__atomic_add_fetch(&shm->stats.ublk_lifecycle_fetch_ok, 1,
 				   __ATOMIC_RELAXED);
 	}
@@ -378,34 +415,27 @@ del_only:
 	/* DEL_DEV on the control ring while FETCH_REQ is parked on the
 	 * IO ring — the f7700a4415af UAF window. */
 	memset(&cc, 0, sizeof(cc));
-	cc.dev_id = (__u32)dev_id;
+	cc.dev_id = (__u32)ctx.dev_id;
 	cc.queue_id = (__u16)-1;
 
 	memset(&sqe, 0, sizeof(sqe));
 	sqe.opcode = IORING_OP_URING_CMD;
-	sqe.fd = ctrl_fd;
+	sqe.fd = ctx.ctrl_fd;
 	sqe.cmd_op = UBLK_U_CMD_DEL_DEV;
 	sqe.addr = (__u64)(uintptr_t)&cc;
 	sqe.len = (__u32)sizeof(cc);
 	sqe.user_data = 0xde10;
 
-	if (ring_submit(&ctrl_ring, &sqe, 1)) {
-		ring_drain(&ctrl_ring);
+	if (ring_submit(&ctx.ctrl_ring, &sqe, 1)) {
+		ring_drain(&ctx.ctrl_ring);
 		__atomic_add_fetch(&shm->stats.ublk_lifecycle_del_ok, 1,
 				   __ATOMIC_RELAXED);
-		if (fetch_in_flight)
+		if (ctx.fetch_in_flight)
 			__atomic_add_fetch(&shm->stats.ublk_lifecycle_race_observed,
 					   1, __ATOMIC_RELAXED);
 	}
 
 out:
-	if (q_fd >= 0)
-		close(q_fd);
-	if (io_ring_up)
-		ring_teardown(&io_ring);
-	if (ctrl_ring_up)
-		ring_teardown(&ctrl_ring);
-	if (ctrl_fd >= 0)
-		close(ctrl_fd);
+	ublk_lifecycle_iter_teardown(&ctx);
 	return true;
 }
