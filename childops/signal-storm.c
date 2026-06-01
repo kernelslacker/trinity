@@ -171,12 +171,58 @@ static void reorder_targets(pid_t *t, unsigned int n)
 	}
 }
 
-bool signal_storm(struct childdata *child)
+/*
+ * Per-invocation context shared across the signal_storm phase helpers.
+ * `targets[]` is filled by signal_storm_iter_collect_targets and read by
+ * every burst arm; `iters`, `order`, and `catalog` are rolled by
+ * signal_storm_iter_pick_mode and consumed by the burst arms.
+ */
+struct signal_storm_iter_ctx {
+	pid_t			targets[MAX_TARGETS];
+	unsigned int		ntargets;
+	unsigned int		iters;
+	enum storm_order	order;
+	enum catalog_mode	catalog;
+};
+
+/*
+ * Phase: snapshot up to MAX_TARGETS live sibling pids into ictx->targets.
+ * Random walk from a random starting offset so the same children do not
+ * get preferentially hammered every invocation.  The self/ppid skip and
+ * the pid_is_valid() guard are load-bearing: both must filter a candidate
+ * out before it lands in the array, otherwise a stale or self-referential
+ * pid can leak into the burst arms.
+ */
+static void signal_storm_iter_collect_targets(struct signal_storm_iter_ctx *ictx)
 {
-	pid_t targets[MAX_TARGETS];
 	pid_t self = mypid();
 	pid_t ppid = getppid();
-	unsigned int ntargets = 0;
+	unsigned int i;
+
+	if (max_children == 0)
+		return;
+
+	unsigned int start = rnd_modulo_u32(max_children);
+
+	for (i = 0; i < max_children && ictx->ntargets < MAX_TARGETS; i++) {
+		unsigned int slot = (start + i) % max_children;
+		pid_t pid = __atomic_load_n(&pids[slot], __ATOMIC_RELAXED);
+
+		if (pid == EMPTY_PIDSLOT)
+			continue;
+		if (pid == self || pid == ppid)
+			continue;
+		if (!pid_is_valid(pid))
+			continue;
+		ictx->targets[ictx->ntargets++] = pid;
+	}
+}
+
+bool signal_storm(struct childdata *child)
+{
+	struct signal_storm_iter_ctx ictx = { 0 };
+	pid_t *targets;
+	unsigned int ntargets;
 	unsigned int i, iters;
 	enum storm_order order;
 	enum catalog_mode catalog;
@@ -185,27 +231,9 @@ bool signal_storm(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.signal_storm_runs, 1, __ATOMIC_RELAXED);
 
-	/*
-	 * Snapshot up to MAX_TARGETS live sibling pids.  Random walk
-	 * from a random starting offset so the same children do not get
-	 * preferentially hammered every invocation.
-	 */
-	if (max_children > 0) {
-		unsigned int start = rnd_modulo_u32(max_children);
-
-		for (i = 0; i < max_children && ntargets < MAX_TARGETS; i++) {
-			unsigned int slot = (start + i) % max_children;
-			pid_t pid = __atomic_load_n(&pids[slot], __ATOMIC_RELAXED);
-
-			if (pid == EMPTY_PIDSLOT)
-				continue;
-			if (pid == self || pid == ppid)
-				continue;
-			if (!pid_is_valid(pid))
-				continue;
-			targets[ntargets++] = pid;
-		}
-	}
+	signal_storm_iter_collect_targets(&ictx);
+	targets = ictx.targets;
+	ntargets = ictx.ntargets;
 
 	if (ntargets == 0) {
 		__atomic_add_fetch(&shm->stats.signal_storm_no_targets,
