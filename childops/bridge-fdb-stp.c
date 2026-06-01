@@ -789,6 +789,39 @@ static void bridge_fdb_stp_iter_setup_names(struct bridge_fdb_stp_iter_ctx *ctx)
 	snprintf(ctx->veth1b, sizeof(ctx->veth1b), "trbv%ub1", rng);
 }
 
+/*
+ * Phase 2: create the bridge link and capture its ifindex.  Latches
+ * ns_unsupported_bridge on the family/proto rejection codes the
+ * rtnetlink layer returns when CONFIG_BRIDGE is absent so siblings
+ * stop probing; EBUSY / EEXIST from a stale name are NOT latched —
+ * those leave the gate open for the next iteration to retry with
+ * fresh rng.  The if_nametoindex call is folded in because losing
+ * the index makes every later step a no-op.  Returns 0 on success
+ * or -1 if the iteration should bail to the out: cleanup path; on
+ * success ctx->bridge_added is set so the teardown helper knows to
+ * RTM_DELLINK it.
+ */
+static int bridge_fdb_stp_iter_bridge_create(struct bridge_fdb_stp_iter_ctx *ctx)
+{
+	int rc;
+
+	rc = build_bridge_create(&ctx->ctx, ctx->br_name);
+	if (rc != 0) {
+		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
+		    rc == -ENOTSUP || rc == -ENOENT || rc == -EPROTONOSUPPORT)
+			ns_unsupported_bridge = true;
+		return -1;
+	}
+	ctx->bridge_added = true;
+	__atomic_add_fetch(&shm->stats.bridge_fdb_stp_bridge_create_ok,
+			   1, __ATOMIC_RELAXED);
+
+	ctx->br_idx = (int)if_nametoindex(ctx->br_name);
+	if (ctx->br_idx == 0)
+		return -1;
+	return 0;
+}
+
 bool bridge_fdb_stp(struct childdata *child)
 {
 	struct bridge_fdb_stp_iter_ctx ictx = {
@@ -844,22 +877,7 @@ bool bridge_fdb_stp(struct childdata *child)
 
 	bridge_fdb_stp_iter_setup_names(&ictx);
 
-	rc = build_bridge_create(&ictx.ctx, ictx.br_name);
-	if (rc != 0) {
-		/* Latch only on the structural-unsupported errnos —
-		 * EBUSY / EEXIST from a stale name leave the latch
-		 * alone so the next iteration retries with fresh rng. */
-		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
-		    rc == -ENOTSUP || rc == -ENOENT || rc == -EPROTONOSUPPORT)
-			ns_unsupported_bridge = true;
-		goto out;
-	}
-	ictx.bridge_added = true;
-	__atomic_add_fetch(&shm->stats.bridge_fdb_stp_bridge_create_ok,
-			   1, __ATOMIC_RELAXED);
-
-	ictx.br_idx = (int)if_nametoindex(ictx.br_name);
-	if (ictx.br_idx == 0)
+	if (bridge_fdb_stp_iter_bridge_create(&ictx) != 0)
 		goto out;
 
 	/* veth pair 0 */
