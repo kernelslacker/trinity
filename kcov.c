@@ -408,6 +408,65 @@ err_free_dedup:
 	return false;
 }
 
+/*
+ * Probe for KCOV_REMOTE_ENABLE support.  Try a remote enable/disable
+ * cycle -- if the ioctl succeeds, the kernel supports it.
+ *
+ * KCOV_DISABLE is best-effort here: a kernel that accepts the
+ * REMOTE_ENABLE but fails the immediate DISABLE leaves the PC fd
+ * stuck in enabled state, so we close it and reopen / re-INIT / re-mmap
+ * to land back at the same post-pc-fd-setup state.  Any failure in
+ * that recovery dance clears kc->active -- the subsequent cmp-fd
+ * setup gates on it.
+ */
+static void kcov_init_child_remote_probe(struct kcov_child *kc,
+					 unsigned int child_id)
+{
+	struct kcov_remote_arg *arg;
+
+	arg = calloc(1, sizeof(*arg));
+	if (arg == NULL)
+		return;
+
+	arg->trace_mode = KCOV_TRACE_PC;
+	arg->area_size = KCOV_TRACE_SIZE;
+	arg->num_handles = 0;
+	arg->common_handle = KCOV_SUBSYSTEM_COMMON | (child_id + 1);
+	if (ioctl(kc->fd, KCOV_REMOTE_ENABLE, arg) == 0) {
+		if (ioctl(kc->fd, KCOV_DISABLE, 0) == 0) {
+			kc->remote_capable = true;
+		} else {
+			/* fd stuck in enabled state — close
+			 * and reopen to reset. */
+			close(kc->fd);
+			munmap(kc->trace_buf,
+				KCOV_TRACE_SIZE * sizeof(unsigned long));
+			kc->trace_buf = NULL;
+			kc->fd = open("/sys/kernel/debug/kcov", O_RDWR);
+			if (kc->fd < 0 ||
+			    ioctl(kc->fd, KCOV_INIT_TRACE, KCOV_TRACE_SIZE) < 0) {
+				if (kc->fd >= 0) {
+					close(kc->fd);
+					kc->fd = -1;
+				}
+				kc->active = false;
+			} else {
+				kc->trace_buf = mmap(NULL,
+					KCOV_TRACE_SIZE * sizeof(unsigned long),
+					PROT_READ | PROT_WRITE, MAP_SHARED,
+					kc->fd, 0);
+				if (kc->trace_buf == MAP_FAILED) {
+					kc->trace_buf = NULL;
+					close(kc->fd);
+					kc->fd = -1;
+					kc->active = false;
+				}
+			}
+		}
+	}
+	free(arg);
+}
+
 void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 {
 	kc->fd = -1;
@@ -431,52 +490,7 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	if (!kcov_init_child_pc_fd(kc))
 		return;
 
-	/* Probe for KCOV_REMOTE_ENABLE support.  Try a remote enable/disable
-	 * cycle — if the ioctl succeeds, the kernel supports it. */
-	{
-		struct kcov_remote_arg *arg;
-
-		arg = calloc(1, sizeof(*arg));
-		if (arg != NULL) {
-			arg->trace_mode = KCOV_TRACE_PC;
-			arg->area_size = KCOV_TRACE_SIZE;
-			arg->num_handles = 0;
-			arg->common_handle = KCOV_SUBSYSTEM_COMMON | (child_id + 1);
-			if (ioctl(kc->fd, KCOV_REMOTE_ENABLE, arg) == 0) {
-				if (ioctl(kc->fd, KCOV_DISABLE, 0) == 0) {
-					kc->remote_capable = true;
-				} else {
-					/* fd stuck in enabled state — close
-					 * and reopen to reset. */
-					close(kc->fd);
-					munmap(kc->trace_buf,
-						KCOV_TRACE_SIZE * sizeof(unsigned long));
-					kc->trace_buf = NULL;
-					kc->fd = open("/sys/kernel/debug/kcov", O_RDWR);
-					if (kc->fd < 0 ||
-					    ioctl(kc->fd, KCOV_INIT_TRACE, KCOV_TRACE_SIZE) < 0) {
-						if (kc->fd >= 0) {
-							close(kc->fd);
-							kc->fd = -1;
-						}
-						kc->active = false;
-					} else {
-						kc->trace_buf = mmap(NULL,
-							KCOV_TRACE_SIZE * sizeof(unsigned long),
-							PROT_READ | PROT_WRITE, MAP_SHARED,
-							kc->fd, 0);
-						if (kc->trace_buf == MAP_FAILED) {
-							kc->trace_buf = NULL;
-							close(kc->fd);
-							kc->fd = -1;
-							kc->active = false;
-						}
-					}
-				}
-			}
-			free(arg);
-		}
-	}
+	kcov_init_child_remote_probe(kc, child_id);
 
 	/*
 	 * Register the kcov ring buffer with the shared-region tracker so
