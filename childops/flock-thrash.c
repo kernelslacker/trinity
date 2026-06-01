@@ -232,6 +232,33 @@ static int flock_thrash_iter_pick_op(enum thrash_order order,
 	return (int)RAND_NEGATIVE_OR(op);
 }
 
+/*
+ * Phase: issue the flock() and reconcile s->held against what the
+ * kernel actually applied.  On success, s->held is updated only when
+ * op_used (post RAND_NEGATIVE_OR substitution) matches a recognised
+ * LOCK_SH/EX/UN constant -- an accepted edge-value garbage op would
+ * otherwise poison the lock-state model.  Failures (EWOULDBLOCK from
+ * LOCK_NB, EINTR from a fired alarm, or anything else like EBADF /
+ * ENOLCK) leave s->held untouched so the next iter just retries.
+ */
+static void flock_thrash_iter_apply(struct flock_slot *s, int op_used)
+{
+	int rc = flock(s->fd, op_used);
+
+	if (rc == 0) {
+		int op_base = op_used & ~LOCK_NB;
+
+		__atomic_add_fetch(&shm->stats.flock_thrash_locks,
+				   1, __ATOMIC_RELAXED);
+		if (op_base == LOCK_SH || op_base == LOCK_EX ||
+		    op_base == LOCK_UN)
+			s->held = (op_base != LOCK_UN);
+	} else {
+		__atomic_add_fetch(&shm->stats.flock_thrash_failed,
+				   1, __ATOMIC_RELAXED);
+	}
+}
+
 bool flock_thrash(struct childdata *child)
 {
 	struct flock_slot slots[NR_FLOCK_FDS];
@@ -255,33 +282,12 @@ bool flock_thrash(struct childdata *child)
 		struct flock_slot *s = &slots[rnd_modulo_u32(opened)];
 		bool skip;
 		int op_used;
-		int rc;
 
 		op_used = flock_thrash_iter_pick_op(order, s, iter,
 						    phase_split, &skip);
 		if (skip)
 			continue;
-		rc = flock(s->fd, op_used);
-		if (rc == 0) {
-			int op_base = op_used & ~LOCK_NB;
-
-			__atomic_add_fetch(&shm->stats.flock_thrash_locks,
-					   1, __ATOMIC_RELAXED);
-			/* Only update s->held when the substituted op is a
-			 * recognised LOCK_* constant; an accepted garbage
-			 * value would otherwise poison the lock-state model. */
-			if (op_base == LOCK_SH || op_base == LOCK_EX ||
-			    op_base == LOCK_UN)
-				s->held = (op_base != LOCK_UN);
-		} else {
-			__atomic_add_fetch(&shm->stats.flock_thrash_failed,
-					   1, __ATOMIC_RELAXED);
-			/* EWOULDBLOCK on LOCK_NB is expected and benign;
-			 * leave s->held alone so the next iteration retries.
-			 * EINTR (alarm fired mid-syscall) is also normal —
-			 * same handling.  Anything else (EBADF, ENOLCK)
-			 * still drops through; the loop just keeps trying. */
-		}
+		flock_thrash_iter_apply(s, op_used);
 	}
 
 	/* Vary teardown order: half the time close in open order (FIFO),
