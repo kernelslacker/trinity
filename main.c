@@ -681,9 +681,21 @@ static void register_zombie_slot(int childno, pid_t pid)
 		return;
 	}
 
-	output(0, "child %d (pid %u) unkillable, deferring slot reuse "
-		"until kernel releases the D-state task.\n",
-		childno, pid);
+	{
+		struct syscallrecord *rec = &children[childno]->syscall;
+		struct syscallentry *entry;
+		unsigned int nr = rec->nr;
+		bool do32 = rec->do32bit;
+		const char *name;
+
+		entry = get_syscall_entry(nr, do32);
+		name = (entry != NULL) ? entry->name : "?";
+
+		output(0, "child %d (pid %u) unkillable in nr=%u (%s)%s, "
+			"deferring slot reuse until kernel releases the "
+			"D-state task.\n",
+			childno, pid, nr, name, do32 ? " (32bit)" : "");
+	}
 
 	/* /proc/$pid/stack and /proc/$pid/syscall reads can block for up
 	 * to ~12s waiting on the kernel when the task is wedged in D-state.
