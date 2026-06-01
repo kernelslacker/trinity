@@ -333,6 +333,50 @@ fail_unmap:
 	return -1;
 }
 
+/*
+ * Phase 2: fan out the worker fleet.  Each forked child enters
+ * inner_worker against the parent's ctx->s mapping -- the
+ * MAP_SHARED region must already be standing (setup_region runs
+ * first) so the inheritance is the post-fork shared mapping rather
+ * than per-child private copies.  Successful child pids are pushed
+ * into ctx->worker_pids and ctx->alive tracks the count.
+ *
+ * Shortfall handling: if fewer than nworkers forks landed, every
+ * surviving worker would park forever on pthread_barrier_wait
+ * (the barrier was sized for the full count).  SIGKILL the partial
+ * herd and waitpid each one synchronously -- no grace window since
+ * a worker stuck on the barrier won't notice the done flag.
+ * ctx->alive is zeroed so the orchestrator's teardown skips the
+ * reap loop entirely.  Returns 0 if every fork landed or -1 on
+ * shortfall (after the partial herd has been cleaned up).
+ */
+static int futex_storm_iter_spawn_workers(struct futex_storm_iter_ctx *ctx)
+{
+	int i, status;
+
+	for (i = 0; i < (int)ctx->nworkers; i++) {
+		pid_t pid = fork();
+
+		if (pid < 0)
+			break;
+		if (pid == 0) {
+			inner_worker(ctx->s);
+			_exit(0);	/* unreachable */
+		}
+		ctx->worker_pids[ctx->alive++] = pid;
+	}
+
+	if (ctx->alive < (int)ctx->nworkers) {
+		for (i = 0; i < ctx->alive; i++)
+			kill(ctx->worker_pids[i], SIGKILL);
+		for (i = 0; i < ctx->alive; i++)
+			waitpid_eintr(ctx->worker_pids[i], &status, 0);
+		ctx->alive = 0;
+		return -1;
+	}
+	return 0;
+}
+
 bool futex_storm(struct childdata *child)
 {
 	struct futex_storm_iter_ctx ctx = { .s = NULL };
@@ -346,30 +390,8 @@ bool futex_storm(struct childdata *child)
 	if (futex_storm_iter_setup_region(&ctx) != 0)
 		return true;
 
-	for (i = 0; i < (int)ctx.nworkers; i++) {
-		pid_t pid = fork();
-
-		if (pid < 0)
-			break;
-		if (pid == 0) {
-			inner_worker(ctx.s);
-			_exit(0);	/* unreachable */
-		}
-		ctx.worker_pids[ctx.alive++] = pid;
-	}
-
-	/*
-	 * Same fork-shortfall handling as barrier_racer: if we couldn't
-	 * fill the barrier slots, surviving workers will park forever on
-	 * pthread_barrier_wait().  SIGKILL them and skip the storm.
-	 */
-	if (ctx.alive < (int)ctx.nworkers) {
-		for (i = 0; i < ctx.alive; i++)
-			kill(ctx.worker_pids[i], SIGKILL);
-		for (i = 0; i < ctx.alive; i++)
-			waitpid_eintr(ctx.worker_pids[i], &status, 0);
+	if (futex_storm_iter_spawn_workers(&ctx) != 0)
 		goto out_barrier;
-	}
 
 	budget.tv_sec  = 0;
 	budget.tv_nsec = STORM_BUDGET_NS;
