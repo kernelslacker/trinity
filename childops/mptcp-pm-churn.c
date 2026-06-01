@@ -838,6 +838,28 @@ static void mptcp_pm_churn_iter_pm_ops_burst(struct mptcp_pm_churn_iter_ctx *ctx
 	}
 }
 
+/*
+ * Phase 5: close whichever resources we managed to acquire.  Runs on
+ * every exit path — both the success path falling through to out: after
+ * pm_ops_burst returns, and the early-bail goto out from any earlier
+ * phase failure.  Order matches the original out: cleanup: genl ctx
+ * first (gated on ctx_open so a pre-attach bail doesn't touch an
+ * uninitialised ctx), then accepted server fd, then client, then the
+ * listener.  Fields default to -1 via the orchestrator's designated
+ * initialiser so the fd guards skip whatever was never opened.
+ */
+static void mptcp_pm_churn_iter_teardown(struct mptcp_pm_churn_iter_ctx *ctx)
+{
+	if (ctx->ctx_open)
+		genl_close(&ctx->ctx);
+	if (ctx->srv_acc >= 0)
+		close(ctx->srv_acc);
+	if (ctx->cli >= 0)
+		close(ctx->cli);
+	if (ctx->srv >= 0)
+		close(ctx->srv);
+}
+
 bool mptcp_pm_churn(struct childdata *child)
 {
 	struct mptcp_pm_churn_iter_ctx ctx = {
@@ -866,14 +888,7 @@ bool mptcp_pm_churn(struct childdata *child)
 	mptcp_pm_churn_iter_pm_ops_burst(&ctx);
 
 out:
-	if (ctx.ctx_open)
-		genl_close(&ctx.ctx);
-	if (ctx.srv_acc >= 0)
-		close(ctx.srv_acc);
-	if (ctx.cli >= 0)
-		close(ctx.cli);
-	if (ctx.srv >= 0)
-		close(ctx.srv);
+	mptcp_pm_churn_iter_teardown(&ctx);
 	return true;
 }
 
