@@ -136,6 +136,102 @@ static unsigned int flock_thrash_iter_open_slots(struct flock_slot *slots)
 	return opened;
 }
 
+/*
+ * Phase: pick the flock op for this iteration based on the running
+ * order and the slot's held state.  Sets *skip and returns 0 when
+ * ORDER_HOLD_BATCH's phase gate wants this iter to no-op; otherwise
+ * returns the op_used value with the RAND_NEGATIVE_OR edge-value
+ * substitution already applied -- that substituted value is what the
+ * kernel actually sees, so the caller must feed it to the apply phase
+ * (not the pre-substitution op) for s->held bookkeeping to stay in
+ * sync with kernel state.
+ */
+static int flock_thrash_iter_pick_op(enum thrash_order order,
+				     const struct flock_slot *s,
+				     unsigned int iter,
+				     unsigned int phase_split,
+				     bool *skip)
+{
+	int op;
+
+	*skip = false;
+
+	switch (order) {
+	case ORDER_HOLD_BATCH:
+		/* Phase 1: only acquire on !held slots; phase 2:
+		 * only release on held slots.  Random fd picks make
+		 * phase 2's release order a shuffle of acquire
+		 * order, so wakeups don't follow the FIFO waiter
+		 * sequence. */
+		if (iter < phase_split) {
+			if (s->held) {
+				*skip = true;
+				return 0;
+			}
+			op = (rnd_modulo_u32(4) == 0) ? LOCK_SH : LOCK_EX;
+			if (rnd_modulo_u32(4) == 0)
+				op |= LOCK_NB;
+		} else {
+			if (!s->held) {
+				*skip = true;
+				return 0;
+			}
+			op = LOCK_UN;
+		}
+		break;
+	case ORDER_LOOSE:
+		/* Don't gate on s->held.  1/8 LOCK_UN regardless of
+		 * state hits the no-op release fast path when
+		 * !held; LOCK_EX on a held slot exercises the
+		 * conversion path (flock_lock_inode replacing the
+		 * existing lock without going through the wait
+		 * queue). */
+		if (rnd_modulo_u32(8) == 0) {
+			op = LOCK_UN;
+		} else {
+			op = (rnd_modulo_u32(4) == 0) ? LOCK_SH : LOCK_EX;
+			if (rnd_modulo_u32(4) == 0)
+				op |= LOCK_NB;
+		}
+		break;
+	case ORDER_ALTERNATE:
+	default:
+		if (s->held) {
+			op = LOCK_UN;
+		} else {
+			/* ~25% LOCK_SH, otherwise LOCK_EX.  Mixing
+			 * in shared locks exercises the SH<->EX
+			 * upgrade/downgrade waitqueue paths in
+			 * addition to the EX-only fast path. */
+			op = (rnd_modulo_u32(4) == 0) ? LOCK_SH : LOCK_EX;
+
+			/* ~25% non-blocking.  Higher than the pure-
+			 * variety mix because under cross-process
+			 * contention the blocking acquire path can
+			 * pin the child for the full alarm window
+			 * if every other child is also holding
+			 * LOCK_EX; the LOCK_NB sprinkle keeps the
+			 * loop ticking and exercises the
+			 * EWOULDBLOCK reject path the blocking
+			 * variant skips. */
+			if (rnd_modulo_u32(4) == 0)
+				op |= LOCK_NB;
+		}
+		break;
+	}
+
+	/* 1-in-RAND_NEGATIVE_RATIO sub the carefully-curated op for
+	 * a garbage value — exercises sys_flock's argument validation
+	 * (LOCK_MAND removal, unknown bit rejection) which the curated
+	 * mix above never reaches.  Returning the substituted value
+	 * lets the apply phase reconcile s->held against what the
+	 * kernel actually applied rather than the original
+	 * (pre-substitution) op — otherwise an accepted garbage value
+	 * drifts the lock-state model and the loop may e.g. issue
+	 * LOCK_EX believing the lock is already held. */
+	return (int)RAND_NEGATIVE_OR(op);
+}
+
 bool flock_thrash(struct childdata *child)
 {
 	struct flock_slot slots[NR_FLOCK_FDS];
@@ -157,79 +253,14 @@ bool flock_thrash(struct childdata *child)
 	phase_split = iter_cap / 2;
 	for (iter = 0; iter < iter_cap; iter++) {
 		struct flock_slot *s = &slots[rnd_modulo_u32(opened)];
-		int op;
+		bool skip;
+		int op_used;
 		int rc;
 
-		switch (order) {
-		case ORDER_HOLD_BATCH:
-			/* Phase 1: only acquire on !held slots; phase 2:
-			 * only release on held slots.  Random fd picks make
-			 * phase 2's release order a shuffle of acquire
-			 * order, so wakeups don't follow the FIFO waiter
-			 * sequence. */
-			if (iter < phase_split) {
-				if (s->held)
-					continue;
-				op = (rnd_modulo_u32(4) == 0) ? LOCK_SH : LOCK_EX;
-				if (rnd_modulo_u32(4) == 0)
-					op |= LOCK_NB;
-			} else {
-				if (!s->held)
-					continue;
-				op = LOCK_UN;
-			}
-			break;
-		case ORDER_LOOSE:
-			/* Don't gate on s->held.  1/8 LOCK_UN regardless of
-			 * state hits the no-op release fast path when
-			 * !held; LOCK_EX on a held slot exercises the
-			 * conversion path (flock_lock_inode replacing the
-			 * existing lock without going through the wait
-			 * queue). */
-			if (rnd_modulo_u32(8) == 0) {
-				op = LOCK_UN;
-			} else {
-				op = (rnd_modulo_u32(4) == 0) ? LOCK_SH : LOCK_EX;
-				if (rnd_modulo_u32(4) == 0)
-					op |= LOCK_NB;
-			}
-			break;
-		case ORDER_ALTERNATE:
-		default:
-			if (s->held) {
-				op = LOCK_UN;
-			} else {
-				/* ~25% LOCK_SH, otherwise LOCK_EX.  Mixing
-				 * in shared locks exercises the SH<->EX
-				 * upgrade/downgrade waitqueue paths in
-				 * addition to the EX-only fast path. */
-				op = (rnd_modulo_u32(4) == 0) ? LOCK_SH : LOCK_EX;
-
-				/* ~25% non-blocking.  Higher than the pure-
-				 * variety mix because under cross-process
-				 * contention the blocking acquire path can
-				 * pin the child for the full alarm window
-				 * if every other child is also holding
-				 * LOCK_EX; the LOCK_NB sprinkle keeps the
-				 * loop ticking and exercises the
-				 * EWOULDBLOCK reject path the blocking
-				 * variant skips. */
-				if (rnd_modulo_u32(4) == 0)
-					op |= LOCK_NB;
-			}
-			break;
-		}
-
-		/* 1-in-RAND_NEGATIVE_RATIO sub the carefully-curated op for
-		 * a garbage value — exercises sys_flock's argument validation
-		 * (LOCK_MAND removal, unknown bit rejection) which the curated
-		 * mix above never reaches.  Capture the substituted value so
-		 * the s->held bookkeeping below reflects what the kernel
-		 * actually applied rather than the original (pre-substitution)
-		 * op — otherwise an accepted garbage value drifts the lock-
-		 * state model and the loop may e.g. issue LOCK_EX believing
-		 * the lock is already held. */
-		int op_used = (int)RAND_NEGATIVE_OR(op);
+		op_used = flock_thrash_iter_pick_op(order, s, iter,
+						    phase_split, &skip);
+		if (skip)
+			continue;
 		rc = flock(s->fd, op_used);
 		if (rc == 0) {
 			int op_base = op_used & ~LOCK_NB;
