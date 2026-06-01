@@ -804,6 +804,84 @@ static void bridge_vlan_iter_open_raw(struct bridge_vlan_iter_ctx *it)
 }
 
 /*
+ * Race phase: rotate one of four mutations against the in-flight
+ * traffic, then push a second tagged frame so the racing op overlaps
+ * a live ingress walk.
+ *
+ *   A (iter%4==0): RTM_DELLINK family=AF_BRIDGE delete vid pvid --
+ *                  vlan-rcu vs ingress lookup.
+ *   B (iter%4==1): RTM_SETLINK IFLA_BRIDGE_VLAN_TUNNEL_INFO add at
+ *                  tunnel_id=42 on pvid -- br_vlan_tunnel parse path.
+ *   C (iter%4==2): RTM_SETLINK IFLA_BRIDGE_MST entry STATE=FORWARDING
+ *                  -- br_mst_set_state topology change mid-traffic.
+ *   D (iter%4==3): re-issue an overlapping range add (base+3..base+7)
+ *                  -- pvid swap window inside br_vlan_add range path.
+ */
+static void bridge_vlan_iter_race(struct bridge_vlan_iter_ctx *it,
+				  unsigned int iter_idx)
+{
+	struct sockaddr_ll sll;
+	unsigned char frame[64];
+	unsigned int race_letter = iter_idx & 3U;
+	ssize_t n;
+
+	switch (race_letter) {
+	case 0:
+		/* RACE A: delete vid pvid mid-flight. */
+		if (it->v0a_idx > 0 &&
+		    build_vlan_info(&it->nl, RTM_DELLINK, it->v0a_idx,
+				    it->pvid, 0, false, false) == 0)
+			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_del_ok,
+					   1, __ATOMIC_RELAXED);
+		break;
+	case 1:
+		/* RACE B: vlan-tunnel add. */
+		if (it->v0a_idx > 0 &&
+		    build_vlan_tunnel_add(&it->nl, it->v0a_idx,
+					  it->pvid, 42U) == 0)
+			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_tunnel_add_ok,
+					   1, __ATOMIC_RELAXED);
+		break;
+	case 2:
+		/* RACE C: MST topology change on the port. */
+		if (it->v0a_idx > 0 &&
+		    build_mst_set(&it->nl, it->v0a_idx, 1U,
+				  (__u8)BR_STATE_FORWARDING) == 0)
+			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_mst_set_ok,
+					   1, __ATOMIC_RELAXED);
+		break;
+	case 3:
+		/* RACE D: re-issue overlapping range add. */
+		if (it->v0a_idx > 0 &&
+		    build_vlan_info(&it->nl, RTM_SETLINK, it->v0a_idx,
+				    (__u16)(it->vid_base + 3U),
+				    (__u16)(it->vid_base + 7U),
+				    true, false) == 0)
+			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_add_ok,
+					   1, __ATOMIC_RELAXED);
+		break;
+	}
+
+	/* Second tagged send while the race is in flight. */
+	if (it->raw < 0)
+		return;
+
+	build_tagged_frame(frame, it->pvid);
+	memset(&sll, 0, sizeof(sll));
+	sll.sll_family   = AF_PACKET;
+	sll.sll_protocol = htons(ETH_P_8021Q);
+	sll.sll_ifindex  = it->v0b_idx;
+	sll.sll_halen    = 6;
+	memset(sll.sll_addr, 0xff, 6);
+
+	n = sendto(it->raw, frame, sizeof(frame), MSG_DONTWAIT,
+		   (struct sockaddr *)&sll, sizeof(sll));
+	if (n > 0)
+		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_raw_send_ok,
+				   1, __ATOMIC_RELAXED);
+}
+
+/*
  * One full create / load / race / teardown cycle on a freshly-named
  * bridge + 2 veth pairs.  Wall-clock cap inherited from the caller.
  */
@@ -813,9 +891,6 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 		.nl  = { .fd = -1 },
 		.raw = -1,
 	};
-	unsigned char frame[64];
-	struct sockaddr_ll sll;
-	unsigned int race_letter = iter_idx & 3U;
 
 	if ((unsigned long long)ns_since(t_outer) >= BVC_WALL_CAP_NS)
 		return;
@@ -829,63 +904,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	if ((unsigned long long)ns_since(t_outer) >= BVC_WALL_CAP_NS)
 		goto teardown;
 
-	/* RACE A/B/C/D dispatch.  Each iteration fires one race kind so
-	 * the four shapes get balanced exposure across the BUDGETED
-	 * outer loop. */
-	switch (race_letter) {
-	case 0:
-		/* RACE A: delete vid pvid mid-flight. */
-		if (it.v0a_idx > 0 &&
-		    build_vlan_info(&it.nl, RTM_DELLINK, it.v0a_idx,
-				    it.pvid, 0, false, false) == 0)
-			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_del_ok,
-					   1, __ATOMIC_RELAXED);
-		break;
-	case 1:
-		/* RACE B: vlan-tunnel add. */
-		if (it.v0a_idx > 0 &&
-		    build_vlan_tunnel_add(&it.nl, it.v0a_idx, it.pvid, 42U) == 0)
-			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_tunnel_add_ok,
-					   1, __ATOMIC_RELAXED);
-		break;
-	case 2:
-		/* RACE C: MST topology change on the port. */
-		if (it.v0a_idx > 0 &&
-		    build_mst_set(&it.nl, it.v0a_idx, 1U,
-				  (__u8)BR_STATE_FORWARDING) == 0)
-			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_mst_set_ok,
-					   1, __ATOMIC_RELAXED);
-		break;
-	case 3:
-		/* RACE D: re-issue overlapping range add. */
-		if (it.v0a_idx > 0 &&
-		    build_vlan_info(&it.nl, RTM_SETLINK, it.v0a_idx,
-				    (__u16)(it.vid_base + 3U),
-				    (__u16)(it.vid_base + 7U),
-				    true, false) == 0)
-			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_add_ok,
-					   1, __ATOMIC_RELAXED);
-		break;
-	}
-
-	/* Second tagged send while the race is in flight. */
-	if (it.raw >= 0) {
-		ssize_t n;
-
-		build_tagged_frame(frame, it.pvid);
-		memset(&sll, 0, sizeof(sll));
-		sll.sll_family   = AF_PACKET;
-		sll.sll_protocol = htons(ETH_P_8021Q);
-		sll.sll_ifindex  = it.v0b_idx;
-		sll.sll_halen    = 6;
-		memset(sll.sll_addr, 0xff, 6);
-
-		n = sendto(it.raw, frame, sizeof(frame), MSG_DONTWAIT,
-			   (struct sockaddr *)&sll, sizeof(sll));
-		if (n > 0)
-			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_raw_send_ok,
-					   1, __ATOMIC_RELAXED);
-	}
+	bridge_vlan_iter_race(&it, iter_idx);
 
 teardown:
 	if (it.raw >= 0) {
