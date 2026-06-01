@@ -4,8 +4,10 @@
 
  */
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include "net.h"
 #include "random.h"
 #include "sanitise.h"
@@ -15,6 +17,15 @@
 #include "utils.h"
 #include "valresult.h"
 #include "compat.h"
+
+/*
+ * UIO_MAXIOV is the kernel-side hard cap on iovec count.  Local
+ * fallback to the canonical 1024 mirrors generate-args.c:262-267
+ * so the file builds against any uapi header vintage.
+ */
+#ifndef UIO_MAXIOV
+# define UIO_MAXIOV 1024
+#endif
 
 static void sanitise_recv(struct syscallrecord *rec)
 {
@@ -249,8 +260,39 @@ skip_si:
 
 	if (RAND_BOOL()) {
 		unsigned int num_entries = RAND_RANGE(1, 3);
+		struct iovec *iov_src;
+		struct iovec *iov;
 
-		msg->msg_iov = alloc_iovec(num_entries, IOV_KERNEL_WRITE);
+		/*
+		 * Oversize the iovec array backing to a fixed UIO_MAXIOV
+		 * slots so a sibling scribble of msg_iovlen above num_entries
+		 * between this sanitiser returning and the kernel reading the
+		 * msghdr leaves the kernel's iov walk inside the chunk.
+		 * scrub_msghdr_for_kernel_write() in rand/random-address.c
+		 * scrubs per-entry iov_base / iov_len but intentionally does
+		 * not touch msg_iovlen (the count itself), so the size_t the
+		 * kernel reads at syscall entry is sibling-writable.  An
+		 * iovlen scribble above num_entries lets the kernel walk past
+		 * the num_entries * sizeof(struct iovec) chunk and treat the
+		 * next libc arena bytes as (iov_base, iov_len) pairs -- kernel
+		 * writes received data through phantom heap pointers and
+		 * surfaces as the dominant __zmalloc -> malloc ->
+		 * malloc_printerr -> abort cluster.  alloc_iovec() still picks
+		 * the per-entry shape and runs the avoid_shared_buffer scrub;
+		 * copy its output into the oversize slot and release the small
+		 * allocation back to the tracked-alloc pool so we do not leak.
+		 * The trailing UIO_MAXIOV - num_entries entries stay zeroed
+		 * (zmalloc), so an iovlen scribble walks NULL / 0 pairs that
+		 * the kernel's iov_iter advances over as no-ops.  Pairs with
+		 * a follow-up that migrates msg_iov off the libc heap.
+		 */
+		iov_src = alloc_iovec(num_entries, IOV_KERNEL_WRITE);
+		iov = zmalloc_tracked(UIO_MAXIOV * sizeof(struct iovec));
+		if (iov_src != NULL) {
+			memcpy(iov, iov_src, num_entries * sizeof(struct iovec));
+			tracked_free_now(iov_src);
+		}
+		msg->msg_iov = iov;
 		msg->msg_iovlen = num_entries;
 	}
 
@@ -511,8 +553,20 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 		unsigned int num_entries = RAND_RANGE(1, 3);
 		struct sockaddr *sa = NULL;
 		socklen_t salen = 0;
+		struct iovec *iov_src;
+		struct iovec *iov;
 
-		msg->msg_iov = alloc_iovec(num_entries, IOV_KERNEL_WRITE);
+		/*
+		 * Oversize msg_iov to UIO_MAXIOV slots; see sanitise_recvmsg
+		 * above for the sibling-scribble heap-overflow rationale.
+		 */
+		iov_src = alloc_iovec(num_entries, IOV_KERNEL_WRITE);
+		iov = zmalloc_tracked(UIO_MAXIOV * sizeof(struct iovec));
+		if (iov_src != NULL) {
+			memcpy(iov, iov_src, num_entries * sizeof(struct iovec));
+			tracked_free_now(iov_src);
+		}
+		msg->msg_iov = iov;
 		msg->msg_iovlen = num_entries;
 
 		if (si != NULL)
