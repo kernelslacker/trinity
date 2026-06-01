@@ -955,13 +955,58 @@ static int psp_key_rotate_iter_socket_install(struct genl_ctx *psp_ctx,
 	return sockfd;
 }
 
+/* Drive the inner traffic loop on the bound socket: BUDGETED+JITTER
+ * iterations, each one send/recv burst -> PSP_CMD_KEY_ROTATE (race
+ * target) -> PSP_CMD_TX_ASSOC re-bind -> second send/recv burst.  The
+ * outer 200 ms wall-clock cap (PKR_WALL_CAP_NS) bounds the loop.  On
+ * exit a single shutdown(SHUT_RDWR) flushes the socket. */
+static void psp_key_rotate_iter_traffic(int sockfd,
+					struct genl_ctx *psp_ctx,
+					uint32_t dev_id,
+					const struct timespec *t_outer)
+{
+	unsigned int inner, j;
+	int rc;
+
+	inner = JITTER_RANGE(PKR_OUTER_BASE);
+	if (inner < PKR_OUTER_FLOOR)
+		inner = PKR_OUTER_FLOOR;
+	if (inner > PKR_OUTER_CAP)
+		inner = PKR_OUTER_CAP;
+
+	for (j = 0; j < inner; j++) {
+		if ((unsigned long long)ns_since(t_outer) >= PKR_WALL_CAP_NS)
+			break;
+
+		inner_traffic_burst(sockfd);
+
+		/* RACE TARGET: rotate keys mid-flow. */
+		rc = psp_key_rotate_cmd(psp_ctx, dev_id);
+		if (rc == 0)
+			__atomic_add_fetch(&shm->stats.psp_key_rotate_rotate_ok,
+					   1, __ATOMIC_RELAXED);
+
+		/* Re-bind the assoc to the rotated generation mid-flow --
+		 * "spi switch" per spec naming. */
+		rc = psp_tx_assoc_cmd(psp_ctx, dev_id, sockfd);
+		if (rc == 0)
+			__atomic_add_fetch(&shm->stats.psp_key_rotate_spi_switch_ok,
+					   1, __ATOMIC_RELAXED);
+
+		inner_traffic_burst(sockfd);
+	}
+
+	(void)shutdown(sockfd, SHUT_RDWR);
+	__atomic_add_fetch(&shm->stats.psp_key_rotate_shutdown_ok,
+			   1, __ATOMIC_RELAXED);
+}
+
 static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 {
 	struct nl_ctx rtnl = { .fd = -1 };
 	struct genl_ctx psp_ctx = { .nl = { .fd = -1 } };
 	int sockfd = -1;
 	uint32_t dev_id = 0;
-	int rc;
 
 	if ((unsigned long long)ns_since(t_outer) >= PKR_WALL_CAP_NS)
 		return;
@@ -979,43 +1024,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	if (ns_unsupported_psp_key_rotate)
 		goto teardown;
 
-	{
-		unsigned int inner;
-		unsigned int j;
-
-		inner = JITTER_RANGE(PKR_OUTER_BASE);
-		if (inner < PKR_OUTER_FLOOR)
-			inner = PKR_OUTER_FLOOR;
-		if (inner > PKR_OUTER_CAP)
-			inner = PKR_OUTER_CAP;
-
-		for (j = 0; j < inner; j++) {
-			if ((unsigned long long)ns_since(t_outer) >=
-			    PKR_WALL_CAP_NS)
-				break;
-
-			inner_traffic_burst(sockfd);
-
-			/* RACE TARGET: rotate keys mid-flow. */
-			rc = psp_key_rotate_cmd(&psp_ctx, dev_id);
-			if (rc == 0)
-				__atomic_add_fetch(&shm->stats.psp_key_rotate_rotate_ok,
-						   1, __ATOMIC_RELAXED);
-
-			/* Re-bind the assoc to the rotated generation
-			 * mid-flow -- "spi switch" per spec naming. */
-			rc = psp_tx_assoc_cmd(&psp_ctx, dev_id, sockfd);
-			if (rc == 0)
-				__atomic_add_fetch(&shm->stats.psp_key_rotate_spi_switch_ok,
-						   1, __ATOMIC_RELAXED);
-
-			inner_traffic_burst(sockfd);
-		}
-	}
-
-	(void)shutdown(sockfd, SHUT_RDWR);
-	__atomic_add_fetch(&shm->stats.psp_key_rotate_shutdown_ok,
-			   1, __ATOMIC_RELAXED);
+	psp_key_rotate_iter_traffic(sockfd, &psp_ctx, dev_id, t_outer);
 
 teardown:
 	/* Randomised teardown order: rotate which fd dies first so the
