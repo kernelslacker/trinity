@@ -146,6 +146,7 @@ struct sctp_assoc_churn_iter_ctx {
 	int srv;
 	int cli;
 	int srv_acc;
+	int peeled;
 	int sock_type;
 	uint16_t srv_port_n;
 	uint16_t cli_port_n;
@@ -440,15 +441,57 @@ static void sctp_assoc_churn_iter_churn_loop(struct sctp_assoc_churn_iter_ctx *c
 	}
 }
 
+/*
+ * Phase 5: optional peel-off then shutdown the live fds.  Peel-off
+ * is only meaningful for SOCK_SEQPACKET (one-to-many style) — the
+ * SOCK_STREAM kernel side already returns EINVAL for peeloff, which
+ * is itself an exercised reject edge so we still attempt it.
+ * Requires a non-zero assoc_id from CONNECTX; if we never got one
+ * (rare, EINPROGRESS path), skip the getsockopt.  The trailing
+ * shutdown(SHUT_RDWR) block lives here — peeled has to land after
+ * the peeloff getsockopt, and cli / srv_acc shutdown only when we
+ * reached this far so the existing early-bail goto out paths still
+ * skip them.  Void return: peeloff outcome is purely a stat tick.
+ */
+static void sctp_assoc_churn_iter_peeloff(struct sctp_assoc_churn_iter_ctx *ctx)
+{
+	if (ctx->assoc_id != 0) {
+		struct sctp_peeloff_arg_compat parg;
+		socklen_t plen = sizeof(parg);
+		int rc;
+
+		memset(&parg, 0, sizeof(parg));
+		parg.associd = ctx->assoc_id;
+		parg.sd = -1;
+		rc = getsockopt(ctx->cli, IPPROTO_SCTP, SCTP_SOCKOPT_PEELOFF,
+				&parg, &plen);
+		if (rc == 0 && parg.sd >= 0) {
+			ctx->peeled = parg.sd;
+			__atomic_add_fetch(
+				&shm->stats.sctp_assoc_churn_peeled_off,
+				1, __ATOMIC_RELAXED);
+		} else {
+			__atomic_add_fetch(
+				&shm->stats.sctp_assoc_churn_peeloff_rejected,
+				1, __ATOMIC_RELAXED);
+		}
+	}
+
+	(void)shutdown(ctx->cli, SHUT_RDWR);
+	if (ctx->srv_acc >= 0)
+		(void)shutdown(ctx->srv_acc, SHUT_RDWR);
+	if (ctx->peeled >= 0)
+		(void)shutdown(ctx->peeled, SHUT_RDWR);
+}
+
 bool sctp_assoc_churn(struct childdata *child)
 {
 	struct sctp_assoc_churn_iter_ctx ctx = {
 		.srv = -1,
 		.cli = -1,
 		.srv_acc = -1,
+		.peeled = -1,
 	};
-	int peeled = -1;
-	int rc;
 
 	(void)child;
 
@@ -469,42 +512,11 @@ bool sctp_assoc_churn(struct childdata *child)
 
 	sctp_assoc_churn_iter_churn_loop(&ctx);
 
-	/* Optional peel-off: split the assoc onto its own fd.  Only
-	 * meaningful for SOCK_SEQPACKET (one-to-many style) — the
-	 * SOCK_STREAM kernel-side already returns EINVAL for peeloff,
-	 * which is itself an exercised reject edge so we still attempt
-	 * it.  Requires a non-zero assoc_id from connectx; if we never
-	 * got one (rare, EINPROGRESS path), skip. */
-	if (ctx.assoc_id != 0) {
-		struct sctp_peeloff_arg_compat parg;
-		socklen_t plen = sizeof(parg);
-
-		memset(&parg, 0, sizeof(parg));
-		parg.associd = ctx.assoc_id;
-		parg.sd = -1;
-		rc = getsockopt(ctx.cli, IPPROTO_SCTP, SCTP_SOCKOPT_PEELOFF,
-				&parg, &plen);
-		if (rc == 0 && parg.sd >= 0) {
-			peeled = parg.sd;
-			__atomic_add_fetch(
-				&shm->stats.sctp_assoc_churn_peeled_off,
-				1, __ATOMIC_RELAXED);
-		} else {
-			__atomic_add_fetch(
-				&shm->stats.sctp_assoc_churn_peeloff_rejected,
-				1, __ATOMIC_RELAXED);
-		}
-	}
-
-	(void)shutdown(ctx.cli, SHUT_RDWR);
-	if (ctx.srv_acc >= 0)
-		(void)shutdown(ctx.srv_acc, SHUT_RDWR);
-	if (peeled >= 0)
-		(void)shutdown(peeled, SHUT_RDWR);
+	sctp_assoc_churn_iter_peeloff(&ctx);
 
 out:
-	if (peeled >= 0)
-		close(peeled);
+	if (ctx.peeled >= 0)
+		close(ctx.peeled);
 	if (ctx.srv_acc >= 0)
 		close(ctx.srv_acc);
 	if (ctx.cli >= 0)
