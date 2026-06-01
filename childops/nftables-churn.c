@@ -6849,6 +6849,37 @@ static int nftables_churn_iter_setup_netns(struct nftables_churn_iter_ctx *ctx)
 	return 0;
 }
 
+/*
+ * Phase: NETLINK_ROUTE socket open + one-time lo bring-up inside the
+ * fresh netns.  Splits out from setup_netns because the nfnl fd is
+ * already live by the time we get here, so a failure must funnel
+ * through the out: cleanup path to close it (whereas
+ * setup_netns failures had nothing yet to clean).  The lo bring-up is
+ * gated by the process-wide lo_brought_up latch so subsequent
+ * invocations skip the RTM_NEWLINK round trip.  Returns 0 on success;
+ * -1 means caller should goto out -- nfnl needs closing.
+ */
+static int nftables_churn_iter_open_rtnl(struct nftables_churn_iter_ctx *ctx)
+{
+	struct nl_open_opts rtnl_opts = {
+		.proto         = NETLINK_ROUTE,
+		.recv_timeo_s  = NFNL_RECV_TIMEO_S,
+	};
+
+	if (nl_open(&ctx->rtnl, &rtnl_opts) < 0) {
+		__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	if (!lo_brought_up) {
+		bring_lo_up(&ctx->rtnl);
+		lo_brought_up = true;
+	}
+
+	return 0;
+}
+
 bool nftables_churn(struct childdata *child)
 {
 	struct nftables_churn_iter_ctx ctx = {
@@ -6857,10 +6888,6 @@ bool nftables_churn(struct childdata *child)
 		.udp        = -1,
 		.base_chain = "chain_in",
 		.aux_chain  = "chain_aux",
-	};
-	struct nl_open_opts rtnl_opts = {
-		.proto         = NETLINK_ROUTE,
-		.recv_timeo_s  = NFNL_RECV_TIMEO_S,
 	};
 	struct timespec t0;
 	unsigned int iters;
@@ -6879,16 +6906,8 @@ bool nftables_churn(struct childdata *child)
 	if (nftables_churn_iter_setup_netns(&ctx) != 0)
 		return true;
 
-	if (nl_open(&ctx.rtnl, &rtnl_opts) < 0) {
-		__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (nftables_churn_iter_open_rtnl(&ctx) != 0)
 		goto out;
-	}
-
-	if (!lo_brought_up) {
-		bring_lo_up(&ctx.rtnl);
-		lo_brought_up = true;
-	}
 
 	/* Dormant-table abort sub-mode (upstream 63bac02786030) -- rare gate
 	 * so the expression-fuzz path below stays the dominant workload.
