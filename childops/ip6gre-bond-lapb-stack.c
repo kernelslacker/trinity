@@ -407,13 +407,49 @@ static int ip6gre_lapb_iter_attach_gre(struct ip6gre_lapb_iter_ctx *ctx)
 	return 0;
 }
 
+/*
+ * Phase: locate the lapbether-auto-created lapb%d device and drive
+ * IBLS_FLAG_CYCLES_BASE..IBLS_FLAG_CYCLES_CAP IFF_UP/IFF_DOWN cycles
+ * against it.  This is the bug trigger: __dev_notify_flags on the
+ * lapb dev runs the lapb notifier chain, which kicks
+ * lapb_establish_data_link and eventually lapbeth_data_transmit ->
+ * bond_header_create -> ip6gre_header on a skb with insufficient
+ * headroom.  A few UP/DOWN cycles widen the window.  A missing
+ * lapb%d (no lapbether module) latches g_unsupported via
+ * latch_unsupported() and stat-bumps the setup_failed counter
+ * before returning early; the orchestrator's out: teardown still
+ * drains the bond + gre links that the earlier phases created.
+ */
+static void ip6gre_lapb_iter_flag_cycles(struct ip6gre_lapb_iter_ctx *ctx)
+{
+	unsigned int cycles, i;
+	int lapb_idx;
+
+	lapb_idx = find_lapb_ifindex();
+	if (lapb_idx <= 0) {
+		latch_unsupported("find lapb%d", ENODEV);
+		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	cycles = (rand32() % (IBLS_FLAG_CYCLES_CAP - IBLS_FLAG_CYCLES_BASE + 1U))
+	         + IBLS_FLAG_CYCLES_BASE;
+	for (i = 0; i < cycles; i++) {
+		(void)ibls_setlink(&ctx->ctx, lapb_idx, 0, IFF_UP, IFF_UP);
+		__atomic_add_fetch(&shm->stats.ip6gre_lapb_flag_toggles,
+				   1, __ATOMIC_RELAXED);
+		(void)ibls_setlink(&ctx->ctx, lapb_idx, 0, 0, IFF_UP);
+		__atomic_add_fetch(&shm->stats.ip6gre_lapb_flag_toggles,
+				   1, __ATOMIC_RELAXED);
+	}
+}
+
 bool ip6gre_bond_lapb_stack(struct childdata *child)
 {
 	struct ip6gre_lapb_iter_ctx ictx = {
 		.ctx = { .fd = -1 },
 	};
-	int lapb_idx = 0;
-	unsigned int cycles, i;
 
 	(void)child;
 
@@ -434,29 +470,7 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 	if (ip6gre_lapb_iter_attach_gre(&ictx) != 0)
 		goto out;
 
-	lapb_idx = find_lapb_ifindex();
-	if (lapb_idx <= 0) {
-		latch_unsupported("find lapb%d", ENODEV);
-		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-
-	/* The bug trigger: __dev_notify_flags on the lapb dev runs the
-	 * lapb notifier chain, which kicks lapb_establish_data_link and
-	 * eventually lapbeth_data_transmit -> bond_header_create ->
-	 * ip6gre_header on a skb with insufficient headroom.  A few
-	 * UP/DOWN cycles widen the window. */
-	cycles = (rand32() % (IBLS_FLAG_CYCLES_CAP - IBLS_FLAG_CYCLES_BASE + 1U))
-	         + IBLS_FLAG_CYCLES_BASE;
-	for (i = 0; i < cycles; i++) {
-		(void)ibls_setlink(&ictx.ctx, lapb_idx, 0, IFF_UP, IFF_UP);
-		__atomic_add_fetch(&shm->stats.ip6gre_lapb_flag_toggles,
-				   1, __ATOMIC_RELAXED);
-		(void)ibls_setlink(&ictx.ctx, lapb_idx, 0, 0, IFF_UP);
-		__atomic_add_fetch(&shm->stats.ip6gre_lapb_flag_toggles,
-				   1, __ATOMIC_RELAXED);
-	}
+	ip6gre_lapb_iter_flag_cycles(&ictx);
 
 out:
 	if (ictx.ctx.fd >= 0) {
