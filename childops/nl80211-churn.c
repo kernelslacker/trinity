@@ -1169,6 +1169,39 @@ static void nl80211_admin_gate_probe(uint32_t wiphy_idx)
 }
 
 /*
+ * Phase: gate on the outer wall-clock budget, pick a fresh STATION ifname,
+ * and create the iface via NEW_INTERFACE.  Returns 0 on success and fills
+ * *ifindex / ifname; returns -1 when the wall cap is hit or NEW_INTERFACE
+ * fails (caller bails -- the rest of the phases have nothing to anchor on).
+ * Latches ns_unsupported_nl80211 on the kernel-doesn't-have-nl80211 errnos
+ * so subsequent outer iters short-circuit cheaply.
+ */
+static int nl80211_iter_setup(struct genl_ctx *ctx, char *ifname,
+			      int *ifindex, const struct timespec *t_outer)
+{
+	int rc;
+
+	if ((unsigned long long)ns_since(t_outer) >= NL80211_WALL_CAP_NS)
+		return -1;
+
+	(void)snprintf(ifname, IFNAMSIZ, "twl%u",
+		       (unsigned int)(rand32() & 0xffffu));
+
+	rc = new_station_iface(ctx, nl80211_phy0, ifname);
+	if (rc < 0) {
+		if (errno_is_unsupported(-rc))
+			ns_unsupported_nl80211 = true;
+		return -1;
+	}
+	*ifindex = rc;
+	__atomic_add_fetch(&shm->stats.nl80211_iface_created,
+			   1, __ATOMIC_RELAXED);
+	if (created_count < NL80211_IFACE_RING_CAP)
+		created_ifindex[created_count++] = *ifindex;
+	return 0;
+}
+
+/*
  * Single outer iteration of the churn loop.  Each iter creates one
  * STATION iface, runs the full scan/connect/burst/scan-again/regdom/
  * disconnect/del-iface chain on it, and tears it down at the end.  The
@@ -1184,23 +1217,8 @@ static void iter_one(struct genl_ctx *ctx, unsigned int iter_idx,
 
 	(void)iter_idx;
 
-	if ((unsigned long long)ns_since(t_outer) >= NL80211_WALL_CAP_NS)
+	if (nl80211_iter_setup(ctx, ifname, &ifindex, t_outer) < 0)
 		return;
-
-	(void)snprintf(ifname, sizeof(ifname), "twl%u",
-		       (unsigned int)(rand32() & 0xffffu));
-
-	rc = new_station_iface(ctx, nl80211_phy0, ifname);
-	if (rc < 0) {
-		if (errno_is_unsupported(-rc))
-			ns_unsupported_nl80211 = true;
-		return;
-	}
-	ifindex = rc;
-	__atomic_add_fetch(&shm->stats.nl80211_iface_created,
-			   1, __ATOMIC_RELAXED);
-	if (created_count < NL80211_IFACE_RING_CAP)
-		created_ifindex[created_count++] = ifindex;
 
 	rc = trigger_scan(ctx, ifindex);
 	if (rc == 0)
