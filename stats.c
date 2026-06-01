@@ -1708,30 +1708,8 @@ static void dump_stats_json_rxrpc_alg_ublk_block(void)
 		shm->stats.blkdev_lifecycle_rescans);
 }
 
-static void dump_stats_json(void)
+static void dump_stats_json_probes_misuse_and_tail(void)
 {
-	putchar('{');
-
-	json_emit_syscalls_array();
-
-	fputs(",\"stats\":{", stdout);
-	dump_stats_json_fault_and_fd_lifecycle();
-	dump_stats_json_oracle();
-	dump_stats_json_basic_subsystems();
-	dump_stats_json_iouring_and_zombies();
-	dump_stats_json_corruption_and_audit();
-	dump_stats_json_lifecycle_and_storms();
-	dump_stats_json_socket_family_and_tls();
-	dump_stats_json_netfilter_and_xfrm();
-
-	stat_category_emit_json(&msg_zerocopy_churn_category);
-
-	printf(",");
-	stat_category_emit_json(&setsockopt_pairing_category);
-
-	dump_stats_json_iouring_zc_and_kvm();
-	dump_stats_json_rxrpc_alg_ublk_block();
-
 	printf("\"iscsi_target_probe\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_target\":%lu,\"connected\":%lu,\"login_sent\":%lu,\"login_replies\":%lu,\"scsi_cmd_sent\":%lu,\"bytes_out\":%lu,\"bytes_in\":%lu},"
 		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu,\"burn_iters\":%lu},"
 		"\"ipv6_ndisc_proxy\":{\"runs\":%lu,\"ns_sent_ok\":%lu,\"setup_failed\":%lu,\"proxy_enable_ok\":%lu},"
@@ -1848,6 +1826,32 @@ static void dump_stats_json(void)
 		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[22],
 		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[23],
 		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[24]);
+}
+
+static void dump_stats_json(void)
+{
+	putchar('{');
+
+	json_emit_syscalls_array();
+
+	fputs(",\"stats\":{", stdout);
+	dump_stats_json_fault_and_fd_lifecycle();
+	dump_stats_json_oracle();
+	dump_stats_json_basic_subsystems();
+	dump_stats_json_iouring_and_zombies();
+	dump_stats_json_corruption_and_audit();
+	dump_stats_json_lifecycle_and_storms();
+	dump_stats_json_socket_family_and_tls();
+	dump_stats_json_netfilter_and_xfrm();
+
+	stat_category_emit_json(&msg_zerocopy_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&setsockopt_pairing_category);
+
+	dump_stats_json_iouring_zc_and_kvm();
+	dump_stats_json_rxrpc_alg_ublk_block();
+	dump_stats_json_probes_misuse_and_tail();
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
