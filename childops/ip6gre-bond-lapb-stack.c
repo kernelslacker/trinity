@@ -367,6 +367,46 @@ static int ip6gre_lapb_iter_create_bond(struct ip6gre_lapb_iter_ctx *ctx)
 	return 0;
 }
 
+/*
+ * Phase: RTM_NEWLINK type=ip6gre, ifindex resolution, and the
+ * RTM_SETLINK IFLA_MASTER=bond enslave that arms the bug shape.
+ * bond_enslave's first-slave path picks up the slave's header_ops, so
+ * bond->header_ops->create starts dispatching to ip6gre_header from
+ * the moment the SETLINK lands -- subsequent flag-cycle traffic on the
+ * paired lapb dev fans through that mis-aimed header build.  Latches
+ * g_unsupported on the ip6gre / bond_enslave EAFNOSUPPORT-class shapes
+ * so a CONFIG_IP6_GRE-less or older-bonding kernel bails at the gate
+ * next invocation.  Returns 0 on success; -1 means caller should goto
+ * out -- the bond is created and needs teardown.
+ */
+static int ip6gre_lapb_iter_attach_gre(struct ip6gre_lapb_iter_ctx *ctx)
+{
+	int rc;
+
+	rc = ibls_newlink(&ctx->ctx, ctx->gre_name, "ip6gre",
+			  append_ip6gre_data);
+	if (rc != 0) {
+		if (err_is_unsupported(rc))
+			latch_unsupported("NEWLINK type=ip6gre", -rc);
+		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	ctx->gre_idx = (int)if_nametoindex(ctx->gre_name);
+	if (ctx->gre_idx <= 0)
+		return -1;
+
+	rc = ibls_setlink(&ctx->ctx, ctx->gre_idx, ctx->bond_idx, 0, 0);
+	if (rc != 0) {
+		if (err_is_unsupported(rc))
+			latch_unsupported("SETLINK IFLA_MASTER=bond", -rc);
+		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	return 0;
+}
+
 bool ip6gre_bond_lapb_stack(struct childdata *child)
 {
 	struct ip6gre_lapb_iter_ctx ictx = {
@@ -374,7 +414,6 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 	};
 	int lapb_idx = 0;
 	unsigned int cycles, i;
-	int rc;
 
 	(void)child;
 
@@ -392,30 +431,8 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 	if (ip6gre_lapb_iter_create_bond(&ictx) != 0)
 		goto out;
 
-	rc = ibls_newlink(&ictx.ctx, ictx.gre_name, "ip6gre",
-			  append_ip6gre_data);
-	if (rc != 0) {
-		if (err_is_unsupported(rc))
-			latch_unsupported("NEWLINK type=ip6gre", -rc);
-		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (ip6gre_lapb_iter_attach_gre(&ictx) != 0)
 		goto out;
-	}
-	ictx.gre_idx = (int)if_nametoindex(ictx.gre_name);
-	if (ictx.gre_idx <= 0)
-		goto out;
-
-	/* Enslave ip6gre to the bond.  bond_enslave's first-slave path
-	 * picks up the slave's header_ops, so bond->header_ops->create
-	 * starts dispatching to ip6gre_header from this point on. */
-	rc = ibls_setlink(&ictx.ctx, ictx.gre_idx, ictx.bond_idx, 0, 0);
-	if (rc != 0) {
-		if (err_is_unsupported(rc))
-			latch_unsupported("SETLINK IFLA_MASTER=bond", -rc);
-		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
 
 	lapb_idx = find_lapb_ifindex();
 	if (lapb_idx <= 0) {
