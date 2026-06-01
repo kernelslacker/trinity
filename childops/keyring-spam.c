@@ -300,6 +300,30 @@ static void keyring_spam_iter_invalidate(int32_t *live)
 	}
 }
 
+/* OP_UNLINK: detach a serial from the picked anchor keyring.  We do
+ * not track per-serial anchor, so the anchor we pass here may not be
+ * the key's parent -- the kernel returns -ENOENT in that case, which
+ * still exercises keyring_search_aux on the wrong keyring (a useful
+ * negative path).  Successful unlinks drop the serial from the ring. */
+static void keyring_spam_iter_unlink(int32_t *live, int anchor)
+{
+	int32_t serial;
+	long rc;
+
+	serial = ring_pick(live);
+	if (serial == 0)
+		return;
+	rc = syscall(__NR_keyctl, (unsigned long) KEYCTL_UNLINK,
+		     (unsigned long) serial,
+		     (unsigned long) anchor, 0UL, 0UL);
+	if (rc < 0) {
+		__atomic_add_fetch(&shm->stats.keyring_spam_failed,
+				   1, __ATOMIC_RELAXED);
+	} else {
+		ring_drop(live, serial);
+	}
+}
+
 bool keyring_spam(struct childdata *child)
 {
 	int32_t live[LIVE_KEYS_RING];
@@ -320,8 +344,6 @@ bool keyring_spam(struct childdata *child)
 	for (iter = 0; iter < iters; iter++) {
 		enum keyring_op op;
 		int anchor;
-		long rc;
-		int32_t serial;
 
 		op = (enum keyring_op) rnd_modulo_u32(NR_KEYRING_OPS);
 		anchor = anchor_keyrings[rnd_modulo_u32(ARRAY_SIZE(anchor_keyrings))];
@@ -351,24 +373,7 @@ bool keyring_spam(struct childdata *child)
 			break;
 
 		case OP_UNLINK:
-			serial = ring_pick(live);
-			if (serial == 0)
-				break;
-			/* Unlink from the same anchor we added against where
-			 * possible.  We don't track per-serial anchor here:
-			 * try the picked anchor first, and if it wasn't the
-			 * key's parent the kernel returns -ENOENT, which
-			 * still exercises keyring_search_aux on the wrong
-			 * keyring -- a useful negative path. */
-			rc = syscall(__NR_keyctl, (unsigned long) KEYCTL_UNLINK,
-				     (unsigned long) serial,
-				     (unsigned long) anchor, 0UL, 0UL);
-			if (rc < 0) {
-				__atomic_add_fetch(&shm->stats.keyring_spam_failed,
-						   1, __ATOMIC_RELAXED);
-			} else {
-				ring_drop(live, serial);
-			}
+			keyring_spam_iter_unlink(live, anchor);
 			break;
 
 		case NR_KEYRING_OPS:
