@@ -221,6 +221,61 @@ static bool make_fd_pair(int sv[2])
 	return socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0;
 }
 
+/* Per-cycle state shared across the close_racer_iter_* helpers.  Lives
+ * on the orchestrator's stack and is fresh per cycle -- arrays are
+ * fixed-size (MULTI_PAIR_MAX), k/n_spawned/mode are scalars rolled at
+ * the top of each iteration.  deferred_fds + deferred_n stay function-
+ * scope in close_racer because they accumulate across cycles, not
+ * within one. */
+struct close_racer_iter_ctx {
+	struct racer_arg	ra[MULTI_PAIR_MAX];
+	pthread_t		tid[MULTI_PAIR_MAX];
+	int			sv[MULTI_PAIR_MAX][2];
+	bool			spawned[MULTI_PAIR_MAX];
+	unsigned int		k;
+	unsigned int		n_spawned;
+	enum cycle_mode		mode;
+};
+
+/* Open all K pairs and spawn one racer thread per pair BEFORE any
+ * close, so multi-pair mode actually has multiple concurrent fdget
+ * references in flight when the close phase starts.  CYCLE_SKIP_CLOSE
+ * re-rolls RACER_RECV because that op has no peer-close EOF and no
+ * sv[0] EBADF to unblock it mid-cycle -- recv() (no MSG_DONTWAIT, no
+ * SO_RCVTIMEO) would otherwise block until the parent's per-op SIGALRM
+ * fires.  pthread_create EAGAIN under nproc/thread limits is the
+ * common failure; bookkeep + close the just-opened pair and continue
+ * rather than bailing mid-loop so any already-spawned racers are
+ * guaranteed to be joined later.  Writes ctx->n_spawned for the
+ * orchestrator's THREAD_SPAWN_LATCH check. */
+static void close_racer_iter_open_pairs(struct close_racer_iter_ctx *ctx)
+{
+	unsigned int j;
+
+	for (j = 0; j < ctx->k; j++) {
+		if (!make_fd_pair(ctx->sv[j])) {
+			__atomic_add_fetch(&shm->stats.close_racer_failed,
+					   1, __ATOMIC_RELAXED);
+			continue;
+		}
+		ctx->ra[j].fd = ctx->sv[j][0];
+		do {
+			ctx->ra[j].op = (enum racer_op)rnd_modulo_u32(RACER_OP_NR);
+		} while (ctx->mode == CYCLE_SKIP_CLOSE &&
+			 ctx->ra[j].op == RACER_RECV);
+		if (pthread_create(&ctx->tid[j], NULL,
+				   racer_thread, &ctx->ra[j]) != 0) {
+			__atomic_add_fetch(&shm->stats.close_racer_thread_spawn_fail,
+					   1, __ATOMIC_RELAXED);
+			close(ctx->sv[j][0]);
+			close(ctx->sv[j][1]);
+			continue;
+		}
+		ctx->spawned[j] = true;
+		ctx->n_spawned++;
+	}
+}
+
 bool close_racer(struct childdata *child)
 {
 	unsigned int cycles;
@@ -236,58 +291,18 @@ bool close_racer(struct childdata *child)
 	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
-		enum cycle_mode mode = (enum cycle_mode)rnd_modulo_u32(CYCLE_MODE_NR);
-		struct racer_arg ra[MULTI_PAIR_MAX];
-		pthread_t tid[MULTI_PAIR_MAX];
-		int sv[MULTI_PAIR_MAX][2];
-		bool spawned[MULTI_PAIR_MAX] = { false };
-		unsigned int k = 1;
+		struct close_racer_iter_ctx ctx = {
+			.k    = 1,
+			.mode = (enum cycle_mode)rnd_modulo_u32(CYCLE_MODE_NR),
+		};
 		unsigned int j;
-		unsigned int n_spawned = 0;
 
-		if (mode == CYCLE_MULTI_PAIR)
-			k = 2 + rnd_modulo_u32(2);
+		if (ctx.mode == CYCLE_MULTI_PAIR)
+			ctx.k = 2 + rnd_modulo_u32(2);
 
-		/* Open all K pairs and spawn racers BEFORE any close, so
-		 * multi-pair mode actually has multiple concurrent fdget
-		 * references in flight when the close phase starts. */
-		for (j = 0; j < k; j++) {
-			if (!make_fd_pair(sv[j])) {
-				__atomic_add_fetch(&shm->stats.close_racer_failed,
-						   1, __ATOMIC_RELAXED);
-				continue;
-			}
-			ra[j].fd = sv[j][0];
-			/* CYCLE_SKIP_CLOSE defers BOTH sv[0] and sv[1] to
-			 * function-end cleanup, so a RACER_RECV pick has no
-			 * peer-close EOF and no sv[0] EBADF to unblock it
-			 * mid-cycle.  recv() (no MSG_DONTWAIT, no SO_RCVTIMEO)
-			 * therefore blocks until the parent's per-op SIGALRM
-			 * fires and pthread_join() at end-of-cycle waits the
-			 * full alarm budget.  Re-roll the op so RECV is
-			 * excluded when we already know the cycle won't unblock
-			 * it; the other RACER_OPs are bounded-timeout (or
-			 * non-blocking) and join cleanly under SKIP_CLOSE. */
-			do {
-				ra[j].op = (enum racer_op)rnd_modulo_u32(RACER_OP_NR);
-			} while (mode == CYCLE_SKIP_CLOSE && ra[j].op == RACER_RECV);
-			if (pthread_create(&tid[j], NULL,
-					   racer_thread, &ra[j]) != 0) {
-				/* EAGAIN under nproc/thread limits is the
-				 * common case.  Bookkeep, close the fds we
-				 * just opened, leave latch check for end-of-
-				 * cycle so we never bail with already-
-				 * spawned-but-unjoined racers. */
-				__atomic_add_fetch(&shm->stats.close_racer_thread_spawn_fail,
-						   1, __ATOMIC_RELAXED);
-				close(sv[j][0]);
-				close(sv[j][1]);
-				continue;
-			}
-			spawned[j] = true;
-			n_spawned++;
-		}
-		if (n_spawned == 0) {
+		close_racer_iter_open_pairs(&ctx);
+
+		if (ctx.n_spawned == 0) {
 			/* Count the cycle as one streak step, not k steps,
 			 * so the latch reflects stuck spawn paths rather
 			 * than wide cycles where every pair tripped EAGAIN. */
@@ -303,10 +318,10 @@ bool close_racer(struct childdata *child)
 		if ((rnd_u32() & 0xff) != 0)
 			usleep((useconds_t)(1 + rnd_modulo_u32(100)));
 
-		switch (mode) {
+		switch (ctx.mode) {
 		case CYCLE_PEER_FIRST:
-			(void)close(sv[0][1]);
-			(void)close(sv[0][0]);
+			(void)close(ctx.sv[0][1]);
+			(void)close(ctx.sv[0][0]);
 			break;
 
 		case CYCLE_SKIP_CLOSE:
@@ -314,11 +329,11 @@ bool close_racer(struct childdata *child)
 			 * joined first; the deferred close then drops the
 			 * last ref synchronously rather than racing fdget. */
 			if (deferred_n + 2 <= DEFERRED_FD_MAX) {
-				deferred_fds[deferred_n++] = sv[0][0];
-				deferred_fds[deferred_n++] = sv[0][1];
+				deferred_fds[deferred_n++] = ctx.sv[0][0];
+				deferred_fds[deferred_n++] = ctx.sv[0][1];
 			} else {
-				(void)close(sv[0][0]);
-				(void)close(sv[0][1]);
+				(void)close(ctx.sv[0][0]);
+				(void)close(ctx.sv[0][1]);
 			}
 			break;
 
@@ -326,8 +341,8 @@ bool close_racer(struct childdata *child)
 			int order[MULTI_PAIR_MAX * 2];
 			unsigned int n = 0;
 
-			for (j = 0; j < k; j++) {
-				if (!spawned[j])
+			for (j = 0; j < ctx.k; j++) {
+				if (!ctx.spawned[j])
 					continue;
 				order[n++] = (int)(j * 2);
 				order[n++] = (int)(j * 2 + 1);
@@ -346,7 +361,7 @@ bool close_racer(struct childdata *child)
 			for (j = 0; j < n; j++) {
 				int idx = order[j];
 
-				(void)close(sv[idx >> 1][idx & 1]);
+				(void)close(ctx.sv[idx >> 1][idx & 1]);
 			}
 			break;
 		}
@@ -354,9 +369,9 @@ bool close_racer(struct childdata *child)
 		case CYCLE_NORMAL:
 		case CYCLE_POST_SLEEP:
 		default:
-			(void)close(sv[0][0]);
-			(void)close(sv[0][1]);
-			if (mode == CYCLE_POST_SLEEP) {
+			(void)close(ctx.sv[0][0]);
+			(void)close(ctx.sv[0][1]);
+			if (ctx.mode == CYCLE_POST_SLEEP) {
 				/* Short post-close sleep: racer's syscall has
 				 * returned by now, so this widens the window
 				 * where final fput / release may still be
@@ -366,13 +381,13 @@ bool close_racer(struct childdata *child)
 			break;
 		}
 
-		for (j = 0; j < k; j++) {
-			if (spawned[j])
-				(void)pthread_join(tid[j], NULL);
+		for (j = 0; j < ctx.k; j++) {
+			if (ctx.spawned[j])
+				(void)pthread_join(ctx.tid[j], NULL);
 		}
 
 		__atomic_add_fetch(&shm->stats.close_racer_pairs,
-				   n_spawned, __ATOMIC_RELAXED);
+				   ctx.n_spawned, __ATOMIC_RELAXED);
 	}
 
 	/* Drain deferred closes from CYCLE_SKIP_CLOSE iterations.  All
