@@ -805,6 +805,64 @@ static bool run_oneshot_passes(void)
 	return true;
 }
 
+/*
+ * Final teardown + process exit.  Two distinct shutdown shapes flow
+ * through here:
+ *
+ *   clean_run = true   -- main_loop()/epoch_loop() returned normally
+ *   and end-of-run persistence already ran.  Tear down the global
+ *   objects table, emit the syscall-totals summary, optionally dump
+ *   stats, and re-derive ret from shm->exit_reason via set_exit_code.
+ *
+ *   clean_run = false  -- a pre-fuzz short-circuit (dump-mode, munge
+ *   failure, --effector-map calibration).  Skip the clean-run-only
+ *   work; ret is whatever the caller passed in.
+ *
+ * In both cases, the post-cleanup tail is identical: stop the kmsg
+ * monitor, close the stats log, and exit via _exit() on ASAN builds
+ * (skipping atexit handlers so libasan's leak-check doesn't tkill
+ * the parent mid-reap and orphan surviving fuzz children) or via
+ * plain exit() otherwise.  Marked noreturn so the caller (main()
+ * only) does not need a trailing return statement.
+ */
+static void __attribute__((noreturn))
+finalize_and_exit(int ret, bool clean_run)
+{
+	if (clean_run) {
+		destroy_global_objects();
+
+		output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
+			parent_stats.op_count,
+			parent_stats.successes, parent_stats.failures);
+		if (show_stats == true)
+			dump_stats();
+
+		ret = set_exit_code(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED));
+	}
+
+	kmsg_monitor_stop();
+
+	stats_log_close();
+
+#ifdef __SANITIZE_ADDRESS__
+	/*
+	 * ASAN/LSAN build: skip atexit handlers on the parent's normal
+	 * shutdown.  Trinity intentionally leaves a number of allocations
+	 * unfreed at teardown (per-child mmap pools, sysv_shm regions,
+	 * fd-event ring backing, etc.).  Under libasan, exit() runs
+	 * __cxa_finalize -> __do_global_dtors_aux -> __lsan::DoLeakCheck(),
+	 * which finds those unreachable allocations and tkill()s the parent
+	 * with SIGABRT before reaper-of-children completes -- orphaning
+	 * surviving fuzz children that then burn CPU indefinitely.  Children
+	 * still go through their own _exit()/exit() paths, so LSAN coverage
+	 * of real leaks introduced by the fuzz path is unaffected.
+	 */
+	_exit(ret);
+#else
+	exit(ret);
+#endif
+}
+
 int main(int argc, char* argv[])
 {
 	int ret = EXIT_SUCCESS;
@@ -864,15 +922,15 @@ int main(int argc, char* argv[])
 		break;
 	case INIT_FAILED:
 		ret = EXIT_FAILURE;
-		goto out;
+		/* fallthrough */
 	case INIT_DONE:
-		goto out;
+		finalize_and_exit(ret, false);
 	}
 
 	init_pre_fork();
 
 	if (!run_oneshot_passes())
-		goto out;
+		finalize_and_exit(ret, false);
 
 	warm_start_all();
 
@@ -883,35 +941,5 @@ int main(int argc, char* argv[])
 
 	persist_state_on_clean_exit();
 
-	destroy_global_objects();
-
-	output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
-		parent_stats.op_count,
-		parent_stats.successes, parent_stats.failures);
-	if (show_stats == true)
-		dump_stats();
-
-	ret = set_exit_code(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED));
-out:
-	kmsg_monitor_stop();
-
-	stats_log_close();
-
-#ifdef __SANITIZE_ADDRESS__
-	/*
-	 * ASAN/LSAN build: skip atexit handlers on the parent's normal
-	 * shutdown.  Trinity intentionally leaves a number of allocations
-	 * unfreed at teardown (per-child mmap pools, sysv_shm regions,
-	 * fd-event ring backing, etc.).  Under libasan, exit() runs
-	 * __cxa_finalize -> __do_global_dtors_aux -> __lsan::DoLeakCheck(),
-	 * which finds those unreachable allocations and tkill()s the parent
-	 * with SIGABRT before reaper-of-children completes -- orphaning
-	 * surviving fuzz children that then burn CPU indefinitely.  Children
-	 * still go through their own _exit()/exit() paths, so LSAN coverage
-	 * of real leaks introduced by the fuzz path is unaffected.
-	 */
-	_exit(ret);
-#else
-	exit(ret);
-#endif
+	finalize_and_exit(ret, true);
 }
