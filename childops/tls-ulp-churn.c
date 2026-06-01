@@ -354,6 +354,39 @@ static int tls_ulp_churn_iter_install_keys(int s, unsigned short *version_out)
 	return 0;
 }
 
+/* Steps 5+6: drive tls_sw_sendmsg with a single best-effort send of
+ * urandom-keyed payload, then drive tls_sw_splice_eof from /etc/passwd
+ * into the TLS-armed socket.  The splice source is opened on demand and
+ * closed inline; if /etc/passwd isn't there (chroot, slimmed sysroot)
+ * the splice is silently skipped — the rest of the sequence still has
+ * coverage value.  Returns void: both syscalls are best-effort and the
+ * caller has no branch on either outcome. */
+static void tls_ulp_churn_iter_initial_traffic(int s)
+{
+	unsigned char payload[64];
+	int splice_src;
+
+	generate_rand_bytes(payload, sizeof(payload));
+	if (send(s, payload, 1 + rnd_modulo_u32(sizeof(payload)),
+		 MSG_DONTWAIT | MSG_NOSIGNAL) > 0)
+		__atomic_add_fetch(&shm->stats.tls_ulp_churn_send_ok,
+				   1, __ATOMIC_RELAXED);
+
+	splice_src = open(SPLICE_SRC_PATH, O_RDONLY | O_CLOEXEC);
+	if (splice_src >= 0) {
+		off_t off_in = 0;
+		ssize_t n;
+
+		n = splice(splice_src, &off_in, s, NULL,
+			   SPLICE_MAX_BYTES,
+			   SPLICE_F_NONBLOCK | SPLICE_F_MORE);
+		if (n > 0)
+			__atomic_add_fetch(&shm->stats.tls_ulp_churn_splice_ok,
+					   1, __ATOMIC_RELAXED);
+		close(splice_src);
+	}
+}
+
 bool tls_ulp_churn(struct childdata *child)
 {
 	struct tls12_crypto_info_aes_gcm_128 cinfo;
@@ -362,7 +395,6 @@ bool tls_ulp_churn(struct childdata *child)
 	struct timespec t0;
 	pid_t acceptor = -1;
 	int s = -1;
-	int splice_src = -1;
 	unsigned short version;
 	unsigned int iters;
 	unsigned int i;
@@ -397,31 +429,7 @@ bool tls_ulp_churn(struct childdata *child)
 	if (tls_ulp_churn_iter_install_keys(s, &version) != 0)
 		goto out;
 
-	/* Step 5: drive tls_sw_sendmsg. */
-	generate_rand_bytes(payload, sizeof(payload));
-	if (send(s, payload, 1 + rnd_modulo_u32(sizeof(payload)),
-		 MSG_DONTWAIT | MSG_NOSIGNAL) > 0)
-		__atomic_add_fetch(&shm->stats.tls_ulp_churn_send_ok,
-				   1, __ATOMIC_RELAXED);
-
-	/* Step 6: drive tls_sw_splice_eof.  The splice source is a
-	 * regular file fd we open on demand; if /etc/passwd isn't there
-	 * (chroot, slimmed sysroot) we silently skip — the rest of the
-	 * sequence still has coverage value. */
-	splice_src = open(SPLICE_SRC_PATH, O_RDONLY | O_CLOEXEC);
-	if (splice_src >= 0) {
-		off_t off_in = 0;
-		ssize_t n;
-
-		n = splice(splice_src, &off_in, s, NULL,
-			   SPLICE_MAX_BYTES,
-			   SPLICE_F_NONBLOCK | SPLICE_F_MORE);
-		if (n > 0)
-			__atomic_add_fetch(&shm->stats.tls_ulp_churn_splice_ok,
-					   1, __ATOMIC_RELAXED);
-		close(splice_src);
-		splice_src = -1;
-	}
+	tls_ulp_churn_iter_initial_traffic(s);
 
 	/* Step 7: rekey burst.  Each iteration installs TLS_TX with a
 	 * fresh urandom key and pushes a small send through the just-
@@ -501,8 +509,6 @@ bool tls_ulp_churn(struct childdata *child)
 	(void)shutdown(s, SHUT_RDWR);
 
 out:
-	if (splice_src >= 0)
-		close(splice_src);
 	if (s >= 0)
 		close(s);
 	reap_acceptor(acceptor);
