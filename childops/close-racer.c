@@ -365,6 +365,25 @@ static void close_racer_iter_close_phase(struct close_racer_iter_ctx *ctx,
 	}
 }
 
+/* Join all spawned racers and bump close_racer_pairs.  Every racer
+ * op is bounded-timeout (or non-blocking and races in fdget directly)
+ * by construction, so plain pthread_join returns within
+ * RACER_TIMEOUT_MS regardless of whether close() fired before, during,
+ * or after the lookup -- no need for pthread_cancel / pthread_kill
+ * here. */
+static void close_racer_iter_join_racers(struct close_racer_iter_ctx *ctx)
+{
+	unsigned int j;
+
+	for (j = 0; j < ctx->k; j++) {
+		if (ctx->spawned[j])
+			(void)pthread_join(ctx->tid[j], NULL);
+	}
+
+	__atomic_add_fetch(&shm->stats.close_racer_pairs,
+			   ctx->n_spawned, __ATOMIC_RELAXED);
+}
+
 bool close_racer(struct childdata *child)
 {
 	unsigned int cycles;
@@ -384,7 +403,6 @@ bool close_racer(struct childdata *child)
 			.k    = 1,
 			.mode = (enum cycle_mode)rnd_modulo_u32(CYCLE_MODE_NR),
 		};
-		unsigned int j;
 
 		if (ctx.mode == CYCLE_MULTI_PAIR)
 			ctx.k = 2 + rnd_modulo_u32(2);
@@ -403,14 +421,7 @@ bool close_racer(struct childdata *child)
 		spawn_fail_streak = 0;
 
 		close_racer_iter_close_phase(&ctx, deferred_fds, &deferred_n);
-
-		for (j = 0; j < ctx.k; j++) {
-			if (ctx.spawned[j])
-				(void)pthread_join(ctx.tid[j], NULL);
-		}
-
-		__atomic_add_fetch(&shm->stats.close_racer_pairs,
-				   ctx.n_spawned, __ATOMIC_RELAXED);
+		close_racer_iter_join_racers(&ctx);
 	}
 
 	/* Drain deferred closes from CYCLE_SKIP_CLOSE iterations.  All
