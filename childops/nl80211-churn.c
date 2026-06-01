@@ -1293,6 +1293,32 @@ static void nl80211_iter_submodes(struct genl_ctx *ctx, int ifindex)
 }
 
 /*
+ * Phase: drive DEL_INTERFACE and reconcile the created-iface ring.  On a
+ * successful delete, bumps the destroyed stat and clears the matching ring
+ * slot so cleanup_ifaces() at child exit doesn't try to re-delete it.
+ * Linear search is fine: the ring is bounded at NL80211_IFACE_RING_CAP
+ * (64) and this runs once per outer iter, not per syscall.
+ */
+static void nl80211_iter_teardown(struct genl_ctx *ctx, int ifindex)
+{
+	int rc;
+
+	rc = del_iface_by_index(ctx, ifindex);
+	if (rc == 0) {
+		unsigned int j;
+
+		__atomic_add_fetch(&shm->stats.nl80211_iface_destroyed,
+				   1, __ATOMIC_RELAXED);
+		for (j = 0; j < created_count; j++) {
+			if (created_ifindex[j] == ifindex) {
+				created_ifindex[j] = 0;
+				break;
+			}
+		}
+	}
+}
+
+/*
  * Single outer iteration of the churn loop.  Each iter creates one
  * STATION iface, runs the full scan/connect/burst/scan-again/regdom/
  * disconnect/del-iface chain on it, and tears it down at the end.  The
@@ -1304,7 +1330,6 @@ static void iter_one(struct genl_ctx *ctx, unsigned int iter_idx,
 {
 	char ifname[IFNAMSIZ];
 	int ifindex;
-	int rc;
 
 	(void)iter_idx;
 
@@ -1312,28 +1337,9 @@ static void iter_one(struct genl_ctx *ctx, unsigned int iter_idx,
 		return;
 
 	nl80211_iter_scan_connect(ctx, ifindex, ifname, t_outer);
-
 	nl80211_iter_races(ctx, ifindex);
-
 	nl80211_iter_submodes(ctx, ifindex);
-
-	rc = del_iface_by_index(ctx, ifindex);
-	if (rc == 0) {
-		unsigned int j;
-
-		__atomic_add_fetch(&shm->stats.nl80211_iface_destroyed,
-				   1, __ATOMIC_RELAXED);
-		/* Mark the ring entry so cleanup_ifaces() doesn't try
-		 * to redelete it.  Linear search is fine: the ring is
-		 * bounded at 64 and cleanup happens once per child-op
-		 * invocation, not per syscall. */
-		for (j = 0; j < created_count; j++) {
-			if (created_ifindex[j] == ifindex) {
-				created_ifindex[j] = 0;
-				break;
-			}
-		}
-	}
+	nl80211_iter_teardown(ctx, ifindex);
 }
 
 bool nl80211_churn(struct childdata *child)
