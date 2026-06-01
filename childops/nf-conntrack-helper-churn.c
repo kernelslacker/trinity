@@ -725,6 +725,25 @@ static void nfct_helper_iter_expect(struct nfct_helper_iter_ctx *ictx)
 }
 
 /*
+ * Phase: drive a single loopback packet at the master tuple's zone via
+ * SO_MARK so nf_conntrack_in() fires the just-installed helper's
+ * ->help() callback.  Send failures are benign coverage -- the
+ * conntrack lookup already ran by the time sendto returns.
+ */
+static void nfct_helper_iter_drive(struct nfct_helper_iter_ctx *ictx)
+{
+	int drive_fd;
+
+	drive_fd = loopback_drive(ictx->l4proto, ictx->dport,
+				  0xc0de0000U | (__u32)ictx->zone);
+	if (drive_fd >= 0) {
+		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_packet_sent,
+				   1, __ATOMIC_RELAXED);
+		close(drive_fd);
+	}
+}
+
+/*
  * One outer iteration: pick zone + helper, insert master conntrack +
  * expectation, drive a packet through, then run a small race burst
  * (delete / zone-swap / detach).  Returns true on every path; the
@@ -742,16 +761,7 @@ static void iter_one(struct nfnl_ctx *ctx)
 
 	nfct_helper_iter_attach(&ictx);
 	nfct_helper_iter_expect(&ictx);
-
-	/* 4) Drive a packet through loopback to fire nf_conntrack_in()
-	 *    and the helper's ->help() callback. */
-	drive_fd = loopback_drive(ictx.l4proto, ictx.dport,
-				  0xc0de0000U | (__u32)ictx.zone);
-	if (drive_fd >= 0) {
-		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_packet_sent,
-				   1, __ATOMIC_RELAXED);
-		close(drive_fd);
-	}
+	nfct_helper_iter_drive(&ictx);
 
 	/* 5) Race burst: BUDGETED inner loop alternating delete /
 	 *    zone-swap / mid-flow detach.  Each step targets a distinct
