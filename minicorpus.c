@@ -198,6 +198,7 @@ static bool minicorpus_pick_from_other_syscall(unsigned int nr,
 {
 	struct corpus_ring *ring;
 	unsigned int src_nr, slot, src_arg, num_args;
+	unsigned int count, head;
 	unsigned long picked;
 
 	if (xprop_n_fd_src == 0)
@@ -211,23 +212,51 @@ static bool minicorpus_pick_from_other_syscall(unsigned int nr,
 
 	ring = &minicorpus_shm->rings[src_nr];
 
-	ring_lock(ring);
-	if (ring->count == 0) {
-		ring_unlock(ring);
+	/*
+	 * Lockless reader.  Single slot, single arg, no joint snapshot
+	 * across multiple entries -- drop ring->lock and synchronise on
+	 * the writer's release-stores of count/head (see
+	 * minicorpus_save_with_reason).  Writers still serialise on
+	 * ring->lock; this reader just observes the published view.
+	 *
+	 * Ordering: the writer publishes count BEFORE head (the
+	 * deliberate inversion vs chain_corpus_save documented at the
+	 * publish site).  An acquire-load of count is the synchronisation
+	 * edge -- it pairs with the writer's release-store of count and
+	 * therefore makes the entry stores that preceded that store
+	 * visible to us.  The head store happens *after* the count store
+	 * in writer program order, so a count-acquire does not also
+	 * synchronise the head bump; loading head relaxed can return a
+	 * value one publish stale.  That is fine: a stale head still
+	 * points one past a slot that was validly published in some
+	 * earlier save, so we land on a legitimate xprop source -- "most
+	 * recent" is a heuristic here, not a correctness invariant.
+	 *
+	 * Race tolerance: a concurrent minicorpus_save can overwrite the
+	 * slot we are mid-read on.  num_args is validated in [1, 6] post-
+	 * snapshot; a torn struct assignment that produces an out-of-
+	 * range value just skips the pick, no retry -- same tolerance
+	 * the fuzzer applies to the other 75%+ of mutated inputs.
+	 * args[] is a fixed-size 6-element array, so reading
+	 * args[src_arg] with src_arg < num_args <= 6 is memory-safe even
+	 * if the underlying ulong was itself torn; the caller just gets
+	 * a slightly-stale value, which is fuzz fodder either way.
+	 */
+	count = __atomic_load_n(&ring->count, __ATOMIC_ACQUIRE);
+	if (count == 0)
 		return false;
-	}
+	head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
+
 	/* Newest entry: head points one past the last write.  Adding
 	 * CORPUS_RING_SIZE before the subtract keeps the unsigned modulo
 	 * well-defined when head is 0 on a wrapped ring. */
-	slot = (ring->head + CORPUS_RING_SIZE - 1) % CORPUS_RING_SIZE;
+	slot = (head + CORPUS_RING_SIZE - 1) % CORPUS_RING_SIZE;
+
 	num_args = ring->entries[slot].num_args;
-	if (num_args == 0 || num_args > 6) {
-		ring_unlock(ring);
+	if (num_args == 0 || num_args > 6)
 		return false;
-	}
 	src_arg = rnd_modulo_u32(num_args);
 	picked = ring->entries[slot].args[src_arg];
-	ring_unlock(ring);
 
 	*val = picked;
 	__atomic_fetch_add(&minicorpus_shm->xprop_hits, 1UL,
