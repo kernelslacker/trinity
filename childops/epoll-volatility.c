@@ -215,29 +215,30 @@ static int epoll_volatility_iter_setup(struct epoll_volatility_iter_ctx *ctx)
 	return 0;
 }
 
-bool epoll_volatility(struct childdata *child)
+/*
+ * Drive phase: the timed ADD/MOD/DEL/WAIT churn loop.  Picks a
+ * jittered iteration count up front, then bounded-loops until
+ * either the count or the BUDGET_NS wall-clock ceiling is hit.
+ * The start timespec, iter counter, and per-iter scratch (op
+ * selector, event mask, evs[] buffer) all stay local to this
+ * helper -- only ctx fields cross helper boundaries.
+ *
+ * Caller must have run epoll_volatility_iter_setup() and seen
+ * it return 0, so ctx.n_epfds > 0 and ctx.n_target_fds > 0 are
+ * the helper's precondition (rnd_modulo_u32() on them would
+ * otherwise divide by zero).
+ */
+static void epoll_volatility_iter_drive(struct epoll_volatility_iter_ctx *ctx)
 {
-	struct epoll_volatility_iter_ctx ctx = {
-		.n_epfds = 0,
-		.n_target_fds = 0,
-	};
 	struct timespec start;
-	unsigned int iter;
 	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
-	unsigned int i, j;
-
-	(void) child;
-
-	__atomic_add_fetch(&shm->stats.epoll_volatility_runs, 1, __ATOMIC_RELAXED);
-
-	if (epoll_volatility_iter_setup(&ctx) != 0)
-		goto out;
+	unsigned int iter;
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
 	for (iter = 0; iter < iters; iter++) {
 		unsigned int op = rnd_modulo_u32(16);
-		unsigned int epfd_idx = rnd_modulo_u32(ctx.n_epfds);
+		unsigned int epfd_idx = rnd_modulo_u32(ctx->n_epfds);
 		struct epoll_event ev;
 		unsigned int fd_idx;
 		int rc;
@@ -245,17 +246,17 @@ bool epoll_volatility(struct childdata *child)
 		if (op < 5) {
 			/* EPOLL_CTL_ADD: prefer an unregistered slot so the
 			 * op succeeds and grows the per-fd epitem list. */
-			fd_idx = pick_fd_idx(ctx.registered, epfd_idx, ctx.n_target_fds, false);
+			fd_idx = pick_fd_idx(ctx->registered, epfd_idx, ctx->n_target_fds, false);
 			memset(&ev, 0, sizeof(ev));
 			ev.events  = (uint32_t)RAND_NEGATIVE_OR(random_events());
-			ev.data.fd = ctx.target_fds[fd_idx];
-			rc = epoll_ctl(ctx.epfds[epfd_idx], EPOLL_CTL_ADD,
-				       ctx.target_fds[fd_idx], &ev);
+			ev.data.fd = ctx->target_fds[fd_idx];
+			rc = epoll_ctl(ctx->epfds[epfd_idx], EPOLL_CTL_ADD,
+				       ctx->target_fds[fd_idx], &ev);
 			__atomic_add_fetch(&shm->stats.epoll_volatility_ctl_calls,
 					   1, __ATOMIC_RELAXED);
 			if (rc == 0) {
 				if (fd_idx < NR_TARGET_FDS)
-					ctx.registered[epfd_idx][fd_idx] = true;
+					ctx->registered[epfd_idx][fd_idx] = true;
 			} else {
 				__atomic_add_fetch(&shm->stats.epoll_volatility_failed,
 						   1, __ATOMIC_RELAXED);
@@ -265,12 +266,12 @@ bool epoll_volatility(struct childdata *child)
 			 * events_update path inside ep_modify is exercised
 			 * with a real mask transition.  Random new mask
 			 * each time. */
-			fd_idx = pick_fd_idx(ctx.registered, epfd_idx, ctx.n_target_fds, true);
+			fd_idx = pick_fd_idx(ctx->registered, epfd_idx, ctx->n_target_fds, true);
 			memset(&ev, 0, sizeof(ev));
 			ev.events  = random_events();
-			ev.data.fd = ctx.target_fds[fd_idx];
-			rc = epoll_ctl(ctx.epfds[epfd_idx], EPOLL_CTL_MOD,
-				       ctx.target_fds[fd_idx], &ev);
+			ev.data.fd = ctx->target_fds[fd_idx];
+			rc = epoll_ctl(ctx->epfds[epfd_idx], EPOLL_CTL_MOD,
+				       ctx->target_fds[fd_idx], &ev);
 			__atomic_add_fetch(&shm->stats.epoll_volatility_ctl_calls,
 					   1, __ATOMIC_RELAXED);
 			if (rc != 0)
@@ -280,14 +281,14 @@ bool epoll_volatility(struct childdata *child)
 			/* EPOLL_CTL_DEL: prefer a registered slot so the
 			 * per-fd epitem unlink + waitqueue removal path
 			 * inside ep_remove is exercised. */
-			fd_idx = pick_fd_idx(ctx.registered, epfd_idx, ctx.n_target_fds, true);
-			rc = epoll_ctl(ctx.epfds[epfd_idx], EPOLL_CTL_DEL,
-				       ctx.target_fds[fd_idx], NULL);
+			fd_idx = pick_fd_idx(ctx->registered, epfd_idx, ctx->n_target_fds, true);
+			rc = epoll_ctl(ctx->epfds[epfd_idx], EPOLL_CTL_DEL,
+				       ctx->target_fds[fd_idx], NULL);
 			__atomic_add_fetch(&shm->stats.epoll_volatility_ctl_calls,
 					   1, __ATOMIC_RELAXED);
 			if (rc == 0) {
 				if (fd_idx < NR_TARGET_FDS)
-					ctx.registered[epfd_idx][fd_idx] = false;
+					ctx->registered[epfd_idx][fd_idx] = false;
 			} else {
 				__atomic_add_fetch(&shm->stats.epoll_volatility_failed,
 						   1, __ATOMIC_RELAXED);
@@ -300,13 +301,31 @@ bool epoll_volatility(struct childdata *child)
 			 * walk and timeout path, not to harvest events. */
 			struct epoll_event evs[4];
 
-			(void) epoll_wait(ctx.epfds[epfd_idx], evs,
+			(void) epoll_wait(ctx->epfds[epfd_idx], evs,
 					  (int) ARRAY_SIZE(evs), 1);
 		}
 
 		if (budget_elapsed(&start))
 			break;
 	}
+}
+
+bool epoll_volatility(struct childdata *child)
+{
+	struct epoll_volatility_iter_ctx ctx = {
+		.n_epfds = 0,
+		.n_target_fds = 0,
+	};
+	unsigned int i, j;
+
+	(void) child;
+
+	__atomic_add_fetch(&shm->stats.epoll_volatility_runs, 1, __ATOMIC_RELAXED);
+
+	if (epoll_volatility_iter_setup(&ctx) != 0)
+		goto out;
+
+	epoll_volatility_iter_drive(&ctx);
 
 out:
 	for (i = 0; i < ctx.n_epfds; i++)
