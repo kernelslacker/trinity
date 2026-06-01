@@ -780,15 +780,8 @@ static void dump_stats_json_fault_and_fd_lifecycle(void)
 		shm->stats.fd_random_exhausted);
 }
 
-static void dump_stats_json(void)
+static void dump_stats_json_oracle(void)
 {
-	putchar('{');
-
-	json_emit_syscalls_array();
-
-	fputs(",\"stats\":{", stdout);
-	dump_stats_json_fault_and_fd_lifecycle();
-
 	printf("\"oracle\":{\"fd_anomalies\":%lu,\"mmap_anomalies\":%lu,"
 			"\"cred_anomalies\":%lu,\"sched_anomalies\":%lu,"
 			"\"uid_anomalies\":%lu,\"gid_anomalies\":%lu,"
@@ -862,8 +855,97 @@ static void dump_stats_json(void)
 				"\"llistxattr_anomalies\":%lu,"
 				"\"readlink_anomalies\":%lu,"
 				"\"readlinkat_anomalies\":%lu,"
-				"\"sysfs_anomalies\":%lu},"
-		"\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
+				"\"sysfs_anomalies\":%lu},",
+		shm->stats.fd_oracle_anomalies, shm->stats.mmap_oracle_anomalies,
+		shm->stats.cred_oracle_anomalies, shm->stats.sched_oracle_anomalies,
+		shm->stats.uid_oracle_anomalies, shm->stats.gid_oracle_anomalies,
+		shm->stats.setgroups_oracle_anomalies,
+		shm->stats.getegid_oracle_anomalies,
+		shm->stats.getuid_oracle_anomalies,
+		shm->stats.getgid_oracle_anomalies,
+		shm->stats.getppid_oracle_anomalies,
+		shm->stats.getcwd_oracle_anomalies,
+		shm->stats.getpid_oracle_anomalies,
+		shm->stats.getpgid_oracle_anomalies,
+		shm->stats.getpgrp_oracle_anomalies,
+		shm->stats.geteuid_oracle_anomalies,
+		shm->stats.getsid_oracle_anomalies,
+		shm->stats.gettid_oracle_anomalies,
+		shm->stats.setsid_oracle_anomalies,
+		shm->stats.setpgid_oracle_anomalies,
+		shm->stats.sched_getscheduler_oracle_anomalies,
+		shm->stats.getgroups_oracle_anomalies,
+		shm->stats.getresuid_oracle_anomalies,
+		shm->stats.getresgid_oracle_anomalies,
+		shm->stats.umask_oracle_anomalies,
+		shm->stats.sched_get_priority_max_oracle_anomalies,
+		shm->stats.sched_get_priority_min_oracle_anomalies,
+		shm->stats.sched_yield_oracle_anomalies,
+		shm->stats.getpagesize_oracle_anomalies,
+		shm->stats.time_oracle_anomalies,
+		shm->stats.gettimeofday_oracle_anomalies,
+		shm->stats.newuname_oracle_anomalies,
+		shm->stats.rt_sigpending_oracle_anomalies,
+		shm->stats.sched_getaffinity_oracle_anomalies,
+		shm->stats.rt_sigprocmask_oracle_anomalies,
+		shm->stats.sched_getparam_oracle_anomalies,
+		shm->stats.sched_rr_get_interval_oracle_anomalies,
+		shm->stats.get_robust_list_oracle_anomalies,
+		shm->stats.getrlimit_oracle_anomalies,
+		shm->stats.sysinfo_oracle_anomalies,
+		shm->stats.times_oracle_anomalies,
+		shm->stats.clock_getres_oracle_anomalies,
+		shm->stats.capget_oracle_anomalies,
+		shm->stats.newlstat_oracle_anomalies,
+		shm->stats.newstat_oracle_anomalies,
+		shm->stats.newfstat_oracle_anomalies,
+		shm->stats.newfstatat_oracle_anomalies,
+		shm->stats.statx_oracle_anomalies,
+		shm->stats.fstatfs_oracle_anomalies,
+		shm->stats.fstatfs64_oracle_anomalies,
+		shm->stats.statfs_oracle_anomalies,
+		shm->stats.statfs64_oracle_anomalies,
+		shm->stats.uname_oracle_anomalies,
+		shm->stats.lsm_list_modules_oracle_anomalies,
+		shm->stats.listmount_oracle_anomalies,
+		shm->stats.statmount_oracle_anomalies,
+		shm->stats.getsockname_oracle_anomalies,
+		shm->stats.getpeername_oracle_anomalies,
+		shm->stats.file_getattr_oracle_anomalies,
+		shm->stats.sched_getattr_oracle_anomalies,
+		shm->stats.getrusage_oracle_anomalies,
+		shm->stats.sigpending_oracle_anomalies,
+		shm->stats.getcpu_oracle_anomalies,
+		shm->stats.clock_gettime_oracle_anomalies,
+		shm->stats.get_mempolicy_oracle_anomalies,
+		shm->stats.lsm_get_self_attr_oracle_anomalies,
+		shm->stats.prlimit64_oracle_anomalies,
+		shm->stats.sigaltstack_oracle_anomalies,
+		shm->stats.olduname_oracle_anomalies,
+		shm->stats.lookup_dcookie_oracle_anomalies,
+		shm->stats.getxattr_oracle_anomalies,
+		shm->stats.lgetxattr_oracle_anomalies,
+		shm->stats.fgetxattr_oracle_anomalies,
+		shm->stats.listxattrat_oracle_anomalies,
+		shm->stats.flistxattr_oracle_anomalies,
+		shm->stats.listxattr_oracle_anomalies,
+		shm->stats.llistxattr_oracle_anomalies,
+		shm->stats.readlink_oracle_anomalies,
+		shm->stats.readlinkat_oracle_anomalies,
+		shm->stats.sysfs_oracle_anomalies);
+}
+
+static void dump_stats_json(void)
+{
+	putchar('{');
+
+	json_emit_syscalls_array();
+
+	fputs(",\"stats\":{", stdout);
+	dump_stats_json_fault_and_fd_lifecycle();
+	dump_stats_json_oracle();
+
+	printf("\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
 		"\"memory_pressure\":{\"runs_madv_pageout\":%lu},"
 		"\"sched_cycler\":{\"runs\":%lu,\"eperm\":%lu},"
 		"\"userns_fuzzer\":{\"runs\":%lu,\"inner_crashed\":%lu,\"unsupported\":%lu},"
@@ -978,83 +1060,6 @@ static void dump_stats_json(void)
 		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"peek_ok\":%lu,\"iouring_variant_ok\":%lu,\"sibling_spawn_ok\":%lu,\"sibling_spawn_failed\":%lu,\"sibling_reaped_ok\":%lu,\"sibling_crashed\":%lu},"
 		"\"netns_teardown\":{\"runs\":%lu,\"setup_failed\":%lu,\"unshare_ok\":%lu,\"socket_pair_ok\":%lu,\"fork_ok\":%lu,\"setns_ok\":%lu,\"kill_ok\":%lu,\"completed_ok\":%lu},"
 		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},",
-		shm->stats.fd_oracle_anomalies, shm->stats.mmap_oracle_anomalies,
-		shm->stats.cred_oracle_anomalies, shm->stats.sched_oracle_anomalies,
-		shm->stats.uid_oracle_anomalies, shm->stats.gid_oracle_anomalies,
-		shm->stats.setgroups_oracle_anomalies,
-		shm->stats.getegid_oracle_anomalies,
-		shm->stats.getuid_oracle_anomalies,
-		shm->stats.getgid_oracle_anomalies,
-		shm->stats.getppid_oracle_anomalies,
-		shm->stats.getcwd_oracle_anomalies,
-		shm->stats.getpid_oracle_anomalies,
-		shm->stats.getpgid_oracle_anomalies,
-		shm->stats.getpgrp_oracle_anomalies,
-		shm->stats.geteuid_oracle_anomalies,
-		shm->stats.getsid_oracle_anomalies,
-		shm->stats.gettid_oracle_anomalies,
-		shm->stats.setsid_oracle_anomalies,
-		shm->stats.setpgid_oracle_anomalies,
-		shm->stats.sched_getscheduler_oracle_anomalies,
-		shm->stats.getgroups_oracle_anomalies,
-		shm->stats.getresuid_oracle_anomalies,
-		shm->stats.getresgid_oracle_anomalies,
-		shm->stats.umask_oracle_anomalies,
-		shm->stats.sched_get_priority_max_oracle_anomalies,
-		shm->stats.sched_get_priority_min_oracle_anomalies,
-		shm->stats.sched_yield_oracle_anomalies,
-		shm->stats.getpagesize_oracle_anomalies,
-		shm->stats.time_oracle_anomalies,
-		shm->stats.gettimeofday_oracle_anomalies,
-		shm->stats.newuname_oracle_anomalies,
-		shm->stats.rt_sigpending_oracle_anomalies,
-		shm->stats.sched_getaffinity_oracle_anomalies,
-		shm->stats.rt_sigprocmask_oracle_anomalies,
-		shm->stats.sched_getparam_oracle_anomalies,
-		shm->stats.sched_rr_get_interval_oracle_anomalies,
-		shm->stats.get_robust_list_oracle_anomalies,
-		shm->stats.getrlimit_oracle_anomalies,
-		shm->stats.sysinfo_oracle_anomalies,
-		shm->stats.times_oracle_anomalies,
-		shm->stats.clock_getres_oracle_anomalies,
-		shm->stats.capget_oracle_anomalies,
-		shm->stats.newlstat_oracle_anomalies,
-		shm->stats.newstat_oracle_anomalies,
-		shm->stats.newfstat_oracle_anomalies,
-		shm->stats.newfstatat_oracle_anomalies,
-		shm->stats.statx_oracle_anomalies,
-		shm->stats.fstatfs_oracle_anomalies,
-		shm->stats.fstatfs64_oracle_anomalies,
-		shm->stats.statfs_oracle_anomalies,
-		shm->stats.statfs64_oracle_anomalies,
-		shm->stats.uname_oracle_anomalies,
-		shm->stats.lsm_list_modules_oracle_anomalies,
-		shm->stats.listmount_oracle_anomalies,
-		shm->stats.statmount_oracle_anomalies,
-		shm->stats.getsockname_oracle_anomalies,
-		shm->stats.getpeername_oracle_anomalies,
-		shm->stats.file_getattr_oracle_anomalies,
-		shm->stats.sched_getattr_oracle_anomalies,
-		shm->stats.getrusage_oracle_anomalies,
-		shm->stats.sigpending_oracle_anomalies,
-		shm->stats.getcpu_oracle_anomalies,
-		shm->stats.clock_gettime_oracle_anomalies,
-		shm->stats.get_mempolicy_oracle_anomalies,
-		shm->stats.lsm_get_self_attr_oracle_anomalies,
-		shm->stats.prlimit64_oracle_anomalies,
-		shm->stats.sigaltstack_oracle_anomalies,
-		shm->stats.olduname_oracle_anomalies,
-		shm->stats.lookup_dcookie_oracle_anomalies,
-		shm->stats.getxattr_oracle_anomalies,
-		shm->stats.lgetxattr_oracle_anomalies,
-		shm->stats.fgetxattr_oracle_anomalies,
-		shm->stats.listxattrat_oracle_anomalies,
-		shm->stats.flistxattr_oracle_anomalies,
-		shm->stats.listxattr_oracle_anomalies,
-		shm->stats.llistxattr_oracle_anomalies,
-		shm->stats.readlink_oracle_anomalies,
-		shm->stats.readlinkat_oracle_anomalies,
-		shm->stats.sysfs_oracle_anomalies,
 		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
 		shm->stats.memory_pressure_runs,
 		shm->stats.sched_cycler_runs, shm->stats.sched_cycler_eperm,
