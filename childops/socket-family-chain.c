@@ -152,54 +152,90 @@ static const enum alg_dict_type sfc_to_dict[SFC_NR_TYPES] = {
 #define AUTHENCESN_NAME	"authencesn(hmac(sha256),cbc(aes))"
 
 /*
+ * Per-invocation state shared across the alg_chain_iter_* helpers below.
+ * parent_fd / child_fd / splice_pfd default to -1 via the orchestrator's
+ * designated initialiser so the teardown helper can close them
+ * unconditionally regardless of which earlier phase bailed; sndbuf /
+ * rcvbuf default to NULL so the per-buffer free gates skip work the data
+ * leg never allocated.  sa + type are filled in by setup and consumed by
+ * arm (bind + the AEAD-only authsize branch).
+ */
+struct alg_chain_iter_ctx {
+	struct sockaddr_alg	sa;
+	unsigned char		*sndbuf;
+	unsigned char		*rcvbuf;
+	enum sfc_type_idx	type;
+	int			parent_fd;
+	int			child_fd;
+	int			splice_pfd[2];
+};
+
+/*
+ * Phase 1: open the AF_ALG parent socket and fill sa with either the
+ * authencesn-shaped Copy Fail-bait (1-in-8) or a random pick from the
+ * curated dictionary.  socket() failures with EAFNOSUPPORT /
+ * EPROTONOSUPPORT bump err_burst so the caller can latch the AF_ALG-
+ * unsupported gate after ERR_BURST_LIMIT consecutive misses.  Returns
+ * 0 on success or -1 if the iteration should bail to the orchestrator's
+ * out: teardown path.
+ */
+static int alg_chain_iter_setup(struct alg_chain_iter_ctx *ictx,
+				unsigned int *err_burst)
+{
+	ictx->parent_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
+	if (ictx->parent_fd < 0) {
+		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
+			(*err_burst)++;
+		return -1;
+	}
+
+	memset(&ictx->sa, 0, sizeof(ictx->sa));
+	ictx->sa.salg_family = AF_ALG;
+
+	if (ONE_IN(8)) {
+		/* The Copy Fail-shaped path: aead/authencesn-with-extended-sn. */
+		strncpy((char *)ictx->sa.salg_type, "aead",
+			sizeof(ictx->sa.salg_type) - 1);
+		strncpy((char *)ictx->sa.salg_name, AUTHENCESN_NAME,
+			sizeof(ictx->sa.salg_name) - 1);
+		ictx->type = SFC_TYPE_AEAD;
+		__atomic_add_fetch(
+			&shm->stats.socket_family_chain_authencesn_attempts, 1,
+			__ATOMIC_RELAXED);
+	} else {
+		ictx->type = (enum sfc_type_idx)rnd_modulo_u32(SFC_NR_TYPES);
+		pick_alg(sfc_to_dict[ictx->type], sfc_types[ictx->type],
+			 &ictx->sa);
+	}
+	return 0;
+}
+
+/*
  * One coherent AF_ALG chain.  Returns false on a clean kernel-not-supported
  * path so the outer cycle can latch the unsupported flag; returns true on
  * everything else (including chain steps that legitimately fail late).
  */
 static bool run_alg_chain(unsigned int *err_burst)
 {
-	struct sockaddr_alg sa;
+	struct alg_chain_iter_ctx ictx = {
+		.parent_fd = -1,
+		.child_fd = -1,
+		.splice_pfd = { -1, -1 },
+	};
 	unsigned char key[64];
-	unsigned char *sndbuf = NULL;
-	unsigned char *rcvbuf = NULL;
 	struct iovec iov;
 	struct msghdr msg;
-	enum sfc_type_idx type;
-	int parent_fd = -1;
-	int child_fd = -1;
-	int splice_pfd[2] = { -1, -1 };
 	unsigned int keylen;
 	unsigned int sndlen;
 	unsigned int rcvlen;
 	bool used_splice = false;
 	bool ok = false;
 
-	parent_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
-	if (parent_fd < 0) {
-		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
-			(*err_burst)++;
+	if (alg_chain_iter_setup(&ictx, err_burst) != 0)
 		goto out;
-	}
 
-	memset(&sa, 0, sizeof(sa));
-	sa.salg_family = AF_ALG;
-
-	if (ONE_IN(8)) {
-		/* The Copy Fail-shaped path: aead/authencesn-with-extended-sn. */
-		strncpy((char *)sa.salg_type, "aead",
-			sizeof(sa.salg_type) - 1);
-		strncpy((char *)sa.salg_name, AUTHENCESN_NAME,
-			sizeof(sa.salg_name) - 1);
-		type = SFC_TYPE_AEAD;
-		__atomic_add_fetch(
-			&shm->stats.socket_family_chain_authencesn_attempts, 1,
-			__ATOMIC_RELAXED);
-	} else {
-		type = (enum sfc_type_idx)rnd_modulo_u32(SFC_NR_TYPES);
-		pick_alg(sfc_to_dict[type], sfc_types[type], &sa);
-	}
-
-	if (bind(parent_fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
+	if (bind(ictx.parent_fd, (struct sockaddr *)&ictx.sa,
+		 sizeof(ictx.sa)) < 0) {
 		/*
 		 * Only count errors that suggest the kernel doesn't support
 		 * AF_ALG at all (ENOPROTOOPT) or rejects on privilege
@@ -220,7 +256,7 @@ static bool run_alg_chain(unsigned int *err_burst)
 	/* 1-in-RAND_NEGATIVE_RATIO sub the curated 16/32/64 keylen for a
 	 * curated edge value — exercises __sys_setsockopt's optlen < 0
 	 * rejection (cast to int) which the curated mix never reaches. */
-	if (setsockopt(parent_fd, SOL_ALG, ALG_SET_KEY,
+	if (setsockopt(ictx.parent_fd, SOL_ALG, ALG_SET_KEY,
 		       key, (socklen_t)RAND_NEGATIVE_OR(keylen)) < 0) {
 		if (errno == EPERM || errno == ENOPROTOOPT)
 			(*err_burst)++;
@@ -228,16 +264,16 @@ static bool run_alg_chain(unsigned int *err_burst)
 		 * walking the chain anyway; accept() may still succeed. */
 	}
 
-	if (type == SFC_TYPE_AEAD) {
+	if (ictx.type == SFC_TYPE_AEAD) {
 		unsigned int authsize = (rnd_u32() & 1) ? 12 : 16;
 
-		(void) setsockopt(parent_fd, SOL_ALG,
+		(void) setsockopt(ictx.parent_fd, SOL_ALG,
 				  ALG_SET_AEAD_AUTHSIZE,
 				  &authsize, sizeof(authsize));
 	}
 
-	child_fd = accept(parent_fd, NULL, NULL);
-	if (child_fd < 0) {
+	ictx.child_fd = accept(ictx.parent_fd, NULL, NULL);
+	if (ictx.child_fd < 0) {
 		if (errno == EPERM || errno == ENOPROTOOPT)
 			(*err_burst)++;
 		goto out;
@@ -265,19 +301,20 @@ static bool run_alg_chain(unsigned int *err_burst)
 	if (rnd_modulo_u32(100) < SPLICE_SUBST_PCT) {
 		int tagged_fd = get_rand_pagecache_fd();
 
-		if (tagged_fd >= 0 && pipe2(splice_pfd, O_CLOEXEC) == 0) {
+		if (tagged_fd >= 0 && pipe2(ictx.splice_pfd, O_CLOEXEC) == 0) {
 			ssize_t in_n;
 
 			__atomic_add_fetch(
 				&shm->stats.socket_family_chain_splice_attempts,
 				1, __ATOMIC_RELAXED);
 
-			in_n = splice(tagged_fd, NULL, splice_pfd[1], NULL,
+			in_n = splice(tagged_fd, NULL, ictx.splice_pfd[1], NULL,
 				      sndlen,
 				      SPLICE_F_NONBLOCK | SPLICE_F_MOVE);
 			if (in_n > 0) {
-				(void) splice(splice_pfd[0], NULL, child_fd,
-					      NULL, (size_t) in_n,
+				(void) splice(ictx.splice_pfd[0], NULL,
+					      ictx.child_fd, NULL,
+					      (size_t) in_n,
 					      SPLICE_F_NONBLOCK | SPLICE_F_MOVE);
 				used_splice = true;
 			}
@@ -285,37 +322,37 @@ static bool run_alg_chain(unsigned int *err_burst)
 	}
 
 	if (!used_splice) {
-		sndbuf = zmalloc(sndlen);
-		generate_rand_bytes(sndbuf, sndlen);
+		ictx.sndbuf = zmalloc(sndlen);
+		generate_rand_bytes(ictx.sndbuf, sndlen);
 
-		iov.iov_base = sndbuf;
+		iov.iov_base = ictx.sndbuf;
 		iov.iov_len  = sndlen;
 		memset(&msg, 0, sizeof(msg));
 		msg.msg_iov    = &iov;
 		msg.msg_iovlen = 1;
 
-		(void) sendmsg(child_fd, &msg, MSG_NOSIGNAL);
+		(void) sendmsg(ictx.child_fd, &msg, MSG_NOSIGNAL);
 	}
 
 	rcvlen = 16 + rnd_modulo_u32(256 - 16 + 1);
-	rcvbuf = zmalloc(rcvlen);
-	(void) recv(child_fd, rcvbuf, rcvlen, 0);
+	ictx.rcvbuf = zmalloc(rcvlen);
+	(void) recv(ictx.child_fd, ictx.rcvbuf, rcvlen, 0);
 
 	*err_burst = 0;
 	ok = true;
 out:
-	if (splice_pfd[0] >= 0)
-		close(splice_pfd[0]);
-	if (splice_pfd[1] >= 0)
-		close(splice_pfd[1]);
-	if (child_fd >= 0)
-		close(child_fd);
-	if (parent_fd >= 0)
-		close(parent_fd);
-	if (sndbuf)
-		free(sndbuf);
-	if (rcvbuf)
-		free(rcvbuf);
+	if (ictx.splice_pfd[0] >= 0)
+		close(ictx.splice_pfd[0]);
+	if (ictx.splice_pfd[1] >= 0)
+		close(ictx.splice_pfd[1]);
+	if (ictx.child_fd >= 0)
+		close(ictx.child_fd);
+	if (ictx.parent_fd >= 0)
+		close(ictx.parent_fd);
+	if (ictx.sndbuf)
+		free(ictx.sndbuf);
+	if (ictx.rcvbuf)
+		free(ictx.rcvbuf);
 
 	return ok;
 }
