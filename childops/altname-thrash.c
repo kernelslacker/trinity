@@ -386,27 +386,22 @@ static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx)
 	return 0;
 }
 
-bool altname_thrash(struct childdata *child)
+/*
+ * Burst phase: BUDGETED+JITTER iteration count, clamped by
+ * ALT_THRASH_FLOOR/CAP, with a STORM_BUDGET_NS wall-clock cap so even
+ * an unbounded burst can't outrun the SIGALRM(1s) inherited from
+ * child.c.  Each iteration emits an add / get / del altname triplet so
+ * the kernel sees overlapping RCU read and prop_list writer grace
+ * periods.  The add/victim scratch arrays live on the helper's stack
+ * — they are not read across helper boundaries, so they stay out of
+ * struct altname_iter_ctx.
+ */
+static void altname_thrash_iter_burst(struct altname_iter_ctx *ctx)
 {
-	struct altname_iter_ctx ctx = { .nl = { .fd = -1 } };
 	char added[ALT_BURST][ALT_NAME_MAX + 1];
 	char victims[ALT_BURST][ALT_NAME_MAX + 1];
 	struct timespec t0;
-	unsigned int iters;
-	unsigned int i;
-
-	(void)child;
-
-	__atomic_add_fetch(&shm->stats.altname_thrash_invocations, 1,
-			   __ATOMIC_RELAXED);
-
-	if (ns_setup_failed_altname_thrash ||
-	    ns_unsupported_altname_thrash ||
-	    ns_unsupported_dummy_altname_thrash)
-		return true;
-
-	if (altname_thrash_iter_setup(&ctx) != 0)
-		goto out;
+	unsigned int iters, i;
 
 	(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 	iters = BUDGETED(CHILD_OP_ALTNAME_THRASH,
@@ -428,14 +423,14 @@ bool altname_thrash(struct childdata *child)
 			ring_push(added[j]);
 		}
 
-		if (build_linkprop(&ctx.nl, RTM_NEWLINKPROP, ctx.dummy_idx,
+		if (build_linkprop(&ctx->nl, RTM_NEWLINKPROP, ctx->dummy_idx,
 				   (const char (*)[ALT_NAME_MAX + 1])added,
 				   batch) == 0) {
 			__atomic_add_fetch(&shm->stats.altname_thrash_addprop_done,
 					   1, __ATOMIC_RELAXED);
 		}
 
-		if (build_getlink(&ctx.nl, ctx.dummy_idx) == 0) {
+		if (build_getlink(&ctx->nl, ctx->dummy_idx) == 0) {
 			__atomic_add_fetch(&shm->stats.altname_thrash_getlink_done,
 					   1, __ATOMIC_RELAXED);
 		}
@@ -456,13 +451,33 @@ bool altname_thrash(struct childdata *child)
 			memcpy(victims[j], alt_ring[idx], ALT_NAME_MAX + 1);
 		}
 
-		if (build_linkprop(&ctx.nl, RTM_DELLINKPROP, ctx.dummy_idx,
+		if (build_linkprop(&ctx->nl, RTM_DELLINKPROP, ctx->dummy_idx,
 				   (const char (*)[ALT_NAME_MAX + 1])victims,
 				   vbatch) == 0) {
 			__atomic_add_fetch(&shm->stats.altname_thrash_delprop_done,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
+}
+
+bool altname_thrash(struct childdata *child)
+{
+	struct altname_iter_ctx ctx = { .nl = { .fd = -1 } };
+
+	(void)child;
+
+	__atomic_add_fetch(&shm->stats.altname_thrash_invocations, 1,
+			   __ATOMIC_RELAXED);
+
+	if (ns_setup_failed_altname_thrash ||
+	    ns_unsupported_altname_thrash ||
+	    ns_unsupported_dummy_altname_thrash)
+		return true;
+
+	if (altname_thrash_iter_setup(&ctx) != 0)
+		goto out;
+
+	altname_thrash_iter_burst(&ctx);
 
 out:
 	if (ctx.nl_opened) {
