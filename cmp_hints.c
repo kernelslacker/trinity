@@ -286,12 +286,18 @@ void cmp_hints_init(void)
 
 static void pool_lock(struct cmp_hint_pool *pool)
 {
+	if (cmp_hints_shm != NULL)
+		__atomic_fetch_add(&cmp_hints_shm->held_count, 1,
+				__ATOMIC_RELAXED);
 	lock(&pool->lock);
 }
 
 static void pool_unlock(struct cmp_hint_pool *pool)
 {
 	unlock(&pool->lock);
+	if (cmp_hints_shm != NULL)
+		__atomic_sub_fetch(&cmp_hints_shm->held_count, 1,
+				__ATOMIC_RELAXED);
 }
 
 /*

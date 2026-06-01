@@ -98,12 +98,18 @@ void minicorpus_init(void)
 
 static void ring_lock(struct corpus_ring *ring)
 {
+	if (minicorpus_shm != NULL)
+		__atomic_fetch_add(&minicorpus_shm->held_count, 1,
+				__ATOMIC_RELAXED);
 	lock(&ring->lock);
 }
 
 static void ring_unlock(struct corpus_ring *ring)
 {
 	unlock(&ring->lock);
+	if (minicorpus_shm != NULL)
+		__atomic_sub_fetch(&minicorpus_shm->held_count, 1,
+				__ATOMIC_RELAXED);
 }
 
 /*

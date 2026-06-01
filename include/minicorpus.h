@@ -176,6 +176,11 @@ struct minicorpus_shared {
 	 * gates whether to write, not what to write (the per-ring lock taken by
 	 * the serialiser provides the ordering for the entries[] contents). */
 	unsigned long mutations;
+
+	/* Parent-tick scan accelerator; incremented before ring->lock acquire,
+	 * decremented after release.  check_all_locks may skip the family when
+	 * zero (added in follow-up commit). */
+	unsigned long held_count;
 };
 
 extern struct minicorpus_shared *minicorpus_shm;
