@@ -237,6 +237,27 @@ static void keyring_spam_iter_read(int32_t *live)
 				   1, __ATOMIC_RELAXED);
 }
 
+/* OP_DESCRIBE: KEYCTL_DESCRIBE drives the type->describe path with a
+ * generous 128-byte buffer (the kernel returns "type;uid;gid;perm;desc"
+ * truncated to fit).  Skips when the ring is empty. */
+static void keyring_spam_iter_describe(int32_t *live)
+{
+	char buf[128];
+	int32_t serial;
+	long rc;
+
+	serial = ring_pick(live);
+	if (serial == 0)
+		return;
+	rc = syscall(__NR_keyctl, (unsigned long) KEYCTL_DESCRIBE,
+		     (unsigned long) serial,
+		     (unsigned long) buf,
+		     (unsigned long) sizeof(buf), 0UL);
+	if (rc < 0)
+		__atomic_add_fetch(&shm->stats.keyring_spam_failed,
+				   1, __ATOMIC_RELAXED);
+}
+
 bool keyring_spam(struct childdata *child)
 {
 	int32_t live[LIVE_KEYS_RING];
@@ -275,21 +296,9 @@ bool keyring_spam(struct childdata *child)
 			keyring_spam_iter_read(live);
 			break;
 
-		case OP_DESCRIBE: {
-			char buf[128];
-
-			serial = ring_pick(live);
-			if (serial == 0)
-				break;
-			rc = syscall(__NR_keyctl, (unsigned long) KEYCTL_DESCRIBE,
-				     (unsigned long) serial,
-				     (unsigned long) buf,
-				     (unsigned long) sizeof(buf), 0UL);
-			if (rc < 0)
-				__atomic_add_fetch(&shm->stats.keyring_spam_failed,
-						   1, __ATOMIC_RELAXED);
+		case OP_DESCRIBE:
+			keyring_spam_iter_describe(live);
 			break;
-		}
 
 		case OP_REVOKE:
 			serial = ring_pick(live);
