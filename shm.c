@@ -271,19 +271,27 @@ static void init_shm_alloc_children(void)
 	expected_fd_event_rings = alloc_shared(fd_event_ring_arr_bytes);
 }
 
-void init_shm(void)
+/*
+ * Per-child childdata + ring allocation pass.  For each
+ * for_each_child slot, alloc the shared childdata struct,
+ * publish its pointer into children[], zero the embedded
+ * syscallrecord, stamp child->num from the loop counter, then
+ * carve out the three per-child shared rings (fd_event_ring,
+ * stats_ring, edgepair_ring) and run each ring's init.  The
+ * fd_event_ring address is also mirrored into the
+ * expected_fd_event_rings[] canary so fd_event_drain_all() can
+ * spot a wild-write swap of the in-childdata pointer.
+ *
+ * Runs after init_shm_alloc_children() (which carves children[]
+ * and expected_fd_event_rings[]) and before the published-mirror
+ * + mprotect tail phase that locks children[] PROT_READ.  Pulled
+ * into its own helper so the orchestrator reads as a phase list;
+ * no shared state with adjacent phases, signature collapses to
+ * (void).
+ */
+static void init_shm_per_child_rings(void)
 {
 	unsigned int i;
-
-	output(2, "shm is at %p\n", shm);
-
-	init_shm_debug_start();
-
-	init_shm_self_exe_snapshot();
-
-	init_shm_strategy_state();
-
-	init_shm_alloc_children();
 
 	/* We allocate the childdata structs as shared mappings, because
 	 * the forking process needs to peek into each childs syscall records
@@ -346,6 +354,21 @@ void init_shm(void)
 		child->edgepair_ring = alloc_shared(sizeof(struct edgepair_ring));
 		edgepair_ring_init(child->edgepair_ring);
 	}
+}
+
+void init_shm(void)
+{
+	output(2, "shm is at %p\n", shm);
+
+	init_shm_debug_start();
+
+	init_shm_self_exe_snapshot();
+
+	init_shm_strategy_state();
+
+	init_shm_alloc_children();
+
+	init_shm_per_child_rings();
 
 	/* Allocate the parent-write / child-read mirror page.
 	 * Children read shm_published->fleet_op_count off the cold path
