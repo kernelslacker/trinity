@@ -252,7 +252,20 @@ static void sanitise_recvmsg(struct syscallrecord *rec)
 
 	rec->a1 = fd_from_socketinfo(si);
 
-	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, si->triplet.family);
+	/*
+	 * msg_name is purely a kernel write-target on recvmsg; the kernel
+	 * never reads it.  Allocate sizeof(struct sockaddr_storage) bytes
+	 * unconditionally instead of generate_sockaddr's per-family alloc,
+	 * which can be smaller than the kernel's max sockaddr write size
+	 * (e.g., sockaddr_un at 110 bytes).  Without this, a sibling
+	 * scribbling msg_namelen post-sanitise to a value >= sizeof(struct
+	 * sockaddr_storage) under a non-UNIX socket lets the kernel overflow
+	 * the undersized msg_name alloc with up to 128 bytes of peer
+	 * address.  Free path unchanged: snap->name still tracks the live
+	 * msg_name alloc through tracked_free_now().
+	 */
+	sa = (struct sockaddr *) zmalloc_tracked(sizeof(struct sockaddr_storage));
+	salen = sizeof(struct sockaddr_storage);
 
 skip_si:
 	msg = zmalloc_tracked(sizeof(struct msghdr));
@@ -557,8 +570,18 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 			msg->msg_iovlen = 0;
 		}
 
-		if (si != NULL)
-			generate_sockaddr(&sa, &salen, si->triplet.family);
+		/*
+		 * Same rationale as sanitise_recvmsg: allocate sizeof(struct
+		 * sockaddr_storage) unconditionally rather than the per-family
+		 * shape generate_sockaddr would surface, so a sibling that
+		 * scribbles msg_namelen post-sanitise cannot drive the kernel
+		 * to overflow an undersized per-i msg_name alloc.  Free path
+		 * unchanged: snap->name[i] still tracks the live alloc.
+		 */
+		if (si != NULL) {
+			sa = (struct sockaddr *) zmalloc_tracked(sizeof(struct sockaddr_storage));
+			salen = sizeof(struct sockaddr_storage);
+		}
 		msg->msg_name = sa;
 		msg->msg_namelen = salen;
 		snap->name[i] = sa;
