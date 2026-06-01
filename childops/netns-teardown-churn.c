@@ -327,6 +327,52 @@ static void reap_inflight_child(pid_t pid)
 }
 
 /*
+ * Per-iteration scratch carried across the netns_teardown_iter_<phase>
+ * helpers.  Lifetime is exactly one iter_one() invocation; avoids
+ * threading the anchor fd, the three socket fds, and the in-ns child
+ * pid through every helper signature.  Sentinel values (-1) mark
+ * "not established" so the recover path can act selectively.
+ */
+struct netns_teardown_iter_ctx {
+	int	nsfd;
+	int	s_listen;
+	int	s_conn;
+	int	s_accept;
+	pid_t	pid;
+};
+
+/*
+ * Phase 1: open the /proc/self/ns/net anchor fd, unshare into a fresh
+ * net ns, then best-effort bring loopback up inside it.  Bumps
+ * unshare_ok on success.  The open/unshare failure paths predate any
+ * socket state (no recover-label cleanup needed), so they bump
+ * setup_failed, clean up their own nsfd, and signal -1; on -1 the
+ * caller returns from iter_one without touching the recover path.
+ */
+static int netns_teardown_iter_setup_ns(struct netns_teardown_iter_ctx *it)
+{
+	it->nsfd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
+	if (it->nsfd < 0) {
+		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	if (unshare(CLONE_NEWNET) < 0) {
+		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		close(it->nsfd);
+		it->nsfd = -1;
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.netns_teardown_unshare_ok,
+			   1, __ATOMIC_RELAXED);
+
+	(void)bring_up_loopback();
+	return 0;
+}
+
+/*
  * One outer iteration: anchor open, unshare, lo bring-up, sockets,
  * fork, race, kill, waitpid.  Best-effort; per-step counter bumps
  * carry the success signal.  Latches ns_unsupported on a probe-style
@@ -334,72 +380,58 @@ static void reap_inflight_child(pid_t pid)
  */
 static void iter_one(void)
 {
-	int nsfd = -1;
-	int s_listen = -1, s_conn = -1, s_accept = -1;
+	struct netns_teardown_iter_ctx it = {
+		.nsfd = -1, .s_listen = -1, .s_conn = -1, .s_accept = -1,
+		.pid = -1,
+	};
 	struct sockaddr_in addr;
 	socklen_t addrlen;
-	pid_t pid;
 
-	nsfd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
-	if (nsfd < 0) {
-		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (netns_teardown_iter_setup_ns(&it) != 0)
 		return;
-	}
 
-	if (unshare(CLONE_NEWNET) < 0) {
-		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		close(nsfd);
-		return;
-	}
-	__atomic_add_fetch(&shm->stats.netns_teardown_unshare_ok,
-			   1, __ATOMIC_RELAXED);
-
-	(void)bring_up_loopback();
-
-	s_listen = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-	if (s_listen < 0)
+	it.s_listen = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (it.s_listen < 0)
 		goto recover;
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(0x7f000001U);
 	addr.sin_port = 0;
-	if (bind(s_listen, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+	if (bind(it.s_listen, (struct sockaddr *)&addr, sizeof(addr)) < 0)
 		goto recover;
-	if (listen(s_listen, 4) < 0)
+	if (listen(it.s_listen, 4) < 0)
 		goto recover;
 
 	addrlen = sizeof(addr);
-	if (getsockname(s_listen, (struct sockaddr *)&addr, &addrlen) < 0)
+	if (getsockname(it.s_listen, (struct sockaddr *)&addr, &addrlen) < 0)
 		goto recover;
 
-	s_conn = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-	if (s_conn < 0)
+	it.s_conn = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (it.s_conn < 0)
 		goto recover;
-	if (connect(s_conn, (struct sockaddr *)&addr, sizeof(addr)) < 0 &&
+	if (connect(it.s_conn, (struct sockaddr *)&addr, sizeof(addr)) < 0 &&
 	    errno != EINPROGRESS)
 		goto recover;
 
-	s_accept = accept(s_listen, NULL, NULL);
-	if (s_accept < 0)
+	it.s_accept = accept(it.s_listen, NULL, NULL);
+	if (it.s_accept < 0)
 		goto recover;
 
 	__atomic_add_fetch(&shm->stats.netns_teardown_socket_pair_ok,
 			   1, __ATOMIC_RELAXED);
 
-	pid = fork();
-	if (pid < 0)
+	it.pid = fork();
+	if (it.pid < 0)
 		goto recover;
 
-	if (pid == 0) {
+	if (it.pid == 0) {
 		int raw_fd = -1, xfrm_fd = -1;
 
-		(void)close(nsfd);
-		nsfd = -1;
+		(void)close(it.nsfd);
+		it.nsfd = -1;
 		open_extras(&raw_fd, &xfrm_fd);
-		child_pump(s_conn, s_accept);
+		child_pump(it.s_conn, it.s_accept);
 		(void)raw_fd;
 		(void)xfrm_fd;
 		_exit(0);
@@ -408,7 +440,7 @@ static void iter_one(void)
 	__atomic_add_fetch(&shm->stats.netns_teardown_fork_ok,
 			   1, __ATOMIC_RELAXED);
 
-	if (setns(nsfd, CLONE_NEWNET) < 0) {
+	if (setns(it.nsfd, CLONE_NEWNET) < 0) {
 		/* setns failure leaves us stuck in the doomed ns.  Best
 		 * effort: kill the child to release one ref so the
 		 * cleanup_net workqueue can fire when this trinity child
@@ -416,14 +448,14 @@ static void iter_one(void)
 		 * subsequent invocation will re-enter the same broken
 		 * state, so latch off. */
 		ns_unsupported_netns_teardown = true;
-		(void)kill(pid, SIGKILL);
-		reap_inflight_child(pid);
+		(void)kill(it.pid, SIGKILL);
+		reap_inflight_child(it.pid);
 		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		(void)close(s_listen); s_listen = -1;
-		(void)close(s_conn);   s_conn = -1;
-		(void)close(s_accept); s_accept = -1;
-		(void)close(nsfd);     nsfd = -1;
+		(void)close(it.s_listen); it.s_listen = -1;
+		(void)close(it.s_conn);   it.s_conn = -1;
+		(void)close(it.s_accept); it.s_accept = -1;
+		(void)close(it.nsfd);     it.nsfd = -1;
 		return;
 	}
 	__atomic_add_fetch(&shm->stats.netns_teardown_setns_ok,
@@ -432,20 +464,20 @@ static void iter_one(void)
 	/* Drop parent's doomed-ns socket refs so only the in-ns child
 	 * keeps the net alive.  Without this the ns can't die when the
 	 * child does — defeats the whole race. */
-	(void)close(s_listen); s_listen = -1;
-	(void)close(s_conn);   s_conn = -1;
-	(void)close(s_accept); s_accept = -1;
+	(void)close(it.s_listen); it.s_listen = -1;
+	(void)close(it.s_conn);   it.s_conn = -1;
+	(void)close(it.s_accept); it.s_accept = -1;
 
 	(void)usleep(rand32() % NETNS_TD_PARENT_USLEEP_MAX);
 
-	if (kill(pid, SIGKILL) == 0) {
+	if (kill(it.pid, SIGKILL) == 0) {
 		__atomic_add_fetch(&shm->stats.netns_teardown_kill_ok,
 				   1, __ATOMIC_RELAXED);
 	}
-	reap_inflight_child(pid);
+	reap_inflight_child(it.pid);
 
-	(void)close(nsfd);
-	nsfd = -1;
+	(void)close(it.nsfd);
+	it.nsfd = -1;
 	__atomic_add_fetch(&shm->stats.netns_teardown_completed_ok,
 			   1, __ATOMIC_RELAXED);
 	return;
@@ -458,13 +490,13 @@ recover:
 	 * the latched-off state (subsequent invocations short-circuit). */
 	__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
 			   1, __ATOMIC_RELAXED);
-	if (s_accept >= 0) (void)close(s_accept);
-	if (s_conn   >= 0) (void)close(s_conn);
-	if (s_listen >= 0) (void)close(s_listen);
-	if (nsfd >= 0) {
-		if (setns(nsfd, CLONE_NEWNET) < 0)
+	if (it.s_accept >= 0) (void)close(it.s_accept);
+	if (it.s_conn   >= 0) (void)close(it.s_conn);
+	if (it.s_listen >= 0) (void)close(it.s_listen);
+	if (it.nsfd >= 0) {
+		if (setns(it.nsfd, CLONE_NEWNET) < 0)
 			ns_unsupported_netns_teardown = true;
-		(void)close(nsfd);
+		(void)close(it.nsfd);
 	}
 }
 
