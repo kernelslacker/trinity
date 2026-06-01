@@ -105,6 +105,50 @@ already_done:
 #define syscall32(a,b,c,d,e,f,g) 0
 #endif /* ARCH_IS_BIARCH */
 
+static inline bool is_addr_argtype(enum argtype t)
+{
+	return t == ARG_ADDRESS || t == ARG_NON_NULL_ADDRESS;
+}
+
+/*
+ * Final-pass pointer scrub.  blanket_address_scrub() in generate-args.c
+ * already redirects ARG_ADDRESS / ARG_NON_NULL_ADDRESS slots that alias
+ * shared_regions or the libc arena, but that pass runs at the tail of
+ * generate_syscall_args(); a sibling child can scribble a pid-shaped
+ * (or otherwise corrupted) value into rec->aN in the window between
+ * the scrub and the syscall asm below.  Walk argtype[] one more time
+ * just before dispatch and re-stamp any address-class slot whose
+ * current value no longer passes the heap-pointer shape check.  Lock-
+ * free for the same reason the per-arg snapshot at the call site is:
+ * a sibling stomp landing AFTER this scrub is bounded by the canary /
+ * shadow infrastructure further down the path.
+ */
+static void final_pass_arg_address_scrub(struct syscallentry *entry,
+					 struct syscallrecord *rec)
+{
+	unsigned int i;
+
+	for (i = 0; i < entry->num_args && i < 6; i++) {
+		unsigned long *slot;
+
+		if (!is_addr_argtype(entry->argtype[i]))
+			continue;
+
+		switch (i + 1) {
+		case 1: slot = &rec->a1; break;
+		case 2: slot = &rec->a2; break;
+		case 3: slot = &rec->a3; break;
+		case 4: slot = &rec->a4; break;
+		case 5: slot = &rec->a5; break;
+		case 6: slot = &rec->a6; break;
+		default: continue;
+		}
+
+		if (looks_like_corrupted_ptr(rec, (const void *) *slot))
+			*slot = (unsigned long) get_writable_address(page_size);
+	}
+}
+
 /*
  * Maybe arm /proc/self/fail-nth so the next syscall sees an allocation
  * failure on its Nth slab/page alloc.  Returns true if we wrote a value.
@@ -174,6 +218,11 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * read inside the post handler. */
 	rec->_canary = REC_CANARY_MAGIC;
 	unlock(&rec->lock);
+
+	/* Final-pass ARG_ADDRESS / ARG_NON_NULL_ADDRESS re-validation.
+	 * Catches sibling-stomp during the decode/sanitise window that the
+	 * generate-args.c snapshot phase can't see. */
+	final_pass_arg_address_scrub(entry, rec);
 
 	/* Snapshot the argument slots before dispatch.  rec lives in
 	 * shared memory and a sibling child can stomp rec->aN mid-flight
