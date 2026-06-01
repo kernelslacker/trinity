@@ -243,11 +243,57 @@ void madvise_cycler_pool_race_handler(int sig, siginfo_t *info,
 	siglongjmp(madvise_cycler_pool_race_jmp, 1);
 }
 
-bool madvise_cycler(struct childdata *child)
+/*
+ * Per-invocation state shared across the madvise_cycler_iter_* helpers.
+ * Lives on the orchestrator's stack and is fresh per call.  region /
+ * region_len / nr_pages are filled by pick_region; advice_idx and start
+ * are filled by setup_budget and then read + advanced by run_cycle.
+ * iter_cap stays out of this struct -- see the volatile comment on the
+ * orchestrator's iter_cap declaration.
+ */
+struct madvise_cycler_iter_ctx {
+	unsigned char	*region;
+	unsigned long	 region_len;
+	unsigned long	 nr_pages;
+	unsigned int	 advice_idx;
+	struct timespec	 start;
+};
+
+/*
+ * Phase 1: draw a writable region from the parent's inherited mapping
+ * pool.  Most of the curated advice modes (PAGEOUT, FREE, POPULATE_WRITE,
+ * COLLAPSE) need to walk and modify ptes on a writable VMA; PROT_READ-
+ * only / PROT_NONE entries would either return early or fail -EACCES
+ * before hitting the interesting paths.  The pool entry is owned by
+ * the parent and remains alive after return -- this op never munmap()s
+ * it; tearing down a pool entry would unmap pages every other sibling
+ * drawing the same map is still treating as live.
+ *
+ * Returns 0 on success (ctx->region / region_len / nr_pages populated),
+ * -1 if the pool yielded no writable mapping (caller bails false), or
+ * 1 if the region is single-page so pick_subrange's region/2 cap would
+ * collapse to whole-VMA every iteration (caller bails true: no useful
+ * work, but not a dispatch-level failure).
+ */
+static int madvise_cycler_iter_pick_region(struct madvise_cycler_iter_ctx *ctx)
 {
 	struct map *m;
-	unsigned char *region;
-	unsigned long region_len, nr_pages;
+
+	m = get_map_with_prot(PROT_READ | PROT_WRITE);
+	if (m == NULL)
+		return -1;
+
+	ctx->region = (unsigned char *) m->ptr;
+	ctx->region_len = m->size;
+	ctx->nr_pages = ctx->region_len / page_size;
+	if (ctx->nr_pages < 2)
+		return 1;
+	return 0;
+}
+
+bool madvise_cycler(struct childdata *child)
+{
+	struct madvise_cycler_iter_ctx ictx = { 0 };
 	struct timespec start;
 	unsigned int iter;
 	/* volatile: iter_cap is computed before sigsetjmp via the BUDGETED
@@ -258,36 +304,17 @@ bool madvise_cycler(struct childdata *child)
 	 * qualified type. */
 	volatile unsigned int iter_cap;
 	unsigned int advice_idx;
+	int rc;
 
 	(void) child;
 
 	__atomic_add_fetch(&shm->stats.madvise_cycler_runs, 1, __ATOMIC_RELAXED);
 
-	/*
-	 * Draw a writable region from the parent's inherited mapping pool.
-	 * Most of the curated advice modes (PAGEOUT, FREE, POPULATE_WRITE,
-	 * COLLAPSE) need to walk and modify ptes on a writable VMA;
-	 * PROT_READ-only / PROT_NONE entries would either return early or
-	 * fail -EACCES before hitting the interesting paths.
-	 *
-	 * The pool is owned by the parent: do NOT munmap on cleanup.
-	 * Tearing down a pool entry would unmap pages every other sibling
-	 * drawing the same map is still treating as live.
-	 */
-	m = get_map_with_prot(PROT_READ | PROT_WRITE);
-	if (m == NULL)
+	rc = madvise_cycler_iter_pick_region(&ictx);
+	if (rc < 0)
 		return false;
-
-	region = (unsigned char *) m->ptr;
-	region_len = m->size;
-
-	nr_pages = region_len / page_size;
-	if (nr_pages < 2) {
-		/* Single-page region: pick_subrange's region/2 cap collapses
-		 * to whole-VMA every iteration, which defeats the
-		 * partial-VMA goal.  Skip rather than degrade. */
+	if (rc > 0)
 		return true;
-	}
 
 	/* Setup is outside the wrap.  None of clock_gettime, the effector
 	 * pick, or the budget-cap calculation touches the pool mapping, so
@@ -313,8 +340,8 @@ bool madvise_cycler(struct childdata *child)
 		struct sigaction sa, old_segv, old_bus;
 		bool aborted = false;
 
-		madvise_cycler_pool_race_addr_low  = (uintptr_t)region;
-		madvise_cycler_pool_race_addr_high = (uintptr_t)region + region_len;
+		madvise_cycler_pool_race_addr_low  = (uintptr_t)ictx.region;
+		madvise_cycler_pool_race_addr_high = (uintptr_t)ictx.region + ictx.region_len;
 
 		memset(&sa, 0, sizeof(sa));
 		sigemptyset(&sa.sa_mask);
@@ -326,9 +353,9 @@ bool madvise_cycler(struct childdata *child)
 		if (sigsetjmp(madvise_cycler_pool_race_jmp, 1) == 0) {
 			for (iter = 0; iter < iter_cap; iter++) {
 				unsigned long offset, len;
-				int advice, rc;
+				int advice, mrc;
 
-				offset = pick_subrange(nr_pages, &len);
+				offset = pick_subrange(ictx.nr_pages, &len);
 				advice = (int)advice_cycle[advice_idx];
 				advice_idx = (advice_idx + 1) %
 					(unsigned int)ARRAY_SIZE(advice_cycle);
@@ -339,13 +366,13 @@ bool madvise_cycler(struct childdata *child)
 				 * (PAGE_ALIGN overflow, end < start, len near
 				 * SIZE_MAX) which the partial-VMA path above
 				 * never reaches. */
-				rc = madvise(region + offset,
-					     (size_t)RAND_NEGATIVE_OR(len),
-					     advice);
+				mrc = madvise(ictx.region + offset,
+					      (size_t)RAND_NEGATIVE_OR(len),
+					      advice);
 				__atomic_add_fetch(
 					&shm->stats.madvise_cycler_calls,
 					1, __ATOMIC_RELAXED);
-				if (rc < 0) {
+				if (mrc < 0) {
 					__atomic_add_fetch(
 						&shm->stats.madvise_cycler_failed,
 						1, __ATOMIC_RELAXED);
@@ -359,7 +386,7 @@ bool madvise_cycler(struct childdata *child)
 				if (RAND_BOOL())
 					touch_subrange(
 						(volatile unsigned char *)
-							region + offset,
+							ictx.region + offset,
 						len);
 
 				if (budget_elapsed(&start))
