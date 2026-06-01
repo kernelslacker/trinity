@@ -507,6 +507,68 @@ static void persist_state_on_clean_exit(void)
 	}
 }
 
+/*
+ * Publish the run's identification anchors so post-mortem grep
+ * tooling can pin down a crashed run from log scrollback.  The
+ * mainpid line gives a gdb-attach target without needing `ps`; the
+ * seed line is a canonical anchor whose wording matches across the
+ * auto and -s code paths (init_seed() already prints the value, but
+ * the line text differs between them).  Auto-generated seeds are
+ * additionally persisted to ./last-run-seed so a stochastic crash
+ * can be re-run with --seed=$(cat tmp/last-run-seed) -- the user-
+ * supplied path doesn't persist, since the caller already has the
+ * value and overwriting the file would lose the last auto seed.
+ */
+static void publish_and_persist_seed(void)
+{
+	/* Always print mainpid so a gdb-attach round-trip is one line away
+	 * instead of needing a separate `ps ax | grep trinity`.  Not gated
+	 * on -v: the cost is one line per run, the saving is per-debug. */
+	output(0, "mainpid=%d\n", mainpid);
+
+	/*
+	 * Print the active post-init shm->seed unconditionally as a canonical
+	 * `[main] seed=` anchor for log-grep tooling -- init_seed() already
+	 * prints the value, but the line wording differs between the auto
+	 * and -s paths.
+	 *
+	 * Persist only the auto-generated seed: drop the value into
+	 * ./last-run-seed (we are already chdir'd into tmp/ via
+	 * change_tmp_dir) so a stochastic crash can be re-run with
+	 *     trinity --seed=$(cat tmp/last-run-seed) ...
+	 * The user-supplied (-s/--seed) path doesn't need persisting -- the
+	 * caller already has the value they passed in, and overwriting the
+	 * file would lose the last auto-generated seed.
+	 *
+	 * Write atomically via .tmp + rename (mirrors minicorpus.c) so a
+	 * partial write never replaces a previous good value.  Best effort:
+	 * all failures are silent, the file is informational.
+	 */
+	{
+		unsigned int active_seed =
+			__atomic_load_n(&shm->seed, __ATOMIC_RELAXED);
+
+		output(0, "seed=0x%x\n", active_seed);
+
+		if (user_set_seed == false) {
+			FILE *f = fopen("last-run-seed.tmp", "w");
+
+			if (f != NULL) {
+				int wrote = fprintf(f, "%u\n", active_seed);
+				int closed = fclose(f);
+
+				if (wrote > 0 && closed == 0) {
+					if (rename("last-run-seed.tmp",
+							"last-run-seed") != 0)
+						(void)unlink("last-run-seed.tmp");
+				} else {
+					(void)unlink("last-run-seed.tmp");
+				}
+			}
+		}
+	}
+}
+
 int main(int argc, char* argv[])
 {
 	int ret = EXIT_SUCCESS;
@@ -610,52 +672,7 @@ int main(int argc, char* argv[])
 	output(1, "phase: init_shm\n");
 	init_shm();
 
-	/* Always print mainpid so a gdb-attach round-trip is one line away
-	 * instead of needing a separate `ps ax | grep trinity`.  Not gated
-	 * on -v: the cost is one line per run, the saving is per-debug. */
-	output(0, "mainpid=%d\n", mainpid);
-
-	/*
-	 * Print the active post-init shm->seed unconditionally as a canonical
-	 * `[main] seed=` anchor for log-grep tooling -- init_seed() already
-	 * prints the value, but the line wording differs between the auto
-	 * and -s paths.
-	 *
-	 * Persist only the auto-generated seed: drop the value into
-	 * ./last-run-seed (we are already chdir'd into tmp/ via
-	 * change_tmp_dir) so a stochastic crash can be re-run with
-	 *     trinity --seed=$(cat tmp/last-run-seed) ...
-	 * The user-supplied (-s/--seed) path doesn't need persisting -- the
-	 * caller already has the value they passed in, and overwriting the
-	 * file would lose the last auto-generated seed.
-	 *
-	 * Write atomically via .tmp + rename (mirrors minicorpus.c) so a
-	 * partial write never replaces a previous good value.  Best effort:
-	 * all failures are silent, the file is informational.
-	 */
-	{
-		unsigned int active_seed =
-			__atomic_load_n(&shm->seed, __ATOMIC_RELAXED);
-
-		output(0, "seed=0x%x\n", active_seed);
-
-		if (user_set_seed == false) {
-			FILE *f = fopen("last-run-seed.tmp", "w");
-
-			if (f != NULL) {
-				int wrote = fprintf(f, "%u\n", active_seed);
-				int closed = fclose(f);
-
-				if (wrote > 0 && closed == 0) {
-					if (rename("last-run-seed.tmp",
-							"last-run-seed") != 0)
-						(void)unlink("last-run-seed.tmp");
-				} else {
-					(void)unlink("last-run-seed.tmp");
-				}
-			}
-		}
-	}
+	publish_and_persist_seed();
 
 	print_core_pattern();
 
