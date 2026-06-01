@@ -4138,33 +4138,8 @@ static void dump_stats_strategy_summary(void)
 	dump_strategy_stats();
 }
 
-void dump_stats(void)
+static void dump_stats_childop_runs_local(void)
 {
-	unsigned int i;
-
-	if (stats_json) {
-		dump_stats_json();
-		return;
-	}
-
-	dump_stats_runtime_header();
-
-	dump_stats_per_syscall_tables();
-
-	dump_stats_fd_tracking();
-
-	dump_stats_oracle_anomalies();
-
-	dump_stats_fuzzer_subsystems();
-
-	dump_stats_corruption_and_pool();
-
-	dump_stats_childop_ranked_tables();
-
-	dump_stats_shared_buffer_misc();
-
-	dump_stats_strategy_summary();
-
 	if (shm->stats.refcount_audit_runs) {
 		stat_row("refcount_audit", "runs",           shm->stats.refcount_audit_runs);
 		stat_row("refcount_audit", "fd_anomalies",   shm->stats.refcount_audit_fd_anomalies);
@@ -4300,6 +4275,36 @@ void dump_stats(void)
 		stat_row("close_racer", "failed",            shm->stats.close_racer_failed);
 		stat_row("close_racer", "thread_spawn_fail", shm->stats.close_racer_thread_spawn_fail);
 	}
+}
+
+void dump_stats(void)
+{
+	unsigned int i;
+
+	if (stats_json) {
+		dump_stats_json();
+		return;
+	}
+
+	dump_stats_runtime_header();
+
+	dump_stats_per_syscall_tables();
+
+	dump_stats_fd_tracking();
+
+	dump_stats_oracle_anomalies();
+
+	dump_stats_fuzzer_subsystems();
+
+	dump_stats_corruption_and_pool();
+
+	dump_stats_childop_ranked_tables();
+
+	dump_stats_shared_buffer_misc();
+
+	dump_stats_strategy_summary();
+
+	dump_stats_childop_runs_local();
 
 	if (shm->stats.socket_family_chain_runs) {
 		stat_row("socket_family_chain", "runs",                shm->stats.socket_family_chain_runs);
