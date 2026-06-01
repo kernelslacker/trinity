@@ -1727,6 +1727,30 @@ static void print_stats_picker_state(enum picker_mode_t pmode, bool plateau)
 	}
 }
 
+static void print_stats_plateau_warning(enum picker_mode_t pmode, bool plateau)
+{
+	/*
+	 * One-shot warning when the plateau detector fires
+	 * under a non-bandit picker: the intervention
+	 * rotation (RRC-bias / anti-prior / uniform-random)
+	 * only runs in PICKER_BANDIT_UCB1 mode, so the
+	 * round-robin / future-picker operator needs to know
+	 * the plateau machinery they're watching go active
+	 * isn't going to respond.  One-shot per plateau
+	 * transition (active rising edge), not per dump, so a
+	 * long plateau doesn't spam the log.
+	 */
+	static bool warned_this_plateau = false;
+	if (plateau && pmode != PICKER_BANDIT_UCB1) {
+		if (!warned_this_plateau) {
+			output(0, "WARNING: plateau detected under non-bandit picker; plateau response is bandit-only\n");
+			warned_this_plateau = true;
+		}
+	} else if (!plateau) {
+		warned_this_plateau = false;
+	}
+}
+
 static void print_stats(void)
 {
 	unsigned long op_count = parent_stats.op_count;
@@ -1769,27 +1793,7 @@ static void print_stats(void)
 					__ATOMIC_ACQUIRE);
 
 				print_stats_picker_state(pmode, plateau);
-
-				/*
-				 * One-shot warning when the plateau detector fires
-				 * under a non-bandit picker: the intervention
-				 * rotation (RRC-bias / anti-prior / uniform-random)
-				 * only runs in PICKER_BANDIT_UCB1 mode, so the
-				 * round-robin / future-picker operator needs to know
-				 * the plateau machinery they're watching go active
-				 * isn't going to respond.  One-shot per plateau
-				 * transition (active rising edge), not per dump, so a
-				 * long plateau doesn't spam the log.
-				 */
-				static bool warned_this_plateau = false;
-				if (plateau && pmode != PICKER_BANDIT_UCB1) {
-					if (!warned_this_plateau) {
-						output(0, "WARNING: plateau detected under non-bandit picker; plateau response is bandit-only\n");
-						warned_this_plateau = true;
-					}
-				} else if (!plateau) {
-					warned_this_plateau = false;
-				}
+				print_stats_plateau_warning(pmode, plateau);
 
 				/*
 				 * Plateau hypothesis ruleset.  Drive the per-
