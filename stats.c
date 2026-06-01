@@ -1018,18 +1018,8 @@ static void dump_stats_json_iouring_and_zombies(void)
 		shm->stats.zombies_timed_out);
 }
 
-static void dump_stats_json(void)
+static void dump_stats_json_corruption_and_audit(void)
 {
-	putchar('{');
-
-	json_emit_syscalls_array();
-
-	fputs(",\"stats\":{", stdout);
-	dump_stats_json_fault_and_fd_lifecycle();
-	dump_stats_json_oracle();
-	dump_stats_json_basic_subsystems();
-	dump_stats_json_iouring_and_zombies();
-
 	printf("\"corruption\":{\"fd_event_ring_noncanon\":%lu,"
 			"\"fd_event_ring_canary\":%lu,\"fd_event_payload\":%lu,"
 			"\"deferred_free_corrupt_ptr\":%lu,"
@@ -1068,8 +1058,65 @@ static void dump_stats_json(void)
 			"\"get_writable_address_scribbled_postmp_shm\":%lu,"
 			"\"get_writable_address_enomem_exhausted\":%lu},"
 		"\"refcount_audit\":{\"runs\":%lu,\"fd_anomalies\":%lu,"
-			"\"mmap_anomalies\":%lu,\"sock_anomalies\":%lu},"
-		"\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
+			"\"mmap_anomalies\":%lu,\"sock_anomalies\":%lu},",
+		shm->stats.fd_event_ring_corrupted,
+		shm->stats.fd_event_ring_overwritten,
+		shm->stats.fd_event_payload_corrupt,
+		parent_stats.deferred_free_corrupt_ptr,
+		parent_stats.post_handler_corrupt_ptr,
+		parent_stats.deferred_free_reject,
+		parent_stats.deferred_free_reject_pathname,
+		parent_stats.deferred_free_reject_iovec,
+		parent_stats.deferred_free_reject_sockaddr,
+		parent_stats.deferred_free_reject_other,
+		parent_stats.snapshot_non_heap_reject,
+		shm->stats.rec_canary_stomped,
+		shm->stats.rzs_blanket_reject,
+		shm->stats.retfd_blanket_reject,
+		shm->stats.sibling_mprotect_failed,
+		shm->stats.destroy_object_idx_corrupt,
+		shm->stats.global_obj_uaf_caught,
+		shm->stats.maps_pool_draw_exhausted,
+		shm->stats.maps_reject_pool_empty,
+		shm->stats.maps_reject_bogus_obj_ptr,
+		shm->stats.maps_reject_alloc_track_miss,
+		shm->stats.maps_reject_size_zero,
+		shm->stats.maps_reject_size_too_large,
+		shm->stats.deferred_free_reject_misaligned,
+		shm->stats.deferred_free_reject_corrupt_shape,
+		shm->stats.deferred_free_reject_non_heap,
+		shm->stats.deferred_free_reject_untracked,
+		shm->stats.deferred_free_reject_shared_region,
+		shm->stats.pagecache_canary_corrupt_caught,
+		parent_stats.lock_word_scribbled,
+		shm->stats.lock_held_scribble,
+		shm->stats.chain_replay_len_corrupt,
+		parent_stats.shared_buffer_redirected, parent_stats.range_overlaps_shared_rejects,
+		parent_stats.libc_heap_redirected, parent_stats.libc_heap_embedded_redirected,
+		parent_stats.get_writable_address_scribbled_shm_range,
+		parent_stats.get_writable_address_scribbled_mprotect_mmap,
+		parent_stats.get_writable_address_scribbled_mprotect_shm,
+		parent_stats.get_writable_address_scribbled_postmp_mmap,
+		parent_stats.get_writable_address_scribbled_postmp_shm,
+		parent_stats.get_writable_address_enomem_exhausted,
+		shm->stats.refcount_audit_runs, shm->stats.refcount_audit_fd_anomalies,
+		shm->stats.refcount_audit_mmap_anomalies, shm->stats.refcount_audit_sock_anomalies);
+}
+
+static void dump_stats_json(void)
+{
+	putchar('{');
+
+	json_emit_syscalls_array();
+
+	fputs(",\"stats\":{", stdout);
+	dump_stats_json_fault_and_fd_lifecycle();
+	dump_stats_json_oracle();
+	dump_stats_json_basic_subsystems();
+	dump_stats_json_iouring_and_zombies();
+	dump_stats_json_corruption_and_audit();
+
+	printf("\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
 			"\"overlay\":%lu,\"quota\":%lu,\"bind\":%lu,\"unsupported\":%lu},"
 		"\"signal_storm\":{\"runs\":%lu,\"kill\":%lu,\"probe\":%lu,\"sigqueue\":%lu,\"no_targets\":%lu},"
 		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},"
@@ -1120,48 +1167,6 @@ static void dump_stats_json(void)
 		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"peek_ok\":%lu,\"iouring_variant_ok\":%lu,\"sibling_spawn_ok\":%lu,\"sibling_spawn_failed\":%lu,\"sibling_reaped_ok\":%lu,\"sibling_crashed\":%lu},"
 		"\"netns_teardown\":{\"runs\":%lu,\"setup_failed\":%lu,\"unshare_ok\":%lu,\"socket_pair_ok\":%lu,\"fork_ok\":%lu,\"setns_ok\":%lu,\"kill_ok\":%lu,\"completed_ok\":%lu},"
 		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},",
-		shm->stats.fd_event_ring_corrupted,
-		shm->stats.fd_event_ring_overwritten,
-		shm->stats.fd_event_payload_corrupt,
-		parent_stats.deferred_free_corrupt_ptr,
-		parent_stats.post_handler_corrupt_ptr,
-		parent_stats.deferred_free_reject,
-		parent_stats.deferred_free_reject_pathname,
-		parent_stats.deferred_free_reject_iovec,
-		parent_stats.deferred_free_reject_sockaddr,
-		parent_stats.deferred_free_reject_other,
-		parent_stats.snapshot_non_heap_reject,
-		shm->stats.rec_canary_stomped,
-		shm->stats.rzs_blanket_reject,
-		shm->stats.retfd_blanket_reject,
-		shm->stats.sibling_mprotect_failed,
-		shm->stats.destroy_object_idx_corrupt,
-		shm->stats.global_obj_uaf_caught,
-		shm->stats.maps_pool_draw_exhausted,
-		shm->stats.maps_reject_pool_empty,
-		shm->stats.maps_reject_bogus_obj_ptr,
-		shm->stats.maps_reject_alloc_track_miss,
-		shm->stats.maps_reject_size_zero,
-		shm->stats.maps_reject_size_too_large,
-		shm->stats.deferred_free_reject_misaligned,
-		shm->stats.deferred_free_reject_corrupt_shape,
-		shm->stats.deferred_free_reject_non_heap,
-		shm->stats.deferred_free_reject_untracked,
-		shm->stats.deferred_free_reject_shared_region,
-		shm->stats.pagecache_canary_corrupt_caught,
-		parent_stats.lock_word_scribbled,
-		shm->stats.lock_held_scribble,
-		shm->stats.chain_replay_len_corrupt,
-		parent_stats.shared_buffer_redirected, parent_stats.range_overlaps_shared_rejects,
-		parent_stats.libc_heap_redirected, parent_stats.libc_heap_embedded_redirected,
-		parent_stats.get_writable_address_scribbled_shm_range,
-		parent_stats.get_writable_address_scribbled_mprotect_mmap,
-		parent_stats.get_writable_address_scribbled_mprotect_shm,
-		parent_stats.get_writable_address_scribbled_postmp_mmap,
-		parent_stats.get_writable_address_scribbled_postmp_shm,
-		parent_stats.get_writable_address_enomem_exhausted,
-		shm->stats.refcount_audit_runs, shm->stats.refcount_audit_fd_anomalies,
-		shm->stats.refcount_audit_mmap_anomalies, shm->stats.refcount_audit_sock_anomalies,
 		shm->stats.fs_lifecycle_tmpfs, shm->stats.fs_lifecycle_ramfs,
 		shm->stats.fs_lifecycle_rdonly, shm->stats.fs_lifecycle_overlay,
 		shm->stats.fs_lifecycle_quota, shm->stats.fs_lifecycle_bind,
