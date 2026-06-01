@@ -241,7 +241,7 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 				 enum corpus_save_reason reason)
 {
 	struct corpus_ring *ring;
-	struct corpus_entry *ent;
+	struct corpus_entry tmp;
 	struct syscallentry *entry;
 	unsigned int nr = rec->nr;
 	unsigned int i;
@@ -263,18 +263,20 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 	if (!corpus_args_replayable(entry))
 		return;
 
-	ring = &minicorpus_shm->rings[nr];
-
-	ring_lock(ring);
-
-	ent = &ring->entries[ring->head % CORPUS_RING_SIZE];
-	ent->args[0] = rec->a1;
-	ent->args[1] = rec->a2;
-	ent->args[2] = rec->a3;
-	ent->args[3] = rec->a4;
-	ent->args[4] = rec->a5;
-	ent->args[5] = rec->a6;
-	ent->num_args = entry->num_args;
+	/* Build the entry on the stack unlocked.  None of this work touches
+	 * shared state, so holding ring->lock across the arg copy and the
+	 * argtype walk would serialise every other saver / replayer on this
+	 * syscall's ring for no contention reason.  Zero the whole local
+	 * struct so any future corpus_entry field is implicitly initialised
+	 * rather than silently publishing uninitialised stack bytes. */
+	memset(&tmp, 0, sizeof(tmp));
+	tmp.args[0] = rec->a1;
+	tmp.args[1] = rec->a2;
+	tmp.args[2] = rec->a3;
+	tmp.args[3] = rec->a4;
+	tmp.args[4] = rec->a5;
+	tmp.args[5] = rec->a6;
+	tmp.num_args = entry->num_args;
 
 	/* Saved fd numbers are stale on replay — zero them out so mutate_arg
 	 * gets a fresh fd rather than trying to reuse a closed one.  Same
@@ -286,13 +288,16 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 		if (is_fdarg(entry->argtype[i]) ||
 		    entry->argtype[i] == ARG_ADDRESS ||
 		    entry->argtype[i] == ARG_NON_NULL_ADDRESS)
-			ent->args[i] = 0;
+			tmp.args[i] = 0;
 	}
 
+	ring = &minicorpus_shm->rings[nr];
+
+	ring_lock(ring);
+	ring->entries[ring->head % CORPUS_RING_SIZE] = tmp;
 	ring->head++;
 	if (ring->count < CORPUS_RING_SIZE)
 		ring->count++;
-
 	ring_unlock(ring);
 
 	__atomic_fetch_add(&minicorpus_shm->mutations, 1UL, __ATOMIC_RELAXED);
