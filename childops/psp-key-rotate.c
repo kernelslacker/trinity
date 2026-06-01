@@ -909,12 +909,57 @@ static int psp_key_rotate_iter_family_resolve(struct genl_ctx *psp_ctx,
 	return 0;
 }
 
+/* Open a TCP socket, fire a best-effort loopback connect(), then
+ * install the initial PSP key and bind the SA to the socket via the
+ * assoc command (the spec-named spi_set step).  Returns the socket fd
+ * on success or -1 if the iteration should bail to iter_one's out:
+ * cleanup.  The key install / assoc themselves are best-effort: their
+ * stats are recorded inline and ns_unsupported_psp_key_rotate may
+ * latch from psp_key_rotate_cmd's errno, which the caller checks
+ * before entering the traffic loop. */
+static int psp_key_rotate_iter_socket_install(struct genl_ctx *psp_ctx,
+					      uint32_t dev_id)
+{
+	struct sockaddr_in peer;
+	int sockfd;
+	int rc;
+
+	sockfd = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
+	if (sockfd < 0) {
+		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	apply_timeouts(sockfd);
+	memset(&peer, 0, sizeof(peer));
+	peer.sin_family      = AF_INET;
+	peer.sin_port        = htons(0xCAFE);
+	peer.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	(void)connect(sockfd, (struct sockaddr *)&peer, sizeof(peer));
+
+	/* Initial key install. */
+	rc = psp_key_rotate_cmd(psp_ctx, dev_id);
+	if (rc == 0)
+		__atomic_add_fetch(&shm->stats.psp_key_rotate_key_install_ok,
+				   1, __ATOMIC_RELAXED);
+	else if (rc < 0 && errno_is_unsupported(-rc))
+		ns_unsupported_psp_key_rotate = true;
+
+	/* Bind the SA to the socket via the assoc command (spec stat:
+	 * spi_set_ok -- see spec-deviation note in the file header). */
+	rc = psp_tx_assoc_cmd(psp_ctx, dev_id, sockfd);
+	if (rc == 0)
+		__atomic_add_fetch(&shm->stats.psp_key_rotate_spi_set_ok,
+				   1, __ATOMIC_RELAXED);
+
+	return sockfd;
+}
+
 static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 {
 	struct nl_ctx rtnl = { .fd = -1 };
 	struct genl_ctx psp_ctx = { .nl = { .fd = -1 } };
 	int sockfd = -1;
-	struct sockaddr_in peer;
 	uint32_t dev_id = 0;
 	int rc;
 
@@ -927,33 +972,9 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	if (psp_key_rotate_iter_family_resolve(&psp_ctx, &dev_id) != 0)
 		goto out;
 
-	sockfd = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
-	if (sockfd < 0) {
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	sockfd = psp_key_rotate_iter_socket_install(&psp_ctx, dev_id);
+	if (sockfd < 0)
 		goto out;
-	}
-	apply_timeouts(sockfd);
-	memset(&peer, 0, sizeof(peer));
-	peer.sin_family      = AF_INET;
-	peer.sin_port        = htons(0xCAFE);
-	peer.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-	(void)connect(sockfd, (struct sockaddr *)&peer, sizeof(peer));
-
-	/* Initial key install. */
-	rc = psp_key_rotate_cmd(&psp_ctx, dev_id);
-	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_key_install_ok,
-				   1, __ATOMIC_RELAXED);
-	else if (rc < 0 && errno_is_unsupported(-rc))
-		ns_unsupported_psp_key_rotate = true;
-
-	/* Bind the SA to the socket via the assoc command (spec stat:
-	 * spi_set_ok -- see spec-deviation note in the file header). */
-	rc = psp_tx_assoc_cmd(&psp_ctx, dev_id, sockfd);
-	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_spi_set_ok,
-				   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_psp_key_rotate)
 		goto teardown;
