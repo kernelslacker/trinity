@@ -716,7 +716,39 @@ struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir)
 	if (num == 0)
 		return NULL;
 
-	iov = zmalloc_tracked(num * sizeof(struct iovec));	/* freed by generic_free_arg */
+	/*
+	 * Oversize the backing allocation to UIO_MAXIOV slots regardless
+	 * of num so a sibling scribble of the count field (rec->aN for
+	 * ARG_IOVEC / ARG_IOVECLEN consumers, msg->msg_iovlen for the
+	 * recv/sendmsg paths, or sqe->len for io_uring_register) cannot
+	 * grow past the chunk end.  Trinity does not scrub the count
+	 * itself: handle_arg_iovec publishes num_entries into the paired
+	 * ABI slot, and that slot sits in shm where any sibling syscall
+	 * can stomp it before the kernel walks the iovec at syscall
+	 * entry.  The kernel reads M entries from userspace; bytes past
+	 * entry N-1 used to be live libc free-list chunk metadata
+	 * (fwd/bk pointers, size headers, adjacent allocations) which
+	 * the kernel then interpreted as (iov_base, iov_len) pairs.  For
+	 * IOV_KERNEL_WRITE callers (readv / preadv / preadv2 /
+	 * process_vm_readv / process_madvise / recvmsg / recvmmsg) the
+	 * kernel then wrote received data through those phantom heap
+	 * pointers, surfacing later as the dominant __zmalloc -> malloc
+	 * -> malloc_printerr -> abort cluster.  For process_madvise
+	 * specifically, MADV_PAGEOUT / MADV_COLLAPSE zaps PTEs at the
+	 * phantom address -- if it lands in the per-child libc brk
+	 * arena, the next malloc trips glibc's chunk-metadata corruption
+	 * detector (the pattern documented at process_madvise.c:24-37).
+	 *
+	 * Oversizing to UIO_MAXIOV * sizeof(struct iovec) (16 KB) bounds
+	 * the kernel's OOB walk at the chunk boundary; entries [num,
+	 * UIO_MAXIOV) are zeroed by zmalloc so the kernel iov_iter walks
+	 * NULL / 0 pairs as no-ops.  Beyond UIO_MAXIOV the kernel
+	 * rejects at import_iovec with EINVAL, so the heap-overflow
+	 * target is structurally closed.  Pairs with a follow-up that
+	 * migrates this allocation off the libc heap entirely for the
+	 * structural defense.
+	 */
+	iov = zmalloc_tracked(UIO_MAXIOV * sizeof(struct iovec));	/* freed by generic_free_arg */
 
 	for (i = 0; i < num; i++) {
 		enum iovec_entry_shape shape = pick_iovec_entry_shape(i, dir);
