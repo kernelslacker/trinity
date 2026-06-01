@@ -1887,6 +1887,24 @@ static void dump_strategy_stats_header(void)
 	output(0, "strategy picker: %s\n", picker_mode_name(mode));
 }
 
+/* Forced-intervention cohort.  These windows ran STRATEGY_RANDOM
+ * over the picker's head because the kcov plateau detector
+ * reported the fleet was stalled; their pulls/reward are
+ * deliberately NOT folded into the per-arm bandit_pulls[] /
+ * bandit_reward_calls[] series so a forced-RANDOM intervention
+ * does not get conflated with a policy-chosen RANDOM in the
+ * learner's history. */
+static void dump_strategy_stats_plateau_forced_cohort(void)
+{
+	unsigned long plateau_forced;
+
+	plateau_forced = __atomic_load_n(&shm->stats.plateau_forced_windows,
+					 __ATOMIC_RELAXED);
+	if (plateau_forced > 0)
+		output(0, "  plateau-forced windows: %lu (forced over picker via SR_PLATEAU_FORCE, excluded from UCB learner)\n",
+		       plateau_forced);
+}
+
 void dump_strategy_stats(void)
 {
 	unsigned long total_pulls = 0;
@@ -1895,19 +1913,10 @@ void dump_strategy_stats(void)
 	int i;
 
 	dump_strategy_stats_header();
+	dump_strategy_stats_plateau_forced_cohort();
 
-	/* Forced-intervention cohort.  These windows ran STRATEGY_RANDOM
-	 * over the picker's head because the kcov plateau detector
-	 * reported the fleet was stalled; their pulls/reward are
-	 * deliberately NOT folded into the per-arm bandit_pulls[] /
-	 * bandit_reward_calls[] series so a forced-RANDOM intervention
-	 * does not get conflated with a policy-chosen RANDOM in the
-	 * learner's history. */
 	plateau_forced = __atomic_load_n(&shm->stats.plateau_forced_windows,
 					 __ATOMIC_RELAXED);
-	if (plateau_forced > 0)
-		output(0, "  plateau-forced windows: %lu (forced over picker via SR_PLATEAU_FORCE, excluded from UCB learner)\n",
-		       plateau_forced);
 
 	/* Plateau intervention mode rotation distribution.  Suppressed when
 	 * no plateau-forced window has run yet (plateau_forced == 0); when
