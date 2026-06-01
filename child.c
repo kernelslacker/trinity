@@ -695,14 +695,26 @@ static void init_child_isolate_io(void)
 }
 
 /*
- * Called from the fork_children loop in the main process.
+ * Freeze the shared-memory regions this child relies on so that a
+ * sibling's stray kernel-side write can't scribble them mid-run.
+ * Four PROT_READ pulls, each independently justified by its
+ * inline comment:
+ *
+ *   - the per-sibling childdata regions (initial sweep + freeze_gen
+ *     bump so existing siblings re-sweep on their next loop top
+ *     check),
+ *   - the shared pids[] array (a single allocation that doesn't
+ *     grow, hence the one-shot mprotect here rather than the
+ *     per-loop catch-up),
+ *   - the edgepair published mirror,
+ *   - the stats published mirror.
+ *
+ * Also re-publishes child->num from the stack-based childno before
+ * the freeze so the freeze itself observes a known-good num field.
  */
-static void init_child(struct childdata *child, int childno)
+static void init_child_freeze_shared(struct childdata *child, int childno)
 {
-	pid_t pid = getpid();
 	unsigned int new_gen;
-
-	init_child_isolate_io();
 
 	/* Re-set num from the stack-based childno in case shared memory
 	 * was corrupted by a sibling's stray write. */
@@ -752,6 +764,18 @@ static void init_child(struct childdata *child, int childno)
 	 * arg pointer could scribble fleet_op_count between publishes and
 	 * perturb rotation / termination behavior. */
 	stats_published_freeze();
+}
+
+/*
+ * Called from the fork_children loop in the main process.
+ */
+static void init_child(struct childdata *child, int childno)
+{
+	pid_t pid = getpid();
+
+	init_child_isolate_io();
+
+	init_child_freeze_shared(child, childno);
 
 	/* Wait for parent to set our childno */
 	while (__atomic_load_n(&pids[childno], __ATOMIC_ACQUIRE) != pid) {
