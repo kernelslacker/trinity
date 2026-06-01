@@ -460,13 +460,34 @@ static void netlink_monitor_race_iter_membership_churn(struct netlink_monitor_ra
 				   1, __ATOMIC_RELAXED);
 }
 
+/*
+ * Phase: final RTM_NEWADDR + drain after the membership churn.  This
+ * is the broadcast path running against a freshly-mutated subscriber
+ * set -- the after-shot of the drop/add race window.  The DELADDR for
+ * this NEWADDR happens at the out: cleanup via the addr_added latch.
+ */
+static void netlink_monitor_race_iter_final_burst(struct netlink_monitor_race_iter_ctx *ctx)
+{
+	unsigned int drained;
+
+	if (build_addr(&ctx->mut, RTM_NEWADDR, ctx->ifindex, ctx->addr) == 0) {
+		ctx->addr_added = true;
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
+				   1, __ATOMIC_RELAXED);
+	}
+
+	drained = drain_monitor(&ctx->mon);
+	if (drained)
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race_recv_drained,
+				   drained, __ATOMIC_RELAXED);
+}
+
 bool netlink_monitor_race(struct childdata *child)
 {
 	struct netlink_monitor_race_iter_ctx ctx = {
 		.mon = { .fd = -1 },
 		.mut = { .fd = -1 },
 	};
-	unsigned int drained;
 
 	(void)child;
 
@@ -485,22 +506,8 @@ bool netlink_monitor_race(struct childdata *child)
 		goto out;
 
 	netlink_monitor_race_iter_address_burst(&ctx);
-
 	netlink_monitor_race_iter_membership_churn(&ctx);
-
-	/* Final NEWADDR/DELADDR cycle so an event fires after the
-	 * membership churn -- this is the broadcast path running against
-	 * a freshly-mutated subscriber set. */
-	if (build_addr(&ctx.mut, RTM_NEWADDR, ctx.ifindex, ctx.addr) == 0) {
-		ctx.addr_added = true;
-		__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
-				   1, __ATOMIC_RELAXED);
-	}
-
-	drained = drain_monitor(&ctx.mon);
-	if (drained)
-		__atomic_add_fetch(&shm->stats.netlink_monitor_race_recv_drained,
-				   drained, __ATOMIC_RELAXED);
+	netlink_monitor_race_iter_final_burst(&ctx);
 
 out:
 	if (ctx.mut.fd >= 0) {
