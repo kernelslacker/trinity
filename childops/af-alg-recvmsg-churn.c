@@ -357,46 +357,75 @@ static void recv_rotating(int fd)
 	free(big);
 }
 
+/*
+ * Per-invocation state shared across the alg_recvmsg_iter_* helpers.
+ * sa is filled by setup and consumed by arm's bind().  parent_fd /
+ * child_fd default to -1 via the orchestrator's designated initialiser
+ * so the teardown helper's >= 0 gates skip work for fds that were
+ * never opened (e.g. when pick_algorithm bails before socket()).
+ */
+struct alg_recvmsg_iter_ctx {
+	struct sockaddr_alg	sa;
+	int			parent_fd;
+	int			child_fd;
+};
+
+/*
+ * Close whichever fds the iteration actually opened.  Runs on every
+ * exit path -- success and any early bail from setup or arm.  Both
+ * fds default to -1 via the orchestrator's designated initialiser
+ * so the >= 0 gates skip work for resources that were never set up.
+ * child_fd is closed before parent_fd to match the pre-extraction
+ * teardown order (close(op_fd); close(sk)).
+ */
+static void alg_recvmsg_iter_teardown(struct alg_recvmsg_iter_ctx *ictx)
+{
+	if (ictx->child_fd >= 0)
+		close(ictx->child_fd);
+	if (ictx->parent_fd >= 0)
+		close(ictx->parent_fd);
+}
+
 static void iter_one(void)
 {
-	struct sockaddr_alg sa;
+	struct alg_recvmsg_iter_ctx ictx = {
+		.parent_fd = -1,
+		.child_fd = -1,
+	};
 	struct timeval tv;
 	enum alg_type_idx type;
 	const char *name;
 	unsigned char keybuf[ARC_KEY_MAX];
 	unsigned char ivbuf[ARC_IV_MAX];
-	int sk, op_fd;
 
 	if (!pick_algorithm(&type, &name))
-		return;
+		goto out;
 
-	sk = socket(AF_ALG, SOCK_SEQPACKET, 0);
-	if (sk < 0) {
+	ictx.parent_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
+	if (ictx.parent_fd < 0) {
 		if (errno == EAFNOSUPPORT)
 			alg_unsupported = true;
-		return;
+		goto out;
 	}
 
-	memset(&sa, 0, sizeof(sa));
-	sa.salg_family = AF_ALG;
-	strncpy((char *)sa.salg_type, alg_type_strings[type],
-		sizeof(sa.salg_type) - 1);
-	strncpy((char *)sa.salg_name, name, sizeof(sa.salg_name) - 1);
+	memset(&ictx.sa, 0, sizeof(ictx.sa));
+	ictx.sa.salg_family = AF_ALG;
+	strncpy((char *)ictx.sa.salg_type, alg_type_strings[type],
+		sizeof(ictx.sa.salg_type) - 1);
+	strncpy((char *)ictx.sa.salg_name, name, sizeof(ictx.sa.salg_name) - 1);
 
-	if (bind(sk, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		close(sk);
-		return;
-	}
+	if (bind(ictx.parent_fd, (struct sockaddr *)&ictx.sa,
+		 sizeof(ictx.sa)) < 0)
+		goto out;
 
-	op_fd = accept(sk, NULL, NULL);
-	if (op_fd < 0) {
-		close(sk);
-		return;
-	}
+	ictx.child_fd = accept(ictx.parent_fd, NULL, NULL);
+	if (ictx.child_fd < 0)
+		goto out;
 
 	tv.tv_sec = ARC_RECVMSG_TIMEO_S;
 	tv.tv_usec = 0;
-	(void)setsockopt(op_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+	(void)setsockopt(ictx.child_fd, SOL_SOCKET, SO_RCVTIMEO,
+			 &tv, sizeof(tv));
 
 	if (ONE_IN(2)) {
 		size_t klen = ONE_IN(8) ? 0 :
@@ -404,7 +433,7 @@ static void iter_one(void)
 
 		if (klen > 0)
 			generate_rand_bytes(keybuf, klen);
-		send_cmsg_only(op_fd, ALG_SET_KEY, keybuf, klen);
+		send_cmsg_only(ictx.child_fd, ALG_SET_KEY, keybuf, klen);
 		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_setkey_sent,
 				   1, __ATOMIC_RELAXED);
 	}
@@ -415,26 +444,26 @@ static void iter_one(void)
 
 		if (ilen > 0)
 			generate_rand_bytes(ivbuf, ilen);
-		send_cmsg_only(op_fd, ALG_SET_IV, ivbuf, ilen);
+		send_cmsg_only(ictx.child_fd, ALG_SET_IV, ivbuf, ilen);
 		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_iv_sent,
 				   1, __ATOMIC_RELAXED);
 	}
 
-	if (send_rotating_payload(op_fd))
+	if (send_rotating_payload(ictx.child_fd))
 		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_oob_iov,
 				   1, __ATOMIC_RELAXED);
 
 	/* Always emit the af_alg_pull_tsgl trigger shape (cmsg-only,
 	 * empty payload, no MSG_MORE) before recvmsg() so the slab-OOB
 	 * window is exercised on every iter, not just statistically. */
-	send_empty_cmsg_no_more(op_fd);
+	send_empty_cmsg_no_more(ictx.child_fd);
 	__atomic_add_fetch(&shm->stats.af_alg_recvmsg_empty_cmsg_no_more,
 			   1, __ATOMIC_RELAXED);
 
-	recv_rotating(op_fd);
+	recv_rotating(ictx.child_fd);
 
-	close(op_fd);
-	close(sk);
+out:
+	alg_recvmsg_iter_teardown(&ictx);
 }
 
 bool af_alg_recvmsg_churn(struct childdata *child)
