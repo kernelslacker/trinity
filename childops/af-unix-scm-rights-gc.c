@@ -790,6 +790,36 @@ static void af_unix_scm_rights_gc_drop_refs(struct af_unix_scm_rights_gc_iter_ct
 }
 
 /*
+ * Phase 4: prod unix_gc into running.  Half the time fire a fresh
+ * SCM_RIGHTS attach over the spare sv4 pair -- drives unix_inflight()
+ * and the gc-schedule path; the other half just usleep(0) and let the
+ * workqueue tick catch up.  extra_fd is opened, used, and closed inside
+ * the helper so the caller's teardown stays simple.  Bumps trigger_ok
+ * on either branch on best effort.
+ */
+static void af_unix_scm_rights_gc_trigger_gc(struct af_unix_scm_rights_gc_iter_ctx *it)
+{
+	int extra_fd;
+
+	if (RAND_BOOL()) {
+		extra_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
+		if (extra_fd >= 0) {
+			ssize_t s = send_scm_fd(it->sv4[1], extra_fd);
+
+			if (s >= 0) {
+				__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_trigger_ok,
+						   1, __ATOMIC_RELAXED);
+			}
+			(void)close(extra_fd);
+		}
+	} else {
+		(void)usleep(0);
+		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_trigger_ok,
+				   1, __ATOMIC_RELAXED);
+	}
+}
+
+/*
  * One outer iteration: build a 3-pair SCM_RIGHTS cycle, drop userspace
  * refs to make it gc-only-reachable, run a small race burst.  All
  * counters are best-effort -- iter_one returns void; the per-step bumps
@@ -806,7 +836,6 @@ static void iter_one(void)
 		.use_iouring = false,
 		.cycle_ok = false,
 	};
-	int extra_fd = -1;
 	unsigned int races;
 
 	if (af_unix_scm_rights_gc_setup(&it) != 0)
@@ -814,28 +843,7 @@ static void iter_one(void)
 
 	af_unix_scm_rights_gc_build_cycle(&it);
 	af_unix_scm_rights_gc_drop_refs(&it);
-
-	/* 4) Trigger gc.  Half the time fire a fresh SCM_RIGHTS attach
-	 *    over the spare sv4 pair (drives unix_inflight() and the gc
-	 *    schedule path); the other half just yield and let the
-	 *    workqueue catch up. */
-	if (RAND_BOOL()) {
-		extra_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
-		if (extra_fd >= 0) {
-			ssize_t s = send_scm_fd(it.sv4[1], extra_fd);
-
-			if (s >= 0) {
-				__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_trigger_ok,
-						   1, __ATOMIC_RELAXED);
-			}
-			(void)close(extra_fd);
-			extra_fd = -1;
-		}
-	} else {
-		(void)usleep(0);
-		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_trigger_ok,
-				   1, __ATOMIC_RELAXED);
-	}
+	af_unix_scm_rights_gc_trigger_gc(&it);
 
 	/* 5) Race burst.  Two shapes share the same loop body conceptually:
 	 *
@@ -898,7 +906,6 @@ out:
 	if (it.sv4[0] >= 0) (void)close(it.sv4[0]);
 	if (it.sv4[1] >= 0) (void)close(it.sv4[1]);
 	if (it.iouring_fd >= 0) (void)close(it.iouring_fd);
-	if (extra_fd >= 0) (void)close(extra_fd);
 }
 
 /*
