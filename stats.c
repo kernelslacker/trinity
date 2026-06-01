@@ -3365,19 +3365,8 @@ static void dump_stats_per_syscall_tables(void)
 	stats_emit_header();
 }
 
-void dump_stats(void)
+static void dump_stats_fd_tracking(void)
 {
-	unsigned int i;
-
-	if (stats_json) {
-		dump_stats_json();
-		return;
-	}
-
-	dump_stats_runtime_header();
-
-	dump_stats_per_syscall_tables();
-
 	if (parent_stats.fault_injected) {
 		stat_row("fault_injection", "armed_fail_nth",  parent_stats.fault_injected);
 		stat_row("fault_injection", "returned_enomem", parent_stats.fault_consumed);
@@ -3439,6 +3428,22 @@ void dump_stats(void)
 			stat_row("fd_provider_outstanding", name, outstanding);
 		}
 	}
+}
+
+void dump_stats(void)
+{
+	unsigned int i;
+
+	if (stats_json) {
+		dump_stats_json();
+		return;
+	}
+
+	dump_stats_runtime_header();
+
+	dump_stats_per_syscall_tables();
+
+	dump_stats_fd_tracking();
 
 	if (shm->stats.fd_oracle_anomalies)
 		stat_row("oracle", "fd_anomalies",   shm->stats.fd_oracle_anomalies);
