@@ -144,8 +144,10 @@ static const uint32_t loopback_pool[NR_LOOPBACK_ADDRS] = {
  * connect helper packs into the CONNECTX address list. */
 struct sctp_assoc_churn_iter_ctx {
 	int srv;
+	int cli;
 	int sock_type;
 	uint16_t srv_port_n;
+	uint16_t cli_port_n;
 };
 
 static void fill_sin(struct sockaddr_in *sa, uint32_t addr_h, uint16_t port_n)
@@ -270,6 +272,48 @@ static int sctp_assoc_churn_iter_setup_server(struct sctp_assoc_churn_iter_ctx *
 	return 0;
 }
 
+/*
+ * Phase 2: open the client SCTP socket, bind a separate primary
+ * (127.0.0.4:0 — distinct from the server's primary so the assoc has
+ * unambiguous local-vs-remote endpoints), recover the kernel-assigned
+ * ephemeral port via getsockname, then flip both client and server
+ * fds to O_NONBLOCK.  Non-blocking from here on so a wedged loopback
+ * can't pin us past child.c's SIGALRM(1s) safety net — CONNECTX
+ * returning EINPROGRESS later is fine and the assoc completes
+ * asynchronously.  Returns 0 on success or -1 if the iteration should
+ * bail to the out: cleanup path.
+ */
+static int sctp_assoc_churn_iter_setup_client(struct sctp_assoc_churn_iter_ctx *ctx)
+{
+	struct sockaddr_in cli_primary;
+	socklen_t slen;
+
+	ctx->cli = socket(AF_INET, ctx->sock_type | SOCK_CLOEXEC, IPPROTO_SCTP);
+	if (ctx->cli < 0) {
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	fill_sin(&cli_primary, loopback_pool[3], 0);
+	if (bind(ctx->cli, (struct sockaddr *)&cli_primary,
+		 sizeof(cli_primary)) < 0) {
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	slen = sizeof(cli_primary);
+	if (getsockname(ctx->cli, (struct sockaddr *)&cli_primary, &slen) < 0) {
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	ctx->cli_port_n = cli_primary.sin_port;
+
+	(void)fcntl(ctx->cli, F_SETFL, O_NONBLOCK);
+	(void)fcntl(ctx->srv, F_SETFL, O_NONBLOCK);
+	return 0;
+}
+
 bool sctp_assoc_churn(struct childdata *child)
 {
 	/* sockaddr buffer space — sized for the whole pool plus a little
@@ -277,17 +321,14 @@ bool sctp_assoc_churn(struct childdata *child)
 	 * whole pack-buffer fits in well under a kilobyte and there's
 	 * nothing to free on the failure paths. */
 	struct sockaddr_in addrs[NR_LOOPBACK_ADDRS];
-	struct sockaddr_in cli_primary;
 	struct sctp_assoc_churn_iter_ctx ctx = {
 		.srv = -1,
+		.cli = -1,
 	};
-	socklen_t slen;
-	int cli = -1;
 	int srv_acc = -1;
 	int peeled = -1;
 	int rc;
 	int addr_len;
-	uint16_t cli_port_n;
 	sctp_assoc_t_compat assoc_id = 0;
 	unsigned int iters;
 	unsigned int i;
@@ -304,39 +345,8 @@ bool sctp_assoc_churn(struct childdata *child)
 	if (sctp_assoc_churn_iter_setup_server(&ctx) != 0)
 		goto out;
 
-	/* Client side: bind a separate primary so the assoc has
-	 * unambiguous local-vs-remote endpoints, plus a second multi-
-	 * home address for symmetry.  Also pinned to a known port via
-	 * bind(0)+getsockname so the connectx path uses a stable
-	 * 4-tuple. */
-	cli = socket(AF_INET, ctx.sock_type | SOCK_CLOEXEC, IPPROTO_SCTP);
-	if (cli < 0) {
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (sctp_assoc_churn_iter_setup_client(&ctx) != 0)
 		goto out;
-	}
-	fill_sin(&cli_primary, loopback_pool[3], 0);
-	if (bind(cli, (struct sockaddr *)&cli_primary,
-		 sizeof(cli_primary)) < 0) {
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-	slen = sizeof(cli_primary);
-	if (getsockname(cli, (struct sockaddr *)&cli_primary, &slen) < 0) {
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-	cli_port_n = cli_primary.sin_port;
-	(void)cli_port_n;
-
-	/* Non-blocking from here on so a wedged loopback can't pin us
-	 * past SIGALRM(1s).  Connectx returning EINPROGRESS is fine —
-	 * the assoc completes asynchronously and subsequent send()s
-	 * either piggyback on the cookie or get queued. */
-	(void)fcntl(cli, F_SETFL, O_NONBLOCK);
-	(void)fcntl(ctx.srv, F_SETFL, O_NONBLOCK);
 
 	/* SCTP_SOCKOPT_CONNECTX with the server's full multi-address
 	 * set (3 addrs).  Kernel returns the new assoc_id as the
@@ -344,7 +354,7 @@ bool sctp_assoc_churn(struct childdata *child)
 	 * non-standard but it's how the SCTP API was wired.  We grab it
 	 * for the optional peeloff step later. */
 	addr_len = pack_addrs(addrs, NR_LOOPBACK_ADDRS, 0, 3, ctx.srv_port_n);
-	rc = setsockopt(cli, IPPROTO_SCTP, SCTP_SOCKOPT_CONNECTX,
+	rc = setsockopt(ctx.cli, IPPROTO_SCTP, SCTP_SOCKOPT_CONNECTX,
 			addrs, (socklen_t)addr_len);
 	if (rc < 0 && errno != EINPROGRESS) {
 		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_connect_failed,
@@ -381,7 +391,7 @@ bool sctp_assoc_churn(struct childdata *child)
 	 * actually transitioned to ESTABLISHED on both ends.  Otherwise
 	 * the post-handshake bindx ADD races against the cookie itself,
 	 * which isn't the bug class we're targeting. */
-	churn_send(cli);
+	churn_send(ctx.cli);
 	if (srv_acc >= 0)
 		churn_send(srv_acc);
 
@@ -402,8 +412,8 @@ bool sctp_assoc_churn(struct childdata *child)
 		 *    side runs sctp_send_asconf_add_ip synchronously
 		 *    before the setsockopt returns to userspace). */
 		addr_len = pack_addrs(addrs, NR_LOOPBACK_ADDRS,
-				      rot_idx, 1, cli_port_n);
-		rc = setsockopt(cli, IPPROTO_SCTP, SCTP_SOCKOPT_BINDX_ADD,
+				      rot_idx, 1, ctx.cli_port_n);
+		rc = setsockopt(ctx.cli, IPPROTO_SCTP, SCTP_SOCKOPT_BINDX_ADD,
 				addrs, (socklen_t)addr_len);
 		if (rc == 0)
 			__atomic_add_fetch(
@@ -416,7 +426,7 @@ bool sctp_assoc_churn(struct childdata *child)
 
 		/* b) Send during the ASCONF reply window — race window
 		 *    against ASCONF parameter parsing on the server. */
-		churn_send(cli);
+		churn_send(ctx.cli);
 		if (srv_acc >= 0)
 			churn_send(srv_acc);
 
@@ -424,7 +434,7 @@ bool sctp_assoc_churn(struct childdata *child)
 		 *    sctp_send_asconf_del_ip path; if the data send
 		 *    above hasn't been ACKed yet, this races a path
 		 *    deletion against in-flight DATA on that path. */
-		rc = setsockopt(cli, IPPROTO_SCTP, SCTP_SOCKOPT_BINDX_REM,
+		rc = setsockopt(ctx.cli, IPPROTO_SCTP, SCTP_SOCKOPT_BINDX_REM,
 				addrs, (socklen_t)addr_len);
 		if (rc == 0)
 			__atomic_add_fetch(
@@ -454,7 +464,7 @@ bool sctp_assoc_churn(struct childdata *child)
 		memset(&parg, 0, sizeof(parg));
 		parg.associd = assoc_id;
 		parg.sd = -1;
-		rc = getsockopt(cli, IPPROTO_SCTP, SCTP_SOCKOPT_PEELOFF,
+		rc = getsockopt(ctx.cli, IPPROTO_SCTP, SCTP_SOCKOPT_PEELOFF,
 				&parg, &plen);
 		if (rc == 0 && parg.sd >= 0) {
 			peeled = parg.sd;
@@ -468,7 +478,7 @@ bool sctp_assoc_churn(struct childdata *child)
 		}
 	}
 
-	(void)shutdown(cli, SHUT_RDWR);
+	(void)shutdown(ctx.cli, SHUT_RDWR);
 	if (srv_acc >= 0)
 		(void)shutdown(srv_acc, SHUT_RDWR);
 	if (peeled >= 0)
@@ -479,8 +489,8 @@ out:
 		close(peeled);
 	if (srv_acc >= 0)
 		close(srv_acc);
-	if (cli >= 0)
-		close(cli);
+	if (ctx.cli >= 0)
+		close(ctx.cli);
 	if (ctx.srv >= 0)
 		close(ctx.srv);
 	__atomic_add_fetch(&shm->stats.sctp_assoc_churn_cycles,
