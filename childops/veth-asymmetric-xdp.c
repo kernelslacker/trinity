@@ -173,6 +173,30 @@ static bool *const kind_latch[PK_NR] = {
 	[PK_MACVLAN] = &ns_unsupported_macvlan,
 };
 
+/* Per-invocation state shared across the extracted phase helpers.
+ * prog_fd / raw / ctx.fd default to -1 via the orchestrator's
+ * designated initialiser so the teardown helper can close them
+ * unconditionally regardless of which earlier phase bailed.  pk is
+ * captured up front from pick_kind() before the netlink ctx is opened
+ * so the teardown helper can still decide whether b_idx needs an
+ * explicit DELLINK (ipvlan/macvlan only).  Name + queue-count fields
+ * are filled in by setup; a_idx/b_idx by create_pair; prog_fd by
+ * load_xdp; raw by drive_burst. */
+struct veth_xdp_iter_ctx {
+	struct nl_ctx	ctx;
+	char		a_name[IFNAMSIZ];
+	char		b_name[IFNAMSIZ];
+	enum pair_kind	pk;
+	__u32		ntx;
+	__u32		nrx;
+	__u32		ptx;
+	__u32		prx;
+	int		a_idx;
+	int		b_idx;
+	int		prog_fd;
+	int		raw;
+};
+
 static int sys_bpf(int cmd, union bpf_attr *attr, unsigned int size)
 {
 	return (int)syscall(__NR_bpf, cmd, attr, size);
@@ -502,27 +526,58 @@ static enum pair_kind pick_kind(void)
 	return PK_NR;
 }
 
+/*
+ * Phase 1: roll the asymmetric queue counts and pick the pair's
+ * interface names.  The shape ntx != nrx, ptx != prx, and (ntx,nrx)
+ * != (ptx,prx) is what makes the rcv-side txq-lookup walk past
+ * matching parameters on the peer; q_choices[] has 4 entries so the
+ * 8-iter re-roll loop converges quickly.  (ptx,prx) are unused for
+ * ipvlan/macvlan slaves but rolling them unconditionally keeps the
+ * loop simple.  Names share the same 16-bit g_iter suffix so a
+ * child's pairs correlate by suffix across iterations.  Cheap and
+ * infallible -- no return value.
+ */
+static void veth_xdp_iter_setup(struct veth_xdp_iter_ctx *ictx)
+{
+	unsigned int i;
+
+	for (i = 0; i < 8; i++) {
+		ictx->ntx = pick_q();
+		ictx->nrx = pick_q();
+		ictx->ptx = pick_q();
+		ictx->prx = pick_q();
+		if (ictx->ntx != ictx->nrx && ictx->ptx != ictx->prx &&
+		    (ictx->ntx != ictx->ptx || ictx->nrx != ictx->prx))
+			break;
+	}
+
+	g_iter++;
+	snprintf(ictx->a_name, sizeof(ictx->a_name), "vax%ua",
+		 g_iter & 0xffffU);
+	snprintf(ictx->b_name, sizeof(ictx->b_name), "vax%ub",
+		 g_iter & 0xffffU);
+}
+
 bool veth_asymmetric_xdp(struct childdata *child)
 {
-	struct nl_ctx ctx = { .fd = -1 };
+	struct veth_xdp_iter_ctx ictx = {
+		.ctx = { .fd = -1 },
+		.prog_fd = -1,
+		.raw = -1,
+	};
 	struct nl_open_opts opts = {
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 	};
-	int prog_fd = -1, raw = -1;
-	int a_idx = 0, b_idx = 0;
-	__u32 ntx, nrx, ptx, prx;
 	unsigned int burst, i;
-	char a_name[IFNAMSIZ], b_name[IFNAMSIZ];
-	enum pair_kind pk;
 	int rc;
 
 	(void)child;
 
 	__atomic_add_fetch(&shm->stats.veth_asym_iters, 1, __ATOMIC_RELAXED);
 
-	pk = pick_kind();
-	if (pk == PK_NR)
+	ictx.pk = pick_kind();
+	if (ictx.pk == PK_NR)
 		return true;
 
 	if (!vax_unshared) {
@@ -542,31 +597,17 @@ bool veth_asymmetric_xdp(struct childdata *child)
 		vax_unshared = true;
 	}
 
-	if (nl_open(&ctx, &opts) < 0)
+	if (nl_open(&ictx.ctx, &opts) < 0)
 		goto out;
 
-	/* Asymmetric: ntx != nrx and (ntx,nrx) != (ptx,prx).  Bounded
-	 * roll loop -- q_choices has 4 entries so a few rolls suffice.
-	 * (ptx,prx) are unused for ipvlan/macvlan slaves but rolling them
-	 * unconditionally keeps the loop simple.) */
-	for (i = 0; i < 8; i++) {
-		ntx = pick_q();
-		nrx = pick_q();
-		ptx = pick_q();
-		prx = pick_q();
-		if (ntx != nrx && ptx != prx && (ntx != ptx || nrx != prx))
-			break;
-	}
+	veth_xdp_iter_setup(&ictx);
 
-	g_iter++;
-	snprintf(a_name, sizeof(a_name), "vax%ua", g_iter & 0xffffU);
-	snprintf(b_name, sizeof(b_name), "vax%ub", g_iter & 0xffffU);
-
-	rc = vax_create_dispatch(&ctx, pk, a_name, b_name,
-				 ntx, nrx, ptx, prx, &a_idx, &b_idx);
+	rc = vax_create_dispatch(&ictx.ctx, ictx.pk, ictx.a_name, ictx.b_name,
+				 ictx.ntx, ictx.nrx, ictx.ptx, ictx.prx,
+				 &ictx.a_idx, &ictx.b_idx);
 	if (rc != 0) {
 		if (rc == -ENOENT || rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT) {
-			*kind_latch[pk] = true;
+			*kind_latch[ictx.pk] = true;
 			__atomic_add_fetch(&shm->stats.veth_asym_unsupported,
 					   1, __ATOMIC_RELAXED);
 		} else if (rc == -EPERM) {
@@ -575,24 +616,25 @@ bool veth_asymmetric_xdp(struct childdata *child)
 		}
 		goto out;
 	}
-	if (a_idx <= 0 || b_idx <= 0)
+	if (ictx.a_idx <= 0 || ictx.b_idx <= 0)
 		goto out;
 
 	__atomic_add_fetch(&shm->stats.veth_asym_pair_ok, 1, __ATOMIC_RELAXED);
 
-	(void)vax_setlink_up(&ctx, a_idx);
-	(void)vax_setlink_up(&ctx, b_idx);
+	(void)vax_setlink_up(&ictx.ctx, ictx.a_idx);
+	(void)vax_setlink_up(&ictx.ctx, ictx.b_idx);
 
 	if (!ns_unsupported_xdp) {
-		prog_fd = vax_load_xdp_prog();
-		if (prog_fd < 0) {
+		ictx.prog_fd = vax_load_xdp_prog();
+		if (ictx.prog_fd < 0) {
 			if (errno == EPERM || errno == EACCES ||
 			    errno == EINVAL || errno == EOPNOTSUPP) {
 				ns_unsupported_xdp = true;
 				__atomic_add_fetch(&shm->stats.veth_asym_unsupported,
 						   1, __ATOMIC_RELAXED);
 			}
-		} else if (vax_xdp_attach(&ctx, a_idx, prog_fd) == 0) {
+		} else if (vax_xdp_attach(&ictx.ctx, ictx.a_idx,
+					  ictx.prog_fd) == 0) {
 			__atomic_add_fetch(&shm->stats.veth_asym_xdp_attach_ok,
 					   1, __ATOMIC_RELAXED);
 		}
@@ -601,15 +643,15 @@ bool veth_asymmetric_xdp(struct childdata *child)
 	/* Raw send into veth_b.  Frames are eth+IPv4+UDP-shaped garbage --
 	 * sufficient to drive the kernel's hash-modulo txq selection on the
 	 * rcv (veth_a) side under the asymmetric-queue config. */
-	raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_IP));
-	if (raw >= 0) {
+	ictx.raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_IP));
+	if (ictx.raw >= 0) {
 		struct sockaddr_ll sll;
 		unsigned char frame[64];
 
 		memset(&sll, 0, sizeof(sll));
 		sll.sll_family   = AF_PACKET;
 		sll.sll_protocol = htons(ETH_P_IP);
-		sll.sll_ifindex  = b_idx;
+		sll.sll_ifindex  = ictx.b_idx;
 		sll.sll_halen    = 6;
 		memset(sll.sll_addr, 0xff, 6);
 
@@ -618,7 +660,8 @@ bool veth_asymmetric_xdp(struct childdata *child)
 		for (i = 0; i < burst; i++) {
 			generate_rand_bytes(frame, sizeof(frame));
 			frame[12] = 0x08; frame[13] = 0x00;	/* ethertype IP */
-			if (sendto(raw, frame, sizeof(frame), MSG_DONTWAIT,
+			if (sendto(ictx.raw, frame, sizeof(frame),
+				   MSG_DONTWAIT,
 				   (struct sockaddr *)&sll, sizeof(sll)) > 0)
 				__atomic_add_fetch(&shm->stats.veth_asym_send_ok,
 						   1, __ATOMIC_RELAXED);
@@ -626,23 +669,24 @@ bool veth_asymmetric_xdp(struct childdata *child)
 	}
 
 out:
-	if (raw >= 0)
-		close(raw);
-	if (prog_fd >= 0) {
-		if (a_idx > 0 && ctx.fd >= 0)
-			(void)vax_xdp_attach(&ctx, a_idx, -1);
-		close(prog_fd);
+	if (ictx.raw >= 0)
+		close(ictx.raw);
+	if (ictx.prog_fd >= 0) {
+		if (ictx.a_idx > 0 && ictx.ctx.fd >= 0)
+			(void)vax_xdp_attach(&ictx.ctx, ictx.a_idx, -1);
+		close(ictx.prog_fd);
 	}
-	if (ctx.fd >= 0) {
+	if (ictx.ctx.fd >= 0) {
 		/* veth/vxcan: dellink(a) cascades the peer.  ipvlan/macvlan:
 		 * slave (a) and parent dummy (b) are independent -- delete
 		 * both so the netns doesn't accumulate stale devices across
 		 * many iterations in the same child. */
-		if (a_idx > 0)
-			(void)vax_dellink(&ctx, a_idx);
-		if (b_idx > 0 && (pk == PK_IPVLAN || pk == PK_MACVLAN))
-			(void)vax_dellink(&ctx, b_idx);
-		nl_close(&ctx);
+		if (ictx.a_idx > 0)
+			(void)vax_dellink(&ictx.ctx, ictx.a_idx);
+		if (ictx.b_idx > 0 &&
+		    (ictx.pk == PK_IPVLAN || ictx.pk == PK_MACVLAN))
+			(void)vax_dellink(&ictx.ctx, ictx.b_idx);
+		nl_close(&ictx.ctx);
 	}
 	return true;
 }
