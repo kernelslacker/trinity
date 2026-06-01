@@ -558,6 +558,46 @@ static void veth_xdp_iter_setup(struct veth_xdp_iter_ctx *ictx)
 		 g_iter & 0xffffU);
 }
 
+/*
+ * Phase 2: create the pair / slave-on-parent for ictx->pk, capture
+ * a_idx / b_idx, and bring both ends UP.  Latches the per-kind
+ * unsupported gate on the structural-errno set from
+ * vax_create_dispatch so siblings stop probing that kind; EPERM bumps
+ * the eperm counter but stays unlatched (transient capability state
+ * can flip).  Returns 0 on success or -1 if the iteration should bail
+ * to the orchestrator's out: teardown path.  Setlink-up failures are
+ * best-effort -- a DOWN end still leaves the create-side of the
+ * asymmetric-queue surface exercised even without traffic.
+ */
+static int veth_xdp_iter_create_pair(struct veth_xdp_iter_ctx *ictx)
+{
+	int rc;
+
+	rc = vax_create_dispatch(&ictx->ctx, ictx->pk, ictx->a_name,
+				 ictx->b_name, ictx->ntx, ictx->nrx,
+				 ictx->ptx, ictx->prx,
+				 &ictx->a_idx, &ictx->b_idx);
+	if (rc != 0) {
+		if (rc == -ENOENT || rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT) {
+			*kind_latch[ictx->pk] = true;
+			__atomic_add_fetch(&shm->stats.veth_asym_unsupported,
+					   1, __ATOMIC_RELAXED);
+		} else if (rc == -EPERM) {
+			__atomic_add_fetch(&shm->stats.veth_asym_eperm,
+					   1, __ATOMIC_RELAXED);
+		}
+		return -1;
+	}
+	if (ictx->a_idx <= 0 || ictx->b_idx <= 0)
+		return -1;
+
+	__atomic_add_fetch(&shm->stats.veth_asym_pair_ok, 1, __ATOMIC_RELAXED);
+
+	(void)vax_setlink_up(&ictx->ctx, ictx->a_idx);
+	(void)vax_setlink_up(&ictx->ctx, ictx->b_idx);
+	return 0;
+}
+
 bool veth_asymmetric_xdp(struct childdata *child)
 {
 	struct veth_xdp_iter_ctx ictx = {
@@ -570,7 +610,6 @@ bool veth_asymmetric_xdp(struct childdata *child)
 		.recv_timeo_s = 1,
 	};
 	unsigned int burst, i;
-	int rc;
 
 	(void)child;
 
@@ -602,27 +641,8 @@ bool veth_asymmetric_xdp(struct childdata *child)
 
 	veth_xdp_iter_setup(&ictx);
 
-	rc = vax_create_dispatch(&ictx.ctx, ictx.pk, ictx.a_name, ictx.b_name,
-				 ictx.ntx, ictx.nrx, ictx.ptx, ictx.prx,
-				 &ictx.a_idx, &ictx.b_idx);
-	if (rc != 0) {
-		if (rc == -ENOENT || rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT) {
-			*kind_latch[ictx.pk] = true;
-			__atomic_add_fetch(&shm->stats.veth_asym_unsupported,
-					   1, __ATOMIC_RELAXED);
-		} else if (rc == -EPERM) {
-			__atomic_add_fetch(&shm->stats.veth_asym_eperm,
-					   1, __ATOMIC_RELAXED);
-		}
+	if (veth_xdp_iter_create_pair(&ictx) != 0)
 		goto out;
-	}
-	if (ictx.a_idx <= 0 || ictx.b_idx <= 0)
-		goto out;
-
-	__atomic_add_fetch(&shm->stats.veth_asym_pair_ok, 1, __ATOMIC_RELAXED);
-
-	(void)vax_setlink_up(&ictx.ctx, ictx.a_idx);
-	(void)vax_setlink_up(&ictx.ctx, ictx.b_idx);
 
 	if (!ns_unsupported_xdp) {
 		ictx.prog_fd = vax_load_xdp_prog();
