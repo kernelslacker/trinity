@@ -511,66 +511,96 @@ static void fill_sendmsg_zc(struct io_uring_sqe *s, int sock_fd,
 	s->user_data = 0xCB110000ULL | buf_index;
 }
 
-/* One full sequence on a freshly-created ring + loopback TCP socket. */
-static void iter_one(const struct timespec *t_outer)
+/*
+ * Per-iteration scratchpad shared across the iouring_send_zc_iter_<phase>
+ * helpers.  Lifetime is exactly one iter_one() invocation; avoids
+ * threading a dozen out-parameters through the phase helpers.
+ */
+struct iouring_send_zc_iter_ctx {
+	struct ring_ctx	ring;
+	struct iovec	bufs[ZC_BUF_COUNT];
+	void		*pages[ZC_BUF_COUNT];
+	void		*replacement;
+	struct iovec	replacement_iov;
+	pid_t		acceptor;
+	int		sock_fd;
+	unsigned int	submitted;
+	bool		ring_ok;
+	bool		bufs_registered;
+};
+
+/*
+ * Stand up the ring, mmap the registered-buffer pool, and install it
+ * via IORING_REGISTER_BUFFERS.  io_uring_setup() failing with the cap-
+ * gate errnos latches ns_unsupported_iouring_send_zc_churn so subsequent
+ * invocations short-circuit.  Returns 0 on success; nonzero means the
+ * caller should bail to the teardown path.
+ */
+static int iouring_send_zc_iter_setup(struct iouring_send_zc_iter_ctx *it)
 {
-	struct ring_ctx ctx;
-	struct iovec bufs[ZC_BUF_COUNT];
-	void *pages[ZC_BUF_COUNT];
-	void *replacement = MAP_FAILED;
-	struct iovec replacement_iov;
-	pid_t acceptor = -1;
-	int sock_fd = -1;
-	int one = 1;
 	unsigned int i;
-	bool ring_ok = false;
-	bool bufs_registered = false;
-	unsigned int submitted = 0;
 
-	for (i = 0; i < ZC_BUF_COUNT; i++)
-		pages[i] = MAP_FAILED;
-
-	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
-		return;
-
-	if (!ring_setup(&ctx)) {
+	if (!ring_setup(&it->ring)) {
 		if (errno == ENOSYS || errno == EPERM ||
 		    errno == ENOMEM || errno == EINVAL)
 			ns_unsupported_iouring_send_zc_churn = true;
 		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return;
+		return -1;
 	}
-	ring_ok = true;
+	it->ring_ok = true;
 
 	for (i = 0; i < ZC_BUF_COUNT; i++) {
-		pages[i] = mmap(NULL, ZC_BUF_BYTES, PROT_READ | PROT_WRITE,
-				MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE,
-				-1, 0);
-		if (pages[i] == MAP_FAILED) {
+		it->pages[i] = mmap(NULL, ZC_BUF_BYTES, PROT_READ | PROT_WRITE,
+				    MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE,
+				    -1, 0);
+		if (it->pages[i] == MAP_FAILED) {
 			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
 					   1, __ATOMIC_RELAXED);
-			goto out;
+			return -1;
 		}
-		memset(pages[i], 0xa5 ^ (int)i, ZC_BUF_BYTES);
-		bufs[i].iov_base = pages[i];
-		bufs[i].iov_len  = ZC_BUF_BYTES;
+		memset(it->pages[i], 0xa5 ^ (int)i, ZC_BUF_BYTES);
+		it->bufs[i].iov_base = it->pages[i];
+		it->bufs[i].iov_len  = ZC_BUF_BYTES;
 	}
 
-	if (do_register(ctx.fd, IORING_REGISTER_BUFFERS, bufs, ZC_BUF_COUNT) < 0) {
+	if (do_register(it->ring.fd, IORING_REGISTER_BUFFERS,
+			it->bufs, ZC_BUF_COUNT) < 0) {
 		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		goto out;
+		return -1;
 	}
-	bufs_registered = true;
+	it->bufs_registered = true;
 	__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_register_bufs_ok,
 			   1, __ATOMIC_RELAXED);
+	return 0;
+}
+
+/* One full sequence on a freshly-created ring + loopback TCP socket. */
+static void iter_one(const struct timespec *t_outer)
+{
+	struct iouring_send_zc_iter_ctx it;
+	int one = 1;
+	unsigned int i;
+
+	memset(&it, 0, sizeof(it));
+	it.replacement = MAP_FAILED;
+	it.acceptor    = -1;
+	it.sock_fd     = -1;
+	for (i = 0; i < ZC_BUF_COUNT; i++)
+		it.pages[i] = MAP_FAILED;
+
+	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
+		return;
+
+	if (iouring_send_zc_iter_setup(&it) != 0)
+		goto out;
 
 	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
 		goto out;
 
-	sock_fd = open_loopback_pair(&acceptor);
-	if (sock_fd < 0) {
+	it.sock_fd = open_loopback_pair(&it.acceptor);
+	if (it.sock_fd < 0) {
 		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -579,7 +609,7 @@ static void iter_one(const struct timespec *t_outer)
 	/* SO_ZEROCOPY enables the kernel-side ZC path the SEND_ZC SQE
 	 * targets.  EOPNOTSUPP / EPERM here latches the cap-gate -- the
 	 * platform can't reach the path at all. */
-	if (setsockopt(sock_fd, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one)) < 0) {
+	if (setsockopt(it.sock_fd, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one)) < 0) {
 		if (errno == EOPNOTSUPP || errno == ENOPROTOOPT ||
 		    errno == EPERM)
 			ns_unsupported_iouring_send_zc_churn = true;
@@ -596,9 +626,9 @@ static void iter_one(const struct timespec *t_outer)
 		unsigned int idx = rnd_modulo_u32(ZC_BUF_COUNT);
 		size_t send_len = (size_t)(1 + rnd_modulo_u32(ZC_BUF_BYTES));
 
-		fill_send_zc(&sqe, sock_fd, pages[idx], send_len, idx);
-		if (submit_one(&ctx, &sqe) == 1) {
-			submitted++;
+		fill_send_zc(&sqe, it.sock_fd, it.pages[idx], send_len, idx);
+		if (submit_one(&it.ring, &sqe) == 1) {
+			it.submitted++;
 			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_send_zc_ok,
 					   1, __ATOMIC_RELAXED);
 		}
@@ -621,16 +651,16 @@ static void iter_one(const struct timespec *t_outer)
 			unsigned int slot = (buf_index + j) % ZC_BUF_COUNT;
 			size_t len = (size_t)(1 + rnd_modulo_u32(ZC_BUF_BYTES));
 
-			local_iov[j].iov_base = pages[slot];
+			local_iov[j].iov_base = it.pages[slot];
 			local_iov[j].iov_len  = len;
 		}
 		memset(&msg, 0, sizeof(msg));
 		msg.msg_iov    = local_iov;
 		msg.msg_iovlen = n_iov;
 
-		fill_sendmsg_zc(&sqe, sock_fd, &msg, buf_index);
-		if (submit_one(&ctx, &sqe) == 1) {
-			submitted++;
+		fill_sendmsg_zc(&sqe, it.sock_fd, &msg, buf_index);
+		if (submit_one(&it.ring, &sqe) == 1) {
+			it.submitted++;
 			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_sendmsg_zc_ok,
 					   1, __ATOMIC_RELAXED);
 		}
@@ -644,21 +674,21 @@ static void iter_one(const struct timespec *t_outer)
 	 * have already latched onto the original io_mapped_ubuf -- the
 	 * update should refcount-protect the in-flight reference, not
 	 * redirect it. */
-	replacement = mmap(NULL, ZC_BUF_BYTES, PROT_READ | PROT_WRITE,
-			   MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
-	if (replacement != MAP_FAILED) {
+	it.replacement = mmap(NULL, ZC_BUF_BYTES, PROT_READ | PROT_WRITE,
+			      MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
+	if (it.replacement != MAP_FAILED) {
 		struct io_uring_rsrc_update2 upd;
 
-		memset(replacement, 0x5a, ZC_BUF_BYTES);
-		replacement_iov.iov_base = replacement;
-		replacement_iov.iov_len  = ZC_BUF_BYTES;
+		memset(it.replacement, 0x5a, ZC_BUF_BYTES);
+		it.replacement_iov.iov_base = it.replacement;
+		it.replacement_iov.iov_len  = ZC_BUF_BYTES;
 
 		memset(&upd, 0, sizeof(upd));
 		upd.offset = 0;
-		upd.data   = (uint64_t)(uintptr_t)&replacement_iov;
+		upd.data   = (uint64_t)(uintptr_t)&it.replacement_iov;
 		upd.nr     = 1;
 
-		if (do_register(ctx.fd, IORING_REGISTER_BUFFERS_UPDATE,
+		if (do_register(it.ring.fd, IORING_REGISTER_BUFFERS_UPDATE,
 				&upd, sizeof(upd)) >= 0)
 			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_update_race_ok,
 					   1, __ATOMIC_RELAXED);
@@ -673,10 +703,10 @@ static void iter_one(const struct timespec *t_outer)
 		int r;
 		unsigned int reaped;
 
-		r = do_enter(ctx.fd, submitted, submitted,
+		r = do_enter(it.ring.fd, it.submitted, it.submitted,
 			     IORING_ENTER_GETEVENTS);
 		if (r >= 0) {
-			reaped = drain_cqes(&ctx);
+			reaped = drain_cqes(&it.ring);
 			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_cqe_drained,
 					   (unsigned long)reaped,
 					   __ATOMIC_RELAXED);
@@ -691,35 +721,35 @@ static void iter_one(const struct timespec *t_outer)
 	 * ref keeps the table alive past the unregister; the bug surface
 	 * is the ordering window between the rsrc_node refcount drop and
 	 * the notif's deferred lookup. */
-	if (do_register(ctx.fd, IORING_UNREGISTER_BUFFERS, NULL, 0) >= 0) {
+	if (do_register(it.ring.fd, IORING_UNREGISTER_BUFFERS, NULL, 0) >= 0) {
 		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_unregister_race_ok,
 				   1, __ATOMIC_RELAXED);
-		bufs_registered = false;
+		it.bufs_registered = false;
 	}
 
 	/* Final drain to harvest any deferred notif CQEs that landed
 	 * after the unregister. */
 	{
-		unsigned int reaped = drain_cqes(&ctx);
+		unsigned int reaped = drain_cqes(&it.ring);
 
 		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_cqe_drained,
 				   (unsigned long)reaped, __ATOMIC_RELAXED);
 	}
 
 out:
-	if (bufs_registered)
-		(void)do_register(ctx.fd, IORING_UNREGISTER_BUFFERS, NULL, 0);
-	if (replacement != MAP_FAILED)
-		(void)munmap(replacement, ZC_BUF_BYTES);
+	if (it.bufs_registered)
+		(void)do_register(it.ring.fd, IORING_UNREGISTER_BUFFERS, NULL, 0);
+	if (it.replacement != MAP_FAILED)
+		(void)munmap(it.replacement, ZC_BUF_BYTES);
 	for (i = 0; i < ZC_BUF_COUNT; i++) {
-		if (pages[i] != MAP_FAILED)
-			(void)munmap(pages[i], ZC_BUF_BYTES);
+		if (it.pages[i] != MAP_FAILED)
+			(void)munmap(it.pages[i], ZC_BUF_BYTES);
 	}
-	if (sock_fd >= 0)
-		close(sock_fd);
-	if (ring_ok)
-		ring_teardown(&ctx);
-	reap_acceptor(acceptor);
+	if (it.sock_fd >= 0)
+		close(it.sock_fd);
+	if (it.ring_ok)
+		ring_teardown(&it.ring);
+	reap_acceptor(it.acceptor);
 }
 
 bool iouring_send_zc_churn(struct childdata *child)
