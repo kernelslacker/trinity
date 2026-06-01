@@ -213,6 +213,30 @@ static void keyring_spam_iter_add_key(int32_t *live,
 	}
 }
 
+/* OP_READ: pull payload bytes out of a live serial via KEYCTL_READ.
+ * Skips when the ring is empty.  RAND_NEGATIVE_OR(KEYCTL_READ) sometimes
+ * flips the opcode negative to exercise the keyctl op dispatcher's
+ * out-of-range path; the kernel returns -ENOTTY/-EOPNOTSUPP there and
+ * we count it as expected. */
+static void keyring_spam_iter_read(int32_t *live)
+{
+	unsigned char buf[64];
+	int32_t serial;
+	long rc;
+
+	serial = ring_pick(live);
+	if (serial == 0)
+		return;
+	rc = syscall(__NR_keyctl,
+		     (unsigned long) RAND_NEGATIVE_OR(KEYCTL_READ),
+		     (unsigned long) serial,
+		     (unsigned long) buf,
+		     (unsigned long) sizeof(buf), 0UL);
+	if (rc < 0)
+		__atomic_add_fetch(&shm->stats.keyring_spam_failed,
+				   1, __ATOMIC_RELAXED);
+}
+
 bool keyring_spam(struct childdata *child)
 {
 	int32_t live[LIVE_KEYS_RING];
@@ -247,22 +271,9 @@ bool keyring_spam(struct childdata *child)
 			keyring_spam_iter_add_key(live, payload, iter, anchor);
 			break;
 
-		case OP_READ: {
-			unsigned char buf[64];
-
-			serial = ring_pick(live);
-			if (serial == 0)
-				break;
-			rc = syscall(__NR_keyctl,
-				     (unsigned long) RAND_NEGATIVE_OR(KEYCTL_READ),
-				     (unsigned long) serial,
-				     (unsigned long) buf,
-				     (unsigned long) sizeof(buf), 0UL);
-			if (rc < 0)
-				__atomic_add_fetch(&shm->stats.keyring_spam_failed,
-						   1, __ATOMIC_RELAXED);
+		case OP_READ:
+			keyring_spam_iter_read(live);
 			break;
-		}
 
 		case OP_DESCRIBE: {
 			char buf[128];
