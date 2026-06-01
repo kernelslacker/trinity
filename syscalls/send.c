@@ -123,10 +123,15 @@ struct syscallentry syscall_sendto = {
  * proto->gen_msg) are NOT snapshotted here: they are copied into a
  * writable-pool buffer in sanitise_sendmsg so the iov_base lives in
  * the mmap-backed pool region, outside the libc brk arena that
- * scrub_iovec_for_kernel_write() defangs.  Pool buffers recycle via
- * the pool allocator, so the post handler does not free them; the
- * alloc_iovec path likewise routes buffers through
- * deferred_free_enqueue() with the iov itself.
+ * scrub_iovec_for_kernel_write() defangs.  The msg_iov array itself
+ * also lives in the writable-pool now (see sanitise_sendmsg) so the
+ * iov walk past a sibling-scribbled msg_iovlen cannot read the next
+ * libc chunk's bytes as (iov_base, iov_len) pairs.  Pool buffers
+ * recycle via the pool allocator, so the post handler frees neither
+ * the gen_msg payload nor the iov array.  The alloc_iovec path's
+ * per-entry iov_base buffers still flow through the alloc_iovec
+ * tracking that release_obj / generic_free_arg handle separately
+ * from the iov array itself.
  *
  * Sized 32 bytes, landing in the 32-byte glibc malloc chunk bucket,
  * still clear of the 16-byte free-list bucket that holds
@@ -208,15 +213,18 @@ skip_si:
 				free(gen_buf);
 
 				/*
-				 * Oversize the iov backing to UIO_MAXIOV
-				 * slots; see recv.c::sanitise_recvmsg for the
-				 * sibling-scribble heap-overflow rationale.
-				 * Only slot 0 is populated -- the trailing
-				 * zero-filled entries make an iovlen scribble
-				 * walk NULL / 0 pairs the kernel iov_iter
-				 * advances over as no-ops.
+				 * Migrate the iov to the writable-pool; see
+				 * recv.c::sanitise_recvmsg for the structural
+				 * rationale.  Only slot 0 is populated -- the
+				 * trailing pool bytes are zero-filled by
+				 * get_writable_address() so an iovlen scribble
+				 * walks NULL / 0 pairs the kernel iov_iter
+				 * advances over as no-ops.  Fall back to the
+				 * alloc_iovec arm when the pool is exhausted.
 				 */
-				iov = zmalloc_tracked(UIO_MAXIOV * sizeof(struct iovec));
+				iov = get_writable_address(UIO_MAXIOV * sizeof(struct iovec));
+				if (iov == NULL)
+					goto skip_gen_msg;
 				iov->iov_base = kbuf;
 				iov->iov_len = gen_len;
 				msg->msg_iov = iov;
@@ -235,24 +243,29 @@ skip_gen_msg:;
 
 		num_entries = RAND_RANGE(1, 3);
 		/*
-		 * Oversize msg_iov to UIO_MAXIOV slots; see
-		 * recv.c::sanitise_recvmsg for the sibling-scribble heap-
-		 * overflow rationale.  Read direction means the kernel
-		 * doesn't write back through iov_base, but kernel-side
-		 * iov_iter still reads past the chunk if msg_iovlen is
-		 * scribbled larger -- the OOB read of (iov_base, iov_len)
-		 * pairs from the next libc chunk then drives an arbitrary-
-		 * pointer read into the send path, an info-leak into the
-		 * outgoing network traffic.
+		 * Migrate msg_iov to the writable-pool; see
+		 * recv.c::sanitise_recvmsg for the structural rationale.
+		 * Read direction means the kernel doesn't write back
+		 * through iov_base, but the OOB iov-array walk past a
+		 * sibling-scribbled msg_iovlen still treats the next libc
+		 * chunk's bytes as (iov_base, iov_len) pairs and reads
+		 * arbitrary heap into outgoing network traffic.  Pool
+		 * migration removes the libc-arena read target.  Drop to
+		 * NULL / 0 when the pool cannot surface a slot.
 		 */
 		iov_src = alloc_iovec(num_entries, IOV_KERNEL_READ);
-		iov = zmalloc_tracked(UIO_MAXIOV * sizeof(struct iovec));
-		if (iov_src != NULL) {
+		iov = get_writable_address(UIO_MAXIOV * sizeof(struct iovec));
+		if (iov != NULL && iov_src != NULL)
 			memcpy(iov, iov_src, num_entries * sizeof(struct iovec));
+		if (iov_src != NULL)
 			tracked_free_now(iov_src);
+		if (iov != NULL) {
+			msg->msg_iov = iov;
+			msg->msg_iovlen = num_entries;
+		} else {
+			msg->msg_iov = NULL;
+			msg->msg_iovlen = 0;
 		}
-		msg->msg_iov = iov;
-		msg->msg_iovlen = num_entries;
 	}
 
 set_control:
@@ -400,10 +413,10 @@ skip_bound:
 	 * msg_name that passes the inner shape-only check but aborts
 	 * in libasan free().  The snap fields are wrapped in the
 	 * magic-cookie struct above and hold the sanitise-time
-	 * allocations.
+	 * allocations.  msg_iov is no longer freed -- it lives in the
+	 * writable-pool now (see sanitise_sendmsg) and pool allocations
+	 * are never released by trinity.
 	 */
-	if (msg->msg_iov != NULL)
-		deferred_free_enqueue(msg->msg_iov);
 	tracked_free_now(snap->name);	// free sockaddr
 	rec->a2 = 0;
 	deferred_free_enqueue(msg);
@@ -459,10 +472,12 @@ struct syscallentry syscall_sendmsg = {
  * for a 4-elem array); the inner shape-only check accepts it but
  * free() of an interior offset aborts in libasan.  Stash the
  * originals at sanitise time so the post handler frees the
- * allocations we made.  iov_base is intentionally not snapshotted
- * here because the sendmmsg sanitiser does not free any iov_base
- * (alloc_iovec()'d buffers are routed through deferred_free_enqueue
- * with the iov itself, and there is no per-i gen_msg path).
+ * allocations we made.  Neither msg_iov nor iov_base is snapshotted
+ * here: the iov array lives in the writable-pool (see
+ * sanitise_sendmmsg) and pool allocations are never released by
+ * trinity, and the per-entry iov_base buffers are handled separately
+ * by the alloc_iovec tracking that release_obj / generic_free_arg
+ * already drive.  There is no per-i gen_msg path.
  */
 #define SENDMMSG_POST_STATE_MAGIC	0x53454E444D5453UL	/* "SENDMTS" */
 struct sendmmsg_post_state {
@@ -500,18 +515,23 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 		struct iovec *iov;
 
 		/*
-		 * Oversize msg_iov to UIO_MAXIOV slots; see
-		 * recv.c::sanitise_recvmsg for the sibling-scribble heap-
-		 * overflow rationale.
+		 * Migrate msg_iov to the writable-pool; see
+		 * recv.c::sanitise_recvmsg for the structural rationale.
+		 * Drop to NULL / 0 when the pool cannot surface a slot.
 		 */
 		iov_src = alloc_iovec(num_entries, IOV_KERNEL_READ);
-		iov = zmalloc_tracked(UIO_MAXIOV * sizeof(struct iovec));
-		if (iov_src != NULL) {
+		iov = get_writable_address(UIO_MAXIOV * sizeof(struct iovec));
+		if (iov != NULL && iov_src != NULL)
 			memcpy(iov, iov_src, num_entries * sizeof(struct iovec));
+		if (iov_src != NULL)
 			tracked_free_now(iov_src);
+		if (iov != NULL) {
+			msg->msg_iov = iov;
+			msg->msg_iovlen = num_entries;
+		} else {
+			msg->msg_iov = NULL;
+			msg->msg_iovlen = 0;
 		}
-		msg->msg_iov = iov;
-		msg->msg_iovlen = num_entries;
 
 		if (si != NULL)
 			generate_sockaddr(&sa, &salen, si->triplet.family);
@@ -644,12 +664,13 @@ static void post_sendmmsg(struct syscallrecord *rec)
 	 * heap-shaped within-array offset of msgs[] that passes the
 	 * inner shape-only check but aborts in libasan free().  The
 	 * snap fields are wrapped in the magic-cookie struct above
-	 * and hold the sanitise-time allocations.
+	 * and hold the sanitise-time allocations.  msg_iov is no
+	 * longer freed -- it lives in the writable-pool now (see
+	 * sanitise_sendmmsg) and pool allocations are never released
+	 * by trinity.
 	 */
-	for (i = 0; i < vlen; i++) {
-		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov);
+	for (i = 0; i < vlen; i++)
 		tracked_free_now(snap->name[i]);
-	}
 	rec->a2 = 0;
 	deferred_free_enqueue(msgs);
 
