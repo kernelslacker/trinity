@@ -1573,14 +1573,42 @@ static void xfrm_churn_iter_setup_udp(struct xfrm_churn_iter_ctx *ctx)
 	(void)bind(ctx->udp, (struct sockaddr *)&src, sizeof(src));
 }
 
+/*
+ * Phase: drive one BUDGETED + JITTER + cap-clamped sendto burst
+ * through the live SA on the UDP socket.  No-op when the UDP socket
+ * never came up.  Each call captures its own CLOCK_MONOTONIC anchor
+ * for drive_inner_traffic's STORM_BUDGET_NS wall-cap; the second
+ * call rolls a fresh iters count so the post-rekey burst doesn't
+ * inherit the first burst's size.
+ */
+static void xfrm_churn_iter_drive_burst(struct xfrm_churn_iter_ctx *ctx)
+{
+	struct timespec t0;
+	unsigned int iters, sent;
+
+	if (ctx->udp < 0)
+		return;
+
+	(void)clock_gettime(CLOCK_MONOTONIC, &t0);
+	iters = BUDGETED(CHILD_OP_XFRM_CHURN,
+			 JITTER_RANGE(XFRM_PACKET_BASE));
+	if (iters < XFRM_PACKET_FLOOR)
+		iters = XFRM_PACKET_FLOOR;
+	if (iters > XFRM_PACKET_CAP)
+		iters = XFRM_PACKET_CAP;
+
+	sent = drive_inner_traffic(ctx->udp, iters, &t0);
+	if (sent)
+		__atomic_add_fetch(&shm->stats.xfrm_churn_esp_sent,
+				   sent, __ATOMIC_RELAXED);
+}
+
 bool xfrm_churn(struct childdata *child)
 {
 	struct xfrm_churn_iter_ctx ctx = {
 		.nl  = { .fd = -1 },
 		.udp = -1,
 	};
-	struct timespec t0;
-	unsigned int iters, sent;
 	int rc;
 
 	(void)child;
@@ -1610,20 +1638,7 @@ bool xfrm_churn(struct childdata *child)
 
 	xfrm_churn_iter_setup_udp(&ctx);
 
-	if (ctx.udp >= 0) {
-		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
-		iters = BUDGETED(CHILD_OP_XFRM_CHURN,
-				 JITTER_RANGE(XFRM_PACKET_BASE));
-		if (iters < XFRM_PACKET_FLOOR)
-			iters = XFRM_PACKET_FLOOR;
-		if (iters > XFRM_PACKET_CAP)
-			iters = XFRM_PACKET_CAP;
-
-		sent = drive_inner_traffic(ctx.udp, iters, &t0);
-		if (sent)
-			__atomic_add_fetch(&shm->stats.xfrm_churn_esp_sent,
-					   sent, __ATOMIC_RELAXED);
-	}
+	xfrm_churn_iter_drive_burst(&ctx);
 
 	/*
 	 * Mid-flow rekey: rebuild the SA on the same (reqid, spi,
@@ -1661,20 +1676,7 @@ bool xfrm_churn(struct childdata *child)
 	 * Second send burst — encrypt path may walk the freshly-rotated
 	 * key, or hit the stale-key window mid-rotation.
 	 */
-	if (ctx.udp >= 0) {
-		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
-		iters = BUDGETED(CHILD_OP_XFRM_CHURN,
-				 JITTER_RANGE(XFRM_PACKET_BASE));
-		if (iters < XFRM_PACKET_FLOOR)
-			iters = XFRM_PACKET_FLOOR;
-		if (iters > XFRM_PACKET_CAP)
-			iters = XFRM_PACKET_CAP;
-
-		sent = drive_inner_traffic(ctx.udp, iters, &t0);
-		if (sent)
-			__atomic_add_fetch(&shm->stats.xfrm_churn_esp_sent,
-					   sent, __ATOMIC_RELAXED);
-	}
+	xfrm_churn_iter_drive_burst(&ctx);
 
 	/*
 	 * Tear the SA down racing the in-flight encrypt still draining
