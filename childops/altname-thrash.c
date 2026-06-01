@@ -319,23 +319,81 @@ static bool is_unsupported_err(int rc)
 	       rc == -EPROTONOSUPPORT || rc == -ENOPKG;
 }
 
-bool altname_thrash(struct childdata *child)
-{
+/*
+ * Per-invocation context shared across the altname_thrash phase
+ * helpers.  Only state read or written across helper boundaries lives
+ * here; the burst-local scratch arrays stay on the helper's stack.
+ * File-local statics (alt_ring, the ns_* latches) are not lifted —
+ * they're already visible to every helper.
+ */
+struct altname_iter_ctx {
+	struct nl_ctx nl;
 	char dummy_name[IFNAMSIZ];
-	char added[ALT_BURST][ALT_NAME_MAX + 1];
-	char victims[ALT_BURST][ALT_NAME_MAX + 1];
-	struct nl_ctx nl = { .fd = -1 };
+	int dummy_idx;
+	bool nl_opened;
+	bool dummy_added;
+};
+
+/*
+ * Setup phase: latch checks, lazy unshare(CLONE_NEWNET), open the
+ * rtnetlink socket, create the dummy device, and bring it up.  Returns
+ * 0 if the burst phase should run, -1 on any failure (with the
+ * appropriate ns_*_altname_thrash latch raised so subsequent
+ * invocations skip the failing subsystem).  On -1 the teardown helper
+ * is still safe to call: it gates on ctx->nl_opened / ctx->dummy_added.
+ */
+static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx)
+{
 	struct nl_open_opts opts = {
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = RTNL_RECV_TIMEO_S,
 	};
-	bool nl_opened = false;
-	int dummy_idx = 0;
-	bool dummy_added = false;
+	int rc;
+
+	if (!ns_unshared_altname_thrash) {
+		if (unshare(CLONE_NEWNET) < 0) {
+			ns_setup_failed_altname_thrash = true;
+			__atomic_add_fetch(&shm->stats.altname_thrash_unshare_failed,
+					   1, __ATOMIC_RELAXED);
+			return -1;
+		}
+		ns_unshared_altname_thrash = true;
+	}
+
+	if (nl_open(&ctx->nl, &opts) < 0) {
+		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
+			ns_unsupported_altname_thrash = true;
+		return -1;
+	}
+	ctx->nl_opened = true;
+
+	(void)snprintf(ctx->dummy_name, sizeof(ctx->dummy_name), "tralt%u",
+		       (unsigned int)(rand32() & 0xffffu));
+
+	rc = build_dummy_create(&ctx->nl, ctx->dummy_name);
+	if (rc != 0) {
+		if (is_unsupported_err(rc))
+			ns_unsupported_dummy_altname_thrash = true;
+		return -1;
+	}
+	ctx->dummy_added = true;
+
+	ctx->dummy_idx = (int)if_nametoindex(ctx->dummy_name);
+	if (ctx->dummy_idx == 0)
+		return -1;
+
+	(void)build_setlink_up(&ctx->nl, ctx->dummy_idx);
+	return 0;
+}
+
+bool altname_thrash(struct childdata *child)
+{
+	struct altname_iter_ctx ctx = { .nl = { .fd = -1 } };
+	char added[ALT_BURST][ALT_NAME_MAX + 1];
+	char victims[ALT_BURST][ALT_NAME_MAX + 1];
 	struct timespec t0;
 	unsigned int iters;
 	unsigned int i;
-	int rc;
 
 	(void)child;
 
@@ -347,39 +405,8 @@ bool altname_thrash(struct childdata *child)
 	    ns_unsupported_dummy_altname_thrash)
 		return true;
 
-	if (!ns_unshared_altname_thrash) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			ns_setup_failed_altname_thrash = true;
-			__atomic_add_fetch(&shm->stats.altname_thrash_unshare_failed,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-		ns_unshared_altname_thrash = true;
-	}
-
-	if (nl_open(&nl, &opts) < 0) {
-		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
-			ns_unsupported_altname_thrash = true;
+	if (altname_thrash_iter_setup(&ctx) != 0)
 		goto out;
-	}
-	nl_opened = true;
-
-	(void)snprintf(dummy_name, sizeof(dummy_name), "tralt%u",
-		       (unsigned int)(rand32() & 0xffffu));
-
-	rc = build_dummy_create(&nl, dummy_name);
-	if (rc != 0) {
-		if (is_unsupported_err(rc))
-			ns_unsupported_dummy_altname_thrash = true;
-		goto out;
-	}
-	dummy_added = true;
-
-	dummy_idx = (int)if_nametoindex(dummy_name);
-	if (dummy_idx == 0)
-		goto out;
-
-	(void)build_setlink_up(&nl, dummy_idx);
 
 	(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 	iters = BUDGETED(CHILD_OP_ALTNAME_THRASH,
@@ -401,14 +428,14 @@ bool altname_thrash(struct childdata *child)
 			ring_push(added[j]);
 		}
 
-		if (build_linkprop(&nl, RTM_NEWLINKPROP, dummy_idx,
+		if (build_linkprop(&ctx.nl, RTM_NEWLINKPROP, ctx.dummy_idx,
 				   (const char (*)[ALT_NAME_MAX + 1])added,
 				   batch) == 0) {
 			__atomic_add_fetch(&shm->stats.altname_thrash_addprop_done,
 					   1, __ATOMIC_RELAXED);
 		}
 
-		if (build_getlink(&nl, dummy_idx) == 0) {
+		if (build_getlink(&ctx.nl, ctx.dummy_idx) == 0) {
 			__atomic_add_fetch(&shm->stats.altname_thrash_getlink_done,
 					   1, __ATOMIC_RELAXED);
 		}
@@ -429,7 +456,7 @@ bool altname_thrash(struct childdata *child)
 			memcpy(victims[j], alt_ring[idx], ALT_NAME_MAX + 1);
 		}
 
-		if (build_linkprop(&nl, RTM_DELLINKPROP, dummy_idx,
+		if (build_linkprop(&ctx.nl, RTM_DELLINKPROP, ctx.dummy_idx,
 				   (const char (*)[ALT_NAME_MAX + 1])victims,
 				   vbatch) == 0) {
 			__atomic_add_fetch(&shm->stats.altname_thrash_delprop_done,
@@ -438,10 +465,10 @@ bool altname_thrash(struct childdata *child)
 	}
 
 out:
-	if (nl_opened) {
-		if (dummy_added && dummy_idx > 0)
-			(void)build_dellink(&nl, dummy_idx);
-		nl_close(&nl);
+	if (ctx.nl_opened) {
+		if (ctx.dummy_added && ctx.dummy_idx > 0)
+			(void)build_dellink(&ctx.nl, ctx.dummy_idx);
+		nl_close(&ctx.nl);
 	}
 
 	return true;
