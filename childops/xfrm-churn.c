@@ -1643,6 +1643,52 @@ static void xfrm_churn_iter_rekey(struct xfrm_churn_iter_ctx *ctx)
 	}
 }
 
+/*
+ * Phase: SA + policy teardown, then the rare side-path syscalls.
+ * DELSA + DELPOLICY race the in-flight encrypt still draining from
+ * the post-rekey burst (CVE-2022-36879 lineage).  The three
+ * sub-mode gates after that exercise distinct codepaths sharing the
+ * SAD/SPD with the netlink_xfrm dispatch we just used: AH+ESN+async
+ * (~1/4), PF_KEYv2 flush (~1/8), compat-table opcode sweep (~1/8).
+ */
+static void xfrm_churn_iter_teardown_sa(struct xfrm_churn_iter_ctx *ctx)
+{
+	/*
+	 * Tear the SA down racing the in-flight encrypt still draining
+	 * from the second burst.  Cascades cleanup of the bundle cache
+	 * via xfrm_state_delete -> __xfrm_state_destroy — the primary
+	 * teardown-vs-traffic window the op exists to open.
+	 */
+	if (build_delsa(&ctx->nl, ctx->def->proto, ctx->spi) == 0)
+		__atomic_add_fetch(&shm->stats.xfrm_churn_sa_deleted,
+				   1, __ATOMIC_RELAXED);
+
+	if (build_delpolicy(&ctx->nl) == 0)
+		__atomic_add_fetch(&shm->stats.xfrm_churn_pol_deleted,
+				   1, __ATOMIC_RELAXED);
+
+	/* AH+ESN+async-hash sub-mode: ~1 in 4 invocations installs an
+	 * AH SA with the (XFRM_STATE_ESN | replay-window | async-friendly
+	 * auth name) trifecta required to reach the codepath upstream
+	 * commit ec54093e6a8f patches. */
+	if ((rand32() & 3U) == 0)
+		install_ah_esn_async_sa(&ctx->nl, ctx->udp);
+
+	/* PF_KEYv2 alt path: ~1 in 8 invocations exercises the parallel
+	 * af_key dispatch + flush paths that share the SAD/SPD with
+	 * netlink_xfrm. */
+	if ((rand32() & 7U) == 0)
+		pfkey_flush_burst();
+
+	/* Compat-table off-end-read sweep: ~1 in 8 invocations iterates
+	 * the full XFRM_MSG_BASE..XFRM_MSG_MAX opcode range against the
+	 * already-open netlink_xfrm fd.  Targets the bug class fixed by
+	 * upstream 28465227c80f (missing xfrm_msg_min[] entry for
+	 * XFRM_MSG_MAPPING) and any later off-end indices added since. */
+	if (ONE_IN(8))
+		xfrm_compat_msg_sweep(&ctx->nl);
+}
+
 bool xfrm_churn(struct childdata *child)
 {
 	struct xfrm_churn_iter_ctx ctx = {
@@ -1678,55 +1724,9 @@ bool xfrm_churn(struct childdata *child)
 	xfrm_churn_iter_setup_udp(&ctx);
 
 	xfrm_churn_iter_drive_burst(&ctx);
-
-	/*
-	 * Mid-flow rekey: rebuild the SA on the same (reqid, spi,
-	 * proto) shell with a fresh random key.  The in-flight encrypt
-	 * from the burst above may still be holding the old key —
-	 * CVE-2023-1611 family lives in this window.
-	 */
 	xfrm_churn_iter_rekey(&ctx);
-
-	/*
-	 * Second send burst — encrypt path may walk the freshly-rotated
-	 * key, or hit the stale-key window mid-rotation.
-	 */
 	xfrm_churn_iter_drive_burst(&ctx);
-
-	/*
-	 * Tear the SA down racing the in-flight encrypt still draining
-	 * from the second burst.  Cascades cleanup of the bundle cache
-	 * via xfrm_state_delete -> __xfrm_state_destroy — the primary
-	 * teardown-vs-traffic window the op exists to open.
-	 */
-	if (build_delsa(&ctx.nl, ctx.def->proto, ctx.spi) == 0)
-		__atomic_add_fetch(&shm->stats.xfrm_churn_sa_deleted,
-				   1, __ATOMIC_RELAXED);
-
-	if (build_delpolicy(&ctx.nl) == 0)
-		__atomic_add_fetch(&shm->stats.xfrm_churn_pol_deleted,
-				   1, __ATOMIC_RELAXED);
-
-	/* AH+ESN+async-hash sub-mode: ~1 in 4 invocations installs an
-	 * AH SA with the (XFRM_STATE_ESN | replay-window | async-friendly
-	 * auth name) trifecta required to reach the codepath upstream
-	 * commit ec54093e6a8f patches. */
-	if ((rand32() & 3U) == 0)
-		install_ah_esn_async_sa(&ctx.nl, ctx.udp);
-
-	/* PF_KEYv2 alt path: ~1 in 8 invocations exercises the parallel
-	 * af_key dispatch + flush paths that share the SAD/SPD with
-	 * netlink_xfrm. */
-	if ((rand32() & 7U) == 0)
-		pfkey_flush_burst();
-
-	/* Compat-table off-end-read sweep: ~1 in 8 invocations iterates
-	 * the full XFRM_MSG_BASE..XFRM_MSG_MAX opcode range against the
-	 * already-open netlink_xfrm fd.  Targets the bug class fixed by
-	 * upstream 28465227c80f (missing xfrm_msg_min[] entry for
-	 * XFRM_MSG_MAPPING) and any later off-end indices added since. */
-	if (ONE_IN(8))
-		xfrm_compat_msg_sweep(&ctx.nl);
+	xfrm_churn_iter_teardown_sa(&ctx);
 
 out:
 	if (ctx.udp >= 0)
