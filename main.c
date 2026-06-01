@@ -1807,6 +1807,80 @@ static void print_stats_plateau_hypothesis(bool plateau)
 	}
 }
 
+static void print_stats_pool_ratio(void)
+{
+	/* Per-pool live ratio.  When the explorer pool is empty
+	 * (e.g. -C N where N/8 rounds to zero, common with ASAN
+	 * configs), drop the explorer half of the line but still
+	 * report bandit activity so edge-discovery visibility
+	 * isn't lost. */
+	static unsigned long last_bandit_edges = 0;
+	unsigned long b_cur = __atomic_load_n(
+		&shm->stats.bandit_pool_edges_discovered,
+		__ATOMIC_RELAXED);
+	unsigned long b_delta = b_cur - last_bandit_edges;
+
+	if (explorer_children > 0) {
+		static unsigned long last_explorer_edges = 0;
+		unsigned long e_cur = __atomic_load_n(
+			&shm->stats.explorer_pool_edges_discovered,
+			__ATOMIC_RELAXED);
+		unsigned long total = e_cur + b_cur;
+		unsigned long e_delta = e_cur - last_explorer_edges;
+		unsigned int e_share_pct = total > 0 ?
+			(unsigned int)(e_cur * 100UL / total) : 0;
+		unsigned int b_share_pct = 100U - e_share_pct;
+		char e_delta_str[24] = "";
+		char b_delta_str[24] = "";
+		if (e_delta > 0)
+			snprintf(e_delta_str, sizeof(e_delta_str),
+				"/+%lu", e_delta);
+		if (b_delta > 0)
+			snprintf(b_delta_str, sizeof(b_delta_str),
+				"/+%lu", b_delta);
+
+		/*
+		 * Coalesce identical explorer/bandit lines.  When both
+		 * e_delta and b_delta are zero (steady-state run) the
+		 * line is byte-for-byte unchanged, so suppress repeats
+		 * and force a print every 30 windows to keep an anchor.
+		 */
+		static unsigned int last_eb_explorers;
+		static unsigned int last_eb_max;
+		static unsigned long last_eb_e_cur;
+		static unsigned long last_eb_b_cur;
+		static unsigned int eb_suppress = 30; /* force first print */
+		if (eb_suppress >= 30 ||
+		    explorer_children != last_eb_explorers ||
+		    max_children != last_eb_max ||
+		    e_cur != last_eb_e_cur ||
+		    b_cur != last_eb_b_cur) {
+			output(0, "explorer: %u/%u children, %lu edges (%u%%%s)  bandit: %u/%u, %lu edges (%u%%%s)\n",
+				explorer_children, max_children,
+				e_cur, e_share_pct, e_delta_str,
+				max_children - explorer_children, max_children,
+				b_cur, b_share_pct, b_delta_str);
+			last_eb_explorers = explorer_children;
+			last_eb_max = max_children;
+			last_eb_e_cur = e_cur;
+			last_eb_b_cur = b_cur;
+			eb_suppress = 0;
+		} else {
+			eb_suppress++;
+		}
+		last_explorer_edges = e_cur;
+	} else {
+		if (b_delta > 0)
+			output(0, "bandit: %u/%u children, %lu edges (+%lu)\n",
+				max_children, max_children,
+				b_cur, b_delta);
+		else
+			output(0, "bandit: %u/%u children, %lu edges\n",
+				max_children, max_children, b_cur);
+	}
+	last_bandit_edges = b_cur;
+}
+
 static void print_stats(void)
 {
 	unsigned long op_count = parent_stats.op_count;
@@ -1853,76 +1927,7 @@ static void print_stats(void)
 				print_stats_plateau_hypothesis(plateau);
 			}
 
-			/* Per-pool live ratio.  When the explorer pool is empty
-			 * (e.g. -C N where N/8 rounds to zero, common with ASAN
-			 * configs), drop the explorer half of the line but still
-			 * report bandit activity so edge-discovery visibility
-			 * isn't lost. */
-			static unsigned long last_bandit_edges = 0;
-			unsigned long b_cur = __atomic_load_n(
-				&shm->stats.bandit_pool_edges_discovered,
-				__ATOMIC_RELAXED);
-			unsigned long b_delta = b_cur - last_bandit_edges;
-
-			if (explorer_children > 0) {
-				static unsigned long last_explorer_edges = 0;
-				unsigned long e_cur = __atomic_load_n(
-					&shm->stats.explorer_pool_edges_discovered,
-					__ATOMIC_RELAXED);
-				unsigned long total = e_cur + b_cur;
-				unsigned long e_delta = e_cur - last_explorer_edges;
-				unsigned int e_share_pct = total > 0 ?
-					(unsigned int)(e_cur * 100UL / total) : 0;
-				unsigned int b_share_pct = 100U - e_share_pct;
-				char e_delta_str[24] = "";
-				char b_delta_str[24] = "";
-				if (e_delta > 0)
-					snprintf(e_delta_str, sizeof(e_delta_str),
-						"/+%lu", e_delta);
-				if (b_delta > 0)
-					snprintf(b_delta_str, sizeof(b_delta_str),
-						"/+%lu", b_delta);
-
-				/*
-				 * Coalesce identical explorer/bandit lines.  When both
-				 * e_delta and b_delta are zero (steady-state run) the
-				 * line is byte-for-byte unchanged, so suppress repeats
-				 * and force a print every 30 windows to keep an anchor.
-				 */
-				static unsigned int last_eb_explorers;
-				static unsigned int last_eb_max;
-				static unsigned long last_eb_e_cur;
-				static unsigned long last_eb_b_cur;
-				static unsigned int eb_suppress = 30; /* force first print */
-				if (eb_suppress >= 30 ||
-				    explorer_children != last_eb_explorers ||
-				    max_children != last_eb_max ||
-				    e_cur != last_eb_e_cur ||
-				    b_cur != last_eb_b_cur) {
-					output(0, "explorer: %u/%u children, %lu edges (%u%%%s)  bandit: %u/%u, %lu edges (%u%%%s)\n",
-						explorer_children, max_children,
-						e_cur, e_share_pct, e_delta_str,
-						max_children - explorer_children, max_children,
-						b_cur, b_share_pct, b_delta_str);
-					last_eb_explorers = explorer_children;
-					last_eb_max = max_children;
-					last_eb_e_cur = e_cur;
-					last_eb_b_cur = b_cur;
-					eb_suppress = 0;
-				} else {
-					eb_suppress++;
-				}
-				last_explorer_edges = e_cur;
-			} else {
-				if (b_delta > 0)
-					output(0, "bandit: %u/%u children, %lu edges (+%lu)\n",
-						max_children, max_children,
-						b_cur, b_delta);
-				else
-					output(0, "bandit: %u/%u children, %lu edges\n",
-						max_children, max_children, b_cur);
-			}
-			last_bandit_edges = b_cur;
+			print_stats_pool_ratio();
 
 			lastcount = op_count;
 		}
