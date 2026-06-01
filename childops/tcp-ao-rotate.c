@@ -367,6 +367,42 @@ static int tcp_ao_rotate_iter_install_keys(struct tcp_ao_rotate_iter_ctx *ctx)
 	return 0;
 }
 
+/*
+ * Phase 3: bring the connection to ESTABLISHED and prime the
+ * AO sign/verify path.  cli goes O_NONBLOCK so a wedged loopback can't
+ * pin us past child.c's SIGALRM(1s) cap (EINPROGRESS is fine — accept()
+ * still completes).  srv_acc also goes O_NONBLOCK so the in-loop
+ * rotate_send bursts don't block on a slow receiver.  The two initial
+ * rotate_send calls drive bytes through the just-installed key so the
+ * very first ADD_KEY/INFO race has live ESTABLISHED traffic to
+ * interact with.  Returns 0 on success or -1 if the iteration should
+ * bail to the out: cleanup path.
+ */
+static int tcp_ao_rotate_iter_connect(struct tcp_ao_rotate_iter_ctx *ctx)
+{
+	(void)fcntl(ctx->cli, F_SETFL, O_NONBLOCK);
+	if (connect(ctx->cli, (struct sockaddr *)&ctx->srv_addr,
+		    sizeof(ctx->srv_addr)) < 0 && errno != EINPROGRESS) {
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_connect_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	ctx->srv_acc = accept(ctx->listener, NULL, NULL);
+	if (ctx->srv_acc < 0) {
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_connect_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	(void)fcntl(ctx->srv_acc, F_SETFL, O_NONBLOCK);
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_connected,
+			   1, __ATOMIC_RELAXED);
+
+	rotate_send(ctx->cli);
+	rotate_send(ctx->srv_acc);
+	return 0;
+}
+
 bool tcp_ao_rotate(struct childdata *child)
 {
 	struct tcp_ao_rotate_iter_ctx ctx = {
@@ -395,34 +431,8 @@ bool tcp_ao_rotate(struct childdata *child)
 	if (tcp_ao_rotate_iter_install_keys(&ctx) != 0)
 		goto out;
 
-	/* Non-blocking connect so a wedged loopback can't pin us past
-	 * SIGALRM(1s).  Loopback usually completes synchronously even
-	 * with the AO sign/verify overhead, but EINPROGRESS is fine —
-	 * accept() succeeds regardless and we proceed to the rotate
-	 * loop. */
-	(void)fcntl(ctx.cli, F_SETFL, O_NONBLOCK);
-	if (connect(ctx.cli, (struct sockaddr *)&ctx.srv_addr,
-		    sizeof(ctx.srv_addr)) < 0 && errno != EINPROGRESS) {
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_connect_failed,
-				   1, __ATOMIC_RELAXED);
+	if (tcp_ao_rotate_iter_connect(&ctx) != 0)
 		goto out;
-	}
-
-	ctx.srv_acc = accept(ctx.listener, NULL, NULL);
-	if (ctx.srv_acc < 0) {
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_connect_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-	(void)fcntl(ctx.srv_acc, F_SETFL, O_NONBLOCK);
-	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_connected,
-			   1, __ATOMIC_RELAXED);
-
-	/* Drive the AO sign/verify path with an initial send before any
-	 * rotation, so the first ADD_KEY/INFO race actually has live
-	 * ESTABLISHED traffic to interact with. */
-	rotate_send(ctx.cli);
-	rotate_send(ctx.srv_acc);
 
 	/* Rotation loop.  cur_id starts at 1 (the just-installed key)
 	 * and rolls forward each iteration: we add cur_id+1, rotate
