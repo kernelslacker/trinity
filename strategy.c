@@ -1878,17 +1878,23 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
  * only when total_pulls is zero (run too short for any window to
  * close).
  */
-void dump_strategy_stats(void)
+static void dump_strategy_stats_header(void)
 {
 	enum picker_mode_t mode;
+
+	mode = __atomic_load_n(&shm->picker_mode, __ATOMIC_RELAXED);
+
+	output(0, "strategy picker: %s\n", picker_mode_name(mode));
+}
+
+void dump_strategy_stats(void)
+{
 	unsigned long total_pulls = 0;
 	unsigned long explorer_edges, bandit_edges;
 	unsigned long plateau_forced;
 	int i;
 
-	mode = __atomic_load_n(&shm->picker_mode, __ATOMIC_RELAXED);
-
-	output(0, "strategy picker: %s\n", picker_mode_name(mode));
+	dump_strategy_stats_header();
 
 	/* Forced-intervention cohort.  These windows ran STRATEGY_RANDOM
 	 * over the picker's head because the kcov plateau detector
