@@ -310,6 +310,51 @@ static int netlink_monitor_race_iter_setup_netns(void)
 	return 0;
 }
 
+/*
+ * Phase: open the monitor netlink socket with a randomised RTMGRP_*
+ * bind, then attach NETLINK_LISTEN_ALL_NSID (CVE-2024-26688 lineage)
+ * and NETLINK_BROADCAST_ERROR.  Returns 0 on success; -1 means the
+ * monitor open failed and the caller should return true immediately --
+ * the mutator fd hasn't been opened yet so there is nothing to clean
+ * up via the out: label.
+ */
+static int netlink_monitor_race_iter_open_monitor(struct netlink_monitor_race_iter_ctx *ctx)
+{
+	struct nl_open_opts mon_opts = {
+		.proto        = NETLINK_ROUTE,
+		.recv_timeo_s = RTNL_RECV_TIMEO_S,
+	};
+	int one = 1;
+
+	/* The bind-time .groups subscription is the race-timing-critical
+	 * piece this childop hangs on: the monitor must be a live
+	 * broadcast subscriber for the mutator's NEWLINK / NEWADDR events
+	 * before those events fire.  nl_open() bind()s with sa.nl_groups
+	 * = opts->groups in the same syscall the per-file rtnl_open() did,
+	 * preserving the atomic-with-bind subscribe semantics. */
+	mon_opts.groups = random_group_mask();
+
+	if (nl_open(&ctx->mon, &mon_opts) < 0) {
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.netlink_monitor_race_mon_open,
+			   1, __ATOMIC_RELAXED);
+
+	/* Attach the peernet path -- CVE-2024-26688 lineage.  ENOPROTOOPT
+	 * on older kernels is fine; we still hit the broadcast race below. */
+	(void)setsockopt(ctx->mon.fd, SOL_NETLINK, NETLINK_LISTEN_ALL_NSID,
+			 &one, sizeof(one));
+
+	/* Promote ENOBUFS into recv error returns so a heavy broadcast
+	 * burst surfaces as an actual error rather than silent drops. */
+	(void)setsockopt(ctx->mon.fd, SOL_NETLINK, NETLINK_BROADCAST_ERROR,
+			 &one, sizeof(one));
+
+	return 0;
+}
+
 bool netlink_monitor_race(struct childdata *child)
 {
 	char dev_name[IFNAMSIZ];
@@ -317,16 +362,11 @@ bool netlink_monitor_race(struct childdata *child)
 		.mon = { .fd = -1 },
 		.mut = { .fd = -1 },
 	};
-	struct nl_open_opts mon_opts = {
-		.proto         = NETLINK_ROUTE,
-		.recv_timeo_s  = RTNL_RECV_TIMEO_S,
-	};
 	struct nl_open_opts mut_opts = {
 		.proto         = NETLINK_ROUTE,
 		.recv_timeo_s  = RTNL_RECV_TIMEO_S,
 	};
 	__u32 drop_grp, add_grp;
-	int one = 1;
 	unsigned int drained;
 	unsigned int i;
 
@@ -340,31 +380,8 @@ bool netlink_monitor_race(struct childdata *child)
 	if (netlink_monitor_race_iter_setup_netns() != 0)
 		return true;
 
-	/* The bind-time .groups subscription is the race-timing-critical
-	 * piece this childop hangs on: the monitor must be a live
-	 * broadcast subscriber for the mutator's NEWLINK / NEWADDR events
-	 * before those events fire.  nl_open() bind()s with sa.nl_groups
-	 * = opts->groups in the same syscall the per-file rtnl_open() did,
-	 * preserving the atomic-with-bind subscribe semantics. */
-	mon_opts.groups = random_group_mask();
-
-	if (nl_open(&ctx.mon, &mon_opts) < 0) {
-		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (netlink_monitor_race_iter_open_monitor(&ctx) != 0)
 		return true;
-	}
-	__atomic_add_fetch(&shm->stats.netlink_monitor_race_mon_open,
-			   1, __ATOMIC_RELAXED);
-
-	/* Attach the peernet path -- CVE-2024-26688 lineage.  ENOPROTOOPT
-	 * on older kernels is fine; we still hit the broadcast race below. */
-	(void)setsockopt(ctx.mon.fd, SOL_NETLINK, NETLINK_LISTEN_ALL_NSID,
-			 &one, sizeof(one));
-
-	/* Promote ENOBUFS into recv error returns so a heavy broadcast
-	 * burst surfaces as an actual error rather than silent drops. */
-	(void)setsockopt(ctx.mon.fd, SOL_NETLINK, NETLINK_BROADCAST_ERROR,
-			 &one, sizeof(one));
 
 	if (nl_open(&ctx.mut, &mut_opts) < 0) {
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
