@@ -85,14 +85,14 @@ bool check_all_locks(void)
 	unsigned int i;
 	bool ret = false;
 
-	check_lock(&shm->syscalltable_lock);
+	ret |= check_lock(&shm->syscalltable_lock);
 
 	/* check_parent_pid (child.c) is the only taker; held briefly on the
 	 * EXIT_REPARENT_PROBLEM fatal path.  A second child entering reparent
 	 * recovery while the first died mid-update would otherwise spin until
 	 * the in-primitive pid_alive recovery fires.  Same shm struct as
 	 * syscalltable_lock above — no NULL gate needed. */
-	check_lock(&shm->buglock);
+	ret |= check_lock(&shm->buglock);
 
 	if (children == NULL)
 		return false;
