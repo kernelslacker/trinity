@@ -628,13 +628,49 @@ static int iouring_multishot_iter_arm_recv(struct iouring_multishot_iter_ctx *it
 	return 0;
 }
 
+/*
+ * Drive multishot completions: short burst of UDP packets from txfd
+ * to the rxfd's bound port, then a non-blocking ms_enter + ms_drain to
+ * reap whatever CQEs the kernel posted.  Each accepted packet posts
+ * one CQE on the multishot SQE.  Loopback SOCK_DGRAM never blocks the
+ * sender for a small burst, but the packet count is capped so a stuck
+ * receiver doesn't accumulate unbounded sk buffer charge.
+ */
+static void iouring_multishot_iter_traffic(struct iouring_multishot_iter_ctx *it)
+{
+	struct sockaddr_in dst;
+	const char payload[64] = "trinity-multishot-payload";
+	unsigned int npkts, i;
+	int r;
+
+	memset(&dst, 0, sizeof(dst));
+	dst.sin_family = AF_INET;
+	dst.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	dst.sin_port = it->port;
+
+	npkts = MIN_PKTS + rnd_modulo_u32(MAX_PKTS - MIN_PKTS + 1);
+	for (i = 0; i < npkts; i++) {
+		ssize_t n = sendto(it->txfd, payload, sizeof(payload), 0,
+				   (struct sockaddr *)&dst, sizeof(dst));
+		if (n > 0)
+			__atomic_add_fetch(&shm->stats.iouring_multishot_packets_sent,
+					   1, __ATOMIC_RELAXED);
+	}
+
+	r = ms_enter(&it->ms, 0, 0);
+	if (r >= 0) {
+		unsigned int reaped = ms_drain(&it->ms);
+
+		__atomic_add_fetch(&shm->stats.iouring_multishot_completions,
+				   (unsigned long)reaped, __ATOMIC_RELAXED);
+	}
+}
+
 bool iouring_net_multishot(struct childdata *child)
 {
 	struct iouring_multishot_iter_ctx it;
 	struct io_uring_sqe sqe;
 	struct io_uring_napi napi_out;
-	unsigned int npkts;
-	unsigned int i;
 	int r;
 
 	(void)child;
@@ -667,37 +703,7 @@ bool iouring_net_multishot(struct childdata *child)
 	if (iouring_multishot_iter_arm_recv(&it) != 0)
 		goto out;
 
-	/* Drive multishot completions: short burst of UDP packets.  Each
-	 * accepted packet posts one CQE on the multishot SQE.  Loopback
-	 * SOCK_DGRAM never blocks the sender for a small burst, but cap
-	 * the count so a stuck receiver doesn't accumulate unbounded sk
-	 * buffer charge. */
-	{
-		struct sockaddr_in dst;
-		const char payload[64] = "trinity-multishot-payload";
-
-		memset(&dst, 0, sizeof(dst));
-		dst.sin_family = AF_INET;
-		dst.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-		dst.sin_port = it.port;
-
-		npkts = MIN_PKTS + rnd_modulo_u32(MAX_PKTS - MIN_PKTS + 1);
-		for (i = 0; i < npkts; i++) {
-			ssize_t n = sendto(it.txfd, payload, sizeof(payload), 0,
-					   (struct sockaddr *)&dst, sizeof(dst));
-			if (n > 0)
-				__atomic_add_fetch(&shm->stats.iouring_multishot_packets_sent,
-						   1, __ATOMIC_RELAXED);
-		}
-	}
-
-	r = ms_enter(&it.ms, 0, 0);
-	if (r >= 0) {
-		unsigned int reaped = ms_drain(&it.ms);
-
-		__atomic_add_fetch(&shm->stats.iouring_multishot_completions,
-				   (unsigned long)reaped, __ATOMIC_RELAXED);
-	}
+	iouring_multishot_iter_traffic(&it);
 
 	/* Cancel the multishot.  USERDATA match drives the cancel walker
 	 * through io_uring/cancel.c and tears down the request while
