@@ -371,6 +371,41 @@ struct alg_recvmsg_iter_ctx {
 };
 
 /*
+ * Phase 1: pick an (alg type, alg name) pair from the /proc/crypto-
+ * backed cache, open the AF_ALG parent socket, and fill sa with the
+ * bind target.  pick_algorithm() returning false (no usable type in
+ * the cache yet) is a clean bail with no fd to close.  socket(AF_ALG)
+ * returning EAFNOSUPPORT latches alg_unsupported so the outer cycle
+ * breaks early on the next iter.  Returns 0 on success or -1 to bail
+ * to the orchestrator's out: teardown path; on the socket-fail bail
+ * parent_fd has captured the -1 from the failed socket() call and the
+ * teardown helper's >= 0 gate skips it.
+ */
+static int alg_recvmsg_iter_setup(struct alg_recvmsg_iter_ctx *ictx)
+{
+	enum alg_type_idx type;
+	const char *name;
+
+	if (!pick_algorithm(&type, &name))
+		return -1;
+
+	ictx->parent_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
+	if (ictx->parent_fd < 0) {
+		if (errno == EAFNOSUPPORT)
+			alg_unsupported = true;
+		return -1;
+	}
+
+	memset(&ictx->sa, 0, sizeof(ictx->sa));
+	ictx->sa.salg_family = AF_ALG;
+	strncpy((char *)ictx->sa.salg_type, alg_type_strings[type],
+		sizeof(ictx->sa.salg_type) - 1);
+	strncpy((char *)ictx->sa.salg_name, name,
+		sizeof(ictx->sa.salg_name) - 1);
+	return 0;
+}
+
+/*
  * Close whichever fds the iteration actually opened.  Runs on every
  * exit path -- success and any early bail from setup or arm.  Both
  * fds default to -1 via the orchestrator's designated initialiser
@@ -393,26 +428,11 @@ static void iter_one(void)
 		.child_fd = -1,
 	};
 	struct timeval tv;
-	enum alg_type_idx type;
-	const char *name;
 	unsigned char keybuf[ARC_KEY_MAX];
 	unsigned char ivbuf[ARC_IV_MAX];
 
-	if (!pick_algorithm(&type, &name))
+	if (alg_recvmsg_iter_setup(&ictx) != 0)
 		goto out;
-
-	ictx.parent_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
-	if (ictx.parent_fd < 0) {
-		if (errno == EAFNOSUPPORT)
-			alg_unsupported = true;
-		goto out;
-	}
-
-	memset(&ictx.sa, 0, sizeof(ictx.sa));
-	ictx.sa.salg_family = AF_ALG;
-	strncpy((char *)ictx.sa.salg_type, alg_type_strings[type],
-		sizeof(ictx.sa.salg_type) - 1);
-	strncpy((char *)ictx.sa.salg_name, name, sizeof(ictx.sa.salg_name) - 1);
 
 	if (bind(ictx.parent_fd, (struct sockaddr *)&ictx.sa,
 		 sizeof(ictx.sa)) < 0)
