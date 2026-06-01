@@ -266,29 +266,38 @@ static void broadcast_wake(struct futex_storm_shared *s)
 	}
 }
 
-bool futex_storm(struct childdata *child)
+/*
+ * Phase 1: stand up the MAP_SHARED region every worker reads/writes
+ * against and the process-shared barrier the parent uses to release
+ * them simultaneously.  The region is mmap'd here so the resulting
+ * pointer can be inherited by the fork burst that follows -- moving
+ * the mmap after the fork would give each worker a private mapping
+ * and break every shared-state access.  nworkers is rolled before
+ * the barrier_init so the barrier waits on exactly the right count.
+ *
+ * Any internal setup failure unmaps the region (if it had been
+ * mapped) and destroys the barrier attr before return, so the caller
+ * can just bail without further teardown.  barrier_up is flipped
+ * only after a successful pthread_barrier_init so the orchestrator's
+ * teardown path can tell whether the barrier needs destroying.
+ * Returns 0 on success or -1 if the iteration should bail.
+ */
+static int futex_storm_iter_setup_region(struct futex_storm_iter_ctx *ctx)
 {
-	struct futex_storm_iter_ctx ctx = { .s = NULL };
 	pthread_barrierattr_t attr;
-	struct timespec budget;
-	int i, status;
 
-	(void)child;
+	ctx->nworkers = 3 + rnd_modulo_u32(MAX_WORKERS - 2);	/* 3..MAX_WORKERS */
 
-	__atomic_add_fetch(&shm->stats.futex_storm_runs, 1, __ATOMIC_RELAXED);
-
-	ctx.nworkers = 3 + rnd_modulo_u32(MAX_WORKERS - 2);	/* 3..MAX_WORKERS */
-
-	ctx.s = mmap(NULL, sizeof(*ctx.s), PROT_READ | PROT_WRITE,
-		     MAP_ANONYMOUS | MAP_SHARED, -1, 0);
-	if (ctx.s == MAP_FAILED) {
-		ctx.s = NULL;
-		return true;
+	ctx->s = mmap(NULL, sizeof(*ctx->s), PROT_READ | PROT_WRITE,
+		      MAP_ANONYMOUS | MAP_SHARED, -1, 0);
+	if (ctx->s == MAP_FAILED) {
+		ctx->s = NULL;
+		return -1;
 	}
 
-	memset(ctx.s->futexes, 0, sizeof(ctx.s->futexes));
-	ctx.s->done  = 0;
-	ctx.s->iters = 0;
+	memset(ctx->s->futexes, 0, sizeof(ctx->s->futexes));
+	ctx->s->done  = 0;
+	ctx->s->iters = 0;
 
 	/*
 	 * Pick the per-invocation op-selection mode and the two pinned
@@ -296,26 +305,46 @@ bool futex_storm(struct childdata *child)
 	 * indices must differ so REQUEUE_HEAVY actually drives traffic
 	 * across two buckets rather than degenerating into a self-requeue.
 	 */
-	ctx.s->mode    = rnd_modulo_u32(STORM_MODE_MAX);
-	ctx.s->pinned1 = (int)rnd_modulo_u32(NR_FUTEX_WORDS);
-	ctx.s->pinned2 = (int)rnd_modulo_u32(NR_FUTEX_WORDS);
-	if (ctx.s->pinned2 == ctx.s->pinned1)
-		ctx.s->pinned2 = (ctx.s->pinned1 + 1) % NR_FUTEX_WORDS;
+	ctx->s->mode    = rnd_modulo_u32(STORM_MODE_MAX);
+	ctx->s->pinned1 = (int)rnd_modulo_u32(NR_FUTEX_WORDS);
+	ctx->s->pinned2 = (int)rnd_modulo_u32(NR_FUTEX_WORDS);
+	if (ctx->s->pinned2 == ctx->s->pinned1)
+		ctx->s->pinned2 = (ctx->s->pinned1 + 1) % NR_FUTEX_WORDS;
 
 	if (pthread_barrierattr_init(&attr) != 0)
-		goto out_unmap;
+		goto fail_unmap;
 
 	if (pthread_barrierattr_setpshared(&attr, PTHREAD_PROCESS_SHARED) != 0) {
 		pthread_barrierattr_destroy(&attr);
-		goto out_unmap;
+		goto fail_unmap;
 	}
 
-	if (pthread_barrier_init(&ctx.s->barrier, &attr, ctx.nworkers) != 0) {
+	if (pthread_barrier_init(&ctx->s->barrier, &attr, ctx->nworkers) != 0) {
 		pthread_barrierattr_destroy(&attr);
-		goto out_unmap;
+		goto fail_unmap;
 	}
 	pthread_barrierattr_destroy(&attr);
-	ctx.barrier_up = true;
+	ctx->barrier_up = true;
+	return 0;
+
+fail_unmap:
+	munmap(ctx->s, sizeof(*ctx->s));
+	ctx->s = NULL;
+	return -1;
+}
+
+bool futex_storm(struct childdata *child)
+{
+	struct futex_storm_iter_ctx ctx = { .s = NULL };
+	struct timespec budget;
+	int i, status;
+
+	(void)child;
+
+	__atomic_add_fetch(&shm->stats.futex_storm_runs, 1, __ATOMIC_RELAXED);
+
+	if (futex_storm_iter_setup_region(&ctx) != 0)
+		return true;
 
 	for (i = 0; i < (int)ctx.nworkers; i++) {
 		pid_t pid = fork();
@@ -383,7 +412,6 @@ bool futex_storm(struct childdata *child)
 
 out_barrier:
 	pthread_barrier_destroy(&ctx.s->barrier);
-out_unmap:
 	munmap(ctx.s, sizeof(*ctx.s));
 	return true;
 }
