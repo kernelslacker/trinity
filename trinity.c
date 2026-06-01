@@ -661,6 +661,58 @@ static void init_main_early(void)
 	init_shm();
 }
 
+/*
+ * Init the run-time monitors (core_pattern surfacing, kmsg monitor,
+ * taint-checker) and dispatch the early-exit dump modes that operate
+ * purely on the parsed tables (--show-disabled-syscalls,
+ * --show-syscall-list, --show-ioctl-list, --show-unannotated).  The
+ * dump modes need init_taint_checking() to have run first because the
+ * disabled-syscalls printer queries the taint-derived deny list, and
+ * each dump-mode path is mutually exclusive with normal fuzzing.
+ * Returned value tells main() whether to fall through to the next
+ * init phase or short-circuit to the out: label, with EXIT_FAILURE
+ * reserved for the munge_tables() error path.
+ */
+enum init_action {
+	INIT_CONTINUE,
+	INIT_DONE,
+	INIT_FAILED,
+};
+
+static enum init_action init_monitors_and_handle_dump_modes(void)
+{
+	print_core_pattern();
+
+	kmsg_monitor_start();
+
+	init_taint_checking();
+
+	if (show_disabled_syscalls == true) {
+		print_disabled_syscalls();
+		return INIT_DONE;
+	}
+
+	if (munge_tables() == false)
+		return INIT_FAILED;
+
+	if (show_syscall_list == true) {
+		dump_syscall_tables();
+		return INIT_DONE;
+	}
+
+	if (show_ioctl_list == true) {
+		dump_ioctls();
+		return INIT_DONE;
+	}
+
+	if (show_unannotated == true) {
+		show_unannotated_args();
+		return INIT_DONE;
+	}
+
+	return INIT_CONTINUE;
+}
+
 int main(int argc, char* argv[])
 {
 	int ret = EXIT_SUCCESS;
@@ -716,34 +768,13 @@ int main(int argc, char* argv[])
 
 	publish_and_persist_seed();
 
-	print_core_pattern();
-
-	kmsg_monitor_start();
-
-	init_taint_checking();
-
-	if (show_disabled_syscalls == true) {
-		print_disabled_syscalls();
-		goto out;
-	}
-
-	if (munge_tables() == false) {
+	switch (init_monitors_and_handle_dump_modes()) {
+	case INIT_CONTINUE:
+		break;
+	case INIT_FAILED:
 		ret = EXIT_FAILURE;
 		goto out;
-	}
-
-	if (show_syscall_list == true) {
-		dump_syscall_tables();
-		goto out;
-	}
-
-	if (show_ioctl_list == true) {
-		dump_ioctls();
-		goto out;
-	}
-
-	if (show_unannotated == true) {
-		show_unannotated_args();
+	case INIT_DONE:
 		goto out;
 	}
 
