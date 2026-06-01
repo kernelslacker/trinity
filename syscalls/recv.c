@@ -260,8 +260,24 @@ skip_si:
 	}
 
 	if (RAND_BOOL()) {
+		/*
+		 * Oversize the backing allocation to a fixed 4096 bytes so a
+		 * sibling scribble of msg_controllen up to 4096 between this
+		 * sanitiser returning and the kernel reading the value still
+		 * leaves the kernel's write through msg_control inside the
+		 * chunk.  scrub_msghdr_for_kernel_write() in
+		 * rand/random-address.c intentionally does not redirect
+		 * msg_controllen (only iov_base entries), so the size_t the
+		 * kernel reads is sibling-writable.  Heap-buffer-overflow
+		 * through this slot was the dominant __zmalloc -> malloc ->
+		 * malloc_printerr -> abort crash cluster -- see the comment
+		 * at recv.c above the scrub_msghdr_for_kernel_write() call
+		 * for the full description.  Keep msg_controllen randomised
+		 * across [0, 4096) so the kernel still sees the original
+		 * size-hint distribution.
+		 */
 		msg->msg_controllen = rand32() % 4096;
-		msg->msg_control = zmalloc(msg->msg_controllen);
+		msg->msg_control = zmalloc(4096);
 	}
 
 	if (ONE_IN(100))
@@ -504,8 +520,15 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 		snap->name[i] = sa;
 
 		if (RAND_BOOL()) {
+			/*
+			 * Oversize to fixed 4096; see sanitise_recvmsg
+			 * above for the sibling-scribble heap-overflow
+			 * rationale.  msg_controllen stays randomised so
+			 * the kernel still sees the original size-hint
+			 * distribution.
+			 */
 			msg->msg_controllen = rand32() % 4096;
-			msg->msg_control = zmalloc(msg->msg_controllen);
+			msg->msg_control = zmalloc(4096);
 			snap->control[i] = msg->msg_control;
 		}
 
