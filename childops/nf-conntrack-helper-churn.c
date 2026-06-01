@@ -682,6 +682,28 @@ static int nfct_helper_iter_pick(struct nfct_helper_iter_ctx *ictx)
 }
 
 /*
+ * Phase: CT_NEW with CTA_HELP -- the helper-attach path.  Folds the ack
+ * into the per-helper availability mask and bumps the attach_ok /
+ * attach_fail stats accordingly.  EEXIST is benign coverage (the lookup
+ * + collision-detection path ran end-to-end).
+ */
+static void nfct_helper_iter_attach(struct nfct_helper_iter_ctx *ictx)
+{
+	int rc;
+
+	rc = build_ct_new(ictx->ctx, ictx->zone, ictx->l4proto,
+			  ictx->sport, ictx->dport, ictx->helper_name, 0);
+	update_helper_mask(ictx->helper_idx, rc);
+	if (rc == 0 || rc == -EEXIST) {
+		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_attach_ok,
+				   1, __ATOMIC_RELAXED);
+	} else {
+		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_attach_fail,
+				   1, __ATOMIC_RELAXED);
+	}
+}
+
+/*
  * One outer iteration: pick zone + helper, insert master conntrack +
  * expectation, drive a packet through, then run a small race burst
  * (delete / zone-swap / detach).  Returns true on every path; the
@@ -697,18 +719,7 @@ static void iter_one(struct nfnl_ctx *ctx)
 	if (nfct_helper_iter_pick(&ictx) < 0)
 		return;
 
-	/* 2) CT_NEW with CTA_HELP -- the helper-attach path.  EEXIST is
-	 *    benign coverage (lookup + collision-detection ran).  */
-	rc = build_ct_new(ictx.ctx, ictx.zone, ictx.l4proto,
-			  ictx.sport, ictx.dport, ictx.helper_name, 0);
-	update_helper_mask(ictx.helper_idx, rc);
-	if (rc == 0 || rc == -EEXIST) {
-		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_attach_ok,
-				   1, __ATOMIC_RELAXED);
-	} else {
-		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_attach_fail,
-				   1, __ATOMIC_RELAXED);
-	}
+	nfct_helper_iter_attach(&ictx);
 
 	/* 3) EXP_NEW -- expectation injection.  Half the time put the
 	 *    child in a different zone than the master to exercise the
