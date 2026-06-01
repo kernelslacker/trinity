@@ -605,6 +605,43 @@ static void init_main_process(char *argv[])
 	create_shm();
 }
 
+/*
+ * Post-parse process I/O setup: the version banner (routed to stdout
+ * or stderr based on whether --stats-json has reserved stdout), the
+ * cgroup v2 sub-cgroup placement + atexit cleanup hook, and the
+ * --stats-log-file open.  All three steps are gated on parsed args
+ * and so cannot run until after parse_args returns; the stats-log
+ * open also has to precede change_tmp_dir() so a relative log path
+ * is resolved against the operator's launch CWD.
+ */
+static void init_post_parse_io(void)
+{
+	/* Banner is deferred until after parse_args so --stats-json (which
+	 * reserves stdout for the JSON document) can redirect it to stderr.
+	 * Without this, the banner would land on stdout before the flag is
+	 * known and corrupt the JSON stream consumers expect to parse. */
+	if (should_route_to_stdout())
+		outputstd("Trinity " VERSION " (git " GIT_HASH ")  Dave Jones <davej@codemonkey.org.uk>\n");
+	else
+		outputerr("Trinity " VERSION " (git " GIT_HASH ")  Dave Jones <davej@codemonkey.org.uk>\n");
+
+	/* Place ourselves into a dedicated cgroup v2 sub-cgroup with a
+	 * memory cap so a runaway allocation triggers a scoped OOM kill of
+	 * trinity instead of a host-wide global OOM that takes down the
+	 * surrounding shell/tmux.  cgroup v2 process membership is inherited
+	 * on plain fork(), so all later children land here automatically.
+	 * Failures degrade gracefully: trinity continues without the safety
+	 * net rather than refusing to start. */
+	self_cgroup_setup();
+	atexit(self_cgroup_cleanup);
+
+	/* Open --stats-log-file (if any) before change_tmp_dir() so a
+	 * relative PATH is resolved against the operator's launch CWD,
+	 * not trinity's tmp/ working directory.  No-op when the flag was
+	 * not passed; failure logs a warning and continues without a log. */
+	stats_log_open(stats_log_path);
+}
+
 int main(int argc, char* argv[])
 {
 	int ret = EXIT_SUCCESS;
@@ -644,30 +681,7 @@ int main(int argc, char* argv[])
 		exit(EXIT_SUCCESS);
 	}
 
-	/* Banner is deferred until after parse_args so --stats-json (which
-	 * reserves stdout for the JSON document) can redirect it to stderr.
-	 * Without this, the banner would land on stdout before the flag is
-	 * known and corrupt the JSON stream consumers expect to parse. */
-	if (should_route_to_stdout())
-		outputstd("Trinity " VERSION " (git " GIT_HASH ")  Dave Jones <davej@codemonkey.org.uk>\n");
-	else
-		outputerr("Trinity " VERSION " (git " GIT_HASH ")  Dave Jones <davej@codemonkey.org.uk>\n");
-
-	/* Place ourselves into a dedicated cgroup v2 sub-cgroup with a
-	 * memory cap so a runaway allocation triggers a scoped OOM kill of
-	 * trinity instead of a host-wide global OOM that takes down the
-	 * surrounding shell/tmux.  cgroup v2 process membership is inherited
-	 * on plain fork(), so all later children land here automatically.
-	 * Failures degrade gracefully: trinity continues without the safety
-	 * net rather than refusing to start. */
-	self_cgroup_setup();
-	atexit(self_cgroup_cleanup);
-
-	/* Open --stats-log-file (if any) before change_tmp_dir() so a
-	 * relative PATH is resolved against the operator's launch CWD,
-	 * not trinity's tmp/ working directory.  No-op when the flag was
-	 * not passed; failure logs a warning and continues without a log. */
-	stats_log_open(stats_log_path);
+	init_post_parse_io();
 
 	derive_and_clamp_slot_partition();
 
