@@ -389,11 +389,11 @@ syscalls/recv.c:346:post_recvmsg
 syscalls/recv.c:367:post_recvmsg
 syscalls/recv.c:379:post_recvmsg
 syscalls/recv.c:399:post_recvmsg
-syscalls/recv.c:570:post_recvmmsg
-syscalls/recv.c:587:post_recvmmsg
-syscalls/recv.c:605:post_recvmmsg
-syscalls/recv.c:617:post_recvmmsg
-syscalls/recv.c:632:post_recvmmsg
+syscalls/recv.c:576:post_recvmmsg
+syscalls/recv.c:593:post_recvmmsg
+syscalls/recv.c:611:post_recvmmsg
+syscalls/recv.c:623:post_recvmmsg
+syscalls/recv.c:638:post_recvmmsg
 syscalls/rt_sigpending.c:93:post_rt_sigpending
 syscalls/rt_sigpending.c:108:post_rt_sigpending
 syscalls/rt_sigpending.c:132:post_rt_sigpending

@@ -203,22 +203,18 @@ struct syscallentry syscall_recvfrom = {
  * the exact value is 2^-64 per stomp, so a mismatch is treated as a
  * stomp signature rather than as benign noise.
  *
- * The inner-pointer fields (control, name) are snapshotted alongside
- * the outer msghdr pointer because the kernel writes through the
- * msghdr in a recvmsg() call -- in particular msg_control gets the
- * cmsg buffer and msg_namelen gets the actual sockaddr length, and
- * the kernel can also write past msg_control if an iov_base alias
- * lands inside the msghdr struct itself.  After return the inner
- * pointer slots in the current msghdr cannot be trusted: a kernel
- * scribble of msg_control to a within-array offset (e.g. &msgs[5]
- * for a 4-elem array) is a heap-shaped value that passed the inner
- * shape-only check but is not the allocation we made, and free()ing
- * it aborts in libasan.  Stash the originals at sanitise time so the
- * post handler can free the allocations we made, not the values the
- * kernel left behind.  Mirrors the outer-pointer magic-cookie pattern
- * already in place for rec->post_state.
+ * Only msg_name is snapshotted as a free-from-trusted-snap slot.
+ * msg_control now lives in the writable-pool (get_writable_address)
+ * and is never freed by trinity, so there is no scribble-mismatch
+ * concern for that field.  msg_name is still a heap allocation from
+ * generate_sockaddr(), and the kernel writes msg_namelen back into
+ * the msghdr on success -- a sibling iov_base aliased into the
+ * msghdr struct could scribble msg_name with a heap-shaped within-
+ * array offset that the inner shape-only check accepts but free()
+ * aborts on in libasan.  Stash the original sa pointer at sanitise
+ * time so the post handler frees the allocation we made.
  *
- * Sized 40 bytes (lands in the 48-byte glibc malloc chunk bucket) so
+ * Sized 32 bytes (lands in the 32-byte glibc malloc chunk bucket) so
  * the struct still does not collide with the 16-byte free-list bucket
  * that holds alloc_iovec(1).
  */
@@ -227,7 +223,6 @@ struct recvmsg_post_state {
 	unsigned long magic;
 	struct msghdr *msg;
 	unsigned long iov_len_sum;
-	void *control;
 	void *name;
 };
 
@@ -261,23 +256,29 @@ skip_si:
 
 	if (RAND_BOOL()) {
 		/*
-		 * Oversize the backing allocation to a fixed 4096 bytes so a
-		 * sibling scribble of msg_controllen up to 4096 between this
-		 * sanitiser returning and the kernel reading the value still
-		 * leaves the kernel's write through msg_control inside the
-		 * chunk.  scrub_msghdr_for_kernel_write() in
+		 * Back msg_control with a writable-pool slot rather than a
+		 * libc-heap zmalloc().  scrub_msghdr_for_kernel_write() in
 		 * rand/random-address.c intentionally does not redirect
 		 * msg_controllen (only iov_base entries), so the size_t the
-		 * kernel reads is sibling-writable.  Heap-buffer-overflow
-		 * through this slot was the dominant __zmalloc -> malloc ->
-		 * malloc_printerr -> abort crash cluster -- see the comment
-		 * at recv.c above the scrub_msghdr_for_kernel_write() call
-		 * for the full description.  Keep msg_controllen randomised
-		 * across [0, 4096) so the kernel still sees the original
-		 * size-hint distribution.
+		 * kernel reads at syscall entry is sibling-writable.  Even
+		 * with the preceding oversize-to-4096 commit a scribble
+		 * above 4096 would resume the heap-buffer-overflow that
+		 * surfaces as the __zmalloc -> malloc -> malloc_printerr ->
+		 * abort cluster.  Migrating to get_writable_address() takes
+		 * the cmsg writeback's overflow target out of the libc
+		 * arena entirely: the pool's neighbours are other pool
+		 * slots and trinity never free()s a pool address, so even
+		 * an arbitrary-size kernel scribble cannot corrupt glibc
+		 * chunk metadata.  Drop msg_control to NULL (and
+		 * msg_controllen to 0) when the pool cannot surface a
+		 * 4 KB slot -- mirrors the get_writable_address() failure
+		 * mode for sanitise_recvfrom's sockaddr_storage slot.
 		 */
-		msg->msg_controllen = rand32() % 4096;
-		msg->msg_control = zmalloc(4096);
+		msg->msg_control = get_writable_address(4096);
+		if (msg->msg_control != NULL)
+			msg->msg_controllen = rand32() % 4096;
+		else
+			msg->msg_controllen = 0;
 	}
 
 	if (ONE_IN(100))
@@ -321,7 +322,6 @@ skip_si:
 	snap->magic = RECVMSG_POST_STATE_MAGIC;
 	snap->msg = msg;
 	snap->iov_len_sum = iov_len_sum;
-	snap->control = msg->msg_control;
 	snap->name = msg->msg_name;
 	rec->post_state = (unsigned long) snap;
 }
@@ -406,15 +406,16 @@ skip_bound:
 
 	/*
 	 * Free from the trusted snap, not from the current msghdr.  The
-	 * kernel writes through msg_control on success, and a sibling
-	 * iov_base aliased into the msghdr can scribble msg_control with
+	 * kernel writes through msg_namelen on success, and a sibling
+	 * iov_base aliased into the msghdr can scribble msg_name with
 	 * a heap-shaped within-array offset that the inner shape-only
 	 * check accepts but free() aborts on in libasan.  The snap fields
 	 * are wrapped in the magic-cookie struct above, so they hold the
 	 * sanitise-time allocations regardless of what the kernel (or a
-	 * sibling) left in the live msghdr.
+	 * sibling) left in the live msghdr.  msg_control is no longer
+	 * freed -- it lives in the writable-pool now (see sanitise_
+	 * recvmsg) and pool allocations are never released by trinity.
 	 */
-	free(snap->control);
 	deferred_free_enqueue(msg->msg_iov);
 	tracked_free_now(snap->name);
 	rec->a2 = 0;
@@ -463,11 +464,13 @@ struct syscallentry syscall_recvmsg = {
  * surfaces as the dominant __zmalloc -> malloc -> malloc_printerr ->
  * abort crash cluster.  Mirrors RECVMSG_POST_STATE_MAGIC above.
  *
- * The per-i inner pointer fields (msg_control, msg_name) are also
- * snapshotted here.  recvmmsg(2) is a kernel write through the msgs
- * array, and a sibling syscall whose iov_base aliases bytes inside
- * the msgs[] allocation can let the kernel scribble msgs[i].msg_hdr.
- * msg_control with a heap-shaped within-array offset of msgs[] itself
+ * Only the per-i msg_name pointers are snapshotted here.  msg_control
+ * now lives in the writable-pool (get_writable_address) and is never
+ * freed by trinity, so there is no scribble-mismatch concern for that
+ * field.  msg_name is still a heap allocation from generate_sockaddr()
+ * and a sibling syscall whose iov_base aliases bytes inside the
+ * msgs[] allocation can let the kernel scribble msgs[i].msg_hdr.
+ * msg_name with a heap-shaped within-array offset of msgs[] itself
  * (e.g. &msgs[5] for a 4-element array).  Such a value passes the
  * inner shape-only validator but free() of an interior offset aborts
  * in libasan's PoisonShadow alignment CHECK -- ASAN caught that exact
@@ -482,7 +485,6 @@ struct recvmmsg_post_state {
 	struct mmsghdr *msgs;
 	unsigned int vlen;
 	unsigned int _pad;
-	void *control[RECVMMSG_MAX_VLEN];
 	void *name[RECVMMSG_MAX_VLEN];
 };
 
@@ -521,15 +523,19 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 
 		if (RAND_BOOL()) {
 			/*
-			 * Oversize to fixed 4096; see sanitise_recvmsg
-			 * above for the sibling-scribble heap-overflow
-			 * rationale.  msg_controllen stays randomised so
-			 * the kernel still sees the original size-hint
-			 * distribution.
+			 * Migrate msg_control to the writable-pool; see
+			 * sanitise_recvmsg above for the structural
+			 * rationale (sibling-scribbled msg_controllen
+			 * cannot land a kernel overflow on glibc arena
+			 * metadata when the backing buffer is not on
+			 * the libc heap).  Drop to NULL/0 when the pool
+			 * cannot surface a 4 KB slot.
 			 */
-			msg->msg_controllen = rand32() % 4096;
-			msg->msg_control = zmalloc(4096);
-			snap->control[i] = msg->msg_control;
+			msg->msg_control = get_writable_address(4096);
+			if (msg->msg_control != NULL)
+				msg->msg_controllen = rand32() % 4096;
+			else
+				msg->msg_controllen = 0;
 		}
 
 		/*
@@ -636,18 +642,19 @@ static void post_recvmmsg(struct syscallrecord *rec)
 
 	/*
 	 * Free from the trusted per-i snap, not from the live msgs[]
-	 * array.  The kernel writes through msg_control / msg_name on
-	 * success, and a sibling iov_base aliased inside the msgs[]
-	 * allocation can scribble those slots with a heap-shaped
-	 * within-array offset of msgs[] (e.g. &msgs[5] for a 4-elem
-	 * array).  That value passes the inner shape-only check but
-	 * free() of an interior offset aborts in libasan.  The snap
-	 * fields are wrapped in the magic-cookie struct above, so they
-	 * still hold the sanitise-time allocations.
+	 * array.  The kernel writes msg_namelen on success, and a
+	 * sibling iov_base aliased inside the msgs[] allocation can
+	 * scribble msg_name with a heap-shaped within-array offset of
+	 * msgs[] (e.g. &msgs[5] for a 4-elem array).  That value passes
+	 * the inner shape-only check but free() of an interior offset
+	 * aborts in libasan.  The snap fields are wrapped in the magic-
+	 * cookie struct above, so they still hold the sanitise-time
+	 * allocations.  msg_control is no longer freed -- it lives in
+	 * the writable-pool now (see sanitise_recvmmsg) and pool
+	 * allocations are never released by trinity.
 	 */
 	for (i = 0; i < vlen; i++) {
 		deferred_free_enqueue(msgs[i].msg_hdr.msg_iov);
-		free(snap->control[i]);
 		tracked_free_now(snap->name[i]);
 	}
 	rec->a2 = 0;
