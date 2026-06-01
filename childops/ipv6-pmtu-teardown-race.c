@@ -575,22 +575,14 @@ static int v6pmtu_iter_spawn_workers(char names[V6PMTU_NUM_PAIRS][8],
 	return 0;
 }
 
-static void iter_one(void)
+/*
+ * Compute the parent's V6PMTU_PARENT_WALL_NS wall-clock deadline and
+ * reap both workers under it.  reap_with_deadline SIGKILLs a laggard
+ * past the deadline so a wedged worker can't outrun trinity's SIGALRM.
+ */
+static void v6pmtu_iter_reap_workers(pid_t a, pid_t b)
 {
-	int nsfd;
-	char names[V6PMTU_NUM_PAIRS][8];
-	pid_t a, b;
 	struct timespec deadline;
-
-	nsfd = v6pmtu_iter_enter_netns();
-	if (nsfd < 0)
-		return;
-
-	if (v6pmtu_iter_setup_network(names) != 0)
-		goto out_setns;
-
-	if (v6pmtu_iter_spawn_workers(names, &a, &b) != 0)
-		goto out_setns;
 
 	if (clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) {
 		deadline.tv_sec = 0;
@@ -604,6 +596,25 @@ static void iter_one(void)
 
 	reap_with_deadline(a, &deadline);
 	reap_with_deadline(b, &deadline);
+}
+
+static void iter_one(void)
+{
+	int nsfd;
+	char names[V6PMTU_NUM_PAIRS][8];
+	pid_t a, b;
+
+	nsfd = v6pmtu_iter_enter_netns();
+	if (nsfd < 0)
+		return;
+
+	if (v6pmtu_iter_setup_network(names) != 0)
+		goto out_setns;
+
+	if (v6pmtu_iter_spawn_workers(names, &a, &b) != 0)
+		goto out_setns;
+
+	v6pmtu_iter_reap_workers(a, b);
 
 	__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_completed_ok,
 			   1, __ATOMIC_RELAXED);
