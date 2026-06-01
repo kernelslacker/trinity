@@ -555,6 +555,54 @@ static int vxlan_encap_iter_open_ctx(struct vxlan_encap_iter_ctx *ctx)
 	return 0;
 }
 
+/*
+ * Build phase: generate a random ifname and vni-or-key, fire
+ * RTM_NEWLINK to create the tunnel device, resolve its ifindex, and
+ * (for vxlan) install a permanent NTF_SELF fdb entry plus bring the
+ * device up.  Returns 0 if the burst phase should run, -1 on any
+ * failure.  On the link-create rejection path, "rtnl_link_ops not
+ * registered" errnos latch the kind off so subsequent invocations
+ * skip it; other rejections leave the latch alone so the next
+ * iteration retries with a fresh ifname.  Teardown stays safe to
+ * call on -1 because it gates on ctx->link_added and ctx->ifindex.
+ */
+static int vxlan_encap_iter_build_link(struct vxlan_encap_iter_ctx *ctx)
+{
+	int rc;
+
+	snprintf(ctx->ifname, sizeof(ctx->ifname), "trtun%u",
+		 (unsigned int)(rand32() & 0xffffu));
+	ctx->vni_or_key = rand32();
+
+	rc = build_tunnel_link(&ctx->nl, ctx->kind, ctx->ifname,
+			       ctx->vni_or_key);
+	if (rc != 0) {
+		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
+		    rc == -ENOTSUP || rc == -ENOENT || rc == -EPROTONOSUPPORT)
+			*kind_latch(ctx->kind) = true;
+		return -1;
+	}
+	ctx->link_added = true;
+	__atomic_add_fetch(&shm->stats.vxlan_encap_churn_link_create_ok,
+			   1, __ATOMIC_RELAXED);
+
+	ctx->ifindex = (int)if_nametoindex(ctx->ifname);
+	if (ctx->ifindex == 0)
+		return -1;
+
+	if (ctx->kind == TUN_VXLAN) {
+		if (build_fdb_add(&ctx->nl, ctx->ifindex) == 0)
+			__atomic_add_fetch(&shm->stats.vxlan_encap_churn_fdb_add_ok,
+					   1, __ATOMIC_RELAXED);
+	}
+
+	if (build_setlink_up(&ctx->nl, ctx->ifindex) == 0)
+		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_link_up_ok,
+				   1, __ATOMIC_RELAXED);
+
+	return 0;
+}
+
 bool vxlan_encap_churn(struct childdata *child)
 {
 	struct vxlan_encap_iter_ctx ctx = {
@@ -563,7 +611,6 @@ bool vxlan_encap_churn(struct childdata *child)
 	};
 	unsigned int iters;
 	unsigned int i;
-	int rc;
 
 	(void)child;
 
@@ -583,40 +630,8 @@ bool vxlan_encap_churn(struct childdata *child)
 	if (vxlan_encap_iter_open_ctx(&ctx) != 0)
 		return true;
 
-	snprintf(ctx.ifname, sizeof(ctx.ifname), "trtun%u",
-		 (unsigned int)(rand32() & 0xffffu));
-	ctx.vni_or_key = rand32();
-
-	rc = build_tunnel_link(&ctx.nl, ctx.kind, ctx.ifname, ctx.vni_or_key);
-	if (rc != 0) {
-		/* EAFNOSUPPORT / EOPNOTSUPP / ENOTSUPP / ENOENT all mean
-		 * "this rtnl_link_ops is not registered" — the kind's
-		 * module isn't built or loadable, so latch and skip on
-		 * future invocations.  Other rejections (EBUSY, EEXIST
-		 * from a stale name collision) leave the latch alone so
-		 * the next iteration retries with a fresh ifname. */
-		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
-		    rc == -ENOTSUP || rc == -ENOENT || rc == -EPROTONOSUPPORT)
-			*kind_latch(ctx.kind) = true;
+	if (vxlan_encap_iter_build_link(&ctx) != 0)
 		goto out;
-	}
-	ctx.link_added = true;
-	__atomic_add_fetch(&shm->stats.vxlan_encap_churn_link_create_ok,
-			   1, __ATOMIC_RELAXED);
-
-	ctx.ifindex = (int)if_nametoindex(ctx.ifname);
-	if (ctx.ifindex == 0)
-		goto out;
-
-	if (ctx.kind == TUN_VXLAN) {
-		if (build_fdb_add(&ctx.nl, ctx.ifindex) == 0)
-			__atomic_add_fetch(&shm->stats.vxlan_encap_churn_fdb_add_ok,
-					   1, __ATOMIC_RELAXED);
-	}
-
-	if (build_setlink_up(&ctx.nl, ctx.ifindex) == 0)
-		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_link_up_ok,
-				   1, __ATOMIC_RELAXED);
 
 	ctx.raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_IP));
 	if (ctx.raw < 0)
