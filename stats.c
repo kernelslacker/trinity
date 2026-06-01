@@ -3910,27 +3910,8 @@ static void dump_stats_corruption_and_pool(void)
 			 shm->stats.pagecache_canary_corrupt_caught);
 }
 
-void dump_stats(void)
+static void dump_stats_childop_ranked_tables(void)
 {
-	unsigned int i;
-
-	if (stats_json) {
-		dump_stats_json();
-		return;
-	}
-
-	dump_stats_runtime_header();
-
-	dump_stats_per_syscall_tables();
-
-	dump_stats_fd_tracking();
-
-	dump_stats_oracle_anomalies();
-
-	dump_stats_fuzzer_subsystems();
-
-	dump_stats_corruption_and_pool();
-
 	{
 		unsigned int op;
 		char metric[40];
@@ -4081,6 +4062,30 @@ void dump_stats(void)
 			}
 		}
 	}
+}
+
+void dump_stats(void)
+{
+	unsigned int i;
+
+	if (stats_json) {
+		dump_stats_json();
+		return;
+	}
+
+	dump_stats_runtime_header();
+
+	dump_stats_per_syscall_tables();
+
+	dump_stats_fd_tracking();
+
+	dump_stats_oracle_anomalies();
+
+	dump_stats_fuzzer_subsystems();
+
+	dump_stats_corruption_and_pool();
+
+	dump_stats_childop_ranked_tables();
 
 	if (parent_stats.shared_buffer_redirected)
 		stat_row("shared_buffer", "args_redirected",     parent_stats.shared_buffer_redirected);
