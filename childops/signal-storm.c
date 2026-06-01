@@ -262,6 +262,31 @@ static void signal_storm_iter_burst_same_target(struct signal_storm_iter_ctx *ic
 	}
 }
 
+/*
+ * Phase: MODE_GROUPED -- per target, K (1..4) kill()s back-to-back then
+ * Q (1..4) sigqueue()s.  Exercises the kill -> sigqueue transition on a
+ * single task's pending queue, which the per-iter mode flip of
+ * burst_mixed cannot string together.
+ */
+static void signal_storm_iter_burst_mode_grouped(struct signal_storm_iter_ctx *ictx)
+{
+	unsigned int t = 0;
+	unsigned int i = 0;
+
+	while (i < ictx->iters) {
+		pid_t pid = ictx->targets[t % ictx->ntargets];
+		unsigned int kburst = 1 + rnd_modulo_u32(4); /* 1..4 */
+		unsigned int qburst = 1 + rnd_modulo_u32(4);
+		unsigned int k;
+
+		for (k = 0; k < kburst && i < ictx->iters; k++, i++)
+			emit_signal(pid, pick_signal_in(ictx->catalog), true);
+		for (k = 0; k < qburst && i < ictx->iters; k++, i++)
+			emit_signal(pid, pick_signal_in(ictx->catalog), false);
+		t++;
+	}
+}
+
 bool signal_storm(struct childdata *child)
 {
 	struct signal_storm_iter_ctx ictx = { 0 };
@@ -293,26 +318,9 @@ bool signal_storm(struct childdata *child)
 	case ORDER_SAME_TARGET_BURST:
 		signal_storm_iter_burst_same_target(&ictx);
 		break;
-	case ORDER_MODE_GROUPED: {
-		unsigned int t = 0;
-
-		i = 0;
-		while (i < iters) {
-			pid_t pid = targets[t % ntargets];
-			unsigned int kburst = 1 + rnd_modulo_u32(4); /* 1..4 */
-			unsigned int qburst = 1 + rnd_modulo_u32(4);
-			unsigned int k;
-
-			for (k = 0; k < kburst && i < iters; k++, i++)
-				emit_signal(pid, pick_signal_in(catalog),
-					    true);
-			for (k = 0; k < qburst && i < iters; k++, i++)
-				emit_signal(pid, pick_signal_in(catalog),
-					    false);
-			t++;
-		}
+	case ORDER_MODE_GROUPED:
+		signal_storm_iter_burst_mode_grouped(&ictx);
 		break;
-	}
 	case ORDER_MIXED:
 	case ORDER_CATALOG_RESTRICTED:
 	default:
