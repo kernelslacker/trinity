@@ -178,6 +178,31 @@ static void xattr_thrash_iter_op_set(struct xattr_slot *s, const char *name,
 }
 
 /*
+ * Phase: GET dispatch.  use_path=false routes to fgetxattr; use_path=true
+ * routes to getxattr and adds the vfs_path lookup leg.  Both variants
+ * read into a small 64-byte stack buffer; -ENODATA on a name that isn't
+ * currently set is part of the test surface and counted as a benign fail.
+ */
+static void xattr_thrash_iter_op_get(struct xattr_slot *s, const char *name,
+				     bool use_path)
+{
+	unsigned char buf[64];
+	int rc;
+
+	if (use_path)
+		rc = (int) getxattr(s->path, name, buf, sizeof(buf));
+	else
+		rc = (int) fgetxattr(s->fd, name, buf, sizeof(buf));
+
+	if (rc >= 0)
+		__atomic_add_fetch(&shm->stats.xattr_thrash_get,
+				   1, __ATOMIC_RELAXED);
+	else
+		__atomic_add_fetch(&shm->stats.xattr_thrash_failed,
+				   1, __ATOMIC_RELAXED);
+}
+
+/*
  * Phase: close every fd opened by setup_fds.  All xattrs left behind by
  * the iteration loop persist on the testfile inodes by design, so the
  * next xattr_thrash invocation starts against an inode that already has
@@ -233,30 +258,12 @@ bool xattr_thrash(struct childdata *child)
 			break;
 		case 4:
 		case 5:
-		case 6: {
-			unsigned char buf[64];
-
-			rc = (int) fgetxattr(s->fd, name, buf, sizeof(buf));
-			if (rc >= 0)
-				__atomic_add_fetch(&shm->stats.xattr_thrash_get,
-						   1, __ATOMIC_RELAXED);
-			else
-				__atomic_add_fetch(&shm->stats.xattr_thrash_failed,
-						   1, __ATOMIC_RELAXED);
+		case 6:
+			xattr_thrash_iter_op_get(s, name, false);
 			break;
-		}
-		case 7: {
-			unsigned char buf[64];
-
-			rc = (int) getxattr(s->path, name, buf, sizeof(buf));
-			if (rc >= 0)
-				__atomic_add_fetch(&shm->stats.xattr_thrash_get,
-						   1, __ATOMIC_RELAXED);
-			else
-				__atomic_add_fetch(&shm->stats.xattr_thrash_failed,
-						   1, __ATOMIC_RELAXED);
+		case 7:
+			xattr_thrash_iter_op_get(s, name, true);
 			break;
-		}
 		case 8:
 			rc = fremovexattr(s->fd, name);
 			if (rc == 0)
