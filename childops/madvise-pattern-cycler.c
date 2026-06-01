@@ -338,6 +338,67 @@ static void madvise_cycler_iter_arm_guard(const struct madvise_cycler_iter_ctx *
 }
 
 /*
+ * Phase 4: the BUDGETED inner loop -- run up to iter_cap iterations,
+ * each one applying one curated madvise to a random page-aligned sub-
+ * range with an occasional length perturbation, optionally faulting
+ * a few pages back in, and bailing early on wall-clock budget.  Lives
+ * INSIDE the sigsetjmp wrap: a sibling-driven UAF on the pool region
+ * during madvise / touch_subrange siglongjmps the outer body, skipping
+ * the remaining iterations of this function -- there are no per-
+ * iteration allocations to leak, by design.  iter_cap is passed by
+ * value (the orchestrator owns the volatile-qualified storage that
+ * tames -Wclobbered against BUDGETED's _b temp); ctx->advice_idx and
+ * ctx->start are read/advanced through the pointer.
+ */
+static void madvise_cycler_iter_run_cycle(struct madvise_cycler_iter_ctx *ctx,
+					  unsigned int iter_cap)
+{
+	unsigned int iter;
+
+	for (iter = 0; iter < iter_cap; iter++) {
+		unsigned long offset, len;
+		int advice, mrc;
+
+		offset = pick_subrange(ctx->nr_pages, &len);
+		advice = (int)advice_cycle[ctx->advice_idx];
+		ctx->advice_idx = (ctx->advice_idx + 1) %
+			(unsigned int)ARRAY_SIZE(advice_cycle);
+
+		/* 1-in-RAND_NEGATIVE_RATIO sub the page-aligned
+		 * valid len for a curated edge value —
+		 * exercises the kernel's range validation
+		 * (PAGE_ALIGN overflow, end < start, len near
+		 * SIZE_MAX) which the partial-VMA path above
+		 * never reaches. */
+		mrc = madvise(ctx->region + offset,
+			      (size_t)RAND_NEGATIVE_OR(len),
+			      advice);
+		__atomic_add_fetch(
+			&shm->stats.madvise_cycler_calls,
+			1, __ATOMIC_RELAXED);
+		if (mrc < 0) {
+			__atomic_add_fetch(
+				&shm->stats.madvise_cycler_failed,
+				1, __ATOMIC_RELAXED);
+			/* -EINVAL from MADV_COLLAPSE on
+			 * non-THP-eligible ranges, -EAGAIN
+			 * from MADV_FREE on a memory-
+			 * pressured swapless system, etc.
+			 * Expected; fall through. */
+		}
+
+		if (RAND_BOOL())
+			touch_subrange(
+				(volatile unsigned char *)
+					ctx->region + offset,
+				len);
+
+		if (budget_elapsed(&ctx->start))
+			break;
+	}
+}
+
+/*
  * Phase 5: tear down what arm_guard set up, in reverse order: restore
  * the prior SIGSEGV / SIGBUS dispositions first so any post-disarm
  * fault routes back to child_fault_handler, then clear the bounds the
@@ -369,7 +430,6 @@ static void madvise_cycler_iter_disarm_guard(const struct sigaction *old_segv,
 bool madvise_cycler(struct childdata *child)
 {
 	struct madvise_cycler_iter_ctx ictx = { 0 };
-	unsigned int iter;
 	/* volatile: iter_cap is computed before sigsetjmp via the BUDGETED
 	 * macro (which contains a statement-expression temp _b) and read
 	 * inside the wrap.  Without volatile GCC's -Wclobbered analysis
@@ -400,51 +460,10 @@ bool madvise_cycler(struct childdata *child)
 
 		madvise_cycler_iter_arm_guard(&ictx, &old_segv, &old_bus);
 
-		if (sigsetjmp(madvise_cycler_pool_race_jmp, 1) == 0) {
-			for (iter = 0; iter < iter_cap; iter++) {
-				unsigned long offset, len;
-				int advice, mrc;
-
-				offset = pick_subrange(ictx.nr_pages, &len);
-				advice = (int)advice_cycle[ictx.advice_idx];
-				ictx.advice_idx = (ictx.advice_idx + 1) %
-					(unsigned int)ARRAY_SIZE(advice_cycle);
-
-				/* 1-in-RAND_NEGATIVE_RATIO sub the page-aligned
-				 * valid len for a curated edge value —
-				 * exercises the kernel's range validation
-				 * (PAGE_ALIGN overflow, end < start, len near
-				 * SIZE_MAX) which the partial-VMA path above
-				 * never reaches. */
-				mrc = madvise(ictx.region + offset,
-					      (size_t)RAND_NEGATIVE_OR(len),
-					      advice);
-				__atomic_add_fetch(
-					&shm->stats.madvise_cycler_calls,
-					1, __ATOMIC_RELAXED);
-				if (mrc < 0) {
-					__atomic_add_fetch(
-						&shm->stats.madvise_cycler_failed,
-						1, __ATOMIC_RELAXED);
-					/* -EINVAL from MADV_COLLAPSE on
-					 * non-THP-eligible ranges, -EAGAIN
-					 * from MADV_FREE on a memory-
-					 * pressured swapless system, etc.
-					 * Expected; fall through. */
-				}
-
-				if (RAND_BOOL())
-					touch_subrange(
-						(volatile unsigned char *)
-							ictx.region + offset,
-						len);
-
-				if (budget_elapsed(&ictx.start))
-					break;
-			}
-		} else {
+		if (sigsetjmp(madvise_cycler_pool_race_jmp, 1) == 0)
+			madvise_cycler_iter_run_cycle(&ictx, iter_cap);
+		else
 			aborted = true;
-		}
 
 		madvise_cycler_iter_disarm_guard(&old_segv, &old_bus, aborted);
 	}
