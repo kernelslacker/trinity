@@ -204,20 +204,30 @@ static void apply_timeouts(int s)
 	(void)setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &snd_to, sizeof(snd_to));
 }
 
-/* One full sequence on a freshly-created loopback vsock pair. */
-static void iter_one(const struct timespec *t_outer)
+/*
+ * Per-iteration setup: open the loopback listener, bind to
+ * VMADDR_CID_LOCAL with VMADDR_PORT_ANY, listen, open the client,
+ * connect to the listener's resolved address, and drain one accept off
+ * the queue so the loopback transport has a live server-side
+ * vsock_sock backing the per-cpu work queue.  Out fds are initialised
+ * to -1 up-front so the caller's teardown path handles every partial-
+ * success state uniformly.  Returns 0 on success; nonzero means the
+ * caller should goto out for cleanup.  EAFNOSUPPORT / EPERM /
+ * ENOPROTOOPT / ENOENT on socket() and EADDRNOTAVAIL / EAFNOSUPPORT /
+ * EPERM on bind() additionally latch
+ * ns_unsupported_vsock_transport_churn so subsequent invocations
+ * short-circuit to a runs+setup_failed bump.
+ */
+static int vsock_transport_iter_setup(int *listener_out, int *cli_out,
+				      int *srv_out)
 {
-	int listener = -1;
-	int cli = -1;
-	int srv = -1;
 	struct sockaddr_vm addr;
 	socklen_t slen = sizeof(addr);
-	unsigned int sent_count = 0;
-	unsigned char payload[VS_PAYLOAD_BYTES];
-	unsigned char drain[VS_PAYLOAD_BYTES * 2];
+	int listener, cli, srv;
 
-	if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
-		return;
+	*listener_out = -1;
+	*cli_out = -1;
+	*srv_out = -1;
 
 	listener = socket(AF_VSOCK, SOCK_STREAM, 0);
 	if (listener < 0) {
@@ -226,8 +236,9 @@ static void iter_one(const struct timespec *t_outer)
 			ns_unsupported_vsock_transport_churn = true;
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return;
+		return -1;
 	}
+	*listener_out = listener;
 
 	memset(&addr, 0, sizeof(addr));
 	addr.svm_family = AF_VSOCK;
@@ -242,19 +253,19 @@ static void iter_one(const struct timespec *t_outer)
 			ns_unsupported_vsock_transport_churn = true;
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		goto out;
+		return -1;
 	}
 
 	if (getsockname(listener, (struct sockaddr *)&addr, &slen) < 0) {
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		goto out;
+		return -1;
 	}
 
 	if (listen(listener, 8) < 0) {
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		goto out;
+		return -1;
 	}
 
 	__atomic_add_fetch(&shm->stats.vsock_transport_churn_bind_ok,
@@ -264,14 +275,15 @@ static void iter_one(const struct timespec *t_outer)
 	if (cli < 0) {
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		goto out;
+		return -1;
 	}
+	*cli_out = cli;
 	apply_timeouts(cli);
 
 	if (connect(cli, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		goto out;
+		return -1;
 	}
 	__atomic_add_fetch(&shm->stats.vsock_transport_churn_connect_ok,
 			   1, __ATOMIC_RELAXED);
@@ -284,6 +296,26 @@ static void iter_one(const struct timespec *t_outer)
 	srv = accept(listener, NULL, NULL);
 	if (srv >= 0)
 		apply_timeouts(srv);
+	*srv_out = srv;
+
+	return 0;
+}
+
+/* One full sequence on a freshly-created loopback vsock pair. */
+static void iter_one(const struct timespec *t_outer)
+{
+	int listener = -1;
+	int cli = -1;
+	int srv = -1;
+	unsigned int sent_count = 0;
+	unsigned char payload[VS_PAYLOAD_BYTES];
+	unsigned char drain[VS_PAYLOAD_BYTES * 2];
+
+	if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
+		return;
+
+	if (vsock_transport_iter_setup(&listener, &cli, &srv) != 0)
+		goto out;
 
 	/* Step 3: inner send/recv burst. */
 	memset(payload, 0xa5, sizeof(payload));
