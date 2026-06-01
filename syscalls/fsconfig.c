@@ -5,6 +5,8 @@
 #include <string.h>
 #include "fd.h"
 #include "object-types.h"
+#include "objects.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -274,6 +276,46 @@ static void sanitise_fsconfig(struct syscallrecord *rec)
 	}
 }
 
+/*
+ * Post-derived secondary-object registrar wired via
+ * .ret_objtype_via_post.  fsconfig does not return a new object via
+ * its retval -- the fs_context fd in rec->a1 was minted upstream by
+ * fsopen / fspick (whose .ret_objtype = OBJ_FD_FS_CTX already
+ * registered it).  What fsconfig changes is the fs_context's
+ * lifecycle state: a successful FSCONFIG_CMD_CREATE /
+ * FSCONFIG_CMD_CREATE_EXCL / FSCONFIG_CMD_RECONFIGURE transitions
+ * the context to the mountable state ready for fsmount().
+ *
+ * The hook is a defensive backstop for the rare case where the
+ * fs_context fd vanished from the local OBJ_FD_FS_CTX pool between
+ * the original fsopen / fspick post path and this fsconfig dispatch
+ * (parent destructor ran, fd recycling collided, scope migration).
+ * Republishing keeps fsmount consumers finding it; the
+ * find_local_object_by_fd() short-circuit avoids the duplicate-publish
+ * shape post-double-publish.sh exists to flag.
+ */
+static void post_fsconfig_record_fsctx_ready(struct syscallrecord *rec)
+{
+	unsigned long cmd = rec->a2;
+	int fd = (int) rec->a1;
+
+	if ((long) rec->retval != 0)
+		return;
+
+	if (cmd != FSCONFIG_CMD_CREATE &&
+	    cmd != FSCONFIG_CMD_CREATE_EXCL &&
+	    cmd != FSCONFIG_CMD_RECONFIGURE)
+		return;
+
+	if (fd <= 2 || fd >= (1 << 20))
+		return;
+
+	if (find_local_object_by_fd(OBJ_FD_FS_CTX, fd) != NULL)
+		return;
+
+	(void) publish_resource(OBJ_FD_FS_CTX, (unsigned long) fd, NULL);
+}
+
 struct syscallentry syscall_fsconfig = {
 	.name = "fsconfig",
 	.num_args = 5,
@@ -283,5 +325,6 @@ struct syscallentry syscall_fsconfig = {
 	.group = GROUP_VFS,
 	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_fsconfig,
+	.ret_objtype_via_post = post_fsconfig_record_fsctx_ready,
 	.rettype = RET_ZERO_SUCCESS,
 };

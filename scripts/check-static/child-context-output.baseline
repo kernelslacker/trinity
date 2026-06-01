@@ -217,7 +217,7 @@ syscalls/getxattr.c:316:post_getxattr
 syscalls/init_module.c:158:post_init_module
 syscalls/inotify_add_watch.c:26:post_inotify_add_watch
 syscalls/ioprio_get.c:21:post_ioprio_get
-syscalls/io_setup.c:127:post_io_setup
+syscalls/io_setup.c:153:post_io_setup
 syscalls/io_uring_register.c:1253:post_io_uring_register
 syscalls/io_uring_register.c:1268:post_io_uring_register
 syscalls/io_uring_register.c:1318:post_io_uring_register
@@ -332,9 +332,9 @@ syscalls/open.c:93:post_open
 syscalls/pause.c:22:post_pause
 syscalls/perf_event_open.c:1731:post_perf_event_open
 syscalls/personality.c:25:post_personality
-syscalls/pipe.c:106:post_pipe
-syscalls/pipe.c:118:post_pipe
-syscalls/pipe.c:90:post_pipe
+syscalls/pipe.c:122:post_pipe
+syscalls/pipe.c:141:post_pipe
+syscalls/pipe.c:152:post_pipe
 syscalls/pkey.c:119:post_pkey_alloc
 syscalls/poll.c:146:post_poll
 syscalls/poll.c:155:post_poll
@@ -476,9 +476,9 @@ syscalls/sigpending.c:140:post_sigpending
 syscalls/sigpending.c:162:post_sigpending
 syscalls/sigpending.c:179:post_sigpending
 syscalls/socketcall.c:249:post_socketcall
-syscalls/socketpair.c:126:post_socketpair
-syscalls/socketpair.c:142:post_socketpair
-syscalls/socketpair.c:154:post_socketpair
+syscalls/socketpair.c:159:post_socketpair
+syscalls/socketpair.c:178:post_socketpair
+syscalls/socketpair.c:189:post_socketpair
 syscalls/stat.c:391:post_statx
 syscalls/stat.c:406:post_statx
 syscalls/stat.c:438:post_statx
@@ -509,7 +509,7 @@ syscalls/sysinfo.c:181:post_sysinfo
 syscalls/sysinfo.c:187:post_sysinfo
 syscalls/time.c:84:post_time
 syscalls/time.c:98:post_time
-syscalls/timer_create.c:176:post_timer_create
+syscalls/timer_create.c:202:post_timer_create
 syscalls/timerfd_create.c:125:post_timerfd_create
 syscalls/timerfd_create.c:141:post_timerfd_create
 syscalls/timerfd_gettime.c:106:post_timerfd_gettime

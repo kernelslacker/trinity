@@ -276,6 +276,30 @@ struct syscallentry {
 	enum objecttype ret_objtype;
 
 	/*
+	 * Post-derived secondary-object registrar.  ret_objtype covers
+	 * the single-fd case where the syscall's primary retval IS the
+	 * trackable object (open, socket, accept, ...).  Some syscalls
+	 * instead return their object(s) out of band: through a user
+	 * out-pointer (io_setup's ctxp, timer_create's created_timer_id,
+	 * name_to_handle_at's handle/mnt_id) or as a multi-fd pair
+	 * written into a user int[2] (pipe, pipe2, socketpair).  The
+	 * static enum slot above cannot express "two pipe fds at
+	 * fildes[0..1]" or "an aio_context_t dereferenced from rec->aN",
+	 * so the registration logic for those syscalls lives in a
+	 * per-syscall hook that reads the relevant scratch slot
+	 * (rec->post_state, rec->aN) and calls the appropriate
+	 * register_*()/publish_*() helper.  Invoked from
+	 * handle_syscall_ret() ahead of entry->post(); .post may clear
+	 * rec->post_state during its cleanup pass, and reading the
+	 * scratch slot from the hook after that point would see zero.
+	 * The hook is responsible for its own retval check and shape
+	 * validation -- success criteria differ per syscall (== 0 for
+	 * pipe/socketpair/io_setup, >= 0 for timer_create) and the
+	 * dispatcher cannot uniformly gate the call.
+	 */
+	void (*ret_objtype_via_post)(struct syscallrecord *rec);
+
+	/*
 	 * Cached coarse syscall category (enum syscall_category, fits in a
 	 * byte).  Resolved once from .name at table-init time in
 	 * copy_syscall_table() so the dispatch path can index

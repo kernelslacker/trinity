@@ -133,19 +133,59 @@ static unsigned long clock_ids[] = {
 };
 
 /*
- * timer_create allocates a kernel k_itimer slab object and writes the
- * resulting timer_t out to *created_timer_id.  Hand the freshly-minted
- * id to the OBJ_TIMERID pool so timer_settime/_gettime/_getoverrun/
- * _delete consumers can pick it up; the per-child pool destructor
- * issues the real timer_delete() at child teardown so produced timers
- * don't outlive the producing child.  This replaces a previous
- * delete-immediately post handler that prevented any pool-based
- * tracking from being useful.
+ * Post-derived secondary-object registrar wired via
+ * .ret_objtype_via_post.  timer_create allocates a kernel k_itimer
+ * slab object and writes the resulting timer_t out to
+ * *created_timer_id.  Hand the freshly-minted id to the OBJ_TIMERID
+ * pool so timer_settime/_gettime/_getoverrun/_delete consumers can
+ * pick it up; the per-child pool destructor issues the real
+ * timer_delete() at child teardown so produced timers don't outlive
+ * the producing child.  Runs ahead of post_timer_create(), which
+ * clears rec->post_state during cleanup.
+ */
+static void post_timer_create_record_tid(struct syscallrecord *rec)
+{
+	timer_t *idp;
+	intptr_t tid_int;
+
+	if ((long) rec->retval < 0)
+		return;
+
+	idp = (timer_t *) rec->post_state;
+	if (idp == NULL || looks_like_corrupted_ptr(rec, idp))
+		return;
+
+	/*
+	 * The snapshot protects the OUT-pointer (idp) from rec->aN
+	 * scribbles, but the kernel-written timer_t value at *idp lives in
+	 * the user-supplied buffer and is fair game for a sibling syscall
+	 * to clobber between the syscall returning and this handler running.
+	 * glibc's timer_delete() (called from the pool destructor) indexes
+	 * a per-process timer table by tid, so a garbage tid faults inside
+	 * the table lookup before any defensive return path can run.  A
+	 * successful timer_create yields a small non-negative timer_t
+	 * (typically a single-digit index); anything outside [0, 65535] is
+	 * overwhelmingly likely a scribble — drop those instead of feeding
+	 * them to the pool.  Corruption-bump attribution stays in
+	 * post_timer_create() so a single bad call is logged once.
+	 */
+	tid_int = (intptr_t) *idp;
+	if (tid_int < 0 || tid_int > 65535)
+		return;
+
+	register_timerid((int32_t) tid_int);
+}
+
+/*
+ * Cleanup-only sibling of post_timer_create_record_tid().  Owns the
+ * scratch-slot teardown and the out-of-range corruption-bump so the
+ * registrar above can stay focused on adding tids to the pool.
+ * This replaces a previous delete-immediately post handler that
+ * prevented any pool-based tracking from being useful.
  */
 static void post_timer_create(struct syscallrecord *rec)
 {
 	timer_t *idp;
-	timer_t tid;
 	intptr_t tid_int;
 
 	if ((long) rec->retval < 0)
@@ -157,30 +197,13 @@ static void post_timer_create(struct syscallrecord *rec)
 		return;
 	}
 
-	/*
-	 * The snapshot above protects the OUT-pointer (idp) from rec->aN
-	 * scribbles, but the kernel-written timer_t value at *idp lives in
-	 * the user-supplied buffer and is fair game for a sibling syscall
-	 * to clobber between the syscall returning and this handler running.
-	 * glibc's timer_delete() (called from the pool destructor) indexes
-	 * a per-process timer table by tid, so a garbage tid faults inside
-	 * the table lookup before any defensive return path can run.  A
-	 * successful timer_create yields a small non-negative timer_t
-	 * (typically a single-digit index); anything outside [0, 65535] is
-	 * overwhelmingly likely a scribble — drop those instead of feeding
-	 * them to the pool.
-	 */
-	tid = *idp;
-	tid_int = (intptr_t) tid;
+	tid_int = (intptr_t) *idp;
 	if (tid_int < 0 || tid_int > 65535) {
 		outputerr("post_timer_create: rejected suspicious tid=%p (kernel-write-buffer-scribbled?)\n",
-			  (void *) tid);
+			  (void *) (intptr_t) *idp);
 		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
 	}
 
-	register_timerid((int32_t) tid_int);
 	rec->post_state = 0;
 }
 
@@ -193,5 +216,6 @@ struct syscallentry syscall_timer_create = {
 	.arg_params[0].list = ARGLIST(clock_ids),
 	.sanitise = timer_create_sanitise,
 	.post = post_timer_create,
+	.ret_objtype_via_post = post_timer_create_record_tid,
 	.rettype = RET_ZERO_SUCCESS,
 };

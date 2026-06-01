@@ -956,6 +956,16 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 	if (rec->state == AFTER) {
 		enforce_count_bound(entry, rec);
 
+		/* Post-derived secondary-object registrar runs ahead of
+		 * entry->post: per-syscall .post handlers (pipe,
+		 * socketpair, io_setup, timer_create) clear rec->post_state
+		 * as part of their cleanup pass, and the hook reads
+		 * post_state / rec->aN to derive what to register.  Same
+		 * retfd-rejected gate as entry->post -- a fabricated
+		 * retval shouldn't drive any registration. */
+		if (entry->ret_objtype_via_post && !retfd_rejected)
+			entry->ret_objtype_via_post(rec);
+
 		/* Skip entry->post on a rejected RET_FD: handler would
 		 * be acting on a fabricated retval, attribution already
 		 * happened inside reject_corrupt_retfd().

@@ -77,11 +77,43 @@ static void sanitise_pipe(struct syscallrecord *rec)
 	rec->post_state = (unsigned long) snap;
 }
 
-static void post_pipe(struct syscallrecord *rec)
+/*
+ * Post-derived secondary-object registrar wired via
+ * .ret_objtype_via_post.  Runs ahead of post_pipe(), which clears
+ * rec->post_state during its cleanup pass; reading the snap from a
+ * .post hook after that point would see zero.  Does its own shape +
+ * magic validation before deref so a sibling-stomped post_state
+ * doesn't drive register_pipe_fd() with foreign bytes -- corruption
+ * attribution stays in post_pipe() below, which repeats the same
+ * checks and owns the post_handler_corrupt_ptr_bump() accounting.
+ */
+static void post_pipe_record_fds(struct syscallrecord *rec)
 {
 	struct pipe_post_state *snap =
 		(struct pipe_post_state *) rec->post_state;
 	int *fildes;
+
+	if ((long) rec->retval != 0)
+		return;
+
+	if (snap == NULL || looks_like_corrupted_ptr(rec, snap))
+		return;
+
+	if (snap->magic != PIPE_POST_STATE_MAGIC)
+		return;
+
+	fildes = snap->fildes;
+	if (fildes == NULL || looks_like_corrupted_ptr(rec, fildes))
+		return;
+
+	register_pipe_fd(fildes[0], true);
+	register_pipe_fd(fildes[1], false);
+}
+
+static void post_pipe(struct syscallrecord *rec)
+{
+	struct pipe_post_state *snap =
+		(struct pipe_post_state *) rec->post_state;
 
 	if (snap == NULL)
 		return;
@@ -98,9 +130,12 @@ static void post_pipe(struct syscallrecord *rec)
 	 * Magic-cookie check: snap survived the heap-shape gate but a
 	 * sibling scribble of rec->post_state with a heap-shaped pointer
 	 * to a foreign allocation would let the wrong bytes pose as a
-	 * pipe_post_state -- post_pipe would then read fildes[0]/fildes[1]
-	 * out of a foreign buffer and feed them to register_pipe_fd as
-	 * putative fds.  Mirrors recv.c:212.
+	 * pipe_post_state.  fd registration moved to
+	 * post_pipe_record_fds() (wired via .ret_objtype_via_post) so
+	 * the surviving body here is pure post_state cleanup; the magic
+	 * check stays so a forged snap still gets a corruption-bump and
+	 * the inner pointer fields don't get fed to deferred_free.
+	 * Mirrors recv.c:212.
 	 */
 	if (snap->magic != PIPE_POST_STATE_MAGIC) {
 		outputerr("post_pipe: rejected snap with bad magic 0x%lx "
@@ -112,18 +147,12 @@ static void post_pipe(struct syscallrecord *rec)
 		return;
 	}
 
-	fildes = snap->fildes;
-
-	if (fildes == NULL || looks_like_corrupted_ptr(rec, fildes)) {
+	if (snap->fildes == NULL ||
+	    looks_like_corrupted_ptr(rec, snap->fildes)) {
 		outputerr("post_pipe: rejected suspicious fildes=%p "
-			  "(post_state-scribbled?)\n", fildes);
+			  "(post_state-scribbled?)\n", snap->fildes);
 		rec->a1 = 0;
 		goto out_free;
-	}
-
-	if ((long) rec->retval == 0) {
-		register_pipe_fd(fildes[0], true);
-		register_pipe_fd(fildes[1], false);
 	}
 
 	rec->a1 = 0;
@@ -140,6 +169,7 @@ struct syscallentry syscall_pipe = {
 	.group = GROUP_VFS,
 	.sanitise = sanitise_pipe,
 	.post = post_pipe,
+	.ret_objtype_via_post = post_pipe_record_fds,
 	.rettype = RET_ZERO_SUCCESS,
 };
 
@@ -227,5 +257,6 @@ struct syscallentry syscall_pipe2 = {
 	.group = GROUP_VFS,
 	.sanitise = sanitise_pipe2,
 	.post = post_pipe,
+	.ret_objtype_via_post = post_pipe_record_fds,
 	.rettype = RET_ZERO_SUCCESS,
 };

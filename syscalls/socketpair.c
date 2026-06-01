@@ -113,11 +113,44 @@ static void sanitise_socketpair(struct syscallrecord *rec)
 	rec->post_state = (unsigned long) snap;
 }
 
-static void post_socketpair(struct syscallrecord *rec)
+/*
+ * Post-derived secondary-object registrar wired via
+ * .ret_objtype_via_post.  Runs ahead of post_socketpair(), which
+ * clears rec->post_state during cleanup; reading the snap from a
+ * .post hook after that point would see zero.  Does its own shape +
+ * magic validation before deref so a sibling-stomped post_state
+ * doesn't drive register_socketpair_fd() with foreign bytes --
+ * corruption attribution stays in post_socketpair() below, which
+ * repeats the same checks and owns the post_handler_corrupt_ptr_bump()
+ * accounting.
+ */
+static void post_socketpair_record_fds(struct syscallrecord *rec)
 {
 	struct socketpair_post_state *snap =
 		(struct socketpair_post_state *) rec->post_state;
 	int *usockvec;
+
+	if ((long) rec->retval != 0)
+		return;
+
+	if (snap == NULL || looks_like_corrupted_ptr(rec, snap))
+		return;
+
+	if (snap->magic != SOCKETPAIR_POST_STATE_MAGIC)
+		return;
+
+	usockvec = snap->usockvec;
+	if (usockvec == NULL || looks_like_corrupted_ptr(rec, usockvec))
+		return;
+
+	register_socketpair_fd(usockvec[0], rec);
+	register_socketpair_fd(usockvec[1], rec);
+}
+
+static void post_socketpair(struct syscallrecord *rec)
+{
+	struct socketpair_post_state *snap =
+		(struct socketpair_post_state *) rec->post_state;
 
 	if (snap == NULL)
 		return;
@@ -134,9 +167,12 @@ static void post_socketpair(struct syscallrecord *rec)
 	 * Magic-cookie check: snap survived the heap-shape gate but a
 	 * sibling scribble of rec->post_state with a heap-shaped pointer
 	 * to a foreign allocation would let the wrong bytes pose as a
-	 * socketpair_post_state -- post_socketpair would then read
-	 * usockvec[0]/usockvec[1] out of a foreign buffer and feed them
-	 * to register_socketpair_fd as putative fds.
+	 * socketpair_post_state.  fd registration moved to
+	 * post_socketpair_record_fds() (wired via .ret_objtype_via_post)
+	 * so the surviving body here is pure post_state cleanup; the
+	 * magic check stays so a forged snap still gets a
+	 * corruption-bump and the inner pointer fields don't get fed to
+	 * deferred_free.
 	 */
 	if (snap->magic != SOCKETPAIR_POST_STATE_MAGIC) {
 		outputerr("post_socketpair: rejected snap with bad magic 0x%lx "
@@ -148,18 +184,12 @@ static void post_socketpair(struct syscallrecord *rec)
 		return;
 	}
 
-	usockvec = snap->usockvec;
-
-	if (usockvec == NULL || looks_like_corrupted_ptr(rec, usockvec)) {
+	if (snap->usockvec == NULL ||
+	    looks_like_corrupted_ptr(rec, snap->usockvec)) {
 		outputerr("post_socketpair: rejected suspicious usockvec=%p "
-			  "(post_state-scribbled?)\n", usockvec);
+			  "(post_state-scribbled?)\n", snap->usockvec);
 		rec->a4 = 0;
 		goto out_free;
-	}
-
-	if ((long) rec->retval == 0) {
-		register_socketpair_fd(usockvec[0], rec);
-		register_socketpair_fd(usockvec[1], rec);
 	}
 
 	rec->a4 = 0;
@@ -177,5 +207,6 @@ struct syscallentry syscall_socketpair = {
 	.group = GROUP_NET,
 	.sanitise = sanitise_socketpair,
 	.post = post_socketpair,
+	.ret_objtype_via_post = post_socketpair_record_fds,
 	.rettype = RET_ZERO_SUCCESS,
 };

@@ -62,6 +62,31 @@ static void sanitise_name_to_handle_at(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a4, sizeof(int));
 }
 
+/*
+ * Post-derived secondary-object registrar wired via
+ * .ret_objtype_via_post.  name_to_handle_at writes a struct
+ * file_handle out through *handle (rec->a3) and a mnt_id out through
+ * *mnt_id (rec->a4); both are inputs an open_by_handle_at consumer
+ * needs to round-trip back into an fd.  Neither output has a
+ * registerable trinity object type today -- the enum has no
+ * OBJ_FILE_HANDLE / OBJ_MNT_ID slot -- so the hook is wired as the
+ * future landing site once those object types and an
+ * open_by_handle_at consumer side are added.  The retval gate is in
+ * place so a follow-up extension does not have to re-derive the
+ * success contract.
+ */
+static void post_name_to_handle_at_record(struct syscallrecord *rec)
+{
+	if ((long) rec->retval != 0)
+		return;
+
+	/*
+	 * Reserved: future expansion stashes (handle, mnt_id) into an
+	 * OBJ_FILE_HANDLE pool here.  Until that type lands the hook
+	 * intentionally falls through with no side effect.
+	 */
+}
+
 struct syscallentry syscall_name_to_handle_at = {
 	.name = "name_to_handle_at",
 	.num_args = 5,
@@ -72,4 +97,5 @@ struct syscallentry syscall_name_to_handle_at = {
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_name_to_handle_at,
+	.ret_objtype_via_post = post_name_to_handle_at_record,
 };

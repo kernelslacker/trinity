@@ -89,15 +89,17 @@ static void sanitise_io_setup(struct syscallrecord *rec)
 }
 
 /*
- * io_setup allocates a kernel ioctx_t (slab + per-context ring mmap)
- * and writes the resulting aio_context_t out to *ctxp.  Hand the
- * freshly-minted context to the OBJ_AIO_CTX pool so io_submit/
- * io_getevents/io_pgetevents/io_destroy/io_cancel consumers can pick
- * it up; the per-child pool destructor issues the real io_destroy()
- * at child teardown so produced contexts don't outlive the producing
- * child.
+ * Post-derived secondary-object registrar wired via
+ * .ret_objtype_via_post.  io_setup allocates a kernel ioctx_t (slab
+ * + per-context ring mmap) and writes the resulting aio_context_t
+ * out to *ctxp.  Hand the freshly-minted context to the OBJ_AIO_CTX
+ * pool so io_submit/io_getevents/io_pgetevents/io_destroy/io_cancel
+ * consumers can pick it up; the per-child pool destructor issues
+ * the real io_destroy() at child teardown so produced contexts
+ * don't outlive the producing child.  Runs ahead of post_io_setup(),
+ * which clears rec->post_state during cleanup.
  */
-static void post_io_setup(struct syscallrecord *rec)
+static void post_io_setup_record_ctx(struct syscallrecord *rec)
 {
 	unsigned long *ctxp;
 	unsigned long ctx;
@@ -106,10 +108,8 @@ static void post_io_setup(struct syscallrecord *rec)
 		return;
 
 	ctxp = (unsigned long *) rec->post_state;
-	if (looks_like_corrupted_ptr(rec, ctxp)) {
-		rec->post_state = 0;
+	if (ctxp == NULL || looks_like_corrupted_ptr(rec, ctxp))
 		return;
-	}
 
 	/*
 	 * The snapshot above protects the OUT-pointer (ctxp) from rec->aN
@@ -121,16 +121,39 @@ static void post_io_setup(struct syscallrecord *rec)
 	 * through the per-mm aio context table.  aio_context_t is opaque,
 	 * but a real kernel-allocated context is never zero — drop
 	 * zero-valued reads instead of feeding them to the pool.
+	 * Corruption-bump attribution stays in post_io_setup() so a
+	 * single bad call is logged once.
 	 */
 	ctx = *ctxp;
-	if (ctx == 0) {
-		outputerr("post_io_setup: rejected zero ctx (kernel-write-buffer-scribbled?)\n");
-		post_handler_corrupt_ptr_bump(rec, NULL);
+	if (ctx == 0)
+		return;
+
+	register_aio_ctx(ctx);
+}
+
+/*
+ * Cleanup-only sibling of post_io_setup_record_ctx().  Owns the
+ * scratch-slot teardown and the zero-ctx corruption-bump so the
+ * registrar above can stay focused on adding ctxs to the pool.
+ */
+static void post_io_setup(struct syscallrecord *rec)
+{
+	unsigned long *ctxp;
+
+	if ((long) rec->retval != 0)
+		return;
+
+	ctxp = (unsigned long *) rec->post_state;
+	if (looks_like_corrupted_ptr(rec, ctxp)) {
 		rec->post_state = 0;
 		return;
 	}
 
-	register_aio_ctx(ctx);
+	if (*ctxp == 0) {
+		outputerr("post_io_setup: rejected zero ctx (kernel-write-buffer-scribbled?)\n");
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+
 	rec->post_state = 0;
 }
 
@@ -144,5 +167,6 @@ struct syscallentry syscall_io_setup = {
 	.group = GROUP_VFS,
 	.sanitise = sanitise_io_setup,
 	.post = post_io_setup,
+	.ret_objtype_via_post = post_io_setup_record_ctx,
 	.rettype = RET_ZERO_SUCCESS,
 };
