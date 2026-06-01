@@ -670,6 +670,32 @@ static void vxlan_encap_iter_send_burst(struct vxlan_encap_iter_ctx *ctx)
 	}
 }
 
+/*
+ * Teardown phase: close the AF_PACKET fd and tear down the tunnel
+ * device + rtnl socket.  Each cleanup is gated independently
+ * (ctx->raw >= 0, ctx->nl_opened, ctx->link_added && ctx->ifindex > 0)
+ * so it is safe to call from any bail-out point in the orchestrator
+ * — including the early returns above the call where ctx is fully
+ * zero-initialised — without leaking the raw fd or sending a dellink
+ * for an ifindex that was never resolved.  Netns destruction on child
+ * exit catches anything we leave behind.
+ */
+static void vxlan_encap_iter_teardown(struct vxlan_encap_iter_ctx *ctx)
+{
+	if (ctx->raw >= 0)
+		close(ctx->raw);
+
+	if (!ctx->nl_opened)
+		return;
+
+	if (ctx->link_added && ctx->ifindex > 0) {
+		if (build_dellink(&ctx->nl, ctx->ifindex) == 0)
+			__atomic_add_fetch(&shm->stats.vxlan_encap_churn_link_del_ok,
+					   1, __ATOMIC_RELAXED);
+	}
+	nl_close(&ctx->nl);
+}
+
 bool vxlan_encap_churn(struct childdata *child)
 {
 	struct vxlan_encap_iter_ctx ctx = {
@@ -692,26 +718,10 @@ bool vxlan_encap_churn(struct childdata *child)
 	if (ctx.kind == TUN_NR)
 		return true;
 
-	if (vxlan_encap_iter_open_ctx(&ctx) != 0)
-		return true;
+	if (vxlan_encap_iter_open_ctx(&ctx) == 0 &&
+	    vxlan_encap_iter_build_link(&ctx) == 0)
+		vxlan_encap_iter_send_burst(&ctx);
 
-	if (vxlan_encap_iter_build_link(&ctx) != 0)
-		goto out;
-
-	vxlan_encap_iter_send_burst(&ctx);
-
-out:
-	if (ctx.raw >= 0)
-		close(ctx.raw);
-
-	if (ctx.nl_opened) {
-		if (ctx.link_added && ctx.ifindex > 0) {
-			if (build_dellink(&ctx.nl, ctx.ifindex) == 0)
-				__atomic_add_fetch(&shm->stats.vxlan_encap_churn_link_del_ok,
-						   1, __ATOMIC_RELAXED);
-		}
-		nl_close(&ctx.nl);
-	}
-
+	vxlan_encap_iter_teardown(&ctx);
 	return true;
 }
