@@ -310,28 +310,40 @@ static void epoll_volatility_iter_drive(struct epoll_volatility_iter_ctx *ctx)
 	}
 }
 
+/*
+ * Teardown phase: close every successfully-created epfd, then
+ * every target fd.  Safe to call after a partial setup -- the
+ * helper walks exactly ctx->n_epfds / ctx->n_target_fds entries,
+ * which the setup helper bumped only on successful create.  Per-
+ * epfd epitem cleanup runs in the kernel's ep_eventpoll release
+ * path when each epfd closes; that release-side cross-epfd
+ * waitqueue walk is core to the test surface, so the close order
+ * here (epfds first, target fds second) is preserved.
+ */
+static void epoll_volatility_iter_teardown(struct epoll_volatility_iter_ctx *ctx)
+{
+	unsigned int i;
+
+	for (i = 0; i < ctx->n_epfds; i++)
+		close(ctx->epfds[i]);
+	for (i = 0; i < ctx->n_target_fds; i++)
+		close(ctx->target_fds[i]);
+}
+
 bool epoll_volatility(struct childdata *child)
 {
 	struct epoll_volatility_iter_ctx ctx = {
 		.n_epfds = 0,
 		.n_target_fds = 0,
 	};
-	unsigned int i, j;
 
 	(void) child;
 
 	__atomic_add_fetch(&shm->stats.epoll_volatility_runs, 1, __ATOMIC_RELAXED);
 
-	if (epoll_volatility_iter_setup(&ctx) != 0)
-		goto out;
+	if (epoll_volatility_iter_setup(&ctx) == 0)
+		epoll_volatility_iter_drive(&ctx);
 
-	epoll_volatility_iter_drive(&ctx);
-
-out:
-	for (i = 0; i < ctx.n_epfds; i++)
-		close(ctx.epfds[i]);
-	for (j = 0; j < ctx.n_target_fds; j++)
-		close(ctx.target_fds[j]);
-
+	epoll_volatility_iter_teardown(&ctx);
 	return true;
 }
