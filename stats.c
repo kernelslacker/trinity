@@ -3325,6 +3325,24 @@ static void kcov_diag_emit_block(const char *counter_name,
 	}
 }
 
+static void dump_stats_runtime_header(void)
+{
+	time_t start = shm->start_time;
+	time_t now = time(NULL);
+	long elapsed = (start > 0 && now >= start) ? (long)(now - start) : 0;
+	struct tm tm;
+	char ts[32];
+
+	if (start > 0 && localtime_r(&start, &tm) != NULL &&
+	    strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm) > 0) {
+		output(1, "runtime: %ldh%02ldm%02lds (since %s)\n",
+		       elapsed / 3600,
+		       (elapsed / 60) % 60,
+		       elapsed % 60,
+		       ts);
+	}
+}
+
 void dump_stats(void)
 {
 	unsigned int i;
@@ -3334,22 +3352,7 @@ void dump_stats(void)
 		return;
 	}
 
-	{
-		time_t start = shm->start_time;
-		time_t now = time(NULL);
-		long elapsed = (start > 0 && now >= start) ? (long)(now - start) : 0;
-		struct tm tm;
-		char ts[32];
-
-		if (start > 0 && localtime_r(&start, &tm) != NULL &&
-		    strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm) > 0) {
-			output(1, "runtime: %ldh%02ldm%02lds (since %s)\n",
-			       elapsed / 3600,
-			       (elapsed / 60) % 60,
-			       elapsed % 60,
-			       ts);
-		}
-	}
+	dump_stats_runtime_header();
 
 	if (biarch == true) {
 		output(0, "32bit:\n");
