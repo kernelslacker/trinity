@@ -1278,6 +1278,45 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 	return 0;
 }
 
+/*
+ * Pick a qdisc kind, modprobe sch_<kind> best-effort, and install
+ * the root qdisc on it->dummy_idx with a random major in the safe
+ * range [0x10, 0xfff0].  Stores qidx / handle / class{1,2} into it
+ * for the filter+class and churn-loop helpers downstream.  Returns
+ * 0 on success; nonzero (every kind latched, EOPNOTSUPP, etc.) means
+ * the caller should bail to the cleanup path.
+ */
+static int tc_qdisc_add_qdisc(struct tc_qdisc_iter_ctx *it)
+{
+	__u32 major;
+	int rc;
+
+	it->qidx = pick_qdisc_idx();
+	if (it->qidx >= NR_QDISC_KINDS)
+		return -1;
+
+	/* random major in [0x10, 0xfff0] keeps us clear of TC_H_MAJ
+	 * values reserved for the kernel's own ingress / clsact / root
+	 * qdiscs (0xffff* is the well-known reserved range). */
+	major = (__u32)((rand32() % 0xfee0U) + 0x10U);
+	it->handle = major << 16;
+	it->class1 = it->handle | 1U;
+	it->class2 = it->handle | 2U;
+
+	modprobe_qdisc(it->qidx);
+	rc = build_newqdisc(&it->nl, it->dummy_idx, it->handle, TC_H_ROOT,
+			    qdisc_kinds[it->qidx].name,
+			    NLM_F_CREATE | NLM_F_EXCL);
+	if (rc != 0) {
+		if (is_unsupported_err(rc))
+			ns_unsupported_qdisc_kind[it->qidx] = true;
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.tc_qdisc_churn_qdisc_create_ok,
+			   1, __ATOMIC_RELAXED);
+	return 0;
+}
+
 bool tc_qdisc_churn(struct childdata *child)
 {
 	struct tc_qdisc_iter_ctx it = {
@@ -1285,7 +1324,6 @@ bool tc_qdisc_churn(struct childdata *child)
 		.udp = -1,
 	};
 	unsigned int qidx2, cidx;
-	__u32 major;
 	struct timespec t0;
 	unsigned int iters;
 	unsigned int i;
@@ -1317,28 +1355,8 @@ bool tc_qdisc_churn(struct childdata *child)
 		goto out;
 	}
 
-	it.qidx = pick_qdisc_idx();
-	if (it.qidx >= NR_QDISC_KINDS)
+	if (tc_qdisc_add_qdisc(&it) != 0)
 		goto out;
-
-	/* random major in [0x10, 0xfff0] keeps us clear of TC_H_MAJ
-	 * values reserved for the kernel's own ingress / clsact / root
-	 * qdiscs (0xffff* is the well-known reserved range). */
-	major = (__u32)((rand32() % 0xfee0U) + 0x10U);
-	it.handle = major << 16;
-	it.class1 = it.handle | 1U;
-	it.class2 = it.handle | 2U;
-
-	modprobe_qdisc(it.qidx);
-	rc = build_newqdisc(&it.nl, it.dummy_idx, it.handle, TC_H_ROOT,
-			    qdisc_kinds[it.qidx].name, NLM_F_CREATE | NLM_F_EXCL);
-	if (rc != 0) {
-		if (is_unsupported_err(rc))
-			ns_unsupported_qdisc_kind[it.qidx] = true;
-		goto out;
-	}
-	__atomic_add_fetch(&shm->stats.tc_qdisc_churn_qdisc_create_ok,
-			   1, __ATOMIC_RELAXED);
 
 	if (qdisc_kinds[it.qidx].classful) {
 		if (build_newtclass(&it.nl, it.dummy_idx, it.class1, TC_H_ROOT,
