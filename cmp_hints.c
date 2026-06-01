@@ -919,8 +919,19 @@ static struct cmp_hints_pool_ondisk *cmp_hints_serialise(void)
 			pool_unlock(pool);
 
 			count = cmp_hints_pool_scratch.count;
-			if (count > CMP_HINTS_PER_SYSCALL)
-				count = CMP_HINTS_PER_SYSCALL;
+			/* Route the count check through the gate so a stomped
+			 * pool observed for the first time from the save path
+			 * still records the channel (count_oob + canary
+			 * counters) and latches pool->corrupted -- otherwise a
+			 * stomp landing inside a save window leaves no trace
+			 * and the bogus entries get serialised behind a count
+			 * clamped down to the cap, surviving the loader's
+			 * per-entry validator and reappearing on next start. */
+			if (cmp_hints_pool_corrupted(pool, count)) {
+				slot->count = 0;
+				slot->generation = 0;
+				continue;
+			}
 			slot->count = count;
 			slot->generation = cmp_hints_pool_scratch.generation;
 			for (j = 0; j < count; j++) {
