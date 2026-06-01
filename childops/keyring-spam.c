@@ -92,6 +92,10 @@
  * (sometimes two -- add_key plus a tracking-ring update), all cheap. */
 #define MAX_ITERATIONS	64
 
+/* "user" payload bytes per add_key.  Small and fixed -- the point is to
+ * drive the user_key_payload slab path, not to vary payload size. */
+#define KEYRING_PAYLOAD_BYTES	16
+
 /* Recently-added key serials this invocation has produced.  Small ring:
  * the point is to pin REVOKE / INVALIDATE / UNLINK / READ / DESCRIBE on
  * keys with a recent allocation history, not to maintain a long-lived
@@ -182,13 +186,40 @@ static void ring_drop(int32_t *ring, int32_t serial)
 	}
 }
 
+/* OP_ADD_KEY: produce a fresh serial against the picked anchor and
+ * record it in the live ring.  Per-iteration unique description so
+ * add_key creates a new key rather than updating an existing one --
+ * key_update is a narrower path and we want allocation pressure here.
+ * -EDQUOT / -EPERM / -ENOSYS are expected and counted; the call still
+ * exercised the per-op validator. */
+static void keyring_spam_iter_add_key(int32_t *live,
+				      const unsigned char *payload,
+				      unsigned int iter, int anchor)
+{
+	char desc[64];
+	long rc;
+
+	snprintf(desc, sizeof(desc),
+		 "trinity-keyring-spam-%u-%u",
+		 (unsigned int) mypid(), iter);
+	rc = syscall(__NR_add_key, "user", desc,
+		     payload, (size_t) KEYRING_PAYLOAD_BYTES,
+		     (unsigned long) anchor);
+	if (rc < 0) {
+		__atomic_add_fetch(&shm->stats.keyring_spam_failed,
+				   1, __ATOMIC_RELAXED);
+	} else {
+		ring_insert(live, (int32_t) rc);
+	}
+}
+
 bool keyring_spam(struct childdata *child)
 {
 	int32_t live[LIVE_KEYS_RING];
 	struct timespec start;
 	unsigned int iter;
 	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
-	unsigned char payload[16];
+	unsigned char payload[KEYRING_PAYLOAD_BYTES];
 
 	(void) child;
 
@@ -212,31 +243,9 @@ bool keyring_spam(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 
 		switch (op) {
-		case OP_ADD_KEY: {
-			char desc[64];
-
-			/* Per-iteration unique description so add_key creates
-			 * a fresh serial rather than updating an existing
-			 * key (the latter exercises a different, narrower
-			 * path -- key_update -- and we want allocation
-			 * pressure here). */
-			snprintf(desc, sizeof(desc),
-				 "trinity-keyring-spam-%u-%u",
-				 (unsigned int) mypid(), iter);
-			rc = syscall(__NR_add_key, "user", desc,
-				     payload, (size_t) sizeof(payload),
-				     (unsigned long) anchor);
-			if (rc < 0) {
-				__atomic_add_fetch(&shm->stats.keyring_spam_failed,
-						   1, __ATOMIC_RELAXED);
-				/* -EDQUOT (kernel.keys.maxkeys), -EPERM
-				 * (LSM), -ENOSYS (CONFIG_KEYS=n) all
-				 * expected; fall through. */
-			} else {
-				ring_insert(live, (int32_t) rc);
-			}
+		case OP_ADD_KEY:
+			keyring_spam_iter_add_key(live, payload, iter, anchor);
 			break;
-		}
 
 		case OP_READ: {
 			unsigned char buf[64];
