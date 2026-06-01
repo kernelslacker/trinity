@@ -516,14 +516,35 @@ static int v6pmtu_iter_enter_netns(void)
 	return nsfd;
 }
 
-static void iter_one(void)
+/*
+ * Open a private rtnetlink socket, bring lo up, and install the four
+ * veth pairs + addresses + routes via setup_pairs().  Returns 0 on
+ * success, -1 (with setup_failed bumped) if the rtnl socket open
+ * fails; partial setup_pairs() failures are intentionally tolerated.
+ */
+static int v6pmtu_iter_setup_network(char names[V6PMTU_NUM_PAIRS][8])
 {
-	int nsfd;
 	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 	};
+
+	if (nl_open(&ctx, &opts) < 0) {
+		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	bring_lo_up(&ctx);
+	setup_pairs(&ctx, names);
+	nl_close(&ctx);
+	return 0;
+}
+
+static void iter_one(void)
+{
+	int nsfd;
 	char names[V6PMTU_NUM_PAIRS][8];
 	pid_t a, b;
 	struct timespec deadline;
@@ -532,15 +553,8 @@ static void iter_one(void)
 	if (nsfd < 0)
 		return;
 
-	if (nl_open(&ctx, &opts) < 0) {
-		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (v6pmtu_iter_setup_network(names) != 0)
 		goto out_setns;
-	}
-
-	bring_lo_up(&ctx);
-	setup_pairs(&ctx, names);
-	nl_close(&ctx);
 
 	a = fork();
 	if (a < 0) {
