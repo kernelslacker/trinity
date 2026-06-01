@@ -863,25 +863,34 @@ static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 }
 
 /*
- * Marked noinline so __builtin_return_address(0) captured at entry
- * -- and threaded into add_object_validate() as caller_pc, where
- * the verbose trace and the bad-fd outputerr / post-handler
- * bump-site PC captures use it -- names the actual add_object()
- * callsite rather than whatever frame the inliner chose to fold
- * us into.  Caller attribution is the only reason that PC is
- * captured; losing it to inlining defeats the diagnostic.
+ * Publish the inbound obj into its resolved slot and run the
+ * post-publish bookkeeping: scope-conditional fd-hash registration
+ * (with rollback on OBJ_GLOBAL hash-full), the verbose-mode
+ * per-object dump, and the LOCAL / GLOBAL prune calls that keep
+ * the pool within its steady-state ceiling.
+ *
+ * Stamp ordering inside the publish block is slot-array first,
+ * then array_idx, then the monotonic slot_version tag, then the
+ * publish-time fleet op tick, then the head->num_entries bump
+ * last -- any consumer that re-reads obj fields off head->array
+ * sees a fully-populated obj as soon as num_entries admits it.
+ *
+ * Re-resolves head via get_objhead() (idempotent over mypid() /
+ * this_child() / array indexing, byte-exact-preserving) since
+ * add_object_grow_capacity() already proved it non-NULL.
+ *
+ * OBJ_GLOBAL fd_hash registration is the only failure path: a
+ * fd_hash_insert() reject means the parent's global fd_hash is
+ * full -- we roll back the just-published slot (drop num_entries
+ * back, NULL the array slot), close the fd that would otherwise
+ * leak, release_obj() the inbound obj, and return internally.  No
+ * further work follows the publish in the caller.
  */
-__attribute__((noinline))
-void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
+static void add_object_publish(struct object *obj, enum obj_scope scope,
+			       enum objecttype type)
 {
 	struct objhead *head;
 	unsigned int n;
-
-	if (add_object_validate(obj, scope, type, __builtin_return_address(0)))
-		return;
-
-	if (add_object_grow_capacity(obj, scope, type))
-		return;
 
 	head = get_objhead(scope, type);
 	n = head->num_entries;
@@ -966,11 +975,12 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	 * routes through __destroy_object() and so handles destructor +
 	 * fd_hash unhook + slot swap-with-last for the evicted entry.
 	 *
-	 * Pre-fork only: the mainpid guard above (line ~655) sends every
-	 * post-fork child's OBJ_GLOBAL add to release_obj() before we get
-	 * here, so this branch only runs in the parent's pre-fork init.
-	 * That makes obj_global_pruned safe to bump without atomics and
-	 * lets us use the cheap (non-locked) destroy path.
+	 * Pre-fork only: the OBJ_GLOBAL post-fork guard in
+	 * add_object_validate() sends every post-fork child's OBJ_GLOBAL
+	 * add to release_obj() before we get here, so this branch only
+	 * runs in the parent's pre-fork init.  That makes obj_global_pruned
+	 * safe to bump without atomics and lets us use the cheap
+	 * (non-locked) destroy path.
 	 */
 	if (scope == OBJ_GLOBAL && head->num_entries > OBJ_GLOBAL_MAX) {
 		unsigned int victim_idx = rnd_modulo_u32(head->num_entries);
@@ -987,6 +997,27 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 			destroy_object(victim, OBJ_GLOBAL, type);
 		}
 	}
+}
+
+/*
+ * Marked noinline so __builtin_return_address(0) captured at entry
+ * -- and threaded into add_object_validate() as caller_pc, where
+ * the verbose trace and the bad-fd outputerr / post-handler
+ * bump-site PC captures use it -- names the actual add_object()
+ * callsite rather than whatever frame the inliner chose to fold
+ * us into.  Caller attribution is the only reason that PC is
+ * captured; losing it to inlining defeats the diagnostic.
+ */
+__attribute__((noinline))
+void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
+{
+	if (add_object_validate(obj, scope, type, __builtin_return_address(0)))
+		return;
+
+	if (add_object_grow_capacity(obj, scope, type))
+		return;
+
+	add_object_publish(obj, scope, type);
 }
 
 /*
