@@ -473,16 +473,55 @@ static unsigned int msg_zerocopy_iter_send(int s, const void *pages,
 	return sent_count;
 }
 
+/*
+ * Phase 3: munmap-race + resend-on-unmapped.  Gated on sent_count > 0
+ * -- without a successful pin there's no skb chain to race against.
+ * On success the munmap tears down the vma while the skb chain may
+ * still pin the underlying pages; on a working kernel the skb-side
+ * page reference keeps them alive until the destructor fires.  The
+ * follow-up send targets the EFAULT bail in tcp_sendmsg_locked's
+ * MSG_ZEROCOPY init (ubuf_info allocated then get_user_pages fails,
+ * so the rollback path has to undo the just-installed
+ * sk->sk_zckey/uarg state); EFAULT is the expected return and the
+ * counted signal.  Sets *pages_inout to MAP_FAILED when the unmap
+ * succeeds so the orchestrator out: cleanup doesn't double-unmap.
+ */
+static void msg_zerocopy_iter_unmap_resend(int s, void **pages_inout,
+					   unsigned int sent_count)
+{
+	void *saved_pages = NULL;
+	bool munmapped = false;
+	int rc;
+
+	if (sent_count > 0) {
+		saved_pages = *pages_inout;
+		if (munmap(*pages_inout, ZC_PAGE_BYTES) == 0) {
+			munmapped = true;
+			*pages_inout = MAP_FAILED;
+			__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_munmap_ok,
+					   1, __ATOMIC_RELAXED);
+		} else {
+			saved_pages = NULL;
+		}
+	}
+
+	if (munmapped && saved_pages != NULL) {
+		rc = (int)send(s, saved_pages, ZC_PAGE_BYTES,
+			       MSG_ZEROCOPY | MSG_DONTWAIT | MSG_NOSIGNAL);
+		if (rc < 0 && errno == EFAULT)
+			__atomic_add_fetch(
+				&shm->stats.msg_zerocopy_churn_send_after_munmap_caught,
+				1, __ATOMIC_RELAXED);
+	}
+}
+
 /* One full sequence on a freshly-created loopback TCP socket. */
 static void iter_one(const struct timespec *t_outer)
 {
 	pid_t acceptor = -1;
 	int s = -1;
-	int rc;
 	int zero = 0;
 	void *pages = MAP_FAILED;
-	void *saved_pages = NULL;
-	bool munmapped = false;
 	unsigned int sent_count = 0;
 
 	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
@@ -512,41 +551,7 @@ static void iter_one(const struct timespec *t_outer)
 	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
 		goto out;
 
-	/* Step 6: munmap the backing pages while the skb chain may still
-	 * pin them.  THIS IS THE RACE.  On a working kernel the skb
-	 * holds an independent page reference (get_user_pages bumped
-	 * the refcount) so the unmap merely tears down the vma; the
-	 * pages stay alive until the skb destructor fires.  The bug
-	 * surface is the ordering window between vm_area_struct
-	 * teardown and the skb-side put_page. */
-	if (sent_count > 0) {
-		saved_pages = pages;
-		if (munmap(pages, ZC_PAGE_BYTES) == 0) {
-			munmapped = true;
-			pages = MAP_FAILED;
-			__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_munmap_ok,
-					   1, __ATOMIC_RELAXED);
-		} else {
-			saved_pages = NULL;
-		}
-	}
-
-	/* Step 7: send(MSG_ZEROCOPY) again on the now-unmapped range.
-	 * Legal address arithmetic, illegal mapping.  Tests the EFAULT
-	 * bail in tcp_sendmsg_locked's MSG_ZEROCOPY init: ubuf_info is
-	 * allocated then get_user_pages fails, so the rollback path has
-	 * to undo the just-installed sk->sk_zckey/uarg state.  EFAULT
-	 * is the expected return; we count that as the path-reached
-	 * signal.  A non-EFAULT return is itself coverage of the
-	 * partial-success edge. */
-	if (munmapped && saved_pages != NULL) {
-		rc = (int)send(s, saved_pages, ZC_PAGE_BYTES,
-			       MSG_ZEROCOPY | MSG_DONTWAIT | MSG_NOSIGNAL);
-		if (rc < 0 && errno == EFAULT)
-			__atomic_add_fetch(
-				&shm->stats.msg_zerocopy_churn_send_after_munmap_caught,
-				1, __ATOMIC_RELAXED);
-	}
+	msg_zerocopy_iter_unmap_resend(s, &pages, sent_count);
 
 	/* Step 8: setsockopt(SO_ZEROCOPY, 0) mid-flight -- toggle off
 	 * while completion notifications may still be pending on the
