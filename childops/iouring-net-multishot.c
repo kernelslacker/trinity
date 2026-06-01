@@ -562,11 +562,43 @@ static int iouring_multishot_iter_setup_sockets(struct iouring_multishot_iter_ct
 	return 0;
 }
 
+/*
+ * Optionally register NAPI busy-poll on the ring before arming the
+ * multishot.  Pre-6.9 kernels return EINVAL/ENOTTY; we ignore the
+ * error and continue.  The interesting coverage is the register +
+ * later unregister cycle wrapping the multishot lifecycle, so
+ * it->napi_armed latches success and the post-burst stale-NAPI probe
+ * consults it later.
+ */
+static void iouring_multishot_iter_arm_napi(struct iouring_multishot_iter_ctx *it)
+{
+	struct io_uring_napi napi_in;
+	int r;
+
+	if (!ONE_IN(2))
+		return;
+
+	memset(&napi_in, 0, sizeof(napi_in));
+	napi_in.busy_poll_to     = (__u32)rnd_modulo_u32(200);
+	napi_in.prefer_busy_poll = (__u8)(rnd_u32() & 1);
+
+	r = (int)syscall(__NR_io_uring_register, it->ms.fd,
+			 IORING_REGISTER_NAPI, &napi_in, 1);
+	if (r == 0) {
+		it->napi_armed = true;
+		__atomic_add_fetch(&shm->stats.iouring_napi_register_ok,
+				   1, __ATOMIC_RELAXED);
+	} else {
+		__atomic_add_fetch(&shm->stats.iouring_napi_register_fail,
+				   1, __ATOMIC_RELAXED);
+	}
+}
+
 bool iouring_net_multishot(struct childdata *child)
 {
 	struct iouring_multishot_iter_ctx it;
 	struct io_uring_sqe sqe;
-	struct io_uring_napi napi_in, napi_out;
+	struct io_uring_napi napi_out;
 	unsigned int npkts;
 	unsigned int i;
 	int r;
@@ -596,26 +628,7 @@ bool iouring_net_multishot(struct childdata *child)
 	if (iouring_multishot_iter_setup_sockets(&it) != 0)
 		goto out;
 
-	/* Optionally register NAPI busy-poll on the ring before arming the
-	 * multishot.  Pre-6.9 kernels return EINVAL/ENOTTY; we ignore the
-	 * error and continue.  The interesting coverage is the register +
-	 * later unregister cycle wrapping the multishot lifecycle. */
-	if (ONE_IN(2)) {
-		memset(&napi_in, 0, sizeof(napi_in));
-		napi_in.busy_poll_to     = (__u32)rnd_modulo_u32(200);
-		napi_in.prefer_busy_poll = (__u8)(rnd_u32() & 1);
-
-		r = (int)syscall(__NR_io_uring_register, it.ms.fd,
-				 IORING_REGISTER_NAPI, &napi_in, 1);
-		if (r == 0) {
-			it.napi_armed = true;
-			__atomic_add_fetch(&shm->stats.iouring_napi_register_ok,
-					   1, __ATOMIC_RELAXED);
-		} else {
-			__atomic_add_fetch(&shm->stats.iouring_napi_register_fail,
-					   1, __ATOMIC_RELAXED);
-		}
-	}
+	iouring_multishot_iter_arm_napi(&it);
 
 	/* Multishot RECV with buffer selection.  ioprio carries
 	 * IORING_RECV_MULTISHOT; flags carries IOSQE_BUFFER_SELECT;
