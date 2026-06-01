@@ -460,6 +460,23 @@ static void altname_thrash_iter_burst(struct altname_iter_ctx *ctx)
 	}
 }
 
+/*
+ * Teardown phase: RTM_DELLINK the dummy and close the rtnl socket.
+ * Gated on ctx->nl_opened so it is safe to call even when
+ * altname_thrash_iter_setup() bailed before opening the socket; the
+ * ctx->dummy_added / ctx->dummy_idx > 0 guards skip the dellink when
+ * the dummy was never created or if_nametoindex returned 0.  Netns
+ * destruction on child exit catches anything we leave behind.
+ */
+static void altname_thrash_iter_teardown(struct altname_iter_ctx *ctx)
+{
+	if (!ctx->nl_opened)
+		return;
+	if (ctx->dummy_added && ctx->dummy_idx > 0)
+		(void)build_dellink(&ctx->nl, ctx->dummy_idx);
+	nl_close(&ctx->nl);
+}
+
 bool altname_thrash(struct childdata *child)
 {
 	struct altname_iter_ctx ctx = { .nl = { .fd = -1 } };
@@ -474,17 +491,9 @@ bool altname_thrash(struct childdata *child)
 	    ns_unsupported_dummy_altname_thrash)
 		return true;
 
-	if (altname_thrash_iter_setup(&ctx) != 0)
-		goto out;
+	if (altname_thrash_iter_setup(&ctx) == 0)
+		altname_thrash_iter_burst(&ctx);
 
-	altname_thrash_iter_burst(&ctx);
-
-out:
-	if (ctx.nl_opened) {
-		if (ctx.dummy_added && ctx.dummy_idx > 0)
-			(void)build_dellink(&ctx.nl, ctx.dummy_idx);
-		nl_close(&ctx.nl);
-	}
-
+	altname_thrash_iter_teardown(&ctx);
 	return true;
 }
