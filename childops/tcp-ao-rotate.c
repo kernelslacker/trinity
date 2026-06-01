@@ -514,6 +514,25 @@ static void tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
 	(void)shutdown(ctx->srv_acc, SHUT_RDWR);
 }
 
+/*
+ * Phase 5: close whichever fds we managed to open.  Runs on every
+ * exit path — both the success path falling through to out: after
+ * rotate_loop returns, and the early-bail goto out from any earlier
+ * phase failure.  Order matches the original out: cleanup: accepted
+ * server fd first, then client, then listener.  Fields default to -1
+ * via the orchestrator's designated initialiser so the guards skip
+ * fds that were never opened.
+ */
+static void tcp_ao_rotate_iter_teardown(struct tcp_ao_rotate_iter_ctx *ctx)
+{
+	if (ctx->srv_acc >= 0)
+		close(ctx->srv_acc);
+	if (ctx->cli >= 0)
+		close(ctx->cli);
+	if (ctx->listener >= 0)
+		close(ctx->listener);
+}
+
 bool tcp_ao_rotate(struct childdata *child)
 {
 	struct tcp_ao_rotate_iter_ctx ctx = {
@@ -541,12 +560,7 @@ bool tcp_ao_rotate(struct childdata *child)
 	tcp_ao_rotate_iter_rotate_loop(&ctx);
 
 out:
-	if (ctx.srv_acc >= 0)
-		close(ctx.srv_acc);
-	if (ctx.cli >= 0)
-		close(ctx.cli);
-	if (ctx.listener >= 0)
-		close(ctx.listener);
+	tcp_ao_rotate_iter_teardown(&ctx);
 	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_cycles, 1, __ATOMIC_RELAXED);
 	return true;
 }
