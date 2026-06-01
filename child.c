@@ -767,15 +767,29 @@ static void init_child_freeze_shared(struct childdata *child, int childno)
 }
 
 /*
- * Called from the fork_children loop in the main process.
+ * Synchronise with the parent and bring up this child's private
+ * per-process state.  Two phases bundled here because they share
+ * the same precondition (the parent must have published our pid in
+ * pids[childno]) and the same liveness requirement (no
+ * outputerr-able path -- stderr is already /dev/null at this
+ * point):
+ *
+ *   - Block until the parent stamps pids[childno] = our pid,
+ *     panicking via the shm survivor counter if the parent dies
+ *     under us.
+ *   - Once the rendezvous resolves, cache our (childno, pid, child)
+ *     in the this_child fast path, seed the child PRNG, and bring
+ *     up the per-child object pools (OBJ_LOCAL list, cloned
+ *     OBJ_GLOBAL snapshot, mappings, futexes, dirty mapping,
+ *     optional CPU pin).
+ *
+ * The local pid migrates into this helper -- it has no consumer
+ * outside this section, and getpid() is invariant within a
+ * process lifetime, so the call-site move is semantically a no-op.
  */
-static void init_child(struct childdata *child, int childno)
+static void init_child_rendezvous_parent(struct childdata *child, int childno)
 {
 	pid_t pid = getpid();
-
-	init_child_isolate_io();
-
-	init_child_freeze_shared(child, childno);
 
 	/* Wait for parent to set our childno */
 	while (__atomic_load_n(&pids[childno], __ATOMIC_ACQUIRE) != pid) {
@@ -819,6 +833,18 @@ static void init_child(struct childdata *child, int childno)
 
 	if (RAND_BOOL())
 		bind_child_to_cpu(child, childno);
+}
+
+/*
+ * Called from the fork_children loop in the main process.
+ */
+static void init_child(struct childdata *child, int childno)
+{
+	init_child_isolate_io();
+
+	init_child_freeze_shared(child, childno);
+
+	init_child_rendezvous_parent(child, childno);
 
 	/* Wait for all the children to start up. */
 	while (!__atomic_load_n(&shm->ready, __ATOMIC_ACQUIRE))
