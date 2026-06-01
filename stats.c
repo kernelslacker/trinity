@@ -935,16 +935,8 @@ static void dump_stats_json_oracle(void)
 		shm->stats.sysfs_oracle_anomalies);
 }
 
-static void dump_stats_json(void)
+static void dump_stats_json_basic_subsystems(void)
 {
-	putchar('{');
-
-	json_emit_syscalls_array();
-
-	fputs(",\"stats\":{", stdout);
-	dump_stats_json_fault_and_fd_lifecycle();
-	dump_stats_json_oracle();
-
 	printf("\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
 		"\"memory_pressure\":{\"runs_madv_pageout\":%lu},"
 		"\"sched_cycler\":{\"runs\":%lu,\"eperm\":%lu},"
@@ -964,8 +956,61 @@ static void dump_stats_json(void)
 			"\"filter_writes\":%lu,\"event_enable_writes\":%lu,\"misc_writes\":%lu},"
 		"\"bpf_lifecycle\":{\"runs\":%lu,\"progs_loaded\":%lu,\"attached\":%lu,"
 			"\"triggered\":%lu,\"verifier_rejects\":%lu,\"attach_failed\":%lu,\"eperm\":%lu},"
-		"\"bpf_fd_provider\":{\"maps_provided\":%lu,\"progs_provided\":%lu},"
-		"\"recipe_runner\":{\"runs\":%lu,\"completed\":%lu,\"partial\":%lu,\"unsupported\":%lu},"
+		"\"bpf_fd_provider\":{\"maps_provided\":%lu,\"progs_provided\":%lu},",
+		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
+		shm->stats.memory_pressure_runs,
+		shm->stats.sched_cycler_runs, shm->stats.sched_cycler_eperm,
+		shm->stats.userns_runs, shm->stats.userns_inner_crashed, shm->stats.userns_unsupported,
+		shm->stats.barrier_racer_runs, shm->stats.barrier_racer_inner_crashed,
+		shm->stats.genetlink_families_discovered, shm->stats.genetlink_msgs_sent,
+		shm->stats.genetlink_eperm,
+		shm->stats.genl_family_calls_devlink,
+		shm->stats.genl_family_calls_nl80211,
+		shm->stats.genl_family_calls_taskstats,
+		shm->stats.genl_family_calls_ethtool,
+		shm->stats.genl_family_calls_mptcp_pm,
+		shm->stats.genl_family_calls_l2tp,
+		shm->stats.genl_family_calls_gtp,
+		shm->stats.genl_family_calls_macsec,
+		shm->stats.genl_family_calls_netlabel,
+		shm->stats.genl_family_calls_team,
+		shm->stats.genl_family_calls_hsr,
+		shm->stats.genl_family_calls_fou,
+		shm->stats.genl_family_calls_psample,
+		shm->stats.genl_family_calls_ila,
+		shm->stats.genl_family_calls_ioam6,
+		shm->stats.genl_family_calls_seg6,
+		shm->stats.genl_family_calls_thermal,
+		shm->stats.genl_family_calls_ipvs,
+		shm->stats.nfnl_subsys_calls_ctnetlink,
+		shm->stats.nfnl_subsys_calls_ctnetlink_exp,
+		shm->stats.nfnl_subsys_calls_nftables,
+		shm->stats.nfnl_subsys_calls_ipset,
+		shm->stats.netlink_nested_attrs_emitted,
+		shm->stats.perf_chains_runs, shm->stats.perf_chains_groups_created,
+		shm->stats.perf_chains_ioctl_ops,
+		shm->stats.tracefs_kprobe_writes, shm->stats.tracefs_uprobe_writes,
+		shm->stats.tracefs_filter_writes, shm->stats.tracefs_event_enable_writes,
+		shm->stats.tracefs_misc_writes,
+		shm->stats.bpf_lifecycle_runs, shm->stats.bpf_lifecycle_progs_loaded,
+		shm->stats.bpf_lifecycle_attached, shm->stats.bpf_lifecycle_triggered,
+		shm->stats.bpf_lifecycle_verifier_rejects, shm->stats.bpf_lifecycle_attach_failed,
+		shm->stats.bpf_lifecycle_eperm,
+		shm->stats.bpf_maps_provided, shm->stats.bpf_progs_provided);
+}
+
+static void dump_stats_json(void)
+{
+	putchar('{');
+
+	json_emit_syscalls_array();
+
+	fputs(",\"stats\":{", stdout);
+	dump_stats_json_fault_and_fd_lifecycle();
+	dump_stats_json_oracle();
+	dump_stats_json_basic_subsystems();
+
+	printf("\"recipe_runner\":{\"runs\":%lu,\"completed\":%lu,\"partial\":%lu,\"unsupported\":%lu},"
 		"\"iouring_recipes\":{\"runs\":%lu,\"completed\":%lu,\"partial\":%lu,\"enosys\":%lu},"
 		"\"iouring_eventfd\":{\"register_ok\":%lu,\"register_fail\":%lu,"
 			"\"recursive_runs\":%lu,\"recursive_cqes\":%lu},"
@@ -1060,46 +1105,6 @@ static void dump_stats_json(void)
 		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"peek_ok\":%lu,\"iouring_variant_ok\":%lu,\"sibling_spawn_ok\":%lu,\"sibling_spawn_failed\":%lu,\"sibling_reaped_ok\":%lu,\"sibling_crashed\":%lu},"
 		"\"netns_teardown\":{\"runs\":%lu,\"setup_failed\":%lu,\"unshare_ok\":%lu,\"socket_pair_ok\":%lu,\"fork_ok\":%lu,\"setns_ok\":%lu,\"kill_ok\":%lu,\"completed_ok\":%lu},"
 		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},",
-		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
-		shm->stats.memory_pressure_runs,
-		shm->stats.sched_cycler_runs, shm->stats.sched_cycler_eperm,
-		shm->stats.userns_runs, shm->stats.userns_inner_crashed, shm->stats.userns_unsupported,
-		shm->stats.barrier_racer_runs, shm->stats.barrier_racer_inner_crashed,
-		shm->stats.genetlink_families_discovered, shm->stats.genetlink_msgs_sent,
-		shm->stats.genetlink_eperm,
-		shm->stats.genl_family_calls_devlink,
-		shm->stats.genl_family_calls_nl80211,
-		shm->stats.genl_family_calls_taskstats,
-		shm->stats.genl_family_calls_ethtool,
-		shm->stats.genl_family_calls_mptcp_pm,
-		shm->stats.genl_family_calls_l2tp,
-		shm->stats.genl_family_calls_gtp,
-		shm->stats.genl_family_calls_macsec,
-		shm->stats.genl_family_calls_netlabel,
-		shm->stats.genl_family_calls_team,
-		shm->stats.genl_family_calls_hsr,
-		shm->stats.genl_family_calls_fou,
-		shm->stats.genl_family_calls_psample,
-		shm->stats.genl_family_calls_ila,
-		shm->stats.genl_family_calls_ioam6,
-		shm->stats.genl_family_calls_seg6,
-		shm->stats.genl_family_calls_thermal,
-		shm->stats.genl_family_calls_ipvs,
-		shm->stats.nfnl_subsys_calls_ctnetlink,
-		shm->stats.nfnl_subsys_calls_ctnetlink_exp,
-		shm->stats.nfnl_subsys_calls_nftables,
-		shm->stats.nfnl_subsys_calls_ipset,
-		shm->stats.netlink_nested_attrs_emitted,
-		shm->stats.perf_chains_runs, shm->stats.perf_chains_groups_created,
-		shm->stats.perf_chains_ioctl_ops,
-		shm->stats.tracefs_kprobe_writes, shm->stats.tracefs_uprobe_writes,
-		shm->stats.tracefs_filter_writes, shm->stats.tracefs_event_enable_writes,
-		shm->stats.tracefs_misc_writes,
-		shm->stats.bpf_lifecycle_runs, shm->stats.bpf_lifecycle_progs_loaded,
-		shm->stats.bpf_lifecycle_attached, shm->stats.bpf_lifecycle_triggered,
-		shm->stats.bpf_lifecycle_verifier_rejects, shm->stats.bpf_lifecycle_attach_failed,
-		shm->stats.bpf_lifecycle_eperm,
-		shm->stats.bpf_maps_provided, shm->stats.bpf_progs_provided,
 		shm->stats.recipe_runs, shm->stats.recipe_completed,
 		shm->stats.recipe_partial, shm->stats.recipe_unsupported,
 		shm->stats.iouring_recipes_runs, shm->stats.iouring_recipes_completed,
