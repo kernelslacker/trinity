@@ -617,50 +617,71 @@ static void apply_raw_timeouts(int s)
 }
 
 /*
- * One full create / load / race / teardown cycle on a freshly-named
- * bridge + 2 veth pairs.  Wall-clock cap inherited from the caller.
+ * Per-iteration scratch carried across the setup / load / race /
+ * teardown helpers.  Lifetime is one iter_one() invocation; all
+ * fields zero-initialised at the top of iter_one except the two
+ * sentinel-bearing handles (nl.fd and raw).
  */
-static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
+struct bridge_vlan_iter_ctx {
+	struct nl_ctx	nl;
+	char		br_name[IFNAMSIZ];
+	char		v0a[IFNAMSIZ];
+	char		v0b[IFNAMSIZ];
+	char		v1a[IFNAMSIZ];
+	char		v1b[IFNAMSIZ];
+	int		raw;
+	int		br_idx;
+	int		v0a_idx;
+	int		v0b_idx;
+	int		v1a_idx;
+	int		v1b_idx;
+	bool		bridge_added;
+	bool		veth0_added;
+	bool		veth1_added;
+	__u16		vid_base;
+	__u16		pvid;
+	__u16		range_end;
+};
+
+/*
+ * Open the per-iteration NETLINK_ROUTE socket, name the bridge + the
+ * two veth pairs from a single random suffix, create the bridge with
+ * IFLA_BR_VLAN_FILTERING=1, create both veth pairs, look up their
+ * ifindexes, and enslave the v0a / v1a ends to the bridge.  Also
+ * picks the iteration's vid_base / pvid / range_end so later helpers
+ * can pull them straight off ctx.
+ *
+ * Returns 0 on success.  Nonzero means the caller should jump
+ * straight to the cleanup path: nl_open / bridge create failures get
+ * counted as setup_failed here; structurally-unsupported bridge
+ * create rejections additionally latch ns_unsupported_bridge_vlan_churn
+ * so subsequent invocations short-circuit.
+ */
+static int bridge_vlan_iter_setup(struct bridge_vlan_iter_ctx *it,
+				  unsigned int iter_idx)
 {
-	char br_name[IFNAMSIZ];
-	char v0a[IFNAMSIZ], v0b[IFNAMSIZ];
-	char v1a[IFNAMSIZ], v1b[IFNAMSIZ];
-	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts nl_opts = {
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 	};
-	int raw = -1;
-	int br_idx = 0;
-	int v0a_idx = 0, v0b_idx = 0, v1a_idx = 0, v1b_idx = 0;
-	bool bridge_added = false;
-	bool veth0_added = false;
-	bool veth1_added = false;
-	unsigned int rng;
 	__u16 vid_bases[3] = { 10, 100, 4000 };
-	__u16 vid_base, pvid, range_end;
+	unsigned int rng;
 	int rc;
-	unsigned char frame[64];
-	struct sockaddr_ll sll;
-	unsigned int race_letter = iter_idx & 3U;
 
-	if ((unsigned long long)ns_since(t_outer) >= BVC_WALL_CAP_NS)
-		return;
-
-	if (nl_open(&ctx, &nl_opts) < 0) {
+	if (nl_open(&it->nl, &nl_opts) < 0) {
 		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return;
+		return -1;
 	}
 
 	rng = (unsigned int)(rand32() & 0xffffu);
-	snprintf(br_name, sizeof(br_name), "trvbr%u", rng);
-	snprintf(v0a, sizeof(v0a), "trvb%ua0", rng);
-	snprintf(v0b, sizeof(v0b), "trvb%ub0", rng);
-	snprintf(v1a, sizeof(v1a), "trvb%ua1", rng);
-	snprintf(v1b, sizeof(v1b), "trvb%ub1", rng);
+	snprintf(it->br_name, sizeof(it->br_name), "trvbr%u", rng);
+	snprintf(it->v0a, sizeof(it->v0a), "trvb%ua0", rng);
+	snprintf(it->v0b, sizeof(it->v0b), "trvb%ub0", rng);
+	snprintf(it->v1a, sizeof(it->v1a), "trvb%ua1", rng);
+	snprintf(it->v1b, sizeof(it->v1b), "trvb%ub1", rng);
 
-	rc = build_bridge_create(&ctx, br_name);
+	rc = build_bridge_create(&it->nl, it->br_name);
 	if (rc != 0) {
 		if (rc == -EPERM || rc == -ENOSYS ||
 		    rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
@@ -668,84 +689,107 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 			ns_unsupported_bridge_vlan_churn = true;
 		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		goto out;
+		return -1;
 	}
-	bridge_added = true;
+	it->bridge_added = true;
 	__atomic_add_fetch(&shm->stats.bridge_vlan_churn_bridge_create_ok,
 			   1, __ATOMIC_RELAXED);
 
-	br_idx = (int)if_nametoindex(br_name);
-	if (br_idx == 0)
+	it->br_idx = (int)if_nametoindex(it->br_name);
+	if (it->br_idx == 0)
+		return -1;
+
+	if (build_veth_create(&it->nl, it->v0a, it->v0b) == 0) {
+		it->veth0_added = true;
+		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_veth_create_ok,
+				   1, __ATOMIC_RELAXED);
+		it->v0a_idx = (int)if_nametoindex(it->v0a);
+		it->v0b_idx = (int)if_nametoindex(it->v0b);
+	}
+	if (build_veth_create(&it->nl, it->v1a, it->v1b) == 0) {
+		it->veth1_added = true;
+		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_veth_create_ok,
+				   1, __ATOMIC_RELAXED);
+		it->v1a_idx = (int)if_nametoindex(it->v1a);
+		it->v1b_idx = (int)if_nametoindex(it->v1b);
+	}
+
+	if (it->v0a_idx > 0)
+		(void)build_setlink_master(&it->nl, it->v0a_idx, it->br_idx);
+	if (it->v1a_idx > 0)
+		(void)build_setlink_master(&it->nl, it->v1a_idx, it->br_idx);
+
+	it->vid_base  = vid_bases[iter_idx % 3U];
+	it->pvid      = (__u16)(it->vid_base + 5U);
+	it->range_end = (__u16)(it->vid_base + 10U);
+
+	return 0;
+}
+
+/*
+ * One full create / load / race / teardown cycle on a freshly-named
+ * bridge + 2 veth pairs.  Wall-clock cap inherited from the caller.
+ */
+static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
+{
+	struct bridge_vlan_iter_ctx it = {
+		.nl  = { .fd = -1 },
+		.raw = -1,
+	};
+	unsigned char frame[64];
+	struct sockaddr_ll sll;
+	unsigned int race_letter = iter_idx & 3U;
+
+	if ((unsigned long long)ns_since(t_outer) >= BVC_WALL_CAP_NS)
+		return;
+
+	if (bridge_vlan_iter_setup(&it, iter_idx) != 0)
 		goto out;
 
-	if (build_veth_create(&ctx, v0a, v0b) == 0) {
-		veth0_added = true;
-		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_veth_create_ok,
-				   1, __ATOMIC_RELAXED);
-		v0a_idx = (int)if_nametoindex(v0a);
-		v0b_idx = (int)if_nametoindex(v0b);
-	}
-	if (build_veth_create(&ctx, v1a, v1b) == 0) {
-		veth1_added = true;
-		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_veth_create_ok,
-				   1, __ATOMIC_RELAXED);
-		v1a_idx = (int)if_nametoindex(v1a);
-		v1b_idx = (int)if_nametoindex(v1b);
-	}
-
-	if (v0a_idx > 0)
-		(void)build_setlink_master(&ctx, v0a_idx, br_idx);
-	if (v1a_idx > 0)
-		(void)build_setlink_master(&ctx, v1a_idx, br_idx);
-
-	vid_base  = vid_bases[iter_idx % 3U];
-	pvid      = (__u16)(vid_base + 5U);
-	range_end = (__u16)(vid_base + 10U);
-
 	/* Range add of vid_base..range_end on v0a. */
-	if (v0a_idx > 0) {
-		if (build_vlan_info(&ctx, RTM_SETLINK, v0a_idx,
-				    vid_base, range_end, true, false) == 0)
+	if (it.v0a_idx > 0) {
+		if (build_vlan_info(&it.nl, RTM_SETLINK, it.v0a_idx,
+				    it.vid_base, it.range_end, true, false) == 0)
 			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_add_ok,
 					   1, __ATOMIC_RELAXED);
 		/* Single PVID add at pvid. */
-		if (build_vlan_info(&ctx, RTM_SETLINK, v0a_idx,
-				    pvid, 0, false, true) == 0)
+		if (build_vlan_info(&it.nl, RTM_SETLINK, it.v0a_idx,
+				    it.pvid, 0, false, true) == 0)
 			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_add_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
-	(void)build_setlink_up(&ctx, br_idx);
-	if (v0a_idx > 0) (void)build_setlink_up(&ctx, v0a_idx);
-	if (v0b_idx > 0) (void)build_setlink_up(&ctx, v0b_idx);
-	if (v1a_idx > 0) (void)build_setlink_up(&ctx, v1a_idx);
-	if (v1b_idx > 0) (void)build_setlink_up(&ctx, v1b_idx);
+	(void)build_setlink_up(&it.nl, it.br_idx);
+	if (it.v0a_idx > 0) (void)build_setlink_up(&it.nl, it.v0a_idx);
+	if (it.v0b_idx > 0) (void)build_setlink_up(&it.nl, it.v0b_idx);
+	if (it.v1a_idx > 0) (void)build_setlink_up(&it.nl, it.v1a_idx);
+	if (it.v1b_idx > 0) (void)build_setlink_up(&it.nl, it.v1b_idx);
 
-	if (v0b_idx > 0) {
-		raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC,
-			     htons(ETH_P_8021Q));
-		if (raw >= 0) {
-			apply_raw_timeouts(raw);
+	if (it.v0b_idx > 0) {
+		it.raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC,
+				htons(ETH_P_8021Q));
+		if (it.raw >= 0) {
+			apply_raw_timeouts(it.raw);
 			memset(&sll, 0, sizeof(sll));
 			sll.sll_family   = AF_PACKET;
 			sll.sll_protocol = htons(ETH_P_8021Q);
-			sll.sll_ifindex  = v0b_idx;
-			(void)bind(raw, (struct sockaddr *)&sll, sizeof(sll));
+			sll.sll_ifindex  = it.v0b_idx;
+			(void)bind(it.raw, (struct sockaddr *)&sll, sizeof(sll));
 		}
 	}
 
-	if (raw >= 0) {
+	if (it.raw >= 0) {
 		ssize_t n;
 
-		build_tagged_frame(frame, pvid);
+		build_tagged_frame(frame, it.pvid);
 		memset(&sll, 0, sizeof(sll));
 		sll.sll_family   = AF_PACKET;
 		sll.sll_protocol = htons(ETH_P_8021Q);
-		sll.sll_ifindex  = v0b_idx;
+		sll.sll_ifindex  = it.v0b_idx;
 		sll.sll_halen    = 6;
 		memset(sll.sll_addr, 0xff, 6);
 
-		n = sendto(raw, frame, sizeof(frame), MSG_DONTWAIT,
+		n = sendto(it.raw, frame, sizeof(frame), MSG_DONTWAIT,
 			   (struct sockaddr *)&sll, sizeof(sll));
 		if (n > 0)
 			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_raw_send_ok,
@@ -761,33 +805,33 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	switch (race_letter) {
 	case 0:
 		/* RACE A: delete vid pvid mid-flight. */
-		if (v0a_idx > 0 &&
-		    build_vlan_info(&ctx, RTM_DELLINK, v0a_idx,
-				    pvid, 0, false, false) == 0)
+		if (it.v0a_idx > 0 &&
+		    build_vlan_info(&it.nl, RTM_DELLINK, it.v0a_idx,
+				    it.pvid, 0, false, false) == 0)
 			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_del_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 1:
 		/* RACE B: vlan-tunnel add. */
-		if (v0a_idx > 0 &&
-		    build_vlan_tunnel_add(&ctx, v0a_idx, pvid, 42U) == 0)
+		if (it.v0a_idx > 0 &&
+		    build_vlan_tunnel_add(&it.nl, it.v0a_idx, it.pvid, 42U) == 0)
 			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_tunnel_add_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 2:
 		/* RACE C: MST topology change on the port. */
-		if (v0a_idx > 0 &&
-		    build_mst_set(&ctx, v0a_idx, 1U,
+		if (it.v0a_idx > 0 &&
+		    build_mst_set(&it.nl, it.v0a_idx, 1U,
 				  (__u8)BR_STATE_FORWARDING) == 0)
 			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_mst_set_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 3:
 		/* RACE D: re-issue overlapping range add. */
-		if (v0a_idx > 0 &&
-		    build_vlan_info(&ctx, RTM_SETLINK, v0a_idx,
-				    (__u16)(vid_base + 3U),
-				    (__u16)(vid_base + 7U),
+		if (it.v0a_idx > 0 &&
+		    build_vlan_info(&it.nl, RTM_SETLINK, it.v0a_idx,
+				    (__u16)(it.vid_base + 3U),
+				    (__u16)(it.vid_base + 7U),
 				    true, false) == 0)
 			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_add_ok,
 					   1, __ATOMIC_RELAXED);
@@ -795,18 +839,18 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	}
 
 	/* Second tagged send while the race is in flight. */
-	if (raw >= 0) {
+	if (it.raw >= 0) {
 		ssize_t n;
 
-		build_tagged_frame(frame, pvid);
+		build_tagged_frame(frame, it.pvid);
 		memset(&sll, 0, sizeof(sll));
 		sll.sll_family   = AF_PACKET;
 		sll.sll_protocol = htons(ETH_P_8021Q);
-		sll.sll_ifindex  = v0b_idx;
+		sll.sll_ifindex  = it.v0b_idx;
 		sll.sll_halen    = 6;
 		memset(sll.sll_addr, 0xff, 6);
 
-		n = sendto(raw, frame, sizeof(frame), MSG_DONTWAIT,
+		n = sendto(it.raw, frame, sizeof(frame), MSG_DONTWAIT,
 			   (struct sockaddr *)&sll, sizeof(sll));
 		if (n > 0)
 			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_raw_send_ok,
@@ -814,25 +858,25 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	}
 
 teardown:
-	if (raw >= 0) {
-		(void)shutdown(raw, SHUT_RDWR);
-		close(raw);
-		raw = -1;
+	if (it.raw >= 0) {
+		(void)shutdown(it.raw, SHUT_RDWR);
+		close(it.raw);
+		it.raw = -1;
 	}
 
 	/* DELLINK the bridge first; cascades to enslaved veths via
 	 * br_dev_delete and races any in-flight rx still draining. */
-	if (bridge_added && br_idx > 0)
-		(void)build_dellink(&ctx, br_idx);
-	if (veth0_added && v0a_idx > 0)
-		(void)build_dellink(&ctx, v0a_idx);
-	if (veth1_added && v1a_idx > 0)
-		(void)build_dellink(&ctx, v1a_idx);
+	if (it.bridge_added && it.br_idx > 0)
+		(void)build_dellink(&it.nl, it.br_idx);
+	if (it.veth0_added && it.v0a_idx > 0)
+		(void)build_dellink(&it.nl, it.v0a_idx);
+	if (it.veth1_added && it.v1a_idx > 0)
+		(void)build_dellink(&it.nl, it.v1a_idx);
 
 out:
-	if (raw >= 0)
-		close(raw);
-	nl_close(&ctx);
+	if (it.raw >= 0)
+		close(it.raw);
+	nl_close(&it.nl);
 }
 
 bool bridge_vlan_churn(struct childdata *child)
