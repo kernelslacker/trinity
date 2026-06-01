@@ -978,17 +978,28 @@ static bool cmp_hints_entry_valid(const struct cmp_hints_entry_ondisk *e)
 	return true;
 }
 
-bool cmp_hints_load_file(const char *path)
+/*
+ * Phase 1 of cmp_hints_load_file(): the open + header-validation
+ * gauntlet.  Performs the cheap preflight (null guards, stale-tmp
+ * sweep, kallsyms fingerprint capture), opens the persisted state
+ * file, reads the on-disk header, and checks every field against
+ * the running build (magic, version, max_syscall, per_syscall,
+ * entry_size, payload_bytes, and finally the SHA-256 of
+ * /proc/kallsyms).  Each rejection emits the same diagnostic line
+ * as the original inline code and trips a cold start.
+ *
+ * On success returns true with *hdr filled and *fd_out holding an
+ * open file descriptor positioned just past the header (the caller
+ * owns the fd and must close it as part of the payload phase).
+ * On failure returns false with no resources held by the caller --
+ * if the fd was opened the helper closed it before returning.
+ */
+static bool cmp_hints_load_file_header(const char *path,
+				       struct cmp_hints_file_header *hdr,
+				       int *fd_out)
 {
-	struct cmp_hints_file_header hdr;
-	struct cmp_hints_pool_ondisk *payload = NULL;
 	uint8_t cur_fp[32];
 	size_t payload_bytes;
-	uint32_t want_crc;
-	unsigned long rejected = 0;
-	unsigned long loaded_entries = 0;
-	unsigned int populated_pools = 0;
-	unsigned int i, j;
 	ssize_t n;
 	int fd;
 
@@ -1013,60 +1024,82 @@ bool cmp_hints_load_file(const char *path)
 		return false;
 	}
 
-	n = cmp_hints_read_all(fd, &hdr, sizeof(hdr));
-	if (n != (ssize_t)sizeof(hdr)) {
+	n = cmp_hints_read_all(fd, hdr, sizeof(*hdr));
+	if (n != (ssize_t)sizeof(*hdr)) {
 		output(0, "cmp-hints: header truncated at %s (got %zd, want %zu) -- cold start\n",
-		       path, n, sizeof(hdr));
+		       path, n, sizeof(*hdr));
 		(void)close(fd);
 		return false;
 	}
 
-	if (hdr.magic != CMP_HINTS_FILE_MAGIC) {
+	if (hdr->magic != CMP_HINTS_FILE_MAGIC) {
 		output(0, "cmp-hints: file magic 0x%08x != expected 0x%08x at %s -- cold start\n",
-		       hdr.magic, CMP_HINTS_FILE_MAGIC, path);
+		       hdr->magic, CMP_HINTS_FILE_MAGIC, path);
 		(void)close(fd);
 		return false;
 	}
-	if (hdr.version != CMP_HINTS_FILE_VERSION) {
+	if (hdr->version != CMP_HINTS_FILE_VERSION) {
 		output(0, "cmp-hints: file version %u != expected %u at %s -- cold start\n",
-		       hdr.version, CMP_HINTS_FILE_VERSION, path);
+		       hdr->version, CMP_HINTS_FILE_VERSION, path);
 		(void)close(fd);
 		return false;
 	}
-	if (hdr.max_syscall != MAX_NR_SYSCALL) {
+	if (hdr->max_syscall != MAX_NR_SYSCALL) {
 		output(0, "cmp-hints: max_syscall %u != expected %u at %s (file built with a different MAX_NR_SYSCALL) -- cold start\n",
-		       hdr.max_syscall, MAX_NR_SYSCALL, path);
+		       hdr->max_syscall, MAX_NR_SYSCALL, path);
 		(void)close(fd);
 		return false;
 	}
-	if (hdr.per_syscall != CMP_HINTS_PER_SYSCALL) {
+	if (hdr->per_syscall != CMP_HINTS_PER_SYSCALL) {
 		output(0, "cmp-hints: per_syscall %u != expected %u at %s (file built with a different CMP_HINTS_PER_SYSCALL) -- cold start\n",
-		       hdr.per_syscall, CMP_HINTS_PER_SYSCALL, path);
+		       hdr->per_syscall, CMP_HINTS_PER_SYSCALL, path);
 		(void)close(fd);
 		return false;
 	}
-	if (hdr.entry_size != (uint32_t)sizeof(struct cmp_hints_entry_ondisk)) {
+	if (hdr->entry_size != (uint32_t)sizeof(struct cmp_hints_entry_ondisk)) {
 		output(0, "cmp-hints: entry_size %u != expected %zu at %s (file built with a different on-disk record layout) -- cold start\n",
-		       hdr.entry_size,
+		       hdr->entry_size,
 		       sizeof(struct cmp_hints_entry_ondisk), path);
 		(void)close(fd);
 		return false;
 	}
-	payload_bytes = (size_t)MAX_NR_SYSCALL * 2 * sizeof(*payload);
-	if (hdr.payload_bytes != payload_bytes) {
+	payload_bytes = (size_t)MAX_NR_SYSCALL * 2 *
+			sizeof(struct cmp_hints_pool_ondisk);
+	if (hdr->payload_bytes != payload_bytes) {
 		output(0, "cmp-hints: payload_bytes %llu != expected %zu at %s -- cold start\n",
-		       (unsigned long long)hdr.payload_bytes, payload_bytes,
+		       (unsigned long long)hdr->payload_bytes, payload_bytes,
 		       path);
 		(void)close(fd);
 		return false;
 	}
-	if (memcmp(hdr.kallsyms_sha256, cur_fp, sizeof(cur_fp)) != 0) {
+	if (memcmp(hdr->kallsyms_sha256, cur_fp, sizeof(cur_fp)) != 0) {
 		output(0, "cmp-hints: kernel fingerprint mismatch at %s (kallsyms content differs from when the file was written) -- cold start\n",
 		       path);
 		(void)close(fd);
 		return false;
 	}
 
+	*fd_out = fd;
+	return true;
+}
+
+bool cmp_hints_load_file(const char *path)
+{
+	struct cmp_hints_file_header hdr;
+	struct cmp_hints_pool_ondisk *payload = NULL;
+	size_t payload_bytes;
+	uint32_t want_crc;
+	unsigned long rejected = 0;
+	unsigned long loaded_entries = 0;
+	unsigned int populated_pools = 0;
+	unsigned int i, j;
+	ssize_t n;
+	int fd;
+
+	if (!cmp_hints_load_file_header(path, &hdr, &fd))
+		return false;
+
+	payload_bytes = (size_t)MAX_NR_SYSCALL * 2 * sizeof(*payload);
 	payload = malloc(payload_bytes);
 	if (payload == NULL) {
 		output(0, "cmp-hints: payload alloc fail (%zu bytes) -- cold start\n",
