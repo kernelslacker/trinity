@@ -337,6 +337,35 @@ static void madvise_cycler_iter_arm_guard(const struct madvise_cycler_iter_ctx *
 	sigaction(SIGBUS,  &sa, old_bus);
 }
 
+/*
+ * Phase 5: tear down what arm_guard set up, in reverse order: restore
+ * the prior SIGSEGV / SIGBUS dispositions first so any post-disarm
+ * fault routes back to child_fault_handler, then clear the bounds the
+ * handler reads (a stray late signal hitting the just-restored handler
+ * is harmless; one hitting our own handler with stale bounds could
+ * siglongjmp into a vanished wrap).  Bump the pool_race_aborted stat
+ * iff the wrap landed via siglongjmp -- this op holds no per-iteration
+ * allocations, so there is no cleanup the abort path skipped; the
+ * counter is observability, not error reporting (the outer return
+ * stays true, matching the single-page early-return shape: "no useful
+ * work, but not a dispatch-level failure").
+ */
+static void madvise_cycler_iter_disarm_guard(const struct sigaction *old_segv,
+					     const struct sigaction *old_bus,
+					     bool aborted)
+{
+	sigaction(SIGSEGV, old_segv, NULL);
+	sigaction(SIGBUS,  old_bus,  NULL);
+
+	madvise_cycler_pool_race_addr_low  = 0;
+	madvise_cycler_pool_race_addr_high = 0;
+
+	if (aborted)
+		__atomic_add_fetch(
+			&shm->stats.pool_race_aborted[CHILD_OP_MADVISE_CYCLER],
+			1, __ATOMIC_RELAXED);
+}
+
 bool madvise_cycler(struct childdata *child)
 {
 	struct madvise_cycler_iter_ctx ictx = { 0 };
@@ -417,23 +446,7 @@ bool madvise_cycler(struct childdata *child)
 			aborted = true;
 		}
 
-		sigaction(SIGSEGV, &old_segv, NULL);
-		sigaction(SIGBUS,  &old_bus,  NULL);
-
-		madvise_cycler_pool_race_addr_low  = 0;
-		madvise_cycler_pool_race_addr_high = 0;
-
-		if (aborted) {
-			/* siglongjmp skipped any in-flight cleanup — none
-			 * to skip in this body (no per-iteration
-			 * allocations).  Match the single-page early-
-			 * return shape above (return true for "no useful
-			 * work but no error") rather than reporting a
-			 * dispatch-level failure. */
-			__atomic_add_fetch(
-				&shm->stats.pool_race_aborted[CHILD_OP_MADVISE_CYCLER],
-				1, __ATOMIC_RELAXED);
-		}
+		madvise_cycler_iter_disarm_guard(&old_segv, &old_bus, aborted);
 	}
 
 	return true;
