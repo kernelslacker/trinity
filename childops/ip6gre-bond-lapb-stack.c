@@ -265,15 +265,55 @@ static int find_lapb_ifindex(void)
 	return 0;
 }
 
+/*
+ * Per-invocation state shared across the ip6gre_lapb_iter_* helpers
+ * below.  ctx.fd defaults to -1 via the orchestrator's designated
+ * initialiser so the teardown helper can close it unconditionally
+ * regardless of which earlier phase bailed; bond_idx / gre_idx default
+ * to 0 so teardown's per-link RTM_DELLINK gates skip work that was
+ * never set up.  bond_name / gre_name are filled in by the netlink-open
+ * phase and consumed by the per-link create phases.
+ */
+struct ip6gre_lapb_iter_ctx {
+	struct nl_ctx	ctx;
+	int		bond_idx;
+	int		gre_idx;
+	char		bond_name[IFNAMSIZ];
+	char		gre_name[IFNAMSIZ];
+};
+
+/*
+ * Phase: per-child netns setup.  Unshares CLONE_NEWNET the first time
+ * through and latches g_unsupported via latch_unsupported() on failure
+ * so the rest of the child's lifetime pays the EFAIL once.  Returns 0
+ * on success; -1 means caller should return true immediately (no fds
+ * were opened, so no cleanup is needed).
+ */
+static int ip6gre_lapb_iter_setup_netns(void)
+{
+	if (g_ns_unshared)
+		return 0;
+
+	if (unshare(CLONE_NEWNET) < 0) {
+		latch_unsupported("unshare(CLONE_NEWNET)", errno);
+		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	g_ns_unshared = true;
+	return 0;
+}
+
 bool ip6gre_bond_lapb_stack(struct childdata *child)
 {
-	struct nl_ctx ctx = { .fd = -1 };
+	struct ip6gre_lapb_iter_ctx ictx = {
+		.ctx = { .fd = -1 },
+	};
 	struct nl_open_opts opts = {
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 	};
-	int bond_idx = 0, gre_idx = 0, lapb_idx = 0;
-	char bond_name[IFNAMSIZ], gre_name[IFNAMSIZ];
+	int lapb_idx = 0;
 	unsigned int cycles, i;
 	int rc;
 
@@ -284,27 +324,22 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 	if (g_unsupported)
 		return true;
 
-	if (!g_ns_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			latch_unsupported("unshare(CLONE_NEWNET)", errno);
-			__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-		g_ns_unshared = true;
-	}
+	if (ip6gre_lapb_iter_setup_netns() != 0)
+		return true;
 
-	if (nl_open(&ctx, &opts) < 0) {
+	if (nl_open(&ictx.ctx, &opts) < 0) {
 		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 
 	g_iter++;
-	snprintf(bond_name, sizeof(bond_name), "ibls_b%u", g_iter & 0xffffU);
-	snprintf(gre_name,  sizeof(gre_name),  "ibls_g%u", g_iter & 0xffffU);
+	snprintf(ictx.bond_name, sizeof(ictx.bond_name), "ibls_b%u",
+		 g_iter & 0xffffU);
+	snprintf(ictx.gre_name,  sizeof(ictx.gre_name),  "ibls_g%u",
+		 g_iter & 0xffffU);
 
-	rc = ibls_newlink(&ctx, bond_name, "bond", NULL);
+	rc = ibls_newlink(&ictx.ctx, ictx.bond_name, "bond", NULL);
 	if (rc != 0) {
 		if (err_is_unsupported(rc))
 			latch_unsupported("NEWLINK type=bond", -rc);
@@ -312,14 +347,15 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	bond_idx = (int)if_nametoindex(bond_name);
-	if (bond_idx <= 0) {
+	ictx.bond_idx = (int)if_nametoindex(ictx.bond_name);
+	if (ictx.bond_idx <= 0) {
 		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
 
-	rc = ibls_newlink(&ctx, gre_name, "ip6gre", append_ip6gre_data);
+	rc = ibls_newlink(&ictx.ctx, ictx.gre_name, "ip6gre",
+			  append_ip6gre_data);
 	if (rc != 0) {
 		if (err_is_unsupported(rc))
 			latch_unsupported("NEWLINK type=ip6gre", -rc);
@@ -327,14 +363,14 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	gre_idx = (int)if_nametoindex(gre_name);
-	if (gre_idx <= 0)
+	ictx.gre_idx = (int)if_nametoindex(ictx.gre_name);
+	if (ictx.gre_idx <= 0)
 		goto out;
 
 	/* Enslave ip6gre to the bond.  bond_enslave's first-slave path
 	 * picks up the slave's header_ops, so bond->header_ops->create
 	 * starts dispatching to ip6gre_header from this point on. */
-	rc = ibls_setlink(&ctx, gre_idx, bond_idx, 0, 0);
+	rc = ibls_setlink(&ictx.ctx, ictx.gre_idx, ictx.bond_idx, 0, 0);
 	if (rc != 0) {
 		if (err_is_unsupported(rc))
 			latch_unsupported("SETLINK IFLA_MASTER=bond", -rc);
@@ -359,21 +395,21 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 	cycles = (rand32() % (IBLS_FLAG_CYCLES_CAP - IBLS_FLAG_CYCLES_BASE + 1U))
 	         + IBLS_FLAG_CYCLES_BASE;
 	for (i = 0; i < cycles; i++) {
-		(void)ibls_setlink(&ctx, lapb_idx, 0, IFF_UP, IFF_UP);
+		(void)ibls_setlink(&ictx.ctx, lapb_idx, 0, IFF_UP, IFF_UP);
 		__atomic_add_fetch(&shm->stats.ip6gre_lapb_flag_toggles,
 				   1, __ATOMIC_RELAXED);
-		(void)ibls_setlink(&ctx, lapb_idx, 0, 0, IFF_UP);
+		(void)ibls_setlink(&ictx.ctx, lapb_idx, 0, 0, IFF_UP);
 		__atomic_add_fetch(&shm->stats.ip6gre_lapb_flag_toggles,
 				   1, __ATOMIC_RELAXED);
 	}
 
 out:
-	if (ctx.fd >= 0) {
-		if (gre_idx > 0)
-			(void)ibls_dellink(&ctx, gre_idx);
-		if (bond_idx > 0)
-			(void)ibls_dellink(&ctx, bond_idx);
-		nl_close(&ctx);
+	if (ictx.ctx.fd >= 0) {
+		if (ictx.gre_idx > 0)
+			(void)ibls_dellink(&ictx.ctx, ictx.gre_idx);
+		if (ictx.bond_idx > 0)
+			(void)ibls_dellink(&ictx.ctx, ictx.bond_idx);
+		nl_close(&ictx.ctx);
 	}
 	return true;
 }
