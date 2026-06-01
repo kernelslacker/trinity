@@ -1173,6 +1173,7 @@ static int dormant_op_disabled[104] = {
 static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_MMAP_LIFECYCLE,
 	CHILD_OP_MPROTECT_SPLIT,
+	CHILD_OP_VMA_SPLIT_STORM,
 	CHILD_OP_MADVISE_CYCLER,
 	CHILD_OP_NUMA_MIGRATION,
 	CHILD_OP_MLOCK_PRESSURE,
@@ -1388,6 +1389,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_BLKDEV_LIFECYCLE_RACE:	return "blkdev_lifecycle_race";
 	case CHILD_OP_ISCSI_TARGET_PROBE:	return "iscsi_target_probe";
 	case CHILD_OP_ETH_EMITTER:	return "eth_emitter";
+	case CHILD_OP_VMA_SPLIT_STORM:	return "vma_split_storm";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1972,6 +1974,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_BLKDEV_LIFECYCLE_RACE]	= blkdev_lifecycle_race,
 	[CHILD_OP_ISCSI_TARGET_PROBE]	= iscsi_target_probe,
 	[CHILD_OP_ETH_EMITTER]		= eth_emitter,
+	[CHILD_OP_VMA_SPLIT_STORM]	= vma_split_storm,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
