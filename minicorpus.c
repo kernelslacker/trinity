@@ -251,6 +251,7 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 	struct syscallentry *entry;
 	unsigned int nr = rec->nr;
 	unsigned int i;
+	unsigned int cur_count;
 
 	if (minicorpus_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return;
@@ -301,9 +302,20 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 
 	ring_lock(ring);
 	ring->entries[ring->head % CORPUS_RING_SIZE] = tmp;
-	ring->head++;
-	if (ring->count < CORPUS_RING_SIZE)
-		ring->count++;
+	/* Publish count BEFORE head, with release semantics.  The
+	 * planned lockless burst-path reader snapshots count first,
+	 * gates on count >= K_RECENT, then computes a slot offset from
+	 * a snapshotted head.  If head were observed past count, the
+	 * reader would compute against a stale base.  This diverges
+	 * from chain_corpus_save()'s head-first ordering by design.
+	 * Writers still serialise via ring->lock; the release-stores
+	 * exist solely to give the future acquire-load reader a well-
+	 * defined view paired with the entry store above. */
+	cur_count = ring->count;
+	if (cur_count < CORPUS_RING_SIZE)
+		__atomic_store_n(&ring->count, cur_count + 1,
+				 __ATOMIC_RELEASE);
+	__atomic_store_n(&ring->head, ring->head + 1, __ATOMIC_RELEASE);
 	ring_unlock(ring);
 
 	__atomic_fetch_add(&minicorpus_shm->mutations, 1UL, __ATOMIC_RELAXED);
@@ -1249,6 +1261,7 @@ bool minicorpus_load_file(const char *path,
 		uint32_t want;
 		ssize_t n;
 		unsigned int j;
+		unsigned int cur_count;
 
 		n = read_all(fd, &ent, sizeof(ent));
 		if (n == 0)
@@ -1305,9 +1318,14 @@ bool minicorpus_load_file(const char *path,
 		for (j = 0; j < 6; j++)
 			dst->args[j] = (unsigned long)ent.args[j];
 		dst->num_args = ent.num_args;
-		ring->head++;
-		if (ring->count < CORPUS_RING_SIZE)
-			ring->count++;
+		/* Count-before-head release publish; see comment on the
+		 * matching publish in minicorpus_save_with_reason(). */
+		cur_count = ring->count;
+		if (cur_count < CORPUS_RING_SIZE)
+			__atomic_store_n(&ring->count, cur_count + 1,
+					 __ATOMIC_RELEASE);
+		__atomic_store_n(&ring->head, ring->head + 1,
+				 __ATOMIC_RELEASE);
 		ring_unlock(ring);
 		__atomic_fetch_add(&minicorpus_shm->mutations, 1UL,
 				   __ATOMIC_RELAXED);
