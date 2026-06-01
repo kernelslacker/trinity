@@ -227,6 +227,32 @@ static void xattr_thrash_iter_op_remove(struct xattr_slot *s, const char *name,
 }
 
 /*
+ * Phase: LIST dispatch.  use_path=false routes to flistxattr;
+ * use_path=true routes to listxattr.  The deliberately small 256-byte
+ * list buffer sometimes trips -ERANGE once enough names accumulate,
+ * which exercises the size-probe path listxattr callers use to size
+ * their second call.  No name argument -- list ops walk the whole
+ * per-inode xattr list.
+ */
+static void xattr_thrash_iter_op_list(struct xattr_slot *s, bool use_path)
+{
+	char buf[256];
+	int rc;
+
+	if (use_path)
+		rc = (int) listxattr(s->path, buf, sizeof(buf));
+	else
+		rc = (int) flistxattr(s->fd, buf, sizeof(buf));
+
+	if (rc >= 0)
+		__atomic_add_fetch(&shm->stats.xattr_thrash_list,
+				   1, __ATOMIC_RELAXED);
+	else
+		__atomic_add_fetch(&shm->stats.xattr_thrash_failed,
+				   1, __ATOMIC_RELAXED);
+}
+
+/*
  * Phase: close every fd opened by setup_fds.  All xattrs left behind by
  * the iteration loop persist on the testfile inodes by design, so the
  * next xattr_thrash invocation starts against an inode that already has
@@ -263,7 +289,6 @@ bool xattr_thrash(struct childdata *child)
 	for (iter = 0; iter < iters; iter++) {
 		struct xattr_slot *s = &slots[rnd_modulo_u32(opened)];
 		const char *name = xattr_names[rnd_modulo_u32(NR_XATTR_NAMES)];
-		int rc;
 		/* 12 distinct dispatches so the path-based and fd-based
 		 * variants of every op all land regularly.  Set/get
 		 * dominate (8/12) because those are the operations that
@@ -294,34 +319,12 @@ bool xattr_thrash(struct childdata *child)
 		case 9:
 			xattr_thrash_iter_op_remove(s, name, true);
 			break;
-		case 10: {
-			/* Deliberately small list buffer so we sometimes
-			 * trip -ERANGE once enough names accumulate, which
-			 * exercises the size-probe path listxattr callers
-			 * use to size their second call. */
-			char buf[256];
-
-			rc = (int) flistxattr(s->fd, buf, sizeof(buf));
-			if (rc >= 0)
-				__atomic_add_fetch(&shm->stats.xattr_thrash_list,
-						   1, __ATOMIC_RELAXED);
-			else
-				__atomic_add_fetch(&shm->stats.xattr_thrash_failed,
-						   1, __ATOMIC_RELAXED);
+		case 10:
+			xattr_thrash_iter_op_list(s, false);
 			break;
-		}
-		case 11: {
-			char buf[256];
-
-			rc = (int) listxattr(s->path, buf, sizeof(buf));
-			if (rc >= 0)
-				__atomic_add_fetch(&shm->stats.xattr_thrash_list,
-						   1, __ATOMIC_RELAXED);
-			else
-				__atomic_add_fetch(&shm->stats.xattr_thrash_failed,
-						   1, __ATOMIC_RELAXED);
+		case 11:
+			xattr_thrash_iter_op_list(s, true);
 			break;
-		}
 		}
 
 		if (budget_elapsed(&start))
