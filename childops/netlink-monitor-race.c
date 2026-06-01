@@ -396,6 +396,45 @@ static int netlink_monitor_race_iter_open_mutator(struct netlink_monitor_race_it
 	return 0;
 }
 
+/*
+ * Phase: drive NETLINK_MUT_BURST RTM_NEWADDR / RTM_DELADDR cycles
+ * against the freshly-created dummy interface, draining mon's pending
+ * broadcasts in between each mutation.  Each address mutation broadcasts
+ * to mon's bound groups, so the recv-side processing happens concurrently
+ * with the next send -- the bug-class race window this op exists to open.
+ */
+static void netlink_monitor_race_iter_address_burst(struct netlink_monitor_race_iter_ctx *ctx)
+{
+	unsigned int drained;
+	unsigned int i;
+
+	for (i = 0; i < NETLINK_MUT_BURST; i++) {
+		if (build_addr(&ctx->mut, RTM_NEWADDR, ctx->ifindex, ctx->addr) == 0) {
+			ctx->addr_added = true;
+			__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
+					   1, __ATOMIC_RELAXED);
+		}
+
+		drained = drain_monitor(&ctx->mon);
+		if (drained)
+			__atomic_add_fetch(&shm->stats.netlink_monitor_race_recv_drained,
+					   drained, __ATOMIC_RELAXED);
+
+		if (ctx->addr_added) {
+			if (build_addr(&ctx->mut, RTM_DELADDR, ctx->ifindex, ctx->addr) == 0) {
+				ctx->addr_added = false;
+				__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
+						   1, __ATOMIC_RELAXED);
+			}
+		}
+
+		drained = drain_monitor(&ctx->mon);
+		if (drained)
+			__atomic_add_fetch(&shm->stats.netlink_monitor_race_recv_drained,
+					   drained, __ATOMIC_RELAXED);
+	}
+}
+
 bool netlink_monitor_race(struct childdata *child)
 {
 	struct netlink_monitor_race_iter_ctx ctx = {
@@ -404,7 +443,6 @@ bool netlink_monitor_race(struct childdata *child)
 	};
 	__u32 drop_grp, add_grp;
 	unsigned int drained;
-	unsigned int i;
 
 	(void)child;
 
@@ -422,33 +460,7 @@ bool netlink_monitor_race(struct childdata *child)
 	if (netlink_monitor_race_iter_open_mutator(&ctx) != 0)
 		goto out;
 
-	/* Drive a small burst of address add/del cycles so each iteration
-	 * generates a NEWADDR/DELADDR broadcast that mon must process. */
-	for (i = 0; i < NETLINK_MUT_BURST; i++) {
-		if (build_addr(&ctx.mut, RTM_NEWADDR, ctx.ifindex, ctx.addr) == 0) {
-			ctx.addr_added = true;
-			__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
-					   1, __ATOMIC_RELAXED);
-		}
-
-		drained = drain_monitor(&ctx.mon);
-		if (drained)
-			__atomic_add_fetch(&shm->stats.netlink_monitor_race_recv_drained,
-					   drained, __ATOMIC_RELAXED);
-
-		if (ctx.addr_added) {
-			if (build_addr(&ctx.mut, RTM_DELADDR, ctx.ifindex, ctx.addr) == 0) {
-				ctx.addr_added = false;
-				__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
-						   1, __ATOMIC_RELAXED);
-			}
-		}
-
-		drained = drain_monitor(&ctx.mon);
-		if (drained)
-			__atomic_add_fetch(&shm->stats.netlink_monitor_race_recv_drained,
-					   drained, __ATOMIC_RELAXED);
-	}
+	netlink_monitor_race_iter_address_burst(&ctx);
 
 	/* Mid-stream membership churn against an active subscriber list.
 	 * Pick two distinct groups from the supported set: one to drop,
