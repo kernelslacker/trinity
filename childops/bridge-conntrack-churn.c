@@ -655,15 +655,16 @@ static int bridge_conntrack_iter_veth_attach(struct bridge_conntrack_iter_ctx *c
  * failure: the packet/flush burst still runs because the kernel may
  * accept ctnetlink even when nf_tables is gated.
  */
-static int bridge_conntrack_iter_nft_setup(struct bridge_conntrack_iter_ctx *ctx,
-					   const struct nfnl_open_opts *nfnl_opts,
-					   const char *table, const char *chain)
+static int bridge_conntrack_iter_nft_setup(struct bridge_conntrack_iter_ctx *ctx)
 {
+	struct nfnl_open_opts nfnl_opts = {
+		.recv_timeo_s  = 1,
+	};
 	int rc;
 
-	if (nfnl_open(&ctx->nfnl_nft, nfnl_opts) < 0)
+	if (nfnl_open(&ctx->nfnl_nft, &nfnl_opts) < 0)
 		return -1;
-	rc = nft_install_bridge_ct(&ctx->nfnl_nft, table, chain);
+	rc = nft_install_bridge_ct(&ctx->nfnl_nft, "br_ct", "in");
 	if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
 	    rc == -EOPNOTSUPP || rc == -ENOTSUP)
 		ns_unsupported_nf_tables = true;
@@ -681,9 +682,11 @@ static int bridge_conntrack_iter_nft_setup(struct bridge_conntrack_iter_ctx *ctx
  * the targeted race window on its own, so a missing half just yields
  * fewer concurrent stimuli rather than aborting the iteration.
  */
-static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx *ctx,
-						const struct nfnl_open_opts *nfnl_opts)
+static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx *ctx)
 {
+	struct nfnl_open_opts nfnl_opts = {
+		.recv_timeo_s  = 1,
+	};
 	unsigned int iters, i;
 	int rc;
 
@@ -711,7 +714,7 @@ static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx
 			ctx->sender_started = true;
 	}
 
-	if (nfnl_open(&ctx->nfnl_ct, nfnl_opts) == 0) {
+	if (nfnl_open(&ctx->nfnl_ct, &nfnl_opts) == 0) {
 		struct timespec t0;
 
 		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -780,11 +783,6 @@ bool bridge_conntrack_churn(struct childdata *child)
 		.nfnl_ct  = { .nl = { .fd = -1 } },
 		.raw      = -1,
 	};
-	const char *table = "br_ct";
-	const char *chain = "in";
-	struct nfnl_open_opts nfnl_opts = {
-		.recv_timeo_s  = 1,
-	};
 
 	(void)child;
 
@@ -814,10 +812,10 @@ bool bridge_conntrack_churn(struct childdata *child)
 	if (bridge_conntrack_iter_veth_attach(&ctx) != 0)
 		goto out;
 
-	if (bridge_conntrack_iter_nft_setup(&ctx, &nfnl_opts, table, chain) != 0)
+	if (bridge_conntrack_iter_nft_setup(&ctx) != 0)
 		goto out;
 
-	bridge_conntrack_iter_traffic_burst(&ctx, &nfnl_opts);
+	bridge_conntrack_iter_traffic_burst(&ctx);
 
 out:
 	bridge_conntrack_iter_teardown(&ctx);
