@@ -754,18 +754,89 @@ static int afxdp_iter_setup_bpf(struct xsk_state *st)
 	return 0;
 }
 
+/*
+ * Phase 4: pick the bind target ifindex (tun-with-NAPI_FRAGS when the
+ * per-iter knob fires and the tunN is reachable, otherwise lo) and run
+ * bind() with bounded EAGAIN/EBUSY retry.  Clears *want_tun if the tun
+ * path fell through to lo so downstream stats reflect what actually
+ * bound.  Returns -1 only when no ifindex is reachable; bind() failure
+ * leaves st->bound == false and the iteration continues into races.
+ */
+static int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
+			   bool *want_tun, char *tun_name,
+			   unsigned int *target_ifindex_out)
+{
+	struct sockaddr_xdp sxdp;
+	unsigned int target_ifindex = 0;
+	unsigned int retry;
+	int rc;
+
+	/* Pick bind target: tun-with-NAPI_FRAGS when the per-iter knob fired
+	 * (and tun is reachable), else lo.  d73a9a63f9f7's bug surface is
+	 * the IFF_TX_SKB_NO_LINEAR class of netdev — tun in NAPI mode
+	 * exposes that path; lo does not. */
+	if (*want_tun) {
+		st->tun_fd = tun_open_napi_frags(tun_name);
+		if (st->tun_fd >= 0)
+			target_ifindex = if_nametoindex(tun_name);
+		if (target_ifindex == 0) {
+			if (st->tun_fd >= 0) {
+				close(st->tun_fd);
+				st->tun_fd = -1;
+			}
+			*want_tun = false;
+		}
+	}
+	if (target_ifindex == 0)
+		target_ifindex = if_nametoindex("lo");
+	if (target_ifindex == 0) {
+		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	memset(&sxdp, 0, sizeof(sxdp));
+	sxdp.sxdp_family       = AF_XDP;
+	sxdp.sxdp_flags        = XDP_USE_NEED_WAKEUP |
+				 (want_sg ? XDP_USE_SG : 0);
+	sxdp.sxdp_ifindex      = target_ifindex;
+	sxdp.sxdp_queue_id     = 0;
+	sxdp.sxdp_shared_umem_fd = 0;
+
+	rc = -1;
+	for (retry = 0; retry < AFXDP_RETRY_CAP; retry++) {
+		rc = bind(st->xsk_fd, (struct sockaddr *)&sxdp, sizeof(sxdp));
+		if (rc == 0 || !retryable(errno))
+			break;
+	}
+	if (rc == 0) {
+		st->bound = true;
+		__atomic_add_fetch(&shm->stats.afxdp_churn_bind_ok,
+				   1, __ATOMIC_RELAXED);
+		if (*want_tun)
+			__atomic_add_fetch(&shm->stats.afxdp_tun_bind_iters,
+					   1, __ATOMIC_RELAXED);
+	} else if (want_sg && errno == EINVAL) {
+		/* Bind-time rejection of XDP_USE_SG (e.g. driver path).
+		 * Latch so subsequent iters don't ask for it again. */
+		ns_unsupported_xdp_sg = true;
+		__atomic_add_fetch(&shm->stats.afxdp_xsg_bind_failed,
+				   1, __ATOMIC_RELAXED);
+	}
+
+	*target_ifindex_out = target_ifindex;
+	return 0;
+}
+
 /* One full setup + race + teardown cycle on a fresh AF_XDP socket. */
 static void iter_one(unsigned int idx, const struct timespec *t_outer)
 {
 	struct xsk_state st;
 	struct xdp_statistics xstats;
-	struct sockaddr_xdp sxdp;
 	char tun_name[IFNAMSIZ];
 	socklen_t xstats_len = sizeof(xstats);
 	unsigned int target_ifindex;
-	unsigned int retry;
 	bool want_sg, want_tx_md, want_tun;
-	int rc;
 
 	(void)idx;
 
@@ -783,59 +854,9 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 	if (afxdp_iter_setup_bpf(&st) < 0)
 		goto out;
 
-	/* Pick bind target: tun-with-NAPI_FRAGS when the per-iter knob fired
-	 * (and tun is reachable), else lo.  d73a9a63f9f7's bug surface is
-	 * the IFF_TX_SKB_NO_LINEAR class of netdev — tun in NAPI mode
-	 * exposes that path; lo does not. */
-	target_ifindex = 0;
-	if (want_tun) {
-		st.tun_fd = tun_open_napi_frags(tun_name);
-		if (st.tun_fd >= 0)
-			target_ifindex = if_nametoindex(tun_name);
-		if (target_ifindex == 0) {
-			if (st.tun_fd >= 0) {
-				close(st.tun_fd);
-				st.tun_fd = -1;
-			}
-			want_tun = false;
-		}
-	}
-	if (target_ifindex == 0)
-		target_ifindex = if_nametoindex("lo");
-	if (target_ifindex == 0) {
-		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (afxdp_iter_bind(&st, want_sg, &want_tun, tun_name,
+			    &target_ifindex) < 0)
 		goto out;
-	}
-
-	memset(&sxdp, 0, sizeof(sxdp));
-	sxdp.sxdp_family       = AF_XDP;
-	sxdp.sxdp_flags        = XDP_USE_NEED_WAKEUP |
-				 (want_sg ? XDP_USE_SG : 0);
-	sxdp.sxdp_ifindex      = target_ifindex;
-	sxdp.sxdp_queue_id     = 0;
-	sxdp.sxdp_shared_umem_fd = 0;
-
-	rc = -1;
-	for (retry = 0; retry < AFXDP_RETRY_CAP; retry++) {
-		rc = bind(st.xsk_fd, (struct sockaddr *)&sxdp, sizeof(sxdp));
-		if (rc == 0 || !retryable(errno))
-			break;
-	}
-	if (rc == 0) {
-		st.bound = true;
-		__atomic_add_fetch(&shm->stats.afxdp_churn_bind_ok,
-				   1, __ATOMIC_RELAXED);
-		if (want_tun)
-			__atomic_add_fetch(&shm->stats.afxdp_tun_bind_iters,
-					   1, __ATOMIC_RELAXED);
-	} else if (want_sg && errno == EINVAL) {
-		/* Bind-time rejection of XDP_USE_SG (e.g. driver path).
-		 * Latch so subsequent iters don't ask for it again. */
-		ns_unsupported_xdp_sg = true;
-		__atomic_add_fetch(&shm->stats.afxdp_xsg_bind_failed,
-				   1, __ATOMIC_RELAXED);
-	}
 
 	/* Attach the loaded XDP program to lo so xdp_do_redirect() actually
 	 * walks the XSKMAP -- without an attached program, the RACE A
