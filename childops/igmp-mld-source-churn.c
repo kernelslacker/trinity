@@ -506,6 +506,26 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 }
 
 /*
+ * Phase 5 (v4): free any bulk-filter buffer the race phase allocated,
+ * then close send_s + recv_s in iter_idx-randomised order so teardown
+ * isn't always recv-first.  Sentinel-aware so the same helper backs
+ * both the teardown: success-path and the out: short-circuit path.
+ */
+static void igmp_source_iter_v4_teardown(struct igmp_source_iter_v4_ctx *it)
+{
+	free(it->gf);
+	it->gf = NULL;
+	/* Random close order so teardown isn't always recv-first. */
+	if ((it->iter_idx & 1U) == 0U) {
+		if (it->recv_s >= 0) { close(it->recv_s); it->recv_s = -1; }
+		if (it->send_s >= 0) { close(it->send_s); it->send_s = -1; }
+	} else {
+		if (it->send_s >= 0) { close(it->send_s); it->send_s = -1; }
+		if (it->recv_s >= 0) { close(it->recv_s); it->recv_s = -1; }
+	}
+}
+
+/*
  * One IPv4 join+race+teardown cycle.  Returns immediately if the cap-
  * gate has latched.  Updates ns_unsupported_igmp_mld_source_churn on
  * structural failures from the first MCAST_JOIN_SOURCE_GROUP probe.
@@ -545,16 +565,7 @@ static void iter_one_v4(unsigned int iter_idx, const struct timespec *t_outer)
 	send_burst(it.send_s, 2);
 
 teardown:
-	free(it.gf);
-	it.gf = NULL;
-	/* Random close order so teardown isn't always recv-first. */
-	if ((it.iter_idx & 1U) == 0U) {
-		if (it.recv_s >= 0) { close(it.recv_s); it.recv_s = -1; }
-		if (it.send_s >= 0) { close(it.send_s); it.send_s = -1; }
-	} else {
-		if (it.send_s >= 0) { close(it.send_s); it.send_s = -1; }
-		if (it.recv_s >= 0) { close(it.recv_s); it.recv_s = -1; }
-	}
+	igmp_source_iter_v4_teardown(&it);
 	return;
 
 out:
