@@ -1137,16 +1137,51 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name)
 	}
 }
 
+/*
+ * Per-child one-time setup: unshare a fresh netnamespace, open the
+ * rtnl socket, and bring lo up inside the ns.  Latched failures shut
+ * the whole op off via the ns_* gates checked in the orchestrator on
+ * subsequent invocations.  Returns 0 on success; nonzero means the
+ * caller should bail without entering the cleanup path.
+ */
+static int tc_qdisc_setup_netns(struct nl_ctx *ctx)
+{
+	struct nl_open_opts nl_opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
+
+	if (!ns_unshared) {
+		if (unshare(CLONE_NEWNET) < 0) {
+			ns_setup_failed = true;
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_setup_failed,
+					   1, __ATOMIC_RELAXED);
+			return -1;
+		}
+		ns_unshared = true;
+	}
+
+	if (nl_open(ctx, &nl_opts) < 0) {
+		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
+			ns_unsupported_rtnl = true;
+		__atomic_add_fetch(&shm->stats.tc_qdisc_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	if (!lo_brought_up) {
+		bring_lo_up(ctx);
+		lo_brought_up = true;
+	}
+	return 0;
+}
+
 bool tc_qdisc_churn(struct childdata *child)
 {
 	char dummy_name[IFNAMSIZ];
 	char bridge_name[IFNAMSIZ];
 	char peer_name[IFNAMSIZ];
 	struct nl_ctx ctx = { .fd = -1 };
-	struct nl_open_opts nl_opts = {
-		.proto = NETLINK_ROUTE,
-		.recv_timeo_s = 1,
-	};
 	int udp = -1;
 	int dummy_idx = 0;
 	int bridge_idx = 0;
@@ -1168,28 +1203,8 @@ bool tc_qdisc_churn(struct childdata *child)
 	if (ns_setup_failed || ns_unsupported_rtnl || ns_unsupported_dummy)
 		return true;
 
-	if (!ns_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			ns_setup_failed = true;
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-		ns_unshared = true;
-	}
-
-	if (nl_open(&ctx, &nl_opts) < 0) {
-		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
-			ns_unsupported_rtnl = true;
-		__atomic_add_fetch(&shm->stats.tc_qdisc_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (tc_qdisc_setup_netns(&ctx) != 0)
 		return true;
-	}
-
-	if (!lo_brought_up) {
-		bring_lo_up(&ctx);
-		lo_brought_up = true;
-	}
 
 	/*
 	 * One iteration in three (when supported) builds a bridge
