@@ -73,6 +73,14 @@ struct cmp_hint_entry {
 	uint64_t last_used;	/* pool->last_used_stamp at insertion */
 };
 
+/* Magic word flanking pool->entries[] for wild-write detection.  Init-
+ * time written into canary_pre and canary_post by cmp_hints_init() and
+ * never touched after; a delta is read-only evidence that a kernel-side
+ * stomp (via a syscall arg pointer aliasing into the SHM) reached the
+ * pool.  Value is an arbitrary non-pattern u64 unlikely to be produced
+ * by either zero-init or any normal kernel write the fuzzer drives. */
+#define CMP_HINTS_POOL_CANARY	0x7c4d0b3f9e2a5168ULL
+
 struct cmp_hint_pool {
 	lock_t lock;
 	unsigned int count;
@@ -101,7 +109,9 @@ struct cmp_hint_pool {
 	 * fuzz run can't wrap the 32-bit counter and invert the LRU
 	 * eviction order once the stamp space rolls past UINT_MAX. */
 	uint64_t last_used_stamp;
+	uint64_t canary_pre;
 	struct cmp_hint_entry entries[CMP_HINTS_PER_SYSCALL];
+	uint64_t canary_post;
 };
 
 /*

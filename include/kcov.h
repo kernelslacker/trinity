@@ -496,6 +496,25 @@ struct kcov_shared {
 	 * discarded it (none today, but the slot exists for future
 	 * branchier consumers). */
 	unsigned long cmp_hints_injected;
+	/* Wild-write detection in the cmp_hints SHM pool.  Bumped when a
+	 * read path (cmp_hints_try_get / pool_add_locked) observes a
+	 * pool->count value above the CMP_HINTS_PER_SYSCALL hard cap --
+	 * the only way that can happen is a kernel-side store through a
+	 * fuzzed syscall arg pointer landing on the count field.  Without
+	 * this gate the bogus count drives rnd_modulo_u32 to a wild index
+	 * and the entries[].value load walks off the 1.1 MB SHM mapping. */
+	unsigned long cmp_hints_count_oob;
+	/* Companion canary-channel counters bumped from the same gate.
+	 * Probed only on a count_oob hit, so the cost is paid only when
+	 * a stomp has already happened; in steady state these stay at 0
+	 * and the canary loads never run.  Split into pre/post so the
+	 * channel of corruption is observable: a pre-only stomp suggests
+	 * a write that overshoots the pool header (count/generation/
+	 * last_used_stamp area), a post-only stomp suggests entries[]
+	 * overrun from the tail, and both-set means the stomp was wide
+	 * enough to span the full 16-entry array. */
+	unsigned long cmp_hints_canary_pre_corrupt;
+	unsigned long cmp_hints_canary_post_corrupt;
 	/* See struct kcov_cmp_diag — child-context writes are routed here
 	 * because the child's stdout has already been dup2'd to /dev/null
 	 * by the time KCOV_TRACE_CMP setup runs. */

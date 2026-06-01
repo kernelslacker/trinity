@@ -259,6 +259,22 @@ void cmp_hints_init(void)
 	 */
 	cmp_hints_shm = alloc_shared(sizeof(struct cmp_hints_shared));
 	memset(cmp_hints_shm, 0, sizeof(struct cmp_hints_shared));
+	/* Stamp the wild-write canaries flanking pool->entries[] in every
+	 * (nr, arch) slot.  These are runtime-only -- cmp_hints_load_file
+	 * writes count/generation/entries/last_used_stamp and never touches
+	 * canary_pre/canary_post, so a single init pass before warm-start
+	 * is sufficient for the lifetime of the SHM. */
+	{
+		unsigned int nr, a;
+		for (nr = 0; nr < MAX_NR_SYSCALL; nr++) {
+			for (a = 0; a < 2; a++) {
+				struct cmp_hint_pool *pool =
+					&cmp_hints_shm->pools[nr][a];
+				pool->canary_pre = CMP_HINTS_POOL_CANARY;
+				pool->canary_post = CMP_HINTS_POOL_CANARY;
+			}
+		}
+	}
 	output(0, "KCOV: CMP hint pool allocated (%lu KB)\n",
 		(unsigned long) sizeof(struct cmp_hints_shared) / 1024);
 
@@ -275,6 +291,46 @@ static void pool_lock(struct cmp_hint_pool *pool)
 static void pool_unlock(struct cmp_hint_pool *pool)
 {
 	unlock(&pool->lock);
+}
+
+/*
+ * Wild-write gate for the cmp_hints SHM pool.  Called by every reader
+ * (try_get lockless, pool_add_locked under lock) immediately after the
+ * count load.  Bumps three independent kcov_shm counters so the
+ * post-mortem can attribute corruption to whichever channel hit:
+ *
+ *   - cmp_hints_count_oob:           pool->count exceeds the 16-slot
+ *                                    cap, the only sign visible from
+ *                                    the read path itself.
+ *   - cmp_hints_canary_pre_corrupt:  the 8-byte sentinel between
+ *                                    last_used_stamp and entries[] has
+ *                                    been overwritten -- write reached
+ *                                    the pool from the header side.
+ *   - cmp_hints_canary_post_corrupt: the sentinel after entries[] has
+ *                                    been overwritten -- write reached
+ *                                    the pool from the tail side.
+ *
+ * Canary loads are gated on the count check so the steady-state cost
+ * is one compare-against-16; the canary cache lines are only touched
+ * once a stomp has already occurred.  Returns true when corruption is
+ * present so callers can treat the pool as advisory-empty.
+ */
+static bool cmp_hints_pool_corrupted(const struct cmp_hint_pool *pool,
+				     unsigned int observed_count)
+{
+	if (observed_count <= CMP_HINTS_PER_SYSCALL)
+		return false;
+	if (kcov_shm == NULL)
+		return true;
+	__atomic_fetch_add(&kcov_shm->cmp_hints_count_oob, 1UL,
+			   __ATOMIC_RELAXED);
+	if (pool->canary_pre != CMP_HINTS_POOL_CANARY)
+		__atomic_fetch_add(&kcov_shm->cmp_hints_canary_pre_corrupt,
+				   1UL, __ATOMIC_RELAXED);
+	if (pool->canary_post != CMP_HINTS_POOL_CANARY)
+		__atomic_fetch_add(&kcov_shm->cmp_hints_canary_post_corrupt,
+				   1UL, __ATOMIC_RELAXED);
+	return true;
 }
 
 /*
@@ -302,9 +358,17 @@ static bool pool_add_locked(struct cmp_hint_pool *pool,
 			    unsigned int size)
 {
 	unsigned int i, count = pool->count;
-	uint64_t stamp = ++pool->last_used_stamp;
+	uint64_t stamp;
 	unsigned int victim;
 	uint64_t oldest;
+
+	/* SHM stomp from a fuzzed syscall arg has scribbled count past the
+	 * 16-slot cap; the dedup loop below would walk off entries[].  Bail
+	 * before mutating anything (including last_used_stamp). */
+	if (cmp_hints_pool_corrupted(pool, count))
+		return false;
+
+	stamp = ++pool->last_used_stamp;
 
 	for (i = 0; i < count; i++) {
 		struct cmp_hint_entry *e = &pool->entries[i];
@@ -620,6 +684,12 @@ bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 	 */
 	count = __atomic_load_n(&pool->count, __ATOMIC_ACQUIRE);
 	if (count == 0)
+		return false;
+	/* Lockless gate: a kernel-side wild write through a syscall arg
+	 * pointer can stomp pool->count, and rnd_modulo_u32(garbage) would
+	 * then index off the 1.1 MB SHM into an unmapped page.  Hints are
+	 * advisory -- skip is the safe response. */
+	if (cmp_hints_pool_corrupted(pool, count))
 		return false;
 
 	*out = pool->entries[rnd_modulo_u32(count)].value;
