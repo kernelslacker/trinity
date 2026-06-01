@@ -528,8 +528,10 @@ static void json_emit_cmp_hints_section(void)
 	 * 64-bit halves of the same nr are unrelated syscalls. */
 	for (i = 0; i < MAX_NR_SYSCALL; i++) {
 		for (a = 0; a < 2; a++) {
-			if (cmp_hints_shm->pools[i][a].count > 0) {
-				total_hints += cmp_hints_shm->pools[i][a].count;
+			unsigned int n = cmp_hints_pool_safe_count(&cmp_hints_shm->pools[i][a]);
+
+			if (n > 0) {
+				total_hints += n;
 				syscalls_with_hints++;
 			}
 		}
@@ -5596,8 +5598,10 @@ static void dump_stats_corpus_and_taint_tail(void)
 		 * JSON emitter above. */
 		for (i = 0; i < MAX_NR_SYSCALL; i++) {
 			for (a = 0; a < 2; a++) {
-				if (cmp_hints_shm->pools[i][a].count > 0) {
-					total_hints += cmp_hints_shm->pools[i][a].count;
+				unsigned int n = cmp_hints_pool_safe_count(&cmp_hints_shm->pools[i][a]);
+
+				if (n > 0) {
+					total_hints += n;
 					syscalls_with_hints++;
 				}
 			}

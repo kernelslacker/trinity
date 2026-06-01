@@ -166,6 +166,15 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32);
  * biarch builds do not contend for the same per-nr dedup slots. */
 bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out);
 
+/* Read pool->count clamped to the CMP_HINTS_PER_SYSCALL cap.  Returns 0
+ * if the pool has been corrupted by a wild kernel-side write (latched
+ * via the same gate as cmp_hints_try_get).  Use from callers that need
+ * the count for accounting/heuristics but do not index into entries[];
+ * the alternative -- a raw read of pool->count -- silently folds the
+ * stomped sentinel value (often in the millions) into running totals
+ * and trips downstream classifiers on a non-existent pool population. */
+unsigned int cmp_hints_pool_safe_count(struct cmp_hint_pool *pool);
+
 /* Mid-run snapshot cadence for cmp_hints_maybe_snapshot().  CMP records
  * are expensive to collect -- each one requires a kernel-side comparison
  * to fire on a syscall-derived input -- so the pool grows slowly and the

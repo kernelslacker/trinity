@@ -364,6 +364,28 @@ static bool cmp_hints_pool_corrupted(struct cmp_hint_pool *pool,
 }
 
 /*
+ * Clamp wrapper for readers that need pool->count for accounting but
+ * do NOT index into entries[] (stats accumulators, strategy classifier).
+ * Returns 0 on a stomped pool so accounting code doesn't fold garbage
+ * counts into totals.  Side-effects identical to cmp_hints_pool_corrupted:
+ * first observation of an OOB count records the channel via the kcov_shm
+ * counters and latches pool->corrupted, so these readers participate in
+ * the same one-shot accounting as the index-into-entries readers.
+ *
+ * Also closes a TOCTOU on the existing call sites that read .count
+ * twice in quick succession ('if (count > 0) total += count;'): a
+ * single atomic load drives both the test and the value used.
+ */
+unsigned int cmp_hints_pool_safe_count(struct cmp_hint_pool *pool)
+{
+	unsigned int count = __atomic_load_n(&pool->count, __ATOMIC_RELAXED);
+
+	if (cmp_hints_pool_corrupted(pool, count))
+		return 0;
+	return count;
+}
+
+/*
  * Insert (cmp_ip, val, size) into the entries[] array.  Dedups via linear
  * scan on the full (cmp_ip, value, size) key.  When the pool is full,
  * evicts the entry with the smallest last_used (least-recently-inserted)

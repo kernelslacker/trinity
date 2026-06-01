@@ -1832,8 +1832,7 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 	 * we have no per-call attribution), but a non-empty pool is the
 	 * narrowest evidence available without adding per-call tracking. */
 	if (cmp_hints_shm != NULL && curr < 1024 &&
-	    __atomic_load_n(&cmp_hints_shm->pools[curr][rec->do32bit ? 1 : 0].count,
-			    __ATOMIC_RELAXED) > 0)
+	    cmp_hints_pool_safe_count(&cmp_hints_shm->pools[curr][rec->do32bit ? 1 : 0]) > 0)
 		return RRC_CMP_DERIVED;
 
 	/* RRC_UNUSUAL_FD_PRODUCER / RRC_WRONG_TYPE_FD / RRC_PERSONA_GATED
