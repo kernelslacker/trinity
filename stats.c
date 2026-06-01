@@ -3430,21 +3430,8 @@ static void dump_stats_fd_tracking(void)
 	}
 }
 
-void dump_stats(void)
+static void dump_stats_oracle_anomalies(void)
 {
-	unsigned int i;
-
-	if (stats_json) {
-		dump_stats_json();
-		return;
-	}
-
-	dump_stats_runtime_header();
-
-	dump_stats_per_syscall_tables();
-
-	dump_stats_fd_tracking();
-
 	if (shm->stats.fd_oracle_anomalies)
 		stat_row("oracle", "fd_anomalies",   shm->stats.fd_oracle_anomalies);
 	if (shm->stats.mmap_oracle_anomalies)
@@ -3661,6 +3648,24 @@ void dump_stats(void)
 	if (shm->stats.sysfs_oracle_anomalies)
 		stat_row("oracle", "sysfs_anomalies",
 			 shm->stats.sysfs_oracle_anomalies);
+}
+
+void dump_stats(void)
+{
+	unsigned int i;
+
+	if (stats_json) {
+		dump_stats_json();
+		return;
+	}
+
+	dump_stats_runtime_header();
+
+	dump_stats_per_syscall_tables();
+
+	dump_stats_fd_tracking();
+
+	dump_stats_oracle_anomalies();
 
 	if (shm->stats.procfs_writes || shm->stats.sysfs_writes ||
 	    shm->stats.debugfs_writes) {
