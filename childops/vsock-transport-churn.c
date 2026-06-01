@@ -408,6 +408,22 @@ static void vsock_transport_iter_race(int cli)
 			1, __ATOMIC_RELAXED);
 }
 
+/*
+ * Step 7 success-path teardown: shutdown(SHUT_RDWR) on cli (always
+ * connected at this point) and on srv when the accept produced an fd.
+ * Fires before the shared close-fds path at iter_one's out: label so
+ * the per-cpu loopback worker has a chance to drain the in-flight skb
+ * refs from the burst before the closes pull the sockets out from
+ * under it.  Skipped on every goto-out failure path -- shutdown is
+ * meaningless on a socket whose setup didn't reach connect.
+ */
+static void vsock_transport_iter_teardown(int cli, int srv)
+{
+	(void)shutdown(cli, SHUT_RDWR);
+	if (srv >= 0)
+		(void)shutdown(srv, SHUT_RDWR);
+}
+
 /* One full sequence on a freshly-created loopback vsock pair. */
 static void iter_one(const struct timespec *t_outer)
 {
@@ -428,9 +444,7 @@ static void iter_one(const struct timespec *t_outer)
 
 	vsock_transport_iter_race(cli);
 
-	(void)shutdown(cli, SHUT_RDWR);
-	if (srv >= 0)
-		(void)shutdown(srv, SHUT_RDWR);
+	vsock_transport_iter_teardown(cli, srv);
 
 out:
 	if (cli >= 0)
