@@ -4064,29 +4064,8 @@ static void dump_stats_childop_ranked_tables(void)
 	}
 }
 
-void dump_stats(void)
+static void dump_stats_shared_buffer_misc(void)
 {
-	unsigned int i;
-
-	if (stats_json) {
-		dump_stats_json();
-		return;
-	}
-
-	dump_stats_runtime_header();
-
-	dump_stats_per_syscall_tables();
-
-	dump_stats_fd_tracking();
-
-	dump_stats_oracle_anomalies();
-
-	dump_stats_fuzzer_subsystems();
-
-	dump_stats_corruption_and_pool();
-
-	dump_stats_childop_ranked_tables();
-
 	if (parent_stats.shared_buffer_redirected)
 		stat_row("shared_buffer", "args_redirected",     parent_stats.shared_buffer_redirected);
 	if (parent_stats.libc_heap_redirected)
@@ -4136,6 +4115,32 @@ void dump_stats(void)
 
 	if (verbosity > 1)
 		dump_syscall_category_histogram();
+}
+
+void dump_stats(void)
+{
+	unsigned int i;
+
+	if (stats_json) {
+		dump_stats_json();
+		return;
+	}
+
+	dump_stats_runtime_header();
+
+	dump_stats_per_syscall_tables();
+
+	dump_stats_fd_tracking();
+
+	dump_stats_oracle_anomalies();
+
+	dump_stats_fuzzer_subsystems();
+
+	dump_stats_corruption_and_pool();
+
+	dump_stats_childop_ranked_tables();
+
+	dump_stats_shared_buffer_misc();
 
 	if (shm->stats.bandit_cmp_reward_added)
 		stat_row("strategy", "bandit_cmp_reward_added",
