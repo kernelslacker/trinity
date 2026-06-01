@@ -3104,6 +3104,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_try_get_returned;
 	static unsigned long prev_injected;
 	static unsigned long prev_count_oob;
+	static unsigned long prev_canary_lock_post;
 	static unsigned long prev_canary_pre;
 	static unsigned long prev_canary_post;
 	static struct timespec last_dump;
@@ -3112,11 +3113,11 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned long cur_records, cur_truncated, cur_bloom_skipped, cur_unique;
 	unsigned long cur_strip_skipped;
 	unsigned long cur_try_get_attempts, cur_try_get_returned, cur_injected;
-	unsigned long cur_count_oob, cur_canary_pre, cur_canary_post;
+	unsigned long cur_count_oob, cur_canary_lock_post, cur_canary_pre, cur_canary_post;
 	unsigned long delta_records, delta_truncated, delta_bloom_skipped, delta_unique;
 	unsigned long delta_strip_skipped;
 	unsigned long delta_try_get_attempts, delta_try_get_returned, delta_injected;
-	unsigned long delta_count_oob, delta_canary_pre, delta_canary_post;
+	unsigned long delta_count_oob, delta_canary_lock_post, delta_canary_pre, delta_canary_post;
 	unsigned int pc_kids, cmp_kids;
 
 	if (kcov_shm == NULL)
@@ -3132,9 +3133,10 @@ void kcov_cmp_stats_periodic_dump(void)
 	cur_try_get_attempts = __atomic_load_n(&kcov_shm->cmp_hints_try_get_attempts, __ATOMIC_RELAXED);
 	cur_try_get_returned = __atomic_load_n(&kcov_shm->cmp_hints_try_get_returned, __ATOMIC_RELAXED);
 	cur_injected         = __atomic_load_n(&kcov_shm->cmp_hints_injected,         __ATOMIC_RELAXED);
-	cur_count_oob        = __atomic_load_n(&kcov_shm->cmp_hints_count_oob,        __ATOMIC_RELAXED);
-	cur_canary_pre       = __atomic_load_n(&kcov_shm->cmp_hints_canary_pre_corrupt,  __ATOMIC_RELAXED);
-	cur_canary_post      = __atomic_load_n(&kcov_shm->cmp_hints_canary_post_corrupt, __ATOMIC_RELAXED);
+	cur_count_oob        = __atomic_load_n(&kcov_shm->cmp_hints_count_oob,               __ATOMIC_RELAXED);
+	cur_canary_lock_post = __atomic_load_n(&kcov_shm->cmp_hints_canary_lock_post_corrupt, __ATOMIC_RELAXED);
+	cur_canary_pre       = __atomic_load_n(&kcov_shm->cmp_hints_canary_pre_corrupt,      __ATOMIC_RELAXED);
+	cur_canary_post      = __atomic_load_n(&kcov_shm->cmp_hints_canary_post_corrupt,     __ATOMIC_RELAXED);
 
 	/* First call: arm the window so any pre-existing counts carried
 	 * over from earlier in the run are not mis-attributed to the
@@ -3150,6 +3152,7 @@ void kcov_cmp_stats_periodic_dump(void)
 		prev_try_get_returned = cur_try_get_returned;
 		prev_injected         = cur_injected;
 		prev_count_oob        = cur_count_oob;
+		prev_canary_lock_post = cur_canary_lock_post;
 		prev_canary_pre       = cur_canary_pre;
 		prev_canary_post      = cur_canary_post;
 		return;
@@ -3168,13 +3171,14 @@ void kcov_cmp_stats_periodic_dump(void)
 	delta_try_get_returned = cur_try_get_returned - prev_try_get_returned;
 	delta_injected         = cur_injected         - prev_injected;
 	delta_count_oob        = cur_count_oob        - prev_count_oob;
+	delta_canary_lock_post = cur_canary_lock_post - prev_canary_lock_post;
 	delta_canary_pre       = cur_canary_pre       - prev_canary_pre;
 	delta_canary_post      = cur_canary_post      - prev_canary_post;
 
 	if ((delta_records | delta_truncated | delta_bloom_skipped | delta_strip_skipped |
 	     delta_unique | delta_try_get_attempts | delta_try_get_returned |
-	     delta_injected | delta_count_oob | delta_canary_pre |
-	     delta_canary_post) != 0) {
+	     delta_injected | delta_count_oob | delta_canary_lock_post |
+	     delta_canary_pre | delta_canary_post) != 0) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
 
 		if (delta_records) {
@@ -3234,6 +3238,12 @@ void kcov_cmp_stats_periodic_dump(void)
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
 					"cmp_hints_count_oob", delta_count_oob,
 					rate_milli / 1000, rate_milli % 1000, cur_count_oob);
+		}
+		if (delta_canary_lock_post) {
+			unsigned long rate_milli = (delta_canary_lock_post * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_hints_canary_lock_post_corrupt", delta_canary_lock_post,
+					rate_milli / 1000, rate_milli % 1000, cur_canary_lock_post);
 		}
 		if (delta_canary_pre) {
 			unsigned long rate_milli = (delta_canary_pre * 1000UL) / (unsigned long)elapsed;
@@ -3297,6 +3307,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	prev_try_get_returned = cur_try_get_returned;
 	prev_injected         = cur_injected;
 	prev_count_oob        = cur_count_oob;
+	prev_canary_lock_post = cur_canary_lock_post;
 	prev_canary_pre       = cur_canary_pre;
 	prev_canary_post      = cur_canary_post;
 	last_dump = now;

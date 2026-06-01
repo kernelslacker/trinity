@@ -507,12 +507,20 @@ struct kcov_shared {
 	/* Companion canary-channel counters bumped from the same gate.
 	 * Probed only on a count_oob hit, so the cost is paid only when
 	 * a stomp has already happened; in steady state these stay at 0
-	 * and the canary loads never run.  Split into pre/post so the
-	 * channel of corruption is observable: a pre-only stomp suggests
-	 * a write that overshoots the pool header (count/generation/
-	 * last_used_stamp area), a post-only stomp suggests entries[]
-	 * overrun from the tail, and both-set means the stomp was wide
-	 * enough to span the full 16-entry array. */
+	 * and the canary loads never run.  A direct stomp that lands
+	 * exactly on the count field (4 bytes at the cap-violating
+	 * offset) trips NONE of these -- only cmp_hints_count_oob -- so
+	 * a real wild-write event commonly surfaces as count_oob > 0
+	 * with all three canary counters at 0.  Non-zero canary deltas
+	 * narrow the stomp's width and direction:
+	 *  - canary_lock_post: write overshot the lock or undershot
+	 *    the count area, landing between offset 24 and 32 in the
+	 *    pool (gap between lock_t and count).
+	 *  - canary_pre: write reached entries[] from the header side
+	 *    (overshot last_used_stamp into entries).
+	 *  - canary_post: write reached entries[] from the tail side
+	 *    (overran entries[] from beyond the last slot). */
+	unsigned long cmp_hints_canary_lock_post_corrupt;
 	unsigned long cmp_hints_canary_pre_corrupt;
 	unsigned long cmp_hints_canary_post_corrupt;
 	/* See struct kcov_cmp_diag — child-context writes are routed here

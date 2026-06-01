@@ -83,6 +83,17 @@ struct cmp_hint_entry {
 
 struct cmp_hint_pool {
 	lock_t lock;
+	/* Header-side wild-write sentinel, placed between lock and count
+	 * so a stomp that overshoots the 24-byte lock_t or undershoots
+	 * the count field by a few bytes lands in the canary instead of
+	 * silently corrupting count or generation.  A stomp landing
+	 * exactly on count (4 bytes at offset 32 within the pool) is
+	 * still invisible here -- only cmp_hints_count_oob catches that
+	 * direct hit -- but wider writes that bracket the count field
+	 * trip this slot.  Lock-word corruption itself is already caught
+	 * by the LOCK_RESERVED_DIRTY check on the next acquire; this
+	 * canary covers the gap between those two existing signals. */
+	uint64_t canary_lock_post;
 	unsigned int count;
 	/* Monotonic counter bumped under pool->lock only when pool content
 	 * actually changes -- a fresh insert or an evict-replace, never on a

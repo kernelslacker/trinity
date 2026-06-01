@@ -270,6 +270,7 @@ void cmp_hints_init(void)
 			for (a = 0; a < 2; a++) {
 				struct cmp_hint_pool *pool =
 					&cmp_hints_shm->pools[nr][a];
+				pool->canary_lock_post = CMP_HINTS_POOL_CANARY;
 				pool->canary_pre = CMP_HINTS_POOL_CANARY;
 				pool->canary_post = CMP_HINTS_POOL_CANARY;
 			}
@@ -299,21 +300,36 @@ static void pool_unlock(struct cmp_hint_pool *pool)
  * count load.  Bumps three independent kcov_shm counters so the
  * post-mortem can attribute corruption to whichever channel hit:
  *
- *   - cmp_hints_count_oob:           pool->count exceeds the 16-slot
- *                                    cap, the only sign visible from
- *                                    the read path itself.
- *   - cmp_hints_canary_pre_corrupt:  the 8-byte sentinel between
- *                                    last_used_stamp and entries[] has
- *                                    been overwritten -- write reached
- *                                    the pool from the header side.
- *   - cmp_hints_canary_post_corrupt: the sentinel after entries[] has
- *                                    been overwritten -- write reached
- *                                    the pool from the tail side.
+ *   - cmp_hints_count_oob:                pool->count exceeds the
+ *                                         16-slot cap, the only sign
+ *                                         visible from the read path
+ *                                         itself.
+ *   - cmp_hints_canary_lock_post_corrupt: the sentinel between lock
+ *                                         and count has been
+ *                                         overwritten -- a wide write
+ *                                         landed in the lock/count
+ *                                         seam.
+ *   - cmp_hints_canary_pre_corrupt:       the sentinel between
+ *                                         last_used_stamp and
+ *                                         entries[] has been
+ *                                         overwritten -- write
+ *                                         reached the pool from the
+ *                                         header side.
+ *   - cmp_hints_canary_post_corrupt:      the sentinel after entries[]
+ *                                         has been overwritten --
+ *                                         write reached the pool
+ *                                         from the tail side.
  *
- * Canary loads are gated on the count check so the steady-state cost
- * is one compare-against-16; the canary cache lines are only touched
- * once a stomp has already occurred.  Returns true when corruption is
- * present so callers can treat the pool as advisory-empty.
+ * A narrow stomp that lands exactly on count (or exactly on any
+ * single header field) trips ONLY count_oob; the canaries flank the
+ * data but cannot detect a write that fits entirely between them.
+ * Non-zero canary deltas narrow the stomp's width and direction --
+ * useful for forensics, not load-bearing for the corruption-present
+ * decision.  Canary loads are gated on the count check so the
+ * steady-state cost is one compare-against-16; the canary cache
+ * lines are only touched once a stomp has already occurred.  Returns
+ * true when corruption is present so callers can treat the pool as
+ * advisory-empty.
  *
  * Per-pool latch (pool->corrupted) one-shots the counter bumps: the
  * first observation records the channel, every subsequent call
@@ -333,6 +349,9 @@ static bool cmp_hints_pool_corrupted(struct cmp_hint_pool *pool,
 	if (kcov_shm != NULL) {
 		__atomic_fetch_add(&kcov_shm->cmp_hints_count_oob, 1UL,
 				   __ATOMIC_RELAXED);
+		if (pool->canary_lock_post != CMP_HINTS_POOL_CANARY)
+			__atomic_fetch_add(&kcov_shm->cmp_hints_canary_lock_post_corrupt,
+					   1UL, __ATOMIC_RELAXED);
 		if (pool->canary_pre != CMP_HINTS_POOL_CANARY)
 			__atomic_fetch_add(&kcov_shm->cmp_hints_canary_pre_corrupt,
 					   1UL, __ATOMIC_RELAXED);
