@@ -484,6 +484,27 @@ static void sctp_assoc_churn_iter_peeloff(struct sctp_assoc_churn_iter_ctx *ctx)
 		(void)shutdown(ctx->peeled, SHUT_RDWR);
 }
 
+/*
+ * Phase 6: close whichever fds we managed to open.  Runs on every
+ * exit path — both the success path falling through to out: after
+ * peeloff returns, and the early-bail goto out from any earlier
+ * phase failure.  Order matches the original out: cleanup: peeled
+ * first, then accepted server fd, then client, then listener.
+ * Fields default to -1 via the orchestrator's designated initialiser
+ * so the guards skip fds that were never opened.
+ */
+static void sctp_assoc_churn_iter_teardown(struct sctp_assoc_churn_iter_ctx *ctx)
+{
+	if (ctx->peeled >= 0)
+		close(ctx->peeled);
+	if (ctx->srv_acc >= 0)
+		close(ctx->srv_acc);
+	if (ctx->cli >= 0)
+		close(ctx->cli);
+	if (ctx->srv >= 0)
+		close(ctx->srv);
+}
+
 bool sctp_assoc_churn(struct childdata *child)
 {
 	struct sctp_assoc_churn_iter_ctx ctx = {
@@ -515,14 +536,7 @@ bool sctp_assoc_churn(struct childdata *child)
 	sctp_assoc_churn_iter_peeloff(&ctx);
 
 out:
-	if (ctx.peeled >= 0)
-		close(ctx.peeled);
-	if (ctx.srv_acc >= 0)
-		close(ctx.srv_acc);
-	if (ctx.cli >= 0)
-		close(ctx.cli);
-	if (ctx.srv >= 0)
-		close(ctx.srv);
+	sctp_assoc_churn_iter_teardown(&ctx);
 	__atomic_add_fetch(&shm->stats.sctp_assoc_churn_cycles,
 			   1, __ATOMIC_RELAXED);
 	return true;
