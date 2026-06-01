@@ -820,6 +820,61 @@ static void af_unix_scm_rights_gc_trigger_gc(struct af_unix_scm_rights_gc_iter_c
 }
 
 /*
+ * Phase 5: race burst.  Two shapes share the same loop body conceptually:
+ *
+ *   Shape A (single-task fallback): one task issues peek + drain + attach
+ *     in a tight loop.  Lands as Phase 1 already shipped.
+ *
+ *   Shape B (sibling-task, Phase 2): spawn a clone(CLONE_FILES | SIGCHLD)
+ *     sibling that issues raw MSG_PEEK recvmsg() against sv2[1] via the
+ *     shared fd table; this task does drain + fresh SCM_RIGHTS attach in
+ *     parallel.  Two task_structs contending on the same struct unix_sock
+ *     queue, both visible to unix_gc under unix_gc_lock -- the race shape
+ *     the gc lockset was historically not hardened against.
+ *
+ *   Shape B falls back to Shape A on clone3 ENOSYS or EAGAIN so a
+ *   transient spawn failure does not turn into a wasted iter.
+ */
+static void af_unix_scm_rights_gc_race_burst(struct af_unix_scm_rights_gc_iter_ctx *it)
+{
+	struct af_unix_race_shared *rs;
+	pid_t sibling = -1;
+	unsigned int races;
+
+	races = BUDGETED(CHILD_OP_AF_UNIX_SCM_RIGHTS_GC,
+			 UNIX_SCM_RACE_ITERS_BASE);
+	if (races > UNIX_SCM_RACE_BUDGET)
+		races = UNIX_SCM_RACE_BUDGET;
+	if (races == 0U)
+		races = 1U;
+
+	rs = race_shared_alloc();
+	if (rs != NULL) {
+		rs->sv2_recv_fd = it->sv2[1];
+		rs->race_budget = races;
+		sibling = spawn_race_sibling(rs);
+	}
+
+	if (sibling < 0) {
+		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_sibling_spawn_failed,
+				   1, __ATOMIC_RELAXED);
+		run_race_burst_solo(it->sv2[1], it->sv4[1], races);
+	} else {
+		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_sibling_spawn_ok,
+				   1, __ATOMIC_RELAXED);
+		__atomic_store_n(&rs->go, 1U, __ATOMIC_RELEASE);
+		(void)raw_futex_wake(&rs->go, 1);
+
+		run_race_burst_parent_half(it->sv2[1], it->sv4[1], races);
+
+		reap_race_sibling(sibling);
+	}
+
+	if (rs != NULL)
+		(void)munmap(rs, sizeof(*rs));
+}
+
+/*
  * One outer iteration: build a 3-pair SCM_RIGHTS cycle, drop userspace
  * refs to make it gc-only-reachable, run a small race burst.  All
  * counters are best-effort -- iter_one returns void; the per-step bumps
@@ -836,7 +891,6 @@ static void iter_one(void)
 		.use_iouring = false,
 		.cycle_ok = false,
 	};
-	unsigned int races;
 
 	if (af_unix_scm_rights_gc_setup(&it) != 0)
 		goto out;
@@ -844,57 +898,7 @@ static void iter_one(void)
 	af_unix_scm_rights_gc_build_cycle(&it);
 	af_unix_scm_rights_gc_drop_refs(&it);
 	af_unix_scm_rights_gc_trigger_gc(&it);
-
-	/* 5) Race burst.  Two shapes share the same loop body conceptually:
-	 *
-	 *    Shape A (single-task fallback): one task issues peek + drain +
-	 *      attach in a tight loop.  Lands as Phase 1 already shipped.
-	 *
-	 *    Shape B (sibling-task, Phase 2): spawn a clone(CLONE_FILES |
-	 *      SIGCHLD) sibling that issues raw MSG_PEEK recvmsg() against
-	 *      sv2[1] via the shared fd table; this task does drain + fresh
-	 *      SCM_RIGHTS attach in parallel.  Two task_structs contending
-	 *      on the same struct unix_sock queue, both visible to unix_gc
-	 *      under unix_gc_lock -- the race shape the gc lockset was
-	 *      historically not hardened against.
-	 *
-	 *    Shape B falls back to Shape A on clone3 ENOSYS or EAGAIN so a
-	 *    transient spawn failure does not turn into a wasted iter. */
-	races = BUDGETED(CHILD_OP_AF_UNIX_SCM_RIGHTS_GC,
-			 UNIX_SCM_RACE_ITERS_BASE);
-	if (races > UNIX_SCM_RACE_BUDGET)
-		races = UNIX_SCM_RACE_BUDGET;
-	if (races == 0U)
-		races = 1U;
-
-	{
-		struct af_unix_race_shared *rs = race_shared_alloc();
-		pid_t sibling = -1;
-
-		if (rs != NULL) {
-			rs->sv2_recv_fd = it.sv2[1];
-			rs->race_budget = races;
-			sibling = spawn_race_sibling(rs);
-		}
-
-		if (sibling < 0) {
-			__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_sibling_spawn_failed,
-					   1, __ATOMIC_RELAXED);
-			run_race_burst_solo(it.sv2[1], it.sv4[1], races);
-		} else {
-			__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_sibling_spawn_ok,
-					   1, __ATOMIC_RELAXED);
-			__atomic_store_n(&rs->go, 1U, __ATOMIC_RELEASE);
-			(void)raw_futex_wake(&rs->go, 1);
-
-			run_race_burst_parent_half(it.sv2[1], it.sv4[1], races);
-
-			reap_race_sibling(sibling);
-		}
-
-		if (rs != NULL)
-			(void)munmap(rs, sizeof(*rs));
-	}
+	af_unix_scm_rights_gc_race_burst(&it);
 
 out:
 	if (it.sv1[0] >= 0) (void)close(it.sv1[0]);
