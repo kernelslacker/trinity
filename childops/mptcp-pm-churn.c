@@ -652,6 +652,47 @@ static int mptcp_pm_churn_iter_setup_sockets(struct mptcp_pm_churn_iter_ctx *ctx
 	return 0;
 }
 
+/*
+ * Phase 2: bring the loopback MPTCP connection to ESTABLISHED and prime
+ * the data plane.  Both srv + cli flip to O_NONBLOCK first so a wedged
+ * peer can't pin past child.c's SIGALRM(1s); EINPROGRESS on the connect
+ * is fine — the assoc completes in the background and the later send()
+ * either piggybacks or queues.  accept() failure is intentionally NOT
+ * fatal: the SYN/cookie may not have landed yet and the genl ADD/DEL
+ * churn still exercises the pernet table + client-side option emit
+ * even without a server-side accepted fd.  The two priming churn_sends
+ * drive the connection past ESTABLISHED on both ends so the first
+ * ADD_ADDR doesn't race the cookie itself.  Returns 0 on success or -1
+ * if the iteration should bail to the out: cleanup path.
+ */
+static int mptcp_pm_churn_iter_connect_pair(struct mptcp_pm_churn_iter_ctx *ctx)
+{
+	struct sockaddr_in cli_addr;
+
+	(void)fcntl(ctx->cli, F_SETFL, O_NONBLOCK);
+	(void)fcntl(ctx->srv, F_SETFL, O_NONBLOCK);
+
+	memset(&cli_addr, 0, sizeof(cli_addr));
+	cli_addr.sin_family = AF_INET;
+	cli_addr.sin_addr.s_addr = htonl(MPTCP_PM_LOOPBACK_BASE);
+	cli_addr.sin_port = ctx->srv_port_n;
+	if (connect(ctx->cli, (struct sockaddr *)&cli_addr,
+		    sizeof(cli_addr)) < 0 && errno != EINPROGRESS) {
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	ctx->srv_acc = accept(ctx->srv, NULL, NULL);
+	if (ctx->srv_acc >= 0)
+		(void)fcntl(ctx->srv_acc, F_SETFL, O_NONBLOCK);
+
+	churn_send(ctx->cli);
+	if (ctx->srv_acc >= 0)
+		churn_send(ctx->srv_acc);
+	return 0;
+}
+
 bool mptcp_pm_churn(struct childdata *child)
 {
 	struct mptcp_pm_churn_iter_ctx ctx = {
@@ -659,7 +700,6 @@ bool mptcp_pm_churn(struct childdata *child)
 		.cli     = -1,
 		.srv_acc = -1,
 	};
-	struct sockaddr_in cli_addr;
 	struct genl_open_opts opts;
 	unsigned int iters;
 	unsigned int i;
@@ -678,40 +718,8 @@ bool mptcp_pm_churn(struct childdata *child)
 	if (mptcp_pm_churn_iter_setup_sockets(&ctx) != 0)
 		goto out;
 
-	/* Non-blocking from here so a wedged peer can't pin us past
-	 * SIGALRM(1s).  TCP-style connect on loopback completes
-	 * synchronously almost always, but on rare overload the kernel
-	 * may return EINPROGRESS — fine, the assoc completes and the
-	 * later send() either piggybacks or queues. */
-	(void)fcntl(ctx.cli, F_SETFL, O_NONBLOCK);
-	(void)fcntl(ctx.srv, F_SETFL, O_NONBLOCK);
-
-	memset(&cli_addr, 0, sizeof(cli_addr));
-	cli_addr.sin_family = AF_INET;
-	cli_addr.sin_addr.s_addr = htonl(MPTCP_PM_LOOPBACK_BASE);
-	cli_addr.sin_port = ctx.srv_port_n;
-	if (connect(ctx.cli, (struct sockaddr *)&cli_addr,
-		    sizeof(cli_addr)) < 0 && errno != EINPROGRESS) {
-		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (mptcp_pm_churn_iter_connect_pair(&ctx) != 0)
 		goto out;
-	}
-
-	ctx.srv_acc = accept(ctx.srv, NULL, NULL);
-	if (ctx.srv_acc >= 0)
-		(void)fcntl(ctx.srv_acc, F_SETFL, O_NONBLOCK);
-	/* accept failure here is fine — the SYN/cookie may not have
-	 * landed yet, and the genl ADD/DEL churn still exercises the
-	 * pernet endpoint table and the client-side option emit path
-	 * even if the server-side state machine hasn't caught up. */
-
-	/* Drive the data path before the first ADD_ADDR so the
-	 * connection has actually transitioned to ESTABLISHED on both
-	 * ends.  Otherwise the post-handshake genl ops race against
-	 * the cookie itself, which isn't the bug class we're targeting. */
-	churn_send(ctx.cli);
-	if (ctx.srv_acc >= 0)
-		churn_send(ctx.srv_acc);
 
 	memset(&opts, 0, sizeof(opts));
 	opts.family_name  = MPTCP_PM_NAME;
