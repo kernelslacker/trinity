@@ -123,11 +123,45 @@ static inline bool is_addr_argtype(enum argtype t)
  * free for the same reason the per-arg snapshot at the call site is:
  * a sibling stomp landing AFTER this scrub is bounded by the canary /
  * shadow infrastructure further down the path.
+ *
+ * Two correctness gates the original scrub missed:
+ *
+ *  1. ARG_ADDRESS is intentionally nullable.  get_address() in
+ *     rand/random-address.c returns NULL ~1% of the time, and the
+ *     pre-scrub asb_relocate() explicitly preserves *addr == 0 for
+ *     that reason.  Callers like time(NULL) and the optional-pointer
+ *     paths in select / pselect6 / poll rely on the NULL reaching the
+ *     kernel verbatim.  is_corrupt_ptr_shape() (via
+ *     looks_like_corrupted_ptr) treats small values including 0 as
+ *     corrupt, so without an explicit guard the scrub silently
+ *     reroutes every intentional NULL to a writable-pool page and
+ *     loses coverage of the NULL-arg paths.  ARG_NON_NULL_ADDRESS is
+ *     not nullable; if one IS NULL here it is a sanitiser bug, and the
+ *     scrub still should not paper over it by a silent reroute.
+ *
+ *  2. Post-snapshot hazard.  Per-syscall .post handlers snapshot
+ *     rec->aN into rec->post_state at sanitise time (e.g.
+ *     timer_create stashes a3 as the OUT-pointer; socketpair stashes
+ *     a4 inside its post_state struct) and deref the snapshot after
+ *     the kernel returns.  Rewriting rec->aN here points the kernel
+ *     at a fresh writable-pool page while the post handler still
+ *     reads from the original snapshotted address — that read sees
+ *     uninitialised pool bytes (or freed memory once the slot is
+ *     recycled), which is the heap-corruption amplifier path that
+ *     trips glibc malloc's checker on a later allocation.  No
+ *     per-arg snapshot tracker exists yet, so the conservative gate
+ *     is: if entry->post is set, skip the scrub for this entry
+ *     entirely.  Overly broad (a few .post handlers do not actually
+ *     re-read rec->aN), but it eliminates the bug class.  Follow-up:
+ *     narrow to a per-arg snapshot bitmap.
  */
 static void final_pass_arg_address_scrub(struct syscallentry *entry,
 					 struct syscallrecord *rec)
 {
 	unsigned int i;
+
+	if (entry->post != NULL)
+		return;
 
 	for (i = 0; i < entry->num_args && i < 6; i++) {
 		unsigned long *slot;
@@ -144,6 +178,9 @@ static void final_pass_arg_address_scrub(struct syscallentry *entry,
 		case 6: slot = &rec->a6; break;
 		default: continue;
 		}
+
+		if (entry->argtype[i] == ARG_ADDRESS && *slot == 0)
+			continue;
 
 		if (looks_like_corrupted_ptr(rec, (const void *) *slot))
 			*slot = (unsigned long) get_writable_address(page_size);
