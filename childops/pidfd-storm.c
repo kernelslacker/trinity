@@ -333,26 +333,18 @@ static void pidfd_storm_iter_drive(struct pidfd_slot *slots,
 	}
 }
 
-bool pidfd_storm(struct childdata *child)
+/*
+ * Teardown phase: SIGKILL every spawned child via its pidfd, falling
+ * back to kill(2) by pid where pidfd_open failed at spawn.  A second
+ * pass waitpid()s each pid to reap and closes each pidfd, so no
+ * zombie or leaked pidfd escapes the op.  Runs outside the timed
+ * budget — correctness, not speed, matters here.
+ */
+static void pidfd_storm_iter_reap(struct pidfd_slot *slots,
+				  unsigned int active)
 {
-	struct pidfd_slot slots[NR_CHILDREN];
-	unsigned int active;
 	unsigned int i;
 
-	(void) child;
-
-	__atomic_add_fetch(&shm->stats.pidfd_storm_runs, 1, __ATOMIC_RELAXED);
-
-	active = pidfd_storm_iter_spawn(slots, NR_CHILDREN);
-	if (active == 0)
-		return true;
-
-	pidfd_storm_iter_drive(slots, active, JITTER_RANGE(MAX_ITERATIONS));
-
-	/* Teardown: SIGKILL every spawned child via the pidfd where we
-	 * have one, fall back to kill(2) by pid where pidfd_open failed.
-	 * Then waitpid() each pid to reap, and close each pidfd.  All of
-	 * this runs OUTSIDE the timed budget. */
 	for (i = 0; i < active; i++) {
 		if (slots[i].pidfd >= 0)
 			(void) sys_pidfd_send_signal(slots[i].pidfd, SIGKILL, NULL, 0);
@@ -367,6 +359,23 @@ bool pidfd_storm(struct childdata *child)
 		if (slots[i].pidfd >= 0)
 			close(slots[i].pidfd);
 	}
+}
+
+bool pidfd_storm(struct childdata *child)
+{
+	struct pidfd_slot slots[NR_CHILDREN];
+	unsigned int active;
+
+	(void) child;
+
+	__atomic_add_fetch(&shm->stats.pidfd_storm_runs, 1, __ATOMIC_RELAXED);
+
+	active = pidfd_storm_iter_spawn(slots, NR_CHILDREN);
+	if (active == 0)
+		return true;
+
+	pidfd_storm_iter_drive(slots, active, JITTER_RANGE(MAX_ITERATIONS));
+	pidfd_storm_iter_reap(slots, active);
 
 	return true;
 }
