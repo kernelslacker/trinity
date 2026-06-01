@@ -341,6 +341,98 @@ static void derive_and_clamp_slot_partition(void)
 	}
 }
 
+/*
+ * Pre-fork warm-start of every cross-run coverage carrier: the
+ * minicorpus replay set, the effector-map per-bit significance table,
+ * the kcov bucket_seen[] bitmap, and the cmp-hints pool.  Each loader
+ * is independently gated by its own --no-*-warm-start flag so the
+ * operator can opt out of one without losing the others.  Done before
+ * fork so children inherit the populated tables via COW and the
+ * memcpys land without racing the producers.  Failures are silent --
+ * a missing or stale file just means we boot cold for that carrier.
+ */
+static void warm_start_all(void)
+{
+	/*
+	 * Warm-start the corpus from the previous run if a persisted file
+	 * exists.  Replayed entries take effect once children start fuzzing
+	 * via the existing minicorpus_replay() path.  Failures are silent —
+	 * a missing or stale file just means we boot cold.
+	 */
+	if (!no_warm_start) {
+		const char *path = warm_start_path ? warm_start_path
+						   : minicorpus_default_path();
+		if (path != NULL) {
+			unsigned int loaded = 0, discarded = 0;
+			minicorpus_load_file(path, &loaded, &discarded);
+			if (loaded || discarded)
+				output(0, "minicorpus: warm-started %u entries from %s (%u discarded)\n",
+					loaded, path, discarded);
+			/* Wire up periodic mid-run snapshots to the same path.
+			 * Done before fork so children inherit snapshot_path COW;
+			 * skipped under --no-warm-start since the user has opted
+			 * out of on-disk corpus persistence entirely. */
+			minicorpus_enable_snapshots(path);
+		}
+
+		/* Effector map warm-start runs alongside the corpus warm-start
+		 * — both are pre-fork loads of stale-but-still-relevant
+		 * calibration data.  Children inherit the populated table via
+		 * COW; a missing file just means mutators fall back to uniform
+		 * bit selection.  Failures are silent: the loader rejects
+		 * dimension or kernel-utsname mismatches, and a stale map
+		 * shouldn't degrade fuzzing — it just becomes inert. */
+		{
+			const char *epath = effector_map_default_path();
+
+			if (epath != NULL) {
+				if (effector_map_load_file(epath))
+					output(0, "effector-map: loaded from %s\n", epath);
+				else
+					output(0, "effector-map: no calibrated map found for this kernel — run `trinity --effector-map` once to enable per-bit input-significance picking (boosts coverage-per-iter)\n");
+			}
+		}
+	}
+
+	/*
+	 * kcov bucket_seen[] warm-start.  The 8 MB bitmap and edges_found
+	 * counter are the dominant carriers of cross-run coverage state;
+	 * without persistence, every restart re-discovers the full 50-200k
+	 * edge curve at fuzz speed.  Gated independently of --no-warm-start
+	 * via --no-kcov-warm-start so an operator can opt out of one without
+	 * losing the other.  Done pre-fork, before any child writes to
+	 * bucket_seen[], so the memcpy lands without racing the producers.
+	 */
+	if (!no_kcov_warm_start && kcov_shm != NULL) {
+		const char *kpath = kcov_bitmap_default_path();
+
+		if (kpath != NULL) {
+			(void)kcov_bitmap_load_file(kpath);
+			kcov_bitmap_enable_snapshots(kpath);
+		}
+	}
+
+	/*
+	 * cmp-hints pool warm-start.  Each KCOV CMP record requires a
+	 * kernel-side comparison to actually fire on a syscall-derived
+	 * input, so the pool grows orders of magnitude slower than the
+	 * kcov bitmap and a cold start leaves the first windows after
+	 * restart injecting no hints at all.  Gated independently of
+	 * --no-kcov-warm-start via --no-cmp-hints-warm-start so an
+	 * operator can opt out of one without losing the other.  Done
+	 * pre-fork, before any child writes to a pool, so the load lands
+	 * without racing the producers.
+	 */
+	if (!no_cmp_hints_warm_start && cmp_hints_shm != NULL) {
+		const char *cpath = cmp_hints_default_path();
+
+		if (cpath != NULL) {
+			(void)cmp_hints_load_file(cpath);
+			cmp_hints_enable_snapshots(cpath);
+		}
+	}
+}
+
 int main(int argc, char* argv[])
 {
 	int ret = EXIT_SUCCESS;
@@ -587,84 +679,7 @@ int main(int argc, char* argv[])
 		goto out;
 	}
 
-	/*
-	 * Warm-start the corpus from the previous run if a persisted file
-	 * exists.  Replayed entries take effect once children start fuzzing
-	 * via the existing minicorpus_replay() path.  Failures are silent —
-	 * a missing or stale file just means we boot cold.
-	 */
-	if (!no_warm_start) {
-		const char *path = warm_start_path ? warm_start_path
-						   : minicorpus_default_path();
-		if (path != NULL) {
-			unsigned int loaded = 0, discarded = 0;
-			minicorpus_load_file(path, &loaded, &discarded);
-			if (loaded || discarded)
-				output(0, "minicorpus: warm-started %u entries from %s (%u discarded)\n",
-					loaded, path, discarded);
-			/* Wire up periodic mid-run snapshots to the same path.
-			 * Done before fork so children inherit snapshot_path COW;
-			 * skipped under --no-warm-start since the user has opted
-			 * out of on-disk corpus persistence entirely. */
-			minicorpus_enable_snapshots(path);
-		}
-
-		/* Effector map warm-start runs alongside the corpus warm-start
-		 * — both are pre-fork loads of stale-but-still-relevant
-		 * calibration data.  Children inherit the populated table via
-		 * COW; a missing file just means mutators fall back to uniform
-		 * bit selection.  Failures are silent: the loader rejects
-		 * dimension or kernel-utsname mismatches, and a stale map
-		 * shouldn't degrade fuzzing — it just becomes inert. */
-		{
-			const char *epath = effector_map_default_path();
-
-			if (epath != NULL) {
-				if (effector_map_load_file(epath))
-					output(0, "effector-map: loaded from %s\n", epath);
-				else
-					output(0, "effector-map: no calibrated map found for this kernel — run `trinity --effector-map` once to enable per-bit input-significance picking (boosts coverage-per-iter)\n");
-			}
-		}
-	}
-
-	/*
-	 * kcov bucket_seen[] warm-start.  The 8 MB bitmap and edges_found
-	 * counter are the dominant carriers of cross-run coverage state;
-	 * without persistence, every restart re-discovers the full 50-200k
-	 * edge curve at fuzz speed.  Gated independently of --no-warm-start
-	 * via --no-kcov-warm-start so an operator can opt out of one without
-	 * losing the other.  Done pre-fork, before any child writes to
-	 * bucket_seen[], so the memcpy lands without racing the producers.
-	 */
-	if (!no_kcov_warm_start && kcov_shm != NULL) {
-		const char *kpath = kcov_bitmap_default_path();
-
-		if (kpath != NULL) {
-			(void)kcov_bitmap_load_file(kpath);
-			kcov_bitmap_enable_snapshots(kpath);
-		}
-	}
-
-	/*
-	 * cmp-hints pool warm-start.  Each KCOV CMP record requires a
-	 * kernel-side comparison to actually fire on a syscall-derived
-	 * input, so the pool grows orders of magnitude slower than the
-	 * kcov bitmap and a cold start leaves the first windows after
-	 * restart injecting no hints at all.  Gated independently of
-	 * --no-kcov-warm-start via --no-cmp-hints-warm-start so an
-	 * operator can opt out of one without losing the other.  Done
-	 * pre-fork, before any child writes to a pool, so the load lands
-	 * without racing the producers.
-	 */
-	if (!no_cmp_hints_warm_start && cmp_hints_shm != NULL) {
-		const char *cpath = cmp_hints_default_path();
-
-		if (cpath != NULL) {
-			(void)cmp_hints_load_file(cpath);
-			cmp_hints_enable_snapshots(cpath);
-		}
-	}
+	warm_start_all();
 
 	if (epoch_iterations || epoch_timeout)
 		epoch_loop();
