@@ -384,13 +384,42 @@ static unsigned int iouring_flood_iter_submit_burst(
 	return n_subs;
 }
 
-/* Drain all available CQEs and return how many were reaped. */
-static unsigned int drain_cqes(struct iouring_flood_iter_ctx *ctx)
+/*
+ * Phase 3: hand the just-published burst over to the kernel via
+ * io_uring_enter (with IORING_ENTER_GETEVENTS so the call also reaps
+ * inline completions), then drain every CQE the kernel posted to the
+ * CQ ring.  Every op selected by fill_sqe (NOP, READ / WRITE against
+ * /dev/null) completes inline before io_uring_enter returns, so the
+ * drain never has to wait -- it just walks head..tail and advances
+ * the consumer head with a __sync_synchronize before the store so
+ * the kernel observes the consumer position after every prior CQE
+ * read has retired.
+ *
+ * Stats accounting:
+ *   - io_uring_enter failure (-1) bumps iouring_failed; the CQ ring
+ *     is left untouched since there's nothing to drain on failure.
+ *   - io_uring_enter success bumps iouring_submits by the count
+ *     actually surrendered to the kernel (n_subs), then bumps
+ *     iouring_reaped by the count drained from the CQ ring.
+ */
+static void iouring_flood_iter_reap_cqes(
+		struct iouring_flood_iter_ctx *ctx, unsigned int n_subs)
 {
-	unsigned int head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
-	unsigned int tail;
-	unsigned int reaped = 0;
+	unsigned int head, tail, reaped = 0;
+	int r;
 
+	r = (int)syscall(__NR_io_uring_enter, ctx->fd, n_subs,
+			 n_subs, IORING_ENTER_GETEVENTS, NULL, 0);
+	if (r < 0) {
+		__atomic_add_fetch(&shm->stats.iouring_failed, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	}
+
+	__atomic_add_fetch(&shm->stats.iouring_submits,
+			   (unsigned long)n_subs, __ATOMIC_RELAXED);
+
+	head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
 	tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
 
 	while (head != tail) {
@@ -401,7 +430,9 @@ static unsigned int drain_cqes(struct iouring_flood_iter_ctx *ctx)
 
 	__sync_synchronize();
 	ring_store_u32(ctx->cq_ring, ctx->cq_off_head, head);
-	return reaped;
+
+	__atomic_add_fetch(&shm->stats.iouring_reaped,
+			   (unsigned long)reaped, __ATOMIC_RELAXED);
 }
 
 bool iouring_flood(struct childdata *child)
@@ -435,10 +466,11 @@ bool iouring_flood(struct childdata *child)
 	 * the iouring kernel never faults userspace on a bad SQE buffer.
 	 * The pointer is copied into the SQE in fill_sqe and the kernel
 	 * surfaces a stale-pointer condition as -EFAULT in the CQE result
-	 * (drained in drain_cqes and counted in iouring_failed via the
-	 * io_uring_enter return path), not as a userspace SIGSEGV.  A
-	 * signal-handler wrap here can therefore only hide unrelated bugs
-	 * — bad pool buffers do not surface through it. */
+	 * (drained in iouring_flood_iter_reap_cqes and counted in
+	 * iouring_failed via the io_uring_enter return path), not as a
+	 * userspace SIGSEGV.  A signal-handler wrap here can therefore
+	 * only hide unrelated bugs — bad pool buffers do not surface
+	 * through it. */
 	if (iobuf == NULL) {
 		struct map *m = get_map_with_prot(PROT_READ | PROT_WRITE);
 
@@ -466,7 +498,6 @@ bool iouring_flood(struct childdata *child)
 	for (i = 0; i < cycles; i++) {
 		struct iouring_flood_iter_ctx ctx;
 		unsigned int n_subs;
-		int r;
 
 		if (iouring_flood_iter_setup_ring(&ctx) != 0) {
 			/* setup_ring already categorised the failure --
@@ -489,22 +520,7 @@ bool iouring_flood(struct childdata *child)
 			continue;
 		}
 
-		r = (int)syscall(__NR_io_uring_enter, ctx.fd, n_subs,
-				 n_subs, IORING_ENTER_GETEVENTS, NULL, 0);
-		if (r < 0) {
-			__atomic_add_fetch(&shm->stats.iouring_failed,
-					   1, __ATOMIC_RELAXED);
-		} else {
-			unsigned int reaped;
-
-			__atomic_add_fetch(&shm->stats.iouring_submits,
-					   (unsigned long)n_subs,
-					   __ATOMIC_RELAXED);
-			reaped = drain_cqes(&ctx);
-			__atomic_add_fetch(&shm->stats.iouring_reaped,
-					   (unsigned long)reaped,
-					   __ATOMIC_RELAXED);
-		}
+		iouring_flood_iter_reap_cqes(&ctx, n_subs);
 
 		flood_teardown(&ctx);
 	}
