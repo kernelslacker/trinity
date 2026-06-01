@@ -96,6 +96,32 @@ static void init_shm_debug_start(void)
 	shm->start_time = time(NULL);
 }
 
+/*
+ * Snapshot trinity's own (dev, ino) so the execve sanitiser can
+ * fstatat() the resolved target and refuse to fire when the
+ * fuzz path resolves back to this binary.  Done in the parent
+ * before any child forks, so the populated cache is inherited
+ * via the shared mapping without per-child rework.  A stat
+ * failure here is unexpected (would mean /proc/self/exe is
+ * unreadable) but non-fatal -- valid=false short-circuits the
+ * guard to the pre-protection baseline.
+ */
+static void init_shm_self_exe_snapshot(void)
+{
+	struct stat st;
+
+	if (stat("/proc/self/exe", &st) == 0) {
+		shm->trinity_self_exe.dev = st.st_dev;
+		shm->trinity_self_exe.ino = st.st_ino;
+		shm->trinity_self_exe.valid = true;
+	} else {
+		outputerr("init_shm: stat(/proc/self/exe) failed: %s -- "
+			  "execve self-exec guard disabled\n",
+			  strerror(errno));
+		shm->trinity_self_exe.valid = false;
+	}
+}
+
 void init_shm(void)
 {
 	unsigned int i;
@@ -106,30 +132,7 @@ void init_shm(void)
 
 	init_shm_debug_start();
 
-	/*
-	 * Snapshot trinity's own (dev, ino) so the execve sanitiser can
-	 * fstatat() the resolved target and refuse to fire when the
-	 * fuzz path resolves back to this binary.  Done in the parent
-	 * before any child forks, so the populated cache is inherited
-	 * via the shared mapping without per-child rework.  A stat
-	 * failure here is unexpected (would mean /proc/self/exe is
-	 * unreadable) but non-fatal -- valid=false short-circuits the
-	 * guard to the pre-protection baseline.
-	 */
-	{
-		struct stat st;
-
-		if (stat("/proc/self/exe", &st) == 0) {
-			shm->trinity_self_exe.dev = st.st_dev;
-			shm->trinity_self_exe.ino = st.st_ino;
-			shm->trinity_self_exe.valid = true;
-		} else {
-			outputerr("init_shm: stat(/proc/self/exe) failed: %s -- "
-				  "execve self-exec guard disabled\n",
-				  strerror(errno));
-			shm->trinity_self_exe.valid = false;
-		}
-	}
+	init_shm_self_exe_snapshot();
 
 	/* Multi-strategy rotation starts on the heuristic.  The window
 	 * boundary is op_count - syscalls_at_last_switch, so seeding both
