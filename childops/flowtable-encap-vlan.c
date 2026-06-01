@@ -566,16 +566,84 @@ static void enable_ip_forward(void)
 }
 
 /*
+ * Per-iter shared state passed through each phase helper.  Lifetime is
+ * one iter_one() call; not part of any persistent API.
+ */
+struct flowtable_vlan_iter_ctx {
+	char vp_a[IFNAMSIZ], vp_b[IFNAMSIZ];
+	char vla[IFNAMSIZ], vlb[IFNAMSIZ];
+	char tab[64], ft[64];
+	const char *chain;
+	int vp_a_idx, vp_b_idx;
+	int vla_idx, vlb_idx;
+	__u32 a_addr, b_addr;
+	bool veth_added, vla_added, vlb_added;
+	bool table_added, ft_added, chain_added;
+};
+
+/*
+ * Phase 1: open the per-iter topology — veth pair, vlan children,
+ * addresses, links up, and ip_forward.  Returns 0 on success.  On
+ * partial failure the *_added / *_idx fields are still set so the
+ * orchestrator teardown cleans up whatever made it onto the host.
+ */
+static int flowtable_vlan_iter_setup(struct nl_ctx *rtnl,
+				     struct flowtable_vlan_iter_ctx *c)
+{
+	unsigned int rng;
+
+	rng = (unsigned int)(rand32() & 0xffffu);
+	snprintf(c->vp_a, sizeof(c->vp_a), "tfv%ua", rng);
+	snprintf(c->vp_b, sizeof(c->vp_b), "tfv%ub", rng);
+	snprintf(c->vla,  sizeof(c->vla),  "tfv%ua.100", rng);
+	snprintf(c->vlb,  sizeof(c->vlb),  "tfv%ub.100", rng);
+	snprintf(c->tab,  sizeof(c->tab),  "ftv%u", rng);
+	snprintf(c->ft,   sizeof(c->ft),   "ft%u",  rng);
+
+	if (build_veth_pair(rtnl, c->vp_a, c->vp_b) != 0) {
+		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	c->veth_added = true;
+	c->vp_a_idx = (int)if_nametoindex(c->vp_a);
+	c->vp_b_idx = (int)if_nametoindex(c->vp_b);
+	if (c->vp_a_idx <= 0 || c->vp_b_idx <= 0)
+		return -1;
+
+	if (build_vlan_child(rtnl, c->vla, c->vp_a_idx, 100) == 0) {
+		c->vla_added = true;
+		c->vla_idx = (int)if_nametoindex(c->vla);
+	}
+	if (build_vlan_child(rtnl, c->vlb, c->vp_b_idx, 100) == 0) {
+		c->vlb_added = true;
+		c->vlb_idx = (int)if_nametoindex(c->vlb);
+	}
+	if (c->vla_idx <= 0 || c->vlb_idx <= 0)
+		return -1;
+
+	c->a_addr = htonl(0xc0000201u);	/* 192.0.2.1 */
+	c->b_addr = htonl(0xc0000205u);	/* 192.0.2.5 */
+	(void)build_addaddr(rtnl, c->vla_idx, c->a_addr, 30);
+	(void)build_addaddr(rtnl, c->vlb_idx, c->b_addr, 30);
+
+	(void)build_setlink_up(rtnl, c->vp_a_idx);
+	(void)build_setlink_up(rtnl, c->vp_b_idx);
+	(void)build_setlink_up(rtnl, c->vla_idx);
+	(void)build_setlink_up(rtnl, c->vlb_idx);
+
+	enable_ip_forward();
+	return 0;
+}
+
+/*
  * One full create / drive / race / teardown cycle.  Wall cap inherited
  * from the caller — every step short-circuits if FEV_WALL_CAP_NS has
  * been exceeded.
  */
 static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 {
-	char vp_a[IFNAMSIZ], vp_b[IFNAMSIZ];
-	char vla[IFNAMSIZ], vlb[IFNAMSIZ];
-	char tab[64], ft[64];
-	const char *chain = "fwd";
+	struct flowtable_vlan_iter_ctx c = { .chain = "fwd" };
 	struct nl_ctx rtnl = { .fd = -1 };
 	struct nfnl_ctx nf = { .nl = { .fd = -1 } };
 	struct nl_open_opts rtnl_opts = {
@@ -585,12 +653,6 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	struct nfnl_open_opts nf_opts = {
 		.recv_timeo_s  = FEV_NL_TIMEO_S,
 	};
-	int vp_a_idx = 0, vp_b_idx = 0;
-	int vla_idx = 0, vlb_idx = 0;
-	bool veth_added = false, vla_added = false, vlb_added = false;
-	bool table_added = false, ft_added = false, chain_added = false;
-	unsigned int rng;
-	__u32 a_addr, b_addr;
 	int rc;
 
 	if ((unsigned long long)ns_since(t_outer) >= FEV_WALL_CAP_NS)
@@ -603,56 +665,17 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 		goto out;
 	}
 
-	rng = (unsigned int)(rand32() & 0xffffu);
-	snprintf(vp_a, sizeof(vp_a), "tfv%ua", rng);
-	snprintf(vp_b, sizeof(vp_b), "tfv%ub", rng);
-	snprintf(vla, sizeof(vla), "tfv%ua.100", rng);
-	snprintf(vlb, sizeof(vlb), "tfv%ub.100", rng);
-	snprintf(tab, sizeof(tab), "ftv%u", rng);
-	snprintf(ft,  sizeof(ft),  "ft%u",  rng);
+	if (flowtable_vlan_iter_setup(&rtnl, &c) != 0)
+		goto teardown;
 
-	if (build_veth_pair(&rtnl, vp_a, vp_b) != 0) {
+	if (build_nft_table(&nf, c.tab) != 0) {
 		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto teardown;
 	}
-	veth_added = true;
-	vp_a_idx = (int)if_nametoindex(vp_a);
-	vp_b_idx = (int)if_nametoindex(vp_b);
-	if (vp_a_idx <= 0 || vp_b_idx <= 0)
-		goto teardown;
+	c.table_added = true;
 
-	if (build_vlan_child(&rtnl, vla, vp_a_idx, 100) == 0) {
-		vla_added = true;
-		vla_idx = (int)if_nametoindex(vla);
-	}
-	if (build_vlan_child(&rtnl, vlb, vp_b_idx, 100) == 0) {
-		vlb_added = true;
-		vlb_idx = (int)if_nametoindex(vlb);
-	}
-	if (vla_idx <= 0 || vlb_idx <= 0)
-		goto teardown;
-
-	a_addr = htonl(0xc0000201u);	/* 192.0.2.1 */
-	b_addr = htonl(0xc0000205u);	/* 192.0.2.5 */
-	(void)build_addaddr(&rtnl, vla_idx, a_addr, 30);
-	(void)build_addaddr(&rtnl, vlb_idx, b_addr, 30);
-
-	(void)build_setlink_up(&rtnl, vp_a_idx);
-	(void)build_setlink_up(&rtnl, vp_b_idx);
-	(void)build_setlink_up(&rtnl, vla_idx);
-	(void)build_setlink_up(&rtnl, vlb_idx);
-
-	enable_ip_forward();
-
-	if (build_nft_table(&nf, tab) != 0) {
-		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto teardown;
-	}
-	table_added = true;
-
-	rc = build_nft_flowtable(&nf, tab, ft, vla, vlb);
+	rc = build_nft_flowtable(&nf, c.tab, c.ft, c.vla, c.vlb);
 	if (rc != 0) {
 		if (rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT ||
 		    rc == -EPROTONOSUPPORT)
@@ -661,13 +684,13 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 				   1, __ATOMIC_RELAXED);
 		goto teardown;
 	}
-	ft_added = true;
+	c.ft_added = true;
 
-	if (build_nft_chain_fwd(&nf, tab, chain) != 0)
+	if (build_nft_chain_fwd(&nf, c.tab, c.chain) != 0)
 		goto teardown;
-	chain_added = true;
+	c.chain_added = true;
 
-	if (build_nft_rule_flow_offload(&nf, tab, chain, ft) != 0)
+	if (build_nft_rule_flow_offload(&nf, c.tab, c.chain, c.ft) != 0)
 		goto teardown;
 
 	__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_ok, 1,
@@ -684,11 +707,11 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 
 		memset(&src_a, 0, sizeof(src_a));
 		src_a.sin_family = AF_INET;
-		src_a.sin_addr.s_addr = a_addr;
+		src_a.sin_addr.s_addr = c.a_addr;
 
 		memset(&dst_b, 0, sizeof(dst_b));
 		dst_b.sin_family = AF_INET;
-		dst_b.sin_addr.s_addr = b_addr;
+		dst_b.sin_addr.s_addr = c.b_addr;
 
 		/* Shape A: small UDP burst.  First few packets go through
 		 * the slow path; once the 5-tuple is offloaded the rest
@@ -779,37 +802,37 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	 * offload-entry expiry path runs concurrently with the in-flight
 	 * forward.  Re-creating in the next outer iter rebuilds the
 	 * topology fresh. */
-	if ((iter_idx & 1U) && vla_added && vla_idx > 0) {
-		if (build_dellink(&rtnl, vla_idx) == 0) {
+	if ((iter_idx & 1U) && c.vla_added && c.vla_idx > 0) {
+		if (build_dellink(&rtnl, c.vla_idx) == 0) {
 			__atomic_add_fetch(&shm->stats.flowtable_vlan_vlan_teardown_races,
 					   1, __ATOMIC_RELAXED);
-			vla_added = false;
+			c.vla_added = false;
 		}
 	}
 
 teardown:
-	if (table_added) {
-		if (chain_added)
-			(void)build_nft_simple_del(&nf, NFT_MSG_DELRULE, tab,
+	if (c.table_added) {
+		if (c.chain_added)
+			(void)build_nft_simple_del(&nf, NFT_MSG_DELRULE, c.tab,
 						   "chain", NFTA_RULE_CHAIN,
-						   chain);
-		if (chain_added)
-			(void)build_nft_simple_del(&nf, NFT_MSG_DELCHAIN, tab,
+						   c.chain);
+		if (c.chain_added)
+			(void)build_nft_simple_del(&nf, NFT_MSG_DELCHAIN, c.tab,
 						   "chain", NFTA_CHAIN_NAME,
-						   chain);
-		if (ft_added)
+						   c.chain);
+		if (c.ft_added)
 			(void)build_nft_simple_del(&nf, NFT_MSG_DELFLOWTABLE,
-						   tab, "ft",
-						   NFTA_FLOWTABLE_NAME, ft);
-		(void)build_nft_simple_del(&nf, NFT_MSG_DELTABLE, tab,
+						   c.tab, "ft",
+						   NFTA_FLOWTABLE_NAME, c.ft);
+		(void)build_nft_simple_del(&nf, NFT_MSG_DELTABLE, c.tab,
 					   NULL, 0, NULL);
 	}
-	if (vla_added && vla_idx > 0)
-		(void)build_dellink(&rtnl, vla_idx);
-	if (vlb_added && vlb_idx > 0)
-		(void)build_dellink(&rtnl, vlb_idx);
-	if (veth_added && vp_a_idx > 0)
-		(void)build_dellink(&rtnl, vp_a_idx);
+	if (c.vla_added && c.vla_idx > 0)
+		(void)build_dellink(&rtnl, c.vla_idx);
+	if (c.vlb_added && c.vlb_idx > 0)
+		(void)build_dellink(&rtnl, c.vlb_idx);
+	if (c.veth_added && c.vp_a_idx > 0)
+		(void)build_dellink(&rtnl, c.vp_a_idx);
 
 out:
 	nfnl_close(&nf);
