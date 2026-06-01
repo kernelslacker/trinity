@@ -316,6 +316,44 @@ static int tls_ulp_churn_iter_install_tls_ulp(int s)
 	return 0;
 }
 
+/* Steps 3+4: pick TLS 1.2 vs 1.3 randomly so both record-format variants
+ * get coverage on the install + rekey paths, then install TLS_TX with a
+ * fresh urandom key and TLS_RX matching.  TX install errors latch the
+ * per-process gates (ns_unsupported_tls_tx on ENOPROTOOPT/EOPNOTSUPP,
+ * ns_unsupported_aes_gcm_128 on EINVAL) and trigger the caller's goto
+ * out cleanup.  RX install is best-effort: either succeeds (strparser
+ * comes up alongside the TX path) or fails harmlessly.  Writes the
+ * chosen version into *version_out so the subsequent rekey burst can
+ * stay on the same record-format variant. */
+static int tls_ulp_churn_iter_install_keys(int s, unsigned short *version_out)
+{
+	struct tls12_crypto_info_aes_gcm_128 cinfo;
+	unsigned short version;
+	int rc;
+
+	version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
+	fill_cinfo_aes_gcm_128(&cinfo, version);
+
+	rc = setsockopt(s, SOL_TLS, TLS_TX, &cinfo, sizeof(cinfo));
+	if (rc < 0) {
+		if (errno == ENOPROTOOPT || errno == EOPNOTSUPP)
+			ns_unsupported_tls_tx = true;
+		else if (errno == EINVAL)
+			ns_unsupported_aes_gcm_128 = true;
+		__atomic_add_fetch(&shm->stats.tls_ulp_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.tls_ulp_churn_tx_install_ok,
+			   1, __ATOMIC_RELAXED);
+
+	fill_cinfo_aes_gcm_128(&cinfo, version);
+	(void)setsockopt(s, SOL_TLS, TLS_RX, &cinfo, sizeof(cinfo));
+
+	*version_out = version;
+	return 0;
+}
+
 bool tls_ulp_churn(struct childdata *child)
 {
 	struct tls12_crypto_info_aes_gcm_128 cinfo;
@@ -356,31 +394,8 @@ bool tls_ulp_churn(struct childdata *child)
 	if (tls_ulp_churn_iter_install_tls_ulp(s) != 0)
 		goto out;
 
-	/* Step 3: install TLS_TX with a fresh urandom key.  Pick TLS 1.2
-	 * vs 1.3 randomly so both record-format variants get coverage on
-	 * the install + rekey paths. */
-	version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
-	fill_cinfo_aes_gcm_128(&cinfo, version);
-
-	rc = setsockopt(s, SOL_TLS, TLS_TX, &cinfo, sizeof(cinfo));
-	if (rc < 0) {
-		if (errno == ENOPROTOOPT || errno == EOPNOTSUPP)
-			ns_unsupported_tls_tx = true;
-		else if (errno == EINVAL)
-			ns_unsupported_aes_gcm_128 = true;
-		__atomic_add_fetch(&shm->stats.tls_ulp_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (tls_ulp_churn_iter_install_keys(s, &version) != 0)
 		goto out;
-	}
-	__atomic_add_fetch(&shm->stats.tls_ulp_churn_tx_install_ok,
-			   1, __ATOMIC_RELAXED);
-
-	/* Step 4: install TLS_RX matching.  Errors here are not gated
-	 * because the install side is what guards the latches; the RX
-	 * arm is best-effort and either succeeds (strparser comes up
-	 * alongside the TX path) or fails harmlessly. */
-	fill_cinfo_aes_gcm_128(&cinfo, version);
-	(void)setsockopt(s, SOL_TLS, TLS_RX, &cinfo, sizeof(cinfo));
 
 	/* Step 5: drive tls_sw_sendmsg. */
 	generate_rand_bytes(payload, sizeof(payload));
