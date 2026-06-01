@@ -326,6 +326,51 @@ static bool ublk_lifecycle_iter_setup(struct ublk_lifecycle_iter_ctx *ctx)
 	return true;
 }
 
+/* UBLK_U_CMD_ADD_DEV via IORING_OP_URING_CMD on the ctrl ring with a
+ * minimal ublksrv_ctrl_dev_info (nr_hw_queues=1, queue_depth=4,
+ * dev_id=-1 for kernel-assigned).  Reaps the CQE and reads dev_id back
+ * out of the addr-pointed info.  Deliberately stops at ADD: START_DEV
+ * is skipped so we land in the post-ADD pre-START state where teardown
+ * still walks the io_cmd list.  Returns false on submit failure or if
+ * the kernel-assigned dev_id came back negative -- caller jumps to
+ * teardown. */
+static bool ublk_lifecycle_iter_add_dev(struct ublk_lifecycle_iter_ctx *ctx)
+{
+	struct ublk_lc_ctrl_dev_info info;
+	struct ublk_lc_ctrl_cmd cc;
+	struct io_uring_sqe sqe;
+
+	memset(&info, 0, sizeof(info));
+	info.nr_hw_queues = 1;
+	info.queue_depth = 4;
+	info.dev_id = (__u32)-1;
+	info.max_io_buf_bytes = UBLK_LC_IO_BUF_BYTES;
+
+	memset(&cc, 0, sizeof(cc));
+	cc.dev_id = (__u32)-1;
+	cc.queue_id = (__u16)-1;
+	cc.len = (__u16)sizeof(info);
+	cc.addr = (__u64)(uintptr_t)&info;
+
+	memset(&sqe, 0, sizeof(sqe));
+	sqe.opcode = IORING_OP_URING_CMD;
+	sqe.fd = ctx->ctrl_fd;
+	sqe.cmd_op = UBLK_U_CMD_ADD_DEV;
+	sqe.addr = (__u64)(uintptr_t)&cc;
+	sqe.len = (__u32)sizeof(cc);
+	sqe.user_data = 0xadd0;
+
+	if (!ring_submit(&ctx->ctrl_ring, &sqe, 1))
+		return false;
+	ring_drain(&ctx->ctrl_ring);
+	ctx->dev_id = (int)info.dev_id;
+	if (ctx->dev_id < 0)
+		return false;
+	__atomic_add_fetch(&shm->stats.ublk_lifecycle_add_ok, 1,
+			   __ATOMIC_RELAXED);
+	return true;
+}
+
 /* Reverse-order release of everything ublk_lifecycle stood up: close the
  * queue chrdev first so the IO-ring teardown's force-cancel sees no fresh
  * submissions, then both rings (io before ctrl so the ctrl ring outlives
@@ -353,7 +398,6 @@ bool ublk_lifecycle(struct childdata *child)
 		.dev_id  = -1,
 	};
 	struct ublk_lc_ctrl_cmd cc;
-	struct ublk_lc_ctrl_dev_info info;
 	struct ublk_lc_io_cmd ic;
 	struct io_uring_sqe sqe;
 	char qpath[64];
@@ -369,35 +413,8 @@ bool ublk_lifecycle(struct childdata *child)
 	if (!ublk_lifecycle_iter_setup(&ctx))
 		goto out;
 
-	/* ADD_DEV: kernel allocates dev_id, writes it back into info. */
-	memset(&info, 0, sizeof(info));
-	info.nr_hw_queues = 1;
-	info.queue_depth = 4;
-	info.dev_id = (__u32)-1;
-	info.max_io_buf_bytes = UBLK_LC_IO_BUF_BYTES;
-
-	memset(&cc, 0, sizeof(cc));
-	cc.dev_id = (__u32)-1;
-	cc.queue_id = (__u16)-1;
-	cc.len = (__u16)sizeof(info);
-	cc.addr = (__u64)(uintptr_t)&info;
-
-	memset(&sqe, 0, sizeof(sqe));
-	sqe.opcode = IORING_OP_URING_CMD;
-	sqe.fd = ctx.ctrl_fd;
-	sqe.cmd_op = UBLK_U_CMD_ADD_DEV;
-	sqe.addr = (__u64)(uintptr_t)&cc;
-	sqe.len = (__u32)sizeof(cc);
-	sqe.user_data = 0xadd0;
-
-	if (!ring_submit(&ctx.ctrl_ring, &sqe, 1))
+	if (!ublk_lifecycle_iter_add_dev(&ctx))
 		goto out;
-	ring_drain(&ctx.ctrl_ring);
-	ctx.dev_id = (int)info.dev_id;
-	if (ctx.dev_id < 0)
-		goto out;
-	__atomic_add_fetch(&shm->stats.ublk_lifecycle_add_ok, 1,
-			   __ATOMIC_RELAXED);
 
 	(void)snprintf(qpath, sizeof(qpath), "/dev/ublkc%d", ctx.dev_id);
 	ctx.q_fd = open(qpath, O_RDWR | O_CLOEXEC);
