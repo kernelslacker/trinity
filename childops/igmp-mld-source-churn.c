@@ -692,6 +692,61 @@ static int mld_source_iter_v6_join(struct mld_source_iter_v6_ctx *it)
 }
 
 /*
+ * Phase 4 (v6): one of the four race-letter mutations against the
+ * recv_s filter while the sender's burst is in flight.  A = shrink
+ * (MCAST_LEAVE_SOURCE_GROUP), B = INCLUDE->EXCLUDE flip
+ * (MCAST_BLOCK_SOURCE), C = bulk replace (MCAST_MSFILTER, exercises
+ * the ip6_mc_msfilter realloc + rcu publish path; allocates ctx->gf
+ * which the teardown phase frees), D = full leave
+ * (IPV6_DROP_MEMBERSHIP).
+ */
+static void mld_source_iter_v6_race(struct mld_source_iter_v6_ctx *it)
+{
+	unsigned int race_letter = (it->iter_idx >> 1) & 3U;
+	unsigned int nsrc;
+	int rc;
+
+	switch (race_letter) {
+	case 0:
+		if (setsockopt(it->recv_s, IPPROTO_IPV6, MCAST_LEAVE_SOURCE_GROUP,
+			       &it->gsr_a, sizeof(it->gsr_a)) == 0)
+			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_leave_ok,
+					   1, __ATOMIC_RELAXED);
+		break;
+	case 1:
+		if (setsockopt(it->recv_s, IPPROTO_IPV6, MCAST_BLOCK_SOURCE,
+			       &it->gsr_b, sizeof(it->gsr_b)) == 0)
+			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_block_ok,
+					   1, __ATOMIC_RELAXED);
+		break;
+	case 2:
+		nsrc = rotate_filter_size(it->iter_idx);
+		it->gf = build_filter_v6(0U, &it->grp_v6, nsrc, it->salt);
+		if (it->gf) {
+			rc = setsockopt(it->recv_s, IPPROTO_IPV6, MCAST_MSFILTER,
+					it->gf, GROUP_FILTER_SIZE(nsrc));
+			if (rc == 0)
+				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_msfilter_ok,
+						   1, __ATOMIC_RELAXED);
+		}
+		break;
+	case 3:
+		{
+			struct ipv6_mreq mreq;
+
+			memset(&mreq, 0, sizeof(mreq));
+			memcpy(&mreq.ipv6mr_multiaddr, &it->grp_v6, sizeof(it->grp_v6));
+			if (setsockopt(it->recv_s, IPPROTO_IPV6,
+				       IPV6_DROP_MEMBERSHIP,
+				       &mreq, sizeof(mreq)) == 0)
+				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_drop_ok,
+						   1, __ATOMIC_RELAXED);
+		}
+		break;
+	}
+}
+
+/*
  * IPv6 mirror of iter_one_v4.  Hits ip6_mc_source / ip6_mc_msfilter
  * (net/ipv6/mcast.c) instead of the v4 paths.  SSM group ff3e::42:salt.
  */
@@ -704,9 +759,6 @@ static void iter_one_v6(unsigned int iter_idx, const struct timespec *t_outer)
 		.iter_idx = iter_idx,
 		.salt     = (unsigned int)(rand32() & 0xffu),
 	};
-	unsigned int race_letter = (iter_idx >> 1) & 3U;
-	unsigned int nsrc;
-	int rc;
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
 		return;
@@ -742,44 +794,7 @@ static void iter_one_v6(unsigned int iter_idx, const struct timespec *t_outer)
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
 		goto teardown;
 
-	switch (race_letter) {
-	case 0:
-		if (setsockopt(it.recv_s, IPPROTO_IPV6, MCAST_LEAVE_SOURCE_GROUP,
-			       &it.gsr_a, sizeof(it.gsr_a)) == 0)
-			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_leave_ok,
-					   1, __ATOMIC_RELAXED);
-		break;
-	case 1:
-		if (setsockopt(it.recv_s, IPPROTO_IPV6, MCAST_BLOCK_SOURCE,
-			       &it.gsr_b, sizeof(it.gsr_b)) == 0)
-			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_block_ok,
-					   1, __ATOMIC_RELAXED);
-		break;
-	case 2:
-		nsrc = rotate_filter_size(it.iter_idx);
-		it.gf = build_filter_v6(0U, &it.grp_v6, nsrc, it.salt);
-		if (it.gf) {
-			rc = setsockopt(it.recv_s, IPPROTO_IPV6, MCAST_MSFILTER,
-					it.gf, GROUP_FILTER_SIZE(nsrc));
-			if (rc == 0)
-				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_msfilter_ok,
-						   1, __ATOMIC_RELAXED);
-		}
-		break;
-	case 3:
-		{
-			struct ipv6_mreq mreq;
-
-			memset(&mreq, 0, sizeof(mreq));
-			memcpy(&mreq.ipv6mr_multiaddr, &it.grp_v6, sizeof(it.grp_v6));
-			if (setsockopt(it.recv_s, IPPROTO_IPV6,
-				       IPV6_DROP_MEMBERSHIP,
-				       &mreq, sizeof(mreq)) == 0)
-				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_drop_ok,
-						   1, __ATOMIC_RELAXED);
-		}
-		break;
-	}
+	mld_source_iter_v6_race(&it);
 
 	send_burst(it.send_s, 2);
 
