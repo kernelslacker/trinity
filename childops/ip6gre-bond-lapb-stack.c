@@ -304,14 +304,41 @@ static int ip6gre_lapb_iter_setup_netns(void)
 	return 0;
 }
 
+/*
+ * Phase: open the rtnetlink fd into ctx->ctx and roll the
+ * per-iteration bond/gre device names off g_iter.  Splits out from
+ * setup_netns because the nl_open failure path has no fd to clean up
+ * (the orchestrator's out: cleanup only runs once ctx.fd >= 0), so a
+ * failure here also wants to return true immediately rather than goto
+ * out.  Returns 0 on success; -1 means caller should return true
+ * immediately.
+ */
+static int ip6gre_lapb_iter_open_netlink(struct ip6gre_lapb_iter_ctx *ctx)
+{
+	struct nl_open_opts opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
+
+	if (nl_open(&ctx->ctx, &opts) < 0) {
+		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	g_iter++;
+	snprintf(ctx->bond_name, sizeof(ctx->bond_name), "ibls_b%u",
+		 g_iter & 0xffffU);
+	snprintf(ctx->gre_name,  sizeof(ctx->gre_name),  "ibls_g%u",
+		 g_iter & 0xffffU);
+
+	return 0;
+}
+
 bool ip6gre_bond_lapb_stack(struct childdata *child)
 {
 	struct ip6gre_lapb_iter_ctx ictx = {
 		.ctx = { .fd = -1 },
-	};
-	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
-		.recv_timeo_s = 1,
 	};
 	int lapb_idx = 0;
 	unsigned int cycles, i;
@@ -327,17 +354,8 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 	if (ip6gre_lapb_iter_setup_netns() != 0)
 		return true;
 
-	if (nl_open(&ictx.ctx, &opts) < 0) {
-		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (ip6gre_lapb_iter_open_netlink(&ictx) != 0)
 		return true;
-	}
-
-	g_iter++;
-	snprintf(ictx.bond_name, sizeof(ictx.bond_name), "ibls_b%u",
-		 g_iter & 0xffffU);
-	snprintf(ictx.gre_name,  sizeof(ictx.gre_name),  "ibls_g%u",
-		 g_iter & 0xffffU);
 
 	rc = ibls_newlink(&ictx.ctx, ictx.bond_name, "bond", NULL);
 	if (rc != 0) {
