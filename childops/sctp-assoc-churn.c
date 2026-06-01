@@ -136,6 +136,18 @@ static const uint32_t loopback_pool[NR_LOOPBACK_ADDRS] = {
  * which the kernel side has to format/sign/ack. */
 #define CHURN_ITERS_BASE	3U
 
+/* Per-invocation state shared across the extracted phase helpers.  Fd
+ * fields default to -1 so the teardown path can close-or-skip
+ * unconditionally regardless of which earlier phase bailed.  sock_type
+ * is picked in setup_server and consumed downstream by setup_client
+ * and connect; srv_port_n is the kernel-assigned ephemeral port the
+ * connect helper packs into the CONNECTX address list. */
+struct sctp_assoc_churn_iter_ctx {
+	int srv;
+	int sock_type;
+	uint16_t srv_port_n;
+};
+
 static void fill_sin(struct sockaddr_in *sa, uint32_t addr_h, uint16_t port_n)
 {
 	memset(sa, 0, sizeof(*sa));
@@ -192,6 +204,72 @@ static void churn_send(int fd)
 				   1, __ATOMIC_RELAXED);
 }
 
+/*
+ * Phase 1: pick the per-invocation socket type (SOCK_STREAM vs
+ * SOCK_SEQPACKET so both sk_prot tables in net/sctp/socket.c get
+ * exercised across runs), open the server SCTP socket, bind the
+ * primary to 127.0.0.1:0, recover the kernel-assigned ephemeral port
+ * via getsockname, multi-home with bindx ADD on 127.0.0.2 +
+ * 127.0.0.3 (pre-listen ADD doesn't fire ASCONF — no association
+ * exists yet — but it's the structural setup that lets post-assoc
+ * ADD/REM later actually emit ASCONF chunks), and finally listen.
+ * Doubles as the support gate: EPROTONOSUPPORT / ESOCKTNOSUPPORT on
+ * socket() latches ns_unsupported so siblings stop probing.  Returns
+ * 0 on success or -1 if the iteration should bail to the out:
+ * cleanup path.
+ */
+static int sctp_assoc_churn_iter_setup_server(struct sctp_assoc_churn_iter_ctx *ctx)
+{
+	struct sockaddr_in srv_primary;
+	struct sockaddr_in addrs[NR_LOOPBACK_ADDRS];
+	socklen_t slen;
+	int addr_len;
+	int rc;
+
+	ctx->sock_type = (rnd_u32() & 1) ? SOCK_STREAM : SOCK_SEQPACKET;
+
+	ctx->srv = socket(AF_INET, ctx->sock_type | SOCK_CLOEXEC, IPPROTO_SCTP);
+	if (ctx->srv < 0) {
+		if (errno == EPROTONOSUPPORT || errno == ESOCKTNOSUPPORT)
+			ns_unsupported = true;
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	fill_sin(&srv_primary, loopback_pool[0], 0);
+	if (bind(ctx->srv, (struct sockaddr *)&srv_primary,
+		 sizeof(srv_primary)) < 0) {
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	slen = sizeof(srv_primary);
+	if (getsockname(ctx->srv, (struct sockaddr *)&srv_primary, &slen) < 0) {
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	ctx->srv_port_n = srv_primary.sin_port;
+
+	addr_len = pack_addrs(addrs, NR_LOOPBACK_ADDRS, 1, 2, ctx->srv_port_n);
+	rc = setsockopt(ctx->srv, IPPROTO_SCTP, SCTP_SOCKOPT_BINDX_ADD,
+			addrs, (socklen_t)addr_len);
+	if (rc == 0)
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_bindx_added,
+				   1, __ATOMIC_RELAXED);
+	else
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_bindx_rejected,
+				   1, __ATOMIC_RELAXED);
+
+	if (listen(ctx->srv, 4) < 0) {
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	return 0;
+}
+
 bool sctp_assoc_churn(struct childdata *child)
 {
 	/* sockaddr buffer space — sized for the whole pool plus a little
@@ -199,16 +277,16 @@ bool sctp_assoc_churn(struct childdata *child)
 	 * whole pack-buffer fits in well under a kilobyte and there's
 	 * nothing to free on the failure paths. */
 	struct sockaddr_in addrs[NR_LOOPBACK_ADDRS];
-	struct sockaddr_in srv_primary, cli_primary;
+	struct sockaddr_in cli_primary;
+	struct sctp_assoc_churn_iter_ctx ctx = {
+		.srv = -1,
+	};
 	socklen_t slen;
-	int sock_type;
-	int srv = -1;
 	int cli = -1;
 	int srv_acc = -1;
 	int peeled = -1;
 	int rc;
 	int addr_len;
-	uint16_t srv_port_n;
 	uint16_t cli_port_n;
 	sctp_assoc_t_compat assoc_id = 0;
 	unsigned int iters;
@@ -223,69 +301,15 @@ bool sctp_assoc_churn(struct childdata *child)
 	if (ns_unsupported)
 		return true;
 
-	/* Rotate the socket type per invocation so both the one-to-one
-	 * (SOCK_STREAM) and one-to-many (SOCK_SEQPACKET) sk_prot tables
-	 * inside net/sctp/socket.c get exercised.  The two share most of
-	 * the assoc lifecycle code but split on accept / peeloff /
-	 * implicit-assoc-on-sendmsg. */
-	sock_type = (rnd_u32() & 1) ? SOCK_STREAM : SOCK_SEQPACKET;
-
-	srv = socket(AF_INET, sock_type | SOCK_CLOEXEC, IPPROTO_SCTP);
-	if (srv < 0) {
-		if (errno == EPROTONOSUPPORT || errno == ESOCKTNOSUPPORT)
-			ns_unsupported = true;
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return true;
-	}
-
-	/* Server: bind primary to 127.0.0.1:0 so the kernel picks an
-	 * ephemeral port we can recover via getsockname.  bindx the rest
-	 * of the multi-home set onto the same socket via the raw kernel
-	 * sockopt — libsctp's sctp_bindx() is just a thin wrapper around
-	 * this, so we skip the link-time dependency. */
-	fill_sin(&srv_primary, loopback_pool[0], 0);
-	if (bind(srv, (struct sockaddr *)&srv_primary,
-		 sizeof(srv_primary)) < 0) {
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (sctp_assoc_churn_iter_setup_server(&ctx) != 0)
 		goto out;
-	}
-	slen = sizeof(srv_primary);
-	if (getsockname(srv, (struct sockaddr *)&srv_primary, &slen) < 0) {
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-	srv_port_n = srv_primary.sin_port;
-
-	/* Multi-home the server: bindx ADD addrs[1..2] (127.0.0.2,
-	 * 127.0.0.3) on the SAME port.  Pre-listen ADD doesn't trigger
-	 * ASCONF (no association yet) — it goes through sctp_bindx_add
-	 * only.  This is the structural setup that lets the post-
-	 * association ADD/REM later actually emit ASCONF chunks. */
-	addr_len = pack_addrs(addrs, NR_LOOPBACK_ADDRS, 1, 2, srv_port_n);
-	rc = setsockopt(srv, IPPROTO_SCTP, SCTP_SOCKOPT_BINDX_ADD,
-			addrs, (socklen_t)addr_len);
-	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_bindx_added,
-				   1, __ATOMIC_RELAXED);
-	else
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_bindx_rejected,
-				   1, __ATOMIC_RELAXED);
-
-	if (listen(srv, 4) < 0) {
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
 
 	/* Client side: bind a separate primary so the assoc has
 	 * unambiguous local-vs-remote endpoints, plus a second multi-
 	 * home address for symmetry.  Also pinned to a known port via
 	 * bind(0)+getsockname so the connectx path uses a stable
 	 * 4-tuple. */
-	cli = socket(AF_INET, sock_type | SOCK_CLOEXEC, IPPROTO_SCTP);
+	cli = socket(AF_INET, ctx.sock_type | SOCK_CLOEXEC, IPPROTO_SCTP);
 	if (cli < 0) {
 		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -312,14 +336,14 @@ bool sctp_assoc_churn(struct childdata *child)
 	 * the assoc completes asynchronously and subsequent send()s
 	 * either piggyback on the cookie or get queued. */
 	(void)fcntl(cli, F_SETFL, O_NONBLOCK);
-	(void)fcntl(srv, F_SETFL, O_NONBLOCK);
+	(void)fcntl(ctx.srv, F_SETFL, O_NONBLOCK);
 
 	/* SCTP_SOCKOPT_CONNECTX with the server's full multi-address
 	 * set (3 addrs).  Kernel returns the new assoc_id as the
 	 * setsockopt return value (positive) on success — that's
 	 * non-standard but it's how the SCTP API was wired.  We grab it
 	 * for the optional peeloff step later. */
-	addr_len = pack_addrs(addrs, NR_LOOPBACK_ADDRS, 0, 3, srv_port_n);
+	addr_len = pack_addrs(addrs, NR_LOOPBACK_ADDRS, 0, 3, ctx.srv_port_n);
 	rc = setsockopt(cli, IPPROTO_SCTP, SCTP_SOCKOPT_CONNECTX,
 			addrs, (socklen_t)addr_len);
 	if (rc < 0 && errno != EINPROGRESS) {
@@ -337,8 +361,8 @@ bool sctp_assoc_churn(struct childdata *child)
 	 * exists when bindx ADD fires.  SOCK_SEQPACKET delivers all
 	 * assocs through the parent socket, so accept() doesn't apply
 	 * — the assoc materialises lazily on first ingress. */
-	if (sock_type == SOCK_STREAM) {
-		srv_acc = accept(srv, NULL, NULL);
+	if (ctx.sock_type == SOCK_STREAM) {
+		srv_acc = accept(ctx.srv, NULL, NULL);
 		if (srv_acc >= 0) {
 			(void)fcntl(srv_acc, F_SETFL, O_NONBLOCK);
 			__atomic_add_fetch(
@@ -457,8 +481,8 @@ out:
 		close(srv_acc);
 	if (cli >= 0)
 		close(cli);
-	if (srv >= 0)
-		close(srv);
+	if (ctx.srv >= 0)
+		close(ctx.srv);
 	__atomic_add_fetch(&shm->stats.sctp_assoc_churn_cycles,
 			   1, __ATOMIC_RELAXED);
 	return true;
