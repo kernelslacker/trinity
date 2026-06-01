@@ -1235,6 +1235,28 @@ static void nl80211_iter_scan_connect(struct genl_ctx *ctx, int ifindex,
 }
 
 /*
+ * Phase: post-connect race burst.  Re-triggers scan against the now-
+ * connected iface (the cfg80211_scan_done UAF window, CVE-2025-21672) and
+ * flips the regulatory domain to "ZZ" to race
+ * reg_process_self_managed_hint (CVE-2023-3090 wiphy-index race).  Both
+ * are best-effort -- the kernel-side races are the point, not the rc.
+ */
+static void nl80211_iter_races(struct genl_ctx *ctx, int ifindex)
+{
+	int rc;
+
+	rc = trigger_scan(ctx, ifindex);
+	if (rc == 0)
+		__atomic_add_fetch(&shm->stats.nl80211_scan_triggered,
+				   1, __ATOMIC_RELAXED);
+
+	rc = set_reg_zz(ctx);
+	if (rc == 0)
+		__atomic_add_fetch(&shm->stats.nl80211_regdom_changed,
+				   1, __ATOMIC_RELAXED);
+}
+
+/*
  * Single outer iteration of the churn loop.  Each iter creates one
  * STATION iface, runs the full scan/connect/burst/scan-again/regdom/
  * disconnect/del-iface chain on it, and tears it down at the end.  The
@@ -1255,19 +1277,7 @@ static void iter_one(struct genl_ctx *ctx, unsigned int iter_idx,
 
 	nl80211_iter_scan_connect(ctx, ifindex, ifname, t_outer);
 
-	/* Scan-while-connected race target.  The cfg80211_scan_done UAF
-	 * window (CVE-2025-21672) lives here. */
-	rc = trigger_scan(ctx, ifindex);
-	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.nl80211_scan_triggered,
-				   1, __ATOMIC_RELAXED);
-
-	/* Regdom change race target.  CVE-2023-3090 wiphy-index race
-	 * lives in the reg_process_self_managed_hint path. */
-	rc = set_reg_zz(ctx);
-	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.nl80211_regdom_changed,
-				   1, __ATOMIC_RELAXED);
+	nl80211_iter_races(ctx, ifindex);
 
 	rc = disconnect_iface(ctx, ifindex);
 	__atomic_add_fetch(&shm->stats.nl80211_disconnect_attempted,
