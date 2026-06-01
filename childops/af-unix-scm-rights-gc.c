@@ -684,6 +684,45 @@ static void run_race_burst_parent_half(int sv2_recv, int sv4_recv,
 }
 
 /*
+ * Per-iteration scratchpad shared across the af_unix_scm_rights_gc_<phase>
+ * helpers.  Lifetime is exactly one iter_one() invocation; avoids threading
+ * three fd pairs plus the io_uring variant flags through every helper.
+ *
+ * The teardown path in iter_one closes every fd that is still >= 0, so
+ * helpers signal "ownership transferred / fd closed" simply by writing
+ * -1 back into the field.
+ */
+struct af_unix_scm_rights_gc_iter_ctx {
+	int		sv1[2];
+	int		sv2[2];
+	int		sv3[2];
+	int		sv4[2];
+	int		iouring_fd;
+	bool		use_iouring;
+	bool		cycle_ok;
+};
+
+/*
+ * Phase 1: open the four AF_UNIX SOCK_DGRAM pairs the cycle needs.
+ * sv1..sv3 form the cycle members; sv4 is the spare used by the
+ * gc-trigger and race-burst phases.  Returns 0 on success or -1 on the
+ * first pair failure; the caller goes to the shared teardown path,
+ * which safely no-ops on any pair left at the initial { -1, -1 }.
+ */
+static int af_unix_scm_rights_gc_setup(struct af_unix_scm_rights_gc_iter_ctx *it)
+{
+	if (unix_pair_open(it->sv1) < 0)
+		return -1;
+	if (unix_pair_open(it->sv2) < 0)
+		return -1;
+	if (unix_pair_open(it->sv3) < 0)
+		return -1;
+	if (unix_pair_open(it->sv4) < 0)
+		return -1;
+	return 0;
+}
+
+/*
  * One outer iteration: build a 3-pair SCM_RIGHTS cycle, drop userspace
  * refs to make it gc-only-reachable, run a small race burst.  All
  * counters are best-effort -- iter_one returns void; the per-step bumps
@@ -691,34 +730,30 @@ static void run_race_burst_parent_half(int sv2_recv, int sv4_recv,
  */
 static void iter_one(void)
 {
-	int sv1[2] = { -1, -1 };
-	int sv2[2] = { -1, -1 };
-	int sv3[2] = { -1, -1 };
-	int sv4[2] = { -1, -1 };
-	int iouring_fd = -1;
+	struct af_unix_scm_rights_gc_iter_ctx it = {
+		.sv1 = { -1, -1 },
+		.sv2 = { -1, -1 },
+		.sv3 = { -1, -1 },
+		.sv4 = { -1, -1 },
+		.iouring_fd = -1,
+		.use_iouring = false,
+		.cycle_ok = false,
+	};
 	int extra_fd = -1;
-	bool use_iouring;
-	bool cycle_ok = false;
 	unsigned int races;
 
-	if (unix_pair_open(sv1) < 0)
-		return;
-	if (unix_pair_open(sv2) < 0)
-		goto out;
-	if (unix_pair_open(sv3) < 0)
-		goto out;
-	if (unix_pair_open(sv4) < 0)
+	if (af_unix_scm_rights_gc_setup(&it) != 0)
 		goto out;
 
 	/* Optional io_uring variant: ~1-in-8 iterations swap sv1[0] for an
 	 * io_uring fd in the cycle.  Drives the multi-hop graph extension
 	 * shape that surfaced the CVE-2025-21712 family.  Falls through
 	 * silently if io_uring is unavailable. */
-	use_iouring = HAVE_IOURING_VARIANT && ONE_IN(8);
-	if (use_iouring) {
-		iouring_fd = iouring_open();
-		if (iouring_fd < 0)
-			use_iouring = false;
+	it.use_iouring = HAVE_IOURING_VARIANT && ONE_IN(8);
+	if (it.use_iouring) {
+		it.iouring_fd = iouring_open();
+		if (it.iouring_fd < 0)
+			it.use_iouring = false;
 	}
 
 	/* 2) Build the cycle: each send transfers a kernel ref on the
@@ -731,17 +766,17 @@ static void iter_one(void)
 	 *    Order matters only insofar as each send transfers a ref --
 	 *    the cycle closure happens at the third send. */
 	{
-		int first_fd = use_iouring ? iouring_fd : sv1[0];
+		int first_fd = it.use_iouring ? it.iouring_fd : it.sv1[0];
 		ssize_t s1, s2, s3;
 
-		s1 = send_scm_fd(sv2[1], first_fd);
-		s2 = send_scm_fd(sv3[1], sv2[0]);
-		s3 = send_scm_fd(sv1[1], sv3[0]);
+		s1 = send_scm_fd(it.sv2[1], first_fd);
+		s2 = send_scm_fd(it.sv3[1], it.sv2[0]);
+		s3 = send_scm_fd(it.sv1[1], it.sv3[0]);
 		if (s1 >= 0 && s2 >= 0 && s3 >= 0) {
-			cycle_ok = true;
+			it.cycle_ok = true;
 			__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_cycle_built_ok,
 					   1, __ATOMIC_RELAXED);
-			if (use_iouring) {
+			if (it.use_iouring) {
 				__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_iouring_variant_ok,
 						   1, __ATOMIC_RELAXED);
 			}
@@ -751,13 +786,13 @@ static void iter_one(void)
 	/* 3) Drop userspace refs to the cycle members.  After this the
 	 *    cycle is reachable only via the queued SCM_RIGHTS messages
 	 *    on the peer ends -- exactly the gc fodder shape. */
-	if (cycle_ok) {
-		(void)close(sv1[0]); sv1[0] = -1;
-		(void)close(sv2[0]); sv2[0] = -1;
-		(void)close(sv3[0]); sv3[0] = -1;
-		if (use_iouring) {
-			(void)close(iouring_fd);
-			iouring_fd = -1;
+	if (it.cycle_ok) {
+		(void)close(it.sv1[0]); it.sv1[0] = -1;
+		(void)close(it.sv2[0]); it.sv2[0] = -1;
+		(void)close(it.sv3[0]); it.sv3[0] = -1;
+		if (it.use_iouring) {
+			(void)close(it.iouring_fd);
+			it.iouring_fd = -1;
 		}
 		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_close_ok,
 				   1, __ATOMIC_RELAXED);
@@ -770,7 +805,7 @@ static void iter_one(void)
 	if (RAND_BOOL()) {
 		extra_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
 		if (extra_fd >= 0) {
-			ssize_t s = send_scm_fd(sv4[1], extra_fd);
+			ssize_t s = send_scm_fd(it.sv4[1], extra_fd);
 
 			if (s >= 0) {
 				__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_trigger_ok,
@@ -812,7 +847,7 @@ static void iter_one(void)
 		pid_t sibling = -1;
 
 		if (rs != NULL) {
-			rs->sv2_recv_fd = sv2[1];
+			rs->sv2_recv_fd = it.sv2[1];
 			rs->race_budget = races;
 			sibling = spawn_race_sibling(rs);
 		}
@@ -820,14 +855,14 @@ static void iter_one(void)
 		if (sibling < 0) {
 			__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_sibling_spawn_failed,
 					   1, __ATOMIC_RELAXED);
-			run_race_burst_solo(sv2[1], sv4[1], races);
+			run_race_burst_solo(it.sv2[1], it.sv4[1], races);
 		} else {
 			__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_sibling_spawn_ok,
 					   1, __ATOMIC_RELAXED);
 			__atomic_store_n(&rs->go, 1U, __ATOMIC_RELEASE);
 			(void)raw_futex_wake(&rs->go, 1);
 
-			run_race_burst_parent_half(sv2[1], sv4[1], races);
+			run_race_burst_parent_half(it.sv2[1], it.sv4[1], races);
 
 			reap_race_sibling(sibling);
 		}
@@ -837,15 +872,15 @@ static void iter_one(void)
 	}
 
 out:
-	if (sv1[0] >= 0) (void)close(sv1[0]);
-	if (sv1[1] >= 0) (void)close(sv1[1]);
-	if (sv2[0] >= 0) (void)close(sv2[0]);
-	if (sv2[1] >= 0) (void)close(sv2[1]);
-	if (sv3[0] >= 0) (void)close(sv3[0]);
-	if (sv3[1] >= 0) (void)close(sv3[1]);
-	if (sv4[0] >= 0) (void)close(sv4[0]);
-	if (sv4[1] >= 0) (void)close(sv4[1]);
-	if (iouring_fd >= 0) (void)close(iouring_fd);
+	if (it.sv1[0] >= 0) (void)close(it.sv1[0]);
+	if (it.sv1[1] >= 0) (void)close(it.sv1[1]);
+	if (it.sv2[0] >= 0) (void)close(it.sv2[0]);
+	if (it.sv2[1] >= 0) (void)close(it.sv2[1]);
+	if (it.sv3[0] >= 0) (void)close(it.sv3[0]);
+	if (it.sv3[1] >= 0) (void)close(it.sv3[1]);
+	if (it.sv4[0] >= 0) (void)close(it.sv4[0]);
+	if (it.sv4[1] >= 0) (void)close(it.sv4[1]);
+	if (it.iouring_fd >= 0) (void)close(it.iouring_fd);
 	if (extra_fd >= 0) (void)close(extra_fd);
 }
 
