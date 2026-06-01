@@ -494,6 +494,29 @@ static int netns_teardown_iter_parent_setns_back(struct netns_teardown_iter_ctx 
 }
 
 /*
+ * Phase 5 (parent only, post-setns-back): brief usleep jitter so the
+ * cleanup_net workqueue may or may not have already started, kill the
+ * in-ns child so the last sock_net ref drops, reap, then close the
+ * anchor fd.  Bumps kill_ok on a successful kill and completed_ok at
+ * the end -- the pair carries the "full iteration succeeded" signal.
+ */
+static void netns_teardown_iter_drive_teardown(struct netns_teardown_iter_ctx *it)
+{
+	(void)usleep(rand32() % NETNS_TD_PARENT_USLEEP_MAX);
+
+	if (kill(it->pid, SIGKILL) == 0) {
+		__atomic_add_fetch(&shm->stats.netns_teardown_kill_ok,
+				   1, __ATOMIC_RELAXED);
+	}
+	reap_inflight_child(it->pid);
+
+	(void)close(it->nsfd);
+	it->nsfd = -1;
+	__atomic_add_fetch(&shm->stats.netns_teardown_completed_ok,
+			   1, __ATOMIC_RELAXED);
+}
+
+/*
  * One outer iteration: anchor open, unshare, lo bring-up, sockets,
  * fork, race, kill, waitpid.  Best-effort; per-step counter bumps
  * carry the success signal.  Latches ns_unsupported on a probe-style
@@ -518,18 +541,7 @@ static void iter_one(void)
 	if (netns_teardown_iter_parent_setns_back(&it) != 0)
 		return;
 
-	(void)usleep(rand32() % NETNS_TD_PARENT_USLEEP_MAX);
-
-	if (kill(it.pid, SIGKILL) == 0) {
-		__atomic_add_fetch(&shm->stats.netns_teardown_kill_ok,
-				   1, __ATOMIC_RELAXED);
-	}
-	reap_inflight_child(it.pid);
-
-	(void)close(it.nsfd);
-	it.nsfd = -1;
-	__atomic_add_fetch(&shm->stats.netns_teardown_completed_ok,
-			   1, __ATOMIC_RELAXED);
+	netns_teardown_iter_drive_teardown(&it);
 	return;
 
 recover:
