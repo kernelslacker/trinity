@@ -296,6 +296,26 @@ static long ns_since(const struct timespec *t0)
 	       (now.tv_nsec - t0->tv_nsec);
 }
 
+/* Step 2: install kTLS ULP on the loopback fd.  ENOPROTOOPT means no
+ * CONFIG_TLS; EPERM is unusual here (TCP_ULP doesn't typically gate on
+ * caps) but treat it the same — neither flips mid-process, so latch the
+ * per-process cap-gate and bump setup_failed on either errno.  Returns
+ * 0 on success or -1 when tls_ulp_churn should bail to its out: cleanup
+ * (s closed, acceptor reaped). */
+static int tls_ulp_churn_iter_install_tls_ulp(int s)
+{
+	if (setsockopt(s, IPPROTO_TCP, TCP_ULP, "tls", 3) < 0) {
+		if (errno == ENOPROTOOPT || errno == EPERM)
+			ns_unsupported_tls_ulp = true;
+		__atomic_add_fetch(&shm->stats.tls_ulp_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	__atomic_add_fetch(&shm->stats.tls_ulp_churn_ulp_install_ok,
+			   1, __ATOMIC_RELAXED);
+	return 0;
+}
+
 bool tls_ulp_churn(struct childdata *child)
 {
 	struct tls12_crypto_info_aes_gcm_128 cinfo;
@@ -333,18 +353,8 @@ bool tls_ulp_churn(struct childdata *child)
 		return true;
 	}
 
-	/* Step 2: install kTLS ULP.  ENOPROTOOPT means no CONFIG_TLS;
-	 * EPERM is unusual here (TCP_ULP doesn't typically gate on
-	 * caps) but treat it the same — neither flips mid-process. */
-	if (setsockopt(s, IPPROTO_TCP, TCP_ULP, "tls", 3) < 0) {
-		if (errno == ENOPROTOOPT || errno == EPERM)
-			ns_unsupported_tls_ulp = true;
-		__atomic_add_fetch(&shm->stats.tls_ulp_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (tls_ulp_churn_iter_install_tls_ulp(s) != 0)
 		goto out;
-	}
-	__atomic_add_fetch(&shm->stats.tls_ulp_churn_ulp_install_ok,
-			   1, __ATOMIC_RELAXED);
 
 	/* Step 3: install TLS_TX with a fresh urandom key.  Pick TLS 1.2
 	 * vs 1.3 randomly so both record-format variants get coverage on
