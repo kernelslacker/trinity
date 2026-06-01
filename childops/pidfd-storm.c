@@ -265,25 +265,22 @@ static unsigned int pidfd_storm_iter_spawn(struct pidfd_slot *slots,
 	return active;
 }
 
-bool pidfd_storm(struct childdata *child)
+/*
+ * Storm phase: tight bounded loop over the live slots, picking a
+ * random pidfd each iteration and either signalling it (curated
+ * benign signal with an occasional negative-edge substitution) or
+ * pulling an fd out of it via pidfd_getfd (closed immediately so the
+ * storm doesn't accumulate fd debt).  Caller guarantees active > 0.
+ * Loop is double-bounded by the iters cap and the BUDGET_NS
+ * wall-clock gate; the timer is started inside the helper so the
+ * caller doesn't have to thread a timespec through.
+ */
+static void pidfd_storm_iter_drive(struct pidfd_slot *slots,
+				   unsigned int active, unsigned int iters)
 {
-	struct pidfd_slot slots[NR_CHILDREN];
 	struct timespec start;
-	unsigned int active;
 	unsigned int iter;
-	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
-	unsigned int i;
 
-	(void) child;
-
-	__atomic_add_fetch(&shm->stats.pidfd_storm_runs, 1, __ATOMIC_RELAXED);
-
-	active = pidfd_storm_iter_spawn(slots, NR_CHILDREN);
-	if (active == 0)
-		return true;
-
-	/* Storm: tight bounded loop, picking a random pidfd each
-	 * iteration and either signalling or pulling an fd out of it. */
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
 	for (iter = 0; iter < iters; iter++) {
@@ -334,6 +331,23 @@ bool pidfd_storm(struct childdata *child)
 		if (budget_elapsed(&start))
 			break;
 	}
+}
+
+bool pidfd_storm(struct childdata *child)
+{
+	struct pidfd_slot slots[NR_CHILDREN];
+	unsigned int active;
+	unsigned int i;
+
+	(void) child;
+
+	__atomic_add_fetch(&shm->stats.pidfd_storm_runs, 1, __ATOMIC_RELAXED);
+
+	active = pidfd_storm_iter_spawn(slots, NR_CHILDREN);
+	if (active == 0)
+		return true;
+
+	pidfd_storm_iter_drive(slots, active, JITTER_RANGE(MAX_ITERATIONS));
 
 	/* Teardown: SIGKILL every spawned child via the pidfd where we
 	 * have one, fall back to kill(2) by pid where pidfd_open failed.
