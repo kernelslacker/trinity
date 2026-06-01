@@ -680,6 +680,114 @@ static int flowtable_vlan_iter_install(struct nfnl_ctx *nf,
 }
 
 /*
+ * Phase 3: drive the three traffic shapes — small UDP burst (slow path
+ * then offload fast path), TCP connect-no-listener (SYN forward + RST
+ * return + a GSO-large blind send on a second socket), and an
+ * MTU-borderline UDP send — exercising the inline vlan-encap headroom,
+ * GSO re-checksum, and offload-entry paths.  All sends are
+ * MSG_DONTWAIT / MSG_NOSIGNAL so nothing blocks.
+ */
+static void flowtable_vlan_iter_churn(const struct flowtable_vlan_iter_ctx *c)
+{
+	struct sockaddr_in src_a, dst_b;
+	int udp_fd, tcp_fd, gso_fd;
+	ssize_t n;
+	unsigned char *gso_buf;
+
+	memset(&src_a, 0, sizeof(src_a));
+	src_a.sin_family = AF_INET;
+	src_a.sin_addr.s_addr = c->a_addr;
+
+	memset(&dst_b, 0, sizeof(dst_b));
+	dst_b.sin_family = AF_INET;
+	dst_b.sin_addr.s_addr = c->b_addr;
+
+	/* Shape A: small UDP burst.  First few packets go through the
+	 * slow path; once the 5-tuple is offloaded the rest traverse
+	 * the inline-vlan-encap fast path. */
+	udp_fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	if (udp_fd >= 0) {
+		static const char pad[1400];
+		unsigned int j;
+
+		(void)bind(udp_fd, (struct sockaddr *)&src_a,
+			   sizeof(src_a));
+		dst_b.sin_port = htons(9090);
+		for (j = 0; j < 8; j++) {
+			n = sendto(udp_fd, pad, sizeof(pad),
+				   MSG_DONTWAIT,
+				   (struct sockaddr *)&dst_b,
+				   sizeof(dst_b));
+			if (n > 0)
+				__atomic_add_fetch(
+					&shm->stats.flowtable_vlan_offloaded_pkts,
+					1, __ATOMIC_RELAXED);
+		}
+		close(udp_fd);
+	}
+
+	/* Shape B: TCP connect (no listener) — SYN drives forward, RST
+	 * drives the reverse leg.  Then a GSO-large blind send on a
+	 * second socket targets the inline GSO re-checksum path that
+	 * a177ae30f786 fixes. */
+	tcp_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK |
+			SOCK_CLOEXEC, 0);
+	if (tcp_fd >= 0) {
+		(void)bind(tcp_fd, (struct sockaddr *)&src_a,
+			   sizeof(src_a));
+		dst_b.sin_port = htons(8080);
+		(void)connect(tcp_fd, (struct sockaddr *)&dst_b,
+			      sizeof(dst_b));
+		close(tcp_fd);
+	}
+
+	gso_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK |
+			SOCK_CLOEXEC, 0);
+	if (gso_fd >= 0) {
+		int one = 0;
+		(void)setsockopt(gso_fd, IPPROTO_TCP, TCP_NODELAY,
+				 &one, sizeof(one));
+		(void)bind(gso_fd, (struct sockaddr *)&src_a,
+			   sizeof(src_a));
+		dst_b.sin_port = htons(9091);
+		(void)connect(gso_fd, (struct sockaddr *)&dst_b,
+			      sizeof(dst_b));
+		gso_buf = calloc(1, FEV_GSO_PAYLOAD);
+		if (gso_buf) {
+			n = send(gso_fd, gso_buf, FEV_GSO_PAYLOAD,
+				 MSG_DONTWAIT | MSG_NOSIGNAL);
+			if (n > 0)
+				__atomic_add_fetch(
+					&shm->stats.flowtable_vlan_gso_sends,
+					1, __ATOMIC_RELAXED);
+			free(gso_buf);
+		}
+		close(gso_fd);
+	}
+
+	/* Shape C: MTU-borderline UDP — payload sized to the vlan MTU
+	 * edge so headroom math is exercised on the encap-needed path
+	 * that 69c54f80f407 fixes. */
+	udp_fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	if (udp_fd >= 0) {
+		static unsigned char border[FEV_MTU_BORDER_PAYLOAD];
+
+		(void)bind(udp_fd, (struct sockaddr *)&src_a,
+			   sizeof(src_a));
+		dst_b.sin_port = htons(9092);
+		n = sendto(udp_fd, border, sizeof(border),
+			   MSG_DONTWAIT,
+			   (struct sockaddr *)&dst_b,
+			   sizeof(dst_b));
+		if (n > 0)
+			__atomic_add_fetch(
+				&shm->stats.flowtable_vlan_offloaded_pkts,
+				1, __ATOMIC_RELAXED);
+		close(udp_fd);
+	}
+}
+
+/*
  * One full create / drive / race / teardown cycle.  Wall cap inherited
  * from the caller — every step short-circuits if FEV_WALL_CAP_NS has
  * been exceeded.
@@ -716,104 +824,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	if ((unsigned long long)ns_since(t_outer) >= FEV_WALL_CAP_NS)
 		goto teardown;
 
-	{
-		struct sockaddr_in src_a, dst_b;
-		int udp_fd, tcp_fd, gso_fd;
-		ssize_t n;
-		unsigned char *gso_buf;
-
-		memset(&src_a, 0, sizeof(src_a));
-		src_a.sin_family = AF_INET;
-		src_a.sin_addr.s_addr = c.a_addr;
-
-		memset(&dst_b, 0, sizeof(dst_b));
-		dst_b.sin_family = AF_INET;
-		dst_b.sin_addr.s_addr = c.b_addr;
-
-		/* Shape A: small UDP burst.  First few packets go through
-		 * the slow path; once the 5-tuple is offloaded the rest
-		 * traverse the inline-vlan-encap fast path. */
-		udp_fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-		if (udp_fd >= 0) {
-			static const char pad[1400];
-			unsigned int j;
-
-			(void)bind(udp_fd, (struct sockaddr *)&src_a,
-				   sizeof(src_a));
-			dst_b.sin_port = htons(9090);
-			for (j = 0; j < 8; j++) {
-				n = sendto(udp_fd, pad, sizeof(pad),
-					   MSG_DONTWAIT,
-					   (struct sockaddr *)&dst_b,
-					   sizeof(dst_b));
-				if (n > 0)
-					__atomic_add_fetch(
-						&shm->stats.flowtable_vlan_offloaded_pkts,
-						1, __ATOMIC_RELAXED);
-			}
-			close(udp_fd);
-		}
-
-		/* Shape B: TCP connect (no listener) — SYN drives forward,
-		 * RST drives the reverse leg.  Then a GSO-large blind send
-		 * on a second socket targets the inline GSO re-checksum
-		 * path that a177ae30f786 fixes. */
-		tcp_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK |
-				SOCK_CLOEXEC, 0);
-		if (tcp_fd >= 0) {
-			(void)bind(tcp_fd, (struct sockaddr *)&src_a,
-				   sizeof(src_a));
-			dst_b.sin_port = htons(8080);
-			(void)connect(tcp_fd, (struct sockaddr *)&dst_b,
-				      sizeof(dst_b));
-			close(tcp_fd);
-		}
-
-		gso_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK |
-				SOCK_CLOEXEC, 0);
-		if (gso_fd >= 0) {
-			int one = 0;
-			(void)setsockopt(gso_fd, IPPROTO_TCP, TCP_NODELAY,
-					 &one, sizeof(one));
-			(void)bind(gso_fd, (struct sockaddr *)&src_a,
-				   sizeof(src_a));
-			dst_b.sin_port = htons(9091);
-			(void)connect(gso_fd, (struct sockaddr *)&dst_b,
-				      sizeof(dst_b));
-			gso_buf = calloc(1, FEV_GSO_PAYLOAD);
-			if (gso_buf) {
-				n = send(gso_fd, gso_buf, FEV_GSO_PAYLOAD,
-					 MSG_DONTWAIT | MSG_NOSIGNAL);
-				if (n > 0)
-					__atomic_add_fetch(
-						&shm->stats.flowtable_vlan_gso_sends,
-						1, __ATOMIC_RELAXED);
-				free(gso_buf);
-			}
-			close(gso_fd);
-		}
-
-		/* Shape C: MTU-borderline UDP — payload sized to the vlan
-		 * MTU edge so headroom math is exercised on the encap-needed
-		 * path that 69c54f80f407 fixes. */
-		udp_fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-		if (udp_fd >= 0) {
-			static unsigned char border[FEV_MTU_BORDER_PAYLOAD];
-
-			(void)bind(udp_fd, (struct sockaddr *)&src_a,
-				   sizeof(src_a));
-			dst_b.sin_port = htons(9092);
-			n = sendto(udp_fd, border, sizeof(border),
-				   MSG_DONTWAIT,
-				   (struct sockaddr *)&dst_b,
-				   sizeof(dst_b));
-			if (n > 0)
-				__atomic_add_fetch(
-					&shm->stats.flowtable_vlan_offloaded_pkts,
-					1, __ATOMIC_RELAXED);
-			close(udp_fd);
-		}
-	}
+	flowtable_vlan_iter_churn(&c);
 
 	/* Coin-flip teardown race: drop one vlan child mid-burst so the
 	 * offload-entry expiry path runs concurrently with the in-flight
