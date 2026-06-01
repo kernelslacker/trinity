@@ -537,6 +537,31 @@ static int iouring_multishot_iter_setup_pbufs(struct iouring_multishot_iter_ctx 
 	return 0;
 }
 
+/*
+ * Open the loopback UDP socket pair: rxfd is bound on 127.0.0.1 to an
+ * ephemeral port (recovered into it->port) and will carry the multishot
+ * RECV; txfd is the unbound sender used for the traffic burst.  Returns
+ * 0 on success; nonzero means the caller should bail to the shared
+ * teardown path, which closes whichever fd already came up.
+ */
+static int iouring_multishot_iter_setup_sockets(struct iouring_multishot_iter_ctx *it)
+{
+	it->rxfd = open_udp_loopback(&it->port);
+	if (it->rxfd < 0) {
+		__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	it->txfd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	if (it->txfd < 0) {
+		__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	return 0;
+}
+
 bool iouring_net_multishot(struct childdata *child)
 {
 	struct iouring_multishot_iter_ctx it;
@@ -568,19 +593,8 @@ bool iouring_net_multishot(struct childdata *child)
 	if (iouring_multishot_iter_setup_pbufs(&it) != 0)
 		goto out;
 
-	it.rxfd = open_udp_loopback(&it.port);
-	if (it.rxfd < 0) {
-		__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (iouring_multishot_iter_setup_sockets(&it) != 0)
 		goto out;
-	}
-
-	it.txfd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-	if (it.txfd < 0) {
-		__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
 
 	/* Optionally register NAPI busy-poll on the ring before arming the
 	 * multishot.  Pre-6.9 kernels return EINVAL/ENOTTY; we ignore the
