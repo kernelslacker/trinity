@@ -608,6 +608,64 @@ static int iouring_send_zc_iter_socket(struct iouring_send_zc_iter_ctx *it)
 	return 0;
 }
 
+/*
+ * Submit the two ZC SQEs the iteration is built around: one
+ * IORING_OP_SEND_ZC referencing a rotating buf_index in the
+ * registered table, and one IORING_OP_SENDMSG_ZC with a 1..4-iov
+ * msghdr drawn from the same pool.  Bumps it->submitted per SQE
+ * actually queued so the io_uring_enter min_complete stays honest.
+ */
+static void iouring_send_zc_iter_submit(struct iouring_send_zc_iter_ctx *it)
+{
+	/* SEND_ZC SQE referring buf_index 0..7 (rotating).  Send length is
+	 * clamped to ZC_BUF_BYTES so we never trip the kernel's per-buffer
+	 * bounds check on the iovec. */
+	{
+		struct io_uring_sqe sqe;
+		unsigned int idx = rnd_modulo_u32(ZC_BUF_COUNT);
+		size_t send_len = (size_t)(1 + rnd_modulo_u32(ZC_BUF_BYTES));
+
+		fill_send_zc(&sqe, it->sock_fd, it->pages[idx], send_len, idx);
+		if (submit_one(&it->ring, &sqe) == 1) {
+			it->submitted++;
+			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_send_zc_ok,
+					   1, __ATOMIC_RELAXED);
+		}
+	}
+
+	/* SENDMSG_ZC variant -- 1..4 iovs from the registered pool, each
+	 * iov pointing into a different buffer slot so the multi-iov walk
+	 * touches multiple rsrc_node entries. */
+	{
+		struct io_uring_sqe sqe;
+		struct msghdr msg;
+		struct iovec local_iov[4];
+		unsigned int n_iov = 1 + rnd_modulo_u32(4U);
+		unsigned int j;
+		unsigned int buf_index = rnd_modulo_u32(ZC_BUF_COUNT);
+
+		if (n_iov > 4)
+			n_iov = 4;
+		for (j = 0; j < n_iov; j++) {
+			unsigned int slot = (buf_index + j) % ZC_BUF_COUNT;
+			size_t len = (size_t)(1 + rnd_modulo_u32(ZC_BUF_BYTES));
+
+			local_iov[j].iov_base = it->pages[slot];
+			local_iov[j].iov_len  = len;
+		}
+		memset(&msg, 0, sizeof(msg));
+		msg.msg_iov    = local_iov;
+		msg.msg_iovlen = n_iov;
+
+		fill_sendmsg_zc(&sqe, it->sock_fd, &msg, buf_index);
+		if (submit_one(&it->ring, &sqe) == 1) {
+			it->submitted++;
+			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_sendmsg_zc_ok,
+					   1, __ATOMIC_RELAXED);
+		}
+	}
+}
+
 /* One full sequence on a freshly-created ring + loopback TCP socket. */
 static void iter_one(const struct timespec *t_outer)
 {
@@ -633,53 +691,7 @@ static void iter_one(const struct timespec *t_outer)
 	if (iouring_send_zc_iter_socket(&it) != 0)
 		goto out;
 
-	/* SEND_ZC SQE referring buf_index 0..7 (rotating).  Send length is
-	 * clamped to ZC_BUF_BYTES so we never trip the kernel's per-buffer
-	 * bounds check on the iovec. */
-	{
-		struct io_uring_sqe sqe;
-		unsigned int idx = rnd_modulo_u32(ZC_BUF_COUNT);
-		size_t send_len = (size_t)(1 + rnd_modulo_u32(ZC_BUF_BYTES));
-
-		fill_send_zc(&sqe, it.sock_fd, it.pages[idx], send_len, idx);
-		if (submit_one(&it.ring, &sqe) == 1) {
-			it.submitted++;
-			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_send_zc_ok,
-					   1, __ATOMIC_RELAXED);
-		}
-	}
-
-	/* SENDMSG_ZC variant -- 1..4 iovs from the registered pool, each
-	 * iov pointing into a different buffer slot so the multi-iov walk
-	 * touches multiple rsrc_node entries. */
-	{
-		struct io_uring_sqe sqe;
-		struct msghdr msg;
-		struct iovec local_iov[4];
-		unsigned int n_iov = 1 + rnd_modulo_u32(4U);
-		unsigned int j;
-		unsigned int buf_index = rnd_modulo_u32(ZC_BUF_COUNT);
-
-		if (n_iov > 4)
-			n_iov = 4;
-		for (j = 0; j < n_iov; j++) {
-			unsigned int slot = (buf_index + j) % ZC_BUF_COUNT;
-			size_t len = (size_t)(1 + rnd_modulo_u32(ZC_BUF_BYTES));
-
-			local_iov[j].iov_base = it.pages[slot];
-			local_iov[j].iov_len  = len;
-		}
-		memset(&msg, 0, sizeof(msg));
-		msg.msg_iov    = local_iov;
-		msg.msg_iovlen = n_iov;
-
-		fill_sendmsg_zc(&sqe, it.sock_fd, &msg, buf_index);
-		if (submit_one(&it.ring, &sqe) == 1) {
-			it.submitted++;
-			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_sendmsg_zc_ok,
-					   1, __ATOMIC_RELAXED);
-		}
-	}
+	iouring_send_zc_iter_submit(&it);
 
 	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
 		goto out;
