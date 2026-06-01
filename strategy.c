@@ -2134,16 +2134,10 @@ static void dump_strategy_stats_edge_race(void)
 	}
 }
 
-void dump_strategy_stats(void)
+static void dump_strategy_stats_arms(void)
 {
 	unsigned long total_pulls = 0;
 	int i;
-
-	dump_strategy_stats_header();
-	dump_strategy_stats_plateau_forced_cohort();
-	dump_strategy_stats_intervention_modes();
-	dump_strategy_stats_rescue_classes();
-	dump_strategy_stats_edge_race();
 
 	for (i = 0; i < NR_STRATEGIES; i++)
 		total_pulls += __atomic_load_n(&shm->bandit_pulls[i],
@@ -2248,4 +2242,14 @@ void dump_strategy_stats(void)
 				output(0, "\n");
 		}
 	}
+}
+
+void dump_strategy_stats(void)
+{
+	dump_strategy_stats_header();
+	dump_strategy_stats_plateau_forced_cohort();
+	dump_strategy_stats_intervention_modes();
+	dump_strategy_stats_rescue_classes();
+	dump_strategy_stats_edge_race();
+	dump_strategy_stats_arms();
 }
