@@ -567,6 +567,38 @@ static void ip6erspan_migrate_iter_changelink(struct ip6erspan_migrate_iter_ctx 
 	(void)inm_dellink(&ctx->target_nl, ctx->ifindex);
 }
 
+/*
+ * Phase 5: unified teardown.  Runs on every exit path -- both the
+ * success path after changelink returns and any early-bail from
+ * setup/create_link/migrate.  Branches on ctx->migrated to pick the
+ * right cleanup:
+ *   migrated=true  -- the link has already crossed into the target
+ *                     ns, so setns()-back into the original ns and
+ *                     let the target_ns_fd close below trigger
+ *                     cleanup_net to drop the link.
+ *   migrated=false -- the link still lives in the original ns (or
+ *                     was never created); RTM_DELLINK it against
+ *                     ctx->nl while we still own the original-ns
+ *                     rtnetlink socket.
+ * The trailing fd / socket closes are guarded so they're safe
+ * regardless of which earlier phase bailed; all three handles
+ * default to -1 via the orchestrator's designated initialiser.
+ */
+static void ip6erspan_migrate_iter_teardown(struct ip6erspan_migrate_iter_ctx *ctx)
+{
+	if (ctx->migrated) {
+		(void)setns(inm_orig_ns_fd, CLONE_NEWNET);
+	} else if (ctx->ifindex > 0 && ctx->nl.fd >= 0) {
+		(void)inm_dellink(&ctx->nl, ctx->ifindex);
+	}
+	if (ctx->target_nl.fd >= 0)
+		nl_close(&ctx->target_nl);
+	if (ctx->target_ns_fd >= 0)
+		close(ctx->target_ns_fd);
+	if (ctx->nl.fd >= 0)
+		nl_close(&ctx->nl);
+}
+
 bool ip6erspan_netns_migrate(struct childdata *child)
 {
 	struct ip6erspan_migrate_iter_ctx ictx = {
@@ -598,31 +630,11 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 		goto out;
 
 	if (ip6erspan_migrate_iter_migrate(&ictx) != 0)
-		goto teardown_orig;
+		goto out;
 
 	ip6erspan_migrate_iter_changelink(&ictx, &opts);
 
-	(void)setns(inm_orig_ns_fd, CLONE_NEWNET);
-	if (ictx.target_nl.fd >= 0)
-		nl_close(&ictx.target_nl);
-	if (ictx.target_ns_fd >= 0) {
-		close(ictx.target_ns_fd);
-		ictx.target_ns_fd = -1;
-	}
-	/* Link lives in the now-orphaned target ns; closing the last FD
-	 * on that ns triggers cleanup_net which drops the link.  Nothing
-	 * more for us to do in the original ns. */
-	goto out;
-
-teardown_orig:
-	if (ictx.ifindex > 0 && ictx.nl.fd >= 0)
-		(void)inm_dellink(&ictx.nl, ictx.ifindex);
-	if (ictx.target_nl.fd >= 0)
-		nl_close(&ictx.target_nl);
-	if (ictx.target_ns_fd >= 0)
-		close(ictx.target_ns_fd);
 out:
-	if (ictx.nl.fd >= 0)
-		nl_close(&ictx.nl);
+	ip6erspan_migrate_iter_teardown(&ictx);
 	return true;
 }
