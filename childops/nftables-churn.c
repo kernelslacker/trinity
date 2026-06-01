@@ -6880,6 +6880,68 @@ static int nftables_churn_iter_open_rtnl(struct nftables_churn_iter_ctx *ctx)
 	return 0;
 }
 
+/*
+ * Phase: rare-gate dispatch into the five sub-mode sweeps.  Each gate
+ * is independent and short-circuits the dominant expression-fuzz path
+ * for the rest of this invocation, so the helper just rolls each in
+ * turn and bails as soon as one fires.  Latches
+ * (ns_unsupported_xt_ct, ns_unsupported_nft_compat_validate,
+ * ns_unsupported_nft_fwd_netdev_loop) gate the sub-modes whose
+ * upstream commits don't share ns_unsupported_nf_tables.  Returns 0
+ * if no sub-mode fired (caller continues into the main flow); 1 if
+ * one fired and caller should goto out -- nfnl/rtnl are already open
+ * and need teardown.
+ */
+static int nftables_churn_iter_submode_dispatch(struct nftables_churn_iter_ctx *ctx)
+{
+	/* Dormant-table abort sub-mode (upstream 63bac02786030) -- rare gate
+	 * so the expression-fuzz path below stays the dominant workload.
+	 * Reuses ns_unsupported_nf_tables as the latch on EPERM/EOPNOTSUPP. */
+	if (ONE_IN(8)) {
+		nft_dormant_abort_sweep(&ctx->nfnl);
+		return 1;
+	}
+
+	/* xt_CT v1+v2 usersize sub-mode (upstream 8bedb6c46945) -- rare gate
+	 * so the expression-fuzz path below stays the dominant workload.
+	 * Independent latch (ns_unsupported_xt_ct) so a missing xt_CT module
+	 * doesn't cascade into nf_tables disablement. */
+	if (ONE_IN(8) && !ns_unsupported_xt_ct) {
+		nft_xt_ct_usersize_sweep();
+		return 1;
+	}
+
+	/* Per-hook .validate sweep on xt-compat targets, gated separately
+	 * so the legacy expression-fuzz path above is undisturbed. */
+	if (ONE_IN(2) && !ns_unsupported_nft_compat_validate) {
+		nft_compat_validate_sweep(&ctx->nfnl);
+		return 1;
+	}
+
+	/* nft_fwd_netdev neigh-forward loop sub-mode (upstream 1d47b55b36d2,
+	 * 0a0b35f0bf10, 1049970d7583).  Rare gate so the dominant
+	 * expression-fuzz path above stays the primary workload.  Independent
+	 * latch (ns_unsupported_nft_fwd_netdev_loop) so a kernel without
+	 * CONFIG_VETH or CONFIG_NFT_FWD_NETDEV pays the EFAIL once. */
+	if (ONE_IN(8) && !ns_unsupported_nft_fwd_netdev_loop) {
+		nft_fwd_netdev_loop_sweep(&ctx->nfnl, &ctx->rtnl);
+		return 1;
+	}
+
+	/* L4-aware-on-fragment sub-mode (upstream 952e121c9613, 009d203e56db,
+	 * 0bf00859d7a5).  Rare gate so the dominant expression-fuzz path
+	 * above stays the primary workload.  No dedicated latch -- a kernel
+	 * without CONFIG_NF_TABLES is already gated by ns_unsupported_nf_tables
+	 * upstream; per-expression validators that EOPNOTSUPP just skip the
+	 * rule install and the cleanup still drains. */
+	if (ONE_IN(8)) {
+		nft_l4_aware_frag_sweep(&ctx->nfnl);
+		return 1;
+	}
+
+	return 0;
+}
+
 bool nftables_churn(struct childdata *child)
 {
 	struct nftables_churn_iter_ctx ctx = {
@@ -6909,50 +6971,8 @@ bool nftables_churn(struct childdata *child)
 	if (nftables_churn_iter_open_rtnl(&ctx) != 0)
 		goto out;
 
-	/* Dormant-table abort sub-mode (upstream 63bac02786030) -- rare gate
-	 * so the expression-fuzz path below stays the dominant workload.
-	 * Reuses ns_unsupported_nf_tables as the latch on EPERM/EOPNOTSUPP. */
-	if (ONE_IN(8)) {
-		nft_dormant_abort_sweep(&ctx.nfnl);
+	if (nftables_churn_iter_submode_dispatch(&ctx) != 0)
 		goto out;
-	}
-
-	/* xt_CT v1+v2 usersize sub-mode (upstream 8bedb6c46945) -- rare gate
-	 * so the expression-fuzz path below stays the dominant workload.
-	 * Independent latch (ns_unsupported_xt_ct) so a missing xt_CT module
-	 * doesn't cascade into nf_tables disablement. */
-	if (ONE_IN(8) && !ns_unsupported_xt_ct) {
-		nft_xt_ct_usersize_sweep();
-		goto out;
-	}
-
-	/* Per-hook .validate sweep on xt-compat targets, gated separately
-	 * so the legacy expression-fuzz path above is undisturbed. */
-	if (ONE_IN(2) && !ns_unsupported_nft_compat_validate) {
-		nft_compat_validate_sweep(&ctx.nfnl);
-		goto out;
-	}
-
-	/* nft_fwd_netdev neigh-forward loop sub-mode (upstream 1d47b55b36d2,
-	 * 0a0b35f0bf10, 1049970d7583).  Rare gate so the dominant
-	 * expression-fuzz path above stays the primary workload.  Independent
-	 * latch (ns_unsupported_nft_fwd_netdev_loop) so a kernel without
-	 * CONFIG_VETH or CONFIG_NFT_FWD_NETDEV pays the EFAIL once. */
-	if (ONE_IN(8) && !ns_unsupported_nft_fwd_netdev_loop) {
-		nft_fwd_netdev_loop_sweep(&ctx.nfnl, &ctx.rtnl);
-		goto out;
-	}
-
-	/* L4-aware-on-fragment sub-mode (upstream 952e121c9613, 009d203e56db,
-	 * 0bf00859d7a5).  Rare gate so the dominant expression-fuzz path
-	 * above stays the primary workload.  No dedicated latch -- a kernel
-	 * without CONFIG_NF_TABLES is already gated by ns_unsupported_nf_tables
-	 * upstream; per-expression validators that EOPNOTSUPP just skip the
-	 * rule install and the cleanup still drains. */
-	if (ONE_IN(8)) {
-		nft_l4_aware_frag_sweep(&ctx.nfnl);
-		goto out;
-	}
 
 	ctx.family = pick_family();
 	snprintf(ctx.table_name, sizeof(ctx.table_name), "trnft%u",
