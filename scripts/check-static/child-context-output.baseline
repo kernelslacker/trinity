@@ -46,9 +46,10 @@ childops/numa-migration-churn.c:189:parse_online_nodes
 childops/pagecache-canary-check.c:179:log_corruption
 childops/recipe-runner.c:4111:recipe_runner
 childops/recipe-runner.c:4157:recipe_runner_dump_stats
-childops/refcount-auditor.c:143:audit_fd_bucket
-childops/refcount-auditor.c:191:audit_mmap_bucket
-childops/refcount-auditor.c:388:audit_socket_bucket
+childops/refcount-auditor.c:147:audit_fd_bucket
+childops/refcount-auditor.c:195:audit_mmap_bucket
+childops/refcount-auditor.c:455:audit_socket_bucket
+childops/refcount-auditor.c:492:audit_socket_bucket
 childops/rxrpc-key-install.c:212:probe_rxrpc_key_supported
 childops/rxrpc-key-install.c:358:do_add_rxrpc
 childops/splice-protocols.c:617:splice_protocols_selftest

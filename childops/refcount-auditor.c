@@ -20,12 +20,16 @@
  *   SOCKET: Every tracked socket fd should have a corresponding inode entry
  *           in /proc/net (tcp, udp, tcp6, udp6, unix, packet).  A missing
  *           inode means the socket was freed in the kernel but trinity still
- *           holds a reference in its pool.
+ *           holds a reference in its pool.  The check runs in two phases —
+ *           pool-side (OBJ_FD_SOCKET pool, fstat for inode) and fdinfo-side
+ *           (/proc/self/fd readlinks for "socket:[<inode>]") — sharing the
+ *           net-inode set so we catch drift from either side of the pool.
  *
  * Anomalies are logged at verbosity 0 and counted; trinity keeps running.
  * The auditor bails silently if /proc is unavailable (containerized env).
  */
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
@@ -302,17 +306,80 @@ static unsigned int collect_proc_net_inodes(const char *path,
 }
 
 /*
+ * Walk /proc/self/fd readlinks and collect inode numbers from any entry
+ * whose target matches "socket:[<inode>]".  Returns the count written to out[].
+ *
+ * This is the kernel-direct view of socket fds the child actually holds, used
+ * as the authoritative side of the fdinfo-vs-/proc/net cross-check below.
+ * /proc/self/fd/N is a symlink with target "socket:[<inode>]" for socket fds,
+ * so a single readlink yields the inode without parsing fdinfo key-value
+ * lines (which expose the same information but require more work).
+ *
+ * On opendir failure (containerised env with /proc hidden) we return 0; the
+ * caller treats zero held inodes as "idle child" and skips the cross-check.
+ */
+static unsigned int collect_held_socket_inodes(ino_t *out, unsigned int max)
+{
+	DIR *dir;
+	struct dirent *de;
+	unsigned int count = 0;
+
+	dir = opendir("/proc/self/fd");
+	if (dir == NULL)
+		return 0;
+
+	while (count < max && (de = readdir(dir)) != NULL) {
+		/* /proc/self/fd/ (14) + NAME_MAX (255) + NUL.  d_name is in
+		 * practice a small integer string, but gcc's format-truncation
+		 * check sees the full 255-byte upper bound. */
+		char linkpath[14 + 256];
+		char target[64];
+		ssize_t n;
+		unsigned long inode;
+
+		if (de->d_name[0] == '.')
+			continue;
+
+		snprintf(linkpath, sizeof(linkpath), "/proc/self/fd/%s", de->d_name);
+		n = readlink(linkpath, target, sizeof(target) - 1);
+		if (n <= 0)
+			continue;
+		target[n] = '\0';
+
+		if (sscanf(target, "socket:[%lu]", &inode) == 1 && inode != 0)
+			out[count++] = (ino_t)inode;
+	}
+
+	closedir(dir);
+	return count;
+}
+
+/*
  * Bucket 2: socket refcount check via /proc/net/{tcp,udp,tcp6,udp6,unix,packet}.
  *
- * For each tracked socket in the global OBJ_FD_SOCKET pool, fstat the fd to
- * obtain its kernel inode number.  Then verify the inode appears in at least
- * one of the /proc/net files.  A missing inode means the kernel freed the
- * socket struct while trinity's pool still holds the fd — a refcount imbalance
- * that will produce a UAF once the fd is eventually used.
+ * Two complementary cross-checks share a single collected net-inode set:
+ *
+ *   Phase 1 (pool-side): for each tracked socket in the global OBJ_FD_SOCKET
+ *     pool, fstat the fd to obtain its kernel inode number and verify the
+ *     inode appears in at least one of the /proc/net files.  A missing inode
+ *     means the kernel freed the socket struct while trinity's pool still
+ *     holds the fd — a refcount imbalance that will produce a UAF once the
+ *     fd is eventually used.
+ *
+ *   Phase 2 (fdinfo-side): walk /proc/self/fd readlinks for
+ *     "socket:[<inode>]" entries to obtain the kernel-direct list of socket
+ *     fds this child actually holds, and verify each inode is present in the
+ *     net-inode set.  This catches imbalances the pool view would miss, e.g.
+ *     when the pool tracker drifts from the kernel's real fd table because
+ *     a sibling closed the fd out from under trinity's bookkeeping.
  *
  * We collect inodes from all six /proc/net files up front to avoid re-parsing
  * them once per socket.  If /proc/net/tcp is unavailable we latch a flag and
  * skip all future invocations rather than accumulating spurious anomalies.
+ *
+ * Idle-child discipline: phase 2 silently skips when readlink finds zero
+ * "socket:[...]" entries.  A child that holds no socket fds cannot mismatch
+ * the net tables, and we must not bump the anomaly counter in that window.
  */
 static void audit_socket_bucket(void)
 {
@@ -389,6 +456,44 @@ static void audit_socket_bucket(void)
 			       si->fd, (unsigned long)st.st_ino);
 			__atomic_add_fetch(&shm->stats.refcount_audit_sock_anomalies,
 					   1, __ATOMIC_RELAXED);
+		}
+	}
+
+	/*
+	 * Phase 2: fdinfo-side cross-check.  Pull the kernel's own list of
+	 * socket inodes this child holds (via /proc/self/fd readlinks) and
+	 * verify every one of them appears in the net-inode set.
+	 *
+	 * Stack-bounded held[] cap (256) is far above any realistic per-child
+	 * socket-fd count under sane fuzz loads but small enough to keep the
+	 * frame tight.  Overflow truncates silently — the next cycle samples
+	 * the same set, so a real leak is not hidden.
+	 *
+	 * held_count == 0 silently skips the loop: no false positives on an
+	 * idle child whose fd table holds no sockets at all.
+	 */
+	{
+		ino_t held[256];
+		unsigned int held_count;
+		unsigned int j;
+
+		held_count = collect_held_socket_inodes(held, ARRAY_SIZE(held));
+		for (j = 0; j < held_count; j++) {
+			unsigned int k;
+			bool found = false;
+
+			for (k = 0; k < net_count; k++) {
+				if (net_inodes[k] == held[j]) {
+					found = true;
+					break;
+				}
+			}
+			if (!found) {
+				output(0, "refcount audit: held socket inode %lu (via /proc/self/fd) missing from all /proc/net tables\n",
+				       (unsigned long)held[j]);
+				__atomic_add_fetch(&shm->stats.refcount_audit_sock_anomalies,
+						   1, __ATOMIC_RELAXED);
+			}
 		}
 	}
 
