@@ -6942,6 +6942,76 @@ static int nftables_churn_iter_submode_dispatch(struct nftables_churn_iter_ctx *
 	return 0;
 }
 
+/*
+ * Phase: roll the per-iteration family / table / set / verdict
+ * identifiers, commit NEWTABLE, and stack the dependent NEWSET, two
+ * NEWCHAIN, and the append-only NEWRULE on top.  aux_chain is created
+ * before base_chain so the base-chain rule's NFT_JUMP/NFT_GOTO has a
+ * resolvable target on first commit.  Latches ns_unsupported_nf_tables
+ * on the EAFNOSUPPORT / EOPNOTSUPP / EPROTONOSUPPORT family-not-
+ * registered shape of NEWTABLE failure so siblings stop probing.
+ * Returns 0 on success (ctx.table_created flipped, ready for traffic
+ * + teardown phases); -1 means NEWTABLE failed and caller should goto
+ * out -- there is nothing for the set/chain/rule phases to anchor on.
+ */
+static int nftables_churn_iter_build_table(struct nftables_churn_iter_ctx *ctx)
+{
+	struct nft_expr_plan plan;
+	int rc;
+
+	ctx->family = pick_family();
+	snprintf(ctx->table_name, sizeof(ctx->table_name), "trnft%u",
+		 (unsigned int)(rand32() & 0xffffu));
+	snprintf(ctx->anon_set, sizeof(ctx->anon_set), "__set%u",
+		 (unsigned int)(rand32() & 0xffffu));
+	ctx->set_id = rand32();
+	ctx->verdict = (rand32() & 1) ? NFT_JUMP : NFT_GOTO;
+
+	rc = build_newtable(&ctx->nfnl, ctx->family, ctx->table_name);
+	if (rc != 0) {
+		/* EAFNOSUPPORT / EOPNOTSUPP / EPROTONOSUPPORT all mean
+		 * "this nf_tables family isn't registered" — most
+		 * commonly because the nf_tables module itself is
+		 * absent.  Latch the whole op off; nothing else here
+		 * will work either. */
+		if (rc == -EOPNOTSUPP || rc == -EPROTONOSUPPORT ||
+		    rc == -EAFNOSUPPORT)
+			ns_unsupported_nf_tables = true;
+		return -1;
+	}
+	ctx->table_created = true;
+	__atomic_add_fetch(&shm->stats.nftables_churn_table_create_ok,
+			   1, __ATOMIC_RELAXED);
+
+	if (build_newset(&ctx->nfnl, ctx->family, ctx->table_name,
+			 ctx->anon_set, ctx->set_id) == 0)
+		__atomic_add_fetch(&shm->stats.nftables_churn_set_create_ok,
+				   1, __ATOMIC_RELAXED);
+
+	/* aux first so the base-chain rule's NFT_JUMP/NFT_GOTO has a
+	 * resolvable target on first commit. */
+	if (build_newchain(&ctx->nfnl, ctx->family, ctx->table_name,
+			   ctx->aux_chain, false) == 0)
+		__atomic_add_fetch(&shm->stats.nftables_churn_chain_create_ok,
+				   1, __ATOMIC_RELAXED);
+
+	if (build_newchain(&ctx->nfnl, ctx->family, ctx->table_name,
+			   ctx->base_chain, true) == 0)
+		__atomic_add_fetch(&shm->stats.nftables_churn_chain_create_ok,
+				   1, __ATOMIC_RELAXED);
+
+	nft_expr_plan_randomize(&plan);
+	if (build_newrule(&ctx->nfnl, ctx->family, ctx->table_name,
+			  ctx->base_chain, ctx->aux_chain, ctx->verdict,
+			  0, &plan, ctx->anon_set, ctx->set_id) == 0) {
+		__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
+				   1, __ATOMIC_RELAXED);
+		nft_expr_plan_record_stats(&plan);
+	}
+
+	return 0;
+}
+
 bool nftables_churn(struct childdata *child)
 {
 	struct nftables_churn_iter_ctx ctx = {
@@ -6954,7 +7024,6 @@ bool nftables_churn(struct childdata *child)
 	struct timespec t0;
 	unsigned int iters;
 	unsigned int i;
-	int rc;
 
 	(void)child;
 
@@ -6974,59 +7043,8 @@ bool nftables_churn(struct childdata *child)
 	if (nftables_churn_iter_submode_dispatch(&ctx) != 0)
 		goto out;
 
-	ctx.family = pick_family();
-	snprintf(ctx.table_name, sizeof(ctx.table_name), "trnft%u",
-		 (unsigned int)(rand32() & 0xffffu));
-	snprintf(ctx.anon_set, sizeof(ctx.anon_set), "__set%u",
-		 (unsigned int)(rand32() & 0xffffu));
-	ctx.set_id = rand32();
-	ctx.verdict = (rand32() & 1) ? NFT_JUMP : NFT_GOTO;
-
-	rc = build_newtable(&ctx.nfnl, ctx.family, ctx.table_name);
-	if (rc != 0) {
-		/* EAFNOSUPPORT / EOPNOTSUPP / EPROTONOSUPPORT all mean
-		 * "this nf_tables family isn't registered" — most
-		 * commonly because the nf_tables module itself is
-		 * absent.  Latch the whole op off; nothing else here
-		 * will work either. */
-		if (rc == -EOPNOTSUPP || rc == -EPROTONOSUPPORT ||
-		    rc == -EAFNOSUPPORT)
-			ns_unsupported_nf_tables = true;
+	if (nftables_churn_iter_build_table(&ctx) != 0)
 		goto out;
-	}
-	ctx.table_created = true;
-	__atomic_add_fetch(&shm->stats.nftables_churn_table_create_ok,
-			   1, __ATOMIC_RELAXED);
-
-	if (build_newset(&ctx.nfnl, ctx.family, ctx.table_name,
-			 ctx.anon_set, ctx.set_id) == 0)
-		__atomic_add_fetch(&shm->stats.nftables_churn_set_create_ok,
-				   1, __ATOMIC_RELAXED);
-
-	/* aux first so the base-chain rule's NFT_JUMP/NFT_GOTO has a
-	 * resolvable target on first commit. */
-	if (build_newchain(&ctx.nfnl, ctx.family, ctx.table_name,
-			   ctx.aux_chain, false) == 0)
-		__atomic_add_fetch(&shm->stats.nftables_churn_chain_create_ok,
-				   1, __ATOMIC_RELAXED);
-
-	if (build_newchain(&ctx.nfnl, ctx.family, ctx.table_name,
-			   ctx.base_chain, true) == 0)
-		__atomic_add_fetch(&shm->stats.nftables_churn_chain_create_ok,
-				   1, __ATOMIC_RELAXED);
-
-	{
-		struct nft_expr_plan plan;
-
-		nft_expr_plan_randomize(&plan);
-		if (build_newrule(&ctx.nfnl, ctx.family, ctx.table_name,
-				  ctx.base_chain, ctx.aux_chain, ctx.verdict,
-				  0, &plan, ctx.anon_set, ctx.set_id) == 0) {
-			__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
-					   1, __ATOMIC_RELAXED);
-			nft_expr_plan_record_stats(&plan);
-		}
-	}
 
 	/*
 	 * Drive the input hook with loopback UDP traffic.  Each send
