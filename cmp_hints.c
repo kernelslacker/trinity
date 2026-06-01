@@ -1083,21 +1083,31 @@ static bool cmp_hints_load_file_header(const char *path,
 	return true;
 }
 
-bool cmp_hints_load_file(const char *path)
+/*
+ * Phase 2 of cmp_hints_load_file(): the payload allocation, read,
+ * and CRC verification.  Takes ownership of the fd handed off by
+ * cmp_hints_load_file_header() -- on every exit path the fd is
+ * closed exactly once, matching the original inline lifecycle
+ * (close after a successful read_all, close after the alloc-fail
+ * / read-fail branches).  payload_bytes is recomputed locally
+ * from MAX_NR_SYSCALL and the on-disk record size; the header
+ * phase already validated hdr->payload_bytes against that same
+ * expression, so the two values are equal by construction.
+ *
+ * On success returns true with *payload_out pointing at a
+ * freshly malloc'd buffer the caller owns and must free.  On
+ * failure returns false with no resources held by the caller --
+ * any allocation made by the helper has already been free()d and
+ * the fd is closed.
+ */
+static bool cmp_hints_load_file_payload(const char *path, int fd,
+					const struct cmp_hints_file_header *hdr,
+					struct cmp_hints_pool_ondisk **payload_out)
 {
-	struct cmp_hints_file_header hdr;
-	struct cmp_hints_pool_ondisk *payload = NULL;
+	struct cmp_hints_pool_ondisk *payload;
 	size_t payload_bytes;
 	uint32_t want_crc;
-	unsigned long rejected = 0;
-	unsigned long loaded_entries = 0;
-	unsigned int populated_pools = 0;
-	unsigned int i, j;
 	ssize_t n;
-	int fd;
-
-	if (!cmp_hints_load_file_header(path, &hdr, &fd))
-		return false;
 
 	payload_bytes = (size_t)MAX_NR_SYSCALL * 2 * sizeof(*payload);
 	payload = malloc(payload_bytes);
@@ -1118,12 +1128,32 @@ bool cmp_hints_load_file(const char *path)
 	(void)close(fd);
 
 	want_crc = cmp_hints_crc32(payload, payload_bytes);
-	if (want_crc != hdr.payload_crc32) {
+	if (want_crc != hdr->payload_crc32) {
 		output(0, "cmp-hints: skipping warm-start of %s -- CRC mismatch\n",
 		       path);
 		free(payload);
 		return false;
 	}
+
+	*payload_out = payload;
+	return true;
+}
+
+bool cmp_hints_load_file(const char *path)
+{
+	struct cmp_hints_file_header hdr;
+	struct cmp_hints_pool_ondisk *payload = NULL;
+	unsigned long rejected = 0;
+	unsigned long loaded_entries = 0;
+	unsigned int populated_pools = 0;
+	unsigned int i, j;
+	int fd;
+
+	if (!cmp_hints_load_file_header(path, &hdr, &fd))
+		return false;
+
+	if (!cmp_hints_load_file_payload(path, fd, &hdr, &payload))
+		return false;
 
 	/* Past the header / fingerprint / CRC gates the payload is
 	 * considered authoritative against the running kernel; copy into
