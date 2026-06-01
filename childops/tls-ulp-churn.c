@@ -465,9 +465,26 @@ static void tls_ulp_churn_iter_rekey_burst(int s, unsigned short version,
 	}
 }
 
-bool tls_ulp_churn(struct childdata *child)
+/* Step 8 + Step 9: drain the RX queue once (recv on the TLS-armed RX
+ * path drives tls_sw_recvmsg / tls_strp even on the empty-queue case,
+ * which is the strparser teardown vs queue-empty coverage edge) and
+ * flush the socket with shutdown(SHUT_RDWR).  Returns void: both
+ * syscalls are best-effort and the caller has no branch on either. */
+static void tls_ulp_churn_iter_recv_and_shutdown(int s)
 {
 	unsigned char rxbuf[256];
+	ssize_t n;
+
+	n = recv(s, rxbuf, sizeof(rxbuf), MSG_DONTWAIT);
+	if (n > 0)
+		__atomic_add_fetch(&shm->stats.tls_ulp_churn_recv_ok,
+				   1, __ATOMIC_RELAXED);
+
+	(void)shutdown(s, SHUT_RDWR);
+}
+
+bool tls_ulp_churn(struct childdata *child)
+{
 	struct timespec t0;
 	pid_t acceptor = -1;
 	int s = -1;
@@ -506,18 +523,7 @@ bool tls_ulp_churn(struct childdata *child)
 
 	tls_ulp_churn_iter_rekey_burst(s, version, &t0);
 
-	/* Step 8: recv whatever the acceptor managed to send back (it
-	 * doesn't, but recv()ing on the TLS-armed RX path drives
-	 * tls_sw_recvmsg / tls_strp on an empty queue, which is its own
-	 * coverage edge — strparser teardown vs queue-empty). */
-	{
-		ssize_t n = recv(s, rxbuf, sizeof(rxbuf), MSG_DONTWAIT);
-		if (n > 0)
-			__atomic_add_fetch(&shm->stats.tls_ulp_churn_recv_ok,
-					   1, __ATOMIC_RELAXED);
-	}
-
-	(void)shutdown(s, SHUT_RDWR);
+	tls_ulp_churn_iter_recv_and_shutdown(s);
 
 out:
 	if (s >= 0)
