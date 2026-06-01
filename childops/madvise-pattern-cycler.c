@@ -310,6 +310,33 @@ static void madvise_cycler_iter_setup_budget(struct madvise_cycler_iter_ctx *ctx
 		advice_cycle, ARRAY_SIZE(advice_cycle));
 }
 
+/*
+ * Phase 3: publish the drawn region's [low, high) bounds for the
+ * pool-race fault handler to test si_addr against, then install the
+ * SIGSEGV / SIGBUS handlers and stash the prior dispositions for
+ * disarm to restore.  Publishing the bounds before sigaction is
+ * deliberate: the handler reads the bounds, so the bounds must be
+ * visible the instant either signal is steerable to our handler.
+ * Caller-supplied out-params receive the prior dispositions; both must
+ * survive the sigsetjmp wrap so disarm can put them back.
+ */
+static void madvise_cycler_iter_arm_guard(const struct madvise_cycler_iter_ctx *ctx,
+					  struct sigaction *old_segv,
+					  struct sigaction *old_bus)
+{
+	struct sigaction sa;
+
+	madvise_cycler_pool_race_addr_low  = (uintptr_t)ctx->region;
+	madvise_cycler_pool_race_addr_high = (uintptr_t)ctx->region + ctx->region_len;
+
+	memset(&sa, 0, sizeof(sa));
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_SIGINFO;
+	sa.sa_sigaction = madvise_cycler_pool_race_handler;
+	sigaction(SIGSEGV, &sa, old_segv);
+	sigaction(SIGBUS,  &sa, old_bus);
+}
+
 bool madvise_cycler(struct childdata *child)
 {
 	struct madvise_cycler_iter_ctx ictx = { 0 };
@@ -339,18 +366,10 @@ bool madvise_cycler(struct childdata *child)
 			    JITTER_RANGE(MAX_ITERATIONS));
 
 	{
-		struct sigaction sa, old_segv, old_bus;
+		struct sigaction old_segv, old_bus;
 		bool aborted = false;
 
-		madvise_cycler_pool_race_addr_low  = (uintptr_t)ictx.region;
-		madvise_cycler_pool_race_addr_high = (uintptr_t)ictx.region + ictx.region_len;
-
-		memset(&sa, 0, sizeof(sa));
-		sigemptyset(&sa.sa_mask);
-		sa.sa_flags = SA_SIGINFO;
-		sa.sa_sigaction = madvise_cycler_pool_race_handler;
-		sigaction(SIGSEGV, &sa, &old_segv);
-		sigaction(SIGBUS,  &sa, &old_bus);
+		madvise_cycler_iter_arm_guard(&ictx, &old_segv, &old_bus);
 
 		if (sigsetjmp(madvise_cycler_pool_race_jmp, 1) == 0) {
 			for (iter = 0; iter < iter_cap; iter++) {
