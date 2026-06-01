@@ -492,18 +492,56 @@ static int open_udp_loopback(uint16_t *out_port)
 	return fd;
 }
 
+/*
+ * Per-iteration scratchpad shared across the iouring_multishot_iter_<phase>
+ * helpers.  Embeds the ring/SQ/CQ state owned by ms_ctx and adds the
+ * UDP socket pair, bound port, provided-buffer pool handles, and the
+ * NAPI-armed flag the post-burst probes consult.  Mirrors the
+ * iouring_send_zc_iter_ctx shape: fds + ring/buffer ptrs + flags the
+ * helpers actually share.
+ */
+struct iouring_multishot_iter_ctx {
+	struct ms_ctx	ms;
+	int		rxfd;
+	int		txfd;
+	uint16_t	port;
+	void		*pbuf_ring;
+	void		*pbuf_data;
+	void		*legacy_bufs;
+	bool		used_pbuf_ring;
+	bool		napi_armed;
+};
+
+/*
+ * Stand up the provided-buffer pool.  Tries the modern ring-based
+ * IORING_REGISTER_PBUF_RING first, then falls back to the legacy
+ * PROVIDE_BUFFERS opcode on EINVAL (pre-5.19 kernels) so the multishot
+ * path stays reachable on older builds without per-version branching.
+ * Returns 0 on success; nonzero means the caller should bail to the
+ * shared teardown path.
+ */
+static int iouring_multishot_iter_setup_pbufs(struct iouring_multishot_iter_ctx *it)
+{
+	if (register_pbuf_ring(&it->ms, &it->pbuf_ring, &it->pbuf_data)) {
+		it->used_pbuf_ring = true;
+		__atomic_add_fetch(&shm->stats.iouring_multishot_pbuf_ring_ok,
+				   1, __ATOMIC_RELAXED);
+	} else if (provide_buffers_legacy(&it->ms, &it->legacy_bufs)) {
+		__atomic_add_fetch(&shm->stats.iouring_multishot_pbuf_legacy_ok,
+				   1, __ATOMIC_RELAXED);
+	} else {
+		__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	return 0;
+}
+
 bool iouring_net_multishot(struct childdata *child)
 {
-	struct ms_ctx ctx;
+	struct iouring_multishot_iter_ctx it;
 	struct io_uring_sqe sqe;
-	int rxfd = -1, txfd = -1;
-	uint16_t port = 0;
-	void *pbuf_ring = NULL;
-	void *pbuf_data = NULL;
-	void *legacy_bufs = NULL;
-	bool used_pbuf_ring = false;
 	struct io_uring_napi napi_in, napi_out;
-	bool napi_armed = false;
 	unsigned int npkts;
 	unsigned int i;
 	int r;
@@ -515,7 +553,11 @@ bool iouring_net_multishot(struct childdata *child)
 	if (ns_unsupported)
 		return true;
 
-	if (!ms_setup(&ctx)) {
+	memset(&it, 0, sizeof(it));
+	it.rxfd = -1;
+	it.txfd = -1;
+
+	if (!ms_setup(&it.ms)) {
 		if (errno == ENOSYS || errno == EPERM)
 			ns_unsupported = true;
 		__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
@@ -523,32 +565,18 @@ bool iouring_net_multishot(struct childdata *child)
 		return true;
 	}
 
-	/* Try the modern ring-based buffer pool first.  Falls back to the
-	 * legacy PROVIDE_BUFFERS opcode on EINVAL (pre-5.19 kernels), which
-	 * keeps the multishot path reachable on older builds without
-	 * special-casing per-kernel-version. */
-	if (register_pbuf_ring(&ctx, &pbuf_ring, &pbuf_data)) {
-		used_pbuf_ring = true;
-		__atomic_add_fetch(&shm->stats.iouring_multishot_pbuf_ring_ok,
-				   1, __ATOMIC_RELAXED);
-	} else if (provide_buffers_legacy(&ctx, &legacy_bufs)) {
-		__atomic_add_fetch(&shm->stats.iouring_multishot_pbuf_legacy_ok,
-				   1, __ATOMIC_RELAXED);
-	} else {
+	if (iouring_multishot_iter_setup_pbufs(&it) != 0)
+		goto out;
+
+	it.rxfd = open_udp_loopback(&it.port);
+	if (it.rxfd < 0) {
 		__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
 
-	rxfd = open_udp_loopback(&port);
-	if (rxfd < 0) {
-		__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-
-	txfd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-	if (txfd < 0) {
+	it.txfd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	if (it.txfd < 0) {
 		__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -563,10 +591,10 @@ bool iouring_net_multishot(struct childdata *child)
 		napi_in.busy_poll_to     = (__u32)rnd_modulo_u32(200);
 		napi_in.prefer_busy_poll = (__u8)(rnd_u32() & 1);
 
-		r = (int)syscall(__NR_io_uring_register, ctx.fd,
+		r = (int)syscall(__NR_io_uring_register, it.ms.fd,
 				 IORING_REGISTER_NAPI, &napi_in, 1);
 		if (r == 0) {
-			napi_armed = true;
+			it.napi_armed = true;
 			__atomic_add_fetch(&shm->stats.iouring_napi_register_ok,
 					   1, __ATOMIC_RELAXED);
 		} else {
@@ -581,7 +609,7 @@ bool iouring_net_multishot(struct childdata *child)
 	 * buffer for us at completion time. */
 	memset(&sqe, 0, sizeof(sqe));
 	sqe.opcode    = IORING_OP_RECV;
-	sqe.fd        = rxfd;
+	sqe.fd        = it.rxfd;
 	sqe.addr      = 0;
 	sqe.len       = 0;
 	sqe.ioprio    = IORING_RECV_MULTISHOT;
@@ -589,9 +617,9 @@ bool iouring_net_multishot(struct childdata *child)
 	sqe.buf_group = PBUF_GROUP_ID;
 	sqe.user_data = MULTISHOT_USER_DATA;
 
-	if (!ms_submit(&ctx, &sqe, 1))
+	if (!ms_submit(&it.ms, &sqe, 1))
 		goto out;
-	r = ms_enter(&ctx, 1, 0);
+	r = ms_enter(&it.ms, 1, 0);
 	if (r < 0)
 		goto out;
 	__atomic_add_fetch(&shm->stats.iouring_multishot_armed,
@@ -609,11 +637,11 @@ bool iouring_net_multishot(struct childdata *child)
 		memset(&dst, 0, sizeof(dst));
 		dst.sin_family = AF_INET;
 		dst.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-		dst.sin_port = port;
+		dst.sin_port = it.port;
 
 		npkts = MIN_PKTS + rnd_modulo_u32(MAX_PKTS - MIN_PKTS + 1);
 		for (i = 0; i < npkts; i++) {
-			ssize_t n = sendto(txfd, payload, sizeof(payload), 0,
+			ssize_t n = sendto(it.txfd, payload, sizeof(payload), 0,
 					   (struct sockaddr *)&dst, sizeof(dst));
 			if (n > 0)
 				__atomic_add_fetch(&shm->stats.iouring_multishot_packets_sent,
@@ -621,9 +649,9 @@ bool iouring_net_multishot(struct childdata *child)
 		}
 	}
 
-	r = ms_enter(&ctx, 0, 0);
+	r = ms_enter(&it.ms, 0, 0);
 	if (r >= 0) {
-		unsigned int reaped = ms_drain(&ctx);
+		unsigned int reaped = ms_drain(&it.ms);
 
 		__atomic_add_fetch(&shm->stats.iouring_multishot_completions,
 				   (unsigned long)reaped, __ATOMIC_RELAXED);
@@ -640,12 +668,12 @@ bool iouring_net_multishot(struct childdata *child)
 	sqe.cancel_flags = IORING_ASYNC_CANCEL_USERDATA;
 	sqe.user_data    = CANCEL_USER_DATA;
 
-	if (ms_submit(&ctx, &sqe, 1)) {
-		r = ms_enter(&ctx, 1, 0);
+	if (ms_submit(&it.ms, &sqe, 1)) {
+		r = ms_enter(&it.ms, 1, 0);
 		if (r >= 0) {
 			__atomic_add_fetch(&shm->stats.iouring_multishot_cancel_submitted,
 					   1, __ATOMIC_RELAXED);
-			(void)ms_drain(&ctx);
+			(void)ms_drain(&it.ms);
 		}
 	}
 
@@ -656,9 +684,9 @@ bool iouring_net_multishot(struct childdata *child)
 	 * pass — exercises any post-unregister stale state in io_uring/net.c
 	 * and io_uring/napi.c.  Kernel writes the previous napi config back
 	 * into the passed struct, so it must be writable. */
-	if (napi_armed) {
+	if (it.napi_armed) {
 		memset(&napi_out, 0, sizeof(napi_out));
-		r = (int)syscall(__NR_io_uring_register, ctx.fd,
+		r = (int)syscall(__NR_io_uring_register, it.ms.fd,
 				 IORING_UNREGISTER_NAPI, &napi_out, 1);
 		if (r == 0)
 			__atomic_add_fetch(&shm->stats.iouring_napi_unregister_ok,
@@ -669,7 +697,7 @@ bool iouring_net_multishot(struct childdata *child)
 
 		memset(&sqe, 0, sizeof(sqe));
 		sqe.opcode    = IORING_OP_RECV;
-		sqe.fd        = rxfd;
+		sqe.fd        = it.rxfd;
 		sqe.addr      = 0;
 		sqe.len       = 0;
 		sqe.ioprio    = IORING_RECV_MULTISHOT;
@@ -677,24 +705,24 @@ bool iouring_net_multishot(struct childdata *child)
 		sqe.buf_group = PBUF_GROUP_ID;
 		sqe.user_data = MULTISHOT_USER_DATA;
 
-		if (ms_submit(&ctx, &sqe, 1)) {
-			r = ms_enter(&ctx, 1, 0);
+		if (ms_submit(&it.ms, &sqe, 1)) {
+			r = ms_enter(&it.ms, 1, 0);
 			if (r >= 0)
-				(void)ms_drain(&ctx);
+				(void)ms_drain(&it.ms);
 		}
 	}
 
 out:
-	if (txfd >= 0)
-		close(txfd);
-	if (rxfd >= 0)
-		close(rxfd);
-	if (used_pbuf_ring) {
-		if (pbuf_ring)
-			unregister_pbuf_ring(&ctx, pbuf_ring, pbuf_data);
-	} else if (legacy_bufs) {
-		remove_buffers_legacy(&ctx, legacy_bufs);
+	if (it.txfd >= 0)
+		close(it.txfd);
+	if (it.rxfd >= 0)
+		close(it.rxfd);
+	if (it.used_pbuf_ring) {
+		if (it.pbuf_ring)
+			unregister_pbuf_ring(&it.ms, it.pbuf_ring, it.pbuf_data);
+	} else if (it.legacy_bufs) {
+		remove_buffers_legacy(&it.ms, it.legacy_bufs);
 	}
-	ms_teardown(&ctx);
+	ms_teardown(&it.ms);
 	return true;
 }
