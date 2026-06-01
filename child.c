@@ -836,16 +836,27 @@ static void init_child_rendezvous_parent(struct childdata *child, int childno)
 }
 
 /*
- * Called from the fork_children loop in the main process.
+ * Sandbox / namespace bring-up.  Runs after the parent has
+ * rendezvoused with us and the per-child object pools are up; runs
+ * before any fuzz-driven runtime config (kcov, syscall picker,
+ * etc.) so munge_process() can freely tighten rlimits without
+ * tripping setup-time allocations.
+ *
+ * Phase shape:
+ *   - block on shm->ready so every child enters the post-init
+ *     world at roughly the same moment,
+ *   - turn on the make-it-fail / fail-nth / tainted-fd fault
+ *     injectors,
+ *   - optionally dirty FPU state and always mask child signals,
+ *   - randomly unshare into a private mount/ipc/io/net ns (with
+ *     the MS_PRIVATE remount + no_private_ns latch dance) and a
+ *     PID ns (with the no_pidns latch),
+ *   - if we never dropped privs, clear the dropped_privs flag so
+ *     subsequent fuzz code knows it's running as root,
+ *   - munge_process() applies the random rlimit / umask sweep.
  */
-static void init_child(struct childdata *child, int childno)
+static void init_child_setup_sandbox(struct childdata *child, int childno)
 {
-	init_child_isolate_io();
-
-	init_child_freeze_shared(child, childno);
-
-	init_child_rendezvous_parent(child, childno);
-
 	/* Wait for all the children to start up. */
 	while (!__atomic_load_n(&shm->ready, __ATOMIC_ACQUIRE))
 		sleep(1);
@@ -911,6 +922,20 @@ static void init_child(struct childdata *child, int childno)
 		child->dropped_privs = false;
 
 	munge_process();
+}
+
+/*
+ * Called from the fork_children loop in the main process.
+ */
+static void init_child(struct childdata *child, int childno)
+{
+	init_child_isolate_io();
+
+	init_child_freeze_shared(child, childno);
+
+	init_child_rendezvous_parent(child, childno);
+
+	init_child_setup_sandbox(child, childno);
 
 	kcov_init_child(&child->kcov, child->num);
 
