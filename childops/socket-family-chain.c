@@ -335,6 +335,24 @@ static void alg_chain_iter_drive(struct alg_chain_iter_ctx *ictx)
 }
 
 /*
+ * Phase 4: roll an rcvlen, allocate the receive buffer into ictx, and
+ * drain the child_fd once.  Like drive, this is past the kernel-not-
+ * supported gates so the recv result is discarded and err_burst stays
+ * untouched here — the orchestrator clears it as part of the success
+ * book-keeping after this phase returns.  ictx->rcvbuf defaults to
+ * NULL so the teardown helper's free gate skips work if a bail above
+ * skipped this phase entirely.
+ */
+static void alg_chain_iter_verify(struct alg_chain_iter_ctx *ictx)
+{
+	unsigned int rcvlen;
+
+	rcvlen = 16 + rnd_modulo_u32(256 - 16 + 1);
+	ictx->rcvbuf = zmalloc(rcvlen);
+	(void) recv(ictx->child_fd, ictx->rcvbuf, rcvlen, 0);
+}
+
+/*
  * One coherent AF_ALG chain.  Returns false on a clean kernel-not-supported
  * path so the outer cycle can latch the unsupported flag; returns true on
  * everything else (including chain steps that legitimately fail late).
@@ -346,7 +364,6 @@ static bool run_alg_chain(unsigned int *err_burst)
 		.child_fd = -1,
 		.splice_pfd = { -1, -1 },
 	};
-	unsigned int rcvlen;
 	bool ok = false;
 
 	if (alg_chain_iter_setup(&ictx, err_burst) != 0)
@@ -356,10 +373,7 @@ static bool run_alg_chain(unsigned int *err_burst)
 		goto out;
 
 	alg_chain_iter_drive(&ictx);
-
-	rcvlen = 16 + rnd_modulo_u32(256 - 16 + 1);
-	ictx.rcvbuf = zmalloc(rcvlen);
-	(void) recv(ictx.child_fd, ictx.rcvbuf, rcvlen, 0);
+	alg_chain_iter_verify(&ictx);
 
 	*err_burst = 0;
 	ok = true;
