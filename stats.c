@@ -1103,19 +1103,8 @@ static void dump_stats_json_corruption_and_audit(void)
 		shm->stats.refcount_audit_mmap_anomalies, shm->stats.refcount_audit_sock_anomalies);
 }
 
-static void dump_stats_json(void)
+static void dump_stats_json_lifecycle_and_storms(void)
 {
-	putchar('{');
-
-	json_emit_syscalls_array();
-
-	fputs(",\"stats\":{", stdout);
-	dump_stats_json_fault_and_fd_lifecycle();
-	dump_stats_json_oracle();
-	dump_stats_json_basic_subsystems();
-	dump_stats_json_iouring_and_zombies();
-	dump_stats_json_corruption_and_audit();
-
 	printf("\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
 			"\"overlay\":%lu,\"quota\":%lu,\"bind\":%lu,\"unsupported\":%lu},"
 		"\"signal_storm\":{\"runs\":%lu,\"kill\":%lu,\"probe\":%lu,\"sigqueue\":%lu,\"no_targets\":%lu},"
@@ -1136,37 +1125,7 @@ static void dump_stats_json(void)
 		"\"mount_churn\":{\"runs\":%lu,\"mounts\":%lu,\"umounts\":%lu,\"failed\":%lu},"
 		"\"uffd_churn\":{\"runs\":%lu,\"registers\":%lu,\"unregisters\":%lu,\"failed\":%lu},"
 		"\"iouring_flood\":{\"runs\":%lu,\"submits\":%lu,\"reaped\":%lu,\"failed\":%lu},"
-		"\"close_racer\":{\"runs\":%lu,\"pairs\":%lu,\"failed\":%lu,\"thread_spawn_fail\":%lu},"
-		"\"socket_family_chain\":{\"runs\":%lu,\"completed\":%lu,\"failed\":%lu,\"authencesn_attempts\":%lu,\"splice_attempts\":%lu},"
-		"\"socket_family_grammar\":{\"runs\":%lu,\"completed\":%lu},"
-		"\"tls_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_failed\":%lu,\"ulp_asymmetric\":%lu,\"installs\":%lu,\"rekeys_ok\":%lu,\"rekeys_rejected\":%lu},"
-		"\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu},"
-		"\"eth_emitter\":{\"runs\":%lu,\"setup_failed\":%lu,\"short\":%lu,\"sends_ok\":%lu,\"sends_failed\":%lu,\"tmpl_arp\":%lu,\"tmpl_ipv4_frag_zero\":%lu,\"tmpl_ipv6_na\":%lu,\"tmpl_vlan_qinq\":%lu,\"tmpl_bad_ethertype\":%lu},"
-		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu,\"napi_register_ok\":%lu,\"napi_register_fail\":%lu,\"napi_unregister_ok\":%lu,\"napi_unregister_fail\":%lu},"
-		"\"tcp_ao_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"addkey_rejected\":%lu,\"keys_added\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"packets_sent\":%lu,\"key_rotations\":%lu,\"info_rejected\":%lu,\"key_dels\":%lu,\"delkey_rejected\":%lu,\"cycles\":%lu},"
-		"\"tcp_md5_listener_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"md5_set_ok\":%lu,\"md5_set_failed\":%lu,\"connect_ok\":%lu,\"rst_sent_ok\":%lu,\"completed_ok\":%lu},"
-		"\"ipv6_pmtu_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"ptb_sent_ok\":%lu,\"dellink_ok\":%lu,\"completed_ok\":%lu},"
-		"\"vrf_fib_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_ok\":%lu,\"addr_ok\":%lu,\"up_ok\":%lu,\"rule_added\":%lu,\"bound\":%lu,\"sendto_ok\":%lu,\"rule2_added\":%lu,\"rule_removed\":%lu,\"link_removed\":%lu},"
-		"\"mpls_route_churn\":{\"runs\":%lu,\"label_install_ok\":%lu,\"iptunnel_install_ok\":%lu,\"delete_ok\":%lu,\"ns_unsupported\":%lu},"
-		"\"netlink_monitor_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"mon_open\":%lu,\"mut_open\":%lu,\"mut_op_ok\":%lu,\"recv_drained\":%lu,\"group_drop\":%lu,\"group_add\":%lu},"
-		"\"tipc_link_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bearer_enable_ok\":%lu,\"sock_rdm_ok\":%lu,\"topsrv_connect_ok\":%lu,\"sub_ports_sent\":%lu,\"publish_ok\":%lu,\"bearer_disable_ok\":%lu},"
-		"\"tls_ulp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_install_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"splice_ok\":%lu,\"rekey_ok\":%lu,\"recv_ok\":%lu},"
-		"\"vxlan_encap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"fdb_add_ok\":%lu,\"link_up_ok\":%lu,\"packet_sent_ok\":%lu,\"link_del_ok\":%lu},"
-		"\"ovs_tunnel_vport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"create_ok\":%lu,\"delete_ok\":%lu,\"race_dellink_attempted\":%lu},"
-		"\"bridge_fdb_stp\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"raw_send_ok\":%lu,\"stp_toggle_ok\":%lu,\"fdb_del_ok\":%lu,\"link_del_ok\":%lu,\"vlan_mass_runs\":%lu,\"vlan_mass_max_n\":%lu,\"vlan_mass_enotbufs\":%lu},"
-		"\"bridge_conntrack_churn\":{\"runs\":%lu,\"flushes\":%lu,\"pkts_sent\":%lu},"
-		"\"nftables_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"table_create_ok\":%lu,\"set_create_ok\":%lu,\"chain_create_ok\":%lu,\"rule_create_ok\":%lu,\"packet_sent_ok\":%lu,\"rule_insert_ok\":%lu,\"rule_del_ok\":%lu,\"table_del_ok\":%lu,\"payload_expr_emit\":%lu,\"objref_expr_emit\":%lu,\"compat_validate_install_ok\":%lu,\"compat_validate_install_fail\":%lu,\"compat_validate_unsupported\":%lu,\"compat_validate_per_hook_pairs\":%lu,\"dormant_abort_iters\":%lu,\"dormant_abort_eperm\":%lu,\"dormant_abort_emsg\":%lu,\"dormant_abort_ok\":%lu,\"xt_ct_iters\":%lu,\"xt_ct_eperm\":%lu,\"xt_ct_unsupported\":%lu,\"xt_ct_set_ok\":%lu,\"xt_ct_get_ok\":%lu,\"xt_ct_v2_seen\":%lu,\"fwd_loop_runs\":%lu,\"fwd_loop_ns_setup_failed\":%lu,\"fwd_loop_probe_sent_ok\":%lu,\"fwd_loop_completed_ok\":%lu,\"l4frag_iters\":%lu,\"l4frag_install_ok\":%lu,\"l4frag_rule_ok\":%lu,\"l4frag_send_ok\":%lu,\"l4frag_send_failed\":%lu},"
-		"\"tc_qdisc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"qdisc_create_ok\":%lu,\"tclass_create_ok\":%lu,\"tfilter_create_ok\":%lu,\"packet_sent_ok\":%lu,\"qdisc_replace_ok\":%lu,\"tfilter_del_ok\":%lu,\"qdisc_del_ok\":%lu,\"link_del_ok\":%lu,\"peek_stack_runs\":%lu,\"peek_stack_install_ok\":%lu,\"peek_stack_install_fail\":%lu,\"peek_stack_burst_ok\":%lu,\"bridge_parent_runs\":%lu,\"bridge_dellink_race_ok\":%lu},"
-		"\"xfrm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_updated\":%lu,\"sa_deleted\":%lu,\"pol_added\":%lu,\"pol_deleted\":%lu,\"esp_sent\":%lu,\"pfkey_send_ok\":%lu,\"ah_esn_setup_ok\":%lu,\"ah_esn_setup_fail\":%lu,\"ah_esn_async_runs\":%lu,\"ah_esn_delsa_races\":%lu},"
-		"\"bpf_cgroup_attach\":{\"runs\":%lu,\"setup_failed\":%lu,\"prog_loaded\":%lu,\"attached\":%lu,\"attach_rejected\":%lu,\"packets_sent\":%lu,\"detached\":%lu,\"post_detach_sent\":%lu},"
-		"\"sctp_assoc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bindx_added\":%lu,\"bindx_removed\":%lu,\"bindx_rejected\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"accepted\":%lu,\"packets_sent\":%lu,\"peeled_off\":%lu,\"peeloff_rejected\":%lu,\"cycles\":%lu},"
-		"\"mptcp_pm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sock_mptcp_ok\":%lu,\"addr_added_ok\":%lu,\"addr_removed_ok\":%lu,\"send_ok\":%lu,\"setsockopt_unsupported\":%lu,\"setsockopt_master_set\":%lu,\"setsockopt_master_fail\":%lu,\"getsockopt_verify_ok\":%lu,\"getsockopt_verify_drift\":%lu,\"sockopt_sweep_runs\":%lu,\"sockopt_set_ok\":%lu,\"sockopt_set_failed\":%lu,\"sockopt_subflow_added\":%lu,\"sockopt_readback_ok\":%lu,\"sockopt_inherit_mismatch\":%lu,\"sockopt_unsupported_latched\":%lu},"
-		"\"devlink_port_churn\":{\"iterations\":%lu,\"split_ok\":%lu,\"split_fail\":%lu,\"reload_ok\":%lu,\"reload_fail\":%lu,\"create_skipped\":%lu},"
-		"\"handshake_req_abort\":{\"runs\":%lu,\"setup_failed\":%lu,\"accept_ok\":%lu,\"done_ok\":%lu,\"abort_ok\":%lu,\"orphan_close\":%lu},"
-		"\"nf_conntrack_helper_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_helper\":%lu,\"attach_ok\":%lu,\"attach_fail\":%lu,\"exp_ok\":%lu,\"packet_sent\":%lu,\"delete_ok\":%lu,\"zone_swap\":%lu,\"detach_ok\":%lu},"
-		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"peek_ok\":%lu,\"iouring_variant_ok\":%lu,\"sibling_spawn_ok\":%lu,\"sibling_spawn_failed\":%lu,\"sibling_reaped_ok\":%lu,\"sibling_crashed\":%lu},"
-		"\"netns_teardown\":{\"runs\":%lu,\"setup_failed\":%lu,\"unshare_ok\":%lu,\"socket_pair_ok\":%lu,\"fork_ok\":%lu,\"setns_ok\":%lu,\"kill_ok\":%lu,\"completed_ok\":%lu},"
-		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},",
+		"\"close_racer\":{\"runs\":%lu,\"pairs\":%lu,\"failed\":%lu,\"thread_spawn_fail\":%lu},",
 		shm->stats.fs_lifecycle_tmpfs, shm->stats.fs_lifecycle_ramfs,
 		shm->stats.fs_lifecycle_rdonly, shm->stats.fs_lifecycle_overlay,
 		shm->stats.fs_lifecycle_quota, shm->stats.fs_lifecycle_bind,
@@ -1209,7 +1168,53 @@ static void dump_stats_json(void)
 		shm->stats.iouring_runs, shm->stats.iouring_submits,
 		shm->stats.iouring_reaped, shm->stats.iouring_failed,
 		shm->stats.close_racer_runs, shm->stats.close_racer_pairs,
-		shm->stats.close_racer_failed, shm->stats.close_racer_thread_spawn_fail,
+		shm->stats.close_racer_failed, shm->stats.close_racer_thread_spawn_fail);
+}
+
+static void dump_stats_json(void)
+{
+	putchar('{');
+
+	json_emit_syscalls_array();
+
+	fputs(",\"stats\":{", stdout);
+	dump_stats_json_fault_and_fd_lifecycle();
+	dump_stats_json_oracle();
+	dump_stats_json_basic_subsystems();
+	dump_stats_json_iouring_and_zombies();
+	dump_stats_json_corruption_and_audit();
+	dump_stats_json_lifecycle_and_storms();
+
+	printf("\"socket_family_chain\":{\"runs\":%lu,\"completed\":%lu,\"failed\":%lu,\"authencesn_attempts\":%lu,\"splice_attempts\":%lu},"
+		"\"socket_family_grammar\":{\"runs\":%lu,\"completed\":%lu},"
+		"\"tls_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_failed\":%lu,\"ulp_asymmetric\":%lu,\"installs\":%lu,\"rekeys_ok\":%lu,\"rekeys_rejected\":%lu},"
+		"\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu},"
+		"\"eth_emitter\":{\"runs\":%lu,\"setup_failed\":%lu,\"short\":%lu,\"sends_ok\":%lu,\"sends_failed\":%lu,\"tmpl_arp\":%lu,\"tmpl_ipv4_frag_zero\":%lu,\"tmpl_ipv6_na\":%lu,\"tmpl_vlan_qinq\":%lu,\"tmpl_bad_ethertype\":%lu},"
+		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu,\"napi_register_ok\":%lu,\"napi_register_fail\":%lu,\"napi_unregister_ok\":%lu,\"napi_unregister_fail\":%lu},"
+		"\"tcp_ao_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"addkey_rejected\":%lu,\"keys_added\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"packets_sent\":%lu,\"key_rotations\":%lu,\"info_rejected\":%lu,\"key_dels\":%lu,\"delkey_rejected\":%lu,\"cycles\":%lu},"
+		"\"tcp_md5_listener_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"md5_set_ok\":%lu,\"md5_set_failed\":%lu,\"connect_ok\":%lu,\"rst_sent_ok\":%lu,\"completed_ok\":%lu},"
+		"\"ipv6_pmtu_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"ptb_sent_ok\":%lu,\"dellink_ok\":%lu,\"completed_ok\":%lu},"
+		"\"vrf_fib_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_ok\":%lu,\"addr_ok\":%lu,\"up_ok\":%lu,\"rule_added\":%lu,\"bound\":%lu,\"sendto_ok\":%lu,\"rule2_added\":%lu,\"rule_removed\":%lu,\"link_removed\":%lu},"
+		"\"mpls_route_churn\":{\"runs\":%lu,\"label_install_ok\":%lu,\"iptunnel_install_ok\":%lu,\"delete_ok\":%lu,\"ns_unsupported\":%lu},"
+		"\"netlink_monitor_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"mon_open\":%lu,\"mut_open\":%lu,\"mut_op_ok\":%lu,\"recv_drained\":%lu,\"group_drop\":%lu,\"group_add\":%lu},"
+		"\"tipc_link_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bearer_enable_ok\":%lu,\"sock_rdm_ok\":%lu,\"topsrv_connect_ok\":%lu,\"sub_ports_sent\":%lu,\"publish_ok\":%lu,\"bearer_disable_ok\":%lu},"
+		"\"tls_ulp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_install_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"splice_ok\":%lu,\"rekey_ok\":%lu,\"recv_ok\":%lu},"
+		"\"vxlan_encap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"fdb_add_ok\":%lu,\"link_up_ok\":%lu,\"packet_sent_ok\":%lu,\"link_del_ok\":%lu},"
+		"\"ovs_tunnel_vport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"create_ok\":%lu,\"delete_ok\":%lu,\"race_dellink_attempted\":%lu},"
+		"\"bridge_fdb_stp\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"raw_send_ok\":%lu,\"stp_toggle_ok\":%lu,\"fdb_del_ok\":%lu,\"link_del_ok\":%lu,\"vlan_mass_runs\":%lu,\"vlan_mass_max_n\":%lu,\"vlan_mass_enotbufs\":%lu},"
+		"\"bridge_conntrack_churn\":{\"runs\":%lu,\"flushes\":%lu,\"pkts_sent\":%lu},"
+		"\"nftables_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"table_create_ok\":%lu,\"set_create_ok\":%lu,\"chain_create_ok\":%lu,\"rule_create_ok\":%lu,\"packet_sent_ok\":%lu,\"rule_insert_ok\":%lu,\"rule_del_ok\":%lu,\"table_del_ok\":%lu,\"payload_expr_emit\":%lu,\"objref_expr_emit\":%lu,\"compat_validate_install_ok\":%lu,\"compat_validate_install_fail\":%lu,\"compat_validate_unsupported\":%lu,\"compat_validate_per_hook_pairs\":%lu,\"dormant_abort_iters\":%lu,\"dormant_abort_eperm\":%lu,\"dormant_abort_emsg\":%lu,\"dormant_abort_ok\":%lu,\"xt_ct_iters\":%lu,\"xt_ct_eperm\":%lu,\"xt_ct_unsupported\":%lu,\"xt_ct_set_ok\":%lu,\"xt_ct_get_ok\":%lu,\"xt_ct_v2_seen\":%lu,\"fwd_loop_runs\":%lu,\"fwd_loop_ns_setup_failed\":%lu,\"fwd_loop_probe_sent_ok\":%lu,\"fwd_loop_completed_ok\":%lu,\"l4frag_iters\":%lu,\"l4frag_install_ok\":%lu,\"l4frag_rule_ok\":%lu,\"l4frag_send_ok\":%lu,\"l4frag_send_failed\":%lu},"
+		"\"tc_qdisc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"qdisc_create_ok\":%lu,\"tclass_create_ok\":%lu,\"tfilter_create_ok\":%lu,\"packet_sent_ok\":%lu,\"qdisc_replace_ok\":%lu,\"tfilter_del_ok\":%lu,\"qdisc_del_ok\":%lu,\"link_del_ok\":%lu,\"peek_stack_runs\":%lu,\"peek_stack_install_ok\":%lu,\"peek_stack_install_fail\":%lu,\"peek_stack_burst_ok\":%lu,\"bridge_parent_runs\":%lu,\"bridge_dellink_race_ok\":%lu},"
+		"\"xfrm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_updated\":%lu,\"sa_deleted\":%lu,\"pol_added\":%lu,\"pol_deleted\":%lu,\"esp_sent\":%lu,\"pfkey_send_ok\":%lu,\"ah_esn_setup_ok\":%lu,\"ah_esn_setup_fail\":%lu,\"ah_esn_async_runs\":%lu,\"ah_esn_delsa_races\":%lu},"
+		"\"bpf_cgroup_attach\":{\"runs\":%lu,\"setup_failed\":%lu,\"prog_loaded\":%lu,\"attached\":%lu,\"attach_rejected\":%lu,\"packets_sent\":%lu,\"detached\":%lu,\"post_detach_sent\":%lu},"
+		"\"sctp_assoc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bindx_added\":%lu,\"bindx_removed\":%lu,\"bindx_rejected\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"accepted\":%lu,\"packets_sent\":%lu,\"peeled_off\":%lu,\"peeloff_rejected\":%lu,\"cycles\":%lu},"
+		"\"mptcp_pm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sock_mptcp_ok\":%lu,\"addr_added_ok\":%lu,\"addr_removed_ok\":%lu,\"send_ok\":%lu,\"setsockopt_unsupported\":%lu,\"setsockopt_master_set\":%lu,\"setsockopt_master_fail\":%lu,\"getsockopt_verify_ok\":%lu,\"getsockopt_verify_drift\":%lu,\"sockopt_sweep_runs\":%lu,\"sockopt_set_ok\":%lu,\"sockopt_set_failed\":%lu,\"sockopt_subflow_added\":%lu,\"sockopt_readback_ok\":%lu,\"sockopt_inherit_mismatch\":%lu,\"sockopt_unsupported_latched\":%lu},"
+		"\"devlink_port_churn\":{\"iterations\":%lu,\"split_ok\":%lu,\"split_fail\":%lu,\"reload_ok\":%lu,\"reload_fail\":%lu,\"create_skipped\":%lu},"
+		"\"handshake_req_abort\":{\"runs\":%lu,\"setup_failed\":%lu,\"accept_ok\":%lu,\"done_ok\":%lu,\"abort_ok\":%lu,\"orphan_close\":%lu},"
+		"\"nf_conntrack_helper_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_helper\":%lu,\"attach_ok\":%lu,\"attach_fail\":%lu,\"exp_ok\":%lu,\"packet_sent\":%lu,\"delete_ok\":%lu,\"zone_swap\":%lu,\"detach_ok\":%lu},"
+		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"peek_ok\":%lu,\"iouring_variant_ok\":%lu,\"sibling_spawn_ok\":%lu,\"sibling_spawn_failed\":%lu,\"sibling_reaped_ok\":%lu,\"sibling_crashed\":%lu},"
+		"\"netns_teardown\":{\"runs\":%lu,\"setup_failed\":%lu,\"unshare_ok\":%lu,\"socket_pair_ok\":%lu,\"fork_ok\":%lu,\"setns_ok\":%lu,\"kill_ok\":%lu,\"completed_ok\":%lu},"
+		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},",
 		shm->stats.socket_family_chain_runs,
 		shm->stats.socket_family_chain_completed,
 		shm->stats.socket_family_chain_failed,
