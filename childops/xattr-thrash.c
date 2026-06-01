@@ -113,19 +113,16 @@ static bool budget_elapsed(const struct timespec *start)
 	return elapsed_ns >= BUDGET_NS;
 }
 
-bool xattr_thrash(struct childdata *child)
+/*
+ * Phase: open private fds onto the trinity-testfile? pool.  Each slot
+ * gets both an O_RDWR fd (for the f*xattr variants) and the absolute
+ * path (for the path-based *xattr variants).  Returns the number of
+ * slots successfully opened -- caller bails when zero.
+ */
+static unsigned int xattr_thrash_iter_setup_fds(struct xattr_slot *slots)
 {
-	struct xattr_slot slots[NR_XATTR_FDS];
-	struct timespec start;
 	unsigned int opened = 0;
-	unsigned int iter;
-	unsigned int iters = BUDGETED(CHILD_OP_XATTR_THRASH,
-				      JITTER_RANGE(MAX_ITERATIONS));
 	unsigned int i;
-
-	(void)child;
-
-	__atomic_add_fetch(&shm->stats.xattr_thrash_runs, 1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < NR_XATTR_FDS; i++) {
 		int fd = open_one(1 + i);
@@ -139,6 +136,24 @@ bool xattr_thrash(struct childdata *child)
 		opened++;
 	}
 
+	return opened;
+}
+
+bool xattr_thrash(struct childdata *child)
+{
+	struct xattr_slot slots[NR_XATTR_FDS];
+	struct timespec start;
+	unsigned int opened;
+	unsigned int iter;
+	unsigned int iters = BUDGETED(CHILD_OP_XATTR_THRASH,
+				      JITTER_RANGE(MAX_ITERATIONS));
+	unsigned int i;
+
+	(void)child;
+
+	__atomic_add_fetch(&shm->stats.xattr_thrash_runs, 1, __ATOMIC_RELAXED);
+
+	opened = xattr_thrash_iter_setup_fds(slots);
 	if (opened == 0)
 		return true;
 
