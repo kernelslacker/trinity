@@ -140,6 +140,44 @@ static unsigned int xattr_thrash_iter_setup_fds(struct xattr_slot *slots)
 }
 
 /*
+ * Phase: SET dispatch.  use_path=false routes to fsetxattr with a
+ * randomised flags arg (XATTR_CREATE / XATTR_REPLACE / 0) fuzzed via
+ * RAND_NEGATIVE_OR -- the fd-based caller is the primary setxattr
+ * exerciser.  use_path=true routes to setxattr with flags=0 and adds
+ * the vfs_path lookup leg.  Both pick a value length in the 8-32 byte
+ * range so the kmalloc-16 / kmalloc-32 buckets see a non-uniform size
+ * mix instead of pounding a single class.
+ */
+static void xattr_thrash_iter_op_set(struct xattr_slot *s, const char *name,
+				     bool use_path)
+{
+	unsigned char value[32];
+	size_t vlen = 8 + rnd_modulo_u32(25);
+	unsigned int j;
+	int rc;
+
+	for (j = 0; j < vlen; j++)
+		value[j] = (unsigned char)rnd_u32();
+
+	if (use_path) {
+		rc = setxattr(s->path, name, value, vlen, 0);
+	} else {
+		int flags = (rnd_modulo_u32(8) == 0) ? XATTR_CREATE
+			  : (rnd_modulo_u32(8) == 0) ? XATTR_REPLACE
+			  : 0;
+		rc = fsetxattr(s->fd, name, value, vlen,
+			       (int)RAND_NEGATIVE_OR(flags));
+	}
+
+	if (rc == 0)
+		__atomic_add_fetch(&shm->stats.xattr_thrash_set,
+				   1, __ATOMIC_RELAXED);
+	else
+		__atomic_add_fetch(&shm->stats.xattr_thrash_failed,
+				   1, __ATOMIC_RELAXED);
+}
+
+/*
  * Phase: close every fd opened by setup_fds.  All xattrs left behind by
  * the iteration loop persist on the testfile inodes by design, so the
  * next xattr_thrash invocation starts against an inode that already has
@@ -187,50 +225,12 @@ bool xattr_thrash(struct childdata *child)
 		switch (op) {
 		case 0:
 		case 1:
-		case 2: {
-			/* fsetxattr with a randomised value length in the
-			 * 8-32 byte range.  Spreading across slab buckets
-			 * (kmalloc-16 / kmalloc-32) gives the allocator a
-			 * realistic mixed workload instead of pounding a
-			 * single size class. */
-			unsigned char value[32];
-			size_t vlen = 8 + rnd_modulo_u32(25);
-			unsigned int j;
-			int flags = (rnd_modulo_u32(8) == 0) ? XATTR_CREATE
-				  : (rnd_modulo_u32(8) == 0) ? XATTR_REPLACE
-				  : 0;
-
-			for (j = 0; j < vlen; j++)
-				value[j] = (unsigned char)rnd_u32();
-			rc = fsetxattr(s->fd, name, value, vlen,
-				       (int)RAND_NEGATIVE_OR(flags));
-			if (rc == 0)
-				__atomic_add_fetch(&shm->stats.xattr_thrash_set,
-						   1, __ATOMIC_RELAXED);
-			else
-				__atomic_add_fetch(&shm->stats.xattr_thrash_failed,
-						   1, __ATOMIC_RELAXED);
+		case 2:
+			xattr_thrash_iter_op_set(s, name, false);
 			break;
-		}
-		case 3: {
-			/* setxattr (path-based variant) — exercises the
-			 * vfs_path lookup leg in addition to the xattr
-			 * write itself. */
-			unsigned char value[32];
-			size_t vlen = 8 + rnd_modulo_u32(25);
-			unsigned int j;
-
-			for (j = 0; j < vlen; j++)
-				value[j] = (unsigned char)rnd_u32();
-			rc = setxattr(s->path, name, value, vlen, 0);
-			if (rc == 0)
-				__atomic_add_fetch(&shm->stats.xattr_thrash_set,
-						   1, __ATOMIC_RELAXED);
-			else
-				__atomic_add_fetch(&shm->stats.xattr_thrash_failed,
-						   1, __ATOMIC_RELAXED);
+		case 3:
+			xattr_thrash_iter_op_set(s, name, true);
 			break;
-		}
 		case 4:
 		case 5:
 		case 6: {
