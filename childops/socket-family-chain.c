@@ -276,6 +276,65 @@ static int alg_chain_iter_arm(struct alg_chain_iter_ctx *ictx,
 }
 
 /*
+ * Phase 3: drive the data leg.  Past the accept() we've reached the
+ * actual data path the bug class lives in, so per-step failure here
+ * isn't a kernel-absent signal — no err_burst bumps in this phase.
+ * ~SPLICE_SUBST_PCT% of the time the sendmsg(buffer) leg is replaced
+ * by splice(tagged_fd -> pipe -> child_fd) pulling from a page-cache
+ * fd in the OBJ_FD_PAGECACHE pool so the chain reaches alg_sendpage
+ * via splice_read_to_pipe; on any setup failure (no fd, pipe2 ENFILE,
+ * splice <= 0) we fall through to sendmsg so the data path still
+ * runs.  The pipe pair lives in ictx->splice_pfd (default {-1, -1})
+ * and the optional sndbuf lives in ictx->sndbuf (default NULL); both
+ * are torn down by the teardown helper regardless of which leg ran.
+ */
+static void alg_chain_iter_drive(struct alg_chain_iter_ctx *ictx)
+{
+	struct iovec iov;
+	struct msghdr msg;
+	unsigned int sndlen;
+	bool used_splice = false;
+
+	sndlen = 16 + rnd_modulo_u32(256 - 16 + 1);
+
+	if (rnd_modulo_u32(100) < SPLICE_SUBST_PCT) {
+		int tagged_fd = get_rand_pagecache_fd();
+
+		if (tagged_fd >= 0 && pipe2(ictx->splice_pfd, O_CLOEXEC) == 0) {
+			ssize_t in_n;
+
+			__atomic_add_fetch(
+				&shm->stats.socket_family_chain_splice_attempts,
+				1, __ATOMIC_RELAXED);
+
+			in_n = splice(tagged_fd, NULL, ictx->splice_pfd[1],
+				      NULL, sndlen,
+				      SPLICE_F_NONBLOCK | SPLICE_F_MOVE);
+			if (in_n > 0) {
+				(void) splice(ictx->splice_pfd[0], NULL,
+					      ictx->child_fd, NULL,
+					      (size_t) in_n,
+					      SPLICE_F_NONBLOCK | SPLICE_F_MOVE);
+				used_splice = true;
+			}
+		}
+	}
+
+	if (!used_splice) {
+		ictx->sndbuf = zmalloc(sndlen);
+		generate_rand_bytes(ictx->sndbuf, sndlen);
+
+		iov.iov_base = ictx->sndbuf;
+		iov.iov_len  = sndlen;
+		memset(&msg, 0, sizeof(msg));
+		msg.msg_iov    = &iov;
+		msg.msg_iovlen = 1;
+
+		(void) sendmsg(ictx->child_fd, &msg, MSG_NOSIGNAL);
+	}
+}
+
+/*
  * One coherent AF_ALG chain.  Returns false on a clean kernel-not-supported
  * path so the outer cycle can latch the unsupported flag; returns true on
  * everything else (including chain steps that legitimately fail late).
@@ -287,11 +346,7 @@ static bool run_alg_chain(unsigned int *err_burst)
 		.child_fd = -1,
 		.splice_pfd = { -1, -1 },
 	};
-	struct iovec iov;
-	struct msghdr msg;
-	unsigned int sndlen;
 	unsigned int rcvlen;
-	bool used_splice = false;
 	bool ok = false;
 
 	if (alg_chain_iter_setup(&ictx, err_burst) != 0)
@@ -300,60 +355,7 @@ static bool run_alg_chain(unsigned int *err_burst)
 	if (alg_chain_iter_arm(&ictx, err_burst) != 0)
 		goto out;
 
-	/* From here on we've reached the actual data path the bug class
-	 * lives in.  Any per-step failure is interesting but not a kernel-
-	 * absent signal, so don't bump err_burst. */
-
-	sndlen = 16 + rnd_modulo_u32(256 - 16 + 1);
-
-	/*
-	 * Data leg.  ~SPLICE_SUBST_PCT% of the time, replace the sendmsg
-	 * buffer path with splice(tagged_fd -> pipe -> child_fd) using a
-	 * page-cache-backed source fd from the OBJ_FD_PAGECACHE pool.  The
-	 * pipe pair is owned by run_alg_chain() — splice_pfd[] is initialised
-	 * to {-1, -1} and torn down in the unified out: block, matching the
-	 * per-resource flag-and-cleanup pattern in iouring-recipes.c.
-	 *
-	 * On any setup failure (no fd available, pipe2 ENFILE, the input
-	 * splice returning <= 0 because the AF_ALG sink isn't accepting yet,
-	 * etc.) we fall through to the sendmsg path so the chain still
-	 * exercises the bug-class data path it was built for.
-	 */
-	if (rnd_modulo_u32(100) < SPLICE_SUBST_PCT) {
-		int tagged_fd = get_rand_pagecache_fd();
-
-		if (tagged_fd >= 0 && pipe2(ictx.splice_pfd, O_CLOEXEC) == 0) {
-			ssize_t in_n;
-
-			__atomic_add_fetch(
-				&shm->stats.socket_family_chain_splice_attempts,
-				1, __ATOMIC_RELAXED);
-
-			in_n = splice(tagged_fd, NULL, ictx.splice_pfd[1], NULL,
-				      sndlen,
-				      SPLICE_F_NONBLOCK | SPLICE_F_MOVE);
-			if (in_n > 0) {
-				(void) splice(ictx.splice_pfd[0], NULL,
-					      ictx.child_fd, NULL,
-					      (size_t) in_n,
-					      SPLICE_F_NONBLOCK | SPLICE_F_MOVE);
-				used_splice = true;
-			}
-		}
-	}
-
-	if (!used_splice) {
-		ictx.sndbuf = zmalloc(sndlen);
-		generate_rand_bytes(ictx.sndbuf, sndlen);
-
-		iov.iov_base = ictx.sndbuf;
-		iov.iov_len  = sndlen;
-		memset(&msg, 0, sizeof(msg));
-		msg.msg_iov    = &iov;
-		msg.msg_iovlen = 1;
-
-		(void) sendmsg(ictx.child_fd, &msg, MSG_NOSIGNAL);
-	}
+	alg_chain_iter_drive(&ictx);
 
 	rcvlen = 16 + rnd_modulo_u32(256 - 16 + 1);
 	ictx.rcvbuf = zmalloc(rcvlen);
