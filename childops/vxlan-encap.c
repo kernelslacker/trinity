@@ -506,19 +506,61 @@ static enum tun_kind pick_kind(void)
 	return TUN_NR;
 }
 
-bool vxlan_encap_churn(struct childdata *child)
+/*
+ * Per-invocation state shared across the vxlan_encap_iter_* helpers.
+ * Lives on the orchestrator's stack and is fresh per invocation.  Only
+ * fields read or written across helper boundaries are lifted here; the
+ * packet-burst scratch (sockaddr_ll, pkt buffer) stays on its helper's
+ * stack.  The nl_opened / link_added gates and the raw / nl.fd / ifindex
+ * fields collectively encode the partial-state cleanup that the
+ * teardown helper has to thread back through.
+ */
+struct vxlan_encap_iter_ctx {
+	struct nl_ctx	nl;
+	char		ifname[IFNAMSIZ];
+	enum tun_kind	kind;
+	__u32		vni_or_key;
+	int		ifindex;
+	int		raw;		/* AF_PACKET fd, -1 until opened */
+	bool		nl_opened;	/* rtnl socket is open */
+	bool		link_added;	/* RTM_NEWLINK ack received */
+};
+
+/*
+ * Open the rtnl socket and bring lo up inside the private netns.
+ * Returns 0 on success and -1 on failure (with setup_failed bumped so
+ * caller can bail without entering teardown — although teardown is also
+ * safe to call on failure because it gates on ctx->nl_opened).  The
+ * lo_brought_up latch is shared across invocations so the setlink only
+ * fires the first time through.
+ */
+static int vxlan_encap_iter_open_ctx(struct vxlan_encap_iter_ctx *ctx)
 {
-	char ifname[IFNAMSIZ];
-	enum tun_kind kind;
-	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 	};
-	int raw = -1;
-	int ifindex = 0;
-	__u32 vni_or_key;
-	bool link_added = false;
+
+	if (nl_open(&ctx->nl, &opts) < 0) {
+		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	ctx->nl_opened = true;
+
+	if (!lo_brought_up) {
+		bring_lo_up(&ctx->nl);
+		lo_brought_up = true;
+	}
+	return 0;
+}
+
+bool vxlan_encap_churn(struct childdata *child)
+{
+	struct vxlan_encap_iter_ctx ctx = {
+		.nl = { .fd = -1 },
+		.raw = -1,
+	};
 	unsigned int iters;
 	unsigned int i;
 	int rc;
@@ -534,26 +576,18 @@ bool vxlan_encap_churn(struct childdata *child)
 	if (vxlan_encap_iter_setup_netns() != 0)
 		return true;
 
-	kind = pick_kind();
-	if (kind == TUN_NR)
+	ctx.kind = pick_kind();
+	if (ctx.kind == TUN_NR)
 		return true;
 
-	if (nl_open(&ctx, &opts) < 0) {
-		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (vxlan_encap_iter_open_ctx(&ctx) != 0)
 		return true;
-	}
 
-	if (!lo_brought_up) {
-		bring_lo_up(&ctx);
-		lo_brought_up = true;
-	}
-
-	snprintf(ifname, sizeof(ifname), "trtun%u",
+	snprintf(ctx.ifname, sizeof(ctx.ifname), "trtun%u",
 		 (unsigned int)(rand32() & 0xffffu));
-	vni_or_key = rand32();
+	ctx.vni_or_key = rand32();
 
-	rc = build_tunnel_link(&ctx, kind, ifname, vni_or_key);
+	rc = build_tunnel_link(&ctx.nl, ctx.kind, ctx.ifname, ctx.vni_or_key);
 	if (rc != 0) {
 		/* EAFNOSUPPORT / EOPNOTSUPP / ENOTSUPP / ENOENT all mean
 		 * "this rtnl_link_ops is not registered" — the kind's
@@ -563,29 +597,29 @@ bool vxlan_encap_churn(struct childdata *child)
 		 * the next iteration retries with a fresh ifname. */
 		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 		    rc == -ENOTSUP || rc == -ENOENT || rc == -EPROTONOSUPPORT)
-			*kind_latch(kind) = true;
+			*kind_latch(ctx.kind) = true;
 		goto out;
 	}
-	link_added = true;
+	ctx.link_added = true;
 	__atomic_add_fetch(&shm->stats.vxlan_encap_churn_link_create_ok,
 			   1, __ATOMIC_RELAXED);
 
-	ifindex = (int)if_nametoindex(ifname);
-	if (ifindex == 0)
+	ctx.ifindex = (int)if_nametoindex(ctx.ifname);
+	if (ctx.ifindex == 0)
 		goto out;
 
-	if (kind == TUN_VXLAN) {
-		if (build_fdb_add(&ctx, ifindex) == 0)
+	if (ctx.kind == TUN_VXLAN) {
+		if (build_fdb_add(&ctx.nl, ctx.ifindex) == 0)
 			__atomic_add_fetch(&shm->stats.vxlan_encap_churn_fdb_add_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
-	if (build_setlink_up(&ctx, ifindex) == 0)
+	if (build_setlink_up(&ctx.nl, ctx.ifindex) == 0)
 		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_link_up_ok,
 				   1, __ATOMIC_RELAXED);
 
-	raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_IP));
-	if (raw < 0)
+	ctx.raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_IP));
+	if (ctx.raw < 0)
 		goto out;
 
 	{
@@ -594,8 +628,8 @@ bool vxlan_encap_churn(struct childdata *child)
 		memset(&sll, 0, sizeof(sll));
 		sll.sll_family   = AF_PACKET;
 		sll.sll_protocol = htons(ETH_P_IP);
-		sll.sll_ifindex  = ifindex;
-		(void)bind(raw, (struct sockaddr *)&sll, sizeof(sll));
+		sll.sll_ifindex  = ctx.ifindex;
+		(void)bind(ctx.raw, (struct sockaddr *)&sll, sizeof(sll));
 	}
 
 	/* Per-iteration packet burst.  Each send drives one trip
@@ -631,10 +665,10 @@ bool vxlan_encap_churn(struct childdata *child)
 		memset(&sll, 0, sizeof(sll));
 		sll.sll_family   = AF_PACKET;
 		sll.sll_protocol = htons(ETH_P_IP);
-		sll.sll_ifindex  = ifindex;
+		sll.sll_ifindex  = ctx.ifindex;
 		sll.sll_halen    = 6;
 
-		n = sendto(raw, pkt, pkt_len, MSG_DONTWAIT,
+		n = sendto(ctx.raw, pkt, pkt_len, MSG_DONTWAIT,
 			   (struct sockaddr *)&sll, sizeof(sll));
 		if (n > 0)
 			__atomic_add_fetch(&shm->stats.vxlan_encap_churn_packet_sent_ok,
@@ -642,16 +676,16 @@ bool vxlan_encap_churn(struct childdata *child)
 	}
 
 out:
-	if (raw >= 0)
-		close(raw);
+	if (ctx.raw >= 0)
+		close(ctx.raw);
 
-	if (ctx.fd >= 0) {
-		if (link_added && ifindex > 0) {
-			if (build_dellink(&ctx, ifindex) == 0)
+	if (ctx.nl_opened) {
+		if (ctx.link_added && ctx.ifindex > 0) {
+			if (build_dellink(&ctx.nl, ctx.ifindex) == 0)
 				__atomic_add_fetch(&shm->stats.vxlan_encap_churn_link_del_ok,
 						   1, __ATOMIC_RELAXED);
 		}
-		nl_close(&ctx);
+		nl_close(&ctx.nl);
 	}
 
 	return true;
