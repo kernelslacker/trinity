@@ -767,6 +767,37 @@ static void mld_source_iter_v6_teardown(struct mld_source_iter_v6_ctx *it)
 }
 
 /*
+ * Phase 0 (v6): derive the salted SSM group + two source addresses
+ * into the ctx in6_addr scratches.  Group = ff3e::42:salt (an IPv6 SSM
+ * group), src_a = 2001:db8::salt:0:0:0002, src_b = the same with the
+ * low byte bumped to 0x03.  Pure address-prep -- no syscalls, can't
+ * fail, no counter bumps.  Hoisted out of iter_one_v6 because the byte
+ * fills dominated the orchestrator's line count; the v4 sibling stays
+ * inline (3 htonl macros), so no v4 mirror is needed.
+ */
+static void mld_source_iter_v6_compute_addrs(struct mld_source_iter_v6_ctx *it)
+{
+	memset(&it->grp_v6, 0, sizeof(it->grp_v6));
+	it->grp_v6.s6_addr[0]  = 0xff;
+	it->grp_v6.s6_addr[1]  = 0x3e;
+	it->grp_v6.s6_addr[12] = 0x00;
+	it->grp_v6.s6_addr[13] = 0x42;
+	it->grp_v6.s6_addr[14] = (unsigned char)((it->salt >> 8) & 0xff);
+	it->grp_v6.s6_addr[15] = (unsigned char)(it->salt & 0xff);
+
+	memset(&it->src_a_v6, 0, sizeof(it->src_a_v6));
+	it->src_a_v6.s6_addr[0]  = 0x20;
+	it->src_a_v6.s6_addr[1]  = 0x01;
+	it->src_a_v6.s6_addr[2]  = 0x0d;
+	it->src_a_v6.s6_addr[3]  = 0xb8;
+	it->src_a_v6.s6_addr[12] = (unsigned char)(it->salt & 0xff);
+	it->src_a_v6.s6_addr[15] = 0x02;
+
+	memcpy(&it->src_b_v6, &it->src_a_v6, sizeof(it->src_b_v6));
+	it->src_b_v6.s6_addr[15] = 0x03;
+}
+
+/*
  * IPv6 mirror of iter_one_v4.  Hits ip6_mc_source / ip6_mc_msfilter
  * (net/ipv6/mcast.c) instead of the v4 paths.  SSM group ff3e::42:salt.
  */
@@ -783,24 +814,7 @@ static void iter_one_v6(unsigned int iter_idx, const struct timespec *t_outer)
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
 		return;
 
-	memset(&it.grp_v6, 0, sizeof(it.grp_v6));
-	it.grp_v6.s6_addr[0]  = 0xff;
-	it.grp_v6.s6_addr[1]  = 0x3e;
-	it.grp_v6.s6_addr[12] = 0x00;
-	it.grp_v6.s6_addr[13] = 0x42;
-	it.grp_v6.s6_addr[14] = (unsigned char)((it.salt >> 8) & 0xff);
-	it.grp_v6.s6_addr[15] = (unsigned char)(it.salt & 0xff);
-
-	memset(&it.src_a_v6, 0, sizeof(it.src_a_v6));
-	it.src_a_v6.s6_addr[0]  = 0x20;
-	it.src_a_v6.s6_addr[1]  = 0x01;
-	it.src_a_v6.s6_addr[2]  = 0x0d;
-	it.src_a_v6.s6_addr[3]  = 0xb8;
-	it.src_a_v6.s6_addr[12] = (unsigned char)(it.salt & 0xff);
-	it.src_a_v6.s6_addr[15] = 0x02;
-
-	memcpy(&it.src_b_v6, &it.src_a_v6, sizeof(it.src_b_v6));
-	it.src_b_v6.s6_addr[15] = 0x03;
+	mld_source_iter_v6_compute_addrs(&it);
 
 	if (mld_source_iter_v6_setup_send(&it) != 0)
 		goto out;
