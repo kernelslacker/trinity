@@ -7071,6 +7071,39 @@ static void nftables_churn_iter_drive_traffic(struct nftables_churn_iter_ctx *ct
 	}
 }
 
+/*
+ * Phase: mid-flow position-1 insert + bulk DELRULE + DELSET racing
+ * the still-draining UDP burst.  The position-based NEWRULE walks a
+ * different commit-time codepath from the append-only path in
+ * build_table; if no rule with handle 1 exists the kernel rejects it
+ * cheaply, which is fine -- the commit-time validation still ran.
+ * The bulk DELRULE (no NFTA_RULE_HANDLE) is the targeted
+ * commit-vs-traffic teardown window -- the same one CVE-2024-1086
+ * exploited.  DELSET retires the anonymous set the rule above bound
+ * to before the orchestrator's DELTABLE cascades the rest at out:.
+ */
+static void nftables_churn_iter_mid_churn(struct nftables_churn_iter_ctx *ctx)
+{
+	struct nft_expr_plan plan;
+
+	nft_expr_plan_randomize(&plan);
+	if (build_newrule(&ctx->nfnl, ctx->family, ctx->table_name,
+			  ctx->base_chain, ctx->aux_chain, ctx->verdict,
+			  1, &plan, ctx->anon_set, ctx->set_id) == 0) {
+		__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
+				   1, __ATOMIC_RELAXED);
+		nft_expr_plan_record_stats(&plan);
+	}
+
+	if (build_delrule(&ctx->nfnl, ctx->family, ctx->table_name,
+			  ctx->base_chain) == 0)
+		__atomic_add_fetch(&shm->stats.nftables_churn_rule_del_ok,
+				   1, __ATOMIC_RELAXED);
+
+	(void)build_delset(&ctx->nfnl, ctx->family, ctx->table_name,
+			   ctx->anon_set);
+}
+
 bool nftables_churn(struct childdata *child)
 {
 	struct nftables_churn_iter_ctx ctx = {
@@ -7103,40 +7136,7 @@ bool nftables_churn(struct childdata *child)
 		goto out;
 
 	nftables_churn_iter_drive_traffic(&ctx);
-
-	/*
-	 * Mid-traffic insert: NEWRULE at NFTA_RULE_POSITION = 1.  The
-	 * position-based insert path is a different commit-time codepath
-	 * from the append-only path above; if no rule with handle 1
-	 * exists the kernel rejects it cheaply, which is fine — the
-	 * commit-time validation still ran.
-	 */
-	{
-		struct nft_expr_plan plan;
-
-		nft_expr_plan_randomize(&plan);
-		if (build_newrule(&ctx.nfnl, ctx.family, ctx.table_name,
-				  ctx.base_chain, ctx.aux_chain, ctx.verdict,
-				  1, &plan, ctx.anon_set, ctx.set_id) == 0) {
-			__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
-					   1, __ATOMIC_RELAXED);
-			nft_expr_plan_record_stats(&plan);
-		}
-	}
-
-	/*
-	 * Concurrent with whatever's still draining from the udp send
-	 * loop: bulk-delete every rule in chain_in.  This is the
-	 * targeted commit-vs-traffic teardown window — the same one the
-	 * CVE-2024-1086 nft_verdict UAF exploited.
-	 */
-	if (build_delrule(&ctx.nfnl, ctx.family, ctx.table_name,
-			  ctx.base_chain) == 0)
-		__atomic_add_fetch(&shm->stats.nftables_churn_rule_del_ok,
-				   1, __ATOMIC_RELAXED);
-
-	(void)build_delset(&ctx.nfnl, ctx.family, ctx.table_name,
-			   ctx.anon_set);
+	nftables_churn_iter_mid_churn(&ctx);
 
 out:
 	if (ctx.udp >= 0)
