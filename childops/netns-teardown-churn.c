@@ -420,6 +420,38 @@ static int netns_teardown_iter_sock_pair(struct netns_teardown_iter_ctx *it)
 }
 
 /*
+ * Phase 3: fork the in-ns child.  In the child we drop the anchor fd
+ * (so the child stays in the doomed ns), open the raw + xfrm netlink
+ * extra fds whose pernet exit hooks we want to exercise, then pump
+ * the socket pair until SIGKILL -- the helper does NOT return on the
+ * child side, it _exit(0)s in place.  In the parent we stash the pid
+ * in the ctx, bump fork_ok, and return 0.  Fork failure returns -1;
+ * caller does goto recover (sockets open, no child to clean up).
+ */
+static int netns_teardown_iter_fork_child(struct netns_teardown_iter_ctx *it)
+{
+	it->pid = fork();
+	if (it->pid < 0)
+		return -1;
+
+	if (it->pid == 0) {
+		int raw_fd = -1, xfrm_fd = -1;
+
+		(void)close(it->nsfd);
+		it->nsfd = -1;
+		open_extras(&raw_fd, &xfrm_fd);
+		child_pump(it->s_conn, it->s_accept);
+		(void)raw_fd;
+		(void)xfrm_fd;
+		_exit(0);
+	}
+
+	__atomic_add_fetch(&shm->stats.netns_teardown_fork_ok,
+			   1, __ATOMIC_RELAXED);
+	return 0;
+}
+
+/*
  * One outer iteration: anchor open, unshare, lo bring-up, sockets,
  * fork, race, kill, waitpid.  Best-effort; per-step counter bumps
  * carry the success signal.  Latches ns_unsupported on a probe-style
@@ -438,24 +470,8 @@ static void iter_one(void)
 	if (netns_teardown_iter_sock_pair(&it) != 0)
 		goto recover;
 
-	it.pid = fork();
-	if (it.pid < 0)
+	if (netns_teardown_iter_fork_child(&it) != 0)
 		goto recover;
-
-	if (it.pid == 0) {
-		int raw_fd = -1, xfrm_fd = -1;
-
-		(void)close(it.nsfd);
-		it.nsfd = -1;
-		open_extras(&raw_fd, &xfrm_fd);
-		child_pump(it.s_conn, it.s_accept);
-		(void)raw_fd;
-		(void)xfrm_fd;
-		_exit(0);
-	}
-
-	__atomic_add_fetch(&shm->stats.netns_teardown_fork_ok,
-			   1, __ATOMIC_RELAXED);
 
 	if (setns(it.nsfd, CLONE_NEWNET) < 0) {
 		/* setns failure leaves us stuck in the doomed ns.  Best
