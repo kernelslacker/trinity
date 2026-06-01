@@ -79,6 +79,7 @@
 
 #include "child.h"
 #include "compat.h"
+#include "errno-classify.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -150,13 +151,6 @@ enum splice_src {
 
 #define SPLICE_PROTO_MIN_LEN		16U
 #define SPLICE_PROTO_PAGE		4096U
-
-static bool errno_is_unsupported(int e)
-{
-	return e == EPERM || e == ENOSYS || e == EOPNOTSUPP ||
-	       e == ENOPROTOOPT || e == EAFNOSUPPORT ||
-	       e == EPROTONOSUPPORT;
-}
 
 static int open_src_fd(unsigned int idx)
 {
@@ -270,12 +264,12 @@ static int setup_udp_encap(unsigned int encap_type, enum splice_proto_setup tag)
 
 	fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
 	if (fd < 0) {
-		if (errno_is_unsupported(errno))
+		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 			unsupported_setup[tag] = true;
 		return -1;
 	}
 	if (setsockopt(fd, SOL_UDP, UDP_ENCAP, &v, sizeof(v)) < 0) {
-		if (errno_is_unsupported(errno))
+		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 			unsupported_setup[tag] = true;
 		close(fd);
 		return -1;
@@ -302,7 +296,7 @@ static int setup_tcp_repair(void)
 
 	listener = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
 	if (listener < 0) {
-		if (errno_is_unsupported(errno))
+		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 			unsupported_setup[SPS_TCP_REPAIR] = true;
 		return -1;
 	}
@@ -325,7 +319,7 @@ static int setup_tcp_repair(void)
 		goto fail;
 
 	if (setsockopt(client, IPPROTO_TCP, TCP_REPAIR, &on, sizeof(on)) < 0) {
-		if (errno == EPERM || errno_is_unsupported(errno))
+		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 			unsupported_setup[SPS_TCP_REPAIR] = true;
 		goto fail;
 	}
@@ -364,7 +358,7 @@ static int setup_packet_rx_ring(void)
 
 	fd = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_ALL));
 	if (fd < 0) {
-		if (errno_is_unsupported(errno))
+		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 			unsupported_setup[SPS_PACKET_RX_RING] = true;
 		return -1;
 	}
@@ -382,7 +376,7 @@ static int setup_packet_rx_ring(void)
 				    req.tp_block_nr;
 		if (setsockopt(fd, SOL_PACKET, PACKET_RX_RING,
 			       &req, sizeof(req)) < 0) {
-			if (errno_is_unsupported(errno))
+			if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 				unsupported_setup[SPS_PACKET_RX_RING] = true;
 			close(fd);
 			return -1;
@@ -397,7 +391,7 @@ static int setup_packet_rx_ring(void)
 		req3.tp_retire_blk_tov = 100;
 		if (setsockopt(fd, SOL_PACKET, PACKET_RX_RING,
 			       &req3, sizeof(req3)) < 0) {
-			if (errno_is_unsupported(errno))
+			if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 				unsupported_setup[SPS_PACKET_RX_RING] = true;
 			close(fd);
 			return -1;
@@ -418,7 +412,7 @@ static int setup_af_alg(void)
 
 	parent_fd = socket(AF_ALG, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
 	if (parent_fd < 0) {
-		if (errno_is_unsupported(errno))
+		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 			unsupported_setup[SPS_AF_ALG] = true;
 		return -1;
 	}
@@ -431,7 +425,7 @@ static int setup_af_alg(void)
 		sizeof(sa.salg_name) - 1);
 
 	if (bind(parent_fd, (struct sockaddr *) &sa, sizeof(sa)) < 0) {
-		if (errno_is_unsupported(errno) || errno == ENOENT ||
+		if ((is_syscall_unsupported(errno) || is_proto_family_unsupported(errno)) || errno == ENOENT ||
 		    errno == ESRCH)
 			unsupported_setup[SPS_AF_ALG] = true;
 		close(parent_fd);
@@ -449,7 +443,7 @@ static int setup_af_alg(void)
 	child_fd = accept4(parent_fd, NULL, NULL, SOCK_CLOEXEC);
 	close(parent_fd);
 	if (child_fd < 0) {
-		if (errno_is_unsupported(errno))
+		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 			unsupported_setup[SPS_AF_ALG] = true;
 		return -1;
 	}
@@ -468,7 +462,7 @@ static int setup_af_rxrpc(void)
 
 	fd = socket(AF_RXRPC, SOCK_DGRAM | SOCK_CLOEXEC, PF_INET);
 	if (fd < 0) {
-		if (errno_is_unsupported(errno))
+		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 			unsupported_setup[SPS_AF_RXRPC] = true;
 		return -1;
 	}
@@ -483,7 +477,7 @@ static int setup_af_rxrpc(void)
 	srx.transport.sin.sin_port = 0;
 
 	if (bind(fd, (struct sockaddr *) &srx, sizeof(srx)) < 0) {
-		if (errno_is_unsupported(errno))
+		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 			unsupported_setup[SPS_AF_RXRPC] = true;
 		close(fd);
 		return -1;

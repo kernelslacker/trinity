@@ -113,6 +113,7 @@
 #include <linux/in6.h>
 
 #include "child.h"
+#include "errno-classify.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -189,16 +190,6 @@ static void apply_timeouts(int s)
 	tv.tv_usec = IMC_TIMEO_MS * 1000;
 	(void)setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 	(void)setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-}
-
-/* Latch the cap-gate on the first MCAST_JOIN_SOURCE_GROUP probe error
- * code that signals the path is structurally absent (no permission /
- * not built / family disabled). */
-static bool errno_is_unsupported(int e)
-{
-	return e == EPERM || e == ENOSYS || e == EOPNOTSUPP ||
-	       e == ENOPROTOOPT || e == EAFNOSUPPORT ||
-	       e == EPROTONOSUPPORT;
 }
 
 /*
@@ -409,7 +400,7 @@ static void iter_one_v4(unsigned int iter_idx, const struct timespec *t_outer)
 		       &gsr_a, sizeof(gsr_a)) < 0) {
 		int e = errno;
 
-		if (errno_is_unsupported(e))
+		if (is_syscall_unsupported(e) || is_proto_family_unsupported(e))
 			ns_unsupported_igmp_mld_source_churn = true;
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -578,7 +569,7 @@ static void iter_one_v6(unsigned int iter_idx, const struct timespec *t_outer)
 		       &gsr_a, sizeof(gsr_a)) < 0) {
 		int e = errno;
 
-		if (errno_is_unsupported(e))
+		if (is_syscall_unsupported(e) || is_proto_family_unsupported(e))
 			ns_unsupported_igmp_mld_source_churn = true;
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);

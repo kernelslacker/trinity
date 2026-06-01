@@ -64,6 +64,7 @@ struct iour_open_how {
 
 #include "arch.h"
 #include "child.h"
+#include "errno-classify.h"
 #include "maps.h"
 #include "random.h"
 #include "rnd.h"
@@ -1190,7 +1191,7 @@ static bool recipe_msg_ring(struct iour_recipe_state *s, bool *unsupported)
 
 	r = iour_enter(ctx, 1, 1);
 	if (r < 0) {
-		if (errno == ENOSYS || errno == EINVAL) {
+		if (is_syscall_unsupported(errno) || errno == EINVAL) {
 			*unsupported = true;
 			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
 					   1, __ATOMIC_RELAXED);
@@ -1329,7 +1330,7 @@ static bool recipe_futex_wait_wake(struct iour_recipe_state *s, bool *unsupporte
 
 	r = iour_enter(ctx, 2, 1);
 	if (r < 0) {
-		if (errno == ENOSYS || errno == EINVAL) {
+		if (is_syscall_unsupported(errno) || errno == EINVAL) {
 			*unsupported = true;
 			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
 					   1, __ATOMIC_RELAXED);
@@ -1389,7 +1390,7 @@ static bool recipe_epoll_wait(struct iour_recipe_state *s, bool *unsupported)
 
 	r = iour_enter(ctx, 1, 1);
 	if (r < 0) {
-		if (errno == ENOSYS || errno == EINVAL) {
+		if (is_syscall_unsupported(errno) || errno == EINVAL) {
 			*unsupported = true;
 			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
 					   1, __ATOMIC_RELAXED);
@@ -1608,7 +1609,7 @@ static bool recipe_bind(struct iour_recipe_state *s, bool *unsupported)
 		return false;
 	r = iour_enter(ctx, 1, 1);
 	if (r < 0) {
-		if (errno == ENOSYS || errno == EINVAL) {
+		if (is_syscall_unsupported(errno) || errno == EINVAL) {
 			*unsupported = true;
 			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
 					   1, __ATOMIC_RELAXED);
@@ -1651,7 +1652,7 @@ static bool recipe_listen(struct iour_recipe_state *s, bool *unsupported)
 		return false;
 	r = iour_enter(ctx, 1, 1);
 	if (r < 0) {
-		if (errno == ENOSYS || errno == EINVAL) {
+		if (is_syscall_unsupported(errno) || errno == EINVAL) {
 			*unsupported = true;
 			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
 					   1, __ATOMIC_RELAXED);
@@ -1874,7 +1875,7 @@ static bool recipe_ftruncate(struct iour_recipe_state *s, bool *unsupported)
 		return false;
 	r = iour_enter(ctx, 1, 1);
 	if (r < 0) {
-		if (errno == ENOSYS || errno == EINVAL) {
+		if (is_syscall_unsupported(errno) || errno == EINVAL) {
 			*unsupported = true;
 			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
 					   1, __ATOMIC_RELAXED);
@@ -1970,7 +1971,7 @@ static bool recipe_read_multishot(struct iour_recipe_state *s,
 		return false;
 	r = iour_enter(ctx, 1, 0);
 	if (r < 0) {
-		if (errno == ENOSYS || errno == EINVAL) {
+		if (is_syscall_unsupported(errno) || errno == EINVAL) {
 			*unsupported = true;
 			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
 					   1, __ATOMIC_RELAXED);
@@ -2566,7 +2567,7 @@ static bool recipe_waitid(struct iour_recipe_state *s, bool *unsupported)
 		return false;
 	r = iour_enter(ctx, 1, 1);
 	if (r < 0) {
-		if (errno == ENOSYS || errno == EINVAL) {
+		if (is_syscall_unsupported(errno) || errno == EINVAL) {
 			*unsupported = true;
 			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
 					   1, __ATOMIC_RELAXED);
