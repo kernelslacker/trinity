@@ -1018,6 +1018,40 @@ static void bridge_fdb_stp_iter_stp_toggle(struct bridge_fdb_stp_iter_ctx *ctx)
 				   1, __ATOMIC_RELAXED);
 }
 
+/*
+ * Phase 6: close whichever resources we managed to open.  Runs on
+ * every exit path — both the success path after stp_toggle returns
+ * and any early-bail goto out from an earlier phase.  Order matches
+ * the original out: cleanup: close the raw fd first (any frames still
+ * buffered there get discarded), then RTM_DELLINK the bridge before
+ * closing rtnl itself.  The bridge dellink cascades both veth pairs
+ * via br_dev_delete — that's the targeted teardown-vs-rx window, so
+ * the veths must NOT be pre-DELLINKed.  The mop-up DELLINKs on
+ * port_idx[0]/port_idx[2] catch veths whose bridge enslave failed,
+ * so a long-lived child doesn't accumulate orphan veths in its
+ * private netns.  All fields default to -1 / false via the
+ * orchestrator's designated initialiser so the guards skip work that
+ * was never set up.
+ */
+static void bridge_fdb_stp_iter_teardown(struct bridge_fdb_stp_iter_ctx *ctx)
+{
+	if (ctx->raw >= 0)
+		close(ctx->raw);
+
+	if (ctx->ctx.fd >= 0) {
+		if (ctx->bridge_added && ctx->br_idx > 0) {
+			if (build_dellink(&ctx->ctx, ctx->br_idx) == 0)
+				__atomic_add_fetch(&shm->stats.bridge_fdb_stp_link_del_ok,
+						   1, __ATOMIC_RELAXED);
+		}
+		if (ctx->veth0_added && ctx->port_idx[0] > 0)
+			(void)build_dellink(&ctx->ctx, ctx->port_idx[0]);
+		if (ctx->veth1_added && ctx->port_idx[2] > 0)
+			(void)build_dellink(&ctx->ctx, ctx->port_idx[2]);
+		nl_close(&ctx->ctx);
+	}
+}
+
 bool bridge_fdb_stp(struct childdata *child)
 {
 	struct bridge_fdb_stp_iter_ctx ictx = {
@@ -1076,27 +1110,6 @@ bool bridge_fdb_stp(struct childdata *child)
 	bridge_fdb_stp_iter_stp_toggle(&ictx);
 
 out:
-	if (ictx.raw >= 0)
-		close(ictx.raw);
-
-	if (ictx.ctx.fd >= 0) {
-		/* Deleting the bridge cascades to the enslaved veths via
-		 * br_dev_delete — that's the targeted teardown-vs-rx
-		 * window.  Don't pre-DELLINK the veths individually. */
-		if (ictx.bridge_added && ictx.br_idx > 0) {
-			if (build_dellink(&ictx.ctx, ictx.br_idx) == 0)
-				__atomic_add_fetch(&shm->stats.bridge_fdb_stp_link_del_ok,
-						   1, __ATOMIC_RELAXED);
-		}
-		/* Veths whose bridge enslave failed are still around;
-		 * mop them up so a long-lived child doesn't accumulate
-		 * orphan veths in its private netns. */
-		if (ictx.veth0_added && ictx.port_idx[0] > 0)
-			(void)build_dellink(&ictx.ctx, ictx.port_idx[0]);
-		if (ictx.veth1_added && ictx.port_idx[2] > 0)
-			(void)build_dellink(&ictx.ctx, ictx.port_idx[2]);
-		nl_close(&ictx.ctx);
-	}
-
+	bridge_fdb_stp_iter_teardown(&ictx);
 	return true;
 }
