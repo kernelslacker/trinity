@@ -670,6 +670,76 @@ static int bridge_conntrack_iter_nft_setup(struct bridge_conntrack_iter_ctx *ctx
 	return 0;
 }
 
+/*
+ * Phase 5: spin up the AF_PACKET sender on v1, open the ctnetlink
+ * socket, and race a bounded burst of IPCTNL_MSG_CT_FLUSH against the
+ * in-flight bridge traffic.  Each I/O side has its own wall-cap: the
+ * sender thread bounds itself via BRCT_BUDGET_NS in brct_packet_sender,
+ * and the flush loop's local t0 holds the main thread to the same
+ * budget so the join below can't outlive child.c's SIGALRM(1s) cap.
+ * Raw socket / nfnl_ct open failures degrade gracefully — neither is
+ * the targeted race window on its own, so a missing half just yields
+ * fewer concurrent stimuli rather than aborting the iteration.
+ */
+static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx *ctx,
+						const struct nfnl_open_opts *nfnl_opts)
+{
+	unsigned int iters, i;
+	int rc;
+
+	ctx->raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_ALL));
+	if (ctx->raw >= 0) {
+		struct sockaddr_ll bind_sll;
+
+		memset(&bind_sll, 0, sizeof(bind_sll));
+		bind_sll.sll_family   = AF_PACKET;
+		bind_sll.sll_protocol = htons(ETH_P_ALL);
+		bind_sll.sll_ifindex  = ctx->vb_idx;
+		(void)bind(ctx->raw, (struct sockaddr *)&bind_sll,
+			   sizeof(bind_sll));
+
+		memset(&ctx->sa, 0, sizeof(ctx->sa));
+		ctx->sa.raw_fd  = ctx->raw;
+		ctx->sa.ifindex = ctx->vb_idx;
+		/* Send to v0's MAC; we don't know it cheaply, so use the
+		 * broadcast — bridge floods on unknown unicast / broadcast
+		 * and the ct hook sees the frame either way. */
+		memset(ctx->sa.dst_mac, 0xff, sizeof(ctx->sa.dst_mac));
+		(void)clock_gettime(CLOCK_MONOTONIC, &ctx->sa.t0);
+		if (pthread_create(&ctx->tid, NULL, brct_packet_sender,
+				   &ctx->sa) == 0)
+			ctx->sender_started = true;
+	}
+
+	if (nfnl_open(&ctx->nfnl_ct, nfnl_opts) == 0) {
+		struct timespec t0;
+
+		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
+		iters = BUDGETED(CHILD_OP_BRIDGE_CT_CHURN,
+				 JITTER_RANGE(BRCT_FLUSH_BASE));
+		if (iters < 1)
+			iters = 1;
+		if (iters > BRCT_FLUSH_CAP)
+			iters = BRCT_FLUSH_CAP;
+
+		for (i = 0; i < iters; i++) {
+			if (brct_ns_since(&t0) >= BRCT_BUDGET_NS)
+				break;
+			rc = ctnetlink_flush(&ctx->nfnl_ct);
+			if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
+			    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
+				ns_unsupported_ctnetlink = true;
+				break;
+			}
+			__atomic_add_fetch(&shm->stats.bridge_ct_flushes,
+					   1, __ATOMIC_RELAXED);
+		}
+	}
+
+	if (ctx->sender_started)
+		(void)pthread_join(ctx->tid, NULL);
+}
+
 bool bridge_conntrack_churn(struct childdata *child)
 {
 	struct bridge_conntrack_iter_ctx ctx = {
@@ -683,8 +753,6 @@ bool bridge_conntrack_churn(struct childdata *child)
 	struct nfnl_open_opts nfnl_opts = {
 		.recv_timeo_s  = 1,
 	};
-	unsigned int iters, i;
-	int rc;
 
 	(void)child;
 
@@ -717,57 +785,7 @@ bool bridge_conntrack_churn(struct childdata *child)
 	if (bridge_conntrack_iter_nft_setup(&ctx, &nfnl_opts, table, chain) != 0)
 		goto out;
 
-	ctx.raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_ALL));
-	if (ctx.raw >= 0) {
-		struct sockaddr_ll bind_sll;
-
-		memset(&bind_sll, 0, sizeof(bind_sll));
-		bind_sll.sll_family   = AF_PACKET;
-		bind_sll.sll_protocol = htons(ETH_P_ALL);
-		bind_sll.sll_ifindex  = ctx.vb_idx;
-		(void)bind(ctx.raw, (struct sockaddr *)&bind_sll,
-			   sizeof(bind_sll));
-
-		memset(&ctx.sa, 0, sizeof(ctx.sa));
-		ctx.sa.raw_fd  = ctx.raw;
-		ctx.sa.ifindex = ctx.vb_idx;
-		/* Send to v0's MAC; we don't know it cheaply, so use the
-		 * broadcast — bridge floods on unknown unicast / broadcast
-		 * and the ct hook sees the frame either way. */
-		memset(ctx.sa.dst_mac, 0xff, sizeof(ctx.sa.dst_mac));
-		(void)clock_gettime(CLOCK_MONOTONIC, &ctx.sa.t0);
-		if (pthread_create(&ctx.tid, NULL, brct_packet_sender,
-				   &ctx.sa) == 0)
-			ctx.sender_started = true;
-	}
-
-	if (nfnl_open(&ctx.nfnl_ct, &nfnl_opts) == 0) {
-		struct timespec t0;
-
-		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
-		iters = BUDGETED(CHILD_OP_BRIDGE_CT_CHURN,
-				 JITTER_RANGE(BRCT_FLUSH_BASE));
-		if (iters < 1)
-			iters = 1;
-		if (iters > BRCT_FLUSH_CAP)
-			iters = BRCT_FLUSH_CAP;
-
-		for (i = 0; i < iters; i++) {
-			if (brct_ns_since(&t0) >= BRCT_BUDGET_NS)
-				break;
-			rc = ctnetlink_flush(&ctx.nfnl_ct);
-			if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
-			    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
-				ns_unsupported_ctnetlink = true;
-				break;
-			}
-			__atomic_add_fetch(&shm->stats.bridge_ct_flushes,
-					   1, __ATOMIC_RELAXED);
-		}
-	}
-
-	if (ctx.sender_started)
-		(void)pthread_join(ctx.tid, NULL);
+	bridge_conntrack_iter_traffic_burst(&ctx, &nfnl_opts);
 
 out:
 	if (ctx.raw >= 0) {
