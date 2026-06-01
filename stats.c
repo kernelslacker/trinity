@@ -4117,6 +4117,27 @@ static void dump_stats_shared_buffer_misc(void)
 		dump_syscall_category_histogram();
 }
 
+static void dump_stats_strategy_summary(void)
+{
+	if (shm->stats.bandit_cmp_reward_added)
+		stat_row("strategy", "bandit_cmp_reward_added",
+			 shm->stats.bandit_cmp_reward_added);
+	if (shm->stats.frontier_strategy_picks)
+		stat_row("strategy", "frontier_strategy_picks",
+			 shm->stats.frontier_strategy_picks);
+	if (shm->stats.frontier_underflow_prevented)
+		stat_row("strategy", "frontier_underflow_prevented",
+			 shm->stats.frontier_underflow_prevented);
+	if (shm->stats.frontier_intervention_pulls)
+		stat_row("strategy", "frontier_intervention_pulls",
+			 shm->stats.frontier_intervention_pulls);
+	if (shm->stats.strategy_explorer_picks)
+		stat_row("strategy", "strategy_explorer_picks",
+			 shm->stats.strategy_explorer_picks);
+
+	dump_strategy_stats();
+}
+
 void dump_stats(void)
 {
 	unsigned int i;
@@ -4142,23 +4163,7 @@ void dump_stats(void)
 
 	dump_stats_shared_buffer_misc();
 
-	if (shm->stats.bandit_cmp_reward_added)
-		stat_row("strategy", "bandit_cmp_reward_added",
-			 shm->stats.bandit_cmp_reward_added);
-	if (shm->stats.frontier_strategy_picks)
-		stat_row("strategy", "frontier_strategy_picks",
-			 shm->stats.frontier_strategy_picks);
-	if (shm->stats.frontier_underflow_prevented)
-		stat_row("strategy", "frontier_underflow_prevented",
-			 shm->stats.frontier_underflow_prevented);
-	if (shm->stats.frontier_intervention_pulls)
-		stat_row("strategy", "frontier_intervention_pulls",
-			 shm->stats.frontier_intervention_pulls);
-	if (shm->stats.strategy_explorer_picks)
-		stat_row("strategy", "strategy_explorer_picks",
-			 shm->stats.strategy_explorer_picks);
-
-	dump_strategy_stats();
+	dump_stats_strategy_summary();
 
 	if (shm->stats.refcount_audit_runs) {
 		stat_row("refcount_audit", "runs",           shm->stats.refcount_audit_runs);
