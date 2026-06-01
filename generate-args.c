@@ -985,7 +985,7 @@ static unsigned long gen_arg_struct_size(struct syscallentry *entry,
 /*
  * Shared cleanup helper for any argtype whose generator hands back a
  * heap allocation that must be released after the syscall returns
- * (ARG_PATHNAME, ARG_IOVEC, ARG_SOCKADDR).
+ * (ARG_PATHNAME, ARG_SOCKADDR).
  */
 static void cleanup_deferred_free(struct syscallrecord *rec, unsigned int argnum)
 {
