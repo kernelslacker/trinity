@@ -444,12 +444,34 @@ static void tcp_ulp_swap_iter_swap_attempts(int s)
 	ifname_probe(s);
 }
 
+/* Uninstall the live ULP via setsockopt(TCP_ULP, ""), then re-install
+ * "tls" on the same socket.  Setting "" is the CVE-2024-36010 cleanup
+ * window: tls_update's prior-ctx teardown historically missed strparser
+ * state when an in-flight rx skb was queued, and the re-install retreads
+ * the proto-pointer dance so any leftover ctx is the trigger.  Closes
+ * with shutdown(SHUT_RDWR) to flush whatever the cycle left armed. */
+static void tcp_ulp_swap_iter_cycle_uninstall_reinstall(int s)
+{
+	int rc;
+
+	rc = setsockopt(s, IPPROTO_TCP, TCP_ULP, "", 0);
+	if (rc == 0)
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_uninstall_ok,
+				   1, __ATOMIC_RELAXED);
+
+	rc = setsockopt(s, IPPROTO_TCP, TCP_ULP, "tls", 3);
+	if (rc == 0)
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_reinstall_ok,
+				   1, __ATOMIC_RELAXED);
+
+	(void)shutdown(s, SHUT_RDWR);
+}
+
 /* One full sequence on a freshly-created loopback TCP socket. */
 static void iter_one(const struct timespec *t_outer)
 {
 	pid_t acceptor = -1;
 	int s;
-	int rc;
 
 	if ((unsigned long long)ns_since(t_outer) >= ULP_SWAP_WALL_CAP_NS)
 		return;
@@ -477,30 +499,8 @@ static void iter_one(const struct timespec *t_outer)
 	if ((unsigned long long)ns_since(t_outer) >= ULP_SWAP_WALL_CAP_NS)
 		goto out;
 
-	/* Step 9: setsockopt(TCP_ULP, "") -- uninstall.  net/tls's
-	 * tls_update path is the canonical CVE-2024-36010 cleanup
-	 * window: the prior ctx is meant to be torn down before the
-	 * next install dances the proto pointers back to plain TCP,
-	 * but historically the unwind missed strparser teardown when
-	 * an in-flight rx skb was queued.  Setting "" here races
-	 * exactly that.  Bump on success; on rejection the rejection
-	 * itself is the unreachable-from-flat-fuzzing edge. */
-	rc = setsockopt(s, IPPROTO_TCP, TCP_ULP, "", 0);
-	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_uninstall_ok,
-				   1, __ATOMIC_RELAXED);
-
-	/* Step 10: re-install kTLS on the same sock.  net/tls's
-	 * tls_init() retreads the proto-pointer dance; if the prior
-	 * cleanup left ctx state dangling (the bug class) the second
-	 * init is the trigger.  EEXIST when the kernel still sees a
-	 * live ULP attached -- itself a reject-after-validate edge. */
-	rc = setsockopt(s, IPPROTO_TCP, TCP_ULP, "tls", 3);
-	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_reinstall_ok,
-				   1, __ATOMIC_RELAXED);
-
-	(void)shutdown(s, SHUT_RDWR);
+	/* Steps 9-10: uninstall + reinstall ULP, then shutdown. */
+	tcp_ulp_swap_iter_cycle_uninstall_reinstall(s);
 
 out:
 	if (s >= 0)
