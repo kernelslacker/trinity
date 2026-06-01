@@ -410,6 +410,40 @@ static void ublk_lifecycle_iter_arm_fetch(struct ublk_lifecycle_iter_ctx *ctx)
 	}
 }
 
+/* UBLK_U_CMD_DEL_DEV on the ctrl ring while FETCH_REQ is parked on the
+ * IO ring -- the f7700a4415af UAF window.  The kernel-side
+ * ublk_ctrl_uring_cmd dispatch into the DEL path drives ublk_cancel_dev
+ * -> ublk_cancel_queue -> ublk_cancel_cmd across every parked
+ * UBLK_IO_*_REQ on the queue chrdev.  Best-effort: submit failure is
+ * ignored, teardown still runs.  Bumps race_observed only when fetch
+ * was actually in flight at submit time. */
+static void ublk_lifecycle_iter_del_dev(struct ublk_lifecycle_iter_ctx *ctx)
+{
+	struct ublk_lc_ctrl_cmd cc;
+	struct io_uring_sqe sqe;
+
+	memset(&cc, 0, sizeof(cc));
+	cc.dev_id = (__u32)ctx->dev_id;
+	cc.queue_id = (__u16)-1;
+
+	memset(&sqe, 0, sizeof(sqe));
+	sqe.opcode = IORING_OP_URING_CMD;
+	sqe.fd = ctx->ctrl_fd;
+	sqe.cmd_op = UBLK_U_CMD_DEL_DEV;
+	sqe.addr = (__u64)(uintptr_t)&cc;
+	sqe.len = (__u32)sizeof(cc);
+	sqe.user_data = 0xde10;
+
+	if (ring_submit(&ctx->ctrl_ring, &sqe, 1)) {
+		ring_drain(&ctx->ctrl_ring);
+		__atomic_add_fetch(&shm->stats.ublk_lifecycle_del_ok, 1,
+				   __ATOMIC_RELAXED);
+		if (ctx->fetch_in_flight)
+			__atomic_add_fetch(&shm->stats.ublk_lifecycle_race_observed,
+					   1, __ATOMIC_RELAXED);
+	}
+}
+
 /* Reverse-order release of everything ublk_lifecycle stood up: close the
  * queue chrdev first so the IO-ring teardown's force-cancel sees no fresh
  * submissions, then both rings (io before ctrl so the ctrl ring outlives
@@ -436,8 +470,6 @@ bool ublk_lifecycle(struct childdata *child)
 		.q_fd    = -1,
 		.dev_id  = -1,
 	};
-	struct ublk_lc_ctrl_cmd cc;
-	struct io_uring_sqe sqe;
 
 	(void)child;
 
@@ -454,29 +486,7 @@ bool ublk_lifecycle(struct childdata *child)
 		goto out;
 
 	ublk_lifecycle_iter_arm_fetch(&ctx);
-
-	/* DEL_DEV on the control ring while FETCH_REQ is parked on the
-	 * IO ring — the f7700a4415af UAF window. */
-	memset(&cc, 0, sizeof(cc));
-	cc.dev_id = (__u32)ctx.dev_id;
-	cc.queue_id = (__u16)-1;
-
-	memset(&sqe, 0, sizeof(sqe));
-	sqe.opcode = IORING_OP_URING_CMD;
-	sqe.fd = ctx.ctrl_fd;
-	sqe.cmd_op = UBLK_U_CMD_DEL_DEV;
-	sqe.addr = (__u64)(uintptr_t)&cc;
-	sqe.len = (__u32)sizeof(cc);
-	sqe.user_data = 0xde10;
-
-	if (ring_submit(&ctx.ctrl_ring, &sqe, 1)) {
-		ring_drain(&ctx.ctrl_ring);
-		__atomic_add_fetch(&shm->stats.ublk_lifecycle_del_ok, 1,
-				   __ATOMIC_RELAXED);
-		if (ctx.fetch_in_flight)
-			__atomic_add_fetch(&shm->stats.ublk_lifecycle_race_observed,
-					   1, __ATOMIC_RELAXED);
-	}
+	ublk_lifecycle_iter_del_dev(&ctx);
 
 out:
 	ublk_lifecycle_iter_teardown(&ctx);
