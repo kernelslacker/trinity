@@ -358,37 +358,24 @@ void kcov_init_global(void)
 	}
 }
 
-void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
+/*
+ * Per-child PC-mode bring-up: allocate the dedup table, open and
+ * KCOV_INIT_TRACE the PC fd, mmap its trace buffer, and flip kc->active.
+ * Returns true on full success; on any failure tears down what it
+ * allocated (dedup table, fd, mmap) and returns false so the caller
+ * can bail out before the remote/cmp/select-mode phases.
+ *
+ * Dedup table:  calloc() so post-fork children get their own copy under
+ * COW with every slot's generation field starting at 0.  The first
+ * kcov_collect() bumps current_generation to 1, so all slots immediately
+ * look stale and the table behaves as if just wiped — without paying
+ * the per-call memset cost.
+ */
+static bool kcov_init_child_pc_fd(struct kcov_child *kc)
 {
-	kc->fd = -1;
-	kc->trace_buf = NULL;
-	kc->cmp_fd = -1;
-	kc->cmp_trace_buf = NULL;
-	kc->active = false;
-	kc->cmp_capable = false;
-	kc->cmp_enabled_this_call = false;
-	kc->remote_mode = false;
-	kc->remote_capable = false;
-	kc->mode = KCOV_MODE_PC;
-	kc->recovery_attempts = 0;
-	kc->cmp_recovery_attempts = 0;
-	kc->dedup = NULL;
-	kc->current_generation = 0;
-
-	if (kcov_shm == NULL)
-		return;
-
-	/*
-	 * Per-child, child-private dedup table for hit-count bucketing.
-	 * calloc() so post-fork children get their own copy under COW with
-	 * every slot's generation field starting at 0.  The first
-	 * kcov_collect() bumps current_generation to 1, so all slots
-	 * immediately look stale and the table behaves as if just wiped —
-	 * without paying the per-call memset cost.
-	 */
 	kc->dedup = calloc(KCOV_DEDUP_SIZE, sizeof(*kc->dedup));
 	if (kc->dedup == NULL)
-		return;
+		return false;
 
 	kc->fd = open("/sys/kernel/debug/kcov", O_RDWR);
 	if (kc->fd < 0)
@@ -413,6 +400,36 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	}
 
 	kc->active = true;
+	return true;
+
+err_free_dedup:
+	free(kc->dedup);
+	kc->dedup = NULL;
+	return false;
+}
+
+void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
+{
+	kc->fd = -1;
+	kc->trace_buf = NULL;
+	kc->cmp_fd = -1;
+	kc->cmp_trace_buf = NULL;
+	kc->active = false;
+	kc->cmp_capable = false;
+	kc->cmp_enabled_this_call = false;
+	kc->remote_mode = false;
+	kc->remote_capable = false;
+	kc->mode = KCOV_MODE_PC;
+	kc->recovery_attempts = 0;
+	kc->cmp_recovery_attempts = 0;
+	kc->dedup = NULL;
+	kc->current_generation = 0;
+
+	if (kcov_shm == NULL)
+		return;
+
+	if (!kcov_init_child_pc_fd(kc))
+		return;
 
 	/* Probe for KCOV_REMOTE_ENABLE support.  Try a remote enable/disable
 	 * cycle — if the ioctl succeeds, the kernel supports it. */
@@ -610,10 +627,6 @@ err_close_cmp:
 	 * KCOV_MODE_PC.
 	 */
 	goto select_mode;
-
-err_free_dedup:
-	free(kc->dedup);
-	kc->dedup = NULL;
 }
 
 void kcov_cleanup_child(struct kcov_child *kc)
