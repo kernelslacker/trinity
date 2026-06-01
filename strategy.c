@@ -1966,6 +1966,65 @@ static void dump_strategy_stats_intervention_modes(void)
 	}
 }
 
+/* Random-rescue classifier distribution.  Per-class counts only
+ * accumulate during SR_PLATEAU_FORCE intervention windows, so a
+ * run that never plateaued prints nothing here; on a run that
+ * did, the dominant class plus the currently-published
+ * amplification field together tell the operator which targeted
+ * intervention the orchestrator settled on by run-end.  Zero
+ * buckets are suppressed so the placeholder classes (UNUSUAL_FD_
+ * PRODUCER, WRONG_TYPE_FD, PERSONA_GATED) stay quiet until their
+ * detection infrastructure lands and starts crediting rescues to
+ * them. */
+static void dump_strategy_stats_rescue_classes(void)
+{
+	unsigned long total_rescues = 0;
+	int c;
+
+	for (c = 0; c < RRC_NR_CLASSES; c++)
+		total_rescues += __atomic_load_n(
+			&shm->random_rescue_class_count[c],
+			__ATOMIC_RELAXED);
+
+	if (total_rescues > 0) {
+		int amp = __atomic_load_n(
+			&shm->plateau_rescue_amplified_class,
+			__ATOMIC_RELAXED);
+
+		output(0, "  rescue classes: total=%lu", total_rescues);
+		for (c = 0; c < RRC_NR_CLASSES; c++) {
+			unsigned long count = __atomic_load_n(
+				&shm->random_rescue_class_count[c],
+				__ATOMIC_RELAXED);
+			if (count == 0)
+				continue;
+			output(0, " %s=%lu",
+			       random_rescue_class_name(
+				       (enum random_rescue_class)c),
+			       count);
+		}
+		output(0, "\n");
+
+		/* Amplified class is the orchestrator's current
+		 * pick; RRC_NR_CLASSES means no class is being
+		 * amplified (either the run is not in a plateau
+		 * intervention right now or no class cleared the
+		 * dominance threshold).  Print the threshold
+		 * outcome explicitly so the operator can
+		 * distinguish "no amplification because below
+		 * floor" from "no amplification because the lead
+		 * over the runner-up was too thin". */
+		if (amp >= 0 && amp < RRC_NR_CLASSES)
+			output(0, "  rescue amplified: %s (next intervention biased toward this class's structured replay)\n",
+			       random_rescue_class_name(
+				       (enum random_rescue_class)amp));
+		else
+			output(0, "  rescue amplified: none (no class crossed the %lu-rescue floor with a %lux lead)\n",
+			       RRC_AMPLIFY_MIN_COUNT,
+			       RRC_AMPLIFY_LEAD_RATIO);
+	}
+}
+
 void dump_strategy_stats(void)
 {
 	unsigned long total_pulls = 0;
@@ -1975,64 +2034,7 @@ void dump_strategy_stats(void)
 	dump_strategy_stats_header();
 	dump_strategy_stats_plateau_forced_cohort();
 	dump_strategy_stats_intervention_modes();
-
-	/* Random-rescue classifier distribution.  Per-class counts only
-	 * accumulate during SR_PLATEAU_FORCE intervention windows, so a
-	 * run that never plateaued prints nothing here; on a run that
-	 * did, the dominant class plus the currently-published
-	 * amplification field together tell the operator which targeted
-	 * intervention the orchestrator settled on by run-end.  Zero
-	 * buckets are suppressed so the placeholder classes (UNUSUAL_FD_
-	 * PRODUCER, WRONG_TYPE_FD, PERSONA_GATED) stay quiet until their
-	 * detection infrastructure lands and starts crediting rescues to
-	 * them. */
-	{
-		unsigned long total_rescues = 0;
-		int c;
-
-		for (c = 0; c < RRC_NR_CLASSES; c++)
-			total_rescues += __atomic_load_n(
-				&shm->random_rescue_class_count[c],
-				__ATOMIC_RELAXED);
-
-		if (total_rescues > 0) {
-			int amp = __atomic_load_n(
-				&shm->plateau_rescue_amplified_class,
-				__ATOMIC_RELAXED);
-
-			output(0, "  rescue classes: total=%lu", total_rescues);
-			for (c = 0; c < RRC_NR_CLASSES; c++) {
-				unsigned long count = __atomic_load_n(
-					&shm->random_rescue_class_count[c],
-					__ATOMIC_RELAXED);
-				if (count == 0)
-					continue;
-				output(0, " %s=%lu",
-				       random_rescue_class_name(
-					       (enum random_rescue_class)c),
-				       count);
-			}
-			output(0, "\n");
-
-			/* Amplified class is the orchestrator's current
-			 * pick; RRC_NR_CLASSES means no class is being
-			 * amplified (either the run is not in a plateau
-			 * intervention right now or no class cleared the
-			 * dominance threshold).  Print the threshold
-			 * outcome explicitly so the operator can
-			 * distinguish "no amplification because below
-			 * floor" from "no amplification because the lead
-			 * over the runner-up was too thin". */
-			if (amp >= 0 && amp < RRC_NR_CLASSES)
-				output(0, "  rescue amplified: %s (next intervention biased toward this class's structured replay)\n",
-				       random_rescue_class_name(
-					       (enum random_rescue_class)amp));
-			else
-				output(0, "  rescue amplified: none (no class crossed the %lu-rescue floor with a %lux lead)\n",
-				       RRC_AMPLIFY_MIN_COUNT,
-				       RRC_AMPLIFY_LEAD_RATIO);
-		}
-	}
+	dump_strategy_stats_rescue_classes();
 
 	/* Hybrid bandit/explorer split summary.  Suppressed when the run had
 	 * no explorers reserved (explorer_children == 0) -- the bandit-pool
