@@ -314,22 +314,33 @@ static void pool_unlock(struct cmp_hint_pool *pool)
  * is one compare-against-16; the canary cache lines are only touched
  * once a stomp has already occurred.  Returns true when corruption is
  * present so callers can treat the pool as advisory-empty.
+ *
+ * Per-pool latch (pool->corrupted) one-shots the counter bumps: the
+ * first observation records the channel, every subsequent call
+ * returns true from the latch check and skips both the count
+ * comparison and the canary probes.  Without this, the batch loop in
+ * cmp_hints_flush_pending would multiply a single stomp event by up
+ * to CMP_HINTS_PENDING_BATCH bumps per cmp_hints_collect call and
+ * the count_oob counter would track "exposures" instead of "events".
  */
-static bool cmp_hints_pool_corrupted(const struct cmp_hint_pool *pool,
+static bool cmp_hints_pool_corrupted(struct cmp_hint_pool *pool,
 				     unsigned int observed_count)
 {
+	if (__atomic_load_n(&pool->corrupted, __ATOMIC_RELAXED))
+		return true;
 	if (observed_count <= CMP_HINTS_PER_SYSCALL)
 		return false;
-	if (kcov_shm == NULL)
-		return true;
-	__atomic_fetch_add(&kcov_shm->cmp_hints_count_oob, 1UL,
-			   __ATOMIC_RELAXED);
-	if (pool->canary_pre != CMP_HINTS_POOL_CANARY)
-		__atomic_fetch_add(&kcov_shm->cmp_hints_canary_pre_corrupt,
-				   1UL, __ATOMIC_RELAXED);
-	if (pool->canary_post != CMP_HINTS_POOL_CANARY)
-		__atomic_fetch_add(&kcov_shm->cmp_hints_canary_post_corrupt,
-				   1UL, __ATOMIC_RELAXED);
+	if (kcov_shm != NULL) {
+		__atomic_fetch_add(&kcov_shm->cmp_hints_count_oob, 1UL,
+				   __ATOMIC_RELAXED);
+		if (pool->canary_pre != CMP_HINTS_POOL_CANARY)
+			__atomic_fetch_add(&kcov_shm->cmp_hints_canary_pre_corrupt,
+					   1UL, __ATOMIC_RELAXED);
+		if (pool->canary_post != CMP_HINTS_POOL_CANARY)
+			__atomic_fetch_add(&kcov_shm->cmp_hints_canary_post_corrupt,
+					   1UL, __ATOMIC_RELAXED);
+	}
+	__atomic_store_n(&pool->corrupted, true, __ATOMIC_RELAXED);
 	return true;
 }
 

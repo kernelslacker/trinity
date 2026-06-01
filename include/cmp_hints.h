@@ -112,6 +112,16 @@ struct cmp_hint_pool {
 	uint64_t canary_pre;
 	struct cmp_hint_entry entries[CMP_HINTS_PER_SYSCALL];
 	uint64_t canary_post;
+	/* Sticky one-shot flag latched by cmp_hints_pool_corrupted() on
+	 * first detection of a wild-write into this pool (either count
+	 * out-of-cap or canary stomp).  Subsequent reader calls observe
+	 * the flag and short-circuit without re-bumping the kcov_shm
+	 * counters; without this, cmp_hints_flush_pending's batch loop
+	 * would multiply a single corruption event by up to
+	 * CMP_HINTS_PENDING_BATCH bumps per cmp_hints_collect call.
+	 * Never cleared: a stomped pool stays quarantined for the
+	 * lifetime of the trinity invocation. */
+	bool corrupted;
 };
 
 /*
