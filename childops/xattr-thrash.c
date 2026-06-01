@@ -139,6 +139,21 @@ static unsigned int xattr_thrash_iter_setup_fds(struct xattr_slot *slots)
 	return opened;
 }
 
+/*
+ * Phase: close every fd opened by setup_fds.  All xattrs left behind by
+ * the iteration loop persist on the testfile inodes by design, so the
+ * next xattr_thrash invocation starts against an inode that already has
+ * xattrs to traverse.
+ */
+static void xattr_thrash_iter_teardown_fds(struct xattr_slot *slots,
+					   unsigned int opened)
+{
+	unsigned int i;
+
+	for (i = 0; i < opened; i++)
+		close(slots[i].fd);
+}
+
 bool xattr_thrash(struct childdata *child)
 {
 	struct xattr_slot slots[NR_XATTR_FDS];
@@ -147,7 +162,6 @@ bool xattr_thrash(struct childdata *child)
 	unsigned int iter;
 	unsigned int iters = BUDGETED(CHILD_OP_XATTR_THRASH,
 				      JITTER_RANGE(MAX_ITERATIONS));
-	unsigned int i;
 
 	(void)child;
 
@@ -295,8 +309,7 @@ bool xattr_thrash(struct childdata *child)
 			break;
 	}
 
-	for (i = 0; i < opened; i++)
-		close(slots[i].fd);
+	xattr_thrash_iter_teardown_fds(slots, opened);
 
 	return true;
 }
