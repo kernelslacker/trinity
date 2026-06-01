@@ -167,6 +167,20 @@ static const char * const ao_algs[] = {
  * via BUDGETED() so adapt_budget can grow it on productive runs. */
 #define ROTATE_ITERS_BASE	4U
 
+/* Per-invocation state shared across the extracted phase helpers.  Fd
+ * fields default to -1 so the teardown helper can close them
+ * unconditionally regardless of which earlier phase bailed.  srv_addr
+ * is populated by open_loopback_listener; cli_addr by the client
+ * getsockname; alg by install_keys (used again by rotate_loop). */
+struct tcp_ao_rotate_iter_ctx {
+	int listener;
+	int cli;
+	int srv_acc;
+	struct sockaddr_in srv_addr;
+	struct sockaddr_in cli_addr;
+	const char *alg;
+};
+
 /*
  * Build a TCP-AO key descriptor pointing at `peer`.  Caller controls
  * sndid/rcvid (the matching key ID pair on each end).  set_current=1
@@ -263,18 +277,63 @@ static void rotate_send(int fd)
 				   1, __ATOMIC_RELAXED);
 }
 
+/*
+ * Phase 1: open the loopback listener (via open_loopback_listener),
+ * then open the client socket, bind it to 127.0.0.1:0, and recover the
+ * assigned ephemeral port via getsockname.  The client side has to be
+ * bound BEFORE the listener-side TCP_AO_ADD_KEY because the listener's
+ * key carries the client's exact peer address (prefix=32) and the
+ * kernel pins the match at install time.  Returns 0 on success or -1
+ * if the iteration should bail to the out: cleanup path; on failure
+ * tcp_ao_rotate_setup_failed is bumped and the caller's teardown
+ * helper handles whichever fds we did manage to open.
+ */
+static int tcp_ao_rotate_iter_setup_sockets(struct tcp_ao_rotate_iter_ctx *ctx)
+{
+	socklen_t slen;
+
+	if (open_loopback_listener(&ctx->listener, &ctx->srv_addr) < 0) {
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	ctx->cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (ctx->cli < 0) {
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
+	memset(&ctx->cli_addr, 0, sizeof(ctx->cli_addr));
+	ctx->cli_addr.sin_family = AF_INET;
+	ctx->cli_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	ctx->cli_addr.sin_port = 0;
+	if (bind(ctx->cli, (struct sockaddr *)&ctx->cli_addr,
+		 sizeof(ctx->cli_addr)) < 0) {
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	slen = sizeof(ctx->cli_addr);
+	if (getsockname(ctx->cli, (struct sockaddr *)&ctx->cli_addr, &slen) < 0) {
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	return 0;
+}
+
 bool tcp_ao_rotate(struct childdata *child)
 {
-	struct sockaddr_in srv_addr;
-	struct sockaddr_in cli_addr;
+	struct tcp_ao_rotate_iter_ctx ctx = {
+		.listener = -1,
+		.cli      = -1,
+		.srv_acc  = -1,
+	};
 	struct tcp_ao_add  ao_add;
 	struct tcp_ao_del  ao_del;
 	struct tcp_ao_info_opt ao_info;
-	socklen_t slen;
-	const char *alg;
-	int listener = -1;
-	int cli = -1;
-	int srv_acc = -1;
 	int rc;
 	unsigned int iters;
 	unsigned int i;
@@ -287,49 +346,18 @@ bool tcp_ao_rotate(struct childdata *child)
 	if (ns_unsupported)
 		return true;
 
-	if (open_loopback_listener(&listener, &srv_addr) < 0) {
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return true;
-	}
-
-	cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-	if (cli < 0) {
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (tcp_ao_rotate_iter_setup_sockets(&ctx) != 0)
 		goto out;
-	}
 
-	/* Bind the client to a known address/port BEFORE installing the
-	 * listener-side key: the listener's TCP_AO_ADD_KEY needs the
-	 * client's exact peer address (prefix=32) for the key to match
-	 * the incoming SYN.  Bind to port 0 and getsockname() to recover
-	 * the assigned ephemeral port. */
-	memset(&cli_addr, 0, sizeof(cli_addr));
-	cli_addr.sin_family = AF_INET;
-	cli_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-	cli_addr.sin_port = 0;
-	if (bind(cli, (struct sockaddr *)&cli_addr, sizeof(cli_addr)) < 0) {
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-	slen = sizeof(cli_addr);
-	if (getsockname(cli, (struct sockaddr *)&cli_addr, &slen) < 0) {
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-
-	alg = ao_algs[rnd_modulo_u32(NR_AO_ALGS)];
+	ctx.alg = ao_algs[rnd_modulo_u32(NR_AO_ALGS)];
 
 	/* Install the listener-side key first, peer = client's bound
 	 * address.  This is the call that hits the support gate: if
 	 * TCP-AO isn't compiled in, we get ENOPROTOOPT here and latch
 	 * for the rest of the process.  EPERM means no CAP_NET_ADMIN —
 	 * also latched, since trinity children don't gain caps mid-life. */
-	fill_ao_add(&ao_add, &cli_addr, 1, 1, true, alg);
-	rc = setsockopt(listener, IPPROTO_TCP, TCP_AO_ADD_KEY,
+	fill_ao_add(&ao_add, &ctx.cli_addr, 1, 1, true, ctx.alg);
+	rc = setsockopt(ctx.listener, IPPROTO_TCP, TCP_AO_ADD_KEY,
 			&ao_add, sizeof(ao_add));
 	if (rc < 0) {
 		if (errno == ENOPROTOOPT || errno == EPERM)
@@ -347,8 +375,8 @@ bool tcp_ao_rotate(struct childdata *child)
 	 * cross-host key equality at install time, only at handshake
 	 * time when the HMAC mismatches.  That mismatch is itself an
 	 * exercised verify-reject edge). */
-	fill_ao_add(&ao_add, &srv_addr, 1, 1, true, alg);
-	rc = setsockopt(cli, IPPROTO_TCP, TCP_AO_ADD_KEY,
+	fill_ao_add(&ao_add, &ctx.srv_addr, 1, 1, true, ctx.alg);
+	rc = setsockopt(ctx.cli, IPPROTO_TCP, TCP_AO_ADD_KEY,
 			&ao_add, sizeof(ao_add));
 	if (rc < 0) {
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_addkey_rejected,
@@ -363,29 +391,29 @@ bool tcp_ao_rotate(struct childdata *child)
 	 * with the AO sign/verify overhead, but EINPROGRESS is fine —
 	 * accept() succeeds regardless and we proceed to the rotate
 	 * loop. */
-	(void)fcntl(cli, F_SETFL, O_NONBLOCK);
-	if (connect(cli, (struct sockaddr *)&srv_addr, sizeof(srv_addr)) < 0 &&
-	    errno != EINPROGRESS) {
+	(void)fcntl(ctx.cli, F_SETFL, O_NONBLOCK);
+	if (connect(ctx.cli, (struct sockaddr *)&ctx.srv_addr,
+		    sizeof(ctx.srv_addr)) < 0 && errno != EINPROGRESS) {
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_connect_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
 
-	srv_acc = accept(listener, NULL, NULL);
-	if (srv_acc < 0) {
+	ctx.srv_acc = accept(ctx.listener, NULL, NULL);
+	if (ctx.srv_acc < 0) {
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_connect_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	(void)fcntl(srv_acc, F_SETFL, O_NONBLOCK);
+	(void)fcntl(ctx.srv_acc, F_SETFL, O_NONBLOCK);
 	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_connected,
 			   1, __ATOMIC_RELAXED);
 
 	/* Drive the AO sign/verify path with an initial send before any
 	 * rotation, so the first ADD_KEY/INFO race actually has live
 	 * ESTABLISHED traffic to interact with. */
-	rotate_send(cli);
-	rotate_send(srv_acc);
+	rotate_send(ctx.cli);
+	rotate_send(ctx.srv_acc);
 
 	/* Rotation loop.  cur_id starts at 1 (the just-installed key)
 	 * and rolls forward each iteration: we add cur_id+1, rotate
@@ -412,8 +440,8 @@ bool tcp_ao_rotate(struct childdata *child)
 		 *    we want INFO to be the call that flips current_key,
 		 *    so the rotate path is exercised separately from the
 		 *    install path. */
-		fill_ao_add(&ao_add, &cli_addr, next_id, next_id, false, alg);
-		rc = setsockopt(srv_acc, IPPROTO_TCP, TCP_AO_ADD_KEY,
+		fill_ao_add(&ao_add, &ctx.cli_addr, next_id, next_id, false, ctx.alg);
+		rc = setsockopt(ctx.srv_acc, IPPROTO_TCP, TCP_AO_ADD_KEY,
 				&ao_add, sizeof(ao_add));
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_keys_added,
@@ -422,8 +450,8 @@ bool tcp_ao_rotate(struct childdata *child)
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_addkey_rejected,
 					   1, __ATOMIC_RELAXED);
 
-		fill_ao_add(&ao_add, &srv_addr, next_id, next_id, false, alg);
-		rc = setsockopt(cli, IPPROTO_TCP, TCP_AO_ADD_KEY,
+		fill_ao_add(&ao_add, &ctx.srv_addr, next_id, next_id, false, ctx.alg);
+		rc = setsockopt(ctx.cli, IPPROTO_TCP, TCP_AO_ADD_KEY,
 				&ao_add, sizeof(ao_add));
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_keys_added,
@@ -436,7 +464,7 @@ bool tcp_ao_rotate(struct childdata *child)
 		memset(&ao_info, 0, sizeof(ao_info));
 		ao_info.set_current = 1;
 		ao_info.current_key = next_id;
-		rc = setsockopt(cli, IPPROTO_TCP, TCP_AO_INFO,
+		rc = setsockopt(ctx.cli, IPPROTO_TCP, TCP_AO_INFO,
 				&ao_info, sizeof(ao_info));
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_key_rotations,
@@ -444,21 +472,21 @@ bool tcp_ao_rotate(struct childdata *child)
 		else
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_info_rejected,
 					   1, __ATOMIC_RELAXED);
-		(void)setsockopt(srv_acc, IPPROTO_TCP, TCP_AO_INFO,
+		(void)setsockopt(ctx.srv_acc, IPPROTO_TCP, TCP_AO_INFO,
 				 &ao_info, sizeof(ao_info));
 
 		/* c) Send through the rotated key.  This is the "verify
 		 *    against the new key on the peer" edge.  Drive both
 		 *    directions so retransmit / dup-ack races land on
 		 *    both endpoints' AO state machines. */
-		rotate_send(cli);
-		rotate_send(srv_acc);
+		rotate_send(ctx.cli);
+		rotate_send(ctx.srv_acc);
 
 		/* d) DEL_KEY old cur_id — race against in-flight retx
 		 *    that's still using sndid=cur_id on the wire.  This
 		 *    is the rcu-walk-vs-free race window. */
-		fill_ao_del(&ao_del, &srv_addr, cur_id, cur_id);
-		rc = setsockopt(cli, IPPROTO_TCP, TCP_AO_DEL_KEY,
+		fill_ao_del(&ao_del, &ctx.srv_addr, cur_id, cur_id);
+		rc = setsockopt(ctx.cli, IPPROTO_TCP, TCP_AO_DEL_KEY,
 				&ao_del, sizeof(ao_del));
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_key_dels,
@@ -467,8 +495,8 @@ bool tcp_ao_rotate(struct childdata *child)
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_delkey_rejected,
 					   1, __ATOMIC_RELAXED);
 
-		fill_ao_del(&ao_del, &cli_addr, cur_id, cur_id);
-		rc = setsockopt(srv_acc, IPPROTO_TCP, TCP_AO_DEL_KEY,
+		fill_ao_del(&ao_del, &ctx.cli_addr, cur_id, cur_id);
+		rc = setsockopt(ctx.srv_acc, IPPROTO_TCP, TCP_AO_DEL_KEY,
 				&ao_del, sizeof(ao_del));
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_key_dels,
@@ -480,16 +508,16 @@ bool tcp_ao_rotate(struct childdata *child)
 		cur_id = next_id;
 	}
 
-	(void)shutdown(cli, SHUT_RDWR);
-	(void)shutdown(srv_acc, SHUT_RDWR);
+	(void)shutdown(ctx.cli, SHUT_RDWR);
+	(void)shutdown(ctx.srv_acc, SHUT_RDWR);
 
 out:
-	if (srv_acc >= 0)
-		close(srv_acc);
-	if (cli >= 0)
-		close(cli);
-	if (listener >= 0)
-		close(listener);
+	if (ctx.srv_acc >= 0)
+		close(ctx.srv_acc);
+	if (ctx.cli >= 0)
+		close(ctx.cli);
+	if (ctx.listener >= 0)
+		close(ctx.listener);
 	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_cycles, 1, __ATOMIC_RELAXED);
 	return true;
 }
