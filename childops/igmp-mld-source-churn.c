@@ -448,6 +448,64 @@ static int igmp_source_iter_v4_join(struct igmp_source_iter_v4_ctx *it)
 }
 
 /*
+ * Phase 4 (v4): one of the four race-letter mutations against the
+ * recv_s filter while the sender's burst is in flight.  A = shrink
+ * (MCAST_LEAVE_SOURCE_GROUP), B = INCLUDE->EXCLUDE flip
+ * (MCAST_BLOCK_SOURCE), C = bulk replace (MCAST_MSFILTER, exercises
+ * the ip_mc_msfilter realloc + rcu publish path; allocates ctx->gf
+ * which the teardown phase frees), D = full leave (IP_DROP_MEMBERSHIP).
+ */
+static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
+{
+	unsigned int race_letter = (it->iter_idx >> 1) & 3U;
+	unsigned int nsrc;
+	int rc;
+
+	switch (race_letter) {
+	case 0:
+		/* RACE A: filter shrink mid-stream. */
+		if (setsockopt(it->recv_s, IPPROTO_IP, MCAST_LEAVE_SOURCE_GROUP,
+			       &it->gsr_a, sizeof(it->gsr_a)) == 0)
+			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_leave_ok,
+					   1, __ATOMIC_RELAXED);
+		break;
+	case 1:
+		/* RACE B: INCLUDE -> EXCLUDE flip via BLOCK_SOURCE. */
+		if (setsockopt(it->recv_s, IPPROTO_IP, MCAST_BLOCK_SOURCE,
+			       &it->gsr_b, sizeof(it->gsr_b)) == 0)
+			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_block_ok,
+					   1, __ATOMIC_RELAXED);
+		break;
+	case 2:
+		/* RACE C: bulk replace via MCAST_MSFILTER -- exercises the
+		 * ip_mc_msfilter realloc + rcu publish path. */
+		nsrc = rotate_filter_size(it->iter_idx);
+		it->gf = build_filter_v4(0U, it->grp_be, nsrc, it->salt);
+		if (it->gf) {
+			rc = setsockopt(it->recv_s, IPPROTO_IP, MCAST_MSFILTER,
+					it->gf, GROUP_FILTER_SIZE(nsrc));
+			if (rc == 0)
+				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_msfilter_ok,
+						   1, __ATOMIC_RELAXED);
+		}
+		break;
+	case 3:
+		/* RACE D: full leave race vs in-flight sender. */
+		{
+			struct ip_mreqn mreq;
+
+			memset(&mreq, 0, sizeof(mreq));
+			mreq.imr_multiaddr.s_addr = it->grp_be;
+			if (setsockopt(it->recv_s, IPPROTO_IP, IP_DROP_MEMBERSHIP,
+				       &mreq, sizeof(mreq)) == 0)
+				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_drop_ok,
+						   1, __ATOMIC_RELAXED);
+		}
+		break;
+	}
+}
+
+/*
  * One IPv4 join+race+teardown cycle.  Returns immediately if the cap-
  * gate has latched.  Updates ns_unsupported_igmp_mld_source_churn on
  * structural failures from the first MCAST_JOIN_SOURCE_GROUP probe.
@@ -461,9 +519,6 @@ static void iter_one_v4(unsigned int iter_idx, const struct timespec *t_outer)
 		.iter_idx = iter_idx,
 		.salt     = (unsigned int)(rand32() & 0xffu),
 	};
-	unsigned int race_letter = (iter_idx >> 1) & 3U;
-	unsigned int nsrc;
-	int rc;
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
 		return;
@@ -485,48 +540,7 @@ static void iter_one_v4(unsigned int iter_idx, const struct timespec *t_outer)
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
 		goto teardown;
 
-	switch (race_letter) {
-	case 0:
-		/* RACE A: filter shrink mid-stream. */
-		if (setsockopt(it.recv_s, IPPROTO_IP, MCAST_LEAVE_SOURCE_GROUP,
-			       &it.gsr_a, sizeof(it.gsr_a)) == 0)
-			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_leave_ok,
-					   1, __ATOMIC_RELAXED);
-		break;
-	case 1:
-		/* RACE B: INCLUDE -> EXCLUDE flip via BLOCK_SOURCE. */
-		if (setsockopt(it.recv_s, IPPROTO_IP, MCAST_BLOCK_SOURCE,
-			       &it.gsr_b, sizeof(it.gsr_b)) == 0)
-			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_block_ok,
-					   1, __ATOMIC_RELAXED);
-		break;
-	case 2:
-		/* RACE C: bulk replace via MCAST_MSFILTER -- exercises the
-		 * ip_mc_msfilter realloc + rcu publish path. */
-		nsrc = rotate_filter_size(it.iter_idx);
-		it.gf = build_filter_v4(0U, it.grp_be, nsrc, it.salt);
-		if (it.gf) {
-			rc = setsockopt(it.recv_s, IPPROTO_IP, MCAST_MSFILTER,
-					it.gf, GROUP_FILTER_SIZE(nsrc));
-			if (rc == 0)
-				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_msfilter_ok,
-						   1, __ATOMIC_RELAXED);
-		}
-		break;
-	case 3:
-		/* RACE D: full leave race vs in-flight sender. */
-		{
-			struct ip_mreqn mreq;
-
-			memset(&mreq, 0, sizeof(mreq));
-			mreq.imr_multiaddr.s_addr = it.grp_be;
-			if (setsockopt(it.recv_s, IPPROTO_IP, IP_DROP_MEMBERSHIP,
-				       &mreq, sizeof(mreq)) == 0)
-				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_drop_ok,
-						   1, __ATOMIC_RELAXED);
-		}
-		break;
-	}
+	igmp_source_iter_v4_race(&it);
 
 	send_burst(it.send_s, 2);
 
