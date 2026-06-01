@@ -424,6 +424,42 @@ bool tls_ulp_churn(struct childdata *child)
 		 * historically returned EBUSY for in-place TX re-init.  We
 		 * don't bump a separate counter for it; the runs vs
 		 * rekey_ok ratio is the signal. */
+
+		/* Splice back-pressure probe: shrink SNDBUF to a hard floor
+		 * and replay the splice path against the just-rotated key.
+		 * Drives the strparser-on-rekey + tls_sw_splice_eof
+		 * back-pressure edge — the kernel has to spill into its
+		 * partial-record retry path when the send buffer can't
+		 * absorb the whole splice in one go.  1/8 cadence keeps the
+		 * per-iter cost bounded; the rekey burst itself is the
+		 * hot path. */
+		if (ONE_IN(8)) {
+			int snd = 8192;
+			int sp_src;
+
+			/* SO_SNDBUFFORCE bypasses wmem_max with CAP_NET_ADMIN;
+			 * non-privileged callers fall back to SO_SNDBUF where
+			 * the kernel-min floor (SOCK_MIN_SNDBUF) still bites. */
+			if (setsockopt(s, SOL_SOCKET, SO_SNDBUFFORCE,
+				       &snd, sizeof(snd)) < 0 &&
+			    errno == EPERM)
+				(void)setsockopt(s, SOL_SOCKET, SO_SNDBUF,
+						 &snd, sizeof(snd));
+
+			sp_src = open(SPLICE_SRC_PATH, O_RDONLY | O_CLOEXEC);
+			if (sp_src >= 0) {
+				off_t off_in = 0;
+				ssize_t n;
+
+				n = splice(sp_src, &off_in, s, NULL,
+					   SPLICE_MAX_BYTES,
+					   SPLICE_F_NONBLOCK | SPLICE_F_MORE);
+				if (n > 0)
+					__atomic_add_fetch(&shm->stats.tls_ulp_churn_splice_ok,
+							   1, __ATOMIC_RELAXED);
+				close(sp_src);
+			}
+		}
 	}
 
 	/* Step 8: recv whatever the acceptor managed to send back (it
