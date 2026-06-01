@@ -1257,6 +1257,42 @@ static void nl80211_iter_races(struct genl_ctx *ctx, int ifindex)
 }
 
 /*
+ * Phase: disconnect the iface, then run the two sub-modes guarded by their
+ * own ONE_IN gates.  PMSR FTM (ONE_IN(8)) picks a random slot from the
+ * created-iface ring and flips FTMS_PER_BURST between u8 and u32 widths
+ * (upstream 0f3c0a197309).  Admin-gate probe (ONE_IN(16)) forks a child in
+ * an unmapped user namespace to walk cmds that must be admin-gated
+ * (upstream 381cd547bc6e); its lower rate budgets the fork+waitpid cost.
+ */
+static void nl80211_iter_submodes(struct genl_ctx *ctx, int ifindex)
+{
+	int rc;
+
+	rc = disconnect_iface(ctx, ifindex);
+	__atomic_add_fetch(&shm->stats.nl80211_disconnect_attempted,
+			   1, __ATOMIC_RELAXED);
+	(void)rc;
+
+	if (ONE_IN(8) && created_count > 0) {
+		bool as_u32 = ONE_IN(2);
+		int slot = (int)(rand32() % created_count);
+		int target = created_ifindex[slot];
+
+		if (target > 0) {
+			__atomic_add_fetch(&shm->stats.nl80211_pmsr_runs,
+					   1, __ATOMIC_RELAXED);
+			if (build_pmsr_ftm_req(ctx, (uint32_t)target,
+					       as_u32) == 0)
+				__atomic_add_fetch(&shm->stats.nl80211_pmsr_ok,
+						   1, __ATOMIC_RELAXED);
+		}
+	}
+
+	if (ONE_IN(16))
+		nl80211_admin_gate_probe(nl80211_phy0);
+}
+
+/*
  * Single outer iteration of the churn loop.  Each iter creates one
  * STATION iface, runs the full scan/connect/burst/scan-again/regdom/
  * disconnect/del-iface chain on it, and tears it down at the end.  The
@@ -1279,36 +1315,7 @@ static void iter_one(struct genl_ctx *ctx, unsigned int iter_idx,
 
 	nl80211_iter_races(ctx, ifindex);
 
-	rc = disconnect_iface(ctx, ifindex);
-	__atomic_add_fetch(&shm->stats.nl80211_disconnect_attempted,
-			   1, __ATOMIC_RELAXED);
-	(void)rc;
-
-	/* PMSR FTM request sub-mode.  Low rate (ONE_IN(8)) so it doesn't
-	 * crowd out the scan/connect coverage above; flips the FTMS_PER_BURST
-	 * attribute width every other invocation to exercise both the u8
-	 * and u32 forms documented in upstream commit 0f3c0a197309. */
-	if (ONE_IN(8) && created_count > 0) {
-		bool as_u32 = ONE_IN(2);
-		int slot = (int)(rand32() % created_count);
-		int target = created_ifindex[slot];
-
-		if (target > 0) {
-			__atomic_add_fetch(&shm->stats.nl80211_pmsr_runs,
-					   1, __ATOMIC_RELAXED);
-			if (build_pmsr_ftm_req(ctx, (uint32_t)target,
-					       as_u32) == 0)
-				__atomic_add_fetch(&shm->stats.nl80211_pmsr_ok,
-						   1, __ATOMIC_RELAXED);
-		}
-	}
-
-	/* Admin-gate detector sub-mode.  Lower rate (ONE_IN(16)) than the
-	 * other sub-modes because each call forks + waitpid; the child
-	 * runs in an unmapped user namespace and probes the catalogue of
-	 * cmd ids that must be admin-gated per upstream 381cd547bc6e. */
-	if (ONE_IN(16))
-		nl80211_admin_gate_probe(nl80211_phy0);
+	nl80211_iter_submodes(ctx, ifindex);
 
 	rc = del_iface_by_index(ctx, ifindex);
 	if (rc == 0) {
