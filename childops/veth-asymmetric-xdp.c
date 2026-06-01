@@ -634,6 +634,49 @@ static void veth_xdp_iter_load_xdp(struct veth_xdp_iter_ctx *ictx)
 				   1, __ATOMIC_RELAXED);
 }
 
+/*
+ * Phase 4: open an AF_PACKET/SOCK_RAW socket and spray a 4..16-frame
+ * burst of eth+IP-shaped garbage at the b-side ifindex.  Frames are
+ * intentionally not well-formed past the ethertype -- the goal is to
+ * drive the kernel's hash-modulo txq selection on the rcv (a) side
+ * under the asymmetric-queue config, which only needs link-layer
+ * framing.  Socket open failure (EPERM under unprivileged AF_PACKET,
+ * or EAFNOSUPPORT on a kernel without CONFIG_PACKET) leaves
+ * ictx->raw at -1 so the teardown helper skips the close.  No return
+ * value -- per-send success is recorded as stats.veth_asym_send_ok
+ * and failures are silently tolerated (sendto is MSG_DONTWAIT, so
+ * the burst can't wedge past the SIGALRM(1s) child cap).
+ */
+static void veth_xdp_iter_drive_burst(struct veth_xdp_iter_ctx *ictx)
+{
+	struct sockaddr_ll sll;
+	unsigned char frame[64];
+	unsigned int burst, i;
+
+	ictx->raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC,
+			   htons(ETH_P_IP));
+	if (ictx->raw < 0)
+		return;
+
+	memset(&sll, 0, sizeof(sll));
+	sll.sll_family   = AF_PACKET;
+	sll.sll_protocol = htons(ETH_P_IP);
+	sll.sll_ifindex  = ictx->b_idx;
+	sll.sll_halen    = 6;
+	memset(sll.sll_addr, 0xff, 6);
+
+	burst = VAX_BURST_MIN +
+		(rand32() % (VAX_BURST_MAX - VAX_BURST_MIN + 1U));
+	for (i = 0; i < burst; i++) {
+		generate_rand_bytes(frame, sizeof(frame));
+		frame[12] = 0x08; frame[13] = 0x00;	/* ethertype IP */
+		if (sendto(ictx->raw, frame, sizeof(frame), MSG_DONTWAIT,
+			   (struct sockaddr *)&sll, sizeof(sll)) > 0)
+			__atomic_add_fetch(&shm->stats.veth_asym_send_ok,
+					   1, __ATOMIC_RELAXED);
+	}
+}
+
 bool veth_asymmetric_xdp(struct childdata *child)
 {
 	struct veth_xdp_iter_ctx ictx = {
@@ -645,7 +688,6 @@ bool veth_asymmetric_xdp(struct childdata *child)
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 	};
-	unsigned int burst, i;
 
 	(void)child;
 
@@ -682,33 +724,7 @@ bool veth_asymmetric_xdp(struct childdata *child)
 
 	veth_xdp_iter_load_xdp(&ictx);
 
-	/* Raw send into veth_b.  Frames are eth+IPv4+UDP-shaped garbage --
-	 * sufficient to drive the kernel's hash-modulo txq selection on the
-	 * rcv (veth_a) side under the asymmetric-queue config. */
-	ictx.raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_IP));
-	if (ictx.raw >= 0) {
-		struct sockaddr_ll sll;
-		unsigned char frame[64];
-
-		memset(&sll, 0, sizeof(sll));
-		sll.sll_family   = AF_PACKET;
-		sll.sll_protocol = htons(ETH_P_IP);
-		sll.sll_ifindex  = ictx.b_idx;
-		sll.sll_halen    = 6;
-		memset(sll.sll_addr, 0xff, 6);
-
-		burst = VAX_BURST_MIN +
-			(rand32() % (VAX_BURST_MAX - VAX_BURST_MIN + 1U));
-		for (i = 0; i < burst; i++) {
-			generate_rand_bytes(frame, sizeof(frame));
-			frame[12] = 0x08; frame[13] = 0x00;	/* ethertype IP */
-			if (sendto(ictx.raw, frame, sizeof(frame),
-				   MSG_DONTWAIT,
-				   (struct sockaddr *)&sll, sizeof(sll)) > 0)
-				__atomic_add_fetch(&shm->stats.veth_asym_send_ok,
-						   1, __ATOMIC_RELAXED);
-		}
-	}
+	veth_xdp_iter_drive_burst(&ictx);
 
 out:
 	if (ictx.raw >= 0)
