@@ -382,6 +382,40 @@ static int igmp_source_iter_v4_setup_send(struct igmp_source_iter_v4_ctx *it)
 }
 
 /*
+ * Phase 2 (v4): open the SOCK_DGRAM receiver, apply timeouts, set
+ * SO_REUSEADDR + IP_MULTICAST_LOOP so loopback delivery fires, then
+ * bind to the SSM group:port.  -1 return on socket/bind failure; caller
+ * routes through out: so the partially-opened recv_s is closed.
+ */
+static int igmp_source_iter_v4_setup_recv(struct igmp_source_iter_v4_ctx *it)
+{
+	struct sockaddr_in addr;
+	int yes = 1;
+
+	it->recv_s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+	if (it->recv_s < 0) {
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	apply_timeouts(it->recv_s);
+	(void)setsockopt(it->recv_s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+	(void)setsockopt(it->recv_s, IPPROTO_IP, IP_MULTICAST_LOOP,
+			 &yes, sizeof(yes));
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family      = AF_INET;
+	addr.sin_port        = htons(IMC_PORT);
+	addr.sin_addr.s_addr = it->grp_be;
+	if (bind(it->recv_s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	return 0;
+}
+
+/*
  * One IPv4 join+race+teardown cycle.  Returns immediately if the cap-
  * gate has latched.  Updates ns_unsupported_igmp_mld_source_churn on
  * structural failures from the first MCAST_JOIN_SOURCE_GROUP probe.
@@ -395,9 +429,7 @@ static void iter_one_v4(unsigned int iter_idx, const struct timespec *t_outer)
 		.iter_idx = iter_idx,
 		.salt     = (unsigned int)(rand32() & 0xffu),
 	};
-	struct sockaddr_in addr;
 	unsigned int race_letter = (iter_idx >> 1) & 3U;
-	int yes = 1;
 	unsigned int nsrc;
 	int rc;
 
@@ -411,27 +443,8 @@ static void iter_one_v4(unsigned int iter_idx, const struct timespec *t_outer)
 
 	if (igmp_source_iter_v4_setup_send(&it) != 0)
 		goto out;
-
-	it.recv_s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
-	if (it.recv_s < 0) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (igmp_source_iter_v4_setup_recv(&it) != 0)
 		goto out;
-	}
-	apply_timeouts(it.recv_s);
-	(void)setsockopt(it.recv_s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
-	(void)setsockopt(it.recv_s, IPPROTO_IP, IP_MULTICAST_LOOP,
-			 &yes, sizeof(yes));
-
-	memset(&addr, 0, sizeof(addr));
-	addr.sin_family      = AF_INET;
-	addr.sin_port        = htons(IMC_PORT);
-	addr.sin_addr.s_addr = it.grp_be;
-	if (bind(it.recv_s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
 
 	fill_gsr_v4(&it.gsr_a, 0U, it.grp_be, it.src_a_be);
 	if (setsockopt(it.recv_s, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP,
