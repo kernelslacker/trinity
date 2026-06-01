@@ -122,18 +122,21 @@ static void init_shm_self_exe_snapshot(void)
 	}
 }
 
-void init_shm(void)
+/*
+ * Strategy-rotation / picker-mode / plateau intervention state
+ * init.  All __atomic_store_n stamps so the values the
+ * picker/orchestrator/plateau code reads (often from a child that
+ * raced into its first window before the parent reached this
+ * point) land with release semantics.  The surrounding shm memset
+ * has already zeroed every field; these explicit stamps document
+ * which fields are load-bearing for the rotation state machine
+ * and pin the cold-start sentinels (SR_COLD_START,
+ * RRC_NR_CLASSES, PLATEAU_HYPOTHESIS_NONE) that diverge from zero.
+ * Closes with the run's seed so init_seed() runs after every
+ * other strategy-state field is in place.
+ */
+static void init_shm_strategy_state(void)
 {
-	unsigned int i;
-	size_t childptrslen;
-	size_t fd_event_ring_arr_bytes;
-
-	output(2, "shm is at %p\n", shm);
-
-	init_shm_debug_start();
-
-	init_shm_self_exe_snapshot();
-
 	/* Multi-strategy rotation starts on the heuristic.  The window
 	 * boundary is op_count - syscalls_at_last_switch, so seeding both
 	 * the strategy and the switch-tick at zero gives the first window
@@ -204,6 +207,21 @@ void init_shm(void)
 			 (int)PLATEAU_HYPOTHESIS_NONE, __ATOMIC_RELAXED);
 
 	__atomic_store_n(&shm->seed, init_seed(seed), __ATOMIC_RELAXED);
+}
+
+void init_shm(void)
+{
+	unsigned int i;
+	size_t childptrslen;
+	size_t fd_event_ring_arr_bytes;
+
+	output(2, "shm is at %p\n", shm);
+
+	init_shm_debug_start();
+
+	init_shm_self_exe_snapshot();
+
+	init_shm_strategy_state();
 
 	if (!shared_size_mul(max_children, sizeof(struct childdata *),
 			     &childptrslen)) {
