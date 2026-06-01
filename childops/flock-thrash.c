@@ -112,17 +112,17 @@ static int open_one(unsigned int idx)
 	return open(path, O_RDWR | O_CREAT, 0666);
 }
 
-bool flock_thrash(struct childdata *child)
+/*
+ * Phase: open private fds onto the shared trinity-testfile? pool.
+ * Returns the number of successfully populated slots (up to
+ * NR_FLOCK_FDS; individual opens that fail are silently skipped).
+ * Each populated entry starts with held=false; subsequent phases
+ * drive acquire/release from there.
+ */
+static unsigned int flock_thrash_iter_open_slots(struct flock_slot *slots)
 {
-	struct flock_slot slots[NR_FLOCK_FDS];
 	unsigned int opened = 0;
-	unsigned int iter, iter_cap, phase_split;
 	unsigned int i;
-	enum thrash_order order;
-
-	(void)child;
-
-	__atomic_add_fetch(&shm->stats.flock_thrash_runs, 1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < NR_FLOCK_FDS; i++) {
 		int fd = open_one(1 + i);
@@ -133,7 +133,22 @@ bool flock_thrash(struct childdata *child)
 		slots[opened].held = false;
 		opened++;
 	}
+	return opened;
+}
 
+bool flock_thrash(struct childdata *child)
+{
+	struct flock_slot slots[NR_FLOCK_FDS];
+	unsigned int opened;
+	unsigned int iter, iter_cap, phase_split;
+	unsigned int i;
+	enum thrash_order order;
+
+	(void)child;
+
+	__atomic_add_fetch(&shm->stats.flock_thrash_runs, 1, __ATOMIC_RELAXED);
+
+	opened = flock_thrash_iter_open_slots(slots);
 	if (opened == 0)
 		return true;
 
