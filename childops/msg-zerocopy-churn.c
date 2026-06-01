@@ -429,6 +429,50 @@ static int msg_zerocopy_iter_setup(int s, void **pages_out)
 	return 0;
 }
 
+/*
+ * Phase 2: inner ZC-send loop.  Each successful send queues a
+ * SO_EE_ORIGIN_ZEROCOPY notification on sk_error_queue once the kernel
+ * is done with the pages.  Bounded by ZC_INNER_SENDS and the outer
+ * wall-cap; bails early on EAGAIN (queue full) or a terminal errno.
+ * Returns the count of successful sends -- the caller uses it to gate
+ * the munmap-race step (no successful pin, no race to drive).
+ */
+static unsigned int msg_zerocopy_iter_send(int s, const void *pages,
+					   const struct timespec *t_outer)
+{
+	unsigned int sent_count = 0;
+	unsigned int i;
+
+	for (i = 0; i < ZC_INNER_SENDS; i++) {
+		ssize_t r;
+
+		if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
+			break;
+
+		r = zc_send_retry(s, pages, ZC_PAGE_BYTES);
+		if (r >= 0) {
+			sent_count++;
+			__atomic_add_fetch(
+				&shm->stats.msg_zerocopy_churn_sends_ok,
+				1, __ATOMIC_RELAXED);
+		} else if (errno == EFAULT) {
+			__atomic_add_fetch(
+				&shm->stats.msg_zerocopy_churn_sends_efault,
+				1, __ATOMIC_RELAXED);
+		} else if (errno == EAGAIN) {
+			__atomic_add_fetch(
+				&shm->stats.msg_zerocopy_churn_sends_eagain,
+				1, __ATOMIC_RELAXED);
+			break;
+		} else {
+			/* Terminal errno (ENOTCONN / EPIPE etc.) -- bail. */
+			break;
+		}
+	}
+
+	return sent_count;
+}
+
 /* One full sequence on a freshly-created loopback TCP socket. */
 static void iter_one(const struct timespec *t_outer)
 {
@@ -454,40 +498,7 @@ static void iter_one(const struct timespec *t_outer)
 	if (msg_zerocopy_iter_setup(s, &pages) != 0)
 		goto out;
 
-	/* Step 4: inner ZC-send loop.  Each successful send queues a
-	 * SO_EE_ORIGIN_ZEROCOPY notification on sk_error_queue once
-	 * the kernel is done with the pages. */
-	{
-		unsigned int i;
-
-		for (i = 0; i < ZC_INNER_SENDS; i++) {
-			ssize_t r;
-
-			if ((unsigned long long)ns_since(t_outer) >=
-			    ZC_WALL_CAP_NS)
-				break;
-
-			r = zc_send_retry(s, pages, ZC_PAGE_BYTES);
-			if (r >= 0) {
-				sent_count++;
-				__atomic_add_fetch(
-					&shm->stats.msg_zerocopy_churn_sends_ok,
-					1, __ATOMIC_RELAXED);
-			} else if (errno == EFAULT) {
-				__atomic_add_fetch(
-					&shm->stats.msg_zerocopy_churn_sends_efault,
-					1, __ATOMIC_RELAXED);
-			} else if (errno == EAGAIN) {
-				__atomic_add_fetch(
-					&shm->stats.msg_zerocopy_churn_sends_eagain,
-					1, __ATOMIC_RELAXED);
-				break;
-			} else {
-				/* Terminal errno (ENOTCONN / EPIPE etc.) -- bail. */
-				break;
-			}
-		}
-	}
+	sent_count = msg_zerocopy_iter_send(s, pages, t_outer);
 
 	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
 		goto out;
