@@ -335,6 +335,38 @@ static int ip6gre_lapb_iter_open_netlink(struct ip6gre_lapb_iter_ctx *ctx)
 	return 0;
 }
 
+/*
+ * Phase: RTM_NEWLINK type=bond and ifindex resolution.  Creating the
+ * bond also auto-creates the paired lapb%d via lapbether's
+ * NETDEV_REGISTER notifier, so this single helper produces both the
+ * bond device the later enslave targets and the lapb device the flag-
+ * cycles phase drives.  Latches g_unsupported on the
+ * EAFNOSUPPORT/EOPNOTSUPP/EPROTONOSUPPORT shape of CONFIG_BONDING
+ * absence so subsequent invocations bail at the gate.  Returns 0 on
+ * success; -1 means caller should goto out -- the netlink fd is open
+ * and needs the teardown helper to close it.
+ */
+static int ip6gre_lapb_iter_create_bond(struct ip6gre_lapb_iter_ctx *ctx)
+{
+	int rc;
+
+	rc = ibls_newlink(&ctx->ctx, ctx->bond_name, "bond", NULL);
+	if (rc != 0) {
+		if (err_is_unsupported(rc))
+			latch_unsupported("NEWLINK type=bond", -rc);
+		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	ctx->bond_idx = (int)if_nametoindex(ctx->bond_name);
+	if (ctx->bond_idx <= 0) {
+		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	return 0;
+}
+
 bool ip6gre_bond_lapb_stack(struct childdata *child)
 {
 	struct ip6gre_lapb_iter_ctx ictx = {
@@ -357,20 +389,8 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 	if (ip6gre_lapb_iter_open_netlink(&ictx) != 0)
 		return true;
 
-	rc = ibls_newlink(&ictx.ctx, ictx.bond_name, "bond", NULL);
-	if (rc != 0) {
-		if (err_is_unsupported(rc))
-			latch_unsupported("NEWLINK type=bond", -rc);
-		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
-				   1, __ATOMIC_RELAXED);
+	if (ip6gre_lapb_iter_create_bond(&ictx) != 0)
 		goto out;
-	}
-	ictx.bond_idx = (int)if_nametoindex(ictx.bond_name);
-	if (ictx.bond_idx <= 0) {
-		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
 
 	rc = ibls_newlink(&ictx.ctx, ictx.gre_name, "ip6gre",
 			  append_ip6gre_data);
