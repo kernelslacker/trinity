@@ -287,13 +287,30 @@ static void signal_storm_iter_burst_mode_grouped(struct signal_storm_iter_ctx *i
 	}
 }
 
+/*
+ * Phase: MIXED -- baseline uniform draw of (target, mode, sig) each
+ * iteration.  Also the catalog-restricted shape: when pick_mode latched
+ * a CATALOG_RT_ONLY / CATALOG_STD_ONLY catalog, the homogeneous burst
+ * lands here because the per-iter mode flip is what surfaces the
+ * single-family queue behaviour we want.  Default arm: any future
+ * storm_order with no dedicated burst helper falls through to this
+ * shape.
+ */
+static void signal_storm_iter_burst_mixed(struct signal_storm_iter_ctx *ictx)
+{
+	unsigned int i;
+
+	for (i = 0; i < ictx->iters; i++) {
+		pid_t pid = ictx->targets[rnd_modulo_u32(ictx->ntargets)];
+		int sig = pick_signal_in(ictx->catalog);
+
+		emit_signal(pid, sig, RAND_BOOL());
+	}
+}
+
 bool signal_storm(struct childdata *child)
 {
 	struct signal_storm_iter_ctx ictx = { 0 };
-	pid_t *targets;
-	unsigned int ntargets;
-	unsigned int i, iters;
-	enum catalog_mode catalog;
 
 	(void)child;
 
@@ -309,11 +326,6 @@ bool signal_storm(struct childdata *child)
 
 	signal_storm_iter_pick_mode(&ictx);
 
-	targets = ictx.targets;
-	ntargets = ictx.ntargets;
-	iters = ictx.iters;
-	catalog = ictx.catalog;
-
 	switch (ictx.order) {
 	case ORDER_SAME_TARGET_BURST:
 		signal_storm_iter_burst_same_target(&ictx);
@@ -324,12 +336,7 @@ bool signal_storm(struct childdata *child)
 	case ORDER_MIXED:
 	case ORDER_CATALOG_RESTRICTED:
 	default:
-		for (i = 0; i < iters; i++) {
-			pid_t pid = targets[rnd_modulo_u32(ntargets)];
-			int sig = pick_signal_in(catalog);
-
-			emit_signal(pid, sig, RAND_BOOL());
-		}
+		signal_storm_iter_burst_mixed(&ictx);
 		break;
 	}
 
