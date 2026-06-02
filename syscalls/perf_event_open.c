@@ -1629,6 +1629,28 @@ static int pick_perf_group_fd(struct syscallrecord *rec)
 	return group_leader;
 }
 
+static unsigned long pick_perf_flags(void)
+{
+	unsigned long flags = 0;
+
+	/* flags */
+	/* You almost never set these unless you're playing with cgroups */
+	if (RAND_BOOL()) {
+		flags = rand64();
+	} else {
+		if (RAND_BOOL())
+			flags |= PERF_FLAG_FD_NO_GROUP;
+		if (RAND_BOOL())
+			flags |= PERF_FLAG_FD_OUTPUT;
+		if (RAND_BOOL())
+			flags |= PERF_FLAG_PID_CGROUP;
+		if (RAND_BOOL())
+			flags |= PERF_FLAG_FD_CLOEXEC;
+	}
+
+	return flags;
+}
+
 void sanitise_perf_event_open(struct syscallrecord *rec)
 {
 	struct csfu_buf buf = build_csfu_struct(&desc_perf_event_attr);
@@ -1664,21 +1686,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 
 	group_leader = pick_perf_group_fd(rec);
 
-	/* flags */
-	/* You almost never set these unless you're playing with cgroups */
-	flags = 0;
-	if (RAND_BOOL()) {
-		flags = rand64();
-	} else {
-		if (RAND_BOOL())
-			flags |= PERF_FLAG_FD_NO_GROUP;
-		if (RAND_BOOL())
-			flags |= PERF_FLAG_FD_OUTPUT;
-		if (RAND_BOOL())
-			flags |= PERF_FLAG_PID_CGROUP;
-		if (RAND_BOOL())
-			flags |= PERF_FLAG_FD_CLOEXEC;
-	}
+	flags = pick_perf_flags();
 	rec->a5 = flags;
 
 	/* pid */
