@@ -1602,13 +1602,40 @@ static void pick_perf_cpu(struct syscallrecord *rec)
 	}
 }
 
+static int pick_perf_group_fd(struct syscallrecord *rec)
+{
+	int group_leader = 0;
+
+	/* group_fd */
+	/* should usually be -1 or another perf_event fd         */
+	/* Anything but -1 unlikely to work unless the other pid */
+	/* was properly set up to be a group master              */
+	switch (rnd_modulo_u32(3)) {
+	case 0:
+		rec->a4 = -1;
+		group_leader = 1;
+		break;
+	case 1:
+		/* Try to get a previous random perf_event_open() fd  */
+		rec->a4 = get_rand_perf_fd();
+		break;
+	case 2:
+		/* Rely on ARG_FD */
+		break;
+	default:
+		break;
+	}
+
+	return group_leader;
+}
+
 void sanitise_perf_event_open(struct syscallrecord *rec)
 {
 	struct csfu_buf buf = build_csfu_struct(&desc_perf_event_attr);
 	struct perf_event_attr *attr = buf.ptr;
 	unsigned long flags;
 	pid_t pid;
-	int group_leader = 0;
+	int group_leader;
 
 	if (!attr)
 		return;
@@ -1635,25 +1662,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 
 	pick_perf_cpu(rec);
 
-	/* group_fd */
-	/* should usually be -1 or another perf_event fd         */
-	/* Anything but -1 unlikely to work unless the other pid */
-	/* was properly set up to be a group master              */
-	switch (rnd_modulo_u32(3)) {
-	case 0:
-		rec->a4 = -1;
-		group_leader = 1;
-		break;
-	case 1:
-		/* Try to get a previous random perf_event_open() fd  */
-		rec->a4 = get_rand_perf_fd();
-		break;
-	case 2:
-		/* Rely on ARG_FD */
-		break;
-	default:
-		break;
-	}
+	group_leader = pick_perf_group_fd(rec);
 
 	/* flags */
 	/* You almost never set these unless you're playing with cgroups */
