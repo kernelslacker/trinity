@@ -218,6 +218,66 @@ static const int jmp_ops[] = {
 static const int mem_sizes[] = { BPF_B, BPF_H, BPF_W, BPF_DW };
 
 /*
+ * Emit one ALU64 op with a sign-bounded immediate.  MOV always initializes
+ * the destination; for other ops, dst must already be live or we emit a
+ * priming MOV first (and bail if that priming insn hit body_len).
+ */
+static int emit_tier1_alu64_imm(struct bpf_insn *insns, int pos, int body_len,
+				 struct reg_state *rs)
+{
+	int dst = reg_pick_dst();
+	int op = RAND_ARRAY(alu_ops);
+	int imm = (int)(rnd_modulo_u32(65536)) - 32768;
+
+	if (op != BPF_MOV && !(rs->live & (1 << dst))) {
+		insns[pos++] = EBPF_MOV64_IMM(dst, rnd_modulo_u32(100));
+		reg_set(rs, dst);
+		if (pos >= body_len)
+			return pos;
+	}
+	/* Avoid shift by >= 64 */
+	if (op == BPF_LSH || op == BPF_RSH || op == BPF_ARSH)
+		imm = rnd_modulo_u32(64);
+	insns[pos++] = EBPF_ALU64_IMM(op, dst, imm);
+	reg_set(rs, dst);
+	return pos;
+}
+
+/*
+ * Emit one ALU64 reg-to-reg op, priming dst with a MOV first when
+ * required for liveness (same pattern as the IMM variant).
+ */
+static int emit_tier1_alu64_reg(struct bpf_insn *insns, int pos, int body_len,
+				 struct reg_state *rs)
+{
+	int dst = reg_pick_dst();
+	int src = reg_pick_live(rs);
+	int op = RAND_ARRAY(alu_ops);
+
+	if (op != BPF_MOV && !(rs->live & (1 << dst))) {
+		insns[pos++] = EBPF_MOV64_IMM(dst, 1);
+		reg_set(rs, dst);
+		if (pos >= body_len)
+			return pos;
+	}
+	insns[pos++] = EBPF_ALU64_REG(op, dst, src);
+	reg_set(rs, dst);
+	return pos;
+}
+
+/* Emit a single ALU32 MOV-immediate.  Always initializes dst. */
+static int emit_tier1_alu32_mov_imm(struct bpf_insn *insns, int pos,
+				     struct reg_state *rs)
+{
+	int dst = reg_pick_dst();
+	int imm = rnd_modulo_u32(256);
+
+	insns[pos++] = EBPF_ALU32_IMM(BPF_MOV, dst, imm);
+	reg_set(rs, dst);
+	return pos;
+}
+
+/*
  * Tier 1: Generate a valid eBPF program.
  *
  * Strategy: emit a sequence of random operations that the verifier can
@@ -257,46 +317,13 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns,
 		int choice = rnd_modulo_u32(100);
 
 		if (choice < 40) {
-			/* ALU64 with immediate */
-			int dst = reg_pick_dst();
-			int op = RAND_ARRAY(alu_ops);
-			int imm = (int)(rnd_modulo_u32(65536)) - 32768;
-
-			/* MOV always initializes, others need dst to be live */
-			if (op != BPF_MOV && !(rs.live & (1 << dst))) {
-				insns[pos++] = EBPF_MOV64_IMM(dst, rnd_modulo_u32(100));
-				reg_set(&rs, dst);
-				if (pos >= body_len)
-					break;
-			}
-			/* Avoid shift by >= 64 */
-			if (op == BPF_LSH || op == BPF_RSH || op == BPF_ARSH)
-				imm = rnd_modulo_u32(64);
-			insns[pos++] = EBPF_ALU64_IMM(op, dst, imm);
-			reg_set(&rs, dst);
+			pos = emit_tier1_alu64_imm(insns, pos, body_len, &rs);
 
 		} else if (choice < 55) {
-			/* ALU64 reg-to-reg */
-			int dst = reg_pick_dst();
-			int src = reg_pick_live(&rs);
-			int op = RAND_ARRAY(alu_ops);
-
-			if (op != BPF_MOV && !(rs.live & (1 << dst))) {
-				insns[pos++] = EBPF_MOV64_IMM(dst, 1);
-				reg_set(&rs, dst);
-				if (pos >= body_len)
-					break;
-			}
-			insns[pos++] = EBPF_ALU64_REG(op, dst, src);
-			reg_set(&rs, dst);
+			pos = emit_tier1_alu64_reg(insns, pos, body_len, &rs);
 
 		} else if (choice < 65) {
-			/* ALU32 with immediate */
-			int dst = reg_pick_dst();
-			int imm = rnd_modulo_u32(256);
-
-			insns[pos++] = EBPF_ALU32_IMM(BPF_MOV, dst, imm);
-			reg_set(&rs, dst);
+			pos = emit_tier1_alu32_mov_imm(insns, pos, &rs);
 
 		} else if (choice < 75) {
 			/* Stack store + load */
