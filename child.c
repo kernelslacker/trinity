@@ -58,6 +58,16 @@ _Static_assert(offsetof(struct childdata, op_nr) < 64,
 	"struct childdata: op_nr (per-syscall hot field) escaped the leading cacheline");
 
 /*
+ * Pin the syscallrecord (and therefore its trailing seq counter, mutated
+ * by every writer via srec_publish_begin / srec_publish_end) to an
+ * offset >= 64 so a future field reorder that drags the cold per-call
+ * record into the hot cacheline fails the build instead of silently
+ * blowing the per-call cache-miss budget the layout was tuned for.
+ */
+_Static_assert(offsetof(struct childdata, syscall) >= 64,
+	"struct childdata: syscallrecord drifted into the hot cacheline");
+
+/*
  * Hard per-child virtual-memory cap.  A single runaway mmap/mremap (or the
  * cumulative drift of N children each growing to multi-GiB) can push the
  * machine into global OOM; with memory.oom.group on the user slice that
