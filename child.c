@@ -4,7 +4,6 @@
 
 #include <fcntl.h>
 #include <errno.h>
-#include <limits.h>
 #include <malloc.h>
 #include <signal.h>
 #include <stdatomic.h>
@@ -659,120 +658,36 @@ static void freeze_sibling_childdata(int my_childno)
 }
 
 /*
- * Per-child bug log path stashed by init_child_isolate_io() so the
- * exit-time cleanup can stat() and unlink the file when no stderr
- * write ever occurred (healthy children).
- */
-static char saved_buglog_path[PATH_MAX + 64];
-
-/*
- * Reap an empty per-pid bug log on clean child exit.  Registered
- * via atexit() in init_child_isolate_io() and also called explicitly
- * from child_process()'s out: cleanup — trinity uses _exit() on the
- * normal child-loop exit path (main.c after child_process returns),
- * and _exit bypasses atexit handlers, so the explicit call is what
- * actually reaps the common case.  The atexit registration covers
- * any future exit() path and is harmless when both fire (the second
- * stat() observes ENOENT after the first unlink).
- *
- * SIGABRT / SIGSEGV / SIGBUS / SIGILL paths terminate via _exit()
- * inside child_fault_handler (or the kernel-side SIG_DFL terminate
- * under debug mode), neither of which runs atexit handlers — a
- * populated bug log from a real crash therefore stays on disk for
- * triage.
- */
-static void unlink_empty_buglog(void)
-{
-	struct stat st;
-
-	if (saved_buglog_path[0] == '\0')
-		return;
-	if (stat(saved_buglog_path, &st) != 0)
-		return;
-	if (st.st_size == 0)
-		(void)unlink(saved_buglog_path);
-}
-
-/*
  * Isolate this child's stdio + controlling terminal before any
  * syscall fuzzing starts.  Three steps, all about keeping fuzzed
- * I/O off the operator's terminal: redirect fd 0/1 to /dev/null
- * and fd 2 to a per-pid bug log so splice/sendfile/vmsplice/write
- * can't spew to the tty, drop the inherited --stats-log-file fd so
- * a fuzzed fchmod/ftruncate/write can't smash the operator's log,
- * and setsid() to sever the controlling terminal so a later
- * open("/dev/tty") can't re-acquire it.  Bundled here so the I/O-
- * isolation contract is self-contained -- subsequent init phases
- * assume stderr is the bug log and rely on the no-controlling-tty
- * invariant.
+ * I/O off the operator's terminal: redirect fd 0/1/2 to /dev/null
+ * so splice/sendfile/vmsplice/write can't spew to the tty, drop the
+ * inherited --stats-log-file fd so a fuzzed fchmod/ftruncate/write
+ * can't smash the operator's log, and setsid() to sever the
+ * controlling terminal so a later open("/dev/tty") can't re-acquire
+ * it.  Bundled here so the I/O-isolation contract is self-contained
+ * -- subsequent init phases assume stderr is /dev/null and rely on
+ * the no-controlling-tty invariant.
  */
 static void init_child_isolate_io(void)
 {
 	int devnull;
 
-	/* Redirect stdin/stdout to /dev/null so no syscall (splice,
-	 * sendfile, vmsplice, write to fd 0, etc.) can spew to the
-	 * operator's terminal.  fd 0 must be redirected too: ptys are
-	 * bidirectional and writing to the inherited stdin (which is
-	 * the operator's pty) lands on their shell.  Open O_RDWR so
+	/* Redirect stdin/stdout/stderr to /dev/null so no syscall
+	 * (splice, sendfile, vmsplice, write to fd 0, etc.) can spew to
+	 * the operator's terminal.  fd 0 must be redirected too: ptys
+	 * are bidirectional and writing to the inherited stdin (which
+	 * is the operator's pty) lands on their shell.  Open O_RDWR so
 	 * fuzzed reads against fd 0 also succeed (with EOF) instead of
-	 * EBADF'ing — keeps the syscall behaviour realistic.  Kept open
-	 * past the dup2s as a fallback for stderr if the bug-log open
-	 * below fails. */
+	 * EBADF'ing — keeps the syscall behaviour realistic. */
 	devnull = open("/dev/null", O_RDWR);
 	if (devnull >= 0) {
 		dup2(devnull, STDIN_FILENO);
 		dup2(devnull, STDOUT_FILENO);
+		dup2(devnull, STDERR_FILENO);
+		if (devnull > STDERR_FILENO)
+			close(devnull);
 	}
-
-	/*
-	 * Redirect stderr to a per-pid bug log so glibc's own
-	 * malloc_printerr / __libc_message / __fortify_fail /
-	 * __stack_chk_fail family writes -- which happen BEFORE any
-	 * trinity signal handler runs -- land on disk for post-mortem
-	 * triage.  An earlier design captured the abort text via a
-	 * dlsym handshake on glibc's __abort_msg in signals.c, but
-	 * glibc 2.34+'s malloc_printerr path stores into __abort_msg
-	 * inconsistently across corruption modes: most malloc-side
-	 * checks emit the formatted complaint to stderr but skip the
-	 * __abort_msg store, so the dlsym capture only fires on the
-	 * subset that does both.  Pre-redirecting stderr here lets us
-	 * catch every variant uniformly.  The __abort_msg dlvsym block
-	 * in signals.c is kept as defense-in-depth: when __abort_msg
-	 * IS set, its prefixed "abort_msg:" line lands in the same
-	 * log and is grep-friendly for bucketing.
-	 *
-	 * Path uses trinity_tmpdir_abs() so a fuzzed chdir() doesn't
-	 * move us off the writable tmp directory mid-run, and getpid()
-	 * rather than mypid() because the cached_pid backing mypid()
-	 * isn't populated until set_child_cache runs later in
-	 * init_child_rendezvous_parent.  On open failure, fall back
-	 * to /dev/null (matches the previous behaviour: stderr stays
-	 * silenced rather than attached to the inherited tty).
-	 */
-	{
-		char buglog_path[PATH_MAX + 64];
-		int bug_fd;
-
-		snprintf(buglog_path, sizeof(buglog_path),
-			 "%s/trinity-bug-%d.log",
-			 trinity_tmpdir_abs(), (int)getpid());
-		bug_fd = open(buglog_path,
-			      O_WRONLY | O_CREAT | O_APPEND, 0644);
-		if (bug_fd >= 0) {
-			dup2(bug_fd, STDERR_FILENO);
-			close(bug_fd);
-			strncpy(saved_buglog_path, buglog_path,
-				sizeof(saved_buglog_path) - 1);
-			saved_buglog_path[sizeof(saved_buglog_path) - 1] = '\0';
-			(void)atexit(unlink_empty_buglog);
-		} else if (devnull >= 0) {
-			dup2(devnull, STDERR_FILENO);
-		}
-	}
-
-	if (devnull > STDERR_FILENO)
-		close(devnull);
 
 	/* Drop the inherited --stats-log-file fd before any syscall fuzzing
 	 * starts: it's a parent-only writer, but children would otherwise
@@ -2655,13 +2570,6 @@ out:
 		close(child->tainted_fd);
 		child->tainted_fd = -1;
 	}
-
-	/* Reap an empty bug log from this healthy child.  main.c calls
-	 * _exit() after child_process() returns, which bypasses atexit
-	 * (POSIX), so the explicit call here is what actually unlinks
-	 * the file on the dominant clean-exit path.  Crashes never
-	 * reach this point -- child_fault_handler _exits directly. */
-	unlink_empty_buglog();
 
 	debugf("child %d %d exiting.\n", childno, mypid());
 }
