@@ -1692,6 +1692,39 @@ static pid_t pick_perf_pid(unsigned long flags)
 	return pid;
 }
 
+static void maybe_fill_perf_attr_body(struct perf_event_attr *attr,
+				      enum csfu_bucket bucket,
+				      int group_leader)
+{
+	/*
+	 * Non-EXACT buckets exercise the size validator only -- the
+	 * kernel rejects on attr->size before reading any body field,
+	 * and OVERSIZE_NONZERO / TAIL_MISMATCH need their tail garbage
+	 * preserved.  Skip the structured fill on those paths; the
+	 * zmalloc_tracked() buffer is already zeroed where the kernel
+	 * cares to look.
+	 */
+	if (bucket != CSFU_BUCKET_EXACT)
+		return;
+
+	switch (rnd_modulo_u32(4)) {
+	case 0:
+		create_mostly_valid_counting_event(attr, group_leader);
+		break;
+	case 1:
+		create_mostly_valid_sampling_event(attr, group_leader);
+		break;
+	case 2:
+		create_mostly_valid_global_event(attr, group_leader);
+		break;
+	case 3:
+		create_random_event(attr);
+		break;
+	default:
+		break;
+	}
+}
+
 void sanitise_perf_event_open(struct syscallrecord *rec)
 {
 	struct csfu_buf buf = build_csfu_struct(&desc_perf_event_attr);
@@ -1733,32 +1766,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	pid = pick_perf_pid(flags);
 	rec->a2 = pid;
 
-	/*
-	 * Non-EXACT buckets exercise the size validator only -- the
-	 * kernel rejects on attr->size before reading any body field,
-	 * and OVERSIZE_NONZERO / TAIL_MISMATCH need their tail garbage
-	 * preserved.  Skip the structured fill on those paths; the
-	 * zmalloc_tracked() buffer is already zeroed where the kernel
-	 * cares to look.
-	 */
-	if (buf.bucket == CSFU_BUCKET_EXACT) {
-		switch (rnd_modulo_u32(4)) {
-		case 0:
-			create_mostly_valid_counting_event(attr, group_leader);
-			break;
-		case 1:
-			create_mostly_valid_sampling_event(attr, group_leader);
-			break;
-		case 2:
-			create_mostly_valid_global_event(attr, group_leader);
-			break;
-		case 3:
-			create_random_event(attr);
-			break;
-		default:
-			break;
-		}
-	}
+	maybe_fill_perf_attr_body(attr, buf.bucket, group_leader);
 
 	avoid_shared_buffer_inout(&rec->a1, sizeof(struct perf_event_attr));
 }
