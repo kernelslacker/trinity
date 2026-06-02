@@ -231,12 +231,10 @@ union fail_run_u {
 };
 
 struct results {
-	/* No remaining writers under this lock after the fail_run CAS
-	 * conversion -- all scoreboard updates are now lock-free.  Kept
-	 * for one more commit so the step-5 removal lands isolated and is
-	 * easy to revert if a regression shows up.  Zero-init from
-	 * alloc_shared() leaves the lock UNLOCKED. */
-	lock_t lock;
+	/* Lockless: all scoreboard updates use atomic ops -- the fd bitmaps
+	 * are set/cleared via __atomic on the byte, len_score is RMW'd via
+	 * CAS on the packed 64-bit word, and fail_run is RMW'd via CAS on
+	 * the packed 32-bit word.  No mutex is taken on any update path. */
 	/* ARG_FD / typed-fd: bit `fd` set if get_random_fd / get_typed_fd
 	 * returned that low fd for this slot and the call succeeded. */
 	unsigned char success_fds[SUCCESS_FD_SCOREBOARD_BYTES];
