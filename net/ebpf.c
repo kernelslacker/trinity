@@ -278,6 +278,41 @@ static int emit_tier1_alu32_mov_imm(struct bpf_insn *insns, int pos,
 }
 
 /*
+ * Emit a stack store of a live reg, then optionally a load from the
+ * same slot into a fresh dst.  If the store alone lands on body_len,
+ * return early without the follow-up load.
+ */
+static int emit_tier1_stack_roundtrip(struct bpf_insn *insns, int pos,
+				       int body_len, struct reg_state *rs)
+{
+	int reg = reg_pick_live(rs);
+	int off = rand_stack_offset();
+
+	insns[pos++] = EBPF_STX_MEM(BPF_DW, BPF_REG_10, reg, off);
+	if (pos >= body_len)
+		return pos;
+
+	if (ONE_IN(2)) {
+		int dst = reg_pick_dst();
+
+		insns[pos++] = EBPF_LDX_MEM(BPF_DW, dst, BPF_REG_10, off);
+		reg_set(rs, dst);
+	}
+	return pos;
+}
+
+/* Emit one ST_MEM of a small immediate into a random stack slot. */
+static int emit_tier1_st_imm(struct bpf_insn *insns, int pos)
+{
+	int off = rand_stack_offset();
+	int sz = RAND_ARRAY(mem_sizes);
+	int val = rnd_modulo_u32(256);
+
+	insns[pos++] = EBPF_ST_MEM(sz, BPF_REG_10, off, val);
+	return pos;
+}
+
+/*
  * Tier 1: Generate a valid eBPF program.
  *
  * Strategy: emit a sequence of random operations that the verifier can
@@ -326,19 +361,7 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns,
 			pos = emit_tier1_alu32_mov_imm(insns, pos, &rs);
 
 		} else if (choice < 75) {
-			/* Stack store + load */
-			int reg = reg_pick_live(&rs);
-			int off = rand_stack_offset();
-
-			insns[pos++] = EBPF_STX_MEM(BPF_DW, BPF_REG_10, reg, off);
-			if (pos >= body_len)
-				break;
-
-			if (ONE_IN(2)) {
-				int dst = reg_pick_dst();
-				insns[pos++] = EBPF_LDX_MEM(BPF_DW, dst, BPF_REG_10, off);
-				reg_set(&rs, dst);
-			}
+			pos = emit_tier1_stack_roundtrip(insns, pos, body_len, &rs);
 
 		} else if (choice < 82 && remaining >= 3) {
 			/* Forward conditional jump (skip 1-3 insns) */
@@ -361,12 +384,7 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns,
 			}
 
 		} else if (choice < 87) {
-			/* Store immediate to stack */
-			int off = rand_stack_offset();
-			int sz = RAND_ARRAY(mem_sizes);
-			int val = rnd_modulo_u32(256);
-
-			insns[pos++] = EBPF_ST_MEM(sz, BPF_REG_10, off, val);
+			pos = emit_tier1_st_imm(insns, pos);
 
 		} else if (choice < 92) {
 			/* MOV64 reg-to-reg (register copy) */
