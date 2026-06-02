@@ -357,18 +357,91 @@ static void free_pmus(struct pmu_type **p, int n)
 	*p = NULL;
 }
 
+static int scan_pmu_formats(int pmu_num, const char *dir_name)
+{
+	DIR *format_dir;
+	struct dirent *format_entry;
+	char format_name[BUFSIZ+7] = "";
+	char format_value[BUFSIZ] = "";
+	char temp_name[BUFSIZ*2] = "";
+	char read_buf[BUFSIZ] = "";
+	int format_num = 0;
+	int result;
+
+	snprintf(format_name, sizeof(format_name), "%s/format", dir_name);
+	format_dir = opendir(format_name);
+	if (format_dir == NULL) {
+		/* Can be normal to have no format strings */
+		return 0;
+	}
+
+	/* Count format strings */
+	while (1) {
+		format_entry = readdir(format_dir);
+		if (format_entry == NULL) break;
+		if (!strcmp(".", format_entry->d_name)) continue;
+		if (!strcmp("..", format_entry->d_name)) continue;
+		pmus[pmu_num].num_formats++;
+	}
+
+	/* Allocate format structure */
+	pmus[pmu_num].formats = calloc(pmus[pmu_num].num_formats,
+					sizeof(struct format_type));
+	if (pmus[pmu_num].formats == NULL) {
+		pmus[pmu_num].num_formats = 0;
+		closedir(format_dir);
+		return -1;
+	}
+
+	/* Read format string info */
+	rewinddir(format_dir);
+	format_num = 0;
+	while (1) {
+		format_entry = readdir(format_dir);
+
+		if (format_entry == NULL) break;
+		if (!strcmp(".", format_entry->d_name)) continue;
+		if (!strcmp("..", format_entry->d_name)) continue;
+
+		if (format_num >= pmus[pmu_num].num_formats)
+			break;
+
+		pmus[pmu_num].formats[format_num].name =
+			strdup(format_entry->d_name);
+		if (!pmus[pmu_num].formats[format_num].name)
+			continue;
+		snprintf(temp_name, sizeof(temp_name), "%s/format/%s",
+			dir_name, format_entry->d_name);
+		if (read_sysfs_value(temp_name, read_buf,
+				     sizeof(read_buf)) >= 0) {
+			result = sscanf(read_buf, "%s", format_value);
+			if (result == 1) {
+				pmus[pmu_num].formats[format_num].value =
+				strdup(format_value);
+				if (!pmus[pmu_num].formats[format_num].value)
+					continue;
+			}
+
+			parse_format(format_value,
+				&pmus[pmu_num].formats[format_num].field,
+				&pmus[pmu_num].formats[format_num].mask);
+			format_num++;
+		}
+	}
+	closedir(format_dir);
+	return 0;
+}
+
 static int init_pmus(void) {
 
-	DIR *dir,*event_dir,*format_dir;
-	struct dirent *entry,*event_entry,*format_entry;
+	DIR *dir,*event_dir;
+	struct dirent *entry,*event_entry;
 	char dir_name[BUFSIZ] = "";
 	char event_name[BUFSIZ+7] = "";
 	char event_value[BUFSIZ] = "";
 	char temp_name[BUFSIZ*2] = "";
-	char format_name[BUFSIZ+7] = "";
-	char format_value[BUFSIZ] = "";
 	char read_buf[BUFSIZ] = "";
-	int type,pmu_num=0,format_num=0,generic_num=0;
+	int type,pmu_num=0,generic_num=0;
 	int result = -1;
 
 
@@ -427,69 +500,11 @@ static int init_pmus(void) {
 		/***********************/
 		/* Scan format strings */
 		/***********************/
-		snprintf(format_name, sizeof(format_name), "%s/format",dir_name);
-		format_dir=opendir(format_name);
-		if (format_dir==NULL) {
-			/* Can be normal to have no format strings */
-		}
-		else {
-			/* Count format strings */
-			while(1) {
-				format_entry=readdir(format_dir);
-				if (format_entry==NULL) break;
-				if (!strcmp(".",format_entry->d_name)) continue;
-				if (!strcmp("..",format_entry->d_name)) continue;
-				pmus[pmu_num].num_formats++;
-			}
-
-			/* Allocate format structure */
-			pmus[pmu_num].formats=calloc(pmus[pmu_num].num_formats,
-							sizeof(struct format_type));
-			if (pmus[pmu_num].formats==NULL) {
-				pmus[pmu_num].num_formats=0;
-				closedir(format_dir);
-				closedir(dir);
-				free_pmus(&pmus, pmu_num);
-				num_pmus = 0;
-				return -1;
-			}
-
-			/* Read format string info */
-			rewinddir(format_dir);
-			format_num=0;
-			while(1) {
-				format_entry=readdir(format_dir);
-
-				if (format_entry==NULL) break;
-				if (!strcmp(".",format_entry->d_name)) continue;
-				if (!strcmp("..",format_entry->d_name)) continue;
-
-				if (format_num >= pmus[pmu_num].num_formats)
-					break;
-
-				pmus[pmu_num].formats[format_num].name=
-					strdup(format_entry->d_name);
-				if (!pmus[pmu_num].formats[format_num].name)
-					continue;
-				snprintf(temp_name, sizeof(temp_name), "%s/format/%s",
-					dir_name,format_entry->d_name);
-				if (read_sysfs_value(temp_name, read_buf,
-						     sizeof(read_buf)) >= 0) {
-					result=sscanf(read_buf,"%s",format_value);
-					if (result==1) {
-						pmus[pmu_num].formats[format_num].value=
-						strdup(format_value);
-						if (!pmus[pmu_num].formats[format_num].value)
-							continue;
-					}
-
-					parse_format(format_value,
-						&pmus[pmu_num].formats[format_num].field,
-						&pmus[pmu_num].formats[format_num].mask);
-					format_num++;
-				}
-			}
-			closedir(format_dir);
+		if (scan_pmu_formats(pmu_num, dir_name) < 0) {
+			closedir(dir);
+			free_pmus(&pmus, pmu_num);
+			num_pmus = 0;
+			return -1;
 		}
 
 		/***********************/
