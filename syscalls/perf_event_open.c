@@ -1587,6 +1587,21 @@ static const struct csfu_desc desc_perf_event_attr = {
 	.n_known_sizes = ARRAY_SIZE(perf_event_attr_known_sizes),
 };
 
+static void pick_perf_cpu(struct syscallrecord *rec)
+{
+	/* cpu */
+	/* requires ROOT to select specific CPU if pid==-1 (all processes) */
+	/* -1 means all CPUs */
+
+	if (RAND_BOOL()) {
+		/* Any CPU */
+		rec->a3 = -1;
+	} else {
+		/* Default to the get_cpu() value */
+		/* set by ARG_CPU                 */
+	}
+}
+
 void sanitise_perf_event_open(struct syscallrecord *rec)
 {
 	struct csfu_buf buf = build_csfu_struct(&desc_perf_event_attr);
@@ -1618,17 +1633,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	 */
 	deferred_free_enqueue(attr);
 
-	/* cpu */
-	/* requires ROOT to select specific CPU if pid==-1 (all processes) */
-	/* -1 means all CPUs */
-
-	if (RAND_BOOL()) {
-		/* Any CPU */
-		rec->a3 = -1;
-	} else {
-		/* Default to the get_cpu() value */
-		/* set by ARG_CPU                 */
-	}
+	pick_perf_cpu(rec);
 
 	/* group_fd */
 	/* should usually be -1 or another perf_event fd         */
