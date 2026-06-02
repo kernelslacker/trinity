@@ -2141,6 +2141,30 @@ static void run_periodic_surfaces(void)
 	canary_queue_tick();
 }
 
+/* Final operator-visibility line at main_loop shutdown: state why
+ * we're bailing.  EXIT_UID_CHANGED carries extra forensic context
+ * (the uid we now hold versus the one we started with), so it gets
+ * its own format; everything else routes through decode_exit. */
+static void log_main_loop_exit(void)
+{
+	enum exit_reasons reason =
+		__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+
+	switch (reason) {
+	case EXIT_UID_CHANGED: {
+		uid_t bad = __atomic_load_n(&shm->uid_at_exit,
+					    __ATOMIC_ACQUIRE);
+		output(0, "Bailing main loop because UID changed (was %u, now %u).\n",
+			orig_uid, bad);
+		break;
+	}
+	default:
+		output(0, "Bailing main loop because %s.\n",
+			decode_exit(reason));
+		break;
+	}
+}
+
 /* Shutdown-tail wait: keep reaping and killing children until the
  * pid map is empty.  Per-invocation counters (last, shutdown_attempts)
  * are scoped to this call so they reset across epochs -- carrying
@@ -2251,24 +2275,7 @@ corrupt:
 	kill_all_kids();
 
 dont_wait:
-	{
-		enum exit_reasons reason =
-			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
-
-		switch (reason) {
-		case EXIT_UID_CHANGED: {
-			uid_t bad = __atomic_load_n(&shm->uid_at_exit,
-						    __ATOMIC_ACQUIRE);
-			output(0, "Bailing main loop because UID changed (was %u, now %u).\n",
-				orig_uid, bad);
-			break;
-		}
-		default:
-			output(0, "Bailing main loop because %s.\n",
-				decode_exit(reason));
-			break;
-		}
-	}
+	log_main_loop_exit();
 
 	final_ring_drain();
 }
