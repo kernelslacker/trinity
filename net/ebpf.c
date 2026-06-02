@@ -313,6 +313,34 @@ static int emit_tier1_st_imm(struct bpf_insn *insns, int pos)
 }
 
 /*
+ * Emit a forward conditional jump that skips 1-3 insns, then fill
+ * the skipped slots with mov-self NOPs.  Caller must have ensured
+ * body_len - pos >= 3 before dispatch so the skip range is non-zero.
+ */
+static int emit_tier1_jmp_fwd(struct bpf_insn *insns, int pos, int body_len,
+			       struct reg_state *rs)
+{
+	int src = reg_pick_live(rs);
+	int op = RAND_ARRAY(jmp_ops);
+	int max_skip = (body_len - pos) - 2;
+	int skip;
+
+	if (max_skip > 3)
+		max_skip = 3;
+
+	skip = 1 + (rnd_modulo_u32(max_skip));
+	insns[pos++] = EBPF_JMP_IMM(op, src, rnd_modulo_u32(100), skip);
+
+	/* Fill skipped slots with safe NOPs (mov rX, rX) */
+	for (int j = 0; j < skip && pos < body_len; j++) {
+		int r = reg_pick_live(rs);
+
+		insns[pos++] = EBPF_MOV64_REG(r, r);
+	}
+	return pos;
+}
+
+/*
  * Tier 1: Generate a valid eBPF program.
  *
  * Strategy: emit a sequence of random operations that the verifier can
@@ -364,24 +392,7 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns,
 			pos = emit_tier1_stack_roundtrip(insns, pos, body_len, &rs);
 
 		} else if (choice < 82 && remaining >= 3) {
-			/* Forward conditional jump (skip 1-3 insns) */
-			int src = reg_pick_live(&rs);
-			int op = RAND_ARRAY(jmp_ops);
-			int max_skip = remaining - 2;
-
-			if (max_skip > 3)
-				max_skip = 3;
-			if (max_skip < 1)
-				break;
-
-			int skip = 1 + (rnd_modulo_u32(max_skip));
-			insns[pos++] = EBPF_JMP_IMM(op, src, rnd_modulo_u32(100), skip);
-
-			/* Fill skipped slots with safe NOPs (mov rX, rX) */
-			for (int j = 0; j < skip && pos < body_len; j++) {
-				int r = reg_pick_live(&rs);
-				insns[pos++] = EBPF_MOV64_REG(r, r);
-			}
+			pos = emit_tier1_jmp_fwd(insns, pos, body_len, &rs);
 
 		} else if (choice < 87) {
 			pos = emit_tier1_st_imm(insns, pos);
