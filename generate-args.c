@@ -24,6 +24,7 @@
 #include "strategy.h"	// plateau_rescue_bias_active_for, RRC_CMP_DERIVED
 #include "struct_catalog.h"
 #include "syscall.h"
+#include "syscall_record.h"
 #include "tables.h"
 #include "trinity.h"	// num_online_cpus
 #include "utils.h"	// zmalloc
@@ -1532,9 +1533,11 @@ void generate_syscall_args(struct syscallrecord *rec)
 	struct syscallentry *entry;
 
 	lock(&rec->lock);
+	srec_publish_begin(rec);
 
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
 	if (entry == NULL) {
+		srec_publish_end(rec);
 		unlock(&rec->lock);
 		return;
 	}
@@ -1560,6 +1563,7 @@ void generate_syscall_args(struct syscallrecord *rec)
 		rec->rettype = entry->rettype;
 		blanket_address_scrub(entry, rec);
 		snapshot_args(entry, rec);
+		srec_publish_end(rec);
 		unlock(&rec->lock);
 		return;
 	}
@@ -1571,5 +1575,6 @@ void generate_syscall_args(struct syscallrecord *rec)
 	blanket_address_scrub(entry, rec);
 	snapshot_args(entry, rec);
 
+	srec_publish_end(rec);
 	unlock(&rec->lock);
 }

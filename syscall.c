@@ -33,6 +33,7 @@
 #include "signals.h"
 #include "stats_ring.h"
 #include "syscall.h"
+#include "syscall_record.h"
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"
@@ -172,6 +173,7 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	needalarm = entry->flags & NEED_ALARM;
 
 	lock(&rec->lock);
+	srec_publish_begin(rec);
 	__atomic_store_n(&rec->state, state, __ATOMIC_RELAXED);
 	/* Stamp the wholesale-stomp canary just before dispatch so
 	 * handle_syscall_ret() can tell whether anything overwrote
@@ -179,6 +181,7 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * path; the matching load is paired with the AFTER snapshot
 	 * read inside the post handler. */
 	rec->_canary = REC_CANARY_MAGIC;
+	srec_publish_end(rec);
 	unlock(&rec->lock);
 
 	/* Second blanket_address_scrub() pass, post-unlock and pre-snapshot:
@@ -225,10 +228,12 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 						 __ATOMIC_RELAXED);
 		}
 		lock(&rec->lock);
+		srec_publish_begin(rec);
 		rec->errno_post = EINVAL;
 		rec->retval = (unsigned long) -1L;
 		rec->validator_rejected = true;
 		__atomic_store_n(&rec->state, AFTER, __ATOMIC_RELEASE);
+		srec_publish_end(rec);
 		unlock(&rec->lock);
 		return;
 	}
@@ -351,9 +356,11 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	}
 
 	lock(&rec->lock);
+	srec_publish_begin(rec);
 	rec->errno_post = saved_errno;
 	rec->retval = ret;
 	__atomic_store_n(&rec->state, AFTER, __ATOMIC_RELEASE);
+	srec_publish_end(rec);
 	unlock(&rec->lock);
 }
 

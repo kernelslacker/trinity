@@ -32,6 +32,7 @@
 #include "stats_ring.h"
 #include "strategy.h"
 #include "syscall.h"
+#include "syscall_record.h"
 #include "tables.h"
 #include "trinity.h"
 #include "utils.h"
@@ -307,8 +308,10 @@ retry:
 
 	/* critical section for shm updates. */
 	lock(&rec->lock);
+	srec_publish_begin(rec);
 	rec->do32bit = do32;
 	rec->nr = syscallnr;
+	srec_publish_end(rec);
 	unlock(&rec->lock);
 
 	return true;
@@ -501,8 +504,10 @@ retry:
 
 commit:
 	lock(&rec->lock);
+	srec_publish_begin(rec);
 	rec->do32bit = do32;
 	rec->nr = syscallnr;
+	srec_publish_end(rec);
 	unlock(&rec->lock);
 
 	return true;
@@ -612,8 +617,10 @@ retry:
 	}
 
 	lock(&rec->lock);
+	srec_publish_begin(rec);
 	rec->do32bit = do32;
 	rec->nr = syscallnr;
+	srec_publish_end(rec);
 	unlock(&rec->lock);
 
 	__atomic_fetch_add(&shm->stats.frontier_strategy_picks, 1UL,
@@ -705,8 +712,10 @@ retry:
 	}
 
 	lock(&rec->lock);
+	srec_publish_begin(rec);
 	rec->do32bit = do32;
 	rec->nr = syscallnr;
+	srec_publish_end(rec);
 	unlock(&rec->lock);
 
 	__atomic_fetch_add(&shm->stats.edgepair_frontier_strategy_picks, 1UL,
@@ -798,8 +807,10 @@ static bool set_syscall_nr_edgepair_chain(struct syscallrecord *rec,
 		return false;
 
 	lock(&rec->lock);
+	srec_publish_begin(rec);
 	rec->do32bit = do32;
 	rec->nr = best_nr;
+	srec_publish_end(rec);
 	unlock(&rec->lock);
 
 	__atomic_fetch_add(&shm->stats.edgepair_chain_picks, 1UL,
@@ -1879,6 +1890,7 @@ bool replay_syscall_step(struct childdata *child,
 	 * and crash-ring reconstruction.  apply_chain_substitution writes
 	 * rec->aN, so the unlock has to come after it. */
 	lock(&rec->lock);
+	srec_publish_begin(rec);
 	rec->do32bit = saved->do32bit;
 	rec->nr = saved->nr;
 
@@ -1892,6 +1904,7 @@ bool replay_syscall_step(struct childdata *child,
 	rec->postbuffer[0] = '\0';
 
 	apply_chain_substitution(rec, entry, have_substitute, substitute_retval);
+	srec_publish_end(rec);
 	unlock(&rec->lock);
 
 	return dispatch_step(child, entry, found_new);
