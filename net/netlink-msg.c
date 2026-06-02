@@ -2181,6 +2181,56 @@ static const struct nla_attr_spec *pick_spec_table(int protocol,
 }
 
 /* Build a single nlmsghdr at msg+offset. Returns new offset (NLMSG_ALIGN'd). */
+/*
+ * Single iteration of build_one_nlmsg()'s inner attr-append loop.
+ * Returns the new offset, or 0 to signal "no progress, caller break".
+ * 0 is an unambiguous sentinel here because the caller has already
+ * advanced offset past NLMSG_HDRLEN before the loop runs.
+ */
+static size_t iter_nlmsg_attr(unsigned char *msg, size_t offset, size_t buflen,
+			      const struct nla_attr_spec *spec_table,
+			      size_t nr_specs,
+			      struct socket_triplet *triplet,
+			      unsigned short nlmsg_type,
+			      unsigned char body_family,
+			      int rtnl_group)
+{
+	unsigned short attr_hint;
+	size_t new_off;
+
+	/* Spec-driven path: families with a curated nla_attr_spec table
+	 * (XFRM, ctnetlink, nftables, genl-ctrl, sock_diag) emit attrs
+	 * sized to their per-type kind.  This dramatically lowers the
+	 * EINVAL rejection rate at the family's nla_policy gate. */
+	if (spec_table) {
+		new_off = append_specced_nlattr(msg, offset, buflen,
+						spec_table, nr_specs);
+		if (new_off == offset)
+			return 0;
+		return new_off;
+	}
+
+	/* Legacy random-payload path for families without a spec table —
+	 * currently NETLINK_ROUTE (which has its own structured per-group
+	 * payload generators) and unknown families. */
+	attr_hint = pick_attr_hint(triplet->protocol, nlmsg_type);
+
+	if (ONE_IN(7)) {
+		unsigned short outer = attr_hint ? attr_hint : rand16();
+
+		new_off = append_nested_attr_container(msg, offset, buflen,
+						       outer,
+						       triplet->protocol,
+						       nlmsg_type, body_family,
+						       rtnl_group);
+		if (new_off > offset)
+			return new_off;
+	}
+
+	return append_nlattr(msg, offset, buflen, attr_hint,
+			     body_family, rtnl_group);
+}
+
 static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 			      struct socket_triplet *triplet)
 {
@@ -2247,49 +2297,14 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 					     &nr_specs);
 
 		while (num_attrs-- > 0 && offset < buflen) {
-			unsigned short attr_hint;
-			size_t new_off;
-
-			/* Spec-driven path: families with a curated
-			 * nla_attr_spec table (XFRM, ctnetlink, nftables,
-			 * genl-ctrl, sock_diag) emit attrs sized to their
-			 * per-type kind.  This dramatically lowers the
-			 * EINVAL rejection rate at the family's nla_policy
-			 * gate. */
-			if (spec_table) {
-				new_off = append_specced_nlattr(msg, offset,
-								buflen,
-								spec_table,
-								nr_specs);
-				if (new_off == offset)
-					break;
-				offset = new_off;
-				continue;
-			}
-
-			/* Legacy random-payload path for families without
-			 * a spec table — currently NETLINK_ROUTE (which has
-			 * its own structured per-group payload generators)
-			 * and unknown families. */
-			attr_hint = pick_attr_hint(triplet->protocol,
-						   nlmsg_type);
-
-			if (ONE_IN(7)) {
-				unsigned short outer = attr_hint
-					? attr_hint : rand16();
-
-				new_off = append_nested_attr_container(msg,
-					offset, buflen, outer,
-					triplet->protocol, nlmsg_type,
-					body_family, rtnl_group);
-				if (new_off > offset) {
-					offset = new_off;
-					continue;
-				}
-			}
-
-			offset = append_nlattr(msg, offset, buflen, attr_hint,
-					       body_family, rtnl_group);
+			size_t new_off = iter_nlmsg_attr(msg, offset, buflen,
+							 spec_table, nr_specs,
+							 triplet, nlmsg_type,
+							 body_family,
+							 rtnl_group);
+			if (new_off == 0)
+				break;
+			offset = new_off;
 		}
 	}
 
