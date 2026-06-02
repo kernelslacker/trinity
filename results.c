@@ -111,24 +111,22 @@ static void store_successful_fd(struct results *results, unsigned long value)
 static void store_failed_fd(struct results *results, unsigned long value)
 {
 	int fd = (int) value;
-	bool set_failed_bit;
+	union fail_run_u cur, new;
+	uint8_t committed_count;
 
 	if (fd < 3 || fd >= SUCCESS_FD_SCOREBOARD_BITS)
 		return;
 
-	/* The packed (fd, count) tuple in fail_run is the canonical state
-	 * now (legacy fail_run_fd / fail_run_count are no longer read or
-	 * written).  Reads and the bump still run under results->lock so
-	 * two children can't race the !run-in-flight branch and end up
-	 * with one child's fd alongside the other child's count, blowing
-	 * past FAIL_RUN_THRESHOLD against the wrong fd.  The committed
-	 * pair is published with a single atomic store so concurrent
-	 * lock-free clears in store_successful_fd observe a coherent
-	 * (fd, count) word.  Step 4 converts this bump to a CAS loop and
-	 * drops the lock. */
-	{
-		union fail_run_u cur, new;
-		lock(&results->lock);
+	/* Bump the (fd, count) run-length tracker lock-free with a CAS loop
+	 * on fail_run.raw.  On fd match, increment count saturating at
+	 * UINT8_MAX so a 256-fail run before any clear can't wrap to zero
+	 * and silence the bad-fd marker; on fd change, reseed (fd, 1).  No
+	 * early-out: by construction new != cur on every iteration (count
+	 * incremented or fd changed), so the CAS always carries useful
+	 * work.  A concurrent store_successful_fd clear that lands between
+	 * our load and our CAS just forces us to retry against the cleared
+	 * state and reseed. */
+	do {
 		cur.raw = __atomic_load_n(&results->fail_run.raw,
 					  __ATOMIC_RELAXED);
 		new = cur;
@@ -140,13 +138,17 @@ static void store_failed_fd(struct results *results, unsigned long value)
 			new.u.count = 1;
 			new.u.pad = 0;
 		}
-		__atomic_store_n(&results->fail_run.raw, new.raw,
-				 __ATOMIC_RELEASE);
-		set_failed_bit = (new.u.count >= FAIL_RUN_THRESHOLD);
-		unlock(&results->lock);
-	}
+	} while (!__atomic_compare_exchange_n(&results->fail_run.raw,
+					      &cur.raw, new.raw, false,
+					      __ATOMIC_RELEASE,
+					      __ATOMIC_RELAXED));
 
-	if (set_failed_bit)
+	/* Test the value we definitely wrote, not a fresh load: a
+	 * concurrent clear between our CAS commit and a re-read could
+	 * show 0 here and miss firing the bad-fd marker for a run we
+	 * just observed crossing the threshold. */
+	committed_count = new.u.count;
+	if (committed_count >= FAIL_RUN_THRESHOLD)
 		__atomic_fetch_or(&results->failed_fds[fd >> 3],
 				  (unsigned char)(1U << (fd & 7)),
 				  __ATOMIC_RELAXED);

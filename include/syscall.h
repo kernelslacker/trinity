@@ -211,10 +211,9 @@ struct arglist {
 #define SUCCESS_FD_SCOREBOARD_BYTES	(SUCCESS_FD_SCOREBOARD_BITS / 8)
 
 /* Packed views of the ARG_LEN scoreboard (min, max) and the failed-fd
- * run-length tracker (fail_run_fd, fail_run_count).  len_score is updated
- * lock-free by store_successful_len() via a CAS loop on the raw u64;
- * fail_run still goes through the per-results lock until a follow-up
- * commit converts store_failed_fd / store_successful_fd to CAS as well. */
+ * run-length tracker (fd, count).  Both are updated lock-free via CAS
+ * loops on the raw word -- len_score by store_successful_len(), fail_run
+ * by store_failed_fd() (bump) and store_successful_fd() (clear). */
 union len_score_u {
 	uint64_t raw;
 	struct {
@@ -232,11 +231,10 @@ union fail_run_u {
 };
 
 struct results {
-	/* Serialises the fail_run_fd / fail_run_count pair updated by
-	 * store_failed_fd / store_successful_fd.  The success_fds /
-	 * failed_fds bitmaps are mutated lock-free via __atomic_fetch_or /
-	 * __atomic_fetch_and on the touched byte; len_score is mutated
-	 * lock-free via a CAS loop on its raw u64.  Zero-init from
+	/* No remaining writers under this lock after the fail_run CAS
+	 * conversion -- all scoreboard updates are now lock-free.  Kept
+	 * for one more commit so the step-5 removal lands isolated and is
+	 * easy to revert if a regression shows up.  Zero-init from
 	 * alloc_shared() leaves the lock UNLOCKED. */
 	lock_t lock;
 	/* ARG_FD / typed-fd: bit `fd` set if get_random_fd / get_typed_fd
@@ -247,22 +245,19 @@ struct results {
 	 * it to bias re-rolls away from (slot, fd) pairs the kernel keeps
 	 * rejecting (EBADF/EINVAL/etc).  Cleared by store_successful_fd(). */
 	unsigned char failed_fds[SUCCESS_FD_SCOREBOARD_BYTES];
-	/* Run-length tracking for the failed_fds bitmap.  Only the most
-	 * recently-failing fd is tracked (full per-fd counters would cost
-	 * 256 bytes per slot); good enough since we only care about long
-	 * consecutive runs against a single fd, which is the actual symptom
-	 * of a permanently-broken (slot, fd) pair.  fail_run_count == 0
-	 * means no run in flight (so static-zero init "just works"). */
-	unsigned char fail_run_fd;
-	unsigned char fail_run_count;	/* saturating; 0 = no run in flight */
 	/* ARG_LEN: range of successful length values, folded into one
 	 * 64-bit word so store_successful_len() can RMW it with a single
 	 * CAS.  min == UINT32_MAX && max == 0 is the not-seen sentinel
 	 * (stamped by results_init_one() in results.h); readers should
 	 * check len_score_is_seen() before consuming min/max. */
 	union len_score_u len_score;
-	/* fail_run_fd / fail_run_count packed for future CAS conversion;
-	 * not yet read or written by any path. */
+	/* Run-length tracking for the failed_fds bitmap.  Only the most
+	 * recently-failing fd is tracked (full per-fd counters would cost
+	 * 256 bytes per slot); good enough since we only care about long
+	 * consecutive runs against a single fd, which is the actual symptom
+	 * of a permanently-broken (slot, fd) pair.  count == 0 means no
+	 * run in flight (so static-zero init "just works").  Mutated
+	 * lock-free via CAS on fail_run.raw. */
 	union fail_run_u fail_run;
 };
 
