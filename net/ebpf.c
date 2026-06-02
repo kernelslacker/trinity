@@ -340,6 +340,43 @@ static int emit_tier1_jmp_fwd(struct bpf_insn *insns, int pos, int body_len,
 	return pos;
 }
 
+/* Emit one MOV64 reg-to-reg copy from a live src to a fresh dst. */
+static int emit_tier1_mov64_reg(struct bpf_insn *insns, int pos,
+				 struct reg_state *rs)
+{
+	int dst = reg_pick_dst();
+	int src = reg_pick_live(rs);
+
+	insns[pos++] = EBPF_MOV64_REG(dst, src);
+	reg_set(rs, dst);
+	return pos;
+}
+
+/*
+ * Emit a CALL to a randomly picked helper from the prog-type-
+ * appropriate set, then clear caller-saved regs in the liveness map.
+ */
+static int emit_tier1_call(struct bpf_insn *insns, int pos,
+			    struct reg_state *rs, struct helper_set hs)
+{
+	int func = hs.helpers[rnd_modulo_u32(hs.count)];
+
+	insns[pos++] = EBPF_CALL(func);
+	reg_clear_caller_saved(rs);
+	return pos;
+}
+
+/* Emit one endianness-conversion op on a live reg at 16/32/64 bits. */
+static int emit_tier1_endian(struct bpf_insn *insns, int pos,
+			      struct reg_state *rs)
+{
+	int dst = reg_pick_live(rs);
+	int sizes[] = { 16, 32, 64 };
+
+	insns[pos++] = EBPF_ENDIAN(BPF_K, dst, RAND_ARRAY(sizes));
+	return pos;
+}
+
 /*
  * Tier 1: Generate a valid eBPF program.
  *
@@ -398,23 +435,13 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns,
 			pos = emit_tier1_st_imm(insns, pos);
 
 		} else if (choice < 92) {
-			/* MOV64 reg-to-reg (register copy) */
-			int dst = reg_pick_dst();
-			int src = reg_pick_live(&rs);
-			insns[pos++] = EBPF_MOV64_REG(dst, src);
-			reg_set(&rs, dst);
+			pos = emit_tier1_mov64_reg(insns, pos, &rs);
 
 		} else if (choice < 97 && remaining >= 2) {
-			/* Helper call from prog-type-appropriate set */
-			int func = hs.helpers[rnd_modulo_u32(hs.count)];
-			insns[pos++] = EBPF_CALL(func);
-			reg_clear_caller_saved(&rs);
+			pos = emit_tier1_call(insns, pos, &rs, hs);
 
 		} else {
-			/* Endianness conversion */
-			int dst = reg_pick_live(&rs);
-			int sizes[] = { 16, 32, 64 };
-			insns[pos++] = EBPF_ENDIAN(BPF_K, dst, RAND_ARRAY(sizes));
+			pos = emit_tier1_endian(insns, pos, &rs);
 		}
 	}
 
