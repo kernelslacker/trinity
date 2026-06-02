@@ -1651,6 +1651,47 @@ static unsigned long pick_perf_flags(void)
 	return flags;
 }
 
+static pid_t pick_perf_pid(unsigned long flags)
+{
+	pid_t pid;
+
+	/* pid */
+	/* requires ROOT to select pid that doesn't belong to us */
+
+	if (flags & PERF_FLAG_PID_CGROUP) {
+		/* PERF_FLAG_PID_CGROUP makes the kernel interpret 'pid' as
+		 * a cgroup directory fd (an O_PATH dir under /sys/fs/cgroup).
+		 * Pull from the cgroup pool so the cgroup-pinned perf path
+		 * actually exercises real cgroup attachment instead of
+		 * bouncing off EBADF on the first random fd we hand it.
+		 * If the pool is empty (no cgroupfs mounted, init failed),
+		 * fall back to a generic random fd to keep this path firing. */
+		pid = get_rand_cgroup_fd();
+		if (pid < 0)
+			pid = get_random_fd();
+	} else {
+		switch(rnd_modulo_u32(4)) {
+		case 0:	/* use current thread */
+			pid = 0;
+			break;
+		case 1: /* get an arbitrary pid */
+			pid = get_pid();
+			break;
+		case 2:	/* measure *all* pids.  Might require root */
+			pid = -1;
+			break;
+		case 3: /* measure our actual pid */
+			pid=mypid();
+			break;
+		default:
+			pid = 0;
+			break;
+		}
+	}
+
+	return pid;
+}
+
 void sanitise_perf_event_open(struct syscallrecord *rec)
 {
 	struct csfu_buf buf = build_csfu_struct(&desc_perf_event_attr);
@@ -1689,39 +1730,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	flags = pick_perf_flags();
 	rec->a5 = flags;
 
-	/* pid */
-	/* requires ROOT to select pid that doesn't belong to us */
-
-	if (flags & PERF_FLAG_PID_CGROUP) {
-		/* PERF_FLAG_PID_CGROUP makes the kernel interpret 'pid' as
-		 * a cgroup directory fd (an O_PATH dir under /sys/fs/cgroup).
-		 * Pull from the cgroup pool so the cgroup-pinned perf path
-		 * actually exercises real cgroup attachment instead of
-		 * bouncing off EBADF on the first random fd we hand it.
-		 * If the pool is empty (no cgroupfs mounted, init failed),
-		 * fall back to a generic random fd to keep this path firing. */
-		pid = get_rand_cgroup_fd();
-		if (pid < 0)
-			pid = get_random_fd();
-	} else {
-		switch(rnd_modulo_u32(4)) {
-		case 0:	/* use current thread */
-			pid = 0;
-			break;
-		case 1: /* get an arbitrary pid */
-			pid = get_pid();
-			break;
-		case 2:	/* measure *all* pids.  Might require root */
-			pid = -1;
-			break;
-		case 3: /* measure our actual pid */
-			pid=mypid();
-			break;
-		default:
-			pid = 0;
-			break;
-		}
-	}
+	pid = pick_perf_pid(flags);
 	rec->a2 = pid;
 
 	/*
