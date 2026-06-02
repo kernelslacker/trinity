@@ -386,7 +386,7 @@ void clean_childdata(struct childdata *child)
 {
 	memset(&child->syscall, 0, sizeof(struct syscallrecord));
 	child->seed = 0;
-	child->kill_count = 0;
+	__atomic_store_n(&child->kill_count, 0, __ATOMIC_RELAXED);
 	child->kill_in_flight = false;
 	child->dontkillme = false;
 	child->xcpu_count = 0;
@@ -2263,7 +2263,7 @@ void child_process(struct childdata *child, int childno)
 			alarm(0);
 			if (check_stall(child))
 				goto out;
-			if (child->kill_count > 0) {
+			if (__atomic_load_n(&child->kill_count, __ATOMIC_RELAXED) > 0) {
 				output(1, "[%d] Missed a kill signal, exiting\n", mypid());
 				goto out;
 			}

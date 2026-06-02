@@ -901,7 +901,7 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	 *
 	 * This check must come before the D-state early return below,
 	 * otherwise unkillable D-state children never get reaped. */
-	if (child->kill_count >= 10) {
+	if (__atomic_load_n(&child->kill_count, __ATOMIC_RELAXED) >= 10) {
 		register_zombie_slot(childno, pid);
 		return true;
 	}
@@ -918,7 +918,7 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	state = get_pid_state(childno);
 	if (state == 'D') {
 		kill_pid(pid);
-		child->kill_count++;
+		__atomic_add_fetch(&child->kill_count, 1, __ATOMIC_RELAXED);
 		child->kill_in_flight = true;
 		return false;
 	}
@@ -929,7 +929,7 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 			stuck_syscall_info(child, childno);
 		debugf("child %d (pid %u) hasn't made progress in 30 seconds! Sending SIGKILL\n",
 				childno, pid);
-		child->kill_count++;
+		__atomic_add_fetch(&child->kill_count, 1, __ATOMIC_RELAXED);
 		child->kill_in_flight = true;
 		kill_pid(pid);
 	}
@@ -939,8 +939,9 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 		return false;
 
 	debugf("sending another SIGKILL to child %u (pid:%u). [kill count:%u] [diff:%lu]\n",
-		childno, pid, child->kill_count, diff);
-	child->kill_count++;
+		childno, pid,
+		__atomic_load_n(&child->kill_count, __ATOMIC_RELAXED), diff);
+	__atomic_add_fetch(&child->kill_count, 1, __ATOMIC_RELAXED);
 	kill_pid(pid);
 
 	return false;

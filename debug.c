@@ -345,7 +345,8 @@ void dump_childdata(struct childdata *child)
 	output(0, "seed: %u\n", child->seed);
 	output(0, "childnum: %d\n", child->num);
 
-	output(0, "killcount: %d\n", child->kill_count);
+	output(0, "killcount: %d\n",
+		__atomic_load_n(&child->kill_count, __ATOMIC_RELAXED));
 	output(0, "dontkillme: %d\n", child->dontkillme);
 	output(0, "\n");
 };
