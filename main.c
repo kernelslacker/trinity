@@ -1965,6 +1965,88 @@ static void final_ring_drain(void)
 	edgepair_ring_drain_all();
 }
 
+/* Per-tick block that pulls fresh state from every child: reap zombies,
+ * drain the three observation rings (fd_event/stats/edgepair) into the
+ * parent aggregates, then poll the two child-side beacons (hit_bug,
+ * fault_beacon) for events a BUG'd or fault-handler-bound child
+ * couldn't print itself.  No reorder, no new state. */
+static void drain_child_surfaces(void)
+{
+	handle_children();
+
+	/* Drain fd events from all children's ring buffers.
+	 * This processes dup/close events that children couldn't
+	 * apply directly (COW heap prevents global pool mutation). */
+	fd_event_drain_all();
+
+	/* Drain stats deltas from all children's rings into the
+	 * parent-private aggregate.  Republishes the mirror page
+	 * inside its own thaw/refreeze bracket. */
+	stats_ring_drain_all();
+
+	/* Drain edgepair observation events from all children's rings
+	 * into the parent-private edgepair_aggregate.  Republishes
+	 * the mirror page inside its own thaw/refreeze bracket. */
+	edgepair_ring_drain_all();
+
+	/* Surface any child-side __BUG() event the BUG'd child
+	 * stamped into shared memory but couldn't print itself
+	 * (stderr was redirected to /dev/null in init_child).  Cost
+	 * is one acquire-load per child per tick; dump_child_bug is
+	 * idempotent via its bug_dumped cmpxchg gate, so the
+	 * zombie watchdog calling it later (or this loop firing
+	 * twice between BUG and reap) doesn't double-print. */
+	{
+		unsigned int bi;
+
+		for_each_child(bi) {
+			struct childdata *bc =
+				__atomic_load_n(&children[bi],
+						__ATOMIC_ACQUIRE);
+
+			if (bc == NULL)
+				continue;
+			if (!__atomic_load_n(&bc->hit_bug,
+					     __ATOMIC_ACQUIRE))
+				continue;
+			if (__atomic_load_n(&bc->bug_dumped,
+					    __ATOMIC_ACQUIRE))
+				continue;
+			dump_child_bug(bc);
+		}
+	}
+
+	/* Surface any signal-time fault beacon stamped by
+	 * child_fault_handler.  Sibling poll to the hit_bug block
+	 * above with identical shape; cheap acquire-load per child
+	 * per tick and dump_child_fault_beacon is idempotent via
+	 * its fault_beacon_dumped cmpxchg gate.  The beacon path
+	 * exists because the in-handler backtrace_symbols_fd chain
+	 * can re-fault on a corrupted ld.so writable segment
+	 * before any forensic line lands on disk; without this
+	 * poll the SIGSEGV-in-ld.so death class is silent in the
+	 * bug corpus. */
+	{
+		unsigned int fi;
+
+		for_each_child(fi) {
+			struct childdata *fc =
+				__atomic_load_n(&children[fi],
+						__ATOMIC_ACQUIRE);
+
+			if (fc == NULL)
+				continue;
+			if (__atomic_load_n(&fc->fault_beacon.written,
+					    __ATOMIC_ACQUIRE) == 0U)
+				continue;
+			if (__atomic_load_n(&fc->fault_beacon_dumped,
+					    __ATOMIC_ACQUIRE))
+				continue;
+			dump_child_fault_beacon(fc);
+		}
+	}
+}
+
 void main_loop(void)
 {
 	struct timespec epoch_start;
@@ -2007,79 +2089,7 @@ void main_loop(void)
 
 	while (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING) {
 
-		handle_children();
-
-		/* Drain fd events from all children's ring buffers.
-		 * This processes dup/close events that children couldn't
-		 * apply directly (COW heap prevents global pool mutation). */
-		fd_event_drain_all();
-
-		/* Drain stats deltas from all children's rings into the
-		 * parent-private aggregate.  Republishes the mirror page
-		 * inside its own thaw/refreeze bracket. */
-		stats_ring_drain_all();
-
-		/* Drain edgepair observation events from all children's rings
-		 * into the parent-private edgepair_aggregate.  Republishes
-		 * the mirror page inside its own thaw/refreeze bracket. */
-		edgepair_ring_drain_all();
-
-		/* Surface any child-side __BUG() event the BUG'd child
-		 * stamped into shared memory but couldn't print itself
-		 * (stderr was redirected to /dev/null in init_child).  Cost
-		 * is one acquire-load per child per tick; dump_child_bug is
-		 * idempotent via its bug_dumped cmpxchg gate, so the
-		 * zombie watchdog calling it later (or this loop firing
-		 * twice between BUG and reap) doesn't double-print. */
-		{
-			unsigned int bi;
-
-			for_each_child(bi) {
-				struct childdata *bc =
-					__atomic_load_n(&children[bi],
-							__ATOMIC_ACQUIRE);
-
-				if (bc == NULL)
-					continue;
-				if (!__atomic_load_n(&bc->hit_bug,
-						     __ATOMIC_ACQUIRE))
-					continue;
-				if (__atomic_load_n(&bc->bug_dumped,
-						    __ATOMIC_ACQUIRE))
-					continue;
-				dump_child_bug(bc);
-			}
-		}
-
-		/* Surface any signal-time fault beacon stamped by
-		 * child_fault_handler.  Sibling poll to the hit_bug block
-		 * above with identical shape; cheap acquire-load per child
-		 * per tick and dump_child_fault_beacon is idempotent via
-		 * its fault_beacon_dumped cmpxchg gate.  The beacon path
-		 * exists because the in-handler backtrace_symbols_fd chain
-		 * can re-fault on a corrupted ld.so writable segment
-		 * before any forensic line lands on disk; without this
-		 * poll the SIGSEGV-in-ld.so death class is silent in the
-		 * bug corpus. */
-		{
-			unsigned int fi;
-
-			for_each_child(fi) {
-				struct childdata *fc =
-					__atomic_load_n(&children[fi],
-							__ATOMIC_ACQUIRE);
-
-				if (fc == NULL)
-					continue;
-				if (__atomic_load_n(&fc->fault_beacon.written,
-						    __ATOMIC_ACQUIRE) == 0U)
-					continue;
-				if (__atomic_load_n(&fc->fault_beacon_dumped,
-						    __ATOMIC_ACQUIRE))
-					continue;
-				dump_child_fault_beacon(fc);
-			}
-		}
+		drain_child_surfaces();
 
 		taint_check();
 
