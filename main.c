@@ -2141,6 +2141,48 @@ static void run_periodic_surfaces(void)
 	canary_queue_tick();
 }
 
+/* Shutdown-tail wait: keep reaping and killing children until the
+ * pid map is empty.  Per-invocation counters (last, shutdown_attempts)
+ * are scoped to this call so they reset across epochs -- carrying
+ * them in file scope would let a prior epoch's count trip the >10
+ * cap on the first real wait of a new epoch. */
+static void wait_for_children_to_exit(void)
+{
+	unsigned int last = 0;
+	unsigned int shutdown_attempts = 0;
+
+	handle_children();
+
+	/* Are there still children running ? */
+	while (pidmap_empty() == false) {
+		if (++shutdown_attempts > 10) {
+			output(0, "Gave up waiting for children after %u attempts.\n",
+				shutdown_attempts);
+			panic(EXIT_TIMED_OUT);
+			break;
+		}
+
+		if (last != __atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED)) {
+			last = __atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED);
+
+			output(0, "exit_reason=%d, but %u children still running.\n",
+				__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED),
+				__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED));
+		}
+
+		/* Wait for all the children to exit. */
+		while (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) > 0) {
+			taint_check();
+
+			handle_children();
+			kill_all_kids();
+			/* Give children a chance to exit before retrying. */
+			sleep(1);
+		}
+		reap_dead_kids();
+	}
+}
+
 void main_loop(void)
 {
 	struct timespec epoch_start;
@@ -2203,41 +2245,7 @@ void main_loop(void)
 	    (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == EXIT_SHM_CORRUPTION))
 		goto dont_wait;
 
-	handle_children();
-
-	/* Are there still children running ? */
-	/* Per-invocation counters: must reset across epochs, otherwise the
-	 * accumulated count from prior epochs can trip the >10 cap on the
-	 * first real wait of a new epoch. */
-	unsigned int last = 0;
-	unsigned int shutdown_attempts = 0;
-	while (pidmap_empty() == false) {
-		if (++shutdown_attempts > 10) {
-			output(0, "Gave up waiting for children after %u attempts.\n",
-				shutdown_attempts);
-			panic(EXIT_TIMED_OUT);
-			break;
-		}
-
-		if (last != __atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED)) {
-			last = __atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED);
-
-			output(0, "exit_reason=%d, but %u children still running.\n",
-				__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED),
-				__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED));
-		}
-
-		/* Wait for all the children to exit. */
-		while (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) > 0) {
-			taint_check();
-
-			handle_children();
-			kill_all_kids();
-			/* Give children a chance to exit before retrying. */
-			sleep(1);
-		}
-		reap_dead_kids();
-	}
+	wait_for_children_to_exit();
 
 corrupt:
 	kill_all_kids();
