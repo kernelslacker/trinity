@@ -700,6 +700,103 @@ static enum iovec_entry_shape pick_iovec_entry_shape(unsigned int idx,
 	return SHAPE_VALID_MAP;
 }
 
+static inline void fill_iov_entry_map_backed(struct iovec *iov,
+					     unsigned int i,
+					     enum iov_direction dir,
+					     enum iovec_entry_shape shape)
+{
+	struct map *map;
+	unsigned long base;
+
+	/*
+	 * Map-backed shapes share the same base lookup + scrub tail.
+	 *
+	 * For IOV_KERNEL_READ callers the avoid_shared_buffer_inout()
+	 * scrub below memcpy()s the original bytes into the replacement
+	 * buffer, which requires the source map to actually be readable.
+	 * The initial map pool (mm/maps-initial.c) includes PROT_WRITE-
+	 * only, PROT_EXEC-only and PROT_NONE entries, and reading from
+	 * any of those SEGVs trinity inside the sanitiser before the
+	 * syscall ever fires.  Filter to entries that include PROT_READ
+	 * for the read direction; the write direction is content-blind
+	 * (kernel overwrites the buffer) so protection diversity remains
+	 * the point and plain get_map() is correct there.
+	 *
+	 * If no readable map is available, fall back to a scratch buffer
+	 * from get_writable_address() (PROT_READ|PROT_WRITE backed) so
+	 * the entry still produces coverage rather than being silently
+	 * dropped.
+	 */
+	if (dir == IOV_KERNEL_READ)
+		map = get_map_with_prot(PROT_READ);
+	else
+		map = get_map();
+	if (map == NULL) {
+		if (dir == IOV_KERNEL_READ) {
+			void *scratch = get_writable_address(page_size);
+
+			if (scratch != NULL) {
+				iov[i].iov_base = scratch;
+				iov[i].iov_len = (shape == SHAPE_TINY)
+					? 1
+					: page_size / 2;
+				return;
+			}
+		}
+		iov[i].iov_base = NULL;
+		iov[i].iov_len = 0;
+		return;
+	}
+
+	iov[i].iov_base = map->ptr;
+	if (shape == SHAPE_TINY) {
+		iov[i].iov_len = 1;
+	} else if (shape == SHAPE_PAGECROSS && map->size > page_size) {
+		unsigned long len = page_size + RAND_RANGE(1, 64);
+
+		if (len > map->size)
+			len = map->size;
+		iov[i].iov_len = len;
+	} else if (RAND_BOOL()) {
+		const unsigned int lens[] = {
+			0, 1, page_size - 1, page_size,
+			page_size + 1, page_size * 2,
+		};
+		iov[i].iov_len = lens[rnd_modulo_u32(ARRAY_SIZE(lens))];
+	} else {
+		iov[i].iov_len = map->size > 0 ? rnd_modulo_u32(map->size) : 0;
+	}
+
+	/*
+	 * Per-entry relocation away from alloc_shared() regions and
+	 * the libc brk arena.  A get_map() pointer can in principle
+	 * alias one of trinity's alloc_shared() regions (children
+	 * blob, fd_event_ring, shared obj/string heaps) or land in
+	 * libc brk, both of which would let the kernel scribble
+	 * bookkeeping.
+	 *
+	 * Both directions use avoid_shared_buffer_out().  For
+	 * IOV_KERNEL_WRITE callers (readv, preadv, preadv2,
+	 * recvmsg, recvmmsg, process_vm_readv, process_madvise)
+	 * the kernel overwrites the buffer, so preserving input
+	 * bytes is wasted work.  For IOV_KERNEL_READ callers
+	 * (writev, pwritev, pwritev2, sendmsg, sendmmsg, vmsplice,
+	 * process_vm_writev) the source pages are anon shmem from
+	 * MAP_SHARED|MAP_ANONYMOUS initial maps; their demand-
+	 * fault can SIGBUS when the shmem allocator cannot back
+	 * the page.  range_readable_user() verifies VMA permission
+	 * but cannot predict per-page allocability, so a copy-in
+	 * variant would SIGBUS the sanitiser before the syscall
+	 * ever fires.  None of the seven IOV_KERNEL_READ post-
+	 * handlers deref iov_base after the syscall (only retval
+	 * and scalars are consumed), so preserving source bytes
+	 * across relocation buys nothing.
+	 */
+	base = (unsigned long) iov[i].iov_base;
+	avoid_shared_buffer_out(&base, iov[i].iov_len);
+	iov[i].iov_base = (void *) base;
+}
+
 struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir)
 {
 	struct iovec *iov;
@@ -759,8 +856,6 @@ struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir)
 
 	for (i = 0; i < num; i++) {
 		enum iovec_entry_shape shape = pick_iovec_entry_shape(i, dir);
-		struct map *map;
-		unsigned long base;
 		void *pool;
 
 		switch (shape) {
@@ -811,93 +906,7 @@ struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir)
 			break;
 		}
 
-		/*
-		 * Map-backed shapes share the same base lookup + scrub tail.
-		 *
-		 * For IOV_KERNEL_READ callers the avoid_shared_buffer_inout()
-		 * scrub below memcpy()s the original bytes into the replacement
-		 * buffer, which requires the source map to actually be readable.
-		 * The initial map pool (mm/maps-initial.c) includes PROT_WRITE-
-		 * only, PROT_EXEC-only and PROT_NONE entries, and reading from
-		 * any of those SEGVs trinity inside the sanitiser before the
-		 * syscall ever fires.  Filter to entries that include PROT_READ
-		 * for the read direction; the write direction is content-blind
-		 * (kernel overwrites the buffer) so protection diversity remains
-		 * the point and plain get_map() is correct there.
-		 *
-		 * If no readable map is available, fall back to a scratch buffer
-		 * from get_writable_address() (PROT_READ|PROT_WRITE backed) so
-		 * the entry still produces coverage rather than being silently
-		 * dropped.
-		 */
-		if (dir == IOV_KERNEL_READ)
-			map = get_map_with_prot(PROT_READ);
-		else
-			map = get_map();
-		if (map == NULL) {
-			if (dir == IOV_KERNEL_READ) {
-				void *scratch = get_writable_address(page_size);
-
-				if (scratch != NULL) {
-					iov[i].iov_base = scratch;
-					iov[i].iov_len = (shape == SHAPE_TINY)
-						? 1
-						: page_size / 2;
-					continue;
-				}
-			}
-			iov[i].iov_base = NULL;
-			iov[i].iov_len = 0;
-			continue;
-		}
-
-		iov[i].iov_base = map->ptr;
-		if (shape == SHAPE_TINY) {
-			iov[i].iov_len = 1;
-		} else if (shape == SHAPE_PAGECROSS && map->size > page_size) {
-			unsigned long len = page_size + RAND_RANGE(1, 64);
-
-			if (len > map->size)
-				len = map->size;
-			iov[i].iov_len = len;
-		} else if (RAND_BOOL()) {
-			const unsigned int lens[] = {
-				0, 1, page_size - 1, page_size,
-				page_size + 1, page_size * 2,
-			};
-			iov[i].iov_len = lens[rnd_modulo_u32(ARRAY_SIZE(lens))];
-		} else {
-			iov[i].iov_len = map->size > 0 ? rnd_modulo_u32(map->size) : 0;
-		}
-
-		/*
-		 * Per-entry relocation away from alloc_shared() regions and
-		 * the libc brk arena.  A get_map() pointer can in principle
-		 * alias one of trinity's alloc_shared() regions (children
-		 * blob, fd_event_ring, shared obj/string heaps) or land in
-		 * libc brk, both of which would let the kernel scribble
-		 * bookkeeping.
-		 *
-		 * Both directions use avoid_shared_buffer_out().  For
-		 * IOV_KERNEL_WRITE callers (readv, preadv, preadv2,
-		 * recvmsg, recvmmsg, process_vm_readv, process_madvise)
-		 * the kernel overwrites the buffer, so preserving input
-		 * bytes is wasted work.  For IOV_KERNEL_READ callers
-		 * (writev, pwritev, pwritev2, sendmsg, sendmmsg, vmsplice,
-		 * process_vm_writev) the source pages are anon shmem from
-		 * MAP_SHARED|MAP_ANONYMOUS initial maps; their demand-
-		 * fault can SIGBUS when the shmem allocator cannot back
-		 * the page.  range_readable_user() verifies VMA permission
-		 * but cannot predict per-page allocability, so a copy-in
-		 * variant would SIGBUS the sanitiser before the syscall
-		 * ever fires.  None of the seven IOV_KERNEL_READ post-
-		 * handlers deref iov_base after the syscall (only retval
-		 * and scalars are consumed), so preserving source bytes
-		 * across relocation buys nothing.
-		 */
-		base = (unsigned long) iov[i].iov_base;
-		avoid_shared_buffer_out(&base, iov[i].iov_len);
-		iov[i].iov_base = (void *) base;
+		fill_iov_entry_map_backed(iov, i, dir, shape);
 	}
 
 	return iov;
