@@ -33,6 +33,7 @@
 #include "stats_ring.h"
 #include "strategy.h"
 #include "syscall.h"
+#include "syscall_record.h"
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"
@@ -541,39 +542,41 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 	char fdstr[80];
 	pid_t pid;
 	bool do32;
-	char state;
+	enum syscallstate state;
+	bool got;
 
 	pid = __atomic_load_n(&pids[childno], __ATOMIC_RELAXED);
 
 	rec = &child->syscall;
 
-	if (trylock(&rec->lock) == false)
-		return;
-
-	do32 = rec->do32bit;
-	callno = rec->nr;
-	state = rec->state;
-
-	/* The name lookup is a pure table index and is meaningful in
-	 * any state -- without it AFTER-state kills print cmd:? and we
-	 * lose all visibility into which syscall's post-handler path
-	 * stuck the child. */
-	entry = get_syscall_entry(callno, do32);
-
-	/* we can only be 'stuck' if we're still doing the syscall.
-	 * Snapshot the args under the lock -- rec lives in shm and a
-	 * sibling could scribble it the moment we unlock. The args are
-	 * only meaningful pre-syscall, so leave them zeroed otherwise. */
-	if (state == BEFORE) {
+	/* Lockless snapshot via the sequence counter -- the parent-side
+	 * diagnostic must not contend with the child's own writer path
+	 * on rec->lock under fleet conditions where many children wedge
+	 * simultaneously.  Writers still hold rec->lock and bracket their
+	 * mutations with srec_publish_begin/end, so we get a coherent
+	 * view without taking the lock. */
+	SREC_SNAPSHOT(rec, {
+		do32 = rec->do32bit;
+		callno = rec->nr;
+		state = __atomic_load_n(&rec->state, __ATOMIC_RELAXED);
 		args[0] = rec->a1;
 		args[1] = rec->a2;
 		args[2] = rec->a3;
 		args[3] = rec->a4;
 		args[4] = rec->a5;
 		args[5] = rec->a6;
+	}, got);
+
+	if (!got) {
+		output(0, "  (snapshot give-up: writer churn)\n");
+		return;
 	}
 
-	unlock(&rec->lock);
+	/* The name lookup is a pure table index and is meaningful in
+	 * any state -- without it AFTER-state kills print cmd:? and we
+	 * lose all visibility into which syscall's post-handler path
+	 * stuck the child. */
+	entry = get_syscall_entry(callno, do32);
 
 	/* Always-on kill diag: the caller is about to SIGKILL this child,
 	 * and without this line non-debug runs just see a child vanish.
