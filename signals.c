@@ -1,8 +1,10 @@
 #include <dlfcn.h>
 #include <fcntl.h>
+#include <limits.h>	// PATH_MAX
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/mman.h>	// memfd_create, MFD_CLOEXEC
 #include <sys/stat.h>	// umask
 #include <ucontext.h>	// ucontext_t / REG_RIP &c for fault_beacon IP/SP capture
 #include <unistd.h>
@@ -50,6 +52,73 @@ void init_abort_msg_capture(void)
 	glibc_abort_msg_p = dlvsym(RTLD_DEFAULT, "__abort_msg", "GLIBC_PRIVATE");
 	if (glibc_abort_msg_p == NULL)
 		glibc_abort_msg_p = dlsym(RTLD_DEFAULT, "__abort_msg");
+}
+
+/*
+ * In-process anonymous file that backs the child's stderr after
+ * init_stderr_memfd() runs.  The fd is kept open past the dup2 so
+ * child_fault_handler() can lseek+read the buffered text back into
+ * the on-disk bug log when the child actually crashes.  -1 means
+ * the memfd_create() failed (e.g. CONFIG_MEMFD_CREATE=n on a
+ * stripped kernel) and stderr stays at its previous /dev/null
+ * baseline -- the handler then skips the drain and produces only
+ * the in-handler backtrace + siginfo, same as before this feature
+ * existed.
+ */
+static int stderr_memfd = -1;
+
+/*
+ * Bug-log path pre-formatted at init time so the signal handler
+ * never has to call snprintf() (not async-signal-safe per POSIX
+ * 2024 §2.4.3).  Sized like the existing on-stack PATH_MAX + 64
+ * buffer in child_fault_handler so a long trinity_tmpdir_abs() plus
+ * "/trinity-bug-<pid>.log" cannot truncate.
+ */
+static char buglog_path[PATH_MAX + 64];
+
+/*
+ * Buffer the child's stderr writes in an anonymous in-memory file
+ * so glibc's malloc_printerr / __libc_message / __fortify_fail /
+ * __stack_chk_fail family text (which happens BEFORE any trinity
+ * signal handler runs) survives long enough for the fault handler
+ * to flush it into the on-disk bug log -- but only on a real
+ * crash, so trinity's own outputerr() noise from healthy children
+ * is silently discarded with the process at clean exit.
+ *
+ * Paired with the drain block at the top of child_fault_handler:
+ * the handler open()s the bug log, lseek()s the memfd to 0, and
+ * splices the buffered text into the log before its own writes.
+ *
+ * snprintf() is NOT async-signal-safe, so the path is formatted
+ * here at init time (under the inherited non-fuzzed locale state)
+ * and stashed in the file-static buglog_path[].  trinity_tmpdir_abs()
+ * is used so a fuzzed chdir() can't move us off the writable tmp
+ * dir mid-run; getpid() is used instead of mypid() because the
+ * cached_pid backing mypid() isn't populated until set_child_cache
+ * runs later in init_child_rendezvous_parent.
+ *
+ * On memfd_create() failure (CONFIG_MEMFD_CREATE=n or sandbox)
+ * stderr stays at /dev/null per init_child_isolate_io()'s baseline:
+ * the per-pid bug log still gets the in-handler backtrace + siginfo
+ * via the handler's explicit open + dup2, only the pre-crash glibc
+ * text capture is lost.
+ *
+ * The fd is intentionally NOT closed after dup2 onto STDERR_FILENO --
+ * the handler reads it back from the same fd.
+ */
+void init_stderr_memfd(void)
+{
+	int fd;
+
+	snprintf(buglog_path, sizeof(buglog_path),
+		 "%s/trinity-bug-%d.log",
+		 trinity_tmpdir_abs(), (int)getpid());
+
+	fd = memfd_create("trinity-stderr", MFD_CLOEXEC);
+	if (fd < 0)
+		return;
+	dup2(fd, STDERR_FILENO);
+	stderr_memfd = fd;
 }
 
 /*
@@ -436,29 +505,52 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	 */
 	(void)umask(0);
 	/*
-	 * Child stdin/stdout/stderr were dup2'd to /dev/null in init_child
-	 * (see child.c) to silence syscall spew to the operator's terminal.
-	 * Redirect stderr to a per-pid log file so the backtrace + signal
-	 * info output below lands in /tmp/trinity-bug-<pid>.log instead of
-	 * being swallowed — without this we have zero forensics on child SEGVs.
+	 * Open the per-pid bug log and (if init_stderr_memfd() succeeded
+	 * for this child) drain the buffered pre-crash stderr text into
+	 * it BEFORE redirecting STDERR_FILENO at the file -- otherwise
+	 * the in-handler write_siginfo_safely() / backtrace_symbols_fd()
+	 * output below would land before the glibc malloc_printerr text
+	 * that explains why we're here.
+	 *
+	 * The drain captures every stderr write the child made before
+	 * faulting: glibc's __libc_message / __fortify_fail /
+	 * __stack_chk_fail formatted complaints (the whole point of
+	 * pre-redirecting stderr), plus every trinity outputerr() line
+	 * accumulated this run.  The outputerr noise is harmless here
+	 * because the on-disk bug log only materialises on a real
+	 * crash -- clean exits discard the memfd with the process.
+	 *
+	 * buglog_path[] was pre-formatted in init_stderr_memfd() so
+	 * the snprintf() doesn't happen in this handler (snprintf is
+	 * not async-signal-safe per POSIX 2024 §2.4.3).  open / lseek /
+	 * read / write / dup2 / close ARE all on the POSIX safe list.
+	 *
+	 * If init_stderr_memfd() failed (CONFIG_MEMFD_CREATE=n) or this
+	 * is a child that started before that init step, stderr_memfd
+	 * is -1 and we skip the drain -- the bug log still gets the
+	 * in-handler backtrace + siginfo, just without the pre-crash
+	 * glibc text.  If the open() itself fails (fuzzed unlink of
+	 * the tmp dir, ENOSPC, ...) there is nothing to be done; the
+	 * child dies silently as it would have anyway.
 	 */
 	{
-		char path[PATH_MAX + 64];
-		int fd;
+		int bug_fd;
 
-		{
-			struct sigsafe_buf b = { path, sizeof(path) };
+		bug_fd = open(buglog_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+		if (bug_fd >= 0) {
+			if (stderr_memfd >= 0) {
+				char drain_buf[4096];
+				ssize_t n, w;
 
-			sigsafe_puts(&b, trinity_tmpdir_abs());
-			sigsafe_puts(&b, "/trinity-bug-");
-			sigsafe_puti(&b, (long)mypid());
-			sigsafe_puts(&b, ".log");
-			sigsafe_putc(&b, '\0');
-		}
-		fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
-		if (fd >= 0) {
-			dup2(fd, STDERR_FILENO);
-			close(fd);
+				(void)lseek(stderr_memfd, 0, SEEK_SET);
+				while ((n = read(stderr_memfd, drain_buf,
+						 sizeof(drain_buf))) > 0) {
+					w = write(bug_fd, drain_buf, n);
+					(void)w;	/* dying anyway; short write irrelevant */
+				}
+			}
+			dup2(bug_fd, STDERR_FILENO);
+			close(bug_fd);
 		}
 	}
 #if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)

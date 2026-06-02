@@ -1052,6 +1052,18 @@ static void init_child(struct childdata *child, int childno)
 {
 	init_child_isolate_io();
 
+	/*
+	 * Override init_child_isolate_io()'s stderr -> /dev/null
+	 * baseline with a per-child memfd buffer so glibc's
+	 * malloc_printerr / __libc_message / __fortify_fail family
+	 * writes survive long enough for child_fault_handler() to
+	 * flush them into the on-disk bug log on a real crash.
+	 * Clean exits discard the memfd with the process so trinity's
+	 * own outputerr() noise never reaches disk.  Falls back to
+	 * /dev/null on memfd_create() failure (see signals.c).
+	 */
+	init_stderr_memfd();
+
 	init_child_freeze_shared(child, childno);
 
 	init_child_rendezvous_parent(child, childno);
