@@ -507,38 +507,86 @@ static int scan_pmu_generic_events(int pmu_num, const char *dir_name)
 	return 0;
 }
 
-static int init_pmus(void) {
-
-	DIR *dir;
-	struct dirent *entry;
+/*
+ * Populate a single pmus[] slot from one /sys/bus/event_source/devices
+ * entry.  Owns the PMU-dir setup -- name strdup, dir_name format, type
+ * read -- then dispatches to scan_pmu_formats() and
+ * scan_pmu_generic_events() for the two inner subdirectory walks.
+ *
+ * Returns 0 on success.  Returns 1 when the name strdup fails: the
+ * original outer loop treated that as a soft stop (break, finish with
+ * the PMUs gathered so far, init_pmus returns success), so callers
+ * should break out of the readdir loop without doing pmu_num++ and
+ * proceed to the success path.  Returns -1 when an inner scan helper
+ * hits a calloc failure; callers reproduce the original bypass
+ * cleanup (closedir outer dir, free_pmus, num_pmus=0, return -1).
+ */
+static int iter_pmu_dir(struct dirent *entry, int pmu_num)
+{
 	char dir_name[BUFSIZ] = "";
 	char temp_name[BUFSIZ*2] = "";
 	char read_buf[BUFSIZ] = "";
-	int type,pmu_num=0;
-	int result = -1;
+	int type;
+	int result;
 
+	/* read name */
+	pmus[pmu_num].name = strdup(entry->d_name);
+	if (!pmus[pmu_num].name)
+		return 1;
+	snprintf(dir_name, sizeof(dir_name), SYSFS"/%s",
+		entry->d_name);
+
+	/* read type */
+	snprintf(temp_name, sizeof(temp_name), "%s/type", dir_name);
+	if (read_sysfs_value(temp_name, read_buf, sizeof(read_buf)) >= 0) {
+		result = sscanf(read_buf, "%d", &type);
+		if (result == 1) pmus[pmu_num].type = type;
+	}
+
+	/***********************/
+	/* Scan format strings */
+	/***********************/
+	if (scan_pmu_formats(pmu_num, dir_name) < 0)
+		return -1;
+
+	/***********************/
+	/* Scan generic events */
+	/***********************/
+	if (scan_pmu_generic_events(pmu_num, dir_name) < 0)
+		return -1;
+
+	return 0;
+}
+
+static int init_pmus(void)
+{
+	DIR *dir;
+	struct dirent *entry;
+	int pmu_num = 0;
+	int result = -1;
+	int rc;
 
 	/* Count number of PMUs */
 	/* This may break if PMUs are ever added/removed on the fly? */
 
-	dir=opendir(SYSFS);
-	if (dir==NULL) {
+	dir = opendir(SYSFS);
+	if (dir == NULL) {
 		return -1;
 	}
 
-	while(1) {
-		entry=readdir(dir);
-		if (entry==NULL) break;
-		if (!strcmp(".",entry->d_name)) continue;
-		if (!strcmp("..",entry->d_name)) continue;
+	while (1) {
+		entry = readdir(dir);
+		if (entry == NULL) break;
+		if (!strcmp(".", entry->d_name)) continue;
+		if (!strcmp("..", entry->d_name)) continue;
 		num_pmus++;
 	}
 
-	if (num_pmus<1)
+	if (num_pmus < 1)
 		goto out;
 
-	pmus=calloc(num_pmus,sizeof(struct pmu_type));
-	if (pmus==NULL)
+	pmus = calloc(num_pmus, sizeof(struct pmu_type));
+	if (pmus == NULL)
 		goto out;
 
 	/****************/
@@ -547,48 +595,24 @@ static int init_pmus(void) {
 
 	rewinddir(dir);
 
-	while(1) {
-		entry=readdir(dir);
-		if (entry==NULL) break;
-		if (!strcmp(".",entry->d_name)) continue;
-		if (!strcmp("..",entry->d_name)) continue;
+	while (1) {
+		entry = readdir(dir);
+		if (entry == NULL) break;
+		if (!strcmp(".", entry->d_name)) continue;
+		if (!strcmp("..", entry->d_name)) continue;
 
 		if (pmu_num >= num_pmus)
 			break;
 
-		/* read name */
-		pmus[pmu_num].name=strdup(entry->d_name);
-		if (!pmus[pmu_num].name)
+		rc = iter_pmu_dir(entry, pmu_num);
+		if (rc < 0) {
+			closedir(dir);
+			free_pmus(&pmus, pmu_num);
+			num_pmus = 0;
+			return -1;
+		}
+		if (rc > 0)
 			break;
-		snprintf(dir_name, sizeof(dir_name), SYSFS"/%s",
-			entry->d_name);
-
-		/* read type */
-		snprintf(temp_name, sizeof(temp_name), "%s/type",dir_name);
-		if (read_sysfs_value(temp_name, read_buf, sizeof(read_buf)) >= 0) {
-			result=sscanf(read_buf,"%d",&type);
-			if (result==1) pmus[pmu_num].type=type;
-		}
-
-		/***********************/
-		/* Scan format strings */
-		/***********************/
-		if (scan_pmu_formats(pmu_num, dir_name) < 0) {
-			closedir(dir);
-			free_pmus(&pmus, pmu_num);
-			num_pmus = 0;
-			return -1;
-		}
-
-		/***********************/
-		/* Scan generic events */
-		/***********************/
-		if (scan_pmu_generic_events(pmu_num, dir_name) < 0) {
-			closedir(dir);
-			free_pmus(&pmus, pmu_num);
-			num_pmus = 0;
-			return -1;
-		}
 		pmu_num++;
 	}
 
