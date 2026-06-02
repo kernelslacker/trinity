@@ -666,6 +666,35 @@ void canary_queue_init(void)
 	(void)canary_risky_defer;
 }
 
+/* Parked-slot retry.  When the previous tick exhausted the picker we
+ * cleared canary_active_op_set and raised canary_slots_parked.  The
+ * canary_active_op_set early-return in canary_queue_tick() would
+ * otherwise mean every subsequent tick bails before pick_next_canary()
+ * runs again, so the dormant-op promotion path would silently die the
+ * moment the first parking happened.  Re-run the picker here; if a
+ * DEMOTED op's backoff has elapsed (or any other newly-eligible
+ * candidate has appeared) enter_canarying() stages it and clears the
+ * parked flag.  canary_active_op_set stays false until the killed slot
+ * child is re-forked and canary_queue_on_child_respawn() commits the
+ * staged op, so the dispatcher still falls through its early-return
+ * on this tick.
+ *
+ * Returns true when the dispatcher should bail this tick (parked and
+ * the picker is still empty); false when nothing needs to happen or
+ * a new op has been staged. */
+static bool retry_parked_slot(void)
+{
+	enum child_op_type next;
+
+	if (!canary_slots_parked)
+		return false;
+	if (pick_next_canary(&next)) {
+		enter_canarying(next);
+		return false;
+	}
+	return true;
+}
+
 /* Edge-triggered visibility for the plateau-driven window shrink.
  * Log on both rising and falling edges so the operator can see the
  * effective budget change in real time. */
@@ -697,25 +726,8 @@ void canary_queue_tick(void)
 
 	log_plateau_edge();
 
-	/* Parked-slot retry.  When the previous tick exhausted the picker
-	 * we cleared canary_active_op_set and raised canary_slots_parked.
-	 * The early-return below would otherwise mean every subsequent
-	 * tick bails before pick_next_canary() ever runs again, so the
-	 * dormant-op promotion path would silently die the moment the
-	 * first parking happened.  Re-run the picker here; if a DEMOTED
-	 * op's backoff has elapsed (or any other newly-eligible candidate
-	 * has appeared) enter_canarying() stages it and clears the parked
-	 * flag.  canary_active_op_set stays false until the killed slot
-	 * child is re-forked and canary_queue_on_child_respawn() commits
-	 * the staged op, so we still fall through the early-return on
-	 * this tick. */
-	if (canary_slots_parked) {
-		enum child_op_type next;
-		if (pick_next_canary(&next))
-			enter_canarying(next);
-		else
-			return;
-	}
+	if (retry_parked_slot())
+		return;
 
 	if (!canary_active_op_set)
 		return;
