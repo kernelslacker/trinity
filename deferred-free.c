@@ -722,6 +722,76 @@ static bool deferred_free_reject_outside_heap(void *ptr, void *caller_pc)
 	return true;
 }
 
+/* Force-free the oldest (lowest TTL) entry to make room.  In
+ * practice this rarely happens — TTL range is 5-50 and we tick every
+ * syscall. */
+static void ring_evict_oldest_safe(void)
+{
+	unsigned int i;
+	unsigned int oldest = 0;
+	unsigned int min_ttl = UINT_MAX;
+	void *evict_ptr;
+	bool corrupt = false;
+
+	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
+		if (ring[i].ptr != NULL && ring[i].ttl < min_ttl) {
+			min_ttl = ring[i].ttl;
+			oldest = i;
+		}
+	}
+	if (ring[oldest].ptr == NULL)
+		return;
+
+	evict_ptr = ring[oldest].ptr;
+
+	/*
+	 * The enqueue path validates ptr against the heap-
+	 * bounds and shared-region bands BEFORE ring_unlock().
+	 * Once unlocked, the slot sits RW until ring_lock()
+	 * runs, so an in-flight stomp from a sibling fuzzed
+	 * value-result syscall can scribble ring[oldest].ptr
+	 * between when the slot was last validated and when
+	 * the full-ring eviction here decides to free it.
+	 * Re-run the surviving stateless guards plus the in-
+	 * flight set membership check before free()ing so a
+	 * wild pointer becomes a telemetry bump instead of a
+	 * crash.  alloc_track_consume() already fired at
+	 * enqueue and would always miss here -- skipped, not
+	 * re-run.  Counter only (no per-rejection log): the
+	 * eviction case is rarer than the enqueue rejection
+	 * paths, whose 1-in-1000 caller-PC logs already prove
+	 * the stomp pattern.
+	 *
+	 * The inflight_hash_contains() check is the strongest
+	 * signal here: if evict_ptr was admitted by this child,
+	 * it is in the set; if a stomp swapped the slot to some
+	 * other value, the set does not know that value and the
+	 * lookup misses.  Heap/shared-region guards remain as
+	 * belt-and-suspenders for the case where the in-flight
+	 * set itself is scribbled (BSS, no mprotect armor yet).
+	 */
+	if (!is_in_glibc_heap(evict_ptr) ||
+	    range_overlaps_shared((unsigned long)evict_ptr, 1) ||
+	    !inflight_hash_contains(evict_ptr))
+		corrupt = true;
+	if (corrupt) {
+		struct childdata *c = this_child();
+
+		if (c != NULL && c->stats_ring != NULL)
+			stats_ring_enqueue(c->stats_ring,
+					   STATS_FIELD_RING_EVICTION_CORRUPT,
+					   0, 1);
+		else
+			parent_stats.ring_eviction_corrupt++;
+	} else {
+		inflight_hash_remove(evict_ptr);
+		free(evict_ptr);
+	}
+	ring[oldest].ptr = NULL;
+	occupied_mask &= ~(1ULL << oldest);
+	ring_count--;
+}
+
 void deferred_free_enqueue(void *ptr)
 {
 	unsigned int i;
@@ -805,71 +875,8 @@ void deferred_free_enqueue(void *ptr)
 		return;
 	}
 
-	/* If the ring is full, force-free the oldest (lowest TTL) entry
-	 * to make room.  In practice this rarely happens — TTL range
-	 * is 5-50 and we tick every syscall. */
-	if (ring_count == DEFERRED_RING_SIZE) {
-		unsigned int oldest = 0;
-		unsigned int min_ttl = UINT_MAX;
-
-		for (i = 0; i < DEFERRED_RING_SIZE; i++) {
-			if (ring[i].ptr != NULL && ring[i].ttl < min_ttl) {
-				min_ttl = ring[i].ttl;
-				oldest = i;
-			}
-		}
-		if (ring[oldest].ptr != NULL) {
-			void *evict_ptr = ring[oldest].ptr;
-			bool corrupt = false;
-
-			/*
-			 * The enqueue path validates ptr against the heap-
-			 * bounds and shared-region bands BEFORE ring_unlock().
-			 * Once unlocked, the slot sits RW until ring_lock()
-			 * runs, so an in-flight stomp from a sibling fuzzed
-			 * value-result syscall can scribble ring[oldest].ptr
-			 * between when the slot was last validated and when
-			 * the full-ring eviction here decides to free it.
-			 * Re-run the surviving stateless guards plus the in-
-			 * flight set membership check before free()ing so a
-			 * wild pointer becomes a telemetry bump instead of a
-			 * crash.  alloc_track_consume() already fired at
-			 * enqueue and would always miss here -- skipped, not
-			 * re-run.  Counter only (no per-rejection log): the
-			 * eviction case is rarer than the enqueue rejection
-			 * paths, whose 1-in-1000 caller-PC logs already prove
-			 * the stomp pattern.
-			 *
-			 * The inflight_hash_contains() check is the strongest
-			 * signal here: if evict_ptr was admitted by this child,
-			 * it is in the set; if a stomp swapped the slot to some
-			 * other value, the set does not know that value and the
-			 * lookup misses.  Heap/shared-region guards remain as
-			 * belt-and-suspenders for the case where the in-flight
-			 * set itself is scribbled (BSS, no mprotect armor yet).
-			 */
-			if (!is_in_glibc_heap(evict_ptr) ||
-			    range_overlaps_shared((unsigned long)evict_ptr, 1) ||
-			    !inflight_hash_contains(evict_ptr))
-				corrupt = true;
-			if (corrupt) {
-				struct childdata *c = this_child();
-
-				if (c != NULL && c->stats_ring != NULL)
-					stats_ring_enqueue(c->stats_ring,
-							   STATS_FIELD_RING_EVICTION_CORRUPT,
-							   0, 1);
-				else
-					parent_stats.ring_eviction_corrupt++;
-			} else {
-				inflight_hash_remove(evict_ptr);
-				free(evict_ptr);
-			}
-			ring[oldest].ptr = NULL;
-			occupied_mask &= ~(1ULL << oldest);
-			ring_count--;
-		}
-	}
+	if (ring_count == DEFERRED_RING_SIZE)
+		ring_evict_oldest_safe();
 
 	/*
 	 * Ring is logically full but the full-ring eviction above found
