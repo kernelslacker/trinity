@@ -1,5 +1,4 @@
 #include <dlfcn.h>
-#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -424,43 +423,21 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 		}
 	}
 	/*
-	 * Reset the umask before creating any files.  The umask syscall is
-	 * itself fuzzed, so a child that drew umask(0777) and then crashed
-	 * would otherwise have its /tmp/trinity-bug-<pid>.log redirect file
-	 * created with mode 0644 & ~0777 == 0, and the kernel/userspace
-	 * coredump helper would create the core file with the same 0000
-	 * mode and abort with "cannot preserve file permissions".  umask()
-	 * is async-signal-safe (POSIX 2024 §2.4.3) so this is safe to call
-	 * from a signal handler.  Returning the old mask is intentionally
-	 * ignored — this child is about to die.
+	 * Reset the umask before the kernel / userspace coredump helper
+	 * creates the core file (raise(sig) below with SIG_DFL under
+	 * debug mode).  The umask syscall is itself fuzzed, so a child
+	 * that drew umask(0777) and then crashed would otherwise have
+	 * its core file created with mode 0666 & ~0777 == 0, and the
+	 * helper would abort with "cannot preserve file permissions".
+	 * The per-pid bug log itself is no longer created here -- stderr
+	 * was pre-redirected to it in init_child_isolate_io() under the
+	 * inherited (non-fuzzed) umask, and the writes below all flow
+	 * through STDERR_FILENO.  umask() is async-signal-safe (POSIX
+	 * 2024 §2.4.3) so this is safe to call from a signal handler.
+	 * Returning the old mask is intentionally ignored — this child
+	 * is about to die.
 	 */
 	(void)umask(0);
-	/*
-	 * Child stdin/stdout/stderr were dup2'd to /dev/null in init_child
-	 * (see child.c) to silence syscall spew to the operator's terminal.
-	 * Redirect stderr to a per-pid log file so the backtrace + signal
-	 * info output below lands in /tmp/trinity-bug-<pid>.log instead of
-	 * being swallowed — without this we have zero forensics on child SEGVs.
-	 */
-	{
-		char path[PATH_MAX + 64];
-		int fd;
-
-		{
-			struct sigsafe_buf b = { path, sizeof(path) };
-
-			sigsafe_puts(&b, trinity_tmpdir_abs());
-			sigsafe_puts(&b, "/trinity-bug-");
-			sigsafe_puti(&b, (long)mypid());
-			sigsafe_puts(&b, ".log");
-			sigsafe_putc(&b, '\0');
-		}
-		fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
-		if (fd >= 0) {
-			dup2(fd, STDERR_FILENO);
-			close(fd);
-		}
-	}
 #if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
 	{
 		void *frames[64];
