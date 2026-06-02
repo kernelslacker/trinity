@@ -630,92 +630,114 @@ void deferred_free_init(void)
 	heap_bounds_init();
 }
 
+/*
+ * Alignment is non-negotiable.  glibc malloc returns >= 8-byte
+ * aligned chunks on x86_64, so a free() candidate with low bits set
+ * cannot be a real allocation start.  libasan internally CHECKs
+ * alignment in its poisoning path (asan_poisoning.cpp:
+ * "AddrIsAlignedByGranularity(addr) != 0") and aborts the child on
+ * the misaligned address before its bad-free reporter ever runs --
+ * the cluster shows up as a CHECK-failed crash without an ASAN
+ * report attached, which is harder to triage than a normal bad-free.
+ */
+static bool deferred_free_reject_misaligned(void *ptr, void *caller_pc)
+{
+	static unsigned long misalign_drops;
+	unsigned long n;
+
+	if (((unsigned long)ptr & 0x7) == 0)
+		return false;
+
+	n = ++misalign_drops;
+	if ((n % 1000) == 1) {
+		char pcbuf[128];
+		outputerr("deferred_free_enqueue: rejected misaligned "
+			  "ptr=%p caller=%s [%lu cumulative]\n", ptr,
+			  pc_to_string(caller_pc, pcbuf, sizeof(pcbuf)), n);
+	}
+	__atomic_add_fetch(&shm->stats.deferred_free_reject_misaligned, 1, __ATOMIC_RELAXED);
+	return true;
+}
+
+/*
+ * Reject pid-scribbled / canonical-out-of-range / misaligned values
+ * BEFORE they ever reach the ring.  Cluster-1/2/3 root cause
+ * (residual-cores triage 2026-05-02): a sibling fuzzed value-result
+ * syscall scribbles a tid/pid into rec->aN, the post handler does
+ * deferred_freeptr(&rec->aN) which arrives here, and N syscalls
+ * later deferred_free_tick() free()s the pid -- SIGSEGV with
+ * si_addr==si_pid.  Drop the bad value at the post-handler boundary
+ * (one counter bumped, ring slot stays empty) instead of letting
+ * the corruption propagate into the ring.
+ */
+static bool deferred_free_reject_corrupt_shape(void *ptr, void *caller_pc)
+{
+	if (!is_corrupt_ptr_shape(ptr))
+		return false;
+
+	outputerr("deferred_free_enqueue: rejected suspicious ptr=%p "
+		  "(pid-scribbled?)\n", ptr);
+	deferred_free_reject_bump(caller_pc);
+	__atomic_add_fetch(&shm->stats.deferred_free_reject_corrupt_shape, 1, __ATOMIC_RELAXED);
+	return true;
+}
+
+/*
+ * Heap-bounds backstop: every pointer __zmalloc() can hand back
+ * lives inside the brk arena cached at init time.  A scribbled
+ * snapshot/arg slot whose value passes the shape heuristic above
+ * but lands in the stack, an mmap'd library, an executable
+ * mapping, or one of trinity's own MAP_PRIVATE regions cannot be
+ * a real malloc result -- free()ing it is undefined.  Two
+ * compares, branch-predictable, no syscalls; cheaper than the
+ * O(N) alloc-track scan below and catches the case where the
+ * stomp value coincidentally matches a recently-evicted ring
+ * slot the alloc-track ring no longer remembers.
+ */
+static bool deferred_free_reject_outside_heap(void *ptr, void *caller_pc)
+{
+	static unsigned long non_heap_drops;
+	unsigned long n;
+	struct childdata *c;
+
+	if (is_in_glibc_heap(ptr))
+		return false;
+
+	n = ++non_heap_drops;
+	if ((n % 1000) == 1) {
+		char pcbuf[128];
+		outputerr("deferred_free_enqueue: rejected ptr=%p "
+			  "(outside glibc heap) caller=%s "
+			  "[%lu cumulative]\n", ptr,
+			  pc_to_string(caller_pc, pcbuf, sizeof(pcbuf)), n);
+	}
+	c = this_child();
+	if (c != NULL && c->stats_ring != NULL)
+		stats_ring_enqueue(c->stats_ring,
+				   STATS_FIELD_SNAPSHOT_NON_HEAP_REJECT,
+				   0, 1);
+	else
+		parent_stats.snapshot_non_heap_reject++;
+	__atomic_add_fetch(&shm->stats.deferred_free_reject_non_heap, 1, __ATOMIC_RELAXED);
+	return true;
+}
+
 void deferred_free_enqueue(void *ptr)
 {
 	unsigned int i;
+	void *caller_pc = __builtin_return_address(0);
 
 	if (ptr == NULL)
 		return;
 
-	/*
-	 * Alignment is non-negotiable.  glibc malloc returns >= 8-byte
-	 * aligned chunks on x86_64, so a free() candidate with low bits set
-	 * cannot be a real allocation start.  libasan internally CHECKs
-	 * alignment in its poisoning path (asan_poisoning.cpp:
-	 * "AddrIsAlignedByGranularity(addr) != 0") and aborts the child on
-	 * the misaligned address before its bad-free reporter ever runs --
-	 * the cluster shows up as a CHECK-failed crash without an ASAN
-	 * report attached, which is harder to triage than a normal bad-free.
-	 */
-	if (((unsigned long)ptr & 0x7) != 0) {
-		static unsigned long misalign_drops;
-		unsigned long n = ++misalign_drops;
-		if ((n % 1000) == 1) {
-			char pcbuf[128];
-			outputerr("deferred_free_enqueue: rejected misaligned "
-				  "ptr=%p caller=%s [%lu cumulative]\n", ptr,
-				  pc_to_string(__builtin_return_address(0),
-					       pcbuf, sizeof(pcbuf)), n);
-		}
-		__atomic_add_fetch(&shm->stats.deferred_free_reject_misaligned, 1, __ATOMIC_RELAXED);
+	if (deferred_free_reject_misaligned(ptr, caller_pc))
 		return;
-	}
 
-	/*
-	 * Reject pid-scribbled / canonical-out-of-range / misaligned values
-	 * BEFORE they ever reach the ring.  Cluster-1/2/3 root cause
-	 * (residual-cores triage 2026-05-02): a sibling fuzzed value-result
-	 * syscall scribbles a tid/pid into rec->aN, the post handler does
-	 * deferred_freeptr(&rec->aN) which arrives here, and N syscalls
-	 * later deferred_free_tick() free()s the pid -- SIGSEGV with
-	 * si_addr==si_pid.  Drop the bad value at the post-handler boundary
-	 * (one counter bumped, ring slot stays empty) instead of letting
-	 * the corruption propagate into the ring.
-	 */
-	if (is_corrupt_ptr_shape(ptr)) {
-		outputerr("deferred_free_enqueue: rejected suspicious ptr=%p "
-			  "(pid-scribbled?)\n", ptr);
-		deferred_free_reject_bump(__builtin_return_address(0));
-		__atomic_add_fetch(&shm->stats.deferred_free_reject_corrupt_shape, 1, __ATOMIC_RELAXED);
+	if (deferred_free_reject_corrupt_shape(ptr, caller_pc))
 		return;
-	}
 
-	/*
-	 * Heap-bounds backstop: every pointer __zmalloc() can hand back
-	 * lives inside the brk arena cached at init time.  A scribbled
-	 * snapshot/arg slot whose value passes the shape heuristic above
-	 * but lands in the stack, an mmap'd library, an executable
-	 * mapping, or one of trinity's own MAP_PRIVATE regions cannot be
-	 * a real malloc result -- free()ing it is undefined.  Two
-	 * compares, branch-predictable, no syscalls; cheaper than the
-	 * O(N) alloc-track scan below and catches the case where the
-	 * stomp value coincidentally matches a recently-evicted ring
-	 * slot the alloc-track ring no longer remembers.
-	 */
-	if (!is_in_glibc_heap(ptr)) {
-		static unsigned long non_heap_drops;
-		unsigned long n = ++non_heap_drops;
-		if ((n % 1000) == 1) {
-			char pcbuf[128];
-			outputerr("deferred_free_enqueue: rejected ptr=%p "
-				  "(outside glibc heap) caller=%s "
-				  "[%lu cumulative]\n", ptr,
-				  pc_to_string(__builtin_return_address(0),
-					       pcbuf, sizeof(pcbuf)), n);
-		}
-		{
-			struct childdata *c = this_child();
-
-			if (c != NULL && c->stats_ring != NULL)
-				stats_ring_enqueue(c->stats_ring,
-						   STATS_FIELD_SNAPSHOT_NON_HEAP_REJECT,
-						   0, 1);
-			else
-				parent_stats.snapshot_non_heap_reject++;
-		}
-		__atomic_add_fetch(&shm->stats.deferred_free_reject_non_heap, 1, __ATOMIC_RELAXED);
+	if (deferred_free_reject_outside_heap(ptr, caller_pc))
 		return;
-	}
 
 	/*
 	 * Ground-truth check: refuse to enqueue a pointer that __zmalloc()
