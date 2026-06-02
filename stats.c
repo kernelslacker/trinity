@@ -5495,6 +5495,21 @@ static void dump_stats_corpus_and_taint_tail(void)
 				output(0, "Xprop: %lu hits\n", xp_hits);
 		}
 
+		/* Lockless-reader torn-read validator firings (aggregate over
+		 * xprop pick, replay common, replay burst).  Gated on non-zero
+		 * because the expected steady-state value is 0 -- the writer's
+		 * release-store publish pattern makes mid-publish reads rare.
+		 * A non-zero rate here means the validator is doing real work
+		 * and torn reads ARE happening at the printed rate. */
+		{
+			unsigned long torn = __atomic_load_n(
+				&minicorpus_shm->replay_torn_rejects,
+				__ATOMIC_RELAXED);
+
+			if (torn > 0)
+				output(0, "Corpus torn-read rejects: %lu\n", torn);
+		}
+
 		histo_total = 0;
 		for (i = 1; i <= STACK_MAX; i++)
 			histo_total += __atomic_load_n(&minicorpus_shm->stack_depth_histogram[i],

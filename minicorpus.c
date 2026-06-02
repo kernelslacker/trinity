@@ -253,8 +253,11 @@ static bool minicorpus_pick_from_other_syscall(unsigned int nr,
 	slot = (head + CORPUS_RING_SIZE - 1) % CORPUS_RING_SIZE;
 
 	num_args = ring->entries[slot].num_args;
-	if (num_args == 0 || num_args > 6)
+	if (num_args == 0 || num_args > 6) {
+		__atomic_fetch_add(&minicorpus_shm->replay_torn_rejects,
+				   1UL, __ATOMIC_RELAXED);
 		return false;
+	}
 	src_arg = rnd_modulo_u32(num_args);
 	picked = ring->entries[slot].args[src_arg];
 
@@ -917,8 +920,11 @@ bool minicorpus_replay(struct syscallrecord *rec)
 		 * oldest of the K_RECENT window. */
 		slot = (head - K_RECENT + offset) % CORPUS_RING_SIZE;
 		snapshot = ring->entries[slot];
-		if (snapshot.num_args < 1 || snapshot.num_args > 6)
+		if (snapshot.num_args < 1 || snapshot.num_args > 6) {
+			__atomic_fetch_add(&minicorpus_shm->replay_torn_rejects,
+					   1UL, __ATOMIC_RELAXED);
 			return false;
+		}
 		__atomic_fetch_add(&minicorpus_shm->cmp_rising_replay_picks,
 				   1UL, __ATOMIC_RELAXED);
 	} else {
@@ -944,8 +950,11 @@ bool minicorpus_replay(struct syscallrecord *rec)
 			return false;
 		slot = rnd_modulo_u32(count);
 		snapshot = ring->entries[slot];
-		if (snapshot.num_args < 1 || snapshot.num_args > 6)
+		if (snapshot.num_args < 1 || snapshot.num_args > 6) {
+			__atomic_fetch_add(&minicorpus_shm->replay_torn_rejects,
+					   1UL, __ATOMIC_RELAXED);
 			return false;
+		}
 	}
 
 	entry = get_syscall_entry(nr, rec->do32bit);

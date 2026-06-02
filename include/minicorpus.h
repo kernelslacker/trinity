@@ -181,6 +181,17 @@ struct minicorpus_shared {
 	 * decremented after release.  check_all_locks may skip the family when
 	 * zero (added in follow-up commit). */
 	unsigned long held_count;
+
+	/* Aggregate count of lockless-reader num_args validator failures;
+	 * non-zero means torn reads ARE happening at this rate.  Bumped on
+	 * each [1, 6] out-of-range snapshot.num_args observed by the xprop
+	 * pick, replay common, and replay burst readers (the three sites
+	 * that dropped ring->lock).  Single field rather than per-ring: the
+	 * counter exists to answer "is the validator firing at a non-trivial
+	 * rate fleet-wide?" at dashboard scale, not "which ring is hot
+	 * enough to tear", so 1024 atomic counter slots for per-syscall
+	 * granularity would buy nothing currently consumed.  RELAXED. */
+	unsigned long replay_torn_rejects;
 };
 
 extern struct minicorpus_shared *minicorpus_shm;
