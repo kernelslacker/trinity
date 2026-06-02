@@ -2093,6 +2093,54 @@ static bool check_main_loop_stops(const struct timespec *epoch_start)
 	return false;
 }
 
+/* Per-tick periodic-surface phase: zombie reaping, anomaly spike
+ * detection, the operator-visibility dumps (defense counters, top
+ * syscalls, vma count, kcov cmp stats, canary queue summary),
+ * coverage-plateau / kcov-bitmap / cmp-hints snapshot triggers,
+ * the stats heartbeat, and the canary-queue per-tick window work.
+ * Each call is internally rate-limited / self-gated -- this helper
+ * is "fire every tick, callees decide if they actually run". */
+static void run_periodic_surfaces(void)
+{
+	check_children_progressing();
+
+	process_zombie_pending();
+
+	corrupt_ptr_spike_check();
+
+	defense_counters_periodic_dump();
+
+	top_syscalls_periodic_dump();
+
+	vma_count_periodic_dump();
+
+	kcov_cmp_stats_periodic_dump();
+
+	/* Canary queue summary line (60-s cadence, self-rate-limited
+	 * inside the call).  Lives in stats.c next to the other
+	 * periodic-surface dumps so adding new operator visibility
+	 * lines to the queue stays a single-file edit. */
+	canary_queue_periodic_dump();
+
+	kcov_plateau_check();
+
+	kcov_bitmap_maybe_snapshot();
+
+	cmp_hints_maybe_snapshot();
+
+	print_stats();
+
+	/* Canary queue per-tick work: poll the active op's window
+	 * progress, fire promote/demote transitions when the window
+	 * closes, drain backed-off demotes back into the picker pool.
+	 * Cheap when the queue is disabled (single bool check).  The
+	 * matching 60-s summary line is emitted from stats.c alongside
+	 * the other periodic-surface dumps -- keeping it there means
+	 * adding a new periodic visibility surface to the queue does
+	 * not require a separate main_loop edit. */
+	canary_queue_tick();
+}
+
 void main_loop(void)
 {
 	struct timespec epoch_start;
@@ -2140,43 +2188,7 @@ void main_loop(void)
 		if (check_main_loop_stops(&epoch_start) == true)
 			goto corrupt;
 
-		check_children_progressing();
-
-		process_zombie_pending();
-
-		corrupt_ptr_spike_check();
-
-		defense_counters_periodic_dump();
-
-		top_syscalls_periodic_dump();
-
-		vma_count_periodic_dump();
-
-		kcov_cmp_stats_periodic_dump();
-
-		/* Canary queue summary line (60-s cadence, self-rate-limited
-		 * inside the call).  Lives in stats.c next to the other
-		 * periodic-surface dumps so adding new operator visibility
-		 * lines to the queue stays a single-file edit. */
-		canary_queue_periodic_dump();
-
-		kcov_plateau_check();
-
-		kcov_bitmap_maybe_snapshot();
-
-		cmp_hints_maybe_snapshot();
-
-		print_stats();
-
-		/* Canary queue per-tick work: poll the active op's window
-		 * progress, fire promote/demote transitions when the window
-		 * closes, drain backed-off demotes back into the picker pool.
-		 * Cheap when the queue is disabled (single bool check).  The
-		 * matching 60-s summary line is emitted from stats.c alongside
-		 * the other periodic-surface dumps -- keeping it there means
-		 * adding a new periodic visibility surface to the queue does
-		 * not require a separate main_loop edit. */
-		canary_queue_tick();
+		run_periodic_surfaces();
 
 		/* This should never happen, but just to catch corner cases, like if
 		 * fork() failed when we tried to replace a child.
