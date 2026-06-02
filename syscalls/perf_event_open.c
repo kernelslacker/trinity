@@ -432,16 +432,89 @@ static int scan_pmu_formats(int pmu_num, const char *dir_name)
 	return 0;
 }
 
-static int init_pmus(void) {
-
-	DIR *dir,*event_dir;
-	struct dirent *entry,*event_entry;
-	char dir_name[BUFSIZ] = "";
+static int scan_pmu_generic_events(int pmu_num, const char *dir_name)
+{
+	DIR *event_dir;
+	struct dirent *event_entry;
 	char event_name[BUFSIZ+7] = "";
 	char event_value[BUFSIZ] = "";
 	char temp_name[BUFSIZ*2] = "";
 	char read_buf[BUFSIZ] = "";
-	int type,pmu_num=0,generic_num=0;
+	int generic_num = 0;
+	int result;
+
+	snprintf(event_name, sizeof(event_name), "%s/events", dir_name);
+	event_dir = opendir(event_name);
+	if (event_dir == NULL) {
+		/* It's sometimes normal to have no generic events */
+		return 0;
+	}
+
+	/* Count generic events */
+	while (1) {
+		event_entry = readdir(event_dir);
+		if (event_entry == NULL) break;
+		if (!strcmp(".", event_entry->d_name)) continue;
+		if (!strcmp("..", event_entry->d_name)) continue;
+		pmus[pmu_num].num_generic_events++;
+	}
+
+	/* Allocate generic events */
+	pmus[pmu_num].generic_events = calloc(
+		pmus[pmu_num].num_generic_events,
+		sizeof(struct generic_event_type));
+	if (pmus[pmu_num].generic_events == NULL) {
+		pmus[pmu_num].num_generic_events = 0;
+		closedir(event_dir);
+		return -1;
+	}
+
+	/* Read in generic events */
+	rewinddir(event_dir);
+	generic_num = 0;
+	while (1) {
+		event_entry = readdir(event_dir);
+		if (event_entry == NULL) break;
+		if (!strcmp(".", event_entry->d_name)) continue;
+		if (!strcmp("..", event_entry->d_name)) continue;
+
+		if (generic_num >= pmus[pmu_num].num_generic_events)
+			break;
+
+		pmus[pmu_num].generic_events[generic_num].name =
+			strdup(event_entry->d_name);
+		if (!pmus[pmu_num].generic_events[generic_num].name)
+			continue;
+		snprintf(temp_name, sizeof(temp_name), "%s/events/%s",
+			dir_name, event_entry->d_name);
+		if (read_sysfs_value(temp_name, read_buf,
+				     sizeof(read_buf)) >= 0) {
+			result = sscanf(read_buf, "%s", event_value);
+			if (result == 1) {
+				pmus[pmu_num].generic_events[generic_num].value =
+					strdup(event_value);
+				if (!pmus[pmu_num].generic_events[generic_num].value)
+					continue;
+			}
+		}
+		parse_generic(pmu_num, event_value,
+				&pmus[pmu_num].generic_events[generic_num].config,
+				&pmus[pmu_num].generic_events[generic_num].config1,
+				&pmus[pmu_num].generic_events[generic_num].config2);
+		generic_num++;
+	}
+	closedir(event_dir);
+	return 0;
+}
+
+static int init_pmus(void) {
+
+	DIR *dir;
+	struct dirent *entry;
+	char dir_name[BUFSIZ] = "";
+	char temp_name[BUFSIZ*2] = "";
+	char read_buf[BUFSIZ] = "";
+	int type,pmu_num=0;
 	int result = -1;
 
 
@@ -510,70 +583,11 @@ static int init_pmus(void) {
 		/***********************/
 		/* Scan generic events */
 		/***********************/
-		snprintf(event_name, sizeof(event_name), "%s/events",dir_name);
-		event_dir=opendir(event_name);
-		if (event_dir==NULL) {
-			/* It's sometimes normal to have no generic events */
-		}
-		else {
-
-			/* Count generic events */
-			while(1) {
-				event_entry=readdir(event_dir);
-				if (event_entry==NULL) break;
-				if (!strcmp(".",event_entry->d_name)) continue;
-				if (!strcmp("..",event_entry->d_name)) continue;
-				pmus[pmu_num].num_generic_events++;
-			}
-
-			/* Allocate generic events */
-			pmus[pmu_num].generic_events=calloc(
-				pmus[pmu_num].num_generic_events,
-				sizeof(struct generic_event_type));
-			if (pmus[pmu_num].generic_events==NULL) {
-				pmus[pmu_num].num_generic_events=0;
-				closedir(event_dir);
-				closedir(dir);
-				free_pmus(&pmus, pmu_num);
-				num_pmus = 0;
-				return -1;
-			}
-
-			/* Read in generic events */
-			rewinddir(event_dir);
-			generic_num=0;
-			while(1) {
-				event_entry=readdir(event_dir);
-				if (event_entry==NULL) break;
-				if (!strcmp(".",event_entry->d_name)) continue;
-				if (!strcmp("..",event_entry->d_name)) continue;
-
-				if (generic_num >= pmus[pmu_num].num_generic_events)
-					break;
-
-				pmus[pmu_num].generic_events[generic_num].name=
-					strdup(event_entry->d_name);
-				if (!pmus[pmu_num].generic_events[generic_num].name)
-					continue;
-				snprintf(temp_name, sizeof(temp_name), "%s/events/%s",
-					dir_name,event_entry->d_name);
-				if (read_sysfs_value(temp_name, read_buf,
-						     sizeof(read_buf)) >= 0) {
-					result=sscanf(read_buf,"%s",event_value);
-					if (result==1) {
-						pmus[pmu_num].generic_events[generic_num].value=
-							strdup(event_value);
-						if (!pmus[pmu_num].generic_events[generic_num].value)
-							continue;
-					}
-				}
-				parse_generic(pmu_num,event_value,
-						&pmus[pmu_num].generic_events[generic_num].config,
-						&pmus[pmu_num].generic_events[generic_num].config1,
-						&pmus[pmu_num].generic_events[generic_num].config2);
-				generic_num++;
-			}
-			closedir(event_dir);
+		if (scan_pmu_generic_events(pmu_num, dir_name) < 0) {
+			closedir(dir);
+			free_pmus(&pmus, pmu_num);
+			num_pmus = 0;
+			return -1;
 		}
 		pmu_num++;
 	}
