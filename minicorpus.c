@@ -881,36 +881,46 @@ bool minicorpus_replay(struct syscallrecord *rec)
 	}
 
 	if (cmp_burst_active) {
-		/* Burst path stays locked for this commit.  The K_RECENT
-		 * slot math depends on a joint (head, count) snapshot,
-		 * which is delicate against the writer's two-step publish;
-		 * step 4 of the lockless conversion handles it. */
-		ring_lock(ring);
+		/* Burst path lockless reader: picks one of K_RECENT newest
+		 * slots, so the slot math needs a joint (head, count)
+		 * snapshot.  The writer publishes count BEFORE head with
+		 * release semantics (foundation commit), so acquire-loading
+		 * count first is the synchronisation edge: it pairs with
+		 * the entry stores that preceded the writer's count bump
+		 * and chains the prior head bump that this count value
+		 * implies.  Plain-load head next; release-store ordering
+		 * guarantees the load sees a value at least as recent as
+		 * what count implied.
+		 *
+		 * Race between count-load and head-load: a writer that
+		 * publishes between the two leaves count snapshotted at
+		 * the pre-publish value but head at the post-publish
+		 * value, so the slot calc picks ONE entry newer than
+		 * count implied.  That entry exists and is valid (the
+		 * writer just published it), so num_args is sane --
+		 * benign.  The reverse ordering (head before count) would
+		 * be unsafe -- head could outrun count beyond the K_RECENT
+		 * window and pick against a stale base.  Count-first
+		 * acquire-load is load-bearing. */
+		unsigned int count = __atomic_load_n(&ring->count,
+						     __ATOMIC_ACQUIRE);
+		unsigned int head, offset;
 
-		if (ring->count == 0) {
-			ring_unlock(ring);
+		if (count < K_RECENT)
 			return false;
-		}
 
-		/* Slot pick inside the burst.  With at least K_RECENT
-		 * entries: uniform over the K_RECENT newest slots,
-		 * addressing (head - K_RECENT, head).  Below the K_RECENT
-		 * threshold, fall back to uniform over ring->count. */
-		if (ring->count >= K_RECENT) {
-			slot = rnd_modulo_u32(K_RECENT);
-			slot = (ring->head - K_RECENT + slot) % CORPUS_RING_SIZE;
-			__atomic_fetch_add(&minicorpus_shm->cmp_rising_replay_picks,
-					   1UL, __ATOMIC_RELAXED);
-		} else {
-			slot = rnd_modulo_u32(ring->count);
-			/* The ring is written at head and wraps, so the
-			 * oldest valid entry starts at (head - count) mod
-			 * CORPUS_RING_SIZE. */
-			slot = (ring->head - ring->count + slot) % CORPUS_RING_SIZE;
-		}
+		head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
+		offset = rnd_modulo_u32(K_RECENT);
+
+		/* head points one past the most recently published slot,
+		 * so (head - 1) is the newest and (head - K_RECENT) the
+		 * oldest of the K_RECENT window. */
+		slot = (head - K_RECENT + offset) % CORPUS_RING_SIZE;
 		snapshot = ring->entries[slot];
-
-		ring_unlock(ring);
+		if (snapshot.num_args < 1 || snapshot.num_args > 6)
+			return false;
+		__atomic_fetch_add(&minicorpus_shm->cmp_rising_replay_picks,
+				   1UL, __ATOMIC_RELAXED);
 	} else {
 		/* Common path: uniform over count, lockless.  The writer
 		 * publishes count BEFORE head with release semantics, so
