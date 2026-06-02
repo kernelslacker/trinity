@@ -695,6 +695,44 @@ static bool retry_parked_slot(void)
 	return true;
 }
 
+/* End-of-window decision.  iters has reached the resolved budget, so
+ * close the current op's window (which records the
+ * promote/demote/finish verdict on canary_ops[op]) and try to stage
+ * the next candidate from the picker.  If the picker is exhausted
+ * the slot is parked instead: the just-closed window's child is
+ * still alive with the demoted/finished op stamped at fork time, and
+ * dedicated alt-op children keep child->op_type for life, so without
+ * intervention that slot would keep running the just-demoted op
+ * throughout the entire backoff window AND crashes from it would be
+ * silently dropped because canary_active_op_set is false.  Parking
+ * clears active/pending state and recycles the slot child via the
+ * same kill path the window-transition uses; when spawn_child()
+ * respawns it, canary_slot_active() still returns true (parked, not
+ * disabled) so the canary branch of assign_dedicated_alt_op() runs,
+ * but canary_active_op() returns CHILD_OP_SYSCALL while parked,
+ * which drops the slot back into the default syscall picker -- no
+ * demoted alt-op runs in the meantime.  The next tick re-enters the
+ * picker via retry_parked_slot() at the top of canary_queue_tick();
+ * if pick_next_canary() still fails the slot stays parked until
+ * then. */
+static void close_window_or_park(enum child_op_type op)
+{
+	enum child_op_type next;
+
+	close_window_and_decide(op);
+	if (pick_next_canary(&next)) {
+		enter_canarying(next);
+		return;
+	}
+	canary_pending_op_set = false;
+	canary_active_op_set = false;
+	canary_active_op_cell = CHILD_OP_SYSCALL;
+	canary_pending_op = CHILD_OP_SYSCALL;
+	canary_slots_parked = true;
+	output(0, "canary queue: picker exhausted, parking slot(s) until next eligible op\n");
+	kill_canary_slot_children();
+}
+
 /* Edge-triggered visibility for the plateau-driven window shrink.
  * Log on both rising and falling edges so the operator can see the
  * effective budget change in real time. */
@@ -755,43 +793,8 @@ void canary_queue_tick(void)
 			edges, canary_ops[op].window_crashes);
 	}
 
-	if (iters >= (unsigned long)budget) {
-		enum child_op_type next;
-		close_window_and_decide(op);
-		if (pick_next_canary(&next)) {
-			enter_canarying(next);
-		} else {
-			/* Picker exhausted: the just-closed window's child
-			 * is still alive with the demoted/finished op
-			 * stamped at fork time, and dedicated alt-op
-			 * children keep child->op_type for life.  Without
-			 * intervention that slot would keep running the
-			 * just-demoted op throughout the entire backoff
-			 * window, AND crashes from it would be silently
-			 * dropped because canary_active_op_set is false.
-			 *
-			 * Park the slot: clear active/pending state and
-			 * recycle the slot child via the same kill path the
-			 * window-transition uses.  When spawn_child()
-			 * respawns it, canary_slot_active() still returns
-			 * true (we are parked, not disabled) so the canary
-			 * branch of assign_dedicated_alt_op() runs, but
-			 * canary_active_op() returns CHILD_OP_SYSCALL while
-			 * parked, which drops the slot back into the default
-			 * syscall picker -- no demoted alt-op runs in the
-			 * meantime.  The next tick re-enters the picker via
-			 * the parked-retry branch at the top of
-			 * canary_queue_tick(); if pick_next_canary() still
-			 * fails the slot stays parked until then. */
-			canary_pending_op_set = false;
-			canary_active_op_set = false;
-			canary_active_op_cell = CHILD_OP_SYSCALL;
-			canary_pending_op = CHILD_OP_SYSCALL;
-			canary_slots_parked = true;
-			output(0, "canary queue: picker exhausted, parking slot(s) until next eligible op\n");
-			kill_canary_slot_children();
-		}
-	}
+	if (iters >= (unsigned long)budget)
+		close_window_or_park(op);
 }
 
 void canary_queue_summary(void)
