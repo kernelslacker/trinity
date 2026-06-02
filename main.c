@@ -2047,6 +2047,52 @@ static void drain_child_surfaces(void)
 	}
 }
 
+/* Per-tick stop-condition checks.  Runs after the child-surface
+ * drain so taint and shm-integrity checks see the freshest state.
+ * Returns true if main_loop should branch straight to the corrupt
+ * shutdown label (shm integrity lost -- pid map can't be trusted).
+ * The epoch limit / iteration limit / wall-clock timeout cases
+ * trigger panic() instead, which stamps shm->exit_reason and lets
+ * the while-loop condition catch the exit on its next pass. */
+static bool check_main_loop_stops(const struct timespec *epoch_start)
+{
+	taint_check();
+
+	self_cgroup_events_check();
+
+	if (shm_is_corrupt() == true)
+		return true;
+
+	while (check_all_locks() == true) {
+		reap_dead_kids();
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == EXIT_REACHED_COUNT)
+			kill_all_kids();
+	}
+
+	unsigned long op = parent_stats.op_count;
+
+	if (syscalls_todo && (op >= syscalls_todo)) {
+		output(0, "Reached limit %lu. Telling children to exit.\n", syscalls_todo);
+		panic(EXIT_REACHED_COUNT);
+	}
+
+	if (epoch_iterations && (op >= epoch_iterations)) {
+		output(0, "Epoch iteration limit %lu reached.\n", epoch_iterations);
+		panic(EXIT_EPOCH_DONE);
+	}
+
+	if (epoch_timeout) {
+		struct timespec now;
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		if ((unsigned int)(now.tv_sec - epoch_start->tv_sec) >= epoch_timeout) {
+			output(0, "Epoch timeout %u seconds reached.\n", epoch_timeout);
+			panic(EXIT_EPOCH_DONE);
+		}
+	}
+
+	return false;
+}
+
 void main_loop(void)
 {
 	struct timespec epoch_start;
@@ -2091,39 +2137,8 @@ void main_loop(void)
 
 		drain_child_surfaces();
 
-		taint_check();
-
-		self_cgroup_events_check();
-
-		if (shm_is_corrupt() == true)
+		if (check_main_loop_stops(&epoch_start) == true)
 			goto corrupt;
-
-		while (check_all_locks() == true) {
-			reap_dead_kids();
-			if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == EXIT_REACHED_COUNT)
-				kill_all_kids();
-		}
-
-		unsigned long op = parent_stats.op_count;
-
-		if (syscalls_todo && (op >= syscalls_todo)) {
-			output(0, "Reached limit %lu. Telling children to exit.\n", syscalls_todo);
-			panic(EXIT_REACHED_COUNT);
-		}
-
-		if (epoch_iterations && (op >= epoch_iterations)) {
-			output(0, "Epoch iteration limit %lu reached.\n", epoch_iterations);
-			panic(EXIT_EPOCH_DONE);
-		}
-
-		if (epoch_timeout) {
-			struct timespec now;
-			clock_gettime(CLOCK_MONOTONIC, &now);
-			if ((unsigned int)(now.tv_sec - epoch_start.tv_sec) >= epoch_timeout) {
-				output(0, "Epoch timeout %u seconds reached.\n", epoch_timeout);
-				panic(EXIT_EPOCH_DONE);
-			}
-		}
 
 		check_children_progressing();
 
