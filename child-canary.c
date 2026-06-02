@@ -666,6 +666,24 @@ void canary_queue_init(void)
 	(void)canary_risky_defer;
 }
 
+/* Edge-triggered visibility for the plateau-driven window shrink.
+ * Log on both rising and falling edges so the operator can see the
+ * effective budget change in real time. */
+static void log_plateau_edge(void)
+{
+	bool now_plateau = (kcov_shm != NULL &&
+		__atomic_load_n(&kcov_shm->plateau_active,
+				__ATOMIC_ACQUIRE));
+	if (now_plateau == canary_last_plateau)
+		return;
+	output(0, "canary queue: plateau %s; effective window now %u iters\n",
+		now_plateau
+			? "entered, halving canary window"
+			: "lifted, restoring canary window",
+		window_iters_resolved());
+	canary_last_plateau = now_plateau;
+}
+
 void canary_queue_tick(void)
 {
 	enum child_op_type op;
@@ -677,22 +695,7 @@ void canary_queue_tick(void)
 	if (!canary_queue_live)
 		return;
 
-	/* Edge-triggered visibility for the plateau-driven window shrink.
-	 * Log on both rising and falling edges so the operator can see
-	 * the effective budget change in real time. */
-	{
-		bool now_plateau = (kcov_shm != NULL &&
-			__atomic_load_n(&kcov_shm->plateau_active,
-					__ATOMIC_ACQUIRE));
-		if (now_plateau != canary_last_plateau) {
-			output(0, "canary queue: plateau %s; effective window now %u iters\n",
-				now_plateau
-					? "entered, halving canary window"
-					: "lifted, restoring canary window",
-				window_iters_resolved());
-			canary_last_plateau = now_plateau;
-		}
-	}
+	log_plateau_edge();
 
 	/* Parked-slot retry.  When the previous tick exhausted the picker
 	 * we cleared canary_active_op_set and raised canary_slots_parked.
