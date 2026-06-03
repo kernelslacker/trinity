@@ -767,6 +767,46 @@ static const struct struct_field bpf_attr_OBJ_fields[] = {
 };
 
 /*
+ * MAP_ELEM variant covers MAP_LOOKUP / UPDATE / DELETE /
+ * GET_NEXT_KEY / FREEZE / LOOKUP_AND_DELETE.  All read off the
+ * same anonymous struct: map_fd + key + (value|next_key union) +
+ * flags.  Key/value sizes are fixed maxes here (1024 / 65536); a
+ * map-aware sizing pass (look up the actual map's key_size /
+ * value_size at fill time) is bigger and lives in a later phase.
+ * The kernel still bounds-checks every (ptr, size) shape against
+ * the map's declared sizes, so the worst-case fallout from an
+ * overshoot is -EINVAL.
+ */
+static const struct struct_field bpf_attr_MAP_ELEM_fields[] = {
+	FIELDX(union bpf_attr, map_fd, FT_FD,
+	       .mutate_weight = 150),
+	FIELDX(union bpf_attr, key, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .max_bytes = 1024 },
+	       .mutate_weight = 120),
+	FIELDX(union bpf_attr, value, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .max_bytes = 65536 },
+	       .mutate_weight = 120),
+	FIELDX(union bpf_attr, flags, FT_FLAGS,
+	       .u.flags.mask = (BPF_ANY | BPF_NOEXIST | BPF_EXIST |
+				BPF_F_LOCK)),
+};
+
+/*
+ * GET_ID variant covers BPF_*_GET_NEXT_ID and BPF_*_GET_FD_BY_ID.
+ * The id-shaped fields stay FT_RAW because the kernel iterates
+ * IDs linearly and a random u32 typically misses; CMP-hint
+ * attribution still scopes here once the cmd matches.
+ * fd_by_id_token_fd is an FT_FD slot honoured on the BY_ID arms.
+ */
+static const struct struct_field bpf_attr_GET_ID_fields[] = {
+	FIELD(union bpf_attr, start_id),
+	FIELD(union bpf_attr, next_id),
+	FIELDX(union bpf_attr, open_flags, FT_FLAGS,
+	       .u.flags.mask = (BPF_F_RDONLY | BPF_F_WRONLY)),
+	FIELDX(union bpf_attr, fd_by_id_token_fd, FT_FD),
+};
+
+/*
  * bpf_insn registration -- required so PROG_LOAD's insns
  * FT_PTR_ARRAY can resolve sizeof(struct bpf_insn) (8 bytes) when
  * the pointer pass allocates the sub-buffer.  No field annotations:
@@ -822,6 +862,90 @@ static const struct union_variant bpf_attr_variants[] = {
 		.name		= "OBJ_GET",
 		.fields		= bpf_attr_OBJ_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_OBJ_fields),
+	},
+	{
+		.discrim_value	= BPF_MAP_LOOKUP_ELEM,
+		.name		= "MAP_LOOKUP_ELEM",
+		.fields		= bpf_attr_MAP_ELEM_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_MAP_ELEM_fields),
+	},
+	{
+		.discrim_value	= BPF_MAP_UPDATE_ELEM,
+		.name		= "MAP_UPDATE_ELEM",
+		.fields		= bpf_attr_MAP_ELEM_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_MAP_ELEM_fields),
+	},
+	{
+		.discrim_value	= BPF_MAP_DELETE_ELEM,
+		.name		= "MAP_DELETE_ELEM",
+		.fields		= bpf_attr_MAP_ELEM_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_MAP_ELEM_fields),
+	},
+	{
+		.discrim_value	= BPF_MAP_GET_NEXT_KEY,
+		.name		= "MAP_GET_NEXT_KEY",
+		.fields		= bpf_attr_MAP_ELEM_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_MAP_ELEM_fields),
+	},
+	{
+		.discrim_value	= BPF_MAP_LOOKUP_AND_DELETE_ELEM,
+		.name		= "MAP_LOOKUP_AND_DELETE_ELEM",
+		.fields		= bpf_attr_MAP_ELEM_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_MAP_ELEM_fields),
+	},
+	{
+		.discrim_value	= BPF_MAP_FREEZE,
+		.name		= "MAP_FREEZE",
+		.fields		= bpf_attr_MAP_ELEM_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_MAP_ELEM_fields),
+	},
+	{
+		.discrim_value	= BPF_PROG_GET_NEXT_ID,
+		.name		= "PROG_GET_NEXT_ID",
+		.fields		= bpf_attr_GET_ID_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
+	},
+	{
+		.discrim_value	= BPF_MAP_GET_NEXT_ID,
+		.name		= "MAP_GET_NEXT_ID",
+		.fields		= bpf_attr_GET_ID_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
+	},
+	{
+		.discrim_value	= BPF_PROG_GET_FD_BY_ID,
+		.name		= "PROG_GET_FD_BY_ID",
+		.fields		= bpf_attr_GET_ID_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
+	},
+	{
+		.discrim_value	= BPF_MAP_GET_FD_BY_ID,
+		.name		= "MAP_GET_FD_BY_ID",
+		.fields		= bpf_attr_GET_ID_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
+	},
+	{
+		.discrim_value	= BPF_BTF_GET_FD_BY_ID,
+		.name		= "BTF_GET_FD_BY_ID",
+		.fields		= bpf_attr_GET_ID_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
+	},
+	{
+		.discrim_value	= BPF_BTF_GET_NEXT_ID,
+		.name		= "BTF_GET_NEXT_ID",
+		.fields		= bpf_attr_GET_ID_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
+	},
+	{
+		.discrim_value	= BPF_LINK_GET_FD_BY_ID,
+		.name		= "LINK_GET_FD_BY_ID",
+		.fields		= bpf_attr_GET_ID_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
+	},
+	{
+		.discrim_value	= BPF_LINK_GET_NEXT_ID,
+		.name		= "LINK_GET_NEXT_ID",
+		.fields		= bpf_attr_GET_ID_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
 	},
 };
 #endif
