@@ -317,6 +317,73 @@ int kcov_pc_diag_format(char *buf, size_t bufsz)
 	return n;
 }
 
+/*
+ * Runtime base of the kernel text segment, read once from /proc/kallsyms
+ * (address of "_text"; "_stext" as a fallback).  Subtracted from every PC
+ * before it hits the bucket_seen[] hash so the bucket index for a given
+ * instruction is invariant across KASLR reboots of the same kernel build
+ * -- the warm-start cache stays useful across reboots that the kallsyms
+ * fingerprint already considers identical.
+ *
+ * Zero means "base unavailable" (kallsyms unreadable, _text/_stext
+ * absent, or kptr_restrict zeroed every address).  PCs are then hashed
+ * raw; warm-start save / load is mutually compatible only across runs
+ * where the base is also zero on the other side -- the load path
+ * rejects a canonical-vs-raw mismatch.
+ *
+ * Populated by kcov_init_global before any child forks so the value
+ * propagates by COW; callers in hot paths read kcov_kaslr_base
+ * directly without re-entering this lookup.
+ */
+static uint64_t kcov_kaslr_base;
+static bool     kcov_kaslr_base_valid;
+
+static uint64_t kcov_get_kaslr_base(void)
+{
+	FILE *f;
+	char line[4096];
+	uint64_t text_addr = 0;
+	uint64_t stext_addr = 0;
+
+	if (kcov_kaslr_base_valid)
+		return kcov_kaslr_base;
+
+	f = fopen("/proc/kallsyms", "r");
+	if (f == NULL) {
+		output(0, "kcov-bitmap: open(/proc/kallsyms) failed: %s -- KASLR base unavailable, PCs hashed raw this run\n",
+		       strerror(errno));
+		kcov_kaslr_base_valid = true;
+		return 0;
+	}
+	while (fgets(line, sizeof(line), f) != NULL) {
+		unsigned long long addr;
+		char type;
+		char name[256];
+
+		if (sscanf(line, "%llx %c %255s", &addr, &type, name) != 3)
+			continue;
+		if (strcmp(name, "_text") == 0) {
+			text_addr = addr;
+			/* Prefer _text; no point scanning further. */
+			break;
+		}
+		if (strcmp(name, "_stext") == 0)
+			stext_addr = addr;
+	}
+	if (ferror(f))
+		output(0, "kcov-bitmap: read error on /proc/kallsyms -- KASLR base may be incomplete\n");
+	(void)fclose(f);
+
+	if (text_addr == 0)
+		text_addr = stext_addr;
+	if (text_addr == 0)
+		output(0, "kcov-bitmap: _text/_stext not in kallsyms (kptr_restrict zeroed addresses?) -- KASLR base unavailable, PCs hashed raw this run\n");
+
+	kcov_kaslr_base = text_addr;
+	kcov_kaslr_base_valid = true;
+	return kcov_kaslr_base;
+}
+
 void kcov_init_global(void)
 {
 	int fd;
@@ -341,6 +408,12 @@ void kcov_init_global(void)
 		(unsigned long)KCOV_NUM_EDGES / (1024 * 1024),
 		KCOV_NUM_EDGES, KCOV_NUM_BUCKETS,
 		kcov_shm->distinct_edges, kcov_shm->edges_found);
+
+	/* Resolve the kernel-text base now -- pre-fork, so every child
+	 * inherits the populated cache via COW and the hot-path PC hash
+	 * just reads the static.  See kcov_canon_pc / kcov_get_kaslr_base
+	 * for what zero (lookup failed) means downstream. */
+	(void)kcov_get_kaslr_base();
 
 	edgepair_init_global();
 
@@ -1092,6 +1165,23 @@ unsigned long kcov_bracket_end(struct kcov_child *kc,
 }
 
 /*
+ * Strip the runtime KASLR base from a kernel PC so the bucket index for
+ * a given instruction is invariant across reboots of the same kernel
+ * build.  kcov_kaslr_base is populated by kcov_init_global from the
+ * address of _text in /proc/kallsyms; on systems where that lookup
+ * failed it stays zero and this is the identity transform (the run
+ * then hashes raw PCs, matching the pre-canonicalisation behaviour).
+ *
+ * Single point of canonicalisation.  See pc_to_edge below: every PC
+ * that lands in bucket_seen[] is routed through here first, and
+ * scripts/check-static/kcov-canonicalise-pcs.sh enforces the rule.
+ */
+static inline unsigned long kcov_canon_pc(unsigned long pc)
+{
+	return pc - (unsigned long)kcov_kaslr_base;
+}
+
+/*
  * Hash a kernel PC value into an edge index.
  *
  * The previous xor-shift mixed too few of the bits in a typical kernel PC.
@@ -1107,6 +1197,7 @@ unsigned long kcov_bracket_end(struct kcov_child *kc,
  */
 static unsigned int pc_to_edge(unsigned long pc)
 {
+	pc = kcov_canon_pc(pc);
 	pc ^= pc >> 33;
 	pc *= 0xff51afd7ed558ccdUL;
 	pc ^= pc >> 33;
@@ -1687,22 +1778,29 @@ void kcov_plateau_check(void)
  * format bump costs nothing the bitmap warm-start was already
  * providing.
  *
- * Version 4 adds boot_id from /proc/sys/kernel/random/boot_id to
- * the header.  The kallsyms fingerprint is deliberately KASLR-
- * invariant (see the address-stripping rationale above) -- which
- * is right for IDENTITY (same kernel image -> same fingerprint
- * regardless of KASLR or kptr_restrict) but wrong for the bitmap,
- * whose buckets are hashed from raw runtime PCs.  If the text
- * base shifts between runs (KASLR rerolled across a reboot, same
- * source rebuilt with a different linker layout, etc.) the
- * fingerprint still matches yet every cached bucket aliases to a
- * different instruction.  boot_id rejects the cross-boot reload
- * without needing PC canonicalisation.  The bitmap warm-start is
- * a soft signal in aggregate but load-bearing for downstream
- * novelty: lazy-seeding last_edge_at[] from warm-known hits
- * inherits any poisoning, so the conservative reject is worth a
- * format bump. */
-#define KCOV_BITMAP_FILE_VERSION	4U
+ * Version 4 added a boot_id guard from /proc/sys/kernel/random/boot_id
+ * to reject cross-boot reloads.  Rationale at the time: the kallsyms
+ * fingerprint is deliberately KASLR-invariant (right for identity --
+ * same kernel image -> same fingerprint regardless of KASLR or
+ * kptr_restrict) but bucket_seen[] was hashed from raw runtime PCs,
+ * so a KASLR reroll across a reboot left the fingerprint matching yet
+ * silently aliased every cached bucket to a different instruction.
+ * boot_id papered over that without canonicalising PCs, at the cost
+ * of forcing one cold start per reboot even when the kernel hadn't
+ * changed.
+ *
+ * Version 5 fixes that properly: PCs are stripped of the runtime
+ * KASLR base (see kcov_canon_pc / kcov_get_kaslr_base) before they
+ * hit the bucket_seen[] hash, so the bucket index for an instruction
+ * stays put across reboots of the same build.  The boot_id field and
+ * its associated machinery are gone; in its place the header carries
+ * kaslr_base purely as a load-time consistency gate -- if the file
+ * was written with PCs canonicalised but this run can't canonicalise
+ * (kallsyms unreadable, _text absent), or vice versa, the bucket
+ * indices would silently disagree and the load is refused.  Files
+ * written under v4 reject cleanly on the version mismatch, costing
+ * one cold start at the format bump. */
+#define KCOV_BITMAP_FILE_VERSION	5U
 
 struct kcov_bitmap_file_header {
 	uint32_t magic;
@@ -1716,13 +1814,15 @@ struct kcov_bitmap_file_header {
 	uint8_t  kallsyms_sha256[32];
 	uint32_t max_nr_syscall;   /* MAX_NR_SYSCALL at save time */
 	uint32_t priors_crc32;     /* CRC over both prior arrays */
-	char     boot_id[37];      /* /proc/sys/kernel/random/boot_id,
-				    * NUL-terminated UUID string; empty
-				    * if the read failed at save time
-				    * (then the load path skips this
-				    * check and the kallsyms fingerprint
-				    * is the only identity gate). */
-	uint8_t  hdr_pad2[3];      /* keep total header size 8-aligned */
+	uint64_t kaslr_base;       /* Runtime _text base at save time.
+				    * Zero means the writer could not
+				    * resolve the base and the payload
+				    * is hashed from raw PCs.  The load
+				    * path rejects when (hdr.kaslr_base
+				    * != 0) XOR (current kcov_kaslr_base
+				    * != 0) -- a canonical-vs-raw mix
+				    * would silently corrupt bucket
+				    * lookups. */
 };
 
 /* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Same algorithm
@@ -1993,50 +2093,6 @@ bool kcov_get_kernel_fp(uint8_t out[32])
 }
 
 /*
- * Cached boot_id for this run.  /proc/sys/kernel/random/boot_id is a
- * 36-character UUID followed by a newline; we keep the 36 hex/dash
- * chars and NUL-terminate.  Cached on first call so save and load
- * don't re-open the file.  An empty cache entry (boot_id[0] == '\0')
- * means the read failed -- callers leave the header field zeroed and
- * the load path treats either-side empty as "boot_id check
- * unavailable", falling back to the kallsyms fingerprint alone.
- */
-static char kcov_boot_id[37];
-static bool kcov_boot_id_valid;
-
-static bool kcov_get_boot_id(char out[37])
-{
-	int fd;
-	ssize_t n;
-
-	if (!kcov_boot_id_valid) {
-		fd = open("/proc/sys/kernel/random/boot_id", O_RDONLY);
-		if (fd < 0) {
-			output(0, "kcov-bitmap: open(/proc/sys/kernel/random/boot_id) failed: %s -- boot_id identity check disabled this run\n",
-			       strerror(errno));
-			kcov_boot_id[0] = '\0';
-			kcov_boot_id_valid = true;
-			out[0] = '\0';
-			return false;
-		}
-		n = read(fd, kcov_boot_id, 36);
-		(void)close(fd);
-		if (n != 36) {
-			output(0, "kcov-bitmap: short read on /proc/sys/kernel/random/boot_id (got %zd, want 36) -- boot_id identity check disabled this run\n",
-			       n);
-			kcov_boot_id[0] = '\0';
-			kcov_boot_id_valid = true;
-			out[0] = '\0';
-			return false;
-		}
-		kcov_boot_id[36] = '\0';
-		kcov_boot_id_valid = true;
-	}
-	memcpy(out, kcov_boot_id, 37);
-	return true;
-}
-
-/*
  * Fold one syscall table into the running SHA-256 context.  Each entry
  * contributes a 1-byte arch tag (so the 32-bit and 64-bit tables in a
  * biarch build cannot alias one another at overlapping nrs), the
@@ -2208,11 +2264,6 @@ bool kcov_bitmap_save_file(const char *path)
 		free(priors_blob);
 		return false;
 	}
-	/* Fail open: kcov_get_boot_id() logs once on failure, hdr.boot_id
-	 * stays zero from the memset above, and the load path treats an
-	 * empty boot_id as "check unavailable" and falls back to the
-	 * kallsyms fingerprint alone. */
-	(void)kcov_get_boot_id(hdr.boot_id);
 
 	hdr.magic = KCOV_BITMAP_FILE_MAGIC;
 	hdr.version = KCOV_BITMAP_FILE_VERSION;
@@ -2225,6 +2276,14 @@ bool kcov_bitmap_save_file(const char *path)
 					      KCOV_NUM_EDGES);
 	hdr.max_nr_syscall = MAX_NR_SYSCALL;
 	hdr.priors_crc32 = kcov_bitmap_crc32(priors_blob, priors_blob_size);
+	/* Stamp the canonicalisation mode so the loader can refuse a
+	 * canonical-vs-raw mismatch.  Zero means the writer hashed PCs
+	 * raw (kallsyms unreadable, _text absent); non-zero is the
+	 * writer's runtime _text address and is informational past the
+	 * non-zero check -- the loader only cares about the mode bit,
+	 * not the specific base, because both sides canonicalise against
+	 * their own local base before comparing bucket indices. */
+	hdr.kaslr_base = kcov_kaslr_base;
 
 	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d",
 		       path, (int)mypid());
@@ -2345,28 +2404,23 @@ bool kcov_bitmap_load_file(const char *path)
 		(void)close(fd);
 		return false;
 	}
-	/* boot_id rejects cross-boot reloads that the kallsyms
-	 * fingerprint cannot catch: the fingerprint is deliberately
-	 * KASLR-invariant, but bucket_seen[] is hashed from raw runtime
-	 * PCs, so a fresh KASLR reroll lands the same instruction in a
-	 * different bucket.  Skip silently when either side is empty --
-	 * that is the fail-open path documented on kcov_get_boot_id().
-	 */
-	if (hdr.boot_id[0] != '\0') {
-		char cur_boot_id[37];
-
-		/* Force NUL-termination on the on-disk field before
-		 * logging it: a stale or corrupted dump may not have
-		 * had byte 36 zeroed. */
-		hdr.boot_id[36] = '\0';
-		if (kcov_get_boot_id(cur_boot_id) &&
-		    cur_boot_id[0] != '\0' &&
-		    memcmp(hdr.boot_id, cur_boot_id, 37) != 0) {
-			output(0, "kcov-bitmap: boot_id mismatch at %s (was %s, now %s) -- refusing stale bitmap, cold start\n",
-			       path, hdr.boot_id, cur_boot_id);
-			(void)close(fd);
-			return false;
-		}
+	/* The on-disk buckets are indexed by canonical PC (raw PC minus
+	 * the writer's KASLR base) when hdr.kaslr_base != 0, and by raw
+	 * PC otherwise.  This run's hot path applies the same transform
+	 * against the local kcov_kaslr_base, so the two must agree on
+	 * whether canonicalisation is in effect at all -- any XOR
+	 * mismatch means one side is canonical and the other raw, and
+	 * the bucket indices would silently disagree.  Both-canonical
+	 * (regardless of which base each used) and both-raw are
+	 * accepted; the indices line up because each side strips its
+	 * own local base. */
+	if ((hdr.kaslr_base != 0) != (kcov_kaslr_base != 0)) {
+		output(0, "kcov-bitmap: canonicalisation mismatch at %s (file kaslr_base=0x%llx, current=0x%llx) -- refusing stale bitmap, cold start\n",
+		       path,
+		       (unsigned long long)hdr.kaslr_base,
+		       (unsigned long long)kcov_kaslr_base);
+		(void)close(fd);
+		return false;
 	}
 
 	/* Stage into a scratch buffer so a CRC failure doesn't leave the
