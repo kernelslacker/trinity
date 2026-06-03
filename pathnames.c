@@ -300,7 +300,7 @@ int check_stat_file(const struct stat *sb)
 	uid_t target_uid = orig_uid;
 	gid_t target_gid = orig_gid;
 
-	if (dropprivs == true) {
+	if (orig_uid == 0) {
 		target_uid = nobody_uid;
 		target_gid = nobody_gid;
 	}

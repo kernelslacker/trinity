@@ -862,8 +862,8 @@ static void init_child_rendezvous_parent(struct childdata *child, int childno)
  *   - randomly unshare into a private mount/ipc/io/net ns (with
  *     the MS_PRIVATE remount + no_private_ns latch dance) and a
  *     PID ns (with the no_pidns latch),
- *   - if we never dropped privs, clear the dropped_privs flag so
- *     subsequent fuzz code knows it's running as root,
+ *   - if we started as root, drop_privs() lowers the child to
+ *     nobody so subsequent fuzz syscalls run unprivileged,
  *   - munge_process() applies the random rlimit / umask sweep.
  */
 static void init_child_setup_sandbox(struct childdata *child, int childno)
@@ -930,7 +930,7 @@ static void init_child_setup_sandbox(struct childdata *child, int childno)
 #endif
 
 	if (orig_uid == 0)
-		child->dropped_privs = false;
+		drop_privs();
 
 	munge_process();
 }

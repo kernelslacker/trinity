@@ -4,7 +4,6 @@
 # (Always do mmap, so the child processes have some local maps)
 
 . scripts/paths.sh
-. scripts/privs.sh
 . scripts/taint.sh
 
 ARRAY[0]="madvise"

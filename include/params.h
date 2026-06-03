@@ -46,7 +46,6 @@ extern bool show_ioctl_list;
 extern bool show_disabled_syscalls;
 extern unsigned char verbosity;
 extern bool dangerous;
-extern bool dropprivs;
 extern bool do_syslog;
 extern unsigned char desired_group;
 extern bool group_bias;

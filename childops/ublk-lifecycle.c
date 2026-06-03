@@ -10,7 +10,7 @@
  * Sequence (per invocation):
  *   1. open /dev/ublk-control.  EPERM/ENOENT/ENXIO/EACCES latch the
  *      whole op off (kernel without CONFIG_BLK_DEV_UBLK, no
- *      CAP_SYS_ADMIN, --dropprivs in effect).
+ *      CAP_SYS_ADMIN, or privs dropped to nobody).
  *   2. set up two private io_urings (control + IO) so the teardown
  *      order is independent and the cancellation walker sees in-flight
  *      cmds parked on a sibling ring.
@@ -297,7 +297,7 @@ struct ublk_lifecycle_iter_ctx {
  * sees in-flight cmds parked on a sibling ring.  Two failure modes
  * latch ns_unsupported_ublk for the rest of this child: ctrl-fd
  * EPERM/ENOENT/ENXIO/EACCES (no CONFIG_BLK_DEV_UBLK, no
- * CAP_SYS_ADMIN, or --dropprivs in effect) and ring_setup ENOSYS
+ * CAP_SYS_ADMIN, or privs dropped to nobody) and ring_setup ENOSYS
  * (io_uring absent).  Returns false on any setup failure -- caller
  * jumps to teardown which honours the partial-up flags. */
 static bool ublk_lifecycle_iter_setup(struct ublk_lifecycle_iter_ctx *ctx)

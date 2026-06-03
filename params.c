@@ -66,7 +66,6 @@ bool show_ioctl_list = false;
 bool show_disabled_syscalls = false;
 unsigned char verbosity = 1;
 bool dangerous = false;
-bool dropprivs = false;
 bool do_syslog = false;
 bool random_selection = false;
 unsigned int random_selection_num;
@@ -448,7 +447,6 @@ static const struct option_help option_descs[] = {
 	{ "dangerous",		'd', "enable dangerous mode" },
 	{ "debug",		'D', "enable debug" },
 	{ "disable-fds",	 0,  NULL },	/* handled separately */
-	{ "dropprivs",		'X', "if run as root, switch to nobody [EXPERIMENTAL]" },
 	{ "dry-run",		 0,  "parse args and exit without fuzzing" },
 	{ "effector-map",	 0,  "calibrate per-bit input significance under KCOV and exit (one-shot)" },
 	{ "enable-fds",		 0,  NULL },	/* handled separately */
@@ -521,7 +519,7 @@ static void usage(void)
 	exit(EXIT_SUCCESS);
 }
 
-static const char paramstr[] = "a:b:c:C:dDE:g:hILN:P:qr:s:ST:V:vx:X";
+static const char paramstr[] = "a:b:c:C:dDE:g:hILN:P:qr:s:ST:V:vx:";
 
 static const struct option longopts[] = {
 	{ "alt-op-children", required_argument, NULL, 0 },
@@ -534,7 +532,6 @@ static const struct option longopts[] = {
 	{ "children", required_argument, NULL, 'C' },
 	{ "clowntown", no_argument, NULL, 0 },
 	{ "dangerous", no_argument, NULL, 'd' },
-	{ "dropprivs", no_argument, NULL, 'X'},
 	{ "debug", no_argument, NULL, 'D' },
 	{ "disable-fds", required_argument, NULL, 0 },
 	{ "dry-run", no_argument, NULL, 0 },
@@ -773,13 +770,6 @@ void parse_args(int argc, char *argv[])
 		case 'x':
 			do_exclude_syscall = true;
 			toggle_syscall(optarg, false);
-			break;
-
-		case 'X':
-			if (getuid() == 0)
-				dropprivs = true;
-			else
-				outputstd("Already running unprivileged, can't drop privs\n");
 			break;
 
 		case 0:

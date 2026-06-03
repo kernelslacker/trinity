@@ -1,11 +1,12 @@
 #pragma once
 
-#include "child.h"
+#include <sys/types.h>
 
 void dump_uids(void);
 void init_uids(void);
 void do_uid0_check(void);
 void check_uid(void);
+void drop_privs(void);
 
 extern uid_t orig_uid;
 extern gid_t orig_gid;

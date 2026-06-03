@@ -30,9 +30,9 @@
  *      egresses an interface.
  *   4. Open AF_INET / SOCK_RAW / IPPROTO_IGMP and setsockopt
  *      IPPROTO_IP/MRT_INIT.  -EPERM here means the host has dropped
- *      CAP_NET_ADMIN before we got into the netns (trinity --dropprivs);
- *      bump the eperm counter and latch — this op is dead for the rest
- *      of the child's life.
+ *      CAP_NET_ADMIN before we got into the netns (trinity auto-drops
+ *      to nobody when started as root); bump the eperm counter and
+ *      latch — this op is dead for the rest of the child's life.
  *   5. MRT_ADD_VIF with vifc_vifi=0, vifc_lcl_addr=127.0.0.1,
  *      vifc_rmt_addr=0.  No flags so the kernel takes the local
  *      interface lookup branch.
