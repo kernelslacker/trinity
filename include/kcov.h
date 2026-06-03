@@ -506,6 +506,15 @@ struct kcov_shared {
 	 * window rotation, so the delta over a stats interval is roughly
 	 * try_get_attempts * (1 / CHAOS_WINDOW_MODULO) in steady state. */
 	unsigned long cmp_hints_chaos_suppressed;
+	/* Chaos-mode state.  Window count + active flag both live in shm
+	 * so all children see the same chaos schedule -- the CAS-winning
+	 * child in maybe_rotate_strategy updates them, every child reads
+	 * the flag in cmp_hints_try_get.  When these were file-scope
+	 * statics in cmp_hints.c each child had its own copy and the
+	 * schedule never crossed a fork: cmp_hints_chaos_suppressed
+	 * stayed at 0 across long multi-child runs. */
+	unsigned long cmp_hints_chaos_window_count;
+	unsigned int  cmp_hints_chaos_active;
 	/* Wild-write detection in the cmp_hints SHM pool.  Bumped when a
 	 * read path (cmp_hints_try_get / pool_add_locked) observes a
 	 * pool->count value above the CMP_HINTS_PER_SYSCALL hard cap --

@@ -110,23 +110,26 @@ static bool cmp_hints_strip[2][MAX_NR_SYSCALL];
  */
 #define CHAOS_WINDOW_MODULO 8
 
-static unsigned long cmp_hints_chaos_window_count;
-static bool cmp_hints_chaos_active;
-
 void cmp_hints_chaos_tick(void)
 {
 	unsigned long n;
 
-	n = __atomic_add_fetch(&cmp_hints_chaos_window_count, 1UL,
+	if (kcov_shm == NULL)
+		return;
+
+	n = __atomic_add_fetch(&kcov_shm->cmp_hints_chaos_window_count, 1UL,
 			       __ATOMIC_RELAXED);
-	__atomic_store_n(&cmp_hints_chaos_active,
-			 (n % CHAOS_WINDOW_MODULO) == 0,
+	__atomic_store_n(&kcov_shm->cmp_hints_chaos_active,
+			 (n % CHAOS_WINDOW_MODULO) == 0 ? 1u : 0u,
 			 __ATOMIC_RELAXED);
 }
 
 bool cmp_hints_chaos_query(void)
 {
-	return __atomic_load_n(&cmp_hints_chaos_active, __ATOMIC_RELAXED);
+	if (kcov_shm == NULL)
+		return false;
+	return __atomic_load_n(&kcov_shm->cmp_hints_chaos_active,
+			       __ATOMIC_RELAXED) != 0;
 }
 
 /*
@@ -773,10 +776,11 @@ bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 	 * attempts/returned gap, with cmp_hints_chaos_suppressed
 	 * accounting for the difference.  Before the pool snapshot so the
 	 * suppressed path skips the lockless load entirely. */
-	if (__atomic_load_n(&cmp_hints_chaos_active, __ATOMIC_RELAXED)) {
-		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_hints_chaos_suppressed,
-					   1UL, __ATOMIC_RELAXED);
+	if (kcov_shm != NULL &&
+	    __atomic_load_n(&kcov_shm->cmp_hints_chaos_active,
+			    __ATOMIC_RELAXED)) {
+		__atomic_fetch_add(&kcov_shm->cmp_hints_chaos_suppressed,
+				   1UL, __ATOMIC_RELAXED);
 		return false;
 	}
 
