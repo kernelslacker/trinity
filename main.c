@@ -549,12 +549,12 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 
 	rec = &child->syscall;
 
-	/* Lockless snapshot via the sequence counter -- the parent-side
-	 * diagnostic must not contend with the child's own writer path
-	 * on rec->lock under fleet conditions where many children wedge
-	 * simultaneously.  Writers still hold rec->lock and bracket their
-	 * mutations with srec_publish_begin/end, so we get a coherent
-	 * view without taking the lock. */
+	/* Lockless snapshot via the sequence counter.  Writers bracket
+	 * coherent mutations with srec_publish_begin/end (no rec->lock
+	 * involved post-strengthen); the SREC_SNAPSHOT spin pattern
+	 * gives this parent-side diagnostic a coherent multi-field view
+	 * without contending with the child's writer path under fleet
+	 * conditions where many children wedge simultaneously. */
 	SREC_SNAPSHOT(rec, {
 		do32 = rec->do32bit;
 		callno = rec->nr;
