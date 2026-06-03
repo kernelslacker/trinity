@@ -428,37 +428,122 @@ static const struct struct_field sched_param_fields[] = {
 /* ------------------------------------------------------------------ */
 
 #ifdef USE_BPF
+#include "bpf.h"
+
 /*
- * union bpf_attr is a tagged union dispatched on the bpf() cmd argument.
- * Every command's anonymous struct starts at offset 0, so most of the
- * fields below collide on offset — that's intentional.  The CMP heuristic
- * picks at random across same-size matches, so a u32 CMP hint may resolve
- * to map_type, prog_type, attach_type, or any of the other enum-bearing
- * slots the kernel constantly compares against the BPF_* constant space.
- *
- * Only the most-compared scalar fields are listed; the deeper per-cmd
- * substructs (test, link_create, link_update, raw_tracepoint, info, ...)
- * carry mostly fds and addresses that the kernel passes through rather
- * than compares.
+ * Shared with syscalls/bpf.c via include/bpf.h.  Lives here so the
+ * FT_ENUM annotation on union bpf_attr.map_type and sanitise_bpf's
+ * map_type pick share a single vocabulary.
  */
-static const struct struct_field bpf_attr_fields[] = {
-	FIELD(union bpf_attr, map_type),
-	FIELD(union bpf_attr, key_size),
-	FIELD(union bpf_attr, value_size),
-	FIELD(union bpf_attr, max_entries),
-	FIELD(union bpf_attr, map_flags),
-	FIELD(union bpf_attr, prog_type),
-	FIELD(union bpf_attr, insn_cnt),
-	FIELD(union bpf_attr, log_level),
-	FIELD(union bpf_attr, log_size),
-	FIELD(union bpf_attr, kern_version),
-	FIELD(union bpf_attr, prog_flags),
-	FIELD(union bpf_attr, expected_attach_type),
-	FIELD(union bpf_attr, attach_type),
-	FIELD(union bpf_attr, attach_flags),
-	FIELD(union bpf_attr, start_id),
-	FIELD(union bpf_attr, prog_id),
-	FIELD(union bpf_attr, map_id),
+const unsigned long bpf_map_types[] = {
+	BPF_MAP_TYPE_HASH, BPF_MAP_TYPE_ARRAY,
+	BPF_MAP_TYPE_PROG_ARRAY, BPF_MAP_TYPE_PERF_EVENT_ARRAY,
+	BPF_MAP_TYPE_PERCPU_HASH, BPF_MAP_TYPE_PERCPU_ARRAY,
+	BPF_MAP_TYPE_STACK_TRACE, BPF_MAP_TYPE_CGROUP_ARRAY,
+	BPF_MAP_TYPE_LRU_HASH, BPF_MAP_TYPE_LRU_PERCPU_HASH,
+	BPF_MAP_TYPE_LPM_TRIE,
+	BPF_MAP_TYPE_ARRAY_OF_MAPS, BPF_MAP_TYPE_HASH_OF_MAPS,
+	BPF_MAP_TYPE_DEVMAP, BPF_MAP_TYPE_SOCKMAP,
+	BPF_MAP_TYPE_CPUMAP, BPF_MAP_TYPE_XSKMAP,
+	BPF_MAP_TYPE_SOCKHASH,
+	BPF_MAP_TYPE_CGROUP_STORAGE,
+	BPF_MAP_TYPE_REUSEPORT_SOCKARRAY,
+	BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE,
+	BPF_MAP_TYPE_QUEUE, BPF_MAP_TYPE_STACK,
+	BPF_MAP_TYPE_SK_STORAGE, BPF_MAP_TYPE_DEVMAP_HASH,
+	BPF_MAP_TYPE_STRUCT_OPS, BPF_MAP_TYPE_RINGBUF,
+	BPF_MAP_TYPE_INODE_STORAGE, BPF_MAP_TYPE_TASK_STORAGE,
+	BPF_MAP_TYPE_BLOOM_FILTER, BPF_MAP_TYPE_USER_RINGBUF,
+	BPF_MAP_TYPE_CGRP_STORAGE, BPF_MAP_TYPE_ARENA,
+	BPF_MAP_TYPE_INSN_ARRAY,
+};
+const unsigned int bpf_map_types_count = ARRAY_SIZE(bpf_map_types);
+
+/*
+ * MAP_CREATE flag mask.  Names absent from the local uapi header
+ * vintage drop out via #ifdef so an older /usr/include/linux/bpf.h
+ * doesn't break the build; the cost is a tiny gap in the mask which
+ * the kernel still rejects up-stream of any field-level validation.
+ */
+#define MAP_CREATE_FLAGS_MASK ( \
+	BPF_F_NO_PREALLOC | BPF_F_NO_COMMON_LRU | BPF_F_NUMA_NODE | \
+	BPF_F_RDONLY | BPF_F_WRONLY | BPF_F_STACK_BUILD_ID | \
+	BPF_F_ZERO_SEED | BPF_F_RDONLY_PROG | BPF_F_WRONLY_PROG | \
+	BPF_F_CLONE | BPF_F_MMAPABLE | BPF_F_INNER_MAP | BPF_F_LINK)
+
+#ifdef BPF_F_PRESERVE_ELEMS
+# define MAP_CREATE_FLAGS_PRESERVE	BPF_F_PRESERVE_ELEMS
+#else
+# define MAP_CREATE_FLAGS_PRESERVE	0UL
+#endif
+#ifdef BPF_F_VTYPE_BTF_OBJ_FD
+# define MAP_CREATE_FLAGS_VTYPE	BPF_F_VTYPE_BTF_OBJ_FD
+#else
+# define MAP_CREATE_FLAGS_VTYPE	0UL
+#endif
+#ifdef BPF_F_TOKEN_FD
+# define MAP_CREATE_FLAGS_TOKEN_FD	BPF_F_TOKEN_FD
+#else
+# define MAP_CREATE_FLAGS_TOKEN_FD	0UL
+#endif
+
+#define MAP_CREATE_FLAGS_FULL_MASK \
+	(MAP_CREATE_FLAGS_MASK | MAP_CREATE_FLAGS_PRESERVE | \
+	 MAP_CREATE_FLAGS_VTYPE | MAP_CREATE_FLAGS_TOKEN_FD)
+
+/*
+ * MAP_CREATE variant: every gate field that the kernel validates
+ * before reaching the map-type-specific code in map_create() lands
+ * here.  Ranges mirror sanitise_bpf today (1024 / 65536 / 1024) so
+ * a CMP-driven hint that the kernel compared a u32 against a small
+ * constant lands on the field most likely to satisfy validation.
+ *
+ * Fields absent from older uapi headers (excl_prog_hash /
+ * excl_prog_hash_size) are intentionally not annotated this round;
+ * adding offsetof references against a union member the header
+ * doesn't declare would break the build on older distros, and the
+ * kernel still accepts a zero-fill in those bytes.
+ */
+static const struct struct_field bpf_attr_MAP_CREATE_fields[] = {
+	FIELDX(union bpf_attr, map_type, FT_ENUM,
+	       .u.enum_ = { bpf_map_types, ARRAY_SIZE(bpf_map_types) },
+	       .mutate_weight = 200),
+	FIELDX(union bpf_attr, key_size, FT_RANGE,
+	       .u.range = { 0, 1024 }),
+	FIELDX(union bpf_attr, value_size, FT_RANGE,
+	       .u.range = { 0, 65536 }),
+	FIELDX(union bpf_attr, max_entries, FT_RANGE,
+	       .u.range = { 0, 1024 }),
+	FIELDX(union bpf_attr, map_flags, FT_FLAGS,
+	       .u.flags.mask = MAP_CREATE_FLAGS_FULL_MASK,
+	       .mutate_weight = 80),
+	FIELDX(union bpf_attr, inner_map_fd, FT_FD),
+	FIELDX(union bpf_attr, numa_node, FT_RANGE,
+	       .u.range = { 0, 255 }),
+	FIELD(union bpf_attr, map_name),
+	FIELD(union bpf_attr, map_ifindex),
+	FIELDX(union bpf_attr, btf_fd, FT_FD),
+	FIELD(union bpf_attr, btf_key_type_id),
+	FIELD(union bpf_attr, btf_value_type_id),
+	FIELD(union bpf_attr, btf_vmlinux_value_type_id),
+	FIELD(union bpf_attr, map_extra),
+	FIELDX(union bpf_attr, value_type_btf_obj_fd, FT_FD),
+	FIELDX(union bpf_attr, map_token_fd, FT_FD),
+};
+
+/*
+ * Tagged-union variant table.  rec->a1 carries the bpf cmd at sanitise
+ * and post time; the discriminator scan picks the matching variant.
+ * Only MAP_CREATE is annotated in this round; the other ~21 variants
+ * land in follow-up commits and remain catalog-empty until then.
+ */
+static const struct union_variant bpf_attr_variants[] = {
+	{
+		.discrim_value	= BPF_MAP_CREATE,
+		.name		= "MAP_CREATE",
+		.fields		= bpf_attr_MAP_CREATE_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_MAP_CREATE_fields),
+	},
 };
 #endif
 
@@ -589,10 +674,19 @@ const struct struct_desc struct_catalog[] = {
 	},
 #ifdef USE_BPF
 	{
-		.name		= "bpf_attr",
-		.struct_size	= sizeof(union bpf_attr),
-		.fields		= bpf_attr_fields,
-		.num_fields	= ARRAY_SIZE(bpf_attr_fields),
+		.name			= "bpf_attr",
+		.struct_size		= sizeof(union bpf_attr),
+		/*
+		 * Shared prefix is empty: every bpf cmd lives in its own
+		 * anonymous union arm with no truly-common fields.  The
+		 * tagged-union path takes over via discrim_arg_idx == 1
+		 * (bpf cmd lives in rec->a1).
+		 */
+		.fields			= NULL,
+		.num_fields		= 0,
+		.discrim_arg_idx	= 1,
+		.variants		= bpf_attr_variants,
+		.num_variants		= ARRAY_SIZE(bpf_attr_variants),
 	},
 #endif
 	/*

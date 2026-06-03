@@ -8,6 +8,24 @@ int get_rand_bpf_link_fd(void);
 int get_rand_bpf_btf_fd(void);
 int get_rand_bpf_token_fd(void);
 
+/*
+ * bpf map / prog / attach type vocabularies.  Defined alongside the
+ * bpf_attr struct catalog (struct_catalog.c) so the schema-aware
+ * fill's FT_ENUM tags and sanitise_bpf's RAND_ARRAY paths share a
+ * single source.  Counts live as their own extern so syscalls/bpf.c
+ * keeps a runtime read.  Populated only when USE_BPF is set; the
+ * catalog itself is also USE_BPF-gated, so undefined-reference
+ * builds without bpf support never name these symbols.
+ */
+extern const unsigned long bpf_map_types[];
+extern const unsigned int bpf_map_types_count;
+
+/*
+ * Map-type fallback defines for older /usr/include/linux/bpf.h.  Both
+ * syscalls/bpf.c (RAND_ARRAY consumer in sanitise) and struct_catalog.c
+ * (FT_ENUM annotation in the bpf_attr MAP_CREATE variant) walk the
+ * same vocabulary, so the fallback set lives here.
+ */
 #ifndef BPF_MAP_TYPE_LRU_HASH
 #define BPF_MAP_TYPE_LRU_HASH 9
 #define BPF_MAP_TYPE_LRU_PERCPU_HASH 10
@@ -16,8 +34,43 @@ int get_rand_bpf_token_fd(void);
 #ifndef BPF_F_NO_COMMON_LRU
 #define BPF_F_NO_COMMON_LRU     (1U << 1)
 #endif
+#ifndef BPF_MAP_TYPE_ARRAY_OF_MAPS
+#define BPF_MAP_TYPE_ARRAY_OF_MAPS	12
+#define BPF_MAP_TYPE_HASH_OF_MAPS	13
+#endif
+#ifndef BPF_MAP_TYPE_DEVMAP
+#define BPF_MAP_TYPE_DEVMAP		14
+#define BPF_MAP_TYPE_SOCKMAP		15
+#define BPF_MAP_TYPE_CPUMAP		16
+#endif
+#ifndef BPF_MAP_TYPE_XSKMAP
+#define BPF_MAP_TYPE_XSKMAP		17
+#define BPF_MAP_TYPE_SOCKHASH		18
+#endif
+#ifndef BPF_MAP_TYPE_REUSEPORT_SOCKARRAY
+#define BPF_MAP_TYPE_REUSEPORT_SOCKARRAY 20
+#endif
+#ifndef BPF_MAP_TYPE_QUEUE
+#define BPF_MAP_TYPE_QUEUE		22
+#define BPF_MAP_TYPE_STACK		23
+#endif
+#ifndef BPF_MAP_TYPE_SK_STORAGE
+#define BPF_MAP_TYPE_SK_STORAGE		24
+#endif
+#ifndef BPF_MAP_TYPE_DEVMAP_HASH
+#define BPF_MAP_TYPE_DEVMAP_HASH	25
+#endif
+#ifndef BPF_MAP_TYPE_STRUCT_OPS
+#define BPF_MAP_TYPE_STRUCT_OPS		26
+#endif
 #ifndef BPF_MAP_TYPE_RINGBUF
 #define BPF_MAP_TYPE_RINGBUF		27
+#endif
+#ifndef BPF_MAP_TYPE_INODE_STORAGE
+#define BPF_MAP_TYPE_INODE_STORAGE	28
+#endif
+#ifndef BPF_MAP_TYPE_TASK_STORAGE
+#define BPF_MAP_TYPE_TASK_STORAGE	29
 #endif
 #ifndef BPF_MAP_TYPE_BLOOM_FILTER
 #define BPF_MAP_TYPE_BLOOM_FILTER	30
@@ -25,8 +78,19 @@ int get_rand_bpf_token_fd(void);
 #ifndef BPF_MAP_TYPE_USER_RINGBUF
 #define BPF_MAP_TYPE_USER_RINGBUF	31
 #endif
+#ifndef BPF_MAP_TYPE_CGRP_STORAGE
+#define BPF_MAP_TYPE_CGRP_STORAGE	32
+#endif
 #ifndef BPF_MAP_TYPE_ARENA
 #define BPF_MAP_TYPE_ARENA		33
+#endif
+#ifndef BPF_MAP_TYPE_INSN_ARRAY
+#define BPF_MAP_TYPE_INSN_ARRAY		34
+#endif
+
+/* Flags referenced from the MAP_CREATE schema annotation. */
+#ifndef BPF_F_TOKEN_FD
+#define BPF_F_TOKEN_FD			(1U << 16)
 #endif
 
 /*

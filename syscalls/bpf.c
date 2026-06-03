@@ -174,9 +174,6 @@ static bool bpf_prog_load(union bpf_attr *attr)
 #ifndef BPF_TOKEN_CREATE
 #define BPF_TOKEN_CREATE		36
 #endif
-#ifndef BPF_F_TOKEN_FD
-#define BPF_F_TOKEN_FD			(1U << 16)
-#endif
 #ifndef BPF_PROG_STREAM_READ_BY_FD
 #define BPF_PROG_STREAM_READ_BY_FD	37
 #endif
@@ -184,83 +181,17 @@ static bool bpf_prog_load(union bpf_attr *attr)
 #define BPF_PROG_ASSOC_STRUCT_OPS	38
 #endif
 
-/* Map types added after trinity's original definitions */
-#ifndef BPF_MAP_TYPE_ARRAY_OF_MAPS
-#define BPF_MAP_TYPE_ARRAY_OF_MAPS	12
-#define BPF_MAP_TYPE_HASH_OF_MAPS	13
-#endif
-#ifndef BPF_MAP_TYPE_DEVMAP
-#define BPF_MAP_TYPE_DEVMAP		14
-#define BPF_MAP_TYPE_SOCKMAP		15
-#define BPF_MAP_TYPE_CPUMAP		16
-#endif
-#ifndef BPF_MAP_TYPE_XSKMAP
-#define BPF_MAP_TYPE_XSKMAP		17
-#define BPF_MAP_TYPE_SOCKHASH		18
-#endif
-#ifndef BPF_MAP_TYPE_REUSEPORT_SOCKARRAY
-#define BPF_MAP_TYPE_REUSEPORT_SOCKARRAY 20
-#endif
-#ifndef BPF_MAP_TYPE_QUEUE
-#define BPF_MAP_TYPE_QUEUE		22
-#define BPF_MAP_TYPE_STACK		23
-#endif
-#ifndef BPF_MAP_TYPE_SK_STORAGE
-#define BPF_MAP_TYPE_SK_STORAGE		24
-#endif
-#ifndef BPF_MAP_TYPE_DEVMAP_HASH
-#define BPF_MAP_TYPE_DEVMAP_HASH	25
-#endif
-#ifndef BPF_MAP_TYPE_STRUCT_OPS
-#define BPF_MAP_TYPE_STRUCT_OPS		26
-#endif
-#ifndef BPF_MAP_TYPE_RINGBUF
-#define BPF_MAP_TYPE_RINGBUF		27
-#endif
-#ifndef BPF_MAP_TYPE_INODE_STORAGE
-#define BPF_MAP_TYPE_INODE_STORAGE	28
-#endif
-#ifndef BPF_MAP_TYPE_TASK_STORAGE
-#define BPF_MAP_TYPE_TASK_STORAGE	29
-#endif
-#ifndef BPF_MAP_TYPE_BLOOM_FILTER
-#define BPF_MAP_TYPE_BLOOM_FILTER	30
-#endif
-#ifndef BPF_MAP_TYPE_USER_RINGBUF
-#define BPF_MAP_TYPE_USER_RINGBUF	31
-#endif
-#ifndef BPF_MAP_TYPE_CGRP_STORAGE
-#define BPF_MAP_TYPE_CGRP_STORAGE	32
-#endif
-#ifndef BPF_MAP_TYPE_ARENA
-#define BPF_MAP_TYPE_ARENA		33
-#endif
-#ifndef BPF_MAP_TYPE_INSN_ARRAY
-#define BPF_MAP_TYPE_INSN_ARRAY		34
-#endif
+/* BPF_F_TOKEN_FD and the map-type fallbacks moved to include/bpf.h
+ * so the schema-aware fill catalog and this file share them. */
 
-static const unsigned long bpf_map_types[] = {
-	BPF_MAP_TYPE_HASH, BPF_MAP_TYPE_ARRAY,
-	BPF_MAP_TYPE_PROG_ARRAY, BPF_MAP_TYPE_PERF_EVENT_ARRAY,
-	BPF_MAP_TYPE_PERCPU_HASH, BPF_MAP_TYPE_PERCPU_ARRAY,
-	BPF_MAP_TYPE_STACK_TRACE, BPF_MAP_TYPE_CGROUP_ARRAY,
-	BPF_MAP_TYPE_LRU_HASH, BPF_MAP_TYPE_LRU_PERCPU_HASH,
-	BPF_MAP_TYPE_LPM_TRIE,
-	BPF_MAP_TYPE_ARRAY_OF_MAPS, BPF_MAP_TYPE_HASH_OF_MAPS,
-	BPF_MAP_TYPE_DEVMAP, BPF_MAP_TYPE_SOCKMAP,
-	BPF_MAP_TYPE_CPUMAP, BPF_MAP_TYPE_XSKMAP,
-	BPF_MAP_TYPE_SOCKHASH,
-	BPF_MAP_TYPE_CGROUP_STORAGE,
-	BPF_MAP_TYPE_REUSEPORT_SOCKARRAY,
-	BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE,
-	BPF_MAP_TYPE_QUEUE, BPF_MAP_TYPE_STACK,
-	BPF_MAP_TYPE_SK_STORAGE, BPF_MAP_TYPE_DEVMAP_HASH,
-	BPF_MAP_TYPE_STRUCT_OPS, BPF_MAP_TYPE_RINGBUF,
-	BPF_MAP_TYPE_INODE_STORAGE, BPF_MAP_TYPE_TASK_STORAGE,
-	BPF_MAP_TYPE_BLOOM_FILTER, BPF_MAP_TYPE_USER_RINGBUF,
-	BPF_MAP_TYPE_CGRP_STORAGE, BPF_MAP_TYPE_ARENA,
-	BPF_MAP_TYPE_INSN_ARRAY,
-};
+/*
+ * bpf_map_types[] now lives in struct_catalog.c so the schema-aware
+ * fill's FT_ENUM annotation on union bpf_attr.map_type and the
+ * sanitise here share a single vocabulary.  Declared extern in
+ * include/bpf.h; consumed below via rnd_modulo_u32 instead of
+ * RAND_ARRAY because the array's compile-time size is no longer
+ * visible at the call site.
+ */
 
 /* Attach types not present in older bpf.h headers */
 #ifndef BPF_TRACE_KPROBE_SESSION
@@ -392,7 +323,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 
 	switch (cmd) {
 	case BPF_MAP_CREATE:
-		attr->map_type = RAND_ARRAY(bpf_map_types);
+		attr->map_type = bpf_map_types[rnd_modulo_u32(bpf_map_types_count)];
 		attr->key_size = rnd_modulo_u32(1024);
 		attr->value_size = rnd_modulo_u32((1024 * 64));
 		attr->max_entries = rnd_modulo_u32(1024);
