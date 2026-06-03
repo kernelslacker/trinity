@@ -16,6 +16,7 @@
 #include <sys/resource.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <sched.h>
@@ -211,17 +212,79 @@ static const struct struct_field sigaction_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct iovec (msg_iov array element)                                */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Registered so msghdr.msg_iov can name it via FT_PTR_ARRAY.elem_struct
+ * and the pointer pass knows sizeof(struct iovec) for allocation.
+ * Both fields stay FT_RAW: iov_base is a userspace pointer the kernel
+ * dereferences (random bytes there fault out, which is fine for the
+ * "msg_iovlen entries scanned" coverage we care about right now); a
+ * later commit annotates iov_base as FT_ADDRESS and iov_len as
+ * FT_LEN_BYTES(iov_base) so the per-entry buffers point at real
+ * writable regions.
+ */
+static const struct struct_field iovec_fields[] = {
+	FIELD(struct iovec, iov_base),
+	FIELD(struct iovec, iov_len),
+};
+
+/* ------------------------------------------------------------------ */
 /* struct msghdr (sendmsg, recvmsg)                                    */
 /* ------------------------------------------------------------------ */
 
+/*
+ * msghdr carries three distinct pointer/length pair shapes:
+ *
+ *   msg_name + msg_namelen      - optional sockaddr pointer, bytes
+ *   msg_iov + msg_iovlen        - required iovec array, element count
+ *   msg_control + msg_controllen- optional cmsg buffer, bytes
+ *
+ * Plus msg_flags as a recvmsg/sendmsg MSG_* bitmask.  Each pair is
+ * annotated so the schema-aware fill keeps the length and the buffer
+ * consistent; the kernel's first-pass sanity checks (msg_iovlen <=
+ * UIO_MAXIOV, msg_namelen <= sizeof(sockaddr_storage), wild pointer
+ * deref) stop bouncing the call before any family-specific recvmsg /
+ * sendmsg path runs.
+ *
+ * msg_name uses sockaddr_storage as a generic catch-all; a later
+ * commit annotates sockaddr_storage with FT_TAGGED_UNION on
+ * ss_family and msg_name's sub-buffer will naturally pick up the
+ * per-AF_* layout without changing this file.
+ */
+#define MSGHDR_FLAGS_MASK \
+	(MSG_OOB | MSG_PEEK | MSG_DONTROUTE | MSG_CTRUNC | MSG_TRUNC | \
+	 MSG_EOR | MSG_DONTWAIT | MSG_CONFIRM | MSG_ERRQUEUE | MSG_NOSIGNAL)
+
 static const struct struct_field msghdr_fields[] = {
-	FIELD(struct msghdr, msg_name),
-	FIELD(struct msghdr, msg_namelen),
-	FIELD(struct msghdr, msg_iov),
-	FIELD(struct msghdr, msg_iovlen),
-	FIELD(struct msghdr, msg_control),
-	FIELD(struct msghdr, msg_controllen),
-	FIELD(struct msghdr, msg_flags),
+	FIELDX(struct msghdr, msg_name, FT_PTR_STRUCT,
+	       .u.ptr_struct = { .len_field = "msg_namelen",
+				 .struct_name = "sockaddr_storage",
+				 .optional = true },
+	       .mutate_weight = 120),
+	FIELDX(struct msghdr, msg_namelen, FT_LEN_BYTES,
+	       .u.len_of = { .buf_field = "msg_name", .optional = true },
+	       .mutate_weight = 40),
+	FIELDX(struct msghdr, msg_iov, FT_PTR_ARRAY,
+	       .u.ptr_array = { .len_field = "msg_iovlen",
+				.elem_struct = "iovec",
+				.max_count = 16 },
+	       .mutate_weight = 200),
+	FIELDX(struct msghdr, msg_iovlen, FT_LEN_COUNT,
+	       .u.len_of = { .buf_field = "msg_iov" },
+	       .mutate_weight = 40),
+	FIELDX(struct msghdr, msg_control, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .len_field = "msg_controllen",
+				.optional = true,
+				.max_bytes = 4096 },
+	       .mutate_weight = 150),
+	FIELDX(struct msghdr, msg_controllen, FT_LEN_BYTES,
+	       .u.len_of = { .buf_field = "msg_control", .optional = true },
+	       .mutate_weight = 40),
+	FIELDX(struct msghdr, msg_flags, FT_FLAGS,
+	       .u.flags.mask = MSGHDR_FLAGS_MASK,
+	       .mutate_weight = 60),
 };
 
 /* ------------------------------------------------------------------ */
@@ -529,6 +592,20 @@ const struct struct_desc struct_catalog[] = {
 		.num_fields	= ARRAY_SIZE(bpf_attr_fields),
 	},
 #endif
+	/*
+	 * iovec: registered for name lookup only -- referenced by
+	 * msghdr.msg_iov's FT_PTR_ARRAY.elem_struct so the pointer pass
+	 * can resolve sizeof(struct iovec) for allocation.  No syscall_
+	 * struct_args entry: iovec is not passed directly as an
+	 * ARG_STRUCT_PTR slot.  Placed at the tail of the catalog so the
+	 * existing struct_catalog[N] indices above stay stable.
+	 */
+	{
+		.name		= "iovec",
+		.struct_size	= sizeof(struct iovec),
+		.fields		= iovec_fields,
+		.num_fields	= ARRAY_SIZE(iovec_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
