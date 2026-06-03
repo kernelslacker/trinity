@@ -242,10 +242,42 @@ static const struct struct_field sockaddr_storage_fields[] = {
 /* struct landlock_ruleset_attr (landlock_create_ruleset)              */
 /* ------------------------------------------------------------------ */
 
+/*
+ * The three fields are u64 bitmasks over disjoint vocab spaces:
+ *
+ *   handled_access_fs  -> LANDLOCK_ACCESS_FS_*  (bits 0..15)
+ *   handled_access_net -> LANDLOCK_ACCESS_NET_* (bits 0..1)
+ *   scoped             -> LANDLOCK_SCOPE_*      (bits 0..1)
+ *
+ * Anything outside its mask makes landlock_create_ruleset return
+ * -EINVAL before the ruleset is ever allocated, so an FT_RAW splat
+ * almost never reaches security/landlock/ paths.  Mask values are
+ * built from the named uapi constants; if a new bit lands upstream
+ * the mask needs updating here (caught by reviewer reading uapi diff).
+ */
+#define LANDLOCK_ACCESS_FS_MASK \
+	(LANDLOCK_ACCESS_FS_EXECUTE     | LANDLOCK_ACCESS_FS_WRITE_FILE  | \
+	 LANDLOCK_ACCESS_FS_READ_FILE   | LANDLOCK_ACCESS_FS_READ_DIR    | \
+	 LANDLOCK_ACCESS_FS_REMOVE_DIR  | LANDLOCK_ACCESS_FS_REMOVE_FILE | \
+	 LANDLOCK_ACCESS_FS_MAKE_CHAR   | LANDLOCK_ACCESS_FS_MAKE_DIR    | \
+	 LANDLOCK_ACCESS_FS_MAKE_REG    | LANDLOCK_ACCESS_FS_MAKE_SOCK   | \
+	 LANDLOCK_ACCESS_FS_MAKE_FIFO   | LANDLOCK_ACCESS_FS_MAKE_BLOCK  | \
+	 LANDLOCK_ACCESS_FS_MAKE_SYM    | LANDLOCK_ACCESS_FS_REFER       | \
+	 LANDLOCK_ACCESS_FS_TRUNCATE    | LANDLOCK_ACCESS_FS_IOCTL_DEV)
+
+#define LANDLOCK_ACCESS_NET_MASK \
+	(LANDLOCK_ACCESS_NET_BIND_TCP | LANDLOCK_ACCESS_NET_CONNECT_TCP)
+
+#define LANDLOCK_SCOPE_MASK \
+	(LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET | LANDLOCK_SCOPE_SIGNAL)
+
 static const struct struct_field landlock_ruleset_attr_fields[] = {
-	FIELD(struct landlock_ruleset_attr, handled_access_fs),
-	FIELD(struct landlock_ruleset_attr, handled_access_net),
-	FIELD(struct landlock_ruleset_attr, scoped),
+	FIELDX(struct landlock_ruleset_attr, handled_access_fs, FT_FLAGS,
+	       .u.flags.mask = LANDLOCK_ACCESS_FS_MASK),
+	FIELDX(struct landlock_ruleset_attr, handled_access_net, FT_FLAGS,
+	       .u.flags.mask = LANDLOCK_ACCESS_NET_MASK),
+	FIELDX(struct landlock_ruleset_attr, scoped, FT_FLAGS,
+	       .u.flags.mask = LANDLOCK_SCOPE_MASK),
 };
 
 /* ------------------------------------------------------------------ */
