@@ -759,6 +759,38 @@ static void write_field_uint(unsigned char *buf, const struct struct_field *f,
 	}
 }
 
+/*
+ * Read a 1/2/4/8-byte unsigned field as a uint64_t.  Wider fields
+ * return 0 -- the only callers (the FT_ADDRESS scrub recursion and the
+ * FT_PTR_ARRAY count read) only care about pointer- and length-sized
+ * slots, which are at most 8 bytes wide.
+ */
+static uint64_t read_field_uint(const unsigned char *buf,
+				const struct struct_field *f)
+{
+	switch (f->size) {
+	case 1:
+		return buf[f->offset];
+	case 2: {
+		uint16_t v;
+		memcpy(&v, buf + f->offset, sizeof(v));
+		return v;
+	}
+	case 4: {
+		uint32_t v;
+		memcpy(&v, buf + f->offset, sizeof(v));
+		return v;
+	}
+	case 8: {
+		uint64_t v;
+		memcpy(&v, buf + f->offset, sizeof(v));
+		return v;
+	}
+	default:
+		return 0;
+	}
+}
+
 /* Linear name lookup over a cataloged struct's field array. */
 static int find_field_index(const struct struct_desc *desc, const char *name)
 {
@@ -862,12 +894,13 @@ static void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size
 		case FT_FLAGS:
 			fill_field_flags(buf, f);
 			break;
+		case FT_ADDRESS:
+			continue;	/* deferred to pointer pass */
 		case FT_ENUM:
 		case FT_RANGE:
 		case FT_FD:
 		case FT_MAGIC:
 		case FT_VERSION_MAGIC:
-		case FT_ADDRESS:
 		case FT_TAGGED_UNION:
 		case FT_RAW:
 		default:
@@ -957,6 +990,30 @@ static void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size
 			deferred_free_enqueue(sub);
 			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
 			chosen_len[i] = target->struct_size;
+			break;
+		}
+
+		case FT_ADDRESS: {
+			/*
+			 * Plant a get_address() pointer and publish the
+			 * companion length so any paired FT_LEN_BYTES field
+			 * stays internally consistent.  Length defaults to
+			 * page_size when no LEN partner exists -- a NULL
+			 * address (~1% via get_address) pins length to 0 so
+			 * the (NULL, 0) shape stays coherent for the kernel
+			 * sees-NULL-iov-skip arm.
+			 */
+			void *addr;
+
+			if (f->size != sizeof(unsigned long)) {
+				/* sub-pointer-width FT_ADDRESS cannot hold a
+				 * useful address; fall back to raw splat. */
+				fill_field_raw(buf, f);
+				break;
+			}
+			addr = get_address();
+			write_field_uint(buf, f, (uint64_t)(uintptr_t) addr);
+			chosen_len[i] = addr ? page_size : 0;
 			break;
 		}
 
@@ -1598,6 +1655,38 @@ uint8_t compute_address_scrub_mask(const struct syscallentry *entry)
 }
 
 /*
+ * Bit k set means slot (k+1)'s argtype is ARG_STRUCT_PTR_IN/OUT/INOUT
+ * AND the cataloged struct for that (syscall, arg) reaches an
+ * FT_ADDRESS field via the pointer chain.  Resolved once at table-init
+ * time so the per-dispatch nested_address_scrub() walk short-circuits
+ * with a single masked load on the bulk of syscalls (no cataloged
+ * struct, or no address-shaped field inside it).
+ */
+uint8_t compute_nested_address_scrub_mask(const struct syscallentry *entry)
+{
+	uint8_t mask = 0;
+	unsigned int i;
+
+	if (entry == NULL || entry->name == NULL)
+		return 0;
+
+	for (i = 0; i < entry->num_args && i < 6; i++) {
+		enum argtype t = entry->argtype[i];
+		const struct struct_desc *desc;
+
+		if (t != ARG_STRUCT_PTR_IN &&
+		    t != ARG_STRUCT_PTR_OUT &&
+		    t != ARG_STRUCT_PTR_INOUT)
+			continue;
+
+		desc = struct_arg_lookup_by_name(entry->name, i + 1);
+		if (desc != NULL && struct_desc_has_address_field(desc))
+			mask |= (uint8_t)(1u << i);
+	}
+	return mask;
+}
+
+/*
  * Build the cleanup-hook slot bitmap for entry's argtype[] table.  Called
  * once per syscallentry at table-init time from copy_syscall_table() in
  * tables.c; the cached mask in entry->cleanup_arg_mask drives
@@ -1731,6 +1820,144 @@ static void snapshot_args(struct syscallentry *entry, struct syscallrecord *rec)
 	}
 }
 
+/*
+ * Bounded recursion depth for the nested-address walker.  Real
+ * cataloged structs are flat or one level deep (msghdr -> iovec); the
+ * cap mirrors STRUCT_ADDRESS_SCAN_MAX_DEPTH in struct_catalog.c so a
+ * future cyclic catalog entry cannot drive infinite recursion at
+ * dispatch time.
+ */
+#define NESTED_ADDRESS_SCRUB_MAX_DEPTH	4
+
+static void scrub_struct_addresses(unsigned char *buf, unsigned int size,
+				   const struct struct_desc *desc,
+				   unsigned int depth);
+
+/*
+ * Walk one cataloged-struct buffer and scrub every FT_ADDRESS field,
+ * recursing into FT_PTR_STRUCT targets and FT_PTR_ARRAY elements whose
+ * element struct is itself cataloged.  FT_PTR_BYTES and the FT_PTR_*
+ * pointers themselves are trinity-allocated via zmalloc_tracked() and
+ * cannot alias shared_regions[] or the libc brk arena; they are not
+ * scrub targets, only recursion edges.
+ */
+static void scrub_struct_addresses(unsigned char *buf, unsigned int size,
+				   const struct struct_desc *desc,
+				   unsigned int depth)
+{
+	unsigned int i;
+
+	if (buf == NULL || desc == NULL ||
+	    depth >= NESTED_ADDRESS_SCRUB_MAX_DEPTH)
+		return;
+
+	for (i = 0; i < desc->num_fields; i++) {
+		const struct struct_field *f = &desc->fields[i];
+		const struct struct_desc *target;
+		unsigned long ptr;
+
+		if (f->offset + f->size > size)
+			continue;
+
+		switch (f->tag) {
+		case FT_ADDRESS: {
+			/*
+			 * Scrub at the field's natural pointer width.
+			 * Sub-pointer-sized FT_ADDRESS fields cannot hold a
+			 * useful address; skip them rather than scribble
+			 * adjacent bytes.
+			 */
+			if (f->size != sizeof(unsigned long))
+				break;
+			avoid_shared_buffer_out(
+				(unsigned long *)(buf + f->offset), page_size);
+			break;
+		}
+		case FT_PTR_STRUCT:
+			ptr = (unsigned long) read_field_uint(buf, f);
+			if (ptr == 0)
+				break;
+			target = struct_catalog_lookup(f->u.ptr_struct.struct_name);
+			if (target == NULL || target->struct_size == 0)
+				break;
+			scrub_struct_addresses((unsigned char *) ptr,
+					       target->struct_size,
+					       target, depth + 1);
+			break;
+		case FT_PTR_ARRAY: {
+			unsigned long count = 0;
+			unsigned long cap;
+			int paired;
+			unsigned long j;
+
+			ptr = (unsigned long) read_field_uint(buf, f);
+			if (ptr == 0)
+				break;
+			target = struct_catalog_lookup(f->u.ptr_array.elem_struct);
+			if (target == NULL || target->struct_size == 0)
+				break;
+
+			paired = find_field_index(desc, f->u.ptr_array.len_field);
+			if (paired >= 0)
+				count = (unsigned long) read_field_uint(
+					buf, &desc->fields[paired]);
+
+			/*
+			 * Cap the iteration at the catalog's declared
+			 * max_count (or PTR_ARRAY_DEFAULT_MAX) so a sibling-
+			 * scribbled len field cannot drive a walk past the
+			 * allocation's tail and SEGV the sanitiser.
+			 */
+			cap = f->u.ptr_array.max_count;
+			if (cap == 0)
+				cap = PTR_ARRAY_DEFAULT_MAX;
+			if (count > cap)
+				count = cap;
+
+			for (j = 0; j < count; j++) {
+				unsigned char *elem = (unsigned char *) ptr
+					+ j * target->struct_size;
+
+				scrub_struct_addresses(elem,
+						       target->struct_size,
+						       target, depth + 1);
+			}
+			break;
+		}
+		default:
+			break;
+		}
+	}
+}
+
+static void nested_address_scrub(struct syscallentry *entry,
+				 struct syscallrecord *rec)
+{
+	uint8_t mask = entry->nested_address_scrub_mask;
+
+	while (mask != 0) {
+		unsigned int i = (unsigned int)__builtin_ctz(mask) + 1;
+		const struct struct_desc *desc;
+		unsigned long slot;
+
+		switch (i) {
+		case 1: slot = rec->a1; break;
+		case 2: slot = rec->a2; break;
+		case 3: slot = rec->a3; break;
+		case 4: slot = rec->a4; break;
+		case 5: slot = rec->a5; break;
+		case 6: slot = rec->a6; break;
+		default: slot = 0; break;
+		}
+
+		desc = struct_arg_lookup(rec->nr, i, rec->do32bit);
+		if (slot != 0 && desc != NULL)
+			scrub_struct_addresses((unsigned char *) slot,
+					       desc->struct_size, desc, 0);
+		mask &= (uint8_t)(mask - 1);
+	}
+}
+
 void blanket_address_scrub(struct syscallentry *entry, struct syscallrecord *rec)
 {
 	uint8_t mask = entry->address_scrub_mask;
@@ -1754,6 +1981,8 @@ void blanket_address_scrub(struct syscallentry *entry, struct syscallrecord *rec
 			avoid_shared_buffer_out(slot, page_size);
 		mask &= (uint8_t)(mask - 1);
 	}
+
+	nested_address_scrub(entry, rec);
 }
 
 void generic_sanitise(struct syscallentry *entry, struct syscallrecord *rec)

@@ -788,6 +788,65 @@ int struct_field_for_cmp(const struct struct_desc *desc, unsigned long val)
 	return -1;
 }
 
+const struct struct_desc *struct_arg_lookup_by_name(const char *name,
+						    unsigned int arg_idx)
+{
+	const struct syscall_struct_arg *sa;
+
+	if (name == NULL || arg_idx < 1 || arg_idx > 6)
+		return NULL;
+	for (sa = syscall_struct_args; sa->syscall_name != NULL; sa++) {
+		if (sa->arg_idx == arg_idx &&
+		    strcmp(sa->syscall_name, name) == 0)
+			return sa->desc;
+	}
+	return NULL;
+}
+
+/*
+ * Bounded recursion depth for the FT_ADDRESS reachability check.  Real
+ * cataloged structs are flat or one level deep (msghdr -> iovec); the
+ * cap is a safety net against future cyclic catalog entries.
+ */
+#define STRUCT_ADDRESS_SCAN_MAX_DEPTH	4
+
+static bool struct_desc_has_address_field_depth(const struct struct_desc *desc,
+						unsigned int depth)
+{
+	unsigned int i;
+
+	if (desc == NULL || depth >= STRUCT_ADDRESS_SCAN_MAX_DEPTH)
+		return false;
+
+	for (i = 0; i < desc->num_fields; i++) {
+		const struct struct_field *f = &desc->fields[i];
+		const struct struct_desc *target;
+
+		switch (f->tag) {
+		case FT_ADDRESS:
+			return true;
+		case FT_PTR_STRUCT:
+			target = struct_catalog_lookup(f->u.ptr_struct.struct_name);
+			if (struct_desc_has_address_field_depth(target, depth + 1))
+				return true;
+			break;
+		case FT_PTR_ARRAY:
+			target = struct_catalog_lookup(f->u.ptr_array.elem_struct);
+			if (struct_desc_has_address_field_depth(target, depth + 1))
+				return true;
+			break;
+		default:
+			break;
+		}
+	}
+	return false;
+}
+
+bool struct_desc_has_address_field(const struct struct_desc *desc)
+{
+	return struct_desc_has_address_field_depth(desc, 0);
+}
+
 void struct_catalog_init(void)
 {
 	const struct syscall_struct_arg *sa;

@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include "syscall.h"
@@ -143,3 +144,22 @@ int struct_field_for_cmp(const struct struct_desc *desc, unsigned long val);
  * Must be called after select_syscall_tables().
  */
 void struct_catalog_init(void);
+
+/*
+ * Linear search through syscall_struct_args[] for an entry matching
+ * (name, arg_idx) and return its struct_desc.  Returns NULL if no
+ * mapping exists.  Suitable for table-init paths that run before
+ * struct_catalog_init() has populated the nr-indexed table; per-
+ * dispatch consumers should use struct_arg_lookup() instead.
+ */
+const struct struct_desc *struct_arg_lookup_by_name(const char *name,
+						    unsigned int arg_idx);
+
+/*
+ * True if desc (or any cataloged struct reachable from desc via
+ * FT_PTR_STRUCT / FT_PTR_ARRAY) carries an FT_ADDRESS field.  Used at
+ * table-init time to decide whether nested address-scrub needs to walk
+ * the struct on every dispatch.  Bounded recursion guards against
+ * future catalog entries with cyclic references.
+ */
+bool struct_desc_has_address_field(const struct struct_desc *desc);

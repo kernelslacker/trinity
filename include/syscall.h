@@ -420,6 +420,19 @@ struct syscallentry {
 	uint8_t len_arg_mask;
 
 	/*
+	 * Bitmap of arg slots whose argtype is ARG_STRUCT_PTR_IN/OUT/INOUT
+	 * AND whose cataloged struct reaches an FT_ADDRESS field via the
+	 * pointer chain (direct, FT_PTR_STRUCT target, or FT_PTR_ARRAY
+	 * element struct).  blanket_address_scrub() walks the struct buffer
+	 * for these slots and applies avoid_shared_buffer_out() to every
+	 * FT_ADDRESS field discovered, so address-like fields nested inside
+	 * cataloged structs get the same wild-write defense as top-level
+	 * ARG_ADDRESS slots.  Zero for the bulk of syscalls -- the dispatch
+	 * short-circuits on the cached zero without a struct walk.
+	 */
+	uint8_t nested_address_scrub_mask;
+
+	/*
 	 * Trinity 1-based index (1..6) of the syscall argument whose value
 	 * upper-bounds rec->retval -- typically the "count" / "size" / "len"
 	 * argument of read/write/recv/send-class syscalls.  Consumed at the
@@ -559,6 +572,7 @@ uint8_t compute_address_scrub_mask(const struct syscallentry *entry);
 uint8_t compute_cleanup_arg_mask(const struct syscallentry *entry);
 uint8_t compute_fd_arg_mask(const struct syscallentry *entry);
 uint8_t compute_len_arg_mask(const struct syscallentry *entry);
+uint8_t compute_nested_address_scrub_mask(const struct syscallentry *entry);
 
 /*
  * Tripwire bump for get_arg_snapshot() mismatches.  Out-of-line so the

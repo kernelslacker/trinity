@@ -618,6 +618,10 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		copy[m].cleanup_arg_mask = compute_cleanup_arg_mask(&copy[m]);
 		copy[m].fd_arg_mask = compute_fd_arg_mask(&copy[m]);
 		copy[m].len_arg_mask = compute_len_arg_mask(&copy[m]);
+		copy[m].nested_address_scrub_mask =
+			compute_nested_address_scrub_mask(&copy[m]);
+		if (copy[m].flags & SKIP_BLANKET_SCRUB)
+			copy[m].nested_address_scrub_mask = 0;
 
 		/* memcpy + alloc_shared zero-init leaves results[].len_score
 		 * decoding as (min=0, max=0) -- a valid range, not the
