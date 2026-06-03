@@ -15,13 +15,54 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdint.h>
 #include "syscall.h"
+
+/*
+ * Semantic field-type taxonomy.
+ *
+ * Fields default to FT_RAW (the zero value), which preserves the
+ * historical per-field random-byte fill.  Other tags carry kernel-ABI
+ * vocabulary so the schema-aware fill path can produce values that
+ * survive first-pass validators (size, enum bounds, flag-mask checks,
+ * length-of-sibling checks, magic-version checks, fd validity).
+ *
+ * Phase 1 implements the FT_RAW fall-through and FT_FLAGS.  The other
+ * tag values are reserved here so the catalog can be annotated
+ * incrementally; the fill switch falls through to FT_RAW for tags it
+ * does not yet understand.
+ */
+enum field_tag {
+	FT_RAW = 0,		/* current per-field random splat (default) */
+	FT_ENUM,		/* pick from u.enum_.vals */
+	FT_RANGE,		/* uniform [u.range.lo, u.range.hi] */
+	FT_FLAGS,		/* OR a random subset of u.flags.mask bits */
+	FT_LEN_OF,		/* match sibling field's effective length */
+	FT_FD,			/* fd-shaped slot */
+	FT_PTR_TO,		/* nested catalog lookup -> recursive build */
+	FT_PTR_BUF,		/* allocate sub-buffer sized by sibling */
+	FT_MAGIC,		/* pick from a curated constant set */
+	FT_VERSION_MAGIC,	/* pick from a curated size/version set */
+	FT_ADDRESS,		/* writable / scrubbable region */
+	FT_TAGGED_UNION,	/* per-discriminator subset of fields */
+};
 
 /* One field within a cataloged struct. */
 struct struct_field {
 	const char	*name;
 	unsigned int	 offset;
 	unsigned int	 size;
+	enum field_tag	 tag;
+	uint8_t		 mutate_weight;
+	union {
+		struct { const unsigned long *vals; unsigned int n; } enum_;
+		struct { unsigned long lo, hi; } range;
+		struct { unsigned long mask; } flags;
+		struct { const char *sibling; unsigned int scale; } len_of;
+		const unsigned long *vals;		/* FT_MAGIC, FT_VERSION_MAGIC */
+		const char *ptr_to;			/* FT_PTR_TO struct name */
+		const char *ptr_buf_len_field;		/* FT_PTR_BUF sibling */
+	} u;
 };
 
 /* A cataloged struct type with full field layout. */

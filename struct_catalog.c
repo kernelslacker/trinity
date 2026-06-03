@@ -41,11 +41,27 @@
 #include "trinity.h"
 #include "utils.h"
 
-/* Helper: build a struct_field entry from struct S, member m. */
+/*
+ * FIELD(S, m): the FT_RAW shortcut.  Tag, weight, and the .u payload
+ * stay zero-initialised, so the field falls through to the historical
+ * per-field random splat.  Existing entries keep this form.
+ */
 #define FIELD(S, m) \
 	{ .name = #m, \
 	  .offset = offsetof(S, m), \
 	  .size = sizeof(((S *)NULL)->m) }
+
+/*
+ * FIELDX(S, m, TAG, ...): the semantic form.  Trailing __VA_ARGS__
+ * carries the tag-specific designated initialisers, typically
+ * .u.<arm> = { ... } and/or .mutate_weight = N.
+ */
+#define FIELDX(S, m, TAG, ...) \
+	{ .name = #m, \
+	  .offset = offsetof(S, m), \
+	  .size = sizeof(((S *)NULL)->m), \
+	  .tag = (TAG), \
+	  __VA_ARGS__ }
 
 /* ------------------------------------------------------------------ */
 /* struct timex (adjtimex, clock_adjtime)                               */

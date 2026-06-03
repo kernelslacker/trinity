@@ -656,16 +656,87 @@ static unsigned long gen_arg_socketinfo(struct syscallentry *entry __unused__,
 #define STRUCT_PTR_IN_FALLBACK_SIZE	256U
 
 /*
- * Field-fill loop shared by the IN and INOUT generators: walks the
- * struct catalog and splats a fresh random value into every
- * addressable field of natural width <= 4 bytes.  Wider fields
- * (typically pointers and u64 flags) are left at the buffer's
- * initial fill -- a random 8-byte value in a pointer slot just
- * bounces at copy_from_user with -EFAULT and would starve every
- * other field of fuzz coverage.
+ * Per-field FT_RAW splat: the historical strategy.  Splats a fresh
+ * random value into every addressable field of natural width <= 4
+ * bytes.  Wider fields (typically pointers and u64 flags) are left at
+ * the buffer's initial fill -- a random 8-byte value in a pointer
+ * slot just bounces at copy_from_user with -EFAULT and would starve
+ * every other field of fuzz coverage.
  */
-static void struct_field_fill(unsigned char *buf, unsigned int size,
-			      const struct struct_desc *desc)
+static void fill_field_raw(unsigned char *buf, const struct struct_field *f)
+{
+	switch (f->size) {
+	case 1:
+		buf[f->offset] = (unsigned char) rand32();
+		break;
+	case 2: {
+		uint16_t v = (uint16_t) rand32();
+		memcpy(buf + f->offset, &v, sizeof(v));
+		break;
+	}
+	case 4: {
+		uint32_t v = rand32();
+		memcpy(buf + f->offset, &v, sizeof(v));
+		break;
+	}
+	default:
+		/* leave wider fields at the buffer's initial fill */
+		break;
+	}
+}
+
+/*
+ * FT_FLAGS: OR a random subset of the valid-bit mask into the field
+ * slot.  Each bit in u.flags.mask is independently included with 50%
+ * probability via a single rnd_u64() draw, so the kernel sees a
+ * mask-valid value rather than the splat's random byte pattern.  Bits
+ * outside the mask are never set, which keeps the call past the
+ * kernel's "unknown flags" rejection on the first iteration.
+ */
+static void fill_field_flags(unsigned char *buf, const struct struct_field *f)
+{
+	uint64_t val = f->u.flags.mask & rnd_u64();
+
+	switch (f->size) {
+	case 1: {
+		uint8_t v = (uint8_t) val;
+		memcpy(buf + f->offset, &v, sizeof(v));
+		break;
+	}
+	case 2: {
+		uint16_t v = (uint16_t) val;
+		memcpy(buf + f->offset, &v, sizeof(v));
+		break;
+	}
+	case 4: {
+		uint32_t v = (uint32_t) val;
+		memcpy(buf + f->offset, &v, sizeof(v));
+		break;
+	}
+	case 8: {
+		uint64_t v = val;
+		memcpy(buf + f->offset, &v, sizeof(v));
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+/*
+ * Schema-aware field fill: dispatch on f->tag and produce a
+ * tag-respecting value, falling back to the FT_RAW per-field random
+ * splat for tags this build does not yet specialise.
+ *
+ * All catalog entries default to FT_RAW; an unannotated struct
+ * therefore produces byte-identical output to the pre-schema
+ * struct_field_fill -- the rand32() call sequence is preserved
+ * field-for-field, width-for-width.  As individual structs migrate
+ * to FIELDX() annotations, their fields begin consuming the per-tag
+ * mutators below.
+ */
+static void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
+					   const struct struct_desc *desc)
 {
 	unsigned int i;
 
@@ -674,22 +745,30 @@ static void struct_field_fill(unsigned char *buf, unsigned int size,
 
 		if (f->offset + f->size > size)
 			continue;
-		switch (f->size) {
-		case 1:
-			buf[f->offset] = (unsigned char) rand32();
+
+		switch (f->tag) {
+		case FT_FLAGS:
+			fill_field_flags(buf, f);
 			break;
-		case 2: {
-			uint16_t v = (uint16_t) rand32();
-			memcpy(buf + f->offset, &v, sizeof(v));
-			break;
-		}
-		case 4: {
-			uint32_t v = rand32();
-			memcpy(buf + f->offset, &v, sizeof(v));
-			break;
-		}
+
+		/*
+		 * Tags reserved for later phases: fall through to FT_RAW.
+		 * The catalog can be annotated with these tags today; the
+		 * per-tag mutator lands when its first consumer needs it.
+		 */
+		case FT_ENUM:
+		case FT_RANGE:
+		case FT_LEN_OF:
+		case FT_FD:
+		case FT_PTR_TO:
+		case FT_PTR_BUF:
+		case FT_MAGIC:
+		case FT_VERSION_MAGIC:
+		case FT_ADDRESS:
+		case FT_TAGGED_UNION:
+		case FT_RAW:
 		default:
-			/* leave wider fields at the buffer's initial fill */
+			fill_field_raw(buf, f);
 			break;
 		}
 	}
@@ -697,8 +776,10 @@ static void struct_field_fill(unsigned char *buf, unsigned int size,
 
 /*
  * ARG_STRUCT_PTR_IN: hand the kernel a heap-allocated buffer sized for
- * the cataloged struct at this (syscall, arg), then per-field random-
- * splat via struct_field_fill().
+ * the cataloged struct at this (syscall, arg), then per-field
+ * schema-aware fill via struct_field_fill_schema_aware().  For
+ * unannotated structs every field is FT_RAW and the output matches
+ * the historical per-field random splat byte-for-byte.
  *
  * Catalog miss: fall back to STRUCT_PTR_IN_FALLBACK_SIZE bytes of zeros.
  * The slot stays a valid kernel-readable buffer, so the kernel still
@@ -725,7 +806,7 @@ static unsigned long gen_arg_struct_ptr_in(struct syscallentry *entry __unused__
 	buf = zmalloc_tracked(size);
 
 	if (desc != NULL)
-		struct_field_fill(buf, size, desc);
+		struct_field_fill_schema_aware(buf, size, desc);
 
 	deferred_free_enqueue(buf);
 	return (unsigned long) buf;
@@ -804,11 +885,12 @@ static unsigned long gen_arg_struct_ptr_out(struct syscallentry *entry __unused_
 /*
  * ARG_STRUCT_PTR_INOUT: ioctl-shaped slots where the kernel reads input
  * fields off the buffer and then writes output bytes back to it.  The
- * input half needs the same per-field random splat as ARG_STRUCT_PTR_IN
+ * input half needs the same schema-aware fill as ARG_STRUCT_PTR_IN
  * -- a poison-filled buffer makes every input field look like 0xAAAA...
  * and the kernel rejects the call before it ever exercises the output
- * path.  Field-fill via struct_field_fill(), then hand the buffer over;
- * the kernel's writes land on whatever fields it chooses to overwrite.
+ * path.  Field-fill via struct_field_fill_schema_aware(), then hand
+ * the buffer over; the kernel's writes land on whatever fields it
+ * chooses to overwrite.
  *
  * Catalog miss: fall back to STRUCT_PTR_IN_FALLBACK_SIZE bytes of zeros,
  * same as the IN path -- zeros are a valid input shape for most
@@ -839,7 +921,7 @@ static unsigned long gen_arg_struct_ptr_inout(struct syscallentry *entry __unuse
 	buf = zmalloc_tracked(size);
 
 	if (desc != NULL)
-		struct_field_fill(buf, size, desc);
+		struct_field_fill_schema_aware(buf, size, desc);
 
 	deferred_free_enqueue(buf);
 	return (unsigned long) buf;
