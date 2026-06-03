@@ -172,7 +172,6 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	call = rec->nr + SYSCALL_OFFSET;
 	needalarm = entry->flags & NEED_ALARM;
 
-	lock(&rec->lock);
 	srec_publish_begin(rec);
 	__atomic_store_n(&rec->state, state, __ATOMIC_RELAXED);
 	/* Stamp the wholesale-stomp canary just before dispatch so
@@ -182,13 +181,13 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * read inside the post handler. */
 	rec->_canary = REC_CANARY_MAGIC;
 	srec_publish_end(rec);
-	unlock(&rec->lock);
 
-	/* Second blanket_address_scrub() pass, post-unlock and pre-snapshot:
-	 * closes the sibling-stomp window between the sanitise-time scrub at
-	 * the tail of generate_syscall_args() and the local snapshot below.
-	 * Same range-aware predicate and same address_scrub_mask (honouring
-	 * SKIP_BLANKET_SCRUB) as the first pass — only the timing moves. */
+	/* Second blanket_address_scrub() pass, post-publish_end and
+	 * pre-snapshot: closes the sibling-stomp window between the
+	 * sanitise-time scrub at the tail of generate_syscall_args() and
+	 * the local snapshot below.  Same range-aware predicate and same
+	 * address_scrub_mask (honouring SKIP_BLANKET_SCRUB) as the first
+	 * pass — only the timing moves. */
 	blanket_address_scrub(entry, rec);
 
 	/* Snapshot the argument slots before dispatch.  rec lives in
@@ -227,28 +226,22 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 				__atomic_store_n(&kc->cmp_trace_buf[0], 0,
 						 __ATOMIC_RELAXED);
 		}
-		/* Lock-removal candidate.  rec->state is atomic and the
-		 * publish brackets cover field publishing, but
-		 * srec_publish_begin's release is intentionally weak
-		 * (see syscall_record.h) and leans on the lock acquire
-		 * as the write-ordering anchor.  Strengthen begin (e.g.
-		 * acquire fence after the seq=odd store, or an acq_rel
-		 * store) before dropping locks at writer sites. */
-		lock(&rec->lock);
 		srec_publish_begin(rec);
 		rec->errno_post = EINVAL;
 		rec->retval = (unsigned long) -1L;
 		rec->validator_rejected = true;
 		__atomic_store_n(&rec->state, AFTER, __ATOMIC_RELEASE);
 		srec_publish_end(rec);
-		unlock(&rec->lock);
 		return;
 	}
 
-	/* Arm the alarm after releasing rec->lock.  Previously
-	 * alarm(1) was above the lock region, creating a window
-	 * where SIGALRM could fire while we held the lock.  The
-	 * siglongjmp in the handler would then orphan it. */
+	/* Arm the alarm after the publish-end above.  alarm(1) used to
+	 * sit above the rec->lock region, opening a window where
+	 * SIGALRM could fire while the lock was held; the siglongjmp
+	 * in the handler would then orphan it.  The publish brackets
+	 * now stand in for the lock as the ordering anchor, but the
+	 * alarm-after-publish ordering is preserved on the same
+	 * grounds. */
 	if (needalarm)
 		(void)alarm(1);
 
@@ -362,13 +355,11 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		sigalrm_pending = 0;
 	}
 
-	lock(&rec->lock);
 	srec_publish_begin(rec);
 	rec->errno_post = saved_errno;
 	rec->retval = ret;
 	__atomic_store_n(&rec->state, AFTER, __ATOMIC_RELEASE);
 	srec_publish_end(rec);
-	unlock(&rec->lock);
 }
 
 /* This is a special case for things like execve, which would replace our
@@ -406,12 +397,7 @@ static void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 	if (pid_alive(extrapid) == true)
 		usleep(100);
 
-	/* Do NOT hold rec->lock here. The grandchild acquires it inside
-	 * __do_syscall(), so holding it while waiting would deadlock:
-	 * parent holds lock -> waitpid(grandchild) -> grandchild spins
-	 * on same lock -> neither can make progress.
-	 *
-	 * Bound the loop to ~1 second (1000 * 1ms) so a D-state
+	/* Bound the loop to ~1 second (1000 * 1ms) so a D-state
 	 * grandchild can't stall us forever.
 	 */
 	for (int i = 0; pid == 0 && i < 1000; i++) {
