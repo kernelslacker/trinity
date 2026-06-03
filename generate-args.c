@@ -2054,13 +2054,11 @@ void generate_syscall_args(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
 
-	lock(&rec->lock);
 	srec_publish_begin(rec);
 
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
 	if (entry == NULL) {
 		srec_publish_end(rec);
-		unlock(&rec->lock);
 		return;
 	}
 	__atomic_store_n(&rec->state, PREP, __ATOMIC_RELAXED);
@@ -2086,7 +2084,6 @@ void generate_syscall_args(struct syscallrecord *rec)
 		blanket_address_scrub(entry, rec);
 		snapshot_args(entry, rec);
 		srec_publish_end(rec);
-		unlock(&rec->lock);
 		return;
 	}
 
@@ -2098,5 +2095,4 @@ void generate_syscall_args(struct syscallrecord *rec)
 	snapshot_args(entry, rec);
 
 	srec_publish_end(rec);
-	unlock(&rec->lock);
 }
