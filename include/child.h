@@ -353,8 +353,6 @@ struct childdata {
 
 	bool dontkillme;	/* provide temporary protection from the reaper. */
 
-	bool dropped_privs;
-
 	/* Hybrid bandit/explorer split: true for the explorer slice
 	 * [alt_op_children, alt_op_children + explorer_children) of the
 	 * child array.  Slots strictly below alt_op_children are dedicated
