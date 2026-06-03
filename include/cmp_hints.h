@@ -170,6 +170,22 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32);
  * biarch builds do not contend for the same per-nr dedup slots. */
 bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out);
 
+/* Advance the chaos-mode window counter.  Called once per bandit window
+ * rotation from maybe_rotate_strategy().  Every CHAOS_WINDOW_MODULO'th
+ * window flips cmp_hints_chaos_active to true for the duration of that
+ * window so cmp_hints_try_get returns false and the caller falls
+ * through to its random-arg path -- the cmp-hints pool saturates on
+ * kernel-validated constants, which biases generated args AWAY from
+ * the invalid-combination space most WARN_ONs guard.  Periodic
+ * suppression gives random generation a fair shot at that space.
+ *
+ * cmp_hints_chaos_query exposes the current toggle for diagnostics
+ * (the stats block prints it alongside the chaos_suppressed counter).
+ * Hot-path callers should NOT consult it -- cmp_hints_try_get already
+ * gates internally. */
+void cmp_hints_chaos_tick(void);
+bool cmp_hints_chaos_query(void);
+
 /* Read pool->count clamped to the CMP_HINTS_PER_SYSCALL cap.  Returns 0
  * if the pool has been corrupted by a wild kernel-side write (latched
  * via the same gate as cmp_hints_try_get).  Use from callers that need

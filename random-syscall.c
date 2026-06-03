@@ -1270,6 +1270,13 @@ static void maybe_rotate_strategy(void)
 	 * above. */
 	frontier_window_advance();
 
+	/* Advance the cmp_hints chaos-mode window counter.  Flips the
+	 * hint-suppression toggle on every CHAOS_WINDOW_MODULO'th window
+	 * so random-arg generation gets a fair shot at the
+	 * invalid-combination space that the kernel-validated cmp_hints
+	 * pool otherwise biases away from. */
+	cmp_hints_chaos_tick();
+
 	next = select_next_strategy(prev, &next_reason);
 	if (next < 0 || next >= NR_STRATEGIES) {
 		next = (prev + 1) % NR_STRATEGIES;

@@ -496,6 +496,16 @@ struct kcov_shared {
 	 * discarded it (none today, but the slot exists for future
 	 * branchier consumers). */
 	unsigned long cmp_hints_injected;
+	/* cmp_hints_try_get() calls that the chaos-mode gate forced to
+	 * return false.  Bumped after the shm/nr guard, before the pool
+	 * lookup, when cmp_hints_chaos_active() is true for the current
+	 * rotation window.  Subtracted from the apparent attempt->returned
+	 * funnel: a window where chaos is active inflates attempts without
+	 * a matching returned bump and the difference shows up here.
+	 * Cumulative -- chaos windows fire on a fixed modulo of the bandit
+	 * window rotation, so the delta over a stats interval is roughly
+	 * try_get_attempts * (1 / CHAOS_WINDOW_MODULO) in steady state. */
+	unsigned long cmp_hints_chaos_suppressed;
 	/* Wild-write detection in the cmp_hints SHM pool.  Bumped when a
 	 * read path (cmp_hints_try_get / pool_add_locked) observes a
 	 * pool->count value above the CMP_HINTS_PER_SYSCALL hard cap --

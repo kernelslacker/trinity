@@ -83,6 +83,53 @@ struct cmp_hints_shared *cmp_hints_shm = NULL;
 static bool cmp_hints_strip[2][MAX_NR_SYSCALL];
 
 /*
+ * Chaos-mode toggle.  cmp_hints saturates after a warm-up period at
+ * roughly the per-syscall cap across the syscalls the fuzzer
+ * exercises, and substitutes kernel-blessed constants at the
+ * gen_undefined_arg injection point at >99% of pulls.  Constants the
+ * kernel CMP'd against by definition passed the kernel's validation
+ * gates; the vast majority of WARN_ONs guard INVALID state (refcount
+ * underflow, mutually-exclusive flag combinations, etc.) -- so a
+ * hint-injected arg is biased AWAY from the args that trip WARNs.
+ *
+ * Periodically suppress hint injection so random-arg generation gets
+ * a fair shot at the invalid-combination space.  Gate at the
+ * cmp_hints_try_get layer -- when chaos is active the function
+ * returns false (no hint), the caller falls through to its other
+ * arg-generation paths.  Zero churn at the call site.
+ *
+ * Cadence: cmp_hints_chaos_tick() is called once per bandit window
+ * rotation from maybe_rotate_strategy().  Every CHAOS_WINDOW_MODULO'th
+ * window flips chaos_active for the duration of that window -- 1 in
+ * every 8 windows in the current default (12.5% of windows).  Cheap:
+ * tick path is one fetch_add and one atomic store; hot-path gate is
+ * one atomic load.  Modulo-of-counter rather than RNG so the cadence
+ * stays exactly predictable -- attribution work in follow-ups can
+ * line up WARN-fire deltas against the chaos schedule without
+ * sampling noise.
+ */
+#define CHAOS_WINDOW_MODULO 8
+
+static unsigned long cmp_hints_chaos_window_count;
+static bool cmp_hints_chaos_active;
+
+void cmp_hints_chaos_tick(void)
+{
+	unsigned long n;
+
+	n = __atomic_add_fetch(&cmp_hints_chaos_window_count, 1UL,
+			       __ATOMIC_RELAXED);
+	__atomic_store_n(&cmp_hints_chaos_active,
+			 (n % CHAOS_WINDOW_MODULO) == 0,
+			 __ATOMIC_RELAXED);
+}
+
+bool cmp_hints_chaos_query(void)
+{
+	return __atomic_load_n(&cmp_hints_chaos_active, __ATOMIC_RELAXED);
+}
+
+/*
  * Mark each named syscall as cmp-collection-stripped.  Names are
  * resolved via search_syscall_table() against the active table set;
  * under biarch both the 32-bit and 64-bit indices are flagged since
@@ -719,6 +766,19 @@ bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 	if (kcov_shm != NULL)
 		__atomic_fetch_add(&kcov_shm->cmp_hints_try_get_attempts, 1UL,
 				   __ATOMIC_RELAXED);
+
+	/* Chaos-mode gate.  Placed after the attempts bump so the consumer
+	 * demand series stays comparable across chaos and non-chaos
+	 * windows -- suppressed pulls remain visible as the
+	 * attempts/returned gap, with cmp_hints_chaos_suppressed
+	 * accounting for the difference.  Before the pool snapshot so the
+	 * suppressed path skips the lockless load entirely. */
+	if (__atomic_load_n(&cmp_hints_chaos_active, __ATOMIC_RELAXED)) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_hints_chaos_suppressed,
+					   1UL, __ATOMIC_RELAXED);
+		return false;
+	}
 
 	pool = &cmp_hints_shm->pools[nr][do32 ? 1 : 0];
 
