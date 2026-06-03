@@ -4,8 +4,10 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>	// strnlen
 #include <sys/mman.h>	// memfd_create, MFD_CLOEXEC
 #include <sys/stat.h>	// umask
+#include <sys/syscall.h>	// SYS_write (raw syscall, bypassing libc stdio)
 #include <ucontext.h>	// ucontext_t / REG_RIP &c for fault_beacon IP/SP capture
 #include <unistd.h>
 #if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
@@ -52,6 +54,57 @@ void init_abort_msg_capture(void)
 	glibc_abort_msg_p = dlvsym(RTLD_DEFAULT, "__abort_msg", "GLIBC_PRIVATE");
 	if (glibc_abort_msg_p == NULL)
 		glibc_abort_msg_p = dlsym(RTLD_DEFAULT, "__abort_msg");
+}
+
+/*
+ * Capture glibc's __abort_msg directly into the per-pid bug log via raw
+ * syscall, bypassing libc stdio and STDERR_FILENO entirely.
+ *
+ * Why not just write to STDERR_FILENO after dup2?  Because every child
+ * inherits the SAME underlying struct file for the stderr-memfd via
+ * fork: one offset, one inode.  Concurrent writev()s from N children's
+ * glibc malloc_printerr -> __libc_message paths race with each other AND
+ * with sibling SIGABRT handlers' lseek(0)+read drain blocks.  Most
+ * messages are overwritten before the originator drains, or attributed
+ * to the wrong bug log when a sibling's lseek mutates the shared offset
+ * mid-drain.  Empirical capture rate sat at ~13-15% regardless of fleet
+ * size.
+ *
+ * __abort_msg, on the other hand, is per-process: glibc's __libc_message
+ * mmap()s the backing buffer in the abort()ing child's own address
+ * space and populates it before raising SIGABRT.  No sharing across
+ * fork, no race, no offset state.  Writing it directly into the per-pid
+ * bug_fd -- which the handler just open()ed for this specific child
+ * with O_APPEND -- sidesteps the shared-memfd path entirely.
+ *
+ * Async-signal-safe throughout:
+ *   - syscall(SYS_write, ...) is the raw syscall instruction; write()
+ *     itself is on POSIX 2024 §2.4.3's safe list, and the wrapper does
+ *     no extra libc work beyond setting up the registers.
+ *   - strnlen() walks memory looking for NUL; no allocation, no locale,
+ *     no lock.  Bounded by m->size so a corrupt buffer can't run away.
+ *
+ * The m->msg[0] == '\0' early-out catches the rare path where glibc
+ * allocated the buffer but bailed before formatting (e.g. format failed
+ * inside vfprintf-on-string).  Don't emit a bare "abort_msg: \n".
+ */
+static void capture_abort_msg_to_buglog(int bug_fd)
+{
+	struct abort_msg_s *m;
+	size_t len;
+	static const char prefix[] = "abort_msg: ";
+
+	if (glibc_abort_msg_p == NULL)
+		return;
+	m = *glibc_abort_msg_p;
+	if (m == NULL || m->msg[0] == '\0')
+		return;
+
+	len = strnlen(m->msg, m->size);
+	(void)syscall(SYS_write, bug_fd, prefix, sizeof(prefix) - 1);
+	(void)syscall(SYS_write, bug_fd, m->msg, len);
+	if (len == 0 || m->msg[len - 1] != '\n')
+		(void)syscall(SYS_write, bug_fd, "\n", 1);
 }
 
 /*
@@ -543,6 +596,22 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 
 		bug_fd = open(buglog_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
 		if (bug_fd >= 0) {
+			/*
+			 * Capture __abort_msg directly into the per-pid bug
+			 * log BEFORE the shared-memfd drain.  The memfd is
+			 * fork-shared (one struct file, one offset) so the
+			 * writev() that glibc's __libc_message emitted to
+			 * STDERR_FILENO almost certainly raced with a sibling
+			 * child's drain.  __abort_msg lives in this child's
+			 * private address space and has no such race -- read
+			 * it now while we are guaranteed exclusive access to
+			 * our own per-pid bug_fd.  See
+			 * capture_abort_msg_to_buglog() above for the full
+			 * rationale and the raw-syscall justification.
+			 */
+			if (sig == SIGABRT)
+				capture_abort_msg_to_buglog(bug_fd);
+
 			if (stderr_memfd >= 0) {
 				char drain_buf[4096];
 				ssize_t n, w;
