@@ -807,6 +807,71 @@ static const struct struct_field bpf_attr_GET_ID_fields[] = {
 };
 
 /*
+ * The remaining annotated variants live inside NAMED struct
+ * members of union bpf_attr (link_update.*, link_detach.*, ...),
+ * so offsetof and the schema field names use dotted forms.
+ * find_field_index_in walks the local fields[] by strcmp on the
+ * dotted name; FT_LEN_BYTES.buf_field below uses the same form
+ * so the pairing resolves.
+ *
+ * BPF_PROG_ASSOC_STRUCT_OPS is one of the variants in this tail
+ * group per the design doc, but the prog_assoc_struct_ops named
+ * struct member is absent from the local uapi vintage; the cmd
+ * itself is only available via syscalls/bpf.c's fallback #define.
+ * Skipped this round.
+ */
+static const struct struct_field bpf_attr_LINK_UPDATE_fields[] = {
+	FIELDX(union bpf_attr, link_update.link_fd, FT_FD),
+	FIELDX(union bpf_attr, link_update.new_prog_fd, FT_FD),
+	FIELDX(union bpf_attr, link_update.flags, FT_FLAGS,
+	       .u.flags.mask = BPF_F_REPLACE),
+	FIELDX(union bpf_attr, link_update.old_prog_fd, FT_FD),
+};
+
+static const struct struct_field bpf_attr_LINK_DETACH_fields[] = {
+	FIELDX(union bpf_attr, link_detach.link_fd, FT_FD),
+};
+
+static const struct struct_field bpf_attr_ENABLE_STATS_fields[] = {
+	/*
+	 * enum bpf_stats_type is a tiny set today (RUN_TIME_NS only);
+	 * a dedicated enum vocab is overkill -- FT_RANGE keeps the
+	 * value bounded near the legal range without committing to
+	 * a vocab that turns stale on every uapi bump.
+	 */
+	FIELDX(union bpf_attr, enable_stats.type, FT_RANGE,
+	       .u.range = { 0, 8 }),
+};
+
+static const struct struct_field bpf_attr_ITER_CREATE_fields[] = {
+	FIELDX(union bpf_attr, iter_create.link_fd, FT_FD),
+	FIELD(union bpf_attr, iter_create.flags),
+};
+
+static const struct struct_field bpf_attr_PROG_BIND_MAP_fields[] = {
+	FIELDX(union bpf_attr, prog_bind_map.prog_fd, FT_FD),
+	FIELDX(union bpf_attr, prog_bind_map.map_fd, FT_FD),
+	FIELD(union bpf_attr, prog_bind_map.flags),
+};
+
+static const struct struct_field bpf_attr_TOKEN_CREATE_fields[] = {
+	FIELD(union bpf_attr, token_create.flags),
+	FIELDX(union bpf_attr, token_create.bpffs_fd, FT_FD),
+};
+
+static const struct struct_field bpf_attr_PROG_STREAM_READ_fields[] = {
+	FIELDX(union bpf_attr, prog_stream_read.stream_buf, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .len_field = "prog_stream_read.stream_buf_len",
+				.optional = true,
+				.max_bytes = 4096 }),
+	FIELDX(union bpf_attr, prog_stream_read.stream_buf_len, FT_LEN_BYTES,
+	       .u.len_of = { .buf_field = "prog_stream_read.stream_buf",
+			     .optional = true }),
+	FIELD(union bpf_attr, prog_stream_read.stream_id),
+	FIELDX(union bpf_attr, prog_stream_read.prog_fd, FT_FD),
+};
+
+/*
  * bpf_insn registration -- required so PROG_LOAD's insns
  * FT_PTR_ARRAY can resolve sizeof(struct bpf_insn) (8 bytes) when
  * the pointer pass allocates the sub-buffer.  No field annotations:
@@ -946,6 +1011,48 @@ static const struct union_variant bpf_attr_variants[] = {
 		.name		= "LINK_GET_NEXT_ID",
 		.fields		= bpf_attr_GET_ID_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
+	},
+	{
+		.discrim_value	= BPF_LINK_UPDATE,
+		.name		= "LINK_UPDATE",
+		.fields		= bpf_attr_LINK_UPDATE_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_LINK_UPDATE_fields),
+	},
+	{
+		.discrim_value	= BPF_LINK_DETACH,
+		.name		= "LINK_DETACH",
+		.fields		= bpf_attr_LINK_DETACH_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_LINK_DETACH_fields),
+	},
+	{
+		.discrim_value	= BPF_ENABLE_STATS,
+		.name		= "ENABLE_STATS",
+		.fields		= bpf_attr_ENABLE_STATS_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_ENABLE_STATS_fields),
+	},
+	{
+		.discrim_value	= BPF_ITER_CREATE,
+		.name		= "ITER_CREATE",
+		.fields		= bpf_attr_ITER_CREATE_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_ITER_CREATE_fields),
+	},
+	{
+		.discrim_value	= BPF_PROG_BIND_MAP,
+		.name		= "PROG_BIND_MAP",
+		.fields		= bpf_attr_PROG_BIND_MAP_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_PROG_BIND_MAP_fields),
+	},
+	{
+		.discrim_value	= BPF_TOKEN_CREATE,
+		.name		= "TOKEN_CREATE",
+		.fields		= bpf_attr_TOKEN_CREATE_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_TOKEN_CREATE_fields),
+	},
+	{
+		.discrim_value	= BPF_PROG_STREAM_READ_BY_FD,
+		.name		= "PROG_STREAM_READ_BY_FD",
+		.fields		= bpf_attr_PROG_STREAM_READ_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_PROG_STREAM_READ_fields),
 	},
 };
 #endif
