@@ -18,6 +18,7 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -458,6 +459,102 @@ int get_child_live_fd(struct childdata *child)
 	}
 
 	return -1;
+}
+
+/*
+ * Protected-fd registry.  Argument generators for the close family
+ * (close, dup2, dup3, close_range) and the random-syscall chain-
+ * substitution path consult these predicates to keep diagnostic and
+ * coverage fds out of the fuzz picker pool.  See the contract in
+ * include/fd.h.
+ *
+ * Two classes of fd live in this registry:
+ *
+ *   - the calling child's kcov PC fd and cmp fd, opened in
+ *     kcov_init_child and re-located above KCOV_FD_HIGH_BASE so the
+ *     low-slot ARG_FD pool never naturally hands them out -- but
+ *     dup2's RAND_RANGE(rl.rlim_cur+1) and close_range's range walks
+ *     can still reach them.  A successful close / dup2 over either
+ *     slot silently disables coverage for the rest of the child's
+ *     life (next ioctl(KCOV_ENABLE, ...) returns -ENOTTY).
+ *
+ *   - STDERR_FILENO and the in-memory stderr capture memfd installed
+ *     by init_stderr_memfd.  The SIGABRT handler drains the memfd
+ *     into the per-pid bug log via read(memfd, ...) + write(fd 2, ...);
+ *     if either fd is clobbered by a fuzz close-family syscall before
+ *     the handler runs, the buffered glibc malloc_printerr /
+ *     __fortify_fail / __stack_chk_fail text is lost and the bug log
+ *     bottoms out at the in-handler backtrace + siginfo with no
+ *     pre-crash explanation.
+ *
+ * Parent context (this_child() == NULL): STDERR_FILENO still matches
+ * the constant check, but the parent never opens a kcov_child or a
+ * stderr memfd, so those branches naturally fall through.  Parent-side
+ * arg generation is rare and the conservative answer (treat fd 2 as
+ * protected) is the right one regardless.
+ *
+ * The fd < 0 / hi < lo guards mirror the kernel-side validation order
+ * the close-family syscalls themselves apply, so a sanitiser that
+ * skipped its own bounds checks before consulting this registry would
+ * still get a safe answer.
+ */
+bool fd_is_protected(int fd)
+{
+	struct childdata *child;
+	int memfd;
+
+	if (fd < 0)
+		return false;
+	if (fd == STDERR_FILENO)
+		return true;
+	memfd = trinity_stderr_memfd();
+	if (memfd >= 0 && fd == memfd)
+		return true;
+	child = this_child();
+	if (child == NULL)
+		return false;
+	if (child->kcov.fd >= 0 && fd == child->kcov.fd)
+		return true;
+	if (child->kcov.cmp_fd >= 0 && fd == child->kcov.cmp_fd)
+		return true;
+	return false;
+}
+
+bool range_contains_protected_fd(int lo, int hi)
+{
+	return lowest_protected_fd_in_range(lo, hi) >= 0;
+}
+
+int lowest_protected_fd_in_range(int lo, int hi)
+{
+	struct childdata *child;
+	int memfd;
+	int lowest = -1;
+
+	if (hi < lo)
+		return -1;
+
+	if (STDERR_FILENO >= lo && STDERR_FILENO <= hi)
+		lowest = STDERR_FILENO;
+
+	memfd = trinity_stderr_memfd();
+	if (memfd >= 0 && memfd >= lo && memfd <= hi)
+		if (lowest < 0 || memfd < lowest)
+			lowest = memfd;
+
+	child = this_child();
+	if (child != NULL) {
+		if (child->kcov.fd >= 0 &&
+		    child->kcov.fd >= lo && child->kcov.fd <= hi)
+			if (lowest < 0 || child->kcov.fd < lowest)
+				lowest = child->kcov.fd;
+		if (child->kcov.cmp_fd >= 0 &&
+		    child->kcov.cmp_fd >= lo && child->kcov.cmp_fd <= hi)
+			if (lowest < 0 || child->kcov.cmp_fd < lowest)
+				lowest = child->kcov.cmp_fd;
+	}
+
+	return lowest;
 }
 
 /*

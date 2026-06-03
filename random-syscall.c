@@ -16,6 +16,7 @@
 #include "cmp_hints.h"
 #include "debug.h"
 #include "edgepair.h"
+#include "fd.h"
 #include "kcov.h"
 #include "locks.h"
 #include "minicorpus.h"
@@ -1071,16 +1072,17 @@ static void apply_chain_substitution(struct syscallrecord *rec,
 	}
 
 	/*
-	 * Same defence for kcov-protected fds.  sanitise_dup2 picks newfd
-	 * from [256, 4095), which overlaps the kcov fd slot range; a
-	 * successful dup2() to one of those slots silently closes the
-	 * kcov fd, and propagating that fd number into a downstream
+	 * Same defence for protected fds (kcov PC/cmp, STDERR_FILENO, the
+	 * stderr capture memfd).  sanitise_dup2 picks newfd from
+	 * [256, 4095) and other ranges that overlap those slots; a
+	 * successful dup2() to one of them silently closes the protected
+	 * fd, and propagating its number into a downstream
 	 * close()/close_range()/dup2() arg via the chain substitute
 	 * finishes the job.  Mask the fd slots when substitute_retval
 	 * names a protected fd so the chain steers the substitute to a
 	 * non-fd slot (or skips this step entirely).
 	 */
-	if (kcov_fd_is_protected((int)substitute_retval)) {
+	if (fd_is_protected((int)substitute_retval)) {
 		for (i = 0; i < entry->num_args && i < 6; i++) {
 			if (is_fdarg(entry->argtype[i]))
 				mask &= (uint8_t)~(1u << i);

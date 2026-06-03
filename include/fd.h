@@ -109,6 +109,45 @@ int get_new_random_fd(void);
 int get_typed_fd(enum argtype type);
 
 /*
+ * Protected-fd registry consulted by close / dup2 / dup3 / close_range
+ * argument generators (and the random-syscall chain-substitution path) to
+ * keep fds whose lifetime trinity depends on for its own correctness or
+ * diagnostics OUT of the picker pool.  Currently covers:
+ *
+ *   - the calling child's per-task kcov PC fd and cmp fd (see kcov.h);
+ *     a fuzz-induced close/dup2 over either slot silently disables
+ *     coverage for the rest of that child's life.
+ *   - STDERR_FILENO and the stderr capture memfd installed by
+ *     init_stderr_memfd() (see signals.h); the SIGABRT-handler drain
+ *     that surfaces glibc malloc_printerr / __fortify_fail text into
+ *     the per-pid bug log writes via fd 2 and reads from the memfd,
+ *     so either being clobbered before the handler runs loses the
+ *     pre-crash explanation.
+ *
+ * Parent-context callers (this_child() == NULL) still get STDERR_FILENO
+ * protected -- the constant is process-wide -- but neither the kcov
+ * slots nor the memfd are live in the parent, so those checks naturally
+ * fall through.
+ */
+bool fd_is_protected(int fd);
+
+/*
+ * Returns true if [lo, hi] (inclusive) overlaps any protected fd.
+ * Companion to fd_is_protected for range-based syscalls (close_range)
+ * where the bounds themselves are safe but the range walk in between
+ * would sweep over a protected slot.
+ */
+bool range_contains_protected_fd(int lo, int hi);
+
+/*
+ * Returns the lowest protected fd inside [lo, hi] (inclusive), or -1
+ * if no protected fd lies in the range.  close_range trims its upper
+ * bound to (this value - 1) so the kernel-side walk stops short of
+ * the first protected slot rather than skipping it.
+ */
+int lowest_protected_fd_in_range(int lo, int hi);
+
+/*
  * Pick from the fd_types whose ->poll handlers park the caller on a
  * real wait queue (pipe / eventfd / timerfd / signalfd / inotify /
  * fanotify / socket).  Used by poll(2)/ppoll(2)/select(2)/pselect6(2)

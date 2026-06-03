@@ -121,6 +121,11 @@ void init_stderr_memfd(void)
 	stderr_memfd = fd;
 }
 
+int trinity_stderr_memfd(void)
+{
+	return stderr_memfd;
+}
+
 /*
  * Set while a child is inside do_syscall().  Lets the child fault
  * handler distinguish a SIGSEGV/SIGBUS/SIGILL the child fuzzed at

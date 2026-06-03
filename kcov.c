@@ -716,7 +716,7 @@ void kcov_cleanup_child(struct kcov_child *kc)
  * INIT_TRACE, mmap, F_DUPFD_CLOEXEC up to KCOV_FD_HIGH_BASE -- with two
  * deliberate orderings the bare init path does not need:
  *
- *   1. Open the new fd BEFORE closing the old one.  kcov_fd_is_protected
+ *   1. Open the new fd BEFORE closing the old one.  fd_is_protected
  *      reads kc->fd / kc->cmp_fd; if we left either at -1 for the open()
  *      round-trip, a concurrent arg-gen path could substitute the slot
  *      number the kernel is about to hand back to us, reintroducing the
@@ -767,7 +767,7 @@ static bool kcov_recover_fd(struct kcov_child *kc, bool is_cmp)
 	/* Park the rebuilt fd above the picker range, same best-effort
 	 * relocation kcov_init_child does.  A failed dup just leaves the
 	 * fresh fd at its low slot; the protected-fd registry still covers
-	 * it via kcov_fd_is_protected once we install it below. */
+	 * it via fd_is_protected once we install it below. */
 	if ((unsigned int)new_fd < KCOV_FD_HIGH_BASE) {
 		int hi_fd = fcntl(new_fd, F_DUPFD_CLOEXEC,
 				  (int)KCOV_FD_HIGH_BASE);
@@ -790,56 +790,6 @@ static bool kcov_recover_fd(struct kcov_child *kc, bool is_cmp)
 	track_shared_region((unsigned long)new_buf, buf_bytes);
 
 	return true;
-}
-
-/*
- * The kcov fds opened in kcov_init_child are not registered with any fd
- * provider, so trinity's argument generators never deliberately pick them
- * -- but a fuzzed close()/dup2()/dup3()/close_range() can still target
- * the same numeric fd indirectly (via the live-fd ring, via a typed-fd
- * picker that happens to hand back an fd number that aliases ours after
- * an earlier slot recycle, or via a numeric-substitute path).  Once the
- * slot is replaced, the next ioctl(kc->cmp_fd, KCOV_ENABLE, ...) returns
- * -ENOTTY -- the runtime_enable cmp_diag site is the symptom.  These two
- * predicates let arg generators (and the close_range range walk) keep
- * the kcov fds out of harm's way.
- *
- * Parent-context callers (this_child() == NULL) get false back; the
- * parent never owns a per-child kcov_child so there is nothing to
- * protect for the duration of a parent-side arg-gen call.
- */
-bool kcov_fd_is_protected(int fd)
-{
-	struct childdata *child;
-
-	if (fd < 0)
-		return false;
-	child = this_child();
-	if (child == NULL)
-		return false;
-	if (fd == child->kcov.fd && child->kcov.fd >= 0)
-		return true;
-	if (fd == child->kcov.cmp_fd && child->kcov.cmp_fd >= 0)
-		return true;
-	return false;
-}
-
-bool kcov_range_contains_protected_fd(int lo, int hi)
-{
-	struct childdata *child;
-
-	if (hi < lo)
-		return false;
-	child = this_child();
-	if (child == NULL)
-		return false;
-	if (child->kcov.fd >= 0 &&
-	    child->kcov.fd >= lo && child->kcov.fd <= hi)
-		return true;
-	if (child->kcov.cmp_fd >= 0 &&
-	    child->kcov.cmp_fd >= lo && child->kcov.cmp_fd <= hi)
-		return true;
-	return false;
 }
 
 void kcov_enable_trace(struct kcov_child *kc)

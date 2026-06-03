@@ -740,21 +740,13 @@ void kcov_get_cmp_records(struct kcov_child *kc,
 			  struct kcov_cmp_record **out,
 			  unsigned long *count);
 
-/* Returns true if fd matches one of the calling child's kcov fds (the PC
- * fd or the cmp fd).  Both are opened in kcov_init_child and never
- * registered with any fd provider, so a fuzzed close()/dup2()/dup3()/
- * close_range() that picks the same numeric fd from the live-fd ring or
- * from any other source can silently replace the kcov fd's slot; the
- * next ioctl(KCOV_ENABLE) on the now-stale slot returns -ENOTTY (the
- * runtime_enable cmp_diag site documents the symptom).  Argument
- * generators consult this to keep that integer out of the picker pool. */
-bool kcov_fd_is_protected(int fd);
-
-/* Returns true if [lo, hi] (inclusive) overlaps either of the calling
- * child's kcov fds.  Companion to kcov_fd_is_protected for range-based
- * syscalls (close_range) where the bounds themselves may be safe but
- * the range sweeps over a protected fd. */
-bool kcov_range_contains_protected_fd(int lo, int hi);
+/*
+ * Per-child kcov PC fd and cmp fd are protected from fuzz close /
+ * dup2 / dup3 / close_range targeting via fd_is_protected() /
+ * range_contains_protected_fd() / lowest_protected_fd_in_range() in
+ * include/fd.h -- the same registry that protects STDERR_FILENO and
+ * the stderr capture memfd.  See those declarations for the contract.
+ */
 
 /* Returns true if syscall nr hasn't found new edges recently.
  * Used by syscall selection to deprioritize saturated syscalls. */

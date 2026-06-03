@@ -92,17 +92,20 @@ static void sanitise_dup2(struct syscallrecord *rec)
 	}
 
 	/*
-	 * gen_arg_fd() filters this child's kcov fds out of ARG_FD picks,
-	 * but the rlimit / RAND_RANGE buckets below pick fresh integers
-	 * that can land on a relocated kcov slot.  A successful
-	 * dup2(oldfd, kcov_fd) atomically replaces the slot; the next
-	 * ioctl(KCOV_*, ...) returns -ENOTTY and that child loses
-	 * coverage for the rest of its life.  Reroll on collision (match
-	 * the bounded-retry pattern in gen_arg_fd), and on the unlikely
-	 * case where every attempt collides, fall back to rec->a1: it
-	 * was picked by ARG_FD so it is already filtered, and dup2(oldfd,
-	 * oldfd) is the documented kernel no-op short-circuit the bucket
-	 * already exercises with pick < 90.
+	 * gen_arg_fd() filters protected fds out of ARG_FD picks (kcov
+	 * PC/cmp, STDERR_FILENO, the stderr capture memfd), but the rlimit
+	 * / RAND_RANGE buckets below pick fresh integers that can land on
+	 * any of those slots.  A successful dup2(oldfd, protected_fd)
+	 * atomically replaces the slot: the kcov case silently disables
+	 * coverage for the rest of the child's life (next ioctl(KCOV_*,
+	 * ...) returns -ENOTTY); the stderr-capture case loses the
+	 * buffered pre-crash glibc malloc_printerr text the fault handler
+	 * was relying on to drain into the bug log.  Reroll on collision
+	 * (match the bounded-retry pattern in gen_arg_fd), and on the
+	 * unlikely case where every attempt collides, fall back to rec->a1:
+	 * it was picked by ARG_FD so it is already filtered, and
+	 * dup2(oldfd, oldfd) is the documented kernel no-op short-circuit
+	 * the bucket already exercises with pick < 90.
 	 */
 	for (kcov_tries = 0; kcov_tries < 4; kcov_tries++) {
 		pick = rnd_modulo_u32(100);
@@ -134,7 +137,7 @@ static void sanitise_dup2(struct syscallrecord *rec)
 		if (rec->a2 <= 2)
 			rec->a2 = (unsigned long) RAND_RANGE(256, 4095);
 
-		if (!kcov_fd_is_protected((int) rec->a2))
+		if (!fd_is_protected((int) rec->a2))
 			return;
 	}
 	rec->a2 = rec->a1;
