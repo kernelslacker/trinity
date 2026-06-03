@@ -1405,6 +1405,27 @@ struct_desc_resolve_variant(const struct struct_desc *desc,
 	return NULL;
 }
 
+/*
+ * True for the tag set that carries kernel-ABI vocabulary the CMP
+ * attribution prefers when it has a same-width match: FT_ENUM /
+ * FT_FLAGS / FT_VERSION_MAGIC are the gates the kernel actively
+ * compares against the constants KCOV-CMP traps, so attributing a
+ * learned constant to one of those slots produces a steerable
+ * mutation hint instead of landing on a coincidentally-same-width
+ * FT_RAW opaque-id field where future mutations would be wasted.
+ */
+static bool field_tag_is_gate(enum field_tag tag)
+{
+	switch (tag) {
+	case FT_ENUM:
+	case FT_FLAGS:
+	case FT_VERSION_MAGIC:
+		return true;
+	default:
+		return false;
+	}
+}
+
 int struct_field_for_cmp(const struct struct_desc *desc,
 			 struct syscallrecord *rec, unsigned long val)
 {
@@ -1413,8 +1434,8 @@ int struct_field_for_cmp(const struct struct_desc *desc,
 	unsigned int num_fields;
 	unsigned int want = natural_width(val);
 	unsigned int i;
-	unsigned int exact_seen = 0, fit_seen = 0;
-	int exact_pick = -1, fit_pick = -1;
+	unsigned int gate_seen = 0, exact_seen = 0, fit_seen = 0;
+	int gate_pick = -1, exact_pick = -1, fit_pick = -1;
 
 	/*
 	 * Variant-scoped candidate pool when the discriminator resolves.
@@ -1432,19 +1453,33 @@ int struct_field_for_cmp(const struct struct_desc *desc,
 	}
 
 	/*
-	 * Single-pass reservoir sample with two reservoirs:
-	 *   exact_pick — uniform random among fields where size == want
-	 *   fit_pick   — uniform random among fields where size >= want
-	 * Exact match preferred; fit fallback only used when no exact exists.
-	 * One scan instead of up to four.
+	 * Single-pass reservoir sample with three reservoirs:
+	 *   gate_pick  — uniform random among same-width gate-tagged
+	 *                fields (FT_ENUM / FT_FLAGS / FT_VERSION_MAGIC).
+	 *                Preferred over the size-only matches when any
+	 *                gate field is a candidate, on the principle
+	 *                that the kernel CMP'd a constant against a
+	 *                gate field's vocab more often than against a
+	 *                same-width opaque field.
+	 *   exact_pick — uniform random among same-width fields of any
+	 *                tag (the pre-tag fallback).
+	 *   fit_pick   — uniform random among fields whose size >= want
+	 *                (covers narrow CMP values landing in wider
+	 *                slots).
 	 */
 	for (i = 0; i < num_fields; i++) {
 		unsigned int fsize = fields[i].size;
+		enum field_tag tag = fields[i].tag;
 
 		if (fsize == want) {
 			exact_seen++;
 			if (rnd_modulo_u32(exact_seen) == 0)
 				exact_pick = (int)i;
+			if (field_tag_is_gate(tag)) {
+				gate_seen++;
+				if (rnd_modulo_u32(gate_seen) == 0)
+					gate_pick = (int)i;
+			}
 		}
 		if (fsize >= want) {
 			fit_seen++;
@@ -1453,6 +1488,8 @@ int struct_field_for_cmp(const struct struct_desc *desc,
 		}
 	}
 
+	if (gate_pick >= 0)
+		return gate_pick;
 	if (exact_pick >= 0)
 		return exact_pick;
 	if (fit_pick >= 0)
