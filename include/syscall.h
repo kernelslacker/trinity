@@ -112,13 +112,15 @@ struct syscallrecord {
 	uint8_t arg_snapshot_mask;
 
 	/*
-	 * Publish sequence counter for lock-free diagnostic readers.  Mutated
-	 * by srec_publish_begin / srec_publish_end (see syscall_record.h)
-	 * which writers call inside their existing rec->lock regions: odd
-	 * during in-progress mutations, even on completion.  Readers that
-	 * want a coherent multi-field snapshot without taking rec->lock spin
-	 * on SREC_SNAPSHOT() against this field instead.  Placed at the end
-	 * of the struct so existing field offsets stay put; the whole
+	 * Publish sequence counter for lock-free diagnostic readers.
+	 * Mutated by srec_publish_begin / srec_publish_end (see
+	 * syscall_record.h) which writers bracket around coherent field
+	 * writes: odd during in-progress mutations, even on completion.
+	 * The brackets are self-sufficient ordering anchors, so writers
+	 * are free to drop rec->lock around them.  Readers spin on
+	 * SREC_SNAPSHOT() against this field for a coherent multi-field
+	 * view without taking rec->lock.  Placed at the end of the
+	 * struct so existing field offsets stay put; the whole
 	 * syscallrecord is already pushed into the cold tail of struct
 	 * childdata, so seq lands far outside any hot cacheline.
 	 */

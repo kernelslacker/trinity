@@ -3,32 +3,38 @@
 #include "syscall.h"
 
 /*
- * Sequence-counter publish/snapshot helpers for diagnostic readers that
- * want to skip rec->lock.  Writer brackets every coherent publish with
+ * Sequence-counter publish/snapshot helpers for diagnostic readers
+ * that skip rec->lock.  Writer brackets every coherent publish with
  * srec_publish_begin (odd sequence) / srec_publish_end (even sequence,
  * release).  Reader spin-copies fields between two acquire-loads of
  * rec->seq and accepts only when both reads are equal AND even.
  * Bounded retry; on give-up, reader skips the snapshot.
  *
- * This is additive infrastructure -- writers KEEP rec->lock and pair
- * the publish brackets with the existing lock/unlock.  Readers that
- * still take the lock for coherent multi-field reads keep working
- * unchanged.  Subsequent commits migrate diagnostic readers to
- * SREC_SNAPSHOT one at a time.
+ * The publish brackets are self-sufficient: srec_publish_begin's
+ * release-store + acquire-fence prevents subsequent field writes
+ * from being hoisted above the odd marker, and srec_publish_end's
+ * release-store publishes those writes to readers.  Writers MAY
+ * drop rec->lock provided all coherent field writes sit between
+ * the brackets -- the brackets ARE the writer-side ordering anchor,
+ * not the lock.  Readers that still take the lock for non-snapshot
+ * reads keep working unchanged.
  */
 
 /*
  * srec_publish_begin -- mark an odd sequence to signal "mutation in
- * progress".  The release here is weak: the lock acquire that paired
- * with this call is the real ordering anchor for in-progress writes.
- * Release is used so any later add-fences elsewhere also observe the
- * odd marker.
+ * progress".  The release-store on seq orders prior writes against
+ * the marker; the trailing acquire-fence prevents the compiler (and
+ * the CPU on weak-ordering architectures) from hoisting subsequent
+ * field writes above the marker.  Together these replace the lock
+ * acquire as the writer-side ordering anchor, so writer sites are
+ * free to drop the surrounding rec->lock.
  */
 static inline void srec_publish_begin(struct syscallrecord *rec)
 {
 	uint32_t s = __atomic_load_n(&rec->seq, __ATOMIC_RELAXED);
 
 	__atomic_store_n(&rec->seq, s | 1U, __ATOMIC_RELEASE);
+	__atomic_thread_fence(__ATOMIC_ACQUIRE);
 }
 
 /*
