@@ -459,6 +459,43 @@ const unsigned long bpf_map_types[] = {
 };
 const unsigned int bpf_map_types_count = ARRAY_SIZE(bpf_map_types);
 
+const unsigned long bpf_prog_types[] = {
+	BPF_PROG_TYPE_UNSPEC,
+	BPF_PROG_TYPE_SOCKET_FILTER,
+	BPF_PROG_TYPE_KPROBE,
+	BPF_PROG_TYPE_SCHED_CLS,
+	BPF_PROG_TYPE_SCHED_ACT,
+	BPF_PROG_TYPE_TRACEPOINT,
+	BPF_PROG_TYPE_XDP,
+	BPF_PROG_TYPE_PERF_EVENT,
+	BPF_PROG_TYPE_CGROUP_SKB,
+	BPF_PROG_TYPE_CGROUP_SOCK,
+	BPF_PROG_TYPE_LWT_IN,
+	BPF_PROG_TYPE_LWT_OUT,
+	BPF_PROG_TYPE_LWT_XMIT,
+	BPF_PROG_TYPE_SOCK_OPS,
+	BPF_PROG_TYPE_SK_SKB,
+	BPF_PROG_TYPE_CGROUP_DEVICE,
+	BPF_PROG_TYPE_SK_MSG,
+	BPF_PROG_TYPE_RAW_TRACEPOINT,
+	BPF_PROG_TYPE_CGROUP_SOCK_ADDR,
+	BPF_PROG_TYPE_LWT_SEG6LOCAL,
+	BPF_PROG_TYPE_LIRC_MODE2,
+	BPF_PROG_TYPE_SK_REUSEPORT,
+	BPF_PROG_TYPE_FLOW_DISSECTOR,
+	BPF_PROG_TYPE_CGROUP_SYSCTL,
+	BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE,
+	BPF_PROG_TYPE_CGROUP_SOCKOPT,
+	BPF_PROG_TYPE_TRACING,
+	BPF_PROG_TYPE_STRUCT_OPS,
+	BPF_PROG_TYPE_EXT,
+	BPF_PROG_TYPE_LSM,
+	BPF_PROG_TYPE_SK_LOOKUP,
+	BPF_PROG_TYPE_SYSCALL,
+	BPF_PROG_TYPE_NETFILTER,
+};
+const unsigned int bpf_prog_types_count = ARRAY_SIZE(bpf_prog_types);
+
 /*
  * MAP_CREATE flag mask.  Names absent from the local uapi header
  * vintage drop out via #ifdef so an older /usr/include/linux/bpf.h
@@ -532,10 +569,118 @@ static const struct struct_field bpf_attr_MAP_CREATE_fields[] = {
 };
 
 /*
+ * PROG_LOAD flag mask.  The trailing #ifdef arms cover names that
+ * older /usr/include/linux/bpf.h vintages may not declare; missing
+ * names contribute zero to the mask and the kernel still rejects
+ * bits outside its own contemporary mask before any field-level
+ * validation runs.
+ */
+#define PROG_LOAD_FLAGS_MASK ( \
+	BPF_F_STRICT_ALIGNMENT | BPF_F_ANY_ALIGNMENT | \
+	BPF_F_TEST_RND_HI32 | BPF_F_TEST_STATE_FREQ | BPF_F_SLEEPABLE | \
+	BPF_F_XDP_HAS_FRAGS)
+
+#ifdef BPF_F_XDP_DEV_BOUND_ONLY
+# define PROG_LOAD_FLAGS_XDP_DEV	BPF_F_XDP_DEV_BOUND_ONLY
+#else
+# define PROG_LOAD_FLAGS_XDP_DEV	0UL
+#endif
+#ifdef BPF_F_TEST_REG_INVARIANTS
+# define PROG_LOAD_FLAGS_TEST_REG	BPF_F_TEST_REG_INVARIANTS
+#else
+# define PROG_LOAD_FLAGS_TEST_REG	0UL
+#endif
+
+#define PROG_LOAD_FLAGS_FULL_MASK ( \
+	PROG_LOAD_FLAGS_MASK | PROG_LOAD_FLAGS_XDP_DEV | \
+	PROG_LOAD_FLAGS_TEST_REG | BPF_F_TOKEN_FD)
+
+/*
+ * PROG_LOAD variant.  Two pointer/length pairs land here:
+ *   - insns + insn_cnt as FT_PTR_ARRAY/FT_LEN_COUNT, with bpf_insn
+ *     registered below as the element struct (8 bytes each); cap at
+ *     64 instructions so we keep the verifier reachable without
+ *     dropping into the very-long-program timeouts.
+ *   - log_buf + log_size as FT_PTR_BYTES/FT_LEN_BYTES with the
+ *     buffer optional (~80% present per the schema default) so the
+ *     NULL-log path also gets reached.
+ *
+ * license / func_info_* / line_info_* / core_relos / fd_array and
+ * the signature/keyring fields stay FT_RAW: sanitise_bpf owns the
+ * verifier-passing program assembly today, and a schema-driven
+ * random splat in those slots would only feed back to it as noise.
+ *
+ * The attach_prog_fd / attach_btf_obj_fd anonymous union picks
+ * attach_prog_fd as the canonical slot (more common arm); the
+ * kernel reads the same bytes either way.
+ *
+ * Older uapi vintages may lack signature / signature_size /
+ * keyring_id; those references are skipped this round rather than
+ * gated on #ifdef offsetof which the preprocessor doesn't support.
+ */
+static const struct struct_field bpf_attr_PROG_LOAD_fields[] = {
+	FIELDX(union bpf_attr, prog_type, FT_ENUM,
+	       .u.enum_ = { bpf_prog_types, ARRAY_SIZE(bpf_prog_types) },
+	       .mutate_weight = 200),
+	FIELDX(union bpf_attr, insn_cnt, FT_LEN_COUNT,
+	       .u.len_of = { .buf_field = "insns" },
+	       .mutate_weight = 40),
+	FIELDX(union bpf_attr, insns, FT_PTR_ARRAY,
+	       .u.ptr_array = { .len_field = "insn_cnt",
+				.elem_struct = "bpf_insn",
+				.max_count = 64 },
+	       .mutate_weight = 150),
+	FIELD(union bpf_attr, license),
+	FIELDX(union bpf_attr, log_level, FT_FLAGS,
+	       .u.flags.mask = 0x7),
+	FIELDX(union bpf_attr, log_size, FT_LEN_BYTES,
+	       .u.len_of = { .buf_field = "log_buf", .optional = true }),
+	FIELDX(union bpf_attr, log_buf, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .len_field = "log_size",
+				.optional = true,
+				.max_bytes = 4096 }),
+	FIELD(union bpf_attr, kern_version),
+	FIELDX(union bpf_attr, prog_flags, FT_FLAGS,
+	       .u.flags.mask = PROG_LOAD_FLAGS_FULL_MASK),
+	FIELD(union bpf_attr, prog_name),
+	FIELD(union bpf_attr, prog_ifindex),
+	FIELDX(union bpf_attr, expected_attach_type, FT_ENUM,
+	       .u.enum_ = { bpf_prog_types, ARRAY_SIZE(bpf_prog_types) }),
+	FIELDX(union bpf_attr, prog_btf_fd, FT_FD),
+	FIELD(union bpf_attr, func_info_rec_size),
+	FIELD(union bpf_attr, func_info),
+	FIELD(union bpf_attr, func_info_cnt),
+	FIELD(union bpf_attr, line_info_rec_size),
+	FIELD(union bpf_attr, line_info),
+	FIELD(union bpf_attr, line_info_cnt),
+	FIELD(union bpf_attr, attach_btf_id),
+	FIELDX(union bpf_attr, attach_prog_fd, FT_FD),
+	FIELD(union bpf_attr, core_relo_cnt),
+	FIELD(union bpf_attr, fd_array),
+	FIELD(union bpf_attr, core_relos),
+	FIELD(union bpf_attr, core_relo_rec_size),
+	FIELD(union bpf_attr, log_true_size),
+};
+
+/*
+ * bpf_insn registration -- required so PROG_LOAD's insns
+ * FT_PTR_ARRAY can resolve sizeof(struct bpf_insn) (8 bytes) when
+ * the pointer pass allocates the sub-buffer.  No field annotations:
+ * the kernel verifier rejects the random byte pattern regardless,
+ * but the (ptr, cnt) shape sanitise_bpf produces still gets a
+ * well-formed schema fallback when the sanitise path is skipped.
+ */
+static const struct struct_field bpf_insn_fields[] = {
+	FIELD(struct bpf_insn, code),
+	FIELD(struct bpf_insn, off),
+	FIELD(struct bpf_insn, imm),
+};
+
+/*
  * Tagged-union variant table.  rec->a1 carries the bpf cmd at sanitise
  * and post time; the discriminator scan picks the matching variant.
- * Only MAP_CREATE is annotated in this round; the other ~21 variants
- * land in follow-up commits and remain catalog-empty until then.
+ * Variants annotated incrementally as the catalog grows; cmds without
+ * an entry fall through to the empty shared prefix.
  */
 static const struct union_variant bpf_attr_variants[] = {
 	{
@@ -543,6 +688,12 @@ static const struct union_variant bpf_attr_variants[] = {
 		.name		= "MAP_CREATE",
 		.fields		= bpf_attr_MAP_CREATE_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_MAP_CREATE_fields),
+	},
+	{
+		.discrim_value	= BPF_PROG_LOAD,
+		.name		= "PROG_LOAD",
+		.fields		= bpf_attr_PROG_LOAD_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_PROG_LOAD_fields),
 	},
 };
 #endif
@@ -687,6 +838,19 @@ const struct struct_desc struct_catalog[] = {
 		.discrim_arg_idx	= 1,
 		.variants		= bpf_attr_variants,
 		.num_variants		= ARRAY_SIZE(bpf_attr_variants),
+	},
+	/*
+	 * bpf_insn registered for name lookup only -- referenced from
+	 * PROG_LOAD's insns FT_PTR_ARRAY.elem_struct so the pointer
+	 * pass can size its sub-buffer.  No syscall_struct_args entry.
+	 * Sits after bpf_attr to keep the existing struct_catalog[]
+	 * indices stable for the syscall_struct_args[] table.
+	 */
+	{
+		.name		= "bpf_insn",
+		.struct_size	= sizeof(struct bpf_insn),
+		.fields		= bpf_insn_fields,
+		.num_fields	= ARRAY_SIZE(bpf_insn_fields),
 	},
 #endif
 	/*

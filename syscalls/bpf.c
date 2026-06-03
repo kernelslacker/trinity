@@ -38,41 +38,11 @@ static const char *const bpf_raw_tp_names[] = {
 	"sys_enter", "sys_exit", "sched_switch", "sched_wakeup", "task_newtask",
 };
 
-static unsigned long bpf_prog_types[] = {
-	BPF_PROG_TYPE_UNSPEC,
-	BPF_PROG_TYPE_SOCKET_FILTER,
-	BPF_PROG_TYPE_KPROBE,
-	BPF_PROG_TYPE_SCHED_CLS,
-	BPF_PROG_TYPE_SCHED_ACT,
-	BPF_PROG_TYPE_TRACEPOINT,
-	BPF_PROG_TYPE_XDP,
-	BPF_PROG_TYPE_PERF_EVENT,
-	BPF_PROG_TYPE_CGROUP_SKB,
-	BPF_PROG_TYPE_CGROUP_SOCK,
-	BPF_PROG_TYPE_LWT_IN,
-	BPF_PROG_TYPE_LWT_OUT,
-	BPF_PROG_TYPE_LWT_XMIT,
-	BPF_PROG_TYPE_SOCK_OPS,
-	BPF_PROG_TYPE_SK_SKB,
-	BPF_PROG_TYPE_CGROUP_DEVICE,
-	BPF_PROG_TYPE_SK_MSG,
-	BPF_PROG_TYPE_RAW_TRACEPOINT,
-	BPF_PROG_TYPE_CGROUP_SOCK_ADDR,
-	BPF_PROG_TYPE_LWT_SEG6LOCAL,
-	BPF_PROG_TYPE_LIRC_MODE2,
-	BPF_PROG_TYPE_SK_REUSEPORT,
-	BPF_PROG_TYPE_FLOW_DISSECTOR,
-	BPF_PROG_TYPE_CGROUP_SYSCTL,
-	BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE,
-	BPF_PROG_TYPE_CGROUP_SOCKOPT,
-	BPF_PROG_TYPE_TRACING,
-	BPF_PROG_TYPE_STRUCT_OPS,
-	BPF_PROG_TYPE_EXT,
-	BPF_PROG_TYPE_LSM,
-	BPF_PROG_TYPE_SK_LOOKUP,
-	BPF_PROG_TYPE_SYSCALL,
-	BPF_PROG_TYPE_NETFILTER,
-};
+/*
+ * bpf_prog_types[] also lives in struct_catalog.c alongside the
+ * MAP_CREATE / PROG_LOAD variants for the same shared-vocabulary
+ * reason as bpf_map_types[].  Declared extern in include/bpf.h.
+ */
 
 static const char license[] = "GPLv2";
 
@@ -80,7 +50,7 @@ static bool bpf_prog_load(union bpf_attr *attr)
 {
 	bool classic_filter = false;
 
-	attr->prog_type = RAND_ARRAY(bpf_prog_types);
+	attr->prog_type = bpf_prog_types[rnd_modulo_u32(bpf_prog_types_count)];
 
 	if (attr->prog_type == BPF_PROG_TYPE_SOCKET_FILTER && ONE_IN(2)) {
 		/* Classic BPF via sock_fprog for socket filters */
