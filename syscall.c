@@ -227,6 +227,13 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 				__atomic_store_n(&kc->cmp_trace_buf[0], 0,
 						 __ATOMIC_RELAXED);
 		}
+		/* Lock-removal candidate.  rec->state is atomic and the
+		 * publish brackets cover field publishing, but
+		 * srec_publish_begin's release is intentionally weak
+		 * (see syscall_record.h) and leans on the lock acquire
+		 * as the write-ordering anchor.  Strengthen begin (e.g.
+		 * acquire fence after the seq=odd store, or an acq_rel
+		 * store) before dropping locks at writer sites. */
 		lock(&rec->lock);
 		srec_publish_begin(rec);
 		rec->errno_post = EINVAL;
