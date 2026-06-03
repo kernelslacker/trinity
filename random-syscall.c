@@ -307,13 +307,11 @@ retry:
 		}
 	}
 
-	/* critical section for shm updates. */
-	lock(&rec->lock);
+	/* publish (nr, do32bit) as a coherent pair. */
 	srec_publish_begin(rec);
 	rec->do32bit = do32;
 	rec->nr = syscallnr;
 	srec_publish_end(rec);
-	unlock(&rec->lock);
 
 	return true;
 }
@@ -504,12 +502,10 @@ retry:
 	}
 
 commit:
-	lock(&rec->lock);
 	srec_publish_begin(rec);
 	rec->do32bit = do32;
 	rec->nr = syscallnr;
 	srec_publish_end(rec);
-	unlock(&rec->lock);
 
 	return true;
 }
@@ -617,12 +613,10 @@ retry:
 			goto retry;
 	}
 
-	lock(&rec->lock);
 	srec_publish_begin(rec);
 	rec->do32bit = do32;
 	rec->nr = syscallnr;
 	srec_publish_end(rec);
-	unlock(&rec->lock);
 
 	__atomic_fetch_add(&shm->stats.frontier_strategy_picks, 1UL,
 			   __ATOMIC_RELAXED);
@@ -712,12 +706,10 @@ retry:
 			goto retry;
 	}
 
-	lock(&rec->lock);
 	srec_publish_begin(rec);
 	rec->do32bit = do32;
 	rec->nr = syscallnr;
 	srec_publish_end(rec);
-	unlock(&rec->lock);
 
 	__atomic_fetch_add(&shm->stats.edgepair_frontier_strategy_picks, 1UL,
 			   __ATOMIC_RELAXED);
@@ -807,12 +799,10 @@ static bool set_syscall_nr_edgepair_chain(struct syscallrecord *rec,
 	if (!best_valid)
 		return false;
 
-	lock(&rec->lock);
 	srec_publish_begin(rec);
 	rec->do32bit = do32;
 	rec->nr = best_nr;
 	srec_publish_end(rec);
-	unlock(&rec->lock);
 
 	__atomic_fetch_add(&shm->stats.edgepair_chain_picks, 1UL,
 			   __ATOMIC_RELAXED);
@@ -1890,15 +1880,15 @@ bool replay_syscall_step(struct childdata *child,
 		__atomic_fetch_add(&chain_corpus_shm->replay_steps_dispatched,
 				   1UL, __ATOMIC_RELAXED);
 
-	/* Hold rec->lock across the (nr, do32bit) advance, the arg writes,
-	 * the postbuffer reset, and the chain substitution.  An outside
-	 * reader (watchdog thread, parent inspecting via shm, pre_crash_ring
-	 * decode) that samples rec mid-step must not see the new (nr,
-	 * do32bit) paired with the previous syscall's a1..a6 — that torn
-	 * pairing miscredits args to the wrong syscall in divergence stats
-	 * and crash-ring reconstruction.  apply_chain_substitution writes
-	 * rec->aN, so the unlock has to come after it. */
-	lock(&rec->lock);
+	/* Publish the (nr, do32bit) advance, the arg writes, the
+	 * postbuffer reset, and the chain substitution as one coherent
+	 * step.  An outside reader (watchdog thread, parent inspecting
+	 * via shm, pre_crash_ring decode) that samples rec mid-step must
+	 * not see the new (nr, do32bit) paired with the previous
+	 * syscall's a1..a6 — that torn pairing miscredits args to the
+	 * wrong syscall in divergence stats and crash-ring reconstruction.
+	 * apply_chain_substitution writes rec->aN, so the publish_end
+	 * has to come after it. */
 	srec_publish_begin(rec);
 	rec->do32bit = saved->do32bit;
 	rec->nr = saved->nr;
@@ -1914,7 +1904,6 @@ bool replay_syscall_step(struct childdata *child,
 
 	apply_chain_substitution(rec, entry, have_substitute, substitute_retval);
 	srec_publish_end(rec);
-	unlock(&rec->lock);
 
 	return dispatch_step(child, entry, found_new);
 }
