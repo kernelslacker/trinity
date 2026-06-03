@@ -218,16 +218,19 @@ static const struct struct_field sigaction_fields[] = {
 /*
  * Registered so msghdr.msg_iov can name it via FT_PTR_ARRAY.elem_struct
  * and the pointer pass knows sizeof(struct iovec) for allocation.
- * Both fields stay FT_RAW: iov_base is a userspace pointer the kernel
- * dereferences (random bytes there fault out, which is fine for the
- * "msg_iovlen entries scanned" coverage we care about right now); a
- * later commit annotates iov_base as FT_ADDRESS and iov_len as
- * FT_LEN_BYTES(iov_base) so the per-entry buffers point at real
- * writable regions.
+ * iov_base is the kernel-dereferenced pointer; FT_ADDRESS routes it
+ * through the nested-scrub walker so a fresh get_address() lands in
+ * the field and any alias of shared_regions[] / libc brk gets
+ * redirected before the syscall fires.  iov_len is paired length-in-
+ * bytes of iov_base, so the kernel sees coherent (base, len) per
+ * iovec entry instead of NULL + page_size.
  */
 static const struct struct_field iovec_fields[] = {
-	FIELD(struct iovec, iov_base),
-	FIELD(struct iovec, iov_len),
+	FIELDX(struct iovec, iov_base, FT_ADDRESS,
+	       .mutate_weight = 120),
+	FIELDX(struct iovec, iov_len, FT_LEN_BYTES,
+	       .u.len_of = { .buf_field = "iov_base" },
+	       .mutate_weight = 40),
 };
 
 /* ------------------------------------------------------------------ */
