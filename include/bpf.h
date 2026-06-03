@@ -21,6 +21,8 @@ extern const unsigned long bpf_map_types[];
 extern const unsigned int bpf_map_types_count;
 extern const unsigned long bpf_prog_types[];
 extern const unsigned int bpf_prog_types_count;
+extern const unsigned long bpf_attach_types[];
+extern const unsigned int bpf_attach_types_count;
 
 /*
  * Map-type fallback defines for older /usr/include/linux/bpf.h.  Both

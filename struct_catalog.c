@@ -496,6 +496,51 @@ const unsigned long bpf_prog_types[] = {
 };
 const unsigned int bpf_prog_types_count = ARRAY_SIZE(bpf_prog_types);
 
+/* Attach types not present in older /usr/include/linux/bpf.h. */
+#ifndef BPF_TRACE_KPROBE_SESSION
+#define BPF_TRACE_KPROBE_SESSION	56
+#endif
+#ifndef BPF_TRACE_UPROBE_SESSION
+#define BPF_TRACE_UPROBE_SESSION	57
+#endif
+#ifndef BPF_TRACE_FSESSION
+#define BPF_TRACE_FSESSION		58
+#endif
+
+const unsigned long bpf_attach_types[] = {
+	BPF_CGROUP_INET_INGRESS, BPF_CGROUP_INET_EGRESS,
+	BPF_CGROUP_INET_SOCK_CREATE, BPF_CGROUP_SOCK_OPS,
+	BPF_SK_SKB_STREAM_PARSER, BPF_SK_SKB_STREAM_VERDICT,
+	BPF_CGROUP_DEVICE, BPF_SK_MSG_VERDICT,
+	BPF_CGROUP_INET4_BIND, BPF_CGROUP_INET6_BIND,
+	BPF_CGROUP_INET4_CONNECT, BPF_CGROUP_INET6_CONNECT,
+	BPF_CGROUP_INET4_POST_BIND, BPF_CGROUP_INET6_POST_BIND,
+	BPF_CGROUP_UDP4_SENDMSG, BPF_CGROUP_UDP6_SENDMSG,
+	BPF_LIRC_MODE2, BPF_FLOW_DISSECTOR,
+	BPF_CGROUP_SYSCTL,
+	BPF_CGROUP_UDP4_RECVMSG, BPF_CGROUP_UDP6_RECVMSG,
+	BPF_CGROUP_GETSOCKOPT, BPF_CGROUP_SETSOCKOPT,
+	BPF_TRACE_RAW_TP, BPF_TRACE_FENTRY, BPF_TRACE_FEXIT,
+	BPF_MODIFY_RETURN, BPF_LSM_MAC, BPF_TRACE_ITER,
+	BPF_CGROUP_INET4_GETPEERNAME, BPF_CGROUP_INET6_GETPEERNAME,
+	BPF_CGROUP_INET4_GETSOCKNAME, BPF_CGROUP_INET6_GETSOCKNAME,
+	BPF_XDP_DEVMAP, BPF_CGROUP_INET_SOCK_RELEASE,
+	BPF_XDP_CPUMAP, BPF_SK_LOOKUP, BPF_XDP,
+	BPF_SK_SKB_VERDICT,
+	BPF_SK_REUSEPORT_SELECT, BPF_SK_REUSEPORT_SELECT_OR_MIGRATE,
+	BPF_PERF_EVENT, BPF_TRACE_KPROBE_MULTI,
+	BPF_LSM_CGROUP, BPF_STRUCT_OPS, BPF_NETFILTER,
+	BPF_TCX_INGRESS, BPF_TCX_EGRESS,
+	BPF_TRACE_UPROBE_MULTI,
+	BPF_CGROUP_UNIX_CONNECT, BPF_CGROUP_UNIX_SENDMSG,
+	BPF_CGROUP_UNIX_RECVMSG, BPF_CGROUP_UNIX_GETPEERNAME,
+	BPF_CGROUP_UNIX_GETSOCKNAME,
+	BPF_NETKIT_PRIMARY, BPF_NETKIT_PEER,
+	BPF_TRACE_KPROBE_SESSION, BPF_TRACE_UPROBE_SESSION,
+	BPF_TRACE_FSESSION,
+};
+const unsigned int bpf_attach_types_count = ARRAY_SIZE(bpf_attach_types);
+
 /*
  * MAP_CREATE flag mask.  Names absent from the local uapi header
  * vintage drop out via #ifdef so an older /usr/include/linux/bpf.h
@@ -645,7 +690,7 @@ static const struct struct_field bpf_attr_PROG_LOAD_fields[] = {
 	FIELD(union bpf_attr, prog_name),
 	FIELD(union bpf_attr, prog_ifindex),
 	FIELDX(union bpf_attr, expected_attach_type, FT_ENUM,
-	       .u.enum_ = { bpf_prog_types, ARRAY_SIZE(bpf_prog_types) }),
+	       .u.enum_ = { bpf_attach_types, ARRAY_SIZE(bpf_attach_types) }),
 	FIELDX(union bpf_attr, prog_btf_fd, FT_FD),
 	FIELD(union bpf_attr, func_info_rec_size),
 	FIELD(union bpf_attr, func_info),
@@ -660,6 +705,65 @@ static const struct struct_field bpf_attr_PROG_LOAD_fields[] = {
 	FIELD(union bpf_attr, core_relos),
 	FIELD(union bpf_attr, core_relo_rec_size),
 	FIELD(union bpf_attr, log_true_size),
+};
+
+/*
+ * PROG_ATTACH attach_flags mask.  All eight names are stable in
+ * mainline; the four newer-arrival names (REPLACE/BEFORE/AFTER/
+ * ID/PREORDER/LINK) all postdate the trinity baseline header
+ * vintage but are present in /usr/include/linux/bpf.h.
+ */
+#define PROG_ATTACH_FLAGS_MASK ( \
+	BPF_F_ALLOW_OVERRIDE | BPF_F_ALLOW_MULTI | BPF_F_REPLACE | \
+	BPF_F_BEFORE | BPF_F_AFTER | BPF_F_ID | BPF_F_PREORDER | \
+	BPF_F_LINK)
+
+/*
+ * PROG_ATTACH variant.  The target_fd/target_ifindex and
+ * relative_fd/relative_id anonymous unions each get one FT_FD
+ * annotation at the shared offset -- picking the broader-semantic
+ * arm; the kernel reads the same bytes either way.  expected_revision
+ * stays FT_RAW: it's a u64 opaque revision counter that doesn't gate
+ * any first-pass validation.
+ */
+static const struct struct_field bpf_attr_PROG_ATTACH_fields[] = {
+	FIELDX(union bpf_attr, target_fd, FT_FD),
+	FIELDX(union bpf_attr, attach_bpf_fd, FT_FD),
+	FIELDX(union bpf_attr, attach_type, FT_ENUM,
+	       .u.enum_ = { bpf_attach_types, ARRAY_SIZE(bpf_attach_types) },
+	       .mutate_weight = 200),
+	FIELDX(union bpf_attr, attach_flags, FT_FLAGS,
+	       .u.flags.mask = PROG_ATTACH_FLAGS_MASK,
+	       .mutate_weight = 80),
+	FIELDX(union bpf_attr, replace_bpf_fd, FT_FD),
+	FIELDX(union bpf_attr, relative_fd, FT_FD),
+	FIELD(union bpf_attr, expected_revision),
+};
+
+/*
+ * OBJ (BPF_OBJ_PIN / BPF_OBJ_GET) file_flags mask.  RDONLY/WRONLY
+ * share their bit values with the map_flags mask; PATH_FD is OBJ-
+ * specific and (along with the path_fd field it gates) was added
+ * later but is present in the local uapi vintage.
+ */
+#define OBJ_FILE_FLAGS_MASK	(BPF_F_RDONLY | BPF_F_WRONLY | BPF_F_PATH_FD)
+
+/*
+ * OBJ variant.  pathname is the only string-shaped slot in the
+ * catalog so far -- FT_PTR_BYTES with null_terminated = true so
+ * strnlen_user / the path walker see a NUL-terminated buffer.  No
+ * len-pair field: the kernel uses strnlen_user on the buffer and
+ * trusts the NUL it finds.
+ */
+static const struct struct_field bpf_attr_OBJ_fields[] = {
+	FIELDX(union bpf_attr, pathname, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .null_terminated = true,
+				.max_bytes = 256 },
+	       .mutate_weight = 150),
+	FIELDX(union bpf_attr, bpf_fd, FT_FD),
+	FIELDX(union bpf_attr, file_flags, FT_FLAGS,
+	       .u.flags.mask = OBJ_FILE_FLAGS_MASK),
+	FIELDX(union bpf_attr, path_fd, FT_FD),
 };
 
 /*
@@ -694,6 +798,30 @@ static const struct union_variant bpf_attr_variants[] = {
 		.name		= "PROG_LOAD",
 		.fields		= bpf_attr_PROG_LOAD_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_PROG_LOAD_fields),
+	},
+	{
+		.discrim_value	= BPF_PROG_ATTACH,
+		.name		= "PROG_ATTACH",
+		.fields		= bpf_attr_PROG_ATTACH_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_PROG_ATTACH_fields),
+	},
+	{
+		.discrim_value	= BPF_PROG_DETACH,
+		.name		= "PROG_DETACH",
+		.fields		= bpf_attr_PROG_ATTACH_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_PROG_ATTACH_fields),
+	},
+	{
+		.discrim_value	= BPF_OBJ_PIN,
+		.name		= "OBJ_PIN",
+		.fields		= bpf_attr_OBJ_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_OBJ_fields),
+	},
+	{
+		.discrim_value	= BPF_OBJ_GET,
+		.name		= "OBJ_GET",
+		.fields		= bpf_attr_OBJ_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_OBJ_fields),
 	},
 };
 #endif
