@@ -724,6 +724,87 @@ static void fill_field_flags(unsigned char *buf, const struct struct_field *f)
 }
 
 /*
+ * Write a 1/2/4/8-byte unsigned value into the field slot.  Wider
+ * fields are left untouched -- the same conservative shape as
+ * fill_field_flags.  Used by the FT_LEN_* and FT_PTR_* implementations
+ * to plant length values and pointer values at the right width
+ * without per-call-site size dispatch.
+ */
+static void write_field_uint(unsigned char *buf, const struct struct_field *f,
+			     uint64_t val)
+{
+	switch (f->size) {
+	case 1: {
+		uint8_t v = (uint8_t) val;
+		memcpy(buf + f->offset, &v, sizeof(v));
+		break;
+	}
+	case 2: {
+		uint16_t v = (uint16_t) val;
+		memcpy(buf + f->offset, &v, sizeof(v));
+		break;
+	}
+	case 4: {
+		uint32_t v = (uint32_t) val;
+		memcpy(buf + f->offset, &v, sizeof(v));
+		break;
+	}
+	case 8: {
+		uint64_t v = val;
+		memcpy(buf + f->offset, &v, sizeof(v));
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+/* Linear name lookup over a cataloged struct's field array. */
+static int find_field_index(const struct struct_desc *desc, const char *name)
+{
+	unsigned int i;
+
+	if (name == NULL)
+		return -1;
+	for (i = 0; i < desc->num_fields; i++) {
+		if (strcmp(desc->fields[i].name, name) == 0)
+			return (int) i;
+	}
+	return -1;
+}
+
+/*
+ * Caps and per-iteration bias for the FT_PTR_* family.  Defaults apply
+ * when the field's annotation leaves max_bytes / max_count at zero.
+ * OPTIONAL_PRESENT_PCT is the bias toward "buffer present" for fields
+ * marked .optional = true; the remainder rolls NULL pointer + 0 length
+ * so the NULL-args kernel path also gets exercised.
+ */
+#define PTR_BYTES_DEFAULT_MAX	4096U
+#define PTR_ARRAY_DEFAULT_MAX	16U
+#define OPTIONAL_PRESENT_PCT	80U
+#define STRUCT_FILL_MAX_FIELDS	64U
+
+/* True ~OPTIONAL_PRESENT_PCT% of the time. */
+static bool optional_present(void)
+{
+	return rnd_modulo_u32(100) < OPTIONAL_PRESENT_PCT;
+}
+
+/*
+ * Random-byte fill into a freshly-allocated sub-buffer.  Used by
+ * FT_PTR_BYTES so cmsg-style parsers see varied bytes rather than the
+ * zero fill zmalloc hands back.
+ */
+static void random_byte_fill(unsigned char *p, unsigned long nbytes)
+{
+	unsigned long j;
+
+	for (j = 0; j < nbytes; j++)
+		p[j] = (unsigned char) rnd_u32();
+}
+
+/*
  * Schema-aware field fill: dispatch on f->tag and produce a
  * tag-respecting value, falling back to the FT_RAW per-field random
  * splat for tags this build does not yet specialise.
@@ -734,34 +815,56 @@ static void fill_field_flags(unsigned char *buf, const struct struct_field *f)
  * field-for-field, width-for-width.  As individual structs migrate
  * to FIELDX() annotations, their fields begin consuming the per-tag
  * mutators below.
+ *
+ * Three passes resolve the cross-field coupling between PTR and LEN
+ * tags without an init-time topological sort:
+ *
+ *  1. Scalar pass: FT_FLAGS / FT_RAW / reserved tags.  Order-
+ *     independent so we can run it first without observing the
+ *     pointer fields the later passes will populate.
+ *  2. Pointer pass: FT_PTR_BYTES / FT_PTR_ARRAY / FT_PTR_STRUCT.
+ *     Allocate a sub-buffer via zmalloc_tracked, write the pointer
+ *     into the slot, remember the chosen size (bytes for BYTES /
+ *     STRUCT, element count for ARRAY) keyed by field index.
+ *     Optional pointers may roll NULL+0 with OPTIONAL_PRESENT_PCT
+ *     bias toward present, so the NULL-args kernel path keeps
+ *     coverage too.
+ *  3. Length pass: FT_LEN_BYTES / FT_LEN_COUNT.  Resolve the paired
+ *     buffer field by name, read the size/count chosen in pass 2,
+ *     write it into the slot at the LEN field's natural width.
+ *     Coupled fields stay consistent -- the kernel sees a length
+ *     that matches the buffer it describes.
  */
 static void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
 					   const struct struct_desc *desc)
 {
+	unsigned long chosen_len[STRUCT_FILL_MAX_FIELDS] = {0};
+	unsigned int n = desc->num_fields;
 	unsigned int i;
 
-	for (i = 0; i < desc->num_fields; i++) {
+	if (n > STRUCT_FILL_MAX_FIELDS)
+		n = STRUCT_FILL_MAX_FIELDS;
+
+	/* Pass 1: scalar tags. */
+	for (i = 0; i < n; i++) {
 		const struct struct_field *f = &desc->fields[i];
 
 		if (f->offset + f->size > size)
 			continue;
 
 		switch (f->tag) {
+		case FT_PTR_BYTES:
+		case FT_PTR_ARRAY:
+		case FT_PTR_STRUCT:
+		case FT_LEN_BYTES:
+		case FT_LEN_COUNT:
+			continue;	/* deferred to later passes */
 		case FT_FLAGS:
 			fill_field_flags(buf, f);
 			break;
-
-		/*
-		 * Tags reserved for later phases: fall through to FT_RAW.
-		 * The catalog can be annotated with these tags today; the
-		 * per-tag mutator lands when its first consumer needs it.
-		 */
 		case FT_ENUM:
 		case FT_RANGE:
-		case FT_LEN_OF:
 		case FT_FD:
-		case FT_PTR_TO:
-		case FT_PTR_BUF:
 		case FT_MAGIC:
 		case FT_VERSION_MAGIC:
 		case FT_ADDRESS:
@@ -771,6 +874,113 @@ static void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size
 			fill_field_raw(buf, f);
 			break;
 		}
+	}
+
+	/* Pass 2: pointer tags. */
+	for (i = 0; i < n; i++) {
+		const struct struct_field *f = &desc->fields[i];
+
+		if (f->offset + f->size > size)
+			continue;
+
+		switch (f->tag) {
+		case FT_PTR_BYTES: {
+			unsigned int cap = f->u.ptr_bytes.max_bytes;
+			unsigned long nbytes;
+			void *sub;
+
+			if (cap == 0)
+				cap = PTR_BYTES_DEFAULT_MAX;
+
+			if (f->u.ptr_bytes.optional && !optional_present()) {
+				write_field_uint(buf, f, 0);
+				break;
+			}
+
+			nbytes = 1 + rnd_modulo_u32(cap);
+			sub = zmalloc_tracked(nbytes);
+			random_byte_fill(sub, nbytes);
+			deferred_free_enqueue(sub);
+			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
+			chosen_len[i] = nbytes;
+			break;
+		}
+
+		case FT_PTR_ARRAY: {
+			unsigned int cap = f->u.ptr_array.max_count;
+			const struct struct_desc *elem;
+			unsigned long count, nbytes;
+			void *sub;
+
+			if (cap == 0)
+				cap = PTR_ARRAY_DEFAULT_MAX;
+
+			elem = struct_catalog_lookup(f->u.ptr_array.elem_struct);
+			if (elem == NULL || elem->struct_size == 0) {
+				/*
+				 * Element struct not cataloged: leave NULL.
+				 * Paired LEN field will read chosen_len == 0
+				 * and plant zero, so the (NULL, 0) shape the
+				 * kernel sees is internally consistent.
+				 */
+				write_field_uint(buf, f, 0);
+				break;
+			}
+
+			count = 1 + rnd_modulo_u32(cap);
+			nbytes = count * elem->struct_size;
+			sub = zmalloc_tracked(nbytes);
+			deferred_free_enqueue(sub);
+			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
+			chosen_len[i] = count;
+			break;
+		}
+
+		case FT_PTR_STRUCT: {
+			const struct struct_desc *target;
+			void *sub;
+
+			if (f->u.ptr_struct.optional && !optional_present()) {
+				write_field_uint(buf, f, 0);
+				break;
+			}
+
+			target = struct_catalog_lookup(f->u.ptr_struct.struct_name);
+			if (target == NULL || target->struct_size == 0) {
+				write_field_uint(buf, f, 0);
+				break;
+			}
+
+			sub = zmalloc_tracked(target->struct_size);
+			struct_field_fill_schema_aware(sub, target->struct_size,
+						       target);
+			deferred_free_enqueue(sub);
+			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
+			chosen_len[i] = target->struct_size;
+			break;
+		}
+
+		default:
+			break;
+		}
+	}
+
+	/* Pass 3: length tags. */
+	for (i = 0; i < n; i++) {
+		const struct struct_field *f = &desc->fields[i];
+		int paired;
+
+		if (f->offset + f->size > size)
+			continue;
+
+		if (f->tag != FT_LEN_BYTES && f->tag != FT_LEN_COUNT)
+			continue;
+
+		paired = find_field_index(desc, f->u.len_of.buf_field);
+		if (paired < 0 || (unsigned int) paired >= n)
+			write_field_uint(buf, f, 0);
+		else
+			write_field_uint(buf, f, chosen_len[paired]);
 	}
 }
 
