@@ -791,18 +791,24 @@ static uint64_t read_field_uint(const unsigned char *buf,
 	}
 }
 
-/* Linear name lookup over a cataloged struct's field array. */
-static int find_field_index(const struct struct_desc *desc, const char *name)
+/* Linear name lookup over a struct's field array. */
+static int find_field_index_in(const struct struct_field *fields,
+			       unsigned int num_fields, const char *name)
 {
 	unsigned int i;
 
 	if (name == NULL)
 		return -1;
-	for (i = 0; i < desc->num_fields; i++) {
-		if (strcmp(desc->fields[i].name, name) == 0)
+	for (i = 0; i < num_fields; i++) {
+		if (strcmp(fields[i].name, name) == 0)
 			return (int) i;
 	}
 	return -1;
+}
+
+static int find_field_index(const struct struct_desc *desc, const char *name)
+{
+	return find_field_index_in(desc->fields, desc->num_fields, name);
 }
 
 /*
@@ -826,14 +832,19 @@ static bool optional_present(void)
 /*
  * Random-byte fill into a freshly-allocated sub-buffer.  Used by
  * FT_PTR_BYTES so cmsg-style parsers see varied bytes rather than the
- * zero fill zmalloc hands back.
+ * zero fill zmalloc hands back.  When null_terminate is set, the last
+ * byte is forced to NUL so the kernel's cstring path (strnlen_user,
+ * etc.) sees a terminated buffer rather than walking off the end.
  */
-static void random_byte_fill(unsigned char *p, unsigned long nbytes)
+static void random_byte_fill(unsigned char *p, unsigned long nbytes,
+			     bool null_terminate)
 {
 	unsigned long j;
 
 	for (j = 0; j < nbytes; j++)
 		p[j] = (unsigned char) rnd_u32();
+	if (null_terminate && nbytes > 0)
+		p[nbytes - 1] = 0;
 }
 
 /*
@@ -868,18 +879,36 @@ static void random_byte_fill(unsigned char *p, unsigned long nbytes)
  *     that matches the buffer it describes.
  */
 static void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
-					   const struct struct_desc *desc)
+					   const struct struct_desc *desc,
+					   struct syscallrecord *rec)
 {
+	const struct union_variant *variant;
+	const struct struct_field *fields;
 	unsigned long chosen_len[STRUCT_FILL_MAX_FIELDS] = {0};
-	unsigned int n = desc->num_fields;
+	unsigned int n;
 	unsigned int i;
+
+	/*
+	 * Variant-scoped fill when the discriminator resolves.  Nested
+	 * FT_PTR_STRUCT calls pass rec through, so a struct nested inside
+	 * a tagged-union parent reads the same syscall args -- matching
+	 * the "discriminator source is the parent syscallrecord" rule.
+	 */
+	variant = struct_desc_resolve_variant(desc, rec);
+	if (variant != NULL) {
+		fields = variant->fields;
+		n = variant->num_fields;
+	} else {
+		fields = desc->fields;
+		n = desc->num_fields;
+	}
 
 	if (n > STRUCT_FILL_MAX_FIELDS)
 		n = STRUCT_FILL_MAX_FIELDS;
 
 	/* Pass 1: scalar tags. */
 	for (i = 0; i < n; i++) {
-		const struct struct_field *f = &desc->fields[i];
+		const struct struct_field *f = &fields[i];
 
 		if (f->offset + f->size > size)
 			continue;
@@ -896,9 +925,52 @@ static void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size
 			break;
 		case FT_ADDRESS:
 			continue;	/* deferred to pointer pass */
-		case FT_ENUM:
-		case FT_RANGE:
-		case FT_FD:
+		case FT_FD: {
+			/*
+			 * Random fd via the generic pool.  Typed-pool draws
+			 * (e.g. OBJ_FD_BPF_MAP) are a later lift; today's
+			 * fd consumers in the cataloged structs all accept
+			 * a generic fd value and the kernel does its own
+			 * subtype check.  Sub-int-width FT_FD falls through
+			 * to the raw splat since an fd in <4 bytes cannot
+			 * round-trip the kernel-side -1 sentinel.
+			 */
+			int fd;
+
+			if (f->size != sizeof(int)) {
+				fill_field_raw(buf, f);
+				break;
+			}
+			fd = get_random_fd();
+			write_field_uint(buf, f, (uint64_t)(uint32_t) fd);
+			break;
+		}
+		case FT_ENUM: {
+			const unsigned long *vals = f->u.enum_.vals;
+			unsigned int nvals = f->u.enum_.n;
+			uint64_t v;
+
+			if (vals == NULL || nvals == 0) {
+				fill_field_raw(buf, f);
+				break;
+			}
+			v = (uint64_t) vals[rnd_modulo_u32(nvals)];
+			write_field_uint(buf, f, v);
+			break;
+		}
+		case FT_RANGE: {
+			unsigned long lo = f->u.range.lo;
+			unsigned long hi = f->u.range.hi;
+			uint64_t v;
+
+			if (hi <= lo) {
+				fill_field_raw(buf, f);
+				break;
+			}
+			v = lo + (uint64_t) rnd_modulo_u64(hi - lo + 1);
+			write_field_uint(buf, f, v);
+			break;
+		}
 		case FT_MAGIC:
 		case FT_VERSION_MAGIC:
 		case FT_TAGGED_UNION:
@@ -911,7 +983,7 @@ static void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size
 
 	/* Pass 2: pointer tags. */
 	for (i = 0; i < n; i++) {
-		const struct struct_field *f = &desc->fields[i];
+		const struct struct_field *f = &fields[i];
 
 		if (f->offset + f->size > size)
 			continue;
@@ -932,7 +1004,8 @@ static void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size
 
 			nbytes = 1 + rnd_modulo_u32(cap);
 			sub = zmalloc_tracked(nbytes);
-			random_byte_fill(sub, nbytes);
+			random_byte_fill(sub, nbytes,
+					 f->u.ptr_bytes.null_terminated);
 			deferred_free_enqueue(sub);
 			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
 			chosen_len[i] = nbytes;
@@ -986,7 +1059,7 @@ static void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size
 
 			sub = zmalloc_tracked(target->struct_size);
 			struct_field_fill_schema_aware(sub, target->struct_size,
-						       target);
+						       target, rec);
 			deferred_free_enqueue(sub);
 			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
 			chosen_len[i] = target->struct_size;
@@ -1024,7 +1097,7 @@ static void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size
 
 	/* Pass 3: length tags. */
 	for (i = 0; i < n; i++) {
-		const struct struct_field *f = &desc->fields[i];
+		const struct struct_field *f = &fields[i];
 		int paired;
 
 		if (f->offset + f->size > size)
@@ -1033,7 +1106,7 @@ static void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size
 		if (f->tag != FT_LEN_BYTES && f->tag != FT_LEN_COUNT)
 			continue;
 
-		paired = find_field_index(desc, f->u.len_of.buf_field);
+		paired = find_field_index_in(fields, n, f->u.len_of.buf_field);
 		if (paired < 0 || (unsigned int) paired >= n)
 			write_field_uint(buf, f, 0);
 		else
@@ -1073,7 +1146,7 @@ static unsigned long gen_arg_struct_ptr_in(struct syscallentry *entry __unused__
 	buf = zmalloc_tracked(size);
 
 	if (desc != NULL)
-		struct_field_fill_schema_aware(buf, size, desc);
+		struct_field_fill_schema_aware(buf, size, desc, rec);
 
 	deferred_free_enqueue(buf);
 	return (unsigned long) buf;
@@ -1188,7 +1261,7 @@ static unsigned long gen_arg_struct_ptr_inout(struct syscallentry *entry __unuse
 	buf = zmalloc_tracked(size);
 
 	if (desc != NULL)
-		struct_field_fill_schema_aware(buf, size, desc);
+		struct_field_fill_schema_aware(buf, size, desc, rec);
 
 	deferred_free_enqueue(buf);
 	return (unsigned long) buf;

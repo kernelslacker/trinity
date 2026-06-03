@@ -755,22 +755,74 @@ static unsigned int natural_width(unsigned long val)
 	return 8;
 }
 
-int struct_field_for_cmp(const struct struct_desc *desc, unsigned long val)
+const struct union_variant *
+struct_desc_resolve_variant(const struct struct_desc *desc,
+			    struct syscallrecord *rec)
 {
+	unsigned long discrim;
+	unsigned int idx;
+	unsigned int i;
+
+	if (desc == NULL || rec == NULL)
+		return NULL;
+	if (desc->variants == NULL || desc->num_variants == 0)
+		return NULL;
+	idx = desc->discrim_arg_idx;
+	if (idx < 1 || idx > 6)
+		return NULL;
+
+	switch (idx) {
+	case 1: discrim = rec->a1; break;
+	case 2: discrim = rec->a2; break;
+	case 3: discrim = rec->a3; break;
+	case 4: discrim = rec->a4; break;
+	case 5: discrim = rec->a5; break;
+	case 6: discrim = rec->a6; break;
+	default: return NULL;
+	}
+
+	for (i = 0; i < desc->num_variants; i++) {
+		if (desc->variants[i].discrim_value == discrim)
+			return &desc->variants[i];
+	}
+	return NULL;
+}
+
+int struct_field_for_cmp(const struct struct_desc *desc,
+			 struct syscallrecord *rec, unsigned long val)
+{
+	const struct union_variant *variant;
+	const struct struct_field *fields;
+	unsigned int num_fields;
 	unsigned int want = natural_width(val);
 	unsigned int i;
 	unsigned int exact_seen = 0, fit_seen = 0;
 	int exact_pick = -1, fit_pick = -1;
 
 	/*
+	 * Variant-scoped candidate pool when the discriminator resolves.
+	 * No-match on a tagged-union desc falls through to the shared
+	 * desc->fields[] (today an empty prefix for bpf_attr; future
+	 * structs with common-prefix fields land there too).
+	 */
+	variant = struct_desc_resolve_variant(desc, rec);
+	if (variant != NULL) {
+		fields = variant->fields;
+		num_fields = variant->num_fields;
+	} else {
+		fields = desc->fields;
+		num_fields = desc->num_fields;
+	}
+
+	/*
 	 * Single-pass reservoir sample with two reservoirs:
 	 *   exact_pick — uniform random among fields where size == want
 	 *   fit_pick   — uniform random among fields where size >= want
 	 * Exact match preferred; fit fallback only used when no exact exists.
-	 * One scan of desc->fields[] instead of up to four.
+	 * One scan instead of up to four.
 	 */
-	for (i = 0; i < desc->num_fields; i++) {
-		unsigned int fsize = desc->fields[i].size;
+	for (i = 0; i < num_fields; i++) {
+		unsigned int fsize = fields[i].size;
 
 		if (fsize == want) {
 			exact_seen++;

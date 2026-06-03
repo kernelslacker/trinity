@@ -66,6 +66,7 @@ struct struct_field {
 		struct {
 			const char	*len_field;
 			bool		 optional;
+			bool		 null_terminated;
 			unsigned int	 max_bytes;
 		} ptr_bytes;
 		/* FT_PTR_ARRAY: pointer to [1, max_count] elements of named struct. */
@@ -89,12 +90,38 @@ struct struct_field {
 	} u;
 };
 
+/*
+ * Per-discriminator-value subset of fields for a tagged-union struct.
+ * When struct_desc->variants is non-NULL the schema-aware fill resolves
+ * the live discriminator value (typically a syscall arg read off rec)
+ * and walks the matching variant's fields[] in place of the shared
+ * desc->fields[].  effective_size lets the kernel-side size byte be
+ * driven by the per-variant ABI rather than sizeof(union) -- left zero
+ * by variants that don't care.
+ */
+struct union_variant {
+	unsigned long		   discrim_value;
+	const char		  *name;
+	const struct struct_field *fields;
+	unsigned int		   num_fields;
+	unsigned int		   effective_size;
+};
+
 /* A cataloged struct type with full field layout. */
 struct struct_desc {
 	const char		 *name;
 	unsigned int		  struct_size;
 	const struct struct_field *fields;
 	unsigned int		  num_fields;
+	/*
+	 * Tagged-union plumbing.  All zero (default) means "not a tagged
+	 * union" -- pre-existing structs keep their flat fields[] semantics.
+	 * discrim_arg_idx is 1-based and names which syscall arg slot
+	 * carries the discriminator value at fill time.
+	 */
+	unsigned int		   discrim_arg_idx;
+	const struct union_variant *variants;
+	unsigned int		   num_variants;
 };
 
 /*
@@ -132,11 +159,32 @@ const struct struct_desc *struct_arg_lookup(unsigned int nr,
 
 /*
  * Given a CMP hint value and a struct descriptor, return the index of
- * the first field whose size can naturally contain the value, or -1 if
- * no field matches.  Used to associate a kernel CMP constant with the
- * struct field most likely being compared.
+ * a field whose size can naturally contain the value, or -1 if no
+ * field matches.  Used to associate a kernel CMP constant with the
+ * struct field most likely being compared.  When desc carries a
+ * tagged-union variant set and rec is non-NULL, the candidate pool is
+ * scoped to the live variant resolved from rec; otherwise the full
+ * desc->fields[] is sampled.  Passing rec == NULL preserves the
+ * pre-variant behaviour for non-union structs.
+ *
+ * Field reference: the returned index addresses either the resolved
+ * variant's fields[] (when scoped) or desc->fields[] (when not).
+ * Callers that want to read the field directly must mirror the same
+ * lookup; an opaque-index API would force the same walk on the read
+ * side without any reuse benefit.
  */
-int struct_field_for_cmp(const struct struct_desc *desc, unsigned long val);
+struct syscallrecord;
+int struct_field_for_cmp(const struct struct_desc *desc,
+			 struct syscallrecord *rec, unsigned long val);
+
+/*
+ * Resolve which union_variant applies to a given (desc, rec) pair.
+ * Returns NULL when desc carries no variants, when rec is NULL, or
+ * when the discriminator value matches no variant.
+ */
+const struct union_variant *
+struct_desc_resolve_variant(const struct struct_desc *desc,
+			    struct syscallrecord *rec);
 
 /*
  * Build the fast nr->desc lookup table by resolving syscall names in
