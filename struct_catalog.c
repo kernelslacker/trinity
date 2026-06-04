@@ -384,6 +384,70 @@ static const unsigned long clockid_values[] = {
 	CLOCK_TAI,
 };
 
+/*
+ * Off-40 bit-field flag mask.  perf_event_attr packs 36 single-bit
+ * flags plus precise_ip:2 plus __reserved_1:26 into a u64 starting at
+ * offset 40 (see include/perf_event.h:397-446).  Trinity cannot use
+ * offsetof on a bit-field member, so the catalog entry uses an
+ * explicit { .offset = 40, .size = 8 } and this mask is hand-built
+ * from the named bit positions:
+ *
+ *   - bits 0..14   single-bit flags: disabled, inherit, pinned,
+ *                  exclusive, exclude_user, exclude_kernel,
+ *                  exclude_hv, exclude_idle, mmap, comm, freq,
+ *                  inherit_stat, enable_on_exec, task, watermark
+ *   - bits 15..16  precise_ip (0..3 value, NOT a flag) -- excluded
+ *                  so FT_FLAGS leaves it 0 (broadest "arbitrary skid"
+ *                  path).  A future commit could carve out a tiny
+ *                  ε-random splat for the 4 legal values.
+ *   - bits 17..37  single-bit flags: mmap_data, sample_id_all,
+ *                  exclude_host, exclude_guest,
+ *                  exclude_callchain_kernel, exclude_callchain_user,
+ *                  mmap2, comm_exec, use_clockid, context_switch,
+ *                  write_backward, namespaces, ksymbol, bpf_event,
+ *                  aux_output, cgroup, text_poke, build_id,
+ *                  inherit_thread, remove_on_exec, sigtrap
+ *   - bits 38..63  __reserved_1 (26 bits) -- excluded so FT_FLAGS
+ *                  never trips the kernel's reserved-nonzero
+ *                  -EINVAL gate.
+ *
+ * Sums to 36 bits set.  This is the only hand-built-from-bitfield
+ * mask in the catalog; a generic FT_BITFIELD_RUN sidecar would be
+ * cleaner but isn't worth the infra for one struct whose schema fill
+ * is discarded by sanitise_perf_event_open anyway.
+ *
+ * Constants use 1ULL so the OR-chain evaluates as u64; the implicit
+ * narrowing to .u.flags.mask's unsigned long type silently drops
+ * bits 32..37 (cgroup, text_poke, build_id, inherit_thread,
+ * remove_on_exec, sigtrap) on 32-bit builds.  Acceptable: trinity's
+ * primary target is 64-bit, the live fill path is discarded
+ * regardless, and the truncation only narrows the CMP-attribution
+ * vocab on 32-bit -- never produces an invalid value.
+ */
+#define PERF_ATTR_FLAG_MASK ( \
+	(1ULL << 0)  | (1ULL << 1)  | (1ULL << 2)  | (1ULL << 3)  | \
+	(1ULL << 4)  | (1ULL << 5)  | (1ULL << 6)  | (1ULL << 7)  | \
+	(1ULL << 8)  | (1ULL << 9)  | (1ULL << 10) | (1ULL << 11) | \
+	(1ULL << 12) | (1ULL << 13) | (1ULL << 14) | \
+	/* bits 15..16 skipped: precise_ip is a 2-bit value */ \
+	(1ULL << 17) | (1ULL << 18) | (1ULL << 19) | (1ULL << 20) | \
+	(1ULL << 21) | (1ULL << 22) | (1ULL << 23) | (1ULL << 24) | \
+	(1ULL << 25) | (1ULL << 26) | (1ULL << 27) | (1ULL << 28) | \
+	(1ULL << 29) | (1ULL << 30) | (1ULL << 31) | (1ULL << 32) | \
+	(1ULL << 33) | (1ULL << 34) | (1ULL << 35) | (1ULL << 36) | \
+	(1ULL << 37) \
+	/* bits 38..63: __reserved_1, skipped */ \
+)
+
+/*
+ * aux_action (offset 116): u32 with 3 valid bits packed at the low
+ * end (aux_start_paused, aux_pause, aux_resume in upstream uapi;
+ * trinity's perf_event.h vintage exposes the slot as a plain u32 so
+ * the bit names aren't visible here).  The remaining 29 bits are
+ * reserved and rejected nonzero by the kernel.
+ */
+#define PERF_AUX_ACTION_MASK ((1UL << 0) | (1UL << 1) | (1UL << 2))
+
 static const struct struct_field perf_event_attr_fields[] = {
 	FIELDX(struct perf_event_attr, type, FT_ENUM,
 	       .u.enum_ = { perf_type_values, ARRAY_SIZE(perf_type_values) },
@@ -407,6 +471,18 @@ static const struct struct_field perf_event_attr_fields[] = {
 	FIELDX(struct perf_event_attr, read_format, FT_FLAGS,
 	       .u.flags.mask = PERF_FORMAT_MASK,
 	       .mutate_weight = 80),
+	/*
+	 * Off-40 bit-field flag group (disabled..sigtrap).  Cannot use
+	 * FIELDX -- offsetof on a bit-field member is invalid -- so the
+	 * struct literal carries the offset/size explicitly.  Mask
+	 * construction documented above PERF_ATTR_FLAG_MASK.
+	 */
+	{ .name		= "flags_bitfield",
+	  .offset	= 40,
+	  .size		= 8,
+	  .tag		= FT_FLAGS,
+	  .mutate_weight = 100,
+	  .u.flags.mask = PERF_ATTR_FLAG_MASK },
 	/* wakeup_events / wakeup_watermark anon union; `watermark` flag picks. */
 	FIELD(struct perf_event_attr, wakeup_events),
 	/*
@@ -442,11 +518,12 @@ static const struct struct_field perf_event_attr_fields[] = {
 	FIELD(struct perf_event_attr, aux_sample_size),
 	/*
 	 * aux_action: 3 valid bits (aux_start_paused / aux_pause /
-	 * aux_resume) packed into a u32 with 29 reserved bits.  FT_FLAGS
-	 * mask is constructed in commit B alongside the off-40 bit-field
-	 * group.
+	 * aux_resume) packed into a u32 with 29 reserved bits.  Mask
+	 * documented above PERF_AUX_ACTION_MASK.
 	 */
-	FIELD(struct perf_event_attr, aux_action),
+	FIELDX(struct perf_event_attr, aux_action, FT_FLAGS,
+	       .u.flags.mask = PERF_AUX_ACTION_MASK,
+	       .mutate_weight = 60),
 	FIELD(struct perf_event_attr, sig_data),
 	FIELD(struct perf_event_attr, config3),
 };
