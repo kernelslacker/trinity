@@ -2354,6 +2354,91 @@ static const struct struct_field bpf_attr_TOKEN_CREATE_fields[] = {
 	FIELDX(union bpf_attr, token_create.bpffs_fd, FT_FD),
 };
 
+/*
+ * BPF_PROG_TEST_RUN test variant.  Two pointer pairs (data_in/out,
+ * ctx_in/out) plus repeat / cpu / batch_size as ranges to keep the
+ * call from burning CPU forever on a max-u32 repeat draw or
+ * bouncing on -EINVAL when cpu exceeds num_possible_cpus().
+ *
+ * retval / duration are kernel outputs; FT_RAW pre-fill is harmless,
+ * the kernel overwrites them.  ctx_in/out are optional -- the
+ * standard test path only requires the data pair.
+ */
+#define TEST_RUN_FLAGS_MASK \
+	(BPF_F_TEST_RUN_ON_CPU | BPF_F_TEST_XDP_LIVE_FRAMES)
+
+static const struct struct_field bpf_attr_TEST_fields[] = {
+	FIELDX(union bpf_attr, test.prog_fd, FT_FD),
+	FIELD(union bpf_attr, test.retval),
+	FIELDX(union bpf_attr, test.data_size_in, FT_LEN_BYTES,
+	       .u.len_of = { .buf_field = "test.data_in", .optional = true }),
+	FIELDX(union bpf_attr, test.data_size_out, FT_LEN_BYTES,
+	       .u.len_of = { .buf_field = "test.data_out", .optional = true }),
+	FIELDX(union bpf_attr, test.data_in, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .len_field = "test.data_size_in",
+				.optional = true,
+				.max_bytes = 65536 }),
+	FIELDX(union bpf_attr, test.data_out, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .len_field = "test.data_size_out",
+				.optional = true,
+				.max_bytes = 65536 }),
+	FIELDX(union bpf_attr, test.repeat, FT_RANGE,
+	       .u.range = { 0, 1024 }),
+	FIELD(union bpf_attr, test.duration),
+	FIELDX(union bpf_attr, test.ctx_size_in, FT_LEN_BYTES,
+	       .u.len_of = { .buf_field = "test.ctx_in", .optional = true }),
+	FIELDX(union bpf_attr, test.ctx_size_out, FT_LEN_BYTES,
+	       .u.len_of = { .buf_field = "test.ctx_out", .optional = true }),
+	FIELDX(union bpf_attr, test.ctx_in, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .len_field = "test.ctx_size_in",
+				.optional = true,
+				.max_bytes = 4096 }),
+	FIELDX(union bpf_attr, test.ctx_out, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .len_field = "test.ctx_size_out",
+				.optional = true,
+				.max_bytes = 4096 }),
+	FIELDX(union bpf_attr, test.flags, FT_FLAGS,
+	       .u.flags.mask = TEST_RUN_FLAGS_MASK),
+	FIELDX(union bpf_attr, test.cpu, FT_RANGE,
+	       .u.range = { 0, 1024 }),
+	FIELDX(union bpf_attr, test.batch_size, FT_RANGE,
+	       .u.range = { 0, 1024 }),
+};
+
+/*
+ * BPF_OBJ_GET_INFO_BY_FD info variant.  bpf_fd is the generic-fd
+ * slot (kernel handles prog/map/link/btf dispatch via the fd's
+ * underlying file ops).  info is a kernel-writable buffer; the
+ * pre-fill bytes get overwritten on success, but we still need the
+ * (ptr, len) pair to be internally consistent so the kernel's
+ * up-front bounds check passes.  Not optional -- a NULL info buffer
+ * just bounces on -EFAULT before reaching the info_by_fd dispatch.
+ */
+static const struct struct_field bpf_attr_INFO_fields[] = {
+	FIELDX(union bpf_attr, info.bpf_fd, FT_FD),
+	FIELDX(union bpf_attr, info.info_len, FT_LEN_BYTES,
+	       .u.len_of = { .buf_field = "info.info" }),
+	FIELDX(union bpf_attr, info.info, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .len_field = "info.info_len",
+				.max_bytes = 4096 }),
+};
+
+/*
+ * BPF_RAW_TRACEPOINT_OPEN raw_tracepoint variant.  name is a u64 user
+ * pointer to a NUL-terminated tracepoint name string -- the kernel
+ * runs strndup_user on it, so an unterminated buffer wastes the
+ * call.  64 bytes is generous for any real tracepoint identifier.
+ * The u32 hole between prog_fd and cookie is uapi padding; leaving
+ * it unannotated is the right call -- the kernel ignores it.
+ */
+static const struct struct_field bpf_attr_RAW_TRACEPOINT_fields[] = {
+	FIELDX(union bpf_attr, raw_tracepoint.name, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .null_terminated = true,
+				.max_bytes = 64 }),
+	FIELDX(union bpf_attr, raw_tracepoint.prog_fd, FT_FD),
+	FIELD(union bpf_attr, raw_tracepoint.cookie),
+};
+
 static const struct struct_field bpf_attr_PROG_STREAM_READ_fields[] = {
 	FIELDX(union bpf_attr, prog_stream_read.stream_buf, FT_PTR_BYTES,
 	       .u.ptr_bytes = { .len_field = "prog_stream_read.stream_buf_len",
@@ -2940,6 +3025,27 @@ static const struct union_variant bpf_attr_variants[] = {
 		.fields		= bpf_attr_PROG_STREAM_READ_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_PROG_STREAM_READ_fields),
 		.effective_size	= sizeof(((union bpf_attr *)NULL)->prog_stream_read),
+	},
+	{
+		.discrim_value	= BPF_PROG_TEST_RUN,
+		.name		= "TEST",
+		.fields		= bpf_attr_TEST_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_TEST_fields),
+		.effective_size	= sizeof(((union bpf_attr *)NULL)->test),
+	},
+	{
+		.discrim_value	= BPF_OBJ_GET_INFO_BY_FD,
+		.name		= "OBJ_GET_INFO_BY_FD",
+		.fields		= bpf_attr_INFO_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_INFO_fields),
+		.effective_size	= sizeof(((union bpf_attr *)NULL)->info),
+	},
+	{
+		.discrim_value	= BPF_RAW_TRACEPOINT_OPEN,
+		.name		= "RAW_TRACEPOINT_OPEN",
+		.fields		= bpf_attr_RAW_TRACEPOINT_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_RAW_TRACEPOINT_fields),
+		.effective_size	= sizeof(((union bpf_attr *)NULL)->raw_tracepoint),
 	},
 	{
 		.discrim_value	= BPF_LINK_CREATE,
