@@ -16,6 +16,7 @@
 
 #include "arch.h"
 #include "arg_coupling.h"
+#include "argtype-ops.h"
 #include "child.h"
 #include "debug.h"
 #include "deferred-free.h"
@@ -840,13 +841,20 @@ static enum arena_ptr_status arena_ptr_liveness(unsigned long v, size_t need)
  * structural shape of the bug 1279961 SEGV at handle_syscall_ret+0x24a
  * (si_addr=0x4037e000) which is_corrupt_ptr_shape() by design admits.
  *
- * Phase 1 telemetry-only: bump the per-site counter (split arg vs
- * post_state for downstream attribution), log at most once per second
- * via the rate-limited warner, and continue.  entry->post(rec) runs
- * unchanged regardless of probe outcome -- a quiet-week rate from this
- * counter is the gate for any future rejection policy.
+ * Phase 2 (arg slots): on detection bump arena_ptr_stale_caught_arg,
+ * then regenerate the offending slot via the per-argtype generator and
+ * re-check.  Up to 3 attempts; if every retry also lands in the arena
+ * band give up, bump arena_ptr_stale_reject_giveup, and leave the
+ * original value in place so entry->post(rec) still observes a
+ * deterministic state and we don't spin on a generator that is
+ * systemically poisoned.
+ *
+ * Phase 1 behaviour preserved for post_state: rec->post_state is the
+ * .post handler's snap-stash convention and the kernel has already
+ * observed the syscall by the time we get here, so rejection has
+ * nothing to influence.  Bump the counter, log, continue.
  */
-static void arena_liveness_probe(const struct syscallentry *entry,
+static void arena_liveness_probe(struct syscallentry *entry,
 				 struct syscallrecord *rec)
 {
 	size_t need = (size_t) page_size;
@@ -854,26 +862,43 @@ static void arena_liveness_probe(const struct syscallentry *entry,
 
 	for_each_arg(entry, i) {
 		enum argtype t = entry->argtype[i - 1];
-		unsigned long v;
+		const struct argtype_ops *ops;
+		unsigned long *slot;
+		unsigned long fresh;
+		unsigned int attempt;
 
 		if (t != ARG_ADDRESS && t != ARG_NON_NULL_ADDRESS)
 			continue;
 
 		switch (i) {
-		case 1: v = rec->a1; break;
-		case 2: v = rec->a2; break;
-		case 3: v = rec->a3; break;
-		case 4: v = rec->a4; break;
-		case 5: v = rec->a5; break;
-		case 6: v = rec->a6; break;
+		case 1: slot = &rec->a1; break;
+		case 2: slot = &rec->a2; break;
+		case 3: slot = &rec->a3; break;
+		case 4: slot = &rec->a4; break;
+		case 5: slot = &rec->a5; break;
+		case 6: slot = &rec->a6; break;
 		default: continue;
 		}
 
-		if (arena_ptr_liveness(v, need) == ARENA_PTR_STALE) {
-			__atomic_add_fetch(&shm->stats.arena_ptr_stale_caught_arg,
-					   1, __ATOMIC_RELAXED);
-			arena_stale_warn_ratelimited(entry, "arg", v);
+		if (arena_ptr_liveness(*slot, need) != ARENA_PTR_STALE)
+			continue;
+
+		__atomic_add_fetch(&shm->stats.arena_ptr_stale_caught_arg,
+				   1, __ATOMIC_RELAXED);
+		arena_stale_warn_ratelimited(entry, "arg", *slot);
+
+		ops = argtype_get_ops(t);
+		for (attempt = 0; attempt < 3; attempt++) {
+			fresh = ops->generate(entry, rec, i);
+			if (arena_ptr_liveness(fresh, need) != ARENA_PTR_STALE)
+				break;
 		}
+		if (attempt == 3) {
+			__atomic_add_fetch(&shm->stats.arena_ptr_stale_reject_giveup,
+					   1, __ATOMIC_RELAXED);
+			continue;
+		}
+		*slot = fresh;
 	}
 
 	if (rec->post_state != 0 &&

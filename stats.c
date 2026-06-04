@@ -1036,6 +1036,7 @@ static void dump_stats_json_corruption_and_audit(void)
 			"\"retfd_blanket_reject\":%lu,"
 			"\"arena_ptr_stale_caught_arg\":%lu,"
 			"\"arena_ptr_stale_caught_post_state\":%lu,"
+			"\"arena_ptr_stale_reject_giveup\":%lu,"
 			"\"sibling_mprotect_failed\":%lu,"
 			"\"destroy_object_idx\":%lu,"
 			"\"global_obj_uaf_caught\":%lu,"
@@ -1080,6 +1081,7 @@ static void dump_stats_json_corruption_and_audit(void)
 		shm->stats.retfd_blanket_reject,
 		shm->stats.arena_ptr_stale_caught_arg,
 		shm->stats.arena_ptr_stale_caught_post_state,
+		shm->stats.arena_ptr_stale_reject_giveup,
 		shm->stats.sibling_mprotect_failed,
 		shm->stats.destroy_object_idx_corrupt,
 		shm->stats.global_obj_uaf_caught,
@@ -2085,6 +2087,8 @@ static const struct {
 	  offsetof(struct stats_s, arena_ptr_stale_caught_arg) },
 	{ "arena_ptr_stale_caught_post_state",
 	  offsetof(struct stats_s, arena_ptr_stale_caught_post_state) },
+	{ "arena_ptr_stale_reject_giveup",
+	  offsetof(struct stats_s, arena_ptr_stale_reject_giveup) },
 	{ "execve_self_exec_blocked",
 	  offsetof(struct stats_s, execve_self_exec_blocked) },
 	{ "sibling_mprotect_failed",
@@ -4019,6 +4023,9 @@ static void dump_stats_corruption_and_pool(void)
 	if (shm->stats.arena_ptr_stale_caught_post_state)
 		stat_row("corruption", "arena_ptr_stale_caught_post_state",
 			 shm->stats.arena_ptr_stale_caught_post_state);
+	if (shm->stats.arena_ptr_stale_reject_giveup)
+		stat_row("corruption", "arena_ptr_stale_reject_giveup",
+			 shm->stats.arena_ptr_stale_reject_giveup);
 	if (shm->stats.sibling_mprotect_failed)
 		stat_row("corruption", "sibling_mprotect_failed", shm->stats.sibling_mprotect_failed);
 	{
