@@ -1457,6 +1457,104 @@ static const struct struct_field io_uring_register_restriction_fields[] = {
 };
 
 /*
+ * IORING_REGISTER_NAPI (27) / IORING_UNREGISTER_NAPI (28) / arg =
+ * struct io_uring_napi.  opcode picks IO_URING_NAPI_REGISTER_OP /
+ * STATIC_ADD_ID / STATIC_DEL_ID; for REGISTER_OP, op_param is a
+ * tracking-strategy enum (DYNAMIC/STATIC/INACTIVE), otherwise it is a
+ * napi id -- FT_ENUM is documentation-grade for the register-op case
+ * and a harmless small-int hint for the add/del cases.  resv/pad must
+ * be zero.  UNREGISTER ignores most fields but shares the layout.
+ */
+static const unsigned long io_uring_napi_opcodes[] = {
+	IO_URING_NAPI_REGISTER_OP,
+	IO_URING_NAPI_STATIC_ADD_ID,
+	IO_URING_NAPI_STATIC_DEL_ID,
+};
+
+static const unsigned long io_uring_napi_tracking_strategies[] = {
+	IO_URING_NAPI_TRACKING_DYNAMIC,
+	IO_URING_NAPI_TRACKING_STATIC,
+	IO_URING_NAPI_TRACKING_INACTIVE,
+};
+
+static const struct struct_field io_uring_register_napi_fields[] = {
+	FIELD(struct io_uring_napi, busy_poll_to),
+	FIELDX(struct io_uring_napi, prefer_busy_poll, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 1 },
+	       .mutate_weight = 60),
+	FIELDX(struct io_uring_napi, opcode, FT_ENUM,
+	       .u.enum_ = { .vals = io_uring_napi_opcodes,
+			    .n = ARRAY_SIZE(io_uring_napi_opcodes) },
+	       .mutate_weight = 80),
+	FIELD(struct io_uring_napi, pad),
+	FIELDX(struct io_uring_napi, op_param, FT_ENUM,
+	       .u.enum_ = { .vals = io_uring_napi_tracking_strategies,
+			    .n = ARRAY_SIZE(io_uring_napi_tracking_strategies) },
+	       .mutate_weight = 60),
+	FIELD(struct io_uring_napi, resv),
+};
+
+/*
+ * IORING_REGISTER_CLOCK (29) / arg = struct io_uring_clock_register.
+ * Kernel validates clockid against a two-entry allowlist
+ * (CLOCK_MONOTONIC / CLOCK_BOOTTIME); anything else gives -EINVAL.
+ * __resv must be zero.
+ */
+static const unsigned long io_uring_clock_ids[] = {
+	CLOCK_MONOTONIC,
+	CLOCK_BOOTTIME,
+};
+
+static const struct struct_field io_uring_register_clock_fields[] = {
+	FIELDX(struct io_uring_clock_register, clockid, FT_ENUM,
+	       .u.enum_ = { .vals = io_uring_clock_ids,
+			    .n = ARRAY_SIZE(io_uring_clock_ids) },
+	       .mutate_weight = 90),
+	FIELD(struct io_uring_clock_register, __resv),
+};
+
+/*
+ * IORING_REGISTER_CLONE_BUFFERS (30) / arg = struct
+ * io_uring_clone_buffers.  src_fd is a source io_uring ring fd; the
+ * hand-rolled fill path seeds it from the ring pool.  flags carry the
+ * IORING_REGISTER_SRC_REGISTERED / DST_REPLACE pair.  src_off / dst_off
+ * / nr are small slot indices.  pad[3] must be zero.
+ */
+#define IORING_CLONE_BUFFERS_FLAGS_MASK \
+	(IORING_REGISTER_SRC_REGISTERED | IORING_REGISTER_DST_REPLACE)
+
+static const struct struct_field io_uring_register_clone_buffers_fields[] = {
+	FIELDX(struct io_uring_clone_buffers, src_fd, FT_FD,
+	       .mutate_weight = 80),
+	FIELDX(struct io_uring_clone_buffers, flags, FT_FLAGS,
+	       .u.flags.mask = IORING_CLONE_BUFFERS_FLAGS_MASK,
+	       .mutate_weight = 80),
+	FIELDX(struct io_uring_clone_buffers, src_off, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 16 },
+	       .mutate_weight = 60),
+	FIELDX(struct io_uring_clone_buffers, dst_off, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 16 },
+	       .mutate_weight = 60),
+	FIELDX(struct io_uring_clone_buffers, nr, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 16 },
+	       .mutate_weight = 60),
+	FIELD(struct io_uring_clone_buffers, pad),
+};
+
+/*
+ * IORING_REGISTER_PBUF_STATUS (26) / arg = struct io_uring_buf_status.
+ * Mostly output: kernel writes head + resv[8].  buf_group is the only
+ * real input; resv must be zero on the way in.
+ */
+static const struct struct_field io_uring_register_pbuf_status_fields[] = {
+	FIELDX(struct io_uring_buf_status, buf_group, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 16 },
+	       .mutate_weight = 60),
+	FIELD(struct io_uring_buf_status, head),
+	FIELD(struct io_uring_buf_status, resv),
+};
+
+/*
  * Per-opcode variant table.  rec->a2 carries the opcode at sanitise
  * and post time; struct_desc_resolve_variant() picks the matching
  * variant.  Opcodes without an entry fall through to the empty shared
@@ -1585,6 +1683,46 @@ static const struct union_variant io_uring_register_variants[] = {
 		.fields		= io_uring_register_files_update_fields,
 		.num_fields	= ARRAY_SIZE(io_uring_register_files_update_fields),
 		.effective_size	= sizeof(struct io_uring_rsrc_update),
+	},
+	/*
+	 * NAPI / UNREGISTER_NAPI share struct io_uring_napi (16B).  The
+	 * kernel ignores most fields on unregister; same variant fields[]
+	 * is correct for both.
+	 */
+	{
+		.discrim_value	= IORING_REGISTER_NAPI,
+		.name		= "NAPI",
+		.fields		= io_uring_register_napi_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_napi_fields),
+		.effective_size	= sizeof(struct io_uring_napi),
+	},
+	{
+		.discrim_value	= IORING_UNREGISTER_NAPI,
+		.name		= "UNREGISTER_NAPI",
+		.fields		= io_uring_register_napi_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_napi_fields),
+		.effective_size	= sizeof(struct io_uring_napi),
+	},
+	{
+		.discrim_value	= IORING_REGISTER_CLOCK,
+		.name		= "CLOCK",
+		.fields		= io_uring_register_clock_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_clock_fields),
+		.effective_size	= sizeof(struct io_uring_clock_register),
+	},
+	{
+		.discrim_value	= IORING_REGISTER_CLONE_BUFFERS,
+		.name		= "CLONE_BUFFERS",
+		.fields		= io_uring_register_clone_buffers_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_clone_buffers_fields),
+		.effective_size	= sizeof(struct io_uring_clone_buffers),
+	},
+	{
+		.discrim_value	= IORING_REGISTER_PBUF_STATUS,
+		.name		= "PBUF_STATUS",
+		.fields		= io_uring_register_pbuf_status_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_pbuf_status_fields),
+		.effective_size	= sizeof(struct io_uring_buf_status),
 	},
 };
 
