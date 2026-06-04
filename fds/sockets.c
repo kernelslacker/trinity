@@ -93,6 +93,8 @@ struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsig
 	obj->sockinfo.triplet.family = domain;
 	obj->sockinfo.triplet.type = type;
 	obj->sockinfo.triplet.protocol = protocol;
+	obj->sockinfo.is_listener = false;
+	obj->sockinfo.local_len = 0;
 
 	/* Run per-protocol socket setup eagerly, before the obj is
 	 * published into the global pool.  The shared obj heap is
@@ -101,6 +103,35 @@ struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsig
 	proto = net_protocols[domain].proto;
 	if (proto != NULL && proto->socket_setup != NULL)
 		proto->socket_setup(fd);
+
+	/*
+	 * Eager listener-state probe.  Cheap (two syscalls, only fires when
+	 * SO_ACCEPTCONN reports 1) and lets the accept-unblocker connector
+	 * use a cached loopback addr instead of re-probing every fire.  Most
+	 * sockets registered here are fresh socket()s and report 0; the rare
+	 * already-listening cases (e.g. socket_setup hooks that bind+listen)
+	 * get cached for the rest of the run.  Sockets that transition to
+	 * LISTEN later via socket_child_ops() bind/listen cannot update this
+	 * slot (heap is read-only post publish) — the connector lazy-probes
+	 * those at fire time.
+	 */
+	{
+		int v = 0;
+		socklen_t vlen = sizeof(v);
+
+		if (getsockopt(fd, SOL_SOCKET, SO_ACCEPTCONN, &v, &vlen) == 0 &&
+		    v == 1) {
+			socklen_t alen = sizeof(obj->sockinfo.local);
+
+			if (getsockname(fd,
+					(struct sockaddr *) &obj->sockinfo.local,
+					&alen) == 0 &&
+			    alen <= sizeof(obj->sockinfo.local)) {
+				obj->sockinfo.local_len = alen;
+				obj->sockinfo.is_listener = true;
+			}
+		}
+	}
 
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_SOCKET);
 
