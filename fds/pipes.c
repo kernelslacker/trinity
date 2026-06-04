@@ -15,6 +15,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "unblocker.h"
 #include "utils.h"
 
 static void pipefd_destructor(struct object *obj)
@@ -151,12 +152,31 @@ int get_rand_pipe_fd(void)
 	return -1;
 }
 
+/*
+ * Per-child periodic hook for the pipes provider.  Pokes one writer-
+ * end fd with a single byte (non-blocking, flags restored after) so a
+ * concurrent reader on an empty pipe doesn't sit indefinitely in
+ * wait_event_interruptible_exclusive(pipe->rd_wait).  Kernel pipe-
+ * reads are already killable in current Linux; this is belt-and-
+ * suspenders for the orphaned-blocking-reader wedge open_pipe_pair()
+ * warns about explicitly.
+ *
+ * Cheap: at most ~8 random object picks + one fcntl pair + one
+ * write(1).  Bumps shm->stats.pipe_waker_* counters; no other side
+ * effects.
+ */
+static void pipes_child_ops(void)
+{
+	pipe_waker_poke_one();
+}
+
 static const struct fd_provider pipes_fd_provider = {
 	.name = "pipes",
 	.objtype = OBJ_FD_PIPE,
 	.enabled = true,
 	.init = &init_pipes,
 	.get = &get_rand_pipe_fd,
+	.child_ops = &pipes_child_ops,
 };
 
 REG_FD_PROV(pipes_fd_provider);
