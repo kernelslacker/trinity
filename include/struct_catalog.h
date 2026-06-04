@@ -187,6 +187,23 @@ struct_desc_resolve_variant(const struct struct_desc *desc,
 			    struct syscallrecord *rec);
 
 /*
+ * Schema-aware per-field fill for a cataloged struct.  Three passes
+ * (scalar / pointer / length) resolve tag-driven coupling without an
+ * init-time topological sort; FT_RAW fields keep the historical
+ * per-field random splat byte-for-byte.  When desc carries variants,
+ * the live discriminator on rec selects which variant's fields[] is
+ * walked; the parent rec is also threaded into nested FT_PTR_STRUCT
+ * fills so a child struct reads the same syscall args.
+ *
+ * Public so per-syscall sanitisers (e.g. sanitise_bpf's default arm)
+ * can lean on schema fill for cmds they don't customise; arg-gen
+ * callers in generate-args.c continue to use this directly.
+ */
+void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
+				    const struct struct_desc *desc,
+				    struct syscallrecord *rec);
+
+/*
  * Build the fast nr->desc lookup table by resolving syscall names in
  * syscall_struct_args[] against the active syscall table.
  * Must be called after select_syscall_tables().

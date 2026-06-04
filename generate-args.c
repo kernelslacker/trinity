@@ -908,9 +908,9 @@ static void random_byte_fill(unsigned char *p, unsigned long nbytes,
  *     Coupled fields stay consistent -- the kernel sees a length
  *     that matches the buffer it describes.
  */
-static void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
-					   const struct struct_desc *desc,
-					   struct syscallrecord *rec)
+void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
+				    const struct struct_desc *desc,
+				    struct syscallrecord *rec)
 {
 	const struct union_variant *variant;
 	const struct struct_field *fields;
