@@ -1738,6 +1738,7 @@ static void dump_stats_json_rxrpc_alg_ublk_block(void)
 static void dump_stats_json_probes_misuse_and_tail(void)
 {
 	printf("\"iscsi_target_probe\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_target\":%lu,\"connected\":%lu,\"login_sent\":%lu,\"login_replies\":%lu,\"scsi_cmd_sent\":%lu,\"bytes_out\":%lu,\"bytes_in\":%lu},"
+		"\"iscsi_login_walker\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_target\":%lu,\"connected\":%lu,\"state_init_sent\":%lu,\"bytes_out\":%lu,\"bytes_in\":%lu},"
 		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu,\"burn_iters\":%lu},"
 		"\"ipv6_ndisc_proxy\":{\"runs\":%lu,\"ns_sent_ok\":%lu,\"setup_failed\":%lu,\"proxy_enable_ok\":%lu},"
 		"\"ipfrag_source_churn\":{\"runs\":%lu,\"packets_sent_ok\":%lu,\"send_failed\":%lu,\"unique_srcs\":%lu},"
@@ -1766,6 +1767,13 @@ static void dump_stats_json_probes_misuse_and_tail(void)
 		shm->stats.iscsi_target_probe_scsi_cmd_sent,
 		shm->stats.iscsi_target_probe_bytes_out,
 		shm->stats.iscsi_target_probe_bytes_in,
+		shm->stats.iscsi_walker_runs,
+		shm->stats.iscsi_walker_setup_failed,
+		shm->stats.iscsi_walker_no_target,
+		shm->stats.iscsi_walker_connected,
+		shm->stats.iscsi_walker_state_init_sent,
+		shm->stats.iscsi_walker_bytes_out,
+		shm->stats.iscsi_walker_bytes_in,
 		shm->stats.ipvs_sysctl_writer_runs,
 		shm->stats.ipvs_sysctl_writer_writes_ok,
 		shm->stats.ipvs_sysctl_writer_writes_failed,
@@ -5105,6 +5113,16 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("iscsi_target_probe", "scsi_cmd_sent", shm->stats.iscsi_target_probe_scsi_cmd_sent);
 		stat_row("iscsi_target_probe", "bytes_out",     shm->stats.iscsi_target_probe_bytes_out);
 		stat_row("iscsi_target_probe", "bytes_in",      shm->stats.iscsi_target_probe_bytes_in);
+	}
+
+	if (shm->stats.iscsi_walker_runs) {
+		stat_row("iscsi_login_walker", "runs",            shm->stats.iscsi_walker_runs);
+		stat_row("iscsi_login_walker", "setup_failed",    shm->stats.iscsi_walker_setup_failed);
+		stat_row("iscsi_login_walker", "no_target",       shm->stats.iscsi_walker_no_target);
+		stat_row("iscsi_login_walker", "connected",       shm->stats.iscsi_walker_connected);
+		stat_row("iscsi_login_walker", "state_init_sent", shm->stats.iscsi_walker_state_init_sent);
+		stat_row("iscsi_login_walker", "bytes_out",       shm->stats.iscsi_walker_bytes_out);
+		stat_row("iscsi_login_walker", "bytes_in",        shm->stats.iscsi_walker_bytes_in);
 	}
 
 	if (shm->stats.ipvs_sysctl_writer_runs) {

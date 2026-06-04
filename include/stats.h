@@ -1484,6 +1484,20 @@ struct stats_s {
 	unsigned long iscsi_target_probe_bytes_out;		/* total bytes successfully send()'d */
 	unsigned long iscsi_target_probe_bytes_in;		/* total bytes successfully recv()'d */
 
+	/* iscsi_login_walker childop counters.  Companion to
+	 * iscsi_target_probe: instead of single one-shot PDUs, this walker
+	 * drives the LIO Login state machine through its real-protocol
+	 * transitions to land coverage past the BHS / parser-level
+	 * rejection gates.  Latches off (no_target) on first ECONNREFUSED
+	 * exactly like iscsi_target_probe. */
+	unsigned long iscsi_walker_runs;			/* total iscsi_login_walker invocations */
+	unsigned long iscsi_walker_setup_failed;		/* socket() / non-ECONNREFUSED connect failure */
+	unsigned long iscsi_walker_no_target;			/* ECONNREFUSED on connect — latched per-child */
+	unsigned long iscsi_walker_connected;			/* TCP connect to 3260 returned 0 / completed */
+	unsigned long iscsi_walker_state_init_sent;		/* INIT-state CSG=0 Login PDU send() returned >0 */
+	unsigned long iscsi_walker_bytes_out;			/* total bytes successfully send()'d */
+	unsigned long iscsi_walker_bytes_in;			/* total bytes successfully recv()'d */
+
 	/* ip6erspan_netns_migrate childop counters */
 	unsigned long inm_iters;				/* total ip6erspan_netns_migrate invocations */
 	unsigned long inm_eperm;				/* unshare/NEWLINK rejected with EPERM */

@@ -51,6 +51,7 @@ CHILD_OP_IPMR_CACHE_REPORT            TODO: review for rotation candidacy
 CHILD_OP_IPV6_NDISC_PROXY             TODO: review for rotation candidacy
 CHILD_OP_IPVS_SYSCTL_WRITER           TODO: review for rotation candidacy
 CHILD_OP_ISCSI_TARGET_PROBE           TODO: review for rotation candidacy
+CHILD_OP_ISCSI_LOGIN_WALKER           TODO: review for rotation candidacy
 CHILD_OP_MPLS_ROUTE_CHURN             TODO: review for rotation candidacy
 CHILD_OP_MSG_ZEROCOPY_CHURN           TODO: review for rotation candidacy
 CHILD_OP_NF_CONNTRACK_HELPER          TODO: review for rotation candidacy

@@ -1313,7 +1313,7 @@ static void check_fd_leaks(struct childdata *child)
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[106] = {
+static int dormant_op_disabled[107] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -1337,6 +1337,7 @@ static int dormant_op_disabled[106] = {
 	0,	/* eth_emitter is lightweight (one socket per child, fixed-size sendto) — promote at startup. */
 	1,	/* sysfs_string_race: dormant until canary-queue load-tests the .store() race burst. */
 	1,	/* pci_bind: dormant until canary-queue load-tests the driver attach/detach path on the conservative allowlist. */
+	1,	/* iscsi_login_walker: dormant until canary-queue load-tests the LIO Login state-machine walk. */
 };
 
 /*
@@ -1573,6 +1574,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_WIREGUARD_DECRYPT_FLOOD:	return "wireguard_decrypt_flood";
 	case CHILD_OP_BLKDEV_LIFECYCLE_RACE:	return "blkdev_lifecycle_race";
 	case CHILD_OP_ISCSI_TARGET_PROBE:	return "iscsi_target_probe";
+	case CHILD_OP_ISCSI_LOGIN_WALKER:	return "iscsi_login_walker";
 	case CHILD_OP_ETH_EMITTER:	return "eth_emitter";
 	case CHILD_OP_VMA_SPLIT_STORM:	return "vma_split_storm";
 	case CHILD_OP_SYSFS_STRING_RACE:	return "sysfs_string_race";
@@ -1674,7 +1676,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[106] = {
+static const enum child_op_type pick_op_type_table[107] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -1781,6 +1783,7 @@ static const enum child_op_type pick_op_type_table[106] = {
 	[103] = CHILD_OP_ETH_EMITTER,
 	[104] = CHILD_OP_SYSFS_STRING_RACE,
 	[105] = CHILD_OP_PCI_BIND,
+	[106] = CHILD_OP_ISCSI_LOGIN_WALKER,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -2162,6 +2165,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_WIREGUARD_DECRYPT_FLOOD]	= wireguard_decrypt_flood,
 	[CHILD_OP_BLKDEV_LIFECYCLE_RACE]	= blkdev_lifecycle_race,
 	[CHILD_OP_ISCSI_TARGET_PROBE]	= iscsi_target_probe,
+	[CHILD_OP_ISCSI_LOGIN_WALKER]	= iscsi_login_walker,
 	[CHILD_OP_ETH_EMITTER]		= eth_emitter,
 	[CHILD_OP_VMA_SPLIT_STORM]	= vma_split_storm,
 	[CHILD_OP_SYSFS_STRING_RACE]	= sysfs_string_race,
