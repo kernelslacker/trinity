@@ -1298,6 +1298,21 @@ static void maybe_rotate_strategy(void)
 			 __atomic_load_n(&shm->bandit_cmp_new_constants[next],
 					 __ATOMIC_RELAXED),
 			 __ATOMIC_RELAXED);
+	/* Reseed the kmsg_warn_fires snapshot from the live counter (not a
+	 * per-strategy mirror -- the underlying counter is global).  A
+	 * future commit in this stack reads this snapshot at the top of the
+	 * rotation handler to compute the per-window WARN delta and feeds
+	 * it through bandit_record_pull for chaos cohort attribution.
+	 * Reseeded under RELAXED matching the other *_at_window_start stores
+	 * above; the snapshot tolerates a race between read and store
+	 * because the delta is a coarse cohort-level signal, not a precise
+	 * per-call attribution. */
+	__atomic_store_n(&shm->kmsg_warn_fires_at_window_start,
+			 kcov_shm != NULL ?
+				 __atomic_load_n(&kcov_shm->kmsg_warn_fires,
+						 __ATOMIC_RELAXED) :
+				 0UL,
+			 __ATOMIC_RELAXED);
 	/* Publish the selection reason BEFORE current_strategy: the RELEASE
 	 * store on current_strategy below pairs with the picker's and the
 	 * plateau gates' ACQUIRE loads of current_strategy, making the

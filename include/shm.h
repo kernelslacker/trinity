@@ -762,6 +762,21 @@ struct shm_s {
 	unsigned long bandit_cmp_at_window_start;
 
 	/*
+	 * Snapshot of kcov_shm->kmsg_warn_fires at the start of the current
+	 * bandit window.  Single global field (mirrors bandit_cmp_at_window_
+	 * start) because kmsg_warn_fires is global rather than per-arm --
+	 * the chaos cohort attribution that consumes the delta in a follow-up
+	 * commit needs only "how many WARNs fired in this window", not "how
+	 * many WARNs fired while strategy X was active".  Reseeded from the
+	 * live counter at every rotation regardless of selection reason, so
+	 * the delta the cohort split sees represents only events the kernel
+	 * emitted inside the just-finished window.  Written only by the
+	 * CAS-winning child on the rotation path; RELAXED accesses match the
+	 * other *_at_window_start fields.
+	 */
+	unsigned long kmsg_warn_fires_at_window_start;
+
+	/*
 	 * Per-arm cumulative sum of (cmp_term * 1000 / total_reward) across
 	 * windows where cmp_term > 0.  Divided by bandit_pulls[arm] at end
 	 * of run to print the average per-window CMP contribution share, so
