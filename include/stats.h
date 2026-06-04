@@ -2457,6 +2457,24 @@ struct stats_s {
 	unsigned long pci_bind_bind_ok;			/* bind write returned >=0 (kernel re-attached) */
 	unsigned long pci_bind_bind_enodev;		/* bind write returned EINVAL/ENODEV (handler ran, BDF not present / matched another driver) */
 	unsigned long pci_bind_bind_failed;		/* bind open failed (EACCES / ENOENT / non-root) */
+
+	/* accept-unblocker counters.  Fires a loopback connect() at a
+	 * pooled listening socket so a concurrent accept() sees a non-empty
+	 * backlog and never parks in inet_csk_accept's wait loop.  See
+	 * net/unblocker.c for the loopback-only safety check. */
+	unsigned long accept_unblocker_connects_fired;		/* fire-and-forget connect() issued at a listener (SYN sent or EINPROGRESS) */
+	unsigned long accept_unblocker_loopback_only_skipped;	/* listener bound to non-loopback addr; refused to connect */
+	unsigned long accept_unblocker_probe_failed;		/* getsockopt(SO_ACCEPTCONN) / getsockname / socket() / connect() returned an unexpected error */
+
+	/* pipe-waker counters.  Iterates pipe writer-end fds and writes a
+	 * single byte non-blocking, so a concurrent reader on an empty
+	 * pipe never parks in wait_event_interruptible_exclusive(pipe->rd_wait).
+	 * The kernel already makes pipe-reads killable; this is a belt-and-
+	 * suspenders defense against orphaned blocking readers (see
+	 * fds/pipes.c open_pipe_pair() comment). */
+	unsigned long pipe_waker_bytes_written;			/* successful 1-byte write() to a writer-end pipe fd */
+	unsigned long pipe_waker_no_target;			/* fired but the pool walk returned no writer-end fd */
+	unsigned long pipe_waker_write_failed;			/* write() returned <0 (EAGAIN on full pipe, EBADF on closed fd, etc.) */
 };
 
 unsigned int stats_syscall_category(const char *name);

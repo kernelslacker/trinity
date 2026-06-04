@@ -4838,6 +4838,28 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("pci_bind", "bind_failed",       shm->stats.pci_bind_bind_failed);
 	}
 
+	if (shm->stats.accept_unblocker_connects_fired ||
+	    shm->stats.accept_unblocker_loopback_only_skipped ||
+	    shm->stats.accept_unblocker_probe_failed) {
+		stat_row("accept_unblocker", "connects_fired",
+			 shm->stats.accept_unblocker_connects_fired);
+		stat_row("accept_unblocker", "loopback_only_skipped",
+			 shm->stats.accept_unblocker_loopback_only_skipped);
+		stat_row("accept_unblocker", "probe_failed",
+			 shm->stats.accept_unblocker_probe_failed);
+	}
+
+	if (shm->stats.pipe_waker_bytes_written ||
+	    shm->stats.pipe_waker_no_target ||
+	    shm->stats.pipe_waker_write_failed) {
+		stat_row("pipe_waker", "bytes_written",
+			 shm->stats.pipe_waker_bytes_written);
+		stat_row("pipe_waker", "no_target",
+			 shm->stats.pipe_waker_no_target);
+		stat_row("pipe_waker", "write_failed",
+			 shm->stats.pipe_waker_write_failed);
+	}
+
 	if (shm->stats.nat_t_churn_runs) {
 		stat_row("nat_t_churn", "runs",              shm->stats.nat_t_churn_runs);
 		stat_row("nat_t_churn", "setup_failed",      shm->stats.nat_t_churn_setup_failed);
