@@ -37,6 +37,7 @@
 #include <linux/landlock.h>
 #include <mqueue.h>
 
+#include "compat.h"
 #include "config.h"
 #ifdef USE_BPF
 #include <linux/bpf.h>
@@ -683,6 +684,70 @@ static const struct struct_field perf_event_attr_hw_cache_variant_fields[] = {
 	       .mutate_weight = 120),
 };
 
+/*
+ * PERF_TYPE_BREAKPOINT: config is ignored; bp_type / bp_addr / bp_len
+ * carry the breakpoint shape.  Mirrors setup_breakpoints() in
+ * syscalls/perf_event_open.c so the hand-rolled csfu path and the
+ * schema-aware CMP attribution agree on the vocabulary:
+ *
+ *   bp_type -> HW_BREAKPOINT_{EMPTY, R, W, RW, X, INVALID}
+ *   bp_addr -> watchable address (FT_ADDRESS plants get_address())
+ *   bp_len  -> HW_BREAKPOINT_LEN_{1,2,3,4,5,6,7,8}
+ *
+ * INVALID (== R | W | X == 7) is included so the kernel's rejection
+ * path also gets exercised.  Odd lengths (3, 5, 6, 7) are in the
+ * vocab because setup_breakpoints() draws them too -- the kernel
+ * rejects non-{1,2,4,8} bp_len on most arches, so they probe the
+ * validator gate.
+ *
+ * bp_addr's FT_ADDRESS is latent documentation today on two counts:
+ * (1) sanitise_perf_event_open() discards the schema-filled buffer
+ * and setup_breakpoints() plants its own get_address() value into
+ * the csfu buffer; (2) struct_desc_has_address_field() walks only
+ * desc->fields[] -- not per-variant fields[] -- so the nested-scrub
+ * arg-mask doesn't register perf_event_open's a1 slot from this
+ * annotation.  Lifting the walker into variants is out of scope
+ * here; for perf the FT_ADDRESS annotation is forward-infra parity
+ * with the hand-rolled path.
+ *
+ * `config` is not listed in the variant -- the shared pass leaves it
+ * at FT_RAW, the kernel ignores it for BREAKPOINT, and there is no
+ * FT_RESERVED tag today that would force it to zero.  Cost is one
+ * splattered u64 the kernel discards; benefit of adding one is nil.
+ */
+static const unsigned long hw_breakpoint_values[] = {
+	HW_BREAKPOINT_EMPTY,
+	HW_BREAKPOINT_R,
+	HW_BREAKPOINT_W,
+	HW_BREAKPOINT_RW,
+	HW_BREAKPOINT_X,
+	HW_BREAKPOINT_INVALID,
+};
+
+static const unsigned long hw_breakpoint_len_values[] = {
+	HW_BREAKPOINT_LEN_1,
+	HW_BREAKPOINT_LEN_2,
+	HW_BREAKPOINT_LEN_3,
+	HW_BREAKPOINT_LEN_4,
+	HW_BREAKPOINT_LEN_5,
+	HW_BREAKPOINT_LEN_6,
+	HW_BREAKPOINT_LEN_7,
+	HW_BREAKPOINT_LEN_8,
+};
+
+static const struct struct_field perf_event_attr_breakpoint_variant_fields[] = {
+	FIELDX(struct perf_event_attr, bp_type, FT_ENUM,
+	       .u.enum_ = { hw_breakpoint_values,
+			    ARRAY_SIZE(hw_breakpoint_values) },
+	       .mutate_weight = 120),
+	FIELDX(struct perf_event_attr, bp_addr, FT_ADDRESS,
+	       .mutate_weight = 100),
+	FIELDX(struct perf_event_attr, bp_len, FT_ENUM,
+	       .u.enum_ = { hw_breakpoint_len_values,
+			    ARRAY_SIZE(hw_breakpoint_len_values) },
+	       .mutate_weight = 100),
+};
+
 static const struct union_variant perf_event_attr_variants[] = {
 	{
 		.discrim_value	= PERF_TYPE_HARDWARE,
@@ -701,6 +766,12 @@ static const struct union_variant perf_event_attr_variants[] = {
 		.name		= "HW_CACHE",
 		.fields		= perf_event_attr_hw_cache_variant_fields,
 		.num_fields	= ARRAY_SIZE(perf_event_attr_hw_cache_variant_fields),
+	},
+	{
+		.discrim_value	= PERF_TYPE_BREAKPOINT,
+		.name		= "BREAKPOINT",
+		.fields		= perf_event_attr_breakpoint_variant_fields,
+		.num_fields	= ARRAY_SIZE(perf_event_attr_breakpoint_variant_fields),
 	},
 };
 
