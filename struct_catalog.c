@@ -2366,6 +2366,53 @@ static const struct struct_field bpf_attr_PROG_STREAM_READ_fields[] = {
 };
 
 /*
+ * LINK_CREATE outer variant.  attach_type is the inner discriminator
+ * for the link_create tail sub-union -- subsequent commits populate
+ * nested_variants[] with the per-attach-type tails.  The four head
+ * fields (prog_fd/map_fd, target_fd/target_ifindex, attach_type,
+ * flags) sit at the union's offsets 0/4/8/12 and are shared across
+ * every sub-variant, so they live here on the outer variant rather
+ * than being repeated on each arm.
+ *
+ * The two anonymous unions (prog_fd|map_fd, target_fd|target_ifindex)
+ * each get one FT_FD slot; the kernel reads the same bytes either
+ * way, and the broader-semantic arm (prog_fd, target_fd) is the more
+ * common live shape.
+ *
+ * flags annotated FT_RAW: the mask is per-attach-type and the head
+ * field can't express that -- leaving it as a random splat lets the
+ * verifier reject unknown bits without us committing to a wrong-
+ * per-attach mask.  Revisit by moving flags onto each sub-variant.
+ */
+static const struct struct_field bpf_attr_LINK_CREATE_fields[] = {
+	FIELDX(union bpf_attr, link_create.prog_fd, FT_FD),
+	FIELDX(union bpf_attr, link_create.target_fd, FT_FD),
+	FIELDX(union bpf_attr, link_create.attach_type, FT_ENUM,
+	       .u.enum_ = { bpf_attach_types, ARRAY_SIZE(bpf_attach_types) },
+	       .mutate_weight = 200),
+	FIELD(union bpf_attr, link_create.flags),
+};
+
+/*
+ * BASE sub-variant.  Catch-all for attach types that have no
+ * specific arm (BPF_FLOW_DISSECTOR, BPF_SK_LOOKUP, ...).  Also runs
+ * unconditionally as the shared head pass before any specific arm
+ * overlays its tail -- the TRACING arm relies on this for the
+ * target_btf_id slot it overlays a cookie on top of.
+ */
+static const struct struct_field bpf_attr_LINK_CREATE_BASE_fields[] = {
+	FIELD(union bpf_attr, link_create.target_btf_id),
+};
+
+static const struct union_variant bpf_attr_LINK_CREATE_base = {
+	.name		= "LINK_CREATE/BASE",
+	.fields		= bpf_attr_LINK_CREATE_BASE_fields,
+	.num_fields	= ARRAY_SIZE(bpf_attr_LINK_CREATE_BASE_fields),
+	.effective_size	= offsetof(union bpf_attr, link_create.target_btf_id) +
+			  sizeof(((union bpf_attr *)NULL)->link_create.target_btf_id),
+};
+
+/*
  * bpf_insn registration -- retained as an 8-byte CMP-attribution shape
  * so a learned KCOV-compare constant on code / off / imm can be
  * attributed back to the right field by struct_field_for_cmp().
@@ -2577,6 +2624,24 @@ static const struct union_variant bpf_attr_variants[] = {
 		.fields		= bpf_attr_PROG_STREAM_READ_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_PROG_STREAM_READ_fields),
 		.effective_size	= sizeof(((union bpf_attr *)NULL)->prog_stream_read),
+	},
+	{
+		.discrim_value	= BPF_LINK_CREATE,
+		.name		= "LINK_CREATE",
+		.fields		= bpf_attr_LINK_CREATE_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_LINK_CREATE_fields),
+		.effective_size	= sizeof(((union bpf_attr *)NULL)->link_create),
+		/*
+		 * attach_type is the inner discriminator; subsequent commits
+		 * land sub-variants in nested_variants[].  base runs first so
+		 * the catch-all target_btf_id slot is filled before any
+		 * specific arm overlays its tail.
+		 */
+		.nested_discrim_offset = offsetof(union bpf_attr, link_create.attach_type),
+		.nested_discrim_size   = 4,
+		.base		= &bpf_attr_LINK_CREATE_base,
+		.nested_variants     = NULL,
+		.num_nested_variants = 0,
 	},
 };
 #endif

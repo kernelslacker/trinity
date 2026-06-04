@@ -58,11 +58,11 @@ syscalls/alarm.c:100:post_alarm
 syscalls/alarm.c:61:post_alarm
 syscalls/alarm.c:76:post_alarm
 syscalls/alarm.c:91:post_alarm
-syscalls/bpf.c:566:post_bpf
 syscalls/bpf.c:583:post_bpf
 syscalls/bpf.c:600:post_bpf
-syscalls/bpf.c:634:post_bpf
-syscalls/bpf.c:649:post_bpf
+syscalls/bpf.c:617:post_bpf
+syscalls/bpf.c:651:post_bpf
+syscalls/bpf.c:666:post_bpf
 syscalls/capget.c:153:post_capget
 syscalls/capget.c:168:post_capget
 syscalls/capget.c:196:post_capget

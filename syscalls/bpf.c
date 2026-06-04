@@ -501,14 +501,31 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		 */
 		const struct struct_desc *desc = struct_catalog_lookup("bpf_attr");
 		const struct union_variant *variant = NULL;
+		const struct union_variant *nested = NULL;
 
 		if (desc != NULL) {
 			variant = struct_desc_resolve_variant(desc, rec, NULL);
 			struct_field_fill_schema_aware((unsigned char *) attr,
 						       sizeof(union bpf_attr),
 						       desc, rec);
+			/*
+			 * Nested tagged-union: when the outer variant gates
+			 * a sub-union (e.g. link_create's attach_type), the
+			 * sub-variant's effective_size is the more specific
+			 * bound -- a TRACING arm's 28 bytes vs. the full 88
+			 * link_create struct.  Pick the nested size when it
+			 * resolves and is non-zero; otherwise the outer
+			 * variant's size still wins.
+			 */
+			if (variant != NULL && variant->nested_variants != NULL)
+				nested = struct_desc_resolve_nested_variant(
+					variant,
+					(const unsigned char *) attr,
+					sizeof(union bpf_attr));
 		}
-		if (variant != NULL && variant->effective_size != 0)
+		if (nested != NULL && nested->effective_size != 0)
+			rec->a3 = nested->effective_size;
+		else if (variant != NULL && variant->effective_size != 0)
 			rec->a3 = variant->effective_size;
 		else
 			rec->a3 = sizeof(union bpf_attr);
