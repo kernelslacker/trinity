@@ -187,14 +187,25 @@ void corrupt_ptr_breadcrumb_dump(unsigned int max_lines)
 						"(last %u, child-scan order, "
 						"newest first per child):\n",
 						max_lines);
-			stats_log_write("  nr=%u%s arg=%s bad=0x%lx "
-					"label=%s site=%s name=%s iter=%lu\n",
-					b->syscall_nr,
-					b->syscall_nr == (unsigned int) ~0u
-					    ? "" : width,
-					arg_buf, b->bad_ptr,
-					corrupt_ptr_label(b->bad_ptr),
-					tag, name, b->iter_at_fire);
+			if (b->bad_ptr == CORRUPT_PTR_BREADCRUMB_BAD_UNKNOWN)
+				stats_log_write("  nr=%u%s arg=%s bad=? "
+						"label=- site=%s name=%s "
+						"iter=%lu\n",
+						b->syscall_nr,
+						b->syscall_nr == (unsigned int) ~0u
+						    ? "" : width,
+						arg_buf, tag, name,
+						b->iter_at_fire);
+			else
+				stats_log_write("  nr=%u%s arg=%s bad=0x%lx "
+						"label=%s site=%s name=%s "
+						"iter=%lu\n",
+						b->syscall_nr,
+						b->syscall_nr == (unsigned int) ~0u
+						    ? "" : width,
+						arg_buf, b->bad_ptr,
+						corrupt_ptr_label(b->bad_ptr),
+						tag, name, b->iter_at_fire);
 			emitted++;
 		}
 	}

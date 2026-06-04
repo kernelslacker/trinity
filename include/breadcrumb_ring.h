@@ -28,6 +28,11 @@ struct syscallrecord;
 #define CORRUPT_PTR_BREADCRUMB_SLOTS	64
 #define CORRUPT_PTR_BREADCRUMB_NO_ARG	0xffu
 #define CORRUPT_PTR_BREADCRUMB_SITE_LEN	16
+/* Sentinel for bad_ptr when the firing callsite couldn't capture
+ * the scribbled value (e.g. legacy post_handler_corrupt_ptr_bump
+ * compat path).  Distinguishes "unknown" from a real 0x0 scribble
+ * in dump output. */
+#define CORRUPT_PTR_BREADCRUMB_BAD_UNKNOWN	((unsigned long)~0UL)
 
 struct corrupt_ptr_breadcrumb {
 	unsigned long	bad_ptr;	/* scribbled value the guard caught */

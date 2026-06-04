@@ -1748,7 +1748,8 @@ void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
 					void *caller_pc, const char *site)
 {
 	post_handler_corrupt_ptr_bump_full(rec, caller_pc, site,
-					   CORRUPT_PTR_BREADCRUMB_NO_ARG, 0);
+					   CORRUPT_PTR_BREADCRUMB_NO_ARG,
+					   CORRUPT_PTR_BREADCRUMB_BAD_UNKNOWN);
 }
 
 /*
