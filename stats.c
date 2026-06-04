@@ -3332,6 +3332,27 @@ void kcov_cmp_stats_periodic_dump(void)
 		}
 	}
 
+	/*
+	 * Standalone grep-friendly cumulative lines for counters whose only
+	 * stat output above is delta-gated (skipped at zero) and whose bare
+	 * tokens recur in narrative -- JSON dumps, header comments, atomic
+	 * fetch sites -- so `grep -c <counter>` against a long-running log
+	 * counts narrative occurrences rather than the counter, the same
+	 * triage trap post_handler_corrupt_ptr_cumulative was added to
+	 * close.  Emit one line per dump window per counter (even at zero
+	 * so trend tracking has a t=0 anchor) with a distinctive
+	 * _cumulative suffix; operators can `grep <counter>_cumulative
+	 * out.log | tail -1` for the current total or grep -c the suffix
+	 * to count windows.  Placed outside the delta-gated block above so
+	 * they fire every window regardless of cmp activity.
+	 */
+	output(0, "[main] cmp_hints_chaos_suppressed_cumulative=%lu\n",
+	       cur_chaos_suppressed);
+	output(0, "[main] propagation_injected_cumulative=%lu\n",
+	       cur_prop_injected);
+	output(0, "[main] propagation_edgepair_boosted_injected_cumulative=%lu\n",
+	       cur_prop_boosted);
+
 	pc_kids  = __atomic_load_n(&kcov_shm->pc_mode_children,  __ATOMIC_RELAXED);
 	cmp_kids = __atomic_load_n(&kcov_shm->cmp_mode_children, __ATOMIC_RELAXED);
 
@@ -4054,6 +4075,24 @@ static void dump_stats_corruption_and_pool(void)
 	if (shm->stats.arena_ptr_stale_reject_giveup)
 		stat_row("corruption", "arena_ptr_stale_reject_giveup",
 			 shm->stats.arena_ptr_stale_reject_giveup);
+	/*
+	 * Standalone grep-friendly cumulative lines for the arena_ptr_stale
+	 * trio.  The stat_rows above are gated on non-zero, and the JSON +
+	 * defense_counters[] registrations repeat the bare counter tokens as
+	 * narrative, so `grep -c arena_ptr_stale_caught_arg out.log` counts
+	 * occurrences rather than the counter itself -- the same triage trap
+	 * post_handler_corrupt_ptr_cumulative was added to close.  Emit one
+	 * line per window per counter (even at zero so trend tracking has a
+	 * t=0 anchor) with a distinctive _cumulative suffix; operators can
+	 * `grep <counter>_cumulative out.log | tail -1` for the current
+	 * total or grep -c the suffix to count windows.
+	 */
+	output(0, "[main] arena_ptr_stale_caught_arg_cumulative=%lu\n",
+	       shm->stats.arena_ptr_stale_caught_arg);
+	output(0, "[main] arena_ptr_stale_caught_post_state_cumulative=%lu\n",
+	       shm->stats.arena_ptr_stale_caught_post_state);
+	output(0, "[main] arena_ptr_stale_reject_giveup_cumulative=%lu\n",
+	       shm->stats.arena_ptr_stale_reject_giveup);
 	if (shm->stats.sibling_mprotect_failed)
 		stat_row("corruption", "sibling_mprotect_failed", shm->stats.sibling_mprotect_failed);
 	{
