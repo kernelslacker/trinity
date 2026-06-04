@@ -975,6 +975,25 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 			write_field_uint(buf, f, v);
 			break;
 		}
+		case FT_VOCAB: {
+			const char *const *vocab = f->u.vocab.vocab;
+			unsigned int nv = f->u.vocab.vocab_len;
+			unsigned int stride = f->u.vocab.element_stride;
+			const char *pick;
+			size_t plen;
+
+			if (vocab == NULL || nv == 0 || stride == 0) {
+				fill_field_raw(buf, f);
+				break;
+			}
+			if (stride > f->size)
+				stride = f->size;
+			pick = vocab[rnd_modulo_u32(nv)];
+			plen = strnlen(pick, stride - 1);
+			memset(buf + f->offset, 0, stride);
+			memcpy(buf + f->offset, pick, plen);
+			break;
+		}
 		case FT_RANGE: {
 			unsigned long lo = f->u.range.lo;
 			unsigned long hi = f->u.range.hi;

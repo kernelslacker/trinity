@@ -50,6 +50,7 @@ enum field_tag {
 	FT_ADDRESS,		/* writable / scrubbable region */
 	FT_TAGGED_UNION,	/* per-discriminator subset of fields */
 	FT_BPF_PROGRAM,		/* eBPF insn buffer; fill delegated to net/ebpf.c generator */
+	FT_VOCAB,		/* pick a NUL-padded byte string from u.vocab.vocab */
 };
 
 /* One field within a cataloged struct. */
@@ -87,6 +88,18 @@ struct struct_field {
 			const char	*buf_field;
 			bool		 optional;
 		} len_of;
+		/*
+		 * FT_VOCAB: pick one entry from a curated string pool and
+		 * splat it NUL-padded across an element_stride-wide slot.
+		 * element_stride matches the field width (sizeof the char
+		 * array member); over-long entries are truncated with a
+		 * reserved trailing NUL so the slot is always C-string safe.
+		 */
+		struct {
+			const char *const *vocab;
+			unsigned int	   vocab_len;
+			unsigned int	   element_stride;
+		} vocab;
 		const unsigned long *vals;		/* FT_MAGIC, FT_VERSION_MAGIC */
 	} u;
 };
