@@ -19,6 +19,7 @@
 #include "deferred-free.h"
 #include "publish_resource.h"
 #include "shm.h"
+#include "struct_catalog.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -484,9 +485,35 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		rec->a3 = sizeof(attr->raw_tracepoint);
 		break;
 
-	default:
-		rec->a3 = sizeof(union bpf_attr);
+	default: {
+		/*
+		 * Schema-aware floor for the ~15 cmds without a hand-rolled
+		 * arm above (BPF_PROG_QUERY, BPF_TASK_FD_QUERY, the MAP_*
+		 * batch ops, etc.).  struct_field_fill_schema_aware reads
+		 * the cmd discriminator off rec->a1 via bpf_attr's variant
+		 * table; annotated variants get FT_ENUM / FT_FLAGS / FT_FD
+		 * / FT_PTR_BYTES coherent fill instead of zero, and
+		 * unannotated cmds fall through to the zmalloc-zero shape
+		 * the old default produced.  rec->a3 prefers the variant's
+		 * effective_size when set so the kernel sees a per-cmd size
+		 * rather than the full union; unset effective_size keeps
+		 * the historical sizeof(union bpf_attr) default.
+		 */
+		const struct struct_desc *desc = struct_catalog_lookup("bpf_attr");
+		const struct union_variant *variant = NULL;
+
+		if (desc != NULL) {
+			variant = struct_desc_resolve_variant(desc, rec);
+			struct_field_fill_schema_aware((unsigned char *) attr,
+						       sizeof(union bpf_attr),
+						       desc, rec);
+		}
+		if (variant != NULL && variant->effective_size != 0)
+			rec->a3 = variant->effective_size;
+		else
+			rec->a3 = sizeof(union bpf_attr);
 		break;
+	}
 	}
 
 	avoid_shared_buffer_inout(&rec->a2, rec->a3);
