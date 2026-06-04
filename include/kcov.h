@@ -496,6 +496,13 @@ struct kcov_shared {
 	 * discarded it (none today, but the slot exists for future
 	 * branchier consumers). */
 	unsigned long cmp_hints_injected;
+	/* Bumped by gen_undefined_arg when prop_ring_try_get returns
+	 * a value the per-child propagation ring captured from an
+	 * earlier syscall return.  Sibling counter to cmp_hints_injected:
+	 * same callsite, different value source (trinity-observed return
+	 * vs kernel KCOV_TRACE_CMP).  Cumulative; stats.c reports the
+	 * per-window delta alongside the cmp_hints counters. */
+	unsigned long propagation_injected;
 	/* cmp_hints_try_get() calls that the chaos-mode gate forced to
 	 * return false.  Bumped after the shm/nr guard, before the pool
 	 * lookup, when cmp_hints_chaos_active() is true for the current

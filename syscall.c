@@ -1121,6 +1121,15 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		    entry->post(rec);
 
 		register_returned_fd(entry, rec);
+
+		/* Capture qualifying non-fd small-int returns into the
+		 * per-child propagation ring.  Same state == AFTER gate
+		 * as the fd path; same gate ordering after the canary
+		 * check so a scribbled retval doesn't pollute the ring.
+		 * The push routine applies the OBJ_NONE / range / fd-
+		 * alias filters internally so the dispatcher stays
+		 * agnostic to the capture policy. */
+		prop_ring_push(this_child(), entry, rec);
 	}
 
 	/* check_uid inspects current process state, not rec; safe to

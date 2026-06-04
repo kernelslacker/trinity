@@ -393,6 +393,25 @@ static unsigned long gen_undefined_arg(struct syscallentry *entry __unused__,
 	unsigned int call = rec->nr;
 	unsigned long hint;
 
+	/* Constant propagation: with low probability pull a value the
+	 * kernel just handed us back from a recent syscall.  Sibling
+	 * channel to cmp_hints (which surfaces values the *kernel*
+	 * compared against); this one surfaces values *trinity* received
+	 * as return.  Probability gate lives inside prop_ring_try_get so
+	 * the existing 9-way switch weights stay untouched; on an empty
+	 * or stale ring we just fall through to the regular mix. */
+	{
+		struct childdata *child = this_child();
+		unsigned long val;
+
+		if (child != NULL && prop_ring_try_get(child, rec, &val)) {
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(&kcov_shm->propagation_injected,
+						   1UL, __ATOMIC_RELAXED);
+			return val;
+		}
+	}
+
 	switch (rnd_modulo_u32(9)) {
 	case 0:
 		if (cmp_hints_try_get(call, rec->do32bit, &hint)) {

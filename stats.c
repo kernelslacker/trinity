@@ -3123,6 +3123,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_try_get_attempts;
 	static unsigned long prev_try_get_returned;
 	static unsigned long prev_injected;
+	static unsigned long prev_prop_injected;
 	static unsigned long prev_chaos_suppressed;
 	static unsigned long prev_count_oob;
 	static unsigned long prev_canary_lock_post;
@@ -3134,11 +3135,13 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned long cur_records, cur_truncated, cur_bloom_skipped, cur_unique;
 	unsigned long cur_strip_skipped;
 	unsigned long cur_try_get_attempts, cur_try_get_returned, cur_injected;
+	unsigned long cur_prop_injected;
 	unsigned long cur_chaos_suppressed;
 	unsigned long cur_count_oob, cur_canary_lock_post, cur_canary_pre, cur_canary_post;
 	unsigned long delta_records, delta_truncated, delta_bloom_skipped, delta_unique;
 	unsigned long delta_strip_skipped;
 	unsigned long delta_try_get_attempts, delta_try_get_returned, delta_injected;
+	unsigned long delta_prop_injected;
 	unsigned long delta_chaos_suppressed;
 	unsigned long delta_count_oob, delta_canary_lock_post, delta_canary_pre, delta_canary_post;
 	unsigned int pc_kids, cmp_kids;
@@ -3156,6 +3159,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	cur_try_get_attempts = __atomic_load_n(&kcov_shm->cmp_hints_try_get_attempts, __ATOMIC_RELAXED);
 	cur_try_get_returned = __atomic_load_n(&kcov_shm->cmp_hints_try_get_returned, __ATOMIC_RELAXED);
 	cur_injected         = __atomic_load_n(&kcov_shm->cmp_hints_injected,         __ATOMIC_RELAXED);
+	cur_prop_injected    = __atomic_load_n(&kcov_shm->propagation_injected,       __ATOMIC_RELAXED);
 	cur_chaos_suppressed = __atomic_load_n(&kcov_shm->cmp_hints_chaos_suppressed, __ATOMIC_RELAXED);
 	cur_count_oob        = __atomic_load_n(&kcov_shm->cmp_hints_count_oob,               __ATOMIC_RELAXED);
 	cur_canary_lock_post = __atomic_load_n(&kcov_shm->cmp_hints_canary_lock_post_corrupt, __ATOMIC_RELAXED);
@@ -3175,6 +3179,7 @@ void kcov_cmp_stats_periodic_dump(void)
 		prev_try_get_attempts = cur_try_get_attempts;
 		prev_try_get_returned = cur_try_get_returned;
 		prev_injected         = cur_injected;
+		prev_prop_injected    = cur_prop_injected;
 		prev_chaos_suppressed = cur_chaos_suppressed;
 		prev_count_oob        = cur_count_oob;
 		prev_canary_lock_post = cur_canary_lock_post;
@@ -3195,6 +3200,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	delta_try_get_attempts = cur_try_get_attempts - prev_try_get_attempts;
 	delta_try_get_returned = cur_try_get_returned - prev_try_get_returned;
 	delta_injected         = cur_injected         - prev_injected;
+	delta_prop_injected    = cur_prop_injected    - prev_prop_injected;
 	delta_chaos_suppressed = cur_chaos_suppressed - prev_chaos_suppressed;
 	delta_count_oob        = cur_count_oob        - prev_count_oob;
 	delta_canary_lock_post = cur_canary_lock_post - prev_canary_lock_post;
@@ -3203,7 +3209,8 @@ void kcov_cmp_stats_periodic_dump(void)
 
 	if ((delta_records | delta_truncated | delta_bloom_skipped | delta_strip_skipped |
 	     delta_unique | delta_try_get_attempts | delta_try_get_returned |
-	     delta_injected | delta_chaos_suppressed | delta_count_oob |
+	     delta_injected | delta_prop_injected |
+	     delta_chaos_suppressed | delta_count_oob |
 	     delta_canary_lock_post |
 	     delta_canary_pre | delta_canary_post) != 0) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
@@ -3255,6 +3262,12 @@ void kcov_cmp_stats_periodic_dump(void)
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
 					"cmp_hints_injected", delta_injected,
 					rate_milli / 1000, rate_milli % 1000, cur_injected);
+		}
+		if (delta_prop_injected) {
+			unsigned long rate_milli = (delta_prop_injected * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"propagation_injected", delta_prop_injected,
+					rate_milli / 1000, rate_milli % 1000, cur_prop_injected);
 		}
 		if (delta_chaos_suppressed) {
 			unsigned long rate_milli = (delta_chaos_suppressed * 1000UL) / (unsigned long)elapsed;
@@ -3340,6 +3353,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	prev_try_get_attempts = cur_try_get_attempts;
 	prev_try_get_returned = cur_try_get_returned;
 	prev_injected         = cur_injected;
+	prev_prop_injected    = cur_prop_injected;
 	prev_chaos_suppressed = cur_chaos_suppressed;
 	prev_count_oob        = cur_count_oob;
 	prev_canary_lock_post = cur_canary_lock_post;

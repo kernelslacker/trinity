@@ -11,6 +11,7 @@
 #include "kcov.h"
 #include "objects.h"
 #include "pre_crash_ring.h"
+#include "prop_ring.h"
 #include "syscall.h"
 
 struct fd_event_ring;
@@ -516,6 +517,14 @@ struct childdata {
 	/* Ring of fds returned by recent fd-creating syscalls.
 	 * Consulted preferentially when generating ARG_FD arguments. */
 	struct child_fd_ring live_fds;
+
+	/* Sibling of live_fds for non-fd returns: small-int scalars
+	 * (cookies, key serials, queue ids, signal numbers, ...) that
+	 * arrive on RET_NONE syscalls and get propagated forward into
+	 * ARG_UNDEFINED slots of subsequent calls.  Capture happens in
+	 * handle_syscall_ret() after register_returned_fd; consume
+	 * happens at low probability in gen_undefined_arg(). */
+	struct child_prop_ring prop_ring;
 
 	/*
 	 * Per-child OBJ_LOCAL objhead array.  Allocated lazily by

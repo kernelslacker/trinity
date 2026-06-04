@@ -440,6 +440,11 @@ void clean_childdata(struct childdata *child)
 		child->live_fds.fds[i] = -1;
 	child->live_fds.head = 0;
 
+	/* Reset propagation ring; slot.valid=false in zeroed entries
+	 * keeps prop_ring_try_get from picking ungenerated history if
+	 * the consumer probe ever happens before any capture. */
+	memset(&child->prop_ring, 0, sizeof(child->prop_ring));
+
 	/* Reset syscall ring; UNKNOWN state in zeroed slots is filtered
 	 * by the post-mortem reader so a freshly-spawned child contributes
 	 * nothing until it has actually completed a syscall. */
