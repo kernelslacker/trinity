@@ -99,17 +99,61 @@ elif ! printf '%s\n' "$block" | grep -qE '\.tag[[:space:]]*=[[:space:]]*FT_FLAGS
 fi
 checked=$((checked + 1))
 
+# Per-type variants installed by commits C/D/E/F.  All six PERF_TYPE_*
+# values should appear as named union_variant entries in
+# perf_event_attr_variants[]; TRACEPOINT and RAW are intentionally
+# empty (config stays FT_RAW) but still present so the resolver
+# returns a named variant for CMP-attribution scoping.
+variants_block=$(awk '
+	/^static const struct union_variant perf_event_attr_variants\[\] = \{/ {
+		in_block = 1
+		next
+	}
+	in_block && /^\};/ { in_block = 0; exit }
+	in_block { print }
+' "$SRC")
+
+if [ -z "$variants_block" ]; then
+	problems+=("perf_event_attr_variants[]: array not found")
+else
+	for v in HARDWARE SOFTWARE HW_CACHE BREAKPOINT TRACEPOINT RAW; do
+		if ! printf '%s\n' "$variants_block" \
+		     | grep -qE "\.name[[:space:]]*=[[:space:]]*\"$v\""; then
+			problems+=("perf_event_attr_variants[]: missing PERF_TYPE_$v entry")
+		fi
+		checked=$((checked + 1))
+	done
+fi
+
+# The desc-level buffer-relative discriminator wires `type` (offset 0,
+# size 4) so the resolver can reach the variant set installed above.
+desc_block=$(awk '
+	/\.name[[:space:]]*=[[:space:]]*"perf_event_attr"/ { in_block = 1 }
+	in_block { print }
+	in_block && /^[[:space:]]*\},$/ { in_block = 0; exit }
+' "$SRC")
+if ! printf '%s\n' "$desc_block" \
+     | grep -qE '\.buffer_discrim_offset[[:space:]]*='; then
+	problems+=("perf_event_attr desc: missing .buffer_discrim_offset")
+fi
+if ! printf '%s\n' "$desc_block" \
+     | grep -qE '\.buffer_discrim_size[[:space:]]*='; then
+	problems+=("perf_event_attr desc: missing .buffer_discrim_size")
+fi
+checked=$((checked + 2))
+
 if [ "${#problems[@]}" -gt 0 ]; then
 	{
-		echo "  $NAME: tag mismatch(es) in perf_event_attr_fields[]:"
+		echo "  $NAME: catalog mismatch(es) for perf_event_attr:"
 		for line in "${problems[@]}"; do
 			echo "    $line"
 		done
 		echo "  fix: re-read schema-aware-phase2-step6-perf-event-attr-spec"
-		echo "       for the expected tags; commits A and B installed them."
+		echo "       for the expected tags + variants; commits A/B/C/D/E/F"
+		echo "       installed them."
 	} >&2
 	fail "${#problems[@]} mismatch(es) of $checked"
 fi
 
-echo "PASS: $NAME: $checked field tag(s) validated"
+echo "PASS: $NAME: $checked catalog item(s) validated"
 exit 0
