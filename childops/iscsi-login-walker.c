@@ -44,9 +44,17 @@
  *                 DataDigest=None, MaxRecvDataSegmentLength=8192, plus
  *                 the rest of the OP_NEG mandatory set.
  *
- *   Subsequent commits add the FullFeaturePhase command-side fuzz and
- *   a chaos toggle that retains the random-byte coverage the older
- *   probe was producing.
+ *   FFP           the Login phase is over; the kernel-side session is
+ *                 in the post-login command-dispatch state.  Emit a
+ *                 small burst (1-4) of fuzzed BHS PDUs with the opcode
+ *                 biased into the FFP-valid set (NOP-Out, SCSI Cmd,
+ *                 SCSI Task Mgmt, Text Req, SCSI Data-Out, Logout Req,
+ *                 SNACK) and the rest of the header random.  This is
+ *                 the path the CVE corpus drivers/target/iscsi work
+ *                 exercises -- post-login command dispatch.
+ *
+ *   Subsequent commits add a chaos toggle that retains the random-byte
+ *   coverage the older probe was producing.
  *
  * Safety:
  *
@@ -365,6 +373,65 @@ static size_t build_login_op_neg(unsigned char *out, uint8_t isid[6])
 	return ISCSI_BHS_LEN + padded;
 }
 
+/* Post-login opcodes the FFP dispatcher accepts.  Bias the FFP fuzz
+ * opcode field into this set so the per-opcode handlers see real
+ * coverage instead of every PDU bouncing off the BHS opcode validator.
+ *
+ *   0x00  NOP-Out
+ *   0x01  SCSI Command
+ *   0x02  SCSI Task Management Function Request
+ *   0x04  Text Request
+ *   0x05  SCSI Data-Out
+ *   0x06  Logout Request
+ *   0x10  SNACK Request */
+static const unsigned char ffp_opcodes[] = {
+	0x00, 0x01, 0x02, 0x04, 0x05, 0x06, 0x10,
+};
+#define NR_FFP_OPCODES	(sizeof(ffp_opcodes) / sizeof(ffp_opcodes[0]))
+
+/* Cap on FFP fuzz data segment size.  Small keeps the dispatcher
+ * engaged on the BHS / header validators rather than burning cycles
+ * inside large copy_from_user paths that aren't the target. */
+#define FFP_DATA_MAX	16U
+
+/* Per-iteration FFP-PDU burst.  1-4 PDUs is enough to hit each
+ * dispatcher arm a few times across a session lifetime without making
+ * any one iteration unbounded. */
+#define FFP_PDUS_MAX	4U
+
+/* Build a FullFeaturePhase fuzz PDU.  Starts from a wholly-random BHS,
+ * then biases the opcode 7/8 of the time into the FFP-valid set and
+ * pins the AHS length / ISID / TSIH fields to values that won't cause
+ * the dispatcher to reject before the per-opcode handler runs.  Data
+ * segment is 0-15 random bytes plus 4-byte padding. */
+static size_t build_ffp_fuzz(unsigned char *out, uint8_t isid[6])
+{
+	unsigned char *bhs = out;
+	unsigned char *data = out + ISCSI_BHS_LEN;
+	size_t data_len;
+	size_t padded;
+
+	rnd_fill(bhs, ISCSI_BHS_LEN);
+	if ((rnd_u32() & 7) != 0)
+		bhs[0] = (unsigned char)((bhs[0] & 0x40) |
+			ffp_opcodes[rnd_modulo_u32(NR_FFP_OPCODES)]);
+	bhs[4] = (unsigned char)(bhs[4] & 0x03);	/* small AHS */
+	memcpy(bhs + 8, isid, 6);			/* same session */
+	bhs[14] = 0;					/* TSIH high */
+	bhs[15] = 0;					/* TSIH low */
+	/* ITT / CmdSN / ExpStatSN left random — they are echo cookies
+	 * and per-PDU window fields; the kernel either accepts a fresh
+	 * tag or rejects it, both reasonable coverage. */
+
+	data_len = rnd_modulo_u32(FFP_DATA_MAX);
+	padded = (data_len + 3) & ~(size_t)3;
+	if (padded > 0)
+		rnd_fill(data, padded);
+	put_be24(bhs + 5, (uint32_t)padded);
+
+	return ISCSI_BHS_LEN + padded;
+}
+
 bool iscsi_login_walker(struct childdata *child)
 {
 	unsigned char pdu[ISCSI_BHS_LEN + LOGIN_TEXT_MAX];
@@ -439,6 +506,33 @@ bool iscsi_login_walker(struct childdata *child)
 					   (unsigned long)n, __ATOMIC_RELAXED);
 		}
 		iscsi_drain(fd);
+
+		/* FullFeaturePhase fuzz burst.  The Login walk is over;
+		 * the kernel-side session is in the post-login command-
+		 * dispatch state (or it RST'd us mid-walk, in which case
+		 * these sends just get EPIPE and the stat increments
+		 * stop tracking).  Emit 1..FFP_PDUS_MAX fuzzed BHS PDUs
+		 * with the opcode biased into the FFP-valid set. */
+		__atomic_add_fetch(&shm->stats.iscsi_walker_ffp_iters, 1,
+				   __ATOMIC_RELAXED);
+		{
+			unsigned int j;
+			unsigned int ffp_pdus = 1 + rnd_modulo_u32(FFP_PDUS_MAX);
+
+			for (j = 0; j < ffp_pdus; j++) {
+				pdu_len = build_ffp_fuzz(pdu, isid);
+				n = send(fd, pdu, pdu_len,
+					 MSG_DONTWAIT | MSG_NOSIGNAL);
+				if (n > 0) {
+					__atomic_add_fetch(&shm->stats.iscsi_walker_ffp_pdus,
+							   1, __ATOMIC_RELAXED);
+					__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
+							   (unsigned long)n,
+							   __ATOMIC_RELAXED);
+				}
+				iscsi_drain(fd);
+			}
+		}
 
 		(void)shutdown(fd, SHUT_RDWR);
 		close(fd);
