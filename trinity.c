@@ -622,9 +622,21 @@ static void init_post_parse_io(void)
 	 * Without this, the banner would land on stdout before the flag is
 	 * known and corrupt the JSON stream consumers expect to parse. */
 	if (should_route_to_stdout())
-		outputstd("Trinity " VERSION " (git " GIT_HASH ")  Dave Jones <davej@codemonkey.org.uk>\n");
+		outputstd("Trinity " VERSION "  Dave Jones <davej@codemonkey.org.uk>\n");
 	else
-		outputerr("Trinity " VERSION " (git " GIT_HASH ")  Dave Jones <davej@codemonkey.org.uk>\n");
+		outputerr("Trinity " VERSION "  Dave Jones <davej@codemonkey.org.uk>\n");
+
+	/* Distinctive single-token build_hash anchor for triage tooling:
+	 * `grep build_hash out-*.log | tail -1` pins down which binary
+	 * produced a given log without having to parse the banner's
+	 * parenthesised `(git ...)` token.  Fleet lands fixes faster than
+	 * fuzz runs roll, so triages that try to attribute behaviour to a
+	 * specific commit need a self-describing provenance marker in the
+	 * log itself.  Build-time (not run-time) hash: the binary is what
+	 * was built, regardless of the source tree's state when it ran.
+	 * output() auto-prefixes "[main] " when called from mainpid, so
+	 * the line on disk reads "[main] build_hash=<sha>". */
+	output(0, "build_hash=%s\n", GIT_HASH);
 
 	/* Place ourselves into a dedicated cgroup v2 sub-cgroup with a
 	 * memory cap so a runaway allocation triggers a scoped OOM kill of
