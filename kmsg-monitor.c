@@ -35,6 +35,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "kcov.h"		/* kcov_shm */
 #include "kmsg-monitor.h"
 #include "pre_crash_ring.h"
 #include "trinity.h"
@@ -260,6 +261,18 @@ static void *kmsg_monitor_thread(void *arg)
 
 		if (match) {
 			enum kmsg_event_kind kind = classify_kmsg_event(body);
+
+			/* Flat WARN-fires bump for the chaos-mode V2 cohort
+			 * attribution at bandit window close.  Any classified
+			 * event counts -- the bucketing into chaos-on vs
+			 * chaos-off cohorts happens in bandit_record_pull where
+			 * the per-window delta lands.  UNKNOWN means the
+			 * trigger ladder matched but the structured classifier
+			 * did not recognise it, so it is not a real signal --
+			 * leave the counter alone in that case. */
+			if (kind != KMSG_EVENT_UNKNOWN && kcov_shm != NULL)
+				__atomic_fetch_add(&kcov_shm->kmsg_warn_fires,
+						   1UL, __ATOMIC_RELAXED);
 
 			output(0, "KMSG: {event:%d, banner:\"%s\"}\n",
 				(int)kind, body);
