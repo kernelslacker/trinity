@@ -435,6 +435,11 @@ void clean_childdata(struct childdata *child)
 	memset(child->local_deferred_free_reject_pc, 0,
 	       sizeof(child->local_deferred_free_reject_pc));
 
+	/* Reset breadcrumb ring; .valid=false in zeroed slots keeps the
+	 * parent dumper from picking up a previous occupant's leftover
+	 * payload as if it belonged to the fresh child. */
+	memset(&child->breadcrumb_ring, 0, sizeof(child->breadcrumb_ring));
+
 	/* Reset live fd ring: -1 marks all slots as empty. */
 	for (int i = 0; i < CHILD_FD_RING_SIZE; i++)
 		child->live_fds.fds[i] = -1;

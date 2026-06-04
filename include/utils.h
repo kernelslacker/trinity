@@ -269,6 +269,19 @@ static inline bool looks_like_corrupted_ptr(struct syscallrecord *rec,
  */
 void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
 					void *caller_pc, const char *site);
+/*
+ * Richer entry point that additionally feeds the per-fire breadcrumb
+ * ring with the scribbled pointer value and the arg slot it was caught
+ * on.  Callers that know the bad pointer (the shape-heuristic helpers,
+ * the snapshot-shadow tripwire) should prefer this over the legacy
+ * _bump_site entry; tagless callers stay on _bump_site, which forwards
+ * with arg_idx=CORRUPT_PTR_BREADCRUMB_NO_ARG and bad_ptr=0 so the
+ * breadcrumb still names the syscall even when the value is unknown.
+ */
+void post_handler_corrupt_ptr_bump_full(struct syscallrecord *rec,
+					void *caller_pc, const char *site,
+					unsigned int arg_idx,
+					unsigned long bad_ptr);
 #define post_handler_corrupt_ptr_bump(rec, caller_pc) \
 	post_handler_corrupt_ptr_bump_site((rec), (caller_pc), NULL)
 

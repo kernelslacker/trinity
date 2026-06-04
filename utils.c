@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include "breadcrumb_ring.h"
 #include "child.h"
 #include "debug.h"
 #include "deferred-free.h"
@@ -1700,8 +1701,10 @@ static void corrupt_ptr_pc_record(unsigned int nr, bool do32bit, void *pc,
 	ring[victim].count = victim_count + 1;
 }
 
-void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
-					void *caller_pc, const char *site)
+void post_handler_corrupt_ptr_bump_full(struct syscallrecord *rec,
+					void *caller_pc, const char *site,
+					unsigned int arg_idx,
+					unsigned long bad_ptr)
 {
 	struct childdata *child;
 	unsigned int nr;
@@ -1734,6 +1737,18 @@ void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
 	}
 	corrupt_ptr_pc_record(nr, do32bit, caller_pc, site);
 	corrupt_ptr_attr_record(nr, do32bit);
+
+	/* Per-fire breadcrumb with the scribbled pointer value, the arg
+	 * slot the caller attributed it to (or NO_ARG), and the site tag.
+	 * Drops silently when this_child() is NULL -- per-child storage. */
+	corrupt_ptr_breadcrumb_push(rec, arg_idx, bad_ptr, site);
+}
+
+void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
+					void *caller_pc, const char *site)
+{
+	post_handler_corrupt_ptr_bump_full(rec, caller_pc, site,
+					   CORRUPT_PTR_BREADCRUMB_NO_ARG, 0);
 }
 
 /*
@@ -1871,7 +1886,7 @@ void arg_shadow_stomp_bump(struct syscallrecord *rec, unsigned int argnum,
  * default for 64-bit boots) is used for the pid-shaped band so a stray
  * tid lands here even though it would also satisfy v >= 0x10000.
  */
-static const char *corrupt_ptr_label(unsigned long v)
+const char *corrupt_ptr_label(unsigned long v)
 {
 	if (v < 0x10000)
 		return "NULL-ish";
@@ -1899,7 +1914,8 @@ bool looks_like_corrupted_ptr_pc(struct syscallrecord *rec, const void *p,
 	if (!is_corrupt_ptr_shape(p))
 		return false;
 
-	post_handler_corrupt_ptr_bump(rec, caller_pc);
+	post_handler_corrupt_ptr_bump_full(rec, caller_pc, "shape-heuristic",
+					   CORRUPT_PTR_BREADCRUMB_NO_ARG, v);
 
 	/*
 	 * Sample every CORRUPT_PTR_SAMPLE_INTERVALth rejection.  Counter

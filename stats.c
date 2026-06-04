@@ -8,6 +8,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "arch.h"
+#include "breadcrumb_ring.h"
 #include "child.h"
 #include "cmp_hints.h"
 #include "edgepair.h"
@@ -2818,6 +2819,13 @@ void defense_counters_periodic_dump(void)
 
 	corrupt_ptr_attr_dump();
 	deferred_free_reject_pc_dump();
+
+	/* Per-fire breadcrumbs printed below the attribution rollup so a
+	 * triage scan sees the headline rates, then which handlers, then
+	 * the individual scribbled values that drove them.  Self-rate-
+	 * limited inside the helper to the same 600 s cadence as the
+	 * surrounding dump. */
+	corrupt_ptr_breadcrumb_dump(10);
 
 	last_dump = now;
 }

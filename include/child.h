@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include "types.h"
+#include "breadcrumb_ring.h"
 #include "bug_backtrace.h"
 #include "cmp_hints.h"
 #include "edgepair.h"
@@ -584,6 +585,14 @@ struct childdata {
 	struct corrupt_ptr_attr_entry local_corrupt_ptr_attr[CORRUPT_PTR_ATTR_SLOTS];
 	struct corrupt_ptr_pc_entry local_corrupt_ptr_pc[CORRUPT_PTR_PC_SLOTS];
 	struct deferred_free_reject_pc_entry local_deferred_free_reject_pc[CORRUPT_PTR_PC_SLOTS];
+
+	/* Per-fire payload that the (nr, do32bit) / (nr, do32bit, pc)
+	 * attribution shards drop on the floor: the scribbled pointer
+	 * value, the arg slot it was caught on (when the caller knows),
+	 * and a short site tag.  Owner-only writes from inside the child;
+	 * parent reads at periodic-dump time.  See include/breadcrumb_ring.h
+	 * for the coherence model. */
+	struct corrupt_ptr_breadcrumb_ring breadcrumb_ring;
 
 	/* Ring of recently completed syscall records, drained by the parent
 	 * during post-mortem to reconstruct a fleet-wide chronology. */
