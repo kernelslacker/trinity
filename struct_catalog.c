@@ -590,6 +590,59 @@ static const struct struct_field io_uring_register_file_alloc_range_fields[] = {
 };
 
 /*
+ * IORING_REGISTER_PBUF_RING (opcode 22) / IORING_UNREGISTER_PBUF_RING
+ * (opcode 23) / arg = struct io_uring_buf_reg.  ring_addr is a u64
+ * user pointer to the buffer ring; the hand-rolled fill points it at
+ * a real mapping.  ring_entries must be power-of-two and is seeded
+ * 16..128 by sanitise_io_uring_register -- FT_RAW captures the
+ * occasional non-pow2 / zero rejection edges the CMP path cares about.
+ * bgid is the buffer-group id; flags carry the IOU_PBUF_RING_* mask.
+ * resv[3] is reserved (must be zero, untouched by FT_RAW at size 24).
+ */
+#define IOU_PBUF_RING_MASK \
+	(IOU_PBUF_RING_MMAP | IOU_PBUF_RING_INC)
+
+static const struct struct_field io_uring_register_pbuf_ring_fields[] = {
+	FIELD(struct io_uring_buf_reg, ring_addr),
+	FIELDX(struct io_uring_buf_reg, ring_entries, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct io_uring_buf_reg, bgid, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 16 },
+	       .mutate_weight = 60),
+	FIELDX(struct io_uring_buf_reg, flags, FT_FLAGS,
+	       .u.flags.mask = IOU_PBUF_RING_MASK,
+	       .mutate_weight = 80),
+	FIELD(struct io_uring_buf_reg, resv),
+};
+
+/*
+ * IORING_REGISTER_SYNC_CANCEL (opcode 24) / arg = struct
+ * io_uring_sync_cancel_reg.  The largest single-struct variant
+ * (64 bytes) and the one that drives io_uring_register_args.struct_size.
+ * addr is a u64 userdata matcher (kernel compares it against in-flight
+ * requests); fd is the target fd; flags carry the
+ * IORING_ASYNC_CANCEL_* mask the kernel dispatches on; opcode is a
+ * single byte the cancellation matches against the original SQE
+ * opcode.  timeout is __kernel_timespec (16 bytes, FT_RAW no-op) and
+ * the pad / pad2 trailers are pure alignment padding so they stay
+ * out of the field table entirely.
+ */
+#define IORING_ASYNC_CANCEL_MASK \
+	(IORING_ASYNC_CANCEL_ALL      | IORING_ASYNC_CANCEL_FD       | \
+	 IORING_ASYNC_CANCEL_ANY      | IORING_ASYNC_CANCEL_FD_FIXED | \
+	 IORING_ASYNC_CANCEL_USERDATA | IORING_ASYNC_CANCEL_OP)
+
+static const struct struct_field io_uring_register_sync_cancel_fields[] = {
+	FIELD(struct io_uring_sync_cancel_reg, addr),
+	FIELDX(struct io_uring_sync_cancel_reg, fd, FT_FD,
+	       .mutate_weight = 80),
+	FIELDX(struct io_uring_sync_cancel_reg, flags, FT_FLAGS,
+	       .u.flags.mask = IORING_ASYNC_CANCEL_MASK,
+	       .mutate_weight = 80),
+	FIELD(struct io_uring_sync_cancel_reg, opcode),
+};
+
+/*
  * Per-opcode variant table.  rec->a2 carries the opcode at sanitise
  * and post time; struct_desc_resolve_variant() picks the matching
  * variant.  Opcodes without an entry fall through to the empty shared
@@ -617,6 +670,27 @@ static const struct union_variant io_uring_register_variants[] = {
 		.fields		= io_uring_register_file_alloc_range_fields,
 		.num_fields	= ARRAY_SIZE(io_uring_register_file_alloc_range_fields),
 		.effective_size	= sizeof(struct io_uring_file_index_range),
+	},
+	{
+		.discrim_value	= IORING_REGISTER_PBUF_RING,
+		.name		= "PBUF_RING",
+		.fields		= io_uring_register_pbuf_ring_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_pbuf_ring_fields),
+		.effective_size	= sizeof(struct io_uring_buf_reg),
+	},
+	{
+		.discrim_value	= IORING_UNREGISTER_PBUF_RING,
+		.name		= "UNREGISTER_PBUF_RING",
+		.fields		= io_uring_register_pbuf_ring_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_pbuf_ring_fields),
+		.effective_size	= sizeof(struct io_uring_buf_reg),
+	},
+	{
+		.discrim_value	= IORING_REGISTER_SYNC_CANCEL,
+		.name		= "SYNC_CANCEL",
+		.fields		= io_uring_register_sync_cancel_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_sync_cancel_fields),
+		.effective_size	= sizeof(struct io_uring_sync_cancel_reg),
 	},
 };
 
