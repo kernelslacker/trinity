@@ -1303,7 +1303,7 @@ static void check_fd_leaks(struct childdata *child)
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[105] = {
+static int dormant_op_disabled[106] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -1326,6 +1326,7 @@ static int dormant_op_disabled[105] = {
 	1,
 	0,	/* eth_emitter is lightweight (one socket per child, fixed-size sendto) — promote at startup. */
 	1,	/* sysfs_string_race: dormant until canary-queue load-tests the .store() race burst. */
+	1,	/* pci_bind: dormant until canary-queue load-tests the driver attach/detach path on the conservative allowlist. */
 };
 
 /*
@@ -1565,6 +1566,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_ETH_EMITTER:	return "eth_emitter";
 	case CHILD_OP_VMA_SPLIT_STORM:	return "vma_split_storm";
 	case CHILD_OP_SYSFS_STRING_RACE:	return "sysfs_string_race";
+	case CHILD_OP_PCI_BIND:		return "pci_bind";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1662,7 +1664,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[105] = {
+static const enum child_op_type pick_op_type_table[106] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -1768,6 +1770,7 @@ static const enum child_op_type pick_op_type_table[105] = {
 	[102] = CHILD_OP_ISCSI_TARGET_PROBE,
 	[103] = CHILD_OP_ETH_EMITTER,
 	[104] = CHILD_OP_SYSFS_STRING_RACE,
+	[105] = CHILD_OP_PCI_BIND,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -2152,6 +2155,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_ETH_EMITTER]		= eth_emitter,
 	[CHILD_OP_VMA_SPLIT_STORM]	= vma_split_storm,
 	[CHILD_OP_SYSFS_STRING_RACE]	= sysfs_string_race,
+	[CHILD_OP_PCI_BIND]		= pci_bind,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,

@@ -202,6 +202,7 @@ enum child_op_type {
 	CHILD_OP_ETH_EMITTER,
 	CHILD_OP_VMA_SPLIT_STORM,
 	CHILD_OP_SYSFS_STRING_RACE,
+	CHILD_OP_PCI_BIND,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -920,3 +921,4 @@ bool iscsi_target_probe(struct childdata *child);
 bool eth_emitter(struct childdata *child);
 bool vma_split_storm(struct childdata *child);
 bool sysfs_string_race(struct childdata *child);
+bool pci_bind(struct childdata *child);

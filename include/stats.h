@@ -2374,6 +2374,17 @@ struct stats_s {
 	unsigned long sysfs_string_race_fork_failed;	/* fork() of a writer child failed (EAGAIN / RLIMIT) */
 	unsigned long sysfs_string_race_writes_ok;	/* child pwrite() returned >0 (.store() accepted) */
 	unsigned long sysfs_string_race_writes_failed;	/* child pwrite() returned <=0 (EINVAL / EBUSY / etc.) */
+
+	/* pci_bind childop counters */
+	unsigned long pci_bind_runs;			/* total pci_bind invocations (incl. no-op latched / no-device) */
+	unsigned long pci_bind_drivers_available;	/* set once at probe: count of allowlist drivers found in /sys/bus/pci/drivers/ */
+	unsigned long pci_bind_no_devices;		/* picked driver had no currently-bound BDFs (per-invocation no-op) */
+	unsigned long pci_bind_unbind_ok;		/* unbind write returned >=0 (kernel accepted detach) */
+	unsigned long pci_bind_unbind_enodev;		/* unbind write returned EINVAL/ENODEV (handler ran, BDF already detached / not bound) */
+	unsigned long pci_bind_unbind_failed;		/* unbind open failed (EACCES / ENOENT / non-root) */
+	unsigned long pci_bind_bind_ok;			/* bind write returned >=0 (kernel re-attached) */
+	unsigned long pci_bind_bind_enodev;		/* bind write returned EINVAL/ENODEV (handler ran, BDF not present / matched another driver) */
+	unsigned long pci_bind_bind_failed;		/* bind open failed (EACCES / ENOENT / non-root) */
 };
 
 unsigned int stats_syscall_category(const char *name);

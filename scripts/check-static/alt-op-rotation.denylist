@@ -28,6 +28,7 @@ CHILD_OP_UBLK_LIFECYCLE          REASON: device lifecycle race
 CHILD_OP_NETNS_TEARDOWN_CHURN    REASON: netns teardown race
 CHILD_OP_IPV6_PMTU_TEARDOWN_RACE REASON: PMTU teardown race
 CHILD_OP_TCP_MD5_LISTENER_RACE   REASON: listener-socket race
+CHILD_OP_PCI_BIND                REASON: PCI driver attach/detach lifecycle race
 CHILD_OP_AFXDP_CHURN                  TODO: review for rotation candidacy
 CHILD_OP_AF_ALG_RECVMSG_CHURN         TODO: review for rotation candidacy
 CHILD_OP_AF_ALG_TEMPLATE_PROBE        TODO: review for rotation candidacy
