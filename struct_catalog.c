@@ -17,11 +17,13 @@
 #include <sys/resource.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/uio.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <sched.h>
 #include <time.h>
+#include <netinet/in.h>
 #include <linux/capability.h>
 #include <linux/futex.h>
 #include <linux/sched.h>
@@ -642,13 +644,65 @@ static const struct struct_field msghdr_fields[] = {
 /* ------------------------------------------------------------------ */
 
 /*
- * Only ss_family is interesting from a CMP standpoint — the kernel's
- * sockaddr dispatch starts by comparing it against AF_* constants.  The
- * rest of the buffer is opaque padding whose meaning depends entirely on
- * which family the kernel routed to.
+ * Tagged-union on ss_family.  Per-AF sub-variants live below; each
+ * variant's fields[] runs against the same sockaddr_storage envelope
+ * so offsets are buffer-relative (offsetof on the per-AF struct
+ * happens to match offsetof on sockaddr_storage for the shared head).
+ *
+ * ss_family itself is FT_ENUM over the curated vocab so the scalar
+ * pass writes a value the resolver will then match; an FT_RAW splat
+ * lands on a known AF roughly 1-in-8 instead of 1-in-32768, which is
+ * the difference between "variant fires" and "variant is theoretical".
+ *
+ * Variants intentionally omit ss_family from their fields[] -- the
+ * shared head pass already wrote it.  Each variant declares an
+ * effective_size matching the per-AF sizeof(struct sockaddr_XX) so
+ * the paired FT_LEN_BYTES (msghdr.msg_namelen) reports the kernel-
+ * expected length rather than the full 128-byte envelope.
+ *
+ * Long-tail families (AF_BLUETOOTH, AF_CAN, AF_XDP, AF_RDS, ...) fall
+ * through to the shared head pass alone: ss_family lands on a known
+ * AF value but the rest of the buffer stays opaque, matching today's
+ * pre-variant placeholder behaviour for those families.  A follow-up
+ * step covers them incrementally.
  */
+static const unsigned long sockaddr_storage_af_vocab[] = {
+	AF_UNIX, AF_INET,
+};
+
+/* AF_UNIX (sockaddr_un) -- 2-byte family + 108-byte sun_path. */
+static const struct struct_field sockaddr_un_variant_fields[] = {
+	FIELD(struct sockaddr_un, sun_path),
+};
+
+/* AF_INET (sockaddr_in) -- u16 port + 32-bit IPv4 + 8 bytes pad. */
+static const struct struct_field sockaddr_in_variant_fields[] = {
+	FIELD(struct sockaddr_in, sin_port),
+	FIELD(struct sockaddr_in, sin_addr),
+};
+
+static const struct union_variant sockaddr_storage_variants[] = {
+	{
+		.discrim_value	 = AF_UNIX,
+		.name		 = "AF_UNIX",
+		.fields		 = sockaddr_un_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_un_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_un),
+	},
+	{
+		.discrim_value	 = AF_INET,
+		.name		 = "AF_INET",
+		.fields		 = sockaddr_in_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_in_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_in),
+	},
+};
+
 static const struct struct_field sockaddr_storage_fields[] = {
-	FIELD(struct sockaddr_storage, ss_family),
+	FIELDX(struct sockaddr_storage, ss_family, FT_ENUM,
+	       .u.enum_ = { .vals = sockaddr_storage_af_vocab,
+			    .n    = ARRAY_SIZE(sockaddr_storage_af_vocab) },
+	       .mutate_weight = 200),
 };
 
 /* ------------------------------------------------------------------ */
@@ -1779,10 +1833,16 @@ const struct struct_desc struct_catalog[] = {
 		.num_fields	= ARRAY_SIZE(msghdr_fields),
 	},
 	{
-		.name		= "sockaddr_storage",
-		.struct_size	= sizeof(struct sockaddr_storage),
-		.fields		= sockaddr_storage_fields,
-		.num_fields	= ARRAY_SIZE(sockaddr_storage_fields),
+		.name			= "sockaddr_storage",
+		.struct_size		= sizeof(struct sockaddr_storage),
+		.fields			= sockaddr_storage_fields,
+		.num_fields		= ARRAY_SIZE(sockaddr_storage_fields),
+		.variants		= sockaddr_storage_variants,
+		.num_variants		= ARRAY_SIZE(sockaddr_storage_variants),
+		.buffer_discrim_offset	= offsetof(struct sockaddr_storage,
+						   ss_family),
+		.buffer_discrim_size	= sizeof(((struct sockaddr_storage *) 0)->
+						 ss_family),
 	},
 	{
 		.name		= "landlock_ruleset_attr",
