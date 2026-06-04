@@ -258,33 +258,194 @@ static const struct struct_field epoll_event_fields[] = {
 /* ------------------------------------------------------------------ */
 
 /*
- * Only the addressable scalar fields are listed; the long bitfield run
- * (disabled, inherit, ..., sigtrap, __reserved_1) cannot be referenced
- * by offsetof and is intentionally omitted.  CMP attribution still
- * benefits from every full-byte field below — particularly type, size,
- * sample_type, read_format, branch_sample_type, sample_regs_*, and the
- * union'd config / bp_addr / bp_len slots that the kernel constantly
- * compares against PERF_* constants.
+ * perf_event_attr is the rare cataloged struct whose live fill path
+ * the schema does NOT drive.  sanitise_perf_event_open() in
+ * syscalls/perf_event_open.c hand-rolls a coherent (type, config)
+ * tuple via pick_perf_tuple() and overwrites rec->a1 with its own
+ * buffer; the schema-aware fill produced upstream is discarded on
+ * every iteration.  The catalog therefore exists for two forward-
+ * infra purposes:
+ *
+ *   1. type-scoped CMP attribution.  struct_field_for_cmp() prefers
+ *      a same-width FT_ENUM / FT_FLAGS / FT_VERSION_MAGIC slot over
+ *      an FT_RAW one, so a learned constant (KCOV CMP) lands on the
+ *      named gate (type, size, sample_type, ...) rather than a
+ *      coincidentally-same-width opaque slot.  No live consumer is
+ *      wired today; this awaits the cmp_hints recording-path lift.
+ *   2. per-type variant infra.  Phase 2 step 6 commits C/D/E/F are
+ *      held until the step-4 buffer-discriminator lands; once it
+ *      does, `type` (offset 0) becomes the desc-level discriminator
+ *      and config / bp_* / config1 / config2 get per-PERF_TYPE_*
+ *      sub-variants.  This commit annotates the type-independent
+ *      shared fields only.
+ *
+ * Bit-field flag group at offset 40 (disabled..sigtrap, ~36 single-
+ * bit flags + precise_ip:2 + __reserved_1:26) is annotated by the
+ * follow-up commit B; the explicit hand-built mask doesn't compose
+ * with offsetof so the field uses an explicit { .offset = 40 }.
  */
+
+/*
+ * type (offset 0): PERF_TYPE_* major-type discriminator.  Six legal
+ * values today; vendor PMU type IDs >= PERF_TYPE_MAX are dynamically
+ * registered and not enumerable at compile time.  The buffer-
+ * discriminator infra (step 4) will read this slot to select the
+ * per-type config / bp_* / config1 / config2 variant.
+ */
+static const unsigned long perf_type_values[] = {
+	PERF_TYPE_HARDWARE,
+	PERF_TYPE_SOFTWARE,
+	PERF_TYPE_TRACEPOINT,
+	PERF_TYPE_HW_CACHE,
+	PERF_TYPE_RAW,
+	PERF_TYPE_BREAKPOINT,
+};
+
+/*
+ * size (offset 4): ABI version stamp.  The kernel accepts any prior
+ * PERF_ATTR_SIZE_VER* and zero-pads to its own sizeof; non-version
+ * values bounce on -E2BIG / -EINVAL.  Mirrors perf_event_attr_known_
+ * sizes[] in syscalls/perf_event_open.c so the hand-rolled csfu and
+ * the schema-aware CMP attribution share the same vocabulary.
+ */
+static const unsigned long perf_attr_known_sizes[] = {
+	PERF_ATTR_SIZE_VER0,
+	PERF_ATTR_SIZE_VER1,
+	PERF_ATTR_SIZE_VER2,
+	PERF_ATTR_SIZE_VER3,
+	PERF_ATTR_SIZE_VER4,
+	PERF_ATTR_SIZE_VER5,
+	PERF_ATTR_SIZE_VER6,
+	PERF_ATTR_SIZE_VER7,
+	PERF_ATTR_SIZE_VER8,
+};
+
+/*
+ * sample_type (offset 24): PERF_SAMPLE_* bits 0..24.  The kernel
+ * branches heavily on these in the overflow/sample path -- attributing
+ * a learned constant to this field's vocab is high signal.
+ */
+#define PERF_SAMPLE_MASK ( \
+	PERF_SAMPLE_IP            | PERF_SAMPLE_TID             | \
+	PERF_SAMPLE_TIME          | PERF_SAMPLE_ADDR            | \
+	PERF_SAMPLE_READ          | PERF_SAMPLE_CALLCHAIN       | \
+	PERF_SAMPLE_ID            | PERF_SAMPLE_CPU             | \
+	PERF_SAMPLE_PERIOD        | PERF_SAMPLE_STREAM_ID       | \
+	PERF_SAMPLE_RAW           | PERF_SAMPLE_BRANCH_STACK    | \
+	PERF_SAMPLE_REGS_USER     | PERF_SAMPLE_STACK_USER      | \
+	PERF_SAMPLE_WEIGHT        | PERF_SAMPLE_DATA_SRC        | \
+	PERF_SAMPLE_IDENTIFIER    | PERF_SAMPLE_TRANSACTION     | \
+	PERF_SAMPLE_REGS_INTR     | PERF_SAMPLE_PHYS_ADDR       | \
+	PERF_SAMPLE_AUX           | PERF_SAMPLE_CGROUP          | \
+	PERF_SAMPLE_DATA_PAGE_SIZE | PERF_SAMPLE_CODE_PAGE_SIZE | \
+	PERF_SAMPLE_WEIGHT_STRUCT)
+
+/*
+ * read_format (offset 32): PERF_FORMAT_* bits 0..4 controlling the
+ * layout of read() on a perf event fd.
+ */
+#define PERF_FORMAT_MASK ( \
+	PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING | \
+	PERF_FORMAT_ID                 | PERF_FORMAT_GROUP              | \
+	PERF_FORMAT_LOST)
+
+/*
+ * branch_sample_type (offset 72): PERF_SAMPLE_BRANCH_* bits 0..19.
+ * Only consulted when sample_type carries PERF_SAMPLE_BRANCH_STACK;
+ * harmless garbage otherwise, so unconditional FT_FLAGS is correct.
+ */
+#define PERF_SAMPLE_BRANCH_MASK ( \
+	PERF_SAMPLE_BRANCH_USER       | PERF_SAMPLE_BRANCH_KERNEL      | \
+	PERF_SAMPLE_BRANCH_HV         | PERF_SAMPLE_BRANCH_ANY         | \
+	PERF_SAMPLE_BRANCH_ANY_CALL   | PERF_SAMPLE_BRANCH_ANY_RETURN  | \
+	PERF_SAMPLE_BRANCH_IND_CALL   | PERF_SAMPLE_BRANCH_ABORT_TX    | \
+	PERF_SAMPLE_BRANCH_IN_TX      | PERF_SAMPLE_BRANCH_NO_TX       | \
+	PERF_SAMPLE_BRANCH_COND       | PERF_SAMPLE_BRANCH_CALL_STACK  | \
+	PERF_SAMPLE_BRANCH_IND_JUMP   | PERF_SAMPLE_BRANCH_CALL        | \
+	PERF_SAMPLE_BRANCH_NO_FLAGS   | PERF_SAMPLE_BRANCH_NO_CYCLES   | \
+	PERF_SAMPLE_BRANCH_TYPE_SAVE  | PERF_SAMPLE_BRANCH_HW_INDEX    | \
+	PERF_SAMPLE_BRANCH_PRIV_SAVE  | PERF_SAMPLE_BRANCH_COUNTERS)
+
+/*
+ * clockid (offset 92): __s32, consulted only when the use_clockid
+ * flag is set.  The kernel accepts the standard POSIX CLOCK_* IDs
+ * plus a couple of perf-rejected ones so the rejection path also
+ * gets exercised when use_clockid is on.
+ */
+static const unsigned long clockid_values[] = {
+	CLOCK_REALTIME,
+	CLOCK_MONOTONIC,
+	CLOCK_PROCESS_CPUTIME_ID,
+	CLOCK_THREAD_CPUTIME_ID,
+	CLOCK_MONOTONIC_RAW,
+	CLOCK_REALTIME_COARSE,
+	CLOCK_MONOTONIC_COARSE,
+	CLOCK_BOOTTIME,
+	CLOCK_TAI,
+};
+
 static const struct struct_field perf_event_attr_fields[] = {
-	FIELD(struct perf_event_attr, type),
-	FIELD(struct perf_event_attr, size),
+	FIELDX(struct perf_event_attr, type, FT_ENUM,
+	       .u.enum_ = { perf_type_values, ARRAY_SIZE(perf_type_values) },
+	       .mutate_weight = 200),
+	FIELDX(struct perf_event_attr, size, FT_VERSION_MAGIC,
+	       .u.vals = perf_attr_known_sizes,
+	       .mutate_weight = 80),
+	/*
+	 * config: meaning depends on `type`.  HARDWARE -> perf_hw_id,
+	 * SOFTWARE -> perf_sw_ids, HW_CACHE -> packed (cache, op,
+	 * result) triple, BREAKPOINT -> ignored, RAW/TRACEPOINT ->
+	 * vendor-/runtime-specific.  Per-type variants land in
+	 * commits C/D once the step-4 buffer-discriminator lands.
+	 */
 	FIELD(struct perf_event_attr, config),
+	/* sample_period / sample_freq anon union; `freq` flag picks. */
 	FIELD(struct perf_event_attr, sample_period),
-	FIELD(struct perf_event_attr, sample_type),
-	FIELD(struct perf_event_attr, read_format),
+	FIELDX(struct perf_event_attr, sample_type, FT_FLAGS,
+	       .u.flags.mask = PERF_SAMPLE_MASK,
+	       .mutate_weight = 100),
+	FIELDX(struct perf_event_attr, read_format, FT_FLAGS,
+	       .u.flags.mask = PERF_FORMAT_MASK,
+	       .mutate_weight = 80),
+	/* wakeup_events / wakeup_watermark anon union; `watermark` flag picks. */
 	FIELD(struct perf_event_attr, wakeup_events),
+	/*
+	 * bp_type / bp_addr / bp_len are interpreted only when
+	 * type == PERF_TYPE_BREAKPOINT; otherwise the slots double as
+	 * config1 / config2 and carry PMU-specific extension words.
+	 * Per-type variant lands in commit E.
+	 */
 	FIELD(struct perf_event_attr, bp_type),
 	FIELD(struct perf_event_attr, bp_addr),
 	FIELD(struct perf_event_attr, bp_len),
-	FIELD(struct perf_event_attr, branch_sample_type),
+	FIELDX(struct perf_event_attr, branch_sample_type, FT_FLAGS,
+	       .u.flags.mask = PERF_SAMPLE_BRANCH_MASK,
+	       .mutate_weight = 80),
+	/*
+	 * sample_regs_user / sample_regs_intr: bit-per-register mask,
+	 * arch-specific (asm/perf_regs.h per architecture).  No
+	 * portable enum.  TODO: arch-conditional mask once a precedent
+	 * for arch-#ifdef catalog content lands.
+	 */
 	FIELD(struct perf_event_attr, sample_regs_user),
-	FIELD(struct perf_event_attr, sample_stack_user),
-	FIELD(struct perf_event_attr, clockid),
+	FIELDX(struct perf_event_attr, sample_stack_user, FT_RANGE,
+	       .u.range = { 0, 65528 },
+	       .mutate_weight = 60),
+	FIELDX(struct perf_event_attr, clockid, FT_ENUM,
+	       .u.enum_ = { clockid_values, ARRAY_SIZE(clockid_values) },
+	       .mutate_weight = 60),
 	FIELD(struct perf_event_attr, sample_regs_intr),
 	FIELD(struct perf_event_attr, aux_watermark),
-	FIELD(struct perf_event_attr, sample_max_stack),
+	FIELDX(struct perf_event_attr, sample_max_stack, FT_RANGE,
+	       .u.range = { 0, 255 },
+	       .mutate_weight = 60),
 	FIELD(struct perf_event_attr, aux_sample_size),
+	/*
+	 * aux_action: 3 valid bits (aux_start_paused / aux_pause /
+	 * aux_resume) packed into a u32 with 29 reserved bits.  FT_FLAGS
+	 * mask is constructed in commit B alongside the off-40 bit-field
+	 * group.
+	 */
 	FIELD(struct perf_event_attr, aux_action),
 	FIELD(struct perf_event_attr, sig_data),
 	FIELD(struct perf_event_attr, config3),
