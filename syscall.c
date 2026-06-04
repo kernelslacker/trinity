@@ -834,6 +834,11 @@ static enum arena_ptr_status arena_ptr_liveness(unsigned long v, size_t need)
 	return ARENA_PTR_UNKNOWN;
 }
 
+/* Max regenerate attempts before arena_liveness_probe gives up on a
+ * slot whose generated value keeps landing inside the arena band.
+ * Bounded so a systemically-poisoned generator can't spin the probe. */
+#define ARENA_REJECT_MAX_RETRIES	3
+
 /*
  * Dispatcher-level liveness probe.  Walks the ARG_ADDRESS /
  * ARG_NON_NULL_ADDRESS slots and the rec->post_state tail looking for
@@ -843,11 +848,11 @@ static enum arena_ptr_status arena_ptr_liveness(unsigned long v, size_t need)
  *
  * Phase 2 (arg slots): on detection bump arena_ptr_stale_caught_arg,
  * then regenerate the offending slot via the per-argtype generator and
- * re-check.  Up to 3 attempts; if every retry also lands in the arena
- * band give up, bump arena_ptr_stale_reject_giveup, and leave the
- * original value in place so entry->post(rec) still observes a
- * deterministic state and we don't spin on a generator that is
- * systemically poisoned.
+ * re-check.  Up to ARENA_REJECT_MAX_RETRIES attempts; if every retry
+ * also lands in the arena band give up, bump
+ * arena_ptr_stale_reject_giveup, and leave the original value in place
+ * so entry->post(rec) still observes a deterministic state and we don't
+ * spin on a generator that is systemically poisoned.
  *
  * Phase 1 behaviour preserved for post_state: rec->post_state is the
  * .post handler's snap-stash convention and the kernel has already
@@ -888,12 +893,12 @@ static void arena_liveness_probe(struct syscallentry *entry,
 		arena_stale_warn_ratelimited(entry, "arg", *slot);
 
 		ops = argtype_get_ops(t);
-		for (attempt = 0; attempt < 3; attempt++) {
+		for (attempt = 0; attempt < ARENA_REJECT_MAX_RETRIES; attempt++) {
 			fresh = ops->generate(entry, rec, i);
 			if (arena_ptr_liveness(fresh, need) != ARENA_PTR_STALE)
 				break;
 		}
-		if (attempt == 3) {
+		if (attempt == ARENA_REJECT_MAX_RETRIES) {
 			__atomic_add_fetch(&shm->stats.arena_ptr_stale_reject_giveup,
 					   1, __ATOMIC_RELAXED);
 			/* Don't leave the stale pointer in place: the kernel

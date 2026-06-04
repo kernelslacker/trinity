@@ -49,6 +49,23 @@
 #define PROP_RING_INJECT_MOD		12
 #define PROP_RING_INJECT_MOD_BOOSTED	6
 
+/* Phase 2 downsample denominator applied when the ring DOESN'T contain a
+ * top-quartile (A, B) pair: keeps the unboosted effective rate at the
+ * Phase 1 1-in-12 baseline (boosted 1/6 * 1/2 = 1/12). */
+#define PROP_RING_DOWNSAMPLE_DENOM	2
+
+/* Per-injection recency-filter probe budget.  If every slot we touch
+ * inside the loop is stale (older than PROP_RING_RECENCY_MAX), the ring
+ * as a whole is treated as stale and the caller falls back to
+ * raw-random generation. */
+#define PROP_RING_RECENCY_PROBE_TRIES	4
+
+/* Top-quartile divisor for the edgepair-cutoff histogram walk:
+ * accumulate from the highest bin downward until at least
+ * populated/PROP_RING_TOPQ_DIVISOR slots are covered (i.e. the top 25%
+ * of edgepairs by total_count). */
+#define PROP_RING_TOPQ_DIVISOR		4
+
 static unsigned int ring_prev(unsigned int head)
 {
 	return (head - 1) & (CHILD_PROP_RING_SIZE - 1);
@@ -191,7 +208,7 @@ bool prop_ring_try_get(struct childdata *child,
 		    : ULONG_MAX;
 	boost = ring_has_topq_pair(ring, populated, rec->nr, threshold);
 
-	if (!boost && rnd_modulo_u32(2) != 0)
+	if (!boost && rnd_modulo_u32(PROP_RING_DOWNSAMPLE_DENOM) != 0)
 		return false;
 
 	now = child->op_nr;
@@ -207,7 +224,7 @@ bool prop_ring_try_get(struct childdata *child,
 	 * fine -- the boost signal is per-ring ("this ring contains at
 	 * least one top-q (A, B) for current B"), not per-slot, and the
 	 * design spec calls that out as the all-top-q net effect. */
-	for (tries = 0; tries < 4; tries++) {
+	for (tries = 0; tries < PROP_RING_RECENCY_PROBE_TRIES; tries++) {
 		unsigned int idx = rnd_modulo_u32(populated);
 		struct prop_slot *slot = &ring->slots[idx];
 
@@ -296,10 +313,11 @@ void prop_ring_recompute_edgepair_topq(void)
 		return;
 
 	/* Top quartile = top 25%, so accumulate from the highest bin
-	 * downward until we cover at least populated/4 slots.  The
-	 * (+3)/4 keeps the target non-zero on tiny populations where
-	 * integer-division to 0 would let every pair clear the bar. */
-	target = (populated + 3) / 4;
+	 * downward until we cover at least populated/PROP_RING_TOPQ_DIVISOR
+	 * slots.  The round-up bias (+ DIVISOR - 1) keeps the target
+	 * non-zero on tiny populations where integer-division to 0 would
+	 * let every pair clear the bar. */
+	target = (populated + PROP_RING_TOPQ_DIVISOR - 1) / PROP_RING_TOPQ_DIVISOR;
 	acc = 0;
 	threshold = ULONG_MAX;
 	for (b = 32; b >= 0; b--) {
