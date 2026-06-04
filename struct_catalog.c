@@ -1077,20 +1077,40 @@ static const struct struct_field sockaddr_vm_variant_fields[] = {
 #ifdef USE_IF_ALG
 /*
  * AF_ALG (sockaddr_alg) -- crypto userspace endpoint.  salg_type and
- * salg_name are 14- and 64-byte NUL-padded strings; the schema-fill
- * machinery's FT_ENUM only carries unsigned-long values today, so a
- * string vocabulary needs wider enum support before it can land here.
- * Leaving both as FT_RAW means the kernel's name lookup fails most
- * of the time, but the variant still fires and msg_namelen reports
- * 88 instead of 128, which is the dispatch the kernel needs to
- * reach AF_ALG-specific code.  salg_feat / salg_mask stay FT_RAW
- * pending a curated CRYPTO_ALG_* mask.
+ * salg_name are 14- and 64-byte NUL-padded strings the kernel feeds
+ * straight into crypto_find_alg().  FT_VOCAB plants a curated string
+ * from a known bucket / algorithm name so the bind path walks past
+ * the lookup loop rather than tripping at -ENOENT on random bytes.
+ * Per-field draws are independent: a type/name mismatch still drives
+ * the full lookup, which is the kernel boundary trinity's proto-alg
+ * dictionary documents as worth fuzzing.  salg_feat / salg_mask stay
+ * FT_RAW pending a curated CRYPTO_ALG_* mask.
  */
+static const char *const salg_type_vocab[] = {
+	"hash", "skcipher", "aead", "rng",
+	"akcipher", "kpp", "shash", "ahash",
+};
+
+static const char *const salg_name_vocab[] = {
+	"sha1", "sha256", "sha512", "md5",
+	"hmac(sha256)", "hmac(sha512)",
+	"aes-cbc-essiv:sha256", "chacha20",
+	"poly1305", "gcm(aes)", "ccm(aes)",
+	"xts(aes)", "cbc(aes)", "ecb(aes)",
+	"rfc4106(gcm(aes))",
+};
+
 static const struct struct_field sockaddr_alg_variant_fields[] = {
-	FIELD(struct sockaddr_alg, salg_type),
+	FIELDX(struct sockaddr_alg, salg_type, FT_VOCAB,
+	       .u.vocab = { .vocab = salg_type_vocab,
+			    .vocab_len = ARRAY_SIZE(salg_type_vocab),
+			    .element_stride = sizeof(((struct sockaddr_alg *)NULL)->salg_type) }),
 	FIELD(struct sockaddr_alg, salg_feat),
 	FIELD(struct sockaddr_alg, salg_mask),
-	FIELD(struct sockaddr_alg, salg_name),
+	FIELDX(struct sockaddr_alg, salg_name, FT_VOCAB,
+	       .u.vocab = { .vocab = salg_name_vocab,
+			    .vocab_len = ARRAY_SIZE(salg_name_vocab),
+			    .element_stride = sizeof(((struct sockaddr_alg *)NULL)->salg_name) }),
 };
 #endif
 
