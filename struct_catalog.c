@@ -2413,6 +2413,104 @@ static const struct union_variant bpf_attr_LINK_CREATE_base = {
 };
 
 /*
+ * Per-attach-type discriminator-value sets for the link_create
+ * sub-variants.  Single-value arms use the .discrim_value scalar on
+ * the union_variant entry; multi-value arms (TRACING here, CGROUP
+ * later) use .discrim_values[] so one entry covers them all.
+ *
+ * TRACING covers the fentry/fexit/modify-return/LSM/raw-tp/fsession
+ * family -- any attach type that the kernel routes through the
+ * tracing-link path, all of which share the (target_btf_id, cookie)
+ * tail shape on top of the BASE arm's target_btf_id slot.
+ */
+#ifndef BPF_TRACE_FSESSION
+#define BPF_TRACE_FSESSION		58
+#endif
+
+static const unsigned long bpf_attach_types_tracing[] = {
+	BPF_TRACE_FENTRY, BPF_TRACE_FEXIT, BPF_MODIFY_RETURN,
+	BPF_LSM_MAC, BPF_LSM_CGROUP, BPF_TRACE_RAW_TP,
+	BPF_TRACE_FSESSION,
+};
+
+/*
+ * ITER sub-variant: iter_info is a user pointer to a bpf_iter_link_info
+ * blob the verifier walks; the schema fill plants random bytes so the
+ * kernel's first-pass copy_from_user succeeds and the iter-type
+ * dispatch runs.  iter_info_len pairs back via FT_LEN_BYTES.
+ */
+static const struct struct_field bpf_attr_LINK_CREATE_ITER_fields[] = {
+	FIELDX(union bpf_attr, link_create.iter_info, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .len_field = "link_create.iter_info_len",
+				.optional = true,
+				.max_bytes = 128 }),
+	FIELDX(union bpf_attr, link_create.iter_info_len, FT_LEN_BYTES,
+	       .u.len_of = { .buf_field = "link_create.iter_info",
+			     .optional = true }),
+};
+
+/*
+ * PERF_EVENT sub-variant: a single u64 cookie at the inner-union
+ * leading offset.  Random bytes are fine -- the kernel passes the
+ * value through verbatim to BPF helpers without interpretation.
+ */
+static const struct struct_field bpf_attr_LINK_CREATE_PERF_EVENT_fields[] = {
+	FIELD(union bpf_attr, link_create.perf_event.bpf_cookie),
+};
+
+/*
+ * TRACING sub-variant: overlays a u64 cookie on top of the BASE arm's
+ * target_btf_id (the inner struct's first 4 bytes alias the BASE
+ * target_btf_id slot per the uapi comment).  cookie lives at offset 8
+ * within the inner struct -- u64 natural alignment puts it after
+ * 4 bytes of pad, not immediately after target_btf_id as the spec
+ * draft assumed.  effective_size therefore lands at 32, not 28.
+ */
+static const struct struct_field bpf_attr_LINK_CREATE_TRACING_fields[] = {
+	FIELD(union bpf_attr, link_create.tracing.cookie),
+};
+
+/*
+ * LINK_CREATE nested sub-variant table.  attach_type read off the
+ * just-filled buffer at offset 8 (relative to the union, equal to
+ * link_create.attach_type since link_create is at union offset 0)
+ * selects which entry's tail fields[] overlay onto the BASE pass.
+ */
+static const struct union_variant bpf_attr_LINK_CREATE_nested[] = {
+	{
+		.discrim_value	= BPF_TRACE_ITER,
+		.name		= "LINK_CREATE/ITER",
+		.fields		= bpf_attr_LINK_CREATE_ITER_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_LINK_CREATE_ITER_fields),
+		.effective_size	= offsetof(union bpf_attr,
+					   link_create.iter_info_len) +
+				  sizeof(((union bpf_attr *)NULL)
+					 ->link_create.iter_info_len),
+	},
+	{
+		.discrim_value	= BPF_PERF_EVENT,
+		.name		= "LINK_CREATE/PERF_EVENT",
+		.fields		= bpf_attr_LINK_CREATE_PERF_EVENT_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_LINK_CREATE_PERF_EVENT_fields),
+		.effective_size	= offsetof(union bpf_attr,
+					   link_create.perf_event.bpf_cookie) +
+				  sizeof(((union bpf_attr *)NULL)
+					 ->link_create.perf_event.bpf_cookie),
+	},
+	{
+		.discrim_values	    = bpf_attach_types_tracing,
+		.num_discrim_values = ARRAY_SIZE(bpf_attach_types_tracing),
+		.name		= "LINK_CREATE/TRACING",
+		.fields		= bpf_attr_LINK_CREATE_TRACING_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_LINK_CREATE_TRACING_fields),
+		.effective_size	= offsetof(union bpf_attr,
+					   link_create.tracing.cookie) +
+				  sizeof(((union bpf_attr *)NULL)
+					 ->link_create.tracing.cookie),
+	},
+};
+
+/*
  * bpf_insn registration -- retained as an 8-byte CMP-attribution shape
  * so a learned KCOV-compare constant on code / off / imm can be
  * attributed back to the right field by struct_field_for_cmp().
@@ -2640,8 +2738,8 @@ static const struct union_variant bpf_attr_variants[] = {
 		.nested_discrim_offset = offsetof(union bpf_attr, link_create.attach_type),
 		.nested_discrim_size   = 4,
 		.base		= &bpf_attr_LINK_CREATE_base,
-		.nested_variants     = NULL,
-		.num_nested_variants = 0,
+		.nested_variants     = bpf_attr_LINK_CREATE_nested,
+		.num_nested_variants = ARRAY_SIZE(bpf_attr_LINK_CREATE_nested),
 	},
 };
 #endif
