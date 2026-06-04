@@ -9,6 +9,7 @@
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
+#include "unblocker.h"
 #include "utils.h"
 
 /*
@@ -89,9 +90,32 @@ static void sanitise_accept_addrlen(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) lenp;
 }
 
+/*
+ * On-demand accept-unblocker.  Immediately before the kernel-side
+ * accept() runs, fire a loopback connect at the very fd this call is
+ * about to use so the backlog is non-empty by the time accept enters
+ * inet_csk_accept's wait loop.  Removes the blocking window for this
+ * specific call rather than relying on the periodic baseline in
+ * socket_child_ops().
+ *
+ * rec->a1 arrives as a struct socketinfo * from ARG_SOCKETINFO and is
+ * overwritten with the int fd by fd_from_socketinfo() below.  Grab
+ * the cached listener metadata off the socketinfo first; the
+ * connector then prefers cache->local over a lazy probe.
+ *
+ * fd_from_socketinfo() carries a 1/1000 random-fd substitution; on
+ * that arm rec->a1 ends up pointing at an arbitrary fd, the connector
+ * lazy-probes that, and a non-listener is a hard no-op.
+ */
 static void sanitise_accept(struct syscallrecord *rec)
 {
-	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
+	struct socketinfo *si = (struct socketinfo *) rec->a1;
+	int fd;
+
+	rec->a1 = fd_from_socketinfo(si);
+	fd = (int) rec->a1;
+
+	accept_unblocker_fire(fd, si);
 
 	sanitise_accept_addrlen(rec);
 }
@@ -176,7 +200,13 @@ static unsigned long sanitise_accept4_flags(void)
 
 static void sanitise_accept4(struct syscallrecord *rec)
 {
-	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
+	struct socketinfo *si = (struct socketinfo *) rec->a1;
+	int fd;
+
+	rec->a1 = fd_from_socketinfo(si);
+	fd = (int) rec->a1;
+
+	accept_unblocker_fire(fd, si);
 
 	sanitise_accept_addrlen(rec);
 
