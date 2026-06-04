@@ -49,7 +49,29 @@ static void sanitise_accept_addrlen(struct syscallrecord *rec)
 
 	avoid_shared_buffer_out(&rec->a2, sizeof(struct sockaddr_storage));
 
-	lenp = zmalloc(sizeof(*lenp));
+	/*
+	 * Source the value-result socklen_t slot from
+	 * get_writable_address() rather than bare zmalloc().  The
+	 * original zmalloc() result was untracked (no deferred_alloc_track)
+	 * AND the .post handler made no attempt to free it, so every
+	 * accept call leaked an 8-byte libc-heap chunk -- 5-second runs
+	 * showed thousands of these accumulating per child.  Pool-owned
+	 * memory has no free obligation, mirrors the pipe/socketpair fix
+	 * shape, and the slot lives outside the libc brk arena so the
+	 * kernel-side writeback of the actual length can't trip glibc
+	 * malloc consistency checks on adjacent chunks.
+	 *
+	 * On pool exhaustion fall back to the NULL/NULL pair shape (b)
+	 * so the kernel EFAULTs cleanly instead of writing the result
+	 * length into a leftover slot from a previous iteration.
+	 */
+	lenp = (socklen_t *) get_writable_address(sizeof(*lenp));
+	if (lenp == NULL) {
+		rec->a2 = 0;
+		rec->a3 = 0;
+		return;
+	}
+
 	if (bucket < 50) {
 		/* (a) full sockaddr_storage capacity. */
 		*lenp = sizeof(struct sockaddr_storage);
@@ -65,13 +87,6 @@ static void sanitise_accept_addrlen(struct syscallrecord *rec)
 	}
 
 	rec->a3 = (unsigned long) lenp;
-	/*
-	 * upeer_addrlen is value-result.  Use _inout (not _out) so the
-	 * init value survives any heap-overlap relocation: the kernel
-	 * reads *lenp as max_addrlen BEFORE writing the actual length
-	 * back.  Mirrors getsockopt.c:73-101.
-	 */
-	avoid_shared_buffer_inout(&rec->a3, sizeof(socklen_t));
 }
 
 static void sanitise_accept(struct syscallrecord *rec)
