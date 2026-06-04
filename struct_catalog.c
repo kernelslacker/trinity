@@ -143,14 +143,63 @@ static const struct struct_field clone_args_fields[] = {
 /* struct io_uring_params (io_uring_setup)                             */
 /* ------------------------------------------------------------------ */
 
+/*
+ * IORING_SETUP_* vocabulary for io_uring_params.flags.  Mirrors the
+ * curated set in io_uring_setup.c's set_rand_bitmask() array — kept in
+ * sync by reviewer reading the uapi diff.  Compat #ifndef arms cover
+ * bits the system header may pre-date; newer bits (CQE_MIXED, SQE_MIXED,
+ * SQ_REWIND in io_uring_setup.c) are deliberately omitted here since
+ * neither <linux/io_uring.h> nor the upstream uapi exposes them yet.
+ */
+#ifndef IORING_SETUP_NO_MMAP
+#define IORING_SETUP_NO_MMAP		(1U << 14)
+#define IORING_SETUP_REGISTERED_FD_ONLY	(1U << 15)
+#endif
+#ifndef IORING_SETUP_NO_SQARRAY
+#define IORING_SETUP_NO_SQARRAY		(1U << 16)
+#endif
+#ifndef IORING_SETUP_HYBRID_IOPOLL
+#define IORING_SETUP_HYBRID_IOPOLL	(1U << 17)
+#endif
+
+#define IORING_SETUP_MASK \
+	(IORING_SETUP_IOPOLL          | IORING_SETUP_SQPOLL          | \
+	 IORING_SETUP_SQ_AFF          | IORING_SETUP_CQSIZE          | \
+	 IORING_SETUP_CLAMP           | IORING_SETUP_ATTACH_WQ       | \
+	 IORING_SETUP_R_DISABLED      | IORING_SETUP_SUBMIT_ALL      | \
+	 IORING_SETUP_COOP_TASKRUN    | IORING_SETUP_TASKRUN_FLAG    | \
+	 IORING_SETUP_SQE128          | IORING_SETUP_CQE32           | \
+	 IORING_SETUP_SINGLE_ISSUER   | IORING_SETUP_DEFER_TASKRUN   | \
+	 IORING_SETUP_NO_MMAP         | IORING_SETUP_REGISTERED_FD_ONLY | \
+	 IORING_SETUP_NO_SQARRAY      | IORING_SETUP_HYBRID_IOPOLL)
+
+/*
+ * sq_entries / cq_entries: the kernel rounds up to power-of-two via
+ * roundup_pow_of_two() regardless of the value passed, so FT_RANGE would
+ * only obscure the rare interesting cases (zero -> -EINVAL; values above
+ * IORING_MAX_ENTRIES -> capped).  Leave FT_RAW and lean on the mutate
+ * weight to shake those edges out; cq_entries is also gated by SETUP_CQSIZE
+ * so the field is silently ignored most of the time.
+ *
+ * features is kernel-written output; sq_off / cq_off are
+ * io_sqring_offsets / io_cqring_offsets, also output-only, and stay
+ * uncataloged until an OUTPUT-fill mode exists.  resv[3] is rejected by
+ * the kernel's memchr_inv() check on non-zero, so FT_RAW on a zeroed
+ * buffer is the right answer.
+ */
 static const struct struct_field io_uring_params_fields[] = {
-	FIELD(struct io_uring_params, sq_entries),
-	FIELD(struct io_uring_params, cq_entries),
-	FIELD(struct io_uring_params, flags),
+	FIELDX(struct io_uring_params, sq_entries, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct io_uring_params, cq_entries, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct io_uring_params, flags, FT_FLAGS,
+	       .u.flags.mask = IORING_SETUP_MASK,
+	       .mutate_weight = 100),
 	FIELD(struct io_uring_params, sq_thread_cpu),
 	FIELD(struct io_uring_params, sq_thread_idle),
 	FIELD(struct io_uring_params, features),
-	FIELD(struct io_uring_params, wq_fd),
+	FIELDX(struct io_uring_params, wq_fd, FT_FD,
+	       .mutate_weight = 80),
 };
 
 /* ------------------------------------------------------------------ */
