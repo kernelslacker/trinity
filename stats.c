@@ -1033,6 +1033,8 @@ static void dump_stats_json_corruption_and_audit(void)
 			"\"snapshot_non_heap_reject\":%lu,"
 			"\"rec_canary_stomped\":%lu,\"rzs_blanket_reject\":%lu,"
 			"\"retfd_blanket_reject\":%lu,"
+			"\"arena_ptr_stale_caught_arg\":%lu,"
+			"\"arena_ptr_stale_caught_post_state\":%lu,"
 			"\"sibling_mprotect_failed\":%lu,"
 			"\"destroy_object_idx\":%lu,"
 			"\"global_obj_uaf_caught\":%lu,"
@@ -1075,6 +1077,8 @@ static void dump_stats_json_corruption_and_audit(void)
 		shm->stats.rec_canary_stomped,
 		shm->stats.rzs_blanket_reject,
 		shm->stats.retfd_blanket_reject,
+		shm->stats.arena_ptr_stale_caught_arg,
+		shm->stats.arena_ptr_stale_caught_post_state,
 		shm->stats.sibling_mprotect_failed,
 		shm->stats.destroy_object_idx_corrupt,
 		shm->stats.global_obj_uaf_caught,
@@ -2066,6 +2070,10 @@ static const struct {
 	  offsetof(struct stats_s, rzs_blanket_reject) },
 	{ "retfd_blanket_reject",
 	  offsetof(struct stats_s, retfd_blanket_reject) },
+	{ "arena_ptr_stale_caught_arg",
+	  offsetof(struct stats_s, arena_ptr_stale_caught_arg) },
+	{ "arena_ptr_stale_caught_post_state",
+	  offsetof(struct stats_s, arena_ptr_stale_caught_post_state) },
 	{ "execve_self_exec_blocked",
 	  offsetof(struct stats_s, execve_self_exec_blocked) },
 	{ "sibling_mprotect_failed",
@@ -3973,6 +3981,12 @@ static void dump_stats_corruption_and_pool(void)
 		stat_row("corruption", "rzs_blanket_reject",     shm->stats.rzs_blanket_reject);
 	if (shm->stats.retfd_blanket_reject)
 		stat_row("corruption", "retfd_blanket_reject",   shm->stats.retfd_blanket_reject);
+	if (shm->stats.arena_ptr_stale_caught_arg)
+		stat_row("corruption", "arena_ptr_stale_caught_arg",
+			 shm->stats.arena_ptr_stale_caught_arg);
+	if (shm->stats.arena_ptr_stale_caught_post_state)
+		stat_row("corruption", "arena_ptr_stale_caught_post_state",
+			 shm->stats.arena_ptr_stale_caught_post_state);
 	if (shm->stats.sibling_mprotect_failed)
 		stat_row("corruption", "sibling_mprotect_failed", shm->stats.sibling_mprotect_failed);
 	{
