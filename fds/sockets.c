@@ -22,6 +22,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "uid.h"
+#include "unblocker.h"
 #include "utils.h"
 
 unsigned int nr_sockets = 0;
@@ -437,6 +438,40 @@ static void socket_child_ops(void)
 	ret = listen(fd, RAND_RANGE(1, 128));
 	if (ret == -1)
 		goto out;
+
+	/*
+	 * Periodic accept-unblocker baseline.  This child just put fd
+	 * into LISTEN with a freshly generated local addr — the connector
+	 * will SYN it on the loopback rewrite, leaving an entry in the
+	 * backlog so the next accept (here or in another child via the
+	 * OBJ_GLOBAL socketinfo pool) doesn't park in inet_csk_accept's
+	 * wait loop.  Cheap (one socket+connect+close); no effect when
+	 * the listener is bound to a non-rewritable addr (loopback-only
+	 * counter bumps in that case).
+	 */
+	accept_unblocker_fire(fd, si);
+
+	/*
+	 * Cross-prime arm: on ~1-in-8 invocations pick a few other
+	 * pooled socketinfos and try the connector on each.  Most picks
+	 * will miss (the pool is overwhelmingly non-listeners) but a
+	 * hit primes a queue some other child is about to accept on.
+	 * Bounded to 4 picks per fire so the worst case is 4 lazy
+	 * probes + 4 throwaway connects per ~8 socket_child_ops calls.
+	 */
+	if (ONE_IN(8)) {
+		unsigned int i;
+
+		for (i = 0; i < 4; i++) {
+			struct socketinfo *other = get_rand_socketinfo();
+
+			if (other == NULL)
+				break;
+			if (other->fd < 0 || other->fd == fd)
+				continue;
+			accept_unblocker_fire(other->fd, other);
+		}
+	}
 
 	flags = fcntl(fd, F_GETFL, 0);
 	if (flags != -1)
