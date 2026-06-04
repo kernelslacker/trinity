@@ -3007,8 +3007,90 @@ struct_desc_resolve_variant(const struct struct_desc *desc,
 	}
 
 	for (i = 0; i < desc->num_variants; i++) {
-		if (desc->variants[i].discrim_value == discrim)
-			return &desc->variants[i];
+		const struct union_variant *v = &desc->variants[i];
+
+		if (v->discrim_values != NULL) {
+			unsigned int j;
+
+			for (j = 0; j < v->num_discrim_values; j++) {
+				if (v->discrim_values[j] == discrim)
+					return v;
+			}
+			continue;
+		}
+		if (v->discrim_value == discrim)
+			return v;
+	}
+	return NULL;
+}
+
+const struct union_variant *
+struct_desc_resolve_nested_variant(const struct union_variant *outer,
+				   const unsigned char *buf,
+				   unsigned int size)
+{
+	unsigned long discrim = 0;
+	unsigned int off, width;
+	unsigned int i;
+
+	if (outer == NULL || buf == NULL)
+		return NULL;
+	if (outer->nested_variants == NULL || outer->num_nested_variants == 0)
+		return NULL;
+
+	off = outer->nested_discrim_offset;
+	width = outer->nested_discrim_size;
+	if (width != 1 && width != 2 && width != 4 && width != 8)
+		return NULL;
+	if (off + width > size)
+		return NULL;
+
+	switch (width) {
+	case 1:
+		discrim = buf[off];
+		break;
+	case 2: {
+		uint16_t v;
+		memcpy(&v, buf + off, sizeof(v));
+		discrim = v;
+		break;
+	}
+	case 4: {
+		uint32_t v;
+		memcpy(&v, buf + off, sizeof(v));
+		discrim = v;
+		break;
+	}
+	case 8: {
+		uint64_t v;
+		memcpy(&v, buf + off, sizeof(v));
+		discrim = (unsigned long) v;
+		break;
+	}
+	}
+
+	for (i = 0; i < outer->num_nested_variants; i++) {
+		const struct union_variant *v = &outer->nested_variants[i];
+
+		/*
+		 * Nested-of-nested is rejected here defensively -- the fill
+		 * path also caps recursion, but refusing the entry up-front
+		 * keeps the API contract explicit.
+		 */
+		if (v->nested_variants != NULL)
+			continue;
+
+		if (v->discrim_values != NULL) {
+			unsigned int j;
+
+			for (j = 0; j < v->num_discrim_values; j++) {
+				if (v->discrim_values[j] == discrim)
+					return v;
+			}
+			continue;
+		}
+		if (v->discrim_value == discrim)
+			return v;
 	}
 	return NULL;
 }

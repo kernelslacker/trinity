@@ -112,13 +112,39 @@ struct struct_field {
  * desc->fields[].  effective_size lets the kernel-side size byte be
  * driven by the per-variant ABI rather than sizeof(union) -- left zero
  * by variants that don't care.
+ *
+ * Multi-discriminator entries: when discrim_values is non-NULL the
+ * resolver scans num_discrim_values entries for a match.  Lets one
+ * variant claim many discriminator values without cloning the entry
+ * (e.g. the cgroup link_create sub-variant matches ~20 attach types).
+ * discrim_value is the single-value shortcut and is consulted only
+ * when discrim_values is NULL.
+ *
+ * Nested tagged-union: when nested_variants is non-NULL the fill path
+ * re-resolves a sub-variant against the just-filled buffer.  The
+ * sub-discriminator is read from the variant's struct at byte offset
+ * nested_discrim_offset (struct-relative, not buffer-relative), width
+ * nested_discrim_size (1/2/4/8).  base, if set, runs once before the
+ * matched sub-variant -- covers the "DEFAULT pass then specific
+ * overlay" pattern used by link_create's tracing arms.  Sub-variants
+ * are themselves struct union_variant, but the resolver caps recursion
+ * at depth 2 -- nested-of-nested is rejected to keep the fill path
+ * predictable.
  */
 struct union_variant {
 	unsigned long		   discrim_value;
+	const unsigned long	  *discrim_values;
+	unsigned int		   num_discrim_values;
 	const char		  *name;
 	const struct struct_field *fields;
 	unsigned int		   num_fields;
 	unsigned int		   effective_size;
+
+	unsigned int		   nested_discrim_offset;
+	unsigned int		   nested_discrim_size;
+	const struct union_variant *base;
+	const struct union_variant *nested_variants;
+	unsigned int		   num_nested_variants;
 };
 
 /* A cataloged struct type with full field layout. */
@@ -221,6 +247,21 @@ const struct union_variant *
 struct_desc_resolve_variant(const struct struct_desc *desc,
 			    struct syscallrecord *rec,
 			    const unsigned char *buf);
+
+/*
+ * Re-resolve the nested sub-variant for an outer variant whose buffer
+ * has already been filled.  The sub-discriminator is read from buf at
+ * outer->nested_discrim_offset using outer->nested_discrim_size bytes,
+ * then linear-scanned against outer->nested_variants[].  Returns NULL
+ * when outer has no nested table, when buf is too small for the
+ * discriminator field, or when no nested entry matches.  Callers that
+ * need the more specific effective_size (e.g. sanitise_bpf default
+ * arm) prefer the nested return when non-NULL.
+ */
+const struct union_variant *
+struct_desc_resolve_nested_variant(const struct union_variant *outer,
+				   const unsigned char *buf,
+				   unsigned int size);
 
 /*
  * Schema-aware per-field fill for a cataloged struct.  Three passes

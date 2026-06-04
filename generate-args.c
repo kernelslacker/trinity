@@ -1199,6 +1199,39 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 	}
 }
 
+/*
+ * Nested sub-variant overlay: when the outer variant carries a
+ * nested_variants table, re-read the sub-discriminator from the
+ * just-filled buffer, optionally run the shared base pass, then
+ * overlay the matched sub-variant.  Depth-1 only -- the resolver
+ * rejects nested-of-nested.  Shared head fields (e.g. link_create's
+ * target_btf_id) run once before the specific arm overlays its tail;
+ * base is itself a union_variant so the field-fill machinery sees a
+ * uniform shape, and we ignore its discrim_value and any (forbidden)
+ * nested table.
+ */
+static void struct_variant_overlay_nested(unsigned char *buf, unsigned int size,
+					  const struct union_variant *variant,
+					  struct syscallrecord *rec)
+{
+	const struct union_variant *nested;
+
+	if (variant->nested_variants == NULL)
+		return;
+
+	nested = struct_desc_resolve_nested_variant(variant, buf, size);
+	if (nested == NULL && variant->base == NULL)
+		return;
+
+	if (variant->base != NULL)
+		struct_fill_passes(buf, size, variant->base->fields,
+				   variant->base->num_fields, rec);
+
+	if (nested != NULL)
+		struct_fill_passes(buf, size, nested->fields,
+				   nested->num_fields, rec);
+}
+
 void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
 				    const struct struct_desc *desc,
 				    struct syscallrecord *rec)
@@ -1218,6 +1251,7 @@ void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
 	if (variant != NULL) {
 		struct_fill_passes(buf, size, variant->fields,
 				   variant->num_fields, rec);
+		struct_variant_overlay_nested(buf, size, variant, rec);
 		return;
 	}
 
@@ -1227,9 +1261,11 @@ void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
 		return;
 
 	variant = struct_desc_resolve_variant(desc, rec, buf);
-	if (variant != NULL)
+	if (variant != NULL) {
 		struct_fill_passes(buf, size, variant->fields,
 				   variant->num_fields, rec);
+		struct_variant_overlay_nested(buf, size, variant, rec);
+	}
 }
 
 /*
