@@ -635,18 +635,59 @@ static void ring_lock(void)
 static unsigned int g_max_vmas = DEFERRED_DEFAULT_MAX_VMAS;
 
 /*
- * Per-child sticky latch set when ring_unlock returns ENOMEM.  The
- * next deferred_free_tick that successfully re-acquires the ring RW
- * frees every entry regardless of TTL, then clears the latch.  This
- * matches the "drain the deferred-free queue aggressively on ENOMEM"
- * hard-cap policy -- holding ptrs in the ring while the kernel is
- * short on VMA slots pins their glibc-arena chunks alive, prolonging
- * the pressure window; draining returns them to the allocator (which
- * can then munmap any associated arena pages) as soon as the next
- * RW flip succeeds.  BSS-resident: each child gets its own copy via
- * fork's COW, so a flap in one child doesn't perturb its siblings.
+ * Tear down the ring after ring_unlock() returned ENOMEM.  The page is
+ * still PROT_NONE at this point (the RW flip is exactly what failed);
+ * if we just bail and leave it that way, every sibling fuzzed value-
+ * result syscall whose buffer lands inside the ring SEGV_ACCERRs in
+ * copy_to_user, and every subsequent ring_unlock retry hits the same
+ * ENOMEM and emits another "mprotect RW failed: errno=12" line.  RC's
+ * 02:36 triage caught this as a SEGV_ACCERR storm of 2282 faults across
+ * 2270 children at recurring redzone pages, with the matching log
+ * volume saturating bug-logs (8k-25k mprotect-RW-failed lines per run).
+ *
+ * Releasing the VMA slot with munmap() drops both failure modes at the
+ * source: the PROT_NONE residue is gone (so no more SEGV_ACCERR fault-
+ * bait), and the kernel gets the VMA back to satisfy whatever split the
+ * wider mm-syscall workload needed.  Cost: every ptr currently in the
+ * ring is leaked from glibc's tracking until the child exits.  That is
+ * the same tradeoff d8943d44's drain-aggressive bypass already accepted
+ * for the per-allocation UAF-detection window -- abandoning the
+ * remaining ring slots is the worst case of that bypass, taken once
+ * when the kernel has actually told us it cannot satisfy more mprotect
+ * splits.
+ *
+ * Untrack the shared region BEFORE munmap so range_overlaps_shared()
+ * stops answering yes on a VA the kernel will reclaim out from under
+ * it -- the pairing rule the check-static script enforces for every
+ * other track/munmap site.  inflight_hash[] is cleared in lock-step
+ * with ring_count so the orphan-sweep at next tick (which won't run,
+ * since ring_count is now zero) doesn't have a stale picture to recover
+ * from if a future commit re-arms the ring; the heap chunks the hash
+ * entries pointed at are leaked alongside the queued ptrs themselves.
+ *
+ * Idempotent: a second caller (e.g. a flush after the enqueue path
+ * already disposed) sees ring==NULL and returns.  After dispose every
+ * deferred_free_* entry point falls through to the no-op path --
+ * enqueue's ring==NULL gate routes to immediate free(), tick/flush bail
+ * on ring_count==0 -- so the deferred-free machinery is functionally
+ * off in this child for the rest of its life.  Per-child by fork's COW,
+ * so a flap in one child doesn't perturb siblings.
  */
-static bool deferred_free_drain_aggressive;
+static void ring_dispose_after_enomem(void)
+{
+	if (ring == NULL)
+		return;
+
+	untrack_shared_region((unsigned long)ring, ring_bytes);
+	if (munmap(ring, ring_bytes) != 0)
+		outputerr("deferred_free: munmap ring after ENOMEM failed: errno=%d\n",
+			  errno);
+
+	ring = NULL;
+	ring_count = 0;
+	occupied_mask = 0;
+	memset(inflight_hash, 0, sizeof(inflight_hash));
+}
 
 static void deferred_free_read_max_map_count(void)
 {
@@ -998,27 +1039,48 @@ void deferred_free_enqueue(void *ptr)
 	}
 
 	/*
+	 * Ring was disposed by a prior ENOMEM event (enqueue or drain
+	 * path).  Deferred-free is off for the rest of this child's life;
+	 * fall through to immediate free() instead of mprotect-thrashing
+	 * on a NULL ring.  No counter bump: the dispose-event counters
+	 * (_enomem_drain, _rw_restore_enomem) already record the rate of
+	 * ring teardowns; per-enqueue noise after teardown adds nothing.
+	 */
+	if (ring == NULL) {
+		free(ptr);
+		return;
+	}
+
+	/*
 	 * RING_UNLOCK_ENOMEM is the hard cap -- the kernel just told us
-	 * it can't satisfy a VMA split for the protection change.  Set
-	 * the drain-aggressive latch so the next tick frees every queued
-	 * entry regardless of TTL, bump the dedicated counter (the
-	 * existing outputerr line from ring_unlock keeps the per-event
-	 * log breadcrumb), and free this ptr immediately so the caller's
-	 * "no longer your problem" contract still holds.
+	 * it can't satisfy a VMA split for the protection change.  Dispose
+	 * the ring entirely (munmap releases the VMA slot so the page
+	 * stops being SEGV_ACCERR fault-bait for sibling fuzzed value-
+	 * result syscalls), bump the dedicated counter (the existing
+	 * outputerr line from ring_unlock keeps the per-event log
+	 * breadcrumb), and free this ptr immediately so the caller's "no
+	 * longer your problem" contract still holds.
+	 *
+	 * Pre-dispose this path set a sticky drain-aggressive latch and
+	 * let the next tick chew through the ring; that left every queued
+	 * ptr's PROT_NONE page persistent in the meantime, which is
+	 * exactly the residue RC's 02:36 SEGV_ACCERR storm rode in on.
+	 * Dispose drops the page outright, so the latch infrastructure is
+	 * gone (no consumer left to set it to true).
 	 *
 	 * RING_UNLOCK_FAIL (any other errno) falls through to the same
-	 * immediate-free, but does NOT arm the drain latch -- a non-
-	 * ENOMEM failure is a different class (typically EACCES from a
-	 * not-yet-sanitised mm-syscall that overlapped the ring), not
-	 * a VMA-budget event.
+	 * immediate-free, but does NOT dispose the ring -- a non-ENOMEM
+	 * failure is a different class (typically EACCES from a not-yet-
+	 * sanitised mm-syscall that overlapped the ring), not a VMA-
+	 * budget event, and the next ring_unlock can plausibly succeed.
 	 */
 	{
 		enum ring_unlock_result r = ring_unlock();
 
 		if (r == RING_UNLOCK_ENOMEM) {
-			deferred_free_drain_aggressive = true;
 			__atomic_add_fetch(&shm->stats.deferred_free_enomem_drain,
 					   1, __ATOMIC_RELAXED);
+			ring_dispose_after_enomem();
 			free(ptr);
 			return;
 		}
@@ -1224,18 +1286,14 @@ void deferred_free_tick(void)
 	static unsigned int tick_count;
 	static unsigned int gc_count;
 	unsigned int i;
-	bool force_drain;
 	enum ring_unlock_result r;
 
 	/* Cheap path: ring_count is read while still locked, but it lives
-	 * in BSS (not in the protected ring), so this access is safe. */
-	if (ring_count == 0) {
-		/* Latch can clear here too -- if ring_count already went
-		 * to zero between the ENOMEM event and this tick (eviction
-		 * or flush drained it), no work remains. */
-		deferred_free_drain_aggressive = false;
+	 * in BSS (not in the protected ring), so this access is safe.
+	 * ring_count is also zero when the ring has been disposed after
+	 * an ENOMEM event, so this guard doubles as the ring==NULL bail. */
+	if (ring_count == 0)
 		return;
-	}
 
 	/*
 	 * Batch ticks: run the full mprotect+walk+free bracket only on
@@ -1247,24 +1305,39 @@ void deferred_free_tick(void)
 	 *
 	 * tick_count is BSS-resident (not in the ring), and per-child by
 	 * fork's COW, so this static is safe to touch without unlocking.
-	 *
-	 * The batch divisor is bypassed when the drain-aggressive latch
-	 * is set: under VMA pressure we want to attempt the unlock on
-	 * every tick until the ring empties, so the pressure window
-	 * isn't extended by up to DEFERRED_TICK_BATCH syscalls of idle
-	 * waiting.
 	 */
-	force_drain = deferred_free_drain_aggressive;
-	if (!force_drain &&
-	    (++tick_count & (DEFERRED_TICK_BATCH - 1)) != 0)
+	if ((++tick_count & (DEFERRED_TICK_BATCH - 1)) != 0)
 		return;
 
-	/* On unlock failure the page is still PROT_NONE; bail rather
-	 * than SEGV_ACCERR in the loop below.  Entries stay queued and
-	 * will be retried on the next tick -- the drain-aggressive
-	 * latch stays set so the next attempt also bypasses the batch
-	 * divisor. */
+	/*
+	 * ENOMEM on the RW-restore is the same VMA-exhaustion class the
+	 * enqueue path handles, just observed from the drain side: the
+	 * kernel cannot satisfy a split for the protection change.
+	 * Leaving the ring at PROT_NONE here was RC's dominant 02:36
+	 * SEGV_ACCERR storm signature -- the page persists as fault-bait
+	 * for sibling fuzzed value-result syscalls, and the next tick
+	 * hits the same ENOMEM and emits another "mprotect RW failed"
+	 * line (8k-25k per run in RC's three-build trend, dominant
+	 * bug-log volume).  Dispose the ring outright so the PROT_NONE
+	 * residue goes away; the entries currently queued are leaked
+	 * (lost forever from glibc's tracking until the child exits),
+	 * which is the worst case of d8943d44's drain-aggressive
+	 * tradeoff -- acceptable because the alternative is the loop
+	 * above continuing to thrash for the rest of the run.
+	 *
+	 * RING_UNLOCK_FAIL (any other errno) keeps the prior behaviour:
+	 * bail this tick, leave the page PROT_NONE, and retry on the
+	 * next tick.  A transient EACCES from a not-yet-sanitised mm-
+	 * syscall is not the VMA-budget class and does not warrant
+	 * abandoning the ring.
+	 */
 	r = ring_unlock();
+	if (r == RING_UNLOCK_ENOMEM) {
+		__atomic_add_fetch(&shm->stats.deferred_free_rw_restore_enomem,
+				   1, __ATOMIC_RELAXED);
+		ring_dispose_after_enomem();
+		return;
+	}
 	if (r != RING_UNLOCK_OK)
 		return;
 
@@ -1288,21 +1361,14 @@ void deferred_free_tick(void)
 			continue;
 		}
 
-		/* Under drain-aggressive, bypass the TTL countdown and
-		 * free the entry on this tick.  The redzone-equivalent
-		 * UAF-detection window is shortened for these entries, but
-		 * trading per-allocation UAF coverage for trinity survival
-		 * is the right call when the alternative is the child
-		 * aborting on the next mprotect ENOMEM. */
-		if (!force_drain && ring[i].ttl > 0) {
+		if (ring[i].ttl > 0) {
 			ring[i].ttl--;
 			continue;
 		}
 
-		/* TTL expired (or drain forced) — free it.  Clear the
-		 * slot BEFORE calling the free function so that if a
-		 * signal interrupts us mid-free and we longjmp, the slot
-		 * is already empty. */
+		/* TTL expired — free it.  Clear the slot BEFORE calling
+		 * the free function so that if a signal interrupts us
+		 * mid-free and we longjmp, the slot is already empty. */
 		ptr = ring[i].ptr;
 		ring[i].ptr = NULL;
 		occupied_mask &= ~(1ULL << i);
@@ -1315,25 +1381,38 @@ void deferred_free_tick(void)
 		inflight_gc_sweep();
 
 	ring_lock();
-
-	/* Drain completed (every slot we could touch is freed).  Clear
-	 * the latch so subsequent ticks return to batched cadence; if
-	 * the VMA pressure re-surfaces, the next enqueue ENOMEM will
-	 * re-arm it. */
-	if (force_drain && ring_count == 0)
-		deferred_free_drain_aggressive = false;
 }
 
 void deferred_free_flush(void)
 {
 	unsigned int i;
+	enum ring_unlock_result r;
 
-	/* Called from the child exit path; if unlock fails the deferred
-	 * ptrs leak, but the child is going away so the kernel reaps
-	 * them at exit.  Better than SEGV_ACCERR-ing on the way out.
-	 * Treat ENOMEM and other failures identically here -- the child
-	 * is exiting, the drain-aggressive latch is moot. */
-	if (ring_unlock() != RING_UNLOCK_OK)
+	/* Ring already disposed by a prior ENOMEM event.  Nothing to
+	 * flush; skip ring_unlock so we don't emit a "mprotect RW
+	 * failed" log line on every child exit for the rest of the run. */
+	if (ring == NULL)
+		return;
+
+	/*
+	 * Called from the child exit path.  ENOMEM still warrants the
+	 * dispose treatment: the child is going away anyway, but its
+	 * teardown can run for many syscalls (atexit handlers, glibc
+	 * arena cleanup), during which a PROT_NONE ring page is still
+	 * fault-bait for any sibling whose fuzzed value-result buffer
+	 * lands inside.  Dispose drops the page; the queued ptrs leak
+	 * for the brief teardown window, then the kernel reaps the
+	 * whole address space at exit.  RING_UNLOCK_FAIL (non-ENOMEM)
+	 * stays a silent bail -- not the VMA-budget class.
+	 */
+	r = ring_unlock();
+	if (r == RING_UNLOCK_ENOMEM) {
+		__atomic_add_fetch(&shm->stats.deferred_free_rw_restore_enomem,
+				   1, __ATOMIC_RELAXED);
+		ring_dispose_after_enomem();
+		return;
+	}
+	if (r != RING_UNLOCK_OK)
 		return;
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {

@@ -1054,6 +1054,7 @@ static void dump_stats_json_corruption_and_audit(void)
 			"\"deferred_free_outstanding_vmas\":%lu,"
 			"\"deferred_free_vma_fallback_immediate\":%lu,"
 			"\"deferred_free_enomem_drain\":%lu,"
+			"\"deferred_free_rw_restore_enomem\":%lu,"
 			"\"pagecache_canary_corrupt_caught\":%lu,"
 			"\"lock_word_scribbled\":%lu,"
 			"\"lock_held_scribble\":%lu,"
@@ -1102,6 +1103,7 @@ static void dump_stats_json_corruption_and_audit(void)
 		shm->stats.deferred_free_outstanding_vmas,
 		shm->stats.deferred_free_vma_fallback_immediate,
 		shm->stats.deferred_free_enomem_drain,
+		shm->stats.deferred_free_rw_restore_enomem,
 		shm->stats.pagecache_canary_corrupt_caught,
 		parent_stats.lock_word_scribbled,
 		shm->stats.lock_held_scribble,
@@ -2169,6 +2171,8 @@ static const struct {
 	  offsetof(struct stats_s, deferred_free_vma_fallback_immediate) },
 	{ "deferred_free_enomem_drain",
 	  offsetof(struct stats_s, deferred_free_enomem_drain) },
+	{ "deferred_free_rw_restore_enomem",
+	  offsetof(struct stats_s, deferred_free_rw_restore_enomem) },
 	{ "pagecache_canary_corrupt_caught",
 	  offsetof(struct stats_s, pagecache_canary_corrupt_caught) },
 	/* genetlink registry per-family dispatch counters; rate-of-change
@@ -4072,6 +4076,8 @@ static void dump_stats_corruption_and_pool(void)
 		stat_row("corruption", "deferred_free_vma_fallback_immediate", shm->stats.deferred_free_vma_fallback_immediate);
 	if (shm->stats.deferred_free_enomem_drain)
 		stat_row("corruption", "deferred_free_enomem_drain",          shm->stats.deferred_free_enomem_drain);
+	if (shm->stats.deferred_free_rw_restore_enomem)
+		stat_row("corruption", "deferred_free_rw_restore_enomem",     shm->stats.deferred_free_rw_restore_enomem);
 	if (parent_stats.snapshot_non_heap_reject)
 		stat_row("corruption", "snapshot_non_heap_reject", parent_stats.snapshot_non_heap_reject);
 	if (parent_stats.lock_word_scribbled)

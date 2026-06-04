@@ -1856,16 +1856,30 @@ struct stats_s {
 	 *     starts arming per-slot redzones), but tracking it keeps the
 	 *     defensive bound observable for that case.
 	 *
-	 *   _enomem_drain: hard-cap events -- ring_unlock returned -ENOMEM
-	 *     despite the soft cap.  The enqueue path frees the current
-	 *     ptr immediately and flags the next tick to drain every queued
-	 *     entry regardless of TTL, so the deferred-free machinery stops
-	 *     adding glibc-arena pressure while the kernel reclaims VMA
-	 *     slots.  Non-zero is a real VMA-exhaustion event, not a soft
-	 *     warning. */
+	 *   _enomem_drain: hard-cap events on the enqueue path -- ring_unlock
+	 *     returned -ENOMEM despite the soft cap.  The ring is munmap'd
+	 *     (releasing the VMA slot the kernel was short of) and the
+	 *     current ptr is freed immediately so the caller's "no longer
+	 *     your problem" contract holds; the ring stays NULL for the
+	 *     rest of the child's life, so subsequent enqueues fall through
+	 *     to plain free().  Non-zero is a real VMA-exhaustion event,
+	 *     not a soft warning.
+	 *
+	 *   _rw_restore_enomem: same shape but on the drain path --
+	 *     deferred_free_tick or deferred_free_flush couldn't restore RW
+	 *     on the ring page before walking it.  The PROT_NONE page would
+	 *     otherwise persist as fault-bait for sibling fuzzed value-
+	 *     result syscalls (RC's 02:36 SEGV_ACCERR storm: 2282 faults
+	 *     across 2270 children at recurring redzone pages), so the
+	 *     drain path also munmap's the ring; the entries currently
+	 *     queued are leaked (lost forever from glibc's tracking until
+	 *     the child exits).  Cost of those leaks is bounded by the
+	 *     64-slot ring; benefit is the page goes away instead of
+	 *     thrashing on ENOMEM for the rest of the run. */
 	unsigned long deferred_free_outstanding_vmas;
 	unsigned long deferred_free_vma_fallback_immediate;
 	unsigned long deferred_free_enomem_drain;
+	unsigned long deferred_free_rw_restore_enomem;
 
 	/* Bumped by run_sequence_chain() when chain_corpus_pick() returns
 	 * a chain_entry whose len is zero or greater than MAX_SEQ_LEN.
