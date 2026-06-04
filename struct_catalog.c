@@ -541,6 +541,86 @@ static const struct struct_field sched_param_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* io_uring_register per-opcode variants                                */
+/* ------------------------------------------------------------------ */
+
+/*
+ * IORING_REGISTER_EVENTFD (opcode 4): arg points at a bare int fd; no
+ * enclosing struct.  The variant fields[] still describes the one
+ * scalar so CMP attribution and any future schema fill see "fd at
+ * offset 0".  sanitise_io_uring_register seeds it from OBJ_FD_EVENTFD
+ * regardless.
+ */
+static const struct struct_field io_uring_register_eventfd_fields[] = {
+	{ .name = "fd", .offset = 0, .size = sizeof(int),
+	  .tag = FT_FD, .mutate_weight = 100 },
+};
+
+/*
+ * IORING_REGISTER_FILES_UPDATE (opcode 6) / arg = struct
+ * io_uring_rsrc_update.  offset is the slot index into the fixed-file
+ * table -- the kernel rejects anything past the registered count, so a
+ * small range surfaces in-range hits.  resv must be zero or the kernel
+ * rejects on -EINVAL.  data is a u64 user pointer to the fd[] payload;
+ * sanitise_io_uring_register fills it from OBJ_FD pools.
+ */
+static const struct struct_field io_uring_register_files_update_fields[] = {
+	FIELDX(struct io_uring_rsrc_update, offset, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 64 },
+	       .mutate_weight = 80),
+	FIELD(struct io_uring_rsrc_update, resv),
+	FIELD(struct io_uring_rsrc_update, data),
+};
+
+/*
+ * IORING_REGISTER_FILE_ALLOC_RANGE (opcode 25) / arg = struct
+ * io_uring_file_index_range.  off and len name a half-open
+ * [off, off + len) span the kernel uses to reserve sparse slots; the
+ * overflow-probe path lives in sanitise_io_uring_register.  resv must
+ * be zero.
+ */
+static const struct struct_field io_uring_register_file_alloc_range_fields[] = {
+	FIELDX(struct io_uring_file_index_range, off, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 16 },
+	       .mutate_weight = 80),
+	FIELDX(struct io_uring_file_index_range, len, FT_RANGE,
+	       .u.range = { .lo = 1, .hi = 16 },
+	       .mutate_weight = 80),
+	FIELD(struct io_uring_file_index_range, resv),
+};
+
+/*
+ * Per-opcode variant table.  rec->a2 carries the opcode at sanitise
+ * and post time; struct_desc_resolve_variant() picks the matching
+ * variant.  Opcodes without an entry fall through to the empty shared
+ * prefix (no schema fill, no CMP attribution scope).  Variants land
+ * incrementally; see follow-up commits.
+ */
+static const struct union_variant io_uring_register_variants[] = {
+	{
+		.discrim_value	= IORING_REGISTER_EVENTFD,
+		.name		= "EVENTFD",
+		.fields		= io_uring_register_eventfd_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_eventfd_fields),
+		.effective_size	= sizeof(int),
+	},
+	{
+		.discrim_value	= IORING_REGISTER_FILES_UPDATE,
+		.name		= "FILES_UPDATE",
+		.fields		= io_uring_register_files_update_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_files_update_fields),
+		.effective_size	= sizeof(struct io_uring_rsrc_update),
+	},
+	{
+		.discrim_value	= IORING_REGISTER_FILE_ALLOC_RANGE,
+		.name		= "FILE_ALLOC_RANGE",
+		.fields		= io_uring_register_file_alloc_range_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_file_alloc_range_fields),
+		.effective_size	= sizeof(struct io_uring_file_index_range),
+	},
+};
+
+/* ------------------------------------------------------------------ */
 /* union bpf_attr (bpf)                                                */
 /* ------------------------------------------------------------------ */
 
@@ -1359,8 +1439,8 @@ const struct struct_desc struct_catalog[] = {
 		.fields			= NULL,
 		.num_fields		= 0,
 		.discrim_arg_idx	= 2,	/* opcode in rec->a2 */
-		.variants		= NULL,
-		.num_variants		= 0,
+		.variants		= io_uring_register_variants,
+		.num_variants		= ARRAY_SIZE(io_uring_register_variants),
 	},
 #ifdef USE_BPF
 	{
