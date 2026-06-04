@@ -1328,6 +1328,40 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= sched_param_fields,
 		.num_fields	= ARRAY_SIZE(sched_param_fields),
 	},
+	/*
+	 * io_uring_register tagged-union infra entry.  Each opcode (in
+	 * rec->a2) presents a different per-cmd struct shape at *rec->a3;
+	 * the variant table dispatches by opcode.  Shared prefix is empty:
+	 * register opcodes are fully self-contained per-cmd structs with
+	 * no truly-common fields.  Variants populated incrementally; see
+	 * follow-up commits.
+	 *
+	 * struct_size is set to the largest projected variant
+	 * (io_uring_sync_cancel_reg @ 64 bytes) so the buffer fed to the
+	 * fill path is never too small for any single-struct opcode.
+	 *
+	 * Placed BEFORE the USE_BPF block so its struct_catalog[] index is
+	 * stable across USE_BPF / non-USE_BPF builds for the
+	 * syscall_struct_args[] mapping below; the bpf_attr / bpf_insn /
+	 * iovec entries that follow shift by one slot accordingly.
+	 *
+	 * No live consumer wires this entry today: io_uring_register's
+	 * arg slot is ARG_ADDRESS (not ARG_STRUCT_PTR_*) and the existing
+	 * sanitise_io_uring_register hand-rolls every opcode's payload.
+	 * The entry is forward infra for opcode-scoped CMP attribution
+	 * (struct_field_for_cmp pending a cmp_hints caller) and a future
+	 * ARG_ADDRESS-mapped fill consumer.  The bpf catalog landed the
+	 * same way: variant data first, sanitise caller after.
+	 */
+	{
+		.name			= "io_uring_register_args",
+		.struct_size		= 64,
+		.fields			= NULL,
+		.num_fields		= 0,
+		.discrim_arg_idx	= 2,	/* opcode in rec->a2 */
+		.variants		= NULL,
+		.num_variants		= 0,
+	},
 #ifdef USE_BPF
 	{
 		.name			= "bpf_attr",
@@ -1455,9 +1489,11 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "sched_setparam",	2, &struct_catalog[19] },
 	/* sched_setscheduler(pid_t, int, struct sched_param *) */
 	{ "sched_setscheduler",	3, &struct_catalog[19] },
+	/* io_uring_register(int fd, unsigned op, void *arg, unsigned nr_args) */
+	{ "io_uring_register",	3, &struct_catalog[20] },
 #ifdef USE_BPF
 	/* bpf(int, union bpf_attr *, unsigned int) */
-	{ "bpf",		2, &struct_catalog[20] },
+	{ "bpf",		2, &struct_catalog[21] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
