@@ -2267,6 +2267,49 @@ static void dump_strategy_stats_arms(void)
 			if (any_reason)
 				output(0, "\n");
 		}
+
+		/* Chaos cohort breakdown: this arm's per-window WARN-fire
+		 * rate split by chaos state.  The chaos schedule fires every
+		 * CHAOS_WINDOW_MODULO'th window (1-in-8 today) and suppresses
+		 * cmp_hints injection for the duration, leaving the random
+		 * argument generator unbiased.  The V2 hypothesis is that
+		 * chaos-on windows produce measurably more kernel diagnostic
+		 * events than chaos-off windows -- the per-arm rate split
+		 * here is the headline observation.  Suppressed when both
+		 * cohorts are at zero pulls (arm never selected) so an arm
+		 * the picker has not visited stays quiet.  WARN fires are
+		 * rendered as parts per thousand of the cohort's pulls so the
+		 * two cohorts are directly comparable across orders of
+		 * magnitude difference in their window counts (chaos-on
+		 * cohort is ~1/(MODULO-1) the size of chaos-off in steady
+		 * state). */
+		{
+			unsigned long c_pulls[2], c_warn[2];
+			int c;
+
+			for (c = 0; c < 2; c++) {
+				c_pulls[c] = __atomic_load_n(
+					&shm->bandit_pulls_by_chaos[i][c],
+					__ATOMIC_RELAXED);
+				c_warn[c] = __atomic_load_n(
+					&shm->bandit_warn_fires_by_chaos[i][c],
+					__ATOMIC_RELAXED);
+			}
+			if (c_pulls[0] + c_pulls[1] > 0) {
+				unsigned long off_rate_x1000 = c_pulls[0] ?
+					(c_warn[0] * 1000UL / c_pulls[0]) : 0;
+				unsigned long on_rate_x1000 = c_pulls[1] ?
+					(c_warn[1] * 1000UL / c_pulls[1]) : 0;
+
+				output(0, "    chaos: off=%lu/%lu (%lu.%03lu warn/window) on=%lu/%lu (%lu.%03lu warn/window)\n",
+				       c_pulls[0], c_warn[0],
+				       off_rate_x1000 / 1000UL,
+				       off_rate_x1000 % 1000UL,
+				       c_pulls[1], c_warn[1],
+				       on_rate_x1000 / 1000UL,
+				       on_rate_x1000 % 1000UL);
+			}
+		}
 	}
 }
 
