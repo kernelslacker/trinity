@@ -247,3 +247,13 @@ extern const unsigned int bpf_attach_types_count;
 
 /* eBPF program generation */
 struct bpf_insn *ebpf_gen_program(int *insn_count, unsigned int prog_type);
+void ebpf_gen_program_into(struct bpf_insn *insns, int max_insns,
+			   int *insn_count, unsigned int prog_type);
+
+/*
+ * Maximum insn slots the generator may emit -- matches TIER3_MAX_INSNS
+ * in net/ebpf.c.  Exposed so the schema-mutation FT_BPF_PROGRAM tag in
+ * generate-args.c can size its sub-buffer without naming a net/ebpf.c
+ * internal.  Bump in lockstep if a tier's MAX grows past 512.
+ */
+#define EBPF_GEN_PROG_MAX_INSNS	512

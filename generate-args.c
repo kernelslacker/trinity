@@ -6,6 +6,9 @@
 
 #include "arch.h"
 #include "argtype-ops.h"
+#ifdef USE_BPF
+#include "bpf.h"
+#endif
 #include "cmp_hints.h"
 #include "debug.h"
 #include "deferred-free.h"
@@ -930,6 +933,7 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 		case FT_PTR_BYTES:
 		case FT_PTR_ARRAY:
 		case FT_PTR_STRUCT:
+		case FT_BPF_PROGRAM:
 		case FT_LEN_BYTES:
 		case FT_LEN_COUNT:
 			continue;	/* deferred to later passes */
@@ -1052,6 +1056,42 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 			deferred_free_enqueue(sub);
 			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
 			chosen_len[i] = count;
+			break;
+		}
+
+		case FT_BPF_PROGRAM: {
+#ifdef USE_BPF
+			/*
+			 * Marker-only tag: allocate a max-tier-sized sub-buffer
+			 * and hand it to ebpf_gen_program_into(), which rolls
+			 * its own tier (50/25/25 valid/boundary/chaos) and emits
+			 * the instruction stream.  prog_type is read from the
+			 * sibling "prog_type" field already populated by the
+			 * scalar pass; absent or unreadable, default to UNSPEC
+			 * so the universal helper set still applies.  chosen_len
+			 * carries the generator's actual emit count so the
+			 * paired FT_LEN_COUNT writes a matching insn_cnt.
+			 */
+			const unsigned int max_insns = EBPF_GEN_PROG_MAX_INSNS;
+			unsigned int nbytes = max_insns * (unsigned int) sizeof(struct bpf_insn);
+			int pt_idx = find_field_index_in(fields, n, "prog_type");
+			unsigned int prog_type = 0;
+			int out_count = 0;
+			void *sub;
+
+			if (pt_idx >= 0 && (unsigned int) pt_idx < n)
+				prog_type = (unsigned int)
+					read_field_uint(buf, &fields[pt_idx]);
+
+			sub = zmalloc_tracked(nbytes);
+			ebpf_gen_program_into(sub, (int) max_insns,
+					      &out_count, prog_type);
+			deferred_free_enqueue(sub);
+			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
+			chosen_len[i] = (unsigned long) out_count;
+#else
+			write_field_uint(buf, f, 0);
+#endif
 			break;
 		}
 

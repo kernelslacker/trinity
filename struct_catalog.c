@@ -2058,18 +2058,23 @@ static const struct struct_field bpf_attr_MAP_CREATE_fields[] = {
 
 /*
  * PROG_LOAD variant.  Two pointer/length pairs land here:
- *   - insns + insn_cnt as FT_PTR_ARRAY/FT_LEN_COUNT, with bpf_insn
- *     registered below as the element struct (8 bytes each); cap at
- *     64 instructions so we keep the verifier reachable without
- *     dropping into the very-long-program timeouts.
+ *   - insns + insn_cnt as FT_BPF_PROGRAM/FT_LEN_COUNT.  Fill delegates
+ *     to net/ebpf.c's three-tier generator (~50% valid, 25% boundary,
+ *     25% chaos) via ebpf_gen_program_into(), so the schema-mutation
+ *     path produces the same verifier-reachable instruction streams as
+ *     the live BPF_PROG_LOAD sanitiser instead of a per-insn random
+ *     splat that the verifier would reject on first sight.  insn_cnt
+ *     reports the generator's actual emit count, not a pre-rolled cap.
  *   - log_buf + log_size as FT_PTR_BYTES/FT_LEN_BYTES with the
  *     buffer optional (~80% present per the schema default) so the
  *     NULL-log path also gets reached.
  *
  * license / func_info_* / line_info_* / core_relos / fd_array and
- * the signature/keyring fields stay FT_RAW: sanitise_bpf owns the
- * verifier-passing program assembly today, and a schema-driven
- * random splat in those slots would only feed back to it as noise.
+ * the signature/keyring fields stay FT_RAW: a schema-driven random
+ * splat in those slots would just bounce at copy_from_user / parser
+ * boundaries.  bpf_insn keeps its 8-byte catalog entry below for KCOV-
+ * compare attribution on code/imm even though FILL no longer reaches
+ * it via FT_PTR_ARRAY.
  *
  * The attach_prog_fd / attach_btf_obj_fd anonymous union picks
  * attach_prog_fd as the canonical slot (more common arm); the
@@ -2086,10 +2091,7 @@ static const struct struct_field bpf_attr_PROG_LOAD_fields[] = {
 	FIELDX(union bpf_attr, insn_cnt, FT_LEN_COUNT,
 	       .u.len_of = { .buf_field = "insns" },
 	       .mutate_weight = 40),
-	FIELDX(union bpf_attr, insns, FT_PTR_ARRAY,
-	       .u.ptr_array = { .len_field = "insn_cnt",
-				.elem_struct = "bpf_insn",
-				.max_count = 64 },
+	FIELDX(union bpf_attr, insns, FT_BPF_PROGRAM,
 	       .mutate_weight = 150),
 	FIELD(union bpf_attr, license),
 	FIELDX(union bpf_attr, log_level, FT_FLAGS,
@@ -2288,12 +2290,13 @@ static const struct struct_field bpf_attr_PROG_STREAM_READ_fields[] = {
 };
 
 /*
- * bpf_insn registration -- required so PROG_LOAD's insns
- * FT_PTR_ARRAY can resolve sizeof(struct bpf_insn) (8 bytes) when
- * the pointer pass allocates the sub-buffer.  No field annotations:
- * the kernel verifier rejects the random byte pattern regardless,
- * but the (ptr, cnt) shape sanitise_bpf produces still gets a
- * well-formed schema fallback when the sanitise path is skipped.
+ * bpf_insn registration -- retained as an 8-byte CMP-attribution shape
+ * so a learned KCOV-compare constant on code / off / imm can be
+ * attributed back to the right field by struct_field_for_cmp().
+ * PROG_LOAD's insns FILL now flows through FT_BPF_PROGRAM (which calls
+ * net/ebpf.c's generator) rather than splatting random bpf_insn
+ * elements via FT_PTR_ARRAY, but the per-field shape is still the
+ * vocabulary the CMP-hint path reasons over.
  */
 static const struct struct_field bpf_insn_fields[] = {
 	FIELD(struct bpf_insn, code),
@@ -2689,11 +2692,13 @@ const struct struct_desc struct_catalog[] = {
 		.num_variants		= ARRAY_SIZE(bpf_attr_variants),
 	},
 	/*
-	 * bpf_insn registered for name lookup only -- referenced from
-	 * PROG_LOAD's insns FT_PTR_ARRAY.elem_struct so the pointer
-	 * pass can size its sub-buffer.  No syscall_struct_args entry.
-	 * Sits after bpf_attr to keep the existing struct_catalog[]
-	 * indices stable for the syscall_struct_args[] table.
+	 * bpf_insn registered for name lookup only -- kept as a CMP-
+	 * attribution shape (code / off / imm) so KCOV-compare learned
+	 * constants can be attributed to the right field.  No
+	 * syscall_struct_args entry; PROG_LOAD's insns now flows through
+	 * FT_BPF_PROGRAM rather than FT_PTR_ARRAY.elem_struct.  Sits
+	 * after bpf_attr to keep the existing struct_catalog[] indices
+	 * stable for the syscall_struct_args[] table.
 	 */
 	{
 		.name		= "bpf_insn",

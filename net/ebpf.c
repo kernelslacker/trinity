@@ -683,44 +683,66 @@ static int gen_tier3(struct bpf_insn *insns, int max_insns)
 }
 
 /*
- * Main entry point: generate an eBPF program.
+ * Fill-into-buffer core: pick a tier and emit instructions into a
+ * caller-supplied buffer.  The caller owns allocation; we just write.
  *
- * Returns a malloc'd array of struct bpf_insn. Caller must free.
- * *insn_count is set to the number of instructions.
+ * max_insns caps how many slots the buffer can hold.  Each tier's own
+ * MAX is further clamped by max_insns so a short buffer cannot overrun.
+ * *insn_count is set to the number of instructions actually emitted.
  *
- * Distribution: ~50% Tier 1 (valid), ~25% Tier 2 (boundary), ~25% Tier 3 (chaos)
+ * Distribution: ~50% Tier 1 (valid), ~25% Tier 2 (boundary),
+ * ~25% Tier 3 (chaos).  Two consumers share this core: the live
+ * BPF_PROG_LOAD path (via the ebpf_gen_program() allocating wrapper
+ * below) and the schema-mutation FT_BPF_PROGRAM tag, which allocates
+ * its own sub-buffer and delegates fill here.
  */
-struct bpf_insn *ebpf_gen_program(int *insn_count, unsigned int prog_type)
+void ebpf_gen_program_into(struct bpf_insn *insns, int max_insns,
+			   int *insn_count, unsigned int prog_type)
 {
-	struct bpf_insn *insns;
 	struct helper_set hs;
-	int max_insns, len;
+	int tier_max, len, tier_id;
 	int tier = rnd_modulo_u32(100);
 
 	if (tier < 50) {
-		max_insns = TIER1_MAX_INSNS;
+		tier_max = TIER1_MAX_INSNS;
+		tier_id = 1;
 	} else if (tier < 75) {
-		max_insns = TIER2_MAX_INSNS;
+		tier_max = TIER2_MAX_INSNS;
+		tier_id = 2;
 	} else {
-		max_insns = TIER3_MAX_INSNS;
+		tier_max = TIER3_MAX_INSNS;
+		tier_id = 3;
 	}
+	if (tier_max > max_insns)
+		tier_max = max_insns;
 
-	insns = zmalloc(max_insns * sizeof(struct bpf_insn));
 	hs = get_helpers_for_prog_type(prog_type);
 
-	if (tier < 50)
-		len = gen_tier1(insns, max_insns, hs);
-	else if (tier < 75)
-		len = gen_tier2(insns, max_insns);
+	if (tier_id == 1)
+		len = gen_tier1(insns, tier_max, hs);
+	else if (tier_id == 2)
+		len = gen_tier2(insns, tier_max);
 	else
-		len = gen_tier3(insns, max_insns);
+		len = gen_tier3(insns, tier_max);
 
 	*insn_count = len;
 
 	if (verbosity >= MAX_LOGLEVEL)
 		debugf("ebpf: generated tier %d program, %d insns\n",
-		       tier < 50 ? 1 : (tier < 75 ? 2 : 3), len);
+		       tier_id, len);
+}
 
+/*
+ * Allocating wrapper: hand out a fresh zmalloc'd insn buffer sized for
+ * the largest tier and delegate fill to the core.  Caller owns free()
+ * via the post_bpf inner-ptr gate (see syscalls/bpf.c).
+ */
+struct bpf_insn *ebpf_gen_program(int *insn_count, unsigned int prog_type)
+{
+	struct bpf_insn *insns;
+
+	insns = zmalloc(TIER3_MAX_INSNS * sizeof(struct bpf_insn));
+	ebpf_gen_program_into(insns, TIER3_MAX_INSNS, insn_count, prog_type);
 	return insns;
 }
 
