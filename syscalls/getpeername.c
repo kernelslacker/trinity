@@ -73,6 +73,12 @@ static void sanitise_getpeername(struct syscallrecord *rec)
 	addr = (struct sockaddr_storage *) get_writable_address(sizeof(*addr));
 	if (addr != NULL)
 		rec->a2 = (unsigned long) addr;
+	else
+		/* On pool exhaustion / mincore failure, leaving the original
+		 * undersized ARG_SOCKADDR buffer would preserve the very
+		 * overflow shape this routine exists to prevent.  Force NULL
+		 * so the kernel returns -EFAULT cleanly. */
+		rec->a2 = 0;
 
 	/*
 	 * usockaddr_len is a value-result socklen_t pointer. ARG_SOCKADDRLEN
