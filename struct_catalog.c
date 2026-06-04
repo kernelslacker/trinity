@@ -11,6 +11,7 @@
 
 #include <stddef.h>
 #include <string.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <sys/timex.h>
 #include <sys/resource.h>
@@ -68,8 +69,22 @@
 /* struct timex (adjtimex, clock_adjtime)                               */
 /* ------------------------------------------------------------------ */
 
+/*
+ * ADJ_* mode-bit vocabulary for timex.modes.  Anything outside the
+ * mask causes the kernel to reject the call before any clock state is
+ * read, so an FT_RAW splat almost never reaches the do_adjtimex()
+ * dispatch.  Mask values are stable in linux/timex.h; new ADJ_* bits
+ * are rare and caught by reviewer reading the uapi diff.
+ */
+#define TIMEX_MODES_MASK \
+	(ADJ_OFFSET | ADJ_FREQUENCY | ADJ_MAXERROR | ADJ_ESTERROR | \
+	 ADJ_STATUS | ADJ_TIMECONST | ADJ_TAI    | ADJ_SETOFFSET | \
+	 ADJ_MICRO  | ADJ_NANO      | ADJ_TICK)
+
 static const struct struct_field timex_fields[] = {
-	FIELD(struct timex, modes),
+	FIELDX(struct timex, modes, FT_FLAGS,
+	       .u.flags.mask = TIMEX_MODES_MASK,
+	       .mutate_weight = 80),
 	FIELD(struct timex, offset),
 	FIELD(struct timex, freq),
 	FIELD(struct timex, maxerror),
@@ -162,8 +177,31 @@ static const struct struct_field itimerspec_fields[] = {
 /* struct epoll_event (epoll_ctl)                                      */
 /* ------------------------------------------------------------------ */
 
+/*
+ * EPOLL* event-bit vocabulary for epoll_event.events.  EPOLLEXCLUSIVE
+ * and EPOLLWAKEUP postdate older glibc vintages; compat.h declares
+ * EPOLLWAKEUP unconditionally and the local #ifdef arm covers
+ * EPOLLEXCLUSIVE.  Bits outside the mask either fail the kernel's
+ * EP_PRIVATE_BITS check or get silently masked, so a uniform-byte
+ * splat almost never produces a useful (op, events) combination.
+ */
+#ifndef EPOLLEXCLUSIVE
+# define EPOLLEXCLUSIVE_COMPAT	(1u << 28)
+#else
+# define EPOLLEXCLUSIVE_COMPAT	EPOLLEXCLUSIVE
+#endif
+
+#define EPOLL_EVENTS_MASK \
+	(EPOLLIN     | EPOLLOUT    | EPOLLRDHUP   | EPOLLPRI    | \
+	 EPOLLERR    | EPOLLHUP    | EPOLLET      | EPOLLONESHOT | \
+	 EPOLLWAKEUP | EPOLLEXCLUSIVE_COMPAT       | \
+	 EPOLLRDNORM | EPOLLRDBAND | EPOLLWRNORM  | EPOLLWRBAND | \
+	 EPOLLMSG)
+
 static const struct struct_field epoll_event_fields[] = {
-	FIELD(struct epoll_event, events),
+	FIELDX(struct epoll_event, events, FT_FLAGS,
+	       .u.flags.mask = EPOLL_EVENTS_MASK,
+	       .mutate_weight = 80),
 };
 
 /* ------------------------------------------------------------------ */
@@ -207,8 +245,30 @@ static const struct struct_field perf_event_attr_fields[] = {
 /* struct sigaction (rt_sigaction, sigaction)                          */
 /* ------------------------------------------------------------------ */
 
+/*
+ * SA_* flag vocabulary for sigaction.sa_flags.  SA_RESTORER is
+ * declared by linux/signal.h / asm/signal.h but is intentionally
+ * not exposed by glibc's <signal.h>; the local #ifdef arm picks up
+ * the architectural value when present and contributes zero
+ * otherwise.  Bits outside the kernel-supported mask are silently
+ * cleared by the rt_sigaction path, so a uniform-byte splat wastes
+ * the field on bits the kernel ignores.
+ */
+#ifdef SA_RESTORER
+# define SIGACTION_FLAGS_RESTORER	SA_RESTORER
+#else
+# define SIGACTION_FLAGS_RESTORER	0UL
+#endif
+
+#define SIGACTION_FLAGS_MASK \
+	(SA_NOCLDSTOP | SA_NOCLDWAIT | SA_NODEFER | SA_ONSTACK | \
+	 SA_RESETHAND | SA_RESTART   | SA_SIGINFO | \
+	 SIGACTION_FLAGS_RESTORER)
+
 static const struct struct_field sigaction_fields[] = {
-	FIELD(struct sigaction, sa_flags),
+	FIELDX(struct sigaction, sa_flags, FT_FLAGS,
+	       .u.flags.mask = SIGACTION_FLAGS_MASK,
+	       .mutate_weight = 80),
 };
 
 /* ------------------------------------------------------------------ */
@@ -399,8 +459,16 @@ static const struct struct_field stack_t_fields[] = {
 /* struct mq_attr (mq_open, mq_getsetattr)                              */
 /* ------------------------------------------------------------------ */
 
+/*
+ * mq_attr.mq_flags is the only settable bit in the struct on the
+ * mq_setattr path and the kernel masks everything but O_NONBLOCK
+ * away.  Constraining the random fill to that single bit lets
+ * mq_getsetattr's IPC_SET path go through validation instead of
+ * bouncing on -EINVAL.
+ */
 static const struct struct_field mq_attr_fields[] = {
-	FIELD(struct mq_attr, mq_flags),
+	FIELDX(struct mq_attr, mq_flags, FT_FLAGS,
+	       .u.flags.mask = O_NONBLOCK),
 	FIELD(struct mq_attr, mq_maxmsg),
 	FIELD(struct mq_attr, mq_msgsize),
 	FIELD(struct mq_attr, mq_curmsgs),
