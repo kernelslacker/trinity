@@ -1636,6 +1636,14 @@ struct stats_s {
 	unsigned long bpf_maps_provided;
 	unsigned long bpf_progs_provided;
 
+	/* net/ebpf.c generator: cumulative count of programs that prepended
+	 * an LD_MAP_FD loading a real bpf-map fd from the trinity object pool
+	 * (Phase 3.3).  Bumped whenever the 5% base substitution rate or the
+	 * tier2 dedicated map-exercise sub-strategy fires AND the pool had at
+	 * least one map fd to hand out — empty-pool falls back silently to
+	 * scalar-only generation and is not counted here. */
+	unsigned long ebpf_gen_map_fd_substituted;
+
 	/* Slots held in zombie-pending state because the kernel still has
 	 * the unkillable D-state task around and may yet wake it to write
 	 * into childdata.  Reusing a slot before the kernel tears the task

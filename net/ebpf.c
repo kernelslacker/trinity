@@ -18,6 +18,7 @@
 #include "debug.h"
 #include "params.h"
 #include "random.h"
+#include "shm.h"
 #include "trinity.h"	// MAX_LOGLEVEL
 #include "utils.h"
 #include "rnd.h"
@@ -35,6 +36,24 @@
 #define TIER2_MAX_INSNS		256
 #define TIER3_MIN_INSNS		2
 #define TIER3_MAX_INSNS		512
+
+/*
+ * Phase 3.3: probability that any generated program prepends an LD_MAP_FD
+ * loading a real bpf-map fd from trinity's object pool.  Picked low so
+ * scalar-only programs still dominate coverage; the tier2 dedicated
+ * map-exercise sub-strategy below forces it independently when more
+ * map-path coverage is wanted.  Not env-tunable on purpose — Phase 3.3
+ * is the macro's first user and the weight bakes into the build.
+ */
+#define MAP_FD_WEIGHT_PCT	5
+
+/*
+ * Phase 3.3: chance that a tier 2 program runs the dedicated map-exercise
+ * sub-strategy, which forces an LD_MAP_FD prepend regardless of the 5%
+ * base rate.  Triggers only when get_rand_bpf_fd() actually returns a
+ * live fd; empty-pool still falls back to scalar-only generation.
+ */
+#define TIER2_FORCE_MAP_FD_DENOM	4
 
 /*
  * Per-prog-type helper function tables.
@@ -683,6 +702,55 @@ static int gen_tier3(struct bpf_insn *insns, int max_insns)
 }
 
 /*
+ * Phase 3.3: decide whether this program should prepend an LD_MAP_FD,
+ * and if so pull a live fd from trinity's bpf-map object pool.
+ *
+ * Returns the fd (>= 0) when substitution should fire, or -1 to skip.
+ * Empty pool (get_rand_bpf_fd() == -1) collapses to the skip path so
+ * the caller falls back to scalar-only generation for that program.
+ *
+ * Two independent triggers feed into the substitution decision:
+ *   - Base rate: MAP_FD_WEIGHT_PCT chance on every program regardless
+ *     of tier, so map-fd loads sprinkle across the whole population.
+ *   - Tier 2 dedicated sub-strategy: 1/TIER2_FORCE_MAP_FD_DENOM of
+ *     tier 2 programs force substitution to thicken map-path coverage
+ *     beyond what the 5% base rate alone produces.
+ *
+ * Both triggers share the same empty-pool guard, so a build with no
+ * maps available silently degrades both paths to scalar-only.
+ */
+static int pick_map_fd_for_program(int tier_id)
+{
+	bool force = (tier_id == 2 && ONE_IN(TIER2_FORCE_MAP_FD_DENOM));
+	bool base = (rnd_modulo_u32(100) < MAP_FD_WEIGHT_PCT);
+	int fd;
+
+	if (!force && !base)
+		return -1;
+
+	fd = get_rand_bpf_fd();
+	if (fd < 0)
+		return -1;
+
+	return fd;
+}
+
+/*
+ * Emit an LD_MAP_FD pseudo-insn pair at the head of the buffer,
+ * loading the supplied map fd into a randomly chosen R1-R9 register.
+ * Costs 2 slots (BPF_LD | BPF_DW | BPF_IMM is a 128-bit immediate).
+ * Caller has already verified the fd is live and the buffer has room.
+ */
+static void emit_ld_map_fd_prologue(struct bpf_insn *insns, int map_fd)
+{
+	int dst = BPF_REG_1 + rnd_modulo_u32(9);	/* R1..R9 */
+	struct bpf_insn pair[] = { EBPF_LD_MAP_FD(dst, map_fd) };
+
+	insns[0] = pair[0];
+	insns[1] = pair[1];
+}
+
+/*
  * Fill-into-buffer core: pick a tier and emit instructions into a
  * caller-supplied buffer.  The caller owns allocation; we just write.
  *
@@ -695,6 +763,13 @@ static int gen_tier3(struct bpf_insn *insns, int max_insns)
  * BPF_PROG_LOAD path (via the ebpf_gen_program() allocating wrapper
  * below) and the schema-mutation FT_BPF_PROGRAM tag, which allocates
  * its own sub-buffer and delegates fill here.
+ *
+ * Phase 3.3: programs may optionally prepend an LD_MAP_FD loading a
+ * real bpf-map fd from the object pool — see pick_map_fd_for_program()
+ * for the trigger rules.  The prepend consumes two slots at the head
+ * of the buffer; the chosen tier then fills the remainder via a
+ * pointer/length slice, so the tier code stays oblivious to the
+ * substitution and the verifier sees a single self-consistent program.
  */
 void ebpf_gen_program_into(struct bpf_insn *insns, int max_insns,
 			   int *insn_count, unsigned int prog_type)
@@ -702,6 +777,8 @@ void ebpf_gen_program_into(struct bpf_insn *insns, int max_insns,
 	struct helper_set hs;
 	int tier_max, len, tier_id;
 	int tier = rnd_modulo_u32(100);
+	int prepend = 0;
+	int map_fd;
 
 	if (tier < 50) {
 		tier_max = TIER1_MAX_INSNS;
@@ -716,20 +793,36 @@ void ebpf_gen_program_into(struct bpf_insn *insns, int max_insns,
 	if (tier_max > max_insns)
 		tier_max = max_insns;
 
+	/*
+	 * Prepend an LD_MAP_FD pair when the substitution decision fires
+	 * and the buffer can still fit a meaningful tier body after the
+	 * 2-slot reservation.  The lower bound matches TIER3_MIN_INSNS so
+	 * even the smallest legal tier has space to emit something.
+	 */
+	map_fd = pick_map_fd_for_program(tier_id);
+	if (map_fd >= 0 && tier_max >= TIER3_MIN_INSNS + 2) {
+		emit_ld_map_fd_prologue(insns, map_fd);
+		prepend = 2;
+		tier_max -= 2;
+		__atomic_add_fetch(&shm->stats.ebpf_gen_map_fd_substituted, 1,
+				   __ATOMIC_RELAXED);
+	}
+
 	hs = get_helpers_for_prog_type(prog_type);
 
 	if (tier_id == 1)
-		len = gen_tier1(insns, tier_max, hs);
+		len = gen_tier1(insns + prepend, tier_max, hs);
 	else if (tier_id == 2)
-		len = gen_tier2(insns, tier_max);
+		len = gen_tier2(insns + prepend, tier_max);
 	else
-		len = gen_tier3(insns, tier_max);
+		len = gen_tier3(insns + prepend, tier_max);
 
-	*insn_count = len;
+	*insn_count = len + prepend;
 
 	if (verbosity >= MAX_LOGLEVEL)
-		debugf("ebpf: generated tier %d program, %d insns\n",
-		       tier_id, len);
+		debugf("ebpf: generated tier %d program, %d insns%s\n",
+		       tier_id, *insn_count,
+		       prepend ? " (map-fd prepend)" : "");
 }
 
 /*

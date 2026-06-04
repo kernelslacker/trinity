@@ -3987,6 +3987,11 @@ static void dump_stats_fuzzer_subsystems(void)
 		stat_row("bpf_fd_provider", "progs_provided", shm->stats.bpf_progs_provided);
 	}
 
+	if (shm->stats.ebpf_gen_map_fd_substituted) {
+		stat_row("ebpf_gen", "map_fd_substituted",
+			 shm->stats.ebpf_gen_map_fd_substituted);
+	}
+
 	if (shm->stats.recipe_runs) {
 		stat_row("recipe_runner", "runs",        shm->stats.recipe_runs);
 		stat_row("recipe_runner", "completed",   shm->stats.recipe_completed);
