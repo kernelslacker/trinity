@@ -3998,6 +3998,19 @@ static void dump_stats_corruption_and_pool(void)
 		stat_row("corruption", "deferred_free_corrupt_ptr", parent_stats.deferred_free_corrupt_ptr);
 	if (parent_stats.post_handler_corrupt_ptr)
 		stat_row("corruption", "post_handler_corrupt_ptr", parent_stats.post_handler_corrupt_ptr);
+	/*
+	 * Standalone grep-friendly cumulative line.  The stat_row above
+	 * is gated on non-zero and the per-handler attribution block
+	 * elsewhere repeats the bare token "post_handler_corrupt_ptr"
+	 * as narrative, so `grep -c post_handler_corrupt_ptr out.log`
+	 * counts occurrences, not the counter -- a triage trap.  Emit
+	 * one line per window with a distinctive _cumulative suffix so
+	 * operators can do `grep post_handler_corrupt_ptr_cumulative
+	 * out.log | tail -1` for the current total, or grep -c against
+	 * the suffix to count windows.
+	 */
+	output(0, "[main] post_handler_corrupt_ptr_cumulative=%lu\n",
+	       parent_stats.post_handler_corrupt_ptr);
 	if (parent_stats.arg_shadow_stomp)
 		stat_row("corruption", "arg_shadow_stomp", parent_stats.arg_shadow_stomp);
 	if (parent_stats.deferred_free_reject)
