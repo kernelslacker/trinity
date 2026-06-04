@@ -23,6 +23,7 @@
 #include "params.h"
 #include "pids.h"
 #include "pre_crash_ring.h"
+#include "prop_ring.h"
 #include "random.h"
 #include "rnd.h"
 #include "sequence.h"
@@ -1266,6 +1267,13 @@ static void maybe_rotate_strategy(void)
 	 * invalid-combination space that the kernel-validated cmp_hints
 	 * pool otherwise biases away from. */
 	cmp_hints_chaos_tick();
+
+	/* Recompute the prop_ring edgepair top-quartile threshold from
+	 * the published mirror so the hot-path boost gate in
+	 * prop_ring_try_get reads a fresh cutoff next window.  Single
+	 * 262K-slot scan amortised across the strategy window; cost is
+	 * paid by this CAS-winner child only. */
+	prop_ring_recompute_edgepair_topq();
 
 	next = select_next_strategy(prev, &next_reason);
 	if (next < 0 || next >= NR_STRATEGIES) {
