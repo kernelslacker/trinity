@@ -48,6 +48,18 @@
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
 #endif
+#ifdef USE_XDP
+#include <linux/if_xdp.h>
+/*
+ * XDP_USE_NEED_WAKEUP landed in 5.4 (commit 77cd0d7b3f25); older
+ * toolchain headers won't carry it even when the rest of the
+ * sockaddr_xdp definitions are present.  Fall back to the upstream
+ * bit value so the FT_FLAGS mask stays the same on either side.
+ */
+#ifndef XDP_USE_NEED_WAKEUP
+#define XDP_USE_NEED_WAKEUP	(1 << 3)
+#endif
+#endif
 
 #include "struct_catalog.h"
 #include "arch.h"
@@ -945,11 +957,13 @@ static const struct struct_field msghdr_fields[] = {
  * the paired FT_LEN_BYTES (msghdr.msg_namelen) reports the kernel-
  * expected length rather than the full 128-byte envelope.
  *
- * Long-tail families (AF_BLUETOOTH, AF_CAN, AF_XDP, AF_RDS, ...) fall
+ * Long-tail families (AF_BLUETOOTH, AF_CAN, AF_RDS, ...) fall
  * through to the shared head pass alone: ss_family lands on a known
  * AF value but the rest of the buffer stays opaque, matching today's
- * pre-variant placeholder behaviour for those families.  A follow-up
- * step covers them incrementally.
+ * pre-variant placeholder behaviour for those families.  AF_BLUETOOTH
+ * needs socket-state to disambiguate L2CAP / RFCOMM / HCI / SCO and
+ * AF_RDS reuses sockaddr_in / sockaddr_in6 wholesale, so neither
+ * fits the single-buffer discriminator the variants table walks.
  */
 static const unsigned long sockaddr_storage_af_vocab[] = {
 	AF_UNIX, AF_INET, AF_INET6, AF_NETLINK, AF_PACKET,
@@ -960,6 +974,9 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 	AF_ALG,
 #endif
 	AF_TIPC,
+#ifdef USE_XDP
+	AF_XDP,
+#endif
 };
 
 /*
@@ -1139,6 +1156,36 @@ static const struct struct_field sockaddr_tipc_variant_fields[] = {
 	FIELD(struct sockaddr_tipc, addr),
 };
 
+#ifdef USE_XDP
+/*
+ * AF_XDP (sockaddr_xdp) -- XSK endpoint.  sxdp_flags drives the
+ * UMEM / queue binding semantics; the kernel's xsk_bind() rejects
+ * anything outside XDP_SHARED_UMEM | XDP_COPY | XDP_ZEROCOPY |
+ * XDP_USE_NEED_WAKEUP with -EINVAL before the dispatch lands, so an
+ * FT_FLAGS pick over that mask keeps coverage on the registered
+ * codepaths.  sxdp_ifindex is a generic 32-bit ifindex -- trinity
+ * has no live ifindex pool here, so leave it FT_RAW; bind() mostly
+ * fails at the netlink lookup but xsk_bind itself still runs.
+ * sxdp_queue_id stays small since real NICs rarely expose many
+ * queues, biasing the range toward something xsk_get_pool_from_qid
+ * may actually accept.  sxdp_shared_umem_fd is only honoured with
+ * XDP_SHARED_UMEM set, but an FT_FD slot biases toward an existing
+ * fd in the pool so the rare accept path exercises something other
+ * than -EBADF.
+ */
+#define SOCKADDR_XDP_FLAGS_MASK						\
+	(XDP_SHARED_UMEM | XDP_COPY | XDP_ZEROCOPY | XDP_USE_NEED_WAKEUP)
+
+static const struct struct_field sockaddr_xdp_variant_fields[] = {
+	FIELDX(struct sockaddr_xdp, sxdp_flags, FT_FLAGS,
+	       .u.flags.mask = SOCKADDR_XDP_FLAGS_MASK),
+	FIELD(struct sockaddr_xdp, sxdp_ifindex),
+	FIELDX(struct sockaddr_xdp, sxdp_queue_id, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 64 }),
+	FIELDX(struct sockaddr_xdp, sxdp_shared_umem_fd, FT_FD),
+};
+#endif
+
 static const struct union_variant sockaddr_storage_variants[] = {
 	{
 		.discrim_value	 = AF_UNIX,
@@ -1200,6 +1247,15 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.num_fields	 = ARRAY_SIZE(sockaddr_tipc_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_tipc),
 	},
+#ifdef USE_XDP
+	{
+		.discrim_value	 = AF_XDP,
+		.name		 = "AF_XDP",
+		.fields		 = sockaddr_xdp_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_xdp_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_xdp),
+	},
+#endif
 };
 
 static const struct struct_field sockaddr_storage_fields[] = {
