@@ -71,10 +71,17 @@ struct struct_field {
 			bool		 null_terminated;
 			unsigned int	 max_bytes;
 		} ptr_bytes;
-		/* FT_PTR_ARRAY: pointer to [1, max_count] elements of named struct. */
+		/*
+		 * FT_PTR_ARRAY: pointer to [1, max_count] elements.
+		 * Either elem_struct names a cataloged struct (size from
+		 * its struct_size), or elem_size carries the scalar byte
+		 * width directly (e.g. 8 for a u64 array).  When both are
+		 * set, elem_struct wins.
+		 */
 		struct {
 			const char	*len_field;
 			const char	*elem_struct;
+			unsigned int	 elem_size;
 			unsigned int	 max_count;
 		} ptr_array;
 		/* FT_PTR_STRUCT: pointer to one cataloged struct. */
@@ -83,10 +90,21 @@ struct struct_field {
 			const char	*struct_name;
 			bool		 optional;
 		} ptr_struct;
-		/* FT_LEN_BYTES / FT_LEN_COUNT: report paired buffer's chosen size. */
+		/*
+		 * FT_LEN_BYTES / FT_LEN_COUNT: report paired buffer's
+		 * chosen size.  buf_field is the single-pointer shortcut;
+		 * buf_fields[] + n_buf_fields names a list of sibling
+		 * pointer fields that share this LEN slot's count (e.g.
+		 * kprobe_multi's cnt gates syms+addrs+cookies together).
+		 * When buf_fields is set the fill pre-pins a single
+		 * shared count across all listed siblings; buf_field is
+		 * consulted only when buf_fields is NULL.
+		 */
 		struct {
-			const char	*buf_field;
-			bool		 optional;
+			const char		*buf_field;
+			const char *const	*buf_fields;
+			unsigned int		 n_buf_fields;
+			bool			 optional;
 		} len_of;
 		/*
 		 * FT_VOCAB: pick one entry from a curated string pool and

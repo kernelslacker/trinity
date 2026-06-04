@@ -1017,6 +1017,61 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 		}
 	}
 
+	/*
+	 * Pre-pin pass: when a LEN field carries a buf_fields[] list
+	 * (multi-pair gating, e.g. kprobe_multi's cnt gating
+	 * syms+addrs+cookies), roll one shared count and write it into
+	 * chosen_len[] for every listed sibling.  Pass 2 then reads
+	 * chosen_len[i] for those pointer fields instead of rolling its
+	 * own, so all siblings agree on the same count and the LEN
+	 * field's value matches every pointer it gates.
+	 *
+	 * Cap: minimum across the listed siblings' max_count /
+	 * max_bytes; absent any cap, the PTR_ARRAY_DEFAULT_MAX default
+	 * applies.  All siblings must therefore set a sensible cap or
+	 * accept the conservative default.
+	 */
+	for (i = 0; i < n; i++) {
+		const struct struct_field *f = &fields[i];
+		unsigned long count;
+		unsigned int cap = 0;
+		unsigned int j;
+
+		if (f->tag != FT_LEN_BYTES && f->tag != FT_LEN_COUNT)
+			continue;
+		if (f->u.len_of.buf_fields == NULL ||
+		    f->u.len_of.n_buf_fields == 0)
+			continue;
+
+		for (j = 0; j < f->u.len_of.n_buf_fields; j++) {
+			int p = find_field_index_in(fields, n,
+						    f->u.len_of.buf_fields[j]);
+			unsigned int c = 0;
+
+			if (p < 0 || (unsigned int) p >= n)
+				continue;
+			if (fields[p].tag == FT_PTR_ARRAY)
+				c = fields[p].u.ptr_array.max_count;
+			else if (fields[p].tag == FT_PTR_BYTES)
+				c = fields[p].u.ptr_bytes.max_bytes;
+			if (c == 0)
+				continue;
+			if (cap == 0 || c < cap)
+				cap = c;
+		}
+		if (cap == 0)
+			cap = PTR_ARRAY_DEFAULT_MAX;
+
+		count = 1 + rnd_modulo_u32(cap);
+		for (j = 0; j < f->u.len_of.n_buf_fields; j++) {
+			int p = find_field_index_in(fields, n,
+						    f->u.len_of.buf_fields[j]);
+			if (p < 0 || (unsigned int) p >= n)
+				continue;
+			chosen_len[p] = count;
+		}
+	}
+
 	/* Pass 2: pointer tags. */
 	for (i = 0; i < n; i++) {
 		const struct struct_field *f = &fields[i];
@@ -1038,7 +1093,16 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 				break;
 			}
 
-			nbytes = 1 + rnd_modulo_u32(cap);
+			/*
+			 * chosen_len[i] != 0 here means a multi-pair LEN
+			 * field pre-pinned this buffer's size in the
+			 * pin-pass below.  Use the shared value rather
+			 * than rolling an independent one.
+			 */
+			if (chosen_len[i] != 0)
+				nbytes = chosen_len[i];
+			else
+				nbytes = 1 + rnd_modulo_u32(cap);
 			sub = zmalloc_tracked(nbytes);
 			random_byte_fill(sub, nbytes,
 					 f->u.ptr_bytes.null_terminated);
@@ -1051,26 +1115,44 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 		case FT_PTR_ARRAY: {
 			unsigned int cap = f->u.ptr_array.max_count;
 			const struct struct_desc *elem;
+			unsigned int elem_size = 0;
 			unsigned long count, nbytes;
 			void *sub;
 
 			if (cap == 0)
 				cap = PTR_ARRAY_DEFAULT_MAX;
 
+			/*
+			 * elem_struct (cataloged struct, size from
+			 * struct_size) takes precedence; elem_size
+			 * (scalar byte width, e.g. 8 for a u64 array)
+			 * is the fallback when no struct is named.  At
+			 * least one must resolve to a non-zero width
+			 * for the allocation to proceed.
+			 */
 			elem = struct_catalog_lookup(f->u.ptr_array.elem_struct);
-			if (elem == NULL || elem->struct_size == 0) {
+			if (elem != NULL && elem->struct_size != 0)
+				elem_size = elem->struct_size;
+			else if (f->u.ptr_array.elem_size != 0)
+				elem_size = f->u.ptr_array.elem_size;
+
+			if (elem_size == 0) {
 				/*
-				 * Element struct not cataloged: leave NULL.
-				 * Paired LEN field will read chosen_len == 0
-				 * and plant zero, so the (NULL, 0) shape the
+				 * Neither a cataloged elem_struct nor an
+				 * elem_size override: leave NULL.  Paired
+				 * LEN field will read chosen_len == 0 and
+				 * plant zero, so the (NULL, 0) shape the
 				 * kernel sees is internally consistent.
 				 */
 				write_field_uint(buf, f, 0);
 				break;
 			}
 
-			count = 1 + rnd_modulo_u32(cap);
-			nbytes = count * elem->struct_size;
+			if (chosen_len[i] != 0)
+				count = chosen_len[i];
+			else
+				count = 1 + rnd_modulo_u32(cap);
+			nbytes = count * elem_size;
 			sub = zmalloc_tracked(nbytes);
 			deferred_free_enqueue(sub);
 			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
@@ -1191,7 +1273,26 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 		if (f->tag != FT_LEN_BYTES && f->tag != FT_LEN_COUNT)
 			continue;
 
-		paired = find_field_index_in(fields, n, f->u.len_of.buf_field);
+		/*
+		 * Multi-pair: every listed sibling shares the same count
+		 * (the pin-pass guaranteed this), so reading from the
+		 * first resolvable sibling is sufficient.
+		 */
+		if (f->u.len_of.buf_fields != NULL) {
+			unsigned int j;
+
+			paired = -1;
+			for (j = 0; j < f->u.len_of.n_buf_fields; j++) {
+				paired = find_field_index_in(fields, n,
+					f->u.len_of.buf_fields[j]);
+				if (paired >= 0 && (unsigned int) paired < n)
+					break;
+				paired = -1;
+			}
+		} else {
+			paired = find_field_index_in(fields, n,
+						     f->u.len_of.buf_field);
+		}
 		if (paired < 0 || (unsigned int) paired >= n)
 			write_field_uint(buf, f, 0);
 		else

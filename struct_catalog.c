@@ -2471,6 +2471,77 @@ static const struct struct_field bpf_attr_LINK_CREATE_TRACING_fields[] = {
 };
 
 /*
+ * KPROBE_MULTI / UPROBE_MULTI sub-variants.  Both gate three or four
+ * sibling pointer arrays with a single cnt slot, exercising the new
+ * multi-pair LEN extension (buf_fields[]).  cookies (KPROBE) /
+ * ref_ctr_offsets+cookies (UPROBE) stay optional via .max_count and
+ * the pre-pin pass treats them uniformly with the required siblings.
+ *
+ * The element type is scalar (u64 for symbol pointers, addresses,
+ * file offsets, cookies) -- this is the first user of FT_PTR_ARRAY's
+ * elem_size override path that lets the pointer pass size its
+ * sub-buffer without a cataloged elem_struct.
+ */
+static const unsigned long bpf_attach_types_kprobe_multi[] = {
+	BPF_TRACE_KPROBE_MULTI, BPF_TRACE_KPROBE_SESSION,
+};
+
+static const char *const bpf_attr_link_create_kprobe_multi_arrays[] = {
+	"link_create.kprobe_multi.syms",
+	"link_create.kprobe_multi.addrs",
+	"link_create.kprobe_multi.cookies",
+};
+
+static const struct struct_field bpf_attr_LINK_CREATE_KPROBE_MULTI_fields[] = {
+	FIELDX(union bpf_attr, link_create.kprobe_multi.flags, FT_FLAGS,
+	       .u.flags.mask = BPF_F_KPROBE_MULTI_RETURN),
+	FIELDX(union bpf_attr, link_create.kprobe_multi.cnt, FT_LEN_COUNT,
+	       .u.len_of = { .buf_fields = bpf_attr_link_create_kprobe_multi_arrays,
+			     .n_buf_fields = ARRAY_SIZE(bpf_attr_link_create_kprobe_multi_arrays) }),
+	FIELDX(union bpf_attr, link_create.kprobe_multi.syms, FT_PTR_ARRAY,
+	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
+				.max_count = 32 }),
+	FIELDX(union bpf_attr, link_create.kprobe_multi.addrs, FT_PTR_ARRAY,
+	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
+				.max_count = 32 }),
+	FIELDX(union bpf_attr, link_create.kprobe_multi.cookies, FT_PTR_ARRAY,
+	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
+				.max_count = 32 }),
+};
+
+static const unsigned long bpf_attach_types_uprobe_multi[] = {
+	BPF_TRACE_UPROBE_MULTI, BPF_TRACE_UPROBE_SESSION,
+};
+
+static const char *const bpf_attr_link_create_uprobe_multi_arrays[] = {
+	"link_create.uprobe_multi.offsets",
+	"link_create.uprobe_multi.ref_ctr_offsets",
+	"link_create.uprobe_multi.cookies",
+};
+
+static const struct struct_field bpf_attr_LINK_CREATE_UPROBE_MULTI_fields[] = {
+	FIELDX(union bpf_attr, link_create.uprobe_multi.path, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .null_terminated = true,
+				.optional = true,
+				.max_bytes = 256 }),
+	FIELDX(union bpf_attr, link_create.uprobe_multi.offsets, FT_PTR_ARRAY,
+	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
+				.max_count = 32 }),
+	FIELDX(union bpf_attr, link_create.uprobe_multi.ref_ctr_offsets, FT_PTR_ARRAY,
+	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
+				.max_count = 32 }),
+	FIELDX(union bpf_attr, link_create.uprobe_multi.cookies, FT_PTR_ARRAY,
+	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
+				.max_count = 32 }),
+	FIELDX(union bpf_attr, link_create.uprobe_multi.cnt, FT_LEN_COUNT,
+	       .u.len_of = { .buf_fields = bpf_attr_link_create_uprobe_multi_arrays,
+			     .n_buf_fields = ARRAY_SIZE(bpf_attr_link_create_uprobe_multi_arrays) }),
+	FIELDX(union bpf_attr, link_create.uprobe_multi.flags, FT_FLAGS,
+	       .u.flags.mask = BPF_F_UPROBE_MULTI_RETURN),
+	FIELD(union bpf_attr, link_create.uprobe_multi.pid),
+};
+
+/*
  * LINK_CREATE nested sub-variant table.  attach_type read off the
  * just-filled buffer at offset 8 (relative to the union, equal to
  * link_create.attach_type since link_create is at union offset 0)
@@ -2507,6 +2578,28 @@ static const struct union_variant bpf_attr_LINK_CREATE_nested[] = {
 					   link_create.tracing.cookie) +
 				  sizeof(((union bpf_attr *)NULL)
 					 ->link_create.tracing.cookie),
+	},
+	{
+		.discrim_values	    = bpf_attach_types_kprobe_multi,
+		.num_discrim_values = ARRAY_SIZE(bpf_attach_types_kprobe_multi),
+		.name		= "LINK_CREATE/KPROBE_MULTI",
+		.fields		= bpf_attr_LINK_CREATE_KPROBE_MULTI_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_LINK_CREATE_KPROBE_MULTI_fields),
+		.effective_size	= offsetof(union bpf_attr,
+					   link_create.kprobe_multi.cookies) +
+				  sizeof(((union bpf_attr *)NULL)
+					 ->link_create.kprobe_multi.cookies),
+	},
+	{
+		.discrim_values	    = bpf_attach_types_uprobe_multi,
+		.num_discrim_values = ARRAY_SIZE(bpf_attach_types_uprobe_multi),
+		.name		= "LINK_CREATE/UPROBE_MULTI",
+		.fields		= bpf_attr_LINK_CREATE_UPROBE_MULTI_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_LINK_CREATE_UPROBE_MULTI_fields),
+		.effective_size	= offsetof(union bpf_attr,
+					   link_create.uprobe_multi.pid) +
+				  sizeof(((union bpf_attr *)NULL)
+					 ->link_create.uprobe_multi.pid),
 	},
 };
 
