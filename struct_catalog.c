@@ -622,6 +622,67 @@ static const struct struct_field perf_event_attr_software_variant_fields[] = {
 	       .mutate_weight = 120),
 };
 
+/*
+ * PERF_TYPE_HW_CACHE: config is a packed bitfield-in-a-u64:
+ *
+ *     config = cache_id | (op_id << 8) | (result_id << 16)
+ *
+ * with cache_id < PERF_COUNT_HW_CACHE_MAX (7), op_id <
+ * PERF_COUNT_HW_CACHE_OP_MAX (3), result_id <
+ * PERF_COUNT_HW_CACHE_RESULT_MAX (2).  The kernel rejects triples
+ * with any sub-field >= its _MAX.  None of the catalog tags model
+ * three composing enums at sub-byte offsets (the schema keys fields
+ * by byte offset/size, so three enums would all claim offset 8 with
+ * overlapping writes -- the union-collision problem flagged in the
+ * design doc), so the variant uses a curated FT_ENUM over the 42
+ * pre-packed legal triples: 7 caches * 3 ops * 2 results.
+ *
+ * This mirrors random_cache_config() in syscalls/perf_event_open.c
+ * (the same {L1D, L1I, LL, DTLB, ITLB, BPU, NODE} *
+ * {READ, WRITE, PREFETCH} * {ACCESS, MISS} cross-product) so the
+ * hand-rolled csfu path and the schema-aware CMP attribution share
+ * the same packed-config vocabulary.  Out-of-range sub-field probes
+ * (cache_id=7, op_id=3, ...) are intentionally not in the curated
+ * set; the hand-rolled path covers them already via its RAND_BYTE()
+ * arms, and adding them here would defeat the validator-passing
+ * intent of an FT_ENUM draw.
+ */
+#define HW_CACHE_PACKED(cache, op, result) \
+	((unsigned long) (cache) | \
+	 ((unsigned long) (op) << 8) | \
+	 ((unsigned long) (result) << 16))
+
+#define HW_CACHE_TRIPLES_FOR_CACHE(cache) \
+	HW_CACHE_PACKED((cache), PERF_COUNT_HW_CACHE_OP_READ, \
+			PERF_COUNT_HW_CACHE_RESULT_ACCESS), \
+	HW_CACHE_PACKED((cache), PERF_COUNT_HW_CACHE_OP_READ, \
+			PERF_COUNT_HW_CACHE_RESULT_MISS), \
+	HW_CACHE_PACKED((cache), PERF_COUNT_HW_CACHE_OP_WRITE, \
+			PERF_COUNT_HW_CACHE_RESULT_ACCESS), \
+	HW_CACHE_PACKED((cache), PERF_COUNT_HW_CACHE_OP_WRITE, \
+			PERF_COUNT_HW_CACHE_RESULT_MISS), \
+	HW_CACHE_PACKED((cache), PERF_COUNT_HW_CACHE_OP_PREFETCH, \
+			PERF_COUNT_HW_CACHE_RESULT_ACCESS), \
+	HW_CACHE_PACKED((cache), PERF_COUNT_HW_CACHE_OP_PREFETCH, \
+			PERF_COUNT_HW_CACHE_RESULT_MISS)
+
+static const unsigned long hw_cache_packed_values[] = {
+	HW_CACHE_TRIPLES_FOR_CACHE(PERF_COUNT_HW_CACHE_L1D),
+	HW_CACHE_TRIPLES_FOR_CACHE(PERF_COUNT_HW_CACHE_L1I),
+	HW_CACHE_TRIPLES_FOR_CACHE(PERF_COUNT_HW_CACHE_LL),
+	HW_CACHE_TRIPLES_FOR_CACHE(PERF_COUNT_HW_CACHE_DTLB),
+	HW_CACHE_TRIPLES_FOR_CACHE(PERF_COUNT_HW_CACHE_ITLB),
+	HW_CACHE_TRIPLES_FOR_CACHE(PERF_COUNT_HW_CACHE_BPU),
+	HW_CACHE_TRIPLES_FOR_CACHE(PERF_COUNT_HW_CACHE_NODE),
+};
+
+static const struct struct_field perf_event_attr_hw_cache_variant_fields[] = {
+	FIELDX(struct perf_event_attr, config, FT_ENUM,
+	       .u.enum_ = { hw_cache_packed_values,
+			    ARRAY_SIZE(hw_cache_packed_values) },
+	       .mutate_weight = 120),
+};
+
 static const struct union_variant perf_event_attr_variants[] = {
 	{
 		.discrim_value	= PERF_TYPE_HARDWARE,
@@ -634,6 +695,12 @@ static const struct union_variant perf_event_attr_variants[] = {
 		.name		= "SOFTWARE",
 		.fields		= perf_event_attr_software_variant_fields,
 		.num_fields	= ARRAY_SIZE(perf_event_attr_software_variant_fields),
+	},
+	{
+		.discrim_value	= PERF_TYPE_HW_CACHE,
+		.name		= "HW_CACHE",
+		.fields		= perf_event_attr_hw_cache_variant_fields,
+		.num_fields	= ARRAY_SIZE(perf_event_attr_hw_cache_variant_fields),
 	},
 };
 
