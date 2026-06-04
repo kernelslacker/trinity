@@ -2355,6 +2355,139 @@ static const struct struct_field bpf_attr_TOKEN_CREATE_fields[] = {
 };
 
 /*
+ * BPF_PROG_QUERY query variant.  prog_cnt is the single LEN slot
+ * that gates four sibling arrays (prog_ids + prog_attach_flags +
+ * link_ids + link_attach_flags) -- the heaviest multi-pair user in
+ * the catalog so far.  The pre-pin pass rolls one count and pins it
+ * on every listed sibling so the kernel sees coherent (cnt, ptrs)
+ * shapes rather than four independently rolled counts.
+ *
+ * All four arrays carry kernel-output values; the schema fill pre-
+ * allocates the buffers and the kernel overwrites them on success.
+ * Optional arms keep the NULL-pointer path also exercised on the
+ * three non-required slots.
+ */
+static const char *const bpf_attr_query_arrays[] = {
+	"query.prog_ids",
+	"query.prog_attach_flags",
+	"query.link_ids",
+	"query.link_attach_flags",
+};
+
+static const struct struct_field bpf_attr_QUERY_fields[] = {
+	FIELDX(union bpf_attr, query.target_fd, FT_FD),
+	FIELDX(union bpf_attr, query.attach_type, FT_ENUM,
+	       .u.enum_ = { bpf_attach_types, ARRAY_SIZE(bpf_attach_types) },
+	       .mutate_weight = 150),
+	FIELDX(union bpf_attr, query.query_flags, FT_FLAGS,
+	       .u.flags.mask = BPF_F_QUERY_EFFECTIVE),
+	FIELD(union bpf_attr, query.attach_flags),
+	FIELDX(union bpf_attr, query.prog_ids, FT_PTR_ARRAY,
+	       .u.ptr_array = { .elem_size = sizeof(uint32_t),
+				.max_count = 64 }),
+	FIELDX(union bpf_attr, query.prog_cnt, FT_LEN_COUNT,
+	       .u.len_of = { .buf_fields = bpf_attr_query_arrays,
+			     .n_buf_fields = ARRAY_SIZE(bpf_attr_query_arrays) }),
+	FIELDX(union bpf_attr, query.prog_attach_flags, FT_PTR_ARRAY,
+	       .u.ptr_array = { .elem_size = sizeof(uint32_t),
+				.max_count = 64 }),
+	FIELDX(union bpf_attr, query.link_ids, FT_PTR_ARRAY,
+	       .u.ptr_array = { .elem_size = sizeof(uint32_t),
+				.max_count = 64 }),
+	FIELDX(union bpf_attr, query.link_attach_flags, FT_PTR_ARRAY,
+	       .u.ptr_array = { .elem_size = sizeof(uint32_t),
+				.max_count = 64 }),
+	FIELD(union bpf_attr, query.revision),
+};
+
+/*
+ * BPF_TASK_FD_QUERY task_fd_query variant.  buf is the kernel-
+ * writable name/symbol/filename buffer; non-optional because a NULL
+ * buffer bounces on the up-front -EFAULT before the per-fd-type
+ * dispatch.  prog_id / fd_type / probe_offset / probe_addr are
+ * kernel outputs that we still pre-fill so the slot is well-defined
+ * if the call fails before the kernel writes them.
+ */
+static const struct struct_field bpf_attr_TASK_FD_QUERY_fields[] = {
+	FIELD(union bpf_attr, task_fd_query.pid),
+	FIELDX(union bpf_attr, task_fd_query.fd, FT_FD),
+	FIELD(union bpf_attr, task_fd_query.flags),
+	FIELDX(union bpf_attr, task_fd_query.buf_len, FT_LEN_BYTES,
+	       .u.len_of = { .buf_field = "task_fd_query.buf" }),
+	FIELDX(union bpf_attr, task_fd_query.buf, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .len_field = "task_fd_query.buf_len",
+				.max_bytes = 256 }),
+	FIELD(union bpf_attr, task_fd_query.prog_id),
+	FIELD(union bpf_attr, task_fd_query.fd_type),
+	FIELD(union bpf_attr, task_fd_query.probe_offset),
+	FIELD(union bpf_attr, task_fd_query.probe_addr),
+};
+
+/*
+ * BPF_BTF_LOAD btf_load variant.  Random bytes in btf fail the BTF
+ * magic check (0xEB9F) and bounce on -EINVAL before reaching the
+ * verifier proper -- acceptable for this round; a follow-up can plant
+ * the magic via FT_VERSION_MAGIC to widen coverage past the magic
+ * gate.  btf_log_buf is optional so the no-log path runs too.
+ */
+static const struct struct_field bpf_attr_BTF_LOAD_fields[] = {
+	FIELDX(union bpf_attr, btf, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .len_field = "btf_size",
+				.max_bytes = 4096 }),
+	FIELDX(union bpf_attr, btf_log_buf, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .len_field = "btf_log_size",
+				.optional = true,
+				.max_bytes = 4096 }),
+	FIELDX(union bpf_attr, btf_size, FT_LEN_BYTES,
+	       .u.len_of = { .buf_field = "btf" }),
+	FIELDX(union bpf_attr, btf_log_size, FT_LEN_BYTES,
+	       .u.len_of = { .buf_field = "btf_log_buf", .optional = true }),
+	FIELDX(union bpf_attr, btf_log_level, FT_FLAGS,
+	       .u.flags.mask = 0x7),
+	FIELD(union bpf_attr, btf_log_true_size),
+	FIELDX(union bpf_attr, btf_flags, FT_FLAGS,
+	       .u.flags.mask = BPF_F_TOKEN_FD),
+	FIELDX(union bpf_attr, btf_token_fd, FT_FD),
+};
+
+/*
+ * BPF_MAP_*_BATCH batch variant.  count gates keys+values together
+ * (multi-pair).  in_batch is the optional iterator-state buffer
+ * (NULL-to-start); out_batch is non-optional because the kernel
+ * writes the next iterator state into it.  Element size for keys /
+ * values uses a generous 8-byte default -- map-aware sizing (read
+ * the map_fd's key_size / value_size at fill time) lives in a
+ * follow-up; today an undersized buffer -EINVALs cleanly.
+ */
+static const char *const bpf_attr_batch_arrays[] = {
+	"batch.keys",
+	"batch.values",
+};
+
+#define BATCH_ELEM_FLAGS_MASK \
+	(BPF_ANY | BPF_NOEXIST | BPF_EXIST | BPF_F_LOCK)
+
+static const struct struct_field bpf_attr_BATCH_fields[] = {
+	FIELDX(union bpf_attr, batch.in_batch, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .optional = true, .max_bytes = 1024 }),
+	FIELDX(union bpf_attr, batch.out_batch, FT_PTR_BYTES,
+	       .u.ptr_bytes = { .max_bytes = 1024 }),
+	FIELDX(union bpf_attr, batch.keys, FT_PTR_ARRAY,
+	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
+				.max_count = 64 }),
+	FIELDX(union bpf_attr, batch.values, FT_PTR_ARRAY,
+	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
+				.max_count = 64 }),
+	FIELDX(union bpf_attr, batch.count, FT_LEN_COUNT,
+	       .u.len_of = { .buf_fields = bpf_attr_batch_arrays,
+			     .n_buf_fields = ARRAY_SIZE(bpf_attr_batch_arrays) }),
+	FIELDX(union bpf_attr, batch.map_fd, FT_FD),
+	FIELDX(union bpf_attr, batch.elem_flags, FT_FLAGS,
+	       .u.flags.mask = BATCH_ELEM_FLAGS_MASK),
+	FIELD(union bpf_attr, batch.flags),
+};
+
+/*
  * BPF_PROG_TEST_RUN test variant.  Two pointer pairs (data_in/out,
  * ctx_in/out) plus repeat / cpu / batch_size as ranges to keep the
  * call from burning CPU forever on a max-u32 repeat draw or
@@ -3025,6 +3158,61 @@ static const struct union_variant bpf_attr_variants[] = {
 		.fields		= bpf_attr_PROG_STREAM_READ_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_PROG_STREAM_READ_fields),
 		.effective_size	= sizeof(((union bpf_attr *)NULL)->prog_stream_read),
+	},
+	{
+		.discrim_value	= BPF_PROG_QUERY,
+		.name		= "QUERY",
+		.fields		= bpf_attr_QUERY_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_QUERY_fields),
+		.effective_size	= sizeof(((union bpf_attr *)NULL)->query),
+	},
+	{
+		.discrim_value	= BPF_TASK_FD_QUERY,
+		.name		= "TASK_FD_QUERY",
+		.fields		= bpf_attr_TASK_FD_QUERY_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_TASK_FD_QUERY_fields),
+		.effective_size	= sizeof(((union bpf_attr *)NULL)->task_fd_query),
+	},
+	{
+		.discrim_value	= BPF_BTF_LOAD,
+		.name		= "BTF_LOAD",
+		.fields		= bpf_attr_BTF_LOAD_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_BTF_LOAD_fields),
+		/*
+		 * BTF_LOAD lives in an unnamed anonymous struct rather than
+		 * a named tag, so sizeof reaches for btf_token_fd's offset +
+		 * size; no convenient sizeof(attr->btf_load) handle exists.
+		 */
+		.effective_size	= offsetof(union bpf_attr, btf_token_fd) +
+				  sizeof(((union bpf_attr *)NULL)->btf_token_fd),
+	},
+	{
+		.discrim_value	= BPF_MAP_LOOKUP_BATCH,
+		.name		= "MAP_LOOKUP_BATCH",
+		.fields		= bpf_attr_BATCH_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_BATCH_fields),
+		.effective_size	= sizeof(((union bpf_attr *)NULL)->batch),
+	},
+	{
+		.discrim_value	= BPF_MAP_LOOKUP_AND_DELETE_BATCH,
+		.name		= "MAP_LOOKUP_AND_DELETE_BATCH",
+		.fields		= bpf_attr_BATCH_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_BATCH_fields),
+		.effective_size	= sizeof(((union bpf_attr *)NULL)->batch),
+	},
+	{
+		.discrim_value	= BPF_MAP_UPDATE_BATCH,
+		.name		= "MAP_UPDATE_BATCH",
+		.fields		= bpf_attr_BATCH_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_BATCH_fields),
+		.effective_size	= sizeof(((union bpf_attr *)NULL)->batch),
+	},
+	{
+		.discrim_value	= BPF_MAP_DELETE_BATCH,
+		.name		= "MAP_DELETE_BATCH",
+		.fields		= bpf_attr_BATCH_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_BATCH_fields),
+		.effective_size	= sizeof(((union bpf_attr *)NULL)->batch),
 	},
 	{
 		.discrim_value	= BPF_PROG_TEST_RUN,
