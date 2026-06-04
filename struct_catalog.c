@@ -1555,6 +1555,65 @@ static const struct struct_field io_uring_register_pbuf_status_fields[] = {
 };
 
 /*
+ * IORING_REGISTER_FILES2 (13) / IORING_REGISTER_BUFFERS2 (15) /
+ * arg = struct io_uring_rsrc_register.  nr is the count; flags carry
+ * the IORING_RSRC_REGISTER_SPARSE bit; data/tags are __aligned_u64
+ * user pointers to the fd[]/iovec[] payload and tag[] array (the
+ * hand-rolled fill owns pointer seeding).  resv2 must be zero.
+ * FILES2 and BUFFERS2 share the struct -- one fields[], two keys.
+ */
+#define IORING_RSRC_REGISTER_FLAGS_MASK	(IORING_RSRC_REGISTER_SPARSE)
+
+static const struct struct_field io_uring_register_rsrc_register_fields[] = {
+	FIELDX(struct io_uring_rsrc_register, nr, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 16 },
+	       .mutate_weight = 80),
+	FIELDX(struct io_uring_rsrc_register, flags, FT_FLAGS,
+	       .u.flags.mask = IORING_RSRC_REGISTER_FLAGS_MASK,
+	       .mutate_weight = 80),
+	FIELD(struct io_uring_rsrc_register, resv2),
+	FIELD(struct io_uring_rsrc_register, data),
+	FIELD(struct io_uring_rsrc_register, tags),
+};
+
+/*
+ * IORING_REGISTER_FILES_UPDATE2 (14) / IORING_REGISTER_BUFFERS_UPDATE
+ * (16) / arg = struct io_uring_rsrc_update2.  offset is a small slot
+ * index; data/tags are user pointers; nr is the count.  resv / resv2
+ * must be zero.  Both opcodes share the struct -- one fields[], two
+ * keys.
+ */
+static const struct struct_field io_uring_register_rsrc_update2_fields[] = {
+	FIELDX(struct io_uring_rsrc_update2, offset, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 64 },
+	       .mutate_weight = 80),
+	FIELD(struct io_uring_rsrc_update2, resv),
+	FIELD(struct io_uring_rsrc_update2, data),
+	FIELD(struct io_uring_rsrc_update2, tags),
+	FIELDX(struct io_uring_rsrc_update2, nr, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 16 },
+	       .mutate_weight = 80),
+	FIELD(struct io_uring_rsrc_update2, resv2),
+};
+
+/*
+ * IORING_REGISTER_PROBE (8) / arg = struct io_uring_probe + flex
+ * ops[].  Output-heavy: kernel fills ops[] up to ops_len entries.
+ * Header-only variant -- the 16-byte fixed prefix.  ops_len is the
+ * caller-supplied capacity; everything else must be zero on input.
+ * The flex ops[] array is owned by the hand-rolled fill path (no
+ * array-aware schema model today).
+ */
+static const struct struct_field io_uring_register_probe_fields[] = {
+	FIELD(struct io_uring_probe, last_op),
+	FIELDX(struct io_uring_probe, ops_len, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 16 },
+	       .mutate_weight = 60),
+	FIELD(struct io_uring_probe, resv),
+	FIELD(struct io_uring_probe, resv2),
+};
+
+/*
  * Per-opcode variant table.  rec->a2 carries the opcode at sanitise
  * and post time; struct_desc_resolve_variant() picks the matching
  * variant.  Opcodes without an entry fall through to the empty shared
@@ -1724,6 +1783,60 @@ static const struct union_variant io_uring_register_variants[] = {
 		.num_fields	= ARRAY_SIZE(io_uring_register_pbuf_status_fields),
 		.effective_size	= sizeof(struct io_uring_buf_status),
 	},
+	/*
+	 * FILES2 / BUFFERS2 share struct io_uring_rsrc_register (32B).
+	 * FILES_UPDATE2 / BUFFERS_UPDATE share struct io_uring_rsrc_update2
+	 * (32B).  One fields[] per struct, two keys each.
+	 */
+	{
+		.discrim_value	= IORING_REGISTER_FILES2,
+		.name		= "FILES2",
+		.fields		= io_uring_register_rsrc_register_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_rsrc_register_fields),
+		.effective_size	= sizeof(struct io_uring_rsrc_register),
+	},
+	{
+		.discrim_value	= IORING_REGISTER_BUFFERS2,
+		.name		= "BUFFERS2",
+		.fields		= io_uring_register_rsrc_register_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_rsrc_register_fields),
+		.effective_size	= sizeof(struct io_uring_rsrc_register),
+	},
+	{
+		.discrim_value	= IORING_REGISTER_FILES_UPDATE2,
+		.name		= "FILES_UPDATE2",
+		.fields		= io_uring_register_rsrc_update2_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_rsrc_update2_fields),
+		.effective_size	= sizeof(struct io_uring_rsrc_update2),
+	},
+	{
+		.discrim_value	= IORING_REGISTER_BUFFERS_UPDATE,
+		.name		= "BUFFERS_UPDATE",
+		.fields		= io_uring_register_rsrc_update2_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_rsrc_update2_fields),
+		.effective_size	= sizeof(struct io_uring_rsrc_update2),
+	},
+	/*
+	 * PROBE: header-only variant (16B).  ops[] flex array is
+	 * output-side and lives in the hand-rolled fill path; not
+	 * modelled in the schema.
+	 */
+	{
+		.discrim_value	= IORING_REGISTER_PROBE,
+		.name		= "PROBE",
+		.fields		= io_uring_register_probe_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_probe_fields),
+		.effective_size	= sizeof(struct io_uring_probe),
+	},
+	/*
+	 * No-arg opcodes -- intentionally absent from this table:
+	 *   IORING_REGISTER_PERSONALITY (9):   returns an id; arg ignored.
+	 *   IORING_UNREGISTER_PERSONALITY (10): id passed in nr_args/a4.
+	 *   IORING_REGISTER_ENABLE_RINGS (12): no arg.
+	 * The absence is deliberate, not an oversight; no variant means
+	 * no schema fill and no opcode-scoped CMP attribution -- correct
+	 * for opcodes whose arg slot is unused or a bare id.
+	 */
 };
 
 /* ------------------------------------------------------------------ */
