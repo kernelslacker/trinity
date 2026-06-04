@@ -147,13 +147,21 @@ void corrupt_ptr_breadcrumb_dump(unsigned int max_lines)
 			continue;
 		total_seen += (long) n;
 
-		/* Walk newest-first by reversing the linearised range. */
-		for (j = n; j-- > 0 && emitted < max_lines; ) {
+		/* Walk newest-first within this child by reversing the
+		 * linearised range.  Across children we proceed in
+		 * for_each_child() order -- not strictly global
+		 * newest-first.  Keep counting total_seen even after
+		 * emission hits max_lines so the "more not shown"
+		 * tally below reflects every child's contribution. */
+		for (j = n; j-- > 0; ) {
 			const struct corrupt_ptr_breadcrumb *b = &stack[j];
 			const char *name;
 			const char *width;
 			const char *tag;
 			char arg_buf[8];
+
+			if (emitted >= max_lines)
+				break;
 
 			if (b->syscall_nr == (unsigned int) ~0u) {
 				name = "<deferred-free / non-syscall>";
@@ -176,7 +184,8 @@ void corrupt_ptr_breadcrumb_dump(unsigned int max_lines)
 
 			if (emitted == 0)
 				stats_log_write("corrupt_ptr breadcrumbs "
-						"(last %u; newest first):\n",
+						"(last %u, child-scan order, "
+						"newest first per child):\n",
 						max_lines);
 			stats_log_write("  nr=%u%s arg=%s bad=0x%lx "
 					"label=%s site=%s name=%s iter=%lu\n",
@@ -188,8 +197,6 @@ void corrupt_ptr_breadcrumb_dump(unsigned int max_lines)
 					tag, name, b->iter_at_fire);
 			emitted++;
 		}
-		if (emitted >= max_lines)
-			break;
 	}
 
 	if (emitted > 0 && total_seen > (long) emitted)
