@@ -79,6 +79,12 @@ static void sanitise_recvfrom(struct syscallrecord *rec)
 	addr = (struct sockaddr_storage *) get_writable_address(sizeof(*addr));
 	if (addr != NULL)
 		rec->a5 = (unsigned long) addr;
+	else
+		/* On pool exhaustion / mincore failure, leaving the original
+		 * undersized ARG_SOCKADDR buffer would preserve the very
+		 * overflow shape this routine exists to prevent.  Force NULL
+		 * so the kernel returns -EFAULT cleanly. */
+		rec->a5 = 0;
 
 	/*
 	 * Allocate the value-result addrlen slot through the shared shape
