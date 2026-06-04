@@ -61,11 +61,28 @@ static void sanitise_getsockname(struct syscallrecord *rec)
 
 	rec->post_state = 0;
 #endif
+	struct sockaddr_storage *addr;
 	struct valresult_buf vrb;
 
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 
-	avoid_shared_buffer_out(&rec->a2, sizeof(struct sockaddr_storage));
+	/*
+	 * ARG_SOCKADDR hands back generate_sockaddr()'s natural per-family
+	 * allocation -- as small as sockaddr_in (16 bytes) when the random
+	 * draw picks AF_INET, smaller still on the unknown-protocol fallback
+	 * paths that publish a rnd_modulo_u32(page_size - 1) + 1 length.  The
+	 * kernel fills the bound address up to *addrlen bytes, where *addrlen
+	 * is the value-result slot below seeded at sockaddr_storage capacity.
+	 * When the fd at a1 backs a sockaddr_un with a long sun_path the
+	 * kernel writes ~110 bytes into a 16-byte zmalloc chunk and glibc's
+	 * heap-overflow detector aborts the child.  Override a2 with a
+	 * sockaddr_storage-sized writable buffer so the kernel has room for
+	 * the largest legitimate address.  Mirrors sanitise_recvfrom in
+	 * recv.c.
+	 */
+	addr = (struct sockaddr_storage *) get_writable_address(sizeof(*addr));
+	if (addr != NULL)
+		rec->a2 = (unsigned long) addr;
 
 	/*
 	 * usockaddr_len is a value-result socklen_t pointer. ARG_SOCKADDRLEN
