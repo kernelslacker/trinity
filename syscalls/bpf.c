@@ -503,7 +503,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		const struct union_variant *variant = NULL;
 
 		if (desc != NULL) {
-			variant = struct_desc_resolve_variant(desc, rec);
+			variant = struct_desc_resolve_variant(desc, rec, NULL);
 			struct_field_fill_schema_aware((unsigned char *) attr,
 						       sizeof(union bpf_attr),
 						       desc, rec);

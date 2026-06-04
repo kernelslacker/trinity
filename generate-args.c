@@ -908,30 +908,13 @@ static void random_byte_fill(unsigned char *p, unsigned long nbytes,
  *     Coupled fields stay consistent -- the kernel sees a length
  *     that matches the buffer it describes.
  */
-void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
-				    const struct struct_desc *desc,
-				    struct syscallrecord *rec)
+static void struct_fill_passes(unsigned char *buf, unsigned int size,
+			       const struct struct_field *fields,
+			       unsigned int n,
+			       struct syscallrecord *rec)
 {
-	const struct union_variant *variant;
-	const struct struct_field *fields;
 	unsigned long chosen_len[STRUCT_FILL_MAX_FIELDS] = {0};
-	unsigned int n;
 	unsigned int i;
-
-	/*
-	 * Variant-scoped fill when the discriminator resolves.  Nested
-	 * FT_PTR_STRUCT calls pass rec through, so a struct nested inside
-	 * a tagged-union parent reads the same syscall args -- matching
-	 * the "discriminator source is the parent syscallrecord" rule.
-	 */
-	variant = struct_desc_resolve_variant(desc, rec);
-	if (variant != NULL) {
-		fields = variant->fields;
-		n = variant->num_fields;
-	} else {
-		fields = desc->fields;
-		n = desc->num_fields;
-	}
 
 	if (n > STRUCT_FILL_MAX_FIELDS)
 		n = STRUCT_FILL_MAX_FIELDS;
@@ -1074,6 +1057,7 @@ void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
 
 		case FT_PTR_STRUCT: {
 			const struct struct_desc *target;
+			const struct union_variant *tvariant;
 			void *sub;
 
 			if (f->u.ptr_struct.optional && !optional_present()) {
@@ -1092,7 +1076,19 @@ void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
 						       target, rec);
 			deferred_free_enqueue(sub);
 			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
-			chosen_len[i] = target->struct_size;
+			/*
+			 * Re-resolve the target's variant now that sub is
+			 * populated so the paired length field reports the
+			 * per-variant ABI size when one is declared (e.g.
+			 * sockaddr_un's 110 vs sockaddr_in's 16).  Falls back
+			 * to target->struct_size when no variant resolves or
+			 * the variant leaves effective_size at zero.
+			 */
+			tvariant = struct_desc_resolve_variant(target, rec, sub);
+			chosen_len[i] = (tvariant != NULL &&
+					 tvariant->effective_size != 0)
+					? tvariant->effective_size
+					: target->struct_size;
 			break;
 		}
 
@@ -1142,6 +1138,39 @@ void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
 		else
 			write_field_uint(buf, f, chosen_len[paired]);
 	}
+}
+
+void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
+				    const struct struct_desc *desc,
+				    struct syscallrecord *rec)
+{
+	const struct union_variant *variant;
+
+	/*
+	 * Arg-derived discriminator resolves up-front from rec; nested
+	 * FT_PTR_STRUCT calls thread rec through so a child struct under
+	 * a tagged-union parent reads the same syscall args.  Buffer-
+	 * derived discriminators can't resolve here -- the buffer is empty
+	 * -- so the shared desc->fields[] head pass runs first and writes
+	 * the discriminator (e.g. sockaddr_storage's ss_family).  The
+	 * per-AF variant fill then runs on the now-populated buffer.
+	 */
+	variant = struct_desc_resolve_variant(desc, rec, NULL);
+	if (variant != NULL) {
+		struct_fill_passes(buf, size, variant->fields,
+				   variant->num_fields, rec);
+		return;
+	}
+
+	struct_fill_passes(buf, size, desc->fields, desc->num_fields, rec);
+
+	if (desc->buffer_discrim_size == 0)
+		return;
+
+	variant = struct_desc_resolve_variant(desc, rec, buf);
+	if (variant != NULL)
+		struct_fill_passes(buf, size, variant->fields,
+				   variant->num_fields, rec);
 }
 
 /*

@@ -2066,28 +2066,63 @@ static unsigned int natural_width(unsigned long val)
 
 const struct union_variant *
 struct_desc_resolve_variant(const struct struct_desc *desc,
-			    struct syscallrecord *rec)
+			    struct syscallrecord *rec,
+			    const unsigned char *buf)
 {
 	unsigned long discrim;
 	unsigned int idx;
 	unsigned int i;
 
-	if (desc == NULL || rec == NULL)
+	if (desc == NULL)
 		return NULL;
 	if (desc->variants == NULL || desc->num_variants == 0)
 		return NULL;
-	idx = desc->discrim_arg_idx;
-	if (idx < 1 || idx > 6)
-		return NULL;
 
-	switch (idx) {
-	case 1: discrim = rec->a1; break;
-	case 2: discrim = rec->a2; break;
-	case 3: discrim = rec->a3; break;
-	case 4: discrim = rec->a4; break;
-	case 5: discrim = rec->a5; break;
-	case 6: discrim = rec->a6; break;
-	default: return NULL;
+	idx = desc->discrim_arg_idx;
+	if (idx != 0) {
+		if (rec == NULL || idx > 6)
+			return NULL;
+		switch (idx) {
+		case 1: discrim = rec->a1; break;
+		case 2: discrim = rec->a2; break;
+		case 3: discrim = rec->a3; break;
+		case 4: discrim = rec->a4; break;
+		case 5: discrim = rec->a5; break;
+		case 6: discrim = rec->a6; break;
+		default: return NULL;
+		}
+	} else if (desc->buffer_discrim_size != 0) {
+		/*
+		 * Buffer-relative discriminator: the just-filled buffer
+		 * carries the discriminator value at a fixed offset.  CMP
+		 * and other pre-fill callers pass buf == NULL and short-
+		 * circuit here.
+		 */
+		if (buf == NULL)
+			return NULL;
+		switch (desc->buffer_discrim_size) {
+		case 1:
+			discrim = buf[desc->buffer_discrim_offset];
+			break;
+		case 2: {
+			uint16_t v;
+			memcpy(&v, buf + desc->buffer_discrim_offset,
+			       sizeof(v));
+			discrim = v;
+			break;
+		}
+		case 4: {
+			uint32_t v;
+			memcpy(&v, buf + desc->buffer_discrim_offset,
+			       sizeof(v));
+			discrim = v;
+			break;
+		}
+		default:
+			return NULL;
+		}
+	} else {
+		return NULL;
 	}
 
 	for (i = 0; i < desc->num_variants; i++) {
@@ -2135,7 +2170,14 @@ int struct_field_for_cmp(const struct struct_desc *desc,
 	 * desc->fields[] (today an empty prefix for bpf_attr; future
 	 * structs with common-prefix fields land there too).
 	 */
-	variant = struct_desc_resolve_variant(desc, rec);
+	/*
+	 * CMP runs before the next fill so there's no buffer to consult
+	 * for buffer-discriminator structs; passing buf == NULL makes the
+	 * resolver short-circuit and attribution lands on the flat field
+	 * list (typically the shared head field carrying the discriminator
+	 * itself, which is the high-value CMP target anyway).
+	 */
+	variant = struct_desc_resolve_variant(desc, rec, NULL);
 	if (variant != NULL) {
 		fields = variant->fields;
 		num_fields = variant->num_fields;

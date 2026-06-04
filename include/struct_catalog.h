@@ -122,6 +122,15 @@ struct struct_desc {
 	unsigned int		   discrim_arg_idx;
 	const struct union_variant *variants;
 	unsigned int		   num_variants;
+	/*
+	 * Buffer-relative discriminator: used when the value lives at a
+	 * fixed offset inside the just-filled buffer itself (e.g.
+	 * sockaddr_storage's ss_family at offset 0) rather than in a
+	 * syscall arg.  Consulted only when discrim_arg_idx == 0;
+	 * buffer_discrim_size of 1/2/4 selects width, zero disables.
+	 */
+	unsigned int		   buffer_discrim_offset;
+	unsigned int		   buffer_discrim_size;
 };
 
 /*
@@ -178,13 +187,26 @@ int struct_field_for_cmp(const struct struct_desc *desc,
 			 struct syscallrecord *rec, unsigned long val);
 
 /*
- * Resolve which union_variant applies to a given (desc, rec) pair.
- * Returns NULL when desc carries no variants, when rec is NULL, or
- * when the discriminator value matches no variant.
+ * Resolve which union_variant applies to a given (desc, rec, buf) tuple.
+ * Two discriminator sources are supported, in priority order:
+ *
+ *   - desc->discrim_arg_idx > 0: read a syscall arg off rec.  buf is
+ *     unused on this path.  rec must be non-NULL.
+ *   - desc->buffer_discrim_size > 0: read the discriminator from
+ *     buf + desc->buffer_discrim_offset at the indicated width.  Used
+ *     when the live discriminator was just written into the buffer by
+ *     the scalar pass (e.g. sockaddr_storage's ss_family).  buf must
+ *     be non-NULL on this path; pass NULL to opt out (e.g. from CMP
+ *     paths that run before the next fill).
+ *
+ * Returns NULL when desc carries no variants, when the active
+ * discriminator source is unreadable, or when the discriminator value
+ * matches no variant.
  */
 const struct union_variant *
 struct_desc_resolve_variant(const struct struct_desc *desc,
-			    struct syscallrecord *rec);
+			    struct syscallrecord *rec,
+			    const unsigned char *buf);
 
 /*
  * Schema-aware per-field fill for a cataloged struct.  Three passes
