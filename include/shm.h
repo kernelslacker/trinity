@@ -408,6 +408,48 @@ struct shm_s {
 	unsigned long bandit_reward_pc_edge_count[NR_STRATEGIES];
 
 	/*
+	 * Per-arm x chaos-state cohort accumulators -- chaos-mode V2
+	 * observation-only attribution.  Each completed window is bucketed
+	 * into [arm][chaos_state] in bandit_record_pull, where chaos_state
+	 * is the cmp_hints_chaos_active flag sampled at window close
+	 * (chaos_off=0 / chaos_on=1).  The cohort split lets the operator
+	 * compare per-arm reward and kernel-diagnostic-fire rates between
+	 * windows where cmp_hints suppression was active and windows where
+	 * it was not, without re-running the fuzzer with chaos disabled.
+	 *
+	 * Three parallel matrices mirror the existing lifetime series with
+	 * a chaos-state dimension:
+	 *
+	 *   bandit_pulls_by_chaos[a][c]              -- window count for arm
+	 *     a with chaos state c.  Bumped on every non-SR_PLATEAU_FORCE
+	 *     window the learner accepts; the per-cohort sum across c
+	 *     equals bandit_pulls[a].
+	 *   bandit_reward_calls_by_chaos[a][c]       -- combined reward
+	 *     (pc_edge_calls_dampened + cmp_term), same units as
+	 *     bandit_reward_calls[a].  Sum across c equals bandit_reward_
+	 *     calls[a].
+	 *   bandit_warn_fires_by_chaos[a][c]         -- per-window delta
+	 *     of kmsg_warn_fires bucketed into the matching cohort.  Brand
+	 *     new V2 counter; no companion lifetime series because the
+	 *     headline V2 question is "does chaos correlate with WARNs?"
+	 *     and a per-arm-flat WARN total without the cohort split would
+	 *     not answer it.
+	 *
+	 * Observation-only -- nothing in select_next_strategy / ucb1_score
+	 * / pick_next_strategy reads these arrays.  The learner's reward
+	 * formula in bandit_record_pull is unchanged.  Action mode (V3)
+	 * will fold the chaos cohort signal back into the picker once the
+	 * statistical-significance gate from the design doc clears.
+	 *
+	 * Single-writer protocol matches the existing bandit_pulls[] path
+	 * (CAS-serialised rotation), dump-side reads are RELAXED.
+	 * NR_STRATEGIES * 2 * 3 series * 8 bytes = 192 bytes today.
+	 */
+	unsigned long bandit_pulls_by_chaos[NR_STRATEGIES][2];
+	unsigned long bandit_reward_calls_by_chaos[NR_STRATEGIES][2];
+	unsigned long bandit_warn_fires_by_chaos[NR_STRATEGIES][2];
+
+	/*
 	 * Per-arm syscall-level exposure counters.  The existing per-arm
 	 * series (bandit_pulls[], pc_edge_calls_by_strategy[],
 	 * bandit_reward_calls[]) all measure WINDOWS or NEW-EDGE CALLS --
