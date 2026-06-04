@@ -348,7 +348,9 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 			unsigned long pc_edge_calls,
 			unsigned long pc_edge_calls_dampened_q8,
 			unsigned long pc_edge_count,
-			unsigned long cmp_new_constants);
+			unsigned long cmp_new_constants,
+			unsigned long warn_fires,
+			bool was_chaos);
 
 /*
  * Pick the arm to run during the next window using the configured

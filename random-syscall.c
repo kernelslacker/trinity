@@ -1152,6 +1152,9 @@ static void maybe_rotate_strategy(void)
 	unsigned long edges_now, edges_in_window;
 	unsigned long syscalls_in_window;
 	unsigned long cmp_now, cmp_in_window;
+	unsigned long warn_now = 0;
+	unsigned long warn_in_window = 0;
+	bool was_chaos;
 
 	/* Read fleet op_count off the parent-published mirror page; the
 	 * canonical aggregate is parent-private and not visible to children.
@@ -1224,6 +1227,28 @@ static void maybe_rotate_strategy(void)
 		__atomic_load_n(&shm->bandit_cmp_at_window_start,
 				__ATOMIC_RELAXED);
 
+	/* WARN-fires delta + chaos-cohort snapshot for the chaos-mode V2
+	 * attribution.  warn_now reads the live counter kmsg-monitor bumps
+	 * on every classified kernel diagnostic; the at-window-start
+	 * snapshot was reseeded at the bottom of the previous rotation (or
+	 * is zero on the very first window).  was_chaos samples
+	 * cmp_hints_chaos_active BEFORE cmp_hints_chaos_tick advances the
+	 * schedule below, so it reflects the chaos state that was in effect
+	 * across the just-finished window -- which is the cohort the delta
+	 * should be attributed to.  Skipped when kcov_shm is NULL (kcov
+	 * unavailable, no kmsg counter to read): the delta is zero and the
+	 * cohort sample becomes a no-op for that window. */
+	if (kcov_shm != NULL) {
+		warn_now = __atomic_load_n(&kcov_shm->kmsg_warn_fires,
+					   __ATOMIC_RELAXED);
+		warn_in_window = warn_now -
+			__atomic_load_n(&shm->kmsg_warn_fires_at_window_start,
+					__ATOMIC_RELAXED);
+	} else {
+		warn_in_window = 0UL;
+	}
+	was_chaos = cmp_hints_chaos_query();
+
 	/* Feed the just-finished window into the bandit before asking
 	 * the picker to choose the next arm, so UCB1 sees up-to-date
 	 * pulls/reward when scoring.  The learner consumes the call-count
@@ -1246,7 +1271,8 @@ static void maybe_rotate_strategy(void)
 	 * structures and must stay aligned with the rotation cadence. */
 	bandit_record_pull(prev, prev_reason, calls_in_window,
 			   calls_dampened_q8_in_window,
-			   edges_in_window, cmp_in_window);
+			   edges_in_window, cmp_in_window,
+			   warn_in_window, was_chaos);
 
 	/* Tick the rotation counter so bandit_cmp_observe()'s per-syscall
 	 * bloom decay sees the new window index on subsequent calls.

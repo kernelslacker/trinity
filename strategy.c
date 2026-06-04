@@ -213,13 +213,16 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 			unsigned long pc_edge_calls,
 			unsigned long pc_edge_calls_dampened_q8,
 			unsigned long pc_edge_count,
-			unsigned long cmp_new_constants)
+			unsigned long cmp_new_constants,
+			unsigned long warn_fires,
+			bool was_chaos)
 {
 	unsigned long cmp_term;
 	unsigned long pc_edge_calls_dampened;
 	unsigned long total_raw;
 	unsigned long total;
 	unsigned long now_window;
+	unsigned int chaos_idx;
 	int i;
 
 	if (arm < 0 || arm >= NR_STRATEGIES)
@@ -255,6 +258,30 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 	__atomic_fetch_add(
 		&shm->bandit_reward_pc_edge_count_by_reason[arm][reason],
 		pc_edge_count, __ATOMIC_RELAXED);
+
+	/* Per-arm x chaos-state cohort attribution -- chaos-mode V2.  Same
+	 * "captures every window including SR_PLATEAU_FORCE" treatment as
+	 * the by-reason matrix above: the cohort signal must include every
+	 * window the chaos schedule covered, otherwise an intervention
+	 * window that happened to land inside a chaos window would silently
+	 * drop from the cohort the operator is trying to read.
+	 *
+	 * was_chaos is sampled by the caller in maybe_rotate_strategy
+	 * before cmp_hints_chaos_tick advances the schedule, so it reflects
+	 * the chaos state in effect across the just-finished window rather
+	 * than the state for the upcoming one.  The warn_fires delta is the
+	 * caller-computed kmsg_warn_fires_now - kmsg_warn_fires_at_window_
+	 * start delta for the same window.  Observation only -- no consumer
+	 * in select_next_strategy or ucb1_score reads these arrays; V3
+	 * action mode will wire them into the picker once the significance
+	 * gate from the design doc clears. */
+	chaos_idx = was_chaos ? 1u : 0u;
+	__atomic_fetch_add(&shm->bandit_pulls_by_chaos[arm][chaos_idx], 1UL,
+			   __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->bandit_reward_calls_by_chaos[arm][chaos_idx],
+			   total_raw, __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->bandit_warn_fires_by_chaos[arm][chaos_idx],
+			   warn_fires, __ATOMIC_RELAXED);
 
 	/* SR_PLATEAU_FORCE windows skip the learner-facing updates: an
 	 * intervention window ran STRATEGY_RANDOM because every arm was
