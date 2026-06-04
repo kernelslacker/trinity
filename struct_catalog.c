@@ -28,6 +28,7 @@
 #include <linux/if_arp.h>
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
+#include <linux/tipc.h>
 #include <linux/capability.h>
 #include <linux/futex.h>
 #include <linux/sched.h>
@@ -42,6 +43,9 @@
 #endif
 #ifdef USE_VSOCK
 #include <linux/vm_sockets.h>
+#endif
+#ifdef USE_IF_ALG
+#include <linux/if_alg.h>
 #endif
 
 #include "struct_catalog.h"
@@ -678,6 +682,10 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 #ifdef USE_VSOCK
 	AF_VSOCK,
 #endif
+#ifdef USE_IF_ALG
+	AF_ALG,
+#endif
+	AF_TIPC,
 };
 
 /*
@@ -792,6 +800,51 @@ static const struct struct_field sockaddr_vm_variant_fields[] = {
 };
 #endif
 
+#ifdef USE_IF_ALG
+/*
+ * AF_ALG (sockaddr_alg) -- crypto userspace endpoint.  salg_type and
+ * salg_name are 14- and 64-byte NUL-padded strings; the schema-fill
+ * machinery's FT_ENUM only carries unsigned-long values today, so a
+ * string vocabulary needs wider enum support before it can land here.
+ * Leaving both as FT_RAW means the kernel's name lookup fails most
+ * of the time, but the variant still fires and msg_namelen reports
+ * 88 instead of 128, which is the dispatch the kernel needs to
+ * reach AF_ALG-specific code.  salg_feat / salg_mask stay FT_RAW
+ * pending a curated CRYPTO_ALG_* mask.
+ */
+static const struct struct_field sockaddr_alg_variant_fields[] = {
+	FIELD(struct sockaddr_alg, salg_type),
+	FIELD(struct sockaddr_alg, salg_feat),
+	FIELD(struct sockaddr_alg, salg_mask),
+	FIELD(struct sockaddr_alg, salg_name),
+};
+#endif
+
+/*
+ * AF_TIPC (sockaddr_tipc) -- TIPC endpoint.  addrtype is itself a
+ * sub-discriminator over a 16-byte inner union; the schema infra
+ * only resolves one level of buffer-derived discriminator today, so
+ * the inner union is filled as raw bytes.  Depth-2 dispatch on
+ * addrtype is a follow-up if TIPC traffic argues for it.
+ */
+static const unsigned long tipc_addrtype_vocab[] = {
+	TIPC_ADDR_NAMESEQ, TIPC_ADDR_NAME, TIPC_ADDR_ID,
+};
+
+static const unsigned long tipc_scope_vocab[] = {
+	TIPC_ZONE_SCOPE, TIPC_CLUSTER_SCOPE, TIPC_NODE_SCOPE,
+};
+
+static const struct struct_field sockaddr_tipc_variant_fields[] = {
+	FIELDX(struct sockaddr_tipc, addrtype, FT_ENUM,
+	       .u.enum_ = { .vals = tipc_addrtype_vocab,
+			    .n    = ARRAY_SIZE(tipc_addrtype_vocab) }),
+	FIELDX(struct sockaddr_tipc, scope, FT_ENUM,
+	       .u.enum_ = { .vals = tipc_scope_vocab,
+			    .n    = ARRAY_SIZE(tipc_scope_vocab) }),
+	FIELD(struct sockaddr_tipc, addr),
+};
+
 static const struct union_variant sockaddr_storage_variants[] = {
 	{
 		.discrim_value	 = AF_UNIX,
@@ -837,6 +890,22 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.effective_size	 = sizeof(struct sockaddr_vm),
 	},
 #endif
+#ifdef USE_IF_ALG
+	{
+		.discrim_value	 = AF_ALG,
+		.name		 = "AF_ALG",
+		.fields		 = sockaddr_alg_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_alg_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_alg),
+	},
+#endif
+	{
+		.discrim_value	 = AF_TIPC,
+		.name		 = "AF_TIPC",
+		.fields		 = sockaddr_tipc_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_tipc_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_tipc),
+	},
 };
 
 static const struct struct_field sockaddr_storage_fields[] = {
