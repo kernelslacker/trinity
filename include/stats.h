@@ -1495,6 +1495,8 @@ struct stats_s {
 	unsigned long iscsi_walker_no_target;			/* ECONNREFUSED on connect — latched per-child */
 	unsigned long iscsi_walker_connected;			/* TCP connect to 3260 returned 0 / completed */
 	unsigned long iscsi_walker_state_init_sent;		/* INIT-state CSG=0 Login PDU send() returned >0 */
+	unsigned long iscsi_walker_state_security_sent;		/* SECURITY_NEG transit PDU (T=1 CSG=0 NSG=1) sent */
+	unsigned long iscsi_walker_state_op_neg_sent;		/* OP_NEG transit PDU (T=1 CSG=1 NSG=3) sent */
 	unsigned long iscsi_walker_bytes_out;			/* total bytes successfully send()'d */
 	unsigned long iscsi_walker_bytes_in;			/* total bytes successfully recv()'d */
 

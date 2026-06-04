@@ -24,16 +24,29 @@
  *
  * What this childop does in this commit:
  *
- *   INIT (only state implemented today): open a nonblocking TCP
- *   connection to 127.0.0.1:3260, send one well-formed Login Request
- *   PDU with CSG=0 (SecurityNegotiation), no TRANSIT, no CONTINUE, and
- *   a tidy InitiatorName + AuthMethod=None data segment.  The target
- *   should accept the framing and reply with a Login Response keeping
- *   us in CSG=0.  We drain whatever it sends and close the socket.
+ *   INIT          open a nonblocking TCP connection to 127.0.0.1:3260
+ *                 and send a Login Request PDU with CSG=0
+ *                 (SecurityNegotiation), no TRANSIT, no CONTINUE, and a
+ *                 well-formed InitiatorName + AuthMethod=None data
+ *                 segment.  Target should accept the framing and reply
+ *                 with a Login Response keeping us in CSG=0.
  *
- *   Subsequent commits extend the walker to drive SECURITY_NEG, OP_NEG,
- *   and FFP state transitions, then add a chaos toggle that retains
- *   the random-byte coverage the older probe was producing.
+ *   SECURITY_NEG  send a second Login Request PDU with TRANSIT=1,
+ *                 CSG=0, NSG=1 (LoginOperationalNegotiation).  This is
+ *                 the kernel's CSG=0 -> CSG=1 transition handler;
+ *                 reaching it requires that the prior INIT PDU framing
+ *                 was accepted, which is the whole point of walking the
+ *                 state machine instead of one-shotting.
+ *
+ *   OP_NEG        send a third Login Request PDU with TRANSIT=1,
+ *                 CSG=1, NSG=3 (FullFeaturePhase) carrying the
+ *                 operational keys: TargetName, HeaderDigest=None,
+ *                 DataDigest=None, MaxRecvDataSegmentLength=8192, plus
+ *                 the rest of the OP_NEG mandatory set.
+ *
+ *   Subsequent commits add the FullFeaturePhase command-side fuzz and
+ *   a chaos toggle that retains the random-byte coverage the older
+ *   probe was producing.
  *
  * Safety:
  *
@@ -83,9 +96,17 @@
  *   0b11 - FullFeaturePhase
  *
  * INIT state: CSG=0, NSG=0, T=0, C=0 -> flag byte 0x00.  Keeps the
- * target in SecurityNegotiation; the response will echo CSG=0 and we
- * will iterate forward in later commits. */
-#define ISCSI_LOGIN_FLAGS_INIT		0x00
+ * target in SecurityNegotiation; the response echoes CSG=0.
+ *
+ * SECURITY_NEG -> OP_NEG transition: T=1, C=0, CSG=0, NSG=1 -> 0x81.
+ * Asks the kernel to advance from CSG=0 to CSG=1 on the next response.
+ *
+ * OP_NEG -> FFP transition: T=1, C=0, CSG=1, NSG=3 -> 0x87.  Asks the
+ * kernel to advance from CSG=1 straight into FullFeaturePhase, where
+ * the post-login command dispatcher takes over. */
+#define ISCSI_LOGIN_FLAGS_INIT			0x00
+#define ISCSI_LOGIN_FLAGS_TRANSIT_SEC_TO_OP	0x81
+#define ISCSI_LOGIN_FLAGS_TRANSIT_OP_TO_FF	0x87
 
 /* Cap on Login text data we'll generate per PDU.  Demo-mode LIO accepts
  * up to MaxRecvDataSegmentLength bytes, but small keeps us well under
@@ -227,10 +248,11 @@ static const char login_text_init[] =
 	"AuthMethod=None\0";
 
 /* Build a Login Request PDU for the INIT state: CSG=0, no TRANSIT, no
- * CONTINUE, ISID randomised, TSIH=0 (new session), CID=1, CmdSN=0,
- * ExpStatSN=0.  Returns the total PDU length (BHS + padded data
- * segment). */
-static size_t build_login_init(unsigned char *out)
+ * CONTINUE, ISID supplied by the caller (so subsequent PDUs in the
+ * same iteration can reuse it for the same session), TSIH=0 (new
+ * session), CID=1, CmdSN=0, ExpStatSN=0.  Returns the total PDU
+ * length (BHS + padded data segment). */
+static size_t build_login_init(unsigned char *out, uint8_t isid[6])
 {
 	unsigned char *bhs = out;
 	unsigned char *data = out + ISCSI_BHS_LEN;
@@ -246,7 +268,7 @@ static size_t build_login_init(unsigned char *out)
 	bhs[2] = 0;					/* Version-max */
 	bhs[3] = 0;					/* Version-min */
 	bhs[4] = 0;					/* TotalAHSLength */
-	rnd_fill(bhs + 8, 6);				/* ISID */
+	memcpy(bhs + 8, isid, 6);			/* ISID */
 	bhs[14] = 0;					/* TSIH high */
 	bhs[15] = 0;					/* TSIH low (new session) */
 	rnd_fill(bhs + 16, 4);				/* ITT */
@@ -256,6 +278,86 @@ static size_t build_login_init(unsigned char *out)
 	memset(bhs + 24, 0, 8);
 
 	memcpy(data, login_text_init, data_len);
+	if (padded > data_len)
+		memset(data + data_len, 0, padded - data_len);
+
+	put_be24(bhs + 5, (uint32_t)padded);
+	return ISCSI_BHS_LEN + padded;
+}
+
+/* Empty-but-valid Login Request PDU for the SECURITY_NEG -> OP_NEG
+ * transition: TRANSIT=1, CSG=0, NSG=1, no data segment.  The kernel
+ * sees AuthMethod=None from the prior INIT PDU, so SecurityNegotiation
+ * has no outstanding work and the TRANSIT bit advances us to
+ * LoginOperationalNegotiation on the next response. */
+static size_t build_login_security_neg(unsigned char *out, uint8_t isid[6])
+{
+	unsigned char *bhs = out;
+
+	memset(bhs, 0, ISCSI_BHS_LEN);
+	bhs[0] = ISCSI_OP_LOGIN | ISCSI_OP_IMMEDIATE;
+	bhs[1] = ISCSI_LOGIN_FLAGS_TRANSIT_SEC_TO_OP;
+	/* Version, AHS, DataSegmentLength all stay 0 */
+	memcpy(bhs + 8, isid, 6);			/* same ISID */
+	bhs[14] = 0;					/* TSIH high */
+	bhs[15] = 0;					/* TSIH low */
+	rnd_fill(bhs + 16, 4);				/* ITT */
+	bhs[20] = 0;
+	bhs[21] = 1;					/* CID = 1 */
+	/* CmdSN = 0, ExpStatSN = 0 — Immediate Login doesn't advance
+	 * the CmdSN window so leaving zeros matches the spec. */
+	memset(bhs + 24, 0, 8);
+
+	return ISCSI_BHS_LEN;
+}
+
+/* Text-key data segment for the OP_NEG state's TRANSIT -> FFP PDU.
+ * Operational keys the kernel walks during LoginOperationalNegotiation:
+ * TargetName is mandatory for normal sessions, HeaderDigest /
+ * DataDigest negotiate the per-PDU CRC, MaxRecvDataSegmentLength caps
+ * incoming PDU sizes, and the time-window / R2T / burst keys round out
+ * the standard demo-mode acceptable set. */
+static const char login_text_op_neg[] =
+	"TargetName=iqn.2026-05.fuzz:t\0"
+	"HeaderDigest=None\0"
+	"DataDigest=None\0"
+	"MaxRecvDataSegmentLength=8192\0"
+	"MaxBurstLength=262144\0"
+	"FirstBurstLength=65536\0"
+	"DefaultTime2Wait=2\0"
+	"DefaultTime2Retain=20\0"
+	"MaxOutstandingR2T=1\0"
+	"MaxConnections=1\0"
+	"InitialR2T=Yes\0"
+	"ImmediateData=Yes\0"
+	"DataPDUInOrder=Yes\0"
+	"DataSequenceInOrder=Yes\0"
+	"ErrorRecoveryLevel=0\0";
+
+/* Build the OP_NEG -> FFP Login PDU: TRANSIT=1, CSG=1, NSG=3, with the
+ * operational-keys data segment.  This is the gate to the post-login
+ * command dispatcher; if the kernel accepts the framing and the keys,
+ * the session is in FullFeaturePhase on the next response and SCSI
+ * Command PDUs are now reachable. */
+static size_t build_login_op_neg(unsigned char *out, uint8_t isid[6])
+{
+	unsigned char *bhs = out;
+	unsigned char *data = out + ISCSI_BHS_LEN;
+	size_t data_len = sizeof(login_text_op_neg) - 1;
+	size_t padded = (data_len + 3) & ~(size_t)3;
+
+	memset(bhs, 0, ISCSI_BHS_LEN);
+	bhs[0] = ISCSI_OP_LOGIN | ISCSI_OP_IMMEDIATE;
+	bhs[1] = ISCSI_LOGIN_FLAGS_TRANSIT_OP_TO_FF;
+	memcpy(bhs + 8, isid, 6);			/* same ISID */
+	bhs[14] = 0;
+	bhs[15] = 0;
+	rnd_fill(bhs + 16, 4);				/* ITT */
+	bhs[20] = 0;
+	bhs[21] = 1;					/* CID = 1 */
+	memset(bhs + 24, 0, 8);
+
+	memcpy(data, login_text_op_neg, data_len);
 	if (padded > data_len)
 		memset(data + data_len, 0, padded - data_len);
 
@@ -286,6 +388,8 @@ bool iscsi_login_walker(struct childdata *child)
 		iters = 1;
 
 	for (i = 0; i < iters; i++) {
+		uint8_t isid[6];
+
 		fd = iscsi_connect(ISCSI_CONNECT_TIMEOUT_MS);
 		if (fd < 0) {
 			if (errno == ECONNREFUSED) {
@@ -301,7 +405,12 @@ bool iscsi_login_walker(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.iscsi_walker_connected, 1,
 				   __ATOMIC_RELAXED);
 
-		pdu_len = build_login_init(pdu);
+		/* Fresh ISID per iteration; the three PDUs in the walk all
+		 * carry the same ISID so the kernel treats them as one
+		 * session being driven forward. */
+		rnd_fill(isid, sizeof(isid));
+
+		pdu_len = build_login_init(pdu, isid);
 		n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
 		if (n > 0) {
 			__atomic_add_fetch(&shm->stats.iscsi_walker_state_init_sent,
@@ -309,7 +418,26 @@ bool iscsi_login_walker(struct childdata *child)
 			__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
 					   (unsigned long)n, __ATOMIC_RELAXED);
 		}
+		iscsi_drain(fd);
 
+		pdu_len = build_login_security_neg(pdu, isid);
+		n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
+		if (n > 0) {
+			__atomic_add_fetch(&shm->stats.iscsi_walker_state_security_sent,
+					   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
+					   (unsigned long)n, __ATOMIC_RELAXED);
+		}
+		iscsi_drain(fd);
+
+		pdu_len = build_login_op_neg(pdu, isid);
+		n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
+		if (n > 0) {
+			__atomic_add_fetch(&shm->stats.iscsi_walker_state_op_neg_sent,
+					   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
+					   (unsigned long)n, __ATOMIC_RELAXED);
+		}
 		iscsi_drain(fd);
 
 		(void)shutdown(fd, SHUT_RDWR);
