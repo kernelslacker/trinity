@@ -56,69 +56,137 @@
 #define TIER2_FORCE_MAP_FD_DENOM	4
 
 /*
- * Per-prog-type helper function tables.
- *
- * Only helpers that need zero arguments or simple scalar args are
- * included — calling helpers that require specific pointer types
- * (map values, skb pointers, etc.) without proper setup would just
- * get rejected by the verifier anyway.
+ * Phase 3.4: lottery weight for emitting an arg-bearing helper call
+ * inside tier 1's main dispatch.  Picked a touch under the 3.3 map-fd
+ * weight so call-storms don't crowd out scalar coverage — the tier 2
+ * dedicated sub-strategy below provides a second, deterministic source.
  */
-static const int helpers_universal[] = {
-	BPF_FUNC_ktime_get_ns,
-	BPF_FUNC_get_prandom_u32,
-	BPF_FUNC_get_smp_processor_id,
-	BPF_FUNC_get_current_pid_tgid,
-	BPF_FUNC_get_current_uid_gid,
-	BPF_FUNC_get_numa_node_id,
-	BPF_FUNC_ktime_get_boot_ns,
-	BPF_FUNC_ktime_get_coarse_ns,
-	BPF_FUNC_jiffies64,
-	BPF_FUNC_ktime_get_tai_ns,
+#define HELPER_CALL_WEIGHT_PCT		8
+
+/*
+ * Phase 3.4: which tier 2 sub-strategy index forces a typed helper call.
+ * Acts as the dedicated counterpart to tier1's lottery so map-helper and
+ * scalar-arg paths see traffic even when the lottery doesn't fire.
+ */
+#define TIER2_STRATEGY_HELPER_CALL	5
+#define TIER2_STRATEGY_COUNT		6
+
+/*
+ * Phase 3.4: per-arg type tag in the helper descriptor table.  The
+ * generator emits a setup sequence for each arg matching its kind, then
+ * a BPF_CALL.  Kinds intentionally limited to what we can satisfy
+ * cheaply and verifier-cleanly; richer kinds (ARG_CONST_MAP_VALUE,
+ * ARG_PTR_TO_MEM with strict size matching, varargs, etc.) are deferred
+ * to a follow-on sub-phase along with the map-value NULL-check idiom.
+ */
+enum helper_arg_kind {
+	ARG_SCALAR,		/* MOV64_IMM small constant */
+	ARG_MAP_PTR,		/* copy of an existing PTR_TO_MAP reg */
+	ARG_STACK_PTR,		/* R10 + offset into the call-local init slot */
+	ARG_STACK_SIZE,		/* MOV64_IMM matching the init-slot byte size */
+};
+
+struct helper_desc {
+	int	func;		/* BPF_FUNC_* helper id */
+	uint8_t	nargs;		/* 0..5 */
+	uint8_t	arg_kind[5];	/* per-arg enum helper_arg_kind */
+};
+
+#define HD0(f) \
+	{ .func = (f), .nargs = 0, .arg_kind = { 0, 0, 0, 0, 0 } }
+#define HD2(f, a0, a1) \
+	{ .func = (f), .nargs = 2, \
+	  .arg_kind = { (a0), (a1), 0, 0, 0 } }
+#define HD3(f, a0, a1, a2) \
+	{ .func = (f), .nargs = 3, \
+	  .arg_kind = { (a0), (a1), (a2), 0, 0 } }
+#define HD4(f, a0, a1, a2, a3) \
+	{ .func = (f), .nargs = 4, \
+	  .arg_kind = { (a0), (a1), (a2), (a3), 0 } }
+
+/*
+ * Per-prog-type helper descriptor tables.
+ *
+ * Curated set: zero-arg helpers (always safe to call), plus a small
+ * arg-bearing core — map_lookup/update/delete, probe_read_kernel —
+ * whose prototypes we can satisfy from this generator's vocabulary.
+ * No privileged helpers, no kfuncs, no socket sendmsg / override_return,
+ * no skb-mutating helpers that need a live skb context.  Helpers whose
+ * verifier prototype demands kinds we don't model yet stay out.
+ */
+static const struct helper_desc helpers_universal[] = {
+	HD0(BPF_FUNC_ktime_get_ns),
+	HD0(BPF_FUNC_get_prandom_u32),
+	HD0(BPF_FUNC_get_smp_processor_id),
+	HD0(BPF_FUNC_get_current_pid_tgid),
+	HD0(BPF_FUNC_get_current_uid_gid),
+	HD0(BPF_FUNC_get_numa_node_id),
+	HD0(BPF_FUNC_ktime_get_boot_ns),
+	HD0(BPF_FUNC_ktime_get_coarse_ns),
+	HD0(BPF_FUNC_jiffies64),
+	HD0(BPF_FUNC_ktime_get_tai_ns),
+	HD2(BPF_FUNC_map_lookup_elem, ARG_MAP_PTR, ARG_STACK_PTR),
+	HD4(BPF_FUNC_map_update_elem, ARG_MAP_PTR, ARG_STACK_PTR,
+	    ARG_STACK_PTR, ARG_SCALAR),
+	HD2(BPF_FUNC_map_delete_elem, ARG_MAP_PTR, ARG_STACK_PTR),
 };
 
 /* Tracing types: kprobe, tracepoint, perf_event, raw_tracepoint */
-static const int helpers_tracing[] = {
-	BPF_FUNC_ktime_get_ns,
-	BPF_FUNC_get_prandom_u32,
-	BPF_FUNC_get_smp_processor_id,
-	BPF_FUNC_get_current_pid_tgid,
-	BPF_FUNC_get_current_uid_gid,
-	BPF_FUNC_get_numa_node_id,
-	BPF_FUNC_ktime_get_boot_ns,
-	BPF_FUNC_get_current_task,
-	BPF_FUNC_get_current_cgroup_id,
-	BPF_FUNC_get_func_ip,
+static const struct helper_desc helpers_tracing[] = {
+	HD0(BPF_FUNC_ktime_get_ns),
+	HD0(BPF_FUNC_get_prandom_u32),
+	HD0(BPF_FUNC_get_smp_processor_id),
+	HD0(BPF_FUNC_get_current_pid_tgid),
+	HD0(BPF_FUNC_get_current_uid_gid),
+	HD0(BPF_FUNC_get_numa_node_id),
+	HD0(BPF_FUNC_ktime_get_boot_ns),
+	HD0(BPF_FUNC_get_current_task),
+	HD0(BPF_FUNC_get_current_cgroup_id),
+	HD0(BPF_FUNC_get_func_ip),
+	HD2(BPF_FUNC_map_lookup_elem, ARG_MAP_PTR, ARG_STACK_PTR),
+	HD4(BPF_FUNC_map_update_elem, ARG_MAP_PTR, ARG_STACK_PTR,
+	    ARG_STACK_PTR, ARG_SCALAR),
+	HD2(BPF_FUNC_map_delete_elem, ARG_MAP_PTR, ARG_STACK_PTR),
+	HD3(BPF_FUNC_probe_read_kernel, ARG_STACK_PTR, ARG_STACK_SIZE,
+	    ARG_SCALAR),
 };
 
 /* Networking types: socket_filter, sched_cls, sched_act, xdp, lwt, etc. */
-static const int helpers_networking[] = {
-	BPF_FUNC_ktime_get_ns,
-	BPF_FUNC_get_prandom_u32,
-	BPF_FUNC_get_smp_processor_id,
-	BPF_FUNC_get_current_pid_tgid,
-	BPF_FUNC_get_current_uid_gid,
-	BPF_FUNC_get_numa_node_id,
-	BPF_FUNC_ktime_get_boot_ns,
-	BPF_FUNC_get_hash_recalc,
-	BPF_FUNC_get_route_realm,
-	BPF_FUNC_csum_update,
+static const struct helper_desc helpers_networking[] = {
+	HD0(BPF_FUNC_ktime_get_ns),
+	HD0(BPF_FUNC_get_prandom_u32),
+	HD0(BPF_FUNC_get_smp_processor_id),
+	HD0(BPF_FUNC_get_current_pid_tgid),
+	HD0(BPF_FUNC_get_current_uid_gid),
+	HD0(BPF_FUNC_get_numa_node_id),
+	HD0(BPF_FUNC_ktime_get_boot_ns),
+	HD0(BPF_FUNC_get_hash_recalc),
+	HD0(BPF_FUNC_get_route_realm),
+	HD0(BPF_FUNC_csum_update),
+	HD2(BPF_FUNC_map_lookup_elem, ARG_MAP_PTR, ARG_STACK_PTR),
+	HD4(BPF_FUNC_map_update_elem, ARG_MAP_PTR, ARG_STACK_PTR,
+	    ARG_STACK_PTR, ARG_SCALAR),
+	HD2(BPF_FUNC_map_delete_elem, ARG_MAP_PTR, ARG_STACK_PTR),
 };
 
 /* Cgroup types */
-static const int helpers_cgroup[] = {
-	BPF_FUNC_ktime_get_ns,
-	BPF_FUNC_get_prandom_u32,
-	BPF_FUNC_get_smp_processor_id,
-	BPF_FUNC_get_current_pid_tgid,
-	BPF_FUNC_get_current_uid_gid,
-	BPF_FUNC_get_numa_node_id,
-	BPF_FUNC_ktime_get_boot_ns,
-	BPF_FUNC_get_current_cgroup_id,
-	BPF_FUNC_get_local_storage,
+static const struct helper_desc helpers_cgroup[] = {
+	HD0(BPF_FUNC_ktime_get_ns),
+	HD0(BPF_FUNC_get_prandom_u32),
+	HD0(BPF_FUNC_get_smp_processor_id),
+	HD0(BPF_FUNC_get_current_pid_tgid),
+	HD0(BPF_FUNC_get_current_uid_gid),
+	HD0(BPF_FUNC_get_numa_node_id),
+	HD0(BPF_FUNC_ktime_get_boot_ns),
+	HD0(BPF_FUNC_get_current_cgroup_id),
+	HD2(BPF_FUNC_map_lookup_elem, ARG_MAP_PTR, ARG_STACK_PTR),
+	HD4(BPF_FUNC_map_update_elem, ARG_MAP_PTR, ARG_STACK_PTR,
+	    ARG_STACK_PTR, ARG_SCALAR),
+	HD2(BPF_FUNC_map_delete_elem, ARG_MAP_PTR, ARG_STACK_PTR),
 };
 
 struct helper_set {
-	const int *helpers;
+	const struct helper_desc *helpers;
 	int count;
 };
 
@@ -169,20 +237,37 @@ static struct helper_set get_helpers_for_prog_type(unsigned int prog_type)
 /*
  * Register liveness bitmap. Tracks which registers hold known-valid values
  * so we only read from initialized registers.
+ *
+ * Phase 3.4: map_reg tracks the most recent register holding a PTR_TO_MAP
+ * (set by the LD_MAP_FD prepend in ebpf_gen_program_into).  Helper calls
+ * needing an ARG_MAP_PTR copy from this register instead of emitting a
+ * fresh LD_MAP_FD pair, keeping the call sequence short and avoiding any
+ * mid-program 2-slot pseudo-imm that a future jump might land on.  Cleared
+ * (-1) whenever the tracked register is overwritten or clobbered by a
+ * caller-saved reset.
  */
 struct reg_state {
 	uint16_t live;		/* bitmask: 1 << reg if initialized */
+	int8_t map_reg;		/* register holding PTR_TO_MAP, or -1 */
 };
 
-static void reg_init(struct reg_state *rs)
+static void reg_init(struct reg_state *rs, int prepend_map_reg)
 {
 	/* r1 = context pointer, r10 = frame pointer (read-only) */
 	rs->live = (1 << BPF_REG_1) | (1 << BPF_REG_10);
+	rs->map_reg = -1;
+	if (prepend_map_reg >= 0) {
+		rs->live |= (1 << prepend_map_reg);
+		rs->map_reg = prepend_map_reg;
+	}
 }
 
 static void reg_set(struct reg_state *rs, int reg)
 {
 	rs->live |= (1 << reg);
+	/* Overwriting the tracked map reg drops the PTR_TO_MAP tag. */
+	if (reg == rs->map_reg)
+		rs->map_reg = -1;
 }
 
 static void reg_clear_caller_saved(struct reg_state *rs)
@@ -192,6 +277,8 @@ static void reg_clear_caller_saved(struct reg_state *rs)
 		       (1 << BPF_REG_3) | (1 << BPF_REG_4) |
 		       (1 << BPF_REG_5));
 	rs->live |= (1 << BPF_REG_0);
+	if (rs->map_reg >= BPF_REG_1 && rs->map_reg <= BPF_REG_5)
+		rs->map_reg = -1;
 }
 
 static int reg_pick_live(struct reg_state *rs)
@@ -372,16 +459,129 @@ static int emit_tier1_mov64_reg(struct bpf_insn *insns, int pos,
 }
 
 /*
- * Emit a CALL to a randomly picked helper from the prog-type-
- * appropriate set, then clear caller-saved regs in the liveness map.
+ * Phase 3.4: per-call init slot the verifier sees as "definitely
+ * written" before any ARG_STACK_PTR is read.  Zero-initialised at the
+ * start of the call sequence with a single ST_MEM BPF_DW so each
+ * STACK_PTR arg can point at it without dragging in its own init
+ * burden.  Fixed offset/size keeps the descriptor emission tiny; map
+ * keys/values larger than HELPER_ARG_STACK_BYTES will be verifier-
+ * rejected (an accepted Phase-3.4 outcome).
  */
-static int emit_tier1_call(struct bpf_insn *insns, int pos,
-			    struct reg_state *rs, struct helper_set hs)
-{
-	int func = hs.helpers[rnd_modulo_u32(hs.count)];
+#define HELPER_ARG_STACK_OFF	-8
+#define HELPER_ARG_STACK_BYTES	8
+#define HELPER_PICK_RETRIES	4
 
-	insns[pos++] = EBPF_CALL(func);
+static int helper_call_insns(const struct helper_desc *h, bool *need_init)
+{
+	int n = 1;	/* the BPF_CALL itself */
+	int i;
+
+	*need_init = false;
+	for (i = 0; i < h->nargs; i++) {
+		switch (h->arg_kind[i]) {
+		case ARG_SCALAR:
+		case ARG_STACK_SIZE:
+		case ARG_MAP_PTR:
+			n += 1;	/* MOV / MOV64_IMM */
+			break;
+		case ARG_STACK_PTR:
+			n += 2;	/* MOV64_REG r,R10 ; ALU64_IMM SUB */
+			*need_init = true;
+			break;
+		}
+	}
+	if (*need_init)
+		n += 1;		/* one ST_MEM DW zero-init */
+	return n;
+}
+
+/*
+ * Phase 3.4: pick a helper whose prerequisites the current reg state
+ * satisfies.  Only ARG_MAP_PTR has a runtime prereq (a live PTR_TO_MAP
+ * register from a prior LD_MAP_FD); everything else is unconditional.
+ * Returns NULL after a few unsuccessful picks so the caller can re-roll
+ * the outer dispatch rather than burn the slot on a NOP.
+ */
+static const struct helper_desc *
+pick_helper_satisfiable(struct helper_set hs, const struct reg_state *rs)
+{
+	const struct helper_desc *h;
+	int i, attempt;
+	bool wants_map;
+
+	for (attempt = 0; attempt < HELPER_PICK_RETRIES; attempt++) {
+		h = &hs.helpers[rnd_modulo_u32(hs.count)];
+		wants_map = false;
+		for (i = 0; i < h->nargs; i++) {
+			if (h->arg_kind[i] == ARG_MAP_PTR) {
+				wants_map = true;
+				break;
+			}
+		}
+		if (!wants_map || rs->map_reg >= 0)
+			return h;
+	}
+	return NULL;
+}
+
+/*
+ * Phase 3.4: emit a helper call whose R1..R5 are populated per the
+ * descriptor's per-arg kind, then BPF_CALL and a caller-saved clobber
+ * in the liveness map.  Return value (R0) is intentionally ignored —
+ * the map-value NULL-check + deref idiom belongs to a follow-on phase.
+ *
+ * Bails (returns pos unchanged) when no satisfiable helper exists in
+ * the current reg state or the remaining buffer can't fit the setup
+ * plus the EXIT epilogue.  The outer dispatch loop just re-rolls.
+ */
+static int emit_tier1_helper_call(struct bpf_insn *insns, int pos,
+				   int body_len, struct reg_state *rs,
+				   struct helper_set hs)
+{
+	const struct helper_desc *h;
+	bool need_init;
+	int needed, i, reg;
+
+	h = pick_helper_satisfiable(hs, rs);
+	if (h == NULL)
+		return pos;
+
+	needed = helper_call_insns(h, &need_init);
+	if (body_len - pos < needed + 1)	/* +1 reserves the EXIT slot */
+		return pos;
+
+	if (need_init) {
+		insns[pos++] = EBPF_ST_MEM(BPF_DW, BPF_REG_10,
+					   HELPER_ARG_STACK_OFF, 0);
+	}
+
+	for (i = 0; i < h->nargs; i++) {
+		reg = BPF_REG_1 + i;
+		switch (h->arg_kind[i]) {
+		case ARG_SCALAR:
+			insns[pos++] = EBPF_MOV64_IMM(reg,
+						      rnd_modulo_u32(64));
+			break;
+		case ARG_STACK_SIZE:
+			insns[pos++] = EBPF_MOV64_IMM(reg,
+						      HELPER_ARG_STACK_BYTES);
+			break;
+		case ARG_MAP_PTR:
+			insns[pos++] = EBPF_MOV64_REG(reg, rs->map_reg);
+			break;
+		case ARG_STACK_PTR:
+			insns[pos++] = EBPF_MOV64_REG(reg, BPF_REG_10);
+			insns[pos++] = EBPF_ALU64_IMM(BPF_ADD, reg,
+						      HELPER_ARG_STACK_OFF);
+			break;
+		}
+		reg_set(rs, reg);
+	}
+
+	insns[pos++] = EBPF_CALL(h->func);
 	reg_clear_caller_saved(rs);
+	__atomic_add_fetch(&shm->stats.ebpf_gen_helper_call_emitted, 1,
+			   __ATOMIC_RELAXED);
 	return pos;
 }
 
@@ -404,13 +604,13 @@ static int emit_tier1_endian(struct bpf_insn *insns, int pos,
  * come from initialized registers, stack access is bounded.
  */
 static int gen_tier1(struct bpf_insn *insns, int max_insns,
-		     struct helper_set hs)
+		     struct helper_set hs, int prepend_map_reg)
 {
 	struct reg_state rs;
 	int pos = 0;
 	int body_len;
 
-	reg_init(&rs);
+	reg_init(&rs, prepend_map_reg);
 
 	/* Prologue: r0 = 0 (safe default return value) */
 	insns[pos++] = EBPF_MOV64_IMM(BPF_REG_0, 0);
@@ -453,14 +653,23 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns,
 		} else if (choice < 87) {
 			pos = emit_tier1_st_imm(insns, pos);
 
-		} else if (choice < 92) {
+		} else if (choice < 90) {
 			pos = emit_tier1_mov64_reg(insns, pos, &rs);
 
-		} else if (choice < 97 && remaining >= 2) {
-			pos = emit_tier1_call(insns, pos, &rs, hs);
+		} else if (choice < 100 - HELPER_CALL_WEIGHT_PCT) {
+			pos = emit_tier1_endian(insns, pos, &rs);
 
 		} else {
-			pos = emit_tier1_endian(insns, pos, &rs);
+			/*
+			 * Last HELPER_CALL_WEIGHT_PCT% of the lottery: a
+			 * typed helper call.  May bail (returns pos
+			 * unchanged) when no satisfiable helper exists in
+			 * the current reg state or the buffer can't fit the
+			 * arg-setup + CALL + EXIT; the next loop iteration
+			 * re-rolls.
+			 */
+			pos = emit_tier1_helper_call(insns, pos, body_len,
+						     &rs, hs);
 		}
 	}
 
@@ -479,14 +688,15 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns,
  * deep jump chains, pointer arithmetic near bounds, unchecked map
  * lookups, ALU ops that overflow, register spill/fill patterns.
  */
-static int gen_tier2(struct bpf_insn *insns, int max_insns)
+static int gen_tier2(struct bpf_insn *insns, int max_insns,
+		     struct helper_set hs, int prepend_map_reg)
 {
 	struct reg_state rs;
 	int pos = 0;
 	int body_len;
-	int strategy = rnd_modulo_u32(5);
+	int strategy = rnd_modulo_u32(TIER2_STRATEGY_COUNT);
 
-	reg_init(&rs);
+	reg_init(&rs, prepend_map_reg);
 
 	/* Always start with r0 = 0 */
 	insns[pos++] = EBPF_MOV64_IMM(BPF_REG_0, 0);
@@ -601,6 +811,36 @@ static int gen_tier2(struct bpf_insn *insns, int max_insns)
 						       rnd_modulo_u32(1000), 1);
 			insns[pos++] = EBPF_ALU32_IMM(BPF_ADD, BPF_REG_4, 1);
 		}
+		break;
+
+	case TIER2_STRATEGY_HELPER_CALL:
+		/*
+		 * Phase 3.4 dedicated helper-call probe: force at least
+		 * one arg-bearing helper call so the map/scalar arg paths
+		 * see traffic outside the tier1 8% lottery.  Filler ALU
+		 * operates on R6 (callee-saved) so it survives the per-
+		 * call caller-saved clobber and stays a scalar — using
+		 * R0 here would mix scalar-returning and pointer-or-null-
+		 * returning helpers, mostly verifier-rejecting the body.
+		 * The picker may still bail when no helper in this prog-
+		 * type's table is satisfiable in the current reg state;
+		 * the trailing ALU pad keeps body_len intact either way.
+		 */
+		insns[pos++] = EBPF_MOV64_IMM(BPF_REG_6, 0);
+		reg_set(&rs, BPF_REG_6);
+		while (pos < body_len) {
+			int old_pos = pos;
+
+			pos = emit_tier1_helper_call(insns, pos, body_len,
+						     &rs, hs);
+			if (pos == old_pos)
+				break;
+			if (pos >= body_len)
+				break;
+			insns[pos++] = EBPF_ALU64_IMM(BPF_ADD, BPF_REG_6, 1);
+		}
+		while (pos < body_len)
+			insns[pos++] = EBPF_ALU64_IMM(BPF_ADD, BPF_REG_6, 1);
 		break;
 	}
 
@@ -740,14 +980,19 @@ static int pick_map_fd_for_program(int tier_id)
  * loading the supplied map fd into a randomly chosen R1-R9 register.
  * Costs 2 slots (BPF_LD | BPF_DW | BPF_IMM is a 128-bit immediate).
  * Caller has already verified the fd is live and the buffer has room.
+ *
+ * Returns the dst register so Phase 3.4's typed-helper emitter can
+ * thread it through reg_state and satisfy ARG_MAP_PTR slots without
+ * emitting another 2-slot LD_MAP_FD mid-body.
  */
-static void emit_ld_map_fd_prologue(struct bpf_insn *insns, int map_fd)
+static int emit_ld_map_fd_prologue(struct bpf_insn *insns, int map_fd)
 {
 	int dst = BPF_REG_1 + rnd_modulo_u32(9);	/* R1..R9 */
 	struct bpf_insn pair[] = { EBPF_LD_MAP_FD(dst, map_fd) };
 
 	insns[0] = pair[0];
 	insns[1] = pair[1];
+	return dst;
 }
 
 /*
@@ -778,6 +1023,7 @@ void ebpf_gen_program_into(struct bpf_insn *insns, int max_insns,
 	int tier_max, len, tier_id;
 	int tier = rnd_modulo_u32(100);
 	int prepend = 0;
+	int prepend_map_reg = -1;
 	int map_fd;
 
 	if (tier < 50) {
@@ -801,7 +1047,7 @@ void ebpf_gen_program_into(struct bpf_insn *insns, int max_insns,
 	 */
 	map_fd = pick_map_fd_for_program(tier_id);
 	if (map_fd >= 0 && tier_max >= TIER3_MIN_INSNS + 2) {
-		emit_ld_map_fd_prologue(insns, map_fd);
+		prepend_map_reg = emit_ld_map_fd_prologue(insns, map_fd);
 		prepend = 2;
 		tier_max -= 2;
 		__atomic_add_fetch(&shm->stats.ebpf_gen_map_fd_substituted, 1,
@@ -811,9 +1057,11 @@ void ebpf_gen_program_into(struct bpf_insn *insns, int max_insns,
 	hs = get_helpers_for_prog_type(prog_type);
 
 	if (tier_id == 1)
-		len = gen_tier1(insns + prepend, tier_max, hs);
+		len = gen_tier1(insns + prepend, tier_max, hs,
+				prepend_map_reg);
 	else if (tier_id == 2)
-		len = gen_tier2(insns + prepend, tier_max);
+		len = gen_tier2(insns + prepend, tier_max, hs,
+				prepend_map_reg);
 	else
 		len = gen_tier3(insns + prepend, tier_max);
 

@@ -1644,6 +1644,15 @@ struct stats_s {
 	 * scalar-only generation and is not counted here. */
 	unsigned long ebpf_gen_map_fd_substituted;
 
+	/* Phase 3.4: bumped each time the eBPF generator emits a typed
+	 * helper call — either via tier1's HELPER_CALL_WEIGHT_PCT lottery
+	 * or the tier2 dedicated helper-call sub-strategy.  Counts only
+	 * successful emissions; picks that bailed because no satisfiable
+	 * helper existed in the current reg state (e.g. ARG_MAP_PTR with
+	 * an empty map-reg slot) or the remaining buffer couldn't fit the
+	 * arg-setup + CALL + EXIT do not increment this. */
+	unsigned long ebpf_gen_helper_call_emitted;
+
 	/* Slots held in zombie-pending state because the kernel still has
 	 * the unkillable D-state task around and may yet wake it to write
 	 * into childdata.  Reusing a slot before the kernel tears the task

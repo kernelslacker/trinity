@@ -3992,6 +3992,11 @@ static void dump_stats_fuzzer_subsystems(void)
 			 shm->stats.ebpf_gen_map_fd_substituted);
 	}
 
+	if (shm->stats.ebpf_gen_helper_call_emitted) {
+		stat_row("ebpf_gen", "helper_call_emitted",
+			 shm->stats.ebpf_gen_helper_call_emitted);
+	}
+
 	if (shm->stats.recipe_runs) {
 		stat_row("recipe_runner", "runs",        shm->stats.recipe_runs);
 		stat_row("recipe_runner", "completed",   shm->stats.recipe_completed);
