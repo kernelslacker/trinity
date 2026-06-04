@@ -155,11 +155,12 @@ syscalls/get_mempolicy.c:220:post_get_mempolicy
 syscalls/get_mempolicy.c:246:post_get_mempolicy
 syscalls/get_mempolicy.c:254:post_get_mempolicy
 syscalls/getpagesize.c:46:post_getpagesize
-syscalls/getpeername.c:207:post_getpeername
-syscalls/getpeername.c:222:post_getpeername
-syscalls/getpeername.c:242:post_getpeername
+syscalls/getpeername.c:218:post_getpeername
+syscalls/getpeername.c:233:post_getpeername
+syscalls/getpeername.c:253:post_getpeername
 syscalls/getpeername.c:271:post_getpeername
-syscalls/getpeername.c:347:post_getpeername
+syscalls/getpeername.c:300:post_getpeername
+syscalls/getpeername.c:376:post_getpeername
 syscalls/getpgid.c:72:post_getpgid
 syscalls/getpgid.c:49:post_getpgid
 syscalls/getpgrp.c:38:post_getpgrp
