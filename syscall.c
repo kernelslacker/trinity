@@ -896,6 +896,10 @@ static void arena_liveness_probe(struct syscallentry *entry,
 		if (attempt == 3) {
 			__atomic_add_fetch(&shm->stats.arena_ptr_stale_reject_giveup,
 					   1, __ATOMIC_RELAXED);
+			/* Don't leave the stale pointer in place: the kernel
+			 * will dereference it via the .post handler.  Zero it
+			 * so the syscall returns -EFAULT instead. */
+			*slot = 0;
 			continue;
 		}
 		*slot = fresh;
