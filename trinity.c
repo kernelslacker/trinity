@@ -28,6 +28,7 @@
 #include "params.h"
 #include "domains.h"
 #include "random.h"
+#include "rlimits.h"
 #include "self_cgroup.h"
 #include "signals.h"
 #include "shm.h"
@@ -904,6 +905,14 @@ int main(int argc, char* argv[])
 	init_post_parse_io();
 
 	derive_and_clamp_slot_partition();
+
+	/* Cap NOFILE/NPROC/AS for the whole trinity process tree before
+	 * fork_children() runs; child processes inherit rlimits at fork
+	 * time, so this is the single point that bounds the fleet's
+	 * resource footprint as a defense against OOM cascades.  Runs
+	 * after derive_and_clamp_slot_partition() so max_children is
+	 * final and the NPROC target reflects the actual fleet size. */
+	init_rlimits(max_children);
 
 	/* Register trinity's own .data/.bss + every loaded DSO's writable
 	 * PT_LOAD segments with shared_regions[] BEFORE fork_children() so
