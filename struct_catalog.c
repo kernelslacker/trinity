@@ -24,6 +24,7 @@
 #include <sched.h>
 #include <time.h>
 #include <netinet/in.h>
+#include <linux/netlink.h>
 #include <linux/capability.h>
 #include <linux/futex.h>
 #include <linux/sched.h>
@@ -667,7 +668,7 @@ static const struct struct_field msghdr_fields[] = {
  * step covers them incrementally.
  */
 static const unsigned long sockaddr_storage_af_vocab[] = {
-	AF_UNIX, AF_INET,
+	AF_UNIX, AF_INET, AF_INET6, AF_NETLINK,
 };
 
 /* AF_UNIX (sockaddr_un) -- 2-byte family + 108-byte sun_path. */
@@ -679,6 +680,34 @@ static const struct struct_field sockaddr_un_variant_fields[] = {
 static const struct struct_field sockaddr_in_variant_fields[] = {
 	FIELD(struct sockaddr_in, sin_port),
 	FIELD(struct sockaddr_in, sin_addr),
+};
+
+/*
+ * AF_INET6 (sockaddr_in6) -- IPv6 endpoint.  sin6_scope_id is an
+ * ifindex; trinity has no live ifindex pool so a coarse range covers
+ * the typical machine's interface count without paying for a /proc
+ * scan at init.
+ */
+static const struct struct_field sockaddr_in6_variant_fields[] = {
+	FIELD(struct sockaddr_in6, sin6_port),
+	FIELD(struct sockaddr_in6, sin6_flowinfo),
+	FIELD(struct sockaddr_in6, sin6_addr),
+	FIELDX(struct sockaddr_in6, sin6_scope_id, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 64 }),
+};
+
+/*
+ * AF_NETLINK (sockaddr_nl) -- nl_groups is a multicast bitmask whose
+ * meaning depends on which NETLINK_* family the socket was opened
+ * with; that's not discoverable from sockaddr_nl alone so the mask
+ * stays generic-full-32.  Family-aware biasing is a follow-up if
+ * coverage stats argue for it.
+ */
+static const struct struct_field sockaddr_nl_variant_fields[] = {
+	FIELD(struct sockaddr_nl, nl_pad),
+	FIELD(struct sockaddr_nl, nl_pid),
+	FIELDX(struct sockaddr_nl, nl_groups, FT_FLAGS,
+	       .u.flags.mask = 0xFFFFFFFFUL),
 };
 
 static const struct union_variant sockaddr_storage_variants[] = {
@@ -695,6 +724,20 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_in_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_in_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_in),
+	},
+	{
+		.discrim_value	 = AF_INET6,
+		.name		 = "AF_INET6",
+		.fields		 = sockaddr_in6_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_in6_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_in6),
+	},
+	{
+		.discrim_value	 = AF_NETLINK,
+		.name		 = "AF_NETLINK",
+		.fields		 = sockaddr_nl_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_nl_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_nl),
 	},
 };
 
