@@ -333,6 +333,40 @@ struct stats_s {
 	 * the per-handler ring carries the breakdown. */
 	unsigned long retfd_blanket_reject;
 
+	/* handle_syscall_ret() observed a page-aligned, arena-band-shaped
+	 * pointer in either an ARG_ADDRESS / ARG_NON_NULL_ADDRESS slot of
+	 * rec->aN (..._arg) or in the rec->post_state tail (..._post_state)
+	 * that neither range_in_tracked_shared() nor
+	 * addr_in_local_runtime_map() recognised as live.  Distinct bug
+	 * class from post_handler_corrupt_ptr, which catches structurally-
+	 * broken values (NULL-ish, kernel-VA, misaligned): the values
+	 * caught here are structurally valid arena-shaped pointers whose
+	 * underlying mapping is gone -- a sibling munmap landed the page
+	 * between the syscall returning and the .post handler about to
+	 * dereference it, or a sibling scribbled an arena-shaped value
+	 * into the slot from outside the live tracker set.  The
+	 * is_corrupt_ptr_shape() gate at include/utils.h:200 cannot
+	 * distinguish "live arena pointer" from "stale arena pointer",
+	 * since the predicate is purely structural; this counter surfaces
+	 * the residual STALE class.
+	 *
+	 * SPLIT into two counters rather than one-with-attribution: the
+	 * arg-slot and post_state detection sites have different stomp
+	 * vectors (arg slots ride the value-result sibling-write path,
+	 * post_state rides the .post handler's snap-stash convention), and
+	 * a downstream operator reading the periodic rate dump benefits
+	 * from seeing the two rates side by side instead of having to
+	 * untangle them from per-PC attribution.
+	 *
+	 * Telemetry-only for Phase 1 -- the bump is informational and
+	 * entry->post still runs.  A rejection policy (skip-the-post on
+	 * STALE) is gated on quiet-week rate data accumulated through
+	 * this counter, matching the cadence rzs_blanket_reject /
+	 * retfd_blanket_reject followed before their respective coercion
+	 * passes landed. */
+	unsigned long arena_ptr_stale_caught_arg;
+	unsigned long arena_ptr_stale_caught_post_state;
+
 	/* fill_arg() fired the ONE_IN(WRONG_FD_TYPE_FREQ) branch on a
 	 * typed-fd argument and substituted either a different typed-fd
 	 * subtype or a generic-pool fd in its place.  Headline counter for

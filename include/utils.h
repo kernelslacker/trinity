@@ -424,3 +424,28 @@ void sanitize_inherited_fds(void);
 #define RAND_ARRAY(_array) _array[rnd_modulo_u32(ARRAY_SIZE(_array))]
 
 #define IS_ALIGNED(x, a)	(((x) & ((typeof(x))(a) - 1)) == 0)
+
+/*
+ * Initial-mappings arena band.  setup_initial_mappings() in mm/maps-
+ * initial.c lays the per-page-protection initial pool entries between
+ * 0x40000000 and 0x44000000; the literal here matches that span and is
+ * stable across kernels (the band is fixed by the trinity-side mmap
+ * hints, not by the kernel's ASLR layout).  Used by is_in_arena_band()
+ * below as the heuristic STALE classifier for the handle_syscall_ret()
+ * liveness probe: a page-aligned pointer landing inside this range that
+ * neither range_in_tracked_shared() nor addr_in_local_runtime_map()
+ * accepts is structurally an arena slot whose mapping is gone.
+ *
+ * A runtime CHILD_ANON mmap above ARENA_BAND_HI falls through to the
+ * probe's UNKNOWN bucket -- a false negative, not a false positive,
+ * acceptable for the telemetry-only first landing.  A stamped-from-init
+ * variant is a follow-up worth doing before any rejection policy lands
+ * on top of this counter.
+ */
+#define ARENA_BAND_LO	0x40000000UL
+#define ARENA_BAND_HI	0x44000000UL
+
+static inline bool is_in_arena_band(unsigned long p)
+{
+	return p >= ARENA_BAND_LO && p < ARENA_BAND_HI;
+}
