@@ -25,6 +25,9 @@
 #include <time.h>
 #include <netinet/in.h>
 #include <linux/netlink.h>
+#include <linux/if_arp.h>
+#include <linux/if_ether.h>
+#include <linux/if_packet.h>
 #include <linux/capability.h>
 #include <linux/futex.h>
 #include <linux/sched.h>
@@ -36,6 +39,9 @@
 #include "config.h"
 #ifdef USE_BPF
 #include <linux/bpf.h>
+#endif
+#ifdef USE_VSOCK
+#include <linux/vm_sockets.h>
 #endif
 
 #include "struct_catalog.h"
@@ -668,7 +674,34 @@ static const struct struct_field msghdr_fields[] = {
  * step covers them incrementally.
  */
 static const unsigned long sockaddr_storage_af_vocab[] = {
-	AF_UNIX, AF_INET, AF_INET6, AF_NETLINK,
+	AF_UNIX, AF_INET, AF_INET6, AF_NETLINK, AF_PACKET,
+#ifdef USE_VSOCK
+	AF_VSOCK,
+#endif
+};
+
+/*
+ * AF_PACKET curated vocabularies.  Each enum table targets a
+ * specific dispatch the kernel does in packet_rcv / af_packet's
+ * deliver paths -- protocol decode, ARP hardware type lookup, and
+ * the rx-type classifier respectively.  Sets stay small to keep
+ * the enum-pick distribution biased toward kernel-visible buckets.
+ */
+static const unsigned long packet_eth_p_vocab[] = {
+	ETH_P_LOOP, ETH_P_ALL, ETH_P_IP, ETH_P_ARP, ETH_P_RARP,
+	ETH_P_8021Q, ETH_P_IPV6, ETH_P_MPLS_UC, ETH_P_MPLS_MC,
+	ETH_P_LOOPBACK,
+};
+
+static const unsigned long packet_arphrd_vocab[] = {
+	ARPHRD_ETHER, ARPHRD_PPP, ARPHRD_TUNNEL, ARPHRD_TUNNEL6,
+	ARPHRD_LOOPBACK, ARPHRD_SIT, ARPHRD_IPGRE, ARPHRD_VOID,
+	ARPHRD_NONE,
+};
+
+static const unsigned long packet_pkttype_vocab[] = {
+	PACKET_HOST, PACKET_BROADCAST, PACKET_MULTICAST, PACKET_OTHERHOST,
+	PACKET_OUTGOING, PACKET_LOOPBACK, PACKET_USER, PACKET_KERNEL,
 };
 
 /* AF_UNIX (sockaddr_un) -- 2-byte family + 108-byte sun_path. */
@@ -710,6 +743,55 @@ static const struct struct_field sockaddr_nl_variant_fields[] = {
 	       .u.flags.mask = 0xFFFFFFFFUL),
 };
 
+/*
+ * AF_PACKET (sockaddr_ll) -- raw socket endpoint.  sll_halen is
+ * bounded by the 8-byte sll_addr buffer the variant emits; the
+ * kernel reads only the first sll_halen bytes regardless of what
+ * landed in the tail, so leaving sll_addr as FT_RAW and sll_halen
+ * as FT_RANGE without coupling them is fine.
+ */
+static const struct struct_field sockaddr_ll_variant_fields[] = {
+	FIELDX(struct sockaddr_ll, sll_protocol, FT_ENUM,
+	       .u.enum_ = { .vals = packet_eth_p_vocab,
+			    .n    = ARRAY_SIZE(packet_eth_p_vocab) }),
+	FIELDX(struct sockaddr_ll, sll_ifindex, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 64 }),
+	FIELDX(struct sockaddr_ll, sll_hatype, FT_ENUM,
+	       .u.enum_ = { .vals = packet_arphrd_vocab,
+			    .n    = ARRAY_SIZE(packet_arphrd_vocab) }),
+	FIELDX(struct sockaddr_ll, sll_pkttype, FT_ENUM,
+	       .u.enum_ = { .vals = packet_pkttype_vocab,
+			    .n    = ARRAY_SIZE(packet_pkttype_vocab) }),
+	FIELDX(struct sockaddr_ll, sll_halen, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 8 }),
+	FIELD(struct sockaddr_ll, sll_addr),
+};
+
+#ifdef USE_VSOCK
+/*
+ * AF_VSOCK (sockaddr_vm) -- VMware/hypervisor socket endpoint.
+ * svm_cid picks from the small set of well-known CIDs the kernel
+ * recognises (any/hypervisor/local/host); arbitrary CIDs are rare
+ * and bias toward unrouteable.  svm_flags has exactly one defined
+ * bit today.  svm_reserved1 and svm_zero stay FT_RAW; the kernel
+ * doesn't enforce them but accepts whatever the buffer carries.
+ */
+static const unsigned long vsock_cid_vocab[] = {
+	VMADDR_CID_ANY, VMADDR_CID_HYPERVISOR,
+	VMADDR_CID_LOCAL, VMADDR_CID_HOST,
+};
+
+static const struct struct_field sockaddr_vm_variant_fields[] = {
+	FIELD(struct sockaddr_vm, svm_reserved1),
+	FIELD(struct sockaddr_vm, svm_port),
+	FIELDX(struct sockaddr_vm, svm_cid, FT_ENUM,
+	       .u.enum_ = { .vals = vsock_cid_vocab,
+			    .n    = ARRAY_SIZE(vsock_cid_vocab) }),
+	FIELDX(struct sockaddr_vm, svm_flags, FT_FLAGS,
+	       .u.flags.mask = VMADDR_FLAG_TO_HOST),
+};
+#endif
+
 static const struct union_variant sockaddr_storage_variants[] = {
 	{
 		.discrim_value	 = AF_UNIX,
@@ -739,6 +821,22 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.num_fields	 = ARRAY_SIZE(sockaddr_nl_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_nl),
 	},
+	{
+		.discrim_value	 = AF_PACKET,
+		.name		 = "AF_PACKET",
+		.fields		 = sockaddr_ll_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_ll_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_ll),
+	},
+#ifdef USE_VSOCK
+	{
+		.discrim_value	 = AF_VSOCK,
+		.name		 = "AF_VSOCK",
+		.fields		 = sockaddr_vm_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_vm_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_vm),
+	},
+#endif
 };
 
 static const struct struct_field sockaddr_storage_fields[] = {
