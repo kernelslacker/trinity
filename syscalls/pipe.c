@@ -28,53 +28,60 @@ static void register_pipe_fd(int fd, bool reader)
 }
 
 /*
- * Snapshot for the post handler.  Previously the raw int[2] result
- * buffer was parked in rec->post_state and post_pipe read fildes[0]/
- * fildes[1] off it directly if the pointer looked heap-shaped.  But the
- * heap-shape check on rec->post_state is value-based only -- a sibling
- * scribbling rec->post_state with any heap-shaped 8-byte aligned pointer
- * (a different syscall's post_state, a stale alloc_iovec(1) in the same
- * free-list bucket, ...) sails past looks_like_corrupted_ptr() and
- * post_pipe then reads fildes[0]/fildes[1] out of foreign bytes and
- * feeds them to register_pipe_fd() as putative fds.  Wrap the buffer
- * pointer in a magic-cookie struct so the raw int[2] is no longer
- * exposed via post_state -- post_pipe reads fildes through snap->fildes,
- * and a cookie mismatch rejects foreign-allocation forgeries before any
- * inner-field deref.  Mirrors RECVMSG_POST_STATE_MAGIC at recv.c:103.
- * Sized 24 bytes to stay clear of the 16-byte free-list bucket that
- * holds alloc_iovec(1) and other small allocations.
+ * Snapshot for the post handler.  Three-leg hardening, mirroring the
+ * shape that landed for getsockname/getpeername:
  *
- * Two pointers are stored.  ->fildes is the address the kernel actually
- * writes the returned int[2] into -- avoid_shared_buffer_out() relocates
- * rec->a1 off the libc heap into a parent-private writable region, so
- * post_pipe must read fds from the relocated buffer, not the zmalloc
- * result.  ->original_alloc is the zmalloc()'d pointer we hand back to
- * deferred_free_enqueue(): the relocated buffer is owned by the
- * writable-address allocator (mmap'd, alloc-track-unknown) and would be
- * rejected by deferred_free_enqueue()'s heap-bounds and alloc-track
- * gates.
+ *   1. The int[2] output buffer is sourced from get_writable_address()
+ *      rather than zmalloc() + avoid_shared_buffer_out().  The arena
+ *      is mmap-backed, far from the libc brk region where glibc malloc
+ *      consistency checks fire, so a wild kernel write into this slot
+ *      can no longer surface as a SIGABRT cluster at __libc_message
+ *      raise IP.  Pool-owned -- no deferred_free needed for the buffer.
+ *
+ *   2. The snap struct carries a magic cookie that the post handler
+ *      checks before dereferencing snap->fildes.  A sibling scribble of
+ *      rec->post_state with a heap-shaped pointer to a foreign chunk
+ *      survives looks_like_corrupted_ptr() but fails the cookie gate.
+ *
+ *   3. The snap pointer is registered in the post-state ownership table
+ *      at sanitise time and checked in the post handler via
+ *      post_state_is_owned().  A cookie-collision foreign chunk would
+ *      otherwise sail past the magic check; the ownership table closes
+ *      that gap.
+ *
+ * Only the writable-arena buffer pointer needs storing -- there is no
+ * second pointer to free because get_writable_address() returns
+ * pool-managed memory.
  */
 #define PIPE_POST_STATE_MAGIC	0x504950455F4D4147UL	/* "PIPE_MAG" */
 struct pipe_post_state {
 	unsigned long magic;
 	int *fildes;
-	int *original_alloc;
 };
 
 static void sanitise_pipe(struct syscallrecord *rec)
 {
-	int *fildes = zmalloc_tracked(sizeof(int) * 2);
+	int *fildes;
 	struct pipe_post_state *snap;
 
+	fildes = (int *) get_writable_address(sizeof(int) * 2);
+	if (fildes == NULL) {
+		/*
+		 * Pool exhaustion / mincore failure.  Leaving a leftover
+		 * pointer from a previous iteration in rec->a1 would let the
+		 * kernel write the fd pair into whatever sits there now.
+		 * Force NULL so the kernel returns -EFAULT cleanly.
+		 */
+		rec->a1 = 0;
+		return;
+	}
 	rec->a1 = (unsigned long) fildes;
-
-	avoid_shared_buffer_out(&rec->a1, 2 * sizeof(int));
 
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = PIPE_POST_STATE_MAGIC;
-	snap->fildes = (int *) rec->a1;
-	snap->original_alloc = fildes;
+	snap->fildes = fildes;
 	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
 }
 
 /*
@@ -82,10 +89,11 @@ static void sanitise_pipe(struct syscallrecord *rec)
  * .ret_objtype_via_post.  Runs ahead of post_pipe(), which clears
  * rec->post_state during its cleanup pass; reading the snap from a
  * .post hook after that point would see zero.  Does its own shape +
- * magic validation before deref so a sibling-stomped post_state
- * doesn't drive register_pipe_fd() with foreign bytes -- corruption
- * attribution stays in post_pipe() below, which repeats the same
- * checks and owns the post_handler_corrupt_ptr_bump() accounting.
+ * magic + ownership validation before deref so a sibling-stomped
+ * post_state doesn't drive register_pipe_fd() with foreign bytes --
+ * corruption attribution stays in post_pipe() below, which repeats
+ * the same checks and owns the post_handler_corrupt_ptr_bump()
+ * accounting.
  */
 static void post_pipe_record_fds(struct syscallrecord *rec)
 {
@@ -100,6 +108,9 @@ static void post_pipe_record_fds(struct syscallrecord *rec)
 		return;
 
 	if (snap->magic != PIPE_POST_STATE_MAGIC)
+		return;
+
+	if (!post_state_is_owned(snap))
 		return;
 
 	fildes = snap->fildes;
@@ -130,12 +141,7 @@ static void post_pipe(struct syscallrecord *rec)
 	 * Magic-cookie check: snap survived the heap-shape gate but a
 	 * sibling scribble of rec->post_state with a heap-shaped pointer
 	 * to a foreign allocation would let the wrong bytes pose as a
-	 * pipe_post_state.  fd registration moved to
-	 * post_pipe_record_fds() (wired via .ret_objtype_via_post) so
-	 * the surviving body here is pure post_state cleanup; the magic
-	 * check stays so a forged snap still gets a corruption-bump and
-	 * the inner pointer fields don't get fed to deferred_free.
-	 * Mirrors recv.c:212.
+	 * pipe_post_state.  Mirrors recv.c:212.
 	 */
 	if (snap->magic != PIPE_POST_STATE_MAGIC) {
 		outputerr("post_pipe: rejected snap with bad magic 0x%lx "
@@ -147,18 +153,25 @@ static void post_pipe(struct syscallrecord *rec)
 		return;
 	}
 
-	if (snap->fildes == NULL ||
-	    looks_like_corrupted_ptr(rec, snap->fildes)) {
-		outputerr("post_pipe: rejected suspicious fildes=%p "
-			  "(post_state-scribbled?)\n", snap->fildes);
+	/*
+	 * Ownership-table check: shape + magic passed, but a foreign
+	 * chunk could in principle carry the matching cookie by
+	 * coincidence (e.g. another in-flight pipe child's snap, or a
+	 * stale snap a sibling stomp resurrected by redirecting
+	 * rec->post_state at it).  Reject before deferred_freeptr() hands
+	 * a foreign pointer to the deferred-free ring.  Mirrors the third
+	 * leg of the getsockname/getpeername hardening.
+	 */
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_pipe: rejected post_state=%p not in "
+			  "ownership table (post_state-redirected?)\n", snap);
 		rec->a1 = 0;
-		goto out_free;
+		rec->post_state = 0;
+		return;
 	}
 
 	rec->a1 = 0;
-	deferred_free_enqueue(snap->original_alloc);
-
-out_free:
+	post_state_unregister(snap);
 	deferred_freeptr(&rec->post_state);
 }
 
@@ -232,18 +245,22 @@ static unsigned long sanitise_pipe2_flags(void)
 
 static void sanitise_pipe2(struct syscallrecord *rec)
 {
-	int *fildes = zmalloc_tracked(sizeof(int) * 2);
+	int *fildes;
 	struct pipe_post_state *snap;
 
+	fildes = (int *) get_writable_address(sizeof(int) * 2);
+	if (fildes == NULL) {
+		rec->a1 = 0;
+		rec->a2 = sanitise_pipe2_flags();
+		return;
+	}
 	rec->a1 = (unsigned long) fildes;
-
-	avoid_shared_buffer_out(&rec->a1, 2 * sizeof(int));
 
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = PIPE_POST_STATE_MAGIC;
-	snap->fildes = (int *) rec->a1;
-	snap->original_alloc = fildes;
+	snap->fildes = fildes;
 	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
 
 	rec->a2 = sanitise_pipe2_flags();
 }

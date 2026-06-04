@@ -333,9 +333,9 @@ syscalls/open.c:93:post_open
 syscalls/pause.c:22:post_pause
 syscalls/perf_event_open.c:1823:post_perf_event_open
 syscalls/personality.c:25:post_personality
-syscalls/pipe.c:122:post_pipe
-syscalls/pipe.c:141:post_pipe
-syscalls/pipe.c:152:post_pipe
+syscalls/pipe.c:133:post_pipe
+syscalls/pipe.c:147:post_pipe
+syscalls/pipe.c:166:post_pipe
 syscalls/pkey.c:119:post_pkey_alloc
 syscalls/poll.c:146:post_poll
 syscalls/poll.c:155:post_poll
@@ -477,9 +477,9 @@ syscalls/sigpending.c:140:post_sigpending
 syscalls/sigpending.c:162:post_sigpending
 syscalls/sigpending.c:179:post_sigpending
 syscalls/socketcall.c:249:post_socketcall
-syscalls/socketpair.c:159:post_socketpair
-syscalls/socketpair.c:178:post_socketpair
-syscalls/socketpair.c:189:post_socketpair
+syscalls/socketpair.c:170:post_socketpair
+syscalls/socketpair.c:184:post_socketpair
+syscalls/socketpair.c:203:post_socketpair
 syscalls/stat.c:391:post_statx
 syscalls/stat.c:406:post_statx
 syscalls/stat.c:438:post_statx
