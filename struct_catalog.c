@@ -643,6 +643,44 @@ static const struct struct_field io_uring_register_sync_cancel_fields[] = {
 };
 
 /*
+ * Array-shaped register opcodes.  arg points at a bare element array;
+ * the count lives in rec->a4.  The variant fields[] describes the
+ * layout of ONE element (the kernel CMPs each element against the
+ * same constants regardless of index, so attributing to the element
+ * is approximately correct for CMP purposes).  effective_size is the
+ * size of one element; array-aware fill is not modelled (would need
+ * net-new infra in generate-args.c and the live fill path is fully
+ * hand-rolled in sanitise_io_uring_register either way).
+ */
+
+/*
+ * IORING_REGISTER_RESTRICTIONS (opcode 11) / arg = struct
+ * io_uring_restriction[].  Per-element opcode picks among the four
+ * IORING_RESTRICTION_* discriminators which in turn decide whether
+ * the anonymous-union byte at offset 2 is interpreted as register_op,
+ * sqe_op, or sqe_flags.  The blind-fd (fd == -1) task-scoped path in
+ * sanitise_io_uring_register wraps the element in
+ * io_uring_task_restriction; the catalog models the real-fd flat
+ * element only.
+ */
+static const unsigned long io_uring_restriction_opcodes[] = {
+	IORING_RESTRICTION_REGISTER_OP,
+	IORING_RESTRICTION_SQE_OP,
+	IORING_RESTRICTION_SQE_FLAGS_ALLOWED,
+	IORING_RESTRICTION_SQE_FLAGS_REQUIRED,
+};
+
+static const struct struct_field io_uring_register_restriction_fields[] = {
+	FIELDX(struct io_uring_restriction, opcode, FT_ENUM,
+	       .u.enum_ = { .vals = io_uring_restriction_opcodes,
+			    .n = ARRAY_SIZE(io_uring_restriction_opcodes) },
+	       .mutate_weight = 80),
+	FIELD(struct io_uring_restriction, register_op),
+	FIELD(struct io_uring_restriction, resv),
+	FIELD(struct io_uring_restriction, resv2),
+};
+
+/*
  * Per-opcode variant table.  rec->a2 carries the opcode at sanitise
  * and post time; struct_desc_resolve_variant() picks the matching
  * variant.  Opcodes without an entry fall through to the empty shared
@@ -691,6 +729,86 @@ static const struct union_variant io_uring_register_variants[] = {
 		.fields		= io_uring_register_sync_cancel_fields,
 		.num_fields	= ARRAY_SIZE(io_uring_register_sync_cancel_fields),
 		.effective_size	= sizeof(struct io_uring_sync_cancel_reg),
+	},
+	/*
+	 * Array-shaped opcodes below: variant fields[] describes one
+	 * element, effective_size is sizeof(one element).  The full
+	 * payload length depends on rec->a4 (element count) and is owned
+	 * by the hand-rolled fill path.
+	 */
+	{
+		.discrim_value	= IORING_REGISTER_BUFFERS,
+		.name		= "BUFFERS",
+		.fields		= iovec_fields,
+		.num_fields	= ARRAY_SIZE(iovec_fields),
+		.effective_size	= sizeof(struct iovec),
+	},
+	{
+		.discrim_value	= IORING_UNREGISTER_BUFFERS,
+		.name		= "UNREGISTER_BUFFERS",
+		.fields		= iovec_fields,
+		.num_fields	= ARRAY_SIZE(iovec_fields),
+		.effective_size	= sizeof(struct iovec),
+	},
+	/*
+	 * FILES / UNREGISTER_FILES: arg is a bare int[] of fds.  No
+	 * fields[] -- a trivial scalar array has nothing useful for CMP
+	 * to attribute and the hand-rolled fill owns the -1 sparse-hole
+	 * seeding.  effective_size names one element so a future
+	 * array-aware consumer can still size the payload.
+	 */
+	{
+		.discrim_value	= IORING_REGISTER_FILES,
+		.name		= "FILES",
+		.fields		= NULL,
+		.num_fields	= 0,
+		.effective_size	= sizeof(int),
+	},
+	{
+		.discrim_value	= IORING_UNREGISTER_FILES,
+		.name		= "UNREGISTER_FILES",
+		.fields		= NULL,
+		.num_fields	= 0,
+		.effective_size	= sizeof(int),
+	},
+	{
+		.discrim_value	= IORING_REGISTER_RESTRICTIONS,
+		.name		= "RESTRICTIONS",
+		.fields		= io_uring_register_restriction_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_restriction_fields),
+		.effective_size	= sizeof(struct io_uring_restriction),
+	},
+	/*
+	 * IOWQ_MAX_WORKERS: arg is __u32[2] (bounded/unbounded worker
+	 * caps).  No fields[] -- trivial scalar array, hand-rolled fill
+	 * owns it.
+	 */
+	{
+		.discrim_value	= IORING_REGISTER_IOWQ_MAX_WORKERS,
+		.name		= "IOWQ_MAX_WORKERS",
+		.fields		= NULL,
+		.num_fields	= 0,
+		.effective_size	= 2 * sizeof(__u32),
+	},
+	/*
+	 * RING_FDS / UNREGISTER_RING_FDS: array of io_uring_rsrc_update;
+	 * element layout is the same as FILES_UPDATE so the variant
+	 * fields[] is reused.  Hand-rolled fill seeds data from the
+	 * io_uring fd pool.
+	 */
+	{
+		.discrim_value	= IORING_REGISTER_RING_FDS,
+		.name		= "RING_FDS",
+		.fields		= io_uring_register_files_update_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_files_update_fields),
+		.effective_size	= sizeof(struct io_uring_rsrc_update),
+	},
+	{
+		.discrim_value	= IORING_UNREGISTER_RING_FDS,
+		.name		= "UNREGISTER_RING_FDS",
+		.fields		= io_uring_register_files_update_fields,
+		.num_fields	= ARRAY_SIZE(io_uring_register_files_update_fields),
+		.effective_size	= sizeof(struct io_uring_rsrc_update),
 	},
 };
 
