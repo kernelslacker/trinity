@@ -541,6 +541,102 @@ static const struct struct_field perf_event_attr_fields[] = {
 	FIELD(struct perf_event_attr, config3),
 };
 
+/*
+ * Per-type sub-variants.  `type` at offset 0 is the discriminator;
+ * the desc-level buffer_discrim_offset/size below reads it back after
+ * the shared scalar pass has written a known PERF_TYPE_* value (the
+ * type FT_ENUM above promotes the discriminator into a known-value
+ * draw so the variant fires reliably, not once per 4 billion fills).
+ *
+ * The kernel reinterprets config / config1 / config2 (bp_addr / bp_len)
+ * per type:
+ *
+ *   HARDWARE   -> config = perf_hw_id (PERF_COUNT_HW_*)
+ *   SOFTWARE   -> config = perf_sw_ids (PERF_COUNT_SW_*)
+ *   HW_CACHE   -> config = packed (cache_id, op_id, result_id) triple
+ *   BREAKPOINT -> config ignored; bp_type / bp_addr / bp_len are live
+ *   TRACEPOINT -> config = runtime tracefs event id (not catalog-able)
+ *   RAW        -> config = vendor-specific PMU counter id
+ *
+ * Variants override the corresponding shared fields[] entries; fields
+ * not listed in the variant retain their shared-pass values.  Unknown
+ * type values (vendor PMU type ids >= PERF_TYPE_MAX) fall through to
+ * the shared fields[] alone, which matches the kernel's perf_pmu
+ * lookup path for dynamic PMU types.
+ *
+ * The schema-aware fill is discarded by sanitise_perf_event_open()
+ * regardless (it overwrites rec->a1 with the hand-rolled csfu buffer),
+ * so these variants are forward infra for type-scoped CMP attribution
+ * via struct_field_for_cmp() once the cmp_hints recording path
+ * acquires a consumer.
+ */
+
+/*
+ * PERF_TYPE_HARDWARE: config low 32 bits select a generalised event;
+ * high 32 bits carry an optional PMU type id (left zero == core PMU).
+ * Cataloguing only the low-half PERF_COUNT_HW_* values; the PMU-type-
+ * id extension is a runtime-registered range not enumerable at compile
+ * time.
+ */
+static const unsigned long perf_hw_ids[] = {
+	PERF_COUNT_HW_CPU_CYCLES,
+	PERF_COUNT_HW_INSTRUCTIONS,
+	PERF_COUNT_HW_CACHE_REFERENCES,
+	PERF_COUNT_HW_CACHE_MISSES,
+	PERF_COUNT_HW_BRANCH_INSTRUCTIONS,
+	PERF_COUNT_HW_BRANCH_MISSES,
+	PERF_COUNT_HW_BUS_CYCLES,
+	PERF_COUNT_HW_STALLED_CYCLES_FRONTEND,
+	PERF_COUNT_HW_STALLED_CYCLES_BACKEND,
+	PERF_COUNT_HW_REF_CPU_CYCLES,
+};
+
+/*
+ * PERF_TYPE_SOFTWARE: config is the perf_sw_ids enum; all 12 entries
+ * are stable uapi.
+ */
+static const unsigned long perf_sw_ids[] = {
+	PERF_COUNT_SW_CPU_CLOCK,
+	PERF_COUNT_SW_TASK_CLOCK,
+	PERF_COUNT_SW_PAGE_FAULTS,
+	PERF_COUNT_SW_CONTEXT_SWITCHES,
+	PERF_COUNT_SW_CPU_MIGRATIONS,
+	PERF_COUNT_SW_PAGE_FAULTS_MIN,
+	PERF_COUNT_SW_PAGE_FAULTS_MAJ,
+	PERF_COUNT_SW_ALIGNMENT_FAULTS,
+	PERF_COUNT_SW_EMULATION_FAULTS,
+	PERF_COUNT_SW_DUMMY,
+	PERF_COUNT_SW_BPF_OUTPUT,
+	PERF_COUNT_SW_CGROUP_SWITCHES,
+};
+
+static const struct struct_field perf_event_attr_hardware_variant_fields[] = {
+	FIELDX(struct perf_event_attr, config, FT_ENUM,
+	       .u.enum_ = { perf_hw_ids, ARRAY_SIZE(perf_hw_ids) },
+	       .mutate_weight = 120),
+};
+
+static const struct struct_field perf_event_attr_software_variant_fields[] = {
+	FIELDX(struct perf_event_attr, config, FT_ENUM,
+	       .u.enum_ = { perf_sw_ids, ARRAY_SIZE(perf_sw_ids) },
+	       .mutate_weight = 120),
+};
+
+static const struct union_variant perf_event_attr_variants[] = {
+	{
+		.discrim_value	= PERF_TYPE_HARDWARE,
+		.name		= "HARDWARE",
+		.fields		= perf_event_attr_hardware_variant_fields,
+		.num_fields	= ARRAY_SIZE(perf_event_attr_hardware_variant_fields),
+	},
+	{
+		.discrim_value	= PERF_TYPE_SOFTWARE,
+		.name		= "SOFTWARE",
+		.fields		= perf_event_attr_software_variant_fields,
+		.num_fields	= ARRAY_SIZE(perf_event_attr_software_variant_fields),
+	},
+};
+
 /* ------------------------------------------------------------------ */
 /* struct sigaction (rt_sigaction, sigaction)                          */
 /* ------------------------------------------------------------------ */
@@ -2025,10 +2121,15 @@ const struct struct_desc struct_catalog[] = {
 		.num_fields	= ARRAY_SIZE(epoll_event_fields),
 	},
 	{
-		.name		= "perf_event_attr",
-		.struct_size	= sizeof(struct perf_event_attr),
-		.fields		= perf_event_attr_fields,
-		.num_fields	= ARRAY_SIZE(perf_event_attr_fields),
+		.name			= "perf_event_attr",
+		.struct_size		= sizeof(struct perf_event_attr),
+		.fields			= perf_event_attr_fields,
+		.num_fields		= ARRAY_SIZE(perf_event_attr_fields),
+		.variants		= perf_event_attr_variants,
+		.num_variants		= ARRAY_SIZE(perf_event_attr_variants),
+		.buffer_discrim_offset	= offsetof(struct perf_event_attr, type),
+		.buffer_discrim_size	= sizeof(((struct perf_event_attr *) 0)->
+						 type),
 	},
 	{
 		.name		= "sigaction",
