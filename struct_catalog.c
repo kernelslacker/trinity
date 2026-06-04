@@ -30,6 +30,7 @@
 #include <linux/if_packet.h>
 #include <linux/tipc.h>
 #include <linux/capability.h>
+#include <linux/netfilter.h>
 #include <linux/futex.h>
 #include <linux/sched.h>
 #include <linux/sched/types.h>
@@ -2471,6 +2472,87 @@ static const struct struct_field bpf_attr_LINK_CREATE_TRACING_fields[] = {
 };
 
 /*
+ * NETFILTER / TCX / NETKIT / CGROUP_MULTI sub-variants for
+ * LINK_CREATE.  Three share an identical inner layout
+ * (relative_fd|relative_id + expected_revision); the cgroup arm
+ * claims every BPF_CGROUP_* attach type via discrim_values[] so one
+ * entry covers the ~28-way fan-out without cloning.
+ *
+ * Netfilter's hooknum is bounded by NF_INET_NUMHOOKS (5 hooks,
+ * PREROUTING..POSTROUTING); pf is a small fixed NFPROTO_* set --
+ * INET/IPV4/IPV6/ARP/NETDEV/BRIDGE -- without which the kernel's
+ * dispatch never reaches the per-pf hook list.
+ */
+static const unsigned long netfilter_pfs[] = {
+	NFPROTO_INET, NFPROTO_IPV4, NFPROTO_IPV6,
+	NFPROTO_ARP, NFPROTO_NETDEV, NFPROTO_BRIDGE,
+};
+
+static const struct struct_field bpf_attr_LINK_CREATE_NETFILTER_fields[] = {
+	FIELDX(union bpf_attr, link_create.netfilter.pf, FT_ENUM,
+	       .u.enum_ = { netfilter_pfs, ARRAY_SIZE(netfilter_pfs) },
+	       .mutate_weight = 150),
+	FIELDX(union bpf_attr, link_create.netfilter.hooknum, FT_RANGE,
+	       .u.range = { 0, NF_INET_NUMHOOKS - 1 }),
+	FIELD(union bpf_attr, link_create.netfilter.priority),
+	FIELDX(union bpf_attr, link_create.netfilter.flags, FT_FLAGS,
+	       .u.flags.mask = BPF_F_NETFILTER_IP_DEFRAG),
+};
+
+/*
+ * TCX and NETKIT share the layout (relative_fd|relative_id +
+ * expected_revision); the field annotations differ only in dotted
+ * path so the two are typed out separately rather than aliased.
+ */
+static const struct struct_field bpf_attr_LINK_CREATE_TCX_fields[] = {
+	FIELDX(union bpf_attr, link_create.tcx.relative_fd, FT_FD),
+	FIELD(union bpf_attr, link_create.tcx.expected_revision),
+};
+
+static const struct struct_field bpf_attr_LINK_CREATE_NETKIT_fields[] = {
+	FIELDX(union bpf_attr, link_create.netkit.relative_fd, FT_FD),
+	FIELD(union bpf_attr, link_create.netkit.expected_revision),
+};
+
+static const struct struct_field bpf_attr_LINK_CREATE_CGROUP_fields[] = {
+	FIELDX(union bpf_attr, link_create.cgroup.relative_fd, FT_FD),
+	FIELD(union bpf_attr, link_create.cgroup.expected_revision),
+};
+
+static const unsigned long bpf_attach_types_tcx[] = {
+	BPF_TCX_INGRESS, BPF_TCX_EGRESS,
+};
+
+static const unsigned long bpf_attach_types_netkit[] = {
+	BPF_NETKIT_PRIMARY, BPF_NETKIT_PEER,
+};
+
+/*
+ * CGROUP_MULTI claims every BPF_CGROUP_* attach type.  The cgroup
+ * arm's inner struct is shared across all of them; per-attach
+ * semantics live in kernel/bpf/cgroup.c and don't affect the wire
+ * shape sanitise produces.
+ */
+static const unsigned long bpf_attach_types_cgroup[] = {
+	BPF_CGROUP_INET_INGRESS, BPF_CGROUP_INET_EGRESS,
+	BPF_CGROUP_INET_SOCK_CREATE, BPF_CGROUP_SOCK_OPS,
+	BPF_CGROUP_DEVICE,
+	BPF_CGROUP_INET4_BIND, BPF_CGROUP_INET6_BIND,
+	BPF_CGROUP_INET4_CONNECT, BPF_CGROUP_INET6_CONNECT,
+	BPF_CGROUP_INET4_POST_BIND, BPF_CGROUP_INET6_POST_BIND,
+	BPF_CGROUP_UDP4_SENDMSG, BPF_CGROUP_UDP6_SENDMSG,
+	BPF_CGROUP_SYSCTL,
+	BPF_CGROUP_UDP4_RECVMSG, BPF_CGROUP_UDP6_RECVMSG,
+	BPF_CGROUP_GETSOCKOPT, BPF_CGROUP_SETSOCKOPT,
+	BPF_CGROUP_INET4_GETPEERNAME, BPF_CGROUP_INET6_GETPEERNAME,
+	BPF_CGROUP_INET4_GETSOCKNAME, BPF_CGROUP_INET6_GETSOCKNAME,
+	BPF_CGROUP_INET_SOCK_RELEASE,
+	BPF_CGROUP_UNIX_CONNECT, BPF_CGROUP_UNIX_SENDMSG,
+	BPF_CGROUP_UNIX_RECVMSG, BPF_CGROUP_UNIX_GETPEERNAME,
+	BPF_CGROUP_UNIX_GETSOCKNAME,
+};
+
+/*
  * KPROBE_MULTI / UPROBE_MULTI sub-variants.  Both gate three or four
  * sibling pointer arrays with a single cnt slot, exercising the new
  * multi-pair LEN extension (buf_fields[]).  cookies (KPROBE) /
@@ -2600,6 +2682,49 @@ static const struct union_variant bpf_attr_LINK_CREATE_nested[] = {
 					   link_create.uprobe_multi.pid) +
 				  sizeof(((union bpf_attr *)NULL)
 					 ->link_create.uprobe_multi.pid),
+	},
+	{
+		.discrim_value	= BPF_NETFILTER,
+		.name		= "LINK_CREATE/NETFILTER",
+		.fields		= bpf_attr_LINK_CREATE_NETFILTER_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_LINK_CREATE_NETFILTER_fields),
+		.effective_size	= offsetof(union bpf_attr,
+					   link_create.netfilter.flags) +
+				  sizeof(((union bpf_attr *)NULL)
+					 ->link_create.netfilter.flags),
+	},
+	{
+		.discrim_values	    = bpf_attach_types_tcx,
+		.num_discrim_values = ARRAY_SIZE(bpf_attach_types_tcx),
+		.name		= "LINK_CREATE/TCX",
+		.fields		= bpf_attr_LINK_CREATE_TCX_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_LINK_CREATE_TCX_fields),
+		.effective_size	= offsetof(union bpf_attr,
+					   link_create.tcx.expected_revision) +
+				  sizeof(((union bpf_attr *)NULL)
+					 ->link_create.tcx.expected_revision),
+	},
+	{
+		.discrim_values	    = bpf_attach_types_netkit,
+		.num_discrim_values = ARRAY_SIZE(bpf_attach_types_netkit),
+		.name		= "LINK_CREATE/NETKIT",
+		.fields		= bpf_attr_LINK_CREATE_NETKIT_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_LINK_CREATE_NETKIT_fields),
+		.effective_size	= offsetof(union bpf_attr,
+					   link_create.netkit.expected_revision) +
+				  sizeof(((union bpf_attr *)NULL)
+					 ->link_create.netkit.expected_revision),
+	},
+	{
+		.discrim_values	    = bpf_attach_types_cgroup,
+		.num_discrim_values = ARRAY_SIZE(bpf_attach_types_cgroup),
+		.name		= "LINK_CREATE/CGROUP",
+		.fields		= bpf_attr_LINK_CREATE_CGROUP_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_LINK_CREATE_CGROUP_fields),
+		.effective_size	= offsetof(union bpf_attr,
+					   link_create.cgroup.expected_revision) +
+				  sizeof(((union bpf_attr *)NULL)
+					 ->link_create.cgroup.expected_revision),
 	},
 };
 
