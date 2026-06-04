@@ -53,8 +53,12 @@
  *                 the path the CVE corpus drivers/target/iscsi work
  *                 exercises -- post-login command dispatch.
  *
- *   Subsequent commits add a chaos toggle that retains the random-byte
- *   coverage the older probe was producing.
+ * Chaos toggle: every ISCSI_WALKER_CHAOS_MODULO=5 invocations the
+ * walker skips the state-machine walk entirely and sends a burst of
+ * wholly-random 48-byte BHS PDUs.  Keeps the front-door BHS / parser
+ * coverage the older iscsi_target_probe random-spam path was
+ * producing intact, so the new walker doesn't silently erode the
+ * coverage we had before.
  *
  * Safety:
  *
@@ -399,6 +403,18 @@ static const unsigned char ffp_opcodes[] = {
  * any one iteration unbounded. */
 #define FFP_PDUS_MAX	4U
 
+/* Chaos toggle: every Nth invocation of the walker bypasses the
+ * state-machine path entirely and instead emits a burst of wholly-
+ * random BHS PDUs (no Login walk, no FFP fuzz, just random bytes
+ * straight at the BHS validators).  5 -> 20% chaos / 80% walk. */
+#define ISCSI_WALKER_CHAOS_MODULO	5U
+
+/* Per-iteration chaos burst: 1-3 random BHS PDUs.  Smaller than the
+ * FFP burst because the chaos path is purely about retaining the
+ * front-door coverage the older iscsi_target_probe produced; the
+ * walker's main value is post-Login depth, not random spam volume. */
+#define CHAOS_PDUS_MAX	3U
+
 /* Build a FullFeaturePhase fuzz PDU.  Starts from a wholly-random BHS,
  * then biases the opcode 7/8 of the time into the FFP-valid set and
  * pins the AHS length / ISID / TSIH fields to values that won't cause
@@ -432,14 +448,38 @@ static size_t build_ffp_fuzz(unsigned char *out, uint8_t isid[6])
 	return ISCSI_BHS_LEN + padded;
 }
 
+/* Chaos-path PDU: a wholly-random 48-byte BHS with the opcode masked
+ * into the 0x00..0x1f range so the BHS opcode validator has a
+ * non-trivial chance of selecting a defined initiator opcode.  AHS
+ * length is masked small and DataSegmentLength is bounded so the
+ * target doesn't sit waiting for megabytes of data we'll never send.
+ * No data segment is emitted -- the chaos path is BHS-only, mirroring
+ * the random-spam arm of the older iscsi_target_probe. */
+static size_t build_chaos_bhs(unsigned char *out)
+{
+	rnd_fill(out, ISCSI_BHS_LEN);
+	out[0] = (unsigned char)((out[0] & 0x40) | (out[0] & 0x1f));
+	out[4] = (unsigned char)(out[4] & 0x03);
+	out[5] = 0;
+	out[6] = 0;
+	out[7] = (unsigned char)(out[7] & 0x0f);
+	return ISCSI_BHS_LEN;
+}
+
 bool iscsi_login_walker(struct childdata *child)
 {
+	/* Per-child invocation counter for the chaos toggle.  Single-
+	 * threaded inside a child (iscsi_target_probe does the same with
+	 * its plain `static bool ns_unsupported`), so no atomic needed. */
+	static unsigned int invocation_counter;
+
 	unsigned char pdu[ISCSI_BHS_LEN + LOGIN_TEXT_MAX];
 	unsigned int iters;
 	unsigned int i;
 	int fd;
 	ssize_t n;
 	size_t pdu_len;
+	bool chaos;
 
 	(void)child;
 
@@ -448,6 +488,11 @@ bool iscsi_login_walker(struct childdata *child)
 
 	if (ns_unsupported)
 		return true;
+
+	chaos = ((invocation_counter++ % ISCSI_WALKER_CHAOS_MODULO) == 0);
+	if (chaos)
+		__atomic_add_fetch(&shm->stats.iscsi_walker_chaos_runs, 1,
+				   __ATOMIC_RELAXED);
 
 	iters = BUDGETED(CHILD_OP_ISCSI_LOGIN_WALKER,
 			 JITTER_RANGE(ISCSI_WALKER_ITERS_BASE));
@@ -471,6 +516,29 @@ bool iscsi_login_walker(struct childdata *child)
 		}
 		__atomic_add_fetch(&shm->stats.iscsi_walker_connected, 1,
 				   __ATOMIC_RELAXED);
+
+		if (chaos) {
+			unsigned int chaos_pdus = 1 + rnd_modulo_u32(CHAOS_PDUS_MAX);
+			unsigned int j;
+
+			for (j = 0; j < chaos_pdus; j++) {
+				pdu_len = build_chaos_bhs(pdu);
+				n = send(fd, pdu, pdu_len,
+					 MSG_DONTWAIT | MSG_NOSIGNAL);
+				if (n > 0) {
+					__atomic_add_fetch(&shm->stats.iscsi_walker_chaos_pdus,
+							   1, __ATOMIC_RELAXED);
+					__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
+							   (unsigned long)n,
+							   __ATOMIC_RELAXED);
+				}
+				iscsi_drain(fd);
+			}
+
+			(void)shutdown(fd, SHUT_RDWR);
+			close(fd);
+			continue;
+		}
 
 		/* Fresh ISID per iteration; the three PDUs in the walk all
 		 * carry the same ISID so the kernel treats them as one

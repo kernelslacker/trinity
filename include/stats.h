@@ -1499,6 +1499,8 @@ struct stats_s {
 	unsigned long iscsi_walker_state_op_neg_sent;		/* OP_NEG transit PDU (T=1 CSG=1 NSG=3) sent */
 	unsigned long iscsi_walker_ffp_iters;			/* iterations that entered the FFP-fuzz phase */
 	unsigned long iscsi_walker_ffp_pdus;			/* FFP fuzz PDUs send() returned >0 */
+	unsigned long iscsi_walker_chaos_runs;			/* invocations that took the chaos path (1-in-N) */
+	unsigned long iscsi_walker_chaos_pdus;			/* random-BHS PDUs send() returned >0 in chaos mode */
 	unsigned long iscsi_walker_bytes_out;			/* total bytes successfully send()'d */
 	unsigned long iscsi_walker_bytes_in;			/* total bytes successfully recv()'d */
 
