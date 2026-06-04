@@ -15,11 +15,13 @@
  */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "deferred-free.h"
@@ -570,32 +572,127 @@ static uint64_t occupied_mask;
  * async-signal-safe so these are safe to call from anywhere
  * deferred_free_* is reachable.
  *
- * ring_unlock() returns false on mprotect failure so callers bail out
- * before touching ring[].  Failure is rare but does happen under
- * fuzzing pressure (kernel VMA-limit ENOMEM when the per-process
- * map_count cap is approached, transient EAGAIN under memory pressure,
- * or a not-yet-sanitised mm-syscall slipping past the shared-region
- * filter and modifying the ring's VMA).  When the original bracket
- * landed it logged-and-returned, leaving the page at PROT_NONE while
- * the caller fell through into the ring access loop -- ~311 self-
- * inflicted SEGV_ACCERR crashes per 1.5h fuzz run with si_addr
- * matching the ring page, split across deferred_free_tick+0x7e
- * (the ring[i].ttl read in the loop body) and deferred_free_enqueue
- * +0x89 (the ring[i].ptr == NULL slot scan).
+ * ring_unlock() returns RING_UNLOCK_OK on success, RING_UNLOCK_ENOMEM
+ * when the kernel rejected the protection change for VMA-budget
+ * reasons (per-process /proc/sys/vm/max_map_count cap approached, or
+ * splitting the surrounding mapping would overshoot it), and
+ * RING_UNLOCK_FAIL on any other failure.  Callers handle the three
+ * cases differently: ENOMEM flips the per-child drain-aggressive
+ * latch so the next tick drains the queue regardless of TTL (the
+ * sooner the ring empties, the sooner the held-back glibc-arena
+ * chunks can be returned to the kernel and the VMA budget recovers);
+ * generic FAIL just falls back to immediate free for this ptr;
+ * either way the caller bails before touching ring[].  Pre-trio the
+ * function returned bool, fold both fail cases into one path, and the
+ * VMA-exhaustion class observed in the 22:38 run (113/362 bug-logs,
+ * 7424 "mprotect RW failed" lines) survived as a silent leak of
+ * queued ptrs while the original bracket landed it logged-and-
+ * returned, leaving the page at PROT_NONE while the caller fell
+ * through -- ~311 self-inflicted SEGV_ACCERR crashes per 1.5h fuzz
+ * run, split across deferred_free_tick+0x7e (the ring[i].ttl read in
+ * the loop body) and deferred_free_enqueue+0x89 (the ring[i].ptr ==
+ * NULL slot scan).  The current routing keeps the page PROT_NONE
+ * (no caller proceeds on failure) but stops adding queue pressure
+ * while the kernel is at the VMA limit.
  */
-static bool ring_unlock(void)
+enum ring_unlock_result {
+	RING_UNLOCK_OK,
+	RING_UNLOCK_ENOMEM,
+	RING_UNLOCK_FAIL,
+};
+
+static enum ring_unlock_result ring_unlock(void)
 {
 	if (mprotect(ring, ring_bytes, PROT_READ | PROT_WRITE) != 0) {
-		outputerr("deferred_free: mprotect RW failed: errno=%d\n", errno);
-		return false;
+		int e = errno;
+
+		outputerr("deferred_free: mprotect RW failed: errno=%d\n", e);
+		return (e == ENOMEM) ? RING_UNLOCK_ENOMEM : RING_UNLOCK_FAIL;
 	}
-	return true;
+	return RING_UNLOCK_OK;
 }
 
 static void ring_lock(void)
 {
 	if (mprotect(ring, ring_bytes, PROT_NONE) != 0)
 		outputerr("deferred_free: mprotect NONE failed: errno=%d\n", errno);
+}
+
+/*
+ * Per-process kernel VMA budget, read once from
+ * /proc/sys/vm/max_map_count at parent init and inherited by every
+ * forked child via COW BSS.  The soft cap below (see
+ * deferred_free_enqueue) compares the in-ring entry count against
+ * g_max_vmas/2 to keep deferred-free's contribution to address-space
+ * pressure under half the per-process budget.  Default value
+ * (DEFERRED_DEFAULT_MAX_VMAS) is the Linux 6.x default for
+ * vm.max_map_count -- used if the procfs read fails for any reason
+ * (containers without /proc/sys mounted, sysctl read denied, etc.)
+ * so the bound still has a sane ceiling rather than firing on every
+ * enqueue (which would happen if g_max_vmas were left at zero).
+ */
+#define DEFERRED_DEFAULT_MAX_VMAS	65536U
+static unsigned int g_max_vmas = DEFERRED_DEFAULT_MAX_VMAS;
+
+/*
+ * Per-child sticky latch set when ring_unlock returns ENOMEM.  The
+ * next deferred_free_tick that successfully re-acquires the ring RW
+ * frees every entry regardless of TTL, then clears the latch.  This
+ * matches the "drain the deferred-free queue aggressively on ENOMEM"
+ * hard-cap policy -- holding ptrs in the ring while the kernel is
+ * short on VMA slots pins their glibc-arena chunks alive, prolonging
+ * the pressure window; draining returns them to the allocator (which
+ * can then munmap any associated arena pages) as soon as the next
+ * RW flip succeeds.  BSS-resident: each child gets its own copy via
+ * fork's COW, so a flap in one child doesn't perturb its siblings.
+ */
+static bool deferred_free_drain_aggressive;
+
+static void deferred_free_read_max_map_count(void)
+{
+	int fd;
+	char buf[32];
+	ssize_t n;
+	long v;
+
+	fd = open("/proc/sys/vm/max_map_count", O_RDONLY | O_CLOEXEC);
+	if (fd < 0) {
+		outputerr("deferred_free: open(/proc/sys/vm/max_map_count) "
+			  "failed: %s; using default %u\n",
+			  strerror(errno), g_max_vmas);
+		return;
+	}
+	n = read(fd, buf, sizeof(buf) - 1);
+	(void)close(fd);
+	if (n <= 0) {
+		outputerr("deferred_free: read(/proc/sys/vm/max_map_count) "
+			  "returned %zd; using default %u\n", n, g_max_vmas);
+		return;
+	}
+	buf[n] = '\0';
+	v = strtol(buf, NULL, 10);
+	if (v > 0 && v <= INT_MAX)
+		g_max_vmas = (unsigned int)v;
+}
+
+/*
+ * CAS the cross-fleet outstanding-VMA high-water mark up to @v.
+ * Up-only so a quiet trailing window after a peak doesn't erase the
+ * peak.  RELAXED ordering: the counter is observability, not a
+ * synchronisation primitive.
+ */
+static void deferred_free_record_outstanding(unsigned int v)
+{
+	unsigned long cur = __atomic_load_n(&shm->stats.deferred_free_outstanding_vmas,
+					    __ATOMIC_RELAXED);
+
+	while (v > cur) {
+		if (__atomic_compare_exchange_n(
+				&shm->stats.deferred_free_outstanding_vmas,
+				&cur, (unsigned long)v, false,
+				__ATOMIC_RELAXED, __ATOMIC_RELAXED))
+			return;
+	}
 }
 
 void deferred_free_init(void)
@@ -615,6 +712,15 @@ void deferred_free_init(void)
 	ring_count = 0;
 	occupied_mask = 0;
 	ring_lock();
+
+	/*
+	 * Read vm.max_map_count once in the parent so every child
+	 * inherits the same cached value via COW BSS.  Failure to read
+	 * is non-fatal: the default DEFERRED_DEFAULT_MAX_VMAS leaves
+	 * the soft cap at half the upstream default, which is
+	 * conservative without being trigger-happy.
+	 */
+	deferred_free_read_max_map_count();
 
 	/*
 	 * Cache the brk-arena extent and labeled non-brk allocator
@@ -866,13 +972,60 @@ void deferred_free_enqueue(void *ptr)
 		return;
 	}
 
-	/* If ring_unlock() fails the page stays PROT_NONE; falling
-	 * through into the slot scan would SEGV_ACCERR.  Free the ptr
-	 * directly so the caller's contract (ptr is no longer their
-	 * problem) still holds. */
-	if (!ring_unlock()) {
+	/*
+	 * Soft cap on the per-process VMA contribution of the deferred-
+	 * free path.  Each in-ring entry pins an allocation past its
+	 * natural lifetime, holding the matching glibc-arena page (and
+	 * any redzone VMA a future hardening pass might wrap around it)
+	 * resident; bounding the in-flight count at half of
+	 * /proc/sys/vm/max_map_count leaves the other half for the
+	 * fuzzer's actual mm-syscall workload.  With the current
+	 * DEFERRED_RING_SIZE of 64 the cap is non-binding under any
+	 * default max_map_count (32768+), but stays correct on systems
+	 * tuned down and would limit a future per-slot redzone variant.
+	 *
+	 * Placed AFTER alloc_track_consume so the tracking-set entry is
+	 * already drained (otherwise routing around the ring would leave
+	 * a stale alloc_track[] slot trickling out via LRU rotation);
+	 * placed BEFORE ring_unlock so the rejected enqueue does not pay
+	 * the mprotect bracket cost.
+	 */
+	if (ring_count > g_max_vmas / 2) {
+		__atomic_add_fetch(&shm->stats.deferred_free_vma_fallback_immediate,
+				   1, __ATOMIC_RELAXED);
 		free(ptr);
 		return;
+	}
+
+	/*
+	 * RING_UNLOCK_ENOMEM is the hard cap -- the kernel just told us
+	 * it can't satisfy a VMA split for the protection change.  Set
+	 * the drain-aggressive latch so the next tick frees every queued
+	 * entry regardless of TTL, bump the dedicated counter (the
+	 * existing outputerr line from ring_unlock keeps the per-event
+	 * log breadcrumb), and free this ptr immediately so the caller's
+	 * "no longer your problem" contract still holds.
+	 *
+	 * RING_UNLOCK_FAIL (any other errno) falls through to the same
+	 * immediate-free, but does NOT arm the drain latch -- a non-
+	 * ENOMEM failure is a different class (typically EACCES from a
+	 * not-yet-sanitised mm-syscall that overlapped the ring), not
+	 * a VMA-budget event.
+	 */
+	{
+		enum ring_unlock_result r = ring_unlock();
+
+		if (r == RING_UNLOCK_ENOMEM) {
+			deferred_free_drain_aggressive = true;
+			__atomic_add_fetch(&shm->stats.deferred_free_enomem_drain,
+					   1, __ATOMIC_RELAXED);
+			free(ptr);
+			return;
+		}
+		if (r != RING_UNLOCK_OK) {
+			free(ptr);
+			return;
+		}
 	}
 
 	if (ring_count == DEFERRED_RING_SIZE)
@@ -900,6 +1053,7 @@ void deferred_free_enqueue(void *ptr)
 	ring[i].ttl = RAND_RANGE(DEFERRED_TTL_MIN, DEFERRED_TTL_MAX);
 	occupied_mask |= 1ULL << i;
 	ring_count++;
+	deferred_free_record_outstanding(ring_count);
 
 	ring_lock();
 
@@ -1070,11 +1224,18 @@ void deferred_free_tick(void)
 	static unsigned int tick_count;
 	static unsigned int gc_count;
 	unsigned int i;
+	bool force_drain;
+	enum ring_unlock_result r;
 
 	/* Cheap path: ring_count is read while still locked, but it lives
 	 * in BSS (not in the protected ring), so this access is safe. */
-	if (ring_count == 0)
+	if (ring_count == 0) {
+		/* Latch can clear here too -- if ring_count already went
+		 * to zero between the ENOMEM event and this tick (eviction
+		 * or flush drained it), no work remains. */
+		deferred_free_drain_aggressive = false;
 		return;
+	}
 
 	/*
 	 * Batch ticks: run the full mprotect+walk+free bracket only on
@@ -1086,14 +1247,25 @@ void deferred_free_tick(void)
 	 *
 	 * tick_count is BSS-resident (not in the ring), and per-child by
 	 * fork's COW, so this static is safe to touch without unlocking.
+	 *
+	 * The batch divisor is bypassed when the drain-aggressive latch
+	 * is set: under VMA pressure we want to attempt the unlock on
+	 * every tick until the ring empties, so the pressure window
+	 * isn't extended by up to DEFERRED_TICK_BATCH syscalls of idle
+	 * waiting.
 	 */
-	if ((++tick_count & (DEFERRED_TICK_BATCH - 1)) != 0)
+	force_drain = deferred_free_drain_aggressive;
+	if (!force_drain &&
+	    (++tick_count & (DEFERRED_TICK_BATCH - 1)) != 0)
 		return;
 
 	/* On unlock failure the page is still PROT_NONE; bail rather
 	 * than SEGV_ACCERR in the loop below.  Entries stay queued and
-	 * will be retried on the next tick. */
-	if (!ring_unlock())
+	 * will be retried on the next tick -- the drain-aggressive
+	 * latch stays set so the next attempt also bypasses the batch
+	 * divisor. */
+	r = ring_unlock();
+	if (r != RING_UNLOCK_OK)
 		return;
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
@@ -1116,14 +1288,21 @@ void deferred_free_tick(void)
 			continue;
 		}
 
-		if (ring[i].ttl > 0) {
+		/* Under drain-aggressive, bypass the TTL countdown and
+		 * free the entry on this tick.  The redzone-equivalent
+		 * UAF-detection window is shortened for these entries, but
+		 * trading per-allocation UAF coverage for trinity survival
+		 * is the right call when the alternative is the child
+		 * aborting on the next mprotect ENOMEM. */
+		if (!force_drain && ring[i].ttl > 0) {
 			ring[i].ttl--;
 			continue;
 		}
 
-		/* TTL expired — free it.  Clear the slot BEFORE calling
-		 * the free function so that if a signal interrupts us
-		 * mid-free and we longjmp, the slot is already empty. */
+		/* TTL expired (or drain forced) — free it.  Clear the
+		 * slot BEFORE calling the free function so that if a
+		 * signal interrupts us mid-free and we longjmp, the slot
+		 * is already empty. */
 		ptr = ring[i].ptr;
 		ring[i].ptr = NULL;
 		occupied_mask &= ~(1ULL << i);
@@ -1136,6 +1315,13 @@ void deferred_free_tick(void)
 		inflight_gc_sweep();
 
 	ring_lock();
+
+	/* Drain completed (every slot we could touch is freed).  Clear
+	 * the latch so subsequent ticks return to batched cadence; if
+	 * the VMA pressure re-surfaces, the next enqueue ENOMEM will
+	 * re-arm it. */
+	if (force_drain && ring_count == 0)
+		deferred_free_drain_aggressive = false;
 }
 
 void deferred_free_flush(void)
@@ -1144,8 +1330,10 @@ void deferred_free_flush(void)
 
 	/* Called from the child exit path; if unlock fails the deferred
 	 * ptrs leak, but the child is going away so the kernel reaps
-	 * them at exit.  Better than SEGV_ACCERR-ing on the way out. */
-	if (!ring_unlock())
+	 * them at exit.  Better than SEGV_ACCERR-ing on the way out.
+	 * Treat ENOMEM and other failures identically here -- the child
+	 * is exiting, the drain-aggressive latch is moot. */
+	if (ring_unlock() != RING_UNLOCK_OK)
 		return;
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {

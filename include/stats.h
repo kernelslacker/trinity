@@ -1831,6 +1831,42 @@ struct stats_s {
 	 * heap.  See deferred-free.c clause 5. */
 	unsigned long deferred_free_reject_shared_region;
 
+	/* deferred-free ring exerts pressure on the per-process VMA budget
+	 * (/proc/sys/vm/max_map_count) via the mprotect bracket around its
+	 * mmap'd ring page -- under fuzz pressure the bracket's RW flip can
+	 * return -ENOMEM when the kernel runs out of VMA slots to split the
+	 * surrounding mapping, at which point ring_unlock fails and the
+	 * enqueue path can't access the slot.  The trio below surfaces the
+	 * bound-and-fallback path that keeps the deferred-free instrumen-
+	 * tation from killing a child whose VMA table fills up:
+	 *
+	 *   _outstanding_vmas: cross-fleet high-water mark of in-ring
+	 *     deferred-free entries.  Each entry is one held-back free that
+	 *     keeps an allocation (and its glibc-arena chunk) alive past its
+	 *     natural lifetime; the conceptual model is one outstanding VMA
+	 *     per entry, even though today's ring uses a single mprotect-
+	 *     bracketed region rather than per-slot redzone mappings.  CAS
+	 *     up-only so transient peaks survive a quieter trailing window.
+	 *
+	 *   _vma_fallback_immediate: soft-cap rejections -- enqueue saw the
+	 *     local in-ring count above max_map_count/2 and routed the ptr
+	 *     to immediate free() instead of admitting it.  The current
+	 *     ring is bounded at 64 slots so the cap only fires on systems
+	 *     with a small max_map_count (or if a future hardening pass
+	 *     starts arming per-slot redzones), but tracking it keeps the
+	 *     defensive bound observable for that case.
+	 *
+	 *   _enomem_drain: hard-cap events -- ring_unlock returned -ENOMEM
+	 *     despite the soft cap.  The enqueue path frees the current
+	 *     ptr immediately and flags the next tick to drain every queued
+	 *     entry regardless of TTL, so the deferred-free machinery stops
+	 *     adding glibc-arena pressure while the kernel reclaims VMA
+	 *     slots.  Non-zero is a real VMA-exhaustion event, not a soft
+	 *     warning. */
+	unsigned long deferred_free_outstanding_vmas;
+	unsigned long deferred_free_vma_fallback_immediate;
+	unsigned long deferred_free_enomem_drain;
+
 	/* Bumped by run_sequence_chain() when chain_corpus_pick() returns
 	 * a chain_entry whose len is zero or greater than MAX_SEQ_LEN.
 	 * The chain corpus is shared memory and tolerates lockless reads
