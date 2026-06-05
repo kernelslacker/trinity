@@ -170,14 +170,31 @@ static void send_cmsg_only(int fd, int op, const void *payload, size_t len)
 	(void)sendmsg(fd, &mh, MSG_DONTWAIT);
 }
 
+/*
+ * Per-child scratch state shared across every iteration of the outer
+ * loop.  scratch is sized for the LARGEST single buffer any send/recv
+ * shape needs (ARC_BIG_IOV_BYTES, 64K) and is reused by both the send
+ * leg (cases that need 4K or 64K) and the recv leg (cases that need
+ * up to 64K) because they run strictly sequentially within an iter.
+ * Allocated once by af_alg_recvmsg_churn() before the outer loop and
+ * freed once after it -- avoids calloc/free of 64K-class buffers on
+ * the hot per-iter path.  Only the random portion is refilled per
+ * iter; shapes/coverage are unchanged.
+ */
+struct alg_recvmsg_child_ctx {
+	unsigned char *scratch;
+};
+
 /* One sendmsg() with a rotating payload iov.  Returns true iff the
  * chosen layout is the slab-OOB-shaped 8-iov scatter (the
  * af_alg_pull_tsgl trigger shape) so the caller can bump the
- * af_alg_recvmsg_oob_iov counter for operator visibility. */
-static bool send_rotating_payload(int fd)
+ * af_alg_recvmsg_oob_iov counter for operator visibility.  The big
+ * scatter trailer and the oversize single iov both live in cctx's
+ * per-child scratch (sized for the larger of the two) so the hot
+ * send path doesn't calloc/free on every iter. */
+static bool send_rotating_payload(int fd, struct alg_recvmsg_child_ctx *cctx)
 {
 	unsigned char small_buf[1] = {0xa5};
-	unsigned char *big = NULL;
 	struct iovec iov[8];
 	struct msghdr mh = {0};
 	unsigned int shape;
@@ -199,26 +216,20 @@ static bool send_rotating_payload(int fd)
 		mh.msg_iovlen = 1;
 		break;
 	case 2:		/* 8-iov scatter, mostly empty + 4096B trailer */
-		big = calloc(1, ARC_SCATTER_TRAILER);
-		if (big == NULL)
-			return false;
-		generate_rand_bytes(big, ARC_SCATTER_TRAILER);
+		generate_rand_bytes(cctx->scratch, ARC_SCATTER_TRAILER);
 		for (i = 0; i < 7; i++) {
 			iov[i].iov_base = small_buf;
 			iov[i].iov_len = 0;
 		}
-		iov[7].iov_base = big;
+		iov[7].iov_base = cctx->scratch;
 		iov[7].iov_len = ARC_SCATTER_TRAILER;
 		mh.msg_iov = iov;
 		mh.msg_iovlen = 8;
 		oob = true;
 		break;
 	default:	/* oversize 64KB single iov */
-		big = calloc(1, ARC_BIG_IOV_BYTES);
-		if (big == NULL)
-			return false;
-		generate_rand_bytes(big, ARC_BIG_IOV_BYTES);
-		iov[0].iov_base = big;
+		generate_rand_bytes(cctx->scratch, ARC_BIG_IOV_BYTES);
+		iov[0].iov_base = cctx->scratch;
 		iov[0].iov_len = ARC_BIG_IOV_BYTES;
 		mh.msg_iov = iov;
 		mh.msg_iovlen = 1;
@@ -226,7 +237,6 @@ static bool send_rotating_payload(int fd)
 	}
 
 	(void)sendmsg(fd, &mh, MSG_DONTWAIT);
-	free(big);
 	return oob;
 }
 
@@ -249,11 +259,14 @@ static void send_empty_cmsg_no_more(int fd)
 /* recvmsg() with a rotating output iov.  Mirrors the send shapes so
  * the kernel walks both ends of the sg/tsgl rotation logic.  Each
  * shape is accounted on its own counter so operators can see which
- * recv-side path the kernel actually walked when a crash lands. */
-static void recv_rotating(int fd)
+ * recv-side path the kernel actually walked when a crash lands.  The
+ * output buffer for every non-zero shape is carved out of cctx's
+ * per-child scratch (the many-small case packs 16x64=1024 into the
+ * head of the same buffer), so the hot recv path doesn't calloc/free
+ * on every iter. */
+static void recv_rotating(int fd, struct alg_recvmsg_child_ctx *cctx)
 {
 	unsigned char tiny[1];
-	unsigned char *big = NULL;
 	struct iovec iov[16];
 	struct msghdr mh = {0};
 	unsigned int shape, i;
@@ -269,10 +282,7 @@ static void recv_rotating(int fd)
 				   1, __ATOMIC_RELAXED);
 		break;
 	case 1:		/* oversize single iov */
-		big = calloc(1, ARC_BIG_IOV_BYTES);
-		if (big == NULL)
-			return;
-		iov[0].iov_base = big;
+		iov[0].iov_base = cctx->scratch;
 		iov[0].iov_len = ARC_BIG_IOV_BYTES;
 		mh.msg_iov = iov;
 		mh.msg_iovlen = 1;
@@ -280,21 +290,15 @@ static void recv_rotating(int fd)
 				   1, __ATOMIC_RELAXED);
 		break;
 	case 2:		/* many small iovs */
-		big = calloc(16, 64);
-		if (big == NULL)
-			return;
 		for (i = 0; i < 16; i++) {
-			iov[i].iov_base = big + i * 64;
+			iov[i].iov_base = cctx->scratch + i * 64;
 			iov[i].iov_len = 64;
 		}
 		mh.msg_iov = iov;
 		mh.msg_iovlen = 16;
 		break;
 	default:	/* mismatched read sizes */
-		big = calloc(1, ARC_BIG_IOV_BYTES);
-		if (big == NULL)
-			return;
-		iov[0].iov_base = big;
+		iov[0].iov_base = cctx->scratch;
 		iov[0].iov_len = (size_t)RAND_RANGE(1U, ARC_BIG_IOV_BYTES);
 		mh.msg_iov = iov;
 		mh.msg_iovlen = 1;
@@ -302,7 +306,6 @@ static void recv_rotating(int fd)
 	}
 
 	(void)recvmsg(fd, &mh, MSG_DONTWAIT);
-	free(big);
 }
 
 /*
@@ -393,7 +396,8 @@ static int alg_recvmsg_iter_arm(struct alg_recvmsg_iter_ctx *ictx)
  * ignored.  keybuf/ivbuf are stack-local: only the drive phase reads
  * them, so they don't belong in the cross-phase ictx.
  */
-static void alg_recvmsg_iter_drive(struct alg_recvmsg_iter_ctx *ictx)
+static void alg_recvmsg_iter_drive(struct alg_recvmsg_iter_ctx *ictx,
+				   struct alg_recvmsg_child_ctx *cctx)
 {
 	unsigned char keybuf[ARC_KEY_MAX];
 	unsigned char ivbuf[ARC_IV_MAX];
@@ -420,7 +424,7 @@ static void alg_recvmsg_iter_drive(struct alg_recvmsg_iter_ctx *ictx)
 				   1, __ATOMIC_RELAXED);
 	}
 
-	if (send_rotating_payload(ictx->child_fd))
+	if (send_rotating_payload(ictx->child_fd, cctx))
 		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_oob_iov,
 				   1, __ATOMIC_RELAXED);
 
@@ -448,7 +452,7 @@ static void alg_recvmsg_iter_teardown(struct alg_recvmsg_iter_ctx *ictx)
 		close(ictx->parent_fd);
 }
 
-static void iter_one(void)
+static void iter_one(struct alg_recvmsg_child_ctx *cctx)
 {
 	struct alg_recvmsg_iter_ctx ictx = {
 		.parent_fd = -1,
@@ -461,8 +465,8 @@ static void iter_one(void)
 	if (alg_recvmsg_iter_arm(&ictx) != 0)
 		goto out;
 
-	alg_recvmsg_iter_drive(&ictx);
-	recv_rotating(ictx.child_fd);
+	alg_recvmsg_iter_drive(&ictx, cctx);
+	recv_rotating(ictx.child_fd, cctx);
 
 out:
 	alg_recvmsg_iter_teardown(&ictx);
@@ -470,6 +474,7 @@ out:
 
 bool af_alg_recvmsg_churn(struct childdata *child)
 {
+	struct alg_recvmsg_child_ctx cctx = { .scratch = NULL };
 	struct timespec t0;
 	unsigned int outer_iters, i;
 
@@ -482,6 +487,15 @@ bool af_alg_recvmsg_churn(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
+
+	/* One scratch allocation per child invocation, sized for the
+	 * largest single buffer any send/recv shape uses.  Reused across
+	 * every iter so the hot path doesn't calloc/free 64K-class
+	 * buffers each pass.  Failure to allocate is treated like the
+	 * pre-extraction per-shape calloc failure (skip the work). */
+	cctx.scratch = calloc(1, ARC_BIG_IOV_BYTES);
+	if (cctx.scratch == NULL)
+		return true;
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t0) < 0) {
 		t0.tv_sec = 0;
@@ -498,11 +512,12 @@ bool af_alg_recvmsg_churn(struct childdata *child)
 	for (i = 0; i < outer_iters; i++) {
 		if ((unsigned long long)ns_since(&t0) >= ARC_WALL_CAP_NS)
 			break;
-		iter_one();
+		iter_one(&cctx);
 		if (alg_unsupported)
 			break;
 	}
 
+	free(cctx.scratch);
 	return true;
 }
 
