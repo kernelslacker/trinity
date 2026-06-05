@@ -410,12 +410,16 @@ static void pdpc_modprobe_netdevsim_once(void)
 	(void)waitpid_eintr(pid, &status, 0);
 }
 
-/* atexit cleanup: switch back into the latched netns and del each
- * spawned netdevsim bus device.  Best-effort; if setns fails the
- * device sticks around until the netdevsim module is unloaded.  Using
- * atexit rather than per-iter cleanup so the latched bus_id set
- * persists for the life of the trinity child worker. */
-static void pdpc_cleanup_atexit(void)
+/* Per-child cleanup: switch back into the latched netns and del each
+ * spawned netdevsim bus device, then close the latched netns fd.
+ * Best-effort; if setns fails the device sticks around until the
+ * netdevsim module is unloaded.  Invoked from child_process()'s out:
+ * path — worker children call _exit() which bypasses atexit handlers,
+ * so the cleanup has to be wired into the explicit per-child exit
+ * path rather than registered with atexit().  Idempotent: the state
+ * is reset so a second call from a partial-setup unwind followed by
+ * the out: path call is a no-op. */
+void psp_key_rotate_cleanup_child(void)
 {
 	char buf[32];
 	unsigned int i;
@@ -427,6 +431,7 @@ static void pdpc_cleanup_atexit(void)
 			       (unsigned int)pdpc_bus_ids[i]);
 		(void)pdpc_sysfs_write_str(PDPC_NETDEVSIM_DEL, buf);
 	}
+	pdpc_n_instances = 0;
 	if (pdpc_latched_netns_fd >= 0) {
 		close(pdpc_latched_netns_fd);
 		pdpc_latched_netns_fd = -1;
@@ -489,11 +494,14 @@ static bool pdpc_setup_once(void)
 	}
 
 	if (pdpc_n_instances < 2U) {
+		/* Partial setup: unwind the devices we did manage to
+		 * create and drop the latched netns fd so a failed setup
+		 * doesn't leak resources per child. */
+		psp_key_rotate_cleanup_child();
 		ns_unsupported_psp_devlink_port = true;
 		return false;
 	}
 
-	(void)atexit(pdpc_cleanup_atexit);
 	pdpc_setup_done = true;
 	return true;
 }
@@ -1130,6 +1138,10 @@ bool psp_key_rotate(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
+}
+
+void psp_key_rotate_cleanup_child(void)
+{
 }
 
 #endif

@@ -889,6 +889,7 @@ bool vsock_transport_churn(struct childdata *child);
 bool bridge_vlan_churn(struct childdata *child);
 bool igmp_mld_source_churn(struct childdata *child);
 bool psp_key_rotate(struct childdata *child);
+void psp_key_rotate_cleanup_child(void);
 bool afxdp_churn(struct childdata *child);
 bool kvm_run_churn(struct childdata *child);
 bool nl80211_churn(struct childdata *child);
