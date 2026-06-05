@@ -5681,6 +5681,67 @@ static void dump_stats_corpus_and_taint_tail(void)
 			       saves_pc, saves_cmp, cmp_wins);
 		}
 
+		/*
+		 * Per-tag productivity for the C.2b post-fill struct-field
+		 * mutator.  Independent from the per-op MUT_NUM_OPS counters
+		 * dumped above -- different injection point, different
+		 * histogram axis.  Suppressed when the aggregate trial count
+		 * is zero so a build / fleet that never invoked the path
+		 * stays clean; a single non-zero slot brings the whole
+		 * histogram into view so per-tag relative productivity
+		 * (FT_FLAGS bit-flips vs FT_RAW noise) is greppable.
+		 * Skip-listed tags (FT_PTR_*, FT_LEN_*, FT_FD, FT_ADDRESS,
+		 * FT_BPF_PROGRAM, FT_TAGGED_UNION) stay zero by design and
+		 * are silently skipped to keep the output compact.
+		 */
+		{
+			static const char *const tag_names[FT_NUM_TAGS] = {
+				[FT_RAW]		= "raw",
+				[FT_ENUM]		= "enum",
+				[FT_RANGE]		= "range",
+				[FT_FLAGS]		= "flags",
+				[FT_PTR_BYTES]		= "ptr_bytes",
+				[FT_PTR_ARRAY]		= "ptr_array",
+				[FT_PTR_STRUCT]		= "ptr_struct",
+				[FT_LEN_BYTES]		= "len_bytes",
+				[FT_LEN_COUNT]		= "len_count",
+				[FT_FD]			= "fd",
+				[FT_MAGIC]		= "magic",
+				[FT_VERSION_MAGIC]	= "vermagic",
+				[FT_ADDRESS]		= "address",
+				[FT_TAGGED_UNION]	= "tagged_union",
+				[FT_BPF_PROGRAM]	= "bpf_program",
+				[FT_VOCAB]		= "vocab",
+			};
+			unsigned long sf_total = 0;
+			unsigned int t;
+
+			for (t = 0; t < FT_NUM_TAGS; t++)
+				sf_total += __atomic_load_n(
+					&minicorpus_shm->mut_struct_field_trials[t],
+					__ATOMIC_RELAXED);
+
+			if (sf_total > 0) {
+				output(0, "\nStruct-field mutator wins/trials (per tag):\n");
+				for (t = 0; t < FT_NUM_TAGS; t++) {
+					unsigned long tr = __atomic_load_n(
+						&minicorpus_shm->mut_struct_field_trials[t],
+						__ATOMIC_RELAXED);
+					unsigned long wn = __atomic_load_n(
+						&minicorpus_shm->mut_struct_field_wins[t],
+						__ATOMIC_RELAXED);
+					unsigned long tag_pct10;
+
+					if (tr == 0 || tag_names[t] == NULL)
+						continue;
+					tag_pct10 = wn * 1000UL / tr;
+					output(0, "  %-12s %lu/%lu (%lu.%lu%%)\n",
+					       tag_names[t], wn, tr,
+					       tag_pct10 / 10, tag_pct10 % 10);
+				}
+			}
+		}
+
 		{
 			unsigned long c_iter = __atomic_load_n(
 				&minicorpus_shm->chain_iter_count,

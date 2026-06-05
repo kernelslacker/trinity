@@ -454,6 +454,19 @@ static unsigned int this_replay_source_slot;
 static bool this_attrib_cmp_source;
 
 /*
+ * Process-local C.2b post-fill struct-field attribution stash.  Set by
+ * minicorpus_struct_field_attrib() when struct_field_mutate_one applies
+ * a per-tag primitive; consumed and cleared by
+ * minicorpus_mut_attrib_commit().  At most one tag per call by
+ * construction -- the gated entry point mutates exactly one field per
+ * invocation -- so a simple (set, tag) pair captures everything the
+ * commit needs.  Same per-process / fork-then-single-threaded guarantee
+ * as the rest of the attribution stash.
+ */
+static enum field_tag this_struct_field_tag;
+static bool this_struct_field_set;
+
+/*
  * Floor on the per-case weight in the weighted scheduler.
  *
  * Weights are scaled to [0, 1000] (see weighted_pick_case() comment).
@@ -545,6 +558,12 @@ void minicorpus_mut_attrib_set_cmp_source(void)
 	this_attrib_cmp_source = true;
 }
 
+void minicorpus_struct_field_attrib(enum field_tag tag)
+{
+	this_struct_field_tag = tag;
+	this_struct_field_set = true;
+}
+
 void minicorpus_mut_attrib_commit(bool found_new)
 {
 	unsigned int i;
@@ -554,6 +573,7 @@ void minicorpus_mut_attrib_commit(bool found_new)
 		 * commit() doesn't see stale state from before init. */
 		this_attrib_cmp_source = false;
 		this_replay_source_tracked = false;
+		this_struct_field_set = false;
 		for (i = 0; i < MUT_NUM_OPS; i++)
 			mut_structured_attrib[i] = 0;
 		return;
@@ -672,6 +692,34 @@ void minicorpus_mut_attrib_commit(bool found_new)
 				&minicorpus_shm->mut_attrib_cmp_wins,
 				1UL, __ATOMIC_RELAXED);
 		this_attrib_cmp_source = false;
+	}
+
+	/*
+	 * Per-tag attribution for the C.2b post-fill struct-field mutator.
+	 * Exactly one tag per call by construction (struct_field_mutate_one
+	 * picks at most one field per invocation), so the stash is a simple
+	 * (set, tag) pair.  Trials bump unconditionally on a set stash --
+	 * the stash being set IS the "we did a mutation" signal -- and wins
+	 * bump only on found_new.  Independent of the per-syscall-replay
+	 * baseline gate used by the MUT_NUM_OPS counters above: post-fill
+	 * mutation runs on fresh-fill calls, never on replay, so there is
+	 * no per-entry baseline to subtract.  Out-of-range tag bytes are
+	 * defensively rejected before the shm write so a future caller
+	 * passing a typo'd tag can't corrupt a neighbouring counter slot.
+	 */
+	if (this_struct_field_set) {
+		unsigned int tag = (unsigned int) this_struct_field_tag;
+
+		if (tag < FT_NUM_TAGS) {
+			__atomic_fetch_add(
+				&minicorpus_shm->mut_struct_field_trials[tag],
+				1UL, __ATOMIC_RELAXED);
+			if (found_new)
+				__atomic_fetch_add(
+					&minicorpus_shm->mut_struct_field_wins[tag],
+					1UL, __ATOMIC_RELAXED);
+		}
+		this_struct_field_set = false;
 	}
 }
 

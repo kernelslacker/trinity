@@ -1534,47 +1534,131 @@ static void mutate_field_raw(unsigned char *buf, const struct struct_field *f)
 }
 
 /*
- * Build a candidate index list of mutable fields within a single
- * variant-resolved field array.  Skip-list discipline lives here: any
- * tag for which field_tag_is_mutable_c2b() returns false (PTR/LEN/FD/
- * ADDRESS/BPF_PROGRAM/TAGGED_UNION as well as the not-yet-mutable
- * future tags) never becomes a candidate, so the picker can't waste a
- * trial on a "selected then bailed" field.  Bounds-checked against the
- * post-fill buffer size for the same reason struct_fill_passes() does:
- * a field whose end lies past the buffer cannot be safely read or
- * written.  Candidate weights default to one when the catalog leaves
- * mutate_weight at zero so the early scaffolding stays pickable.
+ * Build a candidate list of mutable fields reachable from buf via the
+ * cataloged struct descriptor, walking FT_PTR_STRUCT children up to a
+ * fixed depth.  Skip-list discipline lives here: any tag for which
+ * field_tag_is_mutable_c2b() returns false (PTR/LEN/FD/ADDRESS/
+ * BPF_PROGRAM/TAGGED_UNION as well as the not-yet-mutable future tags)
+ * never becomes a candidate, so the picker can't waste a trial on a
+ * "selected then bailed" field.
+ *
+ * Each candidate remembers the buffer it lives in alongside the field
+ * pointer -- after the cross-depth weighted pick, the dispatch needs
+ * to know which buffer to mutate.  Bounds-checked at each level
+ * against that buffer's size for the same reason struct_fill_passes
+ * is: a field whose end lies past the local buffer cannot be safely
+ * read or written.  Candidate weights default to one when the catalog
+ * leaves mutate_weight at zero so the early scaffolding stays
+ * pickable.
  */
 struct mutate_candidate {
+	unsigned char *buf;
 	const struct struct_field *field;
 	unsigned int weight;
 };
 
-#define STRUCT_MUTATE_MAX_CANDIDATES	STRUCT_FILL_MAX_FIELDS
+/*
+ * Depth cap for the recursive walk: parent + two child levels (depths
+ * 0, 1, 2).  Each level can in principle contribute STRUCT_FILL_MAX_FIELDS
+ * candidates; multiply for the upper bound on the candidate array.
+ * Catalog structs today reach at most 2 levels (msghdr -> iovec); the
+ * extra slot is a forward-compat safety margin for future deeper
+ * nests.  Bounded recursion is also the cyclic-catalog safety net --
+ * a future cyclic entry can't trap the collector beyond the cap.
+ */
+#define STRUCT_MUTATE_DEPTH_CAP		3U
+#define STRUCT_MUTATE_MAX_CANDIDATES	(STRUCT_FILL_MAX_FIELDS * \
+					 STRUCT_MUTATE_DEPTH_CAP)
 
-static unsigned int collect_mutable_candidates(unsigned int size,
-					       const struct struct_field *fields,
-					       unsigned int n,
+/*
+ * Test-only lookup override.  Trinity has no separate unit-test
+ * binary, so the depth-walk self-test must drive collect_candidates
+ * over a sandbox catalog without polluting the real struct_catalog
+ * lookup table.  Setting this pointer redirects the FT_PTR_STRUCT
+ * child-desc resolution path; cleared after the test so production
+ * callers see struct_catalog_lookup unchanged.  Never set outside the
+ * self-test.
+ */
+static const struct struct_desc *(*mutate_struct_lookup_override)(const char *);
+
+static const struct struct_desc *mutate_lookup_desc(const char *name)
+{
+	if (mutate_struct_lookup_override != NULL)
+		return mutate_struct_lookup_override(name);
+	return struct_catalog_lookup(name);
+}
+
+static unsigned int collect_mutable_candidates(unsigned char *buf,
+					       unsigned int size,
+					       const struct struct_desc *desc,
+					       struct syscallrecord *rec,
+					       unsigned int depth,
 					       struct mutate_candidate *out,
 					       unsigned int out_max)
 {
+	const struct union_variant *variant;
+	const struct struct_field *fields;
+	unsigned int n_fields;
 	unsigned int collected = 0;
 	unsigned int i;
 
-	if (n > STRUCT_FILL_MAX_FIELDS)
-		n = STRUCT_FILL_MAX_FIELDS;
+	if (buf == NULL || desc == NULL)
+		return 0;
+	if (depth >= STRUCT_MUTATE_DEPTH_CAP)
+		return 0;
 
-	for (i = 0; i < n && collected < out_max; i++) {
+	variant = struct_desc_resolve_variant(desc, rec, buf);
+	if (variant != NULL) {
+		fields = variant->fields;
+		n_fields = variant->num_fields;
+	} else {
+		fields = desc->fields;
+		n_fields = desc->num_fields;
+	}
+	if (n_fields > STRUCT_FILL_MAX_FIELDS)
+		n_fields = STRUCT_FILL_MAX_FIELDS;
+
+	for (i = 0; i < n_fields && collected < out_max; i++) {
 		const struct struct_field *f = &fields[i];
 
 		if (f->offset + f->size > size)
 			continue;
-		if (!field_tag_is_mutable_c2b(f->tag))
-			continue;
 
-		out[collected].field = f;
-		out[collected].weight = f->mutate_weight ? f->mutate_weight : 1U;
-		collected++;
+		if (field_tag_is_mutable_c2b(f->tag)) {
+			out[collected].buf = buf;
+			out[collected].field = f;
+			out[collected].weight =
+				f->mutate_weight ? f->mutate_weight : 1U;
+			collected++;
+			continue;
+		}
+
+		/*
+		 * Walk FT_PTR_STRUCT children to depth STRUCT_MUTATE_DEPTH_CAP.
+		 * NULL child pointer (optional rolled absent at fill time)
+		 * has nothing to mutate; uncataloged or zero-sized target
+		 * has no schema to walk.  Both skip silently rather than
+		 * fail loud -- a depth-walk that aborts on a single
+		 * missing leaf would starve every other reachable field.
+		 */
+		if (f->tag == FT_PTR_STRUCT) {
+			const struct struct_desc *child_desc;
+			unsigned char *child_buf;
+
+			child_desc = mutate_lookup_desc(f->u.ptr_struct.struct_name);
+			if (child_desc == NULL || child_desc->struct_size == 0)
+				continue;
+
+			child_buf = (unsigned char *)(uintptr_t)
+				read_field_uint(buf, f);
+			if (child_buf == NULL)
+				continue;
+
+			collected += collect_mutable_candidates(
+				child_buf, child_desc->struct_size,
+				child_desc, rec, depth + 1,
+				out + collected, out_max - collected);
+		}
 	}
 	return collected;
 }
@@ -1583,9 +1667,10 @@ static unsigned int collect_mutable_candidates(unsigned int size,
  * Weighted pick over the collected candidate set.  Same uniform-falls-
  * out-when-equal-weights behaviour as the other weighted pickers in the
  * codebase; an all-zero weight set is impossible because the collector
- * substitutes 1 for an unset mutate_weight.
+ * substitutes 1 for an unset mutate_weight.  Returns a pointer into the
+ * caller's candidate array; the (buf, field) pair both come from there.
  */
-static const struct struct_field *
+static const struct mutate_candidate *
 weighted_pick_candidate(const struct mutate_candidate *cands, unsigned int n)
 {
 	unsigned long total = 0;
@@ -1602,9 +1687,9 @@ weighted_pick_candidate(const struct mutate_candidate *cands, unsigned int n)
 	for (i = 0; i < n; i++) {
 		accum += cands[i].weight;
 		if (r < accum)
-			return cands[i].field;
+			return &cands[i];
 	}
-	return cands[n - 1].field;
+	return &cands[n - 1];
 }
 
 /*
@@ -1644,36 +1729,27 @@ static void mutate_dispatch_one(unsigned char *buf,
 }
 
 /*
- * Variant-resolve, collect mutable candidates from the resolved
- * fields[], weight-pick one, dispatch.  No gate roll -- callers
- * (public entry point + self-test) own the gating decision.  Returns
- * the winning field for the self-test's invariant assertions; NULL
- * when no mutable candidate existed.
+ * Variant-resolve at each level, collect mutable candidates across the
+ * nested struct chain (depth cap STRUCT_MUTATE_DEPTH_CAP), weight-pick
+ * one, dispatch against the winning candidate's buffer (which may be a
+ * child sub-buffer reachable via FT_PTR_STRUCT, not the top-level buf).
+ * Bumps the per-tag attribution stash before returning so the next
+ * minicorpus_mut_attrib_commit folds the trial into the per-tag
+ * histogram.  No gate roll -- callers (public entry point +
+ * self-test) own the gating decision.  Returns the winning candidate
+ * for the self-test's invariant assertions; NULL when no mutable
+ * candidate existed across the whole reachable chain.
  */
-static const struct struct_field *
+static const struct mutate_candidate *
 mutate_one_unconditional(unsigned char *buf, unsigned int size,
 			 const struct struct_desc *desc,
 			 struct syscallrecord *rec)
 {
-	const struct union_variant *variant;
-	const struct struct_field *fields;
-	const struct struct_field *winner;
 	struct mutate_candidate cands[STRUCT_MUTATE_MAX_CANDIDATES];
-	unsigned int n_fields, n_cands;
+	const struct mutate_candidate *winner;
+	unsigned int n_cands;
 
-	if (buf == NULL || desc == NULL)
-		return NULL;
-
-	variant = struct_desc_resolve_variant(desc, rec, buf);
-	if (variant != NULL) {
-		fields = variant->fields;
-		n_fields = variant->num_fields;
-	} else {
-		fields = desc->fields;
-		n_fields = desc->num_fields;
-	}
-
-	n_cands = collect_mutable_candidates(size, fields, n_fields,
+	n_cands = collect_mutable_candidates(buf, size, desc, rec, 0,
 					     cands, STRUCT_MUTATE_MAX_CANDIDATES);
 	if (n_cands == 0)
 		return NULL;
@@ -1682,7 +1758,8 @@ mutate_one_unconditional(unsigned char *buf, unsigned int size,
 	if (winner == NULL)
 		return NULL;
 
-	mutate_dispatch_one(buf, winner);
+	mutate_dispatch_one(winner->buf, winner->field);
+	minicorpus_struct_field_attrib(winner->field->tag);
 	return winner;
 }
 
@@ -1985,6 +2062,265 @@ static void selftest_skiplist(void)
 		BUG("struct_field_mutate_one mutated a skip-listed field");
 }
 
+/*
+ * Variant-scope invariant: when the resolved desc carries variants
+ * keyed off a buffer-derived discriminator, collect_mutable_candidates
+ * must only emit fields from the resolved variant -- never the parent's
+ * shared field list, never sibling variants.  A regression that
+ * forgot to resolve the variant (passing NULL buf, or skipping the
+ * resolver entirely) would silently splatter mutations across the
+ * dead union envelope.
+ *
+ * Builds a sandbox tagged-union desc with two variants keyed on byte
+ * zero (1 -> "alpha" variant, 2 -> "beta" variant); flips the
+ * discriminator and asserts the candidate set names the matching
+ * field exclusively.
+ */
+static void selftest_variant_scope(void)
+{
+	static const struct struct_field alpha_fields[] = {
+		{
+			.name		= "alpha",
+			.offset		= 4,
+			.size		= 4,
+			.tag		= FT_FLAGS,
+			.mutate_weight	= 1,
+			.u.flags	= { .mask = 0xFFU },
+		},
+	};
+	static const struct struct_field beta_fields[] = {
+		{
+			.name		= "beta",
+			.offset		= 4,
+			.size		= 4,
+			.tag		= FT_FLAGS,
+			.mutate_weight	= 1,
+			.u.flags	= { .mask = 0xFFU },
+		},
+	};
+	static const struct union_variant variants[] = {
+		{
+			.discrim_value	= 1,
+			.name		= "alpha_v",
+			.fields		= alpha_fields,
+			.num_fields	= ARRAY_SIZE(alpha_fields),
+		},
+		{
+			.discrim_value	= 2,
+			.name		= "beta_v",
+			.fields		= beta_fields,
+			.num_fields	= ARRAY_SIZE(beta_fields),
+		},
+	};
+	struct struct_desc desc = {
+		.name			= "selftest_variant",
+		.struct_size		= 16,
+		.variants		= variants,
+		.num_variants		= ARRAY_SIZE(variants),
+		.buffer_discrim_offset	= 0,
+		.buffer_discrim_size	= 1,
+	};
+	struct mutate_candidate cands[STRUCT_MUTATE_MAX_CANDIDATES];
+	unsigned char buf[16];
+	unsigned int n;
+
+	memset(buf, 0, sizeof(buf));
+	buf[0] = 1;
+	n = collect_mutable_candidates(buf, sizeof(buf), &desc, NULL, 0,
+				       cands, STRUCT_MUTATE_MAX_CANDIDATES);
+	if (n != 1 || strcmp(cands[0].field->name, "alpha") != 0)
+		BUG("variant scope failed for alpha discriminator");
+
+	buf[0] = 2;
+	n = collect_mutable_candidates(buf, sizeof(buf), &desc, NULL, 0,
+				       cands, STRUCT_MUTATE_MAX_CANDIDATES);
+	if (n != 1 || strcmp(cands[0].field->name, "beta") != 0)
+		BUG("variant scope failed for beta discriminator");
+
+	/*
+	 * Unknown discriminator: no variant resolves, the collector
+	 * falls back to desc->fields[] -- which is empty here -- so
+	 * the candidate set must be zero.  Catches a regression that
+	 * leaked sibling variant fields into the no-match arm.
+	 */
+	buf[0] = 99;
+	n = collect_mutable_candidates(buf, sizeof(buf), &desc, NULL, 0,
+				       cands, STRUCT_MUTATE_MAX_CANDIDATES);
+	if (n != 0)
+		BUG("variant no-match leaked candidates");
+}
+
+/*
+ * Depth-cap invariant: the recursive walk reaches the parent and its
+ * first two FT_PTR_STRUCT descendants (depths 0, 1, 2) and stops
+ * before depth 3.  Catches a regression that lifted or removed the
+ * cap (unbounded recursion) or applied it off-by-one (only depths
+ * 0/1 contribute).
+ *
+ * Builds a 4-deep sandbox chain via the mutate_struct_lookup_override
+ * hook so the test desc resolves without polluting the production
+ * struct_catalog.  Each level has one FT_FLAGS leaf; a working depth
+ * cap of 3 yields exactly 3 candidates.
+ */
+struct selftest_depth_chain {
+	unsigned char *next;
+	uint32_t       leaf;
+} __attribute__((packed));
+
+static const struct struct_field selftest_depth_fields[4][2] = {
+	{
+		{
+			.name		= "next",
+			.offset		= 0,
+			.size		= sizeof(unsigned char *),
+			.tag		= FT_PTR_STRUCT,
+			.mutate_weight	= 1,
+			.u.ptr_struct	= { .struct_name = "selftest_depth_1" },
+		},
+		{
+			.name		= "leaf0",
+			.offset		= sizeof(unsigned char *),
+			.size		= sizeof(uint32_t),
+			.tag		= FT_FLAGS,
+			.mutate_weight	= 1,
+			.u.flags	= { .mask = 0xFFU },
+		},
+	},
+	{
+		{
+			.name		= "next",
+			.offset		= 0,
+			.size		= sizeof(unsigned char *),
+			.tag		= FT_PTR_STRUCT,
+			.mutate_weight	= 1,
+			.u.ptr_struct	= { .struct_name = "selftest_depth_2" },
+		},
+		{
+			.name		= "leaf1",
+			.offset		= sizeof(unsigned char *),
+			.size		= sizeof(uint32_t),
+			.tag		= FT_FLAGS,
+			.mutate_weight	= 1,
+			.u.flags	= { .mask = 0xFFU },
+		},
+	},
+	{
+		{
+			.name		= "next",
+			.offset		= 0,
+			.size		= sizeof(unsigned char *),
+			.tag		= FT_PTR_STRUCT,
+			.mutate_weight	= 1,
+			.u.ptr_struct	= { .struct_name = "selftest_depth_3" },
+		},
+		{
+			.name		= "leaf2",
+			.offset		= sizeof(unsigned char *),
+			.size		= sizeof(uint32_t),
+			.tag		= FT_FLAGS,
+			.mutate_weight	= 1,
+			.u.flags	= { .mask = 0xFFU },
+		},
+	},
+	{
+		{
+			.name		= "next",
+			.offset		= 0,
+			.size		= sizeof(unsigned char *),
+			.tag		= FT_PTR_STRUCT,
+			.mutate_weight	= 1,
+			.u.ptr_struct	= { .struct_name = "selftest_depth_unreached" },
+		},
+		{
+			.name		= "leaf3",
+			.offset		= sizeof(unsigned char *),
+			.size		= sizeof(uint32_t),
+			.tag		= FT_FLAGS,
+			.mutate_weight	= 1,
+			.u.flags	= { .mask = 0xFFU },
+		},
+	},
+};
+
+static const struct struct_desc selftest_depth_descs[4] = {
+	{
+		.name		= "selftest_depth_0",
+		.struct_size	= sizeof(struct selftest_depth_chain),
+		.fields		= selftest_depth_fields[0],
+		.num_fields	= 2,
+	},
+	{
+		.name		= "selftest_depth_1",
+		.struct_size	= sizeof(struct selftest_depth_chain),
+		.fields		= selftest_depth_fields[1],
+		.num_fields	= 2,
+	},
+	{
+		.name		= "selftest_depth_2",
+		.struct_size	= sizeof(struct selftest_depth_chain),
+		.fields		= selftest_depth_fields[2],
+		.num_fields	= 2,
+	},
+	{
+		.name		= "selftest_depth_3",
+		.struct_size	= sizeof(struct selftest_depth_chain),
+		.fields		= selftest_depth_fields[3],
+		.num_fields	= 2,
+	},
+};
+
+static const struct struct_desc *selftest_depth_lookup(const char *name)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(selftest_depth_descs); i++)
+		if (strcmp(selftest_depth_descs[i].name, name) == 0)
+			return &selftest_depth_descs[i];
+	return NULL;
+}
+
+static void selftest_depth_cap(void)
+{
+	struct selftest_depth_chain chain[4];
+	struct mutate_candidate cands[STRUCT_MUTATE_MAX_CANDIDATES];
+	unsigned int n;
+	unsigned int i;
+	unsigned int leaf_seen = 0;
+
+	memset(chain, 0, sizeof(chain));
+	chain[0].next = (unsigned char *) &chain[1];
+	chain[1].next = (unsigned char *) &chain[2];
+	chain[2].next = (unsigned char *) &chain[3];
+	chain[3].next = NULL;
+	for (i = 0; i < 4; i++)
+		chain[i].leaf = 0;
+
+	mutate_struct_lookup_override = selftest_depth_lookup;
+	n = collect_mutable_candidates((unsigned char *) &chain[0],
+				       sizeof(chain[0]),
+				       &selftest_depth_descs[0], NULL, 0,
+				       cands, STRUCT_MUTATE_MAX_CANDIDATES);
+	mutate_struct_lookup_override = NULL;
+
+	if (n != 3)
+		BUG("depth-walk did not contribute exactly 3 candidates");
+
+	for (i = 0; i < n; i++) {
+		if (strncmp(cands[i].field->name, "leaf", 4) != 0)
+			BUG("depth-walk emitted a non-leaf candidate");
+		/*
+		 * leaf3 lives in chain[3], which is depth 3 -- past the
+		 * cap.  Its name must never appear in the candidate set.
+		 */
+		if (strcmp(cands[i].field->name, "leaf3") == 0)
+			BUG("depth-walk reached depth-3 field");
+		leaf_seen |= 1U << (cands[i].field->name[4] - '0');
+	}
+	/* leaf0 (bit 0), leaf1 (bit 1), leaf2 (bit 2) all present. */
+	if (leaf_seen != 0x7U)
+		BUG("depth-walk did not visit all three reachable leaves");
+}
+
 void struct_field_mutate_self_check(void)
 {
 	selftest_flags();
@@ -1993,6 +2329,8 @@ void struct_field_mutate_self_check(void)
 	selftest_range();
 	selftest_raw();
 	selftest_skiplist();
+	selftest_variant_scope();
+	selftest_depth_cap();
 }
 
 void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,

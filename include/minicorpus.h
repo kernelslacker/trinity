@@ -1,6 +1,7 @@
 #pragma once
 
 #include "locks.h"
+#include "struct_catalog.h"
 #include "syscall.h"
 
 /*
@@ -126,6 +127,23 @@ struct minicorpus_shared {
 	 * so they cannot bump these counters even by accident. */
 	unsigned long mut_structured_trials[MUT_NUM_OPS];
 	unsigned long mut_structured_wins[MUT_NUM_OPS];
+	/*
+	 * Per-tag productivity for the C.2b struct-buffer post-fill
+	 * mutator (struct_field_mutate_one).  Bumped exactly once per
+	 * mutated call (the gated entry point picks at most one field
+	 * per invocation), so attribution is exact and there is no
+	 * stack-depth inflation to subtract.  Separate from the C.2a
+	 * MUT_NUM_OPS counters above because the injection point is
+	 * different (post-fill in-buffer vs top-level scalar) and the
+	 * later bandit pass needs to weight the two arms
+	 * independently.  Indexed by enum field_tag with FT_NUM_TAGS
+	 * as the trailing sentinel; skip-listed tag slots simply stay
+	 * zero because their fields are filtered out at candidate
+	 * collection time.  RELAXED atomics; read at dump_stats() time
+	 * the same shape as saves_by_reason[].
+	 */
+	unsigned long mut_struct_field_trials[FT_NUM_TAGS];
+	unsigned long mut_struct_field_wins[FT_NUM_TAGS];
 	/* Replay-path measurement counters for the mutation trio.
 	 * All updated via __atomic RELAXED; read at dump_stats() time. */
 	unsigned long replay_count;		/* replays that ran (returned true) */
@@ -280,6 +298,17 @@ void minicorpus_mut_attrib_commit(bool found_new);
  * stats without changing the bandit-weighting inputs (mut_wins[] /
  * mut_trials[]) it consults. */
 void minicorpus_mut_attrib_set_cmp_source(void);
+
+/* Tag the current process's pending mutator attribution as having
+ * applied a C.2b post-fill struct-field mutation with tag @tag.  Called
+ * by struct_field_mutate_one() right after a mutation lands; consumed
+ * and cleared by the next minicorpus_mut_attrib_commit() call, which
+ * bumps mut_struct_field_trials[tag] unconditionally and
+ * mut_struct_field_wins[tag] iff the commit's found_new flag is set.
+ * At most one tag per call -- struct_field_mutate_one only ever mutates
+ * a single field per invocation -- so attribution is exact and there is
+ * no per-stack-pick inflation to subtract. */
+void minicorpus_struct_field_attrib(enum field_tag tag);
 
 /* Persist the in-memory corpus rings to a file at @path.
  * Writes via a per-pid .tmp file and renames atomically — safe under

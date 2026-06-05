@@ -51,6 +51,14 @@ enum field_tag {
 	FT_TAGGED_UNION,	/* per-discriminator subset of fields */
 	FT_BPF_PROGRAM,		/* eBPF insn buffer; fill delegated to net/ebpf.c generator */
 	FT_VOCAB,		/* pick a NUL-padded byte string from u.vocab.vocab */
+
+	/*
+	 * Sentinel for per-tag-indexed counters (e.g.
+	 * minicorpus_shared::mut_struct_field_trials).  Append-only: keep
+	 * after the last real tag so existing tag IDs don't shift.  Any
+	 * new tag is added immediately before this sentinel.
+	 */
+	FT_NUM_TAGS,
 };
 
 /* One field within a cataloged struct. */
