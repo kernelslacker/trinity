@@ -127,6 +127,18 @@ static int parse_format(const char *string, int *field_type, unsigned long long 
 		}
 		shift=firstnum;
 
+		/*
+		 * The bit position is fed straight into a 64-bit shift below,
+		 * so a sysfs descriptor with a position > 63 (or one whose
+		 * digit accumulator overflowed signed int into negatives) would
+		 * invoke shift UB.  Reject before we touch the shift.
+		 */
+		if (firstnum < 0 || firstnum > 63) {
+			outputerr("PMU format start bit out of range: %d\n",
+				firstnum);
+			return -1;
+		}
+
 		/* check if no second num */
 		if ((string[i]==0) || (string[i]==',')) {
 			bits=1;
@@ -147,7 +159,22 @@ static int parse_format(const char *string, int *field_type, unsigned long long 
 				secondnum+=(string[i])-'0';
 				i++;
 			}
+			if (secondnum < firstnum || secondnum > 63) {
+				outputerr("PMU format end bit out of range: %d-%d\n",
+					firstnum, secondnum);
+				return -1;
+			}
 			bits=(secondnum-firstnum)+1;
+		}
+
+		/*
+		 * bits feeds (1ULL << bits) below; shifts by >=64 (or negative)
+		 * are UB in C.  64 is the special-cased all-ones path.
+		 */
+		if (bits <= 0 || bits > 64) {
+			outputerr("PMU format bit count out of range: %d\n",
+				bits);
+			return -1;
 		}
 
 		if (bits==64) {
@@ -362,7 +389,8 @@ static int scan_pmu_formats(int pmu_num, const char *dir_name)
 	DIR *format_dir;
 	struct dirent *format_entry;
 	char format_name[BUFSIZ+7] = "";
-	char format_value[BUFSIZ] = "";
+	/* +1 so sscanf's %BUFSIZ width can write BUFSIZ chars + NUL */
+	char format_value[BUFSIZ+1] = "";
 	char temp_name[BUFSIZ*2] = "";
 	char read_buf[BUFSIZ] = "";
 	int format_num = 0;
@@ -410,23 +438,32 @@ static int scan_pmu_formats(int pmu_num, const char *dir_name)
 			strdup(format_entry->d_name);
 		if (!pmus[pmu_num].formats[format_num].name)
 			continue;
+		/*
+		 * Clear per entry: the buffer is reused across the dir scan
+		 * and would otherwise carry the prior entry's token if the
+		 * sysfs read or sscanf parse below fails on a malformed /
+		 * empty / whitespace-only descriptor file, causing parse_format
+		 * to operate on a stale value strdup'd into the WRONG slot.
+		 */
+		format_value[0] = '\0';
 		snprintf(temp_name, sizeof(temp_name), "%s/format/%s",
 			dir_name, format_entry->d_name);
 		if (read_sysfs_value(temp_name, read_buf,
-				     sizeof(read_buf)) >= 0) {
-			result = sscanf(read_buf, "%s", format_value);
-			if (result == 1) {
-				pmus[pmu_num].formats[format_num].value =
-				strdup(format_value);
-				if (!pmus[pmu_num].formats[format_num].value)
-					continue;
-			}
+				     sizeof(read_buf)) < 0)
+			continue;
+		result = sscanf(read_buf, "%" __stringify(BUFSIZ) "s",
+			format_value);
+		if (result != 1)
+			continue;
+		pmus[pmu_num].formats[format_num].value =
+			strdup(format_value);
+		if (!pmus[pmu_num].formats[format_num].value)
+			continue;
 
-			parse_format(format_value,
-				&pmus[pmu_num].formats[format_num].field,
-				&pmus[pmu_num].formats[format_num].mask);
-			format_num++;
-		}
+		parse_format(format_value,
+			&pmus[pmu_num].formats[format_num].field,
+			&pmus[pmu_num].formats[format_num].mask);
+		format_num++;
 	}
 	closedir(format_dir);
 	return 0;
@@ -437,7 +474,8 @@ static int scan_pmu_generic_events(int pmu_num, const char *dir_name)
 	DIR *event_dir;
 	struct dirent *event_entry;
 	char event_name[BUFSIZ+7] = "";
-	char event_value[BUFSIZ] = "";
+	/* +1 so sscanf's %BUFSIZ width can write BUFSIZ chars + NUL */
+	char event_value[BUFSIZ+1] = "";
 	char temp_name[BUFSIZ*2] = "";
 	char read_buf[BUFSIZ] = "";
 	int generic_num = 0;
@@ -485,18 +523,27 @@ static int scan_pmu_generic_events(int pmu_num, const char *dir_name)
 			strdup(event_entry->d_name);
 		if (!pmus[pmu_num].generic_events[generic_num].name)
 			continue;
+		/*
+		 * Clear per entry: the buffer is reused across the dir scan
+		 * and would otherwise carry the prior entry's token if the
+		 * sysfs read or sscanf parse below fails, causing parse_generic
+		 * to operate on a stale value strdup'd into the WRONG slot.
+		 */
+		event_value[0] = '\0';
 		snprintf(temp_name, sizeof(temp_name), "%s/events/%s",
 			dir_name, event_entry->d_name);
 		if (read_sysfs_value(temp_name, read_buf,
-				     sizeof(read_buf)) >= 0) {
-			result = sscanf(read_buf, "%s", event_value);
-			if (result == 1) {
-				pmus[pmu_num].generic_events[generic_num].value =
-					strdup(event_value);
-				if (!pmus[pmu_num].generic_events[generic_num].value)
-					continue;
-			}
-		}
+				     sizeof(read_buf)) < 0)
+			continue;
+		result = sscanf(read_buf, "%" __stringify(BUFSIZ) "s",
+			event_value);
+		if (result != 1)
+			continue;
+		pmus[pmu_num].generic_events[generic_num].value =
+			strdup(event_value);
+		if (!pmus[pmu_num].generic_events[generic_num].value)
+			continue;
+
 		parse_generic(pmu_num, event_value,
 				&pmus[pmu_num].generic_events[generic_num].config,
 				&pmus[pmu_num].generic_events[generic_num].config1,
