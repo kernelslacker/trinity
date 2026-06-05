@@ -653,8 +653,14 @@ static int init_pmus(void)
 
 		rc = iter_pmu_dir(entry, pmu_num);
 		if (rc < 0) {
+			/*
+			 * iter_pmu_dir owns the current slot's name strdup
+			 * (always done first) and may have allocated formats[]
+			 * with partial entries before the failing inner scan.
+			 * Free pmu_num+1 so the partial slot doesn't leak.
+			 */
 			closedir(dir);
-			free_pmus(&pmus, pmu_num);
+			free_pmus(&pmus, pmu_num + 1);
 			num_pmus = 0;
 			return -1;
 		}
@@ -662,6 +668,15 @@ static int init_pmus(void)
 			break;
 		pmu_num++;
 	}
+
+	/*
+	 * num_pmus was the directory-entry count from the sizing pass; if a
+	 * name strdup failed mid-population we broke early and trailing slots
+	 * are zeroed placeholders.  random_sysfs_config() picks by num_pmus,
+	 * so clamp it to what actually populated to keep the selector off the
+	 * zeroed tail.
+	 */
+	num_pmus = pmu_num;
 
 	result = 0;
 
