@@ -25,6 +25,20 @@ volatile sig_atomic_t xcpu_pending;
 volatile sig_atomic_t ctrlc_pending;
 
 /*
+ * Recovery point for asb_relocate()'s best-effort source copy.  See
+ * include/signals.h and rand/random-address.c::asb_relocate() for the
+ * full contract.  Definition lives here so the storage for the jmp_buf
+ * is colocated with the handler that reads asb_copy_active.
+ *
+ * Inherited COW-private into every forked child; never touched by the
+ * parent.  Plain file-scope storage rather than __thread because
+ * trinity children are single-threaded processes -- no two threads in
+ * the same address space race on the slot.
+ */
+sigjmp_buf asb_copy_recover;
+volatile sig_atomic_t asb_copy_active;
+
+/*
  * Cached pointer to glibc's __abort_msg.  Resolved once at child init
  * so there is no link-time GLIBC_PRIVATE dependency: a glibc upgrade
  * that drops the symbol leaves this NULL and the SIGABRT handler
@@ -449,6 +463,40 @@ static void *fault_beacon_extract_sp(const void *ctx)
 static __attribute__((no_sanitize("address")))
 void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 {
+	/*
+	 * asb_relocate() copy-fault recovery.  Runs FIRST, before the
+	 * sibling-spoof gate and before the fault beacon stamp, because
+	 * the longjmp aborts the handler outright and must not leave any
+	 * publish-side side effects (a beacon record, a bug-log open) on
+	 * a fault we're about to retry-as-skip in the sanitiser.
+	 *
+	 * Gated on:
+	 *   - SIGSEGV or SIGBUS only (the memcpy faults the kernel raises
+	 *     for an unmapped/torn-down source; SIGILL/SIGABRT are not
+	 *     produced by the speculative read and are left to the
+	 *     normal crash path);
+	 *   - si_code > 0, i.e. a real kernel-generated fault.  A sibling
+	 *     kill/tkill that happens to deliver SIGSEGV while the flag
+	 *     is set has si_code <= 0 and would resume the memcpy on
+	 *     return anyway -- siglongjmp'ing on it would falsely mark
+	 *     the copy as faulted and lose accuracy in the new counter;
+	 *   - asb_copy_active, which asb_relocate() sets ONLY across the
+	 *     memcpy itself and clears immediately after.  Any other
+	 *     SIGSEGV/SIGBUS the child takes (real fuzz-found kernel bug,
+	 *     crash in unrelated code) sees the flag clear and falls
+	 *     through to the existing diagnostic + _exit path.
+	 *
+	 * sigsetjmp was installed with savemask=1 so siglongjmp restores
+	 * the application's signal mask; the kernel's per-handler add-
+	 * the-current-signal mask is unwound as part of that restore so
+	 * a subsequent SIGSEGV in the same child still reaches this
+	 * handler (no permanently-blocked SEGV after recovery).
+	 */
+	if (asb_copy_active && info->si_code > 0 &&
+	    (sig == SIGSEGV || sig == SIGBUS)) {
+		siglongjmp(asb_copy_recover, 1);
+	}
+
 	if (info->si_code <= 0 && info->si_pid != mypid()) {
 		/* Sibling spoof — ignore. */
 		return;

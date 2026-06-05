@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <setjmp.h>	// sigsetjmp for asb_relocate copy-fault recovery
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -16,6 +17,7 @@
 #include "sanitise.h"
 #include "maps.h"
 #include "shm.h"
+#include "signals.h"	// asb_copy_recover / asb_copy_active recovery slot
 #include "stats_ring.h"
 #include "tables.h"
 #include "utils.h"
@@ -420,7 +422,19 @@ static void asb_relocate(unsigned long *addr, unsigned long len,
 	void *replacement;
 	void *original;
 	bool overlap_shared, overlap_heap;
-	bool readable_skip = false;
+	/*
+	 * readable_skip / copy_faulted span the sigsetjmp/siglongjmp
+	 * window below: readable_skip is set on the else arm that
+	 * never enters sigsetjmp, copy_faulted is set on the longjmp
+	 * return path.  Per C11 7.13.2.1 a non-volatile local whose
+	 * value can change between setjmp and longjmp is indeterminate
+	 * after the longjmp return, and gcc -Wclobbered flags both.
+	 * Mark them volatile so the post-block stats reads see the
+	 * value we actually wrote, not whatever ended up in a register
+	 * the longjmp restore didn't preserve.
+	 */
+	volatile bool readable_skip = false;
+	volatile bool copy_faulted = false;
 
 	if (addr == NULL)
 		return;
@@ -447,6 +461,19 @@ static void asb_relocate(unsigned long *addr, unsigned long len,
 	 * kernel behaviour we are trying to fuzz with a userspace
 	 * SIGSEGV.
 	 *
+	 * Even the cached-state gate is racy under fuzzed workloads: a
+	 * sibling can tear down a tracked MAP_SHARED region via a raw
+	 * munmap/mremap that bypasses untrack_shared_region(), leaving
+	 * range_in_tracked_shared() with a stale "yes" answer.  The next
+	 * memcpy from that source then faults on the now-unmapped VMA
+	 * (SIGSEGV / SEGV_MAPERR) and the child dies, masking the
+	 * kernel behaviour we were about to fuzz.  Wrap the speculative
+	 * copy in sigsetjmp/siglongjmp so the fault degrades to the
+	 * no-copy fall-through instead of killing the child: the kernel
+	 * SIGSEGV/SIGBUS handler (child_fault_handler) checks
+	 * asb_copy_active first and longjmp's back here when the fault
+	 * fires inside the copy window.
+	 *
 	 * The no-copy fall-through is safe: get_writable_address()
 	 * already filled @replacement with fuzz data, and the *addr
 	 * rewrite below still redirects the kernel away from the
@@ -454,10 +481,28 @@ static void asb_relocate(unsigned long *addr, unsigned long len,
 	 * strictly better than the kernel chasing an unreadable source.
 	 */
 	if (copy_original && len != 0) {
-		if (range_readable_user(original, len))
-			memcpy(replacement, original, len);
-		else
+		if (range_readable_user(original, len)) {
+			if (sigsetjmp(asb_copy_recover, 1) == 0) {
+				asb_copy_active = 1;
+				memcpy(replacement, original, len);
+				asb_copy_active = 0;
+			} else {
+				/*
+				 * child_fault_handler caught a real
+				 * SIGSEGV/SIGBUS inside the memcpy and
+				 * longjmp'd back.  Clear the flag FIRST so
+				 * any subsequent fault in this child (real
+				 * kernel-fuzzed crash, unrelated bug) takes
+				 * the normal diagnostic + _exit path rather
+				 * than silently recovering here.  Skip the
+				 * copy; *addr is still redirected below.
+				 */
+				asb_copy_active = 0;
+				copy_faulted = true;
+			}
+		} else {
 			readable_skip = true;
+		}
 	}
 
 	*addr = (unsigned long) replacement;
@@ -477,6 +522,10 @@ static void asb_relocate(unsigned long *addr, unsigned long len,
 				stats_ring_enqueue(c->stats_ring,
 						   STATS_FIELD_ASB_RELOCATE_READABLE_SKIP,
 						   0, 1);
+			if (copy_faulted)
+				stats_ring_enqueue(c->stats_ring,
+						   STATS_FIELD_ASB_RELOCATE_COPY_FAULT,
+						   0, 1);
 		} else {
 			if (overlap_shared)
 				parent_stats.shared_buffer_redirected++;
@@ -484,6 +533,8 @@ static void asb_relocate(unsigned long *addr, unsigned long len,
 				parent_stats.libc_heap_redirected++;
 			if (readable_skip)
 				parent_stats.asb_relocate_readable_skip++;
+			if (copy_faulted)
+				parent_stats.asb_relocate_copy_fault++;
 		}
 	}
 }

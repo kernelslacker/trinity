@@ -44,6 +44,14 @@ enum stats_field {
 	 * fully readable -- redirection still happened, but the memcpy
 	 * was skipped to avoid faulting inside the sanitiser. */
 	STATS_FIELD_ASB_RELOCATE_READABLE_SKIP,
+	/* asb_relocate()'s best-effort memcpy faulted on the source: the
+	 * shared-region / heap tracker reported the source as readable
+	 * but a sibling tore the underlying mapping down (raw munmap /
+	 * mremap that never went through untrack_shared_region()) before
+	 * we copied.  The child fault handler longjmp'd back, the
+	 * sanitiser fell through to the no-copy redirect path, and this
+	 * counter records the recovery. */
+	STATS_FIELD_ASB_RELOCATE_COPY_FAULT,
 	/* range_overlaps_libc_heap() saw a query that falls inside the
 	 * bounding box of captured allocator regions but matched no
 	 * specific slot -- the canonical staleness shape of a post-init
@@ -152,6 +160,7 @@ struct stats_aggregate {
 	unsigned long libc_heap_redirected;
 	unsigned long libc_heap_embedded_redirected;
 	unsigned long asb_relocate_readable_skip;
+	unsigned long asb_relocate_copy_fault;
 	unsigned long heap_pointer_outside_cache;
 	unsigned long range_overlaps_shared_rejects;
 	unsigned long get_writable_address_scribbled_shm_range;

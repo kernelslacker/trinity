@@ -109,6 +109,9 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	case STATS_FIELD_ASB_RELOCATE_READABLE_SKIP:
 		parent_stats.asb_relocate_readable_skip += delta;
 		break;
+	case STATS_FIELD_ASB_RELOCATE_COPY_FAULT:
+		parent_stats.asb_relocate_copy_fault += delta;
+		break;
 	case STATS_FIELD_HEAP_POINTER_OUTSIDE_CACHE:
 		parent_stats.heap_pointer_outside_cache += delta;
 		break;
