@@ -104,8 +104,15 @@ bool sanitise_xattr_name_arg_pooled(struct syscallrecord *rec, unsigned int argn
 	}
 
 	name = (char *) get_writable_struct(XATTR_NAME_BUFSZ);
-	if (!name)
+	if (!name) {
+		/* Pool exhausted.  Force the slot to NULL so a stale ARG_ADDRESS
+		 * pointer left over from a prior draw can't be handed to the
+		 * kernel (or to xattr_fill_value via xattr_set_value) as if it
+		 * were a valid xattr name.  Mirrors the getpeername / recvfrom
+		 * pool-exhaustion guard. */
+		*slot = 0;
 		return false;
+	}
 	gen_xattr_name_pooled(name, XATTR_NAME_BUFSZ);
 	*slot = (unsigned long) name;
 	return true;
@@ -250,6 +257,13 @@ size_t xattr_fill_value(const char *name, void *buf, size_t bufsz)
 	};
 	size_t n;
 
+	/* All branches below dispatch on strncmp(name, ...) and memcpy into
+	 * buf -- a NULL or zero-size buffer, or a NULL name pointer, would
+	 * fault before producing a value.  Return zero bytes ("no value");
+	 * the caller leaves *sizep at 0, which is a valid setxattr draw. */
+	if (name == NULL || buf == NULL || bufsz == 0)
+		return 0;
+
 	if (strncmp(name, "security.selinux", 16) == 0) {
 		const char *ctx = RAND_ARRAY(selinux_ctx);
 
@@ -323,6 +337,12 @@ void xattr_set_value(const char *name, unsigned long *bufp, unsigned long *sizep
 {
 	void *p;
 	size_t n;
+
+	/* If the name slot was forced to NULL (pool exhaustion in
+	 * sanitise_xattr_name_arg_pooled), don't dispatch on it -- leave
+	 * the original ARG_ADDRESS / ARG_LEN draw in place as a fallback. */
+	if (name == NULL)
+		return;
 
 	p = get_writable_address(page_size);
 	if (!p)
