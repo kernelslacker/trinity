@@ -112,6 +112,20 @@ struct minicorpus_shared {
 	 * in minicorpus.c. */
 	unsigned long mut_trials[MUT_NUM_OPS];
 	unsigned long mut_wins[MUT_NUM_OPS];
+	/* Structure-aware mutator productivity, parallel to
+	 * mut_trials/mut_wins.  Bumped only when mutate_arg picked op `i`
+	 * AND the arg's type carried structural metadata (ARG_LIST /
+	 * ARG_OP / ARG_RANGE) so the type-aware variant fired instead of
+	 * the byte-level op.  The ratio mut_structured_wins[i] /
+	 * mut_structured_trials[i] is the structured win rate per op; the
+	 * difference against the aggregate mut_wins[i] / mut_trials[i]
+	 * shows whether structured firings outperform the unstructured
+	 * fallback.  Phase C.3 will wire these into the bandit; for now
+	 * they exist purely for measurement.  Coupled arg slots (FD,
+	 * ADDRESS, PTR, LEN) never satisfy the structural-metadata gate
+	 * so they cannot bump these counters even by accident. */
+	unsigned long mut_structured_trials[MUT_NUM_OPS];
+	unsigned long mut_structured_wins[MUT_NUM_OPS];
 	/* Replay-path measurement counters for the mutation trio.
 	 * All updated via __atomic RELAXED; read at dump_stats() time. */
 	unsigned long replay_count;		/* replays that ran (returned true) */

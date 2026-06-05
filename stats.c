@@ -432,14 +432,20 @@ static void json_emit_minicorpus_section(void)
 
 	fputs(",\"minicorpus\":{\"mutators\":[", stdout);
 	for (i = 0; i < MUT_NUM_OPS; i++) {
-		unsigned long t = __atomic_load_n(&minicorpus_shm->mut_trials[i], __ATOMIC_RELAXED);
-		unsigned long w = __atomic_load_n(&minicorpus_shm->mut_wins[i],   __ATOMIC_RELAXED);
+		unsigned long t  = __atomic_load_n(&minicorpus_shm->mut_trials[i], __ATOMIC_RELAXED);
+		unsigned long w  = __atomic_load_n(&minicorpus_shm->mut_wins[i],   __ATOMIC_RELAXED);
+		unsigned long st = __atomic_load_n(&minicorpus_shm->mut_structured_trials[i],
+						   __ATOMIC_RELAXED);
+		unsigned long sw = __atomic_load_n(&minicorpus_shm->mut_structured_wins[i],
+						   __ATOMIC_RELAXED);
 
 		if (i > 0)
 			putchar(',');
 		fputs("{\"name\":", stdout);
 		json_emit_string(op_names[i]);
-		printf(",\"trials\":%lu,\"wins\":%lu}", t, w);
+		printf(",\"trials\":%lu,\"wins\":%lu"
+		       ",\"structured_trials\":%lu,\"structured_wins\":%lu}",
+		       t, w, st, sw);
 	}
 	putchar(']');
 
@@ -5709,15 +5715,24 @@ static void dump_stats_corpus_and_taint_tail(void)
 						      __ATOMIC_RELAXED);
 
 		if (tot_trials > 0) {
-			output(0, "\nMutator productivity (wins/trials):\n");
+			output(0, "\nMutator productivity (wins/trials  [structured wins/trials]):\n");
 			for (i = 0; i < MUT_NUM_OPS; i++) {
-				unsigned long t = __atomic_load_n(&minicorpus_shm->mut_trials[i],
-								  __ATOMIC_RELAXED);
-				unsigned long w = __atomic_load_n(&minicorpus_shm->mut_wins[i],
-								  __ATOMIC_RELAXED);
+				unsigned long t  = __atomic_load_n(&minicorpus_shm->mut_trials[i],
+								   __ATOMIC_RELAXED);
+				unsigned long w  = __atomic_load_n(&minicorpus_shm->mut_wins[i],
+								   __ATOMIC_RELAXED);
+				unsigned long st = __atomic_load_n(
+					&minicorpus_shm->mut_structured_trials[i],
+					__ATOMIC_RELAXED);
+				unsigned long sw = __atomic_load_n(
+					&minicorpus_shm->mut_structured_wins[i],
+					__ATOMIC_RELAXED);
+				unsigned long spct10 = st ? (sw * 1000UL / st) : 0UL;
+
 				pct10 = t ? (w * 1000UL / t) : 0UL;
-				output(0, "  %-10s %lu/%lu (%lu.%lu%%)\n",
-				       op_names[i], w, t, pct10 / 10, pct10 % 10);
+				output(0, "  %-10s %lu/%lu (%lu.%lu%%)  [%lu/%lu (%lu.%lu%%)]\n",
+				       op_names[i], w, t, pct10 / 10, pct10 % 10,
+				       sw, st, spct10 / 10, spct10 % 10);
 			}
 		}
 

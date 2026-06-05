@@ -393,6 +393,18 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 static unsigned int mut_attrib[MUT_NUM_OPS];
 
 /*
+ * Parallel structured-firing stash.  Bumped from inside mutate_arg
+ * whenever the structure-aware branch ran (ARG_LIST / ARG_OP /
+ * ARG_RANGE with usable arg_param metadata).  Drained by
+ * minicorpus_mut_attrib_commit into shm->mut_structured_trials /
+ * mut_structured_wins so per-op structured productivity can be
+ * compared against the existing aggregate mut_trials / mut_wins.
+ * Same per-process / fork-then-single-threaded guarantee as
+ * mut_attrib above.
+ */
+static unsigned int mut_structured_attrib[MUT_NUM_OPS];
+
+/*
  * Process-local replay and splice attribution flags.
  *
  * Set by minicorpus_replay() when the respective event occurs; consumed
@@ -542,6 +554,8 @@ void minicorpus_mut_attrib_commit(bool found_new)
 		 * commit() doesn't see stale state from before init. */
 		this_attrib_cmp_source = false;
 		this_replay_source_tracked = false;
+		for (i = 0; i < MUT_NUM_OPS; i++)
+			mut_structured_attrib[i] = 0;
 		return;
 	}
 
@@ -582,14 +596,30 @@ void minicorpus_mut_attrib_commit(bool found_new)
 		}
 
 		for (i = 0; i < MUT_NUM_OPS; i++) {
-			if (mut_attrib[i] == 0)
-				continue;
-			__atomic_fetch_add(&minicorpus_shm->mut_trials[i],
-					   1UL, __ATOMIC_RELAXED);
-			if (found_new && baseline_established)
-				__atomic_fetch_add(&minicorpus_shm->mut_wins[i],
+			if (mut_attrib[i] != 0) {
+				__atomic_fetch_add(&minicorpus_shm->mut_trials[i],
 						   1UL, __ATOMIC_RELAXED);
-			mut_attrib[i] = 0;
+				if (found_new && baseline_established)
+					__atomic_fetch_add(&minicorpus_shm->mut_wins[i],
+							   1UL, __ATOMIC_RELAXED);
+				mut_attrib[i] = 0;
+			}
+
+			/* Structured-firing accounting lives on a parallel
+			 * stash because a single call may pick op `i` more
+			 * than once with only some of those picks landing on
+			 * a structured-typed slot.  Bumped per-call (not
+			 * per-pick) and gated by the same baseline rule as
+			 * the unstructured pair so the two ratios stay
+			 * apples-to-apples. */
+			if (mut_structured_attrib[i] != 0) {
+				__atomic_fetch_add(&minicorpus_shm->mut_structured_trials[i],
+						   1UL, __ATOMIC_RELAXED);
+				if (found_new && baseline_established)
+					__atomic_fetch_add(&minicorpus_shm->mut_structured_wins[i],
+							   1UL, __ATOMIC_RELAXED);
+				mut_structured_attrib[i] = 0;
+			}
 		}
 
 		/* Advance the source entry's baseline if this replay was
@@ -607,10 +637,13 @@ void minicorpus_mut_attrib_commit(bool found_new)
 		this_replay_source_tracked = false;
 	} else {
 		/* Untracked source (chain-replay or other non-minicorpus
-		 * caller).  Clear the stash without recording per-op events
-		 * -- the bandit signal stays exclusively per-syscall-replay. */
-		for (i = 0; i < MUT_NUM_OPS; i++)
+		 * caller).  Clear both stashes without recording per-op
+		 * events -- the bandit signal (and the structured-firing
+		 * companion) stays exclusively per-syscall-replay. */
+		for (i = 0; i < MUT_NUM_OPS; i++) {
 			mut_attrib[i] = 0;
+			mut_structured_attrib[i] = 0;
+		}
 	}
 
 	if (this_replay_ran) {
@@ -682,6 +715,191 @@ void minicorpus_mut_attrib_commit(bool found_new)
  * stack_depth_histogram array bounds). */
 
 /*
+ * Apply a structure-aware variant of mutator @op to @val when the
+ * arg's type carries enough metadata to define a "valid neighbour"
+ * (ARG_LIST: bitmask vocabulary; ARG_OP: pick-one enum; ARG_RANGE:
+ * bounded integer).  Returns true and writes through *val on
+ * success; returns false to let the caller fall through to the
+ * byte-level switch.
+ *
+ * Hard rule: coupled tags (ARG_FD / typed FDs / ARG_ADDRESS /
+ * ARG_LEN / ARG_STRUCT_PTR_*) are intentionally absent from the
+ * switch.  Field-level perturbation of those slots breaks invariants
+ * the rest of the generator (fd validity, ptr<->len pairing,
+ * address aliasing) is built to preserve, so structured mutation is
+ * the wrong tool for them — they fall through to the unstructured
+ * ops which already handle them safely.
+ *
+ * Per-op semantics within each structured type:
+ *   ARG_LIST  (bitmask vocabulary in arg_params.list.values[]):
+ *     0/6/7 (bit-flip, bswap-add, bswap-sub) -> XOR one listed bit
+ *     1 (add)        -> set one listed bit
+ *     2 (sub)        -> clear one listed bit
+ *     3 (boundary)   -> all listed bits OR'd, or zero
+ *     4 (byte-shuf)  -> random subset of listed bits
+ *     5 (keep)       -> no-op (still counts as structured firing)
+ *   ARG_OP (pick-one vocabulary):
+ *     1 (add)        -> next entry (index + 1)
+ *     2 (sub)        -> prev entry (index - 1)
+ *     3 (boundary)   -> first or last entry
+ *     5 (keep)       -> no-op
+ *     0/4/6/7        -> any different entry
+ *   ARG_RANGE [low, hi]:
+ *     1 (add)        -> +1 clamped to hi
+ *     2 (sub)        -> -1 clamped to lo
+ *     3 (boundary)   -> low or hi
+ *     5 (keep)       -> no-op
+ *     0/4/6/7        -> adjacent step (+/- 1) clamped
+ *
+ * Missing or degenerate metadata (NULL values array, num == 0, hi <
+ * low) is treated as "no structure available" and the caller falls
+ * through.
+ */
+static bool try_structured_mutation(unsigned long *val, unsigned int op,
+		enum argtype atype, const struct arg_param *params)
+{
+	if (params == NULL)
+		return false;
+
+	switch (atype) {
+	case ARG_LIST: {
+		const struct arglist *list = &params->list;
+		unsigned long bit;
+		unsigned int j;
+
+		if (list->num == 0 || list->values == NULL)
+			return false;
+
+		bit = list->values[rnd_modulo_u32(list->num)];
+
+		switch (op) {
+		case 0:
+		case 6:
+		case 7:
+			*val ^= bit;
+			return true;
+		case 1:
+			*val |= bit;
+			return true;
+		case 2:
+			*val &= ~bit;
+			return true;
+		case 3: {
+			unsigned long all = 0;
+
+			if (RAND_BOOL()) {
+				*val = 0;
+			} else {
+				for (j = 0; j < list->num; j++)
+					all |= list->values[j];
+				*val = all;
+			}
+			return true;
+		}
+		case 4: {
+			unsigned long mask = 0;
+
+			for (j = 0; j < list->num; j++)
+				if (RAND_BOOL())
+					mask |= list->values[j];
+			*val = mask;
+			return true;
+		}
+		case 5:
+			return true;
+		}
+		return false;
+	}
+	case ARG_OP: {
+		const struct arglist *list = &params->list;
+		unsigned int cur, pick, j;
+
+		if (list->num == 0 || list->values == NULL)
+			return false;
+		if (list->num == 1) {
+			*val = list->values[0];
+			return true;
+		}
+
+		cur = list->num;
+		for (j = 0; j < list->num; j++) {
+			if (list->values[j] == *val) {
+				cur = j;
+				break;
+			}
+		}
+
+		switch (op) {
+		case 1:
+			pick = (cur < list->num) ?
+				(cur + 1) % list->num :
+				rnd_modulo_u32(list->num);
+			*val = list->values[pick];
+			return true;
+		case 2:
+			pick = (cur < list->num) ?
+				(cur + list->num - 1) % list->num :
+				rnd_modulo_u32(list->num);
+			*val = list->values[pick];
+			return true;
+		case 3:
+			*val = list->values[RAND_BOOL() ? 0 : list->num - 1];
+			return true;
+		case 5:
+			return true;
+		case 0:
+		case 4:
+		case 6:
+		case 7:
+			do {
+				pick = rnd_modulo_u32(list->num);
+			} while (pick == cur);
+			*val = list->values[pick];
+			return true;
+		}
+		return false;
+	}
+	case ARG_RANGE: {
+		unsigned long lo = params->range.low;
+		unsigned long hi = params->range.hi;
+
+		if (hi < lo)
+			return false;
+		if (lo == hi) {
+			*val = lo;
+			return true;
+		}
+
+		switch (op) {
+		case 1:
+			*val = (*val >= hi) ? hi : *val + 1;
+			return true;
+		case 2:
+			*val = (*val <= lo) ? lo : *val - 1;
+			return true;
+		case 3:
+			*val = RAND_BOOL() ? lo : hi;
+			return true;
+		case 5:
+			return true;
+		case 0:
+		case 4:
+		case 6:
+		case 7:
+			if (RAND_BOOL())
+				*val = (*val >= hi) ? hi : *val + 1;
+			else
+				*val = (*val <= lo) ? lo : *val - 1;
+			return true;
+		}
+		return false;
+	}
+	default:
+		return false;
+	}
+}
+
+/*
  * Apply a small mutation to a single argument value.
  * The mutations are designed to explore nearby input space:
  *   - bit flip: toggle a single bit, biased by per-(syscall, arg)
@@ -696,13 +914,27 @@ void minicorpus_mut_attrib_commit(bool found_new)
  * @nr / @arg are the syscall table index and zero-based arg slot for
  * the value being mutated.  They are only consulted for the bit-flip
  * case to look up effector-map weights; other cases ignore them.
+ *
+ * @params (when non-NULL) carries the ABI metadata for the slot --
+ * arglist for ARG_LIST/ARG_OP, range for ARG_RANGE -- and lets the
+ * picked op fire a type-aware variant instead of a byte-level
+ * perturbation.  Structured firings are stashed in
+ * mut_structured_attrib[op] alongside the unconditional mut_attrib[op]
+ * bump so the commit path can separate structured vs unstructured
+ * productivity per op.
  */
 static unsigned long mutate_arg(unsigned long val, enum argtype atype,
+		const struct arg_param *params,
 		unsigned int nr, unsigned int arg)
 {
 	unsigned int op = weighted_pick_case(atype);
 
 	mut_attrib[op]++;
+
+	if (try_structured_mutation(&val, op, atype, params)) {
+		mut_structured_attrib[op]++;
+		return val;
+	}
 
 	switch (op) {
 	case 0:
@@ -843,14 +1075,17 @@ static unsigned int pick_stack_depth(void)
  * Apply mutate_arg n_muts times in sequence.  The stack composes the
  * primitive mutations into a single transformation per call site.
  * @nr / @arg pass through to mutate_arg's bit-flip case for effector-map
- * weighting.
+ * weighting; @params forwards the slot's ABI metadata so the
+ * structure-aware variants can fire on every stacked step rather than
+ * just the first.
  */
 static unsigned long mutate_arg_stacked(unsigned long val, unsigned int n_muts,
 					enum argtype atype,
+					const struct arg_param *params,
 					unsigned int nr, unsigned int arg)
 {
 	while (n_muts-- > 0)
-		val = mutate_arg(val, atype, nr, arg);
+		val = mutate_arg(val, atype, params, nr, arg);
 	return val;
 }
 
@@ -937,7 +1172,7 @@ void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry,
 			__atomic_fetch_add(&minicorpus_shm->stack_depth_histogram[depth],
 					   1UL, __ATOMIC_RELAXED);
 			val = mutate_arg_stacked(val, depth, entry->argtype[i],
-					nr, i);
+					&entry->arg_params[i], nr, i);
 		}
 
 fd_safety:
