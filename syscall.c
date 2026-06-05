@@ -374,6 +374,18 @@ static void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 	pid_t pid = 0;
 	pid_t extrapid;
 
+#ifdef __SANITIZE_ADDRESS__
+	/* ASAN's __asan_handle_no_return runs at the fork/exec boundary
+	 * and trips a CHECK in PoisonShadow when called from this path
+	 * (PlatformUnpoisonStacks receives bogus stack bounds, aborts
+	 * with "AddrIsAlignedByGranularity != 0").  Downstream EAGAIN
+	 * mmap failures in the grandchild's ASAN allocator follow from
+	 * the same CLONE_VM-shared-address-space state.  Skip the extra
+	 * fork on sanitizer builds; the regular fuzz path stays. */
+	(void)rec; (void)entry; (void)child;
+	return;
+#endif
+
 	extrapid = fork();
 	if (extrapid == 0) {
 		/* grand-child */
