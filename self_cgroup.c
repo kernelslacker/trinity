@@ -103,6 +103,16 @@ static bool parse_size_arg(const char *arg, unsigned long mem_total,
 		return true;
 	}
 
+	/*
+	 * strtoull() silently accepts a leading '-' and wraps the result
+	 * into ULLONG_MAX-adjacent values that look like enormous byte
+	 * counts; '+' is equally surprising in a size context.  Reject
+	 * both signs up front, matching parse_unsigned()'s contract in
+	 * params.c.
+	 */
+	if (*arg == '-' || *arg == '+')
+		return false;
+
 	errno = 0;
 	val = strtoull(arg, &end, 10);
 	if (end == arg || errno == ERANGE)
