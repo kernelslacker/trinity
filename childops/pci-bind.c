@@ -231,8 +231,12 @@ retry:
 	while ((de = readdir(d)) != NULL && count < PCI_BIND_DEVS_MAX) {
 		if (!is_bdf_name(de->d_name))
 			continue;
-		(void)snprintf(devs[count], PCI_BIND_BDF_LEN, "%s",
-			       de->d_name);
+		/* is_bdf_name() above already validated the 12-char BDF
+		 * shape so this fits PCI_BIND_BDF_LEN exactly.  Explicit
+		 * precision keeps -Wformat-truncation quiet without
+		 * relying on snprintf's silent clamp. */
+		(void)snprintf(devs[count], PCI_BIND_BDF_LEN, "%.*s",
+			       PCI_BIND_BDF_LEN - 1, de->d_name);
 		count++;
 	}
 	closedir(d);
