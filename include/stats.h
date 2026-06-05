@@ -1673,6 +1673,19 @@ struct stats_s {
 	 * arg-setup + CALL + EXIT do not increment this. */
 	unsigned long ebpf_gen_helper_call_emitted;
 
+	/* Phase 3.4.5: bumped each time the generator emits the map-value
+	 * NULL-check + deref idiom after a map_lookup_elem.  Total counter
+	 * plus a read/write breakdown: deref_read counts LDX_W loads of
+	 * the value, deref_write counts STX_W stores; sum equals
+	 * deref_emitted.  Gated on the 3% MAP_VAL_DEREF_WEIGHT_PCT lottery
+	 * AND a live PTR_OR_NULL_TO_MAP_VALUE in R0 from a recent lookup,
+	 * so the observed rate sits well below the lottery weight -- bumps
+	 * here track the slice of programs that actually reach the
+	 * verifier's check_map_access / map-value runtime path. */
+	unsigned long ebpf_gen_map_value_deref_emitted;
+	unsigned long ebpf_gen_map_value_deref_read;
+	unsigned long ebpf_gen_map_value_deref_write;
+
 	/* Slots held in zombie-pending state because the kernel still has
 	 * the unkillable D-state task around and may yet wake it to write
 	 * into childdata.  Reusing a slot before the kernel tears the task

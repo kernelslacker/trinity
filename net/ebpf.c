@@ -64,6 +64,17 @@
 #define HELPER_CALL_WEIGHT_PCT		8
 
 /*
+ * Phase 3.4.5: lottery weight for emitting the map-value NULL-check +
+ * deref idiom after a map_lookup_elem leaves R0 holding a PTR_OR_NULL_
+ * TO_MAP_VALUE.  Lower than HELPER_CALL_WEIGHT_PCT because the deref
+ * carries a runtime prereq (live map-value-or-null in R0) the dispatch
+ * cannot force, so most rolls would be no-ops anyway -- the marker
+ * survives across iterations that don't touch R0, giving 3% a chance
+ * to fire on any of several iterations after a lookup lands.
+ */
+#define MAP_VAL_DEREF_WEIGHT_PCT	3
+
+/*
  * Phase 3.4: which tier 2 sub-strategy index forces a typed helper call.
  * Acts as the dedicated counterpart to tier1's lottery so map-helper and
  * scalar-arg paths see traffic even when the lottery doesn't fire.
@@ -249,6 +260,7 @@ static struct helper_set get_helpers_for_prog_type(unsigned int prog_type)
 struct reg_state {
 	uint16_t live;		/* bitmask: 1 << reg if initialized */
 	int8_t map_reg;		/* register holding PTR_TO_MAP, or -1 */
+	bool r0_maps_value_or_null;	/* R0 = PTR_OR_NULL_TO_MAP_VALUE */
 };
 
 static void reg_init(struct reg_state *rs, int prepend_map_reg)
@@ -256,6 +268,7 @@ static void reg_init(struct reg_state *rs, int prepend_map_reg)
 	/* r1 = context pointer, r10 = frame pointer (read-only) */
 	rs->live = (1 << BPF_REG_1) | (1 << BPF_REG_10);
 	rs->map_reg = -1;
+	rs->r0_maps_value_or_null = false;
 	if (prepend_map_reg >= 0) {
 		rs->live |= (1 << prepend_map_reg);
 		rs->map_reg = prepend_map_reg;
@@ -268,6 +281,9 @@ static void reg_set(struct reg_state *rs, int reg)
 	/* Overwriting the tracked map reg drops the PTR_TO_MAP tag. */
 	if (reg == rs->map_reg)
 		rs->map_reg = -1;
+	/* Any write to R0 invalidates the map-value-or-null marker. */
+	if (reg == BPF_REG_0)
+		rs->r0_maps_value_or_null = false;
 }
 
 static void reg_clear_caller_saved(struct reg_state *rs)
@@ -279,6 +295,8 @@ static void reg_clear_caller_saved(struct reg_state *rs)
 	rs->live |= (1 << BPF_REG_0);
 	if (rs->map_reg >= BPF_REG_1 && rs->map_reg <= BPF_REG_5)
 		rs->map_reg = -1;
+	/* Caller re-arms r0_maps_value_or_null for lookup-style helpers. */
+	rs->r0_maps_value_or_null = false;
 }
 
 static int reg_pick_live(struct reg_state *rs)
@@ -580,8 +598,58 @@ static int emit_tier1_helper_call(struct bpf_insn *insns, int pos,
 
 	insns[pos++] = EBPF_CALL(h->func);
 	reg_clear_caller_saved(rs);
+	/*
+	 * Phase 3.4.5: arm the deref gate when the helper returns a
+	 * map-value-or-null pointer in R0.  Only map_lookup_elem is in
+	 * the current table; per-cpu / lookup-and-delete variants land
+	 * with the descriptor-table widening they deserve.
+	 */
+	if (h->func == BPF_FUNC_map_lookup_elem)
+		rs->r0_maps_value_or_null = true;
 	__atomic_add_fetch(&shm->stats.ebpf_gen_helper_call_emitted, 1,
 			   __ATOMIC_RELAXED);
+	return pos;
+}
+
+/*
+ * Phase 3.4.5: emit the JEQ R0,0,+1 ; LDX/STX pair that actually touches
+ * the map value pointed to by R0.  Caller has verified
+ * r0_maps_value_or_null and that body_len - pos >= 2.  Bounded to a
+ * 4-byte access at offset 0 -- the verifier's per-map bounds check
+ * accepts (0, 4) on every map type trinity provisions; larger offsets
+ * fail per-map and would need map-type-aware sizing the generator
+ * doesn't track.  Read picks a fresh dst (LDX clobbers it); write
+ * picks any live reg as the source.  Either variant drops the
+ * map-value-or-null marker since the deref consumes it.
+ */
+static int emit_tier1_map_val_deref(struct bpf_insn *insns, int pos,
+				     struct reg_state *rs)
+{
+	/*
+	 * +1 in the JEQ offset is the count of insns to skip past the
+	 * JEQ itself.  We always emit exactly one insn after it, so the
+	 * skip lands on whatever the dispatch picks next.
+	 */
+	insns[pos++] = EBPF_JMP_IMM(BPF_JEQ, BPF_REG_0, 0, 1);
+
+	if (ONE_IN(2)) {
+		int src = reg_pick_live(rs);
+
+		insns[pos++] = EBPF_STX_MEM(BPF_W, BPF_REG_0, src, 0);
+		__atomic_add_fetch(&shm->stats.ebpf_gen_map_value_deref_write,
+				   1, __ATOMIC_RELAXED);
+	} else {
+		int dst = reg_pick_dst();
+
+		insns[pos++] = EBPF_LDX_MEM(BPF_W, dst, BPF_REG_0, 0);
+		reg_set(rs, dst);
+		__atomic_add_fetch(&shm->stats.ebpf_gen_map_value_deref_read,
+				   1, __ATOMIC_RELAXED);
+	}
+
+	rs->r0_maps_value_or_null = false;
+	__atomic_add_fetch(&shm->stats.ebpf_gen_map_value_deref_emitted,
+			   1, __ATOMIC_RELAXED);
 	return pos;
 }
 
@@ -633,7 +701,23 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns,
 
 	while (pos < body_len) {
 		int remaining = body_len - pos;
-		int choice = rnd_modulo_u32(100);
+		int choice;
+
+		/*
+		 * Phase 3.4.5: opportunistic deref of a recent
+		 * map_lookup_elem result.  Rolled independently of the
+		 * main lottery so the existing dispatch weights stay
+		 * untouched.  The marker survives across iterations that
+		 * don't touch R0, so a missed roll here still has a chance
+		 * on subsequent iterations until something clobbers R0.
+		 */
+		if (rs.r0_maps_value_or_null && remaining >= 2 &&
+		    rnd_modulo_u32(100) < MAP_VAL_DEREF_WEIGHT_PCT) {
+			pos = emit_tier1_map_val_deref(insns, pos, &rs);
+			continue;
+		}
+
+		choice = rnd_modulo_u32(100);
 
 		if (choice < 40) {
 			pos = emit_tier1_alu64_imm(insns, pos, body_len, &rs);
@@ -835,6 +919,21 @@ static int gen_tier2(struct bpf_insn *insns, int max_insns,
 						     &rs, hs);
 			if (pos == old_pos)
 				break;
+			/*
+			 * Phase 3.4.5: if the call left a map-value-or-null
+			 * in R0, roll the deref idiom now -- the next
+			 * iteration's helper call will clobber R0 and shut
+			 * the window for good.  Same 3% weight as gen_tier1
+			 * even though every iteration here can deref; the
+			 * lower rate matches the spec's "spread across the
+			 * body" intent and keeps the storm filler weight
+			 * dominant.
+			 */
+			if (rs.r0_maps_value_or_null &&
+			    body_len - pos >= 2 &&
+			    rnd_modulo_u32(100) < MAP_VAL_DEREF_WEIGHT_PCT)
+				pos = emit_tier1_map_val_deref(insns, pos,
+							       &rs);
 			if (pos >= body_len)
 				break;
 			insns[pos++] = EBPF_ALU64_IMM(BPF_ADD, BPF_REG_6, 1);

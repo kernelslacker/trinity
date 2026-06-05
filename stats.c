@@ -4011,6 +4011,15 @@ static void dump_stats_fuzzer_subsystems(void)
 			 shm->stats.ebpf_gen_helper_call_emitted);
 	}
 
+	if (shm->stats.ebpf_gen_map_value_deref_emitted) {
+		stat_row("ebpf_gen", "map_value_deref_emitted",
+			 shm->stats.ebpf_gen_map_value_deref_emitted);
+		stat_row("ebpf_gen", "map_value_deref_read",
+			 shm->stats.ebpf_gen_map_value_deref_read);
+		stat_row("ebpf_gen", "map_value_deref_write",
+			 shm->stats.ebpf_gen_map_value_deref_write);
+	}
+
 	if (shm->stats.recipe_runs) {
 		stat_row("recipe_runner", "runs",        shm->stats.recipe_runs);
 		stat_row("recipe_runner", "completed",   shm->stats.recipe_completed);
