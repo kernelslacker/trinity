@@ -299,6 +299,22 @@ void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
 				    struct syscallrecord *rec);
 
 /*
+ * Post-fill structure-aware mutator.  Runs immediately after
+ * struct_field_fill_schema_aware() at the top-level ARG_STRUCT_PTR_IN /
+ * ARG_STRUCT_PTR_INOUT call sites; with bounded probability picks one
+ * mutable-tagged field and applies a tag-respecting neighbour mutation
+ * in place.  Skip-list (FT_PTR_*, FT_LEN_*, FT_ADDRESS, FT_FD,
+ * FT_BPF_PROGRAM, FT_TAGGED_UNION) fields are never candidates so the
+ * (ptr, len) coupling and address / fd validity invariants the fill
+ * resolves stay intact.  Variant resolution receives the live post-fill
+ * buf so buffer-derived discriminators (e.g. sockaddr_storage's
+ * ss_family) scope correctly.
+ */
+void struct_field_mutate_one(unsigned char *buf, unsigned int size,
+			     const struct struct_desc *desc,
+			     struct syscallrecord *rec);
+
+/*
  * Build the fast nr->desc lookup table by resolving syscall names in
  * syscall_struct_args[] against the active syscall table.
  * Must be called after select_syscall_tables().

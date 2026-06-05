@@ -1322,6 +1322,219 @@ static void struct_variant_overlay_nested(unsigned char *buf, unsigned int size,
 				   nested->num_fields, rec);
 }
 
+/*
+ * Structure-aware post-fill mutation gate.  After
+ * struct_field_fill_schema_aware() writes a schema-valid struct into
+ * buf, struct_field_mutate_one() rolls this percentage and, on hit,
+ * picks one field and applies a tag-respecting neighbour mutation.
+ *
+ * 12% (~1-in-8) keeps schema-fill's validator-passing intent dominant
+ * while still exploring valid neighbours every few calls; tuned next to
+ * OPTIONAL_PRESENT_PCT so the two probability-driven fill knobs live
+ * side-by-side.  Phase C.2b: only FT_FLAGS dispatches today, the
+ * remaining mutable tags (FT_ENUM / FT_VOCAB / FT_RANGE / FT_RAW) wire
+ * up in the next commit.
+ */
+#define STRUCT_FIELD_MUTATE_PCT		12U
+
+/*
+ * True for tags the post-fill mutator may touch.  The skip-list (PTR_*,
+ * LEN_*, ADDRESS, FD, BPF_PROGRAM, TAGGED_UNION) is enforced at
+ * candidate-collection time so a skip-listed field is never picked --
+ * the load-bearing safety property for the whole phase.  FT_MAGIC /
+ * FT_VERSION_MAGIC are deliberately excluded today; folding them in is
+ * a future curated-tag lift once the per-tag counters confirm we want
+ * them.  Other future tags default to non-mutable so the skip-list
+ * grows by allow-list, not by deny-list.
+ */
+static bool field_tag_is_mutable_c2b(enum field_tag tag)
+{
+	switch (tag) {
+	case FT_FLAGS:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/*
+ * FT_FLAGS post-fill primitive: single-bit flip within the valid-bits
+ * mask.  Unlike fill_field_flags()'s whole-mask 50%-each redraw, this
+ * walks exactly one bit -- the kernel sees the same value the schema
+ * fill produced with one in-mask bit toggled, so a coverage win
+ * attributes to that one bit instead of the eight or sixteen the
+ * fill's redraw would have churned in parallel.  Bits outside the mask
+ * are never touched, preserving the kernel's "unknown flags reject"
+ * guarantee.
+ */
+static void mutate_field_flags(unsigned char *buf, const struct struct_field *f)
+{
+	uint64_t mask = f->u.flags.mask;
+	uint64_t val;
+	unsigned int pop, pick, seen;
+	unsigned int i;
+
+	if (mask == 0)
+		return;
+
+	pop = (unsigned int) __builtin_popcountll(mask);
+	pick = (unsigned int) rnd_modulo_u32(pop);
+
+	val = read_field_uint(buf, f);
+	seen = 0;
+	for (i = 0; i < 64; i++) {
+		uint64_t bit = (uint64_t) 1 << i;
+
+		if ((mask & bit) == 0)
+			continue;
+		if (seen == pick) {
+			val ^= bit;
+			break;
+		}
+		seen++;
+	}
+	write_field_uint(buf, f, val);
+}
+
+/*
+ * Build a candidate index list of mutable fields within a single
+ * variant-resolved field array.  Skip-list discipline lives here: any
+ * tag for which field_tag_is_mutable_c2b() returns false (PTR/LEN/FD/
+ * ADDRESS/BPF_PROGRAM/TAGGED_UNION as well as the not-yet-mutable
+ * future tags) never becomes a candidate, so the picker can't waste a
+ * trial on a "selected then bailed" field.  Bounds-checked against the
+ * post-fill buffer size for the same reason struct_fill_passes() does:
+ * a field whose end lies past the buffer cannot be safely read or
+ * written.  Candidate weights default to one when the catalog leaves
+ * mutate_weight at zero so the early scaffolding stays pickable.
+ */
+struct mutate_candidate {
+	const struct struct_field *field;
+	unsigned int weight;
+};
+
+#define STRUCT_MUTATE_MAX_CANDIDATES	STRUCT_FILL_MAX_FIELDS
+
+static unsigned int collect_mutable_candidates(unsigned int size,
+					       const struct struct_field *fields,
+					       unsigned int n,
+					       struct mutate_candidate *out,
+					       unsigned int out_max)
+{
+	unsigned int collected = 0;
+	unsigned int i;
+
+	if (n > STRUCT_FILL_MAX_FIELDS)
+		n = STRUCT_FILL_MAX_FIELDS;
+
+	for (i = 0; i < n && collected < out_max; i++) {
+		const struct struct_field *f = &fields[i];
+
+		if (f->offset + f->size > size)
+			continue;
+		if (!field_tag_is_mutable_c2b(f->tag))
+			continue;
+
+		out[collected].field = f;
+		out[collected].weight = f->mutate_weight ? f->mutate_weight : 1U;
+		collected++;
+	}
+	return collected;
+}
+
+/*
+ * Weighted pick over the collected candidate set.  Same uniform-falls-
+ * out-when-equal-weights behaviour as the other weighted pickers in the
+ * codebase; an all-zero weight set is impossible because the collector
+ * substitutes 1 for an unset mutate_weight.
+ */
+static const struct struct_field *
+weighted_pick_candidate(const struct mutate_candidate *cands, unsigned int n)
+{
+	unsigned long total = 0;
+	unsigned long r, accum;
+	unsigned int i;
+
+	for (i = 0; i < n; i++)
+		total += cands[i].weight;
+	if (total == 0)
+		return NULL;
+
+	r = (unsigned long) rnd_modulo_u32((uint32_t) total);
+	accum = 0;
+	for (i = 0; i < n; i++) {
+		accum += cands[i].weight;
+		if (r < accum)
+			return cands[i].field;
+	}
+	return cands[n - 1].field;
+}
+
+/*
+ * Post-fill struct-buffer mutation.  Called immediately after
+ * struct_field_fill_schema_aware() at the two top-level ARG_STRUCT
+ * call sites; runs at most one tag-respecting neighbour mutation per
+ * invocation.  Variant resolution receives the live post-fill buf so
+ * buffer-derived discriminators (sockaddr_storage's ss_family,
+ * bpf_attr's cmd) scope to the correct variant -- passing NULL would
+ * silently mis-scope every tagged-union mutation.
+ *
+ * One field per call keeps the change atomic so a coverage win
+ * attributes to a single (tag, field) pair instead of being smeared
+ * across a whole-buffer re-roll.  Depth 1 here -- the recursive
+ * candidate collection for FT_PTR_STRUCT children lands in a follow-up
+ * commit with the per-tag counter histogram that justifies the wider
+ * surface area.
+ */
+void struct_field_mutate_one(unsigned char *buf, unsigned int size,
+			     const struct struct_desc *desc,
+			     struct syscallrecord *rec)
+{
+	const struct union_variant *variant;
+	const struct struct_field *fields;
+	const struct struct_field *winner;
+	struct mutate_candidate cands[STRUCT_MUTATE_MAX_CANDIDATES];
+	unsigned int n_fields, n_cands;
+
+	if (buf == NULL || desc == NULL)
+		return;
+	if (rnd_modulo_u32(100) >= STRUCT_FIELD_MUTATE_PCT)
+		return;
+
+	variant = struct_desc_resolve_variant(desc, rec, buf);
+	if (variant != NULL) {
+		fields = variant->fields;
+		n_fields = variant->num_fields;
+	} else {
+		fields = desc->fields;
+		n_fields = desc->num_fields;
+	}
+
+	n_cands = collect_mutable_candidates(size, fields, n_fields,
+					     cands, STRUCT_MUTATE_MAX_CANDIDATES);
+	if (n_cands == 0)
+		return;
+
+	winner = weighted_pick_candidate(cands, n_cands);
+	if (winner == NULL)
+		return;
+
+	switch (winner->tag) {
+	case FT_FLAGS:
+		mutate_field_flags(buf, winner);
+		break;
+	default:
+		/*
+		 * Unreachable today -- the candidate collector only emits
+		 * mutable tags, and FT_FLAGS is the sole mutable tag in
+		 * this commit.  The remaining per-tag primitives wire up
+		 * in the next commit; until then a stray dispatch is a
+		 * silent no-op rather than a wrong write.
+		 */
+		break;
+	}
+}
+
 void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
 				    const struct struct_desc *desc,
 				    struct syscallrecord *rec)
@@ -1389,8 +1602,10 @@ static unsigned long gen_arg_struct_ptr_in(struct syscallentry *entry __unused__
 
 	buf = zmalloc_tracked(size);
 
-	if (desc != NULL)
+	if (desc != NULL) {
 		struct_field_fill_schema_aware(buf, size, desc, rec);
+		struct_field_mutate_one(buf, size, desc, rec);
+	}
 
 	deferred_free_enqueue(buf);
 	return (unsigned long) buf;
@@ -1504,8 +1719,10 @@ static unsigned long gen_arg_struct_ptr_inout(struct syscallentry *entry __unuse
 
 	buf = zmalloc_tracked(size);
 
-	if (desc != NULL)
+	if (desc != NULL) {
 		struct_field_fill_schema_aware(buf, size, desc, rec);
+		struct_field_mutate_one(buf, size, desc, rec);
+	}
 
 	deferred_free_enqueue(buf);
 	return (unsigned long) buf;
