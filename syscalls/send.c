@@ -324,6 +324,7 @@ set_control:
 	snap->iov_len_sum = iov_len_sum;
 	snap->name = msg->msg_name;
 	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
 }
 
 static void post_sendmsg(struct syscallrecord *rec)
@@ -363,6 +364,25 @@ static void post_sendmsg(struct syscallrecord *rec)
 		outputerr("post_sendmsg: rejected snap with bad magic 0x%lx "
 			  "(post_state-stomped to foreign allocation?)\n",
 			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		rec->a2 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Ownership-table check: shape + magic passed, but a foreign
+	 * chunk could carry the matching cookie by coincidence (e.g.
+	 * another in-flight sendmsg child's snap, or a stale snap a
+	 * sibling stomp resurrected by redirecting rec->post_state at it
+	 * before the deferred-free ring evicted it).  The magic only
+	 * proves "looks like a sendmsg_post_state", not "is THIS attempt's
+	 * snapshot".  Reject before tracked_free_now(snap->name) hands a
+	 * foreign inner pointer to a raw free().  Mirrors pipe.c / execve.c.
+	 */
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_sendmsg: rejected post_state=%p not in "
+			  "ownership table (post_state-redirected?)\n", snap);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->a2 = 0;
 		rec->post_state = 0;
@@ -416,6 +436,7 @@ skip_bound:
 	deferred_free_enqueue(msg);
 
 out_free:
+	post_state_unregister(snap);
 	deferred_freeptr(&rec->post_state);
 }
 
