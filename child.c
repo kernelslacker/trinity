@@ -2343,13 +2343,28 @@ void child_process(struct childdata *child, int childno)
 		if (use_dedicated_op == false)
 			child->op_type = pick_op_type();
 
+		/* Snapshot op_type once per iter.  child->op_type lives in
+		 * shared memory and can be scribbled by a poisoned-arena
+		 * write between the picker above and the stats writers
+		 * below.  The dispatch path already bounds-checks the field
+		 * before indexing op_dispatch[], but the per-op stats arrays
+		 * (sized by NR_CHILD_OP_TYPES) were indexed unchecked and a
+		 * corrupted index would scribble past their backing store.
+		 * Use the local for both dispatch and stats; skip the
+		 * per-childop stats writes entirely when the snapshot is out
+		 * of range. */
+		const enum child_op_type op = child->op_type;
+		const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 		/* The alt-op predicate is read three times below (alarm arm,
 		 * watch_taint compute, alarm disarm + op_count bump) and the
 		 * op_type field cannot change inside the iter body once
 		 * stamped above.  Hoist into a single bool, mirroring the
 		 * tick16 / use_dedicated_op / have_kcov hoists already in
-		 * this loop; saves 2 loads + 2 compares per iter. */
-		const bool is_alt_op = (child->op_type != CHILD_OP_SYSCALL);
+		 * this loop; saves 2 loads + 2 compares per iter.  Folded in
+		 * valid_op so a corrupted op_type both stays out of dispatch
+		 * and out of the alt-op-only stats paths below. */
+		const bool is_alt_op = valid_op && (op != CHILD_OP_SYSCALL);
 
 		/* Refresh the iteration-start timestamp every 16th pass.
 		 * vDSO clock_gettime is fast (~20 ns) but at ~700 ops/sec
@@ -2389,9 +2404,7 @@ void child_process(struct childdata *child, int childno)
 			: 0UL;
 
 		bool (*op_fn)(struct childdata *) =
-			(child->op_type < NR_CHILD_OP_TYPES)
-				? op_dispatch[child->op_type]
-				: NULL;
+			valid_op ? op_dispatch[op] : NULL;
 
 		/* Soft-taint watcher: bracket non-syscall dispatches with a
 		 * read of /proc/sys/kernel/tainted so a bit transition (e.g.
@@ -2424,8 +2437,8 @@ void child_process(struct childdata *child, int childno)
 
 		if (have_kcov &&
 		    childop_kcov_attr_mode != CHILDOP_KCOV_ATTR_OFF &&
-		    child->op_type < NR_CHILD_OP_TYPES &&
-		    op_uses_outer_bracket(child->op_type)) {
+		    valid_op &&
+		    op_uses_outer_bracket(op)) {
 			bracketed = kcov_bracket_begin(&child->kcov);
 		}
 
@@ -2434,7 +2447,7 @@ void child_process(struct childdata *child, int childno)
 		if (bracketed) {
 			edges_this_call = kcov_bracket_end(
 				&child->kcov,
-				CHILDOP_KCOV_NR_BASE + child->op_type);
+				CHILDOP_KCOV_NR_BASE + op);
 		}
 
 		if (watch_taint) {
@@ -2444,10 +2457,10 @@ void child_process(struct childdata *child, int childno)
 			if (delta) {
 				pre_crash_ring_record_taint(child, delta,
 							    tainted_after,
-							    (unsigned int) child->op_type,
+							    (unsigned int) op,
 							    child->op_nr);
 				__atomic_add_fetch(
-					&shm->stats.taint_transitions[child->op_type],
+					&shm->stats.taint_transitions[op],
 					1, __ATOMIC_RELAXED);
 			}
 			child->last_tainted = tainted_after;
@@ -2472,12 +2485,13 @@ void child_process(struct childdata *child, int childno)
 		if (have_kcov) {
 			unsigned long edges_after = __atomic_load_n(
 				&kcov_shm->edges_found, __ATOMIC_RELAXED);
-			adapt_budget(child->op_type, edges_before, edges_after);
+			if (valid_op)
+				adapt_budget(op, edges_before, edges_after);
 			if (is_alt_op) {
 				unsigned long delta = (edges_after >= edges_before)
 					? (edges_after - edges_before) : 0;
 				__atomic_fetch_add(
-					&shm->stats.childop_edges_discovered[child->op_type],
+					&shm->stats.childop_edges_discovered[op],
 					delta, __ATOMIC_RELAXED);
 				/* Parallel call-count bump for any invocation
 				 * that surfaced at least one new edge.  Mirrors
@@ -2487,7 +2501,7 @@ void child_process(struct childdata *child, int childno)
 				 * call-count. */
 				if (delta > 0)
 					__atomic_fetch_add(
-						&shm->stats.childop_calls_with_edges[child->op_type],
+						&shm->stats.childop_calls_with_edges[op],
 						1, __ATOMIC_RELAXED);
 			}
 			/* dual / on modes only: publish the bracketed per-
@@ -2501,7 +2515,7 @@ void child_process(struct childdata *child, int childno)
 			 * counter is a strict improvement. */
 			if (bracketed) {
 				__atomic_fetch_add(
-					&shm->stats.childop_edges_clean[child->op_type],
+					&shm->stats.childop_edges_clean[op],
 					edges_this_call, __ATOMIC_RELAXED);
 			}
 		}
@@ -2515,7 +2529,7 @@ void child_process(struct childdata *child, int childno)
 		 * aggregates that path. */
 		if (is_alt_op) {
 			__atomic_fetch_add(
-				&shm->stats.childop_invocations[child->op_type],
+				&shm->stats.childop_invocations[op],
 				1UL, __ATOMIC_RELAXED);
 
 			/* Per-op "last successful dispatch" timestamp, sampled
@@ -2535,7 +2549,7 @@ void child_process(struct childdata *child, int childno)
 			 * (the create_shm() memset already zeroed the array). */
 			if (ret != FAIL && shm_published != NULL) {
 				__atomic_store_n(
-					&shm->stats.childop_last_success_ts[child->op_type],
+					&shm->stats.childop_last_success_ts[op],
 					shm_published->fleet_op_count,
 					__ATOMIC_RELAXED);
 			}
