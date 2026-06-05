@@ -19,15 +19,19 @@
  * captured at sanitise time and consumed by the post handler.  Lives
  * in rec->post_state, a slot the syscall ABI does not expose, so a
  * sibling syscall scribbling rec->aN between the syscall returning
- * and the post handler running cannot redirect the strncpy at a
- * foreign pathname or steer the source memcpy at a foreign user
- * statbuf.
+ * and the post handler running cannot steer the source memcpy at a
+ * foreign user statbuf.  The pathname is snapshotted by VALUE into
+ * the embedded byte buffer below rather than by pointer -- a stale
+ * heap-shaped filename pointer that survived looks_like_corrupted_ptr's
+ * shape-only gate would otherwise let the .post strncpy walk off the
+ * end of an unrelated allocation, and a sibling rewrite of the bytes
+ * between sanitise and post would forge a clean-looking divergence.
  */
 #define NEWLSTAT_POST_STATE_MAGIC	0x4E4C5354UL	/* "NLST" */
 struct newlstat_post_state {
 	unsigned long magic;
-	unsigned long filename;
 	unsigned long statbuf;
+	char filename[PATH_MAX];
 };
 
 static void sanitise_newlstat(struct syscallrecord *rec)
@@ -39,18 +43,24 @@ static void sanitise_newlstat(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a2, page_size);
 
 	/*
-	 * Snapshot the two input args for the post oracle.  Without this
-	 * the post handler reads rec->aN at post-time, when a sibling
-	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original user
-	 * pathname or statbuf pointers, so the strncpy / memcpy would touch
-	 * a foreign allocation and the re-issue could resolve a different
-	 * symlink entirely.  post_state is private to the post handler.
+	 * Snapshot input state for the post oracle.  Without this the
+	 * post handler reads rec->aN at post-time, when a sibling syscall
+	 * may have scribbled the slots: looks_like_corrupted_ptr() cannot
+	 * tell a real-but-wrong heap address from the original user
+	 * statbuf pointer, so the source memcpy would touch a foreign
+	 * allocation, and a stale rec->a1 / sibling-rewritten pathname
+	 * bytes would let the re-issue resolve a different symlink
+	 * entirely.  Snapshot the filename BYTES via post_snapshot_str so
+	 * the post handler never re-derefs the user pointer; skip the
+	 * post sample entirely when the snapshot source is not provably
+	 * readable.  post_state is private to the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = NEWLSTAT_POST_STATE_MAGIC;
-	snap->filename = rec->a1;
 	snap->statbuf  = rec->a2;
+	if (!post_snapshot_str(snap->filename, sizeof(snap->filename),
+			       (const char *)(unsigned long) rec->a1))
+		snap->filename[0] = '\0';
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -95,7 +105,6 @@ static void post_newlstat(struct syscallrecord *rec)
 	struct newlstat_post_state *snap =
 		(struct newlstat_post_state *) rec->post_state;
 	struct stat first, recheck;
-	char local_path[PATH_MAX];
 	int diverged = 0;
 
 	if (snap == NULL)
@@ -136,31 +145,34 @@ static void post_newlstat(struct syscallrecord *rec)
 	if ((long) rec->retval != 0)
 		goto out_free;
 
-	if (snap->filename == 0 || snap->statbuf == 0)
+	if (snap->statbuf == 0)
+		goto out_free;
+
+	if (snap->filename[0] == '\0')
 		goto out_free;
 
 	{
 		void *buf = (void *)(unsigned long) snap->statbuf;
-		void *path = (void *)(unsigned long) snap->filename;
 
 		/*
 		 * Defense in depth: even with the post_state snapshot, a
 		 * wholesale stomp could rewrite the snapshot's inner
-		 * statbuf / filename fields.  Reject pid-scribbled pointers
-		 * before deref.
+		 * statbuf field.  Reject pid-scribbled pointers before
+		 * deref.  The filename is now snapshotted by value into
+		 * the snap's embedded buffer, so the post-time strncpy
+		 * walk-off risk is gone -- only the statbuf pointer still
+		 * needs a shape gate.
 		 */
-		if (looks_like_corrupted_ptr(rec, buf) || looks_like_corrupted_ptr(rec, path)) {
-			outputerr("post_newlstat: rejected suspicious statbuf=%p filename=%p (post_state-scribbled?)\n",
-				  buf, path);
+		if (looks_like_corrupted_ptr(rec, buf)) {
+			outputerr("post_newlstat: rejected suspicious statbuf=%p (post_state-scribbled?)\n",
+				  buf);
 			goto out_free;
 		}
 	}
 
 	memcpy(&first, (void *)(unsigned long) snap->statbuf, sizeof(first));
-	strncpy(local_path, (const char *)(unsigned long) snap->filename, PATH_MAX - 1);
-	local_path[PATH_MAX - 1] = '\0';
 
-	if (syscall(SYS_lstat, local_path, &recheck) != 0)
+	if (syscall(SYS_lstat, snap->filename, &recheck) != 0)
 		goto out_free;
 
 	if (first.st_dev     != recheck.st_dev)     diverged = 1;
@@ -183,7 +195,7 @@ static void post_newlstat(struct syscallrecord *rec)
 	       "rdev=%lx,size=%lld,blksize=%ld,blocks=%lld} "
 	       "recall={dev=%lx,ino=%lu,mode=%o,nlink=%lu,uid=%u,gid=%u,"
 	       "rdev=%lx,size=%lld,blksize=%ld,blocks=%lld}\n",
-	       local_path,
+	       snap->filename,
 	       (unsigned long) first.st_dev, (unsigned long) first.st_ino,
 	       (unsigned int) first.st_mode, (unsigned long) first.st_nlink,
 	       (unsigned int) first.st_uid, (unsigned int) first.st_gid,
