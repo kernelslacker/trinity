@@ -971,6 +971,7 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 {
 	unsigned int call = rec->nr;
 	bool retfd_rejected;
+	bool rzs_rejected = false;
 
 	/* Wholesale-stomp check: if anything overwrote the rec while the
 	 * kernel had control, the canary won't match.  Catches the rarer
@@ -1008,19 +1009,41 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 	 * sanitise hook (fcntl, futex) -- so we don't have to sprinkle
 	 * the same retval bound across the ~85 .post handlers individually.
 	 * Use rec->rettype, not entry->rettype, so per-cmd overrides apply
-	 * to the correct subset of calls.  Informational like the canary
-	 * check above; downstream success/failure tally and entry->post
-	 * still run.  rzs_blanket_reject is the only counter touched here:
-	 * this is a dispatcher-level rettype-contract violation (a sibling
-	 * scribbled rec->retval after the syscall returned), distinct from
-	 * a .post handler rejecting a pid-shaped pointer in rec->aN.  The
-	 * two bug classes used to share post_handler_corrupt_ptr, which
-	 * inflated the headline counter and smeared the per-handler
-	 * attribution; they are accounted separately now. */
+	 * to the correct subset of calls.  rzs_blanket_reject is the
+	 * headline counter for this class: a dispatcher-level rettype-
+	 * contract violation (a sibling scribbled rec->retval after the
+	 * syscall returned), distinct from a .post handler rejecting a
+	 * pid-shaped pointer in rec->aN.  The two bug classes used to
+	 * share post_handler_corrupt_ptr, which inflated the headline
+	 * counter and smeared the per-handler attribution; they are
+	 * accounted separately now.
+	 *
+	 * Coerce the impossible retval to -1UL / EINVAL and set
+	 * rzs_rejected so downstream handlers cannot act on the
+	 * fabricated value.  Without coercion the success branch below
+	 * runs for any rec->retval != -1UL, and a RET_ZERO_SUCCESS
+	 * .ret_objtype_via_post handler (timer_create) then treats the
+	 * stomped scalar as a successful return and publishes a bogus
+	 * timer id into the OBJ_TIMERID pool -- a later timer_delete()
+	 * picks up the garbage and faults inside glibc's per-process
+	 * timer table.  Mirrors reject_corrupt_retfd's coerce-to-failure
+	 * shape so the failure branch handles it identically to a real
+	 * EINVAL.  handle_success(), register_returned_fd() and
+	 * prop_ring_push() all short-circuit on retval == -1UL already,
+	 * so the coercion alone suppresses those paths; rzs_rejected
+	 * gates only the post-derived registrar and entry->post (defence
+	 * in depth, matching the retfd_rejected pattern at the same
+	 * site). */
 	if (unlikely(rec->rettype == RET_ZERO_SUCCESS &&
-		     rec->retval != 0 && rec->retval != -1UL))
+		     rec->retval != 0 && rec->retval != -1UL)) {
 		__atomic_add_fetch(&shm->stats.rzs_blanket_reject, 1,
 				   __ATOMIC_RELAXED);
+		outputerr("rzs: rejecting out-of-bound retval=0x%lx for %s\n",
+			  rec->retval, entry->name);
+		rec->retval = (unsigned long)-1L;
+		rec->errno_post = EINVAL;
+		rzs_rejected = true;
+	}
 
 	/* Validate RET_FD shape before success/failure dispatch.  A
 	 * structurally corrupt fd return (e.g. upper bits set, or below the
@@ -1180,9 +1203,14 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		 * socketpair, io_setup, timer_create) clear rec->post_state
 		 * as part of their cleanup pass, and the hook reads
 		 * post_state / rec->aN to derive what to register.  Same
-		 * retfd-rejected gate as entry->post -- a fabricated
-		 * retval shouldn't drive any registration. */
-		if (entry->ret_objtype_via_post && !retfd_rejected)
+		 * retfd/rzs-rejected gate as entry->post -- a fabricated
+		 * retval shouldn't drive any registration (timer_create is
+		 * RET_ZERO_SUCCESS with a .ret_objtype_via_post that reads
+		 * *post_state on the success branch; without the rzs gate
+		 * a stomped retval would feed a garbage timer_t into the
+		 * OBJ_TIMERID pool). */
+		if (entry->ret_objtype_via_post &&
+		    !retfd_rejected && !rzs_rejected)
 			entry->ret_objtype_via_post(rec);
 
 		/* Telemetry-only liveness gate.  Runs immediately before
@@ -1193,13 +1221,14 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		 * for the rejection-policy decision. */
 		arena_liveness_probe(entry, rec);
 
-		/* Skip entry->post on a rejected RET_FD: handler would
-		 * be acting on a fabricated retval, attribution already
-		 * happened inside reject_corrupt_retfd().
+		/* Skip entry->post on a rejected RET_FD or RET_ZERO_SUCCESS:
+		 * the handler would be acting on a fabricated retval,
+		 * attribution already happened inside the rejection site.
 		 * register_returned_fd() below already short-circuits on
 		 * (long)rec->retval < 0 so the coerced -1UL makes it a
-		 * no-op there regardless. */
-		if (entry->post && !retfd_rejected)
+		 * no-op there regardless; prop_ring_push() likewise filters
+		 * the coerced sret == -1 case before capture. */
+		if (entry->post && !retfd_rejected && !rzs_rejected)
 		    entry->post(rec);
 
 		register_returned_fd(entry, rec);

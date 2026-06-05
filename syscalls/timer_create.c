@@ -191,7 +191,14 @@ static void post_timer_create_record_tid(struct syscallrecord *rec)
 	timer_t *idp;
 	intptr_t tid_int;
 
-	if ((long) rec->retval < 0)
+	/* timer_create is RET_ZERO_SUCCESS: the only successful retval is
+	 * exactly 0.  Anything else -- including a positive small int left
+	 * by a sibling stomp the dispatcher's rzs gate happened to miss --
+	 * means the kernel-written *idp may not exist or may hold stale
+	 * shm noise.  Tighter than the previous (long)retval < 0 gate,
+	 * which admitted a stomped retval=5 as "success" and let a garbage
+	 * timer_t through into the OBJ_TIMERID pool. */
+	if (rec->retval != 0)
 		return;
 
 	if (snap == NULL || looks_like_corrupted_ptr(rec, snap))
@@ -252,6 +259,13 @@ static void post_timer_create(struct syscallrecord *rec)
 		(struct timer_create_post_state *) rec->post_state;
 	timer_t *idp;
 	intptr_t tid_int;
+
+	/* Same strict success gate as post_timer_create_record_tid:
+	 * RET_ZERO_SUCCESS contract means only retval == 0 indicates the
+	 * kernel actually wrote *idp.  Reject everything else (including
+	 * the rzs-coerced -1UL) before dereferencing post_state. */
+	if (rec->retval != 0)
+		return;
 
 	if (snap == NULL)
 		return;
