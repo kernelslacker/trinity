@@ -37,6 +37,7 @@
 #include <linux/io_uring.h>
 #include <linux/landlock.h>
 #include <linux/mman.h>
+#include <linux/mount.h>
 #include <mqueue.h>
 
 #include "compat.h"
@@ -295,6 +296,75 @@ static const struct struct_field cachestat_range_fields[] = {
 	       .mutate_weight = 60),
 	FIELDX(struct cachestat_range, len, FT_RANGE,
 	       .u.range = { 0, 4000000000UL },
+	       .mutate_weight = 60),
+};
+
+/* ------------------------------------------------------------------ */
+/* struct mount_attr (mount_setattr, open_tree_attr)                   */
+/* ------------------------------------------------------------------ */
+
+/*
+ * MOUNT_ATTR_* bit vocabulary.  ifndef-guarded to match the pattern in
+ * syscalls/mount.c and syscalls/fsmount.c -- older toolchain headers
+ * may pre-date the IDMAP / NOSYMFOLLOW additions.  struct mount_attr
+ * itself is presumed available via <linux/mount.h>; if the host header
+ * is too old to carry the struct the build already fails in
+ * open_tree_attr.c, not here.
+ */
+#ifndef MOUNT_ATTR_RDONLY
+#define MOUNT_ATTR_RDONLY	0x00000001
+#define MOUNT_ATTR_NOSUID	0x00000002
+#define MOUNT_ATTR_NODEV	0x00000004
+#define MOUNT_ATTR_NOEXEC	0x00000008
+#define MOUNT_ATTR_NOATIME	0x00000010
+#define MOUNT_ATTR_STRICTATIME	0x00000020
+#define MOUNT_ATTR_NODIRATIME	0x00000080
+#define MOUNT_ATTR_IDMAP	0x00100000
+#define MOUNT_ATTR_NOSYMFOLLOW	0x00200000
+#endif
+
+#define MOUNT_ATTR_ALL_MASK \
+	(MOUNT_ATTR_RDONLY | MOUNT_ATTR_NOSUID | MOUNT_ATTR_NODEV | \
+	 MOUNT_ATTR_NOEXEC | MOUNT_ATTR_NOATIME | MOUNT_ATTR_STRICTATIME | \
+	 MOUNT_ATTR_NODIRATIME | MOUNT_ATTR_IDMAP | MOUNT_ATTR_NOSYMFOLLOW)
+
+/*
+ * propagation is effectively a 4-valued enum: do_change_type() EINVALs
+ * the moment two propagation bits appear together, so FT_FLAGS would
+ * be wrong here -- the mutator would happily OR a second bit in and
+ * trip the validator.  FT_ENUM over the four MS_* propagation
+ * constants keeps the mutator inside the legal one-bit shape.
+ */
+static const unsigned long mount_attr_propagation_values[] = {
+	MS_SHARED, MS_PRIVATE, MS_SLAVE, MS_UNBINDABLE,
+};
+
+/*
+ * mount_setattr / open_tree_attr already carry strong bespoke
+ * sanitisers (build_mount_attr() in syscalls/open_tree_attr.c, mirrored
+ * by sanitise_mount_setattr) that pick coherent attr_set / attr_clr /
+ * propagation / userns_fd buckets and respect the kernel's mutually-
+ * exclusive ATIME-mode and propagation rules.  Those sanitisers
+ * overwrite rec->a4 wholesale after gen_arg_struct_ptr_in's schema-
+ * aware fill, so the registration here is attribution-only --
+ * struct_field_for_cmp() uses the FT_FLAGS / FT_ENUM / FT_FD tags to
+ * steer KCOV-CMP learned constants at the right field rather than at a
+ * coincidentally-same-width slot.  The bespoke fill stays live; this
+ * entry never displaces it.  Same shape as cachestat_range above and
+ * the io_uring_register_args entry below.
+ */
+static const struct struct_field mount_attr_fields[] = {
+	FIELDX(struct mount_attr, attr_set, FT_FLAGS,
+	       .u.flags.mask = MOUNT_ATTR_ALL_MASK,
+	       .mutate_weight = 100),
+	FIELDX(struct mount_attr, attr_clr, FT_FLAGS,
+	       .u.flags.mask = MOUNT_ATTR_ALL_MASK,
+	       .mutate_weight = 80),
+	FIELDX(struct mount_attr, propagation, FT_ENUM,
+	       .u.enum_ = { mount_attr_propagation_values,
+			    ARRAY_SIZE(mount_attr_propagation_values) },
+	       .mutate_weight = 80),
+	FIELDX(struct mount_attr, userns_fd, FT_FD,
 	       .mutate_weight = 60),
 };
 
@@ -3596,6 +3666,19 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= cachestat_range_fields,
 		.num_fields	= ARRAY_SIZE(cachestat_range_fields),
 	},
+	/*
+	 * mount_attr: appended at the tail so the existing struct_catalog[N]
+	 * indices above stay stable; the syscall_struct_args[] mapping below
+	 * picks up the new entry via an explicit USE_BPF-aware index since
+	 * the bpf_attr / bpf_insn entries shift the position by two when
+	 * USE_BPF is set.
+	 */
+	{
+		.name		= "mount_attr",
+		.struct_size	= sizeof(struct mount_attr),
+		.fields		= mount_attr_fields,
+		.num_fields	= ARRAY_SIZE(mount_attr_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -3708,11 +3791,26 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * sanitise_cachestat / pick_range continues to own the live fill.
 	 */
 	{ "cachestat",		2, &struct_catalog[25] },
+	/*
+	 * mount_setattr(int dfd, const char *path, unsigned int flags,
+	 *               struct mount_attr *uattr, size_t usize)
+	 * open_tree_attr(int dfd, const char *filename, unsigned int flags,
+	 *                struct mount_attr *uattr, size_t usize)
+	 * Both a4 slots are ARG_STRUCT_PTR_IN, but the bespoke sanitisers
+	 * (build_mount_attr / sanitise_mount_setattr) overwrite rec->a4
+	 * after the schema-aware fill -- attribution-only registration so
+	 * struct_field_for_cmp can steer CMP-learned constants at the
+	 * named fields.  The curated bespoke fill stays live.
+	 */
+	{ "mount_setattr",	4, &struct_catalog[26] },
+	{ "open_tree_attr",	4, &struct_catalog[26] },
 #else
 	{ "clock_nanosleep",	3, &struct_catalog[22] },
 	{ "nanosleep",		1, &struct_catalog[22] },
 	{ "utimensat",		3, &struct_catalog[22] },
 	{ "cachestat",		2, &struct_catalog[23] },
+	{ "mount_setattr",	4, &struct_catalog[24] },
+	{ "open_tree_attr",	4, &struct_catalog[24] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
