@@ -1095,7 +1095,7 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 			sub = zmalloc_tracked(nbytes);
 			random_byte_fill(sub, nbytes,
 					 f->u.ptr_bytes.null_terminated);
-			deferred_free_enqueue(sub);
+			deferred_free_enqueue_or_leak(sub);
 			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
 			chosen_len[i] = nbytes;
 			break;
@@ -1143,7 +1143,7 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 				count = 1 + rnd_modulo_u32(cap);
 			nbytes = count * elem_size;
 			sub = zmalloc_tracked(nbytes);
-			deferred_free_enqueue(sub);
+			deferred_free_enqueue_or_leak(sub);
 			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
 			chosen_len[i] = count;
 			break;
@@ -1176,7 +1176,7 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 			sub = zmalloc_tracked(nbytes);
 			ebpf_gen_program_into(sub, (int) max_insns,
 					      &out_count, prog_type);
-			deferred_free_enqueue(sub);
+			deferred_free_enqueue_or_leak(sub);
 			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
 			chosen_len[i] = (unsigned long) out_count;
 #else
@@ -1204,7 +1204,7 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 			sub = zmalloc_tracked(target->struct_size);
 			struct_field_fill_schema_aware(sub, target->struct_size,
 						       target, rec);
-			deferred_free_enqueue(sub);
+			deferred_free_enqueue_or_leak(sub);
 			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
 			/*
 			 * Re-resolve the target's variant now that sub is
@@ -2405,7 +2405,7 @@ static unsigned long gen_arg_struct_ptr_in(struct syscallentry *entry __unused__
 		struct_field_mutate_one(buf, size, desc, rec);
 	}
 
-	deferred_free_enqueue(buf);
+	deferred_free_enqueue_or_leak(buf);
 	return (unsigned long) buf;
 }
 
@@ -2475,7 +2475,7 @@ static unsigned long gen_arg_struct_ptr_out(struct syscallentry *entry __unused_
 	buf = zmalloc_tracked(size);
 	memset(buf, STRUCT_PTR_OUT_POISON_BYTE, size);
 
-	deferred_free_enqueue(buf);
+	deferred_free_enqueue_or_leak(buf);
 	return (unsigned long) buf;
 }
 
@@ -2522,7 +2522,7 @@ static unsigned long gen_arg_struct_ptr_inout(struct syscallentry *entry __unuse
 		struct_field_mutate_one(buf, size, desc, rec);
 	}
 
-	deferred_free_enqueue(buf);
+	deferred_free_enqueue_or_leak(buf);
 	return (unsigned long) buf;
 }
 
