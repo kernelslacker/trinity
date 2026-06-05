@@ -266,17 +266,23 @@ static unsigned long newfstatat_flags[] = {
  * captured at sanitise time and consumed by the post handler.  Lives
  * in rec->post_state, a slot the syscall ABI does not expose, so a
  * sibling syscall scribbling rec->aN between the syscall returning
- * and the post handler running cannot redirect the oracle at a
- * foreign user buffer / path string and cannot smear the dfd or the
- * AT_* flag word that steers lookup semantics on the re-issue.
+ * and the post handler running cannot redirect the oracle at a foreign
+ * user buffer and cannot smear the dfd or the AT_* flag word that
+ * steers lookup semantics on the re-issue.  The pathname is snapshotted
+ * by VALUE into the embedded byte buffer below rather than by pointer
+ * -- a stale heap-shaped pathname pointer that survived
+ * looks_like_corrupted_ptr's shape-only gate would otherwise let the
+ * .post strncpy walk off the end of an unrelated allocation, and a
+ * sibling rewrite of the bytes between sanitise and post would forge
+ * a clean-looking divergence.
  */
 #define NEWFSTATAT_POST_STATE_MAGIC	0x4E465441UL	/* "NFTA" */
 struct newfstatat_post_state {
 	unsigned long magic;
 	unsigned long dfd;
-	unsigned long pathname;
 	unsigned long statbuf;
 	unsigned long at_flags;
+	char pathname[PATH_MAX];
 };
 
 static void sanitise_newfstatat(struct syscallrecord *rec)
@@ -288,23 +294,27 @@ static void sanitise_newfstatat(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a3, page_size);
 
 	/*
-	 * Snapshot the four input args for the post oracle.  Without
-	 * this the post handler reads rec->aN at post-time, when a
-	 * sibling syscall may have scribbled the slots:
-	 * looks_like_corrupted_ptr() cannot tell a real-but-wrong heap
-	 * address from the original user buffer / path pointers, so
-	 * the strncpy / memcpy would touch a foreign allocation, and
-	 * a stomped dfd or flag word would silently steer the re-call
-	 * at a different inode than the one the original syscall
-	 * actually resolved.  post_state is private to the post
-	 * handler.
+	 * Snapshot input state for the post oracle.  Without this the
+	 * post handler reads rec->aN at post-time, when a sibling syscall
+	 * may have scribbled the slots: looks_like_corrupted_ptr() cannot
+	 * tell a real-but-wrong heap address from the original user buffer
+	 * pointer, so the source memcpy would touch a foreign allocation,
+	 * and a stomped dfd, flag word, or rec->a2 / sibling-rewritten
+	 * pathname bytes would silently steer the re-call at a different
+	 * inode than the one the original syscall actually resolved.
+	 * Snapshot the pathname BYTES via post_snapshot_str so the post
+	 * handler never re-derefs the user pointer; skip the post sample
+	 * when the snapshot source is not provably readable.  post_state
+	 * is private to the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = NEWFSTATAT_POST_STATE_MAGIC;
 	snap->dfd      = rec->a1;
-	snap->pathname = rec->a2;
 	snap->statbuf  = rec->a3;
 	snap->at_flags = rec->a4;
+	if (!post_snapshot_str(snap->pathname, sizeof(snap->pathname),
+			       (const char *)(unsigned long) rec->a2))
+		snap->pathname[0] = '\0';
 	rec->post_state = (unsigned long) snap;
 }
 
@@ -363,7 +373,6 @@ static void post_newfstatat(struct syscallrecord *rec)
 	struct newfstatat_post_state *snap =
 		(struct newfstatat_post_state *) rec->post_state;
 	struct stat first, recheck;
-	char local_path[PATH_MAX];
 	int dfd, flag;
 	int diverged = 0;
 
@@ -405,34 +414,37 @@ static void post_newfstatat(struct syscallrecord *rec)
 	if ((long) rec->retval != 0)
 		goto out_free;
 
-	if (snap->pathname == 0 || snap->statbuf == 0)
+	if (snap->statbuf == 0)
+		goto out_free;
+
+	if (snap->pathname[0] == '\0')
 		goto out_free;
 
 	dfd = (int) snap->dfd;
 
 	{
 		void *buf = (void *)(unsigned long) snap->statbuf;
-		void *path = (void *)(unsigned long) snap->pathname;
 
 		/*
 		 * Defense in depth: even with the post_state snapshot, a
 		 * wholesale stomp could rewrite the snapshot's inner
-		 * statbuf / pathname fields.  Reject pid-scribbled
-		 * pointers before deref.
+		 * statbuf field.  Reject pid-scribbled pointers before
+		 * deref.  The pathname is now snapshotted by value into
+		 * the snap's embedded buffer, so the post-time strncpy
+		 * walk-off risk is gone -- only the statbuf pointer still
+		 * needs a shape gate.
 		 */
-		if (looks_like_corrupted_ptr(rec, buf) || looks_like_corrupted_ptr(rec, path)) {
-			outputerr("post_newfstatat: rejected suspicious statbuf=%p filename=%p (post_state-scribbled?)\n",
-				  buf, path);
+		if (looks_like_corrupted_ptr(rec, buf)) {
+			outputerr("post_newfstatat: rejected suspicious statbuf=%p (post_state-scribbled?)\n",
+				  buf);
 			goto out_free;
 		}
 	}
 
-	strncpy(local_path, (const char *)(unsigned long) snap->pathname, PATH_MAX - 1);
-	local_path[PATH_MAX - 1] = '\0';
 	flag = (int) snap->at_flags;
 	memcpy(&first, (void *)(unsigned long) snap->statbuf, sizeof(first));
 
-	if (syscall(SYS_newfstatat, dfd, local_path, &recheck, flag) != 0)
+	if (syscall(SYS_newfstatat, dfd, snap->pathname, &recheck, flag) != 0)
 		goto out_free;
 
 	if (first.st_dev     != recheck.st_dev)     diverged = 1;
@@ -455,7 +467,7 @@ static void post_newfstatat(struct syscallrecord *rec)
 	       "rdev=%lx,size=%lld,blksize=%ld,blocks=%lld} "
 	       "recall={dev=%lx,ino=%lu,mode=%o,nlink=%lu,uid=%u,gid=%u,"
 	       "rdev=%lx,size=%lld,blksize=%ld,blocks=%lld}\n",
-	       dfd, local_path, (unsigned int) flag,
+	       dfd, snap->pathname, (unsigned int) flag,
 	       (unsigned long) first.st_dev, (unsigned long) first.st_ino,
 	       (unsigned int) first.st_mode, (unsigned long) first.st_nlink,
 	       (unsigned int) first.st_uid, (unsigned int) first.st_gid,
