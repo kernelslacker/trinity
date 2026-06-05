@@ -171,7 +171,10 @@ static void post_getcwd(struct syscallrecord *rec)
 
 	copy_len = ((size_t)ret < sizeof(user_cwd))
 			? (size_t)ret : sizeof(user_cwd) - 1;
-	memcpy(user_cwd, (const void *)(uintptr_t) snap->buf, copy_len);
+	if (!post_snapshot_or_skip(user_cwd,
+				   (const void *)(uintptr_t) snap->buf,
+				   copy_len))
+		goto out_free;
 	/* sys_getcwd includes the trailing NUL in the returned length, so
 	 * the string proper is copy_len-1 bytes.  Force NUL-terminate
 	 * defensively. */
