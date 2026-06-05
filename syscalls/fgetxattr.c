@@ -259,25 +259,6 @@ static void post_fgetxattr(struct syscallrecord *rec)
 	if (snap_fd < 0)
 		goto out_free;
 
-	{
-		void *value = (void *)(unsigned long) snap->value;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner value
-		 * pointer field.  Reject pid-scribbled values before deref.
-		 * The name is now snapshotted by value into the snap's
-		 * embedded buffer, so the post-time strncpy walk-off risk
-		 * is gone -- only the value pointer still needs a shape
-		 * gate.
-		 */
-		if (looks_like_corrupted_ptr(rec, value)) {
-			outputerr("post_fgetxattr: rejected suspicious value=%p (post_state-scribbled?)\n",
-				  value);
-			goto out_free;
-		}
-	}
-
 	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first_buf))
 		snap_len = sizeof(first_buf);
@@ -291,7 +272,10 @@ static void post_fgetxattr(struct syscallrecord *rec)
 	if (snap->buf_alloc_size != 0 && snap_len > snap->buf_alloc_size)
 		snap_len = snap->buf_alloc_size;
 
-	memcpy(first_buf, (void *)(unsigned long) snap->value, snap_len);
+	if (!post_snapshot_or_skip(first_buf,
+				   (void *)(unsigned long) snap->value,
+				   snap_len))
+		goto out_free;
 
 	rc = syscall(SYS_fgetxattr, snap_fd, snap->name,
 		     recheck_buf, sizeof(recheck_buf));
