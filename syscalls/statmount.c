@@ -344,7 +344,7 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	 * path.  Matches the deferred_free_enqueue() lifetime sched_setattr
 	 * and the rest of the csfu consumer set already use.
 	 */
-	deferred_free_enqueue(req);
+	deferred_free_enqueue_or_leak(req);
 }
 
 /*

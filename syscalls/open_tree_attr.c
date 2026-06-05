@@ -211,7 +211,7 @@ static void sanitise_open_tree_attr(struct syscallrecord *rec)
 	 * time — open_tree_attr has no post handler, so this is the
 	 * only place the zmalloc_tracked() allocation gets released.
 	 */
-	deferred_free_enqueue(ma);
+	deferred_free_enqueue_or_leak(ma);
 }
 
 struct syscallentry syscall_open_tree_attr = {

@@ -65,7 +65,7 @@ static void sanitise_file_setattr(struct syscallrecord *rec)
 	 * Hand the csfu buffer to the deferred-free queue up front --
 	 * the zmalloc_tracked() allocation has no other release path.
 	 */
-	deferred_free_enqueue(fa);
+	deferred_free_enqueue_or_leak(fa);
 
 	/*
 	 * Non-EXACT buckets are rejected on usize by copy_struct_from_user()

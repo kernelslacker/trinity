@@ -156,7 +156,7 @@ static void sanitise_landlock_create_ruleset(struct syscallrecord *rec)
 	 * cleanup independent of whether post_landlock_create_ruleset
 	 * ever runs (it's skipped when the retfd reject hook fires).
 	 */
-	deferred_free_enqueue(attr);
+	deferred_free_enqueue_or_leak(attr);
 }
 
 static void post_landlock_create_ruleset(struct syscallrecord *rec)

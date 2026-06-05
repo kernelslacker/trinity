@@ -421,7 +421,7 @@ static void sanitise_mount_setattr(struct syscallrecord *rec)
 	 * time -- mount_setattr has no post handler, so this is the only
 	 * place the zmalloc_tracked() allocation gets released.
 	 */
-	deferred_free_enqueue(ma);
+	deferred_free_enqueue_or_leak(ma);
 }
 
 #ifndef AT_RECURSIVE

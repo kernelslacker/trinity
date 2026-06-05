@@ -1754,7 +1754,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	 * reject_corrupt_retfd() flags retfd, handle_syscall_ret() skips .post
 	 * entirely, and a post-side free would leak the snap.
 	 */
-	deferred_free_enqueue(attr);
+	deferred_free_enqueue_or_leak(attr);
 
 	pick_perf_cpu(rec);
 

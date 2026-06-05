@@ -278,7 +278,7 @@ static void sanitise_listmount(struct syscallrecord *rec)
 	 * deferred-free TTL outlives the post handler, which still reads
 	 * via snap->req in the same iteration.
 	 */
-	deferred_free_enqueue(req);
+	deferred_free_enqueue_or_leak(req);
 }
 
 /*

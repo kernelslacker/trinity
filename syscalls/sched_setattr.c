@@ -164,7 +164,7 @@ submit:
 	 * time -- sched_setattr has no post handler, so this is the only
 	 * place the zmalloc_tracked() allocation gets released.
 	 */
-	deferred_free_enqueue(sa);
+	deferred_free_enqueue_or_leak(sa);
 }
 
 struct syscallentry syscall_sched_setattr = {

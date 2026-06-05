@@ -62,7 +62,7 @@ static void sanitise_setxattrat(struct syscallrecord *rec)
 		 * front so the value-buffer allocation failure path
 		 * below cannot leak it.
 		 */
-		deferred_free_enqueue(args);
+		deferred_free_enqueue_or_leak(args);
 
 		/*
 		 * Non-EXACT buckets get rejected on size by the validator
