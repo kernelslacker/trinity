@@ -1386,7 +1386,7 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 		}
 	}
 
-	free(head->array);
+	tracked_free_now(head->array);
 	head->array = NULL;
 	head->array_capacity = 0;
 }
