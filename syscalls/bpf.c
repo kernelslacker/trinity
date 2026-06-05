@@ -7,6 +7,7 @@
 #include <linux/filter.h>
 #include <linux/version.h>
 #include <sys/syscall.h>
+#include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
 #include "arch.h"
@@ -559,6 +560,41 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	rec->post_state = (unsigned long) snap;
 }
 
+/*
+ * Drive the sk_lookup attach lifecycle on a freshly loaded
+ * BPF_PROG_TYPE_SK_LOOKUP program.  sk_lookup attaches via
+ * BPF_LINK_CREATE against a network namespace fd (not a cgroup or
+ * netdev), so open /proc/self/ns/net as the target.  Best-effort:
+ * a verifier-rejected prog never reaches here, and the LINK_CREATE
+ * itself routinely EPERMs without CAP_NET_ADMIN/CAP_BPF on the
+ * netns -- both are normal outcomes for a privilege-fuzzed run.
+ * The live link fd, when one is returned, gets published into the
+ * shared OBJ_FD_BPF_LINK pool so its release follows the same
+ * schedule as every other bpf link, with no special-case leak.
+ */
+static void bpf_attach_sk_lookup(int prog_fd)
+{
+	union bpf_attr lc;
+	int netns_fd, link_fd;
+
+	netns_fd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
+	if (netns_fd < 0)
+		return;
+
+	memset(&lc, 0, sizeof(lc));
+	lc.link_create.prog_fd = prog_fd;
+	lc.link_create.target_fd = netns_fd;
+	lc.link_create.attach_type = BPF_SK_LOOKUP;
+	lc.link_create.flags = 0;
+
+	link_fd = syscall(__NR_bpf, BPF_LINK_CREATE, &lc, sizeof(lc));
+	close(netns_fd);
+
+	if (link_fd >= 0)
+		publish_resource(OBJ_FD_BPF_LINK, link_fd,
+				 &(struct resource_meta){.subtype = BPF_SK_LOOKUP});
+}
+
 static void post_bpf(struct syscallrecord *rec)
 {
 	struct bpf_post_state *snap = (struct bpf_post_state *) rec->post_state;
@@ -684,6 +720,17 @@ static void post_bpf(struct syscallrecord *rec)
 		if (fd >= 0)
 			publish_resource(OBJ_FD_BPF_PROG, fd,
 					 &(struct resource_meta){.subtype = attr->prog_type});
+
+		/*
+		 * sk_lookup is one of the few prog types whose runtime path is
+		 * gated entirely on having an attached link in the target netns
+		 * -- a freshly loaded prog with no link is a verifier exercise
+		 * and nothing else.  Drive the attach inline so the attach path
+		 * sees traffic; the resulting link fd, if any, joins the normal
+		 * link pool and releases on the standard schedule.
+		 */
+		if (fd >= 0 && attr->prog_type == BPF_PROG_TYPE_SK_LOOKUP)
+			bpf_attach_sk_lookup(fd);
 
 		/* Two instruction-buffer allocators feed BPF_PROG_LOAD: the
 		 * classic-BPF branch returns a tracked sock_fprog wrapper that
