@@ -514,6 +514,13 @@ bool alloc_track_lookup(void *ptr)
  * a non-tracked pointer is not by itself a bug, and a hard error here
  * would punish callers that legitimately mix tracked and untracked
  * allocations on the same release path.
+ *
+ * inflight_hash_remove() keeps the in-flight set symmetric: if this
+ * buffer was already admitted to the deferred-free ring by another
+ * owner, drop the stale positive so a later ring eviction of that
+ * slot sees the entry gone and skips it instead of double-freeing.
+ * The remove no-ops on a miss, so the common case (ptr was never
+ * enqueued) costs only one hash probe.
  */
 void tracked_free_now(void *ptr)
 {
@@ -521,6 +528,7 @@ void tracked_free_now(void *ptr)
 		return;
 
 	alloc_track_consume(ptr);
+	inflight_hash_remove(ptr);
 	free(ptr);
 }
 
