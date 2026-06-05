@@ -1942,32 +1942,6 @@ struct stats_s {
 	 * fresh chain) but worth tracking so spikes are visible. */
 	unsigned long chain_replay_len_corrupt;
 
-	/* Sequence-chain mid-step edgepair-guided picker counters.  Bumped
-	 * from set_syscall_nr_edgepair_chain in random-syscall.c when a
-	 * chain step i >= 1 short-circuits the bandit dispatch and picks
-	 * the next syscall by edgepair_score() against the predecessor.
-	 *
-	 *   edgepair_chain_picks         -- successful mid-chain picks
-	 *                                   (chain-step short-circuit taken)
-	 *   edgepair_chain_pick_fails    -- mid-chain picks that found no
-	 *                                   usable candidate and fell
-	 *                                   through to the normal bandit
-	 *                                   dispatch
-	 *   edgepair_chain_pick_explore  -- successful picks scored under
-	 *                                   EDGEPAIR_SCORE_EXPLORATION
-	 *   edgepair_chain_pick_exploit  -- successful picks scored under
-	 *                                   EDGEPAIR_SCORE_EXPLOITATION
-	 *
-	 * The explore/exploit split sums to edgepair_chain_picks -- the
-	 * mode is chosen per-pick by a 50/50 coin.  No strategy_picks[]
-	 * bump is paired with these (mid-chain picks inherit the strategy
-	 * stamp from step 0); the bandit accounting stays attributed to
-	 * whichever arm started the chain. */
-	unsigned long edgepair_chain_picks;
-	unsigned long edgepair_chain_pick_fails;
-	unsigned long edgepair_chain_pick_explore;
-	unsigned long edgepair_chain_pick_exploit;
-
 	/* Per-call abort counter for random_map_readfn().  Bumped each time
 	 * the per-page memcpy in one of the read walks (read_one_page,
 	 * read_whole_mapping, read_every_other_page, read_mapping_reverse,
@@ -2014,15 +1988,6 @@ struct stats_s {
 	 * pulls for the COVERAGE_FRONTIER arm, this ratio also approximates
 	 * the average accepted picks per window the arm ran. */
 	unsigned long frontier_strategy_picks;
-
-	/* Bump from set_syscall_nr_edgepair_frontier each time a candidate
-	 * clears the edgepair-weighted acceptance gate and commits.  Sibling
-	 * of frontier_strategy_picks; use the ratio
-	 * (edgepair_frontier_strategy_picks /
-	 *  bandit_pulls[STRATEGY_EDGEPAIR_FRONTIER]) to see how often a pull
-	 * translated to an actual committed pick vs how often the picker hit
-	 * its 10000-iteration retry budget. */
-	unsigned long edgepair_frontier_strategy_picks;
 
 	/* Number of times the ring rotation's per-nr subtract against
 	 * frontier_recent_count_cached would have produced a negative value
@@ -2080,59 +2045,6 @@ struct stats_s {
 	 * bandit-pool aggregate without iterating the per-strategy array.
 	 * CALL-COUNT semantics, see explorer_pool_edges_discovered above. */
 	unsigned long bandit_pool_edges_discovered;
-
-	/* Explorer picker edge-pair gating counters.  Both bumped from
-	 * set_syscall_nr_random's retry loop and meaningful only on the
-	 * explorer path (the heuristic picker's matching cold-pair gate
-	 * runs against the heuristic's own pre-rotation flow and does not
-	 * touch these counters).
-	 *
-	 * explorer_cold_pair_rejects: incremented on each rejection of a
-	 * (prev, curr) pair the edgepair tracker has classified cold --
-	 * the pair WAS productive but has not surfaced a new edge in over
-	 * EDGEPAIR_COLD_THRESHOLD pair-calls.  Sustained growth confirms
-	 * the explorer side is now avoiding saturated pairs the way the
-	 * heuristic side already does; flat-while-cold means the gate is
-	 * not firing (mis-wired RAND_BOOL or stale edgepair view).
-	 *
-	 * explorer_unseen_pair_accepts: incremented on the never-seen
-	 * short-circuit -- edgepair_get_stats returned the {0, 0} sentinel
-	 * indicating no record for the pair, so the explorer takes it
-	 * immediately without re-rolling against anti-prior.  Tracks the
-	 * pace at which the explorer is driving onto unexplored (prev,
-	 * curr) sequences; should dominate the cold-reject counter early
-	 * in a run and bleed toward zero as the pair table fills.
-	 *
-	 * explorer_unseen_pair_seek_retries: incremented each time the
-	 * PAIR_UNSEEN intervention's bounded re-roll consumed one retry
-	 * before accepting.  Saturates at UNSEEN_SEEK_RETRY_CAP per
-	 * outer pick; sustained growth during plateau windows confirms
-	 * the intervention is actively redirecting the picker, flat
-	 * means the unseen pool is already large enough that the first
-	 * roll lands on an unseen pair without retrying. */
-	unsigned long explorer_cold_pair_rejects;
-	unsigned long explorer_unseen_pair_accepts;
-	unsigned long explorer_unseen_pair_seek_retries;
-
-	/* Bandit novelty-dampener visibility counters.  Bumped from the
-	 * per-syscall new-edge bump site in random-syscall.c whenever the
-	 * (prev, curr) edgepair lookup returned a known pair and the
-	 * historical productivity ratio scaled the dampen multiplier below
-	 * the full 1.0 (256) credit.  Together they let the operator see
-	 * both how OFTEN the dampener is firing (count) and the AGGREGATE
-	 * magnitude of the discount it's applying (shortfall_sum):
-	 *
-	 *   mean shortfall per dampened bump = shortfall_sum / count
-	 *   total reward shaved (Q8 units)   = shortfall_sum
-	 *
-	 * Bumps from the never-seen-pair short-circuit (no historical
-	 * record, full 1.0 credit) and the all-history-new-edges case
-	 * (ratio == 1.0, full 1.0 credit) are NOT counted -- the dampener
-	 * didn't actually fire.  Saturating reads via the existing
-	 * dump_stats / stats_log paths; RELAXED add-fetch is fine,
-	 * cumulative diagnostic with no ordering requirement. */
-	unsigned long bandit_dampened_bumps_count;
-	unsigned long bandit_dampened_q8_shortfall_sum;
 
 	/* Per-syscall new-edge attribution, split by strategy pool.  Bumped
 	 * from dispatch_step's new-edge branch with the real bucket-edge

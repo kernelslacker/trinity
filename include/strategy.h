@@ -35,22 +35,11 @@
  */
 
 enum strategy_t {
-	STRATEGY_HEURISTIC = 0,	/* default: group-bias + cold-skip + edgepair-bias */
+	STRATEGY_HEURISTIC = 0,	/* default: group-bias + cold-skip */
 	STRATEGY_RANDOM,	/* uniform pick, no biases */
 	STRATEGY_COVERAGE_FRONTIER, /* roulette-wheel weighted by per-syscall
 				     * frontier-edge count (see frontier_*
 				     * APIs below) */
-	STRATEGY_EDGEPAIR_FRONTIER, /* roulette-wheel weighted by edgepair_
-				     * score(prev, candidate) -- same
-				     * rejection-sampling shape as
-				     * STRATEGY_COVERAGE_FRONTIER but the
-				     * weight comes from (prev, candidate)
-				     * pair productivity instead of
-				     * per-syscall frontier-edge counts.
-				     * Ineligible when edgepair is disabled
-				     * or when child has no last_syscall_nr;
-				     * falls back to uniform pick in the
-				     * latter case.  */
 	NR_STRATEGIES,
 };
 
@@ -148,8 +137,8 @@ enum strategy_selection_reason {
  * enum reorder.
  *
  * Currently dispatched classes (those the classifier actively
- * attributes today): RRC_COLD_SKIP, RRC_CMP_DERIVED, RRC_PAIR_COLD,
- * RRC_PAIR_UNSEEN, and the RRC_UNKNOWN catch-all.
+ * attributes today): RRC_COLD_SKIP, RRC_CMP_DERIVED, and the
+ * RRC_UNKNOWN catch-all.
  *
  * RRC_COLD_SKIP:           rec->nr would have been skipped under
  *                          STRATEGY_HEURISTIC's kcov cold-skip gate
@@ -168,25 +157,6 @@ enum strategy_selection_reason {
  * RRC_PERSONA_GATED:       placeholder for namespace/cgroup/childop
  *                          persona attribution; persona infrastructure
  *                          does not exist yet, never selected today.
- * RRC_PAIR_COLD:           the rescue completed on a (last_syscall_
- *                          nr, curr_nr) pair that edgepair_is_cold()
- *                          flags as cold -- the pair WAS productive
- *                          but has not surfaced a new edge in over
- *                          EDGEPAIR_COLD_THRESHOLD pair-calls.  The
- *                          orchestrator can amplify this class to
- *                          suppress the cold-pair RAND_BOOL gate
- *                          inside set_syscall_nr_random() so the
- *                          intervention reaches the same pairs the
- *                          random picker is currently throttling.
- *
- * RRC_PAIR_UNSEEN:          the rescue completed on a (last_syscall_
- *                          nr, curr_nr) pair edgepair_get_stats()
- *                          had no record of (the {0, 0} sentinel).
- *                          Amplifying this class enables a bounded
- *                          retry budget inside set_syscall_nr_
- *                          random() that re-rolls when ps.total != 0
- *                          to seek an unseen successor instead of
- *                          accepting the first seen one.
  * RRC_UNKNOWN:             rescue did not match any structured class.
  */
 enum random_rescue_class {
@@ -195,8 +165,6 @@ enum random_rescue_class {
 	RRC_WRONG_TYPE_FD,
 	RRC_CMP_DERIVED,
 	RRC_PERSONA_GATED,
-	RRC_PAIR_COLD,
-	RRC_PAIR_UNSEEN,
 	RRC_UNKNOWN,
 	RRC_NR_CLASSES,		/* sentinel, must stay last */
 };
@@ -316,29 +284,17 @@ const char *picker_mode_name(enum picker_mode_t mode);
  * signal a future intervention classifier wants to see.
  *
  * For non-forced reasons, this bumps bandit_pulls[arm], adds the
- * learner reward (pc_edge_calls_dampened_q8 >> 8) + cmp_term to
- * bandit_reward_calls[arm], adds pc_edge_count to
- * bandit_reward_pc_edge_count[arm], and folds in
+ * learner reward pc_edge_calls + cmp_term to bandit_reward_calls[arm],
+ * adds pc_edge_count to bandit_reward_pc_edge_count[arm], and folds in
  * (cmp_new_constants / CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL) as a
- * secondary CMP-novelty term on the call-count reward only.  The
- * by-reason diagnostic update above uses the RAW (undampened)
- * pc_edge_calls + cmp_term so the per-reason readout stays a faithful
- * baseline that an operator can A/B against the learner's dampened
- * shape without rerunning the fleet.
+ * secondary CMP-novelty term on the call-count reward only.
  *
  * pc_edge_calls is the per-window delta of pc_edge_calls_by_strategy
  * for the just-finished arm — calls that produced >=1 new edge.
- * pc_edge_calls_dampened_q8 is the matching delta of the parallel
- * Q8 fixed-point counter pc_edge_calls_dampened_q8_by_strategy[]:
- * each per-syscall bump scales by the (prev, curr) edgepair's
- * historical productivity ratio so the learner discounts
- * call-with-new-edges credit from saturated pairs.  See the bump
- * site and the dampening formula in random-syscall.c.
  * pc_edge_count is the parallel per-window delta of
- * pc_edge_count_by_strategy — real bucket-edge bits flipped.  All
- * three series are recorded so the operator can compare the dampened
- * learner reward, the raw call-count reward, and the bucket-count
- * reward shapes across the same windows.
+ * pc_edge_count_by_strategy — real bucket-edge bits flipped.  Both
+ * series are recorded so the operator can compare the call-count and
+ * bucket-count reward shapes across the same windows.
  *
  * Called from the CAS-winning child during maybe_rotate_strategy()
  * on every window close including SR_PLATEAU_FORCE windows; a
@@ -346,7 +302,6 @@ const char *picker_mode_name(enum picker_mode_t mode);
  */
 void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 			unsigned long pc_edge_calls,
-			unsigned long pc_edge_calls_dampened_q8,
 			unsigned long pc_edge_count,
 			unsigned long cmp_new_constants,
 			unsigned long warn_fires,
@@ -520,19 +475,6 @@ void frontier_window_advance(void);
  * runs the live reading is zero and RRC_COLD_SKIP would never trip for
  * exactly the cold-syscall rescues this classifier exists to surface.
  *
- * pair_was_unseen and pair_was_cold are the (prev, curr) edgepair-state
- * answers sampled by the caller BEFORE edgepair_record() ran.  The
- * record path queues a pair event on the per-child SPSC ring, and the
- * parent has not necessarily drained it before the classifier asks
- * edgepair_get_stats() / edgepair_is_cold() -- so a live read here can
- * see either pre-call or post-call state depending on drain latency.
- * Pinning both at draw time keeps RRC_PAIR_UNSEEN / RRC_PAIR_COLD
- * classification aligned with what the picker actually saw, mirroring
- * the cold_skip_pct_before contract above.  Pass false for both when
- * the child has no predecessor (child->last_syscall_nr ==
- * EDGEPAIR_NO_PREV) -- the classifier ignores the pair branches in
- * that case.
- *
  * Only meaningful when shm->current_selection_reason == SR_PLATEAU_FORCE
  * AND the call produced new edges -- the caller is responsible for both
  * gates.  Returns RRC_UNKNOWN if no class matched (a falling-through
@@ -542,9 +484,7 @@ struct childdata;
 struct syscallrecord;
 enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 						struct childdata *child,
-						unsigned int cold_skip_pct_before,
-						bool pair_was_unseen,
-						bool pair_was_cold);
+						unsigned int cold_skip_pct_before);
 
 /*
  * Human-readable rescue-class name for the dump and the rotation log.

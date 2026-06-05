@@ -40,26 +40,10 @@ void prop_ring_push(struct childdata *child,
 /*
  * Try to pull a recent return value out of CHILD's ring for injection
  * as an input arg to the syscall described by REC.  On success returns
- * true, stores the value in *OUT, and (when BOOSTED_OUT is non-NULL)
- * stamps *BOOSTED_OUT with whether the call was accepted via the
- * edgepair-top-quartile 2x boost (true) or the Phase 1 baseline path
- * (false).  Lets the caller bump
- * propagation_edgepair_boosted_injected for the boost-attributed
- * subset of propagation_injected.
+ * true and stores the value in *OUT; the per-call probability gate
+ * lives inside this function so callers do not need to roll one
+ * themselves.
  */
 bool prop_ring_try_get(struct childdata *child,
 		       const struct syscallrecord *rec,
-		       unsigned long *out,
-		       bool *boosted_out);
-
-/*
- * Recompute the edgepair top-quartile threshold from the published
- * mirror and write it into kcov_shm->prop_edgepair_topq_threshold.
- * Called by the CAS-winner in maybe_rotate_strategy once per strategy
- * window so the hot-path comparison in prop_ring_try_get stays a
- * single relaxed atomic load.  No-op when KCOV is unavailable or the
- * edgepair mirror is not yet populated; in that case the threshold
- * keeps its prior value (ULONG_MAX on cold start, the last computed
- * cutoff on subsequent windows) so the boost gate fails closed.
- */
-void prop_ring_recompute_edgepair_topq(void);
+		       unsigned long *out);

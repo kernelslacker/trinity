@@ -163,8 +163,6 @@ static void init_shm_strategy_state(void)
 	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL, __ATOMIC_RELAXED);
 	__atomic_store_n(&shm->pc_edge_calls_at_window_start, 0UL,
 			 __ATOMIC_RELAXED);
-	__atomic_store_n(&shm->pc_edge_calls_dampened_q8_at_window_start, 0UL,
-			 __ATOMIC_RELAXED);
 	__atomic_store_n(&shm->pc_edge_count_at_window_start, 0UL,
 			 __ATOMIC_RELAXED);
 

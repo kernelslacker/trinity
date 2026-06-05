@@ -503,20 +503,9 @@ static void json_emit_minicorpus_section(void)
 	c_subst  = __atomic_load_n(&minicorpus_shm->chain_substitution_count, __ATOMIC_RELAXED);
 	c_save   = chain_corpus_shm ? __atomic_load_n(&chain_corpus_shm->save_count,   __ATOMIC_RELAXED) : 0UL;
 	c_replay = chain_corpus_shm ? __atomic_load_n(&chain_corpus_shm->replay_count, __ATOMIC_RELAXED) : 0UL;
-	{
-		unsigned long ep_picks, ep_fails, ep_explore, ep_exploit;
-
-		ep_picks   = __atomic_load_n(&shm->stats.edgepair_chain_picks,         __ATOMIC_RELAXED);
-		ep_fails   = __atomic_load_n(&shm->stats.edgepair_chain_pick_fails,    __ATOMIC_RELAXED);
-		ep_explore = __atomic_load_n(&shm->stats.edgepair_chain_pick_explore,  __ATOMIC_RELAXED);
-		ep_exploit = __atomic_load_n(&shm->stats.edgepair_chain_pick_exploit,  __ATOMIC_RELAXED);
-		printf(",\"sequence_chains\":{\"iter_count\":%lu,\"substitutions\":%lu,"
-			"\"corpus_saves\":%lu,\"corpus_replays\":%lu,"
-			"\"edgepair_picks\":%lu,\"edgepair_pick_fails\":%lu,"
-			"\"edgepair_pick_explore\":%lu,\"edgepair_pick_exploit\":%lu}",
-			c_iter, c_subst, c_save, c_replay,
-			ep_picks, ep_fails, ep_explore, ep_exploit);
-	}
+	printf(",\"sequence_chains\":{\"iter_count\":%lu,\"substitutions\":%lu,"
+		"\"corpus_saves\":%lu,\"corpus_replays\":%lu}",
+		c_iter, c_subst, c_save, c_replay);
 
 	putchar('}');
 }
@@ -545,110 +534,6 @@ static void json_emit_cmp_hints_section(void)
 	}
 	printf(",\"cmp_hints\":{\"values_total\":%u,\"syscalls_with_hints\":%u}",
 		total_hints, syscalls_with_hints);
-}
-
-#define EDGEPAIR_TOP_N 10
-
-struct edgepair_top_entry {
-	unsigned int prev_nr;
-	unsigned int curr_nr;
-	unsigned long new_edges;
-};
-
-/*
- * Walk parent_edgepair.table[] and gather the top-N entries by new_edge_count
- * along with the count of cold-parent pairs. Shared by the JSON and text
- * emission paths; each caller formats top[]/top_count/cold_pairs in its own
- * way.
- */
-static unsigned int
-edgepair_collect_summary(struct edgepair_top_entry top[EDGEPAIR_TOP_N],
-			 unsigned int *out_cold_pairs)
-{
-	unsigned int i, j;
-	unsigned int top_count = 0;
-	unsigned int cold_pairs = 0;
-
-	memset(top, 0, sizeof(struct edgepair_top_entry) * EDGEPAIR_TOP_N);
-
-	for (i = 0; i < EDGEPAIR_TABLE_SIZE; i++) {
-		struct edgepair_entry *e = &parent_edgepair.table[i];
-		unsigned long edges;
-
-		if (e->prev_nr == EDGEPAIR_EMPTY)
-			continue;
-		edges = e->new_edge_count;
-		if (edges == 0)
-			continue;
-		if (edgepair_entry_is_cold_parent(e))
-			cold_pairs++;
-
-		for (j = top_count; j > 0 && edges > top[j - 1].new_edges; j--) {
-			if (j < EDGEPAIR_TOP_N)
-				top[j] = top[j - 1];
-		}
-		if (j < EDGEPAIR_TOP_N) {
-			top[j].prev_nr = e->prev_nr;
-			top[j].curr_nr = e->curr_nr;
-			top[j].new_edges = edges;
-			if (top_count < EDGEPAIR_TOP_N)
-				top_count++;
-		}
-	}
-
-	*out_cold_pairs = cold_pairs;
-	return top_count;
-}
-
-static void json_emit_edgepair_section(void)
-{
-	unsigned int j;
-	unsigned int top_count;
-	unsigned int cold_pairs;
-	struct edgepair_top_entry top[EDGEPAIR_TOP_N];
-	const struct syscalltable *table;
-	unsigned int nr_max;
-
-	if (!edgepair_is_enabled()) {
-		fputs(",\"edgepair\":null", stdout);
-		return;
-	}
-
-	top_count = edgepair_collect_summary(top, &cold_pairs);
-
-	printf(",\"edgepair\":{\"unique_pairs\":%lu,\"total_pair_calls\":%lu,"
-		"\"inserts_dropped\":%lu,\"cold_pairs\":%u,\"top_pairs\":[",
-		parent_edgepair.pairs_tracked, parent_edgepair.total_pair_calls,
-		parent_edgepair.pairs_dropped, cold_pairs);
-
-	table = biarch ? syscalls_64bit : syscalls;
-	nr_max = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
-	for (j = 0; j < top_count; j++) {
-		const char *prev_name = "???";
-		const char *curr_name = "???";
-
-		if (top[j].prev_nr < nr_max && table[top[j].prev_nr].entry)
-			prev_name = table[top[j].prev_nr].entry->name;
-		if (top[j].curr_nr < nr_max && table[top[j].curr_nr].entry)
-			curr_name = table[top[j].curr_nr].entry->name;
-
-		if (j > 0)
-			putchar(',');
-		fputs("{\"prev\":", stdout);
-		json_emit_string(prev_name);
-		fputs(",\"curr\":", stdout);
-		json_emit_string(curr_name);
-		printf(",\"new_edges\":%lu}", top[j].new_edges);
-	}
-	fputs("]}", stdout);
-
-	/* Match text path: still dump the full table to its on-disk file. */
-	{
-		const char *path = edgepair_default_path();
-
-		if (path != NULL)
-			edgepair_dump_to_file(path);
-	}
 }
 
 /*
@@ -1916,7 +1801,6 @@ static void dump_stats_json(void)
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
 	json_emit_cmp_hints_section();
-	json_emit_edgepair_section();
 
 	fputs("}\n", stdout);
 	fflush(stdout);
@@ -2264,8 +2148,6 @@ static const struct {
 	 * the fleet's syscall throughput when the bandit picker selects it. */
 	{ "frontier_strategy_picks",
 	  offsetof(struct stats_s, frontier_strategy_picks) },
-	{ "edgepair_frontier_strategy_picks",
-	  offsetof(struct stats_s, edgepair_frontier_strategy_picks) },
 	/* Saturating-subtract clamps fired during frontier ring rotation --
 	 * see comment on struct field.  Non-zero is a correctness flag, not
 	 * tuning data. */
@@ -2294,30 +2176,6 @@ static const struct {
 	  offsetof(struct stats_s, explorer_pool_edges_discovered) },
 	{ "bandit_pool_edges_discovered",
 	  offsetof(struct stats_s, bandit_pool_edges_discovered) },
-	/* Explorer picker edge-pair gating: cold-pair rejections cap at 20
-	 * retries per pick; never-seen accepts short-circuit past anti-prior.
-	 * See the matching field comments in struct stats_s for what flat or
-	 * runaway growth on each counter implies. */
-	{ "explorer_cold_pair_rejects",
-	  offsetof(struct stats_s, explorer_cold_pair_rejects) },
-	{ "explorer_unseen_pair_accepts",
-	  offsetof(struct stats_s, explorer_unseen_pair_accepts) },
-	{ "explorer_unseen_pair_seek_retries",
-	  offsetof(struct stats_s, explorer_unseen_pair_seek_retries) },
-	/* Mid-chain sequence picks routed through edgepair scoring.
-	 * picks vs pick_fails is the success rate of the per-step pair-aware
-	 * picker; explore/exploit split sums to picks and surfaces how often
-	 * the picker drew from each scoring mode.  Rate-of-change against
-	 * chain_iter_count (json sequence_chains.iter_count) shows the picker
-	 * keeping pace with chain execution. */
-	{ "edgepair_chain_picks",
-	  offsetof(struct stats_s, edgepair_chain_picks) },
-	{ "edgepair_chain_pick_fails",
-	  offsetof(struct stats_s, edgepair_chain_pick_fails) },
-	{ "edgepair_chain_pick_explore",
-	  offsetof(struct stats_s, edgepair_chain_pick_explore) },
-	{ "edgepair_chain_pick_exploit",
-	  offsetof(struct stats_s, edgepair_chain_pick_exploit) },
 	/* Epoll lazy-arm wins: rate-of-change tracks fresh epfds reaching
 	 * children after the deferred-arm refactor.  A flat counter while
 	 * fd_regenerated keeps climbing means children aren't picking up
@@ -3172,7 +3030,6 @@ void kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_try_get_returned;
 	static unsigned long prev_injected;
 	static unsigned long prev_prop_injected;
-	static unsigned long prev_prop_boosted;
 	static unsigned long prev_chaos_suppressed;
 	static unsigned long prev_count_oob;
 	static unsigned long prev_canary_lock_post;
@@ -3185,14 +3042,12 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned long cur_strip_skipped;
 	unsigned long cur_try_get_attempts, cur_try_get_returned, cur_injected;
 	unsigned long cur_prop_injected;
-	unsigned long cur_prop_boosted;
 	unsigned long cur_chaos_suppressed;
 	unsigned long cur_count_oob, cur_canary_lock_post, cur_canary_pre, cur_canary_post;
 	unsigned long delta_records, delta_truncated, delta_bloom_skipped, delta_unique;
 	unsigned long delta_strip_skipped;
 	unsigned long delta_try_get_attempts, delta_try_get_returned, delta_injected;
 	unsigned long delta_prop_injected;
-	unsigned long delta_prop_boosted;
 	unsigned long delta_chaos_suppressed;
 	unsigned long delta_count_oob, delta_canary_lock_post, delta_canary_pre, delta_canary_post;
 	unsigned int pc_kids, cmp_kids;
@@ -3211,7 +3066,6 @@ void kcov_cmp_stats_periodic_dump(void)
 	cur_try_get_returned = __atomic_load_n(&kcov_shm->cmp_hints_try_get_returned, __ATOMIC_RELAXED);
 	cur_injected         = __atomic_load_n(&kcov_shm->cmp_hints_injected,         __ATOMIC_RELAXED);
 	cur_prop_injected    = __atomic_load_n(&kcov_shm->propagation_injected,       __ATOMIC_RELAXED);
-	cur_prop_boosted     = __atomic_load_n(&kcov_shm->propagation_edgepair_boosted_injected, __ATOMIC_RELAXED);
 	cur_chaos_suppressed = __atomic_load_n(&kcov_shm->cmp_hints_chaos_suppressed, __ATOMIC_RELAXED);
 	cur_count_oob        = __atomic_load_n(&kcov_shm->cmp_hints_count_oob,               __ATOMIC_RELAXED);
 	cur_canary_lock_post = __atomic_load_n(&kcov_shm->cmp_hints_canary_lock_post_corrupt, __ATOMIC_RELAXED);
@@ -3232,7 +3086,6 @@ void kcov_cmp_stats_periodic_dump(void)
 		prev_try_get_returned = cur_try_get_returned;
 		prev_injected         = cur_injected;
 		prev_prop_injected    = cur_prop_injected;
-		prev_prop_boosted     = cur_prop_boosted;
 		prev_chaos_suppressed = cur_chaos_suppressed;
 		prev_count_oob        = cur_count_oob;
 		prev_canary_lock_post = cur_canary_lock_post;
@@ -3254,7 +3107,6 @@ void kcov_cmp_stats_periodic_dump(void)
 	delta_try_get_returned = cur_try_get_returned - prev_try_get_returned;
 	delta_injected         = cur_injected         - prev_injected;
 	delta_prop_injected    = cur_prop_injected    - prev_prop_injected;
-	delta_prop_boosted     = cur_prop_boosted     - prev_prop_boosted;
 	delta_chaos_suppressed = cur_chaos_suppressed - prev_chaos_suppressed;
 	delta_count_oob        = cur_count_oob        - prev_count_oob;
 	delta_canary_lock_post = cur_canary_lock_post - prev_canary_lock_post;
@@ -3263,7 +3115,7 @@ void kcov_cmp_stats_periodic_dump(void)
 
 	if ((delta_records | delta_truncated | delta_bloom_skipped | delta_strip_skipped |
 	     delta_unique | delta_try_get_attempts | delta_try_get_returned |
-	     delta_injected | delta_prop_injected | delta_prop_boosted |
+	     delta_injected | delta_prop_injected |
 	     delta_chaos_suppressed | delta_count_oob |
 	     delta_canary_lock_post |
 	     delta_canary_pre | delta_canary_post) != 0) {
@@ -3323,14 +3175,6 @@ void kcov_cmp_stats_periodic_dump(void)
 					"propagation_injected", delta_prop_injected,
 					rate_milli / 1000, rate_milli % 1000, cur_prop_injected);
 		}
-		if (delta_prop_boosted) {
-			unsigned long rate_milli = (delta_prop_boosted * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"propagation_edgepair_boosted",
-					delta_prop_boosted,
-					rate_milli / 1000, rate_milli % 1000,
-					cur_prop_boosted);
-		}
 		if (delta_chaos_suppressed) {
 			unsigned long rate_milli = (delta_chaos_suppressed * 1000UL) / (unsigned long)elapsed;
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, chaos_active=%d)\n",
@@ -3386,8 +3230,6 @@ void kcov_cmp_stats_periodic_dump(void)
 	       cur_chaos_suppressed);
 	output(0, "[main] propagation_injected_cumulative=%lu\n",
 	       cur_prop_injected);
-	output(0, "[main] propagation_edgepair_boosted_injected_cumulative=%lu\n",
-	       cur_prop_boosted);
 
 	pc_kids  = __atomic_load_n(&kcov_shm->pc_mode_children,  __ATOMIC_RELAXED);
 	cmp_kids = __atomic_load_n(&kcov_shm->cmp_mode_children, __ATOMIC_RELAXED);
@@ -3437,7 +3279,6 @@ void kcov_cmp_stats_periodic_dump(void)
 	prev_try_get_returned = cur_try_get_returned;
 	prev_injected         = cur_injected;
 	prev_prop_injected    = cur_prop_injected;
-	prev_prop_boosted     = cur_prop_boosted;
 	prev_chaos_suppressed = cur_chaos_suppressed;
 	prev_count_oob        = cur_count_oob;
 	prev_canary_lock_post = cur_canary_lock_post;
@@ -5839,26 +5680,6 @@ static void dump_stats_corpus_and_taint_tail(void)
 			if (c_iter > 0)
 				output(0, "Sequence chains: %lu iters  %lu substitutions  %lu corpus saves  %lu replays\n",
 				       c_iter, c_subst, c_save, c_replay);
-
-			{
-				unsigned long ep_picks = __atomic_load_n(
-					&shm->stats.edgepair_chain_picks,
-					__ATOMIC_RELAXED);
-				unsigned long ep_fails = __atomic_load_n(
-					&shm->stats.edgepair_chain_pick_fails,
-					__ATOMIC_RELAXED);
-				unsigned long ep_explore = __atomic_load_n(
-					&shm->stats.edgepair_chain_pick_explore,
-					__ATOMIC_RELAXED);
-				unsigned long ep_exploit = __atomic_load_n(
-					&shm->stats.edgepair_chain_pick_exploit,
-					__ATOMIC_RELAXED);
-
-				if (ep_picks > 0 || ep_fails > 0)
-					output(0, "Sequence chains edgepair picker: %lu picks (%lu explore / %lu exploit)  %lu fails\n",
-					       ep_picks, ep_explore, ep_exploit,
-					       ep_fails);
-			}
 		}
 	}
 
@@ -5880,50 +5701,6 @@ static void dump_stats_corpus_and_taint_tail(void)
 		}
 		stat_row("cmp_hints", "values_total",        total_hints);
 		stat_row("cmp_hints", "syscalls_with_hints", syscalls_with_hints);
-	}
-
-	if (edgepair_is_enabled()) {
-		unsigned int top_count;
-		unsigned int cold_pairs;
-		struct edgepair_top_entry top[EDGEPAIR_TOP_N];
-		unsigned int j;
-
-		stat_row("edgepair_coverage", "unique_pairs",     parent_edgepair.pairs_tracked);
-		stat_row("edgepair_coverage", "total_pair_calls", parent_edgepair.total_pair_calls);
-
-		if (parent_edgepair.pairs_dropped > 0)
-			stat_row("edgepair_coverage", "inserts_dropped", parent_edgepair.pairs_dropped);
-
-		top_count = edgepair_collect_summary(top, &cold_pairs);
-
-		if (top_count > 0) {
-			const struct syscalltable *table = biarch ? syscalls_64bit : syscalls;
-			unsigned int nr_max = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
-
-			output(0, "Top edge-producing syscall pairs:\n");
-			for (j = 0; j < top_count; j++) {
-				const char *prev_name = "???";
-				const char *curr_name = "???";
-
-				if (top[j].prev_nr < nr_max && table[top[j].prev_nr].entry)
-					prev_name = table[top[j].prev_nr].entry->name;
-				if (top[j].curr_nr < nr_max && table[top[j].curr_nr].entry)
-					curr_name = table[top[j].curr_nr].entry->name;
-
-				output(0, "  %-20s -> %-20s %lu\n",
-					prev_name, curr_name, top[j].new_edges);
-			}
-		}
-
-		if (cold_pairs > 0)
-			stat_row("edgepair_coverage", "cold_pairs", cold_pairs);
-
-		{
-			const char *path = edgepair_default_path();
-
-			if (path != NULL)
-				edgepair_dump_to_file(path);
-		}
 	}
 
 	/*

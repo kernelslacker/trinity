@@ -503,26 +503,6 @@ struct kcov_shared {
 	 * vs kernel KCOV_TRACE_CMP).  Cumulative; stats.c reports the
 	 * per-window delta alongside the cmp_hints counters. */
 	unsigned long propagation_injected;
-	/* Subset of propagation_injected: counts injections that fired
-	 * because the (src_nr, curr_nr) edgepair cleared the top-quartile
-	 * threshold and earned the 2x outer-probability boost.  Lets the
-	 * operator split the propagation_injected rate into boost-driven
-	 * vs baseline.  Cumulative; the per-window delta rides in the
-	 * same stats line as propagation_injected. */
-	unsigned long propagation_edgepair_boosted_injected;
-	/* Cutoff value for the "is this (prev_nr, curr_nr) pair in the
-	 * top quartile of observed edgepair counts?" check.  Set once
-	 * per strategy-window rotation by the CAS-winner in
-	 * maybe_rotate_strategy via prop_ring_recompute_edgepair_topq,
-	 * which walks edgepair_published, log-buckets total_count across
-	 * populated slots, and emits the 75th-percentile bin lower bound.
-	 * Read by prop_ring_try_get to decide whether any ring entry
-	 * (a recent return from A) earns the 2x boost for the current
-	 * syscall B.  ULONG_MAX on a cold start (no window has computed
-	 * yet); the comparison "total_count >= threshold" then fails
-	 * for every pair, so the prop-injection rate stays at the
-	 * Phase 1 baseline. */
-	unsigned long prop_edgepair_topq_threshold;
 	/* cmp_hints_try_get() calls that the chaos-mode gate forced to
 	 * return false.  Bumped after the shm/nr guard, before the pool
 	 * lookup, when cmp_hints_chaos_active() is true for the current

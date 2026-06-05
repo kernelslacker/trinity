@@ -404,15 +404,6 @@ void kcov_init_global(void)
 	 */
 	kcov_shm = alloc_shared(sizeof(struct kcov_shared));
 	memset(kcov_shm, 0, sizeof(struct kcov_shared));
-	/* Fail-safe initial value for the prop_ring edgepair top-quartile
-	 * threshold: ULONG_MAX so no (prev, curr) pair clears it until the
-	 * first strategy-window rotation has had a chance to walk
-	 * edgepair_published and emit a real cutoff.  Without this seed
-	 * the zero-initialised threshold would mean "every pair is top-
-	 * quartile" on a cold start and the propagation injection rate
-	 * would jump to its boosted value immediately, with no edgepair
-	 * data to support the bias. */
-	kcov_shm->prop_edgepair_topq_threshold = ULONG_MAX;
 	output(0, "KCOV: coverage collection enabled (%lu MB bucket-seen table, %u edges, %u buckets; counters: distinct_edges=%lu, edges_found=%lu bucket-transitions)\n",
 		(unsigned long)KCOV_NUM_EDGES / (1024 * 1024),
 		KCOV_NUM_EDGES, KCOV_NUM_BUCKETS,

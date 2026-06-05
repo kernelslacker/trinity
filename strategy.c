@@ -34,7 +34,6 @@
 #include "child.h"		/* struct childdata */
 #include "cmp_hints.h"		/* cmp_hints_shm */
 #include "debug.h"
-#include "edgepair.h"		/* EDGEPAIR_NO_PREV */
 #include "kcov.h"		/* KCOV_CMP_RECORDS_MAX, kcov_shm */
 #include "params.h"
 #include "rnd.h"
@@ -150,7 +149,6 @@ const char *strategy_name(int arm)
 	case STRATEGY_HEURISTIC:		return "HEURISTIC";
 	case STRATEGY_RANDOM:			return "RANDOM";
 	case STRATEGY_COVERAGE_FRONTIER:	return "COVERAGE_FRONTIER";
-	case STRATEGY_EDGEPAIR_FRONTIER:	return "EDGEPAIR_FRONTIER";
 	default:				return "?";
 	}
 }
@@ -158,8 +156,6 @@ const char *strategy_name(int arm)
 bool is_strategy_eligible(int arm)
 {
 	if (arm < 0 || arm >= NR_STRATEGIES)
-		return false;
-	if (arm == STRATEGY_EDGEPAIR_FRONTIER && !edgepair_is_enabled())
 		return false;
 	return true;
 }
@@ -185,41 +181,26 @@ bool is_strategy_eligible(int arm)
  * same reason.
  *
  * pc_edge_calls is the per-window pc_edge_calls_by_strategy delta
- * (calls with >=1 new edge).  pc_edge_calls_dampened_q8 is the
- * matching per-window delta of the parallel Q8 fixed-point counter
- * pc_edge_calls_dampened_q8_by_strategy: each per-syscall bump
- * scales by the (prev, curr) edgepair's historical productivity
- * ratio (see the bump site in random-syscall.c) so the learner
- * discounts call-with-new-edges credit from saturated pairs.
- * pc_edge_count is the parallel pc_edge_count_by_strategy delta
- * (real bucket-edge bits flipped).  cmp_new_constants is the
- * per-window bandit_cmp_new_constants delta.
+ * (calls with >=1 new edge).  pc_edge_count is the parallel
+ * pc_edge_count_by_strategy delta (real bucket-edge bits flipped).
+ * cmp_new_constants is the per-window bandit_cmp_new_constants delta.
  *
  * The learner-facing combined reward is
- *   (pc_edge_calls_dampened_q8 >> 8) +
- *   cmp_new_constants / CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL
- * (both integer divisions — sub-weight CMP residues round to zero so
- * a window with a handful of novel constants doesn't perturb the
- * headline PC signal; the Q8 shift recovers the dampened call-count
- * from the Q8 sum).  The by-reason diagnostic update bucketed below
- * uses the raw (undampened) pc_edge_calls + cmp_term so the
- * per-reason readout stays comparable across runs taken before and
- * after the dampener was wired in.  The pc_edge_count delta
- * accumulates into the parallel diagnostic reward (no cmp term
- * folded in) so the operator can compare what the real-count reward
- * would have looked like.
+ *   pc_edge_calls + cmp_new_constants / CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL
+ * (integer division — sub-weight CMP residues round to zero so a
+ * window with a handful of novel constants doesn't perturb the
+ * headline PC signal).  The pc_edge_count delta accumulates into the
+ * parallel diagnostic reward (no cmp term folded in) so the operator
+ * can compare what the real-count reward would have looked like.
  */
 void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 			unsigned long pc_edge_calls,
-			unsigned long pc_edge_calls_dampened_q8,
 			unsigned long pc_edge_count,
 			unsigned long cmp_new_constants,
 			unsigned long warn_fires,
 			bool was_chaos)
 {
 	unsigned long cmp_term;
-	unsigned long pc_edge_calls_dampened;
-	unsigned long total_raw;
 	unsigned long total;
 	unsigned long now_window;
 	unsigned int chaos_idx;
@@ -231,18 +212,7 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 		return;
 
 	cmp_term = cmp_new_constants / CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL;
-	/* By-reason diagnostic uses the raw (undampened) call-count so an
-	 * operator can compare the dampened learner reward against the
-	 * unmodified shape pre-dampening readouts assumed.  The learner
-	 * (bandit_reward_calls[] / recent_reward_x1000[]) instead consumes
-	 * the dampened series, recovered from the Q8 delta by dividing by
-	 * 256: per-syscall bumps credit dampen_q8 in [128, 256], so the
-	 * sum is up to 256x the equivalent undampened call count and the
-	 * shift recovers the dampened call-count integer the bandit
-	 * actually wants to score against. */
-	total_raw = pc_edge_calls + cmp_term;
-	pc_edge_calls_dampened = pc_edge_calls_dampened_q8 >> 8;
-	total = pc_edge_calls_dampened + cmp_term;
+	total = pc_edge_calls + cmp_term;
 
 	/* Always bucket the just-finished window by (arm, reason) before
 	 * any cohort-gated learner update.  These matrices are diagnostic
@@ -254,7 +224,7 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 	__atomic_fetch_add(&shm->bandit_pulls_by_reason[arm][reason], 1UL,
 			   __ATOMIC_RELAXED);
 	__atomic_fetch_add(&shm->bandit_reward_calls_by_reason[arm][reason],
-			   total_raw, __ATOMIC_RELAXED);
+			   total, __ATOMIC_RELAXED);
 	__atomic_fetch_add(
 		&shm->bandit_reward_pc_edge_count_by_reason[arm][reason],
 		pc_edge_count, __ATOMIC_RELAXED);
@@ -279,7 +249,7 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 	__atomic_fetch_add(&shm->bandit_pulls_by_chaos[arm][chaos_idx], 1UL,
 			   __ATOMIC_RELAXED);
 	__atomic_fetch_add(&shm->bandit_reward_calls_by_chaos[arm][chaos_idx],
-			   total_raw, __ATOMIC_RELAXED);
+			   total, __ATOMIC_RELAXED);
 	__atomic_fetch_add(&shm->bandit_warn_fires_by_chaos[arm][chaos_idx],
 			   warn_fires, __ATOMIC_RELAXED);
 
@@ -346,7 +316,7 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 			   __ATOMIC_RELAXED);
 
 	/* Per-arm running sum of cmp_term's share of the combined reward,
-	 * scaled to parts per thousand.  total is non-zero here because
+	 * scaled to parts per thousand.  Total is non-zero here because
 	 * cmp_term > 0.  Averaged at end-of-run to surface the empirical
 	 * CMP weighting per arm so the 0.25 constant can be tuned. */
 	__atomic_fetch_add(&shm->bandit_cmp_share_sum_x1000[arm],
@@ -1024,8 +994,6 @@ static int amplified_intervention_arm(enum random_rescue_class c)
 	case RRC_UNUSUAL_FD_PRODUCER:
 	case RRC_WRONG_TYPE_FD:
 	case RRC_PERSONA_GATED:
-	case RRC_PAIR_COLD:
-	case RRC_PAIR_UNSEEN:
 	case RRC_UNKNOWN:
 	case RRC_NR_CLASSES:
 		break;
@@ -1814,8 +1782,6 @@ const char *random_rescue_class_name(enum random_rescue_class c)
 	case RRC_WRONG_TYPE_FD:		return "WRONG_TYPE_FD";
 	case RRC_CMP_DERIVED:		return "CMP_DERIVED";
 	case RRC_PERSONA_GATED:		return "PERSONA_GATED";
-	case RRC_PAIR_COLD:		return "PAIR_COLD";
-	case RRC_PAIR_UNSEEN:		return "PAIR_UNSEEN";
 	case RRC_UNKNOWN:		return "UNKNOWN";
 	case RRC_NR_CLASSES:		break;	/* sentinel */
 	}
@@ -1824,9 +1790,7 @@ const char *random_rescue_class_name(enum random_rescue_class c)
 
 enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 						struct childdata *child,
-						unsigned int cold_skip_pct_before,
-						bool pair_was_unseen,
-						bool pair_was_cold)
+						unsigned int cold_skip_pct_before)
 {
 	unsigned int curr;
 
@@ -1868,28 +1832,6 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 	 * land here fall through to UNKNOWN; the orchestrator's bias
 	 * dispatch handles those classes for the future infrastructure to
 	 * wire in without an enum reorder. */
-
-	if (child->last_syscall_nr != EDGEPAIR_NO_PREV) {
-		/* {0, 0} sentinel means edgepair has no record for the
-		 * pair -- the rescue carried the child onto an unseen
-		 * (prev, curr) successor.  Distinct from RRC_COLD_SKIP
-		 * because the cold-skip predicate is per-nr while this
-		 * is per-pair.  Uses the caller's pre-edgepair_record()
-		 * snapshot, not a fresh edgepair_get_stats() read --
-		 * edgepair_record queues a pair event on the per-child
-		 * SPSC ring and the parent has not necessarily drained
-		 * it by the time the classifier runs. */
-		if (pair_was_unseen)
-			return RRC_PAIR_UNSEEN;
-
-		/* edgepair_is_cold uses the published mirror with the
-		 * same EDGEPAIR_COLD_THRESHOLD math as the explorer's
-		 * cold-pair gate, so the classifier and the picker can
-		 * never disagree on which pair counts as cold.  Same
-		 * pre-record snapshot reason as RRC_PAIR_UNSEEN above. */
-		if (pair_was_cold)
-			return RRC_PAIR_COLD;
-	}
 
 	return RRC_UNKNOWN;
 }

@@ -341,32 +341,6 @@ struct shm_s {
 	unsigned long pc_edge_count_by_strategy[NR_STRATEGIES];
 
 	/*
-	 * Novelty-dampened mirror of pc_edge_calls_by_strategy[], in Q8
-	 * fixed-point.  Each per-syscall new-edge bump credits the active
-	 * arm by dampen_q8 in [128, 256] (= 0.5x .. 1.0x) instead of by 1,
-	 * where the multiplier tracks the historical productivity ratio of
-	 * the (prev, curr) edgepair the call belongs to:
-	 *   dampen = 0.5 + 0.5 * (new_edges / (total + 1))
-	 * Never-seen pairs (no prev, or no edgepair record) get the full
-	 * 1.0 (256) credit.  See the bump site in random-syscall.c.
-	 *
-	 * The learner-facing reward in bandit_record_pull divides the
-	 * per-window delta by 256 to recover the dampened call-count
-	 * before folding in the cmp_term.  The raw pc_edge_calls_by_
-	 * strategy[] series above stays untouched so the by-reason
-	 * diagnostic stays a faithful comparison baseline against the
-	 * dampened reward shape.
-	 *
-	 * pc_edge_calls_dampened_q8_at_window_start is the matching
-	 * window-start snapshot the rotation site diffs against to get the
-	 * per-window dampened delta; reseeded from the new arm's
-	 * cumulative dampened counter after every rotation, same shape as
-	 * pc_edge_calls_at_window_start.
-	 */
-	unsigned long pc_edge_calls_dampened_q8_by_strategy[NR_STRATEGIES];
-	unsigned long pc_edge_calls_dampened_q8_at_window_start;
-
-	/*
 	 * UCB1 bandit picker (Phase 2) — see include/strategy.h.
 	 *
 	 * picker_mode: arm-selection policy (PICKER_ROUND_ROBIN or
@@ -425,7 +399,7 @@ struct shm_s {
 	 *     window the learner accepts; the per-cohort sum across c
 	 *     equals bandit_pulls[a].
 	 *   bandit_reward_calls_by_chaos[a][c]       -- combined reward
-	 *     (pc_edge_calls_dampened + cmp_term), same units as
+	 *     (pc_edge_calls + cmp_term), same units as
 	 *     bandit_reward_calls[a].  Sum across c equals bandit_reward_
 	 *     calls[a].
 	 *   bandit_warn_fires_by_chaos[a][c]         -- per-window delta

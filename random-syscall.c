@@ -40,15 +40,6 @@
 #include "utils.h"
 
 /*
- * Number of candidate syscall numbers sampled per mid-chain edgepair pick.
- * Small enough that the K edgepair_score() lookups (each one mirror-page
- * load + a hash probe) stay cheap relative to a syscall dispatch, large
- * enough that the picker has a real shot at landing on a productive
- * outgoing pair when one exists.  See set_syscall_nr_edgepair_chain().
- */
-#define EDGEPAIR_CHAIN_SAMPLE_K 16
-
-/*
  * Compression factor for the frontier-weighted acceptance denominator.
  * See the gate in set_syscall_nr_frontier() for the rationale.
  */
@@ -171,8 +162,8 @@ static bool syscall_in_group(unsigned int nr, bool do32, unsigned int target_gro
 /*
  * Pick the syscall to run under STRATEGY_HEURISTIC: uniform draw from
  * active_syscalls, then layered biases — group affinity (70% prefer last
- * group), kcov cold-skip (probabilistic), edgepair freshness (50% skip
- * cold pairs).  This is trinity's pre-rotation default behaviour.
+ * group) and kcov cold-skip (probabilistic).  This is trinity's
+ * pre-rotation default behaviour.
  */
 static bool set_syscall_nr_heuristic(struct syscallrecord *rec,
 				     struct childdata *child)
@@ -183,7 +174,6 @@ static bool set_syscall_nr_heuristic(struct syscallrecord *rec,
 	bool do32;
 	unsigned int group_attempts = 0;
 	unsigned int kcov_attempts = 0;
-	unsigned int edgepair_attempts = 0;
 	unsigned int outer_attempts = 0;
 	unsigned int nr_syscalls;
 
@@ -294,20 +284,6 @@ retry:
 		}
 	}
 
-	/* Edge-pair sequence biasing: if we have a previous syscall,
-	 * prefer pairs that have produced new edges before.
-	 * Skip cold pairs (haven't found new edges recently) 50% of
-	 * the time.  Boost productive pairs by accepting them
-	 * immediately when we'd otherwise retry. */
-	if (child->last_syscall_nr != EDGEPAIR_NO_PREV) {
-		if (edgepair_is_cold(child->last_syscall_nr, syscallnr) &&
-		    (rnd_u32() & 1U)) {
-			edgepair_attempts++;
-			if (edgepair_attempts < 20)
-				goto retry;
-		}
-	}
-
 	/* publish (nr, do32bit) as a coherent pair. */
 	srec_publish_begin(rec);
 	rec->do32bit = do32;
@@ -331,16 +307,6 @@ retry:
  * gate cannot starve the rest of the validate / EXPENSIVE gates.
  */
 #define ANTI_PRIOR_RETRY_CAP 64U
-
-/*
- * Bound for the PAIR_UNSEEN intervention's bounded re-roll.  When the
- * orchestrator amplifies RRC_PAIR_UNSEEN, the picker re-rolls a bounded
- * number of times trying to land on an unseen (prev, curr) successor
- * instead of accepting a seen one.  High enough to meaningfully steer
- * toward unseen successors, low enough that an already-saturated pair
- * table cannot livelock the picker.
- */
-#define UNSEEN_SEEK_RETRY_CAP 8U
 
 /*
  * Pick the syscall to run under STRATEGY_RANDOM: uniform draw from
@@ -370,8 +336,6 @@ bool set_syscall_nr_random(struct syscallrecord *rec,
 	unsigned int outer_attempts = 0;
 	unsigned int nr_syscalls;
 	unsigned int anti_prior_attempts = 0;
-	unsigned int edgepair_attempts = 0;
-	unsigned int unseen_seek_attempts = 0;
 	bool anti_prior_on;
 
 	/* See the matching comment in set_syscall_nr_heuristic — the table
@@ -422,70 +386,6 @@ retry:
 	}
 	note_validation_success(syscallnr, do32);
 
-	/* Edge-pair gates, guarded on a valid previous syscall.  Mirrors the
-	 * heuristic picker's cold-pair filter (saturated (prev, curr) pairs
-	 * whose reachable PCs have already been exhausted waste explorer
-	 * iterations on territory the heuristic side is also actively
-	 * avoiding) and adds an immediate-accept short-circuit for
-	 * never-seen pairs so the explorer drives toward unexplored
-	 * territory rather than re-treading stale ground.
-	 *
-	 * Never-seen detection uses edgepair_get_stats() returning {0, 0}
-	 * -- no record exists in the hash table, distinct from a recorded
-	 * pair that simply happens to have produced no new edges yet.
-	 * Accept short-circuits past the anti-prior gate so an unexplored
-	 * pair is taken on its first sighting regardless of the bandit's
-	 * per-syscall pick-rate distribution.
-	 *
-	 * Cold-pair rejection uses the same RAND_BOOL gate and 20-retry
-	 * cap as the heuristic picker.  Sits before anti-prior so the cold
-	 * filter runs on the unbiased candidate stream; a rejected cold
-	 * pair retries from the top of the loop where the next pick is a
-	 * fresh uniform draw. */
-	if (child->last_syscall_nr != EDGEPAIR_NO_PREV) {
-		struct edgepair_stats ps =
-			edgepair_get_stats(child->last_syscall_nr, syscallnr);
-
-		if (ps.new_edges == 0 && ps.total == 0) {
-			__atomic_fetch_add(
-				&shm->stats.explorer_unseen_pair_accepts,
-				1UL, __ATOMIC_RELAXED);
-			goto commit;
-		}
-
-		/* RRC_PAIR_UNSEEN intervention: when the orchestrator has
-		 * amplified PAIR_UNSEEN, re-roll a bounded number of times
-		 * trying to land on an unseen (prev, curr) successor
-		 * instead of accepting a seen one.  Bounded by
-		 * UNSEEN_SEEK_RETRY_CAP so an extreme distribution falls
-		 * back to the normal accept path instead of livelocking the
-		 * picker. */
-		if (plateau_rescue_bias_active_for(RRC_PAIR_UNSEEN) &&
-		    unseen_seek_attempts < UNSEEN_SEEK_RETRY_CAP) {
-			unseen_seek_attempts++;
-			__atomic_fetch_add(
-				&shm->stats.explorer_unseen_pair_seek_retries,
-				1UL, __ATOMIC_RELAXED);
-			goto retry;
-		}
-
-		/* RRC_PAIR_COLD intervention: when the orchestrator has
-		 * amplified PAIR_COLD, suppress the cold-pair RAND_BOOL
-		 * rejection so the intervention actually reaches the cold
-		 * pairs the picker is otherwise throttling.  Outside the
-		 * intervention the gate stays exactly as before. */
-		if (edgepair_is_cold(child->last_syscall_nr, syscallnr) &&
-		    !plateau_rescue_bias_active_for(RRC_PAIR_COLD) &&
-		    (rnd_u32() & 1U)) {
-			__atomic_fetch_add(
-				&shm->stats.explorer_cold_pair_rejects,
-				1UL, __ATOMIC_RELAXED);
-			edgepair_attempts++;
-			if (edgepair_attempts < 20)
-				goto retry;
-		}
-	}
-
 	/* Anti-prior accept gate.  Applied AFTER the active/validate/
 	 * EXPENSIVE correctness gates so a rejected anti-prior candidate
 	 * goes back through the uniform pick rather than burning the gate
@@ -502,7 +402,6 @@ retry:
 		 * picks fall through. */
 	}
 
-commit:
 	srec_publish_begin(rec);
 	rec->do32bit = do32;
 	rec->nr = syscallnr;
@@ -626,198 +525,6 @@ retry:
 }
 
 /*
- * Pick the syscall to run under STRATEGY_EDGEPAIR_FRONTIER: uniform draw
- * from active_syscalls, then biased acceptance via
- * edgepair_score(child->last_syscall_nr, candidate, mode).  mode flips
- * 50/50 between EXPLORATION (favours never-seen outgoing pairs) and
- * EXPLOITATION (favours productive-fresh outgoing pairs) per call, so
- * both axes get airtime without a tuning knob.
- *
- * When the child has no predecessor (last_syscall_nr == EDGEPAIR_NO_PREV)
- * the score is undefined; fall back to a uniform validate-and-accept loop
- * without the score gate so the first syscall of each child still gets
- * normal cover.
- *
- * The validate / EXPENSIVE / AVOID_SYSCALL retry budget mirrors
- * set_syscall_nr_coverage_frontier(): correctness gates apply regardless
- * of strategy.
- */
-static bool set_syscall_nr_edgepair_frontier(struct syscallrecord *rec,
-					     struct childdata *child)
-{
-	unsigned int syscallnr;
-	unsigned int val;
-	bool do32;
-	unsigned int outer_attempts = 0;
-	unsigned int nr_syscalls;
-	enum edgepair_score_mode mode;
-	bool have_prev;
-
-	if (biarch) {
-		do32 = choose_syscall_table(child, &nr_syscalls);
-	} else {
-		do32 = false;
-		nr_syscalls = max_nr_syscalls;
-	}
-
-	have_prev = (child->last_syscall_nr != EDGEPAIR_NO_PREV);
-	mode = (rnd_u32() & 1U) ? EDGEPAIR_SCORE_EXPLORATION
-				: EDGEPAIR_SCORE_EXPLOITATION;
-
-retry:
-	if (no_syscalls_enabled() == true) {
-		output(0, "[%d] No more syscalls enabled. Exiting\n", mypid());
-		__atomic_store_n(&shm->exit_reason, EXIT_NO_SYSCALLS_ENABLED, __ATOMIC_RELAXED);
-		return FAIL;
-	}
-
-	if (outer_attempts++ > 10000) {
-		output(0, "[%d] set_syscall_nr_edgepair_frontier exceeded retry budget\n", mypid());
-		return FAIL;
-	}
-
-	syscallnr = rnd_modulo_u32(nr_syscalls);
-
-	val = child->active_syscalls[syscallnr];
-	if (val == 0)
-		goto retry;
-
-	syscallnr = val - 1;
-
-	if (syscall_is_expensive(syscallnr, do32) && !ONE_IN(1000))
-		goto retry;
-
-	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
-		note_validation_failure(syscallnr, do32);
-		goto retry;
-	}
-	note_validation_success(syscallnr, do32);
-
-	/* Edgepair-weighted acceptance.  edgepair_score returns a weight in
-	 * [0, 1024]; treat it as a rejection-sampling probability against the
-	 * max weight 1024.  A weight of 0 still accepts on a 1024-sided roll
-	 * of 0, keeping a non-starving floor for cold pairs in this arm so it
-	 * does not livelock when every pair score is currently low. */
-	if (have_prev) {
-		unsigned int w = edgepair_score(child->last_syscall_nr,
-						syscallnr, mode);
-		unsigned int roll = (unsigned int)rnd_modulo_u32(1024U + 1U);
-
-		if (roll > w)
-			goto retry;
-	}
-
-	srec_publish_begin(rec);
-	rec->do32bit = do32;
-	rec->nr = syscallnr;
-	srec_publish_end(rec);
-
-	__atomic_fetch_add(&shm->stats.edgepair_frontier_strategy_picks, 1UL,
-			   __ATOMIC_RELAXED);
-
-	return true;
-}
-
-/*
- * Mid-chain edgepair-guided pick.  Sample up to EDGEPAIR_CHAIN_SAMPLE_K
- * syscall numbers from the active table, drop any that can't be called
- * right now (active_syscalls slot empty, validate_specific_syscall_silent
- * rejects), score the survivors by edgepair_score(prev, candidate, mode)
- * against child->last_syscall_nr, and commit the highest-scoring one.
- *
- * Mode flips per call between EDGEPAIR_SCORE_EXPLORATION (favours
- * never-seen outgoing pairs) and EDGEPAIR_SCORE_EXPLOITATION (favours
- * productive-fresh outgoing pairs) on a 50/50 coin, so both axes get
- * airtime without a tuning knob.
- *
- * On a successful pick the function writes rec->nr / rec->do32bit and
- * returns true; the caller (set_syscall_nr) short-circuits and skips
- * the bandit's strategy_picks[] / strategy_at_pick stamp so chain mid-
- * step dispatches inherit step 0's attribution.  On failure (no candidate
- * survived K tries) returns false and the caller falls through to the
- * normal bandit dispatch, where strategy_at_pick / strategy_picks[] get
- * stamped exactly once for this call.
- *
- * Applies the same EXPENSIVE 1/1000 reject gate the bandit pickers
- * use before validation/scoring, so chain mid-step dispatches do not
- * win the K-candidate competition with an expensive syscall at a rate
- * the top-level pickers would never produce.
- */
-static bool set_syscall_nr_edgepair_chain(struct syscallrecord *rec,
-					  struct childdata *child)
-{
-	enum edgepair_score_mode mode;
-	unsigned int nr_syscalls;
-	unsigned int best_nr = 0;
-	unsigned int best_score = 0;
-	unsigned int sample;
-	bool best_valid = false;
-	bool do32;
-
-	if (biarch) {
-		do32 = choose_syscall_table(child, &nr_syscalls);
-	} else {
-		do32 = false;
-		nr_syscalls = max_nr_syscalls;
-	}
-
-	if (no_syscalls_enabled() == true)
-		return false;
-
-	mode = (rnd_u32() & 1U) ? EDGEPAIR_SCORE_EXPLORATION
-				: EDGEPAIR_SCORE_EXPLOITATION;
-
-	for (sample = 0; sample < EDGEPAIR_CHAIN_SAMPLE_K; sample++) {
-		unsigned int idx = rnd_modulo_u32(nr_syscalls);
-		int val = child->active_syscalls[idx];
-		unsigned int candidate;
-		unsigned int score;
-
-		if (val == 0)
-			continue;
-
-		candidate = (unsigned int)(val - 1);
-
-		if (syscall_is_expensive(candidate, do32) && !ONE_IN(1000))
-			continue;
-
-		if (validate_specific_syscall_silent(syscalls, (int)candidate) == false)
-			continue;
-
-		score = edgepair_score(child->last_syscall_nr, candidate, mode);
-
-		/* > rather than >= so the first survivor wins ties.  Without
-		 * the strict inequality the picker would silently prefer
-		 * later samples on ties, which biases nothing useful and
-		 * costs an extra store per equal-scoring candidate. */
-		if (!best_valid || score > best_score) {
-			best_nr = candidate;
-			best_score = score;
-			best_valid = true;
-		}
-	}
-
-	if (!best_valid)
-		return false;
-
-	srec_publish_begin(rec);
-	rec->do32bit = do32;
-	rec->nr = best_nr;
-	srec_publish_end(rec);
-
-	__atomic_fetch_add(&shm->stats.edgepair_chain_picks, 1UL,
-			   __ATOMIC_RELAXED);
-	if (mode == EDGEPAIR_SCORE_EXPLORATION)
-		__atomic_fetch_add(&shm->stats.edgepair_chain_pick_explore,
-				   1UL, __ATOMIC_RELAXED);
-	else
-		__atomic_fetch_add(&shm->stats.edgepair_chain_pick_exploit,
-				   1UL, __ATOMIC_RELAXED);
-
-	return true;
-}
-
-/*
  * Dispatch syscall selection through the active strategy's picker.
  * Reads shm->current_strategy with relaxed atomic, then snapshots the
  * chosen arm into child->strategy_at_pick so the post-syscall reward
@@ -857,30 +564,6 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 		return set_syscall_nr_random(rec, child);
 	}
 
-	/* Mid-chain edgepair-guided pick: when run_sequence_chain is mid-way
-	 * through a fresh-generation chain (step i >= 1, not replaying) and
-	 * the previous syscall is known, try to pick the next syscall by
-	 * scoring outgoing edgepairs from child->last_syscall_nr.  On
-	 * success the function commits rec and returns true here, skipping
-	 * the strategy_picks[] / strategy_at_pick stamp below so the chain
-	 * mid-step dispatch inherits step 0's bandit attribution -- the
-	 * spec is deliberate about not double-counting picks that the
-	 * bandit didn't actually drive.
-	 *
-	 * On failure (no candidate survived the K-sample budget) we bump
-	 * the per-call fails counter and fall through to the normal bandit
-	 * dispatch path, which stamps strategy_picks[] exactly once for
-	 * this call. */
-	if (child->in_chain_mid_step &&
-	    child->last_syscall_nr != EDGEPAIR_NO_PREV &&
-	    edgepair_is_enabled()) {
-		if (set_syscall_nr_edgepair_chain(rec, child))
-			return true;
-		__atomic_fetch_add(&shm->stats.edgepair_chain_pick_fails, 1UL,
-				   __ATOMIC_RELAXED);
-		/* Fall through to bandit dispatch. */
-	}
-
 	/* ACQUIRE pairs with the RELEASE store on current_strategy in
 	 * maybe_rotate_strategy below.  Without it, a child observing the
 	 * new strategy id is not guaranteed to also see the companion
@@ -918,8 +601,6 @@ static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 		return set_syscall_nr_random(rec, child);
 	case STRATEGY_COVERAGE_FRONTIER:
 		return set_syscall_nr_coverage_frontier(rec, child);
-	case STRATEGY_EDGEPAIR_FRONTIER:
-		return set_syscall_nr_edgepair_frontier(rec, child);
 	default:
 		__builtin_unreachable();
 	}
@@ -1148,7 +829,6 @@ static void maybe_rotate_strategy(void)
 	enum strategy_selection_reason prev_reason;
 	enum strategy_selection_reason next_reason = SR_NORMAL_UCB;
 	unsigned long calls_now, calls_in_window;
-	unsigned long calls_dampened_q8_now, calls_dampened_q8_in_window;
 	unsigned long edges_now, edges_in_window;
 	unsigned long syscalls_in_window;
 	unsigned long cmp_now, cmp_in_window;
@@ -1201,12 +881,6 @@ static void maybe_rotate_strategy(void)
 				    __ATOMIC_RELAXED);
 	calls_in_window = calls_now -
 		__atomic_load_n(&shm->pc_edge_calls_at_window_start,
-				__ATOMIC_RELAXED);
-	calls_dampened_q8_now = __atomic_load_n(
-		&shm->pc_edge_calls_dampened_q8_by_strategy[prev],
-		__ATOMIC_RELAXED);
-	calls_dampened_q8_in_window = calls_dampened_q8_now -
-		__atomic_load_n(&shm->pc_edge_calls_dampened_q8_at_window_start,
 				__ATOMIC_RELAXED);
 	edges_now = __atomic_load_n(&shm->pc_edge_count_by_strategy[prev],
 				    __ATOMIC_RELAXED);
@@ -1270,7 +944,6 @@ static void maybe_rotate_strategy(void)
 	 * snapshot reseed) runs unconditionally -- those are coverage-side
 	 * structures and must stay aligned with the rotation cadence. */
 	bandit_record_pull(prev, prev_reason, calls_in_window,
-			   calls_dampened_q8_in_window,
 			   edges_in_window, cmp_in_window,
 			   warn_in_window, was_chaos);
 
@@ -1294,13 +967,6 @@ static void maybe_rotate_strategy(void)
 	 * pool otherwise biases away from. */
 	cmp_hints_chaos_tick();
 
-	/* Recompute the prop_ring edgepair top-quartile threshold from
-	 * the published mirror so the hot-path boost gate in
-	 * prop_ring_try_get reads a fresh cutoff next window.  Single
-	 * 262K-slot scan amortised across the strategy window; cost is
-	 * paid by this CAS-winner child only. */
-	prop_ring_recompute_edgepair_topq();
-
 	next = select_next_strategy(prev, &next_reason);
 	if (next < 0 || next >= NR_STRATEGIES) {
 		next = (prev + 1) % NR_STRATEGIES;
@@ -1310,11 +976,6 @@ static void maybe_rotate_strategy(void)
 	__atomic_store_n(&shm->pc_edge_calls_at_window_start,
 			 __atomic_load_n(&shm->pc_edge_calls_by_strategy[next],
 					 __ATOMIC_RELAXED),
-			 __ATOMIC_RELAXED);
-	__atomic_store_n(&shm->pc_edge_calls_dampened_q8_at_window_start,
-			 __atomic_load_n(
-				 &shm->pc_edge_calls_dampened_q8_by_strategy[next],
-				 __ATOMIC_RELAXED),
 			 __ATOMIC_RELAXED);
 	__atomic_store_n(&shm->pc_edge_count_at_window_start,
 			 __atomic_load_n(&shm->pc_edge_count_by_strategy[next],
@@ -1499,38 +1160,6 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	if (found_new != NULL)
 		*found_new = new_edges;
 
-	/* Snapshot the rescue classifier's pair-state inputs BEFORE
-	 * edgepair_record() runs.  edgepair_record() queues a pair event
-	 * on a per-child SPSC ring that the parent has not necessarily
-	 * drained before classify_random_rescue() asks
-	 * edgepair_get_stats() / edgepair_is_cold(); a live read in the
-	 * classifier can therefore see either pre-call or post-call pair
-	 * state depending on drain latency.  Pinning both answers at draw
-	 * time keeps RRC_PAIR_UNSEEN / RRC_PAIR_COLD classification
-	 * aligned with the state the picker actually saw, the same shape
-	 * as rescue_cold_skip_pct_before above.  Both stay false when the
-	 * child has no predecessor -- the classifier ignores the pair
-	 * branches in that case. */
-	/* Hoisted to function scope so both the rescue classifier (which
-	 * additionally requires !rec->validator_rejected) and the dampen_q8
-	 * adjustment downstream can read the same edgepair stats without a
-	 * second lookup. */
-	struct edgepair_stats ps_before = { 0 };
-	bool ps_before_valid = false;
-	if (child->last_syscall_nr != EDGEPAIR_NO_PREV) {
-		ps_before = edgepair_get_stats(child->last_syscall_nr, rec->nr);
-		ps_before_valid = true;
-	}
-
-	bool rescue_pair_was_unseen = false;
-	bool rescue_pair_was_cold = false;
-	if (ps_before_valid && !rec->validator_rejected) {
-		rescue_pair_was_unseen =
-			(ps_before.new_edges == 0 && ps_before.total == 0);
-		rescue_pair_was_cold =
-			edgepair_is_cold(child->last_syscall_nr, rec->nr);
-	}
-
 	/* Record the (prev, curr) syscall pair for sequence coverage.
 	 * CMP-mode children collect comparison records, not PC edges,
 	 * so new_edges is structurally false above; recording the pair
@@ -1640,44 +1269,6 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 				__atomic_fetch_add(&shm->pc_edge_count_by_strategy[strat],
 						   new_edge_count,
 						   __ATOMIC_RELAXED);
-
-				/* Novelty-dampened call count.  Look up the
-				 * historical (prev, curr) edgepair stats and
-				 * scale the bump by the productivity ratio
-				 * ratio = new_edges / (total + 1):
-				 *   dampen     = 0.5 + 0.5 * ratio
-				 *   dampen_q8  = 128 + (128 * new_edges) / (total + 1)
-				 * Clamped to [128, 256] so a never-seen pair
-				 * (no prev, or no edgepair record) gets the
-				 * full 1.0 (256) credit and a fully-stale pair
-				 * floors at 0.5x rather than zeroing -- the
-				 * floor preserves a learning signal for rare
-				 * novelty bursts from otherwise-saturated
-				 * pairs while still discounting the bulk of
-				 * the reward the bandit would otherwise bank
-				 * from those pairs. */
-				unsigned int dampen_q8 = 256U;
-				if (ps_before_valid && ps_before.total > 0) {
-					unsigned long denom = ps_before.total + 1UL;
-					dampen_q8 = 128U + (unsigned int)
-						((128UL * ps_before.new_edges) / denom);
-					if (dampen_q8 < 128U)
-						dampen_q8 = 128U;
-					if (dampen_q8 > 256U)
-						dampen_q8 = 256U;
-				}
-				__atomic_fetch_add(
-					&shm->pc_edge_calls_dampened_q8_by_strategy[strat],
-					dampen_q8, __ATOMIC_RELAXED);
-				if (dampen_q8 < 256U) {
-					__atomic_fetch_add(
-						&shm->stats.bandit_dampened_bumps_count,
-						1UL, __ATOMIC_RELAXED);
-					__atomic_fetch_add(
-						&shm->stats.bandit_dampened_q8_shortfall_sum,
-						256UL - dampen_q8,
-						__ATOMIC_RELAXED);
-				}
 			}
 			__atomic_fetch_add(&shm->stats.bandit_pool_edges_discovered,
 					   1, __ATOMIC_RELAXED);
@@ -1700,9 +1291,7 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			    SR_PLATEAU_FORCE) {
 				enum random_rescue_class rrc =
 					classify_random_rescue(rec, child,
-						rescue_cold_skip_pct_before,
-						rescue_pair_was_unseen,
-						rescue_pair_was_cold);
+						rescue_cold_skip_pct_before);
 				if (rrc >= 0 && rrc < RRC_NR_CLASSES)
 					__atomic_fetch_add(
 						&shm->random_rescue_class_count[rrc],
