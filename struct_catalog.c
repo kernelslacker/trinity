@@ -3740,6 +3740,9 @@ const struct struct_desc *struct_catalog_lookup(const char *name)
 {
 	unsigned int i;
 
+	if (name == NULL)
+		return NULL;
+
 	for (i = 0; i < struct_catalog_count; i++) {
 		if (strcmp(struct_catalog[i].name, name) == 0)
 			return &struct_catalog[i];
