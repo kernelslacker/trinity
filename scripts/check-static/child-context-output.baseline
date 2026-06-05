@@ -219,7 +219,11 @@ syscalls/getxattr.c:316:post_getxattr
 syscalls/init_module.c:158:post_init_module
 syscalls/inotify_add_watch.c:26:post_inotify_add_watch
 syscalls/ioprio_get.c:21:post_ioprio_get
-syscalls/io_setup.c:153:post_io_setup
+syscalls/io_setup.c:212:post_io_setup
+syscalls/io_setup.c:219:post_io_setup
+syscalls/io_setup.c:228:post_io_setup
+syscalls/io_setup.c:246:post_io_setup
+syscalls/io_setup.c:260:post_io_setup
 syscalls/io_uring_register.c:1222:post_io_uring_register
 syscalls/io_uring_register.c:1237:post_io_uring_register
 syscalls/io_uring_register.c:1287:post_io_uring_register

@@ -2496,6 +2496,7 @@ struct stats_s {
 	 * Distinct counter per syscall so the operator dump shows which
 	 * out-pointer slot is being stomped, not just an aggregate. */
 	unsigned long timer_create_inner_ptr_mismatch;		/* timer_create: snap->idp != rec->a3 in post */
+	unsigned long io_setup_inner_ptr_mismatch;		/* io_setup: snap->ctxp != rec->a2 in post */
 };
 
 unsigned int stats_syscall_category(const char *name);
