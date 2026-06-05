@@ -1133,11 +1133,16 @@ static const struct struct_field sockaddr_alg_variant_fields[] = {
 #endif
 
 /*
- * AF_TIPC (sockaddr_tipc) -- TIPC endpoint.  addrtype is itself a
- * sub-discriminator over a 16-byte inner union; the schema infra
- * only resolves one level of buffer-derived discriminator today, so
- * the inner union is filled as raw bytes.  Depth-2 dispatch on
- * addrtype is a follow-up if TIPC traffic argues for it.
+ * AF_TIPC (sockaddr_tipc) -- TIPC endpoint.  The outer variant fills
+ * the (family, addrtype, scope) prefix; addrtype is itself a sub-
+ * discriminator over the 12-byte inner addr union, so the per-arm
+ * member layout is overlaid via nested_variants[].  Each arm leaves
+ * its u32 sub-fields FT_RAW so the random splat carries through; the
+ * tagged-union plumbing exists to anchor future ENUM/RANGE
+ * annotations on type/instance/domain without re-touching the
+ * sockaddr_storage entry.  effective_size stays at sizeof(struct
+ * sockaddr_tipc) on every arm -- the kernel ABI rejects shorter
+ * addrlens regardless of which inner arm is live.
  */
 static const unsigned long tipc_addrtype_vocab[] = {
 	TIPC_ADDR_NAMESEQ, TIPC_ADDR_NAME, TIPC_ADDR_ID,
@@ -1154,7 +1159,47 @@ static const struct struct_field sockaddr_tipc_variant_fields[] = {
 	FIELDX(struct sockaddr_tipc, scope, FT_ENUM,
 	       .u.enum_ = { .vals = tipc_scope_vocab,
 			    .n    = ARRAY_SIZE(tipc_scope_vocab) }),
-	FIELD(struct sockaddr_tipc, addr),
+};
+
+static const struct struct_field sockaddr_tipc_id_fields[] = {
+	FIELD(struct sockaddr_tipc, addr.id.ref),
+	FIELD(struct sockaddr_tipc, addr.id.node),
+};
+
+static const struct struct_field sockaddr_tipc_nameseq_fields[] = {
+	FIELD(struct sockaddr_tipc, addr.nameseq.type),
+	FIELD(struct sockaddr_tipc, addr.nameseq.lower),
+	FIELD(struct sockaddr_tipc, addr.nameseq.upper),
+};
+
+static const struct struct_field sockaddr_tipc_name_fields[] = {
+	FIELD(struct sockaddr_tipc, addr.name.name.type),
+	FIELD(struct sockaddr_tipc, addr.name.name.instance),
+	FIELD(struct sockaddr_tipc, addr.name.domain),
+};
+
+static const struct union_variant sockaddr_tipc_addr_nested[] = {
+	{
+		.discrim_value	 = TIPC_ADDR_ID,
+		.name		 = "TIPC_ADDR_ID",
+		.fields		 = sockaddr_tipc_id_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_tipc_id_fields),
+		.effective_size	 = sizeof(struct sockaddr_tipc),
+	},
+	{
+		.discrim_value	 = TIPC_ADDR_NAMESEQ,
+		.name		 = "TIPC_ADDR_NAMESEQ",
+		.fields		 = sockaddr_tipc_nameseq_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_tipc_nameseq_fields),
+		.effective_size	 = sizeof(struct sockaddr_tipc),
+	},
+	{
+		.discrim_value	 = TIPC_ADDR_NAME,
+		.name		 = "TIPC_ADDR_NAME",
+		.fields		 = sockaddr_tipc_name_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_tipc_name_fields),
+		.effective_size	 = sizeof(struct sockaddr_tipc),
+	},
 };
 
 #ifdef USE_XDP
@@ -1247,6 +1292,10 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_tipc_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_tipc_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_tipc),
+		.nested_discrim_offset = offsetof(struct sockaddr_tipc, addrtype),
+		.nested_discrim_size   = 1,
+		.nested_variants     = sockaddr_tipc_addr_nested,
+		.num_nested_variants = ARRAY_SIZE(sockaddr_tipc_addr_nested),
 	},
 #ifdef USE_XDP
 	{
