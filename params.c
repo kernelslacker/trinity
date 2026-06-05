@@ -16,6 +16,7 @@
 #include "params.h"
 #include "domains.h"
 #include "random.h"
+#include "self_cgroup.h"
 #include "strategy.h"
 #include "syscall.h"
 #include "tables.h"
@@ -922,6 +923,8 @@ void parse_args(int argc, char *argv[])
 			}
 
 			if (strcmp("memory-max", longopts[opt_index].name) == 0) {
+				if (!validate_cgroup_size_arg("--memory-max", optarg))
+					exit(EXIT_FAILURE);
 				free(memory_max_arg);
 				memory_max_arg = strdup(optarg);
 				if (memory_max_arg == NULL) {
@@ -931,6 +934,8 @@ void parse_args(int argc, char *argv[])
 			}
 
 			if (strcmp("memory-high", longopts[opt_index].name) == 0) {
+				if (!validate_cgroup_size_arg("--memory-high", optarg))
+					exit(EXIT_FAILURE);
 				free(memory_high_arg);
 				memory_high_arg = strdup(optarg);
 				if (memory_high_arg == NULL) {
@@ -940,6 +945,8 @@ void parse_args(int argc, char *argv[])
 			}
 
 			if (strcmp("memory-swap-max", longopts[opt_index].name) == 0) {
+				if (!validate_cgroup_size_arg("--memory-swap-max", optarg))
+					exit(EXIT_FAILURE);
 				free(memory_swap_max_arg);
 				memory_swap_max_arg = strdup(optarg);
 				if (memory_swap_max_arg == NULL) {

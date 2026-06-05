@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <sys/types.h>
 
 /*
@@ -58,3 +59,16 @@ pid_t self_cgroup_fork_into_workload(void);
  * spawn_child(); 0 means no throttle (the common case).
  */
 extern unsigned int fork_throttle_us;
+
+/*
+ * Syntactic validation of a --memory-max / --memory-high /
+ * --memory-swap-max argument.  Called from parse_args() so --dry-run
+ * exercises the same acceptance rules as a live run -- the historical
+ * validator lived inside self_cgroup_setup() which is skipped under
+ * --dry-run, letting dry-run report success on inputs the real run
+ * would reject.  Accepts "max", "<n>%" with 1 <= n <= 100, and
+ * "<n>[KMG]" decimal byte counts; rejects leading signs, empty input,
+ * unknown suffixes, percentage out-of-range, and overflow.  Emits a
+ * "--flag: invalid memory-size ..." diagnostic on rejection.
+ */
+bool validate_cgroup_size_arg(const char *flag_name, const char *arg);

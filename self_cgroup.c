@@ -29,6 +29,20 @@
 #endif
 
 /*
+ * parse_size_arg() canonicalises sizes through 'unsigned long long'
+ * but stores them into 'unsigned long' and writes them back out via
+ * memory.* knobs that the kernel rounds to PAGE_SIZE multiples.  On
+ * 32-bit hosts 'unsigned long' is 32 bits, so a "5G" cap silently
+ * truncates to 1 GiB -- defeating the cap on exactly the size
+ * operators are likely to set.  Trinity has not been tested on
+ * 32-bit hosts in years; pin the assumption here so a future
+ * cross-build failure surfaces at compile time rather than as a
+ * silently-wrong production cap.
+ */
+_Static_assert(sizeof(unsigned long) >= 8,
+	       "trinity self-cgroup memory caps assume 64-bit unsigned long");
+
+/*
  * Sub-cgroup layout (all under the v2 cgroup we belong to at startup):
  *
  *   trinity-<pid>/                     container, no procs, no memory.* set
@@ -144,6 +158,37 @@ static bool parse_size_arg(const char *arg, unsigned long mem_total,
 		return false;
 	*out_bytes = (unsigned long)val;
 	return true;
+}
+
+/*
+ * Parse-time validation hook for --memory-max / --memory-high /
+ * --memory-swap-max.  parse_args() calls this immediately after
+ * strdup'ing the optarg so --dry-run rejects malformed inputs the
+ * same way a live run would.  self_cgroup_setup() retains its own
+ * parse_size_arg() call as defense-in-depth -- a future code path
+ * that mutates the *_arg globals after parse_args() (env override,
+ * config file, etc.) still gets caught before being written to
+ * memory.max.
+ *
+ * mem_total=1 is sufficient for a syntactic pass: percentage range
+ * (1..100) is enforced before the multiply, and the absolute /
+ * suffix branches don't read mem_total.  The canonicalised string
+ * is discarded.
+ */
+bool validate_cgroup_size_arg(const char *flag_name, const char *arg)
+{
+	char *out_str = NULL;
+	unsigned long out_bytes = 0;
+
+	if (parse_size_arg(arg, 1, &out_str, &out_bytes)) {
+		free(out_str);
+		return true;
+	}
+
+	outputerr("%s: invalid memory-size '%s' "
+		  "(accepted: 'max', '<n>%%' with 1..100, '<n>[KMG]')\n",
+		  flag_name, arg ? arg : "(null)");
+	return false;
 }
 
 /*
