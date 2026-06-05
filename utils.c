@@ -2601,6 +2601,30 @@ bool post_snapshot_str(char *dst, size_t dstsz, const char *src)
 	return true;
 }
 
+bool post_snapshot_or_skip(void *dst, const void *src, size_t len)
+{
+	if (src == NULL)
+		return false;
+
+	/*
+	 * Single-probe readability gate, identical in shape to the one
+	 * in post_snapshot_str().  The post oracle's NULL + shape-only
+	 * looks_like_corrupted_ptr guard waves through a heap-shaped but
+	 * stale/unmapped snap->field; range_readable_user proves the
+	 * full len-byte window is mapped (tracked-shared region or
+	 * cached libc heap), so the memcpy below cannot fault on the
+	 * sibling free / unmap / fuzz-redirect window between the
+	 * syscall return and the post sample.  False here means the
+	 * caller skips the .post sample rather than feeding the
+	 * downstream oracle a foreign byte pattern.
+	 */
+	if (!range_readable_user(src, len))
+		return false;
+
+	memcpy(dst, src, len);
+	return true;
+}
+
 void sanitize_inherited_fds(void)
 {
 	DIR *dir;

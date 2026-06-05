@@ -421,6 +421,30 @@ __must_check
 bool post_snapshot_str(char *dst, size_t dstsz, const char *src);
 
 /*
+ * Snapshot @len bytes of a user-space source into @dst, or tell the
+ * caller to skip the .post sample.  The bytes-shaped sibling of
+ * post_snapshot_str(): same NULL + range_readable_user gate, plain
+ * memcpy underneath.  Use at every .post oracle site that currently
+ * pairs a NULL/shape check with memcpy(local, snap->field, len) -- the
+ * single guarded call retires the shape-only looks_like_corrupted_ptr
+ * reliance for the source-read path so a non-NULL but stale/unmapped
+ * snap->field can no longer fault inside trinity between the syscall
+ * return and the post sample.
+ *
+ * @dst : destination buffer (must be non-NULL).
+ * @src : user-space source pointer.
+ * @len : copy length in bytes (already clamped by the caller to the
+ *        destination size and any snapshotted allocation bound).
+ *
+ * Returns true after copying @len bytes from @src to @dst.  Returns
+ * false when @src is NULL or not provably readable for the full @len
+ * window via range_readable_user(); callers MUST treat false as "skip
+ * the .post sample" rather than dereferencing @src later.
+ */
+__must_check
+bool post_snapshot_or_skip(void *dst, const void *src, size_t len);
+
+/*
  * Coarse-grained refresh hook for the cached sbrk(0) snapshot consumed
  * by is_in_glibc_heap() / range_overlaps_libc_heap().  Called from
  * alloc_object() so the cache moves forward roughly in step with the
