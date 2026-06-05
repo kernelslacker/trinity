@@ -18,21 +18,27 @@
 
 #if defined(SYS_getxattr) || defined(__NR_getxattr)
 /*
- * Snapshot of the three getxattr input args read by the post oracle,
- * captured at sanitise time and consumed by the post handler.  Lives in
+ * Snapshot of the getxattr input args read by the post oracle, captured
+ * at sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot redirect us at a foreign value buffer or hand
- * the re-call the wrong (pathname, name) tuple.
+ * handler running cannot redirect us at a foreign value buffer.  The
+ * pathname and xattr name are snapshotted by VALUE into the embedded
+ * byte buffers below rather than by pointer -- a stale heap-shaped
+ * pointer that survived looks_like_corrupted_ptr's shape-only gate
+ * would otherwise let the .post strncpy walk off the end of an
+ * unrelated allocation, and a sibling rewrite of the bytes between
+ * sanitise and post would hand the re-call the wrong (pathname, name)
+ * tuple and forge a clean-looking divergence.
  */
 #define GETXATTR_POST_STATE_MAGIC	0x47585452UL	/* "GXTR" */
 struct getxattr_post_state {
 	unsigned long magic;
-	unsigned long pathname;
-	unsigned long name;
 	unsigned long value;
 	unsigned long size;
 	size_t buf_alloc_size;
+	char pathname[PATH_MAX];
+	char name[256];
 };
 #endif
 
@@ -95,23 +101,32 @@ static void sanitise_getxattr(struct syscallrecord *rec)
 		rec->a4 = (unsigned long) buf_alloc_size;
 
 	/*
-	 * Snapshot the three input args for the post oracle.  Without this
-	 * the post handler reads rec->aN at post-time, when a sibling
-	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original user
-	 * buffer pointers, so the memcpy / re-call would touch a foreign
-	 * allocation.  post_state is private to the post handler.  Gated on
+	 * Snapshot input state for the post oracle.  Without this the
+	 * post handler reads rec->aN at post-time, when a sibling syscall
+	 * may have scribbled the slots: looks_like_corrupted_ptr() cannot
+	 * tell a real-but-wrong heap address from the original user value
+	 * pointer, so the memcpy would touch a foreign allocation, and a
+	 * stale rec->a1 / rec->a2 or sibling-rewritten pathname / name
+	 * bytes would hand the re-call the wrong (pathname, name) tuple.
+	 * Snapshot the pathname and name BYTES via post_snapshot_str so
+	 * the post handler never re-derefs the user pointers; skip the
+	 * post sample when either snapshot source is not provably
+	 * readable.  post_state is private to the post handler.  Gated on
 	 * SYS_getxattr to mirror the .post registration -- on systems
 	 * without SYS_getxattr the post handler is not registered and a
 	 * snapshot only the post handler can free would leak.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = GETXATTR_POST_STATE_MAGIC;
-	snap->pathname = rec->a1;
-	snap->name     = rec->a2;
 	snap->value    = rec->a3;
 	snap->size     = rec->a4;
 	snap->buf_alloc_size = buf_alloc_size;
+	if (!post_snapshot_str(snap->pathname, sizeof(snap->pathname),
+			       (const char *)(unsigned long) rec->a1))
+		snap->pathname[0] = '\0';
+	if (!post_snapshot_str(snap->name, sizeof(snap->name),
+			       (const char *)(unsigned long) rec->a2))
+		snap->name[0] = '\0';
 	rec->post_state = (unsigned long) snap;
 #endif
 }
@@ -168,8 +183,6 @@ static void post_getxattr(struct syscallrecord *rec)
 	struct getxattr_post_state *snap =
 		(struct getxattr_post_state *) rec->post_state;
 	unsigned long retval = rec->retval;
-	char snap_path[PATH_MAX];
-	char snap_name[256];
 	unsigned char first_buf[4096];
 	unsigned char recheck_buf[4096];
 	size_t snap_len;
@@ -242,34 +255,30 @@ static void post_getxattr(struct syscallrecord *rec)
 	if (snap->size == 0)
 		goto out_free;
 
-	if (snap->value == 0 || snap->pathname == 0 || snap->name == 0)
+	if (snap->value == 0)
+		goto out_free;
+
+	if (snap->pathname[0] == '\0' || snap->name[0] == '\0')
 		goto out_free;
 
 	{
 		void *value = (void *)(unsigned long) snap->value;
-		void *path = (void *)(unsigned long) snap->pathname;
-		void *name = (void *)(unsigned long) snap->name;
 
 		/*
 		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * fields.  Reject pid-scribbled value/pathname/name before
-		 * deref.
+		 * wholesale stomp could rewrite the snapshot's inner value
+		 * pointer field.  Reject pid-scribbled values before deref.
+		 * pathname and name are now snapshotted by value into the
+		 * snap's embedded buffers, so the post-time strncpy walk-off
+		 * risk is gone -- only the value pointer still needs a shape
+		 * gate.
 		 */
-		if (looks_like_corrupted_ptr(rec, value) ||
-		    looks_like_corrupted_ptr(rec, path) ||
-		    looks_like_corrupted_ptr(rec, name)) {
-			outputerr("post_getxattr: rejected suspicious value=%p path=%p name=%p (post_state-scribbled?)\n",
-				  value, path, name);
+		if (looks_like_corrupted_ptr(rec, value)) {
+			outputerr("post_getxattr: rejected suspicious value=%p (post_state-scribbled?)\n",
+				  value);
 			goto out_free;
 		}
 	}
-
-	strncpy(snap_path, (char *)(unsigned long) snap->pathname, sizeof(snap_path) - 1);
-	snap_path[sizeof(snap_path) - 1] = '\0';
-
-	strncpy(snap_name, (char *)(unsigned long) snap->name, sizeof(snap_name) - 1);
-	snap_name[sizeof(snap_name) - 1] = '\0';
 
 	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first_buf))
@@ -286,7 +295,7 @@ static void post_getxattr(struct syscallrecord *rec)
 
 	memcpy(first_buf, (void *)(unsigned long) snap->value, snap_len);
 
-	rc = syscall(SYS_getxattr, snap_path, snap_name,
+	rc = syscall(SYS_getxattr, snap->pathname, snap->name,
 		     recheck_buf, sizeof(recheck_buf));
 
 	if (rc <= 0)
@@ -315,7 +324,7 @@ static void post_getxattr(struct syscallrecord *rec)
 
 		output(0,
 		       "[oracle:getxattr] path=%s name=%s len=%zu first %s vs recheck %s\n",
-		       snap_path, snap_name, snap_len,
+		       snap->pathname, snap->name, snap_len,
 		       first_hex, recheck_hex);
 		__atomic_add_fetch(&shm->stats.getxattr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);

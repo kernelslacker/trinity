@@ -17,21 +17,27 @@
 
 #if defined(SYS_fgetxattr) || defined(__NR_fgetxattr)
 /*
- * Snapshot of the three fgetxattr input args read by the post oracle,
- * captured at sanitise time and consumed by the post handler.  Lives in
+ * Snapshot of the fgetxattr input args read by the post oracle, captured
+ * at sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot redirect us at a foreign value buffer or hand
- * the re-call the wrong (fd, name) tuple.
+ * the re-call the wrong fd.  The xattr name is snapshotted by VALUE into
+ * the embedded byte buffer below rather than by pointer -- a stale
+ * heap-shaped name pointer that survived looks_like_corrupted_ptr's
+ * shape-only gate would otherwise let the .post strncpy walk off the
+ * end of an unrelated allocation, and a sibling rewrite of the bytes
+ * between sanitise and post would hand the re-call the wrong name and
+ * forge a clean-looking divergence.
  */
 #define FGETXATTR_POST_STATE_MAGIC	0x46475852UL	/* "FGXR" */
 struct fgetxattr_post_state {
 	unsigned long magic;
 	unsigned long fd;
-	unsigned long name;
 	unsigned long value;
 	unsigned long size;
 	size_t buf_alloc_size;
+	char name[256];
 };
 #endif
 
@@ -88,23 +94,29 @@ static void sanitise_fgetxattr(struct syscallrecord *rec)
 		rec->a4 = (unsigned long) buf_alloc_size;
 
 	/*
-	 * Snapshot the three input args for the post oracle.  Without this
-	 * the post handler reads rec->aN at post-time, when a sibling
-	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original user
-	 * buffer pointers, so the memcpy / re-call would touch a foreign
-	 * allocation.  post_state is private to the post handler.  Gated on
-	 * SYS_fgetxattr to mirror the .post registration -- on systems
-	 * without SYS_fgetxattr the post handler is not registered and a
-	 * snapshot only the post handler can free would leak.
+	 * Snapshot input state for the post oracle.  Without this the
+	 * post handler reads rec->aN at post-time, when a sibling syscall
+	 * may have scribbled the slots: looks_like_corrupted_ptr() cannot
+	 * tell a real-but-wrong heap address from the original user value
+	 * pointer, so the memcpy would touch a foreign allocation, and a
+	 * stale rec->a2 / sibling-rewritten name bytes would hand the
+	 * re-call the wrong xattr name.  Snapshot the name BYTES via
+	 * post_snapshot_str so the post handler never re-derefs the user
+	 * pointer; skip the post sample when the snapshot source is not
+	 * provably readable.  post_state is private to the post handler.
+	 * Gated on SYS_fgetxattr to mirror the .post registration -- on
+	 * systems without SYS_fgetxattr the post handler is not registered
+	 * and a snapshot only the post handler can free would leak.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = FGETXATTR_POST_STATE_MAGIC;
 	snap->fd    = rec->a1;
-	snap->name  = rec->a2;
 	snap->value = rec->a3;
 	snap->size  = rec->a4;
 	snap->buf_alloc_size = buf_alloc_size;
+	if (!post_snapshot_str(snap->name, sizeof(snap->name),
+			       (const char *)(unsigned long) rec->a2))
+		snap->name[0] = '\0';
 	rec->post_state = (unsigned long) snap;
 #endif
 }
@@ -169,7 +181,6 @@ static void post_fgetxattr(struct syscallrecord *rec)
 		(struct fgetxattr_post_state *) rec->post_state;
 	unsigned long retval = rec->retval;
 	int snap_fd;
-	char snap_name[256];
 	unsigned char first_buf[4096];
 	unsigned char recheck_buf[4096];
 	size_t snap_len;
@@ -238,7 +249,10 @@ static void post_fgetxattr(struct syscallrecord *rec)
 	if (snap->size == 0)
 		goto out_free;
 
-	if (snap->value == 0 || snap->name == 0)
+	if (snap->value == 0)
+		goto out_free;
+
+	if (snap->name[0] == '\0')
 		goto out_free;
 
 	snap_fd = (int) snap->fd;
@@ -247,22 +261,22 @@ static void post_fgetxattr(struct syscallrecord *rec)
 
 	{
 		void *value = (void *)(unsigned long) snap->value;
-		void *name = (void *)(unsigned long) snap->name;
 
 		/*
 		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * fields.  Reject pid-scribbled value/name before deref.
+		 * wholesale stomp could rewrite the snapshot's inner value
+		 * pointer field.  Reject pid-scribbled values before deref.
+		 * The name is now snapshotted by value into the snap's
+		 * embedded buffer, so the post-time strncpy walk-off risk
+		 * is gone -- only the value pointer still needs a shape
+		 * gate.
 		 */
-		if (looks_like_corrupted_ptr(rec, value) || looks_like_corrupted_ptr(rec, name)) {
-			outputerr("post_fgetxattr: rejected suspicious value=%p name=%p (post_state-scribbled?)\n",
-				  value, name);
+		if (looks_like_corrupted_ptr(rec, value)) {
+			outputerr("post_fgetxattr: rejected suspicious value=%p (post_state-scribbled?)\n",
+				  value);
 			goto out_free;
 		}
 	}
-
-	strncpy(snap_name, (char *)(unsigned long) snap->name, sizeof(snap_name) - 1);
-	snap_name[sizeof(snap_name) - 1] = '\0';
 
 	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first_buf))
@@ -279,7 +293,7 @@ static void post_fgetxattr(struct syscallrecord *rec)
 
 	memcpy(first_buf, (void *)(unsigned long) snap->value, snap_len);
 
-	rc = syscall(SYS_fgetxattr, snap_fd, snap_name,
+	rc = syscall(SYS_fgetxattr, snap_fd, snap->name,
 		     recheck_buf, sizeof(recheck_buf));
 
 	if (rc <= 0)
@@ -308,7 +322,7 @@ static void post_fgetxattr(struct syscallrecord *rec)
 
 		output(0,
 		       "[oracle:fgetxattr] fd=%d name=%s len=%zu first %s vs recheck %s\n",
-		       snap_fd, snap_name, snap_len,
+		       snap_fd, snap->name, snap_len,
 		       first_hex, recheck_hex);
 		__atomic_add_fetch(&shm->stats.fgetxattr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
