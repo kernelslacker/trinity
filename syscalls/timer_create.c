@@ -10,6 +10,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "deferred-free.h"
 #include "objects.h"
 #include "publish_resource.h"
 #include "rnd.h"
@@ -83,9 +84,38 @@ static int pick_signo_avoiding_sigint(void)
 	return signo;
 }
 
+/*
+ * Snapshot for the post handler.  Mirrors the pipe/socketpair shape:
+ *
+ *   1. The snap struct carries a magic cookie that the post handler
+ *      checks before dereferencing snap->idp.  A sibling scribble of
+ *      rec->post_state with a heap-shaped pointer to a foreign chunk
+ *      survives looks_like_corrupted_ptr() but fails the cookie gate.
+ *
+ *   2. The snap pointer is registered in the post-state ownership
+ *      table at sanitise time and checked in the post handler via
+ *      post_state_is_owned().  A cookie-collision foreign chunk would
+ *      otherwise sail past the magic check.
+ *
+ *   3. snap->idp records the out-pointer value as written into rec->a3
+ *      at sanitise time.  The post handler compares snap->idp against
+ *      the live rec->a3 and bails on mismatch -- a sibling scribble of
+ *      rec->a3 between sanitise and post means the kernel either wrote
+ *      to a different buffer (so *snap->idp is stale) or rec->a3 was
+ *      clobbered after the syscall returned (so *snap->idp may have
+ *      been written-to-then-unmapped underneath us).  Either way the
+ *      timer_t we'd read is untrustworthy.
+ */
+#define TIMER_CREATE_POST_STATE_MAGIC	0x54494D52435F4D47UL	/* "TIMRC_MG" */
+struct timer_create_post_state {
+	unsigned long magic;
+	timer_t *idp;
+};
+
 static void timer_create_sanitise(struct syscallrecord *rec)
 {
 	struct sigevent *sigev;
+	struct timer_create_post_state *snap;
 
 	sigev = (struct sigevent *) get_writable_address(sizeof(struct sigevent));
 	if (sigev != NULL) {
@@ -120,9 +150,15 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 	 * Snapshot the user out-pointer for the post handler.  Sibling
 	 * syscalls in the child can scribble rec->aN between sanitise and
 	 * post; reading from a private slot keeps the deref pointed at the
-	 * buffer the kernel actually wrote into.
+	 * buffer the kernel actually wrote into, and the identity check in
+	 * the post handler turns a scribbled rec->a3 into a clean bail
+	 * rather than a quiet read from a stale or unmapped address.
 	 */
-	rec->post_state = rec->a3;
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = TIMER_CREATE_POST_STATE_MAGIC;
+	snap->idp = (timer_t *) rec->a3;
+	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
 }
 
 static unsigned long clock_ids[] = {
@@ -141,17 +177,43 @@ static unsigned long clock_ids[] = {
  * pick it up; the per-child pool destructor issues the real
  * timer_delete() at child teardown so produced timers don't outlive
  * the producing child.  Runs ahead of post_timer_create(), which
- * clears rec->post_state during cleanup.
+ * clears rec->post_state during cleanup.  Does its own shape + magic
+ * + ownership + inner-pointer-identity validation before deref so a
+ * sibling-stomped post_state doesn't drive register_timerid() with
+ * foreign bytes -- corruption attribution stays in post_timer_create()
+ * below, which repeats the same checks and owns the inner-ptr-mismatch
+ * counter bump.
  */
 static void post_timer_create_record_tid(struct syscallrecord *rec)
 {
+	struct timer_create_post_state *snap =
+		(struct timer_create_post_state *) rec->post_state;
 	timer_t *idp;
 	intptr_t tid_int;
 
 	if ((long) rec->retval < 0)
 		return;
 
-	idp = (timer_t *) rec->post_state;
+	if (snap == NULL || looks_like_corrupted_ptr(rec, snap))
+		return;
+
+	if (snap->magic != TIMER_CREATE_POST_STATE_MAGIC)
+		return;
+
+	if (!post_state_is_owned(snap))
+		return;
+
+	/*
+	 * Inner-pointer-identity check: snap->idp is the out-pointer we
+	 * captured at sanitise; rec->a3 is the live slot.  A mismatch
+	 * means a sibling scribble retargeted the kernel's write or
+	 * clobbered rec->a3 after return -- *snap->idp would read stale
+	 * or unmapped bytes either way.
+	 */
+	if ((timer_t *) rec->a3 != snap->idp)
+		return;
+
+	idp = snap->idp;
 	if (idp == NULL || looks_like_corrupted_ptr(rec, idp))
 		return;
 
@@ -178,24 +240,69 @@ static void post_timer_create_record_tid(struct syscallrecord *rec)
 
 /*
  * Cleanup-only sibling of post_timer_create_record_tid().  Owns the
- * scratch-slot teardown and the out-of-range corruption-bump so the
- * registrar above can stay focused on adding tids to the pool.
- * This replaces a previous delete-immediately post handler that
- * prevented any pool-based tracking from being useful.
+ * scratch-slot teardown, the out-of-range corruption-bump, and the
+ * inner-ptr-mismatch counter so the registrar above can stay focused
+ * on adding tids to the pool.  This replaces a previous delete-
+ * immediately post handler that prevented any pool-based tracking
+ * from being useful.
  */
 static void post_timer_create(struct syscallrecord *rec)
 {
+	struct timer_create_post_state *snap =
+		(struct timer_create_post_state *) rec->post_state;
 	timer_t *idp;
 	intptr_t tid_int;
 
-	if ((long) rec->retval < 0)
+	if (snap == NULL)
 		return;
 
-	idp = (timer_t *) rec->post_state;
-	if (looks_like_corrupted_ptr(rec, idp)) {
+	if (looks_like_corrupted_ptr(rec, snap)) {
+		outputerr("post_timer_create: rejected suspicious post_state=%p "
+			  "(pid-scribbled?)\n", snap);
 		rec->post_state = 0;
 		return;
 	}
+
+	if (snap->magic != TIMER_CREATE_POST_STATE_MAGIC) {
+		outputerr("post_timer_create: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		rec->post_state = 0;
+		return;
+	}
+
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_timer_create: rejected post_state=%p not in "
+			  "ownership table (post_state-redirected?)\n", snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	if ((long) rec->retval < 0)
+		goto out_free;
+
+	/*
+	 * Inner-pointer-identity check: snap->idp is the out-pointer we
+	 * captured at sanitise; rec->a3 is the live slot.  A mismatch
+	 * means a sibling scribble retargeted the kernel's write or
+	 * clobbered rec->a3 after return.  Bump the dedicated mismatch
+	 * counter and skip the *idp deref entirely -- the timer_t there
+	 * is untrustworthy.
+	 */
+	if ((timer_t *) rec->a3 != snap->idp) {
+		outputerr("post_timer_create: inner-ptr mismatch snap->idp=%p rec->a3=%p "
+			  "(sibling-scribbled out-pointer)\n",
+			  (void *) snap->idp, (void *) rec->a3);
+		__atomic_add_fetch(&shm->stats.timer_create_inner_ptr_mismatch,
+				   1, __ATOMIC_RELAXED);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_free;
+	}
+
+	idp = snap->idp;
+	if (idp == NULL || looks_like_corrupted_ptr(rec, idp))
+		goto out_free;
 
 	tid_int = (intptr_t) *idp;
 	if (tid_int < 0 || tid_int > 65535) {
@@ -204,7 +311,9 @@ static void post_timer_create(struct syscallrecord *rec)
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 
-	rec->post_state = 0;
+out_free:
+	post_state_unregister(snap);
+	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_timer_create = {

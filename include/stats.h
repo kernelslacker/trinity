@@ -2487,6 +2487,15 @@ struct stats_s {
 	unsigned long pipe_waker_bytes_written;			/* successful 1-byte write() to a writer-end pipe fd */
 	unsigned long pipe_waker_no_target;			/* fired but the pool walk returned no writer-end fd */
 	unsigned long pipe_waker_write_failed;			/* write() returned <0 (EAGAIN on full pipe, EBADF on closed fd, etc.) */
+
+	/* Per-syscall inner-pointer-identity tripwire counters.  Bumped
+	 * from the .post handler when the post_state snap's captured
+	 * out-pointer no longer matches the live rec->aN slot -- a
+	 * sibling scribble retargeted the kernel's write or clobbered
+	 * rec->aN between syscall return and the .post handler running.
+	 * Distinct counter per syscall so the operator dump shows which
+	 * out-pointer slot is being stomped, not just an aggregate. */
+	unsigned long timer_create_inner_ptr_mismatch;		/* timer_create: snap->idp != rec->a3 in post */
 };
 
 unsigned int stats_syscall_category(const char *name);

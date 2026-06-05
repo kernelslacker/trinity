@@ -4743,6 +4743,11 @@ static void dump_stats_childop_runs_network(void)
 			 shm->stats.pipe_waker_write_failed);
 	}
 
+	if (shm->stats.timer_create_inner_ptr_mismatch) {
+		stat_row("timer_create", "inner_ptr_mismatch",
+			 shm->stats.timer_create_inner_ptr_mismatch);
+	}
+
 	if (shm->stats.nat_t_churn_runs) {
 		stat_row("nat_t_churn", "runs",              shm->stats.nat_t_churn_runs);
 		stat_row("nat_t_churn", "setup_failed",      shm->stats.nat_t_churn_setup_failed);
