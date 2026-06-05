@@ -939,10 +939,27 @@ static void ring_evict_oldest_safe(void)
 	ring_count--;
 }
 
-void deferred_free_enqueue(void *ptr)
+/*
+ * Shared implementation for deferred_free_enqueue() and
+ * deferred_free_enqueue_or_leak().  The full reject / admit pipeline
+ * is identical for the two entry points; only the five
+ * under-pressure fallback paths branch on @leak_on_pressure.  On a
+ * leak path the caller's contract is "the buffer survives until
+ * child exit"; the heap chunk is not free()d, the alloc-track slot
+ * has already been drained by alloc_track_consume() so no stale
+ * mirror entry is left behind, and the kernel reclaims the address
+ * space when the child exits.
+ *
+ * The reject paths above the fallback bracket free nothing in either
+ * variant -- a rejected pointer either was never a real allocation
+ * (shape / heap-bounds / untracked) or is being intentionally held
+ * out of the queue (shared-region overlap); both classes pass the
+ * pointer back to the caller unchanged.
+ */
+static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
+					   bool leak_on_pressure)
 {
 	unsigned int i;
-	void *caller_pc = __builtin_return_address(0);
 
 	if (ptr == NULL)
 		return;
@@ -973,10 +990,9 @@ void deferred_free_enqueue(void *ptr)
 			outputerr("deferred_free_enqueue: rejected ptr=%p "
 				  "(not a tracked allocation) caller=%s "
 				  "[%lu cumulative]\n", ptr,
-				  pc_to_string(__builtin_return_address(0),
-					       pcbuf, sizeof(pcbuf)), n);
+				  pc_to_string(caller_pc, pcbuf, sizeof(pcbuf)), n);
 		}
-		deferred_free_reject_bump(__builtin_return_address(0));
+		deferred_free_reject_bump(caller_pc);
 		__atomic_add_fetch(&shm->stats.deferred_free_reject_untracked, 1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -1006,8 +1022,7 @@ void deferred_free_enqueue(void *ptr)
 			outputerr("deferred_free_enqueue: rejected ptr=%p "
 				  "(overlaps shared region) caller=%s "
 				  "[%lu cumulative]\n", ptr,
-				  pc_to_string(__builtin_return_address(0),
-					       pcbuf, sizeof(pcbuf)), n);
+				  pc_to_string(caller_pc, pcbuf, sizeof(pcbuf)), n);
 		}
 		__atomic_add_fetch(&shm->stats.deferred_free_reject_shared_region, 1, __ATOMIC_RELAXED);
 		return;
@@ -1034,7 +1049,8 @@ void deferred_free_enqueue(void *ptr)
 	if (ring_count > g_max_vmas / 2) {
 		__atomic_add_fetch(&shm->stats.deferred_free_vma_fallback_immediate,
 				   1, __ATOMIC_RELAXED);
-		free(ptr);
+		if (!leak_on_pressure)
+			free(ptr);
 		return;
 	}
 
@@ -1047,7 +1063,8 @@ void deferred_free_enqueue(void *ptr)
 	 * ring teardowns; per-enqueue noise after teardown adds nothing.
 	 */
 	if (ring == NULL) {
-		free(ptr);
+		if (!leak_on_pressure)
+			free(ptr);
 		return;
 	}
 
@@ -1059,7 +1076,8 @@ void deferred_free_enqueue(void *ptr)
 	 * result syscalls), bump the dedicated counter (the existing
 	 * outputerr line from ring_unlock keeps the per-event log
 	 * breadcrumb), and free this ptr immediately so the caller's "no
-	 * longer your problem" contract still holds.
+	 * longer your problem" contract still holds (or leak it instead
+	 * for the pre-dispatch variant -- see leak_on_pressure docs).
 	 *
 	 * Pre-dispose this path set a sticky drain-aggressive latch and
 	 * let the next tick chew through the ring; that left every queued
@@ -1069,10 +1087,11 @@ void deferred_free_enqueue(void *ptr)
 	 * gone (no consumer left to set it to true).
 	 *
 	 * RING_UNLOCK_FAIL (any other errno) falls through to the same
-	 * immediate-free, but does NOT dispose the ring -- a non-ENOMEM
-	 * failure is a different class (typically EACCES from a not-yet-
-	 * sanitised mm-syscall that overlapped the ring), not a VMA-
-	 * budget event, and the next ring_unlock can plausibly succeed.
+	 * immediate-free / leak path, but does NOT dispose the ring -- a
+	 * non-ENOMEM failure is a different class (typically EACCES from
+	 * a not-yet-sanitised mm-syscall that overlapped the ring), not
+	 * a VMA-budget event, and the next ring_unlock can plausibly
+	 * succeed.
 	 */
 	{
 		enum ring_unlock_result r = ring_unlock();
@@ -1081,11 +1100,13 @@ void deferred_free_enqueue(void *ptr)
 			__atomic_add_fetch(&shm->stats.deferred_free_enomem_drain,
 					   1, __ATOMIC_RELAXED);
 			ring_dispose_after_enomem();
-			free(ptr);
+			if (!leak_on_pressure)
+				free(ptr);
 			return;
 		}
 		if (r != RING_UNLOCK_OK) {
-			free(ptr);
+			if (!leak_on_pressure)
+				free(ptr);
 			return;
 		}
 	}
@@ -1098,12 +1119,14 @@ void deferred_free_enqueue(void *ptr)
 	 * nothing evictable (every slot's ptr was scribbled to NULL by a
 	 * fuzzed value-result syscall).  The tick-loop reconciliation
 	 * will catch up; for this call, re-lock the ring and fall back to
-	 * a plain free so we don't ctzll(0) into UB territory and write
-	 * one element past the ring.
+	 * a plain free (or a leak for the pre-dispatch variant) so we
+	 * don't ctzll(0) into UB territory and write one element past
+	 * the ring.
 	 */
 	if (occupied_mask == ~0ULL) {
 		ring_lock();
-		free(ptr);
+		if (!leak_on_pressure)
+			free(ptr);
 		return;
 	}
 
@@ -1126,6 +1149,16 @@ void deferred_free_enqueue(void *ptr)
 	 * mprotect cost on this write.
 	 */
 	inflight_hash_insert(ptr);
+}
+
+void deferred_free_enqueue(void *ptr)
+{
+	deferred_free_enqueue_internal(ptr, __builtin_return_address(0), false);
+}
+
+void deferred_free_enqueue_or_leak(void *ptr)
+{
+	deferred_free_enqueue_internal(ptr, __builtin_return_address(0), true);
 }
 
 void deferred_freeptr(unsigned long *p)

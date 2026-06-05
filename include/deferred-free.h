@@ -75,8 +75,53 @@ void tracked_free_now(void *ptr);
  * when the entry's TTL expires; the function-pointer parameter was
  * removed to eliminate the ROP/JOP surface a corrupted ring entry's
  * free_func slot would otherwise hand an attacker.
+ *
+ * Under VMA / ENOMEM / ring-full pressure the queue cannot admit the
+ * pointer; this variant falls back to a SYNCHRONOUS free() in that
+ * case so the caller's "no longer your problem" contract holds.  Use
+ * this from .post handlers and other post-dispatch sites where the
+ * kernel has already consumed the buffer — the sync free is safe
+ * because nothing is about to read the memory.  For pre-dispatch
+ * callers (sanitise sites that enqueue a buffer the kernel/post
+ * handler still needs to deref), use deferred_free_enqueue_or_leak
+ * instead.
  */
 void deferred_free_enqueue(void *ptr);
+
+/*
+ * Pre-dispatch variant of deferred_free_enqueue.  Same NULL / shape /
+ * heap-bounds / shared-region / alloc-track gates and same ring-admit
+ * path on the success case; ONLY the under-pressure fallback paths
+ * differ.  Where deferred_free_enqueue() falls back to a synchronous
+ * free() under VMA / ENOMEM / ring-full pressure, this variant
+ * INTENTIONALLY LEAKS — does nothing, returns — and lets the child's
+ * eventual exit reclaim the buffer.
+ *
+ * Use this when the caller does NOT yet own the buffer's lifecycle:
+ *
+ *   - sanitise enqueues a buffer that the kernel is about to read or
+ *     write during the syscall (io_uring_params, openat2 how,
+ *     perf_event_attr, sched_attr, mount_attr, file_attr,
+ *     xattr_args, ns_id_req, mnt_id_req, landlock_ruleset_attr, ...);
+ *
+ *   - sanitise enqueues a post_state snap that the .post handler
+ *     still needs to deref after the syscall returns (mq_open snap).
+ *
+ * The plain deferred_free_enqueue() is correct for post-dispatch
+ * sites where the buffer has already been consumed (.post handlers,
+ * teardown helpers); the synchronous-free fallback is safe there
+ * because no one is about to read the memory.  At a pre-dispatch
+ * site, that same sync free becomes a use-after-free: the syscall
+ * sanitiser returned "queued for later" but the buffer was actually
+ * freed before the kernel got to read it.
+ *
+ * The leak is bounded by the child's per-process rlimits and
+ * max_map_count; trinity child lifetimes are short, so a buffer
+ * leaked on the pressure path is reclaimed by the kernel when the
+ * child exits.  A bounded leak is a strictly better failure mode
+ * than a kernel-side UAF on the input buffer.
+ */
+void deferred_free_enqueue_or_leak(void *ptr);
 
 /*
  * Save the pointer value, zero the source field, and enqueue the
