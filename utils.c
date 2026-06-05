@@ -2567,6 +2567,40 @@ bool range_readable_user(const void *addr, size_t len)
 	return false;
 }
 
+bool post_snapshot_str(char *dst, size_t dstsz, const char *src)
+{
+	size_t i;
+
+	if (dst == NULL || dstsz == 0)
+		return false;
+	if (src == NULL)
+		return false;
+
+	/*
+	 * Single-probe readability gate.  range_readable_user proves the
+	 * full dstsz-byte window of src is mapped (tracked-shared region
+	 * or cached libc heap); the copy loop below then never reads past
+	 * what we proved.  False here means src is not provably readable
+	 * and the caller skips the .post sample rather than feeding a
+	 * stale heap-shaped pointer into a downstream strncpy that would
+	 * walk off an unrelated allocation.  ASAN catches that walk-off in
+	 * test; in production it silently surfaces as an oracle anomaly
+	 * against a foreign byte pattern.
+	 */
+	if (!range_readable_user(src, dstsz))
+		return false;
+
+	for (i = 0; i + 1 < dstsz; i++) {
+		char c = src[i];
+
+		dst[i] = c;
+		if (c == '\0')
+			return true;
+	}
+	dst[i] = '\0';
+	return true;
+}
+
 void sanitize_inherited_fds(void)
 {
 	DIR *dir;

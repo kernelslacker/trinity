@@ -393,6 +393,34 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len);
 bool range_readable_user(const void *addr, size_t len);
 
 /*
+ * Copy a NUL-terminated user string into a fixed sanitise-time buffer
+ * so the post oracle reads the bytes from its own snapshot and never
+ * re-derefs the user pointer after the syscall returned.
+ *
+ * Without this helper, the snapshot-by-pointer pattern in the path /
+ * xattr-name oracles strncpy(dst, snap->ptr, ...) at .post time -- the
+ * pointed-to bytes may have been changed by a sibling between sanitise
+ * and post (TOCTOU between the two reads creates false oracle
+ * anomalies), or a wholesale stomp may have left snap->ptr heap-shaped
+ * but pointing at a foreign, smaller allocation that
+ * looks_like_corrupted_ptr (shape-only) waved through.  Snapshotting
+ * the bytes at sanitise time, when the pointer is still the one the
+ * kernel is about to deref, removes both failure modes.
+ *
+ * @dst   : destination buffer (must be non-NULL, dstsz > 0).
+ * @dstsz : destination size in bytes.  The output is always NUL-
+ *          terminated on success; bytes are copied up to dstsz - 1.
+ * @src   : user-space source pointer.
+ *
+ * Returns true and populates @dst on success.  Returns false when @src
+ * is NULL or not provably readable for the full dstsz window via
+ * range_readable_user(); callers MUST treat false as "skip the .post
+ * sample" rather than dereferencing @src later.
+ */
+__must_check
+bool post_snapshot_str(char *dst, size_t dstsz, const char *src);
+
+/*
  * Coarse-grained refresh hook for the cached sbrk(0) snapshot consumed
  * by is_in_glibc_heap() / range_overlaps_libc_heap().  Called from
  * alloc_object() so the cache moves forward roughly in step with the
