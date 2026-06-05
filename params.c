@@ -1027,6 +1027,15 @@ void parse_args(int argc, char *argv[])
 			break;
 		}
 	}
+
+	if (optind < argc) {
+		outputerr("unexpected argument(s):");
+		while (optind < argc)
+			outputerr(" '%s'", argv[optind++]);
+		outputerr("\n");
+		exit(EXIT_FAILURE);
+	}
+
 	if (verbosity > MAX_LOGLEVEL)
 		verbosity = MAX_LOGLEVEL;
 
