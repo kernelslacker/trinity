@@ -24,8 +24,8 @@
 # every time a writable address is requested; both want to migrate to
 # a cached-permissions / cached-residency map maintained on the slow
 # side of the allocator.
-rand/random-address.c:198:mprotect
-rand/random-address.c:337:mincore
+rand/random-address.c:212:mprotect
+rand/random-address.c:351:mincore
 
 # utils.c: heap_bounds_init() is genuinely one-shot (called from the
 # parent during setup) and would normally be slow-ok.  It lives in a
