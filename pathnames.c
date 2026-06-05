@@ -278,6 +278,18 @@ static void add_to_namelist(const char *name)
 {
 	struct namelist *newnode;
 
+	/*
+	 * generate_pathname() copies a pool entry into a MAX_PATH_LEN buffer,
+	 * so reject anything that wouldn't fit (including the NUL) here at
+	 * collection time.  Deep -V trees can produce paths beyond 4095 bytes
+	 * even though the kernel will later reject them with ENAMETOOLONG.
+	 */
+	if (strlen(name) >= MAX_PATH_LEN) {
+		debugf("Skipping overlong path (%zu bytes): %s\n",
+			strlen(name), name);
+		return;
+	}
+
 	newnode = zmalloc(sizeof(struct namelist));
 	if (newnode == NULL) {
 		outputerr("add_to_namelist: zmalloc failed for %s\n", name);
@@ -675,7 +687,12 @@ const char * generate_pathname(void)
 
 	/* 90% chance of returning an unmangled filename. */
 	if (!ONE_IN(10)) {
-		memcpy(newpath, pathname, len + 1);
+		unsigned int copylen = len + 1;
+
+		if (copylen > MAX_PATH_LEN)
+			copylen = MAX_PATH_LEN;
+		memcpy(newpath, pathname, copylen);
+		newpath[MAX_PATH_LEN - 1] = '\0';
 		return newpath;
 	}
 
