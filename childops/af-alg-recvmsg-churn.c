@@ -171,15 +171,20 @@ static void send_cmsg_only(int fd, int op, const void *payload, size_t len)
 }
 
 /*
- * Per-child scratch state shared across every iteration of the outer
- * loop.  scratch is sized for the LARGEST single buffer any send/recv
- * shape needs (ARC_BIG_IOV_BYTES, 64K) and is reused by both the send
- * leg (cases that need 4K or 64K) and the recv leg (cases that need
- * up to 64K) because they run strictly sequentially within an iter.
- * Allocated once by af_alg_recvmsg_churn() before the outer loop and
- * freed once after it -- avoids calloc/free of 64K-class buffers on
- * the hot per-iter path.  Only the random portion is refilled per
- * iter; shapes/coverage are unchanged.
+ * Per-child scratch state shared across every iteration of every
+ * af_alg_recvmsg_churn() invocation in this child's lifetime.  scratch
+ * is sized for the LARGEST single buffer any send/recv shape needs
+ * (ARC_BIG_IOV_BYTES, 64K) and is reused by both the send leg (cases
+ * that need 4K or 64K) and the recv leg (cases that need up to 64K)
+ * because they run strictly sequentially within an iter.  The backing
+ * storage is a child-local static lazy-malloc'd on first use and never
+ * freed -- post-fork the static lives in COW-private child memory, so
+ * each child gets its own buffer and the parent never touches it.
+ * Avoids calloc/free of 64K-class buffers on every invocation as well
+ * as on the per-iter path; only the random portion is refilled before
+ * send (calloc's zero-fill was pure waste -- generate_rand_bytes()
+ * overwrites the bytes we actually transmit, and recv writes into the
+ * buffer rather than reading from it).
  */
 struct alg_recvmsg_child_ctx {
 	unsigned char *scratch;
@@ -474,7 +479,16 @@ out:
 
 bool af_alg_recvmsg_churn(struct childdata *child)
 {
-	struct alg_recvmsg_child_ctx cctx = { .scratch = NULL };
+	/* Child-local lazy-allocated scratch, sized for the largest
+	 * single buffer any send/recv shape uses.  First call mallocs;
+	 * subsequent calls (and every iter within them) reuse the same
+	 * pointer for the child's lifetime.  Post-fork the static is COW-
+	 * private so each child gets its own buffer.  No free() -- the
+	 * buffer dies with the child.  malloc (not calloc): only the
+	 * random portion is refilled per send and recv writes into the
+	 * buffer, so zero-fill would be discarded immediately. */
+	static unsigned char *scratch;
+	struct alg_recvmsg_child_ctx cctx;
 	struct timespec t0;
 	unsigned int outer_iters, i;
 
@@ -488,14 +502,12 @@ bool af_alg_recvmsg_churn(struct childdata *child)
 		return true;
 	}
 
-	/* One scratch allocation per child invocation, sized for the
-	 * largest single buffer any send/recv shape uses.  Reused across
-	 * every iter so the hot path doesn't calloc/free 64K-class
-	 * buffers each pass.  Failure to allocate is treated like the
-	 * pre-extraction per-shape calloc failure (skip the work). */
-	cctx.scratch = calloc(1, ARC_BIG_IOV_BYTES);
-	if (cctx.scratch == NULL)
-		return true;
+	if (scratch == NULL) {
+		scratch = malloc(ARC_BIG_IOV_BYTES);
+		if (scratch == NULL)
+			return true;
+	}
+	cctx.scratch = scratch;
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t0) < 0) {
 		t0.tv_sec = 0;
@@ -517,7 +529,6 @@ bool af_alg_recvmsg_churn(struct childdata *child)
 			break;
 	}
 
-	free(cctx.scratch);
 	return true;
 }
 
