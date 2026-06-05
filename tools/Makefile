@@ -32,15 +32,11 @@ V	= @
 Q	= $(V:1=)
 QUIET_CC = $(Q:@=@echo    '  CC	'$@;)
 
-all: analyze-sockets edge_analyzer
+all: analyze-sockets
 
 analyze-sockets:
 	$(QUIET_CC)$(CC) $(CFLAGS) analyze-sockets.c -o analyze-sockets
 
-edge_analyzer:
-	$(QUIET_CC)$(CC) $(CFLAGS) edge_analyzer.c -o edge_analyzer
-
 clean:
 	@rm -f core.*
 	@rm -f analyze-sockets
-	@rm -f edge_analyzer
