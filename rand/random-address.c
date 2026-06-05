@@ -30,20 +30,6 @@ void * get_writable_address(unsigned long size)
 	int mincore_retries = 0;
 	bool from_mmap = false;
 
-#ifdef __SANITIZE_ADDRESS__
-	/* ASAN places shadow + allocator mappings throughout the address
-	 * space, including trinity's reserved arena band 0x40000000-
-	 * 0x44000000.  trinity's mprotect on arena pages fails with
-	 * EINVAL when ASAN is squatting, and ASAN's own mmaps EAGAIN
-	 * when trinity reserved the address first -- the two collide
-	 * and starve each other.  Route through plain zmalloc on
-	 * sanitizer builds: loses the predictable-arena-address
-	 * property (and the arena_ptr_liveness telemetry that depends
-	 * on it) but gains ASAN's heap-overflow tracking, which is
-	 * the property we actually want during sanitizer runs. */
-	return zmalloc(size);
-#endif
-
 retry:	tries++;
 	/*
 	 * Reset per-iteration state.  The retry: label can be reached
