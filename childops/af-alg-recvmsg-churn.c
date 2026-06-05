@@ -7,10 +7,11 @@
  * upstream CI has C reproducers for actually get hit by the fleet.
  *
  * Per outer iteration:
- *   1. Sample (salg_type, salg_name) from a /proc/crypto cache built on
- *      first use and refreshed once every ~256 invocations.  Cache
- *      holds up to MAX_ALGS_PER_TYPE = 32 names per
- *      aead/skcipher/hash/rng family.
+ *   1. Sample (salg_type, salg_name) from the shared parent-side
+ *      alg_dict (net/proto-alg-dict.c) built once at startup from
+ *      /proc/crypto + static fallback.  Children inherit the dict via
+ *      COW.  Restricted to the aead/skcipher/hash/rng buckets via
+ *      ati_to_dict[].
  *   2. socket(AF_ALG, SOCK_SEQPACKET, 0); bind() to (type, name);
  *      accept() the operation fd; SO_RCVTIMEO=1s on the op fd.
  *   3. ONE_IN(2): sendmsg() carrying a CMSG of (SOL_ALG, ALG_SET_KEY)
@@ -31,11 +32,10 @@
  *      recv/sendmsg use MSG_DONTWAIT on top of the SO_RCVTIMEO floor.
  *   8. close() both fds.
  *
- * Hard error gates: socket(AF_ALG) returning EAFNOSUPPORT (no
+ * Hard error gate: socket(AF_ALG) returning EAFNOSUPPORT (no
  * CONFIG_CRYPTO_USER_API) latches alg_unsupported for the child's
- * lifetime; an unreadable /proc/crypto latches crypto_proc_unsupported
- * separately.  Either gate flips into the unsupported counter and the
- * op early-returns on subsequent invocations.
+ * lifetime; the gate flips into the unsupported counter and the op
+ * early-returns on subsequent invocations.
  *
  * BUDGETED outer (base 4 / cap 16) with JITTER + 200 ms wall cap.
  * DORMANT in dormant_op_disabled[]; smoke-test before fleet enable.
@@ -44,7 +44,6 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -59,6 +58,7 @@
 
 #include "child.h"
 #include "jitter.h"
+#include "proto-alg-dict.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -83,15 +83,12 @@
 #define ARC_OUTER_CAP			16U
 #define ARC_WALL_CAP_NS			(200ULL * 1000ULL * 1000ULL)
 #define ARC_RECVMSG_TIMEO_S		1
-#define MAX_ALGS_PER_TYPE		32U
-#define ARC_CACHE_REFRESH_PERIOD	256U
 #define ARC_KEY_MIN			16U
 #define ARC_KEY_MAX			256U
 #define ARC_IV_MIN			8U
 #define ARC_IV_MAX			32U
 #define ARC_BIG_IOV_BYTES		(64U * 1024U)
 #define ARC_SCATTER_TRAILER		4096U
-#define ARC_NAME_MAX			63U
 
 enum alg_type_idx { ATI_AEAD = 0, ATI_SKCIPHER, ATI_HASH, ATI_RNG, ATI_NR };
 
@@ -99,13 +96,17 @@ static const char * const alg_type_strings[ATI_NR] = {
 	"aead", "skcipher", "hash", "rng",
 };
 
-static char alg_cache[ATI_NR][MAX_ALGS_PER_TYPE][ARC_NAME_MAX + 1];
-static unsigned int alg_cache_count[ATI_NR];
-static bool alg_cache_built;
-static unsigned int arc_invocation_counter;
+/* Map this childop's local type index onto the shared alg_dict bucket
+ * built once in the parent by init_alg_template_dict() (called from
+ * open_fds() before fork).  Children inherit the dict via COW. */
+static const enum alg_dict_type ati_to_dict[ATI_NR] = {
+	[ATI_AEAD]	= ALG_DICT_AEAD,
+	[ATI_SKCIPHER]	= ALG_DICT_SKCIPHER,
+	[ATI_HASH]	= ALG_DICT_HASH,
+	[ATI_RNG]	= ALG_DICT_RNG,
+};
 
 static bool alg_unsupported;
-static bool crypto_proc_unsupported;
 
 static long long ns_since(const struct timespec *t0)
 {
@@ -118,77 +119,24 @@ static long long ns_since(const struct timespec *t0)
 }
 
 #ifdef USE_IF_ALG
-/* Rebuild alg_cache[][] from /proc/crypto.  Keep the first
- * MAX_ALGS_PER_TYPE names per type; later entries are silently
- * dropped (the cache is a sample, not an enumeration).  Returns false
- * iff /proc/crypto can't be opened, so the caller can latch
- * crypto_proc_unsupported and skip future cache rebuilds. */
-static bool rebuild_alg_cache(void)
-{
-	FILE *f;
-	char line[256];
-	char cur_name[ARC_NAME_MAX + 1] = {0};
-
-	f = fopen("/proc/crypto", "re");
-	if (f == NULL)
-		return false;
-
-	memset(alg_cache_count, 0, sizeof(alg_cache_count));
-
-	while (fgets(line, sizeof(line), f) != NULL) {
-		if (strncmp(line, "name", 4) == 0) {
-			const char *p = strchr(line, ':');
-
-			cur_name[0] = '\0';
-			if (p != NULL) {
-				p++;
-				while (*p == ' ' || *p == '\t')
-					p++;
-				snprintf(cur_name, sizeof(cur_name), "%s", p);
-				cur_name[strcspn(cur_name, "\r\n")] = '\0';
-			}
-		} else if (strncmp(line, "type", 4) == 0) {
-			const char *p = strchr(line, ':');
-			enum alg_type_idx t;
-
-			if (p == NULL || cur_name[0] == '\0')
-				continue;
-			p++;
-			while (*p == ' ' || *p == '\t')
-				p++;
-			for (t = 0; t < ATI_NR; t++) {
-				size_t tlen = strlen(alg_type_strings[t]);
-
-				if (strncmp(p, alg_type_strings[t], tlen) != 0)
-					continue;
-				if (p[tlen] != '\n' && p[tlen] != '\r' &&
-				    p[tlen] != '\0')
-					continue;
-				if (alg_cache_count[t] >= MAX_ALGS_PER_TYPE)
-					break;
-				snprintf(alg_cache[t][alg_cache_count[t]],
-					 sizeof(alg_cache[t][0]), "%s", cur_name);
-				alg_cache_count[t]++;
-				break;
-			}
-		}
-	}
-	fclose(f);
-	alg_cache_built = true;
-	return true;
-}
-
+/* Sample (alg_type, alg_name) from the parent-side dict.  Tries up to
+ * ATI_NR random buckets; returns false only if every bucket the
+ * childop cares about is empty in the dict (the static fallback in
+ * net/proto-alg.c keeps that case unreachable in practice). */
 static bool pick_algorithm(enum alg_type_idx *type_out, const char **name_out)
 {
 	unsigned int attempts;
 
 	for (attempts = 0; attempts < ATI_NR; attempts++) {
 		enum alg_type_idx t = (enum alg_type_idx)RAND_RANGE(0, ATI_NR - 1);
+		const char **names;
+		unsigned int n;
 
-		if (alg_cache_count[t] == 0)
+		names = alg_dict_names(ati_to_dict[t], &n);
+		if (n == 0)
 			continue;
 		*type_out = t;
-		*name_out = alg_cache[t][rnd_modulo_u32(alg_cache_count[t])];
+		*name_out = names[rnd_modulo_u32(n)];
 		return true;
 	}
 	return false;
@@ -371,10 +319,11 @@ struct alg_recvmsg_iter_ctx {
 };
 
 /*
- * Phase 1: pick an (alg type, alg name) pair from the /proc/crypto-
- * backed cache, open the AF_ALG parent socket, and fill sa with the
- * bind target.  pick_algorithm() returning false (no usable type in
- * the cache yet) is a clean bail with no fd to close.  socket(AF_ALG)
+ * Phase 1: pick an (alg type, alg name) pair from the shared
+ * parent-side alg_dict, open the AF_ALG parent socket, and fill sa
+ * with the bind target.  pick_algorithm() returning false (no usable
+ * type in the dict, which the static fallback makes effectively
+ * unreachable) is a clean bail with no fd to close.  socket(AF_ALG)
  * returning EAFNOSUPPORT latches alg_unsupported so the outer cycle
  * breaks early on the next iter.  Returns 0 on success or -1 to bail
  * to the orchestrator's out: teardown path; on the socket-fail bail
@@ -528,20 +477,10 @@ bool af_alg_recvmsg_churn(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.af_alg_recvmsg_runs, 1, __ATOMIC_RELAXED);
 
-	if (alg_unsupported || crypto_proc_unsupported) {
+	if (alg_unsupported) {
 		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_unsupported,
 				   1, __ATOMIC_RELAXED);
 		return true;
-	}
-
-	if (!alg_cache_built ||
-	    (++arc_invocation_counter % ARC_CACHE_REFRESH_PERIOD) == 0) {
-		if (!rebuild_alg_cache()) {
-			crypto_proc_unsupported = true;
-			__atomic_add_fetch(&shm->stats.af_alg_recvmsg_unsupported,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
 	}
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t0) < 0) {
