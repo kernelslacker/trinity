@@ -514,11 +514,11 @@ syscalls/sysinfo.c:181:post_sysinfo
 syscalls/sysinfo.c:187:post_sysinfo
 syscalls/time.c:84:post_time
 syscalls/time.c:98:post_time
-syscalls/timer_create.c:260:post_timer_create
-syscalls/timer_create.c:267:post_timer_create
-syscalls/timer_create.c:276:post_timer_create
-syscalls/timer_create.c:294:post_timer_create
-syscalls/timer_create.c:309:post_timer_create
+syscalls/timer_create.c:274:post_timer_create
+syscalls/timer_create.c:281:post_timer_create
+syscalls/timer_create.c:290:post_timer_create
+syscalls/timer_create.c:308:post_timer_create
+syscalls/timer_create.c:323:post_timer_create
 syscalls/timerfd_create.c:125:post_timerfd_create
 syscalls/timerfd_create.c:141:post_timerfd_create
 syscalls/timerfd_gettime.c:106:post_timerfd_gettime
