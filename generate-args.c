@@ -1331,9 +1331,7 @@ static void struct_variant_overlay_nested(unsigned char *buf, unsigned int size,
  * 12% (~1-in-8) keeps schema-fill's validator-passing intent dominant
  * while still exploring valid neighbours every few calls; tuned next to
  * OPTIONAL_PRESENT_PCT so the two probability-driven fill knobs live
- * side-by-side.  Phase C.2b: only FT_FLAGS dispatches today, the
- * remaining mutable tags (FT_ENUM / FT_VOCAB / FT_RANGE / FT_RAW) wire
- * up in the next commit.
+ * side-by-side.
  */
 #define STRUCT_FIELD_MUTATE_PCT		12U
 
@@ -1351,6 +1349,10 @@ static bool field_tag_is_mutable_c2b(enum field_tag tag)
 {
 	switch (tag) {
 	case FT_FLAGS:
+	case FT_ENUM:
+	case FT_VOCAB:
+	case FT_RANGE:
+	case FT_RAW:
 		return true;
 	default:
 		return false;
@@ -1394,6 +1396,141 @@ static void mutate_field_flags(unsigned char *buf, const struct struct_field *f)
 		seen++;
 	}
 	write_field_uint(buf, f, val);
+}
+
+/*
+ * FT_ENUM post-fill primitive: replace with a different draw from
+ * u.enum_.vals so the kernel sees a real "swap to another vocab entry"
+ * neighbour move instead of either the same value or a wholly random
+ * one.  Reject-samples until a different index is drawn; with n == 1
+ * there is no different value to swap to, so the field is left alone.
+ * A bounded retry cap guards against pathological vocabs that contain
+ * the same value repeated (effective n == 1 with formal n > 1) without
+ * spinning the rng forever.
+ */
+static void mutate_field_enum(unsigned char *buf, const struct struct_field *f)
+{
+	const unsigned long *vals = f->u.enum_.vals;
+	unsigned int n = f->u.enum_.n;
+	uint64_t current;
+	unsigned int retries;
+
+	if (vals == NULL || n <= 1)
+		return;
+
+	current = read_field_uint(buf, f);
+	for (retries = 0; retries < 8; retries++) {
+		uint64_t cand = (uint64_t) vals[rnd_modulo_u32(n)];
+
+		if (cand != current) {
+			write_field_uint(buf, f, cand);
+			return;
+		}
+	}
+}
+
+/*
+ * FT_VOCAB post-fill primitive: pick a different curated string and
+ * splat it NUL-padded across element_stride bytes, mirroring exactly
+ * the shape fill_field_vocab() lands in pass 1 -- memset(stride, 0),
+ * memcpy(min(strlen, stride - 1)).  Reject-sample on the just-filled
+ * string so the kernel sees a fresh entry rather than the same one
+ * twice; bounded retries handle the n == 1 / duplicate-vocab cases
+ * without burning rng.  String comparison is over the stride-bounded
+ * pad to match what's actually written into the buffer (anything
+ * beyond stride-1 is truncated identically by both writers, so the
+ * "different" check would be a false negative if it compared past the
+ * truncation point).
+ */
+static void mutate_field_vocab(unsigned char *buf, const struct struct_field *f)
+{
+	const char *const *vocab = f->u.vocab.vocab;
+	unsigned int nv = f->u.vocab.vocab_len;
+	unsigned int stride = f->u.vocab.element_stride;
+	unsigned int retries;
+
+	if (vocab == NULL || nv <= 1 || stride == 0)
+		return;
+	if (stride > f->size)
+		stride = f->size;
+	if (stride == 0)
+		return;
+
+	for (retries = 0; retries < 8; retries++) {
+		const char *pick = vocab[rnd_modulo_u32(nv)];
+		size_t plen;
+
+		if (memcmp(buf + f->offset, pick,
+			   strnlen(pick, stride - 1)) == 0 &&
+		    strnlen(pick, stride - 1) ==
+			   strnlen((const char *) (buf + f->offset),
+				   stride - 1))
+			continue;
+
+		plen = strnlen(pick, stride - 1);
+		memset(buf + f->offset, 0, stride);
+		memcpy(buf + f->offset, pick, plen);
+		return;
+	}
+}
+
+/*
+ * FT_RANGE post-fill primitive: step by ±1 within [lo, hi], clamped at
+ * the bounds.  The "small adjacent step" is what makes FT_RANGE
+ * mutable distinct from the fill's uniform redraw -- the kernel sees a
+ * value one neighbour away from a known-valid base, so size-sensitive
+ * branches that the schema fill jumps across uniformly get walked one
+ * step at a time.  Out-of-range or degenerate ranges (hi <= lo) are
+ * no-ops: there is no neighbour to step to.  Saturating at the bounds
+ * rather than wrapping preserves the lo/hi invariant the fill writes.
+ */
+static void mutate_field_range(unsigned char *buf, const struct struct_field *f)
+{
+	unsigned long lo = f->u.range.lo;
+	unsigned long hi = f->u.range.hi;
+	uint64_t current;
+	uint64_t next;
+
+	if (hi <= lo)
+		return;
+
+	current = read_field_uint(buf, f);
+	if (current < lo || current > hi)
+		return;
+
+	if (current == lo)
+		next = current + 1;
+	else if (current == hi)
+		next = current - 1;
+	else if (rnd_u32() & 1)
+		next = current + 1;
+	else
+		next = current - 1;
+
+	write_field_uint(buf, f, next);
+}
+
+/*
+ * FT_RAW post-fill primitive: single-bit flip scoped to a random byte
+ * inside [f->offset, f->offset + f->size).  The "scoped" part is
+ * load-bearing -- a stray byte outside the field would clobber its
+ * neighbour, which is precisely the sort of cross-field contamination
+ * schema fill exists to prevent.  Width-gated to <= 4 bytes (1/2/4) so
+ * the splat shape matches fill_field_raw()'s; wider FT_RAW (pointers,
+ * u64 cookies) is left alone, the same conservative shape the fill
+ * walks past.
+ */
+static void mutate_field_raw(unsigned char *buf, const struct struct_field *f)
+{
+	unsigned int byte_off;
+	unsigned int bit;
+
+	if (f->size == 0 || f->size > 4)
+		return;
+
+	byte_off = rnd_modulo_u32(f->size);
+	bit = rnd_modulo_u32(8);
+	buf[f->offset + byte_off] ^= (unsigned char) (1U << bit);
 }
 
 /*
@@ -1471,6 +1608,85 @@ weighted_pick_candidate(const struct mutate_candidate *cands, unsigned int n)
 }
 
 /*
+ * Apply one per-tag primitive to one already-picked field.  Split out
+ * from the gated public entry point so the self-test can drive the
+ * dispatch deterministically without rolling against
+ * STRUCT_FIELD_MUTATE_PCT thousands of times to land enough trials.
+ */
+static void mutate_dispatch_one(unsigned char *buf,
+				const struct struct_field *winner)
+{
+	switch (winner->tag) {
+	case FT_FLAGS:
+		mutate_field_flags(buf, winner);
+		break;
+	case FT_ENUM:
+		mutate_field_enum(buf, winner);
+		break;
+	case FT_VOCAB:
+		mutate_field_vocab(buf, winner);
+		break;
+	case FT_RANGE:
+		mutate_field_range(buf, winner);
+		break;
+	case FT_RAW:
+		mutate_field_raw(buf, winner);
+		break;
+	default:
+		/*
+		 * Skip-listed and not-yet-mutable tags should never reach
+		 * the dispatch -- collect_mutable_candidates filters them
+		 * upstream.  A stray dispatch here is a bug in the filter,
+		 * not a write to attempt; stay silent.
+		 */
+		break;
+	}
+}
+
+/*
+ * Variant-resolve, collect mutable candidates from the resolved
+ * fields[], weight-pick one, dispatch.  No gate roll -- callers
+ * (public entry point + self-test) own the gating decision.  Returns
+ * the winning field for the self-test's invariant assertions; NULL
+ * when no mutable candidate existed.
+ */
+static const struct struct_field *
+mutate_one_unconditional(unsigned char *buf, unsigned int size,
+			 const struct struct_desc *desc,
+			 struct syscallrecord *rec)
+{
+	const struct union_variant *variant;
+	const struct struct_field *fields;
+	const struct struct_field *winner;
+	struct mutate_candidate cands[STRUCT_MUTATE_MAX_CANDIDATES];
+	unsigned int n_fields, n_cands;
+
+	if (buf == NULL || desc == NULL)
+		return NULL;
+
+	variant = struct_desc_resolve_variant(desc, rec, buf);
+	if (variant != NULL) {
+		fields = variant->fields;
+		n_fields = variant->num_fields;
+	} else {
+		fields = desc->fields;
+		n_fields = desc->num_fields;
+	}
+
+	n_cands = collect_mutable_candidates(size, fields, n_fields,
+					     cands, STRUCT_MUTATE_MAX_CANDIDATES);
+	if (n_cands == 0)
+		return NULL;
+
+	winner = weighted_pick_candidate(cands, n_cands);
+	if (winner == NULL)
+		return NULL;
+
+	mutate_dispatch_one(buf, winner);
+	return winner;
+}
+
+/*
  * Post-fill struct-buffer mutation.  Called immediately after
  * struct_field_fill_schema_aware() at the two top-level ARG_STRUCT
  * call sites; runs at most one tag-respecting neighbour mutation per
@@ -1490,49 +1706,293 @@ void struct_field_mutate_one(unsigned char *buf, unsigned int size,
 			     const struct struct_desc *desc,
 			     struct syscallrecord *rec)
 {
-	const struct union_variant *variant;
-	const struct struct_field *fields;
-	const struct struct_field *winner;
-	struct mutate_candidate cands[STRUCT_MUTATE_MAX_CANDIDATES];
-	unsigned int n_fields, n_cands;
-
-	if (buf == NULL || desc == NULL)
-		return;
 	if (rnd_modulo_u32(100) >= STRUCT_FIELD_MUTATE_PCT)
 		return;
+	(void) mutate_one_unconditional(buf, size, desc, rec);
+}
 
-	variant = struct_desc_resolve_variant(desc, rec, buf);
-	if (variant != NULL) {
-		fields = variant->fields;
-		n_fields = variant->num_fields;
-	} else {
-		fields = desc->fields;
-		n_fields = desc->num_fields;
+/*
+ * Self-test for the per-tag primitives and the skip-list discipline.
+ *
+ * Trinity has no separate unit-test binary -- the harness only runs on
+ * an isolated fuzz host, so structural and behavioural invariants
+ * shipped with new code have to be asserted at process start instead.
+ * Same pattern as shared_bitmap_self_check(): one-shot, called from
+ * the parent before any child forks, BUG() on failure so a regression
+ * fails the run loudly instead of silently producing wrong outputs.
+ *
+ * Each primitive is exercised with a hand-built struct_field over a
+ * sandbox buffer (i.e. zero coupling to the production catalog) so the
+ * assertions don't depend on catalog field choices that may shift.
+ * Iteration counts are large enough that reject-sampling primitives
+ * (FT_ENUM / FT_VOCAB) get many independent draws; rng coverage of
+ * sub-byte cases (FT_RAW bit picks, FT_RANGE direction) is hit by the
+ * same loop count without needing a separate sweep.
+ */
+#define STRUCT_MUTATE_SELFTEST_ITERS	256U
+
+static void selftest_flags(void)
+{
+	uint64_t mask = 0x0000000000ABCDEFULL;
+	unsigned char field_buf[4];
+	struct struct_field f = {
+		.name		= "selftest_flags",
+		.offset		= 0,
+		.size		= 4,
+		.tag		= FT_FLAGS,
+		.mutate_weight	= 1,
+		.u.flags	= { .mask = (unsigned long) mask },
+	};
+	unsigned int i;
+
+	for (i = 0; i < STRUCT_MUTATE_SELFTEST_ITERS; i++) {
+		uint32_t before = (uint32_t) (rnd_u32() & (uint32_t) mask);
+		uint32_t after;
+		uint32_t diff;
+		uint32_t bits;
+
+		memcpy(field_buf, &before, sizeof(before));
+		mutate_field_flags(field_buf, &f);
+		memcpy(&after, field_buf, sizeof(after));
+
+		if ((after & ~(uint32_t) mask) != 0)
+			BUG("mutate_field_flags wrote outside mask");
+
+		diff = before ^ after;
+		bits = (uint32_t) __builtin_popcount(diff);
+		if (bits != 1)
+			BUG("mutate_field_flags toggled != 1 bit");
+		if ((diff & ~(uint32_t) mask) != 0)
+			BUG("mutate_field_flags toggled out-of-mask bit");
 	}
+}
 
-	n_cands = collect_mutable_candidates(size, fields, n_fields,
-					     cands, STRUCT_MUTATE_MAX_CANDIDATES);
-	if (n_cands == 0)
-		return;
+static void selftest_enum(void)
+{
+	static const unsigned long vals[] = { 1, 7, 42, 100, 9999 };
+	unsigned char field_buf[4];
+	struct struct_field f = {
+		.name		= "selftest_enum",
+		.offset		= 0,
+		.size		= 4,
+		.tag		= FT_ENUM,
+		.mutate_weight	= 1,
+		.u.enum_	= { .vals = vals, .n = ARRAY_SIZE(vals) },
+	};
+	unsigned int i;
 
-	winner = weighted_pick_candidate(cands, n_cands);
-	if (winner == NULL)
-		return;
+	for (i = 0; i < STRUCT_MUTATE_SELFTEST_ITERS; i++) {
+		uint32_t before = (uint32_t) vals[rnd_modulo_u32(ARRAY_SIZE(vals))];
+		uint32_t after;
+		unsigned int j;
+		bool in_vocab = false;
 
-	switch (winner->tag) {
-	case FT_FLAGS:
-		mutate_field_flags(buf, winner);
-		break;
-	default:
+		memcpy(field_buf, &before, sizeof(before));
+		mutate_field_enum(field_buf, &f);
+		memcpy(&after, field_buf, sizeof(after));
+
+		if (after == before)
+			BUG("mutate_field_enum failed to swap value");
+		for (j = 0; j < ARRAY_SIZE(vals); j++) {
+			if ((uint32_t) vals[j] == after) {
+				in_vocab = true;
+				break;
+			}
+		}
+		if (!in_vocab)
+			BUG("mutate_field_enum wrote non-vocab value");
+	}
+}
+
+static void selftest_vocab(void)
+{
+	static const char *const vocab[] = { "alpha", "beta", "gamma", "delta" };
+	unsigned char field_buf[16];
+	struct struct_field f = {
+		.name		= "selftest_vocab",
+		.offset		= 0,
+		.size		= sizeof(field_buf),
+		.tag		= FT_VOCAB,
+		.mutate_weight	= 1,
+		.u.vocab	= {
+			.vocab		= vocab,
+			.vocab_len	= ARRAY_SIZE(vocab),
+			.element_stride	= sizeof(field_buf),
+		},
+	};
+	unsigned int i;
+
+	for (i = 0; i < STRUCT_MUTATE_SELFTEST_ITERS; i++) {
+		const char *start = vocab[rnd_modulo_u32(ARRAY_SIZE(vocab))];
+		unsigned int j;
+		bool in_vocab = false;
+
+		memset(field_buf, 0, sizeof(field_buf));
+		memcpy(field_buf, start, strlen(start));
+		mutate_field_vocab(field_buf, &f);
+
+		if (field_buf[sizeof(field_buf) - 1] != 0)
+			BUG("mutate_field_vocab dropped trailing NUL");
+
+		for (j = 0; j < ARRAY_SIZE(vocab); j++) {
+			if (strcmp((const char *) field_buf, vocab[j]) == 0) {
+				in_vocab = true;
+				break;
+			}
+		}
+		if (!in_vocab)
+			BUG("mutate_field_vocab wrote non-vocab string");
+	}
+}
+
+static void selftest_range(void)
+{
+	unsigned char field_buf[4];
+	struct struct_field f = {
+		.name		= "selftest_range",
+		.offset		= 0,
+		.size		= 4,
+		.tag		= FT_RANGE,
+		.mutate_weight	= 1,
+		.u.range	= { .lo = 10, .hi = 20 },
+	};
+	unsigned int i;
+
+	for (i = 0; i < STRUCT_MUTATE_SELFTEST_ITERS; i++) {
+		uint32_t before = 10 + rnd_modulo_u32(11);
+		uint32_t after;
+		int32_t delta;
+
+		memcpy(field_buf, &before, sizeof(before));
+		mutate_field_range(field_buf, &f);
+		memcpy(&after, field_buf, sizeof(after));
+
+		if (after < 10 || after > 20)
+			BUG("mutate_field_range stepped outside [lo, hi]");
+		delta = (int32_t) after - (int32_t) before;
+		if (delta < -1 || delta > 1 || delta == 0)
+			BUG("mutate_field_range step != +/- 1");
+	}
+}
+
+static void selftest_raw(void)
+{
+	unsigned char ring[8];
+	struct struct_field f = {
+		.name		= "selftest_raw",
+		.offset		= 2,
+		.size		= 4,
+		.tag		= FT_RAW,
+		.mutate_weight	= 1,
+	};
+	unsigned int i;
+
+	for (i = 0; i < STRUCT_MUTATE_SELFTEST_ITERS; i++) {
+		unsigned char before[sizeof(ring)];
+		unsigned int j;
+		unsigned int touched = 0;
+
+		for (j = 0; j < sizeof(ring); j++)
+			ring[j] = (unsigned char) rnd_u32();
+		memcpy(before, ring, sizeof(ring));
+
+		mutate_field_raw(ring, &f);
+
 		/*
-		 * Unreachable today -- the candidate collector only emits
-		 * mutable tags, and FT_FLAGS is the sole mutable tag in
-		 * this commit.  The remaining per-tag primitives wire up
-		 * in the next commit; until then a stray dispatch is a
-		 * silent no-op rather than a wrong write.
+		 * Bytes outside [f->offset, f->offset + f->size) must be
+		 * byte-identical -- the field-scope guarantee is the whole
+		 * point of FT_RAW's "do not contaminate the neighbour" rule.
 		 */
-		break;
+		for (j = 0; j < sizeof(ring); j++) {
+			if (j >= f.offset && j < f.offset + f.size)
+				continue;
+			if (ring[j] != before[j])
+				BUG("mutate_field_raw touched out-of-field byte");
+		}
+		for (j = f.offset; j < f.offset + f.size; j++)
+			if (ring[j] != before[j])
+				touched++;
+		if (touched != 1)
+			BUG("mutate_field_raw flipped != 1 byte");
 	}
+}
+
+/*
+ * Skip-list invariant: a struct whose only fields carry skip-listed
+ * tags must round-trip byte-identical across many gated invocations
+ * of struct_field_mutate_one().  The candidate collector should yield
+ * zero candidates and the gated entry point should short-circuit; any
+ * regression that promoted a coupled tag (PTR_*, LEN_*, ADDRESS, FD,
+ * BPF_PROGRAM) into the candidate set would re-introduce the
+ * (ptr, len) / address / fd desync the schema fill exists to prevent.
+ *
+ * The mutation rate is high enough that 10k * STRUCT_FIELD_MUTATE_PCT
+ * gate passes is on the order of 1200 -- a single mistakenly-allowed
+ * skip-list candidate would flip a byte with overwhelming probability.
+ */
+static void selftest_skiplist(void)
+{
+	unsigned char buf[64];
+	unsigned char snapshot[sizeof(buf)];
+	struct struct_field skiplist_fields[] = {
+		{
+			.name		= "ptr",
+			.offset		= 0,
+			.size		= 8,
+			.tag		= FT_PTR_BYTES,
+			.mutate_weight	= 100,
+			.u.ptr_bytes	= { .max_bytes = 16 },
+		},
+		{
+			.name		= "len",
+			.offset		= 8,
+			.size		= 4,
+			.tag		= FT_LEN_BYTES,
+			.mutate_weight	= 100,
+			.u.len_of	= { .buf_field = "ptr" },
+		},
+		{
+			.name		= "fd",
+			.offset		= 16,
+			.size		= 4,
+			.tag		= FT_FD,
+			.mutate_weight	= 100,
+		},
+		{
+			.name		= "addr",
+			.offset		= 24,
+			.size		= 8,
+			.tag		= FT_ADDRESS,
+			.mutate_weight	= 100,
+		},
+	};
+	struct struct_desc desc = {
+		.name		= "selftest_skiplist",
+		.struct_size	= sizeof(buf),
+		.fields		= skiplist_fields,
+		.num_fields	= ARRAY_SIZE(skiplist_fields),
+	};
+	unsigned int i;
+
+	for (i = 0; i < sizeof(buf); i++)
+		buf[i] = (unsigned char) rnd_u32();
+	memcpy(snapshot, buf, sizeof(buf));
+
+	for (i = 0; i < 10000U; i++)
+		struct_field_mutate_one(buf, sizeof(buf), &desc, NULL);
+
+	if (memcmp(buf, snapshot, sizeof(buf)) != 0)
+		BUG("struct_field_mutate_one mutated a skip-listed field");
+}
+
+void struct_field_mutate_self_check(void)
+{
+	selftest_flags();
+	selftest_enum();
+	selftest_vocab();
+	selftest_range();
+	selftest_raw();
+	selftest_skiplist();
 }
 
 void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,

@@ -315,6 +315,17 @@ void struct_field_mutate_one(unsigned char *buf, unsigned int size,
 			     struct syscallrecord *rec);
 
 /*
+ * Behavioural self-test for the per-tag post-fill mutator primitives
+ * and the skip-list discipline.  One-shot, called from the parent in
+ * init_shm_publish_and_subsystems() before any child forks.  BUG()s on
+ * failure -- trinity has no separate unit-test binary, so a regression
+ * in the in-buffer mutator (wrong-mask flag bit, out-of-vocab enum,
+ * skip-listed field touched) must fail the run loudly here rather than
+ * propagate silently into fuzz output.
+ */
+void struct_field_mutate_self_check(void);
+
+/*
  * Build the fast nr->desc lookup table by resolving syscall names in
  * syscall_struct_args[] against the active syscall table.
  * Must be called after select_syscall_tables().

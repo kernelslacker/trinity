@@ -383,6 +383,7 @@ static void init_shm_publish_and_subsystems(void)
 	chain_corpus_init();
 	cmp_hints_init();
 	struct_catalog_init();
+	struct_field_mutate_self_check();
 
 	/*
 	 * Allocate the deferred-free ring in the parent before any child
