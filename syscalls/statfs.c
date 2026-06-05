@@ -20,15 +20,19 @@
  * captured at sanitise time and consumed by the post handler.  Lives
  * in rec->post_state, a slot the syscall ABI does not expose, so a
  * sibling syscall scribbling rec->aN between the syscall returning
- * and the post handler running cannot redirect the strncpy at a
- * foreign pathname or steer the source memcpy at a foreign user
- * buffer.
+ * and the post handler running cannot steer the source memcpy at a
+ * foreign user buffer.  The pathname is snapshotted by VALUE into the
+ * embedded byte buffer below rather than by pointer -- a stale heap-
+ * shaped pathname pointer that survived looks_like_corrupted_ptr's
+ * shape-only gate would otherwise let the .post strncpy walk off the
+ * end of an unrelated allocation, and a sibling rewrite of the bytes
+ * between sanitise and post would forge a clean-looking divergence.
  */
 #define STATFS_POST_STATE_MAGIC	0x53544653UL	/* "STFS" */
 struct statfs_post_state {
 	unsigned long magic;
-	unsigned long pathname;
 	unsigned long buf;
+	char pathname[PATH_MAX];
 };
 #endif
 
@@ -43,19 +47,25 @@ static void sanitise_statfs(struct syscallrecord *rec)
 		rec->post_state = 0;
 
 		/*
-		 * Snapshot the two input args for the post oracle.  Without
-		 * this the post handler reads rec->aN at post-time, when a
+		 * Snapshot input state for the post oracle.  Without this
+		 * the post handler reads rec->aN at post-time, when a
 		 * sibling syscall may have scribbled the slots:
 		 * looks_like_corrupted_ptr() cannot tell a real-but-wrong
-		 * heap address from the original user pathname or buf
-		 * pointers, so the strncpy / memcpy would touch a foreign
-		 * allocation and the re-issue could resolve a different mount
-		 * entirely.  post_state is private to the post handler.
+		 * heap address from the original user buf pointer, so the
+		 * source memcpy would touch a foreign allocation, and a
+		 * stale rec->a1 / sibling-rewritten pathname bytes would
+		 * let the re-issue resolve a different mount entirely.
+		 * Snapshot the pathname BYTES via post_snapshot_str so the
+		 * post handler never re-derefs the user pointer; skip the
+		 * post sample when the snapshot source is not provably
+		 * readable.  post_state is private to the post handler.
 		 */
 		snap = zmalloc_tracked(sizeof(*snap));
 		snap->magic    = STATFS_POST_STATE_MAGIC;
-		snap->pathname = rec->a1;
 		snap->buf      = rec->a2;
+		if (!post_snapshot_str(snap->pathname, sizeof(snap->pathname),
+				       (const char *)(unsigned long) rec->a1))
+			snap->pathname[0] = '\0';
 		rec->post_state = (unsigned long) snap;
 	}
 #endif
@@ -111,7 +121,6 @@ static void post_statfs(struct syscallrecord *rec)
 {
 	struct statfs_post_state *snap =
 		(struct statfs_post_state *) rec->post_state;
-	char snap_path[PATH_MAX];
 	struct statfs first, recheck;
 	int diverged = 0;
 
@@ -150,10 +159,10 @@ static void post_statfs(struct syscallrecord *rec)
 	if ((long) rec->retval != 0)
 		goto out_free;
 
-	if (snap->pathname == 0)
+	if (snap->buf == 0)
 		goto out_free;
 
-	if (snap->buf == 0)
+	if (snap->pathname[0] == '\0')
 		goto out_free;
 
 	if (!ONE_IN(100))
@@ -161,27 +170,25 @@ static void post_statfs(struct syscallrecord *rec)
 
 	{
 		void *buf = (void *)(unsigned long) snap->buf;
-		void *path = (void *)(unsigned long) snap->pathname;
 
 		/*
 		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner buf /
-		 * pathname fields.  Reject pid-scribbled pointers before
-		 * deref.
+		 * wholesale stomp could rewrite the snapshot's inner buf
+		 * field.  Reject pid-scribbled pointers before deref.  The
+		 * pathname is now snapshotted by value into the snap's
+		 * embedded buffer, so the post-time strncpy walk-off risk
+		 * is gone -- only the buf pointer still needs a shape gate.
 		 */
-		if (looks_like_corrupted_ptr(rec, buf) || looks_like_corrupted_ptr(rec, path)) {
-			outputerr("post_statfs: rejected suspicious buf=%p pathname=%p (post_state-scribbled?)\n",
-				  buf, path);
+		if (looks_like_corrupted_ptr(rec, buf)) {
+			outputerr("post_statfs: rejected suspicious buf=%p (post_state-scribbled?)\n",
+				  buf);
 			goto out_free;
 		}
 	}
 
-	strncpy(snap_path, (const char *)(unsigned long) snap->pathname,
-		sizeof(snap_path) - 1);
-	snap_path[sizeof(snap_path) - 1] = '\0';
 	memcpy(&first, (void *)(unsigned long) snap->buf, sizeof(first));
 
-	if (syscall(SYS_statfs, snap_path, &recheck) != 0)
+	if (syscall(SYS_statfs, snap->pathname, &recheck) != 0)
 		goto out_free;
 
 	if (first.f_fsid.__val[0] != recheck.f_fsid.__val[0] ||
@@ -205,7 +212,7 @@ static void post_statfs(struct syscallrecord *rec)
 	       "namelen=%ld,frsize=%ld,flags=%lx,fsid=%x:%x} "
 	       "recall={type=%lx,bsize=%ld,blocks=%llu,files=%llu,"
 	       "namelen=%ld,frsize=%ld,flags=%lx,fsid=%x:%x}\n",
-	       snap_path,
+	       snap->pathname,
 	       (unsigned long) first.f_type, (long) first.f_bsize,
 	       (unsigned long long) first.f_blocks,
 	       (unsigned long long) first.f_files,
@@ -252,16 +259,21 @@ struct syscallentry syscall_statfs = {
  * captured at sanitise time and consumed by the post handler.  Lives
  * in rec->post_state, a slot the syscall ABI does not expose, so a
  * sibling syscall scribbling rec->aN between the syscall returning
- * and the post handler running cannot redirect the strncpy at a
- * foreign pathname, smear the buffer-size word used to seed the
- * re-issue, or steer the source memcpy at a foreign user buffer.
+ * and the post handler running cannot smear the buffer-size word used
+ * to seed the re-issue or steer the source memcpy at a foreign user
+ * buffer.  The pathname is snapshotted by VALUE into the embedded byte
+ * buffer below rather than by pointer -- a stale heap-shaped pathname
+ * pointer that survived looks_like_corrupted_ptr's shape-only gate
+ * would otherwise let the .post strncpy walk off the end of an
+ * unrelated allocation, and a sibling rewrite of the bytes between
+ * sanitise and post would forge a clean-looking divergence.
  */
 #define STATFS64_POST_STATE_MAGIC	0x53544636UL	/* "STF6" */
 struct statfs64_post_state {
 	unsigned long magic;
-	unsigned long pathname;
 	unsigned long sz;
 	unsigned long buf;
+	char pathname[PATH_MAX];
 };
 #endif
 
@@ -276,21 +288,27 @@ static void sanitise_statfs64(struct syscallrecord *rec)
 		rec->post_state = 0;
 
 		/*
-		 * Snapshot the three input args for the post oracle.
-		 * Without this the post handler reads rec->aN at post-time,
-		 * when a sibling syscall may have scribbled the slots:
+		 * Snapshot input state for the post oracle.  Without this
+		 * the post handler reads rec->aN at post-time, when a
+		 * sibling syscall may have scribbled the slots:
 		 * looks_like_corrupted_ptr() cannot tell a real-but-wrong
-		 * heap address from the original user pathname or buf
-		 * pointers, so the strncpy / memcpy would touch a foreign
-		 * allocation and a stomped sz word would change the buffer-
-		 * size semantics on the re-issue.  post_state is private to
-		 * the post handler.
+		 * heap address from the original user buf pointer, so the
+		 * source memcpy would touch a foreign allocation, a stomped
+		 * sz word would change the buffer-size semantics on the
+		 * re-issue, and a stale rec->a1 / sibling-rewritten pathname
+		 * bytes would let the re-issue resolve a different mount.
+		 * Snapshot the pathname BYTES via post_snapshot_str so the
+		 * post handler never re-derefs the user pointer; skip the
+		 * post sample when the snapshot source is not provably
+		 * readable.  post_state is private to the post handler.
 		 */
 		snap = zmalloc_tracked(sizeof(*snap));
 		snap->magic    = STATFS64_POST_STATE_MAGIC;
-		snap->pathname = rec->a1;
 		snap->sz       = rec->a2;
 		snap->buf      = rec->a3;
+		if (!post_snapshot_str(snap->pathname, sizeof(snap->pathname),
+				       (const char *)(unsigned long) rec->a1))
+			snap->pathname[0] = '\0';
 		rec->post_state = (unsigned long) snap;
 	}
 #endif
@@ -321,7 +339,6 @@ static void post_statfs64(struct syscallrecord *rec)
 {
 	struct statfs64_post_state *snap =
 		(struct statfs64_post_state *) rec->post_state;
-	char snap_path[PATH_MAX];
 	struct statfs64 first, recheck;
 	size_t sz_snapshot;
 	int diverged = 0;
@@ -361,13 +378,13 @@ static void post_statfs64(struct syscallrecord *rec)
 	if ((long) rec->retval != 0)
 		goto out_free;
 
-	if (snap->pathname == 0)
-		goto out_free;
-
 	if (snap->sz < sizeof(struct statfs64))
 		goto out_free;
 
 	if (snap->buf == 0)
+		goto out_free;
+
+	if (snap->pathname[0] == '\0')
 		goto out_free;
 
 	if (!ONE_IN(100))
@@ -377,27 +394,25 @@ static void post_statfs64(struct syscallrecord *rec)
 
 	{
 		void *buf = (void *)(unsigned long) snap->buf;
-		void *path = (void *)(unsigned long) snap->pathname;
 
 		/*
 		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner buf /
-		 * pathname fields.  Reject pid-scribbled pointers before
-		 * deref.
+		 * wholesale stomp could rewrite the snapshot's inner buf
+		 * field.  Reject pid-scribbled pointers before deref.  The
+		 * pathname is now snapshotted by value into the snap's
+		 * embedded buffer, so the post-time strncpy walk-off risk
+		 * is gone -- only the buf pointer still needs a shape gate.
 		 */
-		if (looks_like_corrupted_ptr(rec, buf) || looks_like_corrupted_ptr(rec, path)) {
-			outputerr("post_statfs64: rejected suspicious buf=%p pathname=%p (post_state-scribbled?)\n",
-				  buf, path);
+		if (looks_like_corrupted_ptr(rec, buf)) {
+			outputerr("post_statfs64: rejected suspicious buf=%p (post_state-scribbled?)\n",
+				  buf);
 			goto out_free;
 		}
 	}
 
-	strncpy(snap_path, (const char *)(unsigned long) snap->pathname,
-		sizeof(snap_path) - 1);
-	snap_path[sizeof(snap_path) - 1] = '\0';
 	memcpy(&first, (void *)(unsigned long) snap->buf, sizeof(first));
 
-	if (syscall(SYS_statfs64, snap_path, sz_snapshot, &recheck) != 0)
+	if (syscall(SYS_statfs64, snap->pathname, sz_snapshot, &recheck) != 0)
 		goto out_free;
 
 	if (first.f_fsid.__val[0] != recheck.f_fsid.__val[0] ||
@@ -421,7 +436,7 @@ static void post_statfs64(struct syscallrecord *rec)
 	       "namelen=%ld,frsize=%ld,flags=%lx,fsid=%x:%x} "
 	       "recall={type=%lx,bsize=%ld,blocks=%llu,files=%llu,"
 	       "namelen=%ld,frsize=%ld,flags=%lx,fsid=%x:%x}\n",
-	       snap_path, sz_snapshot,
+	       snap->pathname, sz_snapshot,
 	       (unsigned long) first.f_type, (long) first.f_bsize,
 	       (unsigned long long) first.f_blocks,
 	       (unsigned long long) first.f_files,
