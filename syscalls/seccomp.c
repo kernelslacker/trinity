@@ -198,6 +198,7 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 		snap->op = rec->a1;
 		snap->heap = heap;
 		rec->post_state = (unsigned long) snap;
+		post_state_register(snap);
 	}
 }
 
@@ -218,6 +219,33 @@ static void post_seccomp(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_seccomp: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Ownership-table check before any deref of snap.  The shape gate
+	 * above is size-blind: a sibling scribble that redirects
+	 * rec->post_state at a smaller foreign heap chunk (e.g. another
+	 * syscall's own post_state snap, or any aligned heap allocation)
+	 * still passes looks_like_corrupted_ptr().  Reading snap->magic
+	 * out of a chunk shorter than sizeof(struct seccomp_post_state)
+	 * is a heap-buffer-overflow under ASAN, and the magic-cookie
+	 * filter that follows would happily accept any chunk whose first
+	 * eight bytes happen to collide with SECCOMP_POST_STATE_MAGIC
+	 * (a stale same-type snapshot still resident on the deferred-free
+	 * ring is the obvious collision source).  Gate on the ownership
+	 * table -- which is a pure pointer comparison and well-defined
+	 * regardless of the underlying allocation size -- so foreign
+	 * pointers never reach the magic check or the inner-field reads.
+	 * On a miss the snap was never one we produced, so there is
+	 * nothing for this handler to unregister or free.
+	 */
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_seccomp: rejected post_state=%p not in ownership "
+			  "table (post_state-redirected to foreign allocation?)\n",
+			  snap);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
@@ -249,6 +277,7 @@ static void post_seccomp(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap->heap)) {
 		outputerr("post_seccomp: rejected suspicious snap heap=%p (post_state-scribbled?)\n",
 			  snap->heap);
+		post_state_unregister(snap);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
@@ -282,6 +311,7 @@ static void post_seccomp(struct syscallrecord *rec)
 		break;
 	}
 
+	post_state_unregister(snap);
 	deferred_freeptr(&rec->post_state);
 }
 
