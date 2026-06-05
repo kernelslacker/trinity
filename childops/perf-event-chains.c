@@ -47,8 +47,6 @@ struct pmu_entry {
 
 static struct pmu_entry pmu_catalog[MAX_PMUS];
 static unsigned int pmu_count;
-static bool pmu_discovery_done;
-static bool pmu_warned_unsupported;
 
 static long do_perf_event_open(struct perf_event_attr *attr, pid_t pid,
 			       int cpu, int group_fd, unsigned long flags)
@@ -111,10 +109,14 @@ static void probe_sysfs_pmu(const char *devpath, const char *devname)
 /*
  * Walk /sys/bus/event_source/devices/ and read the 'type' file from
  * each entry.  Failures are silently skipped — the built-in software
- * PMU added below is always present and sufficient to exercise the
- * group path on any kernel.
+ * and hardware PMUs added below are always present and sufficient to
+ * exercise the group path on any kernel.
+ *
+ * Runs once in the parent before fork; children inherit pmu_catalog[]
+ * and pmu_count via COW so no child re-pays the sysfs walk on its
+ * first invocation.
  */
-static void discover_pmus(void)
+void perf_event_chains_init(void)
 {
 	static const char dev_root[] = "/sys/bus/event_source/devices";
 	DIR *dir;
@@ -140,33 +142,6 @@ static void discover_pmus(void)
 	}
 
 	closedir(dir);
-}
-
-static bool ensure_discovery(void)
-{
-	if (pmu_discovery_done)
-		return true;
-
-	discover_pmus();
-	pmu_discovery_done = true;
-
-	if (pmu_count == 0) {
-		if (!pmu_warned_unsupported) {
-			pmu_warned_unsupported = true;
-			/* stderr was redirected to /dev/null in init_child,
-			 * so an outputerr here would be lost.  Bump a shm
-			 * counter under the same one-shot gate -- one tick
-			 * per child first-observation, so the counter
-			 * reports how many children disabled this childop
-			 * for lack of PMUs. */
-			__atomic_add_fetch(
-				&shm->stats.perf_event_chains_pmu_unsupported,
-				1, __ATOMIC_RELAXED);
-		}
-		return false;
-	}
-
-	return true;
 }
 
 /*
@@ -285,7 +260,7 @@ bool perf_event_chains(struct childdata *child)
 
 	(void)child;
 
-	if (!ensure_discovery())
+	if (pmu_count == 0)
 		return true;
 
 	__atomic_add_fetch(&shm->stats.perf_chains_runs, 1, __ATOMIC_RELAXED);

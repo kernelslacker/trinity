@@ -800,6 +800,7 @@ static void init_pre_fork(void)
 static bool run_oneshot_passes(void)
 {
 	procfs_writer_init();
+	perf_event_chains_init();
 
 	/*
 	 * --effector-map: one-shot calibration pass that probes per-bit
