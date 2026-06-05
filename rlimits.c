@@ -60,5 +60,15 @@ void init_rlimits(unsigned int nr_children)
 
 	cap_one(RLIMIT_NOFILE, "NOFILE", (rlim_t) NOFILE_TARGET);
 	cap_one(RLIMIT_NPROC, "NPROC", nproc_target);
+
+	/* ASAN reserves TB-scale virtual address space for its shadow
+	 * tables.  An RLIMIT_AS cap of a few GB starves ASAN's mmap and
+	 * trinity aborts at init before the first fuzz iteration.  Skip
+	 * the AS cap on sanitizer builds; the cgroup self-cap still bounds
+	 * RSS+swap on the production build. */
+#ifdef __SANITIZE_ADDRESS__
+	output(0, "rlimit: AS=skipped (ASAN build needs unlimited VA)\n");
+#else
 	cap_one(RLIMIT_AS, "AS", (rlim_t) AS_TARGET);
+#endif
 }
