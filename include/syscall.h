@@ -93,17 +93,24 @@ struct syscallrecord {
 
 	/*
 	 * Per-arg shadow of integer slots the post handler will read to
-	 * validate rec->retval.  Populated by snapshot_args() at the tail of
-	 * generate_syscall_args(), gated on entry->arg_snapshot_mask.
-	 * Opted-in post handlers read via get_arg_snapshot(rec, N) instead
-	 * of rec->aN directly; the accessor verifies shadow vs. live and
-	 * bumps arg_shadow_stomp on mismatch.  Defends the small set of
-	 * handlers that compare an integer arg against retval (epoll_wait
-	 * family's maxevents, getsid's pid gate) from sibling-stomp
-	 * scribbles of rec->aN between BEFORE and AFTER -- a stomp that
-	 * leaves the canary intact is invisible to the wholesale detector
-	 * above.  arg_snapshot_mask mirrors entry->arg_snapshot_mask at
-	 * snapshot time so the accessor can confirm "this slot was actually
+	 * validate rec->retval.  Populated in __do_syscall() after the
+	 * second blanket_address_scrub from the local a1..a6 values that
+	 * are about to be passed to the kernel, gated on
+	 * entry->arg_snapshot_mask.  Opted-in post handlers read via
+	 * get_arg_snapshot(rec, N) instead of rec->aN directly; the
+	 * accessor verifies shadow vs. live and bumps arg_shadow_stomp on
+	 * mismatch.  Defends the small set of handlers that compare an
+	 * integer arg against retval (epoll_wait family's maxevents,
+	 * getsid's pid gate) from sibling-stomp scribbles of rec->aN
+	 * between dispatch and the post handler -- a stomp that leaves the
+	 * canary intact is invisible to the wholesale detector above.
+	 * Capturing from the dispatch-time locals rather than rec->aN
+	 * means the tripwire only fires for a stomp that lands AFTER the
+	 * kernel saw its args, which is the bug class arg_shadow_stomp is
+	 * meant to surface; an earlier sanitise/dispatch-window stomp is
+	 * already covered by the kernel seeing the stomped value directly.
+	 * arg_snapshot_mask mirrors entry->arg_snapshot_mask at snapshot
+	 * time so the accessor can confirm "this slot was actually
 	 * shadowed" without re-resolving the entry per read.  Placed after
 	 * _canary (cold tail) so a single stomp pattern aliased onto the
 	 * aN slots will not also hit the shadow at the matching offset.
@@ -591,9 +598,10 @@ void arg_shadow_stomp_bump(struct syscallrecord *rec, unsigned int argnum,
  * site should not be reaching for the accessor), returns the live slot
  * value unchanged so the handler still sees something usable.  When the
  * slot IS shadowed, compares shadow vs live, bumps the tripwire on
- * mismatch (sibling stomp between BEFORE and AFTER), and returns the
+ * mismatch (sibling stomp landing after the dispatch-time snapshot in
+ * __do_syscall() and before the post handler runs), and returns the
  * stable shadow value so the handler's retval-vs-bound check operates
- * on the pre-syscall input rather than the post-stomp value.
+ * on the value the kernel actually saw rather than the post-stomp value.
  */
 static inline unsigned long get_arg_snapshot(struct syscallrecord *rec,
 					     unsigned int argnum)

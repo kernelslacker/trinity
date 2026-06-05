@@ -206,6 +206,42 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	a5 = rec->a5;
 	a6 = rec->a6;
 
+	/* Populate rec->arg_shadow[] from the local a1..a6 about to be
+	 * passed to the kernel, so opted-in post handlers reading via
+	 * get_arg_snapshot() see exactly what the kernel saw.  Captured
+	 * here -- after the second blanket_address_scrub above and from
+	 * the locals (immune to a sibling stomp between BEFORE and AFTER)
+	 * -- rather than at the tail of generate_syscall_args(): a sibling
+	 * stomp between sanitise-time and dispatch-time used to leave the
+	 * shadow holding a stale pre-stomp value while the kernel saw the
+	 * stomped one, and get_arg_snapshot()'s tripwire bump for the
+	 * mismatch was the only signal; the post handler still consumed
+	 * the stale shadow.  Capturing from the locals collapses the
+	 * window: the only stomp the shadow can now miss is one that
+	 * lands after dispatch began, which IS the bug class
+	 * arg_shadow_stomp is meant to surface. */
+	{
+		uint8_t mask = entry->arg_snapshot_mask;
+
+		rec->arg_snapshot_mask = mask;
+		while (mask != 0) {
+			unsigned int i = (unsigned int)__builtin_ctz(mask);
+			unsigned long val;
+
+			switch (i + 1) {
+			case 1: val = a1; break;
+			case 2: val = a2; break;
+			case 3: val = a3; break;
+			case 4: val = a4; break;
+			case 5: val = a5; break;
+			case 6: val = a6; break;
+			default: val = 0; break;
+			}
+			rec->arg_shadow[i] = val;
+			mask &= (uint8_t)(mask - 1);
+		}
+	}
+
 	/* Cross-arg consistency check: catch (buf_ptr, count) pairs the
 	 * kernel would reject at its earliest validation step so we
 	 * don't burn a syscall round-trip and a kcov enable/disable on

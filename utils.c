@@ -1853,8 +1853,12 @@ void post_handler_corrupt_ptr_bump_retfd(struct syscallrecord *rec)
 /*
  * Out-of-line tripwire for get_arg_snapshot() mismatches.  Called only
  * when an opted-in slot's shadow disagrees with the live rec->aN at the
- * post handler's read site, i.e. a sibling scribbled the slot between
- * the snapshot taken at the tail of generate_syscall_args() and now.
+ * post handler's read site, i.e. a sibling scribbled the slot after the
+ * dispatch-time snapshot in __do_syscall() (taken from the local a1..a6
+ * just before the syscall is issued) and before the post handler ran.
+ * The narrower window is intentional: a stomp earlier than dispatch
+ * was seen by the kernel directly and isn't a post-handler bound
+ * fabrication, so it does not belong in this counter.
  * Routes through the per-child stats_ring on the child path (parent
  * drain accumulates into parent_stats.arg_shadow_stomp) and through
  * parent_stats directly on the rare no-child path.  No per-syscall
