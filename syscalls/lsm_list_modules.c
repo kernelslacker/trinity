@@ -238,6 +238,16 @@ static void post_lsm_list_modules(struct syscallrecord *rec)
 		}
 	}
 
+	/*
+	 * Range-prove the size word before reading it.  The shape-only
+	 * guard above lets a non-NULL but stale/unmapped snap->size
+	 * through; the memcpy below would then fault inside the .post
+	 * handler.  range_readable_user gates the full first_size window.
+	 */
+	if (!range_readable_user((void *)(unsigned long) snap->size,
+				 sizeof(first_size)))
+		goto out_free;
+
 	memcpy(&first_size, (void *)(unsigned long) snap->size,
 	       sizeof(first_size));
 	if (first_size == 0 || first_size > page_size)

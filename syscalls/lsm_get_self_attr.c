@@ -271,6 +271,15 @@ static void post_lsm_get_self_attr(struct syscallrecord *rec)
 		goto out_free;
 	}
 
+	/*
+	 * Range-prove the size word before reading it.  The shape-only
+	 * guard above lets a non-NULL but stale/unmapped snap->size
+	 * through; the memcpy below would then fault inside the .post
+	 * handler.  range_readable_user gates the full size_first window.
+	 */
+	if (!range_readable_user((const void *) snap->size, sizeof(size_first)))
+		goto out_free;
+
 	memcpy(&size_first, (const void *) snap->size, sizeof(size_first));
 	if (size_first > LSM_CTX_BUF_MAX)
 		goto out_free;

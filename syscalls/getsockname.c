@@ -294,6 +294,16 @@ static void post_getsockname(struct syscallrecord *rec)
 		}
 	}
 
+	/*
+	 * Range-prove the length word before reading it.  The shape-only
+	 * guard above lets a non-NULL but stale/unmapped snap->usockaddr_len
+	 * through; the memcpy below would then fault inside the .post
+	 * handler.  range_readable_user gates the full socklen_t window.
+	 */
+	if (!range_readable_user((const void *) snap->usockaddr_len,
+				 sizeof(socklen_t)))
+		goto out_free;
+
 	memcpy(&first_len, (const void *) snap->usockaddr_len, sizeof(socklen_t));
 	if (first_len == 0 || first_len > sizeof(struct sockaddr_storage))
 		goto out_free;
