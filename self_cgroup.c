@@ -230,6 +230,7 @@ static bool write_cg_file(const char *cg_path, const char *name,
 	int fd;
 	ssize_t n;
 	size_t len;
+	int saved_errno;
 
 	if ((size_t)snprintf(path, sizeof(path), "%s/%s", cg_path, name) >= sizeof(path))
 		return false;
@@ -238,8 +239,17 @@ static bool write_cg_file(const char *cg_path, const char *name,
 		return false;
 	len = strlen(value);
 	n = write(fd, value, len);
+	if (n == (ssize_t)len) {
+		close(fd);
+		return true;
+	}
+	/* Preserve write()'s errno across close() so callers' strerror(errno)
+	 * reports the real cgroup-write failure cause, not a stray close
+	 * errno. */
+	saved_errno = errno;
 	close(fd);
-	return n == (ssize_t)len;
+	errno = saved_errno;
+	return false;
 }
 
 /*
