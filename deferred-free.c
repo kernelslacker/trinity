@@ -1049,7 +1049,10 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	if (ring_count > g_max_vmas / 2) {
 		__atomic_add_fetch(&shm->stats.deferred_free_vma_fallback_immediate,
 				   1, __ATOMIC_RELAXED);
-		if (!leak_on_pressure)
+		if (leak_on_pressure)
+			__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
+					   1, __ATOMIC_RELAXED);
+		else
 			free(ptr);
 		return;
 	}
@@ -1063,7 +1066,10 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * ring teardowns; per-enqueue noise after teardown adds nothing.
 	 */
 	if (ring == NULL) {
-		if (!leak_on_pressure)
+		if (leak_on_pressure)
+			__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
+					   1, __ATOMIC_RELAXED);
+		else
 			free(ptr);
 		return;
 	}
@@ -1100,12 +1106,18 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 			__atomic_add_fetch(&shm->stats.deferred_free_enomem_drain,
 					   1, __ATOMIC_RELAXED);
 			ring_dispose_after_enomem();
-			if (!leak_on_pressure)
+			if (leak_on_pressure)
+				__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
+						   1, __ATOMIC_RELAXED);
+			else
 				free(ptr);
 			return;
 		}
 		if (r != RING_UNLOCK_OK) {
-			if (!leak_on_pressure)
+			if (leak_on_pressure)
+				__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
+						   1, __ATOMIC_RELAXED);
+			else
 				free(ptr);
 			return;
 		}
@@ -1125,7 +1137,10 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 */
 	if (occupied_mask == ~0ULL) {
 		ring_lock();
-		if (!leak_on_pressure)
+		if (leak_on_pressure)
+			__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
+					   1, __ATOMIC_RELAXED);
+		else
 			free(ptr);
 		return;
 	}

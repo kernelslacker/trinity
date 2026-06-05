@@ -1967,6 +1967,28 @@ struct stats_s {
 	unsigned long deferred_free_enomem_drain;
 	unsigned long deferred_free_rw_restore_enomem;
 
+	/* deferred_free_enqueue_or_leak() pressure path fired -- the
+	 * queue refused to admit (VMA soft cap, ring==NULL after a prior
+	 * ENOMEM dispose, RING_UNLOCK_ENOMEM, RING_UNLOCK_FAIL, or
+	 * occupied_mask-saturated full-ring), and the variant
+	 * intentionally LEAKED the ptr instead of falling back to a
+	 * synchronous free().  The leak is bounded by the child's
+	 * max_map_count and reclaimed at child exit; trinity child
+	 * lifetimes are short, so a non-zero rate here is the visible
+	 * cost of preserving "pre-dispatch caller does not own this
+	 * buffer's lifecycle" against the UAF a sync free would
+	 * otherwise cause.
+	 *
+	 * Bumped alongside the existing _vma_fallback_immediate /
+	 * _enomem_drain counters (which keep counting the pressure
+	 * EVENT) so operators can compare queue success rate against
+	 * leak rate without having to subtract pre-dispatch hits out of
+	 * a shared counter.  Companion to the pre-dispatch site
+	 * migration (io_uring_setup, openat2, perf_event_open,
+	 * landlock_create_ruleset, file/sched/mount/open_tree_attr,
+	 * get/setxattrat, mq_open, listmount, statmount). */
+	unsigned long deferred_free_pre_dispatch_leaked;
+
 	/* Bumped by run_sequence_chain() when chain_corpus_pick() returns
 	 * a chain_entry whose len is zero or greater than MAX_SEQ_LEN.
 	 * The chain corpus is shared memory and tolerates lockless reads
