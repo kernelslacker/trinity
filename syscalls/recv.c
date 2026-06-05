@@ -372,6 +372,7 @@ skip_si:
 	snap->iov_len_sum = iov_len_sum;
 	snap->name = msg->msg_name;
 	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
 }
 
 static void post_recvmsg(struct syscallrecord *rec)
@@ -416,6 +417,25 @@ static void post_recvmsg(struct syscallrecord *rec)
 			  "(post_state-stomped to foreign allocation?)\n",
 			  snap->magic);
 		post_handler_corrupt_ptr_bump(rec, NULL);
+		rec->a2 = 0;
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Ownership-table check: shape + magic passed, but a foreign chunk
+	 * could in principle carry the matching cookie -- typically a stale
+	 * same-type snap a sibling stomp resurrected by redirecting
+	 * rec->post_state at it.  The cookie proves "looks like a
+	 * recvmsg_post_state"; only the ownership table proves "is the
+	 * snapshot we registered for THIS attempt".  Reject before the
+	 * inner-field deref hands tracked_free_now() an unowned snap->name,
+	 * which a tracking-table miss would raw-free() -- arbitrary free
+	 * of an attacker-influenced pointer.  Mirrors pipe.c / execve.c.
+	 */
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_recvmsg: rejected post_state=%p not in "
+			  "ownership table (post_state-redirected?)\n", snap);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
@@ -470,6 +490,7 @@ skip_bound:
 	deferred_free_enqueue(msg);
 
 out_free:
+	post_state_unregister(snap);
 	deferred_freeptr(&rec->post_state);
 }
 
