@@ -505,7 +505,10 @@ static void post_readlinkat(struct syscallrecord *rec)
 	if (snap_len > sizeof(first_buf))
 		snap_len = sizeof(first_buf);
 
-	memcpy(first_buf, (void *)(unsigned long) snap->buf, snap_len);
+	if (!post_snapshot_or_skip(first_buf,
+				   (void *)(unsigned long) snap->buf,
+				   snap_len))
+		goto out_free;
 
 	rc = syscall(SYS_readlinkat, dfd, snap->pathname, recheck_buf,
 		     (int) sizeof(recheck_buf));
