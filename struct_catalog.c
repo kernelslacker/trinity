@@ -250,6 +250,28 @@ static const struct struct_field itimerspec_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct timespec (clock_nanosleep, nanosleep, utimensat)             */
+/* ------------------------------------------------------------------ */
+
+/*
+ * tv_nsec is rejected by the kernel for values outside [0, 1e9) before
+ * the syscall does any real work, so an FT_RAW splat almost never lands
+ * on the wait/update path.  Keep tv_sec as an unbounded FT_RANGE so
+ * absolute / past / future buckets stay reachable; pin tv_nsec to the
+ * legal nanosecond range so the request actually clears the kernel's
+ * input check.  Callers that want UTIME_NOW / UTIME_OMIT (utimensat)
+ * still construct those values in their own sanitise callback.
+ */
+static const struct struct_field timespec_fields[] = {
+	FIELDX(struct timespec, tv_sec, FT_RANGE,
+	       .u.range = { 0, 4000000000UL },
+	       .mutate_weight = 60),
+	FIELDX(struct timespec, tv_nsec, FT_RANGE,
+	       .u.range = { 0, 999999999UL },
+	       .mutate_weight = 60),
+};
+
+/* ------------------------------------------------------------------ */
 /* struct epoll_event (epoll_ctl)                                      */
 /* ------------------------------------------------------------------ */
 
@@ -3521,6 +3543,19 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= iovec_fields,
 		.num_fields	= ARRAY_SIZE(iovec_fields),
 	},
+	/*
+	 * timespec: highest-fan-out time argument across the syscall
+	 * surface.  Appended at the tail so the existing struct_catalog[N]
+	 * indices above stay stable; the syscall_struct_args[] mappings
+	 * below pick up the new entry via an explicit USE_BPF-aware index
+	 * since iovec's position shifts by two when USE_BPF is set.
+	 */
+	{
+		.name		= "timespec",
+		.struct_size	= sizeof(struct timespec),
+		.fields		= timespec_fields,
+		.num_fields	= ARRAY_SIZE(timespec_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -3609,6 +3644,26 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 #ifdef USE_BPF
 	/* bpf(int, union bpf_attr *, unsigned int) */
 	{ "bpf",		2, &struct_catalog[21] },
+#endif
+	/*
+	 * timespec lives at the catalog tail; its index shifts by two when
+	 * USE_BPF adds the bpf_attr / bpf_insn entries ahead of iovec.
+	 * utimensat's `utimes` arg is a 2-element timespec array -- the
+	 * mapping table has no array semantics, so the entry below names
+	 * the single-struct desc and the existing sanitise_utimensat
+	 * callback continues to own the 2-element layout.
+	 */
+#ifdef USE_BPF
+	/* clock_nanosleep(clockid_t, int, struct timespec *, struct timespec *) */
+	{ "clock_nanosleep",	3, &struct_catalog[24] },
+	/* nanosleep(struct timespec *, struct timespec *) */
+	{ "nanosleep",		1, &struct_catalog[24] },
+	/* utimensat(int, const char *, struct timespec[2], int) */
+	{ "utimensat",		3, &struct_catalog[24] },
+#else
+	{ "clock_nanosleep",	3, &struct_catalog[22] },
+	{ "nanosleep",		1, &struct_catalog[22] },
+	{ "utimensat",		3, &struct_catalog[22] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
