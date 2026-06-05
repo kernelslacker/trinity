@@ -44,6 +44,18 @@
 struct minicorpus_shared *minicorpus_shm = NULL;
 
 /*
+ * Process-wide runtime kill switch for the mutator chain.  Set at init
+ * from $TRINITY_DISABLE_MUTATORS=1 and inherited COW by every child.
+ * When true, minicorpus_mutate_args() skips splice, xprop, and the
+ * weighted-stack mutate steps and feeds the corpus entry through
+ * verbatim (fd-safety scrub still runs).  Replay rates and corpus
+ * promotion behaviour are otherwise unchanged, so an A/B between
+ * enabled and disabled isolates the mutator chain's contribution to
+ * iter rate and edge growth from the rest of the replay path.
+ */
+static bool mutators_disabled;
+
+/*
  * Cross-syscall value propagation (xprop) source whitelist.
  *
  * Within-syscall splice shuffles values between arg slots of one
@@ -94,6 +106,19 @@ void minicorpus_init(void)
 	xprop_build_whitelist();
 	output(0, "KCOV: mini-corpus xprop whitelist: %u fd-returning sources\n",
 		xprop_n_fd_src);
+
+	/* Mutator kill switch.  Honour only "1" -- any other value (empty,
+	 * "0", arbitrary string) leaves mutators enabled, matching the
+	 * least-surprise convention for boolean env gates elsewhere in
+	 * trinity.  Logged unconditionally so the chosen mode is visible
+	 * in the startup banner alongside the corpus init lines. */
+	{
+		const char *v = getenv("TRINITY_DISABLE_MUTATORS");
+
+		mutators_disabled = (v != NULL && v[0] == '1' && v[1] == '\0');
+		output(0, "KCOV: mini-corpus mutators=%s\n",
+		       mutators_disabled ? "DISABLED" : "ENABLED");
+	}
 }
 
 static void ring_lock(struct corpus_ring *ring)
@@ -860,6 +885,14 @@ void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry,
 	for (i = 0; i < entry->num_args && i < 6; i++) {
 		unsigned long val = snapshot[i];
 
+		/* Mutator kill switch.  When set via TRINITY_DISABLE_MUTATORS
+		 * the corpus entry is replayed verbatim -- skip splice, xprop
+		 * and the weighted-stack mutate.  The fd-safety scrub below
+		 * still runs so stale stdio fds in the saved args don't slip
+		 * through; that scrub is replay correctness, not mutation. */
+		if (mutators_disabled)
+			goto fd_safety;
+
 		/* Cross-arg splice: with probability 1/SPLICE_RATIO, replace
 		 * this arg's starting value with a sibling arg's value from
 		 * the same snapshot.  Runs BEFORE the mutator chain so the
@@ -907,6 +940,7 @@ void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry,
 					nr, i);
 		}
 
+fd_safety:
 		/* Don't let fd args land on stdin/stdout/stderr. */
 		if (is_fdarg(entry->argtype[i]) && val <= 2)
 			val = (unsigned long) get_random_fd();
