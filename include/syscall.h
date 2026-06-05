@@ -568,8 +568,10 @@ bool set_syscall_nr_random(struct syscallrecord *rec, struct childdata *child);
 /*
  * Per-call arch picker for biarch builds.  Returns do32 and stamps the
  * child's active_syscalls pointer / nr_syscalls slot so the caller's
- * subsequent loop indexes the correct table.  Uniarch callers should
- * not call this.
+ * subsequent loop indexes the correct table.  *nr_syscalls_out is the
+ * current shm->nr_active_*bit_syscalls snapshot — the picker samples
+ * the compact active prefix, not the max table.  Uniarch callers
+ * should not call this.
  */
 bool choose_syscall_table(struct childdata *child, unsigned int *nr_syscalls_out);
 void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry);

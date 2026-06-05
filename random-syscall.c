@@ -60,6 +60,17 @@ static inline unsigned ilog2_ul(unsigned long x)
  * caller's per-child active_syscalls pointer, and return do32.  Uniarch
  * builds bypass this entirely — child->active_syscalls is set once at
  * init time to shm->active_syscalls and never re-evaluated.
+ *
+ * *nr_syscalls_out receives the current shm->nr_active_*bit_syscalls
+ * count, NOT max_nr_*syscalls: the picker samples the compact
+ * active_syscalls[0..nr_active) prefix maintained by
+ * activate_syscall_in_table()/deactivate_syscall_in_table(), and
+ * sampling the full max table on a restricted run (capability filter,
+ * -c/-r/-g, runtime deactivation) burns the retry budget on slots known
+ * to be zero.  The load is a snapshot — a racing deactivate that lowers
+ * the count after we read it is absorbed by the zero-retry guard at the
+ * picker (deactivate swap-removes and zeros the LAST slot, so a stale
+ * read can see a transient 0 mid-swap).
  */
 bool choose_syscall_table(struct childdata *child,
 			  unsigned int *nr_syscalls_out)
@@ -89,11 +100,13 @@ bool choose_syscall_table(struct childdata *child,
 	if (do32 == false) {
 		syscalls = syscalls_64bit;
 		child->active_syscalls = shm->active_syscalls64;
-		*nr_syscalls_out = max_nr_64bit_syscalls;
+		*nr_syscalls_out = __atomic_load_n(&shm->nr_active_64bit_syscalls,
+						   __ATOMIC_RELAXED);
 	} else {
 		syscalls = syscalls_32bit;
 		child->active_syscalls = shm->active_syscalls32;
-		*nr_syscalls_out = max_nr_32bit_syscalls;
+		*nr_syscalls_out = __atomic_load_n(&shm->nr_active_32bit_syscalls,
+						   __ATOMIC_RELAXED);
 	}
 	return do32;
 }
@@ -176,15 +189,19 @@ static bool set_syscall_nr_heuristic(struct syscallrecord *rec,
 	unsigned int outer_attempts = 0;
 	unsigned int nr_syscalls;
 
-	/* Pick the syscall table once per call: in uniarch the result is
-	 * a constant, and even in biarch the do32 dice rolls once per
-	 * pick — re-rolling under the retry budget (up to 10 000 spins
-	 * on a sparse table) burned ~5 cycles per iteration for nothing. */
+	/* Pick the syscall table once per call: in uniarch the do32 result
+	 * is a constant; in biarch the do32 dice rolls once per pick.  The
+	 * nr_syscalls snapshot is the CURRENT active count
+	 * (shm->nr_active_*) so the rnd_modulo_u32() draw indexes directly
+	 * into the compact active_syscalls[0..nr_active) prefix and a
+	 * restricted run never wastes the retry budget on the sparse-zero
+	 * tail of the max table. */
 	if (biarch) {
 		do32 = choose_syscall_table(child, &nr_syscalls);
 	} else {
 		do32 = false;
-		nr_syscalls = max_nr_syscalls;
+		nr_syscalls = __atomic_load_n(&shm->nr_active_syscalls,
+					      __ATOMIC_RELAXED);
 	}
 
 retry:
@@ -195,9 +212,9 @@ retry:
 	}
 
 	/* Bail if we have spent too many iterations failing to pick a
-	 * usable syscall.  Without this cap, a sparse active_syscalls
-	 * table or a table dominated by EXPENSIVE syscalls (kept at
-	 * 1-in-1000) can wedge the child in a tight retry loop. */
+	 * usable syscall.  Even sampling the compact active prefix, a table
+	 * dominated by EXPENSIVE syscalls (kept at 1-in-1000) can wedge
+	 * the child in a tight retry loop. */
 	if (outer_attempts++ > 10000) {
 		output(0, "[%d] set_syscall_nr exceeded retry budget\n", mypid());
 		return FAIL;
@@ -338,12 +355,14 @@ bool set_syscall_nr_random(struct syscallrecord *rec,
 	bool anti_prior_on;
 
 	/* See the matching comment in set_syscall_nr_heuristic — the table
-	 * pick is a per-call decision, not a per-retry one. */
+	 * pick is a per-call decision, not a per-retry one, and nr_syscalls
+	 * is the active-prefix count rather than max_nr_*syscalls. */
 	if (biarch) {
 		do32 = choose_syscall_table(child, &nr_syscalls);
 	} else {
 		do32 = false;
-		nr_syscalls = max_nr_syscalls;
+		nr_syscalls = __atomic_load_n(&shm->nr_active_syscalls,
+					      __ATOMIC_RELAXED);
 	}
 
 	/* Latch the anti-prior mode once per pick so the per-retry inner
@@ -447,7 +466,8 @@ static bool set_syscall_nr_coverage_frontier(struct syscallrecord *rec,
 		do32 = choose_syscall_table(child, &nr_syscalls);
 	} else {
 		do32 = false;
-		nr_syscalls = max_nr_syscalls;
+		nr_syscalls = __atomic_load_n(&shm->nr_active_syscalls,
+					      __ATOMIC_RELAXED);
 	}
 
 	max_weight = __atomic_load_n(&shm->frontier_max_weight_cached,
