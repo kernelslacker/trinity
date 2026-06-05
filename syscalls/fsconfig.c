@@ -296,8 +296,8 @@ static void sanitise_fsconfig(struct syscallrecord *rec)
  */
 static void post_fsconfig_record_fsctx_ready(struct syscallrecord *rec)
 {
-	unsigned long cmd = rec->a2;
-	int fd = (int) rec->a1;
+	unsigned long cmd = get_arg_snapshot(rec, 2);
+	int fd = (int) get_arg_snapshot(rec, 1);
 
 	if ((long) rec->retval != 0)
 		return;
@@ -327,4 +327,14 @@ struct syscallentry syscall_fsconfig = {
 	.sanitise = sanitise_fsconfig,
 	.ret_objtype_via_post = post_fsconfig_record_fsctx_ready,
 	.rettype = RET_ZERO_SUCCESS,
+	/*
+	 * Snapshot a1 (fd) and a2 (cmd) so the post handler republishes the
+	 * fd that THIS syscall actually dispatched with, not whatever a
+	 * sibling child has since stomped into the shared rec.  Without this,
+	 * a stomp landing between dispatch and the post handler causes
+	 * publish_resource(OBJ_FD_FS_CTX, ...) to register an fd this
+	 * syscall never produced -- and the gating cmd check could likewise
+	 * flip from skip-to-publish (or vice versa) on a stomped a2.
+	 */
+	.arg_snapshot_mask = (1u << 0) | (1u << 1),
 };
