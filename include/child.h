@@ -833,6 +833,7 @@ bool genetlink_fuzzer(struct childdata *child);
 bool perf_event_chains(struct childdata *child);
 void perf_event_chains_init(void);
 bool tracefs_fuzzer(struct childdata *child);
+void tracefs_fuzzer_init(void);
 bool bpf_lifecycle(struct childdata *child);
 bool fault_injector(struct childdata *child);
 bool recipe_runner(struct childdata *child);

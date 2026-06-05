@@ -53,7 +53,7 @@ childops/refcount-auditor.c:492:audit_socket_bucket
 childops/rxrpc-key-install.c:212:probe_rxrpc_key_supported
 childops/rxrpc-key-install.c:358:do_add_rxrpc
 childops/splice-protocols.c:617:splice_protocols_selftest
-childops/tracefs-fuzzer.c:682:check_tracefs
+childops/tracefs-fuzzer.c:671:tracefs_fuzzer_init
 syscalls/alarm.c:100:post_alarm
 syscalls/alarm.c:61:post_alarm
 syscalls/alarm.c:76:post_alarm

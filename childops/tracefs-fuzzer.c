@@ -145,29 +145,24 @@ static const char * const trace_option_names[] = {
 };
 
 /*
- * Per-child event enable-file cache.  Discovered once from
- * TRACEFS_ROOT/events/ at the first invocation.
+ * Event enable-file cache.  Discovered once in the parent from
+ * TRACEFS_ROOT/events/; children inherit the table via COW.
  */
 static char event_enable_paths[MAX_EVENTS][TRACEFS_MAX_PATH];
 static unsigned int nr_event_enables;
-static bool events_discovered;
 
 /*
- * Available tracers discovered once from available_tracers.
+ * Available tracers discovered once in the parent from available_tracers.
  */
 static char discovered_tracers[16][32];
 static unsigned int nr_discovered_tracers;
-static bool tracers_discovered;
 
 /*
- * Per-process tracefs probe state.  tracefs_checked latches the first-call
- * branch; tracefs_available is the overall dispatch enable; the two
- * *_subset_present booleans drive the runtime pick-table filter.
+ * Overall dispatch enable, set by tracefs_fuzzer_init() in the parent.
+ * False means tracefs is absent or both subsets (function-tracer and
+ * event-tracing) are missing — the childop body bails on every call.
  */
 static bool tracefs_available;
-static bool tracefs_checked;
-static bool ftrace_subset_present;
-static bool events_subset_present;
 
 /*
  * Recurse into TRACEFS_ROOT/events/ at depth 1-2 and collect paths ending
@@ -179,8 +174,6 @@ static void discover_event_enables(void)
 	char events_root[TRACEFS_MAX_PATH];
 	DIR *d1;
 	struct dirent *de1;
-
-	events_discovered = true;
 
 	snprintf(events_root, sizeof(events_root), "%s/events", TRACEFS_ROOT);
 
@@ -248,8 +241,6 @@ static void discover_tracers(void)
 	char *p, *end;
 	ssize_t n;
 	int fd;
-
-	tracers_discovered = true;
 
 	snprintf(path, sizeof(path), "%s/available_tracers", TRACEFS_ROOT);
 	/* Raw open/read instead of fopen/fscanf/fclose: avoid stdio's
@@ -519,8 +510,6 @@ static void do_event_enable(void)
 {
 	const char *val;
 
-	if (!events_discovered)
-		discover_event_enables();
 	if (nr_event_enables == 0)
 		return;
 
@@ -557,9 +546,6 @@ static void do_current_tracer(void)
 	char path[TRACEFS_MAX_PATH];
 
 	snprintf(path, sizeof(path), "%s/current_tracer", TRACEFS_ROOT);
-
-	if (!tracers_discovered)
-		discover_tracers();
 
 	if (nr_discovered_tracers > 0 && !ONE_IN(8))
 		write_str(path,
@@ -659,22 +645,25 @@ static void build_pick_table(unsigned int avail)
 }
 
 /*
- * First-invocation probe.  Confirms tracefs is mounted, then learns which
- * subsets are reachable on this kernel and constructs the runtime pick
- * table.  Returns false (and bails the childop) when tracefs is absent or
- * when both function-tracer and event-tracing subsets are missing -- in
- * that degenerate case there is nothing useful left to fuzz.
+ * One-shot parent init.  Confirms tracefs is mounted, learns which
+ * subsets are reachable on this kernel, runs the directory walks for
+ * the event-enable cache and the tracer-name cache, and constructs the
+ * runtime pick table.  Children inherit tracefs_available, the caches,
+ * and pick_table[] via COW so no child re-walks tracefs on first hit.
+ *
+ * Leaves tracefs_available=false (and nr_picks=0) when tracefs is
+ * absent or when both function-tracer and event-tracing subsets are
+ * missing -- in those degenerate cases the childop body bails on
+ * every call.
  */
-static bool check_tracefs(void)
+void tracefs_fuzzer_init(void)
 {
+	bool ftrace_subset_present;
+	bool events_subset_present;
 	unsigned int avail = 0;
 
-	if (tracefs_checked)
-		return tracefs_available;
-	tracefs_checked = true;
-
 	if (access(TRACEFS_ROOT "/tracing_on", F_OK) != 0)
-		return false;
+		return;
 
 	ftrace_subset_present = (access(TRACEFS_ROOT "/current_tracer", F_OK) == 0);
 	events_subset_present = (access(TRACEFS_ROOT "/available_events", F_OK) == 0);
@@ -684,24 +673,27 @@ static bool check_tracefs(void)
 		  events_subset_present ? "yes" : "no");
 
 	if (!ftrace_subset_present && !events_subset_present)
-		return false;
+		return;
 
-	if (ftrace_subset_present)
+	if (ftrace_subset_present) {
 		avail |= REQ_FTRACE;
-	if (events_subset_present)
+		discover_tracers();
+	}
+	if (events_subset_present) {
 		avail |= REQ_EVENTS;
+		discover_event_enables();
+	}
 
 	build_pick_table(avail);
 
 	tracefs_available = true;
-	return true;
 }
 
 bool tracefs_fuzzer(struct childdata *child)
 {
 	(void)child;
 
-	if (!check_tracefs())
+	if (!tracefs_available)
 		return true;
 
 	pick_table[rnd_modulo_u32(nr_picks)]->fn();
