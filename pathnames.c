@@ -698,6 +698,18 @@ const char * generate_pathname(void)
 
 	/* Create a bogus filename. */
 
+	/*
+	 * Local clamp mirroring the sibling branch at the !ONE_IN(10)
+	 * fast path above.  add_to_namelist rejects strlen >= MAX_PATH_LEN
+	 * today so this is currently dead, but the upstream invariant is
+	 * not visible at this callsite -- a local clamp keeps the memcpy
+	 * below safe even if the indexing layer relaxes that check.
+	 * newpath is exactly MAX_PATH_LEN bytes (zmalloc_tracked above);
+	 * keeping one byte for the trailing NUL.
+	 */
+	if (len >= MAX_PATH_LEN)
+		len = MAX_PATH_LEN - 1;
+
 	if (RAND_BOOL())
 		(void) memcpy(newpath, pathname, len);
 	else {
