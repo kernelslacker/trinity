@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # Do a random subset of VM related syscalls.
 # (Always do mmap, so the child processes have some local maps)

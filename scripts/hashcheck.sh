@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # Run from with a kernel source tree.
 # Update the hashes after adding support to Trinity.

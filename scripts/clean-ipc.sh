@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 for s in $(ipcs -m | grep -w "$(whoami)" | awk '{ print $2 }'); do   ipcrm -m "$s"; done
 

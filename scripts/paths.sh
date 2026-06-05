@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 TRINITY_PATH=${TRINITY_PATH:-$(pwd)}
 

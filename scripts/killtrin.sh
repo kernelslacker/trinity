@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 for i in $(pgrep -x trinity);
 do

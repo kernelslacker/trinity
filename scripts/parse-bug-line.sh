@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # parse-bug-line.sh - normalize trinity __BUG() emissions for aggregation.
 #
