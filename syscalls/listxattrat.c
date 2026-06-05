@@ -274,9 +274,9 @@ static void post_listxattrat(struct syscallrecord *rec)
 	snap_dfd = (int) snap->dfd;
 	snap_at_flags = (unsigned int) snap->at_flags;
 
-	strncpy(snap_path, (char *)(unsigned long) snap->pathname,
-		sizeof(snap_path) - 1);
-	snap_path[sizeof(snap_path) - 1] = '\0';
+	if (!post_snapshot_str(snap_path, sizeof(snap_path),
+			       (const char *)(unsigned long) snap->pathname))
+		goto out_free;
 
 	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first_buf))

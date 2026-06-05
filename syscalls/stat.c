@@ -475,8 +475,9 @@ static void post_statx(struct syscallrecord *rec)
 		}
 	}
 
-	strncpy(local_path, (const char *)(unsigned long) snap->pathname, PATH_MAX - 1);
-	local_path[PATH_MAX - 1] = '\0';
+	if (!post_snapshot_str(local_path, sizeof(local_path),
+			       (const char *)(unsigned long) snap->pathname))
+		goto out_free;
 	flags = (unsigned int) snap->flags;
 	mask = (unsigned int) snap->mask;
 	memcpy(&first, (void *)(unsigned long) snap->statxbuf, sizeof(first));

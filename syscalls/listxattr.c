@@ -487,9 +487,9 @@ static void post_listxattr(struct syscallrecord *rec)
 		}
 	}
 
-	strncpy(snap_path, (const char *)(unsigned long) snap->arg1,
-		sizeof(snap_path) - 1);
-	snap_path[sizeof(snap_path) - 1] = '\0';
+	if (!post_snapshot_str(snap_path, sizeof(snap_path),
+			       (const char *)(unsigned long) snap->arg1))
+		goto out_free;
 
 	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first_buf))
@@ -731,9 +731,9 @@ static void post_llistxattr(struct syscallrecord *rec)
 		}
 	}
 
-	strncpy(snap_path, (const char *)(unsigned long) snap->arg1,
-		sizeof(snap_path) - 1);
-	snap_path[sizeof(snap_path) - 1] = '\0';
+	if (!post_snapshot_str(snap_path, sizeof(snap_path),
+			       (const char *)(unsigned long) snap->arg1))
+		goto out_free;
 
 	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first_buf))
