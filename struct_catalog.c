@@ -36,6 +36,7 @@
 #include <linux/sched/types.h>
 #include <linux/io_uring.h>
 #include <linux/landlock.h>
+#include <linux/mman.h>
 #include <mqueue.h>
 
 #include "compat.h"
@@ -268,6 +269,32 @@ static const struct struct_field timespec_fields[] = {
 	       .mutate_weight = 60),
 	FIELDX(struct timespec, tv_nsec, FT_RANGE,
 	       .u.range = { 0, 999999999UL },
+	       .mutate_weight = 60),
+};
+
+/* ------------------------------------------------------------------ */
+/* struct cachestat_range (cachestat)                                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * cachestat's input range struct: a (off, len) byte pair the kernel
+ * walks across the file's address_space.  cachestat already carries a
+ * strong bespoke sanitiser (pick_range() in syscalls/cachestat.c) that
+ * picks a file-size-aware off/len -- the registration here is
+ * attribution-only: cachestat's argtype slot is not ARG_STRUCT_PTR_*,
+ * so the schema-aware fill path never fires and pick_range() continues
+ * to own the live values.  FT_RANGE annotations exist so KCOV CMP
+ * constants can be attributed to off or len rather than landing on a
+ * coincidentally-same-width slot.  Bounds mirror the timespec
+ * precedent's u32-fitting ceiling so the catalog stays portable on
+ * 32-bit unsigned long builds.
+ */
+static const struct struct_field cachestat_range_fields[] = {
+	FIELDX(struct cachestat_range, off, FT_RANGE,
+	       .u.range = { 0, 4000000000UL },
+	       .mutate_weight = 60),
+	FIELDX(struct cachestat_range, len, FT_RANGE,
+	       .u.range = { 0, 4000000000UL },
 	       .mutate_weight = 60),
 };
 
@@ -3556,6 +3583,19 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= timespec_fields,
 		.num_fields	= ARRAY_SIZE(timespec_fields),
 	},
+	/*
+	 * cachestat_range: appended at the tail so the existing
+	 * struct_catalog[N] indices above stay stable; the syscall_struct_
+	 * args[] mapping below picks up the new entry via an explicit
+	 * USE_BPF-aware index since the bpf_attr / bpf_insn entries shift
+	 * the position by two when USE_BPF is set.
+	 */
+	{
+		.name		= "cachestat_range",
+		.struct_size	= sizeof(struct cachestat_range),
+		.fields		= cachestat_range_fields,
+		.num_fields	= ARRAY_SIZE(cachestat_range_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -3660,10 +3700,19 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "nanosleep",		1, &struct_catalog[24] },
 	/* utimensat(int, const char *, struct timespec[2], int) */
 	{ "utimensat",		3, &struct_catalog[24] },
+	/*
+	 * cachestat(unsigned int fd, struct cachestat_range *cstat_range,
+	 *           struct cachestat *cstat, unsigned int flags)
+	 * Maps the INPUT cstat_range arg only; cstat is the kernel-written
+	 * output and is intentionally not registered.  Attribution-only:
+	 * sanitise_cachestat / pick_range continues to own the live fill.
+	 */
+	{ "cachestat",		2, &struct_catalog[25] },
 #else
 	{ "clock_nanosleep",	3, &struct_catalog[22] },
 	{ "nanosleep",		1, &struct_catalog[22] },
 	{ "utimensat",		3, &struct_catalog[22] },
+	{ "cachestat",		2, &struct_catalog[23] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
