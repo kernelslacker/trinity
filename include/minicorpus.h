@@ -53,6 +53,19 @@ enum corpus_save_reason {
 struct corpus_entry {
 	unsigned long args[6];
 	unsigned int num_args;
+	/* Replays of this entry that have produced novel coverage in the
+	 * past.  Used by the sharpened mutator-win attribution path
+	 * (minicorpus_mut_attrib_commit): the FIRST productive replay of an
+	 * entry establishes the entry's intrinsic novelty baseline and is
+	 * NOT credited to any mutator op -- the saved args already pointed
+	 * at unexplored territory, the mutation didn't cause it.  Subsequent
+	 * productive replays cross the baseline and credit the mutator.
+	 *
+	 * Atomic accessed via __atomic_*.  Initialised to 0 by the memset
+	 * in minicorpus_save_with_reason; warm-start loader zeroes it
+	 * explicitly when overwriting a recycled ring slot whose old entry
+	 * had accumulated baseline. */
+	unsigned int novel_replay_hits;
 };
 
 struct corpus_ring {

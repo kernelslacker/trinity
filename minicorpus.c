@@ -379,6 +379,30 @@ static bool this_replay_ran;
 static bool this_replay_spliced;
 
 /*
+ * Process-local per-syscall-replay source pointer.
+ *
+ * minicorpus_replay() sets these to the (nr, slot) of the corpus entry it
+ * picked, so commit() can read and bump the entry's novel_replay_hits
+ * baseline counter and gate mutator-win credit on that baseline.
+ * Chain-replay (replay_syscall_step) does NOT have a source corpus entry
+ * and leaves the flag false; commit() then skips per-op trials/wins
+ * updates for chain-replay events so the bandit signal in mut_trials[]/
+ * mut_wins[] reflects only the per-syscall-replay path where a baseline
+ * can be established.
+ *
+ * Race tolerance: between minicorpus_replay's slot pick and commit() the
+ * ring may rotate and evict the entry, so source_slot can point at a
+ * different entry by the time we read its novel_replay_hits.  Crediting
+ * a sibling entry's baseline is benign noise -- same shape as the
+ * existing replay torn-read tolerance.  Cleared unconditionally in
+ * commit() so a fall-through path can't leak source-tracked state into
+ * a subsequent chain-replay commit.
+ */
+static bool this_replay_source_tracked;
+static unsigned int this_replay_source_nr;
+static unsigned int this_replay_source_slot;
+
+/*
  * Process-local CMP-source attribution flag.
  *
  * Set by minicorpus_mut_attrib_set_cmp_source() when the post-syscall
@@ -492,20 +516,76 @@ void minicorpus_mut_attrib_commit(bool found_new)
 		/* Still clear the per-process tag so a future shm-armed
 		 * commit() doesn't see stale state from before init. */
 		this_attrib_cmp_source = false;
+		this_replay_source_tracked = false;
 		return;
 	}
 
-	for (i = 0; i < MUT_NUM_OPS; i++) {
-		unsigned int picks = mut_attrib[i];
+	/* Per-op mutator accounting is gated on having a tracked source
+	 * corpus entry (i.e., the call came from minicorpus_replay, not
+	 * chain-replay).  Chain-replay shares the same mutator engine but
+	 * has no per-entry baseline to subtract intrinsic novelty against,
+	 * so feeding its events into mut_trials[]/mut_wins[] would re-
+	 * introduce the corpus-marginal-novelty signal that the per-entry
+	 * baseline exists to filter out.  Clear the stash unconditionally
+	 * so the next call starts clean regardless of whether we credited.
+	 *
+	 * Per-op granularity: bump trials/wins by ONE per call per op that
+	 * participated (mut_attrib[op] > 0), not by the raw pick count.
+	 * The old per-pick crediting inflated every call's win signal by
+	 * its stack depth, masking real op-quality differences under the
+	 * common per-call novelty rate (the uniform ~0.07% pathology).
+	 *
+	 * Per-entry baseline gate: even on a tracked-source call,
+	 * mut_wins[] is only bumped if the source entry has produced novel
+	 * coverage in a previous replay (novel_replay_hits > 0).  The first
+	 * productive replay of an entry establishes the baseline -- those
+	 * edges are the entry's intrinsic value, not the mutator's -- and
+	 * is counted as a trial but not a win.  Subsequent productive
+	 * replays cross the baseline and are credited to the mutator.
+	 */
+	if (this_replay_source_tracked) {
+		struct corpus_entry *src_entry = NULL;
+		bool baseline_established = false;
 
-		if (picks == 0)
-			continue;
-		__atomic_fetch_add(&minicorpus_shm->mut_trials[i],
-				   picks, __ATOMIC_RELAXED);
-		if (found_new)
-			__atomic_fetch_add(&minicorpus_shm->mut_wins[i],
-					   picks, __ATOMIC_RELAXED);
-		mut_attrib[i] = 0;
+		if (this_replay_source_nr < MAX_NR_SYSCALL &&
+		    this_replay_source_slot < CORPUS_RING_SIZE) {
+			src_entry = &minicorpus_shm->rings[this_replay_source_nr]
+				    .entries[this_replay_source_slot];
+			baseline_established =
+				__atomic_load_n(&src_entry->novel_replay_hits,
+						__ATOMIC_RELAXED) > 0;
+		}
+
+		for (i = 0; i < MUT_NUM_OPS; i++) {
+			if (mut_attrib[i] == 0)
+				continue;
+			__atomic_fetch_add(&minicorpus_shm->mut_trials[i],
+					   1UL, __ATOMIC_RELAXED);
+			if (found_new && baseline_established)
+				__atomic_fetch_add(&minicorpus_shm->mut_wins[i],
+						   1UL, __ATOMIC_RELAXED);
+			mut_attrib[i] = 0;
+		}
+
+		/* Advance the source entry's baseline if this replay was
+		 * productive.  Bump unconditionally on found_new -- baseline
+		 * tracking is independent of whether wins were credited this
+		 * call (the first productive replay bumps to 1 without
+		 * crediting, unlocking subsequent calls).  Tolerates a slot
+		 * eviction race: a sibling entry's baseline gets advanced
+		 * instead, which is the same benign mis-attribution shape as
+		 * the gate read above. */
+		if (found_new && src_entry != NULL)
+			__atomic_fetch_add(&src_entry->novel_replay_hits,
+					   1U, __ATOMIC_RELAXED);
+
+		this_replay_source_tracked = false;
+	} else {
+		/* Untracked source (chain-replay or other non-minicorpus
+		 * caller).  Clear the stash without recording per-op events
+		 * -- the bandit signal stays exclusively per-syscall-replay. */
+		for (i = 0; i < MUT_NUM_OPS; i++)
+			mut_attrib[i] = 0;
 	}
 
 	if (this_replay_ran) {
@@ -927,6 +1007,9 @@ bool minicorpus_replay(struct syscallrecord *rec)
 		}
 		__atomic_fetch_add(&minicorpus_shm->cmp_rising_replay_picks,
 				   1UL, __ATOMIC_RELAXED);
+		this_replay_source_tracked = true;
+		this_replay_source_nr = nr;
+		this_replay_source_slot = slot;
 	} else {
 		/* Common path: uniform over count, lockless.  The writer
 		 * publishes count BEFORE head with release semantics, so
@@ -955,6 +1038,9 @@ bool minicorpus_replay(struct syscallrecord *rec)
 					   1UL, __ATOMIC_RELAXED);
 			return false;
 		}
+		this_replay_source_tracked = true;
+		this_replay_source_nr = nr;
+		this_replay_source_slot = slot;
 	}
 
 	entry = get_syscall_entry(nr, rec->do32bit);
@@ -1399,6 +1485,11 @@ bool minicorpus_load_file(const char *path,
 		for (j = 0; j < 6; j++)
 			dst->args[j] = (unsigned long)ent.args[j];
 		dst->num_args = ent.num_args;
+		/* novel_replay_hits is volatile per-process baseline state,
+		 * not persisted on disk.  Zero it explicitly when overwriting
+		 * a recycled slot so an entry whose previous occupant had
+		 * accumulated baseline doesn't inherit stale credit. */
+		dst->novel_replay_hits = 0;
 		/* Count-before-head release publish; see comment on the
 		 * matching publish in minicorpus_save_with_reason(). */
 		cur_count = ring->count;
