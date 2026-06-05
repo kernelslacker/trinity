@@ -14,7 +14,6 @@
 #include <unistd.h>
 #include "child.h"
 #include "debug.h"
-#include "edgepair_ring.h"
 #include "fd-event.h"
 #include "list.h"
 #include "params.h"
@@ -120,20 +119,18 @@ void __attribute__((noreturn)) __BUG(const char *bugtxt, const char *filename, c
 		pre_crash_ring_dump_all();
 		/* Parent-side BUG: main_loop has stopped ticking by the
 		 * time we reach this branch, so any slots still pending in
-		 * a child's fd_event / stats / edgepair ring would never
-		 * be consumed.  Flush them now so the post-mortem sees the
-		 * same per-child fd/stats/edgepair context the running
-		 * loop would have aggregated.  Drain order matches the
-		 * per-tick order in main_loop (fd_event -> stats ->
-		 * edgepair).  These helpers are single-consumer parent-
-		 * only; calling them from a child-side BUG would race the
-		 * still-running parent, which is why this lives only in
+		 * a child's fd_event / stats ring would never be consumed.
+		 * Flush them now so the post-mortem sees the same per-child
+		 * fd/stats context the running loop would have aggregated.
+		 * Drain order matches the per-tick order in main_loop
+		 * (fd_event -> stats).  These helpers are single-consumer
+		 * parent-only; calling them from a child-side BUG would race
+		 * the still-running parent, which is why this lives only in
 		 * the parent branch.  Mirrors the kmsg-monitor pre-crash
 		 * drain wired up for WARN/OOPS banners; this is the
 		 * __BUG() counterpart for the other rings. */
 		fd_event_drain_all();
 		stats_ring_drain_all();
-		edgepair_ring_drain_all();
 	}
 
 	/*

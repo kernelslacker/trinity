@@ -28,12 +28,11 @@
  *   1. childdata                     (alloc_shared in init_shm)
  *   2. fd_event_ring                 (alloc_shared in init_shm)
  *   3. stats_ring                    (alloc_shared in init_shm)
- *   4. edgepair_ring                 (alloc_shared in init_shm)
- *   5. KCOV PC trace buffer          (track_shared_region in kcov.c, only
+ *   4. KCOV PC trace buffer          (track_shared_region in kcov.c, only
  *                                     on KCOV-capable kernels)
- *   6. KCOV CMP trace buffer         (track_shared_region in kcov.c, only
+ *   5. KCOV CMP trace buffer         (track_shared_region in kcov.c, only
  *                                     when KCOV_TRACE_CMP is supported)
- *   7. diag_ring                     (alloc_shared in init_shm, lands with
+ *   6. diag_ring                     (alloc_shared in init_shm, lands with
  *                                     the Wave-1 diag-ring series)
  *
  * The cap formula in derive_max_children_cap() divides the remaining

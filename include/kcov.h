@@ -55,7 +55,7 @@ enum errno_bucket {
  * The birthday-paradox figure (50% chance of *any* collision at
  * ~1.177 * sqrt(N) ~= 3400 PCs) is the first-collision threshold, not
  * a practical saturation point: an isolated collision does not skew
- * the cold-syscall, edgepair, or minicorpus heuristics that read
+ * the cold-syscall or minicorpus heuristics that read
  * edges_found.  What skews them is fractional occupancy -- expected
  * unique slots after k inserts is N * (1 - (1 - 1/N)^k), reaching 50%
  * at k ~= N * ln(2) ~= 5.8M PCs.  Real runs see edges_found in the
@@ -376,7 +376,7 @@ struct kcov_shared {
 	/* Per-edge bucket-seen mask.  See KCOV_NUM_BUCKETS comment above for
 	 * the bucket layout.  A child's atomic-OR on this byte that flips a
 	 * never-seen bucket bit is the "new coverage" signal that drives the
-	 * minicorpus, edgepair, and mutator-attribution feedback loops. */
+	 * minicorpus and mutator-attribution feedback loops. */
 	unsigned char bucket_seen[KCOV_NUM_EDGES];
 	/* Count of (edge, bucket) bit-flips ever observed.  Since the
 	 * bucket-seen table was introduced this is NOT the count of distinct
@@ -384,7 +384,7 @@ struct kcov_shared {
 	 * hit-count bucket bumps this counter, so it conflates "new code
 	 * reached" with "known code reached at a new iteration depth".  Kept
 	 * as the fine-grained feedback signal for the minicorpus / mutator-
-	 * attribution / edgepair consumers that want every novel bucket
+	 * attribution consumers that want every novel bucket
 	 * transition to register.  For the cardinality of edges ever reached
 	 * -- the signal the coverage-plateau detector needs -- read
 	 * distinct_edges below instead. */
@@ -832,10 +832,8 @@ bool kcov_bitmap_save_file(const char *path);
 bool kcov_bitmap_load_file(const char *path);
 const char *kcov_bitmap_default_path(void);
 
-/* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Shared between the
- * kcov bitmap save/load path and the edgepair warm-start save/load path
- * so both persistence formats checksum their payloads with the same
- * implementation. */
+/* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Used by the kcov
+ * bitmap save/load path to checksum the persisted payload. */
 uint32_t kcov_bitmap_crc32(const void *buf, size_t len);
 
 /* Fill OUT[32] with the cached kallsyms-derived kernel fingerprint
@@ -849,17 +847,6 @@ uint32_t kcov_bitmap_crc32(const void *buf, size_t len);
  * cmp-hints pool) can stamp the same fingerprint into their headers
  * and stay in lock-step with the kcov-bitmap warm-start invariants. */
 bool kcov_get_kernel_fp(uint8_t out[32]);
-
-/* Fill OUT[32] with the cached SHA-256 digest of the active syscall
- * table shape -- (arch_tag, nr, name) tuples for every slot in the
- * uniarch or biarch tables that are live this run.  Catches the case
- * the existing max_nr_syscall / biarch / kallsyms identity checks
- * miss: two kernels that share MAX_NR_SYSCALL but reorder or rename
- * any syscall produce different digests, so persisted (prev_nr,
- * curr_nr)-keyed state can refuse to load against a table whose
- * semantics have shifted.  Always succeeds; the syscall tables are
- * statically compiled in. */
-bool kcov_get_syscall_table_digest(uint8_t out[32]);
 
 /* Wire periodic mid-run snapshots of the bucket_seen bitmap to PATH.
  * Subsequent kcov_bitmap_maybe_snapshot() calls become live; a no-op

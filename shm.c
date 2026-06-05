@@ -24,7 +24,6 @@
 #include "sequence.h"
 #include "shm.h"
 #include "strategy.h"
-#include "edgepair_ring.h"
 #include "stats_ring.h"
 #include "trinity.h"
 #include "utils.h"
@@ -274,11 +273,11 @@ static void init_shm_alloc_children(void)
  * for_each_child slot, alloc the shared childdata struct,
  * publish its pointer into children[], zero the embedded
  * syscallrecord, stamp child->num from the loop counter, then
- * carve out the three per-child shared rings (fd_event_ring,
- * stats_ring, edgepair_ring) and run each ring's init.  The
- * fd_event_ring address is also mirrored into the
- * expected_fd_event_rings[] canary so fd_event_drain_all() can
- * spot a wild-write swap of the in-childdata pointer.
+ * carve out the two per-child shared rings (fd_event_ring,
+ * stats_ring) and run each ring's init.  The fd_event_ring
+ * address is also mirrored into the expected_fd_event_rings[]
+ * canary so fd_event_drain_all() can spot a wild-write swap of
+ * the in-childdata pointer.
  *
  * Runs after init_shm_alloc_children() (which carves children[]
  * and expected_fd_event_rings[]) and before the published-mirror
@@ -342,31 +341,22 @@ static void init_shm_per_child_rings(void)
 		 * being shared is inherent to the SPSC contract. */
 		child->stats_ring = alloc_shared(sizeof(struct stats_ring));
 		stats_ring_init(child->stats_ring);
-
-		/* Per-child edgepair observation ring.  The child IS the
-		 * producer (every non-cmp dispatched syscall enqueues one
-		 * slot once the per-child sentinel is past), so the ring
-		 * contents stay child-writable.  Enqueue site is the new-edge
-		 * path in random-syscall.c (edgepair_record after a successful
-		 * dispatch); the parent drains via the usual stats path. */
-		child->edgepair_ring = alloc_shared(sizeof(struct edgepair_ring));
-		edgepair_ring_init(child->edgepair_ring);
 	}
 }
 
 /*
  * Final init_shm phase: publish the parent-write / child-read
- * mirror pages (stats_published_init + edgepair_published_init),
- * lock down the children[] pointer array PROT_READ via mprotect
+ * mirror page (stats_published_init), lock down the children[]
+ * pointer array PROT_READ via mprotect
  * using the length stashed by init_shm_alloc_children(), then
  * stand up the cross-subsystem singletons that need shared
  * memory in place before any child forks -- kcov_init_global,
  * minicorpus_init, chain_corpus_init, cmp_hints_init,
  * struct_catalog_init, deferred_free_init.
  *
- * Ordering is load-bearing: the mprotect MUST run after both
- * published_init helpers (those publish initial values that the
- * children read off the mirror pages as soon as they start) and
+ * Ordering is load-bearing: the mprotect MUST run after the
+ * published_init helper (which publishes initial values that the
+ * children read off the mirror page as soon as they start) and
  * BEFORE the kcov / corpus / catalog / deferred-free init bundle
  * (those allocate further shared regions and must not be
  * gratuitously interleaved with the read-only flip on children
@@ -384,10 +374,6 @@ static void init_shm_publish_and_subsystems(void)
 	 * inside stats_ring_drain_all(). */
 	stats_published_init();
 
-	/* Edgepair mirror page: parent-write / child-read.  edgepair_is_cold
-	 * reads its three fields off this page on the syscall-selection
-	 * biasing path, refreshed once per drain. */
-	edgepair_published_init();
 	if (mprotect(children, init_shm_childptrslen, PROT_READ) != 0)
 		log_mprotect_failure(children, init_shm_childptrslen, PROT_READ,
 				     __builtin_return_address(0), errno);

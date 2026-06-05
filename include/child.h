@@ -8,7 +8,6 @@
 #include "breadcrumb_ring.h"
 #include "bug_backtrace.h"
 #include "cmp_hints.h"
-#include "edgepair.h"
 #include "kcov.h"
 #include "objects.h"
 #include "pre_crash_ring.h"
@@ -281,11 +280,6 @@ struct childdata {
 	 * CMP-records counter per call. */
 	struct kcov_child kcov;
 
-	/* Last syscall number executed, for edge-pair tracking.
-	 * Read every call (edgepair_is_cold gate) and written every call
-	 * (post-dispatch update). */
-	unsigned int last_syscall_nr;
-
 	/* Last syscall group executed, for group biasing.
 	 * Read every call (group_bias gate) and conditionally written. */
 	unsigned int last_group;
@@ -371,12 +365,12 @@ struct childdata {
 	bool is_explorer;
 
 	/* Mid-chain step (i >= 1) of a sequence-chain iteration.  Set by
-	 * run_sequence_chain around steps that have a meaningful predecessor
-	 * (last_syscall_nr).  Read by set_syscall_nr to gate the edgepair-
-	 * guided mid-chain picker.  Lives outside the leading hot cacheline
-	 * because the static_assert in child.c pins op_nr at the end of that
-	 * line -- adding a field anywhere ahead of op_nr would push it past
-	 * 64 bytes and break the hot-path budget. */
+	 * run_sequence_chain around steps that need to distinguish a
+	 * mid-chain dispatch from step 0 / a standalone call.  Lives
+	 * outside the leading hot cacheline because the static_assert in
+	 * child.c pins op_nr at the end of that line -- adding a field
+	 * anywhere ahead of op_nr would push it past 64 bytes and break
+	 * the hot-path budget. */
 	bool in_chain_mid_step;
 
 	/* Strategy enum (enum strategy_t) snapshotted in set_syscall_nr()
@@ -450,13 +444,6 @@ struct childdata {
 	 * child, write-only-by-this-child / read-only-by-parent.  See
 	 * include/stats_ring.h for the field set and overflow policy. */
 	struct stats_ring *stats_ring;
-
-	/* Ring buffer for child-produced edgepair observation events
-	 * drained by the parent into struct edgepair_aggregate.  Allocated
-	 * in shared memory, one per child, write-only-by-this-child / read-
-	 * only-by-parent.  See include/edgepair_ring.h for the slot layout
-	 * and overflow policy. */
-	struct edgepair_ring *edgepair_ring;
 
 	/* Name of the recipe currently executing inside recipe_runner(),
 	 * or NULL when no recipe is in flight.  Read by post-mortem to

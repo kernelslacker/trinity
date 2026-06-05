@@ -22,7 +22,6 @@
 #include "child.h"
 #include "fd.h"
 #include "futex.h"
-#include "edgepair_ring.h"
 #include "fd-event.h"
 #include "kcov.h"
 #include "list.h"
@@ -395,7 +394,6 @@ void clean_childdata(struct childdata *child)
 	child->fd_lifetime = 0;
 	child->cached_fd_generation = 0;
 	child->last_group = GROUP_NONE;
-	child->last_syscall_nr = EDGEPAIR_NO_PREV;
 	child->in_chain_mid_step = false;
 	child->op_type = CHILD_OP_SYSCALL;
 	child->stall_count = 0;
@@ -521,8 +519,6 @@ void clean_childdata(struct childdata *child)
 
 	if (child->stats_ring)
 		stats_ring_init(child->stats_ring);
-
-	edgepair_child_reset(child);
 }
 
 static void bind_child_to_cpu(struct childdata *child, int childno)
@@ -726,7 +722,6 @@ static void init_child_isolate_io(void)
  *   - the shared pids[] array (a single allocation that doesn't
  *     grow, hence the one-shot mprotect here rather than the
  *     per-loop catch-up),
- *   - the edgepair published mirror,
  *   - the stats published mirror.
  *
  * Also re-publishes child->num from the stack-based childno before
@@ -767,12 +762,6 @@ static void init_child_freeze_shared(struct childdata *child, int childno)
 		__atomic_add_fetch(&shm->stats.sibling_mprotect_failed, 1,
 				   __ATOMIC_RELAXED);
 	}
-
-	/* Same shape for the edgepair published mirror: edgepair_is_cold
-	 * is the lone child-side reader, the parent's drain is the lone
-	 * writer, and the mirror-integrity sample at edgepair_publish_locked
-	 * already documents the PROT_READ contract. */
-	edgepair_published_freeze();
 
 	/* Same shape for the shm_published stats mirror: children read
 	 * fleet_op_count off it on the cold path (maybe_rotate_strategy()'s

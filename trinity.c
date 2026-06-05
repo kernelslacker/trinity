@@ -197,7 +197,7 @@ static int set_exit_code(enum exit_reasons reason)
  * seconds.  When the epoch limit is reached, main_loop() returns with
  * shm->exit_reason == EXIT_EPOCH_DONE; we reset the per-epoch shared
  * state in-place and call main_loop() again.  Coverage data (kcov
- * bitmap, cmp_hints, minicorpus, edgepair) lives in MAP_SHARED memory
+ * bitmap, cmp_hints, minicorpus) lives in MAP_SHARED memory
  * and accumulates across epochs.
  *
  * This used to run main_loop() in a forked epoch-child process, with

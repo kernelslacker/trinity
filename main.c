@@ -16,7 +16,6 @@
 #include "childops-util.h"
 #include "cmp_hints.h"
 #include "debug.h"
-#include "edgepair_ring.h"
 #include "fd.h"
 #include "fd-event.h"
 #include "kcov.h"
@@ -1962,12 +1961,11 @@ static void final_ring_drain(void)
 {
 	fd_event_drain_all();
 	stats_ring_drain_all();
-	edgepair_ring_drain_all();
 }
 
 /* Per-tick block that pulls fresh state from every child: reap zombies,
- * drain the three observation rings (fd_event/stats/edgepair) into the
- * parent aggregates, then poll the two child-side beacons (hit_bug,
+ * drain the two observation rings (fd_event/stats) into the parent
+ * aggregates, then poll the two child-side beacons (hit_bug,
  * fault_beacon) for events a BUG'd or fault-handler-bound child
  * couldn't print itself.  No reorder, no new state. */
 static void drain_child_surfaces(void)
@@ -1983,11 +1981,6 @@ static void drain_child_surfaces(void)
 	 * parent-private aggregate.  Republishes the mirror page
 	 * inside its own thaw/refreeze bracket. */
 	stats_ring_drain_all();
-
-	/* Drain edgepair observation events from all children's rings
-	 * into the parent-private edgepair_aggregate.  Republishes
-	 * the mirror page inside its own thaw/refreeze bracket. */
-	edgepair_ring_drain_all();
 
 	/* Surface any child-side __BUG() event the BUG'd child
 	 * stamped into shared memory but couldn't print itself
@@ -2283,8 +2276,8 @@ dont_wait:
 
 /*
  * Reset shared state between epochs.  Coverage data (kcov bitmap,
- * cmp_hints, minicorpus, edgepair) is deliberately preserved so
- * that coverage accumulates across epoch boundaries.
+ * cmp_hints, minicorpus) is deliberately preserved so that coverage
+ * accumulates across epoch boundaries.
  */
 void reset_epoch_state(void)
 {
@@ -2324,9 +2317,9 @@ void reset_epoch_state(void)
 	 *
 	 * Bandit arm state (bandit_pulls, bandit_reward_calls, ...) is
 	 * intentionally NOT reset -- warm-start across epochs is the desired
-	 * UCB1 semantics.  cmp_hints pool, edgepair tables, the kcov bitmap,
-	 * and the alloc_track ring are also intentionally preserved across
-	 * epochs for the same reason.
+	 * UCB1 semantics.  cmp_hints pool, the kcov bitmap, and the
+	 * alloc_track ring are also intentionally preserved across epochs
+	 * for the same reason.
 	 */
 	/* fleet_op_count anchor for the next STRATEGY_WINDOW interval */
 	__atomic_store_n(&shm->syscalls_at_last_switch, 0UL,

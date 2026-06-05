@@ -15,7 +15,6 @@
 #include "child.h"
 #include "cmp_hints.h"
 #include "debug.h"
-#include "edgepair.h"
 #include "fd.h"
 #include "kcov.h"
 #include "locks.h"
@@ -1160,24 +1159,6 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	if (found_new != NULL)
 		*found_new = new_edges;
 
-	/* Record the (prev, curr) syscall pair for sequence coverage.
-	 * CMP-mode children collect comparison records, not PC edges,
-	 * so new_edges is structurally false above; recording the pair
-	 * would inflate total_pair_calls / total_count without ever
-	 * being able to bump new_edge_count, polluting the productivity
-	 * signal that edgepair_is_cold, the bandit reward dampener, and
-	 * the frontier/chain pickers all consume.  Skip the write
-	 * entirely on CMP children; the pre-snapshot reads above stay
-	 * valid because they don't mutate state.  Validator-rejected
-	 * calls are the same shape: do_syscall() returned a synthetic
-	 * EINVAL from userspace before the kernel was entered, so
-	 * new_edges is structurally false and recording the pair would
-	 * emit a zero-edge event with identical poisoning effects. */
-	if (child->last_syscall_nr != EDGEPAIR_NO_PREV &&
-	    !rec->validator_rejected &&
-	    child->kcov.mode != KCOV_MODE_CMP)
-		edgepair_record(child, child->last_syscall_nr, rec->nr, new_edges);
-
 	/* CMP-bloom novelty is an equivalent corpus-save / mutator-win
 	 * signal alongside PC-edge novelty.  Under a PC-edge plateau the
 	 * PC-only gate fires for ~0% of calls; the OR-with-CMP gate keeps
@@ -1353,29 +1334,6 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	/* Track the group for biasing. */
 	if (group_bias)
 		child->last_group = entry->group;
-
-	/* Mirror the just-completed syscall into child->last_syscall_nr,
-	 * read by dispatch_step's edgepair_record() as the prev_nr of the
-	 * next (prev, curr) pair-bump, and by set_syscall_nr_random's
-	 * edgepair_is_cold check on the syscall-selection biasing path.
-	 *
-	 * Skip syscalls that returned -ENOSYS or -EOPNOTSUPP: the kernel
-	 * dispatcher rejected the call before its body executed, so kernel
-	 * state is unchanged from the previous syscall.  Crediting them as
-	 * state-setting predecessors of a subsequent new-edge event would
-	 * dilute attribution toward calls that did nothing — at top-N dump
-	 * time these noise pairs crowd out genuinely interesting
-	 * predecessor relationships.  Validator-rejected calls share the
-	 * same rationale: do_syscall() returned a synthetic EINVAL from
-	 * userspace pre-validation without ever entering the kernel, so
-	 * kernel state is likewise unchanged. */
-	if (rec->validator_rejected ||
-	    (rec->retval == -1UL &&
-	     (rec->errno_post == ENOSYS || rec->errno_post == EOPNOTSUPP))) {
-		/* nothing — keep the previous predecessor in place */
-	} else {
-		child->last_syscall_nr = rec->nr;
-	}
 
 	/* Per-arm completion exposure: bump the arm this call was attributed
 	 * to.  Two distinct cases reach here with strategy_at_pick == -1:

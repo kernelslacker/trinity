@@ -11,8 +11,6 @@
 #include "breadcrumb_ring.h"
 #include "child.h"
 #include "cmp_hints.h"
-#include "edgepair.h"
-#include "edgepair_ring.h"
 #include "fd.h"
 #include "kcov.h"
 #include "minicorpus.h"

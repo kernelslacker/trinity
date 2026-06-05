@@ -280,15 +280,10 @@ bool run_sequence_chain(struct childdata *child)
 		bool step_found_new = false;
 		unsigned long rv;
 
-		/* Tell set_syscall_nr() that we're mid-chain on steps i >= 1
-		 * of a fresh-generation chain, so it can route the pick
-		 * through the edgepair-guided sampler that scores outgoing
-		 * pairs from child->last_syscall_nr.  Step 0 stays on the
-		 * normal bandit dispatch — there is no prev syscall to score
-		 * against yet.  Replay steps stay on the bandit too: the
-		 * picker is overridden by the saved nr inside
-		 * replay_syscall_step, so a mid-chain flag would just add an
-		 * unused gate. */
+		/* Mark steps i >= 1 of a fresh-generation chain as mid-chain
+		 * so anything that wants to distinguish a chained dispatch
+		 * from a standalone call can do so.  Step 0 and replay steps
+		 * leave the flag clear. */
 		child->in_chain_mid_step = (i > 0) && !replaying;
 
 		if (replaying) {
@@ -304,8 +299,7 @@ bool run_sequence_chain(struct childdata *child)
 				 * generation for the rest of the chain so the
 				 * iteration still does useful work.  The
 				 * fallthrough fresh call is still step i, so
-				 * the edgepair-mid-step gate is meaningful
-				 * iff i >= 1 — re-evaluate after clearing
+				 * re-evaluate the mid-chain flag after clearing
 				 * replaying. */
 				replaying = false;
 				child->in_chain_mid_step = (i > 0);

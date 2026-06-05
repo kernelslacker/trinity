@@ -8,8 +8,8 @@
 /*
  * Generic single-producer single-consumer ring primitive.
  *
- * Several rings in this tree (fd-event, stats-ring, edgepair-ring)
- * had grown copies of the same shape: per-child producer,
+ * Several rings in this tree (fd-event, stats-ring) had grown copies
+ * of the same shape: per-child producer,
  * parent drain, fixed-size payload slots, lock-free head/tail/overflow
  * accounting with acquire/release ordering, drop-on-full overflow policy.
  * Each reimplemented the head/tail dance and bounds masking from scratch
