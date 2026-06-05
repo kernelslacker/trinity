@@ -364,6 +364,7 @@ static void sanitise_prctl(struct syscallrecord *rec)
 			}
 		}
 		rec->post_state = (unsigned long) snap;
+		post_state_register(snap);
 		break;
 	}
 	default:
@@ -404,6 +405,29 @@ static void post_prctl(struct syscallrecord *rec)
 	 * the per-PR_GET_* strong-val retval bound checks) or free()
 	 * snap->bpf as a sock_fprog.
 	 */
+	/*
+	 * Ownership-table check: shape passed but the magic cookie only
+	 * proves "looks like struct prctl_post_state", not "is the snapshot
+	 * we produced for this attempt".  A sibling scribble that redirects
+	 * rec->post_state at a stale same-type snap still resident on the
+	 * deferred-free queue carries the matching cookie by construction,
+	 * so a cookie-only gate would trust it and dispatch off snap->option
+	 * -- driving the PR_SET_SECCOMP arm into tracked_free_now() on an
+	 * attacker-influenced bpf->filter (an arbitrary free on a tracking-
+	 * table miss).  sanitise_prctl() registers each snap in the post_state
+	 * ownership table immediately after the rec->post_state assignment;
+	 * a value that fails the lookup is not the live snap for this record
+	 * and must not be dereferenced.  Mirrors execve.c / pipe.c.  Bail
+	 * without freeing -- the pointer is suspect.
+	 */
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_prctl: rejected post_state=%p not in ownership "
+			  "table (post_state-redirected?)\n", snap);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		rec->post_state = 0;
+		return;
+	}
+
 	if (snap->magic != PRCTL_POST_STATE_MAGIC) {
 		outputerr("post_prctl: rejected snap with bad magic 0x%lx "
 			  "(post_state-stomped to foreign allocation?)\n",
@@ -423,6 +447,7 @@ static void post_prctl(struct syscallrecord *rec)
 	if (snap->bpf != NULL && looks_like_corrupted_ptr(rec, snap->bpf)) {
 		outputerr("post_prctl: rejected suspicious snap bpf=%p (post_state-scribbled?)\n",
 			  snap->bpf);
+		post_state_unregister(snap);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
@@ -719,6 +744,7 @@ static void post_prctl(struct syscallrecord *rec)
 		break;
 	}
 
+	post_state_unregister(snap);
 	deferred_freeptr(&rec->post_state);
 }
 
