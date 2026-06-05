@@ -293,7 +293,10 @@ static void post_getxattr(struct syscallrecord *rec)
 	if (snap->buf_alloc_size != 0 && snap_len > snap->buf_alloc_size)
 		snap_len = snap->buf_alloc_size;
 
-	memcpy(first_buf, (void *)(unsigned long) snap->value, snap_len);
+	if (!post_snapshot_or_skip(first_buf,
+				   (void *)(unsigned long) snap->value,
+				   snap_len))
+		goto out_free;
 
 	rc = syscall(SYS_getxattr, snap->pathname, snap->name,
 		     recheck_buf, sizeof(recheck_buf));

@@ -169,7 +169,10 @@ static void post_uname(struct syscallrecord *rec)
 		}
 	}
 
-	memcpy(&first, (void *)(unsigned long) snap->name, sizeof(first));
+	if (!post_snapshot_or_skip(&first,
+				   (void *)(unsigned long) snap->name,
+				   sizeof(first)))
+		goto out_free;
 
 	if (syscall(SYS_uname, &recheck) != 0)
 		goto out_free;
