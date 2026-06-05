@@ -436,6 +436,20 @@ struct stats_s {
 	 * for a value-result output buffer). */
 	unsigned long pipe_inner_ptr_mismatch;
 
+	/* post_socketpair_record_fds() observed snap->usockvec (captured
+	 * at sanitise time from get_writable_address() and also published
+	 * into rec->a4) no longer equal to rec->a4 at post time.  Same
+	 * defence as pipe_inner_ptr_mismatch: snap itself has cleared
+	 * magic + ownership, so the divergence narrows the stomp to either
+	 * a sibling scribble of rec->a4 between sanitise and kernel execu-
+	 * tion (the kernel then wrote the fd pair into a foreign address)
+	 * or a sibling heap-corruption shape that survived the structural
+	 * looks_like_corrupted_ptr() check on snap->usockvec.  Bail before
+	 * register_socketpair_fd() reads fd values from the wrong buffer.
+	 * Co-detonation site with the getpeername / getsockname SIGABRT
+	 * cluster -- shared snapshotted-inner-ptr post-handler shape. */
+	unsigned long socketpair_inner_ptr_mismatch;
+
 	/* init_child()'s sibling-freeze step issues mprotect(PROT_READ) on
 	 * every other child's childdata (and on the shared pids[] array) so
 	 * a value-result syscall buffer in one sibling can't scribble over

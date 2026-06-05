@@ -154,6 +154,26 @@ static void post_socketpair_record_fds(struct syscallrecord *rec)
 	if (usockvec == NULL || looks_like_corrupted_ptr(rec, usockvec))
 		return;
 
+	/*
+	 * Identity check: snap->usockvec was set to rec->a4 at sanitise
+	 * time -- both slots hold the same get_writable_address() return.
+	 * looks_like_corrupted_ptr() above is shape-only: a sibling stomp
+	 * that left a heap-shaped value in either slot survives the shape
+	 * gate and the fd-pair deref below would read either the kernel's
+	 * writes into a foreign address (snap->usockvec intact, rec->a4
+	 * stomped pre-syscall) or foreign memory the kernel never touched
+	 * (snap->usockvec stomped, rec->a4 intact).  The snap struct has
+	 * already cleared the magic + ownership gates, so a snap->usockvec
+	 * != rec->a4 divergence narrows the scribble to one of those two
+	 * vectors.  Bail before register_socketpair_fd() sees fd values
+	 * read from the wrong buffer.
+	 */
+	if ((unsigned long) usockvec != rec->a4) {
+		__atomic_add_fetch(&shm->stats.socketpair_inner_ptr_mismatch,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
 	register_socketpair_fd(usockvec[0], rec);
 	register_socketpair_fd(usockvec[1], rec);
 }

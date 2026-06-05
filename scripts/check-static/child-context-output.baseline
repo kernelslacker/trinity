@@ -477,9 +477,9 @@ syscalls/sigpending.c:140:post_sigpending
 syscalls/sigpending.c:162:post_sigpending
 syscalls/sigpending.c:179:post_sigpending
 syscalls/socketcall.c:249:post_socketcall
-syscalls/socketpair.c:170:post_socketpair
-syscalls/socketpair.c:184:post_socketpair
-syscalls/socketpair.c:203:post_socketpair
+syscalls/socketpair.c:190:post_socketpair
+syscalls/socketpair.c:204:post_socketpair
+syscalls/socketpair.c:223:post_socketpair
 syscalls/stat.c:391:post_statx
 syscalls/stat.c:406:post_statx
 syscalls/stat.c:438:post_statx
