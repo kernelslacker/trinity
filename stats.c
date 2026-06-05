@@ -2001,6 +2001,8 @@ static const struct {
 	  offsetof(struct stats_s, arena_ptr_stale_reject_giveup) },
 	{ "execve_self_exec_blocked",
 	  offsetof(struct stats_s, execve_self_exec_blocked) },
+	{ "pipe_inner_ptr_mismatch",
+	  offsetof(struct stats_s, pipe_inner_ptr_mismatch) },
 	{ "sibling_mprotect_failed",
 	  offsetof(struct stats_s, sibling_mprotect_failed) },
 	{ "sibling_refreeze_count",

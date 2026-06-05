@@ -117,6 +117,26 @@ static void post_pipe_record_fds(struct syscallrecord *rec)
 	if (fildes == NULL || looks_like_corrupted_ptr(rec, fildes))
 		return;
 
+	/*
+	 * Identity check: snap->fildes was set to rec->a1 at sanitise
+	 * time -- both slots hold the same get_writable_address() return.
+	 * looks_like_corrupted_ptr() above is shape-only: a sibling stomp
+	 * that left a heap-shaped value in either slot survives the
+	 * shape gate and the fd-pair deref below would read either the
+	 * kernel's writes into a foreign address (snap->fildes intact,
+	 * rec->a1 stomped pre-syscall) or foreign memory the kernel
+	 * never touched (snap->fildes stomped, rec->a1 intact).  The
+	 * snap struct already cleared the magic + ownership gates, so a
+	 * snap->fildes != rec->a1 divergence narrows the scribble to one
+	 * of those two vectors.  Bail before register_pipe_fd() sees fd
+	 * values read from the wrong buffer.
+	 */
+	if ((unsigned long) fildes != rec->a1) {
+		__atomic_add_fetch(&shm->stats.pipe_inner_ptr_mismatch,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
 	register_pipe_fd(fildes[0], true);
 	register_pipe_fd(fildes[1], false);
 }

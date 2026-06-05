@@ -414,6 +414,28 @@ struct stats_s {
 	 * knob.  See sanitise_execve() for the (dev, ino) compare site. */
 	unsigned long execve_self_exec_blocked;
 
+	/* post_pipe_record_fds() observed the snapshot's inner output-
+	 * buffer pointer (snap->fildes, captured at sanitise time from
+	 * get_writable_address()) no longer equal to rec->a1, the slot the
+	 * kernel actually saw at syscall-execution time.  Equality was
+	 * established by sanitise -- which assigns both rec->a1 and
+	 * snap->fildes to the same get_writable_address() return -- and the
+	 * snap pointer itself has already cleared the magic + ownership
+	 * gates by the time this check fires, so a divergence narrows the
+	 * stomp to one of two vectors: a sibling scribbled rec->a1 between
+	 * sanitise and the kernel executing the syscall (the kernel then
+	 * wrote the fd pair into a foreign address, not our buffer), or a
+	 * sibling heap-corruption shape stomped snap->fildes to a foreign
+	 * value that survived the structural looks_like_corrupted_ptr()
+	 * check.  Either way register_pipe_fd() would have either consumed
+	 * fd values read from foreign memory or registered stale zeroes
+	 * from our untouched buffer.  Non-zero here means the identity
+	 * gate just prevented one of those.  Sister bug class to the
+	 * getpeername / getsockname SIGABRT cluster -- shared detonation-
+	 * site shape (post handler dereferences a snapshotted inner pointer
+	 * for a value-result output buffer). */
+	unsigned long pipe_inner_ptr_mismatch;
+
 	/* init_child()'s sibling-freeze step issues mprotect(PROT_READ) on
 	 * every other child's childdata (and on the shared pids[] array) so
 	 * a value-result syscall buffer in one sibling can't scribble over
