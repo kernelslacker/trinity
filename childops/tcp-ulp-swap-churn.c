@@ -98,6 +98,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "childops-util.h"
 #include "compat.h"
 #include "jitter.h"
@@ -351,16 +352,6 @@ static void ifname_probe(int sock)
 
 	__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_ifname_probe_ok,
 			   1, __ATOMIC_RELAXED);
-}
-
-static long long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (long long)(now.tv_sec - t0->tv_sec) * 1000000000LL +
-	       (long long)(now.tv_nsec - t0->tv_nsec);
 }
 
 /* Install kTLS on @s, then push TLS_TX / TLS_RX cinfo with urandom-
