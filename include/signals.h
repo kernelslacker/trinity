@@ -9,6 +9,25 @@ extern volatile sig_atomic_t ctrlc_pending;
 extern volatile sig_atomic_t in_do_syscall;
 
 /*
+ * Set by do_extrafork() in the grand-child branch immediately after
+ * fork(), before the grand-child enters __do_syscall().  Read by
+ * child_fault_handler() to skip the fault-beacon stamp on the grand-
+ * child's crash: this_child() in the grand-child returns the parent
+ * worker's childdata (cached_pid is COW-inherited and never updated
+ * across the throwaway fork), so without this gate a grand-child
+ * SIGSEGV would publish a fault beacon attributed to the parent worker
+ * -- the canary queue then bills the crash to the wrong op_nr and the
+ * worker gets needlessly retired.
+ *
+ * The grand-child is a throwaway (~1s wall clock max, killed by the
+ * parent's waitpid timeout in do_extrafork) and has no childdata of
+ * its own to stamp into, so the correct action is to skip the beacon
+ * entirely.  The kernel-side coredump and the regular crash log path
+ * still surface the death.
+ */
+extern volatile sig_atomic_t in_extrafork_grandchild;
+
+/*
  * Per-child recovery point for asb_relocate()'s best-effort source copy.
  *
  * range_readable_user() proves the source range from cached state
