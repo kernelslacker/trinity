@@ -123,18 +123,10 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 	if (snap->sigsetsize != sizeof(sigset_t))
 		goto out_free;
 
-	/*
-	 * Defense in depth: even with the post_state snapshot, a wholesale
-	 * stomp could rewrite the snapshot's inner pointer field.  Reject
-	 * a pid-scribbled set before deref.
-	 */
-	if (looks_like_corrupted_ptr(rec, (void *) snap->set)) {
-		outputerr("post_rt_sigpending: rejected suspicious set=%p (post_state-scribbled?)\n",
-			  (void *) snap->set);
+	if (!post_snapshot_or_skip(&sset,
+				   (const void *) snap->set,
+				   sizeof(sset)))
 		goto out_free;
-	}
-
-	memcpy(&sset, (const void *) snap->set, sizeof(sset));
 	memcpy(&syscall_pending, &sset, sizeof(syscall_pending));
 
 	/*
