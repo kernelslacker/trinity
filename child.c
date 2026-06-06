@@ -88,10 +88,6 @@ _Static_assert(offsetof(struct childdata, syscall) >= 64,
  */
 #define TRINITY_CHILD_AS_CAP_BYTES	(4UL << 30)
 
-/* Set to true once we detect that unprivileged pidns isn't available.
- * Lives in shared memory (shm->no_pidns) so the flag propagates across
- * fork() — see init_child() below. */
-
 /*
  * Provide temporary immunity from the reaper
  * This is useful if we're going to do something that might take
@@ -917,6 +913,10 @@ static void init_child_setup_sandbox(struct childdata *child, int childno)
 	 *
 	 * Skip if we already know it'll fail (EPERM on unprivileged
 	 * kernels without user_namespaces, or missing CONFIG_PID_NS).
+	 *
+	 * Set to true once we detect that unprivileged pidns isn't available.
+	 * Lives in shared memory (shm->no_pidns) so the flag propagates across
+	 * fork() — see init_child() below.
 	 */
 #ifdef CLONE_NEWPID
 	if (RAND_BOOL() && !__atomic_load_n(&shm->no_pidns, __ATOMIC_RELAXED)) {
@@ -1852,11 +1852,10 @@ static unsigned int enabled_altop_count;
  * and the slot-53 sentinel hole.  Logs the resulting dispatch config so
  * the operator can see at -v what the effective altop mix actually is.
  *
- * Currently called once from main_loop before fork_children; the dormant
- * gates are compile-time constants so a single startup pass suffices.
- *
- * TODO: if a future change adds runtime dormant-flipping, re-invoke this
- * function on the flip so the dense vector and log line stay accurate.
+ * Called once from main_loop before fork_children; the dormant gates
+ * are compile-time constants so a single startup pass suffices.  Any
+ * future runtime dormant-flipping must re-invoke this function so the
+ * dense vector and log line stay accurate.
  */
 void init_altop_dispatch(void)
 {
