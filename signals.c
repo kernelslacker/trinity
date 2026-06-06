@@ -96,7 +96,9 @@ void init_abort_msg_capture(void)
  *     itself is on POSIX 2024 §2.4.3's safe list, and the wrapper does
  *     no extra libc work beyond setting up the registers.
  *   - strnlen() walks memory looking for NUL; no allocation, no locale,
- *     no lock.  Bounded by m->size so a corrupt buffer can't run away.
+ *     no lock.  Bounded by min(m->size, ABORT_MSG_MAX) -- m->size is
+ *     treated as advisory because m lives in the same glibc allocation
+ *     we're salvaging post-corruption and may itself be scribbled.
  *
  * The m->msg[0] == '\0' early-out catches the rare path where glibc
  * allocated the buffer but bailed before formatting (e.g. format failed
@@ -104,17 +106,33 @@ void init_abort_msg_capture(void)
  */
 static void capture_abort_msg_to_buglog(int bug_fd)
 {
+	/*
+	 * Hard upper bound on how many bytes we'll trust m->size to
+	 * authorise reading.  m and m->size both live in the same glibc
+	 * abort allocation we're salvaging post-corruption -- if the
+	 * upstream bug is "heap got scribbled", m->size is just another
+	 * scribbled field.  Real __abort_msg payloads are short single
+	 * lines (a few hundred bytes); 16 KiB is far above anything glibc
+	 * produces and far below any value that would let a corrupt
+	 * size_t run strnlen() off a mapping.
+	 */
+	static const size_t ABORT_MSG_MAX = 16384;
 	struct abort_msg_s *m;
-	size_t len;
+	size_t cap, len;
 	static const char prefix[] = "abort_msg: ";
 
 	if (glibc_abort_msg_p == NULL)
 		return;
 	m = *glibc_abort_msg_p;
-	if (m == NULL || m->msg[0] == '\0')
+	if (m == NULL)
+		return;
+	cap = m->size;
+	if (cap > ABORT_MSG_MAX)
+		cap = ABORT_MSG_MAX;
+	if (cap == 0 || m->msg[0] == '\0')
 		return;
 
-	len = strnlen(m->msg, m->size);
+	len = strnlen(m->msg, cap);
 	(void)syscall(SYS_write, bug_fd, prefix, sizeof(prefix) - 1);
 	(void)syscall(SYS_write, bug_fd, m->msg, len);
 	if (len == 0 || m->msg[len - 1] != '\n')
