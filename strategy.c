@@ -1042,10 +1042,10 @@ int select_next_strategy(int prev,
 			/* Random-rescue classifier dispatch path.  Reuses
 			 * the existing dominant_rescue_class +
 			 * amplified_intervention_arm pair so the classifier-
-			 * driven structured replay shape stays exactly what
-			 * landed when amplification was the only intervention
-			 * mode -- this commit changes the SCHEDULING of when
-			 * it runs, not its internals. */
+			 * driven structured replay shape stays the same as
+			 * when amplification was the only intervention mode;
+			 * only the SCHEDULING of when it runs differs, not
+			 * the internals. */
 			amplified = dominant_rescue_class();
 			arm = amplified_intervention_arm(amplified);
 			break;

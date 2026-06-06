@@ -62,9 +62,8 @@
  * ...) which is squarely inside the working set of trinity's argument
  * generators -- every live-fd-ring slot, every typed-fd reroll.
  * F_DUPFD_CLOEXEC-relocating the kcov slots up out of that range drops
- * the incidental hit rate sharply.  The protected-fd registry installed
- * in the previous commit remains the actual safety net; the relocation
- * is defence-in-depth.
+ * the incidental hit rate sharply.  The protected-fd registry remains
+ * the actual safety net; the relocation is defence-in-depth.
  *
  * 60000 sits inside the RLIMIT_NOFILE=65536 lifted by
  * scripts/run-trinity.sh, leaving ~5500 fds of headroom above for

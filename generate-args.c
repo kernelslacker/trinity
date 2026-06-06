@@ -2450,11 +2450,10 @@ static unsigned long gen_arg_struct_ptr_in(struct syscallentry *entry __unused__
  * buffer alive long enough for that re-read while the post handler's
  * own free path remains independent.
  *
- * Follow-up worth flagging: post-validation that checks whether the
- * 0xAA canary was overwritten is out of scope for this commit -- it
- * needs the catalog to land first so the per-slot allocation is
- * actually reaching the kernel before we start asserting on the bytes
- * the kernel wrote back.
+ * Not yet done: post-validation that checks whether the 0xAA canary
+ * was overwritten.  Needs the catalog in place first so the per-slot
+ * allocation is actually reaching the kernel before we start
+ * asserting on the bytes the kernel wrote back.
  */
 static unsigned long gen_arg_struct_ptr_out(struct syscallentry *entry __unused__,
 					    struct syscallrecord *rec,
@@ -2491,10 +2490,10 @@ static unsigned long gen_arg_struct_ptr_out(struct syscallentry *entry __unused_
  * check.
  *
  * Output-side validation (canary on the written-back bytes, so a post
- * handler can tell touched-bytes from untouched-bytes) is deliberately
- * out of scope here -- it needs the catalog to learn the input shape
- * first, and conflating the two changes makes the per-field splat
- * unreviewable.  This commit's only job is to stop sending all-0xAA as
+ * handler can tell touched-bytes from untouched-bytes) is not done
+ * here -- it needs the catalog to learn the input shape first, and
+ * conflating the two changes would make the per-field splat
+ * unreviewable.  The job here is only to stop sending all-0xAA as
  * INOUT input.
  *
  * Deferred-free / sanitise-overwrite handling matches the IN path.

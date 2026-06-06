@@ -1413,8 +1413,8 @@ static const enum child_op_type alt_op_rotation[] = {
 #define NR_ALT_OP_ROTATION	ARRAY_SIZE(alt_op_rotation)
 
 /*
- * KCOV bracketing opt-in.  Read by the childop dispatcher
- * in a follow-up commit.  Defaults to true for every op.
+ * KCOV bracketing opt-in.  Read by the childop dispatcher.
+ * Defaults to true for every op.
  * CHILD_OP_SYSCALL falls through to run_sequence_chain
  * which brackets per-syscall internally.  CHILD_OP_SCHED_CYCLER
  * (childops/sched-cycler.c) calls random_syscall(child) in
@@ -2493,9 +2493,9 @@ void child_process(struct childdata *child, int childno)
 			 * never sets bracketed=true, so this is quiescent
 			 * by default.  Consumers (adapt_budget above, canary
 			 * queue elsewhere) still read the noisy counter;
-			 * switching them is a job for a follow-up commit
-			 * once the dual-counter soak demonstrates the clean
-			 * counter is a strict improvement. */
+			 * switching them is deferred until the dual-counter
+			 * soak shows the clean counter is a strict
+			 * improvement. */
 			if (bracketed) {
 				__atomic_fetch_add(
 					&shm->stats.childop_edges_clean[op],

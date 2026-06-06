@@ -224,7 +224,7 @@ struct minicorpus_shared {
 
 	/* Parent-tick scan accelerator; incremented before ring->lock acquire,
 	 * decremented after release.  check_all_locks may skip the family when
-	 * zero (added in follow-up commit). */
+	 * zero. */
 	unsigned long held_count;
 
 	/* Aggregate count of lockless-reader num_args validator failures;

@@ -714,8 +714,8 @@ unsigned long kcov_bracket_end(struct kcov_child *kc,
  *          canary queue) keep reading the noisy counter; the clean
  *          counter is for offline comparison while the bracket
  *          design soaks.
- *   ON   - reserved for a follow-up commit that flips consumers
- *          to the clean counter.  Today identical to DUAL.
+ *   ON   - reserved for flipping consumers to the clean counter.
+ *          Currently identical to DUAL.
  */
 enum childop_kcov_attribution_mode {
 	CHILDOP_KCOV_ATTR_OFF = 0,
@@ -744,7 +744,7 @@ extern enum childop_kcov_attribution_mode childop_kcov_attr_mode;
  * KCOV mode bit indicating 32-bit-record collection (snapshotted from the
  * child's current syscall record at set_syscall_nr time, matching how
  * kcov_collect_cmp already receives it).  Threaded into dedup_inc() and
- * reserved for per-syscall diagnostic indexing in a follow-up commit. */
+ * reserved for per-syscall diagnostic indexing. */
 bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		  unsigned long *new_edge_count);
 

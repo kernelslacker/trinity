@@ -132,8 +132,8 @@ extern const struct socket_family_grammar grammar_xdp;
  * Stub entries — registered with can_run=sfg_always_false so they
  * never run on this kernel build, but keep their slot in the
  * registry so a user with the matching CONFIG can pick them up
- * without registering anything new.  Each gets upgraded to a real
- * grammar in a later commit.
+ * without registering anything new.  Each is upgraded to a real
+ * grammar as families are filled in.
  */
 #ifdef USE_BLUETOOTH
 extern const struct socket_family_grammar grammar_bluetooth_stub;

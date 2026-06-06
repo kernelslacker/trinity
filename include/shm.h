@@ -360,10 +360,11 @@ struct shm_s {
 	 *   that produced at least one new edge, not real bucket edges (see
 	 *   the pc_edge_calls_by_strategy comment above).  This is the
 	 *   signal the UCB1 picker scores against; renamed from
-	 *   bandit_reward[] to make the call-count shape explicit.  Future
-	 *   work may switch the learner to consume
+	 *   bandit_reward[] to make the call-count shape explicit.  The
+	 *   learner may later switch to consuming
 	 *   bandit_reward_pc_edge_count[] below (real bucket count) or a
-	 *   transform of it; this commit only makes both signals visible.
+	 *   transform of it; both signals are exposed so that choice can
+	 *   be made later.
 	 *
 	 * bandit_reward_pc_edge_count[]: cumulative PC-edge BUCKET COUNT
 	 *   attributed to each arm — sum of per-window
@@ -781,9 +782,9 @@ struct shm_s {
 	 * Snapshot of kcov_shm->kmsg_warn_fires at the start of the current
 	 * bandit window.  Single global field (mirrors bandit_cmp_at_window_
 	 * start) because kmsg_warn_fires is global rather than per-arm --
-	 * the chaos cohort attribution that consumes the delta in a follow-up
-	 * commit needs only "how many WARNs fired in this window", not "how
-	 * many WARNs fired while strategy X was active".  Reseeded from the
+	 * the chaos-cohort attribution that consumes the delta needs only
+	 * "how many WARNs fired in this window", not "how many WARNs fired
+	 * while strategy X was active".  Reseeded from the
 	 * live counter at every rotation regardless of selection reason, so
 	 * the delta the cohort split sees represents only events the kernel
 	 * emitted inside the just-finished window.  Written only by the

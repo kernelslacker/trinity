@@ -25,8 +25,8 @@
  * hand-rolling the publish path and lets diagnostic / audit tooling
  * grep one symbol (`publish_resource(`) instead of chasing the
  * scattered alloc_object()/add_object() pairs.  The wrapper is
- * additive — existing producers keep working unchanged; per-consumer
- * migrations land as separate follow-up commits, one site at a time.
+ * additive — existing producers keep working; consumers are migrated
+ * one site at a time.
  */
 
 /*

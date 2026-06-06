@@ -149,7 +149,7 @@ struct cmp_hints_shared {
 	struct cmp_hint_pool pools[MAX_NR_SYSCALL][2];
 	/* Parent-tick scan accelerator; incremented before pool->lock acquire,
 	 * decremented after release.  check_all_locks may skip the family when
-	 * zero (added in follow-up commit). */
+	 * zero. */
 	unsigned long held_count;
 };
 _Static_assert(MAX_NR_SYSCALL == 1024,

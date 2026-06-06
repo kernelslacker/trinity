@@ -598,16 +598,15 @@ static const struct struct_field epoll_event_fields[] = {
  *      named gate (type, size, sample_type, ...) rather than a
  *      coincidentally-same-width opaque slot.  No live consumer is
  *      wired today; this awaits the cmp_hints recording-path lift.
- *   2. per-type variant infra.  Phase 2 step 6 commits C/D/E/F are
- *      held until the step-4 buffer-discriminator lands; once it
- *      does, `type` (offset 0) becomes the desc-level discriminator
- *      and config / bp_* / config1 / config2 get per-PERF_TYPE_*
- *      sub-variants.  This commit annotates the type-independent
- *      shared fields only.
+ *   2. per-type variant infra.  Only type-independent shared fields
+ *      are annotated here; per-PERF_TYPE_* sub-variants for
+ *      config / bp_* / config1 / config2 land once the buffer-
+ *      discriminator is wired and `type` (offset 0) becomes the
+ *      desc-level discriminator.
  *
  * Bit-field flag group at offset 40 (disabled..sigtrap, ~36 single-
- * bit flags + precise_ip:2 + __reserved_1:26) is annotated by the
- * follow-up commit B; the explicit hand-built mask doesn't compose
+ * bit flags + precise_ip:2 + __reserved_1:26) is annotated below via
+ * PERF_ATTR_FLAG_MASK; the explicit hand-built mask doesn't compose
  * with offsetof so the field uses an explicit { .offset = 40 }.
  */
 
@@ -815,7 +814,8 @@ static const struct struct_field perf_event_attr_fields[] = {
 	 * bp_type / bp_addr / bp_len are interpreted only when
 	 * type == PERF_TYPE_BREAKPOINT; otherwise the slots double as
 	 * config1 / config2 and carry PMU-specific extension words.
-	 * Per-type variant lands in commit E.
+	 * Per-type variants for bp_type/bp_addr/bp_len (vs
+	 * config1/config2) are not yet annotated.
 	 */
 	FIELD(struct perf_event_attr, bp_type),
 	FIELD(struct perf_event_attr, bp_addr),
@@ -2042,8 +2042,8 @@ static const struct struct_field io_uring_register_probe_fields[] = {
  * Per-opcode variant table.  rec->a2 carries the opcode at sanitise
  * and post time; struct_desc_resolve_variant() picks the matching
  * variant.  Opcodes without an entry fall through to the empty shared
- * prefix (no schema fill, no CMP attribution scope).  Variants land
- * incrementally; see follow-up commits.
+ * prefix (no schema fill, no CMP attribution scope).  Not all opcodes
+ * have variant entries yet.
  */
 static const struct union_variant io_uring_register_variants[] = {
 	{
@@ -2934,12 +2934,12 @@ static const struct struct_field bpf_attr_PROG_STREAM_READ_fields[] = {
 
 /*
  * LINK_CREATE outer variant.  attach_type is the inner discriminator
- * for the link_create tail sub-union -- subsequent commits populate
- * nested_variants[] with the per-attach-type tails.  The four head
- * fields (prog_fd/map_fd, target_fd/target_ifindex, attach_type,
- * flags) sit at the union's offsets 0/4/8/12 and are shared across
- * every sub-variant, so they live here on the outer variant rather
- * than being repeated on each arm.
+ * for the link_create tail sub-union -- nested_variants[] is not yet
+ * populated with the per-attach-type tails.  The four head fields
+ * (prog_fd/map_fd, target_fd/target_ifindex, attach_type, flags) sit
+ * at the union's offsets 0/4/8/12 and are shared across every
+ * sub-variant, so they live here on the outer variant rather than
+ * being repeated on each arm.
  *
  * The two anonymous unions (prog_fd|map_fd, target_fd|target_ifindex)
  * each get one FT_FD slot; the kernel reads the same bytes either
@@ -3590,9 +3590,9 @@ static const struct union_variant bpf_attr_variants[] = {
 		.num_fields	= ARRAY_SIZE(bpf_attr_LINK_CREATE_fields),
 		.effective_size	= sizeof(((union bpf_attr *)NULL)->link_create),
 		/*
-		 * attach_type is the inner discriminator; subsequent commits
-		 * land sub-variants in nested_variants[].  base runs first so
-		 * the catch-all target_btf_id slot is filled before any
+		 * attach_type is the inner discriminator; sub-variants in
+		 * nested_variants[] are not yet populated.  base runs first
+		 * so the catch-all target_btf_id slot is filled before any
 		 * specific arm overlays its tail.
 		 */
 		.nested_discrim_offset = offsetof(union bpf_attr, link_create.attach_type),
@@ -3745,8 +3745,8 @@ const struct struct_desc struct_catalog[] = {
 	 * rec->a2) presents a different per-cmd struct shape at *rec->a3;
 	 * the variant table dispatches by opcode.  Shared prefix is empty:
 	 * register opcodes are fully self-contained per-cmd structs with
-	 * no truly-common fields.  Variants populated incrementally; see
-	 * follow-up commits.
+	 * no truly-common fields.  Variants are populated per-opcode; not
+	 * all opcodes are covered yet.
 	 *
 	 * struct_size is set to the largest projected variant
 	 * (io_uring_sync_cancel_reg @ 64 bytes) so the buffer fed to the
