@@ -72,6 +72,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -99,16 +100,6 @@ static uint16_t ipfrag_listen_port_be;
 static uint16_t ipfrag_id_counter;
 static uint32_t ipfrag_inner_idx;
 static uint32_t ipfrag_rot_base;
-
-static long long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (long long)(now.tv_sec - t0->tv_sec) * 1000000000LL +
-	       (long long)(now.tv_nsec - t0->tv_nsec);
-}
 
 /* Bring lo up and bind 127.0.0.1/8 so the loopback route exists in
  * the freshly-unshared netns.  Returns 0 on success, -1 otherwise. */
