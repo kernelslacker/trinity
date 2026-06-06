@@ -192,23 +192,10 @@ static void post_getrusage(struct syscallrecord *rec)
 
 	who = (int) snap->who;
 
-	{
-		void *ru = (void *)(unsigned long) snap->ru;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner ru
-		 * pointer field.  Reject pid-scribbled ru before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, ru)) {
-			outputerr("post_getrusage: rejected suspicious ru=%p (post_state-scribbled?)\n",
-				  ru);
-			goto out_free;
-		}
-	}
-
-	memcpy(&first, (struct rusage *)(unsigned long) snap->ru,
-	       sizeof(first));
+	if (!post_snapshot_or_skip(&first,
+				   (const void *)(unsigned long) snap->ru,
+				   sizeof(first)))
+		goto out_free;
 
 	if (getrusage(who, &recall) != 0)
 		goto out_free;
