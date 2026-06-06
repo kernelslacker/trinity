@@ -144,23 +144,10 @@ static void post_sysinfo(struct syscallrecord *rec)
 	if (snap->info == 0)
 		goto out_free;
 
-	{
-		void *info = (void *)(unsigned long) snap->info;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner info
-		 * field.  Reject pid-scribbled info before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, info)) {
-			outputerr("post_sysinfo: rejected suspicious info=%p (post_state-scribbled?)\n",
-				  info);
-			goto out_free;
-		}
-	}
-
-	memcpy(&user_view, (void *)(unsigned long) snap->info,
-	       sizeof(user_view));
+	if (!post_snapshot_or_skip(&user_view,
+				   (const void *)(unsigned long) snap->info,
+				   sizeof(user_view)))
+		goto out_free;
 
 	if (sysinfo(&kernel_view) != 0)
 		goto out_free;
