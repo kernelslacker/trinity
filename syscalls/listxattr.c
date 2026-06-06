@@ -225,21 +225,6 @@ static void post_flistxattr(struct syscallrecord *rec)
 	if (snap_fd < 0)
 		goto out_free;
 
-	{
-		void *list_p = (void *)(unsigned long) snap->list;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * field.  Reject pid-scribbled list before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, list_p)) {
-			outputerr("post_flistxattr: rejected suspicious list=%p (post_state-scribbled?)\n",
-				  list_p);
-			goto out_free;
-		}
-	}
-
 	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first_buf))
 		snap_len = sizeof(first_buf);
@@ -253,7 +238,10 @@ static void post_flistxattr(struct syscallrecord *rec)
 	if (snap->buf_alloc_size != 0 && snap_len > snap->buf_alloc_size)
 		snap_len = snap->buf_alloc_size;
 
-	memcpy(first_buf, (void *)(unsigned long) snap->list, snap_len);
+	if (!post_snapshot_or_skip(first_buf,
+				   (void *)(unsigned long) snap->list,
+				   snap_len))
+		goto out_free;
 
 	rc = syscall(SYS_flistxattr, snap_fd, recheck_buf, sizeof(recheck_buf));
 
@@ -471,18 +459,16 @@ static void post_listxattr(struct syscallrecord *rec)
 		goto out_free;
 
 	{
-		void *list_p = (void *)(unsigned long) snap->list;
 		void *path_p = (void *)(unsigned long) snap->arg1;
 
 		/*
 		 * Defense in depth: even with the post_state snapshot, a
 		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * fields.  Reject pid-scribbled list/pathname before deref.
+		 * fields.  Reject pid-scribbled pathname before deref.
 		 */
-		if (looks_like_corrupted_ptr(rec, list_p) ||
-		    looks_like_corrupted_ptr(rec, path_p)) {
-			outputerr("post_listxattr: rejected suspicious list=%p pathname=%p (post_state-scribbled?)\n",
-				  list_p, path_p);
+		if (looks_like_corrupted_ptr(rec, path_p)) {
+			outputerr("post_listxattr: rejected suspicious pathname=%p (post_state-scribbled?)\n",
+				  path_p);
 			goto out_free;
 		}
 	}
@@ -502,7 +488,10 @@ static void post_listxattr(struct syscallrecord *rec)
 	if (snap->buf_alloc_size != 0 && snap_len > snap->buf_alloc_size)
 		snap_len = snap->buf_alloc_size;
 
-	memcpy(first_buf, (void *)(unsigned long) snap->list, snap_len);
+	if (!post_snapshot_or_skip(first_buf,
+				   (void *)(unsigned long) snap->list,
+				   snap_len))
+		goto out_free;
 
 	rc = syscall(SYS_listxattr, snap_path, recheck_buf,
 		     sizeof(recheck_buf));
@@ -715,18 +704,16 @@ static void post_llistxattr(struct syscallrecord *rec)
 		goto out_free;
 
 	{
-		void *list_p = (void *)(unsigned long) snap->list;
 		void *path_p = (void *)(unsigned long) snap->arg1;
 
 		/*
 		 * Defense in depth: even with the post_state snapshot, a
 		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * fields.  Reject pid-scribbled list/pathname before deref.
+		 * fields.  Reject pid-scribbled pathname before deref.
 		 */
-		if (looks_like_corrupted_ptr(rec, list_p) ||
-		    looks_like_corrupted_ptr(rec, path_p)) {
-			outputerr("post_llistxattr: rejected suspicious list=%p pathname=%p (post_state-scribbled?)\n",
-				  list_p, path_p);
+		if (looks_like_corrupted_ptr(rec, path_p)) {
+			outputerr("post_llistxattr: rejected suspicious pathname=%p (post_state-scribbled?)\n",
+				  path_p);
 			goto out_free;
 		}
 	}
@@ -746,7 +733,10 @@ static void post_llistxattr(struct syscallrecord *rec)
 	if (snap->buf_alloc_size != 0 && snap_len > snap->buf_alloc_size)
 		snap_len = snap->buf_alloc_size;
 
-	memcpy(first_buf, (void *)(unsigned long) snap->list, snap_len);
+	if (!post_snapshot_or_skip(first_buf,
+				   (void *)(unsigned long) snap->list,
+				   snap_len))
+		goto out_free;
 
 	rc = syscall(SYS_llistxattr, snap_path, recheck_buf,
 		     sizeof(recheck_buf));
