@@ -651,6 +651,17 @@ static const struct stat_category sched_cycler_category =
 	              sched_cycler_runs,
 	              sched_cycler_fields);
 
+static const struct stat_field userns_fuzzer_fields[] = {
+	STAT_FIELD(userns, runs),
+	STAT_FIELD(userns, inner_crashed),
+	STAT_FIELD(userns, unsupported),
+};
+
+static const struct stat_category userns_fuzzer_category =
+	STAT_CATEGORY("userns_fuzzer",
+	              userns_runs,
+	              userns_fuzzer_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -841,7 +852,6 @@ static void dump_stats_json_basic_subsystems(void)
 {
 	printf("\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
 		"\"memory_pressure\":{\"runs_madv_pageout\":%lu},"
-		"\"userns_fuzzer\":{\"runs\":%lu,\"inner_crashed\":%lu,\"unsupported\":%lu},"
 		"\"barrier_racer\":{\"runs\":%lu,\"inner_crashed\":%lu},"
 		"\"genetlink_fuzzer\":{\"families_discovered\":%lu,\"msgs_sent\":%lu,\"eperm\":%lu},"
 		"\"genl_family_calls\":{\"devlink\":%lu,\"nl80211\":%lu,\"taskstats\":%lu,"
@@ -860,7 +870,6 @@ static void dump_stats_json_basic_subsystems(void)
 		"\"bpf_fd_provider\":{\"maps_provided\":%lu,\"progs_provided\":%lu},",
 		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
 		shm->stats.memory_pressure_runs,
-		shm->stats.userns_runs, shm->stats.userns_inner_crashed, shm->stats.userns_unsupported,
 		shm->stats.barrier_racer_runs, shm->stats.barrier_racer_inner_crashed,
 		shm->stats.genetlink_families_discovered, shm->stats.genetlink_msgs_sent,
 		shm->stats.genetlink_eperm,
@@ -1791,6 +1800,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&sched_cycler_category);
+
+	printf(",");
+	stat_category_emit_json(&userns_fuzzer_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -3763,11 +3775,7 @@ static void dump_stats_fuzzer_subsystems(void)
 
 	stat_category_emit_text(&sched_cycler_category);
 
-	if (shm->stats.userns_runs) {
-		stat_row("userns_fuzzer", "runs",          shm->stats.userns_runs);
-		stat_row("userns_fuzzer", "inner_crashed", shm->stats.userns_inner_crashed);
-		stat_row("userns_fuzzer", "unsupported",   shm->stats.userns_unsupported);
-	}
+	stat_category_emit_text(&userns_fuzzer_category);
 
 	if (shm->stats.barrier_racer_runs) {
 		stat_row("barrier_racer", "runs",          shm->stats.barrier_racer_runs);
