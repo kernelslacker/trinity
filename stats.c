@@ -759,6 +759,17 @@ static const struct stat_category madvise_cycler_category =
 	              madvise_cycler_runs,
 	              madvise_cycler_fields);
 
+static const struct stat_field keyring_spam_fields[] = {
+	STAT_FIELD(keyring_spam, runs),
+	STAT_FIELD(keyring_spam, calls),
+	STAT_FIELD(keyring_spam, failed),
+};
+
+static const struct stat_category keyring_spam_category =
+	STAT_CATEGORY("keyring_spam",
+	              keyring_spam_runs,
+	              keyring_spam_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -1119,7 +1130,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 	printf("\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
 			"\"overlay\":%lu,\"quota\":%lu,\"bind\":%lu,\"unsupported\":%lu},"
 		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},"
-		"\"keyring_spam\":{\"runs\":%lu,\"calls\":%lu,\"failed\":%lu},"
 		"\"vdso_mremap_race\":{\"runs\":%lu,\"mutations\":%lu,\"helper_segvs\":%lu},"
 		"\"flock_thrash\":{\"runs\":%lu,\"locks\":%lu,\"failed\":%lu},"
 		"\"xattr_thrash\":{\"runs\":%lu,\"set\":%lu,\"get\":%lu,"
@@ -1137,8 +1147,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 		shm->stats.fs_lifecycle_unsupported,
 		shm->stats.futex_storm_runs, shm->stats.futex_storm_inner_crashed,
 		shm->stats.futex_storm_iters,
-		shm->stats.keyring_spam_runs, shm->stats.keyring_spam_calls,
-		shm->stats.keyring_spam_failed,
 		shm->stats.vdso_race_runs, shm->stats.vdso_race_mutations,
 		shm->stats.vdso_race_helper_segvs,
 		shm->stats.flock_thrash_runs, shm->stats.flock_thrash_locks,
@@ -1895,6 +1903,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&madvise_cycler_category);
+
+	printf(",");
+	stat_category_emit_json(&keyring_spam_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -4429,11 +4440,7 @@ static void dump_stats_childop_runs_local(void)
 
 	stat_category_emit_text(&madvise_cycler_category);
 
-	if (shm->stats.keyring_spam_runs) {
-		stat_row("keyring_spam", "runs",   shm->stats.keyring_spam_runs);
-		stat_row("keyring_spam", "calls",  shm->stats.keyring_spam_calls);
-		stat_row("keyring_spam", "failed", shm->stats.keyring_spam_failed);
-	}
+	stat_category_emit_text(&keyring_spam_category);
 
 	if (shm->stats.vdso_race_runs) {
 		stat_row("vdso_mremap_race", "runs",         shm->stats.vdso_race_runs);
