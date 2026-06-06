@@ -647,6 +647,22 @@ static const struct stat_category tls_rotate_category =
 	              tls_rotate_runs,
 	              tls_rotate_fields);
 
+static const struct stat_field netns_teardown_fields[] = {
+	STAT_FIELD(netns_teardown, runs),
+	STAT_FIELD(netns_teardown, setup_failed),
+	STAT_FIELD(netns_teardown, unshare_ok),
+	STAT_FIELD(netns_teardown, socket_pair_ok),
+	STAT_FIELD(netns_teardown, fork_ok),
+	STAT_FIELD(netns_teardown, setns_ok),
+	STAT_FIELD(netns_teardown, kill_ok),
+	STAT_FIELD(netns_teardown, completed_ok),
+};
+
+static const struct stat_category netns_teardown_category =
+	STAT_CATEGORY("netns_teardown",
+	              netns_teardown_runs,
+	              netns_teardown_fields);
+
 static const struct stat_field setsockopt_pairing_fields[] = {
 	STAT_FIELD(setsockopt_pairing, paired_emitted),
 };
@@ -1431,7 +1447,6 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 		"\"handshake_req_abort\":{\"runs\":%lu,\"setup_failed\":%lu,\"accept_ok\":%lu,\"done_ok\":%lu,\"abort_ok\":%lu,\"orphan_close\":%lu},"
 		"\"nf_conntrack_helper_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_helper\":%lu,\"attach_ok\":%lu,\"attach_fail\":%lu,\"exp_ok\":%lu,\"packet_sent\":%lu,\"delete_ok\":%lu,\"zone_swap\":%lu,\"detach_ok\":%lu},"
 		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"peek_ok\":%lu,\"iouring_variant_ok\":%lu,\"sibling_spawn_ok\":%lu,\"sibling_spawn_failed\":%lu,\"sibling_reaped_ok\":%lu,\"sibling_crashed\":%lu},"
-		"\"netns_teardown\":{\"runs\":%lu,\"setup_failed\":%lu,\"unshare_ok\":%lu,\"socket_pair_ok\":%lu,\"fork_ok\":%lu,\"setns_ok\":%lu,\"kill_ok\":%lu,\"completed_ok\":%lu},"
 		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},",
 		shm->stats.nftables_churn_runs,
 		shm->stats.nftables_churn_setup_failed,
@@ -1570,14 +1585,6 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 		shm->stats.af_unix_scm_rights_gc_sibling_spawn_failed,
 		shm->stats.af_unix_scm_rights_gc_sibling_reaped_ok,
 		shm->stats.af_unix_scm_rights_gc_sibling_crashed,
-		shm->stats.netns_teardown_runs,
-		shm->stats.netns_teardown_setup_failed,
-		shm->stats.netns_teardown_unshare_ok,
-		shm->stats.netns_teardown_socket_pair_ok,
-		shm->stats.netns_teardown_fork_ok,
-		shm->stats.netns_teardown_setns_ok,
-		shm->stats.netns_teardown_kill_ok,
-		shm->stats.netns_teardown_completed_ok,
 		shm->stats.tcp_ulp_swap_churn_runs,
 		shm->stats.tcp_ulp_swap_churn_setup_failed,
 		shm->stats.tcp_ulp_swap_churn_install_tls_ok,
@@ -2021,6 +2028,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&tls_rotate_category);
+
+	printf(",");
+	stat_category_emit_json(&netns_teardown_category);
 
 	printf(",");
 	stat_category_emit_json(&iouring_flood_category);
@@ -4984,16 +4994,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("af_unix_scm_rights_gc", "sibling_crashed",     shm->stats.af_unix_scm_rights_gc_sibling_crashed);
 	}
 
-	if (shm->stats.netns_teardown_runs) {
-		stat_row("netns_teardown", "runs",            shm->stats.netns_teardown_runs);
-		stat_row("netns_teardown", "setup_failed",    shm->stats.netns_teardown_setup_failed);
-		stat_row("netns_teardown", "unshare_ok",      shm->stats.netns_teardown_unshare_ok);
-		stat_row("netns_teardown", "socket_pair_ok",  shm->stats.netns_teardown_socket_pair_ok);
-		stat_row("netns_teardown", "fork_ok",         shm->stats.netns_teardown_fork_ok);
-		stat_row("netns_teardown", "setns_ok",        shm->stats.netns_teardown_setns_ok);
-		stat_row("netns_teardown", "kill_ok",         shm->stats.netns_teardown_kill_ok);
-		stat_row("netns_teardown", "completed_ok",    shm->stats.netns_teardown_completed_ok);
-	}
+	stat_category_emit_text(&netns_teardown_category);
 
 	if (shm->stats.tcp_ulp_swap_churn_runs) {
 		stat_row("tcp_ulp_swap_churn", "runs",              shm->stats.tcp_ulp_swap_churn_runs);
