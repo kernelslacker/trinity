@@ -222,18 +222,16 @@ static void post_lsm_list_modules(struct syscallrecord *rec)
 		goto out_free;
 
 	{
-		void *ids_p = (void *)(unsigned long) snap->ids;
 		void *size_p = (void *)(unsigned long) snap->size;
 
 		/*
 		 * Defense in depth: even with the post_state snapshot, a
 		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * fields.  Reject pid-scribbled ids/size before deref.
+		 * fields.  Reject pid-scribbled size before deref.
 		 */
-		if (looks_like_corrupted_ptr(rec, ids_p) ||
-		    looks_like_corrupted_ptr(rec, size_p)) {
-			outputerr("post_lsm_list_modules: rejected suspicious ids=%p size=%p (post_state-scribbled?)\n",
-				  ids_p, size_p);
+		if (looks_like_corrupted_ptr(rec, size_p)) {
+			outputerr("post_lsm_list_modules: rejected suspicious size=%p (post_state-scribbled?)\n",
+				  size_p);
 			goto out_free;
 		}
 	}
@@ -257,8 +255,10 @@ static void post_lsm_list_modules(struct syscallrecord *rec)
 	if (first_count > 64)
 		goto out_free;
 
-	memcpy(first_ids, (void *)(unsigned long) snap->ids,
-	       first_count * sizeof(u64));
+	if (!post_snapshot_or_skip(first_ids,
+				   (void *)(unsigned long) snap->ids,
+				   first_count * sizeof(u64)))
+		goto out_free;
 
 	rc = syscall(SYS_lsm_list_modules, recheck_ids, &recheck_size, 0);
 	if (rc != 0)
