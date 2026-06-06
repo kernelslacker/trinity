@@ -400,42 +400,41 @@ static void post_recvmsg(struct syscallrecord *rec)
 	}
 
 	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation (a different syscall's post_state, an
-	 * alloc_iovec(1) in the same 16/24-byte free-list bucket, ...)
-	 * would let the wrong bytes pose as a recvmsg_post_state.  The
-	 * cookie was set at sanitise time; a mismatch means snap does
-	 * not point at our struct -- abandon both the snap and the msghdr
-	 * cleanup rather than feed wild bytes into the inner-field deref.
-	 * Cannot deferred_freeptr the snap because we cannot prove it is
-	 * one of our allocations -- leak it and let the deferred-free
-	 * tick reclaim the original snap on the next pass.
+	 * Ownership-table check: must be the FIRST gate that touches snap
+	 * after the shape check, BEFORE any field read.  A foreign chunk
+	 * could carry a matching magic cookie by coincidence (a stale
+	 * same-type snap a sibling stomp resurrected by redirecting
+	 * rec->post_state at it, an alloc_iovec(1) in the same 16/24-byte
+	 * free-list bucket, ...), in which case reading snap->magic touches
+	 * the wrong struct.  The ownership table proves "this is THIS
+	 * attempt's snapshot"; everything below trusts that.  Reject before
+	 * the inner-field deref hands tracked_free_now() an unowned
+	 * snap->name, which a tracking-table miss would raw-free() --
+	 * arbitrary free of an attacker-influenced pointer.  Mirrors
+	 * prctl.c / pipe.c / execve.c.
 	 */
-	if (snap->magic != RECVMSG_POST_STATE_MAGIC) {
-		outputerr("post_recvmsg: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_recvmsg: rejected post_state=%p not in "
+			  "ownership table (post_state-redirected?)\n", snap);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
 	}
 
 	/*
-	 * Ownership-table check: shape + magic passed, but a foreign chunk
-	 * could in principle carry the matching cookie -- typically a stale
-	 * same-type snap a sibling stomp resurrected by redirecting
-	 * rec->post_state at it.  The cookie proves "looks like a
-	 * recvmsg_post_state"; only the ownership table proves "is the
-	 * snapshot we registered for THIS attempt".  Reject before the
-	 * inner-field deref hands tracked_free_now() an unowned snap->name,
-	 * which a tracking-table miss would raw-free() -- arbitrary free
-	 * of an attacker-influenced pointer.  Mirrors pipe.c / execve.c.
+	 * Magic-cookie check: ownership table confirmed this is our snap,
+	 * so reading snap->magic is now safe.  A mismatch here means the
+	 * snapshot itself was wholesale-scribbled in place -- abandon both
+	 * the snap and the msghdr cleanup rather than feed wild bytes into
+	 * the inner-field deref.  Cannot deferred_freeptr the snap because
+	 * its contents are no longer trustworthy -- leak it and let the
+	 * deferred-free tick reclaim the original snap on the next pass.
 	 */
-	if (!post_state_is_owned(snap)) {
-		outputerr("post_recvmsg: rejected post_state=%p not in "
-			  "ownership table (post_state-redirected?)\n", snap);
+	if (snap->magic != RECVMSG_POST_STATE_MAGIC) {
+		outputerr("post_recvmsg: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
@@ -674,39 +673,38 @@ static void post_recvmmsg(struct syscallrecord *rec)
 	}
 
 	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * recvmmsg_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon both the snap and the msgs
-	 * cleanup rather than walk the cleanup loop over foreign memory.
-	 * Mirrors recv.c:212 (post_recvmsg).
+	 * Ownership-table check: must be the FIRST gate that touches snap
+	 * after the shape check, BEFORE any field read.  A foreign chunk
+	 * could carry a matching magic cookie by coincidence (a stale
+	 * same-type snap a sibling stomp resurrected by redirecting
+	 * rec->post_state at it), in which case reading snap->magic touches
+	 * the wrong struct.  The ownership table proves "this is THIS
+	 * attempt's snapshot"; everything below trusts that.  Reject before
+	 * the per-i cleanup loop hands tracked_free_now() unowned
+	 * snap->name[i] pointers, which a tracking-table miss would
+	 * raw-free() -- arbitrary free of attacker-influenced pointers.
+	 * Mirrors prctl.c / pipe.c / execve.c.
 	 */
-	if (snap->magic != RECVMMSG_POST_STATE_MAGIC) {
-		outputerr("post_recvmmsg: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_recvmmsg: rejected post_state=%p not in "
+			  "ownership table (post_state-redirected?)\n", snap);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
 	}
 
 	/*
-	 * Ownership-table check: shape + magic passed, but a foreign chunk
-	 * could in principle carry the matching cookie -- typically a stale
-	 * same-type snap a sibling stomp resurrected by redirecting
-	 * rec->post_state at it.  The cookie proves "looks like a
-	 * recvmmsg_post_state"; only the ownership table proves "is the
-	 * snapshot we registered for THIS attempt".  Reject before the
-	 * per-i cleanup loop hands tracked_free_now() unowned snap->name[i]
-	 * pointers, which a tracking-table miss would raw-free() -- an
-	 * arbitrary free of attacker-influenced pointers.  Mirrors pipe.c /
-	 * execve.c.
+	 * Magic-cookie check: ownership table confirmed this is our snap,
+	 * so reading snap->magic is now safe.  A mismatch here means the
+	 * snapshot itself was wholesale-scribbled in place -- abandon both
+	 * the snap and the msgs cleanup rather than walk the cleanup loop
+	 * over foreign memory.  Mirrors recv.c:212 (post_recvmsg).
 	 */
-	if (!post_state_is_owned(snap)) {
-		outputerr("post_recvmmsg: rejected post_state=%p not in "
-			  "ownership table (post_state-redirected?)\n", snap);
+	if (snap->magic != RECVMMSG_POST_STATE_MAGIC) {
+		outputerr("post_recvmmsg: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->a2 = 0;
 		rec->post_state = 0;
 		return;
