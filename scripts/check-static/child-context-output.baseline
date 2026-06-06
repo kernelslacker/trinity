@@ -272,9 +272,7 @@ syscalls/newfstat.c:440:post_newfstatat
 syscalls/newlstat.c:119:post_newlstat
 syscalls/newlstat.c:134:post_newlstat
 syscalls/newlstat.c:176:post_newlstat
-syscalls/newstat.c:125:post_newstat
-syscalls/newstat.c:140:post_newstat
-syscalls/newstat.c:182:post_newstat
+syscalls/newstat.c:163:post_newstat
 syscalls/newuname.c:142:post_newuname
 syscalls/newuname.c:157:post_newuname
 syscalls/newuname.c:188:post_newuname
