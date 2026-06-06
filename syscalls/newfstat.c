@@ -190,7 +190,10 @@ static void post_newfstat(struct syscallrecord *rec)
 					   1, __ATOMIC_RELAXED);
 	}
 
-	memcpy(&first, (void *)(unsigned long) snap->statbuf, sizeof(first));
+	if (!post_snapshot_or_skip(&first,
+				   (void *)(unsigned long) snap->statbuf,
+				   sizeof(first)))
+		goto out_free;
 
 	if (syscall(SYS_fstat, fd, &recheck) != 0)
 		goto out_free;
@@ -442,7 +445,10 @@ static void post_newfstatat(struct syscallrecord *rec)
 	}
 
 	flag = (int) snap->at_flags;
-	memcpy(&first, (void *)(unsigned long) snap->statbuf, sizeof(first));
+	if (!post_snapshot_or_skip(&first,
+				   (void *)(unsigned long) snap->statbuf,
+				   sizeof(first)))
+		goto out_free;
 
 	if (syscall(SYS_newfstatat, dfd, snap->pathname, &recheck, flag) != 0)
 		goto out_free;
