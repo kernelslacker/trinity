@@ -107,10 +107,10 @@ static void post_pipe_record_fds(struct syscallrecord *rec)
 	if (snap == NULL || looks_like_corrupted_ptr(rec, snap))
 		return;
 
-	if (snap->magic != PIPE_POST_STATE_MAGIC)
+	if (!post_state_is_owned(snap))
 		return;
 
-	if (!post_state_is_owned(snap))
+	if (snap->magic != PIPE_POST_STATE_MAGIC)
 		return;
 
 	fildes = snap->fildes;
@@ -158,33 +158,34 @@ static void post_pipe(struct syscallrecord *rec)
 	}
 
 	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * pipe_post_state.  Mirrors recv.c:212.
+	 * Ownership-table check: must be the FIRST gate that touches snap
+	 * after the shape check, BEFORE any field read.  A foreign chunk
+	 * could carry a matching magic cookie by coincidence (another
+	 * in-flight pipe child's snap, or a stale snap a sibling stomp
+	 * resurrected by redirecting rec->post_state at it), in which case
+	 * reading snap->magic touches the wrong struct.  Reject before
+	 * deferred_freeptr() hands a foreign pointer to the deferred-free
+	 * ring.  Mirrors prctl.c.
 	 */
-	if (snap->magic != PIPE_POST_STATE_MAGIC) {
-		outputerr("post_pipe: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_pipe: rejected post_state=%p not in "
+			  "ownership table (post_state-redirected?)\n", snap);
 		rec->a1 = 0;
 		rec->post_state = 0;
 		return;
 	}
 
 	/*
-	 * Ownership-table check: shape + magic passed, but a foreign
-	 * chunk could in principle carry the matching cookie by
-	 * coincidence (e.g. another in-flight pipe child's snap, or a
-	 * stale snap a sibling stomp resurrected by redirecting
-	 * rec->post_state at it).  Reject before deferred_freeptr() hands
-	 * a foreign pointer to the deferred-free ring.  Mirrors the third
-	 * leg of the getsockname/getpeername hardening.
+	 * Magic-cookie check: ownership table confirmed this is our snap,
+	 * so reading snap->magic is now safe.  A mismatch here means the
+	 * snapshot itself was wholesale-scribbled in place.  Mirrors
+	 * recv.c:212.
 	 */
-	if (!post_state_is_owned(snap)) {
-		outputerr("post_pipe: rejected post_state=%p not in "
-			  "ownership table (post_state-redirected?)\n", snap);
+	if (snap->magic != PIPE_POST_STATE_MAGIC) {
+		outputerr("post_pipe: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->a1 = 0;
 		rec->post_state = 0;
 		return;
