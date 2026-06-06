@@ -257,6 +257,20 @@ static void post_mremap(struct syscallrecord *rec)
 	map->size = snap->new_len;
 
 	/*
+	 * Invalidate the get_writable_address() known_rw skip-cache.  The
+	 * slot's VMA was just moved/shrunk/grown out from under any prior
+	 * whole-mapping mprotect upgrade -- the cached "this slot is RW and
+	 * resident" claim no longer covers what's at map->ptr.  Letting it
+	 * persist would let the hot path return a pointer into a relocated
+	 * or hole-punched arena page and SEGV_MAPERR the consumer on first
+	 * store.  Covers all mremap arms (shrink in place, grow, MAYMOVE
+	 * relocate, MREMAP_DONTUNMAP); clearing unconditionally on any
+	 * successful mremap is correct and simplest.  Mirrors the clear in
+	 * post_munmap / post_mprotect.
+	 */
+	map->known_rw = false;
+
+	/*
 	 * For file-backed maps, an mremap grow can produce a VMA covering
 	 * pages past the file's backing extent — accessing those pages
 	 * SIGBUSes BUS_ADRERR and burns the child before it contributes
