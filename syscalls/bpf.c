@@ -558,6 +558,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	snap->classic_bpf_insns = classic_bpf_insns;
 	snap->attr_original = attr;
 	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
 }
 
 /*
@@ -623,6 +624,30 @@ static void post_bpf(struct syscallrecord *rec)
 	}
 
 	/*
+	 * Ownership-table check: shape passed but the magic cookie below
+	 * only proves "looks like struct bpf_post_state", not "is the
+	 * snapshot we produced for this attempt".  A sibling scribble that
+	 * redirects rec->post_state at a stale same-type snap still resident
+	 * on the deferred-free queue carries the matching cookie by
+	 * construction, so a cookie-only gate would trust it and proceed to
+	 * dispatch off snap->cmd / dereference snap->attr_original -- driving
+	 * the BPF_PROG_LOAD arm into free() on an attacker-influenced
+	 * attr->insns and the deferred_free_enqueue() tail into the same
+	 * fate on attr.  sanitise_bpf() registers each snap in the post_state
+	 * ownership table immediately after the rec->post_state assignment;
+	 * a value that fails the lookup is not the live snap for this record
+	 * and must not be dereferenced.  Mirrors prctl.c / execve.c / pipe.c.
+	 * Bail without freeing -- the pointer is suspect.
+	 */
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_bpf: rejected post_state=%p not in ownership "
+			  "table (post_state-redirected?)\n", snap);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
 	 * Magic-cookie check: snap survived the heap-shape gate but a
 	 * sibling scribble of rec->post_state with a heap-shaped pointer
 	 * to a foreign allocation would let the wrong bytes pose as a
@@ -652,6 +677,7 @@ static void post_bpf(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap->attr_original)) {
 		outputerr("post_bpf: rejected suspicious snap attr_original=%p (post_state-scribbled?)\n",
 			  snap->attr_original);
+		post_state_unregister(snap);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
@@ -889,6 +915,7 @@ static void post_bpf(struct syscallrecord *rec)
 	}
 
 	deferred_free_enqueue(attr);
+	post_state_unregister(snap);
 	deferred_freeptr(&rec->post_state);
 }
 
