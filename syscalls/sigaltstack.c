@@ -250,23 +250,10 @@ static void post_sigaltstack(struct syscallrecord *rec)
 	if (snap->uoss == 0)
 		goto out_free;
 
-	{
-		void *uoss = (void *)(unsigned long) snap->uoss;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner uoss
-		 * field.  Reject pid-scribbled uoss before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, uoss)) {
-			outputerr("post_sigaltstack: rejected suspicious uoss=%p (post_state-scribbled?)\n",
-				  uoss);
-			goto out_free;
-		}
-	}
-
-	memcpy(&first_ss, (const void *)(unsigned long) snap->uoss,
-	       sizeof(first_ss));
+	if (!post_snapshot_or_skip(&first_ss,
+				   (const void *)(unsigned long) snap->uoss,
+				   sizeof(first_ss)))
+		goto out_free;
 
 	memset(&recheck_ss, 0, sizeof(recheck_ss));
 	rc = syscall(SYS_sigaltstack, NULL, &recheck_ss);
