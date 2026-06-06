@@ -20,6 +20,65 @@ struct object *publish_resource(enum objecttype type, unsigned long id,
 	const struct resource_meta *m = meta ? meta : &zero_meta;
 	struct object *obj;
 
+	/*
+	 * Routing-acceptance gate.  Reject unsupported types BEFORE
+	 * alloc_object() so the fall-through caller (which then takes
+	 * the legacy alloc_object()/add_object() path) doesn't leave
+	 * an orphaned object behind us.
+	 *
+	 * mmap/sockinfo/watch_queue/pipe/epoll/kvm_vm/kvm_vcpu and
+	 * the futex/sysv_shm/aio_iocb families need pool-specific
+	 * state the unified shape can't carry.  Return NULL so the
+	 * caller falls back to the legacy alloc_object()/add_object()
+	 * pair.
+	 */
+	switch (type) {
+	case OBJ_FD_PIPE:
+	case OBJ_FD_DEVFILE:
+	case OBJ_FD_PROCFILE:
+	case OBJ_FD_SYSFILE:
+	case OBJ_FD_PERF:
+	case OBJ_FD_EPOLL:
+	case OBJ_FD_EVENTFD:
+	case OBJ_FD_TIMERFD:
+	case OBJ_FD_TESTFILE:
+	case OBJ_FD_MEMFD:
+	case OBJ_FD_MEMFD_SECRET:
+	case OBJ_FD_DRM:
+	case OBJ_FD_INOTIFY:
+	case OBJ_FD_SOCKET:
+	case OBJ_FD_USERFAULTFD:
+	case OBJ_FD_FANOTIFY:
+	case OBJ_FD_BPF_MAP:
+	case OBJ_FD_BPF_PROG:
+	case OBJ_FD_BPF_LINK:
+	case OBJ_FD_BPF_BTF:
+	case OBJ_FD_BPF_TOKEN:
+	case OBJ_FD_IO_URING:
+	case OBJ_FD_LANDLOCK:
+	case OBJ_FD_PIDFD:
+	case OBJ_FD_MQ:
+	case OBJ_FD_SECCOMP_NOTIF:
+	case OBJ_FD_IOMMUFD:
+	case OBJ_FD_FS_CTX:
+	case OBJ_FD_KVM_SYSTEM:
+	case OBJ_FD_KVM_VM:
+	case OBJ_FD_KVM_VCPU:
+	case OBJ_FD_MOUNT:
+	case OBJ_FD_SIGNALFD:
+	case OBJ_FD_CGROUP:
+	case OBJ_AIO_CTX:
+	case OBJ_KEY_SERIAL:
+	case OBJ_PKEY:
+	case OBJ_TIMERID:
+	case OBJ_PID:
+	case OBJ_SYSV_SEM:
+	case OBJ_SYSV_MSG:
+		break;
+	default:
+		return NULL;
+	}
+
 	obj = alloc_object();
 	if (obj == NULL)
 		return NULL;
@@ -30,7 +89,9 @@ struct object *publish_resource(enum objecttype type, unsigned long id,
 	 * mapping stays in exactly one place (objects.c).  Non-fd
 	 * pools each have a one-line typed assignment below — these
 	 * are the only id-only OBJ types in the enum and the cost of
-	 * stamping them inline is one switch arm each.
+	 * stamping them inline is one switch arm each.  The default
+	 * arm is unreachable: the routing gate above already rejected
+	 * any type not enumerated here.
 	 */
 	switch (type) {
 	case OBJ_FD_PIPE:
@@ -77,14 +138,7 @@ struct object *publish_resource(enum objecttype type, unsigned long id,
 	case OBJ_SYSV_SEM:	obj->sysvsemobj.semid = (int)id; break;
 	case OBJ_SYSV_MSG:	obj->sysvmsgobj.msqid = (int)id; break;
 	default:
-		/*
-		 * mmap/sockinfo/watch_queue/pipe/epoll/kvm_vm/kvm_vcpu
-		 * and the futex/sysv_shm/aio_iocb families need
-		 * pool-specific state the unified shape can't carry.
-		 * Return NULL so the caller falls back to the legacy
-		 * alloc_object()/add_object() pair.
-		 */
-		return NULL;
+		break;
 	}
 
 	/*
