@@ -113,6 +113,7 @@
 #include <linux/in6.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "errno-classify.h"
 #include "jitter.h"
 #include "random.h"
@@ -171,16 +172,6 @@
 #define IMC_LARGE_SRCS			32U
 
 static bool ns_unsupported_igmp_mld_source_churn;
-
-static long long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (long long)(now.tv_sec - t0->tv_sec) * 1000000000LL +
-	       (long long)(now.tv_nsec - t0->tv_nsec);
-}
 
 static void apply_timeouts(int s)
 {
