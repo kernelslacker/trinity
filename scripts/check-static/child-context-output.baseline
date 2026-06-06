@@ -177,10 +177,8 @@ syscalls/getuid.c:59:post_getuid
 syscalls/getxattrat.c:133:post_getxattrat
 syscalls/getxattrat.c:140:post_getxattrat
 syscalls/getxattrat.c:150:post_getxattrat
-syscalls/getxattr.c:200:post_getxattr
 syscalls/getxattr.c:215:post_getxattr
-syscalls/getxattr.c:237:post_getxattr
-syscalls/getxattr.c:309:post_getxattr
+syscalls/getxattr.c:287:post_getxattr
 syscalls/init_module.c:158:post_init_module
 syscalls/inotify_add_watch.c:26:post_inotify_add_watch
 syscalls/ioprio_get.c:21:post_ioprio_get
