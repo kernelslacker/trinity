@@ -31,18 +31,20 @@ void * get_writable_address(unsigned long size)
 	int tries = 0;
 	int mincore_retries = 0;
 	bool from_mmap = false;
+	bool skip_mprotect = false;
 
 retry:	tries++;
 	/*
 	 * Reset per-iteration state.  The retry: label can be reached
-	 * from anywhere below after from_mmap/map have been set on a
-	 * prior iteration; without this reset the line-309
-	 * short-circuit and the later from_mmap branches see stale
-	 * values from that earlier iteration.  The RAND_BOOL() == true
-	 * arm below sets both fields afresh when taken.
+	 * from anywhere below after from_mmap/map/skip_mprotect have
+	 * been set on a prior iteration; without this reset the
+	 * line-309 short-circuit and the later from_mmap branches see
+	 * stale values from that earlier iteration.  The RAND_BOOL() ==
+	 * true arm below sets both fields afresh when taken.
 	 */
 	from_mmap = false;
 	map = NULL;
+	skip_mprotect = false;
 	if (tries == 100)
 		return NULL;
 
@@ -125,19 +127,28 @@ retry:	tries++;
 		/*
 		 * Map-pool fast path.  If the slot's known_rw bit is set
 		 * the entire mapping was upgraded to PROT_READ|PROT_WRITE
-		 * on a previous call AND no munmap/mprotect notifier (or
-		 * the mprotect-split childop) has fired against the slot
-		 * since.  That makes the mprotect upgrade syscall below a
-		 * pure no-op and the mincore() VMA-presence probe at the
-		 * tail redundant -- the slot is intact and writable, so
-		 * skip both.  Note the cache must already have been set
-		 * by a prior call's whole-mapping mprotect: setting it on
-		 * a sub-range upgrade would let a later get_writable_
-		 * address(size > previous size) hit the cache and return
-		 * a buffer whose tail pages aren't actually RW.
+		 * on a previous call AND no per-slot notifier (post_munmap
+		 * / post_mprotect / post_mremap / mprotect-split childop)
+		 * has fired since.  Skip the mprotect upgrade syscall
+		 * below -- it would be a pure no-op -- but still fall
+		 * through to the tracked-region check and the mincore()
+		 * residency probe.  The per-slot notifiers only clear
+		 * known_rw for the single map they sanitised; a wide
+		 * munmap or MAP_FIXED mmap whose snap->map did not match
+		 * this slot can collaterally tear down THIS slot's VMA
+		 * and leave the cache lying, and a blind return would
+		 * hand the caller a pointer into a hole-punched page
+		 * (SEGV_MAPERR on first store).  The two verification
+		 * gates the slow path already runs catch that without an
+		 * extra syscall on the intact-cache common case.  Note
+		 * the cache must already have been set by a prior call's
+		 * whole-mapping mprotect: setting it on a sub-range
+		 * upgrade would let a later get_writable_address(size >
+		 * previous size) hit the cache and return a buffer whose
+		 * tail pages aren't actually RW.
 		 */
 		if (map->known_rw && size <= map->size)
-			return addr;
+			skip_mprotect = true;
 	} else {
 		from_mmap = false;
 		obj = get_random_object(OBJ_SYSV_SHM, OBJ_GLOBAL);
@@ -206,9 +217,11 @@ retry:	tries++;
 	 * to RW only adds permissions; the slot is trinity-owned and
 	 * get_writable_address consumers want RW anyway.  The SysV-shm
 	 * branch has no struct map and no slot-local cache, so it stays
-	 * on the sub-range upgrade.
+	 * on the sub-range upgrade.  On the cache-hit fast path
+	 * (skip_mprotect set) the upgrade is a known no-op and skipped;
+	 * the verification gates below still run.
 	 */
-	{
+	if (!skip_mprotect) {
 		void *mp_addr = from_mmap ? map->ptr : addr;
 		size_t mp_len = from_mmap ? (size_t) map->size : (size_t) size;
 
@@ -314,6 +327,16 @@ retry:	tries++;
 			else
 				parent_stats.get_writable_address_scribbled_postmp_shm++;
 		}
+		/*
+		 * The cache-hit fast path can land here when a wide
+		 * sibling munmap (or MAP_FIXED placement) collaterally
+		 * tore down this slot's VMA without firing the per-slot
+		 * notifier that would normally clear known_rw.  Clear it
+		 * now so future calls do not blindly trust the cache and
+		 * keep returning a pointer into the hole-punched region.
+		 */
+		if (from_mmap)
+			map->known_rw = false;
 		goto retry;
 	}
 
@@ -338,20 +361,30 @@ retry:	tries++;
 	 * retry returns are visible.
 	 */
 	/*
-	 * Skip the residency probe on a freshly-cached mmap slot.  We just
-	 * mprotect()-upgraded the whole mapping above; the kernel only
-	 * returns success there when the VMA spans every page being
-	 * touched, so the head-page mincore() lookup can only succeed.
-	 * The check matters for SysV-shm (no map, no cache) and for any
-	 * future mmap-branch path that bypasses the upgrade.
+	 * Skip the residency probe on a freshly-mprotected mmap slot.
+	 * The kernel only returns success from the upgrade above when
+	 * the VMA spans every page being touched, so the head-page
+	 * mincore() lookup can only succeed.  The cache-hit branch
+	 * (skip_mprotect set) did NOT just call mprotect -- a sibling
+	 * tear-down between calls is possible and the probe must run
+	 * to detect it.  Same for SysV-shm (no map, no cache).
 	 */
-	if (from_mmap && map != NULL && map->known_rw) {
+	if (from_mmap && !skip_mprotect) {
 		/* skip */
 	} else {
 		unsigned char vec;
 		void *probe_addr = (void *)((uintptr_t) addr & PAGE_MASK);
 
 		if (mincore(probe_addr, 1, &vec) != 0 && errno == ENOMEM) {
+			/*
+			 * Cache-hit fast path can land here when a
+			 * sibling tear-down unmapped this slot without
+			 * the per-slot notifier clearing known_rw.
+			 * Invalidate the cache so future calls do not
+			 * keep returning the same hole-punched slot.
+			 */
+			if (from_mmap)
+				map->known_rw = false;
 			mincore_retries++;
 			if (mincore_retries < 4)
 				goto retry;
