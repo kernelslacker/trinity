@@ -176,7 +176,10 @@ static void post_newstat(struct syscallrecord *rec)
 		}
 	}
 
-	memcpy(&first, (void *)(unsigned long) snap->statbuf, sizeof(first));
+	if (!post_snapshot_or_skip(&first,
+				   (void *)(unsigned long) snap->statbuf,
+				   sizeof(first)))
+		goto out_free;
 
 	if (syscall(SYS_stat, snap->filename, &recheck) != 0)
 		goto out_free;
