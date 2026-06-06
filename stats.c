@@ -711,6 +711,18 @@ static const struct stat_category signal_storm_category =
 	              signal_storm_runs,
 	              signal_storm_fields);
 
+static const struct stat_field pipe_thrash_fields[] = {
+	STAT_FIELD(pipe_thrash, runs),
+	STAT_FIELD(pipe_thrash, pipes),
+	STAT_FIELD(pipe_thrash, socketpairs),
+	STAT_FIELD(pipe_thrash, alloc_failed),
+};
+
+static const struct stat_category pipe_thrash_category =
+	STAT_CATEGORY("pipe_thrash",
+	              pipe_thrash_runs,
+	              pipe_thrash_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -1071,7 +1083,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 	printf("\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
 			"\"overlay\":%lu,\"quota\":%lu,\"bind\":%lu,\"unsupported\":%lu},"
 		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},"
-		"\"pipe_thrash\":{\"runs\":%lu,\"pipes\":%lu,\"socketpairs\":%lu,\"alloc_failed\":%lu},"
 		"\"fork_storm\":{\"runs\":%lu,\"forks\":%lu,\"failed\":%lu,"
 			"\"nested\":%lu,\"reaped_signal\":%lu},"
 		"\"pidfd_storm\":{\"runs\":%lu,\"signals\":%lu,\"getfds\":%lu,\"failed\":%lu},"
@@ -1094,8 +1105,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 		shm->stats.fs_lifecycle_unsupported,
 		shm->stats.futex_storm_runs, shm->stats.futex_storm_inner_crashed,
 		shm->stats.futex_storm_iters,
-		shm->stats.pipe_thrash_runs, shm->stats.pipe_thrash_pipes,
-		shm->stats.pipe_thrash_socketpairs, shm->stats.pipe_thrash_alloc_failed,
 		shm->stats.fork_storm_runs, shm->stats.fork_storm_forks,
 		shm->stats.fork_storm_failed, shm->stats.fork_storm_nested,
 		shm->stats.fork_storm_reaped_signal,
@@ -1849,6 +1858,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&signal_storm_category);
+
+	printf(",");
+	stat_category_emit_json(&pipe_thrash_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -4375,12 +4387,7 @@ static void dump_stats_childop_runs_local(void)
 			shm->stats.futex_storm_inner_crashed,
 			shm->stats.futex_storm_iters);
 
-	if (shm->stats.pipe_thrash_runs) {
-		stat_row("pipe_thrash", "runs",         shm->stats.pipe_thrash_runs);
-		stat_row("pipe_thrash", "pipes",        shm->stats.pipe_thrash_pipes);
-		stat_row("pipe_thrash", "socketpairs",  shm->stats.pipe_thrash_socketpairs);
-		stat_row("pipe_thrash", "alloc_failed", shm->stats.pipe_thrash_alloc_failed);
-	}
+	stat_category_emit_text(&pipe_thrash_category);
 
 	if (shm->stats.fork_storm_runs) {
 		stat_row("fork_storm", "runs",          shm->stats.fork_storm_runs);
