@@ -683,6 +683,21 @@ static const struct stat_category perf_event_chains_category =
 	              perf_chains_runs,
 	              perf_event_chains_fields);
 
+static const struct stat_field bpf_lifecycle_fields[] = {
+	STAT_FIELD(bpf_lifecycle, runs),
+	STAT_FIELD(bpf_lifecycle, progs_loaded),
+	STAT_FIELD(bpf_lifecycle, attached),
+	STAT_FIELD(bpf_lifecycle, triggered),
+	STAT_FIELD(bpf_lifecycle, verifier_rejects),
+	STAT_FIELD(bpf_lifecycle, attach_failed),
+	STAT_FIELD(bpf_lifecycle, eperm),
+};
+
+static const struct stat_category bpf_lifecycle_category =
+	STAT_CATEGORY("bpf_lifecycle",
+	              bpf_lifecycle_runs,
+	              bpf_lifecycle_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -884,8 +899,6 @@ static void dump_stats_json_basic_subsystems(void)
 		"\"netlink_generator\":{\"nested_attrs_emitted\":%lu},"
 		"\"tracefs_fuzzer\":{\"kprobe_writes\":%lu,\"uprobe_writes\":%lu,"
 			"\"filter_writes\":%lu,\"event_enable_writes\":%lu,\"misc_writes\":%lu},"
-		"\"bpf_lifecycle\":{\"runs\":%lu,\"progs_loaded\":%lu,\"attached\":%lu,"
-			"\"triggered\":%lu,\"verifier_rejects\":%lu,\"attach_failed\":%lu,\"eperm\":%lu},"
 		"\"bpf_fd_provider\":{\"maps_provided\":%lu,\"progs_provided\":%lu},",
 		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
 		shm->stats.memory_pressure_runs,
@@ -917,10 +930,6 @@ static void dump_stats_json_basic_subsystems(void)
 		shm->stats.tracefs_kprobe_writes, shm->stats.tracefs_uprobe_writes,
 		shm->stats.tracefs_filter_writes, shm->stats.tracefs_event_enable_writes,
 		shm->stats.tracefs_misc_writes,
-		shm->stats.bpf_lifecycle_runs, shm->stats.bpf_lifecycle_progs_loaded,
-		shm->stats.bpf_lifecycle_attached, shm->stats.bpf_lifecycle_triggered,
-		shm->stats.bpf_lifecycle_verifier_rejects, shm->stats.bpf_lifecycle_attach_failed,
-		shm->stats.bpf_lifecycle_eperm,
 		shm->stats.bpf_maps_provided, shm->stats.bpf_progs_provided);
 }
 
@@ -1825,6 +1834,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&perf_event_chains_category);
+
+	printf(",");
+	stat_category_emit_json(&bpf_lifecycle_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -3872,15 +3884,7 @@ static void dump_stats_fuzzer_subsystems(void)
 		stat_row("tracefs_fuzzer", "misc_writes",         shm->stats.tracefs_misc_writes);
 	}
 
-	if (shm->stats.bpf_lifecycle_runs) {
-		stat_row("bpf_lifecycle", "runs",             shm->stats.bpf_lifecycle_runs);
-		stat_row("bpf_lifecycle", "progs_loaded",     shm->stats.bpf_lifecycle_progs_loaded);
-		stat_row("bpf_lifecycle", "attached",         shm->stats.bpf_lifecycle_attached);
-		stat_row("bpf_lifecycle", "triggered",        shm->stats.bpf_lifecycle_triggered);
-		stat_row("bpf_lifecycle", "verifier_rejects", shm->stats.bpf_lifecycle_verifier_rejects);
-		stat_row("bpf_lifecycle", "attach_failed",    shm->stats.bpf_lifecycle_attach_failed);
-		stat_row("bpf_lifecycle", "eperm",            shm->stats.bpf_lifecycle_eperm);
-	}
+	stat_category_emit_text(&bpf_lifecycle_category);
 
 	if (shm->stats.bpf_maps_provided || shm->stats.bpf_progs_provided) {
 		stat_row("bpf_fd_provider", "maps_provided",  shm->stats.bpf_maps_provided);
