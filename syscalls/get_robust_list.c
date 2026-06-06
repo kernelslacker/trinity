@@ -181,20 +181,14 @@ static void post_get_robust_list(struct syscallrecord *rec)
 	if ((pid_t) snap->pid != 0 && (pid_t) snap->pid != gettid())
 		goto out_free;
 
-	/*
-	 * Defense in depth: even with the post_state snapshot, a wholesale
-	 * stomp could rewrite the snapshot's inner pointer fields.  Reject
-	 * pid-scribbled head_ptr/len_ptr before deref.
-	 */
-	if (looks_like_corrupted_ptr(rec, (void *) snap->head_ptr) ||
-	    looks_like_corrupted_ptr(rec, (void *) snap->len_ptr)) {
-		outputerr("post_get_robust_list: rejected suspicious head_ptr=%p len_ptr=%p (post_state-scribbled?)\n",
-			  (void *) snap->head_ptr, (void *) snap->len_ptr);
+	if (!post_snapshot_or_skip(&user_head,
+				   (const void *) snap->head_ptr,
+				   sizeof(user_head)))
 		goto out_free;
-	}
-
-	memcpy(&user_head, (const void *) snap->head_ptr, sizeof(user_head));
-	memcpy(&user_len,  (const void *) snap->len_ptr,  sizeof(user_len));
+	if (!post_snapshot_or_skip(&user_len,
+				   (const void *) snap->len_ptr,
+				   sizeof(user_len)))
+		goto out_free;
 
 	rc = syscall(SYS_get_robust_list, 0, &kernel_head, &kernel_len);
 	if (rc != 0)
