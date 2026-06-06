@@ -21,6 +21,7 @@
 #include <sys/uio.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
+#include <sys/sem.h>
 #include <sched.h>
 #include <time.h>
 #include <netinet/in.h>
@@ -366,6 +367,41 @@ static const struct struct_field mount_attr_fields[] = {
 	       .mutate_weight = 80),
 	FIELDX(struct mount_attr, userns_fd, FT_FD,
 	       .mutate_weight = 60),
+};
+
+/* ------------------------------------------------------------------ */
+/* struct sembuf (semop, semtimedop)                                   */
+/* ------------------------------------------------------------------ */
+
+/*
+ * sem{,timed}op pass an ARRAY of sembuf at a2 (nsops in a3), not a
+ * single struct, and the arg slot is ARG_ADDRESS rather than
+ * ARG_STRUCT_PTR_*.  The bespoke fill_sembuf_array() helpers in
+ * syscalls/semop.c and syscalls/semtimedop.c allocate the buffer,
+ * pick a per-element (sem_num, sem_op, sem_flg) triple respecting
+ * the kernel's nsems / IPC_NOWAIT / SEM_UNDO semantics, and overwrite
+ * rec->a2 -- the schema-aware fill path never runs for this slot.
+ *
+ * Registration is attribution-only, mirroring cachestat_range /
+ * mount_attr above: struct_field_for_cmp() uses the FT_RANGE /
+ * FT_FLAGS tags to steer KCOV-CMP learned constants at sem_num or
+ * sem_flg rather than at a coincidentally-same-width slot.  sem_op
+ * stays FT_RAW: its kernel semantics are arithmetic
+ * (sma->sem_base[].semval + sem_op) rather than a vocab CMP, so no
+ * gate-tag lift would help attribution.  sem_num's range upper bound
+ * mirrors syscalls/semop.c's pick_sem_num() worst-case
+ * (SEMOP_FALLBACK_NSEMS + 63 = 95) so future schema consumers stay
+ * inside the same in-range / out-of-range envelope the bespoke
+ * sanitiser already explores.
+ */
+static const struct struct_field sembuf_fields[] = {
+	FIELDX(struct sembuf, sem_num, FT_RANGE,
+	       .u.range = { 0, 95 },
+	       .mutate_weight = 60),
+	FIELD(struct sembuf, sem_op),
+	FIELDX(struct sembuf, sem_flg, FT_FLAGS,
+	       .u.flags.mask = IPC_NOWAIT | SEM_UNDO,
+	       .mutate_weight = 80),
 };
 
 /* ------------------------------------------------------------------ */
@@ -3679,6 +3715,19 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= mount_attr_fields,
 		.num_fields	= ARRAY_SIZE(mount_attr_fields),
 	},
+	/*
+	 * sembuf: appended at the tail so the existing struct_catalog[N]
+	 * indices above stay stable; the syscall_struct_args[] mapping below
+	 * picks up the new entry via an explicit USE_BPF-aware index since
+	 * the bpf_attr / bpf_insn entries shift the position by two when
+	 * USE_BPF is set.
+	 */
+	{
+		.name		= "sembuf",
+		.struct_size	= sizeof(struct sembuf),
+		.fields		= sembuf_fields,
+		.num_fields	= ARRAY_SIZE(sembuf_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -3804,6 +3853,14 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 */
 	{ "mount_setattr",	4, &struct_catalog[26] },
 	{ "open_tree_attr",	4, &struct_catalog[26] },
+	/*
+	 * sembuf is an array slot on ARG_ADDRESS at a2 of both semop and
+	 * semtimedop; the per-element type is named here so future schema
+	 * consumers and struct_field_for_cmp can resolve it.  The bespoke
+	 * fill_sembuf_array() owns the live (nsops, sem_*) layout.
+	 */
+	{ "semop",		2, &struct_catalog[27] },
+	{ "semtimedop",		2, &struct_catalog[27] },
 #else
 	{ "clock_nanosleep",	3, &struct_catalog[22] },
 	{ "nanosleep",		1, &struct_catalog[22] },
@@ -3811,6 +3868,8 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "cachestat",		2, &struct_catalog[23] },
 	{ "mount_setattr",	4, &struct_catalog[24] },
 	{ "open_tree_attr",	4, &struct_catalog[24] },
+	{ "semop",		2, &struct_catalog[25] },
+	{ "semtimedop",		2, &struct_catalog[25] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
