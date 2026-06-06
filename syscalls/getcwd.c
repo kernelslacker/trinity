@@ -149,21 +149,6 @@ static void post_getcwd(struct syscallrecord *rec)
 	if (snap->buf == 0)
 		goto out_free;			/* no user buffer */
 
-	{
-		void *buf = (void *)(unsigned long) snap->buf;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner buf
-		 * field.  Reject pid-scribbled buf before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, buf)) {
-			outputerr("post_getcwd: rejected suspicious buf=%p (post_state-scribbled?)\n",
-				  buf);
-			goto out_free;
-		}
-	}
-
 	n = readlink("/proc/self/cwd", proc_cwd, sizeof(proc_cwd) - 1);
 	if (n <= 0)
 		goto out_free;			/* readlink failed */
