@@ -9,7 +9,6 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
-#include "deferred-free.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -267,7 +266,7 @@ static void sanitise_statx(struct syscallrecord *rec)
 	snap->flags    = rec->a3;
 	snap->mask     = rec->a4;
 	snap->statxbuf = rec->a5;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -354,7 +353,7 @@ static void sanitise_statx(struct syscallrecord *rec)
  */
 static void post_statx(struct syscallrecord *rec)
 {
-	struct statx_post_state *snap = (struct statx_post_state *) rec->post_state;
+	struct statx_post_state *snap;
 	struct statx first, recheck;
 	char local_path[PATH_MAX];
 	unsigned int flags, mask, valid_mask;
@@ -362,6 +361,13 @@ static void post_statx(struct syscallrecord *rec)
 	int dfd;
 	int diverged = 0;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, STATX_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
 
@@ -381,35 +387,6 @@ static void post_statx(struct syscallrecord *rec)
 	 * epoll post handlers had (commit 48279ed126bb).
 	 */
 	retval = rec->retval;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_statx: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * statx_post_state.  A cookie mismatch means snap does not point
-	 * at our struct -- abandon rather than feed wild bytes into the
-	 * inner-field deref.
-	 */
-	if (snap->magic != STATX_POST_STATE_MAGIC) {
-		outputerr("post_statx: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	/*
 	 * Cheap stx_mask oracle: runs on every successful statx, not
@@ -447,28 +424,28 @@ static void post_statx(struct syscallrecord *rec)
 	}
 
 	if (!ONE_IN(100))
-		goto out_free;
+		goto out_release;
 
 	if ((long) retval != 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->pathname == 0 || snap->statxbuf == 0)
-		goto out_free;
+		goto out_release;
 
 	dfd = (int) snap->dfd;
 
 	if (!post_snapshot_str(local_path, sizeof(local_path),
 			       (const char *)(unsigned long) snap->pathname))
-		goto out_free;
+		goto out_release;
 	flags = (unsigned int) snap->flags;
 	mask = (unsigned int) snap->mask;
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->statxbuf,
 				   sizeof(first)))
-		goto out_free;
+		goto out_release;
 
 	if (syscall(SYS_statx, dfd, local_path, flags, mask, &recheck) != 0)
-		goto out_free;
+		goto out_release;
 
 	valid_mask = first.stx_mask & recheck.stx_mask;
 
@@ -494,7 +471,7 @@ static void post_statx(struct syscallrecord *rec)
 	if (first.stx_rdev_minor != recheck.stx_rdev_minor) diverged = 1;
 
 	if (!diverged)
-		goto out_free;
+		goto out_release;
 
 	output(0,
 	       "statx oracle anomaly: dfd=%d path=%s flags=%x mask=%x valid_mask=%x "
@@ -525,8 +502,8 @@ static void post_statx(struct syscallrecord *rec)
 	__atomic_add_fetch(&shm->stats.statx_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
 
-out_free:
-	deferred_freeptr(&rec->post_state);
+out_release:
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_statx = {
